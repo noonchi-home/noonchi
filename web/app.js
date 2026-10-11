@@ -1,4 +1,4 @@
-// twin-home 웹 화면: 왼쪽 = 방별 기기 카드(빠른 제어, 센서 시뮬레이션), 오른쪽 = 에이전트 대화.
+// twin-home 웹 화면: 방별 기기 카드(빠른 제어, 센서 시뮬레이션) | 3D 트윈(실시간) | 에이전트 대화. 폰 너비에서는 탭.
 // 빌드 없이 쓰는 ES 모듈. 상태는 WebSocket /events로 실시간 반영한다.
 
 const $ = (sel) => document.querySelector(sel);
@@ -375,6 +375,92 @@ function connect() {
   });
 }
 
+// ── 3D 트윈 창 ─────────────────────────────────────────
+// twin-studio 뷰어(/twin/viewer/)를 ?live=auto&embed=1로 넣는다. 뷰어가 같은 /events를 받아 3D에 반영하고,
+// 뷰어 가전 패널에서 바꾼 상태는 POST /api/devices/:id/twin(정책 포함)으로 돌아온다.
+
+const TWIN_SRC = "/twin/viewer/?live=auto&embed=1";
+const narrow = window.matchMedia("(max-width: 860px)");
+const twin = { available: false, on: loadTwinPref(), tab: "devices" };
+
+function loadTwinPref() {
+  try {
+    return localStorage.getItem("twin-home.twin") !== "off";
+  } catch {
+    return true;
+  }
+}
+
+async function checkTwin(health) {
+  if (!health.json?.twin) return false;
+  try {
+    const res = await fetch("/twin/viewer/", { method: "HEAD" });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+function applyTwin() {
+  const pane = $("#twin-pane");
+  const layout = $("#layout");
+  const mobile = narrow.matches;
+  const show = mobile ? twin.tab === "twin" : twin.available && twin.on;
+  pane.hidden = !show;
+  layout.classList.toggle("with-twin", !mobile && twin.available && twin.on);
+  layout.dataset.tab = twin.tab;
+  for (const b of document.querySelectorAll("#tabs [data-tab]")) b.setAttribute("aria-selected", String(b.dataset.tab === twin.tab));
+  $("#twin-toggle").setAttribute("aria-pressed", String(twin.on));
+  const frame = $("#twin-frame");
+  const msg = $("#twin-msg");
+  if (!twin.available) {
+    frame.hidden = true;
+    msg.hidden = false;
+    msg.textContent = "3D 트윈을 찾을 수 없어요. twin-studio의 apartment/(TWIN_STUDIO_DIR)가 있어야 /twin/viewer/가 열려요.";
+    return;
+  }
+  if (show && !frame.getAttribute("src")) {
+    msg.hidden = false;
+    msg.textContent = "3D 트윈 불러오는 중…";
+    frame.addEventListener("load", () => { msg.hidden = true; }, { once: true });
+    frame.src = TWIN_SRC;
+  } else if (show) {
+    // 숨긴 동안 뷰어 캔버스가 0px로 줄었을 수 있다. iframe 창 크기는 그대로라 resize가 안 오므로 직접 알린다
+    requestAnimationFrame(() => {
+      try {
+        frame.contentWindow?.dispatchEvent(new Event("resize"));
+      } catch {
+        // 다른 출처면 무시
+      }
+    });
+  }
+}
+
+async function initTwin(health) {
+  twin.available = await checkTwin(health);
+  $("#twin-toggle").hidden = !twin.available;
+  $("#twin-missing").hidden = twin.available;
+  $("#twin-missing").title = "TWIN_STUDIO_DIR/apartment/가 없어 3D 트윈을 붙이지 못했어요.";
+  $("#twin-toggle").addEventListener("click", () => {
+    twin.on = !twin.on;
+    try {
+      localStorage.setItem("twin-home.twin", twin.on ? "on" : "off");
+    } catch {
+      // 저장소를 못 쓰면 이번 화면에서만
+    }
+    applyTwin();
+  });
+  for (const b of document.querySelectorAll("#tabs [data-tab]")) {
+    b.addEventListener("click", () => {
+      twin.tab = b.dataset.tab;
+      applyTwin();
+    });
+  }
+  narrow.addEventListener("change", applyTwin);
+  window.addEventListener("resize", applyTwin);
+  applyTwin();
+}
+
 // ── 시작 ───────────────────────────────────────────────
 
 async function init() {
@@ -386,7 +472,7 @@ async function init() {
   $("#hub").textContent = `허브 ${health.json.hub ?? "-"}${health.json.transport ? ` · ${health.json.transport}` : ""}`;
   $("#hub").title = health.json.hub === "matter" ? "Matter 브리지(가상 가전) ⇄ matter.js 컨트롤러" : "Matter 없이 메모리에서만";
   $("#provider").textContent = `에이전트 ${health.json.provider ?? "없음"}${health.json.model ? ` · ${health.json.model}` : ""}`;
-  $("#twin-link").hidden = !health.json.twin;
+  initTwin(health);
   app.rooms = rooms.json;
   for (const d of devices.json) app.devices.set(d.id, d);
   renderFilter();

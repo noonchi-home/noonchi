@@ -298,6 +298,33 @@ export function matterFromTwin(target: DeviceTarget, twin: Record<string, unknow
   return m;
 }
 
+// ── 3D 트윈에서 바꾼 twin 상태 → 명령/센서 (POST /api/devices/:id/twin) ──
+
+export type TwinChange =
+  | { type: "command"; command: Command; value: unknown }
+  | { type: "sensor"; value: unknown }
+  | { type: "invalid"; error: string };
+
+/**
+ * twin attr 하나를 바꾸려는 요청을 허브 동작으로 바꾼다. 값은 카탈로그 값 목록에서 고른다(문자열 "true"도 true로).
+ * 센서 attr → 센서, 제어 attr → 켜기/끄기·잠금/해제·커튼 열림(0/100%). on/off는 정책·허브가 start/stop·밸브로 정규화한다.
+ */
+export function twinChange(spec: Pick<DeviceSpec, "kind" | "label" | "sensors" | "twinAttrs">, attr: string, value: unknown): TwinChange {
+  const values = spec.twinAttrs[attr];
+  if (!values) return { type: "invalid", error: `${spec.label}: 상태 ${attr}이(가) 없습니다(있는 상태: ${Object.keys(spec.twinAttrs).join(", ")}).` };
+  const v = values.find((x) => x === value) ?? values.find((x) => String(x) === String(value));
+  if (v === undefined) return { type: "invalid", error: `${spec.label}.${attr}: 값 ${JSON.stringify(value)}은(는) 쓸 수 없습니다(가능한 값: ${values.map(String).join(", ")}).` };
+  if (spec.sensors.includes(attr)) return { type: "sensor", value: v };
+  const control = KIND_PROFILES[spec.kind].control;
+  if (!control || !control.attrs.includes(attr)) return { type: "invalid", error: `${spec.label}: ${attr}은(는) 바꿀 수 없는 상태입니다.` };
+  const active = v === control.active;
+  let command: Command;
+  if (spec.kind === "lock") command = { type: active ? "lock" : "unlock" };
+  else if (spec.kind === "covering") command = { type: "covering", openPercent: active ? 100 : 0 };
+  else command = { type: active ? "on" : "off" };
+  return { type: "command", command, value: v };
+}
+
 // ── 명령 ──────────────────────────────────────────────────
 
 /** 켜기/끄기 별칭: onoff가 없는 동작형은 start/stop, 밸브는 valve open/close. */

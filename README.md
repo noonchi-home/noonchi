@@ -1,8 +1,12 @@
 # twin-home
 
-twin-studio가 만든 아파트 트윈의 가전 65개를 **가상 Matter 기기**(matter.js 브리지)로 띄우고, 에이전트(LLM)에게 한국어로 요청해 켜고 끈다. 상태의 원천은 Matter 속성이고, 바뀐 상태는 웹 화면(WebSocket)에 실시간으로 반영된다. 3D 트윈 연결은 2단계다.
+twin-studio가 만든 아파트 트윈의 가전 65개를 **가상 Matter 기기**(matter.js 브리지)로 띄우고, 에이전트(LLM)에게 한국어로 요청해 켜고 끈다. 상태의 원천은 Matter 속성이고, 바뀐 상태는 웹 화면(WebSocket)과 **3D 트윈**(twin-studio 뷰어)에 실시간으로 반영된다. 3D 트윈에서 바꾼 상태도 승인 정책을 거쳐 twin-home으로 돌아온다.
 
 계약 문서는 [`docs/plan.md`](docs/plan.md)다. 인터페이스·형식을 바꾸려면 그 문서를 먼저 고친다.
+
+![웹 화면: 기기 카드 | 3D 트윈 | 대화. "거실 불 켜고 TV 켜줘" 뒤](docs/screenshot-3d.png)
+
+*`npm start`(허브 matter · network, mock 에이전트)로 띄우고 헤드리스 Chrome으로 채팅에 "거실 불 켜고 TV 켜줘"를 입력해 찍었다. 가운데 3D 트윈(`/twin/viewer/?live=auto&embed=1`)에서 거실 TV 화면이 켜지고 "거실 TV 켜짐·거실 천장등 켜짐·플로어 스탠드 켜짐" 배지가 뜬다. 위쪽 칩은 뷰어의 실시간 연결 상태다.*
 
 ![웹 화면: "거실 불 켜고 TV 꺼줘" 뒤 거실 카드](docs/screenshot.png)
 
@@ -18,7 +22,7 @@ cp .env.example .env    # 선택. 키는 .env에만 넣는다(git에 올리지 �
 npm start               # http://127.0.0.1:8200  (허브 matter, network 전송)
 ```
 
-브라우저로 <http://127.0.0.1:8200/>을 열고 채팅에 "거실 불 켜고 TV 꺼줘", "에어컨 24도로 맞춰줘", "현관문 열어줘"(승인 후 실행)를 입력한다.
+브라우저로 <http://127.0.0.1:8200/>을 열고 채팅에 "거실 불 켜고 TV 꺼줘", "에어컨 24도로 맞춰줘", "현관문 열어줘"(승인 후 실행)를 입력한다. 가운데 3D 트윈에 바로 보인다(아래 "3D 트윈 연결").
 
 ## 구조
 
@@ -129,6 +133,7 @@ twin-home 서버: http://127.0.0.1:8200  (허브 matter/network, 에이전트 mo
 | `GET /api/devices?room=&kind=` | | `[{ ...DeviceSpec, state: DeviceState }]` |
 | `GET /api/devices/:id` | | `{ ...DeviceSpec, state }`, 없으면 404 |
 | `POST /api/devices/:id/command` | `{ command, confirmToken? }` | 200 `{ ok, state }` / 400 오류 / 404 / **409 `{ needsConfirmation: { token, reason } }`** |
+| `POST /api/devices/:id/twin` | `{ attr, value, confirmToken? }` | 3D 트윈에서 바꾼 twin 상태. 200 `{ ok, state, via: "command"\|"sensor", command? }` / 400(없는 attr·값) / 404 / **409 `{ needsConfirmation, command }`** (아래 "3D 트윈 연결") |
 | `POST /api/sensors/:id` | `{ attr, value }` | 200 / 400(센서가 아니거나 값이 목록에 없음) |
 | `POST /api/agent/chat` | `{ message, sessionId? }` | `{ sessionId, reply, actions, pendingConfirmations, provider }` |
 | `POST /api/agent/confirm` | `{ token }` | `{ ok, reply, state, deviceId }`, 토큰이 없거나 만료면 400 |
@@ -139,17 +144,78 @@ twin-home 서버: http://127.0.0.1:8200  (허브 matter/network, 에이전트 mo
 | `GET /events` (WebSocket) | | 붙으면 `{type:"hello"}`와 모든 기기의 `{type:"state", state}`, 이후 바뀔 때마다 `{type:"state"}`와 `{type:"agent", event:"action"\|"reply"\|"pending"\|"confirmed"\|"cancelled", ...}` |
 
 - `command`는 `docs/plan.md`의 `Command` 객체다. 줄임으로 문자열(`"on"`, `"off"`, `"lock"` …)도 받는다.
-- 정적 파일: `/`는 `web/`이다. `/twin/`은 `TWIN_STUDIO_DIR/apartment/`가 있을 때 붙는다(예: `/twin/viewer/`). 경로 탈출(`..`)은 막는다.
+- 정적 파일: `/`는 `web/`이다. `/twin/`은 `TWIN_STUDIO_DIR/apartment/`가 있을 때 붙는다(예: `/twin/viewer/?live=auto`). 경로 탈출(`..`)은 막는다.
 - 보안: 기본 바인드는 `127.0.0.1`. 브라우저 출처는 `localhost`·`127.0.0.1`·`[::1]`만 허용한다(CORS, WebSocket). 다른 출처의 POST(페어링 창 열기 포함)는 403이다. 인증은 없다.
 
 ### 웹 화면 (web/)
 
 빌드 없이 쓰는 ES 모듈(`index.html`, `app.js`, `style.css`)이다. 밝은 화면과 어두운 화면, 폰 너비(390px)를 지원한다.
 
-- **위 상태줄**: 실시간 연결, `허브 matter · network`(전송 포함), 에이전트 공급자, 3D 트윈 링크, 센서 시뮬레이션 스위치.
-- **왼쪽 기기 패널**: 방 탭, 방별 기기 카드(상태 칩, Matter 요약 `onOff=true level=100` 등, 빠른 제어). 센서는 읽기 전용이고 "센서 시뮬레이션"을 켜면 `/api/sensors`로 문 열림·충전을 바꿀 수 있다.
-- **오른쪽 대화**: 메시지마다 도구 호출 기록이 붙고, 승인 대기에는 승인·취소 버튼이 붙는다. 카드에서 승인이 필요한 명령을 눌러도 같은 승인 카드가 뜬다.
+- **배치**: 1280px 이상은 `기기 카드 | 3D 트윈 | 대화` 세 칸, 861~1279px는 왼쪽 카드 + 오른쪽 위 3D·아래 대화, 860px 이하는 `기기 / 3D / 대화` 탭(가로 스크롤 없음).
+- **위 상태줄**: 실시간 연결, `허브 matter · network`(전송 포함), 에이전트 공급자, **3D 트윈 토글**(숨기면 원래 두 칸, 선택은 브라우저에 기억), 센서 시뮬레이션 스위치. `/twin/`이 없으면 토글 대신 "3D 트윈 없음" 표시가 뜨고 3D 칸은 숨긴다(폰 3D 탭에는 이유를 적는다).
+- **기기 패널**: 방 탭, 방별 기기 카드(상태 칩, Matter 요약 `onOff=true level=100` 등, 빠른 제어). 센서는 읽기 전용이고 "센서 시뮬레이션"을 켜면 `/api/sensors`로 문 열림·충전을 바꿀 수 있다.
+- **3D 트윈**: twin-studio 뷰어를 iframe(`/twin/viewer/?live=auto&embed=1`)으로 넣는다. 처음 보일 때 불러오고, "새 창"으로 따로 열 수 있다.
+- **대화**: 메시지마다 도구 호출 기록이 붙고, 승인 대기에는 승인·취소 버튼이 붙는다. 카드에서 승인이 필요한 명령을 눌러도 같은 승인 카드가 뜬다.
 - WebSocket `/events`로 실시간 반영하고, 끊기면 다시 연결한다.
+
+## 3D 트윈 연결
+
+twin-studio 아파트 뷰어(`apartment/viewer/`)에 `?live=`를 주면 twin-home `/events`에 붙어 상태를 3D에 반영하고, 뷰어 가전 패널에서 바꾼 상태를 twin-home으로 보낸다. 뷰어 쪽 코드는 twin-studio `apartment/viewer/live.mjs`(+ `main.mjs`의 몇 줄 훅)다.
+
+### 실행
+
+```bash
+# 1) twin-home(이 레포). /twin/에 ../twin-studio/apartment/를 붙인다
+TWIN_STUDIO_DIR=../twin-studio npm start
+#    → http://127.0.0.1:8200/              웹 화면(카드 | 3D | 대화), 3D 칸은 같은 출처 /twin/viewer/?live=auto&embed=1
+#    → http://127.0.0.1:8200/twin/viewer/?live=auto   뷰어만 크게
+
+# 2) (선택) twin-studio 미리보기 서버(:8100)에서 뷰어를 열어 다른 출처로 붙기
+#    http://127.0.0.1:8100/apartment/viewer/?live=ws://127.0.0.1:8200/events
+```
+
+| `?live=` 값 | 붙는 곳 |
+|---|---|
+| `auto`(또는 `1`, 빈 값) | 같은 호스트의 `ws(s)://<host>/events`. twin-home이 `/twin/viewer/`로 줄 때 |
+| `ws://127.0.0.1:8200/events` | 그 주소. `http://…`를 주면 `ws://…/events`로 바꾼다. REST는 같은 호스트(`http://127.0.0.1:8200`) |
+| (`&embed=1`) | iframe용: 오른쪽 검사 패널·도구를 숨기고, 좁으면(640px 미만) 가전 패널을 접는다("가전 패널" 버튼) |
+
+### 무엇이 맞춰지나
+
+- **twin-home → 3D**: 붙으면 `hello` 뒤 기기 65개 스냅숏, 이후 `state` 이벤트마다 `state.twin`의 attr 중 **그 객체가 가진 attr**만 `aptViewer.setState`로 바꾼다. 3D 객체 id = 기기 id(scene.json placement id, 문은 floorplan 문 id). 같은 값은 건너뛴다.
+- 모르는 기기·attr·값은 무시하고 센다. 뷰어 위쪽 칩: `실시간 연결됨 · twin-home 127.0.0.1:8200 · 기기 65 · 반영 N · 무시 N`(마우스를 올리면 종류별 개수). 끊기면 `끊김 · N초 뒤 다시`, 1·2·4…15초 간격으로 다시 붙는다.
+- **3D → twin-home**: 연결된 동안 뷰어 가전 패널(스위치·목록, 모두 켜기/끄기 포함)에서 바꾼 값은 **로컬에서 바꾸지 않고** `POST /api/devices/:id/twin`으로 보낸다. 돌아오는 `state` 이벤트가 3D를 바꾼다. 원격 상태를 반영하는 동안에는 보내지 않아 되울림이 없다.
+- twin-home이 모르는 객체·attr(장식, 월패드 화면 등)와 끊긴 동안의 변경은 뷰어 안에서만 바뀐다(다시 붙으면 스냅숏으로 덮인다).
+
+### `POST /api/devices/:id/twin` 계약
+
+본문 `{ attr, value, confirmToken? }`. 값은 그 기기 `twinAttrs[attr]` 목록에서 고른다(`"true"`도 `true`로 맞춘다).
+
+| attr 종류 | 바뀌는 것 | 예 |
+|---|---|---|
+| 센서(`door`, `charging`) | `hub.setSensor` (정책 없음) | `door_bed2` `{attr:"door", value:"open"}` → 200 `via:"sensor"` |
+| 제어 attr, 도어록 | `lock` / `unlock` | `door_main` `{attr:"lock", value:"unlocked"}` → **409** |
+| 제어 attr, 커튼·블라인드 | `covering` 100%(open) / 0%(closed) | `curtain_living` `{attr:"curtain", value:"closed"}` → `openPercent=0` |
+| 나머지 제어 attr(`power`, `running`, `heating`, `faucet`, `water`) | `on` / `off` (동작형은 start/stop, 수전은 valve로 정규화) | `washer_1` `{attr:"running", value:false}` → `stop` |
+
+- 명령은 `/command`와 같은 **승인 정책**을 거친다. 현관문 잠금 해제·인덕션 켜기·전자레인지 시작은 409 `{ ok:false, needsConfirmation:{token, reason}, command }`이고 실행하지 않는다. 토큰으로 `POST /api/agent/confirm {token}`(또는 같은 본문에 `confirmToken`)하면 실행한다.
+- 400: attr 없음, 값 없음, 목록에 없는 값, 바꿀 수 없는 attr. 404: 없는 기기. CORS·출처 규칙은 다른 API와 같다(`localhost`·`127.0.0.1`·`[::1]` 출처만, 그래서 :8100 뷰어도 된다).
+
+### 승인 동작(뷰어)
+
+뷰어에서 현관문 잠금을 풀면 스위치가 곧바로 원래대로(잠김) 돌아가고, 화면 아래에 "현관문 잠금 해제는 사용자 승인이 필요합니다. [승인] [취소]" 알림이 뜬다. **승인**은 `POST /api/agent/confirm`을 부르고, 실행되면 state 이벤트로 3D·웹 카드가 함께 바뀐다. **취소**는 `/api/agent/cancel`. 토큰은 5분 뒤 만료된다. 실패(400 등)는 빨간 알림으로 8초 보인다.
+
+### 확인한 것(2026-10-11, 이 PC)
+
+헤드리스 Chrome(CDP)으로 `npm start`(matter/network, mock) + `:8100` 미리보기 서버에서 13개 항목을 확인했다: 3D 칸 기본 표시, 스냅숏 반영(기기 65, 무시 0), 채팅 "거실 불 켜고 TV 켜줘" → 3D의 거실 천장등·플로어 스탠드·TV `on`(REST와 같음), 뷰어 패널 스위치 → REST `on`(클릭 → 3D 반영 33~55ms), 뷰어 현관문 잠금 해제 → 승인 알림·잠김 유지 → 승인 → `unlocked`, `:8100` 다른 출처 뷰어의 수신·패널 POST(CORS), 3D 토글, 390px 가로 스크롤 없음·3D 탭.
+
+따로 한 번 더 확인했다(16개 항목).
+- **채팅 → 3D·카드:** "안방 불 켜줘"는 안방 조명 3개, 이어서 "에어컨 켜줘"는 `ac_master`를 켰다. 원격 상태를 반영하는 동안 뷰어가 보낸 요청은 0회였다.
+- **승인:** 뷰어에서 현관문 잠금을 풀면 승인 알림이 뜬다. 취소하면 잠김이 유지되고 대기가 0개가 된다. 승인하면 `unlocked`가 된다.
+- **새로고침:** 3D가 스냅숏으로 현재 상태를 되살렸다(68개 attr 중 불일치 0).
+- **서버 재시작:** `끊김 · N초 뒤 다시`(1·2·4·8·15초)를 거쳐 저절로 다시 붙고, 스냅숏을 다시 반영했다(불일치 0).
+- **`?live` 없는 뷰어:** 연결하지 않고 그대로 동작한다.
+- **출처 검사:** `evil.com`, `localhost.evil.com`, `null` 출처의 POST는 403이고, WS는 401로 거부된다.
 
 ## 에이전트 (src/agent)
 
@@ -315,13 +381,14 @@ matter.js 0.17.9에 매핑 표의 기기 종류 21개가 모두 있어 **대체�
 
 ## 테스트
 
-`npm test`는 10개 파일을 돌린다(이 PC에서 약 1분 반, 실제 UDP 커미셔닝 포함). 이 중 `tests/devices.test.ts`의 catalog 전용 초기값 검사 1개는 scene 데이터일 때 건너뛴다.
+`npm test`는 11개 파일을 돌린다(이 PC에서 약 1분 반, 실제 UDP 커미셔닝 포함). 이 중 `tests/devices.test.ts`의 catalog 전용 초기값 검사 1개는 scene 데이터일 때 건너뛴다.
 
 | 파일 | 다루는 것 |
 |---|---|
 | `mapping`, `devices`, `memory`, `policy` | 매핑 표, twin 데이터 읽기(실제 twin-studio 데이터 포함), MemoryHub, 승인 토큰 |
 | `agent` | 도구, 기기 찾기, mock 시나리오, 공급자 배선(가짜 API로 요청 모양 확인) |
 | `server` | REST·WS(임의 포트), CORS, Matter 정보·페어링 API |
+| `twin-sync` | 3D 트윈 → `POST /api/devices/:id/twin`: `twinChange` 매핑(명령·센서·오류), 정책 409 + `/api/agent/confirm`, `confirmToken`, 없는 attr·값 400, 뷰어 출처 CORS |
 | `mcp` | MCP stdio 서버를 실제로 띄워 SDK 클라이언트로 호출 |
 | `start` | HUB 기본값 matter, network → local → memory 대체 경로 |
 | `matter` | 모든 기기 종류의 엔드포인트·명령(local), 실제 커미셔닝·구독·재사용·multi-admin 창(network) |
@@ -337,7 +404,16 @@ matter.js 0.17.9에 매핑 표의 기기 종류 21개가 모두 있어 **대체�
 - HTTP API에 인증이 없다. 기본 `HOST=127.0.0.1`로만 연다.
 - twin-studio `apartment/scene.json`의 초기 `state`를 그대로 쓴다. 지금 scene.json(카탈로그 수정 전 빌드)은 식기세척기·세탁기·건조기·로봇청소기가 `running: true`로 들어 있어 처음 띄우면 넷이 "동작 중"이다. twin-studio가 scene.json을 다시 빌드하면 바뀐다(카탈로그는 이미 `[false, true]`).
 - 종료: Ctrl+C(SIGINT)는 서버의 종료 처리(HTTP → 브리지 → 컨트롤러 순)를 탄다. 작업 관리자·`taskkill /F`로 죽이면 정리 없이 끝나지만, 저장소는 다음 시작에 그대로 쓰였다(이 PC에서 확인).
-- 웹 화면의 바람 세기 목록으로는 끌 수 없다(전원 스위치를 쓴다). 3D 트윈 실시간 연결(`?live=`)은 2단계다.
+- 웹 화면의 바람 세기 목록으로는 끌 수 없다(전원 스위치를 쓴다).
+- 3D 트윈은 twin attr(켜짐·열림·잠김 등 두세 값)만 맞춘다. 밝기·설정 온도·바람 세기·커튼 열림 %는 3D에 없다. 3D에서 커튼을 "열림"으로 바꾸면 100%, "닫힘"은 0%다.
+- 뷰어 승인 알림은 뷰어 안에만 뜬다(웹 화면 대화의 승인 카드와 따로). 웹 대화에서 나온 승인 대기는 뷰어에 뜨지 않는다.
+- **조명이 켜지고 꺼질 때 화면이 멈춘다.** 뷰어는 조명을 켤 때 three.js 광원을 장면에 더하고 끌 때 뺀다(twin-studio `states.mjs`의 `refreshLight`). 광원 수·종류 조합이 처음 나올 때마다 three.js가 셰이더를 다시 만든다(한 번에 프로그램 약 17개 추가). 그동안 뷰어의 메인 스레드가 막히고, 같은 출처 iframe이라 twin-home 웹 화면(대화·카드)도 함께 멈춘다. 이 PC의 GPU(AMD Radeon, ANGLE D3D11)에서 잰 값:
+  - 셰이더 캐시가 비어 있을 때: 프레임 사이 최대 10~15초.
+  - Chrome GPU 디스크 캐시가 찬 뒤: 최대 약 0.7초, 3D에 보이기까지 3.5~5초.
+  - 이미 나온 조합: 약 0.1초.
+  - 헤드리스 SwiftShader: 9~18초.
+
+  조명과 상관없는 변경(클릭·채팅 → 3D)은 33~220ms, 에이전트 응답을 기다리는 경우 약 1.3초였다. 고치려면 뷰어에서 광원 수를 고정해야 한다(불러올 때 광원을 미리 만들고, 끌 때는 빼지 말고 intensity만 0으로). twin-studio 뷰어 쪽 일이다.
 
 ### 문제 해결
 

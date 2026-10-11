@@ -14,7 +14,8 @@
 twin-studio (Blender)                twin-home (Node 22 + TypeScript)
  apartment/scene.json  ──────────▶  devices: scene.json의 상태 있는 객체 → DeviceSpec
  apartment/assets/*.glb               │
- apartment/viewer/  ◀── WebSocket ──  server: REST + WS(상태 스트림) + 웹 화면(채팅·기기 패널, 나중에 3D 트윈)
+ apartment/viewer/  ◀── WebSocket ──  server: REST + WS(상태 스트림) + 웹 화면(기기 패널 | 3D 트윈 | 채팅)
+   (live.mjs, ?live=) ── POST /twin ─▶
                                       │
                                       hub: DeviceHub 인터페이스
                                       ├─ MemoryHub      (테스트, Matter 없이)
@@ -93,11 +94,12 @@ interface DeviceHub {
 - `GET /api/rooms`, `GET /api/devices`(spec + state), `GET /api/devices/:id`
 - `POST /api/devices/:id/command` `{command, confirmToken?}`: 정책을 거친다. 승인이 필요하면 `409 {needsConfirmation}`을 돌려준다.
 - `POST /api/sensors/:id` `{attr, value}`
+- `POST /api/devices/:id/twin` `{attr, value, confirmToken?}`: 3D 트윈에서 바꾼 twin 상태. 센서 attr은 센서, 제어 attr은 명령(`twinChange`: lock/unlock, covering 100/0, 나머지 on/off)으로 바꿔 **정책을 거친다**. 200 `{ok, state, via, command?}` / 400 / 404 / 409 `{needsConfirmation, command}`.
 - `POST /api/agent/chat` `{message, sessionId}` → `{reply, actions:[...], pendingConfirmations:[...]}`
 - `POST /api/agent/confirm` `{token}`
 - `GET /api/matter`: 전송·커미셔닝 상태·페어링 코드(Matter 허브일 때만). `POST /api/matter/commissioning-window` `{timeoutSeconds?}`: 같은 LAN의 다른 Matter 컨트롤러(Home Assistant 등)용 페어링 창을 연다(multi-admin, network 전송일 때만).
 - `GET /events`(WebSocket): `{type:"state", state}`, `{type:"agent", ...}`
-- 정적 파일: `web/`(채팅 + 기기 패널). 설정으로 twin-studio의 `apartment/`를 `/twin/`에 붙인다(3D 트윈, 2단계).
+- 정적 파일: `web/`(기기 패널 + 3D 트윈 iframe + 채팅). twin-studio의 `apartment/`를 `/twin/`에 붙인다(뷰어는 `/twin/viewer/?live=auto`).
 - 기본 포트 8200.
 - 허브 기본값은 `HUB=matter`, `MATTER_TRANSPORT=network`다. network 커미셔닝이 제한 시간(`MATTER_COMMISSION_TIMEOUT_MS`, 기본 30초) 안에 안 되면 경고 한 줄을 찍고 local 전송으로, local도 실패하면 MemoryHub로 대신 뜬다.
 
@@ -127,9 +129,12 @@ interface DeviceHub {
 - 경로는 `TWIN_STUDIO_DIR`(기본 `../twin-studio`)이다.
 - twin 상태 초기값은 `state` 또는 catalog `states.*.default`다.
 
-## 3D 트윈 연결 (2단계, twin-studio 뷰어가 끝난 뒤)
+## 3D 트윈 연결 (2단계, 완료 2026-10-11)
 
-twin-studio 뷰어에 `?live=ws://127.0.0.1:8200/events`를 주면 상태 이벤트를 받아 `aptViewer.setState`로 반영한다. 화면에서 바꾼 상태는 `POST /api/devices/:id/command`(제어 가능한 것) 또는 `/api/sensors/:id`(센서)로 보낸다.
+- twin-studio 뷰어(`apartment/viewer/live.mjs`, `main.mjs`의 훅 몇 줄)에 `?live=auto`(같은 호스트 `/events`) 또는 `?live=ws://127.0.0.1:8200/events`를 주면 스냅숏과 state 이벤트를 받아, 그 객체가 가진 twin attr만 `aptViewer.setState`로 반영한다. 모르는 id·attr·값은 무시하고 센다(상태 칩). 끊기면 1~15초 간격으로 다시 붙는다.
+- 뷰어 가전 패널에서 바꾼 값은 연결된 동안 로컬에서 바꾸지 않고 `POST /api/devices/:id/twin`으로 보낸다(원격 반영 중에는 보내지 않음 → 되울림 없음). 409면 스위치를 되돌리고 승인 알림(승인 → `POST /api/agent/confirm`)을 띄운다.
+- twin-home 웹 화면은 뷰어를 iframe(`/twin/viewer/?live=auto&embed=1`)으로 넣는다. 넓은 화면 `카드 | 3D | 대화`, 폰은 탭. `/twin/`이 없으면 숨기고 이유를 보인다.
+- 3D에는 twin attr만 있다(밝기·온도·바람·커튼 %는 없음).
 
 ## 테스트
 
@@ -138,6 +143,7 @@ twin-studio 뷰어에 `?live=ws://127.0.0.1:8200/events`를 주면 상태 이벤
   - MemoryHub
   - 정책(승인 토큰)
   - REST/WS(실제 서버를 임의 포트로)
+  - 3D 트윈 → `POST /api/devices/:id/twin`(매핑, 센서, 정책 409 + confirm, 400)
   - MCP(클라이언트로 도구 목록·호출)
   - 에이전트(mock 공급자로 "거실 TV 켜줘" → turn_on(tv_living) → 상태 on, "현관문 열어줘" → 승인 요청 → 확정 후 unlocked)
 - Matter 통합 테스트:

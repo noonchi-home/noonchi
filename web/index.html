@@ -17,7 +17,8 @@
       <span id="conn" class="badge off" role="status" aria-live="polite">연결 중…</span>
       <span id="hub" class="badge">허브 -</span>
       <span id="provider" class="badge">에이전트 -</span>
-      <a id="twin-link" class="badge link" href="/twin/viewer/" target="_blank" rel="noopener" hidden>3D 트윈</a>
+      <button type="button" id="twin-toggle" class="badge toggle" aria-pressed="true" aria-controls="twin-pane" hidden>3D 트윈</button>
+      <span id="twin-missing" class="badge off" hidden>3D 트윈 없음</span>
       <label class="sim">
         <input type="checkbox" id="sim-toggle">
         <span>센서 시뮬레이션</span>
@@ -25,10 +26,28 @@
     </div>
   </header>
 
-  <main class="layout">
+  <nav class="tabs" id="tabs" role="tablist" aria-label="화면 고르기">
+    <button type="button" role="tab" data-tab="devices" aria-selected="true">기기</button>
+    <button type="button" role="tab" data-tab="twin" aria-selected="false">3D</button>
+    <button type="button" role="tab" data-tab="chat" aria-selected="false">대화</button>
+  </nav>
+
+  <main class="layout" id="layout" data-tab="devices">
     <section class="devices" aria-label="기기">
       <div class="room-filter" id="room-filter" role="tablist" aria-label="방 고르기"></div>
       <div id="rooms" class="rooms"></div>
+    </section>
+
+    <section class="twin" id="twin-pane" aria-label="3D 트윈" hidden>
+      <div class="twin-head">
+        <h2>3D 트윈</h2>
+        <span class="twin-note">채팅·카드로 바꾼 상태가 실시간으로 보여요</span>
+        <a id="twin-open" class="ghost small" href="/twin/viewer/?live=auto" target="_blank" rel="noopener">새 창</a>
+      </div>
+      <div class="twin-body">
+        <iframe id="twin-frame" title="3D 아파트 트윈" loading="lazy"></iframe>
+        <p id="twin-msg" class="twin-msg">3D 트윈 불러오는 중…</p>
+      </div>
     </section>
 
     <section class="chat" aria-label="에이전트 대화">

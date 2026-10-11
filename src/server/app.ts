@@ -12,6 +12,7 @@ import { newSessionId } from "../agent/agent.js";
 import { Policy } from "../agent/policy.js";
 import { deviceViews, roomViews } from "../agent/tools.js";
 import type { Command, CommandResult, DeviceHub, RoomSpec } from "../hub/types.js";
+import { twinChange } from "../model/mapping.js";
 import { listenRetry } from "./net.js";
 
 export interface AppOptions {
@@ -205,6 +206,19 @@ export function createApp(opts: AppOptions): TwinHomeApp {
     const cmd = parseCommand(body.command);
     const token = typeof body.confirmToken === "string" && body.confirmToken ? body.confirmToken : undefined;
     return policy.guard(hub, id!, cmd, token);
+  }, (b) => commandStatus(b as CommandResult));
+
+  // 3D 트윈 화면에서 바꾼 twin 상태(docs/plan.md "3D 트윈 연결"). 제어 attr은 명령으로 바꿔 정책을 거치고, 센서 attr은 센서 값을 바꾼다.
+  route("POST", /^\/api\/devices\/([^/]+)\/twin$/, async (req, _url, [id]) => {
+    const body = await readJson(req);
+    const s = requireSpec(id!);
+    if (typeof body.attr !== "string" || !body.attr) throw new HttpError(400, "attr(twin 상태 이름)가 필요합니다.");
+    if (!("value" in body)) throw new HttpError(400, "value가 필요합니다.");
+    const change = twinChange(s, body.attr, body.value);
+    if (change.type === "invalid") throw new HttpError(400, change.error);
+    if (change.type === "sensor") return { ...(await hub.setSensor(s.id, body.attr, change.value)), via: "sensor" };
+    const token = typeof body.confirmToken === "string" && body.confirmToken ? body.confirmToken : undefined;
+    return { ...(await policy.guard(hub, s.id, change.command, token)), via: "command", command: change.command };
   }, (b) => commandStatus(b as CommandResult));
 
   route("POST", /^\/api\/sensors\/([^/]+)$/, async (req, _url, [id]) => {
