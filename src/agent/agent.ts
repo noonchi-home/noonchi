@@ -1,0 +1,367 @@
+// 에이전트: LLM 공급자 + 도구 호출 루프(최대 6라운드) + 세션별 대화 기억 + 승인 대기 관리.
+// 승인 토큰은 LLM에게 보여 주지 않는다. 사용자가 화면 버튼(confirm)이나 다음 메시지 "응"으로만 확정한다.
+
+import { randomUUID } from "node:crypto";
+import type { Command, DeviceHub, DeviceState, RoomSpec } from "../hub/types.js";
+import type { Policy } from "./policy.js";
+import { askApproval, doneSentence, toolForCommand } from "./phrases.js";
+import { buildSystemPrompt } from "./prompts.js";
+import { AGENT_TOOLS, localBackend, runTool, type ToolBackend, type ToolDef, type ToolResult } from "./tools.js";
+
+export interface ToolCall {
+  id: string;
+  name: string;
+  args: unknown;
+}
+
+export interface ToolCallResult {
+  call: ToolCall;
+  content: string;     // 모델에게 줄 JSON 문자열(승인 토큰 없음)
+  isError: boolean;
+  result: ToolResult;  // 같은 내용(승인 토큰 없음)
+}
+
+export interface StepOptions {
+  system: string;
+  tools: ToolDef[];
+  allowTools: boolean; // false면 도구 없이 답해야 한다(라운드 한도)
+}
+
+export interface StepResult {
+  text: string;
+  calls: ToolCall[];
+}
+
+/** LLM 공급자: 대화 상태(state)는 공급자 형식으로 공급자가 관리한다. */
+export interface LlmProvider {
+  readonly name: string;
+  readonly model?: string;
+  createState(): unknown;
+  addUserMessage(state: unknown, text: string): void;
+  /** 모델을 한 번 부르고, 응답을 state에 덧붙인 뒤 도구 호출·글을 돌려준다. */
+  step(state: unknown, opts: StepOptions): Promise<StepResult>;
+  addToolResults(state: unknown, results: ToolCallResult[]): void;
+  /** 모델 밖에서 처리한 대화(승인·취소)를 기록한다. */
+  addExchange?(state: unknown, user: string, assistant: string): void;
+}
+
+export interface AgentAction {
+  tool: string;
+  args: Record<string, unknown>;
+  ok: boolean;
+  message?: string;
+  error?: string;
+  deviceId?: string;
+  deviceLabel?: string;
+  needsConfirmation?: boolean;
+  at: string;
+}
+
+export interface PendingView {
+  token: string;
+  deviceId: string;
+  deviceLabel: string;
+  command: Command;
+  reason: string;
+  expiresAt: string;
+}
+
+export interface ChatResult {
+  sessionId: string;
+  reply: string;
+  actions: AgentAction[];
+  pendingConfirmations: PendingView[];
+  provider: string;
+}
+
+export interface ConfirmResult {
+  ok: boolean;
+  reply: string;
+  error?: string;
+  deviceId?: string;
+  state?: DeviceState;
+  action?: AgentAction;
+}
+
+export type AgentEvent =
+  | { event: "action"; sessionId: string; action: AgentAction }
+  | { event: "reply"; sessionId: string; message: string; reply: string; actions: AgentAction[]; pendingConfirmations: PendingView[] }
+  | { event: "pending"; sessionId: string; pending: PendingView }
+  | { event: "confirmed"; sessionId?: string; token: string; ok: boolean; reply: string; deviceId?: string }
+  | { event: "cancelled"; sessionId?: string; token: string };
+
+export interface AgentOptions {
+  hub: DeviceHub;
+  policy: Policy;
+  provider: LlmProvider;
+  rooms?: RoomSpec[];
+  maxToolRounds?: number;
+  maxSessions?: number;
+  onEvent?: (e: AgentEvent) => void;
+}
+
+interface Session {
+  id: string;
+  state: unknown;
+  pending: Set<string>;
+  lastUsed: number;
+  queue: Promise<unknown>;
+}
+
+const AFFIRMATIVE = /^(응|어|엉|네|넹|예|그래|좋아|확인|승인|ㅇㅇ|ㅇㅋ|오케이|ok|okay|yes|진행)(요|해|해요|해줘|해주세요|할게|합니다|이요)?[\s.!~,]*(열어\s*줘|해\s*줘|진행해\s*줘|부탁해)?[\s.!~]*$/i;
+const NEGATIVE = /^(아니|아냐|ㄴㄴ|싫어|취소|하지\s*마|안\s*돼|no\b|nope|그만|됐어)/i;
+const TOKEN_MISSING = "승인 토큰이 없거나 만료되었습니다.";
+
+export function isAffirmative(text: string): boolean {
+  return AFFIRMATIVE.test(text.trim());
+}
+
+export function isNegative(text: string): boolean {
+  return NEGATIVE.test(text.trim());
+}
+
+/** 오류를 짧은 설명으로(키처럼 보이는 문자열은 가린다). */
+export function describeError(e: unknown): string {
+  const err = e as { status?: number; name?: string; message?: string };
+  const msg = String(err?.message ?? e).replace(/(sk-[A-Za-z0-9_-]{4})[A-Za-z0-9_-]+/g, "$1***").slice(0, 300);
+  return err?.status && !msg.startsWith(String(err.status)) ? `HTTP ${err.status} ${msg}` : msg;
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
+
+export class Agent {
+  readonly provider: LlmProvider;
+  private readonly hub: DeviceHub;
+  private readonly policy: Policy;
+  private readonly rooms?: RoomSpec[];
+  private readonly maxRounds: number;
+  private readonly maxSessions: number;
+  private readonly sessions = new Map<string, Session>();
+  private readonly listeners = new Set<(e: AgentEvent) => void>();
+  private prompt?: { key: string; text: string };
+
+  constructor(opts: AgentOptions) {
+    this.hub = opts.hub;
+    this.policy = opts.policy;
+    this.provider = opts.provider;
+    this.rooms = opts.rooms;
+    this.maxRounds = opts.maxToolRounds ?? 6;
+    this.maxSessions = opts.maxSessions ?? 200;
+    if (opts.onEvent) this.listeners.add(opts.onEvent);
+  }
+
+  subscribe(cb: (e: AgentEvent) => void): () => void {
+    this.listeners.add(cb);
+    return () => {
+      this.listeners.delete(cb);
+    };
+  }
+
+  /** 사용자 메시지 하나를 처리한다. 같은 세션의 요청은 차례로 처리한다. */
+  chat(sessionId: string, message: string): Promise<ChatResult> {
+    const s = this.session(sessionId);
+    return this.serialize(s, () => this.handle(s, message));
+  }
+
+  /** 승인 토큰으로 대기 중인 명령을 실행한다(화면 승인 버튼, POST /api/agent/confirm). */
+  confirm(token: string): Promise<ConfirmResult> {
+    const s = this.owner(token);
+    const run = async () => {
+      const r = await this.confirmToken(token, s);
+      if (s && r.ok) this.provider.addExchange?.(s.state, "(화면에서 승인 버튼을 눌렀다)", r.reply);
+      this.emit({ event: "confirmed", sessionId: s?.id, token, ok: r.ok, reply: r.reply, deviceId: r.deviceId });
+      return r;
+    };
+    return s ? this.serialize(s, run) : run();
+  }
+
+  /** 승인 대기를 취소한다. */
+  cancel(token: string): { ok: boolean; reply: string } {
+    const s = this.owner(token);
+    s?.pending.delete(token);
+    const p = this.policy.consume(token);
+    if (!p) return { ok: false, reply: "취소할 승인 대기가 없거나 만료되었어요." };
+    this.emit({ event: "cancelled", sessionId: s?.id, token });
+    return { ok: true, reply: `${this.label(p.deviceId)} 명령을 취소했어요.` };
+  }
+
+  /** 승인 대기 목록(세션을 주면 그 세션 것만). */
+  pending(sessionId?: string): PendingView[] {
+    if (sessionId === undefined) return this.policy.pending().map((p) => this.view(p));
+    const s = this.sessions.get(sessionId);
+    if (!s) return [];
+    this.prune(s);
+    return this.policy.pending().filter((p) => s.pending.has(p.token)).map((p) => this.view(p));
+  }
+
+  resetSession(sessionId: string): void {
+    this.sessions.delete(sessionId);
+  }
+
+  // ── 내부 ────────────────────────────────────────────────
+
+  private async handle(s: Session, message: string): Promise<ChatResult> {
+    const actions: AgentAction[] = [];
+    this.prune(s);
+    let reply: string;
+    if (s.pending.size > 0 && isAffirmative(message)) reply = await this.confirmAll(s, message, actions);
+    else if (s.pending.size > 0 && isNegative(message)) reply = this.cancelAll(s, message);
+    else reply = await this.runModel(s, message, actions);
+    const pendingConfirmations = this.pending(s.id);
+    this.emit({ event: "reply", sessionId: s.id, message, reply, actions, pendingConfirmations });
+    return { sessionId: s.id, reply, actions, pendingConfirmations, provider: this.provider.name };
+  }
+
+  private async runModel(s: Session, message: string, actions: AgentAction[]): Promise<string> {
+    const backend = localBackend(this.hub, this.policy, this.rooms);
+    const system = this.systemPrompt();
+    try {
+      this.provider.addUserMessage(s.state, message);
+      for (let round = 0; ; round++) {
+        const allowTools = round < this.maxRounds;
+        const r = await this.provider.step(s.state, { system, tools: AGENT_TOOLS, allowTools });
+        if (r.calls.length === 0) return r.text.trim() || "(답이 비어 있어요)";
+        if (!allowTools) {
+          // 한도를 넘긴 호출은 실행하지 않고 결과만 채워 대화 형식을 맞춘다
+          this.provider.addToolResults(s.state, r.calls.map((call) => {
+            const result: ToolResult = { ok: false, error: `도구 호출 한도(${this.maxRounds}라운드)를 넘어 실행하지 않았습니다.` };
+            return { call, content: JSON.stringify(result), isError: true, result };
+          }));
+          return r.text.trim() || `도구 호출 한도(${this.maxRounds}라운드)를 넘어 멈췄어요. 요청을 나눠서 다시 말씀해 주세요.`;
+        }
+        const results: ToolCallResult[] = [];
+        for (const call of r.calls) results.push(await this.execute(s, call, backend, actions));
+        this.provider.addToolResults(s.state, results);
+      }
+    } catch (e) {
+      // 대화 상태가 어긋났을 수 있으니 새로 시작한다
+      s.state = this.provider.createState();
+      return `에이전트(LLM) 호출에 실패했습니다: ${describeError(e)}`;
+    }
+  }
+
+  private async execute(s: Session, call: ToolCall, backend: ToolBackend, actions: AgentAction[]): Promise<ToolCallResult> {
+    const args = isRecord(call.args) ? call.args : {};
+    const result = await runTool(call.name, args, backend, AGENT_TOOLS);
+    const action: AgentAction = {
+      tool: call.name, args, ok: result.ok, message: result.message, error: result.error,
+      deviceId: result.device?.id, deviceLabel: result.device?.label, needsConfirmation: result.needsConfirmation ? true : undefined,
+      at: new Date().toISOString(),
+    };
+    actions.push(action);
+    this.emit({ event: "action", sessionId: s.id, action });
+    let shown: ToolResult = result;
+    if (result.needsConfirmation) {
+      s.pending.add(result.needsConfirmation.token);
+      const p = this.policy.pending().find((x) => x.token === result.needsConfirmation!.token);
+      if (p) this.emit({ event: "pending", sessionId: s.id, pending: this.view(p) });
+      const { needsConfirmation, ...rest } = result;
+      shown = {
+        ...rest,
+        pendingApproval: { reason: needsConfirmation.reason },
+        message: "사용자 승인을 기다리는 중입니다. 같은 명령을 다시 부르지 말고, 사용자에게 승인할지 물으세요(화면의 승인 버튼 또는 '응').",
+      };
+    }
+    return { call, content: JSON.stringify(shown), isError: !result.ok && !result.needsConfirmation, result: shown };
+  }
+
+  private async confirmAll(s: Session, message: string, actions: AgentAction[]): Promise<string> {
+    const replies: string[] = [];
+    for (const token of [...s.pending]) {
+      const r = await this.confirmToken(token, s);
+      if (r.action) actions.push(r.action);
+      replies.push(r.reply);
+      this.emit({ event: "confirmed", sessionId: s.id, token, ok: r.ok, reply: r.reply, deviceId: r.deviceId });
+    }
+    const reply = replies.join(" ");
+    this.provider.addExchange?.(s.state, message, reply);
+    return reply;
+  }
+
+  private cancelAll(s: Session, message: string): string {
+    const replies: string[] = [];
+    for (const token of [...s.pending]) replies.push(this.cancel(token).reply);
+    const reply = replies.join(" ") || "취소할 승인 대기가 없어요.";
+    this.provider.addExchange?.(s.state, message, reply);
+    return reply;
+  }
+
+  private async confirmToken(token: string, s?: Session): Promise<ConfirmResult> {
+    s?.pending.delete(token);
+    const p = this.policy.pending().find((x) => x.token === token);
+    if (!p) return { ok: false, error: TOKEN_MISSING, reply: "승인할 작업이 없거나 시간이 지나 만료되었어요. 다시 요청해 주세요." };
+    const r = await this.policy.confirm(this.hub, token);
+    const spec = this.hub.list().find((d) => d.id === p.deviceId);
+    const label = spec?.label ?? p.deviceId;
+    const action: AgentAction = {
+      tool: toolForCommand(p.command), args: { device_id: p.deviceId }, ok: r.ok, error: r.error,
+      deviceId: p.deviceId, deviceLabel: label, at: new Date().toISOString(),
+    };
+    const reply = r.ok && spec ? doneSentence([label], spec.kind, p.command) : `${label}: ${r.error ?? "실행하지 못했어요."}`;
+    action.message = r.ok ? reply : undefined;
+    return { ok: r.ok, reply, error: r.error, deviceId: p.deviceId, state: r.state, action };
+  }
+
+  private view(p: { token: string; deviceId: string; command: Command; reason: string; expiresAt: number }): PendingView {
+    return { token: p.token, deviceId: p.deviceId, deviceLabel: this.label(p.deviceId), command: p.command, reason: p.reason, expiresAt: new Date(p.expiresAt).toISOString() };
+  }
+
+  private label(id: string): string {
+    return this.hub.list().find((d) => d.id === id)?.label ?? id;
+  }
+
+  /** 만료된 토큰을 세션에서 지운다. */
+  private prune(s: Session): void {
+    const live = new Set(this.policy.pending().map((p) => p.token));
+    for (const t of [...s.pending]) if (!live.has(t)) s.pending.delete(t);
+  }
+
+  private owner(token: string): Session | undefined {
+    for (const s of this.sessions.values()) if (s.pending.has(token)) return s;
+    return undefined;
+  }
+
+  private session(id: string): Session {
+    const key = id || "default";
+    let s = this.sessions.get(key);
+    if (!s) {
+      if (this.sessions.size >= this.maxSessions) {
+        const oldest = [...this.sessions.values()].sort((a, b) => a.lastUsed - b.lastUsed)[0];
+        if (oldest) this.sessions.delete(oldest.id);
+      }
+      s = { id: key, state: this.provider.createState(), pending: new Set(), lastUsed: Date.now(), queue: Promise.resolve() };
+      this.sessions.set(key, s);
+    }
+    s.lastUsed = Date.now();
+    return s;
+  }
+
+  private serialize<T>(s: Session, fn: () => Promise<T>): Promise<T> {
+    const next = s.queue.then(fn, fn);
+    s.queue = next.catch(() => undefined);
+    return next;
+  }
+
+  private systemPrompt(): string {
+    const devices = this.hub.list();
+    const key = devices.map((d) => `${d.id}:${d.label}`).join("|");
+    if (this.prompt?.key !== key) this.prompt = { key, text: buildSystemPrompt(devices, this.rooms) };
+    return this.prompt.text;
+  }
+
+  private emit(e: AgentEvent): void {
+    for (const cb of [...this.listeners]) {
+      try {
+        cb(e);
+      } catch {
+        // 구독자 오류는 무시
+      }
+    }
+  }
+}
+
+export function newSessionId(): string {
+  return randomUUID();
+}
