@@ -382,6 +382,16 @@ function connect() {
 const TWIN_SRC = "/twin/viewer/?live=auto&embed=1";
 const narrow = window.matchMedia("(max-width: 860px)");
 const twin = { available: false, on: loadTwinPref(), tab: "devices" };
+// 기기 카드: 3D 연결 전부터 있던 Matter 확인용 화면. 3D가 보이는 넓은 화면에서는 기본으로 숨긴다(헤더 버튼으로 켠다).
+const cards = { on: loadPref("twin-home.cards", "off") === "on" };
+
+function loadPref(key, fallback) {
+  try {
+    return localStorage.getItem(key) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 function loadTwinPref() {
   try {
@@ -407,7 +417,11 @@ function applyTwin() {
   const mobile = narrow.matches;
   const show = mobile ? twin.tab === "twin" : twin.available && twin.on;
   pane.hidden = !show;
-  layout.classList.toggle("with-twin", !mobile && twin.available && twin.on);
+  const wideTwin = !mobile && twin.available && twin.on;
+  layout.classList.toggle("with-twin", wideTwin);
+  layout.classList.toggle("no-cards", wideTwin && !cards.on); // 3D가 없으면 카드는 늘 보인다
+  $("#cards-toggle").hidden = !wideTwin;
+  $("#cards-toggle").setAttribute("aria-pressed", String(cards.on));
   layout.dataset.tab = twin.tab;
   for (const b of document.querySelectorAll("#tabs [data-tab]")) b.setAttribute("aria-selected", String(b.dataset.tab === twin.tab));
   $("#twin-toggle").setAttribute("aria-pressed", String(twin.on));
@@ -445,6 +459,15 @@ async function initTwin(health) {
     twin.on = !twin.on;
     try {
       localStorage.setItem("twin-home.twin", twin.on ? "on" : "off");
+    } catch {
+      // 저장소를 못 쓰면 이번 화면에서만
+    }
+    applyTwin();
+  });
+  $("#cards-toggle").addEventListener("click", () => {
+    cards.on = !cards.on;
+    try {
+      localStorage.setItem("twin-home.cards", cards.on ? "on" : "off");
     } catch {
       // 저장소를 못 쓰면 이번 화면에서만
     }

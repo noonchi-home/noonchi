@@ -282,6 +282,14 @@ button.active { background: var(--accent-soft); border-color: var(--accent); col
   .layout.with-twin > .chat { grid-column: 3; grid-row: 1; }
 }
 
+/* 기기 카드를 숨기면 3D | 대화 두 칸 */
+@media (min-width: 861px) {
+  .layout.with-twin.no-cards { grid-template-columns: minmax(0, 1.75fr) minmax(340px, 0.9fr); grid-template-rows: minmax(0, 1fr); }
+  .layout.with-twin.no-cards > .devices { display: none; }
+  .layout.with-twin.no-cards > .twin { grid-column: 1; grid-row: 1; }
+  .layout.with-twin.no-cards > .chat { grid-column: 2; grid-row: 1; }
+}
+
 @media (max-width: 860px) {
   html, body { height: auto; }
   .layout { flex: none; grid-template-columns: 1fr; padding: 10px 16px; }
