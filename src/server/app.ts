@@ -1,9 +1,9 @@
 // HTTP + WebSocket 서버(docs/plan.md "서버"). DeviceHub 하나를 받아 REST·WS·웹 화면을 제공한다.
 // 정책(승인)은 Policy, 자연어는 Agent가 맡는다. 외부 라이브러리는 ws만 쓴다.
 
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { extname, join, resolve, sep } from "node:path";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocket, WebSocketServer } from "ws";
 import { z } from "zod";
@@ -12,8 +12,10 @@ import { newSessionId } from "../agent/agent.js";
 import { Policy } from "../agent/policy.js";
 import { deviceViews, roomViews } from "../agent/tools.js";
 import type { Command, CommandResult, DeviceHub, RoomSpec } from "../hub/types.js";
+import type { LayoutEditor } from "../layout/editor.js";
 import { twinChange } from "../model/mapping.js";
 import { listenRetry } from "./net.js";
+import { serveFile } from "./static.js";
 
 export interface AppOptions {
   hub: DeviceHub;
@@ -22,13 +24,26 @@ export interface AppOptions {
   rooms?: RoomSpec[];
   /** 웹 화면 폴더(기본: 레포의 web/). */
   webDir?: string;
-  /** twin-studio apartment/ 폴더. 있으면 /twin/에 붙인다(요청 때마다 확인). */
+  /** 고른 집의 twin-studio 산출물 폴더(scene.json·assets/). 있으면 /twin/에 붙인다(요청 때마다 확인). */
   twinDir?: string;
+  /** 모든 집이 함께 쓰는 뷰어 폴더(/twin/viewer/). 없으면 twinDir/viewer. */
+  viewerDir?: string;
+  /** 모든 종류의 개별 GLB 폴더(/twin/lib/). 실행 중 더한 종류가 쓴다. */
+  libraryDir?: string;
+  /** 지금 불러온 집과 고를 수 있는 집(/api/health, /api/homes). */
+  home?: { id: string; name: string };
+  homes?: { id: string; name: string }[];
+  /** 폰에서 열 주소(폰 AR 서버가 뜬 뒤 정해진다). 대시보드 눈 칸 안내에 쓴다. */
+  phoneUrls?: () => string[];
+  /** 배치 보정(docs/plan.md 계약 B·C). 있으면 /api/layout*, /events layout 메시지. */
+  layout?: LayoutEditor;
   /** 허용할 브라우저 출처(기본: localhost·127.0.0.1·[::1]의 모든 포트). */
   allowOrigin?: (origin: string) => boolean;
   log?: (msg: string) => void;
   /** /api/health에 보일 허브 종류. */
   hubKind?: string;
+  /** 폰 AR 클로이드의 눈 화면(src/phone/feed.ts). 있으면 GET /api/eye/*를 넘긴다. */
+  eye?: { handle(req: IncomingMessage, res: ServerResponse, path: string): boolean };
 }
 
 /** MatterHub에서 서버가 쓰는 부분(src/matter/matterHub.ts를 직접 불러오지 않으려고 모양만 적는다). */
@@ -55,14 +70,6 @@ export interface TwinHomeApp {
 const DEFAULT_WEB_DIR = fileURLToPath(new URL("../../web/", import.meta.url));
 const LOCAL_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
 const MAX_BODY = 1 << 20;
-
-const TYPES: Record<string, string> = {
-  ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8",
-  ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png",
-  ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".ico": "image/x-icon", ".glb": "model/gltf-binary",
-  ".gltf": "model/gltf+json", ".bin": "application/octet-stream", ".wasm": "application/wasm", ".txt": "text/plain; charset=utf-8",
-  ".hdr": "application/octet-stream", ".ktx2": "image/ktx2", ".md": "text/markdown; charset=utf-8",
-};
 
 class HttpError extends Error {
   constructor(readonly status: number, message: string, readonly extra?: Record<string, unknown>) {
@@ -139,6 +146,8 @@ export function createApp(opts: AppOptions): TwinHomeApp {
   const policy = opts.policy ?? new Policy();
   const webDir = resolve(opts.webDir ?? DEFAULT_WEB_DIR);
   const twinDir = opts.twinDir ? resolve(opts.twinDir) : undefined;
+  const viewerDir = opts.viewerDir ? resolve(opts.viewerDir) : undefined;
+  const libraryDir = opts.libraryDir ? resolve(opts.libraryDir) : undefined;
   const allowOrigin = opts.allowOrigin ?? ((o: string) => LOCAL_ORIGIN.test(o));
   const log = opts.log ?? ((m: string) => console.log(m));
 
@@ -160,7 +169,23 @@ export function createApp(opts: AppOptions): TwinHomeApp {
   route("GET", /^\/api\/health$/, async () => ({
     ok: true, devices: hub.list().length, hub: opts.hubKind ?? "memory", transport: matterInfo()?.transport ?? null,
     provider: agent?.provider.name ?? null, model: agent?.provider.model ?? null, twin: !!twinDir && existsSync(twinDir),
+    eye: !!opts.eye, home: opts.home ?? null, phone_urls: opts.phoneUrls?.() ?? [],
   }));
+
+  // ── 배치 보정 ──
+
+  const requireLayout = () => {
+    if (!opts.layout) throw new HttpError(404, "배치 보정을 쓸 수 없습니다(집 scene.json이 없음).");
+    return opts.layout;
+  };
+  route("GET", /^\/api\/layout$/, async () => {
+    const editor = requireLayout();
+    return { ok: true, ...editor.status(), items: editor.edits() };
+  });
+  route("POST", /^\/api\/layout\/save$/, async () => ({ ok: true, ...requireLayout().save() }));
+  route("POST", /^\/api\/layout\/reset$/, async () => ({ ok: true, reverted: requireLayout().reset().length }));
+
+  route("GET", /^\/api\/homes$/, async () => ({ current: opts.home?.id ?? null, homes: opts.homes ?? (opts.home ? [opts.home] : []) }));
 
   // ── Matter(허브가 MatterHub일 때) ──
 
@@ -281,28 +306,6 @@ export function createApp(opts: AppOptions): TwinHomeApp {
     res.end(text);
   }
 
-  function serveFile(res: ServerResponse, root: string, rel: string, head: boolean): boolean {
-    let decoded: string;
-    try {
-      decoded = decodeURIComponent(rel);
-    } catch {
-      return false;
-    }
-    if (decoded.includes("\0")) return false;
-    let file = resolve(root, "." + sep + decoded.replace(/^[/\\]+/, ""));
-    if (file !== root && !file.startsWith(root.endsWith(sep) ? root : root + sep)) return false;
-    try {
-      if (statSync(file).isDirectory()) file = join(file, "index.html");
-      if (!statSync(file).isFile()) return false;
-    } catch {
-      return false;
-    }
-    const body = readFileSync(file);
-    res.writeHead(200, { "content-type": TYPES[extname(file).toLowerCase()] ?? "application/octet-stream", "content-length": body.length, "cache-control": "no-cache" });
-    res.end(head ? undefined : body);
-    return true;
-  }
-
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? "/", "http://localhost");
     const allowed = cors(req, res);
@@ -317,6 +320,8 @@ export function createApp(opts: AppOptions): TwinHomeApp {
       return;
     }
     const path = url.pathname;
+    // 눈 화면은 JSON이 아니라 JPEG·MJPEG 스트림이라 일반 API 라우팅 앞에서 넘긴다
+    if (opts.eye && path.startsWith("/api/eye/") && opts.eye.handle(req, res, path)) return;
     if (path.startsWith("/api/")) {
       const candidates = routes.filter((r) => r.pattern.test(path));
       const r = candidates.find((x) => x.method === req.method);
@@ -353,8 +358,13 @@ export function createApp(opts: AppOptions): TwinHomeApp {
       return;
     }
     if (path.startsWith("/twin/")) {
-      if (twinDir && existsSync(twinDir) && serveFile(res, twinDir, path.slice("/twin/".length), head)) return;
-      sendJson(res, 404, { ok: false, error: twinDir && existsSync(twinDir) ? `파일이 없습니다: ${path}` : "3D 트윈(twin-studio apartment/)이 아직 없습니다." });
+      const rel = path.slice("/twin/".length);
+      // 뷰어·라이브러리는 모든 집이 함께 쓰는 폴더라 집 폴더보다 먼저 본다
+      const [root, sub] = rel.startsWith("viewer/") && viewerDir ? [viewerDir, rel.slice("viewer/".length)]
+        : rel.startsWith("lib/") && libraryDir ? [libraryDir, rel.slice("lib/".length)]
+        : [twinDir, rel];
+      if (root && existsSync(root) && serveFile(res, root, sub, head)) return;
+      sendJson(res, 404, { ok: false, error: twinDir && existsSync(twinDir) ? `파일이 없습니다: ${path}` : "3D 트윈(twin-studio 집 산출물)이 아직 없습니다. twin-studio에서 먼저 빌드하세요." });
       return;
     }
     if (serveFile(res, webDir, path === "/" ? "index.html" : path, head)) return;
@@ -392,11 +402,13 @@ export function createApp(opts: AppOptions): TwinHomeApp {
   wss.on("connection", (ws) => {
     send(ws, { type: "hello", devices: hub.list().length, provider: agent?.provider.name ?? null, hub: opts.hubKind ?? "memory" });
     for (const state of hub.states()) send(ws, { type: "state", state });
+    for (const m of opts.layout?.syncMessages() ?? []) send(ws, m);
     ws.on("error", () => {});
   });
 
   const unsubHub = hub.subscribe((state) => broadcast({ type: "state", state }));
   const unsubAgent = agent?.subscribe((e) => broadcast({ type: "agent", ...e }));
+  const unsubLayout = opts.layout?.subscribe((m) => broadcast(m));
 
   let closed = false;
   return {
@@ -414,6 +426,7 @@ export function createApp(opts: AppOptions): TwinHomeApp {
       closed = true;
       unsubHub();
       unsubAgent?.();
+      unsubLayout?.();
       for (const ws of wss.clients) ws.terminate();
       await new Promise<void>((r) => wss.close(() => r()));
       server.closeAllConnections();

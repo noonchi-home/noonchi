@@ -1,0 +1,56 @@
+body { margin: 0; font: 16px/1.5 system-ui, sans-serif; color: #34383e; background: #f7f4ef; }
+#intro { padding: 24px 16px; }
+#intro h1 { margin: 0 0 8px; font-size: 22px; }
+button { font: inherit; padding: 10px 14px; border-radius: 10px; border: 1px solid #d8d2c8; background: #fff; }
+#start { width: 100%; background: #b9773f; border-color: #b9773f; color: #fff; }
+#start:disabled { opacity: 0.5; }
+#overlay { position: fixed; inset: 0; color: #fff; font-size: 14px; }
+#overlay[hidden] { display: none; }
+#reticle { position: fixed; left: 50%; top: 50%; width: 28px; height: 28px; margin: -14px 0 0 -14px; border: 3px solid #b3423a; border-radius: 50%; }
+#reticle.hit { border-color: #3f7d4f; }
+/* 가로 촬영용 AR 화면: 위 상태 줄, 오른쪽 큰 버튼, 나머지는 ⋯ 메뉴 */
+.topbar { position: fixed; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 10px; padding: 4px 8px 4px 12px; background: rgb(0 0 0 / 0.45); }
+.topbar #status { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topbar .perf { font-variant-numeric: tabular-nums; opacity: 0.85; white-space: nowrap; }
+.topbar #more { padding: 2px 12px; font-size: 18px; line-height: 1.2; background: rgb(255 255 255 / 0.15); color: #fff; border-color: transparent; }
+.anchors { position: fixed; left: 12px; bottom: 12px; display: flex; flex-direction: column; gap: 8px; max-width: 42vw; }
+.anchors[hidden] { display: none; }
+.anchors button { background: rgb(255 255 255 / 0.94); color: #34383e; text-align: left; font-size: 13px; padding: 8px 12px; }
+.side { position: fixed; right: 10px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 10px; }
+.side button { width: 76px; height: 64px; padding: 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 22px; line-height: 1; background: rgb(255 255 255 / 0.92); color: #34383e; border: none; box-shadow: 0 2px 8px rgb(0 0 0 / 0.25); touch-action: none; user-select: none; -webkit-user-select: none; }
+.side button span { font-size: 12px; }
+.side .talk-btn { background: #2f6fde; color: #fff; }
+.side .talk-btn.listening { background: #b3423a; }
+.toast { position: fixed; left: 50%; top: 44px; transform: translateX(-50%); max-width: min(60vw, 520px); margin: 0; padding: 8px 14px; border-radius: 12px; background: rgb(255 255 255 / 0.94); color: #34383e; text-align: center; }
+.toast[hidden] { display: none; }
+.pending-slot { position: fixed; left: 50%; top: 96px; transform: translateX(-50%); width: min(56vw, 480px); color: #34383e; }
+.menu { position: fixed; top: 40px; right: 96px; width: min(380px, 60vw); max-height: calc(100vh - 56px); overflow: auto; display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 12px; background: rgb(255 255 255 / 0.96); color: #34383e; }
+.menu[hidden] { display: none; }
+.perf-detail { margin: 0; padding: 6px 8px; border-radius: 8px; background: #f2efe9; font-size: 12px; white-space: pre-wrap; }
+.rotate { display: none; position: fixed; left: 50%; top: 40%; transform: translate(-50%, -50%); margin: 0; padding: 10px 16px; border-radius: 12px; background: rgb(0 0 0 / 0.7); font-size: 16px; }
+@media (orientation: portrait) {
+  .rotate { display: block; }
+}
+
+/* 대화(말하기·글 입력·답·승인) */
+.talk { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
+#overlay .talk { margin-top: 0; }
+.reply { margin: 0; padding: 8px 12px; border-radius: 10px; background: rgb(255 255 255 / 0.92); }
+.reply[hidden] { display: none; }
+.pending { display: flex; flex-direction: column; gap: 6px; }
+.pending .ask { display: flex; gap: 6px; align-items: center; padding: 6px 8px; border-radius: 10px; background: rgb(255 255 255 / 0.92); }
+.pending .ask span { flex: 1; }
+.talk-row { display: flex; flex-direction: column; gap: 8px; }
+.talk-btn { width: 100%; padding: 14px; background: #2f6fde; border-color: #2f6fde; color: #fff; font-weight: 600; touch-action: none; user-select: none; -webkit-user-select: none; }
+.talk-btn[hidden] { display: none; }
+.talk-btn.listening { background: #b3423a; border-color: #b3423a; }
+.talk-form { display: flex; gap: 8px; }
+.talk-form input { flex: 1; min-width: 0; font: inherit; padding: 10px 12px; border-radius: 10px; border: 1px solid #d8d2c8; }
+
+/* 초점: 클로이드가 지금 다루는 물건(화면 표시 전용) */
+#focus-layer { position: fixed; inset: 0; pointer-events: none; }
+.focus-mark { position: fixed; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.focus-mark .ring { width: 64px; height: 64px; border: 4px solid #2f6fde; border-radius: 50%; box-shadow: 0 0 0 2px rgb(255 255 255 / 0.7); animation: focus-pulse 1.2s ease-in-out infinite; }
+.focus-mark.off .ring { width: 0; height: 0; border: 14px solid transparent; border-left: 22px solid #2f6fde; border-radius: 0; box-shadow: none; animation: none; transform: rotate(var(--angle)); }
+.focus-mark .label { padding: 2px 8px; border-radius: 8px; font-size: 13px; color: #fff; background: rgb(0 0 0 / 0.6); white-space: nowrap; }
+@keyframes focus-pulse { 50% { transform: scale(1.12); } }

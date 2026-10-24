@@ -1,4 +1,5 @@
-// twin-home 웹 화면: 방별 기기 카드(빠른 제어, 센서 시뮬레이션) | 3D 트윈(실시간) | 에이전트 대화. 폰 너비에서는 탭.
+// twin-home 웹 화면: 왼쪽 3D 트윈(결과) | 오른쪽 위 클로이드의 눈(폰 카메라) · 오른쪽 아래 추론 과정(요청마다 단계 카드).
+// 기기 카드(Matter 속성·센서 시뮬레이션)는 결과 전용 화면이라 헤더 버튼으로 여는 서랍이다. 좁은 화면에서는 탭.
 // 빌드 없이 쓰는 ES 모듈. 상태는 WebSocket /events로 실시간 반영한다.
 
 const $ = (sel) => document.querySelector(sel);
@@ -25,10 +26,12 @@ const ACTIVE = { power: "on", running: true, lock: "unlocked", door: "open", cur
 const MODES = { cool: "냉방", heat: "난방", auto: "자동", dry: "제습", fan: "송풍" };
 const FANS = { low: "약", medium: "중", high: "강", auto: "자동" };
 const TOOL_LABELS = {
-  list_rooms: "방 목록", list_devices: "기기 목록", find_devices: "기기 찾기", get_state: "상태", turn_on: "켜기", turn_off: "끄기",
-  set_level: "밝기", set_climate: "냉난방", set_covering: "커튼", lock: "잠금", unlock: "잠금 해제", start: "시작", stop: "정지", set_valve: "수전",
+  list_rooms: "방 목록 보기", list_devices: "기기 목록 보기", find_devices: "기기 찾기", get_state: "상태 확인", turn_on: "켜기", turn_off: "끄기",
+  set_level: "밝기·음량 맞추기", set_climate: "냉난방 맞추기", set_covering: "커튼 맞추기", lock: "잠그기", unlock: "잠금 해제", start: "시작", stop: "정지",
+  set_valve: "물 틀기·잠그기", find_objects: "물건 찾기", move_object: "물건 옮기기", add_object: "물건 더하기", remove_object: "물건 빼기",
+  find_object_types: "종류 찾기", save_layout: "배치 저장", confirm: "승인 실행",
 };
-const SUGGESTIONS = ["거실 불 켜고 TV 꺼줘", "에어컨 24도로 맞춰줘", "안방 커튼 닫아줘", "현관문 열어줘", "현관문 상태 알려줘"];
+const PHONE_SESSION = "phone"; // 폰(클로이드의 눈)에서 말한 대화의 세션 id(서버 start.ts와 같음)
 
 const app = {
   devices: new Map(), // id → DeviceView(spec + state)
@@ -267,13 +270,18 @@ async function setSensor(d, attr, value) {
   if (!r.json.ok) addMessage("error", r.json.error ?? "센서 값을 바꾸지 못했습니다.");
 }
 
-// ── 대화 ───────────────────────────────────────────────
+// ── 추론 과정 ─────────────────────────────────────────
+// 요청마다 카드 하나: 접으면 요청과 답 한 줄, 펴면 단계마다 💭 생각(모델이 쓴 reason, 판단 근거 아님) → 🔧 행동(도구·대상)
+// → 👁 관찰(도구 결과로 만든 문장), 끝에 💬 답과 🎯 초점. 승인 버튼은 그 카드 안에 있다. 폰 대화(🎙)·사진도 같은 흐름에 쌓인다.
+
+const turns = { last: null, byToken: new Map() };
 
 function scrollChat() {
   const box = $("#messages");
   box.scrollTop = box.scrollHeight;
 }
 
+/** 알림 한 줄(시스템·오류). */
 function addMessage(role, text, extra) {
   const li = el("li", { class: `msg ${role}` }, el("div", { class: "bubble" }, text));
   if (extra) li.append(extra);
@@ -282,14 +290,75 @@ function addMessage(role, text, extra) {
   return li;
 }
 
-function actionChip(a) {
-  const cls = a.needsConfirmation ? "wait" : a.ok ? "ok" : "fail";
-  const mark = a.needsConfirmation ? "승인 대기" : a.ok ? "완료" : "실패";
-  const target = a.deviceLabel ?? a.args?.device_id ?? a.args?.query ?? "";
-  return el("span", { class: `action ${cls}`, title: a.error ?? a.message ?? "" }, `${TOOL_LABELS[a.tool] ?? a.tool}${target ? ` ${target}` : ""} · ${mark}`);
+function stateText(kind) {
+  return { ok: "완료", wait: "승인 대기", fail: "실패", busy: "생각 중" }[kind] ?? kind;
 }
 
-function addConfirm(p) {
+function newTurn(source, text) {
+  const state = el("span", { class: "state busy" }, stateText("busy"));
+  const answer = el("span", { class: "answer" }, "…");
+  const steps = el("ol", { class: "steps" });
+  const details = el("details", { class: "turn" },
+    el("summary", {}, el("span", { class: "src", title: source === "phone" ? "폰에서 말함" : "대시보드에서 보냄" }, source === "phone" ? "🎙" : "💬"),
+      el("span", { class: "ask" }, text), state, answer),
+    steps);
+  const li = el("li", { class: "msg turn-item" }, details);
+  $("#messages").append(li);
+  scrollChat();
+  const turn = { li, details, steps, state, answer, count: 0, actions: [] };
+  turns.last = turn;
+  return turn;
+}
+
+function resultOf(a) {
+  if (a.needsConfirmation) return ["wait", "승인 대기"];
+  if (!a.ok) return ["fail", "실패"];
+  return ["ok", "완료"];
+}
+
+function targetOf(a) {
+  if (a.deviceLabel) return a.deviceLabel;
+  if (a.args?.query) return `"${a.args.query}"`;
+  return a.args?.object_id ?? a.args?.type ?? a.args?.device_id ?? "";
+}
+
+const THINK_NOTE = "모델이 쓴 설명이에요. 판단 근거가 아니에요(근거는 행동과 관찰).";
+
+function addStep(turn, a) {
+  turn.count += 1;
+  turn.actions.push(a);
+  const [cls, label] = resultOf(a);
+  const observed = a.observation ?? (a.ok ? a.message : a.error) ?? label;
+  turn.steps.append(el("li", { class: "step" },
+    el("span", { class: "no" }, `${turn.count}`),
+    el("div", { class: "react" },
+      el("div", { class: "think", title: THINK_NOTE }, "💭 ", el("i", {}, a.reason ?? "(생각을 남기지 않음)"), el("span", { class: "tag" }, "모델의 설명")),
+      el("div", { class: "act" }, "🔧 ", el("b", {}, TOOL_LABELS[a.tool] ?? a.tool), targetOf(a) ? ` · ${targetOf(a)}` : ""),
+      el("div", { class: `obs ${cls}` }, "👁 ", observed))));
+}
+
+const LINE_ICON = { 답: "💬", 초점: "🎯", 취소: "↩", "승인 → 실행": "✅", "승인 실패": "⚠", "찍은 자리": "📍" };
+
+function addLine(turn, label, text, cls = "") {
+  const li = el("li", { class: `step final ${cls}` }, el("span", { class: "no" }, LINE_ICON[label] ?? "·"), el("span", { class: "what" }, el("b", {}, label), ` ${text}`));
+  turn.steps.append(li);
+  return li;
+}
+
+function finishTurn(turn, reply, actions, pending, error) {
+  if (turn.count === 0) for (const a of actions ?? []) addStep(turn, a);
+  turn.answer.textContent = reply ?? error ?? "";
+  const kind = error ? "fail" : pending?.length ? "wait" : (actions ?? []).some((a) => !a.ok && !a.needsConfirmation) && !(actions ?? []).some((a) => a.ok) ? "fail" : "ok";
+  turn.state.className = `state ${kind}`;
+  turn.state.textContent = error ? "오류" : stateText(kind);
+  // 초점 이벤트가 답보다 먼저 올 수 있다: 답을 초점 줄 앞에 둔다(💬 답 → 🎯 초점)
+  const answer = addLine(turn, "답", reply ?? error ?? "");
+  if (turn.focusLine) turn.steps.insertBefore(answer, turn.focusLine);
+  for (const p of pending ?? []) addConfirm(p, turn);
+  scrollChat();
+}
+
+function addConfirm(p, turn) {
   const card = el("div", { class: "confirm", role: "group", "aria-label": "승인 요청" });
   const btns = el("div", { class: "btns" });
   const done = (text) => {
@@ -301,43 +370,58 @@ function addConfirm(p) {
       done("처리 중…");
       const r = await api("/api/agent/confirm", { token: p.token });
       done(r.json.ok ? "승인함" : "실패");
-      addMessage(r.json.ok ? "agent" : "error", r.json.reply ?? r.json.error ?? (r.json.ok ? "실행했어요." : "실패했어요."));
+      settle(p.token, r.json.ok, r.json.reply ?? r.json.error);
     } }, "승인"),
     el("button", { class: "small", onclick: async () => {
       const r = await api("/api/agent/cancel", { token: p.token });
       done("취소함");
-      addMessage("system", r.json.reply ?? "취소했어요.");
+      settle(p.token, false, r.json.reply ?? "취소했어요.", true);
     } }, "취소"),
   );
-  card.append(el("div", { class: "why" }, p.reason), btns);
-  const li = el("li", { class: "msg agent" }, card);
-  $("#messages").append(li);
+  card.append(el("div", { class: "why" }, `${p.deviceLabel ? `${p.deviceLabel}: ` : ""}${p.reason}`), btns);
+  const host = turn ?? newTurn("dashboard", `${p.deviceLabel ?? "기기"} 직접 조작`);
+  if (!turn) {
+    host.state.className = "state wait";
+    host.state.textContent = stateText("wait");
+    host.answer.textContent = "승인을 기다려요";
+  }
+  host.details.open = true;
+  host.details.append(card);
+  turns.byToken.set(p.token, { turn: host, card, done });
+  scrollChat();
+}
+
+/** 승인·취소 결과를 그 카드에 남긴다(대시보드 버튼, 폰 버튼, "응" 어디서 했든). */
+function settle(token, ok, reply, cancelled = false) {
+  const t = turns.byToken.get(token);
+  if (!t) return;
+  turns.byToken.delete(token);
+  t.done(cancelled ? "취소함" : ok ? "승인함" : "실패");
+  addLine(t.turn, cancelled ? "취소" : ok ? "승인 → 실행" : "승인 실패", reply ?? "", ok ? "" : "fail");
+  t.turn.state.className = `state ${ok ? "ok" : cancelled ? "" : "fail"}`;
+  t.turn.state.textContent = cancelled ? "취소" : ok ? "완료" : "실패";
+  t.turn.answer.textContent = reply ?? "";
   scrollChat();
 }
 
 async function sendChat(message) {
   const text = message.trim();
   if (!text) return;
-  addMessage("user", text);
   const input = $("#chat-input");
   input.value = "";
   $("#send").disabled = true;
-  const live = el("div", { class: "actions" });
-  const pending = addMessage("agent", "…", live);
-  pending.querySelector(".bubble").classList.add("typing");
-  app.live = live;
+  const turn = newTurn("dashboard", text);
+  turn.details.open = true;
+  app.live = turn;
   const r = await api("/api/agent/chat", { message: text, sessionId: app.sessionId });
   app.live = null;
-  pending.remove();
   $("#send").disabled = false;
   input.focus();
   if (!r.json.reply) {
-    addMessage("error", r.json.error ?? "에이전트가 답하지 못했습니다.");
+    finishTurn(turn, null, [], [], r.json.error ?? "에이전트가 답하지 못했습니다.");
     return;
   }
-  const extra = r.json.actions?.length ? el("div", { class: "actions" }, r.json.actions.map(actionChip)) : null;
-  addMessage("agent", r.json.reply, extra);
-  for (const p of r.json.pendingConfirmations ?? []) addConfirm(p);
+  finishTurn(turn, r.json.reply, r.json.actions, r.json.pendingConfirmations);
 }
 
 // ── 실시간 ─────────────────────────────────────────────
@@ -349,6 +433,7 @@ function connect() {
   ws.addEventListener("open", () => {
     conn.textContent = "실시간 연결됨";
     conn.className = "badge on";
+    eye.attach?.(); // 서버가 다시 떴으면 끊긴 MJPEG 스트림도 다시 붙인다
   });
   ws.addEventListener("close", () => {
     conn.textContent = "연결 끊김 · 다시 연결 중";
@@ -369,37 +454,163 @@ function connect() {
       d.state = msg.state;
       if (changed) updateCard(d.id, true);
     } else if (msg.type === "agent" && msg.event === "action" && msg.sessionId === app.sessionId && app.live) {
-      app.live.append(actionChip(msg.action));
+      addStep(app.live, msg.action);
       scrollChat();
+    } else if (msg.type === "agent" && msg.event === "reply" && msg.sessionId === PHONE_SESSION) {
+      const turn = newTurn("phone", msg.message);
+      finishTurn(turn, msg.reply, msg.actions, msg.pendingConfirmations);
+    } else if (msg.type === "agent" && msg.event === "confirmed") {
+      settle(msg.token, msg.ok, msg.reply);
+    } else if (msg.type === "agent" && msg.event === "cancelled") {
+      settle(msg.token, false, "취소했어요.", true);
+    } else if (msg.type === "photo") {
+      addPhoto(msg.photo);
+    } else if (msg.type === "layout") {
+      layout.refresh();
+    } else if (msg.type === "focus") {
+      showFocus(msg.focus);
     }
+    // 에이전트 도구(save_layout 등)로 저장하면 layout 메시지가 없으므로 답마다 보정 상태를 다시 읽는다
+    if (msg.type === "agent" && msg.event === "reply") layout.refresh();
   });
 }
 
-// ── 3D 트윈 창 ─────────────────────────────────────────
+// ── 배치 보정 ──────────────────────────────────────────
+// 폰 AR("냉장고 위치 여기로 맞춰줘")·채팅으로 바꾼 가구·가전 자리. 3D 트윈은 /events layout 메시지로 바로 바뀌고,
+// 여기서는 보정 건수·저장 여부만 보인다. 저장 파일은 twin-studio apply-edits로 원본에 반영한다.
+
+const layout = {
+  timer: null,
+  refresh() {
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => this.load(), 200);
+  },
+  async load() {
+    const r = await api("/api/layout");
+    const on = r.status === 200 && r.json.ok;
+    for (const id of ["#layout-state", "#layout-save", "#layout-reset"]) $(id).hidden = !on;
+    if (!on) return;
+    const st = $("#layout-state");
+    st.textContent = r.json.edits === 0 ? "보정 없음" : `보정 ${r.json.edits}건${r.json.dirty ? " · 저장 안 함" : " · 저장됨"}`;
+    st.className = `badge${r.json.dirty ? " off" : ""}`;
+    $("#layout-save").disabled = r.json.edits === 0 && !r.json.dirty;
+    $("#layout-reset").disabled = r.json.edits === 0;
+  },
+  init() {
+    $("#layout-save").addEventListener("click", async () => {
+      const r = await api("/api/layout/save", {});
+      addMessage(r.json.ok ? "system" : "error", r.json.ok ? `배치 보정 ${r.json.count}건을 저장했어요: ${r.json.path}` : r.json.error);
+      this.load();
+    });
+    $("#layout-reset").addEventListener("click", async () => {
+      const r = await api("/api/layout/reset", {});
+      addMessage(r.json.ok ? "system" : "error", r.json.ok ? `배치 보정을 되돌렸어요(${r.json.reverted}곳).` : r.json.error);
+      this.load();
+    });
+    this.load();
+  },
+};
+
+// 초점: 클로이드가 방금 다룬 물건. 3D 트윈(뷰어 고리)과 폰 화면에 표시되고, 눈 캡션과 마지막 과정 카드에 남는다.
+let focusTimer = null;
+let focusing = false;
+let eyeCaption = "클로이드의 눈 · 실시간 · 엔진 입력 아님"; // 받은 fps가 들어간 평소 캡션
+function showFocus(focus) {
+  if (!focus?.targets?.length) return;
+  const names = focus.targets.map((t) => t.label).join(", ");
+  if (turns.last) {
+    const li = addLine(turns.last, "초점", names);
+    turns.last.focusLine ??= li;
+  }
+  const cap = $("#eye-caption");
+  if (!cap) return;
+  cap.textContent = `클로이드 주목 · ${names} · 엔진 입력 아님`;
+  focusing = true;
+  clearTimeout(focusTimer);
+  focusTimer = setTimeout(() => {
+    focusing = false;
+    cap.textContent = eyeCaption;
+  }, focus.ttl_ms ?? 8000);
+}
+
+// ── 클로이드의 눈 ──────────────────────────────────────
+// 폰 AR 서버(PHONE_PORT)가 있으면 오른쪽 위 칸에 폰 카메라 실시간 화면(MJPEG)을 띄운다. 표시 전용이며 엔진 입력이 아니다.
+// 첫 프레임이 오기 전에는 안내를 보인다. '사진 찍기' 사진은 찍은 순간의 트윈 좌표 눈 자세와 함께 과정에 남긴다.
+
+const eye = { attach: null };
+
+function initEye(health) {
+  const empty = $("#eye-empty");
+  if (!health.json?.eye) {
+    empty.textContent = "폰 AR 서버가 꺼져 있어요. PHONE_PORT를 주고 서버를 켜면 폰 카메라 화면이 여기에 보여요.";
+    return;
+  }
+  // 서버가 아는 와이파이 주소 중 집 공유기 대역(192.168.x)을 먼저 보인다(WSL·VPN 가상 어댑터 주소는 뒤로)
+  const urls = health.json.phone_urls ?? [];
+  const rank = (u) => (u.includes("//192.168.") ? 0 : u.includes("//10.") ? 1 : 2);
+  const best = [...urls].sort((a, b) => rank(a) - rank(b))[0];
+  empty.textContent = best
+    ? `폰이 연결되지 않았어요. 같은 와이파이의 안드로이드 크롬에서 ${best} 을 열고 AR을 시작하세요.`
+    : "폰이 연결되지 않았어요. 같은 와이파이의 안드로이드 크롬에서 서버 로그의 '폰 AR' 주소를 열고 AR을 시작하세요.";
+  if (urls.length > 1) empty.title = `다른 주소: ${urls.filter((u) => u !== best).join(", ")}`;
+  const img = $("#eye-live");
+  const shown = () => {
+    $("#eye").hidden = false;
+    empty.hidden = true;
+  };
+  eye.attach = () => { img.src = `/api/eye/stream?t=${Date.now()}`; };
+  img.addEventListener("load", shown);
+  img.addEventListener("error", () => setTimeout(() => eye.attach(), 2000));
+  // 스트림은 첫 프레임이 와야 크기가 생긴다(브라우저마다 load가 늦을 수 있어 크기로도 본다)
+  setInterval(() => { if (img.naturalWidth > 0) shown(); }, 1000);
+  // 서버가 폰에서 받은 화면 장 수(최근 2초)를 캡션에 보인다(느릴 때 원인을 숫자로 보려고)
+  setInterval(async () => {
+    const r = await api("/api/eye/stats");
+    if (!r.json?.ok) return;
+    eyeCaption = `클로이드의 눈 · 실시간 ${r.json.fps} fps${r.json.kb_per_frame ? ` · ${r.json.kb_per_frame}KB` : ""} · 엔진 입력 아님`;
+    if (!focusing) $("#eye-caption").textContent = eyeCaption;
+  }, 2000);
+  eye.attach();
+}
+
+function addPhoto(p) {
+  const pose = p.measured_pose;
+  const where = pose
+    ? `위치 (${pose.position[0].toFixed(2)}, ${pose.position[1].toFixed(2)}) · 방향 ${Math.round(pose.yaw_deg)}° · 높이 ${pose.height_m.toFixed(2)}m`
+    : "위치 모름(맞추기 전)";
+  const turn = newTurn("phone", "📷 사진 찍기");
+  turn.state.className = "state ok";
+  turn.state.textContent = "저장";
+  turn.answer.textContent = where;
+  addLine(turn, "찍은 자리", where);
+  turn.details.append(el("a", { href: p.url, target: "_blank", rel: "noopener" }, el("img", { class: "photo", src: p.url, alt: "클로이드의 눈 사진" })));
+}
+
+// ── 추천 요청: 고른 집의 기기 이름으로 만든다 ─────────────
+function suggestions() {
+  const devices = [...app.devices.values()];
+  const pick = (kind) => devices.find((d) => d.kind === kind);
+  const out = [];
+  const light = pick("light");
+  if (light) out.push(`${light.label} 켜줘`);
+  const tv = pick("tv");
+  if (tv) out.push(`${tv.label} 켜줘`);
+  const ac = pick("aircon");
+  if (ac) out.push(`${ac.label} 24도로 맞춰줘`);
+  const lock = pick("lock");
+  if (lock) out.push(`${lock.label} 상태 알려줘`);
+  const vacuum = pick("vacuum");
+  if (vacuum && out.length < 4) out.push(`${vacuum.label} 시작해줘`);
+  return out.slice(0, 4);
+}
+
+// ── 3D 트윈 · 탭 · 기기 카드 서랍 ───────────────────────
 // twin-studio 뷰어(/twin/viewer/)를 ?live=auto&embed=1로 넣는다. 뷰어가 같은 /events를 받아 3D에 반영하고,
 // 뷰어 가전 패널에서 바꾼 상태는 POST /api/devices/:id/twin(정책 포함)으로 돌아온다.
 
 const TWIN_SRC = "/twin/viewer/?live=auto&embed=1";
 const narrow = window.matchMedia("(max-width: 860px)");
-const twin = { available: false, on: loadTwinPref(), tab: "devices" };
-// 기기 카드: 3D 연결 전부터 있던 Matter 확인용 화면. 3D가 보이는 넓은 화면에서는 기본으로 숨긴다(헤더 버튼으로 켠다).
-const cards = { on: loadPref("twin-home.cards", "off") === "on" };
-
-function loadPref(key, fallback) {
-  try {
-    return localStorage.getItem(key) ?? fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function loadTwinPref() {
-  try {
-    return localStorage.getItem("twin-home.twin") !== "off";
-  } catch {
-    return true;
-  }
-}
+const view = { tab: "twin", twin: false };
 
 async function checkTwin(health) {
   if (!health.json?.twin) return false;
@@ -411,77 +622,51 @@ async function checkTwin(health) {
   }
 }
 
-function applyTwin() {
-  const pane = $("#twin-pane");
-  const layout = $("#layout");
-  const mobile = narrow.matches;
-  const show = mobile ? twin.tab === "twin" : twin.available && twin.on;
-  pane.hidden = !show;
-  const wideTwin = !mobile && twin.available && twin.on;
-  layout.classList.toggle("with-twin", wideTwin);
-  layout.classList.toggle("no-cards", wideTwin && !cards.on); // 3D가 없으면 카드는 늘 보인다
-  $("#cards-toggle").hidden = !wideTwin;
-  $("#cards-toggle").setAttribute("aria-pressed", String(cards.on));
-  layout.dataset.tab = twin.tab;
-  for (const b of document.querySelectorAll("#tabs [data-tab]")) b.setAttribute("aria-selected", String(b.dataset.tab === twin.tab));
-  $("#twin-toggle").setAttribute("aria-pressed", String(twin.on));
-  const frame = $("#twin-frame");
-  const msg = $("#twin-msg");
-  if (!twin.available) {
-    frame.hidden = true;
-    msg.hidden = false;
-    msg.textContent = "3D 트윈을 찾을 수 없어요. twin-studio의 apartment/(TWIN_STUDIO_DIR)가 있어야 /twin/viewer/가 열려요.";
-    return;
-  }
-  if (show && !frame.getAttribute("src")) {
-    msg.hidden = false;
-    msg.textContent = "3D 트윈 불러오는 중…";
-    frame.addEventListener("load", () => { msg.hidden = true; }, { once: true });
-    frame.src = TWIN_SRC;
-  } else if (show) {
-    // 숨긴 동안 뷰어 캔버스가 0px로 줄었을 수 있다. iframe 창 크기는 그대로라 resize가 안 오므로 직접 알린다
-    requestAnimationFrame(() => {
-      try {
-        frame.contentWindow?.dispatchEvent(new Event("resize"));
-      } catch {
-        // 다른 출처면 무시
-      }
-    });
-  }
+function nudgeTwin() {
+  // 숨긴 동안 뷰어 캔버스가 0px로 줄었을 수 있다. iframe 창 크기는 그대로라 resize가 안 오므로 직접 알린다
+  requestAnimationFrame(() => {
+    try {
+      $("#twin-frame").contentWindow?.dispatchEvent(new Event("resize"));
+    } catch {
+      // 다른 출처면 무시
+    }
+  });
+}
+
+function applyTabs() {
+  $("#layout").dataset.tab = view.tab;
+  for (const b of document.querySelectorAll("#tabs [data-tab]")) b.setAttribute("aria-selected", String(b.dataset.tab === view.tab));
+  nudgeTwin();
+}
+
+function setCards(on) {
+  $("#devices-pane").hidden = !on;
+  $("#cards-toggle").setAttribute("aria-pressed", String(on));
 }
 
 async function initTwin(health) {
-  twin.available = await checkTwin(health);
-  $("#twin-toggle").hidden = !twin.available;
-  $("#twin-missing").hidden = twin.available;
-  $("#twin-missing").title = "TWIN_STUDIO_DIR/apartment/가 없어 3D 트윈을 붙이지 못했어요.";
-  $("#twin-toggle").addEventListener("click", () => {
-    twin.on = !twin.on;
-    try {
-      localStorage.setItem("twin-home.twin", twin.on ? "on" : "off");
-    } catch {
-      // 저장소를 못 쓰면 이번 화면에서만
-    }
-    applyTwin();
-  });
-  $("#cards-toggle").addEventListener("click", () => {
-    cards.on = !cards.on;
-    try {
-      localStorage.setItem("twin-home.cards", cards.on ? "on" : "off");
-    } catch {
-      // 저장소를 못 쓰면 이번 화면에서만
-    }
-    applyTwin();
-  });
+  view.twin = await checkTwin(health);
+  $("#twin-missing").hidden = view.twin;
+  $("#twin-missing").title = "고른 집의 twin-studio 산출물(scene.json)이 없어 3D 트윈을 붙이지 못했어요. twin-studio에서 먼저 빌드하세요.";
+  const frame = $("#twin-frame");
+  const msg = $("#twin-msg");
+  if (!view.twin) {
+    frame.hidden = true;
+    msg.textContent = "3D 트윈을 찾을 수 없어요. 고른 집의 twin-studio 산출물이 있어야 /twin/viewer/가 열려요(twin-studio에서 먼저 빌드).";
+  } else {
+    frame.addEventListener("load", () => { msg.hidden = true; }, { once: true });
+    frame.src = TWIN_SRC;
+  }
   for (const b of document.querySelectorAll("#tabs [data-tab]")) {
     b.addEventListener("click", () => {
-      twin.tab = b.dataset.tab;
-      applyTwin();
+      view.tab = b.dataset.tab;
+      applyTabs();
     });
   }
-  narrow.addEventListener("change", applyTwin);
-  window.addEventListener("resize", applyTwin);
-  applyTwin();
+  $("#cards-toggle").addEventListener("click", () => setCards($("#devices-pane").hidden));
+  $("#cards-close").addEventListener("click", () => setCards(false));
+  narrow.addEventListener("change", applyTabs);
+  applyTabs();
 }
 
 // ── 시작 ───────────────────────────────────────────────
@@ -489,20 +674,23 @@ async function initTwin(health) {
 async function init() {
   const [health, rooms, devices] = await Promise.all([api("/api/health"), api("/api/rooms"), api("/api/devices")]);
   if (!Array.isArray(devices.json)) {
-    $("#rooms").replaceChildren(el("p", { class: "empty" }, devices.json.error ?? "기기 목록을 불러오지 못했습니다."));
+    addMessage("error", devices.json.error ?? "기기 목록을 불러오지 못했습니다.");
     return;
   }
   $("#hub").textContent = `허브 ${health.json.hub ?? "-"}${health.json.transport ? ` · ${health.json.transport}` : ""}`;
   $("#hub").title = health.json.hub === "matter" ? "Matter 브리지(가상 가전) ⇄ matter.js 컨트롤러" : "Matter 없이 메모리에서만";
   $("#provider").textContent = `에이전트 ${health.json.provider ?? "없음"}${health.json.model ? ` · ${health.json.model}` : ""}`;
+  $("#home").textContent = `집 ${health.json.home?.name ?? "-"}`;
   initTwin(health);
+  initEye(health);
+  layout.init();
   app.rooms = rooms.json;
   for (const d of devices.json) app.devices.set(d.id, d);
   renderFilter();
   renderRooms();
   connect();
 
-  $("#suggestions").append(...SUGGESTIONS.map((s) => el("button", { type: "button", onclick: () => sendChat(s) }, s)));
+  $("#suggestions").append(...suggestions().map((s) => el("button", { type: "button", onclick: () => sendChat(s) }, s)));
   $("#chat-form").addEventListener("submit", (e) => {
     e.preventDefault();
     sendChat($("#chat-input").value);
@@ -515,9 +703,10 @@ async function init() {
     app.sessionId = crypto.randomUUID();
     saveSession(app.sessionId);
     $("#messages").replaceChildren();
+    turns.last = null;
     addMessage("system", "새 대화를 시작했어요.");
   });
-  addMessage("system", "집 안 가전을 말로 제어해 보세요. 현관문 잠금 해제·인덕션 켜기·전자레인지 시작은 승인 후에만 실행돼요.");
+  addMessage("system", "클로이드에게 말로 요청해 보세요. 요청마다 거친 단계가 카드로 남고, 결과는 왼쪽 3D 트윈에서 보여요. 현관문 잠금 해제·인덕션 켜기·전자레인지 시작은 승인 후에만 실행돼요.");
 }
 
 init();

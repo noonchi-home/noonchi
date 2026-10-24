@@ -2,10 +2,13 @@
 // 승인 토큰은 LLM에게 보여 주지 않는다. 사용자가 화면 버튼(confirm)이나 다음 메시지 "응"으로만 확정한다.
 
 import { randomUUID } from "node:crypto";
+import { z } from "zod";
 import type { Command, DeviceHub, DeviceState, RoomSpec } from "../hub/types.js";
 import type { Policy } from "./policy.js";
 import { askApproval, doneSentence, toolForCommand } from "./phrases.js";
 import { buildSystemPrompt } from "./prompts.js";
+import { LAYOUT_TOOLS, type LayoutTools } from "./layoutTools.js";
+import { observe } from "./observe.js";
 import { AGENT_TOOLS, localBackend, runTool, type ToolBackend, type ToolDef, type ToolResult } from "./tools.js";
 
 export interface ToolCall {
@@ -54,7 +57,18 @@ export interface AgentAction {
   deviceId?: string;
   deviceLabel?: string;
   needsConfirmation?: boolean;
+  /** 생각: 모델이 이 도구를 부른 이유(모델의 설명, 판단 근거 아님). */
+  reason?: string;
+  /** 관찰: 도구 결과를 줄인 한 줄(observe.ts). */
+  observation?: string;
   at: string;
+}
+
+/** 서버 안 에이전트에게만 받는 '생각' 인자. MCP 도구에는 없다. */
+const REASON = z.string().min(1).max(200).describe("왜 이 도구를 부르는지 한국어 한 문장(기기 id·JSON 없이). 화면의 추론 과정에 보인다.");
+
+function withReason(tool: ToolDef): ToolDef {
+  return { ...tool, schema: tool.schema.extend({ reason: REASON }) };
 }
 
 export interface PendingView {
@@ -98,6 +112,8 @@ export interface AgentOptions {
   maxToolRounds?: number;
   maxSessions?: number;
   onEvent?: (e: AgentEvent) => void;
+  /** 배치 보정 도구(find_objects·move_object…)를 켠다. */
+  layout?: LayoutTools;
 }
 
 interface Session {
@@ -138,6 +154,10 @@ export class Agent {
   private readonly rooms?: RoomSpec[];
   private readonly maxRounds: number;
   private readonly maxSessions: number;
+  private readonly layout?: LayoutTools;
+  private readonly tools: ToolDef[];
+  /** 모델에게 보이는 도구(reason 필수). 실행은 tools로 한다. */
+  private readonly modelTools: ToolDef[];
   private readonly sessions = new Map<string, Session>();
   private readonly listeners = new Set<(e: AgentEvent) => void>();
   private prompt?: { key: string; text: string };
@@ -149,6 +169,9 @@ export class Agent {
     this.rooms = opts.rooms;
     this.maxRounds = opts.maxToolRounds ?? 6;
     this.maxSessions = opts.maxSessions ?? 200;
+    this.layout = opts.layout;
+    this.tools = opts.layout ? [...AGENT_TOOLS, ...LAYOUT_TOOLS] : AGENT_TOOLS;
+    this.modelTools = this.tools.map(withReason);
     if (opts.onEvent) this.listeners.add(opts.onEvent);
   }
 
@@ -215,13 +238,13 @@ export class Agent {
   }
 
   private async runModel(s: Session, message: string, actions: AgentAction[]): Promise<string> {
-    const backend = localBackend(this.hub, this.policy, this.rooms);
+    const backend = localBackend(this.hub, this.policy, this.rooms, this.layout);
     const system = this.systemPrompt();
     try {
       this.provider.addUserMessage(s.state, message);
       for (let round = 0; ; round++) {
         const allowTools = round < this.maxRounds;
-        const r = await this.provider.step(s.state, { system, tools: AGENT_TOOLS, allowTools });
+        const r = await this.provider.step(s.state, { system, tools: this.modelTools, allowTools });
         if (r.calls.length === 0) return r.text.trim() || "(답이 비어 있어요)";
         if (!allowTools) {
           // 한도를 넘긴 호출은 실행하지 않고 결과만 채워 대화 형식을 맞춘다
@@ -243,11 +266,14 @@ export class Agent {
   }
 
   private async execute(s: Session, call: ToolCall, backend: ToolBackend, actions: AgentAction[]): Promise<ToolCallResult> {
-    const args = isRecord(call.args) ? call.args : {};
-    const result = await runTool(call.name, args, backend, AGENT_TOOLS);
+    // 생각(reason)은 떼어 기록만 하고, 도구는 원래 인자로 실행한다
+    const { reason, ...args } = isRecord(call.args) ? call.args : {};
+    const result = await runTool(call.name, args, backend, this.tools);
     const action: AgentAction = {
       tool: call.name, args, ok: result.ok, message: result.message, error: result.error,
       deviceId: result.device?.id, deviceLabel: result.device?.label, needsConfirmation: result.needsConfirmation ? true : undefined,
+      reason: typeof reason === "string" && reason.trim() ? reason.trim().slice(0, 200) : undefined,
+      observation: observe(call.name, result),
       at: new Date().toISOString(),
     };
     actions.push(action);
@@ -347,7 +373,7 @@ export class Agent {
   private systemPrompt(): string {
     const devices = this.hub.list();
     const key = devices.map((d) => `${d.id}:${d.label}`).join("|");
-    if (this.prompt?.key !== key) this.prompt = { key, text: buildSystemPrompt(devices, this.rooms) };
+    if (this.prompt?.key !== key) this.prompt = { key, text: buildSystemPrompt(devices, this.rooms, { layout: !!this.layout }) };
     return this.prompt.text;
   }
 

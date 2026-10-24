@@ -1,6 +1,8 @@
 // mock 공급자: 규칙 기반 한국어 의도 해석기. 진짜 LLM처럼 도구를 부른다.
 // 1라운드 find_devices(문장 조각마다) → 2라운드 제어 도구 → 마지막에 결과 문장.
 // 지원: 켜/꺼/열어/닫아/잠가/잠금 해제/시작/멈춰/온도 N도/밝기·음량 N%/상태, "~고"·"그리고"·","로 여러 요청.
+// 배치 도구가 있으면: "냉장고 위치 여기로 맞춰줘"·"냉장고는 여기 있어"·"TV 여기로 옮겨줘" → find_objects → move_object(here),
+// "배치 저장해" → save_layout.
 
 import type { Command, DeviceKind } from "../../hub/types.js";
 import type { LlmProvider, StepOptions, StepResult, ToolCall, ToolCallResult } from "../agent.js";
@@ -35,9 +37,17 @@ interface Act {
   clause: number;
 }
 
+interface LayoutTurn {
+  kind: "here" | "save";
+  name?: string;
+  findCall?: string;
+  actCall?: string;
+}
+
 interface Turn {
   message: string;
-  phase: "parse" | "find" | "act" | "done";
+  phase: "parse" | "find" | "act" | "layout" | "done";
+  layout?: LayoutTurn;
   clauses: Clause[];
   finds: Map<string, number>; // callId → clause index
   found: Map<number, { rooms: { id: string }[]; devices: Found[] }>;
@@ -74,6 +84,18 @@ const VERBS: [RegExp, Intent["kind"]][] = [
 const VERB_WORDS = /(?:켜|꺼|끄|틀|열|닫|잠그|잠가|잠궈|잠금|맞춰|맞추|설정|바꿔|변경|시작|멈춰|멈추|정지|중지|돌려|작동|가동|해제|풀어|그만|스톱)[가-힣]*/g;
 const FILLERS = /(?:^|\s)(?:좀|지금|당장|빨리|해줘|해\s*주세요|해|줘|주세요|부탁해|부탁|요|밝기|음량|볼륨|소리|온도|모드|상태|어때|알려줘|알려|확인|있어|있니|다|모두|전부|모든|전체|하고|청소|냉방|난방|제습|송풍|자동|바람\S*|약하게|세게|강하게|중간|보통)(?=\s|$)/g;
 const ALL = /(?:^|\s)(?:다|모두|전부|모든|전체)(?=\s|$)/;
+
+// "냉장고 위치 여기로 맞춰줘", "냉장고는 여기 있어", "냉장고 여기로 옮겨줘", "침대 여기에 놔줘"(예전 "냉장고 여기야"도 받는다)
+const LAYOUT_HERE = /^(.+?)\s*(?:은|는|이|가|을|를)?\s*(?:(?:위치|자리)\s*(?:을|를|는|가)?\s*)?(?:지금\s*)?여기(?:야|예요|에요|요|다|\s*있어(?:요)?|에\s*있어(?:요)?|로|로\s*옮겨|로\s*맞춰|로\s*해|에\s*놔|에\s*둬|로\s*놔|로\s*둬)?(?:\s*(?:줘|주세요|요))?[.!~\s]*$/;
+const LAYOUT_SAVE = /(?:배치|위치|자리|보정)\s*(?:을|를)?\s*(?:저장|확정)|^(?:저장|확정)(?:해|하자|해\s*줘|해\s*주세요)?[.!~\s]*$/;
+
+export function parseLayout(message: string): LayoutTurn | undefined {
+  const t = message.trim();
+  if (LAYOUT_SAVE.test(t)) return { kind: "save" };
+  const m = t.match(LAYOUT_HERE);
+  const name = m?.[1]?.trim();
+  return name ? { kind: "here", name } : undefined;
+}
 
 function parseIntent(t: string): Intent | undefined {
   const p = t.match(PERCENT);
@@ -175,6 +197,17 @@ function toCall(d: Found, intent: Intent): { name: string; args: Record<string, 
 
 const isLiving = (d: Found) => d.room === "living_room" || d.roomLabel === "거실";
 
+const DOING: Record<Intent["kind"], string> = {
+  on: "켜", off: "꺼", open: "열어", close: "닫아", lock: "잠가", unlock: "잠금 해제해", start: "시작해", stop: "멈춰",
+  state: "상태를 알려", level: "맞춰", climate: "냉난방을 맞춰",
+};
+
+/** mock의 '생각': 요청과 찾은 기기로 만든 고정 문장. */
+function reasonFor(d: Found, intent: Intent): string {
+  if (intent.kind === "state") return `${josa(d.label, "이/가")} 지금 어떤지 확인하려고`;
+  return `${josa(d.label, "을/를")} ${DOING[intent.kind]} 달라는 요청이라서`;
+}
+
 export class MockProvider implements LlmProvider {
   readonly name = "mock";
   readonly model = "rules-ko";
@@ -202,6 +235,11 @@ export class MockProvider implements LlmProvider {
     const s = state as MockState;
     const t = s.turn;
     if (!t || t.phase === "done") return { text: MOCK_HELP, calls: [] };
+    if (t.phase === "parse" && opts.tools.some((x) => x.name === "move_object")) {
+      const layout = parseLayout(t.message);
+      if (layout) return this.layoutStep(s, t, layout, opts);
+    }
+    if (t.phase === "layout") return this.layoutNext(s, t, opts);
     if (t.phase === "parse") {
       t.clauses = parseMessage(t.message);
       if (t.clauses.length === 0) {
@@ -216,7 +254,7 @@ export class MockProvider implements LlmProvider {
         }
         const id = this.id(s);
         t.finds.set(id, i);
-        calls.push({ id, name: "find_devices", args: { query: c.query } });
+        calls.push({ id, name: "find_devices", args: { query: c.query, reason: `'${c.query}'가 어느 기기인지 먼저 찾으려고` } });
       });
       t.phase = "find";
       if (calls.length === 0 || !opts.allowTools) return this.finish(t);
@@ -231,7 +269,7 @@ export class MockProvider implements LlmProvider {
           const call = toCall(d, c.intent);
           const id = this.id(s);
           t.acts.push({ callId: id, device: d, clause: i });
-          calls.push({ id, name: call.name, args: call.args });
+          calls.push({ id, name: call.name, args: { ...call.args, reason: reasonFor(d, c.intent) } });
         }
       });
       t.phase = "act";
@@ -239,6 +277,38 @@ export class MockProvider implements LlmProvider {
       return { text: "", calls };
     }
     return this.finish(t);
+  }
+
+  private layoutStep(s: MockState, t: Turn, layout: LayoutTurn, opts: StepOptions): StepResult {
+    t.layout = layout;
+    t.phase = "layout";
+    if (!opts.allowTools) return this.layoutFinish(t);
+    if (layout.kind === "save") {
+      layout.actCall = this.id(s);
+      return { text: "", calls: [{ id: layout.actCall, name: "save_layout", args: { reason: "지금까지 고친 배치를 저장해 달라고 해서" } }] };
+    }
+    layout.findCall = this.id(s);
+    return { text: "", calls: [{ id: layout.findCall, name: "find_objects", args: { query: layout.name, reason: `'${layout.name}'가 트윈의 어느 물건인지 찾으려고` } }] };
+  }
+
+  private layoutNext(s: MockState, t: Turn, opts: StepOptions): StepResult {
+    const layout = t.layout!;
+    if (layout.actCall || !layout.findCall || !opts.allowTools) return this.layoutFinish(t);
+    const found = t.results.get(layout.findCall);
+    const first = Array.isArray(found?.data) ? (found!.data as { id: string }[])[0] : undefined;
+    if (!first) return this.layoutFinish(t);
+    layout.actCall = this.id(s);
+    const label = (first as { label?: string }).label ?? layout.name ?? "물건";
+    return { text: "", calls: [{ id: layout.actCall, name: "move_object", args: { object_id: first.id, to: "here", reason: `폰이 가리키는 바닥이 ${label}의 실제 자리라서` } }] };
+  }
+
+  private layoutFinish(t: Turn): StepResult {
+    t.phase = "done";
+    const layout = t.layout!;
+    const r = layout.actCall ? t.results.get(layout.actCall) : undefined;
+    if (r) return { text: r.ok ? (r.message ?? "했어요.") : (r.error ?? "하지 못했어요."), calls: [] };
+    if (layout.kind === "here") return { text: `'${layout.name}'에 맞는 물건을 찾지 못했어요.`, calls: [] };
+    return { text: MOCK_HELP, calls: [] };
   }
 
   /** find 결과에서 대상 기기를 고른다. 고를 수 없으면 notes에 이유를 남긴다. */

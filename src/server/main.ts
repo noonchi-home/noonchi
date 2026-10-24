@@ -15,6 +15,9 @@ async function main(): Promise<void> {
   console.log(`  웹 화면   ${url}/`);
   console.log(`  WS 이벤트 ${url.replace(/^http/, "ws")}/events`);
   console.log(`  3D 트윈   ${existsSync(srv.twinDir) ? `${url}/twin/` : `(아직 없음: ${srv.twinDir})`}`);
+  for (const phoneUrl of srv.phoneUrls) {
+    console.log(`  폰 AR     ${phoneUrl}  (폰 크롬 chrome://flags 'Insecure origins treated as secure'에 ${new URL(phoneUrl).origin} 추가)`);
+  }
   if (hubKind === "matter" && transport === "network") {
     console.log(`  Matter    다른 컨트롤러(Home Assistant 등) 추가: curl -X POST ${url}/api/matter/commissioning-window 후 나온 페어링 코드 입력(README "Matter 페어링")`);
   }

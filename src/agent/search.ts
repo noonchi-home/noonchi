@@ -52,7 +52,7 @@ export function compact(s: string): string {
   return s.toLowerCase().replace(/\([^)]*\)/g, "").replace(/[\s·.,!?~'"]/g, "");
 }
 
-function stripParticle(token: string): string {
+export function stripParticle(token: string): string {
   for (const p of PARTICLES) {
     if (token.length > p.length && token.endsWith(p)) return token.slice(0, -p.length);
   }

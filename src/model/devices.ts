@@ -1,9 +1,10 @@
 // twin-studio 데이터 → DeviceSpec 목록 (docs/plan.md "기기 목록 만들기").
-// 1순위 apartment/scene.json objects(attrs 있는 것), 없으면 data/apartment catalog + placement + floorplan 문.
+// 고른 집(homes.json, HOME_ID)의 1순위 <out>/scene.json objects(attrs 있는 것), 없으면 <data>의 placement + floorplan 문 + 카탈로그.
 
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import type { DeviceSpec, RoomSpec } from "../hub/types.js";
+import { resolveHome, type Home } from "./homes.js";
 import { defaultTwinValue, describeDevice } from "./mapping.js";
 
 export type TwinSource = "scene" | "catalog";
@@ -16,7 +17,10 @@ export interface SkippedObject {
 
 export interface TwinData {
   source: TwinSource;
+  /** twin-studio 폴더 */
   dir: string;
+  /** 고른 집 */
+  home: Home;
   rooms: RoomSpec[];
   devices: DeviceSpec[];
   /** 기기 id → twin 초기 상태(twinAttrs의 모든 키). */
@@ -28,6 +32,8 @@ export interface TwinData {
 
 export interface LoadOptions {
   source?: "auto" | TwinSource;
+  /** homes.json의 집 id(없으면 기본 집) */
+  home?: string;
 }
 
 type Attrs = Record<string, unknown[]>;
@@ -114,7 +120,7 @@ export function doorLabel(door: RawDoor, rooms: RoomSpec[]): string {
   return name ? `${name} 문` : door.id;
 }
 
-function buildTwin(dir: string, source: TwinSource, rooms: RoomSpec[], objects: RawObject[], warnings: string[]): TwinData {
+function buildTwin(home: Home, source: TwinSource, rooms: RoomSpec[], objects: RawObject[], warnings: string[]): TwinData {
   const roomLabel = new Map(rooms.map((r) => [r.id, r.label]));
   const devices: DeviceSpec[] = [];
   const initial: Record<string, Record<string, unknown>> = {};
@@ -142,15 +148,15 @@ function buildTwin(dir: string, source: TwinSource, rooms: RoomSpec[], objects: 
       if (allowed.length > 0 && !allowed.includes(value)) warnings.push(`${o.id}.${attr} 초기값 ${JSON.stringify(value)}이 attrs 목록에 없습니다`);
     }
   }
-  return { source, dir, rooms, devices, initial, skipped, warnings };
+  return { source, dir: home.studioDir, home, rooms, devices, initial, skipped, warnings };
 }
 
-function loadFromScene(dir: string, scenePath: string, warnings: string[]): TwinData {
-  const scene = asRecord(readJson(scenePath));
+function loadFromScene(home: Home, warnings: string[]): TwinData {
+  const scene = asRecord(readJson(home.scenePath));
   const plan = asRecord(scene.plan);
   let rooms = parseRooms(plan.rooms);
   let doors = parseDoors(plan.doors);
-  const floorplanPath = join(dir, "data", "apartment", "floorplan.json");
+  const floorplanPath = join(home.dataDir, "floorplan.json");
   if ((rooms.length === 0 || doors.length === 0) && existsSync(floorplanPath)) {
     const fp = asRecord(readJson(floorplanPath));
     if (rooms.length === 0) rooms = parseRooms(fp.rooms);
@@ -167,17 +173,17 @@ function loadFromScene(dir: string, scenePath: string, warnings: string[]): Twin
       attrs: asAttrs(o.attrs), states: asRecord(o.states) as StatesSpec, state: asRecord(o.state),
     };
   });
-  return buildTwin(dir, "scene", rooms, objects, warnings);
+  return buildTwin(home, "scene", rooms, objects, warnings);
 }
 
-function loadFromCatalog(dir: string, warnings: string[]): TwinData {
-  const base = join(dir, "data", "apartment");
+function loadFromCatalog(home: Home, warnings: string[]): TwinData {
+  const base = home.dataDir;
   const fp = asRecord(readJson(join(base, "floorplan.json")));
   const placement = asRecord(readJson(join(base, "placement.json")));
   const rooms = parseRooms(fp.rooms);
   const roomIds = new Set(rooms.map((r) => r.id));
   const catalog = new Map<string, Record<string, unknown>>();
-  const catalogDir = join(base, "catalog");
+  const catalogDir = home.catalogDir;
   for (const file of readdirSync(catalogDir).filter((f) => f.endsWith(".json")).sort()) {
     try {
       const entry = asRecord(readJson(join(catalogDir, file)));
@@ -202,7 +208,7 @@ function loadFromCatalog(dir: string, warnings: string[]): TwinData {
     if (!door.asset) continue;
     objects.push(fromEntry(door.id, door.asset, doorLabel(door, rooms), doorRoom(door, roomIds)));
   }
-  return buildTwin(dir, "catalog", rooms, objects, warnings);
+  return buildTwin(home, "catalog", rooms, objects, warnings);
 }
 
 /** twin-studio 폴더에서 방·기기·초기 상태를 읽는다. */
@@ -210,11 +216,12 @@ export function loadTwin(twinStudioDir?: string, opts: LoadOptions = {}): TwinDa
   const dir = resolveTwinStudioDir(twinStudioDir);
   const want = opts.source ?? "auto";
   const warnings: string[] = [];
-  const scenePath = join(dir, "apartment", "scene.json");
-  const hasCatalog = existsSync(join(dir, "data", "apartment", "placement.json"));
+  const home = resolveHome(dir, opts.home);
+  const scenePath = home.scenePath;
+  const hasCatalog = existsSync(join(home.dataDir, "placement.json"));
   if (want !== "catalog" && existsSync(scenePath)) {
     try {
-      return loadFromScene(dir, scenePath, warnings);
+      return loadFromScene(home, warnings);
     } catch (e) {
       if (want === "scene") throw new Error(`scene.json을 읽지 못했습니다: ${scenePath} (${(e as Error).message})`);
       warnings.push(`scene.json을 읽지 못해 catalog로 대신합니다: ${(e as Error).message}`);
@@ -223,9 +230,9 @@ export function loadTwin(twinStudioDir?: string, opts: LoadOptions = {}): TwinDa
     throw new Error(`scene.json이 없습니다: ${scenePath}`);
   }
   if (!hasCatalog) {
-    throw new Error(`twin-studio 데이터를 찾을 수 없습니다: ${dir} (apartment/scene.json 또는 data/apartment/placement.json 필요, TWIN_STUDIO_DIR 확인)`);
+    throw new Error(`twin-studio 데이터를 찾을 수 없습니다: ${dir} (집 ${home.id}: ${scenePath} 또는 ${join(home.dataDir, "placement.json")} 필요, TWIN_STUDIO_DIR·HOME_ID 확인)`);
   }
-  return loadFromCatalog(dir, warnings);
+  return loadFromCatalog(home, warnings);
 }
 
 /** DeviceSpec 목록만. */

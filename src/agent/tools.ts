@@ -6,6 +6,7 @@ import type { Policy } from "./policy.js";
 import type { Command, CommandResult, DeviceHub, DeviceKind, DeviceSpec, DeviceState, RoomSpec } from "../hub/types.js";
 import { KIND_LABELS } from "../model/mapping.js";
 import { doneSentence } from "./phrases.js";
+import type { LayoutTools } from "./layoutTools.js";
 import { compact, findDevices, resolveRoom } from "./search.js";
 
 /** GET /api/devices 한 항목: spec + 현재 상태. */
@@ -25,6 +26,8 @@ export interface ToolBackend {
   command(id: string, cmd: Command, confirmToken?: string): Promise<CommandResult>;
   /** 승인 토큰으로 대기 중인 명령을 실행한다. */
   confirm(token: string): Promise<CommandResult & { deviceId?: string }>;
+  /** 배치 보정(서버 안 에이전트만). */
+  layout?: LayoutTools;
 }
 
 export interface ToolResult {
@@ -73,8 +76,9 @@ export function deviceViews(hub: DeviceHub): DeviceView[] {
   return out;
 }
 
-export function localBackend(hub: DeviceHub, policy: Policy, rooms?: RoomSpec[]): ToolBackend {
+export function localBackend(hub: DeviceHub, policy: Policy, rooms?: RoomSpec[], layout?: LayoutTools): ToolBackend {
   return {
+    layout,
     rooms: async () => roomViews(hub.list(), rooms),
     devices: async () => deviceViews(hub),
     command: (id, cmd, token) => policy.guard(hub, id, cmd, token),

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -241,6 +241,48 @@ describe("정적 파일·CORS", () => {
     expect(r.json).toEqual({ objects: [] });
     const { url: url2 } = await start({ twinDir: join(dir, "missing") });
     expect((await api(url2, "/twin/scene.json")).status).toBe(404);
+  });
+
+  it("/twin/viewer/·/twin/lib/는 집 폴더와 다른 폴더(뷰어·라이브러리)에서 나온다", async () => {
+    const root = mkdtempSync(join(tmpdir(), "twin-"));
+    cleanups.push(() => rmSync(root, { recursive: true, force: true }));
+    const out = join(root, "homes", "oneroom");
+    const viewer = join(root, "apartment", "viewer");
+    const lib = join(root, "library");
+    for (const d of [out, viewer, join(lib, "assets", "appliances")]) mkdirSync(d, { recursive: true });
+    writeFileSync(join(out, "scene.json"), '{"home":"oneroom"}');
+    writeFileSync(join(viewer, "index.html"), "<title>viewer</title>");
+    writeFileSync(join(lib, "assets", "appliances", "tv.glb"), "glTF");
+    const home = makeHome();
+    const app = createApp({
+      hub: home.hub, policy: home.policy, rooms: ROOMS, twinDir: out, viewerDir: viewer, libraryDir: lib, log: () => {},
+      home: { id: "oneroom", name: "원룸" }, homes: [{ id: "apartment", name: "아파트" }, { id: "oneroom", name: "원룸" }],
+    });
+    const { url } = await app.listen(0, "127.0.0.1");
+    cleanups.push(() => app.close());
+    expect((await api(url, "/twin/scene.json")).json).toEqual({ home: "oneroom" });
+    const page = await api(url, "/twin/viewer/");
+    expect(page.status).toBe(200);
+    expect(page.text).toContain("viewer");
+    const glb = await api(url, "/twin/lib/assets/appliances/tv.glb");
+    expect(glb.status).toBe(200);
+    expect(glb.headers.get("content-type")).toBe("model/gltf-binary");
+    expect((await api(url, "/twin/lib/../scene.json")).status).toBe(200); // URL이 /twin/scene.json으로 정규화된다
+    const health = await api(url, "/api/health");
+    expect(health.json.home).toEqual({ id: "oneroom", name: "원룸" });
+    expect(health.json.phone_urls).toEqual([]);
+    const homes = await api(url, "/api/homes");
+    expect(homes.json).toEqual({ current: "oneroom", homes: [{ id: "apartment", name: "아파트" }, { id: "oneroom", name: "원룸" }] });
+  });
+
+  it("health에 폰 주소(와이파이)를 담는다: 폰 서버가 뜬 뒤 정해져도 그때 값", async () => {
+    const home = makeHome();
+    let urls: string[] = [];
+    const app = createApp({ hub: home.hub, policy: home.policy, rooms: ROOMS, log: () => {}, phoneUrls: () => urls });
+    const { url } = await app.listen(0, "127.0.0.1");
+    cleanups.push(() => app.close());
+    urls = ["http://192.168.0.5:8210/phone/"];
+    expect((await api(url, "/api/health")).json.phone_urls).toEqual(["http://192.168.0.5:8210/phone/"]);
   });
 
   it("CORS는 localhost 출처만 허용한다", async () => {
