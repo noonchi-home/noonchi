@@ -124,8 +124,10 @@ interface DeviceHub {
 
 ## 기기 목록 만들기 (src/model/devices.ts)
 
-- 1순위: twin-studio `apartment/scene.json`의 objects 중 `attrs`가 있는 것.
-- 없으면 `data/apartment/catalog/*.json` + `placement.json` + `floorplan.json`(문)을 읽는다.
+- 집: twin-studio `homes.json`에서 `HOME_ID`(없으면 `default`)로 고른다(`src/model/homes.ts`, 아래 "집 고르기").
+- 1순위: 그 집 `<out>/scene.json`의 objects 중 `attrs`가 있는 것.
+- 없으면 그 집 `<data>`의 `placement.json` + `floorplan.json`(문) + 카탈로그를 읽는다.
+- 카탈로그: `<data>/catalog` → 공용 `data/catalog` → (옛 체크아웃) `data/apartment/catalog` 순서로 찾는다.
 - 경로는 `TWIN_STUDIO_DIR`(기본 `../twin-studio`)이다.
 - twin 상태 초기값은 `state` 또는 catalog `states.*.default`다.
 
@@ -135,6 +137,49 @@ interface DeviceHub {
 - 뷰어 가전 패널에서 바꾼 값은 연결된 동안 로컬에서 바꾸지 않고 `POST /api/devices/:id/twin`으로 보낸다(원격 반영 중에는 보내지 않음 → 되울림 없음). 409면 스위치를 되돌리고 승인 알림(승인 → `POST /api/agent/confirm`)을 띄운다.
 - twin-home 웹 화면은 뷰어를 iframe(`/twin/viewer/?live=auto&embed=1`)으로 넣는다. 넓은 화면 `카드 | 3D | 대화`, 폰은 탭. `/twin/`이 없으면 숨기고 이유를 보인다.
 - 3D에는 twin attr만 있다(밝기·온도·바람·커튼 %는 없음).
+
+## 폰 AR 눈 (3단계)
+
+- `PHONE_PORT`(예: 8210)를 주면 폰 전용 서버가 `PHONE_HOST`(기본 0.0.0.0)에 뜬다. 주는 것은 `/phone/`(페이지)과 `/phone/events`(WebSocket)뿐이다. 기기 API는 본 서버(127.0.0.1)에만 있다.
+- 폰 → 서버: `{type:"pose", position:[x,y,z], orientation:[x,y,z,w], tracking:"ok"|"limited"}`(WebXR local 공간, 초당 10번) · `{type:"anchor", id:<기준점 id>, point:[x,y,z]}`(조준점이 닿은 바닥 점) · `{type:"reset"}`. 서버 → 폰: `{type:"status", anchors, aligned, mismatch_m, error?}`.
+- 기준점 두 곳은 평면도에 지정한 방 모서리다: scene.json `plan.ar_anchors` → 집 data `floorplan.json`의 `ar_anchors`(`[{id, label, position:[x,y]}]`, 정확히 2개) → 없으면 예전 방식(`dock`·`door_main` 객체의 평면 위치) 순서로 읽는다(`src/phone/anchors.ts`). 폰 버튼은 `<label> 지점 기록`이다. 두 점으로 수평 회전·이동·바닥 높이를 구한다(`src/phone/align.ts`). 두 점이 0.5m보다 가까우면 거절하고, 실제·트윈 거리 차이를 `mismatch_m`으로 알린다.
+- 맞춘 뒤 자세는 본 서버 `/events`로 `{type:"eye", eye:{position:[x,y], height_m, yaw_deg, pitch_deg, tracking, at}}`가 된다. 뷰어는 `aptViewer.setEye`로 눈 마커만 움직인다. 판단에는 쓰지 않는다.
+- WebSocket은 페이지를 준 호스트와 같은 출처만 받는다.
+- 기준점 거리 차이가 `PHONE_MAX_MISMATCH_M`(기본 0.3m)을 넘으면 맞춤을 받지 않고 다시 찍게 한다.
+- 카메라(WebXR `camera-access`): 폰은 `/phone/events`에 바이너리 패킷 `[헤더 길이 4바이트 BE][JSON 헤더][JPEG]`(`src/phone/packet.ts`, 최대 4MB)을 보낸다. 헤더 `{kind:"frame"|"photo", width, height, position?, orientation?, tracking?}`. `frame`은 기본 초당 12장·가로 480px·품질 0.55(폰 주소 `?fps=`·`?w=`로 바꾼다, 인코딩 중이거나 와이파이에 쌓이면 건너뜀), `photo`는 카메라 원본 크기.
+- 본 서버(127.0.0.1)의 `GET /api/eye/stream`(MJPEG), `/api/eye/frame.jpg`(최신), `/api/eye/photos/<id>.jpg`, `/api/eye/stats`(최근 2초 받은 fps·장당 KB·마지막 크기, 대시보드 눈 캡션에 fps). 실시간 화면은 표시 전용이며 엔진 입력이 아니다.
+- `photo`는 `PHONE_PHOTO_DIR`(기본 `runtime/photos/`)에 JPEG·JSON으로 저장하고 `/events`로 `{type:"photo", photo:{id, at, url, width, height, measured_pose, pose_note?}}`를 보낸다. 맞추기 전이면 `measured_pose: null`, `pose_note: "not_aligned"`. 폰에는 `{type:"photo_saved", id, aligned}`.
+
+## 집 고르기·배치 보정·음성·초점 (4단계)
+
+상세 계획: [2026-10-24-home-packages-live-edit.md](superpowers/plans/2026-10-24-home-packages-live-edit.md).
+
+**A. 집 고르기** (twin-studio `homes.json`)
+- `{ version, default, viewer, library, homes: [{ id, name, data, out }] }`. 경로는 twin-studio 루트 기준. 없으면 아파트 한 집(`data/apartment`, `apartment`).
+- twin-home은 `HOME_ID`로 집 하나를 불러온다. 정적 경로: `/twin/viewer/*` → `viewer`(모든 집 공용 뷰어), `/twin/lib/*` → `library`(모든 종류 GLB), `/twin/*` → 그 집 `out`. 대시보드 뷰어 주소는 그대로 `/twin/viewer/?live=auto&embed=1`.
+- 폰 AR 기준점은 그 집의 `ar_anchors`(방 모서리 두 곳)다. 없으면 `dock`·`door_main`.
+
+**B. 보정 수정본** `RUNTIME_DIR/homes/<id>/edits.json`(기본 `runtime/`, 커밋하지 않음)
+- `{ version: 1, home, saved_at, edits: [...] }`. edits: `{op:"move", id, position:[x,y], facing_deg, room}` · `{op:"add", id, type, label, room, position, facing_deg, elevation?}`(벽걸이는 elevation) · `{op:"remove", id}`.
+- id마다 최종 결과 하나: 더한 뒤 지움 → 없음, 더한 뒤 옮김 → add(최종 자리), 원래 자리로 돌아오면 없음.
+- twin-home은 twin-studio 파일을 고치지 않는다. 반영은 twin-studio `python -m studio apply-edits --home <id> <edits.json>` → 빌드 → twin-home 재시작. 다시 시작하면 저장해 둔 수정본을 다시 적용한다(이미 원본에 반영된 것은 건너뛴다).
+- 추가한 가전은 반영·빌드·재시작 뒤에야 Matter 기기가 된다(실행 중 Matter 기기 추가는 하지 않는다).
+
+**C. `/events` 추가 메시지**
+- `{type:"layout", op:"move", id, room, plan:{position, facing_deg, elevation}, position:[x,h,y], rotation:[0,ry,0]}` (`ry = -(facing_deg - 90)°`)
+- `{type:"layout", op:"add", object:<scene.json 객체 모양 + footprint·height>}`: `asset`은 집 `assets/…` → `lib/assets/…` → `null`(뷰어가 회색 상자).
+- `{type:"layout", op:"remove", id}`. 받침을 옮기거나 빼면 위에 놓인 물건도 같이 움직이거나 빠진다.
+- 붙을 때 지금 보정 상태를 위 메시지로 다시 보낸다. 되돌리기는 반대 메시지들이다.
+- `{type:"focus", focus:{targets:[{id, label, position:[x,h,y]}], at, ttl_ms}}`: 클로이드가 방금 다룬 물건(에이전트 도구가 성공했거나 승인을 기다리는 대상). 높이는 물건 가운데(천장 물건은 아래로). 표시 전용.
+
+**D. 폰 `/phone/events` 추가 메시지**
+- 폰 → 서버: `pose`에 `hit:[x,y,z]|null`(조준점이 닿은 바닥 점) · `{type:"say", text}`(음성 인식 결과·글, 500자까지) · `{type:"confirm"|"cancel", token}`.
+- 서버 → 폰: `{type:"reply", text, pending:[{token, deviceLabel, reason}]}` · `{type:"focus", targets:[{id, label, ar:[x,y,z]}], ttl_ms}`(맞춘 뒤에만).
+- '여기' = 맞춘 뒤 마지막 자세의 조준점(평면도). 15초 넘게 자세가 없거나 조준점이 바닥에 닿지 않았으면 이유를 돌려준다.
+- 폰 말은 에이전트 세션 `phone` 하나로 이어진다. 대시보드 로그에도 `🎙 폰:`으로 보인다.
+
+**E. 배치 도구** (서버 안 에이전트 전용, MCP에는 없음) `find_objects`, `move_object(object_id, to?:"here", x?, y?, dx?, dy?, facing_deg?, turn_deg?)`, `add_object(type, label?, to?, x?, y?, facing_deg?)`, `remove_object`, `find_object_types`, `save_layout`. 평면도 좌표 +x 오른쪽, +y 아래쪽. 벽걸이는 가장 가까운 벽에 붙고, 바닥 물건을 '여기'로 옮기면 폰 쪽을 보게 놓는다. mock 에이전트도 "냉장고 위치 여기로 맞춰줘"·"냉장고는 여기 있어"·"TV 여기로 옮겨줘"·"배치 저장해"를 안다.
+- REST: `GET /api/layout`, `POST /api/layout/save`, `POST /api/layout/reset`, `GET /api/homes`.
 
 ## 테스트
 
@@ -146,6 +191,7 @@ interface DeviceHub {
   - 3D 트윈 → `POST /api/devices/:id/twin`(매핑, 센서, 정책 409 + confirm, 400)
   - MCP(클라이언트로 도구 목록·호출)
   - 에이전트(mock 공급자로 "거실 TV 켜줘" → turn_on(tv_living) → 상태 on, "현관문 열어줘" → 승인 요청 → 확정 후 unlocked)
+  - 집 고르기(homes.json), 배치 편집기(옮기기·받침·벽 붙이기·더하기·빼기·되돌리기·수정본·다시 적용), 배치 도구와 mock 의도, 폰 '여기'·말·승인·초점, 초점 투영, `HOME_ID` 통합(폰 "냉장고 위치 여기로 맞춰줘" → layout·focus), 추론 과정(reason·관찰)
 - Matter 통합 테스트:
   - 브리지 + 컨트롤러를 띄워 실제로 커미셔닝한다(포트·저장 폴더는 임시).
   - 조명을 켜면 컨트롤러 구독으로 상태가 돌아온다.
@@ -160,3 +206,4 @@ interface DeviceHub {
   - "현관문 열어줘"는 승인을 물은 뒤에만 열린다.
 - MCP: `@modelcontextprotocol/sdk` 클라이언트로 `list_devices`, `turn_on`을 호출해 상태가 바뀐다.
 - Matter: 브리지의 페어링 코드가 출력되고, 컨트롤러 경로(네트워크 또는 local)로 실제 Matter 속성이 바뀐다.
+- `HOME_ID=oneroom PHONE_PORT=8210 npm start`: 폰이 조준한 바닥에서 "냉장고 위치 여기로 맞춰줘"라고 하면 3D 트윈의 냉장고가 그 자리로 옮겨지고 초점 고리가 보인다. "배치 저장해"면 `runtime/homes/oneroom/edits.json`이 생기고 twin-studio `apply-edits`가 읽는다.

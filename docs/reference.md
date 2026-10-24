@@ -77,6 +77,10 @@ HUB=memory npm run demo
 | `ANTHROPIC_EFFORT` | `low` | `low`…`max` |
 | `ANTHROPIC_FALLBACKS` | (켬) | `off`면 서버 측 거절 대체를 끈다 |
 | `TWIN_STUDIO_DIR` | `../twin-studio` | twin-studio 레포(상대 경로는 실행 위치 기준) |
+| `HOME_ID` | `homes.json`의 `default` | 불러올 집(twin-studio `homes.json`의 id, 예: `oneroom`) |
+| `RUNTIME_DIR` | `runtime` | 실행 중 만든 파일의 바탕 폴더: 배치 수정본 `homes/<id>/edits.json`, 사진 `photos/`(커밋하지 않음) |
+| `PHONE_PORT`, `PHONE_HOST` | (끔), `0.0.0.0` | 폰 AR 서버(아래 "폰 AR") |
+| `PHONE_MAX_MISMATCH_M`, `PHONE_PHOTO_DIR` | `0.3`, `RUNTIME_DIR/photos` | 기준점 거리 차이 허용값, 사진 폴더 |
 | `PORT` | `8200` | HTTP 포트(`0`이면 빈 포트) |
 | `HOST` | `127.0.0.1` | HTTP 바인드 주소. `0.0.0.0`이면 LAN에서도 열린다(인증 없음) |
 | `HUB` | `matter` | `matter` / `memory` |
@@ -130,7 +134,11 @@ twin-home 서버: http://127.0.0.1:8200  (허브 matter/network, 에이전트 mo
 
 | 메서드·경로 | 본문 | 응답 |
 |---|---|---|
-| `GET /api/health` | | `{ ok, devices, hub, transport, provider, model, twin }` |
+| `GET /api/health` | | `{ ok, devices, hub, transport, provider, model, twin, eye, home: { id, name } }` |
+| `GET /api/homes` | | `{ current, homes: [{ id, name }] }` (twin-studio `homes.json`) |
+| `GET /api/layout` | | 배치 보정 상태 `{ ok, home, edits, dirty, savePath, savedAt, items }`. 집 scene.json이 없으면 404 |
+| `POST /api/layout/save` | | 수정본을 `RUNTIME_DIR/homes/<id>/edits.json`에 쓴다. `{ ok, path, count, saved_at }` |
+| `POST /api/layout/reset` | | 보정을 모두 버린다. 뷰어에 되돌리는 layout 메시지를 보낸다. `{ ok, reverted }` |
 | `GET /api/rooms` | | `[{ id, label, deviceCount }]` |
 | `GET /api/devices?room=&kind=` | | `[{ ...DeviceSpec, state: DeviceState }]` |
 | `GET /api/devices/:id` | | `{ ...DeviceSpec, state }`, 없으면 404 |
@@ -143,22 +151,23 @@ twin-home 서버: http://127.0.0.1:8200  (허브 matter/network, 에이전트 mo
 | `GET /api/agent/pending?sessionId=` | | 승인 대기 목록 |
 | `GET /api/matter` | | `{ ok, transport, commissioning: "none"\|"new"\|"reused", port, controllerPort?, subscribed?, pairing: { manualPairingCode, qrPairingCode, passcode, discriminator, commissioned, fabrics } }`. MemoryHub면 404 |
 | `POST /api/matter/commissioning-window` | `{ timeoutSeconds? }`(180~900, 기본 900) | `{ ok, timeoutSeconds, pairing, reply }`. 다른 Matter 컨트롤러용 페어링 창을 연다. local 전송이면 400 |
-| `GET /events` (WebSocket) | | 붙으면 `{type:"hello"}`와 모든 기기의 `{type:"state", state}`, 이후 바뀔 때마다 `{type:"state"}`와 `{type:"agent", event:"action"\|"reply"\|"pending"\|"confirmed"\|"cancelled", ...}` |
+| `GET /events` (WebSocket) | | 붙으면 `{type:"hello"}`, 모든 기기의 `{type:"state", state}`, 지금 배치 보정의 `{type:"layout"}`들. 이후 바뀔 때마다 `{type:"state"}`, `{type:"agent", event:"action"\|"reply"\|"pending"\|"confirmed"\|"cancelled", ...}`, `{type:"layout"}`, `{type:"focus"}`, `{type:"eye"}`, `{type:"photo"}` (모양은 [plan.md](plan.md)) |
 
 - `command`는 `docs/plan.md`의 `Command` 객체다. 줄임으로 문자열(`"on"`, `"off"`, `"lock"` …)도 받는다.
-- 정적 파일: `/`는 `web/`이다. `/twin/`은 `TWIN_STUDIO_DIR/apartment/`가 있을 때 붙는다(예: `/twin/viewer/?live=auto`). 경로 탈출(`..`)은 막는다.
+- 정적 파일: `/`는 `web/`이다. `/twin/`은 고른 집의 twin-studio 산출물 폴더(아파트는 `apartment/`, 원룸 예시는 `homes/oneroom/`), `/twin/viewer/`는 모든 집이 함께 쓰는 뷰어(`homes.json` viewer), `/twin/lib/`은 모든 종류의 GLB(`homes.json` library)다. 경로 탈출(`..`)은 막는다.
 - 보안: 기본 바인드는 `127.0.0.1`. 브라우저 출처는 `localhost`·`127.0.0.1`·`[::1]`만 허용한다(CORS, WebSocket). 다른 출처의 POST(페어링 창 열기 포함)는 403이다. 인증은 없다.
 
 ### 웹 화면 (web/)
 
 빌드 없이 쓰는 ES 모듈(`index.html`, `app.js`, `style.css`)이다. 밝은 화면과 어두운 화면, 폰 너비(390px)를 지원한다.
 
-- **배치**: 3D가 보이는 넓은 화면(861px 이상)은 기본이 `3D 트윈 | 대화` 두 칸이다. 헤더의 "기기 카드"를 켜면 1280px 이상은 `기기 카드 | 3D 트윈 | 대화` 세 칸, 861~1279px는 왼쪽 카드 + 오른쪽 위 3D·아래 대화가 된다(선택은 브라우저에 기억). 3D를 끄거나 없으면 카드가 늘 보인다. 860px 이하는 `기기 / 3D / 대화` 탭(가로 스크롤 없음).
-- **기기 카드를 둔 이유**: 3D 연결 전부터 있던 Matter 확인 화면이다. 3D에는 켜짐·꺼짐 같은 상태만 이어지므로 밝기·온도·바람 세기·커튼 %처럼 세밀한 값, Matter 속성 요약, 센서 시뮬레이션은 카드에서만 보고 바꾼다.
-- **위 상태줄**: 실시간 연결, `허브 matter · network`(전송 포함), 에이전트 공급자, **3D 트윈 토글**(숨기면 원래 두 칸, 선택은 브라우저에 기억), 센서 시뮬레이션 스위치. `/twin/`이 없으면 토글 대신 "3D 트윈 없음" 표시가 뜨고 3D 칸은 숨긴다(폰 3D 탭에는 이유를 적는다).
+- **배치**: 넓은 화면(861px 이상)은 왼쪽 큰 칸이 **3D 트윈**(클로이드가 한 일의 결과), 오른쪽 위가 **클로이드의 눈**(폰 카메라 실시간, 엔진 입력 아님, 폰이 없으면 안내), 오른쪽 아래가 **추론 과정**이다. 860px 이하는 `3D 트윈 / 클로이드의 눈 / 추론 과정` 탭(가로 스크롤 없음).
+- **기기 카드**: 결과 전용 화면이라 기본으로 숨긴다. 헤더 **기기 카드**로 왼쪽 서랍을 연다. 밝기·온도·바람 세기·커튼 %, Matter 속성 요약, 센서 시뮬레이션은 여기서만 보고 바꾼다.
+- **위 상태줄**: 실시간 연결, `허브 matter · network`(전송 포함), 에이전트 공급자, 고른 집, **배치 보정**(보정 건수·저장 여부, 배치 저장·되돌리기 버튼), **3D 트윈 토글**(숨기면 원래 두 칸, 선택은 브라우저에 기억), 센서 시뮬레이션 스위치. `/twin/`이 없으면 토글 대신 "3D 트윈 없음" 표시가 뜨고 3D 칸은 숨긴다(폰 3D 탭에는 이유를 적는다).
 - **기기 패널**: 방 탭, 방별 기기 카드(상태 칩, Matter 요약 `onOff=true level=100` 등, 빠른 제어). 센서는 읽기 전용이고 "센서 시뮬레이션"을 켜면 `/api/sensors`로 문 열림·충전을 바꿀 수 있다.
-- **3D 트윈**: twin-studio 뷰어를 iframe(`/twin/viewer/?live=auto&embed=1`)으로 넣는다. 처음 보일 때 불러오고, "새 창"으로 따로 열 수 있다.
-- **대화**: 메시지마다 도구 호출 기록이 붙고, 승인 대기에는 승인·취소 버튼이 붙는다. 카드에서 승인이 필요한 명령을 눌러도 같은 승인 카드가 뜬다.
+- **3D 트윈**: twin-studio 뷰어를 iframe(`/twin/viewer/?live=auto&embed=1`)으로 넣는다. "새 창"으로 따로 열 수 있다.
+- **추론 과정**: 요청마다 카드 하나. 접으면 요청과 답 한 줄(상태 완료·승인 대기·실패), 펴면 에이전트가 거친 단계(도구 이름을 쉬운 말로, 대상, 결과와 이유), 답, 초점 대상이 순서대로 보인다. 승인·취소 버튼은 그 카드 안에 있고, 어디서 승인하든(폰·"응") 결과가 그 카드에 남는다. 폰 대화(🎙)·사진(📷)·배치 저장·되돌리기도 같은 흐름에 쌓인다. 아래 추천 요청은 고른 집의 기기 이름으로 만든다.
+- **클로이드의 눈**: 폰 카메라 실시간 화면. 클로이드가 방금 다룬 물건이 있으면 캡션이 `클로이드 주목 · 냉장고`로 바뀌고, 화면 프레임에도 폰이 그린 고리가 보인다.
 - WebSocket `/events`로 실시간 반영하고, 끊기면 다시 연결한다.
 
 ## 3D 트윈 연결
@@ -219,6 +228,55 @@ TWIN_STUDIO_DIR=../twin-studio npm start
 - **서버 재시작:** `끊김 · N초 뒤 다시`(1·2·4·8·15초)를 거쳐 저절로 다시 붙고, 스냅숏을 다시 반영했다(불일치 0).
 - **`?live` 없는 뷰어:** 연결하지 않고 그대로 동작한다.
 - **출처 검사:** `evil.com`, `localhost.evil.com`, `null` 출처의 POST는 403이고, WS는 401로 거부된다.
+
+## 폰 AR (클로이드의 눈)
+
+폰(안드로이드 크롬)이 WebXR AR로 자기 위치·방향을 재고, 3D 트윈에 '클로이드의 눈' 원뿔로 실시간 표시한다. 계약은 [plan.md](plan.md) "폰 AR 눈", 코드는 `src/phone/`·`web/phone/`, 뷰어 쪽은 twin-studio `apartment/viewer/eye.mjs`다.
+
+1. PC: `PHONE_PORT=8210 npm start` (PowerShell: `$env:PHONE_PORT=8210; npm start`). 시작 로그의 `폰 AR http://<PC IP>:8210/phone/`를 확인한다. Windows 방화벽 창이 뜨면 **개인 네트워크**를 허용한다.
+2. 폰(같은 와이파이): 크롬 `chrome://flags`에서 **Insecure origins treated as secure**를 켜고 `http://<PC IP>:8210`을 넣은 뒤 크롬을 다시 시작한다. WebXR은 보안 출처에서만 켜지기 때문이다.
+3. 폰에서 `http://<PC IP>:8210/phone/` → AR 시작 → 평면도에 정한 기준점 두 곳(방 모서리, 폰 버튼에 이름이 나온다)의 바닥을 차례로 조준해 기록한다. 거리 차이가 30cm를 넘으면 다시 맞춘다. 기준점은 twin-studio `floorplan.json`의 `ar_anchors`이고, 없는 예전 집은 도크·현관문 문턱이다.
+4. PC 브라우저 `http://127.0.0.1:8200/`의 3D에서 눈 마커가 폰을 따라 움직인다. 추적이 약하면 마커가 회색이 된다.
+5. 대시보드 오른쪽 위 "클로이드의 눈" 칸에 폰 카메라 실시간 화면(기본 초당 12장, 폰 주소 뒤에 `?fps=20`·`?w=640`처럼 붙여 바꾼다)이 뜬다. 폰의 **사진 찍기**를 누르면 카메라 원본 크기 사진이 찍은 위치·방향과 함께 대화에 남고 `runtime/photos/`에 저장된다.
+
+- 아이폰은 Safari가 WebXR AR을 지원하지 않아 쓸 수 없다.
+- 흰 벽·어두운 곳·빠른 움직임에서는 추적이 약해진다. 오래 걸으면 조금씩 밀리므로 기준점에서 다시 맞춘다.
+- 트윈과 같은 구조의 집에서만 위치가 맞는다. 기준점 거리 차이가 30cm를 넘으면 맞춤을 받지 않는다. 구조가 다른 집에서 시험만 하려면 `PHONE_MAX_MISMATCH_M=3`처럼 늘린다(위치는 틀린다).
+- 크롬이 AR 카메라 접근(`camera-access`)을 주지 않으면 폰에 "카메라 화면을 보낼 수 없어요"가 뜨고 위치만 보낸다.
+- 카메라 화면이 위아래가 뒤집혀 보이면 폰 주소에 `?flip=0`을 붙인다(카메라 텍스처 방향은 실제 폰에서만 확인할 수 있다).
+- 실시간 화면은 암호화하지 않은 http로 같은 와이파이 안에서만 오간다.
+
+### 폰 화면(가로 촬영)과 속도 측정
+
+- 폰은 가로로 든다. 가운데 조준점, 오른쪽 큰 버튼(🎙 말하기·📷 사진·■ 끝내기), 위 상태 줄(맞춤 상태·거리 차이·추적 약함·보내는 fps). 기준점 버튼은 맞추기 전에만 보이고, 글 입력·다시 맞추기·측정 상세는 ⋯ 메뉴에 있다. 답은 위에 5초 보이고 사라진다. 세로로 들면 "가로로 돌려 주세요"가 뜬다. AR 시작 때 전체 화면·가로 고정을 시도하지만 안 되는 폰이 많다(⋯ 메뉴에 결과).
+- 화면 프레임: 기본 초당 12장, 가로 촬영 가로 480px·세로 360px, JPEG 품질 0.55(`?fps=`·`?w=`로 바꾼다). 인코딩은 워커 두 개로 두 장까지 겹치고, 순서가 뒤바뀐 오래된 프레임은 버린다.
+- 측정: 폰 ⋯ 메뉴에 최근 2초 보낸 fps·장당 KB, readPixels·인코딩 ms, 와이파이 대기(bufferedAmount), 건너뛴 이유별 횟수(인코딩 중·버퍼 가득·순서 뒤바뀜). 서버는 `/api/eye/stats`에 받은 fps·장당 KB를 내고, 대시보드 눈 캡션에 보인다.
+
+### 말하기·'여기'·초점
+
+6. 폰의 **🎙 누르고 말하기**를 누른 채 말하고 손을 뗀다(크롬 내장 음성 인식, 한국어). 받아쓴 문장은 에이전트(세션 `phone`)로 가고, 답은 폰이 읽어 준다. 음성 인식이 없거나 막히면 아래 글 입력으로 보낸다. 승인이 필요하면 폰에 승인·취소 버튼이 뜬다("응"이라고 말해도 된다).
+7. 물건 아래 바닥을 조준점으로 가리키고 "냉장고 위치 여기로 맞춰줘"·"냉장고는 여기 있어"·"TV 여기로 옮겨줘"라고 하면 트윈의 그 물건이 조준점 자리로 옮겨진다(바닥 물건은 폰 쪽을 보게, 벽걸이는 가장 가까운 벽에 붙는다). "배치 저장해"면 수정본을 저장한다(아래 "집 고르기와 배치 보정").
+8. 에이전트가 다룬 물건(켠 TV, 옮긴 냉장고 등)은 폰 화면에 파란 고리와 `클로이드 주목 · 이름`으로 8초 동안 보인다. 화면 밖이면 가장자리 화살표로 방향을 가리킨다. 3D 트윈에도 같은 고리가 뜬다.
+
+- 폰 화면 고리와 대시보드 프레임 고리는 XR 시점의 투영 행렬로 그린다. 카메라 이미지가 그 투영과 같다고 보고 그리므로 실제 폰에서 어긋나는지 확인이 필요하다.
+- AR을 켠 채로 음성 인식이 되는지는 실제 폰에서 아직 확인하지 않았다. 안 되면 글 입력을 쓴다.
+- 폰 말에는 인증이 없다(같은 와이파이의 누구나 보낼 수 있다). 내부 테스트용이다.
+
+## 집 고르기와 배치 보정
+
+twin-studio는 평면도마다 집 패키지를 하나씩 둔다(`homes.json`). twin-home은 `HOME_ID`로 하나를 불러온다.
+
+```bash
+# 먼저 twin-studio에서 빌드: uv run python -m studio apartment --home oneroom --no-render
+HOME_ID=oneroom PHONE_PORT=8210 npm start
+```
+
+1. 실제 집에 맞게 트윈을 고친다: 폰 '여기'(위), 또는 대시보드·폰 채팅("냉장고 오른쪽으로 0.5m", "공기청정기 추가해줘", "TV 빼줘"). 3D 트윈이 바로 바뀌고, 상태줄에 `보정 N건 · 저장 안 함`이 뜬다.
+2. "배치 저장해" 또는 상태줄 **배치 저장** → `runtime/homes/<id>/edits.json`. 다시 시작해도 저장한 보정은 다시 적용된다. **되돌리기**는 저장하지 않은 것까지 모두 버린다.
+3. 확정: twin-studio에서 `uv run python -m studio apply-edits --home <id> <edits.json>`(먼저 `--dry-run`으로 볼 수 있다) → `uv run python -m studio apartment --home <id> --no-render` → twin-home 재시작. 추가한 가전은 이때부터 Matter 기기로 켜고 끌 수 있다.
+
+- 문·창·벽·바닥·천장 고정 설비는 옮기지 않는다. 다른 물건 위에 놓는 종류(TV·전자레인지 등)는 더할 수 없고, 옮기면 받침째 옮긴다.
+- 새 종류의 3D 모델은 집 산출물 → twin-studio `library/`(`python -m studio library`) 순서로 찾고, 둘 다 없으면 회색 상자로 보인다.
 
 ## 에이전트 (src/agent)
 
@@ -341,7 +399,7 @@ matter.js 0.17.9에 매핑 표의 기기 종류 21개가 모두 있어 **대체�
 
 ## 기기 목록 (src/model/devices.ts)
 
-- 1순위 `twin-studio/apartment/scene.json`의 objects 중 `attrs`가 있는 것. 없거나 깨져 있으면 `data/apartment/catalog/*.json` + `placement.json` + `floorplan.json`의 문으로 만든다(`loadTwin(dir, { source: "auto" | "scene" | "catalog" })`).
+- 고른 집(`HOME_ID`)의 1순위 `<out>/scene.json` objects 중 `attrs`가 있는 것. 없거나 깨져 있으면 그 집 `<data>`의 `placement.json` + `floorplan.json`의 문 + 카탈로그(`<data>/catalog` → `data/catalog` → 옛 `data/apartment/catalog`)로 만든다(`loadTwin(dir, { source: "auto" | "scene" | "catalog", home })`).
 - 초기 twin 상태: scene/placement `state` > 카탈로그 `states.<attr>.default` > attr 기본값(꺼짐·멈춤·닫힘·잠김, 커튼은 열림).
 - 문: 방은 twin-studio `layout.py`와 같은 규칙. 이름은 `현관문`, 나머지는 `<들어가는 방> 문`(예: `작은방 문`).
 - 월패드(`wall_pad`)·CLOiD 로봇(`robot`)은 twin 전용이라 목록에서 뺀다(`TwinData.skipped`).
@@ -395,6 +453,9 @@ matter.js 0.17.9에 매핑 표의 기기 종류 21개가 모두 있어 **대체�
 | `mcp` | MCP stdio 서버를 실제로 띄워 SDK 클라이언트로 호출 |
 | `start` | HUB 기본값 matter, network → local → memory 대체 경로 |
 | `matter` | 모든 기기 종류의 엔드포인트·명령(local), 실제 커미셔닝·구독·재사용·multi-admin 창(network) |
+| `homes`, `layout-editor`, `layout-agent`, `layout-server` | homes.json 읽기·카탈로그 순서, 배치 편집기(옮기기·받침·벽 붙이기·더하기·빼기·되돌리기·수정본·재적용), 배치 도구·mock 의도, REST·WS |
+| `phone-session`, `phone-server`, `phone-project`, `focus` | 폰 '여기'·트윈→AR, 말·승인·초점 전달, 초점 투영, `HOME_ID` 통합(폰 "냉장고 위치 여기로 맞춰줘" → layout·focus·저장) |
+| `react` | 추론 과정: 서버 안 에이전트 도구의 필수 reason(MCP에는 없음), 실행 전 떼기, 관찰 문장, mock reason |
 | `e2e` | `startServer()`(npm start 경로)로 실제 기기 65개 MatterHub를 띄우고: 데모 시나리오를 REST 에이전트로 돌려 **브리지의 Matter 속성**(`onOff`, `occupiedCoolingSetpoint`, `currentPositionLiftPercent100ths`, `lockState`)과 WS 이벤트를 확인, MCP 클라이언트로 `turn_on`·`unlock`→`confirm_action`, network 전송으로 같은 흐름 + 기기 쪽 변경이 구독으로 WS까지 오는지 + 페어링 창, 커미셔닝 제한 시간 초과 → local 대체 |
 
 ## 제한 사항
