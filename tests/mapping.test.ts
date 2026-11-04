@@ -90,6 +90,13 @@ describe("describeDevice: plan 매핑 표", () => {
     expect(describeDevice("tv", POWER)!.sensors).toEqual([]);
   });
 
+  it("집 전용 크기 변형(끝 _숫자)·냉동고는 원래 종류 규칙을 쓴다", () => {
+    expect(describeDevice("wall_ac_2", POWER)!.kind).toBe("aircon");
+    expect(describeDevice("fridge_3", { door: ["closed", "open"] })!.kind).toBe("fridge");
+    expect(describeDevice("freezer", { door: ["closed", "open"] })!.kind).toBe("fridge");
+    expect(describeDevice("sofa_2", {})).toBeNull();
+  });
+
   it("twin 전용·모르는 종류는 null", () => {
     expect(describeDevice("wall_pad", { screen: ["off", "on"] })).toBeNull();
     expect(describeDevice("robot", { mode: ["sleep", "active"] })).toBeNull();

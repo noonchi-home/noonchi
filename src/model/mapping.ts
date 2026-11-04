@@ -106,7 +106,7 @@ export const TYPE_RULES: TypeRule[] = [
   { types: ["dishwasher"], kind: "dishwasher" },
   { types: ["washer"], kind: "washer" },
   { types: ["dryer"], kind: "dryer" },
-  { types: ["fridge", "kimchi_fridge"], kind: "fridge" },
+  { types: ["fridge", "kimchi_fridge", "freezer"], kind: "fridge" },
   { types: ["robot_vacuum"], kind: "vacuum" },
   { prefixes: ["curtain_", "blind_"], kind: "covering" },
   { types: ["door_main"], kind: "lock" },
@@ -176,8 +176,10 @@ export function openPercentFromLift(lift100ths: number): number {
 
 // ── 종류 판정 ──────────────────────────────────────────────
 
+/** 집 전용 크기 변형(twin-studio import-labels가 붙이는 wall_ac_2 같은 _숫자)은 원래 종류 규칙을 쓴다. */
 export function findTypeRule(twinType: string): TypeRule | undefined {
-  return TYPE_RULES.find((r) => r.types?.includes(twinType) || r.prefixes?.some((p) => twinType.startsWith(p)));
+  const match = (t: string) => TYPE_RULES.find((r) => r.types?.includes(t) || r.prefixes?.some((p) => t.startsWith(p)));
+  return match(twinType) ?? match(twinType.replace(/_\d+$/, ""));
 }
 
 export interface DeviceDescription {
