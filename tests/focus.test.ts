@@ -81,7 +81,7 @@ describe("HOME_ID로 고른 집: 폰 말 → 배치 보정 → 초점", () => {
   it("폰이 '냉장고 위치 여기로 맞춰줘'라고 하면 조준점으로 옮기고, 대시보드에 layout·초점, 폰에 답·초점이 간다", async () => {
     const { studio, runtime } = studioFixture();
     srv = await startServer({
-      env: { HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock", TWIN_STUDIO_DIR: studio, HOME_ID: "oneroom", RUNTIME_DIR: runtime, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1" },
+      env: { HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock", TWIN_STUDIO_DIR: studio, HOME_ID: "oneroom", RUNTIME_DIR: runtime, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", FOCUS: "1" },
       log: () => {},
     });
     const health = (await (await fetchRetry(`${srv.url}/api/health`)).json()) as Msg;
@@ -118,11 +118,28 @@ describe("HOME_ID로 고른 집: 폰 말 → 배치 보정 → 초점", () => {
 
   it("대시보드 채팅으로 기기를 켜도 그 기기에 초점이 간다", async () => {
     const { studio, runtime } = studioFixture();
-    srv = await startServer({ env: { HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock", TWIN_STUDIO_DIR: studio, HOME_ID: "oneroom", RUNTIME_DIR: runtime }, log: () => {} });
+    srv = await startServer({ env: { HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock", TWIN_STUDIO_DIR: studio, HOME_ID: "oneroom", RUNTIME_DIR: runtime, FOCUS: "1" }, log: () => {} });
     const dash = await listen(`${srv.url.replace(/^http/, "ws")}/events`);
     const res = await fetchRetry(`${srv.url}/api/agent/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "TV 켜줘", sessionId: "s1" }) });
     expect(((await res.json()) as Msg).reply).toMatch(/켰어요/);
     const focus = await dash.waitFor((m) => m.type === "focus");
     expect(focus.focus.targets.map((t: Msg) => t.id)).toEqual(["tv_1"]);
+  });
+
+  it("FOCUS가 없으면(기본) 초점을 대시보드에도 폰에도 보내지 않는다", async () => {
+    const { studio, runtime } = studioFixture();
+    srv = await startServer({ env: { HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock", TWIN_STUDIO_DIR: studio, HOME_ID: "oneroom", RUNTIME_DIR: runtime, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1" }, log: () => {} });
+    const dash = await listen(`${srv.url.replace(/^http/, "ws")}/events`);
+    const phoneUrl = new URL(srv.phoneUrls[0]!);
+    const phone = await listen(`ws://${phoneUrl.host}/phone/events`);
+    phone.ws.send(JSON.stringify({ type: "anchor", id: "dock", point: [1, 0, 3] }));
+    phone.ws.send(JSON.stringify({ type: "anchor", id: "door_main", point: [3, 0, 5] }));
+    await phone.waitFor((m) => m.type === "status" && m.aligned);
+    const res = await fetchRetry(`${srv.url}/api/agent/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "TV 켜줘", sessionId: "s1" }) });
+    expect(((await res.json()) as Msg).reply).toMatch(/켰어요/);
+    await dash.waitFor((m) => m.type === "agent" && m.event === "reply");
+    await new Promise((r) => setTimeout(r, 400));
+    expect(dash.messages.some((m) => m.type === "focus")).toBe(false);
+    expect(phone.messages.some((m) => m.type === "focus")).toBe(false);
   });
 });

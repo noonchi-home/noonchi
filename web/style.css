@@ -256,6 +256,24 @@ button.active { background: var(--accent-soft); border-color: var(--accent); col
 .twin-body iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
 .twin-msg { position: absolute; inset: 0; margin: 0; display: grid; place-items: center; padding: 16px; text-align: center; color: var(--muted); background: var(--panel-2); }
 
+/* 폰 기준점(벽 대기 맞춤): 3D 칸 위 왼쪽에 뜨는 작은 패널 */
+.pane-head button.small { white-space: nowrap; }
+.touch-panel { position: absolute; z-index: 3; bottom: 8px; left: 8px; width: min(360px, calc(100% - 16px)); padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); box-shadow: 0 4px 16px rgb(0 0 0 / 0.15); font-size: 13px; }
+.touch-help { margin: 0 0 8px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.touch-row { display: grid; grid-template-columns: auto 1fr auto; gap: 6px; align-items: center; margin-bottom: 6px; }
+.touch-row input { min-width: 0; }
+.touch-pos { grid-column: 2 / 4; color: var(--muted); font-size: 12px; }
+.touch-id { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; color: #fff; font-size: 12px; }
+.touch-id.a { background: #e8590c; }
+.touch-id.b { background: #1c7ed6; }
+.touch-info { margin: 6px 0; font-size: 12px; }
+.touch-info.error { color: #d6336c; }
+.touch-actions { display: flex; gap: 6px; justify-content: flex-end; }
+#touch-toggle[aria-expanded="true"] { background: var(--accent-soft); }
+/* 3D에서 고르는 동안은 안내 한 줄과 취소만 남겨 3D를 가리지 않는다 */
+.touch-panel.picking > :not(.touch-info, .touch-actions) { display: none; }
+.touch-panel.picking #touch-save, .touch-panel.picking #touch-clear { display: none; }
+
 /* 클로이드의 눈: 폰 카메라 실시간 화면(표시 전용) */
 .eye-body { position: relative; flex: 1; min-height: 0; background: #1d1f22; }
 .eye { position: absolute; inset: 0; margin: 0; }

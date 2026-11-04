@@ -511,6 +511,125 @@ const layout = {
   },
 };
 
+// ── 폰 기준점(벽 대기 맞춤) ──────────────────────────────
+// 3D 트윈에서 벽 두 곳(A·B)을 골라 저장하면 폰이 실제 그 벽 바로 아래 바닥을 조준해 수평을 맞춘다(높이는 눈높이 고정).
+// 고르기는 같은 출처 iframe의 뷰어 API(aptViewer.startPick)를 쓰고, 저장된 점은 3D에 핀으로 보인다.
+
+const touch = {
+  points: { A: null, B: null }, // {position}
+  saved: false,
+  viewer() {
+    try {
+      return $("#twin-frame").contentWindow?.aptViewer ?? null;
+    } catch {
+      return null;
+    }
+  },
+  info(text, error = false) {
+    $("#touch-info").textContent = text;
+    $("#touch-info").classList.toggle("error", error);
+  },
+  list() {
+    return ["A", "B"].map((id) => ({ id, label: $(`#touch-label-${id}`).value.trim(), position: this.points[id]?.position ?? null }));
+  },
+  render() {
+    for (const p of this.list()) {
+      $(`#touch-pos-${p.id}`).textContent = p.position ? `벽 위치 (${p.position[0].toFixed(2)}, ${p.position[1].toFixed(2)})m` : "미지정";
+    }
+    const [a, b] = this.list();
+    $("#touch-save").disabled = !(a.position && b.position);
+    $("#touch-clear").disabled = !a.position && !b.position && !this.saved;
+  },
+  distance() {
+    const [a, b] = this.list();
+    return a.position && b.position ? Math.hypot(b.position[0] - a.position[0], b.position[1] - a.position[1]) : null;
+  },
+  showMarkers() {
+    const v = this.viewer();
+    if (!v?.setTouchPoints) return false;
+    v.setTouchPoints(this.list().filter((p) => p.position).map((p) => ({ ...p, label: p.label || `${p.id} 지점` })));
+    return true;
+  },
+  pick(id) {
+    const v = this.viewer();
+    if (!v?.startPick) {
+      this.info("3D 트윈이 아직 준비되지 않았어요. 잠시 뒤 다시 눌러 주세요.", true);
+      return;
+    }
+    // 이미 고르는 중이면 startPick이 이전 것을 먼저 취소(콜백 null)하므로 접기는 그 뒤에 한다
+    v.startPick((hit) => {
+      this.picking(false);
+      if (!hit) {
+        this.info("고르기를 취소했어요.");
+        return;
+      }
+      this.points[id] = { position: hit.position };
+      this.render();
+      this.showMarkers();
+      const d = this.distance();
+      this.info(d === null ? `${id} 지점을 골랐어요. 다른 지점도 고르세요.` : `A–B 수평 거리 ${d.toFixed(2)}m. 저장하면 폰이 이 두 벽으로 맞춰요.`);
+    });
+    this.picking(true);
+    this.info(`3D 트윈에서 ${id} 지점의 벽을 누르세요(가구는 뚫고 벽을 잡아요).`);
+  },
+  async save() {
+    const [a, b] = this.list();
+    const r = await api("/api/phone/touch-points", { points: [a, b].map((p) => ({ label: p.label, position: p.position })) });
+    if (r.status !== 200 || !r.json.ok) {
+      this.info(r.json.error ?? "저장하지 못했어요.", true);
+      return;
+    }
+    this.apply(r.json);
+    this.info(`저장했어요. A–B ${r.json.distance_m.toFixed(2)}m. 폰 화면에 A·B 기록 버튼이 떠요.`);
+    addMessage("system", `폰 기준점을 저장했어요: A ${r.json.points[0].label}, B ${r.json.points[1].label} (거리 ${r.json.distance_m.toFixed(2)}m).`);
+  },
+  async clear() {
+    const r = await api("/api/phone/touch-points/clear", {});
+    if (r.status !== 200 || !r.json.ok) {
+      this.info(r.json.error ?? "지우지 못했어요.", true);
+      return;
+    }
+    this.apply(r.json);
+    this.info("지웠어요. 폰은 평면도 바닥 기준점으로 맞춰요.");
+  },
+  apply(view) {
+    this.saved = Boolean(view.points);
+    for (const id of ["A", "B"]) {
+      const p = view.points?.find((x) => x.id === id) ?? null;
+      this.points[id] = p ? { position: p.position } : null;
+      $(`#touch-label-${id}`).value = p?.label ?? "";
+    }
+    if (typeof view.eye_height_m === "number") $("#touch-eye").textContent = String(view.eye_height_m);
+    this.render();
+    this.showMarkers();
+  },
+  picking(on) {
+    $("#touch-panel").classList.toggle("picking", on);
+    $("#touch-cancel").hidden = !on;
+  },
+  open(on) {
+    $("#touch-panel").hidden = !on;
+    $("#touch-toggle").setAttribute("aria-expanded", String(on));
+    if (!on) this.viewer()?.cancelPick?.();
+  },
+  async init() {
+    const r = await api("/api/phone/touch-points");
+    if (r.status !== 200 || !r.json.ok) return; // 집 scene.json이 없으면 쓰지 않는다
+    $("#touch-toggle").hidden = false;
+    $("#touch-toggle").addEventListener("click", () => this.open($("#touch-panel").hidden));
+    for (const id of ["A", "B"]) {
+      $(`#touch-pick-${id}`).addEventListener("click", () => this.pick(id));
+      $(`#touch-label-${id}`).addEventListener("input", () => this.showMarkers());
+    }
+    $("#touch-save").addEventListener("click", () => this.save());
+    $("#touch-cancel").addEventListener("click", () => this.viewer()?.cancelPick?.());
+    $("#touch-clear").addEventListener("click", () => this.clear());
+    this.apply(r.json);
+    // 뷰어가 늦게 뜨면 핀을 다시 그린다
+    $("#twin-frame").addEventListener("load", () => setTimeout(() => this.showMarkers(), 500));
+  },
+};
+
 // 초점: 클로이드가 방금 다룬 물건. 3D 트윈(뷰어 고리)과 폰 화면에 표시되고, 눈 캡션과 마지막 과정 카드에 남는다.
 let focusTimer = null;
 let focusing = false;
@@ -684,6 +803,7 @@ async function init() {
   initTwin(health);
   initEye(health);
   layout.init();
+  touch.init();
   app.rooms = rooms.json;
   for (const d of devices.json) app.devices.set(d.id, d);
   renderFilter();

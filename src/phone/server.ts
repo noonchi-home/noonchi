@@ -12,8 +12,8 @@ import { serveFile } from "../server/static.js";
 import type { AnchorTarget } from "./anchors.js";
 import type { EyeFeed } from "./feed.js";
 import { MAX_PACKET_BYTES, parseFramePacket } from "./packet.js";
-import type { Vec3 } from "./align.js";
-import { PhoneSession, type EyeEvent, type HerePoint } from "./session.js";
+import type { Plan2, Vec3 } from "./align.js";
+import { PhoneSession, type AlignMode, type EyeEvent, type FallbackViewpoint, type HerePoint } from "./session.js";
 
 const DEFAULT_WEB_DIR = fileURLToPath(new URL("../../web/phone/", import.meta.url));
 
@@ -24,6 +24,14 @@ export interface PhoneServerOptions {
   feed?: EyeFeed;
   /** 기준점 거리 차이 허용값(m). 기본 0.3. */
   maxMismatchM?: number;
+  /** 있으면 맞추기 전에도 창가 고정 위치 + 폰 방향으로 추정 눈을 보낸다(session.ts estimateFor). */
+  fallback?: FallbackViewpoint;
+  /** 기준점 방식(기본 floor). touch면 targets는 대시보드에서 고른 벽 지점 A·B다(touch.ts). */
+  mode?: AlignMode;
+  /** touch 모드의 눈 높이(방 바닥 위 m, 기본 1.5). */
+  eyeHeightM?: number;
+  /** 평면 점이 있는 방의 바닥 높이(touch 모드 눈 높이에 더한다). */
+  floorAt?: (p: Plan2) => number;
   webDir?: string;
   log?: (msg: string) => void;
   /** 폰에서 말하거나 쓴 문장(음성 인식 결과). 에이전트 답과 승인 대기를 돌려준다. */
@@ -52,6 +60,8 @@ export interface PhoneServer {
   here(): HerePoint;
   /** 클로이드가 지금 다루는 물건을 폰 화면에 표시하게 보낸다(맞추기 전이면 보내지 않는다). */
   sendFocus(targets: FocusTarget[], ttlMs: number): void;
+  /** 기준점·방식을 바꾸고(기록·맞춤은 지움) 연결된 폰에 새 상태를 보낸다. */
+  setTargets(targets: AnchorTarget[], mode: AlignMode): void;
   listen(port: number, host: string): Promise<{ port: number; urls: string[] }>;
   close(): Promise<void>;
 }
@@ -78,7 +88,9 @@ export function lanUrls(port: number, host: string): string[] {
 export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
   const webDir = resolve(opts.webDir ?? DEFAULT_WEB_DIR);
   const log = opts.log ?? ((m: string) => console.log(m));
-  const session = new PhoneSession(opts.targets, { maxMismatchM: opts.maxMismatchM });
+  const session = new PhoneSession(opts.targets, {
+    maxMismatchM: opts.maxMismatchM, fallback: opts.fallback, mode: opts.mode, eyeHeightM: opts.eyeHeightM, floorAt: opts.floorAt,
+  });
 
   const server = createServer((req, res) => {
     const path = new URL(req.url ?? "/", "http://localhost").pathname;
@@ -121,7 +133,9 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
       opts.feed.pushFrame(jpeg, header.width, header.height);
       return;
     }
-    const eye = header.position && header.orientation ? session.eyeFor(header.position, header.orientation, header.tracking ?? "ok") : null;
+    const eye = header.position && header.orientation
+      ? session.eyeAt(header.position, header.orientation, header.tracking ?? "ok", header.epoch)
+      : null;
     const photo = opts.feed.savePhoto(jpeg, header.width, header.height, eye);
     reply(ws, { type: "photo_saved", id: photo.id, aligned: eye !== null });
   };
@@ -182,6 +196,10 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
         targets: targets.map((t) => ({ id: t.id, label: t.label, ar: session.toAr(t.position)! })),
       });
       for (const ws of wss.clients) if (ws.readyState === WebSocket.OPEN) ws.send(msg);
+    },
+    setTargets(targets, mode) {
+      session.setTargets(targets, mode);
+      for (const ws of wss.clients) reply(ws, session.status());
     },
     async listen(port, host) {
       const addr = await listenRetry(server, port, host, { log });

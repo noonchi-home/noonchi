@@ -8,28 +8,29 @@ button { font: inherit; padding: 10px 14px; border-radius: 10px; border: 1px sol
 #overlay[hidden] { display: none; }
 #reticle { position: fixed; left: 50%; top: 50%; width: 28px; height: 28px; margin: -14px 0 0 -14px; border: 3px solid #b3423a; border-radius: 50%; }
 #reticle.hit { border-color: #3f7d4f; }
-/* 가로 촬영용 AR 화면: 위 상태 줄, 오른쪽 큰 버튼, 나머지는 ⋯ 메뉴 */
+/* AR 화면(세로 기준): 위 상태 줄, 아래 큰 버튼 줄, 나머지는 ⋯ 메뉴. 가로로 돌리면 버튼을 오른쪽 세로 줄로 */
 .topbar { position: fixed; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 10px; padding: 4px 8px 4px 12px; background: rgb(0 0 0 / 0.45); }
 .topbar #status { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .topbar .perf { font-variant-numeric: tabular-nums; opacity: 0.85; white-space: nowrap; }
 .topbar #more { padding: 2px 12px; font-size: 18px; line-height: 1.2; background: rgb(255 255 255 / 0.15); color: #fff; border-color: transparent; }
-.anchors { position: fixed; left: 12px; bottom: 12px; display: flex; flex-direction: column; gap: 8px; max-width: 42vw; }
+.anchors { position: fixed; left: 12px; right: 12px; bottom: 96px; display: flex; flex-direction: column; gap: 8px; }
 .anchors[hidden] { display: none; }
 .anchors button { background: rgb(255 255 255 / 0.94); color: #34383e; text-align: left; font-size: 13px; padding: 8px 12px; }
-.side { position: fixed; right: 10px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 10px; }
+.side { position: fixed; left: 0; right: 0; bottom: 14px; display: flex; flex-direction: row; justify-content: center; gap: 14px; }
 .side button { width: 76px; height: 64px; padding: 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 22px; line-height: 1; background: rgb(255 255 255 / 0.92); color: #34383e; border: none; box-shadow: 0 2px 8px rgb(0 0 0 / 0.25); touch-action: none; user-select: none; -webkit-user-select: none; }
 .side button span { font-size: 12px; }
 .side .talk-btn { background: #2f6fde; color: #fff; }
 .side .talk-btn.listening { background: #b3423a; }
-.toast { position: fixed; left: 50%; top: 44px; transform: translateX(-50%); max-width: min(60vw, 520px); margin: 0; padding: 8px 14px; border-radius: 12px; background: rgb(255 255 255 / 0.94); color: #34383e; text-align: center; }
+.toast { position: fixed; left: 50%; top: 44px; transform: translateX(-50%); max-width: min(90vw, 520px); margin: 0; padding: 8px 14px; border-radius: 12px; background: rgb(255 255 255 / 0.94); color: #34383e; text-align: center; }
 .toast[hidden] { display: none; }
-.pending-slot { position: fixed; left: 50%; top: 96px; transform: translateX(-50%); width: min(56vw, 480px); color: #34383e; }
-.menu { position: fixed; top: 40px; right: 96px; width: min(380px, 60vw); max-height: calc(100vh - 56px); overflow: auto; display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 12px; background: rgb(255 255 255 / 0.96); color: #34383e; }
+.pending-slot { position: fixed; left: 50%; top: 96px; transform: translateX(-50%); width: min(90vw, 480px); color: #34383e; }
+.menu { position: fixed; top: 40px; right: 8px; width: min(380px, calc(100vw - 16px)); max-height: calc(100vh - 140px); overflow: auto; display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 12px; background: rgb(255 255 255 / 0.96); color: #34383e; }
 .menu[hidden] { display: none; }
 .perf-detail { margin: 0; padding: 6px 8px; border-radius: 8px; background: #f2efe9; font-size: 12px; white-space: pre-wrap; }
-.rotate { display: none; position: fixed; left: 50%; top: 40%; transform: translate(-50%, -50%); margin: 0; padding: 10px 16px; border-radius: 12px; background: rgb(0 0 0 / 0.7); font-size: 16px; }
-@media (orientation: portrait) {
-  .rotate { display: block; }
+@media (orientation: landscape) {
+  .side { left: auto; right: 10px; bottom: auto; top: 50%; transform: translateY(-50%); flex-direction: column; gap: 10px; }
+  .anchors { right: auto; bottom: 12px; max-width: 42vw; }
+  .menu { right: 96px; width: min(380px, 60vw); max-height: calc(100vh - 56px); }
 }
 
 /* 대화(말하기·글 입력·답·승인) */

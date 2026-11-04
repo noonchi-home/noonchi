@@ -17,6 +17,8 @@ const HeaderSchema = z.object({
   position: z.tuple([num, num, num]).optional(),
   orientation: z.tuple([num, num, num, num]).optional(),
   tracking: z.enum(["ok", "limited"]).optional(),
+  /** 찍은 순간의 AR 원점(session.ts). 사진 위치는 이 원점이 지금 맞춤과 같을 때만 붙인다. */
+  epoch: z.string().min(1).max(64).optional(),
 });
 
 export interface FrameHeader {
@@ -26,6 +28,7 @@ export interface FrameHeader {
   position?: Vec3;
   orientation?: Quat;
   tracking?: "ok" | "limited";
+  epoch?: string;
 }
 
 export function encodeFramePacket(header: FrameHeader, jpeg: Uint8Array): Buffer {

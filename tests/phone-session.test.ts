@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadAnchorTargets, type AnchorTarget } from "../src/phone/anchors.js";
-import { PhoneSession } from "../src/phone/session.js";
+import { PhoneSession, estimateViewpoint } from "../src/phone/session.js";
 
 const TARGETS: AnchorTarget[] = [
   { id: "dock", label: "도크", plan: [3.9, 5.51] },
@@ -161,5 +161,58 @@ describe("여기(조준점)와 트윈 → AR", () => {
     s.handle({ type: "pose", position: [0, 1.4, 0], orientation: [0, 0, 0, 1], hit: ar });
     const here = s.here() as { position: [number, number] };
     here.position.forEach((v, i) => expect(v).toBeCloseTo([1, 2][i]!, 3));
+  });
+});
+
+describe("맞추기 전 추정 눈(창가 고정 위치 + 폰 방향)", () => {
+  const FALLBACK = { position: [2, 0.8] as [number, number], yawDeg: 90, heightM: 1.3 };
+  const s45 = Math.SQRT1_2;
+
+  it("AR 시작 방향(-Z)을 창에서 방 안쪽으로 보고, 돌리면 yaw·기울이면 pitch가 바뀐다(위치는 고정)", () => {
+    const s = new PhoneSession(TARGETS, { now: () => new Date("2026-10-24T10:00:00Z"), fallback: FALLBACK });
+    expect(s.handle({ type: "pose", position: [0, 1.4, 0], orientation: [0, 0, 0, 1] })).toEqual({
+      eye: { position: [2, 0.8], height_m: 1.3, yaw_deg: 90, pitch_deg: 0, tracking: "ok", at: "2026-10-24T10:00:00.000Z", estimated: true },
+    });
+    // +Y로 90° 돌림(위에서 보면 왼쪽으로): 남쪽(90) → 동쪽(0). 걸어도 위치는 그대로
+    const left = s.handle({ type: "pose", position: [3, 1.2, -2], orientation: [0, s45, 0, s45] }).eye!;
+    expect(left).toMatchObject({ position: [2, 0.8], height_m: 1.3, yaw_deg: 0, estimated: true });
+    // 아래로 30° 기울임
+    const sin15 = Math.sin(-Math.PI / 12);
+    const down = s.handle({ type: "pose", position: [0, 1.4, 0], orientation: [sin15, 0, 0, Math.cos(-Math.PI / 12)] }).eye!;
+    expect(down.pitch_deg).toBeCloseTo(-30, 1);
+    expect(down.yaw_deg).toBeCloseTo(90, 1);
+  });
+
+  it("사진(eyeFor)에는 추정 눈을 쓰지 않고, 맞춘 뒤에는 진짜 자세(estimated 없음)", () => {
+    const s = new PhoneSession(TARGETS, { now: () => new Date("2026-10-24T10:00:00Z"), fallback: FALLBACK });
+    expect(s.eyeFor([0, 1.4, 0], [0, 0, 0, 1], "ok")).toBeNull();
+    s.handle({ type: "anchor", id: "dock", point: [3.9, 0, 5.51] });
+    s.handle({ type: "anchor", id: "door_main", point: [2.4, 0, 3.55] });
+    const eye = s.handle({ type: "pose", position: [3.9, 1.4, 5], orientation: [0, 0, 0, 1] }).eye!;
+    expect(eye.position).toEqual([3.9, 5]);
+    expect(eye).not.toHaveProperty("estimated");
+  });
+
+  it("추정 기준이 없으면 맞추기 전에는 아무것도 보내지 않는다(예전 그대로)", () => {
+    const s = new PhoneSession(TARGETS);
+    expect(s.handle({ type: "pose", position: [0, 1.4, 0], orientation: [0, 0, 0, 1] })).toEqual({});
+  });
+});
+
+describe("estimateViewpoint: 가장 넓은 방의 창에서 방 안쪽으로 0.8m", () => {
+  const rooms = [
+    { id: "room", polygon: [[0, 0], [4, 0], [4, 4], [0, 4]] },
+    { id: "bath", polygon: [[0, 4], [1.7, 4], [1.7, 6.6], [0, 6.6]] },
+  ];
+  it("창이 있으면 창 → 방 무게중심 방향", () => {
+    const v = estimateViewpoint({ plan: { rooms, windows: [{ id: "w_bath", position: [0, 5], width: 0.9, room: "bath" }, { id: "win_room", position: [2, 0], width: 1.65, room: "room" }] } });
+    expect(v.position[0]).toBeCloseTo(2);
+    expect(v.position[1]).toBeCloseTo(0.8);
+    expect(v.yawDeg).toBeCloseTo(90);
+    expect(v.heightM).toBe(1.3);
+  });
+  it("창이 없으면 가장 넓은 방 무게중심, yaw 90", () => {
+    const v = estimateViewpoint({ plan: { rooms, windows: [] } });
+    expect(v).toEqual({ position: [2, 2], yawDeg: 90, heightM: 1.3 });
   });
 });

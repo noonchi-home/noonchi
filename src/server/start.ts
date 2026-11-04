@@ -1,5 +1,6 @@
 // 서버 시작(npm start·데모·e2e 테스트 공용): twin 데이터 → 허브(기본 matter, 대체 경로 포함) → 정책·에이전트 → HTTP/WS.
 
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Agent } from "../agent/agent.js";
@@ -14,6 +15,9 @@ import { listHomes } from "../model/homes.js";
 import { loadAnchorTargets } from "../phone/anchors.js";
 import { EyeFeed } from "../phone/feed.js";
 import { createPhoneServer, type PhoneServer } from "../phone/server.js";
+import { estimateViewpoint } from "../phone/session.js";
+import { TouchStore, eyeHeightOf, floorLookup, homeBounds, readTouchPoints, touchPointsPath, touchTargets, type TouchPoint } from "../phone/touch.js";
+import type { AnchorTarget } from "../phone/anchors.js";
 import { createApp, type TwinHomeApp } from "./app.js";
 import { startHub, type HubKind, type MatterTransport, type StartHubOptions } from "./hubFactory.js";
 
@@ -26,7 +30,8 @@ const DEFAULT_RUNTIME_DIR = fileURLToPath(new URL("../../runtime/", import.meta.
 export interface StartServerOptions {
   /** 기본 process.env. HUB, MATTER_*, AGENT_PROVIDER, TWIN_STUDIO_DIR, HOME_ID(twin-studio homes.json의 집, 기본 집), PORT(0이면 빈 포트), HOST,
    *  PHONE_PORT(있으면 폰 AR 서버), PHONE_HOST(기본 0.0.0.0), PHONE_MAX_MISMATCH_M(기준점 거리 차이 허용값, 기본 0.3),
-   *  PHONE_PHOTO_DIR(사진 폴더, 기본 runtime/photos), RUNTIME_DIR(배치 수정본 runtime/homes/<id>/edits.json의 바탕, 기본 runtime)를 읽는다. */
+   *  PHONE_EYE_HEIGHT_M(벽 대기 맞춤의 눈 높이, 기본 1.5),
+   *  FOCUS(1이면 초점 표시를 보낸다, 기본 끔), PHONE_PHOTO_DIR(사진 폴더, 기본 runtime/photos), RUNTIME_DIR(배치 수정본 runtime/homes/<id>/edits.json의 바탕, 기본 runtime)를 읽는다. */
   env?: Env;
   log?: (line: string) => void;
   /** 테스트용: matter 모듈 불러오기. */
@@ -57,6 +62,16 @@ export interface RunningServer {
   close(): Promise<void>;
 }
 
+/** scene.json plan.rooms(기준점 범위 검사·방 바닥 높이). 읽지 못하면 빈 목록. */
+function sceneRooms(scenePath: string): { polygon?: number[][]; floor_z?: number }[] {
+  try {
+    const scene = JSON.parse(readFileSync(scenePath, "utf8").replace(/^﻿/, "")) as { plan?: { rooms?: { polygon?: number[][]; floor_z?: number }[] } };
+    return scene.plan?.rooms ?? [];
+  } catch {
+    return [];
+  }
+}
+
 export async function startServer(opts: StartServerOptions = {}): Promise<RunningServer> {
   const env = opts.env ?? process.env;
   const log = opts.log ?? ((line: string) => console.log(line));
@@ -84,9 +99,27 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     const feed = phoneOn
       ? new EyeFeed({ photoDir: env.PHONE_PHOTO_DIR?.trim() || join(runtimeDir, "photos"), broadcast: (m) => appRef.current?.broadcast(m) })
       : undefined;
+    // 벽 대기 맞춤 기준점 A·B(대시보드에서 고름). 저장·지우면 실행 중인 폰 세션의 기준점이 바로 바뀐다
+    const eyeHeightM = eyeHeightOf(env.PHONE_EYE_HEIGHT_M);
+    const touchPath = touchPointsPath(runtimeDir, home.id);
+    let savedTouch: TouchPoint[] | null = null;
+    try {
+      savedTouch = readTouchPoints(touchPath);
+    } catch (e) {
+      log(`[경고] ${(e as Error).message}. 평면도 바닥 기준점으로 맞춥니다.`);
+    }
+    const phoneRef: { current?: PhoneServer; floor?: AnchorTarget[] } = {};
+    const touchStore = existsSync(home.scenePath)
+      ? new TouchStore(touchPath, homeBounds(sceneRooms(home.scenePath)), (points) => {
+        if (!phoneRef.current || !phoneRef.floor) return;
+        if (points) phoneRef.current.setTargets(touchTargets(points), "touch");
+        else phoneRef.current.setTargets(phoneRef.floor, "floor");
+      }, savedTouch)
+      : undefined;
     const app = createApp({
       hub, policy, agent, rooms: twin.rooms, twinDir, viewerDir: home.viewerDir, libraryDir: home.libraryDir, hubKind, log, eye: feed,
       home: { id: home.id, name: home.name }, homes: listHomes(twin.dir), layout: layout?.editor, phoneUrls: () => phoneUrls,
+      touch: touchStore && { get: () => touchStore.get(), save: (raw) => touchStore.save(raw), clear: () => touchStore.clear(), eyeHeightM },
     });
     appRef.current = app;
     const wanted = Number(env.PORT ?? 8200);
@@ -96,10 +129,14 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     let phoneUrls: string[] = [];
     if (phoneOn) {
       try {
-        const targets = loadAnchorTargets(home.scenePath, join(home.dataDir, "floorplan.json"));
+        const floor = loadAnchorTargets(home.scenePath, join(home.dataDir, "floorplan.json"));
+        const touch = touchStore?.get() ?? null;
+        // 맞추기 전에도 원뿔이 보이게: 창가 고정 위치 + 폰 방향(추정, 사진에는 쓰지 않음)
+        const fallback = estimateViewpoint(JSON.parse(readFileSync(home.scenePath, "utf8").replace(/^﻿/, "")));
         const maxMismatch = Number(env.PHONE_MAX_MISMATCH_M);
         phone = createPhoneServer({
-          targets, feed, log,
+          targets: touch ? touchTargets(touch) : floor, mode: touch ? "touch" : "floor", eyeHeightM, feed, log, fallback,
+          floorAt: floorLookup(sceneRooms(home.scenePath)),
           maxMismatchM: Number.isFinite(maxMismatch) && maxMismatch > 0 ? maxMismatch : undefined,
           onEye: (eye) => app.broadcast({ type: "eye", eye }),
           // 폰에서 말한 것은 "phone" 세션 하나로 이어진다(대시보드 대화와 따로 기억)
@@ -111,6 +148,8 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
           onCancel: async (token) => ({ reply: agent.cancel(token).reply }),
         });
         const phoneServer = phone;
+        phoneRef.current = phone;
+        phoneRef.floor = floor;
         layout?.editor.setHere(() => phoneServer.here());
         const wantedPhone = Number(env.PHONE_PORT);
         const listened = await phone.listen(Number.isInteger(wantedPhone) && wantedPhone >= 0 ? wantedPhone : 8210, env.PHONE_HOST?.trim() || "0.0.0.0");
@@ -128,7 +167,9 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       phone?.sendFocus(targets, FOCUS_TTL_MS);
     };
     const locate = (id: string) => layout?.editor.center(id);
-    const unsubFocus = agent.subscribe((e) => {
+    // 초점 표시는 기본으로 끈다(사용자 요청). FOCUS=1일 때만 대시보드·폰·3D에 보낸다
+    const focusOn = /^(1|true|on)$/i.test(env.FOCUS?.trim() ?? "");
+    const unsubFocus = !focusOn ? () => {} : agent.subscribe((e) => {
       if (e.event === "reply") sendFocus(focusFromActions(e.actions, locate));
       else if (e.event === "confirmed" && e.ok && e.deviceId) sendFocus(focusFromActions([{ tool: "confirm", args: {}, ok: true, deviceId: e.deviceId, at: "" }], locate));
     });
