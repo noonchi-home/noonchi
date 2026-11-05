@@ -1,6 +1,6 @@
-// 설정 2단계 가전 검색(web/setup/device-search.js): 이름·종류·방·id, 띄어쓰기 무시, 초성.
+// 설정 2단계 가전 검색(ui/src/setup/device-search.ts): 이름·종류·방·id, 띄어쓰기 무시, 초성.
 import { describe, expect, it } from "vitest";
-import { searchDevices } from "../web/setup/device-search.js";
+import { searchDevices } from "../src/setup/device-search";
 
 const devices = [
   { id: "fridge_1", label: "냉장고", kindLabel: "냉장고", roomLabel: "주방" },
