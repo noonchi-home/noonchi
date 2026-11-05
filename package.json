@@ -12,6 +12,7 @@
     "dev": "tsx watch src/server/main.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
+    "lint": "tsx scripts/lint-ui-copy.ts",
     "demo": "tsx scripts/demo.ts",
     "mcp": "tsx src/mcp/server.ts"
   },

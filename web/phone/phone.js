@@ -81,7 +81,7 @@ function connect() {
   ws.addEventListener("message", (event) => {
     const msg = JSON.parse(event.data);
     if (msg.type === "status") render(msg);
-    else if (msg.type === "photo_saved") toast(msg.answer ? "컵 안 사진을 보냈어요(요청 답)" : msg.aligned ? "사진을 보냈어요(찍은 위치 포함)" : "사진을 보냈어요. 아직 맞추기 전이라 위치는 없어요");
+    else if (msg.type === "photo_saved") toast(msg.answer ? "요청한 컵 사진을 보냈어요" : msg.aligned ? "사진을 위치와 함께 보냈어요" : "위치 없이 사진을 보냈어요");
     else if (msg.type === "reply") showReply(msg);
     else if (msg.type === "focus") focus = { targets: msg.targets ?? [], until: performance.now() + (msg.ttl_ms ?? 8000) };
     else if (msg.type === "clock") onClock(msg);
@@ -157,7 +157,7 @@ function note(text) {
 
 function renderStatus() {
   const base = view.aligned
-    ? `맞춤 ✓${alignMode === "touch" ? "(근사)" : ""} · 거리 차이 ${Math.round(view.mismatch * 100)}cm${view.limited ? " · 추적 약함" : ""}`
+    ? `${alignMode === "touch" ? "근사 " : ""}맞춤 ✓ · 거리 차이 ${Math.round(view.mismatch * 100)}cm${view.limited ? " · 추적 약함" : ""}`
     : alignMode === "touch"
       ? `맞추기 전 · 벽 지점 ${view.anchors} 기록`
       : `맞추기 전 · 창가 기준 방향만 · 기준점 ${view.anchors} 기록`;
@@ -170,8 +170,8 @@ function render(s) {
   alignMode = s.mode ?? "floor";
   const names = s.anchors.map((a) => (alignMode === "touch" ? `${a.id} ${a.label}` : a.label)).join(", ");
   $("align-help").innerHTML = alignMode === "touch"
-    ? "대시보드에서 정한 벽 두 곳(<span id=\"anchor-names\"></span>) <b>바로 아래 바닥</b>(벽과 바닥이 만나는 선)에 화면 가운데 조준점을 맞추고 <b>기록</b>을 눌러요. 조준점이 초록이면 바닥에 닿은 거예요"
-    : "평면도에 정한 기준점 두 곳(<span id=\"anchor-names\"></span>)의 바닥을 차례로 화면 가운데 조준점에 맞추고 <b>지점 기록</b>을 눌러요";
+    ? "<span id=\"anchor-names\"></span> 바로 아래 바닥에 조준점을 맞추고 <b>기록</b>을 눌러요. 초록이면 닿은 거예요"
+    : "<span id=\"anchor-names\"></span> 바닥에 차례로 조준점을 맞추고 <b>지점 기록</b>을 눌러요";
   $("anchor-names").textContent = names;
   const done = s.anchors.filter((a) => a.recorded).length;
   view.anchors = `${done}/${s.anchors.length}`;
@@ -223,10 +223,10 @@ function renderPerf() {
   const ms = (v) => (v === null ? "-" : `${v.toFixed(1)}ms`);
   $("perf").textContent = `${s.fps.toFixed(1)} fps`;
   $("perf-detail").textContent = [
-    `보낸 화면 ${s.fps.toFixed(1)} fps (목표 ${(1000 / FRAME_MS).toFixed(0)}) · 장당 ${s.kbPerFrame === null ? "-" : `${s.kbPerFrame.toFixed(1)}KB`}`,
+    `보낸 화면 ${s.fps.toFixed(1)} / 목표 ${(1000 / FRAME_MS).toFixed(0)} fps · 장당 ${s.kbPerFrame === null ? "-" : `${s.kbPerFrame.toFixed(1)}KB`}`,
     `readPixels ${ms(s.readMs)} · 인코딩 ${ms(s.encodeMs)} (${view.encoder})`,
     `와이파이 대기 ${Math.round((ws?.bufferedAmount ?? 0) / 1024)}KB · 크기 ${view.size}`,
-    `건너뜀(2초): 인코딩 중 ${s.skipped.encoding} · 버퍼 가득 ${s.skipped.buffer} · 순서 뒤바뀜 ${s.skipped.stale}`,
+    `2초간 건너뜀: 인코딩 중 ${s.skipped.encoding} · 버퍼 가득 ${s.skipped.buffer} · 순서 뒤바뀜 ${s.skipped.stale}`,
   ].join("\n");
   renderStatus();
 }
@@ -380,11 +380,11 @@ function renderMarks(marks) {
 
 async function checkSupport() {
   if (!window.isSecureContext) {
-    $("support").textContent = `보안 연결이 아니라 AR을 켤 수 없어요. 크롬 chrome://flags 'Insecure origins treated as secure'에 ${location.origin}을 넣고 크롬을 다시 시작하세요.`;
+    $("support").textContent = "보안 연결이 아니라 AR을 켤 수 없어요. https 주소로 여세요.";
     return;
   }
   if (!navigator.xr || !(await navigator.xr.isSessionSupported("immersive-ar"))) {
-    $("support").textContent = "이 브라우저는 WebXR AR을 지원하지 않아요. 안드로이드 크롬이 필요해요. 아래에서 글로 말할 수는 있어요.";
+    $("support").textContent = "이 브라우저는 AR을 지원하지 않아요. 안드로이드 크롬으로 여세요.";
     return;
   }
   $("support").textContent = "준비됐어요. 첫 기준점 근처에서 AR을 시작하세요.";
@@ -422,7 +422,7 @@ async function start() {
   view.encoder = grabber?.encoderMode ?? "카메라 없음";
   let cameraSeen = false;
   setTimeout(() => {
-    if (!cameraSeen) note("카메라 화면을 보낼 수 없어요(크롬이 AR 카메라 접근을 지원하지 않거나 거절됨). 위치만 보내요");
+    if (!cameraSeen) note("카메라 화면을 보낼 수 없어요. 위치만 보내요");
   }, 3000);
   const perfTimer = setInterval(renderPerf, 1000);
   session.addEventListener("end", () => {

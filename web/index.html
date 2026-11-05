@@ -11,16 +11,15 @@
   <header class="top">
     <div class="brand">
       <h1>twin-home</h1>
-      <span class="sub">트윈 · 클로이드의 눈 · 추론 과정</span>
     </div>
     <div class="status">
       <span id="conn" class="badge off" role="status" aria-live="polite">연결 중…</span>
-      <span id="home" class="badge" title="설정에서 고른 집(twin-studio homes.json)">집 -</span>
+      <span id="home" class="badge" title="지금 쓰는 집">집 -</span>
       <span id="hub" class="badge">허브 -</span>
       <span id="provider" class="badge">에이전트 -</span>
-      <button type="button" id="cards-toggle" class="badge toggle" aria-pressed="false" aria-controls="devices-pane" title="Matter 속성·밝기·온도·센서 시뮬레이션을 직접 보는 카드">기기 카드</button>
+      <button type="button" id="cards-toggle" class="badge toggle" aria-pressed="false" aria-controls="devices-pane" title="가전 상태를 카드로 보기">기기 카드</button>
       <span id="twin-missing" class="badge off" hidden>3D 트윈 없음</span>
-      <a id="setup-link" class="badge link" href="/setup/" title="집·가전 신호 출처·폰 기준점·배치 보정">설정 다시 하기</a>
+      <a id="setup-link" class="badge link" href="/setup/">설정 다시 하기</a>
     </div>
   </header>
 
@@ -34,7 +33,6 @@
     <section class="twin" id="twin-pane" aria-label="3D 트윈">
       <div class="pane-head">
         <h2>3D 트윈</h2>
-        <span class="note">클로이드가 한 일의 결과가 여기서 보여요</span>
         <a id="twin-open" class="ghost small" href="/twin/viewer/?live=auto" target="_blank" rel="noopener">새 창</a>
       </div>
       <div class="twin-body">
@@ -46,12 +44,11 @@
     <section class="eye-pane" id="eye-pane" aria-label="클로이드의 눈">
       <div class="pane-head">
         <h2>클로이드의 눈</h2>
-        <span class="note">폰 카메라 실시간 · 엔진 입력 아님</span>
       </div>
       <div class="eye-body">
         <figure id="eye" class="eye" hidden>
           <img id="eye-live" alt="클로이드의 눈: 폰 카메라 실시간 화면">
-          <figcaption id="eye-caption">클로이드의 눈 · 실시간 · 엔진 입력 아님</figcaption>
+          <figcaption id="eye-caption">클로이드의 눈 · 실시간</figcaption>
         </figure>
         <p id="eye-empty" class="eye-empty">폰이 연결되지 않았어요.</p>
       </div>
@@ -60,7 +57,6 @@
     <section class="chat" id="log-pane" aria-label="추론 과정">
       <div class="pane-head">
         <h2>추론 과정</h2>
-        <span class="note">요청마다 클로이드가 거친 단계</span>
         <button type="button" id="new-session" class="ghost small">새 대화</button>
       </div>
       <ol id="messages" class="messages" aria-live="polite"></ol>

@@ -11,9 +11,8 @@
   <h1>클로이드의 눈</h1>
   <p id="support">AR 지원을 확인하는 중…</p>
   <ol>
-    <li id="align-help">평면도에 정한 기준점 두 곳(<span id="anchor-names">방 모서리</span>)의 바닥을 차례로 화면 가운데 조준점에 맞추고 <b>지점 기록</b>을 눌러요</li>
-    <li>맞춘 뒤 걸어 다니면 3D 트윈의 눈 마커가 따라 움직여요</li>
-    <li>물건 아래 바닥을 조준하고 <b>말하기</b>를 누른 채 "냉장고 위치 여기로 맞춰줘"라고 하면 트윈의 냉장고가 그 자리로 옮겨져요</li>
+    <li id="align-help"><span id="anchor-names">방 모서리</span> 바닥에 차례로 조준점을 맞추고 <b>지점 기록</b>을 눌러요</li>
+    <li>물건 아래 바닥을 조준하고 <b>말하기</b>를 누른 채 "냉장고 여기로"라고 말해요</li>
   </ol>
   <button id="start" type="button" disabled>AR 시작</button>
   <section id="talk" class="talk" aria-label="클로이드와 대화">
@@ -54,7 +53,7 @@
   <p id="toast" class="toast" role="status" aria-live="polite" hidden></p>
   <div id="menu" class="menu" hidden>
     <div id="menu-talk"></div>
-    <button id="reset" type="button">다시 맞추기(기준점 다시 찍기)</button>
+    <button id="reset" type="button">기준점 다시 찍기</button>
     <pre id="perf-detail" class="perf-detail">측정 전</pre>
     <button id="menu-close" type="button">닫기</button>
   </div>

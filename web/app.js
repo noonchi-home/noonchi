@@ -104,7 +104,7 @@ function stateChips(d) {
     const sensor = d.sensors.includes(attr);
     const active = ACTIVE[attr] === v;
     const cls = ["chip", sensor ? "sensor" : "", active ? (attr === "door" || attr === "lock" ? "alert" : "on") : ""].filter(Boolean).join(" ");
-    chips.push(el("span", { class: cls, title: sensor ? "센서(에이전트가 못 바꿈)" : attr }, ATTR_TEXT[attr]?.[String(v)] ?? `${attr}: ${v}`));
+    chips.push(el("span", { class: cls, title: sensor ? "센서 값은 바꿀 수 없어요" : attr }, ATTR_TEXT[attr]?.[String(v)] ?? `${attr}: ${v}`));
   }
   const m = d.state?.matter ?? {};
   if (d.kind === "light" && m.onOff && typeof m.level === "number") chips.push(el("span", { class: "chip" }, `밝기 ${m.level}%`));
@@ -326,7 +326,7 @@ function targetOf(a) {
   return a.args?.object_id ?? a.args?.type ?? a.args?.device_id ?? "";
 }
 
-const THINK_NOTE = "모델이 쓴 설명이에요. 판단 근거가 아니에요(근거는 행동과 관찰).";
+const THINK_NOTE = "모델이 쓴 설명이에요. 판단 근거는 아니에요.";
 
 function addStep(turn, a) {
   turn.count += 1;
@@ -336,12 +336,12 @@ function addStep(turn, a) {
   turn.steps.append(el("li", { class: "step" },
     el("span", { class: "no" }, `${turn.count}`),
     el("div", { class: "react" },
-      el("div", { class: "think", title: THINK_NOTE }, "💭 ", el("i", {}, a.reason ?? "(생각을 남기지 않음)"), el("span", { class: "tag" }, "모델의 설명")),
+      el("div", { class: "think", title: THINK_NOTE }, "💭 ", el("i", {}, a.reason ?? "생각을 남기지 않았어요"), el("span", { class: "tag" }, "모델의 설명")),
       el("div", { class: "act" }, "🔧 ", el("b", {}, TOOL_LABELS[a.tool] ?? a.tool), targetOf(a) ? ` · ${targetOf(a)}` : ""),
       el("div", { class: `obs ${cls}` }, "👁 ", observed))));
 }
 
-const LINE_ICON = { 답: "💬", 초점: "🎯", 취소: "↩", "승인 → 실행": "✅", "승인 실패": "⚠", "찍은 자리": "📍" };
+const LINE_ICON = { 답: "💬", 초점: "🎯", 취소: "↩", "승인 후 실행": "✅", "승인 실패": "⚠", "찍은 자리": "📍" };
 
 function addLine(turn, label, text, cls = "") {
   const li = el("li", { class: `step final ${cls}` }, el("span", { class: "no" }, LINE_ICON[label] ?? "·"), el("span", { class: "what" }, el("b", {}, label), ` ${text}`));
@@ -401,7 +401,7 @@ function settle(token, ok, reply, cancelled = false) {
   if (!t) return;
   turns.byToken.delete(token);
   t.done(cancelled ? "취소함" : ok ? "승인함" : "실패");
-  addLine(t.turn, cancelled ? "취소" : ok ? "승인 → 실행" : "승인 실패", reply ?? "", ok ? "" : "fail");
+  addLine(t.turn, cancelled ? "취소" : ok ? "승인 후 실행" : "승인 실패", reply ?? "", ok ? "" : "fail");
   t.turn.state.className = `state ${ok ? "ok" : cancelled ? "" : "fail"}`;
   t.turn.state.textContent = cancelled ? "취소" : ok ? "완료" : "실패";
   t.turn.answer.textContent = reply ?? "";
@@ -497,7 +497,7 @@ function brainTurn() {
   const vlm = el("div", { class: "brain-now" }, "VLM: -");
   const steps = el("ol", { class: "steps" });
   const details = el("details", { class: "turn brain-turn", open: true },
-    el("summary", {}, el("span", { class: "src", title: "클로이드 두뇌(폰 카메라)" }, "🤖"), el("span", { class: "ask" }, "컵 지켜보기"), state, answer),
+    el("summary", {}, el("span", { class: "src", title: "클로이드 두뇌" }, "🤖"), el("span", { class: "ask" }, "컵 지켜보기"), state, answer),
     el("div", { class: "brain-nows" }, yolo, vlm), steps);
   $("#messages").append(el("li", { class: "msg turn-item" }, details));
   brainView.turn = { details, state, answer, yolo, vlm, steps, ended: false };
@@ -516,9 +516,9 @@ const ago = (ms) => (ms === null || ms === undefined ? "" : ` · 근거 ${(ms / 
 function onBrain(e) {
   const turn = brainTurn();
   if (e.type === "presence") {
-    turn.yolo.textContent = `${e.summary} (사람 ${e.scores.person.toFixed(2)} · 컵 ${e.scores.cup.toFixed(2)})`;
+    turn.yolo.textContent = `${e.summary} · 사람 ${e.scores.person.toFixed(2)} · 컵 ${e.scores.cup.toFixed(2)}`;
   } else if (e.type === "perception") {
-    turn.vlm.textContent = `VLM${e.answer ? "(요청 답 사진)" : ""}: ${e.error ? `실패 ${e.error}` : e.summary}${ago(e.evidence_age_ms)}`;
+    turn.vlm.textContent = `VLM${e.answer ? " 요청 답 사진" : ""}: ${e.error ? `실패 ${e.error}` : e.summary}${ago(e.evidence_age_ms)}`;
   } else if (e.type === "brain") {
     turn.state.textContent = BRAIN_STATE[e.state] ?? e.state;
     brainStep(turn, BRAIN_ICON[e.stage] ?? "·", `${e.text}${ago(e.evidence_age_ms)}`, e.stage === "error" ? "fail" : "");
@@ -529,7 +529,7 @@ function onBrain(e) {
   } else if (e.type === "request") {
     brainStep(turn, "📱", e.active ? `폰에 요청: ${e.text}` : "폰 요청 거둠");
   } else if (e.type === "action") {
-    if (e.active) brainStep(turn, "📱", `폰에 부탁(모의): ${e.plan.prompt?.text ?? e.plan.dashboard} · 클로이드라면 "${e.plan.would}"`, "wait");
+    if (e.active) brainStep(turn, "📱", `폰에 부탁 · 모의: ${e.plan.prompt?.text ?? e.plan.dashboard} · 클로이드라면 "${e.plan.would}"`, "wait");
   } else if (e.type === "result") {
     turn.outcome = e.outcome; // 바로 뒤 result 단계 글이 카드를 닫는다
   }
@@ -544,7 +544,7 @@ function endBrainTurn(turn, kind) {
 // 초점: 클로이드가 방금 다룬 물건. 3D 트윈(뷰어 고리)과 폰 화면에 표시되고, 눈 캡션과 마지막 과정 카드에 남는다.
 let focusTimer = null;
 let focusing = false;
-let eyeCaption = "클로이드의 눈 · 실시간 · 엔진 입력 아님"; // 받은 fps가 들어간 평소 캡션
+let eyeCaption = "클로이드의 눈 · 실시간"; // 받은 fps가 들어간 평소 캡션
 function showFocus(focus) {
   if (!focus?.targets?.length) return;
   const names = focus.targets.map((t) => t.label).join(", ");
@@ -554,7 +554,7 @@ function showFocus(focus) {
   }
   const cap = $("#eye-caption");
   if (!cap) return;
-  cap.textContent = `클로이드 주목 · ${names} · 엔진 입력 아님`;
+  cap.textContent = `클로이드 주목 · ${names}`;
   focusing = true;
   clearTimeout(focusTimer);
   focusTimer = setTimeout(() => {
@@ -572,7 +572,7 @@ const eye = { attach: null };
 function initEye(health) {
   const empty = $("#eye-empty");
   if (!health.json?.eye) {
-    empty.textContent = "폰 AR 서버가 꺼져 있어요. PHONE_PORT를 주고 서버를 켜면 폰 카메라 화면이 여기에 보여요.";
+    empty.textContent = "폰 서버가 꺼져 있어요.";
     return;
   }
   // 서버가 아는 와이파이 주소 중 집 공유기 대역(192.168.x)을 먼저 보인다(WSL·VPN 가상 어댑터 주소는 뒤로)
@@ -580,8 +580,8 @@ function initEye(health) {
   const rank = (u) => (u.includes("//192.168.") ? 0 : u.includes("//10.") ? 1 : 2);
   const best = [...urls].sort((a, b) => rank(a) - rank(b))[0];
   empty.textContent = best
-    ? `폰이 연결되지 않았어요. 같은 와이파이의 안드로이드 크롬에서 ${best} 을 열고 AR을 시작하세요.`
-    : "폰이 연결되지 않았어요. 같은 와이파이의 안드로이드 크롬에서 서버 로그의 '폰 AR' 주소를 열고 AR을 시작하세요.";
+    ? `폰이 연결되지 않았어요. 폰 크롬에서 ${best} 을 열고 AR을 시작하세요.`
+    : "폰이 연결되지 않았어요. 폰에서 AR을 시작하세요.";
   if (urls.length > 1) empty.title = `다른 주소: ${urls.filter((u) => u !== best).join(", ")}`;
   const img = $("#eye-live");
   const shown = () => {
@@ -597,7 +597,7 @@ function initEye(health) {
   setInterval(async () => {
     const r = await api("/api/eye/stats");
     if (!r.json?.ok) return;
-    eyeCaption = `클로이드의 눈 · 실시간 ${r.json.fps} fps${r.json.kb_per_frame ? ` · ${r.json.kb_per_frame}KB` : ""} · 엔진 입력 아님`;
+    eyeCaption = `클로이드의 눈 · 실시간 ${r.json.fps} fps${r.json.kb_per_frame ? ` · ${r.json.kb_per_frame}KB` : ""}`;
     if (!focusing) $("#eye-caption").textContent = eyeCaption;
   }, 2000);
   eye.attach();
@@ -607,7 +607,7 @@ function addPhoto(p) {
   const pose = p.measured_pose;
   const where = pose
     ? `위치 (${pose.position[0].toFixed(2)}, ${pose.position[1].toFixed(2)}) · 방향 ${Math.round(pose.yaw_deg)}° · 높이 ${pose.height_m.toFixed(2)}m`
-    : "위치 모름(맞추기 전)";
+    : "위치 모름";
   const turn = newTurn("phone", "📷 사진 찍기");
   turn.state.className = "state ok";
   turn.state.textContent = "저장";
@@ -677,12 +677,12 @@ function setCards(on) {
 async function initTwin(health) {
   view.twin = await checkTwin(health);
   $("#twin-missing").hidden = view.twin;
-  $("#twin-missing").title = "고른 집의 twin-studio 산출물(scene.json)이 없어 3D 트윈을 붙이지 못했어요. twin-studio에서 먼저 빌드하세요.";
+  $("#twin-missing").title = "이 집의 3D 트윈이 아직 없어요.";
   const frame = $("#twin-frame");
   const msg = $("#twin-msg");
   if (!view.twin) {
     frame.hidden = true;
-    msg.textContent = "3D 트윈을 찾을 수 없어요. 고른 집의 twin-studio 산출물이 있어야 /twin/viewer/가 열려요(twin-studio에서 먼저 빌드).";
+    msg.textContent = "3D 트윈을 찾을 수 없어요.";
   } else {
     frame.addEventListener("load", () => { msg.hidden = true; }, { once: true });
     frame.src = TWIN_SRC;
@@ -714,7 +714,7 @@ async function init() {
     return;
   }
   $("#hub").textContent = `허브 ${health.json.hub ?? "-"}${health.json.transport ? ` · ${health.json.transport}` : ""}`;
-  $("#hub").title = health.json.hub === "matter" ? "Matter 브리지(가상 가전) ⇄ matter.js 컨트롤러" : "Matter 없이 메모리에서만";
+  $("#hub").title = health.json.hub === "matter" ? "가전이 Matter로 연결돼 있어요" : "Matter 없이 돌고 있어요";
   $("#provider").textContent = `에이전트 ${health.json.provider ?? "없음"}${health.json.model ? ` · ${health.json.model}` : ""}`;
   $("#home").textContent = `집 ${health.json.home?.name ?? "-"}`;
   app.homeId = health.json.home?.id ?? null;
@@ -742,7 +742,7 @@ async function init() {
     turns.last = null;
     addMessage("system", "새 대화를 시작했어요.");
   });
-  addMessage("system", "클로이드에게 말로 요청해 보세요. 요청마다 거친 단계가 카드로 남고, 결과는 왼쪽 3D 트윈에서 보여요. 현관문 잠금 해제·인덕션 켜기·전자레인지 시작은 승인 후에만 실행돼요.");
+  addMessage("system", "클로이드에게 말로 요청해 보세요.");
 }
 
 init();
