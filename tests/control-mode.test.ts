@@ -123,7 +123,7 @@ describe("실제 모드로 바꾸기", () => {
     expect((await get("/api/health")).json.mode).toBe("live");
     const list = await get("/api/setup/thinq");
     expect(list.status).toBe(200);
-    expect(list.json.devices.map((d: Msg) => d.id)).toEqual([FAKE_AC, FAKE_FRIDGE]);
+    expect(list.json.devices.map((d: Msg) => [d.id, d.kind])).toEqual([[FAKE_AC, "aircon"], [FAKE_FRIDGE, "fridge"]]);
     expect(JSON.stringify(list.json)).not.toContain(TOKEN);
     expect(logs.join("\n")).not.toContain(TOKEN);
   });

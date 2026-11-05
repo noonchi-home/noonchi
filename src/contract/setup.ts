@@ -12,6 +12,8 @@ export interface ThinqDeviceView {
   /** ThinQ 앱에서 붙인 이름(alias). */
   name: string;
   model: string;
+  /** 짝지을 수 있는 트윈 기기 종류(에어컨·냉장고). 맞는 종류가 없으면 null. */
+  kind: DeviceKind | null;
 }
 
 /** 설정 2단계 기기 한 줄. source는 저장한 출처(가상·신호 없음), pairable은 ThinQ와 짝지을 수 있는 종류(에어컨·냉장고). */

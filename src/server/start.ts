@@ -275,7 +275,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       async thinqDevices() {
         if (mode !== "live") throw new HttpError(409, "실제 모드에서만 ThinQ 기기를 불러와요.");
         try {
-          thinqList = await thinqClient().devices();
+          thinqList = (await thinqClient().devices()).map((d) => ({ ...d, kind: PAIRABLE_KINDS.find((k) => fitsKind(k, d.type)) ?? null }));
         } catch (e) {
           if (e instanceof ThinqError) throw new HttpError(502, `ThinQ 기기 목록을 받지 못했어요. ${e.message}`);
           throw e;

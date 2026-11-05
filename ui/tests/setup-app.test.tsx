@@ -25,7 +25,7 @@ describe("설정 1단계: 집 고르기", () => {
     open();
     expect(await screen.findByRole("heading", { name: "어느 집을 쓸까요?" })).toBeInTheDocument();
     const steps = within(screen.getByRole("list", { name: "설정 단계" })).getAllByRole("listitem");
-    expect(steps.map((s) => s.textContent)).toEqual(["1집 고르기", "2가전 선택", "3위치 동기화"]);
+    expect(steps.map((s) => s.textContent)).toEqual(["1집 고르기", "2가전 선택", "3운영 모드", "4위치 동기화"]);
     expect(steps[0]).toHaveAttribute("aria-current", "step");
     expect(screen.getByRole("radio", { name: /원룸/ })).toBeChecked();
     expect(screen.getByText("지금 띄운 집")).toBeInTheDocument();
@@ -91,7 +91,7 @@ describe("설정 2단계: 가전 선택", () => {
     expect(screen.getByText("추가 0 · 신호 없음 5")).toBeInTheDocument();
   });
 
-  it("다음: 추가한 가전은 virtual, 나머지는 none으로 저장하고 다음 단계로", async () => {
+  it("다음: 추가한 가전은 virtual, 나머지는 none으로 저장하고 운영 모드 단계로", async () => {
     const { api, user } = open("#devices");
     await user.type(await screen.findByRole("searchbox", { name: "가전 검색" }), "거실 TV{Enter}");
     await user.click(screen.getByRole("button", { name: "다음" }));
@@ -100,7 +100,7 @@ describe("설정 2단계: 가전 선택", () => {
       home: "oneroom",
       sources: { fridge_1: "none", tv_living: "virtual", light_living: "none", ac_living: "none", light_room1: "none" },
     });
-    expect(await screen.findByRole("heading", { name: "폰과 트윈의 위치를 맞춰요" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "가전을 어떻게 다룰까요?" })).toBeInTheDocument();
   });
 
   it("저장한 적이 있는 집은 저장한 출처로 연다", async () => {
@@ -111,7 +111,7 @@ describe("설정 2단계: 가전 선택", () => {
   });
 });
 
-describe("설정 3단계: 위치 동기화", () => {
+describe("설정 4단계: 위치 동기화", () => {
   it("트윈·폰 서버·기준점이 없으면 상태만 보이고, 건너뛰면 끝내고 대시보드로", async () => {
     const { api, navigate, user } = open("#position");
     expect(await screen.findByText("3D 트윈을 찾을 수 없어요.")).toBeInTheDocument();

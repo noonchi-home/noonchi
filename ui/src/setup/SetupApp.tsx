@@ -5,15 +5,17 @@ import { useEvents } from "../lib/use-events";
 import { cn } from "../lib/utils";
 import { DeviceStep, sourcesFrom, type SourceKind } from "./DeviceStep";
 import { HomeStep } from "./HomeStep";
+import { ModeStep } from "./ModeStep";
 import { PositionStep } from "./PositionStep";
 import { call, failText, isOk } from "./setup-api";
 
-// 설정 화면(/setup/): 단계 표시와 단계별 화면. 단계는 주소 #home·#devices·#position으로 남는다.
+// 설정 화면(/setup/): 단계 표시와 단계별 화면. 단계는 주소 #home·#devices·#mode·#position으로 남는다.
 // 서버가 판단·검사를 하고(/api/setup*), 여기서는 고른 것을 보내고 결과를 그린다.
 
 const STEPS = [
   { id: "home", label: "집 고르기" },
   { id: "devices", label: "가전 선택" },
+  { id: "mode", label: "운영 모드" },
   { id: "position", label: "위치 동기화" },
 ] as const;
 type StepId = (typeof STEPS)[number]["id"];
@@ -110,7 +112,7 @@ export function SetupApp({ navigate = (url: string) => location.assign(url) }: {
     }
     show(r.json);
     setNotice(null);
-    go("position", r.json);
+    go("mode", r.json);
   };
 
   const finish = async () => {
@@ -153,9 +155,15 @@ export function SetupApp({ navigate = (url: string) => location.assign(url) }: {
           {view && step === "devices" && (
             <DeviceStep view={view} sources={sources} onSources={setSources} onBack={() => go("home")} onNext={saveDevices} busy={busy} />
           )}
+          {view?.home && step === "mode" && (
+            <ModeStep
+              view={view} onView={show} onBack={() => go("devices")} onNext={() => go("position")}
+              onNotice={(text, error) => setNotice(text ? { text, error } : null)}
+            />
+          )}
           {view?.home && step === "position" && (
             <PositionStep
-              view={view} onBack={() => go("devices")} onDone={finish} layoutTick={layoutTick}
+              view={view} onBack={() => go("mode")} onDone={finish} layoutTick={layoutTick}
               onNotice={(text, error) => setNotice({ text, error })}
             />
           )}

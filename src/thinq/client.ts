@@ -69,7 +69,7 @@ const text = (v: unknown) => (typeof v === "string" ? v : "");
 export class ThinqClient {
   constructor(private readonly cfg: ThinqConfig) {}
 
-  async devices(): Promise<ThinqDeviceView[]> {
+  async devices(): Promise<Omit<ThinqDeviceView, "kind">[]> {
     const list = await this.request("GET", "devices");
     if (!Array.isArray(list)) return [];
     return (list as RawDevice[]).filter((d) => typeof d?.deviceId === "string" && d.deviceId).map((d) => {
