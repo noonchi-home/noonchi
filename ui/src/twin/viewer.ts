@@ -24,6 +24,8 @@ export interface AptViewer {
   node(id: string): THREE_NS.Object3D | null;
   hidden(id: string): boolean | null;
   setBadges(on: boolean): void;
+  /** 벽 보기: full 온전히, auto 앞쪽 낮춤, low 모두 낮춤. 뷰어 막대의 벽 선택도 같이 바뀐다. */
+  setWallMode(mode: "full" | "auto" | "low"): void;
   setFocus(focus: unknown): void;
   renderNow(): void;
 }

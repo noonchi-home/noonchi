@@ -22,6 +22,7 @@ export function TwinStage({ children }: { children?: ReactNode }) {
         .then((v) => {
           if (!live) return;
           v.setBadges(false); // 뷰어 배지 대신 React 말풍선을 쓴다
+          v.setWallMode("low"); // 처음에는 집 전체가 보이게. 그 뒤 벽 선택은 뷰어 막대에서 사용자가 바꾼다
           setError(null);
           setViewer(v);
         })

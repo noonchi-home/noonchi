@@ -5,8 +5,8 @@ import { useViewer, waitForViewer } from "../src/twin/viewer";
 
 // 실제 뷰어(twin-studio main.mjs)처럼: window.aptViewer는 scene.json을 받기 전에 먼저 생기고,
 // 그때 ready는 이미 풀린 Promise다. show()가 시작되면 loading=true, 끝나면 results.mode가 채워진다.
-type FakeViewer = { ready: Promise<unknown>; loading: boolean; results: Record<string, unknown>; setBadges: (on: boolean) => void };
-const loaded = (): FakeViewer => ({ ready: Promise.resolve(), loading: false, results: { mode: "scene" }, setBadges: vi.fn() });
+type FakeViewer = { ready: Promise<unknown>; loading: boolean; results: Record<string, unknown>; setBadges: (on: boolean) => void; setWallMode: (mode: string) => void };
+const loaded = (): FakeViewer => ({ ready: Promise.resolve(), loading: false, results: { mode: "scene" }, setBadges: vi.fn(), setWallMode: vi.fn() });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const winWith = (v?: FakeViewer) => ({ aptViewer: v }) as unknown as Window & { aptViewer?: FakeViewer };
 
@@ -19,7 +19,7 @@ describe("waitForViewer", () => {
   });
 
   it("show() 전(ready는 풀렸지만 아직 안 불러옴)이면 불러오기가 끝날 때까지 기다린다", async () => {
-    const v: FakeViewer = { ready: Promise.resolve(), loading: false, results: {}, setBadges: vi.fn() };
+    const v: FakeViewer = { ...loaded(), results: {} };
     let done = false;
     const p = waitForViewer(winWith(v), 2000).then((r) => { done = true; return r; });
     await sleep(150);
@@ -37,7 +37,7 @@ describe("waitForViewer", () => {
 
   it("불러오는 중에는 시간 제한이 지나도 기다린다", async () => {
     let finish!: () => void;
-    const v: FakeViewer = { ready: new Promise<void>((r) => { finish = r; }), loading: true, results: {}, setBadges: vi.fn() };
+    const v: FakeViewer = { ...loaded(), ready: new Promise<void>((r) => { finish = r; }), loading: true, results: {} };
     const p = waitForViewer(winWith(v), 50);
     setTimeout(() => { v.results.mode = "scene"; v.loading = false; finish(); }, 200);
     await expect(p).resolves.toBe(v);
@@ -71,5 +71,17 @@ describe("TwinStage", () => {
     frame.dispatchEvent(new Event("load"));
     expect(await screen.findByText("뷰어 있음")).toBeInTheDocument();
     expect(v.setBadges).toHaveBeenCalledWith(false);
+  });
+
+  it("뷰어가 준비되면 벽을 한 번만 모두 낮춘다(그 뒤 벽 선택은 사용자 몫)", async () => {
+    const { rerender } = render(<TwinStage><Probe /></TwinStage>);
+    const frame = screen.getByTitle("3D 집 트윈") as HTMLIFrameElement;
+    const v = loaded();
+    (frame.contentWindow as Window & { aptViewer?: FakeViewer }).aptViewer = v;
+    frame.dispatchEvent(new Event("load"));
+    await screen.findByText("뷰어 있음");
+    rerender(<TwinStage><Probe /><p>다시 그림</p></TwinStage>);
+    expect(v.setWallMode).toHaveBeenCalledTimes(1);
+    expect(v.setWallMode).toHaveBeenCalledWith("low");
   });
 });
