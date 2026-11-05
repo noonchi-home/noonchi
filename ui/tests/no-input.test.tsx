@@ -1,0 +1,49 @@
+// 대시보드(허브 화면)에는 입력창이 없다(CLAUDE.md 규칙 표). 요청·질문·답·승인은 폰 음성으로 오간다.
+import { act, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ServerMessage } from "../../src/contract/events.ts";
+import { Dashboard } from "../src/dashboard/Dashboard";
+
+const FIELDS = "input, textarea, select, form, [contenteditable], [role=textbox], [role=searchbox], [role=combobox]";
+
+class FakeSocket {
+  static last: FakeSocket | null = null;
+  onopen: (() => void) | null = null;
+  onmessage: ((e: { data: string }) => void) | null = null;
+  onclose: (() => void) | null = null;
+  constructor(public url: string) { FakeSocket.last = this; }
+  push(m: ServerMessage) { this.onmessage?.({ data: JSON.stringify(m) }); }
+  send() {}
+  close() {}
+}
+
+const waiting: ServerMessage = {
+  type: "agent", event: "reply", sessionId: "phone", message: "현관문 열어줘", reply: "폰에서 승인해 주세요",
+  actions: [{ tool: "unlock", args: {}, ok: false, needsConfirmation: true, deviceId: "lock", deviceLabel: "현관 도어록", reason: "열어 달라고 해서", at: "t" }],
+  pendingConfirmations: [{ token: "k", deviceId: "lock", deviceLabel: "현관 도어록", command: { type: "unlock" }, reason: "문을 열어요", expiresAt: "t" }],
+};
+
+beforeEach(() => {
+  vi.stubGlobal("WebSocket", FakeSocket);
+  vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 404 })));
+});
+afterEach(() => {
+  vi.unstubAllGlobals();
+  history.replaceState(null, "", "/");
+});
+
+describe.each(["parts", "glass"])("대시보드 ?look=%s", (look) => {
+  it("입력창·폼이 하나도 없다: 처음, 폰 요청·승인 대기 카드가 온 뒤, 폰 화면 탭", async () => {
+    history.replaceState(null, "", `/?look=${look}`);
+    const { container } = render(<Dashboard />);
+    expect(container.querySelectorAll(FIELDS)).toHaveLength(0);
+    act(() => FakeSocket.last!.push(waiting));
+    expect(screen.getByText("현관문 열어줘")).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "승인 요청" })).toHaveTextContent("폰에서 승인 대기");
+    expect(container.querySelectorAll(FIELDS)).toHaveLength(0);
+    expect(screen.queryByRole("button", { name: /보내기|승인$/ })).toBeNull();
+    await userEvent.click(screen.getByRole("tab", { name: "폰 화면" }));
+    expect(container.querySelectorAll(FIELDS)).toHaveLength(0);
+  });
+});

@@ -1,15 +1,17 @@
-// 대화 기록(순수 리듀서). web/app.js 추론 과정(newTurn·addStep·finishTurn·addConfirm·settle·onBrain·addPhoto)의 규칙을 옮겼다.
+// 판단 기록(순수 리듀서). 대시보드는 보기만 한다: 요청·승인은 폰에서 음성으로 오고, 서버 메시지만으로 카드를 쌓는다.
 // 요청마다 카드 한 장: 행동 단계(실시간 action 이벤트, 없으면 답의 actions)와 답·초점·승인 결과 줄이 쌓인다.
-// 폰에서 말한 대화·사진, 컵 두뇌 흐름도 같은 목록에 카드로 쌓인다.
+// 실시간 행동은 세션마다 진행 중 카드에 붙고, 그 세션의 답이 카드를 끝낸다. 사진, 컵 두뇌 흐름도 같은 목록에 카드로 쌓인다.
 import type { ActionOutcome, AgentAction, BrainLog, PendingView, PhotoRecord, ServerMessage } from "../../../src/contract/events.ts";
 import { BRAIN_STATE } from "./labels";
 
 /** 폰(클로이드의 눈)에서 말한 대화의 세션 id(서버 start.ts와 같다). */
 export const PHONE_SESSION = "phone";
 
-export type TurnSource = "dashboard" | "phone" | "brain";
+/** phone: 거주자가 폰에서 말함, brain: 컵 두뇌, other: 다른 화면(폰이 아닌 세션). */
+export type TurnSource = "phone" | "brain" | "other";
 export type TurnState = "busy" | "ok" | "wait" | "fail" | "cancel";
-export type PendingStatus = "open" | "busy" | "ok" | "fail" | "cancel";
+/** 승인 대기 카드: 폰에서 승인·취소하면 결과로 바뀐다. */
+export type PendingStatus = "open" | "ok" | "fail" | "cancel";
 export type PendingCard = PendingView & { status: PendingStatus };
 
 /** 행동 한 단계, 또는 글 한 줄(답·초점·취소·승인 결과·찍은 자리·두뇌 단계). mark는 두뇌 줄의 아이콘 자리. */
@@ -20,6 +22,9 @@ export type Step =
 export interface Turn {
   id: string;
   source: TurnSource;
+  /** 에이전트 세션 id(두뇌·사진 카드는 없음). */
+  session?: string;
+  /** 폰에서 들은 말. 답이 오기 전 진행 중 카드는 비어 있다. */
   ask: string;
   state: TurnState;
   /** 상태 알약 글. 없으면 state의 기본 글. */
@@ -35,15 +40,6 @@ export interface Turn {
   outcome?: ActionOutcome;
 }
 
-export type TurnEvent =
-  | { type: "ask"; id: string; source: TurnSource; text: string }
-  | { type: "message"; message: ServerMessage; sessionId: string }
-  /** POST /api/agent/chat 응답. 실시간 답이 먼저 와서 이미 끝났으면 무시한다. */
-  | { type: "result"; id: string; reply?: string; actions?: AgentAction[]; pending?: PendingView[]; error?: string }
-  | { type: "confirming"; token: string }
-  | { type: "settle"; token: string; ok: boolean; reply: string; cancelled?: boolean }
-  | { type: "reset" };
-
 export const STATE_LABELS: Record<TurnState, string> = { busy: "생각 중", ok: "완료", wait: "승인 대기", fail: "실패", cancel: "취소" };
 
 const at = (turns: Turn[], i: number, turn: Turn) => turns.map((t, j) => (j === i ? turn : t));
@@ -54,11 +50,9 @@ const lastIndex = (turns: Turn[], ok: (t: Turn) => boolean) => {
 const line = (label: string, text: string, extra: { tone?: "fail" | "wait"; mark?: string } = {}): Step => ({ kind: "line", label, text, ...extra });
 const isFocus = (s: Step) => s.kind === "line" && s.label === "초점";
 
-function finish(turn: Turn, reply: string | null, actions: AgentAction[] = [], pending: PendingView[] = [], error?: string): Turn {
+function finish(turn: Turn, text: string, actions: AgentAction[] = [], pending: PendingView[] = []): Turn {
   let steps = turn.steps.some((s) => s.kind === "action") ? turn.steps : [...turn.steps, ...actions.map((action): Step => ({ kind: "action", action }))];
-  const text = reply ?? error ?? "";
-  const state: TurnState = error ? "fail"
-    : pending.length ? "wait"
+  const state: TurnState = pending.length ? "wait"
     : actions.some((a) => !a.ok && !a.needsConfirmation) && !actions.some((a) => a.ok) ? "fail"
     : "ok";
   // 초점 이벤트가 답보다 먼저 올 수 있다: 답을 초점 줄 앞에 둔다
@@ -66,13 +60,13 @@ function finish(turn: Turn, reply: string | null, actions: AgentAction[] = [], p
   const answer = line("답", text);
   steps = focusAt === -1 ? [...steps, answer] : [...steps.slice(0, focusAt), answer, ...steps.slice(focusAt)];
   return {
-    ...turn, steps, state, label: error ? "오류" : undefined, answer: text,
+    ...turn, steps, state, label: undefined, answer: text,
     pending: [...turn.pending, ...pending.map((p): PendingCard => ({ ...p, status: "open" }))],
   };
 }
 
 function settle(turns: Turn[], token: string, ok: boolean, reply: string, cancelled = false): Turn[] {
-  const i = lastIndex(turns, (t) => t.pending.some((p) => p.token === token && (p.status === "open" || p.status === "busy")));
+  const i = lastIndex(turns, (t) => t.pending.some((p) => p.token === token && p.status === "open"));
   if (i === -1) return turns;
   const t = turns[i]!;
   const status: PendingStatus = cancelled ? "cancel" : ok ? "ok" : "fail";
@@ -87,6 +81,8 @@ function settle(turns: Turn[], token: string, ok: boolean, reply: string, cancel
 }
 
 const fresh = (id: string, source: TurnSource, ask: string): Turn => ({ id, source, ask, state: "busy", answer: "", steps: [], pending: [] });
+const sourceOf = (session: string): TurnSource => (session === PHONE_SESSION ? "phone" : "other");
+const sessionTurn = (id: string, session: string): Turn => ({ ...fresh(id, sourceOf(session), ""), session });
 
 function photoTurn(id: string, p: PhotoRecord): Turn {
   const pose = p.measured_pose;
@@ -137,17 +133,21 @@ function onBrain(turns: Turn[], e: BrainLog): Turn[] {
   }
 }
 
-function onMessage(turns: Turn[], m: ServerMessage, sessionId: string): Turn[] {
-  const live = () => lastIndex(turns, (t) => t.source === "dashboard" && t.state === "busy");
+function onMessage(turns: Turn[], m: ServerMessage): Turn[] {
   if (m.type === "agent") {
+    const live = (session: string) => lastIndex(turns, (t) => t.session === session && t.state === "busy");
     if (m.event === "action") {
-      const i = m.sessionId === sessionId ? live() : -1;
-      return i === -1 ? turns : at(turns, i, { ...turns[i]!, steps: [...turns[i]!.steps, { kind: "action", action: m.action }] });
+      const i = live(m.sessionId);
+      if (i === -1) return [...turns, { ...sessionTurn(`m${turns.length}`, m.sessionId), steps: [{ kind: "action", action: m.action }] }];
+      return at(turns, i, { ...turns[i]!, steps: [...turns[i]!.steps, { kind: "action", action: m.action }] });
     }
     if (m.event === "reply") {
-      if (m.sessionId === PHONE_SESSION) return [...turns, finish(fresh(`m${turns.length}`, "phone", m.message), m.reply, m.actions, m.pendingConfirmations)];
-      const i = m.sessionId === sessionId ? live() : -1;
-      return i === -1 ? turns : at(turns, i, finish(turns[i]!, m.reply, m.actions, m.pendingConfirmations));
+      // 답에는 그 세션의 승인 대기가 모두 온다: 앞 카드에 이미 있는 것은 빼고 새 것만 이 카드에 둔다
+      const known = new Set(turns.flatMap((t) => t.pending.map((p) => p.token)));
+      const added = m.pendingConfirmations.filter((p) => !known.has(p.token));
+      const i = live(m.sessionId);
+      if (i === -1) return [...turns, finish({ ...sessionTurn(`m${turns.length}`, m.sessionId), ask: m.message }, m.reply, m.actions, added)];
+      return at(turns, i, finish({ ...turns[i]!, ask: turns[i]!.ask || m.message }, m.reply, m.actions, added));
     }
     if (m.event === "confirmed") return settle(turns, m.token, m.ok, m.reply);
     if (m.event === "cancelled") return settle(turns, m.token, false, "취소했어요.", true);
@@ -163,25 +163,7 @@ function onMessage(turns: Turn[], m: ServerMessage, sessionId: string): Turn[] {
   return turns;
 }
 
-export function turnsReducer(turns: Turn[], e: TurnEvent): Turn[] {
-  switch (e.type) {
-    case "ask":
-      return [...turns, fresh(e.id, e.source, e.text)];
-    case "message":
-      return onMessage(turns, e.message, e.sessionId);
-    case "result": {
-      const i = turns.findIndex((t) => t.id === e.id);
-      if (i === -1 || turns[i]!.state !== "busy") return turns;
-      return at(turns, i, e.reply ? finish(turns[i]!, e.reply, e.actions, e.pending) : finish(turns[i]!, null, [], [], e.error ?? "에이전트가 답하지 못했습니다."));
-    }
-    case "confirming": {
-      const i = lastIndex(turns, (t) => t.pending.some((p) => p.token === e.token && p.status === "open"));
-      if (i === -1) return turns;
-      return at(turns, i, { ...turns[i]!, pending: turns[i]!.pending.map((p) => (p.token === e.token ? { ...p, status: "busy" } : p)) });
-    }
-    case "settle":
-      return settle(turns, e.token, e.ok, e.reply, e.cancelled);
-    case "reset":
-      return [];
-  }
+/** 서버 메시지 하나를 판단 기록에 반영한다. */
+export function turnsReducer(turns: Turn[], message: ServerMessage): Turn[] {
+  return onMessage(turns, message);
 }

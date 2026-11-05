@@ -25,9 +25,9 @@ function Waiting({ health }: { health: HealthView | null }) {
 
 /**
  * 폰 카메라 화면만 보이는 자리. H.264 표시 영상이 오면 canvas(일꾼이 그림), 아니면 MJPEG <img>.
- * 첫 장이 오기 전에는 폰 접속 QR을 보인다.
+ * 첫 장이 오기 전에는 폰 접속 QR을 보인다. large면 놓인 자리를 채운다(판단 기록 패널의 폰 화면 탭).
  */
-function EyeBody({ health, connected }: { health: HealthView | null; connected?: boolean | null }) {
+export function EyeBody({ health, connected, large }: { health: HealthView | null; connected?: boolean | null; large?: boolean }) {
   const live = !!health?.eye;
   const [src, setSrc] = useState(streamUrl);
   const [shown, setShown] = useState(false);
@@ -71,8 +71,8 @@ function EyeBody({ health, connected }: { health: HealthView | null; connected?:
   return (
     <>
       {live && (
-        <figure hidden={!shown} className="m-0">
-          <div className="relative h-96 w-56 bg-black/70">
+        <figure hidden={!shown} className={large ? "m-0 h-full min-h-0 flex-1" : "m-0"}>
+          <div className={large ? "relative h-full w-full bg-black/70" : "relative h-96 w-56 bg-black/70"}>
             <div ref={videoBox} hidden={mode !== "video"} className="absolute inset-0" />
             <img
               ref={img}
@@ -86,7 +86,7 @@ function EyeBody({ health, connected }: { health: HealthView | null; connected?:
           </div>
         </figure>
       )}
-      {!shown && <div className="w-56 px-4 pb-4 pt-9"><Waiting health={health} /></div>}
+      {!shown && <div className={large ? "flex flex-1 items-center justify-center p-6" : "w-56 px-4 pb-4 pt-9"}><Waiting health={health} /></div>}
     </>
   );
 }

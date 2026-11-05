@@ -10,12 +10,11 @@ describe("대시보드 뼈대", () => {
     expect(screen.getByLabelText("3D 트윈")).toBeInTheDocument();
   });
 
-  it("트윈 위에 상태 알약·눈 창·대화 패널이 떠 있고, 모두 덮개 층 바로 아래라 빈 곳의 마우스는 3D로 간다", () => {
+  it("트윈 위에 상태 알약·눈 창·판단 기록 패널이 떠 있고, 모두 덮개 층 바로 아래라 빈 곳의 마우스는 3D로 간다", () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 404 })));
     render(<Dashboard />);
-    for (const name of ["집 상태", "클로이드의 눈", "대화"]) {
+    for (const name of ["집 상태", "클로이드의 눈", "판단 기록"]) {
       const panel = screen.getByRole("region", { name });
-      expect(panel).toHaveClass("glass");
       expect(panel.parentElement).toHaveClass("pointer-events-none");
     }
   });

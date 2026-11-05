@@ -35,3 +35,13 @@ export const observedOf = (a: AgentAction) => a.observation ?? (a.ok ? a.message
 export const BRAIN_STATE: Record<BrainState, string> = {
   watching: "지켜봄", in_use: "사용 중", away_check: "자리 비움 확인", requesting: "사진 요청", deciding: "판단 중", confirming: "재확인", acting: "모의 행동", done: "끝",
 };
+
+/** 상태를 읽기만 하는 도구(단계 종류 「확인」). 나머지는 「행동」. */
+const READ_TOOLS = new Set(["list_rooms", "list_devices", "find_devices", "get_state", "find_objects", "find_object_types"]);
+export const stepKind = (tool: string) => (READ_TOOLS.has(tool) ? "확인" : "행동");
+
+/** 컵 두뇌 단계(줄의 mark) → 화면 이름. */
+export const BRAIN_STAGE: Record<string, string> = {
+  use: "사용", away: "자리 비움", request: "사진 요청", answer: "답 사진", decide: "판단", confirm: "재확인", act: "행동", result: "결과",
+  wait: "기다림", cancel: "취소", stale: "오래됨", error: "오류", phone: "폰 부탁", would: "클로이드라면",
+};

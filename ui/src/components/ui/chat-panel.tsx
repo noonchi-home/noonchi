@@ -1,103 +1,85 @@
-// 21st.dev「Chat Panel」(id 23601, theshanelevine/chat)의 모양: 머리줄 + 고정 높이 대화 영역 + 아래 입력칸.
-// 데모 상태·영어 글은 지우고 틀만 남겼다. 색은 유리 토큰(styles.css)만 쓴다.
-import { ArrowUp } from "lucide-react";
-import { useRef, type FormEvent, type ReactNode, type Ref } from "react";
-import { cn } from "../../lib/utils";
+"use client";
 
-/** 패널 틀: 머리줄(제목·동작), 스크롤되는 가운데, 아래 입력. */
-export function ChatShell({ title, actions, children, footer, scrollRef, className }: {
-  title: ReactNode;
-  actions?: ReactNode;
-  children: ReactNode;
-  footer?: ReactNode;
-  scrollRef?: Ref<HTMLDivElement>;
-  className?: string;
+// 21st.dev「Chat Panel」(id 23601, theshanelevine/chat) 받은 코드.
+// 바꾼 것: 고정 크기(h-[288px] max-w-95) 대신 패널을 채운다. 머리줄 탭·동작 단추·대화 영역을 밖에서 넣는다. 입력칸(composer)은 뺐다.
+// 토큰(ink·surface·line·field·hover, rounded-card·shadow-card)은 styles.css에 만든 이 테마 값으로 둔다.
+import type { ReactNode, Ref } from "react";
+
+/* ─────────────────────────────────────────────────────────
+ * CHAT — panel with tabs and a fixed conversation region.
+ * ───────────────────────────────────────────────────────── */
+
+export function Section({
+  label,
+  sub,
+  time,
+  body,
+  resolving,
+}: {
+  label: string;
+  sub?: string;
+  time?: string;
+  body: ReactNode;
+  resolving?: boolean;
 }) {
   return (
-    <div className={cn("flex h-full min-h-0 flex-col overflow-hidden", className)}>
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-glass-line px-3 py-2">
-        <div className="flex min-w-0 items-center gap-2 text-sm font-medium text-ink">{title}</div>
-        <div className="flex items-center gap-1">{actions}</div>
+    <div
+      className="flex w-full flex-col gap-1.5 transition-[opacity,filter,transform] duration-400"
+      style={{
+        opacity: resolving ? 0.55 : 1,
+        filter: resolving ? "blur(0.5px)" : "blur(0)",
+        transform: resolving ? "scale(0.985)" : "scale(1)",
+        transformOrigin: "top left",
+        transitionTimingFunction: "cubic-bezier(0.23, 1, 0.32, 1)",
+        animation: "fade-up 400ms cubic-bezier(0.23,1,0.32,1) both",
+      }}
+    >
+      <div className="flex items-center gap-1 text-[12px] leading-[1.3]">
+        <span className="font-medium text-ink">{label}</span>
+        {sub && <span className="text-ink-2">{sub}</span>}
+        {time && <span className="text-ink">{time}</span>}
       </div>
-      <div ref={scrollRef} className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-3 pb-2 pt-3 [overflow-anchor:none]">{children}</div>
-      {footer && <div className="mt-auto shrink-0 p-2">{footer}</div>}
+      <div className="text-[13px] leading-normal text-ink">{body}</div>
     </div>
   );
 }
 
-/** 사용자가 보낸 말: 오른쪽 정렬 부드러운 덩어리. */
-export function UserBubble({ children, icon }: { children: ReactNode; icon?: ReactNode }) {
-  return (
-    <div className="flex justify-end pl-10">
-      <div className="flex items-start gap-1.5 rounded-xl bg-field-strong px-3 py-1.5 text-[13px] leading-[1.4] text-ink">
-        {icon}
-        <span className="break-words">{children}</span>
-      </div>
-    </div>
-  );
-}
-
-/** 작은 동작 버튼(머리줄). */
-export function IconButton({ label, onClick, children, text }: { label: string; onClick: () => void; children: ReactNode; text?: string }) {
+/** 머리줄 오른쪽 작은 동작 단추. */
+export function ChatAction({ label, onClick, children, expanded }: { label: string; onClick: () => void; children: ReactNode; expanded?: boolean }) {
   return (
     <button
       type="button"
-      aria-label={text ? undefined : label}
+      aria-label={label}
+      aria-expanded={expanded}
       onClick={onClick}
-      className="flex h-7 items-center justify-center gap-1 rounded-lg px-1.5 text-xs text-ink-dim transition-colors hover:bg-field hover:text-ink"
+      className="flex size-6 items-center justify-center rounded-[6px] text-ink-3
+        transition-colors duration-100 hover:bg-hover hover:text-ink-2"
     >
       {children}
-      {text && <span>{text}</span>}
     </button>
   );
 }
 
-/** 입력칸 + 보내기(위 화살표). 칸 아무 곳이나 누르면 입력으로 간다. */
-export function Composer({ value, onChange, onSubmit, disabled, placeholder, label, sendLabel, inputRef }: {
-  value: string;
-  onChange: (v: string) => void;
-  onSubmit: (v: string) => void;
-  disabled?: boolean;
-  placeholder: string;
-  label: string;
-  sendLabel: string;
-  inputRef?: React.RefObject<HTMLInputElement | null>;
-}) {
-  const own = useRef<HTMLInputElement>(null);
-  const input = inputRef ?? own;
-  const canSend = !disabled && value.trim().length > 0;
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
-    if (canSend) onSubmit(value);
-  };
+/** 대화 영역: 고정 영역이라 카드 모양이 바뀌지 않는다. */
+export function ChatRegion({ children, scrollRef }: { children: ReactNode; scrollRef?: Ref<HTMLDivElement> }) {
   return (
-    <form onSubmit={submit} autoComplete="off">
-      <div
-        role="presentation"
-        onClick={() => input.current?.focus()}
-        className="flex cursor-text items-center gap-2 rounded-xl border border-glass-line bg-field p-2 pl-3 transition-colors focus-within:border-ink-dim"
-      >
-        <input
-          ref={input}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          aria-label={label}
-          maxLength={2000}
-          className="min-w-0 flex-1 bg-transparent text-[13px] leading-[1.4] text-ink outline-none placeholder:text-ink-dim"
-        />
-        <button
-          type="submit"
-          aria-label={sendLabel}
-          disabled={!canSend}
-          className={cn(
-            "flex size-7 shrink-0 items-center justify-center rounded-lg transition-[background-color,color,transform] duration-200 enabled:active:scale-[0.96]",
-            canSend ? "bg-ink text-glass" : "bg-field-strong text-ink-dim",
-          )}
-        >
-          <ArrowUp className="size-4" strokeWidth={2.4} aria-hidden="true" />
-        </button>
+    <div ref={scrollRef} className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-3 pt-2.5 pb-1 [overflow-anchor:none]">
+      {children}
+    </div>
+  );
+}
+
+export default function ChatPanel({ tabs, actions, children }: { tabs: ReactNode; actions?: ReactNode; children?: ReactNode }) {
+  return (
+    <div className="flex h-full w-full flex-col self-start overflow-hidden rounded-card bg-surface shadow-card">
+      {/* header — tabs + actions */}
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-line p-1.5">
+        <div className="flex min-w-0 flex-1 items-center">{tabs}</div>
+        <div className="flex items-center gap-1">{actions}</div>
       </div>
-    </form>
+
+      {/* conversation — fixed region so the card never changes shape */}
+      {children}
+    </div>
   );
 }
