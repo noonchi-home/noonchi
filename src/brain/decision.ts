@@ -222,12 +222,24 @@ export function selectDecisionFrames(frames: readonly Frame[], endMs: number, op
 /** 우리 쪽 관찰 사실. PAM은 사진과 기억만 보지만, 모의 모델과 기록에는 이것을 쓴다. */
 export interface DecisionFacts { contents: Contents }
 
+/** 장면 사진 5장 밖의 근거. 요청 답 사진처럼 5장 격자에 들지 않는 사진과, 그 사진에서 VLM이 확신한 사실(컵 안). */
+export interface DecisionEvidence {
+  kind: "cup_contents";
+  value: Contents;
+  certain: boolean;
+  /** 근거 사진 촬영 시각(시간대 있는 ISO). */
+  timestamp: string;
+  source: "request_answer_photo" | "scene_frame";
+  jpeg?: Buffer;
+}
+
 export interface DecisionInput {
   frames: DecisionFrame[];
   memory: PamMemory;
   memoryKind: "list" | "fsm";
   tasks: string[];
   facts: DecisionFacts;
+  evidence?: DecisionEvidence[];
 }
 
 export interface DecisionModel {
@@ -249,7 +261,30 @@ export const CUP_MEMORY: ListMemory = {
   ],
 };
 
-function checkInput(input: DecisionInput): void {
+/** 컵 시나리오의 FSM 기억(임시). PAM fsm 기억 모양(ai/pam/contracts.py validate_memory)을 따른다.
+ *  실제 기억은 PAM 반성기(reflector)가 만든다. 작업 이름은 CUP_TASKS와 같게 둔다. */
+export const CUP_FSM_MEMORY: FsmMemory = {
+  initial_state: "drinking",
+  states: [
+    {
+      id: "drinking",
+      description: "사용자가 식탁에서 컵으로 음료를 마시는 중이라 컵은 사용 중이다.",
+      rules: [],
+      next: [{ to: "left_cup", on: "사용자가 컵을 식탁에 내려놓고 자리를 떠나 보이지 않는다." }],
+    },
+    {
+      id: "left_cup",
+      description: "사용자가 컵을 식탁에 두고 자리를 비웠다. 화면에 안 보이는 것만으로 떠났다고 보지 않는다.",
+      rules: [
+        { trigger: "사용자가 자리를 비웠고 식탁 위 컵이 비어 있으며 아무도 컵을 들거나 만지지 않는다.", action: "컵 치우기" },
+        { trigger: "사용자가 자리를 비웠고 컵 안을 확인할 수 없다.", action: "사용자에게 물어보기" },
+      ],
+      next: [{ to: "drinking", on: "사용자가 돌아와 컵을 다시 든다." }],
+    },
+  ],
+};
+
+export function checkInput(input: DecisionInput): void {
   validateDecisionFrames(input.frames);
   validateTasks(input.tasks);
   validateMemory(input.memory, input.memoryKind);
@@ -274,16 +309,4 @@ export class MockDecision implements DecisionModel {
   }
 }
 
-/**
- * 박석준 PAM(2026-SWE/ai)의 한 카메라 버전을 부를 자리.
- * 지금 PAM은 좌우 카메라 두 장·OpenRouter `qwen/qwen3.5-27b`·`OPENROUTER_API_KEY`·미리 준비한 입력 묶음을 요구한다.
- * 한 카메라 버전이 나오면 사진 5장(시간대 있는 시각)·기억·작업 목록을 넘기고 PAM의 parse_prediction 결과를 받는다.
- * 호출 형식(함수·CLI·HTTP)과 키는 박석준과 정한다. 받은 답은 parsePrediction으로 다시 검사한다.
- */
-export class PamDecision implements DecisionModel {
-  readonly name = "pam";
-
-  async decide(_input: DecisionInput): Promise<Prediction> {
-    throw new ContractError("PAM 연결 전: 한 카메라 버전의 호출 형식이 정해지면 채운다");
-  }
-}
+// 박석준 PAM을 HTTP로 부르는 어댑터는 pam.ts(PamDecision)에 있다.

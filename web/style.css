@@ -301,6 +301,8 @@ button.active { background: var(--accent-soft); border-color: var(--accent); col
 .turn .state.fail { color: var(--err); background: var(--err-soft); border-color: transparent; }
 .turn .state.busy { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
 .turn[open] .answer { white-space: normal; }
+.brain-nows { display: flex; flex-direction: column; gap: 2px; padding: 4px 10px 6px 12px; border-top: 1px dashed var(--line); font-size: 11px; color: var(--muted); }
+.brain-now { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .steps { list-style: none; margin: 0; padding: 4px 10px 10px 12px; display: flex; flex-direction: column; gap: 4px; border-top: 1px dashed var(--line); }
 .step { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 6px; font-size: 12px; align-items: baseline; }
 .step .no { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }

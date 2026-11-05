@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  CUP_MEMORY, CUP_TASKS, MockDecision, PamDecision, findDuplicateKey, parsePrediction, selectDecisionFrames, validateDecisionFrames,
+  CUP_MEMORY, CUP_TASKS, MockDecision, findDuplicateKey, parsePrediction, selectDecisionFrames, validateDecisionFrames,
   validateMemory, validatePrediction, validateTasks, type DecisionInput,
 } from "../src/brain/decision.js";
+import { PamDecision } from "../src/brain/pam.js";
 
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
 const frames = (n = 5) => Array.from({ length: n }, (_, i) => ({ timestamp: `2026-11-04T12:00:0${i * 2}.000+09:00`, jpeg: JPEG }));
@@ -107,7 +108,7 @@ describe("판단 모델", () => {
     await expect(mock.decide({ ...input("empty"), tasks: [] })).rejects.toThrow();
   });
 
-  it("PAM 자리표시는 연결 전이라고 알린다", async () => {
+  it("PAM은 주소(PAM_URL) 없이는 부르지 않는다(pam.ts)", async () => {
     await expect(new PamDecision().decide(input("empty"))).rejects.toThrow(/PAM/);
   });
 });

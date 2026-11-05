@@ -19,6 +19,9 @@ const HeaderSchema = z.object({
   tracking: z.enum(["ok", "limited"]).optional(),
   /** 찍은 순간의 AR 원점(session.ts). 사진 위치는 이 원점이 지금 맞춤과 같을 때만 붙인다. */
   epoch: z.string().min(1).max(64).optional(),
+  /** 서버 시계로 옮긴 촬영 시각(ms)과 그 오차(clock 핑 왕복의 절반). 두뇌가 근거 시각으로 쓴다(src/brain/live.ts). */
+  captured_at: num.optional(),
+  time_err_ms: z.number().min(0).max(60_000).optional(),
 });
 
 export interface FrameHeader {
@@ -29,6 +32,8 @@ export interface FrameHeader {
   orientation?: Quat;
   tracking?: "ok" | "limited";
   epoch?: string;
+  captured_at?: number;
+  time_err_ms?: number;
 }
 
 export function encodeFramePacket(header: FrameHeader, jpeg: Uint8Array): Buffer {

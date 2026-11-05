@@ -4,6 +4,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Agent } from "../agent/agent.js";
+import { createLiveBrain, type CreateLiveBrainOptions, type LiveBrain } from "../brain/live.js";
+import { surfacesFrom, type Surface } from "../brain/presence.js";
 import { Policy } from "../agent/policy.js";
 import { createProvider } from "../agent/providers/index.js";
 import type { DeviceHub } from "../hub/types.js";
@@ -31,13 +33,16 @@ export interface StartServerOptions {
   /** 기본 process.env. HUB, MATTER_*, AGENT_PROVIDER, TWIN_STUDIO_DIR, HOME_ID(twin-studio homes.json의 집, 기본 집), PORT(0이면 빈 포트), HOST,
    *  PHONE_PORT(있으면 폰 AR 서버), PHONE_HOST(기본 0.0.0.0), PHONE_MAX_MISMATCH_M(기준점 거리 차이 허용값, 기본 0.3),
    *  PHONE_EYE_HEIGHT_M(벽 대기 맞춤의 눈 높이, 기본 1.5),
-   *  FOCUS(1이면 초점 표시를 보낸다, 기본 끔), PHONE_PHOTO_DIR(사진 폴더, 기본 runtime/photos), RUNTIME_DIR(배치 수정본 runtime/homes/<id>/edits.json의 바탕, 기본 runtime)를 읽는다. */
+   *  FOCUS(1이면 초점 표시를 보낸다, 기본 끔), PHONE_PHOTO_DIR(사진 폴더, 기본 runtime/photos), RUNTIME_DIR(배치 수정본 runtime/homes/<id>/edits.json의 바탕, 기본 runtime),
+   *  BRAIN(1이면 폰 카메라로 상위 판단을 돌린다. PHONE_PORT·OPENAI_API_KEY 필요, BRAIN_* 는 docs/reference.md)을 읽는다. */
   env?: Env;
   log?: (line: string) => void;
   /** 테스트용: matter 모듈 불러오기. */
   importer?: StartHubOptions["importer"];
   /** MatterHub 추가 옵션. */
   matter?: Record<string, unknown>;
+  /** 테스트용: 두뇌의 판정기·감지기·판단 모델·시계. */
+  brain?: CreateLiveBrainOptions["inject"];
 }
 
 export interface RunningServer {
@@ -72,6 +77,20 @@ function sceneRooms(scenePath: string): { polygon?: number[][]; floor_z?: number
   }
 }
 
+/** 트윈의 식탁·책상 윗면(두뇌의 "식탁을 비추는가"). 배치가 바뀌면 다시 만든다. */
+function surfaceSource(editor: LayoutEditor | undefined): () => Surface[] {
+  if (!editor) return () => [];
+  let cache: Surface[] | null = null;
+  editor.subscribe(() => { cache = null; });
+  return () => (cache ??= surfacesFrom(editor.objects().map((o) => {
+    const c = editor.center(o.id);
+    return {
+      id: o.id, name: o.name, type: o.type, plan: o.plan.position, base: o.position[1],
+      height: c ? Math.max(0, 2 * (c.position[1] - o.position[1])) : o.height ?? 0, footprint: o.footprint,
+    };
+  })));
+}
+
 export async function startServer(opts: StartServerOptions = {}): Promise<RunningServer> {
   const env = opts.env ?? process.env;
   const log = opts.log ?? ((line: string) => console.log(line));
@@ -82,6 +101,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
 
   const started = await startHub(twin, { env, log, importer: opts.importer, matter: { log, ...opts.matter } });
   const { hub } = started;
+  let live: LiveBrain | null = null;
   try {
     const policy = new Policy();
     const { provider, warning } = createProvider(env);
@@ -116,8 +136,18 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
         else phoneRef.current.setTargets(phoneRef.floor, "floor");
       }, savedTouch)
       : undefined;
+    // 상위 판단(BRAIN=1): 폰 카메라 프레임으로 컵 시나리오를 돈다(src/brain/live.ts). 행동은 모의라 기기 명령이 없다
+    const brainWanted = /^(1|true|on)$/i.test(env.BRAIN?.trim() ?? "");
+    if (brainWanted && !phoneOn) log("[경고] BRAIN=1은 PHONE_PORT가 있어야 합니다(폰 카메라가 입력). 두뇌를 끕니다.");
+    live = brainWanted && phoneOn
+      ? await createLiveBrain({
+        env, runtimeDir, log, surfaces: surfaceSource(layout?.editor), inject: opts.brain,
+        toDashboard: (m) => appRef.current?.broadcast(m), toPhone: (m) => phoneRef.current?.send(m),
+      })
+      : null;
+    const brain = live;
     const app = createApp({
-      hub, policy, agent, rooms: twin.rooms, twinDir, viewerDir: home.viewerDir, libraryDir: home.libraryDir, hubKind, log, eye: feed,
+      hub, policy, agent, rooms: twin.rooms, twinDir, viewerDir: home.viewerDir, libraryDir: home.libraryDir, hubKind, log, eye: feed, brain: brain ?? undefined,
       home: { id: home.id, name: home.name }, homes: listHomes(twin.dir), layout: layout?.editor, phoneUrls: () => phoneUrls,
       touch: touchStore && { get: () => touchStore.get(), save: (raw) => touchStore.save(raw), clear: () => touchStore.clear(), eyeHeightM },
     });
@@ -146,6 +176,11 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
           },
           onConfirm: async (token) => ({ reply: (await agent.confirm(token)).reply }),
           onCancel: async (token) => ({ reply: agent.cancel(token).reply }),
+          ...(brain ? {
+            onFrame: (jpeg, h, eye, at) => brain.onFrame(jpeg, { receivedAtMs: at, capturedAt: h.captured_at, timeErrMs: h.time_err_ms, eye }),
+            onPhoto: (jpeg, h, eye, at) => brain.onPhoto(jpeg, { receivedAtMs: at, capturedAt: h.captured_at, timeErrMs: h.time_err_ms, eye }),
+            onBrainReply: (id, choice) => brain.onReply(id, choice),
+          } : {}),
         });
         const phoneServer = phone;
         phoneRef.current = phone;
@@ -156,6 +191,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
         phoneUrls = listened.urls;
       } catch (e) {
         await app.close();
+        await live?.close();
         throw e;
       }
     }
@@ -180,6 +216,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
         if (closed) return;
         closed = true;
         unsubFocus();
+        await live?.close();
         feed?.close();
         await phone?.close();
         await app.close();
@@ -187,6 +224,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       },
     };
   } catch (e) {
+    await live?.close().catch(() => {});
     await hub.stop().catch(() => {});
     throw e;
   }

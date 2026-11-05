@@ -11,7 +11,7 @@ import { listenRetry } from "../server/net.js";
 import { serveFile } from "../server/static.js";
 import type { AnchorTarget } from "./anchors.js";
 import type { EyeFeed } from "./feed.js";
-import { MAX_PACKET_BYTES, parseFramePacket } from "./packet.js";
+import { MAX_PACKET_BYTES, parseFramePacket, type FrameHeader } from "./packet.js";
 import type { Plan2, Vec3 } from "./align.js";
 import { PhoneSession, type AlignMode, type EyeEvent, type FallbackViewpoint, type HerePoint } from "./session.js";
 
@@ -38,6 +38,12 @@ export interface PhoneServerOptions {
   onSay?: (text: string) => Promise<PhoneReply>;
   onConfirm?: (token: string) => Promise<{ reply: string }>;
   onCancel?: (token: string) => Promise<{ reply: string }>;
+  /** 상위 판단(BRAIN=1): 화면 프레임·사진을 그 순간의 눈 자세(맞추기 전 null)와 함께 넘긴다. */
+  onFrame?: (jpeg: Buffer, header: FrameHeader, eye: EyeEvent | null, receivedAtMs: number) => void;
+  /** 사진. 요청 답으로 받았으면 "answer". */
+  onPhoto?: (jpeg: Buffer, header: FrameHeader, eye: EyeEvent | null, receivedAtMs: number) => "answer" | "no_request" | undefined;
+  /** 폰 행동 부탁·질문의 답. */
+  onBrainReply?: (id: string, choice: string) => void;
 }
 
 export interface PhoneReply {
@@ -62,6 +68,8 @@ export interface PhoneServer {
   sendFocus(targets: FocusTarget[], ttlMs: number): void;
   /** 기준점·방식을 바꾸고(기록·맞춤은 지움) 연결된 폰에 새 상태를 보낸다. */
   setTargets(targets: AnchorTarget[], mode: AlignMode): void;
+  /** 연결된 폰 모두에 보낸다(두뇌 요청·행동 부탁·상태 한 줄). */
+  send(msg: unknown): void;
   listen(port: number, host: string): Promise<{ port: number; urls: string[] }>;
   close(): Promise<void>;
 }
@@ -122,22 +130,26 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
   };
   // 바이너리 메시지 = 카메라 프레임·사진 패킷(packet.ts)
   const onPacket = (ws: WebSocket, data: Buffer) => {
+    const receivedAtMs = Date.now();
     const packet = parseFramePacket(data);
     if ("error" in packet) {
       reply(ws, session.status(packet.error));
       return;
     }
     const { header, jpeg } = packet;
-    if (!opts.feed) return;
+    const eyeOf = () => (header.position && header.orientation
+      ? session.eyeAt(header.position, header.orientation, header.tracking ?? "ok", header.epoch)
+      : null);
     if (header.kind === "frame") {
-      opts.feed.pushFrame(jpeg, header.width, header.height);
+      opts.feed?.pushFrame(jpeg, header.width, header.height);
+      if (opts.onFrame) opts.onFrame(jpeg, header, eyeOf(), receivedAtMs);
       return;
     }
-    const eye = header.position && header.orientation
-      ? session.eyeAt(header.position, header.orientation, header.tracking ?? "ok", header.epoch)
-      : null;
+    const eye = eyeOf();
+    const answer = opts.onPhoto?.(jpeg, header, eye, receivedAtMs) === "answer";
+    if (!opts.feed) return;
     const photo = opts.feed.savePhoto(jpeg, header.width, header.height, eye);
-    reply(ws, { type: "photo_saved", id: photo.id, aligned: eye !== null });
+    reply(ws, { type: "photo_saved", id: photo.id, aligned: eye !== null, ...(answer ? { answer: true } : {}) });
   };
 
   const talk = async (ws: WebSocket, msg: Record<string, unknown>) => {
@@ -179,6 +191,17 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
         void talk(ws, raw as Record<string, unknown>);
         return;
       }
+      // 시계 맞춤(NTP식): 폰이 보낸 t0를 그대로, 서버 시각을 붙여 바로 돌려준다
+      if (type === "clock") {
+        const t0 = (raw as { t0?: unknown }).t0;
+        if (typeof t0 === "number" && Number.isFinite(t0)) reply(ws, { type: "clock", t0, server: Date.now() });
+        return;
+      }
+      if (type === "brain_reply") {
+        const { id, choice } = raw as { id?: unknown; choice?: unknown };
+        if (typeof id === "string" && typeof choice === "string" && id.length <= 64 && choice.length <= 32) opts.onBrainReply?.(id, choice);
+        return;
+      }
       const out = session.handle(raw);
       if (out.reply) reply(ws, out.reply);
       if (out.eye) opts.onEye(out.eye);
@@ -200,6 +223,9 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
     setTargets(targets, mode) {
       session.setTargets(targets, mode);
       for (const ws of wss.clients) reply(ws, session.status());
+    },
+    send(msg) {
+      for (const ws of wss.clients) reply(ws, msg);
     },
     async listen(port, host) {
       const addr = await listenRetry(server, port, host, { log });

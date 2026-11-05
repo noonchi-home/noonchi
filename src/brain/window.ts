@@ -4,7 +4,10 @@ import type { WindowConfig } from "./config.js";
 
 export interface Frame {
   id: string;
+  /** 촬영 시각(가장 이른 가능 시각). */
   capturedAtMs: number;
+  /** 가장 늦은 가능 촬영 시각(시계 오차가 있을 때, live.ts). 없으면 capturedAtMs. */
+  latestAtMs?: number;
   jpeg: Buffer;
 }
 

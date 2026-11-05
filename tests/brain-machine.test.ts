@@ -105,7 +105,7 @@ describe("컵 상태 기계", () => {
     const early = m.observe({ perception: emptyInside, evidenceAtMs: 15_200 }, 16_000);
     expect(early.intents).toEqual([]);
     const answer = see(m, 17_000, emptyInside);
-    expect(answer.intents).toEqual([{ kind: "decide", generation: m.generation, contents: "empty", endMs: 17_000 }]);
+    expect(answer.intents).toEqual([{ kind: "decide", generation: m.generation, contents: "empty", endMs: 17_000, contentsAtMs: 17_000 }]);
     expect(requests([answer])).toEqual([expect.objectContaining({ active: false })]);
     expect(m.state).toBe("deciding");
   });

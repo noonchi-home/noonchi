@@ -33,6 +33,19 @@ button { font: inherit; padding: 10px 14px; border-radius: 10px; border: 1px sol
   .menu { right: 96px; width: min(380px, 60vw); max-height: calc(100vh - 56px); }
 }
 
+/* 상위 판단(BRAIN=1): 상태 한 줄, 컵 안 사진 요청(큰 글씨), 행동 부탁(모의, 버튼) */
+.brain-line { position: fixed; top: 36px; left: 8px; right: 8px; margin: 0; padding: 4px 10px; border-radius: 8px; font-size: 13px; color: #fff; background: rgb(0 0 0 / 0.55); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.brain-request { position: fixed; left: 50%; top: 30%; transform: translate(-50%, -50%); width: min(90vw, 520px); margin: 0; padding: 16px 18px; border-radius: 16px; text-align: center; font-size: 24px; font-weight: 700; line-height: 1.35; color: #fff; background: rgb(179 66 58 / 0.92); box-shadow: 0 4px 16px rgb(0 0 0 / 0.35); pointer-events: none; }
+.brain-action { position: fixed; left: 50%; top: 22%; transform: translateX(-50%); width: min(92vw, 520px); display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: 16px; color: #34383e; background: rgb(255 255 255 / 0.96); box-shadow: 0 4px 16px rgb(0 0 0 / 0.35); }
+.brain-action p { margin: 0; }
+.brain-action-text { font-size: 20px; }
+.brain-action .tag { display: inline-block; padding: 1px 8px; border-radius: 8px; font-size: 12px; font-weight: 600; color: #fff; background: #8a6d3b; vertical-align: middle; }
+.brain-action-would { font-size: 12px; color: #6b6f75; }
+.brain-action-choices { display: flex; gap: 8px; }
+.brain-action-choices button { flex: 1; padding: 14px 10px; font-size: 17px; font-weight: 600; }
+.brain-action-choices button:first-child { background: #2f6fde; border-color: #2f6fde; color: #fff; }
+.brain-line[hidden], .brain-request[hidden], .brain-action[hidden] { display: none; }
+
 /* 대화(말하기·글 입력·답·승인) */
 .talk { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
 #overlay .talk { margin-top: 0; }

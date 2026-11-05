@@ -5,6 +5,8 @@
 //   --dir <프레임 폴더>  --fps 12  --hold-ms 12000(마지막 장면을 더 두는 시간, 합성)
 //   --answer-mock empty|not_empty|none  요청 뒤 판정에서 컵 안을 이 값으로 바꾼다(합성 답, 기본 empty)
 //   --answer <jpg>   요청 뒤 그 사진을 프레임으로 넣는다(실제 답 사진이 있을 때)
+//   --detector [yolox_tiny|yolox_nano]  YOLO 존재 판정을 같이 돌린다(2단계 감지 모드, live.ts LiveBrain, 모의 행동까지).
+//                    VLM 호출은 거르기를 거친다. 장당 YOLO 시간을 끝에 찍는다.
 //
 // 기본 프레임은 11-01 실험의 Pexels 컵 영상(runtime/vlm-events/cup/frames, 480×270, 119장): 손이 컵을 들어
 // 화면 밖에서 마시고 돌아와 내려놓은 뒤 손이 빠진다. 컵을 옆에서 찍어 안은 보이지 않는다.
@@ -13,6 +15,8 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import dotenv from "dotenv";
 import { CupBrain, type BrainOutput } from "../src/brain/brain.js";
+import { WorkerDetector, YOLOX_MODELS, type YoloxModel } from "../src/brain/detector.js";
+import { LiveBrain } from "../src/brain/live.js";
 import { DEFAULT_BRAIN_CONFIG } from "../src/brain/config.js";
 import { MockDecision } from "../src/brain/decision.js";
 import {
@@ -26,6 +30,7 @@ const opt = (name: string, fallback: string) => {
   return i >= 0 && args[i + 1] ? args[i + 1]! : fallback;
 };
 const live = args.includes("--live");
+const detectorName = args.includes("--detector") ? ((opt("detector", "yolox_tiny").startsWith("--") ? "yolox_tiny" : opt("detector", "yolox_tiny")) as YoloxModel) : null;
 const dir = resolve(opt("dir", "runtime/vlm-events/cup/frames"));
 const fps = Number(opt("fps", "12"));
 const holdMs = Number(opt("hold-ms", "12000"));
@@ -84,41 +89,59 @@ async function main() {
   const now = () => Math.round(performance.now() - t0);
   const fmt = (ms: number) => `${(ms / 1000).toFixed(1).padStart(5)}s`;
   const timeline: string[] = [];
-  const brain = new CupBrain({
-    perceiver: new AnswerMock(inner),
-    decision: new MockDecision(),
-    config: { ...DEFAULT_BRAIN_CONFIG, callCap: live ? cap : 1000 },
-    clock: { now },
-    emit: (e: BrainOutput) => {
+  const config = { ...DEFAULT_BRAIN_CONFIG, callCap: live ? cap : 1000 };
+  const emit = (e: BrainOutput) => {
       let line: string;
       if (e.type === "perception") {
         line = `${fmt(e.at_ms)}  판정(${e.frames}장, 근거 ${(e.evidence_age_ms / 1000).toFixed(1)}초 전${e.cost_usd ? `, $${e.cost_usd.toFixed(5)}` : ""}) ${e.error ? `실패: ${e.error}` : e.summary}`;
       } else if (e.type === "request") {
         if (e.active) { state.requestActive = true; state.requestAtMs = e.at_ms; } else state.requestActive = false;
         line = `${fmt(e.at_ms)}  📱 ${e.active ? "폰 요청" : "폰 요청 거둠"}: ${e.text}`;
+      } else if (e.type === "presence") {
+        line = `${fmt(e.at_ms)}  ${e.summary} (사람 ${e.scores.person.toFixed(2)} · 컵 ${e.scores.cup.toFixed(2)})`;
+      } else if (e.type === "action") {
+        line = `${fmt(e.at_ms)}  🤖 ${e.active ? `행동(모의): ${e.plan.dashboard}` : "행동 끝"}`;
+      } else if (e.type === "result") {
+        line = `${fmt(e.at_ms)}  결과(${e.outcome}): ${e.text}`;
       } else {
         line = `${fmt(e.at_ms)}  [${e.state}] ${e.stage}: ${e.text}`;
       }
       timeline.push(line);
       console.log(line);
-    },
-    time: { offsetMinutes: -new Date().getTimezoneOffset(), epochMs: Date.now() },
-  });
-  console.log(`재생: ${files.length}장 ${fps}fps(${(clipMs / 1000).toFixed(1)}초) + 마지막 장면 ${(holdMs / 1000).toFixed(1)}초 · 판정 ${live ? "실제 VLM" : "라벨 대본(지연 1.3초)"} · 합성 답 ${answerMock}${answerPath ? ` · 답 사진 ${answerPath}` : ""}`);
+  };
+  let feed: (i: number, at: number, jpeg: Buffer) => void;
+  let brain: CupBrain;
+  let liveBrain: LiveBrain | null = null;
+  if (detectorName) {
+    const model = YOLOX_MODELS[detectorName];
+    const detector = await WorkerDetector.create(join("runtime", "models", model.file));
+    liveBrain = new LiveBrain({
+      config, perceiver: new AnswerMock(inner), detector, decision: new MockDecision(), surfaces: () => [],
+      toDashboard: (m) => emit((m as { event: BrainOutput }).event), toPhone: () => {}, clock: { now }, tickMs: 100,
+    });
+    brain = liveBrain.brain;
+    feed = (_i, at, jpeg) => liveBrain!.onFrame(jpeg, { receivedAtMs: now(), capturedAt: Math.round(at), timeErrMs: 0, eye: null });
+  } else {
+    brain = new CupBrain({ perceiver: new AnswerMock(inner), decision: new MockDecision(), config, clock: { now }, emit, time: { offsetMinutes: -new Date().getTimezoneOffset(), epochMs: Date.now() } });
+    feed = (i, at, jpeg) => brain.onFrame({ id: `f${i}`, capturedAtMs: Math.round(at), jpeg });
+  }
+  console.log(`재생: ${files.length}장 ${fps}fps(${(clipMs / 1000).toFixed(1)}초) + 마지막 장면 ${(holdMs / 1000).toFixed(1)}초 · 판정 ${live ? "실제 VLM" : "라벨 대본(지연 1.3초)"} · 감지 ${detectorName ?? "없음"} · 합성 답 ${answerMock}${answerPath ? ` · 답 사진 ${answerPath}` : ""}`);
   const answerJpeg = answerPath && existsSync(answerPath) ? readFileSync(answerPath) : null;
-  const ticker = setInterval(() => brain.tick(), 100);
+  const ticker = liveBrain ? null : setInterval(() => brain.tick(), 100);
   for (let i = 0; ; i++) {
     const at = (i * 1000) / fps;
     if (at > totalMs) break;
     while (now() < at) await sleep(Math.max(1, at - now()));
     const jpeg = answerJpeg && state.requestActive ? answerJpeg : jpegs[Math.min(i, jpegs.length - 1)]!;
-    brain.onFrame({ id: `f${i}`, capturedAtMs: Math.round(at), jpeg });
-    if (brain.stats().state === "done") break;
+    feed(i, at, jpeg);
+    if (brain.stats().state === "done" || brain.stats().state === "acting") break;
   }
-  clearInterval(ticker);
-  await brain.idle();
+  if (ticker) clearInterval(ticker);
+  await (liveBrain ? liveBrain.idle() : brain.idle());
   const s = brain.stats();
-  console.log(`끝: 상태 ${s.state} · 판정 호출 ${s.calls}회 · 비용 $${s.costUsd.toFixed(5)}${s.capped ? " · 호출 상한 도달" : ""}`);
+  const yolo = liveBrain?.status();
+  console.log(`끝: 상태 ${s.state} · 판정 호출 ${s.calls}회 · 비용 $${s.costUsd.toFixed(5)}${s.capped ? " · 호출 상한 도달" : ""}${yolo ? ` · YOLO ${yolo.detected}/${yolo.frames}장 처리, 장당 ${yolo.detect_ms}ms` : ""}`);
+  await liveBrain?.close();
 }
 
 main().catch((e: unknown) => {

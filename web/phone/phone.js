@@ -6,6 +6,8 @@
 // 화면은 세로 촬영 기준: 가운데 조준점, 아래 큰 버튼(말하기·사진·끝내기), 위 상태 줄, 나머지(글 입력·다시 맞추기·측정)는 ⋯ 메뉴.
 // 말하기: 크롬 내장 음성 인식(ko-KR, 누르고 말하기)으로 받아쓴 문장을 say로 보내고, 답은 읽어 주고 몇 초 보인다. 음성 인식이 없으면 글 입력.
 // 초점: 서버가 보낸 대상(AR 좌표)을 화면에 고리로 그리고, 대시보드로 가는 화면 프레임에도 그린다(사진에는 그리지 않음).
+// 상위 판단(서버 BRAIN=1): 시계를 맞춰(clock 핑, NTP식) 프레임·사진에 서버 시계 촬영 시각과 오차를 붙인다. 두뇌의 컵 안 사진 요청은
+// 화면 가운데 큰 글씨로, 행동 부탁(모의)은 버튼 카드로 보이고, 요청이 떠 있을 때 📷 사진이 요청 답이 된다.
 
 import { createGrabber, framePacket } from "./capture.js";
 import { createFramePipeline, createSendStats, frameWidth } from "./pipeline.js";
@@ -41,20 +43,101 @@ let revision = null;
 let epoch = null;
 const newEpoch = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 let arOn = false;
+// 시계 맞춤: 최근 표본 중 왕복이 가장 짧은 것으로 서버 시계와의 차(offset)를 정하고 오차는 왕복의 절반
+const CLOCK_MS = 2000;
+const phoneNow = () => performance.timeOrigin + performance.now();
+let clockSamples = [];
+let clockTimer = null;
+function clockFix() {
+  if (!clockSamples.length) return null;
+  const best = clockSamples.reduce((a, b) => (b.rtt < a.rtt ? b : a));
+  return { offset: best.offset, err: Math.ceil(best.rtt / 2) };
+}
+function onClock(msg) {
+  const t1 = phoneNow();
+  const rtt = t1 - msg.t0;
+  if (!(rtt >= 0)) return;
+  clockSamples = [...clockSamples, { rtt, offset: msg.server - (msg.t0 + t1) / 2 }].slice(-10);
+}
+/** 폰 시각(ms) → 헤더에 붙일 서버 시계 촬영 시각과 오차. 아직 표본이 없으면 빈 객체(서버가 받은 시각을 쓴다). */
+function stamp(phoneMs) {
+  const fix = clockFix();
+  return fix ? { captured_at: Math.round(phoneMs + fix.offset), time_err_ms: fix.err } : {};
+}
+const brainView = { requestId: null, actionId: null, lineTimer: null };
 const pipeline = createFramePipeline({ maxInFlight: 2 });
 const stats = createSendStats({ windowMs: 2000 });
 const view = { aligned: false, mismatch: null, anchors: "", limited: false, note: "", noteUntil: 0, size: "-", encoder: "-" };
 
 function connect() {
   ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/phone/events`);
+  ws.addEventListener("open", () => {
+    clockSamples = [];
+    const ping = () => send({ type: "clock", t0: phoneNow() });
+    ping();
+    clearInterval(clockTimer);
+    clockTimer = setInterval(ping, CLOCK_MS);
+  });
   ws.addEventListener("message", (event) => {
     const msg = JSON.parse(event.data);
     if (msg.type === "status") render(msg);
-    else if (msg.type === "photo_saved") toast(msg.aligned ? "사진을 보냈어요(찍은 위치 포함)" : "사진을 보냈어요. 아직 맞추기 전이라 위치는 없어요");
+    else if (msg.type === "photo_saved") toast(msg.answer ? "컵 안 사진을 보냈어요(요청 답)" : msg.aligned ? "사진을 보냈어요(찍은 위치 포함)" : "사진을 보냈어요. 아직 맞추기 전이라 위치는 없어요");
     else if (msg.type === "reply") showReply(msg);
     else if (msg.type === "focus") focus = { targets: msg.targets ?? [], until: performance.now() + (msg.ttl_ms ?? 8000) };
+    else if (msg.type === "clock") onClock(msg);
+    else if (msg.type === "request") showRequest(msg);
+    else if (msg.type === "action") showAction(msg);
+    else if (msg.type === "brain_line") showBrainLine(msg.text);
   });
-  ws.addEventListener("close", () => setTimeout(connect, 1000));
+  ws.addEventListener("close", () => {
+    clearInterval(clockTimer);
+    setTimeout(connect, 1000);
+  });
+}
+
+// ── 상위 판단(두뇌) ────────────────────────────────────
+// 요청은 거둘 때까지 크게 보이고, 그동안 📷 버튼 이름이 "컵 안"으로 바뀐다. 행동 부탁은 모의(기기 명령 없음)라고 표시한다.
+
+function showBrainLine(text) {
+  const line = $("brain-line");
+  line.textContent = `🤖 ${text}`;
+  line.hidden = false;
+  clearTimeout(brainView.lineTimer);
+  brainView.lineTimer = setTimeout(() => { line.hidden = true; }, 8000);
+}
+
+function showRequest(msg) {
+  if (!msg.active && msg.id !== brainView.requestId) return;
+  brainView.requestId = msg.active ? msg.id : null;
+  $("brain-request").textContent = `📷 ${msg.text}`;
+  $("brain-request").hidden = !msg.active;
+  $("photo").innerHTML = msg.active ? "📷<span>컵 안</span>" : "📷<span>사진</span>";
+  if (msg.active) speak(msg.text);
+}
+
+function showAction(msg) {
+  if (!msg.active) {
+    if (msg.id === brainView.actionId) {
+      brainView.actionId = null;
+      $("brain-action").hidden = true;
+    }
+    return;
+  }
+  brainView.actionId = msg.id;
+  $("brain-action-text").textContent = msg.text;
+  $("brain-action-would").textContent = msg.would ? `클로이드라면: ${msg.would} · 기기 명령은 보내지 않아요` : "";
+  $("brain-action-choices").replaceChildren(...(msg.choices ?? []).map((c) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = c.label;
+    b.addEventListener("click", () => {
+      if (!send({ type: "brain_reply", id: msg.id, choice: c.id })) note("서버와 연결이 끊겨 답을 보내지 못했어요");
+      else if (c.id === "done") toast("고마워요. 컵이 안 보이는지 확인할게요", 3000);
+    });
+    return b;
+  }));
+  $("brain-action").hidden = false;
+  speak(msg.text);
 }
 
 const send = (msg) => {
@@ -434,7 +517,7 @@ async function start() {
     const pixels = grabber.grab(binding.getCameraImage(camera), width, height);
     const readMs = performance.now() - t0;
     gl.bindFramebuffer(gl.FRAMEBUFFER, session.renderState.baseLayer.framebuffer);
-    const header = { kind: photo ? "photo" : "frame", width, height, position, orientation, tracking, epoch };
+    const header = { kind: photo ? "photo" : "frame", width, height, position, orientation, tracking, epoch, ...stamp(performance.timeOrigin + time) };
     sendFrame(pixels, header, photo ? 0.9 : FRAME_QUALITY, photo ? [] : marks, readMs, photo);
   };
   session.requestAnimationFrame(onFrame);

@@ -469,10 +469,72 @@ function connect() {
       layout.refresh();
     } else if (msg.type === "focus") {
       showFocus(msg.focus);
+    } else if (msg.type === "brain") {
+      onBrain(msg.event);
     }
     // 에이전트 도구(save_layout 등)로 저장하면 layout 메시지가 없으므로 답마다 보정 상태를 다시 읽는다
     if (msg.type === "agent" && msg.event === "reply") layout.refresh();
   });
+}
+
+// ── 클로이드 두뇌(BRAIN=1) ─────────────────────────────
+// 폰 카메라로 도는 상위 판단. 흐름마다 카드 하나: 단계 글(사용 중 → 자리 비움 → 요청 → 판단 → 재확인 → 모의 행동 → 결과)을
+// 쌓고, 최근 YOLO 존재 판정과 VLM 판정은 카드 위 두 줄에서 갈아 끼운다(장마다 쌓으면 읽을 수 없어서). 행동은 모두 모의다.
+
+const BRAIN_STATE = { watching: "지켜봄", in_use: "사용 중", away_check: "자리 비움 확인", requesting: "사진 요청", deciding: "판단 중", confirming: "재확인", acting: "모의 행동", done: "끝" };
+const BRAIN_ICON = { use: "☕", away: "🚶", request: "📷", answer: "👁", decide: "🧠", confirm: "🔍", act: "🤖", result: "✅", wait: "⏸", cancel: "↩", stale: "⌛", error: "⚠" };
+const brainView = { turn: null };
+
+function brainTurn() {
+  if (brainView.turn && !brainView.turn.ended) return brainView.turn;
+  const state = el("span", { class: "state busy" }, BRAIN_STATE.watching);
+  const answer = el("span", { class: "answer" }, "폰 카메라로 컵을 지켜봐요");
+  const yolo = el("div", { class: "brain-now" }, "YOLO: -");
+  const vlm = el("div", { class: "brain-now" }, "VLM: -");
+  const steps = el("ol", { class: "steps" });
+  const details = el("details", { class: "turn brain-turn", open: true },
+    el("summary", {}, el("span", { class: "src", title: "클로이드 두뇌(폰 카메라)" }, "🤖"), el("span", { class: "ask" }, "컵 지켜보기"), state, answer),
+    el("div", { class: "brain-nows" }, yolo, vlm), steps);
+  $("#messages").append(el("li", { class: "msg turn-item" }, details));
+  brainView.turn = { details, state, answer, yolo, vlm, steps, ended: false };
+  scrollChat();
+  return brainView.turn;
+}
+
+function brainStep(turn, icon, text, cls = "") {
+  turn.steps.append(el("li", { class: `step final ${cls}` }, el("span", { class: "no" }, icon), el("span", { class: "what" }, text)));
+  turn.answer.textContent = text;
+  scrollChat();
+}
+
+const ago = (ms) => (ms === null || ms === undefined ? "" : ` · 근거 ${(ms / 1000).toFixed(1)}초 전`);
+
+function onBrain(e) {
+  const turn = brainTurn();
+  if (e.type === "presence") {
+    turn.yolo.textContent = `${e.summary} (사람 ${e.scores.person.toFixed(2)} · 컵 ${e.scores.cup.toFixed(2)})`;
+  } else if (e.type === "perception") {
+    turn.vlm.textContent = `VLM${e.answer ? "(요청 답 사진)" : ""}: ${e.error ? `실패 ${e.error}` : e.summary}${ago(e.evidence_age_ms)}`;
+  } else if (e.type === "brain") {
+    turn.state.textContent = BRAIN_STATE[e.state] ?? e.state;
+    brainStep(turn, BRAIN_ICON[e.stage] ?? "·", `${e.text}${ago(e.evidence_age_ms)}`, e.stage === "error" ? "fail" : "");
+    // 흐름이 끝 상태로 가면(대기·실패·결과) 이 카드는 끝. 다음 이벤트는 새 카드
+    if (e.state === "done" && ["wait", "error", "act", "result"].includes(e.stage)) {
+      endBrainTurn(turn, e.stage === "error" ? "fail" : turn.outcome && !["cleared", "answered"].includes(turn.outcome) ? "wait" : "ok");
+    }
+  } else if (e.type === "request") {
+    brainStep(turn, "📱", e.active ? `폰에 요청: ${e.text}` : "폰 요청 거둠");
+  } else if (e.type === "action") {
+    if (e.active) brainStep(turn, "📱", `폰에 부탁(모의): ${e.plan.prompt?.text ?? e.plan.dashboard} · 클로이드라면 "${e.plan.would}"`, "wait");
+  } else if (e.type === "result") {
+    turn.outcome = e.outcome; // 바로 뒤 result 단계 글이 카드를 닫는다
+  }
+}
+
+function endBrainTurn(turn, kind) {
+  turn.ended = true;
+  turn.state.className = `state ${kind}`;
+  turn.state.textContent = BRAIN_STATE.done;
 }
 
 // ── 배치 보정 ──────────────────────────────────────────

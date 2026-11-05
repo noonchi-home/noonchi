@@ -47,6 +47,8 @@ export interface AppOptions {
   eye?: { handle(req: IncomingMessage, res: ServerResponse, path: string): boolean };
   /** 벽 대기 맞춤의 기준점 A·B(src/phone/touch.ts TouchStore). 있으면 /api/phone/touch-points*. */
   touch?: { get(): TouchPoint[] | null; save(raw: unknown): TouchPoint[]; clear(): void; eyeHeightM: number };
+  /** 상위 판단(BRAIN=1, src/brain/live.ts). 있으면 GET /api/brain에 상태를 보인다. */
+  brain?: { status(): object };
 }
 
 /** MatterHub에서 서버가 쓰는 부분(src/matter/matterHub.ts를 직접 불러오지 않으려고 모양만 적는다). */
@@ -172,8 +174,13 @@ export function createApp(opts: AppOptions): TwinHomeApp {
   route("GET", /^\/api\/health$/, async () => ({
     ok: true, devices: hub.list().length, hub: opts.hubKind ?? "memory", transport: matterInfo()?.transport ?? null,
     provider: agent?.provider.name ?? null, model: agent?.provider.model ?? null, twin: !!twinDir && existsSync(twinDir),
-    eye: !!opts.eye, home: opts.home ?? null, phone_urls: opts.phoneUrls?.() ?? [],
+    eye: !!opts.eye, home: opts.home ?? null, phone_urls: opts.phoneUrls?.() ?? [], brain: !!opts.brain,
   }));
+
+  route("GET", /^\/api\/brain$/, async () => {
+    if (!opts.brain) throw new HttpError(404, "상위 판단이 꺼져 있습니다(BRAIN=1, PHONE_PORT, OPENAI_API_KEY 필요)");
+    return { ok: true, ...opts.brain.status() };
+  });
 
   // ── 배치 보정 ──
 

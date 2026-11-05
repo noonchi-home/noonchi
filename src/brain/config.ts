@@ -1,5 +1,6 @@
 // 상위 판단 에이전트(클로이드의 두뇌) 설정. 기본값은 11-01 실험(최근 2초·최대 5장, 근거 나이 1.5~2초)과
 // 사용자 결정(자리 비움 5초, 근거 3초 넘으면 모름)을 따른다. BRAIN_* 환경 변수로 바꾼다.
+// 2단계(계획서 2026-11-04-brain-live.md): YOLO 존재 판정 창 0.6초, 치워짐 2초, 행동 결과 기다림 120초.
 
 export interface WindowConfig {
   /** 판정 창 길이(ms). 최신 사진에서 이만큼 안의 사진만 넣는다. */
@@ -26,6 +27,12 @@ export interface BrainConfig {
   bufferMs: number;
   /** 판단 모델에 넘길 사진 5장의 간격(ms). PAM은 t-8, t-6, t-4, t-2, t초. */
   decisionStepMs: number;
+  /** YOLO 존재 판정 창(ms): 이 안의 프레임 중 하나라도 보이면 있음. */
+  holdMs: number;
+  /** 행동 결과: 컵 없음이 이만큼 이어지면 치워짐(ms). */
+  clearMs: number;
+  /** 행동 결과를 기다리는 시간(ms). */
+  actionTimeoutMs: number;
 }
 
 export const DEFAULT_BRAIN_CONFIG: BrainConfig = {
@@ -37,6 +44,9 @@ export const DEFAULT_BRAIN_CONFIG: BrainConfig = {
   requestTimeoutMs: 60_000,
   bufferMs: 10_000,
   decisionStepMs: 2000,
+  holdMs: 600,
+  clearMs: 2000,
+  actionTimeoutMs: 120_000,
 };
 
 function num(env: Record<string, string | undefined>, key: string, fallback: number, min: number): number {
@@ -58,5 +68,8 @@ export function loadBrainConfig(env: Record<string, string | undefined> = proces
     requestTimeoutMs: num(env, "BRAIN_REQUEST_TIMEOUT_MS", d.requestTimeoutMs, 1000),
     bufferMs: d.bufferMs,
     decisionStepMs: d.decisionStepMs,
+    holdMs: num(env, "BRAIN_HOLD_MS", d.holdMs, 100),
+    clearMs: num(env, "BRAIN_CLEAR_MS", d.clearMs, 0),
+    actionTimeoutMs: num(env, "BRAIN_ACTION_TIMEOUT_MS", d.actionTimeoutMs, 1000),
   };
 }
