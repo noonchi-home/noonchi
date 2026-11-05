@@ -10,11 +10,15 @@ export interface AptViewer {
   scene: THREE_NS.Scene;
   /** 위에서 보는 정사영 카메라. */
   camera: THREE_NS.OrthographicCamera;
+  /** CCTV 보기(view.cctv)일 때 그리는 원근 카메라. */
+  cctvCamera: THREE_NS.PerspectiveCamera;
   renderer: THREE_NS.WebGLRenderer;
   /** 게터: 지금 불러오기(show)의 Promise. show() 전에는 이미 풀린 Promise다. */
   readonly ready: Promise<unknown>;
   /** 게터: show()가 도는 동안 true. */
   readonly loading: boolean;
+  /** 게터: 보기 상태 복사본. */
+  readonly view: { cctv: boolean };
   /** show()가 시작될 때 비우고, 끝나면 mode(성공) 또는 error(실패)를 채운다. */
   results: { mode?: string; error?: string };
   node(id: string): THREE_NS.Object3D | null;
