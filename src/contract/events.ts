@@ -34,6 +34,25 @@ export interface PendingView {
   expiresAt: string;
 }
 
+/** POST /api/agent/chat 응답. */
+export interface ChatResult {
+  sessionId: string;
+  reply: string;
+  actions: AgentAction[];
+  pendingConfirmations: PendingView[];
+  provider: string;
+}
+
+/** POST /api/agent/confirm 응답. */
+export interface ConfirmResult {
+  ok: boolean;
+  reply: string;
+  error?: string;
+  deviceId?: string;
+  state?: DeviceState;
+  action?: AgentAction;
+}
+
 export type AgentEvent =
   | { event: "action"; sessionId: string; action: AgentAction }
   | { event: "reply"; sessionId: string; message: string; reply: string; actions: AgentAction[]; pendingConfirmations: PendingView[] }
@@ -69,6 +88,37 @@ export type BrainEvent =
   | { type: "request"; id: string; text: string; active: boolean; at_ms: number }
   | { type: "action"; id: string; task: string; plan: ActionPlan; active: boolean; at_ms: number }
   | { type: "result"; id: string; task: string; outcome: ActionOutcome; text: string; at_ms: number };
+
+export type Tri = "yes" | "no" | "unknown";
+
+/** 판정(VLM) 기록 한 줄. */
+export interface PerceptionLog {
+  type: "perception";
+  at_ms: number;
+  evidence_age_ms: number;
+  frames: number;
+  summary: string;
+  cost_usd: number;
+  /** 요청 답 사진 한 장으로 본 판정. */
+  answer?: true;
+  error?: string;
+}
+
+/** 존재 판정(YOLO)이 바뀔 때만 내는 기록. */
+export interface PresenceLog {
+  type: "presence";
+  at_ms: number;
+  evidence_age_ms: number;
+  person: Tri;
+  cup: Tri;
+  table: Tri;
+  /** 창 안 가장 높은 점수(기록용). */
+  scores: { person: number; cup: number };
+  summary: string;
+}
+
+/** 컵 두뇌가 대시보드로 보내는 것 전부(src/brain/live.ts route). */
+export type BrainLog = BrainEvent | PerceptionLog | PresenceLog;
 
 // 기기
 
@@ -139,7 +189,7 @@ export type ServerMessage =
   | { type: "hello"; devices: number; provider: string | null; hub: string; home: string | null }
   | { type: "state"; state: DeviceState }
   | ({ type: "agent" } & AgentEvent)
-  | { type: "brain"; event: BrainEvent }
+  | { type: "brain"; event: BrainLog }
   | { type: "photo"; photo: PhotoRecord }
   | { type: "focus"; focus: Focus }
   | { type: "eye"; eye: EyeEvent };

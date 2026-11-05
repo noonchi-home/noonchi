@@ -1,41 +1,19 @@
 // 상위 판단 실행기: 폰 프레임 → (YOLO 존재 판정) + 판정 반복(VLM) → 컵 상태 기계 → 판단 모델(모의·PAM) → 이벤트·모의 행동.
 // 실시간 연결(폰 프레임·사진·답, 감지기 돌리기, 메시지 나눠 보내기)은 live.ts가 한다. 여기는 시간을 받는 순수한 흐름이다.
 
+import type { BrainLog } from "../contract/events.js";
 import type { BrainConfig } from "./config.js";
 import {
   CUP_MEMORY, CUP_TASKS, isoWithOffset, selectDecisionFrames, type DecisionEvidence, type DecisionModel, type PamMemory,
 } from "./decision.js";
 import { PerceptionLoop, type PerceptionResult } from "./loop.js";
-import { CupMachine, type BrainEvent, type BrainState, type DecideIntent, type MachineOutput } from "./machine.js";
+import { CupMachine, type BrainState, type DecideIntent, type MachineOutput } from "./machine.js";
 import type { Perceiver, Perception } from "./perception.js";
 import type { Presence } from "./presence.js";
 import { FrameBuffer, type Frame } from "./window.js";
 
-export interface PerceptionLog {
-  type: "perception";
-  at_ms: number;
-  evidence_age_ms: number;
-  frames: number;
-  summary: string;
-  cost_usd: number;
-  /** 요청 답 사진 한 장으로 본 판정. */
-  answer?: true;
-  error?: string;
-}
-
-/** YOLO 존재 판정이 바뀔 때만 내는 기록. */
-export interface PresenceLog {
-  type: "presence";
-  at_ms: number;
-  evidence_age_ms: number;
-  person: Presence["person"];
-  cup: Presence["cup"];
-  table: Presence["table"];
-  scores: Presence["scores"];
-  summary: string;
-}
-
-export type BrainOutput = BrainEvent | PerceptionLog | PresenceLog;
+export type { PerceptionLog, PresenceLog } from "../contract/events.js";
+export type BrainOutput = BrainLog;
 
 export interface CupBrainOptions {
   perceiver: Perceiver;

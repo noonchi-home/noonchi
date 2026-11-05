@@ -3,8 +3,8 @@
 
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import type { AgentAction, AgentEvent, PendingView } from "../contract/events.js";
-import type { Command, DeviceHub, DeviceState, RoomSpec } from "../hub/types.js";
+import type { AgentAction, AgentEvent, ChatResult, ConfirmResult, PendingView } from "../contract/events.js";
+import type { Command, DeviceHub, RoomSpec } from "../hub/types.js";
 import type { Policy } from "./policy.js";
 import { askApproval, doneSentence, toolForCommand } from "./phrases.js";
 import { buildSystemPrompt } from "./prompts.js";
@@ -12,7 +12,7 @@ import { LAYOUT_TOOLS, type LayoutTools } from "./layoutTools.js";
 import { observe } from "./observe.js";
 import { AGENT_TOOLS, localBackend, runTool, type ToolBackend, type ToolDef, type ToolResult } from "./tools.js";
 
-export type { AgentAction, AgentEvent, PendingView } from "../contract/events.js";
+export type { AgentAction, AgentEvent, ChatResult, ConfirmResult, PendingView } from "../contract/events.js";
 
 export interface ToolCall {
   id: string;
@@ -56,23 +56,6 @@ const REASON = z.string().min(1).max(200).describe("왜 이 도구를 부르는�
 
 function withReason(tool: ToolDef): ToolDef {
   return { ...tool, schema: tool.schema.extend({ reason: REASON }) };
-}
-
-export interface ChatResult {
-  sessionId: string;
-  reply: string;
-  actions: AgentAction[];
-  pendingConfirmations: PendingView[];
-  provider: string;
-}
-
-export interface ConfirmResult {
-  ok: boolean;
-  reply: string;
-  error?: string;
-  deviceId?: string;
-  state?: DeviceState;
-  action?: AgentAction;
 }
 
 export interface AgentOptions {
