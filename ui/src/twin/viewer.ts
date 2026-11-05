@@ -17,18 +17,25 @@ export interface AptViewer {
   readonly ready: Promise<unknown>;
   /** 게터: show()가 도는 동안 true. */
   readonly loading: boolean;
-  /** 게터: 보기 상태 복사본. */
-  readonly view: { cctv: boolean };
+  /** 게터: 보기 상태 복사본. focus는 고른 방 id, isolate는 초점 방만, showCeiling은 천장 보기. */
+  readonly view: { cctv: boolean; focus: string | null; isolate: boolean; showCeiling: boolean; wallMode: WallMode };
   /** show()가 시작될 때 비우고, 끝나면 mode(성공) 또는 error(실패)를 채운다. */
   results: { mode?: string; error?: string };
+  /** 장면의 모든 물건(부를 때마다 새로 만든다). */
+  objects(): TwinObject[];
   node(id: string): THREE_NS.Object3D | null;
   hidden(id: string): boolean | null;
   setBadges(on: boolean): void;
   /** 벽 보기: full 온전히, auto 앞쪽 낮춤, low 모두 낮춤. 뷰어 막대의 벽 선택도 같이 바뀐다. */
-  setWallMode(mode: "full" | "auto" | "low"): void;
+  setWallMode(mode: WallMode): void;
   setFocus(focus: unknown): void;
   renderNow(): void;
 }
+
+export type WallMode = "full" | "auto" | "low";
+
+/** objects() 한 줄 중 화면이 쓰는 부분. mount: floor·wall·ceiling·surface·opening, room: 방 id(없으면 null). */
+export type TwinObject = { id: string; room?: string | null; mount: string; category: string };
 
 type Loadable = Pick<AptViewer, "ready" | "loading" | "results">;
 
