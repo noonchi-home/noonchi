@@ -32,7 +32,7 @@ export function parseSources(raw: unknown, deviceIds: string[]): Record<string, 
   for (const [id, v] of Object.entries(raw)) {
     if (!known.has(id)) throw new SetupError(`없는 기기입니다: ${id}`);
     if (typeof v !== "string" || !KINDS.has(v)) throw new SetupError(`${id}: 출처는 virtual 또는 none이어야 합니다(받은 값: ${JSON.stringify(v)}).`);
-    out[id] = { kind: v as SignalSource["kind"] };
+    out[id] = { kind: v as "virtual" | "none" };
   }
   return out;
 }
@@ -136,7 +136,7 @@ export class SetupStore {
       if (raw.home !== homeId || !raw.sources || typeof raw.sources !== "object") throw new Error("집 id나 sources가 맞지 않음");
       const out: Record<string, SignalSource> = {};
       for (const [id, s] of Object.entries(raw.sources)) {
-        if (typeof s?.kind === "string" && KINDS.has(s.kind)) out[id] = { kind: s.kind as SignalSource["kind"] };
+        if (typeof s?.kind === "string" && KINDS.has(s.kind)) out[id] = { kind: s.kind as "virtual" | "none" };
         else this.log(`[경고] 신호 출처: ${id}의 출처 ${JSON.stringify(s?.kind)}를 모릅니다. 가상으로 둡니다.`);
       }
       return out;
