@@ -27,6 +27,13 @@ describe("BubbleLayer", () => {
     expect(bubble.style.top).toBe("20px");
   });
 
+  it("꼬리는 밝은 바닥·어두운 바닥 모두에서 보이게 밝은 심에 어두운 테두리를 두른다", () => {
+    render(<BubbleLayer devices={new Map([dev("a", "거실 조명", "on")])} points={new Map([["a", { x: 10, y: 20, visible: true }]])} />);
+    const tail = (screen.getByText("거실 조명").closest("[data-device]") as HTMLElement).lastElementChild;
+    expect(tail).toHaveClass("bg-ink", "ring-1", "ring-glass");
+    expect(tail).not.toHaveClass("w-px");
+  });
+
   it("꺼진 기기는 이름만 보이고, 방금 다룬 기기는 상태까지 크게", () => {
     const devices = new Map([dev("a", "거실 조명", "off"), dev("b", "안방 조명", "off")]);
     const points = new Map([["a", { x: 10, y: 20, visible: true }], ["b", { x: 50, y: 20, visible: true }]]);

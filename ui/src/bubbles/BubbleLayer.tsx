@@ -14,7 +14,7 @@ const TONE: Record<Tone, string> = {
 const LAYER: Record<Tone, string> = { unknown: "z-0", off: "z-10", on: "z-10", alert: "z-20" };
 
 /**
- * 모든 기기 위에 상태 말풍선을 항상 띄운다. 꼬리 끝이 points의 기기 자리에 온다.
+ * 모든 기기 위에 상태 말풍선을 항상 띄운다. 꼬리 끝이 points의 기기 자리에 온다(밝은 심 + 어두운 테두리라 바닥 밝기와 상관없이 보인다).
  * 층은 크기가 0이라 빈 곳의 마우스는 3D로 가고, 말풍선만 마우스를 받는다(꺼진 기기는 올리면 상태가 펼쳐진다).
  */
 export function BubbleLayer({ devices, points, focusId }: { devices: Map<string, DeviceView>; points: Map<string, ScreenPoint>; focusId?: string | null }) {
@@ -37,7 +37,7 @@ export function BubbleLayer({ devices, points, focusId }: { devices: Map<string,
               <div className="font-medium">{s.title}</div>
               <div className={cn(s.tone === "off" && !big && "hidden group-hover:block")}>{s.line}</div>
             </div>
-            <div className="mx-auto h-2 w-px bg-glass-line" />
+            <div className="mx-auto h-2.5 w-0.5 rounded-full bg-ink ring-1 ring-glass" />
           </div>
         );
       })}
