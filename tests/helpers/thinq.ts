@@ -2,6 +2,7 @@
 // 받은 요청을 모두 적어 두고, 기기마다 명령을 적용·무시·거부하거나 상태 읽기를 실패하게 할 수 있다.
 
 import { createServer, type IncomingHttpHeaders } from "node:http";
+import { listenRetry } from "../../src/server/net.js";
 
 /** apply: 받아서 상태를 바꿈, ignore: 받기만 함, reject: 거부, fail-read: 상태 읽기 실패. */
 export type FakeBehavior = "apply" | "ignore" | "reject" | "fail-read";
@@ -117,8 +118,8 @@ export async function startFakeThinq(): Promise<FakeThinq> {
       return send(200, ok({}));
     });
   });
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
-  const { port } = server.address() as { port: number };
+  // 이 PC는 listen이 가끔 EFAULT를 낸다. 서버들과 같이 다시 시도한다
+  const { port } = await listenRetry(server, 0, "127.0.0.1");
   return Object.assign(fake, {
     url: `http://127.0.0.1:${port}/`,
     close: () => new Promise<void>((r) => { server.closeAllConnections(); server.close(() => r()); }),

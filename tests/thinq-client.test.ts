@@ -103,6 +103,26 @@ describe("ThinqClient", () => {
     expect(await caught(client().state(FAKE_AC))).toMatchObject({ status: 500, code: "1500" });
   });
 
+  it("이 PC의 연결 EFAULT는 다시 시도한다(요청이 나가기 전이라 겹치지 않음)", async () => {
+    fake = await startFakeThinq();
+    const real = globalThis.fetch;
+    let failed = 0;
+    vi.stubGlobal("fetch", async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      if (failed === 0) {
+        failed++;
+        throw Object.assign(new TypeError("fetch failed"), { cause: { code: "EFAULT", syscall: "connect" } });
+      }
+      return real(input, init);
+    });
+    try {
+      await client().control(FAKE_AC, { operation: { airConOperationMode: "POWER_OFF" } });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(failed).toBe(1);
+    expect(fake.controls()).toHaveLength(1);
+  });
+
   it("서버에 닿지 못하면 ThinqError(status 0), 글에 토큰이 없다", async () => {
     fake = await startFakeThinq();
     const c = client();

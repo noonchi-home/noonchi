@@ -5,6 +5,7 @@
 
 import { randomUUID } from "node:crypto";
 import type { ThinqDeviceView } from "../contract/setup.js";
+import { fetchRetry } from "../server/net.js";
 
 type Env = Record<string, string | undefined>;
 
@@ -101,7 +102,8 @@ export class ThinqClient {
     };
     let res: Response;
     try {
-      res = await fetch(`${this.cfg.baseUrl}${path}`, {
+      // 이 PC의 연결 EFAULT만 다시 시도한다(연결 전이라 명령이 두 번 가지 않는다)
+      res = await fetchRetry(`${this.cfg.baseUrl}${path}`, {
         method, headers, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(this.cfg.timeoutMs),
       });
     } catch (e) {
