@@ -8,7 +8,7 @@ export function HomeStep({ view, picked, onPick, onNext, busy }: {
 }) {
   return (
     <section aria-labelledby="h-home" className="flex flex-col gap-3">
-      <h2 id="h-home" className="text-lg font-semibold">어느 집을 쓸까요?</h2>
+      <h2 id="h-home" className="text-[18px] font-semibold">어느 집을 쓸까요?</h2>
       <div role="radiogroup" aria-labelledby="h-home" className="grid max-w-xl gap-2">
         {view.homes.map((h) => (
           <label

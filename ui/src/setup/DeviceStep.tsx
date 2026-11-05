@@ -43,7 +43,7 @@ export function DeviceStep({ view, sources, onSources, onBack, onNext, busy }: {
 
   return (
     <section aria-labelledby="h-devices" className="flex min-h-0 flex-1 flex-col gap-3">
-      <h2 id="h-devices" className="text-lg font-semibold">어떤 가전의 상태를 읽을까요?</h2>
+      <h2 id="h-devices" className="text-[18px] font-semibold">어떤 가전의 상태를 읽을까요?</h2>
       <div className="grid max-w-2xl gap-2">
         <input
           ref={box} type="search" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onKey}

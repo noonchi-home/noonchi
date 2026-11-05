@@ -159,7 +159,7 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
   const both = Boolean(points.A && points.B);
   return (
     <section aria-labelledby="h-position" className="flex min-h-0 flex-1 flex-col gap-3">
-      <h2 id="h-position" className="text-lg font-semibold">폰과 트윈의 위치를 맞춰요</h2>
+      <h2 id="h-position" className="text-[18px] font-semibold">폰과 트윈의 위치를 맞춰요</h2>
       <div className="grid min-h-[420px] flex-1 gap-3 md:grid-cols-[minmax(0,1fr)_360px]">
         <TwinBox home={home} frame={frame} onLoad={() => setTimeout(() => showMarkers(), 500)} />
         <div className="flex flex-col gap-3 overflow-auto text-sm">

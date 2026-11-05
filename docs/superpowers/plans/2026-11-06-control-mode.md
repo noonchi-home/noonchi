@@ -58,7 +58,7 @@
 ```ts
 // src/contract/setup.ts
 export type ControlMode = "test" | "live";
-export interface ThinqDeviceView { id: string; type: string; name: string; model: string }
+export interface ThinqDeviceView { id: string; type: string; name: string; model: string; kind: DeviceKind | null } // kind: 맞는 트윈 종류(에어컨·냉장고)
 export interface SetupDeviceView { id: string; label: string; room: string; roomLabel: string; kind: DeviceKind; kindLabel: string; source: { kind: "virtual" | "none" }; pairable: boolean }
 export interface SetupView {
   ok: true; persist: boolean; done: boolean; switching: boolean; error: string | null;
@@ -86,7 +86,7 @@ interface CommandResult { …; outcome?: "done" | "unverified" | "failed" | "not
 |---|---|---|
 | `GET /api/setup` | – | 지금 값 + `mode`, `thinq.ready`(토큰 있음), `pairs`, 기기마다 `pairable` |
 | `POST /api/setup/mode` | `{ mode, confirm? }` | live는 `confirm: true`와 토큰이 있어야 함(아니면 400). 바로 적용·저장 |
-| `GET /api/setup/thinq` | – | 실제 모드에서만 ThinQ 기기 목록(시험 모드 409, ThinQ를 부르지 않음) |
+| `GET /api/setup/thinq` | – | 실제 모드에서만 ThinQ 기기 목록, 항목마다 맞는 트윈 종류(`kind`). 시험 모드 409(ThinQ를 부르지 않음), ThinQ 실패 502 |
 | `POST /api/setup/pairs` | `{ home, pairs: { <트윈 id>: <ThinQ id> \| null } }` | 에어컨·냉장고만. 바로 적용·저장. 다른 집이면 409 |
 
 저장: `RUNTIME_DIR/setup.json`에 `mode`, `RUNTIME_DIR/homes/<id>/thinq.json` = `{ version: 1, home, pairs: { <트윈 id>: <ThinQ id> }, updated_at }`.
@@ -216,6 +216,7 @@ interface CommandResult { …; outcome?: "done" | "unverified" | "failed" | "not
   - 토큰이 없으면(`thinq.ready: false`) 실제 모드 버튼을 막고 「ThinQ 토큰이 없어요.」.
   - `window.confirm`·`window.alert`를 부르지 않는다.
 - [ ] 구현 → 통과 → 화면 글 점검(규칙 표) → 커밋 `feat(ui): choose the control mode and pair ThinQ devices in setup`.
+- [ ] `ui/tests/class-names.test.ts`: 화면 코드에 `text-lg`를 쓰지 않는다(`--color-lg` 토큰과 겹쳐 글자가 LG 빨강이 된다. 큰 글자는 `text-[18px]`).
 
 ### Task 9: 전체 확인
 

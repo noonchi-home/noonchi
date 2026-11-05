@@ -101,7 +101,7 @@ export function ModeStep({ view, onView, onNotice, onBack, onNext }: {
 
   return (
     <section aria-labelledby="h-mode" className="flex min-h-0 flex-1 flex-col gap-3">
-      <h2 id="h-mode" className="text-lg font-semibold">가전을 어떻게 다룰까요?</h2>
+      <h2 id="h-mode" className="text-[18px] font-semibold">가전을 어떻게 다룰까요?</h2>
       <div role="radiogroup" aria-labelledby="h-mode" className="grid max-w-xl gap-2">
         {MODES.map((m) => {
           const off = m.id === "live" && !view.thinq.ready;
