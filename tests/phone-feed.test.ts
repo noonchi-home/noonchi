@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { EyeFeed } from "../src/phone/feed.js";
 import { fetchRetry, listenRetry } from "../src/server/net.js";
 import type { EyeEvent } from "../src/phone/session.js";
+import { readVideo } from "./helpers/video.js";
 
 const JPEG_A = Buffer.from([0xff, 0xd8, 0xaa, 0xaa, 0xff, 0xd9]);
 const JPEG_B = Buffer.from([0xff, 0xd8, 0xbb, 0xbb, 0xbb, 0xff, 0xd9]);
@@ -98,6 +99,40 @@ describe("EyeFeed", () => {
 });
 
 
+describe("표시 영상(H.264) 스트림", () => {
+  const DESC = Buffer.from([1, 0x42, 0xe0, 0x1f]);
+  it("/api/eye/video는 설정·청크를 길이 붙인 메시지로 흘리고, 늦게 붙어도 설정과 키프레임부터 받는다", async () => {
+    const { feed, base } = await setup();
+    feed.video.config(1, { codec: "avc1.42E01F", width: 592, height: 1280, description: DESC });
+    feed.video.chunk(1, { key: true, ts: 0, width: 592, height: 1280, data: Buffer.alloc(900, 0x65) });
+    const v = await readVideo(`${base}/api/eye/video`);
+    expect(v.res.headers["content-type"]).toBe("application/octet-stream");
+    expect(v.res.headers["cache-control"]).toBe("no-store");
+    feed.video.chunk(1, { key: false, ts: 33_333, width: 592, height: 1280, data: Buffer.alloc(120, 0x41) });
+    await v.waitFor((m) => m.header.type === "chunk", 2);
+    expect(v.got.map((m) => m.header)).toEqual([
+      { type: "config", codec: "avc1.42E01F", width: 592, height: 1280 },
+      { type: "chunk", key: true, ts: 0 },
+      { type: "chunk", key: false, ts: 33_333 },
+    ]);
+    expect(Buffer.from(v.got[0]!.body)).toEqual(DESC);
+    expect(v.got[1]!.body.length).toBe(900);
+    const stats = await (await fetchRetry(`${base}/api/eye/stats`)).json() as Record<string, any>;
+    expect(stats.display).toMatchObject({ codec: "avc1.42E01F", width: 592, height: 1280, viewers: 1 });
+    expect(stats.display.fps).toBeGreaterThan(0);
+    v.close();
+  });
+
+  it("feed.close는 영상 스트림도 끝낸다(집을 바꿀 때)", async () => {
+    const { feed, base } = await setup();
+    const v = await readVideo(`${base}/api/eye/video`);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(feed.video.stats().viewers).toBe(1);
+    feed.close();
+    await v.ended;
+  });
+});
+
 describe("받은 프레임 통계", () => {
   it("최근 2초 fps·평균 크기·마지막 크기, /api/eye/stats", async () => {
     let t = Date.parse("2026-10-24T10:15:00Z");
@@ -118,6 +153,6 @@ describe("받은 프레임 통계", () => {
     const { base } = await setup();
     const res = await fetchRetry(`${base}/api/eye/stats`);
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ ok: true, fps: 0 });
+    expect(await res.json()).toMatchObject({ ok: true, fps: 0, display: { codec: null, fps: 0, kbps: 0, key_age_ms: null, viewers: 0 } });
   });
 });

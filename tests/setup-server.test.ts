@@ -11,6 +11,8 @@ import { MemoryHub } from "../src/hub/memory.js";
 import { fetchRetry } from "../src/server/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { openWebSocket } from "./helpers/ws.js";
+import { readVideo } from "./helpers/video.js";
+import { encodeFramePacket } from "../src/phone/packet.js";
 
 type Msg = Record<string, any>;
 let srv: RunningServer | undefined;
@@ -98,6 +100,31 @@ describe("설정 흐름 서버", () => {
     expect((await ev2.waitFor((m) => m.type === "hello")).home).toBe("apartment");
     const chat = await post("/api/agent/chat", { message: "거실 TV 켜줘", sessionId: "s1" });
     expect(chat.status).toBe(200);
+  });
+
+  it("집을 바꾸면 눈 영상 스트림이 끝나고, 다시 붙은 폰의 영상이 새 스트림으로 나온다", async () => {
+    srv = await startServer({ env: env(runtime(), { PHONE_PORT: "0", PHONE_HOST: "127.0.0.1" }), log: () => {} });
+    const phoneBase = srv.phoneUrls[0]!.replace(/\/phone\/$/, "");
+    const sendVideo = async () => {
+      const phone = await openWebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events`, { options: { origin: phoneBase } });
+      sockets.push(phone);
+      phone.send(encodeFramePacket({ kind: "video_config", codec: "avc1.42E01F", width: 592, height: 1280 }, Buffer.from([1, 0x42])));
+      phone.send(encodeFramePacket({ kind: "video", key: true, ts: 0, width: 592, height: 1280 }, Buffer.alloc(500, 0x65)));
+      return phone;
+    };
+    const phone1 = await sendVideo();
+    const v1 = await readVideo(`${srv.url}/api/eye/video`);
+    await v1.waitFor((m) => m.header.type === "chunk");
+    const phoneClosed = new Promise((r) => phone1.once("close", r));
+    expect((await post("/api/setup/home", { home: "apartment" })).status).toBe(200);
+    await v1.ended;
+    await phoneClosed;
+    await sendVideo();
+    const v2 = await readVideo(`${srv.url}/api/eye/video`);
+    const [first, second] = await v2.waitFor(() => true, 2);
+    expect([first!.header.type, second!.header]).toEqual(["config", { type: "chunk", key: true, ts: 0 }]);
+    expect((await get("/api/eye/stats")).json.display).toMatchObject({ codec: "avc1.42E01F", viewers: 1 });
+    v2.close();
   });
 
   it("없는 집은 400, 지금 집을 그대로 둔다", async () => {

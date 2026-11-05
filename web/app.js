@@ -2,6 +2,8 @@
 // 기기 카드(Matter 속성·센서 시뮬레이션)는 결과 전용 화면이라 헤더 버튼으로 여는 서랍이다. 좁은 화면에서는 탭.
 // 빌드 없이 쓰는 ES 모듈. 상태는 WebSocket /events로 실시간 반영한다.
 
+import { attachEyeVideo, displayCaption } from "./eye-video.js";
+
 const $ = (sel) => document.querySelector(sel);
 
 const KIND_LABELS = {
@@ -588,6 +590,8 @@ function initEye(health) {
     $("#eye").hidden = false;
     empty.hidden = true;
   };
+  // 폰이 H.264 표시 영상을 보내면 canvas에 그리고, 없거나 멈추면 이 MJPEG를 보인다(eye-video.js)
+  const video = attachEyeVideo({ canvas: $("#eye-video"), img, onShown: shown });
   eye.attach = () => { img.src = `/api/eye/stream?t=${Date.now()}`; };
   img.addEventListener("load", shown);
   img.addEventListener("error", () => setTimeout(() => eye.attach(), 2000));
@@ -597,7 +601,8 @@ function initEye(health) {
   setInterval(async () => {
     const r = await api("/api/eye/stats");
     if (!r.json?.ok) return;
-    eyeCaption = `클로이드의 눈 · 실시간 ${r.json.fps} fps${r.json.kb_per_frame ? ` · ${r.json.kb_per_frame}KB` : ""}`;
+    eyeCaption = (video.mode === "video" && displayCaption(r.json.display))
+      || `클로이드의 눈 · 실시간 ${r.json.fps} fps${r.json.kb_per_frame ? ` · ${r.json.kb_per_frame}KB` : ""}`;
     if (!focusing) $("#eye-caption").textContent = eyeCaption;
   }, 2000);
   eye.attach();

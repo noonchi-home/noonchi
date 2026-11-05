@@ -10,6 +10,7 @@ import { createPhoneServer, sameHost } from "../src/phone/server.js";
 import { createApp, type TwinHomeApp } from "../src/server/app.js";
 import { fetchRetry } from "../src/server/net.js";
 import { ROOMS, makeHome } from "./helpers/home.js";
+import { readVideo } from "./helpers/video.js";
 
 type Msg = Record<string, any>;
 const TARGETS: AnchorTarget[] = [
@@ -40,7 +41,7 @@ function next(ws: WebSocket, pred: (m: Msg) => boolean): Promise<Msg> {
   });
 }
 
-async function setup() {
+async function setup(opts: { log?: (m: string) => void } = {}) {
   const home = makeHome();
   const photoDir = mkdtempSync(join(tmpdir(), "phone-photos-"));
   cleanups.push(() => rmSync(photoDir, { recursive: true, force: true }));
@@ -53,7 +54,7 @@ async function setup() {
   const webDir = mkdtempSync(join(tmpdir(), "phone-web-"));
   cleanups.push(() => rmSync(webDir, { recursive: true, force: true }));
   writeFileSync(join(webDir, "index.html"), "<title>폰 테스트</title>");
-  const phone = createPhoneServer({ targets: TARGETS, webDir, feed, onEye: (eye) => main.broadcast({ type: "eye", eye }), log: () => {} });
+  const phone = createPhoneServer({ targets: TARGETS, webDir, feed, onEye: (eye) => main.broadcast({ type: "eye", eye }), log: opts.log ?? (() => {}) });
   const { port } = await phone.listen(0, "127.0.0.1");
   cleanups.push(() => phone.close());
   return { url, phoneBase: `http://127.0.0.1:${port}` };
@@ -111,6 +112,47 @@ describe("phone camera", () => {
     phone.send(encodeFramePacket({ kind: "frame", width: 640, height: 480 }, Buffer.from([1, 2])));
     expect((await reply).error).toBe("JPEG가 아닙니다");
     phone.close();
+  });
+
+  it("video_config·video 패킷은 본 서버 /api/eye/video로 중계되고, 폰이 끊기면 end", async () => {
+    const { url, phoneBase } = await setup();
+    const v = await readVideo(`${url}/api/eye/video`);
+    const phone = new WebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events`, { origin: phoneBase });
+    await opened(phone);
+    phone.send(encodeFramePacket({ kind: "video_config", codec: "avc1.42E01F", width: 592, height: 1280 }, Buffer.from([1, 0x42])));
+    phone.send(encodeFramePacket({ kind: "video", key: true, ts: 0, width: 592, height: 1280 }, Buffer.alloc(800, 0x65)));
+    phone.send(encodeFramePacket({ kind: "video", key: false, ts: 33_333, width: 592, height: 1280 }, Buffer.alloc(90, 0x41)));
+    // 분석용 JPEG 프레임은 영상과 따로 그대로 간다
+    phone.send(encodeFramePacket({ kind: "frame", width: 360, height: 780 }, JPEG));
+    await v.waitFor((m) => m.header.type === "chunk", 2);
+    expect(v.got.map((m) => m.header.type)).toEqual(["config", "chunk", "chunk"]);
+    const stats = await (await fetchRetry(`${url}/api/eye/stats`)).json() as Msg;
+    expect(stats).toMatchObject({ frames: 1, display: { codec: "avc1.42E01F", width: 592, height: 1280, viewers: 1 } });
+    phone.close();
+    await v.waitFor((m) => m.header.type === "end");
+    v.close();
+  });
+
+  it("깨진 영상 패킷은 이유를 돌려준다", async () => {
+    const { phoneBase } = await setup();
+    const phone = new WebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events`, { origin: phoneBase });
+    await opened(phone);
+    const reply = next(phone, (m) => m.type === "status" && m.error);
+    phone.send(encodeFramePacket({ kind: "video_config", width: 592, height: 1280 } as never, Buffer.alloc(0)));
+    expect((await reply).error).toContain("codec");
+    phone.close();
+  });
+
+  it("폰 연결·끊김을 로그에 한 줄씩 남긴다", async () => {
+    const lines: string[] = [];
+    const { phoneBase } = await setup({ log: (m) => lines.push(m) });
+    const phone = new WebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events`, { origin: phoneBase });
+    await opened(phone);
+    const closed = new Promise((r) => phone.once("close", r));
+    phone.close();
+    await closed;
+    for (let i = 0; i < 20 && !lines.some((l) => l.includes("끊김")); i++) await new Promise((r) => setTimeout(r, 25));
+    expect(lines.filter((l) => l.startsWith("[phone]"))).toEqual(["[phone] 폰 연결(지금 1대)", "[phone] 폰 끊김(지금 0대)"]);
   });
 });
 

@@ -1,5 +1,6 @@
-// 폰 → 서버 카메라 프레임 바이너리 패킷: [헤더 길이 4바이트(big-endian)][JSON 헤더][JPEG].
+// 폰 → 서버 바이너리 패킷: [헤더 길이 4바이트(big-endian)][JSON 헤더][본문].
 // JSON으로 감싸면 base64로 33% 커지므로 /phone/events에 바이너리 메시지로 그대로 보낸다.
+// 본문: frame·photo는 JPEG, video_config는 H.264 디코더 설정(avcC), video는 H.264 청크(표시 전용, src/phone/video.ts).
 
 import { z } from "zod";
 import type { Quat, Vec3 } from "./align.js";
@@ -7,6 +8,8 @@ import type { Quat, Vec3 } from "./align.js";
 /** ws maxPayload와 같다. 사진(카메라 원본 크기, 품질 0.9)도 이 안에 든다. */
 export const MAX_PACKET_BYTES = 4 * 1024 * 1024;
 const MAX_HEADER_BYTES = 4096;
+/** H.264 디코더 설정(avcC)은 보통 100바이트 안팎이다. 서버가 붙는 화면마다 다시 보내므로 크기를 묶는다. */
+const MAX_DESCRIPTION_BYTES = 64 * 1024;
 
 const num = z.number().refine(Number.isFinite);
 const size = z.number().int().min(1).max(8192);
@@ -23,6 +26,11 @@ const HeaderSchema = z.object({
   captured_at: num.optional(),
   time_err_ms: z.number().min(0).max(60_000).optional(),
 });
+// 코덱 이름은 대시보드가 VideoDecoder에 그대로 넘기므로 avc1.42E01F 같은 모양만 받는다
+const VideoHeaderSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("video_config"), codec: z.string().regex(/^[A-Za-z0-9.]{1,64}$/), width: size, height: size }),
+  z.object({ kind: z.literal("video"), key: z.boolean(), ts: z.number().int().min(0), width: size, height: size }),
+]);
 
 export interface FrameHeader {
   kind: "frame" | "photo";
@@ -36,14 +44,24 @@ export interface FrameHeader {
   time_err_ms?: number;
 }
 
-export function encodeFramePacket(header: FrameHeader, jpeg: Uint8Array): Buffer {
+/** 표시 영상 패킷 헤더. ts는 폰 인코더 시각(µs), width·height는 인코딩 크기. */
+export type VideoHeader =
+  | { kind: "video_config"; codec: string; width: number; height: number }
+  | { kind: "video"; key: boolean; ts: number; width: number; height: number };
+
+export type ParsedPacket = { header: FrameHeader; jpeg: Buffer } | { video: VideoHeader; data: Buffer } | { error: string };
+
+export function encodeFramePacket(header: FrameHeader | VideoHeader, body: Uint8Array): Buffer {
   const head = Buffer.from(JSON.stringify(header), "utf8");
   const len = Buffer.alloc(4);
   len.writeUInt32BE(head.length, 0);
-  return Buffer.concat([len, head, Buffer.from(jpeg)]);
+  return Buffer.concat([len, head, Buffer.from(body)]);
 }
 
-export function parseFramePacket(buf: Buffer): { header: FrameHeader; jpeg: Buffer } | { error: string } {
+const issues = (e: z.ZodError) => `헤더가 올바르지 않습니다: ${e.issues.map((i) => i.path.join(".")).join(", ")}`;
+
+/** 패킷 하나를 JPEG(frame·photo) 또는 영상(video_config·video)으로 읽는다. */
+export function parsePacket(buf: Buffer): ParsedPacket {
   if (buf.length < 4) return { error: "패킷이 너무 짧습니다" };
   const n = buf.readUInt32BE(0);
   if (n > MAX_HEADER_BYTES || 4 + n > buf.length) return { error: "헤더 길이가 맞지 않습니다" };
@@ -53,9 +71,23 @@ export function parseFramePacket(buf: Buffer): { header: FrameHeader; jpeg: Buff
   } catch {
     return { error: "헤더 JSON을 읽지 못했습니다" };
   }
+  const body = buf.subarray(4 + n);
+  const kind = (raw as { kind?: unknown } | null)?.kind;
+  if (kind === "video" || kind === "video_config") {
+    const parsed = VideoHeaderSchema.safeParse(raw);
+    if (!parsed.success) return { error: issues(parsed.error) };
+    if (parsed.data.kind === "video" && body.length === 0) return { error: "영상 청크가 비었습니다" };
+    if (parsed.data.kind === "video_config" && body.length > MAX_DESCRIPTION_BYTES) return { error: "디코더 설정이 너무 큽니다" };
+    return { video: parsed.data, data: body };
+  }
   const parsed = HeaderSchema.safeParse(raw);
-  if (!parsed.success) return { error: `헤더가 올바르지 않습니다: ${parsed.error.issues.map((i) => i.path.join(".")).join(", ")}` };
-  const jpeg = buf.subarray(4 + n);
-  if (jpeg.length < 2 || jpeg[0] !== 0xff || jpeg[1] !== 0xd8) return { error: "JPEG가 아닙니다" };
-  return { header: parsed.data as FrameHeader, jpeg };
+  if (!parsed.success) return { error: issues(parsed.error) };
+  if (body.length < 2 || body[0] !== 0xff || body[1] !== 0xd8) return { error: "JPEG가 아닙니다" };
+  return { header: parsed.data as FrameHeader, jpeg: body };
+}
+
+/** JPEG 패킷(frame·photo)만 받는다. */
+export function parseFramePacket(buf: Buffer): { header: FrameHeader; jpeg: Buffer } | { error: string } {
+  const packet = parsePacket(buf);
+  return "video" in packet ? { error: "JPEG 패킷이 아닙니다" } : packet;
 }
