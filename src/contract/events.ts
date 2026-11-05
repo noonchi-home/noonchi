@@ -77,6 +77,26 @@ export interface DeviceView extends DeviceSpec {
   state: DeviceState;
 }
 
+// 서버 상태
+
+/** GET /api/health. */
+export interface HealthView {
+  ok: true;
+  devices: number;
+  hub: string;
+  transport: string | null;
+  provider: string | null;
+  model: string | null;
+  /** 이 집의 3D 트윈(twin-studio 뷰어)이 있는가. */
+  twin: boolean;
+  /** 폰 서버(클로이드의 눈)가 떠 있는가. */
+  eye: boolean;
+  home: { id: string; name: string } | null;
+  /** 폰에서 열 주소들(와이파이·VPN 어댑터마다 하나). */
+  phone_urls: string[];
+  brain: boolean;
+}
+
 // 초점
 
 /** 초점 대상(트윈 좌표). */

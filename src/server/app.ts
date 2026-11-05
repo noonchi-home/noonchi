@@ -10,6 +10,7 @@ import { z } from "zod";
 import type { Agent } from "../agent/agent.js";
 import { newSessionId } from "../agent/agent.js";
 import { Policy } from "../agent/policy.js";
+import type { HealthView } from "../contract/events.js";
 import { deviceViews, roomViews } from "../agent/tools.js";
 import type { Command, CommandResult, DeviceHub, RoomSpec } from "../hub/types.js";
 import type { LayoutEditor } from "../layout/editor.js";
@@ -174,7 +175,7 @@ export function createApp(opts: AppOptions): TwinHomeApp {
   const routes: { method: string; pattern: RegExp; handler: Handler; status?: (body: unknown) => number }[] = [];
   const route = (method: string, pattern: RegExp, handler: Handler, status?: (body: unknown) => number) => routes.push({ method, pattern, handler, status });
 
-  route("GET", /^\/api\/health$/, async () => ({
+  route("GET", /^\/api\/health$/, async (): Promise<HealthView> => ({
     ok: true, devices: hub.list().length, hub: opts.hubKind ?? "memory", transport: matterInfo()?.transport ?? null,
     provider: agent?.provider.name ?? null, model: agent?.provider.model ?? null, twin: !!twinDir && existsSync(twinDir),
     eye: !!opts.eye, home: opts.home ?? null, phone_urls: opts.phoneUrls?.() ?? [], brain: !!opts.brain,
