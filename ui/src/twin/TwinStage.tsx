@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { hideViewerBar } from "./embed";
 import { ViewerContext, waitForViewer, type AptViewer } from "./viewer";
 
 const SRC = "/twin/viewer/?live=auto&embed=1";
@@ -18,11 +19,13 @@ export function TwinStage({ children }: { children?: ReactNode }) {
     const onLoad = () => {
       const win = f.contentWindow;
       if (!win) return;
+      if (f.contentDocument) hideViewerBar(f.contentDocument); // 뷰어 도구는 React 패널이 대신한다
       waitForViewer(win)
         .then((v) => {
           if (!live) return;
           v.setBadges(false); // 뷰어 배지 대신 React 말풍선을 쓴다
-          v.setWallMode("low"); // 처음에는 집 전체가 보이게. 그 뒤 벽 선택은 뷰어 막대에서 사용자가 바꾼다
+          v.setWallMode("low"); // 처음에는 집 전체가 보이게(뷰어 막대를 숨겨서 벽 선택은 이대로 둔다)
+          if (f.contentDocument) hideViewerBar(f.contentDocument); // 다 불러온 집을 막대 없는 캔버스에 다시 맞춘다
           setError(null);
           setViewer(v);
         })

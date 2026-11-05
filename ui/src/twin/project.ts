@@ -15,7 +15,7 @@ export type ScreenPoint = { x: number; y: number; visible: boolean };
 
 /**
  * 한 프레임: 기기 id별 월드 앵커 → 덮개 좌표(정수 픽셀). rect는 iframe 안 캔버스 자리다.
- * iframe이 덮개와 같은 자리에 깔리므로 캔버스 위치(뷰어 위 막대 높이 등)만 더하면 된다.
+ * iframe이 덮개와 같은 자리에 깔리므로 캔버스 위치만 더하면 된다(뷰어 위 막대는 숨겨서 보통 0).
  * 앵커가 없거나 hidden(id)가 true면 visible=false.
  */
 export function screenPoints(

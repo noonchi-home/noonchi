@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { hideViewerBar } from "../src/twin/embed";
 import { TwinStage } from "../src/twin/TwinStage";
 import { useViewer, waitForViewer } from "../src/twin/viewer";
 
@@ -83,5 +84,32 @@ describe("TwinStage", () => {
     rerender(<TwinStage><Probe /><p>다시 그림</p></TwinStage>);
     expect(v.setWallMode).toHaveBeenCalledTimes(1);
     expect(v.setWallMode).toHaveBeenCalledWith("low");
+  });
+});
+
+describe("뷰어 위 막대 숨기기", () => {
+  it("hideViewerBar는 막대를 숨기는 스타일을 한 번만 넣고 resize를 보낸다", () => {
+    const doc = document.implementation.createHTMLDocument("viewer");
+    hideViewerBar(doc);
+    hideViewerBar(doc);
+    const styles = doc.querySelectorAll("style#twin-home-embed");
+    expect(styles).toHaveLength(1);
+    expect(styles[0]!.textContent).toMatch(/\.bar\s*\{\s*display:\s*none/);
+  });
+
+  it("iframe이 뜨면 뷰어 문서에 막대 숨김을 넣고 캔버스가 다시 크기를 재게 한다", async () => {
+    render(<TwinStage><Probe /></TwinStage>);
+    const frame = screen.getByTitle("3D 집 트윈") as HTMLIFrameElement;
+    const doc = frame.contentDocument!;
+    doc.open();
+    doc.write('<!doctype html><html><head></head><body><header class="bar">벽</header><main class="stage"></main></body></html>');
+    doc.close();
+    const resized = vi.fn();
+    frame.contentWindow!.addEventListener("resize", resized);
+    (frame.contentWindow as Window & { aptViewer?: FakeViewer }).aptViewer = loaded();
+    frame.dispatchEvent(new Event("load"));
+    expect(frame.contentDocument!.getElementById("twin-home-embed")).not.toBeNull();
+    expect(resized).toHaveBeenCalled();
+    await screen.findByText("뷰어 있음");
   });
 });
