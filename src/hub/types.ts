@@ -29,6 +29,14 @@ export interface DeviceState {
   updatedAt: string;
   /** "none"이면 신호 없는 기기라 상태를 모른다(twin·matter가 비어 있음, src/hub/signals.ts). */
   signal?: "none";
+  /** 실제 가전(ThinQ)에서 읽은 값이면 그 출처·ThinQ 기기 id·읽은 시각(src/thinq/link.ts). */
+  readback?: Readback;
+}
+
+export interface Readback {
+  source: "thinq";
+  deviceId: string;
+  at: string;
 }
 
 export type Command =
@@ -53,6 +61,10 @@ export interface CommandResult {
   state?: DeviceState;
   error?: string;
   needsConfirmation?: { token: string; reason: string };
+  /** ThinQ로 보낸 명령의 결과. done: 다시 읽어 같음, unverified: 받았지만 확인 안 됨(ok: true), failed: 거부, not_sent: 보내지 않음. */
+  outcome?: "done" | "unverified" | "failed" | "not_sent";
+  /** ThinQ 실행 기록(실행 id·경로·ThinQ 기기 id). */
+  execution?: { id: string; route: "thinq"; target: string };
 }
 
 export interface DeviceHub {
