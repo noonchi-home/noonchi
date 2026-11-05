@@ -1,0 +1,16 @@
+@import "tailwindcss";
+
+/* 유리 패널: 트윈 위에 떠 있는 판. 색은 토큰으로만 쓴다 */
+@theme {
+  --color-lg: #a50034;
+  --color-glass: rgb(18 22 24 / 0.55);
+  --color-glass-line: rgb(255 255 255 / 0.14);
+  --color-ink: #eef2f1;
+  --color-ink-dim: #a9b4b0;
+  --color-on: #4fd1b5;
+  --color-alert: #ff7a6b;
+  --color-unknown: #c9b26b;
+}
+html, body, #root { height: 100%; margin: 0; }
+body { background: #0d1012; color: var(--color-ink); font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif; }
+.glass { background: var(--color-glass); border: 1px solid var(--color-glass-line); backdrop-filter: blur(14px) saturate(1.2); border-radius: 16px; }

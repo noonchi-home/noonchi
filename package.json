@@ -10,11 +10,14 @@
   "scripts": {
     "start": "tsx src/server/main.ts",
     "dev": "tsx watch src/server/main.ts",
-    "test": "vitest run",
+    "test": "vitest run && npm --prefix ui test",
     "typecheck": "tsc --noEmit",
     "lint": "tsx scripts/lint-ui-copy.ts",
     "demo": "tsx scripts/demo.ts",
-    "mcp": "tsx src/mcp/server.ts"
+    "mcp": "tsx src/mcp/server.ts",
+    "ui:dev": "npm --prefix ui run dev",
+    "ui:build": "npm --prefix ui run build",
+    "ui:test": "npm --prefix ui test"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",
