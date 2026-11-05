@@ -2,6 +2,8 @@ import { useCallback, useMemo, useState } from "react";
 import type { ServerMessage } from "../../../src/contract/events.ts";
 import { BubbleLayer } from "../bubbles/BubbleLayer";
 import { DecisionLog, type LogView } from "../chat/DecisionLog";
+import { checkList, type ChecksState } from "../checks/checks";
+import { useChecks } from "../checks/use-checks";
 import { useLog } from "../chat/use-log";
 import { GlassFilter } from "../components/ui/liquid-glass";
 import { useDevices } from "../lib/use-devices";
@@ -12,10 +14,16 @@ import { EyeBody, EyeWindow } from "../panels/EyeWindow";
 import { StatusPill } from "../panels/StatusPill";
 import { TwinStage } from "../twin/TwinStage";
 import { useAnchors } from "../twin/use-anchors";
+import { useViewer } from "../twin/viewer";
 
-function Overlay({ devices, focusId }: { devices: ReturnType<typeof useDevices>["devices"]; focusId: string | null }) {
-  const points = useAnchors([...devices.keys()]);
-  return <BubbleLayer devices={devices} points={points} focusId={focusId} />;
+/** 확인 목록만 말풍선으로. 두뇌 줄은 장면의 식탁(dining_table)에 붙는다. 자리는 확인한 것만 센다. */
+function Overlay({ devices, checks, focusId }: { devices: ReturnType<typeof useDevices>["devices"]; checks: ChecksState; focusId: string | null }) {
+  const v = useViewer();
+  const table = useMemo(() => v?.objects().find((o) => o.type === "dining_table") ?? null, [v]);
+  const list = useMemo(() => checkList(checks, table?.id ?? null), [checks, table]);
+  const objects = useMemo(() => new Map<string, string>(table ? [[table.id, table.name ?? "식탁"]] : []), [table]);
+  const points = useAnchors(list.map((c) => c.deviceId ?? c.objectId!));
+  return <BubbleLayer checks={list} devices={devices} objects={objects} points={points} focusId={focusId} />;
 }
 
 /**
@@ -30,6 +38,7 @@ export function Dashboard() {
   const { devices, apply } = useDevices();
   const health = useHealth();
   const { turns, onMessage: toLog } = useLog();
+  const { checks, onMessage: toChecks } = useChecks();
   const [view, setView] = useState<LogView>("log");
   const [connected, setConnected] = useState<boolean | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
@@ -41,15 +50,16 @@ export function Dashboard() {
     }
     apply(m);
     toLog(m);
+    toChecks(m);
     if (m.type === "agent" && m.event === "action" && m.action.deviceId) setFocusId(m.action.deviceId);
-  }, [apply, toLog, homeId]);
+  }, [apply, toLog, toChecks, homeId]);
   useEvents(onMessage, setConnected);
   return (
     <LookContext.Provider value={look}>
       <main data-look={look} className="relative h-full w-full overflow-hidden">
         {look === "glass" && <GlassFilter />}
         <TwinStage>
-          <Overlay devices={devices} focusId={focusId} />
+          <Overlay devices={devices} checks={checks} focusId={focusId} />
           <StatusPill connected={connected} health={health} />
           {view === "log" && <EyeWindow health={health} connected={connected} />}
           <DecisionLog turns={turns} view={view} onView={setView} phone={<EyeBody health={health} connected={connected} large />} />

@@ -34,8 +34,8 @@ export interface AptViewer {
 
 export type WallMode = "full" | "auto" | "low";
 
-/** objects() 한 줄 중 화면이 쓰는 부분. mount: floor·wall·ceiling·surface·opening, room: 방 id(없으면 null). */
-export type TwinObject = { id: string; room?: string | null; mount: string; category: string };
+/** objects() 한 줄 중 화면이 쓰는 부분. mount: floor·wall·ceiling·surface·opening, room: 방 id(없으면 null), type: 카탈로그 종류(dining_table 등). */
+export type TwinObject = { id: string; room?: string | null; mount: string; category: string; type?: string; name?: string };
 
 type Loadable = Pick<AptViewer, "ready" | "loading" | "results">;
 
