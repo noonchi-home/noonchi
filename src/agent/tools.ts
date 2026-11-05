@@ -3,16 +3,14 @@
 
 import { z } from "zod";
 import type { Policy } from "./policy.js";
-import type { Command, CommandResult, DeviceHub, DeviceKind, DeviceSpec, DeviceState, RoomSpec } from "../hub/types.js";
+import type { DeviceView } from "../contract/events.js";
+import type { Command, CommandResult, DeviceHub, DeviceKind, DeviceSpec, RoomSpec } from "../hub/types.js";
 import { KIND_LABELS } from "../model/mapping.js";
 import { doneSentence } from "./phrases.js";
 import type { LayoutTools } from "./layoutTools.js";
 import { compact, findDevices, resolveRoom } from "./search.js";
 
-/** GET /api/devices 한 항목: spec + 현재 상태. */
-export interface DeviceView extends DeviceSpec {
-  state: DeviceState;
-}
+export type { DeviceView } from "../contract/events.js";
 
 /** GET /api/rooms 한 항목. */
 export interface RoomView extends RoomSpec {

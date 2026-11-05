@@ -4,14 +4,10 @@
 import type { AgentAction } from "../agent/agent.js";
 import type { FocusTarget } from "../phone/server.js";
 
+export type { Focus } from "../contract/events.js";
+
 export const FOCUS_TTL_MS = 8000;
 const MAX_TARGETS = 6;
-
-export interface Focus {
-  targets: FocusTarget[];
-  at: string;
-  ttl_ms: number;
-}
 
 /** 도구 결과의 대상 id를 순서대로 한 번씩. 위치를 모르는 것(지운 물건 등)은 뺀다. */
 export function focusFromActions(actions: AgentAction[], locate: (id: string) => FocusTarget | undefined): FocusTarget[] {

@@ -3,6 +3,7 @@
 
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import type { AgentAction, AgentEvent, PendingView } from "../contract/events.js";
 import type { Command, DeviceHub, DeviceState, RoomSpec } from "../hub/types.js";
 import type { Policy } from "./policy.js";
 import { askApproval, doneSentence, toolForCommand } from "./phrases.js";
@@ -10,6 +11,8 @@ import { buildSystemPrompt } from "./prompts.js";
 import { LAYOUT_TOOLS, type LayoutTools } from "./layoutTools.js";
 import { observe } from "./observe.js";
 import { AGENT_TOOLS, localBackend, runTool, type ToolBackend, type ToolDef, type ToolResult } from "./tools.js";
+
+export type { AgentAction, AgentEvent, PendingView } from "../contract/events.js";
 
 export interface ToolCall {
   id: string;
@@ -48,36 +51,11 @@ export interface LlmProvider {
   addExchange?(state: unknown, user: string, assistant: string): void;
 }
 
-export interface AgentAction {
-  tool: string;
-  args: Record<string, unknown>;
-  ok: boolean;
-  message?: string;
-  error?: string;
-  deviceId?: string;
-  deviceLabel?: string;
-  needsConfirmation?: boolean;
-  /** 생각: 모델이 이 도구를 부른 이유(모델의 설명, 판단 근거 아님). */
-  reason?: string;
-  /** 관찰: 도구 결과를 줄인 한 줄(observe.ts). */
-  observation?: string;
-  at: string;
-}
-
 /** 서버 안 에이전트에게만 받는 '생각' 인자. MCP 도구에는 없다. */
 const REASON = z.string().min(1).max(200).describe("왜 이 도구를 부르는지 한국어 한 문장(기기 id·JSON 없이). 화면의 추론 과정에 보인다.");
 
 function withReason(tool: ToolDef): ToolDef {
   return { ...tool, schema: tool.schema.extend({ reason: REASON }) };
-}
-
-export interface PendingView {
-  token: string;
-  deviceId: string;
-  deviceLabel: string;
-  command: Command;
-  reason: string;
-  expiresAt: string;
 }
 
 export interface ChatResult {
@@ -96,13 +74,6 @@ export interface ConfirmResult {
   state?: DeviceState;
   action?: AgentAction;
 }
-
-export type AgentEvent =
-  | { event: "action"; sessionId: string; action: AgentAction }
-  | { event: "reply"; sessionId: string; message: string; reply: string; actions: AgentAction[]; pendingConfirmations: PendingView[] }
-  | { event: "pending"; sessionId: string; pending: PendingView }
-  | { event: "confirmed"; sessionId?: string; token: string; ok: boolean; reply: string; deviceId?: string }
-  | { event: "cancelled"; sessionId?: string; token: string };
 
 export interface AgentOptions {
   hub: DeviceHub;

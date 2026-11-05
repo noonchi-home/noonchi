@@ -1,0 +1,13 @@
+import { describe, expect, it } from "vitest";
+import { parseMessage } from "../src/lib/messages";
+
+describe("parseMessage", () => {
+  it("아는 type은 그대로 돌려준다", () => {
+    const m = parseMessage(JSON.stringify({ type: "state", state: { id: "light_1", online: true, twin: { power: "on" }, matter: {}, updatedAt: "t" } }));
+    expect(m?.type).toBe("state");
+  });
+  it("모르는 type·깨진 JSON은 null", () => {
+    expect(parseMessage("{oops")).toBeNull();
+    expect(parseMessage(JSON.stringify({ type: "nope" }))).toBeNull();
+  });
+});

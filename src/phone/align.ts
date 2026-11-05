@@ -4,9 +4,10 @@
 // AR (x, z)를 평면 (x, y)로 읽고 수평 회전 하나와 이동만 구하면 된다. 크기는 둘 다 미터라 맞출 필요가 없다.
 // 회전 각은 평면 규칙(yaw 0 = +x, 90 = +y)을 따른다.
 
-export type Vec3 = [number, number, number];
+import type { EyePose, Plan2, Vec3 } from "../contract/events.js";
+
+export type { EyePose, Plan2, Vec3 } from "../contract/events.js";
 export type Quat = [number, number, number, number]; // x, y, z, w
-export type Plan2 = [number, number];
 
 export interface FloorPoint {
   ar: Vec3;
@@ -19,13 +20,6 @@ export interface Alignment {
   ty: number;
   floorY: number;
   mismatchM: number;
-}
-
-export interface EyePose {
-  position: Plan2;
-  height_m: number;
-  yaw_deg: number;
-  pitch_deg: number;
 }
 
 /** 두 기준점이 이보다 가까우면 방향이 불안정하다. */

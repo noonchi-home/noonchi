@@ -11,8 +11,11 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { join } from "node:path";
+import type { PhotoRecord } from "../contract/events.js";
 import type { EyeEvent } from "./session.js";
 import { VideoRelay, type DisplayStats } from "./video.js";
+
+export type { PhotoRecord } from "../contract/events.js";
 
 const BOUNDARY = "eyeframe";
 /** 느린 화면에는 프레임을 쌓지 않고 건너뛴다. */
@@ -31,16 +34,6 @@ export interface FeedStats {
 /** /api/eye/stats: JPEG 프레임 통계 + 표시 영상(H.264) 통계. */
 export interface EyeStats extends FeedStats {
   display: DisplayStats;
-}
-
-export interface PhotoRecord {
-  id: string;
-  at: string;
-  url: string;
-  width: number;
-  height: number;
-  measured_pose: EyeEvent | null;
-  pose_note?: "not_aligned";
 }
 
 export interface EyeFeedOptions {

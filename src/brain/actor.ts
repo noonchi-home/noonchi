@@ -2,22 +2,9 @@
 // 실제·트윈 기기 명령이나 LG ThinQ 호출을 하지 않는다. 로봇이 없어 "컵 치우기"는 폰으로 사람에게 부탁하고,
 // 결과(컵이 치워졌나)는 상태 기계가 새 판정으로 확인한다.
 
-export interface ActionChoice { id: string; label: string }
+import type { ActionPlan } from "../contract/events.js";
 
-export interface ActionPlan {
-  id: string;
-  task: string;
-  kind: "ask_person_to_clear" | "ask_user" | "unsupported";
-  dry_run: true;
-  /** 실제 로봇·기기라면 했을 일(기록용). */
-  would: string;
-  /** 대시보드 추론 과정에 보일 글. */
-  dashboard: string;
-  /** 폰에 띄울 부탁·질문과 버튼. 없으면 기록만. */
-  prompt: { text: string; choices: ActionChoice[] } | null;
-  /** cup_gone: 컵이 안 보이게 되는지 본다. none: 답만 기록. */
-  check: "cup_gone" | "none";
-}
+export type { ActionChoice, ActionPlan } from "../contract/events.js";
 
 const NO_COMMAND = "기기 명령은 보내지 않아요";
 

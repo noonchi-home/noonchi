@@ -15,20 +15,13 @@
 // "치워짐"은 식탁을 비추는 것이 확인될 때만 저절로 정한다. 식탁을 모르면(맞추기 전·VLM 모드) 사용자가 "치웠어요"를 누른 뒤의
 // 컵 없음만 센다(카메라만 돌려도 치워짐이 되지 않게).
 
+import type { ActionOutcome, BrainEvent, BrainStage, BrainState } from "../contract/events.js";
 import { planAction, replyText, type ActionPlan } from "./actor.js";
 import type { Prediction } from "./decision.js";
 import type { Contents, Perception } from "./perception.js";
 import type { Presence } from "./presence.js";
 
-export type BrainState = "watching" | "in_use" | "away_check" | "requesting" | "deciding" | "confirming" | "acting" | "done";
-export type BrainStage = "use" | "away" | "request" | "answer" | "decide" | "confirm" | "act" | "result" | "wait" | "cancel" | "stale" | "error";
-export type ActionOutcome = "cleared" | "declined" | "answered" | "unconfirmed" | "unsupported" | "withdrawn";
-
-export type BrainEvent =
-  | { type: "brain"; stage: BrainStage; state: BrainState; text: string; at_ms: number; evidence_age_ms: number | null; generation: number }
-  | { type: "request"; id: string; text: string; active: boolean; at_ms: number }
-  | { type: "action"; id: string; task: string; plan: ActionPlan; active: boolean; at_ms: number }
-  | { type: "result"; id: string; task: string; outcome: ActionOutcome; text: string; at_ms: number };
+export type { ActionOutcome, BrainEvent, BrainStage, BrainState } from "../contract/events.js";
 
 /** contentsAtMs: 내용물을 정한 VLM 판정의 근거 시각(내용물 모름이면 null). 판단 근거 사진을 찾는 데 쓴다. */
 export interface DecideIntent { kind: "decide"; generation: number; contents: Contents; endMs: number; contentsAtMs: number | null }

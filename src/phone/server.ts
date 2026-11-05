@@ -7,13 +7,16 @@ import { networkInterfaces } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocket, WebSocketServer } from "ws";
+import type { FocusTarget } from "../contract/events.js";
 import { listenRetry } from "../server/net.js";
 import { serveFile } from "../server/static.js";
 import type { AnchorTarget } from "./anchors.js";
 import type { EyeFeed } from "./feed.js";
 import { MAX_PACKET_BYTES, parsePacket, type FrameHeader } from "./packet.js";
-import type { Plan2, Vec3 } from "./align.js";
+import type { Plan2 } from "./align.js";
 import { PhoneSession, type AlignMode, type EyeEvent, type FallbackViewpoint, type HerePoint } from "./session.js";
+
+export type { FocusTarget } from "../contract/events.js";
 
 const DEFAULT_WEB_DIR = fileURLToPath(new URL("../../web/phone/", import.meta.url));
 
@@ -49,13 +52,6 @@ export interface PhoneServerOptions {
 export interface PhoneReply {
   reply: string;
   pending: { token: string; deviceLabel: string; reason: string }[];
-}
-
-/** 초점 대상(트윈 좌표). */
-export interface FocusTarget {
-  id: string;
-  label: string;
-  position: Vec3;
 }
 
 const MAX_SAY = 500;

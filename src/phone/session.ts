@@ -2,9 +2,12 @@
 // 네트워크와 무관하므로 server.ts가 WebSocket 메시지를 그대로 넘긴다.
 
 import { z } from "zod";
-import { fromTwin, planOf, solveAlignment, toTwin, type Alignment, type EyePose, type Plan2, type Quat, type Vec3 } from "./align.js";
+import type { EyeEvent } from "../contract/events.js";
+import { fromTwin, planOf, solveAlignment, toTwin, type Alignment, type Plan2, type Quat, type Vec3 } from "./align.js";
 import type { AnchorTarget } from "./anchors.js";
 import { DEFAULT_EYE_HEIGHT_M } from "./touch.js";
+
+export type { EyeEvent } from "../contract/events.js";
 
 const num = z.number().refine(Number.isFinite);
 const Vec3Schema = z.tuple([num, num, num]);
@@ -49,9 +52,6 @@ export interface PhoneStatus {
   mismatch_m: number | null;
   error?: string;
 }
-
-/** estimated: 맞추기 전 추정(창가 고정 위치 + 폰 방향). 사진의 measured_pose에는 쓰지 않는다. */
-export type EyeEvent = EyePose & { tracking: "ok" | "limited"; at: string; estimated?: true };
 
 /** 맞추기 전 눈을 둘 자리: 평면도 위치, 'AR 시작 방향'으로 볼 방위(도), 눈 높이. */
 export interface FallbackViewpoint {
