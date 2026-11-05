@@ -74,6 +74,7 @@ describe("설정 흐름 서버", () => {
     expect(r.json.homes.map((h: Msg) => h.id)).toEqual(expect.arrayContaining(["apartment", "oneroom"]));
     expect(r.json.devices.length).toBe(srv.twin.devices.length);
     expect(r.json.devices[0]).toMatchObject({ source: { kind: "virtual" } });
+    expect(r.json.devices_saved).toBe(false);
   });
 
   it("집을 바꾸면 허브·에이전트·트윈이 새 집으로, 다시 붙은 WS hello도 새 집", async () => {
@@ -146,6 +147,7 @@ describe("설정 흐름 서버", () => {
     const r = await post("/api/setup/devices", { home: srv.twin.home.id, sources: { [id]: "none" } });
     expect(r.status).toBe(200);
     expect(r.json.devices.find((d: Msg) => d.id === id).source).toEqual({ kind: "none" });
+    expect(r.json.devices_saved).toBe(true);
     const msg = await ev.waitFor((m) => m.type === "state" && m.state.id === id && m.state.signal === "none");
     expect(msg.state.twin).toEqual({});
     const devices = (await get("/api/devices")).json as unknown as Msg[];
@@ -247,7 +249,7 @@ describe("설정 흐름 서버", () => {
     await srv.close();
     srv = await startServer({ env: env(dir), log: () => {}, persistSetup: true });
     const v = (await get("/api/setup")).json;
-    expect(v).toMatchObject({ done: true, home: { id: "apartment" } });
+    expect(v).toMatchObject({ done: true, home: { id: "apartment" }, devices_saved: true });
     expect(v.devices.find((d: Msg) => d.id === id).source).toEqual({ kind: "none" });
     expect(srv.signals.get(id)!.signal).toBe("none");
   });

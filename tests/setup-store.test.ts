@@ -22,7 +22,9 @@ describe("SetupStore 메모리 방식", () => {
     expect(store.state()).toEqual({ home: null, done: true });
     store.setHome("oneroom");
     expect(store.state()).toEqual({ home: "oneroom", done: false });
+    expect(store.hasSources("oneroom")).toBe(false);
     store.saveSources("oneroom", { tv: { kind: "none" } });
+    expect(store.hasSources("oneroom")).toBe(true);
     expect(store.sources("oneroom", ["tv"])).toEqual({ tv: { kind: "none" } });
     store.markDone();
     expect(store.state().done).toBe(true);
@@ -47,6 +49,16 @@ describe("SetupStore 저장 방식", () => {
     expect(b.sources("apartment", ["tv", "lamp"])).toEqual({ tv: { kind: "none" } });
     const file = JSON.parse(readFileSync(join(dir, "homes", "apartment", "signals.json"), "utf8"));
     expect(file).toMatchObject({ version: 1, home: "apartment", sources: { tv: { kind: "none" } } });
+  });
+
+  it("고른 적이 있는지: 모두 가상으로 저장해도 고른 것", () => {
+    const dir = tmp();
+    const a = new SetupStore({ runtimeDir: dir, persist: true });
+    expect(a.hasSources("apartment")).toBe(false);
+    a.saveSources("apartment", { lamp: { kind: "virtual" } });
+    expect(a.hasSources("apartment")).toBe(true);
+    expect(new SetupStore({ runtimeDir: dir, persist: true }).hasSources("apartment")).toBe(true);
+    expect(a.hasSources("oneroom")).toBe(false);
   });
 
   it("같은 집을 다시 고르면 끝냄을 그대로 두고, 다른 집이면 안 끝냄", () => {

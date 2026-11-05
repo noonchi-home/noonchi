@@ -161,7 +161,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     return {
       ok: true, persist: store.persist, done: st.done, switching, error: switchError,
       home: h ? { id: h.twin.home.id, name: h.twin.home.name } : null, homes: homes(),
-      rooms: h?.twin.rooms ?? [], devices: h ? deviceViews(h) : [],
+      rooms: h?.twin.rooms ?? [], devices: h ? deviceViews(h) : [], devices_saved: h ? store.hasSources(h.twin.home.id) : false,
       position: { touch: !!h?.touch, layout: !!h?.layout, phone_urls: h?.phoneUrls ?? [] },
     };
   };

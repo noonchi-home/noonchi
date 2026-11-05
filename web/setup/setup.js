@@ -1,9 +1,10 @@
 // twin-home 설정 화면: 1 집 고르기 → 2 가전 선택(기기별 신호 출처) → 3 위치 동기화(폰 기준점 A·B, 배치 보정) → 대시보드.
 // 서버가 판단·검사를 하고(/api/setup*), 여기서는 고른 것을 보내고 결과를 그린다. 빌드 없는 ES 모듈.
 
+import { searchDevices } from "./device-search.js";
+
 const $ = (sel) => document.querySelector(sel);
 const STEPS = ["home", "devices", "position"];
-const SOURCE_LABELS = { virtual: "가상", none: "신호 없음" };
 
 const setup = {
   view: null, // GET /api/setup
@@ -51,7 +52,7 @@ async function load() {
   }
   setup.view = r.json;
   setup.pickedHome ??= r.json.home?.id ?? r.json.homes[0]?.id ?? null;
-  setup.sources = new Map(r.json.devices.map((d) => [d.id, d.source.kind]));
+  setup.sources = sourcesFrom(r.json);
   if (r.json.error) notice(`지난번 집 바꾸기가 실패했어요: ${r.json.error}`, "error");
   return true;
 }
@@ -89,7 +90,7 @@ async function chooseHome() {
   const btn = $("#home-next");
   const changing = id !== setup.view.home?.id;
   btn.disabled = true;
-  if (changing) notice("집을 바꾸는 중이에요. Matter 허브를 쓰면 수십 초 걸릴 수 있어요…");
+  if (changing) notice("집을 바꾸는 중이에요. 수십 초 걸릴 수 있어요…");
   setup.switching = true;
   const r = await api("/api/setup/home", { home: id });
   setup.switching = false;
@@ -101,33 +102,74 @@ async function chooseHome() {
     return;
   }
   setup.view = r.json;
-  setup.sources = new Map(r.json.devices.map((d) => [d.id, d.source.kind]));
+  setup.sources = sourcesFrom(r.json);
+  $("#device-search").value = "";
   notice(changing ? `${r.json.home.name}(으)로 바꿨어요.` : "");
   go("devices");
 }
 
 // ── 2 가전 선택 ─────────────────────────────────────────
+// 검색해서 추가한 가전만 가상, 나머지는 신호 없음. 이 집 가전을 고른 적이 없으면 모두 신호 없음으로 시작한다.
+
+function sourcesFrom(view) {
+  return new Map(view.devices.map((d) => [d.id, view.devices_saved ? d.source.kind : "none"]));
+}
+
+const isPicked = (id) => setup.sources.get(id) === "virtual";
+const deviceName = (d) => (d.label.includes(d.kindLabel) ? d.label : `${d.label} · ${d.kindLabel}`);
+
+function setSource(id, kind) {
+  setup.sources.set(id, kind);
+  renderDevices();
+}
 
 function renderDevices() {
-  const counts = { virtual: 0, none: 0 };
-  for (const k of setup.sources.values()) counts[k] = (counts[k] ?? 0) + 1;
-  $("#device-count").textContent = `가상 ${counts.virtual} · 신호 없음 ${counts.none}`;
-  const rooms = [...new Map(setup.view.devices.map((d) => [d.room, d.roomLabel])).entries()];
+  const devices = setup.view.devices;
+  const picked = devices.filter((d) => isPicked(d.id));
+  $("#device-count").textContent = `추가 ${picked.length} · 신호 없음 ${devices.length - picked.length}`;
+  $("#all-none").hidden = picked.length === 0;
+  const rooms = [...new Map(devices.map((d) => [d.room, d.roomLabel])).values()];
+  $("#room-chips").replaceChildren(...rooms.map((label) => el("button", {
+    type: "button", class: "small ghost", onclick: () => { $("#device-search").value = label; $("#device-search").focus(); renderResults(); },
+  }, label)));
   const box = $("#device-list");
-  if (setup.view.devices.length === 0) {
-    box.replaceChildren(el("p", { class: "empty" }, "이 집 배치에 가전이 없어요."));
-    return;
+  if (devices.length === 0) box.replaceChildren(el("p", { class: "empty" }, "이 집 배치에 가전이 없어요."));
+  else if (picked.length === 0) box.replaceChildren(el("p", { class: "empty" }, "아직 추가한 가전이 없어요. 위에서 검색해서 추가하세요."));
+  else box.replaceChildren(el("ul", { class: "chips" }, picked.map((d) => el("li", { class: "chip", "data-id": d.id },
+    d.label.includes(d.roomLabel) ? null : el("span", { class: "room" }, d.roomLabel), el("span", { class: "name" }, deviceName(d)),
+    el("button", { type: "button", class: "chip-x", "aria-label": `${d.roomLabel} ${d.label} 빼기`, onclick: () => setSource(d.id, "none") }, "×"),
+  ))));
+  renderResults();
+}
+
+function renderResults() {
+  const list = $("#device-results");
+  const query = $("#device-search").value;
+  list.hidden = !query.trim();
+  if (list.hidden) return list.replaceChildren();
+  const hits = searchDevices(setup.view.devices, query);
+  if (!hits.length) return list.replaceChildren(el("li", { class: "empty" }, "맞는 가전이 없어요."));
+  const rest = hits.filter((d) => !isPicked(d.id));
+  list.replaceChildren(
+    el("li", { class: "results-head" }, `${hits.length}개`, rest.length > 1 ? el("button", {
+      type: "button", class: "small ghost", onclick: () => { for (const d of rest) setup.sources.set(d.id, "virtual"); renderDevices(); },
+    }, `모두 추가 (${rest.length})`) : null),
+    ...hits.map((d) => el("li", {}, el("button", {
+      type: "button", class: `result${isPicked(d.id) ? " on" : ""}`, "aria-pressed": String(isPicked(d.id)), "data-id": d.id,
+      onclick: () => { setSource(d.id, isPicked(d.id) ? "none" : "virtual"); list.querySelector(`[data-id="${d.id}"]`)?.focus(); },
+    }, el("span", { class: "room" }, d.roomLabel), el("span", { class: "name" }, deviceName(d)), el("span", { class: "act" }, isPicked(d.id) ? "추가됨 ✓" : "추가")))),
+  );
+}
+
+function onSearchKey(e) {
+  if (e.key === "Escape") {
+    e.target.value = "";
+    renderResults();
+  } else if (e.key === "Enter") {
+    // 엔터: 아직 안 넣은 첫 결과를 추가한다
+    const first = searchDevices(setup.view.devices, e.target.value).find((d) => !isPicked(d.id));
+    if (first) setSource(first.id, "virtual");
   }
-  box.replaceChildren(...rooms.map(([room, label]) => el("section", { class: "device-room" },
-    el("h3", {}, label),
-    setup.view.devices.filter((d) => d.room === room).map((d) => el("div", { class: "device-row", "data-id": d.id },
-      el("span", { class: "name" }, d.label), d.label.includes(d.kindLabel) ? null : el("span", { class: "kind" }, d.kindLabel),
-      el("span", { class: "seg", role: "group", "aria-label": `${d.label} 신호 출처` }, Object.entries(SOURCE_LABELS).map(([kind, text]) => el("button", {
-        type: "button", class: `small${setup.sources.get(d.id) === kind ? " active" : ""}`, "aria-pressed": String(setup.sources.get(d.id) === kind), "data-kind": kind,
-        onclick: () => { setup.sources.set(d.id, kind); renderDevices(); },
-      }, text))),
-    )),
-  )));
 }
 
 function setAll(kind) {
@@ -212,7 +254,7 @@ const touch = {
       this.info(d === null ? `${id} 지점을 골랐어요. 다른 지점도 고르세요.` : `A–B 수평 거리 ${d.toFixed(2)}m. 저장하면 폰이 이 두 벽으로 맞춰요.`);
     });
     this.picking(true);
-    this.info(`3D 트윈에서 ${id} 지점의 벽을 누르세요(가구는 뚫고 벽을 잡아요).`);
+    this.info(`3D 트윈에서 ${id} 지점의 벽을 누르세요.`);
   },
   async save() {
     const [a, b] = this.list();
@@ -240,7 +282,6 @@ const touch = {
       this.points[id] = p ? { position: p.position } : null;
       $(`#touch-label-${id}`).value = p?.label ?? "";
     }
-    if (typeof view.eye_height_m === "number") $("#touch-eye").textContent = String(view.eye_height_m);
     this.render();
     this.showMarkers();
   },
@@ -287,7 +328,7 @@ const layout = {
     });
     $("#layout-reset").addEventListener("click", async () => {
       const r = await api("/api/layout/reset", { home: setup.view.home.id });
-      notice(r.json.ok ? `배치 보정을 되돌렸어요(${r.json.reverted}곳).` : r.json.error, r.json.ok ? "" : "error");
+      notice(r.json.ok ? `배치 보정 ${r.json.reverted}곳을 되돌렸어요.` : r.json.error, r.json.ok ? "" : "error");
       this.load();
     });
   },
@@ -334,7 +375,7 @@ const position = {
       $("#twin-msg").hidden = false;
       if (!ok) {
         frame.hidden = true;
-        $("#twin-msg").textContent = "3D 트윈을 찾을 수 없어요. 고른 집의 twin-studio 산출물이 있어야 해요(twin-studio에서 먼저 빌드).";
+        $("#twin-msg").textContent = "3D 트윈을 찾을 수 없어요.";
       } else {
         frame.hidden = false;
         frame.addEventListener("load", () => { $("#twin-msg").hidden = true; }, { once: true });
@@ -343,8 +384,8 @@ const position = {
     }
     const urls = setup.view.position.phone_urls;
     $("#phone-help").textContent = urls.length > 0
-      ? "폰 크롬에서 이 주소를 열고 기준점을 차례로 조준해 기록하세요. 맞추지 않으면 사진에 위치가 붙지 않아요."
-      : "폰 서버가 꺼져 있어요(PHONE_PORT를 주고 켜면 폰으로 맞출 수 있어요).";
+      ? "폰 크롬에서 이 주소를 열고 기준점을 조준해 기록하세요."
+      : "폰 서버가 꺼져 있어요.";
     $("#phone-urls").replaceChildren(...urls.map((u) => el("li", {}, el("code", {}, u))));
     await Promise.all([touch.load(), layout.load()]);
     this.renderDone();
@@ -368,8 +409,9 @@ async function init() {
   $("#home-next").addEventListener("click", chooseHome);
   $("#devices-back").addEventListener("click", () => go("home"));
   $("#devices-next").addEventListener("click", saveDevices);
-  $("#all-virtual").addEventListener("click", () => setAll("virtual"));
   $("#all-none").addEventListener("click", () => setAll("none"));
+  $("#device-search").addEventListener("input", renderResults);
+  $("#device-search").addEventListener("keydown", onSearchKey);
   $("#position-back").addEventListener("click", () => go("devices"));
   $("#position-done").addEventListener("click", () => position.finish());
   touch.init();

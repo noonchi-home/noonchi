@@ -16,7 +16,6 @@ body.setup [hidden] { display: none !important; }
 .wiz { flex: 1; display: flex; flex-direction: column; gap: 10px; min-height: 0; max-width: 1200px; margin: 0 auto; width: 100%; }
 .wiz h2 { margin: 0; font-size: 18px; }
 .wiz h3 { margin: 0 0 6px; font-size: 14px; }
-.help { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
 .wiz-actions { display: flex; gap: 8px; justify-content: flex-end; padding-top: 6px; }
 .box { padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); font-size: 13px; }
 .box p { margin: 0 0 8px; }
@@ -30,13 +29,24 @@ body.setup [hidden] { display: none !important; }
 
 /* 2 가전 선택 */
 .bulk { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-.device-list { flex: 1; min-height: 0; overflow: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; align-content: start; }
-.device-room { padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
-.device-row { display: flex; gap: 6px; align-items: center; padding: 4px 0; border-top: 1px solid var(--line); font-size: 13px; }
-.device-room h3 + .device-row { border-top: 0; }
-.device-row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.device-row .kind { color: var(--muted); font-size: 11px; white-space: nowrap; }
-.seg { display: inline-flex; gap: 2px; }
+.device-search { display: grid; gap: 8px; max-width: 720px; }
+.device-search input { width: 100%; padding: 10px 12px; font-size: 15px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--text); }
+.device-search input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.room-chips { display: flex; gap: 4px; flex-wrap: wrap; }
+.device-results { margin: 0; padding: 4px; list-style: none; max-height: 320px; overflow: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+.device-results .empty { padding: 8px; font-size: 13px; }
+.results-head { display: flex; gap: 8px; align-items: center; justify-content: space-between; padding: 4px 8px; color: var(--muted); font-size: 12px; }
+.result { display: flex; gap: 8px; align-items: center; width: 100%; padding: 8px; border: 0; border-radius: 8px; background: transparent; color: var(--text); text-align: left; font-size: 14px; cursor: pointer; }
+.result:hover, .result:focus-visible { background: var(--accent-soft); }
+.result .room, .chip .room { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.result .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.result .act { color: var(--accent); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.result.on .act { color: var(--on); }
+.device-picked { flex: 1; min-height: 0; overflow: auto; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 0; padding: 0; list-style: none; }
+.chip { display: inline-flex; gap: 6px; align-items: center; padding: 4px 4px 4px 12px; border-radius: 999px; background: var(--accent-soft); font-size: 13px; }
+.chip-x { width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted); font-size: 15px; line-height: 1; cursor: pointer; }
+.chip-x:hover { background: var(--panel); color: var(--err); }
 
 /* 3 위치 동기화 */
 .position-grid { flex: 1; min-height: 420px; display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 12px; }
@@ -47,7 +57,6 @@ body.setup [hidden] { display: none !important; }
 .phone-urls { margin: 0; padding-left: 18px; font-size: 12px; word-break: break-all; }
 
 /* 폰 기준점(벽 대기 맞춤) */
-.touch-help { margin: 0 0 8px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .touch-row { display: grid; grid-template-columns: auto 1fr auto; gap: 6px; align-items: center; margin-bottom: 6px; }
 .touch-row input { min-width: 0; }
 .touch-pos { grid-column: 2 / 4; color: var(--muted); font-size: 12px; }

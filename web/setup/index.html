@@ -12,7 +12,6 @@
   <header class="top">
     <div class="brand">
       <h1>twin-home 설정</h1>
-      <span class="sub">집 → 가전 → 위치 동기화 → 대시보드</span>
     </div>
     <ol class="wiz-steps" id="steps" aria-label="설정 단계">
       <li data-step="home"><b>1</b> 집 고르기</li>
@@ -26,7 +25,6 @@
   <main class="step-body">
     <section id="step-home" class="wiz" aria-labelledby="h-home" hidden>
       <h2 id="h-home">어느 집을 쓸까요?</h2>
-      <p class="help">twin-studio에 만들어 둔 집이에요. 다른 집을 고르면 허브·에이전트·폰 연결을 새 집으로 다시 띄워요.</p>
       <div id="home-list" class="home-list" role="radiogroup" aria-labelledby="h-home"></div>
       <div class="wiz-actions">
         <button type="button" id="home-next" class="primary">다음</button>
@@ -34,14 +32,17 @@
     </section>
 
     <section id="step-devices" class="wiz" aria-labelledby="h-devices" hidden>
-      <h2 id="h-devices">가전마다 상태를 어디서 읽을까요?</h2>
-      <p class="help"><b>가상</b>: 트윈 시뮬레이터의 값을 읽어요. <b>신호 없음</b>: 상태를 「모름」으로 두고, 클로이드가 사진이나 질문으로만 알아내요. 명령은 둘 다 트윈에서 실행돼요.</p>
+      <h2 id="h-devices">어떤 가전의 상태를 읽을까요?</h2>
+      <div class="device-search">
+        <input id="device-search" type="search" placeholder="가전이나 방 이름으로 검색" aria-label="가전 검색" aria-controls="device-results" autocomplete="off">
+        <div id="room-chips" class="room-chips" aria-label="방으로 찾기"></div>
+        <ul id="device-results" class="device-results" aria-label="검색 결과" hidden></ul>
+      </div>
       <div class="bulk">
         <span id="device-count" class="badge"></span>
-        <button type="button" class="small" id="all-virtual">모두 가상</button>
-        <button type="button" class="small" id="all-none">모두 신호 없음</button>
+        <button type="button" class="small ghost" id="all-none">모두 빼기</button>
       </div>
-      <div id="device-list" class="device-list"></div>
+      <div id="device-list" class="device-picked" aria-label="추가한 가전"></div>
       <div class="wiz-actions">
         <button type="button" id="devices-back">이전</button>
         <button type="button" id="devices-next" class="primary">다음</button>
@@ -50,7 +51,6 @@
 
     <section id="step-position" class="wiz" aria-labelledby="h-position" hidden>
       <h2 id="h-position">폰과 트윈의 위치를 맞춰요</h2>
-      <p class="help">건너뛰어도 돼요. 그러면 폰 사진에는 위치가 붙지 않아요(맞추기 전).</p>
       <div class="position-grid">
         <div class="twin-box">
           <iframe id="twin-frame" title="3D 집 트윈"></iframe>
@@ -58,9 +58,8 @@
         </div>
         <div class="side">
           <!-- 폰 기준점: 3D에서 벽 두 곳을 고르면 폰이 실제 그 벽 바로 아래 바닥을 조준해 수평을 맞춘다(높이는 눈높이 고정) -->
-          <section id="touch-panel" class="touch-panel box" aria-label="폰 기준점(벽 두 곳)" hidden>
+          <section id="touch-panel" class="touch-panel box" aria-label="폰 기준점" hidden>
             <h3>폰 기준점 A·B</h3>
-            <p class="touch-help">벽 두 곳을 고르고 저장하면, 폰에서 그 벽 바로 아래 바닥(벽과 바닥이 만나는 선)을 조준점으로 맞추고 기록해요. 높이는 재지 않고 눈높이 <span id="touch-eye">1.5</span>m로 둬요. 맞춤은 근사예요. 저장하지 않으면 평면도 바닥 기준점으로 맞춰요.</p>
             <div class="touch-row">
               <b class="touch-id a">A</b>
               <input id="touch-label-A" type="text" maxlength="40" placeholder="예: 거실 창 오른쪽 벽" aria-label="A 지점 이름">
@@ -82,7 +81,6 @@
           </section>
           <section id="layout-box" class="box" aria-label="배치 보정" hidden>
             <h3>배치 보정</h3>
-            <p class="touch-help">폰 조준점·대화로 옮긴 가구·가전 자리예요. 저장하면 다음에 켤 때도 그대로예요.</p>
             <p><span id="layout-state" class="badge">보정 없음</span></p>
             <div class="touch-actions">
               <button type="button" id="layout-reset" class="ghost small">되돌리기</button>
@@ -91,7 +89,7 @@
           </section>
           <section id="phone-box" class="box" aria-label="폰 연결">
             <h3>폰</h3>
-            <p class="touch-help" id="phone-help">폰 서버가 꺼져 있어요(PHONE_PORT).</p>
+            <p class="touch-info" id="phone-help">폰 서버가 꺼져 있어요.</p>
             <ul id="phone-urls" class="phone-urls"></ul>
           </section>
         </div>

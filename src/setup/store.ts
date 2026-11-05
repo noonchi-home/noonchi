@@ -89,6 +89,11 @@ export class SetupStore {
     return out;
   }
 
+  /** 이 집 가전을 고른 적이 있는지. 모두 가상으로 저장해도 고른 것이다(설정 화면은 안 고른 집을 모두 끈 채로 연다). */
+  hasSources(homeId: string): boolean {
+    return this.persist ? existsSync(this.signalsPath(homeId)) : this.memory.has(homeId);
+  }
+
   saveSources(homeId: string, sources: Record<string, SignalSource>): void {
     const kept = Object.fromEntries(Object.entries(sources).filter(([, s]) => s.kind !== "virtual").map(([id, s]) => [id, { ...s }]));
     if (!this.persist) {
