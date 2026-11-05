@@ -330,3 +330,7 @@ button.active { background: var(--accent-soft); border-color: var(--accent); col
   .layout[data-tab="log"] > .twin, .layout[data-tab="log"] > .eye-pane { display: none; }
   .devices { top: 10px; left: 10px; bottom: 10px; }
 }
+
+/* 클로이드의 눈 표시 영상(H.264, eye-video.js): 코딩된 크기를 칸 안에 비율대로. 영상과 MJPEG 중 하나만 보인다 */
+.eye canvas { display: block; width: 100%; height: 100%; object-fit: contain; }
+.eye [hidden] { display: none; }

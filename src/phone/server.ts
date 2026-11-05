@@ -11,7 +11,7 @@ import { listenRetry } from "../server/net.js";
 import { serveFile } from "../server/static.js";
 import type { AnchorTarget } from "./anchors.js";
 import type { EyeFeed } from "./feed.js";
-import { MAX_PACKET_BYTES, parseFramePacket, type FrameHeader } from "./packet.js";
+import { MAX_PACKET_BYTES, parsePacket, type FrameHeader } from "./packet.js";
 import type { Plan2, Vec3 } from "./align.js";
 import { PhoneSession, type AlignMode, type EyeEvent, type FallbackViewpoint, type HerePoint } from "./session.js";
 
@@ -128,12 +128,18 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
   const reply = (ws: WebSocket, msg: unknown) => {
     if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
   };
-  // 바이너리 메시지 = 카메라 프레임·사진 패킷(packet.ts)
-  const onPacket = (ws: WebSocket, data: Buffer) => {
+  // 바이너리 메시지 = 카메라 프레임·사진·표시 영상 패킷(packet.ts). 영상은 연결 번호로 구분해 판단 없이 중계한다(video.ts)
+  const onPacket = (ws: WebSocket, source: number, data: Buffer) => {
     const receivedAtMs = Date.now();
-    const packet = parseFramePacket(data);
+    const packet = parsePacket(data);
     if ("error" in packet) {
       reply(ws, session.status(packet.error));
+      return;
+    }
+    if ("video" in packet) {
+      const { video, data: body } = packet;
+      if (video.kind === "video_config") opts.feed?.video.config(source, { codec: video.codec, width: video.width, height: video.height, description: body });
+      else opts.feed?.video.chunk(source, { key: video.key, ts: video.ts, width: video.width, height: video.height, data: body });
       return;
     }
     const { header, jpeg } = packet;
@@ -172,11 +178,18 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
     }
   };
 
+  let connections = 0;
   wss.on("connection", (ws) => {
+    const source = ++connections;
+    log(`[phone] 폰 연결(지금 ${wss.clients.size}대)`);
+    ws.on("close", () => {
+      opts.feed?.video.endSource(source);
+      log(`[phone] 폰 끊김(지금 ${wss.clients.size}대)`);
+    });
     reply(ws, session.status());
     ws.on("message", (data, isBinary) => {
       if (isBinary) {
-        onPacket(ws, Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data as Buffer));
+        onPacket(ws, source, Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data as Buffer));
         return;
       }
       let raw: unknown;

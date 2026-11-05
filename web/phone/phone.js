@@ -10,6 +10,7 @@
 // 화면 가운데 큰 글씨로, 행동 부탁(모의)은 버튼 카드로 보이고, 요청이 떠 있을 때 📷 사진이 요청 답이 된다.
 
 import { createGrabber, framePacket } from "./capture.js";
+import { createDisplayEncoder } from "./display-encoder.js";
 import { createFramePipeline, createSendStats, frameWidth } from "./pipeline.js";
 import { focusMarks } from "./project.js";
 import { floorCandidate } from "./touch.js";
@@ -43,6 +44,7 @@ let revision = null;
 let epoch = null;
 const newEpoch = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 let arOn = false;
+let display = null; // 표시 영상(H.264, display-encoder.js). 분석용 JPEG와 따로 대시보드 화면에만 간다
 // 시계 맞춤: 최근 표본 중 왕복이 가장 짧은 것으로 서버 시계와의 차(offset)를 정하고 오차는 왕복의 절반
 const CLOCK_MS = 2000;
 const phoneNow = () => performance.timeOrigin + performance.now();
@@ -227,6 +229,7 @@ function renderPerf() {
     `readPixels ${ms(s.readMs)} · 인코딩 ${ms(s.encodeMs)} (${view.encoder})`,
     `와이파이 대기 ${Math.round((ws?.bufferedAmount ?? 0) / 1024)}KB · 크기 ${view.size}`,
     `건너뜀(2초): 인코딩 중 ${s.skipped.encoding} · 버퍼 가득 ${s.skipped.buffer} · 순서 뒤바뀜 ${s.skipped.stale}`,
+    display?.describe() ?? "표시 영상: 꺼짐(H.264 인코더 없음·카메라 없음·?video=0)",
   ].join("\n");
   renderStatus();
 }
@@ -420,6 +423,7 @@ async function start() {
   const binding = typeof XRWebGLBinding === "function" ? new XRWebGLBinding(session, gl) : null;
   const grabber = binding ? createGrabber(gl, { flipY: FLIP }) : null;
   view.encoder = grabber?.encoderMode ?? "카메라 없음";
+  display = grabber ? createDisplayEncoder({ gl, flipY: FLIP, socket: () => ws, params: PARAMS, onError: note }) : null;
   let cameraSeen = false;
   setTimeout(() => {
     if (!cameraSeen) note("카메라 화면을 보낼 수 없어요(크롬이 AR 카메라 접근을 지원하지 않거나 거절됨). 위치만 보내요");
@@ -428,6 +432,8 @@ async function start() {
   session.addEventListener("end", () => {
     arOn = false;
     lastFloor = null;
+    display?.close();
+    display = null;
     clearInterval(perfTimer);
     $("overlay").hidden = true;
     $("talk").querySelector(".talk-row").append($("talk-form"));
@@ -496,6 +502,7 @@ async function start() {
     const camera = xrView?.camera;
     if (!grabber || !camera) return;
     cameraSeen = true;
+    display?.frame(binding.getCameraImage(camera), camera, time);
     const photo = wantPhoto;
     if (!photo && time - lastFrame < FRAME_MS) return;
     if (ws?.readyState !== WebSocket.OPEN) return;

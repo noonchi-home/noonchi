@@ -1,15 +1,18 @@
 // 클로이드의 눈 화면: 폰이 보낸 최신 카메라 프레임을 MJPEG로 흘리고, '사진 찍기' 사진을 눈 자세와 함께 저장한다.
+// 폰이 따로 보내는 표시 영상(H.264)은 video(src/phone/video.ts)가 중계한다.
 // 실시간 화면은 표시 전용이다(엔진 입력 아님, SSOT 12절). 본 서버가 /api/eye/*를 handle()로 넘긴다.
 //
 //   GET /api/eye/frame.jpg            최신 프레임(없으면 404)
 //   GET /api/eye/stream               multipart/x-mixed-replace(MJPEG). <img src>로 바로 보인다
+//   GET /api/eye/video                표시 영상(H.264) 메시지 스트림. 대시보드가 VideoDecoder로 그린다(web/eye-video.js)
 //   GET /api/eye/photos/<id>.jpg      저장한 사진
-//   GET /api/eye/stats                받은 프레임 통계(최근 2초 fps·장당 크기·마지막 크기), 속도 원인을 숫자로 본다
+//   GET /api/eye/stats                받은 프레임 통계(최근 2초 fps·장당 크기·마지막 크기)와 표시 영상 통계(display)
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { join } from "node:path";
 import type { EyeEvent } from "./session.js";
+import { VideoRelay, type DisplayStats } from "./video.js";
 
 const BOUNDARY = "eyeframe";
 /** 느린 화면에는 프레임을 쌓지 않고 건너뛴다. */
@@ -23,6 +26,11 @@ export interface FeedStats {
   width: number | null;
   height: number | null;
   last_frame_age_ms: number | null;
+}
+
+/** /api/eye/stats: JPEG 프레임 통계 + 표시 영상(H.264) 통계. */
+export interface EyeStats extends FeedStats {
+  display: DisplayStats;
 }
 
 export interface PhotoRecord {
@@ -48,9 +56,12 @@ export class EyeFeed {
   private readonly streams = new Set<ServerResponse>();
   private seq = 0;
   private readonly now: () => Date;
+  /** 표시 영상 중계. 폰 서버가 영상 패킷을 넘긴다. */
+  readonly video: VideoRelay;
 
   constructor(private readonly opts: EyeFeedOptions) {
     this.now = opts.now ?? (() => new Date());
+    this.video = new VideoRelay({ now: () => this.now().getTime() });
   }
 
   pushFrame(jpeg: Buffer, width: number, height: number): void {
@@ -65,8 +76,8 @@ export class EyeFeed {
     }
   }
 
-  /** 최근 2초 동안 받은 프레임 통계. */
-  stats(): FeedStats {
+  /** 최근 2초 동안 받은 프레임 통계와 표시 영상 통계. */
+  stats(): EyeStats {
     const now = this.now().getTime();
     const frames = this.recent.filter((f) => f.at > now - STATS_WINDOW_MS);
     const bytes = frames.reduce((a, f) => a + f.bytes, 0);
@@ -77,6 +88,7 @@ export class EyeFeed {
       width: this.lastSize?.width ?? null,
       height: this.lastSize?.height ?? null,
       last_frame_age_ms: this.lastSize ? now - this.lastSize.at : null,
+      display: this.video.stats(),
     };
   }
 
@@ -116,6 +128,17 @@ export class EyeFeed {
       if (this.latest) writePart(res, this.latest);
       return true;
     }
+    if (path === "/api/eye/video") {
+      res.writeHead(200, { "content-type": "application/octet-stream", "cache-control": "no-store", "x-content-type-options": "nosniff", connection: "close" });
+      res.flushHeaders();
+      if (req.method === "HEAD") {
+        res.end();
+        return true;
+      }
+      res.socket?.setNoDelay(true);
+      this.video.attach(res);
+      return true;
+    }
     if (path === "/api/eye/stats") {
       res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
       res.end(req.method === "HEAD" ? undefined : JSON.stringify({ ok: true, ...this.stats() }));
@@ -137,6 +160,7 @@ export class EyeFeed {
   close(): void {
     for (const res of this.streams) res.end();
     this.streams.clear();
+    this.video.close();
   }
 }
 
