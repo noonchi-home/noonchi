@@ -39,6 +39,8 @@ export interface ToolResult {
   needsConfirmation?: { token: string; reason: string };
   /** LLM에게 보여 줄 때 needsConfirmation 대신(토큰 없음). */
   pendingApproval?: { reason: string };
+  /** ThinQ가 받았지만 다시 읽은 값이 달라 적용을 확인하지 못했다(완료라고 말하지 않는다). */
+  unverified?: true;
   data?: unknown;
 }
 
@@ -105,6 +107,9 @@ async function resolveDevice(backend: ToolBackend, idOrLabel: string): Promise<D
     ?? devices.find((d) => compact(d.label) === compact(idOrLabel));
 }
 
+/** ThinQ가 받았지만 다시 읽은 값이 다를 때의 답. */
+export const unverifiedSentence = (label: string) => `${label}에 명령을 보냈어요. 실제로 바뀌었는지는 확인하지 못했어요.`;
+
 const notFound = (id: string): ToolResult => ({ ok: false, error: `기기를 찾을 수 없습니다: ${id} (find_devices나 list_devices로 id를 확인하세요)` });
 
 // ── 스키마 ───────────────────────────────────────────────
@@ -132,6 +137,9 @@ function commandTool(
       const device = { id: d.id, label: d.label };
       if (r.ok && r.state?.signal === "none") {
         return { ok: true, device, command: cmd, state: "모름", message: `${d.label}에 명령을 보냈어요. 신호가 없어 결과는 확인하지 못했어요.` };
+      }
+      if (r.ok && r.outcome === "unverified") {
+        return { ok: true, device, command: cmd, state: r.state?.twin, matter: r.state?.matter, unverified: true, message: unverifiedSentence(d.label) };
       }
       if (r.ok) {
         return { ok: true, device, command: cmd, state: r.state?.twin, matter: r.state?.matter, message: doneSentence([d.label], d.kind, cmd) };
@@ -235,6 +243,9 @@ export const TOOLS: ToolDef[] = [
       const d = r.deviceId ? await resolveDevice(backend, r.deviceId) : undefined;
       if (r.state?.signal === "none") {
         return { ok: true, state: "모름", device: d ? { id: d.id, label: d.label } : undefined, message: `${d?.label ?? "기기"}에 승인한 명령을 보냈어요. 신호가 없어 결과는 확인하지 못했어요.` };
+      }
+      if (r.outcome === "unverified") {
+        return { ok: true, state: r.state?.twin, matter: r.state?.matter, unverified: true, device: d ? { id: d.id, label: d.label } : undefined, message: unverifiedSentence(d?.label ?? "기기") };
       }
       return {
         ok: true, state: r.state?.twin, matter: r.state?.matter,

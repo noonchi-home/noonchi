@@ -244,3 +244,35 @@ describe("저장(npm start 방식)", () => {
     expect(fake!.requests).toEqual([]);
   });
 });
+
+describe("에이전트 답(실제 모드)", () => {
+  const chat = async (message: string) => (await post("/api/agent/chat", { message })).json;
+  const climate = (r: Msg) => r.actions.find((a: Msg) => a.tool === "set_climate");
+
+  it("다시 읽어 같으면 맞췄다고 한다", async () => {
+    await start();
+    await livePaired();
+    const r = await chat("에어컨 26도로 맞춰줘");
+    expect(r.reply).toMatch(/26°C로 맞췄어요/);
+    expect(climate(r)).toMatchObject({ ok: true });
+  });
+
+  it("받았지만 확인되지 않으면 맞췄다고 하지 않고, 확인하지 못했다고 한다", async () => {
+    await start();
+    await livePaired();
+    fake!.behavior[FAKE_AC] = "ignore";
+    const r = await chat("에어컨 27도로 맞춰줘");
+    expect(r.reply).toMatch(/확인하지 못했어요/);
+    expect(r.reply).not.toMatch(/맞췄어요/);
+    expect(climate(r).observation).toMatch(/확인하지 못했어요/);
+  });
+
+  it("거부하면 실패 이유를 전한다", async () => {
+    await start();
+    await livePaired();
+    fake!.behavior[FAKE_AC] = "reject";
+    const r = await chat("에어컨 28도로 맞춰줘");
+    expect(r.reply).toMatch(/거부/);
+    expect(climate(r).ok).toBe(false);
+  });
+});
