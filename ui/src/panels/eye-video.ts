@@ -7,8 +7,6 @@ const MAX_HEADER_BYTES = 4096;
 export type EyeMode = "video" | "jpeg";
 export type StreamHeader = { type?: string; codec?: string; width?: number; height?: number; key?: boolean; ts?: number };
 export type EyeVideoStats = { drawn: number; queue: number; codec: string | null; width: number; height: number };
-/** /api/eye/stats의 display. */
-export type DisplayStats = { codec?: string | null; width?: number | null; height?: number | null; fps?: number; kbps?: number };
 
 /** [헤더 길이 u32][본문 길이 u32][JSON 헤더][본문]이 이어진 바이트를 메시지로 자른다. 잘려 오거나 붙어 와도 된다. */
 export function createStreamParser({ maxMessageBytes = 8 << 20 } = {}) {
@@ -71,12 +69,6 @@ export function createDecodeGate({ maxQueue = 30 } = {}) {
     },
     reset() { waitKey = true; },
   };
-}
-
-/** /api/eye/stats의 display로 눈 캡션. 영상 통계가 없으면 null. */
-export function displayCaption(display: DisplayStats | null | undefined): string | null {
-  if (!display?.codec || !((display.fps ?? 0) > 0)) return null;
-  return `클로이드의 눈 · 실시간 H.264 ${display.width}×${display.height} ${display.fps} fps · ${((display.kbps ?? 0) / 1000).toFixed(1)}Mbps`;
 }
 
 const RETRY_MS = 1500;

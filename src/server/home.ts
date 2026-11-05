@@ -17,6 +17,7 @@ import { loadTwin, type TwinData } from "../model/devices.js";
 import { listHomes } from "../model/homes.js";
 import { loadAnchorTargets, type AnchorTarget } from "../phone/anchors.js";
 import { EyeFeed } from "../phone/feed.js";
+import { orderPhoneUrls } from "../phone/links.js";
 import { createPhoneServer, type PhoneServer } from "../phone/server.js";
 import { estimateViewpoint } from "../phone/session.js";
 import { TouchStore, eyeHeightOf, floorLookup, homeBounds, readTouchPoints, touchPointsPath, touchTargets, type TouchPoint } from "../phone/touch.js";
@@ -39,6 +40,8 @@ export interface HomeContext {
   importer?: StartHubOptions["importer"];
   matter?: Record<string, unknown>;
   brain?: CreateLiveBrainOptions["inject"];
+  /** 폰 포트로 이어진 https 주소 찾기(tailscale serve). */
+  servedPhoneUrls?: (phonePort: number) => Promise<string[]>;
 }
 
 export interface HomeRuntime {
@@ -181,7 +184,9 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       layout?.editor.setHere(() => phoneServer.here());
       const wantedPhone = ctx.phonePort ?? Number(env.PHONE_PORT);
       const listened = await phone.listen(Number.isInteger(wantedPhone) && wantedPhone >= 0 ? wantedPhone : 8210, env.PHONE_HOST?.trim() || "0.0.0.0");
-      phoneUrls = listened.urls;
+      // 폰 주소: PHONE_URL → tailscale serve https → 와이파이(대시보드 QR은 맨 앞 주소)
+      const served = await (ctx.servedPhoneUrls?.(listened.port) ?? Promise.resolve([])).catch(() => []);
+      phoneUrls = orderPhoneUrls(listened.urls, served, env.PHONE_URL);
       phonePort = (phone.server.address() as { port: number } | null)?.port;
     }
     // 초점: 에이전트가 다룬 물건을 대시보드와 폰에 알린다(표시 전용)

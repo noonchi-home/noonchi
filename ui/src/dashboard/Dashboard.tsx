@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import type { Focus, ServerMessage } from "../../../src/contract/events.ts";
+import type { ServerMessage } from "../../../src/contract/events.ts";
 import { BubbleLayer } from "../bubbles/BubbleLayer";
 import { ChatPanel } from "../chat/ChatPanel";
 import { suggestions } from "../chat/suggestions";
@@ -29,7 +29,6 @@ export function Dashboard() {
   const ideas = useMemo(() => suggestions([...devices.values()]), [devices]);
   const [connected, setConnected] = useState<boolean | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
-  const [focus, setFocus] = useState<Focus | null>(null);
   const homeId = health?.home?.id ?? null;
   const onMessage = useCallback((m: ServerMessage) => {
     if (m.type === "hello" && homeId && m.home && m.home !== homeId) {
@@ -39,7 +38,6 @@ export function Dashboard() {
     apply(m);
     toChat(m);
     if (m.type === "agent" && m.event === "action" && m.action.deviceId) setFocusId(m.action.deviceId);
-    if (m.type === "focus") setFocus(m.focus);
   }, [apply, toChat, homeId]);
   useEvents(onMessage, setConnected);
   return (
@@ -47,7 +45,7 @@ export function Dashboard() {
       <TwinStage>
         <Overlay devices={devices} focusId={focusId} />
         <StatusPill connected={connected} health={health} />
-        <EyeWindow health={health} focus={focus} connected={connected} />
+        <EyeWindow health={health} connected={connected} />
         <ChatPanel chat={chat} suggestions={ideas} />
       </TwinStage>
     </main>

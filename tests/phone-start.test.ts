@@ -55,6 +55,19 @@ describe("startServer + 폰 AR", () => {
     phone.close();
   });
 
+  it("tailscale serve 주소를 와이파이 주소보다 앞에, PHONE_URL은 맨 앞에 둔다", async () => {
+    const ts = "https://phone-pc.example-net.ts.net/phone/";
+    const ports: number[] = [];
+    srv = await startServer({
+      env: { ...BASE_ENV, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", PHONE_URL: "https://my.example/phone/" }, log: () => {},
+      servedPhoneUrls: async (port) => { ports.push(port); return [ts]; },
+    });
+    expect(ports).toEqual([new URL(srv.phoneUrls[2]!).port].map(Number));
+    expect(srv.phoneUrls.slice(0, 2)).toEqual(["https://my.example/phone/", ts]);
+    expect(srv.phoneUrls[2]).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/phone\/$/);
+    expect(((await (await fetchRetry(`${srv.url}/api/health`)).json()) as { phone_urls?: string[] }).phone_urls).toEqual(srv.phoneUrls);
+  });
+
   it("PHONE_PORT가 없으면 폰 서버를 띄우지 않는다", async () => {
     srv = await startServer({ env: BASE_ENV, log: () => {} });
     expect(srv.phoneUrls).toEqual([]);

@@ -1,6 +1,6 @@
 // 눈 영상(H.264) 순수 부분: web/eye-video.js를 TS로 옮긴 ui/src/panels/eye-video.ts. 루트 tests/eye-video.test.ts와 같은 규칙.
 import { afterEach, describe, expect, it } from "vitest";
-import { createDecodeGate, createDisplayMode, createStreamParser, displayCaption, runDecoder } from "../src/panels/eye-video";
+import { createDecodeGate, createDisplayMode, createStreamParser, runDecoder } from "../src/panels/eye-video";
 
 /** 서버 src/phone/video.ts encodeStreamMessage와 같은 틀: [헤더 길이 u32][본문 길이 u32][JSON 헤더][본문]. */
 function encode(header: object, body: Uint8Array): Uint8Array {
@@ -73,16 +73,6 @@ describe("스트림 자르기", () => {
     new DataView(broken.buffer).setUint32(0, 10);
     new DataView(broken.buffer).setUint32(4, 0xffffffff);
     expect(() => createStreamParser().push(broken)).toThrow("영상 스트림 길이가 맞지 않아요");
-  });
-});
-
-describe("눈 캡션", () => {
-  it("영상 통계가 있으면 코덱·크기·fps·Mbps, 없으면 null", () => {
-    expect(displayCaption({ codec: "avc1.42E01F", width: 592, height: 1280, fps: 29.5, kbps: 1830 }))
-      .toBe("클로이드의 눈 · 실시간 H.264 592×1280 29.5 fps · 1.8Mbps");
-    expect(displayCaption({ codec: null, width: null, height: null, fps: 0, kbps: 0 })).toBeNull();
-    expect(displayCaption({ codec: "avc1.42E01F", width: 592, height: 1280, fps: 0, kbps: 0 })).toBeNull();
-    expect(displayCaption(undefined)).toBeNull();
   });
 });
 

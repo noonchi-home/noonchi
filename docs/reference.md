@@ -80,6 +80,7 @@ HUB=memory npm run demo
 | `HOME_ID` | `homes.json`의 `default` | 불러올 집(twin-studio `homes.json`의 id, 예: `oneroom`) |
 | `RUNTIME_DIR` | `runtime` | 실행 중 만든 파일의 바탕 폴더: 배치 수정본 `homes/<id>/edits.json`, 사진 `photos/`(커밋하지 않음) |
 | `PHONE_PORT`, `PHONE_HOST` | (끔), `0.0.0.0` | 폰 AR 서버(아래 "폰 AR") |
+| `PHONE_URL` | (없음) | 폰에서 열 주소. 대시보드 QR에 맨 앞 주소가 나온다. 없으면 `tailscale serve`가 폰 포트로 잇는 https 주소, 그다음 와이파이 주소 |
 | `PHONE_MAX_MISMATCH_M`, `PHONE_PHOTO_DIR` | `0.3`, `RUNTIME_DIR/photos` | 기준점 거리 차이 허용값, 사진 폴더 |
 | `BRAIN` | (끔) | `1`이면 폰 카메라로 상위 판단(클로이드 두뇌, 아래 "상위 판단")을 돌린다. `PHONE_PORT`·`OPENAI_API_KEY`가 있어야 한다 |
 | `BRAIN_DETECTOR`, `BRAIN_YOLO_PATH`, `BRAIN_YOLO_THREADS` | `yolox_tiny`, `runtime/models/<모델>.onnx`, `4` | YOLO 존재 감지기(`yolox_tiny`·`yolox_nano`·`off`). 모델 파일이 없으면 VLM만 쓴다 |

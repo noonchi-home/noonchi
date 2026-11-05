@@ -4,11 +4,13 @@
 
 import { existsSync } from "node:fs";
 import dotenv from "dotenv";
+import { findServedPhoneUrls, runCommand } from "../phone/links.js";
 import { startServer } from "./start.js";
 
 async function main(): Promise<void> {
   dotenv.config({ quiet: true });
-  const srv = await startServer({ env: process.env, persistSetup: true });
+  // tailscale serve로 폰 포트를 https로 열어 두었으면 그 주소를 폰 주소 앞에 둔다(없거나 실패하면 와이파이 주소만)
+  const srv = await startServer({ env: process.env, persistSetup: true, servedPhoneUrls: (port) => findServedPhoneUrls(port, runCommand) });
   const { url, hubKind, transport, agent } = srv;
   const provider = agent.provider;
 
@@ -17,7 +19,8 @@ async function main(): Promise<void> {
   console.log(`  WS 이벤트 ${url.replace(/^http/, "ws")}/events`);
   console.log(`  3D 트윈   ${existsSync(srv.twinDir) ? `${url}/twin/` : `(아직 없음: ${srv.twinDir})`}`);
   for (const phoneUrl of srv.phoneUrls) {
-    console.log(`  폰 AR     ${phoneUrl}  (폰 크롬 chrome://flags 'Insecure origins treated as secure'에 ${new URL(phoneUrl).origin} 추가)`);
+    const secure = phoneUrl.startsWith("https://");
+    console.log(`  폰 AR     ${phoneUrl}${secure ? "" : `  (폰 크롬 chrome://flags 'Insecure origins treated as secure'에 ${new URL(phoneUrl).origin} 추가)`}`);
   }
   if (hubKind === "matter" && transport === "network") {
     console.log(`  Matter    다른 컨트롤러(Home Assistant 등) 추가: curl -X POST ${url}/api/matter/commissioning-window 후 나온 페어링 코드 입력(README "Matter 페어링")`);
