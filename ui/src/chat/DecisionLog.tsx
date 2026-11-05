@@ -12,6 +12,7 @@ import {
 import ChatPanel, { ChatAction, ChatRegion, Section } from "../components/ui/chat-panel";
 import { AgentToolTimeline, CallState, TimelineEmpty, type AgentCallStatus, type AgentToolCall } from "../components/ui/tool-timeline";
 import { cn } from "../lib/utils";
+import { Surface } from "../look/Surface";
 import { BRAIN_STAGE, observedOf, stepKind, targetOf, toolLabel } from "./labels";
 import { STATE_LABELS, type PendingCard, type Step, type Turn, type TurnState } from "./turns";
 
@@ -184,38 +185,40 @@ export function DecisionLog({ turns, view, onView, phone }: { turns: Turn[]; vie
       aria-label="판단 기록"
       className={cn("absolute right-3 top-16 z-50 w-[380px] max-w-[calc(100%-1.5rem)] text-ink min-[1440px]:top-3", open && "bottom-3")}
     >
-      <Tabs value={view} onValueChange={(v) => onView(v as LogView)} className="h-full">
-        <ChatPanel
-          tabs={<AssistantTabsList tabs={TABS} value={view} />}
-          actions={(
-            <ChatAction label={open ? "판단 기록 접기" : "판단 기록 펴기"} expanded={open} onClick={() => setOpen(!open)}>
-              {open ? <ChevronUp size={15} strokeWidth={2} aria-hidden="true" /> : <ChevronDown size={15} strokeWidth={2} aria-hidden="true" />}
-            </ChatAction>
-          )}
-        >
-          {open && (
-            <>
-              <AssistantTabPanel value="log" className="flex min-h-0 flex-1 flex-col">
-                <ChatRegion scrollRef={scroll}>
-                  {turns.length === 0 ? (
-                    <TimelineEmpty
-                      icons={[Smartphone, Brain, Search, Power].map((I, i) => <I key={i} className="size-3.5" />)}
-                      title="폰에서 클로이드에게 말해 보세요."
-                    />
-                  ) : turns.map((t, i) => (
-                    <TurnCard
-                      key={t.id} turn={t} latest={i === turns.length - 1} thinking={thinking[t.id]} steps={steps[t.id]}
-                      onThinking={(v) => setThinking((m) => ({ ...m, [t.id]: v }))}
-                      onSteps={(v) => setSteps((m) => ({ ...m, [t.id]: v }))}
-                    />
-                  ))}
-                </ChatRegion>
-              </AssistantTabPanel>
-              <AssistantTabPanel value="phone" className="flex min-h-0 flex-1 flex-col">{phone}</AssistantTabPanel>
-            </>
-          )}
-        </ChatPanel>
-      </Tabs>
+      <Surface kind="panel" plain className="h-full" contentClassName="h-full">
+        <Tabs value={view} onValueChange={(v) => onView(v as LogView)} className="h-full">
+          <ChatPanel
+            tabs={<AssistantTabsList tabs={TABS} value={view} />}
+            actions={(
+              <ChatAction label={open ? "판단 기록 접기" : "판단 기록 펴기"} expanded={open} onClick={() => setOpen(!open)}>
+                {open ? <ChevronUp size={15} strokeWidth={2} aria-hidden="true" /> : <ChevronDown size={15} strokeWidth={2} aria-hidden="true" />}
+              </ChatAction>
+            )}
+          >
+            {open && (
+              <>
+                <AssistantTabPanel value="log" className="flex min-h-0 flex-1 flex-col">
+                  <ChatRegion scrollRef={scroll}>
+                    {turns.length === 0 ? (
+                      <TimelineEmpty
+                        icons={[Smartphone, Brain, Search, Power].map((I, i) => <I key={i} className="size-3.5" />)}
+                        title="폰에서 클로이드에게 말해 보세요."
+                      />
+                    ) : turns.map((t, i) => (
+                      <TurnCard
+                        key={t.id} turn={t} latest={i === turns.length - 1} thinking={thinking[t.id]} steps={steps[t.id]}
+                        onThinking={(v) => setThinking((m) => ({ ...m, [t.id]: v }))}
+                        onSteps={(v) => setSteps((m) => ({ ...m, [t.id]: v }))}
+                      />
+                    ))}
+                  </ChatRegion>
+                </AssistantTabPanel>
+                <AssistantTabPanel value="phone" className="flex min-h-0 flex-1 flex-col">{phone}</AssistantTabPanel>
+              </>
+            )}
+          </ChatPanel>
+        </Tabs>
+      </Surface>
     </section>
   );
 }

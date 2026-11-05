@@ -2,6 +2,7 @@ import { ChevronUp, Eye } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { HealthView } from "../../../src/contract/events.ts";
 import { attachEyeVideo, type EyeMode } from "./eye-video";
+import { Surface } from "../look/Surface";
 import { pickPhoneUrl } from "./phone-url";
 import { QrCode } from "./QrCode";
 
@@ -18,7 +19,7 @@ function Waiting({ health }: { health: HealthView | null }) {
     <div className="flex flex-col items-center gap-2">
       <QrCode value={best} className="size-48" />
       <p className={line}>폰 카메라로 찍으세요</p>
-      <p className="max-w-48 break-all text-center text-[10px] leading-tight text-ink-dim">{best}</p>
+      <p className="max-w-48 break-all text-center text-[10px] leading-tight text-ink-3">{best}</p>
     </div>
   );
 }
@@ -91,25 +92,27 @@ export function EyeBody({ health, connected, large }: { health: HealthView | nul
   );
 }
 
-const foldButton = "flex size-7 items-center justify-center rounded-lg text-ink-dim transition-colors hover:bg-field hover:text-ink";
+const foldButton = "flex size-7 items-center justify-center rounded-control text-ink-2 transition-colors hover:bg-hover hover:text-ink";
 
-/** 왼쪽 위 작은 유리 창. 접으면 눈 단추만 남고 화면 받기를 멈춘다. */
+/** 왼쪽 위 작은 창. 판은 모양마다 다르다(Surface). 접으면 눈 단추만 남고 화면 받기를 멈춘다. */
 export function EyeWindow({ health, connected }: { health: HealthView | null; connected?: boolean | null }) {
   const [open, setOpen] = useState(true);
   return (
-    <section aria-label="클로이드의 눈" className="glass absolute left-3 top-16 z-50 overflow-hidden text-ink min-[1440px]:top-3">
-      {open ? (
-        <>
-          <EyeBody health={health} connected={connected} />
-          <button type="button" aria-label="눈 창 접기" aria-expanded onClick={() => setOpen(false)} className={`absolute right-1.5 top-1.5 bg-glass ${foldButton}`}>
-            <ChevronUp className="size-4" aria-hidden="true" />
+    <section aria-label="클로이드의 눈" className="absolute left-3 top-16 z-50 text-ink min-[1440px]:top-3">
+      <Surface kind="panel" className="overflow-hidden">
+        {open ? (
+          <>
+            <EyeBody health={health} connected={connected} />
+            <button type="button" aria-label="눈 창 접기" aria-expanded onClick={() => setOpen(false)} className={`absolute right-1.5 top-1.5 bg-white/70 backdrop-blur ${foldButton}`}>
+              <ChevronUp className="size-4" aria-hidden="true" />
+            </button>
+          </>
+        ) : (
+          <button type="button" aria-label="눈 창 펴기" aria-expanded={false} onClick={() => setOpen(true)} className={`m-1 ${foldButton}`}>
+            <Eye className="size-4" aria-hidden="true" />
           </button>
-        </>
-      ) : (
-        <button type="button" aria-label="눈 창 펴기" aria-expanded={false} onClick={() => setOpen(true)} className={`m-1 ${foldButton}`}>
-          <Eye className="size-4" aria-hidden="true" />
-        </button>
-      )}
+        )}
+      </Surface>
     </section>
   );
 }

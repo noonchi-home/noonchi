@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { DeviceView } from "../../src/contract/events.ts";
 import { BubbleLayer } from "../src/bubbles/BubbleLayer";
+import { LookContext } from "../src/look/look";
 
 const dev = (id: string, label: string, power: string): [string, DeviceView] => [id, {
   id, label, room: "r", roomLabel: "거실", twinType: "t", kind: "light", matterDeviceType: "x", capabilities: [], sensors: [], twinAttrs: {},
@@ -30,8 +31,23 @@ describe("BubbleLayer", () => {
   it("꼬리는 밝은 바닥·어두운 바닥 모두에서 보이게 밝은 심에 어두운 테두리를 두른다", () => {
     render(<BubbleLayer devices={new Map([dev("a", "거실 조명", "on")])} points={new Map([["a", { x: 10, y: 20, visible: true }]])} />);
     const tail = (screen.getByText("거실 조명").closest("[data-device]") as HTMLElement).lastElementChild;
-    expect(tail).toHaveClass("bg-ink", "ring-1", "ring-glass");
+    expect(tail).toHaveClass("bg-white", "ring-1");
     expect(tail).not.toHaveClass("w-px");
+  });
+
+  it("부품 모양은 흰 카드, 유리 모양은 유리 말풍선. 모름도 점선 테두리를 쓰지 않는다", () => {
+    const unknown: [string, DeviceView] = ["u", { ...dev("u", "후드", "off")[1], state: { id: "u", online: true, twin: {}, matter: {}, updatedAt: "t", signal: "none" } }];
+    const devices = new Map([dev("a", "거실 조명", "on"), unknown]);
+    const points = new Map([["a", { x: 10, y: 20, visible: true }], ["u", { x: 50, y: 20, visible: true }]]);
+    const surface = (label: string) => (screen.getByText(label).closest("[data-device]") as HTMLElement).querySelector<HTMLElement>("[data-surface]")!;
+    const { unmount } = render(<BubbleLayer devices={devices} points={points} />);
+    expect(surface("거실 조명").dataset.surface).toBe("card");
+    expect(document.querySelector(".border-dashed")).toBeNull();
+    unmount();
+    render(<LookContext.Provider value="glass"><BubbleLayer devices={devices} points={points} /></LookContext.Provider>);
+    expect(surface("거실 조명").dataset.surface).toBe("glass");
+    expect(surface("후드").dataset.surface).toBe("glass");
+    expect(document.querySelector(".border-dashed")).toBeNull();
   });
 
   it("꺼진 기기는 이름만 보이고, 방금 다룬 기기는 상태까지 크게", () => {

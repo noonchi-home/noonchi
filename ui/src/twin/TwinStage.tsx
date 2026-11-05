@@ -38,7 +38,7 @@ export function TwinStage({ children }: { children?: ReactNode }) {
     <ViewerContext.Provider value={viewer}>
       <section className="absolute inset-0" aria-label="3D 트윈">
         <iframe ref={frame} src={SRC} title="3D 집 트윈" className="absolute inset-0 h-full w-full border-0" />
-        {error && <p className="absolute inset-0 grid place-items-center text-ink-dim">{error}</p>}
+        {error && <p className="absolute inset-0 grid place-items-center text-ink-2">{error}</p>}
         <div className="pointer-events-none absolute inset-0 *:pointer-events-auto">{children}</div>
       </section>
     </ViewerContext.Provider>
