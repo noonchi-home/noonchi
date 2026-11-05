@@ -1,6 +1,7 @@
 // 승인 정책: 위험한 명령(현관 잠금 해제, 인덕션 켜기, 전자레인지 시작)은 사용자 승인 토큰이 있어야 실행한다.
 
 import { randomUUID } from "node:crypto";
+import { isUnknown } from "../hub/signals.js";
 import type { Command, CommandResult, CommandType, DeviceHub, DeviceKind, DeviceSpec } from "../hub/types.js";
 import { checkCommand, normalizeCommand } from "../model/mapping.js";
 
@@ -85,7 +86,8 @@ export class Policy {
     if (!spec) return { ok: false, error: `기기를 찾을 수 없습니다: ${id}` };
     const c = normalizeCommand(spec, cmd);
     const state = hub.get(id);
-    const invalid = checkCommand(spec, c, state);
+    // 상태를 모르면 상태에 기대는 사전 검사는 건너뛴다. 실행할 수 있는지는 안쪽 허브가 실제 상태로 다시 본다
+    const invalid = checkCommand(spec, c, isUnknown(state) ? undefined : state);
     if (invalid) return { ok: false, error: invalid, state };
     const reason = this.requiresConfirmation(spec, c);
     if (!reason) return hub.command(id, c);

@@ -162,6 +162,7 @@ export class LayoutEditor {
   private readonly listeners = new Set<(m: LayoutMessage) => void>();
   private saved = "[]";
   private savedAt: string | null = null;
+  private closed = false;
 
   constructor(opts: LayoutEditorOptions) {
     this.homeId = opts.homeId;
@@ -188,6 +189,16 @@ export class LayoutEditor {
   subscribe(cb: (m: LayoutMessage) => void): () => void {
     this.listeners.add(cb);
     return () => this.listeners.delete(cb);
+  }
+
+  /** 집을 바꿀 때 닫는다. 늦게 도착한 에이전트 도구가 이전 집 배치를 바꾸거나 저장하지 못하게 한다. */
+  close(): void {
+    this.closed = true;
+    this.listeners.clear();
+  }
+
+  private ensureOpen(): void {
+    if (this.closed) throw new LayoutError("집을 바꿔서 이 배치는 더 바꾸지 않아요.");
   }
 
   object(id: string): SceneObject | undefined {
@@ -226,6 +237,7 @@ export class LayoutEditor {
   // ── 바꾸기 ─────────────────────────────────────────────
 
   move(id: string, to?: To, opts: { facing_deg?: number; turn_deg?: number } = {}): EditResult {
+    this.ensureOpen();
     const o = this.require(id);
     if (!this.editable(o)) throw new LayoutError(`${o.name}: 옮길 수 없는 물건이에요(벽·바닥·문·창·천장 고정 설비).`);
     const parent = o.mount === "surface" && o.plan.on ? this.current.get(o.plan.on) : undefined;
@@ -252,6 +264,7 @@ export class LayoutEditor {
   }
 
   add(type: string, to: To, opts: { label?: string; facing_deg?: number } = {}): EditResult {
+    this.ensureOpen();
     const info = this.catalog.get(type);
     if (!info) throw new LayoutError(`모르는 종류입니다: ${type} (find_object_types로 종류를 찾으세요)`);
     if (info.mount === "opening" || info.category === "structure") throw new LayoutError(`${info.label}: 더할 수 없는 종류예요(문·창·벽).`);
@@ -271,6 +284,7 @@ export class LayoutEditor {
 
   /** 저장해 둔 수정본(재시작 전)을 다시 적용한다. 이미 원본에 반영된 것은 건너뛴다. 바뀐 건수. */
   applyEdits(edits: Edit[]): number {
+    this.ensureOpen();
     let applied = 0;
     for (const e of edits) {
       if (e.op === "move") {
@@ -300,6 +314,7 @@ export class LayoutEditor {
   }
 
   remove(id: string): EditResult {
+    this.ensureOpen();
     const o = this.require(id);
     if (!this.editable(o)) throw new LayoutError(`${o.name}: 뺄 수 없는 물건이에요(벽·바닥·문·창·천장 고정 설비).`);
     const children = [...this.current.values()].filter((c) => c.plan.on === id);
@@ -315,6 +330,7 @@ export class LayoutEditor {
 
   /** 보정을 모두 버리고 원래 배치로. 뷰어를 되돌리는 메시지를 보낸다. */
   reset(): LayoutMessage[] {
+    this.ensureOpen();
     const out: LayoutMessage[] = [];
     for (const [id, b] of this.base) {
       const c = this.current.get(id);
@@ -362,6 +378,7 @@ export class LayoutEditor {
   }
 
   save(): { path: string; count: number; saved_at: string } {
+    this.ensureOpen();
     const edits = this.edits();
     const savedAt = new Date().toISOString();
     mkdirSync(dirname(this.savePath), { recursive: true });

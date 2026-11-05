@@ -36,7 +36,7 @@ export interface ToolResult {
   message?: string;
   device?: { id: string; label: string };
   command?: Command;
-  state?: Record<string, unknown>;   // twin 상태
+  state?: Record<string, unknown> | "모름"; // twin 상태(신호 없는 기기는 "모름")
   matter?: Record<string, unknown>;  // Matter 속성 요약
   needsConfirmation?: { token: string; reason: string };
   /** LLM에게 보여 줄 때 needsConfirmation 대신(토큰 없음). */
@@ -94,7 +94,9 @@ export function localBackend(hub: DeviceHub, policy: Policy, rooms?: RoomSpec[],
 function brief(d: DeviceView) {
   return {
     id: d.id, label: d.label, room: d.room, roomLabel: d.roomLabel, kind: d.kind, kindLabel: KIND_LABELS[d.kind],
-    capabilities: d.capabilities, sensors: d.sensors, online: d.state.online, state: d.state.twin,
+    capabilities: d.capabilities, sensors: d.sensors,
+    // 신호 없는 기기는 상태를 모른다(사진·질문으로만 확인)
+    ...(d.state.signal === "none" ? { signal: "none" as const, state: "모름" } : { online: d.state.online, state: d.state.twin }),
   };
 }
 
@@ -130,6 +132,9 @@ function commandTool(
       const cmd = toCommand(args);
       const r = await backend.command(d.id, cmd);
       const device = { id: d.id, label: d.label };
+      if (r.ok && r.state?.signal === "none") {
+        return { ok: true, device, command: cmd, state: "모름", message: `${d.label}에 명령을 보냈어요. 신호가 없어 결과는 확인하지 못했어요.` };
+      }
       if (r.ok) {
         return { ok: true, device, command: cmd, state: r.state?.twin, matter: r.state?.matter, message: doneSentence([d.label], d.kind, cmd) };
       }
@@ -230,6 +235,9 @@ export const TOOLS: ToolDef[] = [
       const r = await backend.confirm(String(args.token));
       if (!r.ok) return { ok: false, error: r.error ?? "승인한 명령을 실행하지 못했습니다." };
       const d = r.deviceId ? await resolveDevice(backend, r.deviceId) : undefined;
+      if (r.state?.signal === "none") {
+        return { ok: true, state: "모름", device: d ? { id: d.id, label: d.label } : undefined, message: `${d?.label ?? "기기"}에 승인한 명령을 보냈어요. 신호가 없어 결과는 확인하지 못했어요.` };
+      }
       return {
         ok: true, state: r.state?.twin, matter: r.state?.matter,
         device: d ? { id: d.id, label: d.label } : undefined,

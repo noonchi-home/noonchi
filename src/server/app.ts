@@ -74,9 +74,12 @@ export interface TwinHomeApp {
 
 const DEFAULT_WEB_DIR = fileURLToPath(new URL("../../web/", import.meta.url));
 const LOCAL_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
+
+/** 기본 허용 출처: 이 PC(localhost·127.0.0.1·[::1])의 모든 포트. */
+export const isLocalOrigin = (origin: string): boolean => LOCAL_ORIGIN.test(origin);
 const MAX_BODY = 1 << 20;
 
-class HttpError extends Error {
+export class HttpError extends Error {
   constructor(readonly status: number, message: string, readonly extra?: Record<string, unknown>) {
     super(message);
   }
@@ -120,7 +123,7 @@ function record(v: unknown): Record<string, unknown> {
   return v as Record<string, unknown>;
 }
 
-async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
+export async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
@@ -153,7 +156,7 @@ export function createApp(opts: AppOptions): TwinHomeApp {
   const twinDir = opts.twinDir ? resolve(opts.twinDir) : undefined;
   const viewerDir = opts.viewerDir ? resolve(opts.viewerDir) : undefined;
   const libraryDir = opts.libraryDir ? resolve(opts.libraryDir) : undefined;
-  const allowOrigin = opts.allowOrigin ?? ((o: string) => LOCAL_ORIGIN.test(o));
+  const allowOrigin = opts.allowOrigin ?? isLocalOrigin;
   const log = opts.log ?? ((m: string) => console.log(m));
 
   const spec = (id: string) => hub.list().find((d) => d.id === id);
@@ -192,8 +195,20 @@ export function createApp(opts: AppOptions): TwinHomeApp {
     const editor = requireLayout();
     return { ok: true, ...editor.status(), items: editor.edits() };
   });
-  route("POST", /^\/api\/layout\/save$/, async () => ({ ok: true, ...requireLayout().save() }));
-  route("POST", /^\/api\/layout\/reset$/, async () => ({ ok: true, reverted: requireLayout().reset().length }));
+  // 설정 화면은 자기가 본 집(home)을 같이 보낸다. 다른 탭에서 집을 바꿨으면 새 집을 고치지 않는다.
+  // 본문을 기다리는 사이 이 앱이 닫혔으면(집을 바꿈) 쓰지 않는다
+  const sameHome = (body: Record<string, unknown>) => {
+    if (closed) throw new HttpError(503, "집을 바꾸는 중이에요. 잠시 뒤 다시 해 주세요.");
+    if (typeof body.home === "string" && opts.home && body.home !== opts.home.id) throw new HttpError(409, `집이 바뀌었어요(지금 ${opts.home.name}). 화면을 새로 고치세요.`);
+  };
+  route("POST", /^\/api\/layout\/save$/, async (req) => {
+    sameHome(await readJson(req));
+    return { ok: true, ...requireLayout().save() };
+  });
+  route("POST", /^\/api\/layout\/reset$/, async (req) => {
+    sameHome(await readJson(req));
+    return { ok: true, reverted: requireLayout().reset().length };
+  });
 
   // ── 폰 기준점(벽 대기 맞춤) ──
 
@@ -209,6 +224,7 @@ export function createApp(opts: AppOptions): TwinHomeApp {
   route("POST", /^\/api\/phone\/touch-points$/, async (req) => {
     const store = requireTouch();
     const body = await readJson(req);
+    sameHome(body);
     try {
       return touchView(store.save(body));
     } catch (e) {
@@ -216,7 +232,8 @@ export function createApp(opts: AppOptions): TwinHomeApp {
       throw e;
     }
   });
-  route("POST", /^\/api\/phone\/touch-points\/clear$/, async () => {
+  route("POST", /^\/api\/phone\/touch-points\/clear$/, async (req) => {
+    sameHome(await readJson(req));
     requireTouch().clear();
     return touchView(null);
   });
@@ -436,7 +453,7 @@ export function createApp(opts: AppOptions): TwinHomeApp {
   }
 
   wss.on("connection", (ws) => {
-    send(ws, { type: "hello", devices: hub.list().length, provider: agent?.provider.name ?? null, hub: opts.hubKind ?? "memory" });
+    send(ws, { type: "hello", devices: hub.list().length, provider: agent?.provider.name ?? null, hub: opts.hubKind ?? "memory", home: opts.home?.id ?? null });
     for (const state of hub.states()) send(ws, { type: "state", state });
     for (const m of opts.layout?.syncMessages() ?? []) send(ws, m);
     ws.on("error", () => {});

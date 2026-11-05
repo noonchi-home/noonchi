@@ -143,9 +143,13 @@ twin-home 서버: http://127.0.0.1:8200  (허브 matter/network, 에이전트 mo
 |---|---|---|
 | `GET /api/health` | | `{ ok, devices, hub, transport, provider, model, twin, eye, home: { id, name } }` |
 | `GET /api/homes` | | `{ current, homes: [{ id, name }] }` (twin-studio `homes.json`) |
+| `GET /api/setup` | | 설정 상태 `{ ok, persist, done, switching, error, home, homes, rooms, devices: [{ ..., source }], position }` (아래 "설정 흐름") |
+| `POST /api/setup/home` | `{ home }` | 다른 집이면 허브·에이전트·폰 서버를 새 집으로 다시 띄운다. 없는 집 400, 바꾸는 중 409 |
+| `POST /api/setup/devices` | `{ home, sources: { <기기 id>: "virtual"\|"none" } }` | 기기 신호 출처. 모르는 기기·값 400, `home`이 지금 집과 다르면 409 |
+| `POST /api/setup/done` | `{ home }` | 설정 끝냄 |
 | `GET /api/layout` | | 배치 보정 상태 `{ ok, home, edits, dirty, savePath, savedAt, items }`. 집 scene.json이 없으면 404 |
-| `POST /api/layout/save` | | 수정본을 `RUNTIME_DIR/homes/<id>/edits.json`에 쓴다. `{ ok, path, count, saved_at }` |
-| `POST /api/layout/reset` | | 보정을 모두 버린다. 뷰어에 되돌리는 layout 메시지를 보낸다. `{ ok, reverted }` |
+| `POST /api/layout/save` | `{ home? }` | 수정본을 `RUNTIME_DIR/homes/<id>/edits.json`에 쓴다. `{ ok, path, count, saved_at }`. `home`이 지금 집과 다르면 409 |
+| `POST /api/layout/reset` | `{ home? }` | 보정을 모두 버린다. 뷰어에 되돌리는 layout 메시지를 보낸다. `{ ok, reverted }` |
 | `GET /api/rooms` | | `[{ id, label, deviceCount }]` |
 | `GET /api/devices?room=&kind=` | | `[{ ...DeviceSpec, state: DeviceState }]` |
 | `GET /api/devices/:id` | | `{ ...DeviceSpec, state }`, 없으면 404 |
@@ -158,7 +162,7 @@ twin-home 서버: http://127.0.0.1:8200  (허브 matter/network, 에이전트 mo
 | `GET /api/agent/pending?sessionId=` | | 승인 대기 목록 |
 | `GET /api/matter` | | `{ ok, transport, commissioning: "none"\|"new"\|"reused", port, controllerPort?, subscribed?, pairing: { manualPairingCode, qrPairingCode, passcode, discriminator, commissioned, fabrics } }`. MemoryHub면 404 |
 | `POST /api/matter/commissioning-window` | `{ timeoutSeconds? }`(180~900, 기본 900) | `{ ok, timeoutSeconds, pairing, reply }`. 다른 Matter 컨트롤러용 페어링 창을 연다. local 전송이면 400 |
-| `GET /events` (WebSocket) | | 붙으면 `{type:"hello"}`, 모든 기기의 `{type:"state", state}`, 지금 배치 보정의 `{type:"layout"}`들. 이후 바뀔 때마다 `{type:"state"}`, `{type:"agent", event:"action"\|"reply"\|"pending"\|"confirmed"\|"cancelled", ...}`, `{type:"layout"}`, `{type:"focus"}`, `{type:"eye"}`, `{type:"photo"}` (모양은 [plan.md](plan.md)) |
+| `GET /events` (WebSocket) | | 붙으면 `{type:"hello", home}`, 모든 기기의 `{type:"state", state}`, 지금 배치 보정의 `{type:"layout"}`들. 이후 바뀔 때마다 `{type:"state"}`, `{type:"agent", event:"action"\|"reply"\|"pending"\|"confirmed"\|"cancelled", ...}`, `{type:"layout"}`, `{type:"focus"}`, `{type:"eye"}`, `{type:"photo"}` (모양은 [plan.md](plan.md)) |
 
 - `command`는 `docs/plan.md`의 `Command` 객체다. 줄임으로 문자열(`"on"`, `"off"`, `"lock"` …)도 받는다.
 - 정적 파일: `/`는 `web/`이다. `/twin/`은 고른 집의 twin-studio 산출물 폴더(아파트는 `apartment/`, 원룸 예시는 `homes/oneroom/`), `/twin/viewer/`는 모든 집이 함께 쓰는 뷰어(`homes.json` viewer), `/twin/lib/`은 모든 종류의 GLB(`homes.json` library)다. 경로 탈출(`..`)은 막는다.
@@ -170,8 +174,9 @@ twin-home 서버: http://127.0.0.1:8200  (허브 matter/network, 에이전트 mo
 
 - **배치**: 넓은 화면(861px 이상)은 왼쪽 큰 칸이 **3D 트윈**(클로이드가 한 일의 결과), 오른쪽 위가 **클로이드의 눈**(폰 카메라 실시간, 엔진 입력 아님, 폰이 없으면 안내), 오른쪽 아래가 **추론 과정**이다. 860px 이하는 `3D 트윈 / 클로이드의 눈 / 추론 과정` 탭(가로 스크롤 없음).
 - **기기 카드**: 결과 전용 화면이라 기본으로 숨긴다. 헤더 **기기 카드**로 왼쪽 서랍을 연다. 밝기·온도·바람 세기·커튼 %, Matter 속성 요약, 센서 시뮬레이션은 여기서만 보고 바꾼다.
-- **위 상태줄**: 실시간 연결, `허브 matter · network`(전송 포함), 에이전트 공급자, 고른 집, **배치 보정**(보정 건수·저장 여부, 배치 저장·되돌리기 버튼), **3D 트윈 토글**(숨기면 원래 두 칸, 선택은 브라우저에 기억), 센서 시뮬레이션 스위치. `/twin/`이 없으면 토글 대신 "3D 트윈 없음" 표시가 뜨고 3D 칸은 숨긴다(폰 3D 탭에는 이유를 적는다).
-- **기기 패널**: 방 탭, 방별 기기 카드(상태 칩, Matter 요약 `onOff=true level=100` 등, 빠른 제어). 센서는 읽기 전용이고 "센서 시뮬레이션"을 켜면 `/api/sensors`로 문 열림·충전을 바꿀 수 있다.
+- **위 상태줄**: 실시간 연결, `허브 matter · network`(전송 포함), 에이전트 공급자, 고른 집, **기기 카드**, **설정 다시 하기**(`/setup/`). `/twin/`이 없으면 토글 대신 "3D 트윈 없음" 표시가 뜨고 3D 칸은 숨긴다(폰 3D 탭에는 이유를 적는다).
+- **기기 패널**: 방 탭, 방별 기기 카드(상태 칩, Matter 요약 `onOff=true level=100` 등, 빠른 제어). 센서는 읽기 전용이고 "센서 시뮬레이션"을 켜면 `/api/sensors`로 문 열림·충전을 바꿀 수 있다. 신호 없는 기기는 `모름 · 신호 없음` 칩만 보인다(명령은 보낼 수 있다).
+- **설정 화면** (`web/setup/`): 아래 "설정 흐름". 설정을 안 끝냈으면(`npm start`) 대시보드가 먼저 `/setup/`으로 보낸다.
 - **3D 트윈**: twin-studio 뷰어를 iframe(`/twin/viewer/?live=auto&embed=1`)으로 넣는다. "새 창"으로 따로 열 수 있다.
 - **추론 과정**: 요청마다 카드 하나. 접으면 요청과 답 한 줄(상태 완료·승인 대기·실패), 펴면 에이전트가 거친 단계(도구 이름을 쉬운 말로, 대상, 결과와 이유), 답, 초점 대상이 순서대로 보인다. 승인·취소 버튼은 그 카드 안에 있고, 어디서 승인하든(폰·"응") 결과가 그 카드에 남는다. 폰 대화(🎙)·사진(📷)·배치 저장·되돌리기도 같은 흐름에 쌓인다. 아래 추천 요청은 고른 집의 기기 이름으로 만든다.
 - **클로이드의 눈**: 폰 카메라 실시간 화면. 클로이드가 방금 다룬 물건이 있으면 캡션이 `클로이드 주목 · 냉장고`로 바뀌고, 화면 프레임에도 폰이 그린 고리가 보인다.
@@ -255,9 +260,9 @@ TWIN_STUDIO_DIR=../twin-studio npm start
 
 ### 벽 두 곳에 폰을 대서 맞추기(벽 대기)
 
-바닥 기준점 대신, 대시보드에서 고른 벽 지점 A·B에 폰을 대서 수평 위치·방향을 맞춘다. 높이는 재지 않고 눈 마커를 그 자리 방 바닥 위 1.5m(`PHONE_EYE_HEIGHT_M`)에 둔다. 계획: [2026-11-04-phone-wall-touch](superpowers/plans/2026-11-04-phone-wall-touch.md).
+바닥 기준점 대신, 설정 화면에서 고른 벽 지점 A·B에 폰을 대서 수평 위치·방향을 맞춘다. 높이는 재지 않고 눈 마커를 그 자리 방 바닥 위 1.5m(`PHONE_EYE_HEIGHT_M`)에 둔다. 계획: [2026-11-04-phone-wall-touch](superpowers/plans/2026-11-04-phone-wall-touch.md).
 
-1. 대시보드 3D 칸 위 **폰 기준점** → A **3D에서 고르기** → 3D 트윈에서 벽을 누른다(가구는 뚫고 벽·문·창을 잡고, 점은 그 벽의 방 쪽 면에 붙는다). B도 같게. 이름을 적고 **저장**. 3D에 A·B 핀이 뜨고 `runtime/homes/<집>/phone-touch.json`에 저장된다. 두 점은 0.5m 이상, 멀수록 방향이 정확하다.
+1. 설정 3단계(**위치 동기화**)의 **폰 기준점 A·B** → A **3D에서 고르기** → 3D 트윈에서 벽을 누른다(가구는 뚫고 벽·문·창을 잡고, 점은 그 벽의 방 쪽 면에 붙는다). B도 같게. 이름을 적고 **저장**. 3D에 A·B 핀이 뜨고 `runtime/homes/<집>/phone-touch.json`에 저장된다. 두 점은 0.5m 이상, 멀수록 방향이 정확하다.
 2. 저장하면 실행 중인 폰이 바로 벽 기준점 모드로 바뀐다. 폰에서 AR 시작 → 화면 가운데 조준점을 실제 A 벽 **바로 아래 바닥**(벽과 바닥이 만나는 선)에 맞추고(초록이면 바닥에 닿음) **A … 아래 바닥 조준하고 기록**. B도 같게. 거리 차이가 `PHONE_MAX_MISMATCH_M`(기본 30cm) 안이면 맞춤.
 3. **지우기**를 누르면 평면도 바닥 기준점(`ar_anchors`) 방식으로 돌아간다.
 
@@ -307,17 +312,28 @@ tailscale serve --bg 8210   # 이미 켜져 있으면 생략. 폰: https://<이 
 - `OPENAI_API_KEY`는 `.env`에서 읽는다. VLM 호출은 세션당 `BRAIN_CALL_CAP`(120)회까지, 1회 약 $0.001.
 - 녹화 재생: `npx tsx scripts/brain-replay.ts --detector`(YOLO + 라벨 대본, 호출 0회), `--live --detector --cap 10`(실제 VLM).
 
+## 설정 흐름 (집 → 가전 → 위치 동기화 → 대시보드)
+
+`npm start` 뒤 `http://127.0.0.1:8200/`을 열면 설정을 끝내지 않았을 때 `/setup/`으로 간다. 대시보드 **설정 다시 하기**로 언제든 다시 연다. 계획: [2026-11-05-setup-flow](superpowers/plans/2026-11-05-setup-flow.md).
+
+1. **집 고르기**: twin-studio `homes.json`의 집. 다른 집을 고르면 서버를 끄지 않고 허브·에이전트·폰 서버·두뇌를 새 집으로 다시 띄운다(포트 그대로, HUB=matter local 전송에서 약 2초).
+2. **가전 선택**: 집 배치에 놓인 가전마다 **가상**(트윈 시뮬레이터 값을 읽음) 또는 **신호 없음**(상태를 「모름」으로 두고 사진·질문으로만 알아냄). 명령은 둘 다 트윈에서 실행된다. 신호 없는 기기는 에이전트·대시보드 카드·3D 뷰어 모두 새 상태를 받지 않는다.
+3. **위치 동기화**: 3D에서 폰 기준점 A·B(아래 "벽 대기")와 배치 보정 저장·되돌리기, 폰 주소. 건너뛰면 폰 사진에 위치가 붙지 않는다(`pose_note: not_aligned`).
+
+- 고른 것은 `runtime/setup.json`과 `runtime/homes/<id>/signals.json`에 남아 다음 시작 때 그대로 쓴다. 저장한 집이 없으면 `HOME_ID`(없으면 기본 집)로 뜬다.
+- 테스트·데모(`startServer`)는 이 파일을 읽지도 쓰지도 않는다.
+
 ## 집 고르기와 배치 보정
 
-twin-studio는 평면도마다 집 패키지를 하나씩 둔다(`homes.json`). twin-home은 `HOME_ID`로 하나를 불러온다.
+twin-studio는 평면도마다 집 패키지를 하나씩 둔다(`homes.json`). twin-home은 설정에서 고른 집(없으면 `HOME_ID`)을 불러온다.
 
 ```bash
 # 먼저 twin-studio에서 빌드: uv run python -m studio apartment --home oneroom --no-render
 HOME_ID=oneroom PHONE_PORT=8210 npm start
 ```
 
-1. 실제 집에 맞게 트윈을 고친다: 폰 '여기'(위), 또는 대시보드·폰 채팅("냉장고 오른쪽으로 0.5m", "공기청정기 추가해줘", "TV 빼줘"). 3D 트윈이 바로 바뀌고, 상태줄에 `보정 N건 · 저장 안 함`이 뜬다.
-2. "배치 저장해" 또는 상태줄 **배치 저장** → `runtime/homes/<id>/edits.json`. 다시 시작해도 저장한 보정은 다시 적용된다. **되돌리기**는 저장하지 않은 것까지 모두 버린다.
+1. 실제 집에 맞게 트윈을 고친다: 폰 '여기'(위), 또는 대시보드·폰 채팅("냉장고 오른쪽으로 0.5m", "공기청정기 추가해줘", "TV 빼줘"). 3D 트윈이 바로 바뀌고, 설정 3단계 배치 보정 칸에 `보정 N건 · 저장 안 함`이 뜬다.
+2. "배치 저장해" 또는 설정 3단계 **배치 보정 → 저장** → `runtime/homes/<id>/edits.json`. 다시 시작해도 저장한 보정은 다시 적용된다. **되돌리기**는 저장하지 않은 것까지 모두 버린다.
 3. 확정: twin-studio에서 `uv run python -m studio apply-edits --home <id> <edits.json>`(먼저 `--dry-run`으로 볼 수 있다) → `uv run python -m studio apartment --home <id> --no-render` → twin-home 재시작. 추가한 가전은 이때부터 Matter 기기로 켜고 끌 수 있다.
 
 - 문·창·벽·바닥·천장 고정 설비는 옮기지 않는다. 다른 물건 위에 놓는 종류(TV·전자레인지 등)는 더할 수 없고, 옮기면 받침째 옮긴다.

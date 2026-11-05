@@ -27,6 +27,8 @@ export interface DeviceState {
   twin: Record<string, unknown>;   // twin-studio state 값 (scene.json states와 같은 키/값)
   matter: Record<string, unknown>; // 보기 좋은 Matter 속성 요약 (onOff, level, lockState, fanMode, operationalState, setpointC...)
   updatedAt: string;
+  /** "none"이면 신호 없는 기기라 상태를 모른다(twin·matter가 비어 있음, src/hub/signals.ts). */
+  signal?: "none";
 }
 
 export type Command =

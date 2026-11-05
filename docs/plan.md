@@ -72,7 +72,8 @@ type Capability = "onoff" | "level" | "climate" | "fan" | "covering" | "lock" | 
 interface DeviceState { id: string; online: boolean;
   twin: Record<string, unknown>;              // twin-studio state 값 (scene.json states와 같은 키/값)
   matter: Record<string, unknown>;            // 보기 좋은 Matter 속성 요약 (onOff, level, lockState, fanMode, operationalState, setpoint...)
-  updatedAt: string; }
+  updatedAt: string;
+  signal?: "none"; }                          // 신호 없는 기기: 상태를 모름(twin·matter 비움, 아래 「설정 흐름」)
 type Command =
   | { type: "on" } | { type: "off" } | { type: "level"; percent: number }
   | { type: "climate"; mode?: "cool" | "heat" | "auto" | "dry" | "fan"; setpointC?: number; fan?: "low" | "medium" | "high" | "auto" }
@@ -180,6 +181,30 @@ interface DeviceHub {
 
 **E. 배치 도구** (서버 안 에이전트 전용, MCP에는 없음) `find_objects`, `move_object(object_id, to?:"here", x?, y?, dx?, dy?, facing_deg?, turn_deg?)`, `add_object(type, label?, to?, x?, y?, facing_deg?)`, `remove_object`, `find_object_types`, `save_layout`. 평면도 좌표 +x 오른쪽, +y 아래쪽. 벽걸이는 가장 가까운 벽에 붙고, 바닥 물건을 '여기'로 옮기면 폰 쪽을 보게 놓는다. mock 에이전트도 "냉장고 위치 여기로 맞춰줘"·"냉장고는 여기 있어"·"TV 여기로 옮겨줘"·"배치 저장해"를 안다.
 - REST: `GET /api/layout`, `POST /api/layout/save`, `POST /api/layout/reset`, `GET /api/homes`.
+
+## 설정 흐름 (5단계: 집 → 가전 → 위치 동기화 → 대시보드)
+
+상세 계획: [2026-11-05-setup-flow.md](superpowers/plans/2026-11-05-setup-flow.md). 대시보드는 관찰만 하고, 설정은 `/setup/`에서 한다.
+
+**A. 집 실행 묶음** (`src/server/home.ts`): 집 하나에 딸린 허브·정책·에이전트·배치 편집기·기준점·폰 서버·두뇌·앱. 집을 바꾸면 통째로 닫고 새로 만든다. 본 서버 포트는 껍데기 서버(`src/server/shell.ts`)가 계속 잡고 `/api/setup*`만 직접 처리하며, 나머지 요청과 `/events`는 지금 묶음의 앱으로 넘긴다. 폰 서버는 처음 잡은 포트를 다시 쓴다. 바꾸는 동안 다른 API는 503, 설정 화면 파일은 그대로 나온다. 실패하면 이전 집으로 되돌린다.
+
+**B. 신호 출처** (`src/hub/signals.ts`, 구현명세서 6.3 정보 확보 수단·7.1 `read_appliance`): 기기마다 `virtual`(트윈 시뮬레이터) 또는 `none`(신호 없음). 다음에 `{ kind: "thinq", deviceId }`(실제 가전 읽기 전용)를 더한다.
+- 엔진·대시보드는 `SignalHub`로 읽는다. `none` 기기는 상태가 `{ twin: {}, matter: {}, signal: "none" }`(모름)이고, 바뀌어도 `/events`에 보내지 않는다. 출처를 바꾸면 그 기기 상태를 한 번 보낸다.
+- 명령(가상 실행)은 숨은 세계(안쪽 허브)에서 그대로 실행된다. `none` 기기는 결과도 모르므로, 숨은 세계가 상태 때문에 거절해도 `{ ok: true, state: 모름 }`으로 돌려준다(거절 이유가 숨은 상태를 드러냄). 정책의 사전 검사는 모르는 상태로 하지 않는다.
+- 에이전트 도구는 `state: "모름"`, `signal: "none"`을 보고, 명령·승인 답은 「보냈지만 결과는 확인하지 못했어요」다.
+- 3D 뷰어(twin-studio `live.mjs`)는 `signal: "none"` 상태를 받으면 화면 값을 그대로 두고, 그 기기 조작은 계속 twin-home으로 보낸다.
+
+**C. 저장** (`src/setup/store.ts`, `npm start`만 파일에 쓴다)
+- `RUNTIME_DIR/setup.json`: `{ version: 1, home, done, updated_at }`. 다른 집을 고르면 `done: false`.
+- `RUNTIME_DIR/homes/<id>/signals.json`: `{ version: 1, home, sources: { <기기 id>: { kind } }, updated_at }`(virtual이 아닌 것만). 배치에서 빠진 기기 id는 읽을 때 버린다.
+- 시작 집: 저장한 집 → (없거나 못 띄우면) `HOME_ID` → 기본 집. `startServer`(테스트·데모)는 파일을 읽지 않고 「끝냄」으로 시작한다.
+
+**D. 설정 API** (쓰기는 같은 PC 출처만)
+- `GET /api/setup` → `{ ok, persist, done, switching, error, home, homes, rooms, devices: [{ id, label, room, roomLabel, kind, kindLabel, source }], position: { touch, layout, phone_urls } }`
+- `POST /api/setup/home { home }`: 다른 집이면 묶음을 다시 만든다. 없는 집 400, 바꾸는 중 409.
+- `POST /api/setup/devices { home, sources: { <id>: "virtual"|"none" } }`, `POST /api/setup/done { home }`: `home`이 지금 집과 다르면 409(다른 탭에서 바꿈).
+- 설정 3단계의 `POST /api/phone/touch-points*`·`/api/layout/save|reset`도 `home`을 같이 보낸다(다르면 409).
+- `/events`의 `hello`에 `home`(집 id)이 붙는다. 대시보드는 집이 바뀌면 새로 고친다.
 
 ## 테스트
 

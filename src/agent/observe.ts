@@ -26,6 +26,7 @@ export function observe(tool: string, r: ToolResult): string {
       return listOf((data as Named[] | undefined) ?? [], "방 없음", 8);
     case "get_state": {
       const d = data as { label?: string; kind?: DeviceKind; state?: Record<string, unknown>; matter?: Record<string, unknown> } | undefined;
+      if (typeof d?.state === "string") return `${d.label}: ${d.state}(신호 없음)`;
       return d?.kind ? `${d.label}: ${stateText({ kind: d.kind }, { twin: d.state ?? {}, matter: d.matter ?? {} })}` : (r.message ?? "확인함");
     }
     case "find_objects":

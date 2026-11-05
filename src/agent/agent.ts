@@ -325,7 +325,8 @@ export class Agent {
       tool: toolForCommand(p.command), args: { device_id: p.deviceId }, ok: r.ok, error: r.error,
       deviceId: p.deviceId, deviceLabel: label, at: new Date().toISOString(),
     };
-    const reply = r.ok && spec ? doneSentence([label], spec.kind, p.command) : `${label}: ${r.error ?? "실행하지 못했어요."}`;
+    const reply = r.ok && r.state?.signal === "none" ? `${label}에 명령을 보냈어요. 신호가 없어 결과는 확인하지 못했어요.`
+      : r.ok && spec ? doneSentence([label], spec.kind, p.command) : `${label}: ${r.error ?? "실행하지 못했어요."}`;
     action.message = r.ok ? reply : undefined;
     return { ok: r.ok, reply, error: r.error, deviceId: p.deviceId, state: r.state, action };
   }
