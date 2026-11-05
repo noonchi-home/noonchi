@@ -7,6 +7,7 @@ const TS = "https://phone-pc.example-net.ts.net/phone/";
 const base: HealthView = {
   ok: true, devices: 1, hub: "memory", transport: null, provider: null, model: null, twin: true, eye: true,
   home: null, phone_urls: [TS, "http://192.168.0.7:8210/phone/"], brain: false,
+  mode: "test",
 };
 
 describe("EyeWindow", () => {

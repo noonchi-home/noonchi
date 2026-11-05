@@ -11,6 +11,7 @@ import type { Agent } from "../agent/agent.js";
 import { newSessionId } from "../agent/agent.js";
 import { Policy } from "../agent/policy.js";
 import type { HealthView } from "../contract/events.js";
+import type { ControlMode } from "../contract/setup.js";
 import { deviceViews, roomViews } from "../agent/tools.js";
 import type { Command, CommandResult, DeviceHub, RoomSpec } from "../hub/types.js";
 import type { LayoutEditor } from "../layout/editor.js";
@@ -50,6 +51,8 @@ export interface AppOptions {
   touch?: { get(): TouchPoint[] | null; save(raw: unknown): TouchPoint[]; clear(): void; eyeHeightM: number };
   /** 상위 판단(BRAIN=1, src/brain/live.ts). 있으면 GET /api/brain에 상태를 보인다. */
   brain?: { status(): object };
+  /** 지금 운영 모드(/api/health). 없으면 시험 모드. */
+  mode?: () => ControlMode;
 }
 
 /** MatterHub에서 서버가 쓰는 부분(src/matter/matterHub.ts를 직접 불러오지 않으려고 모양만 적는다). */
@@ -142,8 +145,9 @@ export async function readJson(req: IncomingMessage): Promise<Record<string, unk
   }
 }
 
+/** ThinQ가 받았지만 적용을 확인하지 못한 명령은 202(받음). */
 function commandStatus(r: CommandResult): number {
-  if (r.ok) return 200;
+  if (r.ok) return r.outcome === "unverified" ? 202 : 200;
   if (r.needsConfirmation) return 409;
   return 400;
 }
@@ -178,7 +182,7 @@ export function createApp(opts: AppOptions): TwinHomeApp {
   route("GET", /^\/api\/health$/, async (): Promise<HealthView> => ({
     ok: true, devices: hub.list().length, hub: opts.hubKind ?? "memory", transport: matterInfo()?.transport ?? null,
     provider: agent?.provider.name ?? null, model: agent?.provider.model ?? null, twin: !!twinDir && existsSync(twinDir),
-    eye: !!opts.eye, home: opts.home ?? null, phone_urls: opts.phoneUrls?.() ?? [], brain: !!opts.brain,
+    eye: !!opts.eye, home: opts.home ?? null, phone_urls: opts.phoneUrls?.() ?? [], brain: !!opts.brain, mode: opts.mode?.() ?? "test",
   }));
 
   route("GET", /^\/api\/brain$/, async () => {

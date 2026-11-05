@@ -1,17 +1,22 @@
 // 서버 시작(npm start·데모·e2e 테스트 공용): 껍데기 서버(포트·설정 API) + 집 실행 묶음(src/server/home.ts).
-// 설정 흐름(집 → 가전 → 위치 동기화 → 대시보드): 집을 고르면 묶음을 닫고 새 집으로 다시 만든다. 포트는 그대로다.
+// 설정 흐름(집 → 가전 → 운영 모드 → 위치 동기화 → 대시보드): 집을 고르면 묶음을 닫고 새 집으로 다시 만든다. 포트는 그대로다.
+// 운영 모드: 시험(기본, ThinQ를 부르지 않음) · 실제(짝지은 에어컨·냉장고는 ThinQ). ThinQ 클라이언트는 실제 모드에서만 만든다.
 
 import { fileURLToPath } from "node:url";
 import type { Agent } from "../agent/agent.js";
 import type { Policy } from "../agent/policy.js";
 import type { CreateLiveBrainOptions } from "../brain/live.js";
+import type { ControlMode, SetupView, ThinqDeviceView } from "../contract/setup.js";
 import type { SignalHub } from "../hub/signals.js";
 import type { DeviceHub } from "../hub/types.js";
 import type { LayoutEditor } from "../layout/editor.js";
 import { KIND_LABELS } from "../model/mapping.js";
 import { resolveTwinStudioDir, type TwinData } from "../model/devices.js";
 import { listHomes } from "../model/homes.js";
-import { SetupError, SetupStore, parseSources } from "../setup/store.js";
+import { SetupError, SetupStore, effectiveSources, parsePairs, parseSources } from "../setup/store.js";
+import { PAIRABLE_KINDS, fitsKind } from "../thinq/appliance.js";
+import { ThinqClient, ThinqError, thinqConfig } from "../thinq/client.js";
+import { DEFAULT_POLL_MS, DEFAULT_READBACK_MS, ThinqLink } from "../thinq/link.js";
 import { HttpError, type TwinHomeApp } from "./app.js";
 import type { HubKind, MatterTransport, StartHubOptions } from "./hubFactory.js";
 import { startHome, type HomeContext, type HomeRuntime } from "./home.js";
@@ -22,12 +27,23 @@ type Env = Record<string, string | undefined>;
 /** 실행 중 만든 파일(사진·배치 수정본·설정) 폴더(커밋하지 않음). RUNTIME_DIR로 바꾼다. */
 const DEFAULT_RUNTIME_DIR = fileURLToPath(new URL("../../runtime/", import.meta.url));
 
+const msOf = (raw: string | undefined, fallback: number) => {
+  const n = Number(raw);
+  return raw?.trim() && Number.isFinite(n) && n >= 0 ? n : fallback;
+};
+const msListOf = (raw: string | undefined, fallback: number[]) => {
+  const list = (raw ?? "").split(",").map((x) => Number(x.trim())).filter((n) => Number.isFinite(n) && n >= 0);
+  return raw?.trim() && list.length > 0 ? list : fallback;
+};
+
 export interface StartServerOptions {
   /** 기본 process.env. HUB, MATTER_*, AGENT_PROVIDER, TWIN_STUDIO_DIR, HOME_ID(저장한 집이 없을 때 띄울 집, 기본 집), PORT(0이면 빈 포트), HOST,
    *  PHONE_PORT(있으면 폰 AR 서버), PHONE_HOST(기본 0.0.0.0), PHONE_MAX_MISMATCH_M(기준점 거리 차이 허용값, 기본 0.3),
    *  PHONE_EYE_HEIGHT_M(벽 대기 맞춤의 눈 높이, 기본 1.5),
    *  FOCUS(1이면 초점 표시를 보낸다, 기본 끔), PHONE_PHOTO_DIR(사진 폴더, 기본 runtime/photos), RUNTIME_DIR(배치 수정본·설정의 바탕, 기본 runtime),
-   *  BRAIN(1이면 폰 카메라로 상위 판단을 돌린다. PHONE_PORT·OPENAI_API_KEY 필요, BRAIN_* 는 docs/reference.md)을 읽는다. */
+   *  BRAIN(1이면 폰 카메라로 상위 판단을 돌린다. PHONE_PORT·OPENAI_API_KEY 필요, BRAIN_* 는 docs/reference.md),
+   *  THINQ_TOKEN(실제 모드), THINQ_REGION·THINQ_COUNTRY·THINQ_CLIENT_ID·THINQ_API_KEY·THINQ_BASE_URL·THINQ_TIMEOUT_MS(src/thinq/client.ts),
+   *  THINQ_POLL_MS(짝지은 기기 읽기 간격, 기본 15000, 0이면 처음 한 번), THINQ_READBACK_MS(명령 뒤 다시 읽기 전 기다림, 기본 1000,2000,4000)을 읽는다. */
   env?: Env;
   log?: (line: string) => void;
   /** true면 설정(고른 집·끝냄·신호 출처)을 RUNTIME_DIR에 저장하고 다음 시작 때 읽는다(npm start). 기본은 메모리에만 두고 「끝냄」으로 시작. */
@@ -65,6 +81,8 @@ export interface RunningServer {
   /** PHONE_PORT를 줬을 때 폰에서 열 주소. 없으면 빈 배열. */
   readonly phoneUrls: string[];
   readonly setup: SetupStore;
+  /** 지금 운영 모드. */
+  readonly mode: ControlMode;
   /** 다른 집으로 바꾼다(POST /api/setup/home과 같음). */
   switchHome(id: string): Promise<void>;
   close(): Promise<void>;
@@ -75,23 +93,63 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   const log = opts.log ?? ((line: string) => console.log(line));
   const runtimeDir = env.RUNTIME_DIR?.trim() || DEFAULT_RUNTIME_DIR;
   const store = new SetupStore({ runtimeDir, persist: opts.persistSetup ?? false, log });
+  let mode: ControlMode = store.mode();
+  if (mode === "live" && !thinqConfig(env).ok) {
+    log("[경고] ThinQ 토큰이 없어 시험 모드로 띄웁니다. 실제 모드는 THINQ_TOKEN을 넣고 설정에서 다시 고르세요.");
+    mode = "test";
+  }
   const ctx: HomeContext = {
     env, log, runtimeDir, importer: opts.importer, matter: opts.matter, brain: opts.brain, servedPhoneUrls: opts.servedPhoneUrls,
-    sources: (homeId, ids) => store.sources(homeId, ids),
+    sources: (homeId, ids) => store.sources(homeId, ids), mode: () => mode,
   };
   const studioDir = resolveTwinStudioDir(env.TWIN_STUDIO_DIR);
+  const pollMs = msOf(env.THINQ_POLL_MS, DEFAULT_POLL_MS);
+  const readbackMs = msListOf(env.THINQ_READBACK_MS, DEFAULT_READBACK_MS);
+
+  // ThinQ 클라이언트는 실제 모드에서 처음 필요할 때 만든다(시험 모드는 만들지 않는다)
+  let client: ThinqClient | null = null;
+  let thinqList: ThinqDeviceView[] | null = null;
+  const thinqClient = (): ThinqClient => {
+    if (client) return client;
+    const c = thinqConfig(env);
+    if (!c.ok) throw new HttpError(400, `${c.error} 실제 모드로 바꿀 수 없어요.`);
+    client = new ThinqClient(c.config);
+    return client;
+  };
+
+  /** 지금 모드·짝·저장한 출처를 집 묶음에 적용한다. 실제 모드에서 짝이 있을 때만 ThinQ 연결을 만든다. */
+  const applyControl = (h: HomeRuntime, quiet = true) => {
+    const homeId = h.twin.home.id;
+    const ids = h.twin.devices.map((d) => d.id);
+    const pairs = store.pairs(homeId, ids, { quiet });
+    h.signals.setSources(effectiveSources(store.sources(homeId, ids, { quiet: true }), pairs, mode));
+    h.setLink(mode === "live" && Object.keys(pairs).length > 0
+      ? new ThinqLink({ client: thinqClient(), world: h.hub, pairs, log, pollMs, readbackMs })
+      : null);
+  };
+  const openHome = async (id: string | undefined): Promise<HomeRuntime> => {
+    const h = await startHome(id, ctx);
+    try {
+      applyControl(h, false);
+    } catch (e) {
+      await h.close();
+      throw e;
+    }
+    return h;
+  };
 
   // 저장한 집이 없거나 사라졌으면 HOME_ID(없으면 기본 집)
   const saved = store.state().home;
   const fallbackHome = env.HOME_ID?.trim() || undefined;
   let rt: HomeRuntime;
   try {
-    rt = await startHome(saved ?? fallbackHome, ctx);
+    rt = await openHome(saved ?? fallbackHome);
   } catch (e) {
     if (!saved) throw e;
     log(`[경고] 저장한 집 ${saved}를 띄우지 못했습니다(${(e as Error).message}). ${fallbackHome ?? "기본 집"}으로 띄웁니다.`);
-    rt = await startHome(fallbackHome, ctx);
+    rt = await openHome(fallbackHome);
   }
+  if (mode === "live") log("운영 모드: 실제(짝지은 가전은 ThinQ)");
   ctx.phonePort = rt.phonePort;
   let current: HomeRuntime | null = rt;
   let last: HomeRuntime = rt;
@@ -128,7 +186,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       current = null;
       await old?.close();
       try {
-        const next = await startHome(id, ctx);
+        const next = await openHome(id);
         // 바꾸는 동안 서버를 껐으면 새 묶음도 바로 닫는다
         if (closed) {
           await next.close();
@@ -139,7 +197,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
         switchError = (e as Error).message;
         log(`[경고] 집 ${id}를 띄우지 못했습니다(${switchError}). ${previous}로 되돌립니다.`);
         try {
-          const back = await startHome(previous, ctx);
+          const back = await openHome(previous);
           if (closed) await back.close();
           else current = back;
         } catch (e2) {
@@ -154,10 +212,15 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     }
   }
 
-  const deviceViews = (h: HomeRuntime) => h.twin.devices.map((d) => ({
-    id: d.id, label: d.label, room: d.room, roomLabel: d.roomLabel, kind: d.kind, kindLabel: KIND_LABELS[d.kind], source: h.signals.source(d.id),
-  }));
-  const view = () => {
+  const deviceIds = (h: HomeRuntime) => h.twin.devices.map((d) => d.id);
+  const deviceViews = (h: HomeRuntime): SetupView["devices"] => {
+    const stored = store.sources(h.twin.home.id, deviceIds(h), { quiet: true });
+    return h.twin.devices.map((d) => ({
+      id: d.id, label: d.label, room: d.room, roomLabel: d.roomLabel, kind: d.kind, kindLabel: KIND_LABELS[d.kind],
+      source: stored[d.id] ?? { kind: "virtual" }, pairable: PAIRABLE_KINDS.includes(d.kind),
+    }));
+  };
+  const view = (): SetupView => {
     const st = store.state();
     const h = current;
     return {
@@ -165,6 +228,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       home: h ? { id: h.twin.home.id, name: h.twin.home.name } : null, homes: homes(),
       rooms: h?.twin.rooms ?? [], devices: h ? deviceViews(h) : [], devices_saved: h ? store.hasSources(h.twin.home.id) : false,
       position: { touch: !!h?.touch, layout: !!h?.layout, phone_urls: h?.phoneUrls ?? [] },
+      mode, thinq: { ready: thinqConfig(env).ok }, pairs: h ? store.pairs(h.twin.home.id, deviceIds(h), { quiet: true }) : {},
     };
   };
 
@@ -183,13 +247,65 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       setSources(body) {
         const h = requireHome(body);
         try {
-          const next = { ...h.signals.sources(), ...parseSources(body.sources, h.twin.devices.map((d) => d.id)) };
-          h.signals.setSources(next);
-          store.saveSources(h.twin.home.id, h.signals.sources());
+          const ids = deviceIds(h);
+          store.saveSources(h.twin.home.id, { ...store.sources(h.twin.home.id, ids, { quiet: true }), ...parseSources(body.sources, ids) });
         } catch (e) {
           if (e instanceof SetupError) throw new HttpError(400, e.message);
           throw e;
         }
+        applyControl(h);
+        return view();
+      },
+      setMode(body) {
+        const want = body.mode;
+        if (want !== "test" && want !== "live") throw new HttpError(400, "mode는 test(시험) 또는 live(실제)여야 합니다.");
+        if (want === "live") {
+          if (body.confirm !== true) throw new HttpError(400, "실제 모드는 화면에서 한 번 더 확인한 뒤에 바꿀 수 있어요.");
+          thinqClient();
+        } else {
+          client = null;
+          thinqList = null;
+        }
+        mode = want;
+        store.setMode(want);
+        if (current) applyControl(current);
+        log(`운영 모드: ${want === "live" ? "실제(짝지은 가전은 ThinQ)" : "시험"}`);
+        return view();
+      },
+      async thinqDevices() {
+        if (mode !== "live") throw new HttpError(409, "실제 모드에서만 ThinQ 기기를 불러와요.");
+        try {
+          thinqList = (await thinqClient().devices()).map((d) => ({ ...d, kind: PAIRABLE_KINDS.find((k) => fitsKind(k, d.type)) ?? null }));
+        } catch (e) {
+          if (e instanceof ThinqError) throw new HttpError(502, `ThinQ 기기 목록을 받지 못했어요. ${e.message}`);
+          throw e;
+        }
+        return { ok: true, devices: thinqList };
+      },
+      setPairs(body) {
+        const h = requireHome(body);
+        let parsed: Record<string, string | null>;
+        try {
+          parsed = parsePairs(body.pairs, h.twin.devices);
+        } catch (e) {
+          if (e instanceof SetupError) throw new HttpError(400, e.message);
+          throw e;
+        }
+        // ThinQ 목록을 받았으면 그 목록에 있고 종류가 맞는 기기만
+        for (const [id, target] of Object.entries(parsed)) {
+          if (target === null || !thinqList) continue;
+          const t = thinqList.find((d) => d.id === target);
+          if (!t) throw new HttpError(400, `ThinQ 기기 목록에 없는 기기예요: ${target}`);
+          const d = h.twin.devices.find((x) => x.id === id)!;
+          if (!fitsKind(d.kind, t.type)) throw new HttpError(400, `${d.label}와 ThinQ ${t.name}는 종류가 달라요.`);
+        }
+        const next = { ...store.pairs(h.twin.home.id, deviceIds(h), { quiet: true }) };
+        for (const [id, target] of Object.entries(parsed)) {
+          if (target === null) delete next[id];
+          else next[id] = target;
+        }
+        store.savePairs(h.twin.home.id, next);
+        applyControl(h);
         return view();
       },
       finish(body) {
@@ -227,6 +343,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     get twinDir() { return live().twinDir; },
     get phoneUrls() { return live().phoneUrls; },
     setup: store,
+    get mode() { return mode; },
     switchHome: async (id) => {
       await switchHome(id);
       store.setHome(id);

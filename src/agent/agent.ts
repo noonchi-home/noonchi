@@ -10,7 +10,7 @@ import { askApproval, doneSentence, toolForCommand } from "./phrases.js";
 import { buildSystemPrompt } from "./prompts.js";
 import { LAYOUT_TOOLS, type LayoutTools } from "./layoutTools.js";
 import { observe } from "./observe.js";
-import { AGENT_TOOLS, localBackend, runTool, type ToolBackend, type ToolDef, type ToolResult } from "./tools.js";
+import { AGENT_TOOLS, localBackend, runTool, unverifiedSentence, type ToolBackend, type ToolDef, type ToolResult } from "./tools.js";
 
 export type { AgentAction, AgentEvent, ChatResult, ConfirmResult, PendingView } from "../contract/events.js";
 
@@ -280,6 +280,7 @@ export class Agent {
       deviceId: p.deviceId, deviceLabel: label, at: new Date().toISOString(),
     };
     const reply = r.ok && r.state?.signal === "none" ? `${label}에 명령을 보냈어요. 신호가 없어 결과는 확인하지 못했어요.`
+      : r.ok && r.outcome === "unverified" ? unverifiedSentence(label)
       : r.ok && spec ? doneSentence([label], spec.kind, p.command) : `${label}: ${r.error ?? "실행하지 못했어요."}`;
     action.message = r.ok ? reply : undefined;
     return { ok: r.ok, reply, error: r.error, deviceId: p.deviceId, state: r.state, action };

@@ -103,6 +103,11 @@ HUB=memory npm run demo
 | `MATTER_RUNTIME_SIGNALS` | (끔) | matter.js가 SIGINT를 직접 잡게 하려면 준다(보통 쓰지 않음) |
 | `MATTER_MDNS_NETWORKINTERFACE` | | mDNS를 특정 어댑터로 제한(matter.js 변수, 아래 "문제 해결") |
 | `TWIN_HOME_URL` | `http://127.0.0.1:8200` | MCP 서버가 부를 twin-home 주소 |
+| `THINQ_TOKEN` | (없음) | 실제 모드에 쓰는 LG ThinQ Connect 개인 토큰(PAT). `.env`에만 넣는다. 없으면 실제 모드로 바꿀 수 없다 |
+| `THINQ_COUNTRY`, `THINQ_REGION` | `KR`, `kic` | ThinQ 나라 코드(`x-country`), 지역(`kic`·`aic`·`eic`, 주소 `https://api-<지역>.lgthinq.com/`) |
+| `THINQ_CLIENT_ID`, `THINQ_API_KEY` | (시작마다 uuid), SDK 공개 값 | `x-client-id`, `x-api-key` |
+| `THINQ_POLL_MS`, `THINQ_READBACK_MS`, `THINQ_TIMEOUT_MS` | `15000`, `1000,2000,4000`, `10000` | 짝지은 기기 읽기 간격(`0`이면 처음 한 번), 명령 뒤 다시 읽기 전 기다림, 요청 제한 시간 |
+| `THINQ_BASE_URL` | (지역 주소) | ThinQ 주소를 바꾼다(시험의 가짜 서버) |
 
 선택 값은 `.env.example`에서 주석으로 두었다. 빈 값(`MATTER_X=`)으로 두면 matter.js가 자기 설정으로 읽을 수 있어서다.
 
@@ -142,12 +147,15 @@ twin-home 서버: http://127.0.0.1:8200  (허브 matter/network, 에이전트 mo
 
 | 메서드·경로 | 본문 | 응답 |
 |---|---|---|
-| `GET /api/health` | | `{ ok, devices, hub, transport, provider, model, twin, eye, home: { id, name } }` |
+| `GET /api/health` | | `{ ok, devices, hub, transport, provider, model, twin, eye, home: { id, name }, phone_urls, brain, mode }`(`mode`: `test` 시험 · `live` 실제) |
 | `GET /api/homes` | | `{ current, homes: [{ id, name }] }` (twin-studio `homes.json`) |
-| `GET /api/setup` | | 설정 상태 `{ ok, persist, done, switching, error, home, homes, rooms, devices: [{ ..., source }], position }` (아래 "설정 흐름") |
+| `GET /api/setup` | | 설정 상태 `{ ok, persist, done, switching, error, home, homes, rooms, devices: [{ ..., source, pairable }], position, mode, thinq: { ready }, pairs }` (아래 "설정 흐름", 형은 `src/contract/setup.ts`) |
 | `POST /api/setup/home` | `{ home }` | 다른 집이면 허브·에이전트·폰 서버를 새 집으로 다시 띄운다. 없는 집 400, 바꾸는 중 409 |
 | `POST /api/setup/devices` | `{ home, sources: { <기기 id>: "virtual"\|"none" } }` | 기기 신호 출처. 모르는 기기·값 400, `home`이 지금 집과 다르면 409 |
 | `POST /api/setup/done` | `{ home }` | 설정 끝냄 |
+| `POST /api/setup/mode` | `{ mode: "test"\|"live", confirm? }` | 운영 모드. `live`는 `confirm: true`와 `THINQ_TOKEN`이 있어야 한다(없으면 400) |
+| `GET /api/setup/thinq` | | 실제 모드에서만 ThinQ 기기 목록 `{ ok, devices: [{ id, type, name, model }] }`. 시험 모드 409(ThinQ를 부르지 않음), ThinQ 실패 502 |
+| `POST /api/setup/pairs` | `{ home, pairs: { <기기 id>: <ThinQ id>\|null } }` | 에어컨·냉장고 ↔ ThinQ 기기 짝(`null`은 풀기). 다른 종류·목록에 없는 ThinQ 기기 400, 다른 집 409 |
 | `GET /api/layout` | | 배치 보정 상태 `{ ok, home, edits, dirty, savePath, savedAt, items }`. 집 scene.json이 없으면 404 |
 | `POST /api/layout/save` | `{ home? }` | 수정본을 `RUNTIME_DIR/homes/<id>/edits.json`에 쓴다. `{ ok, path, count, saved_at }`. `home`이 지금 집과 다르면 409 |
 | `POST /api/layout/reset` | `{ home? }` | 보정을 모두 버린다. 뷰어에 되돌리는 layout 메시지를 보낸다. `{ ok, reverted }` |
@@ -313,16 +321,31 @@ tailscale serve --bg 8210   # 이미 켜져 있으면 생략. 폰: https://<이 
 - `OPENAI_API_KEY`는 `.env`에서 읽는다. VLM 호출은 세션당 `BRAIN_CALL_CAP`(120)회까지, 1회 약 $0.001.
 - 녹화 재생: `npx tsx scripts/brain-replay.ts --detector`(YOLO + 라벨 대본, 호출 0회), `--live --detector --cap 10`(실제 VLM).
 
-## 설정 흐름 (집 → 가전 → 위치 동기화 → 대시보드)
+## 설정 흐름 (집 → 가전 → 운영 모드 → 위치 동기화 → 대시보드)
 
 `npm start` 뒤 `http://127.0.0.1:8200/`을 열면 설정을 끝내지 않았을 때 `/setup/`으로 간다. 대시보드 **설정 다시 하기**로 언제든 다시 연다. 계획: [2026-11-05-setup-flow](superpowers/plans/2026-11-05-setup-flow.md).
 
 1. **집 고르기**: twin-studio `homes.json`의 집. 다른 집을 고르면 서버를 끄지 않고 허브·에이전트·폰 서버·두뇌를 새 집으로 다시 띄운다(포트 그대로, HUB=matter local 전송에서 약 2초).
 2. **가전 선택**: 집 배치에 놓인 가전마다 **가상**(트윈 시뮬레이터 값을 읽음) 또는 **신호 없음**(상태를 「모름」으로 두고 사진·질문으로만 알아냄). 명령은 둘 다 트윈에서 실행된다. 신호 없는 기기는 에이전트·대시보드 카드·3D 뷰어 모두 새 상태를 받지 않는다.
-3. **위치 동기화**: 3D에서 폰 기준점 A·B(아래 "벽 대기")와 배치 보정 저장·되돌리기, 폰 주소. 건너뛰면 폰 사진에 위치가 붙지 않는다(`pose_note: not_aligned`).
+3. **운영 모드**: 아래 "운영 모드". 기본은 시험 모드.
+4. **위치 동기화**: 3D에서 폰 기준점 A·B(아래 "벽 대기")와 배치 보정 저장·되돌리기, 폰 주소. 건너뛰면 폰 사진에 위치가 붙지 않는다(`pose_note: not_aligned`).
 
-- 고른 것은 `runtime/setup.json`과 `runtime/homes/<id>/signals.json`에 남아 다음 시작 때 그대로 쓴다. 저장한 집이 없으면 `HOME_ID`(없으면 기본 집)로 뜬다.
+- 고른 것은 `runtime/setup.json`(집·끝냄·모드), `runtime/homes/<id>/signals.json`(출처), `runtime/homes/<id>/thinq.json`(ThinQ 짝)에 남아 다음 시작 때 그대로 쓴다. 저장한 집이 없으면 `HOME_ID`(없으면 기본 집)로 뜬다.
 - 테스트·데모(`startServer`)는 이 파일을 읽지도 쓰지도 않는다.
+
+## 운영 모드 (시험 · 실제)
+
+계획: [2026-11-06-control-mode](superpowers/plans/2026-11-06-control-mode.md).
+
+- **시험 모드**(기본): 가전을 트윈에서만 다룬다(가상 Matter 기기). ThinQ를 한 번도 부르지 않는다.
+- **실제 모드**: 설정에서 짝지은 에어컨·냉장고만 ThinQ로 실제 가전을 읽고 다룬다. 짝짓지 않은 기기는 가상 그대로다.
+  - 읽기: 켤 때와 `THINQ_POLL_MS`마다 읽어 트윈에 비춘다. 기기 상태에 `readback: { source: "thinq", deviceId, at }`이 붙는다. 처음 읽기 전에는 「모름」.
+  - 명령: 정책(승인) → ThinQ에서 지금 상태 읽기 → 이미 같으면 보내지 않음 → 한 단계씩 보냄 → 다시 읽어 같으면 완료(`outcome: "done"`, 200). 받았지만 다시 읽은 값이 다르면 확인 안 됨(`unverified`, 202), 거부하면 실패(`failed`, 400), 지금 상태를 못 읽으면 보내지 않음(`not_sent`, 400). 같은 기기의 앞 명령이 끝나기 전 명령은 거절한다.
+  - 꺼진 에어컨에 냉난방 설정을 보내면 먼저 켜고, 켜짐을 확인한 뒤 설정을 보낸다.
+  - 냉장고는 문 상태만 읽는다(문 닫기 명령은 ThinQ에 없다). 실제 가전 값(센서)은 화면·API로 바꿀 수 없다.
+- 토큰은 `THINQ_TOKEN` 환경변수(`.env`)에만 둔다. 로그·오류 글·응답에 나오지 않는다.
+- 저장한 모드가 실제인데 토큰이 없으면 시험 모드로 뜬다.
+- ThinQ 형식은 LG 공식 SDK(github.com/thinq-connect/pythinqconnect)를 따른다. 실제 연결 때 확인할 것은 계획서 「실제 연결 때 확인할 것」.
 
 ## 집 고르기와 배치 보정
 

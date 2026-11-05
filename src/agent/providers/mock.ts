@@ -355,6 +355,7 @@ export class MockProvider implements LlmProvider {
       if (r.pendingApproval) asks.push(askApproval(r.pendingApproval.reason));
       else if (!r.ok) errors.push(r.error ?? `${a.device.label}: 실패했어요.`);
       else if (r.state === "모름") lines.push(r.message ?? `${a.device.label}: 신호가 없어 상태를 몰라요.`);
+      else if (r.unverified) lines.push(r.message ?? `${a.device.label}: 실제로 바뀌었는지 확인하지 못했어요.`);
       else if (r.command) {
         const key = `${a.device.kind}|${JSON.stringify(r.command)}`;
         const g = done.get(key) ?? { labels: [], kind: a.device.kind, cmd: r.command };

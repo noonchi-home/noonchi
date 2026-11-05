@@ -15,6 +15,12 @@ export interface SetupApi {
   chooseHome(body: Record<string, unknown>): Promise<object>;
   setSources(body: Record<string, unknown>): object;
   finish(body: Record<string, unknown>): object;
+  /** 운영 모드(test·live). live는 confirm: true와 ThinQ 토큰이 있어야 한다. */
+  setMode(body: Record<string, unknown>): object;
+  /** 실제 모드에서만 ThinQ 기기 목록. */
+  thinqDevices(): Promise<object>;
+  /** 에어컨·냉장고 ↔ ThinQ 기기 짝. */
+  setPairs(body: Record<string, unknown>): object;
 }
 
 export interface ShellOptions {
@@ -57,6 +63,9 @@ export function createShell(opts: ShellOptions): Shell {
       else if (req.method === "POST" && path === "/api/setup/home") body = await opts.setup.chooseHome(await readJson(req));
       else if (req.method === "POST" && path === "/api/setup/devices") body = opts.setup.setSources(await readJson(req));
       else if (req.method === "POST" && path === "/api/setup/done") body = opts.setup.finish(await readJson(req));
+      else if (req.method === "POST" && path === "/api/setup/mode") body = opts.setup.setMode(await readJson(req));
+      else if (req.method === "GET" && path === "/api/setup/thinq") body = await opts.setup.thinqDevices();
+      else if (req.method === "POST" && path === "/api/setup/pairs") body = opts.setup.setPairs(await readJson(req));
       else throw new HttpError(404, `없는 API입니다: ${path}`);
       sendJson(res, 200, body);
     } catch (e) {

@@ -73,14 +73,17 @@ interface DeviceState { id: string; online: boolean;
   twin: Record<string, unknown>;              // twin-studio state 값 (scene.json states와 같은 키/값)
   matter: Record<string, unknown>;            // 보기 좋은 Matter 속성 요약 (onOff, level, lockState, fanMode, operationalState, setpoint...)
   updatedAt: string;
-  signal?: "none"; }                          // 신호 없는 기기: 상태를 모름(twin·matter 비움, 아래 「설정 흐름」)
+  signal?: "none";                            // 신호 없는 기기: 상태를 모름(twin·matter 비움, 아래 「설정 흐름」)
+  readback?: { source: "thinq"; deviceId: string; at: string }; } // 실제 가전(ThinQ)에서 읽은 값(아래 「운영 모드」)
 type Command =
   | { type: "on" } | { type: "off" } | { type: "level"; percent: number }
   | { type: "climate"; mode?: "cool" | "heat" | "auto" | "dry" | "fan"; setpointC?: number; fan?: "low" | "medium" | "high" | "auto" }
   | { type: "covering"; openPercent: number } | { type: "lock" } | { type: "unlock" }
   | { type: "start" } | { type: "stop" } | { type: "pause" } | { type: "valve"; open: boolean };
 interface CommandResult { ok: boolean; state?: DeviceState; error?: string;
-  needsConfirmation?: { token: string; reason: string } }
+  needsConfirmation?: { token: string; reason: string };
+  outcome?: "done" | "unverified" | "failed" | "not_sent";        // ThinQ 명령 결과(아래 「운영 모드」)
+  execution?: { id: string; route: "thinq"; target: string } }
 interface DeviceHub {
   start(): Promise<void>; stop(): Promise<void>;
   list(): DeviceSpec[]; get(id: string): DeviceState | undefined; states(): DeviceState[];
@@ -188,7 +191,7 @@ interface DeviceHub {
 
 **A. 집 실행 묶음** (`src/server/home.ts`): 집 하나에 딸린 허브·정책·에이전트·배치 편집기·기준점·폰 서버·두뇌·앱. 집을 바꾸면 통째로 닫고 새로 만든다. 본 서버 포트는 껍데기 서버(`src/server/shell.ts`)가 계속 잡고 `/api/setup*`만 직접 처리하며, 나머지 요청과 `/events`는 지금 묶음의 앱으로 넘긴다. 폰 서버는 처음 잡은 포트를 다시 쓴다. 바꾸는 동안 다른 API는 503, 설정 화면 파일은 그대로 나온다. 실패하면 이전 집으로 되돌린다.
 
-**B. 신호 출처** (`src/hub/signals.ts`, 구현명세서 6.3 정보 확보 수단·7.1 `read_appliance`): 기기마다 `virtual`(트윈 시뮬레이터) 또는 `none`(신호 없음). 다음에 `{ kind: "thinq", deviceId }`(실제 가전 읽기 전용)를 더한다.
+**B. 신호 출처** (`src/hub/signals.ts`, 구현명세서 6.3 정보 확보 수단·7.1 `read_appliance`): 기기마다 `virtual`(트윈 시뮬레이터), `none`(신호 없음), `{ kind: "thinq", deviceId }`(실제 모드에서 ThinQ와 짝지은 기기, 아래 「운영 모드」).
 - 엔진·대시보드는 `SignalHub`로 읽는다. `none` 기기는 상태가 `{ twin: {}, matter: {}, signal: "none" }`(모름)이고, 바뀌어도 `/events`에 보내지 않는다. 출처를 바꾸면 그 기기 상태를 한 번 보낸다.
 - 명령(가상 실행)은 숨은 세계(안쪽 허브)에서 그대로 실행된다. `none` 기기는 결과도 모르므로, 숨은 세계가 상태 때문에 거절해도 `{ ok: true, state: 모름 }`으로 돌려준다(거절 이유가 숨은 상태를 드러냄). 정책의 사전 검사는 모르는 상태로 하지 않는다.
 - 에이전트 도구는 `state: "모름"`, `signal: "none"`을 보고, 명령·승인 답은 「보냈지만 결과는 확인하지 못했어요」다.
