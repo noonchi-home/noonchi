@@ -7,6 +7,7 @@ import { Agent } from "../agent/agent.js";
 import { Policy } from "../agent/policy.js";
 import { createProvider } from "../agent/providers/index.js";
 import { createLiveBrain, type CreateLiveBrainOptions, type LiveBrain } from "../brain/live.js";
+import type { ControlMode } from "../contract/setup.js";
 import { surfacesFrom, type Surface } from "../brain/presence.js";
 import { SignalHub, type SignalSource } from "../hub/signals.js";
 import type { DeviceHub } from "../hub/types.js";
@@ -21,6 +22,7 @@ import { orderPhoneUrls } from "../phone/links.js";
 import { createPhoneServer, type PhoneServer } from "../phone/server.js";
 import { estimateViewpoint } from "../phone/session.js";
 import { TouchStore, eyeHeightOf, floorLookup, homeBounds, readTouchPoints, touchPointsPath, touchTargets, type TouchPoint } from "../phone/touch.js";
+import type { ThinqLink } from "../thinq/link.js";
 import { createApp, type TwinHomeApp } from "./app.js";
 import { startHub, type HubKind, type MatterTransport, type StartHubOptions } from "./hubFactory.js";
 
@@ -42,6 +44,8 @@ export interface HomeContext {
   brain?: CreateLiveBrainOptions["inject"];
   /** 폰 포트로 이어진 https 주소 찾기(tailscale serve). */
   servedPhoneUrls?: (phonePort: number) => Promise<string[]>;
+  /** 지금 운영 모드(/api/health). 없으면 시험 모드. */
+  mode?: () => ControlMode;
 }
 
 export interface HomeRuntime {
@@ -62,6 +66,8 @@ export interface HomeRuntime {
   phoneUrls: string[];
   /** 폰 서버가 실제로 잡은 포트(PHONE_PORT가 없으면 undefined). */
   phonePort?: number;
+  /** ThinQ 연결을 바꾼다(실제 모드). 이전 연결은 멈추고, 새 연결은 붙인 뒤 읽기를 시작한다. null이면 뗀다. */
+  setLink(link: ThinqLink | null): void;
   close(): Promise<void>;
 }
 
@@ -149,7 +155,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     let phoneUrls: string[] = [];
     app = createApp({
       hub: signals, policy, agent, rooms: twin.rooms, twinDir, viewerDir: home.viewerDir, libraryDir: home.libraryDir, hubKind, log, eye: feed, brain: brain ?? undefined,
-      home: { id: home.id, name: home.name }, homes: listHomes(twin.dir), layout: layout?.editor, phoneUrls: () => phoneUrls,
+      home: { id: home.id, name: home.name }, homes: listHomes(twin.dir), layout: layout?.editor, phoneUrls: () => phoneUrls, mode: ctx.mode,
       touch: touchStore && { get: () => touchStore.get(), save: (raw) => touchStore.save(raw), clear: () => touchStore.clear(), eyeHeightM },
     });
     const appNow = app;
@@ -205,16 +211,24 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     });
     let closed = false;
     const phoneNow = phone;
+    let link: ThinqLink | null = null;
     return {
       twin, hub: started.hub, signals, hubKind, transport: started.transport, warnings: started.warnings, policy, agent, layout: layout?.editor,
       touch: touchStore, app: appNow, twinDir, phoneUrls, phonePort,
+      setLink(next) {
+        link?.stop();
+        link = closed ? null : next;
+        signals.setLink(link);
+        link?.start().catch((e) => log(`[경고] ThinQ 읽기를 시작하지 못했어요: ${(e as Error).message}`));
+      },
       async close() {
         if (closed) return;
         closed = true;
         // 한 단계가 실패해도 나머지(특히 폰 포트·허브)는 닫는다. 새 집이 같은 포트를 다시 잡아야 한다
         const steps: [string, () => unknown][] = [
           ["초점", unsubFocus], ["두뇌", () => live?.close()], ["눈 화면", () => feed?.close()],
-          ["폰 서버", () => phoneNow?.close()], ["앱", () => appNow.close()], ["배치", () => layout?.editor.close()], ["허브", () => signals.stop()],
+          ["폰 서버", () => phoneNow?.close()], ["앱", () => appNow.close()], ["배치", () => layout?.editor.close()], ["ThinQ", () => link?.stop()],
+          ["허브", () => signals.stop()],
         ];
         for (const [name, step] of steps) {
           try {

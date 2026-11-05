@@ -6,6 +6,7 @@ import { StatusPill } from "../src/panels/StatusPill";
 const health: HealthView = {
   ok: true, devices: 65, hub: "memory", transport: null, provider: "mock", model: "rules-ko", twin: true, eye: true,
   home: { id: "apartment", name: "마곡 아파트" }, phone_urls: [], brain: false,
+  mode: "test",
 };
 
 describe("StatusPill", () => {

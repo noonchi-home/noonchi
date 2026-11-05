@@ -1,6 +1,7 @@
 // 서버↔화면 메시지 계약(WebSocket /events, /api 응답). 순수 타입만 둔다: ui/가 이 파일을 그대로 가져다 쓴다.
 // 바꾸면 ui/src/lib/messages.ts의 parseMessage와 화면 테스트를 같이 고친다.
 import type { Command, DeviceSpec, DeviceState } from "../hub/types.js";
+import type { ControlMode } from "./setup.js";
 
 // 좌표
 
@@ -145,6 +146,8 @@ export interface HealthView {
   /** 폰에서 열 주소들(와이파이·VPN 어댑터마다 하나). */
   phone_urls: string[];
   brain: boolean;
+  /** 운영 모드: test 시험(트윈만), live 실제(짝지은 가전은 ThinQ). */
+  mode: ControlMode;
 }
 
 // 초점
