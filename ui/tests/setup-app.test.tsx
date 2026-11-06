@@ -461,6 +461,59 @@ describe("설정 4단계: 3D 트윈 보기", () => {
     ]);
     expect(viewer.setWallMode).not.toHaveBeenCalled();
   });
+
+  const openTwin = async () => {
+    open("#position", setupView({ position: { touch: true, layout: false, phone_urls: [] } }), {
+      "HEAD /twin/viewer/": () => [200, null],
+      "GET /api/phone/touch-points": () => [200, { ok: true, points: null, mode: "floor", eye_height_m: 1.5, distance_m: null }],
+    });
+    return (await screen.findByTitle("3D 집 트윈")) as HTMLIFrameElement;
+  };
+  /** 3D를 가리는 덮개: 불투명해서 뒤의 뷰어 막대·패널이 비치지 않고, 마우스를 막는다. */
+  const expectCover = (text: string) => {
+    const cover = screen.getByText(text);
+    expect(cover).toHaveClass("bg-canvas");
+    expect(cover.className).not.toMatch(/pointer-events-none|bg-transparent|bg-canvas\//);
+  };
+
+  it("뷰어가 집을 다 불러오고 막대를 숨기고 배지를 끌 때까지 불투명한 덮개로 가리고, 그 뒤에 걷는다", async () => {
+    const frame = await openTwin();
+    expectCover("3D 트윈 불러오는 중…");
+    const covered = () => screen.queryByText("3D 트윈 불러오는 중…") !== null;
+    const refits: boolean[] = [];
+    frame.contentWindow!.addEventListener("resize", () => refits.push(covered()));
+    let finish!: () => void;
+    let badgesCovered: boolean | null = null;
+    const viewer: Loading = {
+      ready: new Promise<void>((r) => { finish = r; }), loading: true, results: {},
+      setBadges: vi.fn(() => { badgesCovered = covered(); }), setWallMode: vi.fn(), setTouchPoints: vi.fn(),
+    };
+    (frame.contentWindow as unknown as { aptViewer: Loading }).aptViewer = viewer;
+    act(() => { frame.dispatchEvent(new Event("load")); });
+    await act(async () => { await new Promise((r) => setTimeout(r, 250)); });
+    expectCover("3D 트윈 불러오는 중…");
+    viewer.results.mode = "scene";
+    viewer.loading = false;
+    finish();
+    await waitFor(() => expect(screen.queryByText("3D 트윈 불러오는 중…")).not.toBeInTheDocument());
+    expect(badgesCovered).toBe(true);
+    expect(refits.length).toBeGreaterThan(1);
+    expect(refits.at(-1)).toBe(true);
+    expect(screen.queryByText("3D 트윈을 불러오지 못했어요.")).not.toBeInTheDocument();
+  });
+
+  it("뷰어가 집을 불러오지 못하면 덮개에 못 불러왔다고 띄운다", async () => {
+    const frame = await openTwin();
+    const viewer: Loading = {
+      ready: Promise.resolve(), loading: false, results: { error: "scene.json 없음" },
+      setBadges: vi.fn(), setWallMode: vi.fn(), setTouchPoints: vi.fn(),
+    };
+    (frame.contentWindow as unknown as { aptViewer: Loading }).aptViewer = viewer;
+    act(() => { frame.dispatchEvent(new Event("load")); });
+    await waitFor(() => expectCover("3D 트윈을 불러오지 못했어요."));
+    expect(screen.queryByText("3D 트윈 불러오는 중…")).not.toBeInTheDocument();
+    expect(viewer.setBadges).not.toHaveBeenCalled();
+  });
 });
 
 describe("다른 화면에서 집을 바꾸면", () => {

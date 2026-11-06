@@ -55,12 +55,13 @@ interface LayoutView {
   dirty: boolean;
 }
 
-/** 3D 트윈 iframe. 뜨면 뷰어 위 막대를 숨기고, 집을 다 불러오면 배지를 끄고 캔버스를 다시 맞춘 뒤 onReady. */
+/**
+ * 3D 트윈 iframe. 뜨면 뷰어 위 막대를 숨기고, 집을 다 불러오면 배지를 끄고 캔버스를 다시 맞춘 뒤 onReady.
+ * 그때까지 불투명한 덮개로 가린다. 뷰어는 load 전부터 막대·가전 패널을 그리고, embed 접기는 장면을 받은 뒤에 한다.
+ */
 function TwinBox({ home, frame, onReady }: { home: string; frame: React.RefObject<HTMLIFrameElement | null>; onReady: () => void }) {
-  const [twin, setTwin] = useState<"checking" | "none" | "ready">("checking");
-  const [loaded, setLoaded] = useState(false);
+  const [twin, setTwin] = useState<"checking" | "none" | "loading" | "failed" | "ready">("checking");
   const onLoad = () => {
-    setLoaded(true);
     const f = frame.current;
     const win = f?.contentWindow;
     if (!f || !win) return;
@@ -71,28 +72,27 @@ function TwinBox({ home, frame, onReady }: { home: string; frame: React.RefObjec
         v.setBadges(false);
         if (f.contentDocument) hideViewerBar(f.contentDocument); // 다 불러온 집을 막대 없는 캔버스에 다시 맞춘다
         onReady();
+        setTwin("ready");
       })
-      .catch(() => {}); // 뷰어가 없으면 고르기 단추가 알린다
+      .catch(() => { if (frame.current === f) setTwin("failed"); });
   };
   useEffect(() => {
     let live = true;
     setTwin("checking");
-    setLoaded(false);
-    fetch("/twin/viewer/", { method: "HEAD" }).then((r) => r.ok).catch(() => false).then((ok) => { if (live) setTwin(ok ? "ready" : "none"); });
+    fetch("/twin/viewer/", { method: "HEAD" }).then((r) => r.ok).catch(() => false).then((ok) => { if (live) setTwin(ok ? "loading" : "none"); });
     return () => { live = false; };
   }, [home]);
+  const cover = { checking: "3D 트윈 불러오는 중…", loading: "3D 트윈 불러오는 중…", none: "3D 트윈을 찾을 수 없어요.", failed: "3D 트윈을 불러오지 못했어요.", ready: null }[twin];
   return (
     <div className="relative min-h-[360px] overflow-hidden rounded-xl border border-glass-line bg-black/30">
-      {twin === "ready" && (
+      {twin !== "checking" && twin !== "none" && (
         <iframe
           ref={frame} title="3D 집 트윈" src={`${TWIN_SRC}&home=${encodeURIComponent(home)}`}
           className="absolute inset-0 size-full border-0" onLoad={onLoad}
         />
       )}
-      {!(twin === "ready" && loaded) && (
-        <p className="absolute inset-0 m-0 grid place-items-center p-4 text-center text-ink-dim">
-          {twin === "none" ? "3D 트윈을 찾을 수 없어요." : "3D 트윈 불러오는 중…"}
-        </p>
+      {cover && (
+        <p className="absolute inset-0 m-0 grid place-items-center bg-canvas p-4 text-center text-ink-dim">{cover}</p>
       )}
     </div>
   );
