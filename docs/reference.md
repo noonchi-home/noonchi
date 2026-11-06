@@ -20,8 +20,9 @@ Node 22 이상. twin-studio 레포가 옆 폴더(`../twin-studio`)에 있어야 
 
 ```bash
 npm install
+npm --prefix ui install # 화면(React) 패키지
 cp .env.example .env    # 선택. 키는 .env에만 넣는다(git에 올리지 않음). 키가 없으면 mock 에이전트
-npm start               # http://127.0.0.1:8200  (허브 matter, network 전송)
+npm start               # 화면을 빌드하고 http://127.0.0.1:8200  (허브 matter, network 전송)
 ```
 
 브라우저로 <http://127.0.0.1:8200/>을 열고 채팅에 "거실 불 켜고 TV 꺼줘", "에어컨 24도로 맞춰줘", "현관문 열어줘"(승인 후 실행)를 입력한다. 가운데 3D 트윈에 바로 보인다(아래 "3D 트윈 연결").
@@ -41,7 +42,8 @@ src/
   server/app.ts         REST + WebSocket + 정적 파일
   server/main.ts        npm start 진입점(.env, 출력, 종료 신호)
   mcp/                  MCP stdio 서버(server.ts)와 REST 백엔드(client.ts)
-web/                    웹 화면(빌드 없는 ES 모듈)
+ui/                     대시보드·설정 화면(React+TypeScript, 빌드 결과 ui/dist/)
+web/phone/              폰 화면(빌드 없는 ES 모듈)
 scripts/demo.ts         npm run demo
 scripts/scenarios.ts    데모 시나리오(데모와 e2e 테스트가 함께 씀)
 scripts/matter-smoke.ts Matter 연기 시험
@@ -52,8 +54,9 @@ tests/                  vitest (helpers/: 작은 집, REST·WS·MCP 도우미)
 
 | 명령 | 하는 일 |
 |---|---|
-| `npm start` | 서버 실행(기본 포트 8200, 허브 matter/network). Ctrl+C로 정상 종료 |
-| `npm run dev` | 서버 실행 + 파일이 바뀌면 재시작 |
+| `npm start` | 화면 빌드(`npm run ui:build`) 뒤 서버 실행(기본 포트 8200, 허브 matter/network). Ctrl+C로 정상 종료 |
+| `npm run dev` | 화면 빌드 뒤 서버 실행 + 서버 파일이 바뀌면 재시작 |
+| `npm run ui:dev` | 화면 개발 서버(5173, API는 8200으로 넘김) |
 | `npm test` | vitest 전체(단위 + Matter 통합 + e2e, 실제 커미셔닝 포함) |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run demo` | 임의 포트에 서버(matter/local + mock)를 띄워 시나리오 5개(6단계)를 REST·WS로 돌리고 표를 찍는다. 모두 통과면 종료 코드 0 |
@@ -174,21 +177,16 @@ twin-home 서버: http://127.0.0.1:8200  (허브 matter/network, 에이전트 mo
 | `GET /events` (WebSocket) | | 붙으면 `{type:"hello", home}`, 모든 기기의 `{type:"state", state}`, 지금 배치 보정의 `{type:"layout"}`들. 이후 바뀔 때마다 `{type:"state"}`, `{type:"agent", event:"action"\|"reply"\|"pending"\|"confirmed"\|"cancelled", ...}`, `{type:"layout"}`, `{type:"focus"}`, `{type:"eye"}`, `{type:"photo"}` (모양은 [plan.md](plan.md)) |
 
 - `command`는 `docs/plan.md`의 `Command` 객체다. 줄임으로 문자열(`"on"`, `"off"`, `"lock"` …)도 받는다.
-- 정적 파일: `/`는 `web/`이다. `/twin/`은 고른 집의 twin-studio 산출물 폴더(아파트는 `apartment/`, 원룸 예시는 `homes/oneroom/`), `/twin/viewer/`는 모든 집이 함께 쓰는 뷰어(`homes.json` viewer), `/twin/lib/`은 모든 종류의 GLB(`homes.json` library)다. 경로 탈출(`..`)은 막는다.
+- 정적 파일: `/`·`/setup/`은 React 빌드 `ui/dist/`다. `/twin/`은 고른 집의 twin-studio 산출물 폴더(아파트는 `apartment/`, 원룸 예시는 `homes/oneroom/`), `/twin/viewer/`는 모든 집이 함께 쓰는 뷰어(`homes.json` viewer), `/twin/lib/`은 모든 종류의 GLB(`homes.json` library)다. 경로 탈출(`..`)은 막는다.
 - 보안: 기본 바인드는 `127.0.0.1`. 브라우저 출처는 `localhost`·`127.0.0.1`·`[::1]`만 허용한다(CORS, WebSocket). 다른 출처의 POST(페어링 창 열기 포함)는 403이다. 인증은 없다.
 
-### 웹 화면 (web/)
+### 웹 화면 (ui/)
 
-빌드 없이 쓰는 ES 모듈(`index.html`, `app.js`, `style.css`)이다. 밝은 화면과 어두운 화면, 폰 너비(390px)를 지원한다.
+React+TypeScript 화면(`ui/`, Vite 다중 페이지)이다. 서버는 빌드 결과 `ui/dist/`를 내준다. `npm start`·`npm run dev`가 먼저 `npm run ui:build`로 빌드하고, 빌드 전이면 화면 요청은 503(「화면이 아직 빌드되지 않았어요. npm run ui:build」)이다. 화면만 고칠 때는 `npm run ui:dev`(5173, `/api`·`/twin`·`/events`를 8200으로 넘김).
 
-- **배치**: 넓은 화면(861px 이상)은 왼쪽 큰 칸이 **3D 트윈**(클로이드가 한 일의 결과), 오른쪽 위가 **클로이드의 눈**(폰 카메라 실시간, 엔진 입력 아님, 폰이 없으면 안내), 오른쪽 아래가 **추론 과정**이다. 860px 이하는 `3D 트윈 / 클로이드의 눈 / 추론 과정` 탭(가로 스크롤 없음).
-- **기기 카드**: 결과 전용 화면이라 기본으로 숨긴다. 헤더 **기기 카드**로 왼쪽 서랍을 연다. 밝기·온도·바람 세기·커튼 %, Matter 속성 요약, 센서 시뮬레이션은 여기서만 보고 바꾼다.
-- **위 상태줄**: 실시간 연결, `허브 matter · network`(전송 포함), 에이전트 공급자, 고른 집, **기기 카드**, **설정 다시 하기**(`/setup/`). `/twin/`이 없으면 토글 대신 "3D 트윈 없음" 표시가 뜨고 3D 칸은 숨긴다(폰 3D 탭에는 이유를 적는다).
-- **기기 패널**: 방 탭, 방별 기기 카드(상태 칩, Matter 요약 `onOff=true level=100` 등, 빠른 제어). 센서는 읽기 전용이고 "센서 시뮬레이션"을 켜면 `/api/sensors`로 문 열림·충전을 바꿀 수 있다. 신호 없는 기기는 `모름 · 신호 없음` 칩만 보인다(명령은 보낼 수 있다).
-- **설정 화면** (`web/setup/`): 아래 "설정 흐름". 설정을 안 끝냈으면(`npm start`) 대시보드가 먼저 `/setup/`으로 보낸다.
-- **3D 트윈**: twin-studio 뷰어를 iframe(`/twin/viewer/?live=auto&embed=1`)으로 넣는다. "새 창"으로 따로 열 수 있다.
-- **추론 과정**: 요청마다 카드 하나. 접으면 요청과 답 한 줄(상태 완료·승인 대기·실패), 펴면 에이전트가 거친 단계(도구 이름을 쉬운 말로, 대상, 결과와 이유), 답, 초점 대상이 순서대로 보인다. 승인·취소 버튼은 그 카드 안에 있고, 어디서 승인하든(폰·"응") 결과가 그 카드에 남는다. 폰 대화(🎙)·사진(📷)·배치 저장·되돌리기도 같은 흐름에 쌓인다. 아래 추천 요청은 고른 집의 기기 이름으로 만든다.
-- **클로이드의 눈**: 폰 카메라 실시간 화면. 클로이드가 방금 다룬 물건이 있으면 캡션이 `클로이드 주목 · 냉장고`로 바뀌고, 화면 프레임에도 폰이 그린 고리가 보인다.
+- **대시보드** (`/`): 3D 트윈이 화면 전체 배경이고 그 위에 패널이 떠 있다. 위 가운데 상태 알약(연결·집·운영 모드·허브·에이전트·설정 다시 하기), 왼쪽 위 클로이드의 눈(접기), 오른쪽 판단 기록(요청마다 카드, 「폰 화면」 탭). 입력창이 없다. 요청·승인은 폰에서 음성으로 한다. 말풍선은 에이전트가 판단하면서 확인한 기기·물건에만 뜬다. 모양은 `?look=parts`(기본)·`?look=glass`.
+- **설정 화면** (`/setup/`): 아래 "설정 흐름". 설정을 안 끝냈으면(`npm start`) 서버가 `/`를 `/setup/`으로 보낸다(302).
+- **폰 화면** (`web/phone/`): 폰 서버가 `/phone/`으로 내준다(빌드 없는 ES 모듈).
 - WebSocket `/events`로 실시간 반영하고, 끊기면 다시 연결한다.
 
 ## 3D 트윈 연결

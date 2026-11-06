@@ -2,7 +2,7 @@
 
 | 규칙 | 막는 장치 |
 |---|---|
-| 대시보드·설정 화면은 React+TypeScript(`ui/`)로 만든다. 빌드 없는 HTML·JS 화면을 새로 만들지 않는다(폰 화면 `web/phone/`은 옮기기 전까지 예외). 21st.dev 부품은 React 그대로 가져다 쓴다. | 없음. `docs/superpowers/plans/2026-11-06-react-ui.md` Task 10에서 옛 화면을 지우면 구조로 막힌다. |
+| 대시보드·설정 화면은 React+TypeScript(`ui/`)로 만든다. 빌드 없는 HTML·JS 화면을 새로 만들지 않는다(폰 화면 `web/phone/`은 옮기기 전까지 예외). 21st.dev 부품은 React 그대로 가져다 쓴다. | 구조: 서버는 React 빌드 `ui/dist/`만 내준다(`src/server/app.ts` `DEFAULT_WEB_DIR`, `tests/server.test.ts` 「기본 화면 폴더는 ui/dist」). `web/`에 화면을 만들어도 나오지 않는다. 21st.dev 부품을 React로 쓰는지는 막는 장치 없음. |
 | 대시보드(허브 화면)에는 입력창을 두지 않는다. 요청과 질문·답은 거주자와 클로이드가 폰에서 음성으로 주고받고, 허브에는 추론 과정과 판단 과정만 보인다. | `ui/tests/no-input.test.tsx`(두 모양 모두 input·textarea·select·form·contenteditable이 없는지 본다). `npm test`가 돌린다. |
 | 시안으로 보여 준 21st.dev 부품은 실제 코드를 받아 보이는 모양(유리 효과·색·여백·꾸밈)까지 옮긴다. 틀만 따고 꾸밈을 지우지 않는다. 시안에 그림만 쓴 부품도 쓰기로 했으면 코드를 받는다. | 없음. |
 | 트윈 위 말풍선·표시는 에이전트가 판단하면서 확인한 기기·물건에만 띄운다. 모든 기기에 늘 띄우지 않고, 점선 테두리를 쓰지 않는다. 표시용 말풍선은 마우스를 받지 않는다(`pointer-events-none`). | `ui/tests/bubble-layer.test.tsx`(확인 목록에 없는 기기는 그리지 않음, 점선 없음, 말풍선 `pointer-events-none`)·`ui/tests/checks.test.ts`(확인 목록 규칙). `npm test`가 돌린다. |

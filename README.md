@@ -97,7 +97,7 @@ Phone (web/phone/)       — CLOiD's eye: WebXR pose + aim point · camera frame
         ↓  WebSocket /phone/events (Wi-Fi)
 Phone server (src/phone) — Align to the twin (room corners) · eye pose · "here" · voice relay · focus · MJPEG feed · stats
         ↓
-Web UI (web/)            — 3D twin · CLOiD's eye · reasoning cards · device-card drawer
+Web UI (ui/, React)      — 3D twin · status pill · CLOiD's eye · decision log (no input)
         ↓  REST / WebSocket /events (127.0.0.1)
 Server (src/server)      — Node.js 22
 ├── Agent (src/agent)    — Decide: LLM tool loop (OpenAI · Anthropic · mock), device + layout tools, thought and observation per step
@@ -133,8 +133,9 @@ Requires Node.js 22+ and [twin-studio](https://github.com/2026-SWE/twin-studio) 
 
 ```bash
 npm install
+npm --prefix ui install  # dashboard and setup pages (React)
 cp .env.example .env   # optional: OPENAI_API_KEY or ANTHROPIC_API_KEY
-npm start              # http://127.0.0.1:8200
+npm start              # builds the pages, then http://127.0.0.1:8200
 ```
 
 Without an API key, the rule-based mock agent runs. Try "TV 켜줘", "에어컨 24도로 맞춰줘" or "현관문 열어줘" (asks for approval).
