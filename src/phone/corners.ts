@@ -1,6 +1,7 @@
 // 벽 하나로 폰 기준점 A·B 구석 채우기(docs/superpowers/plans/2026-11-06-auto-corners.md).
 // 방 다각형은 벽 중심선이라 구석은 방 쪽 벽 면끼리 만나는 점으로 구한다. 면은 뷰어 snapToWall과 같다:
-// 벽은 중심선 + 법선 × 두께/2, 고체(샤프트·기둥)는 법선이 같은 다각형 변.
+// 벽은 중심선 + 법선 × 두께/2, 고체(샤프트·기둥)는 법선이 같은 다각형 변. 구석은 면 중 그 방과 맞닿고 고체에 가리지 않은
+// 구간끼리만 구한다(여러 방이 함께 쓰는 벽).
 // A: 누른 면을 따라 양쪽으로 가다 처음 만나는 같은 방 면과의 교점 중 가까운 것. B: 누른 점에서 방 안쪽으로 쏜 선이
 // 방을 나가기 전에 닿는 맞은편 면의 구석 중 A에서 먼 것. 벽 가운데 점은 실제 집에서 정확히 찾기 어려워 구석을 쓴다.
 
@@ -105,6 +106,46 @@ function faceOf(room: string, p: V, q: V, n: V, half: number): Face | null {
   return len > 1e-6 ? { room, a: p, t: [(q[0] - p[0]) / len, (q[1] - p[1]) / len], len, n, half } : null;
 }
 
+/** 고체(샤프트·기둥) 다각형들. */
+function planSolids(plan: HomePlan): V[][] {
+  return plan.walls
+    .filter((w) => !(isPair(w.a) && isPair(w.b) && finite(w.thickness) && w.thickness > 0) && Array.isArray(w.polygon) && w.polygon.length >= 3 && w.polygon.every(isPair))
+    .map((w) => w.polygon!.map((p) => [p[0]!, p[1]!] as V));
+}
+
+/**
+ * 면 f 중 방 쪽으로 1cm 들어간 점이 그 방 다각형 안이고 고체 밖인 구간들. 여러 방이 함께 쓰는 벽 면은 벽 전체 길이라
+ * 이렇게 잘라야 그 방에 없는 구석(다른 방 쪽에서 두 면이 만나는 점)이 생기지 않는다. 방 다각형이 없으면 그대로.
+ */
+function clipToRoom(f: Face, polygon: number[][] | undefined, solids: V[][]): Face[] {
+  if (!Array.isArray(polygon) || polygon.length < 3 || !polygon.every(isPair)) return [f];
+  const o = along(f.a, f.n, ON_FACE_M);
+  const cuts = [0, f.len];
+  for (const poly of [polygon, ...solids]) {
+    for (let i = 0; i < poly.length; i++) {
+      const p = poly[i]!, q = poly[(i + 1) % poly.length]!;
+      const e: V = [q[0]! - p[0]!, q[1]! - p[1]!];
+      const c = cross(f.t, e);
+      if (Math.abs(c) < 1e-12) continue;
+      const w: V = [p[0]! - o[0], p[1]! - o[1]];
+      const s = cross(w, e) / c, u = cross(w, f.t) / c;
+      if (u >= 0 && u <= 1 && s > 0 && s < f.len) cuts.push(s);
+    }
+  }
+  cuts.sort((x, y) => x - y);
+  const spans: V[] = [];
+  for (let i = 0; i + 1 < cuts.length; i++) {
+    const s1 = cuts[i]!, s2 = cuts[i + 1]!;
+    if (s2 - s1 < 1e-9) continue;
+    const mid = along(o, f.t, (s1 + s2) / 2);
+    if (!insidePolygon(mid, polygon) || solids.some((s) => insidePolygon(mid, s))) continue;
+    const last = spans.at(-1);
+    if (last && s1 - last[1] < 1e-9) last[1] = s2;
+    else spans.push([s1, s2]);
+  }
+  return spans.flatMap(([s1, s2]) => faceOf(f.room, along(f.a, f.t, s1), along(f.a, f.t, s2), f.n, f.half) ?? []);
+}
+
 /** 평면도의 모든 방 쪽 면. */
 function planFaces(plan: HomePlan): Face[] {
   const out: Face[] = [];
@@ -168,9 +209,8 @@ interface Corner {
   at: V;
 }
 
-/** 면 f 줄에서 s0가 든 조각(같은 줄에 이어진 같은 방 면은 한 벽)과 그 위 같은 방 구석들(s 순). s0가 면 위가 아니면 null. */
-function cornersOn(faces: Face[], f: Face, s0: number): { span: V; corners: Corner[] } | null {
-  // 벽 I12와 기둥 S03처럼 한 줄로 이어진 면을 한 벽으로 본다
+/** 면 f 줄 위 같은 방 면 구간들(f 위 거리, 순서대로). 벽 I12와 기둥 S03처럼 한 줄로 이어진 면은 한 구간이다. */
+function lineSpans(faces: Face[], f: Face): V[] {
   const spans = faces
     .filter((g) => dot(g.n, f.n) > 0.999 && Math.abs(dot(sub(g.a, f.a), f.n)) < ON_FACE_M)
     .map((g) => {
@@ -184,47 +224,81 @@ function cornersOn(faces: Face[], f: Face, s0: number): { span: V; corners: Corn
     if (last && s[0] <= last[1] + JOIN_M) last[1] = Math.max(last[1], s[1]);
     else merged.push([s[0], s[1]]);
   }
-  const span = merged.find(([lo, hi]) => s0 >= lo - JOIN_M && s0 <= hi + JOIN_M);
-  if (!span) return null;
-  const corners: Corner[] = [];
-  for (const g of faces) {
-    const c = cross(f.t, g.t);
-    if (Math.abs(c) < MIN_TURN_SIN) continue;
-    const w = sub(g.a, f.a);
-    const s = cross(w, g.t) / c; // f 위 거리
-    const u = cross(w, f.t) / c; // g 위 거리
-    // 면 끝은 벽 중심선 끝이라, 맞닿는 벽 두께 절반만큼은 이어진 것으로 본다(바깥 모서리)
-    const reach = g.half + JOIN_M;
-    if (s < span[0] - reach || s > span[1] + reach) continue;
-    if (u < -(f.half + JOIN_M) || u > g.len + f.half + JOIN_M) continue;
-    if (!corners.some((k) => Math.abs(k.s - s) < ON_FACE_M)) corners.push({ s, reach, at: along(f.a, f.t, s) });
-  }
-  return { span, corners: corners.sort((x, y) => x.s - y.s) };
+  return merged;
+}
+
+/**
+ * 면 f 줄의 한 조각(같은 줄에 이어진 같은 방 면은 한 벽)과 그 위 같은 방 구석들(s 순).
+ * 끝 구석 밖으로 면이 맞닿은 벽 두께만큼만 이어지면 그 끝은 벽 속(lowInWall·highInWall)이다.
+ */
+interface Piece {
+  span: V;
+  corners: Corner[];
+  lowInWall: boolean;
+  highInWall: boolean;
+}
+
+/**
+ * 면 f 줄에서 s0가 든 조각. 끝이 벽 속이면 그 벽 두께 절반만큼 밖도 그 조각이다(뷰어는 벽 중심선 끝까지 붙이고,
+ * 방 다각형이 벽 중심선이라 자른 면도 거기서 끝난다). s0가 면 위가 아니면 null.
+ */
+function cornersOn(faces: Face[], f: Face, s0: number): Piece | null {
+  const piece = (span: V): Piece => {
+    const corners: Corner[] = [];
+    for (const g of faces) {
+      const c = cross(f.t, g.t);
+      if (Math.abs(c) < MIN_TURN_SIN) continue;
+      const w = sub(g.a, f.a);
+      const s = cross(w, g.t) / c; // f 위 거리
+      const u = cross(w, f.t) / c; // g 위 거리
+      // 면 끝은 벽 중심선 끝이라, 맞닿는 벽 두께 절반만큼은 이어진 것으로 본다(바깥 모서리)
+      const reach = g.half + JOIN_M;
+      if (s < span[0] - reach || s > span[1] + reach) continue;
+      if (u < -(f.half + JOIN_M) || u > g.len + f.half + JOIN_M) continue;
+      if (!corners.some((k) => Math.abs(k.s - s) < ON_FACE_M)) corners.push({ s, reach, at: along(f.a, f.t, s) });
+    }
+    corners.sort((x, y) => x.s - y.s);
+    const first = corners[0], last = corners.at(-1);
+    return { span, corners, lowInWall: !!first && first.s - span[0] <= first.reach, highInWall: !!last && span[1] - last.s <= last.reach };
+  };
+  const pieces = lineSpans(faces, f).map(piece);
+  const has = (p: Piece, wide: boolean) => {
+    const lo = wide && p.lowInWall ? Math.max(JOIN_M, p.corners[0]!.reach) : JOIN_M;
+    const hi = wide && p.highInWall ? Math.max(JOIN_M, p.corners.at(-1)!.reach) : JOIN_M;
+    return s0 >= p.span[0] - lo && s0 <= p.span[1] + hi;
+  };
+  return pieces.find((p) => has(p, false)) ?? pieces.find((p) => has(p, true)) ?? null;
 }
 
 /**
  * 면 f 위 s0를 사이에 둔 두 구석 lo(s가 작은 쪽)·hi. 열린 쪽은 null. s0가 면 위가 아니면 null.
- * 끝 구석 밖으로 면이 맞닿은 벽 두께만큼만 이어지면 그 밖은 벽 속이다. 누른 점이 거기면(뷰어는 벽 중심선 끝까지 붙인다)
- * 그 구석 안쪽 조각을 쓴다.
+ * 누른 점이 벽 속인 끝 구석 밖이면 그 구석 안쪽 조각을 쓴다.
  */
 function bracket(faces: Face[], f: Face, s0: number): { lo: Corner | null; hi: Corner | null } | null {
   const on = cornersOn(faces, f, s0);
   if (!on) return null;
-  const { span, corners: cs } = on;
+  const { span, corners: cs, lowInWall, highInWall } = on;
   const first = cs[0], last = cs.at(-1);
   if (!first || !last) return { lo: null, hi: null };
-  const lowInWall = first.s - span[0] <= first.reach;
-  const highInWall = span[1] - last.s <= last.reach;
   let s = s0;
   if (lowInWall && s < first.s) s = first.s;
   if (highInWall && s > last.s) s = last.s;
   const k = cs.findIndex((c) => Math.abs(c.s - s) < SAME_S_M);
-  if (k >= 0) {
-    // 구석 바로 위: 벽 속이 아닌 쪽 조각
-    if (k === cs.length - 1 && highInWall && !(k === 0 && lowInWall)) return { lo: cs[k - 1] ?? null, hi: cs[k]! };
-    return { lo: cs[k]!, hi: cs[k + 1] ?? null };
-  }
-  return { lo: cs.findLast((c) => c.s < s) ?? null, hi: cs.find((c) => c.s > s) ?? null };
+  if (k < 0) return { lo: cs.findLast((c) => c.s < s) ?? null, hi: cs.find((c) => c.s > s) ?? null };
+  // 구석 바로 위: 벽 속이 아닌 쪽 조각. 둘 다 되면 양 끝이 구석인 쪽, 그다음 긴 쪽(벽을 그린 방향과 상관없게)
+  const low = { lo: cs[k - 1] ?? null, hi: cs[k]! }, high = { lo: cs[k]!, hi: cs[k + 1] ?? null };
+  const lowOk = !(k === 0 && lowInWall), highOk = !(k === cs.length - 1 && highInWall);
+  if (lowOk !== highOk) return lowOk ? low : high;
+  if ((low.lo === null) !== (high.hi === null)) return low.lo ? low : high;
+  const lowLen = cs[k]!.s - (low.lo?.s ?? span[0]), highLen = (high.hi?.s ?? span[1]) - cs[k]!.s;
+  return lowLen > highLen ? low : high;
+}
+
+/** 값 d가 가장 작은 구석. 같으면(1µm) x, 그다음 y가 작은 쪽이라 벽을 그린 방향과 상관없다. */
+function least(cs: (Corner | null)[], d: (c: Corner) => number): Corner | undefined {
+  const cmp = (p: number, q: number) => (Math.abs(p - q) > 1e-6 ? p - q : 0);
+  return cs.filter((c): c is Corner => c !== null)
+    .sort((x, y) => cmp(d(x), d(y)) || cmp(x.at[0], y.at[0]) || cmp(x.at[1], y.at[1]))[0];
 }
 
 /** 점 p에서 d 방향으로 다각형을 처음 나가는 거리. 못 나가면 null. */
@@ -254,7 +328,8 @@ function oppositeHit(faces: Face[], f: Face, p: V, polygon: number[][] | undefin
     if (Math.abs(c) < 0.1) continue;
     const w = sub(g.a, p);
     const s = cross(w, g.t) / c, u = cross(w, f.n) / c;
-    if (s <= JOIN_M || u < -ON_FACE_M || u > g.len + ON_FACE_M) continue;
+    // 허용 끝(1cm)에 딱 걸린 점도 벽 방향과 상관없이 같게 계산 오차만큼 더 본다
+    if (s <= JOIN_M || u < -ON_FACE_M - 1e-9 || u > g.len + ON_FACE_M + 1e-9) continue;
     if (!best || s < best.s) best = { face: g, at: u, s };
   }
   return best && best.s <= exit + ON_FACE_M ? { face: best.face, at: best.at } : null;
@@ -271,20 +346,31 @@ function cornerLabels(name: string | undefined): [string, string] {
 
 /**
  * 누른 벽 점 하나 → 기준점 A(그 벽의 가까운 구석)·B(맞은편 벽의 대각선 구석). 저장하지 않는다.
- * 구석을 못 찾으면 빈 목록. 맞은편이 없거나, A–B가 너무 가깝거나, 저장 검사(parseTouchPoints)에 걸리면 A만.
+ * 구석을 못 찾거나 A가 방 밖이면 빈 목록. 맞은편이 없거나, B가 방 밖이거나, A–B가 너무 가깝거나,
+ * 저장 검사(parseTouchPoints)에 걸리면 A만.
  */
 export function autoCorners(plan: HomePlan, pick: WallPick, bounds: Bounds | null = null): TouchPoint[] {
   const all = planFaces(plan);
   const f = pickedFace(all, plan.rooms, pick);
   if (!f) return [];
-  const faces = all.filter((g) => g.room === f.room);
-  const s0 = dot(sub(pick.position, f.a), f.t);
+  const room = plan.rooms.find((r) => r.id === f.room);
+  const solids = planSolids(plan);
+  const faces = all.filter((g) => g.room === f.room).flatMap((g) => clipToRoom(g, room?.polygon, solids));
+  const poly = room?.polygon;
+  const roomPoly = Array.isArray(poly) && poly.length >= 3 && poly.every(isPair) ? poly : null;
+  const inRoom = (p: Plan2) => !roomPoly || inOrOn(p, roomPoly);
+  let s0 = dot(sub(pick.position, f.a), f.t);
+  // 같은 방 안 기둥·샤프트에 가린 벽 부분(잘라 보기 단면)을 누르면 같은 줄에서 가장 가까운 보이는 면 끝으로 옮긴다
+  const probe = along(pick.position, f.n, JOIN_M);
+  if (!cornersOn(faces, f, s0) && roomPoly && inOrOn(probe, roomPoly) && solids.some((s) => insidePolygon(probe, s))) {
+    const end = least(lineSpans(faces, f).flat().map((s) => ({ s, reach: 0, at: along(f.a, f.t, s) })), (c) => Math.abs(c.s - s0));
+    if (end) s0 = end.s;
+  }
   const near = bracket(faces, f, s0);
-  const a = near && [near.lo, near.hi].filter((c): c is Corner => c !== null).sort((x, y) => Math.abs(x.s - s0) - Math.abs(y.s - s0))[0];
+  const a = near && least([near.lo, near.hi], (c) => Math.abs(c.s - s0));
   if (!near || !a) return [];
   const A: TouchPoint = { id: "A", label: "", position: [mm(a.at[0]), mm(a.at[1])] };
-  if (!inBounds(A.position, bounds)) return [];
-  const room = plan.rooms.find((r) => r.id === f.room);
+  if (!inBounds(A.position, bounds) || !inRoom(A.position)) return [];
   const [labelA, labelB] = cornerLabels(room?.label);
   A.label = labelA;
   // 맞은편을 찾는 선은 A에서 구석 사이 쪽으로 조금 들어간 곳에서 쏜다. 누른 점이 구석 위나 옆 벽 속이어도 대각선 구석이 나온다
@@ -294,9 +380,10 @@ export function autoCorners(plan: HomePlan, pick: WallPick, bounds: Bounds | nul
   const sRay = inward === 1 ? Math.max(s0, a.s + inset) : Math.min(s0, a.s - inset);
   const hit = oppositeHit(faces, f, along(f.a, f.t, sRay), room?.polygon);
   const ends = hit && bracket(faces, hit.face, hit.at);
-  const far = ends && [ends.lo, ends.hi].filter((c): c is Corner => c !== null).sort((x, y) => dist(y.at, a.at) - dist(x.at, a.at))[0];
+  const far = ends && least([ends.lo, ends.hi], (c) => -dist(c.at, a.at));
   if (!far) return [A];
   const B: TouchPoint = { id: "B", label: labelB, position: [mm(far.at[0]), mm(far.at[1])] };
+  if (!inRoom(B.position)) return [A];
   try {
     parseTouchPoints({ points: [A, B] }, bounds);
   } catch (e) {

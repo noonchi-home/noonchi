@@ -52,6 +52,12 @@ describe("autoCorners: 가짜 평면도", () => {
     expect(at(autoCorners(box, { position: [3.9, 2.95], room: "room", normal: [-1, 0] }))).toEqual({ A: [3.9, 2.9], B: [0.1, 0.1] });
   });
 
+  it("방 밖으로 이어진 벽에서 옆 벽 두께 안을 눌러도 그 구석을 쓴다", () => {
+    const plan = boxRoom(4, 3);
+    plan.walls.find((w) => w.id === "S")!.a = [-1, 0];
+    expect(at(autoCorners(plan, { position: [-0.05, 0.1], room: "room", normal: [0, 1] }))).toEqual({ A: [0.1, 0.1], B: [3.9, 2.9] });
+  });
+
   it("벽이 끝나는 열린 쪽은 구석이 아니라서 먼 쪽 구석을 A로 쓴다", () => {
     const openEast = boxRoom(4, 3, ["E"]);
     expect(at(autoCorners(openEast, { position: [3.5, 0.1], room: "room", normal: [0, 1] }))).toEqual({ A: [0.1, 0.1], B: [0.1, 2.9] });
@@ -65,6 +71,17 @@ describe("autoCorners: 가짜 평면도", () => {
     });
     expect(at(autoCorners(plan, { position: [1, 0.1], room: "room", normal: [0, 1] }))).toEqual({ A: [0.1, 0.1], B: [3.5, 2.9] });
     expect(at(autoCorners(plan, { position: [3.9, 2], room: "room", normal: [-1, 0] }))).toEqual({ A: [3.9, 2.5], B: [0.1, 0.1] });
+    // 기둥에 가린 벽 부분(잘라 보기 단면)을 눌러도 기둥 속 구석이 아니라 기둥 옆 구석
+    expect(at(autoCorners(plan, { position: [3.9, 2.8], room: "room", normal: [-1, 0] }))).toEqual({ A: [3.9, 2.5], B: [0.1, 0.1] });
+  });
+
+  it("두 구석 한가운데를 누르면 벽 방향과 상관없이 같다", () => {
+    const flipped = boxRoom(4, 3);
+    const s = flipped.walls.find((w) => w.id === "S")!;
+    [s.a, s.b] = [s.b, s.a];
+    const pick = { position: [2, 0.1] as P, room: "room", normal: [0, 1] as P };
+    expect(at(autoCorners(box, pick))).toEqual({ A: [0.1, 0.1], B: [3.9, 2.9] });
+    expect(at(autoCorners(flipped, pick))).toEqual({ A: [0.1, 0.1], B: [3.9, 2.9] });
   });
 
   it("두 방 사이 열린 경계 위를 누르면 보낸 방을 따른다", () => {
@@ -82,6 +99,43 @@ describe("autoCorners: 가짜 평면도", () => {
     };
     expect(at(autoCorners(plan, { position: [4, 0.1], room: "room", normal: [0, 1] }))).toEqual({ A: [0.1, 0.1], B: [0.1, 2.9] });
     expect(at(autoCorners(plan, { position: [4, 0.1], room: "hall", normal: [0, 1] }))).toEqual({ A: [5.9, 0.1], B: [5.9, 2.9] });
+  });
+
+  it("여러 방이 함께 쓰는 벽에서 다른 방 쪽 구석은 쓰지 않는다", () => {
+    // ㄱ자 거실 위쪽 왼편이 침실. 바깥벽 W·N은 두 방이 함께 쓴다. W·N 거실 면이 만나는 (0.1, 3.9)는 침실 안이다
+    const plan: HomePlan = {
+      rooms: [
+        { id: "living", label: "거실", polygon: [[0, 0], [5, 0], [5, 4], [4, 4], [4, 2], [0, 2]] },
+        { id: "bed", label: "침실", polygon: [[0, 2], [4, 2], [4, 4], [0, 4]] },
+      ],
+      walls: [
+        { id: "S", thickness: 0.2, a: [0, 0], b: [5, 0], faces: [{ room: "living", normal: [0, 1] }] },
+        { id: "E", thickness: 0.2, a: [5, 0], b: [5, 4], faces: [{ room: "living", normal: [-1, 0] }] },
+        { id: "N", thickness: 0.2, a: [5, 4], b: [0, 4], faces: [{ room: "living", normal: [0, -1] }, { room: "bed", normal: [0, -1] }] },
+        { id: "W", thickness: 0.2, a: [0, 4], b: [0, 0], faces: [{ room: "bed", normal: [1, 0] }, { room: "living", normal: [1, 0] }] },
+        { id: "M", thickness: 0.2, a: [0, 2], b: [4, 2], faces: [{ room: "bed", normal: [0, 1] }, { room: "living", normal: [0, -1] }] },
+        { id: "V", thickness: 0.2, a: [4, 2], b: [4, 4], faces: [{ room: "bed", normal: [-1, 0] }, { room: "living", normal: [1, 0] }] },
+      ],
+    };
+    // 맞은편을 찾는 선이 V 벽 몸통 속을 지나 N 벽에 닿는다
+    expect(at(autoCorners(plan, { position: [4.05, 0.1], room: "living", normal: [0, 1] }))).toEqual({ A: [4.9, 0.1], B: [4.1, 3.9] });
+  });
+
+  it("고체가 막은 구석 바로 위를 누르면 벽 방향과 상관없이 같다", () => {
+    // 왼쪽 아래를 샤프트가 차지한 방. 방 다각형은 샤프트를 뺀다
+    const plan = (flip: boolean): HomePlan => ({
+      rooms: [{ id: "room", label: "방", polygon: [[0, 1], [1, 1], [1, 0], [4, 0], [4, 3], [0, 3]] }],
+      walls: [
+        { id: "S", thickness: 0.2, a: [0, 0], b: [4, 0], faces: [{ room: "room", normal: [0, 1] }] },
+        { id: "E", thickness: 0.2, a: [4, 0], b: [4, 3], faces: [{ room: "room", normal: [-1, 0] }] },
+        { id: "N", thickness: 0.2, a: [4, 3], b: [0, 3], faces: [{ room: "room", normal: [0, -1] }] },
+        { id: "W", thickness: 0.2, a: flip ? [0, 0] : [0, 3], b: flip ? [0, 3] : [0, 0], faces: [{ room: "room", normal: [1, 0] }] },
+        { id: "shaft", polygon: [[0, 0], [1, 0], [1, 1], [0, 1]], faces: [{ room: "room", normal: [0, 1] }, { room: "room", normal: [1, 0] }] },
+      ],
+    });
+    const pick = { position: [0.1, 1] as P, room: "room", normal: [1, 0] as P };
+    expect(at(autoCorners(plan(false), pick))).toEqual({ A: [0.1, 1], B: [3.9, 2.9] });
+    expect(at(autoCorners(plan(true), pick))).toEqual({ A: [0.1, 1], B: [3.9, 2.9] });
   });
 
   it("맞은편이 열려 있으면 A만 준다", () => {
@@ -160,6 +214,8 @@ describe("실제 집: 손으로 셈한 구석", () => {
     ["mokryeon_180b", "alpha", [0, 6.066], [0, 1], [0.1, 6.066], [3.525, 10.556]],
     // 거실·복도(12각형): 알파룸 쪽 벽을 누르면 복도 끝 욕실 3 앞 구석이 B
     ["mokryeon_180b", "living", [3.675, 7], [1, 0], [3.675, 7.744], [13.594, 6.066]],
+    // 욕실 2 벽: 맞은편을 찾는 선이 침실 1 벽(bed_sw_right) 몸통 속을 지나 앞 경계벽에 닿는다. 침실 1 쪽 구석은 쓰지 않는다
+    ["mokryeon_180b", "living", [6.85, 6.066], [0, 1], [8.85, 6.066], [11.709, 12.159]],
     // 침실 3: A는 도면 기준 후보 bed_ne_corner [16.1, 2.2969]
     ["mokryeon_180b", "bed_ne", [16.1, 3], [-1, 0], [16.1, 2.297], [11.859, 5.916]],
     // 침실 3: 기둥(column_ne)이 막은 구석은 기둥 면과 만나는 점
@@ -205,6 +261,15 @@ describe("실제 집: 손으로 셈한 구석", () => {
     expect(points[0]!.position[1]).toBeCloseTo(7.894, 3);
     expect(points[1]!.position[0]).toBeCloseTo(11.859, 3);
     expect(points[1]!.position[1]).toBeCloseTo(12.159, 3);
+  });
+
+  it("구석 바로 위를 누르면 벽 방향과 상관없이 같다: 마곡 공용 욕실 E02와 샤프트 S01", () => {
+    const plan = planOf("apartment");
+    const flipped = structuredClone(plan);
+    const e02 = flipped.walls.find((w) => w.id === "E02")!;
+    [e02.a, e02.b] = [e02.b, e02.a];
+    const pick = { position: [0.8, 4.15] as P, room: "bathroom", normal: [1, 0] as P };
+    for (const p of [plan, flipped]) expect(at(autoCorners(p, pick, homeBounds(p.rooms)))).toEqual({ A: [0.8, 4.15], B: [1.74, 6.74] });
   });
 
   it("이름은 방 이름: 알파룸 구석 / 알파룸 맞은편 구석", () => {
@@ -269,20 +334,34 @@ const isCorner = (p: P, segs: Seg[]) => {
   return on.some((s) => on.some((t) => Math.abs(s.n[0] * t.n[0] + s.n[1] * t.n[1]) < 0.9));
 };
 
-describe.each(HOMES.map((h) => h.id))("실제 집 %s: 모든 방의 모든 벽 면 가운데와 양 끝을 누른다", (homeId) => {
+/** 같은 집에서 벽 a·b를 맞바꾸고 고체 다각형 순서를 뒤집은 것. */
+function flipWalls(plan: HomePlan): HomePlan {
+  const out = structuredClone(plan);
+  for (const w of out.walls) {
+    if (w.a && w.b) [w.a, w.b] = [w.b, w.a];
+    if (w.polygon) w.polygon = [...w.polygon].reverse();
+  }
+  return out;
+}
+
+/** 면을 누르는 간격. 좁은 띠(목련 거실 욕실 2 벽 6cm)도 걸리게 한다. */
+const PICK_STEP_M = 0.05;
+
+describe.each(HOMES.map((h) => h.id))("실제 집 %s: 모든 방의 모든 벽 면을 5cm마다 누른다", (homeId) => {
   const plan = planOf(homeId);
   const bounds = homeBounds(plan.rooms);
   const solids = plan.walls.filter((w) => w.polygon).map((w) => w.polygon!);
   const picks = plan.rooms.flatMap((room) => faceSegs(plan, room.id!).flatMap((seg) => {
-    // 면 중 그 방 안에 있고 고체에 가리지 않은 부분의 가운데와 양 끝(끝은 옆 벽 두께 속일 수 있다)
-    const free: P[] = [];
-    for (let i = 1; i < 400; i++) {
-      const t = i / 400;
+    // 면 중 그 방 안에 있고 고체에 가리지 않은 부분을 5cm마다, 그리고 양 끝(끝은 옆 벽 두께 속일 수 있다)
+    const len = Math.hypot(seg.b[0] - seg.a[0], seg.b[1] - seg.a[1]);
+    const freeAt = (ts: number[]) => ts.flatMap((t) => {
       const p: P = [seg.a[0] + (seg.b[0] - seg.a[0]) * t, seg.a[1] + (seg.b[1] - seg.a[1]) * t];
       const probe: P = [p[0] + seg.n[0] * 0.01, p[1] + seg.n[1] * 0.01];
-      if (inside(probe, room.polygon!) && !solids.some((s) => inside(probe, s))) free.push(p);
-    }
-    const spots = [free[0], free[Math.floor(free.length / 2)], free.at(-1)].filter((p): p is P => p !== undefined);
+      return inside(probe, room.polygon!) && !solids.some((s) => inside(probe, s)) ? [p] : [];
+    });
+    const ends = freeAt(Array.from({ length: 399 }, (_, i) => (i + 1) / 400));
+    const grid = freeAt(Array.from({ length: Math.floor(len / PICK_STEP_M) + 1 }, (_, i) => (i * PICK_STEP_M) / len));
+    const spots = [ends[0], ...grid, ends.at(-1)].filter((p): p is P => p !== undefined);
     return spots.map((p) => ({ room: room.id!, seg, position: [Math.round(p[0] * 1000) / 1000, Math.round(p[1] * 1000) / 1000] as P }));
   }));
   const results = picks.map((p) => ({ ...p, points: autoCorners(plan, { position: p.position, room: p.room, normal: p.seg.n }, bounds) }));
@@ -307,6 +386,20 @@ describe.each(HOMES.map((h) => h.id))("실제 집 %s: 모든 방의 모든 벽 �
       expect(inRoom(b.position, polygon), where).toBe(true);
       expect(Math.hypot(b.position[0] - a.position[0], b.position[1] - a.position[1]), where).toBeGreaterThanOrEqual(0.5);
       expect(() => parseTouchPoints({ points: r.points }, bounds), where).not.toThrow();
+    }
+  });
+
+  it("벽을 그린 방향(a→b)을 모두 뒤집어도 누른 점과 나온 A 구석 바로 위의 결과가 같다", () => {
+    const flipped = flipWalls(plan);
+    const corners = new Map<string, { position: P; room: string; normal: P }>();
+    for (const r of results) {
+      const a = r.points[0];
+      if (a) corners.set(JSON.stringify([a.position, r.seg.n]), { position: a.position, room: r.room, normal: r.seg.n });
+    }
+    expect(corners.size).toBeGreaterThan(10);
+    const again = [...results.map((r) => ({ position: r.position, room: r.room, normal: r.seg.n })), ...corners.values()];
+    for (const c of again) {
+      expect(autoCorners(flipped, c, bounds), `${c.room} ${JSON.stringify(c.position)}`).toEqual(autoCorners(plan, c, bounds));
     }
   });
 
