@@ -17,6 +17,7 @@ import { loadLayout } from "../layout/load.js";
 import { loadTwin, type TwinData } from "../model/devices.js";
 import { listHomes } from "../model/homes.js";
 import { loadAnchorTargets, type AnchorTarget } from "../phone/anchors.js";
+import { autoCorners, parseWallPick, pickedRoom, readScenePlan } from "../phone/corners.js";
 import { EyeFeed } from "../phone/feed.js";
 import { orderPhoneUrls } from "../phone/links.js";
 import { createPhoneServer, type PhoneServer } from "../phone/server.js";
@@ -75,18 +76,13 @@ export interface HomeRuntime {
   close(): Promise<void>;
 }
 
-/** scene.json 전체. 없거나 읽지 못하면 null. */
+/** scene.json 전체(클로이드 경로 평면도). 없거나 읽지 못하면 null. */
 function readScene(scenePath: string): unknown {
   try {
     return JSON.parse(readFileSync(scenePath, "utf8").replace(/^﻿/, "")) as unknown;
   } catch {
     return null;
   }
-}
-
-/** scene.json plan.rooms(기준점 범위 검사·방 바닥 높이). 읽지 못하면 빈 목록. */
-function sceneRooms(scenePath: string): { polygon?: number[][]; floor_z?: number }[] {
-  return (readScene(scenePath) as { plan?: { rooms?: { polygon?: number[][]; floor_z?: number }[] } } | null)?.plan?.rooms ?? [];
 }
 
 /** 트윈의 식탁·책상 윗면(두뇌의 "식탁을 비추는가"). 배치가 바뀌면 다시 만든다. */
@@ -133,7 +129,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     const feed = phoneOn
       ? new EyeFeed({ photoDir: env.PHONE_PHOTO_DIR?.trim() || join(runtimeDir, "photos"), broadcast: (m) => appRef.current?.broadcast(m) })
       : undefined;
-    // 벽 대기 맞춤 기준점 A·B(설정 3단계에서 고름). 저장·지우면 실행 중인 폰 세션의 기준점이 바로 바뀐다
+    // 벽 대기 맞춤 기준점 A·B(설정 4단계에서 고름). 저장·지우면 실행 중인 폰 세션의 기준점이 바로 바뀐다
     const eyeHeightM = eyeHeightOf(env.PHONE_EYE_HEIGHT_M);
     const touchPath = touchPointsPath(runtimeDir, home.id);
     let savedTouch: TouchPoint[] | null = null;
@@ -143,8 +139,11 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       log(`[경고] ${(e as Error).message}. 평면도 바닥 기준점으로 맞춥니다.`);
     }
     const phoneRef: { current?: PhoneServer; floor?: AnchorTarget[] } = {};
+    // 방·벽(기준점 범위 검사·방 바닥 높이·벽 하나로 구석 찾기). scene.json이 없거나 깨졌으면 빈 목록
+    const plan = readScenePlan(home.scenePath);
+    const bounds = homeBounds(plan.rooms);
     const touchStore = existsSync(home.scenePath)
-      ? new TouchStore(touchPath, homeBounds(sceneRooms(home.scenePath)), (points) => {
+      ? new TouchStore(touchPath, bounds, (points) => {
         if (!phoneRef.current || !phoneRef.floor) return;
         if (points) phoneRef.current.setTargets(touchTargets(points), "touch");
         else phoneRef.current.setTargets(phoneRef.floor, "floor");
@@ -170,7 +169,11 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     app = createApp({
       hub: signals, policy, agent, rooms: twin.rooms, twinDir, viewerDir: home.viewerDir, libraryDir: home.libraryDir, hubKind, log, eye: feed, brain: brain ?? undefined,
       home: { id: home.id, name: home.name }, homes: listHomes(twin.dir), layout: layout?.editor, phoneUrls: () => phoneUrls, mode: ctx.mode, webDir: ctx.webDir,
-      touch: touchStore && { get: () => touchStore.get(), save: (raw) => touchStore.save(raw), clear: () => touchStore.clear(), eyeHeightM },
+      touch: touchStore && {
+        get: () => touchStore.get(), save: (raw) => touchStore.save(raw), clear: () => touchStore.clear(), eyeHeightM,
+        auto: (raw) => autoCorners(plan, parseWallPick(raw), bounds),
+        room: (raw) => pickedRoom(plan, parseWallPick(raw)),
+      },
       plan: plans,
     });
     const appNow = app;
@@ -184,7 +187,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       const maxMismatch = Number(env.PHONE_MAX_MISMATCH_M);
       phone = createPhoneServer({
         targets: touch ? touchTargets(touch) : floor, mode: touch ? "touch" : "floor", eyeHeightM, feed, log, fallback,
-        floorAt: floorLookup(sceneRooms(home.scenePath)),
+        floorAt: floorLookup(plan.rooms),
         maxMismatchM: Number.isFinite(maxMismatch) && maxMismatch > 0 ? maxMismatch : undefined,
         onEye: (eye) => {
           appNow.broadcast({ type: "eye", eye });

@@ -27,7 +27,8 @@ export class TouchPointsError extends Error {}
 export const DEFAULT_EYE_HEIGHT_M = 1.5;
 /** 기준점은 방 다각형 경계 상자에서 이만큼 밖까지 받는다(바깥벽 두께). */
 export const BOUNDS_MARGIN_M = 0.3;
-const MAX_LABEL = 40;
+/** 기준점 이름 길이 한도. */
+export const MAX_LABEL = 40;
 const IDS = ["A", "B"] as const;
 
 const num = z.number().refine(Number.isFinite);
@@ -49,18 +50,25 @@ export function homeBounds(rooms: { polygon?: number[][] }[]): Bounds | null {
   return { minX: Math.min(...xs) - m, minY: Math.min(...ys) - m, maxX: Math.max(...xs) + m, maxY: Math.max(...ys) + m };
 }
 
+/** 집 범위 안인지. 범위가 없으면 늘 안. */
+export function inBounds([x, y]: Plan2, bounds: Bounds | null): boolean {
+  return !bounds || (x >= bounds.minX && x <= bounds.maxX && y >= bounds.minY && y <= bounds.maxY);
+}
+
+/** 평면 점이 다각형 안인지(짝홀 규칙). */
+export function insidePolygon([x, y]: Plan2, poly: number[][]): boolean {
+  let hit = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i]!, [xj, yj] = poly[j]!;
+    if ((yi! > y) !== (yj! > y) && x < ((xj! - xi!) * (y - yi!)) / (yj! - yi!) + xi!) hit = !hit;
+  }
+  return hit;
+}
+
 /** 평면 점이 들어 있는 방의 바닥 높이(floor_z). 어느 방에도 없으면 0. */
 export function floorLookup(rooms: { polygon?: number[][]; floor_z?: number }[]): (p: Plan2) => number {
-  const inside = ([x, y]: Plan2, poly: number[][]) => {
-    let hit = false;
-    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-      const [xi, yi] = poly[i]!, [xj, yj] = poly[j]!;
-      if ((yi! > y) !== (yj! > y) && x < ((xj! - xi!) * (y - yi!)) / (yj! - yi!) + xi!) hit = !hit;
-    }
-    return hit;
-  };
   return (p) => {
-    const room = rooms.find((r) => r.polygon && inside(p, r.polygon));
+    const room = rooms.find((r) => r.polygon && insidePolygon(p, r.polygon));
     return typeof room?.floor_z === "number" && Number.isFinite(room.floor_z) ? room.floor_z : 0;
   };
 }
@@ -77,10 +85,7 @@ export function parseTouchPoints(raw: unknown, bounds: Bounds | null = null): To
     return { id: IDS[i]!, label, position: [p.position[0], p.position[1]] };
   });
   for (const p of points) {
-    const [x, y] = p.position;
-    if (bounds && (x < bounds.minX || x > bounds.maxX || y < bounds.minY || y > bounds.maxY)) {
-      throw new TouchPointsError(`${p.id} 지점 (${x}, ${y})이 집 범위 밖입니다`);
-    }
+    if (!inBounds(p.position, bounds)) throw new TouchPointsError(`${p.id} 지점 (${p.position[0]}, ${p.position[1]})이 집 범위 밖입니다`);
   }
   const [a, b] = points as [TouchPoint, TouchPoint];
   if (Math.hypot(b.position[0] - a.position[0], b.position[1] - a.position[1]) < MIN_BASELINE_M) {
