@@ -1,0 +1,72 @@
+{
+  "type": "boiler",
+  "label": "가스 보일러",
+  "family": "bath_utility",
+  "category": "appliances",
+  "node_type": "device",
+  "mount": "wall",
+  "footprint": [
+    0.4,
+    0.27
+  ],
+  "height": 0.84,
+  "model": "assets/appliances/boiler.glb",
+  "blocks_walk": false,
+  "blocks_view": false,
+  "anchors": {
+    "front": [
+      0.0,
+      0.9
+    ]
+  },
+  "attrs": {
+    "heating": [
+      "off",
+      "on"
+    ]
+  },
+  "states": {
+    "heating": {
+      "default": "off",
+      "effects": {
+        "off": [
+          {
+            "part": "display",
+            "visible": false
+          },
+          {
+            "part": "flame",
+            "visible": false
+          },
+          {
+            "part": "exhaust",
+            "visible": false
+          },
+          {
+            "part": "heat_led",
+            "emissive": 0.0
+          }
+        ],
+        "on": [
+          {
+            "part": "display",
+            "visible": true
+          },
+          {
+            "part": "flame",
+            "visible": true
+          },
+          {
+            "part": "exhaust",
+            "visible": true
+          },
+          {
+            "part": "heat_led",
+            "emissive": 1.0
+          }
+        ]
+      }
+    }
+  },
+  "notes": "벽걸이 가스 보일러. height는 아래 배관부터 배기통 벽 장식판까지(0.84), 깊이 0.27. heating on → 주황 백라이트 LCD·불꽃 창(효과)·주황 LED 줄과 고리·더운 김(exhaust). 빛 기준점은 두지 않았다(몸통이 벽을 가려 효과가 작고 statecheck 화면만 넓어짐)."
+}

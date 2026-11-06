@@ -1,0 +1,33 @@
+{
+  "type": "vanity",
+  "label": "세면대 하부장",
+  "family": "bath_utility",
+  "category": "fixtures",
+  "node_type": "fixture",
+  "mount": "floor",
+  "footprint": [
+    0.6,
+    0.46
+  ],
+  "height": 1.03,
+  "model": "assets/fixtures/vanity.glb",
+  "blocks_walk": true,
+  "blocks_view": true,
+  "anchors": {
+    "front": [
+      0.0,
+      0.55
+    ],
+    "basin": [
+      0.0,
+      0.035,
+      0.8
+    ],
+    "faucet": [
+      0.0,
+      -0.17,
+      0.95
+    ]
+  },
+  "notes": "원목 하부장 + 일체형 도기 세면 상판(윗면 0.85). height는 수전·칫솔 끝까지(1.03). 앞으로 1.7 cm 나온 손잡이는 bounds=False(크기에서 뺌). 상태 없음."
+}

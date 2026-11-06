@@ -1,0 +1,16 @@
+{
+  "type": "slippers",
+  "label": "슬리퍼",
+  "family": "reuse",
+  "category": "decorations",
+  "node_type": "decor",
+  "mount": "floor",
+  "footprint": [
+    0.26,
+    0.27
+  ],
+  "height": 0.05,
+  "model": "assets/decorations/slippers.glb",
+  "blocks_walk": false,
+  "blocks_view": false
+}

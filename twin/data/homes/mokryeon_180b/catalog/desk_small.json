@@ -1,0 +1,31 @@
+{
+  "type": "desk_small",
+  "label": "책상",
+  "family": "bedroom",
+  "category": "furniture",
+  "node_type": "furniture",
+  "mount": "floor",
+  "footprint": [
+    1.043,
+    0.847
+  ],
+  "height": 0.75,
+  "model": "assets/furniture/desk_small.glb",
+  "blocks_walk": true,
+  "blocks_view": false,
+  "surfaces": [
+    {
+      "name": "top",
+      "height": 0.75
+    }
+  ],
+  "anchors": {
+    "front": [
+      0.0,
+      0.923
+    ]
+  },
+  "notes": "오크 상판, 흰 분체도장 철제 다리·띠, 오른쪽 얕은 서랍, 뒤 구석 전선 구멍. top = 상판 윗면.",
+  "builder": "desk_small",
+  "generated_by": "import-labels"
+}

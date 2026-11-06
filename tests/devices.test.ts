@@ -1,10 +1,10 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 import type { DeviceKind } from "../src/hub/types.js";
-import { initialTwinState, loadDevices, loadTwin, resolveTwinStudioDir } from "../src/model/devices.js";
+import { DEFAULT_TWIN_DIR, initialTwinState, loadDevices, loadTwin, resolveTwinStudioDir } from "../src/model/devices.js";
 
 const REPO = fileURLToPath(new URL("..", import.meta.url));
 const STUDIO = resolveTwinStudioDir(process.env.TWIN_STUDIO_DIR, REPO);
@@ -198,12 +198,13 @@ describe("initialTwinState", () => {
 });
 
 describe("resolveTwinStudioDir", () => {
-  it("기본값은 ../twin-studio, 상대 경로는 base 기준", () => {
+  it("기본값은 저장소 twin/, 상대 경로는 base 기준", () => {
     const saved = process.env.TWIN_STUDIO_DIR;
     delete process.env.TWIN_STUDIO_DIR;
     try {
       const base = join(tmpdir(), "x", "twin-home");
-      expect(resolveTwinStudioDir(undefined, base)).toBe(join(tmpdir(), "x", "twin-studio"));
+      expect(resolveTwinStudioDir(undefined, base)).toBe(resolve(DEFAULT_TWIN_DIR));
+      expect(resolveTwinStudioDir("x", base)).toBe(join(base, "x"));
       expect(resolveTwinStudioDir("../studio2", base)).toBe(join(tmpdir(), "x", "studio2"));
     } finally {
       if (saved !== undefined) process.env.TWIN_STUDIO_DIR = saved;

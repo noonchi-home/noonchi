@@ -326,7 +326,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
 }
 ```
 
-- [ ] **Step 4: 통과 확인** — Run: `H npx vitest run tests/twin-assets.test.ts tests/self-contained.test.ts` / Expected: PASS 3개
+- [ ] **Step 4: 통과 확인** — Run: `H npx vitest run tests/twin-assets.test.ts tests/self-contained.test.ts` / Expected: `tests/twin-assets.test.ts` PASS 3개. `tests/self-contained.test.ts`는 Task 3 전까지 FAIL 2개 그대로다.
 - [ ] **Step 5: 커밋**
 
 ```bash
@@ -371,7 +371,11 @@ Expected: 모두 종료 코드 0, `apartment/scene.json`, `homes/oneroom/scene.j
 ```
 twin/**/*.glb binary
 twin/**/*.json text eol=lf
+twin/**/*.mjs text eol=lf
+twin/**/*.html text eol=lf
+twin/**/*.css text eol=lf
 ```
+`twin/`의 글 파일(json·mjs·html·css)은 모두 LF로 둬 `SOURCE.json`의 sha256이 Windows 체크아웃에서도 맞는다.
 
 - [ ] **Step 5: 기본 폴더 바꾸기** (`src/model/devices.ts`)
 
@@ -391,9 +395,9 @@ export function resolveTwinStudioDir(dir?: string, base: string = process.cwd())
 - [ ] **Step 6: 남은 경로 고치기**
   - `tests/devices.test.ts` 「기본값은 ../twin-studio」 시험 → 「기본값은 저장소 twin/, 상대 경로는 base 기준」: `expect(resolveTwinStudioDir(undefined, base)).toBe(resolve(DEFAULT_TWIN_DIR))`, `expect(resolveTwinStudioDir("x", base)).toBe(join(base, "x"))`.
   - `.env.example`: `# 트윈 결과물 폴더. 비우면 저장소 twin/` + `TWIN_STUDIO_DIR=`.
-  - `scripts/twin3d/dev.ts:45`: `TWIN_STUDIO_DIR: process.env.TWIN_STUDIO_DIR ?? resolve(ROOT, "twin")`.
+  - `scripts/twin3d/dev.ts:45`: `TWIN_STUDIO_DIR: base.TWIN_STUDIO_DIR?.trim() || resolve(ROOT, "twin")`(`serverEnv`의 `base` 인자를 본다).
   - `ui/src/twin/viewer.ts:5` 주석: `원본: twin/apartment/viewer/main.mjs 맨 아래(twin-studio에서 복사).`
-  - `README.md`·`docs/reference.md`: `npx vitest run tests/self-contained.test.ts`가 찍는 줄마다 `../twin-studio` 경로를 `twin/`으로 바꾸고, 「twin-studio에서 빌드」 안내는 「twin-studio에서 빌드한 뒤 `npx tsx scripts/twin-assets.ts --from <twin-studio 폴더>`로 `twin/`을 다시 채운다」로 쓴다. 환경 변수 표 `TWIN_STUDIO_DIR` 기본값은 `twin/`.
+  - `README.md`·`docs/reference.md`: `npx vitest run tests/self-contained.test.ts`가 찍는 줄마다 `../twin-studio` 경로를 `twin/`으로 바꾸고, 「twin-studio에서 빌드」 안내는 「twin-studio에서 빌드한 뒤 `npx tsx scripts/twin-assets.ts --from <twin-studio 폴더>`로 `twin/`을 다시 채운다」로 쓴다. 환경 변수 표 `TWIN_STUDIO_DIR` 기본값은 `twin/`. `docs/reference.md` MCP 절의 `C:/Users/.../소웨공/twin-home/src/mcp/server.ts` 두 줄은 `<저장소 폴더>/src/mcp/server.ts`로 쓴다.
 
 - [ ] **Step 7: CLAUDE.md 한 저장소 줄의 막는 장치**
 

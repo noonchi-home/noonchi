@@ -1,0 +1,66 @@
+{
+  "type": "range_hood",
+  "label": "슬림 후드",
+  "family": "kitchen",
+  "category": "appliances",
+  "node_type": "device",
+  "mount": "wall",
+  "footprint": [
+    0.7,
+    0.4
+  ],
+  "height": 0.75,
+  "model": "assets/appliances/range_hood.glb",
+  "blocks_walk": false,
+  "blocks_view": false,
+  "attrs": {
+    "power": [
+      "off",
+      "on"
+    ]
+  },
+  "states": {
+    "power": {
+      "default": "off",
+      "effects": {
+        "off": [
+          {
+            "part": "light_panel",
+            "emissive": 0.0
+          },
+          {
+            "part": "light_bar",
+            "emissive": 0.0
+          },
+          {
+            "part": "plume",
+            "visible": false
+          },
+          {
+            "light": "cook_light",
+            "intensity": 0.0
+          }
+        ],
+        "on": [
+          {
+            "part": "light_panel",
+            "emissive": 1.0
+          },
+          {
+            "part": "light_bar",
+            "emissive": 1.0
+          },
+          {
+            "part": "plume",
+            "visible": true
+          },
+          {
+            "light": "cook_light",
+            "intensity": 1.0
+          }
+        ]
+      }
+    }
+  },
+  "notes": "슬림 후드(아래 0.15 m) + 상부장과 같은 깊이 0.35의 덕트 가림장. 아래 벽면에 상판~후드 사이 타일 백스플래시 판(0.6 m, 크기 검사 제외)을 포함한다. 켜면 아래 조명판·앞 조명 띠가 빛나고 쿡탑으로 스폿(cook_light)을 비추며 빨려 올라가는 바람(plume)이 보인다"
+}

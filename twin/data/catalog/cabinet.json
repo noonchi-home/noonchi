@@ -1,0 +1,22 @@
+{
+  "type": "cabinet",
+  "label": "높은 서랍장",
+  "family": "reuse",
+  "category": "furniture",
+  "node_type": "furniture",
+  "mount": "floor",
+  "footprint": [
+    0.5,
+    0.46
+  ],
+  "height": 1.45,
+  "model": "assets/furniture/cabinet.glb",
+  "blocks_walk": true,
+  "blocks_view": true,
+  "surfaces": [
+    {
+      "name": "top",
+      "height": 1.45
+    }
+  ]
+}

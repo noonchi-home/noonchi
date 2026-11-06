@@ -1,0 +1,16 @@
+{
+  "type": "plant_succulent",
+  "label": "다육 화분",
+  "family": "reuse",
+  "category": "decorations",
+  "node_type": "decor",
+  "mount": "surface",
+  "footprint": [
+    0.11,
+    0.11
+  ],
+  "height": 0.06,
+  "model": "assets/decorations/plant_succulent.glb",
+  "blocks_walk": false,
+  "blocks_view": false
+}

@@ -1,0 +1,42 @@
+{
+  "type": "blind_175",
+  "label": "작은방 롤 블라인드",
+  "family": "lighting",
+  "category": "fixtures",
+  "node_type": "fixture",
+  "mount": "wall",
+  "footprint": [
+    1.75,
+    0.09
+  ],
+  "height": 0.13,
+  "model": "assets/fixtures/blind_175.glb",
+  "blocks_walk": false,
+  "blocks_view": false,
+  "attrs": {
+    "blind": [
+      "open",
+      "closed"
+    ]
+  },
+  "notes": "쉴 때(open)는 말린 상자(높이 0.13). closed면 효과 부품 fabric이 상자 아래로 1.2 m(창턱 0.9 근처) 내려온다. 오른쪽 구슬 줄은 늘 보이고 크기에서 뺀다(no_bounds)",
+  "states": {
+    "blind": {
+      "default": "open",
+      "effects": {
+        "open": [
+          {
+            "part": "fabric",
+            "visible": false
+          }
+        ],
+        "closed": [
+          {
+            "part": "fabric",
+            "visible": true
+          }
+        ]
+      }
+    }
+  }
+}

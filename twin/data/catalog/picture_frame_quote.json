@@ -1,0 +1,16 @@
+{
+  "type": "picture_frame_quote",
+  "label": "문구 액자",
+  "family": "reuse",
+  "category": "decorations",
+  "node_type": "decor",
+  "mount": "wall",
+  "footprint": [
+    0.45,
+    0.03
+  ],
+  "height": 0.65,
+  "model": "assets/decorations/picture_frame_quote.glb",
+  "blocks_walk": false,
+  "blocks_view": false
+}

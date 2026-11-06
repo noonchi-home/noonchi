@@ -1,0 +1,76 @@
+{
+  "type": "monitor",
+  "label": "모니터",
+  "family": "bedroom",
+  "category": "appliances",
+  "node_type": "device",
+  "mount": "surface",
+  "footprint": [
+    0.62,
+    0.2
+  ],
+  "height": 0.45,
+  "model": "assets/appliances/monitor.glb",
+  "blocks_walk": false,
+  "blocks_view": false,
+  "attrs": {
+    "power": [
+      "off",
+      "on"
+    ]
+  },
+  "states": {
+    "power": {
+      "default": "off",
+      "effects": {
+        "off": [
+          {
+            "part": "screen_ui",
+            "visible": false,
+            "emissive": 0.0
+          },
+          {
+            "part": "ambient_strip",
+            "emissive": 0.0
+          },
+          {
+            "part": "power_led",
+            "emissive": 0.0
+          },
+          {
+            "light": "screen_light",
+            "intensity": 0.0
+          },
+          {
+            "light": "back_light",
+            "intensity": 0.0
+          }
+        ],
+        "on": [
+          {
+            "part": "screen_ui",
+            "visible": true,
+            "emissive": 1.0
+          },
+          {
+            "part": "ambient_strip",
+            "emissive": 1.0
+          },
+          {
+            "part": "power_led",
+            "emissive": 1.0
+          },
+          {
+            "light": "screen_light",
+            "intensity": 1.0
+          },
+          {
+            "light": "back_light",
+            "intensity": 1.0
+          }
+        ]
+      }
+    }
+  },
+  "notes": "27형 모니터(얇은 검은 테, 흰 뒤판, 알루미늄 받침). power on → 바탕화면 그림(screen_ui, 효과 부품, bedroom_monitor_screen) 보임·발광, 뒤판 둘레 띠 조명 발광, 책상을 비추는 면광원(screen_light)과 뒤로 퍼지는 면광원(back_light). 서재처럼 등을 보고 놓여도 띠 조명과 빛이 보인다. off → 짙은 유리 화면."
+}

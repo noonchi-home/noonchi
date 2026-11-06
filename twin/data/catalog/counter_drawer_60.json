@@ -1,0 +1,22 @@
+{
+  "type": "counter_drawer_60",
+  "label": "하부장 서랍 60",
+  "family": "kitchen",
+  "category": "furniture",
+  "node_type": "furniture",
+  "mount": "floor",
+  "footprint": [
+    0.6,
+    0.6
+  ],
+  "height": 0.9,
+  "model": "assets/furniture/counter_drawer_60.glb",
+  "blocks_walk": true,
+  "blocks_view": true,
+  "surfaces": [
+    {
+      "name": "top",
+      "height": 0.9
+    }
+  ]
+}

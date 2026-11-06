@@ -1,0 +1,74 @@
+{
+  "type": "sink_counter",
+  "label": "싱크대",
+  "family": "kitchen",
+  "category": "furniture",
+  "node_type": "furniture",
+  "mount": "floor",
+  "footprint": [
+    0.8,
+    0.6
+  ],
+  "height": 0.9,
+  "model": "assets/furniture/sink_counter.glb",
+  "blocks_walk": true,
+  "blocks_view": true,
+  "surfaces": [
+    {
+      "name": "top",
+      "height": 0.9
+    }
+  ],
+  "anchors": {
+    "basin": [
+      0.0,
+      -0.05
+    ],
+    "front": [
+      0.0,
+      0.5
+    ]
+  },
+  "attrs": {
+    "faucet": [
+      "off",
+      "on"
+    ]
+  },
+  "states": {
+    "faucet": {
+      "default": "off",
+      "effects": {
+        "off": [
+          {
+            "part": "water",
+            "visible": false
+          },
+          {
+            "part": "pool",
+            "visible": false
+          },
+          {
+            "part": "splash",
+            "visible": false
+          }
+        ],
+        "on": [
+          {
+            "part": "water",
+            "visible": true
+          },
+          {
+            "part": "pool",
+            "visible": true
+          },
+          {
+            "part": "splash",
+            "visible": true
+          }
+        ]
+      }
+    }
+  },
+  "notes": "SSOT 9.2 예시 그대로(0.8 x 0.6 x 0.9). 구스넥 수전(상판 위 0.26 m)은 bounds=False라 크기 검사에서 빠진다. 기준점은 평면도 로컬(x 오른쪽, +y 정면): basin = 볼 중심, front = 앞 0.5 m 서는 곳. 수전을 켜면 물줄기·볼에 고인 파란 물·떨어지는 곳의 흰 거품(효과 부품)이 보인다"
+}

@@ -1,0 +1,16 @@
+{
+  "type": "wall_shelf",
+  "label": "벽 선반",
+  "family": "reuse",
+  "category": "furniture",
+  "node_type": "furniture",
+  "mount": "wall",
+  "footprint": [
+    1.0,
+    0.2
+  ],
+  "height": 0.13,
+  "model": "assets/furniture/wall_shelf.glb",
+  "blocks_walk": false,
+  "blocks_view": false
+}

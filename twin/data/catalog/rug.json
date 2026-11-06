@@ -1,0 +1,16 @@
+{
+  "type": "rug",
+  "label": "러그",
+  "family": "reuse",
+  "category": "decorations",
+  "node_type": "decor",
+  "mount": "floor",
+  "footprint": [
+    2.2,
+    1.6
+  ],
+  "height": 0.01,
+  "model": "assets/decorations/rug.glb",
+  "blocks_walk": false,
+  "blocks_view": false
+}

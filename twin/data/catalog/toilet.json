@@ -1,0 +1,28 @@
+{
+  "type": "toilet",
+  "label": "양변기",
+  "family": "bath_utility",
+  "category": "fixtures",
+  "node_type": "fixture",
+  "mount": "floor",
+  "footprint": [
+    0.46,
+    0.7
+  ],
+  "height": 0.72,
+  "model": "assets/fixtures/toilet.glb",
+  "blocks_walk": true,
+  "blocks_view": false,
+  "anchors": {
+    "front": [
+      0.0,
+      0.65
+    ],
+    "seat": [
+      0.0,
+      0.15,
+      0.46
+    ]
+  },
+  "notes": "일체형(치마형) 양변기 + 비데. 폭은 앉은 사람 오른손 쪽(-x) 비데 조작부까지(0.46). 높이는 물탱크 뚜껑 윗면(0.72). 상태 없음."
+}

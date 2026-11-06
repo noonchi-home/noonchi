@@ -1,0 +1,50 @@
+{
+  "type": "ceiling_light",
+  "label": "원형 천장등",
+  "family": "lighting",
+  "category": "fixtures",
+  "node_type": "fixture",
+  "mount": "ceiling",
+  "footprint": [
+    0.45,
+    0.45
+  ],
+  "height": 0.08,
+  "model": "assets/fixtures/ceiling_light.glb",
+  "blocks_walk": false,
+  "blocks_view": false,
+  "attrs": {
+    "power": [
+      "off",
+      "on"
+    ]
+  },
+  "states": {
+    "power": {
+      "default": "off",
+      "effects": {
+        "off": [
+          {
+            "part": "diffuser",
+            "emissive": 0.0
+          },
+          {
+            "light": "glow",
+            "intensity": 0.0
+          }
+        ],
+        "on": [
+          {
+            "part": "diffuser",
+            "emissive": 1.0
+          },
+          {
+            "light": "glow",
+            "intensity": 1.0
+          }
+        ]
+      }
+    }
+  },
+  "notes": "원형 오팔 돔(지름 0.45). 켜면 돔이 따뜻한 흰색(약 3500K)으로 빛나고 아래로 0.36 m 면광원 70 W가 빛 웅덩이를 만든다. 돔이 고정판보다 넓어 위에서도 빛나는 고리가 보인다"
+}

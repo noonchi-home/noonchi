@@ -1,0 +1,18 @@
+{
+  "type": "sofa",
+  "label": "3인 패브릭 소파",
+  "family": "reuse",
+  "category": "furniture",
+  "node_type": "furniture",
+  "mount": "floor",
+  "footprint": [
+    2.1,
+    0.95
+  ],
+  "height": 0.85,
+  "model": "assets/furniture/sofa.glb",
+  "blocks_walk": true,
+  "blocks_view": true,
+  "builder": "sofa",
+  "generated_by": "import-labels"
+}

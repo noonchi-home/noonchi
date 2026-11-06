@@ -1,0 +1,16 @@
+{
+  "type": "magazine",
+  "label": "잡지",
+  "family": "reuse",
+  "category": "decorations",
+  "node_type": "decor",
+  "mount": "surface",
+  "footprint": [
+    0.36,
+    0.29
+  ],
+  "height": 0.01,
+  "model": "assets/decorations/magazine.glb",
+  "blocks_walk": false,
+  "blocks_view": false
+}

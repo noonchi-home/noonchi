@@ -1,0 +1,56 @@
+{
+  "type": "wall_pad",
+  "label": "월패드",
+  "family": "bath_utility",
+  "category": "appliances",
+  "node_type": "device",
+  "mount": "wall",
+  "footprint": [
+    0.3,
+    0.04
+  ],
+  "height": 0.2,
+  "model": "assets/appliances/wall_pad.glb",
+  "blocks_walk": false,
+  "blocks_view": false,
+  "anchors": {
+    "front": [
+      0.0,
+      0.45
+    ]
+  },
+  "attrs": {
+    "screen": [
+      "off",
+      "on"
+    ]
+  },
+  "states": {
+    "screen": {
+      "default": "off",
+      "effects": {
+        "off": [
+          {
+            "part": "screen",
+            "visible": false
+          },
+          {
+            "part": "keys",
+            "emissive": 0.0
+          }
+        ],
+        "on": [
+          {
+            "part": "screen",
+            "visible": true
+          },
+          {
+            "part": "keys",
+            "emissive": 1.0
+          }
+        ]
+      }
+    }
+  },
+  "notes": "10인치 월패드(0.30 × 0.20, 화면 0.2 × 0.113). screen on → 밝은 홈 화면 그림(bath_utility_wallpad_screen, 효과 부품) + 키 백라이트. off는 검은 유리. 복도 끝처럼 멀리서 보는 자리에서도 켬/끔이 보이도록 화면을 크고 밝게 했다."
+}

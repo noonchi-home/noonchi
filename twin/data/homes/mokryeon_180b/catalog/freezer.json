@@ -1,0 +1,18 @@
+{
+  "type": "freezer",
+  "label": "냉동고",
+  "family": "kitchen",
+  "category": "appliances",
+  "node_type": "device",
+  "mount": "floor",
+  "footprint": [
+    0.886,
+    0.768
+  ],
+  "height": 1.85,
+  "model": "assets/appliances/freezer.glb",
+  "blocks_walk": true,
+  "blocks_view": true,
+  "builder": "kimchi_fridge",
+  "generated_by": "import-labels"
+}

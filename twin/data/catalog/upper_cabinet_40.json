@@ -1,0 +1,17 @@
+{
+  "type": "upper_cabinet_40",
+  "label": "상부장 40",
+  "family": "kitchen",
+  "category": "furniture",
+  "node_type": "furniture",
+  "mount": "wall",
+  "footprint": [
+    0.4,
+    0.35
+  ],
+  "height": 0.75,
+  "model": "assets/furniture/upper_cabinet_40.glb",
+  "blocks_walk": false,
+  "blocks_view": false,
+  "notes": "아래쪽 벽면에 상판~상부장 사이 타일 백스플래시 판(0.55 m, bounds=False로 크기·원점 검사 제외)을 포함한다. 타일 줄눈은 모듈 왼쪽 모서리와 상판 높이에 맞춰 옆 모듈과 이어진다"
+}

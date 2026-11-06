@@ -1,0 +1,52 @@
+{
+  "type": "robot_dock",
+  "label": "로봇 충전대",
+  "family": "robots",
+  "category": "appliances",
+  "node_type": "device",
+  "mount": "floor",
+  "footprint": [
+    0.4,
+    0.4
+  ],
+  "height": 0.1,
+  "model": "assets/appliances/robot_dock.glb",
+  "blocks_walk": false,
+  "blocks_view": false,
+  "surfaces": [
+    {
+      "name": "top",
+      "height": 0.1
+    }
+  ],
+  "anchors": {
+    "front": [
+      0.0,
+      0.4
+    ]
+  },
+  "attrs": {
+    "charging": [
+      "off",
+      "on"
+    ]
+  },
+  "states": {
+    "charging": {
+      "default": "off",
+      "effects": {
+        "off": [
+          {"part": "strip", "emissive": 0.0},
+          {"part": "floor_glow", "visible": false},
+          {"light": "glow", "intensity": 0.0}
+        ],
+        "on": [
+          {"part": "strip", "emissive": 1.0},
+          {"part": "floor_glow", "visible": true},
+          {"light": "glow", "intensity": 1.0}
+        ]
+      }
+    }
+  },
+  "notes": "SSOT 9.2 종류. 둥근 사각 받침, 윗면 고무 매트와 충전 접점, 둘레 LED 띠(strip). charging on: 띠 발광 + 바닥 빛 번짐(floor_glow 효과 부품) + 앞쪽 점광원. 로봇이 윗면을 덮어도 옆 띠와 바닥 번짐이 보인다."
+}

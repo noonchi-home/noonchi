@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Apartment Twin</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <header class="bar">
+    <strong>Apartment Twin</strong>
+    <label class="debug-only">불러오기
+      <select id="mode">
+        <option value="scene">scene.json + 개별 GLB</option>
+        <option value="complete">apartment_complete.glb</option>
+      </select>
+    </label>
+    <label>벽
+      <select id="walls">
+        <option value="full" selected>온전히</option>
+        <option value="auto">앞쪽 낮춤</option>
+        <option value="low">모두 낮춤</option>
+      </select>
+    </label>
+    <label>방
+      <select id="room"><option value="">전체</option></select>
+    </label>
+    <button id="cctv" type="button" title="고른 방(없으면 거실)의 천장 모서리 카메라로 봅니다">CCTV로 보기</button>
+    <label title="방 초점일 때 다른 방의 가구·가전을 숨긴다"><input id="isolate" type="checkbox" checked> 초점 방만</label>
+    <label><input id="ceiling" type="checkbox"> 천장 보기</label>
+    <label><input id="badges" type="checkbox" checked> 상태 배지</label>
+    <label class="debug-only"><input id="ao" type="checkbox" checked> AO</label>
+    <span class="tools">
+      <button id="translate" type="button" aria-pressed="true">이동 (W)</button>
+      <button id="rotate" type="button" aria-pressed="false">회전 (E)</button>
+      <button id="reset" type="button">원래 자리</button>
+      <button id="export" type="button">배치 내보내기</button>
+    </span>
+    <span id="status" class="status debug-only" role="status"></span>
+  </header>
+  <main class="stage" id="stage">
+    <canvas id="view"></canvas>
+    <aside class="panel left" aria-label="가전·상태">
+      <h2>가전·상태</h2>
+      <div class="row">
+        <button id="all-on" type="button">모두 켜기</button>
+        <button id="all-off" type="button">모두 끄기</button>
+      </div>
+      <div id="devices" class="devices"></div>
+    </aside>
+    <aside class="panel right" aria-label="가전 상태">
+      <h2>가전 상태 <span id="active-count" class="count" aria-live="polite"></span></h2>
+      <div id="active-list" class="active-list"></div>
+      <section class="debug-only" aria-live="polite">
+        <h2>선택</h2>
+        <div id="selected" class="muted">가구·가전·소품을 클릭하세요. 벽·바닥·문·창·천장 조명은 고정입니다.</div>
+        <div id="selected-states" class="devices"></div>
+        <h2>검사</h2>
+        <ul id="report" class="report"></ul>
+      </section>
+    </aside>
+    <div id="cctv-overlay" class="cctv" hidden>
+      <div class="cctv-top">
+        <span class="rec">REC</span>
+        <span id="cctv-name" class="cctv-name"></span>
+        <span id="cctv-time" class="cctv-time"></span>
+      </div>
+      <ul id="cctv-devices" class="cctv-devices" aria-live="polite"></ul>
+      <div class="cctv-actions">
+        <button id="cctv-prev" type="button" aria-label="이전 방 카메라">◀</button>
+        <button id="cctv-next" type="button" aria-label="다음 방 카메라">▶</button>
+        <button id="cctv-panel" type="button" aria-pressed="true">가전 패널</button>
+        <button id="cctv-exit" type="button">전체 보기</button>
+      </div>
+      <p class="cctv-hint">드래그: 카메라 돌리기 · 휠: 확대 · Esc: 나가기</p>
+    </div>
+    <div id="toast" class="toast" role="status" hidden></div>
+  </main>
+  <script type="module" src="main.mjs"></script>
+</body>
+</html>

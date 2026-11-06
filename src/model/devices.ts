@@ -3,6 +3,7 @@
 
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { DeviceSpec, RoomSpec } from "../hub/types.js";
 import { resolveHome, type Home } from "./homes.js";
 import { defaultTwinValue, describeDevice } from "./mapping.js";
@@ -57,9 +58,13 @@ interface RawObject {
   state?: Record<string, unknown>;
 }
 
-/** TWIN_STUDIO_DIR(기본 ../twin-studio)을 절대 경로로. 상대 경로는 base(기본 cwd) 기준. */
+/** 트윈 결과물 기본 폴더: 이 저장소 twin/(scripts/twin-assets.ts로 twin-studio에서 복사). */
+export const DEFAULT_TWIN_DIR = fileURLToPath(new URL("../../twin/", import.meta.url));
+
+/** 트윈 결과물 폴더(절대 경로): 인자 → TWIN_STUDIO_DIR → 저장소 twin/. 상대 경로는 base(기본 cwd) 기준. */
 export function resolveTwinStudioDir(dir?: string, base: string = process.cwd()): string {
-  const d = dir ?? process.env.TWIN_STUDIO_DIR ?? "../twin-studio";
+  const d = dir?.trim() || process.env.TWIN_STUDIO_DIR?.trim();
+  if (!d) return resolve(DEFAULT_TWIN_DIR);
   return isAbsolute(d) ? resolve(d) : resolve(base, d);
 }
 

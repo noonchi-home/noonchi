@@ -2,7 +2,7 @@ import { createContext, useContext } from "react";
 import type * as THREE_NS from "three";
 
 /**
- * twin-studio 뷰어(window.aptViewer) 중 화면이 쓰는 부분. 원본: ../twin-studio/apartment/viewer/main.mjs 맨 아래.
+ * twin-studio 뷰어(window.aptViewer) 중 화면이 쓰는 부분. 원본: twin/apartment/viewer/main.mjs 맨 아래(twin-studio에서 복사).
  * 3D 객체는 이 THREE로만 만든다(three를 따로 불러 섞지 않는다). @types/three는 타입에만 쓴다.
  */
 export interface AptViewer {

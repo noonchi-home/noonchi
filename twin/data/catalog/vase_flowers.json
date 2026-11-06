@@ -1,0 +1,16 @@
+{
+  "type": "vase_flowers",
+  "label": "꽃병",
+  "family": "reuse",
+  "category": "decorations",
+  "node_type": "decor",
+  "mount": "surface",
+  "footprint": [
+    0.09,
+    0.11
+  ],
+  "height": 0.32,
+  "model": "assets/decorations/vase_flowers.glb",
+  "blocks_walk": false,
+  "blocks_view": false
+}

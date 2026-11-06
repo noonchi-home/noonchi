@@ -42,7 +42,7 @@ async function servedHome(): Promise<{ home: string | null } | null> {
 export function serverEnv(home: string, base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   return {
     ...base, PORT: String(SERVER_PORT), HUB: "memory", AGENT_PROVIDER: "mock", HOME_ID: home,
-    RUNTIME_DIR: "runtime-3d", TWIN_STUDIO_DIR: resolve(ROOT, "../twin-studio-3d"), PHONE_PORT: "", BRAIN: "",
+    RUNTIME_DIR: "runtime-3d", TWIN_STUDIO_DIR: base.TWIN_STUDIO_DIR?.trim() || resolve(ROOT, "twin"), PHONE_PORT: "", BRAIN: "",
   };
 }
 

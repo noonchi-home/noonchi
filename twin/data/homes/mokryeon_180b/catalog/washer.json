@@ -1,0 +1,146 @@
+{
+  "type": "washer",
+  "label": "드럼 세탁기",
+  "family": "bath_utility",
+  "category": "appliances",
+  "node_type": "device",
+  "mount": "floor",
+  "footprint": [
+    0.6,
+    0.65
+  ],
+  "height": 0.85,
+  "model": "assets/appliances/washer.glb",
+  "blocks_walk": true,
+  "blocks_view": true,
+  "surfaces": [
+    {
+      "name": "top",
+      "height": 0.85
+    }
+  ],
+  "anchors": {
+    "front": [
+      0.0,
+      0.65
+    ],
+    "door": [
+      0.0,
+      0.33,
+      0.42
+    ]
+  },
+  "attrs": {
+    "running": [
+      false,
+      true
+    ],
+    "door": [
+      "closed",
+      "open"
+    ]
+  },
+  "states": {
+    "running": {
+      "default": false,
+      "effects": {
+        "false": [
+          {
+            "part": "display",
+            "visible": false
+          },
+          {
+            "part": "dial_ring",
+            "emissive": 0.0
+          },
+          {
+            "part": "drum_light",
+            "emissive": 0.0
+          },
+          {
+            "part": "status_bar",
+            "emissive": 0.0
+          },
+          {
+            "light": "drum_glow",
+            "intensity": 0.0
+          }
+        ],
+        "true": [
+          {
+            "part": "display",
+            "visible": true
+          },
+          {
+            "part": "dial_ring",
+            "emissive": 1.0
+          },
+          {
+            "part": "drum_light",
+            "emissive": 1.0
+          },
+          {
+            "part": "status_bar",
+            "emissive": 1.0
+          },
+          {
+            "light": "drum_glow",
+            "intensity": 1.0
+          },
+          {
+            "part": "drum",
+            "spin": [
+              0,
+              0,
+              0.8
+            ]
+          }
+        ]
+      }
+    },
+    "door": {
+      "default": "closed",
+      "effects": {
+        "closed": [
+          {
+            "part": "door",
+            "rotate": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "part": "door_lamp",
+            "emissive": 0.0
+          },
+          {
+            "light": "door_light",
+            "intensity": 0.0
+          }
+        ],
+        "open": [
+          {
+            "part": "door",
+            "rotate": [
+              0,
+              -100,
+              0
+            ]
+          },
+          {
+            "part": "door_lamp",
+            "emissive": 1.0
+          },
+          {
+            "light": "door_light",
+            "intensity": 1.0
+          }
+        ]
+      }
+    }
+  },
+  "notes": "running(SSOT 불리언) → 표시창·다이얼 고리·양 옆판 위쪽 상태 줄(위에 건조기가 얹혀 윗판은 가려진다)·세탁조 뒤 조명판 발광, 발판 앞 바닥 상태등(drum_glow), 세탁조 회전(spin). door open → 왼쪽 경첩 100° + 패킹 위 문 열림 LED(door_lamp)와 바닥 빛(door_light). running과 door는 대상을 나눈다(발광·보이기·빛 세기를 두 상태가 함께 바꾸면 Blender 미리보기와 뷰어가 달라진다). 뒤를 보고 놓여도(180) 옆판 상태 줄과 앞·옆 바닥 빛이 보인다.",
+  "builder": "washer",
+  "generated_by": "import-labels"
+}

@@ -1,0 +1,58 @@
+{
+  "type": "desk_lamp",
+  "label": "책상 스탠드",
+  "family": "bedroom",
+  "category": "appliances",
+  "node_type": "device",
+  "mount": "surface",
+  "footprint": [
+    0.16,
+    0.32
+  ],
+  "height": 0.44,
+  "model": "assets/appliances/desk_lamp.glb",
+  "blocks_walk": false,
+  "blocks_view": false,
+  "attrs": {
+    "power": [
+      "off",
+      "on"
+    ]
+  },
+  "states": {
+    "power": {
+      "default": "off",
+      "effects": {
+        "off": [
+          {
+            "part": "head_glow",
+            "emissive": 0.0
+          },
+          {
+            "part": "vent",
+            "emissive": 0.0
+          },
+          {
+            "light": "spot",
+            "intensity": 0.0
+          }
+        ],
+        "on": [
+          {
+            "part": "head_glow",
+            "emissive": 1.0
+          },
+          {
+            "part": "vent",
+            "emissive": 1.0
+          },
+          {
+            "light": "spot",
+            "intensity": 1.0
+          }
+        ]
+      }
+    }
+  },
+  "notes": "관절 팔 스탠드(스프링, 황동 관절, 앞으로 숙인 원뿔 갓). power on → 갓 안쪽·확산판·입술 고리·갓 위 통풍 고리 발광 + 책상을 비추는 스폿 빛(spot). 뒤에서도 통풍 고리와 빛 웅덩이가 보인다."
+}

@@ -1,0 +1,16 @@
+{
+  "type": "plant_herb",
+  "label": "허브 화분",
+  "family": "reuse",
+  "category": "decorations",
+  "node_type": "decor",
+  "mount": "surface",
+  "footprint": [
+    0.1,
+    0.1
+  ],
+  "height": 0.24,
+  "model": "assets/decorations/plant_herb.glb",
+  "blocks_walk": false,
+  "blocks_view": false
+}

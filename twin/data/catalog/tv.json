@@ -1,0 +1,64 @@
+{
+  "type": "tv",
+  "label": "TV 65형",
+  "family": "living",
+  "category": "appliances",
+  "node_type": "device",
+  "mount": "surface",
+  "footprint": [
+    1.45,
+    0.22
+  ],
+  "height": 0.9,
+  "model": "assets/appliances/tv.glb",
+  "blocks_walk": false,
+  "blocks_view": true,
+  "anchors": {
+    "front": [
+      0.0,
+      0.6
+    ]
+  },
+  "attrs": {
+    "power": [
+      "off",
+      "on"
+    ]
+  },
+  "states": {
+    "power": {
+      "default": "off",
+      "effects": {
+        "off": [
+          {
+            "part": "screen",
+            "emissive": 0.0
+          },
+          {
+            "part": "standby",
+            "emissive": 1.0
+          },
+          {
+            "light": "glow",
+            "intensity": 0.0
+          }
+        ],
+        "on": [
+          {
+            "part": "screen",
+            "emissive": 1.0
+          },
+          {
+            "part": "standby",
+            "emissive": 0.0
+          },
+          {
+            "light": "glow",
+            "intensity": 1.0
+          }
+        ]
+      }
+    }
+  },
+  "notes": "65형(패널 1.448 x 0.832, 두께 2.4cm) + 가운데 받침(0.46 x 0.22 판). 화면은 검은 유리 바탕에 스트리밍 앱 홈 화면 그림(living_tv_screen 1024x576)을 발광으로만 쓴다. 켜면 화면 발광 + 앞을 보는 차가운 흰빛 면광원, 끄면 검은 화면과 아래 가운데 빨간 대기 LED."
+}

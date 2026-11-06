@@ -1,0 +1,17 @@
+{
+  "type": "books_row",
+  "label": "책 한 줄",
+  "family": "bedroom",
+  "category": "decorations",
+  "node_type": "decor",
+  "mount": "surface",
+  "footprint": [
+    0.59,
+    0.21
+  ],
+  "height": 0.26,
+  "model": "assets/decorations/books_row.glb",
+  "blocks_walk": false,
+  "blocks_view": false,
+  "notes": "책 17권 안팎(높이·두께·깊이·색 제각각, 책등 그림, 단단한 표지는 표지판 + 안으로 들어간 책 배) + 오른쪽 끝에 기댄 책 한 권."
+}

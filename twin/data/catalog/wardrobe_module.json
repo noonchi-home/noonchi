@@ -1,0 +1,23 @@
+{
+  "type": "wardrobe_module",
+  "label": "붙박이장 한 칸",
+  "family": "bedroom",
+  "category": "furniture",
+  "node_type": "furniture",
+  "mount": "floor",
+  "footprint": [
+    0.96,
+    0.6
+  ],
+  "height": 2.28,
+  "model": "assets/furniture/wardrobe_module.glb",
+  "blocks_walk": true,
+  "blocks_view": true,
+  "anchors": {
+    "front": [
+      0.0,
+      0.9
+    ]
+  },
+  "notes": "바닥~천장 붙박이장 한 칸: 손잡이 없는 누름식 평판 문 둘, 위 마감판, 들어간 걸레받이. 옆판 바깥면이 정확히 ±0.48이고 바깥 문 가장자리는 반 틈(1.5mm)이라 0.96 m 간격으로 붙이면 모든 틈이 3mm."
+}

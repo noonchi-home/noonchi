@@ -1,0 +1,66 @@
+{
+  "type": "mk_door_bath_east_l",
+  "label": "door_bath_east (도면 기준)",
+  "family": "openings",
+  "category": "fixtures",
+  "node_type": "fixture",
+  "mount": "opening",
+  "footprint": [
+    0.703125,
+    0.15
+  ],
+  "height": 2.05,
+  "model": "assets/fixtures/mk_door_bath_east_l.glb",
+  "blocks_walk": false,
+  "blocks_view": true,
+  "attrs": {
+    "door": [
+      "closed",
+      "open"
+    ]
+  },
+  "states": {
+    "door": {
+      "default": "closed",
+      "effects": {
+        "closed": [
+          {
+            "part": "leaf",
+            "rotate": [
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "open": [
+          {
+            "part": "leaf",
+            "rotate": [
+              0,
+              -95,
+              0
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "anchors": {
+    "front": [
+      0.0,
+      0.6
+    ],
+    "back": [
+      0.0,
+      -0.6
+    ],
+    "handle": [
+      0.275,
+      0.0,
+      0.98
+    ]
+  },
+  "notes": "정면(-y) = 문이 열리는 쪽(swing_into). 정면에서 볼 때 경첩이 왼쪽(-x). 열림 = 문짝 회전축 leaf를 세로축 -95°(정면 쪽으로 선다). 문틀이 개구부(폭 × 2.1 × 벽 0.12)를 채우고 양면 몰딩(0.06 × 0.012)은 크기 계산에서 뺀다.",
+  "builder": "door_bath_l"
+}

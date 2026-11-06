@@ -1,0 +1,28 @@
+{
+  "type": "mk_win_balcony_north",
+  "label": "win_balcony_north (도면 기준)",
+  "family": "openings",
+  "category": "fixtures",
+  "node_type": "fixture",
+  "mount": "opening",
+  "footprint": [
+    4.55625,
+    0.2
+  ],
+  "height": 2.0,
+  "model": "assets/fixtures/mk_win_balcony_north.glb",
+  "blocks_walk": false,
+  "blocks_view": false,
+  "anchors": {
+    "front": [
+      0.0,
+      0.5
+    ],
+    "back": [
+      0.0,
+      -0.5
+    ]
+  },
+  "notes": "정면(-y) = room 쪽. 흰 PVC 바깥틀이 개구부(폭 × 높이 × 벽 두께)를 채우고 안·밖 레일에 미서기 두 짝씩, 창대석 없이 바닥 레일. 원점 = 창턱(sill) 높이의 개구부 아래 중앙. 양면 몰딩·창대석은 크기 계산에서 뺀다. 상태 없음.",
+  "builder": "window_living"
+}

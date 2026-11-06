@@ -1,0 +1,72 @@
+{
+  "type": "stick_vacuum",
+  "label": "무선청소기(거치대)",
+  "family": "bath_utility",
+  "category": "appliances",
+  "node_type": "device",
+  "mount": "floor",
+  "footprint": [
+    0.26,
+    0.22
+  ],
+  "height": 1.15,
+  "model": "assets/appliances/stick_vacuum.glb",
+  "blocks_walk": true,
+  "blocks_view": true,
+  "anchors": {
+    "front": [
+      0.0,
+      0.5
+    ]
+  },
+  "attrs": {
+    "charging": [
+      "off",
+      "on"
+    ]
+  },
+  "states": {
+    "charging": {
+      "default": "off",
+      "effects": {
+        "off": [
+          {
+            "part": "stand_led",
+            "emissive": 0.0
+          },
+          {
+            "part": "led_bar",
+            "emissive": 0.0
+          },
+          {
+            "light": "charge_glow",
+            "intensity": 0.0
+          },
+          {
+            "light": "top_glow",
+            "intensity": 0.0
+          }
+        ],
+        "on": [
+          {
+            "part": "stand_led",
+            "emissive": 1.0
+          },
+          {
+            "part": "led_bar",
+            "emissive": 1.0
+          },
+          {
+            "light": "charge_glow",
+            "intensity": 1.0
+          },
+          {
+            "light": "top_glow",
+            "intensity": 1.0
+          }
+        ]
+      }
+    }
+  },
+  "notes": "거치대 + 무선청소기. charging on → 거치대 LED(기둥 앞뒤 줄·머리 고리와 윗면·받침 앞)와 손잡이 배터리 막대 발광, 받침 앞 바닥을 비추는 작은 초록 빛(charge_glow). top_glow(거치 머리 앞 1.02 m)는 다용도실처럼 앞 벽을 1.05 m로 낮춘 자리에서도 둘레 벽·선반을 초록으로 비춰 충전 중임을 보인다."
+}

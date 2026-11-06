@@ -1,0 +1,58 @@
+{
+  "type": "bedside_lamp",
+  "label": "수면등",
+  "family": "bedroom",
+  "category": "appliances",
+  "node_type": "device",
+  "mount": "surface",
+  "footprint": [
+    0.25,
+    0.25
+  ],
+  "height": 0.45,
+  "model": "assets/appliances/bedside_lamp.glb",
+  "blocks_walk": false,
+  "blocks_view": false,
+  "attrs": {
+    "power": [
+      "off",
+      "on"
+    ]
+  },
+  "states": {
+    "power": {
+      "default": "off",
+      "effects": {
+        "off": [
+          {
+            "part": "shade",
+            "emissive": 0.0
+          },
+          {
+            "part": "bulb",
+            "emissive": 0.0
+          },
+          {
+            "light": "glow",
+            "intensity": 0.0
+          }
+        ],
+        "on": [
+          {
+            "part": "shade",
+            "emissive": 1.0
+          },
+          {
+            "part": "bulb",
+            "emissive": 1.0
+          },
+          {
+            "light": "glow",
+            "intensity": 1.0
+          }
+        ]
+      }
+    }
+  },
+  "notes": "세이지 유약 도자기 몸통 + 천 갓. power on → 갓·전구 발광 + 따뜻한 점광원(glow). 둥글어 어느 방향에서도 갓 발광이 보인다."
+}

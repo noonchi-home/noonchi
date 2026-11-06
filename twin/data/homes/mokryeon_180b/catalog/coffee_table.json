@@ -1,0 +1,24 @@
+{
+  "type": "coffee_table",
+  "label": "원목 커피 테이블",
+  "family": "reuse",
+  "category": "furniture",
+  "node_type": "furniture",
+  "mount": "floor",
+  "footprint": [
+    1.45,
+    0.62
+  ],
+  "height": 0.42,
+  "model": "assets/furniture/coffee_table.glb",
+  "blocks_walk": true,
+  "blocks_view": false,
+  "surfaces": [
+    {
+      "name": "top",
+      "height": 0.42
+    }
+  ],
+  "builder": "coffee_table",
+  "generated_by": "import-labels"
+}

@@ -1,0 +1,16 @@
+{
+  "type": "picture_frame_figure",
+  "label": "인물화 액자",
+  "family": "reuse",
+  "category": "decorations",
+  "node_type": "decor",
+  "mount": "wall",
+  "footprint": [
+    0.3,
+    0.03
+  ],
+  "height": 0.42,
+  "model": "assets/decorations/picture_frame_figure.glb",
+  "blocks_walk": false,
+  "blocks_view": false
+}

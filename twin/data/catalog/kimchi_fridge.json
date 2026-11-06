@@ -1,0 +1,16 @@
+{
+  "type": "kimchi_fridge",
+  "label": "스탠드 김치냉장고",
+  "family": "kitchen",
+  "category": "appliances",
+  "node_type": "device",
+  "mount": "floor",
+  "footprint": [
+    0.6,
+    0.75
+  ],
+  "height": 1.85,
+  "model": "assets/appliances/kimchi_fridge.glb",
+  "blocks_walk": true,
+  "blocks_view": true
+}

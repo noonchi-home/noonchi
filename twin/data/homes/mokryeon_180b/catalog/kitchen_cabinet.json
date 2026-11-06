@@ -1,0 +1,24 @@
+{
+  "type": "kitchen_cabinet",
+  "label": "주방 수납장",
+  "family": "kitchen",
+  "category": "furniture",
+  "node_type": "furniture",
+  "mount": "floor",
+  "footprint": [
+    1.556,
+    0.749
+  ],
+  "height": 0.9,
+  "model": "assets/furniture/kitchen_cabinet.glb",
+  "blocks_walk": true,
+  "blocks_view": true,
+  "surfaces": [
+    {
+      "name": "top",
+      "height": 0.9
+    }
+  ],
+  "builder": "counter_base_60",
+  "generated_by": "import-labels"
+}

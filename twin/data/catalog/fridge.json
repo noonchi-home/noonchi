@@ -1,0 +1,82 @@
+{
+  "type": "fridge",
+  "label": "양문형 냉장고",
+  "family": "kitchen",
+  "category": "appliances",
+  "node_type": "device",
+  "mount": "floor",
+  "footprint": [
+    0.92,
+    0.75
+  ],
+  "height": 1.85,
+  "model": "assets/appliances/fridge.glb",
+  "blocks_walk": true,
+  "blocks_view": true,
+  "attrs": {
+    "door": [
+      "closed",
+      "open"
+    ]
+  },
+  "states": {
+    "door": {
+      "default": "closed",
+      "effects": {
+        "closed": [
+          {
+            "part": "door_left",
+            "rotate": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "part": "door_right",
+            "rotate": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "part": "interior_light",
+            "emissive": 0.0
+          },
+          {
+            "light": "fridge_light",
+            "intensity": 0.0
+          }
+        ],
+        "open": [
+          {
+            "part": "door_left",
+            "rotate": [
+              0,
+              -100,
+              0
+            ]
+          },
+          {
+            "part": "door_right",
+            "rotate": [
+              0,
+              100,
+              0
+            ]
+          },
+          {
+            "part": "interior_light",
+            "emissive": 1.0
+          },
+          {
+            "light": "fridge_light",
+            "intensity": 1.0
+          }
+        ]
+      }
+    }
+  },
+  "notes": "4도어(위 프렌치 도어 둘 + 아래 문 둘). 문을 열면 위 두 문이 바깥 앞 모서리를 축으로 100° 열리고 실내등(발광)과 열린 앞면에서 밖으로 퍼지는 면광원(fridge_light)이 켜진다"
+}

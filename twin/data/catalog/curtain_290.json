@@ -1,0 +1,66 @@
+{
+  "type": "curtain_290",
+  "label": "거실 커튼(2.9m)",
+  "family": "lighting",
+  "category": "fixtures",
+  "node_type": "fixture",
+  "mount": "wall",
+  "footprint": [
+    2.9,
+    0.18
+  ],
+  "height": 2.25,
+  "model": "assets/fixtures/curtain_290.glb",
+  "blocks_walk": false,
+  "blocks_view": false,
+  "attrs": {
+    "curtain": [
+      "open",
+      "closed"
+    ]
+  },
+  "states": {
+    "curtain": {
+      "default": "open",
+      "effects": {
+        "open": [
+          {
+            "part": "panel_l",
+            "scale": [
+              0.22,
+              1,
+              1.8
+            ]
+          },
+          {
+            "part": "panel_r",
+            "scale": [
+              0.22,
+              1,
+              1.8
+            ]
+          }
+        ],
+        "closed": [
+          {
+            "part": "panel_l",
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "part": "panel_r",
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "notes": "GLB는 닫힌 모양(천 두 장이 전체 폭). 천은 바깥 끝 회전축 panel_l·panel_r 아래에 있어 open이면 x 0.22배·깊이 2.2배로 양끝에 모인다. 봉은 벽에서 0.125 m 앞(커튼 박스 깊이), 주름까지 깊이 약 0.18. 아파트에서는 남쪽 벽에 북쪽을 보고 걸려 카메라가 등 쪽에서 1.05 m로 자른 모습을 보므로, 주름 마루가 낮춘 벽 위로 넉넉히 보이게 봉을 조금 띄웠다"
+}

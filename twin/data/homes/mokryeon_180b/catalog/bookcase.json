@@ -1,0 +1,43 @@
+{
+  "type": "bookcase",
+  "label": "책장",
+  "family": "bedroom",
+  "category": "furniture",
+  "node_type": "furniture",
+  "mount": "floor",
+  "footprint": [
+    1.655,
+    0.374
+  ],
+  "height": 2.0,
+  "model": "assets/furniture/bookcase.glb",
+  "blocks_walk": true,
+  "blocks_view": true,
+  "surfaces": [
+    {
+      "name": "shelf_1",
+      "height": 0.42
+    },
+    {
+      "name": "shelf_2",
+      "height": 0.8
+    },
+    {
+      "name": "shelf_3",
+      "height": 1.18
+    },
+    {
+      "name": "shelf_4",
+      "height": 1.56
+    }
+  ],
+  "anchors": {
+    "front": [
+      0.0,
+      0.692
+    ]
+  },
+  "notes": "오크 개방형 책장: 세로결 옆판, 선반 넷(표면 shelf_1~4 = 선반 윗면), 흰 뒤판, 들어간 받침.",
+  "builder": "bookcase",
+  "generated_by": "import-labels"
+}

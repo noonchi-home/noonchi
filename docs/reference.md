@@ -16,7 +16,7 @@ twin-studio가 만든 아파트 트윈의 가전 65개를 **가상 Matter 기기
 
 ## 빠른 시작
 
-Node 22 이상. twin-studio 레포가 옆 폴더(`../twin-studio`)에 있어야 한다.
+Node 22.15. 트윈 결과물(뷰어·집·카탈로그)은 저장소 `twin/`에 있다. twin-studio에서 집을 다시 빌드했으면 `npx tsx scripts/twin-assets.ts --from <twin-studio 폴더>`로 `twin/`을 다시 채운다(`twin/SOURCE.json`에 twin-studio 커밋과 파일 sha256이 남는다).
 
 ```bash
 npm install
@@ -79,7 +79,7 @@ HUB=memory npm run demo
 | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | `claude-opus-5-5` | Anthropic(Messages API) |
 | `ANTHROPIC_EFFORT` | `low` | `low`…`max` |
 | `ANTHROPIC_FALLBACKS` | (켬) | `off`면 서버 측 거절 대체를 끈다 |
-| `TWIN_STUDIO_DIR` | `../twin-studio` | twin-studio 레포(상대 경로는 실행 위치 기준) |
+| `TWIN_STUDIO_DIR` | `twin/` | 트윈 결과물 폴더(상대 경로는 실행 위치 기준) |
 | `HOME_ID` | `homes.json`의 `default` | 불러올 집(twin-studio `homes.json`의 id, 예: `oneroom`) |
 | `RUNTIME_DIR` | `runtime` | 실행 중 만든 파일의 바탕 폴더: 배치 수정본 `homes/<id>/edits.json`, 사진 `photos/`(커밋하지 않음) |
 | `PHONE_PORT`, `PHONE_HOST` | (끔), `0.0.0.0` | 폰 AR 서버(아래 "폰 AR") |
@@ -196,8 +196,8 @@ twin-studio 아파트 뷰어(`apartment/viewer/`)에 `?live=`를 주면 twin-hom
 ### 실행
 
 ```bash
-# 1) twin-home(이 레포). /twin/에 ../twin-studio/apartment/를 붙인다
-TWIN_STUDIO_DIR=../twin-studio npm start
+# 1) twin-home(이 레포). /twin/에 twin/apartment/를 붙인다(TWIN_STUDIO_DIR 기본값 twin/)
+npm start
 #    → http://127.0.0.1:8200/              웹 화면(3D | 대화, "기기 카드"로 카드 칸 추가), 3D 칸은 같은 출처 /twin/viewer/?live=auto&embed=1
 #    → http://127.0.0.1:8200/twin/viewer/?live=auto   뷰어만 크게
 
@@ -351,16 +351,16 @@ tailscale serve --bg 8210   # 이미 켜져 있으면 생략. 폰: https://<이 
 twin-studio는 평면도마다 집 패키지를 하나씩 둔다(`homes.json`). twin-home은 설정에서 고른 집(없으면 `HOME_ID`)을 불러온다.
 
 ```bash
-# 먼저 twin-studio에서 빌드: uv run python -m studio apartment --home oneroom --no-render
+# 집 3개(apartment·oneroom·mokryeon_180b)는 twin/에 들어 있다
 HOME_ID=oneroom PHONE_PORT=8210 npm start
 ```
 
 1. 실제 집에 맞게 트윈을 고친다: 폰 '여기'(위), 또는 대시보드·폰 채팅("냉장고 오른쪽으로 0.5m", "공기청정기 추가해줘", "TV 빼줘"). 3D 트윈이 바로 바뀌고, 설정 3단계 배치 보정 칸에 `보정 N건 · 저장 안 함`이 뜬다.
 2. "배치 저장해" 또는 설정 3단계 **배치 보정 → 저장** → `runtime/homes/<id>/edits.json`. 다시 시작해도 저장한 보정은 다시 적용된다. **되돌리기**는 저장하지 않은 것까지 모두 버린다.
-3. 확정: twin-studio에서 `uv run python -m studio apply-edits --home <id> <edits.json>`(먼저 `--dry-run`으로 볼 수 있다) → `uv run python -m studio apartment --home <id> --no-render` → twin-home 재시작. 추가한 가전은 이때부터 Matter 기기로 켜고 끌 수 있다.
+3. 확정: twin-studio에서 `uv run python -m studio apply-edits --home <id> <edits.json>`(먼저 `--dry-run`으로 볼 수 있다) → `uv run python -m studio apartment --home <id> --no-render` → 이 저장소에서 `npx tsx scripts/twin-assets.ts --from <twin-studio 폴더>`로 `twin/`을 다시 채움 → twin-home 재시작. 추가한 가전은 이때부터 Matter 기기로 켜고 끌 수 있다.
 
 - 문·창·벽·바닥·천장 고정 설비는 옮기지 않는다. 다른 물건 위에 놓는 종류(TV·전자레인지 등)는 더할 수 없고, 옮기면 받침째 옮긴다.
-- 새 종류의 3D 모델은 집 산출물 → twin-studio `library/`(`python -m studio library`) 순서로 찾고, 둘 다 없으면 회색 상자로 보인다.
+- 새 종류의 3D 모델은 집 산출물 → `twin/library/`(twin-studio `python -m studio library`에서 복사) 순서로 찾고, 둘 다 없으면 회색 상자로 보인다.
 
 ## 에이전트 (src/agent)
 
@@ -383,7 +383,7 @@ stdio MCP 서버다. 에이전트 도구를 그대로 노출하고, **실행 중
 ```bash
 npm start                                                       # 먼저 서버를 띄운다(다른 터미널)
 claude mcp add twin-home -- npx tsx src/mcp/server.ts           # 이 레포 폴더에서
-claude mcp add twin-home -e TWIN_HOME_URL=http://127.0.0.1:8200 -- npx tsx C:/Users/ABC/Desktop/소웨공/twin-home/src/mcp/server.ts   # 다른 폴더에서
+claude mcp add twin-home -e TWIN_HOME_URL=http://127.0.0.1:8200 -- npx tsx <저장소 폴더>/src/mcp/server.ts   # 다른 폴더에서
 ```
 
 Claude Desktop(`claude_desktop_config.json`)은 같은 명령을 이렇게 적는다(이 형식은 여기서 실행해 보지 않았다).
@@ -393,7 +393,7 @@ Claude Desktop(`claude_desktop_config.json`)은 같은 명령을 이렇게 적�
   "mcpServers": {
     "twin-home": {
       "command": "npx",
-      "args": ["-y", "tsx", "C:/Users/ABC/Desktop/소웨공/twin-home/src/mcp/server.ts"],
+      "args": ["-y", "tsx", "<저장소 폴더>/src/mcp/server.ts"],
       "env": { "TWIN_HOME_URL": "http://127.0.0.1:8200" }
     }
   }

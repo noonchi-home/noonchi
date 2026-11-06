@@ -1,0 +1,37 @@
+{
+  "type": "bed_queen",
+  "label": "퀸 침대",
+  "family": "bedroom",
+  "category": "furniture",
+  "node_type": "furniture",
+  "mount": "floor",
+  "footprint": [
+    1.6,
+    2.1
+  ],
+  "height": 1.05,
+  "model": "assets/furniture/bed_queen.glb",
+  "blocks_walk": true,
+  "blocks_view": true,
+  "surfaces": [
+    {
+      "name": "mattress",
+      "height": 0.57
+    }
+  ],
+  "anchors": {
+    "front": [
+      0.0,
+      1.5
+    ],
+    "side_left": [
+      -1.15,
+      0.2
+    ],
+    "side_right": [
+      1.15,
+      0.2
+    ]
+  },
+  "notes": "천 씌운 프레임·세로 채널 누빔 헤드보드(1.05 m), 매트리스, 두께 있는 이불(옆·발치로 늘어지고 윗단을 접어 내림), 베개 2, 발치 머스터드 뜨개 담요. 표면 mattress = 이불 윗면 높이."
+}

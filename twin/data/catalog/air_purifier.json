@@ -1,0 +1,64 @@
+{
+  "type": "air_purifier",
+  "label": "공기청정기",
+  "family": "living",
+  "category": "appliances",
+  "node_type": "device",
+  "mount": "floor",
+  "footprint": [
+    0.29,
+    0.29
+  ],
+  "height": 0.75,
+  "model": "assets/appliances/air_purifier.glb",
+  "blocks_walk": true,
+  "blocks_view": false,
+  "anchors": {
+    "front": [
+      0.0,
+      0.5
+    ]
+  },
+  "attrs": {
+    "power": [
+      "off",
+      "on"
+    ]
+  },
+  "states": {
+    "power": {
+      "default": "off",
+      "effects": {
+        "off": [
+          {
+            "part": "ring",
+            "emissive": 0.0
+          },
+          {
+            "part": "display",
+            "emissive": 0.0
+          },
+          {
+            "part": "plume",
+            "visible": false
+          }
+        ],
+        "on": [
+          {
+            "part": "ring",
+            "emissive": 1.0
+          },
+          {
+            "part": "display",
+            "emissive": 1.0
+          },
+          {
+            "part": "plume",
+            "visible": true
+          }
+        ]
+      }
+    }
+  },
+  "notes": "흰 원통(지름 0.29): 아래 타공 필터, 위 동심원 토출 그릴. 켜지면 윗가장자리 빛 고리·표시창이 파랗게 빛나고 위로 0.6m 솟는 맑은 바람 기둥(plume, 효과 부품)이 나타나 뒤·위에서도 보인다."
+}

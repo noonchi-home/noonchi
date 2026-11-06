@@ -129,7 +129,7 @@ Every command, wherever it comes from, passes the approval policy and changes a 
 <details>
 <summary><b>Run it locally</b></summary>
 
-Requires Node.js 22+ and [twin-studio](https://github.com/2026-SWE/twin-studio) cloned next to this repo (`../twin-studio`). The device list comes from twin-studio's data. The 3D view needs the home built there first (`uv run python -m studio apartment`, or `--home oneroom --no-render` for the one-room sample).
+Requires Node.js 22.15. The twin runtime assets (viewer, homes, catalog) live in `twin/`, copied from [twin-studio](https://github.com/2026-SWE/twin-studio) builds. To refresh them, build the homes in twin-studio, then run `npx tsx scripts/twin-assets.ts --from <twin-studio folder>` to refill `twin/`.
 
 ```bash
 npm install

@@ -1,0 +1,99 @@
+{
+  "type": "dishwasher",
+  "label": "빌트인 식기세척기",
+  "family": "kitchen",
+  "category": "appliances",
+  "node_type": "device",
+  "mount": "floor",
+  "footprint": [
+    0.6,
+    0.6
+  ],
+  "height": 0.9,
+  "model": "assets/appliances/dishwasher.glb",
+  "blocks_walk": true,
+  "blocks_view": true,
+  "surfaces": [
+    {
+      "name": "top",
+      "height": 0.9
+    }
+  ],
+  "anchors": {
+    "front": [
+      0.0,
+      0.5
+    ]
+  },
+  "attrs": {
+    "running": [
+      false,
+      true
+    ],
+    "door": [
+      "closed",
+      "open"
+    ]
+  },
+  "states": {
+    "running": {
+      "default": false,
+      "effects": {
+        "false": [
+          {
+            "part": "display",
+            "emissive": 0.0
+          },
+          {
+            "part": "floor_spot",
+            "visible": false
+          },
+          {
+            "light": "info_light",
+            "intensity": 0.0
+          }
+        ],
+        "true": [
+          {
+            "part": "display",
+            "emissive": 1.0
+          },
+          {
+            "part": "floor_spot",
+            "visible": true
+          },
+          {
+            "light": "info_light",
+            "intensity": 1.0
+          }
+        ]
+      }
+    },
+    "door": {
+      "default": "closed",
+      "effects": {
+        "closed": [
+          {
+            "part": "door",
+            "rotate": [
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "open": [
+          {
+            "part": "door",
+            "rotate": [
+              85,
+              0,
+              0
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "notes": "SSOT 9.2는 높이 0.85. 하부장 줄의 상판(0.03)을 포함해 0.9로 만들었다. 동작 중에는 조작 띠 표시창이 빛나고 앞 바닥에 파란 빛 점(floor_spot)이 생긴다. 문은 아래 앞 모서리(door)를 축으로 앞으로 85° 눕는다"
+}

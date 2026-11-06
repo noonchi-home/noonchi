@@ -1,0 +1,16 @@
+{
+  "type": "picture_frame",
+  "label": "지도 포스터",
+  "family": "reuse",
+  "category": "decorations",
+  "node_type": "decor",
+  "mount": "wall",
+  "footprint": [
+    1.1,
+    0.03
+  ],
+  "height": 0.72,
+  "model": "assets/decorations/picture_frame.glb",
+  "blocks_walk": false,
+  "blocks_view": false
+}

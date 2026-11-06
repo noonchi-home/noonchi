@@ -1,0 +1,16 @@
+{
+  "type": "basket",
+  "label": "라탄 바구니",
+  "family": "reuse",
+  "category": "decorations",
+  "node_type": "decor",
+  "mount": "floor",
+  "footprint": [
+    0.36,
+    0.28
+  ],
+  "height": 0.21,
+  "model": "assets/decorations/basket.glb",
+  "blocks_walk": false,
+  "blocks_view": false
+}
