@@ -43,12 +43,17 @@ describe("maskFromBits", () => {
   it("캔버스 자리(left·top)에 놓는다: 위에 막대가 있는 화면", () => {
     // 4×2 캔버스에서 (1,0)·(3,1)이 집. 사진 6×4, 캔버스는 left 1·top 2
     const bits = Buffer.from([(1 << 1) | (1 << 7)]).toString("base64");
-    const m = maskFromBits({ width: 4, height: 2, bits, left: 1, top: 2 }, 6, 4);
+    const m = maskFromBits({ width: 4, height: 2, bits, left: 1, top: 2, cssWidth: 4, cssHeight: 2 }, 6, 4);
     expect([...m].flatMap((v, i) => (v ? [i] : []))).toEqual([2 * 6 + 2, 3 * 6 + 4]);
   });
   it("자리가 없으면 사진 왼쪽 위, 사진을 벗어나면 오류", () => {
     const one = Buffer.from([1]).toString("base64");
-    expect(maskFromBits({ width: 1, height: 1, bits: one }, 2, 2)[0]).toBe(1);
-    expect(() => maskFromBits({ width: 3, height: 1, bits: one }, 2, 2)).toThrow("마스크 3×1(자리 0,0)가 사진 2×2를 벗어나요");
+    expect(maskFromBits({ width: 1, height: 1, bits: one, cssWidth: 1, cssHeight: 1 }, 2, 2)[0]).toBe(1);
+    expect(() => maskFromBits({ width: 3, height: 1, bits: one, cssWidth: 3, cssHeight: 1 }, 2, 2)).toThrow("마스크 3×1(자리 0,0)가 사진 2×2를 벗어나요");
+  });
+  it("비트 크기가 캔버스 화면 크기(CSS px)와 다르면 오류: 배율이 1이 아닌 그림", () => {
+    const bits = Buffer.from([0, 0]).toString("base64");
+    expect(() => maskFromBits({ width: 4, height: 2, bits, cssWidth: 8, cssHeight: 4 }, 10, 10)).toThrow("마스크 4×2가 캔버스 화면 크기 8×4와 달라요");
+    expect(() => maskFromBits({ width: 4, height: 2, bits, cssWidth: 4.4, cssHeight: 1.6 }, 10, 10)).not.toThrow();
   });
 });

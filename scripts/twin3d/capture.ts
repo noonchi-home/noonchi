@@ -1,11 +1,13 @@
 // npm run capture -- --url <주소> --out <폴더> (--views a,b | --script <파일>) [--legacy] [--gpu] [--size 960x600] [--timeout 90] [--load-timeout 300]
 // 잠금을 잡고 크롬 하나만 띄운다(빈 포트, 임시 프로필). 새 엔진은 window.__twin3d, 옛 뷰어(--legacy)는 window.aptViewer.
-// 집 픽셀은 3D 마스크(물건 흰색·배경 검정으로 한 장, 사진 안 캔버스 자리 left·top)로 가르고, 통계용 사진은 덮개(HUD·미니맵·이름표)를 숨기고 찍는다.
+// 집 픽셀은 3D 마스크(물건 흰색·배경 검정으로 한 장, 사진 안 캔버스 자리 left·top, 화면 크기 cssWidth·cssHeight)로 가르고, 통계용 사진은 덮개(HUD·미니맵·이름표)를 숨기고 찍는다.
+// 옛 뷰어 보기는 overview·room:<id>만 된다. 다른 보기는 크롬을 띄우기 전에 멈춘다.
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import jpeg from "jpeg-js";
+import { legacyView, withTimeout } from "./capture-lib.js";
 import { killTree, withHeavy } from "./heavy.js";
 import { maskFromBits, sampleColors, shotStats, type MaskBits } from "./shot-stats.js";
 
@@ -22,12 +24,11 @@ const loadMs = Number(arg("load-timeout", "300")) * 1000;
 const steps = arg("script")
   ? readFileSync(arg("script")!, "utf8").split(/\r?\n/).map((x) => x.trim()).filter((x) => x && !x.startsWith("#"))
   : arg("views", "overview")!.split(",").flatMap((v) => [`view:${v}`, `shot:${v}`]);
+try { if (legacy) for (const s of steps) if (s.startsWith("view:")) legacyView(s.slice(5)); } catch (e) { console.error((e as Error).message); process.exit(2); }
 const chromePath = [process.env.CHROME, "C:/Program Files/Google/Chrome/Application/chrome.exe"].find((p) => p && existsSync(p));
 if (!chromePath) throw new Error("Chrome을 찾지 못했어요. CHROME 환경 변수에 경로를 넣으세요.");
 mkdirSync(out, { recursive: true });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const withTimeout = <T,>(p: Promise<T>, ms: number, label: string) =>
-  Promise.race([p, sleep(ms).then((): never => { throw new Error(`시간 초과(${ms / 1000}초): ${label}`); })]);
 const median = (c: [number, number, number][]) => (c.length ? [0, 1, 2].map((k) => c.map((x) => x[k]!).sort((a, b) => a - b)[Math.floor((c.length - 1) / 2)]) : null);
 
 // 옛 뷰어: browser-check.mjs loaded(m)과 같은 준비 조건. 마스크는 바닥판을 숨기고 흰 재질·검정 배경으로 한 장 그려 읽는다.
@@ -36,7 +37,7 @@ const MASK_BITS = `(gl, w, h) => { const px = new Uint8Array(w * h * 4); gl.read
   const bits = new Uint8Array(Math.ceil(w * h / 8));
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (px[((h - 1 - y) * w + x) * 4] > 127) { const i = y * w + x; bits[i >> 3] |= 1 << (i & 7); }
   let s = ""; for (const b of bits) s += String.fromCharCode(b); const r = gl.canvas.getBoundingClientRect();
-  return { width: w, height: h, bits: btoa(s), left: r.left, top: r.top }; }`;
+  return { width: w, height: h, bits: btoa(s), left: r.left, top: r.top, cssWidth: r.width, cssHeight: r.height }; }`;
 const LEGACY_MASK = `(() => { const v = window.aptViewer, T = v.THREE; v.setPaused(true);
   const hidden = []; v.scene.traverse((o) => { if (o.isMesh && o.visible && o.geometry?.type === "PlaneGeometry" && Math.abs(o.position.y + 0.15) < 1e-6) { o.visible = false; hidden.push(o); } });
   const bg = v.scene.background, ov = v.scene.overrideMaterial, tm = v.renderer.toneMapping;
@@ -119,7 +120,7 @@ await withHeavy(`capture ${url}`, async (lock) => {
       const [cmd, ...rest] = step.split(":");
       const a = rest.join(":");
       if (cmd === "view" && legacy) {
-        if (a.startsWith("room:")) await evaluate(`window.aptViewer.focusRoom(${JSON.stringify(a.slice(5))})`);
+        await evaluate(legacyView(a));
         await sleep(2500);
       } else if (cmd === "view") await evaluate(`window.__twin3d.view(${JSON.stringify(a)}, { instant: true }).then(() => window.__twin3d.idle())`);
       else if (cmd === "shot") await shoot(a);

@@ -1,12 +1,14 @@
 // npm run dev3d -- start [--home <id>] | stop: 3D 작업용 서버(8201)와 화면(Vite 5174)을 함께 켜고 끈다. 8200·5173은 건드리지 않는다.
-// start: 이미 켜져 있으면 그대로 둔다. 둘 다 답할 때까지 기다리고, 화면 모듈을 한 번 훑어 Vite 의존성 묶기를 끝낸다.
-// 서버는 npm start에서 화면 빌드(prestart)를 뺀 것과 같다. 화면은 5174의 Vite가 내준다.
+// start: 같은 집 서버가 이미 켜져 있으면 그대로 둔다. 다른 집이면 내가 띄운 서버만 다시 켜고, 남이 띄운 서버면 멈춘다.
+// 둘 다 답할 때까지 기다리고, 서버가 띄운 집이 요청과 같은지 본 뒤, 화면 모듈을 한 번 훑어 Vite 의존성 묶기를 끝낸다.
+// 서버는 npm start에서 화면 빌드(prestart)를 뺀 것과 같고 폰 서버·두뇌는 끈다. 화면은 5174의 Vite가 내준다.
+// pid는 띄운 때와 함께 적고, 끌 때는 지금도 그때 띄운 node인지 본다(재부팅 뒤 같은 pid를 쓰는 다른 프로세스를 끄지 않게).
 import { spawn } from "node:child_process";
 import { closeSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { alive, killTree } from "./heavy.js";
+import { alive, killTree, sameProcess } from "./heavy.js";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 export const DEV_PATH = join(tmpdir(), "twin3d-dev.json");
@@ -15,7 +17,8 @@ export const UI_PORT = 5174;
 const SERVER = `http://127.0.0.1:${SERVER_PORT}`;
 const UI = `http://127.0.0.1:${UI_PORT}`;
 const LOGS = join(ROOT, "runtime-3d", "logs");
-interface DevState { server: number | null; ui: number | null; home: string; at: string }
+interface Proc { pid: number; at: string }
+interface DevState { server: Proc | null; ui: Proc | null; home: string; at: string }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const answers = async (url: string) => {
@@ -24,16 +27,41 @@ const answers = async (url: string) => {
 function readState(): DevState | null {
   try { return JSON.parse(readFileSync(DEV_PATH, "utf8")) as DevState; } catch { return null; }
 }
-const ours = (pid: number | null | undefined): pid is number => typeof pid === "number" && pid > 4 && alive(pid);
+const NODE = process.execPath;
+const ours = (p: Proc | null | undefined): boolean => typeof p?.pid === "number" && sameProcess(p.pid, p.at, basename(NODE));
+async function servedHome(): Promise<{ home: string | null } | null> {
+  try {
+    const res = await fetch(`${SERVER}/api/health`, { signal: AbortSignal.timeout(3000) });
+    if (!res.ok) return null;
+    const h = (await res.json()) as { home?: { id?: string } | null };
+    return { home: h.home?.id ?? null };
+  } catch { return null; }
+}
 
-function launch(name: "server" | "ui", args: string[], cwd: string, env: NodeJS.ProcessEnv): number {
+/** 3D 작업 서버 환경. 폰 서버·두뇌는 빈 값으로 넣는다(지우면 서버의 dotenv가 .env 값으로 다시 채운다). */
+export function serverEnv(home: string, base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return {
+    ...base, PORT: String(SERVER_PORT), HUB: "memory", AGENT_PROVIDER: "mock", HOME_ID: home,
+    RUNTIME_DIR: "runtime-3d", TWIN_STUDIO_DIR: resolve(ROOT, "../twin-studio-3d"), PHONE_PORT: "", BRAIN: "",
+  };
+}
+
+/** 8201에 떠 있는 서버(served = health의 집, 안 떠 있으면 null)와 요청한 집을 견줘 할 일을 정한다. */
+export function serverPlan(home: string, served: { home: string | null } | null, own: boolean): "keep" | "launch" | "restart" {
+  if (!served) return "launch";
+  if (served.home === home) return "keep";
+  if (own) return "restart";
+  throw new Error(`8201에 다른 집(${served.home ?? "모름"}) 서버가 떠 있어요. 그 서버를 끈 뒤 다시 켜세요`);
+}
+
+function launch(name: "server" | "ui", args: string[], cwd: string, env: NodeJS.ProcessEnv): Proc {
   mkdirSync(LOGS, { recursive: true });
   const fd = openSync(join(LOGS, `${name}.log`), "w");
-  const child = spawn(process.execPath, args, { cwd, env, detached: true, stdio: ["ignore", fd, fd], windowsHide: true });
+  const child = spawn(NODE, args, { cwd, env, detached: true, stdio: ["ignore", fd, fd], windowsHide: true });
   closeSync(fd);
   child.unref();
   if (!child.pid) throw new Error(`${name}를 띄우지 못했어요`);
-  return child.pid;
+  return { pid: child.pid, at: new Date().toISOString() };
 }
 
 function tail(name: string): string {
@@ -68,28 +96,28 @@ export async function warm(base = UI, path = "/?twin=three", limit = 800): Promi
 
 async function start(home: string): Promise<void> {
   const prev = readState();
-  const serverUp = await answers(`${SERVER}/api/health`);
+  const served = await servedHome();
   const uiUp = await answers(`${UI}/`);
-  if (serverUp && uiUp) { console.log(`이미 켜져 있어요: 서버 ${SERVER} · 화면 ${UI}`); return; }
-  const env: NodeJS.ProcessEnv = { ...process.env };
-  delete env.PHONE_PORT; // 폰 서버(8210)는 띄우지 않는다
-  let server = ours(prev?.server) && serverUp ? prev!.server : null;
-  let ui = ours(prev?.ui) && uiUp ? prev!.ui : null;
-  if (!serverUp) {
-    server = launch("server", [join(ROOT, "node_modules/tsx/dist/cli.mjs"), "src/server/main.ts"], ROOT, {
-      ...env, PORT: String(SERVER_PORT), HUB: "memory", AGENT_PROVIDER: "mock", HOME_ID: home,
-      RUNTIME_DIR: "runtime-3d", TWIN_STUDIO_DIR: resolve(ROOT, "../twin-studio-3d"),
-    });
+  const own = served ? ours(prev?.server) : false;
+  const plan = serverPlan(home, served, own);
+  if (plan === "keep" && uiUp) { console.log(`이미 켜져 있어요: 서버 ${SERVER}(집 ${home}) · 화면 ${UI}`); return; }
+  if (plan === "restart") {
+    killTree(prev!.server!.pid);
+    for (let i = 0; i < 20 && (await answers(`${SERVER}/api/health`)); i++) await sleep(500);
+    if (await answers(`${SERVER}/api/health`)) throw new Error(`다른 집(${served!.home}) 서버가 꺼지지 않았어요`);
+    console.log(`다른 집(${served!.home}) 서버를 껐어요`);
   }
-  if (!uiUp) {
-    ui = launch("ui", [join(ROOT, "ui/node_modules/vite/bin/vite.js"), "--port", String(UI_PORT), "--strictPort"], join(ROOT, "ui"), { ...env, TWIN_HOME_URL: SERVER });
-  }
+  const server = plan === "keep" ? (own ? prev!.server : null) : launch("server", [join(ROOT, "node_modules/tsx/dist/cli.mjs"), "src/server/main.ts"], ROOT, serverEnv(home));
+  const ui = uiUp ? (ours(prev?.ui) ? prev!.ui : null)
+    : launch("ui", [join(ROOT, "ui/node_modules/vite/bin/vite.js"), "--port", String(UI_PORT), "--strictPort"], join(ROOT, "ui"), { ...process.env, TWIN_HOME_URL: SERVER });
   writeFileSync(DEV_PATH, JSON.stringify({ server, ui, home, at: new Date().toISOString() } satisfies DevState));
   try {
-    await waitFor("server", `${SERVER}/api/health`, server, 180_000);
-    await waitFor("ui", `${UI}/`, ui, 120_000);
+    await waitFor("server", `${SERVER}/api/health`, server?.pid ?? null, 180_000);
+    const got = (await servedHome())?.home ?? null;
+    if (got !== home) throw new Error(`서버가 ${got ?? "모르는"} 집을 띄웠어요(요청 ${home}). runtime-3d에 저장된 집이 있는지 보세요`);
+    await waitFor("ui", `${UI}/`, ui?.pid ?? null, 120_000);
     const n = await warm();
-    console.log(`켜졌어요: 서버 ${SERVER}(pid ${server ?? "-"}) · 화면 ${UI}(pid ${ui ?? "-"}) · 모듈 ${n}개 받음 · 기록 ${LOGS}`);
+    console.log(`켜졌어요: 서버 ${SERVER}(집 ${home}, pid ${server?.pid ?? "-"}) · 화면 ${UI}(pid ${ui?.pid ?? "-"}) · 모듈 ${n}개 받음 · 기록 ${LOGS}`);
   } catch (e) {
     await stop();
     throw e;
@@ -99,10 +127,15 @@ async function start(home: string): Promise<void> {
 async function stop(): Promise<void> {
   const s = readState();
   if (!s) { console.log("켜 둔 3D 작업 서버가 없어요"); return; }
-  for (const pid of [s.server, s.ui]) if (ours(pid)) killTree(pid);
+  const left: number[] = [];
+  for (const p of [s.server, s.ui]) {
+    if (p && ours(p)) killTree(p.pid);
+    else if (typeof p?.pid === "number" && alive(p.pid)) left.push(p.pid);
+  }
   rmSync(DEV_PATH, { force: true });
   for (let i = 0; i < 20 && ((await answers(`${SERVER}/api/health`)) || (await answers(`${UI}/`))); i++) await sleep(500);
-  console.log(`껐어요: 서버 pid ${s.server ?? "-"} · 화면 pid ${s.ui ?? "-"}`);
+  console.log(`껐어요: 서버 pid ${s.server?.pid ?? "-"} · 화면 pid ${s.ui?.pid ?? "-"}`);
+  if (left.length) console.log(`pid ${left.join(", ")}는 그때 띄운 프로세스가 아니라 끄지 않았어요`);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {

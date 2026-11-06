@@ -8,11 +8,16 @@ export interface ShotStats {
 }
 type Px = Uint8Array | Uint8ClampedArray;
 
-/** 3D 마스크: 캔버스 크기 비트(위 행부터, 1픽셀 1비트 base64)와 사진 안 캔버스 자리(CSS px, 배율 1). */
-export interface MaskBits { width: number; height: number; bits: string; left?: number; top?: number }
+/**
+ * 3D 마스크: 캔버스 그림 크기(width·height) 비트(위 행부터, 1픽셀 1비트 base64), 사진 안 캔버스 자리(left·top)와 캔버스 화면 크기(cssWidth·cssHeight, CSS px).
+ * 사진은 CSS px(배율 1)이라 그림 크기가 화면 크기와 같아야 한다. 배율(pixelRatio)이 1이 아니면 마스크를 배율 1로 그린다.
+ */
+export interface MaskBits { width: number; height: number; bits: string; left?: number; top?: number; cssWidth: number; cssHeight: number }
 
-/** 캔버스 마스크를 사진 크기로 펼친다. 캔버스 밖(위 막대 등)은 0. */
+/** 캔버스 마스크를 사진 크기로 펼친다. 캔버스 밖(위 막대 등)은 0. 그림 크기가 화면 크기와 다르거나 사진을 벗어나면 오류. */
 export function maskFromBits(m: MaskBits, width: number, height: number): Uint8Array {
+  const cw = Math.round(m.cssWidth), ch = Math.round(m.cssHeight);
+  if (m.width !== cw || m.height !== ch) throw new Error(`마스크 ${m.width}×${m.height}가 캔버스 화면 크기 ${cw}×${ch}와 달라요. 배율 1로 그려야 해요`);
   const left = Math.round(m.left ?? 0), top = Math.round(m.top ?? 0);
   if (left < 0 || top < 0 || left + m.width > width || top + m.height > height) {
     throw new Error(`마스크 ${m.width}×${m.height}(자리 ${left},${top})가 사진 ${width}×${height}를 벗어나요`);
