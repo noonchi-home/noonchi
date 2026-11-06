@@ -2,13 +2,16 @@
 // 설정 흐름(집 → 가전 → 운영 모드 → 위치 동기화 → 대시보드): 집을 고르면 묶음을 닫고 새 집으로 다시 만든다. 포트는 그대로다.
 // 운영 모드: 시험(기본, ThinQ를 부르지 않음) · 실제(짝지은 에어컨·냉장고는 ThinQ). ThinQ 클라이언트는 실제 모드에서만 만든다.
 
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Agent } from "../agent/agent.js";
 import type { Policy } from "../agent/policy.js";
 import type { CreateLiveBrainOptions } from "../brain/live.js";
 import type { ControlMode, SetupView, ThinqDeviceView } from "../contract/setup.js";
 import type { SignalHub } from "../hub/signals.js";
+import { HistoryDb } from "../history/db.js";
 import type { DeviceHub } from "../hub/types.js";
+import { loadEndpoints } from "../infer/endpoints.js";
 import type { LayoutEditor } from "../layout/editor.js";
 import { KIND_LABELS } from "../model/mapping.js";
 import { resolveTwinStudioDir, type TwinData } from "../model/devices.js";
@@ -20,6 +23,7 @@ import { DEFAULT_POLL_MS, DEFAULT_READBACK_MS, ThinqLink } from "../thinq/link.j
 import { HttpError, originChecker, type TwinHomeApp } from "./app.js";
 import type { HubKind, MatterTransport, StartHubOptions } from "./hubFactory.js";
 import { startHome, type HomeContext, type HomeRuntime } from "./home.js";
+import { makeReady } from "./ready.js";
 import { createShell } from "./shell.js";
 
 type Env = Record<string, string | undefined>;
@@ -39,6 +43,7 @@ const msListOf = (raw: string | undefined, fallback: number[]) => {
 export interface StartServerOptions {
   /** 기본 process.env. HUB, MATTER_*, AGENT_PROVIDER, TWIN_STUDIO_DIR, HOME_ID(저장한 집이 없을 때 띄울 집, 기본 집), PORT(0이면 빈 포트), HOST,
    *  ALLOWED_ORIGINS(이 PC 말고 대시보드를 여는 출처, 쉼표로 여러 개),
+   *  INFERENCE_MODE(mock 기본·live)·VLM_BASE_URL·VLM_MODEL·VLM_API_KEY·VLM_EXTRA_BODY·PAM_URL(src/infer/endpoints.ts, 기록 DB는 RUNTIME_DIR/noonchi.db),
    *  PHONE_PORT(있으면 폰 AR 서버), PHONE_HOST(기본 0.0.0.0), PHONE_MAX_MISMATCH_M(기준점 거리 차이 허용값, 기본 0.3),
    *  PHONE_EYE_HEIGHT_M(벽 대기 맞춤의 눈 높이, 기본 1.5),
    *  FOCUS(1이면 초점 표시를 보낸다, 기본 끔), PHONE_PHOTO_DIR(사진 폴더, 기본 runtime/photos), RUNTIME_DIR(배치 수정본·설정의 바탕, 기본 runtime),
@@ -103,9 +108,13 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   }
   // 대시보드를 여는 출처: 이 PC + ALLOWED_ORIGINS(tailscale serve 주소). 쓰기 요청과 /events에 쓴다
   const allowOrigin = originChecker(env.ALLOWED_ORIGINS);
+  // 추론 모드(mock|live)와 모델 주소. 모르는 모드면 여기서 시작을 막는다
+  const endpoints = loadEndpoints(env);
+  // 기록 DB(RUNTIME_DIR/noonchi.db). 시작이 실패하면 닫는다
+  const db = HistoryDb.open(join(runtimeDir, "noonchi.db"));
   const ctx: HomeContext = {
     env, log, runtimeDir, importer: opts.importer, matter: opts.matter, brain: opts.brain, servedPhoneUrls: opts.servedPhoneUrls, webDir: opts.webDir,
-    sources: (homeId, ids) => store.sources(homeId, ids), mode: () => mode, allowOrigin,
+    sources: (homeId, ids) => store.sources(homeId, ids), mode: () => mode, allowOrigin, ready: makeReady({ endpoints, db }),
   };
   const studioDir = resolveTwinStudioDir(env.TWIN_STUDIO_DIR);
   const pollMs = msOf(env.THINQ_POLL_MS, DEFAULT_POLL_MS);
@@ -148,11 +157,16 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   const fallbackHome = env.HOME_ID?.trim() || undefined;
   let rt: HomeRuntime;
   try {
-    rt = await openHome(saved ?? fallbackHome);
+    try {
+      rt = await openHome(saved ?? fallbackHome);
+    } catch (e) {
+      if (!saved) throw e;
+      log(`[경고] 저장한 집 ${saved}를 띄우지 못했습니다(${(e as Error).message}). ${fallbackHome ?? "기본 집"}으로 띄웁니다.`);
+      rt = await openHome(fallbackHome);
+    }
   } catch (e) {
-    if (!saved) throw e;
-    log(`[경고] 저장한 집 ${saved}를 띄우지 못했습니다(${(e as Error).message}). ${fallbackHome ?? "기본 집"}으로 띄웁니다.`);
-    rt = await openHome(fallbackHome);
+    db.close();
+    throw e;
   }
   if (mode === "live") log("운영 모드: 실제(짝지은 가전은 ThinQ)");
   ctx.phonePort = rt.phonePort;
@@ -332,6 +346,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     listened = await shell.listen(Number.isInteger(wanted) && wanted >= 0 ? wanted : 8200, host);
   } catch (e) {
     await rt.close().catch(() => {});
+    db.close();
     throw e;
   }
 
@@ -363,6 +378,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       // 앱이 /events 소켓을 먼저 끊어야 껍데기 서버 close가 기다리지 않는다
       await current?.close();
       await shell.close();
+      db.close();
     },
   };
 }

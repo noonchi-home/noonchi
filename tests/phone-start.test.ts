@@ -16,7 +16,7 @@ afterEach(async () => {
   srv = undefined;
 });
 
-const BASE_ENV = { HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock" };
+const baseEnv = () => ({ HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")) });
 
 function next(ws: WebSocket, pred: (m: Msg) => boolean): Promise<Msg> {
   return new Promise((res, rej) => {
@@ -34,7 +34,7 @@ const opened = (ws: WebSocket) => new Promise<void>((res, rej) => { ws.once("ope
 
 describe("startServer + 폰 AR", () => {
   it("PHONE_PORT가 있으면 폰 서버를 함께 띄우고 눈 자세를 본 서버 /events로 보낸다", async () => {
-    srv = await startServer({ env: { ...BASE_ENV, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1" }, log: () => {} });
+    srv = await startServer({ env: { ...baseEnv(), PHONE_PORT: "0", PHONE_HOST: "127.0.0.1" }, log: () => {} });
     expect(srv.phoneUrls).toHaveLength(1);
     expect(((await (await fetchRetry(`${srv.url}/api/health`)).json()) as { phone_urls?: string[] }).phone_urls).toEqual(srv.phoneUrls);
     const phoneUrl = new URL(srv.phoneUrls[0]!);
@@ -59,7 +59,7 @@ describe("startServer + 폰 AR", () => {
     const ts = "https://phone-pc.example-net.ts.net/phone/";
     const ports: number[] = [];
     srv = await startServer({
-      env: { ...BASE_ENV, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", PHONE_URL: "https://my.example/phone/" }, log: () => {},
+      env: { ...baseEnv(), PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", PHONE_URL: "https://my.example/phone/" }, log: () => {},
       servedPhoneUrls: async (port) => { ports.push(port); return [ts]; },
     });
     expect(ports).toEqual([new URL(srv.phoneUrls[2]!).port].map(Number));
@@ -69,7 +69,7 @@ describe("startServer + 폰 AR", () => {
   });
 
   it("PHONE_PORT가 없으면 폰 서버를 띄우지 않는다", async () => {
-    srv = await startServer({ env: BASE_ENV, log: () => {} });
+    srv = await startServer({ env: baseEnv(), log: () => {} });
     expect(srv.phoneUrls).toEqual([]);
     const health = (await (await fetchRetry(`${srv.url}/api/health`)).json()) as { eye?: boolean };
     expect(health.eye).toBe(false);
@@ -78,7 +78,7 @@ describe("startServer + 폰 AR", () => {
   it("PHONE_MAX_MISMATCH_M로 거리 차이 허용값을 바꾸고, 눈 화면 API를 연다", async () => {
     const photoDir = mkdtempSync(join(tmpdir(), "start-photos-"));
     try {
-      srv = await startServer({ env: { ...BASE_ENV, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", PHONE_MAX_MISMATCH_M: "2", PHONE_PHOTO_DIR: photoDir }, log: () => {} });
+      srv = await startServer({ env: { ...baseEnv(), PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", PHONE_MAX_MISMATCH_M: "2", PHONE_PHOTO_DIR: photoDir }, log: () => {} });
       const health = (await (await fetchRetry(`${srv.url}/api/health`)).json()) as { eye?: boolean };
       expect(health.eye).toBe(true);
       const phoneUrl = new URL(srv.phoneUrls[0]!);

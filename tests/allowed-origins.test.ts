@@ -3,19 +3,16 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { WebSocket } from "ws";
 import { originChecker } from "../src/server/app.js";
+import { fetchRetry } from "../src/server/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
+import { openWebSocket } from "./helpers/ws.js";
 
 const TS = "https://noonchi.tail1234.ts.net";
 let srv: RunningServer | undefined;
 afterEach(async () => { await srv?.close(); srv = undefined; });
 
-const wsOpen = (url: string, origin: string) => new Promise<boolean>((ok) => {
-  const ws = new WebSocket(url, { origin });
-  ws.on("open", () => { ws.close(); ok(true); });
-  ws.on("error", () => ok(false));
-});
+const wsOpen = (url: string, origin: string) => openWebSocket(url, { options: { origin } }).then((ws) => { ws.close(); return true; }, () => false);
 
 describe("허용 출처", () => {
   it("이 PC와 ALLOWED_ORIGINS만 허용한다", () => {
@@ -36,7 +33,7 @@ describe("허용 출처", () => {
     const ws = srv.url.replace(/^http/, "ws") + "/events";
     expect(await wsOpen(ws, TS)).toBe(true);
     expect(await wsOpen(ws, "https://evil.example")).toBe(false);
-    const post = (path: string, origin: string, body: unknown) => fetch(`${srv!.url}${path}`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify(body) });
+    const post = (path: string, origin: string, body: unknown) => fetchRetry(`${srv!.url}${path}`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify(body) });
     expect((await post("/api/agent/chat", TS, { message: "안녕" })).status).not.toBe(403);
     expect((await post("/api/agent/chat", "https://evil.example", { message: "안녕" })).status).toBe(403);
     expect((await post("/api/setup/done", TS, {})).status).not.toBe(403);

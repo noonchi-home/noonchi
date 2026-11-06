@@ -852,7 +852,7 @@ export function makeReady(o: { endpoints: Endpoints; db: HistoryDb; cache?: Reac
   };
 }
 ```
-PAM `/health`는 응답을 캐시하지 않고 2초 제한으로 매번 묻는다(가벼운 GET). `start.ts`: `const endpoints = loadEndpoints(env)`(잘못된 모드면 시작 실패), `const db = HistoryDb.open(join(runtimeDir, "noonchi.db"))`, `ctx.ready = makeReady({ endpoints, db })`, `close()` 끝에 `db.close()`. `app.ts` health: `ready: await (opts.ready?.() ?? notReady)`(없으면 `{ ok: false, …, db: false }`). `.env.example`: `INFERENCE_MODE=mock`, `VLM_BASE_URL=`, `VLM_MODEL=`, `VLM_API_KEY=`, `VLM_EXTRA_BODY=`, `VLM_TIMEOUT_MS=`, `PAM_URL=`(주석: compose 안은 `http://pam:8300`).
+PAM `/health`는 응답을 캐시하지 않고 2초 제한으로 매번 묻는다(가벼운 GET). `reachable()`과 PAM `/health`는 `fetchRetry`(`src/server/net.ts`, 이 PC Windows의 일시 EFAULT를 다시 보냄)로 묻고, 시험의 가짜 서버는 `listenRetry`로 띄우고 `fetchRetry`·`openWebSocket`(`tests/helpers/ws.ts`)으로 부른다. `VLM_EXTRA_BODY`가 JSON 객체가 아니면 시작을 막는다. `tests/history-db.test.ts`(WAL·busy_timeout 5000·닫은 뒤 ok() false)와 ReachCache·reachable 시험(`tests/infer-endpoints.test.ts`)을 더한다. `tests/setup/no-real-ai.ts`는 먼저 건 ThinQ 차단 표시(`noRealThinq`)를 `Object.assign(guarded, inner)`로 남긴다(`tests/thinq-client.test.ts`가 본다). `start.ts`: `const endpoints = loadEndpoints(env)`(잘못된 모드면 시작 실패), `const db = HistoryDb.open(join(runtimeDir, "noonchi.db"))`, `ctx.ready = makeReady({ endpoints, db })`, `close()` 끝에 `db.close()`. `app.ts` health: `ready: await (opts.ready?.() ?? notReady)`(없으면 `{ ok: false, …, db: false }`). `.env.example`: `INFERENCE_MODE=mock`, `VLM_BASE_URL=`, `VLM_MODEL=`, `VLM_API_KEY=`, `VLM_EXTRA_BODY=`, `VLM_TIMEOUT_MS=`, `PAM_URL=`(주석: compose 안은 `http://pam:8300`).
 
 ```ts
 // tests/setup/no-real-ai.ts

@@ -149,6 +149,21 @@ export interface HealthView {
   brain: boolean;
   /** 운영 모드: test 시험(트윈만), live 실제(짝지은 가전은 ThinQ). */
   mode: ControlMode;
+  /** 준비 상태: 추론 모드, 모델 주소 응답, 기록 DB. 모델 주소가 답하지 않아도 health는 200이고 ready.ok가 false다. */
+  ready: ReadyView;
+}
+
+/** 준비 상태(/api/health ready). 모델은 부르지 않고 주소가 답하는지만 본다. */
+export interface ReadyView {
+  /** VLM·PAM 서비스·PAM LLM·기록 DB가 모두 준비됐는가. */
+  ok: boolean;
+  /** 추론 모드: mock(외부 AI API) · live(같은 서버 vLLM). 두 모드는 같은 코드 경로다. */
+  inference_mode: "mock" | "live";
+  vlm: { base_url: string; model: string; key: boolean; reachable: boolean };
+  /** PAM 서비스(PAM_URL)와 그 서비스가 부르는 LLM. 서비스가 답하지 않으면 llm은 null. */
+  pam: { url: string; reachable: boolean; llm: { base_url: string; model: string; reachable: boolean } | null };
+  /** 기록 DB(RUNTIME_DIR/noonchi.db)를 쓸 수 있는가. */
+  db: boolean;
 }
 
 // 초점

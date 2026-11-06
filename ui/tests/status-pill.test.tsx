@@ -7,6 +7,7 @@ const health: HealthView = {
   ok: true, devices: 65, hub: "memory", transport: null, provider: "mock", model: "rules-ko", twin: true, eye: true,
   home: { id: "apartment", name: "마곡 아파트" }, phone_urls: [], brain: false,
   mode: "test",
+  ready: { ok: false, inference_mode: "mock", vlm: { base_url: "", model: "", key: false, reachable: false }, pam: { url: "", reachable: false, llm: null }, db: false },
 };
 
 describe("StatusPill", () => {

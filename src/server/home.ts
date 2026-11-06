@@ -7,6 +7,7 @@ import { Agent } from "../agent/agent.js";
 import { Policy } from "../agent/policy.js";
 import { createProvider } from "../agent/providers/index.js";
 import { createLiveBrain, type CreateLiveBrainOptions, type LiveBrain } from "../brain/live.js";
+import type { ReadyView } from "../contract/events.js";
 import type { ControlMode } from "../contract/setup.js";
 import { surfacesFrom, type Surface } from "../brain/presence.js";
 import { SignalHub, type SignalSource } from "../hub/signals.js";
@@ -53,6 +54,8 @@ export interface HomeContext {
   webDir?: string;
   /** 허용할 브라우저 출처(ALLOWED_ORIGINS). 없으면 이 PC만. */
   allowOrigin?: (origin: string) => boolean;
+  /** 준비 상태(/api/health ready). 집을 바꿔도 같은 것을 쓴다. */
+  ready?: () => Promise<ReadyView>;
 }
 
 export interface HomeRuntime {
@@ -170,7 +173,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     let phoneUrls: string[] = [];
     app = createApp({
       hub: signals, policy, agent, rooms: twin.rooms, twinDir, viewerDir: home.viewerDir, libraryDir: home.libraryDir, hubKind, log, eye: feed, brain: brain ?? undefined,
-      home: { id: home.id, name: home.name }, homes: listHomes(twin.dir), layout: layout?.editor, phoneUrls: () => phoneUrls, mode: ctx.mode, webDir: ctx.webDir, allowOrigin: ctx.allowOrigin,
+      home: { id: home.id, name: home.name }, homes: listHomes(twin.dir), layout: layout?.editor, phoneUrls: () => phoneUrls, mode: ctx.mode, webDir: ctx.webDir, allowOrigin: ctx.allowOrigin, ready: ctx.ready,
       touch: touchStore && {
         get: () => touchStore.get(), save: (raw) => touchStore.save(raw), clear: () => touchStore.clear(), eyeHeightM,
         auto: (raw) => autoCorners(plan, parseWallPick(raw), bounds),

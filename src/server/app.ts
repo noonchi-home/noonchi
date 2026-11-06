@@ -10,7 +10,7 @@ import { z } from "zod";
 import type { Agent } from "../agent/agent.js";
 import { newSessionId } from "../agent/agent.js";
 import { Policy } from "../agent/policy.js";
-import type { HealthView } from "../contract/events.js";
+import type { HealthView, ReadyView } from "../contract/events.js";
 import type { PlanView } from "../contract/plan.js";
 import type { ControlMode } from "../contract/setup.js";
 import { deviceViews, roomViews } from "../agent/tools.js";
@@ -59,6 +59,8 @@ export interface AppOptions {
   brain?: { status(): object };
   /** 지금 운영 모드(/api/health). 없으면 시험 모드. */
   mode?: () => ControlMode;
+  /** 준비 상태(/api/health ready, src/server/ready.ts). 없으면 준비 안 됨. */
+  ready?: () => Promise<ReadyView>;
   /** 클로이드 계획 보관(src/plan/hub.ts). 있으면 에이전트 행동을 넘기고 POST /api/plan*을 받는다. 접속 때 지금 계획을 보낸다. */
   plan?: Pick<PlanHub, "current" | "onAgent" | "put" | "setStep">;
 }
@@ -89,6 +91,11 @@ export const DEFAULT_WEB_DIR = fileURLToPath(new URL("../../ui/dist/", import.me
 /** 화면 폴더에 index.html이 없을 때(빌드 전) 화면 요청에 주는 오류. */
 export const NOT_BUILT = "화면이 아직 빌드되지 않았어요. npm run ui:build";
 const LOCAL_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
+/** 준비 상태를 모를 때(앱만 따로 띄운 시험). */
+const NOT_READY: ReadyView = {
+  ok: false, inference_mode: "mock", vlm: { base_url: "", model: "", key: false, reachable: false },
+  pam: { url: "", reachable: false, llm: null }, db: false,
+};
 
 /** 기본 허용 출처: 이 PC(localhost·127.0.0.1·[::1])의 모든 포트. */
 export const isLocalOrigin = (origin: string): boolean => LOCAL_ORIGIN.test(origin);
@@ -252,6 +259,7 @@ export function createApp(opts: AppOptions): TwinHomeApp {
     ok: true, devices: hub.list().length, hub: opts.hubKind ?? "memory", transport: matterInfo()?.transport ?? null,
     provider: agent?.provider.name ?? null, model: agent?.provider.model ?? null, twin: !!twinDir && existsSync(twinDir),
     eye: !!opts.eye, home: opts.home ?? null, phone_urls: opts.phoneUrls?.() ?? [], brain: !!opts.brain, mode: opts.mode?.() ?? "test",
+    ready: opts.ready ? await opts.ready() : NOT_READY,
   }));
 
   route("GET", /^\/api\/brain$/, async () => {

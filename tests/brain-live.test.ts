@@ -1,5 +1,8 @@
 // 실시간 두뇌 연결: 촬영 시각 보정, LiveBrain 메시지 나눔(대시보드·폰), startServer(BRAIN=1) + 폰 WebSocket 왕복.
 
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { DEFAULT_BRAIN_CONFIG } from "../src/brain/config.js";
@@ -110,7 +113,7 @@ async function until(list: Msg[], pred: (m: Msg) => boolean, ms = 5000): Promise
 describe("startServer(BRAIN=1) + 폰", () => {
   it("BRAIN=1인데 PHONE_PORT가 없으면 두뇌를 끄고 알린다", async () => {
     const lines: string[] = [];
-    srv = await startServer({ env: { HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock", BRAIN: "1" }, log: (l) => lines.push(l) });
+    srv = await startServer({ env: { HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock", BRAIN: "1", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")) }, log: (l) => lines.push(l) });
     expect(lines.some((l) => l.includes("BRAIN=1은 PHONE_PORT"))).toBe(true);
     expect(((await (await fetchRetry(`${srv.url}/api/health`)).json()) as Msg).brain).toBe(false);
   });
@@ -118,7 +121,7 @@ describe("startServer(BRAIN=1) + 폰", () => {
   it("폰 시계 핑에 답하고, 프레임 → 두뇌 → 대시보드 brain 이벤트·폰 요청, 사진 답, /api/brain 상태", async () => {
     let phase: "drink" | "away" = "drink";
     srv = await startServer({
-      env: { HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock", PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", BRAIN: "1", BRAIN_AWAY_MS: "300" },
+      env: { HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock", PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", BRAIN: "1", BRAIN_AWAY_MS: "300", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")) },
       log: () => {},
       brain: {
         perceiver: new ScriptedPerceiver((frames) => {

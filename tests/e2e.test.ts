@@ -36,7 +36,7 @@ afterAll(() => {
 });
 
 function env(extra: Record<string, string>): Record<string, string> {
-  return { PORT: "0", AGENT_PROVIDER: "mock", TWIN_STUDIO_DIR: STUDIO, MATTER_STORAGE_DIR: tempDir("e2e"), ...extra };
+  return { PORT: "0", AGENT_PROVIDER: "mock", TWIN_STUDIO_DIR: STUDIO, MATTER_STORAGE_DIR: tempDir("e2e"), RUNTIME_DIR: tempDir("rt"), ...extra };
 }
 
 /** 브리지 쪽 Matter 클러스터 상태(컨트롤러를 거치지 않은 기기 자체의 값). */
