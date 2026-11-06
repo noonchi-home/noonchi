@@ -51,6 +51,8 @@ export interface HomeContext {
   mode?: () => ControlMode;
   /** 대시보드·설정 화면 폴더. 없으면 React 빌드(ui/dist). */
   webDir?: string;
+  /** 허용할 브라우저 출처(ALLOWED_ORIGINS). 없으면 이 PC만. */
+  allowOrigin?: (origin: string) => boolean;
 }
 
 export interface HomeRuntime {
@@ -168,7 +170,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     let phoneUrls: string[] = [];
     app = createApp({
       hub: signals, policy, agent, rooms: twin.rooms, twinDir, viewerDir: home.viewerDir, libraryDir: home.libraryDir, hubKind, log, eye: feed, brain: brain ?? undefined,
-      home: { id: home.id, name: home.name }, homes: listHomes(twin.dir), layout: layout?.editor, phoneUrls: () => phoneUrls, mode: ctx.mode, webDir: ctx.webDir,
+      home: { id: home.id, name: home.name }, homes: listHomes(twin.dir), layout: layout?.editor, phoneUrls: () => phoneUrls, mode: ctx.mode, webDir: ctx.webDir, allowOrigin: ctx.allowOrigin,
       touch: touchStore && {
         get: () => touchStore.get(), save: (raw) => touchStore.save(raw), clear: () => touchStore.clear(), eyeHeightM,
         auto: (raw) => autoCorners(plan, parseWallPick(raw), bounds),

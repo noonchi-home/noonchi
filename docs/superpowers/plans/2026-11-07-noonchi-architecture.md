@@ -588,7 +588,7 @@ export function originChecker(raw: string | undefined): (origin: string) => bool
   return (origin) => isLocalOrigin(origin) || listed.has(origin);
 }
 ```
-`start.ts`: `const allowOrigin = originChecker(env.ALLOWED_ORIGINS);`를 `createShell({ …, allowOrigin })`와 `ctx.allowOrigin`에 넘기고, `home.ts` `createApp({ …, allowOrigin: ctx.allowOrigin })`. `.env.example`: `# 대시보드를 여는 tailscale serve 주소(쉼표로 여러 개). 예: https://<서버>.<tailnet>.ts.net` + `ALLOWED_ORIGINS=`.
+주소가 아닌 값(`new URL` 실패)은 `ALLOWED_ORIGINS에 주소가 아닌 값이 있어요` 오류로 시작을 막는다(시험 「주소가 아닌 값은 시작을 막는다」, 설정 API `/api/setup/done`의 403도 본다). `docs/reference.md` 환경 변수 표에 `ALLOWED_ORIGINS`를 더한다. `start.ts`: `const allowOrigin = originChecker(env.ALLOWED_ORIGINS);`를 `createShell({ …, allowOrigin })`와 `ctx.allowOrigin`에 넘기고, `home.ts` `createApp({ …, allowOrigin: ctx.allowOrigin })`. `.env.example`: `# 대시보드를 여는 tailscale serve 주소(쉼표로 여러 개). 예: https://<서버>.<tailnet>.ts.net` + `ALLOWED_ORIGINS=`.
 
 - [ ] **Step 4: 통과 확인** — `H npx vitest run tests/allowed-origins.test.ts tests/server.test.ts tests/self-contained.test.ts` / Expected: PASS
 - [ ] **Step 5: 커밋**

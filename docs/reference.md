@@ -94,6 +94,7 @@ HUB=memory npm run demo
 | `FOCUS` | (끔) | `1`이면 초점 표시(클로이드가 다룬 물건의 고리·"클로이드 주목")를 대시보드·폰·3D로 보낸다. 기본은 보내지 않는다 |
 | `PORT` | `8200` | HTTP 포트(`0`이면 빈 포트) |
 | `HOST` | `127.0.0.1` | HTTP 바인드 주소. `0.0.0.0`이면 LAN에서도 열린다(인증 없음) |
+| `ALLOWED_ORIGINS` | (없음) | 이 PC 말고 대시보드를 여는 출처(쉼표로 여러 개, 예: `https://<서버>.<tailnet>.ts.net`). 쓰기 요청과 `/events`를 허용한다. 주소가 아닌 값이면 시작하지 않는다 |
 | `HUB` | `matter` | `matter` / `memory` |
 | `MATTER_TRANSPORT` | `network` | `network`(실제 커미셔닝) / `local`(같은 프로세스 behavior API) |
 | `MATTER_COMMISSION_TIMEOUT_MS` | `30000` | network 커미셔닝·연결 단계별 제한 시간. 넘기면 local로 대신 뜬다 |

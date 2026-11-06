@@ -92,6 +92,18 @@ const LOCAL_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
 
 /** 기본 허용 출처: 이 PC(localhost·127.0.0.1·[::1])의 모든 포트. */
 export const isLocalOrigin = (origin: string): boolean => LOCAL_ORIGIN.test(origin);
+
+/** 허용 출처: 이 PC(localhost·127.0.0.1·[::1]) + ALLOWED_ORIGINS(쉼표로 나눈 https://호스트[:포트], tailscale serve 주소). */
+export function originChecker(raw: string | undefined): (origin: string) => boolean {
+  const listed = new Set((raw ?? "").split(",").map((s) => s.trim()).filter(Boolean).map((s) => {
+    try {
+      return new URL(s).origin;
+    } catch {
+      throw new Error(`ALLOWED_ORIGINS에 주소가 아닌 값이 있어요: ${s} (예: https://<서버>.<tailnet>.ts.net)`);
+    }
+  }));
+  return (origin) => isLocalOrigin(origin) || listed.has(origin);
+}
 const MAX_BODY = 1 << 20;
 
 export class HttpError extends Error {
