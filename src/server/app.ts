@@ -11,11 +11,13 @@ import type { Agent } from "../agent/agent.js";
 import { newSessionId } from "../agent/agent.js";
 import { Policy } from "../agent/policy.js";
 import type { HealthView } from "../contract/events.js";
+import type { PlanView } from "../contract/plan.js";
 import type { ControlMode } from "../contract/setup.js";
 import { deviceViews, roomViews } from "../agent/tools.js";
 import type { Command, CommandResult, DeviceHub, RoomSpec } from "../hub/types.js";
 import type { LayoutEditor } from "../layout/editor.js";
 import { TouchPointsError, type TouchPoint } from "../phone/touch.js";
+import type { PlanHub } from "../plan/hub.js";
 import { twinChange } from "../model/mapping.js";
 import { listenRetry } from "./net.js";
 import { serveFile } from "./static.js";
@@ -53,6 +55,8 @@ export interface AppOptions {
   brain?: { status(): object };
   /** 지금 운영 모드(/api/health). 없으면 시험 모드. */
   mode?: () => ControlMode;
+  /** 클로이드 계획 보관(src/plan/hub.ts). 있으면 에이전트 행동을 넘기고 POST /api/plan*을 받는다. 접속 때 지금 계획을 보낸다. */
+  plan?: Pick<PlanHub, "current" | "onAgent" | "put" | "setStep">;
 }
 
 /** MatterHub에서 서버가 쓰는 부분(src/matter/matterHub.ts를 직접 불러오지 않으려고 모양만 적는다). */
@@ -114,6 +118,52 @@ const CommandSchema = z.discriminatedUnion("type", [
 ]);
 
 const KO_ERRORS = z.locales.ko().localeError;
+
+// 클로이드 계획(docs/plan-contract.md). 글은 화면에 그대로 나가므로 화면 글 규칙(60자 아래, 화살표·괄호 없음)을 여기서도 본다
+const PlanCopy = z.string().max(60).refine((t) => !/→|⇒|->|=>|[()]/.test(t), { error: "화살표·괄호 없이 지금 상태나 할 일만 써 주세요" });
+const XZSchema = z.tuple([z.number(), z.number()]);
+const PlanSchema = z.object({
+  id: z.string().min(1).max(200),
+  revision: z.number().int().min(1),
+  supersedes: z.string().min(1).max(200).optional(),
+  origin: z.enum(["live", "mock"]).optional(),
+  source: z.enum(["brain", "agent", "planner"]),
+  goal: PlanCopy.min(1),
+  judgment: PlanCopy,
+  dryRun: z.boolean(),
+  robot: z.object({ position: XZSchema.nullable(), room: z.string().nullable() }),
+  path: z.array(XZSchema).max(1000),
+  legs: z.array(z.object({ stepId: z.string(), end: z.number().int().min(0) })),
+  steps: z.array(z.object({
+    id: z.string().min(1).max(200),
+    kind: z.enum(["move", "act", "ask", "device", "wait"]),
+    label: PlanCopy.min(1),
+    target: z.object({ objectId: z.string().optional(), deviceId: z.string().optional(), room: z.string().optional(), position: XZSchema.optional() }).optional(),
+    status: z.enum(["pending", "active", "done", "failed", "skipped"]),
+  })).min(1).max(50),
+  status: z.enum(["planned", "running", "done", "cancelled", "failed"]),
+  updatedAt: z.string().max(64),
+}).superRefine((p, ctx) => {
+  if (p.robot.position === null && p.path.length > 0) ctx.addIssue({ code: "custom", path: ["path"], message: "로봇 위치를 모르면 path는 []" });
+  const moves = new Set(p.steps.filter((s) => s.kind === "move").map((s) => s.id));
+  p.legs.forEach((l, i) => {
+    if (!moves.has(l.stepId)) ctx.addIssue({ code: "custom", path: ["legs", i, "stepId"], message: "move 단계 id가 아님" });
+    if (l.end >= p.path.length) ctx.addIssue({ code: "custom", path: ["legs", i, "end"], message: "path 밖 점 번호" });
+  });
+});
+const StepStatusSchema = PlanSchema.shape.steps.element.shape.status;
+
+function parsePlan(raw: unknown): PlanView {
+  const r = PlanSchema.safeParse(raw, { error: KO_ERRORS });
+  if (!r.success) {
+    const issues = r.error.issues.map((i) => `${i.path.join(".") || "plan"}: ${i.message}`).join("; ");
+    throw new HttpError(400, `계획 형식이 올바르지 않습니다: ${issues}`);
+  }
+  return r.data as PlanView;
+}
+
+/** 같은 PC에서 온 요청인가(127.0.0.1·::1). */
+export const isLoopback = (address: string | undefined): boolean => !!address && /^(127\.\d+\.\d+\.\d+|::1|::ffff:127\.\d+\.\d+\.\d+)$/.test(address);
 
 function parseCommand(raw: unknown): Command {
   const value = typeof raw === "string" ? { type: raw } : raw;
@@ -244,6 +294,28 @@ export function createApp(opts: AppOptions): TwinHomeApp {
     sameHome(await readJson(req));
     requireTouch().clear();
     return touchView(null);
+  });
+
+  // ── 클로이드 계획 ──
+
+  route("GET", /^\/api\/plan$/, async () => ({ ok: true, plan: opts.plan?.current() ?? null }));
+  const requirePlan = (req: IncomingMessage) => {
+    if (!opts.plan) throw new HttpError(404, "계획을 받을 수 없습니다(집이 아직 없음).");
+    if (!isLoopback(req.socket.remoteAddress)) throw new HttpError(403, "계획은 서버와 같은 PC에서만 보낼 수 있습니다.");
+    if (closed) throw new HttpError(503, "집을 바꾸는 중이에요. 잠시 뒤 다시 해 주세요.");
+    return opts.plan;
+  };
+  route("POST", /^\/api\/plan$/, async (req) => {
+    const plans = requirePlan(req);
+    plans.put(parsePlan((await readJson(req)).plan));
+    return { ok: true, plan: plans.current() };
+  });
+  route("POST", /^\/api\/plan\/([^/]+)\/steps\/([^/]+)$/, async (req, _url, [id, stepId]) => {
+    const plans = requirePlan(req);
+    const r = StepStatusSchema.safeParse((await readJson(req)).status);
+    if (!r.success) throw new HttpError(400, "status는 pending·active·done·failed·skipped 중 하나여야 합니다.");
+    if (!plans.setStep(id!, stepId!, r.data)) throw new HttpError(404, `지금 계획에 없는 단계입니다: ${id} ${stepId}`);
+    return { ok: true, plan: plans.current() };
   });
 
   route("GET", /^\/api\/homes$/, async () => ({ current: opts.home?.id ?? null, homes: opts.homes ?? (opts.home ? [opts.home] : []) }));
@@ -465,11 +537,15 @@ export function createApp(opts: AppOptions): TwinHomeApp {
     send(ws, { type: "hello", devices: hub.list().length, provider: agent?.provider.name ?? null, hub: opts.hubKind ?? "memory", home: opts.home?.id ?? null });
     for (const state of hub.states()) send(ws, { type: "state", state });
     for (const m of opts.layout?.syncMessages() ?? []) send(ws, m);
+    send(ws, { type: "plan", plan: opts.plan?.current() ?? null });
     ws.on("error", () => {});
   });
 
   const unsubHub = hub.subscribe((state) => broadcast({ type: "state", state }));
-  const unsubAgent = agent?.subscribe((e) => broadcast({ type: "agent", ...e }));
+  const unsubAgent = agent?.subscribe((e) => {
+    broadcast({ type: "agent", ...e });
+    opts.plan?.onAgent(e);
+  });
   const unsubLayout = opts.layout?.subscribe((m) => broadcast(m));
 
   let closed = false;

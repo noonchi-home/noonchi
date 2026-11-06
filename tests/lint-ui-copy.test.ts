@@ -1,7 +1,10 @@
 // 화면 글 검사(scripts/lint-ui-copy.ts): 생각 과정·구현 설명이 화면에 들어가면 실패한다. 예시는 실제로 화면에 들어갔던 글이다.
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { blurbSlots, copyFiles, copyRules, htmlCopy, jsCopy, lintUiCopy, tsxCopy } from "../scripts/lint-ui-copy.js";
+import { COPY_TARGETS, blurbSlots, copyFiles, copyRules, fileCopy, htmlCopy, jsCopy, lintUiCopy, tsxCopy } from "../scripts/lint-ui-copy.js";
 
 const webDir = fileURLToPath(new URL("../web/", import.meta.url));
 const uiDir = fileURLToPath(new URL("../ui/src/", import.meta.url));
@@ -97,7 +100,29 @@ describe("web/(폰)과 ui/src 전체", () => {
   });
 
   it("화면 글 검사에 걸리는 곳이 없다(npm run lint)", () => {
-    const problems = lintUiCopy([webDir, uiDir]);
+    const problems = lintUiCopy(COPY_TARGETS);
     expect(problems.map((p) => `${p.file}:${p.line} [${p.rule}] ${p.text}`)).toEqual([]);
+  });
+});
+
+describe("서버가 화면에 그대로 내보내는 계획 글(src/plan/labels.ts)", () => {
+  const labels = fileURLToPath(new URL("../src/plan/labels.ts", import.meta.url));
+  it("npm run lint가 web/·ui/src와 함께 본다", () => {
+    expect(COPY_TARGETS).toEqual([webDir, uiDir, labels]);
+    expect(copyFiles([labels])).toEqual([labels]);
+  });
+  it("판단·단계·기기 동작 글을 꺼낸다", () => {
+    const texts = fileCopy(labels, readFileSync(labels, "utf8")).map((c) => c.text);
+    expect(texts).toEqual(expect.arrayContaining(["사람이 돌아와 멈췄어요", "식탁으로 가기", "컵 치우기", "켜기"]));
+  });
+  it("파일 하나를 줘도 검사한다", () => {
+    const dir = mkdtempSync(join(tmpdir(), "twin-home-labels-"));
+    try {
+      const file = join(dir, "labels.ts");
+      writeFileSync(file, 'export const STEP_LABEL = { goTable: "식탁 → 싱크대" };\n', "utf8");
+      expect(lintUiCopy([file]).map((p) => p.rule)).toEqual(["흐름 나열"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

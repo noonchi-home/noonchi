@@ -332,20 +332,23 @@ git commit -m "feat(plan): find a floor path through doors and open edges of the
 ### Task 3: 계획 만들기와 방송
 
 **Files:**
-- Create: `src/plan/labels.ts`, `src/plan/planner.ts`, `src/plan/hub.ts`, `tests/plan-planner.test.ts`, `tests/plan-hub.test.ts`
-- Modify: `src/server/home.ts`(brain·eye 이벤트를 PlanHub로), `src/server/app.ts`(에이전트 이벤트 구독 463줄 근처, `GET/POST /api/plan`, 연결 때 지금 계획 보내기 457줄 근처), `scripts/lint-ui-copy.ts`(`src/plan/labels.ts`도 검사)
+- Create: `src/plan/labels.ts`, `src/plan/planner.ts`, `src/plan/hub.ts`, `tests/plan-planner.test.ts`, `tests/plan-hub.test.ts`, `tests/plan-server.test.ts`, `tests/helpers/floor.ts`
+- Modify: `src/server/home.ts`(PlanHub를 만들고 두뇌 대시보드 메시지·맞춘 눈을 넘긴다), `src/server/app.ts`(에이전트 이벤트 구독, `GET/POST /api/plan`, `POST /api/plan/:id/steps/:stepId`, 접속 때 지금 계획 보내기), `scripts/lint-ui-copy.ts`(`COPY_TARGETS`에 `src/plan/labels.ts`), `tests/lint-ui-copy.test.ts`, `docs/plan-contract.md`(403·400·번호 맞춤)
 
 **Interfaces:**
-- Consumes: `BrainEvent`, `AgentEvent`(src/contract/events.ts), `FloorPlan`, `route`, `approach`
+- Consumes: `BrainLog`, `AgentEvent`(src/contract/events.ts), `FloorPlan`, `route`, `approach`, `roomAt`, `CUP_TASKS`(src/brain/decision.ts)
 - Produces:
-  - `JUDGMENT: Record<BrainStage, string>`, `STEP_LABEL`(labels.ts)
-  - `cupPlan(fp: FloorPlan, id: string, nowIso: string): PlanView | null`(식탁·싱크대를 종류 `dining_table`·`sink_counter`로 찾는다)
-  - `devicePlan(fp: FloorPlan, a: AgentAction, nowIso: string): PlanView`
-  - `class PlanHub { constructor(fp: FloorPlan, broadcast: (m: ServerMessage) => void, now?: () => string); current(): PlanView | null; onBrain(e: BrainEvent): void; onAgent(e: AgentEvent): void; onEye(position: XZ): void; put(plan: PlanView): void; setStep(planId: string, stepId: string, status: StepStatus): boolean }`
+  - `JUDGMENT: Record<BrainStage, string>`, `ASK_JUDGMENT`, `STEP_LABEL`, `GOAL`, `DEVICE_VERB`(labels.ts)
+  - `cupPlan(fp: FloorPlan, id: string, nowIso: string): PlanView | null` — 식탁·싱크대를 종류 `dining_table`·`sink_counter`로 찾는다. 식탁이 없으면 null, 싱크대가 없으면 식탁 두 단계만. 로봇 위치가 null이거나 이동 하나라도 길이 없으면 `path: []`, `legs: []`.
+  - `askPlan(fp, id, nowIso): PlanView` — 폰으로 묻는 `ask` 한 단계, 이동 없음.
+  - `devicePlan(fp: FloorPlan, a: AgentAction, nowIso: string): PlanView | null` — `DEVICE_VERB`에 있는 도구이고 `deviceId`가 있을 때만. 읽기·배치 도구는 null.
+  - `class PlanHub { constructor(fp: FloorPlan, broadcast: (m: ServerMessage) => void, now?: () => string); current(): PlanView | null; onDashboard(m: unknown): void; onBrain(e: BrainLog): void; onAgent(e: AgentEvent): void; onEye(position: XZ, estimated?: boolean): void; put(plan: PlanView): void; setStep(planId: string, stepId: string, status: StepStatus): boolean }`
+  - `isLoopback(address: string | undefined): boolean`(app.ts)
+  - `COPY_TARGETS`(scripts/lint-ui-copy.ts): `web/`, `ui/src/`, `src/plan/labels.ts`
 
 화면 글 표(`src/plan/labels.ts`, 모두 60자 아래, 화살표·괄호 없음):
 ```ts
-// 서버가 만들어 화면에 그대로 나가는 글. npm run lint가 이 파일도 검사한다.
+// 서버가 만들어 화면에 그대로 나가는 글. npm run lint가 이 파일도 검사한다(60자 아래, 화살표·괄호 없음).
 import type { BrainStage } from "../contract/events.js";
 
 export const JUDGMENT: Record<BrainStage, string> = {
@@ -355,159 +358,54 @@ export const JUDGMENT: Record<BrainStage, string> = {
   cancel: "사람이 돌아와 멈췄어요", stale: "화면이 오래돼 다시 보는 중", error: "판단하지 못했어요",
 };
 
+/** 사용자에게 물어보기로 정했을 때의 판단(act 단계). */
+export const ASK_JUDGMENT = "치울지 폰으로 물어봐요";
+
 export const STEP_LABEL = {
   goTable: "식탁으로 가기", pickCup: "컵 집기", goSink: "싱크대로 가기", placeCup: "컵 내려놓기",
-  askUser: "폰으로 물어보기", device: (device: string, tool: string) => `${device} ${tool}`,
+  askUser: "폰으로 물어보기", device: (device: string, verb: string) => `${device} ${verb}`.trim(),
 };
 
 export const GOAL = { clearCup: "컵 치우기", askUser: "사용자에게 물어보기" };
+
+/** 기기를 바꾸는 에이전트 도구 → 단계 글 끝말. 여기 없는 도구(읽기·배치)는 계획을 만들지 않는다. */
+export const DEVICE_VERB: Record<string, string> = {
+  turn_on: "켜기", turn_off: "끄기", set_level: "맞추기", set_climate: "맞추기", set_covering: "맞추기",
+  lock: "잠그기", unlock: "잠금 풀기", start: "시작", stop: "멈추기", set_valve: "맞추기",
+};
 ```
 
-- [ ] **Step 1: 실패하는 테스트**
+- [x] **Step 1: 실패하는 테스트**
+  - `tests/helpers/floor.ts`: `SMALL_SCENE`(복도 hall·주방 kitchen 트임, 로봇 [1, 2], 식탁 [7, 3], 싱크대 [5, 1])과 `smallFloor()`.
+  - `tests/plan-planner.test.ts`: 컵 네 단계, 경로는 로봇에서 시작·트인 경계 [4, 2]·끝 점 [2, 3]·물건 0.55m 앞, revision 1·supersedes 없음, 식탁 없으면 null, 길이 없으면 단계만, 싱크대·로봇 없는 집은 두 단계·경로 없음, `askPlan` 한 단계, `devicePlan`(켜기 done, 승인 대기 planned, 실패 failed, `get_state`·기기 없음은 null), 마곡 아파트 컵 계획 = `docs/plan-contract.md` 예시(경로·끝 점·단계).
+  - `tests/plan-hub.test.ts`: 행동 → running(첫 단계 active), 결과 cleared → done·「끝났어요」, cancel → cancelled, 고칠 때마다 revision +1, 세대가 오른 뒤 새 행동은 supersedes, 끝난 계획 뒤 새 행동은 supersedes 없음, 추정 눈은 무시·맞춘 눈은 다음 계획부터, withdrawn → cancelled·unconfirmed → failed(남은 단계 skipped), active false 행동·다른 id 결과는 무시, 물어보기는 `ask` 한 단계·「치울지 폰으로 물어봐요」, 같은 판단은 다시 보내지 않음, 끝난 계획은 뒤 판단으로 안 바뀜, 기기 행동 계획·진행 중인 컵 계획은 안 덮음·승인 대기 → 승인 done·취소 cancelled, `put`은 origin 그대로·같은 id는 번호를 지금보다 크게, 없는 단계는 false, 실제 `LiveBrain` 대시보드 메시지로 컵 계획 running → 나중에 → cancelled.
+  - `tests/plan-server.test.ts`: 접속하면 `{type:"plan", plan:null}`, 계약 문서 예시 POST → 방송·다시 접속하면 그 계획, 단계 POST → revision 2·없는 단계 404·틀린 status 400, 화살표·괄호·61자·로봇 null인데 경로·path 밖 끝 점·본문 없음은 400, 에이전트 「거실 TV 켜줘」 → 기기 계획, 계획 보관 없는 앱은 GET null·POST 404, `isLoopback`, `startServer`에서 맞춘 폰 눈 자리가 기기 계획 로봇 자리.
+  - `tests/lint-ui-copy.test.ts`: `COPY_TARGETS`에 labels.ts, 파일 하나도 검사, labels.ts 글 꺼내기.
 
-`tests/plan-planner.test.ts`
-```ts
-import { describe, expect, it } from "vitest";
-import { cupPlan, devicePlan } from "../src/plan/planner.js";
-import { floorPlanFrom } from "../src/plan/route.js";
+Run → FAIL(모듈 없음)
 
-const fp = floorPlanFrom({
-  plan: {
-    rooms: [
-      { id: "hall", polygon: [[0, 0], [4, 0], [4, 4], [0, 4]] },
-      { id: "kitchen", polygon: [[4, 0], [8, 0], [8, 4], [4, 4]] },
-    ],
-    doors: [], open_edges: [["hall", "kitchen"]], robot: { reachable_rooms: ["hall", "kitchen"] },
-  },
-  objects: [
-    { id: "robot", type: "robot", room: "hall", plan: { position: [1, 2] } },
-    { id: "table_1", type: "dining_table", room: "kitchen", plan: { position: [7, 3] } },
-    { id: "sink_1", type: "sink_counter", room: "kitchen", plan: { position: [5, 1] } },
-  ],
-});
-
-describe("cupPlan", () => {
-  const p = cupPlan(fp, "p1", "2026-11-06T00:00:00Z")!;
-  it("네 단계: 식탁 가기, 컵 집기, 싱크대 가기, 내려놓기", () => {
-    expect(p.steps.map((s) => [s.kind, s.label, s.target?.objectId])).toEqual([
-      ["move", "식탁으로 가기", "table_1"], ["act", "컵 집기", "table_1"],
-      ["move", "싱크대로 가기", "sink_1"], ["act", "컵 내려놓기", "sink_1"],
-    ]);
-  });
-  it("경로는 로봇에서 시작하고 이동 단계마다 끝 점이 있다", () => {
-    expect(p.path[0]).toEqual([1, 2]);
-    expect(p.legs.map((l) => l.stepId)).toEqual([p.steps[0]!.id, p.steps[2]!.id]);
-    expect(p.dryRun).toBe(true);
-  });
-});
-
-describe("devicePlan", () => {
-  it("기기 행동은 이동 없이 한 단계", () => {
-    const p = devicePlan(fp, { tool: "turn_on", args: {}, ok: true, deviceId: "ac", deviceLabel: "거실 에어컨", at: "t" }, "t");
-    expect(p).toMatchObject({ source: "agent", path: [], steps: [{ kind: "device", label: "거실 에어컨 켜기", status: "done" }] });
-  });
-});
-```
-
-`tests/plan-hub.test.ts`
-```ts
-import { describe, expect, it } from "vitest";
-import { PlanHub } from "../src/plan/hub.js";
-// fp는 plan-planner.test.ts와 같은 평면도(테스트 도우미로 tests/helpers/floor.ts에 둔다)
-import { smallFloor } from "./helpers/floor.js";
-
-describe("PlanHub", () => {
-  it("컵 치우기 행동이 오면 계획을 보내고, 결과가 오면 끝낸다", () => {
-    const sent: unknown[] = [];
-    const hub = new PlanHub(smallFloor(), (m) => sent.push(m), () => "t");
-    hub.onBrain({ type: "brain", stage: "decide", state: "deciding", text: "", at_ms: 0, evidence_age_ms: null, generation: 1 });
-    expect(hub.current()).toBeNull();
-    hub.onBrain({ type: "action", id: "a1", task: "컵 치우기", plan: {} as never, active: true, at_ms: 1 });
-    expect(hub.current()).toMatchObject({ goal: "컵 치우기", judgment: "할 일을 고르는 중", status: "running" });
-    hub.onBrain({ type: "result", id: "a1", task: "컵 치우기", outcome: "cleared", text: "", at_ms: 2 });
-    expect(hub.current()?.status).toBe("done");
-    expect(sent.at(-1)).toMatchObject({ type: "plan", plan: { status: "done" } });
-  });
-  it("사람이 돌아오면 취소", () => {
-    const hub = new PlanHub(smallFloor(), () => {}, () => "t");
-    hub.onBrain({ type: "action", id: "a1", task: "컵 치우기", plan: {} as never, active: true, at_ms: 1 });
-    hub.onBrain({ type: "brain", stage: "cancel", state: "in_use", text: "", at_ms: 2, evidence_age_ms: null, generation: 2 });
-    expect(hub.current()).toMatchObject({ status: "cancelled", judgment: "사람이 돌아와 멈췄어요" });
-  });
-});
-```
-
-Run → FAIL
-
-- [ ] **Step 2: planner.ts 구현**
-
-```ts
-import type { AgentAction } from "../contract/events.js";
-import type { PlanStep, PlanView, XZ } from "../contract/plan.js";
-import type { FloorPlan } from "./floor.js";
-import { GOAL, STEP_LABEL } from "./labels.js";
-import { approach, route } from "./route.js";
-
-const STOP_M = 0.55; // 로봇 반지름 0.22m + 여유
-
-const byType = (fp: FloorPlan, type: string) => [...fp.objects.values()].find((o) => o.type === type);
-
-export function cupPlan(fp: FloorPlan, id: string, nowIso: string): PlanView | null {
-  const table = byType(fp, "dining_table");
-  const sink = byType(fp, "sink_counter");
-  if (!table || !sink) return null;
-  const leg1 = route(fp, fp.robot.position, table.position);
-  if (!leg1) return null;
-  const toTable = approach(leg1, STOP_M);
-  const from = toTable.at(-1)!;
-  const leg2 = route(fp, from, sink.position);
-  const toSink = leg2 ? approach(leg2, STOP_M) : [from];
-  const steps: PlanStep[] = [
-    { id: `${id}:1`, kind: "move", label: STEP_LABEL.goTable, target: { objectId: table.id, room: table.room ?? undefined }, status: "pending" },
-    { id: `${id}:2`, kind: "act", label: STEP_LABEL.pickCup, target: { objectId: table.id }, status: "pending" },
-    { id: `${id}:3`, kind: "move", label: STEP_LABEL.goSink, target: { objectId: sink.id, room: sink.room ?? undefined }, status: "pending" },
-    { id: `${id}:4`, kind: "act", label: STEP_LABEL.placeCup, target: { objectId: sink.id }, status: "pending" },
-  ];
-  const path: XZ[] = [...toTable, ...toSink.slice(1)];
-  return {
-    id, source: "brain", goal: GOAL.clearCup, judgment: "", dryRun: true,
-    robot: { position: fp.robot.position, room: fp.robot.room }, path,
-    legs: [{ stepId: steps[0]!.id, end: toTable.length - 1 }, { stepId: steps[2]!.id, end: path.length - 1 }],
-    steps, status: "planned", updatedAt: nowIso,
-  };
-}
-
-const TOOL_VERB: Record<string, string> = { turn_on: "켜기", turn_off: "끄기", set_level: "맞추기", set_climate: "맞추기", set_covering: "맞추기", lock: "잠그기", unlock: "잠금 풀기", start: "시작", stop: "멈추기", set_valve: "맞추기" };
-
-export function devicePlan(fp: FloorPlan, a: AgentAction, nowIso: string): PlanView {
-  const id = `agent:${a.at}:${a.deviceId ?? a.tool}`;
-  return {
-    id, source: "agent", goal: STEP_LABEL.device(a.deviceLabel ?? "", TOOL_VERB[a.tool] ?? a.tool), judgment: "", dryRun: false,
-    robot: { position: fp.robot.position, room: fp.robot.room }, path: [], legs: [],
-    steps: [{ id: `${id}:1`, kind: "device", label: STEP_LABEL.device(a.deviceLabel ?? "", TOOL_VERB[a.tool] ?? a.tool), target: { deviceId: a.deviceId }, status: a.needsConfirmation ? "pending" : a.ok ? "done" : "failed" }],
-    status: a.needsConfirmation ? "planned" : a.ok ? "done" : "failed", updatedAt: nowIso,
-  };
-}
-```
-
-- [ ] **Step 3: hub.ts 구현** — 규칙:
-  - `brain` 이벤트: 지금 계획이 brain 것이면 `judgment = JUDGMENT[stage]`로 바꿔 보낸다. 계획이 없으면 마지막 판단만 기억한다(다음 계획의 judgment).
-  - `action`(task 「컵 치우기」): `cupPlan`으로 만들고 status `running`, 첫 단계 `active`. 「사용자에게 물어보기」는 경로 없는 `ask` 한 단계.
-  - `result`: outcome `cleared`·`answered`면 모든 단계 done·status done, `declined`·`withdrawn`이면 cancelled, 그 밖은 failed.
-  - `brain` stage `cancel`: 지금 brain 계획을 cancelled.
-  - `agent` 이벤트 `action`(deviceId 있음): `devicePlan`. 브레인 계획이 running이면 덮지 않는다.
-  - `onEye(position)`: 폰(클로이드의 눈) 바닥 위치를 로봇 위치로 쓴다. 다음 계획부터 반영.
-  - `put(plan)`: task planner가 보낸 계획. 같은 id면 바꾼다.
-  - 바뀔 때마다 `broadcast({ type: "plan", plan })`.
-- [ ] **Step 4: 서버 잇기**
-  - `src/server/home.ts`: 집을 띄울 때 `floorPlanFrom(JSON.parse(readFileSync(home.scenePath)))`로 `PlanHub`를 만든다(scene이 없으면 만들지 않는다). brain의 `toDashboard`로 나가는 `{type:"brain", event}`를 `hub.onBrain(event)`에도 넘긴다. 165줄 `onEye`에서 `hub.onEye([eye의 x, eye의 z])`(EyePose 필드는 `src/phone/align.ts`를 보고 고른다).
-  - `src/server/app.ts`: 463줄 `agent?.subscribe`에서 `hub.onAgent(e)`. 457줄 처음 연결 때 `send(ws, { type: "plan", plan: hub.current() })`. `GET /api/plan` → `{ ok: true, plan }`. `POST /api/plan`(로컬 출처만) → `hub.put(body.plan)`. `POST /api/plan/:id/steps/:stepId` → `hub.setStep`.
-  - `scripts/lint-ui-copy.ts`: `lintUiCopy`가 `src/plan/labels.ts`를 `jsCopy`로 함께 본다.
-- [ ] **Step 5: 확인** — `npx vitest run tests/plan-planner.test.ts tests/plan-hub.test.ts` PASS, `npm test`·`npm run lint`·`npm run typecheck` PASS
-- [ ] **Step 6: Commit**(사용자 허락 뒤)
+- [x] **Step 2: planner.ts 구현** — 위 Interfaces대로. 정지 거리 `STOP_M = 0.55`(로봇 반지름 0.22m + 여유). 이동 단계 target에는 물건 id와 방, 행동 단계에는 물건 id. 기기 계획 id는 `agent:${at}:${deviceId}`, `dryRun: false`.
+- [x] **Step 3: hub.ts 구현** — 규칙:
+  - `onDashboard(m)`: 두뇌가 대시보드로 보내는 `{type:"brain", event}`를 그대로 받아 `onBrain`으로. 다른 메시지는 무시.
+  - `brain` 이벤트: 마지막 단계와 세대(`generation`)를 기억한다. 지금 계획이 열린(planned·running) brain 것이면 `judgment = JUDGMENT[stage]`(물어보기 계획의 act는 `ASK_JUDGMENT`). 글이 같으면 보내지 않는다. 닫힌 계획은 바꾸지 않는다.
+  - `action`(active true): 「컵 치우기」는 `cupPlan`, 「사용자에게 물어보기」는 `askPlan`. status `running`, 첫 단계 `active`, judgment는 마지막 판단. active false(거두기)는 무시하고 result가 닫는다.
+  - 다시 계획: 마지막 brain 계획이 done이 아니고 그 계획을 만든 뒤 세대가 올랐으면 새 계획에 `supersedes: 이전 id`.
+  - `result`(지금 brain 계획과 같은 id): `cleared`·`answered`면 모든 단계 done·status done·judgment 「끝났어요」, `declined`·`withdrawn`이면 cancelled, 그 밖은 failed. 끝나지 않은 단계는 skipped(failed면 지금 단계만 failed).
+  - `brain` stage `cancel`: 열린 brain 계획을 cancelled·judgment 「사람이 돌아와 멈췄어요」.
+  - `agent` 이벤트 `action`: `devicePlan`. 열린 brain·planner 계획은 덮지 않는다. `pending`이면 토큰을 그 기기 계획에 묶고, `confirmed`면 done·failed, `cancelled`면 cancelled.
+  - `onEye(position, estimated)`: 맞춘 폰(클로이드의 눈) 바닥 자리를 로봇 자리로 쓴다(방은 `roomAt`). 다음 계획부터. `estimated`면 무시.
+  - `put(plan)`: task planner가 보낸 계획. 같은 id면 바꾸고 origin은 그대로.
+  - `setStep`: 지금 계획의 단계 하나. 단계로 계획 상태를 맞춘다(failed 있으면 failed, 모두 done·skipped면 done, active·done 있으면 running, 취소한 계획은 그대로).
+  - 바뀔 때마다 `broadcast({ type: "plan", plan })`. 같은 id면 `revision = max(받은 번호, 지금 번호 + 1)`, 새 id는 받은 번호(서버가 만든 계획은 1). `updatedAt`은 서버 시각.
+- [x] **Step 4: 서버 잇기**
+  - `src/server/home.ts`: 집을 띄울 때 `new PlanHub(floorPlanFrom(scene.json ?? {}), broadcast)`(scene이 없으면 빈 평면도라 컵 계획은 안 나오고 기기·planner 계획만). 두뇌 `toDashboard`에서 대시보드로 보낸 뒤 `plans.onDashboard(m)`. 폰 `onEye`에서 `plans.onEye([eye.position[0], eye.position[1]], eye.estimated === true)`. 앱에 `plan: plans`.
+  - `src/server/app.ts`: `agent?.subscribe`에서 agent 메시지를 보낸 뒤 `opts.plan?.onAgent(e)`. 처음 연결 때 `send(ws, { type: "plan", plan: opts.plan?.current() ?? null })`. `GET /api/plan` → `{ ok: true, plan }`. `POST /api/plan`·`POST /api/plan/:id/steps/:stepId`는 같은 PC(`isLoopback(req.socket.remoteAddress)`)만, 아니면 403. 계획은 zod로 본다: 글(goal·judgment·label)은 60자 아래·화살표·괄호 없음, 로봇 위치가 null이면 path [], legs는 move 단계·path 안 번호. 틀리면 400. 없는 단계 404.
+  - `scripts/lint-ui-copy.ts`: `COPY_TARGETS = [web/, ui/src/, src/plan/labels.ts]`. 파일을 주면 그 파일 하나를 본다. `npm run lint`와 `tests/lint-ui-copy.test.ts`가 같은 목록을 쓴다.
+- [x] **Step 5: 확인** — `npm run heavy -- npx vitest run tests/plan-planner.test.ts tests/plan-hub.test.ts tests/plan-server.test.ts tests/lint-ui-copy.test.ts` PASS, `npm run heavy -- npm test`·`npm run heavy -- npm run lint`·`npm run heavy -- npm run typecheck` PASS
+- [x] **Step 6: Commit**
 
 ```bash
-git add src/plan/labels.ts src/plan/planner.ts src/plan/hub.ts src/server/home.ts src/server/app.ts scripts/lint-ui-copy.ts tests/plan-planner.test.ts tests/plan-hub.test.ts tests/helpers/floor.ts
+git add src/plan/labels.ts src/plan/planner.ts src/plan/hub.ts src/server/home.ts src/server/app.ts scripts/lint-ui-copy.ts tests/plan-planner.test.ts tests/plan-hub.test.ts tests/plan-server.test.ts tests/helpers/floor.ts tests/lint-ui-copy.test.ts docs/plan-contract.md docs/superpowers/plans/2026-11-06-agent-on-twin.md
 git commit -m "feat(plan): build Cloid plans from the cup brain and agent actions and broadcast them"
 ```
 

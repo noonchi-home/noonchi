@@ -1,4 +1,4 @@
-// 집 하나의 실행 묶음: twin 데이터 → 허브(신호 출처로 감쌈) → 정책·에이전트 → 배치·기준점 → 두뇌 → 앱 → 폰 서버.
+// 집 하나의 실행 묶음: twin 데이터 → 허브(신호 출처로 감쌈) → 정책·에이전트 → 배치·기준점 → 두뇌·계획 → 앱 → 폰 서버.
 // 집을 바꾸면 이 묶음을 통째로 닫고 새로 만든다(src/server/start.ts). 앱은 직접 듣지 않고, 껍데기 서버가 요청을 넘긴다(shell.ts).
 
 import { existsSync, readFileSync } from "node:fs";
@@ -22,6 +22,8 @@ import { orderPhoneUrls } from "../phone/links.js";
 import { createPhoneServer, type PhoneServer } from "../phone/server.js";
 import { estimateViewpoint } from "../phone/session.js";
 import { TouchStore, eyeHeightOf, floorLookup, homeBounds, readTouchPoints, touchPointsPath, touchTargets, type TouchPoint } from "../phone/touch.js";
+import { PlanHub } from "../plan/hub.js";
+import { floorPlanFrom } from "../plan/route.js";
 import type { ThinqLink } from "../thinq/link.js";
 import { createApp, type TwinHomeApp } from "./app.js";
 import { startHub, type HubKind, type MatterTransport, type StartHubOptions } from "./hubFactory.js";
@@ -73,14 +75,18 @@ export interface HomeRuntime {
   close(): Promise<void>;
 }
 
+/** scene.json 전체. 없거나 읽지 못하면 null. */
+function readScene(scenePath: string): unknown {
+  try {
+    return JSON.parse(readFileSync(scenePath, "utf8").replace(/^﻿/, "")) as unknown;
+  } catch {
+    return null;
+  }
+}
+
 /** scene.json plan.rooms(기준점 범위 검사·방 바닥 높이). 읽지 못하면 빈 목록. */
 function sceneRooms(scenePath: string): { polygon?: number[][]; floor_z?: number }[] {
-  try {
-    const scene = JSON.parse(readFileSync(scenePath, "utf8").replace(/^﻿/, "")) as { plan?: { rooms?: { polygon?: number[][]; floor_z?: number }[] } };
-    return scene.plan?.rooms ?? [];
-  } catch {
-    return [];
-  }
+  return (readScene(scenePath) as { plan?: { rooms?: { polygon?: number[][]; floor_z?: number }[] } } | null)?.plan?.rooms ?? [];
 }
 
 /** 트윈의 식탁·책상 윗면(두뇌의 "식탁을 비추는가"). 배치가 바뀌면 다시 만든다. */
@@ -144,13 +150,19 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         else phoneRef.current.setTargets(phoneRef.floor, "floor");
       }, savedTouch)
       : undefined;
+    // 클로이드 계획(src/plan/hub.ts): 두뇌 행동·에이전트 기기 행동·맞춘 눈 → 계획을 /events로. 경로는 scene.json 평면도로 찾는다
+    const plans = new PlanHub(floorPlanFrom(readScene(home.scenePath) ?? {}), (m) => appRef.current?.broadcast(m));
     // 상위 판단(BRAIN=1): 폰 카메라 프레임으로 컵 시나리오를 돈다(src/brain/live.ts). 행동은 모의라 기기 명령이 없다
     const brainWanted = /^(1|true|on)$/i.test(env.BRAIN?.trim() ?? "");
     if (brainWanted && !phoneOn) log("[경고] BRAIN=1은 PHONE_PORT가 있어야 합니다(폰 카메라가 입력). 두뇌를 끕니다.");
     live = brainWanted && phoneOn
       ? await createLiveBrain({
         env, runtimeDir, log, surfaces: surfaceSource(layout?.editor), inject: ctx.brain,
-        toDashboard: (m) => appRef.current?.broadcast(m), toPhone: (m) => phoneRef.current?.send(m),
+        toDashboard: (m) => {
+          appRef.current?.broadcast(m);
+          plans.onDashboard(m);
+        },
+        toPhone: (m) => phoneRef.current?.send(m),
       })
       : null;
     const brain = live;
@@ -159,6 +171,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       hub: signals, policy, agent, rooms: twin.rooms, twinDir, viewerDir: home.viewerDir, libraryDir: home.libraryDir, hubKind, log, eye: feed, brain: brain ?? undefined,
       home: { id: home.id, name: home.name }, homes: listHomes(twin.dir), layout: layout?.editor, phoneUrls: () => phoneUrls, mode: ctx.mode, webDir: ctx.webDir,
       touch: touchStore && { get: () => touchStore.get(), save: (raw) => touchStore.save(raw), clear: () => touchStore.clear(), eyeHeightM },
+      plan: plans,
     });
     const appNow = app;
     appRef.current = app;
@@ -173,7 +186,10 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         targets: touch ? touchTargets(touch) : floor, mode: touch ? "touch" : "floor", eyeHeightM, feed, log, fallback,
         floorAt: floorLookup(sceneRooms(home.scenePath)),
         maxMismatchM: Number.isFinite(maxMismatch) && maxMismatch > 0 ? maxMismatch : undefined,
-        onEye: (eye) => appNow.broadcast({ type: "eye", eye }),
+        onEye: (eye) => {
+          appNow.broadcast({ type: "eye", eye });
+          plans.onEye([eye.position[0], eye.position[1]], eye.estimated === true);
+        },
         onSay: async (text) => {
           const r = await agent.chat(PHONE_SESSION, text);
           return { reply: r.reply, pending: r.pendingConfirmations.map((p) => ({ token: p.token, deviceLabel: p.deviceLabel, reason: p.reason })) };
