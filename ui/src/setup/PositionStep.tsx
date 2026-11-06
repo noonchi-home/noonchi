@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SetupView } from "../../../src/contract/setup.ts";
 import { cn } from "../lib/utils";
+import { hideViewerBar } from "../twin/embed";
+import { waitForViewer } from "../twin/viewer";
 import { btn, call, failText, isOk, primary, small } from "./setup-api";
 
 // 4 위치 동기화: 3D 트윈에서 벽 두 곳(A·B)을 골라 저장하면 폰이 실제 그 벽 바로 아래 바닥을 조준해 맞춘다(높이는 눈높이 고정).
 // 고르기는 같은 출처 iframe의 뷰어 API(aptViewer.startPick)를 쓰고, 저장한 점은 3D에 핀으로 보인다.
 // "벽 하나로 A·B 고르기"는 누른 벽 하나를 서버(/api/phone/touch-points/auto)에 보내 A·B 구석을 받는다. 저장은 따로 한다.
 // 손으로 다시 고른 점의 「<방> 벽」 이름은 서버(/api/phone/touch-points/room)가 정한 방으로 짓는다. 같은 쪽을 여러 방이 쓰는 벽에서 뷰어는 첫 방을 보낸다.
+// 3D는 대시보드(TwinStage)처럼 뷰어 위 막대를 숨기고 배지를 끈다. 벽은 고르기에 온전한 벽이 필요해 낮추지 않는다.
+// live=auto는 그대로 둔다: 뷰어는 live가 있을 때만 embed=1(가전 패널 접기·오른쪽 패널 숨김)을 쓰고, 배치 보정·폰 눈 마커도 live로 받는다.
 
 const TWIN_SRC = "/twin/viewer/?live=auto&embed=1";
 const IDS = ["A", "B"] as const;
@@ -14,6 +18,11 @@ type Id = (typeof IDS)[number];
 type Pos = [number, number];
 const MAX_LABEL = 40;
 const WALL = " 벽";
+// 서버(src/phone/corners.ts cornerLabels)가 짓는 구석 이름 꼴. 방 이름은 긴 쪽(맞은편)에 맞춰 같이 줄인다
+const CORNER = " 구석";
+const OPPOSITE = " 맞은편 구석";
+/** 방 이름을 이름 꼴 끝말(suffix)과 합쳐 40자가 넘지 않게 줄인다. */
+const cut = (room: string, suffix: string) => room.trim().slice(0, MAX_LABEL - suffix.length).trim();
 /** 뷰어가 돌려주는 벽 점: 방 쪽 면 위 점, 그 면의 방·법선. */
 type WallHit = { position: Pos; room?: string; normal?: Pos };
 
@@ -46,9 +55,25 @@ interface LayoutView {
   dirty: boolean;
 }
 
-function TwinBox({ home, frame, onLoad }: { home: string; frame: React.RefObject<HTMLIFrameElement | null>; onLoad: () => void }) {
+/** 3D 트윈 iframe. 뜨면 뷰어 위 막대를 숨기고, 집을 다 불러오면 배지를 끄고 캔버스를 다시 맞춘 뒤 onReady. */
+function TwinBox({ home, frame, onReady }: { home: string; frame: React.RefObject<HTMLIFrameElement | null>; onReady: () => void }) {
   const [twin, setTwin] = useState<"checking" | "none" | "ready">("checking");
   const [loaded, setLoaded] = useState(false);
+  const onLoad = () => {
+    setLoaded(true);
+    const f = frame.current;
+    const win = f?.contentWindow;
+    if (!f || !win) return;
+    if (f.contentDocument) hideViewerBar(f.contentDocument);
+    waitForViewer(win)
+      .then((v) => {
+        if (frame.current !== f) return; // 그사이 닫혔거나 집이 바뀌었다
+        v.setBadges(false);
+        if (f.contentDocument) hideViewerBar(f.contentDocument); // 다 불러온 집을 막대 없는 캔버스에 다시 맞춘다
+        onReady();
+      })
+      .catch(() => {}); // 뷰어가 없으면 고르기 단추가 알린다
+  };
   useEffect(() => {
     let live = true;
     setTwin("checking");
@@ -61,7 +86,7 @@ function TwinBox({ home, frame, onLoad }: { home: string; frame: React.RefObject
       {twin === "ready" && (
         <iframe
           ref={frame} title="3D 집 트윈" src={`${TWIN_SRC}&home=${encodeURIComponent(home)}`}
-          className="absolute inset-0 size-full border-0" onLoad={() => { setLoaded(true); onLoad(); }}
+          className="absolute inset-0 size-full border-0" onLoad={onLoad}
         />
       )}
       {!(twin === "ready" && loaded) && (
@@ -85,7 +110,8 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
   const [labels, setLabelsState] = useState<Record<Id, string>>({ A: "", B: "" });
   const labelsRef = useRef(labels);
   const setLabels = (l: Record<Id, string>) => { labelsRef.current = l; setLabelsState(l); };
-  // 앱이 채운 이름. 사용자가 고치지 않아 아직 이 글 그대로면 손으로 다시 고를 때 새 자리에 맞게 바꾼다
+  // 앱이 채운 이름. 사용자가 고치지 않아 아직 이 글 그대로면 손으로 다시 고를 때 새 자리에 맞게 바꾼다.
+  // 저장 파일에는 누가 쓴 이름인지 없어서, 처음 불러온 이름은 아는 방의 이름 꼴(autoLabels)이면 앱이 채운 것으로 본다
   const filled = useRef<Record<Id, string | null>>({ A: null, B: null });
   const [saved, setSaved] = useState(false);
   const [info, setInfo] = useState<{ text: string; error?: boolean }>({ text: "벽 하나로 A·B 구석을 고르세요." });
@@ -99,19 +125,27 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
       return null;
     }
   };
+  /** 앱이 채우는 이름 꼴 전부: 방마다 「<방> 구석」·「<방> 맞은편 구석」·「<방> 벽」. */
+  const autoLabels = () => new Set(view.rooms.flatMap((r) => {
+    const corner = cut(r.label ?? "", OPPOSITE), wall = cut(r.label ?? "", WALL);
+    return [...(corner ? [`${corner}${CORNER}`, `${corner}${OPPOSITE}`] : []), ...(wall ? [`${wall}${WALL}`] : [])];
+  }));
   const list = (p = points, l = labels) => IDS.map((id) => ({ id, label: l[id].trim(), position: p[id] }));
   const showMarkers = (p = points, l = labels) => {
     viewer()?.setTouchPoints?.(list(p, l).filter((x) => x.position).map((x) => ({ id: x.id, label: x.label || `${x.id} 지점`, position: x.position! })));
   };
-  const apply = (t: TouchView) => {
+  /** 서버가 준 A·B로 바꾼다. loaded: 화면을 열며 처음 불러온 값. */
+  const apply = (t: TouchView, loaded = false) => {
     setSaved(Boolean(t.points));
     const p: Record<Id, Pos | null> = { A: null, B: null };
     const l: Record<Id, string> = { A: "", B: "" };
+    const auto = loaded ? autoLabels() : null;
     for (const id of IDS) {
       const hit = t.points?.find((x) => x.id === id);
       p[id] = hit?.position ?? null;
       l[id] = hit?.label ?? "";
-      if (l[id] !== filled.current[id]) filled.current = { ...filled.current, [id]: null };
+      const app = l[id] === filled.current[id] || Boolean(auto?.has(l[id]));
+      filled.current = { ...filled.current, [id]: app ? l[id] : null };
     }
     setPoints(p);
     setLabels(l);
@@ -129,7 +163,7 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
     call<TouchView>("/api/phone/touch-points").then((r) => {
       if (!live) return;
       setTouchOn(isOk(r)); // 집 scene.json이 없으면 쓰지 않는다
-      if (isOk(r)) apply(r.json);
+      if (isOk(r)) apply(r.json, true);
     });
     return () => { live = false; };
   }, [home]);
@@ -157,7 +191,7 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
   };
   /** 손으로 고른 벽의 이름: 「<방> 벽」(40자까지). 방 이름을 모르면 빈 글. */
   const wallLabel = (room?: string) => {
-    const name = (view.rooms.find((r) => r.id === room)?.label ?? "").trim().slice(0, MAX_LABEL - WALL.length).trim();
+    const name = cut(view.rooms.find((r) => r.id === room)?.label ?? "", WALL);
     return name ? `${name}${WALL}` : "";
   };
   /** 누른 벽 점의 방 id. 서버가 모르거나 닿지 못하면 undefined. */
@@ -226,7 +260,7 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
     <section aria-labelledby="h-position" className="flex min-h-0 flex-1 flex-col gap-3">
       <h2 id="h-position" className="text-[18px] font-semibold">폰과 트윈의 위치를 맞춰요</h2>
       <div className="grid min-h-[420px] flex-1 gap-3 md:grid-cols-[minmax(0,1fr)_360px]">
-        <TwinBox home={home} frame={frame} onLoad={() => setTimeout(() => showMarkers(), 500)} />
+        <TwinBox home={home} frame={frame} onReady={() => showMarkers(pointsRef.current, labelsRef.current)} />
         <div className="flex flex-col gap-3 overflow-auto text-sm">
           {touchOn && (
             <section aria-label="폰 기준점" className="rounded-xl border border-glass-line bg-field p-3">

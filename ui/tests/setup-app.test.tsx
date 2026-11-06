@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SetupApp } from "../src/setup/SetupApp";
@@ -143,25 +143,34 @@ describe("설정 4단계: 벽 하나로 A·B 구석 고르기", () => {
   const A = { id: "A", label: "방 구석", position: [3.9, 0.1] };
   const B = { id: "B", label: "방 맞은편 구석", position: [0.1, 3.94] };
 
-  /** 3D 트윈 iframe에 가짜 뷰어를 붙인다. pick(hit)으로 벽을 누른 것처럼 한다. 방 묻기는 기본으로 뷰어가 보낸 방을 그대로 답한다. */
+  /**
+   * 3D 트윈 iframe에 가짜 뷰어를 붙인다. pick(hit)으로 벽을 누른 것처럼 한다. 방 묻기는 기본으로 뷰어가 보낸 방을 그대로 답한다.
+   * 저장한 점은 가짜 서버에 남고, reopen()은 화면을 닫았다 다시 열어 그 점을 불러온다.
+   */
   async function withViewer(auto: (body: any) => [number, unknown], over: Parameters<typeof setupView>[0] = {}, routes: Record<string, (body: any) => [number, unknown]> = {}) {
-    const opened = open("#position", setupView({ position: { touch: true, layout: false, phone_urls: [] }, ...over }), {
+    let saved: { id: string; label: string; position: number[] }[] | null = null;
+    const start = () => open("#position", setupView({ position: { touch: true, layout: false, phone_urls: [] }, ...over }), {
       "HEAD /twin/viewer/": () => [200, null],
-      "GET /api/phone/touch-points": () => [200, { ok: true, points: null, mode: "floor", eye_height_m: 1.5, distance_m: null }],
+      "GET /api/phone/touch-points": () => [200, { ok: true, points: saved, mode: saved ? "touch" : "floor", eye_height_m: 1.5, distance_m: saved ? 5.403 : null }],
       "POST /api/phone/touch-points/auto": auto,
       "POST /api/phone/touch-points/room": (b: { room?: string }) => [200, { ok: true, room: b.room ?? null }],
-      "POST /api/phone/touch-points": (b: { points: { label: string; position: number[] }[] }) => [200, {
-        ok: true, points: b.points.map((p, i) => ({ id: i ? "B" : "A", ...p })), mode: "touch", eye_height_m: 1.5, distance_m: 5.403,
-      }],
+      "POST /api/phone/touch-points": (b: { points: { label: string; position: number[] }[] }) => {
+        saved = b.points.map((p, i) => ({ id: i ? "B" : "A", ...p }));
+        return [200, { ok: true, points: saved, mode: "touch", eye_height_m: 1.5, distance_m: 5.403 }];
+      },
       ...routes,
     });
-    let cb: ((hit: Hit) => void) | null = null;
-    const viewer = { startPick: vi.fn((fn: (hit: Hit) => void) => { cb = fn; }), cancelPick: vi.fn(), setTouchPoints: vi.fn() };
-    const frame = (await screen.findByTitle("3D 집 트윈")) as HTMLIFrameElement;
-    (frame.contentWindow as unknown as { aptViewer: typeof viewer }).aptViewer = viewer;
-    const touch = await screen.findByRole("region", { name: "폰 기준점" });
-    const pick = async (hit: Hit) => { await act(async () => { cb!(hit); }); };
-    return { ...opened, viewer, touch, pick };
+    const attach = async (opened: ReturnType<typeof open>) => {
+      let cb: ((hit: Hit) => void) | null = null;
+      const viewer = { startPick: vi.fn((fn: (hit: Hit) => void) => { cb = fn; }), cancelPick: vi.fn(), setTouchPoints: vi.fn() };
+      const frame = (await screen.findByTitle("3D 집 트윈")) as HTMLIFrameElement;
+      (frame.contentWindow as unknown as { aptViewer: typeof viewer }).aptViewer = viewer;
+      const touch = await screen.findByRole("region", { name: "폰 기준점" });
+      const pick = async (hit: Hit) => { await act(async () => { cb!(hit); }); };
+      return { ...opened, viewer, touch, pick };
+    };
+    const first = await attach(start());
+    return { ...first, reopen: async () => { cleanup(); return attach(start()); } };
   }
 
   it("벽 하나를 누르면 A·B 구석과 이름·거리를 채우고, 저장은 그 두 점을 보낸다", async () => {
@@ -225,7 +234,18 @@ describe("설정 4단계: 벽 하나로 A·B 구석 고르기", () => {
     const name = (touch: HTMLElement, id: "A" | "B") => within(touch).getByRole("textbox", { name: `${id} 지점 이름` });
 
     async function steps(routes: Record<string, (body: any) => [number, unknown]> = {}) {
-      const v = await withViewer(both, rooms, routes);
+      const first = await withViewer(both, rooms, routes);
+      let v: Awaited<ReturnType<typeof first.reopen>> = first;
+      /** 화면을 닫았다 다시 연다. 저장한 점을 불러온 뒤 새 화면을 돌려준다. auto·byHand는 새 화면에서 돈다. */
+      const reopen = async (id: "A" | "B", label: string) => {
+        v = await first.reopen();
+        await waitFor(() => expect(name(v.touch, id)).toHaveValue(label));
+        return v;
+      };
+      const save = async () => {
+        await v.user.click(within(v.touch).getByRole("button", { name: "저장" }));
+        await waitFor(() => expect(within(v.touch).getByRole("status")).toHaveTextContent("저장했어요."));
+      };
       const auto = async () => {
         await v.user.click(within(v.touch).getByRole("button", { name: "벽 하나로 A·B 고르기" }));
         await v.pick({ position: [3, 0.1], room: "room", normal: [0, 1] });
@@ -236,7 +256,7 @@ describe("설정 4단계: 벽 하나로 A·B 구석 고르기", () => {
         await v.pick(hit);
         await waitFor(() => expect(within(v.touch).getByRole("status")).not.toHaveTextContent("지점의 벽을 누르세요."));
       };
-      return { ...v, auto, byHand };
+      return { ...first, auto, byHand, save, reopen };
     }
 
     it("구석을 채운 뒤 손으로 다시 고르면 그 방 벽 이름으로 바꾸고, 방 이름을 모르면 비운다", async () => {
@@ -340,6 +360,106 @@ describe("설정 4단계: 벽 하나로 A·B 구석 고르기", () => {
       await byHand("B", { position: [2, 3.94], room: "room", normal: [0, -1] });
       expect(name(touch, "B")).toHaveValue("내 벽");
     });
+
+    it("저장한 구석·벽 이름을 고치지 않았으면 다시 열어 손으로 고를 때도 그 방 벽 이름으로 바꾼다", async () => {
+      const { auto, byHand, save, reopen } = await steps();
+      await auto();
+      await save();
+      let v = await reopen("B", "방 맞은편 구석");
+      await byHand("B", { position: [2, 3.94], room: "room", normal: [0, -1] });
+      expect(name(v.touch, "B")).toHaveValue("방 벽");
+      await byHand("A", { position: [5, 1], room: "living", normal: [0, 1] });
+      expect(name(v.touch, "A")).toHaveValue("거실 벽");
+      expect(v.viewer.setTouchPoints).toHaveBeenLastCalledWith([
+        { id: "A", label: "거실 벽", position: [5, 1] },
+        { id: "B", label: "방 벽", position: [2, 3.94] },
+      ]);
+      await byHand("B", { position: [6, 1], room: "long", normal: [0, 1] });
+      await save();
+      v = await reopen("B", `${"가".repeat(38)} 벽`);
+      await byHand("B", { position: [2, 3.94], room: "room", normal: [0, -1] });
+      expect(name(v.touch, "B")).toHaveValue("방 벽");
+      await byHand("A", { position: [3, 2], room: "room", normal: [-1, 0] });
+      expect(name(v.touch, "A")).toHaveValue("방 벽");
+    });
+
+    it("40자로 줄인 긴 방 구석 이름도 다시 열면 앱이 채운 이름으로 본다", async () => {
+      const long = "가".repeat(33);
+      const { touch, byHand } = await steps({
+        "GET /api/phone/touch-points": () => [200, {
+          ok: true, mode: "touch", eye_height_m: 1.5, distance_m: 5.403,
+          points: [{ id: "A", label: `${long} 구석`, position: [3.9, 0.1] }, { id: "B", label: `${long} 맞은편 구석`, position: [0.1, 3.94] }],
+        }],
+      });
+      await waitFor(() => expect(name(touch, "B")).toHaveValue(`${long} 맞은편 구석`));
+      await byHand("A", { position: [3, 2], room: "room", normal: [-1, 0] });
+      expect(name(touch, "A")).toHaveValue("방 벽");
+      await byHand("B", { position: [2, 3.94], room: "room", normal: [0, -1] });
+      expect(name(touch, "B")).toHaveValue("방 벽");
+    });
+
+    it("고친 이름은 저장하고 다시 열어도 손으로 다시 고를 때 그대로 둔다", async () => {
+      const { user, touch, auto, byHand, save, reopen } = await steps();
+      await auto();
+      await user.clear(name(touch, "A"));
+      await user.type(name(touch, "A"), "창가 쪽 벽");
+      // 방 목록에 없는 방 이름은 앱이 채운 꼴이 아니다
+      await user.clear(name(touch, "B"));
+      await user.type(name(touch, "B"), "부엌 구석");
+      await save();
+      const v = await reopen("A", "창가 쪽 벽");
+      await byHand("A", { position: [3, 2], room: "room", normal: [-1, 0] });
+      expect(name(v.touch, "A")).toHaveValue("창가 쪽 벽");
+      await byHand("B", { position: [2, 3.94], room: "room", normal: [0, -1] });
+      expect(name(v.touch, "B")).toHaveValue("부엌 구석");
+      expect(within(v.touch).getByText("벽 위치 (2.00, 3.94)m")).toBeInTheDocument();
+      expect(v.api.posts("/api/phone/touch-points/room")).toHaveLength(0);
+    });
+  });
+});
+
+describe("설정 4단계: 3D 트윈 보기", () => {
+  type Loading = {
+    ready: Promise<void>; loading: boolean; results: Record<string, unknown>;
+    setBadges: ReturnType<typeof vi.fn>; setWallMode: ReturnType<typeof vi.fn>; setTouchPoints: ReturnType<typeof vi.fn>;
+  };
+
+  it("뷰어 위 막대를 숨기고, 집을 다 불러오면 배지를 끄고 캔버스를 다시 맞춘다. 벽은 낮추지 않고 저장한 핀을 보인다", async () => {
+    const saved = [{ id: "A", label: "방 구석", position: [3.9, 0.1] }, { id: "B", label: "방 맞은편 구석", position: [0.1, 3.94] }];
+    open("#position", setupView({ position: { touch: true, layout: false, phone_urls: [] } }), {
+      "HEAD /twin/viewer/": () => [200, null],
+      "GET /api/phone/touch-points": () => [200, { ok: true, points: saved, mode: "touch", eye_height_m: 1.5, distance_m: 5.403 }],
+    });
+    const frame = (await screen.findByTitle("3D 집 트윈")) as HTMLIFrameElement;
+    expect(frame.getAttribute("src")).toBe("/twin/viewer/?live=auto&embed=1&home=oneroom");
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "B 지점 이름" })).toHaveValue("방 맞은편 구석"));
+    const doc = frame.contentDocument!;
+    doc.open();
+    doc.write('<!doctype html><html><head></head><body><header class="bar">벽</header><main class="stage"></main></body></html>');
+    doc.close();
+    const resized = vi.fn();
+    frame.contentWindow!.addEventListener("resize", resized);
+    let finish!: () => void;
+    const viewer: Loading = {
+      ready: new Promise<void>((r) => { finish = r; }), loading: true, results: {},
+      setBadges: vi.fn(), setWallMode: vi.fn(), setTouchPoints: vi.fn(),
+    };
+    (frame.contentWindow as unknown as { aptViewer: Loading }).aptViewer = viewer;
+    act(() => { frame.dispatchEvent(new Event("load")); });
+    expect(frame.contentDocument!.getElementById("twin-home-embed")?.textContent).toMatch(/\.bar\s*\{\s*display:\s*none/);
+    const atLoad = resized.mock.calls.length;
+    expect(atLoad).toBeGreaterThan(0);
+    expect(viewer.setBadges).not.toHaveBeenCalled();
+    viewer.results.mode = "scene";
+    viewer.loading = false;
+    finish();
+    await waitFor(() => expect(viewer.setBadges).toHaveBeenCalledWith(false));
+    expect(resized.mock.calls.length).toBeGreaterThan(atLoad);
+    expect(viewer.setTouchPoints).toHaveBeenLastCalledWith([
+      { id: "A", label: "방 구석", position: [3.9, 0.1] },
+      { id: "B", label: "방 맞은편 구석", position: [0.1, 3.94] },
+    ]);
+    expect(viewer.setWallMode).not.toHaveBeenCalled();
   });
 });
 
