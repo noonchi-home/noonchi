@@ -5,3 +5,4 @@ dist/
 coverage/
 *.log
 runtime/
+runtime-3d/

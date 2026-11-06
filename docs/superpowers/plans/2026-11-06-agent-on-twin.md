@@ -1,5 +1,7 @@
 # 트윈 위 에이전트 계획 구현 계획
 
+상태: 2026-11-06-twin3d.md Task 27·28·35·37로 진행한다.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 클로이드가 지금 상황을 어떻게 판단했는지, 무엇을 할지, 어디로 움직일지를 3D 트윈 위에서 바로 알아보게 한다.
