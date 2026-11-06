@@ -6,6 +6,7 @@ import { btn, call, failText, isOk, primary, small } from "./setup-api";
 // 4 위치 동기화: 3D 트윈에서 벽 두 곳(A·B)을 골라 저장하면 폰이 실제 그 벽 바로 아래 바닥을 조준해 맞춘다(높이는 눈높이 고정).
 // 고르기는 같은 출처 iframe의 뷰어 API(aptViewer.startPick)를 쓰고, 저장한 점은 3D에 핀으로 보인다.
 // "벽 하나로 A·B 고르기"는 누른 벽 하나를 서버(/api/phone/touch-points/auto)에 보내 A·B 구석을 받는다. 저장은 따로 한다.
+// 손으로 다시 고른 점의 「<방> 벽」 이름은 서버(/api/phone/touch-points/room)가 정한 방으로 짓는다. 같은 쪽을 여러 방이 쓰는 벽에서 뷰어는 첫 방을 보낸다.
 
 const TWIN_SRC = "/twin/viewer/?live=auto&embed=1";
 const IDS = ["A", "B"] as const;
@@ -32,6 +33,11 @@ interface TouchView {
 interface AutoView {
   ok: true;
   points: { id: Id; label: string; position: Pos }[];
+}
+
+interface RoomView {
+  ok: true;
+  room: string | null;
 }
 
 interface LayoutView {
@@ -154,12 +160,20 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
     const name = (view.rooms.find((r) => r.id === room)?.label ?? "").trim().slice(0, MAX_LABEL - WALL.length).trim();
     return name ? `${name}${WALL}` : "";
   };
-  const pick = (id: Id) => startPick(`3D 트윈에서 ${id} 지점의 벽을 누르세요.`, (hit) => {
+  /** 누른 벽 점의 방 id. 서버가 모르거나 닿지 못하면 undefined. */
+  const roomOf = async (hit: WallHit) => {
+    const r = await call<RoomView>("/api/phone/touch-points/room", { home, position: hit.position, room: hit.room, normal: hit.normal });
+    return isOk(r) ? r.json.room ?? undefined : undefined;
+  };
+  const pick = (id: Id) => startPick(`3D 트윈에서 ${id} 지점의 벽을 누르세요.`, async (hit) => {
+    // 앱이 채운 이름을 고치지 않았을 때만 방을 묻고, 답을 기다리는 동안 이름을 고쳤으면 그대로 둔다
+    const was = filled.current[id];
+    const rename = was !== null && labelsRef.current[id] === was;
+    const room = rename ? await roomOf(hit) : undefined;
     const next = { ...pointsRef.current, [id]: hit.position };
     let l = labelsRef.current;
-    const was = filled.current[id];
-    if (was !== null && l[id] === was) {
-      const label = wallLabel(hit.room);
+    if (rename && filled.current[id] === was && l[id] === was) {
+      const label = wallLabel(room);
       l = { ...l, [id]: label };
       filled.current = { ...filled.current, [id]: label || null };
       setLabels(l);

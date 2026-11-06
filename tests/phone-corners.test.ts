@@ -3,7 +3,7 @@
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { autoCorners, parseWallPick, readScenePlan, type HomePlan } from "../src/phone/corners.js";
+import { autoCorners, parseWallPick, pickedRoom, readScenePlan, type HomePlan } from "../src/phone/corners.js";
 import { TouchPointsError, homeBounds, parseTouchPoints } from "../src/phone/touch.js";
 import { resolveTwinStudioDir } from "../src/model/devices.js";
 import { readRegistry } from "../src/model/homes.js";
@@ -278,10 +278,33 @@ describe("실제 집: 손으로 셈한 구석", () => {
   });
 });
 
+describe("pickedRoom: 누른 벽 점이 든 방", () => {
+  // [집, 뷰어가 보낸 방, 누른 점(방 쪽 면 위), 면 법선, 정한 방]. 뷰어 snapToWall은 같은 쪽 면이 여럿이면 첫 면의 방을 보낸다
+  const CASES: [string, string, P, P, string][] = [
+    // 원룸 서쪽 벽 E04: 첫 면이 욕실
+    ["oneroom", "bathroom", [0.1, 1.5], [1, 0], "room"],
+    ["oneroom", "bathroom", [0.1, 5], [1, 0], "bathroom"],
+    // 원룸 동쪽 벽 E02: 첫 면이 방
+    ["oneroom", "room", [3.9, 4.7], [-1, 0], "kitchen"],
+    // 목련 E10(네 방): 첫 면이 침실 3
+    ["mokryeon_180b", "bed_ne", [16.1, 10], [-1, 0], "bed_se"],
+  ];
+
+  it.each(CASES)("%s %s %j", (home, sent, position, normal, room) => {
+    expect(pickedRoom(planOf(home), { position, room: sent, normal })).toBe(room);
+    expect(pickedRoom(planOf(home), { position })).toBe(room);
+  });
+
+  it("벽에서 먼 점은 null", () => {
+    expect(pickedRoom(planOf("oneroom"), { position: [2, 2], room: "room" })).toBeNull();
+  });
+});
+
 // ── 실제 집: 모든 방의 모든 벽 면 ──
 // 시험 쪽 판정: 벽 면은 중심선 + 법선 × 두께/2(고체는 법선이 같은 다각형 변). 구석은 같은 방의 서로 다른 방향 면 두 개 위에 있다.
 
-type Seg = { a: P; b: P; n: P };
+/** viewer: 그 벽에서 같은 쪽 첫 면의 방(뷰어 snapToWall이 보내는 방). */
+type Seg = { a: P; b: P; n: P; viewer?: string };
 const TOL = 0.002;
 
 function faceSegs(plan: HomePlan, room: string): Seg[] {
@@ -291,9 +314,10 @@ function faceSegs(plan: HomePlan, room: string): Seg[] {
       if (f.room !== room) continue;
       const len = Math.hypot(f.normal[0]!, f.normal[1]!);
       const n: P = [f.normal[0]! / len, f.normal[1]! / len];
+      const viewer = w.faces!.find((g) => g.normal[0]! * n[0] + g.normal[1]! * n[1] > 0.99 * Math.hypot(g.normal[0]!, g.normal[1]!))!.room;
       if (w.a && w.b && typeof w.thickness === "number") {
         const h = w.thickness / 2;
-        segs.push({ a: [w.a[0]! + n[0] * h, w.a[1]! + n[1] * h], b: [w.b[0]! + n[0] * h, w.b[1]! + n[1] * h], n });
+        segs.push({ a: [w.a[0]! + n[0] * h, w.a[1]! + n[1] * h], b: [w.b[0]! + n[0] * h, w.b[1]! + n[1] * h], n, viewer });
       } else if (w.polygon) {
         const poly = w.polygon;
         const area = poly.reduce((s, p, i) => s + p[0]! * poly[(i + 1) % poly.length]![1]! - poly[(i + 1) % poly.length]![0]! * p[1]!, 0);
@@ -301,7 +325,7 @@ function faceSegs(plan: HomePlan, room: string): Seg[] {
           const p = poly[i]!, q = poly[(i + 1) % poly.length]!;
           const l = Math.hypot(q[0]! - p[0]!, q[1]! - p[1]!);
           const out: P = [Math.sign(area) * (q[1]! - p[1]!) / l, -Math.sign(area) * (q[0]! - p[0]!) / l];
-          if (out[0] * n[0] + out[1] * n[1] > 0.99) segs.push({ a: [p[0]!, p[1]!], b: [q[0]!, q[1]!], n });
+          if (out[0] * n[0] + out[1] * n[1] > 0.99) segs.push({ a: [p[0]!, p[1]!], b: [q[0]!, q[1]!], n, viewer });
         }
       }
     }
@@ -322,11 +346,11 @@ const inside = (p: P, poly: number[][]) => {
   }
   return hit;
 };
-/** 방 안이거나 방 다각형 변 위(고체 면이 방 경계와 겹치는 곳, 마곡 안방 욕실 S03). */
-const inRoom = (p: P, poly: number[][]) => inside(p, poly) || poly.some((q, i) => {
+/** 방 안이거나 방 다각형 변에서 tol 안(고체 면이 방 경계와 겹치는 곳, 마곡 안방 욕실 S03). */
+const inRoom = (p: P, poly: number[][], tol = TOL) => inside(p, poly) || poly.some((q, i) => {
   const r = poly[(i + 1) % poly.length]!;
   const seg: Seg = { a: [q[0]!, q[1]!], b: [r[0]!, r[1]!], n: [0, 0] };
-  return distToSeg(p, seg) < TOL;
+  return distToSeg(p, seg) < tol;
 });
 /** 같은 방의 서로 다른 방향 면 두 개가 만나는 점(벽 끝에서 벽 두께만큼은 이어진 것으로 본다). */
 const isCorner = (p: P, segs: Seg[]) => {
@@ -401,6 +425,19 @@ describe.each(HOMES.map((h) => h.id))("실제 집 %s: 모든 방의 모든 벽 �
     for (const c of again) {
       expect(autoCorners(flipped, c, bounds), `${c.room} ${JSON.stringify(c.position)}`).toEqual(autoCorners(plan, c, bounds));
     }
+  });
+
+  it("같은 쪽을 여러 방이 쓰는 벽에서 뷰어가 첫 면의 방을 보내도 pickedRoom은 누른 점 바로 안쪽이 든 방이다", () => {
+    let shared = 0;
+    for (const r of picks) {
+      // 두 방 경계 위(안쪽 2cm가 두 방에 다 드는 곳)는 보낸 방을 따르므로 뺀다
+      const probe: P = [r.position[0] + r.seg.n[0] * 0.02, r.position[1] + r.seg.n[1] * 0.02];
+      const holders = plan.rooms.filter((x) => inRoom(probe, x.polygon!, 0.015));
+      if (holders.length !== 1 || holders[0]!.id !== r.room) continue;
+      if (r.seg.viewer !== r.room) shared++;
+      expect(pickedRoom(plan, { position: r.position, room: r.seg.viewer, normal: r.seg.n }), `${r.room} ${JSON.stringify(r.position)}`).toBe(r.room);
+    }
+    expect(shared).toBeGreaterThan(0);
   });
 
   // 구석이 없는 벽도 있다: 양쪽 끝이 열린 벽(마곡 아파트 I03), 마주 보는 두 벽만 있는 방(원룸 주방)

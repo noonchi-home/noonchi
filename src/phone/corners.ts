@@ -202,6 +202,11 @@ function pickedFace(faces: Face[], rooms: PlanRoom[], pick: WallPick): Face | nu
   return order(pool.filter((f) => f.room === pick.room))[0] ?? order(pool)[0] ?? null;
 }
 
+/** 누른 벽 점의 방 id(구석 찾기와 같은 면 고르기). 벽 면 위가 아니면 null. 손으로 고른 점 이름에 쓴다. */
+export function pickedRoom(plan: HomePlan, pick: WallPick): string | null {
+  return pickedFace(planFaces(plan), plan.rooms, pick)?.room ?? null;
+}
+
 /** 면 줄 위 구석. s는 f 위 거리, reach는 맞닿은 벽 두께 절반 + 여유(면이 그만큼 구석을 지나 벽 속으로 이어진다). */
 interface Corner {
   s: number;

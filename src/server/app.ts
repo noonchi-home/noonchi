@@ -48,8 +48,11 @@ export interface AppOptions {
   /** 폰 AR 클로이드의 눈 화면(src/phone/feed.ts). 있으면 GET /api/eye/*를 넘긴다. */
   eye?: { handle(req: IncomingMessage, res: ServerResponse, path: string): boolean };
   /** 벽 대기 맞춤의 기준점 A·B(src/phone/touch.ts TouchStore). 있으면 /api/phone/touch-points*.
-   *  auto: 누른 벽 하나 → A·B 구석(src/phone/corners.ts, 저장 안 함). */
-  touch?: { get(): TouchPoint[] | null; save(raw: unknown): TouchPoint[]; clear(): void; auto(raw: unknown): TouchPoint[]; eyeHeightM: number };
+   *  auto: 누른 벽 하나 → A·B 구석(src/phone/corners.ts, 저장 안 함). room: 누른 벽 점의 방 id(없으면 null). */
+  touch?: {
+    get(): TouchPoint[] | null; save(raw: unknown): TouchPoint[]; clear(): void; auto(raw: unknown): TouchPoint[]; room(raw: unknown): string | null;
+    eyeHeightM: number;
+  };
   /** 상위 판단(BRAIN=1, src/brain/live.ts). 있으면 GET /api/brain에 상태를 보인다. */
   brain?: { status(): object };
   /** 지금 운영 모드(/api/health). 없으면 시험 모드. */
@@ -253,6 +256,18 @@ export function createApp(opts: AppOptions): TwinHomeApp {
     try {
       const points = store.auto(body);
       return { ok: true, points, distance_m: pairDistance(points) };
+    } catch (e) {
+      if (e instanceof TouchPointsError) throw new HttpError(400, e.message);
+      throw e;
+    }
+  });
+  // 누른 벽 점의 방. 같은 쪽을 여러 방이 쓰는 벽에서 뷰어는 첫 방을 보내므로 손으로 고른 점 이름은 이 답을 쓴다
+  route("POST", /^\/api\/phone\/touch-points\/room$/, async (req) => {
+    const store = requireTouch();
+    const body = await readJson(req);
+    sameHome(body);
+    try {
+      return { ok: true, room: store.room(body) };
     } catch (e) {
       if (e instanceof TouchPointsError) throw new HttpError(400, e.message);
       throw e;

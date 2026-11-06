@@ -21,6 +21,7 @@
 - 맞은편 벽이 없거나, B가 그 방 밖이거나, A–B가 0.5m 미만이거나, `parseTouchPoints`(집 범위)가 거절하면 A만 준다. B는 비우고 손으로 고르게 한다.
 - 고른 결과에 방·법선이 없으면 P에 가장 가까운 면에서 정한다. 뷰어 좌표는 mm 반올림이라 면 맞춤은 1cm까지 본다.
 - 방은 힌트로만 쓴다. 여러 방이 같은 쪽을 쓰는 벽(목련 E10은 네 방)에서 뷰어는 첫 방을 보내므로, 누른 점 바로 안쪽이 든 방으로 정한다. 두 방 경계 위(열린 경계, 사이 벽 속)라 둘 다 들면 보낸 방을 따른다.
+- 손으로 다시 고른 점의 「<방> 벽」 이름도 같은 방법으로 정한 방을 쓴다. 화면은 뷰어가 보낸 방을 쓰지 않고 서버에 묻는다. 서버가 모르면 이름을 비운다.
 - 이름: A "<방 이름> 구석", B "<방 이름> 맞은편 구석". 40자를 넘으면 방 이름을 자른다. 방 이름이 없으면 비워 둔다(저장하면 "A 지점").
 - 화면: "벽 하나로 A·B 고르기" 버튼 하나를 더한다. A·B 줄의 "3D에서 고르기"는 지금처럼 손으로 고른다(가구가 구석을 가릴 때).
 
@@ -37,6 +38,7 @@ Files: `src/server/app.ts`, `src/server/home.ts`, `tests/phone-touch-start.test.
 
 - [x] `POST /api/phone/touch-points/auto {home, position, room?, normal?}` → `{ok, points, distance_m}`. 저장하지 않는다. 잘못된 값 400, 다른 집 409. 실제 oneroom 집으로 시험 → 구현.
 - [x] `home.ts`는 `scene.json` plan을 한 번 읽어 범위·바닥 높이·구석에 같이 쓴다.
+- [x] `POST /api/phone/touch-points/room {home, position, room?, normal?}` → `{ok, room}`. 벽 면 위가 아니면 `room: null`. 잘못된 값 400, 다른 집 409.
 
 ## Task 3: 설정 화면 버튼
 

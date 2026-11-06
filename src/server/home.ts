@@ -17,7 +17,7 @@ import { loadLayout } from "../layout/load.js";
 import { loadTwin, type TwinData } from "../model/devices.js";
 import { listHomes } from "../model/homes.js";
 import { loadAnchorTargets, type AnchorTarget } from "../phone/anchors.js";
-import { autoCorners, parseWallPick, readScenePlan } from "../phone/corners.js";
+import { autoCorners, parseWallPick, pickedRoom, readScenePlan } from "../phone/corners.js";
 import { EyeFeed } from "../phone/feed.js";
 import { orderPhoneUrls } from "../phone/links.js";
 import { createPhoneServer, type PhoneServer } from "../phone/server.js";
@@ -155,6 +155,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       touch: touchStore && {
         get: () => touchStore.get(), save: (raw) => touchStore.save(raw), clear: () => touchStore.clear(), eyeHeightM,
         auto: (raw) => autoCorners(plan, parseWallPick(raw), bounds),
+        room: (raw) => pickedRoom(plan, parseWallPick(raw)),
       },
     });
     const appNow = app;

@@ -157,6 +157,21 @@ describe("벽 대기 맞춤(startServer)", () => {
     expect((await json("/api/phone/touch-points/auto", { home: "apartment", position: [0.1, 6] })).status).toBe(409);
   });
 
+  it("누른 벽 점의 방: 같은 쪽을 여러 방이 쓰는 벽은 뷰어가 보낸 첫 방이 아니라 점 바로 안쪽이 든 방", async () => {
+    const dir = runtime();
+    srv = await startServer({ env: env(dir, { HOME_ID: "oneroom" }), log: () => {} });
+    // 서쪽 벽 E04는 첫 면이 욕실, 동쪽 벽 E02는 첫 면이 방
+    expect((await json("/api/phone/touch-points/room", { home: "oneroom", position: [0.1, 1.5], room: "bathroom", normal: [1, 0] })).json)
+      .toEqual({ ok: true, room: "room" });
+    expect((await json("/api/phone/touch-points/room", { home: "oneroom", position: [3.9, 4.7], room: "room", normal: [-1, 0] })).json)
+      .toEqual({ ok: true, room: "kitchen" });
+    expect((await json("/api/phone/touch-points/room", { position: [2, 2] })).json).toEqual({ ok: true, room: null });
+    const bad = await json("/api/phone/touch-points/room", { home: "oneroom", position: [1, "x"] });
+    expect(bad.status).toBe(400);
+    expect(bad.json.error).toContain("위치");
+    expect((await json("/api/phone/touch-points/room", { home: "apartment", position: [0.1, 1.5] })).status).toBe(409);
+  });
+
   it("깨진 파일이면 경고하고 바닥 조준으로 시작한다", async () => {
     const dir = runtime();
     const probe = await startServer({ env: { HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock" }, log: () => {} });
