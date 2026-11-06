@@ -9,3 +9,5 @@
 | 트윈 3D는 React 대시보드 안에서 three.js로 직접 그린다. iframe으로 다른 뷰어 페이지를 띄우지 않는다. twin-studio는 모델·데이터를 만드는 곳으로만 쓴다. | 없음. 한양목련 3D 계획 Task 43에서 옛 iframe 경로를 지우면 구조로 막힌다. |
 | 화면 글(web/·ui/src)에는 사용자가 할 일과 지금 상태만 쓴다. 생각 과정·구현 설명·흐름 나열(「집 → 가전 → …」)·괄호 덧붙임·설명 칸(.sub·.note·.help)을 넣지 않는다. | `npm run lint`(scripts/lint-ui-copy.ts)가 web/(폰)과 ui/src의 HTML·JS·TS·TSX 글(JSX 글·속성 포함)을 검사. `npm test`도 tests/lint-ui-copy.test.ts로 같은 검사를 돌린다. 짧은 메타 문구는 못 잡으니 글을 쓸 때 직접 본다. |
 | 3D 크롬·시험·빌드·Blender·변환은 한 번에 하나만 돌린다. 시험은 파일 하나도 npm run heavy로, 캡처는 npm run capture로만. | npm run heavy·npm run capture가 잡는 잠금(scripts/twin3d/heavy.ts). 잠금 없이 직접 돌리는 것은 못 막는다. |
+| 추론 모드 mock과 live는 같은 구조로 돈다. 바뀌는 것은 모델 주소와 모델 이름뿐이다. mock이라고 단계를 건너뛰거나 다른 길로 가지 않는다. 시험의 가짜 모델은 같은 주소 자리에 붙는 가짜 서버로 둔다. | 없음. |
+| PAM에는 사진을 넘기지 않는다. 사진마다 YOLO와 VLM이 각각 분석하고, World State가 둘을 합친 관찰 텍스트를 PAM에 넘긴다. | 없음. |
