@@ -72,17 +72,32 @@ describe("로봇 시작점이 없는 집", () => {
   it("시작점이 주어지면 경로가 있다", () => {
     expect(route(bare, [2, 6], [6, 2])?.at(-1)).toEqual([6, 2]);
   });
+  it("갈 수 있는 방 바로 옆이어도 못 가는 방(욕실)이 목적지면 null", () => {
+    expect(bare.portals.some((p) => p.rooms.includes("C") && p.rooms.includes("bath_1"))).toBe(true);
+    expect(route(bare, [2, 6], [6, 6])).toBeNull();
+  });
 });
 
 const STUDIO = resolveTwinStudioDir(process.env.TWIN_STUDIO_DIR, fileURLToPath(new URL("..", import.meta.url)));
 const APARTMENT = join(STUDIO, "apartment", "scene.json");
 const MOKRYEON = join(STUDIO, "homes", "mokryeon_180b", "scene.json");
-const readScene = (path: string) => JSON.parse(readFileSync(path, "utf8")) as { objects: { id: string; type: string; room?: string | null; plan?: { position?: [number, number] } }[] };
+type RealScene = { objects: { id: string; type: string; room?: string | null; plan?: { position?: [number, number] } }[] };
+// 건너뛰는 묶음도 본문은 돈다. 파일은 시험 안에서 처음 쓸 때 읽는다.
+const home = (path: string) => {
+  let cached: { real: RealScene; fp: ReturnType<typeof floorPlanFrom> } | undefined;
+  return () => {
+    if (!cached) {
+      const real = JSON.parse(readFileSync(path, "utf8")) as RealScene;
+      cached = { real, fp: floorPlanFrom(real) };
+    }
+    return cached;
+  };
+};
 
 describe.skipIf(!existsSync(APARTMENT))("마곡 아파트(twin-studio apartment)", () => {
-  const real = readScene(APARTMENT);
-  const fp = floorPlanFrom(real);
+  const load = home(APARTMENT);
   it("복도 로봇에서 식탁 table_1까지 경로가 있다", () => {
+    const { fp } = load();
     expect(fp.robot.position).toEqual([3.9, 5.51]);
     const path = route(fp, fp.robot.position, fp.objects.get("table_1")!.position);
     expect(path?.[0]).toEqual([3.9, 5.51]);
@@ -90,6 +105,7 @@ describe.skipIf(!existsSync(APARTMENT))("마곡 아파트(twin-studio apartment)
     expect(path!.length).toBeLessThanOrEqual(3);
   });
   it("가구·가전 자리는 그 물건의 방에 있다", () => {
+    const { real, fp } = load();
     const wrong = real.objects
       .filter((o) => o.plan?.position && !/^(door|win)_/.test(o.id))
       .filter((o) => roomAt(fp, o.plan!.position!) !== (o.room ?? null))
@@ -99,18 +115,19 @@ describe.skipIf(!existsSync(APARTMENT))("마곡 아파트(twin-studio apartment)
 });
 
 describe.skipIf(!existsSync(MOKRYEON))("한양목련 180B(로봇 자리 없음)", () => {
-  const real = readScene(MOKRYEON);
-  const fp = floorPlanFrom(real);
-  const table = real.objects.find((o) => o.type === "dining_table")!.plan!.position!;
+  const load = home(MOKRYEON);
+  const table = () => load().real.objects.find((o) => o.type === "dining_table")!.plan!.position!;
   it("로봇 위치 null, 경로 없음", () => {
+    const { fp } = load();
     expect(fp.robot.position).toBeNull();
-    expect(route(fp, fp.robot.position, table)).toBeNull();
+    expect(route(fp, fp.robot.position, table())).toBeNull();
   });
   it("갈 수 있는 방 기본값: 발코니·현관·전실(단차 -0.1m)과 욕실 제외", () => {
+    const { fp } = load();
     expect(fp.robot.reachable).toEqual(expect.arrayContaining(["living", "kitchen", "bed_sw", "alpha"]));
     for (const r of ["balcony_front", "balcony_north", "balcony_west", "entrance", "vestibule", "bath_west", "bath_center", "bath_east"]) expect(fp.robot.reachable).not.toContain(r);
   });
   it("알파룸 자리에서 식탁까지는 문을 지나는 경로가 있다", () => {
-    expect(route(fp, [3.5, 9], table)).toEqual([[3.5, 9], [3.6, 6.75], table]);
+    expect(route(load().fp, [3.5, 9], table())).toEqual([[3.5, 9], [3.6, 6.75], table()]);
   });
 });
