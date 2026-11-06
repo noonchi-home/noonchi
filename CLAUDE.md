@@ -11,3 +11,4 @@
 | 3D 크롬·시험·빌드·Blender·변환은 한 번에 하나만 돌린다. 시험은 파일 하나도 npm run heavy로, 캡처는 npm run capture로만. | npm run heavy·npm run capture가 잡는 잠금(scripts/twin3d/heavy.ts). 잠금 없이 직접 돌리는 것은 못 막는다. |
 | 추론 모드 mock과 live는 같은 구조로 돈다. 바뀌는 것은 모델 주소와 모델 이름뿐이다. mock이라고 단계를 건너뛰거나 다른 길로 가지 않는다. 시험의 가짜 모델은 같은 주소 자리에 붙는 가짜 서버로 둔다. | 없음. |
 | PAM에는 사진을 넘기지 않는다. 사진마다 YOLO와 VLM이 각각 분석하고, World State가 둘을 합친 관찰 텍스트를 PAM에 넘긴다. | 없음. |
+| 이 저장소 하나로 빌드·실행·시험·배포한다. 다른 저장소(ai, noonchi-server, twin-studio)의 경로를 쓰지 않고, 아키텍처에 쓰는 코드는 이 저장소로 옮긴다. | 없음. |
