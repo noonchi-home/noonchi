@@ -8,17 +8,20 @@
 
 **Tech Stack:** Node 22.15 + TypeScript(tsx), zod, ws, vitest, onnxruntime-node(YOLOX-Tiny), `node:sqlite`, React(`ui/`), Python 3.11+ FastAPI·pydantic·httpx·pytest, Docker Compose(`gpu` 프로필, vLLM), GitHub Actions, Tailscale.
 
-**Spec:** docs 저장소 `01_Product/구현명세서 SSOT.md` 1.0(브랜치 `ssot/noonchi-architecture`, 커밋 b3f31f8) 3·4·6·11·12·13·15·17·20.6절, 이 저장소 `CLAUDE.md` 규칙 표.
+**Spec:** docs 저장소 `01_Product/구현명세서 SSOT.md` 1.0(브랜치 `ssot/noonchi-architecture`, 커밋 53ae1ce) 3·4·6·11·12·13·15·17·20.6절, 이 저장소 `CLAUDE.md` 규칙 표. 판단 엔진·장면 그래프·시뮬레이터·시점 계획기·세션·시계·하네스는 SSOT 19절(다음 단계) 범위다.
 
 ## Global Constraints
 
-- 한 저장소: 빌드·실행·시험·배포 파일에 옆 저장소 경로(`../ai`, `../twin-studio*`, `noonchi-server`, `소웨공/` 아래 다른 폴더)를 쓰지 않는다. twin-studio 제작 코드(studio/·blender/)는 옮기지 않고 결과물만 `twin/`에 복사한다.
+- 한 저장소: 빌드·실행·시험·배포 파일에 옆 저장소 경로(`../ai`, `../twin-studio*`, `noonchi-server`, `소웨공/` 아래 다른 폴더)를 쓰지 않는다. twin-studio 제작 코드(studio/·blender/)는 옮기지 않고 결과물만 `twin/`에 복사한다. 코드 주석·글에도 옆 저장소 이름을 쓰지 않는다. 어디서 옮겼는지는 `docs/provenance.md`(한 저장소 시험이 보지 않는 문서)에 적는다. 모든 Task의 통과 확인에 `tests/self-contained.test.ts`를 함께 돌린다.
 - 출처: ai 저장소 커밋 cd290d5, twin-studio main 커밋 9e3aecf. 두 저장소와 noonchi-server는 읽기만 한다(고침·커밋·push·브랜치 바꾸기 없음).
 - Node 22.15.0(`.node-version`), `engines.node` `>=22.15 <23`. Python 3.11 이상(`py -3.13 -m venv services/pam/.venv`).
 - 추론 모드 `INFERENCE_MODE=mock|live`(기본 mock). 두 모드는 같은 코드 경로이고 다른 것은 주소·모델 이름·그 제공자 요청 칸뿐이다. 코드에 가짜 모드 분기를 두지 않는다. 시험은 가짜 OpenAI 호환 서버(`scripts/fake-openai.ts`)나 어댑터 경계의 시험 대역을 쓴다.
 - VLM 주소는 noonchi(`src/infer/endpoints.ts`)가, PAM LLM 주소는 PAM 서비스(`services/pam/noonchi_pam/settings.py`)가 고른다. 같은 표를 두 곳에 두지 않는다.
+- live 모델 이름: vLLM을 `--served-model-name vlm`·`pam`으로 띄우고, noonchi·PAM 서비스의 live 모델 이름은 `vlm`·`pam`이다. Hugging Face 모델은 compose의 `VLM_LIVE_MODEL`·`PAM_LIVE_MODEL`에만 적는다. vLLM 이미지는 `vllm/vllm-openai:v0.17.0`(Qwen3-VL·Qwen3.5 지원)으로 고정한다.
+- PAM LLM 문맥 길이는 `PAM_MAX_MODEL_LEN`(기본 32768) 하나로 정한다. vLLM `--max-model-len`과 PAM 서비스의 입력 크기 검사가 같은 값을 쓴다. PAM 서비스는 `입력 추정 + max_tokens ≤ PAM_MAX_MODEL_LEN`이 아니면 413으로 거절하고, `/health`에 판단·반성 입력 한도를 알린다. noonchi는 그 한도에 맞춰 하루 요약을 줄인다.
 - PAM에는 사진을 넘기지 않는다: `pam-predict/2`·`pam-reflect/2`, 계약 타입에 사진 칸이 없다.
-- 엔진 프레임마다 YOLOX와 VLM이 둘 다 분석한다. VLM 동시 요청 상한 `VLM_MAX_INFLIGHT`(기본 4), 답은 프레임 번호로 맞춘다. 못 받은 프레임은 「VLM 분석 없음」으로 남긴다.
+- 엔진 프레임마다 YOLOX와 VLM이 둘 다 분석한다. YOLOX는 상한이 있는 대기열(`DETECT_QUEUE_MAX`, 기본 8)로 하나씩 보고 앞 프레임을 덮어쓰지 않는다. 대기열이 차면 그 프레임은 「요청이 몰려 YOLOX·VLM 분석 없음」, 감지가 실패하면 「감지 오류로 YOLOX 분석 없음」(VLM은 그대로 분석)이다. VLM 동시 요청 상한 `VLM_MAX_INFLIGHT`(기본 4), 답은 프레임 번호로 맞춘다. 못 받은 프레임은 「VLM 분석 없음」으로 남긴다. 기록에서 아무 표시 없이 사라지는 프레임은 없다.
+- 시험에서 서버를 띄울 때는 늘 임시 `RUNTIME_DIR`을 준다. 저장소 `runtime/noonchi.db`를 시험이 열지 않는다.
 - 분석한 엔진 프레임은 디스크에 쓰지 않는다. 디스크에는 폰 「사진 찍기」 사진과 `DATASET_COLLECT=1`일 때의 시험 자료만 쓰고 보관 기간이 지나면 지운다.
 - 시험·개발에서 ThinQ(GET 포함)와 실제 AI API(OpenAI·OpenRouter·Anthropic)를 부르지 않는다. `.env`·키 파일을 읽거나 찍지 않는다. 새 설정은 `.env.example`에 빈 값이나 안전한 기본값으로 둔다.
 - 화면 글은 CLAUDE.md 규칙(사용자 할 일·지금 상태만)을 따른다. 서버가 화면에 그대로 내보내는 글은 `src/plan/labels.ts`·`src/world/labels.ts`에만 두고 `npm run lint`가 검사한다. 대시보드에 입력창을 두지 않는다. `ui/src/plan/`과 `ui/src/dashboard/Dashboard.tsx`는 고치지 않는다.
@@ -55,7 +58,9 @@ H docker build -t noonchi-pam:check services/pam                        (G2부�
 | `src/history/db.ts` | SQLite 열기(G1), 시간축·기억·사진 표(G4) | G1·G4 |
 | `Dockerfile`, `.dockerignore`, `compose.yaml`, `.env.example`, `.node-version`, `tests/deploy-files.test.ts`, `scripts/container-smoke.ts` | 이미지·compose·키 없는 컨테이너 확인 | G1·G2 |
 | `.github/workflows/ci.yml`, `docs/deploy.md` | CI, AWS 배포 절차 | G1·G2 |
-| `scripts/fake-openai.ts`, `tests/setup/no-real-ai.ts` | 가짜 OpenAI 호환 서버, 실제 AI 주소 차단 | G2 |
+| `tests/setup/no-real-ai.ts` | 실제 AI 주소 차단(시험) | G1 |
+| `docs/provenance.md` | 옆 저장소에서 옮긴 동작의 출처 | G3·G4 |
+| `scripts/fake-openai.ts` | 가짜 OpenAI 호환 서버(chat completions·responses) | G2 |
 | `services/pam/` | PAM 서비스(옮긴 `pam` 패키지, 프롬프트, `noonchi_pam/`) | G2 |
 | `src/infer/openai-compat.ts`, `src/infer/vlm.ts` | OpenAI 호환 호출, VLM 어댑터 | G2 |
 | `src/contract/pam.ts`, `src/brain/pam.ts` | `pam-predict/2`·`pam-reflect/2` 타입과 어댑터 | G2 |
@@ -65,6 +70,7 @@ H docker build -t noonchi-pam:check services/pam                        (G2부�
 | `src/world/confirm.ts`, `src/world/place.ts`, `src/world/relations.ts`, `src/world/state.ts`, `src/world/trigger.ts`, `src/contract/world.ts` | 등장·사라짐 확인, 트윈 위치, 관계표, World State, 호출 시점 | G3 |
 | `src/history/recorder.ts`, `src/history/summary.ts`, `src/history/reflect.ts`, `src/history/retention.ts` | 기록, 하루 요약, 반성, 사진 보관 | G4 |
 | `src/act/tasks.ts`, `src/act/check.ts`, `src/act/track.ts`, `src/act/prompts.ts` | 행동 → 계획, 실행 전 검사, 실행 추적, 폰 부탁 글 | G5 |
+| `ui/src/chat/turns.ts`, `ui/src/chat/DecisionLog.tsx`, `ui/src/chat/labels.ts` | 판단 기록: 보낸 관찰 텍스트·World State·확신도·기억 판본·반성 결과 | G3·G5 |
 
 ---
 
@@ -320,7 +326,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
 }
 ```
 
-- [ ] **Step 4: 통과 확인** — Run: `H npx vitest run tests/twin-assets.test.ts` / Expected: PASS 3개
+- [ ] **Step 4: 통과 확인** — Run: `H npx vitest run tests/twin-assets.test.ts tests/self-contained.test.ts` / Expected: PASS 3개
 - [ ] **Step 5: 커밋**
 
 ```bash
@@ -503,7 +509,7 @@ export function installShutdown(proc: ShutdownTarget, close: () => Promise<void>
 ```
 `main.ts`의 `shutdown`·`process.on` 부분을 `installShutdown(process, () => srv.close(), { log: console.log })`로 바꾼다. `package.json`: `"dependencies"`에 `"tsx": "^4.23.15"`를 옮기고 devDependencies에서 뺀다, `"engines": { "node": ">=22.15 <23" }`. `npm install`로 lock을 갱신한다.
 
-- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/shutdown.test.ts tests/start.test.ts` / Expected: PASS(Windows에서는 실제 SIGTERM 시험 건너뜀)
+- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/shutdown.test.ts tests/start.test.ts tests/self-contained.test.ts` / Expected: PASS(Windows에서는 실제 SIGTERM 시험 건너뜀)
 - [ ] **Step 5: 커밋**
 
 ```bash
@@ -524,6 +530,9 @@ git commit -m "feat: pin Node 22.15, run tsx as a runtime dependency and close t
 
 ```ts
 // tests/allowed-origins.test.ts
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 import { originChecker } from "../src/server/app.js";
@@ -549,7 +558,7 @@ describe("허용 출처", () => {
   });
 
   it("tailscale 주소에서 연 대시보드가 /events에 붙고 쓰기 요청을 보낸다", async () => {
-    srv = await startServer({ env: { HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock", ALLOWED_ORIGINS: TS }, log: () => {} });
+    srv = await startServer({ env: { HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock", ALLOWED_ORIGINS: TS, RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")) }, log: () => {} });
     const ws = srv.url.replace(/^http/, "ws") + "/events";
     expect(await wsOpen(ws, TS)).toBe(true);
     expect(await wsOpen(ws, "https://evil.example")).toBe(false);
@@ -572,7 +581,7 @@ export function originChecker(raw: string | undefined): (origin: string) => bool
 ```
 `start.ts`: `const allowOrigin = originChecker(env.ALLOWED_ORIGINS);`를 `createShell({ …, allowOrigin })`와 `ctx.allowOrigin`에 넘기고, `home.ts` `createApp({ …, allowOrigin: ctx.allowOrigin })`. `.env.example`: `# 대시보드를 여는 tailscale serve 주소(쉼표로 여러 개). 예: https://<서버>.<tailnet>.ts.net` + `ALLOWED_ORIGINS=`.
 
-- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/allowed-origins.test.ts tests/server.test.ts` / Expected: PASS
+- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/allowed-origins.test.ts tests/server.test.ts tests/self-contained.test.ts` / Expected: PASS
 - [ ] **Step 5: 커밋**
 
 ```bash
@@ -583,8 +592,10 @@ git commit -m "feat: allow the dashboard origins listed in ALLOWED_ORIGINS for w
 ### Task 6: 준비 상태 /api/health (추론 모드·모델 주소·기록 DB)
 
 **Files:**
-- Create: `src/infer/endpoints.ts`, `src/infer/reach.ts`, `src/history/db.ts`, `src/server/ready.ts`, `tests/infer-endpoints.test.ts`, `tests/health-ready.test.ts`
-- Modify: `src/contract/events.ts`(`HealthView.ready`), `src/server/app.ts`(health에 `ready`), `src/server/home.ts`·`start.ts`(DB 열기, ready 넘기기·닫기), `.env.example`
+- Create: `src/infer/endpoints.ts`, `src/infer/reach.ts`, `src/history/db.ts`, `src/server/ready.ts`, `tests/infer-endpoints.test.ts`, `tests/health-ready.test.ts`, `tests/setup/no-real-ai.ts`, `tests/no-real-ai.test.ts`
+- Modify: `src/contract/events.ts`(`HealthView.ready`), `src/server/app.ts`(health에 `ready`), `src/server/home.ts`·`start.ts`(DB 열기, ready 넘기기·닫기), `.env.example`, `vitest.config.ts`(setupFiles에 `tests/setup/no-real-ai.ts`), 서버를 `RUNTIME_DIR` 없이 띄우던 시험 `tests/e2e.test.ts`·`tests/phone-start.test.ts`·`tests/phone-touch-start.test.ts`(115·177줄 `probe`)·`tests/brain-live.test.ts`(임시 `RUNTIME_DIR`을 준다)
+
+이 Task부터 `/api/health`가 VLM 주소로 GET을 보낸다. mock 기본 주소가 `https://api.openai.com/v1`이라, 차단 장치를 이 Task에서 먼저 만든다.
 
 **Interfaces:**
 - Produces:
@@ -600,7 +611,7 @@ export function loadEndpoints(env: Record<string, string | undefined>): Endpoint
 export class ReachCache { constructor(ttlMs?: number, now?: () => number); check(key: string, probe: () => Promise<boolean>): Promise<boolean> }
 export function reachable(url: string, opts?: { headers?: Record<string, string>; timeoutMs?: number; fetchImpl?: typeof fetch }): Promise<boolean>;
 // src/history/db.ts
-export class HistoryDb { static open(path: string): HistoryDb; readonly db: DatabaseSync; ok(): boolean; close(): void }
+export class HistoryDb { static open(path: string): HistoryDb; readonly db: DatabaseSync; ok(): boolean; close(): void }   // WAL, busy_timeout 5000ms
 // src/contract/events.ts
 export interface ReadyView {
   ok: boolean; inference_mode: "mock" | "live";
@@ -626,8 +637,8 @@ describe("추론 모드", () => {
     expect(e.mode).toBe("mock");
     expect(e.vlm).toMatchObject({ baseUrl: VLM_PRESETS.mock.baseUrl, model: VLM_PRESETS.mock.model, apiKey: "k" });
   });
-  it("live는 같은 서버 vLLM 주소를 고른다", () => {
-    expect(loadEndpoints({ INFERENCE_MODE: "live" }).vlm).toMatchObject({ baseUrl: "http://vllm-vlm:8000/v1", model: "Qwen/Qwen3-VL-4B-Instruct" });
+  it("live는 같은 서버 vLLM 주소와 vLLM이 내건 이름 vlm을 고른다", () => {
+    expect(loadEndpoints({ INFERENCE_MODE: "live" }).vlm).toMatchObject({ baseUrl: "http://vllm-vlm:8000/v1", model: "vlm" });
   });
   it("따로 준 주소·모델·PAM_URL이 앞선다", () => {
     const e = loadEndpoints({ INFERENCE_MODE: "live", VLM_BASE_URL: "http://127.0.0.1:8500/v1", VLM_MODEL: "m", PAM_URL: "http://pam:8300" });
@@ -673,7 +684,7 @@ describe("준비 상태", () => {
     const h = await (await fetch(`${srv.url}/api/health`)).json();
     expect(h.ok).toBe(true);
     expect(h.ready).toMatchObject({ ok: true, inference_mode: "live", db: true,
-      vlm: { base_url: `${base}/v1`, model: "Qwen/Qwen3-VL-4B-Instruct", reachable: true },
+      vlm: { base_url: `${base}/v1`, model: "vlm", reachable: true },
       pam: { url: base, reachable: true, llm: { model: "q", reachable: true } } });
   });
 
@@ -687,7 +698,29 @@ describe("준비 상태", () => {
 });
 ```
 
-- [ ] **Step 2: 실패 확인** — `H npx vitest run tests/infer-endpoints.test.ts tests/health-ready.test.ts` / Expected: FAIL 모듈 없음
+```ts
+// tests/no-real-ai.test.ts
+// 루트 시험에서 실제 AI API로 가는 fetch는 보내기 전에 막힌다. 네트워크로 나가지 않고 확인한다.
+import { describe, expect, it } from "vitest";
+import { blockRealAi } from "./setup/no-real-ai.js";
+
+describe("실제 AI 주소 차단", () => {
+  it("OpenAI·OpenRouter·Anthropic 주소는 안쪽 fetch를 부르지 않고 오류, 로컬 주소는 그대로 보낸다", async () => {
+    const seen: string[] = [];
+    const guarded = blockRealAi((async (u: string) => { seen.push(String(u)); return new Response("{}"); }) as unknown as typeof fetch);
+    for (const u of ["https://api.openai.com/v1/models", "https://openrouter.ai/api/v1/chat/completions", "https://api.anthropic.com/v1/messages"]) {
+      await expect(guarded(u)).rejects.toThrow(/실제 AI API/);
+    }
+    await guarded("http://127.0.0.1:9/v1/models");
+    expect(seen).toEqual(["http://127.0.0.1:9/v1/models"]);
+  });
+  it("루트 시험의 전역 fetch는 차단을 거친다", () => {
+    expect((globalThis.fetch as { blocksRealAi?: boolean }).blocksRealAi).toBe(true);
+  });
+});
+```
+
+- [ ] **Step 2: 실패 확인** — `H npx vitest run tests/infer-endpoints.test.ts tests/health-ready.test.ts tests/no-real-ai.test.ts` / Expected: FAIL 모듈 없음(`../src/infer/endpoints.js`, `./setup/no-real-ai.js`). 네트워크로 나가는 요청 없음.
 - [ ] **Step 3: 구현**
 
 ```ts
@@ -700,10 +733,17 @@ export interface ModelEndpoint { baseUrl: string; model: string; apiKey: string;
 export interface Endpoints { mode: InferenceMode; vlm: ModelEndpoint; pamUrl: string }
 type Env = Record<string, string | undefined>;
 
+// live 모델 이름 vlm은 compose vllm-vlm의 --served-model-name이다(Hugging Face 모델은 compose VLM_LIVE_MODEL).
 export const VLM_PRESETS: Record<InferenceMode, { baseUrl: string; model: string; keyEnv: string; extraBody: Record<string, unknown> }> = {
   mock: { baseUrl: "https://api.openai.com/v1", model: "gpt-5.4-mini", keyEnv: "OPENAI_API_KEY", extraBody: { reasoning_effort: "none" } },
-  live: { baseUrl: "http://vllm-vlm:8000/v1", model: "Qwen/Qwen3-VL-4B-Instruct", keyEnv: "VLLM_API_KEY", extraBody: {} },
+  live: { baseUrl: "http://vllm-vlm:8000/v1", model: "vlm", keyEnv: "VLLM_API_KEY", extraBody: {} },
 };
+
+/** VLM 한 장 분석 제한 시간(VLM_TIMEOUT_MS, 기본 20000). 동시 요청 풀과 OpenAI 호환 호출이 같은 값을 쓴다. */
+export function vlmTimeoutMs(env: Env): number {
+  const v = Number(env.VLM_TIMEOUT_MS);
+  return env.VLM_TIMEOUT_MS?.trim() && Number.isFinite(v) && v >= 1000 ? Math.floor(v) : 20_000;
+}
 
 export function loadEndpoints(env: Env): Endpoints {
   const raw = env.INFERENCE_MODE?.trim() || "mock";
@@ -760,7 +800,7 @@ export class HistoryDb {
   static open(path: string): HistoryDb {
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
     const db = new DatabaseSync(path);
-    db.exec("PRAGMA journal_mode = WAL; CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);");
+    db.exec("PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);");
     return new HistoryDb(db);
   }
   ok(): boolean {
@@ -803,15 +843,38 @@ export function makeReady(o: { endpoints: Endpoints; db: HistoryDb; cache?: Reac
   };
 }
 ```
-PAM `/health`는 응답을 캐시하지 않고 2초 제한으로 매번 묻는다(가벼운 GET). `start.ts`: `const endpoints = loadEndpoints(env)`(잘못된 모드면 시작 실패), `const db = HistoryDb.open(join(runtimeDir, "noonchi.db"))`, `ctx.ready = makeReady({ endpoints, db })`, `close()` 끝에 `db.close()`. `app.ts` health: `ready: await (opts.ready?.() ?? notReady)`(없으면 `{ ok: false, …, db: false }`). `.env.example`: `INFERENCE_MODE=mock`, `VLM_BASE_URL=`, `VLM_MODEL=`, `VLM_API_KEY=`, `VLM_EXTRA_BODY=`, `PAM_URL=`(주석: compose 안은 `http://pam:8300`).
+PAM `/health`는 응답을 캐시하지 않고 2초 제한으로 매번 묻는다(가벼운 GET). `start.ts`: `const endpoints = loadEndpoints(env)`(잘못된 모드면 시작 실패), `const db = HistoryDb.open(join(runtimeDir, "noonchi.db"))`, `ctx.ready = makeReady({ endpoints, db })`, `close()` 끝에 `db.close()`. `app.ts` health: `ready: await (opts.ready?.() ?? notReady)`(없으면 `{ ok: false, …, db: false }`). `.env.example`: `INFERENCE_MODE=mock`, `VLM_BASE_URL=`, `VLM_MODEL=`, `VLM_API_KEY=`, `VLM_EXTRA_BODY=`, `VLM_TIMEOUT_MS=`, `PAM_URL=`(주석: compose 안은 `http://pam:8300`).
 
-- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/infer-endpoints.test.ts tests/health-ready.test.ts tests/server.test.ts tests/start.test.ts` / Expected: PASS. ui `HealthView`를 쓰는 화면 시험: `H npm --prefix ui test` PASS(ui 가짜 health에 `ready`를 더한다).
+```ts
+// tests/setup/no-real-ai.ts
+// 루트 시험 안전장치: 실제 AI API(OpenAI·OpenRouter·Anthropic)로 가는 fetch를 보내기 전에 막는다.
+// 모델 주소는 가짜 서버(scripts/fake-openai.ts, Task 9)나 닿지 않는 로컬 주소로 준다.
+const REAL_AI = /(^|\.)(api\.openai\.com|openrouter\.ai|api\.anthropic\.com)$/i;
+
+export function blockRealAi(inner: typeof fetch): typeof fetch {
+  const guarded = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    const url = typeof input === "string" || input instanceof URL ? new URL(input) : new URL(input.url);
+    if (REAL_AI.test(url.hostname)) throw new Error(`시험에서 실제 AI API(${url.hostname})를 부르려 했어요. 모델 주소를 가짜 서버로 주세요.`);
+    return inner(input, init);
+  }) as typeof fetch & { blocksRealAi: true };
+  guarded.blocksRealAi = true;
+  return guarded;
+}
+
+globalThis.fetch = blockRealAi(globalThis.fetch);
+```
+`vitest.config.ts`: `setupFiles: ["tests/setup/no-real-thinq.ts", "tests/setup/no-real-ai.ts"]`, 위 주석에 한 줄 더한다. 차단에 걸리면 `reachable()`이 false를 돌려 health 시험은 그대로 통과한다.
+
+서버를 `RUNTIME_DIR` 없이 띄우던 시험(`tests/e2e.test.ts`의 `env()`, `tests/phone-start.test.ts`의 `BASE_ENV`, `tests/phone-touch-start.test.ts`의 `probe` 두 곳, `tests/brain-live.test.ts`의 `BRAIN=1` 시험)에 `RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-"))`를 준다.
+
+- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/infer-endpoints.test.ts tests/health-ready.test.ts tests/no-real-ai.test.ts tests/server.test.ts tests/start.test.ts tests/self-contained.test.ts` 그리고 `H npx vitest run`(전부) / Expected: PASS, `runtime/noonchi.db`가 생기지 않는다. ui `HealthView`를 쓰는 화면 시험: `H npm --prefix ui test` PASS(ui 가짜 health에 `ready`를 더한다).
 - [ ] **Step 5: 커밋**
 
 ```bash
-git add src/infer/endpoints.ts src/infer/reach.ts src/history/db.ts src/server/ready.ts src/contract/events.ts src/server/app.ts src/server/home.ts src/server/start.ts .env.example tests/infer-endpoints.test.ts tests/health-ready.test.ts ui/tests
+git add src/infer/endpoints.ts src/infer/reach.ts src/history/db.ts src/server/ready.ts src/contract/events.ts src/server/app.ts src/server/home.ts src/server/start.ts .env.example tests/infer-endpoints.test.ts tests/health-ready.test.ts tests/no-real-ai.test.ts tests/setup/no-real-ai.ts vitest.config.ts tests/e2e.test.ts tests/phone-start.test.ts tests/phone-touch-start.test.ts tests/brain-live.test.ts ui/tests
 git commit -m "feat: report inference mode, model endpoint reachability and the history DB on /api/health"
 ```
+(`ui/tests`는 고친 시험 파일을 하나씩 더한다.)
 
 ### Task 7: Dockerfile·compose·키 없는 컨테이너 확인
 
@@ -848,21 +911,25 @@ describe("배포 파일", () => {
     expect(d).toContain('CMD ["node", "--import", "tsx", "src/server/main.ts"]');
   });
 
-  it("compose: 포트는 127.0.0.1만, gpu 프로필 vLLM 두 개(태그 고정·GPU 몫·캐시), 볼륨·env_file·상태 검사", () => {
+  it("compose: 포트는 127.0.0.1만, gpu 프로필 vLLM 두 개(태그 고정·내건 이름·GPU 몫·캐시·차례로 뜸), 볼륨·env_file·상태 검사", () => {
     const c = parse(read("compose.yaml"), { merge: true }) as { services: Record<string, any>; volumes: Record<string, unknown> };
     for (const [name, s] of Object.entries(c.services)) {
       for (const p of s.ports ?? []) expect(String(p), name).toMatch(/^127\.0\.0\.1:/);
       expect(s.healthcheck, name).toBeTruthy();
     }
-    expect(c.services.noonchi.env_file).toEqual([{ path: ".env", required: false }]);
+    expect(c.services.noonchi.env_file).toEqual([{ path: "${NOONCHI_ENV_FILE:-.env}", required: false }]);
     expect(c.services.noonchi.volumes).toContain("noonchi-data:/data");
-    for (const name of ["vllm-vlm", "vllm-pam"]) {
+    for (const [name, served] of [["vllm-vlm", "vlm"], ["vllm-pam", "pam"]] as const) {
       const s = c.services[name];
       expect(s.profiles).toEqual(["gpu"]);
-      expect(s.image).toMatch(/vllm\/vllm-openai:v\d+\.\d+\.\d+/);
-      expect(s.command.join(" ")).toMatch(/--gpu-memory-utilization \$\{VLLM_\w+_GPU_SHARE:-0\.\d+\}/);
+      expect(s.image).toBe("${VLLM_IMAGE:-vllm/vllm-openai:v0.17.0}");
+      const cmd = s.command.join(" ");
+      expect(cmd).toMatch(/--gpu-memory-utilization \$\{VLLM_\w+_GPU_SHARE:-0\.\d+\}/);
+      expect(cmd).toContain(`--served-model-name ${served}`);
       expect(s.volumes).toContain("model-cache:/root/.cache/huggingface");
     }
+    expect(c.services["vllm-pam"].command.join(" ")).toContain("--max-model-len ${PAM_MAX_MODEL_LEN:-32768}");
+    expect(c.services["vllm-pam"].depends_on).toEqual({ "vllm-vlm": { condition: "service_healthy" } });
     expect(Object.keys(c.volumes)).toEqual(expect.arrayContaining(["noonchi-data", "model-cache"]));
   });
 
@@ -952,10 +1019,10 @@ docs/superpowers
 name: noonchi
 
 x-vllm: &vllm
-  image: ${VLLM_IMAGE:-vllm/vllm-openai:v0.11.0}
+  image: ${VLLM_IMAGE:-vllm/vllm-openai:v0.17.0}
   profiles: [gpu]
   restart: unless-stopped
-  env_file: [{ path: .env, required: false }]
+  env_file: [{ path: "${NOONCHI_ENV_FILE:-.env}", required: false }]
   volumes: [model-cache:/root/.cache/huggingface]
   ipc: host
   deploy:
@@ -975,7 +1042,7 @@ services:
     image: noonchi:local
     init: true
     restart: unless-stopped
-    env_file: [{ path: .env, required: false }]
+    env_file: [{ path: "${NOONCHI_ENV_FILE:-.env}", required: false }]
     environment:
       HOST: 0.0.0.0
       PHONE_HOST: 0.0.0.0
@@ -995,13 +1062,16 @@ services:
 
   vllm-vlm:
     <<: *vllm
-    command: ["--model", "${VLM_LIVE_MODEL:-Qwen/Qwen3-VL-4B-Instruct}", "--gpu-memory-utilization", "${VLLM_VLM_GPU_SHARE:-0.30}",
+    command: ["--model", "${VLM_LIVE_MODEL:-Qwen/Qwen3-VL-4B-Instruct}", "--served-model-name", "vlm", "--gpu-memory-utilization", "${VLLM_VLM_GPU_SHARE:-0.30}",
               "--max-model-len", "8192", "--limit-mm-per-prompt", "{\"image\":1}"]
     ports: ["127.0.0.1:8410:8000"]
 
   vllm-pam:
     <<: *vllm
-    command: ["--model", "${PAM_LIVE_MODEL:-}", "--gpu-memory-utilization", "${VLLM_PAM_GPU_SHARE:-0.60}", "--max-model-len", "16384"]
+    # 한 GPU에서 둘이 동시에 메모리를 잡지 않게 VLM이 뜬 뒤에 뜬다.
+    depends_on: { vllm-vlm: { condition: service_healthy } }
+    command: ["--model", "${PAM_LIVE_MODEL:-}", "--served-model-name", "pam", "--gpu-memory-utilization", "${VLLM_PAM_GPU_SHARE:-0.60}",
+              "--max-model-len", "${PAM_MAX_MODEL_LEN:-32768}"]
     ports: ["127.0.0.1:8420:8000"]
 
 volumes:
@@ -1012,11 +1082,23 @@ volumes:
 `scripts/container-smoke.ts`:
 ```ts
 // 키 없는 컨테이너 확인: compose 프로젝트 noonchi-check로 noonchi를 8520·8530에 띄우고 /api/health가 200인지 본 뒤 내린다.
-// 모델 주소는 닿지 않는 로컬 주소로 둔다(밖으로 나가는 요청 없음). 무거운 일 잠금 안에서 돌린다: H npx tsx scripts/container-smoke.ts
+// 저장소 .env는 읽지 않는다(빈 임시 env 파일을 --env-file과 NOONCHI_ENV_FILE로 준다). 모델·에이전트 주소는 닿지 않는 로컬 주소다.
+// 무거운 일 잠금 안에서 돌린다: H npx tsx scripts/container-smoke.ts
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-const env = { ...process.env, NOONCHI_PORT: "8520", NOONCHI_PHONE_PORT: "8530", VLM_BASE_URL: "http://127.0.0.1:9/v1", PAM_URL: "http://127.0.0.1:9", HUB: "memory", AGENT_PROVIDER: "mock" };
-const compose = (...args: string[]) => spawnSync("docker", ["compose", "-p", "noonchi-check", ...args], { env, stdio: "inherit" });
+const envFile = join(mkdtempSync(join(tmpdir(), "noonchi-check-")), "empty.env");
+writeFileSync(envFile, "");
+// 셸의 키·토큰 값은 넘기지 않는다
+const shell = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/(KEY|TOKEN|SECRET)$/i.test(k)));
+const env = {
+  ...shell, NOONCHI_ENV_FILE: envFile, NOONCHI_PORT: "8520", NOONCHI_PHONE_PORT: "8530", HUB: "memory",
+  VLM_BASE_URL: "http://127.0.0.1:9/v1", PAM_URL: "http://127.0.0.1:9",
+  AGENT_PROVIDER: "openai", OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: "http://127.0.0.1:9/v1",
+};
+const compose = (...args: string[]) => spawnSync("docker", ["compose", "--env-file", envFile, "-p", "noonchi-check", ...args], { env, stdio: "inherit" });
 
 let code = 1;
 try {
@@ -1035,7 +1117,7 @@ try {
 }
 process.exit(code);
 ```
-`compose.yaml` `noonchi.environment`에 `HUB: ${HUB:-matter}`, `AGENT_PROVIDER: ${AGENT_PROVIDER:-}`, `VLM_BASE_URL: ${VLM_BASE_URL:-}`, `PAM_URL: ${PAM_URL:-}`을 더해 셸 값이 넘어가게 한다(빈 값은 `.env`·기본값을 쓴다). `.env.example`에 `NOONCHI_PORT=`, `NOONCHI_PHONE_PORT=`, `VLLM_IMAGE=`, `VLM_LIVE_MODEL=`, `PAM_LIVE_MODEL=`, `VLLM_VLM_GPU_SHARE=`, `VLLM_PAM_GPU_SHARE=`, `VLLM_API_KEY=`를 주석과 함께 더한다.
+`compose.yaml` `noonchi.environment`에 `HUB: ${HUB:-matter}`, `AGENT_PROVIDER: ${AGENT_PROVIDER:-}`, `OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}`, `OPENAI_API_KEY: ${OPENAI_API_KEY:-}`, `VLM_BASE_URL: ${VLM_BASE_URL:-}`, `PAM_URL: ${PAM_URL:-}`을 더한다(값은 셸이나 compose가 읽는 `.env`에서 온다). 에이전트는 시험 대역 없이 OpenAI 공급자가 `OPENAI_BASE_URL` 자리에 붙는다. `.env.example`에 `NOONCHI_PORT=`, `NOONCHI_PHONE_PORT=`, `NOONCHI_ENV_FILE=`(비우면 `.env`), `VLLM_IMAGE=`, `VLM_LIVE_MODEL=`, `PAM_LIVE_MODEL=`, `PAM_MAX_MODEL_LEN=`, `VLLM_VLM_GPU_SHARE=`, `VLLM_PAM_GPU_SHARE=`, `VLLM_API_KEY=`, `OPENAI_BASE_URL=`를 주석과 함께 더한다.
 
 - [ ] **Step 4: 통과 확인**
 
@@ -1044,7 +1126,7 @@ H npx vitest run tests/deploy-files.test.ts tests/self-contained.test.ts
 H docker build -t noonchi:check .
 H npx tsx scripts/container-smoke.ts
 ```
-Expected: 시험 PASS, 이미지 빌드 성공, 스모크가 `ready`를 찍고 종료 코드 0.
+Expected: 시험 PASS, 이미지 빌드 성공, 스모크가 `ready`를 찍고 종료 코드 0. 서버 로그에 「mock(규칙 기반) 에이전트」 경고가 없다.
 
 - [ ] **Step 5: 커밋**
 
@@ -1119,12 +1201,15 @@ NOONCHI는 이 저장소 하나로 AWS EC2 GPU 서버 한 대에서 돈다. CPU�
 ## 1. 서버 준비
 
 1. 서비스 할당량(Service Quotas)에서 서울 리전(`ap-northeast-2`) 「Running On-Demand G and VT instances」 vCPU 한도 증가를 먼저 신청한다. 새 계정은 0이라 인스턴스를 못 띄운다.
-2. 인스턴스: g6e.xlarge(L40S 48GB)면 PAM 27B 4비트(약 14GB)와 Qwen3-VL-4B를 함께 올린다. g5·g6(24GB)면 PAM 모델을 줄인다.
+2. 인스턴스: g6e.2xlarge(8 vCPU, 64GiB, L40S 48GB). PAM 27B 4비트(약 14GB)와 Qwen3-VL-4B를 함께 올리고, CPU로 noonchi·YOLOX·PAM 서비스를 돌린다. g5·g6(24GB)면 PAM 모델을 줄인다. 처음 띄운 뒤 `docker stats`와 `/api/brain`의 `detect_ms`·VLM 분석 없음 수를 보고 크기를 정한다.
 3. AMI: NVIDIA 드라이버와 NVIDIA Container Toolkit이 든 Deep Learning AMI(Ubuntu). 다른 AMI면 드라이버, Docker, NVIDIA Container Toolkit을 설치한다.
 4. 저장소: 루트 볼륨과 따로 EBS 볼륨(gp3, 200GB 이상)을 `/srv`에 붙이고, Docker 데이터 폴더를 거기로 둔다(`/etc/docker/daemon.json`: `{"data-root": "/srv/docker"}`). 기록 DB, 기억, 사진 찍기 사진, 모델 캐시가 여기 남아 인스턴스를 멈춰도 그대로다.
 5. 보안 그룹: 들어오는 규칙을 모두 지운다. 나가는 규칙만 둔다.
 
 ## 2. Tailscale
+
+1. tailnet 관리 화면(login.tailscale.com/admin/dns)에서 MagicDNS와 HTTPS Certificates를 켠다.
+2. 서버에서:
 
     curl -fsSL https://tailscale.com/install.sh | sh
     sudo tailscale up --ssh
@@ -1150,8 +1235,11 @@ NOONCHI는 이 저장소 하나로 AWS EC2 GPU 서버 한 대에서 돈다. CPU�
 | `PHONE_PORT` | `8210` |
 | `BRAIN` | `1` |
 | `PAM_URL` | `http://pam:8300` |
-| `PAM_LIVE_MODEL` | live PAM LLM 모델(Hugging Face 이름) |
-| `OPENAI_API_KEY`, `OPENROUTER_API_KEY` | mock에서만 |
+| `VLM_LIVE_MODEL` | live VLM Hugging Face 모델(기본 `Qwen/Qwen3-VL-4B-Instruct`). vLLM은 `vlm`이라는 이름으로 내건다 |
+| `PAM_LIVE_MODEL` | live PAM LLM Hugging Face 모델. vLLM은 `pam`이라는 이름으로 내건다 |
+| `PAM_MAX_MODEL_LEN` | PAM LLM 문맥 길이(기본 32768). vLLM과 PAM 서비스가 같이 쓴다 |
+| `ANTHROPIC_API_KEY` 또는 `OPENAI_API_KEY` | 에이전트(폰 음성 요청). 두 모드 모두 |
+| `OPENAI_API_KEY`, `OPENROUTER_API_KEY` | mock의 VLM·PAM LLM |
 | `THINQ_TOKEN` | 실제 모드를 쓸 때만 |
 
 키는 `.env`에만 둔다. 이미지에는 들어가지 않는다.
@@ -1163,8 +1251,14 @@ NOONCHI는 이 저장소 하나로 AWS EC2 GPU 서버 한 대에서 돈다. CPU�
     docker compose ps                             # 모두 healthy인지
     curl -s http://127.0.0.1:8200/api/health      # ready.ok가 true인지
 
-- vLLM 이미지 태그는 `VLLM_IMAGE`로 고정한다(기본 `vllm/vllm-openai:v0.11.0`). 태그를 바꾸면 두 모델이 뜨는지 `docker compose --profile gpu logs vllm-vlm vllm-pam`으로 본다.
-- GPU 메모리 몫: `VLLM_VLM_GPU_SHARE`(기본 0.30), `VLLM_PAM_GPU_SHARE`(기본 0.60). 두 값의 합은 0.9를 넘기지 않는다.
+- vLLM 이미지는 `vllm/vllm-openai:v0.17.0`(Qwen3-VL·Qwen3.5 지원)이다. 바꿀 때만 `VLLM_IMAGE`에 적는다. vllm-pam은 vllm-vlm이 healthy가 된 뒤에 뜬다.
+- 두 모델이 떴는지 본다(각각 id `vlm`, `pam`이 나와야 한다):
+
+      curl -s http://127.0.0.1:8410/v1/models
+      curl -s http://127.0.0.1:8420/v1/models
+      docker compose --profile gpu logs --tail 50 vllm-vlm vllm-pam
+
+- GPU 메모리 몫: `VLLM_VLM_GPU_SHARE`(기본 0.30), `VLLM_PAM_GPU_SHARE`(기본 0.60). 두 값의 합은 0.9를 넘기지 않는다. PAM LLM이 메모리 부족으로 못 뜨면 `PAM_MAX_MODEL_LEN`을 줄인다.
 
 ## 5. 호출량
 
@@ -1193,11 +1287,12 @@ git commit -m "docs: add CI checks and the AWS GPU server deployment guide"
 
 # G2 PAM 서비스와 모델 연결
 
-### Task 9: 가짜 OpenAI 호환 서버와 실제 AI 주소 차단
+### Task 9: 가짜 OpenAI 호환 서버
 
 **Files:**
-- Create: `scripts/fake-openai.ts`, `tests/setup/no-real-ai.ts`, `tests/fake-openai.test.ts`
-- Modify: `vitest.config.ts`(setupFiles에 `tests/setup/no-real-ai.ts`)
+- Create: `scripts/fake-openai.ts`, `tests/fake-openai.test.ts`
+
+(실제 AI 주소 차단 `tests/setup/no-real-ai.ts`는 Task 6에서 만들었다.)
 
 **Interfaces:**
 - Produces:
@@ -1243,6 +1338,12 @@ describe("가짜 OpenAI 호환 서버", () => {
     await chat({ model: "m", messages: [] });
     expect(f.requests.at(-1)).toMatchObject({ method: "POST", path: "/v1/chat/completions" });
   });
+  it("에이전트(OpenAI Responses API)에 도구 호출 없는 글 답을 낸다", async () => {
+    f = await startFakeOpenAI();
+    const r = await fetch(`${f.url}/v1/responses`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model: "m", input: [{ role: "user", content: "안녕" }] }) }).then((x) => x.json());
+    expect(r).toMatchObject({ object: "response", status: "completed", output_text: "가짜 답" });
+    expect(r.output[0]).toMatchObject({ type: "message", role: "assistant", content: [{ type: "output_text", text: "가짜 답" }] });
+  });
 });
 ```
 
@@ -1254,7 +1355,7 @@ describe("가짜 OpenAI 호환 서버", () => {
 // 가짜 OpenAI 호환 서버: 정해진 답만 내고 밖으로 나가지 않는다. 자동 시험·CI·키 없는 컨테이너 확인에서 모델 주소 자리에 붙인다.
 //   npx tsx scripts/fake-openai.ts --port 8500 [--host 0.0.0.0]    (0이면 빈 포트, 첫 줄 "listening <포트>")
 // 답: 장면 스키마(scene_observation) → 감지 번호마다 contents_unknown, PAM 판단(task inference module) → 대기(-1),
-//     PAM 반성(procedural memory) → 받은 Current memory 그대로.
+//     PAM 반성(procedural memory) → 받은 Current memory 그대로, 에이전트(POST /v1/responses) → 글 답 「가짜 답」.
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { pathToFileURL } from "node:url";
@@ -1300,6 +1401,11 @@ export async function startFakeOpenAI(o: { port?: number; host?: string; reply?:
         choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: "stop" }],
         usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } });
     }
+    if (req.method === "POST" && /\/responses$/.test(path)) {
+      return send(200, { id: `resp-${requests.length}`, object: "response", created_at: 0, status: "completed", model: body?.model ?? "fake",
+        output: [{ type: "message", id: `msg-${requests.length}`, role: "assistant", status: "completed", content: [{ type: "output_text", text: "가짜 답", annotations: [] }] }],
+        output_text: "가짜 답", usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 } });
+    }
     send(404, { error: { message: `없는 경로: ${path}` } });
   });
   const host = o.host ?? "127.0.0.1";
@@ -1316,43 +1422,40 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
 }
 ```
 
-```ts
-// tests/setup/no-real-ai.ts
-// 루트 시험 안전장치: 실제 AI API(OpenAI·OpenRouter·Anthropic)로 가는 fetch를 막는다. 모델 주소는 가짜 서버(scripts/fake-openai.ts)로 준다.
-const REAL_AI = /(^|\.)(api\.openai\.com|openrouter\.ai|api\.anthropic\.com)$/i;
-const inner = globalThis.fetch;
-globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
-  const url = typeof input === "string" || input instanceof URL ? new URL(input) : new URL(input.url);
-  if (REAL_AI.test(url.hostname)) throw new Error(`시험에서 실제 AI API(${url.hostname})를 부르려 했어요. 모델 주소를 가짜 서버로 주세요.`);
-  return inner(input, init);
-}) as typeof fetch;
-```
-
-- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/fake-openai.test.ts` / Expected: PASS. 그다음 `H npx vitest run`(차단에 걸리는 시험이 있으면 그 시험의 모델 주소를 가짜 서버로 바꾼다) PASS.
+- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/fake-openai.test.ts tests/self-contained.test.ts` / Expected: PASS.
 - [ ] **Step 5: 커밋**
 
 ```bash
-git add scripts/fake-openai.ts tests/setup/no-real-ai.ts tests/fake-openai.test.ts vitest.config.ts
-git commit -m "test: add a fixed-answer OpenAI-compatible fake server and block real AI API hosts in tests"
+git add scripts/fake-openai.ts tests/fake-openai.test.ts
+git commit -m "test: add a fixed-answer OpenAI-compatible fake server for chat completions and responses"
 ```
 
 ### Task 10: PAM 코드 옮기기와 출처
 
 **Files:**
-- Create: `services/pam/pam/{__init__,contracts,messages,scenarios}.py`, `services/pam/prompts/paper/*.txt`, `services/pam/prompts/source_map.json`, `services/pam/config/paper.json`, `services/pam/THIRD_PARTY.md`, `services/pam/PROVENANCE.md`, `services/pam/pyproject.toml`, `services/pam/.gitignore`, `services/pam/tests/test_contracts.py`, `services/pam/tests/test_prompts.py`
+- Create: `services/pam/pam/{__init__,contracts,messages,scenarios}.py`, `services/pam/prompts/paper/*.txt`, `services/pam/prompts/source_map.json`, `services/pam/config/paper.json`, `services/pam/config/openrouter.json`, `services/pam/THIRD_PARTY.md`, `services/pam/PROVENANCE.md`, `services/pam/pyproject.toml`, `services/pam/.gitignore`, `services/pam/tests/test_contracts.py`, `services/pam/tests/test_prompts.py`
+- Modify: `.gitattributes`(PAM 서비스 줄바꿈 고정)
 
 - [ ] **Step 1: ai cd290d5에서 꺼내기**
 
 ```bash
 mkdir -p services/pam
-git -C C:/Users/ABC/Desktop/소웨공/ai archive --format=tar cd290d5 pam/__init__.py pam/contracts.py pam/messages.py pam/scenarios.py prompts config/paper.json THIRD_PARTY.md tests/test_contracts.py | tar -x -C services/pam
+git -C C:/Users/ABC/Desktop/소웨공/ai archive --format=tar cd290d5 pam/__init__.py pam/contracts.py pam/messages.py pam/scenarios.py prompts config/paper.json config/openrouter.json THIRD_PARTY.md tests/test_contracts.py | tar -x -C services/pam
+```
+
+`.gitattributes`에 더한다(ai 저장소와 같은 규칙, 프롬프트 sha256 검사가 어느 clone에서든 맞는다):
+```
+services/pam/** -text
+services/pam/prompts/paper/*.txt text eol=lf
 ```
 
 - [ ] **Step 2: 실패하는 시험** (`services/pam/tests/test_prompts.py`)
 
 ```python
 """옮긴 논문 프롬프트가 해시 검사를 통과하고 논문 설정이 그대로인지 본다."""
-from pam.messages import PROMPT_IDS, load_paper_config, load_prompt
+from pathlib import Path
+
+from pam.messages import PROJECT_ROOT, PROMPT_IDS, load_paper_config, load_prompt
 
 
 def test_paper_prompts_load_with_hash_check():
@@ -1360,6 +1463,19 @@ def test_paper_prompts_load_with_hash_check():
         text, source = load_prompt(prompt_id)
         assert text.strip()
         assert source["id"] == prompt_id
+
+
+def test_paper_prompt_files_are_lf_only():
+    files = sorted(Path(PROJECT_ROOT, "prompts", "paper").glob("*.txt"))
+    assert files
+    for path in files:
+        assert b"\r" not in path.read_bytes(), f"{path.name}: CRLF가 들어 있다. .gitattributes의 services/pam 줄을 확인한다."
+
+
+def test_root_gitattributes_pins_pam_line_endings():
+    lines = Path(PROJECT_ROOT, "..", "..", ".gitattributes").read_text(encoding="utf-8").splitlines()
+    assert "services/pam/** -text" in lines
+    assert "services/pam/prompts/paper/*.txt text eol=lf" in lines
 
 
 def test_paper_config_is_unchanged():
@@ -1400,7 +1516,8 @@ testpaths = ["tests"]
 ```markdown
 # 출처
 
-- `pam/`(`__init__.py`, `contracts.py`, `messages.py`, `scenarios.py`), `prompts/`, `config/paper.json`, `THIRD_PARTY.md`, `tests/test_contracts.py`: ai 저장소(박석준·김준형) 커밋 cd290d5에서 옮겼다.
+- `pam/`(`__init__.py`, `contracts.py`, `messages.py`, `scenarios.py`), `prompts/`, `config/paper.json`, `config/openrouter.json`, `THIRD_PARTY.md`, `tests/test_contracts.py`: ai 저장소(박석준·김준형) 커밋 cd290d5에서 옮겼다.
+- OpenRouter 전송 설정(`config/openrouter.json`: provider alibaba 고정·다른 공급자로 넘기지 않음, max_tokens 판단 2048·반성 16384, 시간 제한 120초)과 요청 칸(`stream: false`, 문맥 압축 끔 `plugins`)은 ai `pam/openrouter.py`의 `build_request`와 같다.
 - 논문: Dohyun Lee, Minho Park 외, An Agentic Framework for Proactive Robots with Procedural Assistance Memory, arXiv:2610.21211v1. 저자 저장소 https://github.com/DAVIAN-Robotics/PAM. 논문 프롬프트 일곱 개는 부록 E·F 전사본이고 해시는 `prompts/source_map.json`에 있다. 자세한 출처와 라이선스 상태는 `THIRD_PARTY.md`.
 - `noonchi_pam/`, `scenarios/noonchi/`, `tests/`(위 파일 빼고), `Dockerfile`은 NOONCHI에서 만들었다.
 ```
@@ -1412,12 +1529,14 @@ py -3.13 -m venv services/pam/.venv
 services/pam/.venv/Scripts/python.exe -m pip install -e "services/pam[test]"
 H services\pam\.venv\Scripts\python.exe -m pytest services/pam -q
 ```
-Expected: `test_contracts.py`와 `test_prompts.py` 모두 PASS.
+Expected: `test_contracts.py`와 `test_prompts.py` 모두 PASS. `.gitattributes`를 더하기 전에는 `test_root_gitattributes_pins_pam_line_endings`가 FAIL이다.
+
+커밋 뒤 줄바꿈 확인(다른 worktree에서 새로 받은 것과 같은 상태): `git ls-files --eol services/pam/prompts/paper` 모든 줄이 `i/lf w/lf`.
 
 - [ ] **Step 5: 커밋**
 
 ```bash
-git add services/pam/pam services/pam/prompts services/pam/config services/pam/THIRD_PARTY.md services/pam/PROVENANCE.md services/pam/pyproject.toml services/pam/.gitignore services/pam/noonchi_pam/__init__.py services/pam/tests/test_contracts.py services/pam/tests/test_prompts.py
+git add .gitattributes services/pam/pam services/pam/prompts services/pam/config services/pam/THIRD_PARTY.md services/pam/PROVENANCE.md services/pam/pyproject.toml services/pam/.gitignore services/pam/noonchi_pam/__init__.py services/pam/tests/test_contracts.py services/pam/tests/test_prompts.py
 git commit -m "feat: copy the paper PAM package, prompts and config from ai cd290d5 into services/pam"
 ```
 
@@ -1462,6 +1581,7 @@ def test_predict_messages_keep_rules_and_put_text_where_photos_were():
     system = built["messages"][0]["content"]
     user = built["messages"][1]["content"]
     assert "If the person is holding or touching an object, the robot cannot perform any" in system
+    assert "action on that object until the person sets it down on the desk." in system  # 판단 규칙 문장은 그대로
     assert "camera frames" not in system and "back-facing cameras" not in system
     assert "0: 컵 치우기\n1: 사용자에게 물어보기" in system
     assert json.dumps(MEMORY, ensure_ascii=False, indent=2) in system
@@ -1534,9 +1654,9 @@ class ReflectRequest(Strict):
     day: date
     memory_kind: Literal["list", "fsm"]
     memory: dict
-    observation_text: str = Field(min_length=1, max_length=400_000)
-    action_summary: str = Field(min_length=1, max_length=200_000)
-    feedback: str | None = None
+    observation_text: str = Field(min_length=1, max_length=100_000)
+    action_summary: str = Field(min_length=1, max_length=50_000)
+    feedback: str | None = Field(default=None, max_length=8_000)
 
 
 class ReflectResponse(Strict):
@@ -1546,7 +1666,7 @@ class ReflectResponse(Strict):
     errors: list[str]
 ```
 
-`services/pam/scenarios/noonchi/scenario.json`(입력 설명·공간 문장만 바꾼다. 판단 규칙 문장은 그대로 둔다):
+`services/pam/scenarios/noonchi/scenario.json`(입력 설명 문장과 공간 문장만 바꾼다. 판단 규칙 문장은 한 글자도 바꾸지 않는다. 규칙 문장의 desk 표현은 박석준과 맞출 항목이다):
 ```json
 {
   "id": "noonchi_home_text",
@@ -1565,7 +1685,6 @@ class ReflectResponse(Strict):
      "reason": "사진 입력 설명을 관찰 텍스트 입력 설명으로 바꾼다."},
     {"old": "- Given the frames and the memory,", "new": "- Given the observation log and the memory,", "reason": "입력 이름만 바꾼다."},
     {"old": "based on the final\n (current) frame.", "new": "based on the latest observations.", "reason": "입력 이름만 바꾼다."},
-    {"old": "action on that object until the person sets it down on the desk.", "new": "action on that object until the person sets it down on a stable surface.", "reason": "책상 밖 표면에도 같은 조건을 쓴다."},
     {"old": "- Today's video: the person's activities recorded from two back-facing cameras\nconcatenated side by side (left_back (*@\\textbar@*) right_back)",
      "new": "- Today's observations: a time-stamped log of the person's activities made by an object detector and a vision-language model from the robot's camera",
      "reason": "반성 입력의 영상 설명을 관찰 텍스트 설명으로 바꾼다."},
@@ -1663,7 +1782,7 @@ def parse_memory(raw: str, kind: str) -> dict:
 ```
 `_render`가 남은 자리표시를 모두 채웠는지 검사한다. 반성 템플릿은 자리표시가 없으므로 그대로 쓴다. `adapt_prompt`는 그 프롬프트에 맞는 바꿈만 적용하고 기록한다.
 
-- [ ] **Step 4: 통과 확인** — `H services\pam\.venv\Scripts\python.exe -m pytest services/pam -q` / Expected: PASS
+- [ ] **Step 4: 통과 확인** — `H services\pam\.venv\Scripts\python.exe -m pytest services/pam -q` 그리고 `H npx vitest run tests/self-contained.test.ts` / Expected: PASS
 - [ ] **Step 5: 커밋**
 
 ```bash
@@ -1674,10 +1793,10 @@ git commit -m "feat: add pam-predict/2 and pam-reflect/2 contracts and text-inpu
 ### Task 12: LLM 호출과 FastAPI 서비스
 
 **Files:**
-- Create: `services/pam/noonchi_pam/settings.py`, `services/pam/noonchi_pam/llm.py`, `services/pam/noonchi_pam/app.py`, `services/pam/tests/conftest.py`, `services/pam/tests/test_app.py`
+- Create: `services/pam/noonchi_pam/settings.py`, `services/pam/noonchi_pam/budget.py`, `services/pam/noonchi_pam/llm.py`, `services/pam/noonchi_pam/app.py`, `services/pam/tests/conftest.py`, `services/pam/tests/test_app.py`, `services/pam/tests/test_budget.py`
 
 **Interfaces:**
-- Produces: `Settings.from_env(env) -> Settings`(`mode`, `base_url`, `model`, `api_key`, `extra`, `thinking: "openrouter" | "chat_template"`), `LlmClient(settings).complete(messages, generation) -> str`, `create_app(settings, client=None) -> FastAPI` — `POST /predict`, `POST /reflect`, `GET /health`(`{"ok": true, "llm": {"base_url", "model", "reachable"}}`).
+- Produces: `Settings.from_env(env) -> Settings`(`mode`, `base_url`, `model`, `api_key`, `extra`, `thinking: "openrouter" | "chat_template"`, `timeout_s`, `max_tokens: {"predictor", "reflector"}`, `max_model_len`), `LlmClient(settings).body(messages, generation) -> dict`, `LlmClient.complete(messages, generation) -> str`, `estimate_tokens(messages) -> int`, `check_budget(messages, max_tokens, max_model_len)`(넘으면 `BudgetError`), `limits(settings) -> {"max_model_len", "predict_input_bytes", "reflect_input_bytes"}`, `create_app(settings, client=None) -> FastAPI` — `POST /predict`, `POST /reflect`(입력이 문맥 길이를 넘으면 413), `GET /health`(`{"ok": true, "llm": {"base_url", "model", "reachable"}, "limits": {...}}`).
 
 - [ ] **Step 1: 실패하는 시험**
 
@@ -1735,17 +1854,78 @@ def test_reflect_returns_updated_memory(fake_openai):
     assert r.status_code == 200 and r.json()["memory"] == MEMORY
 
 
-def test_health_reports_llm(fake_openai):
+def test_health_reports_llm_and_limits(fake_openai):
     body = client_for(fake_openai).get("/health").json()
-    assert body == {"ok": True, "llm": {"base_url": fake_openai, "model": "q", "reachable": True}}
+    assert body["ok"] is True
+    assert body["llm"] == {"base_url": fake_openai, "model": "q", "reachable": True}
+    assert body["limits"]["max_model_len"] == 32768 and body["limits"]["reflect_input_bytes"] > 0
+
+
+def test_reflect_over_context_is_413_and_not_sent(fake_openai):
+    c = client_for(fake_openai)
+    r = c.post("/reflect", json={"contract": "pam-reflect/2", "day": "2026-11-07", "memory_kind": "fsm", "memory": MEMORY,
+                                 "observation_text": "가" * 90_000, "action_summary": "나", "feedback": None})
+    assert r.status_code == 413 and "문맥 길이" in r.json()["error"]
 
 
 def test_presets_pick_addresses_only():
     mock = Settings.from_env({"OPENROUTER_API_KEY": "k"})
     assert (mock.base_url, mock.model, mock.thinking) == ("https://openrouter.ai/api/v1", "qwen/qwen3.5-27b", "openrouter")
-    assert mock.extra == {"provider": {"order": ["alibaba"], "allow_fallbacks": False, "require_parameters": True}}
-    live = Settings.from_env({"INFERENCE_MODE": "live", "PAM_LIVE_MODEL": "m"})
-    assert (live.base_url, live.model, live.thinking) == ("http://vllm-pam:8000/v1", "m", "chat_template")
+    assert mock.extra == {"provider": {"order": ["alibaba"], "allow_fallbacks": False, "require_parameters": True},
+                          "plugins": [{"id": "context-compression", "enabled": False}]}
+    assert (mock.max_tokens, mock.timeout_s, mock.max_model_len) == ({"predictor": 2048, "reflector": 16384}, 120.0, 32768)
+    live = Settings.from_env({"INFERENCE_MODE": "live"})
+    assert (live.base_url, live.model, live.thinking, live.extra) == ("http://vllm-pam:8000/v1", "pam", "chat_template", {})
+    assert (live.max_tokens, live.max_model_len) == (mock.max_tokens, mock.max_model_len)
+
+
+def test_request_body_same_fields_in_both_modes():
+    import httpx
+    from noonchi_pam.llm import LlmClient
+    sent = []
+    def handler(req):
+        sent.append(json.loads(req.content))
+        return httpx.Response(200, json={"choices": [{"message": {"content": "{}"}, "finish_reason": "stop"}]})
+    for env in ({"OPENROUTER_API_KEY": "k"}, {"INFERENCE_MODE": "live"}):
+        LlmClient(Settings.from_env(env), transport=httpx.MockTransport(handler)).complete([{"role": "user", "content": "x"}], {"temperature": 0.3, "enable_thinking": False})
+    mock, live = sent
+    assert mock["stream"] is False and live["stream"] is False
+    assert mock["max_tokens"] == live["max_tokens"] == 2048
+    assert mock["plugins"] == [{"id": "context-compression", "enabled": False}] and mock["reasoning"] == {"enabled": False}
+    assert live["chat_template_kwargs"] == {"enable_thinking": False} and "plugins" not in live
+```
+(`test_app.py` 맨 위에 `import json`.)
+
+```python
+# services/pam/tests/test_budget.py
+"""문맥 길이 검사: /health가 알리는 반성 입력 한도 안의 요청은 통과하고, 넘으면 거절한다."""
+import json
+
+import pytest
+from noonchi_pam.budget import BudgetError, check_budget, limits
+from noonchi_pam.contracts import ReflectRequest
+from noonchi_pam.prompt import build_reflect_messages
+from noonchi_pam.settings import Settings
+from test_v2 import MEMORY
+
+
+def reflect_messages(obs: str, actions: str):
+    return build_reflect_messages(ReflectRequest(contract="pam-reflect/2", day="2026-11-07", memory_kind="fsm", memory=MEMORY,
+                                                 observation_text=obs, action_summary=actions, feedback=None))["messages"]
+
+
+def test_text_inside_reported_limit_fits_with_max_tokens():
+    s = Settings.from_env({"INFERENCE_MODE": "live"})
+    room = limits(s)["reflect_input_bytes"] - len(json.dumps(MEMORY, ensure_ascii=False, indent=2).encode("utf-8"))
+    obs = ("가" * 30 + "\n") * (int(room * 0.7) // 91)       # 한 줄 91바이트
+    actions = ("나" * 30 + "\n") * (int(room * 0.3) // 91)
+    check_budget(reflect_messages(obs, actions), s.max_tokens["reflector"], s.max_model_len)
+
+
+def test_text_past_limit_is_rejected():
+    s = Settings.from_env({"INFERENCE_MODE": "live"})
+    with pytest.raises(BudgetError):
+        check_budget(reflect_messages("가" * 40_000, "나"), s.max_tokens["reflector"], s.max_model_len)
 ```
 
 - [ ] **Step 2: 실패 확인** — `H services\pam\.venv\Scripts\python.exe -m pytest services/pam/tests/test_app.py -q` / Expected: FAIL 모듈 없음
@@ -1753,15 +1933,23 @@ def test_presets_pick_addresses_only():
 
 ```python
 # services/pam/noonchi_pam/settings.py
-"""PAM LLM 주소: INFERENCE_MODE(mock|live)가 미리 정한 주소·모델 이름만 고른다. PAM_LLM_BASE_URL·PAM_LLM_MODEL·PAM_LLM_API_KEY가 있으면 그 값을 쓴다."""
+"""PAM LLM 주소: INFERENCE_MODE(mock|live)가 미리 정한 주소·모델 이름만 고른다. PAM_LLM_BASE_URL·PAM_LLM_MODEL·PAM_LLM_API_KEY가 있으면 그 값을 쓴다.
+전송 값(max_tokens·시간 제한·OpenRouter provider)은 config/openrouter.json(ai cd290d5에서 옮김)에서 읽는다.
+문맥 길이 PAM_MAX_MODEL_LEN(기본 32768)은 compose vllm-pam의 --max-model-len과 같은 값이다. live 모델 이름 pam은 vllm-pam의 --served-model-name이다."""
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 
+from pam.messages import PROJECT_ROOT
+
+TRANSPORT = json.loads((PROJECT_ROOT / "config" / "openrouter.json").read_text(encoding="utf-8"))
+NO_COMPRESSION = [{"id": "context-compression", "enabled": False}]
+
 PRESETS = {
-    "mock": {"base_url": "https://openrouter.ai/api/v1", "model": "qwen/qwen3.5-27b", "key_env": "OPENROUTER_API_KEY", "thinking": "openrouter",
-             "extra": {"provider": {"order": ["alibaba"], "allow_fallbacks": False, "require_parameters": True}}},
-    "live": {"base_url": "http://vllm-pam:8000/v1", "model_env": "PAM_LIVE_MODEL", "key_env": "VLLM_API_KEY", "thinking": "chat_template", "extra": {}},
+    "mock": {"base_url": TRANSPORT["endpoint"].removesuffix("/chat/completions"), "model": TRANSPORT["model"], "key_env": TRANSPORT["api_key_env"],
+             "thinking": "openrouter", "extra": {"provider": TRANSPORT["provider"], "plugins": NO_COMPRESSION}},
+    "live": {"base_url": "http://vllm-pam:8000/v1", "model": "pam", "key_env": "VLLM_API_KEY", "thinking": "chat_template", "extra": {}},
 }
 
 
@@ -1774,6 +1962,8 @@ class Settings:
     thinking: str
     extra: dict = field(default_factory=dict)
     timeout_s: float = 120.0
+    max_tokens: dict = field(default_factory=dict)
+    max_model_len: int = 32768
 
     @staticmethod
     def from_env(env) -> "Settings":
@@ -1785,20 +1975,71 @@ class Settings:
         return Settings(
             mode=mode,
             base_url=(get("PAM_LLM_BASE_URL") or p["base_url"]).rstrip("/"),
-            model=get("PAM_LLM_MODEL") or p.get("model") or get(p.get("model_env", "")) or "",
+            model=get("PAM_LLM_MODEL") or p["model"],
             api_key=get("PAM_LLM_API_KEY") or get(p["key_env"]) or "",
-            thinking=p["thinking"], extra=dict(p["extra"]),
-            timeout_s=float(get("PAM_LLM_TIMEOUT_S") or 120),
+            thinking=p["thinking"], extra=json.loads(json.dumps(p["extra"])),
+            timeout_s=float(get("PAM_LLM_TIMEOUT_S") or TRANSPORT["timeout_seconds"]),
+            max_tokens=dict(TRANSPORT["max_tokens"]),
+            max_model_len=int(get("PAM_MAX_MODEL_LEN") or 32768),
         )
 ```
 
 ```python
+# services/pam/noonchi_pam/budget.py
+"""문맥 길이 검사: 입력 추정 토큰 + max_tokens ≤ max_model_len. 추정은 UTF-8 바이트 ÷ 3(한국어 한 글자를 1토큰으로 넉넉히 센다)."""
+from __future__ import annotations
+
+import json
+import math
+
+from .contracts import PredictRequest, ReflectRequest
+from .prompt import build_predict_messages, build_reflect_messages
+from .settings import Settings
+
+PER_MESSAGE = 8
+RESERVE = 256
+
+
+class BudgetError(ValueError):
+    pass
+
+
+def _texts(messages: list[dict]):
+    for m in messages:
+        c = m["content"]
+        yield from ([c] if isinstance(c, str) else [p.get("text", "") for p in c])
+
+
+def estimate_tokens(messages: list[dict]) -> int:
+    return sum(math.ceil(len(t.encode("utf-8")) / 3) for t in _texts(messages)) + PER_MESSAGE * len(messages)
+
+
+def check_budget(messages: list[dict], max_tokens: int, max_model_len: int) -> None:
+    n = estimate_tokens(messages)
+    if n + max_tokens > max_model_len:
+        raise BudgetError(f"입력이 문맥 길이를 넘음: 추정 {n} + 출력 {max_tokens} > {max_model_len}")
+
+
+def limits(s: Settings) -> dict:
+    """판단·반성 요청에서 바뀌는 글(관찰 텍스트·행동 요약·피드백·기억 JSON·행동 목록)에 쓸 수 있는 UTF-8 바이트 수."""
+    empty_memory = {"initial_state": "s", "states": [{"id": "s", "description": "d", "rules": [], "next": []}]}
+    p = build_predict_messages(PredictRequest(contract="pam-predict/2", final_time="2026-01-01T00:00:00+09:00", observation_text="x",
+                                              memory_kind="fsm", memory=empty_memory, tasks=["t"]))["messages"]
+    r = build_reflect_messages(ReflectRequest(contract="pam-reflect/2", day="2026-01-01", memory_kind="fsm", memory=empty_memory,
+                                              observation_text="x", action_summary="x", feedback=None))["messages"]
+    room = lambda msgs, role: max(0, (s.max_model_len - s.max_tokens[role] - estimate_tokens(msgs) - RESERVE) * 3)  # noqa: E731
+    return {"max_model_len": s.max_model_len, "predict_input_bytes": room(p, "predictor"), "reflect_input_bytes": room(r, "reflector")}
+```
+
+```python
 # services/pam/noonchi_pam/llm.py
-"""OpenAI 호환 chat completions 한 번. 고치거나 다시 묻지 않는다. 잘린 답(finish_reason != stop)은 오류다."""
+"""OpenAI 호환 chat completions 한 번. 고치거나 다시 묻지 않는다. 잘린 답(finish_reason != stop)은 오류다.
+요청 칸은 두 모드가 같다(model, messages, temperature, max_tokens, stream=false, 생각 켜기·끄기). 제공자 칸(extra)만 모드마다 다르다."""
 from __future__ import annotations
 
 import httpx
 
+from .budget import check_budget
 from .settings import Settings
 
 
@@ -1814,9 +2055,14 @@ class LlmClient:
     def _thinking(self, on: bool) -> dict:
         return {"reasoning": {"enabled": on}} if self.s.thinking == "openrouter" else {"chat_template_kwargs": {"enable_thinking": on}}
 
+    def body(self, messages: list[dict], generation: dict) -> dict:
+        role = "reflector" if generation["enable_thinking"] else "predictor"
+        return {"model": self.s.model, "messages": messages, "temperature": generation["temperature"], "max_tokens": self.s.max_tokens[role],
+                "stream": False, **self._thinking(generation["enable_thinking"]), **self.s.extra}
+
     def complete(self, messages: list[dict], generation: dict) -> str:
-        body = {"model": self.s.model, "messages": messages, "temperature": generation["temperature"],
-                "max_tokens": 16384 if generation["enable_thinking"] else 2048, **self._thinking(generation["enable_thinking"]), **self.s.extra}
+        body = self.body(messages, generation)
+        check_budget(messages, body["max_tokens"], self.s.max_model_len)
         headers = {"authorization": f"Bearer {self.s.api_key}"} if self.s.api_key else {}
         r = self.http.post(f"{self.s.base_url}/chat/completions", json=body, headers=headers)
         if r.status_code != 200:
@@ -1836,7 +2082,7 @@ class LlmClient:
 
 ```python
 # services/pam/noonchi_pam/app.py
-"""PAM 서비스: POST /predict(pam-predict/2), POST /reflect(pam-reflect/2), GET /health. 계약에 맞지 않으면 400."""
+"""PAM 서비스: POST /predict(pam-predict/2), POST /reflect(pam-reflect/2), GET /health. 계약에 맞지 않으면 400, 문맥 길이를 넘으면 413."""
 from __future__ import annotations
 
 import os
@@ -1846,6 +2092,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pam.contracts import ContractError, parse_prediction
 
+from .budget import BudgetError, limits
 from .contracts import PredictRequest, PredictResponse, ReflectRequest, ReflectResponse
 from .llm import LlmClient, LlmError
 from .prompt import build_predict_messages, build_reflect_messages, parse_memory
@@ -1869,6 +2116,12 @@ def create_app(settings: Settings | None = None, client: LlmClient | None = None
     async def llm_error(_req: Request, exc: LlmError):
         return JSONResponse(status_code=502, content={"error": str(exc)})
 
+    @app.exception_handler(BudgetError)
+    async def budget_error(_req: Request, exc: BudgetError):
+        return JSONResponse(status_code=413, content={"error": str(exc)})
+
+    room = limits(settings)
+
     @app.post("/predict", response_model=PredictResponse)
     def predict(req: PredictRequest):
         built = build_predict_messages(req)
@@ -1886,18 +2139,18 @@ def create_app(settings: Settings | None = None, client: LlmClient | None = None
 
     @app.get("/health")
     def health():
-        return {"ok": True, "llm": {"base_url": settings.base_url, "model": settings.model, "reachable": llm.reachable()}}
+        return {"ok": True, "llm": {"base_url": settings.base_url, "model": settings.model, "reachable": llm.reachable()}, "limits": room}
 
     return app
 ```
 실행: `uvicorn noonchi_pam.app:create_app --factory --host 0.0.0.0 --port 8300`.
 
-- [ ] **Step 4: 통과 확인** — `H services\pam\.venv\Scripts\python.exe -m pytest services/pam -q` / Expected: PASS
+- [ ] **Step 4: 통과 확인** — `H services\pam\.venv\Scripts\python.exe -m pytest services/pam -q` 그리고 `H npx vitest run tests/self-contained.test.ts` / Expected: PASS
 - [ ] **Step 5: 커밋**
 
 ```bash
-git add services/pam/noonchi_pam/settings.py services/pam/noonchi_pam/llm.py services/pam/noonchi_pam/app.py services/pam/tests/conftest.py services/pam/tests/test_app.py
-git commit -m "feat: serve pam-predict/2 and pam-reflect/2 with FastAPI over an OpenAI-compatible LLM endpoint"
+git add services/pam/noonchi_pam/settings.py services/pam/noonchi_pam/budget.py services/pam/noonchi_pam/llm.py services/pam/noonchi_pam/app.py services/pam/tests/conftest.py services/pam/tests/test_app.py services/pam/tests/test_budget.py
+git commit -m "feat: serve pam-predict/2 and pam-reflect/2 with FastAPI, the copied OpenRouter transport settings and a context-length check"
 ```
 
 ### Task 13: PAM 이미지·compose 서비스·CI·컨테이너 확인
@@ -1949,11 +2202,12 @@ CMD ["uvicorn", "noonchi_pam.app:create_app", "--factory", "--host", "0.0.0.0", 
     image: noonchi-pam:local
     init: true
     restart: unless-stopped
-    env_file: [{ path: .env, required: false }]
+    env_file: [{ path: "${NOONCHI_ENV_FILE:-.env}", required: false }]
     environment:
       INFERENCE_MODE: ${INFERENCE_MODE:-mock}
       PAM_LLM_BASE_URL: ${PAM_LLM_BASE_URL:-}
       PAM_LLM_MODEL: ${PAM_LLM_MODEL:-}
+      PAM_MAX_MODEL_LEN: ${PAM_MAX_MODEL_LEN:-32768}
     ports: ["127.0.0.1:${PAM_HOST_PORT:-8300}:8300"]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8300/health', timeout=3)"]
@@ -1973,7 +2227,7 @@ CMD ["uvicorn", "noonchi_pam.app:create_app", "--factory", "--host", "0.0.0.0", 
 ```
 `noonchi.environment`에 `PAM_URL: ${PAM_URL:-http://pam:8300}`, `INFERENCE_MODE: ${INFERENCE_MODE:-mock}`, `depends_on: { pam: { condition: service_healthy } }`.
 
-`scripts/container-smoke.ts` 바꾸기: env를 `{ VLM_BASE_URL: "http://fake-openai:8500/v1", PAM_LLM_BASE_URL: "http://fake-openai:8500/v1", PAM_LLM_MODEL: "fake", INFERENCE_MODE: "live", NOONCHI_PORT: "8520", NOONCHI_PHONE_PORT: "8530", HUB: "memory", AGENT_PROVIDER: "mock" }`, `compose("--profile", "check", "up", "-d", "--build", "noonchi", "pam", "fake-openai")`, `PAM_HOST_PORT: "8540"`을 env에 더하고, `ready.ok === true`가 될 때까지(최대 120초) 기다려 그때만 성공으로 본다.
+`scripts/container-smoke.ts` 바꾸기: 빈 임시 env 파일(Task 7)은 그대로 두고 덮어쓰는 값을 `{ VLM_BASE_URL: "http://fake-openai:8500/v1", PAM_LLM_BASE_URL: "http://fake-openai:8500/v1", INFERENCE_MODE: "live", AGENT_PROVIDER: "openai", OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: "http://fake-openai:8500/v1", NOONCHI_PORT: "8520", NOONCHI_PHONE_PORT: "8530", PAM_HOST_PORT: "8540", HUB: "memory" }`로 바꾼다. `compose("--profile", "check", "up", "-d", "--build", "noonchi", "pam", "fake-openai")`. `ready.ok === true`가 될 때까지(최대 120초) 기다린 뒤, `POST /api/agent/chat` `{ message: "안녕" }`(origin `http://127.0.0.1:8520`)이 가짜 서버의 「가짜 답」을 돌려주는지 본다. 둘 다 맞을 때만 성공이다.
 
 `.github/workflows/ci.yml`에 잡 더하기:
 ```yaml
@@ -1996,12 +2250,12 @@ CMD ["uvicorn", "noonchi_pam.app:create_app", "--factory", "--host", "0.0.0.0", 
 - [ ] **Step 4: 통과 확인**
 
 ```
-H npx vitest run tests/deploy-files.test.ts
+H npx vitest run tests/deploy-files.test.ts tests/self-contained.test.ts
 H docker build -t noonchi-pam:check services/pam
 H docker build -t noonchi:check .
 H npx tsx scripts/container-smoke.ts
 ```
-Expected: PASS, 두 이미지 빌드, 스모크가 `ready.ok: true`(가짜 서버로 VLM·PAM·PAM LLM 모두 답함)로 종료 코드 0.
+Expected: PASS, 두 이미지 빌드, 스모크가 `ready.ok: true`(가짜 서버로 VLM·PAM·PAM LLM 모두 답함)와 에이전트 답 「가짜 답」을 찍고 종료 코드 0.
 
 - [ ] **Step 5: 커밋**
 
@@ -2014,7 +2268,8 @@ git commit -m "feat: run the PAM service in compose, check the whole stack again
 
 **Files:**
 - Create: `src/infer/openai-compat.ts`, `src/infer/vlm.ts`, `src/infer/cost.ts`, `src/infer/inference.ts`, `tests/infer-vlm.test.ts`, `tests/same-structure.test.ts`
-- Modify: `src/brain/perception.ts`(`OpenAIPerceiver` → `VlmPerceiver`가 `VlmClient`를 쓴다, 가격표는 `cost.ts`로), `src/brain/live.ts`(perceiver 만들기), `CLAUDE.md`(같은 구조 줄)
+- Modify: `src/brain/perception.ts`(`OpenAIPerceiver` → `VlmPerceiver`가 `VlmClient`를 쓴다, 가격표는 `cost.ts`로, `ScriptedPerceiver`를 뺀다), `src/brain/detector.ts`(`ScriptedDetector`를 뺀다), `src/brain/live.ts`(perceiver 만들기), 옮긴 도우미를 쓰는 시험 `tests/brain-gate.test.ts`·`tests/brain-live.test.ts`·`tests/brain-runner.test.ts`·`tests/plan-hub.test.ts`·`tests/brain-detector.test.ts`·`tests/brain-perception.test.ts`, `docs/reference.md`, `CLAUDE.md`(같은 구조 줄)
+- Delete: `scripts/brain-replay.ts`(지운 `OpenAIPerceiver`·옮긴 `ScriptedPerceiver`를 쓰는 녹화 재생 스크립트)
 
 **Interfaces:**
 - Consumes: `Endpoints`, `ModelEndpoint`(Task 6)
@@ -2027,13 +2282,14 @@ export interface ChatMessage { role: "system" | "user"; content: string | ChatPa
 export interface ChatReply { text: string; model: string; usage: { prompt: number; completion: number; cached: number }; ms: number }
 export class OpenAICompatClient {
   constructor(ep: ModelEndpoint, opts?: { fetchImpl?: typeof fetch; timeoutMs?: number });
-  chat(req: { messages: ChatMessage[]; schema?: { name: string; schema: Record<string, unknown> }; maxTokens?: number }): Promise<ChatReply>;
+  chat(req: { messages: ChatMessage[]; schema?: { name: string; schema: Record<string, unknown> }; maxTokens?: number; signal?: AbortSignal }): Promise<ChatReply>;
 }
 // src/infer/vlm.ts
-export interface VlmJson<T> { value: T | null; costUsd: number; model: string; attempts: number; error?: string }
+export interface VlmJson<T> { value: T | null; costUsd: number; model: string; attempts: number; error?: string; aborted?: boolean }
 export class VlmClient {
   constructor(ep: ModelEndpoint, opts?: { fetchImpl?: typeof fetch; timeoutMs?: number });
-  json<T>(o: { prompt: string; texts?: string[]; images: Buffer[]; schema: { name: string; schema: Record<string, unknown> }; parse: (text: string) => T; maxAttempts?: number }): Promise<VlmJson<T>>;
+  // signal이 끊기면 HTTP 요청도 끊고 다시 묻지 않는다(aborted: true). 형식 오류 때 다시 묻는 요청도 같은 signal·같은 제한 시간 안에서 한다.
+  json<T>(o: { prompt: string; texts?: string[]; images: Buffer[]; schema: { name: string; schema: Record<string, unknown> }; parse: (text: string) => T; maxAttempts?: number; signal?: AbortSignal }): Promise<VlmJson<T>>;
 }
 // src/infer/cost.ts
 export function estimateCostUsd(model: string, usage: { prompt: number; completion: number; cached: number }): number; // gpt-5.4-mini 표, 모르는 모델(로컬 vLLM)은 0
@@ -2069,6 +2325,16 @@ describe("VLM 어댑터", () => {
     const r = await vlm.json({ prompt: "p", images: [JPEG], schema: { name: "s", schema: {} }, parse: (t) => JSON.parse(t) });
     expect(r).toMatchObject({ value: null, attempts: 2 });
     expect(f.requests.filter((q) => q.method === "POST")).toHaveLength(2);
+  });
+  it("signal이 끊기면 요청을 끊고 다시 묻지 않는다", async () => {
+    let started = 0;
+    const hang: typeof fetch = (_u, init) => { started++; return new Promise((_, no) => init!.signal!.addEventListener("abort", () => no(init!.signal!.reason))); };
+    const vlm = new VlmClient({ baseUrl: "http://127.0.0.1:9/v1", model: "m", apiKey: "", extraBody: {} }, { fetchImpl: hang });
+    const ac = new AbortController();
+    const p = vlm.json({ prompt: "p", images: [JPEG], schema: { name: "s", schema: {} }, parse: JSON.parse, signal: ac.signal });
+    ac.abort(new Error("timeout"));
+    expect(await p).toMatchObject({ value: null, aborted: true, attempts: 1 });
+    expect(started).toBe(1);
   });
 });
 ```
@@ -2135,12 +2401,13 @@ export interface ChatReply { text: string; model: string; usage: { prompt: numbe
 export class OpenAICompatClient {
   constructor(private readonly ep: ModelEndpoint, private readonly opts: { fetchImpl?: typeof fetch; timeoutMs?: number } = {}) {}
 
-  async chat(req: { messages: ChatMessage[]; schema?: { name: string; schema: Record<string, unknown> }; maxTokens?: number }): Promise<ChatReply> {
+  async chat(req: { messages: ChatMessage[]; schema?: { name: string; schema: Record<string, unknown> }; maxTokens?: number; signal?: AbortSignal }): Promise<ChatReply> {
     const t0 = performance.now();
+    const limit = AbortSignal.timeout(this.opts.timeoutMs ?? 20_000);
     const res = await fetchRetry(`${this.ep.baseUrl}/chat/completions`, {
       method: "POST",
       headers: { "content-type": "application/json", ...(this.ep.apiKey ? { authorization: `Bearer ${this.ep.apiKey}` } : {}) },
-      signal: AbortSignal.timeout(this.opts.timeoutMs ?? 30_000),
+      signal: req.signal ? AbortSignal.any([req.signal, limit]) : limit,
       body: JSON.stringify({
         model: this.ep.model, messages: req.messages, max_completion_tokens: req.maxTokens ?? 600, ...this.ep.extraBody,
         ...(req.schema ? { response_format: { type: "json_schema", json_schema: { name: req.schema.name, strict: true, schema: req.schema.schema } } } : {}),
@@ -2171,22 +2438,23 @@ export class VlmClient {
     this.chat = new OpenAICompatClient(ep, opts);
   }
 
-  async json<T>(o: { prompt: string; texts?: string[]; images: Buffer[]; schema: { name: string; schema: Record<string, unknown> }; parse: (text: string) => T; maxAttempts?: number }): Promise<VlmJson<T>> {
+  async json<T>(o: { prompt: string; texts?: string[]; images: Buffer[]; schema: { name: string; schema: Record<string, unknown> }; parse: (text: string) => T; maxAttempts?: number; signal?: AbortSignal }): Promise<VlmJson<T>> {
     const content: ChatPart[] = [{ type: "text", text: o.prompt }, ...(o.texts ?? []).map((text) => ({ type: "text" as const, text }))];
     for (const img of o.images) content.push({ type: "image_url", image_url: { url: `data:image/jpeg;base64,${img.toString("base64")}`, detail: "high" } });
     const max = Math.max(1, Math.min(2, o.maxAttempts ?? 2));
     let cost = 0, model = this.ep.model, attempts = 0;
-    while (attempts < max) {
+    while (attempts < max && !o.signal?.aborted) {
       attempts++;
       try {
-        const r = await this.chat.chat({ messages: [{ role: "user", content }], schema: o.schema });
+        const r = await this.chat.chat({ messages: [{ role: "user", content }], schema: o.schema, signal: o.signal });
         cost += estimateCostUsd(r.model, r.usage);
         model = r.model;
         try { return { value: o.parse(r.text), costUsd: cost, model, attempts }; } catch { /* 형식 오류: 다시 묻는다 */ }
       } catch (e) {
-        return { value: null, costUsd: cost, model, attempts, error: (e as Error).message };
+        return { value: null, costUsd: cost, model, attempts, error: (e as Error).message, ...(o.signal?.aborted ? { aborted: true } : {}) };
       }
     }
+    if (o.signal?.aborted) return { value: null, costUsd: cost, model, attempts, error: "시간 초과", aborted: true };
     return { value: null, costUsd: cost, model, attempts, error: `형식이 ${attempts}번 틀림` };
   }
 }
@@ -2208,33 +2476,33 @@ export function estimateCostUsd(model: string, u: { prompt: number; completion: 
 
 ```ts
 // src/infer/inference.ts
-// 두 모드가 함께 쓰는 추론 묶음. 모드는 주소만 고른다.
-import { loadEndpoints, type Endpoints } from "./endpoints.js";
+// 두 모드가 함께 쓰는 추론 묶음. 모드는 주소만 고른다. VLM 호출 제한 시간은 동시 요청 풀과 같은 VLM_TIMEOUT_MS다.
+import { loadEndpoints, vlmTimeoutMs, type Endpoints } from "./endpoints.js";
 import { VlmClient } from "./vlm.js";
 
 export function createInference(env: Record<string, string | undefined>): { endpoints: Endpoints; vlm: VlmClient } {
   const endpoints = loadEndpoints(env);
-  return { endpoints, vlm: new VlmClient(endpoints.vlm) };
+  return { endpoints, vlm: new VlmClient(endpoints.vlm, { timeoutMs: vlmTimeoutMs(env) }) };
 }
 ```
-`src/brain/perception.ts`: `OpenAIPerceiver`를 지우고 `VlmPerceiver`(생성자 `(vlm: VlmClient)`, `perceive(frames)` → `vlm.json({ prompt: PERCEPTION_PROMPT, texts: 사진별 상대 시각 글, images: frames.map(f => f.jpeg), schema: { name: "cup_scene", schema: PERCEPTION_JSON_SCHEMA }, parse: parsePerception, maxAttempts })`)를 둔다. `ScriptedPerceiver`는 `tests/helpers/perceivers.ts`로, `ScriptedDetector`는 `tests/helpers/detectors.ts`로 옮기고 시험 import를 고친다. `live.ts` `createLiveBrain`: `OPENAI_API_KEY` 검사 대신 `createInference(env).vlm`으로 `VlmPerceiver`를 만든다(`BRAIN_VLM_MODEL` 대신 `VLM_MODEL`). `docs/reference.md` 환경 변수 표를 바꾼다.
+`src/brain/perception.ts`: `OpenAIPerceiver`를 지우고 `VlmPerceiver`(생성자 `(vlm: VlmClient)`, `perceive(frames)` → `vlm.json({ prompt: PERCEPTION_PROMPT, texts: 사진별 상대 시각 글, images: frames.map(f => f.jpeg), schema: { name: "cup_scene", schema: PERCEPTION_JSON_SCHEMA }, parse: parsePerception, maxAttempts })`)를 둔다. `ScriptedPerceiver`는 `tests/helpers/perceivers.ts`로, `ScriptedDetector`는 `tests/helpers/detectors.ts`로 옮기고 시험 import를 고친다. `live.ts` `createLiveBrain`: `OPENAI_API_KEY` 검사 대신 `createInference(env).vlm`으로 `VlmPerceiver`를 만든다(`BRAIN_VLM_MODEL` 대신 `VLM_MODEL`). `docs/reference.md` 환경 변수 표를 바꾸고 녹화 재생(`scripts/brain-replay.ts`) 줄을 지운다.
 
 CLAUDE.md 같은 구조 줄 막는 장치: `tests/same-structure.test.ts`(두 모드의 주소 표 차이, `INFERENCE_MODE`를 `src/infer/endpoints.ts`만 읽는지, src에 가짜 판단·인식 클래스가 없는지, 두 모드가 같은 가짜 주소 자리에 같은 요청을 보내는지). `npm test`가 돌린다.
 
-- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/infer-vlm.test.ts tests/brain-perception.test.ts tests/brain-live.test.ts` PASS. `tests/same-structure.test.ts`의 둘째 시험은 Task 15 끝에서 PASS.
+- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/infer-vlm.test.ts tests/brain-perception.test.ts tests/brain-live.test.ts tests/brain-gate.test.ts tests/brain-runner.test.ts tests/plan-hub.test.ts tests/brain-detector.test.ts tests/self-contained.test.ts` 그리고 `H npx tsc --noEmit` PASS. `tests/same-structure.test.ts`의 둘째 시험은 Task 15 끝에서 PASS.
 - [ ] **Step 5: 커밋**
 
 ```bash
-git add src/infer/openai-compat.ts src/infer/vlm.ts src/infer/cost.ts src/infer/inference.ts src/brain/perception.ts src/brain/live.ts src/brain/detector.ts tests/helpers/perceivers.ts tests/helpers/detectors.ts tests/infer-vlm.test.ts tests/same-structure.test.ts tests docs/reference.md CLAUDE.md
+git add src/infer/openai-compat.ts src/infer/vlm.ts src/infer/cost.ts src/infer/inference.ts src/brain/perception.ts src/brain/live.ts src/brain/detector.ts tests/helpers/perceivers.ts tests/helpers/detectors.ts tests/infer-vlm.test.ts tests/same-structure.test.ts tests/brain-gate.test.ts tests/brain-live.test.ts tests/brain-runner.test.ts tests/plan-hub.test.ts tests/brain-detector.test.ts tests/brain-perception.test.ts docs/reference.md CLAUDE.md
+git rm scripts/brain-replay.ts
 git commit -m "feat: call the VLM through one OpenAI-compatible adapter whose endpoint INFERENCE_MODE picks"
 ```
-(`tests`는 고친 시험 파일을 하나씩 더한다.)
 
 ### Task 15: PAM 어댑터 /2, 사진 없는 PAM 시험, 관찰 텍스트 첫판
 
 **Files:**
 - Create: `src/contract/pam.ts`, `src/world/text.ts`, `src/world/labels.ts`, `tests/pam-text-only.test.ts`, `tests/world-text.test.ts`, `tests/helpers/decision.ts`, `tests/helpers/pam.ts`
-- Modify: `src/brain/pam.ts`(전부 다시 씀), `src/brain/decision.ts`(`MockDecision`·사진 칸·`selectDecisionFrames` 지움, 검사기·`CUP_*` 유지), `src/brain/brain.ts`(판단 입력을 텍스트로), `src/brain/live.ts`(`BRAIN_DECISION` 없앰, 늘 PAM), `scripts/lint-ui-copy.ts`(`src/world/labels.ts` 검사), `docs/pam-interface.md`, `docs/reference.md`, `CLAUDE.md`(사진 없는 PAM 줄)
+- Modify: `src/brain/pam.ts`(전부 다시 씀), `src/brain/decision.ts`(`MockDecision`·사진 칸·`selectDecisionFrames` 지움, `Frame` import 지움, 검사기·`CUP_*` 유지), `src/brain/brain.ts`(판단 입력을 텍스트로), `src/brain/live.ts`(`BRAIN_DECISION` 없앰, 늘 PAM), `scripts/lint-ui-copy.ts`(`src/world/labels.ts` 검사), `tests/lint-ui-copy.test.ts`(`COPY_TARGETS`에 `src/world/labels.ts`), 지운 이름을 쓰는 시험 `tests/brain-decision.test.ts`(`MockDecision`·`selectDecisionFrames`·`validateDecisionFrames` 시험 → 텍스트 `DecisionInput` 검사 시험)·`tests/brain-gate.test.ts`·`tests/brain-live.test.ts`·`tests/brain-runner.test.ts`·`tests/plan-hub.test.ts`(`ScriptedDecision`으로), `docs/pam-interface.md`, `docs/reference.md`, `CLAUDE.md`(사진 없는 PAM 줄)
 - Delete: `scripts/pam-mock-server.ts`
 
 **Interfaces:**
@@ -2250,16 +2518,20 @@ export interface PamReflectRequest { contract: typeof PAM_REFLECT; day: string; 
 export interface PamReflectResponse { status: "valid" | "invalid"; raw_response: string; memory: unknown | null; errors: string[] }
 // src/brain/pam.ts
 export function assertTextOnly(body: unknown): void; // 어느 깊이든 image·images·frames·image_url·base64 키나 "data:image/" 값이면 ContractError
+export class PamLinkError extends Error {}           // PAM 서비스에 닿지 않음·HTTP 오류(연결 끊김 기록에 쓴다)
+export interface PamLimits { max_model_len: number; predict_input_bytes: number; reflect_input_bytes: number }
 export class PamClient {
   constructor(o: { url: string; timeoutMs?: number; fetchImpl?: typeof fetch });
   predict(r: Omit<PamPredictRequest, "contract">): Promise<Prediction>;          // 원문 다시 검사, invalid는 ContractError
   reflect(r: Omit<PamReflectRequest, "contract">, kind: "list" | "fsm"): Promise<PamMemory>;
+  limits(): Promise<PamLimits>;                                                    // GET {url}/health의 limits
 }
 export class PamDecision implements DecisionModel { constructor(pam: PamClient); readonly name: "pam"; decide(input: DecisionInput): Promise<Prediction> }
 // src/brain/decision.ts
 export interface DecisionInput { text: string; finalTime: string; memory: PamMemory; memoryKind: "list" | "fsm"; tasks: string[]; facts: DecisionFacts }
 // src/world/text.ts
 export interface TimedLine { atMs: number; text: string }
+export function collapseLines(lines: TimedLine[], offsetMinutes: number): string[];   // 이어진 같은 글은 「처음~마지막 글 N번」
 export function buildPamText(o: { lines: TimedLine[]; facts: string[]; eye?: string | null; offsetMinutes: number; maxLines?: number }): string;
 ```
 
@@ -2314,7 +2586,7 @@ describe("사진 없는 PAM", () => {
 ```ts
 // tests/world-text.test.ts
 import { describe, expect, it } from "vitest";
-import { buildPamText } from "../src/world/text.js";
+import { buildPamText, collapseLines } from "../src/world/text.js";
 
 const T = (h: number, m: number, s: number) => Date.UTC(2026, 10, 7, h - 9, m, s);
 describe("PAM 관찰 텍스트", () => {
@@ -2326,6 +2598,10 @@ describe("PAM 관찰 텍스트", () => {
   it("줄이 많으면 최근 maxLines줄만 둔다", () => {
     const lines = Array.from({ length: 50 }, (_, i) => ({ atMs: T(21, 0, i), text: `줄${i}` }));
     expect(buildPamText({ offsetMinutes: 540, lines, facts: [], maxLines: 3 }).split("\n")).toEqual(["21:00:47 줄47", "21:00:48 줄48", "21:00:49 줄49"]);
+  });
+  it("이어진 같은 줄은 시각 범위와 횟수로 묶는다", () => {
+    const lines = [0, 1, 2].map((s) => ({ atMs: T(21, 0, s), text: "요청이 몰려 VLM 분석 없음" })).concat([{ atMs: T(21, 0, 3), text: "사람 보임" }]);
+    expect(collapseLines(lines, 540)).toEqual(["21:00:00~21:00:02 요청이 몰려 VLM 분석 없음 3번", "21:00:03 사람 보임"]);
   });
 });
 ```
@@ -2344,10 +2620,23 @@ export function clock(ms: number, offsetMinutes: number): string {
   return `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
 }
 
+/** 시각 순으로 줄을 쓰고, 이어진 같은 글은 「처음~마지막 글 N번」 한 줄로 묶는다. */
+export function collapseLines(lines: TimedLine[], offsetMinutes: number): string[] {
+  const sorted = [...lines].sort((a, b) => a.atMs - b.atMs);
+  const out: string[] = [];
+  for (let i = 0; i < sorted.length; ) {
+    let j = i;
+    while (j + 1 < sorted.length && sorted[j + 1]!.text === sorted[i]!.text) j++;
+    const first = clock(sorted[i]!.atMs, offsetMinutes);
+    out.push(j === i ? `${first} ${sorted[i]!.text}` : `${first}~${clock(sorted[j]!.atMs, offsetMinutes)} ${sorted[i]!.text} ${j - i + 1}번`);
+    i = j + 1;
+  }
+  return out;
+}
+
 export function buildPamText(o: { lines: TimedLine[]; facts: string[]; eye?: string | null; offsetMinutes: number; maxLines?: number }): string {
-  const lines = [...o.lines].sort((a, b) => a.atMs - b.atMs).slice(-(o.maxLines ?? 40));
   return [
-    ...lines.map((l) => `${clock(l.atMs, o.offsetMinutes)} ${l.text}`),
+    ...collapseLines(o.lines, o.offsetMinutes).slice(-(o.maxLines ?? 40)),
     ...o.facts.map((f) => `[지속] ${f}`),
     ...(o.eye ? [`[눈] ${o.eye}`] : []),
   ].join("\n");
@@ -2378,16 +2667,35 @@ export function assertTextOnly(body: unknown, path = "body"): void {
   }
 }
 
+/** PAM 서비스에 닿지 않거나 HTTP 오류. 답 형식 오류(ContractError)와 나눠 연결 끊김으로 기록한다. */
+export class PamLinkError extends Error {}
+export interface PamLimits { max_model_len: number; predict_input_bytes: number; reflect_input_bytes: number }
+
 export class PamClient {
   constructor(private readonly o: { url: string; timeoutMs?: number; fetchImpl?: typeof fetch }) {}
 
   private async post<T>(path: string, body: unknown, timeoutMs: number): Promise<T> {
     assertTextOnly(body);
-    const res = await fetchRetry(`${this.o.url}${path}`, {
-      method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(timeoutMs), body: JSON.stringify(body),
-    }, { fetchImpl: this.o.fetchImpl });
-    if (!res.ok) throw new ContractError(`PAM HTTP ${res.status}`);
+    let res: Response;
+    try {
+      res = await fetchRetry(`${this.o.url}${path}`, {
+        method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(timeoutMs), body: JSON.stringify(body),
+      }, { fetchImpl: this.o.fetchImpl });
+    } catch (e) {
+      throw new PamLinkError(`PAM 연결 실패: ${(e as Error).message}`);
+    }
+    if (res.status === 413) throw new ContractError(`PAM 입력이 문맥 길이를 넘음: ${await res.text()}`);
+    if (!res.ok) throw new PamLinkError(`PAM HTTP ${res.status}`);
     return await res.json() as T;
+  }
+
+  async limits(): Promise<PamLimits> {
+    let res: Response;
+    try { res = await (this.o.fetchImpl ?? fetch)(`${this.o.url}/health`, { signal: AbortSignal.timeout(5000) }); } catch (e) { throw new PamLinkError(`PAM 연결 실패: ${(e as Error).message}`); }
+    if (!res.ok) throw new PamLinkError(`PAM HTTP ${res.status}`);
+    const b = await res.json() as { limits?: PamLimits };
+    if (!b.limits || !(b.limits.reflect_input_bytes > 0)) throw new ContractError("PAM /health에 입력 한도가 없습니다");
+    return b.limits;
   }
 
   async predict(r: Omit<PamPredictRequest, "contract">): Promise<Prediction> {
@@ -2471,15 +2779,20 @@ noonchi 서버가 PAM 서비스(`services/pam/`)를 부르는 형식이다. PAM�
 
 - 두 계약 모두 사진 칸이 없다. 모르는 칸이 오면 400이다. noonchi는 보내기 전에 사진 칸·`data:image` 값을 막는다(`assertTextOnly`).
 - `status: "invalid"`는 대기(−1)와 다른 판단 실패다.
-- 판단 프롬프트는 논문 프롬프트(`services/pam/prompts/paper/`)의 판단 규칙을 그대로 두고, 입력 설명 문장만 `services/pam/scenarios/noonchi/scenario.json`대로 바꾼다.
-- PAM LLM 주소: `INFERENCE_MODE`가 고른다(mock: OpenRouter `qwen/qwen3.5-27b` provider alibaba, live: 같은 서버 vLLM). `PAM_LLM_BASE_URL`·`PAM_LLM_MODEL`이 앞선다.
+- 판단 프롬프트는 논문 프롬프트(`services/pam/prompts/paper/`)의 판단 규칙 문장을 그대로 두고, 입력 설명 문장과 공간 문장만 `services/pam/scenarios/noonchi/scenario.json`대로 바꾼다.
+- PAM LLM 주소: `INFERENCE_MODE`가 고른다(mock: OpenRouter `qwen/qwen3.5-27b` provider alibaba, live: 같은 서버 vLLM, 모델 이름 `pam`). `PAM_LLM_BASE_URL`·`PAM_LLM_MODEL`이 앞선다.
+- 전송 값은 `services/pam/config/openrouter.json`이다: max_tokens 판단 2048·반성 16384, 시간 제한 120초, `stream: false`. mock은 provider alibaba 고정과 문맥 압축 끔(`plugins`)을 더 보낸다.
+- 문맥 길이: `PAM_MAX_MODEL_LEN`(기본 32768, vLLM `--max-model-len`과 같은 값). `입력 추정 + max_tokens`가 넘으면 413이다. `GET /health`의 `limits`(`predict_input_bytes`, `reflect_input_bytes`)가 바뀌는 글(관찰 텍스트·행동 요약·피드백·기억 JSON)에 쓸 수 있는 UTF-8 바이트 수다. noonchi는 반성 전에 이 값을 읽어 하루 요약을 줄인다.
 - 제한 시간: 판단 `PAM_TIMEOUT_MS`(기본 30000), 반성 300초.
+- 연결 실패·HTTP 오류는 `PamLinkError`(PAM 연결 끊김으로 기록), 답 형식 오류·413은 `ContractError`(판단 실패)다.
+- 기억: 반성으로 고친 기억은 다음 날부터 쓴다. 그날 판단은 그날 처음 정한 기억 판본만 쓴다(논문 `config/paper.json`의 `memory_lifecycle`).
 
 ## 박석준과 맞출 것
 
-1. 입력 설명 문장과 관찰 텍스트의 언어·형식.
-2. 행동 목록. 지금은 `컵 치우기`, `사용자에게 물어보기`.
-3. live PAM LLM 모델(Qwen3.5-27B 4비트 / 7B급).
+1. 입력 설명 문장·공간 문장과 관찰 텍스트의 언어·형식.
+2. 판단 규칙 문장의 책상(desk) 표현: 「the person sets it down on the desk」를 집에 맞게 바꿀지. 지금은 논문 문장 그대로다.
+3. 행동 목록. 지금은 `컵 치우기`, `사용자에게 물어보기`.
+4. live PAM LLM 모델(Qwen3.5-27B 4비트 / 7B급).
 
 ## 시험
 
@@ -2492,16 +2805,16 @@ CLAUDE.md 사진 없는 PAM 줄 막는 장치: `src/contract/pam.ts`(계약 타�
 - [ ] **Step 4: 통과 확인**
 
 ```
-H npx vitest run tests/pam-text-only.test.ts tests/world-text.test.ts tests/brain-pam.test.ts tests/brain-runner.test.ts tests/brain-live.test.ts tests/same-structure.test.ts
+H npx vitest run tests/pam-text-only.test.ts tests/world-text.test.ts tests/brain-pam.test.ts tests/brain-decision.test.ts tests/brain-gate.test.ts tests/brain-runner.test.ts tests/brain-live.test.ts tests/plan-hub.test.ts tests/lint-ui-copy.test.ts tests/same-structure.test.ts tests/self-contained.test.ts
 H npx tsc --noEmit
 H npm run lint
 ```
-Expected: PASS(`tests/brain-pam.test.ts`는 /2 본문과 원문 다시 검사로 고쳐 쓴다).
+Expected: PASS(`tests/brain-pam.test.ts`는 /2 본문과 원문 다시 검사로 고쳐 쓰고, `PamLinkError`(닿지 않는 주소)·`limits()`(가짜 `/health`) 시험을 더한다).
 
 - [ ] **Step 5: 커밋**
 
 ```bash
-git add src/contract/pam.ts src/brain/pam.ts src/brain/decision.ts src/brain/brain.ts src/brain/live.ts src/world/text.ts src/world/labels.ts scripts/lint-ui-copy.ts tests/pam-text-only.test.ts tests/world-text.test.ts tests/helpers/decision.ts tests/brain-pam.test.ts docs/pam-interface.md docs/reference.md CLAUDE.md
+git add src/contract/pam.ts src/brain/pam.ts src/brain/decision.ts src/brain/brain.ts src/brain/live.ts src/world/text.ts src/world/labels.ts scripts/lint-ui-copy.ts tests/lint-ui-copy.test.ts tests/pam-text-only.test.ts tests/world-text.test.ts tests/helpers/decision.ts tests/brain-pam.test.ts tests/brain-decision.test.ts tests/brain-gate.test.ts tests/brain-runner.test.ts tests/brain-live.test.ts tests/plan-hub.test.ts docs/pam-interface.md docs/reference.md CLAUDE.md
 git rm scripts/pam-mock-server.ts
 git commit -m "feat: send PAM text observations over pam-predict/2 and block image fields before sending"
 ```
@@ -2583,7 +2896,7 @@ export function engineDue(lastMs, nowMs, intervalMs) {
 ```
   - `web/phone/phone.js` onFrame: 서버 상태의 `engine_ms`를 `engineMs`로 둔다. 표시 프레임과 별개로 `engineMs && engineDue(lastEngine, time, engineMs)`이면 같은 카메라 이미지를 `grabber.grab`해 `sendFrame(pixels, { kind: "engine", width, height, position, orientation, tracking, epoch, projection: Array.from(xrView.projectionMatrix), ...stamp(performance.timeOrigin + time) }, 0.8, [], readMs, false)`로 보낸다(marks는 빈 배열). `lastEngine = time`.
 
-- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/phone-engine.test.ts tests/phone-server.test.ts tests/phone-packet.test.ts tests/phone-session.test.ts` / Expected: PASS
+- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/phone-engine.test.ts tests/phone-server.test.ts tests/phone-packet.test.ts tests/phone-session.test.ts tests/self-contained.test.ts` / Expected: PASS
 - [ ] **Step 5: 커밋**
 
 ```bash
@@ -2673,7 +2986,7 @@ export class FrameRing {
 ```
 `captureTime`과 그 설명 주석을 `src/brain/live.ts`에서 이 파일로 옮기고, `live.ts`는 여기서 가져온다.
 
-- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/observe-ring.test.ts tests/brain-live.test.ts` / Expected: PASS
+- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/observe-ring.test.ts tests/brain-live.test.ts tests/self-contained.test.ts` / Expected: PASS
 - [ ] **Step 5: 커밋**
 
 ```bash
@@ -2684,7 +2997,7 @@ git commit -m "feat: keep engine frames in a 20 s memory ring and drop exact dup
 ### Task 18: YOLOX 종류 넓히기와 등장·사라짐 확인
 
 **Files:**
-- Create: `src/world/confirm.ts`, `tests/world-confirm.test.ts`
+- Create: `src/world/confirm.ts`, `tests/world-confirm.test.ts`, `docs/provenance.md`
 - Modify: `src/brain/detector.ts`(라벨 `person | cup | bottle | bowl`), `tests/brain-detector.test.ts`
 
 **Interfaces:**
@@ -2738,7 +3051,7 @@ describe("등장·사라짐 확인", () => {
 
 ```ts
 // src/world/confirm.ts
-// 등장·사라짐 확인(noonchi-server changes.py를 옮김): 같은 쪽이 need(key)장 연속일 때만 인정한다.
+// 등장·사라짐 확인: 같은 쪽이 need(key)장 연속일 때만 인정한다(출처: docs/provenance.md).
 // 사라짐은 그 자리가 시야 안인 프레임만 센다. 시야 밖 프레임은 셈을 멈춘다(늘리지도 지우지도 않음).
 export interface ConfirmEvent { key: string; kind: "appeared" | "gone"; atMs: number }
 
@@ -2767,11 +3080,21 @@ export class Confirmer {
 ```
 `detector.ts`: `LABELS = { 0: "person", 41: "cup", 40: "cup", 39: "bottle", 45: "bowl" }`, `decodeYolox`의 클래스 반복을 `[0, 41, 40, 39, 45]`로.
 
-- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/world-confirm.test.ts tests/brain-detector.test.ts tests/brain-presence.test.ts` / Expected: PASS
+`docs/provenance.md`(옮긴 동작의 출처. 한 저장소 시험이 보지 않는 문서라 옆 저장소 이름을 여기에만 쓴다):
+```markdown
+# 옮긴 동작의 출처
+
+| 이 저장소 | 출처 | 옮긴 것 |
+|---|---|---|
+| `src/world/confirm.ts` | noonchi-server(신지훈) f8545a1 `noonchi/changes.py` | 사람 2장·물건 3장 연속 확인, 시야 밖은 세지 않음 |
+```
+Task 20·22·24가 줄을 더한다.
+
+- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/world-confirm.test.ts tests/brain-detector.test.ts tests/brain-presence.test.ts tests/self-contained.test.ts` / Expected: PASS
 - [ ] **Step 5: 커밋**
 
 ```bash
-git add src/world/confirm.ts src/brain/detector.ts tests/world-confirm.test.ts tests/brain-detector.test.ts
+git add src/world/confirm.ts src/brain/detector.ts tests/world-confirm.test.ts tests/brain-detector.test.ts docs/provenance.md
 git commit -m "feat: detect bottles and bowls and confirm appear/disappear over 2 person frames or 3 object frames"
 ```
 
@@ -2791,12 +3114,13 @@ export type SceneState = (typeof SCENE_STATES)[number];
 export interface SceneObservation { scene: string; observations: { object_id: string; state: SceneState }[]; summary: string }
 export interface SceneDetection { id: string; class: string; box: [number, number, number, number]; score: number }
 export function parseScene(text: string, ids: ReadonlySet<string>): SceneObservation;   // 모르는 object_id는 버린다
-export function analyzeScene(vlm: VlmClient, frame: EngineFrame, dets: SceneDetection[]): Promise<{ scene: SceneObservation | null; costUsd: number; error?: string }>;
+export function analyzeScene(vlm: VlmClient, frame: EngineFrame, dets: SceneDetection[], signal?: AbortSignal): Promise<{ scene: SceneObservation | null; costUsd: number; error?: string }>;
 // src/observe/vlm-pool.ts
 export type VlmMissing = "cap" | "timeout" | "format" | "error";
 export interface VlmResult { frameId: string; capturedAtMs: number; scene: SceneObservation | null; missing?: VlmMissing; costUsd: number }
 export class VlmPool {
-  constructor(o: { maxInflight: number; analyze: (frame: EngineFrame, dets: SceneDetection[]) => Promise<{ scene: SceneObservation | null; costUsd: number; error?: string }>; onResult: (r: VlmResult) => void; timeoutMs?: number });
+  // 제한 시간이 지나면 signal을 끊어 HTTP 요청도 끊는다. 자리는 analyze가 끝나야 빈다.
+  constructor(o: { maxInflight: number; analyze: (frame: EngineFrame, dets: SceneDetection[], signal: AbortSignal) => Promise<{ scene: SceneObservation | null; costUsd: number; error?: string }>; onResult: (r: VlmResult) => void; timeoutMs?: number });
   submit(frame: EngineFrame, dets: SceneDetection[]): "sent" | "skipped";
   stats(): { sent: number; missing: Record<VlmMissing, number>; inflight: number; costUsd: number };
   idle(): Promise<void>;
@@ -2831,12 +3155,28 @@ describe("VLM 동시 요청", () => {
   });
   it("시간 초과·형식 오류도 VLM 분석 없음으로 낸다", async () => {
     const out: VlmResult[] = [];
+    const untilAbort = (signal: AbortSignal) => new Promise<never>((_, no) => signal.addEventListener("abort", () => no(signal.reason)));
     const pool = new VlmPool({ maxInflight: 4, timeoutMs: 10, onResult: (r) => out.push(r),
-      analyze: async (fr) => (fr.id === "late" ? new Promise(() => {}) : { scene: null, costUsd: 0, error: "형식이 2번 틀림" }) });
+      analyze: async (fr, _d, signal) => (fr.id === "late" ? untilAbort(signal) : { scene: null, costUsd: 0, error: "형식이 2번 틀림" }) });
     pool.submit(f("late", 1), []); pool.submit(f("bad", 2), []);
-    await new Promise((r) => setTimeout(r, 30));
+    await pool.idle();
     expect(out.map((r) => [r.frameId, r.missing])).toEqual(expect.arrayContaining([["late", "timeout"], ["bad", "format"]]));
     expect(pool.stats().missing).toMatchObject({ timeout: 1, format: 1 });
+  });
+  it("시간 초과면 요청을 끊고, 끊긴 뒤에야 자리가 비어 동시 요청이 상한을 넘지 않는다", async () => {
+    let live = 0, peak = 0;
+    const signals: AbortSignal[] = [];
+    const pool = new VlmPool({ maxInflight: 1, timeoutMs: 10, onResult: () => {},
+      analyze: (_fr, _d, signal) => { live++; peak = Math.max(peak, live); signals.push(signal);
+        return new Promise((_, no) => signal.addEventListener("abort", () => { live--; no(signal.reason); })); } });
+    pool.submit(f("a", 1), []);
+    expect(pool.submit(f("b", 2), [])).toBe("skipped");
+    await pool.idle();
+    expect(signals[0]!.aborted).toBe(true);
+    expect(pool.stats().inflight).toBe(0);
+    expect(pool.submit(f("c", 3), [])).toBe("sent");
+    await pool.idle();
+    expect(peak).toBe(1);
   });
 });
 ```
@@ -2908,12 +3248,12 @@ export function parseScene(text: string, ids: ReadonlySet<string>): SceneObserva
   return { ...s, observations: s.observations.filter((o) => ids.has(o.object_id)) };
 }
 
-export async function analyzeScene(vlm: VlmClient, frame: EngineFrame, dets: SceneDetection[]): Promise<{ scene: SceneObservation | null; costUsd: number; error?: string }> {
+export async function analyzeScene(vlm: VlmClient, frame: EngineFrame, dets: SceneDetection[], signal?: AbortSignal): Promise<{ scene: SceneObservation | null; costUsd: number; error?: string }> {
   const ids = new Set(dets.map((d) => d.id));
   const r = await vlm.json({
     prompt: SCENE_PROMPT,
     texts: [`Detections: ${JSON.stringify(dets.map((d) => ({ id: d.id, class: d.class, box: d.box.map(Math.round) })))}`],
-    images: [frame.jpeg], schema: { name: "scene_observation", schema: SCENE_JSON_SCHEMA }, parse: (t) => parseScene(t, ids),
+    images: [frame.jpeg], schema: { name: "scene_observation", schema: SCENE_JSON_SCHEMA }, parse: (t) => parseScene(t, ids), signal,
   });
   return { scene: r.value, costUsd: r.costUsd, ...(r.error ? { error: r.error } : {}) };
 }
@@ -2923,15 +3263,17 @@ export async function analyzeScene(vlm: VlmClient, frame: EngineFrame, dets: Sce
 // src/observe/vlm-pool.ts
 // VLM 동시 요청: 앞 답을 기다리지 않고 maxInflight까지 보낸다. 답은 프레임 번호로 맞춘다.
 // 상한을 넘은 프레임·시간 초과·형식 오류·호출 오류는 버리지 않고 VLM 분석 없음으로 낸다.
+// 시간 초과는 signal을 끊어 HTTP 요청까지 끊는다. 자리는 analyze가 끝나야 비므로 실제로 나가 있는 요청은 maxInflight를 넘지 않는다.
 import type { EngineFrame } from "./ring.js";
 import type { SceneDetection, SceneObservation } from "./scene.js";
 
 export type VlmMissing = "cap" | "timeout" | "format" | "error";
 export interface VlmResult { frameId: string; capturedAtMs: number; scene: SceneObservation | null; missing?: VlmMissing; costUsd: number }
-type Analyze = (frame: EngineFrame, dets: SceneDetection[]) => Promise<{ scene: SceneObservation | null; costUsd: number; error?: string }>;
+type Analyze = (frame: EngineFrame, dets: SceneDetection[], signal: AbortSignal) => Promise<{ scene: SceneObservation | null; costUsd: number; error?: string }>;
 
 export class VlmPool {
   private readonly running = new Set<Promise<void>>();
+  private readonly controllers = new Set<AbortController>();
   private sent = 0;
   private cost = 0;
   private stopped = false;
@@ -2947,29 +3289,32 @@ export class VlmPool {
     if (this.stopped) return "skipped";
     if (this.running.size >= this.o.maxInflight) { this.miss(frame, "cap"); return "skipped"; }
     this.sent++;
-    let timer: NodeJS.Timeout | undefined;
-    const timeout = new Promise<"timeout">((ok) => { timer = setTimeout(() => ok("timeout"), this.o.timeoutMs ?? 20_000); timer.unref?.(); });
-    const job = Promise.race([this.o.analyze(frame, dets), timeout]).then(
+    const ac = new AbortController();
+    this.controllers.add(ac);
+    const timer = setTimeout(() => ac.abort(new Error("시간 초과")), this.o.timeoutMs ?? 20_000);
+    timer.unref?.();
+    const job = Promise.resolve().then(() => this.o.analyze(frame, dets, ac.signal)).then(
       (r) => {
         if (this.stopped) return;
-        if (r === "timeout") return this.miss(frame, "timeout");
+        if (ac.signal.aborted) return this.miss(frame, "timeout", r.costUsd);
         this.cost += r.costUsd;
         if (!r.scene) return this.miss(frame, r.error?.includes("형식") ? "format" : "error", r.costUsd);
         this.o.onResult({ frameId: frame.id, capturedAtMs: frame.capturedAtMs, scene: r.scene, costUsd: r.costUsd });
       },
-      () => { if (!this.stopped) this.miss(frame, "error"); },
-    ).finally(() => { clearTimeout(timer); this.running.delete(job); });
+      () => { if (!this.stopped) this.miss(frame, ac.signal.aborted ? "timeout" : "error"); },
+    ).finally(() => { clearTimeout(timer); this.controllers.delete(ac); this.running.delete(job); });
     this.running.add(job);
     return "sent";
   }
 
   stats() { return { sent: this.sent, missing: { ...this.missing }, inflight: this.running.size, costUsd: this.cost }; }
   async idle(): Promise<void> { while (this.running.size) await Promise.all([...this.running]); }
-  stop(): void { this.stopped = true; }
+  /** 멈추면 나가 있는 요청을 모두 끊는다. */
+  stop(): void { this.stopped = true; for (const ac of this.controllers) ac.abort(new Error("멈춤")); }
 }
 ```
 
-- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/observe-scene.test.ts tests/observe-vlm-pool.test.ts` / Expected: PASS
+- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/observe-scene.test.ts tests/observe-vlm-pool.test.ts tests/self-contained.test.ts` / Expected: PASS
 - [ ] **Step 5: 커밋**
 
 ```bash
@@ -2980,8 +3325,8 @@ git commit -m "feat: analyze every engine frame with a schema-checked VLM scene 
 ### Task 20: 트윈 위치·관계표·World State
 
 **Files:**
-- Create: `src/contract/world.ts`, `src/world/place.ts`, `src/world/relations.ts`, `src/world/state.ts`, `tests/world-place.test.ts`, `tests/world-state.test.ts`
-- Modify: `src/contract/events.ts`(`ServerMessage`에 `{ type: "world"; world: WorldView }`), `ui/src/lib/messages.ts`(KNOWN에 `world`), `src/world/labels.ts`(상태·변화 글)
+- Create: `src/contract/world.ts`, `src/world/place.ts`, `src/world/relations.ts`, `src/world/state.ts`, `tests/world-place.test.ts`, `tests/world-state.test.ts`, `tests/world-relations.test.ts`
+- Modify: `src/contract/events.ts`(`ServerMessage`에 `{ type: "world"; world: WorldView }`), `ui/src/lib/messages.ts`(KNOWN에 `world`), `src/world/labels.ts`(상태·변화 글), `tests/lint-ui-copy.test.ts`, `docs/provenance.md`
 
 **Interfaces:**
 - Produces:
@@ -2997,10 +3342,11 @@ export interface WorldObject {
   facts: Partial<Record<Facet, WorldFact>>; devices: string[];
 }
 export interface WorldPerson { visible: boolean; since_ms: number; last_seen_ms: number | null; facts: Partial<Record<Facet, WorldFact>> }
-export interface WorldDevice { id: string; kind: string; label: string; status: string | null; changed_ms: number; history: { attr: string; from: unknown; to: unknown; at_ms: number }[] }
+export interface WorldDevice { id: string; kind: string; label: string; status: string | null; changed_ms: number; started_ms: number | null; remaining_min: number | null; history: { attr: string; from: unknown; to: unknown; at_ms: number }[] }
 export interface WorldEye { position: [number, number]; height_m: number; yaw_deg: number; pitch_deg: number; room: string | null; at_ms: number }
-export interface WorldView { at_ms: number; objects: WorldObject[]; person: WorldPerson; devices: WorldDevice[]; eye: WorldEye | null; vlm_missing: number }
-export type WorldChangeKind = "appeared" | "gone" | "out_of_view" | "back_in_view" | "state" | "person_appeared" | "person_gone" | "device" | "vlm" | "vlm_missing";
+export interface WorldView { at_ms: number; objects: WorldObject[]; person: WorldPerson; devices: WorldDevice[]; eye: WorldEye | null; vlm_missing: number; yolo_missing: number }
+export type YoloMissing = "cap" | "error";
+export type WorldChangeKind = "appeared" | "gone" | "out_of_view" | "back_in_view" | "state" | "person_appeared" | "person_gone" | "device" | "vlm" | "vlm_missing" | "yolo_missing";
 export interface WorldChange { kind: WorldChangeKind; at_ms: number; subject: string; text: string; meaningful: boolean }
 // src/world/place.ts
 export interface PlaneSurface { id: string; label: string; center: [number, number]; top: number; radius: number }
@@ -3013,12 +3359,18 @@ export function surfacesFromLayout(objects: readonly { id: string; name: string;
 export const RELATIONS: Record<ObjClass, string[]>;    // cup·bottle·bowl → ["dishwasher"]
 export const DEVICE_STATUS: Record<string, { attr: string; active: string; inactive: string }>; // dishwasher: running → 작동 중 / 이용 가능
 export function relatedDeviceIds(cls: ObjClass, devices: readonly { id: string; kind: string }[]): string[];
+export class RemainingTracker {          // 남은 시간: running이 참이 된 시각 + course_min. 코스 시간이 없으면 null(추정하지 않음)
+  constructor(o?: { runningAttr?: string /* "running" */; courseAttr?: string /* "course_min" */ });
+  update(deviceId: string, twin: Record<string, unknown>, atMs: number): void;
+  startedAt(deviceId: string): number | null;
+  remainingMin(deviceId: string, nowMs: number): number | null;   // max(0, ceil(코스 − 지난 분))
+}
 // src/world/state.ts
 export class WorldState {
   constructor(o: { surfaces: () => PlaneSurface[]; floorAt: (p: [number, number]) => number; roomAt: (p: [number, number]) => string | null; devices: () => readonly { id: string; kind: string; label: string }[]; identityM?: number });
   applyDetections(frame: EngineFrame, dets: Detection[]): { changes: WorldChange[]; ids: Map<string, string> };   // ids: 감지 임시 번호(d1…) → 물체 id(cup_1, person)
-  applyScene(frameId: string, capturedAtMs: number, scene: SceneObservation, ids: Map<string, string>): WorldChange[];
-  applyMissing(frameId: string, capturedAtMs: number, why: VlmMissing): WorldChange[];
+  applyScene(frameId: string, capturedAtMs: number, scene: SceneObservation, ids: Map<string, string>): WorldChange[];   // VLM 요약은 바뀔 때만 vlm 변화
+  applyMissing(frameId: string, capturedAtMs: number, m: { yolo?: YoloMissing; vlm?: VlmMissing }): WorldChange[];      // 등장·사라짐 셈에 넣지 않는다
   applyDevice(s: DeviceState, atMs: number): WorldChange[];
   setEye(eye: EyePose | null, atMs: number): void;
   view(nowMs: number): WorldView;
@@ -3100,8 +3452,22 @@ describe("World State", () => {
     w.applyScene("e3", 3000, { scene: "k", observations: [{ object_id: "d1", state: "has_contents" }], summary: "s" }, ids);
     w.applyScene("e2", 2000, { scene: "k", observations: [{ object_id: "d1", state: "empty" }], summary: "s" }, ids);
     expect(w.view(3000).objects[0]!.facts.contents!.value).toBe("has_contents");
-    expect(w.applyMissing("e4", 4000, "cap")[0]).toMatchObject({ kind: "vlm_missing", meaningful: false });
+    expect(w.applyMissing("e4", 4000, { vlm: "cap" })[0]).toMatchObject({ kind: "vlm_missing", meaningful: false, text: "요청이 몰려 VLM 분석 없음" });
     expect(w.view(4000).vlm_missing).toBe(1);
+  });
+  it("VLM 요약은 바뀔 때만 vlm 변화를 낸다", () => {
+    const w = ws();
+    const kinds = (s: string) => w.applyScene("e1", 1000, { scene: "k", observations: [], summary: s }, new Map()).map((c) => c.kind);
+    expect(kinds("컵이 식탁 위")).toEqual(["vlm"]);
+    expect(kinds("컵이 식탁 위")).toEqual([]);
+    expect(kinds("사람이 컵을 듦")).toEqual(["vlm"]);
+  });
+  it("감지 실패·대기열 초과 프레임은 등장·사라짐 셈에 넣지 않고 분석 없음으로 센다", () => {
+    const w = ws();
+    for (let i = 1; i <= 3; i++) w.applyDetections(frame(i), [cup]);
+    for (let i = 4; i <= 6; i++) expect(w.applyMissing(`e${i}`, i * 1000, { yolo: "error" })[0]).toMatchObject({ kind: "yolo_missing", text: "감지 오류로 YOLOX 분석 없음" });
+    expect(w.applyMissing("e7", 7000, { yolo: "cap", vlm: "cap" })[0]).toMatchObject({ kind: "yolo_missing", text: "요청이 몰려 YOLOX·VLM 분석 없음" });
+    expect(w.view(7000)).toMatchObject({ yolo_missing: 4, vlm_missing: 1, objects: [{ status: "present" }] });
   });
   it("맞추기 전(눈 자세 없음)에는 3장 연속 안 보이면 사라짐", () => {
     const w = ws();
@@ -3116,13 +3482,41 @@ describe("World State", () => {
     w.applyDetections(frame(1), [person]);
     expect(w.applyDetections(frame(2), [person]).changes.map((c) => c.kind)).toEqual(["person_appeared"]);
     const ch = w.applyDevice({ id: "dishwasher_1", online: true, twin: { running: true }, matter: {}, updatedAt: "" }, 5000);
-    expect(ch[0]).toMatchObject({ kind: "device", meaningful: true });
-    expect(w.view(5000).devices[0]).toMatchObject({ status: "작동 중", changed_ms: 5000, history: [{ attr: "running", to: true, at_ms: 5000 }] });
+    expect(ch[0]).toMatchObject({ kind: "device", meaningful: true, text: "식기세척기 작동 중" });
+    expect(w.view(5000).devices[0]).toMatchObject({ status: "작동 중", changed_ms: 5000, remaining_min: null, history: [{ attr: "running", to: true, at_ms: 5000 }] });
+  });
+  it("남은 시간은 running이 참이 된 시각과 코스 분으로만 센다", () => {
+    const w = ws();
+    w.applyDevice({ id: "dishwasher_1", online: true, twin: { running: true, course_min: 90 }, matter: {}, updatedAt: "" }, 0);
+    w.applyDevice({ id: "dishwasher_1", online: true, twin: { running: true, course_min: 90 }, matter: {}, updatedAt: "" }, 60_000);
+    expect(w.view(30 * 60_000 + 1).devices[0]).toMatchObject({ started_ms: 0, remaining_min: 60 });
+    w.applyDevice({ id: "dishwasher_1", online: true, twin: { running: false }, matter: {}, updatedAt: "" }, 40 * 60_000);
+    expect(w.view(40 * 60_000).devices[0]).toMatchObject({ started_ms: null, remaining_min: null });
   });
 });
 ```
 
-- [ ] **Step 2: 실패 확인** — `H npx vitest run tests/world-place.test.ts tests/world-state.test.ts` / Expected: FAIL
+```ts
+// tests/world-relations.test.ts
+import { describe, expect, it } from "vitest";
+import { RemainingTracker } from "../src/world/relations.js";
+
+describe("남은 시간", () => {
+  it("코스 시간이 없으면 비워 두고, 끝나면 지운다", () => {
+    const r = new RemainingTracker();
+    r.update("d", { running: true }, 0);
+    expect(r.remainingMin("d", 60_000)).toBeNull();
+    r.update("d", { running: true, course_min: 10 }, 120_000);
+    expect(r.startedAt("d")).toBe(0);
+    expect(r.remainingMin("d", 9 * 60_000 + 1)).toBe(1);
+    expect(r.remainingMin("d", 20 * 60_000)).toBe(0);
+    r.update("d", { running: false }, 30 * 60_000);
+    expect(r.startedAt("d")).toBeNull();
+  });
+});
+```
+
+- [ ] **Step 2: 실패 확인** — `H npx vitest run tests/world-place.test.ts tests/world-state.test.ts tests/world-relations.test.ts` / Expected: FAIL
 - [ ] **Step 3: 구현**
 
 ```ts
@@ -3214,7 +3608,7 @@ export function surfacesFromLayout(objects: readonly { id: string; name: string;
 
 ```ts
 // src/world/relations.ts
-// 관계표(noonchi-server relations·packet을 옮김): 물건 종류 → 관련 가전 종류, 가전 상태 이름. 사실만 붙이고 할 일은 넣지 않는다.
+// 관계표: 물건 종류 → 관련 가전 종류, 가전 상태 이름, 남은 시간(출처: docs/provenance.md). 사실만 붙이고 할 일은 넣지 않는다.
 import type { ObjClass } from "../contract/world.js";
 
 export const RELATIONS: Record<ObjClass, string[]> = { cup: ["dishwasher"], bottle: ["dishwasher"], bowl: ["dishwasher"] };
@@ -3229,15 +3623,40 @@ export function deviceStatus(kind: string, twin: Record<string, unknown>): strin
   const s = DEVICE_STATUS[kind];
   return s ? (twin[s.attr] === true ? s.active : s.inactive) : null;
 }
+
+/** 남은 시간: running이 참이 된 시각(받은 시각)을 시작으로 두고 course_min에서 지난 분을 뺀다. 코스 시간이 없으면 null. */
+export class RemainingTracker {
+  private readonly runs = new Map<string, { started: number; course: number | null }>();
+  private readonly runningAttr: string;
+  private readonly courseAttr: string;
+  constructor(o: { runningAttr?: string; courseAttr?: string } = {}) {
+    this.runningAttr = o.runningAttr ?? "running";
+    this.courseAttr = o.courseAttr ?? "course_min";
+  }
+  update(deviceId: string, twin: Record<string, unknown>, atMs: number): void {
+    if (twin[this.runningAttr] !== true) { this.runs.delete(deviceId); return; }
+    const c = twin[this.courseAttr];
+    const course = typeof c === "number" && Number.isFinite(c) ? c : null;
+    this.runs.set(deviceId, { started: this.runs.get(deviceId)?.started ?? atMs, course });
+  }
+  startedAt(deviceId: string): number | null { return this.runs.get(deviceId)?.started ?? null; }
+  remainingMin(deviceId: string, nowMs: number): number | null {
+    const r = this.runs.get(deviceId);
+    if (!r || r.course === null) return null;
+    return Math.max(0, Math.ceil(r.course - (nowMs - r.started) / 60_000));
+  }
+}
 ```
+`docs/provenance.md`에 줄을 더한다: `| src/world/relations.ts | noonchi-server f8545a1 noonchi/relations.py·packet.py·remaining.py | 물건 → 관련 가전, 가전 상태 이름, 남은 시간(running 시작 시각 + course_min, 코스 없으면 비움) |`.
 
 `src/world/state.ts` 핵심 규칙(구현):
 - 감지 → 물체: 사람은 키 `person` 하나. 물건은 `view`가 있으면 `placeBox`로 위치를 구하고 같은 종류 중 `identityM`(기본 0.25m) 안의 물체에 붙인다. 없으면 새 id `<종류>_<n>`. `view`가 없으면(맞추기 전) 같은 종류의 물체가 하나뿐이면 그것, 아니면 새 물체(위치 null).
 - `Confirmer`(Task 18)로 등장·사라짐을 확인한다. 시야 판단: 프레임에 `view`가 있고 물체 위치가 있으면 `inView(view, position)`. 프레임에 `view`가 없으면(맞추기 전) 모든 물체를 시야 안으로 본다(폰이 한 곳을 비춘다고 본다). `view`는 있는데 물체 위치를 모르면 사라짐을 세지 않는다.
 - 등장 전(셈 중)인 물체도 `ids`에 넣어 VLM 사실을 받는다. 등장 확인 전에는 `view()`에 내지 않는다.
-- 상태: `FACET` 표 `{ on_table|on_counter|in_sink|on_floor|in_hand: "place", in_use: "use", empty|has_contents|contents_unknown: "contents", sitting|standing: "posture", holding_object|eating_or_drinking: "action" }`. `not_visible`은 사실로 두지 않는다. 같은 면의 기존 사실보다 `capturedAtMs`가 오래된 답은 버린다. 같은 값이 연속 두 번이면 `confirmed`, 아니면 `inferred`. 값이 바뀌면 `state` 변화(meaningful true), VLM 요약은 `vlm` 변화(meaningful false).
-- 가전: `applyDevice`는 이전 twin 값과 비교해 바뀐 attr마다 이력(최근 20개)을 쌓고 `device` 변화를 낸다. meaningful은 관계표에 든 종류일 때 true.
-- 변화 글은 `src/world/labels.ts`의 함수로 만든다:
+- 상태: `FACET` 표 `{ on_table|on_counter|in_sink|on_floor|in_hand: "place", in_use: "use", empty|has_contents|contents_unknown: "contents", sitting|standing: "posture", holding_object|eating_or_drinking: "action" }`. `not_visible`은 사실로 두지 않는다. 같은 면의 기존 사실보다 `capturedAtMs`가 오래된 답은 버린다. 같은 값이 연속 두 번이면 `confirmed`, 아니면 `inferred`. 값이 바뀌면 `state` 변화(meaningful true). VLM 요약은 직전 요약과 글이 다를 때만 `vlm` 변화(meaningful false)를 낸다.
+- 분석 없음: `applyMissing`은 `vlm_missing`·`yolo_missing` 셈을 늘리고 변화(meaningful false) 하나를 낸다. 글은 `{ yolo: "cap" }`이면 `CHANGE_TEXT.yoloMissing.cap`, `{ yolo: "error" }`이면 `CHANGE_TEXT.yoloMissing.error`, VLM만이면 `CHANGE_TEXT.vlmMissing[why]`. `Confirmer`를 부르지 않으므로 물체·사람 상태는 그대로다.
+- 가전: `applyDevice`는 이전 twin 값과 비교해 바뀐 attr마다 이력(최근 20개)을 쌓고 `device` 변화를 낸다. meaningful은 관계표에 든 종류일 때 true. `RemainingTracker.update`를 함께 불러 `view()`의 `started_ms`·`remaining_min`을 채운다. 변화 글은 상태 이름이 있으면 `CHANGE_TEXT.device(label, status)`, 없으면 `CHANGE_TEXT.deviceAttr(label, attr, to)`.
+- 변화 글은 `src/world/labels.ts`의 함수로 만든다(화면 글 규칙: 화살표·괄호 덧붙임 없음):
 
 ```ts
 // src/world/labels.ts (Task 15 파일에 더한다)
@@ -3253,18 +3672,22 @@ export const CHANGE_TEXT = {
   personAppeared: "사람 보임",
   personGone: "사람 안 보임",
   state: (name: string, value: string) => `${name} ${STATE_TEXT[value] ?? value}`,
-  device: (label: string, attr: string, from: unknown, to: unknown) => `${label} ${attr} ${String(from)} → ${String(to)}`,
+  device: (label: string, status: string) => `${label} ${status}`,
+  deviceAttr: (label: string, attr: string, to: unknown) => `${label} ${attr} ${String(to)}`,
+  remaining: (min: number) => `남은 시간 ${min}분`,
   vlm: (summary: string) => `VLM: ${summary}`,
-  vlmMissing: { cap: "VLM 분석 없음(동시 요청 상한)", timeout: "VLM 분석 없음(시간 초과)", format: "VLM 분석 없음(형식 오류)", error: "VLM 분석 없음(호출 오류)" },
+  vlmMissing: { cap: "요청이 몰려 VLM 분석 없음", timeout: "시간 초과로 VLM 분석 없음", format: "형식 오류로 VLM 분석 없음", error: "호출 오류로 VLM 분석 없음" },
+  yoloMissing: { cap: "요청이 몰려 YOLOX·VLM 분석 없음", error: "감지 오류로 YOLOX 분석 없음" },
 };
 export const objectName = (cls: string, id: string) => `${OBJECT_NAME[cls] ?? cls}(${id})`;
 ```
+`tests/lint-ui-copy.test.ts`에 「`src/world/labels.ts` 글이 화면 글 검사를 통과한다」(`lintUiCopy([labels])`가 빈 배열)를 더한다.
 
-- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/world-place.test.ts tests/world-state.test.ts tests/contract.test.ts` 그리고 `H npm --prefix ui test` / Expected: PASS
+- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/world-place.test.ts tests/world-state.test.ts tests/world-relations.test.ts tests/contract.test.ts tests/lint-ui-copy.test.ts tests/self-contained.test.ts`, `H npm run lint`, 그리고 `H npm --prefix ui test` / Expected: PASS
 - [ ] **Step 5: 커밋**
 
 ```bash
-git add src/contract/world.ts src/contract/events.ts src/world/place.ts src/world/relations.ts src/world/state.ts src/world/labels.ts ui/src/lib/messages.ts tests/world-place.test.ts tests/world-state.test.ts
+git add src/contract/world.ts src/contract/events.ts src/world/place.ts src/world/relations.ts src/world/state.ts src/world/labels.ts ui/src/lib/messages.ts tests/world-place.test.ts tests/world-state.test.ts tests/world-relations.test.ts tests/lint-ui-copy.test.ts docs/provenance.md
 git commit -m "feat: merge YOLOX and VLM results per object into a World State with twin positions, relations and device history"
 ```
 
@@ -3272,8 +3695,8 @@ git commit -m "feat: merge YOLOX and VLM results per object into a World State w
 
 **Files:**
 - Create: `src/observe/pipeline.ts`, `tests/observe-pipeline.test.ts`
-- Modify: `src/server/home.ts`(BRAIN=1이면 `ObservationPipeline`), `src/phone/server.ts`(`onFrame`·`onPhoto` 지움), `tests/phone-server.test.ts`, `src/server/app.ts`(`/api/brain` → 파이프라인 상태, 접속 때 World State 보냄), `src/contract/events.ts`(`BrainLog`를 새 모양으로), `src/plan/hub.ts`(컵 두뇌 이벤트 처리 지움), `tests/plan-hub.test.ts`, `ui/src/chat/turns.ts`, `ui/src/chat/labels.ts`, `ui/tests/turns.test.ts`, `ui/tests/decision-log.test.tsx`, `docs/reference.md`
-- Delete: `src/brain/brain.ts`, `src/brain/machine.ts`, `src/brain/loop.ts`, `src/brain/presence.ts`, `src/brain/window.ts`, `src/brain/live.ts`, `src/brain/config.ts`, `src/brain/perception.ts`, `scripts/brain-replay.ts`, `tests/brain-machine.test.ts`, `tests/brain-runner.test.ts`, `tests/brain-fusion.test.ts`, `tests/brain-gate.test.ts`, `tests/brain-presence.test.ts`, `tests/brain-perception.test.ts`, `tests/brain-live.test.ts`, `tests/helpers/perceivers.ts`
+- Modify: `src/server/home.ts`(BRAIN=1이면 `ObservationPipeline`, `surfacesFrom` 대신 `surfacesFromLayout`), `src/server/start.ts`(`CreateLiveBrainOptions` 대신 `StartServerOptions.brain`을 파이프라인 주입 `{ detector?, vlm?, clock? }`로), `src/phone/server.ts`(`onFrame`·`onPhoto` 지움), `tests/phone-server.test.ts`, `src/server/app.ts`(`/api/brain` → 파이프라인 상태, 접속 때 World State 보냄), `src/contract/events.ts`(`BrainLog`를 새 모양으로, `BrainStage`·`BrainState`·`BrainEvent`·`PerceptionLog`·`PresenceLog` 지움), `src/brain/decision.ts`(`perception.ts`의 `Contents` 대신 이 파일에 `type Contents`를 둔다), `src/plan/hub.ts`(컵 두뇌 이벤트 처리 지움), `src/plan/labels.ts`(`JUDGMENT`·`ASK_JUDGMENT`와 `BrainStage` import 지움), `tests/plan-hub.test.ts`, `ui/src/chat/turns.ts`, `ui/src/chat/labels.ts`(`BRAIN_STATE`·`BRAIN_STAGE` 대신 새 기록 글), `ui/src/chat/DecisionLog.tsx`(`LINE_ICON`의 두뇌 단계 표시를 새 기록 종류로, 「컵 지켜보기」 이름을 「클로이드 · 관찰과 판단」으로), `ui/src/checks/checks.ts`(`noteOf`를 새 `observe` 기록으로), `ui/tests/turns.test.ts`, `ui/tests/decision-log.test.tsx`, `ui/tests/checks.test.ts`, `ui/tests/use-checks.test.tsx`, `docs/reference.md`
+- Delete: `src/brain/brain.ts`, `src/brain/machine.ts`, `src/brain/loop.ts`, `src/brain/presence.ts`, `src/brain/window.ts`, `src/brain/live.ts`, `src/brain/config.ts`, `src/brain/perception.ts`, `tests/brain-machine.test.ts`, `tests/brain-runner.test.ts`, `tests/brain-fusion.test.ts`, `tests/brain-gate.test.ts`, `tests/brain-presence.test.ts`, `tests/brain-perception.test.ts`, `tests/brain-live.test.ts`, `tests/helpers/perceivers.ts`
 
 **Interfaces:**
 - Consumes: Task 16~20의 모든 것, `WorkerDetector`, `VlmClient`
@@ -3281,20 +3704,29 @@ git commit -m "feat: merge YOLOX and VLM results per object into a World State w
 
 ```ts
 // src/contract/events.ts
+// 한 엔진 프레임은 observe 기록으로 반드시 남는다: YOLOX 결과(yolo) 또는 yolo_missing, VLM 답(vlm) 또는 vlm_missing.
 export type BrainLog =
-  | { type: "observe"; at_ms: number; frame_id: string; captured_at_ms: number; yolo: string; vlm: string | null; vlm_missing?: VlmMissing }
+  | { type: "observe"; at_ms: number; frame_id: string; captured_at_ms: number; yolo: string | null; yolo_missing?: YoloMissing; vlm: string | null; vlm_missing?: VlmMissing }
   | { type: "world_change"; at_ms: number; kind: WorldChangeKind; text: string }
-  | { type: "decision"; at_ms: number; id: string; text_sent: string; status: "valid" | "failed"; prediction: { observation: string; reasoning: string; task_index: number } | null; action: string | null; error?: string; memory_version: number }
-  | { type: "execution"; at_ms: number; plan_id: string; state: ExecState; text: string };
+  | { type: "decision"; at_ms: number; id: string; seq: number; text_sent: string; status: "valid" | "failed"; prediction: { observation: string; reasoning: string; task_index: number } | null; action: string | null; error?: string; memory_version: number; world: DecisionWorld }
+  | { type: "execution"; at_ms: number; plan_id: string; state: ExecState; text: string }
+  | { type: "link"; at_ms: number; target: "pam"; up: boolean; text: string }
+  | { type: "trigger"; at_ms: number; paused: boolean; text: string }
+  | { type: "reflection"; at_ms: number; day: string; ok: boolean; version: number | null; applies_day: string | null; text: string };
 export type ExecState = "decided" | "planned" | "running" | "verifying" | "done" | "failed";
+/** 판단에 쓴 World State 요약(판단 기록 화면이 펼쳐 보인다). */
+export interface DecisionWorld {
+  objects: { id: string; cls: string; status: string; surface: string | null; error_m: number | null; facts: Record<string, { value: string; certainty: "confirmed" | "inferred" }> }[];
+  person_visible: boolean; vlm_missing: number; yolo_missing: number;
+}
 // src/observe/pipeline.ts
-export interface ObserveConfig { engineMs: number; vlmMaxInflight: number; vlmTimeoutMs: number; keepMs: number }
-export function loadObserveConfig(env): ObserveConfig;   // ENGINE_FRAME_MS(1000), VLM_MAX_INFLIGHT(4), VLM_TIMEOUT_MS(20000)
+export interface ObserveConfig { engineMs: number; vlmMaxInflight: number; vlmTimeoutMs: number; detectQueueMax: number; keepMs: number }
+export function loadObserveConfig(env): ObserveConfig;   // ENGINE_FRAME_MS(1000), VLM_MAX_INFLIGHT(4), VLM_TIMEOUT_MS(20000, vlmTimeoutMs), DETECT_QUEUE_MAX(8)
 export class ObservationPipeline {
   constructor(o: { config: ObserveConfig; detector: Detector | null; vlm: VlmClient; world: WorldState; emit: (log: BrainLog) => void; broadcastWorld: (w: WorldView) => void; onChanges?: (c: WorldChange[]) => void; clock?: { now(): number } });
   onEngine(jpeg: Buffer, header: FrameHeader, eye: EyeEvent | null, view: CameraView | null, receivedAtMs: number): void;
   onDevice(s: DeviceState): void;
-  status(): { frames: number; duplicates: number; detected: number; detect_ms: number | null; vlm: ReturnType<VlmPool["stats"]>; time_source: "phone" | "received" | null };
+  status(): { frames: number; duplicates: number; detected: number; detect_ms: number | null; queued: number; yolo_missing: Record<YoloMissing, number>; vlm: ReturnType<VlmPool["stats"]>; time_source: "phone" | "received" | null };
   idle(): Promise<void>;
   close(): Promise<void>;
 }
@@ -3324,7 +3756,7 @@ describe("관찰 흐름", () => {
     const logs: BrainLog[] = [];
     const worlds: WorldView[] = [];
     const p = new ObservationPipeline({
-      config: { engineMs: 1000, vlmMaxInflight: 4, vlmTimeoutMs: 5000, keepMs: 20_000 },
+      config: { engineMs: 1000, vlmMaxInflight: 4, vlmTimeoutMs: 5000, detectQueueMax: 8, keepMs: 20_000 },
       detector: new ScriptedDetector(() => [{ label: "cup", score: 0.9, cls: 41, box: [220, 160, 40, 20] }]),
       vlm: new VlmClient({ baseUrl: `${fake.url}/v1`, model: "m", apiKey: "", extraBody: {} }),
       world: new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }),
@@ -3344,41 +3776,86 @@ describe("관찰 흐름", () => {
   it("VLM 상한을 넘은 프레임은 VLM 분석 없음으로 기록한다", async () => {
     const logs: BrainLog[] = [];
     const hang = { json: () => new Promise(() => {}) } as unknown as VlmClient;
-    const p = new ObservationPipeline({ config: { engineMs: 1000, vlmMaxInflight: 1, vlmTimeoutMs: 60_000, keepMs: 20_000 }, detector: null, vlm: hang,
+    const p = new ObservationPipeline({ config: { engineMs: 1000, vlmMaxInflight: 1, vlmTimeoutMs: 60_000, detectQueueMax: 8, keepMs: 20_000 }, detector: null, vlm: hang,
       world: new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }), emit: (l) => logs.push(l), broadcastWorld: () => {} });
     p.onEngine(jpeg(1), { kind: "engine", width: 1, height: 1 }, null, null, 1000);
     p.onEngine(jpeg(2), { kind: "engine", width: 1, height: 1 }, null, null, 2000);
     expect(logs.filter((l) => l.type === "observe" && l.vlm_missing === "cap")).toHaveLength(1);
     await p.close();
   });
+
+  it("감지기가 느려도 앞 프레임을 덮어쓰지 않고, 대기열을 넘친 프레임은 YOLOX·VLM 분석 없음으로 남긴다", async () => {
+    fake = await startFakeOpenAI();
+    const logs: BrainLog[] = [];
+    const slow = { detect: () => new Promise<{ detections: []; ms: number }>((ok) => setTimeout(() => ok({ detections: [], ms: 30 }), 30)), close: async () => {} } as unknown as Detector;
+    const p = new ObservationPipeline({ config: { engineMs: 200, vlmMaxInflight: 4, vlmTimeoutMs: 5000, detectQueueMax: 3, keepMs: 20_000 }, detector: slow,
+      vlm: new VlmClient({ baseUrl: `${fake.url}/v1`, model: "m", apiKey: "", extraBody: {} }),
+      world: new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }), emit: (l) => logs.push(l), broadcastWorld: () => {} });
+    for (let i = 1; i <= 10; i++) p.onEngine(jpeg(i), { kind: "engine", width: 1, height: 1, captured_at: i * 10, time_err_ms: 0 }, null, null, i * 10 + 1);
+    await p.idle();
+    const observed = logs.filter((l): l is Extract<BrainLog, { type: "observe" }> => l.type === "observe");
+    const ids = new Set(observed.map((l) => l.frame_id));
+    expect([...ids].sort()).toEqual(Array.from({ length: 10 }, (_, i) => `e${i + 1}`).sort());       // 기록 없이 사라진 프레임이 없다
+    const capped = observed.filter((l) => l.yolo_missing === "cap");
+    expect(capped.length).toBeGreaterThan(0);
+    expect(capped.every((l) => l.vlm_missing === "cap")).toBe(true);
+    expect(observed.filter((l) => l.yolo !== null).length + capped.length).toBe(10);               // 나머지는 모두 YOLOX를 거쳤다
+    expect(p.status().yolo_missing.cap).toBe(capped.length);
+    await p.close();
+  });
+
+  it("감지가 실패한 프레임은 물체를 사라짐으로 세지 않고 YOLOX 분석 없음으로 남기며, VLM은 그 프레임도 분석한다", async () => {
+    fake = await startFakeOpenAI();
+    const logs: BrainLog[] = [];
+    let fail = false;
+    const det = { detect: async () => { if (fail) throw new Error("onnx"); return { detections: [{ label: "cup", score: 0.9, cls: 41, box: [220, 160, 40, 20] }], ms: 1 }; }, close: async () => {} } as unknown as Detector;
+    const world = new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] });
+    const p = new ObservationPipeline({ config: { engineMs: 1000, vlmMaxInflight: 4, vlmTimeoutMs: 5000, detectQueueMax: 8, keepMs: 20_000 }, detector: det,
+      vlm: new VlmClient({ baseUrl: `${fake.url}/v1`, model: "m", apiKey: "", extraBody: {} }), world, emit: (l) => logs.push(l), broadcastWorld: () => {} });
+    for (let i = 1; i <= 3; i++) p.onEngine(jpeg(i), { kind: "engine", width: 1, height: 1, captured_at: i * 1000, time_err_ms: 0 }, null, null, i * 1000);
+    await p.idle();
+    fail = true;
+    for (let i = 4; i <= 7; i++) p.onEngine(jpeg(i), { kind: "engine", width: 1, height: 1, captured_at: i * 1000, time_err_ms: 0 }, null, null, i * 1000);
+    await p.idle();
+    expect(world.view(7000).objects[0]).toMatchObject({ cls: "cup", status: "present" });
+    expect(logs.filter((l) => l.type === "observe" && l.yolo_missing === "error")).toHaveLength(4);
+    expect(fake.requests.filter((r) => r.path.endsWith("/chat/completions"))).toHaveLength(7);
+    await p.close();
+  });
 });
 ```
+(`Detector` 타입은 `../src/brain/detector.js`에서 가져온다.)
 `tests/plan-server.test.ts`·`tests/start.test.ts`에서 `BRAIN=1` 시작 시험은 파이프라인(`inject.detector`·`inject.vlm` 가짜 서버)으로 바꾼다. 분석한 엔진 프레임이 디스크에 남지 않는지 G4 Task 27에서 본다.
 
 - [ ] **Step 2: 실패 확인** — `H npx vitest run tests/observe-pipeline.test.ts` / Expected: FAIL
 - [ ] **Step 3: 구현** (`src/observe/pipeline.ts`)
 
 ```ts
-// 관찰 흐름(BRAIN=1): 엔진 프레임 → 고리(중복 버림) → YOLOX(워커, 하나씩·최신 우선) → VLM(동시 요청) → World State → /events.
+// 관찰 흐름(BRAIN=1): 엔진 프레임 → 고리(중복 버림) → YOLOX(워커, 상한 있는 대기열에서 하나씩) → VLM(동시 요청) → World State → /events.
+// 프레임마다 observe 기록이 반드시 남는다: 대기열이 차면 YOLOX·VLM 분석 없음, 감지 실패면 YOLOX 분석 없음(VLM은 그대로 분석).
 // 분석한 사진은 메모리 고리에만 있다. 디스크에 쓰지 않는다.
 import type { BrainLog } from "../contract/events.js";
-import type { WorldChange, WorldView } from "../contract/world.js";
+import type { WorldChange, WorldView, YoloMissing } from "../contract/world.js";
 import type { DeviceState } from "../hub/types.js";
 import type { Detection, Detector } from "../brain/detector.js";
+import { vlmTimeoutMs } from "../infer/endpoints.js";
 import type { VlmClient } from "../infer/vlm.js";
 import type { FrameHeader } from "../phone/packet.js";
 import type { CameraView, EyeEvent } from "../phone/session.js";
-import { CHANGE_TEXT, OBJECT_NAME } from "../world/labels.js";
+import { OBJECT_NAME } from "../world/labels.js";
 import type { WorldState } from "../world/state.js";
 import { captureTime, FrameRing, sha256, type EngineFrame } from "./ring.js";
 import { analyzeScene, type SceneDetection } from "./scene.js";
 import { VlmPool } from "./vlm-pool.js";
 
-export interface ObserveConfig { engineMs: number; vlmMaxInflight: number; vlmTimeoutMs: number; keepMs: number }
+export interface ObserveConfig { engineMs: number; vlmMaxInflight: number; vlmTimeoutMs: number; detectQueueMax: number; keepMs: number }
 const int = (raw: string | undefined, d: number, min: number) => { const v = Number(raw); return raw?.trim() && Number.isFinite(v) && v >= min ? Math.floor(v) : d; };
 export const loadObserveConfig = (env: Record<string, string | undefined>): ObserveConfig => ({
-  engineMs: int(env.ENGINE_FRAME_MS, 1000, 200), vlmMaxInflight: int(env.VLM_MAX_INFLIGHT, 4, 1), vlmTimeoutMs: int(env.VLM_TIMEOUT_MS, 20_000, 1000), keepMs: 20_000,
+  engineMs: int(env.ENGINE_FRAME_MS, 1000, 200), vlmMaxInflight: int(env.VLM_MAX_INFLIGHT, 4, 1), vlmTimeoutMs: vlmTimeoutMs(env),
+  detectQueueMax: int(env.DETECT_QUEUE_MAX, 8, 1), keepMs: 20_000,
 });
+/** World State 변화 중 프레임마다 생기는 분석 없음은 observe 기록으로 남기므로 world_change로 다시 보내지 않는다. */
+const PER_FRAME = new Set(["vlm_missing", "yolo_missing"]);
 
 const yoloText = (dets: Detection[]) => dets.length ? dets.map((d) => `${OBJECT_NAME[d.label] ?? d.label} ${d.score.toFixed(2)}`).join(" · ") : "감지 없음";
 
@@ -3387,11 +3864,12 @@ export class ObservationPipeline {
   private readonly pool: VlmPool;
   private readonly clock: { now(): number };
   private readonly idsOf = new Map<string, Map<string, string>>();
-  private job: EngineFrame | null = null;
+  private readonly queue: EngineFrame[] = [];
   private detecting: Promise<void> | null = null;
   private seq = 0;
   private frames = 0;
   private detected = 0;
+  private readonly yoloMissing: Record<YoloMissing, number> = { cap: 0, error: 0 };
   private detectMs: number[] = [];
   private timeSource: "phone" | "received" | null = null;
   private closed = false;
@@ -3401,11 +3879,11 @@ export class ObservationPipeline {
     this.ring = new FrameRing(o.config.keepMs);
     this.pool = new VlmPool({
       maxInflight: o.config.vlmMaxInflight, timeoutMs: o.config.vlmTimeoutMs,
-      analyze: (f, d) => analyzeScene(o.vlm, f, d),
+      analyze: (f, d, signal) => analyzeScene(o.vlm, f, d, signal),
       onResult: (r) => {
         const ids = this.idsOf.get(r.frameId) ?? new Map<string, string>();
-        const changes = r.scene ? o.world.applyScene(r.frameId, r.capturedAtMs, r.scene, ids) : o.world.applyMissing(r.frameId, r.capturedAtMs, r.missing!);
-        o.emit({ type: "observe", at_ms: this.clock.now(), frame_id: r.frameId, captured_at_ms: r.capturedAtMs, yolo: "", vlm: r.scene?.summary ?? null, ...(r.missing ? { vlm_missing: r.missing } : {}) });
+        const changes = r.scene ? o.world.applyScene(r.frameId, r.capturedAtMs, r.scene, ids) : o.world.applyMissing(r.frameId, r.capturedAtMs, { vlm: r.missing! });
+        o.emit({ type: "observe", at_ms: this.clock.now(), frame_id: r.frameId, captured_at_ms: r.capturedAtMs, yolo: null, vlm: r.scene?.summary ?? null, ...(r.missing ? { vlm_missing: r.missing } : {}) });
         this.publish(changes);
       },
     });
@@ -3413,7 +3891,7 @@ export class ObservationPipeline {
 
   private publish(changes: WorldChange[]): void {
     if (this.closed) return;
-    for (const c of changes) if (c.kind !== "vlm") this.o.emit({ type: "world_change", at_ms: this.clock.now(), kind: c.kind, text: c.text });
+    for (const c of changes) if (!PER_FRAME.has(c.kind)) this.o.emit({ type: "world_change", at_ms: this.clock.now(), kind: c.kind, text: c.text });
     if (changes.length) { this.o.onChanges?.(changes); this.o.broadcastWorld(this.o.world.view(this.clock.now())); }
   }
 
@@ -3426,32 +3904,49 @@ export class ObservationPipeline {
     this.frames++;
     this.o.world.setEye(eye, t.atMs);
     if (!this.o.detector) { this.analyze(frame, []); return; }
-    this.job = frame;
+    if (this.queue.length >= this.o.config.detectQueueMax) { this.overflow(frame); return; }
+    this.queue.push(frame);
     if (!this.detecting) this.detecting = this.drain().finally(() => { this.detecting = null; });
   }
 
-  private analyze(frame: EngineFrame, dets: Detection[]): void {
-    const { changes, ids } = this.o.world.applyDetections(frame, dets);
-    this.idsOf.set(frame.id, ids);
+  /** 대기열이 찬 프레임: YOLOX·VLM 둘 다 분석하지 못한 것으로 남긴다. */
+  private overflow(frame: EngineFrame): void {
+    this.yoloMissing.cap++;
+    this.o.emit({ type: "observe", at_ms: this.clock.now(), frame_id: frame.id, captured_at_ms: frame.capturedAtMs, yolo: null, yolo_missing: "cap", vlm: null, vlm_missing: "cap" });
+    this.publish(this.o.world.applyMissing(frame.id, frame.capturedAtMs, { yolo: "cap", vlm: "cap" }));
+  }
+
+  /** YOLOX 결과(실패면 null)를 World State에 넣고 같은 프레임을 VLM에 보낸다. */
+  private analyze(frame: EngineFrame, dets: Detection[] | null): void {
+    if (dets) {
+      const { changes, ids } = this.o.world.applyDetections(frame, dets);
+      this.idsOf.set(frame.id, ids);
+      this.publish(changes);
+      this.o.emit({ type: "observe", at_ms: this.clock.now(), frame_id: frame.id, captured_at_ms: frame.capturedAtMs, yolo: yoloText(dets), vlm: null });
+    } else {
+      this.yoloMissing.error++;
+      this.idsOf.set(frame.id, new Map());
+      this.o.emit({ type: "observe", at_ms: this.clock.now(), frame_id: frame.id, captured_at_ms: frame.capturedAtMs, yolo: null, yolo_missing: "error", vlm: null });
+      this.publish(this.o.world.applyMissing(frame.id, frame.capturedAtMs, { yolo: "error" }));
+    }
     for (const k of this.idsOf.keys()) if (!this.ring.get(k)) this.idsOf.delete(k);
-    this.publish(changes);
-    const sceneDets: SceneDetection[] = dets.map((d, i) => ({ id: `d${i + 1}`, class: d.label, box: d.box, score: d.score }));
-    if (this.pool.submit(frame, sceneDets) === "skipped") return;
-    this.o.emit({ type: "observe", at_ms: this.clock.now(), frame_id: frame.id, captured_at_ms: frame.capturedAtMs, yolo: yoloText(dets), vlm: null });
+    const sceneDets: SceneDetection[] = (dets ?? []).map((d, i) => ({ id: `d${i + 1}`, class: d.label, box: d.box, score: d.score }));
+    this.pool.submit(frame, sceneDets);   // 상한을 넘으면 풀이 VLM 분석 없음(cap)을 onResult로 낸다
   }
 
   private async drain(): Promise<void> {
-    while (this.job && !this.closed) {
-      const frame = this.job;
-      this.job = null;
+    while (this.queue.length && !this.closed) {
+      const frame = this.queue.shift()!;
+      let dets: Detection[] | null;
       try {
         const r = await this.o.detector!.detect(frame.jpeg);
         this.detected++;
         this.detectMs = [...this.detectMs.slice(-49), r.ms];
-        this.analyze(frame, r.detections);
+        dets = r.detections;
       } catch {
-        this.analyze(frame, []);
+        dets = null;
       }
+      if (!this.closed) this.analyze(frame, dets);
     }
   }
 
@@ -3460,7 +3955,7 @@ export class ObservationPipeline {
   status() {
     return { frames: this.frames, duplicates: this.ring.dropped, detected: this.detected,
       detect_ms: this.detectMs.length ? Math.round(this.detectMs.reduce((a, b) => a + b, 0) / this.detectMs.length) : null,
-      vlm: this.pool.stats(), time_source: this.timeSource };
+      queued: this.queue.length, yolo_missing: { ...this.yoloMissing }, vlm: this.pool.stats(), time_source: this.timeSource };
   }
 
   async idle(): Promise<void> { while (this.detecting) await this.detecting; await this.pool.idle(); }
@@ -3469,13 +3964,13 @@ export class ObservationPipeline {
     if (this.closed) return;
     this.closed = true;
     this.pool.stop();
-    this.job = null;
+    this.queue.length = 0;
     await this.o.detector?.close?.();
     await this.detecting?.catch(() => {});
   }
 }
 ```
-`observe` 기록은 YOLOX 결과를 VLM에 보낼 때 한 줄(`vlm: null`), VLM 답이나 분석 없음이 올 때 한 줄(`yolo: ""`)이다.
+`observe` 기록: YOLOX 결과는 한 줄(`yolo` 글, `vlm: null`), VLM 답이나 VLM 분석 없음은 한 줄(`yolo: null`), 감지 실패는 `yolo_missing: "error"` 한 줄, 대기열 초과는 `yolo_missing: "cap"`·`vlm_missing: "cap"` 한 줄이다. 프레임 번호가 observe 기록에 없는 프레임은 없다.
 
 `createPipeline`: `loadObserveConfig(env)`, 감지기는 지금 `createLiveBrain`의 감지기 만들기(`BRAIN_DETECTOR`, `BRAIN_YOLO_PATH`, `BRAIN_YOLO_THREADS`, 파일 없으면 경고)를 그대로 옮긴다. VLM은 `createInference(env).vlm`.
 
@@ -3485,25 +3980,28 @@ export class ObservationPipeline {
 
 `src/plan/hub.ts`: `onDashboard`·`onBrain`과 컵 계획 분기를 지우고 `onAgent`·`onEye`·`put`·`setStep`만 남긴다(G5가 판단 계획을 더한다). `tests/plan-hub.test.ts`의 두뇌 이벤트 시험을 지운다.
 
-`ui/src/chat/turns.ts`: `onBrain`을 새 `BrainLog`로 바꾼다 — `observe`(VLM 줄)는 지금 턴의 `now.seen`을 `vlm ?? labels.vlmMissing[vlm_missing]`로 갈아 끼우고, `world_change`는 단계 줄로 쌓고, `decision`은 판단 줄(행동 이름 또는 대기, 이유)을 쌓는다. 글은 `ui/src/chat/labels.ts`에 둔다. `ui/tests/turns.test.ts`·`decision-log.test.tsx`의 컵 두뇌 이벤트 시험을 새 기록으로 바꾼다.
+`ui/src/chat/turns.ts`: `onBrain`을 새 `BrainLog`로 바꾼다 — `observe`는 지금 턴의 `now.seen`을 YOLOX 글로, `now.judged`를 `vlm ?? labels.vlmMissing[vlm_missing] ?? labels.yoloMissing[yolo_missing]`로 갈아 끼우고, `world_change`는 단계 줄로 쌓고, `decision`은 판단 줄(행동 이름 또는 대기, 이유)을 쌓는다. `link`·`trigger`는 단계 줄 하나다. 글은 `ui/src/chat/labels.ts`에 두고(괄호 없이: 「요청이 몰려 VLM 분석 없음」, 「시간 초과로 VLM 분석 없음」, 「형식 오류로 VLM 분석 없음」, 「호출 오류로 VLM 분석 없음」, 「요청이 몰려 YOLOX·VLM 분석 없음」, 「감지 오류로 YOLOX 분석 없음」) `BRAIN_STATE`·`BRAIN_STAGE`는 지운다. `ui/src/chat/DecisionLog.tsx`: `LINE_ICON`의 옛 두뇌 단계 키(use·away·request…)를 새 기록 종류(observe·world_change·decision·execution·link·trigger)로 바꾸고, `WHO.brain`을 「클로이드 · 관찰과 판단」으로 한다. `ui/src/checks/checks.ts` `noteOf`: `observe` 기록의 `yolo` 글(감지 없음이면 「감지 없음」)을 확인 목록의 메모로 쓴다(`presence`·`perception`을 지운다). `ui/tests/turns.test.ts`·`decision-log.test.tsx`·`checks.test.ts`·`use-checks.test.tsx`의 컵 두뇌 기록을 새 기록으로 바꾼다. 말풍선 규칙 시험(`bubble-layer.test.tsx`·`checks.test.ts`)은 이 Task에서 통과해야 한다.
 
-`docs/reference.md` 「상위 판단」 절을 「관찰 흐름」으로 다시 쓰고 `ENGINE_FRAME_MS`·`VLM_MAX_INFLIGHT`·`VLM_TIMEOUT_MS`를 환경 변수 표에 둔다(지운 `BRAIN_*` 줄은 뺀다).
+`src/brain/decision.ts`: `import type { Contents } from "./perception.js"`를 지우고 `export type Contents = "empty" | "not_empty" | "unknown"`(지금 perception.ts 26줄 정의)을 둔다. `src/plan/labels.ts`: `JUDGMENT`·`ASK_JUDGMENT`와 `BrainStage` import를 지운다(이 파일은 Task 28·29가 다시 채운다). `src/server/start.ts`: `CreateLiveBrainOptions` import를 지우고 `StartServerOptions.brain`을 `{ detector?: Detector | null; vlm?: VlmClient; clock?: { now(): number } }`로 바꿔 `createPipeline`의 `inject`로 넘긴다.
+
+`docs/reference.md` 「상위 판단」 절을 「관찰 흐름」으로 다시 쓰고 `ENGINE_FRAME_MS`·`VLM_MAX_INFLIGHT`·`VLM_TIMEOUT_MS`·`DETECT_QUEUE_MAX`를 환경 변수 표에 둔다(지운 `BRAIN_*` 줄은 뺀다). `.env.example`에 `DETECT_QUEUE_MAX=`.
 
 - [ ] **Step 4: 통과 확인**
 
 ```
-H npx vitest run tests/observe-pipeline.test.ts tests/plan-hub.test.ts tests/plan-server.test.ts tests/start.test.ts tests/e2e.test.ts
+H npx vitest run tests/observe-pipeline.test.ts tests/plan-hub.test.ts tests/plan-server.test.ts tests/start.test.ts tests/e2e.test.ts tests/phone-server.test.ts tests/self-contained.test.ts
 H npm --prefix ui test
 H npx tsc --noEmit
+H npm --prefix ui run typecheck
 H npm run lint
 ```
-Expected: PASS
+Expected: PASS(화면 시험의 `checks.test.ts`·`bubble-layer.test.tsx` 포함)
 
 - [ ] **Step 5: 커밋**
 
 ```bash
-git add src/observe/pipeline.ts src/server/home.ts src/phone/server.ts tests/phone-server.test.ts src/server/app.ts src/contract/events.ts src/plan/hub.ts tests/observe-pipeline.test.ts tests/plan-hub.test.ts tests/plan-server.test.ts tests/start.test.ts ui/src/chat/turns.ts ui/src/chat/labels.ts ui/tests/turns.test.ts ui/tests/decision-log.test.tsx docs/reference.md
-git rm src/brain/brain.ts src/brain/machine.ts src/brain/loop.ts src/brain/presence.ts src/brain/window.ts src/brain/live.ts src/brain/config.ts src/brain/perception.ts scripts/brain-replay.ts tests/brain-machine.test.ts tests/brain-runner.test.ts tests/brain-fusion.test.ts tests/brain-gate.test.ts tests/brain-presence.test.ts tests/brain-perception.test.ts tests/brain-live.test.ts tests/helpers/perceivers.ts
+git add src/observe/pipeline.ts src/server/home.ts src/server/start.ts src/phone/server.ts tests/phone-server.test.ts src/server/app.ts src/contract/events.ts src/brain/decision.ts src/plan/hub.ts src/plan/labels.ts tests/observe-pipeline.test.ts tests/plan-hub.test.ts tests/plan-server.test.ts tests/start.test.ts ui/src/chat/turns.ts ui/src/chat/labels.ts ui/src/chat/DecisionLog.tsx ui/src/checks/checks.ts ui/tests/turns.test.ts ui/tests/decision-log.test.tsx ui/tests/checks.test.ts ui/tests/use-checks.test.tsx docs/reference.md .env.example
+git rm src/brain/brain.ts src/brain/machine.ts src/brain/loop.ts src/brain/presence.ts src/brain/window.ts src/brain/live.ts src/brain/config.ts src/brain/perception.ts tests/brain-machine.test.ts tests/brain-runner.test.ts tests/brain-fusion.test.ts tests/brain-gate.test.ts tests/brain-presence.test.ts tests/brain-perception.test.ts tests/brain-live.test.ts tests/helpers/perceivers.ts
 git commit -m "feat: replace the cup brain with the observation pipeline that analyzes every engine frame into the World State"
 ```
 
@@ -3511,7 +4009,7 @@ git commit -m "feat: replace the cup brain with the observation pipeline that an
 
 **Files:**
 - Create: `src/world/trigger.ts`, `src/world/decide.ts`, `tests/world-trigger.test.ts`, `tests/world-decide.test.ts`
-- Modify: `src/world/text.ts`(`textFromWorld`), `src/server/home.ts`(판단 연결), `.env.example`
+- Modify: `src/world/text.ts`(`textFromWorld`), `src/world/labels.ts`(연결·멈춤 글), `src/server/home.ts`(판단 연결), `.env.example`, `docs/provenance.md`
 
 **Interfaces:**
 - Consumes: `PamClient`(Task 15), `WorldState`, `WorldChange`, `CUP_TASKS`·`CUP_FSM_MEMORY`(`src/brain/decision.ts`)
@@ -3526,12 +4024,14 @@ export class Trigger {
   constructor(cfg: TriggerConfig, startedAtMs: number);
   onChanges(changes: WorldChange[]): void;
   due(nowMs: number, personVisible: boolean, inflight: number): boolean;
+  paused(nowMs: number, personVisible: boolean): boolean;   // periodic에서 사람 없음 + 등장·사라짐 없음이 idleStopMs 이어짐. event는 늘 false
   called(nowMs: number): void;
 }
 // src/world/text.ts
 export function textFromWorld(world: WorldView, recent: WorldChange[], o: { nowMs: number; offsetMinutes: number; windowMs?: number /* 60000 */ }): string;
 // src/world/decide.ts
-export interface DecisionRecord { id: string; atMs: number; textSent: string; finalTime: string; status: "valid" | "failed"; prediction: Prediction | null; action: string | null; error?: string; memoryVersion: number }
+export interface DecisionRecord { id: string; seq: number; atMs: number; textSent: string; finalTime: string; status: "valid" | "failed"; prediction: Prediction | null; action: string | null; error?: string; memoryVersion: number; world: DecisionWorld }
+export function decisionWorld(w: WorldView): DecisionWorld;   // 판단 기록에 붙이는 World State 요약
 export class Decider {
   constructor(o: { pam: PamClient; world: WorldState; trigger: Trigger; tasks: () => string[]; memory: () => { memory: PamMemory; kind: "list" | "fsm"; version: number }; emit: (log: BrainLog) => void; onDecision?: (d: DecisionRecord) => void; offsetMinutes: number; clock?: { now(): number } });
   onChanges(changes: WorldChange[]): void;
@@ -3573,6 +4073,13 @@ describe("PAM 호출 시점", () => {
     expect(t.due(1_800_002, false, 0)).toBe(true);
     expect(t.due(1_800_002, false, 4)).toBe(false);
   });
+  it("주기 멈춤은 paused로 알 수 있고, event 모드는 멈추지 않는다", () => {
+    const p = new Trigger({ mode: "periodic", minGapMs: 3000, periodMs: 1000, idleStopMs: 1000, maxInflight: 4 }, 0);
+    expect(p.paused(500, false)).toBe(false);
+    expect(p.paused(1500, false)).toBe(true);
+    expect(p.paused(1500, true)).toBe(false);
+    expect(new Trigger({ mode: "event", minGapMs: 0, periodMs: 1000, idleStopMs: 1000, maxInflight: 1 }, 0).paused(1e9, false)).toBe(false);
+  });
 });
 ```
 
@@ -3608,15 +4115,33 @@ describe("판단 호출", () => {
     const d = new Decider({ pam: new PamClient({ url }), world, trigger: new Trigger({ mode: "event", minGapMs: 0, periodMs: 1000, idleStopMs: 1e9, maxInflight: 1 }, 0),
       tasks: () => [...CUP_TASKS], memory: () => ({ memory: CUP_FSM_MEMORY, kind: "fsm", version: 0 }), emit: () => {}, onDecision: (r) => records.push(r),
       offsetMinutes: 540, clock: { now: () => now } });
-    d.onChanges([{ kind: "person_gone", at_ms: 9000, subject: "person", text: "사람 안 보임", meaningful: true }]);
+    d.onChanges([{ kind: "person_gone", at_ms: 9000, subject: "person", text: "사람 안 보임", meaningful: true },
+      { kind: "vlm", at_ms: 9100, subject: "e9", text: "VLM: 식탁에 컵 하나", meaningful: false }]);
     d.tick();
     await d.idle();
-    expect(records[0]).toMatchObject({ status: "valid", action: null, memoryVersion: 0 });
+    expect(records[0]).toMatchObject({ seq: 1, status: "valid", action: null, memoryVersion: 0, world: { person_visible: false } });
     expect(sent[0]!.observation_text).toContain("사람 안 보임");
+    expect(sent[0]!.observation_text).toContain("VLM: 식탁에 컵 하나");   // 바뀐 VLM 요약도 관찰 텍스트에 든다
     expect(records[0]!.textSent).toBe(sent[0]!.observation_text);
+  });
+
+  it("PAM에 닿지 않다가 닿으면 연결 끊김·연결됨을 한 번씩 기록한다", async () => {
+    const logs: BrainLog[] = [];
+    let url = "http://127.0.0.1:9";
+    const pam = { predict: (r: any) => new PamClient({ url }).predict(r) } as unknown as PamClient;
+    let now = 10_000;
+    const d = new Decider({ pam, world: new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }),
+      trigger: new Trigger({ mode: "event", minGapMs: 0, periodMs: 1000, idleStopMs: 1e9, maxInflight: 1 }, 0),
+      tasks: () => [...CUP_TASKS], memory: () => ({ memory: CUP_FSM_MEMORY, kind: "fsm", version: 0 }), emit: (l) => logs.push(l), offsetMinutes: 540, clock: { now: () => now } });
+    const poke = async () => { d.onChanges([{ kind: "appeared", at_ms: now, subject: "cup_1", text: "컵 보임", meaningful: true }]); d.tick(); await d.idle(); now += 1000; };
+    await poke(); await poke();
+    url = await startPam();
+    await poke();
+    expect(logs.filter((l) => l.type === "link").map((l) => l.type === "link" && l.up)).toEqual([false, true]);
   });
 });
 ```
+(`world-decide.test.ts` 맨 위에 `import type { BrainLog } from "../src/contract/events.js";`.)
 
 - [ ] **Step 2: 실패 확인** — `H npx vitest run tests/world-trigger.test.ts tests/world-decide.test.ts` / Expected: FAIL
 - [ ] **Step 3: 구현**
@@ -3624,7 +4149,7 @@ describe("판단 호출", () => {
 ```ts
 // src/world/trigger.ts
 // PAM 호출 시점. 기본 event: World State에 의미 있는 변화가 있을 때(최소 간격 minGapMs, 동시 maxInflight).
-// periodic(noonchi-server 규칙): 사람이 보이는 동안 periodMs마다. 사람 없음 + 등장·사라짐 없음이 idleStopMs 이어지면 멈추고, 등장·사라짐이 생기면 다시.
+// periodic(출처: docs/provenance.md): 사람이 보이는 동안 periodMs마다. 사람 없음 + 등장·사라짐 없음이 idleStopMs 이어지면 멈추고, 등장·사라짐이 생기면 다시.
 import type { WorldChange } from "../contract/world.js";
 
 export type TriggerMode = "event" | "periodic";
@@ -3656,13 +4181,17 @@ export class Trigger {
     if (inflight >= this.cfg.maxInflight) return false;
     if (this.cfg.mode === "event") return this.pending && nowMs - this.lastCall >= this.cfg.minGapMs;
     if (nowMs - this.lastCall < this.cfg.periodMs) return false;
-    return personVisible || this.pending || nowMs - this.lastActivity < this.cfg.idleStopMs;
+    return !this.paused(nowMs, personVisible);
+  }
+
+  paused(nowMs: number, personVisible: boolean): boolean {
+    return this.cfg.mode === "periodic" && !personVisible && !this.pending && nowMs - this.lastActivity >= this.cfg.idleStopMs;
   }
 
   called(nowMs: number): void { this.lastCall = nowMs; this.pending = false; }
 }
 ```
-주기 시험의 「등장이면 다시」는 `onChanges`의 `lastActivity`가 `at_ms`(0)로 남으므로 `pending`이 true가 되어 다시 부른다.
+주기 시험의 「등장이면 다시」는 `onChanges`의 `lastActivity`가 `at_ms`(0)로 남으므로 `pending`이 true가 되어 다시 부른다. `docs/provenance.md`에 줄을 더한다: `| src/world/trigger.ts | noonchi-server f8545a1 noonchi/sendrule.py | 주기 규칙(사람이 보이면 1초마다, 사람 없음·등장 사라짐 없음 30분이면 멈춤) |`.
 
 `src/world/text.ts`에 더한다:
 ```ts
@@ -3675,35 +4204,49 @@ export function textFromWorld(world: WorldView, recent: WorldChange[], o: { nowM
   for (const ob of world.objects.filter((x) => x.status !== "gone")) {
     const where = ob.surface ? `${ob.surface} 위` : ob.facts.place ? STATE_TEXT[ob.facts.place.value] ?? ob.facts.place.value : "자리 모름";
     const extra = Object.values(ob.facts).filter((f) => f && f !== ob.facts.place).map((f) => STATE_TEXT[f!.value] ?? f!.value);
-    facts.push(`${objectName(ob.cls, ob.id)} ${where}${extra.length ? ` · ${extra.join(" · ")}` : ""}: ${clock(ob.first_seen_ms, o.offsetMinutes)}부터 ${dur(o.nowMs - ob.first_seen_ms)}, 마지막 확인 ${clock(ob.last_seen_ms, o.offsetMinutes)}${ob.status === "out_of_view" ? " (지금 시야 밖)" : ""}`);
+    facts.push(`${objectName(ob.cls, ob.id)} ${where}${extra.length ? ` · ${extra.join(" · ")}` : ""}: ${clock(ob.first_seen_ms, o.offsetMinutes)}부터 ${dur(o.nowMs - ob.first_seen_ms)}, 마지막 확인 ${clock(ob.last_seen_ms, o.offsetMinutes)}${ob.status === "out_of_view" ? ", 지금 시야 밖" : ""}`);
   }
   facts.push(`사람 ${world.person.visible ? "보임" : "안 보임"}: ${clock(world.person.since_ms, o.offsetMinutes)}부터 ${dur(o.nowMs - world.person.since_ms)}`);
-  for (const d of world.devices.filter((x) => x.status)) facts.push(`${d.label}(${d.id}): ${d.status}, ${clock(d.changed_ms, o.offsetMinutes)}에 바뀜`);
+  for (const d of world.devices.filter((x) => x.status)) {
+    facts.push(`${d.label}(${d.id}): ${d.status}, ${clock(d.changed_ms, o.offsetMinutes)}에 바뀜${d.remaining_min !== null ? `, ${CHANGE_TEXT.remaining(d.remaining_min)}` : ""}`);
+  }
   const eye = world.eye ? `클로이드 눈: ${world.eye.room ?? "방 모름"}` : null;
   return buildPamText({ lines, facts, eye, offsetMinutes: o.offsetMinutes });
 }
 ```
-(`STATE_TEXT`·`objectName`은 `src/world/labels.ts`에서 가져온다.)
+(`STATE_TEXT`·`objectName`·`CHANGE_TEXT`는 `src/world/labels.ts`에서 가져온다.) `tests/world-text.test.ts`에 「`textFromWorld`는 최근 창의 변화 줄(바뀐 VLM 요약·분석 없음 포함, 같은 줄은 묶음)과 남은 시간이 있는 가전을 담는다」를 더한다: 식기세척기 `remaining_min: 42`이면 `[지속] 식기세척기(dishwasher_1): 작동 중, 21:00:00에 바뀜, 남은 시간 42분`.
 
 `src/world/decide.ts`:
 ```ts
-// 판단 호출: Trigger가 허락하면 World State 관찰 텍스트 + 기억 + 행동 목록으로 PAM을 부른다. 답은 요청 번호로 맞춘다.
-// 동시 상한을 넘으면 부르지 않는다(Trigger.due가 false). 결과는 기록(decision)과 onDecision으로 넘긴다.
-import type { BrainLog } from "../contract/events.js";
-import type { WorldChange } from "../contract/world.js";
+// 판단 호출: Trigger가 허락하면 World State 관찰 텍스트 + 기억 + 행동 목록으로 PAM을 부른다. 요청마다 번호(seq)를 붙인다.
+// 동시 상한을 넘으면 부르지 않는다(Trigger.due가 false). 결과는 기록(decision)과 onDecision으로 넘긴다. 늦게 온 답의 처리는 실행 추적(Task 29)이 seq로 한다.
+// PAM 연결 끊김·연결됨(link)과 주기 판단 멈춤·다시 시작(trigger)은 바뀔 때 한 번씩 기록한다.
+import type { BrainLog, DecisionWorld } from "../contract/events.js";
+import type { WorldChange, WorldView } from "../contract/world.js";
 import { isoWithOffset, type PamMemory, type Prediction } from "../brain/decision.js";
-import type { PamClient } from "../brain/pam.js";
+import { PamLinkError, type PamClient } from "../brain/pam.js";
+import { LINK_TEXT, TRIGGER_TEXT } from "./labels.js";
 import type { WorldState } from "./state.js";
 import { textFromWorld } from "./text.js";
 import type { Trigger } from "./trigger.js";
 
-export interface DecisionRecord { id: string; atMs: number; textSent: string; finalTime: string; status: "valid" | "failed"; prediction: Prediction | null; action: string | null; error?: string; memoryVersion: number }
+export interface DecisionRecord { id: string; seq: number; atMs: number; textSent: string; finalTime: string; status: "valid" | "failed"; prediction: Prediction | null; action: string | null; error?: string; memoryVersion: number; world: DecisionWorld }
+
+export function decisionWorld(w: WorldView): DecisionWorld {
+  return {
+    objects: w.objects.filter((o) => o.status !== "gone").map((o) => ({ id: o.id, cls: o.cls, status: o.status, surface: o.surface, error_m: o.error_m,
+      facts: Object.fromEntries(Object.entries(o.facts).map(([k, f]) => [k, { value: f!.value, certainty: f!.certainty }])) })),
+    person_visible: w.person.visible, vlm_missing: w.vlm_missing, yolo_missing: w.yolo_missing,
+  };
+}
 
 export class Decider {
   private readonly recent: WorldChange[] = [];
   private readonly running = new Set<Promise<void>>();
   private seq = 0;
   private stopped = false;
+  private link: boolean | null = null;
+  private paused = false;
   private readonly clock: { now(): number };
   constructor(private readonly o: { pam: PamClient; world: WorldState; trigger: Trigger; tasks: () => string[]; memory: () => { memory: PamMemory; kind: "list" | "fsm"; version: number }; emit: (log: BrainLog) => void; onDecision?: (d: DecisionRecord) => void; offsetMinutes: number; clock?: { now(): number } }) {
     this.clock = o.clock ?? { now: () => Date.now() };
@@ -3711,7 +4254,7 @@ export class Decider {
 
   onChanges(changes: WorldChange[]): void {
     const now = this.clock.now();
-    this.recent.push(...changes.filter((c) => c.kind !== "vlm"));
+    this.recent.push(...changes);
     while (this.recent.length && this.recent[0]!.at_ms < now - 600_000) this.recent.shift();
     this.o.trigger.onChanges(changes);
   }
@@ -3720,23 +4263,40 @@ export class Decider {
     if (this.stopped) return;
     const now = this.clock.now();
     const view = this.o.world.view(now);
+    const paused = this.o.trigger.paused(now, view.person.visible);
+    if (paused !== this.paused) {
+      this.paused = paused;
+      this.o.emit({ type: "trigger", at_ms: now, paused, text: paused ? TRIGGER_TEXT.paused : TRIGGER_TEXT.resumed });
+    }
     if (!this.o.trigger.due(now, view.person.visible, this.running.size)) return;
     this.o.trigger.called(now);
-    const id = `pam-${++this.seq}`;
+    const seq = ++this.seq;
+    const id = `pam-${seq}`;
     const textSent = textFromWorld(view, this.recent, { nowMs: now, offsetMinutes: this.o.offsetMinutes });
     const finalTime = isoWithOffset(now, this.o.offsetMinutes);
+    const world = decisionWorld(view);
     const tasks = this.o.tasks();
     const mem = this.o.memory();
+    const base = { id, seq, atMs: now, textSent, finalTime, memoryVersion: mem.version, world };
     const job = this.o.pam.predict({ final_time: finalTime, observation_text: textSent, memory_kind: mem.kind, memory: mem.memory, tasks }).then(
-      (p) => this.finish({ id, atMs: now, textSent, finalTime, status: "valid", prediction: p, action: p.task_index === -1 ? null : tasks[p.task_index]!, memoryVersion: mem.version }),
-      (e: unknown) => this.finish({ id, atMs: now, textSent, finalTime, status: "failed", prediction: null, action: null, error: (e as Error).message, memoryVersion: mem.version }),
+      (p) => { this.setLink(true); this.finish({ ...base, status: "valid", prediction: p, action: p.task_index === -1 ? null : tasks[p.task_index]! }); },
+      (e: unknown) => { if (e instanceof PamLinkError) this.setLink(false); else this.setLink(true);
+        this.finish({ ...base, status: "failed", prediction: null, action: null, error: (e as Error).message }); },
     ).finally(() => this.running.delete(job));
     this.running.add(job);
   }
 
+  private setLink(up: boolean): void {
+    if (this.stopped || this.link === up) return;
+    if (this.link === null && up) { this.link = true; return; }    // 처음부터 닿으면 기록하지 않는다
+    this.link = up;
+    this.o.emit({ type: "link", at_ms: this.clock.now(), target: "pam", up, text: up ? LINK_TEXT.up : LINK_TEXT.down });
+  }
+
   private finish(r: DecisionRecord): void {
     if (this.stopped) return;
-    this.o.emit({ type: "decision", at_ms: this.clock.now(), id: r.id, text_sent: r.textSent, status: r.status, prediction: r.prediction, action: r.action, ...(r.error ? { error: r.error } : {}), memory_version: r.memoryVersion });
+    this.o.emit({ type: "decision", at_ms: this.clock.now(), id: r.id, seq: r.seq, text_sent: r.textSent, status: r.status, prediction: r.prediction, action: r.action,
+      ...(r.error ? { error: r.error } : {}), memory_version: r.memoryVersion, world: r.world });
     this.o.onDecision?.(r);
   }
 
@@ -3744,13 +4304,19 @@ export class Decider {
   stop(): void { this.stopped = true; }
 }
 ```
+`src/world/labels.ts`에 더한다:
+```ts
+export const LINK_TEXT = { up: "PAM 연결됨", down: "PAM 연결 끊김" } as const;
+export const TRIGGER_TEXT = { paused: "사람이 없어 판단을 멈춤", resumed: "판단을 다시 시작함" } as const;
+```
+
 `home.ts`: 파이프라인 `onChanges: (c) => decider.onChanges(c)`, `setInterval(() => decider.tick(), 250).unref()`, 기억은 G4 전까지 `{ memory: CUP_FSM_MEMORY, kind: "fsm", version: 0 }`, 행동 목록 `CUP_TASKS`. 닫을 때 타이머·`decider.stop()`. `.env.example`에 `ENGINE_FRAME_MS=`, `VLM_MAX_INFLIGHT=`, `VLM_TIMEOUT_MS=`, `PAM_TRIGGER=`(event | periodic), `PAM_MIN_GAP_MS=`, `PAM_PERIOD_MS=`, `PAM_IDLE_STOP_MS=`, `PAM_MAX_INFLIGHT=`, `PAM_TIMEOUT_MS=`.
 
-- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/world-trigger.test.ts tests/world-decide.test.ts tests/world-text.test.ts tests/observe-pipeline.test.ts` / Expected: PASS
+- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/world-trigger.test.ts tests/world-decide.test.ts tests/world-text.test.ts tests/observe-pipeline.test.ts tests/self-contained.test.ts` 그리고 `H npm run lint` / Expected: PASS
 - [ ] **Step 5: 커밋**
 
 ```bash
-git add src/world/trigger.ts src/world/decide.ts src/world/text.ts src/server/home.ts .env.example tests/world-trigger.test.ts tests/world-decide.test.ts tests/world-text.test.ts
+git add src/world/trigger.ts src/world/decide.ts src/world/text.ts src/world/labels.ts src/server/home.ts .env.example tests/world-trigger.test.ts tests/world-decide.test.ts tests/world-text.test.ts docs/provenance.md
 git commit -m "feat: call PAM on meaningful World State changes or a periodic rule with the World State observation text"
 ```
 
@@ -3770,7 +4336,8 @@ git commit -m "feat: call PAM on meaningful World State changes or a periodic ru
 - Produces:
 
 ```ts
-export type HistoryKind = "device" | "detection" | "vlm" | "world" | "pam_text" | "mode" | "decision" | "plan" | "execution" | "reflection" | "feedback" | "photo";
+// yolo: YOLOX 분석 없음(감지 오류·대기열 초과) 프레임, link: PAM 연결 끊김·연결됨, trigger: 주기 판단 멈춤·다시 시작
+export type HistoryKind = "device" | "detection" | "vlm" | "yolo" | "world" | "pam_text" | "mode" | "decision" | "plan" | "execution" | "reflection" | "feedback" | "photo" | "link" | "trigger";
 export interface HistoryRow { id: number; at_ms: number; day: string; kind: HistoryKind; subject: string | null; text: string; data: unknown }
 HistoryDb.add(kind: HistoryKind, atMs: number, text: string, o?: { subject?: string; data?: unknown }): void;
 HistoryDb.list(q: { since?: number; until?: number; kinds?: HistoryKind[]; day?: string; limit?: number }): HistoryRow[];
@@ -3796,16 +4363,23 @@ describe("기록 DB", () => {
     expect(db.list({ day: "2026-11-07" }).map((r) => r.kind)).toEqual(["detection", "decision"]);
     expect(db.list({ kinds: ["decision"] })[0]).toMatchObject({ text: "대기", data: { task_index: -1 } });
   });
-  it("관찰·판단·계획·모드·가전 변화를 받아 적는다(사진은 적지 않는다)", () => {
+  it("관찰·판단·계획·모드·가전 변화·연결·멈춤을 받아 적는다(사진은 적지 않는다)", () => {
     const db = HistoryDb.open(":memory:");
     const subs: Record<string, (x: any) => void> = {};
     attachRecorder(db, { onDevice: (cb) => ((subs.device = cb), () => {}), onBrain: (cb) => ((subs.brain = cb), () => {}), onPlan: (cb) => ((subs.plan = cb), () => {}), onMode: (cb) => ((subs.mode = cb), () => {}) });
-    subs.brain!({ type: "observe", at_ms: 1, frame_id: "e1", captured_at_ms: 1, yolo: "", vlm: "컵이 식탁 위" });
+    subs.brain!({ type: "observe", at_ms: 1, frame_id: "e1", captured_at_ms: 1, yolo: null, vlm: "컵이 식탁 위" });
+    subs.brain!({ type: "observe", at_ms: 1, frame_id: "e1", captured_at_ms: 1, yolo: "컵 0.90", vlm: null });                  // YOLOX 결과 줄은 적지 않는다
+    subs.brain!({ type: "observe", at_ms: 1, frame_id: "e2", captured_at_ms: 1, yolo: null, yolo_missing: "cap", vlm: null, vlm_missing: "cap" });
     subs.brain!({ type: "world_change", at_ms: 2, kind: "appeared", text: "컵(cup_1) 보임" });
-    subs.brain!({ type: "decision", at_ms: 3, id: "pam-1", text_sent: "21:00:00 사람 보임", status: "valid", prediction: { observation: "o", reasoning: "r", task_index: -1 }, action: null, memory_version: 0 });
+    subs.brain!({ type: "decision", at_ms: 3, id: "pam-1", seq: 1, text_sent: "21:00:00 사람 보임", status: "valid", prediction: { observation: "o", reasoning: "r", task_index: -1 }, action: null, memory_version: 0,
+      world: { objects: [], person_visible: true, vlm_missing: 0, yolo_missing: 0 } });
+    subs.brain!({ type: "link", at_ms: 4, target: "pam", up: false, text: "PAM 연결 끊김" });
+    subs.brain!({ type: "trigger", at_ms: 5, paused: true, text: "사람이 없어 판단을 멈춤" });
+    subs.brain!({ type: "reflection", at_ms: 6, day: "2026-11-07", ok: true, version: 2, applies_day: "2026-11-08", text: "반성 완료" });   // 반성은 runReflection이 적는다
     subs.mode!("live");
     subs.device!({ id: "dishwasher_1", online: true, twin: { running: true }, matter: {}, updatedAt: "2026-11-07T12:00:00.000Z" });
-    expect(db.list({}).map((r) => r.kind)).toEqual(["vlm", "detection", "pam_text", "decision", "mode", "device"]);
+    expect(db.list({}).map((r) => r.kind)).toEqual(["vlm", "yolo", "detection", "pam_text", "decision", "link", "trigger", "mode", "device"]);
+    expect(db.list({ kinds: ["yolo"] })[0]!.text).toBe("요청이 몰려 YOLOX·VLM 분석 없음");
     expect(JSON.stringify(db.list({}))).not.toMatch(/jpeg|base64/);
   });
 });
@@ -3819,7 +4393,7 @@ describe("기록 DB", () => {
 CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, at_ms INTEGER NOT NULL, day TEXT NOT NULL, kind TEXT NOT NULL, subject TEXT, text TEXT NOT NULL, data TEXT);
 CREATE INDEX IF NOT EXISTS idx_events_at ON events(at_ms);
 CREATE INDEX IF NOT EXISTS idx_events_day_kind ON events(day, kind);
-CREATE TABLE IF NOT EXISTS memories (version INTEGER PRIMARY KEY, created_ms INTEGER NOT NULL, day TEXT, kind TEXT NOT NULL, memory TEXT NOT NULL, source TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS memories (version INTEGER PRIMARY KEY, created_ms INTEGER NOT NULL, day TEXT, applies_day TEXT, kind TEXT NOT NULL, memory TEXT NOT NULL, source TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS photos (id TEXT PRIMARY KEY, at_ms INTEGER NOT NULL, path TEXT NOT NULL, origin TEXT NOT NULL);
 ```
 ```ts
@@ -3843,22 +4417,29 @@ dayOf(ms: number): string { return new Date(ms + this.offsetMinutes * 60_000).to
 
 ```ts
 // src/history/recorder.ts
-// 기록: 가전 변화, 관찰(VLM·분석 없음), World State 변화, PAM에 보낸 텍스트, 판단, 계획, 운영 모드를 한 시간축에 적는다. 사진은 적지 않는다.
+// 기록: 가전 변화, 관찰(VLM 답·VLM 분석 없음, YOLOX 분석 없음), World State 변화, PAM에 보낸 텍스트, 판단, 계획, 운영 모드,
+// PAM 연결 끊김·연결됨, 주기 판단 멈춤·다시 시작을 한 시간축에 적는다. 사진은 적지 않는다. 반성은 runReflection이 적는다.
+import { CHANGE_TEXT } from "../world/labels.js";
+
 export function attachRecorder(db: HistoryDb, o: { … }): () => void {
   const last = new Map<string, Record<string, unknown>>();
   const offs = [
     o.onDevice((s) => {
       const prev = last.get(s.id) ?? {};
       last.set(s.id, { ...s.twin });
-      for (const [attr, to] of Object.entries(s.twin)) if (prev[attr] !== to) db.add("device", Date.parse(s.updatedAt) || Date.now(), `${s.id} ${attr}: ${String(prev[attr])} → ${String(to)}`, { subject: s.id, data: { attr, from: prev[attr] ?? null, to } });
+      for (const [attr, to] of Object.entries(s.twin)) if (prev[attr] !== to) db.add("device", Date.parse(s.updatedAt) || Date.now(), `${s.id} ${attr} ${String(to)}`, { subject: s.id, data: { attr, from: prev[attr] ?? null, to } });
     }),
     o.onBrain((l) => {
-      if (l.type === "observe" && (l.vlm !== null || l.vlm_missing)) db.add("vlm", l.at_ms, l.vlm ?? `VLM 분석 없음(${l.vlm_missing})`, { subject: l.frame_id, data: { captured_at_ms: l.captured_at_ms, missing: l.vlm_missing ?? null } });
-      else if (l.type === "world_change") db.add(l.kind === "appeared" || l.kind === "gone" || l.kind.startsWith("person") ? "detection" : "world", l.at_ms, l.text, { data: { kind: l.kind } });
+      if (l.type === "observe") {
+        if (l.yolo_missing) db.add("yolo", l.at_ms, CHANGE_TEXT.yoloMissing[l.yolo_missing], { subject: l.frame_id, data: { captured_at_ms: l.captured_at_ms, yolo_missing: l.yolo_missing, vlm_missing: l.vlm_missing ?? null } });
+        else if (l.vlm !== null || l.vlm_missing) db.add("vlm", l.at_ms, l.vlm ?? CHANGE_TEXT.vlmMissing[l.vlm_missing!], { subject: l.frame_id, data: { captured_at_ms: l.captured_at_ms, missing: l.vlm_missing ?? null } });
+      } else if (l.type === "world_change") db.add(l.kind === "appeared" || l.kind === "gone" || l.kind.startsWith("person") ? "detection" : "world", l.at_ms, l.text, { data: { kind: l.kind } });
       else if (l.type === "decision") {
         db.add("pam_text", l.at_ms, l.text_sent, { subject: l.id });
-        db.add("decision", l.at_ms, l.action ?? (l.status === "valid" ? "대기" : `판단 실패: ${l.error ?? ""}`), { subject: l.id, data: { prediction: l.prediction, status: l.status, memory_version: l.memory_version } });
+        db.add("decision", l.at_ms, l.action ?? (l.status === "valid" ? "대기" : `판단 실패: ${l.error ?? ""}`), { subject: l.id, data: { seq: l.seq, prediction: l.prediction, status: l.status, memory_version: l.memory_version, world: l.world } });
       } else if (l.type === "execution") db.add("execution", l.at_ms, l.text, { subject: l.plan_id, data: { state: l.state } });
+      else if (l.type === "link") db.add("link", l.at_ms, l.text, { subject: l.target, data: { up: l.up } });
+      else if (l.type === "trigger") db.add("trigger", l.at_ms, l.text, { data: { paused: l.paused } });
     }),
     o.onPlan((p) => db.add("plan", Date.parse(p.updatedAt), `${p.goal} (${p.status})`, { subject: p.id, data: { revision: p.revision, steps: p.steps.map((s) => ({ id: s.id, label: s.label, status: s.status })) } })),
     o.onMode((m) => db.add("mode", Date.now(), m === "live" ? "실제 모드" : "시험 모드", { data: { mode: m } })),
@@ -3868,7 +4449,7 @@ export function attachRecorder(db: HistoryDb, o: { … }): () => void {
 ```
 등장·사라짐(사람 포함)은 `detection`, 나머지 World State 변화는 `world`로 적는다. `home.ts`: `onBrain`은 파이프라인·판단의 `emit`을 나눠 받는 작은 구독 목록으로, `onPlan`은 `PlanHub` 생성자에 `onCommit` 콜백을 더해 연결하고, `onMode`는 `start.ts` 모드 바꾸기에서 부른다.
 
-- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/history-db.test.ts tests/plan-hub.test.ts tests/control-mode.test.ts` / Expected: PASS
+- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/history-db.test.ts tests/plan-hub.test.ts tests/control-mode.test.ts tests/self-contained.test.ts` / Expected: PASS
 - [ ] **Step 5: 커밋**
 
 ```bash
@@ -3880,10 +4461,13 @@ git commit -m "feat: record device changes, detections, VLM observations, World 
 
 **Files:**
 - Create: `src/history/summary.ts`, `tests/history-summary.test.ts`, `tests/history-api.test.ts`
-- Modify: `src/server/app.ts`(`/api/history`, `/api/history/day/{day}`, `/api/decisions`)
+- Modify: `src/server/app.ts`(`/api/history`, `/api/history/day/{day}`, `/api/decisions`), `docs/provenance.md`
 
 **Interfaces:**
-- Produces: `daySummary(db: HistoryDb, day: string): { day: string; observation_text: string; action_summary: string; counts: Record<HistoryKind, number> }`
+- Produces: `daySummary(db: HistoryDb, day: string, o?: { maxBytes?: number }): { day: string; observation_text: string; action_summary: string; counts: Record<HistoryKind, number>; dropped: { observation: number; action: number } }`
+  - 하루 관찰 텍스트: 감지(등장·사라짐)·World State 변화(상태 변화, 바뀐 VLM 요약)·가전 변화만 넣는다. 프레임마다 쓰는 `vlm`·`yolo` 줄은 넣지 않고 맨 끝 한 줄 `[하루] VLM 분석 N장 · VLM 분석 없음 M장 · YOLOX 분석 없음 K장`으로 센다.
+  - 이어진 같은 글은 `collapseLines`로 묶는다.
+  - `maxBytes`(UTF-8)가 있으면 관찰 텍스트 70%·행동 요약 30%로 나눠, 넘으면 오래된 줄부터 빼고 첫 줄에 `앞선 기록 N줄 생략`을 둔다.
 
 - [ ] **Step 1: 실패하는 시험**
 
@@ -3893,20 +4477,41 @@ import { describe, expect, it } from "vitest";
 import { HistoryDb } from "../src/history/db.js";
 import { daySummary } from "../src/history/summary.js";
 
+const t = (h: number, m: number, s = 0) => Date.UTC(2026, 10, 7, h - 9, m, s);
+const bytes = (s: string) => Buffer.byteLength(s, "utf8");
+
 describe("하루 요약", () => {
-  it("관찰 텍스트는 감지·World State·가전 변화, 행동 요약은 판단·실행·피드백을 시각 순으로", () => {
+  it("관찰 텍스트는 감지·World State·가전 변화와 하루 분석 수, 행동 요약은 판단·실행·피드백을 시각 순으로", () => {
     const db = HistoryDb.open(":memory:");
-    const t = (h: number, m: number) => Date.UTC(2026, 10, 7, h - 9, m);
     db.add("detection", t(7, 58), "사람 보임");
     db.add("vlm", t(7, 59), "컵이 식탁 위");
+    db.add("yolo", t(7, 59, 1), "감지 오류로 YOLOX 분석 없음");
+    db.add("world", t(8, 0), "VLM: 컵이 식탁 위");
     db.add("decision", t(8, 10), "컵 치우기");
     db.add("execution", t(8, 11), "컵 치우기 완료");
     db.add("feedback", t(8, 12), "다 마신 뒤에만 치워 줘");
     db.add("pam_text", t(8, 10), "보낸 텍스트");
     const s = daySummary(db, "2026-11-07");
-    expect(s.observation_text).toBe("07:58:00 사람 보임\n07:59:00 VLM: 컵이 식탁 위");
+    expect(s.observation_text).toBe("07:58:00 사람 보임\n08:00:00 VLM: 컵이 식탁 위\n[하루] VLM 분석 1장 · VLM 분석 없음 0장 · YOLOX 분석 없음 1장");
     expect(s.action_summary).toBe("08:10:00 클로이드 판단: 컵 치우기\n08:11:00 클로이드 실행: 컵 치우기 완료\n08:12:00 사용자: 다 마신 뒤에만 치워 줘");
-    expect(s.counts).toMatchObject({ detection: 1, vlm: 1, decision: 1, pam_text: 1 });
+    expect(s.counts).toMatchObject({ detection: 1, vlm: 1, yolo: 1, decision: 1, pam_text: 1 });
+  });
+
+  it("1초 간격 3시간치 기록도 반성 입력 한도 안에 든다", () => {
+    const db = HistoryDb.open(":memory:");
+    const start = t(7, 0);
+    for (let i = 0; i < 3 * 3600; i++) {
+      db.add("vlm", start + i * 1000, i % 7 ? "사람이 식탁 앞에 앉아 컵을 들고 있음" : "VLM 분석 없음");
+      if (i % 20 === 0) db.add("world", start + i * 1000, `컵(cup_${i % 3}) ${i % 40 ? "비어 있음" : "내용물 있음"}`);
+      if (i % 90 === 0) db.add("detection", start + i * 1000, i % 180 ? "사람 안 보임" : "사람 보임");
+      if (i % 300 === 0) db.add("decision", start + i * 1000, i % 600 ? "대기" : "컵 치우기");
+    }
+    const maxBytes = 30_000;   // PAM /health reflect_input_bytes에서 기억 JSON을 뺀 값 정도
+    const s = daySummary(db, "2026-11-07", { maxBytes });
+    expect(bytes(s.observation_text) + bytes(s.action_summary)).toBeLessThanOrEqual(maxBytes);
+    expect(s.observation_text).not.toContain("사람이 식탁 앞에 앉아");                     // 프레임마다 쓴 VLM 줄은 빠진다
+    expect(s.observation_text.split("\n").at(-1)).toMatch(/^\[하루\] VLM 분석 \d+장/);
+    expect(s.observation_text.split("\n")[0]).toMatch(/^앞선 기록 \d+줄 생략$/);
   });
 });
 ```
@@ -3917,34 +4522,48 @@ describe("하루 요약", () => {
 
 ```ts
 // src/history/summary.ts
-// 하루 요약(noonchi-server reflection.build_summary를 옮김): 관찰 텍스트(감지·World State·VLM·가전)와 행동 요약(판단·실행·사용자 말)을 시각 순으로.
-import { clock } from "../world/text.js";
+// 하루 요약(출처: docs/provenance.md): 관찰 텍스트(등장·사라짐, World State 변화, 가전 변화, 하루 분석 수)와
+// 행동 요약(판단·실행·사용자 말)을 시각 순으로. 프레임마다 쓰는 vlm·yolo 줄은 세기만 한다. maxBytes를 넘으면 오래된 줄부터 뺀다.
+import { collapseLines } from "../world/text.js";
 import type { HistoryDb, HistoryKind } from "./db.js";
 
-const OBSERVED: HistoryKind[] = ["detection", "world", "vlm", "device"];
+const OBSERVED: HistoryKind[] = ["detection", "world", "device"];
 const ACTED: HistoryKind[] = ["decision", "execution", "feedback"];
-const PREFIX: Partial<Record<HistoryKind, string>> = { vlm: "VLM: ", decision: "클로이드 판단: ", execution: "클로이드 실행: ", feedback: "사용자: " };
+const PREFIX: Partial<Record<HistoryKind, string>> = { decision: "클로이드 판단: ", execution: "클로이드 실행: ", feedback: "사용자: " };
+const bytes = (s: string) => Buffer.byteLength(s, "utf8");
 
-export function daySummary(db: HistoryDb, day: string) {
-  const rows = db.list({ day });
-  const line = (r: { at_ms: number; kind: HistoryKind; text: string }) => `${clock(r.at_ms, db.offsetMinutes)} ${PREFIX[r.kind] ?? ""}${r.text}`;
+/** 최근 줄부터 budget 바이트까지 담고, 뺀 줄이 있으면 첫 줄에 적는다. */
+function fit(lines: string[], budget: number | undefined, tail: string[] = []): { text: string; dropped: number } {
+  if (budget === undefined) return { text: [...lines, ...tail].join("\n"), dropped: 0 };
+  let used = tail.reduce((a, l) => a + bytes(l) + 1, 0) + 40;   // 40: 「앞선 기록 N줄 생략」 자리
+  let i = lines.length;
+  while (i > 0 && used + bytes(lines[i - 1]!) + 1 <= budget) used += bytes(lines[--i]!) + 1;
+  return { text: [...(i ? [`앞선 기록 ${i}줄 생략`] : []), ...lines.slice(i), ...tail].join("\n"), dropped: i };
+}
+
+export function daySummary(db: HistoryDb, day: string, o: { maxBytes?: number } = {}) {
+  const rows = db.list({ day, limit: 1_000_000 });
   const counts = {} as Record<HistoryKind, number>;
   for (const r of rows) counts[r.kind] = (counts[r.kind] ?? 0) + 1;
-  return {
-    day,
-    observation_text: rows.filter((r) => OBSERVED.includes(r.kind)).map(line).join("\n"),
-    action_summary: rows.filter((r) => ACTED.includes(r.kind)).map(line).join("\n"),
-    counts,
-  };
+  const timed = (kinds: HistoryKind[]) => rows.filter((r) => kinds.includes(r.kind)).map((r) => ({ atMs: r.at_ms, text: `${PREFIX[r.kind] ?? ""}${r.text}` }));
+  const miss = (r: { data: unknown }) => r.data as { missing?: string | null; vlm_missing?: string | null } | null;
+  const vlmRows = rows.filter((r) => r.kind === "vlm");
+  const vlmGot = vlmRows.filter((r) => !miss(r)?.missing).length;
+  const vlmMissing = vlmRows.length - vlmGot + rows.filter((r) => r.kind === "yolo" && miss(r)?.vlm_missing).length;   // 대기열 초과는 VLM도 분석하지 않았다
+  const tally = `[하루] VLM 분석 ${vlmGot}장 · VLM 분석 없음 ${vlmMissing}장 · YOLOX 분석 없음 ${counts.yolo ?? 0}장`;
+  const obs = fit(collapseLines(timed(OBSERVED), db.offsetMinutes), o.maxBytes === undefined ? undefined : Math.floor(o.maxBytes * 0.7), [tally]);
+  const act = fit(collapseLines(timed(ACTED), db.offsetMinutes), o.maxBytes === undefined ? undefined : Math.floor(o.maxBytes * 0.3));
+  return { day, observation_text: obs.text, action_summary: act.text, counts, dropped: { observation: obs.dropped, action: act.dropped } };
 }
 ```
+`docs/provenance.md`에 줄을 더한다: `| src/history/summary.ts | noonchi-server f8545a1 noonchi/reflection.py build_summary | 하루 관찰·행동 요약 |`.
 `HistoryDb`에 `readonly offsetMinutes`를 둔다. `app.ts` 라우트: `GET /api/history`(`since`·`until` 숫자, `kinds` 쉼표 목록, `limit` 기본 500·최대 5000, 답 `{ ok: true, rows: HistoryRow[] }`), `GET /api/history/day/(\d{4}-\d{2}-\d{2})`, `GET /api/decisions`(`kinds: ["decision"]`의 마지막 N개와 같은 `subject`의 `pam_text`를 합침). 날짜 모양이 아니면 404(라우트 불일치), 범위 밖 limit은 400.
 
-- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/history-summary.test.ts tests/history-api.test.ts` / Expected: PASS
+- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/history-summary.test.ts tests/history-api.test.ts tests/self-contained.test.ts` / Expected: PASS
 - [ ] **Step 5: 커밋**
 
 ```bash
-git add src/history/summary.ts src/history/db.ts src/server/app.ts src/server/start.ts tests/history-summary.test.ts tests/history-api.test.ts
+git add src/history/summary.ts src/history/db.ts src/server/app.ts src/server/start.ts tests/history-summary.test.ts tests/history-api.test.ts docs/provenance.md
 git commit -m "feat: add the day summary and history, day and decision APIs"
 ```
 
@@ -3952,16 +4571,19 @@ git commit -m "feat: add the day summary and history, day and decision APIs"
 
 **Files:**
 - Create: `src/history/reflect.ts`, `tests/history-reflect.test.ts`
-- Modify: `src/history/db.ts`(기억 판본), `src/server/home.ts`(Decider의 기억 = 최신 판본), `src/server/app.ts`(`POST /api/reflection/run`), `src/server/start.ts`(`REFLECT_AT` 일정), `.env.example`
+- Modify: `src/history/db.ts`(기억 판본·적용 날짜·날짜별 고정), `src/server/home.ts`(Decider의 기억 = 그날 고정한 판본, 반성 결과를 `brain` 기록으로), `src/server/app.ts`(`POST /api/reflection/run`), `src/server/start.ts`(`REFLECT_AT` 일정), `.env.example`
 
 **Interfaces:**
 - Produces:
 
 ```ts
-HistoryDb.latestMemory(): { version: number; kind: "list" | "fsm"; memory: PamMemory } | null;
-HistoryDb.saveMemory(m: { kind: "list" | "fsm"; memory: PamMemory; day: string | null; source: "seed" | "reflection" }): number;   // 새 version
-export function currentMemory(db: HistoryDb): { memory: PamMemory; kind: "list" | "fsm"; version: number };            // 없으면 CUP_FSM_MEMORY를 seed로 저장
-export async function runReflection(db: HistoryDb, pam: PamClient, day: string, now?: () => number): Promise<{ ok: true; version: number } | { ok: false; error: string }>;
+// 기억 판본: 반성으로 만든 판본은 다음 날(applies_day = 반성한 날 + 1)부터 쓴다. 그날 판단은 그날 처음 정한 판본만 쓴다(meta 표 memory_day:<날짜>에 고정).
+HistoryDb.saveMemory(m: { kind: "list" | "fsm"; memory: PamMemory; day: string | null; appliesDay: string | null; source: "seed" | "reflection" }): number;   // 새 version
+HistoryDb.memoryFor(day: string): { version: number; kind: "list" | "fsm"; memory: PamMemory; appliesDay: string | null } | null;   // applies_day ≤ day 중 가장 새 판본
+HistoryDb.memoryVersion(version: number): { version: number; kind: "list" | "fsm"; memory: PamMemory; appliesDay: string | null } | null;
+HistoryDb.pinnedMemory(day: string): number | null;  HistoryDb.pinMemory(day: string, version: number): void;
+export function memoryForDay(db: HistoryDb, day: string): { memory: PamMemory; kind: "list" | "fsm"; version: number };   // 고정된 판본, 없으면 정해서 고정. 판본이 없으면 CUP_FSM_MEMORY를 seed로 저장
+export async function runReflection(db: HistoryDb, pam: PamClient, day: string, o?: { now?: () => number; emit?: (l: BrainLog) => void }): Promise<{ ok: true; version: number; appliesDay: string } | { ok: false; error: string }>;
 export function scheduleReflection(o: { at: string /* "23:30" */; offsetMinutes: number; run: (day: string) => Promise<unknown>; now?: () => number }): { stop(): void };
 ```
 
@@ -3974,35 +4596,58 @@ import { afterEach, describe, expect, it } from "vitest";
 import { PamClient } from "../src/brain/pam.js";
 import { CUP_FSM_MEMORY } from "../src/brain/decision.js";
 import { HistoryDb } from "../src/history/db.js";
-import { currentMemory, runReflection } from "../src/history/reflect.js";
+import { memoryForDay, runReflection } from "../src/history/reflect.js";
+import type { BrainLog } from "../src/contract/events.js";
 
 let srv: Server | undefined;
 afterEach(() => { srv?.close(); srv = undefined; });
 const got: any[] = [];
+const LIMITS = { max_model_len: 32768, predict_input_bytes: 60_000, reflect_input_bytes: 30_000 };
 const startPam = (memory: unknown) => new Promise<string>((ok) => {
   srv = createServer(async (req, res) => {
     let raw = ""; for await (const c of req) raw += c;
-    got.push(JSON.parse(raw));
     res.writeHead(200, { "content-type": "application/json" });
+    if (req.method === "GET" && req.url === "/health") return res.end(JSON.stringify({ ok: true, llm: null, limits: LIMITS }));
+    got.push(JSON.parse(raw));
     res.end(JSON.stringify({ status: "valid", raw_response: JSON.stringify(memory), memory, errors: [] }));
   }).listen(0, "127.0.0.1", () => ok(`http://127.0.0.1:${(srv!.address() as { port: number }).port}`));
 });
 
 describe("반성", () => {
-  it("하루 관찰 텍스트·행동 요약·피드백을 pam-reflect/2로 보내고 새 기억을 다음 판본으로 쓴다", async () => {
+  it("하루 관찰 텍스트·행동 요약·피드백을 pam-reflect/2로 보내고, 새 기억은 다음 날부터 쓴다", async () => {
     const db = HistoryDb.open(":memory:");
-    expect(currentMemory(db).version).toBe(1);
+    expect(memoryForDay(db, "2026-11-07").version).toBe(1);          // 그날 첫 판단: seed를 정해 고정
     const t = Date.UTC(2026, 10, 6, 23);
     db.add("detection", t, "사람 보임");
     db.add("decision", t + 60_000, "컵 치우기");
     db.add("feedback", t + 120_000, "다 마신 뒤에만 치워 줘");
     const next = { ...CUP_FSM_MEMORY, initial_state: "left_cup" };
-    const r = await runReflection(db, new PamClient({ url: await startPam(next) }), "2026-11-07");
-    expect(r).toEqual({ ok: true, version: 2 });
+    const logs: BrainLog[] = [];
+    const r = await runReflection(db, new PamClient({ url: await startPam(next) }), "2026-11-07", { emit: (l) => logs.push(l) });
+    expect(r).toEqual({ ok: true, version: 2, appliesDay: "2026-11-08" });
     expect(got[0]).toMatchObject({ contract: "pam-reflect/2", day: "2026-11-07", feedback: "다 마신 뒤에만 치워 줘" });
     expect(got[0].observation_text).toContain("사람 보임");
-    expect(currentMemory(db)).toMatchObject({ version: 2, memory: { initial_state: "left_cup" } });
+    expect(memoryForDay(db, "2026-11-07").version).toBe(1);          // 그날은 그대로
+    expect(memoryForDay(db, "2026-11-08")).toMatchObject({ version: 2, memory: { initial_state: "left_cup" } });
     expect(db.list({ kinds: ["reflection"] })).toHaveLength(1);
+    expect(logs).toEqual([expect.objectContaining({ type: "reflection", ok: true, version: 2, applies_day: "2026-11-08" })]);
+  });
+  it("다음 날 판단이 이미 판본을 정했으면 그날은 바꾸지 않고 그다음 날부터 쓴다", async () => {
+    const db = HistoryDb.open(":memory:");
+    expect(memoryForDay(db, "2026-11-08").version).toBe(1);          // 11-08 판단이 먼저 시작함
+    db.add("detection", Date.UTC(2026, 10, 7, 1), "사람 보임");
+    await runReflection(db, new PamClient({ url: await startPam({ ...CUP_FSM_MEMORY, initial_state: "left_cup" }) }), "2026-11-07");
+    expect(memoryForDay(db, "2026-11-08").version).toBe(1);
+    expect(memoryForDay(db, "2026-11-09").version).toBe(2);
+  });
+  it("PAM이 알린 입력 한도에 맞춰 하루 요약을 줄여 보낸다", async () => {
+    const db = HistoryDb.open(":memory:");
+    for (let i = 0; i < 3000; i++) db.add("world", Date.UTC(2026, 10, 7, 0, 0, i), `컵(cup_${i % 5}) 상태 ${i}`);
+    await runReflection(db, new PamClient({ url: await startPam(CUP_FSM_MEMORY) }), "2026-11-07");
+    const sent = got.at(-1);
+    const size = Buffer.byteLength(sent.observation_text) + Buffer.byteLength(sent.action_summary) + Buffer.byteLength(JSON.stringify(sent.memory, null, 2));
+    expect(size).toBeLessThanOrEqual(LIMITS.reflect_input_bytes);
+    expect(sent.observation_text.split("\n")[0]).toMatch(/^앞선 기록 \d+줄 생략$/);
   });
   it("그날 기록이 없으면 PAM을 부르지 않고 실패를 기록한다", async () => {
     const db = HistoryDb.open(":memory:");
@@ -4016,34 +4661,56 @@ describe("반성", () => {
 
 ```ts
 // src/history/reflect.ts
-// 하루 끝 반성: 그날 관찰 텍스트 + 행동 요약 + 사용자 피드백 → pam-reflect/2 → 새 기억 판본. 다음 판단부터 최신 판본을 쓴다.
+// 하루 끝 반성: 그날 관찰 텍스트 + 행동 요약 + 사용자 피드백 → pam-reflect/2 → 새 기억 판본.
+// 새 판본은 다음 날부터 쓴다. 그날 판단은 그날 처음 정한 판본만 쓴다(논문 memory_lifecycle: fixed_during_day, following_day).
+// 보내기 전에 PAM /health의 입력 한도(reflect_input_bytes)에서 기억 JSON·피드백 크기를 빼고 그 안으로 하루 요약을 줄인다.
+import type { BrainLog } from "../contract/events.js";
 import { CUP_FSM_MEMORY, type PamMemory } from "../brain/decision.js";
 import type { PamClient } from "../brain/pam.js";
 import type { HistoryDb } from "./db.js";
 import { daySummary } from "./summary.js";
 
-export function currentMemory(db: HistoryDb): { memory: PamMemory; kind: "list" | "fsm"; version: number } {
-  const m = db.latestMemory();
-  if (m) return { memory: m.memory, kind: m.kind, version: m.version };
-  const version = db.saveMemory({ kind: "fsm", memory: CUP_FSM_MEMORY, day: null, source: "seed" });
+const nextDay = (day: string) => new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+const bytes = (s: string) => Buffer.byteLength(s, "utf8");
+
+export function memoryForDay(db: HistoryDb, day: string): { memory: PamMemory; kind: "list" | "fsm"; version: number } {
+  const pinned = db.pinnedMemory(day);
+  const m = pinned !== null ? db.memoryVersion(pinned) : db.memoryFor(day);
+  if (m) {
+    if (pinned === null) db.pinMemory(day, m.version);
+    return { memory: m.memory, kind: m.kind, version: m.version };
+  }
+  const version = db.saveMemory({ kind: "fsm", memory: CUP_FSM_MEMORY, day: null, appliesDay: null, source: "seed" });
+  db.pinMemory(day, version);
   return { memory: CUP_FSM_MEMORY, kind: "fsm", version };
 }
 
-export async function runReflection(db: HistoryDb, pam: PamClient, day: string, now: () => number = () => Date.now()) {
-  const from = daySummary(db, day);
-  if (!from.observation_text && !from.action_summary) {
-    db.add("reflection", now(), "반성 실패: 그날 기록 없음", { data: { day } });
+export async function runReflection(db: HistoryDb, pam: PamClient, day: string, o: { now?: () => number; emit?: (l: BrainLog) => void } = {}) {
+  const now = o.now ?? (() => Date.now());
+  const done = (ok: boolean, text: string, version: number | null, appliesDay: string | null) => {
+    db.add("reflection", now(), text, { data: { day, version, applies_day: appliesDay } });
+    o.emit?.({ type: "reflection", at_ms: now(), day, ok, version, applies_day: appliesDay, text });
+  };
+  if (!db.list({ day, kinds: ["detection", "world", "device", "vlm", "yolo", "decision", "execution", "feedback"], limit: 1 }).length) {
+    done(false, "반성 실패: 그날 기록 없음", null, null);
     return { ok: false as const, error: "그날 기록이 없어요" };
   }
-  const feedback = db.list({ day: from.day, kinds: ["feedback"] }).map((r) => r.text).join("\n") || null;
-  const cur = currentMemory(db);
+  const cur = memoryForDay(db, day);
   try {
-    const memory = await pam.reflect({ day, memory_kind: cur.kind, memory: cur.memory, observation_text: from.observation_text || "관찰 없음", action_summary: from.action_summary || "행동 없음", feedback }, cur.kind);
-    const version = db.saveMemory({ kind: cur.kind, memory, day, source: "reflection" });
-    db.add("reflection", now(), `반성 완료: 기억 ${version}판`, { data: { day, version } });
-    return { ok: true as const, version };
+    const feedback = db.list({ day, kinds: ["feedback"] }).map((r) => r.text).join("\n") || null;
+    const limits = await pam.limits();
+    const maxBytes = limits.reflect_input_bytes - bytes(JSON.stringify(cur.memory, null, 2)) - bytes(feedback ?? "");
+    if (maxBytes <= 0) throw new Error("기억이 커서 반성 입력 한도를 넘어요");
+    const from = daySummary(db, day, { maxBytes });
+    const memory = await pam.reflect({ day, memory_kind: cur.kind, memory: cur.memory, observation_text: from.observation_text || "관찰 없음",
+      action_summary: from.action_summary || "행동 없음", feedback }, cur.kind);
+    let appliesDay = nextDay(day);
+    while (db.pinnedMemory(appliesDay) !== null) appliesDay = nextDay(appliesDay);
+    const version = db.saveMemory({ kind: cur.kind, memory, day, appliesDay, source: "reflection" });
+    done(true, `반성 완료: 기억 ${version}판, ${appliesDay}부터`, version, appliesDay);
+    return { ok: true as const, version, appliesDay };
   } catch (e) {
-    db.add("reflection", now(), `반성 실패: ${(e as Error).message}`, { data: { day } });
+    done(false, `반성 실패: ${(e as Error).message}`, null, null);
     return { ok: false as const, error: (e as Error).message };
   }
 }
@@ -4067,14 +4734,14 @@ export function scheduleReflection(o: { at: string; offsetMinutes: number; run: 
   return { stop: () => clearTimeout(timer) };
 }
 ```
-시험 기록의 `Date.UTC(2026, 10, 6, 23)`은 서울 11-07 08시라 `2026-11-07` 요약에 든다. `db.ts`: `latestMemory()`(`ORDER BY version DESC LIMIT 1`), `saveMemory()`(INSERT, `version`은 `MAX(version)+1`). `home.ts`: Decider `memory: () => currentMemory(db)`. `app.ts` `POST /api/reflection/run` `{day?}`(기본 오늘) → `runReflection`. `start.ts`: `REFLECT_AT`(기본 `23:30`, 빈 값이면 끔)로 `scheduleReflection`, 닫을 때 `stop()`. `.env.example`: `REFLECT_AT=`.
+시험 기록의 `Date.UTC(2026, 10, 6, 23)`은 서울 11-07 08시라 `2026-11-07` 요약에 든다. `db.ts`(`memories` 표는 Task 23에서 `applies_day`와 함께 만들었다): `memoryFor(day)`: `WHERE applies_day IS NULL OR applies_day <= ? ORDER BY version DESC LIMIT 1`. `memoryVersion(v)`, `saveMemory()`(INSERT, `version`은 `MAX(version)+1`), `pinnedMemory(day)`·`pinMemory(day, v)`는 `meta` 표의 `memory_day:<day>` 줄. `home.ts`: Decider `memory: () => memoryForDay(db, db.dayOf(Date.now()))`, 반성 `emit`은 대시보드 `brain` 방송과 같은 구독 목록. `app.ts` `POST /api/reflection/run` `{day?}`(기본 오늘) → `runReflection`. `start.ts`: `REFLECT_AT`(기본 `23:30`, 빈 값이면 끔)로 `scheduleReflection`, 닫을 때 `stop()`. `.env.example`: `REFLECT_AT=`.
 
-- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/history-reflect.test.ts tests/world-decide.test.ts` / Expected: PASS
+- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/history-reflect.test.ts tests/history-summary.test.ts tests/world-decide.test.ts tests/self-contained.test.ts` / Expected: PASS
 - [ ] **Step 5: 커밋**
 
 ```bash
 git add src/history/reflect.ts src/history/db.ts src/server/home.ts src/server/app.ts src/server/start.ts .env.example tests/history-reflect.test.ts
-git commit -m "feat: reflect each day over pam-reflect/2 and use the newest memory version for the next predictions"
+git commit -m "feat: reflect each day over pam-reflect/2 within the PAM input limit and apply the new memory from the following day"
 ```
 
 ### Task 26: 사진은 디스크에 쓰지 않음, 보관 기간
@@ -4196,7 +4863,7 @@ export function datasetWriter(dir: string, db: HistoryDb): (frame: EngineFrame) 
 ```
 `db.ts`: `addPhoto({id, atMs, path, origin})`, `listPhotos()`, `removePhoto(id)`(`photos` 표). `feed.ts` `savePhoto`: `opts.onSaved?.({ id, atMs, path })` 콜백을 더해 `home.ts`가 `db.addPhoto(..., origin: "photo")`와 기록(`photo`)을 한다. `pipeline.ts`: 생성 옵션 `dataset?: (f: EngineFrame) => void`가 있으면 고리에 넣은 프레임마다 부른다. `createPipeline`은 `env.DATASET_COLLECT === "1"`일 때만 `datasetWriter(join(runtimeDir, "dataset"), db)`를 넘긴다. `start.ts`: 시작 때와 1시간마다 `sweep(db, { photoDays: Number(env.PHOTO_RETENTION_DAYS) || 7, datasetDays: Number(env.DATASET_RETENTION_DAYS) || 7, nowMs: Date.now() })`. `.env.example`: `PHOTO_RETENTION_DAYS=`, `DATASET_COLLECT=`(1이면 엔진 프레임을 시험 자료로 저장), `DATASET_RETENTION_DAYS=`.
 
-- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/no-frames-on-disk.test.ts tests/history-retention.test.ts tests/phone-feed.test.ts` / Expected: PASS
+- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/no-frames-on-disk.test.ts tests/history-retention.test.ts tests/phone-feed.test.ts tests/self-contained.test.ts` / Expected: PASS
 - [ ] **Step 5: 커밋**
 
 ```bash
@@ -4243,10 +4910,10 @@ import { planFor, TASKS } from "../src/act/tasks.js";
 import { smallFloor } from "./helpers/floor.js";
 import type { WorldView } from "../src/contract/world.js";
 
-const world = (cup = true): WorldView => ({ at_ms: 0, vlm_missing: 0, eye: null, devices: [], person: { visible: false, since_ms: 0, last_seen_ms: null, facts: {} },
+const world = (cup = true): WorldView => ({ at_ms: 0, vlm_missing: 0, yolo_missing: 0, eye: null, devices: [], person: { visible: false, since_ms: 0, last_seen_ms: null, facts: {} },
   objects: cup ? [{ id: "cup_1", cls: "cup", position: [7, 0.75, 3], surface: "table_1", room: "kitchen", error_m: 0.1, status: "present", first_seen_ms: 0, last_seen_ms: 0, last_in_view_ms: 0, facts: {}, devices: [] }] : [] });
-const decision = (task_index: number) => ({ id: "pam-1", atMs: 0, textSent: "t", finalTime: "2026-11-07T21:00:00.000+09:00", status: "valid" as const,
-  prediction: { observation: "o", reasoning: "식사가 끝나 컵을 치운다", task_index }, action: task_index === 0 ? "컵 치우기" : task_index === 1 ? "사용자에게 물어보기" : null, memoryVersion: 1 });
+const decision = (task_index: number) => ({ id: "pam-1", seq: 1, atMs: 0, textSent: "t", finalTime: "2026-11-07T21:00:00.000+09:00", status: "valid" as const,
+  prediction: { observation: "o", reasoning: "식사가 끝나 컵을 치운다", task_index }, action: task_index === 0 ? "컵 치우기" : task_index === 1 ? "사용자에게 물어보기" : null, memoryVersion: 1, world: { objects: [], person_visible: false, vlm_missing: 0, yolo_missing: 0 } });
 
 describe("PAM 결과 → 계획", () => {
   it("컵 치우기는 식탁·싱크대 단계 계획이 되고 판단 이유를 단다", () => {
@@ -4311,7 +4978,7 @@ export function planFor(fp: FloorPlan, d: DecisionRecord, world: WorldView, nowI
 ```
 `planner.ts` `cupPlan(fp, id, nowIso, target?: WorldObject | null)`: 대상이 있으면 집기 단계 `target`에 `objectId: target.id`와 `position: [target.position[0], target.position[2]]`를 넣고, 첫 이동 목적지를 그 위치로 한다(없으면 지금처럼 식탁). `PlanHub.onDecision(plan)`: 열린 두뇌 계획이 있으면 새 계획에 `supersedes`를 달고 commit. `home.ts`: Decider `onDecision`에서 Task 29의 실행 흐름으로 넘긴다(이 작업에서는 `plans.onDecision(planFor(...))`까지). `src/brain/actor.ts`와 그 import를 지운다.
 
-- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/act-tasks.test.ts tests/plan-planner.test.ts tests/plan-hub.test.ts` / Expected: PASS
+- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/act-tasks.test.ts tests/plan-planner.test.ts tests/plan-hub.test.ts tests/self-contained.test.ts` / Expected: PASS
 - [ ] **Step 5: 커밋**
 
 ```bash
@@ -4345,11 +5012,12 @@ import { checkPlan, type CheckInput } from "../src/act/check.js";
 const obj = (over = {}) => ({ id: "cup_1", cls: "cup" as const, position: [2, 0.75, 0] as [number, number, number], surface: "t", room: "kitchen", error_m: 0.1, status: "present" as const,
   first_seen_ms: 0, last_seen_ms: 9_000, last_in_view_ms: 9_000, facts: {}, devices: [], ...over });
 const base = (over: Partial<CheckInput> = {}): CheckInput => ({
-  decision: { id: "pam-1", atMs: 8_000, textSent: "t", finalTime: "x", status: "valid", prediction: { observation: "o", reasoning: "r", task_index: 0 }, action: "컵 치우기", memoryVersion: 1 },
+  decision: { id: "pam-1", seq: 1, atMs: 8_000, textSent: "t", finalTime: "x", status: "valid", prediction: { observation: "o", reasoning: "r", task_index: 0 }, action: "컵 치우기", memoryVersion: 1,
+    world: { objects: [], person_visible: false, vlm_missing: 0, yolo_missing: 0 } },
   tasks: ["컵 치우기", "사용자에게 물어보기"],
   plan: { id: "plan:pam-1", revision: 1, source: "brain", goal: "g", judgment: "r", dryRun: true, robot: { position: [0, 0], room: "living" }, path: [[0, 0], [2, 0]], legs: [{ stepId: "s1", end: 1 }],
     steps: [{ id: "s1", kind: "move", label: "l", status: "pending" }, { id: "s2", kind: "act", label: "l", target: { objectId: "cup_1" }, status: "pending" }], status: "planned", updatedAt: "" },
-  world: { at_ms: 10_000, objects: [obj()], person: { visible: false, since_ms: 0, last_seen_ms: null, facts: {} }, devices: [], eye: null, vlm_missing: 0 },
+  world: { at_ms: 10_000, objects: [obj()], person: { visible: false, since_ms: 0, last_seen_ms: null, facts: {} }, devices: [], eye: null, vlm_missing: 0, yolo_missing: 0 },
   nowMs: 10_000, staleMs: 3000, mode: "test", ...over,
 });
 
@@ -4419,7 +5087,7 @@ export const CHECK_TEXT = {
 } as const;
 ```
 
-- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/act-check.test.ts` 그리고 `H npm run lint` / Expected: PASS
+- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/act-check.test.ts tests/self-contained.test.ts` 그리고 `H npm run lint` / Expected: PASS
 - [ ] **Step 5: 커밋**
 
 ```bash
@@ -4442,7 +5110,7 @@ export const EXEC_TEXT: Record<ExecState, string>;    // 판단, 계획, 실행 
 export class ExecutionTracker {
   constructor(o: { plans: PlanHub; world: () => WorldView; check: (d: DecisionRecord, plan: PlanView | null) => ReturnType<typeof checkPlan>;
                    floor: () => FloorPlan; toPhone: (msg: unknown) => void; emit: (l: BrainLog) => void; clock?: { now(): number }; verifyTimeoutMs?: number /* 120000 */; recheckMs?: number /* 3000 */ });
-  onDecision(d: DecisionRecord): void;       // 판단 → 계획 → (검사 통과 시) 실행 중
+  onDecision(d: DecisionRecord): void;       // 판단 → 계획 → (검사 통과 시) 실행 중. 진행 중인 계획과 행동·대상이 같으면 기록만, 지금 계획보다 먼저 보낸(seq가 작은) 판단은 버린다
   onReply(planId: string, choice: string): void;   // 폰 버튼·음성 답
   onWorld(changes: WorldChange[]): void;    // 결과 확인
   tick(): void;                              // 검사 다시 시도·시간 초과
@@ -4463,8 +5131,9 @@ import type { WorldView } from "../src/contract/world.js";
 
 const cup = (status: "present" | "gone", seen = 9_000) => ({ id: "cup_1", cls: "cup" as const, position: [2, 0.75, 0] as [number, number, number], surface: "t", room: "kitchen", error_m: 0.1, status,
   first_seen_ms: 0, last_seen_ms: seen, last_in_view_ms: seen, facts: {}, devices: [] });
-const world = (o: ReturnType<typeof cup>): WorldView => ({ at_ms: 0, objects: [o], person: { visible: false, since_ms: 0, last_seen_ms: null, facts: {} }, devices: [], eye: null, vlm_missing: 0 });
-const decision = { id: "pam-1", atMs: 8_000, textSent: "t", finalTime: "x", status: "valid" as const, prediction: { observation: "o", reasoning: "r", task_index: 0 }, action: "컵 치우기", memoryVersion: 1 };
+const world = (o: ReturnType<typeof cup>): WorldView => ({ at_ms: 0, objects: [o], person: { visible: false, since_ms: 0, last_seen_ms: null, facts: {} }, devices: [], eye: null, vlm_missing: 0, yolo_missing: 0 });
+const decision = { id: "pam-1", seq: 1, atMs: 8_000, textSent: "t", finalTime: "x", status: "valid" as const, prediction: { observation: "o", reasoning: "r", task_index: 0 }, action: "컵 치우기", memoryVersion: 1,
+  world: { objects: [], person_visible: false, vlm_missing: 0, yolo_missing: 0 } };
 
 describe("실행 추적", () => {
   it("판단 → 계획 → 실행 중(폰 부탁) → 결과 확인 → 완료, 단계마다 기록", () => {
@@ -4487,8 +5156,33 @@ describe("실행 추적", () => {
     t.onDecision(decision);
     t.tick();
     expect(logs.at(-1)).toMatchObject({ type: "execution", state: "failed", text: "사람이 그 물건을 쓰는 중이라 기다려요" });
-    t.onDecision({ ...decision, id: "pam-2", action: null, prediction: { ...decision.prediction, task_index: -1 } });
+    t.onDecision({ ...decision, id: "pam-2", seq: 2, action: null, prediction: { ...decision.prediction, task_index: -1 } });
     expect(logs.at(-1)).toMatchObject({ type: "execution", state: "decided" });
+  });
+  it("periodic처럼 같은 판단이 연달아 와도 폰 부탁은 한 번이고 그 계획이 완료까지 간다", () => {
+    const logs: BrainLog[] = [], phone: any[] = [];
+    let w = world(cup("present"));
+    const plans = new PlanHub(smallFloor(), () => {});
+    const t = new ExecutionTracker({ plans, world: () => w, check: () => ({ ok: true }), floor: smallFloor, toPhone: (m) => phone.push(m), emit: (l) => logs.push(l), clock: { now: () => 10_000 } });
+    for (let s = 1; s <= 4; s++) t.onDecision({ ...decision, id: `pam-${s}`, seq: s });
+    expect(phone.filter((m) => m.active)).toHaveLength(1);
+    const planId = t.current()!.planId;
+    expect(planId).toBe("plan:pam-1");
+    expect(logs.filter((l) => l.type === "execution" && l.text === "같은 행동을 진행 중")).toHaveLength(3);
+    t.onReply(planId, "done");
+    w = world(cup("gone"));
+    t.onWorld([{ kind: "gone", at_ms: 11_000, subject: "cup_1", text: "컵(cup_1) 사라짐", meaningful: true }]);
+    expect(t.current()).toMatchObject({ planId, state: "done" });
+  });
+  it("지금 계획보다 먼저 보낸 판단의 답이 늦게 오면 버린다", () => {
+    const logs: BrainLog[] = [], phone: any[] = [];
+    const t = new ExecutionTracker({ plans: new PlanHub(smallFloor(), () => {}), world: () => world(cup("present")), check: () => ({ ok: true }), floor: smallFloor,
+      toPhone: (m) => phone.push(m), emit: (l) => logs.push(l), clock: { now: () => 10_000 } });
+    t.onDecision({ ...decision, id: "pam-5", seq: 5, action: "사용자에게 물어보기", prediction: { ...decision.prediction, task_index: 1 } });
+    t.onDecision({ ...decision, id: "pam-4", seq: 4 });
+    expect(t.current()).toMatchObject({ planId: "plan:pam-5", state: "running" });
+    expect(logs.at(-1)).toMatchObject({ type: "execution", plan_id: "pam-4", text: "앞선 판단이라 쓰지 않음" });
+    expect(phone.filter((m) => m.active)).toHaveLength(1);
   });
 });
 ```
@@ -4500,6 +5194,7 @@ describe("실행 추적", () => {
 // src/act/track.ts
 // 실행 추적(시험 모드): 판단 → 계획 → 실행 중 → 결과 확인 → 완료 또는 실패. 로봇이 없어 집기·옮기기는 폰으로 사람에게 부탁하고,
 // 결과는 World State로 본다(대상 물건이 시야 안에서 사라짐). 물어보기는 답을 받으면 완료. 검사는 recheckMs마다 한 번 더 보고 그래도 안 되면 실패.
+// 로봇은 한 번에 한 계획만 실행한다: 진행 중인 계획과 행동·대상이 같은 판단은 기록만 하고, 지금 계획보다 먼저 보낸 판단(seq가 작음)은 버린다.
 import type { BrainLog, ExecState } from "../contract/events.js";
 import type { PlanView } from "../contract/plan.js";
 import type { WorldChange, WorldView } from "../contract/world.js";
@@ -4508,12 +5203,13 @@ import type { PlanHub } from "../plan/hub.js";
 import { EXEC_TEXT } from "../plan/labels.js";
 import type { DecisionRecord } from "../world/decide.js";
 import type { checkPlan } from "./check.js";
-import { planFor, TASKS } from "./tasks.js";
+import { planFor, targetOf, TASKS } from "./tasks.js";
 
 interface Running { plan: PlanView; decision: DecisionRecord; state: ExecState; since: number; rechecked: boolean; targetId: string | null }
 
 export class ExecutionTracker {
   private run: Running | null = null;
+  private lastSeq = 0;
   private readonly clock: { now(): number };
   constructor(private readonly o: { plans: PlanHub; world: () => WorldView; check: (d: DecisionRecord, plan: PlanView | null) => ReturnType<typeof checkPlan>;
     floor: () => FloorPlan; toPhone: (msg: unknown) => void; emit: (l: BrainLog) => void; clock?: { now(): number }; verifyTimeoutMs?: number; recheckMs?: number }) {
@@ -4529,10 +5225,19 @@ export class ExecutionTracker {
     this.o.emit({ type: "execution", at_ms: r.since, plan_id: r.plan.id, state, text: text ?? EXEC_TEXT[state] });
   }
 
+  private note(d: DecisionRecord, text: string): void {
+    this.o.emit({ type: "execution", at_ms: this.clock.now(), plan_id: d.id, state: "decided", text });
+  }
+
   onDecision(d: DecisionRecord): void {
     const now = this.clock.now();
-    if (!d.action) { this.o.emit({ type: "execution", at_ms: now, plan_id: d.id, state: "decided", text: d.status === "valid" ? EXEC_TEXT.decided : `${EXEC_TEXT.failed}: ${d.error ?? ""}` }); return; }
-    if (this.run && this.run.state !== "done" && this.run.state !== "failed") this.finish("failed", EXEC_TEXT.superseded);
+    if (d.seq < this.lastSeq) return this.note(d, EXEC_TEXT.late);
+    if (!d.action) return this.note(d, d.status === "valid" ? EXEC_TEXT.decided : `${EXEC_TEXT.failed}: ${d.error ?? ""}`);
+    const open = this.run && this.run.state !== "done" && this.run.state !== "failed" ? this.run : null;
+    const spec = TASKS[d.action];
+    if (open && spec && open.decision.action === d.action && open.targetId === (targetOf(spec, this.o.world())?.id ?? null)) return this.note(d, EXEC_TEXT.same);
+    this.lastSeq = d.seq;
+    if (open) this.finish("failed", EXEC_TEXT.superseded);
     const plan = planFor(this.o.floor(), d, this.o.world(), new Date(now).toISOString());
     this.run = { plan: plan ?? ({ id: `plan:${d.id}` } as PlanView), decision: d, state: "decided", since: now, rechecked: false,
       targetId: plan?.steps.find((s) => s.target?.objectId)?.target?.objectId ?? null };
@@ -4592,6 +5297,7 @@ export class ExecutionTracker {
 export const EXEC_TEXT = {
   decided: "판단", planned: "계획", running: "실행 중", verifying: "결과 확인", done: "완료", failed: "실패",
   superseded: "새 판단으로 바뀜", noPlan: "계획을 만들 수 없음", declined: "사용자가 미룸", timeout: "결과를 확인하지 못함",
+  same: "같은 행동을 진행 중", late: "앞선 판단이라 쓰지 않음",
 } as const;
 ```
 `home.ts`: Decider `onDecision: (d) => tracker.onDecision(d)`, 파이프라인 `onChanges`에서 `tracker.onWorld(c)`, 폰 `onBrainReply: (id, choice) => tracker.onReply(id, choice)`, 250ms 타이머에서 `tracker.tick()`, `check: (d, plan) => checkPlan({ decision: d, tasks: [...CUP_TASKS], plan, world: world.view(now), nowMs: now, staleMs: Number(env.STALE_MS) || 3000, mode: ctx.mode?.() ?? "test" })`. `ui/src/chat/turns.ts`: `execution` 줄을 판단 턴의 단계로 쌓고(글은 서버가 보낸 `text`), `ui/src/checks/checks.ts`: 지금 계획 단계의 `target.objectId`·`deviceId`를 확인 목록에 넣는다(말풍선은 그 물건·기기에만).
@@ -4599,7 +5305,7 @@ export const EXEC_TEXT = {
 - [ ] **Step 4: 통과 확인**
 
 ```
-H npx vitest run tests/act-track.test.ts tests/act-check.test.ts tests/act-tasks.test.ts tests/plan-server.test.ts
+H npx vitest run tests/act-track.test.ts tests/act-check.test.ts tests/act-tasks.test.ts tests/plan-server.test.ts tests/self-contained.test.ts
 H npm --prefix ui test
 H npm run lint
 ```
@@ -4658,7 +5364,7 @@ describe("폰 음성 질문", () => {
   - `server.ts` `talk`: `msg.type === "say"`이면 `const a = opts.onAnswer?.(text); if (a?.handled) return reply(ws, { type: "reply", text: a.reply ?? "", pending: [] });` 뒤 지금처럼 `onSay`.
   - `home.ts` `onAnswer`: `tracker.current()`가 `running`이면 그 부탁의 선택지 글(`치웠어요`·`나중에`·`치워 주세요`·`그대로 둬요`)과 말을 맞춰(포함 여부) `tracker.onReply(planId, choice.id)`를 부르고 `{ handled: true, reply: 선택지 글 }`. 맞는 선택지가 없으면 `{ handled: false }`. 열린 부탁이 있는 동안의 말과 답은 모두 `db.add("feedback", now, text)`로 남긴다(반성 피드백).
   - `phone.js`: `{type:"action", speak: true}`를 받으면 지금 카드 표시에 더해 `speechSynthesis.speak(new SpeechSynthesisUtterance(msg.text))`(언어 `ko-KR`). `active: false`면 카드를 거둔다(지금 동작).
-- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/phone-voice.test.ts tests/phone-server.test.ts` 그리고 `H npm run lint` / Expected: PASS
+- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/phone-voice.test.ts tests/phone-server.test.ts tests/self-contained.test.ts` 그리고 `H npm run lint` / Expected: PASS
 - [ ] **Step 5: 커밋**
 
 ```bash
@@ -4746,11 +5452,73 @@ git add tests/noonchi-e2e.test.ts src/server/home.ts src/server/app.ts docs/refe
 git commit -m "test: run the whole observation-to-execution flow against the fake model server and document it"
 ```
 
+### Task 32: 판단 기록 화면 (보낸 관찰 텍스트·World State·확신도·기억 판본·반성 결과)
+
+**Files:**
+- Modify: `ui/src/chat/turns.ts`(판단 줄에 펼침 내용, `reflection`·`link`·`trigger` 줄), `ui/src/chat/labels.ts`(확신도·기억 판본·반성 글), `ui/src/chat/DecisionLog.tsx`(판단 줄을 누르면 펼침), `ui/tests/turns.test.ts`, `ui/tests/decision-log.test.tsx`
+- `ui/src/plan/`과 `ui/src/dashboard/Dashboard.tsx`는 고치지 않는다.
+
+**Interfaces:**
+- Consumes: `BrainLog` `decision`(`text_sent`, `world: DecisionWorld`, `memory_version`, `prediction`), `reflection`(Task 25), `observe`(`yolo` 신뢰도 글).
+- Produces: `Step`에 `detail?: { text_sent: string; world: DecisionWorld; memory_version: number }`. 화면 글(`ui/src/chat/labels.ts`):
+
+```ts
+export const CERTAINTY: Record<"confirmed" | "inferred", string> = { confirmed: "확인됨", inferred: "추정" };
+export const memoryLabel = (v: number) => `기억 ${v}판`;
+export const DECISION_DETAIL = { text: "보낸 관찰", world: "판단할 때 상태", memory: "참조한 기억" } as const;
+```
+
+- [ ] **Step 1: 실패하는 시험**
+
+```ts
+// ui/tests/decision-log.test.tsx 에 더한다
+it("판단 줄을 누르면 보낸 관찰 텍스트·World State·확신도·기억 판본이 보이고 반성 결과 줄이 있다", async () => {
+  const world = { objects: [{ id: "cup_1", cls: "cup", status: "present", surface: "table_1", error_m: 0.12,
+    facts: { contents: { value: "empty", certainty: "confirmed" as const }, place: { value: "on_table", certainty: "inferred" as const } } }],
+    person_visible: false, vlm_missing: 2, yolo_missing: 0 };
+  const brainMsg = (event: BrainLog): ServerMessage => ({ type: "brain", event });
+  show(turnsOf([brainMsg({ type: "decision", at_ms: 1, id: "pam-1", seq: 1, text_sent: "21:00:00 사람 안 보임\n[지속] 컵(cup_1) 식탁 위", status: "valid",
+      prediction: { observation: "o", reasoning: "자리를 비워 컵을 치운다", task_index: 0 }, action: "컵 치우기", memory_version: 3, world }),
+    brainMsg({ type: "reflection", at_ms: 2, day: "2026-11-07", ok: true, version: 4, applies_day: "2026-11-08", text: "반성 완료: 기억 4판, 2026-11-08부터" })]));
+  await userEvent.click(screen.getByRole("button", { name: /컵 치우기/ }));
+  expect(screen.getByText(/21:00:00 사람 안 보임/)).toBeInTheDocument();
+  expect(screen.getByText(/확인됨/)).toBeInTheDocument();
+  expect(screen.getByText(/추정/)).toBeInTheDocument();
+  expect(screen.getByText("기억 3판")).toBeInTheDocument();
+  expect(screen.getByText(/반성 완료: 기억 4판/)).toBeInTheDocument();
+  expect(document.querySelector("input, textarea, select, form, [contenteditable]")).toBeNull();
+});
+```
+(`show`·`turnsOf`는 이 파일에 이미 있는 도우미다. `BrainLog`를 `../../src/contract/events.ts`에서 가져온다.) `ui/tests/turns.test.ts`에 「`decision`이면 판단 줄에 `detail`이 붙고, `reflection`은 줄 하나를 더한다」를 더한다.
+
+- [ ] **Step 2: 실패 확인** — `H npm --prefix ui test -- decision-log turns` / Expected: FAIL(펼침 없음)
+- [ ] **Step 3: 구현**
+  - `turns.ts` `onBrain`: `decision`이면 판단 줄(행동 이름 또는 「대기」, 이유)에 `detail: { text_sent, world, memory_version }`을 붙인다. `reflection`은 `text` 줄 하나(실패면 `tone: "fail"`), `link`·`trigger`도 `text` 줄 하나.
+  - `DecisionLog.tsx`: `detail`이 있는 줄은 `<button aria-expanded>`로 그리고, 누르면 아래를 펼친다: 「보낸 관찰」(`text_sent`를 `<pre>`로), 「판단할 때 상태」(물건마다 `컵 cup_1 · 식탁 위` 아래 사실별 `비어 있음 · 확인됨`, 위치 오차 `±0.12m`, VLM 분석 없음 수), 「참조한 기억」(`memoryLabel(memory_version)`). 입력창은 두지 않는다(펼침 버튼만).
+  - 관찰 줄(`observe`)의 YOLOX 글은 지금처럼 신뢰도(`컵 0.91`)를 그대로 보인다.
+- [ ] **Step 4: 통과 확인**
+
+```
+H npm --prefix ui test
+H npm --prefix ui run typecheck
+H npm run lint
+H npx vitest run tests/self-contained.test.ts tests/lint-ui-copy.test.ts
+```
+Expected: PASS(`no-input.test.tsx`·`bubble-layer.test.tsx` 포함)
+
+- [ ] **Step 5: 커밋**
+
+```bash
+git add ui/src/chat/turns.ts ui/src/chat/labels.ts ui/src/chat/DecisionLog.tsx ui/tests/turns.test.ts ui/tests/decision-log.test.tsx
+git commit -m "feat(ui): expand a decision row into the observation text sent, World State with certainty, memory version, and show reflection results"
+```
+
 **G5 끝:** 그룹 끝 검사를 모두 돌린다.
 
 ---
 
 ## 자기 검토 결과
 
-- SSOT 3절(구성·흐름·포트·CPU/GPU) → G1 Task 7·G2 Task 13·G3. 6.1 → Task 16~19, 21. 6.2 → Task 20, 22. 6.3 → Task 27~30. 6.12 → Task 10~13. 6.13 → Task 23~26. 11절 API → Task 6, 21, 24, 25. 12절(입력창 없음, 확인한 것만 말풍선) → Task 21·29의 ui 바꿈. 13.2 비교 실험은 이 계획 밖(측정 작업). 20.6 → G1 Task 7·8, G2 Task 13.
-- 이름 맞춤: `loadEndpoints`·`VlmClient`·`PamClient`·`buildPamText`·`textFromWorld`·`WorldState`·`Trigger`·`Decider`·`DecisionRecord`·`ExecutionTracker`·`checkPlan`·`planFor`·`HistoryDb`를 같은 이름·모양으로 쓴다.
+- SSOT 3절(구성·흐름·포트·CPU/GPU) → G1 Task 7·G2 Task 13·G3. 6.1 → Task 16~19, 21. 6.2 → Task 20(관계표·남은 시간), 22(관찰 텍스트·호출 시점). 6.3 → Task 27~30. 6.12 → Task 10~13(전송 설정·문맥 길이 검사 포함). 6.13 → Task 23~26(연결·멈춤 기록, 하루 요약 한도, 다음 날부터 쓰는 기억). 11절 API → Task 6, 21, 24, 25. 12절: 입력창 없음·확인한 것만 말풍선 → Task 21·29, 판단 기록(보낸 관찰 텍스트·World State·확신도·참조한 기억·반성 결과) → Task 32. 13.2 비교 실험은 이 계획 밖(측정 작업). 20.6 → G1 Task 7·8, G2 Task 13.
+- 이름 맞춤: `loadEndpoints`·`vlmTimeoutMs`·`VlmClient`·`PamClient`·`PamLinkError`·`buildPamText`·`collapseLines`·`textFromWorld`·`WorldState`·`RemainingTracker`·`Trigger`·`Decider`·`DecisionRecord`·`ExecutionTracker`·`checkPlan`·`planFor`·`HistoryDb`·`memoryForDay`를 같은 이름·모양으로 쓴다.
+- 지우는 파일을 쓰는 곳: Task 14(`scripts/brain-replay.ts`, 옮긴 시험 도우미), Task 15(`tests/brain-decision.test.ts` 외 판단 시험, `tests/lint-ui-copy.test.ts`), Task 21(`src/server/start.ts`, `src/brain/decision.ts`, `src/plan/labels.ts`, `ui/src/chat/*`, `ui/src/checks/checks.ts`와 그 시험)이 Files와 `git add`에 들어 있다.
