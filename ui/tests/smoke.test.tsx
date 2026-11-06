@@ -10,12 +10,16 @@ describe("대시보드 뼈대", () => {
     expect(screen.getByLabelText("3D 트윈")).toBeInTheDocument();
   });
 
-  it("트윈 위에 상태 알약·눈 창·판단 기록 패널이 떠 있고, 모두 덮개 층 바로 아래라 빈 곳의 마우스는 3D로 간다", () => {
+  it("트윈 위에 상태 알약·눈 창·판단 기록 패널이 떠 있고, 패널만 마우스를 받아 빈 곳의 마우스는 3D로 간다", () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 404 })));
     render(<Dashboard />);
+    const overlay = screen.getByLabelText("3D 트윈").querySelector<HTMLElement>(":scope > .pointer-events-none")!;
     for (const name of ["집 상태", "클로이드의 눈", "판단 기록"]) {
       const panel = screen.getByRole("region", { name });
-      expect(panel.parentElement).toHaveClass("pointer-events-none");
+      expect(overlay.contains(panel)).toBe(true);
+      expect(panel.parentElement).toHaveClass("*:pointer-events-auto");
+      // 덮개와 패널 사이 상자(좁은 화면 쌓기 상자)는 넓은 화면에서 상자가 없고 좁은 화면에서도 마우스를 받지 않는다
+      for (let box = panel.parentElement!; box !== overlay; box = box.parentElement!) expect(box).toHaveClass("contents", "max-sm:pointer-events-none!");
     }
   });
 });

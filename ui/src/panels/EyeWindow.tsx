@@ -94,11 +94,14 @@ export function EyeBody({ health, connected, large }: { health: HealthView | nul
 
 const foldButton = "flex size-7 items-center justify-center rounded-control text-ink-2 transition-colors hover:bg-hover hover:text-ink";
 
-/** 왼쪽 위 작은 창. 판은 모양마다 다르다(Surface). 접으면 눈 단추만 남고 화면 받기를 멈춘다. */
+/**
+ * 왼쪽 위 작은 창. 판은 모양마다 다르다(Surface). 접으면 눈 단추만 남고 화면 받기를 멈춘다.
+ * 640px보다 좁으면 대시보드의 쌓기 상자 안에서 제자리(relative)에 놓여 판단 기록 위에 선다.
+ */
 export function EyeWindow({ health, connected }: { health: HealthView | null; connected?: boolean | null }) {
   const [open, setOpen] = useState(true);
   return (
-    <section aria-label="클로이드의 눈" className="absolute left-3 top-16 z-50 text-ink min-[1440px]:top-3">
+    <section aria-label="클로이드의 눈" className="absolute left-3 top-16 z-50 text-ink min-[1440px]:top-3 max-sm:relative max-sm:inset-auto max-sm:self-start">
       <Surface kind="panel" className="overflow-hidden">
         {open ? (
           <>
