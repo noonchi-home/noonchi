@@ -206,7 +206,7 @@ interface DeviceHub {
 - `GET /api/setup` → `{ ok, persist, done, switching, error, home, homes, rooms, devices: [{ id, label, room, roomLabel, kind, kindLabel, source }], position: { touch, layout, phone_urls } }`
 - `POST /api/setup/home { home }`: 다른 집이면 묶음을 다시 만든다. 없는 집 400, 바꾸는 중 409.
 - `POST /api/setup/devices { home, sources: { <id>: "virtual"|"none" } }`, `POST /api/setup/done { home }`: `home`이 지금 집과 다르면 409(다른 탭에서 바꿈).
-- 설정 3단계의 `POST /api/phone/touch-points*`·`/api/layout/save|reset`도 `home`을 같이 보낸다(다르면 409).
+- 설정 4단계의 `POST /api/phone/touch-points*`·`/api/layout/save|reset`도 `home`을 같이 보낸다(다르면 409).
 - `/events`의 `hello`에 `home`(집 id)이 붙는다. 대시보드는 집이 바뀌면 새로 고친다.
 
 ## 테스트

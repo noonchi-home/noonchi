@@ -11,6 +11,8 @@ const TWIN_SRC = "/twin/viewer/?live=auto&embed=1";
 const IDS = ["A", "B"] as const;
 type Id = (typeof IDS)[number];
 type Pos = [number, number];
+const MAX_LABEL = 40;
+const WALL = " 벽";
 /** 뷰어가 돌려주는 벽 점: 방 쪽 면 위 점, 그 면의 방·법선. */
 type WallHit = { position: Pos; room?: string; normal?: Pos };
 
@@ -74,7 +76,11 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
   const [points, setPointsState] = useState<Record<Id, Pos | null>>({ A: null, B: null });
   const pointsRef = useRef(points);
   const setPoints = (p: Record<Id, Pos | null>) => { pointsRef.current = p; setPointsState(p); };
-  const [labels, setLabels] = useState<Record<Id, string>>({ A: "", B: "" });
+  const [labels, setLabelsState] = useState<Record<Id, string>>({ A: "", B: "" });
+  const labelsRef = useRef(labels);
+  const setLabels = (l: Record<Id, string>) => { labelsRef.current = l; setLabelsState(l); };
+  // 앱이 채운 이름. 사용자가 고치지 않아 아직 이 글 그대로면 손으로 다시 고를 때 새 자리에 맞게 바꾼다
+  const filled = useRef<Record<Id, string | null>>({ A: null, B: null });
   const [saved, setSaved] = useState(false);
   const [info, setInfo] = useState<{ text: string; error?: boolean }>({ text: "벽 하나로 A·B 구석을 고르세요." });
   const [picking, setPicking] = useState(false);
@@ -99,6 +105,7 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
       const hit = t.points?.find((x) => x.id === id);
       p[id] = hit?.position ?? null;
       l[id] = hit?.label ?? "";
+      if (l[id] !== filled.current[id]) filled.current = { ...filled.current, [id]: null };
     }
     setPoints(p);
     setLabels(l);
@@ -112,6 +119,7 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
 
   useEffect(() => {
     let live = true;
+    filled.current = { A: null, B: null };
     call<TouchView>("/api/phone/touch-points").then((r) => {
       if (!live) return;
       setTouchOn(isOk(r)); // 집 scene.json이 없으면 쓰지 않는다
@@ -141,12 +149,25 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
     setPicking(true);
     setInfo({ text: prompt });
   };
+  /** 손으로 고른 벽의 이름: 「<방> 벽」(40자까지). 방 이름을 모르면 빈 글. */
+  const wallLabel = (room?: string) => {
+    const name = (view.rooms.find((r) => r.id === room)?.label ?? "").trim().slice(0, MAX_LABEL - WALL.length).trim();
+    return name ? `${name}${WALL}` : "";
+  };
   const pick = (id: Id) => startPick(`3D 트윈에서 ${id} 지점의 벽을 누르세요.`, (hit) => {
     const next = { ...pointsRef.current, [id]: hit.position };
+    let l = labelsRef.current;
+    const was = filled.current[id];
+    if (was !== null && l[id] === was) {
+      const label = wallLabel(hit.room);
+      l = { ...l, [id]: label };
+      filled.current = { ...filled.current, [id]: label || null };
+      setLabels(l);
+    }
     const d = distance(next);
     setPoints(next);
     setInfo({ text: d === null ? `${id} 지점을 골랐어요. 다른 지점도 고르세요.` : `A–B 수평 거리 ${d.toFixed(2)}m. 저장하면 폰이 이 두 벽으로 맞춰요.` });
-    showMarkers(next);
+    showMarkers(next, l);
   });
   // 벽 하나 → 서버가 A(그 벽의 가까운 구석)·B(맞은편 벽의 대각선 구석)를 돌려준다. B를 못 찾으면 A만 온다
   const pickWall = () => startPick("3D 트윈에서 벽 하나를 누르세요.", async (hit) => {
@@ -162,6 +183,7 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
     const d = distance(next);
     setPoints(next);
     setLabels(names);
+    filled.current = { A: names.A || null, B: names.B || null };
     showMarkers(next, names);
     setInfo({ text: d === null ? "A 구석을 골랐어요. B 지점을 고르세요." : `A–B 수평 거리 ${d.toFixed(2)}m. 저장하면 폰이 이 두 구석으로 맞춰요.` });
   });
@@ -200,7 +222,7 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
                 <div key={id} className="mb-2 grid grid-cols-[auto_1fr_auto] items-center gap-1.5">
                   <b className={cn("grid size-6 place-items-center rounded-full text-xs text-white", id === "A" ? "bg-[#e8590c]" : "bg-[#1c7ed6]")}>{id}</b>
                   <input
-                    type="text" maxLength={40} value={labels[id]} aria-label={`${id} 지점 이름`}
+                    type="text" maxLength={MAX_LABEL} value={labels[id]} aria-label={`${id} 지점 이름`}
                     placeholder={id === "A" ? "예: 거실 창 오른쪽 벽" : "예: 반대편 벽"}
                     onChange={(e) => { const l = { ...labels, [id]: e.target.value }; setLabels(l); showMarkers(points, l); }}
                     className="min-w-0 rounded-md border border-glass-line bg-black/20 px-2 py-1 text-ink outline-none focus:border-on"
