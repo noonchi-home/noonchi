@@ -1,6 +1,7 @@
 // twin-studio 결과물 중 서버·뷰어가 읽는 것만 이 저장소 twin/으로 복사한다. twin-studio 위치는 인자로 받는다.
 //   npx tsx scripts/twin-assets.ts --from <twin-studio 폴더> [--commit <커밋>] [--to twin]
 // 복사: homes.json, 뷰어(test/ 빼고), library/assets, data/catalog, 집마다 floorplan.json·placement.json·catalog/, scene.json·assets/.
+// 글 파일(json·mjs·js·html·css)은 줄 끝을 LF로 맞춘다. twin/SOURCE.json에 커밋과 파일마다 sha256을 적는다.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -9,6 +10,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { readRegistry } from "../src/model/homes.js";
 
 const TRACKED = ["homes.json", "apartment/viewer", "data"];
+/** 줄 끝을 LF로 맞춰 복사하는 글 파일. 나머지(GLB 등)는 바이트 그대로. */
+const TEXT = /\.(json|mjs|js|html|css)$/;
 
 function walk(dir: string, skip: (rel: string) => boolean = () => false, base = dir): string[] {
   if (!existsSync(dir)) return [];
@@ -58,8 +61,10 @@ export function copyTwinAssets(o: { from: string; to: string; commit?: string })
     const rel = relative(from, p).replace(/\\/g, "/");
     const dest = join(to, rel);
     mkdirSync(dirname(dest), { recursive: true });
-    copyFileSync(p, dest);
-    const body = readFileSync(p);
+    // 글 파일은 LF로 맞춘다(.gitattributes eol=lf와 같은 내용이라 어느 OS에서 받아도 sha256이 맞는다)
+    const body = TEXT.test(rel) ? Buffer.from(readFileSync(p, "utf8").replace(/\r\n/g, "\n"), "utf8") : readFileSync(p);
+    if (TEXT.test(rel)) writeFileSync(dest, body);
+    else copyFileSync(p, dest);
     files.push({ path: rel, bytes: body.length, sha256: createHash("sha256").update(body).digest("hex") });
   }
   writeFileSync(join(to, "SOURCE.json"), `${JSON.stringify({ source: "twin-studio", commit, homes: reg.homes.map((h) => h.id), files }, null, 2)}\n`);

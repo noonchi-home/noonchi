@@ -1,4 +1,5 @@
 // 트윈 결과물 복사(scripts/twin-assets.ts): twin-studio에서 서버·뷰어가 읽는 파일만 twin/으로 옮긴다.
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
@@ -47,6 +48,21 @@ describe("트윈 결과물 복사", () => {
     expect(src).toMatchObject({ source: "twin-studio", commit: "9e3aecf", homes: ["apartment", "oneroom"] });
     expect(src.files.find((f: { path: string }) => f.path === "apartment/scene.json").sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(r.files).toBe(14);
+  });
+
+  it("글 파일은 줄 끝을 LF로 맞추고 그 내용의 sha256을 적는다. GLB는 그대로 복사한다", () => {
+    const from = fakeStudio();
+    put(from, "apartment/scene.json", '{\r\n  "a": 1\r\n}\r\n');
+    put(from, "apartment/viewer/main.mjs", "a();\r\nb();\r\n");
+    put(from, "apartment/assets/furniture/t.glb", "glTF\r\n\x00\x01");
+    const to = join(mkdtempSync(join(tmpdir(), "twin-")), "twin");
+    copyTwinAssets({ from, to, commit: "c" });
+    expect(readFileSync(join(to, "apartment/scene.json"), "utf8")).toBe('{\n  "a": 1\n}\n');
+    expect(readFileSync(join(to, "apartment/viewer/main.mjs"), "utf8")).toBe("a();\nb();\n");
+    expect(readFileSync(join(to, "apartment/assets/furniture/t.glb"), "latin1")).toBe("glTF\r\n\x00\x01");
+    const src = JSON.parse(readFileSync(join(to, "SOURCE.json"), "utf8"));
+    const sha = (rel: string) => src.files.find((f: { path: string }) => f.path === rel).sha256;
+    expect(sha("apartment/scene.json")).toBe(createHash("sha256").update('{\n  "a": 1\n}\n').digest("hex"));
   });
 
   it("빌드 안 된 집(scene.json 없음)이면 멈춘다", () => {

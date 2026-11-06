@@ -326,7 +326,9 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
 }
 ```
 
-- [ ] **Step 4: 통과 확인** — Run: `H npx vitest run tests/twin-assets.test.ts tests/self-contained.test.ts` / Expected: `tests/twin-assets.test.ts` PASS 3개. `tests/self-contained.test.ts`는 Task 3 전까지 FAIL 2개 그대로다.
+글 파일(json·mjs·js·html·css)은 줄 끝을 LF로 맞춰 쓰고 그 바이트로 sha256을 적는다(Windows의 git archive·Blender 출력은 CRLF다). GLB는 바이트 그대로 복사한다. 시험 「글 파일은 줄 끝을 LF로 맞추고 그 내용의 sha256을 적는다. GLB는 그대로 복사한다」를 더한다.
+
+- [ ] **Step 4: 통과 확인** — Run: `H npx vitest run tests/twin-assets.test.ts tests/self-contained.test.ts` / Expected: `tests/twin-assets.test.ts` PASS 4개. `tests/self-contained.test.ts`는 Task 3 전까지 FAIL 2개 그대로다.
 - [ ] **Step 5: 커밋**
 
 ```bash
