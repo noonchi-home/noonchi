@@ -43,5 +43,5 @@ Files: `ui/src/setup/PositionStep.tsx`, `ui/tests/setup-app.test.tsx`.
 
 ## Task 4: 검증·문서
 
-- [ ] `npm run heavy --` 로 루트·ui 전체 시험, 루트·ui `npx tsc --noEmit`, `npm run lint`, ui 빌드.
-- [ ] `docs/reference.md` 벽 대기 맞춤 사용법에 한두 줄.
+- [x] `npm run heavy --` 로 루트·ui 전체 시험, 루트·ui `npx tsc --noEmit`, `npm run lint`, ui 빌드.
+- [x] `docs/reference.md` 벽 대기 맞춤 사용법에 한두 줄.
