@@ -19,7 +19,10 @@
     "mcp": "tsx src/mcp/server.ts",
     "ui:dev": "npm --prefix ui run dev",
     "ui:build": "npm --prefix ui run build",
-    "ui:test": "npm --prefix ui test"
+    "ui:test": "npm --prefix ui test",
+    "heavy": "tsx scripts/twin3d/run-heavy.ts",
+    "dev3d": "tsx scripts/twin3d/dev.ts",
+    "capture": "tsx scripts/twin3d/capture.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",

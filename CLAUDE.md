@@ -8,3 +8,4 @@
 | 트윈 위 말풍선·표시는 에이전트가 판단하면서 확인한 기기·물건에만 띄운다. 모든 기기에 늘 띄우지 않고, 점선 테두리를 쓰지 않는다. 표시용 말풍선은 마우스를 받지 않는다(`pointer-events-none`). | `ui/tests/bubble-layer.test.tsx`(확인 목록에 없는 기기는 그리지 않음, 점선 없음, 말풍선 `pointer-events-none`)·`ui/tests/checks.test.ts`(확인 목록 규칙). `npm test`가 돌린다. |
 | 트윈 3D는 React 대시보드 안에서 three.js로 직접 그린다. iframe으로 다른 뷰어 페이지를 띄우지 않는다. twin-studio는 모델·데이터를 만드는 곳으로만 쓴다. | 없음. 한양목련 3D 계획 Task 43에서 옛 iframe 경로를 지우면 구조로 막힌다. |
 | 화면 글(web/·ui/src)에는 사용자가 할 일과 지금 상태만 쓴다. 생각 과정·구현 설명·흐름 나열(「집 → 가전 → …」)·괄호 덧붙임·설명 칸(.sub·.note·.help)을 넣지 않는다. | `npm run lint`(scripts/lint-ui-copy.ts)가 web/(폰)과 ui/src의 HTML·JS·TS·TSX 글(JSX 글·속성 포함)을 검사. `npm test`도 tests/lint-ui-copy.test.ts로 같은 검사를 돌린다. 짧은 메타 문구는 못 잡으니 글을 쓸 때 직접 본다. |
+| 3D 크롬·시험·빌드·Blender·변환은 한 번에 하나만 돌린다. 시험은 파일 하나도 npm run heavy로, 캡처는 npm run capture로만. | npm run heavy·npm run capture가 잡는 잠금(scripts/twin3d/heavy.ts). 잠금 없이 직접 돌리는 것은 못 막는다. |
