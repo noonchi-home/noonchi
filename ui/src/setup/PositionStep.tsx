@@ -3,17 +3,20 @@ import type { SetupView } from "../../../src/contract/setup.ts";
 import { cn } from "../lib/utils";
 import { btn, call, failText, isOk, primary, small } from "./setup-api";
 
-// 3 위치 동기화: 3D 트윈에서 벽 두 곳(A·B)을 골라 저장하면 폰이 실제 그 벽 바로 아래 바닥을 조준해 맞춘다(높이는 눈높이 고정).
+// 4 위치 동기화: 3D 트윈에서 벽 두 곳(A·B)을 골라 저장하면 폰이 실제 그 벽 바로 아래 바닥을 조준해 맞춘다(높이는 눈높이 고정).
 // 고르기는 같은 출처 iframe의 뷰어 API(aptViewer.startPick)를 쓰고, 저장한 점은 3D에 핀으로 보인다.
+// "벽 하나로 A·B 고르기"는 누른 벽 하나를 서버(/api/phone/touch-points/auto)에 보내 A·B 구석을 받는다. 저장은 따로 한다.
 
 const TWIN_SRC = "/twin/viewer/?live=auto&embed=1";
 const IDS = ["A", "B"] as const;
 type Id = (typeof IDS)[number];
 type Pos = [number, number];
+/** 뷰어가 돌려주는 벽 점: 방 쪽 면 위 점, 그 면의 방·법선. */
+type WallHit = { position: Pos; room?: string; normal?: Pos };
 
 /** 뷰어(twin-studio main.mjs) 중 기준점 고르기에 쓰는 부분. */
 interface PickViewer {
-  startPick?(cb: (hit: { position: Pos } | null) => void): void;
+  startPick?(cb: (hit: WallHit | null) => void): void;
   cancelPick?(): void;
   setTouchPoints?(points: { id: string; label: string; position: Pos }[]): void;
 }
@@ -22,6 +25,11 @@ interface TouchView {
   ok: true;
   points: { id: Id; label: string; position: Pos }[] | null;
   distance_m: number | null;
+}
+
+interface AutoView {
+  ok: true;
+  points: { id: Id; label: string; position: Pos }[];
 }
 
 interface LayoutView {
@@ -68,7 +76,7 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
   const setPoints = (p: Record<Id, Pos | null>) => { pointsRef.current = p; setPointsState(p); };
   const [labels, setLabels] = useState<Record<Id, string>>({ A: "", B: "" });
   const [saved, setSaved] = useState(false);
-  const [info, setInfo] = useState<{ text: string; error?: boolean }>({ text: "멀리 떨어진 두 벽을 고르세요." });
+  const [info, setInfo] = useState<{ text: string; error?: boolean }>({ text: "벽 하나로 A·B 구석을 고르세요." });
   const [picking, setPicking] = useState(false);
   const [layout, setLayout] = useState<LayoutView | null>(null);
 
@@ -114,7 +122,8 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
   useEffect(() => { void loadLayout(); }, [loadLayout, layoutTick, home]);
 
   const distance = (p = points) => (p.A && p.B ? Math.hypot(p.B[0] - p.A[0], p.B[1] - p.A[1]) : null);
-  const pick = (id: Id) => {
+  /** 3D에서 벽 하나를 고르게 하고, 고르면 onHit. 취소하면 알리기만 한다. */
+  const startPick = (prompt: string, onHit: (hit: WallHit) => void) => {
     const v = viewer();
     if (!v?.startPick) {
       setInfo({ text: "3D 트윈이 아직 준비되지 않았어요. 잠시 뒤 다시 눌러 주세요.", error: true });
@@ -127,15 +136,35 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
         setInfo({ text: "고르기를 취소했어요." });
         return;
       }
-      const next = { ...pointsRef.current, [id]: hit.position };
-      const d = distance(next);
-      setPoints(next);
-      setInfo({ text: d === null ? `${id} 지점을 골랐어요. 다른 지점도 고르세요.` : `A–B 수평 거리 ${d.toFixed(2)}m. 저장하면 폰이 이 두 벽으로 맞춰요.` });
-      showMarkers(next);
+      onHit(hit);
     });
     setPicking(true);
-    setInfo({ text: `3D 트윈에서 ${id} 지점의 벽을 누르세요.` });
+    setInfo({ text: prompt });
   };
+  const pick = (id: Id) => startPick(`3D 트윈에서 ${id} 지점의 벽을 누르세요.`, (hit) => {
+    const next = { ...pointsRef.current, [id]: hit.position };
+    const d = distance(next);
+    setPoints(next);
+    setInfo({ text: d === null ? `${id} 지점을 골랐어요. 다른 지점도 고르세요.` : `A–B 수평 거리 ${d.toFixed(2)}m. 저장하면 폰이 이 두 벽으로 맞춰요.` });
+    showMarkers(next);
+  });
+  // 벽 하나 → 서버가 A(그 벽의 가까운 구석)·B(맞은편 벽의 대각선 구석)를 돌려준다. B를 못 찾으면 A만 온다
+  const pickWall = () => startPick("3D 트윈에서 벽 하나를 누르세요.", async (hit) => {
+    const r = await call<AutoView>("/api/phone/touch-points/auto", { home, position: hit.position, room: hit.room, normal: hit.normal });
+    if (!isOk(r)) return setInfo({ text: failText(r, "구석을 찾지 못했어요."), error: true });
+    if (r.json.points.length === 0) return setInfo({ text: "이 벽에서 구석을 찾지 못했어요. 다른 벽을 누르거나 A·B를 직접 고르세요." });
+    const next: Record<Id, Pos | null> = { A: null, B: null };
+    const names: Record<Id, string> = { A: "", B: "" };
+    for (const p of r.json.points) {
+      next[p.id] = p.position;
+      names[p.id] = p.label;
+    }
+    const d = distance(next);
+    setPoints(next);
+    setLabels(names);
+    showMarkers(next, names);
+    setInfo({ text: d === null ? "A 구석을 골랐어요. B 지점을 고르세요." : `A–B 수평 거리 ${d.toFixed(2)}m. 저장하면 폰이 이 두 구석으로 맞춰요.` });
+  });
   const save = async () => {
     const r = await call<TouchView>("/api/phone/touch-points", { home, points: list().map((p) => ({ label: p.label, position: p.position })) });
     if (!isOk(r)) return setInfo({ text: failText(r, "저장하지 못했어요."), error: true });
@@ -166,6 +195,7 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
           {touchOn && (
             <section aria-label="폰 기준점" className="rounded-xl border border-glass-line bg-field p-3">
               <h3 className="mb-2 font-semibold">폰 기준점 A·B</h3>
+              {!picking && <button type="button" className={cn(btn, "mb-2 w-full")} onClick={pickWall}>벽 하나로 A·B 고르기</button>}
               {!picking && IDS.map((id) => (
                 <div key={id} className="mb-2 grid grid-cols-[auto_1fr_auto] items-center gap-1.5">
                   <b className={cn("grid size-6 place-items-center rounded-full text-xs text-white", id === "A" ? "bg-[#e8590c]" : "bg-[#1c7ed6]")}>{id}</b>

@@ -39,7 +39,7 @@ Files: `src/server/app.ts`, `src/server/home.ts`, `tests/phone-touch-start.test.
 
 Files: `ui/src/setup/PositionStep.tsx`, `ui/tests/setup-app.test.tsx`.
 
-- [ ] 버튼을 누르고 벽을 고르면 auto를 부르고 A·B·이름·거리를 채운다. A만 오면 B를 비우고 B를 고르라고 알린다. 점이 없으면 그대로 두고 알린다. 가짜 뷰어로 시험 → 구현. `npm run lint`.
+- [x] 버튼을 누르고 벽을 고르면 auto를 부르고 A·B·이름·거리를 채운다. A만 오면 B를 비우고 B를 고르라고 알린다. 점이 없으면 그대로 두고 알린다. 가짜 뷰어로 시험 → 구현. `npm run lint`.
 
 ## Task 4: 검증·문서
 
