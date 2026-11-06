@@ -1,8 +1,8 @@
-// 화면 글 검사: web/ 아래 HTML·JS에서 사용자에게 보이는 한국어 글을 꺼내, 생각 과정·구현 설명이 들어갔는지 본다.
+// 화면 글 검사: web/(폰)과 ui/src 아래 HTML·JS·TS·TSX에서 사용자에게 보이는 한국어 글을 꺼내, 생각 과정·구현 설명이 들어갔는지 본다.
 // 사용: npm run lint (tests/lint-ui-copy.test.ts도 같은 검사를 돌린다)
 
 import { readdirSync, readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export type Copy = { text: string; line: number };
@@ -28,12 +28,30 @@ export function htmlCopy(src: string): Copy[] {
 }
 
 const REGEX_BEFORE = /[(,=:[!&|?{};+\-*%<>~^]$|^$|\b(return|typeof|case|in|of)$/;
+/** 이 뒤에 오는 `<`는 JSX 시작이다(식이 올 자리). 이름·`)`·`]` 뒤의 `<`는 비교나 TS 제네릭이다. */
+const JSX_BEFORE = /[(,=:[!&|?{};]$|^$|=>$|\b(return|default|yield|await|else|do)$/;
+/** 글자 꾸밈 태그: 한 문단 안에 있다고 보고 풀어서 이어 붙인다(htmlCopy와 같은 목록). */
+const INLINE_TAG = /^(b|i|em|strong|span|a|code|kbd|small|mark|u|s)$/;
+const ENTITY: Record<string, string> = { rarr: "→", rArr: "⇒", larr: "←", gt: ">", lt: "<", amp: "&", nbsp: " ", quot: '"', apos: "'", middot: "·" };
+const decodeEntities = (t: string) =>
+  t.replace(/&(#x[0-9a-f]+|#\d+|\w+);/gi, (m, e: string) =>
+    e[0] === "#" ? String.fromCodePoint(e[1] === "x" || e[1] === "X" ? parseInt(e.slice(2), 16) : Number(e.slice(1))) : ENTITY[e] ?? m);
 
-/** JS: 주석·정규식은 건너뛰고 문자열·템플릿 글을 꺼낸다(템플릿의 ${…}는 「…」로). console.* 안의 글은 화면 글이 아니라서 뺀다. */
-export function jsCopy(src: string): Copy[] {
+/**
+ * JS·TS(·TSX) 글 꺼내기. 주석·정규식은 건너뛰고 문자열·템플릿 글을 꺼낸다(템플릿의 ${…}는 「…」로).
+ * console.* 안의 글은 화면 글이 아니라서 뺀다. jsx면 JSX 글과 속성 글도 꺼낸다.
+ */
+function codeCopy(src: string, jsx: boolean): Copy[] {
   const out: Copy[] = [];
   let i = 0;
-  let code = ""; // 지금까지 본 코드(정규식 판단·console 판단용)
+  let code = ""; // 지금까지 본 코드(정규식·JSX·console 판단용). 문자열·정규식·JSX 덩어리는 「0」 하나로 둔다
+  const push = (text: string, start: number) => {
+    if (!HANGUL.test(text)) return;
+    if (/console\.\w+\([^;]*$/.test(code.slice(-300))) return;
+    out.push({ text: text.replace(/\s+/g, " ").trim(), line: lineAt(src, start) });
+  };
+
+  /** 따옴표 문자열·템플릿을 읽어 글을 돌려준다. 템플릿 ${…} 안은 코드로 읽는다(그 안 문자열은 따로 꺼낸다). */
   const readString = (quote: string): string => {
     let s = "";
     i++;
@@ -41,14 +59,9 @@ export function jsCopy(src: string): Copy[] {
       if (src[i] === "\\") { s += src[i + 1] ?? ""; i += 2; continue; }
       if (quote === "`" && src[i] === "$" && src[i + 1] === "{") {
         i += 2;
-        let depth = 1;
-        while (i < src.length && depth > 0) {
-          if (src[i] === "{") depth++;
-          else if (src[i] === "}") depth--;
-          else if (src[i] === "'" || src[i] === '"' || src[i] === "`") { const q = src[i]!; const start = i; const inner = readString(q); push(inner, start); continue; }
-          if (depth > 0) i++;
-        }
-        i++;
+        code += "{";
+        scan(true);
+        code += "}";
         s += "…";
         continue;
       }
@@ -58,34 +71,149 @@ export function jsCopy(src: string): Copy[] {
     i++;
     return s;
   };
-  const push = (text: string, start: number) => {
-    if (!HANGUL.test(text)) return;
-    if (/console\.\w+\([^;]*$/.test(code.slice(-300))) return;
-    out.push({ text: text.replace(/\s+/g, " ").trim(), line: lineAt(src, start) });
+
+  const skipComment = (): boolean => {
+    if (src[i] === "/" && src[i + 1] === "/") { const e = src.indexOf("\n", i); i = e < 0 ? src.length : e; return true; }
+    if (src[i] === "/" && src[i + 1] === "*") { const e = src.indexOf("*/", i + 2); i = e < 0 ? src.length : e + 2; return true; }
+    return false;
   };
-  while (i < src.length) {
-    const c = src[i]!;
-    if (c === "/" && src[i + 1] === "/") { const e = src.indexOf("\n", i); i = e < 0 ? src.length : e; continue; }
-    if (c === "/" && src[i + 1] === "*") { const e = src.indexOf("*/", i + 2); i = e < 0 ? src.length : e + 2; continue; }
-    if (c === "'" || c === '"' || c === "`") { const start = i; push(readString(c), start); code += "0"; continue; }
-    if (c === "/" && REGEX_BEFORE.test(code.trimEnd())) {
-      i++;
-      let cls = false;
-      while (i < src.length && (cls || src[i] !== "/")) {
-        if (src[i] === "\\") i++;
-        else if (src[i] === "[") cls = true;
-        else if (src[i] === "]") cls = false;
+
+  /** 코드를 읽는다. untilBrace면 짝이 안 맞는 `}`에서 멈추고 그 `}`를 넘긴다. */
+  const scan = (untilBrace: boolean) => {
+    let depth = 0;
+    while (i < src.length) {
+      const c = src[i]!;
+      if (skipComment()) continue;
+      if (c === "'" || c === '"' || c === "`") { const start = i; push(readString(c), start); code += "0"; continue; }
+      if (c === "/" && REGEX_BEFORE.test(code.trimEnd())) {
         i++;
+        let cls = false;
+        while (i < src.length && (cls || src[i] !== "/")) {
+          if (src[i] === "\\") i++;
+          else if (src[i] === "[") cls = true;
+          else if (src[i] === "]") cls = false;
+          i++;
+        }
+        i++;
+        while (/[a-z]/i.test(src[i] ?? "")) i++;
+        code += "0";
+        continue;
       }
+      if (jsx && c === "<" && JSX_BEFORE.test(code.trimEnd()) && isJsxStart()) { readElement(null); code += "0"; continue; }
+      if (untilBrace) {
+        if (c === "{") depth++;
+        else if (c === "}" && depth-- === 0) { i++; return; }
+      }
+      code += c;
       i++;
-      while (/[a-z]/i.test(src[i] ?? "")) i++;
-      code += "0";
-      continue;
     }
-    code += c;
+  };
+
+  /** `<T,>`·`<T extends …>`(TSX 제네릭 화살표 함수)는 JSX가 아니다. */
+  const isJsxStart = () => {
+    const m = /^<(>|[A-Za-z_$][\w$.:-]*)(\s*,|\s+extends\b)?/.exec(src.slice(i, i + 80));
+    return !!m && !m[2];
+  };
+
+  type Chunk = { text: string; start: number };
+  const add = (acc: Chunk, text: string, at: number) => {
+    if (acc.start < 0 && text.trim()) acc.start = at;
+    acc.text += text;
+  };
+  const flush = (acc: Chunk) => {
+    const text = decodeEntities(acc.text).replace(/\s+/g, " ").trim();
+    if (HANGUL.test(text)) out.push({ text, line: lineAt(src, acc.start) });
+    acc.text = "";
+    acc.start = -1;
+  };
+
+  /** `{…}` 식. 글자 덩어리 안이면 식 자리를 「…」로 두고, 문자열 하나뿐인 식은 그 글을 그대로 이어 붙인다. */
+  const readExpression = (acc: Chunk | null) => {
+    const open = i;
     i++;
-  }
-  return out;
+    code += "{";
+    const rest = src.slice(i);
+    const onlyComments = /^(\s|\/\*[\s\S]*?\*\/|\/\/[^\n]*\n)*\}/.exec(rest);
+    if (onlyComments) { i += onlyComments[0].length; code += "}"; return; }
+    const lead = /^\s*/.exec(rest)![0].length;
+    const q = src[i + lead];
+    if (q === "'" || q === '"' || q === "`") {
+      i += lead;
+      const start = i;
+      const s = readString(q);
+      const tail = /^\s*\}/.exec(src.slice(i));
+      if (tail && acc) { add(acc, s, start); i += tail[0].length; code += "0}"; return; }
+      push(s, start);
+      code += "0";
+    }
+    if (acc) add(acc, "…", open);
+    scan(true);
+    code += "}";
+  };
+
+  /** `<`에서 시작하는 JSX 요소 하나를 읽는다. acc가 있으면(꾸밈 태그) 부모 글 덩어리에 이어 붙인다. */
+  const readElement = (parent: Chunk | null) => {
+    const acc: Chunk = parent ?? { text: "", start: -1 };
+    i++; // <
+    const name = /^[\w$.:-]*/.exec(src.slice(i))![0];
+    i += name.length;
+    // 속성
+    while (i < src.length) {
+      const c = src[i]!;
+      if (/\s/.test(c)) { i++; continue; }
+      if (skipComment()) continue;
+      if (c === "/" && src[i + 1] === ">") { i += 2; return; }
+      if (c === ">") { i++; break; }
+      if (c === "{") { readExpression(null); continue; }
+      const attr = /^[\w$:.-]+/.exec(src.slice(i));
+      if (!attr) { i++; continue; }
+      i += attr[0].length;
+      const eq = /^\s*=\s*/.exec(src.slice(i));
+      if (!eq) continue;
+      i += eq[0].length;
+      const v = src[i];
+      if (v === '"' || v === "'") {
+        const end = src.indexOf(v, i + 1);
+        const stop = end < 0 ? src.length : end;
+        push(src.slice(i + 1, stop), i);
+        i = stop + 1;
+      } else if (v === "{") readExpression(null);
+      else if (v === "<") readElement(null);
+    }
+    // 자식
+    while (i < src.length) {
+      const c = src[i]!;
+      if (c === "<" && src[i + 1] === "/") {
+        const end = src.indexOf(">", i);
+        i = end < 0 ? src.length : end + 1;
+        if (!parent) flush(acc);
+        return;
+      }
+      if (c === "<") {
+        const child = /^<([\w$.:-]*)/.exec(src.slice(i))![1]!;
+        if (INLINE_TAG.test(child)) readElement(acc);
+        else { flush(acc); readElement(null); }
+        continue;
+      }
+      if (c === "{") { readExpression(acc); continue; }
+      add(acc, c, i);
+      i++;
+    }
+    if (!parent) flush(acc);
+  };
+
+  scan(false);
+  return out.sort((a, b) => a.line - b.line);
+}
+
+/** JS: 주석·정규식은 건너뛰고 문자열·템플릿 글을 꺼낸다(템플릿의 ${…}는 「…」로). console.* 안의 글은 화면 글이 아니라서 뺀다. */
+export function jsCopy(src: string): Copy[] {
+  return codeCopy(src, false);
+}
+
+/** TSX: jsCopy에 더해 JSX 글(`>`와 `<` 사이, {식}은 「…」, 꾸밈 태그는 풀어서 한 덩어리)과 속성 글(title·placeholder·aria-label·alt 등)을 꺼낸다. */
+export function tsxCopy(src: string): Copy[] {
+  return codeCopy(src, true);
 }
 
 export const MAX_COPY = 60;
@@ -118,35 +246,56 @@ export function blurbSlots(src: string): Copy[] {
   return [...code.matchAll(BLURB_CLASS)].map((m) => ({ text: m[1]!, line: lineAt(code, m.index!) }));
 }
 
+/** 화면 글을 볼 파일: .html·.js·.ts·.tsx. 타입 선언(.d.ts)·시험(tests/, *.test.*)·node_modules는 뺀다. */
 function walk(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
     const p = join(dir, e.name);
-    if (e.isDirectory()) return walk(p);
-    return /\.(html|js)$/.test(e.name) ? [p] : [];
+    if (e.isDirectory()) return e.name === "tests" || e.name === "node_modules" ? [] : walk(p);
+    return /\.(html|js|ts|tsx)$/.test(e.name) && !/\.d\.ts$|\.test\.[jt]sx?$/.test(e.name) ? [p] : [];
   });
 }
 
-export function lintUiCopy(webDir: string): Problem[] {
+export function copyFiles(dirs: string[]): string[] {
+  return dirs.flatMap(walk);
+}
+
+export function fileCopy(file: string, src: string): Copy[] {
+  if (file.endsWith(".html")) return htmlCopy(src);
+  if (file.endsWith(".tsx")) return tsxCopy(src);
+  return jsCopy(src);
+}
+
+const ROOT = fileURLToPath(new URL("../", import.meta.url));
+/** 보고에 쓸 경로: 저장소 안이면 저장소 기준(web/app.js, ui/src/…), 밖이면 검사한 폴더 이름부터. */
+const shown = (dir: string, file: string) => {
+  const r = relative(ROOT, file);
+  return (r.startsWith("..") ? relative(dirname(dir.replace(/[\\/]+$/, "")), file) : r).replace(/\\/g, "/");
+};
+
+export function lintUiCopy(dirs: string[]): Problem[] {
   const problems: Problem[] = [];
-  for (const file of walk(webDir)) {
-    const src = readFileSync(file, "utf8");
-    const copies = file.endsWith(".html") ? htmlCopy(src) : jsCopy(src);
-    for (const c of copies) for (const rule of copyRules(c.text)) problems.push({ file: relative(webDir, file), line: c.line, text: c.text, rule });
-    for (const s of blurbSlots(src)) problems.push({ file: relative(webDir, file), line: s.line, text: `.${s.text}`, rule: "설명 칸" });
+  for (const dir of dirs) {
+    for (const file of walk(dir)) {
+      const src = readFileSync(file, "utf8");
+      const name = shown(dir, file);
+      for (const c of fileCopy(file, src)) for (const rule of copyRules(c.text)) problems.push({ file: name, line: c.line, text: c.text, rule });
+      for (const s of blurbSlots(src)) problems.push({ file: name, line: s.line, text: `.${s.text}`, rule: "설명 칸" });
+    }
   }
   return problems.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  const webDir = fileURLToPath(new URL("../web/", import.meta.url));
+  const dirs = [fileURLToPath(new URL("../web/", import.meta.url)), fileURLToPath(new URL("../ui/src/", import.meta.url))];
   if (process.argv.includes("--dump")) {
-    for (const file of walk(webDir)) {
-      const src = readFileSync(file, "utf8");
-      for (const c of file.endsWith(".html") ? htmlCopy(src) : jsCopy(src)) console.log(`${relative(webDir, file)}:${c.line}\t${c.text.length}\t${c.text}`);
+    for (const dir of dirs) {
+      for (const file of walk(dir)) {
+        for (const c of fileCopy(file, readFileSync(file, "utf8"))) console.log(`${shown(dir, file)}:${c.line}\t${c.text.length}\t${c.text}`);
+      }
     }
   } else {
-    const problems = lintUiCopy(webDir);
-    for (const p of problems) console.log(`web/${p.file.replace(/\\/g, "/")}:${p.line}  [${p.rule}] ${p.text.slice(0, 80)}`);
+    const problems = lintUiCopy(dirs);
+    for (const p of problems) console.log(`${p.file}:${p.line}  [${p.rule}] ${p.text.slice(0, 80)}`);
     for (const rule of new Set(problems.map((p) => p.rule))) console.log(`  → ${rule}: ${ruleFix(rule)}`);
     process.exitCode = problems.length ? 1 : 0;
   }

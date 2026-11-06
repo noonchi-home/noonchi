@@ -1,7 +1,10 @@
 // 화면 글 검사(scripts/lint-ui-copy.ts): 생각 과정·구현 설명이 화면에 들어가면 실패한다. 예시는 실제로 화면에 들어갔던 글이다.
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { blurbSlots, copyRules, htmlCopy, jsCopy, lintUiCopy } from "../scripts/lint-ui-copy.js";
+import { blurbSlots, copyFiles, copyRules, htmlCopy, jsCopy, lintUiCopy, tsxCopy } from "../scripts/lint-ui-copy.js";
+
+const webDir = fileURLToPath(new URL("../web/", import.meta.url));
+const uiDir = fileURLToPath(new URL("../ui/src/", import.meta.url));
 
 describe("화면 글 규칙", () => {
   it("실제로 들어갔던 글을 잡는다", () => {
@@ -40,9 +43,61 @@ describe("화면 글 꺼내기", () => {
   });
 });
 
-describe("web/ 전체", () => {
+describe("TSX 글 꺼내기", () => {
+  it("JSX 글의 흐름 나열·괄호 설명을 잡는다", () => {
+    const src = `export const A = () => <p className="x">집 → 가전 → 위치 동기화 → 대시보드</p>;\nexport const B = () => <span title="엔진 입력 아님">눈</span>;`;
+    const texts = tsxCopy(src).map((c) => c.text);
+    expect(texts).toContain("집 → 가전 → 위치 동기화 → 대시보드");
+    expect(texts).toContain("엔진 입력 아님");
+    expect(copyRules("집 → 가전 → 위치 동기화 → 대시보드")).toContain("흐름 나열");
+  });
+
+  it("JSX 식 안의 화살표 함수(=>)는 글이 아니다", () => {
+    expect(tsxCopy(`const f = () => <b>{items.map((x) => x)}</b>;`)).toEqual([]);
+    expect(tsxCopy(`const f = () => <p>{items.map((x) => <b key={x}>{x}</b>)}개 남음</p>;`).map((c) => c.text)).toEqual(["…개 남음"]);
+  });
+
+  it("JSX 글: {식}은 「…」로, 꾸밈 태그는 풀어서 한 덩어리로, 식 안 문자열·JSX도 꺼낸다", () => {
+    const src = [
+      "const C = ({ n, on }: { n: number; on: boolean }) => (",
+      '  <section aria-label="가전 목록">',
+      "    {/* 주석 → 은 화면 글이 아니다 */}",
+      "    <p>추가한 <b>가상</b> 가전 {n}개</p>",
+      '    {on ? <span>켜짐</span> : "꺼짐"}',
+      '    <p>집 {"→"} 가전</p>',
+      '    <Step label="집 고르기" hint={`${n}단계`} />',
+      "    <p>Don't 걱정 // 주석 아님</p>",
+      "  </section>",
+      ");",
+    ].join("\n");
+    expect(tsxCopy(src).map((c) => c.text).sort()).toEqual(
+      ["가전 목록", "추가한 가상 가전 …개", "켜짐", "꺼짐", "집 → 가전", "집 고르기", "…단계", "Don't 걱정 // 주석 아님"].sort(),
+    );
+  });
+
+  it("TS 꺾쇠(제네릭·비교)는 JSX로 보지 않는다", () => {
+    const src = [
+      'const [s, setS] = useState<string>("대기");',
+      "const ok = a < b && c > d;",
+      'const m = new Map<string, number>(); const t = "상태";',
+    ].join("\n");
+    expect(tsxCopy(src).map((c) => c.text)).toEqual(["대기", "상태"]);
+  });
+
+  it("JSX 글의 줄 번호", () => {
+    expect(tsxCopy("const A = () => (\n  <div>\n    <p>지금 상태</p>\n  </div>\n);")).toEqual([{ text: "지금 상태", line: 3 }]);
+  });
+});
+
+describe("web/(폰)과 ui/src 전체", () => {
+  it("ui/src의 .tsx·.ts를 본다(.d.ts·tests/는 뺀다)", () => {
+    const files = copyFiles([webDir, uiDir]);
+    expect(files.some((f) => f.endsWith(".tsx"))).toBe(true);
+    expect(files.some((f) => /\.d\.ts$|[\\/]tests[\\/]/.test(f))).toBe(false);
+  });
+
   it("화면 글 검사에 걸리는 곳이 없다(npm run lint)", () => {
-    const problems = lintUiCopy(fileURLToPath(new URL("../web/", import.meta.url)));
-    expect(problems.map((p) => `web/${p.file}:${p.line} [${p.rule}] ${p.text}`)).toEqual([]);
+    const problems = lintUiCopy([webDir, uiDir]);
+    expect(problems.map((p) => `${p.file}:${p.line} [${p.rule}] ${p.text}`)).toEqual([]);
   });
 });
