@@ -1,6 +1,6 @@
 import type { AgentAction, BrainState } from "../../../src/contract/events.ts";
 
-/** 도구 이름 → 화면 이름(web/app.js TOOL_LABELS). */
+/** 도구 이름 → 화면 이름. */
 export const TOOL_LABELS: Record<string, string> = {
   list_rooms: "방 목록 보기", list_devices: "기기 목록 보기", find_devices: "기기 찾기", get_state: "상태 확인", turn_on: "켜기", turn_off: "끄기",
   set_level: "밝기·음량 맞추기", set_climate: "냉난방 맞추기", set_covering: "커튼 맞추기", lock: "잠그기", unlock: "잠금 해제", start: "시작", stop: "정지",

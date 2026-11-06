@@ -1,5 +1,5 @@
 // 클로이드의 눈 표시 영상(H.264): GET /api/eye/video 스트림을 읽어 VideoDecoder로 canvas에 그린다(서버 src/phone/video.ts).
-// web/eye-video.js를 타입만 붙여 옮겼다(옛 화면은 Task 10까지 그 파일을 쓴다). 디코드·그리기는 일꾼(eye-video-worker.ts)에서 한다.
+// web/eye-video.js(루트 시험이 쓰는 같은 파서)를 타입만 붙여 옮겼다. 디코드·그리기는 일꾼(eye-video-worker.ts)에서 한다.
 // 영상이 3초 넘게 안 그려지면(미지원 브라우저·코덱, 폰이 H.264를 못 보냄, 스트림 끊김) MJPEG <img>를 보인다.
 
 const MAX_HEADER_BYTES = 4096;

@@ -266,7 +266,7 @@ export function fileCopy(file: string, src: string): Copy[] {
 }
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
-/** 보고에 쓸 경로: 저장소 안이면 저장소 기준(web/app.js, ui/src/…), 밖이면 검사한 폴더 이름부터. */
+/** 보고에 쓸 경로: 저장소 안이면 저장소 기준(web/phone/phone.js, ui/src/…), 밖이면 검사한 폴더 이름부터. */
 const shown = (dir: string, file: string) => {
   const r = relative(ROOT, file);
   return (r.startsWith("..") ? relative(dirname(dir.replace(/[\\/]+$/, "")), file) : r).replace(/\\/g, "/");

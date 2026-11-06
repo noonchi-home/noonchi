@@ -4,7 +4,7 @@
 //
 //   GET /api/eye/frame.jpg            최신 프레임(없으면 404)
 //   GET /api/eye/stream               multipart/x-mixed-replace(MJPEG). <img src>로 바로 보인다
-//   GET /api/eye/video                표시 영상(H.264) 메시지 스트림. 대시보드가 VideoDecoder로 그린다(web/eye-video.js)
+//   GET /api/eye/video                표시 영상(H.264) 메시지 스트림. 대시보드가 VideoDecoder로 그린다(ui/src/panels/eye-video.ts)
 //   GET /api/eye/photos/<id>.jpg      저장한 사진
 //   GET /api/eye/stats                받은 프레임 통계(최근 2초 fps·장당 크기·마지막 크기)와 표시 영상 통계(display)
 

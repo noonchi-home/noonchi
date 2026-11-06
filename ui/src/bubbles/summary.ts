@@ -1,6 +1,5 @@
 import type { DeviceView } from "../../../src/contract/events.ts";
 
-// 글 표는 옛 화면(web/app.js ATTR_TEXT·ACTIVE·MODES·FANS)과 같다.
 const ATTR_TEXT: Record<string, Record<string, string>> = {
   power: { on: "켜짐", off: "꺼짐" }, running: { true: "동작 중", false: "멈춤" },
   lock: { locked: "잠김", unlocked: "잠금 해제" }, door: { open: "문 열림", closed: "문 닫힘" },

@@ -46,6 +46,8 @@ export interface HomeContext {
   servedPhoneUrls?: (phonePort: number) => Promise<string[]>;
   /** 지금 운영 모드(/api/health). 없으면 시험 모드. */
   mode?: () => ControlMode;
+  /** 대시보드·설정 화면 폴더. 없으면 React 빌드(ui/dist). */
+  webDir?: string;
 }
 
 export interface HomeRuntime {
@@ -155,7 +157,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     let phoneUrls: string[] = [];
     app = createApp({
       hub: signals, policy, agent, rooms: twin.rooms, twinDir, viewerDir: home.viewerDir, libraryDir: home.libraryDir, hubKind, log, eye: feed, brain: brain ?? undefined,
-      home: { id: home.id, name: home.name }, homes: listHomes(twin.dir), layout: layout?.editor, phoneUrls: () => phoneUrls, mode: ctx.mode,
+      home: { id: home.id, name: home.name }, homes: listHomes(twin.dir), layout: layout?.editor, phoneUrls: () => phoneUrls, mode: ctx.mode, webDir: ctx.webDir,
       touch: touchStore && { get: () => touchStore.get(), save: (raw) => touchStore.save(raw), clear: () => touchStore.clear(), eyeHeightM },
     });
     const appNow = app;

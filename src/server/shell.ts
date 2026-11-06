@@ -4,14 +4,15 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { Duplex } from "node:stream";
 import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { HttpError, isLocalOrigin, readJson, type TwinHomeApp } from "./app.js";
+import { DEFAULT_WEB_DIR, HttpError, isLocalOrigin, readJson, type TwinHomeApp } from "./app.js";
 import { listenRetry } from "./net.js";
 import { serveFile } from "./static.js";
 
 /** 설정 API(start.ts가 구현). 던지는 HttpError는 그 상태 코드로 나간다. */
 export interface SetupApi {
   view(): object;
+  /** 설정을 끝냈는지. 안 끝냈으면 /는 /setup/으로 보낸다. */
+  done(): boolean;
   chooseHome(body: Record<string, unknown>): Promise<object>;
   setSources(body: Record<string, unknown>): object;
   finish(body: Record<string, unknown>): object;
@@ -38,7 +39,6 @@ export interface Shell {
   close(): Promise<void>;
 }
 
-const DEFAULT_WEB_DIR = fileURLToPath(new URL("../../web/", import.meta.url));
 const BUSY = "집을 바꾸는 중이에요. 잠시 뒤 다시 해 주세요.";
 
 export function createShell(opts: ShellOptions): Shell {
@@ -86,6 +86,12 @@ export function createShell(opts: ShellOptions): Shell {
         return;
       }
       setupRoute(req, res, path).catch(() => { if (!res.headersSent) sendJson(res, 500, { ok: false, error: "서버 오류" }); });
+      return;
+    }
+    // 설정을 안 끝냈으면 대시보드 대신 설정 화면부터
+    if ((req.method === "GET" || req.method === "HEAD") && path === "/" && !opts.setup.done()) {
+      res.writeHead(302, { location: "/setup/", "cache-control": "no-store" });
+      res.end();
       return;
     }
     const app = opts.current();

@@ -56,6 +56,8 @@ export interface StartServerOptions {
   brain?: CreateLiveBrainOptions["inject"];
   /** 폰 포트로 이어진 https 주소 찾기(main.ts는 tailscale serve 설정을 읽는다). 없으면 찾지 않는다. */
   servedPhoneUrls?: (phonePort: number) => Promise<string[]>;
+  /** 대시보드·설정 화면 폴더. 기본은 React 빌드(ui/dist). */
+  webDir?: string;
 }
 
 /** 집 실행 묶음에서 오는 값은 집을 바꾸면 새 집 것으로 바뀐다(getter). */
@@ -99,7 +101,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     mode = "test";
   }
   const ctx: HomeContext = {
-    env, log, runtimeDir, importer: opts.importer, matter: opts.matter, brain: opts.brain, servedPhoneUrls: opts.servedPhoneUrls,
+    env, log, runtimeDir, importer: opts.importer, matter: opts.matter, brain: opts.brain, servedPhoneUrls: opts.servedPhoneUrls, webDir: opts.webDir,
     sources: (homeId, ids) => store.sources(homeId, ids), mode: () => mode,
   };
   const studioDir = resolveTwinStudioDir(env.TWIN_STUDIO_DIR);
@@ -234,9 +236,11 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
 
   const shell = createShell({
     current: () => current?.app ?? null,
+    webDir: opts.webDir,
     log,
     setup: {
       view,
+      done: () => store.state().done,
       async chooseHome(body) {
         const id = typeof body.home === "string" ? body.home.trim() : "";
         if (!id) throw new HttpError(400, "home(집 id)이 필요합니다.");

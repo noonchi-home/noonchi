@@ -8,7 +8,9 @@
     "node": ">=22"
   },
   "scripts": {
+    "prestart": "npm run ui:build",
     "start": "tsx src/server/main.ts",
+    "predev": "npm run ui:build",
     "dev": "tsx watch src/server/main.ts",
     "test": "vitest run && npm --prefix ui test",
     "typecheck": "tsc --noEmit",

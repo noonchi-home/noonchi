@@ -3,7 +3,7 @@
 
 import { existsSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocket, WebSocketServer } from "ws";
 import { z } from "zod";
@@ -25,7 +25,7 @@ export interface AppOptions {
   policy?: Policy;
   agent?: Agent;
   rooms?: RoomSpec[];
-  /** 웹 화면 폴더(기본: 레포의 web/). */
+  /** 대시보드·설정 화면 폴더(기본: React 빌드 ui/dist/). */
   webDir?: string;
   /** 고른 집의 twin-studio 산출물 폴더(scene.json·assets/). 있으면 /twin/에 붙인다(요청 때마다 확인). */
   twinDir?: string;
@@ -76,7 +76,10 @@ export interface TwinHomeApp {
   broadcast(msg: unknown): void;
 }
 
-const DEFAULT_WEB_DIR = fileURLToPath(new URL("../../web/", import.meta.url));
+/** 대시보드·설정 화면 폴더: React 빌드(ui/dist). npm start·npm run dev가 먼저 빌드한다. */
+export const DEFAULT_WEB_DIR = fileURLToPath(new URL("../../ui/dist/", import.meta.url));
+/** 화면 폴더에 index.html이 없을 때(빌드 전) 화면 요청에 주는 오류. */
+export const NOT_BUILT = "화면이 아직 빌드되지 않았어요. npm run ui:build";
 const LOCAL_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
 
 /** 기본 허용 출처: 이 PC(localhost·127.0.0.1·[::1])의 모든 포트. */
@@ -426,7 +429,8 @@ export function createApp(opts: AppOptions): TwinHomeApp {
       return;
     }
     if (serveFile(res, webDir, path === "/" ? "index.html" : path, head)) return;
-    sendJson(res, 404, { ok: false, error: `파일이 없습니다: ${path}` });
+    if (!existsSync(join(webDir, "index.html"))) sendJson(res, 503, { ok: false, error: NOT_BUILT });
+    else sendJson(res, 404, { ok: false, error: `파일이 없습니다: ${path}` });
   }
 
   const server = createServer((req, res) => {

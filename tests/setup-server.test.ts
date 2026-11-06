@@ -1,7 +1,7 @@
 // 설정 흐름 서버: 집 바꾸기(실행 묶음을 닫고 새로 만듦), 기기 신호 출처, 저장한 선택으로 다시 켜기.
 // 실제 twin-studio 데이터(oneroom·apartment)와 HUB=memory, mock 에이전트로 돈다.
 
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { request, type IncomingMessage } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -28,6 +28,14 @@ afterEach(async () => {
 const runtime = () => {
   const dir = mkdtempSync(join(tmpdir(), "setup-server-"));
   dirs.push(dir);
+  return dir;
+};
+/** 빌드한 화면 대신 쓰는 화면 폴더(대시보드·설정 입구). */
+const web = () => {
+  const dir = runtime();
+  mkdirSync(join(dir, "setup"));
+  writeFileSync(join(dir, "index.html"), "<title>대시보드</title>");
+  writeFileSync(join(dir, "setup", "index.html"), "<title>설정</title>");
   return dir;
 };
 const env = (runtimeDir: string, extra: Record<string, string> = {}) => ({
@@ -147,7 +155,7 @@ describe("설정 흐름 서버", () => {
         return hub;
       },
     });
-    srv = await startServer({ env: env(runtime(), { HUB: "matter", MATTER_TRANSPORT: "local" }), log: () => {}, importer });
+    srv = await startServer({ env: env(runtime(), { HUB: "matter", MATTER_TRANSPORT: "local" }), log: () => {}, importer, webDir: web() });
     let open!: () => void;
     gate = new Promise((r) => { open = r; });
     const switching = srv.switchHome("apartment");
@@ -161,6 +169,7 @@ describe("설정 흐름 서버", () => {
     expect(during.json.error).toMatch(/바꾸는 중/);
     expect(second.status).toBe(409);
     expect(page.status).toBe(200);
+    expect(await page.text()).toContain("설정");
     expect(view).toMatchObject({ switching: true, home: null });
     expect(srv.twin.home.id).toBe("apartment");
     expect((await get("/api/devices")).status).toBe(200);
@@ -279,5 +288,18 @@ describe("설정 흐름 서버", () => {
     expect(v).toMatchObject({ done: true, home: { id: "apartment" }, devices_saved: true });
     expect(v.devices.find((d: Msg) => d.id === id).source).toEqual({ kind: "none" });
     expect(srv.signals.get(id)!.signal).toBe("none");
+  });
+
+  it("설정을 안 끝냈으면 /는 /setup/으로 보내고, 끝내면 대시보드를 내준다", async () => {
+    srv = await startServer({ env: env(runtime()), log: () => {}, persistSetup: true, webDir: web() });
+    const first = await fetchRetry(`${srv.url}/`, { redirect: "manual" });
+    expect(first.status).toBe(302);
+    expect(first.headers.get("location")).toBe("/setup/");
+    const setup = await fetchRetry(`${srv.url}/setup/`);
+    expect(await setup.text()).toContain("설정");
+    expect((await post("/api/setup/done", { home: "oneroom" })).status).toBe(200);
+    const after = await fetchRetry(`${srv.url}/`, { redirect: "manual" });
+    expect(after.status).toBe(200);
+    expect(await after.text()).toContain("대시보드");
   });
 });

@@ -19,10 +19,10 @@ afterEach(async () => {
   while (cleanups.length) await cleanups.pop()!();
 });
 
-async function start(opts: { twinDir?: string; agent?: boolean } = {}) {
+async function start(opts: { twinDir?: string; webDir?: string; agent?: boolean } = {}) {
   const home = makeHome();
   const agent = opts.agent === false ? undefined : new Agent({ hub: home.hub, policy: home.policy, rooms: ROOMS, provider: new MockProvider() });
-  const app: TwinHomeApp = createApp({ hub: home.hub, policy: home.policy, agent, rooms: ROOMS, twinDir: opts.twinDir, log: () => {} });
+  const app: TwinHomeApp = createApp({ hub: home.hub, policy: home.policy, agent, rooms: ROOMS, twinDir: opts.twinDir, webDir: opts.webDir, log: () => {} });
   const { url } = await app.listen(0, "127.0.0.1");
   cleanups.push(() => app.close());
   return { ...home, app, url };
@@ -217,18 +217,42 @@ describe("에이전트 REST", () => {
 });
 
 describe("정적 파일·CORS", () => {
-  it("웹 화면(/, /app.js, /style.css)과 경로 탈출 차단", async () => {
-    const { url } = await start();
+  it("웹 화면(/, /setup/, /assets/*)과 경로 탈출 차단", async () => {
+    const webDir = mkdtempSync(join(tmpdir(), "web-"));
+    cleanups.push(() => rmSync(webDir, { recursive: true, force: true }));
+    mkdirSync(join(webDir, "assets"));
+    mkdirSync(join(webDir, "setup"));
+    writeFileSync(join(webDir, "index.html"), "<title>twin-home</title>");
+    writeFileSync(join(webDir, "setup", "index.html"), "<title>설정</title>");
+    writeFileSync(join(webDir, "assets", "app.js"), "export {};");
+    const { url } = await start({ webDir });
     const index = await api(url, "/");
     expect(index.status).toBe(200);
     expect(index.headers.get("content-type")).toContain("text/html");
     expect(index.text).toContain("twin-home");
-    const js = await api(url, "/app.js");
+    expect((await api(url, "/setup/")).text).toContain("설정");
+    const js = await api(url, "/assets/app.js");
     expect(js.headers.get("content-type")).toContain("javascript");
-    const css = await api(url, "/style.css");
-    expect(css.headers.get("content-type")).toContain("text/css");
+    expect((await api(url, "/assets/none.js")).status).toBe(404);
     const escape = await api(url, "/..%2Fpackage.json");
     expect(escape.status).toBe(404);
+  });
+
+  it("기본 화면 폴더는 ui/dist", async () => {
+    const { DEFAULT_WEB_DIR } = await import("../src/server/app.js");
+    expect(DEFAULT_WEB_DIR.replace(/\\/g, "/")).toMatch(/\/ui\/dist\/$/);
+  });
+
+  it("화면을 빌드하지 않았으면 /와 /setup/은 빌드하라는 503", async () => {
+    const webDir = join(mkdtempSync(join(tmpdir(), "web-")), "missing");
+    cleanups.push(() => rmSync(join(webDir, ".."), { recursive: true, force: true }));
+    const { url } = await start({ webDir });
+    for (const path of ["/", "/setup/"]) {
+      const r = await api(url, path);
+      expect(r.status).toBe(503);
+      expect(r.json).toEqual({ ok: false, error: "화면이 아직 빌드되지 않았어요. npm run ui:build" });
+    }
+    expect((await api(url, "/api/health")).status).toBe(200);
   });
 
   it("/twin/은 twinDir이 있을 때만 붙는다", async () => {
