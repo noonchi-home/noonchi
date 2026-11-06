@@ -6,6 +6,9 @@ describe("parseMessage", () => {
     const m = parseMessage(JSON.stringify({ type: "state", state: { id: "light_1", online: true, twin: { power: "on" }, matter: {}, updatedAt: "t" } }));
     expect(m?.type).toBe("state");
   });
+  it("계획 메시지도 받는다(plan: null은 계획 지움)", () => {
+    expect(parseMessage('{"type":"plan","plan":null}')?.type).toBe("plan");
+  });
   it("모르는 type·깨진 JSON은 null", () => {
     expect(parseMessage("{oops")).toBeNull();
     expect(parseMessage(JSON.stringify({ type: "nope" }))).toBeNull();

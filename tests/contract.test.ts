@@ -1,11 +1,62 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import type { PlanView } from "../src/contract/plan.js";
+
+const CONTRACT_DIR = new URL("../src/contract/", import.meta.url);
 
 describe("메시지 계약", () => {
-  it("src/contract/events.ts는 타입만 가져온다(화면 빌드에 서버 코드가 끌려오지 않게)", () => {
-    const src = readFileSync(new URL("../src/contract/events.ts", import.meta.url), "utf8");
-    const imports = src.split("\n").filter((l) => /^\s*import\b/.test(l));
-    expect(imports.every((l) => /^\s*import type\b/.test(l))).toBe(true);
-    expect(src).not.toMatch(/node:|from "zod"/);
+  it("src/contract의 파일은 타입만 가져오고 타입만 내보낸다(화면 빌드에 서버 코드가 끌려오지 않게)", () => {
+    const files = readdirSync(CONTRACT_DIR).filter((f) => f.endsWith(".ts"));
+    expect(files).toEqual(expect.arrayContaining(["events.ts", "plan.ts"]));
+    for (const f of files) {
+      const src = readFileSync(new URL(f, CONTRACT_DIR), "utf8");
+      const imports = src.split("\n").filter((l) => /^\s*import\b/.test(l));
+      expect(imports.every((l) => /^\s*import type\b/.test(l)), f).toBe(true);
+      expect(src, f).not.toMatch(/node:|from "zod"/);
+      expect(src, f).not.toMatch(/^\s*export\s+(const|let|var|function|class|enum|default)\b/m);
+    }
+  });
+});
+
+// PlanView의 키 전부. 계약에 키를 더하거나 빼면 typecheck가 여기서 실패한다(true = 꼭 있어야 함).
+const PLAN_KEYS: Record<keyof PlanView, boolean> = {
+  id: true, revision: true, supersedes: false, origin: false, source: true, goal: true, judgment: true,
+  dryRun: true, robot: true, path: true, legs: true, steps: true, status: true, updatedAt: true,
+};
+
+/** 문서의 json 블록 중 { plan } 본문 예시. */
+function examplePlan(): PlanView {
+  const md = readFileSync(new URL("../docs/plan-contract.md", import.meta.url), "utf8");
+  const blocks = [...md.matchAll(/```json\r?\n([\s\S]*?)```/g)].map((m) => JSON.parse(m[1]!) as Record<string, unknown>);
+  const plan = blocks.find((b) => "plan" in b)?.plan as PlanView | undefined;
+  if (!plan) throw new Error("docs/plan-contract.md에 { plan } 예시 json 블록이 없다");
+  return plan;
+}
+
+describe("docs/plan-contract.md 예시", () => {
+  it("본문은 { plan: PlanView } 모양", () => {
+    const plan = examplePlan();
+    const keys = Object.keys(plan);
+    expect(keys.filter((k) => !(k in PLAN_KEYS))).toEqual([]);
+    expect(Object.entries(PLAN_KEYS).filter(([k, need]) => need && !keys.includes(k)).map(([k]) => k)).toEqual([]);
+    expect(plan.revision).toBe(1);
+  });
+
+  it("컵 치우기 네 단계: 식탁 가기, 컵 집기, 싱크대 가기, 내려놓기", () => {
+    const plan = examplePlan();
+    expect(plan.steps.map((s) => [s.kind, s.label, s.target?.objectId])).toEqual([
+      ["move", "식탁으로 가기", "table_1"], ["act", "컵 집기", "table_1"],
+      ["move", "싱크대로 가기", "sink_1"], ["act", "컵 내려놓기", "sink_1"],
+    ]);
+    expect(plan.dryRun).toBe(true);
+  });
+
+  it("경로는 로봇에서 시작하고 이동 단계마다 끝 점 번호가 있다", () => {
+    const plan = examplePlan();
+    expect(plan.path[0]).toEqual(plan.robot.position);
+    expect(plan.legs.map((l) => l.stepId)).toEqual(plan.steps.filter((s) => s.kind === "move").map((s) => s.id));
+    const ends = plan.legs.map((l) => l.end);
+    expect(ends.every((e, i) => e > (ends[i - 1] ?? 0))).toBe(true);
+    expect(ends.at(-1)).toBe(plan.path.length - 1);
   });
 });

@@ -1,6 +1,7 @@
 // 서버↔화면 메시지 계약(WebSocket /events, /api 응답). 순수 타입만 둔다: ui/가 이 파일을 그대로 가져다 쓴다.
 // 바꾸면 ui/src/lib/messages.ts의 parseMessage와 화면 테스트를 같이 고친다.
 import type { Command, DeviceSpec, DeviceState } from "../hub/types.js";
+import type { PlanView } from "./plan.js";
 import type { ControlMode } from "./setup.js";
 
 // 좌표
@@ -195,4 +196,6 @@ export type ServerMessage =
   | { type: "brain"; event: BrainLog }
   | { type: "photo"; photo: PhotoRecord }
   | { type: "focus"; focus: Focus }
-  | { type: "eye"; eye: EyeEvent };
+  | { type: "eye"; eye: EyeEvent }
+  /** 클로이드 지금 계획(src/contract/plan.ts). null이면 계획을 지운다. */
+  | { type: "plan"; plan: PlanView | null };

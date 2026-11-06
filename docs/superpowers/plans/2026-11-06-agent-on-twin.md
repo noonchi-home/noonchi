@@ -1,6 +1,6 @@
 # 트윈 위 에이전트 계획 구현 계획
 
-상태: 2026-11-06-twin3d.md Task 27·28·35·37로 진행한다.
+상태: 지금 트윈 위에 진행한다(2026-11-06). 3D 재구축 계획은 멈춤.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -50,10 +50,12 @@ ui/src/plan/PlanCard.tsx   대화 패널 위쪽 계획 카드(단계 목록·상
 ```ts
 // src/contract/plan.ts
 // 클로이드 계획(판단·단계·이동 경로) 계약. 서버 planner와 task planner(ai 저장소)가 같은 모양을 보낸다. 평면 좌표는 scene.json plan과 같은 [x, z] 미터.
-export type XZ = [number, number];
+import type { Plan2 } from "./events.js";
+export type XZ = Plan2;
 export type PlanSource = "brain" | "agent" | "planner";
 export type StepKind = "move" | "act" | "ask" | "device" | "wait";
 export type StepStatus = "pending" | "active" | "done" | "failed" | "skipped";
+export type PlanStatus = "planned" | "running" | "done" | "cancelled" | "failed";
 
 export interface PlanTarget { objectId?: string; deviceId?: string; room?: string; position?: XZ }
 
@@ -61,26 +63,33 @@ export interface PlanStep { id: string; kind: StepKind; label: string; target?: 
 
 export interface PlanView {
   id: string;
+  /** 같은 id를 고칠 때마다 1씩 오른다(새 계획은 1). 화면은 지금 것과 같거나 작은 번호를 버린다. */
+  revision: number;
+  /** 다시 계획했으면 바뀌기 전 계획 id. */
+  supersedes?: string;
+  /** 시험으로 보낸 계획이면 "mock". 없으면 live. */
+  origin?: "live" | "mock";
   source: PlanSource;
   goal: string;
   judgment: string;
   dryRun: boolean;
-  robot: { position: XZ; room: string | null };
-  /** 로봇에서 시작하는 바닥 경로. 이동이 없으면 []. move 단계마다 legs에 끝 점 번호가 있다. */
+  /** 로봇(맞춘 폰 눈) 위치. 모르면 null이고 그때 path는 []. */
+  robot: { position: XZ | null; room: string | null };
+  /** 로봇에서 시작하는 바닥 경로. 이동이 없으면 []. move 단계마다 legs에 path 안 끝 점 번호가 있다. */
   path: XZ[];
   legs: { stepId: string; end: number }[];
   steps: PlanStep[];
-  status: "planned" | "running" | "done" | "cancelled" | "failed";
+  status: PlanStatus;
   updatedAt: string;
 }
 ```
 
 - `ServerMessage`에 `| { type: "plan"; plan: PlanView | null }`(null = 계획 지움).
 
-- [ ] **Step 1: 테스트** — `tests/contract.test.ts`에 `src/contract/plan.ts`도 「타입만 가져온다」 검사를 더한다. `ui/tests/messages.test.ts`에 `parseMessage('{"type":"plan","plan":null}')?.type === "plan"`을 더한다. Run → FAIL
-- [ ] **Step 2: 구현** — 위 타입 파일, `events.ts`·`messages.ts` 고치기. Run → PASS
-- [ ] **Step 3: `docs/plan-contract.md`** — 결론만 쓴다: 보내는 곳(`POST http://127.0.0.1:8200/api/plan`, 본문 `{ plan: PlanView }`, `id`가 같으면 갱신), 좌표 기준(scene.json `plan`, 미터, [x, z]), 컵 치우기 예시 JSON 하나(아래 Task 3 테스트의 기대값과 같은 값), 단계 상태만 바꿀 때 `POST /api/plan/:id/steps/:stepId {status}`.
-- [ ] **Step 4: Commit**(사용자 허락 뒤)
+- [x] **Step 1: 테스트** — `tests/contract.test.ts`에 `src/contract/plan.ts`도 「타입만 가져온다」 검사를 더한다. 문서 예시 JSON이 `PlanView` 키·컵 네 단계·`legs` 규칙을 따르는지도 본다. `ui/tests/messages.test.ts`에 `parseMessage('{"type":"plan","plan":null}')?.type === "plan"`을 더한다. Run → FAIL
+- [x] **Step 2: 구현** — 위 타입 파일, `events.ts`·`messages.ts` 고치기(`KNOWN`은 `Record<ServerMessage["type"], true>`라 type을 빼먹으면 typecheck가 실패한다). Run → PASS
+- [x] **Step 3: `docs/plan-contract.md`** — 결론만 쓴다: 보내는 곳(`POST http://127.0.0.1:8200/api/plan`, 본문 `{ plan: PlanView }`, `id`가 같으면 갱신), 좌표 기준(scene.json `plan`, 미터, [x, z]), `revision`·`supersedes`·`origin`, 로봇 위치를 모르면 `robot.position: null`·`path: []`, 컵 치우기 예시 JSON 하나(아래 Task 3 테스트의 기대값과 같은 값, 마곡 아파트 좌표), 단계 상태만 바꿀 때 `POST /api/plan/:id/steps/:stepId {status}`.
+- [x] **Step 4: Commit**(사용자 허락 뒤)
 
 ```bash
 git add src/contract/plan.ts src/contract/events.ts ui/src/lib/messages.ts tests/contract.test.ts ui/tests/messages.test.ts docs/plan-contract.md
