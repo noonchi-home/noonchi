@@ -105,14 +105,15 @@ git commit -m "feat: define the Cloid plan contract (judgment, steps, floor path
 
 **Interfaces:**
 - Produces:
-  - `interface FloorPlan { rooms: { id: string; polygon: XZ[] }[]; portals: Portal[]; objects: Map<string, { id: string; type: string; room: string | null; position: XZ }>; robot: { position: XZ; room: string | null; reachable: string[] } }`
+  - `interface FloorPlan { rooms: { id: string; polygon: XZ[] }[]; portals: Portal[]; objects: Map<string, { id: string; type: string; room: string | null; position: XZ }>; robot: { position: XZ | null; room: string | null; reachable: string[] } }`(로봇·충전대 물건이 없으면 `position: null`)
   - `interface Portal { id: string; rooms: [string, string]; point: XZ }`
   - `floorPlanFrom(scene: unknown): FloorPlan`(scene.json 전체를 받는다. 문 `connects`, `open_edges`는 두 방 다각형이 겹치는 변의 가운데)
+  - `defaultReachable(rooms)`: `reachable_rooms`가 없는 집에서 쓴다. `floor_z`(없으면 0)가 0이고 id가 `bath`로 시작하지 않는 방(발코니·현관 단차와 욕실 제외)
   - `roomAt(fp: FloorPlan, p: XZ): string | null`
-  - `route(fp: FloorPlan, from: XZ, to: XZ): XZ[] | null`(문·트인 경계를 잇는 최단 거리, 로봇이 갈 수 있는 방만 지난다)
+  - `route(fp: FloorPlan, from: XZ | null, to: XZ): XZ[] | null`(문·트인 경계를 잇는 최단 거리, 로봇이 갈 수 있는 방만 지난다. `from`이 null이면 null)
   - `approach(path: XZ[], stopM: number): XZ[]`(마지막 구간을 stopM만큼 줄인다)
 
-- [ ] **Step 1: 실패하는 테스트**
+- [x] **Step 1: 실패하는 테스트**
 
 `tests/plan-route.test.ts`
 ```ts
@@ -162,7 +163,9 @@ describe("바닥 경로", () => {
 });
 ```
 
-- [ ] **Step 2: 구현**
+같은 파일에 「로봇 시작점이 없는 집」도 둔다: 로봇·충전대·`plan.robot`이 없으면 `robot.position`·`robot.room`이 null이고 `route(fp, null, …)`이 null, 갈 수 있는 방 기본값은 단차(`floor_z: -0.1`) 방과 `bath…` 방을 뺀다.
+
+- [x] **Step 2: 구현**
 
 `src/plan/route.ts`
 ```ts
@@ -188,8 +191,9 @@ export function roomAt(fp: FloorPlan, [x, z]: XZ): string | null {
   return null;
 }
 
-/** 시작·끝 점과 포털을 마디로 둔 최단 거리(다익스트라). 두 마디가 같은 방에 있으면 잇는다. */
-export function route(fp: FloorPlan, from: XZ, to: XZ): XZ[] | null {
+/** 시작·끝 점과 포털을 마디로 둔 최단 거리(다익스트라). 두 마디가 같은 방에 있으면 잇는다. 시작점을 모르면 null. */
+export function route(fp: FloorPlan, from: XZ | null, to: XZ): XZ[] | null {
+  if (!from) return null;
   const startRoom = roomAt(fp, from);
   const endRoom = roomAt(fp, to);
   if (!startRoom || !endRoom) return null;
@@ -244,11 +248,11 @@ export interface FloorPlan {
   rooms: { id: string; polygon: XZ[] }[];
   portals: Portal[];
   objects: Map<string, { id: string; type: string; room: string | null; position: XZ }>;
-  robot: { position: XZ; room: string | null; reachable: string[] };
+  robot: { position: XZ | null; room: string | null; reachable: string[] };
 }
 
 type Scene = {
-  plan?: { rooms?: { id: string; polygon: XZ[] }[]; doors?: { id: string; position: XZ; connects: string[] }[]; open_edges?: [string, string][]; robot?: { dock?: string; reachable_rooms?: string[] } };
+  plan?: { rooms?: { id: string; polygon: XZ[]; floor_z?: number }[]; doors?: { id: string; position: XZ; connects: string[] }[]; open_edges?: [string, string][]; robot?: { dock?: string; reachable_rooms?: string[] } };
   objects?: { id: string; type: string; room?: string | null; plan?: { position?: XZ } }[];
 };
 
@@ -299,16 +303,16 @@ export function floorPlanFrom(scene: unknown): FloorPlan {
   const start = [...objects.values()].find((o) => o.type === "robot") ?? (dockId ? objects.get(dockId) : undefined);
   return {
     rooms, portals, objects,
-    robot: { position: start?.position ?? [0, 0], room: start?.room ?? null, reachable: s.plan?.robot?.reachable_rooms ?? rooms.map((r) => r.id) },
+    robot: { position: start?.position ?? null, room: start?.room ?? null, reachable: s.plan?.robot?.reachable_rooms ?? defaultReachable(rooms) },
   };
 }
 ```
 
-(fixture에는 `robot` 종류가 없어 충전대 자리를 쓴다. 실제 마곡 집은 `robot`(3.9, 5.51, 복도)이 있다.)
+(`defaultReachable`은 위 Interfaces 규칙 그대로. fixture에는 `robot` 종류가 없어 충전대 자리를 쓴다. 실제 마곡 집은 `robot`(3.9, 5.51, 복도)이 있다.)
 
-- [ ] **Step 3: 실제 집으로 한 번 더** — 같은 테스트 파일에 `../twin-studio/apartment/scene.json`이 있을 때만 도는 테스트를 더한다: 로봇(복도)에서 식탁 `table_1`(8.04, 2.7)까지 경로가 있고, 첫 점이 [3.9, 5.51], 끝 점이 [8.04, 2.7], 지나는 점이 3개 이하인지 본다(`it.skipIf(!existsSync(path))`).
-- [ ] **Step 4: 확인** — `npx vitest run tests/plan-route.test.ts` PASS
-- [ ] **Step 5: Commit**(사용자 허락 뒤)
+- [x] **Step 3: 실제 집으로 한 번 더** — 같은 테스트 파일에 `../twin-studio/apartment/scene.json`이 있을 때만 도는 테스트를 더한다: 로봇(복도)에서 식탁 `table_1`(8.04, 2.7)까지 경로가 있고, 첫 점이 [3.9, 5.51], 끝 점이 [8.04, 2.7], 지나는 점이 3개 이하인지 본다(`describe.skipIf(!existsSync(path))`). 가구·가전 자리(문·창 제외)를 `roomAt`으로 찾으면 그 물건의 `room`과 같은지도 본다. `homes/mokryeon_180b/scene.json`이 있으면 로봇 위치 null, 갈 수 있는 방 기본값(발코니·현관·전실·욕실 제외), 알파룸 [3.5, 9]에서 식탁까지 `door_alpha`를 지나는 경로를 본다.
+- [x] **Step 4: 확인** — `npx vitest run tests/plan-route.test.ts` PASS
+- [x] **Step 5: Commit**(사용자 허락 뒤)
 
 ```bash
 git add src/plan/floor.ts src/plan/route.ts tests/plan-route.test.ts
