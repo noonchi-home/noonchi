@@ -132,6 +132,31 @@ describe("벽 대기 맞춤(startServer)", () => {
     phone.ws.close();
   });
 
+  it("벽 하나로 A·B 구석: 실제 원룸 집에서 구석을 돌려주고 저장하지 않는다", async () => {
+    const dir = runtime();
+    srv = await startServer({ env: env(dir, { HOME_ID: "oneroom" }), log: () => {} });
+    expect(srv.twin.home.id).toBe("oneroom");
+    const auto = await json("/api/phone/touch-points/auto", { home: "oneroom", position: [0.1, 6], room: "bathroom", normal: [1, 0] });
+    expect(auto.status).toBe(200);
+    expect(auto.json).toEqual({
+      ok: true, distance_m: 2.885,
+      points: [{ id: "A", label: "욕실 구석", position: [0.1, 6.5] }, { id: "B", label: "욕실 맞은편 구석", position: [1.64, 4.06] }],
+    });
+    // 맞은편이 주방으로 열린 방은 A만
+    expect((await json("/api/phone/touch-points/auto", { position: [3, 0.1] })).json).toEqual({
+      ok: true, distance_m: null, points: [{ id: "A", label: "방 구석", position: [3.9, 0.1] }],
+    });
+    expect((await json("/api/phone/touch-points")).json).toMatchObject({ points: null, mode: "floor" });
+    expect(existsSync(join(dir, "homes", "oneroom", "phone-touch.json"))).toBe(false);
+    // 받은 두 점은 그대로 저장된다
+    expect((await json("/api/phone/touch-points", { home: "oneroom", points: auto.json.points })).json).toMatchObject({ ok: true, mode: "touch", distance_m: 2.885 });
+
+    const bad = await json("/api/phone/touch-points/auto", { home: "oneroom", position: [1, "x"] });
+    expect(bad.status).toBe(400);
+    expect(bad.json.error).toContain("위치");
+    expect((await json("/api/phone/touch-points/auto", { home: "apartment", position: [0.1, 6] })).status).toBe(409);
+  });
+
   it("깨진 파일이면 경고하고 바닥 조준으로 시작한다", async () => {
     const dir = runtime();
     const probe = await startServer({ env: { HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock" }, log: () => {} });

@@ -32,8 +32,8 @@ Files: `src/phone/corners.ts`(새), `tests/phone-corners.test.ts`(새).
 
 Files: `src/server/app.ts`, `src/server/home.ts`, `tests/phone-touch-start.test.ts`.
 
-- [ ] `POST /api/phone/touch-points/auto {home, position, room?, normal?}` → `{ok, points, distance_m}`. 저장하지 않는다. 잘못된 값 400, 다른 집 409. 실제 oneroom 집으로 시험 → 구현.
-- [ ] `home.ts`는 `scene.json` plan을 한 번 읽어 범위·바닥 높이·구석에 같이 쓴다.
+- [x] `POST /api/phone/touch-points/auto {home, position, room?, normal?}` → `{ok, points, distance_m}`. 저장하지 않는다. 잘못된 값 400, 다른 집 409. 실제 oneroom 집으로 시험 → 구현.
+- [x] `home.ts`는 `scene.json` plan을 한 번 읽어 범위·바닥 높이·구석에 같이 쓴다.
 
 ## Task 3: 설정 화면 버튼
 

@@ -47,8 +47,9 @@ export interface AppOptions {
   hubKind?: string;
   /** 폰 AR 클로이드의 눈 화면(src/phone/feed.ts). 있으면 GET /api/eye/*를 넘긴다. */
   eye?: { handle(req: IncomingMessage, res: ServerResponse, path: string): boolean };
-  /** 벽 대기 맞춤의 기준점 A·B(src/phone/touch.ts TouchStore). 있으면 /api/phone/touch-points*. */
-  touch?: { get(): TouchPoint[] | null; save(raw: unknown): TouchPoint[]; clear(): void; eyeHeightM: number };
+  /** 벽 대기 맞춤의 기준점 A·B(src/phone/touch.ts TouchStore). 있으면 /api/phone/touch-points*.
+   *  auto: 누른 벽 하나 → A·B 구석(src/phone/corners.ts, 저장 안 함). */
+  touch?: { get(): TouchPoint[] | null; save(raw: unknown): TouchPoint[]; clear(): void; auto(raw: unknown): TouchPoint[]; eyeHeightM: number };
   /** 상위 판단(BRAIN=1, src/brain/live.ts). 있으면 GET /api/brain에 상태를 보인다. */
   brain?: { status(): object };
   /** 지금 운영 모드(/api/health). 없으면 시험 모드. */
@@ -224,9 +225,13 @@ export function createApp(opts: AppOptions): TwinHomeApp {
     if (!opts.touch) throw new HttpError(404, "폰 기준점을 쓸 수 없습니다(집 scene.json이 없음).");
     return opts.touch;
   };
+  /** A–B 수평 거리(mm 반올림). 두 점이 아니면 null. */
+  const pairDistance = (points: TouchPoint[] | null) => {
+    const [a, b] = points ?? [];
+    return a && b ? Math.round(Math.hypot(b.position[0] - a.position[0], b.position[1] - a.position[1]) * 1000) / 1000 : null;
+  };
   const touchView = (points: TouchPoint[] | null) => ({
-    ok: true, points, mode: points ? "touch" : "floor", eye_height_m: requireTouch().eyeHeightM,
-    distance_m: points ? Math.round(Math.hypot(points[1]!.position[0] - points[0]!.position[0], points[1]!.position[1] - points[0]!.position[1]) * 1000) / 1000 : null,
+    ok: true, points, mode: points ? "touch" : "floor", eye_height_m: requireTouch().eyeHeightM, distance_m: pairDistance(points),
   });
   route("GET", /^\/api\/phone\/touch-points$/, async () => touchView(requireTouch().get()));
   route("POST", /^\/api\/phone\/touch-points$/, async (req) => {
@@ -235,6 +240,19 @@ export function createApp(opts: AppOptions): TwinHomeApp {
     sameHome(body);
     try {
       return touchView(store.save(body));
+    } catch (e) {
+      if (e instanceof TouchPointsError) throw new HttpError(400, e.message);
+      throw e;
+    }
+  });
+  // 벽 하나 → A·B 구석. 저장하지 않는다(설정 화면이 보이고 사람이 저장)
+  route("POST", /^\/api\/phone\/touch-points\/auto$/, async (req) => {
+    const store = requireTouch();
+    const body = await readJson(req);
+    sameHome(body);
+    try {
+      const points = store.auto(body);
+      return { ok: true, points, distance_m: pairDistance(points) };
     } catch (e) {
       if (e instanceof TouchPointsError) throw new HttpError(400, e.message);
       throw e;
