@@ -15,7 +15,8 @@ export function StatusPill({ connected, health }: { connected: boolean | null; h
   const hub = health ? `허브 ${health.hub}${health.transport ? ` · ${health.transport}` : ""}` : "허브 -";
   const agent = health ? `에이전트 ${health.provider ?? "없음"}${health.model ? ` · ${health.model}` : ""}` : "에이전트 -";
   return (
-    <section aria-label="집 상태" className="absolute left-1/2 top-3 z-50 max-w-[calc(100%-1.5rem)] -translate-x-1/2">
+    // 1440px부터는 눈 창(왼쪽 12px + 224px)과 판단 기록(오른쪽 12px + 380px)이 같은 줄로 올라온다. 알약은 둘 사이 빈칸(12px씩 띄움) 가운데에 두고 빈칸보다 넓어지지 않게 한다.
+    <section aria-label="집 상태" className="absolute left-1/2 top-3 z-50 max-w-[calc(100%-1.5rem)] -translate-x-1/2 min-[1440px]:left-[calc(50%-78px)] min-[1440px]:max-w-[calc(100%-652px)]">
       <Surface kind="pill" className="p-1">
         <div className="flex items-center gap-1 overflow-x-auto text-xs font-normal text-ink-2">
           <span role="status" aria-live="polite" className={cn(chip, "flex items-center gap-1.5 font-medium", connected ? "text-green" : "text-ink-2")}>
