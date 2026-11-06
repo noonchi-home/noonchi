@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import type { DeviceView } from "../../src/contract/events.ts";
 import { BubbleLayer } from "../src/bubbles/BubbleLayer";
 import type { Check } from "../src/checks/checks";
-import { LookContext } from "../src/look/look";
 
 const dev = (id: string, label: string, power: string): [string, DeviceView] => [id, {
   id, label, room: "r", roomLabel: "거실", twinType: "t", kind: "light", matterDeviceType: "x", capabilities: [], sensors: [], twinAttrs: {},
@@ -78,19 +77,14 @@ describe("BubbleLayer", () => {
     expect(document.querySelector("[aria-label='확인한 것'] .pointer-events-auto")).toBeNull();
   });
 
-  it("부품 모양은 흰 카드, 유리 모양은 유리 말풍선. 모름도 점선 테두리를 쓰지 않는다", () => {
+  it("말풍선은 흰 카드다. 모름도 점선 테두리를 쓰지 않는다", () => {
     const unknown: [string, DeviceView] = ["u", { ...dev("u", "후드", "off")[1], state: { id: "u", online: true, twin: {}, matter: {}, updatedAt: "t", signal: "none" } }];
     const devices = new Map([dev("a", "거실 조명", "on"), unknown]);
     const checks = [checked("a", 1), checked("u", 2, "확인")];
     const points = new Map([["a", { x: 10, y: 20, visible: true }], ["u", { x: 50, y: 20, visible: true }]]);
-    const surface = (label: string) => bubbleOf(label).querySelector<HTMLElement>("[data-surface]")!;
-    const { unmount } = render(<BubbleLayer checks={checks} devices={devices} points={points} />);
-    expect(surface("거실 조명").dataset.surface).toBe("card");
-    expect(document.querySelector(".border-dashed")).toBeNull();
-    unmount();
-    render(<LookContext.Provider value="glass"><BubbleLayer checks={checks} devices={devices} points={points} /></LookContext.Provider>);
-    expect(surface("거실 조명").dataset.surface).toBe("glass");
-    expect(surface("후드").dataset.surface).toBe("glass");
+    render(<BubbleLayer checks={checks} devices={devices} points={points} />);
+    expect(bubbleOf("거실 조명").querySelector(".bg-surface.shadow-card")).not.toBeNull();
+    expect(bubbleOf("후드").querySelector(".bg-surface.shadow-card")).not.toBeNull();
     expect(document.querySelector(".border-dashed")).toBeNull();
   });
 

@@ -1,7 +1,7 @@
 import type { DeviceView } from "../../../src/contract/events.ts";
 import type { Check, CheckVerb } from "../checks/checks";
 import { cn } from "../lib/utils";
-import { Surface } from "../look/Surface";
+import { Surface } from "../components/Surface";
 import type { ScreenPoint } from "../twin/use-anchors";
 import { deviceSummary, type Tone } from "./summary";
 
@@ -33,7 +33,7 @@ function shownOf(c: Check, devices: Map<string, DeviceView>, objects: Map<string
 /**
  * 에이전트가 판단하면서 확인한 기기·물건(checks)에만 말풍선을 띄운다. 꼬리 끝이 points의 자리에 온다(밝은 심 + 어두운 테두리라 바닥 밝기와 상관없이 보인다).
  * 기기 = 번호 + 이름 + verb + 지금 상태 한 줄, 물건(식탁) = 이름 + verb + 판정 요약.
- * 말풍선 판은 모양마다 다르다: 부품 모양은 흰 카드, 유리 모양은 Liquid Glass(Surface).
+ * 말풍선 판은 흰 카드(Surface)다.
  * 말풍선은 보기만 한다: 층과 말풍선 모두 마우스를 받지 않아 클릭·끌기가 3D 트윈으로 간다.
  */
 export function BubbleLayer({ checks, devices, objects = new Map(), points, focusId }: {

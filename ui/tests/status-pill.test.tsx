@@ -1,7 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { HealthView } from "../../src/contract/events.ts";
-import { LookContext, type Look } from "../src/look/look";
 import { StatusPill } from "../src/panels/StatusPill";
 
 const health: HealthView = {
@@ -39,8 +38,8 @@ describe("StatusPill", () => {
     expect(screen.getByText("에이전트 없음")).toBeInTheDocument();
   });
 
-  it.each<Look>(["parts", "glass"])("운영 모드를 보인다(%s 모양): 시험 모드·실제 모드", (look) => {
-    const pill = (h: HealthView | null) => <LookContext.Provider value={look}><StatusPill connected health={h} /></LookContext.Provider>;
+  it("운영 모드를 보인다: 시험 모드·실제 모드", () => {
+    const pill = (h: HealthView | null) => <StatusPill connected health={h} />;
     const { rerender } = render(pill(null));
     expect(screen.queryByText(/시험 모드|실제 모드/)).toBeNull();
     rerender(pill(health));

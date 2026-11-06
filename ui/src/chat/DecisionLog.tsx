@@ -12,7 +12,7 @@ import {
 import ChatPanel, { ChatAction, ChatRegion, Section } from "../components/ui/chat-panel";
 import { AgentToolTimeline, CallState, TimelineEmpty, type AgentCallStatus, type AgentToolCall } from "../components/ui/tool-timeline";
 import { cn } from "../lib/utils";
-import { Surface } from "../look/Surface";
+import { Surface } from "../components/Surface";
 import { BRAIN_STAGE, observedOf, stepKind, targetOf, toolLabel } from "./labels";
 import { STATE_LABELS, type PendingCard, type Step, type Turn, type TurnState } from "./turns";
 

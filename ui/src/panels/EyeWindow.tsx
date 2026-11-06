@@ -2,7 +2,7 @@ import { ChevronUp, Eye } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { HealthView } from "../../../src/contract/events.ts";
 import { attachEyeVideo, type EyeMode } from "./eye-video";
-import { Surface } from "../look/Surface";
+import { Surface } from "../components/Surface";
 import { pickPhoneUrl } from "./phone-url";
 import { QrCode } from "./QrCode";
 
@@ -95,7 +95,7 @@ export function EyeBody({ health, connected, large }: { health: HealthView | nul
 const foldButton = "flex size-7 items-center justify-center rounded-control text-ink-2 transition-colors hover:bg-hover hover:text-ink";
 
 /**
- * 왼쪽 위 작은 창. 판은 모양마다 다르다(Surface). 접으면 눈 단추만 남고 화면 받기를 멈춘다.
+ * 왼쪽 위 작은 창. 판은 흰 카드(Surface)다. 접으면 눈 단추만 남고 화면 받기를 멈춘다.
  * 640px보다 좁으면 대시보드의 쌓기 상자 안에서 제자리(relative)에 놓여 판단 기록 위에 선다.
  */
 export function EyeWindow({ health, connected }: { health: HealthView | null; connected?: boolean | null }) {

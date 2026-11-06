@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Dashboard } from "../src/dashboard/Dashboard";
 
-afterEach(() => { vi.unstubAllGlobals(); });
+afterEach(() => { vi.unstubAllGlobals(); history.replaceState(null, "", "/"); });
 
 describe("대시보드 뼈대", () => {
   it("3D 트윈 자리가 있다", () => {
@@ -21,5 +21,17 @@ describe("대시보드 뼈대", () => {
       // 덮개와 패널 사이 상자(좁은 화면 쌓기 상자)는 넓은 화면에서 상자가 없고 좁은 화면에서도 마우스를 받지 않는다
       for (let box = panel.parentElement!; box !== overlay; box = box.parentElement!) expect(box).toHaveClass("contents", "max-sm:pointer-events-none!");
     }
+  });
+
+  it("패널·알약·눈 창은 21st.dev 부품 흰 카드다. 옛 주소 ?look=glass로 열어도 같다", () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 404 })));
+    history.replaceState(null, "", "/?look=glass");
+    const { container } = render(<Dashboard />);
+    for (const name of ["집 상태", "클로이드의 눈", "판단 기록"]) {
+      expect(screen.getByRole("region", { name }).querySelector(".bg-surface.shadow-card")).not.toBeNull();
+    }
+    expect(container.querySelector("[data-look]")).toBeNull();
+    expect(document.getElementById("glass-distortion")).toBeNull();
+    expect(document.getElementById("glass-blur")).toBeNull();
   });
 });

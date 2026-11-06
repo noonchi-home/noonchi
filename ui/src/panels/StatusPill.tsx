@@ -1,6 +1,6 @@
 import type { HealthView } from "../../../src/contract/events.ts";
 import { cn } from "../lib/utils";
-import { Surface } from "../look/Surface";
+import { Surface } from "../components/Surface";
 
 const chip = "whitespace-nowrap rounded-full px-2.5 py-1";
 const MODE: Record<HealthView["mode"], { text: string; className: string }> = {
@@ -8,7 +8,7 @@ const MODE: Record<HealthView["mode"], { text: string; className: string }> = {
   live: { text: "실제 모드", className: "bg-orange-tint font-medium text-orange" },
 };
 
-/** 위 가운데 알약: 연결·집·운영 모드·허브·에이전트·트윈 없음·설정 다시 하기. 판은 모양마다 다르다(Surface). */
+/** 위 가운데 알약: 연결·집·운영 모드·허브·에이전트·트윈 없음·설정 다시 하기. 판은 흰 카드(Surface)다. */
 export function StatusPill({ connected, health }: { connected: boolean | null; health: HealthView | null }) {
   const mode = health ? MODE[health.mode] : null;
   const conn = connected === null ? "연결 중…" : connected ? "실시간 연결됨" : "연결 끊김 · 다시 연결 중";

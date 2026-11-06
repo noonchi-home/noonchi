@@ -33,9 +33,8 @@ afterEach(() => {
   history.replaceState(null, "", "/");
 });
 
-describe.each(["parts", "glass"])("대시보드 ?look=%s", (look) => {
+describe("대시보드", () => {
   it("입력창·폼이 하나도 없다: 처음, 폰 요청·승인 대기 카드가 온 뒤, 폰 화면 탭", async () => {
-    history.replaceState(null, "", `/?look=${look}`);
     const { container } = render(<Dashboard />);
     expect(container.querySelectorAll(FIELDS)).toHaveLength(0);
     act(() => FakeSocket.last!.push(waiting));

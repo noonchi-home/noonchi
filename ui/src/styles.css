@@ -2,7 +2,7 @@
 @import "tw-animate-css";
 
 /*
- * 21st.dev 부품 토큰. 값은 :root(부품 모양)에 두고, 유리 모양은 [data-look="glass"]에서 바꾼다.
+ * 21st.dev 부품 토큰. 값은 :root에 둔다.
  * Chat Panel(theshanelevine): 만든 이 사이트 beautifului.dev 밝은 테마 값. 나머지 부품(shadcn): shadcn 기본 neutral 값.
  */
 @theme inline {
@@ -79,33 +79,6 @@
   --border: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
   --destructive: oklch(0.577 0.245 27.325);
-}
-
-/*
- * 유리 모양: 판은 Liquid Glass가 맡으니 Chat Panel 틀은 비우고(surface 투명, 그림자 없음),
- * 카드·칩·선은 반투명 흰색, 글은 밝은 유리 위에서 읽히게 짙은 색.
- */
-[data-look="glass"] {
-  --surface: transparent;
-  --shadow-card: none;
-  --inset: rgb(255 255 255 / 0.3);
-  --hover: rgb(255 255 255 / 0.35);
-  --hover-2: rgb(255 255 255 / 0.5);
-  --ink: oklch(21% 0.012 258);
-  --ink-2: oklch(21% 0.012 258 / 0.74);
-  --ink-3: oklch(21% 0.012 258 / 0.55);
-  --line: rgb(255 255 255 / 0.5);
-  --line-strong: rgb(255 255 255 / 0.65);
-  --line-soft: rgb(255 255 255 / 0.35);
-  --field: rgb(255 255 255 / 0.4);
-
-  --background: rgb(255 255 255 / 0.6);
-  --foreground: oklch(0.18 0.01 258);
-  --card: rgb(255 255 255 / 0.32);
-  --card-foreground: oklch(0.18 0.01 258);
-  --muted: rgb(255 255 255 / 0.4);
-  --muted-foreground: oklch(0.3 0.012 258 / 0.78);
-  --border: rgb(255 255 255 / 0.6);
 }
 
 /* Chat Panel(21st.dev id 23601) 답 칸이 쓰는 움직임 */
