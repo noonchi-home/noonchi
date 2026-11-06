@@ -473,7 +473,8 @@ describe("종료", () => {
     // 빈 임시 폴더에서 띄워 .env를 읽지 않게 한다
     const cwd = mkdtempSync(join(tmpdir(), "cwd-"));
     const main = fileURLToPath(new URL("../src/server/main.ts", import.meta.url));
-    const child = spawn(process.execPath, ["--import", import.meta.resolve("tsx"), main], {
+    const tsx = pathToFileURL(fileURLToPath(new URL("../node_modules/tsx/dist/loader.mjs", import.meta.url))).href;
+    const child = spawn(process.execPath, ["--import", tsx, main], {
       cwd, env: { ...process.env, PORT: "0", HUB: "memory", AGENT_PROVIDER: "mock", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), PHONE_PORT: "" },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -484,6 +485,8 @@ describe("종료", () => {
   }, 30_000);
 });
 ```
+
+(`pathToFileURL`도 `node:url`에서 가져온다. 임시 cwd에서는 `--import tsx`가 풀리지 않아 loader 파일 주소를 준다. 「닫기가 실패하면 1로 끝낸다」 시험도 더한다.)
 
 - [ ] **Step 2: 실패 확인** — `H npx vitest run tests/shutdown.test.ts` / Expected: FAIL 모듈 없음
 - [ ] **Step 3: 구현**

@@ -5,6 +5,7 @@
 import { existsSync } from "node:fs";
 import dotenv from "dotenv";
 import { findServedPhoneUrls, runCommand } from "../phone/links.js";
+import { installShutdown } from "./shutdown.js";
 import { startServer } from "./start.js";
 
 async function main(): Promise<void> {
@@ -26,16 +27,7 @@ async function main(): Promise<void> {
     console.log(`  Matter    다른 컨트롤러(Home Assistant 등) 추가: curl -X POST ${url}/api/matter/commissioning-window 후 나온 페어링 코드 입력(README "Matter 페어링")`);
   }
 
-  let stopping = false;
-  const shutdown = async () => {
-    if (stopping) return;
-    stopping = true;
-    console.log("종료하는 중…");
-    await srv.close();
-    process.exit(0);
-  };
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
+  installShutdown(process, () => srv.close(), { log: console.log });
 }
 
 main().catch((e) => {
