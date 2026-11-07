@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AgentAction, BrainLog, PendingView, ServerMessage } from "../../src/contract/events.ts";
+import type { AgentAction, BrainLog, ExecState, PendingView, ServerMessage } from "../../src/contract/events.ts";
 import { turnsReducer, type Turn } from "../src/chat/turns";
 
 const action: AgentAction = { tool: "turn_on", args: {}, ok: true, deviceId: "ac", deviceLabel: "거실 에어컨", reason: "덥다고 해서", observation: "켜짐", at: "t" };
@@ -124,6 +124,31 @@ describe("관찰과 판단 카드", () => {
     const f = run([decision({ status: "failed", prediction: null, action: null, error: "PAM 연결 실패" })]);
     expect(f[0]).toMatchObject({ state: "fail", label: "판단 실패", ended: true });
     expect(lines(f[0]!)).toEqual(["판단 실패 · PAM 연결 실패"]);
+  });
+
+  it("실행 줄은 그 판단 카드의 단계로 쌓이고, 실행 중이면 카드 알약이 그 단계, 끝나면 완료·실패", () => {
+    const exec = (plan_id: string, state: ExecState, text: string): ServerMessage => ({ type: "brain", event: { type: "execution", at_ms: 0, plan_id, state, text } });
+    const t = run([
+      decision(), exec("plan:pam-1", "decided", "판단"), exec("plan:pam-1", "planned", "계획"), exec("plan:pam-1", "running", "실행 중"),
+      observe({ yolo: "감지 없음" }), decision({ id: "pam-2", seq: 2 }), exec("plan:pam-2", "decided", "같은 행동을 진행 중"),
+      exec("plan:pam-1", "verifying", "결과 확인"), exec("plan:pam-1", "done", "완료"),
+    ]);
+    expect(t).toHaveLength(2);
+    expect(lines(t[0]!)).toEqual(["컵 치우기 · 컵이 비어 있음", "판단", "계획", "실행 중", "결과 확인", "완료"]);
+    expect(t[0]).toMatchObject({ decision: "pam-1", state: "ok", label: "완료" });
+    expect(lines(t[1]!)).toEqual(["컵 치우기 · 컵이 비어 있음", "같은 행동을 진행 중"]);
+    expect(t[1]).toMatchObject({ decision: "pam-2", label: "컵 치우기" });
+    const running = run([decision(), exec("plan:pam-1", "running", "실행 중")]);
+    expect(running[0]).toMatchObject({ state: "busy", label: "실행 중" });
+    const failed = run([decision(), exec("plan:pam-1", "failed", "대상 물건이 보이지 않아 실행하지 않아요")]);
+    expect(failed[0]).toMatchObject({ state: "fail", label: "실패" });
+    expect(failed[0]!.steps.at(-1)).toMatchObject({ tone: "fail", mark: "execution" });
+  });
+
+  it("판단 카드를 못 찾은 실행 줄은 지금 카드에 쌓인다", () => {
+    const t = run([observe({ yolo: "컵 0.90" }), { type: "brain", event: { type: "execution", at_ms: 0, plan_id: "plan:pam-9", state: "failed", text: "실패" } }]);
+    expect(t).toHaveLength(1);
+    expect(lines(t[0]!)).toEqual(["실패"]);
   });
 
   it("폰 행동은 관찰 카드에 붙지 않는다", () => {

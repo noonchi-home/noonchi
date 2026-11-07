@@ -22,3 +22,11 @@ export const CHECK_TEXT = {
   unreachable: "갈 수 있는 길이 없어 실행하지 않아요",
   device_mode: "시험 모드라 실제 가전은 부르지 않아요",
 } as const;
+
+/** 실행 추적 글(src/act/track.ts): 단계 이름과 끝난 까닭. */
+export const EXEC_TEXT = {
+  decided: "판단", planned: "계획", running: "실행 중", verifying: "결과 확인", done: "완료", failed: "실패",
+  wait: "대기", decisionFailed: "판단 실패", superseded: "새 판단으로 바뀜", noPlan: "계획을 만들 수 없음", declined: "사용자가 미룸",
+  timeout: "결과를 확인하지 못함", noAnswer: "답을 받지 못함", same: "같은 행동을 진행 중", late: "앞선 판단이라 쓰지 않음",
+  answered: (label: string) => `완료: ${label}`,
+} as const;

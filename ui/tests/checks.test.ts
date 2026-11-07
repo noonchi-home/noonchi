@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentAction, BrainLog, PendingView, ServerMessage } from "../../src/contract/events.ts";
+import type { PlanStatus, PlanStep, PlanView } from "../../src/contract/plan.ts";
 import { checkList, checksReducer, EMPTY_CHECKS, type ChecksState } from "../src/checks/checks";
 
 const act = (tool: string, deviceId: string | undefined, extra: Partial<AgentAction> = {}): AgentAction =>
@@ -117,5 +118,29 @@ describe("checkList", () => {
     const s = run([yolo("사람 0.90 · 컵 0.80"), acted(act("turn_on", "ac"))]);
     expect(checkList(s, "table_1").map((c) => [c.deviceId ?? c.objectId, c.verb])).toEqual([["ac", "바꿈"], ["table_1", "지켜봄"]]);
     expect(checkList(s, null).map((c) => c.deviceId)).toEqual(["ac"]);
+  });
+});
+
+describe("checksReducer · 지금 계획의 대상", () => {
+  const plan = (status: PlanStatus, steps: PlanStep[], extra: Partial<PlanView> = {}): ServerMessage => ({ type: "plan", plan: {
+    id: "plan:pam-1", revision: 1, source: "brain", goal: "컵 치우기", judgment: "", dryRun: true, robot: { position: null, room: null }, path: [], legs: [], steps, status, updatedAt: "t", ...extra,
+  } });
+  const cupSteps: PlanStep[] = [
+    { id: "s1", kind: "move", label: "식탁으로 가기", target: { objectId: "table_1" }, status: "active" },
+    { id: "s2", kind: "act", label: "컵 집기", target: { objectId: "cup_1", position: [1, 2] }, status: "pending" },
+    { id: "s3", kind: "device", label: "식기세척기 시작", target: { deviceId: "dishwasher" }, status: "pending" },
+  ];
+
+  it("열린 판단 계획의 집기 대상 물건과 가전을 확인 목록에 넣고, 계획이 끝나면 뺀다", () => {
+    const s = run([plan("running", cupSteps)]);
+    expect(checkList(s, null).map((c) => [c.objectId ?? c.deviceId, c.verb])).toEqual([["cup_1", "확인"], ["dishwasher", "확인"]]);
+    expect(checkList(run([plan("done", cupSteps)], s), null)).toEqual([]);
+    expect(checkList(run([{ type: "plan", plan: null }], s), null)).toEqual([]);
+  });
+
+  it("에이전트 기기 계획은 넣지 않는다(에이전트 행동 줄이 이미 있다). 같은 기기가 에이전트 줄에 있으면 한 번만", () => {
+    expect(checkList(run([plan("planned", cupSteps, { source: "agent" })]), null)).toEqual([]);
+    const s = run([acted(act("turn_on", "dishwasher")), plan("running", cupSteps)]);
+    expect(checkList(s, null).map((c) => c.objectId ?? c.deviceId)).toEqual(["dishwasher", "cup_1"]);
   });
 });

@@ -1,4 +1,4 @@
-import type { AgentAction, BrainLog } from "../../../src/contract/events.ts";
+import type { AgentAction, BrainLog, ExecState } from "../../../src/contract/events.ts";
 import type { VlmMissing, YoloMissing } from "../../../src/contract/world.ts";
 
 /** 도구 이름 → 화면 이름. */
@@ -51,3 +51,6 @@ export const VLM_MISSING: Record<VlmMissing, string> = {
 
 /** YOLOX 분석 없음 이유 → 글. */
 export const YOLO_MISSING: Record<YoloMissing, string> = { cap: "요청이 몰려 YOLOX·VLM 분석 없음", error: "감지 오류로 YOLOX 분석 없음" };
+
+/** 실행 단계 → 판단 카드 알약 글. */
+export const EXEC_LABEL: Record<ExecState, string> = { decided: "판단", planned: "계획", running: "실행 중", verifying: "결과 확인", done: "완료", failed: "실패" };

@@ -1,9 +1,10 @@
-// 집 하나의 실행 묶음: twin 데이터 → 허브(신호 출처로 감쌈) → 정책·에이전트 → 배치·기준점 → 관찰 흐름·World State·계획 → 앱 → 폰 서버.
+// 집 하나의 실행 묶음: twin 데이터 → 허브(신호 출처로 감쌈) → 정책·에이전트 → 배치·기준점 → 관찰 흐름·World State·판단·실행 추적·계획 → 앱 → 폰 서버.
 // 집을 바꾸면 이 묶음을 통째로 닫고 새로 만든다(src/server/start.ts). 앱은 직접 듣지 않고, 껍데기 서버가 요청을 넘긴다(shell.ts).
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { planFor } from "../act/tasks.js";
+import { checkPlan, loadActConfig } from "../act/check.js";
+import { ExecutionTracker } from "../act/track.js";
 import { Agent } from "../agent/agent.js";
 import { Policy } from "../agent/policy.js";
 import { createProvider } from "../agent/providers/index.js";
@@ -149,6 +150,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
   let pipeline: ObservationPipeline | null = null;
   let unsubWorld = () => {};
   let decider: Decider | null = null;
+  let tracker: ExecutionTracker | null = null;
   let decideTimer: NodeJS.Timeout | undefined;
   let app: TwinHomeApp | undefined;
   let phone: PhoneServer | undefined;
@@ -209,6 +211,8 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         surfaces: surfaceSource(layout?.editor), floorAt: floorLookup(plan.rooms), roomAt: (p) => roomAt(floorPlan, p), devices: () => signals.list(),
       })
       : null;
+    // 실행 설정(STALE_MS). 틀린 값이면 시작을 막는다
+    const act = loadActConfig(env);
     if (world) {
       const now = () => ctx.brain?.clock?.now() ?? Date.now();
       const emit = (event: BrainLog) => {
@@ -222,21 +226,35 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         pam: new PamClient({ url: loadEndpoints(env).pamUrl, timeoutMs: Number.isFinite(pamTimeout) && pamTimeout > 0 ? pamTimeout : undefined }),
         world, trigger: new Trigger(loadTriggerConfig(env), now()), tasks: () => [...CUP_TASKS],
         memory: () => memoryForDay(history.db, history.db.dayOf(now())), emit, offsetMinutes: history.db.offsetMinutes, clock: ctx.brain?.clock,
-        // 고른 행동 → 클로이드 계획(src/act/tasks.ts). 대기·판단 실패는 계획이 없다
-        onDecision: (d) => {
-          const made = planFor(plans.floor(), d, world.view(now()), new Date(now()).toISOString());
-          if (made) plans.onDecision(made);
-        },
+        // 판단 → 계획 → 실행 전 검사 → 실행 추적(src/act/)
+        onDecision: (d) => tracker?.onDecision(d),
       });
       decider = decide;
+      // 실행 전 검사(src/act/check.ts): 시험 모드에서는 짝지은 실제 가전 단계를 막는다
+      const deviceSteps = (p: PlanView) => p.steps.flatMap((s) => (s.target?.deviceId
+        ? [{ deviceId: s.target.deviceId, paired: signals.sources()[s.target.deviceId]?.kind === "thinq" }] : []));
+      tracker = new ExecutionTracker({
+        plans, floor: () => plans.floor(), world: () => world.view(now()), emit, clock: ctx.brain?.clock,
+        toPhone: (m) => phoneRef.current?.send(m),
+        check: (d, p) => checkPlan({
+          decision: d, tasks: [...CUP_TASKS], plan: p, world: world.view(now()), nowMs: now(), staleMs: act.staleMs, mode: ctx.mode?.() ?? "test", deviceSteps: deviceSteps(p),
+        }),
+      });
+      const tracking = tracker;
       pipeline = await createPipeline({
         env, runtimeDir, log, world, inject: ctx.brain, emit,
         broadcastWorld: (w) => appRef.current?.broadcast({ type: "world", world: w }),
-        onChanges: (c) => decide.onChanges(c),
+        onChanges: (c) => {
+          tracking.onWorld(c);
+          decide.onChanges(c);
+        },
         // 분석한 프레임은 디스크에 쓰지 않는다. DATASET_COLLECT=1일 때만 시험 자료로 RUNTIME_DIR/dataset에 쓴다
         dataset: env.DATASET_COLLECT?.trim() === "1" ? datasetWriter(join(runtimeDir, "dataset"), history.db) : undefined,
       });
-      decideTimer = setInterval(() => decide.tick(), 250);
+      decideTimer = setInterval(() => {
+        decide.tick();
+        tracking.tick();
+      }, 250);
       decideTimer.unref?.();
       for (const s of signals.states()) world.applyDevice(s, now()); // 시작 상태는 변화로 내지 않는다
       const observing = pipeline;
@@ -279,6 +297,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         },
         onConfirm: async (token) => ({ reply: (await agent.confirm(token)).reply }),
         onCancel: async (token) => ({ reply: agent.cancel(token).reply }),
+        onBrainReply: (id, choice) => tracker?.onReply(id, choice),
         ...(observe ? {
           engineMs: observe.config.engineMs,
           onEngine: (jpeg, h, eye, view, at) => observe.onEngine(jpeg, h, eye, view, at),
@@ -326,7 +345,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         closed = true;
         // 한 단계가 실패해도 나머지(특히 폰 포트·허브)는 닫는다. 새 집이 같은 포트를 다시 잡아야 한다
         const steps: [string, () => unknown][] = [
-          ["초점", unsubFocus], ["관찰 흐름", () => { clearInterval(decideTimer); decider?.stop(); unsubWorld(); return pipeline?.close(); }], ["눈 화면", () => feed?.close()],
+          ["초점", unsubFocus], ["관찰 흐름", () => { clearInterval(decideTimer); decider?.stop(); tracker?.stop(); unsubWorld(); return pipeline?.close(); }], ["눈 화면", () => feed?.close()],
           ["폰 서버", () => phoneNow?.close()], ["앱", () => appNow.close()], ["배치", () => layout?.editor.close()], ["ThinQ", () => link?.stop()],
           ["기록", unsubHistory], ["허브", () => signals.stop()],
         ];
@@ -344,6 +363,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     await app?.close().catch(() => {});
     clearInterval(decideTimer);
     decider?.stop();
+    tracker?.stop();
     unsubWorld();
     await pipeline?.close().catch(() => {});
     unsubHistory();

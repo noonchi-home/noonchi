@@ -5413,214 +5413,61 @@ git commit -m "feat: check task, fresh evidence, use by a person, reachability a
 
 **Files:**
 - Create: `src/act/track.ts`, `tests/act-track.test.ts`
-- Modify: `src/server/home.ts`(판단 → 계획 → 검사 → 추적), `src/plan/labels.ts`(실행 단계 글), `ui/src/chat/turns.ts`·`ui/src/chat/labels.ts`(`execution` 줄), `ui/tests/turns.test.ts`, `ui/src/checks/checks.ts`(계획 대상 물건·가전을 확인 목록에), `ui/tests/checks.test.ts`
+- Modify: `src/server/home.ts`(판단 → 계획 → 검사 → 추적, 폰 답, 250ms 타이머, `STALE_MS`), `src/plan/hub.ts`(`close`, 열린 판단 계획은 취소로 닫고 supersedes), `src/plan/labels.ts`(`EXEC_TEXT`), `.env.example`(`STALE_MS`), `docs/reference.md`, `ui/src/chat/turns.ts`·`ui/src/chat/labels.ts`(`execution` 줄, `EXEC_LABEL`), `ui/tests/turns.test.ts`, `ui/src/checks/checks.ts`(열린 계획 대상을 확인 목록에), `ui/tests/checks.test.ts`, `tests/plan-hub.test.ts`
 
 **Interfaces:**
 - Produces:
 
 ```ts
-export type ExecState = "decided" | "planned" | "running" | "verifying" | "done" | "failed";
-export const EXEC_TEXT: Record<ExecState, string>;    // 판단, 계획, 실행 중, 결과 확인, 완료, 실패 (src/plan/labels.ts)
-export class ExecutionTracker {
-  constructor(o: { plans: PlanHub; world: () => WorldView; check: (d: DecisionRecord, plan: PlanView | null) => ReturnType<typeof checkPlan>;
-                   floor: () => FloorPlan; toPhone: (msg: unknown) => void; emit: (l: BrainLog) => void; clock?: { now(): number }; verifyTimeoutMs?: number /* 120000 */; recheckMs?: number /* 3000 */ });
-  onDecision(d: DecisionRecord): void;       // 판단 → 계획 → (검사 통과 시) 실행 중. 진행 중인 계획과 행동·대상이 같으면 기록만, 지금 계획보다 먼저 보낸(seq가 작은) 판단은 버린다
-  onReply(planId: string, choice: string): void;   // 폰 버튼·음성 답
-  onWorld(changes: WorldChange[]): void;    // 결과 확인
-  tick(): void;                              // 검사 다시 시도·시간 초과
-  current(): { planId: string; state: ExecState } | null;
-}
-```
-
-- [ ] **Step 1: 실패하는 시험**
-
-```ts
-// tests/act-track.test.ts
-import { describe, expect, it } from "vitest";
-import { ExecutionTracker } from "../src/act/track.js";
-import { PlanHub } from "../src/plan/hub.js";
-import { smallFloor } from "./helpers/floor.js";
-import type { BrainLog } from "../src/contract/events.js";
-import type { WorldView } from "../src/contract/world.js";
-
-const cup = (status: "present" | "gone", seen = 9_000) => ({ id: "cup_1", cls: "cup" as const, position: [2, 0.75, 0] as [number, number, number], surface: "t", room: "kitchen", error_m: 0.1, status,
-  first_seen_ms: 0, last_seen_ms: seen, last_in_view_ms: seen, facts: {}, devices: [] });
-const world = (o: ReturnType<typeof cup>): WorldView => ({ at_ms: 0, objects: [o], person: { visible: false, since_ms: 0, last_seen_ms: null, facts: {} }, devices: [], eye: null, vlm_missing: 0, yolo_missing: 0 });
-const decision = { id: "pam-1", seq: 1, atMs: 8_000, textSent: "t", finalTime: "x", status: "valid" as const, prediction: { observation: "o", reasoning: "r", task_index: 0 }, action: "컵 치우기", memoryVersion: 1,
-  world: { objects: [], person_visible: false, vlm_missing: 0, yolo_missing: 0 } };
-
-describe("실행 추적", () => {
-  it("판단 → 계획 → 실행 중(폰 부탁) → 결과 확인 → 완료, 단계마다 기록", () => {
-    const logs: BrainLog[] = [], phone: any[] = [];
-    let w = world(cup("present"));
-    const plans = new PlanHub(smallFloor(), () => {});
-    const t = new ExecutionTracker({ plans, world: () => w, check: () => ({ ok: true }), floor: smallFloor, toPhone: (m) => phone.push(m), emit: (l) => logs.push(l), clock: { now: () => 10_000 } });
-    t.onDecision(decision);
-    expect(phone[0]).toMatchObject({ type: "action", task: "컵 치우기", text: "식탁 위 컵을 치워 주세요", speak: true });
-    t.onReply(t.current()!.planId, "done");
-    w = world(cup("gone"));
-    t.onWorld([{ kind: "gone", at_ms: 11_000, subject: "cup_1", text: "컵(cup_1) 사라짐", meaningful: true }]);
-    expect(logs.filter((l) => l.type === "execution").map((l) => l.type === "execution" && l.state)).toEqual(["decided", "planned", "running", "verifying", "done"]);
-    expect(plans.current()?.status).toBe("done");
-  });
-  it("검사를 통과하지 못하면 실패로 끝내고 이유를 남긴다, 대기는 기록만", () => {
-    const logs: BrainLog[] = [];
-    const t = new ExecutionTracker({ plans: new PlanHub(smallFloor(), () => {}), world: () => world(cup("present")), check: () => ({ ok: false, reason: "in_hand", text: "사람이 그 물건을 쓰는 중이라 기다려요" }),
-      floor: smallFloor, toPhone: () => {}, emit: (l) => logs.push(l), clock: { now: () => 10_000 }, recheckMs: 0 });
-    t.onDecision(decision);
-    t.tick();
-    expect(logs.at(-1)).toMatchObject({ type: "execution", state: "failed", text: "사람이 그 물건을 쓰는 중이라 기다려요" });
-    t.onDecision({ ...decision, id: "pam-2", seq: 2, action: null, prediction: { ...decision.prediction, task_index: -1 } });
-    expect(logs.at(-1)).toMatchObject({ type: "execution", state: "decided" });
-  });
-  it("periodic처럼 같은 판단이 연달아 와도 폰 부탁은 한 번이고 그 계획이 완료까지 간다", () => {
-    const logs: BrainLog[] = [], phone: any[] = [];
-    let w = world(cup("present"));
-    const plans = new PlanHub(smallFloor(), () => {});
-    const t = new ExecutionTracker({ plans, world: () => w, check: () => ({ ok: true }), floor: smallFloor, toPhone: (m) => phone.push(m), emit: (l) => logs.push(l), clock: { now: () => 10_000 } });
-    for (let s = 1; s <= 4; s++) t.onDecision({ ...decision, id: `pam-${s}`, seq: s });
-    expect(phone.filter((m) => m.active)).toHaveLength(1);
-    const planId = t.current()!.planId;
-    expect(planId).toBe("plan:pam-1");
-    expect(logs.filter((l) => l.type === "execution" && l.text === "같은 행동을 진행 중")).toHaveLength(3);
-    t.onReply(planId, "done");
-    w = world(cup("gone"));
-    t.onWorld([{ kind: "gone", at_ms: 11_000, subject: "cup_1", text: "컵(cup_1) 사라짐", meaningful: true }]);
-    expect(t.current()).toMatchObject({ planId, state: "done" });
-  });
-  it("지금 계획보다 먼저 보낸 판단의 답이 늦게 오면 버린다", () => {
-    const logs: BrainLog[] = [], phone: any[] = [];
-    const t = new ExecutionTracker({ plans: new PlanHub(smallFloor(), () => {}), world: () => world(cup("present")), check: () => ({ ok: true }), floor: smallFloor,
-      toPhone: (m) => phone.push(m), emit: (l) => logs.push(l), clock: { now: () => 10_000 } });
-    t.onDecision({ ...decision, id: "pam-5", seq: 5, action: "사용자에게 물어보기", prediction: { ...decision.prediction, task_index: 1 } });
-    t.onDecision({ ...decision, id: "pam-4", seq: 4 });
-    expect(t.current()).toMatchObject({ planId: "plan:pam-5", state: "running" });
-    expect(logs.at(-1)).toMatchObject({ type: "execution", plan_id: "pam-4", text: "앞선 판단이라 쓰지 않음" });
-    expect(phone.filter((m) => m.active)).toHaveLength(1);
-  });
-});
-```
-
-- [ ] **Step 2: 실패 확인** — `H npx vitest run tests/act-track.test.ts` / Expected: FAIL
-- [ ] **Step 3: 구현**
-
-```ts
-// src/act/track.ts
-// 실행 추적(시험 모드): 판단 → 계획 → 실행 중 → 결과 확인 → 완료 또는 실패. 로봇이 없어 집기·옮기기는 폰으로 사람에게 부탁하고,
-// 결과는 World State로 본다(대상 물건이 시야 안에서 사라짐). 물어보기는 답을 받으면 완료. 검사는 recheckMs마다 한 번 더 보고 그래도 안 되면 실패.
-// 로봇은 한 번에 한 계획만 실행한다: 진행 중인 계획과 행동·대상이 같은 판단은 기록만 하고, 지금 계획보다 먼저 보낸 판단(seq가 작음)은 버린다.
-import type { BrainLog, ExecState } from "../contract/events.js";
-import type { PlanView } from "../contract/plan.js";
-import type { WorldChange, WorldView } from "../contract/world.js";
-import type { FloorPlan } from "../plan/floor.js";
-import type { PlanHub } from "../plan/hub.js";
-import { EXEC_TEXT } from "../plan/labels.js";
-import type { DecisionRecord } from "../world/decide.js";
-import type { checkPlan } from "./check.js";
-import { planFor, targetOf, TASKS } from "./tasks.js";
-
-interface Running { plan: PlanView; decision: DecisionRecord; state: ExecState; since: number; rechecked: boolean; targetId: string | null }
-
-export class ExecutionTracker {
-  private run: Running | null = null;
-  private lastSeq = 0;
-  private readonly clock: { now(): number };
-  constructor(private readonly o: { plans: PlanHub; world: () => WorldView; check: (d: DecisionRecord, plan: PlanView | null) => ReturnType<typeof checkPlan>;
-    floor: () => FloorPlan; toPhone: (msg: unknown) => void; emit: (l: BrainLog) => void; clock?: { now(): number }; verifyTimeoutMs?: number; recheckMs?: number }) {
-    this.clock = o.clock ?? { now: () => Date.now() };
-  }
-
-  current() { return this.run && { planId: this.run.plan.id, state: this.run.state }; }
-
-  private step(state: ExecState, text?: string): void {
-    const r = this.run!;
-    r.state = state;
-    r.since = this.clock.now();
-    this.o.emit({ type: "execution", at_ms: r.since, plan_id: r.plan.id, state, text: text ?? EXEC_TEXT[state] });
-  }
-
-  private note(d: DecisionRecord, text: string): void {
-    this.o.emit({ type: "execution", at_ms: this.clock.now(), plan_id: d.id, state: "decided", text });
-  }
-
-  onDecision(d: DecisionRecord): void {
-    const now = this.clock.now();
-    if (d.seq < this.lastSeq) return this.note(d, EXEC_TEXT.late);
-    if (!d.action) return this.note(d, d.status === "valid" ? EXEC_TEXT.decided : `${EXEC_TEXT.failed}: ${d.error ?? ""}`);
-    const open = this.run && this.run.state !== "done" && this.run.state !== "failed" ? this.run : null;
-    const spec = TASKS[d.action];
-    if (open && spec && open.decision.action === d.action && open.targetId === (targetOf(spec, this.o.world())?.id ?? null)) return this.note(d, EXEC_TEXT.same);
-    this.lastSeq = d.seq;
-    if (open) this.finish("failed", EXEC_TEXT.superseded);
-    const plan = planFor(this.o.floor(), d, this.o.world(), new Date(now).toISOString());
-    this.run = { plan: plan ?? ({ id: `plan:${d.id}` } as PlanView), decision: d, state: "decided", since: now, rechecked: false,
-      targetId: plan?.steps.find((s) => s.target?.objectId)?.target?.objectId ?? null };
-    this.step("decided");
-    if (!plan) return this.finish("failed", EXEC_TEXT.noPlan);
-    this.o.plans.onDecision(plan);
-    this.step("planned");
-    this.tryStart();
-  }
-
-  private tryStart(): void {
-    const r = this.run!;
-    const c = this.o.check(r.decision, r.plan);
-    if (!c.ok) { if (r.rechecked) this.finish("failed", c.text); return; }
-    const spec = TASKS[r.decision.action!]!;
-    this.o.plans.setStep(r.plan.id, r.plan.steps[0]!.id, "active");
-    this.step("running");
-    this.o.toPhone({ type: "action", id: r.plan.id, task: spec.name, active: true, dry_run: true, speak: true, would: spec.prompt.would, text: spec.prompt.text, choices: spec.prompt.choices });
-  }
-
-  onReply(planId: string, choice: string): void {
-    const r = this.run;
-    if (!r || r.plan.id !== planId || r.state !== "running") return;
-    const spec = TASKS[r.decision.action!]!;
-    if (spec.kind === "ask") return this.finish("done", `${EXEC_TEXT.done}: ${spec.prompt.choices.find((c) => c.id === choice)?.label ?? choice}`);
-    if (choice === "later") return this.finish("failed", EXEC_TEXT.declined);
-    if (choice === "done") this.step("verifying");
-  }
-
-  onWorld(changes: WorldChange[]): void {
-    const r = this.run;
-    if (!r || (r.state !== "verifying" && r.state !== "running") || !r.targetId) return;
-    if (changes.some((c) => c.kind === "gone" && c.subject === r.targetId)) {
-      if (r.state === "running") this.step("verifying");
-      this.finish("done");
-    }
-  }
-
-  tick(): void {
-    const r = this.run;
-    if (!r) return;
-    const now = this.clock.now();
-    if (r.state === "planned" && !r.rechecked && now - r.since >= (this.o.recheckMs ?? 3000)) { r.rechecked = true; this.tryStart(); }
-    if ((r.state === "running" || r.state === "verifying") && now - r.since > (this.o.verifyTimeoutMs ?? 120_000)) this.finish("failed", EXEC_TEXT.timeout);
-  }
-
-  private finish(state: "done" | "failed", text?: string): void {
-    const r = this.run!;
-    this.step(state, text);
-    this.o.toPhone({ type: "action", id: r.plan.id, task: r.decision.action, active: false });
-    if (r.plan.steps) for (const s of r.plan.steps) if (s.status !== "done") this.o.plans.setStep(r.plan.id, s.id, state === "done" ? "done" : "skipped");
-  }
-}
-```
-`src/plan/labels.ts`에 더한다:
-```ts
+// src/plan/labels.ts
 export const EXEC_TEXT = {
   decided: "판단", planned: "계획", running: "실행 중", verifying: "결과 확인", done: "완료", failed: "실패",
-  superseded: "새 판단으로 바뀜", noPlan: "계획을 만들 수 없음", declined: "사용자가 미룸", timeout: "결과를 확인하지 못함",
-  same: "같은 행동을 진행 중", late: "앞선 판단이라 쓰지 않음",
+  wait: "대기", decisionFailed: "판단 실패", superseded: "새 판단으로 바뀜", noPlan: "계획을 만들 수 없음", declined: "사용자가 미룸",
+  timeout: "결과를 확인하지 못함", noAnswer: "답을 받지 못함", same: "같은 행동을 진행 중", late: "앞선 판단이라 쓰지 않음",
+  answered: (label: string) => `완료: ${label}`,
 } as const;
+// src/plan/hub.ts
+PlanHub.close(planId: string, status: "done" | "cancelled" | "failed"): boolean;   // 지금 열린 계획만
+// src/act/track.ts
+export interface TrackerOptions { plans: PlanHub; world: () => WorldView; check: (d: DecisionRecord, plan: PlanView) => CheckResult; floor: () => FloorPlan;
+  toPhone: (msg: unknown) => void; emit: (l: BrainLog) => void; clock?: { now(): number }; verifyTimeoutMs?: number /* 120000 */; recheckMs?: number /* 3000 */ }
+export class ExecutionTracker {
+  onDecision(d: DecisionRecord): void;      // 판단 → 계획 → (검사 통과 시) 실행 중
+  onReply(planId: string, choice: string): void;   // 폰 버튼·음성 답
+  onWorld(changes: WorldChange[]): void;    // 대상 물건 gone → 결과 확인 → 완료
+  tick(): void;                              // 검사 다시 보기·시간 초과
+  current(): { planId: string; state: ExecState } | null;
+  openRequest(): { planId: string; task: string; choices: ActionChoice[] } | null;   // 폰에 띄운 부탁(실행 중)
+  stop(): void;
+}
 ```
-`home.ts`: Decider `onDecision: (d) => tracker.onDecision(d)`, 파이프라인 `onChanges`에서 `tracker.onWorld(c)`, 폰 `onBrainReply: (id, choice) => tracker.onReply(id, choice)`, 250ms 타이머에서 `tracker.tick()`, `check: (d, plan) => checkPlan({ decision: d, tasks: [...CUP_TASKS], plan, world: world.view(now), nowMs: now, staleMs: Number(env.STALE_MS) || 3000, mode: ctx.mode?.() ?? "test" })`. `ui/src/chat/turns.ts`: `execution` 줄을 판단 턴의 단계로 쌓고(글은 서버가 보낸 `text`), `ui/src/checks/checks.ts`: 지금 계획 단계의 `target.objectId`·`deviceId`를 확인 목록에 넣는다(말풍선은 그 물건·기기에만).
 
+- 규칙
+  - execution 기록의 `plan_id`는 늘 `plan:<판단 id>`다. 계획을 만들지 않는 판단(대기·판단 실패·같은 행동·늦은 답)도 그 판단의 `plan:pam-N`으로 `decided` 한 줄을 남긴다.
+  - 같은 행동인지는 행동 이름과 World State에서 고른 대상 물건 id(`targetOf`, 없으면 null)로 본다. 계획의 집기 단계 대상(물건이 없으면 식탁)으로 보지 않는다.
+  - 다른 행동을 고른 새 판단: 지금 실행은 「새 판단으로 바뀜」으로 실패, 폰 부탁을 거두고, `PlanHub.onDecision`이 앞 계획을 취소로 닫고 새 계획에 `supersedes`를 단다. 새 계획을 못 만들면 앞 계획만 취소로 닫는다.
+  - 검사는 통과할 때까지 tick마다 다시 보고, `recheckMs`가 지나도 안 되면 그 이유(`CHECK_TEXT`)로 실패한다.
+  - 끝나면 `PlanHub.close`로 계획을 닫는다(실패면 진행 중 단계만 실패, 나머지 건너뜀). 폰 부탁은 띄웠을 때만 `active: false`로 거둔다.
+  - 집기 부탁에 「치웠어요」를 눌렀을 때 대상이 이미 없으면 바로 완료.
+- [ ] **Step 1: 실패하는 시험**
+  - `tests/act-track.test.ts`: 판단 → 계획 → 실행 중(폰 부탁 `{ type: "action", id: "plan:pam-1", task, text, speak: true, active: true, dry_run: true }`) → 결과 확인 → 완료와 계획 done, 부탁 중에 먼저 치움, 검사가 tick 사이에 통과, `recheckMs` 뒤 실패(계획 failed, 폰 부탁 없음), 대기·판단 실패는 `decided` 한 줄, periodic 같은 판단 4번에 부탁 한 번(같은 행동 줄 3개의 plan_id `plan:pam-2~4`), 늦은 답(`plan:pam-4`, 「앞선 판단이라 쓰지 않음」), 다른 행동으로 바꿈(폰 `[pam-1 켜짐, pam-1 꺼짐, pam-2 켜짐]`, supersedes), 물어보기 답·「나중에」·다른 계획 답 무시, 이미 사라진 물건·결과 시간 초과·답 시간 초과, `openRequest`와 `stop`.
+  - `ui/tests/turns.test.ts`: 실행 줄은 `plan:pam-N`의 판단 카드에 쌓이고(그 사이 새 카드가 열려도), 실행 중이면 알약이 그 단계·busy, 완료면 ok, 실패면 fail과 실패 줄. 판단 카드를 못 찾으면 지금 카드.
+  - `ui/tests/checks.test.ts`: 열린 판단 계획의 act·device 단계 대상을 「확인」으로 넣고 계획이 끝나거나 지워지면 뺀다. 에이전트 기기 계획은 넣지 않고, 에이전트 줄에 있는 기기는 한 번만.
+  - `tests/plan-hub.test.ts`: 앞 판단 계획은 cancelled로 한 번 더 보내고, `close`는 지금 열린 계획만.
+- [ ] **Step 2: 실패 확인** — `H npx vitest run tests/act-track.test.ts`, `H npm --prefix ui test -- turns checks` / Expected: FAIL
+- [ ] **Step 3: 구현**
+  - `home.ts`: `loadActConfig(env)`(틀린 `STALE_MS`면 시작을 막음). Decider `onDecision: (d) => tracker.onDecision(d)`, 파이프라인 `onChanges`에서 `tracker.onWorld(c)` 뒤 `decide.onChanges(c)`, 폰 `onBrainReply: (id, choice) => tracker.onReply(id, choice)`, 250ms 타이머에서 `decide.tick()`·`tracker.tick()`, 닫을 때 `tracker.stop()`.
+  - `check: (d, plan) => checkPlan({ decision: d, tasks: [...CUP_TASKS], plan, world: world.view(now), nowMs: now, staleMs, mode: ctx.mode?.() ?? "test", deviceSteps })`. `deviceSteps`는 계획 단계의 `deviceId`마다 `paired: signals.sources()[id]?.kind === "thinq"`.
+  - 폰으로는 `phoneRef.current?.send(msg)`. 계획 평면도는 `plans.floor()`.
+  - `ui/src/chat/turns.ts`: `decision` 줄이 카드에 `decision: e.id`를 붙인다. `execution`은 그 카드에 줄(글은 서버 `text`)을 더하고, `decided`가 아니면 알약을 `EXEC_LABEL[state]`, state를 busy·ok·fail로.
+  - `ui/src/checks/checks.ts`: `{type:"plan"}`을 받아 `plan` 목록을 만든다. `checkList`는 에이전트 줄, 계획 대상, 두뇌 줄 순서. `ui/src/plan/`·`Dashboard.tsx`는 고치지 않는다.
 - [ ] **Step 4: 통과 확인**
 
 ```
-H npx vitest run tests/act-track.test.ts tests/act-check.test.ts tests/act-tasks.test.ts tests/plan-server.test.ts tests/self-contained.test.ts
+H npx vitest run tests/act-track.test.ts tests/act-check.test.ts tests/act-tasks.test.ts tests/plan-server.test.ts tests/plan-hub.test.ts tests/observe-start.test.ts tests/self-contained.test.ts tests/deploy-files.test.ts tests/lint-ui-copy.test.ts tests/history-record.test.ts
 H npm --prefix ui test
+H npx tsc --noEmit
+H npm --prefix ui run typecheck
 H npm run lint
 ```
 Expected: PASS
@@ -5628,7 +5475,7 @@ Expected: PASS
 - [ ] **Step 5: 커밋**
 
 ```bash
-git add src/act/track.ts src/plan/labels.ts src/contract/events.ts src/server/home.ts ui/src/chat/turns.ts ui/src/chat/labels.ts ui/src/checks/checks.ts ui/tests/turns.test.ts ui/tests/checks.test.ts tests/act-track.test.ts
+git add src/act/track.ts src/plan/hub.ts src/plan/labels.ts src/server/home.ts .env.example docs/reference.md ui/src/chat/turns.ts ui/src/chat/labels.ts ui/src/checks/checks.ts ui/tests/turns.test.ts ui/tests/checks.test.ts tests/act-track.test.ts tests/plan-hub.test.ts
 git commit -m "feat: track plan execution from decision to verified result in test mode and log each state"
 ```
 

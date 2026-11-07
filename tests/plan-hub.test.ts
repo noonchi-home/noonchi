@@ -100,14 +100,25 @@ describe("PlanHub task planner 계획", () => {
 });
 
 describe("PlanHub PAM 판단 계획", () => {
-  it("판단 계획을 보내고, 열린 판단 계획이 있으면 새 계획에 supersedes를 단다", () => {
+  it("판단 계획을 보내고, 열린 판단 계획이 있으면 그것을 취소로 닫고 새 계획에 supersedes를 단다", () => {
     const { hub, sent } = hubWithLog();
     hub.onDecision(cupPlan(smallFloor(), "plan:pam-1", "t")!);
     expect(hub.current()).toMatchObject({ id: "plan:pam-1", source: "brain", status: "planned" });
     expect(hub.current()!.supersedes).toBeUndefined();
     hub.onDecision(askPlan(smallFloor(), "plan:pam-2", "t"));
     expect(hub.current()).toMatchObject({ id: "plan:pam-2", supersedes: "plan:pam-1" });
-    expect(sent).toHaveLength(2);
+    expect(sent.map((m) => [(m.plan as PlanView).id, (m.plan as PlanView).status])).toEqual([["plan:pam-1", "planned"], ["plan:pam-1", "cancelled"], ["plan:pam-2", "planned"]]);
+  });
+  it("close: 지금 열린 계획만 닫는다. 실패면 진행 중 단계만 실패, 나머지는 건너뜀", () => {
+    const { hub } = hubWithLog();
+    const p = cupPlan(smallFloor(), "plan:pam-1", "t")!;
+    expect(hub.close(p.id, "done")).toBe(false);
+    hub.onDecision(p);
+    hub.setStep(p.id, p.steps[0]!.id, "active");
+    expect(hub.close("plan:other", "failed")).toBe(false);
+    expect(hub.close(p.id, "failed")).toBe(true);
+    expect(hub.current()).toMatchObject({ status: "failed", steps: [{ status: "failed" }, { status: "skipped" }, { status: "skipped" }, { status: "skipped" }] });
+    expect(hub.close(p.id, "done")).toBe(false);
   });
   it("끝난 판단 계획 다음 계획에는 supersedes가 없다", () => {
     const { hub } = hubWithLog();

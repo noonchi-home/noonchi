@@ -2,7 +2,7 @@
 // 요청마다 카드 한 장: 행동 단계(실시간 action 이벤트, 없으면 답의 actions)와 답·초점·승인 결과 줄이 쌓인다.
 // 실시간 행동은 세션마다 진행 중 카드에 붙고, 그 세션의 답이 카드를 끝낸다. 사진, 관찰과 판단 흐름도 같은 목록에 카드로 쌓인다.
 import type { AgentAction, BrainLog, PendingView, PhotoRecord, ServerMessage } from "../../../src/contract/events.ts";
-import { BRAIN_CARD, VLM_MISSING, YOLO_MISSING } from "./labels";
+import { BRAIN_CARD, EXEC_LABEL, VLM_MISSING, YOLO_MISSING } from "./labels";
 
 /** 폰(클로이드의 눈)에서 말한 대화의 세션 id(서버 start.ts와 같다). */
 export const PHONE_SESSION = "phone";
@@ -37,6 +37,8 @@ export interface Turn {
   photo?: string;
   /** 관찰과 판단 카드가 끝났는가(판단 줄이 닫는다. 다음 기록은 새 카드). */
   ended?: boolean;
+  /** 이 카드를 닫은 판단 id(pam-N). 그 판단의 실행 줄(plan_id plan:pam-N)이 이 카드에 쌓인다. */
+  decision?: string;
 }
 
 export const STATE_LABELS: Record<TurnState, string> = { busy: "생각 중", ok: "완료", wait: "승인 대기", fail: "실패", cancel: "취소" };
@@ -93,11 +95,17 @@ function photoTurn(id: string, p: PhotoRecord): Turn {
 
 // ── 관찰과 판단 ──────────────────────────────────────────
 // 판단마다 카드 하나: World State 변화·연결·판단 시점 줄을 쌓고, 판단 줄이 카드를 닫는다. YOLOX·VLM 기록은 지금·판정 두 줄에서 갈아 끼운다.
+// 실행 줄(판단 → 계획 → 실행 중 → 결과 확인 → 완료·실패)은 그 판단 카드(plan:pam-N → pam-N)에 쌓이고, 못 찾으면 지금 카드에 쌓인다.
 
 /** 카드 하나에 둘 줄 수(오래된 줄부터 뺀다). */
 const MAX_BRAIN_STEPS = 40;
 
 function onBrain(turns: Turn[], e: BrainLog): Turn[] {
+  if (e.type === "execution") {
+    const id = e.plan_id.replace(/^plan:/, "");
+    const card = lastIndex(turns, (t) => t.source === "brain" && t.decision === id);
+    if (card !== -1) return onExecution(turns, card, e);
+  }
   let i = lastIndex(turns, (t) => t.source === "brain" && !t.ended);
   if (i === -1) {
     turns = [...turns, { ...fresh(`b${turns.length}`, "brain", BRAIN_CARD.ask), label: BRAIN_CARD.watching, now: { seen: "", judged: "" }, ended: false }];
@@ -117,18 +125,27 @@ function onBrain(turns: Turn[], e: BrainLog): Turn[] {
       const choice = ok ? e.action ?? BRAIN_CARD.wait : BRAIN_CARD.failed;
       const why = ok ? e.prediction?.reasoning : e.error;
       const next = add(why ? `${choice} · ${why}` : choice, ok ? {} : { tone: "fail" });
-      return at(turns, i, { ...next, ended: true, state: ok ? "ok" : "fail", label: choice });
+      return at(turns, i, { ...next, ended: true, state: ok ? "ok" : "fail", label: choice, decision: e.id });
     }
     case "link":
       return at(turns, i, add(e.text, e.up ? {} : { tone: "fail" }));
     case "execution":
-      return at(turns, i, add(e.text, e.state === "failed" ? { tone: "fail" } : {}));
+      return onExecution(turns, i, e);
     case "reflection":
       return at(turns, i, add(e.text, e.ok ? {} : { tone: "fail" }));
     case "world_change":
     case "trigger":
       return at(turns, i, add(e.text));
   }
+}
+
+/** 실행 줄을 카드 i의 단계로 쌓는다. 진행 중·끝 단계는 카드 알약을 바꾼다. */
+function onExecution(turns: Turn[], i: number, e: Extract<BrainLog, { type: "execution" }>): Turn[] {
+  const t = turns[i]!;
+  const steps = [...t.steps, line("", e.text, { mark: e.type, ...(e.state === "failed" ? { tone: "fail" as const } : {}) })].slice(-MAX_BRAIN_STEPS);
+  if (e.state === "decided") return at(turns, i, { ...t, steps });
+  const state: TurnState = e.state === "done" ? "ok" : e.state === "failed" ? "fail" : "busy";
+  return at(turns, i, { ...t, steps, state, label: EXEC_LABEL[e.state] });
 }
 
 function onMessage(turns: Turn[], m: ServerMessage): Turn[] {

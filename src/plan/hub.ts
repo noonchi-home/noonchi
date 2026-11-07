@@ -73,11 +73,23 @@ export class PlanHub {
     this.fp = { ...this.fp, robot: { ...this.fp.robot, position: at, room: roomAt(this.fp, at) } };
   }
 
-  /** PAM 판단으로 만든 계획(src/act/tasks.ts). 열린 판단 계획이 있으면 새 계획이 그것을 바꾼다(supersedes). */
+  /** PAM 판단으로 만든 계획(src/act/tasks.ts). 열린 판단 계획이 있으면 그것을 취소로 닫고 새 계획이 바꾼다(supersedes). */
   onDecision(plan: PlanView): void {
     const cur = this.plan;
-    const replaced = isOpen(cur) && cur.source === "brain" && cur.id !== plan.id ? cur.id : undefined;
-    this.commit(replaced ? { ...plan, supersedes: replaced } : plan);
+    if (isOpen(cur) && cur.source === "brain" && cur.id !== plan.id) {
+      this.commit(close(cur, "cancelled"));
+      this.commit({ ...plan, supersedes: cur.id });
+      return;
+    }
+    this.commit(plan);
+  }
+
+  /** 지금 계획이 planId이고 열려 있으면 닫는다(실행 추적의 완료·실패). 아니면 false. */
+  close(planId: string, status: "done" | "cancelled" | "failed"): boolean {
+    const p = this.plan;
+    if (!isOpen(p) || p.id !== planId) return false;
+    this.commit(close(p, status));
+    return true;
   }
 
   /** task planner가 보낸 계획. 같은 id면 바꾼다(번호는 지금보다 크게). origin은 받은 그대로. */
