@@ -1595,6 +1595,8 @@ def test_parse_memory_is_strict():
         parse_memory("```json\n{}\n```", "fsm")
 ```
 
+시험에 더한다: `contract`가 `pam-predict/1`이면 거절, list 기억도 list 프롬프트로 만들어짐, 공간 문장이 집으로 바뀜, 자리표시가 남지 않음, 반성 피드백이 없으면 `Human feedback` 칸 없음, 반성 칸 상한(관찰 100,000자·요약 50,000자·피드백 8,000자)과 모르는 칸 거절, `parse_memory`가 중복 키·NaN·배열을 거절. scenario.json은 셸 heredoc이 아니라 파일 편집기로 쓴다(`\\textbar`의 역슬래시 두 개가 그대로 남아야 바꿈이 맞는다).
+
 - [ ] **Step 2: 실패 확인** — `H services\pam\.venv\Scripts\python.exe -m pytest services/pam/tests/test_v2.py -q` / Expected: FAIL `ModuleNotFoundError: noonchi_pam.contracts`
 - [ ] **Step 3: 구현**
 
@@ -1694,11 +1696,12 @@ from pathlib import Path
 
 from pam.contracts import ContractError, validate_memory, validate_tasks
 from pam.messages import PROJECT_ROOT, _render, load_paper_config, load_prompt
-from pam.scenarios import adapt_prompt, load_scenario
+from pam.scenarios import adapt_prompt, load_scenario, load_scenario_tasks
 
 from .contracts import PredictRequest, ReflectRequest
 
 SCENARIO = load_scenario(PROJECT_ROOT / "scenarios" / "noonchi" / "scenario.json")
+load_scenario_tasks(SCENARIO)
 PLACEHOLDER = re.compile(r"\{(window|tasks_block|n_tasks_minus_one|rules_block|fsm_block)\}")
 
 
@@ -1753,7 +1756,7 @@ def build_reflect_messages(req: ReflectRequest) -> dict:
 
 
 def parse_memory(raw: str, kind: str) -> dict:
-    """완전한 JSON 객체만 받는다(마크다운·중복 키·고침 없음). 틀리면 ValueError."""
+    """완전한 JSON 객체만 받는다(마크다운·중복 키·NaN 같은 상수·고침 없음). 틀리면 ValueError."""
     def unique(pairs):
         out = {}
         for k, v in pairs:
@@ -1761,8 +1764,12 @@ def parse_memory(raw: str, kind: str) -> dict:
                 raise ValueError(f"duplicate key: {k}")
             out[k] = v
         return out
+
+    def constant(value):
+        raise ValueError(f"nonstandard constant: {value}")
+
     try:
-        value = json.loads(raw, object_pairs_hook=unique)
+        value = json.loads(raw, object_pairs_hook=unique, parse_constant=constant)
         return validate_memory(value, kind)
     except (json.JSONDecodeError, ContractError) as e:
         raise ValueError(str(e)) from e
