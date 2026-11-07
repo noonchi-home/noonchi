@@ -103,6 +103,13 @@ describe("배포 파일", () => {
     expect(envNames(svc["fake-openai"]!)).toEqual([]);
   });
 
+  it("아키텍처 계획도 compose처럼 서비스마다 이름을 적는다(env_file·NOONCHI_ENV_FILE 없음)", () => {
+    const plan = read("docs/superpowers/plans/2026-11-07-noonchi-architecture.md");
+    expect(plan).not.toMatch(/NOONCHI_ENV_FILE|env_file:\s*\[|env_file\)\.toEqual|env_file\(|env_file에서/);
+    expect(plan).toContain("KEY_OWNERS");
+    expect(plan).toContain("!SERVICE_ENV.has(k)");
+  });
+
   it("compose: noonchi는 서버 코드가 읽는 설정을, pam은 PAM 서비스가 읽는 설정을 받는다", () => {
     const svc = services();
     const noonchi = new Set(envNames(svc.noonchi!));

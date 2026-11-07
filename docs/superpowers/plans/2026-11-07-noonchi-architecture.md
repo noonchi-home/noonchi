@@ -921,13 +921,14 @@ describe("배포 파일", () => {
     expect(d).toContain('CMD ["node", "--import", "tsx", "src/server/main.ts"]');
   });
 
-  it("compose: 포트는 127.0.0.1만, gpu 프로필 vLLM 두 개(태그 고정·내건 이름·GPU 몫·캐시·차례로 뜸), 볼륨·env_file·상태 검사", () => {
+  it("compose: 포트는 127.0.0.1만, gpu 프로필 vLLM 두 개(태그 고정·내건 이름·GPU 몫·캐시·차례로 뜸), 볼륨·상태 검사", () => {
     const c = parse(read("compose.yaml"), { merge: true }) as { services: Record<string, any>; volumes: Record<string, unknown> };
     for (const [name, s] of Object.entries(c.services)) {
       for (const p of s.ports ?? []) expect(String(p), name).toMatch(/^127\.0\.0\.1:/);
       expect(s.healthcheck, name).toBeTruthy();
     }
-    expect(c.services.noonchi.env_file).toEqual([{ path: "${NOONCHI_ENV_FILE:-.env}", required: false }]);
+    // .env 전체를 넘기지 않는다: 서비스마다 받을 이름을 environment에 적고, 키는 그 키를 쓰는 서비스만 받는다(scripts/compose-keys.ts KEY_OWNERS)
+    for (const [name, s] of Object.entries(c.services)) expect(s.env_file, name).toBeUndefined();
     expect(c.services.noonchi.volumes).toContain("noonchi-data:/data");
     for (const [name, served] of [["vllm-vlm", "vlm"], ["vllm-pam", "pam"]] as const) {
       const s = c.services[name];
@@ -963,7 +964,7 @@ describe("배포 파일", () => {
 `Dockerfile`:
 ```dockerfile
 # noonchi 서버 이미지: 화면 빌드 → 운영 의존성 → YOLOX 모델(sha256 검사) → 실행.
-# 키·.env는 이미지에 넣지 않는다(.dockerignore). 설정은 compose env_file로 실행 때 준다.
+# 키·.env는 이미지에 넣지 않는다(.dockerignore). 설정은 compose가 이 서비스에 적은 이름만 실행 때 준다.
 ARG NODE_IMAGE=node:22.15.0-bookworm-slim
 
 FROM ${NODE_IMAGE} AS ui
@@ -1028,14 +1029,17 @@ docs/superpowers
 `compose.yaml`:
 ```yaml
 # NOONCHI 한 서버: noonchi(CPU). --profile gpu면 vLLM 두 개(VLM, PAM LLM)를 더한다. 포트는 호스트 127.0.0.1에만 연다.
-# 설정·키는 env_file(NOONCHI_ENV_FILE, 기본 .env)에서 온다. environment에는 컨테이너 안에서 늘 같은 값만 둔다.
+# 설정·키는 .env(다른 파일은 docker compose --env-file)에서 오고, 서비스마다 environment에 적은 이름만 받는다.
+# 값 없이 이름만 적은 칸은 .env(또는 셸)에 있을 때만 넘긴다. 키는 그 키를 쓰는 서비스에만 적는다(scripts/compose-keys.ts, 시험이 본다).
+# 값을 적은 칸은 컨테이너 안에서 늘 같은 값이다.
 name: noonchi
 
 x-vllm: &vllm
   image: ${VLLM_IMAGE:-vllm/vllm-openai:v0.17.0}
   profiles: [gpu]
   restart: unless-stopped
-  env_file: [{ path: "${NOONCHI_ENV_FILE:-.env}", required: false }]
+  # vLLM 서버 키(요청에 이 키를 요구한다), 받기 제한이 있는 Hugging Face 모델의 토큰
+  environment: { VLLM_API_KEY: , HF_TOKEN: }
   volumes: [model-cache:/root/.cache/huggingface]
   ipc: host
   deploy:
@@ -1055,7 +1059,6 @@ services:
     image: noonchi:local
     init: true
     restart: unless-stopped
-    env_file: [{ path: "${NOONCHI_ENV_FILE:-.env}", required: false }]
     environment:
       HOST: 0.0.0.0
       PHONE_HOST: 0.0.0.0
@@ -1064,6 +1067,20 @@ services:
       RUNTIME_DIR: /data
       MATTER_STORAGE_DIR: /data/matter
       MATTER_TRANSPORT: local
+      # 서버 코드가 읽는 설정은 값 없이 이름만 적는다(시험이 src/의 설정 이름과 견준다). 아래는 일부
+      AGENT_PROVIDER:
+      OPENAI_API_KEY:
+      OPENAI_MODEL:
+      OPENAI_BASE_URL:
+      ANTHROPIC_API_KEY:
+      INFERENCE_MODE:
+      VLM_BASE_URL:
+      VLM_MODEL:
+      VLM_API_KEY:
+      VLLM_API_KEY:
+      PAM_URL:
+      HUB:
+      THINQ_TOKEN:
     ports:
       - "127.0.0.1:${NOONCHI_PORT:-8200}:8200"
       - "127.0.0.1:${NOONCHI_PHONE_PORT:-8210}:8210"
@@ -1099,14 +1116,15 @@ volumes:
 ```ts
 // 키 없는 컨테이너 확인: compose 프로젝트 noonchi-check로 noonchi를 127.0.0.1:8500(허브)·8510(폰)에 띄우고
 // /api/health가 200인지, 폰 화면이 열리는지, docker stop(SIGTERM)에 종료 코드 0으로 끝나는지 본 뒤 내린다(볼륨까지 지운다).
-// 저장소 .env와 셸의 키·토큰은 넘기지 않는다: 확인용 값만 적은 임시 env 파일을 --env-file과 NOONCHI_ENV_FILE로 준다.
+// 저장소 .env와 셸의 키·토큰은 넘기지 않는다: 확인용 값만 적은 임시 env 파일을 --env-file로 주고, compose가 서비스에 넘기는 이름은 셸 값을 지운다.
 // 모델·PAM·에이전트(OpenAI 공급자) 주소는 컨테이너 안에서 닿지 않는 로컬 주소다. 실제 AI API를 부르지 않는다.
 // 무거운 일 잠금 안에서 돌린다: npm run heavy -- npx tsx scripts/container-smoke.ts
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parse } from "yaml";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const HUB_URL = "http://127.0.0.1:8500";
@@ -1118,9 +1136,12 @@ const CHECK_ENV = {
 
 const envFile = join(mkdtempSync(join(tmpdir(), "noonchi-check-")), "check.env");
 writeFileSync(envFile, Object.entries(CHECK_ENV).map(([k, v]) => `${k}=${v}\n`).join(""));
-// 셸의 키·토큰 값은 넘기지 않는다
-const shell = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/(KEY|TOKEN|SECRET)$/i.test(k)));
-const env = { ...shell, NOONCHI_ENV_FILE: envFile, NOONCHI_PORT: "8500", NOONCHI_PHONE_PORT: "8510" };
+/** compose 서비스가 받는 설정 이름. 셸에 같은 이름이 있으면 compose가 env 파일보다 셸 값을 넘기므로 지운다. */
+const SERVICE_ENV = new Set(Object.values((parse(readFileSync(join(ROOT, "compose.yaml"), "utf8"), { merge: true }) as { services: Record<string, { environment?: Record<string, unknown> }> }).services)
+  .flatMap((svc) => Object.keys(svc.environment ?? {})));
+// 셸의 키·토큰 값과 서비스가 받는 이름은 넘기지 않는다
+const shell = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/(KEY|TOKEN|SECRET)$/i.test(k) && !SERVICE_ENV.has(k)));
+const env = { ...shell, NOONCHI_PORT: "8500", NOONCHI_PHONE_PORT: "8510" };
 const compose = (args: string[], capture = false) =>
   spawnSync("docker", ["compose", "--env-file", envFile, "-p", "noonchi-check", ...args], { cwd: ROOT, env, encoding: "utf8", stdio: capture ? "pipe" : "inherit" });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -1168,7 +1189,7 @@ try {
 }
 process.exit(code);
 ```
-compose `environment`에는 컨테이너 안에서 늘 같은 값(HOST·PHONE_HOST·PORT·PHONE_PORT·RUNTIME_DIR·MATTER_STORAGE_DIR·MATTER_TRANSPORT=local)만 둔다. 설정·키는 env_file(`NOONCHI_ENV_FILE`, 기본 `.env`)에서 온다(`${X:-}`로 비운 값을 environment에 두면 env_file 값을 덮는다). 키 없는 확인은 확인용 값(HUB=memory, 닿지 않는 VLM·PAM 주소, OpenAI 공급자 에이전트 + 닿지 않는 `OPENAI_BASE_URL`)을 적은 임시 env 파일을 `--env-file`과 `NOONCHI_ENV_FILE`로 주고, 호스트 포트는 8500(허브)·8510(폰)이다. health 200·provider openai·twin·db·폰 화면·`docker stop` 뒤 종료 코드 0을 본다. ui 단계는 루트 의존성 없이 `ui/`만 설치한다(화면은 `src/contract` 타입만 쓴다). deps 단계는 `ONNXRUNTIME_NODE_INSTALL=skip`(CUDA 파일 안 받음)으로 설치하고 darwin·win32 onnxruntime 바이너리를 지운다(이미지 약 820MB). `.env.example`에 `NOONCHI_PORT=`, `NOONCHI_PHONE_PORT=`, `NOONCHI_ENV_FILE=`(비우면 `.env`), `VLLM_IMAGE=`, `VLM_LIVE_MODEL=`, `PAM_LIVE_MODEL=`, `PAM_MAX_MODEL_LEN=`, `VLLM_VLM_GPU_SHARE=`, `VLLM_PAM_GPU_SHARE=`, `VLLM_API_KEY=`, `HF_TOKEN=`을 주석과 함께 더한다. 시험 「키 없는 컨테이너 확인: 저장소 .env와 셸의 키를 넘기지 않고 8500·8510에 띄운다」를 더한다. `yaml`은 `^2.9.1`.
+compose `environment`에는 컨테이너 안에서 늘 같은 값(HOST·PHONE_HOST·PORT·PHONE_PORT·RUNTIME_DIR·MATTER_STORAGE_DIR·MATTER_TRANSPORT=local)을 값과 함께 적고, 서버 코드가 읽는 설정은 값 없이 이름만 적는다(`.env`나 셸에 있을 때만 넘긴다. `${X:-}`로 두면 비어 있어도 늘 넘긴다). env_file로 `.env` 전체를 넘기지 않는다. 키(이름이 KEY·TOKEN·SECRET로 끝남)는 그 키를 쓰는 서비스에만 적는다(`scripts/compose-keys.ts`의 `KEY_OWNERS`). 다른 env 파일은 `docker compose --env-file`로 준다. 시험은 서비스에 env_file이 있거나, 키가 `KEY_OWNERS` 밖의 서비스에 가거나, 서버 코드(`src/`)가 읽는 설정이 noonchi에 없으면 실패한다. 키 없는 확인은 확인용 값(HUB=memory, 닿지 않는 VLM·PAM 주소, OpenAI 공급자 에이전트 + 닿지 않는 `OPENAI_BASE_URL`)을 적은 임시 env 파일을 `--env-file`로 주고, compose가 서비스에 넘기는 이름은 셸 값을 지운다(`!SERVICE_ENV.has(k)`). 호스트 포트는 8500(허브)·8510(폰)이다. health 200·provider openai·twin·db·폰 화면·`docker stop` 뒤 종료 코드 0을 본다. ui 단계는 루트 의존성 없이 `ui/`만 설치한다(화면은 `src/contract` 타입만 쓴다). deps 단계는 `ONNXRUNTIME_NODE_INSTALL=skip`(CUDA 파일 안 받음)으로 설치하고 darwin·win32 onnxruntime 바이너리를 지운다(이미지 약 820MB). `.env.example`에 `NOONCHI_PORT=`, `NOONCHI_PHONE_PORT=`, `VLLM_IMAGE=`, `VLM_LIVE_MODEL=`, `PAM_LIVE_MODEL=`, `PAM_MAX_MODEL_LEN=`, `VLLM_VLM_GPU_SHARE=`, `VLLM_PAM_GPU_SHARE=`, `VLLM_API_KEY=`, `HF_TOKEN=`을 주석과 함께 더한다. 시험 「키 없는 컨테이너 확인: 저장소 .env와 셸의 키를 넘기지 않고 8500·8510에 띄운다」를 더한다. `yaml`은 `^2.9.1`.
 
 - [ ] **Step 4: 통과 확인**
 
@@ -2219,8 +2240,16 @@ CMD ["uvicorn", "noonchi_pam.app:create_app", "--factory", "--host", "0.0.0.0", 
     image: noonchi-pam:local
     init: true
     restart: unless-stopped
-    env_file: [{ path: "${NOONCHI_ENV_FILE:-.env}", required: false }]
-    # INFERENCE_MODE·PAM_LLM_*·PAM_MAX_MODEL_LEN은 env_file에서 온다(비면 서비스 기본값)
+    # 비면 서비스 기본값(services/pam/noonchi_pam/settings.py)
+    environment:
+      INFERENCE_MODE:
+      PAM_LLM_BASE_URL:
+      PAM_LLM_MODEL:
+      PAM_LLM_API_KEY:
+      PAM_LLM_TIMEOUT_S:
+      PAM_MAX_MODEL_LEN:
+      OPENROUTER_API_KEY:
+      VLLM_API_KEY:
     ports: ["127.0.0.1:${PAM_HOST_PORT:-8300}:8300"]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8300/health', timeout=3)"]
@@ -2241,7 +2270,7 @@ CMD ["uvicorn", "noonchi_pam.app:create_app", "--factory", "--host", "0.0.0.0", 
       timeout: 5s
       retries: 10
 ```
-`noonchi.environment`에 `PAM_URL: http://pam:8300`(compose 안에서 늘 같은 값), `depends_on: { pam: { condition: service_healthy } }`. `INFERENCE_MODE`·`PAM_LLM_*`는 env_file에서 온다(environment에 `${X:-}`로 두지 않는다).
+`noonchi.environment`에 `PAM_URL: http://pam:8300`(compose 안에서 늘 같은 값), `depends_on: { pam: { condition: service_healthy } }`. pam은 PAM 서비스가 읽는 설정(`INFERENCE_MODE`·`PAM_LLM_*`·`PAM_MAX_MODEL_LEN`·`OPENROUTER_API_KEY`·`VLLM_API_KEY`)을 `environment`에 이름만 적어 받는다(`${X:-}`로 두지 않는다). 시험은 `settings.py`·`config/openrouter.json`이 읽는 이름이 pam에 없으면 실패한다.
 
 `scripts/container-smoke.ts` 바꾸기: 확인용 임시 env 파일(Task 7)의 `CHECK_ENV`를 `{ HUB: "memory", INFERENCE_MODE: "live", VLM_BASE_URL: "http://fake-openai:8500/v1", PAM_LLM_BASE_URL: "http://fake-openai:8500/v1", AGENT_PROVIDER: "openai", OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: "http://fake-openai:8500/v1" }`로 바꾸고(PAM_URL은 compose가 `http://pam:8300`으로 둔다), 셸 값에 `PAM_HOST_PORT: "8520"`을 더한다. 호스트 포트는 그대로 8500·8510이다. compose 명령마다 `--profile check`를 붙이고 `build`(noonchi·pam 이미지) 뒤 `up -d noonchi pam fake-openai`를 한다(`fake-openai`는 `pull_policy: never`로 방금 지은 `noonchi:local`을 쓴다). `ready.ok === true`가 될 때까지(최대 120초) 기다린 뒤, `POST /api/agent/chat` `{ message: "안녕" }`(origin `http://127.0.0.1:8500`)이 가짜 서버의 「가짜 답」을 돌려주는지, `POST http://127.0.0.1:8520/predict`(`pam-predict/2`)가 `valid`·`task_index -1`인지, pam `/health`의 `limits`가 있는지 본다. 모두 맞을 때만 성공이다. 실패하면 noonchi·pam·fake-openai 기록을 찍는다. 이 PC의 일시 EFAULT 때문에 호스트 쪽 요청은 `fetchRetry`로 보내고, `up`이 `invalid pointer address`로 실패하거나 성공해도 호스트 포트(8500·8510·8520)가 15초 안에 TCP로 안 열리면 `down` 뒤 다시 띄운다(최대 8번). 멈춘 요청이 있어도 `down -v`까지 가게 확인하는 동안 타이머 하나로 프로세스를 붙잡아 둔다.
 
@@ -2271,7 +2300,7 @@ H docker build -t noonchi-pam:check services/pam
 H docker build -t noonchi:check .
 H npx tsx scripts/container-smoke.ts
 ```
-Expected: PASS, 두 이미지 빌드, 스모크가 `ready.ok: true`(가짜 서버로 VLM·PAM·PAM LLM·에이전트 모두 답함), 에이전트 답 「가짜 답」, PAM 판단 `task_index -1`을 찍고 종료 코드 0. `docker compose --profile gpu config -q`는 빈 임시 env 파일(`--env-file`, `NOONCHI_ENV_FILE`)로 검사한다(저장소 `.env` 값을 찍지 않게).
+Expected: PASS, 두 이미지 빌드, 스모크가 `ready.ok: true`(가짜 서버로 VLM·PAM·PAM LLM·에이전트 모두 답함), 에이전트 답 「가짜 답」, PAM 판단 `task_index -1`을 찍고 종료 코드 0. `docker compose --profile gpu config -q`는 빈 임시 env 파일(`--env-file`)로 검사한다(저장소 `.env` 값을 찍지 않게). 스모크는 띄우기 전에 모든 키에 확인용 값을 넣은 env 파일로 `docker compose --profile gpu --profile check config --format json`을 풀어, 키를 받는 서비스가 `KEY_OWNERS`와 같은지 본다(값은 찍지 않는다).
 
 - [ ] **Step 5: 커밋**
 
