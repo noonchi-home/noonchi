@@ -7,7 +7,7 @@ import { checkPlan } from "../src/act/check.js";
 
 const surfaces = () => [{ id: "table_1", label: "식탁", center: [2, 0] as [number, number], top: 0.75, radius: 0.6 }];
 const devices = () => [{ id: "dishwasher_1", kind: "dishwasher", label: "식기세척기" }];
-const ws = () => new WorldState({ surfaces, floorAt: () => 0, roomAt: () => "kitchen", devices });
+const ws = () => new WorldState({ surfaces, floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices });
 const frame = (i: number): EngineFrame => ({ id: `e${i}`, capturedAtMs: i * 1000, latestAtMs: i * 1000, jpeg: Buffer.from(`${i}`), sha256: sha256(Buffer.from(`${i}`)), width: 480, height: 360, eye: null, view: null });
 const cup: Detection = { label: "cup", score: 0.9, cls: 41, box: [220, 160, 40, 20] };
 const person: Detection = { label: "person", score: 0.9, cls: 0, box: [10, 10, 100, 300] };
@@ -82,7 +82,7 @@ describe("World State", () => {
     expect(w.view(6000).objects[0]!.status).toBe("gone");
   });
   it("맞춘 뒤: 트윈 위치를 붙이고, 같은 자리 같은 종류는 같은 물체, 시야 밖이면 사라짐을 세지 않는다", () => {
-    const w = new WorldState({ surfaces: () => [{ id: "table_1", label: "식탁", center: [0.75, 0], top: 0.75, radius: 0.6 }], floorAt: () => 0, roomAt: () => "kitchen", devices });
+    const w = new WorldState({ surfaces: () => [{ id: "table_1", label: "식탁", center: [0.75, 0], top: 0.75, radius: 0.6 }], floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices });
     const at = (i: number, view: CameraView) => ({ ...frame(i), view });
     let last;
     for (let i = 1; i <= 3; i++) last = w.applyDetections(at(i, look), [cup]);
@@ -133,7 +133,7 @@ describe("World State", () => {
     expect(w.view(31_000).person.visible).toBe(false);
   });
   it("사라진 물건을 띄엄띄엄 다시 봐도 등장으로 치지 않는다", () => {
-    const w = new WorldState({ surfaces: () => [{ id: "table_1", label: "식탁", center: [0.75, 0], top: 0.75, radius: 0.6 }], floorAt: () => 0, roomAt: () => "kitchen", devices });
+    const w = new WorldState({ surfaces: () => [{ id: "table_1", label: "식탁", center: [0.75, 0], top: 0.75, radius: 0.6 }], floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices });
     const out: string[] = [];
     let n = 0;
     const step = (dets: Detection[]) => { n++; out.push(...w.applyDetections({ ...frame(n), view: look }, dets).changes.map((c) => `${n}:${c.kind}`)); };

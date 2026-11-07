@@ -59,7 +59,8 @@ interface Dev { id: string; kind: string; label: string; twin: Record<string, un
 export interface WorldStateOptions {
   surfaces: () => PlaneSurface[];
   floorAt: (p: Plan2) => number;
-  roomAt: (p: Plan2) => string | null;
+  /** 평면 위 점이 있는 방(id와 이름). 집 밖이면 null. */
+  roomAt: (p: Plan2) => { id: string; label: string } | null;
   devices: () => readonly { id: string; kind: string; label: string }[];
   /** 같은 물체로 볼 거리(m, 기본 0.25). */
   identityM?: number;
@@ -163,7 +164,7 @@ export class WorldState {
         obj.surface = placed.surface;
         obj.surfaceLabel = placed.surface ? surfaces.find((s) => s.id === placed.surface)?.label ?? null : null;
         obj.errorM = placed.errorM;
-        obj.room = this.o.roomAt([placed.position[0], placed.position[2]]);
+        obj.room = this.o.roomAt([placed.position[0], placed.position[2]])?.id ?? null;
       }
     });
     if (seen.has(PERSON)) this.person.last_seen_ms = at;
@@ -321,8 +322,9 @@ export class WorldState {
   }
 
   setEye(eye: EyePose | null, atMs: number): void {
+    const room = eye ? this.o.roomAt(eye.position) : null;
     this.eye = eye
-      ? { position: [eye.position[0], eye.position[1]], height_m: eye.height_m, yaw_deg: eye.yaw_deg, pitch_deg: eye.pitch_deg, room: this.o.roomAt(eye.position), at_ms: atMs }
+      ? { position: [eye.position[0], eye.position[1]], height_m: eye.height_m, yaw_deg: eye.yaw_deg, pitch_deg: eye.pitch_deg, room: room?.id ?? null, room_label: room?.label ?? null, at_ms: atMs }
       : null;
   }
 

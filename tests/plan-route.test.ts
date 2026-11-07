@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { resolveTwinStudioDir } from "../src/model/devices.js";
-import { approach, floorPlanFrom, roomAt, route } from "../src/plan/route.js";
+import { approach, floorPlanFrom, roomAt, roomNamedAt, route } from "../src/plan/route.js";
 
 // A(0..4 × 0..4)와 B(4..8 × 0..4)는 트여 있고, C(0..4 × 4..8)는 A와 (2,4) 문으로 이어진다
 const scene = {
@@ -34,6 +34,12 @@ describe("바닥 경로", () => {
   it("방 찾기", () => {
     expect(roomAt(fp, [6, 1])).toBe("B");
     expect(roomAt(fp, [20, 20])).toBeNull();
+  });
+  it("방 찾기(이름): 트윈 방 목록의 이름, 목록에 없는 방은 id", () => {
+    const named = roomNamedAt(fp, [{ id: "A", label: "거실" }, { id: "B", label: "주방" }]);
+    expect(named([6, 1])).toEqual({ id: "B", label: "주방" });
+    expect(named([2, 6])).toEqual({ id: "C", label: "C" });
+    expect(named([20, 20])).toBeNull();
   });
   it("C에서 B 식탁까지: 문 → 트인 경계 → 식탁", () => {
     expect(route(fp, [2, 6], [6, 2])).toEqual([[2, 6], [2, 4], [4, 2], [6, 2]]);

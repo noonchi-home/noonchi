@@ -53,7 +53,8 @@ export interface WorldDevice {
   history: { attr: string; from: unknown; to: unknown; at_ms: number }[];
 }
 
-export interface WorldEye { position: [number, number]; height_m: number; yaw_deg: number; pitch_deg: number; room: string | null; at_ms: number }
+/** 클로이드 눈(폰) 위치. room은 방 id, room_label은 방 이름(관찰 텍스트의 [눈] 줄). */
+export interface WorldEye { position: [number, number]; height_m: number; yaw_deg: number; pitch_deg: number; room: string | null; room_label: string | null; at_ms: number }
 
 export interface WorldView {
   at_ms: number;

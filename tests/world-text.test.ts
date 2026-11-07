@@ -49,7 +49,7 @@ describe("PAM 관찰 텍스트", () => {
       ],
       person: { visible: false, since_ms: T(21, 5, 0), last_seen_ms: T(21, 4, 58), facts: {} },
       devices: [{ id: "dishwasher_1", kind: "dishwasher", label: "식기세척기", status: "작동 중", changed_ms: T(21, 0, 0), started_ms: T(21, 0, 0), remaining_min: 42, history: [] }],
-      eye: { position: [1, 2], height_m: 1.5, yaw_deg: 0, pitch_deg: -30, room: "kitchen", at_ms: T(21, 9, 59) }, vlm_missing: 3, yolo_missing: 0,
+      eye: { position: [1, 2], height_m: 1.5, yaw_deg: 0, pitch_deg: -30, room: "kitchen", room_label: "주방", at_ms: T(21, 9, 59) }, vlm_missing: 3, yolo_missing: 0,
     };
     const c = (kind: WorldChange["kind"], at: number, text: string): WorldChange => ({ kind, at_ms: at, subject: "x", text, meaningful: false });
     const recent = [c("appeared", T(21, 0, 0), "컵 cup_1 보임 · 식탁 위"), c("vlm", T(21, 9, 10), "VLM: 컵이 식탁 위"),
@@ -61,8 +61,15 @@ describe("PAM 관찰 텍스트", () => {
       "[지속] 그릇 bowl_1 싱크대 안: 21:09:30부터 30초째, 마지막 확인 21:09:40, 지금 시야 밖",
       "[지속] 사람 안 보임: 21:05:00부터 5분째",
       "[지속] 식기세척기 dishwasher_1: 작동 중, 21:00:00에 바뀜, 남은 시간 42분",
-      "[눈] 클로이드 눈: kitchen",
+      "[눈] 클로이드 눈: 주방",
     ]);
+  });
+
+  it("눈 줄은 눈이 있는 방의 id가 아니라 방 이름을 쓴다", () => {
+    const w = new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => ({ id: "living", label: "거실" }), devices: () => [] });
+    w.setEye({ position: [1, 2], height_m: 1.4, yaw_deg: 90, pitch_deg: -10 }, T(21, 0, 0));
+    expect(w.view(T(21, 0, 1)).eye).toMatchObject({ room: "living", room_label: "거실" });
+    expect(textFromWorld(w.view(T(21, 0, 1)), [], { nowMs: T(21, 0, 1), offsetMinutes: 540 }).split("\n").at(-1)).toBe("[눈] 클로이드 눈: 거실");
   });
 
   it("첫 프레임 전이면 사람 줄에 시각을 붙이지 않는다", () => {
@@ -75,15 +82,16 @@ describe("PAM 관찰 텍스트", () => {
   });
 });
 
-/** 사람이 식탁 앞에서 컵을 두고 떠나는 5장(21:00:00~21:00:04, 맞추기 전)과 VLM 답 두 개. 21:00:08의 관찰 텍스트. */
+/** 사람이 식탁 앞에서 컵을 두고 떠나는 5장(21:00:00~21:00:04, 맞추기 전, 클로이드 눈은 주방)과 VLM 답 두 개. 21:00:08의 관찰 텍스트. */
 function exampleScenario(): string {
-  const w = new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] });
+  const w = new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices: () => [] });
   const person: Detection = { label: "person", score: 0.9, cls: 0, box: [10, 10, 100, 300] };
   const cup: Detection = { label: "cup", score: 0.9, cls: 41, box: [220, 160, 40, 20] };
   const frame = (i: number): EngineFrame => ({ id: `e${i}`, capturedAtMs: T(21, 0, i - 1), latestAtMs: T(21, 0, i - 1), jpeg: Buffer.from(`${i}`), sha256: sha256(Buffer.from(`${i}`)), width: 480, height: 360, eye: null, view: null });
   const changes: WorldChange[] = [];
   let ids = new Map<string, string>();
   for (let i = 1; i <= 5; i++) {
+    w.setEye({ position: [1, 2], height_m: 1.2, yaw_deg: 0, pitch_deg: -20 }, T(21, 0, i - 1));
     const r = w.applyDetections(frame(i), i <= 3 ? [person, cup] : [cup]);
     changes.push(...r.changes);
     ids = r.ids;

@@ -1,4 +1,4 @@
-// PAM 관찰 텍스트: 시각이 붙은 줄(오래된 것부터) + [지속] 오래 이어진 사실 + [눈] 클로이드 눈 위치. 사진은 넣지 않는다.
+// PAM 관찰 텍스트: 시각이 붙은 줄(오래된 것부터) + [지속] 오래 이어진 사실 + [눈] 클로이드 눈이 있는 방 이름. 사진은 넣지 않는다.
 import type { WorldChange, WorldFact, WorldView } from "../contract/world.js";
 import { CHANGE_TEXT, EYE_TEXT, OUT_OF_VIEW_NOW, PLACE_UNKNOWN, ROOM_UNKNOWN, STATE_TEXT, objectName, onSurface } from "./labels.js";
 
@@ -55,6 +55,6 @@ export function textFromWorld(world: WorldView, recent: readonly WorldChange[], 
   for (const d of world.devices.filter((x) => x.status)) {
     facts.push(`${d.label} ${d.id}: ${d.status}, ${at(d.changed_ms)}에 바뀜${d.remaining_min !== null ? `, ${CHANGE_TEXT.remaining(d.remaining_min)}` : ""}`);
   }
-  const eye = world.eye ? `${EYE_TEXT} ${world.eye.room ?? ROOM_UNKNOWN}` : null;
+  const eye = world.eye ? `${EYE_TEXT} ${world.eye.room_label ?? ROOM_UNKNOWN}` : null;
   return buildPamText({ lines, facts, eye, offsetMinutes: o.offsetMinutes });
 }

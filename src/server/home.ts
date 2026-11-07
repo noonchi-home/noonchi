@@ -36,7 +36,7 @@ import { createPhoneServer, type PhoneServer } from "../phone/server.js";
 import { estimateViewpoint } from "../phone/session.js";
 import { TouchStore, eyeHeightOf, floorLookup, homeBounds, readTouchPoints, touchPointsPath, touchTargets, type TouchPoint } from "../phone/touch.js";
 import { PlanHub } from "../plan/hub.js";
-import { floorPlanFrom, roomAt } from "../plan/route.js";
+import { floorPlanFrom, roomNamedAt } from "../plan/route.js";
 import { surfacesFromLayout, type PlaneSurface } from "../world/place.js";
 import { Decider } from "../world/decide.js";
 import { WorldState } from "../world/state.js";
@@ -211,7 +211,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     if (brainWanted && !phoneOn) log("[경고] BRAIN=1은 PHONE_PORT가 있어야 합니다(폰 카메라가 입력). 관찰 흐름을 끕니다.");
     const world = brainWanted && phoneOn
       ? new WorldState({
-        surfaces: surfaceSource(layout?.editor), floorAt: floorLookup(plan.rooms), roomAt: (p) => roomAt(floorPlan, p), devices: () => signals.list(),
+        surfaces: surfaceSource(layout?.editor), floorAt: floorLookup(plan.rooms), roomAt: roomNamedAt(floorPlan, twin.rooms), devices: () => signals.list(),
       })
       : null;
     // 실행 설정(STALE_MS). 틀린 값이면 시작을 막는다

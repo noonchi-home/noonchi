@@ -20,6 +20,15 @@ export function roomAt(fp: FloorPlan, [x, z]: XZ): string | null {
   return null;
 }
 
+/** 점이 있는 방의 id와 이름. 이름은 트윈 방 목록(rooms)에서 찾고, 목록에 없는 방은 id. 집 밖이면 null. */
+export function roomNamedAt(fp: FloorPlan, rooms: readonly { id: string; label: string }[]): (p: XZ) => { id: string; label: string } | null {
+  const names = new Map(rooms.map((r) => [r.id, r.label]));
+  return (p) => {
+    const id = roomAt(fp, p);
+    return id ? { id, label: names.get(id) ?? id } : null;
+  };
+}
+
 /** 시작·끝 점과 포털을 마디로 둔 최단 거리(다익스트라). 두 마디가 같은 방에 있으면 잇는다. 시작점을 모르면 null. */
 export function route(fp: FloorPlan, from: XZ | null, to: XZ): XZ[] | null {
   if (!from) return null;
