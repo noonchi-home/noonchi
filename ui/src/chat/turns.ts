@@ -17,6 +17,10 @@ export type PendingCard = PendingView & { status: PendingStatus };
 /** 판단 줄을 펼치면 보이는 근거: PAM에 보낸 관찰 텍스트, 판단할 때 World State 요약, 참조한 기억 판본. */
 export interface DecisionDetail { text_sent: string; world: DecisionWorld; memory_version: number }
 
+/** 한 프레임의 YOLOX 결과(seen)와 VLM 답(judged). 분석 없음이면 그 글. */
+export interface FramePair { frame_id: string; captured_at_ms: number; seen: string; judged: string }
+export type FrameHalf = { frame_id: string; captured_at_ms: number; seen?: string; judged?: string };
+
 /** 행동 한 단계, 또는 글 한 줄(답·초점·취소·승인 결과·찍은 자리·관찰 기록). mark는 관찰 기록 줄의 종류(아이콘·단계 이름). detail은 판단 줄의 근거. */
 export type Step =
   | { kind: "action"; action: AgentAction }
@@ -35,8 +39,10 @@ export interface Turn {
   answer: string;
   steps: Step[];
   pending: PendingCard[];
-  /** 관찰과 판단: 지금 YOLOX가 본 것·최근 VLM 답(장마다 갈아 끼운다). */
-  now?: { seen: string; judged: string };
+  /** 관찰과 판단: YOLOX 결과와 VLM 답이 둘 다 온 가장 새 프레임 하나의 짝. */
+  now?: FramePair;
+  /** 아직 짝이 안 찬 프레임(YOLOX 결과나 VLM 답 하나만 옴). */
+  frames?: FrameHalf[];
   photo?: string;
   /** 관찰과 판단 카드가 끝났는가(판단 줄이 닫는다. 다음 기록은 새 카드). */
   ended?: boolean;
@@ -97,11 +103,30 @@ function photoTurn(id: string, p: PhotoRecord): Turn {
 }
 
 // ── 관찰과 판단 ──────────────────────────────────────────
-// 판단마다 카드 하나: World State 변화·연결·판단 시점 줄을 쌓고, 판단 줄이 카드를 닫는다. YOLOX·VLM 기록은 지금·판정 두 줄에서 갈아 끼운다.
+// 판단마다 카드 하나: World State 변화·연결·판단 시점 줄을 쌓고, 판단 줄이 카드를 닫는다.
+// YOLOX·VLM 기록은 프레임 번호로 짝을 지어, 둘 다 온 가장 새 프레임 하나를 지금·판정 두 줄에 보인다. 다른 프레임의 결과를 섞지 않는다.
 // 실행 줄(판단 → 계획 → 실행 중 → 결과 확인 → 완료·실패)은 그 판단 카드(plan:pam-N → pam-N)에 쌓이고, 못 찾으면 지금 카드에 쌓인다.
 
 /** 카드 하나에 둘 줄 수(오래된 줄부터 뺀다). */
 const MAX_BRAIN_STEPS = 40;
+/** 짝을 기다리는 프레임 수(오래된 것부터 뺀다). VLM 동시 요청 상한보다 넉넉하다. */
+const MAX_HALF_FRAMES = 16;
+
+/** observe 기록 하나를 프레임 짝에 넣는다. 짝이 차고 지금 짝보다 새 프레임이면 지금 짝을 바꾼다. */
+function onObserve(t: Turn, e: Extract<BrainLog, { type: "observe" }>): Turn {
+  const seen = e.yolo ?? (e.yolo_missing ? YOLO_MISSING[e.yolo_missing] : undefined);
+  const judged = e.vlm ?? (e.vlm_missing ? VLM_MISSING[e.vlm_missing] : undefined);
+  if (t.now?.frame_id === e.frame_id) return { ...t, now: { ...t.now, seen: seen ?? t.now.seen, judged: judged ?? t.now.judged } };
+  const frames = t.frames ?? [];
+  const old = frames.find((f) => f.frame_id === e.frame_id);
+  const half: FrameHalf = { ...(old ?? { frame_id: e.frame_id, captured_at_ms: e.captured_at_ms }), ...(seen !== undefined ? { seen } : {}), ...(judged !== undefined ? { judged } : {}) };
+  const rest = frames.filter((f) => f.frame_id !== e.frame_id);
+  if (half.seen === undefined || half.judged === undefined) return { ...t, frames: [...rest, half].slice(-MAX_HALF_FRAMES) };
+  const pair: FramePair = { frame_id: half.frame_id, captured_at_ms: half.captured_at_ms, seen: half.seen, judged: half.judged };
+  if (t.now && pair.captured_at_ms < t.now.captured_at_ms) return { ...t, frames: rest };
+  // 지금 짝보다 앞 프레임은 더 보일 일이 없으니 뺀다
+  return { ...t, now: pair, frames: rest.filter((f) => f.captured_at_ms > pair.captured_at_ms) };
+}
 
 function onBrain(turns: Turn[], e: BrainLog): Turn[] {
   if (e.type === "execution") {
@@ -111,18 +136,18 @@ function onBrain(turns: Turn[], e: BrainLog): Turn[] {
   }
   let i = lastIndex(turns, (t) => t.source === "brain" && !t.ended);
   if (i === -1) {
-    turns = [...turns, { ...fresh(`b${turns.length}`, "brain", BRAIN_CARD.ask), label: BRAIN_CARD.watching, now: { seen: "", judged: "" }, ended: false }];
+    // 판단 줄이 닫은 카드에서 짝을 기다리던 프레임은 새 카드로 옮긴다
+    const prev = lastIndex(turns, (t) => t.source === "brain");
+    const frames = prev === -1 ? [] : turns[prev]!.frames ?? [];
+    if (prev !== -1 && frames.length) turns = at(turns, prev, { ...turns[prev]!, frames: [] });
+    turns = [...turns, { ...fresh(`b${turns.length}`, "brain", BRAIN_CARD.ask), label: BRAIN_CARD.watching, frames, ended: false }];
     i = turns.length - 1;
   }
   const t = turns[i]!;
-  const now = t.now ?? { seen: "", judged: "" };
   const add = (text: string, extra: { tone?: "fail" | "wait"; detail?: DecisionDetail } = {}) => ({ ...t, steps: [...t.steps, line("", text, { ...extra, mark: e.type })].slice(-MAX_BRAIN_STEPS) });
   switch (e.type) {
-    case "observe": {
-      const seen = e.yolo ?? (e.yolo_missing ? YOLO_MISSING[e.yolo_missing] : null);
-      const judged = e.vlm ?? (e.vlm_missing ? VLM_MISSING[e.vlm_missing] : null);
-      return at(turns, i, { ...t, now: { seen: seen ?? now.seen, judged: judged ?? now.judged } });
-    }
+    case "observe":
+      return at(turns, i, onObserve(t, e));
     case "decision": {
       const ok = e.status === "valid";
       const choice = ok ? e.action ?? BRAIN_CARD.wait : BRAIN_CARD.failed;

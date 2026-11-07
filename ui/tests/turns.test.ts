@@ -100,9 +100,34 @@ describe("관찰과 판단 카드", () => {
     const t = run([observe({ yolo: "컵 0.90" }), observe({ vlm: "컵이 식탁 위" }), observe({ frame_id: "e2", yolo_missing: "cap", vlm_missing: "cap" })]);
     expect(t).toHaveLength(1);
     expect(t[0]).toMatchObject({ source: "brain", ask: "관찰과 판단", state: "busy", label: "관찰 중" });
-    expect(t[0]!.now).toEqual({ seen: "요청이 몰려 YOLOX·VLM 분석 없음", judged: "요청이 몰려 VLM 분석 없음" });
+    expect(t[0]!.now).toMatchObject({ seen: "요청이 몰려 YOLOX·VLM 분석 없음", judged: "요청이 몰려 VLM 분석 없음" });
     const u = run([observe({ yolo_missing: "error" }), observe({ vlm_missing: "timeout" }), observe({ vlm_missing: "format" })]);
-    expect(u[0]!.now).toEqual({ seen: "감지 오류로 YOLOX 분석 없음", judged: "형식 오류로 VLM 분석 없음" });
+    expect(u[0]!.now).toMatchObject({ seen: "감지 오류로 YOLOX 분석 없음", judged: "형식 오류로 VLM 분석 없음" });
+  });
+
+  it("지금·판정은 같은 프레임의 YOLOX 결과와 VLM 답만 함께 보이고, 늦게 온 앞 프레임 답은 더 새 짝을 덮지 않는다", () => {
+    const t = run([
+      observe({ frame_id: "e1", captured_at_ms: 1000, yolo: "사람 0.91 · 컵 0.87" }),
+      observe({ frame_id: "e2", captured_at_ms: 2000, yolo: "컵 0.88" }),
+      observe({ frame_id: "e1", captured_at_ms: 1000, vlm: "사람이 식탁에 앉아 있고 식탁 위에 빈 컵이 있음" }),
+    ]);
+    expect(t[0]!.now).toMatchObject({ frame_id: "e1", seen: "사람 0.91 · 컵 0.87", judged: "사람이 식탁에 앉아 있고 식탁 위에 빈 컵이 있음" });
+    const u = run([observe({ frame_id: "e2", captured_at_ms: 2000, vlm: "식탁 위에 빈 컵이 있고 사람이 보이지 않음" })], t);
+    expect(u[0]!.now).toMatchObject({ frame_id: "e2", seen: "컵 0.88", judged: "식탁 위에 빈 컵이 있고 사람이 보이지 않음" });
+    const v = run([
+      observe({ frame_id: "e3", captured_at_ms: 3000, yolo: "컵 0.80" }),
+      observe({ frame_id: "e4", captured_at_ms: 4000, yolo: "감지 없음" }),
+      observe({ frame_id: "e4", captured_at_ms: 4000, vlm: "빈 식탁" }),
+      observe({ frame_id: "e3", captured_at_ms: 3000, vlm: "식탁 위에 컵" }),
+    ], u);
+    expect(v[0]!.now).toMatchObject({ frame_id: "e4", seen: "감지 없음", judged: "빈 식탁" });
+  });
+
+  it("판단 줄이 카드를 닫은 뒤 온 VLM 답은 새 카드에서 같은 프레임의 YOLOX 결과와 짝을 짓는다", () => {
+    const t = run([observe({ frame_id: "e7", captured_at_ms: 7000, yolo: "컵 0.90" }), decision(), observe({ frame_id: "e7", captured_at_ms: 7000, vlm: "식탁 위에 빈 컵" })]);
+    expect(t).toHaveLength(2);
+    expect(t[0]!.now).toBeUndefined();
+    expect(t[1]!.now).toMatchObject({ frame_id: "e7", seen: "컵 0.90", judged: "식탁 위에 빈 컵" });
   });
 
   it("World State 변화·연결·판단 멈춤은 단계 줄, 판단 줄이 카드를 닫고 다음 기록은 새 카드", () => {
@@ -116,7 +141,8 @@ describe("관찰과 판단 카드", () => {
     expect(t).toHaveLength(2);
     expect(lines(t[0]!)).toEqual(["컵 cup_1 보임", "PAM 연결 끊김", "사람이 없어 판단을 멈춤", "컵 치우기 · 컵이 비어 있음"]);
     expect(t[0]).toMatchObject({ state: "ok", label: "컵 치우기", ended: true });
-    expect(t[1]).toMatchObject({ source: "brain", state: "busy", now: { seen: "감지 없음", judged: "" } });
+    expect(t[1]).toMatchObject({ source: "brain", state: "busy" });
+    expect(t[1]!.now).toBeUndefined();
   });
 
   it("판단 줄에는 펼쳐 볼 근거(보낸 관찰 텍스트·World State·기억 판본)가 붙고, 반성은 줄 하나를 더한다", () => {
