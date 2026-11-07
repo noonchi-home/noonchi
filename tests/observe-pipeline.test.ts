@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { startFakeOpenAI, type FakeServer } from "../scripts/fake-openai.js";
 import { VlmClient } from "../src/infer/vlm.js";
-import { ObservationPipeline } from "../src/observe/pipeline.js";
+import { ObservationPipeline, loadObserveConfig } from "../src/observe/pipeline.js";
 import { WorldState } from "../src/world/state.js";
 import type { Detector } from "../src/brain/detector.js";
 import { ScriptedDetector } from "./helpers/detectors.js";
@@ -128,5 +128,14 @@ describe("관찰 흐름", () => {
     expect(world.view(43_000)).toMatchObject({ yolo_missing: 1, vlm_missing: 1 });
     expect(p.status().yolo_missing.stale).toBe(1);
     await p.close();
+  });
+});
+
+describe("관찰 흐름 설정", () => {
+  it("엔진 프레임 간격 기본은 2초(mock은 VLM을 시간당 약 1,800번 부른다), 200ms 아래는 시작을 막는다", () => {
+    expect(loadObserveConfig({})).toMatchObject({ engineMs: 2000, vlmMaxInflight: 4, detectQueueMax: 8, keepMs: 20_000 });
+    expect(3_600_000 / loadObserveConfig({}).engineMs).toBe(1800);
+    expect(loadObserveConfig({ ENGINE_FRAME_MS: "500" }).engineMs).toBe(500);
+    expect(() => loadObserveConfig({ ENGINE_FRAME_MS: "100" })).toThrow(/ENGINE_FRAME_MS=100/);
   });
 });

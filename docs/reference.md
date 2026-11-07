@@ -102,7 +102,7 @@ HUB=memory npm run demo
 | `PHONE_LAN_URLS` | `1` | `0`이면 폰 주소에 이 기계의 네트워크 주소(와이파이)를 넣지 않는다. compose는 `0`으로 둔다(컨테이너 안 주소는 밖에서 열 수 없다). 그때 폰 주소는 `PHONE_URL`뿐이다 |
 | `PHONE_MAX_MISMATCH_M`, `PHONE_PHOTO_DIR` | `0.3`, `RUNTIME_DIR/photos` | 기준점 거리 차이 허용값, 사진 폴더 |
 | `BRAIN` | (끔) | `1`이면 폰 엔진 프레임으로 관찰 흐름(아래 "관찰 흐름")을 돌린다. `PHONE_PORT`가 있어야 한다. VLM은 `INFERENCE_MODE`가 고른 주소로 부른다(mock은 `OPENAI_API_KEY`) |
-| `ENGINE_FRAME_MS` | `1000` | 엔진 프레임 간격(200 이상). 폰 서버가 상태 메시지로 폰에 알린다. mock은 사진 한 장마다 VLM을 한 번 부르므로 1초면 시간당 약 3,600번이다 |
+| `ENGINE_FRAME_MS` | `2000` | 엔진 프레임 간격(200 이상). 폰 서버가 상태 메시지로 폰에 알린다. mock은 사진 한 장마다 VLM을 한 번 부르므로 2초면 시간당 약 1,800번이다 |
 | `VLM_MAX_INFLIGHT`, `DETECT_QUEUE_MAX` | `4`, `8` | VLM 동시 요청 상한(넘친 프레임은 「요청이 몰려 VLM 분석 없음」), YOLOX 대기열 상한(넘친 프레임은 「요청이 몰려 YOLOX·VLM 분석 없음」). 틀린 값이면 시작하지 않는다 |
 | `BRAIN_DETECTOR`, `BRAIN_YOLO_PATH`, `BRAIN_YOLO_THREADS` | `yolox_tiny`, `runtime/models/<모델>.onnx`, `4` | YOLOX 감지기(`yolox_tiny`·`yolox_nano`·`off`). 모델 파일이 없으면 VLM만 쓴다 |
 | `PAM_TIMEOUT_MS` | `30000` | 판단 한 번 제한 시간. 판단은 늘 PAM 서비스(`PAM_URL`, 계약 `docs/pam-interface.md`)다 |
@@ -340,7 +340,7 @@ npm start
 
 폰 엔진 프레임마다 YOLOX와 VLM이 둘 다 분석하고, World State가 둘을 물체별로 합친다. 분석한 사진은 메모리(최근 20초)에만 두고 디스크에 쓰지 않는다(`DATASET_COLLECT=1`일 때만 시험 자료로 쓴다).
 
-- **엔진 프레임:** `BRAIN=1`이면 폰 서버가 상태 메시지 `engine_ms`(`ENGINE_FRAME_MS`, 기본 1초)로 간격을 알리고, 폰은 그 간격마다 분석용 JPEG을 촬영 자세·투영 행렬·서버 시계 촬영 시각과 함께 보낸다. 직전 프레임과 SHA-256이 같으면 버린다. 표시 프레임·사진은 관찰 흐름에 들어가지 않는다.
+- **엔진 프레임:** `BRAIN=1`이면 폰 서버가 상태 메시지 `engine_ms`(`ENGINE_FRAME_MS`, 기본 2초)로 간격을 알리고, 폰은 그 간격마다 분석용 JPEG을 촬영 자세·투영 행렬·서버 시계 촬영 시각과 함께 보낸다. 직전 프레임과 SHA-256이 같으면 버린다. 표시 프레임·사진은 관찰 흐름에 들어가지 않는다.
 - **YOLOX:** 사람·컵·병·그릇(COCO person·cup·wine glass·bottle·bowl)을 워커 스레드에서 하나씩 본다(YOLOX-Tiny, Apache-2.0, 이 PC 4스레드 장당 약 70ms). 대기열(`DETECT_QUEUE_MAX`, 기본 8)이 차면 그 프레임은 「요청이 몰려 YOLOX·VLM 분석 없음」, 감지가 실패하면 「감지 오류로 YOLOX 분석 없음」(VLM은 그 프레임도 분석)이다. 모델 파일이 없으면 「감지기 없음」으로 VLM만 돈다.
 - **VLM:** 프레임마다 한 번, YOLOX 감지 목록(임시 번호·종류·박스)을 같이 보내 보이는 사실만 받는다(`{scene, observations: [{object_id, state}], summary}`, JSON Schema). 동시 요청은 `VLM_MAX_INFLIGHT`(기본 4)까지, 제한 시간(`VLM_TIMEOUT_MS`, 기본 20초)이 지나면 HTTP 요청을 끊는다. 답은 프레임 번호로 맞춘다. 상한 초과·시간 초과·형식 오류·호출 오류 프레임은 「… VLM 분석 없음」으로 남긴다.
 - **World State:** 사람은 2장, 물건은 3장 연속일 때 등장·사라짐을 인정한다. 맞춘 뒤에는 박스 아래 가운데 광선이 트윈의 식탁·책상·조리대·싱크대 윗면(없으면 바닥)과 만나는 점을 물건 위치로 쓰고, 같은 종류가 0.25m 안이면 같은 물체로 본다. 그 자리가 시야 밖이면 「시야 밖」이고 사라짐을 세지 않는다. 맞추기 전에는 위치를 모르고 폰이 한 곳을 비춘다고 본다. VLM 사실은 면(자리·쓰는 중·안 내용·자세·행동)마다 두고 같은 값이 두 번 이어지면 확인됨이다. 컵·병·그릇에는 관계표로 식기세척기를 붙이고, 식기세척기의 상태(작동 중·이용 가능)·바뀐 시각·이력·남은 시간(`course_min`)을 쌓는다.
@@ -357,7 +357,7 @@ HUB=memory HOME_ID=mokryeon_180b PHONE_PORT=8210 BRAIN=1 npm start
 tailscale serve --bg 8210   # 이미 켜져 있으면 생략. 폰: https://<이 PC 이름>.<tailnet>.ts.net/phone/
 ```
 
-- VLM은 `INFERENCE_MODE`가 고른 OpenAI 호환 주소로 부른다(`src/infer/vlm.ts`, chat completions + JSON Schema). mock은 OpenAI `gpt-5.4-mini`(키 `OPENAI_API_KEY`), live는 같은 서버 vLLM `vlm`. mock은 1회 약 $0.001, 1초 간격이면 시간당 약 3,600번이다.
+- VLM은 `INFERENCE_MODE`가 고른 OpenAI 호환 주소로 부른다(`src/infer/vlm.ts`, chat completions + JSON Schema). mock은 OpenAI `gpt-5.4-mini`(키 `OPENAI_API_KEY`), live는 같은 서버 vLLM `vlm`. mock은 1회 약 $0.001, 2초 간격(기본)이면 시간당 약 1,800번이다.
 - 키 없이 돌려 보기: `npx tsx scripts/fake-openai.ts --port 8500`을 띄우고 `VLM_BASE_URL=http://127.0.0.1:8500/v1`로 시작한다.
 
 ## 기록과 반성 (src/history)

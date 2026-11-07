@@ -171,9 +171,12 @@ describe("배포 파일", () => {
   it("배포 문서: GPU 서버 크기·Tailscale 인증서·두 모드의 에이전트 키·두 모델 확인·호출량", () => {
     const d = read("docs/deploy.md");
     for (const s of ["g6e.2xlarge", "MagicDNS", "HTTPS Certificates", "tailscale serve --bg --https=443 http://127.0.0.1:8200", "tailscale serve --bg --https=8443 http://127.0.0.1:8210",
-      "`ANTHROPIC_API_KEY` 또는 `OPENAI_API_KEY`", "curl -s http://127.0.0.1:8410/v1/models", "curl -s http://127.0.0.1:8420/v1/models", "3,600", "vllm/vllm-openai:v0.17.0",
+      "`ANTHROPIC_API_KEY` 또는 `OPENAI_API_KEY`", "curl -s http://127.0.0.1:8410/v1/models", "curl -s http://127.0.0.1:8420/v1/models", "`ENGINE_FRAME_MS`(기본 2000)", "1,800", "vllm/vllm-openai:v0.17.0",
       "curl -s http://127.0.0.1:8300/health", "PAM_HOST_PORT", "`PAM_LLM_BASE_URL`", "fake-openai"]) expect(d).toContain(s);
     expect(d).not.toMatch(/\| `PAM_URL` \|/);
+    // 엔진 프레임 기본 간격 2초(src/observe/pipeline.ts loadObserveConfig)와 같은 값·호출량
+    expect(d).not.toContain("3,600");
+    expect(read("docs/reference.md")).toContain("| `ENGINE_FRAME_MS` | `2000` |");
     // 에이전트는 키가 없어도 다른 공급자(규칙 기반)로 바꾸지 않고 준비 안 됨으로 보인다
     expect(d).toContain("`agent.key`·`agent.reachable`");
     for (const f of ["docs/deploy.md", ".env.example", "README.md", "docs/reference.md", "docs/plan.md"]) expect(read(f), f).not.toMatch(/규칙 기반|rule-based|rules-ko|mock 에이전트|mock 공급자|anthropic` \/ `mock|openai \| anthropic \| mock/);

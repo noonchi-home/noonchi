@@ -1207,7 +1207,7 @@ it("CI: 화면 글·타입·시험·화면 빌드·이미지 빌드·키 없는 
 it("배포 문서: GPU 서버 크기·Tailscale 인증서·두 모드의 에이전트 키·두 모델 확인·호출량", () => {
   const d = read("docs/deploy.md");
   for (const s of ["g6e.2xlarge", "MagicDNS", "HTTPS Certificates", "tailscale serve --bg --https=443 http://127.0.0.1:8200", "tailscale serve --bg --https=8443 http://127.0.0.1:8210",
-    "`ANTHROPIC_API_KEY` 또는 `OPENAI_API_KEY`", "curl -s http://127.0.0.1:8410/v1/models", "curl -s http://127.0.0.1:8420/v1/models", "3,600", "vllm/vllm-openai:v0.17.0"]) expect(d).toContain(s);
+    "`ANTHROPIC_API_KEY` 또는 `OPENAI_API_KEY`", "curl -s http://127.0.0.1:8410/v1/models", "curl -s http://127.0.0.1:8420/v1/models", "`ENGINE_FRAME_MS`(기본 2000)", "1,800", "vllm/vllm-openai:v0.17.0"]) expect(d).toContain(s);
 });
 ```
 
@@ -1258,7 +1258,7 @@ jobs:
       - run: npx tsx scripts/container-smoke.ts
 ```
 
-`docs/deploy.md`: 저장소의 그 파일(커밋 판)을 쓴다. 절: 1 서버 준비(vCPU 한도, g6e.2xlarge, Deep Learning AMI, EBS `/srv`·Docker data-root, 들어오는 규칙 없음), 2 Tailscale(MagicDNS·HTTPS Certificates 켜기, `tailscale serve` 443→8200·8443→8210, Funnel 끔), 3 받기와 설정(`.env` 표: INFERENCE_MODE·ALLOWED_ORIGINS·PHONE_URL·BRAIN·PAM_URL·VLM_LIVE_MODEL·PAM_LIVE_MODEL·PAM_MAX_MODEL_LEN·에이전트 키 두 모드·mock 키·HF_TOKEN·THINQ_TOKEN, 컨테이너 안 값은 compose가 정함), 4 띄우기(두 모델 확인 `curl -s http://127.0.0.1:8410/v1/models`·`8420`, `VLLM_API_KEY`면 Authorization 헤더, GPU 몫, `ready` 뜻), 5 호출량(1초 간격이면 한 시간 약 3,600번), 6 멈추기·고치기, 7 키 없는 확인(개발 PC·CI).
+`docs/deploy.md`: 저장소의 그 파일(커밋 판)을 쓴다. 절: 1 서버 준비(vCPU 한도, g6e.2xlarge, Deep Learning AMI, EBS `/srv`·Docker data-root, 들어오는 규칙 없음), 2 Tailscale(MagicDNS·HTTPS Certificates 켜기, `tailscale serve` 443→8200·8443→8210, Funnel 끔), 3 받기와 설정(`.env` 표: INFERENCE_MODE·ALLOWED_ORIGINS·PHONE_URL·BRAIN·PAM_URL·VLM_LIVE_MODEL·PAM_LIVE_MODEL·PAM_MAX_MODEL_LEN·에이전트 키 두 모드·mock 키·HF_TOKEN·THINQ_TOKEN, 컨테이너 안 값은 compose가 정함), 4 띄우기(두 모델 확인 `curl -s http://127.0.0.1:8410/v1/models`·`8420`, `VLLM_API_KEY`면 Authorization 헤더, GPU 몫, `ready` 뜻), 5 호출량(2초 간격이면 한 시간 약 1,800번), 6 멈추기·고치기, 7 키 없는 확인(개발 PC·CI).
 
 - [ ] **Step 4: 통과 확인** — `H npx vitest run tests/deploy-files.test.ts tests/self-contained.test.ts` / Expected: PASS
 - [ ] **Step 5: 커밋**
@@ -3958,7 +3958,7 @@ export interface DecisionWorld {
 }
 // src/observe/pipeline.ts
 export interface ObserveConfig { engineMs: number; vlmMaxInflight: number; vlmTimeoutMs: number; detectQueueMax: number; keepMs: number }
-export function loadObserveConfig(env): ObserveConfig;   // ENGINE_FRAME_MS(1000, 200 이상), VLM_MAX_INFLIGHT(4), VLM_TIMEOUT_MS(20000, vlmTimeoutMs), DETECT_QUEUE_MAX(8). 틀린 값이면 던진다(시작을 막음)
+export function loadObserveConfig(env): ObserveConfig;   // ENGINE_FRAME_MS(2000, 200 이상), VLM_MAX_INFLIGHT(4), VLM_TIMEOUT_MS(20000, vlmTimeoutMs), DETECT_QUEUE_MAX(8). 틀린 값이면 던진다(시작을 막음)
 export interface PipelineInject { detector?: Detector | null; vlm?: VlmClient; clock?: { now(): number } }
 export class ObservationPipeline {
   constructor(o: { config: ObserveConfig; detector: Detector | null; vlm: VlmClient; world: WorldState; emit: (log: BrainLog) => void; broadcastWorld: (w: WorldView) => void; onChanges?: (c: WorldChange[]) => void; clock?: { now(): number } });
@@ -4111,9 +4111,9 @@ const int = (env: Env, key: string, d: number, min: number) => {
   return Math.floor(v);
 };
 
-/** ENGINE_FRAME_MS(기본 1000, 200 이상), VLM_MAX_INFLIGHT(4), VLM_TIMEOUT_MS(20000), DETECT_QUEUE_MAX(8). 틀린 값이면 시작을 막는다. */
+/** ENGINE_FRAME_MS(기본 2000, 200 이상), VLM_MAX_INFLIGHT(4), VLM_TIMEOUT_MS(20000), DETECT_QUEUE_MAX(8). 틀린 값이면 시작을 막는다. */
 export const loadObserveConfig = (env: Env): ObserveConfig => ({
-  engineMs: int(env, "ENGINE_FRAME_MS", 1000, 200), vlmMaxInflight: int(env, "VLM_MAX_INFLIGHT", 4, 1), vlmTimeoutMs: vlmTimeoutMs(env),
+  engineMs: int(env, "ENGINE_FRAME_MS", 2000, 200), vlmMaxInflight: int(env, "VLM_MAX_INFLIGHT", 4, 1), vlmTimeoutMs: vlmTimeoutMs(env),
   detectQueueMax: int(env, "DETECT_QUEUE_MAX", 8, 1), keepMs: 20_000,
 });
 

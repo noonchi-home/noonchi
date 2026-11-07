@@ -41,9 +41,9 @@ const int = (env: Env, key: string, d: number, min: number) => {
   return Math.floor(v);
 };
 
-/** ENGINE_FRAME_MS(기본 1000, 200 이상), VLM_MAX_INFLIGHT(4), VLM_TIMEOUT_MS(20000), DETECT_QUEUE_MAX(8). 틀린 값이면 시작을 막는다. */
+/** ENGINE_FRAME_MS(기본 2000, 200 이상), VLM_MAX_INFLIGHT(4), VLM_TIMEOUT_MS(20000), DETECT_QUEUE_MAX(8). 틀린 값이면 시작을 막는다. */
 export const loadObserveConfig = (env: Env): ObserveConfig => ({
-  engineMs: int(env, "ENGINE_FRAME_MS", 1000, 200), vlmMaxInflight: int(env, "VLM_MAX_INFLIGHT", 4, 1), vlmTimeoutMs: vlmTimeoutMs(env),
+  engineMs: int(env, "ENGINE_FRAME_MS", 2000, 200), vlmMaxInflight: int(env, "VLM_MAX_INFLIGHT", 4, 1), vlmTimeoutMs: vlmTimeoutMs(env),
   detectQueueMax: int(env, "DETECT_QUEUE_MAX", 8, 1), keepMs: 20_000,
 });
 
