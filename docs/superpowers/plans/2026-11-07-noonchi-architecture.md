@@ -3001,6 +3001,7 @@ git commit -m "feat: send unmarked engine frames with capture time, pose and pro
 
 **Files:**
 - Create: `src/observe/ring.ts`, `tests/observe-ring.test.ts`
+- Modify: `src/brain/live.ts`(`captureTime`을 여기서 가져옴), `tests/brain-live.test.ts`(captureTime 시험을 `tests/observe-ring.test.ts`로 옮김)
 
 **Interfaces:**
 - Consumes: `captureTime(meta)`(`src/brain/live.ts`에서 이 파일로 옮긴다)
@@ -3013,7 +3014,7 @@ export class FrameRing {
   push(f: EngineFrame): boolean;   // 직전 프레임과 sha256이 같으면 false(버림)
   get(id: string): EngineFrame | undefined;
   frames(): readonly EngineFrame[];
-  readonly dropped: number;        // 버린 중복 수
+  get dropped(): number;           // 버린 중복 수
 }
 export function captureTime(meta: { receivedAtMs: number; capturedAt?: number; timeErrMs?: number }): { atMs: number; latestMs: number; source: "phone" | "received" };
 export function sha256(b: Buffer): string;
@@ -3043,6 +3044,7 @@ describe("프레임 고리", () => {
   });
 });
 ```
+`tests/brain-live.test.ts`의 `captureTime` 시험 셋(이른 시각, 받은 시각보다 늦지 않음, 동기 정보 없음)을 이 파일로 옮긴다(`eye` 칸 없이).
 - [ ] **Step 2: 실패 확인** — `H npx vitest run tests/observe-ring.test.ts` / Expected: FAIL
 - [ ] **Step 3: 구현**
 
@@ -3060,11 +3062,13 @@ export const sha256 = (b: Buffer) => createHash("sha256").update(b).digest("hex"
 export class FrameRing {
   private list: EngineFrame[] = [];
   private lastSha: string | null = null;
-  dropped = 0;
+  private duplicates = 0;
   constructor(private readonly keepMs = 20_000) {}
 
+  get dropped(): number { return this.duplicates; }
+
   push(f: EngineFrame): boolean {
-    if (f.sha256 === this.lastSha) { this.dropped++; return false; }
+    if (f.sha256 === this.lastSha) { this.duplicates++; return false; }
     this.lastSha = f.sha256;
     let i = this.list.length;
     while (i > 0 && this.list[i - 1]!.capturedAtMs > f.capturedAtMs) i--;
@@ -3083,7 +3087,7 @@ export class FrameRing {
 - [ ] **Step 5: 커밋**
 
 ```bash
-git add src/observe/ring.ts src/brain/live.ts tests/observe-ring.test.ts
+git add src/observe/ring.ts src/brain/live.ts tests/observe-ring.test.ts tests/brain-live.test.ts docs/superpowers/plans/2026-11-07-noonchi-architecture.md
 git commit -m "feat: keep engine frames in a 20 s memory ring and drop exact duplicates by SHA-256"
 ```
 

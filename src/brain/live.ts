@@ -2,13 +2,12 @@
 // 대시보드 /events에는 {type:"brain", event} 하나로, 폰에는 요청(request)·행동 부탁(action)·상태 한 줄(brain_line)로 나눠 보낸다.
 // 행동은 모두 모의다(actor.ts): 기기 명령·LG ThinQ 호출이 없다.
 //
-// 촬영 시각(계획서 2026-11-04-brain-live.md "촬영 시각"): 폰이 NTP식 clock 핑으로 서버 시계에 맞춘 captured_at과 오차
-// time_err_ms를 보내면 captured_at − time_err_ms(가장 이른 가능 시각)를 쓴다. 근거 나이·"판단 뒤"·"요청 뒤" 검사가
-// 모두 보수적이 된다. 없으면 받은 시각을 쓰고 time_source "received"로 표시한다.
+// 촬영 시각은 src/observe/ring.ts captureTime(가장 이른 가능 시각)을 쓴다. 근거 나이·"판단 뒤"·"요청 뒤" 검사가 모두 보수적이 된다.
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { createInference } from "../infer/inference.js";
+import { captureTime } from "../observe/ring.js";
 import type { EyePose } from "../phone/align.js";
 import { CupBrain, type BrainOutput } from "./brain.js";
 import { loadBrainConfig, type BrainConfig } from "./config.js";
@@ -29,17 +28,6 @@ export interface FrameMeta {
   timeErrMs?: number;
   /** 그 프레임 순간 트윈 좌표 눈 자세(맞추기 전 null). */
   eye: EyePose | null;
-}
-
-/** 촬영 시각 범위: 동기 정보가 있으면 [captured_at − 오차, captured_at + 오차], 없으면 받은 시각 하나. 받은 시각보다 늦을 수 없다.
- *  atMs(이른 쪽)는 근거 나이·"판단 뒤"·"요청 뒤" 검사에, latestMs(늦은 쪽)는 구간을 시작할 때 쓴다(machine.ts). */
-export function captureTime(meta: FrameMeta): { atMs: number; latestMs: number; source: "phone" | "received" } {
-  const { capturedAt, timeErrMs } = meta;
-  if (typeof capturedAt === "number" && Number.isFinite(capturedAt) && typeof timeErrMs === "number" && Number.isFinite(timeErrMs) && timeErrMs >= 0) {
-    const latestMs = Math.min(meta.receivedAtMs, Math.round(capturedAt + timeErrMs));
-    return { atMs: Math.min(latestMs, Math.round(capturedAt - timeErrMs)), latestMs, source: "phone" };
-  }
-  return { atMs: meta.receivedAtMs, latestMs: meta.receivedAtMs, source: "received" };
 }
 
 export interface LiveBrainOptions {

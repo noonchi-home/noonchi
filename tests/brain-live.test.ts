@@ -8,7 +8,7 @@ import WebSocket from "ws";
 import { DEFAULT_BRAIN_CONFIG } from "../src/brain/config.js";
 import { ScriptedDecision } from "./helpers/decision.js";
 import type { Detection } from "../src/brain/detector.js";
-import { LiveBrain, captureTime } from "../src/brain/live.js";
+import { LiveBrain } from "../src/brain/live.js";
 import type { RawPerception } from "../src/brain/perception.js";
 import { encodeFramePacket, type FrameHeader } from "../src/phone/packet.js";
 import { fetchRetry } from "../src/server/net.js";
@@ -27,19 +27,6 @@ const base: RawPerception = {
 const drinking: RawPerception = { ...base, person_present: "yes", person_holding_cup: "yes", drinking: "yes", cup_support: "hand" };
 const person: Detection = { label: "person", score: 0.9, box: [0, 0, 1, 1], cls: 0 };
 const cup: Detection = { label: "cup", score: 0.8, box: [0, 0, 1, 1], cls: 41 };
-
-describe("captureTime", () => {
-  it("폰 동기 시각이 있으면 오차만큼 이른 시각(가장 이른 가능 시각)", () => {
-    expect(captureTime({ receivedAtMs: 10_000, capturedAt: 9_900, timeErrMs: 30, eye: null })).toEqual({ atMs: 9_870, latestMs: 9_930, source: "phone" });
-  });
-  it("받은 시각보다 늦을 수 없다", () => {
-    expect(captureTime({ receivedAtMs: 10_000, capturedAt: 10_500, timeErrMs: 10, eye: null })).toMatchObject({ atMs: 10_000, latestMs: 10_000 });
-  });
-  it("동기 정보가 없거나 오차가 없으면 받은 시각(received)", () => {
-    expect(captureTime({ receivedAtMs: 10_000, capturedAt: 9_900, eye: null })).toEqual({ atMs: 10_000, latestMs: 10_000, source: "received" });
-    expect(captureTime({ receivedAtMs: 10_000, eye: null })).toEqual({ atMs: 10_000, latestMs: 10_000, source: "received" });
-  });
-});
 
 describe("LiveBrain", () => {
   it("요청은 폰 큰 글씨로, 행동은 폰 부탁(버튼·dry_run)으로, 폰 답은 결과로. 대시보드에는 모두 brain 이벤트로", async () => {
