@@ -11,8 +11,9 @@ export function HomeStep({ view, picked, onPick, onNext, busy }: {
 }) {
   return (
     <section aria-labelledby="h-home" className="flex flex-col">
-      <CardHeader>
+      <CardHeader className="flex-row items-start justify-between space-y-0">
         <CardTitle id="h-home">어느 집을 쓸까요?</CardTitle>
+        <img src="/brand/mascot@1x.webp" alt="" className="m-3 h-[120px] w-auto shrink-0" />
       </CardHeader>
       <CardContent>
         <RadioGroup aria-labelledby="h-home" value={picked ?? ""} onValueChange={onPick} className="max-w-xl gap-2">

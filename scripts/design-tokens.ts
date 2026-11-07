@@ -3,10 +3,13 @@
 //   web/phone/tokens.css   폰 화면 CSS 변수
 //   web/phone/tokens.js    폰 캔버스·인코딩 워커가 쓰는 색 값(ESM)
 //   src/design/tokens.ts   트윈·SVG·캔버스·3D 계획 색(TS 값)
+// 같이 옮기는 것: 묶은 글꼴(@fontsource-variable/noto-sans-kr)·라이선스를 web/phone/fonts/와 ui/public/fonts/로, 파비콘·마스코트를 ui/public에서 web/phone으로.
+//   web/phone/fonts/faces.js  인코딩 워커가 FontFace로 넣는 글꼴 조각 목록(꾸러미 CSS에서 만든다)
 // 원본의 {"ref": 이름}은 hex(또는 rgb(… / α))로, 값이 더 있는 {"ref": 이름, width, opacity}는 { color, width, opacity }로 푼다.
 // 사용: npm run tokens (tests/design-tokens.test.ts가 만든 파일이 원본과 같은지 본다)
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 type Json = string | number | boolean | null | Json[] | { [k: string]: Json };
@@ -224,9 +227,51 @@ export function renderTokens(t: Tokens): Record<(typeof OUTPUTS)[number], string
 export const repoPath = (p: string) => fileURLToPath(new URL(`../${p}`, import.meta.url));
 export const readTokens = (): Tokens => JSON.parse(readFileSync(repoPath(SOURCE), "utf8")) as Tokens;
 
+const FONT_PKG = "ui/node_modules/@fontsource-variable/noto-sans-kr";
+export const FONT_FACES = "web/phone/fonts/faces.js";
+
+/** 그대로 옮기는 파일: 저장소 기준 경로 from → to. */
+export function copies(): { from: string; to: string }[] {
+  const woff2 = readdirSync(repoPath(`${FONT_PKG}/files`)).filter((f) => f.endsWith(".woff2")).sort();
+  return [
+    ...woff2.map((f) => ({ from: `${FONT_PKG}/files/${f}`, to: `web/phone/fonts/files/${f}` })),
+    { from: `${FONT_PKG}/index.css`, to: "web/phone/fonts/noto-sans-kr.css" },
+    { from: `${FONT_PKG}/LICENSE`, to: "web/phone/fonts/OFL-noto-sans-kr.txt" },
+    { from: `${FONT_PKG}/LICENSE`, to: "ui/public/fonts/OFL-noto-sans-kr.txt" },
+    ...["favicon.ico", "favicon-32.png", "apple-touch-icon.png", "icon-192.png"].map((f) => ({ from: `ui/public/${f}`, to: `web/phone/${f}` })),
+    { from: "ui/public/brand/mascot@1x.webp", to: "web/phone/brand/mascot@1x.webp" },
+  ];
+}
+
+/** 꾸러미 CSS의 @font-face(파일·unicode-range)를 워커용 ESM 목록으로. */
+export function renderFontFaces(): string {
+  const css = readFileSync(repoPath(`${FONT_PKG}/index.css`), "utf8");
+  const faces = [...css.matchAll(/@font-face\s*\{([^}]*)\}/g)].map((m) => ({
+    src: /url\(\.\/([^)]+)\)/.exec(m[1]!)![1]!,
+    unicodeRange: /unicode-range:\s*([^;]+);/.exec(m[1]!)![1]!.trim(),
+  }));
+  const family = /font-family:\s*'([^']+)'/.exec(css)![1]!;
+  return [
+    "// 만든 파일: npm run tokens가 @fontsource-variable/noto-sans-kr 꾸러미 CSS에서 만든다. 손으로 고치지 않는다.",
+    "// 인코딩 워커(encoder-worker.js)가 이 목록으로 FontFace를 넣는다. 파일은 fonts/files/에 있다.",
+    "",
+    `export const family = ${JSON.stringify(family)};`,
+    "",
+    `export const faces = [\n${faces.map((f) => `  { src: ${JSON.stringify(f.src)}, unicodeRange: ${JSON.stringify(f.unicodeRange)} },`).join("\n")}\n];`,
+    "",
+  ].join("\n");
+}
+
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  for (const [p, body] of Object.entries(renderTokens(readTokens()))) {
+  for (const [p, body] of [...Object.entries(renderTokens(readTokens())), [FONT_FACES, renderFontFaces()] as const]) {
+    mkdirSync(dirname(repoPath(p)), { recursive: true });
     writeFileSync(repoPath(p), body, "utf8");
     console.log(`만듦 ${p}`);
   }
+  const list = copies();
+  for (const c of list) {
+    mkdirSync(dirname(repoPath(c.to)), { recursive: true });
+    copyFileSync(repoPath(c.from), repoPath(c.to));
+  }
+  console.log(`옮김 ${list.length}개(글꼴·라이선스·파비콘·마스코트)`);
 }

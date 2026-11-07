@@ -1,7 +1,7 @@
 // 디자인 토큰(src/design/tokens.json 하나): 화면마다 쓰는 파일은 이 원본에서 npm run tokens가 만든다. 어긋나면 실패한다.
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { OUTPUTS, SOURCE, readTokens, renderTokens, repoPath, resolver } from "../scripts/design-tokens.js";
+import { FONT_FACES, OUTPUTS, SOURCE, copies, readTokens, renderFontFaces, renderTokens, repoPath, resolver } from "../scripts/design-tokens.js";
 
 const tokens = readTokens();
 const onDisk = (p: string) => (existsSync(repoPath(p)) ? readFileSync(repoPath(p), "utf8").replace(/\r\n/g, "\n") : null);
@@ -12,6 +12,21 @@ describe("디자인 토큰 원본", () => {
     expect(Object.keys(want)).toEqual([...OUTPUTS]);
     const stale = OUTPUTS.filter((p) => onDisk(p) !== want[p]);
     expect(stale, `${stale.join(", ")}: ${SOURCE}에서 다시 만드세요(npm run tokens)`).toEqual([]);
+  });
+
+  it("폰에 옮긴 글꼴·라이선스와 파비콘·마스코트가 원본과 같다(다르면 npm run tokens)", () => {
+    const list = copies();
+    expect(list.some((c) => c.to.endsWith("web/phone/fonts/files/noto-sans-kr-0-wght-normal.woff2"))).toBe(true);
+    expect(list.map((c) => c.to)).toEqual(expect.arrayContaining(["web/phone/fonts/noto-sans-kr.css", "web/phone/fonts/OFL-noto-sans-kr.txt", "ui/public/fonts/OFL-noto-sans-kr.txt", "web/phone/favicon.ico", "web/phone/brand/mascot@1x.webp"]));
+    // 글(.css·.txt)은 git이 줄끝을 바꿔 꺼낼 수 있어 줄끝을 맞춰 본다
+    const bytes = (p: string) => (/\.(css|txt)$/.test(p) ? Buffer.from(readFileSync(repoPath(p), "utf8").replace(/\r\n/g, "\n")) : readFileSync(repoPath(p)));
+    const stale = list.filter((c) => !existsSync(repoPath(c.to)) || !bytes(c.from).equals(bytes(c.to))).map((c) => c.to);
+    expect(stale, "npm run tokens로 다시 옮기세요").toEqual([]);
+  });
+
+  it("워커 글꼴 목록(web/phone/fonts/faces.js)이 꾸러미 CSS와 같다", () => {
+    expect(onDisk(FONT_FACES)).toBe(renderFontFaces());
+    expect(renderFontFaces()).toMatch(/unicodeRange: "U\+/);
   });
 
   it("원본이 바뀌면 만든 파일도 바뀐다", () => {

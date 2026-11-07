@@ -3,6 +3,7 @@ import type { ServerMessage } from "../../../src/contract/events.ts";
 import type { SetupView } from "../../../src/contract/setup.ts";
 import { CircleCheck, TriangleAlert } from "lucide-react";
 import { Alert, AlertTitle } from "../components/ui/alert";
+import { Avatar, AvatarImage } from "../components/ui/avatar";
 import { Card } from "../components/ui/card";
 import { SimpleNavbar } from "../components/ui/header-navbar";
 import { Stepper, StepperIndicator, StepperItem, StepperSeparator, StepperTitle, StepperTrigger } from "../components/ui/stepper";
@@ -135,7 +136,7 @@ export function SetupApp({ navigate = (url: string) => location.assign(url) }: {
   return (
     <div className="flex min-h-full flex-col">
       <header>
-        <SimpleNavbar title="NOONCHI" label="설정">
+        <SimpleNavbar title="NOONCHI" label="설정" logo={<Avatar shape="logo" className="size-[34px]"><AvatarImage src="/brand/face-128.png" alt="" /></Avatar>}>
           <Stepper value={at + 1} onValueChange={(v) => go(STEPS[v - 1]!.id)} role="list" aria-label="설정 단계" className="w-[min(640px,60vw)]">
             {STEPS.map((s, i) => (
               <StepperItem key={s.id} step={i + 1} role="listitem" aria-current={i === at ? "step" : undefined} className="not-last:flex-1">

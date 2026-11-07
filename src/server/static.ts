@@ -9,7 +9,7 @@ export const TYPES: Record<string, string> = {
   ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png",
   ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".ico": "image/x-icon", ".glb": "model/gltf-binary",
   ".gltf": "model/gltf+json", ".bin": "application/octet-stream", ".wasm": "application/wasm", ".txt": "text/plain; charset=utf-8",
-  ".hdr": "application/octet-stream", ".ktx2": "image/ktx2", ".md": "text/markdown; charset=utf-8",
+  ".hdr": "application/octet-stream", ".ktx2": "image/ktx2", ".md": "text/markdown; charset=utf-8", ".woff2": "font/woff2",
 };
 
 export function serveFile(res: ServerResponse, root: string, rel: string, head: boolean): boolean {

@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 
 const avatarVariants = cva("group/avatar relative flex h-10 w-10 shrink-0 overflow-hidden rounded-full", {
   variants: {
-    shape: { circle: "", logo: "rounded-logo bg-cream p-[8%]" },
+    shape: { circle: "", logo: "rounded-logo bg-cream" },
     size: {
       default: "",
       md: "size-5 text-caption font-semibold",
@@ -41,7 +41,7 @@ const AvatarImage = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <AvatarPrimitive.Image
     ref={ref}
-    className={cn("aspect-square h-full w-full group-data-[shape=logo]/avatar:object-contain", className)}
+    className={cn("aspect-square h-full w-full group-data-[shape=logo]/avatar:object-contain group-data-[shape=logo]/avatar:p-[8%]", className)}
     {...props}
   />
 ));

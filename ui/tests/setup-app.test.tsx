@@ -31,6 +31,15 @@ describe("설정 1단계: 집 고르기", () => {
     expect(screen.getByText("지금 띄운 집")).toBeInTheDocument();
   });
 
+  it("머리줄은 로고 짝(얼굴 상자 + NOONCHI)과 「설정」, 1단계 제목 옆에 마스코트 전신", async () => {
+    open();
+    await screen.findByRole("heading", { name: "어느 집을 쓸까요?" });
+    expect(screen.getByRole("heading", { name: "NOONCHI" })).toBeInTheDocument();
+    expect(screen.getByText("설정")).toBeInTheDocument();
+    expect(document.querySelector("header [data-shape=logo]")).not.toBeNull();
+    expect(document.querySelector('img[src="/brand/mascot@1x.webp"]')).not.toBeNull();
+  });
+
   it("다른 집을 고르고 다음: 집을 바꾸고 2단계로", async () => {
     const { api, user } = open();
     await user.click(await screen.findByRole("radio", { name: /마곡 아파트/ }));
