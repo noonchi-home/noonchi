@@ -1790,7 +1790,7 @@ git commit -m "feat: add pam-predict/2 and pam-reflect/2 contracts and text-inpu
 - Create: `services/pam/noonchi_pam/settings.py`, `services/pam/noonchi_pam/budget.py`, `services/pam/noonchi_pam/llm.py`, `services/pam/noonchi_pam/app.py`, `services/pam/tests/conftest.py`, `services/pam/tests/test_app.py`, `services/pam/tests/test_budget.py`
 
 **Interfaces:**
-- Produces: `Settings.from_env(env) -> Settings`(`mode`, `base_url`, `model`, `api_key`, `extra`, `thinking: "openrouter" | "chat_template"`, `timeout_s`, `max_tokens: {"predictor", "reflector"}`, `max_model_len`), `LlmClient(settings).body(messages, generation) -> dict`, `LlmClient.complete(messages, generation) -> str`, `estimate_tokens(messages) -> int`, `check_budget(messages, max_tokens, max_model_len)`(넘으면 `BudgetError`), `limits(settings) -> {"max_model_len", "predict_input_bytes", "reflect_input_bytes"}`, `create_app(settings, client=None) -> FastAPI` — `POST /predict`, `POST /reflect`(입력이 문맥 길이를 넘으면 413), `GET /health`(`{"ok": true, "llm": {"base_url", "model", "reachable"}, "limits": {...}}`).
+- Produces: `Settings.from_env(env) -> Settings`(`mode`, `base_url`, `model`, `api_key`, `extra`, `thinking: "openrouter" | "chat_template"`, `timeout_s`, `max_tokens: {"predictor", "reflector"}`, `max_model_len`), `LlmClient(settings, transport=None).body(messages, generation, role=None) -> dict`, `LlmClient.complete(messages, generation, role=None) -> str`(연결 실패·HTTP 오류·잘린 답·모양이 다른 답은 `LlmError` → 502), `estimate_tokens(messages) -> int`, `check_budget(messages, max_tokens, max_model_len)`(넘으면 `BudgetError`), `limits(settings) -> {"max_model_len", "predict_input_bytes", "reflect_input_bytes"}`, `create_app(settings, client=None) -> FastAPI` — `POST /predict`, `POST /reflect`(입력이 문맥 길이를 넘으면 413), `GET /health`(`{"ok": true, "llm": {"base_url", "model", "reachable"}, "limits": {...}}`).
 
 - [ ] **Step 1: 실패하는 시험**
 
@@ -1806,16 +1806,18 @@ import pytest
 REPO = Path(__file__).resolve().parents[3]
 
 
-@pytest.fixture()
+@pytest.fixture(scope="session")
 def fake_openai():
     node = shutil.which("node") or "node"
     proc = subprocess.Popen([node, "--import", "tsx", str(REPO / "scripts" / "fake-openai.ts"), "--port", "0"],
                             cwd=REPO, stdout=subprocess.PIPE, text=True)
-    line = proc.stdout.readline().strip()
-    assert line.startswith("listening "), line
-    yield f"http://127.0.0.1:{line.split()[1]}/v1"
-    proc.terminate()
-    proc.wait(10)
+    try:
+        line = proc.stdout.readline().strip()
+        assert line.startswith("listening "), line
+        yield f"http://127.0.0.1:{line.split()[1]}/v1"
+    finally:
+        proc.terminate()
+        proc.wait(10)
 ```
 
 ```python
@@ -1888,7 +1890,7 @@ def test_request_body_same_fields_in_both_modes():
     assert mock["plugins"] == [{"id": "context-compression", "enabled": False}] and mock["reasoning"] == {"enabled": False}
     assert live["chat_template_kwargs"] == {"enable_thinking": False} and "plugins" not in live
 ```
-(`test_app.py` 맨 위에 `import json`.)
+(`test_app.py` 맨 위에 `import json`.) 시험에 더한다(httpx `MockTransport`로 LLM 자리를 받는다): 기억 모양이 틀리면 LLM을 부르지 않고 400, 마크다운 답은 `invalid`(대기와 다름), 잘린 답·HTTP 오류·모양이 다른 답·닿지 않는 주소는 502, LLM이 꺼져도 `/health`는 답하고 `reachable: false`, 413일 때 LLM에 아무것도 보내지 않음, 두 모드의 요청 주소·키 머리글과 칸 차이(mock `reasoning`·`provider`·`plugins`, live `chat_template_kwargs`), 반성은 `role="reflector"`로 max_tokens 16384, `PAM_MAX_MODEL_LEN`이 반성 출력(16384) 이하면 시작을 막음, `limits`가 문맥 길이를 따라감.
 
 ```python
 # services/pam/tests/test_budget.py
@@ -1928,7 +1930,7 @@ def test_text_past_limit_is_rejected():
 ```python
 # services/pam/noonchi_pam/settings.py
 """PAM LLM 주소: INFERENCE_MODE(mock|live)가 미리 정한 주소·모델 이름만 고른다. PAM_LLM_BASE_URL·PAM_LLM_MODEL·PAM_LLM_API_KEY가 있으면 그 값을 쓴다.
-전송 값(max_tokens·시간 제한·OpenRouter provider)은 config/openrouter.json(ai cd290d5에서 옮김)에서 읽는다.
+전송 값(max_tokens·시간 제한·OpenRouter provider)은 config/openrouter.json에서 읽는다.
 문맥 길이 PAM_MAX_MODEL_LEN(기본 32768)은 compose vllm-pam의 --max-model-len과 같은 값이다. live 모델 이름 pam은 vllm-pam의 --served-model-name이다."""
 from __future__ import annotations
 
@@ -1965,7 +1967,14 @@ class Settings:
         if mode not in PRESETS:
             raise ValueError(f"INFERENCE_MODE={mode}: mock 또는 live여야 합니다")
         p = PRESETS[mode]
-        get = lambda k: (env.get(k) or "").strip() or None  # noqa: E731
+
+        def get(k: str) -> str | None:
+            return (env.get(k) or "").strip() or None
+
+        max_model_len = int(get("PAM_MAX_MODEL_LEN") or 32768)
+        max_tokens = dict(TRANSPORT["max_tokens"])
+        if max_model_len <= max(max_tokens.values()):
+            raise ValueError(f"PAM_MAX_MODEL_LEN={max_model_len}: 반성 출력 {max_tokens['reflector']}보다 커야 합니다")
         return Settings(
             mode=mode,
             base_url=(get("PAM_LLM_BASE_URL") or p["base_url"]).rstrip("/"),
@@ -1973,8 +1982,8 @@ class Settings:
             api_key=get("PAM_LLM_API_KEY") or get(p["key_env"]) or "",
             thinking=p["thinking"], extra=json.loads(json.dumps(p["extra"])),
             timeout_s=float(get("PAM_LLM_TIMEOUT_S") or TRANSPORT["timeout_seconds"]),
-            max_tokens=dict(TRANSPORT["max_tokens"]),
-            max_model_len=int(get("PAM_MAX_MODEL_LEN") or 32768),
+            max_tokens=max_tokens,
+            max_model_len=max_model_len,
         )
 ```
 
@@ -1983,7 +1992,6 @@ class Settings:
 """문맥 길이 검사: 입력 추정 토큰 + max_tokens ≤ max_model_len. 추정은 UTF-8 바이트 ÷ 3(한국어 한 글자를 1토큰으로 넉넉히 센다)."""
 from __future__ import annotations
 
-import json
 import math
 
 from .contracts import PredictRequest, ReflectRequest
@@ -2021,7 +2029,10 @@ def limits(s: Settings) -> dict:
                                               memory_kind="fsm", memory=empty_memory, tasks=["t"]))["messages"]
     r = build_reflect_messages(ReflectRequest(contract="pam-reflect/2", day="2026-01-01", memory_kind="fsm", memory=empty_memory,
                                               observation_text="x", action_summary="x", feedback=None))["messages"]
-    room = lambda msgs, role: max(0, (s.max_model_len - s.max_tokens[role] - estimate_tokens(msgs) - RESERVE) * 3)  # noqa: E731
+
+    def room(msgs: list[dict], role: str) -> int:
+        return max(0, (s.max_model_len - s.max_tokens[role] - estimate_tokens(msgs) - RESERVE) * 3)
+
     return {"max_model_len": s.max_model_len, "predict_input_bytes": room(p, "predictor"), "reflect_input_bytes": room(r, "reflector")}
 ```
 
@@ -2044,39 +2055,50 @@ class LlmError(RuntimeError):
 class LlmClient:
     def __init__(self, settings: Settings, transport: httpx.BaseTransport | None = None):
         self.s = settings
-        self.http = httpx.Client(timeout=settings.timeout_s, transport=transport)
+        self.http = httpx.Client(timeout=settings.timeout_s, transport=transport, follow_redirects=False)
+
+    def _headers(self) -> dict:
+        return {"authorization": f"Bearer {self.s.api_key}"} if self.s.api_key else {}
 
     def _thinking(self, on: bool) -> dict:
         return {"reasoning": {"enabled": on}} if self.s.thinking == "openrouter" else {"chat_template_kwargs": {"enable_thinking": on}}
 
-    def body(self, messages: list[dict], generation: dict) -> dict:
-        role = "reflector" if generation["enable_thinking"] else "predictor"
+    def body(self, messages: list[dict], generation: dict, role: str | None = None) -> dict:
+        role = role or ("reflector" if generation["enable_thinking"] else "predictor")
         return {"model": self.s.model, "messages": messages, "temperature": generation["temperature"], "max_tokens": self.s.max_tokens[role],
                 "stream": False, **self._thinking(generation["enable_thinking"]), **self.s.extra}
 
-    def complete(self, messages: list[dict], generation: dict) -> str:
-        body = self.body(messages, generation)
+    def complete(self, messages: list[dict], generation: dict, role: str | None = None) -> str:
+        body = self.body(messages, generation, role)
         check_budget(messages, body["max_tokens"], self.s.max_model_len)
-        headers = {"authorization": f"Bearer {self.s.api_key}"} if self.s.api_key else {}
-        r = self.http.post(f"{self.s.base_url}/chat/completions", json=body, headers=headers)
+        try:
+            r = self.http.post(f"{self.s.base_url}/chat/completions", json=body, headers=self._headers())
+        except httpx.HTTPError as e:
+            raise LlmError(f"PAM LLM 연결 실패: {type(e).__name__}") from e
         if r.status_code != 200:
             raise LlmError(f"PAM LLM HTTP {r.status_code}")
-        choice = r.json()["choices"][0]
+        try:
+            choice = r.json()["choices"][0]
+            content = choice["message"]["content"]
+        except (ValueError, KeyError, IndexError, TypeError) as e:
+            raise LlmError("PAM LLM 답 모양이 chat completions가 아님") from e
         if choice.get("finish_reason") not in (None, "stop"):
             raise LlmError(f"PAM LLM 답이 끝나지 않음: {choice.get('finish_reason')}")
-        return choice["message"]["content"]
+        if not isinstance(content, str):
+            raise LlmError("PAM LLM 답에 글이 없음")
+        return content
 
     def reachable(self) -> bool:
         try:
-            headers = {"authorization": f"Bearer {self.s.api_key}"} if self.s.api_key else {}
-            return self.http.get(f"{self.s.base_url}/models", headers=headers, timeout=2).status_code == 200
+            return self.http.get(f"{self.s.base_url}/models", headers=self._headers(), timeout=2).status_code == 200
         except httpx.HTTPError:
             return False
 ```
 
 ```python
 # services/pam/noonchi_pam/app.py
-"""PAM 서비스: POST /predict(pam-predict/2), POST /reflect(pam-reflect/2), GET /health. 계약에 맞지 않으면 400, 문맥 길이를 넘으면 413."""
+"""PAM 서비스: POST /predict(pam-predict/2), POST /reflect(pam-reflect/2), GET /health. 계약에 맞지 않으면 400, 문맥 길이를 넘으면 413, LLM 오류는 502.
+실행: uvicorn noonchi_pam.app:create_app --factory --host 0.0.0.0 --port 8300"""
 from __future__ import annotations
 
 import os
@@ -2096,11 +2118,12 @@ from .settings import Settings
 def create_app(settings: Settings | None = None, client: LlmClient | None = None) -> FastAPI:
     settings = settings or Settings.from_env(os.environ)
     llm = client or LlmClient(settings)
+    room = limits(settings)
     app = FastAPI(title="noonchi-pam")
 
     @app.exception_handler(RequestValidationError)
     async def bad_request(_req: Request, exc: RequestValidationError):
-        return JSONResponse(status_code=400, content={"error": str(exc.errors()[:3])})
+        return JSONResponse(status_code=400, content={"error": str([{k: e.get(k) for k in ("loc", "msg", "type")} for e in exc.errors()[:3]])})
 
     @app.exception_handler(ContractError)
     async def contract_error(_req: Request, exc: ContractError):
@@ -2114,18 +2137,16 @@ def create_app(settings: Settings | None = None, client: LlmClient | None = None
     async def budget_error(_req: Request, exc: BudgetError):
         return JSONResponse(status_code=413, content={"error": str(exc)})
 
-    room = limits(settings)
-
     @app.post("/predict", response_model=PredictResponse)
     def predict(req: PredictRequest):
         built = build_predict_messages(req)
-        raw = llm.complete(built["messages"], built["generation"])
+        raw = llm.complete(built["messages"], built["generation"], role="predictor")
         return parse_prediction(raw, list(req.tasks))
 
     @app.post("/reflect", response_model=ReflectResponse)
     def reflect(req: ReflectRequest):
         built = build_reflect_messages(req)
-        raw = llm.complete(built["messages"], built["generation"])
+        raw = llm.complete(built["messages"], built["generation"], role="reflector")
         try:
             return {"status": "valid", "raw_response": raw, "memory": parse_memory(raw, req.memory_kind), "errors": []}
         except ValueError as e:
