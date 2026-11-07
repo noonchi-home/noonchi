@@ -25,8 +25,11 @@ ARG YOLOX_SHA256=427cc366d34e27ff7a03e2899b5e3671425c262ea2291f88bb942bc1cc70b0f
 RUN curl -fsSL -o /yolox_tiny.onnx "$YOLOX_URL" && echo "$YOLOX_SHA256  /yolox_tiny.onnx" | sha256sum -c -
 
 FROM ${NODE_IMAGE} AS run
+# ORT_DISABLE_TELEMETRY=1: onnxruntime 원격 측정(기기 id·측정 DB를 ~/.cache/Microsoft/DeveloperTools/.onnxruntime에 쓰고 HTTPS로 보냄)을 끈다.
+# onnxruntime v1.31.1 docs/Privacy.md "Disabling Telemetry": onnxruntime이 뜨기 전에 준다
 ENV NODE_ENV=production HOST=0.0.0.0 PHONE_HOST=0.0.0.0 PORT=8200 PHONE_PORT=8210 RUNTIME_DIR=/data \
-    MATTER_STORAGE_DIR=/data/matter HUB=matter MATTER_TRANSPORT=local BRAIN_YOLO_PATH=/app/models/yolox_tiny.onnx TZ=Asia/Seoul
+    MATTER_STORAGE_DIR=/data/matter HUB=matter MATTER_TRANSPORT=local BRAIN_YOLO_PATH=/app/models/yolox_tiny.onnx TZ=Asia/Seoul \
+    ORT_DISABLE_TELEMETRY=1
 WORKDIR /app
 COPY --from=deps /app/node_modules node_modules
 COPY package.json tsconfig.json ./

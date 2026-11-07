@@ -38,6 +38,13 @@ describe("배포 파일", () => {
     expect(d).toContain('CMD ["node", "--import", "tsx", "src/server/main.ts"]');
   });
 
+  it("Dockerfile: 실행 이미지는 onnxruntime 원격 측정(기기 id·측정 DB·HTTPS 전송)을 끈다", () => {
+    const d = read("Dockerfile");
+    // onnxruntime v1.31.1 docs/Privacy.md "Disabling Telemetry": ORT_DISABLE_TELEMETRY=1을 onnxruntime이 뜨기 전에 준다
+    const run = d.slice(d.lastIndexOf("FROM "));
+    expect(run).toContain("ORT_DISABLE_TELEMETRY=1");
+  });
+
   it("compose: 포트는 127.0.0.1만, gpu 프로필 vLLM 두 개(태그 고정·내건 이름·GPU 몫·캐시·차례로 뜸), 볼륨·env_file·상태 검사", () => {
     const c = parse(read("compose.yaml"), { merge: true }) as { services: Record<string, any>; volumes: Record<string, unknown> };
     for (const [name, s] of Object.entries(c.services)) {
@@ -218,6 +225,9 @@ describe("배포 파일", () => {
     expect(s).toContain("detected");
     expect(s).toContain("/api/plan");
     expect(s).toContain("planNoToken !== 403 || planToken !== 200");
+    // YOLOX가 돈 뒤 멈춘 컨테이너에 onnxruntime 원격 측정 파일(~/.cache/Microsoft/DeveloperTools/.onnxruntime)이 없는지 docker diff로 본다
+    expect(s).toContain('["diff", id]');
+    expect(s).toContain("DeveloperTools");
   });
 
   it(".env.example에 PAM 서비스 설정 자리가 있다", () => {

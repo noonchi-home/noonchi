@@ -2,7 +2,7 @@
 // ready.ok가 true인지(VLM·PAM 서비스·PAM LLM이 모두 가짜 서버로 답함), /api/health 폰 주소가 확인용 PHONE_URL 하나뿐인지, 에이전트가 가짜 서버의 답을 돌려주는지, PAM 서비스가 관찰 텍스트로 판단하는지, 폰 화면이 열리는지,
 // 이미지 안 YOLOX가 떴고(GET /api/brain detector yolox_tiny) 관찰 흐름(BRAIN=1)이 엔진 프레임 한 장을 YOLOX·가짜 VLM으로 분석해 기록 DB에 vlm 줄을 남기는지(GET /api/history·/api/brain detected),
 // 호스트에서 보낸 계획(POST /api/plan)이 토큰 없이는 403, PLAN_TOKEN을 붙이면 200인지,
-// docker stop(SIGTERM)에 종료 코드 0으로 끝나는지 본 뒤 내린다(볼륨까지 지운다).
+// docker stop(SIGTERM)에 종료 코드 0으로 끝나는지, 멈춘 컨테이너에 onnxruntime 원격 측정 파일(~/.cache/Microsoft/DeveloperTools/.onnxruntime)이 없는지(docker diff) 본 뒤 내린다(볼륨까지 지운다).
 // 키가 그 키를 쓰는 서비스에만 가는지(docker compose config, scripts/compose-keys.ts)도 본다.
 // 저장소 .env와 셸의 키·토큰은 넘기지 않는다: 확인용 값만 적은 임시 env 파일을 --env-file로 주고, compose가 서비스에 넘기는 이름은 셸 값을 지운다.
 // 모델·PAM LLM·에이전트(OpenAI 공급자) 주소는 compose 안의 가짜 서버(fake-openai:8500)다. 실제 AI API를 부르지 않는다.
@@ -196,6 +196,12 @@ try {
   const exit = spawnSync("docker", ["inspect", "-f", "{{.State.ExitCode}}", id], { encoding: "utf8" }).stdout.trim();
   console.log(`stop 뒤 종료 코드: ${exit}`);
   if (exit !== "0") fails.push(`SIGTERM 뒤 종료 코드가 0이 아니에요(${exit})`);
+  // onnxruntime 원격 측정(기기 id·측정 DB를 쓰고 HTTPS로 보냄)은 이미지가 ORT_DISABLE_TELEMETRY=1로 끈다: YOLOX가 돈 뒤에도 그 파일이 없어야 한다
+  const diff = spawnSync("docker", ["diff", id], { encoding: "utf8" });
+  const telemetry = (diff.stdout ?? "").split(/\r?\n/).filter((l) => /\/home\/node\/\.cache|DeveloperTools|\.onnxruntime/.test(l));
+  console.log(`onnxruntime 원격 측정 파일: ${diff.status !== 0 ? "docker diff 실패" : telemetry.length ? telemetry.join(", ") : "없음"}`);
+  if (diff.status !== 0) fails.push("docker diff 실패");
+  else if (telemetry.length) fails.push(`onnxruntime 원격 측정 파일이 생겼어요(${telemetry.join(", ")})`);
   if (fails.length) throw new Error(fails.join("; "));
   console.log("키 없는 컨테이너 확인: 통과");
   code = 0;
