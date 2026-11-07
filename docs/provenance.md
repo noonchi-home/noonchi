@@ -13,3 +13,4 @@
 | `src/history/reflect.ts` | noonchi-server(신지훈) f8545a1 `noonchi/reflection.py` `run_reflection` | 하루가 끝나면 그날 요약을 AI 서버의 반성으로 보냄. 여기서는 사진 대신 하루 관찰 텍스트·행동 요약·피드백을 pam-reflect/2로 보냄 |
 | `src/history/retention.ts`, `src/server/start.ts` 보관 기간 | noonchi-server(신지훈) f8545a1 `noonchi/pipeline.py` `Pipeline.start`, `noonchi/vault.py` `Vault.cleanup` | 시작 때 지난 사진 파일과 그 기록 줄을 지움. 여기서는 시작 때와 1시간마다, 보관 기간(기본 7일)이 지난 사진 찍기 사진·시험 자료만 지움 |
 | `src/world/decide.ts` link·trigger 기록 | noonchi-server(신지훈) f8545a1 `noonchi/pipeline.py` `link_tick`·`send_tick` | AI 연결·끊김과 전송 멈춤·재개를 바뀔 때 한 번씩 기록. 여기서는 PAM 연결 끊김·연결됨과 판단 멈춤·다시 시작 |
+| `twin/apartment/viewer/main.mjs`·`scene.mjs` | twin-studio 9e3aecf `apartment/viewer` (`scripts/twin-assets.ts`가 복사) | 뷰어 전체. 여기서는 불러온 뒤 `apartment_complete.glb` 위치 대조를 `?debug=1`에서만 한다(이 저장소 집에는 그 파일이 없다). 다시 복사하면 이 고침이 사라지고 `tests/twin-viewer.test.ts`가 실패한다 |

@@ -82,6 +82,12 @@ export function baseUrlOf(sceneUrl) {
   return sceneUrl.slice(0, sceneUrl.lastIndexOf("/") + 1);
 }
 
+// 불러온 뒤 위치 대조에 쓸 apartment_complete.glb 주소. 스튜디오 검사(?debug=1)에서만 준다.
+// 화면(twin-home 대시보드·설정·embed)은 이 파일을 받지 않는다: twin-home 집 산출물에는 없다.
+export function completeCheckUrl(base, search) {
+  return new URLSearchParams(search).has("debug") ? `${base}apartment_complete.glb` : null;
+}
+
 function* walk(node) {
   yield node;
   for (const child of node.children ?? []) yield* walk(child);

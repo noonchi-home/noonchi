@@ -22,7 +22,7 @@ import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { CSS2DObject, CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
 import { fitOrtho, placementExport, roomBox } from "./plan.mjs";
 import {
-  applyTransform, assetRoot, baseUrlOf, findPickable, groupByRoom, indexNodes, isIdentity, isPlaceholder,
+  applyTransform, assetRoot, baseUrlOf, completeCheckUrl, findPickable, groupByRoom, indexNodes, isIdentity, isPlaceholder,
   matrixDiff, maxDeviation, parseProp, statesOf, uniqueAssets,
 } from "./scene.mjs";
 import {
@@ -39,6 +39,8 @@ import { planWallOf, snapToWall, touchMarkers, wallHint } from "./touch.mjs";
 const SCENE_URL = new URLSearchParams(location.search).get("scene") ?? "../scene.json";
 const BASE = baseUrlOf(SCENE_URL);
 const COMPLETE = `${BASE}apartment_complete.glb`;
+// 불러온 뒤 위치 대조는 ?debug=1 검사에서만(그 밖에는 null, 집 산출물에 없는 파일을 받지 않는다)
+const CHECK_COMPLETE = completeCheckUrl(BASE, location.search);
 const HIDDEN = 1; // 화면에서 뺀 메시의 레이어
 const MAX_LIGHTS = 16;
 const $ = (id) => document.getElementById(id);
@@ -943,16 +945,17 @@ function textures(root) {
 }
 
 async function deviation() {
-  // apartment_complete.glb의 각 인스턴스 월드 행렬 vs scene.json 변환
+  // apartment_complete.glb의 각 인스턴스 월드 행렬 vs scene.json 변환. ?debug=1이 아니면 대조하지 않는다(checked: false)
+  if (!CHECK_COMPLETE) return { checked: false, loaded: false, max: Infinity, missing: [] };
   let complete;
   try {
-    complete = (await load(COMPLETE)).scene;
+    complete = (await load(CHECK_COMPLETE)).scene;
   } catch {
-    return { loaded: false, max: Infinity, missing: [] };
+    return { checked: true, loaded: false, max: Infinity, missing: [] };
   }
   complete.updateMatrixWorld(true);
   const found = indexNodes(complete, data.objects);
-  return { loaded: true, ...maxDeviation(data.objects, (id) => found.get(id)?.matrixWorld.elements) };
+  return { checked: true, loaded: true, ...maxDeviation(data.objects, (id) => found.get(id)?.matrixWorld.elements) };
 }
 
 function independence() {
@@ -1024,7 +1027,7 @@ async function report(loadMode, root, roots) {
     `텍스처 ${tex.count}개, 누락 ${tex.broken.length + imageFailures.length}개`, "textures"));
 
   const dev = await deviation();
-  list.append(line(dev.loaded && dev.max < 1e-4 && !dev.missing.length, dev.loaded
+  if (dev.checked) list.append(line(dev.loaded && dev.max < 1e-4 && !dev.missing.length, dev.loaded
     ? `apartment_complete.glb 위치 = scene.json (최대 차이 ${dev.max.toExponential(1)}) ${dev.missing.slice(0, 4).join(", ")}`
     : "apartment_complete.glb을 읽지 못해 위치를 대조하지 못했습니다", "deviation"));
 
