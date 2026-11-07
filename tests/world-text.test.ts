@@ -2,6 +2,10 @@
 import { describe, expect, it } from "vitest";
 import type { WorldChange, WorldView } from "../src/contract/world.js";
 import { buildPamText, clock, collapseLines, textFromWorld } from "../src/world/text.js";
+import { readFileSync } from "node:fs";
+import type { Detection } from "../src/brain/detector.js";
+import { sha256, type EngineFrame } from "../src/observe/ring.js";
+import { WorldState } from "../src/world/state.js";
 
 const T = (h: number, m: number, s: number) => Date.UTC(2026, 10, 7, h - 9, m, s);
 describe("PAM 관찰 텍스트", () => {
@@ -65,4 +69,31 @@ describe("PAM 관찰 텍스트", () => {
     const view: WorldView = { at_ms: 0, objects: [], person: { visible: false, since_ms: null, last_seen_ms: null, facts: {} }, devices: [], eye: null, vlm_missing: 0, yolo_missing: 0 };
     expect(textFromWorld(view, [], { nowMs: 0, offsetMinutes: 540 })).toBe("[지속] 사람 안 보임");
   });
+
+  it("docs/pam-interface.md 예시 관찰 텍스트는 World State가 실제로 만드는 글이다", () => {
+    expect(docExample()).toBe(exampleScenario());
+  });
 });
+
+/** 사람이 식탁 앞에서 컵을 두고 떠나는 5장(21:00:00~21:00:04, 맞추기 전)과 VLM 답 두 개. 21:00:08의 관찰 텍스트. */
+function exampleScenario(): string {
+  const w = new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] });
+  const person: Detection = { label: "person", score: 0.9, cls: 0, box: [10, 10, 100, 300] };
+  const cup: Detection = { label: "cup", score: 0.9, cls: 41, box: [220, 160, 40, 20] };
+  const frame = (i: number): EngineFrame => ({ id: `e${i}`, capturedAtMs: T(21, 0, i - 1), latestAtMs: T(21, 0, i - 1), jpeg: Buffer.from(`${i}`), sha256: sha256(Buffer.from(`${i}`)), width: 480, height: 360, eye: null, view: null });
+  const changes: WorldChange[] = [];
+  let ids = new Map<string, string>();
+  for (let i = 1; i <= 5; i++) {
+    const r = w.applyDetections(frame(i), i <= 3 ? [person, cup] : [cup]);
+    changes.push(...r.changes);
+    ids = r.ids;
+    if (i === 3) changes.push(...w.applyScene("e3", T(21, 0, 2), { scene: "kitchen", observations: [{ object_id: "d1", state: "standing" }, { object_id: "d2", state: "on_table" }], summary: "사람이 식탁 옆에 서 있고 컵이 식탁 위에 있다" }, ids));
+    if (i === 5) changes.push(...w.applyScene("e5", T(21, 0, 4), { scene: "kitchen", observations: [{ object_id: "d1", state: "on_table" }, { object_id: "d1", state: "empty" }], summary: "식탁 위에 빈 컵이 있다" }, ids));
+  }
+  return textFromWorld(w.view(T(21, 0, 8)), changes, { nowMs: T(21, 0, 8), offsetMinutes: 540 });
+}
+
+function docExample(): string {
+  const md = readFileSync(new URL("../docs/pam-interface.md", import.meta.url), "utf8");
+  return JSON.parse(`"${/"observation_text": "((?:[^"\\]|\\.)*)"/.exec(md)![1]!}"`) as string;
+}
