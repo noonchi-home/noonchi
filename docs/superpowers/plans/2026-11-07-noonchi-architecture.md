@@ -5365,103 +5365,43 @@ git commit -m "feat: turn the PAM task index into a Cloid plan targeting the Wor
 
 **Files:**
 - Create: `src/act/check.ts`, `tests/act-check.test.ts`
-- Modify: `src/plan/labels.ts`(검사 실패 글)
+- Modify: `src/plan/labels.ts`(검사 실패 글 `CHECK_TEXT`)
 
 **Interfaces:**
 - Produces:
 
 ```ts
-export type CheckFail = "unknown_task" | "no_target" | "stale" | "in_hand" | "unreachable" | "device_mode";
+export type CheckFail = keyof typeof CHECK_TEXT;   // unknown_task | no_target | stale | in_hand | unreachable | device_mode
+export type CheckResult = { ok: true } | { ok: false; reason: CheckFail; text: string };
 export interface CheckInput { decision: DecisionRecord; tasks: string[]; plan: PlanView | null; world: WorldView; nowMs: number; staleMs: number; mode: ControlMode; deviceSteps?: { deviceId: string; paired: boolean }[] }
-export function checkPlan(i: CheckInput): { ok: true } | { ok: false; reason: CheckFail; text: string };
+export function checkPlan(i: CheckInput): CheckResult;
+export function loadActConfig(env): { staleMs: number };   // STALE_MS 기본 3000, 0 이하·숫자 아님이면 시작을 막는다
 ```
 
-- [ ] **Step 1: 실패하는 시험**
+- [ ] **Step 1: 실패하는 시험** — `tests/act-check.test.ts`
+  - 판단(atMs 8000) 뒤 9000에 다시 본 대상, 경로 있음, now 10000이면 통과.
+  - 목록 밖 행동·이번 행동 목록에 없음·계획 없음은 `unknown_task`. 대상이 World State에 없거나 사라짐은 `no_target`.
+  - 마지막으로 본 시각이 판단 시각 이하이거나 `now - last_seen > staleMs`면 `stale`(경계 3000은 통과).
+  - 물건 `place: in_hand`·`use: in_use`, 사람 `action: holding_object`면 `in_hand`.
+  - 물어보기는 대상 물건을 보지 않는다. 이동 단계가 있는데 경로가 없으면 `unreachable`.
+  - 시험 모드에서 짝지은 가전 단계는 `device_mode`, 짝짓지 않았거나 실제 모드면 통과.
+  - `loadActConfig`: 기본 3000, 60000, `-1`·`abc`는 던짐.
+  - 대상 물건은 `planTargetId(plan)`(첫 act 단계 대상)으로 찾는다. 첫 이동 단계 대상(식탁)을 대상으로 보지 않는다.
+- [ ] **Step 2: 실패 확인** — `H npx vitest run tests/act-check.test.ts` / Expected: FAIL(모듈 없음)
+- [ ] **Step 3: 구현** — `src/act/check.ts`는 위 순서대로 본다. `src/plan/labels.ts`에 더한다:
 
-```ts
-// tests/act-check.test.ts
-import { describe, expect, it } from "vitest";
-import { checkPlan, type CheckInput } from "../src/act/check.js";
-
-const obj = (over = {}) => ({ id: "cup_1", cls: "cup" as const, position: [2, 0.75, 0] as [number, number, number], surface: "t", room: "kitchen", error_m: 0.1, status: "present" as const,
-  first_seen_ms: 0, last_seen_ms: 9_000, last_in_view_ms: 9_000, facts: {}, devices: [], ...over });
-const base = (over: Partial<CheckInput> = {}): CheckInput => ({
-  decision: { id: "pam-1", seq: 1, atMs: 8_000, textSent: "t", finalTime: "x", status: "valid", prediction: { observation: "o", reasoning: "r", task_index: 0 }, action: "컵 치우기", memoryVersion: 1,
-    world: { objects: [], person_visible: false, vlm_missing: 0, yolo_missing: 0 } },
-  tasks: ["컵 치우기", "사용자에게 물어보기"],
-  plan: { id: "plan:pam-1", revision: 1, source: "brain", goal: "g", judgment: "r", dryRun: true, robot: { position: [0, 0], room: "living" }, path: [[0, 0], [2, 0]], legs: [{ stepId: "s1", end: 1 }],
-    steps: [{ id: "s1", kind: "move", label: "l", status: "pending" }, { id: "s2", kind: "act", label: "l", target: { objectId: "cup_1" }, status: "pending" }], status: "planned", updatedAt: "" },
-  world: { at_ms: 10_000, objects: [obj()], person: { visible: false, since_ms: 0, last_seen_ms: null, facts: {} }, devices: [], eye: null, vlm_missing: 0, yolo_missing: 0 },
-  nowMs: 10_000, staleMs: 3000, mode: "test", ...over,
-});
-
-describe("실행 전 검사", () => {
-  it("판단 뒤에 다시 본 대상, 갈 수 있는 길이면 통과", () => expect(checkPlan(base())).toEqual({ ok: true }));
-  it("목록 밖 행동", () => expect(checkPlan(base({ decision: { ...base().decision, action: "춤추기" } }))).toMatchObject({ ok: false, reason: "unknown_task" }));
-  it("판단 뒤에 다시 보지 않았거나 3초 넘은 근거", () => {
-    expect(checkPlan(base({ world: { ...base().world, objects: [obj({ last_seen_ms: 7_000 })] } }))).toMatchObject({ reason: "stale" });
-    expect(checkPlan(base({ nowMs: 12_500 }))).toMatchObject({ reason: "stale" });
-  });
-  it("사람이 그 물건을 들고 있거나 쓰는 중", () => {
-    expect(checkPlan(base({ world: { ...base().world, objects: [obj({ facts: { place: { value: "in_hand", at_ms: 9_000, certainty: "inferred" } } })] } }))).toMatchObject({ reason: "in_hand" });
-  });
-  it("이동 단계가 있는데 경로가 없음", () => {
-    expect(checkPlan(base({ plan: { ...base().plan!, path: [], legs: [] } }))).toMatchObject({ reason: "unreachable" });
-  });
-  it("시험 모드에서 짝지은 실제 가전 단계는 막는다", () => {
-    expect(checkPlan(base({ deviceSteps: [{ deviceId: "aircon_1", paired: true }] }))).toMatchObject({ reason: "device_mode" });
-    expect(checkPlan(base({ mode: "live", deviceSteps: [{ deviceId: "aircon_1", paired: true }] }))).toEqual({ ok: true });
-  });
-});
-```
-
-- [ ] **Step 2: 실패 확인** — `H npx vitest run tests/act-check.test.ts` / Expected: FAIL
-- [ ] **Step 3: 구현**
-
-```ts
-// src/act/check.ts
-// 실행 전 검사(결정론): 아는 행동, 대상이 있고 판단 뒤에 다시 봤고 낡지 않음, 사람이 들고 있거나 쓰는 중 아님, 갈 수 있음,
-// 시험 모드에서는 짝지은 실제 가전을 부르지 않음. 통과하지 못하면 실행하지 않고 이유를 낸다.
-import type { PlanView } from "../contract/plan.js";
-import type { ControlMode } from "../contract/setup.js";
-import type { WorldView } from "../contract/world.js";
-import { CHECK_TEXT } from "../plan/labels.js";
-import type { DecisionRecord } from "../world/decide.js";
-import { TASKS } from "./tasks.js";
-
-export type CheckFail = "unknown_task" | "no_target" | "stale" | "in_hand" | "unreachable" | "device_mode";
-export interface CheckInput { decision: DecisionRecord; tasks: string[]; plan: PlanView | null; world: WorldView; nowMs: number; staleMs: number; mode: ControlMode; deviceSteps?: { deviceId: string; paired: boolean }[] }
-
-const fail = (reason: CheckFail) => ({ ok: false as const, reason, text: CHECK_TEXT[reason] });
-
-export function checkPlan(i: CheckInput): { ok: true } | { ok: false; reason: CheckFail; text: string } {
-  const action = i.decision.action;
-  if (!action || !i.tasks.includes(action) || !TASKS[action] || !i.plan) return fail("unknown_task");
-  const targetId = i.plan.steps.find((s) => s.target?.objectId)?.target?.objectId;
-  if (TASKS[action]!.kind === "pick_place") {
-    const o = i.world.objects.find((x) => x.id === targetId);
-    if (!o || o.status === "gone") return fail("no_target");
-    if (o.last_seen_ms <= i.decision.atMs || i.nowMs - o.last_seen_ms > i.staleMs) return fail("stale");
-    if (o.facts.place?.value === "in_hand" || o.facts.use?.value === "in_use" || i.world.person.facts.action?.value === "holding_object") return fail("in_hand");
-  }
-  if (i.plan.steps.some((s) => s.kind === "move") && i.plan.path.length === 0) return fail("unreachable");
-  if (i.mode === "test" && (i.deviceSteps ?? []).some((d) => d.paired)) return fail("device_mode");
-  return { ok: true };
-}
-```
-`src/plan/labels.ts`에 더한다:
 ```ts
 export const CHECK_TEXT = {
   unknown_task: "행동 목록에 없는 행동이라 실행하지 않아요",
   no_target: "대상 물건이 보이지 않아 실행하지 않아요",
-  stale: "판단 뒤에 대상을 다시 확인하지 못해 기다려요",
-  in_hand: "사람이 그 물건을 쓰는 중이라 기다려요",
+  stale: "판단 뒤에 대상을 다시 확인하지 못했어요",
+  in_hand: "사람이 그 물건을 쓰는 중이라 실행하지 않아요",
   unreachable: "갈 수 있는 길이 없어 실행하지 않아요",
   device_mode: "시험 모드라 실제 가전은 부르지 않아요",
 } as const;
 ```
 
-- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/act-check.test.ts tests/self-contained.test.ts` 그리고 `H npm run lint` / Expected: PASS
+- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/act-check.test.ts tests/self-contained.test.ts tests/lint-ui-copy.test.ts` 그리고 `H npm run lint` / Expected: PASS
 - [ ] **Step 5: 커밋**
 
 ```bash
