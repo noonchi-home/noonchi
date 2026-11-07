@@ -4782,7 +4782,7 @@ git add src/world/trigger.ts src/world/decide.ts src/world/text.ts src/world/lab
 git commit -m "feat: call PAM on meaningful World State changes or a periodic rule with the World State observation text"
 ```
 
-**G3 끝:** 그룹 끝 검사를 모두 돌린다. 폰 화면은 `H npm run capture`로 한 번 열어 오류가 없는지 본다(헤드리스 크롬 하나).
+**G3 끝:** 그룹 끝 검사를 모두 돌린다. 폰 화면은 `npm run capture -- --url http://127.0.0.1:8510/phone/ --out <임시 폴더> --load-timeout 8`로 한 번 열어 예외·HTTP 오류가 없는지 본다(헤드리스 크롬 하나. capture가 스스로 무거운 일 잠금을 잡으므로 `H`로 감싸지 않는다. 폰 화면에는 3D가 없어 「불러오기 시간 초과」는 정상). 서버는 `.env`를 읽지 않게 `startServer`에 env를 직접 주고(PORT 8500, PHONE_PORT 8510, HUB memory, AGENT_PROVIDER mock, BRAIN 1, BRAIN_DETECTOR off, 모델 주소는 닿지 않는 이 PC 주소, 임시 RUNTIME_DIR) 띄운다.
 
 ---
 
