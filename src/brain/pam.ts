@@ -1,9 +1,14 @@
 // PAM 서비스(services/pam/)를 HTTP로 부르는 어댑터. 계약은 docs/pam-interface.md(pam-predict/2·pam-reflect/2, 사진 칸 없음).
 // 받은 답은 우리 쪽에서 원문(raw_response)부터 다시 검사한다. invalid는 대기(-1)와 구분해 판단 실패로 둔다.
 // 연결 실패·5xx 등은 PamLinkError(PAM 연결 끊김), 우리 요청이 계약에 맞지 않음(400)·문맥 길이 넘음(413)·답 형식 오류는 ContractError.
-import { PAM_PREDICT, PAM_REFLECT, type PamPredictRequest, type PamPredictResponse, type PamReflectRequest, type PamReflectResponse } from "../contract/pam.js";
+import type {
+  PamPredictContract, PamPredictRequest, PamPredictResponse, PamReflectContract, PamReflectRequest, PamReflectResponse,
+} from "../contract/pam.js";
 import { fetchRetry } from "../server/net.js";
 import { ContractError, checkInput, parsePrediction, validateMemory, type DecisionInput, type DecisionModel, type PamMemory, type Prediction } from "./decision.js";
+
+export const PAM_PREDICT: PamPredictContract = "pam-predict/2";
+export const PAM_REFLECT: PamReflectContract = "pam-reflect/2";
 
 const IMAGE_KEY = /^(image|images|frames|image_url|base64|jpeg|png)$/i;
 

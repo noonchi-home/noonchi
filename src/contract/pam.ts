@@ -1,9 +1,9 @@
-// noonchi ↔ PAM 서비스(services/pam/) 계약 타입. 사진 칸이 없다. 형식 설명은 docs/pam-interface.md.
-export const PAM_PREDICT = "pam-predict/2";
-export const PAM_REFLECT = "pam-reflect/2";
+// noonchi ↔ PAM 서비스(services/pam/) 계약 타입(타입만). 사진 칸이 없다. 형식 설명은 docs/pam-interface.md.
+export type PamPredictContract = "pam-predict/2";
+export type PamReflectContract = "pam-reflect/2";
 
 export interface PamPredictRequest {
-  contract: typeof PAM_PREDICT;
+  contract: PamPredictContract;
   /** 마지막 관찰 시각(시간대 있는 ISO). */
   final_time: string;
   /** World State 관찰 텍스트: 시각이 붙은 줄 + [지속] 사실 + [눈] 위치. */
@@ -22,7 +22,7 @@ export interface PamPredictResponse {
 }
 
 export interface PamReflectRequest {
-  contract: typeof PAM_REFLECT;
+  contract: PamReflectContract;
   /** 반성하는 날(YYYY-MM-DD). */
   day: string;
   memory_kind: "list" | "fsm";

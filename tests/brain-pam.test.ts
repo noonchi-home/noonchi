@@ -1,8 +1,7 @@
 // PAM 서비스 연결(pam-predict/2·pam-reflect/2): 요청 본문, 원문 다시 검사, invalid·틀린 답, 연결 실패(PamLinkError)와 형식 오류(ContractError), 입력 한도.
 import { afterEach, describe, expect, it } from "vitest";
 import { CUP_FSM_MEMORY, CUP_TASKS, ContractError, validateMemory, type DecisionInput } from "../src/brain/decision.js";
-import { PamClient, PamDecision, PamLinkError } from "../src/brain/pam.js";
-import { PAM_PREDICT, PAM_REFLECT } from "../src/contract/pam.js";
+import { PAM_PREDICT, PAM_REFLECT, PamClient, PamDecision, PamLinkError } from "../src/brain/pam.js";
 import { startFakePam, type FakePam } from "./helpers/pam.js";
 
 let pam: FakePam | undefined;

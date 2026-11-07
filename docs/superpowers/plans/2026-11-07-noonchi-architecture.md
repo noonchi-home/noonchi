@@ -2562,14 +2562,16 @@ git commit -m "feat: call the VLM through one OpenAI-compatible adapter whose en
 - Produces:
 
 ```ts
-// src/contract/pam.ts (순수 타입, 사진 칸 없음)
-export const PAM_PREDICT = "pam-predict/2";
-export const PAM_REFLECT = "pam-reflect/2";
-export interface PamPredictRequest { contract: typeof PAM_PREDICT; final_time: string; observation_text: string; memory_kind: "list" | "fsm"; memory: unknown; tasks: string[] }
+// src/contract/pam.ts (타입만: tests/contract.test.ts가 src/contract에서 값 내보내기를 막는다. 사진 칸 없음)
+export type PamPredictContract = "pam-predict/2";
+export type PamReflectContract = "pam-reflect/2";
+export interface PamPredictRequest { contract: PamPredictContract; final_time: string; observation_text: string; memory_kind: "list" | "fsm"; memory: unknown; tasks: string[] }
 export interface PamPredictResponse { status: "valid" | "invalid"; raw_response: string; prediction: { observation: string; reasoning: string; task_index: number } | null; selected_action: string | null; errors: string[] }
-export interface PamReflectRequest { contract: typeof PAM_REFLECT; day: string; memory_kind: "list" | "fsm"; memory: unknown; observation_text: string; action_summary: string; feedback: string | null }
+export interface PamReflectRequest { contract: PamReflectContract; day: string; memory_kind: "list" | "fsm"; memory: unknown; observation_text: string; action_summary: string; feedback: string | null }
 export interface PamReflectResponse { status: "valid" | "invalid"; raw_response: string; memory: unknown | null; errors: string[] }
 // src/brain/pam.ts
+export const PAM_PREDICT: PamPredictContract = "pam-predict/2";
+export const PAM_REFLECT: PamReflectContract = "pam-reflect/2";
 export function assertTextOnly(body: unknown): void; // 어느 깊이든 image·images·frames·image_url·base64 키나 "data:image/" 값이면 ContractError
 export class PamLinkError extends Error {}           // PAM 서비스에 닿지 않음·시간 초과·5xx(연결 끊김 기록에 쓴다). 400·413은 ContractError
 export interface PamLimits { max_model_len: number; predict_input_bytes: number; reflect_input_bytes: number }
@@ -2703,9 +2705,14 @@ export function buildPamText(o: { lines: TimedLine[]; facts: string[]; eye?: str
 // PAM 서비스(services/pam/)를 HTTP로 부르는 어댑터. 계약은 docs/pam-interface.md(pam-predict/2·pam-reflect/2, 사진 칸 없음).
 // 받은 답은 우리 쪽에서 원문(raw_response)부터 다시 검사한다. invalid는 대기(-1)와 구분해 판단 실패로 둔다.
 // 연결 실패·5xx 등은 PamLinkError(PAM 연결 끊김), 우리 요청이 계약에 맞지 않음(400)·문맥 길이 넘음(413)·답 형식 오류는 ContractError.
-import { PAM_PREDICT, PAM_REFLECT, type PamPredictRequest, type PamPredictResponse, type PamReflectRequest, type PamReflectResponse } from "../contract/pam.js";
+import type {
+  PamPredictContract, PamPredictRequest, PamPredictResponse, PamReflectContract, PamReflectRequest, PamReflectResponse,
+} from "../contract/pam.js";
 import { fetchRetry } from "../server/net.js";
 import { ContractError, checkInput, parsePrediction, validateMemory, type DecisionInput, type DecisionModel, type PamMemory, type Prediction } from "./decision.js";
+
+export const PAM_PREDICT: PamPredictContract = "pam-predict/2";
+export const PAM_REFLECT: PamReflectContract = "pam-reflect/2";
 
 const IMAGE_KEY = /^(image|images|frames|image_url|base64|jpeg|png)$/i;
 
