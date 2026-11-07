@@ -24,7 +24,7 @@
 - 시험에서 서버를 띄울 때는 늘 임시 `RUNTIME_DIR`을 준다. 저장소 `runtime/noonchi.db`를 시험이 열지 않는다.
 - 분석한 엔진 프레임은 디스크에 쓰지 않는다. 디스크에는 폰 「사진 찍기」 사진과 `DATASET_COLLECT=1`일 때의 시험 자료만 쓰고 보관 기간이 지나면 지운다.
 - 시험·개발에서 ThinQ(GET 포함)와 실제 AI API(OpenAI·OpenRouter·Anthropic)를 부르지 않는다. `.env`·키 파일을 읽거나 찍지 않는다. 새 설정은 `.env.example`에 빈 값이나 안전한 기본값으로 둔다.
-- 화면 글은 CLAUDE.md 규칙(사용자 할 일·지금 상태만)을 따른다. 서버가 화면에 그대로 내보내는 글은 `src/plan/labels.ts`·`src/world/labels.ts`에만 두고 `npm run lint`가 검사한다. 대시보드에 입력창을 두지 않는다. `ui/src/plan/`과 `ui/src/dashboard/Dashboard.tsx`는 고치지 않는다.
+- 화면 글은 CLAUDE.md 규칙(사용자 할 일·지금 상태만)을 따른다. 서버가 화면에 그대로 내보내는 글은 `src/plan/labels.ts`·`src/world/labels.ts`·`src/history/labels.ts`에만 두고 `npm run lint`가 검사한다. 대시보드에 입력창을 두지 않는다. `ui/src/plan/`과 `ui/src/dashboard/Dashboard.tsx`는 고치지 않는다.
 - 무거운 일 잠금: 시험(파일 하나도)·빌드·docker build·Blender·헤드리스 크롬은 저장소 뿌리(`C:/Users/ABC/Desktop/소웨공/twin-home-noonchi`)에서 `H <명령>`으로만 돌린다. `H` = `npm --prefix C:/Users/ABC/Desktop/소웨공/twin-home-noonchi run heavy --`. 「다른 무거운 일이 돌고 있어요」면 60초마다 최대 120분 다시 시도한다. 잠금을 우회하지 않는다. 헤드리스 크롬은 한 번에 하나.
 - 포트: 내가 띄우는 서버는 8500~8540. 8200·8210·5173·8600·8700은 건드리지 않는다. 내가 띄운 프로세스만, PID > 4를 확인하고 끈다.
 - git: 작업마다 커밋, 영어 메시지(무엇이 바뀌었는지만), 마지막 줄 `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. 경로를 하나씩 `git add`. push 하지 않는다. `graft/`·`.ignore`·`.gitignore`의 graft 줄은 건드리지 않는다(`.gitignore`는 커밋하지 않는다. 무시할 파일은 그 폴더의 `.gitignore`에 둔다).
@@ -68,7 +68,7 @@ H docker build -t noonchi-pam:check services/pam                        (G2부�
 | `src/phone/packet.ts`, `web/phone/engine.js` | 엔진 프레임 패킷과 보내기 간격 | G3 |
 | `src/observe/ring.ts`, `src/observe/scene.ts`, `src/observe/vlm-pool.ts`, `src/observe/pipeline.ts` | 고리·중복 버림, VLM 장면 분석, 동시 요청, 관찰 흐름 | G3 |
 | `src/world/confirm.ts`, `src/world/place.ts`, `src/world/relations.ts`, `src/world/state.ts`, `src/world/trigger.ts`, `src/contract/world.ts` | 등장·사라짐 확인, 트윈 위치, 관계표, World State, 호출 시점 | G3 |
-| `src/history/recorder.ts`, `src/history/summary.ts`, `src/history/reflect.ts`, `src/history/retention.ts` | 기록, 하루 요약, 반성, 사진 보관 | G4 |
+| `src/contract/history.ts`, `src/history/recorder.ts`, `src/history/labels.ts`, `src/history/summary.ts`, `src/history/reflect.ts`, `src/history/retention.ts` | 기록 계약, 기록, 기록 글, 하루 요약, 반성, 사진 보관 | G4 |
 | `src/act/tasks.ts`, `src/act/check.ts`, `src/act/track.ts`, `src/act/prompts.ts` | 행동 → 계획, 실행 전 검사, 실행 추적, 폰 부탁 글 | G5 |
 | `ui/src/chat/turns.ts`, `ui/src/chat/DecisionLog.tsx`, `ui/src/chat/labels.ts` | 판단 기록: 보낸 관찰 텍스트·World State·확신도·기억 판본·반성 결과 | G3·G5 |
 
@@ -4791,66 +4791,53 @@ git commit -m "feat: call PAM on meaningful World State changes or a periodic ru
 ### Task 23: 한 시간축 기록
 
 **Files:**
-- Create: `src/history/recorder.ts`, `tests/history-db.test.ts`
-- Modify: `src/history/db.ts`(표·add·list), `src/server/home.ts`·`start.ts`(기록 연결), `src/plan/hub.ts`(계획 바뀔 때 알림 함수)
+- Create: `src/contract/history.ts`(타입만), `src/history/recorder.ts`, `src/history/labels.ts`, `tests/history-record.test.ts`
+- Modify: `src/history/db.ts`(표·add·list·dayOf), `src/server/start.ts`(기록기·`history` getter·모드 기록), `src/server/home.ts`(가전·관찰·판단·계획을 기록기로), `scripts/lint-ui-copy.ts`(기록 글 검사), `tests/history-db.test.ts`(G1 파일에 더함), `tests/lint-ui-copy.test.ts`, `tests/control-mode.test.ts`, `tests/observe-start.test.ts`, `.env.example`, `docs/reference.md`
 
 **Interfaces:**
 - Produces:
 
 ```ts
+// src/contract/history.ts (타입만, ui/가 그대로 쓴다)
 // yolo: YOLOX 분석 없음(감지 오류·대기열 초과) 프레임, link: PAM 연결 끊김·연결됨, trigger: 주기 판단 멈춤·다시 시작
 export type HistoryKind = "device" | "detection" | "vlm" | "yolo" | "world" | "pam_text" | "mode" | "decision" | "plan" | "execution" | "reflection" | "feedback" | "photo" | "link" | "trigger";
 export interface HistoryRow { id: number; at_ms: number; day: string; kind: HistoryKind; subject: string | null; text: string; data: unknown }
+export interface DaySummary { day; observation_text; action_summary; counts: Partial<Record<HistoryKind, number>>; dropped: { observation: number; action: number } }
+// src/history/db.ts
+historyTzMinutes(env): number;            // HISTORY_TZ_MINUTES(기본 540, -720~840 정수). 틀리면 시작을 막는다. 0도 된다
+HistoryDb.open(path, offsetMinutes = 540); readonly offsetMinutes;
 HistoryDb.add(kind: HistoryKind, atMs: number, text: string, o?: { subject?: string; data?: unknown }): void;
-HistoryDb.list(q: { since?: number; until?: number; kinds?: HistoryKind[]; day?: string; limit?: number }): HistoryRow[];
-HistoryDb.dayOf(ms: number): string;      // HISTORY_TZ_MINUTES(기본 540) 기준 YYYY-MM-DD
-export function attachRecorder(db: HistoryDb, o: { onDevice(cb: (s: DeviceState) => void): () => void; onBrain(cb: (l: BrainLog) => void): () => void; onPlan(cb: (p: PlanView) => void): () => void; onMode(cb: (m: ControlMode) => void): () => void }): () => void;
+HistoryDb.list(q: { since?: number; until?: number; kinds?: HistoryKind[]; day?: string; limit?: number }): HistoryRow[];   // 시각 순, limit 기본 10,000
+HistoryDb.dayOf(ms: number): string;      // offsetMinutes 기준 YYYY-MM-DD
+// src/history/recorder.ts
+export interface DeviceNote { initial?: boolean; label?: string }
+export function topic<T extends unknown[]>(): { on(cb): () => void; emit(...v: T): void };
+export function attachRecorder(db: HistoryDb, o: { onDevice(cb: (s: DeviceState, note?: DeviceNote) => void): () => void; onBrain(cb: (l: BrainLog) => void): () => void;
+  onPlan(cb: (p: PlanView) => void): () => void; onMode(cb: (m: ControlMode) => void): () => void; now?: () => number }): () => void;
+// RunningServer.history: HistoryDb
 ```
 
 - [ ] **Step 1: 실패하는 시험**
 
-```ts
-// tests/history-db.test.ts
-import { describe, expect, it } from "vitest";
-import { HistoryDb } from "../src/history/db.js";
-import { attachRecorder } from "../src/history/recorder.js";
+`tests/history-db.test.ts`(G1 시험에 더한다):
+- 한 시간축에 종류별로 쌓고 하루(서울 0시에 날짜가 바뀜)·종류·시각·limit로 꺼낸다. 다시 열어도 남는다.
+- `historyTzMinutes`: 기본 540, `0`·`-300` 됨, `9시`·`900`은 오류. `HistoryDb.open(":memory:", 0)`이면 UTC 날짜.
+- 기록기: observe(VLM 답 → `vlm`, YOLOX 결과 줄은 적지 않음, 대기열 초과 → `yolo` 「요청이 몰려 YOLOX·VLM 분석 없음」), world_change(등장·사라짐·사람은 `detection`, 나머지 `world`), decision(`pam_text` + `decision`), link, trigger, mode, device를 받은 순서대로 `["vlm","yolo","detection","pam_text","decision","link","trigger","mode","device"]`로 적는다. reflection 기록은 적지 않는다(runReflection이 적음). 사진 글(`jpeg`·`base64`)이 없다.
+- VLM 분석 없음은 이유 글(「시간 초과로 VLM 분석 없음」), 감지 오류는 `yolo` 「감지 오류로 YOLOX 분석 없음」(data `vlm_missing: null`).
+- 판단 실패는 「판단 실패: 이유」, 고른 행동은 그 이름.
+- 가전: `initial`로 알린 상태는 적지 않고, 그 뒤 바뀐 값만 「이름 attr 값」(data `{attr, from, to}`)으로 적는다.
+- 계획: 「목표 상태 글」(「컵 치우기 진행 중」), data에 revision·status·단계.
+- 떼면 구독 넷을 모두 푼다.
 
-describe("기록 DB", () => {
-  it("한 시간축에 종류별로 쌓고 하루·종류·시각으로 꺼낸다", () => {
-    const db = HistoryDb.open(":memory:");
-    const t = Date.UTC(2026, 10, 7, 12);   // 서울 21:00
-    db.add("detection", t, "컵 보임", { subject: "cup_1" });
-    db.add("decision", t + 1000, "대기", { data: { task_index: -1 } });
-    expect(db.dayOf(t)).toBe("2026-11-07");
-    expect(db.list({ day: "2026-11-07" }).map((r) => r.kind)).toEqual(["detection", "decision"]);
-    expect(db.list({ kinds: ["decision"] })[0]).toMatchObject({ text: "대기", data: { task_index: -1 } });
-  });
-  it("관찰·판단·계획·모드·가전 변화·연결·멈춤을 받아 적는다(사진은 적지 않는다)", () => {
-    const db = HistoryDb.open(":memory:");
-    const subs: Record<string, (x: any) => void> = {};
-    attachRecorder(db, { onDevice: (cb) => ((subs.device = cb), () => {}), onBrain: (cb) => ((subs.brain = cb), () => {}), onPlan: (cb) => ((subs.plan = cb), () => {}), onMode: (cb) => ((subs.mode = cb), () => {}) });
-    subs.brain!({ type: "observe", at_ms: 1, frame_id: "e1", captured_at_ms: 1, yolo: null, vlm: "컵이 식탁 위" });
-    subs.brain!({ type: "observe", at_ms: 1, frame_id: "e1", captured_at_ms: 1, yolo: "컵 0.90", vlm: null });                  // YOLOX 결과 줄은 적지 않는다
-    subs.brain!({ type: "observe", at_ms: 1, frame_id: "e2", captured_at_ms: 1, yolo: null, yolo_missing: "cap", vlm: null, vlm_missing: "cap" });
-    subs.brain!({ type: "world_change", at_ms: 2, kind: "appeared", text: "컵(cup_1) 보임" });
-    subs.brain!({ type: "decision", at_ms: 3, id: "pam-1", seq: 1, text_sent: "21:00:00 사람 보임", status: "valid", prediction: { observation: "o", reasoning: "r", task_index: -1 }, action: null, memory_version: 0,
-      world: { objects: [], person_visible: true, vlm_missing: 0, yolo_missing: 0 } });
-    subs.brain!({ type: "link", at_ms: 4, target: "pam", up: false, text: "PAM 연결 끊김" });
-    subs.brain!({ type: "trigger", at_ms: 5, paused: true, text: "사람이 없어 판단을 멈춤" });
-    subs.brain!({ type: "reflection", at_ms: 6, day: "2026-11-07", ok: true, version: 2, applies_day: "2026-11-08", text: "반성 완료" });   // 반성은 runReflection이 적는다
-    subs.mode!("live");
-    subs.device!({ id: "dishwasher_1", online: true, twin: { running: true }, matter: {}, updatedAt: "2026-11-07T12:00:00.000Z" });
-    expect(db.list({}).map((r) => r.kind)).toEqual(["vlm", "yolo", "detection", "pam_text", "decision", "link", "trigger", "mode", "device"]);
-    expect(db.list({ kinds: ["yolo"] })[0]!.text).toBe("요청이 몰려 YOLOX·VLM 분석 없음");
-    expect(JSON.stringify(db.list({}))).not.toMatch(/jpeg|base64/);
-  });
-});
-```
+`tests/history-record.test.ts`: `startServer`(HUB memory, HOME_ID oneroom, 임시 RUNTIME_DIR) 직후 `device` 줄 0, `ac_1` 켜기 명령 뒤 `ac_1` 줄(글은 가전 이름으로 시작), `POST /api/plan` 문서 예시 뒤 `["cup-1", "컵 치우기 진행 중"]`, 닫고 DB를 다시 열어도 남는다.
+`tests/control-mode.test.ts`: 실제 모드로 두 번, 시험 모드로 한 번 바꾸면 `mode` 줄은 「실제 모드」·「시험 모드」 둘.
+`tests/observe-start.test.ts`: 판단 뒤 기록에 `vlm`·`detection`·`pam_text`·`decision`이 있고, `pam_text` 글이 보낸 관찰 텍스트와 같다.
+`tests/lint-ui-copy.test.ts`: `COPY_TARGETS`에 `src/history/labels.ts`가 있고 그 글에 괄호·화살표가 없다.
 
-- [ ] **Step 2: 실패 확인** — `H npx vitest run tests/history-db.test.ts` / Expected: FAIL
+- [ ] **Step 2: 실패 확인** — `H npx vitest run tests/history-db.test.ts tests/history-record.test.ts` / Expected: FAIL(recorder·history 없음)
 - [ ] **Step 3: 구현**
 
-`db.ts` `open`에 표를 더한다:
+`db.ts` `open`에 표를 더한다(`meta`는 G1):
 ```sql
 CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, at_ms INTEGER NOT NULL, day TEXT NOT NULL, kind TEXT NOT NULL, subject TEXT, text TEXT NOT NULL, data TEXT);
 CREATE INDEX IF NOT EXISTS idx_events_at ON events(at_ms);
@@ -4858,64 +4845,109 @@ CREATE INDEX IF NOT EXISTS idx_events_day_kind ON events(day, kind);
 CREATE TABLE IF NOT EXISTS memories (version INTEGER PRIMARY KEY, created_ms INTEGER NOT NULL, day TEXT, applies_day TEXT, kind TEXT NOT NULL, memory TEXT NOT NULL, source TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS photos (id TEXT PRIMARY KEY, at_ms INTEGER NOT NULL, path TEXT NOT NULL, origin TEXT NOT NULL);
 ```
-```ts
-add(kind: HistoryKind, atMs: number, text: string, o: { subject?: string; data?: unknown } = {}): void {
-  this.db.prepare("INSERT INTO events(at_ms, day, kind, subject, text, data) VALUES (?, ?, ?, ?, ?, ?)")
-    .run(atMs, this.dayOf(atMs), kind, o.subject ?? null, text, o.data === undefined ? null : JSON.stringify(o.data));
-}
-list(q: { since?: number; until?: number; kinds?: HistoryKind[]; day?: string; limit?: number }): HistoryRow[] {
-  const where: string[] = [], args: (string | number)[] = [];
-  if (q.since !== undefined) { where.push("at_ms >= ?"); args.push(q.since); }
-  if (q.until !== undefined) { where.push("at_ms <= ?"); args.push(q.until); }
-  if (q.day) { where.push("day = ?"); args.push(q.day); }
-  if (q.kinds?.length) { where.push(`kind IN (${q.kinds.map(() => "?").join(",")})`); args.push(...q.kinds); }
-  const sql = `SELECT * FROM events ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY at_ms, id LIMIT ?`;
-  return (this.db.prepare(sql).all(...args, q.limit ?? 10_000) as { id: number; at_ms: number; day: string; kind: HistoryKind; subject: string | null; text: string; data: string | null }[])
-    .map((r) => ({ ...r, data: r.data === null ? null : JSON.parse(r.data) }));
-}
-dayOf(ms: number): string { return new Date(ms + this.offsetMinutes * 60_000).toISOString().slice(0, 10); }
-```
-`open(path, offsetMinutes = Number(process.env.HISTORY_TZ_MINUTES) || 540)`.
+`add`는 `INSERT INTO events(...)`(data는 JSON 글), `list`는 `WHERE` 조건을 모아 `ORDER BY at_ms, id LIMIT ?`, data는 `JSON.parse`. `dayOf(ms) = new Date(ms + offsetMinutes * 60_000).toISOString().slice(0, 10)`.
+
+`src/history/labels.ts`(npm run lint가 본다): `MODE_TEXT`(실제 모드·시험 모드), `PLAN_STATUS_TEXT`(계획됨·진행 중·끝남·취소됨·실패), `DECISION_TEXT`(대기, 「판단 실패: …」). `scripts/lint-ui-copy.ts` `COPY_TARGETS`에 이 파일을 더한다.
 
 ```ts
-// src/history/recorder.ts
-// 기록: 가전 변화, 관찰(VLM 답·VLM 분석 없음, YOLOX 분석 없음), World State 변화, PAM에 보낸 텍스트, 판단, 계획, 운영 모드,
+// 기록기: 가전 변화, 관찰(VLM 답·VLM 분석 없음, YOLOX 분석 없음), World State 변화, PAM에 보낸 관찰 텍스트, 판단, 계획, 실행, 운영 모드,
 // PAM 연결 끊김·연결됨, 주기 판단 멈춤·다시 시작을 한 시간축에 적는다. 사진은 적지 않는다. 반성은 runReflection이 적는다.
+// YOLOX 결과는 등장·사라짐(detection)으로 남는다. 프레임마다 YOLOX 분석 없음이면 yolo, VLM 답이나 VLM 분석 없음이면 vlm 줄이 남는다.
+import type { BrainLog } from "../contract/events.js";
+import type { PlanView } from "../contract/plan.js";
+import type { ControlMode } from "../contract/setup.js";
+import type { DeviceState } from "../hub/types.js";
 import { CHANGE_TEXT } from "../world/labels.js";
+import type { HistoryDb } from "./db.js";
+import { DECISION_TEXT, MODE_TEXT, PLAN_STATUS_TEXT } from "./labels.js";
 
-export function attachRecorder(db: HistoryDb, o: { … }): () => void {
+/** 가전 상태와 함께 오는 것: initial이면 처음 알린 상태(적지 않고 기억만), label은 기록 글에 쓸 가전 이름. */
+export interface DeviceNote { initial?: boolean; label?: string }
+
+export interface RecorderSources {
+  onDevice(cb: (s: DeviceState, note?: DeviceNote) => void): () => void;
+  onBrain(cb: (l: BrainLog) => void): () => void;
+  onPlan(cb: (p: PlanView) => void): () => void;
+  onMode(cb: (m: ControlMode) => void): () => void;
+  now?: () => number;
+}
+
+/** 구독 목록 하나: on으로 받고 emit으로 보낸다. */
+export function topic<T extends unknown[]>(): { on(cb: (...v: T) => void): () => void; emit(...v: T): void } {
+  const subs = new Set<(...v: T) => void>();
+  return {
+    on: (cb) => { subs.add(cb); return () => { subs.delete(cb); }; },
+    emit: (...v) => { for (const cb of [...subs]) cb(...v); },
+  };
+}
+
+const DETECTION = new Set(["appeared", "gone", "person_appeared", "person_gone"]);
+
+export function attachRecorder(db: HistoryDb, o: RecorderSources): () => void {
+  const now = o.now ?? (() => Date.now());
   const last = new Map<string, Record<string, unknown>>();
   const offs = [
-    o.onDevice((s) => {
-      const prev = last.get(s.id) ?? {};
+    o.onDevice((s, note) => {
+      const prev = last.get(s.id);
       last.set(s.id, { ...s.twin });
-      for (const [attr, to] of Object.entries(s.twin)) if (prev[attr] !== to) db.add("device", Date.parse(s.updatedAt) || Date.now(), `${s.id} ${attr} ${String(to)}`, { subject: s.id, data: { attr, from: prev[attr] ?? null, to } });
+      if (note?.initial) return;
+      const at = Date.parse(s.updatedAt) || now();
+      for (const [attr, to] of Object.entries(s.twin)) {
+        const from = prev?.[attr] ?? null;
+        if (prev && Object.is(prev[attr], to)) continue;
+        db.add("device", at, CHANGE_TEXT.deviceAttr(note?.label ?? s.id, attr, to), { subject: s.id, data: { attr, from, to } });
+      }
     }),
     o.onBrain((l) => {
-      if (l.type === "observe") {
-        if (l.yolo_missing) db.add("yolo", l.at_ms, CHANGE_TEXT.yoloMissing[l.yolo_missing], { subject: l.frame_id, data: { captured_at_ms: l.captured_at_ms, yolo_missing: l.yolo_missing, vlm_missing: l.vlm_missing ?? null } });
-        else if (l.vlm !== null || l.vlm_missing) db.add("vlm", l.at_ms, l.vlm ?? CHANGE_TEXT.vlmMissing[l.vlm_missing!], { subject: l.frame_id, data: { captured_at_ms: l.captured_at_ms, missing: l.vlm_missing ?? null } });
-      } else if (l.type === "world_change") db.add(l.kind === "appeared" || l.kind === "gone" || l.kind.startsWith("person") ? "detection" : "world", l.at_ms, l.text, { data: { kind: l.kind } });
-      else if (l.type === "decision") {
-        db.add("pam_text", l.at_ms, l.text_sent, { subject: l.id });
-        db.add("decision", l.at_ms, l.action ?? (l.status === "valid" ? "대기" : `판단 실패: ${l.error ?? ""}`), { subject: l.id, data: { seq: l.seq, prediction: l.prediction, status: l.status, memory_version: l.memory_version, world: l.world } });
-      } else if (l.type === "execution") db.add("execution", l.at_ms, l.text, { subject: l.plan_id, data: { state: l.state } });
-      else if (l.type === "link") db.add("link", l.at_ms, l.text, { subject: l.target, data: { up: l.up } });
-      else if (l.type === "trigger") db.add("trigger", l.at_ms, l.text, { data: { paused: l.paused } });
+      switch (l.type) {
+        case "observe":
+          if (l.yolo_missing) {
+            db.add("yolo", l.at_ms, CHANGE_TEXT.yoloMissing[l.yolo_missing], {
+              subject: l.frame_id, data: { captured_at_ms: l.captured_at_ms, yolo_missing: l.yolo_missing, vlm_missing: l.vlm_missing ?? null },
+            });
+          } else if (l.vlm !== null || l.vlm_missing) {
+            db.add("vlm", l.at_ms, l.vlm ?? CHANGE_TEXT.vlmMissing[l.vlm_missing!], { subject: l.frame_id, data: { captured_at_ms: l.captured_at_ms, missing: l.vlm_missing ?? null } });
+          }
+          return;
+        case "world_change":
+          db.add(DETECTION.has(l.kind) ? "detection" : "world", l.at_ms, l.text, { data: { kind: l.kind } });
+          return;
+        case "decision":
+          db.add("pam_text", l.at_ms, l.text_sent, { subject: l.id });
+          db.add("decision", l.at_ms, l.action ?? (l.status === "valid" ? DECISION_TEXT.wait : DECISION_TEXT.failed(l.error ?? "")), {
+            subject: l.id, data: { seq: l.seq, prediction: l.prediction, status: l.status, memory_version: l.memory_version, world: l.world },
+          });
+          return;
+        case "execution":
+          db.add("execution", l.at_ms, l.text, { subject: l.plan_id, data: { state: l.state } });
+          return;
+        case "link":
+          db.add("link", l.at_ms, l.text, { subject: l.target, data: { up: l.up } });
+          return;
+        case "trigger":
+          db.add("trigger", l.at_ms, l.text, { data: { paused: l.paused } });
+          return;
+        case "reflection":
+          return;
+      }
     }),
-    o.onPlan((p) => db.add("plan", Date.parse(p.updatedAt), `${p.goal} (${p.status})`, { subject: p.id, data: { revision: p.revision, steps: p.steps.map((s) => ({ id: s.id, label: s.label, status: s.status })) } })),
-    o.onMode((m) => db.add("mode", Date.now(), m === "live" ? "실제 모드" : "시험 모드", { data: { mode: m } })),
+    o.onPlan((p) => db.add("plan", Date.parse(p.updatedAt) || now(), `${p.goal} ${PLAN_STATUS_TEXT[p.status]}`, {
+      subject: p.id, data: { revision: p.revision, status: p.status, steps: p.steps.map((s) => ({ id: s.id, label: s.label, status: s.status })) },
+    })),
+    o.onMode((m) => db.add("mode", now(), MODE_TEXT[m], { data: { mode: m } })),
   ];
   return () => offs.forEach((off) => off());
 }
 ```
-등장·사라짐(사람 포함)은 `detection`, 나머지 World State 변화는 `world`로 적는다. `home.ts`: `onBrain`은 파이프라인·판단의 `emit`을 나눠 받는 작은 구독 목록으로, `onPlan`은 `PlanHub` 생성자에 `onCommit` 콜백을 더해 연결하고, `onMode`는 `start.ts` 모드 바꾸기에서 부른다.
 
-- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/history-db.test.ts tests/plan-hub.test.ts tests/control-mode.test.ts tests/self-contained.test.ts` / Expected: PASS
+`start.ts`: `HistoryDb.open(join(runtimeDir, "noonchi.db"), historyTzMinutes(env))`, `topic`으로 가전·brain·계획·모드 구독 목록을 만들고 `attachRecorder`로 잇는다. 기록기는 서버에 하나라 집을 바꿔도 같다. `ctx.history = { db, device, brain, plan }`(집 묶음이 부름). 운영 모드는 `setMode`에서 바뀔 때만 넘긴다. `RunningServer.history` getter. 닫을 때와 시작 실패 때 기록기를 떼고 DB를 닫는다.
+`home.ts`: 시작 때 `signals.states()`를 `{ initial: true, label }`로 넘기고, `signals.subscribe`로 바뀐 상태를 넘긴다(이름은 `twin.devices`의 label). 관찰 흐름·판단의 `emit`이 대시보드 방송과 함께 `ctx.history.brain`을 부른다. `PlanHub`는 고치지 않고, 넘기는 broadcast에서 `{type:"plan"}`의 계획을 `ctx.history.plan`으로 넘긴다. `.env.example`·`docs/reference.md`: `HISTORY_TZ_MINUTES`, 「기록과 반성」 절.
+
+- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/history-db.test.ts tests/history-record.test.ts tests/plan-hub.test.ts tests/control-mode.test.ts tests/observe-start.test.ts tests/lint-ui-copy.test.ts tests/contract.test.ts tests/self-contained.test.ts`, `H npx tsc --noEmit` / Expected: PASS
 - [ ] **Step 5: 커밋**
 
 ```bash
-git add src/history/db.ts src/history/recorder.ts src/server/home.ts src/server/start.ts src/plan/hub.ts tests/history-db.test.ts
+git add src/contract/history.ts src/history/db.ts src/history/recorder.ts src/history/labels.ts src/server/home.ts src/server/start.ts scripts/lint-ui-copy.ts .env.example docs/reference.md tests/history-db.test.ts tests/history-record.test.ts tests/control-mode.test.ts tests/observe-start.test.ts tests/lint-ui-copy.test.ts docs/superpowers/plans/2026-11-07-noonchi-architecture.md
 git commit -m "feat: record device changes, detections, VLM observations, World State changes, PAM text, decisions, plans and mode changes in one SQLite timeline"
 ```
 

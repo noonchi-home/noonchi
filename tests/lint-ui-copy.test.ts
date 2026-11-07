@@ -108,14 +108,21 @@ describe("web/(폰)과 ui/src 전체", () => {
 describe("서버가 화면에 그대로 내보내는 계획 글(src/plan/labels.ts)", () => {
   const labels = fileURLToPath(new URL("../src/plan/labels.ts", import.meta.url));
   const worldLabels = fileURLToPath(new URL("../src/world/labels.ts", import.meta.url));
+  const historyLabels = fileURLToPath(new URL("../src/history/labels.ts", import.meta.url));
   it("npm run lint가 web/·ui/src와 함께 본다", () => {
-    expect(COPY_TARGETS).toEqual([webDir, uiDir, labels, worldLabels]);
+    expect(COPY_TARGETS).toEqual([webDir, uiDir, labels, worldLabels, historyLabels]);
     expect(copyFiles([labels])).toEqual([labels]);
   });
   it("World State 글(src/world/labels.ts)도 꺼내 검사한다. 괄호·화살표는 템플릿 글에도 없다", () => {
     const texts = fileCopy(worldLabels, readFileSync(worldLabels, "utf8")).map((c) => c.text);
     expect(texts).toEqual(expect.arrayContaining(["사람", "컵", "식탁 위", "… 보임…", "… 시야 밖", "요청이 몰려 VLM 분석 없음", "감지 오류로 YOLOX 분석 없음", "요청이 몰려 YOLOX·VLM 분석 없음"]));
     expect(lintUiCopy([worldLabels])).toEqual([]);
+    expect(texts.filter((t) => /[()→]/.test(t))).toEqual([]);
+  });
+  it("기록 글(src/history/labels.ts)도 꺼내 검사한다. 괄호·화살표는 템플릿 글에도 없다", () => {
+    const texts = fileCopy(historyLabels, readFileSync(historyLabels, "utf8")).map((c) => c.text);
+    expect(texts).toEqual(expect.arrayContaining(["실제 모드", "진행 중", "판단 실패: …"]));
+    expect(lintUiCopy([historyLabels])).toEqual([]);
     expect(texts.filter((t) => /[()→]/.test(t))).toEqual([]);
   });
   it("단계·목표·기기 동작 글을 꺼낸다", () => {

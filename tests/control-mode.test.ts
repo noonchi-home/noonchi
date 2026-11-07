@@ -127,6 +127,14 @@ describe("실제 모드로 바꾸기", () => {
     expect(JSON.stringify(list.json)).not.toContain(TOKEN);
     expect(logs.join("\n")).not.toContain(TOKEN);
   });
+
+  it("모드를 바꾸면 기록 DB에 한 줄 남고, 같은 모드를 다시 골라도 적지 않는다", async () => {
+    await start();
+    expect((await goLive()).status).toBe(200);
+    expect((await goLive()).status).toBe(200);
+    expect((await post("/api/setup/mode", { mode: "test" })).status).toBe(200);
+    expect(srv!.history.list({ kinds: ["mode"] }).map((r) => [r.text, r.data])).toEqual([["실제 모드", { mode: "live" }], ["시험 모드", { mode: "test" }]]);
+  });
 });
 
 describe("짝짓기", () => {

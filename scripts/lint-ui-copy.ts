@@ -1,4 +1,4 @@
-// 화면 글 검사: web/(폰)과 ui/src 아래 HTML·JS·TS·TSX, 서버가 화면에 그대로 내보내는 계획 글(src/plan/labels.ts)·World State 글(src/world/labels.ts)에서
+// 화면 글 검사: web/(폰)과 ui/src 아래 HTML·JS·TS·TSX, 서버가 화면에 그대로 내보내는 계획 글(src/plan/labels.ts)·World State 글(src/world/labels.ts)·기록 글(src/history/labels.ts)에서
 // 사용자에게 보이는 한국어 글을 꺼내, 생각 과정·구현 설명이 들어갔는지 본다.
 // 사용: npm run lint (tests/lint-ui-copy.test.ts도 같은 검사를 돌린다)
 
@@ -268,12 +268,13 @@ export function fileCopy(file: string, src: string): Copy[] {
 }
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
-/** npm run lint가 보는 곳: 폰 화면, 대시보드·설정 화면, 서버가 만들어 화면에 그대로 내보내는 계획 글·World State 글. */
+/** npm run lint가 보는 곳: 폰 화면, 대시보드·설정 화면, 서버가 만들어 화면에 그대로 내보내는 계획 글·World State 글·기록 글. */
 export const COPY_TARGETS = [
   fileURLToPath(new URL("../web/", import.meta.url)),
   fileURLToPath(new URL("../ui/src/", import.meta.url)),
   fileURLToPath(new URL("../src/plan/labels.ts", import.meta.url)),
   fileURLToPath(new URL("../src/world/labels.ts", import.meta.url)),
+  fileURLToPath(new URL("../src/history/labels.ts", import.meta.url)),
 ];
 /** 보고에 쓸 경로: 저장소 안이면 저장소 기준(web/phone/phone.js, ui/src/…), 밖이면 검사한 폴더 이름부터. */
 const shown = (dir: string, file: string) => {

@@ -6,10 +6,13 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Agent } from "../agent/agent.js";
 import type { Policy } from "../agent/policy.js";
+import type { BrainLog } from "../contract/events.js";
+import type { PlanView } from "../contract/plan.js";
 import type { ControlMode, SetupView, ThinqDeviceView } from "../contract/setup.js";
 import type { SignalHub } from "../hub/signals.js";
-import { HistoryDb } from "../history/db.js";
-import type { DeviceHub } from "../hub/types.js";
+import { HistoryDb, historyTzMinutes } from "../history/db.js";
+import { attachRecorder, topic, type DeviceNote } from "../history/recorder.js";
+import type { DeviceHub, DeviceState } from "../hub/types.js";
 import { loadEndpoints } from "../infer/endpoints.js";
 import type { LayoutEditor } from "../layout/editor.js";
 import { KIND_LABELS } from "../model/mapping.js";
@@ -43,7 +46,8 @@ const msListOf = (raw: string | undefined, fallback: number[]) => {
 export interface StartServerOptions {
   /** 기본 process.env. HUB, MATTER_*, AGENT_PROVIDER, TWIN_STUDIO_DIR, HOME_ID(저장한 집이 없을 때 띄울 집, 기본 집), PORT(0이면 빈 포트), HOST,
    *  ALLOWED_ORIGINS(이 PC 말고 대시보드를 여는 출처, 쉼표로 여러 개),
-   *  추론 모드(mock 기본·live)·VLM_BASE_URL·VLM_MODEL·VLM_API_KEY·VLM_EXTRA_BODY·PAM_URL(src/infer/endpoints.ts, 기록 DB는 RUNTIME_DIR/noonchi.db),
+   *  추론 모드(mock 기본·live)·VLM_BASE_URL·VLM_MODEL·VLM_API_KEY·VLM_EXTRA_BODY·PAM_URL(src/infer/endpoints.ts),
+   *  기록 DB는 RUNTIME_DIR/noonchi.db, HISTORY_TZ_MINUTES(기록 날짜의 시간대 분, 기본 540),
    *  PHONE_PORT(있으면 폰 AR 서버), PHONE_HOST(기본 0.0.0.0), PHONE_MAX_MISMATCH_M(기준점 거리 차이 허용값, 기본 0.3),
    *  PHONE_EYE_HEIGHT_M(벽 대기 맞춤의 눈 높이, 기본 1.5),
    *  FOCUS(1이면 초점 표시를 보낸다, 기본 끔), PHONE_PHOTO_DIR(사진 폴더, 기본 runtime/photos), RUNTIME_DIR(배치 수정본·설정의 바탕, 기본 runtime),
@@ -92,6 +96,8 @@ export interface RunningServer {
   readonly setup: SetupStore;
   /** 지금 운영 모드. */
   readonly mode: ControlMode;
+  /** 기록 DB(RUNTIME_DIR/noonchi.db). 집을 바꿔도 같다. */
+  readonly history: HistoryDb;
   /** 다른 집으로 바꾼다(POST /api/setup/home과 같음). */
   switchHome(id: string): Promise<void>;
   close(): Promise<void>;
@@ -111,11 +117,18 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   const allowOrigin = originChecker(env.ALLOWED_ORIGINS);
   // 추론 모드(mock|live)와 모델 주소. 모르는 모드면 여기서 시작을 막는다
   const endpoints = loadEndpoints(env);
-  // 기록 DB(RUNTIME_DIR/noonchi.db). 시작이 실패하면 닫는다
-  const db = HistoryDb.open(join(runtimeDir, "noonchi.db"));
+  // 기록 DB(RUNTIME_DIR/noonchi.db)와 기록기. 집 묶음이 가전·관찰·판단·계획을 넘기고, 운영 모드는 여기서 넘긴다. 시작이 실패하면 닫는다
+  const db = HistoryDb.open(join(runtimeDir, "noonchi.db"), historyTzMinutes(env));
+  const feed = { device: topic<[DeviceState, DeviceNote?]>(), brain: topic<[BrainLog]>(), plan: topic<[PlanView]>(), mode: topic<[ControlMode]>() };
+  const stopRecorder = attachRecorder(db, { onDevice: feed.device.on, onBrain: feed.brain.on, onPlan: feed.plan.on, onMode: feed.mode.on });
+  const closeDb = () => {
+    stopRecorder();
+    db.close();
+  };
   const ctx: HomeContext = {
     env, log, runtimeDir, importer: opts.importer, matter: opts.matter, brain: opts.brain, servedPhoneUrls: opts.servedPhoneUrls, webDir: opts.webDir,
     sources: (homeId, ids) => store.sources(homeId, ids), mode: () => mode, allowOrigin, ready: makeReady({ endpoints, db }),
+    history: { db, device: feed.device.emit, brain: feed.brain.emit, plan: feed.plan.emit },
   };
   const studioDir = resolveTwinStudioDir(env.TWIN_STUDIO_DIR);
   const pollMs = msOf(env.THINQ_POLL_MS, DEFAULT_POLL_MS);
@@ -166,7 +179,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       rt = await openHome(fallbackHome);
     }
   } catch (e) {
-    db.close();
+    closeDb();
     throw e;
   }
   if (mode === "live") log("운영 모드: 실제(짝지은 가전은 ThinQ)");
@@ -289,8 +302,10 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
           client = null;
           thinqList = null;
         }
+        const changed = mode !== want;
         mode = want;
         store.setMode(want);
+        if (changed) feed.mode.emit(want);
         if (current) applyControl(current);
         log(`운영 모드: ${want === "live" ? "실제(짝지은 가전은 ThinQ)" : "시험"}`);
         return view();
@@ -347,7 +362,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     listened = await shell.listen(Number.isInteger(wanted) && wanted >= 0 ? wanted : 8200, host);
   } catch (e) {
     await rt.close().catch(() => {});
-    db.close();
+    closeDb();
     throw e;
   }
 
@@ -368,6 +383,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     get phoneUrls() { return live().phoneUrls; },
     setup: store,
     get mode() { return mode; },
+    history: db,
     switchHome: async (id) => {
       await switchHome(id);
       store.setHome(id);
@@ -379,7 +395,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       // 앱이 /events 소켓을 먼저 끊어야 껍데기 서버 close가 기다리지 않는다
       await current?.close();
       await shell.close();
-      db.close();
+      closeDb();
     },
   };
 }

@@ -9,11 +9,14 @@ import { createProvider } from "../agent/providers/index.js";
 import { CUP_FSM_MEMORY, CUP_TASKS } from "../brain/decision.js";
 import { PamClient } from "../brain/pam.js";
 import type { BrainLog, ReadyView } from "../contract/events.js";
+import type { PlanView } from "../contract/plan.js";
 import type { ControlMode } from "../contract/setup.js";
+import type { HistoryDb } from "../history/db.js";
+import type { DeviceNote } from "../history/recorder.js";
 import { SignalHub, type SignalSource } from "../hub/signals.js";
 import { loadEndpoints } from "../infer/endpoints.js";
 import { createPipeline, type ObservationPipeline, type PipelineInject } from "../observe/pipeline.js";
-import type { DeviceHub } from "../hub/types.js";
+import type { DeviceHub, DeviceState } from "../hub/types.js";
 import type { LayoutEditor } from "../layout/editor.js";
 import { FOCUS_TTL_MS, focusFromActions, type Focus } from "../layout/focus.js";
 import { loadLayout } from "../layout/load.js";
@@ -37,6 +40,14 @@ import { createApp, type TwinHomeApp } from "./app.js";
 import { startHub, type HubKind, type MatterTransport, type StartHubOptions } from "./hubFactory.js";
 
 type Env = Record<string, string | undefined>;
+
+/** 기록 DB와 기록기(src/history/recorder.ts)에 넘기는 곳. 서버(start.ts)가 만들고 집을 바꿔도 같은 것을 쓴다. */
+export interface HomeHistory {
+  db: HistoryDb;
+  device(s: DeviceState, note?: DeviceNote): void;
+  brain(l: BrainLog): void;
+  plan(p: PlanView): void;
+}
 
 /** 폰에서 말한 것은 "phone" 세션 하나로 이어진다(대시보드 대화와 따로 기억). */
 const PHONE_SESSION = "phone";
@@ -63,6 +74,8 @@ export interface HomeContext {
   allowOrigin?: (origin: string) => boolean;
   /** 준비 상태(/api/health ready). 집을 바꿔도 같은 것을 쓴다. */
   ready?: () => Promise<ReadyView>;
+  /** 기록 DB. 없으면 기록하지 않는다. */
+  history?: HomeHistory;
 }
 
 export interface HomeRuntime {
@@ -122,6 +135,10 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
   const signals = new SignalHub(started.hub, ctx.sources(twin.home.id, twin.devices.map((d) => d.id)));
   const none = Object.keys(signals.sources()).length;
   if (none > 0) log(`신호 출처: 신호 없음 ${none}개(상태를 모름으로 보임)`);
+  // 가전 변화 기록: 시작 상태는 기억만 하고, 그 뒤 바뀐 값을 적는다
+  const labelOf = new Map(twin.devices.map((d) => [d.id, d.label]));
+  for (const s of signals.states()) ctx.history?.device(s, { initial: true, label: labelOf.get(s.id) });
+  const unsubHistory = ctx.history ? signals.subscribe((s) => ctx.history!.device(s, { label: labelOf.get(s.id) })) : () => {};
   let pipeline: ObservationPipeline | null = null;
   let unsubWorld = () => {};
   let decider: Decider | null = null;
@@ -166,7 +183,10 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       : undefined;
     // 클로이드 계획(src/plan/hub.ts): 에이전트 기기 행동·맞춘 눈 → 계획을 /events로. 경로는 scene.json 평면도로 찾는다
     const floorPlan = floorPlanFrom(readScene(home.scenePath) ?? {});
-    const plans = new PlanHub(floorPlan, (m) => appRef.current?.broadcast(m));
+    const plans = new PlanHub(floorPlan, (m) => {
+      appRef.current?.broadcast(m);
+      if (m.type === "plan" && m.plan) ctx.history?.plan(m.plan);
+    });
     // 관찰 흐름(BRAIN=1): 폰 엔진 프레임마다 YOLOX·VLM이 분석하고 World State가 합친다(src/observe/pipeline.ts)
     const brainWanted = /^(1|true|on)$/i.test(env.BRAIN?.trim() ?? "");
     if (brainWanted && !phoneOn) log("[경고] BRAIN=1은 PHONE_PORT가 있어야 합니다(폰 카메라가 입력). 관찰 흐름을 끕니다.");
@@ -177,7 +197,10 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       : null;
     if (world) {
       const now = () => ctx.brain?.clock?.now() ?? Date.now();
-      const emit = (event: BrainLog) => appRef.current?.broadcast({ type: "brain", event });
+      const emit = (event: BrainLog) => {
+        appRef.current?.broadcast({ type: "brain", event });
+        ctx.history?.brain(event);
+      };
       // 판단 호출(src/world/decide.ts): World State 관찰 텍스트 + 기억 + 행동 목록으로 PAM 서비스를 부른다. 기억은 반성(G4) 전까지 컵 FSM 기억
       const pamTimeout = Number(env.PAM_TIMEOUT_MS);
       const decide = new Decider({
@@ -283,7 +306,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         const steps: [string, () => unknown][] = [
           ["초점", unsubFocus], ["관찰 흐름", () => { clearInterval(decideTimer); decider?.stop(); unsubWorld(); return pipeline?.close(); }], ["눈 화면", () => feed?.close()],
           ["폰 서버", () => phoneNow?.close()], ["앱", () => appNow.close()], ["배치", () => layout?.editor.close()], ["ThinQ", () => link?.stop()],
-          ["허브", () => signals.stop()],
+          ["기록", unsubHistory], ["허브", () => signals.stop()],
         ];
         for (const [name, step] of steps) {
           try {
@@ -301,6 +324,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     decider?.stop();
     unsubWorld();
     await pipeline?.close().catch(() => {});
+    unsubHistory();
     await signals.stop().catch(() => {});
     throw e;
   }

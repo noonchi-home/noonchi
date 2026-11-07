@@ -86,6 +86,7 @@ HUB=memory npm run demo
 | `TWIN_STUDIO_DIR` | `twin/` | 트윈 결과물 폴더(상대 경로는 실행 위치 기준) |
 | `HOME_ID` | `homes.json`의 `default` | 불러올 집(twin-studio `homes.json`의 id, 예: `oneroom`) |
 | `RUNTIME_DIR` | `runtime` | 실행 중 만든 파일의 바탕 폴더: 배치 수정본 `homes/<id>/edits.json`, 사진 `photos/`, 기록 DB `noonchi.db`(SQLite, 커밋하지 않음) |
+| `HISTORY_TZ_MINUTES` | `540` | 기록 DB가 날짜(하루 요약·반성)를 나누는 시간대(분, -720~840). 틀린 값이면 시작하지 않는다 |
 | `INFERENCE_MODE` | `mock` | `mock`(GPU 없음, VLM은 OpenAI) · `live`(GPU 서버, VLM은 같은 서버 vLLM `http://vllm-vlm:8000/v1`, 모델 이름 `vlm`). 두 모드는 같은 코드 경로이고 주소·모델 이름만 다르다. 다른 값이면 시작하지 않는다 |
 | `VLM_BASE_URL`, `VLM_MODEL`, `VLM_API_KEY`, `VLM_EXTRA_BODY` | 모드 기본값 | 따로 주면 모드 기본값 대신 쓴다(OpenAI 호환 주소). mock 기본: `https://api.openai.com/v1`·`gpt-5.4-mini`·`OPENAI_API_KEY`·`{"reasoning_effort":"none"}`, live 기본: `http://vllm-vlm:8000/v1`·`vlm`·`VLLM_API_KEY`·`{}` |
 | `VLM_TIMEOUT_MS` | `20000` | 사진 한 장 VLM 분석 제한 시간(1000 이상) |
@@ -336,6 +337,18 @@ tailscale serve --bg 8210   # 이미 켜져 있으면 생략. 폰: https://<이 
 
 - VLM은 `INFERENCE_MODE`가 고른 OpenAI 호환 주소로 부른다(`src/infer/vlm.ts`, chat completions + JSON Schema). mock은 OpenAI `gpt-5.4-mini`(키 `OPENAI_API_KEY`), live는 같은 서버 vLLM `vlm`. mock은 1회 약 $0.001, 1초 간격이면 시간당 약 3,600번이다.
 - 키 없이 돌려 보기: `npx tsx scripts/fake-openai.ts --port 8500`을 띄우고 `VLM_BASE_URL=http://127.0.0.1:8500/v1`로 시작한다.
+
+## 기록과 반성 (src/history)
+
+기록 DB는 `RUNTIME_DIR/noonchi.db`(SQLite 파일 하나)다. 재시작해도 남는다.
+
+- **한 시간축(`events` 표):** 종류(`src/contract/history.ts` `HistoryKind`)마다 시각·날짜·대상·글·data를 적는다.
+  - `device` 가전 값 변화(시작 상태는 적지 않음), `detection` 사람·물건 등장·사라짐, `world` 나머지 World State 변화
+  - `vlm` 프레임마다 VLM 답 또는 「… VLM 분석 없음」, `yolo` 「감지 오류로 YOLOX 분석 없음」·「요청이 몰려 YOLOX·VLM 분석 없음」
+  - `pam_text` PAM에 보낸 관찰 텍스트, `decision` 판단(고른 행동·대기·판단 실패), `plan` 계획(목표·상태), `execution` 실행 단계, `mode` 운영 모드 변경
+  - `link` PAM 연결 끊김·연결됨, `trigger` 판단 멈춤·다시 시작
+  - 사진은 적지 않는다. YOLOX 결과는 등장·사라짐으로 남는다.
+- 날짜는 `HISTORY_TZ_MINUTES`(기본 서울) 기준이다.
 
 ## PAM 서비스 (services/pam)
 

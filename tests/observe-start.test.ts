@@ -82,6 +82,11 @@ describe("startServer(BRAIN=1) + 관찰 흐름", () => {
       expect(decision.event).toMatchObject({ seq: 1, status: "valid", action: null, memory_version: 0, world: { objects: [{ id: "cup_1" }] } });
       expect((pam.bodies[0] as { observation_text: string }).observation_text).toContain("컵 cup_1 보임");
       expect(decision.event.text_sent).toBe((pam.bodies[0] as { observation_text: string }).observation_text);
+      // 기록 DB 한 시간축: VLM 답, 등장, PAM에 보낸 텍스트, 판단. YOLOX 결과 줄은 적지 않는다
+      const kinds = new Set(srv.history.list({}).map((r) => r.kind));
+      expect([...kinds]).toEqual(expect.arrayContaining(["vlm", "detection", "pam_text", "decision"]));
+      expect(srv.history.list({ kinds: ["vlm"] })[0]).toMatchObject({ text: "가짜 장면" });
+      expect(srv.history.list({ kinds: ["pam_text"] })[0]!.text).toBe(decision.event.text_sent);
       const status = (await (await fetchRetry(`${srv.url}/api/brain`)).json()) as Msg;
       expect(status).toMatchObject({ ok: true, frames: 3, detected: 3, time_source: "phone" });
       expect(((await (await fetchRetry(`${srv.url}/api/world`)).json()) as Msg).world.objects).toHaveLength(1);
