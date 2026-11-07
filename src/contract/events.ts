@@ -3,6 +3,7 @@
 import type { Command, DeviceSpec, DeviceState } from "../hub/types.js";
 import type { PlanView } from "./plan.js";
 import type { ControlMode } from "./setup.js";
+import type { WorldView } from "./world.js";
 
 // 좌표
 
@@ -213,4 +214,6 @@ export type ServerMessage =
   | { type: "focus"; focus: Focus }
   | { type: "eye"; eye: EyeEvent }
   /** 클로이드 지금 계획(src/contract/plan.ts). null이면 계획을 지운다. */
-  | { type: "plan"; plan: PlanView | null };
+  | { type: "plan"; plan: PlanView | null }
+  /** World State(src/contract/world.ts). 바뀔 때마다, 그리고 접속 때 한 번. */
+  | { type: "world"; world: WorldView };

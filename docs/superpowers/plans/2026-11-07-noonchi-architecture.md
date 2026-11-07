@@ -3454,7 +3454,7 @@ git commit -m "feat: analyze every engine frame with a schema-checked VLM scene 
 
 **Files:**
 - Create: `src/contract/world.ts`, `src/world/place.ts`, `src/world/relations.ts`, `src/world/state.ts`, `tests/world-place.test.ts`, `tests/world-state.test.ts`, `tests/world-relations.test.ts`
-- Modify: `src/contract/events.ts`(`ServerMessage`에 `{ type: "world"; world: WorldView }`), `ui/src/lib/messages.ts`(KNOWN에 `world`), `src/world/labels.ts`(상태·변화 글), `tests/lint-ui-copy.test.ts`, `docs/provenance.md`
+- Modify: `src/contract/events.ts`(`ServerMessage`에 `{ type: "world"; world: WorldView }`), `ui/src/lib/messages.ts`(KNOWN에 `world`), `src/world/labels.ts`(상태·변화 글), `src/observe/vlm-pool.ts`(`VlmMissing`을 계약에서 가져옴), `tests/lint-ui-copy.test.ts`, `docs/provenance.md`
 
 **Interfaces:**
 - Produces:
@@ -3465,16 +3465,17 @@ export type ObjClass = "cup" | "bottle" | "bowl";
 export type Facet = "place" | "use" | "contents" | "posture" | "action";
 export interface WorldFact { value: string; at_ms: number; certainty: "confirmed" | "inferred" }
 export interface WorldObject {
-  id: string; cls: ObjClass; position: [number, number, number] | null; surface: string | null; room: string | null; error_m: number | null;
+  id: string; cls: ObjClass; position: [number, number, number] | null; surface: string | null; surface_label: string | null; room: string | null; error_m: number | null;
   status: "present" | "out_of_view" | "gone"; first_seen_ms: number; last_seen_ms: number; last_in_view_ms: number;
   facts: Partial<Record<Facet, WorldFact>>; devices: string[];
 }
-export interface WorldPerson { visible: boolean; since_ms: number; last_seen_ms: number | null; facts: Partial<Record<Facet, WorldFact>> }
+export interface WorldPerson { visible: boolean; since_ms: number | null /* 첫 프레임 전 null */; last_seen_ms: number | null; facts: Partial<Record<Facet, WorldFact>> }
 export interface WorldDevice { id: string; kind: string; label: string; status: string | null; changed_ms: number; started_ms: number | null; remaining_min: number | null; history: { attr: string; from: unknown; to: unknown; at_ms: number }[] }
 export interface WorldEye { position: [number, number]; height_m: number; yaw_deg: number; pitch_deg: number; room: string | null; at_ms: number }
 export interface WorldView { at_ms: number; objects: WorldObject[]; person: WorldPerson; devices: WorldDevice[]; eye: WorldEye | null; vlm_missing: number; yolo_missing: number }
+export type VlmMissing = "cap" | "timeout" | "format" | "error";   // 계약 파일은 타입만 가져오므로 여기에 둔다(vlm-pool.ts가 다시 내보냄)
 export type YoloMissing = "cap" | "error";
-export type WorldChangeKind = "appeared" | "gone" | "out_of_view" | "back_in_view" | "state" | "person_appeared" | "person_gone" | "device" | "vlm" | "vlm_missing" | "yolo_missing";
+export type WorldChangeKind = "appeared" | "gone" | "out_of_view" | "back_in_view" | "state" | "person_appeared" | "person_gone" | "person_state" | "device" | "vlm" | "vlm_missing" | "yolo_missing";
 export interface WorldChange { kind: WorldChangeKind; at_ms: number; subject: string; text: string; meaningful: boolean }
 // src/world/place.ts
 export interface PlaneSurface { id: string; label: string; center: [number, number]; top: number; radius: number }
@@ -3482,10 +3483,12 @@ export function rayDir(view: CameraView, ndc: [number, number]): [number, number
 export function placeBox(view: CameraView, box: [number, number, number, number], size: { width: number; height: number }, surfaces: PlaneSurface[], floorAt: (p: [number, number]) => number):
   { position: [number, number, number] | null; surface: string | null; errorM: number | null };
 export function inView(view: CameraView, point: [number, number, number]): boolean;
-export function surfacesFromLayout(objects: readonly { id: string; name: string; type: string; plan: [number, number]; base: number; height: number; footprint?: [number, number] }[]): PlaneSurface[]; // table|desk|counter|sink
+export function surfacesFromLayout(objects: readonly { id: string; name: string; type: string; plan: [number, number]; base: number; height: number; footprint?: [number, number] }[]): PlaneSurface[]; // table|desk|counter|sink, lamp는 뺀다
 // src/world/relations.ts
 export const RELATIONS: Record<ObjClass, string[]>;    // cup·bottle·bowl → ["dishwasher"]
 export const DEVICE_STATUS: Record<string, { attr: string; active: string; inactive: string }>; // dishwasher: running → 작동 중 / 이용 가능
+export const RELATED_KINDS: ReadonlySet<string>;      // World State가 보는 가전 종류(관계표 값)
+export function deviceStatus(kind: string, twin: Record<string, unknown>): string | null;
 export function relatedDeviceIds(cls: ObjClass, devices: readonly { id: string; kind: string }[]): string[];
 export class RemainingTracker {          // 남은 시간: running이 참이 된 시각 + course_min. 코스 시간이 없으면 null(추정하지 않음)
   constructor(o?: { runningAttr?: string /* "running" */; courseAttr?: string /* "course_min" */ });
@@ -3495,7 +3498,7 @@ export class RemainingTracker {          // 남은 시간: running이 참이 된
 }
 // src/world/state.ts
 export class WorldState {
-  constructor(o: { surfaces: () => PlaneSurface[]; floorAt: (p: [number, number]) => number; roomAt: (p: [number, number]) => string | null; devices: () => readonly { id: string; kind: string; label: string }[]; identityM?: number });
+  constructor(o: { surfaces: () => PlaneSurface[]; floorAt: (p: [number, number]) => number; roomAt: (p: [number, number]) => string | null; devices: () => readonly { id: string; kind: string; label: string }[]; identityM?: number; minScore?: { person: number; object: number } /* 0.5, 0.4 */ });
   applyDetections(frame: EngineFrame, dets: Detection[]): { changes: WorldChange[]; ids: Map<string, string> };   // ids: 감지 임시 번호(d1…) → 물체 id(cup_1, person)
   applyScene(frameId: string, capturedAtMs: number, scene: SceneObservation, ids: Map<string, string>): WorldChange[];   // VLM 요약은 바뀔 때만 vlm 변화
   applyMissing(frameId: string, capturedAtMs: number, m: { yolo?: YoloMissing; vlm?: VlmMissing }): WorldChange[];      // 등장·사라짐 셈에 넣지 않는다
@@ -3510,7 +3513,7 @@ export class WorldState {
 ```ts
 // tests/world-place.test.ts
 import { describe, expect, it } from "vitest";
-import { inView, placeBox, rayDir } from "../src/world/place.js";
+import { inView, placeBox, rayDir, surfacesFromLayout } from "../src/world/place.js";
 import type { CameraView } from "../src/phone/session.js";
 
 // 90° 시야 정사각형 투영(열 우선), 카메라는 트윈 (0, 1.5, 0)에서 +x를 보고 45° 아래로 숙임
@@ -3525,6 +3528,12 @@ describe("트윈 위치", () => {
     const d = rayDir(view, [0, 0]);
     expect(d[0]).toBeCloseTo(Math.SQRT1_2, 3);
     expect(d[1]).toBeCloseTo(-Math.SQRT1_2, 3);
+    expect(d[2]).toBeCloseTo(0, 3);
+  });
+  it("맞춤 회전 theta만큼 수평으로 돈다", () => {
+    const d = rayDir({ ...view, theta: Math.PI / 2 }, [0, 0]);
+    expect(d[0]).toBeCloseTo(0, 3);
+    expect(d[2]).toBeCloseTo(Math.SQRT1_2, 3);
   });
   it("박스 아래 가운데 광선이 식탁 윗면에 닿으면 그 점과 식탁 id", () => {
     const table = { id: "table_1", label: "식탁", center: [0.75, 0] as [number, number], top: 0.75, radius: 0.6 };
@@ -3532,11 +3541,25 @@ describe("트윈 위치", () => {
     expect(r.surface).toBe("table_1");
     expect(r.position![1]).toBeCloseTo(0.75, 2);
     expect(r.position![0]).toBeCloseTo(0.75, 1);
+    expect(r.errorM).toBeGreaterThan(0);
   });
   it("닿는 면이 없으면 바닥, 시야 뒤 점은 시야 밖", () => {
-    expect(placeBox(view, [220, 160, 40, 20], { width: 480, height: 360 }, [], () => 0).surface).toBeNull();
+    const floor = placeBox(view, [220, 160, 40, 20], { width: 480, height: 360 }, [], () => 0);
+    expect(floor.surface).toBeNull();
+    expect(floor.position![0]).toBeCloseTo(1.5, 2);
+    expect(floor.position![1]).toBe(0);
     expect(inView(view, [-2, 0, 0])).toBe(false);
     expect(inView(view, [1.5, 0, 0])).toBe(true);
+  });
+  it("배치의 식탁·책상·조리대·싱크대만 면으로 쓴다(조명은 빼고)", () => {
+    const s = surfacesFromLayout([
+      { id: "t", name: "식탁", type: "dining_table", plan: [1, 2], base: 0, height: 0.75, footprint: [1.2, 0.8] },
+      { id: "s", name: "소파", type: "sofa", plan: [3, 3], base: 0, height: 0.4 },
+      { id: "k", name: "싱크대", type: "sink_counter", plan: [0, 0], base: 0, height: 0.9 },
+      { id: "l", name: "스탠드", type: "desk_lamp", plan: [1, 1], base: 0.75, height: 0.4 },
+    ]);
+    expect(s.map((x) => [x.id, x.top])).toEqual([["t", 0.75], ["k", 0.9]]);
+    expect(s[0]!.radius).toBeCloseTo(Math.hypot(1.2, 0.8) / 2, 6);
   });
 });
 ```
@@ -3547,6 +3570,7 @@ import { describe, expect, it } from "vitest";
 import { WorldState } from "../src/world/state.js";
 import { sha256, type EngineFrame } from "../src/observe/ring.js";
 import type { Detection } from "../src/brain/detector.js";
+import type { CameraView } from "../src/phone/session.js";
 
 const surfaces = () => [{ id: "table_1", label: "식탁", center: [2, 0] as [number, number], top: 0.75, radius: 0.6 }];
 const devices = () => [{ id: "dishwasher_1", kind: "dishwasher", label: "식기세척기" }];
@@ -3554,6 +3578,14 @@ const ws = () => new WorldState({ surfaces, floorAt: () => 0, roomAt: () => "kit
 const frame = (i: number): EngineFrame => ({ id: `e${i}`, capturedAtMs: i * 1000, latestAtMs: i * 1000, jpeg: Buffer.from(`${i}`), sha256: sha256(Buffer.from(`${i}`)), width: 480, height: 360, eye: null, view: null });
 const cup: Detection = { label: "cup", score: 0.9, cls: 41, box: [220, 160, 40, 20] };
 const person: Detection = { label: "person", score: 0.9, cls: 0, box: [10, 10, 100, 300] };
+
+// 카메라: 트윈 (0, 1.5, 0)에서 45° 아래로 숙이고 +x(look) 또는 −x(away)를 본다. 90° 시야 투영(열 우선)
+const P = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1.0002, -1, 0, 0, -0.020002, 0];
+const mul = (a: number[], b: number[]) => [a[3]! * b[0]! + a[0]! * b[3]! + a[1]! * b[2]! - a[2]! * b[1]!, a[3]! * b[1]! - a[0]! * b[2]! + a[1]! * b[3]! + a[2]! * b[0]!, a[3]! * b[2]! + a[0]! * b[1]! - a[1]! * b[0]! + a[2]! * b[3]!, a[3]! * b[3]! - a[0]! * b[0]! - a[1]! * b[1]! - a[2]! * b[2]!];
+const tilt = [Math.sin(-Math.PI / 8), 0, 0, Math.cos(-Math.PI / 8)];
+const camera = (yaw: number): CameraView => ({ origin: [0, 1.5, 0], orientation: mul([0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)], tilt) as [number, number, number, number], theta: 0, projection: P });
+const look = camera(-Math.PI / 2);
+const away = camera(Math.PI / 2);
 
 describe("World State", () => {
   it("3장 연속 컵이면 등장, 관계표로 식기세척기를 붙인다(맞추기 전 위치는 모름)", () => {
@@ -3564,11 +3596,21 @@ describe("World State", () => {
     const o = w.view(3000).objects[0]!;
     expect(o).toMatchObject({ cls: "cup", status: "present", position: null, devices: ["dishwasher_1"], first_seen_ms: 1000, last_seen_ms: 3000 });
   });
+  it("등장 확인 전 물체는 보이지 않고, 한 장 끊기면 잊는다", () => {
+    const w = ws();
+    w.applyDetections(frame(1), [cup]);
+    w.applyDetections(frame(2), [cup]);
+    expect(w.view(2000).objects).toEqual([]);
+    w.applyDetections(frame(3), []);
+    for (let i = 4; i <= 6; i++) w.applyDetections(frame(i), [cup]);
+    expect(w.view(6000).objects.map((o) => [o.id, o.first_seen_ms])).toEqual([["cup_2", 4000]]);
+  });
   it("VLM 사실을 면(facet)마다 두고, 두 번 연속이면 confirmed", () => {
     const w = ws();
     let ids = new Map<string, string>();
     for (let i = 1; i <= 3; i++) ids = w.applyDetections(frame(i), [cup]).ids;
-    w.applyScene("e3", 3000, { scene: "kitchen", observations: [{ object_id: "d1", state: "empty" }], summary: "s" }, ids);
+    expect(w.applyScene("e3", 3000, { scene: "kitchen", observations: [{ object_id: "d1", state: "empty" }], summary: "s" }, ids)
+      .filter((c) => c.kind === "state")).toEqual([expect.objectContaining({ subject: "cup_1", text: "컵 cup_1 비어 있음", meaningful: true })]);
     expect(w.view(3000).objects[0]!.facts.contents).toMatchObject({ value: "empty", certainty: "inferred" });
     w.applyScene("e3", 3000, { scene: "kitchen", observations: [{ object_id: "d1", state: "empty" }, { object_id: "d1", state: "on_table" }], summary: "s" }, ids);
     expect(w.view(3000).objects[0]!.facts).toMatchObject({ contents: { certainty: "confirmed" }, place: { value: "on_table" } });
@@ -3589,6 +3631,7 @@ describe("World State", () => {
     expect(kinds("컵이 식탁 위")).toEqual(["vlm"]);
     expect(kinds("컵이 식탁 위")).toEqual([]);
     expect(kinds("사람이 컵을 듦")).toEqual(["vlm"]);
+    expect(w.applyScene("e0", 500, { scene: "k", observations: [], summary: "더 앞선 사진" }, new Map())).toEqual([]);
   });
   it("감지 실패·대기열 초과 프레임은 등장·사라짐 셈에 넣지 않고 분석 없음으로 센다", () => {
     const w = ws();
@@ -3605,13 +3648,30 @@ describe("World State", () => {
     expect(w.applyDetections(frame(6), []).changes.map((c) => c.kind)).toEqual(["gone"]);
     expect(w.view(6000).objects[0]!.status).toBe("gone");
   });
+  it("맞춘 뒤: 트윈 위치를 붙이고, 같은 자리 같은 종류는 같은 물체, 시야 밖이면 사라짐을 세지 않는다", () => {
+    const w = new WorldState({ surfaces: () => [{ id: "table_1", label: "식탁", center: [0.75, 0], top: 0.75, radius: 0.6 }], floorAt: () => 0, roomAt: () => "kitchen", devices });
+    const at = (i: number, view: CameraView) => ({ ...frame(i), view });
+    let last;
+    for (let i = 1; i <= 3; i++) last = w.applyDetections(at(i, look), [cup]);
+    expect(last!.changes).toEqual([expect.objectContaining({ kind: "appeared", text: "컵 cup_1 보임 · 식탁 위", meaningful: true })]);
+    expect(w.view(3000).objects).toEqual([expect.objectContaining({ id: "cup_1", surface: "table_1", room: "kitchen" })]);
+    expect(w.view(3000).objects[0]!.position![1]).toBeCloseTo(0.75, 2);
+    expect(w.applyDetections(at(4, away), []).changes).toEqual([expect.objectContaining({ kind: "out_of_view", text: "컵 cup_1 시야 밖", meaningful: false })]);
+    for (let i = 5; i <= 8; i++) expect(w.applyDetections(at(i, away), []).changes).toEqual([]);
+    expect(w.view(8000).objects[0]).toMatchObject({ status: "out_of_view", last_in_view_ms: 3000 });
+    expect(w.applyDetections(at(9, look), [cup]).changes.map((c) => c.kind)).toEqual(["back_in_view"]);
+    expect(w.view(9000).objects.map((o) => [o.id, o.status])).toEqual([["cup_1", "present"]]);
+  });
   it("사람은 2장으로 보임·안 보임, 가전 변화는 바뀐 시각과 이력", () => {
     const w = ws();
     w.applyDetections(frame(1), [person]);
     expect(w.applyDetections(frame(2), [person]).changes.map((c) => c.kind)).toEqual(["person_appeared"]);
+    expect(w.view(2000).person).toMatchObject({ visible: true, since_ms: 2000, last_seen_ms: 2000 });
     const ch = w.applyDevice({ id: "dishwasher_1", online: true, twin: { running: true }, matter: {}, updatedAt: "" }, 5000);
     expect(ch[0]).toMatchObject({ kind: "device", meaningful: true, text: "식기세척기 작동 중" });
     expect(w.view(5000).devices[0]).toMatchObject({ status: "작동 중", changed_ms: 5000, remaining_min: null, history: [{ attr: "running", to: true, at_ms: 5000 }] });
+    expect(w.applyDevice({ id: "dishwasher_1", online: true, twin: { running: true }, matter: {}, updatedAt: "" }, 6000)).toEqual([]);
+    expect(w.applyDevice({ id: "tv_1", online: true, twin: { power: "on" }, matter: {}, updatedAt: "" }, 6000)).toEqual([]);
   });
   it("남은 시간은 running이 참이 된 시각과 코스 분으로만 센다", () => {
     const w = ws();
@@ -3621,13 +3681,28 @@ describe("World State", () => {
     w.applyDevice({ id: "dishwasher_1", online: true, twin: { running: false }, matter: {}, updatedAt: "" }, 40 * 60_000);
     expect(w.view(40 * 60_000).devices[0]).toMatchObject({ started_ms: null, remaining_min: null });
   });
+  it("신호 없는 가전은 상태를 모름으로 둔다", () => {
+    const w = ws();
+    expect(w.applyDevice({ id: "dishwasher_1", online: false, twin: {}, matter: {}, updatedAt: "", signal: "none" }, 0)).toEqual([]);
+    expect(w.view(0).devices[0]).toMatchObject({ status: null });
+  });
 });
 ```
 
 ```ts
 // tests/world-relations.test.ts
 import { describe, expect, it } from "vitest";
-import { RemainingTracker } from "../src/world/relations.js";
+import { RemainingTracker, deviceStatus, relatedDeviceIds } from "../src/world/relations.js";
+
+describe("관계표", () => {
+  it("컵·병·그릇에 식기세척기를 붙이고, 상태 이름은 running으로 정한다", () => {
+    const devices = [{ id: "dw", kind: "dishwasher" }, { id: "tv", kind: "tv" }];
+    for (const cls of ["cup", "bottle", "bowl"] as const) expect(relatedDeviceIds(cls, devices)).toEqual(["dw"]);
+    expect(deviceStatus("dishwasher", { running: true })).toBe("작동 중");
+    expect(deviceStatus("dishwasher", { running: false })).toBe("이용 가능");
+    expect(deviceStatus("tv", { power: "on" })).toBeNull();
+  });
+});
 
 describe("남은 시간", () => {
   it("코스 시간이 없으면 비워 두고, 끝나면 지운다", () => {
@@ -3655,6 +3730,7 @@ import { rotate2, rotate3, type Quat } from "../phone/align.js";
 import type { CameraView } from "../phone/session.js";
 
 type V3 = [number, number, number];
+/** 물건이 놓일 수 있는 윗면. center는 평면도 [x, y], top은 바닥에서 윗면 높이(m), radius는 윗면을 덮는 원. */
 export interface PlaneSurface { id: string; label: string; center: [number, number]; top: number; radius: number }
 
 function invert4(m: number[]): number[] {
@@ -3693,7 +3769,8 @@ export function rayDir(view: CameraView, [nx, ny]: [number, number]): V3 {
   return norm([px, ar[1], py]);
 }
 
-export function placeBox(view: CameraView, box: [number, number, number, number], size: { width: number; height: number }, surfaces: PlaneSurface[], floorAt: (p: [number, number]) => number) {
+/** 박스 [x, y, w, h](픽셀)의 트윈 위치. 광선이 위를 향하면 위치를 모른다. 오차는 거리에 따라 늘린다(5cm + 거리의 3%). */
+export function placeBox(view: CameraView, box: [number, number, number, number], size: { width: number; height: number }, surfaces: PlaneSurface[], floorAt: (p: [number, number]) => number): { position: V3 | null; surface: string | null; errorM: number | null } {
   const u = box[0] + box[2] / 2, v = box[1] + box[3];
   const d = rayDir(view, [(u / size.width) * 2 - 1, 1 - (v / size.height) * 2]);
   if (d[1] >= -1e-6) return { position: null, surface: null, errorM: null };
@@ -3726,8 +3803,12 @@ export function inView(view: CameraView, point: V3): boolean {
 }
 
 const SURFACE_TYPE = /table|desk|counter|sink/;
+/** 이름에 면 낱말이 들어도 면이 아닌 것(책상 조명). */
+const NOT_SURFACE = /lamp/;
+
+/** 배치 물건 중 식탁·책상·조리대·싱크대 윗면. top은 물건 바닥 + 높이, radius는 윗면을 덮는 원(footprint 대각선의 절반, 없으면 0.4m). */
 export function surfacesFromLayout(objects: readonly { id: string; name: string; type: string; plan: [number, number]; base: number; height: number; footprint?: [number, number] }[]): PlaneSurface[] {
-  return objects.filter((o) => SURFACE_TYPE.test(o.type)).map((o) => ({
+  return objects.filter((o) => SURFACE_TYPE.test(o.type) && !NOT_SURFACE.test(o.type)).map((o) => ({
     id: o.id, label: o.name, center: [o.plan[0], o.plan[1]], top: o.base + o.height, radius: o.footprint ? Math.hypot(o.footprint[0], o.footprint[1]) / 2 : 0.4,
   }));
 }
@@ -3740,19 +3821,27 @@ export function surfacesFromLayout(objects: readonly { id: string; name: string;
 import type { ObjClass } from "../contract/world.js";
 
 export const RELATIONS: Record<ObjClass, string[]> = { cup: ["dishwasher"], bottle: ["dishwasher"], bowl: ["dishwasher"] };
+
+/** 가전 종류 → 상태 이름: attr이 true면 active, 아니면 inactive. */
 export const DEVICE_STATUS: Record<string, { attr: string; active: string; inactive: string }> = {
   dishwasher: { attr: "running", active: "작동 중", inactive: "이용 가능" },
 };
+
+/** World State가 보는 가전 종류: 관계표에 든 것. */
+export const RELATED_KINDS: ReadonlySet<string> = new Set(Object.values(RELATIONS).flat());
+
 export function relatedDeviceIds(cls: ObjClass, devices: readonly { id: string; kind: string }[]): string[] {
   const kinds = RELATIONS[cls];
   return devices.filter((d) => kinds.includes(d.kind)).map((d) => d.id);
 }
+
+/** 상태 이름. 상태표가 없는 종류면 null. */
 export function deviceStatus(kind: string, twin: Record<string, unknown>): string | null {
   const s = DEVICE_STATUS[kind];
   return s ? (twin[s.attr] === true ? s.active : s.inactive) : null;
 }
 
-/** 남은 시간: running이 참이 된 시각(받은 시각)을 시작으로 두고 course_min에서 지난 분을 뺀다. 코스 시간이 없으면 null. */
+/** 남은 시간: running이 참이 된 시각(받은 시각)을 시작으로 두고 course_min에서 지난 분을 뺀다. 코스 시간이 없으면 null(추정하지 않는다). */
 export class RemainingTracker {
   private readonly runs = new Map<string, { started: number; course: number | null }>();
   private readonly runningAttr: string;
@@ -3761,13 +3850,22 @@ export class RemainingTracker {
     this.runningAttr = o.runningAttr ?? "running";
     this.courseAttr = o.courseAttr ?? "course_min";
   }
+
   update(deviceId: string, twin: Record<string, unknown>, atMs: number): void {
-    if (twin[this.runningAttr] !== true) { this.runs.delete(deviceId); return; }
+    if (twin[this.runningAttr] !== true) {
+      this.runs.delete(deviceId);
+      return;
+    }
     const c = twin[this.courseAttr];
     const course = typeof c === "number" && Number.isFinite(c) ? c : null;
     this.runs.set(deviceId, { started: this.runs.get(deviceId)?.started ?? atMs, course });
   }
-  startedAt(deviceId: string): number | null { return this.runs.get(deviceId)?.started ?? null; }
+
+  startedAt(deviceId: string): number | null {
+    return this.runs.get(deviceId)?.started ?? null;
+  }
+
+  /** max(0, ceil(코스 − 지난 분)). */
   remainingMin(deviceId: string, nowMs: number): number | null {
     const r = this.runs.get(deviceId);
     if (!r || r.course === null) return null;
@@ -3775,28 +3873,33 @@ export class RemainingTracker {
   }
 }
 ```
-`docs/provenance.md`에 줄을 더한다: `| src/world/relations.ts | noonchi-server f8545a1 noonchi/relations.py·packet.py·remaining.py | 물건 → 관련 가전, 가전 상태 이름, 남은 시간(running 시작 시각 + course_min, 코스 없으면 비움) |`.
+`docs/provenance.md`에 줄을 더한다: `| src/world/relations.ts | noonchi-server f8545a1 noonchi/relations.py·packet.py·remaining.py, config/noonchi.yaml relations·device_status | 물건 → 관련 가전(컵·병, 여기서 그릇을 더함), 가전 상태 이름(작동 중·이용 가능), 남은 시간(running을 받은 시각 + course_min, 코스 없으면 비움) |`.
 
 `src/world/state.ts` 핵심 규칙(구현):
-- 감지 → 물체: 사람은 키 `person` 하나. 물건은 `view`가 있으면 `placeBox`로 위치를 구하고 같은 종류 중 `identityM`(기본 0.25m) 안의 물체에 붙인다. 없으면 새 id `<종류>_<n>`. `view`가 없으면(맞추기 전) 같은 종류의 물체가 하나뿐이면 그것, 아니면 새 물체(위치 null).
-- `Confirmer`(Task 18)로 등장·사라짐을 확인한다. 시야 판단: 프레임에 `view`가 있고 물체 위치가 있으면 `inView(view, position)`. 프레임에 `view`가 없으면(맞추기 전) 모든 물체를 시야 안으로 본다(폰이 한 곳을 비춘다고 본다). `view`는 있는데 물체 위치를 모르면 사라짐을 세지 않는다.
-- 등장 전(셈 중)인 물체도 `ids`에 넣어 VLM 사실을 받는다. 등장 확인 전에는 `view()`에 내지 않는다.
-- 상태: `FACET` 표 `{ on_table|on_counter|in_sink|on_floor|in_hand: "place", in_use: "use", empty|has_contents|contents_unknown: "contents", sitting|standing: "posture", holding_object|eating_or_drinking: "action" }`. `not_visible`은 사실로 두지 않는다. 같은 면의 기존 사실보다 `capturedAtMs`가 오래된 답은 버린다. 같은 값이 연속 두 번이면 `confirmed`, 아니면 `inferred`. 값이 바뀌면 `state` 변화(meaningful true). VLM 요약은 직전 요약과 글이 다를 때만 `vlm` 변화(meaningful false)를 낸다.
+- 감지 → 물체: 신뢰도가 사람 0.5·물건 0.4 아래면 받지 않는다. 사람은 키 `person` 하나. 물건은 `view`가 있으면 `placeBox`로 위치를 구하고 같은 종류 중 `identityM`(기본 0.25m) 안의 가장 가까운 물체(사라진 것도 같은 자리면 같은 id로 돌아온다)에 붙인다. 없으면 위치를 아직 모르는 같은 종류 물체, 그것도 없으면 새 id `<종류>_<n>`. 위치를 모르면(맞추기 전, 광선이 위를 향함) 사라지지 않은 같은 종류 물체에 처음 본 순서로 붙이고(한 프레임 안에서 한 물체에 두 번 붙이지 않음), 남는 감지는 새 물체다.
+- `Confirmer`(Task 18)로 등장·사라짐을 확인한다. 시야 판단: 프레임에 `view`가 있고 물체 위치가 있으면 `inView(view, position)`. 프레임에 `view`가 없으면(맞추기 전) 모든 물체를 시야 안으로 본다(폰이 한 곳을 비춘다고 본다). `view`는 있는데 물체 위치를 모르면 사라짐을 세지 않는다. 사람 사라짐은 시야를 보지 않는다.
+- 등장 전(셈 중)인 물체도 `ids`에 넣어 VLM 사실을 받는다. 등장 확인 전에는 `view()`에 내지 않고, 셈 중에 한 장이라도 안 보이면 잊는다. 사라진 물체는 10분 두었다가 잊는다.
+- 시야 밖: 등장한 물체의 자리가 지금 프레임 시야 밖이면 `out_of_view` 변화(meaningful false)와 상태 「시야 밖」, 다시 시야 안이면 `back_in_view` 변화(meaningful false)와 「있음」. 시야 안이면 `last_in_view_ms`를 고친다.
+- 상태: `FACET` 표 `{ on_table|on_counter|in_sink|on_floor|in_hand: "place", in_use: "use", empty|has_contents|contents_unknown: "contents", sitting|standing: "posture", holding_object|eating_or_drinking: "action" }`. 물건은 place·use·contents, 사람은 posture·action만 받는다. `not_visible`은 사실로 두지 않는다. 같은 면의 기존 사실보다 `capturedAtMs`가 오래된 답은 버린다. 같은 값이 연속 두 번이면 `confirmed`, 아니면 `inferred`. 등장한 물건의 값이 새로 생기거나 바뀌면 `state` 변화(meaningful true), 사람은 `person_state`(meaningful false). VLM 요약은 직전 요약과 글이 다를 때만 `vlm` 변화(meaningful false)를 내고, 더 오래된 프레임의 요약은 버린다.
 - 분석 없음: `applyMissing`은 `vlm_missing`·`yolo_missing` 셈을 늘리고 변화(meaningful false) 하나를 낸다. 글은 `{ yolo: "cap" }`이면 `CHANGE_TEXT.yoloMissing.cap`, `{ yolo: "error" }`이면 `CHANGE_TEXT.yoloMissing.error`, VLM만이면 `CHANGE_TEXT.vlmMissing[why]`. `Confirmer`를 부르지 않으므로 물체·사람 상태는 그대로다.
-- 가전: `applyDevice`는 이전 twin 값과 비교해 바뀐 attr마다 이력(최근 20개)을 쌓고 `device` 변화를 낸다. meaningful은 관계표에 든 종류일 때 true. `RemainingTracker.update`를 함께 불러 `view()`의 `started_ms`·`remaining_min`을 채운다. 변화 글은 상태 이름이 있으면 `CHANGE_TEXT.device(label, status)`, 없으면 `CHANGE_TEXT.deviceAttr(label, attr, to)`.
+- 가전: 관계표에 든 종류(`RELATED_KINDS`, 지금은 식기세척기)만 본다. 처음 받은 상태는 속성마다 이력(from null)을 쌓고 상태 이름 변화 하나만 낸다. 그 뒤로는 이전 twin 값과 비교해 바뀐 속성마다 이력(최근 20개)을 쌓고, 상태 속성(running)이 바뀌어 상태 이름이 바뀌면 `CHANGE_TEXT.device(label, status)`, 다른 속성은 `CHANGE_TEXT.deviceAttr(label, attr, to)` 변화를 낸다(모두 meaningful true). 신호 없는 가전(`signal: "none"`)은 상태를 null(모름)로 둔다. `RemainingTracker.update`를 함께 불러 `view()`의 `started_ms`·`remaining_min`을 채운다.
 - 변화 글은 `src/world/labels.ts`의 함수로 만든다(화면 글 규칙: 화살표·괄호 덧붙임 없음):
 
 ```ts
 // src/world/labels.ts (Task 15 파일에 더한다)
+/** VLM 상태 값 → 글. */
 export const STATE_TEXT: Record<string, string> = {
   on_table: "식탁 위", on_counter: "조리대 위", in_sink: "싱크대 안", on_floor: "바닥", in_hand: "손에 있음", in_use: "쓰는 중",
   empty: "비어 있음", has_contents: "내용물 있음", contents_unknown: "안이 안 보임", sitting: "앉아 있음", standing: "서 있음",
   holding_object: "물건을 들고 있음", eating_or_drinking: "먹거나 마시는 중",
 };
+
+/** World State 변화 글(관찰 텍스트 줄, 판단 기록 줄). */
 export const CHANGE_TEXT = {
   appeared: (name: string, where: string | null) => `${name} 보임${where ? ` · ${where}` : ""}`,
   gone: (name: string) => `${name} 사라짐`,
   outOfView: (name: string) => `${name} 시야 밖`,
+  backInView: (name: string) => `${name} 다시 시야 안`,
   personAppeared: "사람 보임",
   personGone: "사람 안 보임",
   state: (name: string, value: string) => `${name} ${STATE_TEXT[value] ?? value}`,
@@ -3807,15 +3910,20 @@ export const CHANGE_TEXT = {
   vlmMissing: { cap: "요청이 몰려 VLM 분석 없음", timeout: "시간 초과로 VLM 분석 없음", format: "형식 오류로 VLM 분석 없음", error: "호출 오류로 VLM 분석 없음" },
   yoloMissing: { cap: "요청이 몰려 YOLOX·VLM 분석 없음", error: "감지 오류로 YOLOX 분석 없음" },
 };
-export const objectName = (cls: string, id: string) => `${OBJECT_NAME[cls] ?? cls}(${id})`;
+
+/** 물건 이름: 종류 글 + id(컵 cup_1). */
+export const objectName = (cls: string, id: string) => `${OBJECT_NAME[cls] ?? cls} ${id}`;
+
+/** 놓인 면 글(식탁 위). */
+export const onSurface = (label: string) => `${label} 위`;
 ```
-`tests/lint-ui-copy.test.ts`에 「`src/world/labels.ts` 글이 화면 글 검사를 통과한다」(`lintUiCopy([labels])`가 빈 배열)를 더한다.
+물건 이름은 괄호 없이 「컵 cup_1」이다. `tests/lint-ui-copy.test.ts`의 World State 글 시험은 새 글(「식탁 위」, 「… 보임…」, 「… 시야 밖」, 분석 없음 글)을 꺼내는지, `lintUiCopy([labels])`가 빈 배열인지, 템플릿 글에도 괄호·화살표가 없는지 본다(린트의 괄호 규칙은 「…(…)」를 잡지 못한다).
 
 - [ ] **Step 4: 통과 확인** — `H npx vitest run tests/world-place.test.ts tests/world-state.test.ts tests/world-relations.test.ts tests/contract.test.ts tests/lint-ui-copy.test.ts tests/self-contained.test.ts`, `H npm run lint`, 그리고 `H npm --prefix ui test` / Expected: PASS
 - [ ] **Step 5: 커밋**
 
 ```bash
-git add src/contract/world.ts src/contract/events.ts src/world/place.ts src/world/relations.ts src/world/state.ts src/world/labels.ts ui/src/lib/messages.ts tests/world-place.test.ts tests/world-state.test.ts tests/world-relations.test.ts tests/lint-ui-copy.test.ts docs/provenance.md
+git add src/contract/world.ts src/contract/events.ts src/world/place.ts src/world/relations.ts src/world/state.ts src/world/labels.ts src/observe/vlm-pool.ts ui/src/lib/messages.ts tests/world-place.test.ts tests/world-state.test.ts tests/world-relations.test.ts tests/lint-ui-copy.test.ts docs/provenance.md docs/superpowers/plans/2026-11-07-noonchi-architecture.md
 git commit -m "feat: merge YOLOX and VLM results per object into a World State with twin positions, relations and device history"
 ```
 

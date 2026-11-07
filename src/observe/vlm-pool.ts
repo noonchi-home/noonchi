@@ -1,10 +1,11 @@
 // VLM 동시 요청: 앞 답을 기다리지 않고 maxInflight까지 보낸다. 답은 프레임 번호로 맞춘다.
 // 상한을 넘은 프레임·시간 초과·형식 오류·호출 오류는 버리지 않고 VLM 분석 없음으로 낸다.
 // 시간 초과는 signal을 끊어 HTTP 요청까지 끊는다. 자리는 analyze가 끝나야 비므로 실제로 나가 있는 요청은 maxInflight를 넘지 않는다.
+import type { VlmMissing } from "../contract/world.js";
 import type { EngineFrame } from "./ring.js";
 import type { SceneDetection, SceneObservation } from "./scene.js";
 
-export type VlmMissing = "cap" | "timeout" | "format" | "error";
+export type { VlmMissing } from "../contract/world.js";
 export interface VlmResult { frameId: string; capturedAtMs: number; scene: SceneObservation | null; missing?: VlmMissing; costUsd: number }
 type Analysis = { scene: SceneObservation | null; costUsd: number; error?: string };
 type Analyze = (frame: EngineFrame, dets: SceneDetection[], signal: AbortSignal) => Promise<Analysis>;
