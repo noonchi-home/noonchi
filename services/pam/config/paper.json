@@ -1,0 +1,44 @@
+{
+  "model": "Qwen3.5-27B",
+  "predictor": {
+    "temperature": 0.3,
+    "enable_thinking": false,
+    "frame_count": 5,
+    "frame_stride_seconds": 2,
+    "interval_seconds": 1
+  },
+  "reflector": {
+    "temperature": 0.3,
+    "enable_thinking": true,
+    "frame_count": 200,
+    "schedule": "end_of_day",
+    "sampling": "uniform_over_day"
+  },
+  "frame_composition": {
+    "layout": "horizontal",
+    "views": ["left_back", "right_back"],
+    "include_wrist_camera": false
+  },
+  "memory_lifecycle": {
+    "fixed_during_day": true,
+    "updated_memory_applies": "following_day"
+  },
+  "provenance": {
+    "source_pdf": "papers/2610.21211v1.pdf",
+    "source_pdf_sha256": "1fe0e4954d4fefaffb1e9d1619a2e52e1918b2872ca789485ec437e95f82a364",
+    "sections": {
+      "model_and_generation": {"section": "A.2", "pages": [15, 16]},
+      "predictor_cadence": {"section": "3.1", "pages": [4]},
+      "camera_composition": {"sections": ["A.2", "A.4"], "pages": [15, 16, 17]},
+      "memory_lifecycle": {"section": "3.3", "pages": [5]},
+      "printed_prompt_fps_note": {"section": "E", "pages": [31]}
+    },
+    "serving_framework_in_paper": "vLLM",
+    "notes": [
+      "The printed predictor prompts say 1 fps; A.2 and the introduction to Appendix E explicitly specify the supplied images are two seconds apart.",
+      "The frame count counts temporal composites: one frame contains both camera views.",
+      "Approximately one-second predictor and one-minute reflector calls are measured timings, not timeouts or a hosted-service guarantee.",
+      "API provider, model ID mapping, maximum tokens, image preprocessing, retries, and scheduling-overrun policy are not specified here. They require separate implementation decisions."
+    ]
+  }
+}

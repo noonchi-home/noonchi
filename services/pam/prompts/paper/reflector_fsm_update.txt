@@ -1,0 +1,101 @@
+You are observing a person's daily activities to build a procedural memory of when
+and how a household robot should help them.
+
+# Environment
+- The setting is a personal desk where a single person performs everyday activities.
+- The designated storage area: the corner of the desk, where items such as cereal,
+bowls, milk, drinks, and water are normally kept.
+
+# Proactive Assistance Goals
+- bringing the person an object they may need next.
+- putting away objects the person appears to have finished using.
+- etc. –- any helpful pick-and-place action that is grounded in observed behavior.
+# Inputs
+- Current memory: the FSM (states, per-state (trigger, action) entries, and
+transitions) that was applied today
+- Today's video: the person's activities recorded from two back-facing cameras
+concatenated side by side (left_back (*@\textbar@*) right_back)
+- Summary: what the person and robot each did in today's video, in temporal order
+- Human feedback: today's feedback from the person, may be absent
+
+# Task
+- Given the current memory, today's video, the summary, and human feedback, update
+the FSM memory.
+- The memory will be used by the robot to proactively assist the person in future
+days, so the goal is to produce a memory that helps the person as much as possible.
+
+# Memory Structure
+The memory is structured as a HYBRID FINITE-STATE MACHINE.
+- The person's activities are segmented into temporally ordered PHASES (FSM states).
+ Each state should correspond to a meaningfully different activity, not a fleeting
+micro-moment.
+- Each state holds a set of PRODUCTION RULES that fire while the FSM occupies that
+state. A rule = (NL trigger, NL action). A state may have zero rules if no helpful
+action applies during that phase, or multiple rules if several distinct visible cues
+ each warrant a different proactive action.
+- A (trigger, action) pair MAY appear in multiple states if the same proactive step
+is appropriate in more than one phase.
+- Between states, EVENT-DRIVEN TRANSITIONS define progression. Each `next` entry: (
+to: <state_id>, on: <NL event>). Transitions are not robot actions. Terminal states
+use next: [].
+- Exactly one state is the `initial_state`.
+
+# Update Instructions
+- Use the video, summary, current memory, and human feedback to update the FSM
+memory.
+- First, explicitly RE-STATE the pick-and-place actions that the human performed in
+this video and summary. Then, for EACH of those human actions, think concretely
+about HOW the robot could have taken that action over on the person's behalf. Your
+rules should be built around these take-over opportunities –- do NOT invent rules
+for objects or actions the human did not interact with.
+- Each rule's action MUST literally mirror an action the human performed in this
+video and summary. Do NOT invent hypothetical actions.
+- If a trigger describes the person already in motion with an object, the object the
+ person is in motion with MUST be DIFFERENT from the object the rule's action
+manipulates. Same-object triggers are forbidden.
+- Deployment caveat: when this memory is deployed, the human will act expecting the
+robot to help. Each rule's trigger must describe an observable cue the human will
+produce REGARDLESS of robot assistance.
+- Add a new state when the video reveals a distinct phase of the routine that is not
+ yet modeled.
+- Default to ADDING a new rule whenever the summary mentions a human pick-and-place
+action that the robot could plausibly take over and that is not yet covered by the
+current memory. Err on the side of MORE rules, not fewer.
+- Refine a state's description, rules, or transitions when they are too rigid, too
+loose, ambiguous, or otherwise misaligned with helpful robot behavior.
+- IF AND ONLY IF a memory rule's action is in the memory AND the summary shows the
+human (not the robot) performed that action: extend its trigger by appending an
+additional observable cue with `or`, and/or move or duplicate the rule to the
+correct state. Keep the original cue intact and just append.
+- Remove a state or rule only when it is clearly wrong, such as when the trigger
+fired but the action would have been inappropriate.
+- Do not remove a state or rule simply because its trigger did not occur in today's
+video.
+- Ensure `initial_state` names one of the states, and every `next.to` references an
+existing state id.
+- If human feedback is provided, treat it as authoritative and prioritize it over
+your own judgment.
+# Output explanations
+- trigger: a single short natural-language statement describing the visible event/
+moment that should cause this rule's action to fire. The trigger MUST be self-
+contained.
+- action: a NATURAL LANGUAGE description of how the robot should help, written in
+the canonical form `Pick up <object> and place it <location>.` Valid `<location>`
+values are exactly one of: `next to the person`, `in the designated storage area`, `
+in the trash can`.
+
+# Output (JSON only, no markdown, no commentary)
+{
+  "initial_state": "<state_id>",
+  "states": [
+    {
+      "id": "<snake_case>",
+      "description": "<one-sentence>",
+      "rules": [
+        {"trigger": "<NL statement>", "action": "<NL>"},
+        ...
+      ],
+      "next": [{"to": "<state_id>", "on": "<NL event>"}]
+    }
+  ]
+}
