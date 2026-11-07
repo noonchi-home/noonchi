@@ -11,11 +11,14 @@ import type { Agent } from "../agent/agent.js";
 import { newSessionId } from "../agent/agent.js";
 import { Policy } from "../agent/policy.js";
 import type { HealthView, ReadyView } from "../contract/events.js";
+import type { HistoryKind } from "../contract/history.js";
 import type { WorldView } from "../contract/world.js";
 import type { PlanView } from "../contract/plan.js";
 import type { ControlMode } from "../contract/setup.js";
 import { deviceViews, roomViews } from "../agent/tools.js";
 import type { Command, CommandResult, DeviceHub, RoomSpec } from "../hub/types.js";
+import { HISTORY_KINDS, type HistoryDb } from "../history/db.js";
+import { daySummary, isDay } from "../history/summary.js";
 import type { LayoutEditor } from "../layout/editor.js";
 import { TouchPointsError, type TouchPoint } from "../phone/touch.js";
 import type { PlanHub } from "../plan/hub.js";
@@ -66,6 +69,8 @@ export interface AppOptions {
   ready?: () => Promise<ReadyView>;
   /** 클로이드 계획 보관(src/plan/hub.ts). 있으면 에이전트 행동을 넘기고 POST /api/plan*을 받는다. 접속 때 지금 계획을 보낸다. */
   plan?: Pick<PlanHub, "current" | "onAgent" | "put" | "setStep">;
+  /** 기록 DB(src/history/db.ts). 있으면 GET /api/history·/api/history/day/{날짜}·/api/decisions. */
+  history?: HistoryDb;
 }
 
 /** MatterHub에서 서버가 쓰는 부분(src/matter/matterHub.ts를 직접 불러오지 않으려고 모양만 적는다). */
@@ -274,6 +279,42 @@ export function createApp(opts: AppOptions): TwinHomeApp {
     if (!opts.world) throw new HttpError(404, "관찰 흐름이 꺼져 있습니다(BRAIN=1, PHONE_PORT 필요)");
     return { ok: true, world: opts.world() };
   });
+
+  // ── 기록 ──
+
+  const requireHistory = () => {
+    if (!opts.history) throw new HttpError(404, "기록 DB가 없습니다.");
+    return opts.history;
+  };
+  const msParam = (url: URL, key: string) => {
+    const raw = url.searchParams.get(key)?.trim();
+    if (!raw) return undefined;
+    const v = Number(raw);
+    if (!Number.isFinite(v) || v < 0) throw new HttpError(400, `${key}는 0 이상의 시각(ms)이어야 합니다.`);
+    return v;
+  };
+  const limitParam = (url: URL, fallback: number, max: number) => {
+    const raw = url.searchParams.get("limit")?.trim();
+    if (!raw) return fallback;
+    const v = Number(raw);
+    if (!Number.isInteger(v) || v < 1 || v > max) throw new HttpError(400, `limit는 1~${max} 사이 정수여야 합니다.`);
+    return v;
+  };
+  // since가 없으면 최근 limit줄, 있으면 since부터 limit줄(둘 다 시각 순)
+  route("GET", /^\/api\/history$/, async (_req, url) => {
+    const db = requireHistory();
+    const kinds = (url.searchParams.get("kinds") ?? "").split(",").map((k) => k.trim()).filter(Boolean);
+    const unknown = kinds.filter((k) => !HISTORY_KINDS.includes(k as HistoryKind));
+    if (unknown.length) throw new HttpError(400, `모르는 기록 종류입니다: ${unknown.join(", ")} (있는 종류: ${HISTORY_KINDS.join(", ")})`);
+    const since = msParam(url, "since");
+    return { ok: true, rows: db.list({ since, until: msParam(url, "until"), kinds: kinds as HistoryKind[], limit: limitParam(url, 500, 5000), latest: since === undefined }) };
+  });
+  route("GET", /^\/api\/history\/day\/(\d{4}-\d{2}-\d{2})$/, async (_req, _url, [day]) => {
+    const db = requireHistory();
+    if (!isDay(day!)) throw new HttpError(400, `없는 날짜입니다: ${day}`);
+    return { ok: true, ...daySummary(db, day!) };
+  });
+  route("GET", /^\/api\/decisions$/, async (_req, url) => ({ ok: true, decisions: requireHistory().decisions(limitParam(url, 20, 500)) }));
 
   // ── 배치 보정 ──
 

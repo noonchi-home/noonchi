@@ -232,7 +232,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         auto: (raw) => autoCorners(plan, parseWallPick(raw), bounds),
         room: (raw) => pickedRoom(plan, parseWallPick(raw)),
       },
-      plan: plans,
+      plan: plans, history: ctx.history?.db,
     });
     const appNow = app;
     appRef.current = app;

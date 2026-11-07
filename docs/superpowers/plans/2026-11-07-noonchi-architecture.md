@@ -4955,109 +4955,91 @@ git commit -m "feat: record device changes, detections, VLM observations, World 
 
 **Files:**
 - Create: `src/history/summary.ts`, `tests/history-summary.test.ts`, `tests/history-api.test.ts`
-- Modify: `src/server/app.ts`(`/api/history`, `/api/history/day/{day}`, `/api/decisions`), `docs/provenance.md`
+- Modify: `src/history/db.ts`(`latest`·`counts`·`analysisTally`·`decisions`), `src/history/labels.ts`(`SUMMARY_TEXT`), `src/contract/history.ts`(`DecisionRow`), `src/server/app.ts`(`/api/history`, `/api/history/day/{day}`, `/api/decisions`), `src/server/home.ts`(앱에 기록 DB), `docs/provenance.md`, `docs/reference.md`
 
 **Interfaces:**
-- Produces: `daySummary(db: HistoryDb, day: string, o?: { maxBytes?: number }): { day: string; observation_text: string; action_summary: string; counts: Record<HistoryKind, number>; dropped: { observation: number; action: number } }`
-  - 하루 관찰 텍스트: 감지(등장·사라짐)·World State 변화(상태 변화, 바뀐 VLM 요약)·가전 변화만 넣는다. 프레임마다 쓰는 `vlm`·`yolo` 줄은 넣지 않고 맨 끝 한 줄 `[하루] VLM 분석 N장 · VLM 분석 없음 M장 · YOLOX 분석 없음 K장`으로 센다.
+- Produces: `daySummary(db: HistoryDb, day: string, o?: { maxBytes?: number }): DaySummary`, `isDay(day: string): boolean`, `HistoryDb.list({ …, latest })`, `HistoryDb.counts(day)`, `HistoryDb.analysisTally(day): { vlm; vlmMissing; yoloMissing }`, `HistoryDb.decisions(limit): DecisionRow[]`
+  - 하루 관찰 텍스트: 감지(등장·사라짐)·World State 변화(상태 변화, 바뀐 VLM 요약)·가전 변화만 넣는다. 프레임마다 쓰는 `vlm`·`yolo` 줄은 넣지 않고 맨 끝 한 줄 `[하루] VLM 분석 N장 · VLM 분석 없음 M장 · YOLOX 분석 없음 K장`으로 센다(SQL `json_extract`로 센다. 하루 8만 줄을 읽지 않는다).
   - 이어진 같은 글은 `collapseLines`로 묶는다.
-  - `maxBytes`(UTF-8)가 있으면 관찰 텍스트 70%·행동 요약 30%로 나눠, 넘으면 오래된 줄부터 빼고 첫 줄에 `앞선 기록 N줄 생략`을 둔다.
+  - `maxBytes`(UTF-8)가 있으면 관찰 텍스트 70%·행동 요약 30%로 나누되 한쪽이 덜 쓰면 남는 몫을 다른 쪽이 쓴다. 다 들어가면 줄이지 않는다. 넘으면 오래된 줄부터 빼고 첫 줄에 `앞선 기록 N줄 생략`을 둔다.
+  - 판단 번호(`pam-N`)는 다시 켜면 처음부터라, `decisions`는 같은 번호·같은 시각의 `pam_text`를 붙인다.
 
 - [ ] **Step 1: 실패하는 시험**
 
-```ts
-// tests/history-summary.test.ts
-import { describe, expect, it } from "vitest";
-import { HistoryDb } from "../src/history/db.js";
-import { daySummary } from "../src/history/summary.js";
+`tests/history-summary.test.ts`:
+- 관찰 텍스트 `"07:58:00 사람 보임\n08:00:00 VLM: 컵이 식탁 위\n08:05:00 식기세척기 running true\n[하루] VLM 분석 1장 · VLM 분석 없음 0장 · YOLOX 분석 없음 1장"`, 행동 요약 `"08:10:00 클로이드 판단: 컵 치우기\n08:11:00 클로이드 실행: 컵 치우기 완료\n08:12:00 사용자: 다 마신 뒤에만 치워 줘"`, counts는 그날 종류별 수(전날 줄은 빠짐), dropped 0.
+- VLM 분석 없음은 이유 있는 `vlm` 줄과 대기열 초과 `yolo` 줄로 센다. 「대기」 세 번은 `09:00:10~09:00:12 클로이드 판단: 대기 3번`.
+- 한도 안이면 그대로, 행동 요약이 작으면 관찰 텍스트가 70%보다 더 쓴다.
+- 1초 간격 3시간치(VLM 10,800줄): 한도 30,000이면 다 들고(줄인 줄 0), 12,000이면 한도 안이고 첫 줄 「앞선 기록 N줄 생략」, 끝 줄 하루 분석 수, 최근 줄(`09:59:40`)은 남는다.
 
-const t = (h: number, m: number, s = 0) => Date.UTC(2026, 10, 7, h - 9, m, s);
-const bytes = (s: string) => Buffer.byteLength(s, "utf8");
-
-describe("하루 요약", () => {
-  it("관찰 텍스트는 감지·World State·가전 변화와 하루 분석 수, 행동 요약은 판단·실행·피드백을 시각 순으로", () => {
-    const db = HistoryDb.open(":memory:");
-    db.add("detection", t(7, 58), "사람 보임");
-    db.add("vlm", t(7, 59), "컵이 식탁 위");
-    db.add("yolo", t(7, 59, 1), "감지 오류로 YOLOX 분석 없음");
-    db.add("world", t(8, 0), "VLM: 컵이 식탁 위");
-    db.add("decision", t(8, 10), "컵 치우기");
-    db.add("execution", t(8, 11), "컵 치우기 완료");
-    db.add("feedback", t(8, 12), "다 마신 뒤에만 치워 줘");
-    db.add("pam_text", t(8, 10), "보낸 텍스트");
-    const s = daySummary(db, "2026-11-07");
-    expect(s.observation_text).toBe("07:58:00 사람 보임\n08:00:00 VLM: 컵이 식탁 위\n[하루] VLM 분석 1장 · VLM 분석 없음 0장 · YOLOX 분석 없음 1장");
-    expect(s.action_summary).toBe("08:10:00 클로이드 판단: 컵 치우기\n08:11:00 클로이드 실행: 컵 치우기 완료\n08:12:00 사용자: 다 마신 뒤에만 치워 줘");
-    expect(s.counts).toMatchObject({ detection: 1, vlm: 1, yolo: 1, decision: 1, pam_text: 1 });
-  });
-
-  it("1초 간격 3시간치 기록도 반성 입력 한도 안에 든다", () => {
-    const db = HistoryDb.open(":memory:");
-    const start = t(7, 0);
-    for (let i = 0; i < 3 * 3600; i++) {
-      db.add("vlm", start + i * 1000, i % 7 ? "사람이 식탁 앞에 앉아 컵을 들고 있음" : "VLM 분석 없음");
-      if (i % 20 === 0) db.add("world", start + i * 1000, `컵(cup_${i % 3}) ${i % 40 ? "비어 있음" : "내용물 있음"}`);
-      if (i % 90 === 0) db.add("detection", start + i * 1000, i % 180 ? "사람 안 보임" : "사람 보임");
-      if (i % 300 === 0) db.add("decision", start + i * 1000, i % 600 ? "대기" : "컵 치우기");
-    }
-    const maxBytes = 30_000;   // PAM /health reflect_input_bytes에서 기억 JSON을 뺀 값 정도
-    const s = daySummary(db, "2026-11-07", { maxBytes });
-    expect(bytes(s.observation_text) + bytes(s.action_summary)).toBeLessThanOrEqual(maxBytes);
-    expect(s.observation_text).not.toContain("사람이 식탁 앞에 앉아");                     // 프레임마다 쓴 VLM 줄은 빠진다
-    expect(s.observation_text.split("\n").at(-1)).toMatch(/^\[하루\] VLM 분석 \d+장/);
-    expect(s.observation_text.split("\n")[0]).toMatch(/^앞선 기록 \d+줄 생략$/);
-  });
-});
-```
-`tests/history-api.test.ts`: `startServer`(HUB memory, RUNTIME_DIR 임시) 뒤 `db.add`를 직접 몇 줄 넣고 `GET /api/history?kinds=decision`, `GET /api/history/day/2026-11-07`, `GET /api/decisions?limit=1`이 위 모양을 돌려주는지, 잘못된 날짜는 400인지 본다(`RunningServer`에 `history: HistoryDb` getter를 더한다).
+`tests/history-api.test.ts`: `startServer`(HUB memory, 임시 RUNTIME_DIR) 뒤 `srv.history.add`로 줄을 넣고 본다.
+- `GET /api/history?kinds=decision`, `since·until·kinds`, `limit=2`(최근 두 줄), `since&limit=1`(처음 한 줄).
+- 모르는 종류·`since=어제`·`limit=0`·`limit=5001`은 400.
+- `GET /api/history/day/2026-11-07`은 요약, `2026-02-30`은 400, `어제`는 404.
+- `GET /api/decisions?limit=2`는 마지막 두 판단과 그 `text_sent`(다시 켠 뒤 같은 번호도 같은 시각 것), 기본 20, `limit=501`은 400.
 
 - [ ] **Step 2: 실패 확인** — `H npx vitest run tests/history-summary.test.ts tests/history-api.test.ts` / Expected: FAIL
 - [ ] **Step 3: 구현**
 
 ```ts
-// src/history/summary.ts
 // 하루 요약(출처: docs/provenance.md): 관찰 텍스트(등장·사라짐, World State 변화, 가전 변화, 하루 분석 수)와
-// 행동 요약(판단·실행·사용자 말)을 시각 순으로. 프레임마다 쓰는 vlm·yolo 줄은 세기만 한다. maxBytes를 넘으면 오래된 줄부터 뺀다.
+// 행동 요약(판단·실행·사용자 말)을 시각 순으로. 프레임마다 쓰는 vlm·yolo 줄은 세기만 한다. 이어진 같은 줄은 묶는다.
+// maxBytes(UTF-8)를 넘으면 오래된 줄부터 빼고 첫 줄에 「앞선 기록 N줄 생략」을 둔다. 관찰 텍스트가 70%, 행동 요약이 30%를 쓰고, 한쪽이 덜 쓰면 남는 몫을 다른 쪽이 쓴다.
+import type { DaySummary, HistoryKind } from "../contract/history.js";
 import { collapseLines } from "../world/text.js";
-import type { HistoryDb, HistoryKind } from "./db.js";
+import type { HistoryDb } from "./db.js";
+import { SUMMARY_TEXT } from "./labels.js";
 
 const OBSERVED: HistoryKind[] = ["detection", "world", "device"];
 const ACTED: HistoryKind[] = ["decision", "execution", "feedback"];
-const PREFIX: Partial<Record<HistoryKind, string>> = { decision: "클로이드 판단: ", execution: "클로이드 실행: ", feedback: "사용자: " };
+const PREFIX: Partial<Record<HistoryKind, string>> = { decision: SUMMARY_TEXT.decision, execution: SUMMARY_TEXT.execution, feedback: SUMMARY_TEXT.feedback };
 const bytes = (s: string) => Buffer.byteLength(s, "utf8");
+const joinedBytes = (lines: string[]) => lines.reduce((a, l) => a + bytes(l) + 1, 0);
 
-/** 최근 줄부터 budget 바이트까지 담고, 뺀 줄이 있으면 첫 줄에 적는다. */
+/** 다 들어가면 그대로. 아니면 최근 줄부터 budget 바이트까지 담고 뺀 줄 수를 첫 줄에 적는다. tail은 늘 끝에 둔다. */
 function fit(lines: string[], budget: number | undefined, tail: string[] = []): { text: string; dropped: number } {
-  if (budget === undefined) return { text: [...lines, ...tail].join("\n"), dropped: 0 };
-  let used = tail.reduce((a, l) => a + bytes(l) + 1, 0) + 40;   // 40: 「앞선 기록 N줄 생략」 자리
+  const all = [...lines, ...tail];
+  if (budget === undefined || joinedBytes(all) - 1 <= budget) return { text: all.join("\n"), dropped: 0 };
+  let used = joinedBytes(tail) + bytes(SUMMARY_TEXT.dropped(lines.length)) + 1;
   let i = lines.length;
   while (i > 0 && used + bytes(lines[i - 1]!) + 1 <= budget) used += bytes(lines[--i]!) + 1;
-  return { text: [...(i ? [`앞선 기록 ${i}줄 생략`] : []), ...lines.slice(i), ...tail].join("\n"), dropped: i };
+  return { text: [...(i ? [SUMMARY_TEXT.dropped(i)] : []), ...lines.slice(i), ...tail].join("\n"), dropped: i };
 }
 
-export function daySummary(db: HistoryDb, day: string, o: { maxBytes?: number } = {}) {
-  const rows = db.list({ day, limit: 1_000_000 });
-  const counts = {} as Record<HistoryKind, number>;
-  for (const r of rows) counts[r.kind] = (counts[r.kind] ?? 0) + 1;
-  const timed = (kinds: HistoryKind[]) => rows.filter((r) => kinds.includes(r.kind)).map((r) => ({ atMs: r.at_ms, text: `${PREFIX[r.kind] ?? ""}${r.text}` }));
-  const miss = (r: { data: unknown }) => r.data as { missing?: string | null; vlm_missing?: string | null } | null;
-  const vlmRows = rows.filter((r) => r.kind === "vlm");
-  const vlmGot = vlmRows.filter((r) => !miss(r)?.missing).length;
-  const vlmMissing = vlmRows.length - vlmGot + rows.filter((r) => r.kind === "yolo" && miss(r)?.vlm_missing).length;   // 대기열 초과는 VLM도 분석하지 않았다
-  const tally = `[하루] VLM 분석 ${vlmGot}장 · VLM 분석 없음 ${vlmMissing}장 · YOLOX 분석 없음 ${counts.yolo ?? 0}장`;
-  const obs = fit(collapseLines(timed(OBSERVED), db.offsetMinutes), o.maxBytes === undefined ? undefined : Math.floor(o.maxBytes * 0.7), [tally]);
-  const act = fit(collapseLines(timed(ACTED), db.offsetMinutes), o.maxBytes === undefined ? undefined : Math.floor(o.maxBytes * 0.3));
+/** YYYY-MM-DD이고 달력에 있는 날짜인가. */
+export function isDay(day: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return false;
+  const ms = Date.parse(`${day}T00:00:00Z`);
+  return !Number.isNaN(ms) && new Date(ms).toISOString().slice(0, 10) === day;
+}
+
+export function daySummary(db: HistoryDb, day: string, o: { maxBytes?: number } = {}): DaySummary {
+  const lines = (kinds: HistoryKind[]) =>
+    collapseLines(db.list({ day, kinds, limit: 10_000_000 }).map((r) => ({ atMs: r.at_ms, text: `${PREFIX[r.kind] ?? ""}${r.text}` })), db.offsetMinutes);
+  const observed = lines(OBSERVED);
+  const acted = lines(ACTED);
+  const counts = db.counts(day);
+  // 프레임마다 쓰는 vlm·yolo 줄은 넣지 않고 센다. 대기열 초과 yolo 줄은 VLM도 분석하지 않았다
+  const n = db.analysisTally(day);
+  const tail = [SUMMARY_TEXT.tally(n.vlm, n.vlmMissing, n.yoloMissing)];
+  if (o.maxBytes === undefined) {
+    const obs = fit(observed, undefined, tail);
+    return { day, observation_text: obs.text, action_summary: acted.join("\n"), counts, dropped: { observation: 0, action: 0 } };
+  }
+  const actFull = Math.max(0, joinedBytes(acted) - 1);
+  const obs = fit(observed, Math.max(Math.floor(o.maxBytes * 0.7), o.maxBytes - actFull), tail);
+  const act = fit(acted, o.maxBytes - bytes(obs.text));
   return { day, observation_text: obs.text, action_summary: act.text, counts, dropped: { observation: obs.dropped, action: act.dropped } };
 }
 ```
-`docs/provenance.md`에 줄을 더한다: `| src/history/summary.ts | noonchi-server f8545a1 noonchi/reflection.py build_summary | 하루 관찰·행동 요약 |`.
-`HistoryDb`에 `readonly offsetMinutes`를 둔다. `app.ts` 라우트: `GET /api/history`(`since`·`until` 숫자, `kinds` 쉼표 목록, `limit` 기본 500·최대 5000, 답 `{ ok: true, rows: HistoryRow[] }`), `GET /api/history/day/(\d{4}-\d{2}-\d{2})`, `GET /api/decisions`(`kinds: ["decision"]`의 마지막 N개와 같은 `subject`의 `pam_text`를 합침). 날짜 모양이 아니면 404(라우트 불일치), 범위 밖 limit은 400.
+`app.ts` 라우트(`AppOptions.history`, 없으면 404): `GET /api/history`(`since`·`until` 0 이상 숫자, `kinds` 쉼표 목록은 `HISTORY_KINDS` 안, `limit` 기본 500·최대 5000, `since`가 없으면 `latest`, 답 `{ ok: true, rows }`), `GET /api/history/day/(\d{4}-\d{2}-\d{2})`(`isDay`가 아니면 400, 답 `{ ok: true, ...daySummary }`), `GET /api/decisions`(`limit` 기본 20·최대 500, 답 `{ ok: true, decisions }`). 날짜 모양이 아니면 404(라우트 불일치). `home.ts`가 `createApp`에 `history: ctx.history?.db`를 넘긴다.
+`docs/provenance.md`: `| src/history/summary.ts | noonchi-server(신지훈) f8545a1 noonchi/reflection.py build_summary | 그날 기록으로 시각 순 하루 요약(등장·사라짐, 가전 변화). 잦은 줄은 넣지 않음 |`. `docs/reference.md`: REST 표 세 줄, 「기록과 반성」 하루 요약.
 
-- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/history-summary.test.ts tests/history-api.test.ts tests/self-contained.test.ts` / Expected: PASS
+- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/history-summary.test.ts tests/history-api.test.ts tests/history-db.test.ts tests/contract.test.ts tests/self-contained.test.ts`, `H npx tsc --noEmit` / Expected: PASS
 - [ ] **Step 5: 커밋**
 
 ```bash
-git add src/history/summary.ts src/history/db.ts src/server/app.ts src/server/start.ts tests/history-summary.test.ts tests/history-api.test.ts docs/provenance.md
+git add src/history/summary.ts src/history/db.ts src/history/labels.ts src/contract/history.ts src/server/app.ts src/server/home.ts tests/history-summary.test.ts tests/history-api.test.ts docs/provenance.md docs/reference.md docs/superpowers/plans/2026-11-07-noonchi-architecture.md
 git commit -m "feat: add the day summary and history, day and decision APIs"
 ```
 

@@ -7,3 +7,12 @@ export const MODE_TEXT: Record<ControlMode, string> = { live: "실제 모드", t
 export const PLAN_STATUS_TEXT: Record<PlanStatus, string> = { planned: "계획됨", running: "진행 중", done: "끝남", cancelled: "취소됨", failed: "실패" };
 
 export const DECISION_TEXT = { wait: "대기", failed: (error: string) => `판단 실패: ${error}` };
+
+/** 하루 요약 글: 행동 요약 줄 머리, 줄인 줄 수, 하루 분석 수. */
+export const SUMMARY_TEXT = {
+  decision: "클로이드 판단: ",
+  execution: "클로이드 실행: ",
+  feedback: "사용자: ",
+  dropped: (n: number) => `앞선 기록 ${n}줄 생략`,
+  tally: (vlm: number, vlmMissing: number, yoloMissing: number) => `[하루] VLM 분석 ${vlm}장 · VLM 분석 없음 ${vlmMissing}장 · YOLOX 분석 없음 ${yoloMissing}장`,
+};

@@ -20,6 +20,22 @@ export interface HistoryRow {
   data: unknown;
 }
 
+/** GET /api/decisions 한 줄: 판단 기록과 그때 PAM에 보낸 관찰 텍스트. */
+export interface DecisionRow {
+  /** 판단 번호(pam-N). 다시 켜면 번호가 처음부터라 시각과 함께 본다. */
+  id: string;
+  at_ms: number;
+  day: string;
+  /** 고른 행동·대기·판단 실패와 이유. */
+  text: string;
+  text_sent: string | null;
+  seq: number;
+  status: "valid" | "failed";
+  prediction: { observation: string; reasoning: string; task_index: number } | null;
+  memory_version: number;
+  world: unknown;
+}
+
 /** 하루 요약(반성 입력). dropped는 입력 한도 때문에 뺀 오래된 줄 수. */
 export interface DaySummary {
   day: string;
