@@ -1,0 +1,66 @@
+# NOONCHI 한 서버: noonchi(CPU). --profile gpu면 vLLM 두 개(VLM, PAM LLM)를 더한다. 포트는 호스트 127.0.0.1에만 연다.
+# 설정·키는 env_file(NOONCHI_ENV_FILE, 기본 .env)에서 온다. environment에는 컨테이너 안에서 늘 같은 값만 둔다.
+name: noonchi
+
+x-vllm: &vllm
+  image: ${VLLM_IMAGE:-vllm/vllm-openai:v0.17.0}
+  profiles: [gpu]
+  restart: unless-stopped
+  env_file: [{ path: "${NOONCHI_ENV_FILE:-.env}", required: false }]
+  volumes: [model-cache:/root/.cache/huggingface]
+  ipc: host
+  deploy:
+    resources:
+      reservations:
+        devices: [{ driver: nvidia, count: all, capabilities: [gpu] }]
+  healthcheck:
+    test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+    interval: 30s
+    timeout: 5s
+    retries: 20
+    start_period: 900s
+
+services:
+  noonchi:
+    build: .
+    image: noonchi:local
+    init: true
+    restart: unless-stopped
+    env_file: [{ path: "${NOONCHI_ENV_FILE:-.env}", required: false }]
+    environment:
+      HOST: 0.0.0.0
+      PHONE_HOST: 0.0.0.0
+      PORT: "8200"
+      PHONE_PORT: "8210"
+      RUNTIME_DIR: /data
+      MATTER_STORAGE_DIR: /data/matter
+      MATTER_TRANSPORT: local
+    ports:
+      - "127.0.0.1:${NOONCHI_PORT:-8200}:8200"
+      - "127.0.0.1:${NOONCHI_PHONE_PORT:-8210}:8210"
+    volumes: [noonchi-data:/data]
+    stop_grace_period: 20s
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8200/api/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  vllm-vlm:
+    <<: *vllm
+    command: ["--model", "${VLM_LIVE_MODEL:-Qwen/Qwen3-VL-4B-Instruct}", "--served-model-name", "vlm", "--gpu-memory-utilization", "${VLLM_VLM_GPU_SHARE:-0.30}",
+              "--max-model-len", "8192", "--limit-mm-per-prompt", "{\"image\":1}"]
+    ports: ["127.0.0.1:8410:8000"]
+
+  vllm-pam:
+    <<: *vllm
+    # 한 GPU에서 둘이 동시에 메모리를 잡지 않게 VLM이 뜬 뒤에 뜬다.
+    depends_on: { vllm-vlm: { condition: service_healthy } }
+    command: ["--model", "${PAM_LIVE_MODEL:-}", "--served-model-name", "pam", "--gpu-memory-utilization", "${VLLM_PAM_GPU_SHARE:-0.60}",
+              "--max-model-len", "${PAM_MAX_MODEL_LEN:-32768}"]
+    ports: ["127.0.0.1:8420:8000"]
+
+volumes:
+  noonchi-data:
+  model-cache:

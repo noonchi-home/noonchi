@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.example
+node_modules
+ui/node_modules
+ui/dist
+runtime
+runtime-3d
+graft
+.git
+.matter
+coverage
+*.log
+services/pam/.venv
+docs/superpowers
