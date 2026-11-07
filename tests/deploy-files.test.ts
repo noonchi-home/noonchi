@@ -150,4 +150,15 @@ describe("배포 파일", () => {
     const keys = read(".env.example").split(/\r?\n/).map((l) => /^#?\s*([A-Z0-9_]+)=/.exec(l)?.[1]).filter(Boolean);
     for (const k of ["OPENROUTER_API_KEY", "PAM_LLM_BASE_URL", "PAM_LLM_MODEL", "PAM_LLM_API_KEY", "PAM_HOST_PORT"]) expect(keys, k).toContain(k);
   });
+
+  it("배포 문서 3절이 .env에 넣으라는 이름은 모두 .env.example에 있고, 관찰 흐름은 켜져 있다", () => {
+    const example = read(".env.example");
+    const keys = example.split(/\r?\n/).map((l) => /^#?\s*([A-Z0-9_]+)=/.exec(l)?.[1]).filter(Boolean);
+    const d = read("docs/deploy.md");
+    const table = d.slice(d.indexOf("## 3."), d.indexOf("## 4.")).split(/\r?\n/).filter((l) => l.startsWith("| `"));
+    const named = table.flatMap((l) => [...l.split("|")[1]!.matchAll(/`([A-Z][A-Z0-9_]+)`/g)].map((m) => m[1]!));
+    expect(named.length).toBeGreaterThan(5);
+    for (const k of named) expect(keys, k).toContain(k);
+    expect(example).toMatch(/^BRAIN=1$/m);
+  });
 });
