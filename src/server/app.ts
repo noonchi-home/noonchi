@@ -18,6 +18,7 @@ import type { ControlMode } from "../contract/setup.js";
 import { deviceViews, roomViews } from "../agent/tools.js";
 import type { Command, CommandResult, DeviceHub, RoomSpec } from "../hub/types.js";
 import { HISTORY_KINDS, type HistoryDb } from "../history/db.js";
+import type { ReflectResult } from "../history/reflect.js";
 import { daySummary, isDay } from "../history/summary.js";
 import type { LayoutEditor } from "../layout/editor.js";
 import { TouchPointsError, type TouchPoint } from "../phone/touch.js";
@@ -71,6 +72,8 @@ export interface AppOptions {
   plan?: Pick<PlanHub, "current" | "onAgent" | "put" | "setStep">;
   /** 기록 DB(src/history/db.ts). 있으면 GET /api/history·/api/history/day/{날짜}·/api/decisions. */
   history?: HistoryDb;
+  /** 그날 반성(src/history/reflect.ts). 있으면 POST /api/reflection/run. */
+  reflect?: (day: string) => Promise<ReflectResult>;
 }
 
 /** MatterHub에서 서버가 쓰는 부분(src/matter/matterHub.ts를 직접 불러오지 않으려고 모양만 적는다). */
@@ -313,6 +316,17 @@ export function createApp(opts: AppOptions): TwinHomeApp {
     const db = requireHistory();
     if (!isDay(day!)) throw new HttpError(400, `없는 날짜입니다: ${day}`);
     return { ok: true, ...daySummary(db, day!) };
+  });
+  // 반성 바로 하기: day(기본 오늘). 그날 기록이 없거나 이미 반성 중이면 409, PAM 실패는 502
+  route("POST", /^\/api\/reflection\/run$/, async (req) => {
+    const db = requireHistory();
+    if (!opts.reflect) throw new HttpError(404, "반성을 쓸 수 없습니다.");
+    const body = await readJson(req);
+    const day = body.day ?? db.dayOf(Date.now());
+    if (typeof day !== "string" || !isDay(day)) throw new HttpError(400, "day는 YYYY-MM-DD 날짜여야 합니다.");
+    const r = await opts.reflect(day);
+    if (!r.ok) throw new HttpError(r.empty ? 409 : 502, r.error);
+    return { ok: true, day, version: r.version, appliesDay: r.appliesDay };
   });
   route("GET", /^\/api\/decisions$/, async (_req, url) => ({ ok: true, decisions: requireHistory().decisions(limitParam(url, 20, 500)) }));
 

@@ -86,7 +86,8 @@ HUB=memory npm run demo
 | `TWIN_STUDIO_DIR` | `twin/` | 트윈 결과물 폴더(상대 경로는 실행 위치 기준) |
 | `HOME_ID` | `homes.json`의 `default` | 불러올 집(twin-studio `homes.json`의 id, 예: `oneroom`) |
 | `RUNTIME_DIR` | `runtime` | 실행 중 만든 파일의 바탕 폴더: 배치 수정본 `homes/<id>/edits.json`, 사진 `photos/`, 기록 DB `noonchi.db`(SQLite, 커밋하지 않음) |
-| `HISTORY_TZ_MINUTES` | `540` | 기록 DB가 날짜(하루 요약·반성)를 나누는 시간대(분, -720~840). 틀린 값이면 시작하지 않는다 |
+| `HISTORY_TZ_MINUTES` | `540` | 기록 DB가 날짜(하루 요약·반성)를 나누는 시간대(분, -720~840). PAM 관찰 텍스트 시각도 이 시간대다. 틀린 값이면 시작하지 않는다 |
+| `REFLECT_AT` | `23:30` | 매일 그날을 반성하는 시각(HH:MM, 기록 시간대). `off`면 끈다. 틀린 값이면 시작하지 않는다 |
 | `INFERENCE_MODE` | `mock` | `mock`(GPU 없음, VLM은 OpenAI) · `live`(GPU 서버, VLM은 같은 서버 vLLM `http://vllm-vlm:8000/v1`, 모델 이름 `vlm`). 두 모드는 같은 코드 경로이고 주소·모델 이름만 다르다. 다른 값이면 시작하지 않는다 |
 | `VLM_BASE_URL`, `VLM_MODEL`, `VLM_API_KEY`, `VLM_EXTRA_BODY` | 모드 기본값 | 따로 주면 모드 기본값 대신 쓴다(OpenAI 호환 주소). mock 기본: `https://api.openai.com/v1`·`gpt-5.4-mini`·`OPENAI_API_KEY`·`{"reasoning_effort":"none"}`, live 기본: `http://vllm-vlm:8000/v1`·`vlm`·`VLLM_API_KEY`·`{}` |
 | `VLM_TIMEOUT_MS` | `20000` | 사진 한 장 VLM 분석 제한 시간(1000 이상) |
@@ -192,6 +193,7 @@ twin-home 서버: http://127.0.0.1:8200  (허브 matter/network, 에이전트 mo
 | `GET /api/world` | | `{ ok, world }` 지금 World State(`src/contract/world.ts` `WorldView`). `BRAIN=1`이 아니면 404 |
 | `GET /api/history?since=&until=&kinds=&limit=` | | `{ ok, rows: HistoryRow[] }` 한 시간축 기록(시각 순). `since`가 없으면 최근 `limit`줄, 있으면 그 시각부터 `limit`줄(기본 500, 최대 5000). `kinds`는 쉼표 목록. 모르는 종류·숫자가 아닌 시각·범위 밖 limit은 400 |
 | `GET /api/history/day/{YYYY-MM-DD}` | | `{ ok, day, observation_text, action_summary, counts, dropped }` 하루 요약(아래 "기록과 반성"). 없는 날짜 400 |
+| `POST /api/reflection/run` | `{ day? }`(기본 오늘) | 그날을 바로 반성한다. `{ ok, day, version, appliesDay }`. 없는 날짜 400, 그날 기록이 없거나 이미 반성 중이면 409, PAM 실패 502 |
 | `GET /api/decisions?limit=` | | `{ ok, decisions: [{ id, at_ms, day, text, text_sent, seq, status, prediction, memory_version, world }] }` 최근 판단과 그때 보낸 관찰 텍스트(기본 20, 최대 500) |
 | `GET /events` (WebSocket) | | 붙으면 `{type:"hello", home}`, 모든 기기의 `{type:"state", state}`, 지금 배치 보정의 `{type:"layout"}`들, `{type:"plan"}`, (`BRAIN=1`이면) `{type:"world"}`. 이후 바뀔 때마다 `{type:"state"}`, `{type:"agent", event:"action"\|"reply"\|"pending"\|"confirmed"\|"cancelled", ...}`, `{type:"layout"}`, `{type:"focus"}`, `{type:"eye"}`, `{type:"photo"}`, `{type:"brain", event}`(관찰·World State 변화·판단 기록, `src/contract/events.ts` `BrainLog`), `{type:"world"}` (모양은 [plan.md](plan.md)) |
 
@@ -327,7 +329,7 @@ npm start
 - **VLM:** 프레임마다 한 번, YOLOX 감지 목록(임시 번호·종류·박스)을 같이 보내 보이는 사실만 받는다(`{scene, observations: [{object_id, state}], summary}`, JSON Schema). 동시 요청은 `VLM_MAX_INFLIGHT`(기본 4)까지, 제한 시간(`VLM_TIMEOUT_MS`, 기본 20초)이 지나면 HTTP 요청을 끊는다. 답은 프레임 번호로 맞춘다. 상한 초과·시간 초과·형식 오류·호출 오류 프레임은 「… VLM 분석 없음」으로 남긴다.
 - **World State:** 사람은 2장, 물건은 3장 연속일 때 등장·사라짐을 인정한다. 맞춘 뒤에는 박스 아래 가운데 광선이 트윈의 식탁·책상·조리대·싱크대 윗면(없으면 바닥)과 만나는 점을 물건 위치로 쓰고, 같은 종류가 0.25m 안이면 같은 물체로 본다. 그 자리가 시야 밖이면 「시야 밖」이고 사라짐을 세지 않는다. 맞추기 전에는 위치를 모르고 폰이 한 곳을 비춘다고 본다. VLM 사실은 면(자리·쓰는 중·안 내용·자세·행동)마다 두고 같은 값이 두 번 이어지면 확인됨이다. 컵·병·그릇에는 관계표로 식기세척기를 붙이고, 식기세척기의 상태(작동 중·이용 가능)·바뀐 시각·이력·남은 시간(`course_min`)을 쌓는다.
 - **기록:** 프레임마다 `{type:"brain", event:{type:"observe"}}`(YOLOX 글 또는 `yolo_missing`, VLM 요약 또는 `vlm_missing`)가 반드시 나가고, World State가 바뀌면 `world_change`와 `{type:"world"}`가 나간다. 상태는 `GET /api/brain`, World State는 `GET /api/world`.
-- **판단 호출:** 기본(`PAM_TRIGGER=event`)은 World State에 의미 있는 변화(사람·물건 등장·사라짐, 물건 상태 변화, 식기세척기 변화)가 있을 때 PAM 서비스(`PAM_URL`)를 부른다(최소 간격 `PAM_MIN_GAP_MS`, 동시 `PAM_MAX_INFLIGHT`). `periodic`은 사람이 보이는 동안 `PAM_PERIOD_MS`마다 부르고, 사람 없음·등장 사라짐 없음이 `PAM_IDLE_STOP_MS`(30분) 이어지면 멈췄다가 등장·사라짐이 생기면 다시 부른다. 넘기는 것은 관찰 텍스트(최근 60초 변화 줄, 이어진 같은 줄은 「처음~마지막 글 N번」, `[지속]` 물건·사람·식기세척기 상태와 남은 시간, `[눈]` 눈 위치) + 기억(지금은 컵 FSM 기억) + 행동 목록이다. 판단마다 `{type:"brain", event:{type:"decision"}}`(번호 seq, 보낸 관찰 텍스트, PAM 답, World State 요약)이 나가고, PAM 연결 끊김·연결됨(`link`)과 판단 멈춤·다시 시작(`trigger`)은 바뀔 때 한 번씩 나간다.
+- **판단 호출:** 기본(`PAM_TRIGGER=event`)은 World State에 의미 있는 변화(사람·물건 등장·사라짐, 물건 상태 변화, 식기세척기 변화)가 있을 때 PAM 서비스(`PAM_URL`)를 부른다(최소 간격 `PAM_MIN_GAP_MS`, 동시 `PAM_MAX_INFLIGHT`). `periodic`은 사람이 보이는 동안 `PAM_PERIOD_MS`마다 부르고, 사람 없음·등장 사라짐 없음이 `PAM_IDLE_STOP_MS`(30분) 이어지면 멈췄다가 등장·사라짐이 생기면 다시 부른다. 넘기는 것은 관찰 텍스트(최근 60초 변화 줄, 이어진 같은 줄은 「처음~마지막 글 N번」, `[지속]` 물건·사람·식기세척기 상태와 남은 시간, `[눈]` 눈 위치) + 기억(그날 처음 정한 기억 판본, 아래 "기록과 반성") + 행동 목록이다. 판단마다 `{type:"brain", event:{type:"decision"}}`(번호 seq, 보낸 관찰 텍스트, PAM 답, World State 요약)이 나가고, PAM 연결 끊김·연결됨(`link`)과 판단 멈춤·다시 시작(`trigger`)은 바뀔 때 한 번씩 나간다.
 - **화면:** 대시보드 판단 기록의 「클로이드 · 관찰과 판단」 카드에 World State 변화·연결·판단 시점 줄과 지금 YOLOX·VLM 한 줄씩. 판단 줄(고른 행동·대기·판단 실패와 이유)이 카드를 닫는다. 트윈 식탁 말풍선 메모는 마지막 YOLOX 글이다.
 
 실행(폰은 Tailscale 주소로 연다):
@@ -357,6 +359,11 @@ tailscale serve --bg 8210   # 이미 켜져 있으면 생략. 폰: https://<이 
   - 행동 요약: 「클로이드 판단: …」·「클로이드 실행: …」·「사용자: …」(피드백).
   - 이어진 같은 줄은 「처음~마지막 글 N번」 한 줄로 묶는다.
   - 크기 한도를 주면 관찰 텍스트 70%·행동 요약 30%로 나누고(한쪽이 덜 쓰면 다른 쪽이 씀), 넘으면 오래된 줄부터 빼고 첫 줄에 「앞선 기록 N줄 생략」을 둔다.
+- **기억 판본(`memories` 표):** 판단은 그날 처음 정한 판본을 하루 내내 쓴다(`meta` `memory_day:<날짜>`). 판본이 없으면 컵 FSM 기억을 1판으로 저장한다.
+- **반성:** 매일 `REFLECT_AT`(기본 23:30)이나 `POST /api/reflection/run`으로 돈다. 한 번에 하나만 돈다.
+  - PAM 서비스 `GET /health`의 `reflect_input_bytes`에서 기억 JSON·피드백 크기를 빼고, 그 안으로 하루 요약을 줄여 `pam-reflect/2`로 보낸다.
+  - 새 기억은 다음 날부터 쓴다. 다음 날 판단이 이미 다른 판본으로 시작했으면 그다음 날부터다.
+  - 결과는 기록 DB(`reflection`)와 대시보드 판단 기록(`{type:"brain", event:{type:"reflection"}}`)에 남는다. 그날 기록이 없으면 PAM을 부르지 않고 실패로 남긴다.
 
 ## PAM 서비스 (services/pam)
 

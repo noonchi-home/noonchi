@@ -79,7 +79,7 @@ describe("startServer(BRAIN=1) + 관찰 흐름", () => {
       expect(world.world.objects[0]).toMatchObject({ id: "cup_1", cls: "cup", status: "present" });
       await until(dashBox, (m) => m.type === "brain" && m.event.type === "world_change" && m.event.kind === "appeared");
       const decision = await until(dashBox, (m) => m.type === "brain" && m.event.type === "decision");
-      expect(decision.event).toMatchObject({ seq: 1, status: "valid", action: null, memory_version: 0, world: { objects: [{ id: "cup_1" }] } });
+      expect(decision.event).toMatchObject({ seq: 1, status: "valid", action: null, memory_version: 1, world: { objects: [{ id: "cup_1" }] } });
       expect((pam.bodies[0] as { observation_text: string }).observation_text).toContain("컵 cup_1 보임");
       expect(decision.event.text_sent).toBe((pam.bodies[0] as { observation_text: string }).observation_text);
       // 기록 DB 한 시간축: VLM 답, 등장, PAM에 보낸 텍스트, 판단. YOLOX 결과 줄은 적지 않는다

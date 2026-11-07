@@ -5047,176 +5047,153 @@ git commit -m "feat: add the day summary and history, day and decision APIs"
 
 **Files:**
 - Create: `src/history/reflect.ts`, `tests/history-reflect.test.ts`
-- Modify: `src/history/db.ts`(기억 판본·적용 날짜·날짜별 고정), `src/server/home.ts`(Decider의 기억 = 그날 고정한 판본, 반성 결과를 `brain` 기록으로), `src/server/app.ts`(`POST /api/reflection/run`), `src/server/start.ts`(`REFLECT_AT` 일정), `.env.example`
+- Modify: `src/history/db.ts`(기억 판본·적용 날짜·날짜별 고정), `src/history/labels.ts`(`REFLECT_TEXT`), `src/server/home.ts`(Decider의 기억 = 그날 고정한 판본, 관찰 텍스트 시각 = 기록 시간대, 앱에 반성), `src/server/app.ts`(`POST /api/reflection/run`), `src/server/start.ts`(반성 하나씩·대시보드로 결과·`REFLECT_AT` 일정), `tests/observe-start.test.ts`(판단 기억 판본 1), `.env.example`, `docs/reference.md`
 
 **Interfaces:**
 - Produces:
 
 ```ts
 // 기억 판본: 반성으로 만든 판본은 다음 날(applies_day = 반성한 날 + 1)부터 쓴다. 그날 판단은 그날 처음 정한 판본만 쓴다(meta 표 memory_day:<날짜>에 고정).
-HistoryDb.saveMemory(m: { kind: "list" | "fsm"; memory: PamMemory; day: string | null; appliesDay: string | null; source: "seed" | "reflection" }): number;   // 새 version
-HistoryDb.memoryFor(day: string): { version: number; kind: "list" | "fsm"; memory: PamMemory; appliesDay: string | null } | null;   // applies_day ≤ day 중 가장 새 판본
-HistoryDb.memoryVersion(version: number): { version: number; kind: "list" | "fsm"; memory: PamMemory; appliesDay: string | null } | null;
-HistoryDb.pinnedMemory(day: string): number | null;  HistoryDb.pinMemory(day: string, version: number): void;
-export function memoryForDay(db: HistoryDb, day: string): { memory: PamMemory; kind: "list" | "fsm"; version: number };   // 고정된 판본, 없으면 정해서 고정. 판본이 없으면 CUP_FSM_MEMORY를 seed로 저장
-export async function runReflection(db: HistoryDb, pam: PamClient, day: string, o?: { now?: () => number; emit?: (l: BrainLog) => void }): Promise<{ ok: true; version: number; appliesDay: string } | { ok: false; error: string }>;
+// 다음 날이 이미 고정됐으면 고정되지 않은 그다음 날부터다.
+interface MemoryVersion { version: number; kind: "list" | "fsm"; memory: unknown; appliesDay: string | null }
+HistoryDb.saveMemory(m: { kind; memory: unknown; day: string | null; appliesDay: string | null; source: "seed" | "reflection" }): number;   // 새 version(1부터)
+HistoryDb.memoryFor(day: string): MemoryVersion | null;   // applies_day가 없거나 ≤ day 중 가장 새 판본
+HistoryDb.memoryVersion(version: number): MemoryVersion | null;
+HistoryDb.pinnedMemory(day: string): number | null;  HistoryDb.pinMemory(day: string, version: number): void;   // 이미 고정한 날은 바꾸지 않음
+export function memoryForDay(db: HistoryDb, day: string): { memory: PamMemory; kind: "list" | "fsm"; version: number };   // 고정된 판본(validateMemory로 검사), 없으면 정해서 고정. 판본이 없으면 CUP_FSM_MEMORY를 seed로 저장
+export type ReflectResult = { ok: true; version: number; appliesDay: string } | { ok: false; error: string; empty?: true };
+export async function runReflection(db: HistoryDb, pam: PamClient, day: string, o?: { now?: () => number; emit?: (l: BrainLog) => void }): Promise<ReflectResult>;
+export function loadReflectAt(env): string | null;   // REFLECT_AT: 비우면 "23:30", off면 null, HH:MM이 아니면 시작을 막는다
 export function scheduleReflection(o: { at: string /* "23:30" */; offsetMinutes: number; run: (day: string) => Promise<unknown>; now?: () => number }): { stop(): void };
 ```
 
 - [ ] **Step 1: 실패하는 시험**
 
-```ts
-// tests/history-reflect.test.ts
-import { createServer, type Server } from "node:http";
-import { afterEach, describe, expect, it } from "vitest";
-import { PamClient } from "../src/brain/pam.js";
-import { CUP_FSM_MEMORY } from "../src/brain/decision.js";
-import { HistoryDb } from "../src/history/db.js";
-import { memoryForDay, runReflection } from "../src/history/reflect.js";
-import type { BrainLog } from "../src/contract/events.js";
+`tests/history-reflect.test.ts`(가짜 PAM은 `/health` 한도 `reflect_input_bytes: 30_000`과 정해진 기억을 낸다):
+- 기억 판본: 판본이 없으면 컵 FSM 기억을 1판으로 저장해 그날에 고정, 2판(11-08부터)을 더해도 11-07은 1판, `pinMemory`는 고정한 날을 바꾸지 않는다.
+- 반성: `pam-reflect/2`(`day`·`memory_kind`·`memory`·`feedback`)로 보내고 관찰 텍스트에 `08:00:00 사람 보임`, 행동 요약은 `08:01:00 클로이드 판단: 컵 치우기\n08:02:00 사용자: 다 마신 뒤에만 치워 줘`. 결과 `{ ok: true, version: 2, appliesDay: "2026-11-08" }`, 11-07은 1판·11-08은 2판, 기록 DB `reflection` 줄 「반성 완료: 기억 2판, 2026-11-08부터」, emit `{type:"reflection", …}` 하나.
+- 11-08 판단이 먼저 판본을 정했으면 11-09부터.
+- 3000줄을 한도(관찰+행동+기억 JSON ≤ 30,000) 안으로 줄이고 첫 줄 「앞선 기록 N줄 생략」, 행동이 없으면 「행동 없음」.
+- 그날 기록이 없으면 PAM을 부르지 않고 `{ ok: false, empty: true, error: "그날 기록 없음" }`, 기록 「반성 실패: 그날 기록 없음」.
+- PAM에 닿지 않으면 「반성 실패: PAM 연결 실패…」, 기억 그대로.
+- `REFLECT_AT`: 비우면 23:30, `07:05`, `off`면 null, `7:5`·`24:00`·`23:60`·`밤`은 오류.
+- `scheduleReflection`(가짜 시계, 서울 23:00 시작): 30분 뒤 `2026-11-07`, 하루 뒤 `2026-11-08`, `stop` 뒤에는 더 없음.
+- 반성 API(`startServer` + `tests/helpers/pam.ts`): `POST /api/reflection/run {day}` → `{ ok, day, version: 2, appliesDay: "2026-11-08" }`, 대시보드 `/events`에 `brain` reflection. 없는 날짜·숫자 day 400, 그날 기록이 없으면 409. `REFLECT_AT=25:00`이면 서버가 뜨지 않는다.
 
-let srv: Server | undefined;
-afterEach(() => { srv?.close(); srv = undefined; });
-const got: any[] = [];
-const LIMITS = { max_model_len: 32768, predict_input_bytes: 60_000, reflect_input_bytes: 30_000 };
-const startPam = (memory: unknown) => new Promise<string>((ok) => {
-  srv = createServer(async (req, res) => {
-    let raw = ""; for await (const c of req) raw += c;
-    res.writeHead(200, { "content-type": "application/json" });
-    if (req.method === "GET" && req.url === "/health") return res.end(JSON.stringify({ ok: true, llm: null, limits: LIMITS }));
-    got.push(JSON.parse(raw));
-    res.end(JSON.stringify({ status: "valid", raw_response: JSON.stringify(memory), memory, errors: [] }));
-  }).listen(0, "127.0.0.1", () => ok(`http://127.0.0.1:${(srv!.address() as { port: number }).port}`));
-});
+`tests/observe-start.test.ts`의 판단 `memory_version`은 1(seed 판본)이다.
 
-describe("반성", () => {
-  it("하루 관찰 텍스트·행동 요약·피드백을 pam-reflect/2로 보내고, 새 기억은 다음 날부터 쓴다", async () => {
-    const db = HistoryDb.open(":memory:");
-    expect(memoryForDay(db, "2026-11-07").version).toBe(1);          // 그날 첫 판단: seed를 정해 고정
-    const t = Date.UTC(2026, 10, 6, 23);
-    db.add("detection", t, "사람 보임");
-    db.add("decision", t + 60_000, "컵 치우기");
-    db.add("feedback", t + 120_000, "다 마신 뒤에만 치워 줘");
-    const next = { ...CUP_FSM_MEMORY, initial_state: "left_cup" };
-    const logs: BrainLog[] = [];
-    const r = await runReflection(db, new PamClient({ url: await startPam(next) }), "2026-11-07", { emit: (l) => logs.push(l) });
-    expect(r).toEqual({ ok: true, version: 2, appliesDay: "2026-11-08" });
-    expect(got[0]).toMatchObject({ contract: "pam-reflect/2", day: "2026-11-07", feedback: "다 마신 뒤에만 치워 줘" });
-    expect(got[0].observation_text).toContain("사람 보임");
-    expect(memoryForDay(db, "2026-11-07").version).toBe(1);          // 그날은 그대로
-    expect(memoryForDay(db, "2026-11-08")).toMatchObject({ version: 2, memory: { initial_state: "left_cup" } });
-    expect(db.list({ kinds: ["reflection"] })).toHaveLength(1);
-    expect(logs).toEqual([expect.objectContaining({ type: "reflection", ok: true, version: 2, applies_day: "2026-11-08" })]);
-  });
-  it("다음 날 판단이 이미 판본을 정했으면 그날은 바꾸지 않고 그다음 날부터 쓴다", async () => {
-    const db = HistoryDb.open(":memory:");
-    expect(memoryForDay(db, "2026-11-08").version).toBe(1);          // 11-08 판단이 먼저 시작함
-    db.add("detection", Date.UTC(2026, 10, 7, 1), "사람 보임");
-    await runReflection(db, new PamClient({ url: await startPam({ ...CUP_FSM_MEMORY, initial_state: "left_cup" }) }), "2026-11-07");
-    expect(memoryForDay(db, "2026-11-08").version).toBe(1);
-    expect(memoryForDay(db, "2026-11-09").version).toBe(2);
-  });
-  it("PAM이 알린 입력 한도에 맞춰 하루 요약을 줄여 보낸다", async () => {
-    const db = HistoryDb.open(":memory:");
-    for (let i = 0; i < 3000; i++) db.add("world", Date.UTC(2026, 10, 7, 0, 0, i), `컵(cup_${i % 5}) 상태 ${i}`);
-    await runReflection(db, new PamClient({ url: await startPam(CUP_FSM_MEMORY) }), "2026-11-07");
-    const sent = got.at(-1);
-    const size = Buffer.byteLength(sent.observation_text) + Buffer.byteLength(sent.action_summary) + Buffer.byteLength(JSON.stringify(sent.memory, null, 2));
-    expect(size).toBeLessThanOrEqual(LIMITS.reflect_input_bytes);
-    expect(sent.observation_text.split("\n")[0]).toMatch(/^앞선 기록 \d+줄 생략$/);
-  });
-  it("그날 기록이 없으면 PAM을 부르지 않고 실패를 기록한다", async () => {
-    const db = HistoryDb.open(":memory:");
-    expect(await runReflection(db, new PamClient({ url: "http://127.0.0.1:9" }), "2026-11-07")).toMatchObject({ ok: false });
-  });
-});
-```
-
-- [ ] **Step 2: 실패 확인** — `H npx vitest run tests/history-reflect.test.ts` / Expected: FAIL
+- [ ] **Step 2: 실패 확인** — `H npx vitest run tests/history-reflect.test.ts tests/observe-start.test.ts` / Expected: FAIL
 - [ ] **Step 3: 구현**
 
 ```ts
-// src/history/reflect.ts
 // 하루 끝 반성: 그날 관찰 텍스트 + 행동 요약 + 사용자 피드백 → pam-reflect/2 → 새 기억 판본.
 // 새 판본은 다음 날부터 쓴다. 그날 판단은 그날 처음 정한 판본만 쓴다(논문 memory_lifecycle: fixed_during_day, following_day).
-// 보내기 전에 PAM /health의 입력 한도(reflect_input_bytes)에서 기억 JSON·피드백 크기를 빼고 그 안으로 하루 요약을 줄인다.
-import type { BrainLog } from "../contract/events.js";
-import { CUP_FSM_MEMORY, type PamMemory } from "../brain/decision.js";
+// 다음 날 판단이 이미 판본을 정했으면 그다음 날부터 쓴다. 보내기 전에 PAM /health의 입력 한도(reflect_input_bytes)에서
+// 기억 JSON·피드백 크기를 빼고 그 안으로 하루 요약을 줄인다. 결과는 기록 DB(reflection)와 판단 기록(brain)에 남긴다.
+import { CUP_FSM_MEMORY, validateMemory, type PamMemory } from "../brain/decision.js";
 import type { PamClient } from "../brain/pam.js";
+import type { BrainLog } from "../contract/events.js";
 import type { HistoryDb } from "./db.js";
+import { REFLECT_TEXT } from "./labels.js";
 import { daySummary } from "./summary.js";
 
 const nextDay = (day: string) => new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
 const bytes = (s: string) => Buffer.byteLength(s, "utf8");
+/** 그날 기록이 있다고 보는 종류. */
+const DAY_KINDS = ["detection", "world", "device", "vlm", "yolo", "decision", "execution", "feedback"] as const;
 
-export function memoryForDay(db: HistoryDb, day: string): { memory: PamMemory; kind: "list" | "fsm"; version: number } {
+export interface DayMemory { memory: PamMemory; kind: "list" | "fsm"; version: number }
+export type ReflectResult = { ok: true; version: number; appliesDay: string } | { ok: false; error: string; empty?: true };
+
+/** 그날 고정한 판본. 없으면 그날 쓸 수 있는 가장 새 판본을 고정하고, 판본이 하나도 없으면 컵 FSM 기억을 seed로 저장한다. */
+export function memoryForDay(db: HistoryDb, day: string): DayMemory {
   const pinned = db.pinnedMemory(day);
   const m = pinned !== null ? db.memoryVersion(pinned) : db.memoryFor(day);
   if (m) {
     if (pinned === null) db.pinMemory(day, m.version);
-    return { memory: m.memory, kind: m.kind, version: m.version };
+    return { memory: validateMemory(m.memory, m.kind), kind: m.kind, version: m.version };
   }
   const version = db.saveMemory({ kind: "fsm", memory: CUP_FSM_MEMORY, day: null, appliesDay: null, source: "seed" });
   db.pinMemory(day, version);
   return { memory: CUP_FSM_MEMORY, kind: "fsm", version };
 }
 
-export async function runReflection(db: HistoryDb, pam: PamClient, day: string, o: { now?: () => number; emit?: (l: BrainLog) => void } = {}) {
+export async function runReflection(db: HistoryDb, pam: PamClient, day: string, o: { now?: () => number; emit?: (l: BrainLog) => void } = {}): Promise<ReflectResult> {
   const now = o.now ?? (() => Date.now());
   const done = (ok: boolean, text: string, version: number | null, appliesDay: string | null) => {
-    db.add("reflection", now(), text, { data: { day, version, applies_day: appliesDay } });
-    o.emit?.({ type: "reflection", at_ms: now(), day, ok, version, applies_day: appliesDay, text });
+    const at = now();
+    db.add("reflection", at, text, { data: { day, ok, version, applies_day: appliesDay } });
+    o.emit?.({ type: "reflection", at_ms: at, day, ok, version, applies_day: appliesDay, text });
   };
-  if (!db.list({ day, kinds: ["detection", "world", "device", "vlm", "yolo", "decision", "execution", "feedback"], limit: 1 }).length) {
-    done(false, "반성 실패: 그날 기록 없음", null, null);
-    return { ok: false as const, error: "그날 기록이 없어요" };
+  if (!db.list({ day, kinds: [...DAY_KINDS], limit: 1 }).length) {
+    done(false, REFLECT_TEXT.failed(REFLECT_TEXT.empty), null, null);
+    return { ok: false, empty: true, error: REFLECT_TEXT.empty };
   }
-  const cur = memoryForDay(db, day);
   try {
+    const cur = memoryForDay(db, day);
     const feedback = db.list({ day, kinds: ["feedback"] }).map((r) => r.text).join("\n") || null;
     const limits = await pam.limits();
     const maxBytes = limits.reflect_input_bytes - bytes(JSON.stringify(cur.memory, null, 2)) - bytes(feedback ?? "");
-    if (maxBytes <= 0) throw new Error("기억이 커서 반성 입력 한도를 넘어요");
-    const from = daySummary(db, day, { maxBytes });
-    const memory = await pam.reflect({ day, memory_kind: cur.kind, memory: cur.memory, observation_text: from.observation_text || "관찰 없음",
-      action_summary: from.action_summary || "행동 없음", feedback }, cur.kind);
+    if (maxBytes <= 0) throw new Error(REFLECT_TEXT.tooBig);
+    const summary = daySummary(db, day, { maxBytes });
+    const memory = await pam.reflect({
+      day, memory_kind: cur.kind, memory: cur.memory, observation_text: summary.observation_text || REFLECT_TEXT.noObservation,
+      action_summary: summary.action_summary || REFLECT_TEXT.noAction, feedback,
+    }, cur.kind);
     let appliesDay = nextDay(day);
     while (db.pinnedMemory(appliesDay) !== null) appliesDay = nextDay(appliesDay);
     const version = db.saveMemory({ kind: cur.kind, memory, day, appliesDay, source: "reflection" });
-    done(true, `반성 완료: 기억 ${version}판, ${appliesDay}부터`, version, appliesDay);
-    return { ok: true as const, version, appliesDay };
+    done(true, REFLECT_TEXT.done(version, appliesDay), version, appliesDay);
+    return { ok: true, version, appliesDay };
   } catch (e) {
-    done(false, `반성 실패: ${(e as Error).message}`, null, null);
-    return { ok: false as const, error: (e as Error).message };
+    const error = (e as Error).message;
+    done(false, REFLECT_TEXT.failed(error), null, null);
+    return { ok: false, error };
   }
 }
 
-/** 매일 at(HH:MM, offsetMinutes 시간대)에 그날을 반성한다. */
+/** REFLECT_AT: 매일 반성할 시각 HH:MM(기록 시간대). 비우면 23:30, off면 끔. 틀린 값이면 시작을 막는다. */
+export function loadReflectAt(env: Record<string, string | undefined>): string | null {
+  const raw = env.REFLECT_AT?.trim();
+  if (!raw) return "23:30";
+  if (raw === "off") return null;
+  const m = /^(\d{2}):(\d{2})$/.exec(raw);
+  if (!m || Number(m[1]) > 23 || Number(m[2]) > 59) throw new Error(`REFLECT_AT=${raw}: HH:MM(00:00~23:59) 또는 off여야 합니다`);
+  return raw;
+}
+
+/** 매일 at(HH:MM, offsetMinutes 시간대)에 그날을 반성한다. 끝나면 다음 날 같은 시각을 잡는다. */
 export function scheduleReflection(o: { at: string; offsetMinutes: number; run: (day: string) => Promise<unknown>; now?: () => number }): { stop(): void } {
   const [h, m] = o.at.split(":").map(Number) as [number, number];
   const now = o.now ?? (() => Date.now());
-  let timer: NodeJS.Timeout;
+  const offset = o.offsetMinutes * 60_000;
+  let timer: NodeJS.Timeout | undefined;
+  let stopped = false;
   const next = () => {
-    const local = new Date(now() + o.offsetMinutes * 60_000);
-    let target = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate(), h, m) - o.offsetMinutes * 60_000;
+    if (stopped) return;
+    const local = new Date(now() + offset);
+    let target = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate(), h, m) - offset;
     if (target <= now()) target += 86_400_000;
-    timer = setTimeout(async () => {
-      await o.run(new Date(target + o.offsetMinutes * 60_000).toISOString().slice(0, 10)).catch(() => {});
-      next();
+    timer = setTimeout(() => {
+      void o.run(new Date(target + offset).toISOString().slice(0, 10)).catch(() => {}).finally(next);
     }, target - now());
     timer.unref?.();
   };
   next();
-  return { stop: () => clearTimeout(timer) };
+  return { stop: () => { stopped = true; clearTimeout(timer); } };
 }
 ```
-시험 기록의 `Date.UTC(2026, 10, 6, 23)`은 서울 11-07 08시라 `2026-11-07` 요약에 든다. `db.ts`(`memories` 표는 Task 23에서 `applies_day`와 함께 만들었다): `memoryFor(day)`: `WHERE applies_day IS NULL OR applies_day <= ? ORDER BY version DESC LIMIT 1`. `memoryVersion(v)`, `saveMemory()`(INSERT, `version`은 `MAX(version)+1`), `pinnedMemory(day)`·`pinMemory(day, v)`는 `meta` 표의 `memory_day:<day>` 줄. `home.ts`: Decider `memory: () => memoryForDay(db, db.dayOf(Date.now()))`, 반성 `emit`은 대시보드 `brain` 방송과 같은 구독 목록. `app.ts` `POST /api/reflection/run` `{day?}`(기본 오늘) → `runReflection`. `start.ts`: `REFLECT_AT`(기본 `23:30`, 빈 값이면 끔)로 `scheduleReflection`, 닫을 때 `stop()`. `.env.example`: `REFLECT_AT=`.
+`db.ts`(`memories` 표는 Task 23에서 `applies_day`와 함께 만들었다): `memoryFor(day)`: `WHERE applies_day IS NULL OR applies_day <= ? ORDER BY version DESC LIMIT 1`. `memoryVersion(v)`, `saveMemory()`(INSERT, `version`은 `MAX(version)+1`), `pinnedMemory(day)`·`pinMemory(day, v)`는 `meta` 표의 `memory_day:<day>` 줄(`ON CONFLICT DO NOTHING`).
+`home.ts`: `HomeContext.history`는 꼭 있다(start.ts가 준다). Decider `memory: () => memoryForDay(history.db, history.db.dayOf(now()))`, `offsetMinutes: history.db.offsetMinutes`(관찰 텍스트 시각과 하루 날짜가 같은 시간대). `createApp`에 `reflect: history.reflect`.
+`start.ts`: `loadReflectAt(env)`(DB를 열기 전), PAM 서비스 `PamClient`, `reflect(day)`는 한 번에 하나(돌고 있으면 `HttpError(409, "이미 반성하는 중이에요")`), 결과는 지금 집 앱의 `{type:"brain"}`로 방송. `REFLECT_AT`이 있으면 `scheduleReflection`, 닫을 때 `stop()`.
+`app.ts` `POST /api/reflection/run` `{day?}`(기본 오늘, `isDay`가 아니면 400) → `reflect`. 실패는 `empty`면 409, 아니면 502.
+`.env.example`: `REFLECT_AT=`(주석: 기본 23:30, off면 끔). `docs/reference.md`: 환경 변수 표, REST 표, 「기록과 반성」의 기억 판본·반성, 「관찰 흐름」 판단 호출의 기억.
 
-- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/history-reflect.test.ts tests/history-summary.test.ts tests/world-decide.test.ts tests/self-contained.test.ts` / Expected: PASS
+- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/history-reflect.test.ts tests/history-summary.test.ts tests/history-api.test.ts tests/observe-start.test.ts tests/world-decide.test.ts tests/self-contained.test.ts`, `H npx tsc --noEmit` / Expected: PASS
 - [ ] **Step 5: 커밋**
 
 ```bash
-git add src/history/reflect.ts src/history/db.ts src/server/home.ts src/server/app.ts src/server/start.ts .env.example tests/history-reflect.test.ts
+git add src/history/reflect.ts src/history/db.ts src/history/labels.ts src/server/home.ts src/server/app.ts src/server/start.ts .env.example docs/reference.md tests/history-reflect.test.ts tests/observe-start.test.ts docs/superpowers/plans/2026-11-07-noonchi-architecture.md
 git commit -m "feat: reflect each day over pam-reflect/2 within the PAM input limit and apply the new memory from the following day"
 ```
 

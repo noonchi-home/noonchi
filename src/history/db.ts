@@ -33,6 +33,11 @@ export function historyTzMinutes(env: Record<string, string | undefined>): numbe
 /** latest면 조건에 맞는 마지막 limit줄(시각 순으로 돌려줌). 아니면 처음부터 limit줄. */
 export interface HistoryQuery { since?: number; until?: number; kinds?: HistoryKind[]; day?: string; limit?: number; latest?: boolean }
 
+/** 기억 판본 하나. appliesDay는 쓰기 시작하는 날(seed는 null). */
+export interface MemoryVersion { version: number; kind: "list" | "fsm"; memory: unknown; appliesDay: string | null }
+type RawMemory = { version: number; kind: "list" | "fsm"; memory: string; applies_day: string | null };
+const memoryRow = (r: RawMemory): MemoryVersion => ({ version: r.version, kind: r.kind, memory: JSON.parse(r.memory) as unknown, appliesDay: r.applies_day });
+
 type RawRow = Omit<HistoryRow, "data"> & { data: string | null };
 const parseRow = (r: RawRow): HistoryRow => ({ ...r, data: r.data === null ? null : JSON.parse(r.data) as unknown });
 
@@ -72,6 +77,36 @@ export class HistoryDb {
     const sql = `SELECT id, at_ms, day, kind, subject, text, data FROM events ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY ${order} LIMIT ?`;
     const rows = (this.db.prepare(sql).all(...args, q.limit ?? 10_000) as unknown as RawRow[]).map(parseRow);
     return q.latest ? rows.reverse() : rows;
+  }
+
+  /** 기억 판본을 저장하고 새 번호를 돌려준다(1부터). appliesDay가 없으면(seed) 어느 날에나 쓸 수 있다. */
+  saveMemory(m: { kind: "list" | "fsm"; memory: unknown; day: string | null; appliesDay: string | null; source: "seed" | "reflection" }): number {
+    const next = (this.db.prepare("SELECT COALESCE(MAX(version), 0) + 1 AS v FROM memories").get() as { v: number }).v;
+    this.db.prepare("INSERT INTO memories(version, created_ms, day, applies_day, kind, memory, source) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(next, Date.now(), m.day, m.appliesDay, m.kind, JSON.stringify(m.memory), m.source);
+    return next;
+  }
+
+  /** 그날 쓸 수 있는 판본(applies_day가 없거나 그날 이전) 중 가장 새 것. */
+  memoryFor(day: string): MemoryVersion | null {
+    const r = this.db.prepare("SELECT version, kind, memory, applies_day FROM memories WHERE applies_day IS NULL OR applies_day <= ? ORDER BY version DESC LIMIT 1").get(day);
+    return r ? memoryRow(r as RawMemory) : null;
+  }
+
+  memoryVersion(version: number): MemoryVersion | null {
+    const r = this.db.prepare("SELECT version, kind, memory, applies_day FROM memories WHERE version = ?").get(version);
+    return r ? memoryRow(r as RawMemory) : null;
+  }
+
+  /** 그날 판단에 고정한 판본(meta memory_day:<날짜>). */
+  pinnedMemory(day: string): number | null {
+    const r = this.db.prepare("SELECT value FROM meta WHERE key = ?").get(`memory_day:${day}`) as { value: string } | undefined;
+    return r ? Number(r.value) : null;
+  }
+
+  /** 그날 판본을 고정한다. 이미 고정한 날은 바꾸지 않는다. */
+  pinMemory(day: string, version: number): void {
+    this.db.prepare("INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING").run(`memory_day:${day}`, String(version));
   }
 
   /** 그날 종류별 줄 수. */
