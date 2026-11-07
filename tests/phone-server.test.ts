@@ -156,6 +156,48 @@ describe("phone camera", () => {
   });
 });
 
+describe("엔진 프레임", () => {
+  async function engineSetup() {
+    const photoDir = mkdtempSync(join(tmpdir(), "phone-photos-"));
+    cleanups.push(() => rmSync(photoDir, { recursive: true, force: true }));
+    const feed = new EyeFeed({ photoDir, broadcast: () => {} });
+    const webDir = mkdtempSync(join(tmpdir(), "phone-web-"));
+    cleanups.push(() => rmSync(webDir, { recursive: true, force: true }));
+    writeFileSync(join(webDir, "index.html"), "<title>폰</title>");
+    const got: { header: Msg; eye: Msg | null; view: Msg | null; at: number }[] = [];
+    const phone = createPhoneServer({
+      targets: TARGETS, webDir, feed, onEye: () => {}, log: () => {}, engineMs: 1000,
+      onEngine: (_jpeg, header, eye, view, at) => got.push({ header, eye, view, at }),
+    });
+    const { port } = await phone.listen(0, "127.0.0.1");
+    cleanups.push(() => phone.close());
+    return { feed, got, phoneBase: `http://127.0.0.1:${port}` };
+  }
+
+  it("engineMs를 주면 연결 직후 상태에 engine_ms를 싣는다", async () => {
+    const { phoneBase } = await engineSetup();
+    const ws = new WebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events`, { origin: phoneBase });
+    const status = next(ws, (m) => m.type === "status");
+    await opened(ws);
+    expect(await status).toMatchObject({ engine_ms: 1000 });
+    ws.close();
+  });
+
+  it("engine 패킷은 onEngine으로 가고 표시 화면으로는 가지 않는다. 맞춘 뒤면 투영과 트윈 원점을 붙인다", async () => {
+    const { feed, got, phoneBase } = await engineSetup();
+    const ws = await alignedPhone(phoneBase);
+    const projection = Array.from({ length: 16 }, (_, i) => (i % 5 === 0 ? 1 : 0));
+    ws.send(encodeFramePacket({ kind: "engine", width: 480, height: 360, position: [3.9, 1.4, 5], orientation: [0, 0, 0, 1], captured_at: 1000, time_err_ms: 5, projection }, JPEG));
+    for (let i = 0; i < 40 && !got.length; i++) await new Promise((r) => setTimeout(r, 25));
+    expect(got).toHaveLength(1);
+    expect(got[0]!.header).toMatchObject({ kind: "engine", captured_at: 1000 });
+    expect(got[0]!.eye).toMatchObject({ position: [3.9, 5], height_m: 1.4 });
+    expect(got[0]!.view).toMatchObject({ origin: [3.9, 1.4, 5], projection });
+    expect(feed.stats().frames).toBe(0);
+    ws.close();
+  });
+});
+
 describe("sameHost", () => {
   it("출처 호스트가 요청 호스트와 같을 때만 받는다", () => {
     expect(sameHost(undefined, "192.168.0.5:8210")).toBe(true);

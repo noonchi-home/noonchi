@@ -51,6 +51,8 @@ export interface PhoneStatus {
   aligned: boolean;
   mismatch_m: number | null;
   error?: string;
+  /** 엔진 프레임 간격(ms). 관찰 흐름이 켜졌을 때 폰 서버가 싣는다(server.ts). */
+  engine_ms?: number;
 }
 
 /** 맞추기 전 눈을 둘 자리: 평면도 위치, 'AR 시작 방향'으로 볼 방위(도), 눈 높이. */
@@ -109,6 +111,14 @@ export function estimateViewpoint(scene: { plan?: { rooms?: { id: string; polygo
     yawDeg: round((((Math.atan2(d[1], d[0]) * 180) / Math.PI) + 360) % 360),
     heightM: FALLBACK_HEIGHT_M,
   };
+}
+
+/** 엔진 프레임의 카메라: 원점은 트윈 눈 위치 [x, 높이, y], 방향 계산에 쓸 AR 회전과 맞춤 회전(theta), 투영 행렬(16개, 열 우선). */
+export interface CameraView {
+  origin: Vec3;
+  orientation: Quat;
+  theta: number;
+  projection: number[];
 }
 
 /** '여기'로 쓸 수 있는 마지막 자세의 나이(ms). */
@@ -225,6 +235,14 @@ export class PhoneSession {
   eyeAt(position: Vec3, orientation: Quat, tracking: "ok" | "limited", epoch: string | undefined): EyeEvent | null {
     if (epoch !== undefined && epoch !== this.epoch) return null;
     return this.eyeFor(position, orientation, tracking);
+  }
+
+  /** 엔진 프레임의 카메라. 원점은 eyeAt의 트윈 눈 위치(touch 모드 높이 규칙 포함). 맞추기 전·다른 원점·투영 없음이면 null. */
+  viewAt(position: Vec3, orientation: Quat, projection: number[] | undefined, epoch: string | undefined): CameraView | null {
+    if (!projection || projection.length !== 16) return null;
+    const eye = this.eyeAt(position, orientation, "ok", epoch);
+    if (!eye || !this.alignment) return null;
+    return { origin: [eye.position[0], eye.height_m, eye.position[1]], orientation, theta: this.alignment.theta, projection: [...projection] };
   }
 
   /** 맞추기 전 추정 눈: 위치·높이는 고정, 방향은 폰 자세. AR local 공간이 시작할 때 폰은 -Z를 보므로

@@ -6,11 +6,13 @@
 // 화면은 세로 촬영 기준: 가운데 조준점, 아래 큰 버튼(말하기·사진·끝내기), 위 상태 줄, 나머지(글 입력·다시 맞추기·측정)는 ⋯ 메뉴.
 // 말하기: 크롬 내장 음성 인식(ko-KR, 누르고 말하기)으로 받아쓴 문장을 say로 보내고, 답은 읽어 주고 몇 초 보인다. 음성 인식이 없으면 글 입력.
 // 초점: 서버가 보낸 대상(AR 좌표)을 화면에 고리로 그리고, 대시보드로 가는 화면 프레임에도 그린다(사진에는 그리지 않음).
-// 상위 판단(서버 BRAIN=1): 시계를 맞춰(clock 핑, NTP식) 프레임·사진에 서버 시계 촬영 시각과 오차를 붙인다. 두뇌의 컵 안 사진 요청은
+// 엔진 프레임(서버 BRAIN=1): 서버가 상태 메시지 engine_ms로 알려 준 간격마다 분석용 JPEG을 따로 보낸다(초점 고리 없음,
+// 촬영 순간 자세·투영 행렬·서버 시계 촬영 시각과 오차를 붙인다). 시계는 clock 핑(NTP식)으로 맞추고 프레임·사진에도 붙인다. 두뇌의 컵 안 사진 요청은
 // 화면 가운데 큰 글씨로, 행동 부탁(모의)은 버튼 카드로 보이고, 요청이 떠 있을 때 📷 사진이 요청 답이 된다.
 
 import { createGrabber, framePacket } from "./capture.js";
 import { createDisplayEncoder } from "./display-encoder.js";
+import { engineDue } from "./engine.js";
 import { createFramePipeline, createSendStats, frameWidth } from "./pipeline.js";
 import { focusMarks } from "./project.js";
 import { floorCandidate } from "./touch.js";
@@ -24,6 +26,7 @@ const clamp = (raw, lo, hi, fallback) => {
 };
 const FRAME_MS = 1000 / clamp(PARAMS.get("fps"), 1, 30, 12);
 const FRAME_QUALITY = 0.55; // 장 수를 늘린 만큼 한 장 크기를 줄인다(사진은 0.9)
+const ENGINE_QUALITY = 0.8; // 엔진 프레임은 YOLOX·VLM이 분석한다
 const MAX_BUFFERED = 512 * 1024; // 와이파이가 느리면 프레임을 쌓지 않고 건너뛴다
 const FLIP = PARAMS.get("flip") !== "0";
 const IDLE_LABEL = "🎙 누르고 말하기";
@@ -33,6 +36,9 @@ let hitPoint = null;
 let lastSent = 0;
 let lastFrame = 0;
 let wantPhoto = false;
+// 엔진 프레임 간격(ms, 서버 상태 engine_ms). 없으면 보내지 않는다
+let engineMs = 0;
+let lastEngine = null;
 let focus = { targets: [], until: 0 };
 // 벽 기준점 맞춤(touch 모드): 대시보드에서 고른 벽 지점 A·B 바로 아래 바닥을 조준점으로 맞추고 기록 → 그 바닥 점을 보낸다.
 // 벽에 폰을 대면 카메라가 가려져 위치를 자주 잃어서, 서서 바닥을 비추는 조준으로 바꿨다
@@ -169,6 +175,7 @@ function renderStatus() {
 
 function render(s) {
   revision = s.revision ?? null;
+  if (typeof s.engine_ms === "number" && s.engine_ms > 0) engineMs = s.engine_ms;
   alignMode = s.mode ?? "floor";
   const names = s.anchors.map((a) => (alignMode === "touch" ? `${a.id} ${a.label}` : a.label)).join(", ");
   $("align-help").innerHTML = alignMode === "touch"
@@ -443,20 +450,21 @@ async function start() {
   $("stop").onclick = () => session.end();
   $("photo").onclick = () => { wantPhoto = true; };
 
-  const sendFrame = (pixels, header, quality, marks, readMs, photo) => {
+  // always: 사진·엔진 프레임은 늘 보내고 표시 통계에 넣지 않는다
+  const sendFrame = (pixels, header, quality, marks, readMs, always) => {
     const id = pipeline.start();
     const t0 = performance.now();
     grabber.toJpeg(pixels, header.width, header.height, quality, marks)
       .then((jpeg) => {
         const encodeMs = performance.now() - t0;
-        // 사진은 늘 보낸다. 화면 프레임은 더 새 프레임이 먼저 나갔으면 버린다(순서 뒤바뀜)
-        if (!pipeline.finish(id) && !photo) {
+        // 사진·엔진 프레임은 늘 보낸다. 화면 프레임은 더 새 프레임이 먼저 나갔으면 버린다(순서 뒤바뀜)
+        if (!pipeline.finish(id) && !always) {
           stats.skipped("stale");
           return;
         }
         if (ws?.readyState !== WebSocket.OPEN) return;
         ws.send(framePacket(header, jpeg));
-        if (!photo) stats.sent({ bytes: jpeg.size, readMs, encodeMs });
+        if (!always) stats.sent({ bytes: jpeg.size, readMs, encodeMs });
       })
       .catch((error) => {
         pipeline.fail(id);
@@ -503,6 +511,20 @@ async function start() {
     if (!grabber || !camera) return;
     cameraSeen = true;
     display?.frame(binding.getCameraImage(camera), camera, time);
+    if (engineMs && engineDue(lastEngine, time, engineMs) && ws?.readyState === WebSocket.OPEN) {
+      lastEngine = time;
+      const ew = Math.min(frameWidth(PARAMS.get("w"), camera.height > camera.width), camera.width);
+      const eh = Math.round((ew * camera.height) / camera.width);
+      const e0 = performance.now();
+      const enginePixels = grabber.grab(binding.getCameraImage(camera), ew, eh);
+      const engineRead = performance.now() - e0;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, session.renderState.baseLayer.framebuffer);
+      const engineHeader = {
+        kind: "engine", width: ew, height: eh, position, orientation, tracking, epoch,
+        projection: Array.from(xrView.projectionMatrix), ...stamp(performance.timeOrigin + time),
+      };
+      sendFrame(enginePixels, engineHeader, ENGINE_QUALITY, [], engineRead, true);
+    }
     const photo = wantPhoto;
     if (!photo && time - lastFrame < FRAME_MS) return;
     if (ws?.readyState !== WebSocket.OPEN) return;

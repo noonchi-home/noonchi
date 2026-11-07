@@ -2921,7 +2921,7 @@ git commit -m "feat: send PAM text observations over pam-predict/2 and block ima
 
 **Files:**
 - Create: `web/phone/engine.js`, `web/phone/engine.d.ts`, `tests/phone-engine.test.ts`
-- Modify: `src/phone/packet.ts`(`kind: "engine"`, `projection`), `src/phone/server.ts`(`onEngine`, 상태에 `engine_ms`), `src/phone/session.ts`(`viewAt`), `web/phone/phone.js`(엔진 프레임 보내기), `tests/phone-packet.test.ts`, `tests/phone-server.test.ts`
+- Modify: `src/phone/packet.ts`(`kind: "engine"`, `projection`), `src/phone/server.ts`(`onEngine`, 상태에 `engine_ms`), `src/phone/session.ts`(`viewAt`, `PhoneStatus.engine_ms`), `web/phone/phone.js`(엔진 프레임 보내기), `tests/phone-server.test.ts`, `tests/phone-session.test.ts`, `docs/reference.md`(폰 화면 절)
 
 **Interfaces:**
 - Produces:
@@ -2961,9 +2961,9 @@ describe("엔진 프레임", () => {
   });
 });
 ```
-`tests/phone-server.test.ts`에 더한다: `engineMs: 1000`이면 연결 직후 상태 메시지에 `engine_ms: 1000`, `engine` 패킷은 `onEngine`으로 가고 `feed.pushFrame`(표시)으로는 가지 않는다.
+`tests/phone-server.test.ts`에 더한다: `engineMs: 1000`이면 연결 직후 상태 메시지에 `engine_ms: 1000`, `engine` 패킷은 `onEngine`(맞춘 뒤면 눈 자세와 `view.origin`·`projection`)으로 가고 `feed.pushFrame`(표시)으로는 가지 않는다(`feed.stats().frames` 0). `tests/phone-session.test.ts`에 `viewAt`(맞추기 전·투영 없음·16개 아님·다른 원점이면 null) 시험을 더한다.
 
-- [ ] **Step 2: 실패 확인** — `H npx vitest run tests/phone-engine.test.ts tests/phone-server.test.ts` / Expected: FAIL
+- [ ] **Step 2: 실패 확인** — `H npx vitest run tests/phone-engine.test.ts tests/phone-server.test.ts tests/phone-session.test.ts` / Expected: FAIL
 - [ ] **Step 3: 구현**
   - `packet.ts` HeaderSchema: `kind: z.enum(["frame", "photo", "engine"])`, `projection: z.array(num).length(16).optional()`.
   - `session.ts`:
@@ -2977,7 +2977,7 @@ viewAt(position: Vec3, orientation: Quat, projection: number[] | undefined, epoc
   return { origin: [eye.position[0], eye.height_m, eye.position[1]], orientation, theta: this.alignment.theta, projection };
 }
 ```
-  - `server.ts` onPacket: `header.kind === "engine"`이면 `opts.onEngine?.(jpeg, header, eyeOf(), header.position && header.orientation ? session.viewAt(header.position, header.orientation, header.projection, header.epoch) : null, receivedAtMs)` 뒤 return. `frame`은 지금처럼 표시(`feed.pushFrame`)와 `onFrame`으로 간다. 연결 때 상태에 `...(opts.engineMs ? { engine_ms: opts.engineMs } : {})`를 더한다(`PhoneStatus`에 `engine_ms?: number`).
+  - `server.ts` onPacket: `header.kind === "engine"`이면 `opts.onEngine?.(jpeg, header, eyeOf(), header.position && header.orientation ? session.viewAt(header.position, header.orientation, header.projection, header.epoch) : null, receivedAtMs)` 뒤 return. `frame`은 지금처럼 표시(`feed.pushFrame`)와 `onFrame`으로 간다. 폰에 보내는 상태 메시지(연결 때, 오류, 기준점 바꿈, `session.handle` 답)는 모두 `withEngine`으로 `...(opts.engineMs ? { engine_ms: opts.engineMs } : {})`를 싣는다(`PhoneStatus`에 `engine_ms?: number`).
   - `web/phone/engine.js`:
 
 ```js
@@ -2986,13 +2986,14 @@ export function engineDue(lastMs, nowMs, intervalMs) {
   return lastMs === null || nowMs - lastMs >= intervalMs;
 }
 ```
-  - `web/phone/phone.js` onFrame: 서버 상태의 `engine_ms`를 `engineMs`로 둔다. 표시 프레임과 별개로 `engineMs && engineDue(lastEngine, time, engineMs)`이면 같은 카메라 이미지를 `grabber.grab`해 `sendFrame(pixels, { kind: "engine", width, height, position, orientation, tracking, epoch, projection: Array.from(xrView.projectionMatrix), ...stamp(performance.timeOrigin + time) }, 0.8, [], readMs, false)`로 보낸다(marks는 빈 배열). `lastEngine = time`.
+  - `web/phone/phone.js` onFrame: 서버 상태의 `engine_ms`(있을 때만)를 `engineMs`로 둔다. 표시 프레임과 별개로 `engineMs && engineDue(lastEngine, time, engineMs)`이면 같은 카메라 이미지를 화면 프레임 크기로 `grabber.grab`해 `sendFrame(pixels, { kind: "engine", width, height, position, orientation, tracking, epoch, projection: Array.from(xrView.projectionMatrix), ...stamp(performance.timeOrigin + time) }, 0.8, [], readMs, true)`로 보낸다(marks는 빈 배열). `sendFrame`의 마지막 인자는 `always`(사진·엔진 프레임: 순서 뒤바뀜으로 버리지 않고 표시 통계에 넣지 않음)다. `lastEngine = time`.
+  - `docs/reference.md` 「폰 화면」 절에 엔진 프레임 한 줄.
 
 - [ ] **Step 4: 통과 확인** — `H npx vitest run tests/phone-engine.test.ts tests/phone-server.test.ts tests/phone-packet.test.ts tests/phone-session.test.ts tests/self-contained.test.ts` / Expected: PASS
 - [ ] **Step 5: 커밋**
 
 ```bash
-git add web/phone/engine.js web/phone/engine.d.ts web/phone/phone.js src/phone/packet.ts src/phone/server.ts src/phone/session.ts tests/phone-engine.test.ts tests/phone-server.test.ts tests/phone-packet.test.ts
+git add web/phone/engine.js web/phone/engine.d.ts web/phone/phone.js src/phone/packet.ts src/phone/server.ts src/phone/session.ts tests/phone-engine.test.ts tests/phone-server.test.ts tests/phone-session.test.ts docs/reference.md docs/superpowers/plans/2026-11-07-noonchi-architecture.md
 git commit -m "feat: send unmarked engine frames with capture time, pose and projection at a server-set interval"
 ```
 

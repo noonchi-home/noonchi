@@ -14,7 +14,7 @@ import type { AnchorTarget } from "./anchors.js";
 import type { EyeFeed } from "./feed.js";
 import { MAX_PACKET_BYTES, parsePacket, type FrameHeader } from "./packet.js";
 import type { Plan2 } from "./align.js";
-import { PhoneSession, type AlignMode, type EyeEvent, type FallbackViewpoint, type HerePoint } from "./session.js";
+import { PhoneSession, type AlignMode, type CameraView, type EyeEvent, type FallbackViewpoint, type HerePoint, type PhoneStatus } from "./session.js";
 
 export type { FocusTarget } from "../contract/events.js";
 
@@ -41,6 +41,10 @@ export interface PhoneServerOptions {
   onSay?: (text: string) => Promise<PhoneReply>;
   onConfirm?: (token: string) => Promise<{ reply: string }>;
   onCancel?: (token: string) => Promise<{ reply: string }>;
+  /** 관찰 흐름(BRAIN=1): 엔진 프레임을 그 순간의 눈 자세·카메라(맞추기 전 null)와 함께 넘긴다. */
+  onEngine?: (jpeg: Buffer, header: FrameHeader, eye: EyeEvent | null, view: CameraView | null, receivedAtMs: number) => void;
+  /** 엔진 프레임 간격(ms). 있으면 상태 메시지에 engine_ms로 실어 폰이 그 간격으로 보낸다. */
+  engineMs?: number;
   /** 상위 판단(BRAIN=1): 화면 프레임·사진을 그 순간의 눈 자세(맞추기 전 null)와 함께 넘긴다. */
   onFrame?: (jpeg: Buffer, header: FrameHeader, eye: EyeEvent | null, receivedAtMs: number) => void;
   /** 사진. 요청 답으로 받았으면 "answer". */
@@ -124,12 +128,15 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
   const reply = (ws: WebSocket, msg: unknown) => {
     if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
   };
-  // 바이너리 메시지 = 카메라 프레임·사진·표시 영상 패킷(packet.ts). 영상은 연결 번호로 구분해 판단 없이 중계한다(video.ts)
+  /** 상태 메시지에 엔진 프레임 간격을 싣는다. */
+  const withEngine = (s: PhoneStatus): PhoneStatus => (opts.engineMs ? { ...s, engine_ms: opts.engineMs } : s);
+  const status = (error?: string) => withEngine(session.status(error));
+  // 바이너리 메시지 = 엔진 프레임(분석용)·화면 프레임(표시용)·사진·표시 영상 패킷(packet.ts). 영상은 연결 번호로 구분해 판단 없이 중계한다(video.ts)
   const onPacket = (ws: WebSocket, source: number, data: Buffer) => {
     const receivedAtMs = Date.now();
     const packet = parsePacket(data);
     if ("error" in packet) {
-      reply(ws, session.status(packet.error));
+      reply(ws, status(packet.error));
       return;
     }
     if ("video" in packet) {
@@ -142,6 +149,11 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
     const eyeOf = () => (header.position && header.orientation
       ? session.eyeAt(header.position, header.orientation, header.tracking ?? "ok", header.epoch)
       : null);
+    if (header.kind === "engine") {
+      const view = header.position && header.orientation ? session.viewAt(header.position, header.orientation, header.projection, header.epoch) : null;
+      opts.onEngine?.(jpeg, header, eyeOf(), view, receivedAtMs);
+      return;
+    }
     if (header.kind === "frame") {
       opts.feed?.pushFrame(jpeg, header.width, header.height);
       if (opts.onFrame) opts.onFrame(jpeg, header, eyeOf(), receivedAtMs);
@@ -182,7 +194,7 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
       opts.feed?.video.endSource(source);
       log(`[phone] 폰 끊김(지금 ${wss.clients.size}대)`);
     });
-    reply(ws, session.status());
+    reply(ws, status());
     ws.on("message", (data, isBinary) => {
       if (isBinary) {
         onPacket(ws, source, Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data as Buffer));
@@ -192,7 +204,7 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
       try {
         raw = JSON.parse(String(data));
       } catch {
-        reply(ws, session.status("JSON이 아닙니다"));
+        reply(ws, status("JSON이 아닙니다"));
         return;
       }
       const type = (raw as { type?: unknown } | null)?.type;
@@ -212,7 +224,7 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
         return;
       }
       const out = session.handle(raw);
-      if (out.reply) reply(ws, out.reply);
+      if (out.reply) reply(ws, withEngine(out.reply));
       if (out.eye) opts.onEye(out.eye);
     });
     ws.on("error", () => {});
@@ -231,7 +243,7 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
     },
     setTargets(targets, mode) {
       session.setTargets(targets, mode);
-      for (const ws of wss.clients) reply(ws, session.status());
+      for (const ws of wss.clients) reply(ws, status());
     },
     send(msg) {
       for (const ws of wss.clients) reply(ws, msg);
