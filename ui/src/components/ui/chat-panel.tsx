@@ -2,7 +2,7 @@
 
 // 21st.dev「Chat Panel」(id 23601, theshanelevine/chat) 받은 코드.
 // 바꾼 것: 고정 크기(h-[288px] max-w-95) 대신 패널을 채운다. 머리줄 탭·동작 단추·대화 영역을 밖에서 넣는다. 입력칸(composer)은 뺐다.
-// 토큰(ink·surface·line·field·hover, rounded-card·shadow-card)은 styles.css에 만든 이 테마 값으로 둔다.
+// 토큰 이름(ink·surface·line·hover, rounded-card·shadow-card)은 그대로, 값은 NOONCHI 토큰(ui/src/tokens.css). Section 글 12px → caption, 13px → body-sm 토큰, rounded-[6px] → rounded-chip.
 import type { ReactNode, Ref } from "react";
 
 /* ─────────────────────────────────────────────────────────
@@ -34,12 +34,12 @@ export function Section({
         animation: "fade-up 400ms cubic-bezier(0.23,1,0.32,1) both",
       }}
     >
-      <div className="flex items-center gap-1 text-[12px] leading-[1.3]">
+      <div className="flex items-center gap-1 text-caption">
         <span className="font-medium text-ink">{label}</span>
         {sub && <span className="text-ink-2">{sub}</span>}
         {time && <span className="text-ink">{time}</span>}
       </div>
-      <div className="text-[13px] leading-normal text-ink">{body}</div>
+      <div className="text-body-sm text-ink">{body}</div>
     </div>
   );
 }
@@ -52,7 +52,7 @@ export function ChatAction({ label, onClick, children, expanded }: { label: stri
       aria-label={label}
       aria-expanded={expanded}
       onClick={onClick}
-      className="flex size-6 items-center justify-center rounded-[6px] text-ink-3
+      className="flex size-6 items-center justify-center rounded-chip text-ink-3
         transition-colors duration-100 hover:bg-hover hover:text-ink-2"
     >
       {children}

@@ -1,85 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-
-/*
- * 21st.dev 부품 토큰. 값은 :root에 둔다.
- * Chat Panel(theshanelevine): 만든 이 사이트 beautifului.dev 밝은 테마 값. 나머지 부품(shadcn): shadcn 기본 neutral 값.
- */
-@theme inline {
-  --color-page: var(--page);
-  --color-canvas: var(--canvas);
-  --color-surface: var(--surface);
-  --color-inset: var(--inset);
-  --color-ink: var(--ink);
-  --color-ink-2: var(--ink-2);
-  --color-ink-3: var(--ink-3);
-  --color-hover: var(--hover);
-  --color-hover-2: var(--hover-2);
-  --color-field: var(--field);
-  --color-line: var(--line);
-  --color-line-strong: var(--line-strong);
-  --color-line-soft: var(--line-soft);
-  --color-accent: var(--accent);
-  --color-green: var(--green);
-  --color-green-tint: var(--green-tint);
-  --color-orange: var(--orange);
-  --color-orange-tint: var(--orange-tint);
-  --color-red: var(--red);
-  --color-red-tint: var(--red-tint);
-  --shadow-card: var(--shadow-card);
-  --radius-chip: 6px;
-  --radius-control: 8px;
-  --radius-card: 10px;
-  --radius-window: 14px;
-
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-border: var(--border);
-  --color-ring: var(--ring);
-  --color-destructive: var(--destructive);
-}
-
-:root {
-  --page: oklch(98.5% 0.001 286.376);
-  --canvas: oklch(96.1% 0.002 247.84);
-  --surface: oklch(100% 0 0);
-  --inset: oklch(97.9% 0.002 247.839);
-  --hover: oklch(97% 0.002 247.839);
-  --hover-2: oklch(93.3% 0.003 247.86);
-  --ink: oklch(24.7% 0.006 258.361);
-  --ink-2: oklch(50.6% 0.01 264.477);
-  --ink-3: oklch(69.5% 0.009 264.505);
-  --line: oklch(94.6% 0.003 264.542);
-  --line-strong: oklch(91.2% 0.005 258.326);
-  --line-soft: oklch(96.6% 0.002 264.542);
-  --field: oklch(96.1% 0.001 286.375);
-  --accent: oklch(62.6% 0.205 254.947);
-  --green: oklch(60.3% 0.155 150.883);
-  --green-tint: oklch(95.8% 0.017 159.118);
-  --orange: oklch(68.9% 0.179 49.902);
-  --orange-tint: oklch(96.4% 0.021 67.581);
-  --red: oklch(62.1% 0.192 23.042);
-  --red-tint: oklch(95.6% 0.017 17.462);
-  --shadow-card: 0 0 0 1px var(--line), 0 18px 47px 0 #00000008, 0 7.5px 19px 0 #00000005, 0 4px 10.5px 0 #00000005, 0 2.3px 5.8px 0 #00000003, 0 1.2px 3.1px 0 #00000003, 0 0.5px 1.3px 0 #00000003;
-
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --border: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-}
+/* 색·글꼴·모서리·그림자 토큰: src/design/tokens.json에서 npm run tokens가 만든 파일 */
+@import "./tokens.css";
 
 /* Chat Panel(21st.dev id 23601) 답 칸이 쓰는 움직임 */
 @keyframes fade-up {
@@ -87,5 +9,10 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
-html, body, #root { height: 100%; margin: 0; }
-body { background: var(--canvas); color: var(--ink); font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif; }
+@layer base {
+  /* 받은 shadcn 부품의 border는 border 토큰 색(Tailwind v4 기본은 currentColor) */
+  *, ::after, ::before, ::backdrop, ::file-selector-button { border-color: var(--border); }
+  html, body, #root { height: 100%; margin: 0; }
+  body { background: var(--canvas); color: var(--ink); word-break: keep-all; overflow-wrap: break-word; }
+  iframe { border: 0; }
+}

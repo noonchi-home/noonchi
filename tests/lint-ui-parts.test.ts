@@ -56,6 +56,7 @@ describe("화면 코드는 배치만", () => {
       "const c = <div className=\"pointer-events-none absolute w-max scale-125 origin-bottom whitespace-nowrap\" style={{ left: p.x, top: p.y }} />;",
       'const d = <p className="text-left truncate">흰 바탕 · 둥근 글</p>;',
       'location.hash = "#home"; fetch("/api/setup/home"); const id = "h-devices";',
+      'const e = <Button variant="outline" size="sm" aria-label="border 없음">이전</Button>;',
     ].join("\n");
     expect(found("ui/src/x.tsx", src)).toEqual([]);
   });

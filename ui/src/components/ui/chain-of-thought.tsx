@@ -1,7 +1,8 @@
 "use client";
 
-// 21st.dev「Chain of Thought」(id 28391, nexus-ui/chain-of-thought) 받은 코드 그대로.
-// 도우미 text-shimmer·use-on-change는 받은 꾸러미에 없어서 chain-of-thought-utils/에 같은 이름으로 두었다.
+// 21st.dev「Chain of Thought」(id 28391, nexus-ui/chain-of-thought) 받은 코드.
+// 바꾼 것: text-sm → body-sm 토큰(destructive는 error 토큰 별칭). 뿌리에 disableShimmer를 이어 반짝임을 끌 수 있다(대시보드·움직임 줄이기 설정).
+// 도우미 text-shimmer(21st.dev id 1169)·use-on-change는 chain-of-thought-utils/에 있다.
 import * as React from "react";
 import { AlertTriangle, ChevronDown } from "lucide-react";
 
@@ -18,6 +19,7 @@ type ChainOfThoughtRootContextValue = {
   registerStep: (id: string, status: ChainOfThoughtStepStatus) => void;
   allStepsComplete: boolean;
   hasAnyError: boolean;
+  disableShimmer: boolean;
 };
 
 const ChainOfThoughtRootContext =
@@ -57,6 +59,7 @@ type ChainOfThoughtProps = Omit<
   defaultOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
   autoCloseOnAllComplete?: boolean;
+  disableShimmer?: boolean;
 };
 
 function ChainOfThought({
@@ -65,6 +68,7 @@ function ChainOfThought({
   defaultOpen = true,
   onOpenChange,
   autoCloseOnAllComplete = true,
+  disableShimmer = false,
   children,
   ...props
 }: ChainOfThoughtProps) {
@@ -97,8 +101,8 @@ function ChainOfThought({
   );
 
   const contextValue = React.useMemo(
-    () => ({ registerStep, allStepsComplete, hasAnyError }),
-    [allStepsComplete, hasAnyError, registerStep],
+    () => ({ registerStep, allStepsComplete, hasAnyError, disableShimmer }),
+    [allStepsComplete, hasAnyError, registerStep, disableShimmer],
   );
 
   const handleOpenChange = React.useCallback(
@@ -148,7 +152,7 @@ function ChainOfThoughtTrigger({
   children,
   ...props
 }: ChainOfThoughtTriggerProps) {
-  const { allStepsComplete, hasAnyError } = useChainOfThoughtRootContext(
+  const { allStepsComplete, hasAnyError, disableShimmer } = useChainOfThoughtRootContext(
     "ChainOfThoughtTrigger",
   );
   const isActive = !allStepsComplete && !hasAnyError;
@@ -166,10 +170,10 @@ function ChainOfThoughtTrigger({
       {icon}
       <div className="flex min-w-0 flex-1 items-start gap-1.25 overflow-hidden">
         <TextShimmer
-          className="truncate text-left text-sm leading-4.5 text-ellipsis whitespace-nowrap"
+          className="truncate text-left text-body-sm leading-4.5 text-ellipsis whitespace-nowrap"
           spread={10}
           invertLight
-          disableShimmer={!isActive}
+          disableShimmer={disableShimmer || !isActive}
         >
           {children ?? label}
         </TextShimmer>
@@ -341,6 +345,7 @@ function ChainOfThoughtStepTitle({
   const { hasContent, status } = useChainOfThoughtStepContext(
     "ChainOfThoughtStepTitle",
   );
+  const { disableShimmer } = useChainOfThoughtRootContext("ChainOfThoughtStepTitle");
   const isCollapsible = collapsible ?? hasContent;
   const isActive = status === "active";
   const isError = status === "error";
@@ -360,7 +365,7 @@ function ChainOfThoughtStepTitle({
         data-slot="chain-of-thought-step-title"
         data-active={String(isActive)}
         className={cn(
-          "group flex items-center text-sm leading-4.5 text-muted-foreground",
+          "group flex items-center text-body-sm leading-4.5 text-muted-foreground",
           isError && "text-destructive",
           resolvedIcon ? "gap-2" : "gap-0",
           className,
@@ -373,10 +378,10 @@ function ChainOfThoughtStepTitle({
           </div>
         ) : null}
         <TextShimmer
-          className="truncate text-left text-sm leading-4.5 text-ellipsis whitespace-nowrap"
+          className="truncate text-left text-body-sm leading-4.5 text-ellipsis whitespace-nowrap"
           spread={10}
           invertLight
-          disableShimmer={!isActive}
+          disableShimmer={disableShimmer || !isActive}
         >
           {label}
         </TextShimmer>
@@ -389,7 +394,7 @@ function ChainOfThoughtStepTitle({
       data-slot="chain-of-thought-step-title"
       data-active={String(isActive)}
       className={cn(
-        "group flex w-full cursor-pointer items-center text-sm text-muted-foreground transition-colors hover:text-foreground",
+        "group flex w-full cursor-pointer items-center text-body-sm text-muted-foreground transition-colors hover:text-foreground",
         isError && "text-destructive hover:text-destructive/90",
         resolvedIcon ? "gap-2" : "gap-0",
         className,
@@ -406,10 +411,10 @@ function ChainOfThoughtStepTitle({
       ) : null}
       <div className="flex min-w-0 flex-1 items-start gap-1.25 overflow-hidden">
         <TextShimmer
-          className="truncate text-left text-sm leading-4.5 text-ellipsis whitespace-nowrap"
+          className="truncate text-left text-body-sm leading-4.5 text-ellipsis whitespace-nowrap"
           spread={10}
           invertLight
-          disableShimmer={!isActive}
+          disableShimmer={disableShimmer || !isActive}
         >
           {label}
         </TextShimmer>
@@ -461,7 +466,7 @@ function ChainOfThoughtComplete({
     <div
       data-slot="chain-of-thought-complete"
       className={cn(
-        "mt-0 flex items-center gap-2 text-sm leading-4.5 text-muted-foreground fade-in-0",
+        "mt-0 flex items-center gap-2 text-body-sm leading-4.5 text-muted-foreground fade-in-0",
         !icon && "gap-0",
         className,
       )}

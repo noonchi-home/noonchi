@@ -67,6 +67,9 @@ export function screenProblems(file: string, src: string): PartsProblem[] {
   const hits: { at: number; text: string; rule: string }[] = [];
   const jsx = file.endsWith(".tsx");
   for (const s of codeStrings(src, jsx)) {
+    // className 밖 JSX 속성 값(variant="outline", aria-label="…")은 class가 아니다
+    const attr = /([A-Za-z_][\w-]*)=\s*\{?\s*$/.exec(src.slice(Math.max(0, s.start - 60), s.start));
+    if (attr && !/^(?:className|class)$/.test(attr[1]!)) continue;
     for (const m of s.text.matchAll(/\S+/g)) {
       if (VISUAL.some((re) => re.test(baseOf(m[0])))) hits.push({ at: s.start + 1 + m.index!, text: m[0], rule: "꾸밈 class" });
     }

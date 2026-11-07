@@ -1,14 +1,15 @@
+import { TriangleAlert } from "lucide-react";
 import type { HealthView } from "../../../src/contract/events.ts";
-import { cn } from "../lib/utils";
-import { Surface } from "../components/Surface";
+import { Button } from "../components/ui/button";
+import { LiquidGlass } from "../components/ui/liquid-glass";
+import { Status, StatusIndicator, StatusLabel } from "../components/ui/status";
 
-const chip = "whitespace-nowrap rounded-full px-2.5 py-1";
-const MODE: Record<HealthView["mode"], { text: string; className: string }> = {
-  test: { text: "시험 모드", className: "" },
-  live: { text: "실제 모드", className: "bg-orange-tint font-medium text-orange" },
+const MODE: Record<HealthView["mode"], { text: string; variant: "default" | "warning" }> = {
+  test: { text: "시험 모드", variant: "default" },
+  live: { text: "실제 모드", variant: "warning" },
 };
 
-/** 위 가운데 알약: 연결·집·운영 모드·허브·에이전트·트윈 없음·설정 다시 하기. 판은 흰 카드(Surface)다. */
+/** 위 가운데 알약: 연결·집·운영 모드·허브·에이전트·트윈 없음·설정 다시 하기. 판은 21st.dev Liquid Glass, 칩은 Status, 링크는 Button. */
 export function StatusPill({ connected, health }: { connected: boolean | null; health: HealthView | null }) {
   const mode = health ? MODE[health.mode] : null;
   const conn = connected === null ? "연결 중…" : connected ? "실시간 연결됨" : "연결 끊김 · 다시 연결 중";
@@ -17,20 +18,18 @@ export function StatusPill({ connected, health }: { connected: boolean | null; h
   return (
     // 1440px부터는 눈 창(왼쪽 12px + 224px)과 판단 기록(오른쪽 12px + 380px)이 같은 줄로 올라온다. 알약은 둘 사이 빈칸(12px씩 띄움) 가운데에 두고 빈칸보다 넓어지지 않게 한다.
     <section aria-label="집 상태" className="absolute left-1/2 top-3 z-50 max-w-[calc(100%-1.5rem)] -translate-x-1/2 min-[1440px]:left-[calc(50%-78px)] min-[1440px]:max-w-[calc(100%-652px)]">
-      <Surface kind="pill" className="p-1">
-        <div className="flex items-center gap-1 overflow-x-auto text-xs font-normal text-ink-2">
-          <span role="status" aria-live="polite" className={cn(chip, "flex items-center gap-1.5 font-medium", connected ? "text-green" : "text-ink-2")}>
-            <span aria-hidden="true" className={cn("size-2 rounded-full", connected ? "bg-green" : connected === false ? "bg-red" : "bg-ink-3")} />
-            {conn}
-          </span>
-          <span className={chip}>{`집 ${health?.home?.name ?? "-"}`}</span>
-          {mode && <span className={cn(chip, mode.className)}>{mode.text}</span>}
-          <span className={chip}>{hub}</span>
-          <span className={chip}>{agent}</span>
-          {health && !health.twin && <span className={cn(chip, "text-red")}>3D 트윈 없음</span>}
-          <a href="/setup/" className={cn(chip, "bg-field text-ink transition-colors hover:bg-hover-2")}>설정 다시 하기</a>
-        </div>
-      </Surface>
+      <LiquidGlass tint={0.6} contentClassName="flex items-center gap-1 overflow-x-auto p-1">
+        <Status role="status" aria-live="polite" variant={connected ? "success" : connected === false ? "error" : "default"}>
+          <StatusIndicator live={connected === true} />
+          <StatusLabel>{conn}</StatusLabel>
+        </Status>
+        <Status>{`집 ${health?.home?.name ?? "-"}`}</Status>
+        {mode && <Status variant={mode.variant}>{mode.text}</Status>}
+        <Status>{hub}</Status>
+        <Status>{agent}</Status>
+        {health && !health.twin && <Status variant="error"><TriangleAlert className="size-3.5" aria-hidden="true" />3D 트윈 없음</Status>}
+        <Button asChild variant="secondary" size="sm" className="shrink-0"><a href="/setup/">설정 다시 하기</a></Button>
+      </LiquidGlass>
     </section>
   );
 }

@@ -23,13 +23,14 @@ describe("대시보드 뼈대", () => {
     }
   });
 
-  it("패널·알약·눈 창은 21st.dev 부품 흰 카드다. 옛 주소 ?look=glass로 열어도 같다", () => {
+  it("상태 알약·눈 창은 21st.dev Liquid Glass, 판단 기록은 21st.dev Chat Panel이다. 옛 주소 ?look=glass로 열어도 같다", () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 404 })));
     history.replaceState(null, "", "/?look=glass");
     const { container } = render(<Dashboard />);
-    for (const name of ["집 상태", "클로이드의 눈", "판단 기록"]) {
-      expect(screen.getByRole("region", { name }).querySelector(".bg-surface.shadow-card")).not.toBeNull();
+    for (const name of ["집 상태", "클로이드의 눈"]) {
+      expect(screen.getByRole("region", { name }).querySelector("[data-slot=liquid-glass]")).not.toBeNull();
     }
+    expect(screen.getByRole("region", { name: "판단 기록" }).querySelector(".bg-surface.shadow-card")).not.toBeNull();
     expect(container.querySelector("[data-look]")).toBeNull();
     expect(document.getElementById("glass-distortion")).toBeNull();
     expect(document.getElementById("glass-blur")).toBeNull();

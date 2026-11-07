@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ServerMessage } from "../../../src/contract/events.ts";
 import type { SetupView } from "../../../src/contract/setup.ts";
+import { CircleCheck, TriangleAlert } from "lucide-react";
+import { Alert, AlertTitle } from "../components/ui/alert";
+import { Card } from "../components/ui/card";
+import { SimpleNavbar } from "../components/ui/header-navbar";
+import { Stepper, StepperIndicator, StepperItem, StepperSeparator, StepperTitle, StepperTrigger } from "../components/ui/stepper";
 import { useEvents } from "../lib/use-events";
 import { cn } from "../lib/utils";
 import { DeviceStep, sourcesFrom, type SourceKind } from "./DeviceStep";
@@ -129,28 +134,26 @@ export function SetupApp({ navigate = (url: string) => location.assign(url) }: {
   const at = STEPS.findIndex((s) => s.id === step);
   return (
     <div className="flex min-h-full flex-col">
-      <header className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-        <h1 className="text-base font-semibold">twin-home 설정</h1>
-        <ol aria-label="설정 단계" className="m-0 flex list-none flex-wrap gap-1.5 p-0 text-[13px]">
-          {STEPS.map((s, i) => (
-            <li
-              key={s.id} aria-current={i === at ? "step" : undefined}
-              className={cn("inline-flex items-center gap-1.5 rounded-full border border-glass-line px-2.5 py-0.5 text-ink-dim",
-                i === at && "border-transparent bg-on/15 font-semibold text-on", i < at && "text-ink")}
-            >
-              <b className={cn("grid size-[18px] place-items-center rounded-full bg-field text-[11px]", i === at && "bg-on text-[#08201b]")}>{i + 1}</b>
-              {s.label}
-            </li>
-          ))}
-        </ol>
+      <header>
+        <SimpleNavbar title="NOONCHI" label="설정">
+          <Stepper value={at + 1} onValueChange={(v) => go(STEPS[v - 1]!.id)} role="list" aria-label="설정 단계" className="w-[min(640px,60vw)]">
+            {STEPS.map((s, i) => (
+              <StepperItem key={s.id} step={i + 1} role="listitem" aria-current={i === at ? "step" : undefined} className="not-last:flex-1">
+                <StepperTrigger className="gap-2"><StepperIndicator /><StepperTitle className="whitespace-nowrap">{s.label}</StepperTitle></StepperTrigger>
+                {i < STEPS.length - 1 && <StepperSeparator className="mx-3" />}
+              </StepperItem>
+            ))}
+          </Stepper>
+        </SimpleNavbar>
       </header>
       {notice && (
-        <p role="status" aria-live="polite" className={cn("mx-4 mb-2 rounded-lg px-3 py-2 text-[13px]", notice.error ? "bg-alert/15 text-alert" : "bg-on/15 text-on")}>
-          {notice.text}
-        </p>
+        <Alert role="status" aria-live="polite" variant={notice.error ? "error" : "success"} className="mx-auto mt-4 w-[calc(100%-2rem)] max-w-6xl">
+          {notice.error ? <TriangleAlert aria-hidden="true" /> : <CircleCheck aria-hidden="true" />}
+          <AlertTitle>{notice.text}</AlertTitle>
+        </Alert>
       )}
-      <main className="flex min-h-0 flex-1 px-4 pb-4">
-        <div className="glass mx-auto flex w-full max-w-6xl flex-1 flex-col p-5">
+      <main className="flex min-h-0 flex-1 p-4">
+        <Card className={cn("mx-auto flex w-full flex-1 flex-col", step === "position" ? "max-w-6xl" : "max-w-[760px]")}>
           {view && step === "home" && <HomeStep view={view} picked={picked} onPick={setPicked} onNext={chooseHome} busy={busy} />}
           {view && step === "devices" && (
             <DeviceStep view={view} sources={sources} onSources={setSources} onBack={() => go("home")} onNext={saveDevices} busy={busy} />
@@ -167,7 +170,7 @@ export function SetupApp({ navigate = (url: string) => location.assign(url) }: {
               onNotice={(text, error) => setNotice({ text, error })}
             />
           )}
-        </div>
+        </Card>
       </main>
     </div>
   );

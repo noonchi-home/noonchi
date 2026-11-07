@@ -469,11 +469,11 @@ describe("설정 4단계: 3D 트윈 보기", () => {
     });
     return (await screen.findByTitle("3D 집 트윈")) as HTMLIFrameElement;
   };
-  /** 3D를 가리는 덮개: 불투명해서 뒤의 뷰어 막대·패널이 비치지 않고, 마우스를 막는다. */
+  /** 3D를 가리는 동안: 트윈은 숨겨 뒤의 뷰어 막대·패널이 비치지 않고, 덮개 글이 보이고 마우스를 막는다. */
   const expectCover = (text: string) => {
     const cover = screen.getByText(text);
-    expect(cover).toHaveClass("bg-canvas");
-    expect(cover.className).not.toMatch(/pointer-events-none|bg-transparent|bg-canvas\//);
+    expect(screen.getByTitle("3D 집 트윈")).toHaveClass("invisible");
+    expect(cover.closest(".pointer-events-none")).toBeNull();
   };
 
   it("뷰어가 집을 다 불러오고 막대를 숨기고 배지를 끌 때까지 불투명한 덮개로 가리고, 그 뒤에 걷는다", async () => {

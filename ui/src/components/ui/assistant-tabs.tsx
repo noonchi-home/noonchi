@@ -2,7 +2,7 @@
 
 // 21st.dev「Assistant Tabs」(id 28429, shadcnspace/tabs-10) 받은 코드.
 // 바꾼 것: 데모 패널(대화·음성·영상·설정)과 그 안의 입력칸·스위치는 뺐다. 탭 목록과 내용은 밖에서 받는다.
-// 고르지 않은 탭은 아이콘만 보여서 탭마다 aria-label을 붙였다.
+// 고르지 않은 탭은 아이콘만 보여서 탭마다 aria-label을 붙였다. dark:data-active 줄을 지우고 text-sm → label 토큰.
 import type { ReactNode } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import type { LucideIcon } from "lucide-react";
@@ -23,7 +23,7 @@ export function AssistantTabsList({ tabs, value, className }: { tabs: AssistantT
             value={itemValue}
             aria-label={label}
             className={cn(
-              "rounded-full border-none py-1.5 text-sm font-medium text-muted-foreground dark:data-active:bg-background data-active:bg-background data-active:text-foreground group-data-[variant=default]/tabs-list:data-active:shadow-xs cursor-pointer transition-all duration-300 flex items-center justify-center flex-1",
+              "rounded-full border-none py-1.5 text-label font-medium text-muted-foreground data-active:bg-background data-active:text-foreground group-data-[variant=default]/tabs-list:data-active:shadow-xs cursor-pointer transition-all duration-300 flex items-center justify-center flex-1",
               isActive ? "px-4" : "px-3",
             )}
           >
@@ -35,7 +35,7 @@ export function AssistantTabsList({ tabs, value, className }: { tabs: AssistantT
                   animate={{ width: "auto", opacity: 1, marginLeft: 6 }}
                   exit={{ width: 0, opacity: 0, marginLeft: 0 }}
                   transition={{ duration: 0.2, ease: "easeInOut" }}
-                  className="overflow-hidden whitespace-nowrap text-sm font-medium inline-block"
+                  className="overflow-hidden whitespace-nowrap text-label font-medium inline-block"
                 >
                   {label}
                 </motion.span>

@@ -1,7 +1,18 @@
+import { FlaskConical, Info, PlugZap, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import type { ControlMode, SetupView, ThinqDeviceView } from "../../../src/contract/setup.ts";
-import { cn } from "../lib/utils";
-import { btn, call, failText, isOk, primary, small } from "./setup-api";
+import { Alert, AlertTitle } from "../components/ui/alert";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader,
+  AlertDialogIcon, AlertDialogTitle,
+} from "../components/ui/alert-dialog";
+import { Button } from "../components/ui/button";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../components/ui/card";
+import { Item, ItemActions, ItemContent, ItemTitle } from "../components/ui/item";
+import { RadioCard, RadioGroup } from "../components/ui/radio-group";
+import { SelectNative } from "../components/ui/select-native";
+import { Status } from "../components/ui/status";
+import { call, failText, isOk } from "./setup-api";
 
 // 3 운영 모드: 시험 모드(트윈에서만, 기본) · 실제 모드(짝지은 에어컨·냉장고는 ThinQ로 실제 가전).
 // 실제 모드로 바꿀 때는 화면 안 확인 창에서 한 번 더 묻는다(브라우저 대화상자를 쓰지 않는다). 시험 모드로는 바로 바꾼다.
@@ -14,18 +25,24 @@ const MODES: { id: ControlMode; name: string; line: string }[] = [
   { id: "live", name: "실제 모드", line: "ThinQ로 실제 가전을 다뤄요" },
 ];
 
-function AskLive({ busy, onYes, onNo }: { busy: boolean; onYes: () => void; onNo: () => void }) {
+/** 실제 모드 확인 창(21st.dev Alert Dialog with icon). */
+function AskLive({ open, busy, onYes, onNo }: { open: boolean; busy: boolean; onYes: () => void; onNo: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" onKeyDown={(e) => { if (e.key === "Escape") onNo(); }}>
-      <div role="alertdialog" aria-modal="true" aria-labelledby="ask-live-title" aria-describedby="ask-live-body" className="glass w-full max-w-sm p-5">
-        <h3 id="ask-live-title" className="mb-2 text-base font-semibold">실제 모드로 바꿀까요?</h3>
-        <p id="ask-live-body" className="mb-4 text-sm">실제 가전이 움직여요.</p>
-        <div className="flex justify-end gap-2">
-          <button type="button" className={btn} onClick={onNo} autoFocus>취소</button>
-          <button type="button" className={cn(primary, "bg-alert text-white")} disabled={busy} onClick={onYes}>실제 모드로 바꾸기</button>
+    <AlertDialog open={open} onOpenChange={(o) => { if (!o) onNo(); }}>
+      <AlertDialogContent className="motion-reduce:animate-none">
+        <div className="flex flex-col gap-2 max-sm:items-center sm:flex-row sm:gap-4">
+          <AlertDialogIcon><TriangleAlert size={16} strokeWidth={2} /></AlertDialogIcon>
+          <AlertDialogHeader>
+            <AlertDialogTitle>실제 모드로 바꿀까요?</AlertDialogTitle>
+            <AlertDialogDescription>실제 가전이 움직여요.</AlertDialogDescription>
+          </AlertDialogHeader>
         </div>
-      </div>
-    </div>
+        <AlertDialogFooter>
+          <AlertDialogCancel>취소</AlertDialogCancel>
+          <AlertDialogAction variant="destructive" disabled={busy} onClick={(e) => { e.preventDefault(); onYes(); }}>실제 모드로 바꾸기</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
@@ -46,34 +63,40 @@ function Pairs({ view, onView, onNotice }: { view: SetupView; onView: (v: SetupV
 
   const devices = view.devices.filter((d) => d.pairable);
   return (
-    <section aria-label="ThinQ 짝" className="flex max-w-xl flex-col gap-2 rounded-xl border border-glass-line bg-field p-3 text-sm">
-      <h3 className="font-semibold">ThinQ 기기와 짝짓기</h3>
-      {list.status === "loading" && <p className="text-ink-dim">ThinQ 기기를 불러오는 중…</p>}
-      {list.status === "error" && (
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="text-alert">{list.error}</p>
-          <button type="button" className={small} onClick={() => void load()}>다시 불러오기</button>
-        </div>
-      )}
-      {list.status === "ready" && devices.length === 0 && <p className="text-ink-dim">이 집에는 짝지을 에어컨·냉장고가 없어요.</p>}
-      {list.status === "ready" && devices.map((d) => {
-        const value = view.pairs[d.id] ?? "";
-        const options = list.devices.filter((t) => t.kind === d.kind);
-        const missing = value && !options.some((t) => t.id === value);
-        return (
-          <div key={d.id} className="grid grid-cols-[1fr_minmax(0,14rem)] items-center gap-2">
-            <span>{d.label}</span>
-            <select
-              aria-label={`${d.label} ThinQ 기기`} value={value} onChange={(e) => void pair(d.id, e.target.value)}
-              className="rounded-md border border-glass-line bg-black/30 px-2 py-1 text-ink outline-none focus:border-on"
-            >
-              <option value="">짝 없음</option>
-              {missing && <option value={value}>{value}</option>}
-              {options.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
-          </div>
-        );
-      })}
+    <section aria-label="ThinQ 짝" className="max-w-xl">
+      <Card>
+        <CardHeader><CardTitle>ThinQ 기기와 짝짓기</CardTitle></CardHeader>
+        <CardContent className="flex flex-col gap-2">
+          {list.status === "loading" && <CardDescription>ThinQ 기기를 불러오는 중…</CardDescription>}
+          {list.status === "error" && (
+            <Alert variant="error">
+              <TriangleAlert aria-hidden="true" />
+              <AlertTitle>{list.error}</AlertTitle>
+              <div className="col-start-2 mt-2"><Button variant="secondary" size="sm" onClick={() => void load()}>다시 불러오기</Button></div>
+            </Alert>
+          )}
+          {list.status === "ready" && devices.length === 0 && <CardDescription>이 집에는 짝지을 에어컨·냉장고가 없어요.</CardDescription>}
+          {list.status === "ready" && devices.map((d) => {
+            const value = view.pairs[d.id] ?? "";
+            const options = list.devices.filter((t) => t.kind === d.kind);
+            const missing = value && !options.some((t) => t.id === value);
+            return (
+              <Item key={d.id} size="sm" variant="outline" className="flex-nowrap">
+                <ItemContent><ItemTitle>{d.label}</ItemTitle></ItemContent>
+                <ItemActions className="w-56">
+                  <div className="w-full">
+                    <SelectNative aria-label={`${d.label} ThinQ 기기`} value={value} onChange={(e) => void pair(d.id, e.target.value)}>
+                      <option value="">짝 없음</option>
+                      {missing && <option value={value}>{value}</option>}
+                      {options.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </SelectNative>
+                  </div>
+                </ItemActions>
+              </Item>
+            );
+          })}
+        </CardContent>
+      </Card>
     </section>
   );
 }
@@ -100,37 +123,28 @@ export function ModeStep({ view, onView, onNotice, onBack, onNext }: {
   };
 
   return (
-    <section aria-labelledby="h-mode" className="flex min-h-0 flex-1 flex-col gap-3">
-      <h2 id="h-mode" className="text-[18px] font-semibold">가전을 어떻게 다룰까요?</h2>
-      <div role="radiogroup" aria-labelledby="h-mode" className="grid max-w-xl gap-2">
-        {MODES.map((m) => {
-          const off = m.id === "live" && !view.thinq.ready;
-          const on = view.mode === m.id;
-          return (
-            <label
-              key={m.id}
-              className={cn("flex items-center gap-3 rounded-xl border border-glass-line bg-field px-3 py-2.5",
-                off ? "cursor-not-allowed opacity-50" : "cursor-pointer", on && (m.id === "live" ? "border-alert bg-field-strong" : "border-on bg-field-strong"))}
-            >
-              <input
-                type="radio" name="mode" value={m.id} checked={on} disabled={off} onChange={() => pick(m.id)}
-                className="accent-[var(--color-on)]"
-              />
-              <span className="flex flex-col">
-                <span className="font-medium">{m.name}</span>
-                <span className="text-xs text-ink-dim">{m.line}</span>
-              </span>
-            </label>
-          );
-        })}
-      </div>
-      {!view.thinq.ready && <p className="text-sm text-ink-dim">ThinQ 토큰이 없어요.</p>}
-      {view.mode === "live" && view.home && <Pairs view={view} onView={onView} onNotice={onNotice} />}
-      <div className="mt-auto flex justify-end gap-2 pt-1">
-        <button type="button" className={btn} onClick={onBack}>이전</button>
-        <button type="button" className={primary} onClick={onNext}>다음</button>
-      </div>
-      {asking && <AskLive busy={busy} onYes={() => void change("live")} onNo={() => setAsking(false)} />}
+    <section aria-labelledby="h-mode" className="flex min-h-0 flex-1 flex-col">
+      <CardHeader>
+        <CardTitle id="h-mode">가전을 어떻게 다룰까요?</CardTitle>
+      </CardHeader>
+      <CardContent className="flex min-h-0 flex-1 flex-col gap-3">
+        <RadioGroup aria-labelledby="h-mode" value={view.mode} onValueChange={(v) => pick(v as ControlMode)} className="max-w-xl gap-2">
+          {MODES.map((m) => (
+            <RadioCard
+              key={m.id} value={m.id} label={m.name} disabled={m.id === "live" && !view.thinq.ready}
+              icon={m.id === "live" ? <PlugZap /> : <FlaskConical />}
+              description={m.id === "live" ? <Status variant="warning">{m.line}</Status> : m.line}
+            />
+          ))}
+        </RadioGroup>
+        {!view.thinq.ready && <Alert className="max-w-xl"><Info aria-hidden="true" /><AlertTitle>ThinQ 토큰이 없어요.</AlertTitle></Alert>}
+        {view.mode === "live" && view.home && <Pairs view={view} onView={onView} onNotice={onNotice} />}
+      </CardContent>
+      <CardFooter className="mt-auto justify-end gap-2">
+        <Button variant="outline" onClick={onBack}>이전</Button>
+        <Button onClick={onNext}>다음</Button>
+      </CardFooter>
+      <AskLive open={asking} busy={busy} onYes={() => void change("live")} onNo={() => setAsking(false)} />
     </section>
   );
 }
