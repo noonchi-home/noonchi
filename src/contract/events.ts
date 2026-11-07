@@ -65,23 +65,6 @@ export type AgentEvent =
 
 // 판단·행동
 
-export interface ActionChoice { id: string; label: string }
-
-export interface ActionPlan {
-  id: string;
-  task: string;
-  kind: "ask_person_to_clear" | "ask_user" | "unsupported";
-  dry_run: true;
-  /** 실제 로봇·기기라면 했을 일(기록용). */
-  would: string;
-  /** 대시보드 추론 과정에 보일 글. */
-  dashboard: string;
-  /** 폰에 띄울 부탁·질문과 버튼. 없으면 기록만. */
-  prompt: { text: string; choices: ActionChoice[] } | null;
-  /** cup_gone: 컵이 안 보이게 되는지 본다. none: 답만 기록. */
-  check: "cup_gone" | "none";
-}
-
 /** 실행 흐름 단계(판단 → 계획 → 실행 중 → 결과 확인 → 완료·실패). */
 export type ExecState = "decided" | "planned" | "running" | "verifying" | "done" | "failed";
 

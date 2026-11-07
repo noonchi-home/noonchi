@@ -3,6 +3,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { planFor } from "../act/tasks.js";
 import { Agent } from "../agent/agent.js";
 import { Policy } from "../agent/policy.js";
 import { createProvider } from "../agent/providers/index.js";
@@ -221,6 +222,11 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         pam: new PamClient({ url: loadEndpoints(env).pamUrl, timeoutMs: Number.isFinite(pamTimeout) && pamTimeout > 0 ? pamTimeout : undefined }),
         world, trigger: new Trigger(loadTriggerConfig(env), now()), tasks: () => [...CUP_TASKS],
         memory: () => memoryForDay(history.db, history.db.dayOf(now())), emit, offsetMinutes: history.db.offsetMinutes, clock: ctx.brain?.clock,
+        // 고른 행동 → 클로이드 계획(src/act/tasks.ts). 대기·판단 실패는 계획이 없다
+        onDecision: (d) => {
+          const made = planFor(plans.floor(), d, world.view(now()), new Date(now()).toISOString());
+          if (made) plans.onDecision(made);
+        },
       });
       decider = decide;
       pipeline = await createPipeline({

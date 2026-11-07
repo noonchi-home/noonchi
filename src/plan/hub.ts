@@ -1,5 +1,5 @@
 // 지금 클로이드 계획 하나를 보관하고, 바뀔 때마다 /events로 {type:"plan"}을 보낸다.
-// 에이전트 기기 행동, task planner가 보낸 계획(POST /api/plan)이 들어온다. 같은 계획을 고칠 때마다 revision을 올린다.
+// 에이전트 기기 행동, PAM 판단 계획(src/act/), task planner가 보낸 계획(POST /api/plan)이 들어온다. 같은 계획을 고칠 때마다 revision을 올린다.
 import type { AgentEvent, ServerMessage } from "../contract/events.js";
 import type { PlanStatus, PlanStep, PlanView, StepStatus, XZ } from "../contract/plan.js";
 import type { FloorPlan } from "./floor.js";
@@ -43,6 +43,11 @@ export class PlanHub {
     return this.plan;
   }
 
+  /** 지금 평면도(맞춘 눈이 있으면 그 자리가 로봇 자리). */
+  floor(): FloorPlan {
+    return this.fp;
+  }
+
   /** 에이전트 이벤트: 기기를 바꾼 행동은 한 단계 계획. 진행 중인 다른 출처 계획은 덮지 않는다. */
   onAgent(e: AgentEvent): void {
     if (e.event === "action") {
@@ -66,6 +71,13 @@ export class PlanHub {
     if (estimated || !position.every(Number.isFinite)) return;
     const at: XZ = [position[0], position[1]];
     this.fp = { ...this.fp, robot: { ...this.fp.robot, position: at, room: roomAt(this.fp, at) } };
+  }
+
+  /** PAM 판단으로 만든 계획(src/act/tasks.ts). 열린 판단 계획이 있으면 새 계획이 그것을 바꾼다(supersedes). */
+  onDecision(plan: PlanView): void {
+    const cur = this.plan;
+    const replaced = isOpen(cur) && cur.source === "brain" && cur.id !== plan.id ? cur.id : undefined;
+    this.commit(replaced ? { ...plan, supersedes: replaced } : plan);
   }
 
   /** task planner가 보낸 계획. 같은 id면 바꾼다(번호는 지금보다 크게). origin은 받은 그대로. */

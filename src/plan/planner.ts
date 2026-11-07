@@ -14,14 +14,21 @@ const base = (fp: FloorPlan, id: string, nowIso: string) => ({
   id, revision: 1, robot: { position: fp.robot.position, room: fp.robot.room }, updatedAt: nowIso,
 });
 
-/** 컵 치우기: 식탁으로 가서 컵을 집고 싱크대로 가서 내려놓는다. 식탁이 없으면 null, 싱크대가 없으면 식탁 두 단계만. */
-export function cupPlan(fp: FloorPlan, id: string, nowIso: string): PlanView | null {
+/** 집을 물건(World State). 위치는 트윈 좌표 [x, 높이, y], 맞추기 전이면 null. */
+export interface PickTarget { id: string; position: [number, number, number] | null }
+
+/**
+ * 컵 치우기: 식탁으로 가서 컵을 집고 싱크대로 가서 내려놓는다. 식탁이 없으면 null, 싱크대가 없으면 식탁 두 단계만.
+ * 집을 물건을 알면 집기 단계 대상이 그 물건이고, 위치까지 알면 첫 이동은 그 물건 앞까지 간다. 모르면 식탁을 가리킨다.
+ */
+export function cupPlan(fp: FloorPlan, id: string, nowIso: string, target: PickTarget | null = null): PlanView | null {
   const table = byType(fp, "dining_table");
   if (!table) return null;
   const sink = byType(fp, "sink_counter");
+  const at: XZ | null = target?.position ? [target.position[0], target.position[2]] : null;
   const steps: PlanStep[] = [
     { id: `${id}:1`, kind: "move", label: STEP_LABEL.goTable, target: { objectId: table.id, ...(table.room ? { room: table.room } : {}) }, status: "pending" },
-    { id: `${id}:2`, kind: "act", label: STEP_LABEL.pickCup, target: { objectId: table.id }, status: "pending" },
+    { id: `${id}:2`, kind: "act", label: STEP_LABEL.pickCup, target: target ? { objectId: target.id, ...(at ? { position: at } : {}) } : { objectId: table.id }, status: "pending" },
   ];
   if (sink) {
     steps.push(
@@ -32,7 +39,7 @@ export function cupPlan(fp: FloorPlan, id: string, nowIso: string): PlanView | n
   // 이동마다 경로를 잇는다. 하나라도 길이 없으면 경로처럼 그리지 않는다
   let path: XZ[] = [];
   let legs: PlanView["legs"] = [];
-  const leg1 = route(fp, fp.robot.position, table.position);
+  const leg1 = route(fp, fp.robot.position, at ?? table.position);
   const toTable = leg1 && approach(leg1, STOP_M);
   const leg2 = toTable && sink ? route(fp, toTable.at(-1)!, sink.position) : null;
   if (toTable && (!sink || leg2)) {

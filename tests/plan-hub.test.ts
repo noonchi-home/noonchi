@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentAction } from "../src/contract/events.js";
 import type { PlanView } from "../src/contract/plan.js";
 import { PlanHub } from "../src/plan/hub.js";
+import { askPlan, cupPlan } from "../src/plan/planner.js";
 // fp는 plan-planner.test.ts와 같은 평면도
 import { smallFloor } from "./helpers/floor.js";
 
@@ -95,5 +96,30 @@ describe("PlanHub task planner 계획", () => {
     expect(hub.setStep("x1", "x1:9", "done")).toBe(false);
     expect(hub.setStep("x1", "x1:1", "failed")).toBe(true);
     expect(hub.current()!.status).toBe("failed");
+  });
+});
+
+describe("PlanHub PAM 판단 계획", () => {
+  it("판단 계획을 보내고, 열린 판단 계획이 있으면 새 계획에 supersedes를 단다", () => {
+    const { hub, sent } = hubWithLog();
+    hub.onDecision(cupPlan(smallFloor(), "plan:pam-1", "t")!);
+    expect(hub.current()).toMatchObject({ id: "plan:pam-1", source: "brain", status: "planned" });
+    expect(hub.current()!.supersedes).toBeUndefined();
+    hub.onDecision(askPlan(smallFloor(), "plan:pam-2", "t"));
+    expect(hub.current()).toMatchObject({ id: "plan:pam-2", supersedes: "plan:pam-1" });
+    expect(sent).toHaveLength(2);
+  });
+  it("끝난 판단 계획 다음 계획에는 supersedes가 없다", () => {
+    const { hub } = hubWithLog();
+    const first = askPlan(smallFloor(), "plan:pam-1", "t");
+    hub.onDecision(first);
+    hub.setStep(first.id, first.steps[0]!.id, "done");
+    hub.onDecision(cupPlan(smallFloor(), "plan:pam-2", "t")!);
+    expect(hub.current()!.supersedes).toBeUndefined();
+  });
+  it("맞춘 눈 자리를 평면도 로봇 자리로 돌려준다", () => {
+    const { hub } = hubWithLog();
+    hub.onEye([2, 1], false);
+    expect(hub.floor().robot).toMatchObject({ position: [2, 1], room: "hall" });
   });
 });

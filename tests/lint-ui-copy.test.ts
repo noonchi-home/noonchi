@@ -109,8 +109,9 @@ describe("서버가 화면에 그대로 내보내는 계획 글(src/plan/labels.
   const labels = fileURLToPath(new URL("../src/plan/labels.ts", import.meta.url));
   const worldLabels = fileURLToPath(new URL("../src/world/labels.ts", import.meta.url));
   const historyLabels = fileURLToPath(new URL("../src/history/labels.ts", import.meta.url));
+  const prompts = fileURLToPath(new URL("../src/act/prompts.ts", import.meta.url));
   it("npm run lint가 web/·ui/src와 함께 본다", () => {
-    expect(COPY_TARGETS).toEqual([webDir, uiDir, labels, worldLabels, historyLabels]);
+    expect(COPY_TARGETS).toEqual([webDir, uiDir, labels, worldLabels, historyLabels, prompts]);
     expect(copyFiles([labels])).toEqual([labels]);
   });
   it("World State 글(src/world/labels.ts)도 꺼내 검사한다. 괄호·화살표는 템플릿 글에도 없다", () => {
@@ -124,6 +125,11 @@ describe("서버가 화면에 그대로 내보내는 계획 글(src/plan/labels.
     expect(texts).toEqual(expect.arrayContaining(["실제 모드", "진행 중", "판단 실패: …"]));
     expect(lintUiCopy([historyLabels])).toEqual([]);
     expect(texts.filter((t) => /[()→]/.test(t))).toEqual([]);
+  });
+  it("폰 부탁 글(src/act/prompts.ts)도 꺼내 검사한다", () => {
+    const texts = fileCopy(prompts, readFileSync(prompts, "utf8")).map((c) => c.text);
+    expect(texts).toEqual(expect.arrayContaining(["식탁 위 컵을 치워 주세요", "치웠어요", "그대로 둬요"]));
+    expect(lintUiCopy([prompts])).toEqual([]);
   });
   it("단계·목표·기기 동작 글을 꺼낸다", () => {
     const texts = fileCopy(labels, readFileSync(labels, "utf8")).map((c) => c.text);

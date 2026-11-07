@@ -92,3 +92,17 @@ describe.skipIf(!existsSync(APARTMENT))("마곡 아파트 컵 계획 = 계약 �
     expect(p.steps.map(({ status: _s, ...rest }) => rest)).toEqual(doc.steps.map(({ status: _s, ...rest }) => rest));
   });
 });
+
+describe("cupPlan 집을 물건", () => {
+  it("물건을 주면 집기 단계 대상이 그 물건이고, 위치를 알면 첫 이동은 그 물건 앞에서 멈춘다", () => {
+    const p = cupPlan(fp, "p1", "t", { id: "cup_1", position: [6, 0.75, 2] })!;
+    expect(p.steps[1]!.target).toEqual({ objectId: "cup_1", position: [6, 2] });
+    expect(dist(p.path[p.legs[0]!.end]!, [6, 2])).toBeCloseTo(0.55, 2);
+    expect(p.steps[0]!.target).toMatchObject({ objectId: "table_1" });
+  });
+  it("위치를 모르면 대상만 바꾸고 식탁 앞까지 간다", () => {
+    const p = cupPlan(fp, "p1", "t", { id: "cup_1", position: null })!;
+    expect(p.steps[1]!.target).toEqual({ objectId: "cup_1" });
+    expect(dist(p.path[p.legs[0]!.end]!, [7, 3])).toBeCloseTo(0.55, 2);
+  });
+});

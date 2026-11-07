@@ -24,7 +24,7 @@
 - 시험에서 서버를 띄울 때는 늘 임시 `RUNTIME_DIR`을 준다. 저장소 `runtime/noonchi.db`를 시험이 열지 않는다.
 - 분석한 엔진 프레임은 디스크에 쓰지 않는다. 디스크에는 폰 「사진 찍기」 사진과 `DATASET_COLLECT=1`일 때의 시험 자료만 쓰고 보관 기간이 지나면 지운다.
 - 시험·개발에서 ThinQ(GET 포함)와 실제 AI API(OpenAI·OpenRouter·Anthropic)를 부르지 않는다. `.env`·키 파일을 읽거나 찍지 않는다. 새 설정은 `.env.example`에 빈 값이나 안전한 기본값으로 둔다.
-- 화면 글은 CLAUDE.md 규칙(사용자 할 일·지금 상태만)을 따른다. 서버가 화면에 그대로 내보내는 글은 `src/plan/labels.ts`·`src/world/labels.ts`·`src/history/labels.ts`에만 두고 `npm run lint`가 검사한다. 대시보드에 입력창을 두지 않는다. `ui/src/plan/`과 `ui/src/dashboard/Dashboard.tsx`는 고치지 않는다.
+- 화면 글은 CLAUDE.md 규칙(사용자 할 일·지금 상태만)을 따른다. 서버가 화면에 그대로 내보내는 글은 `src/plan/labels.ts`·`src/world/labels.ts`·`src/history/labels.ts`·`src/act/prompts.ts`(폰 부탁)에만 두고 `npm run lint`가 검사한다. 대시보드에 입력창을 두지 않는다. `ui/src/plan/`과 `ui/src/dashboard/Dashboard.tsx`는 고치지 않는다.
 - 무거운 일 잠금: 시험(파일 하나도)·빌드·docker build·Blender·헤드리스 크롬은 저장소 뿌리(`C:/Users/ABC/Desktop/소웨공/twin-home-noonchi`)에서 `H <명령>`으로만 돌린다. `H` = `npm --prefix C:/Users/ABC/Desktop/소웨공/twin-home-noonchi run heavy --`. 「다른 무거운 일이 돌고 있어요」면 60초마다 최대 120분 다시 시도한다. 잠금을 우회하지 않는다. 헤드리스 크롬은 한 번에 하나.
 - 포트: 내가 띄우는 서버는 8500~8540. 8200·8210·5173·8600·8700은 건드리지 않는다. 내가 띄운 프로세스만, PID > 4를 확인하고 끈다.
 - git: 작업마다 커밋, 영어 메시지(무엇이 바뀌었는지만), 마지막 줄 `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. 경로를 하나씩 `git add`. push 하지 않는다. `graft/`·`.ignore`·`.gitignore`의 graft 줄은 건드리지 않는다(`.gitignore`는 커밋하지 않는다. 무시할 파일은 그 폴더의 `.gitignore`에 둔다).
@@ -5308,108 +5308,55 @@ git commit -m "feat: keep analyzed frames off disk and delete saved photos and o
 
 **Files:**
 - Create: `src/act/tasks.ts`, `src/act/prompts.ts`, `tests/act-tasks.test.ts`
-- Modify: `src/plan/hub.ts`(`onDecision`), `src/plan/planner.ts`(`cupPlan`에 대상 물체 위치), `src/server/home.ts`(Decider `onDecision` → 실행 흐름)
-- Delete: `src/brain/actor.ts`(글은 `src/act/prompts.ts`로)
+- Modify: `src/plan/hub.ts`(`onDecision`, `floor`), `src/plan/planner.ts`(`cupPlan`에 집을 물건), `src/server/home.ts`(Decider `onDecision` → 계획), `src/contract/events.ts`(옛 `ActionPlan`·`ActionChoice` 지움), `scripts/lint-ui-copy.ts`·`tests/lint-ui-copy.test.ts`(`src/act/prompts.ts`도 검사), `tests/plan-planner.test.ts`, `tests/plan-hub.test.ts`
+- Delete: `src/brain/actor.ts`(부탁 글은 `src/act/prompts.ts`로)
 
 **Interfaces:**
 - Consumes: `cupPlan`·`askPlan`(`src/plan/planner.ts`), `DecisionRecord`(Task 22), `WorldView`
 - Produces:
 
 ```ts
+// src/act/prompts.ts (npm run lint가 검사한다)
+export interface ActionChoice { id: string; label: string }
+export interface ActionPrompt { text: string; choices: ActionChoice[]; would: string }
+export type TaskName = "컵 치우기" | "사용자에게 물어보기";
+export const PROMPTS: Record<TaskName, ActionPrompt>;
 // src/act/tasks.ts
-export interface TaskSpec { name: string; kind: "pick_place" | "ask"; target?: ObjClass; prompt: ActionPrompt }
-export const TASKS: Record<string, TaskSpec>;     // "컵 치우기" pick_place cup, "사용자에게 물어보기" ask
-export function targetOf(spec: TaskSpec, world: WorldView): WorldObject | null;     // 식탁 위에 있는 대상 중 가장 최근에 본 것
-export function planFor(fp: FloorPlan, d: DecisionRecord, world: WorldView, nowIso: string): PlanView | null;   // task_index -1·실패는 null
-// src/act/prompts.ts
-export interface ActionPrompt { text: string; choices: { id: string; label: string }[]; would: string }
-export const PROMPTS: Record<string, ActionPrompt>;
+export interface TaskSpec { name: TaskName; kind: "pick_place" | "ask"; target?: ObjClass; prompt: ActionPrompt }
+export const TASKS: Record<string, TaskSpec>;                       // "컵 치우기" pick_place cup, "사용자에게 물어보기" ask
+export function taskOf(action: string | null): TaskSpec | null;      // 목록 밖이면 null
+export function targetOf(spec: TaskSpec, world: WorldView): WorldObject | null;   // 대상 종류 중 사라지지 않고 가장 최근에 본 것
+export function planTargetId(plan: PlanView): string | null;         // 첫 act 단계의 대상 물건 id
+export const planIdOf: (decisionId: string) => string;               // plan:<판단 id>
+export function planFor(fp: FloorPlan, d: DecisionRecord, world: WorldView, nowIso: string): PlanView | null;   // 대기·실패·목록 밖은 null
+// src/plan/planner.ts
+export interface PickTarget { id: string; position: [number, number, number] | null }
+export function cupPlan(fp: FloorPlan, id: string, nowIso: string, target?: PickTarget | null): PlanView | null;
 // src/plan/hub.ts
-PlanHub.onDecision(plan: PlanView, judgment: string): void;     // 새 계획(진행 중인 판단 계획은 supersedes)
+PlanHub.onDecision(plan: PlanView): void;   // 열린 판단(brain) 계획이 있으면 새 계획에 supersedes
+PlanHub.floor(): FloorPlan;                 // 맞춘 눈이 있으면 그 자리가 로봇 자리
 ```
 
-- [ ] **Step 1: 실패하는 시험**
-
-```ts
-// tests/act-tasks.test.ts
-import { describe, expect, it } from "vitest";
-import { planFor, TASKS } from "../src/act/tasks.js";
-import { smallFloor } from "./helpers/floor.js";
-import type { WorldView } from "../src/contract/world.js";
-
-const world = (cup = true): WorldView => ({ at_ms: 0, vlm_missing: 0, yolo_missing: 0, eye: null, devices: [], person: { visible: false, since_ms: 0, last_seen_ms: null, facts: {} },
-  objects: cup ? [{ id: "cup_1", cls: "cup", position: [7, 0.75, 3], surface: "table_1", room: "kitchen", error_m: 0.1, status: "present", first_seen_ms: 0, last_seen_ms: 0, last_in_view_ms: 0, facts: {}, devices: [] }] : [] });
-const decision = (task_index: number) => ({ id: "pam-1", seq: 1, atMs: 0, textSent: "t", finalTime: "2026-11-07T21:00:00.000+09:00", status: "valid" as const,
-  prediction: { observation: "o", reasoning: "식사가 끝나 컵을 치운다", task_index }, action: task_index === 0 ? "컵 치우기" : task_index === 1 ? "사용자에게 물어보기" : null, memoryVersion: 1, world: { objects: [], person_visible: false, vlm_missing: 0, yolo_missing: 0 } });
-
-describe("PAM 결과 → 계획", () => {
-  it("컵 치우기는 식탁·싱크대 단계 계획이 되고 판단 이유를 단다", () => {
-    const p = planFor(smallFloor(), decision(0), world(), "2026-11-07T12:00:00.000Z")!;
-    expect(p).toMatchObject({ source: "brain", dryRun: true, judgment: "식사가 끝나 컵을 치운다" });
-    expect(p.steps.map((s) => s.kind)).toEqual(["move", "act", "move", "act"]);
-    expect(p.steps[1]!.target).toMatchObject({ objectId: "cup_1" });
-  });
-  it("물어보기는 한 단계, 대기·판단 실패는 계획이 없다", () => {
-    expect(planFor(smallFloor(), decision(1), world(), "x")!.steps.map((s) => s.kind)).toEqual(["ask"]);
-    expect(planFor(smallFloor(), decision(-1), world(), "x")).toBeNull();
-    expect(planFor(smallFloor(), { ...decision(0), status: "failed", prediction: null, action: null }, world(), "x")).toBeNull();
-  });
-  it("행동 목록의 행동마다 계획 모양이 있다", () => {
-    expect(Object.keys(TASKS)).toEqual(["컵 치우기", "사용자에게 물어보기"]);
-  });
-});
-```
-(`smallFloor()`는 `tests/helpers/floor.ts`의 작은 평면도: 로봇 [1, 2], 식탁 `table_1` [7, 3], 싱크대 `sink_1` [5, 1].)
-
-- [ ] **Step 2: 실패 확인** — `H npx vitest run tests/act-tasks.test.ts` / Expected: FAIL
+- [ ] **Step 1: 실패하는 시험** — `tests/act-tasks.test.ts`
+  - 컵 치우기: `plan:pam-1`, brain, 모의, 판단 이유, 단계 move·act·move·act, 집기 단계 대상 `{ objectId: "cup_1", position: [7, 3] }`, `planTargetId`가 `cup_1`.
+  - 물건 위치를 알면 첫 이동 끝이 그 물건 앞 0.55m, 모르면 대상만 `cup_1`이고 식탁 앞 0.55m.
+  - 대상은 사라지지 않은 같은 종류 중 가장 최근에 본 것. 물건이 없으면 집기 단계는 식탁(`table_1`).
+  - 물어보기는 ask 한 단계. 대기(-1)·판단 실패·목록 밖 행동(「춤추기」)은 null.
+  - 행동마다 계획 모양과 폰 부탁 버튼이 있다.
+  - `tests/plan-hub.test.ts`: 열린 판단 계획 다음은 supersedes, 끝난 계획 다음은 없음, `floor()`가 맞춘 눈 자리. `tests/plan-planner.test.ts`: `cupPlan` 집을 물건 두 경우. `tests/lint-ui-copy.test.ts`: `COPY_TARGETS`에 `src/act/prompts.ts`.
+  - 시험의 `WorldObject`에는 `surface_label`도 넣는다(`tsc --noEmit`이 tests도 본다).
+- [ ] **Step 2: 실패 확인** — `H npx vitest run tests/act-tasks.test.ts` / Expected: FAIL(모듈 없음)
 - [ ] **Step 3: 구현**
-
-```ts
-// src/act/prompts.ts (src/brain/actor.ts의 부탁 글을 옮김). 폰에 보이고 소리로 읽는 글.
-export interface ActionPrompt { text: string; choices: { id: string; label: string }[]; would: string }
-export const PROMPTS: Record<string, ActionPrompt> = {
-  "컵 치우기": { text: "식탁 위 컵을 치워 주세요", choices: [{ id: "done", label: "치웠어요" }, { id: "later", label: "나중에" }], would: "로봇이 식탁의 컵을 싱크대로 옮긴다" },
-  "사용자에게 물어보기": { text: "컵을 치울까요?", choices: [{ id: "clear", label: "치워 주세요" }, { id: "keep", label: "그대로 둬요" }], would: "사용자에게 컵을 치울지 묻는다" },
-};
-```
-
-```ts
-// src/act/tasks.ts
-// 행동 목록의 행동마다 계획 모양을 정해 둔다. PAM이 고른 번호(task_index)를 클로이드 계획으로 바꾼다. 대기(-1)·판단 실패는 계획이 없다.
-import type { PlanView } from "../contract/plan.js";
-import type { ObjClass, WorldObject, WorldView } from "../contract/world.js";
-import type { FloorPlan } from "../plan/floor.js";
-import { askPlan, cupPlan } from "../plan/planner.js";
-import type { DecisionRecord } from "../world/decide.js";
-import { PROMPTS, type ActionPrompt } from "./prompts.js";
-
-export interface TaskSpec { name: string; kind: "pick_place" | "ask"; target?: ObjClass; prompt: ActionPrompt }
-export const TASKS: Record<string, TaskSpec> = {
-  "컵 치우기": { name: "컵 치우기", kind: "pick_place", target: "cup", prompt: PROMPTS["컵 치우기"]! },
-  "사용자에게 물어보기": { name: "사용자에게 물어보기", kind: "ask", prompt: PROMPTS["사용자에게 물어보기"]! },
-};
-
-export function targetOf(spec: TaskSpec, world: WorldView): WorldObject | null {
-  if (!spec.target) return null;
-  return world.objects.filter((o) => o.cls === spec.target && o.status !== "gone").sort((a, b) => b.last_seen_ms - a.last_seen_ms)[0] ?? null;
-}
-
-export function planFor(fp: FloorPlan, d: DecisionRecord, world: WorldView, nowIso: string): PlanView | null {
-  if (d.status !== "valid" || !d.prediction || !d.action) return null;
-  const spec = TASKS[d.action];
-  if (!spec) return null;
-  const id = `plan:${d.id}`;
-  const base = spec.kind === "ask" ? askPlan(fp, id, nowIso) : cupPlan(fp, id, nowIso, targetOf(spec, world));
-  return base && { ...base, judgment: d.prediction.reasoning };
-}
-```
-`planner.ts` `cupPlan(fp, id, nowIso, target?: WorldObject | null)`: 대상이 있으면 집기 단계 `target`에 `objectId: target.id`와 `position: [target.position[0], target.position[2]]`를 넣고, 첫 이동 목적지를 그 위치로 한다(없으면 지금처럼 식탁). `PlanHub.onDecision(plan)`: 열린 두뇌 계획이 있으면 새 계획에 `supersedes`를 달고 commit. `home.ts`: Decider `onDecision`에서 Task 29의 실행 흐름으로 넘긴다(이 작업에서는 `plans.onDecision(planFor(...))`까지). `src/brain/actor.ts`와 그 import를 지운다.
-
-- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/act-tasks.test.ts tests/plan-planner.test.ts tests/plan-hub.test.ts tests/self-contained.test.ts` / Expected: PASS
+  - `src/act/prompts.ts`: 옛 `src/brain/actor.ts`의 부탁 글(「식탁 위 컵을 치워 주세요」 치웠어요·나중에, 「컵을 치울까요?」 치워 주세요·그대로 둬요)과 would.
+  - `src/act/tasks.ts`: 위 인터페이스. `planFor`는 ask면 `askPlan`, pick_place면 `cupPlan(fp, id, now, targetOf(spec, world))`에 `judgment: d.prediction.reasoning`.
+  - `cupPlan`: 집을 물건이 있으면 집기 단계 대상이 그 물건(위치를 알면 `position: [x, y]`), 첫 이동 목적지는 물건 위치(모르면 식탁). 첫 이동 단계 대상은 식탁 그대로.
+  - `home.ts`: Decider `onDecision`에서 `planFor(plans.floor(), d, world.view(now), …)`가 있으면 `plans.onDecision`. Task 29에서 실행 추적으로 바꾼다.
+  - `src/brain/actor.ts`와 `events.ts`의 `ActionPlan`·`ActionChoice`를 지운다(쓰는 곳 없음).
+- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/act-tasks.test.ts tests/plan-planner.test.ts tests/plan-hub.test.ts tests/self-contained.test.ts tests/lint-ui-copy.test.ts tests/observe-start.test.ts`, `H npx tsc --noEmit` / Expected: PASS
 - [ ] **Step 5: 커밋**
 
 ```bash
-git add src/act/tasks.ts src/act/prompts.ts src/plan/hub.ts src/plan/planner.ts src/server/home.ts tests/act-tasks.test.ts tests/plan-planner.test.ts tests/plan-hub.test.ts
+git add src/act/tasks.ts src/act/prompts.ts src/plan/hub.ts src/plan/planner.ts src/server/home.ts src/contract/events.ts scripts/lint-ui-copy.ts tests/act-tasks.test.ts tests/plan-planner.test.ts tests/plan-hub.test.ts tests/lint-ui-copy.test.ts
 git rm src/brain/actor.ts
 git commit -m "feat: turn the PAM task index into a Cloid plan targeting the World State object"
 ```
