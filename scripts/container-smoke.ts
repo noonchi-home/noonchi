@@ -3,7 +3,8 @@
 // 이미지 안 YOLOX가 떴고(GET /api/brain detector yolox_tiny) 관찰 흐름(BRAIN=1)이 엔진 프레임 한 장을 YOLOX·가짜 VLM으로 분석해 기록 DB에 vlm 줄을 남기는지(GET /api/history·/api/brain detected),
 // 호스트에서 보낸 계획(POST /api/plan)이 토큰 없이는 403, PLAN_TOKEN을 붙이면 200인지,
 // docker stop(SIGTERM)에 종료 코드 0으로 끝나는지 본 뒤 내린다(볼륨까지 지운다).
-// 저장소 .env와 셸의 키·토큰은 넘기지 않는다: 확인용 값만 적은 임시 env 파일을 --env-file과 NOONCHI_ENV_FILE로 준다.
+// 키가 그 키를 쓰는 서비스에만 가는지(docker compose config, scripts/compose-keys.ts)도 본다.
+// 저장소 .env와 셸의 키·토큰은 넘기지 않는다: 확인용 값만 적은 임시 env 파일을 --env-file로 주고, compose가 서비스에 넘기는 이름은 셸 값을 지운다.
 // 모델·PAM LLM·에이전트(OpenAI 공급자) 주소는 compose 안의 가짜 서버(fake-openai:8500)다. 실제 AI API를 부르지 않는다.
 // 무거운 일 잠금 안에서 돌린다: npm run heavy -- npx tsx scripts/container-smoke.ts
 import { spawnSync } from "node:child_process";
@@ -14,6 +15,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import jpeg from "jpeg-js";
 import WebSocket from "ws";
+import { parse } from "yaml";
+import { KEY_OWNERS } from "./compose-keys.js";
 import { encodeFramePacket } from "../src/phone/packet.js";
 import { fetchRetry } from "../src/server/net.js";
 
@@ -32,15 +35,35 @@ const CHECK_ENV = {
 /** docs/plan-contract.md의 { plan } 예시. */
 const PLAN_BODY = /```json\r?\n([\s\S]*?)```/.exec(readFileSync(join(ROOT, "docs", "plan-contract.md"), "utf8"))![1]!;
 
-const envFile = join(mkdtempSync(join(tmpdir(), "noonchi-check-")), "check.env");
+const tmp = mkdtempSync(join(tmpdir(), "noonchi-check-"));
+const envFile = join(tmp, "check.env");
 writeFileSync(envFile, Object.entries(CHECK_ENV).map(([k, v]) => `${k}=${v}\n`).join(""));
-// 셸의 키·토큰 값은 넘기지 않는다
-const shell = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/(KEY|TOKEN|SECRET)$/i.test(k)));
-const env = { ...shell, NOONCHI_ENV_FILE: envFile, NOONCHI_PORT: "8500", NOONCHI_PHONE_PORT: "8510", PAM_HOST_PORT: "8520" };
+/** compose 서비스가 받는 설정 이름. 셸에 같은 이름이 있으면 compose가 env 파일보다 셸 값을 넘기므로 지운다. */
+const SERVICE_ENV = new Set(Object.values((parse(readFileSync(join(ROOT, "compose.yaml"), "utf8"), { merge: true }) as { services: Record<string, { environment?: Record<string, unknown> }> }).services)
+  .flatMap((svc) => Object.keys(svc.environment ?? {})));
+// 셸의 키·토큰 값과 서비스가 받는 이름은 넘기지 않는다
+const shell = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/(KEY|TOKEN|SECRET)$/i.test(k) && !SERVICE_ENV.has(k)));
+const env = { ...shell, NOONCHI_PORT: "8500", NOONCHI_PHONE_PORT: "8510", PAM_HOST_PORT: "8520" };
 const compose = (args: string[], capture = false) =>
   spawnSync("docker", ["compose", "--env-file", envFile, "-p", "noonchi-check", "--profile", "check", ...args],
     { cwd: ROOT, env, encoding: "utf8", stdio: capture ? "pipe" : "inherit" });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** 모든 키에 확인용 값을 넣은 env 파일로 compose 설정(gpu·check 프로필 포함)을 풀어, 키를 받는 서비스가 KEY_OWNERS와 다른 것을 낸다. 값은 찍지 않는다. */
+function keyLeaks(): string[] {
+  const keysFile = join(tmp, "keys.env");
+  writeFileSync(keysFile, Object.keys(KEY_OWNERS).map((k) => `${k}=check-${k.toLowerCase()}\n`).join(""));
+  const r = spawnSync("docker", ["compose", "--env-file", keysFile, "-p", "noonchi-check", "--profile", "gpu", "--profile", "check", "config", "--format", "json"],
+    { cwd: ROOT, env, encoding: "utf8" });
+  if (r.status !== 0) return ["docker compose config 실패"];
+  const services = (JSON.parse(r.stdout) as { services: Record<string, { environment?: Record<string, string | null> }> }).services;
+  const out: string[] = [];
+  for (const [key, owners] of Object.entries(KEY_OWNERS)) {
+    const got = Object.entries(services).filter(([, svc]) => svc.environment?.[key] != null).map(([n]) => n).sort();
+    if (got.join(",") !== [...owners].sort().join(",")) out.push(`${key}를 ${got.join("·") || "아무 서비스도 안"} 받아요(${owners.join("·")}만 받아야 해요)`);
+  }
+  return out;
+}
 
 /** 답이 올 때까지 기다리고, until(답)이 참이면 그 답을 낸다. 시간 안에 참이 안 되면 마지막 답(없으면 null). */
 async function waitJson(url: string, ms: number, until: (b: Record<string, any>) => boolean = () => true): Promise<Record<string, any> | null> {
@@ -100,6 +123,8 @@ let code = 1;
 // 기다리던 요청이 이 PC의 EFAULT로 손잡이 없이 멈춰도 프로세스가 정리 없이 끝나지 않게 붙잡아 둔다(제한 시간이 돌고 down -v가 돈다)
 const keepAlive = setInterval(() => {}, 1000);
 try {
+  const leaks = keyLeaks();
+  console.log(`서비스마다 받는 키: ${leaks.length ? leaks.join("; ") : "키는 그 키를 쓰는 서비스만 받음"}`);
   if (compose(["build"]).status !== 0) throw new Error("compose build 실패");
   // 이 PC(Windows)는 포트를 열 때 가끔 EFAULT(invalid pointer address)로 실패하고, up이 성공해도 호스트 포트 하나가 안 열릴 때가 있다
   // (src/server/net.ts). 그때만 내리고 다시 띄운다
@@ -119,7 +144,7 @@ try {
   if (!h) throw new Error("120초 안에 /api/health가 답하지 않았어요");
   console.log(`health: hub=${h.hub} provider=${h.provider} eye=${h.eye} twin=${h.twin}`);
   console.log(`ready: ${JSON.stringify(h.ready)}`);
-  const fails: string[] = [];
+  const fails: string[] = [...leaks];
   if (h.ready?.ok !== true) fails.push("120초 안에 ready.ok가 true가 되지 않았어요");
   if (h.provider !== "openai") fails.push(`에이전트가 openai가 아니에요(${h.provider})`);
   if (!h.twin) fails.push("트윈 결과물(twin/)이 이미지에 없어요");

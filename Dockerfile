@@ -1,5 +1,5 @@
 # noonchi 서버 이미지: 화면 빌드 → 운영 의존성 → YOLOX 모델(sha256 검사) → 실행.
-# 키·.env는 이미지에 넣지 않는다(.dockerignore). 설정은 compose env_file로 실행 때 준다.
+# 키·.env는 이미지에 넣지 않는다(.dockerignore). 설정은 compose가 이 서비스에 적은 이름만 실행 때 준다.
 ARG NODE_IMAGE=node:22.15.0-bookworm-slim
 
 FROM ${NODE_IMAGE} AS ui

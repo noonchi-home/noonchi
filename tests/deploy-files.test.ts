@@ -1,10 +1,28 @@
 // 배포 파일(Dockerfile·compose.yaml·.dockerignore·.env.example·키 없는 컨테이너 확인)이 배포 규칙을 지키는지 본다.
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
+import { isKeyName, KEY_OWNERS } from "../scripts/compose-keys.js";
 import { YOLOX_MODELS } from "../src/brain/detector.js";
 
 const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
+type Service = { environment?: Record<string, unknown> | string[]; env_file?: unknown };
+/** 서비스가 받는 설정 이름(값을 정한 것과 .env에서 받는 것). */
+const envNames = (s: Service) => (Array.isArray(s.environment) ? s.environment.map((e) => e.split("=")[0]!) : Object.keys(s.environment ?? {}));
+const services = () => (parse(read("compose.yaml"), { merge: true }) as { services: Record<string, Service> }).services;
+/** 서버 코드(src/)가 읽는 설정 이름. */
+function serverEnvNames(): Set<string> {
+  const root = fileURLToPath(new URL("../src", import.meta.url));
+  const files: string[] = [];
+  const walk = (d: string) => { for (const n of readdirSync(d)) { const p = join(d, n); if (statSync(p).isDirectory()) walk(p); else if (p.endsWith(".ts")) files.push(p); } };
+  walk(root);
+  const res = [/\benv\??\.([A-Z][A-Z0-9_]+)/g, /\(env, "([A-Z][A-Z0-9_]+)"/g, /\bv\("([A-Z][A-Z0-9_]+)"\)/g, /keyEnv: "([A-Z][A-Z0-9_]+)"/g];
+  return new Set(files.flatMap((f) => { const t = readFileSync(f, "utf8"); return res.flatMap((re) => [...t.matchAll(re)].map((m) => m[1]!)); }));
+}
+/** 컨테이너에 넘기지 않는 서버 설정: 호스트 경로(이미지 안 twin/·모델, RUNTIME_DIR/photos), MCP 서버용 주소, matter.js 안쪽 값. */
+const NOT_FOR_CONTAINER = new Set(["TWIN_STUDIO_DIR", "PHONE_PHOTO_DIR", "BRAIN_YOLO_PATH", "TWIN_HOME_URL", "MATTER_RUNTIME_SIGNALS"]);
 
 describe("배포 파일", () => {
   it("Dockerfile: Node 22.15 이상 22.x, 운영 의존성만, 화면 빌드, 트윈 포함, YOLOX sha256 검사", () => {
@@ -26,7 +44,6 @@ describe("배포 파일", () => {
       for (const p of s.ports ?? []) expect(String(p), name).toMatch(/^127\.0\.0\.1:/);
       expect(s.healthcheck, name).toBeTruthy();
     }
-    expect(c.services.noonchi.env_file).toEqual([{ path: "${NOONCHI_ENV_FILE:-.env}", required: false }]);
     expect(c.services.noonchi.volumes).toContain("noonchi-data:/data");
     expect(c.services.noonchi.profiles).toBeUndefined();
     for (const [name, served] of [["vllm-vlm", "vlm"], ["vllm-pam", "pam"]] as const) {
@@ -52,19 +69,43 @@ describe("배포 파일", () => {
     expect(pam.build).toBe("services/pam");
     expect(pam.image).toBe("noonchi-pam:local");
     expect(pam.ports).toEqual(["127.0.0.1:${PAM_HOST_PORT:-8300}:8300"]);
-    expect(pam.env_file).toEqual([{ path: "${NOONCHI_ENV_FILE:-.env}", required: false }]);
     expect(pam.profiles).toBeUndefined();
     expect(c.services.noonchi.environment.PAM_URL).toBe("http://pam:8300");
     // 컨테이너 안 네트워크 주소(Docker 브리지)는 밖에서 열 수 없으니 폰 주소에 넣지 않는다
     expect(c.services.noonchi.environment.PHONE_LAN_URLS).toBe("0");
     expect(c.services.noonchi.depends_on).toEqual({ pam: { condition: "service_healthy" } });
-    // 설정은 env_file에서 온다: environment에 ${X:-}를 두면 env_file 값을 덮는다
+    // 이름만 적은 칸은 .env에 있을 때만 넘긴다. ${X:-}로 두면 비어 있어도 늘 넘긴다
     for (const name of ["noonchi", "pam"]) for (const v of Object.values(c.services[name].environment ?? {})) expect(String(v), name).not.toContain("${");
     const fake = c.services["fake-openai"];
     expect(fake.profiles).toEqual(["check"]);
     expect(fake.image).toBe("noonchi:local");
     expect(fake.ports).toBeUndefined();
     expect(fake.command.join(" ")).toContain("scripts/fake-openai.ts --port 8500 --host 0.0.0.0");
+  });
+
+  it("compose: env_file 없이 서비스마다 받을 이름을 적고, 키는 그 키를 쓰는 서비스만 받는다", () => {
+    const svc = services();
+    for (const [name, s] of Object.entries(svc)) expect(s.env_file, `${name}: env_file은 .env 전체를 넘긴다`).toBeUndefined();
+    const exampleKeys = read(".env.example").split(/\r?\n/).map((l) => /^#?\s*([A-Z][A-Z0-9_]+)=/.exec(l)?.[1]).filter((k): k is string => !!k);
+    const keys = new Set([...exampleKeys, ...Object.values(svc).flatMap(envNames)].filter(isKeyName));
+    for (const k of keys) {
+      expect(KEY_OWNERS, `${k}을 받을 서비스를 scripts/compose-keys.ts에 적으세요`).toHaveProperty(k);
+      const got = Object.entries(svc).filter(([, s]) => envNames(s).includes(k)).map(([n]) => n).sort();
+      expect(got, k).toEqual([...KEY_OWNERS[k]!].sort());
+    }
+    expect(envNames(svc["fake-openai"]!)).toEqual([]);
+  });
+
+  it("compose: noonchi는 서버 코드가 읽는 설정을, pam은 PAM 서비스가 읽는 설정을 받는다", () => {
+    const svc = services();
+    const noonchi = new Set(envNames(svc.noonchi!));
+    const missing = [...serverEnvNames()].filter((k) => !NOT_FOR_CONTAINER.has(k) && !noonchi.has(k));
+    expect(missing, "compose.yaml noonchi environment에 더하세요").toEqual([]);
+    const settings = read("services/pam/noonchi_pam/settings.py");
+    const pamReads = [...settings.matchAll(/get\("([A-Z][A-Z0-9_]+)"\)|"key_env": "([A-Z][A-Z0-9_]+)"/g)].map((m) => (m[1] ?? m[2])!);
+    pamReads.push((JSON.parse(read("services/pam/config/openrouter.json")) as { api_key_env: string }).api_key_env);
+    expect(pamReads.length).toBeGreaterThan(5);
+    expect(pamReads.filter((k) => !envNames(svc.pam!).includes(k)), "compose.yaml pam environment에 더하세요").toEqual([]);
   });
 
   it("PAM 이미지: 저장소 안 services/pam만 쓰고 해시를 고정한 잠금 파일로 pyproject와 같은 판의 의존성을 깐다", () => {
@@ -131,8 +172,11 @@ describe("배포 파일", () => {
   it("키 없는 컨테이너 확인: 저장소 .env와 셸의 키를 넘기지 않고 8500·8510에 띄운다", () => {
     const s = read("scripts/container-smoke.ts");
     expect(s).toContain('"--env-file", envFile');
-    expect(s).toContain("NOONCHI_ENV_FILE: envFile");
     expect(s).toContain("(KEY|TOKEN|SECRET)$");
+    // compose가 서비스에 넘기는 이름은 셸 값을 쓰지 않고, 실제 compose 설정에서 키가 그 키를 쓰는 서비스에만 가는지 본다
+    expect(s).toContain("!SERVICE_ENV.has(k)");
+    expect(s).toContain('"--profile", "gpu", "--profile", "check", "config", "--format", "json"');
+    expect(s).toContain("KEY_OWNERS");
     expect(s).toContain('NOONCHI_PORT: "8500"');
     expect(s).toContain('NOONCHI_PHONE_PORT: "8510"');
     expect(s).toContain('"down", "-v"');
