@@ -73,6 +73,18 @@ describe("폰 페이지(web/phone/index.html)", () => {
     expect(page).toMatch(/<img [^>]*src="brand\/mascot@1x\.webp"[^>]*>\s*<h1>/);
   });
 
+  it("카메라 영상 위 글(AR 카드·이름표·상태 줄·기준점 단추)은 14px 이상이다", () => {
+    const css = web("phone.css");
+    const sizes = Object.fromEntries([...web("tokens.css").matchAll(/--(type-[\w-]+-size): (\d+)px;/g)].map((m) => [m[1]!, Number(m[2])]));
+    const fontPx = (selector: string) => {
+      const rule = new RegExp(`(?:^|\\n)${selector.replace(/[.#]/g, "\\$&")} \\{([^}]*)\\}`).exec(css);
+      const size = rule && /font-size: var\(--(type-[\w-]+-size)\)/.exec(rule[1]!);
+      return size ? sizes[size[1]!] : undefined;
+    };
+    const onVideo = [".brain-action .tag", ".brain-action-would", ".brain-line", ".focus-mark .label", ".anchors button", ".side button span"];
+    expect(Object.fromEntries(onVideo.map((s) => [s, (fontPx(s) ?? 0) >= 14]))).toEqual(Object.fromEntries(onVideo.map((s) => [s, true])));
+  });
+
   it("phone.css는 토큰 변수로만 칠한다", () => {
     const css = web("phone.css");
     expect(css).toContain("var(--ink)");

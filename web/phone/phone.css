@@ -44,7 +44,7 @@ button { font: inherit; padding: 10px 14px; border-radius: var(--radius-card); b
 .brain-action { position: fixed; left: 50%; top: 22%; transform: translateX(-50%); width: min(92vw, 520px); display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: var(--radius-2xl); color: var(--ink); background: var(--glass-phone); box-shadow: var(--shadow-float); }
 .brain-action p { margin: 0; }
 .brain-action-text { font-size: var(--type-title-size); }
-.brain-action .tag { display: inline-block; padding: 1px 8px; border-radius: var(--radius-lg); font-size: var(--type-caption-size); font-weight: 600; color: var(--on-status); background: var(--warn); vertical-align: middle; }
+.brain-action .tag { display: inline-block; padding: 1px 8px; border-radius: var(--radius-lg); font-size: var(--type-body-sm-size); font-weight: 600; color: var(--on-status); background: var(--warn); vertical-align: middle; }
 .brain-action-would { font-size: var(--type-body-sm-size); color: var(--ink); }
 .brain-action-choices { display: flex; gap: 8px; }
 .brain-action-choices button { flex: 1; padding: 14px 10px; font-size: var(--type-title-sm-size); font-weight: 600; }
