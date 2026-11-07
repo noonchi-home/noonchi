@@ -43,7 +43,7 @@ cp .env.example .env
 | `PHONE_URL` | `https://<서버>.<tailnet>.ts.net:8443/phone/` |
 | `BRAIN` | `1` |
 | `VLM_LIVE_MODEL` | live VLM Hugging Face 모델(기본 `Qwen/Qwen3-VL-4B-Instruct`). vLLM은 `vlm`이라는 이름으로 내건다 |
-| `PAM_LIVE_MODEL` | live PAM LLM Hugging Face 모델. vLLM은 `pam`이라는 이름으로 내건다 |
+| `PAM_LIVE_MODEL` | live PAM LLM Hugging Face 모델(기본 `Qwen/Qwen3.5-27B-GPTQ-Int4`, Qwen3.5-27B 4비트). vLLM은 `pam`이라는 이름으로 내건다 |
 | `PAM_MAX_MODEL_LEN` | PAM LLM 문맥 길이(기본 32768). vLLM과 PAM 서비스가 같이 쓴다 |
 | `PAM_LLM_BASE_URL`, `PAM_LLM_MODEL` | 비우면 모드 기본값(mock: OpenRouter `qwen/qwen3.5-27b` provider alibaba, live: `http://vllm-pam:8000/v1`의 `pam`) |
 | `ANTHROPIC_API_KEY` 또는 `OPENAI_API_KEY` | 에이전트(폰 음성 요청). mock·live 두 모드 모두 필요하다 |
@@ -66,6 +66,7 @@ curl -s http://127.0.0.1:8300/health          # PAM 서비스: llm.reachable, li
 ```
 
 - vLLM 이미지는 `vllm/vllm-openai:v0.17.0`(Qwen3-VL·Qwen3.5 지원)이다. 바꿀 때만 `VLLM_IMAGE`에 적는다. vllm-pam은 vllm-vlm이 healthy가 된 뒤에 뜬다. 처음에는 모델을 받느라 수십 분 걸린다.
+- vllm-pam은 `--reasoning-parser qwen3`로 띄운다. 반성(생각 켬)의 생각 글은 `reasoning_content`로 빠지고 `content`에는 답만 남는다.
 - 두 모델이 떴는지 본다(각각 id `vlm`, `pam`이 나와야 한다):
 
     ```bash

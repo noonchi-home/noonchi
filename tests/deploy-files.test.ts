@@ -39,6 +39,9 @@ describe("배포 파일", () => {
       expect(s.volumes).toContain("model-cache:/root/.cache/huggingface");
     }
     expect(c.services["vllm-pam"].command.join(" ")).toContain("--max-model-len ${PAM_MAX_MODEL_LEN:-32768}");
+    // live PAM LLM: Qwen3.5-27B 4비트. 생각 글은 reasoning_content로 빼서 content에는 답만 남긴다
+    expect(c.services["vllm-pam"].command.join(" ")).toContain("--model ${PAM_LIVE_MODEL:-Qwen/Qwen3.5-27B-GPTQ-Int4}");
+    expect(c.services["vllm-pam"].command.join(" ")).toContain("--reasoning-parser qwen3");
     expect(c.services["vllm-pam"].depends_on).toEqual({ "vllm-vlm": { condition: "service_healthy" } });
     expect(Object.keys(c.volumes)).toEqual(expect.arrayContaining(["noonchi-data", "model-cache"]));
   });

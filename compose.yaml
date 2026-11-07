@@ -86,9 +86,10 @@ services:
   vllm-pam:
     <<: *vllm
     # 한 GPU에서 둘이 동시에 메모리를 잡지 않게 VLM이 뜬 뒤에 뜬다.
+    # PAM LLM은 Qwen3.5-27B 4비트. 반성(생각 켬)의 생각 글은 reasoning_content로 빼고 content에는 답만 남긴다.
     depends_on: { vllm-vlm: { condition: service_healthy } }
-    command: ["--model", "${PAM_LIVE_MODEL:-}", "--served-model-name", "pam", "--gpu-memory-utilization", "${VLLM_PAM_GPU_SHARE:-0.60}",
-              "--max-model-len", "${PAM_MAX_MODEL_LEN:-32768}"]
+    command: ["--model", "${PAM_LIVE_MODEL:-Qwen/Qwen3.5-27B-GPTQ-Int4}", "--served-model-name", "pam", "--gpu-memory-utilization", "${VLLM_PAM_GPU_SHARE:-0.60}",
+              "--max-model-len", "${PAM_MAX_MODEL_LEN:-32768}", "--reasoning-parser", "qwen3"]
     ports: ["127.0.0.1:8420:8000"]
 
 volumes:
