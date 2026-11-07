@@ -1,23 +1,23 @@
 import { render, screen } from "@testing-library/react";
+import { create } from "qrcode";
 import { describe, expect, it } from "vitest";
-import { qrPath } from "../src/panels/qr";
-import { QrCode } from "../src/panels/QrCode";
+import { QRCode } from "../src/components/ui/qr-code";
 
 const URL_ = "https://phone-pc.example-net.ts.net/phone/";
 
-describe("QR", () => {
-  it("QR 판 크기(21 + 4의 배수)와 왼쪽 위 찾기 무늬로 시작하는 경로", () => {
-    const { size, d } = qrPath(URL_);
-    expect(size).toBeGreaterThanOrEqual(21);
-    expect((size - 17) % 4).toBe(0);
-    expect(d.startsWith("M0 0h7v1h-7z")).toBe(true);
-    expect(qrPath("https://other.example/phone/").d).not.toBe(d);
+describe("QR(21st.dev QR Code)", () => {
+  it("네모 칸으로, qr-ink 칸을 qr-bg 바탕 위에 그린다(폰 카메라가 멀리서 읽게)", () => {
+    render(<QRCode value={URL_} variant="squares" aria-label="폰 접속 QR" />);
+    const svg = screen.getByRole("img", { name: "폰 접속 QR" });
+    expect(svg).toHaveAttribute("shape-rendering", "crispEdges");
+    expect(svg.querySelector(":scope > rect")).toHaveAttribute("fill", "var(--qr-bg)");
+    expect(svg.querySelector(":scope > g")).toHaveAttribute("fill", "var(--qr-ink)");
+    expect(svg.querySelector("circle")).toBeNull();
   });
 
-  it("흰 바탕 위 검은 칸으로 그린다", () => {
-    render(<QrCode value={URL_} />);
-    const svg = screen.getByRole("img", { name: "폰 접속 QR" });
-    expect(svg.querySelector("rect")).toHaveAttribute("fill", "#fff");
-    expect(svg.querySelector("path")?.getAttribute("d")).toBe(qrPath(URL_).d);
+  it("판 크기는 QR 칸 수 + 여백 2칸씩", () => {
+    render(<QRCode value={URL_} variant="squares" aria-label="폰 접속 QR" />);
+    const n = create(URL_, { errorCorrectionLevel: "M" }).modules.size;
+    expect(screen.getByRole("img", { name: "폰 접속 QR" })).toHaveAttribute("viewBox", `0 0 ${n + 4} ${n + 4}`);
   });
 });

@@ -1,9 +1,18 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { TriangleAlert } from "lucide-react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import type { SetupView } from "../../../src/contract/setup.ts";
+import { Alert, AlertTitle } from "../components/ui/alert";
+import { Avatar, AvatarFallback } from "../components/ui/avatar";
+import { Button } from "../components/ui/button";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../components/ui/card";
+import { Input } from "../components/ui/input";
+import { Skeleton } from "../components/ui/skeleton";
+import { Status } from "../components/ui/status";
 import { cn } from "../lib/utils";
+import { urlParts } from "../panels/phone-url";
 import { hideViewerBar } from "../twin/embed";
 import { waitForViewer } from "../twin/viewer";
-import { btn, call, failText, isOk, primary, small } from "./setup-api";
+import { call, failText, isOk } from "./setup-api";
 
 // 4 위치 동기화: 3D 트윈에서 벽 두 곳(A·B)을 골라 저장하면 폰이 실제 그 벽 바로 아래 바닥을 조준해 맞춘다(높이는 눈높이 고정).
 // 고르기는 같은 출처 iframe의 뷰어 API(aptViewer.startPick)를 쓰고, 저장한 점은 3D에 핀으로 보인다.
@@ -56,8 +65,8 @@ interface LayoutView {
 }
 
 /**
- * 3D 트윈 iframe. 뜨면 뷰어 위 막대를 숨기고, 집을 다 불러오면 배지를 끄고 캔버스를 다시 맞춘 뒤 onReady.
- * 그때까지 불투명한 덮개로 가린다. 뷰어는 load 전부터 막대·가전 패널을 그리고, embed 접기는 장면을 받은 뒤에 한다.
+ * 3D 트윈 iframe(21st.dev Card 안). 뜨면 뷰어 위 막대를 숨기고, 집을 다 불러오면 배지를 끄고 캔버스를 다시 맞춘 뒤 onReady.
+ * 그때까지 트윈을 숨기고(invisible) Skeleton·글로 자리를 채운다. 뷰어는 load 전부터 막대·가전 패널을 그리고, embed 접기는 장면을 받은 뒤에 한다.
  */
 function TwinBox({ home, frame, onReady }: { home: string; frame: React.RefObject<HTMLIFrameElement | null>; onReady: () => void }) {
   const [twin, setTwin] = useState<"checking" | "none" | "loading" | "failed" | "ready">("checking");
@@ -83,18 +92,24 @@ function TwinBox({ home, frame, onReady }: { home: string; frame: React.RefObjec
     return () => { live = false; };
   }, [home]);
   const cover = { checking: "3D 트윈 불러오는 중…", loading: "3D 트윈 불러오는 중…", none: "3D 트윈을 찾을 수 없어요.", failed: "3D 트윈을 불러오지 못했어요.", ready: null }[twin];
+  const waiting = twin === "checking" || twin === "loading";
   return (
-    <div className="relative min-h-[360px] overflow-hidden rounded-xl border border-glass-line bg-black/30">
+    <Card className="relative min-h-[360px] overflow-hidden">
       {twin !== "checking" && twin !== "none" && (
         <iframe
           ref={frame} title="3D 집 트윈" src={`${TWIN_SRC}&home=${encodeURIComponent(home)}`}
-          className="absolute inset-0 size-full border-0" onLoad={onLoad}
+          className={cn("absolute inset-0 size-full", cover && "invisible")} onLoad={onLoad}
         />
       )}
-      {cover && (
-        <p className="absolute inset-0 m-0 grid place-items-center bg-canvas p-4 text-center text-ink-dim">{cover}</p>
+      {cover && waiting && (
+        <Skeleton className="absolute inset-0 grid place-items-center p-4"><CardDescription>{cover}</CardDescription></Skeleton>
       )}
-    </div>
+      {cover && !waiting && (
+        <div className="absolute inset-0 grid place-items-center p-4">
+          <Alert variant="error" className="w-auto"><TriangleAlert aria-hidden="true" /><AlertTitle>{cover}</AlertTitle></Alert>
+        </div>
+      )}
+    </Card>
   );
 }
 
@@ -257,68 +272,87 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
   const urls = view.position.phone_urls;
   const both = Boolean(points.A && points.B);
   return (
-    <section aria-labelledby="h-position" className="flex min-h-0 flex-1 flex-col gap-3">
-      <h2 id="h-position" className="text-[18px] font-semibold">폰과 트윈의 위치를 맞춰요</h2>
-      <div className="grid min-h-[420px] flex-1 gap-3 md:grid-cols-[minmax(0,1fr)_360px]">
+    <section aria-labelledby="h-position" className="flex min-h-0 flex-1 flex-col">
+      <CardHeader>
+        <CardTitle id="h-position">폰과 트윈의 위치를 맞춰요</CardTitle>
+      </CardHeader>
+      <CardContent className="grid min-h-[420px] flex-1 gap-3 md:grid-cols-[minmax(0,1fr)_360px]">
         <TwinBox home={home} frame={frame} onReady={() => showMarkers(pointsRef.current, labelsRef.current)} />
-        <div className="flex flex-col gap-3 overflow-auto text-sm">
+        <div className="flex flex-col gap-3 overflow-auto">
           {touchOn && (
-            <section aria-label="폰 기준점" className="rounded-xl border border-glass-line bg-field p-3">
-              <h3 className="mb-2 font-semibold">폰 기준점 A·B</h3>
-              {!picking && <button type="button" className={cn(btn, "mb-2 w-full")} onClick={pickWall}>벽 하나로 A·B 고르기</button>}
-              {!picking && IDS.map((id) => (
-                <div key={id} className="mb-2 grid grid-cols-[auto_1fr_auto] items-center gap-1.5">
-                  <b className={cn("grid size-6 place-items-center rounded-full text-xs text-white", id === "A" ? "bg-[#e8590c]" : "bg-[#1c7ed6]")}>{id}</b>
-                  <input
-                    type="text" maxLength={MAX_LABEL} value={labels[id]} aria-label={`${id} 지점 이름`}
-                    placeholder={id === "A" ? "예: 거실 창 오른쪽 벽" : "예: 반대편 벽"}
-                    onChange={(e) => { const l = { ...labels, [id]: e.target.value }; setLabels(l); showMarkers(points, l); }}
-                    className="min-w-0 rounded-md border border-glass-line bg-black/20 px-2 py-1 text-ink outline-none focus:border-on"
-                  />
-                  <button type="button" className={small} onClick={() => pick(id)}>3D에서 고르기</button>
-                  <span className="col-start-2 col-end-4 text-xs text-ink-dim">
-                    {points[id] ? `벽 위치 (${points[id]![0].toFixed(2)}, ${points[id]![1].toFixed(2)})m` : "미지정"}
-                  </span>
-                </div>
-              ))}
-              <p role="status" aria-live="polite" className={cn("my-2 text-xs", info.error && "text-alert")}>{info.text}</p>
-              <div className="flex justify-end gap-1.5">
-                {picking ? <button type="button" className={small} onClick={() => viewer()?.cancelPick?.()}>고르기 취소</button> : (
-                  <>
-                    <button type="button" className={btn} disabled={!both} onClick={save}>저장</button>
-                    <button type="button" className={small} disabled={!points.A && !points.B && !saved} onClick={clear}>지우기</button>
-                  </>
-                )}
-              </div>
+            <section aria-label="폰 기준점">
+              <Card>
+                <CardHeader><CardTitle>폰 기준점 A·B</CardTitle></CardHeader>
+                <CardContent className="flex flex-col gap-2">
+                  {!picking && <Button variant="outline" size="sm" className="w-full" onClick={pickWall}>벽 하나로 A·B 고르기</Button>}
+                  {!picking && IDS.map((id) => (
+                    <div key={id} className="grid grid-cols-[auto_1fr_auto] items-center gap-1.5">
+                      <Avatar size="marker" aria-hidden="true"><AvatarFallback tone={id === "A" ? "marker-a" : "marker-b"}>{id}</AvatarFallback></Avatar>
+                      <Input
+                        type="text" maxLength={MAX_LABEL} value={labels[id]} aria-label={`${id} 지점 이름`}
+                        placeholder={id === "A" ? "예: 거실 창 오른쪽 벽" : "예: 반대편 벽"}
+                        onChange={(e) => { const l = { ...labels, [id]: e.target.value }; setLabels(l); showMarkers(points, l); }}
+                        className="min-w-0"
+                      />
+                      <Button variant="secondary" size="sm" onClick={() => pick(id)}>3D에서 고르기</Button>
+                      <CardDescription className="col-start-2 col-end-4">
+                        {points[id] ? `벽 위치 (${points[id]![0].toFixed(2)}, ${points[id]![1].toFixed(2)})m` : "미지정"}
+                      </CardDescription>
+                    </div>
+                  ))}
+                  <Alert role="status" aria-live="polite" variant={info.error ? "error" : "default"}>
+                    {info.error && <TriangleAlert aria-hidden="true" />}
+                    <AlertTitle>{info.text}</AlertTitle>
+                  </Alert>
+                </CardContent>
+                <CardFooter className="justify-end gap-1.5">
+                  {picking ? <Button variant="ghost" size="sm" onClick={() => viewer()?.cancelPick?.()}>고르기 취소</Button> : (
+                    <>
+                      <Button size="sm" disabled={!both} onClick={save}>저장</Button>
+                      <Button variant="outline" size="sm" disabled={!points.A && !points.B && !saved} onClick={clear}>지우기</Button>
+                    </>
+                  )}
+                </CardFooter>
+              </Card>
             </section>
           )}
           {layout && (
-            <section aria-label="배치 보정" className="rounded-xl border border-glass-line bg-field p-3">
-              <h3 className="mb-2 font-semibold">배치 보정</h3>
-              <p className="mb-2">
-                <span className={cn("rounded-full px-2 py-0.5 text-xs", layout.dirty ? "bg-alert/15 text-alert" : "bg-on/15 text-on")}>
-                  {layout.edits === 0 ? "보정 없음" : `보정 ${layout.edits}건 · ${layout.dirty ? "저장 안 함" : "저장됨"}`}
-                </span>
-              </p>
-              <div className="flex justify-end gap-1.5">
-                <button type="button" className={small} disabled={layout.edits === 0} onClick={() => layoutAct("reset")}>되돌리기</button>
-                <button type="button" className={btn} disabled={layout.edits === 0 && !layout.dirty} onClick={() => layoutAct("save")}>저장</button>
-              </div>
+            <section aria-label="배치 보정">
+              <Card>
+                <CardHeader><CardTitle>배치 보정</CardTitle></CardHeader>
+                <CardContent>
+                  <Status variant={layout.dirty ? "error" : "success"}>
+                    {layout.edits === 0 ? "보정 없음" : `보정 ${layout.edits}건 · ${layout.dirty ? "저장 안 함" : "저장됨"}`}
+                  </Status>
+                </CardContent>
+                <CardFooter className="justify-end gap-1.5">
+                  <Button variant="outline" size="sm" disabled={layout.edits === 0} onClick={() => layoutAct("reset")}>되돌리기</Button>
+                  <Button size="sm" disabled={layout.edits === 0 && !layout.dirty} onClick={() => layoutAct("save")}>저장</Button>
+                </CardFooter>
+              </Card>
             </section>
           )}
-          <section aria-label="폰 연결" className="rounded-xl border border-glass-line bg-field p-3">
-            <h3 className="mb-2 font-semibold">폰</h3>
-            <p className="mb-1 text-xs">{urls.length > 0 ? "폰 크롬에서 이 주소를 열고 기준점을 조준해 기록하세요." : "폰 서버가 꺼져 있어요."}</p>
-            <ul className="list-disc break-all pl-5 text-xs">
-              {urls.map((u) => <li key={u}><code>{u}</code></li>)}
-            </ul>
+          <section aria-label="폰 연결">
+            <Card>
+              <CardHeader>
+                <CardTitle>폰</CardTitle>
+                <CardDescription>{urls.length > 0 ? "폰 크롬에서 이 주소를 열고 기준점을 조준해 기록하세요." : "폰 서버가 꺼져 있어요."}</CardDescription>
+              </CardHeader>
+              {urls.length > 0 && (
+                <CardContent>
+                  <ul className="m-0 list-disc break-words pl-5">
+                    {urls.map((u) => <li key={u}><code>{urlParts(u).map((p, i) => <Fragment key={i}>{p}<wbr /></Fragment>)}</code></li>)}
+                  </ul>
+                </CardContent>
+              )}
+            </Card>
           </section>
         </div>
-      </div>
-      <div className="flex justify-end gap-2 pt-1">
-        <button type="button" className={btn} onClick={onBack}>이전</button>
-        <button type="button" className={primary} onClick={onDone}>{saved ? "완료하고 대시보드로" : "건너뛰고 대시보드로"}</button>
-      </div>
+      </CardContent>
+      <CardFooter className="justify-end gap-2">
+        <Button variant="outline" onClick={onBack}>이전</Button>
+        <Button onClick={onDone}>{saved ? "완료하고 대시보드로" : "건너뛰고 대시보드로"}</Button>
+      </CardFooter>
     </section>
   );
 }

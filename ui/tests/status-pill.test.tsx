@@ -21,6 +21,26 @@ describe("StatusPill", () => {
     expect(screen.getByRole("status")).toHaveTextContent("연결 끊김 · 다시 연결 중");
   });
 
+  it("연결 칩은 21st.dev Status: 연결됨이면 success와 움직이는 점 하나, 끊기면 error, 처음은 default", () => {
+    const { rerender } = render(<StatusPill connected={null} health={null} />);
+    expect(screen.getByRole("status")).toHaveAttribute("data-variant", "default");
+    expect(document.querySelectorAll("[data-live]")).toHaveLength(0);
+    rerender(<StatusPill connected health={health} />);
+    expect(screen.getByRole("status")).toHaveAttribute("data-variant", "success");
+    expect(document.querySelectorAll("[data-live]")).toHaveLength(1);
+    rerender(<StatusPill connected={false} health={{ ...health, mode: "live" }} />);
+    expect(screen.getByRole("status")).toHaveAttribute("data-variant", "error");
+    expect(document.querySelectorAll("[data-live]")).toHaveLength(0);
+    expect(screen.getByText("실제 모드").closest("[data-slot=status]")).toHaveAttribute("data-variant", "warning");
+  });
+
+  it("맨 앞에 로고 짝: 얼굴 상자(Avatar logo)와 NOONCHI 글자표", () => {
+    render(<StatusPill connected health={health} />);
+    const pill = screen.getByRole("region", { name: "집 상태" });
+    expect(pill.querySelector("[data-shape=logo]")).not.toBeNull();
+    expect(screen.getByText("NOONCHI")).toBeInTheDocument();
+  });
+
   it("집·허브·에이전트 배지와 설정 다시 하기 링크", () => {
     render(<StatusPill connected health={{ ...health, hub: "matter", transport: "udp" }} />);
     expect(screen.getByText("집 마곡 아파트")).toBeInTheDocument();

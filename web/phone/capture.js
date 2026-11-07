@@ -4,7 +4,7 @@
 // flipY: 텍스처가 GL 방식(t=0이 이미지 아래쪽)이면 true. readPixels는 아래 줄부터 읽으므로 셰이더에서 뒤집어
 // 위 줄부터 나오게 한다. 실제 폰 카메라 텍스처 방향은 폰에서 확인하고, 거꾸로면 폰 페이지 ?flip=0으로 바꾼다.
 
-import { drawMarks } from "./marks.js";
+import { drawMarks, markFont } from "./marks.js";
 
 export { drawMarks };
 
@@ -121,7 +121,10 @@ export function createEncoder({ workers: count = 2 } = {}) {
 
   let canvas = null;
   let ctx = null;
-  function onMainThread(pixels, width, height, quality, marks) {
+  async function onMainThread(pixels, width, height, quality, marks) {
+    // 이름표 글자의 글꼴 조각(phone 페이지 @font-face)을 받은 뒤 그린다
+    const text = marks.map((m) => m.label).join("");
+    if (text && document.fonts) await document.fonts.load(markFont(width), text).catch(() => {});
     canvas ??= document.createElement("canvas");
     ctx ??= canvas.getContext("2d");
     canvas.width = width;

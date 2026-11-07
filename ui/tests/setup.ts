@@ -17,3 +17,8 @@ if (typeof window !== "undefined" && typeof window.matchMedia !== "function") {
 // motion 움직임은 바로 끝난 상태로 그린다(처음 opacity 0에 머물지 않게).
 import { MotionGlobalConfig } from "motion/react";
 MotionGlobalConfig.skipAnimations = true;
+
+// jsdom에는 ResizeObserver가 없다. 21st.dev 부품(Liquid Glass, Radix Tooltip 화살표)이 크기를 잴 때 쓴다. 재지 않는 빈 것으로 둔다.
+if (typeof window !== "undefined" && typeof window.ResizeObserver !== "function") {
+  window.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver;
+}

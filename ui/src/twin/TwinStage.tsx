@@ -1,4 +1,6 @@
+import { TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Alert, AlertTitle } from "../components/ui/alert";
 import { hideViewerBar } from "./embed";
 import { ViewerContext, waitForViewer, type AptViewer } from "./viewer";
 
@@ -37,8 +39,12 @@ export function TwinStage({ children }: { children?: ReactNode }) {
   return (
     <ViewerContext.Provider value={viewer}>
       <section className="absolute inset-0" aria-label="3D 트윈">
-        <iframe ref={frame} src={SRC} title="3D 집 트윈" className="absolute inset-0 h-full w-full border-0" />
-        {error && <p className="absolute inset-0 grid place-items-center text-ink-2">{error}</p>}
+        <iframe ref={frame} src={SRC} title="3D 집 트윈" className="absolute inset-0 h-full w-full" />
+        {error && (
+          <div className="absolute inset-0 grid place-items-center p-4">
+            <Alert variant="error" className="w-auto max-w-md"><TriangleAlert aria-hidden="true" /><AlertTitle>{error}</AlertTitle></Alert>
+          </div>
+        )}
         <div className="pointer-events-none absolute inset-0 *:pointer-events-auto">{children}</div>
       </section>
     </ViewerContext.Provider>

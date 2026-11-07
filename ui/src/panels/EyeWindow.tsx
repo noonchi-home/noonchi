@@ -1,25 +1,35 @@
 import { ChevronUp, Eye } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type { HealthView } from "../../../src/contract/events.ts";
+import { Button } from "../components/ui/button";
+import { Item, ItemContent, ItemDescription, ItemTitle } from "../components/ui/item";
+import { LiquidGlass } from "../components/ui/liquid-glass";
+import { QRCode } from "../components/ui/qr-code";
 import { attachEyeVideo, type EyeMode } from "./eye-video";
-import { Surface } from "../components/Surface";
-import { pickPhoneUrl } from "./phone-url";
-import { QrCode } from "./QrCode";
+import { pickPhoneUrl, urlParts } from "./phone-url";
 
 const streamUrl = () => `/api/eye/stream?t=${Date.now()}`;
-const line = "px-1 text-center text-xs text-ink";
+
+/** 안내 한 줄(21st.dev Basic Item). */
+const Line = ({ text }: { text: string }) => (
+  <Item size="sm" className="justify-center"><ItemContent className="items-center"><ItemTitle>{text}</ItemTitle></ItemContent></Item>
+);
 
 /** 폰이 아직 화면을 보내지 않을 때: 맨 앞 폰 주소 QR(찍으면 바로 시작), 한 줄, 주소는 작게. */
 function Waiting({ health }: { health: HealthView | null }) {
   if (!health) return <div className="size-48" />;
-  if (!health.eye) return <p className={line}>폰 서버가 꺼져 있어요.</p>;
+  if (!health.eye) return <Line text="폰 서버가 꺼져 있어요." />;
   const { best } = pickPhoneUrl(health.phone_urls);
-  if (!best) return <p className={line}>폰에서 AR을 시작하세요.</p>;
+  if (!best) return <Line text="폰에서 AR을 시작하세요." />;
   return (
     <div className="flex flex-col items-center gap-2">
-      <QrCode value={best} className="size-48" />
-      <p className={line}>폰 카메라로 찍으세요</p>
-      <p className="max-w-48 break-all text-center text-[10px] leading-tight text-ink-3">{best}</p>
+      <QRCode value={best} variant="squares" aria-label="폰 접속 QR" className="size-48" />
+      <Item size="sm" className="max-w-48 justify-center">
+        <ItemContent className="items-center">
+          <ItemTitle>폰 카메라로 찍으세요</ItemTitle>
+          <ItemDescription className="line-clamp-none break-words text-center">{urlParts(best).map((p, i) => <Fragment key={i}>{p}<wbr /></Fragment>)}</ItemDescription>
+        </ItemContent>
+      </Item>
     </div>
   );
 }
@@ -73,7 +83,7 @@ export function EyeBody({ health, connected, large }: { health: HealthView | nul
     <>
       {live && (
         <figure hidden={!shown} className={large ? "m-0 h-full min-h-0 flex-1" : "m-0"}>
-          <div className={large ? "relative h-full w-full bg-black/70" : "relative h-96 w-56 bg-black/70"}>
+          <div className={large ? "relative h-full w-full" : "relative h-96 w-56"}>
             <div ref={videoBox} hidden={mode !== "video"} className="absolute inset-0" />
             <img
               ref={img}
@@ -92,30 +102,28 @@ export function EyeBody({ health, connected, large }: { health: HealthView | nul
   );
 }
 
-const foldButton = "flex size-7 items-center justify-center rounded-control text-ink-2 transition-colors hover:bg-hover hover:text-ink";
-
 /**
- * 왼쪽 위 작은 창. 판은 흰 카드(Surface)다. 접으면 눈 단추만 남고 화면 받기를 멈춘다.
+ * 왼쪽 위 작은 창. 판은 21st.dev Liquid Glass(판 16px, tint 0.9)다. 접으면 눈 단추 알약(tint 0.6)만 남고 화면 받기를 멈춘다.
  * 640px보다 좁으면 대시보드의 쌓기 상자 안에서 제자리(relative)에 놓여 판단 기록 위에 선다.
  */
 export function EyeWindow({ health, connected }: { health: HealthView | null; connected?: boolean | null }) {
   const [open, setOpen] = useState(true);
   return (
-    <section aria-label="클로이드의 눈" className="absolute left-3 top-16 z-50 text-ink min-[1440px]:top-3 max-sm:relative max-sm:inset-auto max-sm:self-start">
-      <Surface kind="panel" className="overflow-hidden">
-        {open ? (
-          <>
-            <EyeBody health={health} connected={connected} />
-            <button type="button" aria-label="눈 창 접기" aria-expanded onClick={() => setOpen(false)} className={`absolute right-1.5 top-1.5 bg-white/70 backdrop-blur ${foldButton}`}>
-              <ChevronUp className="size-4" aria-hidden="true" />
-            </button>
-          </>
-        ) : (
-          <button type="button" aria-label="눈 창 펴기" aria-expanded={false} onClick={() => setOpen(true)} className={`m-1 ${foldButton}`}>
-            <Eye className="size-4" aria-hidden="true" />
-          </button>
-        )}
-      </Surface>
+    <section aria-label="클로이드의 눈" data-panel className="absolute left-3 top-16 z-50 min-[1440px]:top-3 max-sm:relative max-sm:inset-auto max-sm:self-start">
+      {open ? (
+        <LiquidGlass radius={16} contentClassName="relative">
+          <EyeBody health={health} connected={connected} />
+          <Button variant="secondary" size="icon" aria-label="눈 창 접기" aria-expanded onClick={() => setOpen(false)} className="absolute right-1.5 top-1.5 h-7 w-7">
+            <ChevronUp className="size-4" aria-hidden="true" />
+          </Button>
+        </LiquidGlass>
+      ) : (
+        <LiquidGlass tint={0.6} contentClassName="p-1">
+          <Button variant="ghost" size="sm" aria-label="눈 창 펴기" aria-expanded={false} onClick={() => setOpen(true)} className="gap-1.5">
+            <Eye className="size-4" aria-hidden="true" />클로이드의 눈
+          </Button>
+        </LiquidGlass>
+      )}
     </section>
   );
 }

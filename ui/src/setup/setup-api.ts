@@ -21,8 +21,3 @@ export function isOk<T>(r: Reply<T>): r is { status: number; json: T } {
 }
 
 export const failText = (r: Reply<unknown>, fallback: string) => (r.json as Fail | null)?.error ?? fallback;
-
-/** 설정 화면 버튼 모양. */
-export const btn = "rounded-lg bg-field px-3 py-1.5 text-sm text-ink transition-colors hover:bg-field-strong disabled:cursor-not-allowed disabled:opacity-40";
-export const primary = "rounded-lg bg-on px-3 py-1.5 text-sm font-semibold text-[#08201b] transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40";
-export const small = "rounded-md bg-field px-2 py-1 text-xs text-ink transition-colors hover:bg-field-strong disabled:cursor-not-allowed disabled:opacity-40";

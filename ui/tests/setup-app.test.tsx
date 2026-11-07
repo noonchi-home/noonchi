@@ -31,6 +31,23 @@ describe("설정 1단계: 집 고르기", () => {
     expect(screen.getByText("지금 띄운 집")).toBeInTheDocument();
   });
 
+  it("단계 표시 너비는 가로 변형(data-[orientation=horizontal]:)으로 줘서 받은 w-full을 이긴다(잇는 선이 보인다)", async () => {
+    open();
+    await screen.findByRole("heading", { name: "어느 집을 쓸까요?" });
+    const classes = screen.getByRole("list", { name: "설정 단계" }).className.split(/\s+/);
+    expect(classes).toContain("data-[orientation=horizontal]:w-[min(640px,60vw)]");
+    expect(classes).not.toContain("data-[orientation=horizontal]:w-full");
+  });
+
+  it("머리줄은 로고 짝(얼굴 상자 + NOONCHI)과 「설정」, 1단계 제목 옆에 마스코트 전신", async () => {
+    open();
+    await screen.findByRole("heading", { name: "어느 집을 쓸까요?" });
+    expect(screen.getByRole("heading", { name: "NOONCHI" })).toBeInTheDocument();
+    expect(screen.getByText("설정")).toBeInTheDocument();
+    expect(document.querySelector("header [data-shape=logo]")).not.toBeNull();
+    expect(document.querySelector('img[src="/brand/mascot@1x.webp"]')).not.toBeNull();
+  });
+
   it("다른 집을 고르고 다음: 집을 바꾸고 2단계로", async () => {
     const { api, user } = open();
     await user.click(await screen.findByRole("radio", { name: /마곡 아파트/ }));
@@ -128,7 +145,10 @@ describe("설정 4단계: 위치 동기화", () => {
       "GET /api/phone/touch-points": () => [200, { ok: true, points: null, mode: "floor", eye_height_m: 1.5, distance_m: null }],
       "GET /api/layout": () => [200, { ok: true, edits: 2, dirty: true }],
     });
-    expect(await screen.findByText("https://pc.tail:8210/phone/")).toBeInTheDocument();
+    const addr = await screen.findByText("https://pc.tail:8210/phone/");
+    // 주소는 / 뒤에서만 줄을 바꾼다
+    expect(addr.closest("ul")!.className).not.toMatch(/break-all/);
+    expect([...addr.childNodes].map((n) => (n.nodeName === "WBR" ? "|" : n.textContent)).join("")).toBe("https://|pc.tail:8210/|phone/|");
     expect(screen.getByText("폰 크롬에서 이 주소를 열고 기준점을 조준해 기록하세요.")).toBeInTheDocument();
     const touch = await screen.findByRole("region", { name: "폰 기준점" });
     expect(within(touch).getAllByRole("button", { name: "3D에서 고르기" })).toHaveLength(2);
@@ -469,11 +489,11 @@ describe("설정 4단계: 3D 트윈 보기", () => {
     });
     return (await screen.findByTitle("3D 집 트윈")) as HTMLIFrameElement;
   };
-  /** 3D를 가리는 덮개: 불투명해서 뒤의 뷰어 막대·패널이 비치지 않고, 마우스를 막는다. */
+  /** 3D를 가리는 동안: 트윈은 숨겨 뒤의 뷰어 막대·패널이 비치지 않고, 덮개 글이 보이고 마우스를 막는다. */
   const expectCover = (text: string) => {
     const cover = screen.getByText(text);
-    expect(cover).toHaveClass("bg-canvas");
-    expect(cover.className).not.toMatch(/pointer-events-none|bg-transparent|bg-canvas\//);
+    expect(screen.getByTitle("3D 집 트윈")).toHaveClass("invisible");
+    expect(cover.closest(".pointer-events-none")).toBeNull();
   };
 
   it("뷰어가 집을 다 불러오고 막대를 숨기고 배지를 끌 때까지 불투명한 덮개로 가리고, 그 뒤에 걷는다", async () => {

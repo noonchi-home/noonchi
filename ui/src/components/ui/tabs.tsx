@@ -1,6 +1,7 @@
 "use client";
 
-// shadcn tabs(21st.dev Assistant Tabs 의존 부품, 받은 코드 그대로).
+// 21st.dev「Tabs」(id 953, shadcn/tabs) 받은 코드.
+// 바꾼 것: 없음(Assistant Tabs 의존 부품). ring-offset-background는 그대로(background=surface 토큰).
 import * as React from "react";
 import * as TabsPrimitive from "@radix-ui/react-tabs";
 

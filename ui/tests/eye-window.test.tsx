@@ -21,6 +21,14 @@ describe("EyeWindow", () => {
     expect(screen.queryByText("http://192.168.0.7:8210/phone/")).toBeNull();
   });
 
+  it("주소는 / 뒤에서만 줄을 바꾼다(IP·이름 가운데서 끊지 않는다)", () => {
+    render(<EyeWindow health={{ ...base, phone_urls: ["http://192.168.0.7:8210/phone/"] }} />);
+    const addr = screen.getByText("http://192.168.0.7:8210/phone/");
+    expect(addr.className).not.toMatch(/break-all/);
+    const parts = [...addr.childNodes].map((n) => (n.nodeName === "WBR" ? "|" : n.textContent)).join("");
+    expect(parts).toBe("http://|192.168.0.7:8210/|phone/|");
+  });
+
   it("제목·캡션·설명 글이 없다", () => {
     render(<EyeWindow health={base} />);
     expect(screen.queryByRole("heading")).toBeNull();

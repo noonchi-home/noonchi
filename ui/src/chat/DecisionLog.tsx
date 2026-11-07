@@ -3,16 +3,19 @@ import {
   MapPin, MessageSquare, Monitor, Pause, Play, Plug, Power, Save, ScanSearch, Search, ShieldCheck, SlidersHorizontal, Smartphone, Square, Thermometer, TriangleAlert,
   Undo2, Wrench, type LucideIcon,
 } from "lucide-react";
-import { useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Alert, AlertAction, AlertTitle } from "../components/ui/alert";
 import { AssistantTabPanel, AssistantTabsList, Tabs, type AssistantTab } from "../components/ui/assistant-tabs";
 import {
   ChainOfThought, ChainOfThoughtContent, ChainOfThoughtStep, ChainOfThoughtStepContent, ChainOfThoughtStepTitle, ChainOfThoughtTrigger,
   type ChainOfThoughtStepStatus,
 } from "../components/ui/chain-of-thought";
 import ChatPanel, { ChatAction, ChatRegion, Section } from "../components/ui/chat-panel";
+import ImagePreview from "../components/ui/image-preview";
+import { Item, ItemActions, ItemContent, ItemMedia, ItemTitle } from "../components/ui/item";
+import { Status } from "../components/ui/status";
 import { AgentToolTimeline, CallState, TimelineEmpty, type AgentCallStatus, type AgentToolCall } from "../components/ui/tool-timeline";
 import { cn } from "../lib/utils";
-import { Surface } from "../components/Surface";
 import { DECISION_DETAIL, errorLine, factLine, LOG_KIND, memoryLabel, objectLine, observedOf, stepKind, targetOf, toolLabel, worldLine } from "./labels";
 import { STATE_LABELS, type DecisionDetail, type PendingCard, type Step, type Turn, type TurnState } from "./turns";
 
@@ -34,9 +37,14 @@ const LINE_ICON: Record<string, LucideIcon> = {
   observe: Eye, world_change: ScanSearch, decision: Brain, execution: Play, link: Plug, trigger: Pause, reflection: Bot,
 };
 const TURN_CALL: Record<TurnState, AgentCallStatus> = { busy: "running", ok: "done", wait: "wait", fail: "error", cancel: "queued" };
-const PENDING: Record<PendingCard["status"], { status: AgentCallStatus; label: string }> = {
-  open: { status: "wait", label: "폰에서 승인 대기" }, ok: { status: "done", label: "승인함" }, fail: { status: "error", label: "실패" }, cancel: { status: "queued", label: "취소함" },
+const PENDING: Record<PendingCard["status"], { status: AgentCallStatus; label: string; alert: "warning" | "success" | "error" | "default" }> = {
+  open: { status: "wait", label: "폰에서 승인 대기", alert: "warning" }, ok: { status: "done", label: "승인함", alert: "success" },
+  fail: { status: "error", label: "실패", alert: "error" }, cancel: { status: "queued", label: "취소함", alert: "default" },
 };
+/** 저절로 접히고 펼칠 때(사용자가 누르지 않았을 때)는 움직임 없이 바뀐다. */
+const STILL = "data-[state=closed]:animate-none data-[state=open]:animate-none";
+/** 움직임 줄이기 설정이면 펼침도 움직이지 않는다. */
+const CALM = "motion-reduce:animate-none";
 const WHO: Record<Turn["source"], { icon: LucideIcon; text: string }> = {
   phone: { icon: Smartphone, text: "거주자 · 폰" }, brain: { icon: Bot, text: "클로이드 · 관찰과 판단" }, other: { icon: Monitor, text: "다른 화면" },
 };
@@ -81,68 +89,57 @@ function thoughtsOf(turn: Turn): Thought[] {
   return out;
 }
 
-/** 판단 줄: 누르면 그 판단에 쓴 근거(보낸 관찰 텍스트, 판단할 때 World State, 참조한 기억 판본)를 펼친다. 보기만 한다. */
+/** 판단 줄: 누르면 그 판단에 쓴 근거(보낸 관찰 텍스트, 판단할 때 World State, 참조한 기억 판본)를 펼친다. 보기만 한다. 21st.dev Chain of Thought 하나 + Chat Panel Section. */
 function DecisionRow({ text, detail }: { text: string; detail: DecisionDetail }) {
-  const [open, setOpen] = useState(false);
-  const id = useId();
   const { world } = detail;
   return (
-    <div>
-      <button
-        type="button" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}
-        className="flex w-full cursor-pointer items-start gap-1 text-left text-xs leading-5 text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <span className="min-w-0 flex-1">{text}</span>
-        <ChevronDown className={cn("mt-0.5 size-3.5 shrink-0 transition-transform", open && "rotate-180")} aria-hidden="true" />
-      </button>
-      {open && (
-        <div id={id} role="region" aria-label={DECISION_DETAIL.region} className="mt-2 flex flex-col gap-3 rounded-lg border border-border bg-background/40 p-2.5">
-          <Section label={DECISION_DETAIL.text} body={<pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-4">{detail.text_sent}</pre>} />
-          <Section label={DECISION_DETAIL.world} body={(
-            <ul className="flex flex-col gap-2 text-xs leading-5">
-              {world.objects.map((o) => (
-                <li key={o.id}>
-                  <p className="font-medium text-ink">{objectLine(o)}</p>
-                  <ul className="text-muted-foreground">
-                    {Object.entries(o.facts).map(([facet, f]) => <li key={facet}>{factLine(f)}</li>)}
-                    <li>{errorLine(o.error_m)}</li>
-                  </ul>
-                </li>
-              ))}
-              <li className="text-muted-foreground">{worldLine(world)}</li>
-            </ul>
-          )} />
-          <Section label={DECISION_DETAIL.memory} body={<p className="text-xs leading-5">{memoryLabel(detail.memory_version)}</p>} />
-        </div>
-      )}
-    </div>
+    <ChainOfThought defaultOpen={false} autoCloseOnAllComplete={false} disableShimmer>
+      <ChainOfThoughtTrigger label={text} />
+      <ChainOfThoughtContent role="region" aria-label={DECISION_DETAIL.region} className={cn("flex flex-col gap-3", CALM)}>
+        <Section label={DECISION_DETAIL.text} body={<pre className="m-0 max-h-48 overflow-auto whitespace-pre-wrap break-words">{detail.text_sent}</pre>} />
+        <Section label={DECISION_DETAIL.world} body={(
+          <div className="flex flex-col gap-2">
+            {world.objects.map((o) => (
+              <Section key={o.id} label={objectLine(o)} body={(
+                <ul className="m-0 list-none p-0">
+                  {Object.entries(o.facts).map(([facet, f]) => <li key={facet}>{factLine(f)}</li>)}
+                  <li>{errorLine(o.error_m)}</li>
+                </ul>
+              )} />
+            ))}
+            <p className="m-0">{worldLine(world)}</p>
+          </div>
+        )} />
+        <Section label={DECISION_DETAIL.memory} body={memoryLabel(detail.memory_version)} />
+      </ChainOfThoughtContent>
+    </ChainOfThought>
   );
 }
 
 function Who({ turn }: { turn: Turn }) {
   const { icon: I, text } = WHO[turn.source];
   return (
-    <div className="mb-3 flex items-center gap-2 text-[11px] leading-4 text-muted-foreground">
-      <I className="size-3.5 shrink-0" aria-hidden="true" />
-      <span className="min-w-0 truncate">{text}</span>
-      <span className="ml-auto"><CallState status={TURN_CALL[turn.state]} reduced label={turn.label ?? STATE_LABELS[turn.state]} /></span>
-    </div>
+    <Item size="sm" className="mb-3 flex-nowrap">
+      <ItemMedia><I className="size-3.5" aria-hidden="true" /></ItemMedia>
+      <ItemContent className="min-w-0"><ItemTitle className="min-w-0 truncate">{text}</ItemTitle></ItemContent>
+      <ItemActions><CallState status={TURN_CALL[turn.state]} reduced label={turn.label ?? STATE_LABELS[turn.state]} /></ItemActions>
+    </Item>
   );
 }
 
-function Thinking({ turn, open, onOpen }: { turn: Turn; open: boolean; onOpen: (open: boolean) => void }) {
+function Thinking({ turn, open, auto, onOpen }: { turn: Turn; open: boolean; auto: boolean; onOpen: (open: boolean) => void }) {
   const thoughts = thoughtsOf(turn);
   if (thoughts.length === 0) return null;
   const label = turn.source === "brain" ? turn.label ?? STATE_LABELS[turn.state] : turn.state === "busy" ? "생각 중" : `생각 ${thoughts.length}개`;
   return (
-    <ChainOfThought open={open} onOpenChange={onOpen} className="mb-4">
+    <ChainOfThought open={open} onOpenChange={onOpen} disableShimmer className="mb-4">
       <ChainOfThoughtTrigger label={label} icon={<Brain className="size-4 shrink-0" aria-hidden="true" />} />
-      <ChainOfThoughtContent>
+      <ChainOfThoughtContent className={cn(auto && STILL, CALM)}>
         {thoughts.map((t) => (
           <ChainOfThoughtStep key={t.key} status={t.status} hasContent autoCloseOnComplete={false}>
             <ChainOfThoughtStepTitle icon={t.icon}>{t.title}</ChainOfThoughtStepTitle>
-            <ChainOfThoughtStepContent>
-              {t.detail ? <DecisionRow text={t.text} detail={t.detail} /> : <p className="text-xs leading-5 text-muted-foreground">{t.text}</p>}
+            <ChainOfThoughtStepContent className={CALM}>
+              {t.detail ? <DecisionRow text={t.text} detail={t.detail} /> : t.text}
             </ChainOfThoughtStepContent>
           </ChainOfThoughtStep>
         ))}
@@ -152,13 +149,13 @@ function Thinking({ turn, open, onOpen }: { turn: Turn; open: boolean; onOpen: (
 }
 
 function Approval({ p }: { p: PendingCard }) {
-  const { status, label } = PENDING[p.status];
+  const { status, label, alert } = PENDING[p.status];
   return (
-    <div role="group" aria-label="승인 요청" className="mt-3 flex items-center gap-2 rounded-lg border border-border bg-background/40 px-2.5 py-2">
-      <Smartphone className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-      <p className="min-w-0 flex-1 text-xs leading-4">{`${p.deviceLabel ? `${p.deviceLabel}: ` : ""}${p.reason}`}</p>
-      <CallState status={status} reduced label={label} />
-    </div>
+    <Alert role="group" aria-label="승인 요청" variant={alert} className="mt-3">
+      <Smartphone aria-hidden="true" />
+      <AlertTitle>{`${p.deviceLabel ? `${p.deviceLabel}: ` : ""}${p.reason}`}</AlertTitle>
+      <AlertAction><CallState status={status} reduced label={label} /></AlertAction>
+    </Alert>
   );
 }
 
@@ -176,9 +173,9 @@ function TurnCard({ turn, latest, thinking, steps, onThinking, onSteps }: {
       )}
       {turn.pending.map((p) => <Approval key={p.token} p={p} />)}
       {turn.photo && (
-        <a href={turn.photo} target="_blank" rel="noopener" className="mt-3 block">
-          <img src={turn.photo} alt="클로이드의 눈 사진" className="max-h-48 rounded-lg" />
-        </a>
+        <div className="mt-3">
+          <ImagePreview src={turn.photo} alt="클로이드의 눈 사진" className="max-h-48" />
+        </div>
       )}
     </>
   );
@@ -190,12 +187,12 @@ function TurnCard({ turn, latest, thinking, steps, onThinking, onSteps }: {
         prompt={brain ? undefined : turn.ask || undefined}
         answer={brain ? "" : turn.answer}
         answerLabel={(
-          <span className="mr-1.5 inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
+          <Status className="mr-1.5 inline-flex align-middle">
             <MessageSquare className="size-3" aria-hidden="true" />{turn.source === "phone" ? "폰에 답함" : "답함"}
-          </span>
+          </Status>
         )}
         head={<Who turn={turn} />}
-        thought={<Thinking turn={turn} open={thinking ?? latest} onOpen={onThinking} />}
+        thought={<Thinking turn={turn} open={thinking ?? latest} auto={thinking === undefined} onOpen={onThinking} />}
         after={after}
         activityOpen={steps ?? latest}
         onActivityOpenChange={onSteps}
@@ -222,12 +219,12 @@ export function DecisionLog({ turns, view, onView, phone }: { turns: Turn[]; vie
   return (
     <section
       aria-label="판단 기록"
+      data-panel
       className={cn(
-        "absolute right-3 top-16 z-50 w-[380px] max-w-[calc(100%-1.5rem)] text-ink min-[1440px]:top-3 max-sm:relative max-sm:inset-auto max-sm:max-w-full",
+        "absolute right-3 top-16 z-50 w-[380px] max-w-[calc(100%-1.5rem)] min-[1440px]:top-3 max-sm:relative max-sm:inset-auto max-sm:max-w-full",
         open && "bottom-3 max-sm:min-h-0 max-sm:flex-1",
       )}
     >
-      <Surface kind="panel" plain className="h-full" contentClassName="h-full">
         <Tabs value={view} onValueChange={(v) => onView(v as LogView)} className="h-full">
           <ChatPanel
             tabs={<AssistantTabsList tabs={TABS} value={view} />}
@@ -260,7 +257,6 @@ export function DecisionLog({ turns, view, onView, phone }: { turns: Turn[]; vie
             )}
           </ChatPanel>
         </Tabs>
-      </Surface>
     </section>
   );
 }

@@ -131,6 +131,18 @@ describe("DecisionLog", () => {
     expect(within(detail).getByText("사람 보임 · VLM 분석 없음 0장 · YOLOX 분석 없음 1장")).toBeInTheDocument();
   });
 
+  it("클로이드의 눈 사진은 누르면 크게 본다(새 탭 대신 21st.dev Image Preview)", async () => {
+    show(turnsOf([{ type: "photo", photo: { id: "p1", at: "t", url: "/api/photos/p1.jpg", width: 640, height: 480, measured_pose: null } }]));
+    const open = screen.getByRole("button", { name: "사진 크게 보기" });
+    expect(within(open).getByAltText("클로이드의 눈 사진")).toHaveAttribute("src", "/api/photos/p1.jpg");
+    expect(document.querySelector('a[target="_blank"]')).toBeNull();
+    await userEvent.click(open);
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByAltText("클로이드의 눈 사진")).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole("button", { name: "닫기" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("알약 탭으로 판단 기록과 폰 화면을 바꾼다", async () => {
     const onView = show([]);
     await userEvent.click(screen.getByRole("tab", { name: "폰 화면" }));

@@ -6,7 +6,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export type Copy = { text: string; line: number };
+export type Copy = { text: string; line: number; start?: number };
 export type Problem = { file: string; line: number; text: string; rule: string };
 
 const HANGUL = /[가-힣ㄱ-ㅎ]/;
@@ -42,11 +42,12 @@ const decodeEntities = (t: string) =>
  * JS·TS(·TSX) 글 꺼내기. 주석·정규식은 건너뛰고 문자열·템플릿 글을 꺼낸다(템플릿의 ${…}는 「…」로).
  * console.* 안의 글은 화면 글이 아니라서 뺀다. jsx면 JSX 글과 속성 글도 꺼낸다.
  */
-function codeCopy(src: string, jsx: boolean): Copy[] {
+function codeCopy(src: string, jsx: boolean, all = false): Copy[] {
   const out: Copy[] = [];
   let i = 0;
   let code = ""; // 지금까지 본 코드(정규식·JSX·console 판단용). 문자열·정규식·JSX 덩어리는 「0」 하나로 둔다
   const push = (text: string, start: number) => {
+    if (all) { out.push({ text, line: lineAt(src, start), start }); return; }
     if (!HANGUL.test(text)) return;
     if (/console\.\w+\([^;]*$/.test(code.slice(-300))) return;
     out.push({ text: text.replace(/\s+/g, " ").trim(), line: lineAt(src, start) });
@@ -122,6 +123,7 @@ function codeCopy(src: string, jsx: boolean): Copy[] {
     acc.text += text;
   };
   const flush = (acc: Chunk) => {
+    if (all) { acc.text = ""; acc.start = -1; return; }
     const text = decodeEntities(acc.text).replace(/\s+/g, " ").trim();
     if (HANGUL.test(text)) out.push({ text, line: lineAt(src, acc.start) });
     acc.text = "";
@@ -210,6 +212,11 @@ function codeCopy(src: string, jsx: boolean): Copy[] {
 /** JS: 주석·정규식은 건너뛰고 문자열·템플릿 글을 꺼낸다(템플릿의 ${…}는 「…」로). console.* 안의 글은 화면 글이 아니라서 뺀다. */
 export function jsCopy(src: string): Copy[] {
   return codeCopy(src, false);
+}
+
+/** 문자열·템플릿·JSX 속성 글을 모두 꺼낸다(한국어가 아니어도, JSX 글은 빼고). start는 src 안 글이 시작하는 자리다. 꾸밈 검사(lint-ui-color·lint-ui-parts)가 쓴다. */
+export function codeStrings(src: string, jsx: boolean): (Copy & { start: number })[] {
+  return codeCopy(src, jsx, true) as (Copy & { start: number })[];
 }
 
 /** TSX: jsCopy에 더해 JSX 글(`>`와 `<` 사이, {식}은 「…」, 꾸밈 태그는 풀어서 한 덩어리)과 속성 글(title·placeholder·aria-label·alt 등)을 꺼낸다. */
