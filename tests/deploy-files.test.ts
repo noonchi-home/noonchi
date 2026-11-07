@@ -137,6 +137,15 @@ describe("배포 파일", () => {
     expect(s).toContain("/api/history?kinds=vlm");
   });
 
+  it("키 없는 컨테이너 확인: 이미지 안 YOLOX가 떠서 분석했는지, 호스트에서 보낸 계획이 토큰으로만 들어가는지 본다", () => {
+    const s = read("scripts/container-smoke.ts");
+    expect(s).toContain("/api/brain");
+    expect(s).toContain('detector !== "yolox_tiny"');
+    expect(s).toContain("detected");
+    expect(s).toContain("/api/plan");
+    expect(s).toContain("planNoToken !== 403 || planToken !== 200");
+  });
+
   it(".env.example에 PAM 서비스 설정 자리가 있다", () => {
     const keys = read(".env.example").split(/\r?\n/).map((l) => /^#?\s*([A-Z0-9_]+)=/.exec(l)?.[1]).filter(Boolean);
     for (const k of ["OPENROUTER_API_KEY", "PAM_LLM_BASE_URL", "PAM_LLM_MODEL", "PAM_LLM_API_KEY", "PAM_HOST_PORT"]) expect(keys, k).toContain(k);

@@ -1,12 +1,13 @@
 // 키 없는 컨테이너 확인: compose 프로젝트 noonchi-check로 noonchi(127.0.0.1:8500 허브·8510 폰), pam(8520), 가짜 OpenAI 호환 서버(check 프로필)를 띄우고
 // ready.ok가 true인지(VLM·PAM 서비스·PAM LLM이 모두 가짜 서버로 답함), 에이전트가 가짜 서버의 답을 돌려주는지, PAM 서비스가 관찰 텍스트로 판단하는지, 폰 화면이 열리는지,
-// 관찰 흐름(BRAIN=1)이 엔진 프레임 한 장을 YOLOX·가짜 VLM으로 분석해 기록 DB에 vlm 줄을 남기는지(GET /api/history),
+// 이미지 안 YOLOX가 떴고(GET /api/brain detector yolox_tiny) 관찰 흐름(BRAIN=1)이 엔진 프레임 한 장을 YOLOX·가짜 VLM으로 분석해 기록 DB에 vlm 줄을 남기는지(GET /api/history·/api/brain detected),
+// 호스트에서 보낸 계획(POST /api/plan)이 토큰 없이는 403, PLAN_TOKEN을 붙이면 200인지,
 // docker stop(SIGTERM)에 종료 코드 0으로 끝나는지 본 뒤 내린다(볼륨까지 지운다).
 // 저장소 .env와 셸의 키·토큰은 넘기지 않는다: 확인용 값만 적은 임시 env 파일을 --env-file과 NOONCHI_ENV_FILE로 준다.
 // 모델·PAM LLM·에이전트(OpenAI 공급자) 주소는 compose 안의 가짜 서버(fake-openai:8500)다. 실제 AI API를 부르지 않는다.
 // 무거운 일 잠금 안에서 돌린다: npm run heavy -- npx tsx scripts/container-smoke.ts
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,10 +22,13 @@ const HUB_URL = "http://127.0.0.1:8500";
 const PHONE_URL = "http://127.0.0.1:8510";
 const PAM_URL = "http://127.0.0.1:8520";
 const FAKE = "http://fake-openai:8500/v1";
+const PLAN_TOKEN = "check-plan-token";
 const CHECK_ENV = {
   HUB: "memory", BRAIN: "1", INFERENCE_MODE: "live", VLM_BASE_URL: "http://fake-openai:8500/v1", PAM_LLM_BASE_URL: "http://fake-openai:8500/v1",
-  AGENT_PROVIDER: "openai", OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: "http://fake-openai:8500/v1",
+  AGENT_PROVIDER: "openai", OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: "http://fake-openai:8500/v1", PLAN_TOKEN,
 };
+/** docs/plan-contract.md의 { plan } 예시. */
+const PLAN_BODY = /```json\r?\n([\s\S]*?)```/.exec(readFileSync(join(ROOT, "docs", "plan-contract.md"), "utf8"))![1]!;
 
 const envFile = join(mkdtempSync(join(tmpdir(), "noonchi-check-")), "check.env");
 writeFileSync(envFile, Object.entries(CHECK_ENV).map(([k, v]) => `${k}=${v}\n`).join(""));
@@ -138,11 +142,25 @@ try {
   const phone = await fetchRetry(`${PHONE_URL}/phone/`, { signal: AbortSignal.timeout(5000) }).then((r) => r.status, (e: Error & { cause?: { code?: string; syscall?: string } }) => { console.log(`폰 화면 요청 오류: ${e.message} ${e.cause?.code ?? ""} ${e.cause?.syscall ?? ""}`); return 0; });
   if (phone !== 200) fails.push(`폰 화면이 열리지 않아요(${phone})`);
   if (h.brain !== true) fails.push("관찰 흐름(BRAIN=1)이 켜지지 않았어요");
+  const brain0 = await waitJson(`${HUB_URL}/api/brain`, 10_000);
+  console.log(`감지기: ${brain0?.detector ?? null}`);
+  if (brain0?.detector !== "yolox_tiny") fails.push(`이미지 안 YOLOX가 뜨지 않았어요(${brain0?.detector ?? null})`);
+  // 계획: 호스트에서 보내면 컨테이너에는 Docker 브리지 주소로 보인다. 토큰 없이는 403, PLAN_TOKEN을 붙이면 200
+  const postPlan = (headers: Record<string, string>) => fetchRetry(`${HUB_URL}/api/plan`, {
+    method: "POST", headers: { "content-type": "application/json", ...headers }, body: PLAN_BODY, signal: AbortSignal.timeout(10_000),
+  }).then((r) => r.status, () => 0);
+  const planNoToken = await postPlan({});
+  const planToken = await postPlan({ authorization: `Bearer ${PLAN_TOKEN}` });
+  console.log(`계획 보내기: 토큰 없음 ${planNoToken}, 토큰 ${planToken}`);
+  if (planNoToken !== 403 || planToken !== 200) fails.push(`호스트에서 보낸 계획이 토큰 없음 403·토큰 200이 아니에요(${planNoToken}, ${planToken})`);
   // 관찰 흐름: 엔진 프레임 한 장 → YOLOX·가짜 VLM → 기록 DB vlm 줄
   await sendEngineFrame().catch((e: Error) => fails.push(`엔진 프레임을 보내지 못했어요(${e.message})`));
   const vlm = await waitJson(`${HUB_URL}/api/history?kinds=vlm`, 30_000, (b) => (b.rows?.length ?? 0) > 0);
   console.log(`기록 vlm 줄: ${JSON.stringify(vlm?.rows?.[0]?.text ?? null)}`);
   if (vlm?.ok !== true || !(vlm.rows?.length > 0)) fails.push("/api/history에 엔진 프레임의 vlm 줄이 없어요");
+  const brain1 = await waitJson(`${HUB_URL}/api/brain`, 10_000, (b) => (b.detected ?? 0) >= 1);
+  console.log(`YOLOX 분석: ${brain1?.detected ?? 0}장`);
+  if (!((brain1?.detected ?? 0) >= 1)) fails.push("YOLOX가 엔진 프레임을 분석하지 않았어요(/api/brain detected)");
   // docker stop(SIGTERM) → 서버가 닫고 0으로 끝나야 한다
   if (compose(["stop", "noonchi"]).status !== 0) fails.push("compose stop 실패");
   const id = compose(["ps", "-a", "-q", "noonchi"], true).stdout.trim();
