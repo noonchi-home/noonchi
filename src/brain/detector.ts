@@ -244,13 +244,3 @@ export class WorkerDetector implements Detector {
     await new Promise((r) => setTimeout(r, 500));
   }
 }
-
-/** 시험·재생용: 함수가 감지를 정한다. */
-export class ScriptedDetector implements Detector {
-  readonly name = "scripted";
-  constructor(private readonly script: (jpegBytes: Buffer) => Detection[]) {}
-
-  async detect(jpegBytes: Buffer): Promise<DetectResult> {
-    return { detections: this.script(jpegBytes), ms: 0, width: 0, height: 0 };
-  }
-}

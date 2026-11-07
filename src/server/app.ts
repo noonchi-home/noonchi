@@ -263,7 +263,7 @@ export function createApp(opts: AppOptions): TwinHomeApp {
   }));
 
   route("GET", /^\/api\/brain$/, async () => {
-    if (!opts.brain) throw new HttpError(404, "상위 판단이 꺼져 있습니다(BRAIN=1, PHONE_PORT, OPENAI_API_KEY 필요)");
+    if (!opts.brain) throw new HttpError(404, "상위 판단이 꺼져 있습니다(BRAIN=1, PHONE_PORT 필요)");
     return { ok: true, ...opts.brain.status() };
   });
 

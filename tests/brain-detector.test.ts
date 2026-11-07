@@ -5,8 +5,9 @@ import { join } from "node:path";
 import jpeg from "jpeg-js";
 import { describe, expect, it } from "vitest";
 import {
-  ScriptedDetector, WorkerDetector, YOLOX_MODELS, YoloxDetector, decodeYolox, letterbox, nms, type Detection,
+  WorkerDetector, YOLOX_MODELS, YoloxDetector, decodeYolox, letterbox, nms, type Detection,
 } from "../src/brain/detector.js";
+import { ScriptedDetector } from "./helpers/detectors.js";
 
 const S = 416;
 const ANCHORS = (S / 8) ** 2 + (S / 16) ** 2 + (S / 32) ** 2; // 3549

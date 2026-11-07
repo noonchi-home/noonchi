@@ -4,9 +4,10 @@ import { describe, expect, it } from "vitest";
 import { CupBrain, type BrainOutput } from "../src/brain/brain.js";
 import { DEFAULT_BRAIN_CONFIG } from "../src/brain/config.js";
 import { MockDecision, type DecisionInput, type DecisionModel } from "../src/brain/decision.js";
-import { ScriptedPerceiver, type RawPerception } from "../src/brain/perception.js";
+import type { RawPerception } from "../src/brain/perception.js";
 import type { Presence } from "../src/brain/presence.js";
 import type { Frame } from "../src/brain/window.js";
+import { ScriptedPerceiver } from "./helpers/perceivers.js";
 
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
 const PHOTO = Buffer.from([0xff, 0xd8, 0x01, 0xff, 0xd9]);

@@ -1,14 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_BRAIN_CONFIG } from "../src/brain/config.js";
 import { MockDecision } from "../src/brain/decision.js";
-import { ScriptedDetector, type Detection } from "../src/brain/detector.js";
+import type { Detection } from "../src/brain/detector.js";
 import { LiveBrain } from "../src/brain/live.js";
-import { ScriptedPerceiver, type RawPerception } from "../src/brain/perception.js";
+import type { RawPerception } from "../src/brain/perception.js";
 import type { AgentAction, BrainEvent, BrainStage } from "../src/contract/events.js";
 import type { PlanView } from "../src/contract/plan.js";
 import { PlanHub } from "../src/plan/hub.js";
+import { ScriptedDetector } from "./helpers/detectors.js";
 // fp는 plan-planner.test.ts와 같은 평면도
 import { smallFloor } from "./helpers/floor.js";
+import { ScriptedPerceiver } from "./helpers/perceivers.js";
 
 type Sent = { type: string; plan: PlanView | null };
 

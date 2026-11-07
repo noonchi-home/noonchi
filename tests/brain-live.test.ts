@@ -7,12 +7,14 @@ import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { DEFAULT_BRAIN_CONFIG } from "../src/brain/config.js";
 import { MockDecision } from "../src/brain/decision.js";
-import { ScriptedDetector, type Detection } from "../src/brain/detector.js";
+import type { Detection } from "../src/brain/detector.js";
 import { LiveBrain, captureTime } from "../src/brain/live.js";
-import { ScriptedPerceiver, type RawPerception } from "../src/brain/perception.js";
+import type { RawPerception } from "../src/brain/perception.js";
 import { encodeFramePacket, type FrameHeader } from "../src/phone/packet.js";
 import { fetchRetry } from "../src/server/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
+import { ScriptedDetector } from "./helpers/detectors.js";
+import { ScriptedPerceiver } from "./helpers/perceivers.js";
 import { openWebSocket } from "./helpers/ws.js";
 
 type Msg = Record<string, any>;

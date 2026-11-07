@@ -96,9 +96,8 @@ HUB=memory npm run demo
 | `PHONE_PORT`, `PHONE_HOST` | (끔), `0.0.0.0` | 폰 AR 서버(아래 "폰 AR") |
 | `PHONE_URL` | (없음) | 폰에서 열 주소. 대시보드 QR에 맨 앞 주소가 나온다. 없으면 `tailscale serve`가 폰 포트로 잇는 https 주소, 그다음 와이파이 주소 |
 | `PHONE_MAX_MISMATCH_M`, `PHONE_PHOTO_DIR` | `0.3`, `RUNTIME_DIR/photos` | 기준점 거리 차이 허용값, 사진 폴더 |
-| `BRAIN` | (끔) | `1`이면 폰 카메라로 상위 판단(클로이드 두뇌, 아래 "상위 판단")을 돌린다. `PHONE_PORT`·`OPENAI_API_KEY`가 있어야 한다 |
+| `BRAIN` | (끔) | `1`이면 폰 카메라로 상위 판단(클로이드 두뇌, 아래 "상위 판단")을 돌린다. `PHONE_PORT`가 있어야 한다. VLM은 `INFERENCE_MODE`가 고른 주소로 부른다(mock은 `OPENAI_API_KEY`) |
 | `BRAIN_DETECTOR`, `BRAIN_YOLO_PATH`, `BRAIN_YOLO_THREADS` | `yolox_tiny`, `runtime/models/<모델>.onnx`, `4` | YOLO 존재 감지기(`yolox_tiny`·`yolox_nano`·`off`). 모델 파일이 없으면 VLM만 쓴다 |
-| `BRAIN_VLM_MODEL` | `OPENAI_MODEL` → `gpt-5.4-mini` | 사진 판정 VLM(OpenAI Responses API) |
 | `BRAIN_DECISION`, `PAM_URL`, `PAM_TIMEOUT_MS` | `mock`, (없음), `20000` | 판단 모델. `pam`이면 `PAM_URL`로 HTTP(계약 `docs/pam-interface.md`) |
 | `BRAIN_AWAY_MS`, `BRAIN_STALE_MS`, `BRAIN_HOLD_MS`, `BRAIN_CLEAR_MS` | `5000`, `3000`, `600`, `2000` | 자리 비움 시간, 근거가 이보다 오래되면 모름, YOLO 존재 창, 치워짐 판정 시간 |
 | `BRAIN_INTERVAL_MS`, `BRAIN_CALL_CAP`, `BRAIN_REQUEST_TIMEOUT_MS`, `BRAIN_ACTION_TIMEOUT_MS` | `1000`, `120`, `60000`, `120000` | VLM 호출 간격·상한, 사진 요청·행동 결과 기다리는 시간 |
@@ -329,8 +328,8 @@ HUB=memory HOME_ID=mokryeon_180b PHONE_PORT=8210 BRAIN=1 npm start
 tailscale serve --bg 8210   # 이미 켜져 있으면 생략. 폰: https://<이 PC 이름>.<tailnet>.ts.net/phone/
 ```
 
-- `OPENAI_API_KEY`는 `.env`에서 읽는다. VLM 호출은 세션당 `BRAIN_CALL_CAP`(120)회까지, 1회 약 $0.001.
-- 녹화 재생: `npx tsx scripts/brain-replay.ts --detector`(YOLO + 라벨 대본, 호출 0회), `--live --detector --cap 10`(실제 VLM).
+- VLM은 `INFERENCE_MODE`가 고른 OpenAI 호환 주소로 부른다(`src/infer/vlm.ts`, chat completions + JSON Schema). mock은 OpenAI `gpt-5.4-mini`(키 `OPENAI_API_KEY`), live는 같은 서버 vLLM `vlm`. 호출은 세션당 `BRAIN_CALL_CAP`(120)회까지, mock 1회 약 $0.001.
+- 키 없이 돌려 보기: `npx tsx scripts/fake-openai.ts --port 8500`을 띄우고 `VLM_BASE_URL=http://127.0.0.1:8500/v1`로 시작한다.
 
 ## PAM 서비스 (services/pam)
 

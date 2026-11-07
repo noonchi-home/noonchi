@@ -2303,8 +2303,10 @@ export class OpenAICompatClient {
 export interface VlmJson<T> { value: T | null; costUsd: number; model: string; attempts: number; error?: string; aborted?: boolean }
 export class VlmClient {
   constructor(ep: ModelEndpoint, opts?: { fetchImpl?: typeof fetch; timeoutMs?: number });
+  readonly model: string; // 주소 표의 모델 이름(기록용)
   // signal이 끊기면 HTTP 요청도 끊고 다시 묻지 않는다(aborted: true). 형식 오류 때 다시 묻는 요청도 같은 signal·같은 제한 시간 안에서 한다.
-  json<T>(o: { prompt: string; texts?: string[]; images: Buffer[]; schema: { name: string; schema: Record<string, unknown> }; parse: (text: string) => T; maxAttempts?: number; signal?: AbortSignal }): Promise<VlmJson<T>>;
+  // captions: 사진마다 그 사진 바로 앞에 둘 설명(컵 판정의 촬영 시각). texts는 모든 사진 앞에 둔다.
+  json<T>(o: { prompt: string; texts?: string[]; images: Buffer[]; captions?: string[]; schema: { name: string; schema: Record<string, unknown> }; parse: (text: string) => T; maxAttempts?: number; signal?: AbortSignal }): Promise<VlmJson<T>>;
 }
 // src/infer/cost.ts
 export function estimateCostUsd(model: string, usage: { prompt: number; completion: number; cached: number }): number; // gpt-5.4-mini 표, 모르는 모델(로컬 vLLM)은 0
@@ -2400,6 +2402,8 @@ describe("같은 구조", () => {
 });
 ```
 
+시험에 더한다(`tests/infer-vlm.test.ts`): OpenAI 호환 호출이 키를 Bearer로 보내고 사용량을 돌려줌·HTTP 오류는 던짐, 사진 설명(captions)이 그 사진 바로 앞에 감, maxAttempts 1, 두 번째 시도가 HTTP 오류여도 첫 시도 비용·횟수를 남김, 이미 끊긴 signal이면 요청하지 않음(attempts 0), 제한 시간(timeoutMs)에 끊김, 비용표(표에 없는 모델 0). 같은 구조 셋째 시험은 mock만 `reasoning_effort` 칸을 더 보내는지도 본다. `tests/brain-perception.test.ts`의 「OpenAI 판정기」 시험은 `VlmPerceiver`(chat completions 답 모양) 시험으로 바꾼다: 사진마다 설명 + 사진 순서(`text, text, image_url, text, image_url`), 스키마 이름 `cup_scene`, 다시 묻기·상한·비용, 사진이 없으면 부르지 않음.
+
 - [ ] **Step 2: 실패 확인** — `H npx vitest run tests/infer-vlm.test.ts tests/same-structure.test.ts` / Expected: FAIL 모듈 없음. 둘째 시험은 지금 `src/brain/decision.ts`의 `class MockDecision`과 `src/brain/perception.ts`의 `class ScriptedPerceiver`, `src/brain/detector.ts`의 `class ScriptedDetector`에서도 실패한다(Task 15와 이 작업에서 시험 도우미로 옮긴다).
 - [ ] **Step 3: 구현**
 
@@ -2413,9 +2417,16 @@ export type ChatPart = { type: "text"; text: string } | { type: "image_url"; ima
 export interface ChatMessage { role: "system" | "user"; content: string | ChatPart[] }
 export interface ChatReply { text: string; model: string; usage: { prompt: number; completion: number; cached: number }; ms: number }
 
+interface ChatBody {
+  model?: string;
+  choices?: { message?: { content?: string | null } }[];
+  usage?: { prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: { cached_tokens?: number } };
+}
+
 export class OpenAICompatClient {
   constructor(private readonly ep: ModelEndpoint, private readonly opts: { fetchImpl?: typeof fetch; timeoutMs?: number } = {}) {}
 
+  /** signal이나 제한 시간(timeoutMs, 기본 20000)이 끊기면 요청도 끊는다. HTTP 오류는 던진다. */
   async chat(req: { messages: ChatMessage[]; schema?: { name: string; schema: Record<string, unknown> }; maxTokens?: number; signal?: AbortSignal }): Promise<ChatReply> {
     const t0 = performance.now();
     const limit = AbortSignal.timeout(this.opts.timeoutMs ?? 20_000);
@@ -2428,8 +2439,11 @@ export class OpenAICompatClient {
         ...(req.schema ? { response_format: { type: "json_schema", json_schema: { name: req.schema.name, strict: true, schema: req.schema.schema } } } : {}),
       }),
     }, { fetchImpl: this.opts.fetchImpl });
-    if (!res.ok) throw new Error(`모델 HTTP ${res.status}`);
-    const b = await res.json() as { model?: string; choices?: { message?: { content?: string } }[]; usage?: { prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: { cached_tokens?: number } } };
+    if (!res.ok) {
+      await res.body?.cancel();
+      throw new Error(`모델 HTTP ${res.status}`);
+    }
+    const b = (await res.json()) as ChatBody;
     return {
       text: b.choices?.[0]?.message?.content ?? "", model: b.model ?? this.ep.model, ms: performance.now() - t0,
       usage: { prompt: b.usage?.prompt_tokens ?? 0, completion: b.usage?.completion_tokens ?? 0, cached: b.usage?.prompt_tokens_details?.cached_tokens ?? 0 },
@@ -2441,11 +2455,27 @@ export class OpenAICompatClient {
 ```ts
 // src/infer/vlm.ts
 // VLM 사진 분석 어댑터(모델 호출 하나에 어댑터 하나). 형식이 틀리면 한 번만 다시 묻는다(maxAttempts, 기본 2).
+// signal이 끊기면 HTTP 요청도 끊고 다시 묻지 않는다(aborted: true). 다시 묻는 요청도 같은 signal·같은 제한 시간 안에서 한다.
 import { estimateCostUsd } from "./cost.js";
 import type { ModelEndpoint } from "./endpoints.js";
 import { OpenAICompatClient, type ChatPart } from "./openai-compat.js";
 
-export interface VlmJson<T> { value: T | null; costUsd: number; model: string; attempts: number; error?: string }
+export interface VlmJson<T> { value: T | null; costUsd: number; model: string; attempts: number; error?: string; aborted?: boolean }
+
+export interface VlmRequest<T> {
+  prompt: string;
+  /** 사진 앞에 둘 글(감지 목록 등). */
+  texts?: string[];
+  images: Buffer[];
+  /** 사진마다 그 사진 바로 앞에 둘 설명(촬영 시각 등). */
+  captions?: string[];
+  schema: { name: string; schema: Record<string, unknown> };
+  parse: (text: string) => T;
+  maxAttempts?: number;
+  signal?: AbortSignal;
+}
+
+const reasonOf = (s: AbortSignal | undefined): string => (s?.reason instanceof Error ? s.reason.message : "끊김");
 
 export class VlmClient {
   private readonly chat: OpenAICompatClient;
@@ -2453,9 +2483,17 @@ export class VlmClient {
     this.chat = new OpenAICompatClient(ep, opts);
   }
 
-  async json<T>(o: { prompt: string; texts?: string[]; images: Buffer[]; schema: { name: string; schema: Record<string, unknown> }; parse: (text: string) => T; maxAttempts?: number; signal?: AbortSignal }): Promise<VlmJson<T>> {
+  get model(): string {
+    return this.ep.model;
+  }
+
+  async json<T>(o: VlmRequest<T>): Promise<VlmJson<T>> {
     const content: ChatPart[] = [{ type: "text", text: o.prompt }, ...(o.texts ?? []).map((text) => ({ type: "text" as const, text }))];
-    for (const img of o.images) content.push({ type: "image_url", image_url: { url: `data:image/jpeg;base64,${img.toString("base64")}`, detail: "high" } });
+    o.images.forEach((img, i) => {
+      const caption = o.captions?.[i];
+      if (caption) content.push({ type: "text", text: caption });
+      content.push({ type: "image_url", image_url: { url: `data:image/jpeg;base64,${img.toString("base64")}`, detail: "high" } });
+    });
     const max = Math.max(1, Math.min(2, o.maxAttempts ?? 2));
     let cost = 0, model = this.ep.model, attempts = 0;
     while (attempts < max && !o.signal?.aborted) {
@@ -2469,7 +2507,7 @@ export class VlmClient {
         return { value: null, costUsd: cost, model, attempts, error: (e as Error).message, ...(o.signal?.aborted ? { aborted: true } : {}) };
       }
     }
-    if (o.signal?.aborted) return { value: null, costUsd: cost, model, attempts, error: "시간 초과", aborted: true };
+    if (o.signal?.aborted) return { value: null, costUsd: cost, model, attempts, error: reasonOf(o.signal), aborted: true };
     return { value: null, costUsd: cost, model, attempts, error: `형식이 ${attempts}번 틀림` };
   }
 }
@@ -2500,7 +2538,7 @@ export function createInference(env: Record<string, string | undefined>): { endp
   return { endpoints, vlm: new VlmClient(endpoints.vlm, { timeoutMs: vlmTimeoutMs(env) }) };
 }
 ```
-`src/brain/perception.ts`: `OpenAIPerceiver`를 지우고 `VlmPerceiver`(생성자 `(vlm: VlmClient)`, `perceive(frames)` → `vlm.json({ prompt: PERCEPTION_PROMPT, texts: 사진별 상대 시각 글, images: frames.map(f => f.jpeg), schema: { name: "cup_scene", schema: PERCEPTION_JSON_SCHEMA }, parse: parsePerception, maxAttempts })`)를 둔다. `ScriptedPerceiver`는 `tests/helpers/perceivers.ts`로, `ScriptedDetector`는 `tests/helpers/detectors.ts`로 옮기고 시험 import를 고친다. `live.ts` `createLiveBrain`: `OPENAI_API_KEY` 검사 대신 `createInference(env).vlm`으로 `VlmPerceiver`를 만든다(`BRAIN_VLM_MODEL` 대신 `VLM_MODEL`). `docs/reference.md` 환경 변수 표를 바꾸고 녹화 재생(`scripts/brain-replay.ts`) 줄을 지운다.
+`src/brain/perception.ts`: `OpenAIPerceiver`·가격표·`estimateCostUsd`를 지우고 `VlmPerceiver`(생성자 `(vlm: VlmClient)`, `perceive(frames)` → `vlm.json({ prompt: PERCEPTION_PROMPT, images: frames.map(f => f.jpeg), captions: 사진별 상대 시각 글, schema: { name: "cup_scene", schema: PERCEPTION_JSON_SCHEMA }, parse: parsePerception, maxAttempts })`)를 둔다. `ScriptedPerceiver`는 `tests/helpers/perceivers.ts`로, `ScriptedDetector`는 `tests/helpers/detectors.ts`로 옮기고 시험 import를 고친다. `live.ts` `createLiveBrain`: `OPENAI_API_KEY` 검사 대신 `createInference(env).vlm`으로 `VlmPerceiver`를 만든다(`BRAIN_VLM_MODEL` 대신 `VLM_MODEL`). 키가 없어도 두뇌를 끄지 않는다(반환 타입 `Promise<LiveBrain>`, 키 없음은 `/api/health` `ready.vlm.key`가 보인다). 시작 기록 줄에 VLM 모델 이름을 더한다. `src/server/app.ts`의 `/api/brain` 404 글과 `start.ts` 주석에서 `OPENAI_API_KEY 필요`를 뺀다(src 주석에도 `INFERENCE_MODE` 낱말을 쓰지 않는다). `docs/reference.md` 환경 변수 표를 바꾸고 녹화 재생(`scripts/brain-replay.ts`) 줄을 지운다.
 
 CLAUDE.md 같은 구조 줄 막는 장치: `tests/same-structure.test.ts`(두 모드의 주소 표 차이, `INFERENCE_MODE`를 `src/infer/endpoints.ts`만 읽는지, src에 가짜 판단·인식 클래스가 없는지, 두 모드가 같은 가짜 주소 자리에 같은 요청을 보내는지). `npm test`가 돌린다.
 

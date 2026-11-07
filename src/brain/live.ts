@@ -8,13 +8,14 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { createInference } from "../infer/inference.js";
 import type { EyePose } from "../phone/align.js";
 import { CupBrain, type BrainOutput } from "./brain.js";
 import { loadBrainConfig, type BrainConfig } from "./config.js";
 import { CUP_FSM_MEMORY, CUP_TASKS, MockDecision, type DecisionModel } from "./decision.js";
 import { WorkerDetector, YOLOX_MODELS, type Detector, type YoloxModel } from "./detector.js";
 import { PamDecision } from "./pam.js";
-import { OpenAIPerceiver, type Perceiver } from "./perception.js";
+import { VlmPerceiver, type Perceiver } from "./perception.js";
 import { DEFAULT_PRESENCE, PresenceTracker, tableInView, type Surface } from "./presence.js";
 import type { Frame } from "./window.js";
 
@@ -195,19 +196,12 @@ export interface CreateLiveBrainOptions {
   inject?: { perceiver?: Perceiver; detector?: Detector | null; decision?: DecisionModel; clock?: { now(): number } };
 }
 
-/** 환경 변수로 두뇌를 만든다. VLM 키가 없으면 null(경고). 감지기 모델이 없으면 VLM만으로 돈다(경고). */
-export async function createLiveBrain(o: CreateLiveBrainOptions): Promise<LiveBrain | null> {
+/** 환경 변수로 두뇌를 만든다. VLM은 추론 모드가 고른 주소(src/infer)로 부른다. 감지기 모델이 없으면 VLM만으로 돈다(경고). */
+export async function createLiveBrain(o: CreateLiveBrainOptions): Promise<LiveBrain> {
   const { env, log } = o;
   const config = loadBrainConfig(env);
-  let perceiver = o.inject?.perceiver;
-  if (!perceiver) {
-    const key = env.OPENAI_API_KEY?.trim();
-    if (!key) {
-      log("[경고] BRAIN=1이지만 OPENAI_API_KEY가 없어 두뇌를 끕니다(VLM 판정이 필요해요).");
-      return null;
-    }
-    perceiver = new OpenAIPerceiver({ apiKey: key, model: env.BRAIN_VLM_MODEL?.trim() || env.OPENAI_MODEL?.trim() || "gpt-5.4-mini" });
-  }
+  const inference = createInference(env);
+  const perceiver = o.inject?.perceiver ?? new VlmPerceiver(inference.vlm);
   let detector: Detector | null;
   if (o.inject && "detector" in o.inject) {
     detector = o.inject.detector ?? null;
@@ -238,7 +232,7 @@ export async function createLiveBrain(o: CreateLiveBrainOptions): Promise<LiveBr
       decision = new MockDecision();
     }
   }
-  log(`두뇌: 감지 ${detector?.name ?? "없음(VLM만)"} · 판단 ${decision.name} · 행동 모의(기기 명령 없음)`);
+  log(`두뇌: 감지 ${detector?.name ?? "없음(VLM만)"} · VLM ${inference.vlm.model} · 판단 ${decision.name} · 행동 모의(기기 명령 없음)`);
   return new LiveBrain({
     config, perceiver, detector, decision, surfaces: o.surfaces, toDashboard: o.toDashboard, toPhone: o.toPhone, log, clock: o.inject?.clock,
   });

@@ -2,7 +2,7 @@
 // SSOT 6.1: 사진 묶음에 VLM 1회, `visible`이 값보다 먼저, 형식 오류는 1회 다시 묻고 그래도 틀리면 모름.
 
 import { z } from "zod";
-import { fetchRetry } from "../server/net.js";
+import type { VlmClient } from "../infer/vlm.js";
 import type { Frame } from "./window.js";
 
 const Tri = z.enum(["yes", "no", "unknown"]);
@@ -69,108 +69,22 @@ export interface Perceiver {
   perceive(frames: readonly Frame[], opts?: { maxAttempts?: number }): Promise<PerceiveReply>;
 }
 
-/** 원/백만 토큰이 아니라 USD/백만 토큰. 11-01 실험과 같은 값. */
-const PRICES: Record<string, { input: number; cached: number; output: number }> = {
-  "gpt-5.4-mini": { input: 0.75, cached: 0.075, output: 4.5 },
-  "gpt-5.4-mini-2026-03-17": { input: 0.75, cached: 0.075, output: 4.5 },
-  "gpt-4.1-mini-2025-04-14": { input: 0.4, cached: 0.1, output: 1.6 },
-};
+/** VLM 어댑터(src/infer/vlm.ts)로 판정한다(OpenAI 호환 chat completions, 구조화 출력 strict). 사진마다 최신 기준 상대 시각을 붙인다.
+ *  형식 오류면 한 번만 다시 묻는다(maxAttempts, 기본 2). 중간에 네트워크 오류가 나도 앞 시도의 비용은 남긴다. */
+export class VlmPerceiver implements Perceiver {
+  constructor(private readonly vlm: VlmClient) {}
 
-interface Usage { input_tokens: number; output_tokens: number; input_tokens_details?: { cached_tokens?: number } }
-
-/** 모르는 모델이면 gpt-5.4-mini 가격으로 어림한다(상한 관리용). */
-export function estimateCostUsd(model: string, usage: Usage): number {
-  const price = PRICES[model] ?? PRICES["gpt-5.4-mini"]!;
-  const cached = usage.input_tokens_details?.cached_tokens ?? 0;
-  return ((usage.input_tokens - cached) * price.input + cached * price.cached + usage.output_tokens * price.output) / 1_000_000;
-}
-
-export interface OpenAIPerceiverOptions {
-  apiKey: string;
-  model: string;
-  endpoint?: string;
-  detail?: "low" | "high";
-  fetchImpl?: typeof fetch;
-}
-
-/** OpenAI Responses API로 판정한다(구조화 출력 strict). 사진마다 최신 기준 상대 시각을 붙인다. */
-export class OpenAIPerceiver implements Perceiver {
-  constructor(private readonly opts: OpenAIPerceiverOptions) {
-    if (!opts.apiKey) throw new Error("OPENAI_API_KEY가 없습니다");
-  }
-
-  private body(frames: readonly Frame[]) {
-    const last = frames.at(-1)!.capturedAtMs;
-    const content: Record<string, unknown>[] = [{ type: "input_text", text: PERCEPTION_PROMPT }];
-    frames.forEach((f, i) => {
-      content.push({ type: "input_text", text: `Photo ${i + 1}/${frames.length}, taken ${Math.round(f.capturedAtMs - last)}ms relative to the last photo` });
-      content.push({ type: "input_image", image_url: `data:image/jpeg;base64,${f.jpeg.toString("base64")}`, detail: this.opts.detail ?? "high" });
-    });
-    return {
-      model: this.opts.model,
-      store: false,
-      max_output_tokens: 600,
-      ...(this.opts.model.startsWith("gpt-5.4") ? { reasoning: { effort: "none" } } : {}),
-      input: [{ role: "user", content }],
-      text: { format: { type: "json_schema", name: "cup_scene", strict: true, schema: PERCEPTION_JSON_SCHEMA } },
-    };
-  }
-
-  private async once(frames: readonly Frame[]): Promise<{ text: string; costUsd: number; model: string }> {
-    const response = await fetchRetry(this.opts.endpoint ?? "https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${this.opts.apiKey}`, "Content-Type": "application/json" },
-      signal: AbortSignal.timeout(30_000),
-      body: JSON.stringify(this.body(frames)),
-    }, { fetchImpl: this.opts.fetchImpl });
-    if (!response.ok) throw new Error(`판정 HTTP ${response.status}`);
-    const body = await response.json() as { model?: string; usage?: Usage; output?: { type: string; content?: { type: string; text?: string }[] }[] };
-    const model = body.model ?? this.opts.model;
-    const costUsd = body.usage ? estimateCostUsd(model, body.usage) : 0;
-    const text = (body.output ?? []).flatMap((o) => (o.type === "message" ? o.content ?? [] : []))
-      .filter((c) => c.type === "output_text").map((c) => c.text ?? "").join("");
-    return { text, costUsd, model };
-  }
-
-  /** 형식 오류면 한 번만 다시 묻는다(maxAttempts, 기본 2). 중간에 네트워크 오류가 나도 앞 시도의 비용은 남긴다. */
   async perceive(frames: readonly Frame[], opts: { maxAttempts?: number } = {}): Promise<PerceiveReply> {
     if (!frames.length) throw new Error("판정할 사진이 없습니다");
-    const max = Math.max(1, Math.min(2, opts.maxAttempts ?? 2));
-    let cost = 0;
-    let model = this.opts.model;
-    let attempts = 0;
-    while (attempts < max) {
-      attempts++;
-      let r: { text: string; costUsd: number; model: string };
-      try {
-        r = await this.once(frames);
-      } catch (e) {
-        return { perception: null, costUsd: cost, model, attempts, error: e instanceof Error ? e.message : String(e) };
-      }
-      cost += r.costUsd;
-      model = r.model;
-      try {
-        return { perception: parsePerception(r.text), costUsd: cost, model, attempts };
-      } catch {
-        // 형식 오류: 남은 시도가 있으면 다시 묻는다
-      }
-    }
-    return { perception: null, costUsd: cost, model, attempts, error: `판정 형식이 ${attempts}번 틀려 모름으로 둡니다` };
-  }
-}
-
-/** 시험·재생용: 함수가 판정을 정한다(null이면 실패). 지연(ms)을 줄 수 있다. */
-export class ScriptedPerceiver implements Perceiver {
-  constructor(
-    private readonly script: (frames: readonly Frame[]) => RawPerception | null,
-    private readonly delay: (ms: number) => Promise<void> = async () => {},
-    private readonly latencyMs = 0,
-  ) {}
-
-  async perceive(frames: readonly Frame[]): Promise<PerceiveReply> {
-    if (this.latencyMs) await this.delay(this.latencyMs);
-    const raw = this.script(frames);
-    return raw ? { perception: normalizePerception(raw), costUsd: 0, model: "scripted", attempts: 1 }
-      : { perception: null, costUsd: 0, model: "scripted", attempts: 1, error: "대본 판정 없음" };
+    const last = frames.at(-1)!.capturedAtMs;
+    const r = await this.vlm.json({
+      prompt: PERCEPTION_PROMPT,
+      images: frames.map((f) => f.jpeg),
+      captions: frames.map((f, i) => `Photo ${i + 1}/${frames.length}, taken ${Math.round(f.capturedAtMs - last)}ms relative to the last photo`),
+      schema: { name: "cup_scene", schema: PERCEPTION_JSON_SCHEMA },
+      parse: parsePerception,
+      maxAttempts: opts.maxAttempts,
+    });
+    return { perception: r.value, costUsd: r.costUsd, model: r.model, attempts: r.attempts, ...(r.error ? { error: r.error } : {}) };
   }
 }

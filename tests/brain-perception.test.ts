@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import { FrameBuffer, selectWindow, type Frame } from "../src/brain/window.js";
 import { PerceptionLoop } from "../src/brain/loop.js";
 import {
-  OpenAIPerceiver, PERCEPTION_JSON_SCHEMA, normalizePerception, parsePerception, type RawPerception, type PerceiveReply,
+  PERCEPTION_JSON_SCHEMA, VlmPerceiver, normalizePerception, parsePerception, type RawPerception, type PerceiveReply,
 } from "../src/brain/perception.js";
+import { VlmClient } from "../src/infer/vlm.js";
 
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
 const frame = (ms: number, id = `f${ms}`): Frame => ({ id, capturedAtMs: ms, jpeg: JPEG });
@@ -157,54 +158,41 @@ describe("판정 반복(단일 진행·최신 우선)", () => {
   });
 });
 
-describe("OpenAI 판정기", () => {
+describe("VLM 판정기", () => {
+  const chatReply = (text: string, usage = { prompt_tokens: 1000, completion_tokens: 100 }) =>
+    new Response(JSON.stringify({ model: "gpt-5.4-mini-2026-03-17", choices: [{ message: { content: text }, finish_reason: "stop" }], usage }), { status: 200 });
+  const vlm = (fetchImpl: typeof fetch) => new VlmClient({ baseUrl: "http://127.0.0.1:9/v1", model: "gpt-5.4-mini", apiKey: "k", extraBody: {} }, { fetchImpl });
+
   it("사진마다 촬영 시각을 붙여 한 번에 보내고, 형식이 틀리면 한 번 다시 묻는다", async () => {
-    const bodies: { input: { content: { type: string; text?: string }[] }[]; text: { format: { strict: boolean } } }[] = [];
+    const bodies: { messages: { content: { type: string; text?: string }[] }[]; response_format: { json_schema: { name: string; strict: boolean } } }[] = [];
     const answers = ["not json", JSON.stringify(raw({ drinking: "yes" }))];
     const fetchImpl = (async (_url: string, init: RequestInit) => {
       bodies.push(JSON.parse(String(init.body)));
-      const text = answers.shift()!;
-      return new Response(JSON.stringify({
-        model: "gpt-5.4-mini-2026-03-17", status: "completed",
-        usage: { input_tokens: 1000, output_tokens: 100 },
-        output: [{ type: "message", content: [{ type: "output_text", text }] }],
-      }), { status: 200 });
-    }) as typeof fetch;
-    const p = new OpenAIPerceiver({ apiKey: "k", model: "gpt-5.4-mini", fetchImpl });
-    const out = await p.perceive([frame(1000), frame(1500)]);
+      return chatReply(answers.shift()!);
+    }) as unknown as typeof fetch;
+    const out = await new VlmPerceiver(vlm(fetchImpl)).perceive([frame(1000), frame(1500)]);
     expect(out.perception?.drinking).toBe("yes");
     expect(bodies).toHaveLength(2);
-    const content = bodies[0]!.input[0]!.content;
-    expect(content.filter((c) => c.type === "input_image")).toHaveLength(2);
-    expect(content.some((c) => c.text?.includes("-500ms"))).toBe(true);
-    expect(bodies[0]!.text.format.strict).toBe(true);
+    const content = bodies[0]!.messages[0]!.content;
+    expect(content.map((c) => c.type)).toEqual(["text", "text", "image_url", "text", "image_url"]);
+    expect(content[1]!.text).toContain("-500ms");
+    expect(bodies[0]!.response_format.json_schema).toMatchObject({ name: "cup_scene", strict: true });
     expect(out.costUsd).toBeGreaterThan(0);
+    expect(out.attempts).toBe(2);
   });
 
   it("다시 묻기도 실제 호출로 세고, 남은 상한이 1이면 한 번만 부른다", async () => {
     let requests = 0;
-    const fetchImpl = (async () => {
-      requests++;
-      return new Response(JSON.stringify({
-        model: "gpt-5.4-mini-2026-03-17", status: "completed", usage: { input_tokens: 10, output_tokens: 1 },
-        output: [{ type: "message", content: [{ type: "output_text", text: "{}" }] }],
-      }), { status: 200 });
-    }) as unknown as typeof fetch;
-    const out = await new OpenAIPerceiver({ apiKey: "k", model: "gpt-5.4-mini", fetchImpl }).perceive([frame(0)], { maxAttempts: 1 });
+    const fetchImpl = (async () => { requests++; return chatReply("{}", { prompt_tokens: 10, completion_tokens: 1 }); }) as unknown as typeof fetch;
+    const out = await new VlmPerceiver(vlm(fetchImpl)).perceive([frame(0)], { maxAttempts: 1 });
     expect(requests).toBe(1);
     expect(out.attempts).toBe(1);
   });
 
   it("두 번째 시도가 네트워크 오류여도 첫 시도 비용은 남긴다", async () => {
     let n = 0;
-    const fetchImpl = (async () => {
-      if (n++ === 1) return new Response("down", { status: 500 });
-      return new Response(JSON.stringify({
-        model: "gpt-5.4-mini-2026-03-17", status: "completed", usage: { input_tokens: 1000, output_tokens: 10 },
-        output: [{ type: "message", content: [{ type: "output_text", text: "nope" }] }],
-      }), { status: 200 });
-    }) as unknown as typeof fetch;
-    const out = await new OpenAIPerceiver({ apiKey: "k", model: "gpt-5.4-mini", fetchImpl }).perceive([frame(0)]);
+    const fetchImpl = (async () => (n++ === 1 ? new Response("down", { status: 500 }) : chatReply("nope", { prompt_tokens: 1000, completion_tokens: 10 }))) as unknown as typeof fetch;
+    const out = await new VlmPerceiver(vlm(fetchImpl)).perceive([frame(0)]);
     expect(out.perception).toBeNull();
     expect(out.attempts).toBe(2);
     expect(out.costUsd).toBeGreaterThan(0);
@@ -212,13 +200,15 @@ describe("OpenAI 판정기", () => {
   });
 
   it("두 번 다 형식이 틀리면 판정을 비우고 비용은 센다", async () => {
-    const fetchImpl = (async () => new Response(JSON.stringify({
-      model: "gpt-5.4-mini-2026-03-17", status: "completed", usage: { input_tokens: 10, output_tokens: 1 },
-      output: [{ type: "message", content: [{ type: "output_text", text: "{}" }] }],
-    }), { status: 200 })) as unknown as typeof fetch;
-    const out = await new OpenAIPerceiver({ apiKey: "k", model: "gpt-5.4-mini", fetchImpl }).perceive([frame(0)]);
+    const fetchImpl = (async () => chatReply("{}", { prompt_tokens: 10, completion_tokens: 1 })) as unknown as typeof fetch;
+    const out = await new VlmPerceiver(vlm(fetchImpl)).perceive([frame(0)]);
     expect(out.perception).toBeNull();
     expect(out.error).toMatch(/형식/);
     expect(out.costUsd).toBeGreaterThan(0);
+  });
+
+  it("판정할 사진이 없으면 부르지 않는다", async () => {
+    const fetchImpl = (async () => { throw new Error("불렀음"); }) as unknown as typeof fetch;
+    await expect(new VlmPerceiver(vlm(fetchImpl)).perceive([])).rejects.toThrow(/사진이 없습니다/);
   });
 });
