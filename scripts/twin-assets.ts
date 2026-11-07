@@ -2,10 +2,11 @@
 //   npx tsx scripts/twin-assets.ts --from <twin-studio 폴더> [--commit <커밋>] [--to twin]
 // 복사: homes.json, 뷰어(test/ 빼고), library/assets, data/catalog, 집마다 floorplan.json·placement.json·catalog/, scene.json·assets/.
 // 글 파일(json·mjs·js·html·css)은 줄 끝을 LF로 맞춘다. twin/SOURCE.json에 커밋과 파일마다 sha256을 적는다.
+// --to는 비었거나 이전 복사 결과(SOURCE.json)인 폴더만 지우고 새로 쓴다. 저장소 뿌리와 그 위 폴더는 거절한다.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { readRegistry } from "../src/model/homes.js";
 
@@ -38,10 +39,31 @@ function gitCommit(dir: string): string {
   }
 }
 
+/** 이 저장소 뿌리. */
+const REPO = resolve(fileURLToPath(new URL("..", import.meta.url)));
+
+/** child가 parent와 같거나 그 안에 있는가. */
+function within(child: string, parent: string): boolean {
+  const rel = relative(parent, child);
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+/** 지워도 되는 복사할 곳인가: 없거나 비었거나 이전 복사 결과(SOURCE.json source twin-studio)다. 저장소 뿌리와 그 위 폴더, twin-studio를 품는 폴더는 거절한다. */
+function checkTarget(to: string, from: string): void {
+  if (within(from, to)) throw new Error(`복사할 곳(${to})이 twin-studio 폴더를 품어요. 다른 폴더를 주세요.`);
+  if (within(REPO, to)) throw new Error(`복사할 곳(${to})이 이 저장소 뿌리이거나 그 위 폴더예요. 저장소 안 twin/을 주세요.`);
+  if (!existsSync(to) || readdirSync(to).length === 0) return;
+  let source: unknown = null;
+  try {
+    source = JSON.parse(readFileSync(join(to, "SOURCE.json"), "utf8")).source;
+  } catch { /* 이전 복사 결과가 아님 */ }
+  if (source !== "twin-studio") throw new Error(`복사할 곳(${to})이 비어 있지 않고 이전 복사 결과(SOURCE.json)도 아니에요. 빈 폴더나 twin/을 주세요.`);
+}
+
 export function copyTwinAssets(o: { from: string; to: string; commit?: string }): { files: number; bytes: number; commit: string } {
   const from = resolve(o.from);
   const to = resolve(o.to);
-  if (to === from || from.startsWith(`${to}\\`) || from.startsWith(`${to}/`)) throw new Error(`복사할 곳(${to})이 twin-studio 폴더를 품어요. 다른 폴더를 주세요.`);
+  checkTarget(to, from);
   const reg = readRegistry(from);
   const commit = o.commit ?? gitCommit(from);
   const picks = new Set<string>([join(from, "homes.json")]);

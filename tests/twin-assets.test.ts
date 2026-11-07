@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { copyTwinAssets } from "../scripts/twin-assets.js";
 
@@ -69,6 +70,27 @@ describe("트윈 결과물 복사", () => {
     const from = fakeStudio();
     writeFileSync(join(from, "homes.json"), JSON.stringify({ homes: [{ id: "x", data: "data/x", out: "homes/x" }] }));
     expect(() => copyTwinAssets({ from, to: join(from, "out"), commit: "c" })).toThrow(/scene\.json/);
+  });
+
+  it("저장소 뿌리·그 위 폴더·이전 결과가 아닌 폴더에는 복사하지 않고 아무것도 지우지 않는다", () => {
+    const from = fakeStudio();
+    const root = fileURLToPath(new URL("..", import.meta.url));
+    expect(() => copyTwinAssets({ from, to: root, commit: "c" })).toThrow(/저장소/);
+    expect(() => copyTwinAssets({ from, to: join(root, ".."), commit: "c" })).toThrow(/저장소/);
+    const other = mkdtempSync(join(tmpdir(), "other-"));
+    put(other, "keep.txt", "keep");
+    expect(() => copyTwinAssets({ from, to: other, commit: "c" })).toThrow(/SOURCE\.json/);
+    expect(readFileSync(join(other, "keep.txt"), "utf8")).toBe("keep");
+  });
+
+  it("이전 복사 결과 폴더와 빈 폴더에는 새로 복사한다", () => {
+    const from = fakeStudio();
+    const to = mkdtempSync(join(tmpdir(), "twin-"));
+    copyTwinAssets({ from, to, commit: "a" });
+    put(to, "old-only.json", "{}");
+    copyTwinAssets({ from, to, commit: "b" });
+    expect(list(to)).not.toContain("old-only.json");
+    expect(JSON.parse(readFileSync(join(to, "SOURCE.json"), "utf8")).commit).toBe("b");
   });
 
   it("git 폴더가 아니고 --commit이 없으면 멈춘다", () => {
