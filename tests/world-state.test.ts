@@ -94,6 +94,24 @@ describe("World State", () => {
     expect(w.applyDetections(at(9, look), [cup]).changes.map((c) => c.kind)).toEqual(["back_in_view"]);
     expect(w.view(9000).objects.map((o) => [o.id, o.status])).toEqual([["cup_1", "present"]]);
   });
+  it("띄엄띄엄 본 사람은 보임으로 치지 않는다", () => {
+    const w = ws();
+    const out: string[] = [];
+    w.applyDetections(frame(1), [person]);
+    for (let i = 2; i <= 30; i++) out.push(...w.applyDetections(frame(i), []).changes.map((c) => c.kind));
+    out.push(...w.applyDetections(frame(31), [person]).changes.map((c) => c.kind));
+    expect(out).toEqual([]);
+    expect(w.view(31_000).person.visible).toBe(false);
+  });
+  it("사라진 물건을 띄엄띄엄 다시 봐도 등장으로 치지 않는다", () => {
+    const w = new WorldState({ surfaces: () => [{ id: "table_1", label: "식탁", center: [0.75, 0], top: 0.75, radius: 0.6 }], floorAt: () => 0, roomAt: () => "kitchen", devices });
+    const out: string[] = [];
+    let n = 0;
+    const step = (dets: Detection[]) => { n++; out.push(...w.applyDetections({ ...frame(n), view: look }, dets).changes.map((c) => `${n}:${c.kind}`)); };
+    for (const dets of [[cup], [cup], [cup], [], [], [], [cup], [], [], [], [cup], [], [], [], [cup]]) step(dets);
+    expect(out).toEqual(["3:appeared", "6:gone"]);
+    expect(w.view(n * 1000).objects.map((o) => o.status)).toEqual(["gone"]);
+  });
   it("사람은 2장으로 보임·안 보임, 가전 변화는 바뀐 시각과 이력", () => {
     const w = ws();
     w.applyDetections(frame(1), [person]);

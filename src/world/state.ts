@@ -191,11 +191,11 @@ export class WorldState {
     }
     for (const obj of this.objects.values()) {
       if (!obj.confirmed) {
-        if (!seen.has(obj.id)) this.objects.delete(obj.id);   // 세는 중에 끊기면 잊는다
+        if (!seen.has(obj.id)) this.forget(obj.id);   // 세는 중에 끊기면 잊는다
         continue;
       }
       if (obj.status === "gone") {
-        if (obj.goneAt !== null && at - obj.goneAt > GONE_KEEP_MS) this.objects.delete(obj.id);
+        if (obj.goneAt !== null && at - obj.goneAt > GONE_KEEP_MS) this.forget(obj.id);
         continue;
       }
       const vis = seen.has(obj.id) ? true : this.visible(obj, view);
@@ -211,6 +211,11 @@ export class WorldState {
       }
     }
     return { changes, ids };
+  }
+
+  private forget(id: string): void {
+    this.objects.delete(id);
+    this.confirmer.forget(id);
   }
 
   /** 같은 면의 사실보다 오래된 답은 버린다. 값이 새로 생기거나 바뀌면 true. */
