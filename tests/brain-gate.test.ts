@@ -1,12 +1,13 @@
-// 감지 모드 실행기: VLM 거르기, 요청 답 사진 우선 호출, 판단 근거(evidence) 전달, 처음부터 끝(모의 행동·결과).
+// 감지 모드 실행기: VLM 거르기, 요청 답 사진 우선 호출, 판단 근거를 관찰 텍스트로 전달(사진 없음), 처음부터 끝(모의 행동·결과).
 
 import { describe, expect, it } from "vitest";
 import { CupBrain, type BrainOutput } from "../src/brain/brain.js";
 import { DEFAULT_BRAIN_CONFIG } from "../src/brain/config.js";
-import { MockDecision, type DecisionInput, type DecisionModel } from "../src/brain/decision.js";
+import type { DecisionInput, DecisionModel } from "../src/brain/decision.js";
 import type { RawPerception } from "../src/brain/perception.js";
 import type { Presence } from "../src/brain/presence.js";
 import type { Frame } from "../src/brain/window.js";
+import { ScriptedDecision } from "./helpers/decision.js";
 import { ScriptedPerceiver } from "./helpers/perceivers.js";
 
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
@@ -19,7 +20,7 @@ const base: RawPerception = {
 class Spy implements DecisionModel {
   readonly name = "spy";
   inputs: DecisionInput[] = [];
-  private readonly mock = new MockDecision();
+  private readonly mock = new ScriptedDecision();
   whatIf = this.mock.whatIf.bind(this.mock);
   async decide(input: DecisionInput) {
     this.inputs.push(input);
@@ -44,7 +45,7 @@ function setup(scene: Scene, opts: { decision?: DecisionModel } = {}) {
     return scene.vlm(frames.at(-1)!.capturedAtMs);
   });
   const brain = new CupBrain({
-    perceiver, decision: opts.decision ?? new MockDecision(), config: DEFAULT_BRAIN_CONFIG, clock: { now: () => now },
+    perceiver, decision: opts.decision ?? new ScriptedDecision(), config: DEFAULT_BRAIN_CONFIG, clock: { now: () => now },
     emit: (e) => out.push(e), presence: true, acting: true, time: { offsetMinutes: 540, epochMs: Date.parse("2026-11-04T03:00:00Z") },
   });
   let lastSeen = { person: null as number | null, cup: null as number | null };
@@ -110,7 +111,12 @@ describe("요청 답 사진", () => {
     expect(texts(s.out).some((t) => t.startsWith("컵 안 확인: 빈 컵(확신"))).toBe(true);
     await s.runTo(11_088, 14_000);
     expect(spy.inputs).toHaveLength(1);
-    expect(spy.inputs[0]!.evidence).toMatchObject([{ kind: "cup_contents", value: "empty", source: "request_answer_photo", jpeg: PHOTO }]);
+    const sent = spy.inputs[0]!;
+    expect(sent.text).toContain("[지속] 컵 안: 빈 컵 확신, 12:00:11 요청 답 사진");
+    expect(sent.text).toMatch(/^12:00:\d\d YOLO 사람/m);
+    expect(sent.text).toMatch(/^12:00:11 요청 답 사진 VLM /m);
+    expect(sent.finalTime).toMatch(/^2026-11-04T12:00:1\d\.\d{3}\+09:00$/);
+    expect(JSON.stringify(sent)).not.toMatch(/jpeg|base64|image/);
   });
 });
 
@@ -124,7 +130,7 @@ describe("답 사진 두 장", () => {
     await s.brain.idle();
     expect(s.out.filter((e) => e.type === "perception" && e.answer)).toHaveLength(2);
     await s.runTo(11_088, 14_000);
-    expect(spy.inputs[0]!.evidence).toMatchObject([{ source: "request_answer_photo", timestamp: expect.stringContaining("12:00:11.050") }]);
+    expect(spy.inputs[0]!.text).toContain("[지속] 컵 안: 빈 컵 확신, 12:00:11 요청 답 사진");
   });
 });
 
@@ -138,7 +144,7 @@ describe("판단 근거 사진 보존", () => {
     }, { decision: spy });
     await s.runTo(0, 30_000);
     expect(spy.inputs.length).toBeGreaterThan(0);
-    expect(spy.inputs[0]!.evidence).toMatchObject([{ kind: "cup_contents", value: "empty", source: "scene_frame" }]);
+    expect(spy.inputs[0]!.text).toMatch(/\[지속\] 컵 안: 빈 컵 확신, 12:00:0[56] 장면 사진/);
   });
 });
 

@@ -1,11 +1,12 @@
-// 상위 판단 실행기: 폰 프레임 → (YOLO 존재 판정) + 판정 반복(VLM) → 컵 상태 기계 → 판단 모델(모의·PAM) → 이벤트·모의 행동.
+// 상위 판단 실행기: 폰 프레임 → (YOLO 존재 판정) + 판정 반복(VLM) → 컵 상태 기계 → 판단 모델(PAM) → 이벤트·모의 행동.
+// 판단 모델에는 사진을 넘기지 않는다: YOLO·VLM 기록 줄(시각이 붙은 글)과 확신한 컵 안 사실을 관찰 텍스트로 만들어 넘긴다(src/world/text.ts).
 // 실시간 연결(폰 프레임·사진·답, 감지기 돌리기, 메시지 나눠 보내기)은 live.ts가 한다. 여기는 시간을 받는 순수한 흐름이다.
 
 import type { BrainLog } from "../contract/events.js";
 import type { BrainConfig } from "./config.js";
-import {
-  CUP_MEMORY, CUP_TASKS, isoWithOffset, selectDecisionFrames, type DecisionEvidence, type DecisionModel, type PamMemory,
-} from "./decision.js";
+import { CONTENTS_FACT, LINE } from "../world/labels.js";
+import { buildPamText, clock, type TimedLine } from "../world/text.js";
+import { CUP_MEMORY, CUP_TASKS, isoWithOffset, type DecisionModel, type PamMemory } from "./decision.js";
 import { PerceptionLoop, type PerceptionResult } from "./loop.js";
 import { CupMachine, type BrainState, type DecideIntent, type MachineOutput } from "./machine.js";
 import type { Perceiver, Perception } from "./perception.js";
@@ -24,7 +25,7 @@ export interface CupBrainOptions {
   tasks?: string[];
   memory?: PamMemory;
   memoryKind?: "list" | "fsm";
-  /** 판단 사진 명목 시각용: 시간대(분)와, 프레임 시각이 상대값이면 그 0의 실제 시각. */
+  /** 관찰 텍스트 시각용: 시간대(분)와, 프레임 시각이 상대값이면 그 0의 실제 시각. */
   time?: { offsetMinutes: number; epochMs: number };
   /** 감지 모드: onPresence로 YOLO 존재 판정을 넣는다(자리 비움·재확인·결과 확인, VLM 거르기). */
   presence?: boolean;
@@ -52,8 +53,8 @@ export class CupBrain {
   private readonly loop: PerceptionLoop;
   private readonly tasks: string[];
   private decisionRun: Promise<void> | null = null;
-  /** 판단 사진 5장(2초 간격)이 아직 모자라 미룬 판단. 사진이 모이면 그때의 최신 사진까지로 판단한다. */
-  private pending: { intent: DecideIntent; deadlineMs: number } | null = null;
+  /** 관찰 텍스트 줄(YOLO·VLM 기록 글, 촬영 시각). 최근 두 판단 창 길이만 둔다. */
+  private lines: { atMs: number; text: string }[] = [];
   private lastPresence: Presence | null = null;
   private lastPresenceText = "";
   /** 거르기: 마지막 VLM 호출을 시작할 때의 (사람, 컵) 짝. */
@@ -101,9 +102,9 @@ export class CupBrain {
       this.opts.emit({
         type: "presence", at_ms: now, evidence_age_ms: now - pr.atMs, person: pr.person, cup: pr.cup, table: pr.table, scores: pr.scores, summary: text,
       });
+      this.line(pr.atMs, text);
     }
     this.apply(this.machine.observePresence(pr, now));
-    this.retryPending();
     this.loop.poll();
   }
 
@@ -127,7 +128,6 @@ export class CupBrain {
   tick(): void {
     if (this.stopped) return;
     this.apply(this.machine.tick(this.opts.clock.now()));
-    this.retryPending();
     this.loop.poll();
   }
 
@@ -158,16 +158,24 @@ export class CupBrain {
       type: "perception", at_ms: now, evidence_age_ms: now - r.evidenceAtMs, frames: r.frameIds.length,
       summary: summarize(r.perception), cost_usd: r.costUsd, ...(answer ? { answer: true as const } : {}), ...(r.error ? { error: r.error } : {}),
     });
+    this.line(r.evidenceAtMs, r.perception ? `${answer ? `${LINE.answerPhoto} ` : ""}${LINE.vlm} ${summarize(r.perception)}` : LINE.noVlm);
     if (r.perception) {
       const frame = answerFrame ?? this.buffer.frames().find((f) => f.id === r.frameIds.at(-1));
       if (frame) this.remember(r.evidenceAtMs, { perception: r.perception, frame, answer });
     }
     this.apply(this.machine.observe({ ...r, answer }, now));
-    this.retryPending();
   }
 
-  /** 판단 근거(evidence)로 넘길 수 있게 최근 판정을 조금 남긴다. */
-  /** 기계가 받아들여 들고 있는 컵 안 근거(keepEvidence)의 사진은 오래돼도 지우지 않는다(판단이 늦어져도 근거로 넘기게). */
+  /** 관찰 텍스트 줄을 더하고, 가장 새 줄에서 두 판단 창보다 오래된 줄을 버린다. */
+  private line(atMs: number, text: string): void {
+    this.lines.push({ atMs, text });
+    const newest = Math.max(...this.lines.map((l) => l.atMs));
+    const keep = 2 * this.opts.config.decisionWindowMs;
+    this.lines = this.lines.filter((l) => newest - l.atMs <= keep);
+  }
+
+  /** 판단 근거로 넘길 수 있게 최근 판정을 조금 남긴다.
+   *  기계가 받아들여 들고 있는 컵 안 근거(keepEvidence)는 오래돼도 지우지 않는다(판단이 늦어져도 [지속] 사실로 넘기게). */
   private remember(atMs: number, j: Judged): void {
     this.judged.set(atMs, j);
     const keep = new Set(this.machine.keepEvidence());
@@ -180,70 +188,36 @@ export class CupBrain {
     for (const intent of out.intents) this.startDecision(intent);
   }
 
-  private startDecision(intent: DecideIntent): void {
-    if (!this.tryDecision(intent)) {
-      this.pending = { intent, deadlineMs: this.opts.clock.now() + this.opts.config.requestTimeoutMs };
-      const m = this.machine;
-      this.opts.emit({
-        type: "brain", stage: "decide", state: m.state, text: "판단 사진 5장(2초 간격)이 아직 모자람 → 모이면 판단",
-        at_ms: this.opts.clock.now(), evidence_age_ms: null, generation: m.generation,
-      });
-    }
-  }
-
-  private retryPending(): void {
-    const p = this.pending;
-    if (!p) return;
-    if (p.intent.generation !== this.machine.generation || this.machine.state !== "deciding") {
-      this.pending = null; // 사람이 돌아오는 등 흐름이 바뀌었다
-      return;
-    }
-    // 기한부터 본다: 기한이 지난 뒤에는 사진이 모였어도 부르지 않는다
-    if (this.opts.clock.now() > p.deadlineMs) {
-      this.pending = null;
-      this.apply(this.machine.decisionFailed(p.intent.generation, "판단 사진 5장(2초 간격)을 못 모음", this.opts.clock.now()));
-    } else if (this.tryDecision(p.intent)) {
-      this.pending = null;
-    }
-  }
-
-  /** 판단 근거의 내용물이 확신한 VLM 판정에서 왔으면 그 판정의 사진(요청 답 사진이면 그 사진)을 근거로 넘긴다. */
-  private evidenceFor(intent: DecideIntent, time: { offsetMinutes: number; epochMs: number }): DecisionEvidence[] {
+  /** 판단 근거의 내용물이 확신한 VLM 판정에서 왔으면 그 사실을 [지속] 줄로 넘긴다(사진은 넘기지 않는다). */
+  private factsFor(intent: DecideIntent, time: { offsetMinutes: number; epochMs: number }): string[] {
     const j = intent.contentsAtMs === null ? undefined : this.judged.get(intent.contentsAtMs);
-    if (!j || j.perception.contents_status !== "confirmed") return [];
-    return [{
-      kind: "cup_contents", value: j.perception.contents, certain: true,
-      timestamp: isoWithOffset(time.epochMs + j.frame.capturedAtMs, time.offsetMinutes),
-      source: j.answer ? "request_answer_photo" : "scene_frame", jpeg: j.frame.jpeg,
-    }];
+    if (!j || j.perception.contents_status !== "confirmed" || j.perception.contents === "unknown") return [];
+    return [`${CONTENTS_FACT[j.perception.contents]}, ${clock(time.epochMs + j.frame.capturedAtMs, time.offsetMinutes)} ${j.answer ? LINE.answerPhoto : LINE.sceneFrame}`];
   }
 
-  /** 사진이 모이면 판단 모델을 부르고 true. 끝 시각은 근거 시각 이후의 최신 사진까지 늦출 수 있다. */
-  private tryDecision(intent: DecideIntent): boolean {
-    if (this.stopped) return true; // 멈춘 뒤에는 판단 모델을 부르지 않는다(미뤄 두지도 않음)
+  /** 판단 모델을 부른다: 마지막 관찰까지 판단 창(decisionWindowMs) 안의 줄 + [지속] 사실 = 관찰 텍스트. */
+  private startDecision(intent: DecideIntent): void {
+    if (this.stopped) return; // 멈춘 뒤에는 판단 모델을 부르지 않는다
     const time = this.opts.time ?? { offsetMinutes: -new Date().getTimezoneOffset(), epochMs: 0 };
-    const endMs = Math.max(intent.endMs, this.buffer.latest()?.capturedAtMs ?? intent.endMs);
-    const frames = selectDecisionFrames(this.buffer.frames(), endMs, {
-      stepMs: this.opts.config.decisionStepMs, toleranceMs: 500, ...time,
-    });
-    if (!frames) return false;
+    const endMs = Math.max(intent.endMs, this.buffer.latest()?.capturedAtMs ?? intent.endMs, ...this.lines.map((l) => l.atMs));
+    const lines: TimedLine[] = this.lines.filter((l) => l.atMs <= endMs && endMs - l.atMs <= this.opts.config.decisionWindowMs)
+      .map((l) => ({ atMs: time.epochMs + l.atMs, text: l.text }));
+    const text = buildPamText({ lines, facts: this.factsFor(intent, time), offsetMinutes: time.offsetMinutes });
     const run = this.opts.decision.decide({
-      frames, memory: this.opts.memory ?? CUP_MEMORY, memoryKind: this.opts.memoryKind ?? "list",
-      tasks: this.tasks, facts: { contents: intent.contents }, evidence: this.evidenceFor(intent, time),
+      text, finalTime: isoWithOffset(time.epochMs + endMs, time.offsetMinutes),
+      memory: this.opts.memory ?? CUP_MEMORY, memoryKind: this.opts.memoryKind ?? "list", tasks: this.tasks, facts: { contents: intent.contents },
     }).then(
       (pred) => { if (!this.stopped) this.apply(this.machine.decided(intent.generation, pred, this.tasks, this.opts.clock.now())); },
       (e: unknown) => { if (!this.stopped) this.apply(this.machine.decisionFailed(intent.generation, e instanceof Error ? e.message : String(e), this.opts.clock.now())); },
     );
     const tracked: Promise<void> = run.finally(() => { if (this.decisionRun === tracked) this.decisionRun = null; });
     this.decisionRun = tracked;
-    return true;
   }
 
   /** 판정을 더 부르지 않는다(서버 종료). 진행 중인 판정·판단 결과는 그대로 끝나게 둔다. */
   stop(): void {
     this.stopped = true;
     this.loop.stop();
-    this.pending = null;
   }
 
   async idle(): Promise<void> {

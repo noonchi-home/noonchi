@@ -12,9 +12,9 @@ import { createInference } from "../infer/inference.js";
 import type { EyePose } from "../phone/align.js";
 import { CupBrain, type BrainOutput } from "./brain.js";
 import { loadBrainConfig, type BrainConfig } from "./config.js";
-import { CUP_FSM_MEMORY, CUP_TASKS, MockDecision, type DecisionModel } from "./decision.js";
+import { CUP_FSM_MEMORY, CUP_TASKS, type DecisionModel } from "./decision.js";
 import { WorkerDetector, YOLOX_MODELS, type Detector, type YoloxModel } from "./detector.js";
-import { PamDecision } from "./pam.js";
+import { PamClient, PamDecision } from "./pam.js";
 import { VlmPerceiver, type Perceiver } from "./perception.js";
 import { DEFAULT_PRESENCE, PresenceTracker, tableInView, type Surface } from "./presence.js";
 import type { Frame } from "./window.js";
@@ -222,16 +222,9 @@ export async function createLiveBrain(o: CreateLiveBrainOptions): Promise<LiveBr
       }
     }
   }
-  let decision = o.inject?.decision;
-  if (!decision) {
-    if (env.BRAIN_DECISION?.trim() === "pam") {
-      const url = env.PAM_URL?.trim();
-      if (!url) log("[경고] BRAIN_DECISION=pam이지만 PAM_URL이 없습니다. 판단마다 실패로 기록돼요.");
-      decision = new PamDecision({ url, timeoutMs: Number(env.PAM_TIMEOUT_MS) || undefined });
-    } else {
-      decision = new MockDecision();
-    }
-  }
+  // 판단은 늘 PAM 서비스(PAM_URL)다. 서비스가 없으면 판단마다 실패로 기록된다
+  const decision = o.inject?.decision
+    ?? new PamDecision(new PamClient({ url: inference.endpoints.pamUrl, timeoutMs: Number(env.PAM_TIMEOUT_MS) || undefined }));
   log(`두뇌: 감지 ${detector?.name ?? "없음(VLM만)"} · VLM ${inference.vlm.model} · 판단 ${decision.name} · 행동 모의(기기 명령 없음)`);
   return new LiveBrain({
     config, perceiver, detector, decision, surfaces: o.surfaces, toDashboard: o.toDashboard, toPhone: o.toPhone, log, clock: o.inject?.clock,

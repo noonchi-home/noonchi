@@ -23,10 +23,10 @@ export interface BrainConfig {
   awayMs: number;
   /** 컵 안 사진 요청을 거두는 시간(ms). */
   requestTimeoutMs: number;
-  /** 버퍼에 두는 사진 길이(ms). 판단 모델에 넘길 8초 창보다 길어야 한다. */
+  /** 버퍼에 두는 사진 길이(ms). VLM 판정 창과 컵 안 근거를 찾는 데 쓴다. */
   bufferMs: number;
-  /** 판단 모델에 넘길 사진 5장의 간격(ms). PAM은 t-8, t-6, t-4, t-2, t초. */
-  decisionStepMs: number;
+  /** 판단 모델에 넘길 관찰 텍스트 창(ms): 마지막 관찰까지 이 안의 YOLO·VLM 줄. */
+  decisionWindowMs: number;
   /** YOLO 존재 판정 창(ms): 이 안의 프레임 중 하나라도 보이면 있음. */
   holdMs: number;
   /** 행동 결과: 컵 없음이 이만큼 이어지면 치워짐(ms). */
@@ -43,7 +43,7 @@ export const DEFAULT_BRAIN_CONFIG: BrainConfig = {
   awayMs: 5000,
   requestTimeoutMs: 60_000,
   bufferMs: 10_000,
-  decisionStepMs: 2000,
+  decisionWindowMs: 10_000,
   holdMs: 600,
   clearMs: 2000,
   actionTimeoutMs: 120_000,
@@ -67,7 +67,7 @@ export function loadBrainConfig(env: Record<string, string | undefined> = proces
     awayMs: num(env, "BRAIN_AWAY_MS", d.awayMs, 0),
     requestTimeoutMs: num(env, "BRAIN_REQUEST_TIMEOUT_MS", d.requestTimeoutMs, 1000),
     bufferMs: d.bufferMs,
-    decisionStepMs: d.decisionStepMs,
+    decisionWindowMs: d.decisionWindowMs,
     holdMs: num(env, "BRAIN_HOLD_MS", d.holdMs, 100),
     clearMs: num(env, "BRAIN_CLEAR_MS", d.clearMs, 0),
     actionTimeoutMs: num(env, "BRAIN_ACTION_TIMEOUT_MS", d.actionTimeoutMs, 1000),

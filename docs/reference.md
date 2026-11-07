@@ -98,7 +98,7 @@ HUB=memory npm run demo
 | `PHONE_MAX_MISMATCH_M`, `PHONE_PHOTO_DIR` | `0.3`, `RUNTIME_DIR/photos` | 기준점 거리 차이 허용값, 사진 폴더 |
 | `BRAIN` | (끔) | `1`이면 폰 카메라로 상위 판단(클로이드 두뇌, 아래 "상위 판단")을 돌린다. `PHONE_PORT`가 있어야 한다. VLM은 `INFERENCE_MODE`가 고른 주소로 부른다(mock은 `OPENAI_API_KEY`) |
 | `BRAIN_DETECTOR`, `BRAIN_YOLO_PATH`, `BRAIN_YOLO_THREADS` | `yolox_tiny`, `runtime/models/<모델>.onnx`, `4` | YOLO 존재 감지기(`yolox_tiny`·`yolox_nano`·`off`). 모델 파일이 없으면 VLM만 쓴다 |
-| `BRAIN_DECISION`, `PAM_URL`, `PAM_TIMEOUT_MS` | `mock`, (없음), `20000` | 판단 모델. `pam`이면 `PAM_URL`로 HTTP(계약 `docs/pam-interface.md`) |
+| `PAM_TIMEOUT_MS` | `30000` | 판단 한 번 제한 시간. 판단은 늘 PAM 서비스(`PAM_URL`, 계약 `docs/pam-interface.md`)다 |
 | `BRAIN_AWAY_MS`, `BRAIN_STALE_MS`, `BRAIN_HOLD_MS`, `BRAIN_CLEAR_MS` | `5000`, `3000`, `600`, `2000` | 자리 비움 시간, 근거가 이보다 오래되면 모름, YOLO 존재 창, 치워짐 판정 시간 |
 | `BRAIN_INTERVAL_MS`, `BRAIN_CALL_CAP`, `BRAIN_REQUEST_TIMEOUT_MS`, `BRAIN_ACTION_TIMEOUT_MS` | `1000`, `120`, `60000`, `120000` | VLM 호출 간격·상한, 사진 요청·행동 결과 기다리는 시간 |
 | `FOCUS` | (끔) | `1`이면 초점 표시(클로이드가 다룬 물건의 고리·"클로이드 주목")를 대시보드·폰·3D로 보낸다. 기본은 보내지 않는다 |
@@ -316,7 +316,7 @@ npm start
 - **YOLO + VLM:** YOLO(YOLOX-Tiny, Apache-2.0, 이 PC 4스레드 장당 약 70ms)가 매 장면 사람·컵이 있는지 본다(최근 0.6초 안에 한 장이라도 보이면 있음). VLM은 마심·들고 있음·컵 안만 본다. 자리 비움은 YOLO "사람 없음·컵 있음" 5초 + 그 사이 찍힌 VLM "사람 없음"이 둘 다 있어야 정한다. VLM은 볼 것이 있거나 장면이 바뀔 때만 부른다.
 - **식탁을 비추는가:** 폰 위치를 맞춘 뒤에는 눈 자세와 트윈의 식탁·책상으로 계산한다(앞 30° 안, 6m 안). 맞추기 전은 모름이라 막지 않는다.
 - **행동은 모두 모의다.** 실제·트윈 기기 명령이나 LG ThinQ 호출이 없다. "컵 치우기"는 로봇이 없어 폰으로 사람에게 부탁하고(치웠어요·나중에), "사용자에게 물어보기"는 폰으로 묻는다. 치워짐은 식탁을 비추며 컵이 2초 안 보이면 정한다. 맞추기 전에는 "치웠어요"를 누른 뒤의 컵 없음만 센다.
-- **판단 모델:** 기본은 모의 모델. `BRAIN_DECISION=pam`이면 박석준 PAM을 HTTP로 부른다(계약 `docs/pam-interface.md`, 모의 서버 `npx tsx scripts/pam-mock-server.ts`).
+- **판단 모델:** 늘 PAM 서비스(`PAM_URL`, `services/pam/`)다. 사진은 넘기지 않고, 마지막 관찰까지 10초 안의 YOLO·VLM 기록 줄과 확신한 컵 안 사실(`[지속]`)을 관찰 텍스트로 넘긴다(`pam-predict/2`, 계약 `docs/pam-interface.md`). PAM 서비스가 없으면 판단마다 실패로 기록된다.
 - **시각:** 폰이 2초마다 서버와 시계를 맞춰(NTP식) 프레임마다 서버 시계 촬영 시각과 오차를 보낸다. 서버는 "가장 이른 가능 시각"을 써서 근거 나이를 보수적으로 잰다.
 - **화면:** 대시보드 추론 과정 칸에 🤖 카드(단계 글 + 최근 YOLO·VLM 한 줄), 폰에는 위 상태 한 줄·가운데 큰 요청 글·행동 부탁 카드(모의 표시). 상태는 `GET /api/brain`.
 

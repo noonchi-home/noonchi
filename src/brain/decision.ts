@@ -1,10 +1,9 @@
-// 판단 모델(박석준 PAM)을 도구로 부르는 자리. 계약은 ai/pam/contracts.py와 같다:
-// decide(사진 5장, 기억, 작업 목록) → {observation, reasoning, task_index}. task_index -1은 대기다.
+// 판단 모델(PAM)을 도구로 부르는 자리. 검사 규칙은 services/pam/pam/contracts.py와 같다:
+// decide(관찰 텍스트, 마지막 관찰 시각, 기억, 작업 목록) → {observation, reasoning, task_index}. task_index -1은 대기다. 사진은 넘기지 않는다.
 // 판단 모델은 무엇을 도울지만 정한다. 언제 더 볼지·행동 전 재확인은 상태 기계(machine.ts)가 정한다.
 // 검사 메시지는 PAM 원문(영어)과 같게 두어 두 쪽 기록을 대조하기 쉽게 한다.
 
 import type { Contents } from "./perception.js";
-import type { Frame } from "./window.js";
 
 export class ContractError extends Error {}
 
@@ -157,31 +156,7 @@ export function parsePrediction(raw: string, tasks: string[]): ParsedPrediction 
   return result;
 }
 
-export interface DecisionFrame {
-  /** PAM에 넘길 명목 시각: 시간대가 있는 ISO, 2초 격자(t-8..t). */
-  timestamp: string;
-  /** 실제 촬영 시각(ms). 명목 시각과 ±0.5초 안. */
-  capturedAtMs?: number;
-  jpeg?: Buffer;
-  path?: string;
-}
-
 const TZ = /(Z|[+-]\d{2}:\d{2})$/;
-
-/** PAM predictor 입력 규칙: 정확히 5장, 시간대 있는 시각, 증가, 정확히 stepMs 간격(PAM은 2초). */
-export function validateDecisionFrames(frames: DecisionFrame[], stepMs = 2000): void {
-  if (frames.length !== 5) throw new ContractError(`판단 사진은 5장이어야 합니다(지금 ${frames.length}장)`);
-  let previous = Number.NEGATIVE_INFINITY;
-  frames.forEach((f, i) => {
-    if (!TZ.test(f.timestamp) || Number.isNaN(Date.parse(f.timestamp))) {
-      throw new ContractError(`frames[${i}].timestamp: 시간대가 있는 ISO 시각이어야 합니다`);
-    }
-    const t = Date.parse(f.timestamp);
-    if (t <= previous) throw new ContractError(`frames[${i}].timestamp: 시각이 증가해야 합니다`);
-    if (i > 0 && t - previous !== stepMs) throw new ContractError(`frames[${i}].timestamp: 판단 사진은 ${stepMs / 1000}초 간격이어야 합니다`);
-    previous = t;
-  });
-}
 
 const pad = (n: number, w = 2) => String(n).padStart(w, "0");
 
@@ -192,54 +167,19 @@ export function isoWithOffset(ms: number, offsetMinutes: number): string {
   return `${local}${offsetMinutes >= 0 ? "+" : "-"}${pad(Math.floor(a / 60))}:${pad(a % 60)}`;
 }
 
-export interface DecisionFrameOptions {
-  stepMs: number;
-  toleranceMs: number;
-  /** 명목 시각을 쓸 시간대(분). 한국은 540. */
-  offsetMinutes: number;
-  /** capturedAtMs가 상대 시각이면 그 0의 실제 시각(ms). 절대 시각(Date.now)이면 0. */
-  epochMs: number;
-}
-
-/** 끝 시각 endMs에서 t-8..t 자리마다 ±toleranceMs 안의 가장 가까운 실제 사진을 고른다. 한 자리라도 없으면 null. */
-export function selectDecisionFrames(frames: readonly Frame[], endMs: number, opts: DecisionFrameOptions): DecisionFrame[] | null {
-  const picked: DecisionFrame[] = [];
-  const used = new Set<string>();
-  for (let k = 4; k >= 0; k--) {
-    const nominal = endMs - k * opts.stepMs;
-    let best: Frame | undefined;
-    for (const f of frames) {
-      const d = Math.abs(f.capturedAtMs - nominal);
-      if (d <= opts.toleranceMs && f.capturedAtMs <= endMs && (!best || d < Math.abs(best.capturedAtMs - nominal))) best = f;
-    }
-    if (!best || used.has(best.id)) return null;
-    used.add(best.id);
-    picked.push({ timestamp: isoWithOffset(opts.epochMs + nominal, opts.offsetMinutes), capturedAtMs: best.capturedAtMs, jpeg: best.jpeg });
-  }
-  return picked;
-}
-
-/** 우리 쪽 관찰 사실. PAM은 사진과 기억만 보지만, 모의 모델과 기록에는 이것을 쓴다. */
+/** 우리 쪽 관찰 사실. PAM은 관찰 텍스트와 기억만 보고, 시험용 판단 모델과 기록은 이것을 쓴다. */
 export interface DecisionFacts { contents: Contents }
 
-/** 장면 사진 5장 밖의 근거. 요청 답 사진처럼 5장 격자에 들지 않는 사진과, 그 사진에서 VLM이 확신한 사실(컵 안). */
-export interface DecisionEvidence {
-  kind: "cup_contents";
-  value: Contents;
-  certain: boolean;
-  /** 근거 사진 촬영 시각(시간대 있는 ISO). */
-  timestamp: string;
-  source: "request_answer_photo" | "scene_frame";
-  jpeg?: Buffer;
-}
-
+/** PAM 판단 입력(pam-predict/2 칸과 같다). 사진 칸이 없다. */
 export interface DecisionInput {
-  frames: DecisionFrame[];
+  /** World State 관찰 텍스트(src/world/text.ts buildPamText). */
+  text: string;
+  /** 마지막 관찰 시각(시간대 있는 ISO). */
+  finalTime: string;
   memory: PamMemory;
   memoryKind: "list" | "fsm";
   tasks: string[];
   facts: DecisionFacts;
-  evidence?: DecisionEvidence[];
 }
 
 export interface DecisionModel {
@@ -261,7 +201,7 @@ export const CUP_MEMORY: ListMemory = {
   ],
 };
 
-/** 컵 시나리오의 FSM 기억(임시). PAM fsm 기억 모양(ai/pam/contracts.py validate_memory)을 따른다.
+/** 컵 시나리오의 FSM 기억(임시). PAM fsm 기억 모양(services/pam/pam/contracts.py validate_memory)을 따른다.
  *  실제 기억은 PAM 반성기(reflector)가 만든다. 작업 이름은 CUP_TASKS와 같게 둔다. */
 export const CUP_FSM_MEMORY: FsmMemory = {
   initial_state: "drinking",
@@ -284,29 +224,16 @@ export const CUP_FSM_MEMORY: FsmMemory = {
   ],
 };
 
+/** PAM 판단 관찰 텍스트 상한(글자 수). PAM 서비스 pam-predict/2와 같다. */
+export const MAX_OBSERVATION_TEXT = 20_000;
+
+/** 보내기 전 검사: 관찰 텍스트, 시간대 있는 마지막 관찰 시각, 작업 목록, 기억 모양. */
 export function checkInput(input: DecisionInput): void {
-  validateDecisionFrames(input.frames);
+  if (typeof input.text !== "string" || !input.text.trim()) throw new ContractError("관찰 텍스트가 비어 있습니다");
+  if (input.text.length > MAX_OBSERVATION_TEXT) throw new ContractError(`관찰 텍스트는 ${MAX_OBSERVATION_TEXT}자까지입니다(지금 ${input.text.length}자)`);
+  if (!TZ.test(input.finalTime) || Number.isNaN(Date.parse(input.finalTime))) throw new ContractError("finalTime: 시간대가 있는 ISO 시각이어야 합니다");
   validateTasks(input.tasks);
   validateMemory(input.memory, input.memoryKind);
 }
 
-/** 결정론 모의 모델: 빈 컵 → 컵 치우기, 남음 → 대기, 모름 → 묻기(목록에 없으면 대기). */
-export class MockDecision implements DecisionModel {
-  readonly name = "mock";
-
-  whatIf(facts: DecisionFacts, tasks: string[]): number {
-    if (facts.contents === "empty") return tasks.indexOf("컵 치우기");
-    if (facts.contents === "not_empty") return -1;
-    return tasks.indexOf("사용자에게 물어보기");
-  }
-
-  async decide(input: DecisionInput): Promise<Prediction> {
-    checkInput(input);
-    const index = this.whatIf(input.facts, input.tasks);
-    const said = { empty: "컵이 비어 있음", not_empty: "컵에 음료가 남아 있음", unknown: "컵 안을 확인할 수 없음" }[input.facts.contents];
-    const reasoning = index === -1 ? `${said} → 기다린다` : `${said} → ${input.tasks[index]}`;
-    return validatePrediction({ observation: `사용자는 자리에 없고 ${said}`, reasoning, task_index: index }, input.tasks);
-  }
-}
-
-// 박석준 PAM을 HTTP로 부르는 어댑터는 pam.ts(PamDecision)에 있다.
+// PAM 서비스를 HTTP로 부르는 어댑터는 pam.ts(PamClient·PamDecision)에 있다.

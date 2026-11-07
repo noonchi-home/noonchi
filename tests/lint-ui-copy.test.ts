@@ -107,9 +107,15 @@ describe("web/(폰)과 ui/src 전체", () => {
 
 describe("서버가 화면에 그대로 내보내는 계획 글(src/plan/labels.ts)", () => {
   const labels = fileURLToPath(new URL("../src/plan/labels.ts", import.meta.url));
+  const worldLabels = fileURLToPath(new URL("../src/world/labels.ts", import.meta.url));
   it("npm run lint가 web/·ui/src와 함께 본다", () => {
-    expect(COPY_TARGETS).toEqual([webDir, uiDir, labels]);
+    expect(COPY_TARGETS).toEqual([webDir, uiDir, labels, worldLabels]);
     expect(copyFiles([labels])).toEqual([labels]);
+  });
+  it("World State 글(src/world/labels.ts)도 꺼내 검사한다", () => {
+    const texts = fileCopy(worldLabels, readFileSync(worldLabels, "utf8")).map((c) => c.text);
+    expect(texts).toEqual(expect.arrayContaining(["사람", "컵", "VLM 분석 없음", "요청 답 사진"]));
+    expect(lintUiCopy([worldLabels])).toEqual([]);
   });
   it("판단·단계·기기 동작 글을 꺼낸다", () => {
     const texts = fileCopy(labels, readFileSync(labels, "utf8")).map((c) => c.text);

@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { CupBrain, type BrainOutput } from "../src/brain/brain.js";
 import { DEFAULT_BRAIN_CONFIG } from "../src/brain/config.js";
-import { MockDecision, type DecisionInput, type DecisionModel, type Prediction } from "../src/brain/decision.js";
+import type { DecisionInput, DecisionModel, Prediction } from "../src/brain/decision.js";
 import type { RawPerception } from "../src/brain/perception.js";
+import { ScriptedDecision } from "./helpers/decision.js";
 import { ScriptedPerceiver } from "./helpers/perceivers.js";
 
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
@@ -29,7 +30,7 @@ async function run(opts: { decision?: DecisionModel; untilMs?: number; back?: nu
   const out: BrainOutput[] = [];
   const brain = new CupBrain({
     perceiver: new ScriptedPerceiver((opts.scene ?? scene)(state)),
-    decision: opts.decision ?? new MockDecision(),
+    decision: opts.decision ?? new ScriptedDecision(),
     config: { ...DEFAULT_BRAIN_CONFIG, awayMs: opts.awayMs ?? DEFAULT_BRAIN_CONFIG.awayMs, requestTimeoutMs: opts.requestTimeoutMs ?? DEFAULT_BRAIN_CONFIG.requestTimeoutMs },
     clock: { now: () => now },
     emit: (e) => {
@@ -65,17 +66,22 @@ describe("상위 판단 실행기(컵 시나리오, 모의 판정·모의 판단
     expect(brain.stats().calls).toBeLessThanOrEqual(26);
   });
 
-  it("판단 모델에는 2초 격자 5장과 기억·작업 목록이 간다", async () => {
+  it("판단 모델에는 사진 없이 관찰 텍스트·최종 시각·기억·작업 목록이 간다", async () => {
     const seen: DecisionInput[] = [];
     const spy: DecisionModel = {
       name: "spy",
-      whatIf: (f, tasks) => new MockDecision().whatIf(f, tasks),
-      decide: async (input): Promise<Prediction> => { seen.push(input); return new MockDecision().decide(input); },
+      whatIf: (f, tasks) => new ScriptedDecision().whatIf(f, tasks),
+      decide: async (input): Promise<Prediction> => { seen.push(input); return new ScriptedDecision().decide(input); },
     };
     await run({ decision: spy });
     expect(seen).toHaveLength(1);
-    const ts = seen[0]!.frames.map((f) => Date.parse(f.timestamp));
-    expect(ts.slice(1).map((v, i) => v - ts[i]!)).toEqual([2000, 2000, 2000, 2000]);
+    const lines = seen[0]!.text.split("\n");
+    expect(lines.length).toBeGreaterThan(1);
+    const times = lines.filter((l) => !l.startsWith("[")).map((l) => l.slice(0, 8));
+    expect(times).toEqual([...times].sort());
+    expect(lines.every((l) => /^(\d\d:\d\d:\d\d(~\d\d:\d\d:\d\d)? |\[지속\] )/.test(l))).toBe(true);
+    expect(seen[0]!.finalTime).toMatch(/[+-]\d\d:\d\d$/);
+    expect(Object.keys(seen[0]!).sort()).toEqual(["facts", "finalTime", "memory", "memoryKind", "tasks", "text"]);
     expect(seen[0]!.facts.contents).toBe("empty");
     expect(seen[0]!.tasks).toContain("컵 치우기");
   });
@@ -94,7 +100,7 @@ describe("상위 판단 실행기(컵 시나리오, 모의 판정·모의 판단
     expect(logs[0]).toMatchObject({ evidence_age_ms: 0, cost_usd: 0 });
   });
 
-  it("시작 직후라 8초 사진이 모자라면 포기하지 않고, 모이면 판단한다", async () => {
+  it("시작 직후라 관찰이 짧아도 바로 판단한다", async () => {
     const early = (st: { requested: boolean; back: number | null }) => (frames: readonly { capturedAtMs: number }[]): RawPerception => {
       const t = frames.at(-1)!.capturedAtMs;
       if (t < 1000) return { ...base, person_present: "yes", person_holding_cup: "yes", drinking: "yes", cup_support: "hand" };
@@ -106,39 +112,6 @@ describe("상위 판단 실행기(컵 시나리오, 모의 판정·모의 판단
     expect(t.some((x) => x.includes("판단 모델 실패"))).toBe(false);
     expect(t.some((x) => x.includes("실행 제안: 컵 치우기"))).toBe(true);
     expect(brain.stats().state).toBe("done");
-  });
-
-  it("미뤄 둔 판단은 기한이 지나면 사진이 모여도 부르지 않는다", async () => {
-    let now = 0;
-    const st = { requested: false };
-    let calls = 0;
-    const out: BrainOutput[] = [];
-    const brain = new CupBrain({
-      perceiver: new ScriptedPerceiver((frames) => {
-        const t = frames.at(-1)!.capturedAtMs;
-        if (t < 1000) return { ...base, person_present: "yes", person_holding_cup: "yes", drinking: "yes", cup_support: "hand" };
-        return st.requested ? { ...base, cup_contents: { visible: true, value: "empty", certain: true } } : base;
-      }),
-      decision: { name: "spy", decide: async (input) => { calls++; return new MockDecision().decide(input); } },
-      config: { ...DEFAULT_BRAIN_CONFIG, awayMs: 1000, requestTimeoutMs: 3000 },
-      clock: { now: () => now },
-      emit: (e) => { out.push(e); if (e.type === "request") st.requested = e.active; },
-      time: { offsetMinutes: 540, epochMs: 0 },
-    });
-    let i = 0;
-    for (; (i * 1000) / 12 <= 3500; i++) {
-      now = Math.round((i * 1000) / 12);
-      brain.onFrame({ id: `f${i}`, capturedAtMs: now, jpeg: JPEG });
-      brain.tick();
-      await brain.idle();
-    }
-    expect(texts(out).some((x) => x.includes("아직 모자람"))).toBe(true);
-    now = 10_000; // 기한(3초)이 한참 지난 뒤 사진이 한꺼번에 들어온다
-    for (; (i * 1000) / 12 <= 10_000; i++) brain.onFrame({ id: `f${i}`, capturedAtMs: Math.round((i * 1000) / 12), jpeg: JPEG });
-    brain.tick();
-    await brain.idle();
-    expect(calls).toBe(0);
-    expect(texts(out).some((x) => x.includes("판단 모델 실패(판단 사진 5장"))).toBe(true);
   });
 
   it("판단 모델이 실패하면 대기로 끝낸다", async () => {

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { DEFAULT_BRAIN_CONFIG } from "../src/brain/config.js";
-import { MockDecision } from "../src/brain/decision.js";
+import { ScriptedDecision } from "./helpers/decision.js";
 import type { Detection } from "../src/brain/detector.js";
 import { LiveBrain, captureTime } from "../src/brain/live.js";
 import type { RawPerception } from "../src/brain/perception.js";
@@ -54,7 +54,7 @@ describe("LiveBrain", () => {
         return phase === "drink" ? drinking : phase === "gone" ? { ...base, cup_visible: "no", cup_support: "unknown" } : base;
       }),
       detector: new ScriptedDetector(() => (phase === "drink" ? [person, cup] : phase === "away" ? [cup] : [])),
-      decision: new MockDecision(),
+      decision: new ScriptedDecision(),
       surfaces: () => [],
       toDashboard: (m) => toDash.push(m as Msg), toPhone: (m) => toPhone.push(m as Msg),
       clock: { now: () => now }, tickMs: 60_000,
@@ -84,7 +84,7 @@ describe("LiveBrain", () => {
       expect(toDash.some((m) => m.type === "brain" && m.event.type === "result" && m.event.outcome === "declined")).toBe(true);
       expect(toDash.some((m) => m.type === "brain" && m.event.type === "presence")).toBe(true);
       expect(toPhone.some((m) => m.type === "brain_line" && /실행\(모의\)/.test(m.text))).toBe(true);
-      expect(live.status()).toMatchObject({ state: "done", detector: "scripted", decision: "mock", time_source: "phone" });
+      expect(live.status()).toMatchObject({ state: "done", detector: "scripted", decision: "scripted", time_source: "phone" });
     } finally {
       await live.close();
     }
@@ -131,7 +131,7 @@ describe("startServer(BRAIN=1) + 폰", () => {
           return phase === "drink" ? drinking : base;
         }),
         detector: new ScriptedDetector(() => (phase === "drink" ? [person, cup] : [cup])),
-        decision: new MockDecision(),
+        decision: new ScriptedDecision(),
       },
     });
     expect(((await (await fetchRetry(`${srv.url}/api/health`)).json()) as Msg).brain).toBe(true);
@@ -166,7 +166,7 @@ describe("startServer(BRAIN=1) + 폰", () => {
       expect(await until(phoneBox, (m) => m.type === "photo_saved")).toMatchObject({ answer: true });
       await until(dashBox, (m) => m.type === "brain" && m.event.type === "brain" && /컵 안 확인: 빈 컵/.test(m.event.text));
       const status = (await (await fetchRetry(`${srv.url}/api/brain`)).json()) as Msg;
-      expect(status).toMatchObject({ ok: true, detector: "scripted", decision: "mock", time_source: "phone", time_err_ms: 3 });
+      expect(status).toMatchObject({ ok: true, detector: "scripted", decision: "scripted", time_source: "phone", time_err_ms: 3 });
       expect(status.frames).toBeGreaterThan(5);
     } finally {
       dash.close();

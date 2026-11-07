@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_BRAIN_CONFIG } from "../src/brain/config.js";
-import { MockDecision } from "../src/brain/decision.js";
+import { ScriptedDecision } from "./helpers/decision.js";
 import type { Detection } from "../src/brain/detector.js";
 import { LiveBrain } from "../src/brain/live.js";
 import type { RawPerception } from "../src/brain/perception.js";
@@ -228,7 +228,7 @@ describe("실제 컵 두뇌(LiveBrain) 메시지로 계획", () => {
         return phase === "drink" ? drinking : base;
       }),
       detector: new ScriptedDetector(() => (phase === "drink" ? [person, cup] : [cup])),
-      decision: new MockDecision(),
+      decision: new ScriptedDecision(),
       surfaces: () => [],
       toDashboard: (m) => hub.onDashboard(m), toPhone: () => {},
       clock: { now: () => now }, tickMs: 60_000,

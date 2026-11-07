@@ -2554,8 +2554,8 @@ git commit -m "feat: call the VLM through one OpenAI-compatible adapter whose en
 ### Task 15: PAM 어댑터 /2, 사진 없는 PAM 시험, 관찰 텍스트 첫판
 
 **Files:**
-- Create: `src/contract/pam.ts`, `src/world/text.ts`, `src/world/labels.ts`, `tests/pam-text-only.test.ts`, `tests/world-text.test.ts`, `tests/helpers/decision.ts`, `tests/helpers/pam.ts`
-- Modify: `src/brain/pam.ts`(전부 다시 씀), `src/brain/decision.ts`(`MockDecision`·사진 칸·`selectDecisionFrames` 지움, `Frame` import 지움, 검사기·`CUP_*` 유지), `src/brain/brain.ts`(판단 입력을 텍스트로), `src/brain/live.ts`(`BRAIN_DECISION` 없앰, 늘 PAM), `scripts/lint-ui-copy.ts`(`src/world/labels.ts` 검사), `tests/lint-ui-copy.test.ts`(`COPY_TARGETS`에 `src/world/labels.ts`), 지운 이름을 쓰는 시험 `tests/brain-decision.test.ts`(`MockDecision`·`selectDecisionFrames`·`validateDecisionFrames` 시험 → 텍스트 `DecisionInput` 검사 시험)·`tests/brain-gate.test.ts`·`tests/brain-live.test.ts`·`tests/brain-runner.test.ts`·`tests/plan-hub.test.ts`(`ScriptedDecision`으로), `docs/pam-interface.md`, `docs/reference.md`, `CLAUDE.md`(사진 없는 PAM 줄)
+- Create: `src/contract/pam.ts`, `src/world/text.ts`, `src/world/labels.ts`, `tests/pam-text-only.test.ts`, `tests/world-text.test.ts`, `tests/helpers/decision.ts`, `tests/helpers/pam.ts`(시험용 PAM 자리 `startFakePam`: 본문 기록, 정해진 판단 답, 경로별 HTTP 상태, `/health` 입력 한도)
+- Modify: `src/brain/pam.ts`(전부 다시 씀), `src/brain/decision.ts`(`MockDecision`·사진 칸·`selectDecisionFrames` 지움, `Frame` import 지움, 검사기·`CUP_*` 유지), `src/brain/brain.ts`(판단 입력을 텍스트로), `src/brain/config.ts`(`decisionStepMs` → `decisionWindowMs` 10000), `src/brain/live.ts`(`BRAIN_DECISION` 없앰, 늘 PAM), `src/server/start.ts`(주석의 `INFERENCE_MODE` 낱말), `.env.example`(`PAM_TIMEOUT_MS=`), `scripts/lint-ui-copy.ts`(`src/world/labels.ts` 검사), `tests/lint-ui-copy.test.ts`(`COPY_TARGETS`에 `src/world/labels.ts`), 지운 이름을 쓰는 시험 `tests/brain-decision.test.ts`(`MockDecision`·`selectDecisionFrames`·`validateDecisionFrames` 시험 → 텍스트 `DecisionInput` 검사 시험)·`tests/brain-gate.test.ts`·`tests/brain-live.test.ts`·`tests/brain-runner.test.ts`·`tests/plan-hub.test.ts`(`ScriptedDecision`으로), `docs/pam-interface.md`, `docs/reference.md`, `CLAUDE.md`(사진 없는 PAM 줄)
 - Delete: `scripts/pam-mock-server.ts`
 
 **Interfaces:**
@@ -2571,7 +2571,7 @@ export interface PamReflectRequest { contract: typeof PAM_REFLECT; day: string; 
 export interface PamReflectResponse { status: "valid" | "invalid"; raw_response: string; memory: unknown | null; errors: string[] }
 // src/brain/pam.ts
 export function assertTextOnly(body: unknown): void; // 어느 깊이든 image·images·frames·image_url·base64 키나 "data:image/" 값이면 ContractError
-export class PamLinkError extends Error {}           // PAM 서비스에 닿지 않음·HTTP 오류(연결 끊김 기록에 쓴다)
+export class PamLinkError extends Error {}           // PAM 서비스에 닿지 않음·시간 초과·5xx(연결 끊김 기록에 쓴다). 400·413은 ContractError
 export interface PamLimits { max_model_len: number; predict_input_bytes: number; reflect_input_bytes: number }
 export class PamClient {
   constructor(o: { url: string; timeoutMs?: number; fetchImpl?: typeof fetch });
@@ -2579,9 +2579,11 @@ export class PamClient {
   reflect(r: Omit<PamReflectRequest, "contract">, kind: "list" | "fsm"): Promise<PamMemory>;
   limits(): Promise<PamLimits>;                                                    // GET {url}/health의 limits
 }
-export class PamDecision implements DecisionModel { constructor(pam: PamClient); readonly name: "pam"; decide(input: DecisionInput): Promise<Prediction> }
+export class PamDecision implements DecisionModel { constructor(pam: PamClient); readonly name: "pam"; decide(input: DecisionInput): Promise<Prediction> } // checkInput 뒤 보낸다
 // src/brain/decision.ts
 export interface DecisionInput { text: string; finalTime: string; memory: PamMemory; memoryKind: "list" | "fsm"; tasks: string[]; facts: DecisionFacts }
+export const MAX_OBSERVATION_TEXT = 20_000;
+export function checkInput(input: DecisionInput): void; // 빈 관찰 텍스트·20000자 넘음·시간대 없는 finalTime·작업 목록·기억 모양이면 ContractError
 // src/world/text.ts
 export interface TimedLine { atMs: number; text: string }
 export function collapseLines(lines: TimedLine[], offsetMinutes: number): string[];   // 이어진 같은 글은 「처음~마지막 글 N번」
@@ -2699,9 +2701,11 @@ export function buildPamText(o: { lines: TimedLine[]; facts: string[]; eye?: str
 ```ts
 // src/brain/pam.ts
 // PAM 서비스(services/pam/)를 HTTP로 부르는 어댑터. 계약은 docs/pam-interface.md(pam-predict/2·pam-reflect/2, 사진 칸 없음).
+// 받은 답은 우리 쪽에서 원문(raw_response)부터 다시 검사한다. invalid는 대기(-1)와 구분해 판단 실패로 둔다.
+// 연결 실패·5xx 등은 PamLinkError(PAM 연결 끊김), 우리 요청이 계약에 맞지 않음(400)·문맥 길이 넘음(413)·답 형식 오류는 ContractError.
 import { PAM_PREDICT, PAM_REFLECT, type PamPredictRequest, type PamPredictResponse, type PamReflectRequest, type PamReflectResponse } from "../contract/pam.js";
 import { fetchRetry } from "../server/net.js";
-import { ContractError, parsePrediction, validateMemory, type DecisionInput, type DecisionModel, type PamMemory, type Prediction } from "./decision.js";
+import { ContractError, checkInput, parsePrediction, validateMemory, type DecisionInput, type DecisionModel, type PamMemory, type Prediction } from "./decision.js";
 
 const IMAGE_KEY = /^(image|images|frames|image_url|base64|jpeg|png)$/i;
 
@@ -2711,7 +2715,10 @@ export function assertTextOnly(body: unknown, path = "body"): void {
     if (/data:image\//i.test(body)) throw new ContractError(`${path}: PAM에는 사진을 넘기지 않습니다`);
     return;
   }
-  if (Array.isArray(body)) return body.forEach((v, i) => assertTextOnly(v, `${path}[${i}]`));
+  if (Array.isArray(body)) {
+    body.forEach((v, i) => assertTextOnly(v, `${path}[${i}]`));
+    return;
+  }
   if (body && typeof body === "object") {
     for (const [k, v] of Object.entries(body)) {
       if (IMAGE_KEY.test(k)) throw new ContractError(`${path}.${k}: PAM에는 사진을 넘기지 않습니다`);
@@ -2720,41 +2727,52 @@ export function assertTextOnly(body: unknown, path = "body"): void {
   }
 }
 
-/** PAM 서비스에 닿지 않거나 HTTP 오류. 답 형식 오류(ContractError)와 나눠 연결 끊김으로 기록한다. */
+/** PAM 서비스에 닿지 않거나 HTTP 오류(5xx 등). 답 형식 오류(ContractError)와 나눠 연결 끊김으로 기록한다. */
 export class PamLinkError extends Error {}
 export interface PamLimits { max_model_len: number; predict_input_bytes: number; reflect_input_bytes: number }
 
 export class PamClient {
   constructor(private readonly o: { url: string; timeoutMs?: number; fetchImpl?: typeof fetch }) {}
 
-  private async post<T>(path: string, body: unknown, timeoutMs: number): Promise<T> {
-    assertTextOnly(body);
+  private async send(path: string, init: RequestInit, timeoutMs: number): Promise<Response> {
     let res: Response;
     try {
-      res = await fetchRetry(`${this.o.url}${path}`, {
-        method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(timeoutMs), body: JSON.stringify(body),
-      }, { fetchImpl: this.o.fetchImpl });
+      res = await fetchRetry(`${this.o.url}${path}`, { ...init, signal: AbortSignal.timeout(timeoutMs) }, { fetchImpl: this.o.fetchImpl });
     } catch (e) {
       throw new PamLinkError(`PAM 연결 실패: ${(e as Error).message}`);
     }
+    if (res.status === 400) throw new ContractError(`PAM이 요청을 거절함(계약에 맞지 않음): ${await res.text()}`);
     if (res.status === 413) throw new ContractError(`PAM 입력이 문맥 길이를 넘음: ${await res.text()}`);
-    if (!res.ok) throw new PamLinkError(`PAM HTTP ${res.status}`);
-    return await res.json() as T;
+    if (!res.ok) {
+      await res.body?.cancel();
+      throw new PamLinkError(`PAM HTTP ${res.status}`);
+    }
+    return res;
   }
 
+  private async post<T>(path: string, body: unknown, timeoutMs: number): Promise<T> {
+    assertTextOnly(body);
+    const res = await this.send(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }, timeoutMs);
+    try {
+      return (await res.json()) as T;
+    } catch {
+      throw new ContractError("PAM 답이 JSON이 아닙니다");
+    }
+  }
+
+  /** GET {url}/health의 입력 한도(판단·반성에 넣을 수 있는 UTF-8 바이트). */
   async limits(): Promise<PamLimits> {
-    let res: Response;
-    try { res = await (this.o.fetchImpl ?? fetch)(`${this.o.url}/health`, { signal: AbortSignal.timeout(5000) }); } catch (e) { throw new PamLinkError(`PAM 연결 실패: ${(e as Error).message}`); }
-    if (!res.ok) throw new PamLinkError(`PAM HTTP ${res.status}`);
-    const b = await res.json() as { limits?: PamLimits };
-    if (!b.limits || !(b.limits.reflect_input_bytes > 0)) throw new ContractError("PAM /health에 입력 한도가 없습니다");
+    const res = await this.send("/health", {}, 5000);
+    const b = (await res.json()) as { limits?: PamLimits };
+    if (!b.limits || !(b.limits.reflect_input_bytes > 0) || !(b.limits.predict_input_bytes > 0)) throw new ContractError("PAM /health에 입력 한도가 없습니다");
     return b.limits;
   }
 
   async predict(r: Omit<PamPredictRequest, "contract">): Promise<Prediction> {
     const body: PamPredictRequest = { contract: PAM_PREDICT, ...r };
     const res = await this.post<PamPredictResponse>("/predict", body, this.o.timeoutMs ?? 30_000);
-    if (res.status === "invalid") throw new ContractError(`PAM 답이 계약에 맞지 않음(대기와 다름): ${res.errors.join("; ") || "이유 없음"}`);
+    if (res.status === "invalid") throw new ContractError(`PAM 답이 계약에 맞지 않음(대기와 다름): ${res.errors?.join("; ") || "이유 없음"}`);
+    if (res.status !== "valid" || typeof res.raw_response !== "string") throw new ContractError("PAM 답: status·raw_response가 계약 모양이 아닙니다");
     const again = parsePrediction(res.raw_response, r.tasks);
     if (again.status !== "valid" || !again.prediction) throw new ContractError(`PAM 원문이 우리 검사에서 틀림: ${again.errors.join("; ")}`);
     const p = res.prediction;
@@ -2765,7 +2783,7 @@ export class PamClient {
 
   async reflect(r: Omit<PamReflectRequest, "contract">, kind: "list" | "fsm"): Promise<PamMemory> {
     const res = await this.post<PamReflectResponse>("/reflect", { contract: PAM_REFLECT, ...r }, 300_000);
-    if (res.status !== "valid" || !res.memory) throw new ContractError(`PAM 반성 실패: ${res.errors.join("; ") || "이유 없음"}`);
+    if (res.status !== "valid" || !res.memory) throw new ContractError(`PAM 반성 실패: ${res.errors?.join("; ") || "이유 없음"}`);
     return validateMemory(res.memory, kind);
   }
 }
@@ -2773,22 +2791,34 @@ export class PamClient {
 export class PamDecision implements DecisionModel {
   readonly name = "pam";
   constructor(private readonly pam: PamClient) {}
+
   decide(input: DecisionInput): Promise<Prediction> {
+    try {
+      checkInput(input);
+    } catch (e) {
+      return Promise.reject(e);
+    }
     return this.pam.predict({ final_time: input.finalTime, observation_text: input.text, memory_kind: input.memoryKind, memory: input.memory, tasks: input.tasks });
   }
 }
 ```
 
-`src/brain/decision.ts`: `DecisionFrame`·`validateDecisionFrames`·`selectDecisionFrames`·`DecisionEvidence`·`MockDecision`을 지우고 `DecisionInput`을 위 모양으로 바꾼다. `checkInput`은 `validateTasks`·`validateMemory`와 `finalTime` 시간대 검사만 한다. `MockDecision`(whatIf 포함)은 `tests/helpers/decision.ts`의 `ScriptedDecision`으로 옮겨 기존 두뇌 시험이 쓴다.
+`src/brain/decision.ts`: `DecisionFrame`·`validateDecisionFrames`·`selectDecisionFrames`·`DecisionEvidence`·`MockDecision`을 지우고 `DecisionInput`을 위 모양으로 바꾼다. `checkInput`은 관찰 텍스트(비지 않음, 20,000자까지), `finalTime` 시간대, `validateTasks`·`validateMemory`를 검사한다. 주석의 계약 출처는 `services/pam/pam/contracts.py`로 적는다. `MockDecision`(whatIf 포함)은 `tests/helpers/decision.ts`의 `ScriptedDecision`(이름 `scripted`)으로 옮겨 기존 두뇌 시험이 쓴다.
 
-`src/brain/brain.ts`: `CupBrain`이 내보내는 perception·presence 기록의 `summary`를 `TimedLine`으로 최근 20초 모은다. `tryDecision`은 `buildPamText({ lines: 최근 판단 창 10초 줄, facts: [], offsetMinutes })`와 `finalTime = isoWithOffset(epochMs + 최신 사진 촬영 시각, offsetMinutes)`로 `decision.decide`를 부른다. 「판단 사진 5장」 대기 흐름(`pending`)과 그 글을 지운다.
+`src/brain/brain.ts`: `CupBrain`이 내보내는 presence 기록 글(`YOLO 사람 …`)과 perception 기록 글(`VLM …`, 답 사진은 `요청 답 사진 VLM …`, 판정 없음은 `VLM 분석 없음`)을 촬영 시각이 붙은 줄로 두 판단 창(20초) 모은다. `startDecision`은 `buildPamText({ lines: 마지막 관찰까지 decisionWindowMs(10초) 안의 줄, facts, offsetMinutes })`와 `finalTime = isoWithOffset(epochMs + 마지막 관찰 시각, offsetMinutes)`로 `decision.decide`를 바로 부른다. facts는 판단 근거의 컵 안이 확신한 VLM 판정에서 왔을 때 `컵 안: 빈 컵 확신, 12:00:11 요청 답 사진`(장면이면 `장면 사진`) 한 줄이다(판단 창보다 오래돼도 넘긴다). 「판단 사진 5장」 대기 흐름(`pending`·`retryPending`)과 그 글을 지운다. 줄 머리·사실 글은 `src/world/labels.ts`(`LINE`, `CONTENTS_FACT`)에 둔다.
 
 `src/brain/live.ts`: `decision = inject?.decision ?? new PamDecision(new PamClient({ url: endpoints.pamUrl, timeoutMs: Number(env.PAM_TIMEOUT_MS) || undefined }))`. `BRAIN_DECISION`을 읽지 않는다.
 
-`src/world/labels.ts`(화면·텍스트 글, 이 작업에서는 빈 표로 만들고 G3에서 채운다):
+`src/world/labels.ts`(화면·텍스트 글, G3에서 더 채운다):
 ```ts
-// 서버가 화면·PAM 관찰 텍스트에 그대로 내보내는 World State 글. npm run lint가 검사한다.
+// 서버가 화면·PAM 관찰 텍스트에 그대로 내보내는 World State 글. npm run lint가 검사한다(60자 아래, 화살표·괄호 없음).
 export const OBJECT_NAME: Record<string, string> = { person: "사람", cup: "컵", bottle: "병", bowl: "그릇" };
+
+/** 관찰 텍스트 줄 머리: 어느 분석에서 온 줄인지. */
+export const LINE = { vlm: "VLM", answerPhoto: "요청 답 사진", sceneFrame: "장면 사진", noVlm: "VLM 분석 없음" };
+
+/** VLM이 확신한 컵 안([지속] 사실). */
+export const CONTENTS_FACT = { empty: "컵 안: 빈 컵 확신", not_empty: "컵 안: 음료 남음 확신" };
 ```
 `scripts/lint-ui-copy.ts`의 검사 파일 목록에 `../src/world/labels.ts`를 더한다.
 
@@ -2853,7 +2883,9 @@ noonchi 서버가 PAM 서비스(`services/pam/`)를 부르는 형식이다. PAM�
 - noonchi 쪽: `tests/pam-text-only.test.ts`, `tests/brain-pam.test.ts`
 ```
 
-CLAUDE.md 사진 없는 PAM 줄 막는 장치: `src/contract/pam.ts`(계약 타입에 사진 칸 없음)와 `tests/pam-text-only.test.ts`(사진 칸을 넣으면 타입 검사 실패, 사진 칸·`data:image` 본문은 보내기 전 막힘, 실제로 나간 본문 확인), `services/pam/tests/test_v2.py`(사진 칸이면 400). `npm test`·CI가 돌린다.
+실제 `docs/pam-interface.md`는 위 블록에 더해 요청·답 예시를 json 코드 블록으로 쓰고, `GET /health` 절, 칸 상한(판단 관찰 20,000자, 반성 관찰 100,000자·요약 50,000자·피드백 8,000자), 502(잘린 답·LLM 오류), 「400·413·답 형식 오류는 `ContractError`, 연결 실패·시간 초과·5xx는 `PamLinkError`」, 시험용 PAM 자리 `tests/helpers/pam.ts`, 키 없이 두뇌를 PAM에 붙이는 법을 적는다.
+
+CLAUDE.md 사진 없는 PAM 줄 막는 장치: 타입 `src/contract/pam.ts`·`DecisionInput`(사진 칸 없음)과 `tests/pam-text-only.test.ts`(사진 칸을 넣으면 타입 검사 실패, 사진 칸·`data:image` 본문은 보내기 전 막힘, 실제로 나간 본문 확인), `services/pam/tests/test_v2.py`·`test_app.py`(사진 칸이면 400). `npm test`·CI가 돌린다.
 
 - [ ] **Step 4: 통과 확인**
 
@@ -2862,12 +2894,12 @@ H npx vitest run tests/pam-text-only.test.ts tests/world-text.test.ts tests/brai
 H npx tsc --noEmit
 H npm run lint
 ```
-Expected: PASS(`tests/brain-pam.test.ts`는 /2 본문과 원문 다시 검사로 고쳐 쓰고, `PamLinkError`(닿지 않는 주소)·`limits()`(가짜 `/health`) 시험을 더한다).
+Expected: PASS(`tests/brain-pam.test.ts`는 /2 본문과 원문 다시 검사로 고쳐 쓰고, 보내기 전 입력 검사, `PamLinkError`(닿지 않는 주소·5xx·시간 초과), 400·413은 `ContractError`, 반성 /2, `limits()`(가짜 `/health`, 한도 없으면 `ContractError`) 시험을 더한다). 두뇌 시험은 바뀐 입력에 맞춘다: `brain-gate`는 근거 사진 대신 관찰 텍스트의 `[지속]` 줄·줄 머리·사진 없음, `brain-runner`는 「사진 없이 관찰 텍스트·최종 시각·기억·작업 목록」과 「관찰이 짧아도 바로 판단」, 미뤄 둔 판단 시험은 지운다. `brain-live`의 판단 이름은 `scripted`다. `lint-ui-copy` 시험은 `src/world/labels.ts`를 COPY_TARGETS 넷째로 보고 그 글을 검사한다.
 
 - [ ] **Step 5: 커밋**
 
 ```bash
-git add src/contract/pam.ts src/brain/pam.ts src/brain/decision.ts src/brain/brain.ts src/brain/live.ts src/world/text.ts src/world/labels.ts scripts/lint-ui-copy.ts tests/lint-ui-copy.test.ts tests/pam-text-only.test.ts tests/world-text.test.ts tests/helpers/decision.ts tests/brain-pam.test.ts tests/brain-decision.test.ts tests/brain-gate.test.ts tests/brain-runner.test.ts tests/brain-live.test.ts tests/plan-hub.test.ts docs/pam-interface.md docs/reference.md CLAUDE.md
+git add src/contract/pam.ts src/brain/pam.ts src/brain/decision.ts src/brain/brain.ts src/brain/config.ts src/brain/live.ts src/server/start.ts src/world/text.ts src/world/labels.ts scripts/lint-ui-copy.ts tests/lint-ui-copy.test.ts tests/pam-text-only.test.ts tests/world-text.test.ts tests/helpers/decision.ts tests/helpers/pam.ts tests/brain-pam.test.ts tests/brain-decision.test.ts tests/brain-gate.test.ts tests/brain-runner.test.ts tests/brain-live.test.ts tests/plan-hub.test.ts .env.example docs/pam-interface.md docs/reference.md CLAUDE.md
 git rm scripts/pam-mock-server.ts
 git commit -m "feat: send PAM text observations over pam-predict/2 and block image fields before sending"
 ```
