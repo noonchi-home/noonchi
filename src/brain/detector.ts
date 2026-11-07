@@ -171,7 +171,7 @@ export class YoloxDetector implements Detector {
   }
 }
 
-/** YoloxDetector를 워커 스레드에서 돌린다(detector-thread.ts). 실시간 두뇌는 이것을 쓴다: 추론이 부른 스레드를 막기 때문. */
+/** YoloxDetector를 워커 스레드에서 돌린다(detector-thread.ts). 관찰 흐름(src/observe/pipeline.ts)은 이것을 쓴다: 추론이 부른 스레드를 막기 때문. */
 export class WorkerDetector implements Detector {
   private seq = 0;
   private readonly waiting = new Map<number, { resolve: (r: DetectResult) => void; reject: (e: Error) => void }>();
