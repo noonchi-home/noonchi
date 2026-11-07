@@ -1,7 +1,7 @@
 // 종료(src/server/shutdown.ts): SIGTERM·SIGINT를 받으면 서버를 한 번 닫고 끝낸다(docker stop, Ctrl+C).
 import { EventEmitter } from "node:events";
 import { spawn } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from "vitest";
 import { installShutdown } from "../src/server/shutdown.js";
 
 const fakeProc = () => Object.assign(new EventEmitter(), { exit: vi.fn() });
+const main = fileURLToPath(new URL("../src/server/main.ts", import.meta.url));
 
 describe("종료", () => {
   it("SIGTERM이면 한 번만 닫고 0으로 끝낸다", async () => {
@@ -46,10 +47,17 @@ describe("종료", () => {
     }
   });
 
+  it("서버 줄(「서버:」)을 찍기 전에 종료 처리를 건다", () => {
+    // 아래 실제 SIGTERM 시험은 이 줄을 보자마자 보낸다. 처리를 걸기 전에 오면 신호에 바로 죽는다(종료 코드 없음)
+    const src = readFileSync(main, "utf8");
+    const install = src.indexOf("installShutdown(process");
+    expect(install).toBeGreaterThan(-1);
+    expect(install).toBeLessThan(src.indexOf("서버: ${url}"));
+  });
+
   it.skipIf(process.platform === "win32")("실제 SIGTERM으로 서버가 0으로 끝난다", async () => {
     // 빈 임시 폴더에서 띄워 .env를 읽지 않게 한다
     const cwd = mkdtempSync(join(tmpdir(), "cwd-"));
-    const main = fileURLToPath(new URL("../src/server/main.ts", import.meta.url));
     const tsx = pathToFileURL(fileURLToPath(new URL("../node_modules/tsx/dist/loader.mjs", import.meta.url))).href;
     const child = spawn(process.execPath, ["--import", tsx, main], {
       cwd, env: { ...process.env, PORT: "0", HUB: "memory", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), PHONE_PORT: "" },

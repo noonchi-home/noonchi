@@ -12,6 +12,8 @@ async function main(): Promise<void> {
   dotenv.config({ quiet: true });
   // tailscale serve로 폰 포트를 https로 열어 두었으면 그 주소를 폰 주소 앞에 둔다(없거나 실패하면 와이파이 주소만)
   const srv = await startServer({ env: process.env, persistSetup: true, servedPhoneUrls: (port) => findServedPhoneUrls(port, runCommand) });
+  // 서버 줄을 찍자마자 온 SIGTERM도 받도록 줄을 찍기 전에 건다
+  installShutdown(process, () => srv.close(), { log: console.log });
   const { url, hubKind, transport, agent } = srv;
   const provider = agent.provider;
 
@@ -26,8 +28,6 @@ async function main(): Promise<void> {
   if (hubKind === "matter" && transport === "network") {
     console.log(`  Matter    다른 컨트롤러(Home Assistant 등) 추가: curl -X POST ${url}/api/matter/commissioning-window 후 나온 페어링 코드 입력(README "Matter 페어링")`);
   }
-
-  installShutdown(process, () => srv.close(), { log: console.log });
 }
 
 main().catch((e) => {
