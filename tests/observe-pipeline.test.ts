@@ -11,6 +11,17 @@ import type { WorldView } from "../src/contract/world.js";
 let fake: FakeServer | undefined;
 afterEach(async () => { await fake?.close(); fake = undefined; });
 const jpeg = (i: number) => Buffer.from([0xff, 0xd8, i]);
+const cupDet = () => new ScriptedDetector(() => [{ label: "cup", score: 0.9, cls: 41, box: [10, 10, 10, 10] }]);
+const until = async (ok: () => boolean) => { for (let i = 0; i < 200 && !ok(); i++) await new Promise((r) => setTimeout(r, 5)); };
+/** 답을 시험이 풀 때까지 붙잡아 두는 VLM. 풀면 d1을 싱크대 안으로 답한다. */
+function gatedVlm() {
+  const gates: (() => void)[] = [];
+  const vlm = { model: "gated", json: () => new Promise((ok) => {
+    gates.push(() => ok({ value: { scene: "kitchen", observations: [{ object_id: "d1", state: "in_sink" }], summary: `s${gates.length}` }, costUsd: 0, model: "gated", attempts: 1 }));
+  }) } as unknown as VlmClient;
+  return { vlm, gates };
+}
+const head = (at: number) => ({ kind: "engine" as const, width: 100, height: 100, captured_at: at, time_err_ms: 0 });
 
 describe("관찰 흐름", () => {
   it("엔진 프레임마다 YOLOX와 VLM이 둘 다 분석하고, 같은 사진은 버리고, World State를 보낸다", async () => {
@@ -83,6 +94,39 @@ describe("관찰 흐름", () => {
     expect(world.view(7000).objects[0]).toMatchObject({ cls: "cup", status: "present" });
     expect(logs.filter((l) => l.type === "observe" && l.yolo_missing === "error")).toHaveLength(4);
     expect(fake.requests.filter((r) => r.path.endsWith("/chat/completions"))).toHaveLength(7);
+    await p.close();
+  });
+
+  it("VLM 답이 그 프레임이 고리에서 빠진 뒤에 와도 물체별 사실을 넣는다", async () => {
+    const { vlm, gates } = gatedVlm();
+    const world = new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] });
+    const p = new ObservationPipeline({ config: { engineMs: 1000, vlmMaxInflight: 50, vlmTimeoutMs: 600_000, detectQueueMax: 50, keepMs: 20_000 }, detector: cupDet(), vlm, world,
+      emit: () => {}, broadcastWorld: () => {} });
+    for (let i = 1; i <= 3; i++) { p.onEngine(jpeg(i), head(i * 1000), null, null, i * 1000 + 5); await until(() => gates.length >= i); }
+    p.onEngine(jpeg(4), head(24_000), null, null, 24_005);
+    await until(() => gates.length >= 4);
+    gates[2]!();
+    await until(() => world.view(24_000).objects[0]?.facts.place !== undefined);
+    expect(world.view(24_000).objects[0]!.facts.place).toMatchObject({ value: "in_sink", at_ms: 3000 });
+    await p.close();
+  });
+
+  it("고리 범위보다 늦게 온 프레임은 분석하지 않고 YOLOX·VLM 분석 없음(stale)으로 남긴다", async () => {
+    const { vlm, gates } = gatedVlm();
+    const logs: BrainLog[] = [];
+    let detected = 0;
+    const det = new ScriptedDetector(() => { detected++; return [{ label: "cup", score: 0.9, cls: 41, box: [10, 10, 10, 10] }]; });
+    const world = new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] });
+    const p = new ObservationPipeline({ config: { engineMs: 1000, vlmMaxInflight: 50, vlmTimeoutMs: 600_000, detectQueueMax: 50, keepMs: 20_000 }, detector: det, vlm, world,
+      emit: (l) => logs.push(l), broadcastWorld: () => {} });
+    for (let i = 1; i <= 3; i++) { p.onEngine(jpeg(i), head(40_000 + i * 1000), null, null, 40_005 + i * 1000); await until(() => gates.length >= i); }
+    p.onEngine(jpeg(9), head(13_000), null, null, 43_100);
+    await until(() => logs.some((l) => l.type === "observe" && l.frame_id === "e4"));
+    expect(logs.filter((l) => l.type === "observe" && l.frame_id === "e4")).toEqual([expect.objectContaining({ yolo: null, yolo_missing: "stale", vlm: null, vlm_missing: "stale" })]);
+    expect(detected).toBe(3);
+    expect(gates).toHaveLength(3);
+    expect(world.view(43_000)).toMatchObject({ yolo_missing: 1, vlm_missing: 1 });
+    expect(p.status().yolo_missing.stale).toBe(1);
     await p.close();
   });
 });

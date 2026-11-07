@@ -1,4 +1,5 @@
 // 엔진 프레임 메모리 고리(기본 20초). 디스크에 쓰지 않는다. 직전 프레임과 SHA-256이 같으면 새 프레임으로 넣지 않는다.
+// 가장 새 프레임보다 keepMs 넘게 앞서 찍힌 프레임(늦게 온 프레임)도 넣지 않는다.
 import { createHash } from "node:crypto";
 import type { EyePose } from "../contract/events.js";
 import type { CameraView } from "../phone/session.js";
@@ -43,19 +44,21 @@ export class FrameRing {
     return this.duplicates;
   }
 
-  /** 직전 프레임과 같은 사진이면 넣지 않고 false. */
-  push(f: EngineFrame): boolean {
+  /** 넣으면 added. 직전 프레임과 같은 사진이면 duplicate, 고리 범위보다 앞서 찍혔으면 stale(둘 다 넣지 않음). */
+  push(f: EngineFrame): "added" | "duplicate" | "stale" {
     if (f.sha256 === this.lastSha) {
       this.duplicates++;
-      return false;
+      return "duplicate";
     }
+    const newest = this.list.at(-1)?.capturedAtMs;
+    if (newest !== undefined && newest - f.capturedAtMs > this.keepMs) return "stale";
     this.lastSha = f.sha256;
     let i = this.list.length;
     while (i > 0 && this.list[i - 1]!.capturedAtMs > f.capturedAtMs) i--;
     this.list.splice(i, 0, f);
-    const newest = this.list.at(-1)!.capturedAtMs;
-    this.list = this.list.filter((x) => newest - x.capturedAtMs <= this.keepMs);
-    return true;
+    const last = this.list.at(-1)!.capturedAtMs;
+    this.list = this.list.filter((x) => last - x.capturedAtMs <= this.keepMs);
+    return "added";
   }
 
   get(id: string): EngineFrame | undefined {

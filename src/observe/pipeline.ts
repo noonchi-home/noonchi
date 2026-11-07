@@ -1,5 +1,7 @@
 // 관찰 흐름(BRAIN=1): 엔진 프레임 → 고리(중복 버림) → YOLOX(워커, 상한 있는 대기열에서 하나씩) → VLM(동시 요청) → World State → /events.
-// 프레임마다 observe 기록이 반드시 남는다: 대기열이 차면 YOLOX·VLM 분석 없음, 감지 실패면 YOLOX 분석 없음(VLM은 그대로 분석).
+// 프레임마다 observe 기록이 반드시 남는다: 대기열이 차면 YOLOX·VLM 분석 없음, 감지 실패면 YOLOX 분석 없음(VLM은 그대로 분석),
+// 고리 범위(keepMs)보다 앞서 찍힌 늦은 프레임은 분석하지 않고 YOLOX·VLM 분석 없음(stale). 늦은 프레임은 World State·눈 자세에 넣지 않는다.
+// 감지 번호(d1…)와 물체 id의 짝은 그 프레임의 VLM 답(또는 분석 없음)이 올 때까지 둔다.
 // 분석한 사진은 메모리 고리에만 있다. 디스크에 쓰지 않는다. DATASET_COLLECT=1이면 dataset(시험 자료 저장, src/history/retention.ts)이 고리에 넣은 프레임을 받는다.
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -91,7 +93,7 @@ export class ObservationPipeline {
   private seq = 0;
   private frames = 0;
   private detected = 0;
-  private readonly yoloMissing: Record<YoloMissing, number> = { cap: 0, error: 0 };
+  private readonly yoloMissing: Record<YoloMissing, number> = { cap: 0, error: 0, stale: 0 };
   private detectMs: number[] = [];
   private timeSource: "phone" | "received" | null = null;
   private timeErr: number | null = null;
@@ -107,6 +109,7 @@ export class ObservationPipeline {
       onResult: (r) => {
         if (this.closed) return;
         const ids = this.idsOf.get(r.frameId) ?? new Map<string, string>();
+        this.idsOf.delete(r.frameId);
         const changes = r.scene ? o.world.applyScene(r.frameId, r.capturedAtMs, r.scene, ids) : o.world.applyMissing(r.frameId, r.capturedAtMs, { vlm: r.missing! });
         o.emit({ type: "observe", at_ms: this.clock.now(), frame_id: r.frameId, captured_at_ms: r.capturedAtMs, yolo: null, vlm: r.scene?.summary ?? null, ...(r.missing ? { vlm_missing: r.missing } : {}) });
         this.publish(changes);
@@ -131,8 +134,13 @@ export class ObservationPipeline {
     this.timeSource = t.source;
     this.timeErr = t.source === "phone" ? header.time_err_ms ?? null : null;
     const frame: EngineFrame = { id: `e${++this.seq}`, capturedAtMs: t.atMs, latestAtMs: t.latestMs, jpeg, sha256: sha256(jpeg), width: header.width, height: header.height, eye, view };
-    if (!this.ring.push(frame)) return;
+    const pushed = this.ring.push(frame);
+    if (pushed === "duplicate") return;
     this.frames++;
+    if (pushed === "stale") {
+      this.missBoth(frame, "stale");
+      return;
+    }
     if (this.o.dataset) {
       try {
         this.o.dataset(frame);
@@ -147,18 +155,18 @@ export class ObservationPipeline {
       return;
     }
     if (this.queue.length >= this.o.config.detectQueueMax) {
-      this.overflow(frame);
+      this.missBoth(frame, "cap");
       return;
     }
     this.queue.push(frame);
     if (!this.detecting) this.detecting = this.drain().finally(() => { this.detecting = null; });
   }
 
-  /** 대기열이 찬 프레임: YOLOX·VLM 둘 다 분석하지 못한 것으로 남긴다. */
-  private overflow(frame: EngineFrame): void {
-    this.yoloMissing.cap++;
-    this.o.emit({ type: "observe", at_ms: this.clock.now(), frame_id: frame.id, captured_at_ms: frame.capturedAtMs, yolo: null, yolo_missing: "cap", vlm: null, vlm_missing: "cap" });
-    this.publish(this.o.world.applyMissing(frame.id, frame.capturedAtMs, { yolo: "cap", vlm: "cap" }));
+  /** 대기열이 찬 프레임(cap)·늦게 온 프레임(stale): YOLOX·VLM 둘 다 분석하지 못한 것으로 남긴다. */
+  private missBoth(frame: EngineFrame, why: "cap" | "stale"): void {
+    this.yoloMissing[why]++;
+    this.o.emit({ type: "observe", at_ms: this.clock.now(), frame_id: frame.id, captured_at_ms: frame.capturedAtMs, yolo: null, yolo_missing: why, vlm: null, vlm_missing: why });
+    this.publish(this.o.world.applyMissing(frame.id, frame.capturedAtMs, { yolo: why, vlm: why }));
   }
 
   /** YOLOX 결과(실패면 null, 감지기가 없으면 undefined)를 World State에 넣고 같은 프레임을 VLM에 보낸다. */
@@ -178,7 +186,6 @@ export class ObservationPipeline {
       this.o.emit({ ...base, at_ms: this.clock.now(), yolo: null, yolo_missing: "error" });
       this.publish(this.o.world.applyMissing(frame.id, frame.capturedAtMs, { yolo: "error" }));
     }
-    for (const k of this.idsOf.keys()) if (!this.ring.get(k)) this.idsOf.delete(k);
     const sceneDets: SceneDetection[] = (dets ?? []).map((d, i) => ({ id: `d${i + 1}`, class: d.label, box: d.box, score: d.score }));
     this.pool.submit(frame, sceneDets); // 상한을 넘으면 풀이 VLM 분석 없음(cap)을 onResult로 낸다
   }

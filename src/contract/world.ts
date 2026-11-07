@@ -63,14 +63,14 @@ export interface WorldView {
   eye: WorldEye | null;
   /** VLM 답을 못 받은 프레임 수. */
   vlm_missing: number;
-  /** YOLOX가 분석하지 못한 프레임 수(감지 오류·대기열 초과). */
+  /** YOLOX가 분석하지 못한 프레임 수(감지 오류·대기열 초과·늦게 온 프레임). */
   yolo_missing: number;
 }
 
-/** VLM 분석 없음: cap 동시 상한·대기열 초과, timeout 제한 시간, format 형식 오류, error 호출 오류. */
-export type VlmMissing = "cap" | "timeout" | "format" | "error";
-/** YOLOX 분석 없음: cap 대기열 초과(VLM도 없음), error 감지 오류(VLM은 분석). */
-export type YoloMissing = "cap" | "error";
+/** VLM 분석 없음: cap 동시 상한·대기열 초과, timeout 제한 시간, format 형식 오류, error 호출 오류, stale 고리 범위보다 늦게 온 프레임. */
+export type VlmMissing = "cap" | "timeout" | "format" | "error" | "stale";
+/** YOLOX 분석 없음: cap 대기열 초과(VLM도 없음), error 감지 오류(VLM은 분석), stale 늦게 온 프레임(VLM도 없음). */
+export type YoloMissing = "cap" | "error" | "stale";
 
 export type WorldChangeKind =
   | "appeared" | "gone" | "out_of_view" | "back_in_view" | "state" | "person_appeared" | "person_gone" | "person_state"

@@ -11,10 +11,17 @@ describe("프레임 고리", () => {
   });
   it("직전 프레임과 같은 사진이면 버리고 센다", () => {
     const r = new FrameRing();
-    expect(r.push(frame("a", 0, "same"))).toBe(true);
-    expect(r.push(frame("b", 1000, "same"))).toBe(false);
+    expect(r.push(frame("a", 0, "same"))).toBe("added");
+    expect(r.push(frame("b", 1000, "same"))).toBe("duplicate");
     expect(r.dropped).toBe(1);
     expect(r.get("b")).toBeUndefined();
+  });
+  it("가장 새 프레임보다 20초 넘게 앞선 프레임은 넣지 않고 stale", () => {
+    const r = new FrameRing();
+    r.push(frame("a", 30_000));
+    expect(r.push(frame("b", 9_999))).toBe("stale");
+    expect(r.push(frame("c", 10_000))).toBe("added");
+    expect(r.frames().map((f) => f.id)).toEqual(["c", "a"]);
   });
 });
 

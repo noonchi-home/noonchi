@@ -6,7 +6,9 @@ import type { EngineFrame } from "./ring.js";
 import type { SceneDetection, SceneObservation } from "./scene.js";
 
 export type { VlmMissing } from "../contract/world.js";
-export interface VlmResult { frameId: string; capturedAtMs: number; scene: SceneObservation | null; missing?: VlmMissing; costUsd: number }
+/** 풀이 내는 분석 없음(늦게 온 프레임 stale은 풀에 오기 전에 관찰 흐름이 남긴다). */
+type PoolMissing = Exclude<VlmMissing, "stale">;
+export interface VlmResult { frameId: string; capturedAtMs: number; scene: SceneObservation | null; missing?: PoolMissing; costUsd: number }
 type Analysis = { scene: SceneObservation | null; costUsd: number; error?: string };
 type Analyze = (frame: EngineFrame, dets: SceneDetection[], signal: AbortSignal) => Promise<Analysis>;
 
@@ -16,10 +18,10 @@ export class VlmPool {
   private sent = 0;
   private cost = 0;
   private stopped = false;
-  private readonly missing: Record<VlmMissing, number> = { cap: 0, timeout: 0, format: 0, error: 0 };
+  private readonly missing: Record<PoolMissing, number> = { cap: 0, timeout: 0, format: 0, error: 0 };
   constructor(private readonly o: { maxInflight: number; analyze: Analyze; onResult: (r: VlmResult) => void; timeoutMs?: number }) {}
 
-  private miss(frame: EngineFrame, why: VlmMissing, costUsd = 0): void {
+  private miss(frame: EngineFrame, why: PoolMissing, costUsd = 0): void {
     this.missing[why]++;
     this.o.onResult({ frameId: frame.id, capturedAtMs: frame.capturedAtMs, scene: null, missing: why, costUsd });
   }
@@ -62,7 +64,7 @@ export class VlmPool {
     return "sent";
   }
 
-  stats(): { sent: number; missing: Record<VlmMissing, number>; inflight: number; costUsd: number } {
+  stats(): { sent: number; missing: Record<PoolMissing, number>; inflight: number; costUsd: number } {
     return { sent: this.sent, missing: { ...this.missing }, inflight: this.running.size, costUsd: Math.round(this.cost * 1e5) / 1e5 };
   }
 

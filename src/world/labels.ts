@@ -24,8 +24,8 @@ export const CHANGE_TEXT = {
   deviceAttr: (label: string, attr: string, to: unknown) => `${label} ${attr} ${String(to)}`,
   remaining: (min: number) => `남은 시간 ${min}분`,
   vlm: (summary: string) => `VLM: ${summary}`,
-  vlmMissing: { cap: "요청이 몰려 VLM 분석 없음", timeout: "시간 초과로 VLM 분석 없음", format: "형식 오류로 VLM 분석 없음", error: "호출 오류로 VLM 분석 없음" },
-  yoloMissing: { cap: "요청이 몰려 YOLOX·VLM 분석 없음", error: "감지 오류로 YOLOX 분석 없음" },
+  vlmMissing: { cap: "요청이 몰려 VLM 분석 없음", timeout: "시간 초과로 VLM 분석 없음", format: "형식 오류로 VLM 분석 없음", error: "호출 오류로 VLM 분석 없음", stale: "늦게 온 사진이라 VLM 분석 없음" },
+  yoloMissing: { cap: "요청이 몰려 YOLOX·VLM 분석 없음", error: "감지 오류로 YOLOX 분석 없음", stale: "늦게 온 사진이라 YOLOX·VLM 분석 없음" },
 };
 
 /** 물건 이름: 종류 글 + id(컵 cup_1). */
