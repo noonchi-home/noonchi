@@ -94,7 +94,7 @@ NOONCHI는 이 저장소 하나로 AWS EC2 GPU 서버 한 대에서 돈다. CPU�
 
 - 키는 `.env`에만 둔다. 이미지에는 들어가지 않는다.
 - `.env`는 두 곳에 쓰인다. compose 파일 안의 `${…}`(모델 이름·포트·GPU 몫·문맥 길이)와 컨테이너 설정(`env_file`)이다. 다른 env 파일을 쓰려면 두 곳 모두 그 파일을 보게 `--env-file`과 `NOONCHI_ENV_FILE`을 함께 준다: `NOONCHI_ENV_FILE=prod.env docker compose --env-file prod.env --profile gpu up -d`
-- 컨테이너 안의 주소·포트·데이터 폴더(`HOST`, `PORT`, `PHONE_PORT`, `RUNTIME_DIR=/data`, `MATTER_TRANSPORT=local`, `PAM_URL=http://pam:8300`)는 compose가 정한다. 호스트 포트만 `NOONCHI_PORT`(기본 8200)·`NOONCHI_PHONE_PORT`(기본 8210)·`PAM_HOST_PORT`(기본 8300)로 바꾼다.
+- 컨테이너 안의 주소·포트·데이터 폴더(`HOST`, `PORT`, `PHONE_PORT`, `RUNTIME_DIR=/data`, `MATTER_TRANSPORT=local`, `PAM_URL=http://pam:8300`)는 compose가 정한다. 컨테이너 안 주소는 밖에서 열 수 없어 대시보드 폰 주소는 `PHONE_URL`뿐이다(`PHONE_LAN_URLS=0`). 호스트 포트만 `NOONCHI_PORT`(기본 8200)·`NOONCHI_PHONE_PORT`(기본 8210)·`PAM_HOST_PORT`(기본 8300)로 바꾼다.
 
 ## 4. 띄우기
 

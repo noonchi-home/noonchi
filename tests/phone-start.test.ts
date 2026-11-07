@@ -68,6 +68,20 @@ describe("startServer + 폰 AR", () => {
     expect(((await (await fetchRetry(`${srv.url}/api/health`)).json()) as { phone_urls?: string[] }).phone_urls).toEqual(srv.phoneUrls);
   });
 
+  it("PHONE_LAN_URLS=0(컨테이너)이면 이 기계 네트워크 주소는 빼고 밖에서 열 수 있는 PHONE_URL·tailscale 주소만 둔다", async () => {
+    const ts = "https://phone-pc.example-net.ts.net/phone/";
+    srv = await startServer({
+      env: { ...baseEnv(), PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", PHONE_LAN_URLS: "0", PHONE_URL: "https://my.example/phone/" }, log: () => {},
+      servedPhoneUrls: async () => [ts],
+    });
+    expect(srv.phoneUrls).toEqual(["https://my.example/phone/", ts]);
+    expect(((await (await fetchRetry(`${srv.url}/api/health`)).json()) as { phone_urls?: string[] }).phone_urls).toEqual(["https://my.example/phone/", ts]);
+    await srv.close();
+    srv = await startServer({ env: { ...baseEnv(), PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", PHONE_LAN_URLS: "off" }, log: () => {} });
+    expect(srv.phoneUrls).toEqual([]);
+    expect(((await (await fetchRetry(`${srv.url}/api/health`)).json()) as { eye?: boolean; phone_urls?: string[] })).toMatchObject({ eye: true, phone_urls: [] });
+  });
+
   it("PHONE_PORT가 없으면 폰 서버를 띄우지 않는다", async () => {
     srv = await startServer({ env: baseEnv(), log: () => {} });
     expect(srv.phoneUrls).toEqual([]);

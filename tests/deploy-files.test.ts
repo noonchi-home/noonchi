@@ -55,6 +55,8 @@ describe("배포 파일", () => {
     expect(pam.env_file).toEqual([{ path: "${NOONCHI_ENV_FILE:-.env}", required: false }]);
     expect(pam.profiles).toBeUndefined();
     expect(c.services.noonchi.environment.PAM_URL).toBe("http://pam:8300");
+    // 컨테이너 안 네트워크 주소(Docker 브리지)는 밖에서 열 수 없으니 폰 주소에 넣지 않는다
+    expect(c.services.noonchi.environment.PHONE_LAN_URLS).toBe("0");
     expect(c.services.noonchi.depends_on).toEqual({ pam: { condition: "service_healthy" } });
     // 설정은 env_file에서 온다: environment에 ${X:-}를 두면 env_file 값을 덮는다
     for (const name of ["noonchi", "pam"]) for (const v of Object.values(c.services[name].environment ?? {})) expect(String(v), name).not.toContain("${");
@@ -150,6 +152,12 @@ describe("배포 파일", () => {
     expect(s).not.toMatch(/\bawait fetch\(/);
     expect(s).toContain("invalid pointer address");
     expect(s).toContain("clearInterval(keepAlive)");
+  });
+
+  it("키 없는 컨테이너 확인: /api/health 폰 주소가 PHONE_URL 하나뿐인지(컨테이너 안 주소 없음) 본다", () => {
+    const s = read("scripts/container-smoke.ts");
+    expect(s).toContain('PHONE_URL: CHECK_PHONE_URL');
+    expect(s).toContain("JSON.stringify(h.phone_urls) !== JSON.stringify([CHECK_PHONE_URL])");
   });
 
   it("키 없는 컨테이너 확인: 관찰 흐름을 켜고 엔진 프레임 한 장의 vlm 줄을 기록 API로 본다", () => {

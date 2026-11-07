@@ -1,5 +1,5 @@
 // 키 없는 컨테이너 확인: compose 프로젝트 noonchi-check로 noonchi(127.0.0.1:8500 허브·8510 폰), pam(8520), 가짜 OpenAI 호환 서버(check 프로필)를 띄우고
-// ready.ok가 true인지(VLM·PAM 서비스·PAM LLM이 모두 가짜 서버로 답함), 에이전트가 가짜 서버의 답을 돌려주는지, PAM 서비스가 관찰 텍스트로 판단하는지, 폰 화면이 열리는지,
+// ready.ok가 true인지(VLM·PAM 서비스·PAM LLM이 모두 가짜 서버로 답함), /api/health 폰 주소가 확인용 PHONE_URL 하나뿐인지, 에이전트가 가짜 서버의 답을 돌려주는지, PAM 서비스가 관찰 텍스트로 판단하는지, 폰 화면이 열리는지,
 // 이미지 안 YOLOX가 떴고(GET /api/brain detector yolox_tiny) 관찰 흐름(BRAIN=1)이 엔진 프레임 한 장을 YOLOX·가짜 VLM으로 분석해 기록 DB에 vlm 줄을 남기는지(GET /api/history·/api/brain detected),
 // 호스트에서 보낸 계획(POST /api/plan)이 토큰 없이는 403, PLAN_TOKEN을 붙이면 200인지,
 // docker stop(SIGTERM)에 종료 코드 0으로 끝나는지 본 뒤 내린다(볼륨까지 지운다).
@@ -23,9 +23,11 @@ const PHONE_URL = "http://127.0.0.1:8510";
 const PAM_URL = "http://127.0.0.1:8520";
 const FAKE = "http://fake-openai:8500/v1";
 const PLAN_TOKEN = "check-plan-token";
+/** 확인용 폰 주소. /api/health 폰 주소는 이것 하나여야 한다(컨테이너 안 주소는 밖에서 열 수 없어 넣지 않는다). */
+const CHECK_PHONE_URL = "https://noonchi-check.example/phone/";
 const CHECK_ENV = {
   HUB: "memory", BRAIN: "1", INFERENCE_MODE: "live", VLM_BASE_URL: "http://fake-openai:8500/v1", PAM_LLM_BASE_URL: "http://fake-openai:8500/v1",
-  AGENT_PROVIDER: "openai", OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: "http://fake-openai:8500/v1", PLAN_TOKEN,
+  AGENT_PROVIDER: "openai", OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: "http://fake-openai:8500/v1", PLAN_TOKEN, PHONE_URL: CHECK_PHONE_URL,
 };
 /** docs/plan-contract.md의 { plan } 예시. */
 const PLAN_BODY = /```json\r?\n([\s\S]*?)```/.exec(readFileSync(join(ROOT, "docs", "plan-contract.md"), "utf8"))![1]!;
@@ -124,6 +126,8 @@ try {
   if (h.ready?.db !== true) fails.push("기록 DB를 열지 못했어요");
   if (h.ready?.inference_mode !== "live" || h.ready?.vlm?.base_url !== FAKE) fails.push("추론 설정이 확인용 env 파일 값이 아니에요");
   if (h.ready?.pam?.url !== "http://pam:8300" || h.ready?.pam?.llm?.base_url !== FAKE) fails.push("PAM 서비스·PAM LLM 주소가 compose·확인용 값이 아니에요");
+  console.log(`폰 주소: ${JSON.stringify(h.phone_urls)}`);
+  if (JSON.stringify(h.phone_urls) !== JSON.stringify([CHECK_PHONE_URL])) fails.push(`폰 주소가 PHONE_URL 하나가 아니에요(${JSON.stringify(h.phone_urls)})`);
   const chat = await fetchRetry(`${HUB_URL}/api/agent/chat`, {
     method: "POST", headers: { "content-type": "application/json", origin: HUB_URL }, body: JSON.stringify({ message: "안녕" }), signal: AbortSignal.timeout(30_000),
   }).then(async (r) => ({ status: r.status, body: (await r.json()) as Record<string, any> }), (e: Error) => ({ status: 0, body: { error: e.message } as Record<string, any> }));

@@ -328,9 +328,11 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       layout?.editor.setHere(() => phoneServer.here());
       const wantedPhone = ctx.phonePort ?? Number(env.PHONE_PORT);
       const listened = await phone.listen(Number.isInteger(wantedPhone) && wantedPhone >= 0 ? wantedPhone : 8210, env.PHONE_HOST?.trim() || "0.0.0.0");
-      // 폰 주소: PHONE_URL → tailscale serve https → 와이파이(대시보드 QR은 맨 앞 주소)
+      // 폰 주소: PHONE_URL → tailscale serve https → 와이파이(대시보드 QR은 맨 앞 주소).
+      // PHONE_LAN_URLS=0(compose)이면 이 기계 네트워크 주소를 넣지 않는다: 컨테이너 안 주소는 밖에서 열 수 없다
       const served = await (ctx.servedPhoneUrls?.(listened.port) ?? Promise.resolve([])).catch(() => []);
-      phoneUrls = orderPhoneUrls(listened.urls, served, env.PHONE_URL);
+      const lanOff = /^(0|false|off)$/i.test(env.PHONE_LAN_URLS?.trim() ?? "");
+      phoneUrls = orderPhoneUrls(lanOff ? [] : listened.urls, served, env.PHONE_URL);
       phonePort = (phone.server.address() as { port: number } | null)?.port;
     }
     // 초점: 에이전트가 다룬 물건을 대시보드와 폰에 알린다(표시 전용)
