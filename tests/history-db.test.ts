@@ -79,6 +79,8 @@ describe("기록기", () => {
     const stop = attachRecorder(db, {
       onDevice: (cb) => ((subs.device = cb), () => {}), onBrain: (cb) => ((subs.brain = cb), () => {}),
       onPlan: (cb) => ((subs.plan = cb), () => {}), onMode: (cb) => ((subs.mode = cb), () => {}),
+      // 모드 줄 시각을 고정한다. Date.now()가 가전 줄(2026-11-07 12:00Z)보다 늦으면 줄 순서가 바뀐다
+      now: () => Date.UTC(2026, 10, 7, 11, 59),
     });
     return { db, subs, stop };
   }
