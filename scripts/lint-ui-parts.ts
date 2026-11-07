@@ -41,6 +41,8 @@ const VISUAL = [
   /^outline(?:-.*)?$/, /^(?:backdrop-.+|blur(?:-.*)?|drop-shadow(?:-.*)?|brightness-.+|contrast-.+|saturate-.+|grayscale|invert|sepia|hue-rotate-.+)$/,
   /^font-/, /^(?:leading|tracking)-/, /^(?:italic|underline|overline|line-through|uppercase|lowercase|capitalize|antialiased)$/,
   /^(?:fill|stroke|decoration|divide|placeholder|caret|accent|from|via|to)-/,
+  // 임의 속성 class: [background:…]·[border-radius:…]·[box-shadow:…]·[font-size:…]·[filter:…]
+  /^\[(?:-webkit-)?(?:background|color|border|outline|box-shadow|text-shadow|font|line-height|letter-spacing|filter|backdrop-filter|fill|stroke|text-decoration|caret-color|accent-color)(?:-[\w-]+)?:/,
 ];
 /** 꾸밈 inline style 칸(React style 객체·DOM el.style). left·top·transform·opacity는 자리·움직임이라 된다. */
 const VISUAL_STYLE = /^(?:background\w*|color|border\w*|outline\w*|boxShadow|textShadow|backdropFilter|WebkitBackdropFilter|filter|font\w*|lineHeight|letterSpacing|fill|stroke|textDecoration\w*|cssText)$/;
@@ -59,6 +61,29 @@ function baseOf(token: string): string {
 }
 
 const lineAt = (src: string, index: number) => src.slice(0, index).split("\n").length;
+/** pos가 JSX 여는 태그(<Tag … 안)에 있는지. 따옴표 글과 {식}은 건너뛰고, 그 밖의 >·/>·;를 만나면 태그 밖이다. */
+function insideJsxTag(src: string, pos: number): boolean {
+  const before = src.slice(Math.max(0, pos - 600), pos);
+  const tags = [...before.matchAll(/<[A-Za-z][\w.]*(?=[\s>/])/g)];
+  const last = tags[tags.length - 1];
+  if (!last) return false;
+  const body = before.slice(last.index! + last[0].length);
+  let depth = 0;
+  let quote = "";
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i]!;
+    if (quote) { if (c === quote) quote = ""; continue; }
+    if (c === '"' || c === "'" || c === "`") quote = c;
+    else if (c === "{") depth++;
+    else if (c === "}") depth--;
+    else if (depth === 0 && (c === ";" || (c === ">" && body[i - 1] !== "="))) return false;
+  }
+  return true;
+}
+
+/** class를 받는 속성: className·class와 이름이 ClassName으로 끝나는 속성(contentClassName 등). */
+const CLASS_ATTR = /^(?:className|class|\w*ClassName)$/;
+
 const blankComments = (src: string) => src.replace(/\/\*[\s\S]*?\*\/|(^|[^:"'`])\/\/.*$/gm, (m) => m.replace(/[^\n]/g, " "));
 
 /** 화면 코드 파일 하나의 꾸밈. three.js를 쓰는 장면 코드는 보지 않는다. */
@@ -67,9 +92,9 @@ export function screenProblems(file: string, src: string): PartsProblem[] {
   const hits: { at: number; text: string; rule: string }[] = [];
   const jsx = file.endsWith(".tsx");
   for (const s of codeStrings(src, jsx)) {
-    // className 밖 JSX 속성 값(variant="outline", aria-label="…")은 class가 아니다
+    // class를 받지 않는 JSX 속성 값(variant="outline", aria-label="…")은 class가 아니다. const cls="…" 같은 변수는 본다
     const attr = /([A-Za-z_][\w-]*)=\s*\{?\s*$/.exec(src.slice(Math.max(0, s.start - 60), s.start));
-    if (attr && !/^(?:className|class)$/.test(attr[1]!)) continue;
+    if (attr && !CLASS_ATTR.test(attr[1]!) && jsx && insideJsxTag(src, s.start - attr[0].length)) continue;
     for (const m of s.text.matchAll(/\S+/g)) {
       if (VISUAL.some((re) => re.test(baseOf(m[0])))) hits.push({ at: s.start + 1 + m.index!, text: m[0], rule: "꾸밈 class" });
     }
@@ -100,6 +125,8 @@ export function screenProblems(file: string, src: string): PartsProblem[] {
       }
     }
   }
+  // 변수로 넘긴 style(style={s})은 칸을 볼 수 없어 실패로 본다. 자리는 style={{ left, top }}로 바로 쓴다
+  if (jsx) for (const m of code.matchAll(/\bstyle=\{(?!\{)\s*([^}]*?)\s*\}/g)) hits.push({ at: m.index!, text: `style={${m[1]}}`, rule: "꾸밈 style" });
   // SVG·아이콘 색 속성(fill="…", stroke="…", color=…)
   if (jsx) for (const m of code.matchAll(/<[A-Za-z][\w.]*\b[^<>]*?\s(fill|stroke|stopColor|color)=/g)) {
     hits.push({ at: m.index! + m[0].lastIndexOf(m[1]!), text: m[1]!, rule: "꾸밈 style" });

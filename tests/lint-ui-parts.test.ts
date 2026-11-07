@@ -49,6 +49,30 @@ describe("화면 코드는 배치만", () => {
     expect(found("ui/src/x.tsx", src)).toEqual(["1 꾸밈 style borderRadius", "1 꾸밈 style boxShadow", "2 꾸밈 style fill", "3 꾸밈 style background"]);
   });
 
+  it("빠져나가던 길을 잡는다: *ClassName 속성, 임의 속성 class, 변수 style, 붙여 쓴 변수 class", () => {
+    const src = [
+      '<LiquidGlass contentClassName="rounded-xl bg-surface shadow-lg ring-1 ring-line" />;',
+      'const a = <div className="[background:var(--brand)] [border-radius:12px] [box-shadow:var(--shadow-card)] [font-size:20px] [filter:blur(2px)]" />;',
+      'const s = { background: "var(--brand)", borderRadius: 12 }; const b = <div style={s} />;',
+      'const cls="rounded-xl bg-brand";',
+    ].join("\n");
+    expect(found("ui/src/x.tsx", src)).toEqual([
+      "1 꾸밈 class rounded-xl", "1 꾸밈 class bg-surface", "1 꾸밈 class shadow-lg", "1 꾸밈 class ring-1", "1 꾸밈 class ring-line",
+      "2 꾸밈 class [background:var(--brand)]", "2 꾸밈 class [border-radius:12px]", "2 꾸밈 class [box-shadow:var(--shadow-card)]", "2 꾸밈 class [font-size:20px]", "2 꾸밈 class [filter:blur(2px)]",
+      "3 꾸밈 style style={s}",
+      "4 꾸밈 class rounded-xl", "4 꾸밈 class bg-brand",
+    ]);
+  });
+
+  it("배치용 *ClassName·임의 속성·식 안 style은 통과한다", () => {
+    const src = [
+      '<LiquidGlass tint={0.6} contentClassName="flex flex-wrap items-center gap-1 p-1" />;',
+      'const a = <div className="[grid-template-columns:1fr_auto] [inset:0]" style={{ left: p.x, transform: `translate(${x}px)` }} />;',
+      'const b = <Tip side="left" align="start" />;',
+    ].join("\n");
+    expect(found("ui/src/x.tsx", src)).toEqual([]);
+  });
+
   it("배치 class·자리 style은 통과한다", () => {
     const src = [
       'const a = <section className="absolute left-1/2 top-3 z-50 max-w-[calc(100%-1.5rem)] -translate-x-1/2 min-[1440px]:left-[calc(50%-78px)]" />;',
