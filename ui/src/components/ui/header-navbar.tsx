@@ -1,7 +1,7 @@
 "use client";
 
 // 21st.dev「Core Header Navbar」(id 9847, kumail_ali_r/core-header-navbar) 받은 코드.
-// 바꾼 것: SecondaryNavbar와 오른쪽 사용자 칸(이름·「Active Now」·동그라미 아바타)을 뺐다. 그 자리는 밖에서 넣는 칸(children)이다.
+// 바꾼 것: SecondaryNavbar와 오른쪽 사용자 칸(이름·「Active Now」·동그라미 아바타)을 뺐다. 그 자리는 밖에서 넣는 칸(children)이다. 왼쪽 칸 간격 gap-4 → gap-[9px](위키 로고 짝 간격).
 // 제목 h1을 NavbarTitle로 내보낸다: class(text-xl bold tracking-tighter italic) → 브랜드 제목(850, 0.11em, uppercase, ink 토큰), size(setup 18px, hub title-sm 토큰), as(대시보드는 span).
 // title 앞에 logo 자리(ReactNode)와 제목 옆 label(label 토큰)을 이었다. 격자 바탕 var(--muted)는 그대로(muted=cream), 마스크 #000 → shade 토큰(가리는 모양 그대로).
 import React from "react";

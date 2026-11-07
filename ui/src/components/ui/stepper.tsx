@@ -1,8 +1,8 @@
 "use client";
 
 // 21st.dev「Stepper」(id 769, originui/stepper) 받은 코드.
-// 바꾼 것: @radix-ui/react-icons CheckIcon → lucide Check, text-xs·text-sm → caption·body-sm 토큰.
-// 색만: 끝난 단계(data-state=completed) 표시·잇는 선 bg-primary → bg-ok·text-on-status, 지금 단계(active)만 brand(primary). 안 한 단계 bg-muted는 그대로(muted=cream).
+// 바꾼 것: @radix-ui/react-icons CheckIcon → lucide Check, text-xs·text-sm → caption·body-sm 토큰, 끝난 단계 색 data-[state=completed]:bg-primary·text-primary-foreground → bg-ok·text-on-status, 잇는 선 group-data-[state=completed]/step:bg-primary → bg-ok.
+// 지금 단계(active)만 brand(primary). 안 한 단계 bg-muted는 그대로(muted=cream).
 import { cn } from "@/lib/utils";
 import { Check, LoaderCircle } from "lucide-react";
 import * as React from "react";
