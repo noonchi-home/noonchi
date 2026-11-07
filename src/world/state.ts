@@ -2,6 +2,7 @@
 // - 같은 물체: 트윈 위치 + 종류(identityM 안). 맞추기 전(카메라 없음)에는 위치를 모르므로 같은 종류의 물체에 차례로 붙인다.
 // - 등장·사라짐: Confirmer(사람 2장, 물건 3장). 사라짐은 그 자리가 시야 안인 프레임만 센다. 등장 확인 전 물체는 view()에 내지 않는다.
 // - VLM 사실: 면(facet)마다 하나. 촬영 시각이 더 오래된 답은 버리고, 같은 값이 연속 두 번이면 confirmed. 요약은 바뀔 때만 변화로 낸다.
+//   쓰는 중(use)·사람 행동(action)은 지금만 맞는 사실이다: 그 물체를 본 프레임의 VLM 답에 없으면 지운다. 사람이 안 보이면 사람 사실을 지운다.
 // - 분석 없음(applyMissing): 셈과 변화 하나만 남기고 등장·사라짐 셈에는 넣지 않는다.
 // - 가전: 관계표에 든 종류만 본다. 바뀐 속성의 이력, 상태 이름, 남은 시간(RemainingTracker).
 import type { EyePose } from "../contract/events.js";
@@ -28,6 +29,8 @@ const FACET: Record<string, Facet> = {
 };
 const OBJECT_FACETS: ReadonlySet<Facet> = new Set<Facet>(["place", "use", "contents"]);
 const PERSON_FACETS: ReadonlySet<Facet> = new Set<Facet>(["posture", "action"]);
+/** 지금만 맞는 면. 그 물체를 본 프레임의 답에 없으면 지운다. */
+const NOW_FACETS: readonly Facet[] = ["use", "action"];
 const PERSON = "person";
 const HISTORY_MAX = 20;
 /** 사라진 물체를 이만큼 두었다가 잊는다(같은 자리에 다시 보이면 같은 id로 돌아온다). */
@@ -173,6 +176,7 @@ export class WorldState {
       if (e.key === PERSON) {
         this.person.visible = e.kind === "appeared";
         this.person.since_ms = at;
+        if (e.kind === "gone") this.person.facts = {};
         changes.push({ kind: e.kind === "appeared" ? "person_appeared" : "person_gone", at_ms: at, subject: PERSON, meaningful: true,
           text: e.kind === "appeared" ? CHANGE_TEXT.personAppeared : CHANGE_TEXT.personGone });
         continue;
@@ -186,6 +190,7 @@ export class WorldState {
       } else {
         obj.status = "gone";
         obj.goneAt = at;
+        for (const f of NOW_FACETS) delete obj.facts[f];
         changes.push({ kind: "gone", at_ms: at, subject: obj.id, meaningful: true, text: CHANGE_TEXT.gone(this.name(obj)) });
       }
     }
@@ -241,10 +246,12 @@ export class WorldState {
         changes.push({ kind: "vlm", at_ms: capturedAtMs, subject: frameId, meaningful: false, text: CHANGE_TEXT.vlm(summary) });
       }
     }
+    const said = new Set<string>();
     for (const ob of scene.observations) {
       const facet = FACET[ob.state];
       const target = ids.get(ob.object_id);
       if (!facet || !target) continue;
+      said.add(`${target}|${facet}`);
       if (target === PERSON) {
         if (PERSON_FACETS.has(facet) && this.setFact(this.person.facts, facet, ob.state, capturedAtMs) && this.person.visible) {
           changes.push({ kind: "person_state", at_ms: capturedAtMs, subject: PERSON, meaningful: false, text: CHANGE_TEXT.state(OBJECT_NAME.person!, ob.state) });
@@ -255,6 +262,15 @@ export class WorldState {
       if (!obj || !OBJECT_FACETS.has(facet)) continue;
       if (this.setFact(obj.facts, facet, ob.state, capturedAtMs) && obj.confirmed && obj.status !== "gone") {
         changes.push({ kind: "state", at_ms: capturedAtMs, subject: obj.id, meaningful: true, text: CHANGE_TEXT.state(this.name(obj), ob.state) });
+      }
+    }
+    // 이 프레임에서 본 물체·사람의 지금만 맞는 사실: 이 답에 없으면 지운다(더 새 답의 사실은 그대로)
+    for (const target of new Set(ids.values())) {
+      const facts = target === PERSON ? this.person.facts : this.objects.get(target)?.facts;
+      if (!facts) continue;
+      for (const f of NOW_FACETS) {
+        const prev = facts[f];
+        if (prev && prev.at_ms <= capturedAtMs && !said.has(`${target}|${f}`)) delete facts[f];
       }
     }
     return changes;

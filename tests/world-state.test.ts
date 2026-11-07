@@ -3,6 +3,7 @@ import { WorldState } from "../src/world/state.js";
 import { sha256, type EngineFrame } from "../src/observe/ring.js";
 import type { Detection } from "../src/brain/detector.js";
 import type { CameraView } from "../src/phone/session.js";
+import { checkPlan } from "../src/act/check.js";
 
 const surfaces = () => [{ id: "table_1", label: "식탁", center: [2, 0] as [number, number], top: 0.75, radius: 0.6 }];
 const devices = () => [{ id: "dishwasher_1", kind: "dishwasher", label: "식기세척기" }];
@@ -93,6 +94,34 @@ describe("World State", () => {
     expect(w.view(8000).objects[0]).toMatchObject({ status: "out_of_view", last_in_view_ms: 3000 });
     expect(w.applyDetections(at(9, look), [cup]).changes.map((c) => c.kind)).toEqual(["back_in_view"]);
     expect(w.view(9000).objects.map((o) => [o.id, o.status])).toEqual([["cup_1", "present"]]);
+  });
+  it("쓰는 중·물건을 들고 있음은 그 물체를 본 뒤 VLM 답에 없으면 지우고, 사람이 안 보이면 사람 사실을 지운다", () => {
+    const w = ws();
+    let ids = new Map<string, string>();
+    for (let i = 1; i <= 3; i++) ids = w.applyDetections(frame(i), [person, cup]).ids;
+    w.applyScene("e3", 3000, { scene: "k", observations: [{ object_id: "d1", state: "holding_object" }, { object_id: "d2", state: "in_use" }], summary: "마심" }, ids);
+    expect(w.view(3000).objects[0]!.facts.use?.value).toBe("in_use");
+    expect(w.view(3000).person.facts.action?.value).toBe("holding_object");
+    for (let i = 4; i <= 100; i++) {
+      ids = w.applyDetections(frame(i), [cup]).ids;
+      w.applyScene(`e${i}`, i * 1000, { scene: "k", observations: [{ object_id: "d1", state: "on_table" }, { object_id: "d1", state: "empty" }], summary: "빈 컵" }, ids);
+    }
+    const v = w.view(100_000);
+    expect(v.person).toMatchObject({ visible: false, facts: {} });
+    expect(v.objects[0]!.facts.use).toBeUndefined();
+    expect(v.objects[0]!.facts).toMatchObject({ place: { value: "on_table" }, contents: { value: "empty" } });
+    const decision = { id: "pam-1", seq: 1, atMs: 99_000, textSent: "", finalTime: "", status: "valid" as const, prediction: { observation: "o", reasoning: "r", task_index: 0 }, action: "컵 치우기", memoryVersion: 1, world: { objects: [], person_visible: false, vlm_missing: 0, yolo_missing: 0 } };
+    const plan = { id: "plan:pam-1", revision: 1, source: "brain" as const, goal: "g", judgment: "j", dryRun: true, robot: { position: null, room: null }, path: [], legs: [],
+      steps: [{ id: "s1", kind: "act" as const, label: "l", status: "pending" as const, target: { objectId: v.objects[0]!.id } }], status: "planned" as const, updatedAt: "" };
+    expect(checkPlan({ decision, tasks: ["컵 치우기", "사용자에게 물어보기"], plan, world: v, nowMs: 100_500, staleMs: 3000, mode: "test" })).toEqual({ ok: true });
+  });
+  it("늦게 온 오래된 답은 쓰는 중을 지우지 않는다", () => {
+    const w = ws();
+    let ids = new Map<string, string>();
+    for (let i = 1; i <= 3; i++) ids = w.applyDetections(frame(i), [cup]).ids;
+    w.applyScene("e3", 3000, { scene: "k", observations: [{ object_id: "d1", state: "in_use" }], summary: "s" }, ids);
+    w.applyScene("e2", 2000, { scene: "k", observations: [], summary: "s" }, ids);
+    expect(w.view(3000).objects[0]!.facts.use?.value).toBe("in_use");
   });
   it("띄엄띄엄 본 사람은 보임으로 치지 않는다", () => {
     const w = ws();
