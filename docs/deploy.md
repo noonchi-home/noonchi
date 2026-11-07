@@ -5,15 +5,40 @@ NOONCHI는 이 저장소 하나로 AWS EC2 GPU 서버 한 대에서 돈다. CPU�
 ## 1. 서버 준비
 
 1. 서비스 할당량(Service Quotas)에서 서울 리전(`ap-northeast-2`) 「Running On-Demand G and VT instances」 vCPU 한도 증가를 먼저 신청한다. 새 계정은 0이라 인스턴스를 못 띄운다.
-2. 인스턴스: g6e.2xlarge(8 vCPU, 64GiB, L40S 48GB). PAM 27B 4비트(약 14GB)와 Qwen3-VL-4B를 GPU에 함께 올리고, CPU로 noonchi·YOLOX·PAM 서비스를 돌린다. g5·g6(24GB)면 PAM 모델을 줄인다. 처음 띄운 뒤 `docker stats`와 `/api/brain`의 `detect_ms`·VLM 분석 없음 수를 보고 크기를 정한다.
-3. AMI: NVIDIA 드라이버와 NVIDIA Container Toolkit이 든 Deep Learning AMI(Ubuntu). 다른 AMI면 드라이버, Docker, NVIDIA Container Toolkit을 설치한다.
-4. 저장소: 루트 볼륨과 따로 EBS 볼륨(gp3, 200GB 이상)을 `/srv`에 붙이고, Docker 데이터 폴더를 거기로 둔다(`/etc/docker/daemon.json`: `{"data-root": "/srv/docker"}`). 기록 DB, 기억, 사진 찍기 사진, 모델 캐시가 여기 남아 인스턴스를 멈춰도 그대로다.
-5. 보안 그룹: 들어오는 규칙을 모두 지운다. 나가는 규칙만 둔다.
+2. IAM 역할: `AmazonSSMManagedInstanceCore` 정책을 붙인 EC2용 IAM 역할을 만든다. 인스턴스를 띄울 때 이 역할을 붙인다. 들어오는 포트 없이 Session Manager로 서버에 들어가는 데 쓴다.
+3. 인스턴스: g6e.2xlarge(8 vCPU, 64GiB, L40S 48GB). PAM 27B 4비트(약 14GB)와 Qwen3-VL-4B를 GPU에 함께 올리고, CPU로 noonchi·YOLOX·PAM 서비스를 돌린다. g5·g6(24GB)면 PAM 모델을 줄인다. 처음 띄운 뒤 `docker stats`와 `/api/brain`의 `detect_ms`·VLM 분석 없음 수를 보고 크기를 정한다.
+4. AMI: NVIDIA 드라이버, Docker, NVIDIA Container Toolkit, SSM 에이전트가 든 Deep Learning AMI(Ubuntu). 다른 AMI면 넷을 설치한다.
+5. 저장 공간: 루트 볼륨과 따로 EBS 볼륨(gp3, 200GB 이상)을 붙인다. 기록 DB, 기억, 사진 찍기 사진, 모델 캐시, 저장소가 여기 남아 인스턴스를 멈춰도 그대로다.
+6. 보안 그룹: 들어오는 규칙을 두지 않는다. 나가는 규칙(기본: 모두 허용)만 둔다. Session Manager와 Tailscale은 나가는 연결로 붙는다.
+7. 들어가기: EC2 콘솔 → 인스턴스 → 연결 → Session Manager. PC에서는 `aws ssm start-session --target <인스턴스 id> --region ap-northeast-2`(Session Manager 플러그인 필요). 목록에 안 보이면 IAM 역할을 확인한다. Session Manager는 `ssm-user`로 들어오니 `sudo su - ubuntu`로 바꾼 뒤 아래를 한다.
+8. EBS를 `/srv`에 붙인다(처음 한 번):
+
+    ```bash
+    lsblk                                         # 붙인 EBS 이름(예: nvme1n1, 마운트 없음)
+    sudo mkfs -t ext4 /dev/nvme1n1                # 새 볼륨일 때만. 안의 데이터가 지워진다
+    sudo mkdir -p /srv && sudo mount /dev/nvme1n1 /srv
+    echo "UUID=$(sudo blkid -s UUID -o value /dev/nvme1n1) /srv ext4 defaults,nofail 0 2" | sudo tee -a /etc/fstab
+    sudo umount /srv && sudo mount -a && df -h /srv   # fstab 줄 확인
+    ```
+
+9. Docker 데이터 폴더를 `/srv/docker`로 옮긴다. `/etc/docker/daemon.json`에 이미 있는 설정(NVIDIA 런타임 등)은 그대로 두고 `data-root`만 더한다:
+
+    ```bash
+    sudo apt-get install -y jq
+    sudo systemctl stop docker docker.socket
+    [ -f /etc/docker/daemon.json ] || echo '{}' | sudo tee /etc/docker/daemon.json
+    sudo cp /etc/docker/daemon.json /etc/docker/daemon.json.bak
+    sudo jq '. + {"data-root": "/srv/docker"}' /etc/docker/daemon.json.bak | sudo tee /etc/docker/daemon.json
+    sudo systemctl start docker
+    docker info --format '{{.DockerRootDir}}'     # /srv/docker가 나와야 한다
+    ```
+
+- `docker` 명령이 권한 오류면 `sudo usermod -aG docker ubuntu` 뒤 다시 들어온다.
 
 ## 2. Tailscale
 
 1. tailnet 관리 화면(login.tailscale.com/admin/dns)에서 MagicDNS를 켜고, 같은 화면의 HTTPS Certificates를 켠다. 둘 다 켜야 `tailscale serve`가 `<서버>.<tailnet>.ts.net` 인증서를 받는다.
-2. 서버에서:
+2. 서버에서(Session Manager 창):
 
     ```bash
     curl -fsSL https://tailscale.com/install.sh | sh
@@ -26,13 +51,28 @@ NOONCHI는 이 저장소 하나로 AWS EC2 GPU 서버 한 대에서 돈다. CPU�
 - 대시보드: `https://<서버>.<tailnet>.ts.net/`, 폰: `https://<서버>.<tailnet>.ts.net:8443/phone/`
 - 첫 접속 때 인증서를 받느라 몇 초 걸린다.
 - Funnel은 켜지 않는다. 폰·PC는 같은 tailnet에 로그인한다.
+- 그 뒤로는 tailnet 안 PC에서 `tailscale ssh ubuntu@<서버>`로도 들어간다.
 
 ## 3. 받기와 설정
 
-```bash
-git clone <NOONCHI 저장소 주소> /srv/noonchi && cd /srv/noonchi
-cp .env.example .env
-```
+저장소(`noonchi-home/twin-home`)는 비공개라 읽기 전용 배포 키로 받는다.
+
+1. 서버에서 키를 만든다:
+
+    ```bash
+    ssh-keygen -t ed25519 -N "" -f ~/.ssh/noonchi_deploy
+    cat ~/.ssh/noonchi_deploy.pub
+    ```
+
+2. GitHub 저장소 Settings → Deploy keys → Add deploy key에 공개 키를 붙인다. 「Allow write access」는 끈다.
+3. 받는다(`git pull`도 같은 키를 쓴다):
+
+    ```bash
+    printf 'Host github.com\n  IdentityFile ~/.ssh/noonchi_deploy\n  IdentitiesOnly yes\n' >> ~/.ssh/config
+    sudo mkdir -p /srv/noonchi && sudo chown ubuntu: /srv/noonchi
+    git clone git@github.com:noonchi-home/twin-home.git /srv/noonchi && cd /srv/noonchi
+    cp .env.example .env
+    ```
 
 `.env`에 넣는 값:
 
@@ -41,18 +81,19 @@ cp .env.example .env
 | `INFERENCE_MODE` | `live`(GPU 서버) / `mock`(외부 API) |
 | `ALLOWED_ORIGINS` | `https://<서버>.<tailnet>.ts.net` |
 | `PHONE_URL` | `https://<서버>.<tailnet>.ts.net:8443/phone/` |
-| `BRAIN` | `1` |
+| `BRAIN` | `1`(`.env.example` 기본값) |
+| `PLAN_TOKEN` | 계획기가 계획(`POST /api/plan`)을 보낼 때 붙이는 토큰. 긴 무작위 글(`openssl rand -hex 32`) |
 | `VLM_LIVE_MODEL` | live VLM Hugging Face 모델(기본 `Qwen/Qwen3-VL-4B-Instruct`). vLLM은 `vlm`이라는 이름으로 내건다 |
 | `PAM_LIVE_MODEL` | live PAM LLM Hugging Face 모델(기본 `Qwen/Qwen3.5-27B-GPTQ-Int4`, Qwen3.5-27B 4비트). vLLM은 `pam`이라는 이름으로 내건다 |
 | `PAM_MAX_MODEL_LEN` | PAM LLM 문맥 길이(기본 32768). vLLM과 PAM 서비스가 같이 쓴다 |
 | `PAM_LLM_BASE_URL`, `PAM_LLM_MODEL` | 비우면 모드 기본값(mock: OpenRouter `qwen/qwen3.5-27b` provider alibaba, live: `http://vllm-pam:8000/v1`의 `pam`) |
-| `ANTHROPIC_API_KEY` 또는 `OPENAI_API_KEY` | 에이전트(폰 음성 요청). mock·live 두 모드 모두 필요하다 |
+| `ANTHROPIC_API_KEY` 또는 `OPENAI_API_KEY` | 에이전트(폰 음성 요청). 두 모드 모두 이 키로 상용 LLM을 부른다. 키가 없으면 규칙 기반 mock 에이전트가 돌고 시작 로그에 경고가 한 줄 남는다 |
 | `OPENAI_API_KEY`, `OPENROUTER_API_KEY` | mock의 VLM·PAM LLM |
 | `HF_TOKEN` | 받기 제한이 있는 Hugging Face 모델만 |
 | `THINQ_TOKEN` | 실제 모드를 쓸 때만 |
 
 - 키는 `.env`에만 둔다. 이미지에는 들어가지 않는다.
-- 다른 파일을 쓰려면 `NOONCHI_ENV_FILE=<파일>`로 띄운다.
+- `.env`는 두 곳에 쓰인다. compose 파일 안의 `${…}`(모델 이름·포트·GPU 몫·문맥 길이)와 컨테이너 설정(`env_file`)이다. 다른 env 파일을 쓰려면 두 곳 모두 그 파일을 보게 `--env-file`과 `NOONCHI_ENV_FILE`을 함께 준다: `NOONCHI_ENV_FILE=prod.env docker compose --env-file prod.env --profile gpu up -d`
 - 컨테이너 안의 주소·포트·데이터 폴더(`HOST`, `PORT`, `PHONE_PORT`, `RUNTIME_DIR=/data`, `MATTER_TRANSPORT=local`, `PAM_URL=http://pam:8300`)는 compose가 정한다. 호스트 포트만 `NOONCHI_PORT`(기본 8200)·`NOONCHI_PHONE_PORT`(기본 8210)·`PAM_HOST_PORT`(기본 8300)로 바꾼다.
 
 ## 4. 띄우기
