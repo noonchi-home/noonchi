@@ -475,7 +475,7 @@ describe("종료", () => {
     const main = fileURLToPath(new URL("../src/server/main.ts", import.meta.url));
     const tsx = pathToFileURL(fileURLToPath(new URL("../node_modules/tsx/dist/loader.mjs", import.meta.url))).href;
     const child = spawn(process.execPath, ["--import", tsx, main], {
-      cwd, env: { ...process.env, PORT: "0", HUB: "memory", AGENT_PROVIDER: "mock", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), PHONE_PORT: "" },
+      cwd, env: { ...process.env, PORT: "0", HUB: "memory", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), PHONE_PORT: "" },
       stdio: ["ignore", "pipe", "pipe"],
     });
     await new Promise<void>((ok) => child.stdout!.on("data", (d) => { if (String(d).includes("서버:")) ok(); }));
@@ -567,7 +567,7 @@ describe("허용 출처", () => {
   });
 
   it("tailscale 주소에서 연 대시보드가 /events에 붙고 쓰기 요청을 보낸다", async () => {
-    srv = await startServer({ env: { HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock", ALLOWED_ORIGINS: TS, RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")) }, log: () => {} });
+    srv = await startServer({ env: { HUB: "memory", PORT: "0", ALLOWED_ORIGINS: TS, RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")) }, log: () => {} });
     const ws = srv.url.replace(/^http/, "ws") + "/events";
     expect(await wsOpen(ws, TS)).toBe(true);
     expect(await wsOpen(ws, "https://evil.example")).toBe(false);
@@ -626,11 +626,12 @@ export interface ReadyView {
   ok: boolean; inference_mode: "mock" | "live";
   vlm: { base_url: string; model: string; key: boolean; reachable: boolean };
   pam: { url: string; reachable: boolean; llm: { base_url: string; model: string; reachable: boolean } | null };
+  agent: { provider: "openai" | "anthropic"; base_url: string; model: string; key: boolean; reachable: boolean };
   db: boolean;
 }
 // HealthView에 ready: ReadyView 추가
 // src/server/ready.ts
-export function makeReady(o: { endpoints: Endpoints; db: HistoryDb; cache?: ReachCache; fetchImpl?: typeof fetch }): () => Promise<ReadyView>;
+export function makeReady(o: { endpoints: Endpoints; agent: AgentEndpoint; db: HistoryDb; cache?: ReachCache; fetchImpl?: typeof fetch }): () => Promise<ReadyView>;
 ```
 
 - [ ] **Step 1: 실패하는 시험**
@@ -687,7 +688,7 @@ describe("준비 상태", () => {
   it("추론 모드·모델 주소 응답·PAM·기록 DB를 보인다", async () => {
     const base = await startStub();
     srv = await startServer({ env: {
-      HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")),
+      HUB: "memory", PORT: "0", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")),
       INFERENCE_MODE: "live", VLM_BASE_URL: `${base}/v1`, PAM_URL: base,
     }, log: () => {} });
     const h = await (await fetch(`${srv.url}/api/health`)).json();
@@ -698,7 +699,7 @@ describe("준비 상태", () => {
   });
 
   it("모델 주소가 답하지 않아도 health는 200이고 ready.ok가 false다", async () => {
-    srv = await startServer({ env: { HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")),
+    srv = await startServer({ env: { HUB: "memory", PORT: "0", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")),
       VLM_BASE_URL: "http://127.0.0.1:9/v1", PAM_URL: "http://127.0.0.1:9" }, log: () => {} });
     const r = await fetch(`${srv.url}/api/health`);
     expect(r.status).toBe(200);
@@ -852,7 +853,7 @@ export function makeReady(o: { endpoints: Endpoints; db: HistoryDb; cache?: Reac
   };
 }
 ```
-PAM `/health`는 응답을 캐시하지 않고 2초 제한으로 매번 묻는다(가벼운 GET). `reachable()`과 PAM `/health`는 `fetchRetry`(`src/server/net.ts`, 이 PC Windows의 일시 EFAULT를 다시 보냄)로 묻고, 시험의 가짜 서버는 `listenRetry`로 띄우고 `fetchRetry`·`openWebSocket`(`tests/helpers/ws.ts`)으로 부른다. `VLM_EXTRA_BODY`가 JSON 객체가 아니면 시작을 막는다. `tests/history-db.test.ts`(WAL·busy_timeout 5000·닫은 뒤 ok() false)와 ReachCache·reachable 시험(`tests/infer-endpoints.test.ts`)을 더한다. `tests/setup/no-real-ai.ts`는 먼저 건 ThinQ 차단 표시(`noRealThinq`)를 `Object.assign(guarded, inner)`로 남긴다(`tests/thinq-client.test.ts`가 본다). `start.ts`: `const endpoints = loadEndpoints(env)`(잘못된 모드면 시작 실패), `const db = HistoryDb.open(join(runtimeDir, "noonchi.db"))`, `ctx.ready = makeReady({ endpoints, db })`, `close()` 끝에 `db.close()`. `app.ts` health: `ready: await (opts.ready?.() ?? notReady)`(없으면 `{ ok: false, …, db: false }`). `.env.example`: `INFERENCE_MODE=mock`, `VLM_BASE_URL=`, `VLM_MODEL=`, `VLM_API_KEY=`, `VLM_EXTRA_BODY=`, `VLM_TIMEOUT_MS=`, `PAM_URL=`(주석: compose 안은 `http://pam:8300`).
+PAM `/health`는 응답을 캐시하지 않고 2초 제한으로 매번 묻는다(가벼운 GET). `reachable()`과 PAM `/health`는 `fetchRetry`(`src/server/net.ts`, 이 PC Windows의 일시 EFAULT를 다시 보냄)로 묻고, 시험의 가짜 서버는 `listenRetry`로 띄우고 `fetchRetry`·`openWebSocket`(`tests/helpers/ws.ts`)으로 부른다. `VLM_EXTRA_BODY`가 JSON 객체가 아니면 시작을 막는다. `tests/history-db.test.ts`(WAL·busy_timeout 5000·닫은 뒤 ok() false)와 ReachCache·reachable 시험(`tests/infer-endpoints.test.ts`)을 더한다. `tests/setup/no-real-ai.ts`는 먼저 건 ThinQ 차단 표시(`noRealThinq`)를 `Object.assign(guarded, inner)`로 남긴다(`tests/thinq-client.test.ts`가 본다). `start.ts`: `const endpoints = loadEndpoints(env)`(잘못된 모드면 시작 실패), `const db = HistoryDb.open(join(runtimeDir, "noonchi.db"))`, `ctx.ready = makeReady({ endpoints, agent: agentEndpoint(env), db })`(에이전트 키·주소 응답도 `ready.agent`로 본다. 키가 없어도 다른 공급자로 바꾸지 않는다), `close()` 끝에 `db.close()`. `app.ts` health: `ready: await (opts.ready?.() ?? notReady)`(없으면 `{ ok: false, …, db: false }`). `.env.example`: `INFERENCE_MODE=mock`, `VLM_BASE_URL=`, `VLM_MODEL=`, `VLM_API_KEY=`, `VLM_EXTRA_BODY=`, `VLM_TIMEOUT_MS=`, `PAM_URL=`(주석: compose 안은 `http://pam:8300`).
 
 ```ts
 // tests/setup/no-real-ai.ts
@@ -2270,7 +2271,7 @@ H docker build -t noonchi-pam:check services/pam
 H docker build -t noonchi:check .
 H npx tsx scripts/container-smoke.ts
 ```
-Expected: PASS, 두 이미지 빌드, 스모크가 `ready.ok: true`(가짜 서버로 VLM·PAM·PAM LLM 모두 답함), 에이전트 답 「가짜 답」, PAM 판단 `task_index -1`을 찍고 종료 코드 0. `docker compose --profile gpu config -q`는 빈 임시 env 파일(`--env-file`, `NOONCHI_ENV_FILE`)로 검사한다(저장소 `.env` 값을 찍지 않게).
+Expected: PASS, 두 이미지 빌드, 스모크가 `ready.ok: true`(가짜 서버로 VLM·PAM·PAM LLM·에이전트 모두 답함), 에이전트 답 「가짜 답」, PAM 판단 `task_index -1`을 찍고 종료 코드 0. `docker compose --profile gpu config -q`는 빈 임시 env 파일(`--env-file`, `NOONCHI_ENV_FILE`)로 검사한다(저장소 `.env` 값을 찍지 않게).
 
 - [ ] **Step 5: 커밋**
 

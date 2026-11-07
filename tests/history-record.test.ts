@@ -26,7 +26,7 @@ const docPlan = (): PlanView => {
 describe("서버 기록 연결", () => {
   it("가전 명령으로 바뀐 값과 받은 계획을 기록 DB에 적고, 닫은 뒤 다시 열어도 남는다", async () => {
     const runtime = mkdtempSync(join(tmpdir(), "rt-"));
-    srv = await startServer({ env: { HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock", HOME_ID: "oneroom", RUNTIME_DIR: runtime }, log: () => {} });
+    srv = await startServer({ env: { HUB: "memory", PORT: "0", HOME_ID: "oneroom", RUNTIME_DIR: runtime }, log: () => {} });
     expect(srv.history.list({ kinds: ["device"] })).toEqual([]);
     expect((await post("/api/devices/ac_1/command", { command: { type: "on" } })).status).toBe(200);
     const rows = srv.history.list({ kinds: ["device"] });

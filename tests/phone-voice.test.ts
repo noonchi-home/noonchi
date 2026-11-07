@@ -91,7 +91,7 @@ describe("startServer(BRAIN=1): 클로이드 질문을 폰 말로 답한다", ()
     fake = await startFakeOpenAI();
     pam = await startFakePam({ predict: () => ({ observation: "컵이 식탁에 있음", reasoning: "치울지 묻는다", task_index: 1 }) });
     srv = await startServer({
-      env: { HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
+      env: { HUB: "memory", PORT: "0", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
         BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url, PAM_MIN_GAP_MS: "0" },
       brain: { detector: new ScriptedDetector(() => [{ label: "cup", score: 0.9, cls: 41, box: [1, 1, 2, 1] }]) }, log: () => {},
     });

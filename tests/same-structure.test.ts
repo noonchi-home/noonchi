@@ -24,7 +24,8 @@ describe("같은 구조", () => {
     for (const p of walk(SRC).filter((x) => /\.tsx?$/.test(x))) {
       const t = readFileSync(p, "utf8");
       if (!p.endsWith(join("infer", "endpoints.ts"))) expect(t, p).not.toMatch(/INFERENCE_MODE|endpoints\.mode|inferenceMode/);
-      expect(t, p).not.toMatch(/class \w*(Mock|Scripted|Fake)(Decision|Perceiver|Detector|Vlm|Pam)\b/);
+      // 에이전트도 같다: 규칙 기반·가짜 공급자를 두지 않고 늘 실제 공급자(openai·anthropic)를 부른다. 시험은 가짜 서버를 OPENAI_BASE_URL에 붙인다
+      expect(t, p).not.toMatch(/class \w*(Mock|Scripted|Fake|Rule)\w*(Decision|Perceiver|Detector|Vlm|Pam|Provider|Agent|Llm)\b/);
     }
   });
 

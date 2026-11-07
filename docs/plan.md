@@ -115,8 +115,9 @@ interface DeviceHub {
   - `lock`, `unlock`, `start`, `stop`, `set_valve{open}`
 - 승인 정책(`src/agent/policy.ts`): 현관 잠금 해제, 인덕션 켜기, 전자레인지 시작은 **사용자 승인 후 실행**한다. 도구가 `needsConfirmation`을 돌려주면 에이전트는 실행하지 말고 사용자에게 확인을 묻는다. 화면의 승인 버튼이나 다음 메시지의 "응"으로 확정한다.
 - LLM 공급자:
-  - `AGENT_PROVIDER=openai|anthropic|mock`. 자동 선택은 ANTHROPIC_API_KEY가 있으면 anthropic(claude-opus-5-5), 없으면 openai(OPENAI_MODEL, 기본 gpt-5.5)다.
-  - 테스트는 `mock`(규칙 기반 가짜 LLM)을 쓴다.
+  - `AGENT_PROVIDER=openai|anthropic`. 자동 선택은 ANTHROPIC_API_KEY가 있으면 anthropic(claude-opus-5-5), 없으면 openai(OPENAI_MODEL, 기본 gpt-5.5)다.
+  - 키가 없어도 다른 공급자로 바꾸지 않는다. 에이전트는 준비 안 됨(`/api/health` `ready.agent`)이고 대화가 실패한다.
+  - 테스트는 같은 OpenAI 공급자를 가짜 OpenAI 호환 서버(`OPENAI_BASE_URL`)에 붙인다. 가짜 서버가 사용자 말마다 정한 도구 호출을 낸다.
 - 시스템 프롬프트: 한국어. 방·기기 목록 요약, 승인 규칙, 실행 후 결과를 짧게 보고하라는 지시.
 - `.env`에서 키를 읽는다. 키를 로그에 출력하지 않는다.
 
@@ -182,7 +183,7 @@ interface DeviceHub {
 - '여기' = 맞춘 뒤 마지막 자세의 조준점(평면도). 15초 넘게 자세가 없거나 조준점이 바닥에 닿지 않았으면 이유를 돌려준다.
 - 폰 말은 에이전트 세션 `phone` 하나로 이어진다. 대시보드 로그에도 `🎙 폰:`으로 보인다.
 
-**E. 배치 도구** (서버 안 에이전트 전용, MCP에는 없음) `find_objects`, `move_object(object_id, to?:"here", x?, y?, dx?, dy?, facing_deg?, turn_deg?)`, `add_object(type, label?, to?, x?, y?, facing_deg?)`, `remove_object`, `find_object_types`, `save_layout`. 평면도 좌표 +x 오른쪽, +y 아래쪽. 벽걸이는 가장 가까운 벽에 붙고, 바닥 물건을 '여기'로 옮기면 폰 쪽을 보게 놓는다. mock 에이전트도 "냉장고 위치 여기로 맞춰줘"·"냉장고는 여기 있어"·"TV 여기로 옮겨줘"·"배치 저장해"를 안다.
+**E. 배치 도구** (서버 안 에이전트 전용, MCP에는 없음) `find_objects`, `move_object(object_id, to?:"here", x?, y?, dx?, dy?, facing_deg?, turn_deg?)`, `add_object(type, label?, to?, x?, y?, facing_deg?)`, `remove_object`, `find_object_types`, `save_layout`. 평면도 좌표 +x 오른쪽, +y 아래쪽. 벽걸이는 가장 가까운 벽에 붙고, 바닥 물건을 '여기'로 옮기면 폰 쪽을 보게 놓는다.
 - REST: `GET /api/layout`, `POST /api/layout/save`, `POST /api/layout/reset`, `GET /api/homes`.
 
 ## 설정 흐름 (5단계: 집 → 가전 → 위치 동기화 → 대시보드)
@@ -218,13 +219,13 @@ interface DeviceHub {
   - REST/WS(실제 서버를 임의 포트로)
   - 3D 트윈 → `POST /api/devices/:id/twin`(매핑, 센서, 정책 409 + confirm, 400)
   - MCP(클라이언트로 도구 목록·호출)
-  - 에이전트(mock 공급자로 "거실 TV 켜줘" → turn_on(tv_living) → 상태 on, "현관문 열어줘" → 승인 요청 → 확정 후 unlocked)
-  - 집 고르기(homes.json), 배치 편집기(옮기기·받침·벽 붙이기·더하기·빼기·되돌리기·수정본·다시 적용), 배치 도구와 mock 의도, 폰 '여기'·말·승인·초점, 초점 투영, `HOME_ID` 통합(폰 "냉장고 위치 여기로 맞춰줘" → layout·focus), 추론 과정(reason·관찰)
+  - 에이전트(가짜 OpenAI 호환 서버의 도구 호출로 "거실 TV 켜줘" → turn_on(tv_living) → 상태 on, "현관문 열어줘" → 승인 요청 → 확정 후 unlocked)
+  - 집 고르기(homes.json), 배치 편집기(옮기기·받침·벽 붙이기·더하기·빼기·되돌리기·수정본·다시 적용), 배치 도구와 가짜 서버의 배치 말, 폰 '여기'·말·승인·초점, 초점 투영, `HOME_ID` 통합(폰 "냉장고 위치 여기로 맞춰줘" → layout·focus), 추론 과정(reason·관찰)
 - Matter 통합 테스트:
   - 브리지 + 컨트롤러를 띄워 실제로 커미셔닝한다(포트·저장 폴더는 임시).
   - 조명을 켜면 컨트롤러 구독으로 상태가 돌아온다.
   - 네트워크 모드가 이 PC에서 안 되면 원인을 기록하고 local 모드로 같은 테스트를 통과시킨다.
-- `npm run demo`: 서버를 띄우고 mock 에이전트로 시나리오 5개를 돌려 결과를 출력한다.
+- `npm run demo`: 서버를 띄우고 셸의 키로 실제 LLM 에이전트에 시나리오 5개를 돌려 결과를 출력한다.
 
 ## 수용 기준
 

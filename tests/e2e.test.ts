@@ -1,5 +1,5 @@
 // 끝에서 끝까지: npm start와 같은 시작 경로(startServer)로 서버를 띄운다(HUB 기본값 = matter).
-//   twin-studio 실제 기기 → MatterHub(브리지 엔드포인트) → REST·WS → mock 에이전트 → MCP stdio 서버.
+//   twin-studio 실제 기기 → MatterHub(브리지 엔드포인트) → REST·WS → 에이전트(OpenAI 공급자, 모델 자리는 가짜 OpenAI 호환 서버) → MCP stdio 서버.
 // 확인은 브리지 쪽 Matter 속성(실제 Matter 기기 상태)으로 한다.
 //   local:   네트워크 없이(빠름)
 //   network: 서버가 브리지를 실제로 커미셔닝(UDP, 임시 포트·저장 폴더). 이 PC에서 안 되면 원인을 남기고 건너뛴다.
@@ -15,17 +15,21 @@ import type { MatterHub } from "../src/matter/matterHub.js";
 import { resolveTwinStudioDir } from "../src/model/devices.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { api, listenEvents, mcpClient, type Msg } from "./helpers/live.js";
+import { HOME_SCRIPT, startFakeLlm, type FakeLlm } from "./helpers/llm.js";
 
 const REPO = fileURLToPath(new URL("..", import.meta.url));
 const STUDIO = resolveTwinStudioDir(process.env.TWIN_STUDIO_DIR, REPO);
 
+let llm: FakeLlm;
+beforeAll(async () => { llm = await startFakeLlm(HOME_SCRIPT); });
 const temps: string[] = [];
 function tempDir(prefix: string): string {
   const d = mkdtempSync(join(tmpdir(), `twin-home-${prefix}-`));
   temps.push(d);
   return d;
 }
-afterAll(() => {
+afterAll(async () => {
+  await llm?.close();
   for (const d of temps) {
     try {
       rmSync(d, { recursive: true, force: true });
@@ -36,7 +40,7 @@ afterAll(() => {
 });
 
 function env(extra: Record<string, string>): Record<string, string> {
-  return { PORT: "0", AGENT_PROVIDER: "mock", TWIN_STUDIO_DIR: STUDIO, MATTER_STORAGE_DIR: tempDir("e2e"), RUNTIME_DIR: tempDir("rt"), ...extra };
+  return { PORT: "0", ...llm.env, TWIN_STUDIO_DIR: STUDIO, MATTER_STORAGE_DIR: tempDir("e2e"), RUNTIME_DIR: tempDir("rt"), ...extra };
 }
 
 /** 브리지 쪽 Matter 클러스터 상태(컨트롤러를 거치지 않은 기기 자체의 값). */
@@ -72,13 +76,13 @@ describe("e2e: npm start 경로(HUB 기본 matter, local 전송)", () => {
     expect(srv.twin.devices.length).toBeGreaterThanOrEqual(50);
     expect(logs.join("\n")).toMatch(/수동 페어링 코드: \d{11}/);
     const health = await api(srv.url, "/api/health");
-    expect(health.json).toMatchObject({ ok: true, hub: "matter", transport: "local", provider: "mock", devices: srv.twin.devices.length });
+    expect(health.json).toMatchObject({ ok: true, hub: "matter", transport: "local", provider: "openai", devices: srv.twin.devices.length });
     const matter = await api(srv.url, "/api/matter");
     expect(matter.json).toMatchObject({ ok: true, transport: "local", pairing: { manualPairingCode: expect.stringMatching(/^\d{11}$/) } });
     expect(bridge(srv, "tv_living").bridgedDeviceBasicInformation!.nodeLabel).toBe("거실 TV");
   });
 
-  it("데모 시나리오(REST 에이전트, mock)가 모두 통과하고 브리지의 Matter 속성이 바뀐다", async () => {
+  it("데모 시나리오(REST 에이전트, 가짜 서버의 도구 호출)가 모두 통과하고 브리지의 Matter 속성이 바뀐다", async () => {
     const before = events.messages.length;
     const rows = await runScenarios({ url: srv.url, hub: srv.hub, devices: srv.twin.devices, sessionId: "e2e-demo" });
     for (const r of rows) expect(r.pass, `${r.no} "${r.say}" → ${r.reply}`).toBe(true);

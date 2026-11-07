@@ -1,7 +1,7 @@
 // 3D 트윈 → twin-home: POST /api/devices/:id/twin {attr, value} (docs/plan.md "3D 트윈 연결")
 import { afterEach, describe, expect, it } from "vitest";
 import { Agent } from "../src/agent/agent.js";
-import { MockProvider } from "../src/agent/providers/mock.js";
+import { createProvider } from "../src/agent/providers/index.js";
 import { twinChange } from "../src/model/mapping.js";
 import { createApp } from "../src/server/app.js";
 import { fetchRetry } from "../src/server/net.js";
@@ -16,7 +16,7 @@ afterEach(async () => {
 
 async function start() {
   const home = makeHome();
-  const agent = new Agent({ hub: home.hub, policy: home.policy, rooms: ROOMS, provider: new MockProvider() });
+  const agent = new Agent({ hub: home.hub, policy: home.policy, rooms: ROOMS, provider: createProvider({}).provider }); // 모델은 부르지 않는다
   const app = createApp({ hub: home.hub, policy: home.policy, agent, rooms: ROOMS, log: () => {} });
   const { url } = await app.listen(0, "127.0.0.1");
   cleanups.push(() => app.close());

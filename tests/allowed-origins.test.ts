@@ -29,7 +29,7 @@ describe("허용 출처", () => {
   });
 
   it("tailscale 주소에서 연 대시보드가 /events에 붙고 쓰기 요청을 보낸다", async () => {
-    srv = await startServer({ env: { HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock", ALLOWED_ORIGINS: TS, RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")) }, log: () => {} });
+    srv = await startServer({ env: { HUB: "memory", PORT: "0", ALLOWED_ORIGINS: TS, RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")) }, log: () => {} });
     const ws = srv.url.replace(/^http/, "ws") + "/events";
     expect(await wsOpen(ws, TS)).toBe(true);
     expect(await wsOpen(ws, "https://evil.example")).toBe(false);

@@ -41,7 +41,7 @@ async function servedHome(): Promise<{ home: string | null } | null> {
 /** 3D 작업 서버 환경. 폰 서버·두뇌는 빈 값으로 넣는다(지우면 서버의 dotenv가 .env 값으로 다시 채운다). */
 export function serverEnv(home: string, base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   return {
-    ...base, PORT: String(SERVER_PORT), HUB: "memory", AGENT_PROVIDER: "mock", HOME_ID: home,
+    ...base, PORT: String(SERVER_PORT), HUB: "memory", HOME_ID: home,
     RUNTIME_DIR: "runtime-3d", TWIN_STUDIO_DIR: base.TWIN_STUDIO_DIR?.trim() || resolve(ROOT, "twin"), PHONE_PORT: "", BRAIN: "",
   };
 }

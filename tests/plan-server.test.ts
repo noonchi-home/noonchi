@@ -3,9 +3,8 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { Agent } from "../src/agent/agent.js";
-import { MockProvider } from "../src/agent/providers/mock.js";
 import type { PlanView } from "../src/contract/plan.js";
 import { PlanHub } from "../src/plan/hub.js";
 import { canSendPlan, createApp, isLoopback } from "../src/server/app.js";
@@ -14,9 +13,14 @@ import { startServer, type RunningServer } from "../src/server/start.js";
 import { smallFloor } from "./helpers/floor.js";
 import { ROOMS, makeHome } from "./helpers/home.js";
 import { CATALOG, scene } from "./helpers/layout.js";
+import { HOME_SCRIPT, startFakeLlm, type FakeLlm } from "./helpers/llm.js";
 import { openWebSocket } from "./helpers/ws.js";
 
 type Msg = Record<string, any>;
+// 에이전트는 실제 OpenAI 공급자, 모델 자리는 가짜 OpenAI 호환 서버
+let llm: FakeLlm;
+beforeAll(async () => { llm = await startFakeLlm({ ...HOME_SCRIPT, "TV 켜줘": [[["turn_on", { device_id: "tv_1" }]], "TV를 켰어요."] }); });
+afterAll(async () => { await llm?.close(); });
 const cleanups: (() => Promise<void> | void)[] = [];
 afterEach(async () => {
   while (cleanups.length) await cleanups.pop()!();
@@ -45,7 +49,7 @@ async function api(url: string, path: string, body?: unknown) {
 
 async function start(withPlan = true) {
   const home = makeHome();
-  const agent = new Agent({ hub: home.hub, policy: home.policy, rooms: ROOMS, provider: new MockProvider() });
+  const agent = new Agent({ hub: home.hub, policy: home.policy, rooms: ROOMS, provider: llm.provider() });
   const ref: { broadcast?: (m: unknown) => void } = {};
   const plan = withPlan ? new PlanHub(smallFloor(), (m) => ref.broadcast?.(m), () => "2026-11-06T00:00:00Z") : undefined;
   const app = createApp({ hub: home.hub, policy: home.policy, agent, rooms: ROOMS, log: () => {}, plan });
@@ -170,7 +174,7 @@ describe("startServer: 집의 계획 보관", () => {
   it("맞춘 폰 눈 자리가 기기 계획의 로봇 자리가 된다", async () => {
     const { studio, runtime } = studioFixture();
     srv = await startServer({
-      env: { HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock", TWIN_STUDIO_DIR: studio, HOME_ID: "oneroom", RUNTIME_DIR: runtime, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1" },
+      env: { HUB: "memory", PORT: "0", ...llm.env, TWIN_STUDIO_DIR: studio, HOME_ID: "oneroom", RUNTIME_DIR: runtime, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1" },
       log: () => {},
     });
     const dash = await listen(srv.url);

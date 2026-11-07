@@ -8,7 +8,8 @@ const base: HealthView = {
   ok: true, devices: 1, hub: "memory", transport: null, provider: null, model: null, twin: true, eye: true,
   home: null, phone_urls: [TS, "http://192.168.0.7:8210/phone/"], brain: false,
   mode: "test",
-  ready: { ok: false, inference_mode: "mock", vlm: { base_url: "", model: "", key: false, reachable: false }, pam: { url: "", reachable: false, llm: null }, db: false },
+  ready: { ok: false, inference_mode: "mock", vlm: { base_url: "", model: "", key: false, reachable: false }, pam: { url: "", reachable: false, llm: null },
+    agent: { provider: "openai", base_url: "", model: "", key: false, reachable: false }, db: false },
 };
 
 describe("EyeWindow", () => {

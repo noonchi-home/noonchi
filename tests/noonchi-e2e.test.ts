@@ -38,7 +38,7 @@ describe("NOONCHI 처음부터 끝까지", () => {
     pam = await startFakePam({ predict: () => ({ observation: "빈 컵이 식탁에 남음", reasoning: "자리를 비워 컵을 치운다", task_index: 0 }) });
     let cupVisible = true;
     srv = await startServer({
-      env: { HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
+      env: { HUB: "memory", PORT: "0", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
         BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url, PAM_MIN_GAP_MS: "0" },
       brain: { detector: new ScriptedDetector(() => (cupVisible ? [{ label: "cup", score: 0.9, cls: 41, box: [220, 160, 40, 20] }] : [])) }, log: () => {},
     });

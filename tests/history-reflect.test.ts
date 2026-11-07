@@ -166,7 +166,7 @@ describe("반성 시각", () => {
 describe("반성 API", () => {
   async function start(extra: Record<string, string> = {}) {
     fakePam = await startFakePam();
-    running = await startServer({ env: { HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), PAM_URL: fakePam.url, ...extra }, log: () => {} });
+    running = await startServer({ env: { HUB: "memory", PORT: "0", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), PAM_URL: fakePam.url, ...extra }, log: () => {} });
     return running;
   }
   const post = async (body: unknown) => {

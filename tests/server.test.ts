@@ -1,19 +1,23 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { Agent } from "../src/agent/agent.js";
-import { MockProvider } from "../src/agent/providers/mock.js";
 import { MemoryHub } from "../src/hub/memory.js";
 import type { DeviceHub } from "../src/hub/types.js";
 import { createApp, type TwinHomeApp } from "../src/server/app.js";
 import { createHub } from "../src/server/hubFactory.js";
 import { fetchRetry } from "../src/server/net.js";
 import { ROOMS, homeDevices, makeHome, twin } from "./helpers/home.js";
+import { HOME_SCRIPT, startFakeLlm, type FakeLlm } from "./helpers/llm.js";
 
 type Msg = Record<string, any>;
 
+// 에이전트는 실제 OpenAI 공급자, 모델 자리는 가짜 OpenAI 호환 서버
+let llm: FakeLlm;
+beforeAll(async () => { llm = await startFakeLlm(HOME_SCRIPT); });
+afterAll(async () => { await llm?.close(); });
 const cleanups: (() => Promise<void> | void)[] = [];
 afterEach(async () => {
   while (cleanups.length) await cleanups.pop()!();
@@ -21,7 +25,7 @@ afterEach(async () => {
 
 async function start(opts: { twinDir?: string; webDir?: string; agent?: boolean } = {}) {
   const home = makeHome();
-  const agent = opts.agent === false ? undefined : new Agent({ hub: home.hub, policy: home.policy, rooms: ROOMS, provider: new MockProvider() });
+  const agent = opts.agent === false ? undefined : new Agent({ hub: home.hub, policy: home.policy, rooms: ROOMS, provider: llm.provider() });
   const app: TwinHomeApp = createApp({ hub: home.hub, policy: home.policy, agent, rooms: ROOMS, twinDir: opts.twinDir, webDir: opts.webDir, log: () => {} });
   const { url } = await app.listen(0, "127.0.0.1");
   cleanups.push(() => app.close());
@@ -76,7 +80,7 @@ describe("REST 읽기", () => {
   it("GET /api/health, /api/rooms, /api/devices", async () => {
     const { url, devices } = await start();
     const h = await api(url, "/api/health");
-    expect(h.json).toMatchObject({ ok: true, devices: devices.length, provider: "mock" });
+    expect(h.json).toMatchObject({ ok: true, devices: devices.length, provider: "openai", model: "gpt-5.5" });
     const rooms = await api(url, "/api/rooms");
     expect(rooms.status).toBe(200);
     expect(rooms.json.find((r: Msg) => r.id === "living_room")).toMatchObject({ label: "거실" });
@@ -171,7 +175,7 @@ describe("에이전트 REST", () => {
     const r = await api(url, "/api/agent/chat", { body: { message: "거실 TV 켜줘", sessionId: "t1" } });
     expect(r.status).toBe(200);
     expect(r.json.sessionId).toBe("t1");
-    expect(r.json.reply).toContain("켰");
+    expect(r.json.reply).toBe("거실 TV를 켰어요.");
     expect(r.json.actions.some((a: Msg) => a.tool === "turn_on")).toBe(true);
     expect(r.json.pendingConfirmations).toEqual([]);
     expect(twin(hub, "tv_living").power).toBe("on");

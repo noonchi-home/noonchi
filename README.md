@@ -53,7 +53,7 @@ Today the Decide stage is an LLM tool agent. The judgment engine designed in the
 #### 03. Chat Control Agent
 
 - Control the home in plain Korean: "TV 켜줘", "에어컨 24도로 맞춰줘".
-- The agent calls device and layout tools through OpenAI, Anthropic, or a rule-based mock that needs no API key. Every tool call carries a short `reason`, which becomes the thought in the reasoning log.
+- The agent calls device and layout tools through OpenAI or Anthropic. Every tool call carries a short `reason`, which becomes the thought in the reasoning log.
 
 #### 04. Approval Policy
 
@@ -100,7 +100,7 @@ Phone server (src/phone) — Align to the twin (room corners) · eye pose · "he
 Web UI (ui/, React)      — 3D twin · status pill · CLOiD's eye · decision log (no input)
         ↓  REST / WebSocket /events (127.0.0.1)
 Server (src/server)      — Node.js 22
-├── Agent (src/agent)    — Decide: LLM tool loop (OpenAI · Anthropic · mock), device + layout tools, thought and observation per step
+├── Agent (src/agent)    — Decide: LLM tool loop (OpenAI · Anthropic), device + layout tools, thought and observation per step
 ├── Layout (src/layout)  — Runtime corrections on top of the home's scene.json · focus
 ├── Policy               — Approval for risky commands
 └── Device hub           — Model + Act
@@ -134,16 +134,16 @@ Requires Node.js 22.15. The twin runtime assets (viewer, homes, catalog) live in
 ```bash
 npm install
 npm --prefix ui install  # dashboard and setup pages (React)
-cp .env.example .env   # optional: OPENAI_API_KEY or ANTHROPIC_API_KEY
+cp .env.example .env   # OPENAI_API_KEY or ANTHROPIC_API_KEY for the agent
 npm start              # builds the pages, then http://127.0.0.1:8200
 ```
 
-Without an API key, the rule-based mock agent runs. Try "TV 켜줘", "에어컨 24도로 맞춰줘" or "현관문 열어줘" (asks for approval).
+Without an API key the agent is not ready (`/api/health` `ready.agent`) and chat requests fail. With a key, try "TV 켜줘", "에어컨 24도로 맞춰줘" or "현관문 열어줘" (asks for approval).
 
 **NOONCHI 관찰·판단 흐름**
 
-- 로컬(`INFERENCE_MODE=mock`, GPU 없음): `.env`에 `OPENAI_API_KEY`(VLM)와 `OPENROUTER_API_KEY`(PAM LLM)를 넣는다. PAM 서비스를 띄우고(`services/pam`, [reference](docs/reference.md#pam-서비스-servicespam)) `BRAIN=1 PHONE_PORT=8210 npm start`로 시작한다. 폰 사진 한 장마다 VLM을 한 번 부른다.
-- 키 없이 돌려 보기: `npx tsx scripts/fake-openai.ts --port 8500`을 띄우고 `VLM_BASE_URL`·`PAM_LLM_BASE_URL`을 `http://127.0.0.1:8500/v1`로 둔다.
+- 로컬(`INFERENCE_MODE=mock`, GPU 없음): `.env`에 `OPENAI_API_KEY`(VLM·에이전트)와 `OPENROUTER_API_KEY`(PAM LLM)를 넣는다. PAM 서비스를 띄우고(`services/pam`, [reference](docs/reference.md#pam-서비스-servicespam)) `BRAIN=1 PHONE_PORT=8210 npm start`로 시작한다. 폰 사진 한 장마다 VLM을 한 번 부른다.
+- 키 없이 돌려 보기: `npx tsx scripts/fake-openai.ts --port 8500`을 띄우고 `VLM_BASE_URL`·`PAM_LLM_BASE_URL`·`OPENAI_BASE_URL`을 `http://127.0.0.1:8500/v1`로, `OPENAI_API_KEY`를 `fake-key`로 둔다. 에이전트는 가짜 서버의 「가짜 답」을 낸다.
 - 서버 한 대(compose): `cp .env.example .env`로 값을 채우고 `docker compose up -d --build`. GPU 서버는 `docker compose --profile gpu up -d --build`([deploy](docs/deploy.md)).
 
 | Command | What it does |

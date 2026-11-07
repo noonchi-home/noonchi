@@ -8,7 +8,7 @@ twin-studio가 만든 아파트 트윈의 가전 65개를 **가상 Matter 기기
 
 ![웹 화면: 기기 카드 | 3D 트윈 | 대화. "거실 불 켜고 TV 켜줘" 뒤](screenshot-3d.png)
 
-*`npm start`(허브 matter · network, mock 에이전트)로 띄우고 헤드리스 Chrome으로 채팅에 "거실 불 켜고 TV 켜줘"를 입력해 찍었다. 가운데 3D 트윈(`/twin/viewer/?live=auto&embed=1`)에서 거실 TV 화면이 켜지고 "거실 TV 켜짐·거실 천장등 켜짐·플로어 스탠드 켜짐" 배지가 뜬다. 위쪽 칩은 뷰어의 실시간 연결 상태다.*
+*`npm start`(허브 matter · network)로 띄우고 헤드리스 Chrome으로 채팅에 "거실 불 켜고 TV 켜줘"를 입력해 찍었다. 가운데 3D 트윈(`/twin/viewer/?live=auto&embed=1`)에서 거실 TV 화면이 켜지고 "거실 TV 켜짐·거실 천장등 켜짐·플로어 스탠드 켜짐" 배지가 뜬다. 위쪽 칩은 뷰어의 실시간 연결 상태다.*
 
 ![웹 화면: "거실 불 켜고 TV 꺼줘" 뒤 거실 카드](screenshot.png)
 
@@ -21,7 +21,7 @@ Node 22.15. 트윈 결과물(뷰어·집·카탈로그)은 저장소 `twin/`에 
 ```bash
 npm install
 npm --prefix ui install # 화면(React) 패키지
-cp .env.example .env    # 선택. 키는 .env에만 넣는다(git에 올리지 않음). 키가 없으면 mock 에이전트
+cp .env.example .env    # 키는 .env에만 넣는다(git에 올리지 않음). 에이전트는 OPENAI_API_KEY 또는 ANTHROPIC_API_KEY
 npm start               # 화면을 빌드하고 http://127.0.0.1:8200  (허브 matter, network 전송)
 ```
 
@@ -61,7 +61,7 @@ tests/                  vitest (helpers/: 작은 집, REST·WS·MCP 도우미)
 | `npm run ui:dev` | 화면 개발 서버(5173, API는 8200으로 넘김) |
 | `npm test` | vitest 전체(단위 + Matter 통합 + e2e, 실제 커미셔닝 포함) |
 | `npm run typecheck` | `tsc --noEmit` |
-| `npm run demo` | 임의 포트에 서버(matter/local + mock)를 띄워 시나리오 5개(6단계)를 REST·WS로 돌리고 표를 찍는다. 모두 통과면 종료 코드 0 |
+| `npm run demo` | 임의 포트에 서버(matter/local)를 띄워 시나리오 5개(6단계)를 REST·WS로 돌리고 표를 찍는다. 에이전트는 셸의 키로 실제 LLM을 부른다. 모두 통과면 종료 코드 0 |
 | `npm run mcp` | MCP stdio 서버(실행 중인 서버의 REST를 부른다) |
 | `npx tsx scripts/matter-smoke.ts` | Matter만: 커미셔닝 → 거실 TV·천장등 토글 → 상태 출력 |
 | `npx tsx scripts/fake-openai.ts --port 8500` | 가짜 OpenAI 호환 서버(정해진 답, 밖으로 나가지 않음). 첫 줄에 `listening <포트>`. 모델 주소 자리(`VLM_BASE_URL`, `PAM_LLM_BASE_URL`, `OPENAI_BASE_URL`)에 `http://127.0.0.1:8500/v1`로 붙인다 |
@@ -78,8 +78,8 @@ HUB=memory npm run demo
 
 | 이름 | 기본값 | 뜻 |
 |---|---|---|
-| `AGENT_PROVIDER` | (자동) | `openai` / `anthropic` / `mock`. 비우면 `ANTHROPIC_API_KEY` → anthropic, 없고 `OPENAI_API_KEY` → openai, 둘 다 없으면 mock(경고) |
-| `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL` | `gpt-5.5` | OpenAI(Responses API) |
+| `AGENT_PROVIDER` | (자동) | `openai` / `anthropic`. 비우면 `ANTHROPIC_API_KEY`가 있으면 anthropic, 없으면 openai. 키가 없어도 다른 공급자로 바꾸지 않는다: 시작 로그에 경고, 에이전트는 준비 안 됨(`/api/health` `ready.agent`)이고 대화가 실패한다 |
+| `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL` | `gpt-5.5`, `https://api.openai.com/v1` | OpenAI(Responses API). 시험·키 없는 확인은 `OPENAI_BASE_URL`을 가짜 OpenAI 호환 서버(`scripts/fake-openai.ts`)에 붙인다 |
 | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | `claude-opus-5-5` | Anthropic(Messages API) |
 | `ANTHROPIC_EFFORT` | `low` | `low`…`max` |
 | `ANTHROPIC_FALLBACKS` | (켬) | `off`면 서버 측 거절 대체를 끈다 |
@@ -158,7 +158,7 @@ twin 데이터: scene (…\twin-studio) · 기기 65개 · 방 13개
   QR 페이로드:     MT:Y.K90YDA1327ZK2AG00
   (passcode 20261011, discriminator 3011) 이미 커미셔닝됨: 같은 LAN의 다른 컨트롤러(Home Assistant 등)는 먼저 페어링 창을 연 뒤(POST /api/matter/commissioning-window) 이 코드로 추가한다.
 [Matter 컨트롤러] 저장된 커미셔닝을 다시 쓴다(peer1).
-twin-home 서버: http://127.0.0.1:8200  (허브 matter/network, 에이전트 mock/rules-ko)
+twin-home 서버: http://127.0.0.1:8200  (허브 matter/network, 에이전트 openai/gpt-5.5)
   웹 화면   http://127.0.0.1:8200/
   WS 이벤트 ws://127.0.0.1:8200/events
   3D 트윈   http://127.0.0.1:8200/twin/
@@ -263,7 +263,7 @@ npm start
 
 ### 확인한 것(2026-10-11, 이 PC)
 
-헤드리스 Chrome(CDP)으로 `npm start`(matter/network, mock) + `:8100` 미리보기 서버에서 13개 항목을 확인했다: 3D 칸 기본 표시, 스냅숏 반영(기기 65, 무시 0), 채팅 "거실 불 켜고 TV 켜줘" → 3D의 거실 천장등·플로어 스탠드·TV `on`(REST와 같음), 뷰어 패널 스위치 → REST `on`(클릭 → 3D 반영 33~55ms), 뷰어 현관문 잠금 해제 → 승인 알림·잠김 유지 → 승인 → `unlocked`, `:8100` 다른 출처 뷰어의 수신·패널 POST(CORS), 3D 토글, 390px 가로 스크롤 없음·3D 탭.
+헤드리스 Chrome(CDP)으로 `npm start`(matter/network) + `:8100` 미리보기 서버에서 13개 항목을 확인했다: 3D 칸 기본 표시, 스냅숏 반영(기기 65, 무시 0), 채팅 "거실 불 켜고 TV 켜줘" → 3D의 거실 천장등·플로어 스탠드·TV `on`(REST와 같음), 뷰어 패널 스위치 → REST `on`(클릭 → 3D 반영 33~55ms), 뷰어 현관문 잠금 해제 → 승인 알림·잠김 유지 → 승인 → `unlocked`, `:8100` 다른 출처 뷰어의 수신·패널 POST(CORS), 3D 토글, 390px 가로 스크롤 없음·3D 탭.
 
 따로 한 번 더 확인했다(16개 항목).
 - **채팅 → 3D·카드:** "안방 불 켜줘"는 안방 조명 3개, 이어서 "에어컨 켜줘"는 `ac_master`를 켰다. 원격 상태를 반영하는 동안 뷰어가 보낸 요청은 0회였다.
@@ -452,7 +452,8 @@ HOME_ID=oneroom PHONE_PORT=8210 npm start
 - **공급자**(`providers/`)
   - `anthropic`: Messages API 도구 사용, `ANTHROPIC_MODEL`(기본 `claude-opus-5-5`). 이 모델은 thinking을 끌 수 없어 `thinking`을 보내지 않고 `output_config.effort`(`ANTHROPIC_EFFORT`, 기본 `low`)로 깊이를 정한다. 거절 대체 `fallbacks: "default"`(beta `server-side-fallback-2026-07-01`)를 기본으로 켠다.
   - `openai`: Responses API 함수 호출, `OPENAI_MODEL`(기본 `gpt-5.5`).
-  - `mock`: 규칙 기반 한국어 해석기. LLM처럼 `find_devices` → 제어 도구 순서로 부른다. 켜/꺼/열어/닫아/잠가/잠금 해제/시작/멈춰/상태, `N도`, `밝기·음량 N%`, 냉방·난방·제습·송풍, 바람 세기를 알아듣고, "~고/그리고/,/~랑"으로 여러 요청을 한 번에 받는다.
+  - 키가 없어도 다른 공급자로 바꾸지 않는다. 부르면 요청을 보내지 않고 키가 없다고 실패한다. `/api/health` `ready.agent`(키·주소 응답)가 준비 안 됨이다.
+  - 시험은 같은 OpenAI 공급자를 가짜 OpenAI 호환 서버(`tests/helpers/llm.ts`, `OPENAI_BASE_URL`)에 붙인다. 가짜 서버는 사용자 말마다 정한 도구 호출과 답을 낸다.
   - 키는 로그·응답에 넣지 않는다.
 
 ## MCP (src/mcp/server.ts)
@@ -610,21 +611,21 @@ matter.js 0.17.9에 매핑 표의 기기 종류 21개가 모두 있어 **대체�
 | 파일 | 다루는 것 |
 |---|---|
 | `mapping`, `devices`, `memory`, `policy` | 매핑 표, twin 데이터 읽기(실제 twin-studio 데이터 포함), MemoryHub, 승인 토큰 |
-| `agent` | 도구, 기기 찾기, mock 시나리오, 공급자 배선(가짜 API로 요청 모양 확인) |
+| `agent` | 도구, 기기 찾기, 가짜 OpenAI 호환 서버로 한국어 요청 시나리오·승인·세션 기억, 공급자 선택(키가 없어도 바꾸지 않음), 공급자 배선(가짜 API로 요청 모양 확인) |
 | `server` | REST·WS(임의 포트), CORS, Matter 정보·페어링 API |
 | `twin-sync` | 3D 트윈 → `POST /api/devices/:id/twin`: `twinChange` 매핑(명령·센서·오류), 정책 409 + `/api/agent/confirm`, `confirmToken`, 없는 attr·값 400, 뷰어 출처 CORS |
 | `mcp` | MCP stdio 서버를 실제로 띄워 SDK 클라이언트로 호출 |
 | `start` | HUB 기본값 matter, network → local → memory 대체 경로 |
 | `matter` | 모든 기기 종류의 엔드포인트·명령(local), 실제 커미셔닝·구독·재사용·multi-admin 창(network) |
-| `homes`, `layout-editor`, `layout-agent`, `layout-server` | homes.json 읽기·카탈로그 순서, 배치 편집기(옮기기·받침·벽 붙이기·더하기·빼기·되돌리기·수정본·재적용), 배치 도구·mock 의도, REST·WS |
+| `homes`, `layout-editor`, `layout-agent`, `layout-server` | homes.json 읽기·카탈로그 순서, 배치 편집기(옮기기·받침·벽 붙이기·더하기·빼기·되돌리기·수정본·재적용), 배치 도구·가짜 서버의 배치 말, REST·WS |
 | `phone-session`, `phone-server`, `phone-project`, `focus` | 폰 '여기'·트윈→AR, 말·승인·초점 전달, 초점 투영, `HOME_ID` 통합(폰 "냉장고 위치 여기로 맞춰줘" → layout·focus·저장) |
-| `react` | 추론 과정: 서버 안 에이전트 도구의 필수 reason(MCP에는 없음), 실행 전 떼기, 관찰 문장, mock reason |
+| `react` | 추론 과정: 서버 안 에이전트 도구의 필수 reason(MCP에는 없음), 실행 전 떼기, 관찰 문장 |
 | `e2e` | `startServer()`(npm start 경로)로 실제 기기 65개 MatterHub를 띄우고: 데모 시나리오를 REST 에이전트로 돌려 **브리지의 Matter 속성**(`onOff`, `occupiedCoolingSetpoint`, `currentPositionLiftPercent100ths`, `lockState`)과 WS 이벤트를 확인, MCP 클라이언트로 `turn_on`·`unlock`→`confirm_action`, network 전송으로 같은 흐름 + 기기 쪽 변경이 구독으로 WS까지 오는지 + 페어링 창, 커미셔닝 제한 시간 초과 → local 대체 |
 
 ## 제한 사항
 
 - **외부 Matter 컨트롤러로는 아직 해 보지 않았다.** 페어링 창이 열리는 것(`windowStatus ≠ 0`)까지는 테스트하지만, Home Assistant·SmartThings 앱으로 실제 추가한 적은 없다. 인증받지 않은 테스트 vendor(0xFFF1)다.
-- **실제 LLM 호출을 해 보지 않았다.** 키가 없어 anthropic·openai 공급자는 가짜 HTTP API로 요청·도구 루프 모양만 확인했다. 키가 없으면 mock 에이전트로 뜬다.
+- **실제 LLM 호출을 해 보지 않았다.** 키가 없어 anthropic·openai 공급자는 가짜 HTTP API로 요청·도구 루프 모양만 확인했다. 키가 없으면 에이전트가 준비 안 됨이다.
 - `DeviceState.online`은 항상 true다(브리지 연결 상태를 따르지 않는다).
 - local로 대신 뜨면 외부 컨트롤러를 붙일 수 없다(시작 로그의 `[경고]`와 `/api/health`의 `transport`로 알 수 있다).
 - 시작 시간: 기기 65개 network는 보통 7~10초. 이 PC에 무거운 작업(Blender 빌드 등)이 돌 때는 local도 30초, network 재시작이 2분 가까이 걸린 적이 있다. 커미셔닝 단계별 제한 시간(`MATTER_COMMISSION_TIMEOUT_MS`)은 한 단계에 적용되므로 전체 시작은 그보다 길 수 있다.

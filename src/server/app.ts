@@ -108,7 +108,7 @@ const LOCAL_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
 /** 준비 상태를 모를 때(앱만 따로 띄운 시험). */
 const NOT_READY: ReadyView = {
   ok: false, inference_mode: "mock", vlm: { base_url: "", model: "", key: false, reachable: false },
-  pam: { url: "", reachable: false, llm: null }, db: false,
+  pam: { url: "", reachable: false, llm: null }, agent: { provider: "openai", base_url: "", model: "", key: false, reachable: false }, db: false,
 };
 
 /** 기본 허용 출처: 이 PC(localhost·127.0.0.1·[::1])의 모든 포트. */

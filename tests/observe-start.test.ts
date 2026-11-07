@@ -27,7 +27,7 @@ afterEach(async () => {
   pam = undefined;
 });
 
-const env = (extra: Record<string, string> = {}) => ({ HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), ...extra });
+const env = (extra: Record<string, string> = {}) => ({ HUB: "memory", PORT: "0", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), ...extra });
 const inbox = (ws: WebSocket) => {
   const list: Msg[] = [];
   ws.on("message", (d) => list.push(JSON.parse(String(d)) as Msg));

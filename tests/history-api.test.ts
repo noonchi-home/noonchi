@@ -21,7 +21,7 @@ const t = (h: number, m: number) => Date.UTC(2026, 10, 7, h - 9, m); // 서울 �
 const world = { objects: [], person_visible: true, vlm_missing: 0, yolo_missing: 0 };
 
 async function start() {
-  srv = await startServer({ env: { HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")) }, log: () => {} });
+  srv = await startServer({ env: { HUB: "memory", PORT: "0", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")) }, log: () => {} });
   const db = srv.history;
   db.add("detection", t(8, 0), "사람 보임");
   for (const [i, action] of [[1, "대기"], [2, "컵 치우기"]] as const) {

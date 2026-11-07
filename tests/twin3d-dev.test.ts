@@ -5,7 +5,7 @@ import { serverEnv, serverPlan } from "../scripts/twin3d/dev.js";
 describe("dev3d 서버 환경", () => {
   it("폰 서버·두뇌는 빈 값으로 넣어 .env가 다시 채우지 못한다", () => {
     const env = serverEnv("oneroom", { PATH: "x", PHONE_PORT: "8210", BRAIN: "1" });
-    expect(env).toMatchObject({ PATH: "x", PORT: "8201", HUB: "memory", AGENT_PROVIDER: "mock", HOME_ID: "oneroom", RUNTIME_DIR: "runtime-3d", PHONE_PORT: "", BRAIN: "" });
+    expect(env).toMatchObject({ PATH: "x", PORT: "8201", HUB: "memory", HOME_ID: "oneroom", RUNTIME_DIR: "runtime-3d", PHONE_PORT: "", BRAIN: "" });
     dotenv.populate(env as Record<string, string>, { PHONE_PORT: "8210", BRAIN: "1", OTHER: "y" });
     expect([env.PHONE_PORT, env.BRAIN, env.OTHER]).toEqual(["", "", "y"]);
   });

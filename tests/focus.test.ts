@@ -3,15 +3,26 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { AgentAction } from "../src/agent/agent.js";
 import { focusFromActions } from "../src/layout/focus.js";
 import { fetchRetry } from "../src/server/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { CATALOG, scene } from "./helpers/layout.js";
+import { startFakeLlm, type FakeLlm } from "./helpers/llm.js";
 import { openWebSocket } from "./helpers/ws.js";
 
 type Msg = Record<string, any>;
+// 에이전트는 실제 OpenAI 공급자, 모델 자리는 가짜 OpenAI 호환 서버
+let llm: FakeLlm;
+beforeAll(async () => {
+  llm = await startFakeLlm({
+    "냉장고 위치 여기로 맞춰줘": [[["find_objects", { query: "냉장고" }]], [["move_object", { object_id: "fridge_1", to: "here" }]], "냉장고를 여기로 옮겼어요."],
+    "배치 저장해": [[["save_layout", {}]], "배치 1건을 저장했어요."],
+    "TV 켜줘": [[["turn_on", { device_id: "tv_1" }]], "TV를 켰어요."],
+  });
+});
+afterAll(async () => { await llm?.close(); });
 const cleanups: (() => Promise<void> | void)[] = [];
 let srv: RunningServer | undefined;
 afterEach(async () => {
@@ -81,7 +92,7 @@ describe("HOME_ID로 고른 집: 폰 말 → 배치 보정 → 초점", () => {
   it("폰이 '냉장고 위치 여기로 맞춰줘'라고 하면 조준점으로 옮기고, 대시보드에 layout·초점, 폰에 답·초점이 간다", async () => {
     const { studio, runtime } = studioFixture();
     srv = await startServer({
-      env: { HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock", TWIN_STUDIO_DIR: studio, HOME_ID: "oneroom", RUNTIME_DIR: runtime, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", FOCUS: "1" },
+      env: { HUB: "memory", PORT: "0", ...llm.env, TWIN_STUDIO_DIR: studio, HOME_ID: "oneroom", RUNTIME_DIR: runtime, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", FOCUS: "1" },
       log: () => {},
     });
     const health = (await (await fetchRetry(`${srv.url}/api/health`)).json()) as Msg;
@@ -118,7 +129,7 @@ describe("HOME_ID로 고른 집: 폰 말 → 배치 보정 → 초점", () => {
 
   it("대시보드 채팅으로 기기를 켜도 그 기기에 초점이 간다", async () => {
     const { studio, runtime } = studioFixture();
-    srv = await startServer({ env: { HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock", TWIN_STUDIO_DIR: studio, HOME_ID: "oneroom", RUNTIME_DIR: runtime, FOCUS: "1" }, log: () => {} });
+    srv = await startServer({ env: { HUB: "memory", PORT: "0", ...llm.env, TWIN_STUDIO_DIR: studio, HOME_ID: "oneroom", RUNTIME_DIR: runtime, FOCUS: "1" }, log: () => {} });
     const dash = await listen(`${srv.url.replace(/^http/, "ws")}/events`);
     const res = await fetchRetry(`${srv.url}/api/agent/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "TV 켜줘", sessionId: "s1" }) });
     expect(((await res.json()) as Msg).reply).toMatch(/켰어요/);
@@ -128,7 +139,7 @@ describe("HOME_ID로 고른 집: 폰 말 → 배치 보정 → 초점", () => {
 
   it("FOCUS가 없으면(기본) 초점을 대시보드에도 폰에도 보내지 않는다", async () => {
     const { studio, runtime } = studioFixture();
-    srv = await startServer({ env: { HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock", TWIN_STUDIO_DIR: studio, HOME_ID: "oneroom", RUNTIME_DIR: runtime, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1" }, log: () => {} });
+    srv = await startServer({ env: { HUB: "memory", PORT: "0", ...llm.env, TWIN_STUDIO_DIR: studio, HOME_ID: "oneroom", RUNTIME_DIR: runtime, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1" }, log: () => {} });
     const dash = await listen(`${srv.url.replace(/^http/, "ws")}/events`);
     const phoneUrl = new URL(srv.phoneUrls[0]!);
     const phone = await listen(`ws://${phoneUrl.host}/phone/events`);

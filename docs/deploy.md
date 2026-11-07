@@ -87,7 +87,7 @@ NOONCHI는 이 저장소 하나로 AWS EC2 GPU 서버 한 대에서 돈다. CPU�
 | `PAM_LIVE_MODEL` | live PAM LLM Hugging Face 모델(기본 `Qwen/Qwen3.5-27B-GPTQ-Int4`, Qwen3.5-27B 4비트). vLLM은 `pam`이라는 이름으로 내건다 |
 | `PAM_MAX_MODEL_LEN` | PAM LLM 문맥 길이(기본 32768). vLLM과 PAM 서비스가 같이 쓴다 |
 | `PAM_LLM_BASE_URL`, `PAM_LLM_MODEL` | 비우면 모드 기본값(mock: OpenRouter `qwen/qwen3.5-27b` provider alibaba, live: `http://vllm-pam:8000/v1`의 `pam`) |
-| `ANTHROPIC_API_KEY` 또는 `OPENAI_API_KEY` | 에이전트(폰 음성 요청). 두 모드 모두 이 키로 상용 LLM을 부른다. 키가 없으면 규칙 기반 mock 에이전트가 돌고 시작 로그에 경고가 한 줄 남는다 |
+| `ANTHROPIC_API_KEY` 또는 `OPENAI_API_KEY` | 에이전트(폰 음성 요청). 두 모드 모두 이 키로 상용 LLM을 부른다. `ANTHROPIC_API_KEY`가 없으면 OpenAI다. 키가 없으면 에이전트가 준비 안 됨(`ready.agent`)이고 폰 대화가 실패하며, 시작 로그에 경고가 한 줄 남는다 |
 | `OPENAI_API_KEY`, `OPENROUTER_API_KEY` | mock의 VLM·PAM LLM |
 | `HF_TOKEN` | 받기 제한이 있는 Hugging Face 모델만 |
 | `THINQ_TOKEN` | 실제 모드를 쓸 때만 |
@@ -119,7 +119,7 @@ curl -s http://127.0.0.1:8300/health          # PAM 서비스: llm.reachable, li
 
 - `VLLM_API_KEY`를 넣었으면 위 두 명령에 `-H "Authorization: Bearer $VLLM_API_KEY"`를 붙인다.
 - GPU 메모리 몫: `VLLM_VLM_GPU_SHARE`(기본 0.30), `VLLM_PAM_GPU_SHARE`(기본 0.60). 두 값의 합은 0.9를 넘기지 않는다. PAM LLM이 메모리 부족으로 못 뜨면 `PAM_MAX_MODEL_LEN`을 줄인다.
-- `/api/health`의 `ready`: `vlm.reachable`(VLM 주소 응답), `pam.reachable`·`pam.llm.reachable`(PAM 서비스와 그 LLM), `db`(기록 DB). 하나라도 false면 `ready.ok`가 false다.
+- `/api/health`의 `ready`: `vlm.reachable`(VLM 주소 응답), `pam.reachable`·`pam.llm.reachable`(PAM 서비스와 그 LLM), `agent.key`·`agent.reachable`(에이전트 키와 주소 응답), `db`(기록 DB). 하나라도 false면 `ready.ok`가 false다.
 - PAM 서비스 `/health`의 `limits`: 판단·반성에 넣을 수 있는 글 크기(UTF-8 바이트). `PAM_MAX_MODEL_LEN`을 바꾸면 같이 바뀐다.
 
 ## 5. 호출량

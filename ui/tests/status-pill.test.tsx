@@ -4,10 +4,11 @@ import type { HealthView } from "../../src/contract/events.ts";
 import { StatusPill } from "../src/panels/StatusPill";
 
 const health: HealthView = {
-  ok: true, devices: 65, hub: "memory", transport: null, provider: "mock", model: "rules-ko", twin: true, eye: true,
+  ok: true, devices: 65, hub: "memory", transport: null, provider: "openai", model: "gpt-5.5", twin: true, eye: true,
   home: { id: "apartment", name: "마곡 아파트" }, phone_urls: [], brain: false,
   mode: "test",
-  ready: { ok: false, inference_mode: "mock", vlm: { base_url: "", model: "", key: false, reachable: false }, pam: { url: "", reachable: false, llm: null }, db: false },
+  ready: { ok: false, inference_mode: "mock", vlm: { base_url: "", model: "", key: false, reachable: false }, pam: { url: "", reachable: false, llm: null },
+    agent: { provider: "openai", base_url: "", model: "", key: false, reachable: false }, db: false },
 };
 
 describe("StatusPill", () => {
@@ -24,7 +25,7 @@ describe("StatusPill", () => {
     render(<StatusPill connected health={{ ...health, hub: "matter", transport: "udp" }} />);
     expect(screen.getByText("집 마곡 아파트")).toBeInTheDocument();
     expect(screen.getByText("허브 matter · udp")).toBeInTheDocument();
-    expect(screen.getByText("에이전트 mock · rules-ko")).toBeInTheDocument();
+    expect(screen.getByText("에이전트 openai · gpt-5.5")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "설정 다시 하기" })).toHaveAttribute("href", "/setup/");
     expect(screen.queryByText("3D 트윈 없음")).toBeNull();
   });

@@ -52,7 +52,7 @@ describe("종료", () => {
     const main = fileURLToPath(new URL("../src/server/main.ts", import.meta.url));
     const tsx = pathToFileURL(fileURLToPath(new URL("../node_modules/tsx/dist/loader.mjs", import.meta.url))).href;
     const child = spawn(process.execPath, ["--import", tsx, main], {
-      cwd, env: { ...process.env, PORT: "0", HUB: "memory", AGENT_PROVIDER: "mock", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), PHONE_PORT: "" },
+      cwd, env: { ...process.env, PORT: "0", HUB: "memory", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), PHONE_PORT: "" },
       stdio: ["ignore", "pipe", "pipe"],
     });
     await new Promise<void>((ok) => child.stdout!.on("data", (d) => { if (String(d).includes("서버:")) ok(); }));

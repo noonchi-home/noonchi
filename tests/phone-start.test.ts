@@ -16,7 +16,7 @@ afterEach(async () => {
   srv = undefined;
 });
 
-const baseEnv = () => ({ HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")) });
+const baseEnv = () => ({ HUB: "memory", PORT: "0", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")) });
 
 function next(ws: WebSocket, pred: (m: Msg) => boolean): Promise<Msg> {
   return new Promise((res, rej) => {

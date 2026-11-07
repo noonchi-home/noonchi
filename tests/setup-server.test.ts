@@ -1,20 +1,24 @@
 // 설정 흐름 서버: 집 바꾸기(실행 묶음을 닫고 새로 만듦), 기기 신호 출처, 저장한 선택으로 다시 켜기.
-// 실제 twin-studio 데이터(oneroom·apartment)와 HUB=memory, mock 에이전트로 돈다.
+// 실제 twin-studio 데이터(oneroom·apartment)와 HUB=memory, 가짜 OpenAI 호환 서버에 붙인 에이전트로 돈다.
 
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { request, type IncomingMessage } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type WebSocket from "ws";
 import { MemoryHub } from "../src/hub/memory.js";
 import { fetchRetry } from "../src/server/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
+import { HOME_SCRIPT, startFakeLlm, type FakeLlm } from "./helpers/llm.js";
 import { openWebSocket } from "./helpers/ws.js";
 import { readVideo } from "./helpers/video.js";
 import { encodeFramePacket } from "../src/phone/packet.js";
 
 type Msg = Record<string, any>;
+let llm: FakeLlm;
+beforeAll(async () => { llm = await startFakeLlm({ ...HOME_SCRIPT, "전자레인지 시작해줘": [[["start", { device_id: "microwave_1" }]], "시작할까요?"] }); });
+afterAll(async () => { await llm?.close(); });
 let srv: RunningServer | undefined;
 const sockets: WebSocket[] = [];
 const dirs: string[] = [];
@@ -39,7 +43,7 @@ const web = () => {
   return dir;
 };
 const env = (runtimeDir: string, extra: Record<string, string> = {}) => ({
-  HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock", HOME_ID: "oneroom", RUNTIME_DIR: runtimeDir, ...extra,
+  HUB: "memory", PORT: "0", ...llm.env, HOME_ID: "oneroom", RUNTIME_DIR: runtimeDir, ...extra,
 });
 const get = async (path: string) => {
   const r = await fetchRetry(`${srv!.url}${path}`);

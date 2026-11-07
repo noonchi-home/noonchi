@@ -48,6 +48,15 @@ describe("가짜 OpenAI 호환 서버", () => {
     expect(r.output[0]).toMatchObject({ type: "message", role: "assistant", content: [{ type: "output_text", text: "가짜 답" }] });
   });
 
+  it("에이전트 답을 정하면 도구 호출(function_call)과 글을 낸다", async () => {
+    f = await startFakeOpenAI({ respond: (body) => (body.input.length === 1 ? { calls: [{ name: "turn_on", args: { device_id: "tv_living" } }] } : { text: "켰어요" }) });
+    const first = await post("/v1/responses", { model: "m", input: [{ role: "user", content: "TV 켜줘" }] });
+    expect(first.output).toEqual([expect.objectContaining({ type: "function_call", name: "turn_on", arguments: '{"device_id":"tv_living"}', call_id: expect.any(String) })]);
+    expect(first.output_text).toBe("");
+    const second = await post("/v1/responses", { model: "m", input: [{ role: "user", content: "TV 켜줘" }, first.output[0], { type: "function_call_output", call_id: first.output[0].call_id, output: "{}" }] });
+    expect(second).toMatchObject({ output_text: "켰어요", output: [{ type: "message", content: [{ type: "output_text", text: "켰어요" }] }] });
+  });
+
   it("명령으로 띄우면 첫 줄에 포트를 찍고 그 포트에서 답한다", async () => {
     const child = spawn(process.execPath, ["--import", "tsx", "scripts/fake-openai.ts", "--port", "0"], { cwd: ROOT, stdio: ["ignore", "pipe", "inherit"] });
     try {

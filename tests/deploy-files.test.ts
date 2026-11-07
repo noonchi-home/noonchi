@@ -174,6 +174,9 @@ describe("배포 파일", () => {
       "`ANTHROPIC_API_KEY` 또는 `OPENAI_API_KEY`", "curl -s http://127.0.0.1:8410/v1/models", "curl -s http://127.0.0.1:8420/v1/models", "3,600", "vllm/vllm-openai:v0.17.0",
       "curl -s http://127.0.0.1:8300/health", "PAM_HOST_PORT", "`PAM_LLM_BASE_URL`", "fake-openai"]) expect(d).toContain(s);
     expect(d).not.toMatch(/\| `PAM_URL` \|/);
+    // 에이전트는 키가 없어도 다른 공급자(규칙 기반)로 바꾸지 않고 준비 안 됨으로 보인다
+    expect(d).toContain("`agent.key`·`agent.reachable`");
+    for (const f of ["docs/deploy.md", ".env.example", "README.md", "docs/reference.md", "docs/plan.md"]) expect(read(f), f).not.toMatch(/규칙 기반|rule-based|rules-ko|mock 에이전트|mock 공급자|anthropic` \/ `mock|openai \| anthropic \| mock/);
   });
 
   it("키 없는 컨테이너 확인: 저장소 .env와 셸의 키를 넘기지 않고 8500·8510에 띄운다", () => {

@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Agent } from "../agent/agent.js";
 import type { Policy } from "../agent/policy.js";
+import { agentEndpoint } from "../agent/providers/index.js";
 import type { BrainLog } from "../contract/events.js";
 import type { PlanView } from "../contract/plan.js";
 import type { ControlMode, SetupView, ThinqDeviceView } from "../contract/setup.js";
@@ -146,7 +147,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   };
   const ctx: HomeContext = {
     env, log, runtimeDir, importer: opts.importer, matter: opts.matter, brain: opts.brain, servedPhoneUrls: opts.servedPhoneUrls, webDir: opts.webDir,
-    sources: (homeId, ids) => store.sources(homeId, ids), mode: () => mode, allowOrigin, planToken: env.PLAN_TOKEN?.trim() || undefined, ready: makeReady({ endpoints, db }),
+    sources: (homeId, ids) => store.sources(homeId, ids), mode: () => mode, allowOrigin, planToken: env.PLAN_TOKEN?.trim() || undefined, ready: makeReady({ endpoints, agent: agentEndpoint(env), db }),
     history: { db, device: feed.device.emit, brain: feed.brain.emit, plan: feed.plan.emit, reflect },
   };
   const studioDir = resolveTwinStudioDir(env.TWIN_STUDIO_DIR);
