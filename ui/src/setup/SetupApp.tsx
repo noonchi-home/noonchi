@@ -137,7 +137,7 @@ export function SetupApp({ navigate = (url: string) => location.assign(url) }: {
     <div className="flex min-h-full flex-col">
       <header>
         <SimpleNavbar title="NOONCHI" label="설정" logo={<Avatar shape="logo" className="size-[34px]"><AvatarImage src="/brand/face-128.png" alt="" /></Avatar>}>
-          <Stepper value={at + 1} onValueChange={(v) => go(STEPS[v - 1]!.id)} role="list" aria-label="설정 단계" className="w-[min(640px,60vw)]">
+          <Stepper value={at + 1} onValueChange={(v) => go(STEPS[v - 1]!.id)} role="list" aria-label="설정 단계" className="data-[orientation=horizontal]:w-[min(640px,60vw)]">
             {STEPS.map((s, i) => (
               <StepperItem key={s.id} step={i + 1} role="listitem" aria-current={i === at ? "step" : undefined} className="not-last:flex-1">
                 <StepperTrigger className="gap-2"><StepperIndicator /><StepperTitle className="whitespace-nowrap">{s.label}</StepperTitle></StepperTrigger>

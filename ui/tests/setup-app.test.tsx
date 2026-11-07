@@ -31,6 +31,14 @@ describe("설정 1단계: 집 고르기", () => {
     expect(screen.getByText("지금 띄운 집")).toBeInTheDocument();
   });
 
+  it("단계 표시 너비는 가로 변형(data-[orientation=horizontal]:)으로 줘서 받은 w-full을 이긴다(잇는 선이 보인다)", async () => {
+    open();
+    await screen.findByRole("heading", { name: "어느 집을 쓸까요?" });
+    const classes = screen.getByRole("list", { name: "설정 단계" }).className.split(/\s+/);
+    expect(classes).toContain("data-[orientation=horizontal]:w-[min(640px,60vw)]");
+    expect(classes).not.toContain("data-[orientation=horizontal]:w-full");
+  });
+
   it("머리줄은 로고 짝(얼굴 상자 + NOONCHI)과 「설정」, 1단계 제목 옆에 마스코트 전신", async () => {
     open();
     await screen.findByRole("heading", { name: "어느 집을 쓸까요?" });
