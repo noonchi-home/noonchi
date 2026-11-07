@@ -7,7 +7,7 @@ import type { BrainLog } from "../src/contract/events.js";
 import type { PlanView } from "../src/contract/plan.js";
 import type { ControlMode } from "../src/contract/setup.js";
 import type { DeviceState } from "../src/hub/types.js";
-import { HistoryDb, historyTzMinutes } from "../src/history/db.js";
+import { HistoryDb, historyTzMinutes, type HistoryKind } from "../src/history/db.js";
 import { attachRecorder, type DeviceNote } from "../src/history/recorder.js";
 
 describe("기록 DB", () => {
@@ -45,6 +45,16 @@ describe("기록 DB", () => {
     expect(db.list({ kinds: ["detection"] })[0]).toMatchObject({ subject: "cup_1", data: null });
   });
 
+  it("같은 시각이면 넣은 순으로 꺼낸다(latest도 같은 순)", () => {
+    const db = HistoryDb.open(":memory:");
+    const t = Date.UTC(2026, 10, 7, 12);
+    for (const [i, kind] of (["yolo", "device", "mode", "decision"] as HistoryKind[]).entries()) db.add(kind, t, String(i + 1));
+    const q = { day: "2026-11-07", kinds: ["yolo", "device", "mode", "decision"] as HistoryKind[] };
+    expect(db.list(q).map((r) => r.text)).toEqual(["1", "2", "3", "4"]);
+    expect(db.list({ ...q, latest: true, limit: 2 }).map((r) => r.text)).toEqual(["3", "4"]);
+    expect(db.list({ latest: true, limit: 3 }).map((r) => r.text)).toEqual(["2", "3", "4"]);
+  });
+
   it("다시 열어도 기록이 남는다", () => {
     const path = join(mkdtempSync(join(tmpdir(), "db-")), "noonchi.db");
     const a = HistoryDb.open(path);
@@ -71,6 +81,9 @@ describe("기록 DB", () => {
 });
 
 describe("기록기", () => {
+  // 시각을 고정한다. 실제 시계를 쓰면 날짜가 지나면서 고정 시각(updatedAt)으로 적는 줄과 순서가 바뀐다
+  const NOW = Date.UTC(2026, 10, 7, 11); // 서울 20:00
+
   function wired() {
     const db = HistoryDb.open(":memory:");
     const subs: {
@@ -78,7 +91,7 @@ describe("기록기", () => {
     } = {};
     const stop = attachRecorder(db, {
       onDevice: (cb) => ((subs.device = cb), () => {}), onBrain: (cb) => ((subs.brain = cb), () => {}),
-      onPlan: (cb) => ((subs.plan = cb), () => {}), onMode: (cb) => ((subs.mode = cb), () => {}),
+      onPlan: (cb) => ((subs.plan = cb), () => {}), onMode: (cb) => ((subs.mode = cb), () => {}), now: () => NOW,
     });
     return { db, subs, stop };
   }
@@ -103,7 +116,7 @@ describe("기록기", () => {
     expect(db.list({ kinds: ["vlm"] })[0]).toMatchObject({ subject: "e1", text: "컵이 식탁 위", data: { captured_at_ms: 1, missing: null } });
     expect(db.list({ kinds: ["pam_text"] })[0]).toMatchObject({ subject: "pam-1", text: "21:00:00 사람 보임" });
     expect(db.list({ kinds: ["decision"] })[0]).toMatchObject({ subject: "pam-1", text: "대기", data: { seq: 1, memory_version: 1, status: "valid", prediction: { task_index: -1 } } });
-    expect(db.list({ kinds: ["mode"] })[0]).toMatchObject({ text: "실제 모드", data: { mode: "live" } });
+    expect(db.list({ kinds: ["mode"] })[0]).toMatchObject({ at_ms: NOW, text: "실제 모드", data: { mode: "live" } });
     expect(db.list({ kinds: ["device"] })[0]).toMatchObject({ at_ms: Date.UTC(2026, 10, 7, 12), subject: "dishwasher_1", data: { attr: "running", from: null, to: true } });
     expect(JSON.stringify(db.list({}))).not.toMatch(/jpeg|base64/);
   });
