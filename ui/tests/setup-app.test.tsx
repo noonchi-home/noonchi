@@ -137,7 +137,10 @@ describe("설정 4단계: 위치 동기화", () => {
       "GET /api/phone/touch-points": () => [200, { ok: true, points: null, mode: "floor", eye_height_m: 1.5, distance_m: null }],
       "GET /api/layout": () => [200, { ok: true, edits: 2, dirty: true }],
     });
-    expect(await screen.findByText("https://pc.tail:8210/phone/")).toBeInTheDocument();
+    const addr = await screen.findByText("https://pc.tail:8210/phone/");
+    // 주소는 / 뒤에서만 줄을 바꾼다
+    expect(addr.closest("ul")!.className).not.toMatch(/break-all/);
+    expect([...addr.childNodes].map((n) => (n.nodeName === "WBR" ? "|" : n.textContent)).join("")).toBe("https://|pc.tail:8210/|phone/|");
     expect(screen.getByText("폰 크롬에서 이 주소를 열고 기준점을 조준해 기록하세요.")).toBeInTheDocument();
     const touch = await screen.findByRole("region", { name: "폰 기준점" });
     expect(within(touch).getAllByRole("button", { name: "3D에서 고르기" })).toHaveLength(2);

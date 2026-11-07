@@ -1,5 +1,5 @@
 import { TriangleAlert } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import type { SetupView } from "../../../src/contract/setup.ts";
 import { Alert, AlertTitle } from "../components/ui/alert";
 import { Avatar, AvatarFallback } from "../components/ui/avatar";
@@ -9,6 +9,7 @@ import { Input } from "../components/ui/input";
 import { Skeleton } from "../components/ui/skeleton";
 import { Status } from "../components/ui/status";
 import { cn } from "../lib/utils";
+import { urlParts } from "../panels/phone-url";
 import { hideViewerBar } from "../twin/embed";
 import { waitForViewer } from "../twin/viewer";
 import { call, failText, isOk } from "./setup-api";
@@ -339,8 +340,8 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
               </CardHeader>
               {urls.length > 0 && (
                 <CardContent>
-                  <ul className="m-0 list-disc break-all pl-5">
-                    {urls.map((u) => <li key={u}><code>{u}</code></li>)}
+                  <ul className="m-0 list-disc break-words pl-5">
+                    {urls.map((u) => <li key={u}><code>{urlParts(u).map((p, i) => <Fragment key={i}>{p}<wbr /></Fragment>)}</code></li>)}
                   </ul>
                 </CardContent>
               )}

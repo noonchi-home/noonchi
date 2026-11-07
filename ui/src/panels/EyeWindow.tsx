@@ -1,12 +1,12 @@
 import { ChevronUp, Eye } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type { HealthView } from "../../../src/contract/events.ts";
 import { Button } from "../components/ui/button";
 import { Item, ItemContent, ItemDescription, ItemTitle } from "../components/ui/item";
 import { LiquidGlass } from "../components/ui/liquid-glass";
 import { QRCode } from "../components/ui/qr-code";
 import { attachEyeVideo, type EyeMode } from "./eye-video";
-import { pickPhoneUrl } from "./phone-url";
+import { pickPhoneUrl, urlParts } from "./phone-url";
 
 const streamUrl = () => `/api/eye/stream?t=${Date.now()}`;
 
@@ -27,7 +27,7 @@ function Waiting({ health }: { health: HealthView | null }) {
       <Item size="sm" className="max-w-48 justify-center">
         <ItemContent className="items-center">
           <ItemTitle>폰 카메라로 찍으세요</ItemTitle>
-          <ItemDescription className="break-all text-center">{best}</ItemDescription>
+          <ItemDescription className="line-clamp-none break-words text-center">{urlParts(best).map((p, i) => <Fragment key={i}>{p}<wbr /></Fragment>)}</ItemDescription>
         </ItemContent>
       </Item>
     </div>
