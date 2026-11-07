@@ -43,6 +43,35 @@ describe("배포 파일", () => {
     expect(Object.keys(c.volumes)).toEqual(expect.arrayContaining(["noonchi-data", "model-cache"]));
   });
 
+  it("compose: pam 서비스와 check 프로필 가짜 서버, noonchi는 pam에 붙는다", () => {
+    const c = parse(read("compose.yaml"), { merge: true }) as { services: Record<string, any> };
+    const pam = c.services.pam;
+    expect(pam.build).toBe("services/pam");
+    expect(pam.image).toBe("noonchi-pam:local");
+    expect(pam.ports).toEqual(["127.0.0.1:${PAM_HOST_PORT:-8300}:8300"]);
+    expect(pam.env_file).toEqual([{ path: "${NOONCHI_ENV_FILE:-.env}", required: false }]);
+    expect(pam.profiles).toBeUndefined();
+    expect(c.services.noonchi.environment.PAM_URL).toBe("http://pam:8300");
+    expect(c.services.noonchi.depends_on).toEqual({ pam: { condition: "service_healthy" } });
+    // 설정은 env_file에서 온다: environment에 ${X:-}를 두면 env_file 값을 덮는다
+    for (const name of ["noonchi", "pam"]) for (const v of Object.values(c.services[name].environment ?? {})) expect(String(v), name).not.toContain("${");
+    const fake = c.services["fake-openai"];
+    expect(fake.profiles).toEqual(["check"]);
+    expect(fake.image).toBe("noonchi:local");
+    expect(fake.ports).toBeUndefined();
+    expect(fake.command.join(" ")).toContain("scripts/fake-openai.ts --port 8500 --host 0.0.0.0");
+  });
+
+  it("PAM 이미지: 저장소 안 services/pam만 쓰고 pyproject와 같은 판의 의존성을 깐다", () => {
+    const d = read("services/pam/Dockerfile");
+    expect(d).toMatch(/^FROM python:3\.13\.\d+-slim-bookworm/m);
+    for (const dep of /dependencies = \[([^\]]*)\]/.exec(read("services/pam/pyproject.toml"))![1]!.match(/"[^"]+"/g)!) expect(d).toContain(dep.slice(1, -1));
+    for (const x of ["COPY pam pam", "COPY noonchi_pam noonchi_pam", "COPY prompts prompts", "COPY config config", "COPY scenarios scenarios", "USER pam", "EXPOSE 8300"]) expect(d).toContain(x);
+    expect(d).toContain('CMD ["uvicorn", "noonchi_pam.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8300"]');
+    const i = read("services/pam/.dockerignore").split(/\r?\n/);
+    for (const x of [".venv", "__pycache__", ".pytest_cache", "tests", "*.egg-info"]) expect(i).toContain(x);
+  });
+
   it(".dockerignore가 비밀·런타임·의존성을 뺀다", () => {
     const i = read(".dockerignore").split(/\r?\n/);
     for (const x of [".env", "node_modules", "ui/node_modules", "runtime", "runtime-3d", "graft", ".git", "services/pam/.venv"]) expect(i).toContain(x);
@@ -62,12 +91,17 @@ describe("배포 파일", () => {
     expect(ci).not.toMatch(/docker push|push: true/);
     const jobs = (parse(ci) as { jobs: Record<string, { env?: Record<string, string> }> }).jobs;
     for (const [name, j] of Object.entries(jobs)) expect(j.env?.ONNXRUNTIME_NODE_INSTALL, name).toBe("skip");
+    expect(ci).toContain('pip install -e "services/pam[test]"');
+    expect(ci).toContain("pytest services/pam");
+    expect(ci).toContain("docker build -t noonchi-pam:ci services/pam");
   });
 
   it("배포 문서: GPU 서버 크기·Tailscale 인증서·두 모드의 에이전트 키·두 모델 확인·호출량", () => {
     const d = read("docs/deploy.md");
     for (const s of ["g6e.2xlarge", "MagicDNS", "HTTPS Certificates", "tailscale serve --bg --https=443 http://127.0.0.1:8200", "tailscale serve --bg --https=8443 http://127.0.0.1:8210",
-      "`ANTHROPIC_API_KEY` 또는 `OPENAI_API_KEY`", "curl -s http://127.0.0.1:8410/v1/models", "curl -s http://127.0.0.1:8420/v1/models", "3,600", "vllm/vllm-openai:v0.17.0"]) expect(d).toContain(s);
+      "`ANTHROPIC_API_KEY` 또는 `OPENAI_API_KEY`", "curl -s http://127.0.0.1:8410/v1/models", "curl -s http://127.0.0.1:8420/v1/models", "3,600", "vllm/vllm-openai:v0.17.0",
+      "curl -s http://127.0.0.1:8300/health", "PAM_HOST_PORT", "`PAM_LLM_BASE_URL`", "fake-openai"]) expect(d).toContain(s);
+    expect(d).not.toMatch(/\| `PAM_URL` \|/);
   });
 
   it("키 없는 컨테이너 확인: 저장소 .env와 셸의 키를 넘기지 않고 8500·8510에 띄운다", () => {
@@ -78,5 +112,22 @@ describe("배포 파일", () => {
     expect(s).toContain('NOONCHI_PORT: "8500"');
     expect(s).toContain('NOONCHI_PHONE_PORT: "8510"');
     expect(s).toContain('"down", "-v"');
+    expect(s).toContain('PAM_HOST_PORT: "8520"');
+  });
+
+  it("키 없는 컨테이너 확인: 모델·PAM LLM·에이전트를 모두 가짜 서버에 붙이고 ready.ok와 에이전트 답을 본다", () => {
+    const s = read("scripts/container-smoke.ts");
+    expect(s).toContain('"--profile", "check"');
+    for (const k of ["VLM_BASE_URL", "PAM_LLM_BASE_URL", "OPENAI_BASE_URL"]) expect(s).toContain(`${k}: "http://fake-openai:8500/v1"`);
+    expect(s).toContain('INFERENCE_MODE: "live"');
+    expect(s).not.toMatch(/PAM_URL:/);
+    expect(s).toContain("ready.ok");
+    expect(s).toContain("/api/agent/chat");
+    expect(s).toContain("가짜 답");
+  });
+
+  it(".env.example에 PAM 서비스 설정 자리가 있다", () => {
+    const keys = read(".env.example").split(/\r?\n/).map((l) => /^#?\s*([A-Z0-9_]+)=/.exec(l)?.[1]).filter(Boolean);
+    for (const k of ["OPENROUTER_API_KEY", "PAM_LLM_BASE_URL", "PAM_LLM_MODEL", "PAM_LLM_API_KEY", "PAM_HOST_PORT"]) expect(keys, k).toContain(k);
   });
 });

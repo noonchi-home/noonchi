@@ -2172,7 +2172,7 @@ git commit -m "feat: serve pam-predict/2 and pam-reflect/2 with FastAPI, the cop
 
 **Files:**
 - Create: `services/pam/Dockerfile`, `services/pam/.dockerignore`
-- Modify: `compose.yaml`(서비스 `pam`, 프로필 `check`의 `fake-openai`), `.github/workflows/ci.yml`(python 잡, pam 이미지), `scripts/container-smoke.ts`(check 프로필), `tests/deploy-files.test.ts`, `.env.example`(`OPENROUTER_API_KEY=`, `PAM_LLM_BASE_URL=`, `PAM_LLM_MODEL=`, `PAM_LLM_API_KEY=`)
+- Modify: `compose.yaml`(서비스 `pam`, 프로필 `check`의 `fake-openai`), `.github/workflows/ci.yml`(python 잡, pam 이미지), `scripts/container-smoke.ts`(check 프로필), `tests/deploy-files.test.ts`, `.env.example`(`OPENROUTER_API_KEY=`, `PAM_LLM_BASE_URL=`, `PAM_LLM_MODEL=`, `PAM_LLM_API_KEY=`, `PAM_LLM_TIMEOUT_S=`, `PAM_HOST_PORT=`), `docs/deploy.md`(표의 `PAM_URL` 줄을 빼고 `PAM_LLM_*`·`PAM_HOST_PORT`, PAM `/health`, 7절 키 없는 확인), `docs/reference.md`(환경 변수 표, 명령 표, 「PAM 서비스」 절)
 
 - [ ] **Step 1: 실패하는 시험** (`tests/deploy-files.test.ts`에 추가)
 
@@ -2188,13 +2188,14 @@ it("compose: pam 서비스와 check 프로필 가짜 서버, noonchi는 pam에 �
   expect(ci).toContain("docker build -t noonchi-pam:ci services/pam");
 });
 ```
+시험에 더한다: noonchi `depends_on` pam healthy, noonchi·pam environment에 `${`가 없음, `fake-openai`는 포트를 열지 않음, PAM Dockerfile이 `python:3.13.x-slim-bookworm`이고 pyproject와 같은 판의 의존성·`COPY` 줄·`USER pam`·CMD를 가짐, `services/pam/.dockerignore`, CI pam 잡(`pip install -e "services/pam[test]"`, 모든 잡 `ONNXRUNTIME_NODE_INSTALL=skip`), 스모크가 `--profile check`·`INFERENCE_MODE: "live"`·세 주소를 가짜 서버로·`PAM_URL`을 적지 않음·`ready.ok`·에이전트 답을 봄, `.env.example`의 PAM 자리, deploy.md 내용.
 
 - [ ] **Step 2: 실패 확인** — `H npx vitest run tests/deploy-files.test.ts` / Expected: FAIL
 - [ ] **Step 3: 쓰기**
 
 `services/pam/Dockerfile`(`pam.messages.PROJECT_ROOT`가 `pam/`의 부모 `/app`이라 패키지 폴더를 `/app`에 그대로 두고 의존성만 설치한다):
 ```dockerfile
-FROM python:3.13-slim
+FROM python:3.13.9-slim-bookworm
 WORKDIR /app
 RUN pip install --no-cache-dir fastapi==0.115.12 uvicorn==0.34.2 pydantic==2.11.4 httpx==0.28.1 && useradd -m pam
 COPY pam pam
@@ -2203,12 +2204,12 @@ COPY prompts prompts
 COPY config config
 COPY scenarios scenarios
 COPY THIRD_PARTY.md PROVENANCE.md ./
-ENV PYTHONPATH=/app
+ENV PYTHONPATH=/app PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 USER pam
 EXPOSE 8300
 CMD ["uvicorn", "noonchi_pam.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8300"]
 ```
-`services/pam/.dockerignore`: `.venv`, `__pycache__`, `.pytest_cache`, `tests`, `*.egg-info`.
+`services/pam/.dockerignore`: `.venv`, `__pycache__`, `.pytest_cache`, `tests`, `*.egg-info`, `.env`, `.env.*`.
 
 `compose.yaml` 서비스 더하기:
 ```yaml
@@ -2229,16 +2230,19 @@ CMD ["uvicorn", "noonchi_pam.app:create_app", "--factory", "--host", "0.0.0.0", 
 
   fake-openai:
     image: noonchi:local
+    pull_policy: never
     profiles: [check]
+    init: true
     command: ["node", "--import", "tsx", "scripts/fake-openai.ts", "--port", "8500", "--host", "0.0.0.0"]
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8500/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
       interval: 5s
+      timeout: 5s
       retries: 10
 ```
 `noonchi.environment`에 `PAM_URL: http://pam:8300`(compose 안에서 늘 같은 값), `depends_on: { pam: { condition: service_healthy } }`. `INFERENCE_MODE`·`PAM_LLM_*`는 env_file에서 온다(environment에 `${X:-}`로 두지 않는다).
 
-`scripts/container-smoke.ts` 바꾸기: 확인용 임시 env 파일(Task 7)의 `CHECK_ENV`를 `{ HUB: "memory", INFERENCE_MODE: "live", VLM_BASE_URL: "http://fake-openai:8500/v1", PAM_LLM_BASE_URL: "http://fake-openai:8500/v1", AGENT_PROVIDER: "openai", OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: "http://fake-openai:8500/v1" }`로 바꾸고(PAM_URL은 compose가 `http://pam:8300`으로 둔다), 셸 값에 `PAM_HOST_PORT: "8520"`을 더한다. 호스트 포트는 그대로 8500·8510이다. `compose("--profile", "check", "up", "-d", "--build", "noonchi", "pam", "fake-openai")`. `ready.ok === true`가 될 때까지(최대 120초) 기다린 뒤, `POST /api/agent/chat` `{ message: "안녕" }`(origin `http://127.0.0.1:8500`)이 가짜 서버의 「가짜 답」을 돌려주는지 본다. 둘 다 맞을 때만 성공이다.
+`scripts/container-smoke.ts` 바꾸기: 확인용 임시 env 파일(Task 7)의 `CHECK_ENV`를 `{ HUB: "memory", INFERENCE_MODE: "live", VLM_BASE_URL: "http://fake-openai:8500/v1", PAM_LLM_BASE_URL: "http://fake-openai:8500/v1", AGENT_PROVIDER: "openai", OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: "http://fake-openai:8500/v1" }`로 바꾸고(PAM_URL은 compose가 `http://pam:8300`으로 둔다), 셸 값에 `PAM_HOST_PORT: "8520"`을 더한다. 호스트 포트는 그대로 8500·8510이다. compose 명령마다 `--profile check`를 붙이고 `build`(noonchi·pam 이미지) 뒤 `up -d noonchi pam fake-openai`를 한다(`fake-openai`는 `pull_policy: never`로 방금 지은 `noonchi:local`을 쓴다). `ready.ok === true`가 될 때까지(최대 120초) 기다린 뒤, `POST /api/agent/chat` `{ message: "안녕" }`(origin `http://127.0.0.1:8500`)이 가짜 서버의 「가짜 답」을 돌려주는지, `POST http://127.0.0.1:8520/predict`(`pam-predict/2`)가 `valid`·`task_index -1`인지, pam `/health`의 `limits`가 있는지 본다. 모두 맞을 때만 성공이다. 실패하면 noonchi·pam·fake-openai 기록을 찍는다.
 
 `.github/workflows/ci.yml`에 잡 더하기:
 ```yaml
@@ -2266,12 +2270,12 @@ H docker build -t noonchi-pam:check services/pam
 H docker build -t noonchi:check .
 H npx tsx scripts/container-smoke.ts
 ```
-Expected: PASS, 두 이미지 빌드, 스모크가 `ready.ok: true`(가짜 서버로 VLM·PAM·PAM LLM 모두 답함)와 에이전트 답 「가짜 답」을 찍고 종료 코드 0.
+Expected: PASS, 두 이미지 빌드, 스모크가 `ready.ok: true`(가짜 서버로 VLM·PAM·PAM LLM 모두 답함), 에이전트 답 「가짜 답」, PAM 판단 `task_index -1`을 찍고 종료 코드 0. `docker compose --profile gpu config -q`는 빈 임시 env 파일(`--env-file`, `NOONCHI_ENV_FILE`)로 검사한다(저장소 `.env` 값을 찍지 않게).
 
 - [ ] **Step 5: 커밋**
 
 ```bash
-git add services/pam/Dockerfile services/pam/.dockerignore compose.yaml .github/workflows/ci.yml scripts/container-smoke.ts tests/deploy-files.test.ts .env.example
+git add services/pam/Dockerfile services/pam/.dockerignore compose.yaml .github/workflows/ci.yml scripts/container-smoke.ts tests/deploy-files.test.ts .env.example docs/deploy.md docs/reference.md
 git commit -m "feat: run the PAM service in compose, check the whole stack against the fake server and test it in CI"
 ```
 

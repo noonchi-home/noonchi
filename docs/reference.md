@@ -64,6 +64,8 @@ tests/                  vitest (helpers/: 작은 집, REST·WS·MCP 도우미)
 | `npm run demo` | 임의 포트에 서버(matter/local + mock)를 띄워 시나리오 5개(6단계)를 REST·WS로 돌리고 표를 찍는다. 모두 통과면 종료 코드 0 |
 | `npm run mcp` | MCP stdio 서버(실행 중인 서버의 REST를 부른다) |
 | `npx tsx scripts/matter-smoke.ts` | Matter만: 커미셔닝 → 거실 TV·천장등 토글 → 상태 출력 |
+| `npx tsx scripts/fake-openai.ts --port 8500` | 가짜 OpenAI 호환 서버(정해진 답, 밖으로 나가지 않음). 첫 줄에 `listening <포트>`. 모델 주소 자리(`VLM_BASE_URL`, `PAM_LLM_BASE_URL`, `OPENAI_BASE_URL`)에 `http://127.0.0.1:8500/v1`로 붙인다 |
+| `npx tsx scripts/container-smoke.ts` | 키 없는 컨테이너 확인(noonchi·pam·가짜 서버, `docs/deploy.md` 7절) |
 
 ```bash
 HUB=memory npm start                     # Matter 없이(빠름)
@@ -87,7 +89,10 @@ HUB=memory npm run demo
 | `INFERENCE_MODE` | `mock` | `mock`(GPU 없음, VLM은 OpenAI) · `live`(GPU 서버, VLM은 같은 서버 vLLM `http://vllm-vlm:8000/v1`, 모델 이름 `vlm`). 두 모드는 같은 코드 경로이고 주소·모델 이름만 다르다. 다른 값이면 시작하지 않는다 |
 | `VLM_BASE_URL`, `VLM_MODEL`, `VLM_API_KEY`, `VLM_EXTRA_BODY` | 모드 기본값 | 따로 주면 모드 기본값 대신 쓴다(OpenAI 호환 주소). mock 기본: `https://api.openai.com/v1`·`gpt-5.4-mini`·`OPENAI_API_KEY`·`{"reasoning_effort":"none"}`, live 기본: `http://vllm-vlm:8000/v1`·`vlm`·`VLLM_API_KEY`·`{}` |
 | `VLM_TIMEOUT_MS` | `20000` | 사진 한 장 VLM 분석 제한 시간(1000 이상) |
-| `PAM_URL` | `http://127.0.0.1:8300` | PAM 서비스 주소(compose 안은 `http://pam:8300`) |
+| `PAM_URL` | `http://127.0.0.1:8300` | PAM 서비스 주소(compose 안은 compose가 `http://pam:8300`으로 둔다) |
+| `PAM_LLM_BASE_URL`, `PAM_LLM_MODEL`, `PAM_LLM_API_KEY` | 모드 기본값 | PAM 서비스(`services/pam/`)가 부르는 PAM LLM(OpenAI 호환 주소). mock 기본: `https://openrouter.ai/api/v1`·`qwen/qwen3.5-27b`(provider alibaba 고정)·`OPENROUTER_API_KEY`, live 기본: `http://vllm-pam:8000/v1`·`pam`·`VLLM_API_KEY` |
+| `PAM_LLM_TIMEOUT_S`, `PAM_MAX_MODEL_LEN` | `120`, `32768` | PAM LLM 한 번 제한 시간(초), 문맥 길이(vLLM `--max-model-len`과 같은 값, 반성 출력 16384보다 커야 한다). 입력이 넘으면 PAM 서비스가 413 |
+| `PAM_HOST_PORT` | `8300` | compose가 호스트 127.0.0.1에 여는 PAM 서비스 포트 |
 | `PHONE_PORT`, `PHONE_HOST` | (끔), `0.0.0.0` | 폰 AR 서버(아래 "폰 AR") |
 | `PHONE_URL` | (없음) | 폰에서 열 주소. 대시보드 QR에 맨 앞 주소가 나온다. 없으면 `tailscale serve`가 폰 포트로 잇는 https 주소, 그다음 와이파이 주소 |
 | `PHONE_MAX_MISMATCH_M`, `PHONE_PHOTO_DIR` | `0.3`, `RUNTIME_DIR/photos` | 기준점 거리 차이 허용값, 사진 폴더 |
@@ -326,6 +331,21 @@ tailscale serve --bg 8210   # 이미 켜져 있으면 생략. 폰: https://<이 
 
 - `OPENAI_API_KEY`는 `.env`에서 읽는다. VLM 호출은 세션당 `BRAIN_CALL_CAP`(120)회까지, 1회 약 $0.001.
 - 녹화 재생: `npx tsx scripts/brain-replay.ts --detector`(YOLO + 라벨 대본, 호출 0회), `--live --detector --cap 10`(실제 VLM).
+
+## PAM 서비스 (services/pam)
+
+판단·반성을 HTTP로 내준다: `POST /predict`(`pam-predict/2`), `POST /reflect`(`pam-reflect/2`), `GET /health`(`llm`, `limits`). 계약은 `docs/pam-interface.md`. 논문 PAM 코드·프롬프트(`pam/`, `prompts/`, `config/`)를 옮겨 왔고 출처는 `services/pam/PROVENANCE.md`·`THIRD_PARTY.md`다.
+
+```bash
+py -3.13 -m venv services/pam/.venv                                   # 한 번만
+services/pam/.venv/Scripts/python.exe -m pip install -e "services/pam[test]"
+cd services/pam && .venv/Scripts/python.exe -m uvicorn noonchi_pam.app:create_app --factory --port 8300
+```
+
+- 직접 띄우면 셸 환경 변수만 읽는다(`.env`는 compose가 넘긴다). mock은 `OPENROUTER_API_KEY`가 있어야 판단·반성이 된다.
+- 가짜 서버로 띄우기: `INFERENCE_MODE=live PAM_LLM_BASE_URL=http://127.0.0.1:8500/v1`(가짜 서버를 먼저 띄운다).
+- 답: 계약에 맞지 않으면 400, 문맥 길이를 넘으면 413, PAM LLM 오류·잘린 답은 502.
+- 시험: `npm run heavy -- services\pam\.venv\Scripts\python.exe -m pytest services/pam -q`(가짜 OpenAI 호환 서버를 띄워 쓴다).
 
 ## 설정 흐름 (집 → 가전 → 운영 모드 → 위치 동기화 → 대시보드)
 

@@ -38,3 +38,20 @@ jobs:
       - run: npm ci
       - run: docker build -t noonchi:ci .
       - run: npx tsx scripts/container-smoke.ts
+  pam:
+    runs-on: ubuntu-24.04
+    env:
+      ONNXRUNTIME_NODE_INSTALL: skip
+    steps:
+      - uses: actions/checkout@v4
+      # PAM 시험의 가짜 OpenAI 호환 서버(scripts/fake-openai.ts)를 tsx로 띄운다
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - run: npm ci
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -e "services/pam[test]"
+      - run: pytest services/pam -q
+      - run: docker build -t noonchi-pam:ci services/pam

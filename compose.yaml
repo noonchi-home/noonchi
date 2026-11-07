@@ -1,4 +1,5 @@
-# NOONCHI 한 서버: noonchi(CPU). --profile gpu면 vLLM 두 개(VLM, PAM LLM)를 더한다. 포트는 호스트 127.0.0.1에만 연다.
+# NOONCHI 한 서버: noonchi(CPU, 서버·YOLOX), pam(CPU, PAM 서비스). --profile gpu면 vLLM 두 개(VLM, PAM LLM)를 더한다.
+# --profile check는 키 없는 확인용 가짜 OpenAI 호환 서버(fake-openai)를 더한다. 포트는 호스트 127.0.0.1에만 연다.
 # 설정·키는 env_file(NOONCHI_ENV_FILE, 기본 .env)에서 온다. environment에는 컨테이너 안에서 늘 같은 값만 둔다.
 name: noonchi
 
@@ -35,6 +36,8 @@ services:
       RUNTIME_DIR: /data
       MATTER_STORAGE_DIR: /data/matter
       MATTER_TRANSPORT: local
+      PAM_URL: http://pam:8300
+    depends_on: { pam: { condition: service_healthy } }
     ports:
       - "127.0.0.1:${NOONCHI_PORT:-8200}:8200"
       - "127.0.0.1:${NOONCHI_PHONE_PORT:-8210}:8210"
@@ -46,6 +49,33 @@ services:
       timeout: 5s
       retries: 5
       start_period: 60s
+
+  pam:
+    build: services/pam
+    image: noonchi-pam:local
+    init: true
+    restart: unless-stopped
+    # INFERENCE_MODE·PAM_LLM_*·PAM_MAX_MODEL_LEN·키는 env_file에서 온다(비면 서비스 기본값)
+    env_file: [{ path: "${NOONCHI_ENV_FILE:-.env}", required: false }]
+    ports: ["127.0.0.1:${PAM_HOST_PORT:-8300}:8300"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8300/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  fake-openai:
+    image: noonchi:local
+    pull_policy: never
+    profiles: [check]
+    init: true
+    command: ["node", "--import", "tsx", "scripts/fake-openai.ts", "--port", "8500", "--host", "0.0.0.0"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8500/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   vllm-vlm:
     <<: *vllm
