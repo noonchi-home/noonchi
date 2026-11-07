@@ -5522,79 +5522,23 @@ git commit -m "feat: speak Cloid's questions on the phone, take spoken answers f
 
 **Files:**
 - Create: `tests/noonchi-e2e.test.ts`
-- Modify: `docs/reference.md`(관찰 → 판단 → 실행 → 기록 → 반성 흐름, API), `README.md`(빠른 시작: mock·compose), `scripts/container-smoke.ts`(엔진 프레임 한 장 보내고 `/api/history`에 vlm 줄이 생기는지)
+- Modify: `docs/reference.md`(관찰 → 판단 → 실행 → 기록 → 반성 흐름 표, `/events` brain 기록 종류), `README.md`(NOONCHI 흐름: mock 로컬 실행·키 없이·compose), `scripts/container-smoke.ts`(`BRAIN=1`, 엔진 프레임 한 장 → `/api/history?kinds=vlm`), `tests/deploy-files.test.ts`
 
-- [ ] **Step 1: 실패하는 시험**
-
-```ts
-// tests/noonchi-e2e.test.ts
-// 폰 엔진 프레임 → YOLOX(대본)·VLM(가짜 서버) → World State → PAM(시험 대역 서버: 컵 치우기) → 계획 → 검사 → 폰 부탁 → 답 → 결과 확인 → 기록.
-import { mkdtempSync } from "node:fs";
-import { createServer, type Server } from "node:http";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-import { WebSocket } from "ws";
-import { startFakeOpenAI, type FakeServer } from "../scripts/fake-openai.js";
-import { encodeFramePacket } from "../src/phone/packet.js";
-import { startServer, type RunningServer } from "../src/server/start.js";
-import { ScriptedDetector } from "./helpers/detectors.js";
-
-let srv: RunningServer | undefined, fake: FakeServer | undefined, pam: Server | undefined;
-afterEach(async () => { await srv?.close(); await fake?.close(); pam?.close(); });
-
-function startPam(): Promise<string> {
-  pam = createServer(async (req, res) => {
-    for await (const _ of req) { /* 본문 소비 */ }
-    const pred = { observation: "빈 컵이 식탁에 남음", reasoning: "자리를 비워 컵을 치운다", task_index: 0 };
-    res.writeHead(200, { "content-type": "application/json" });
-    res.end(JSON.stringify({ status: "valid", raw_response: JSON.stringify(pred), prediction: pred, selected_action: "컵 치우기", errors: [] }));
-  });
-  return new Promise((ok) => pam!.listen(0, "127.0.0.1", () => ok(`http://127.0.0.1:${(pam!.address() as { port: number }).port}`)));
-}
-
-describe("NOONCHI 처음부터 끝까지", () => {
-  it("관찰부터 실행 결과까지 한 흐름으로 돌고 기록에 남는다", async () => {
-    fake = await startFakeOpenAI();
-    let cupVisible = true;
-    srv = await startServer({ env: { HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
-      BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: await startPam(), PAM_MIN_GAP_MS: "0", STALE_MS: "60000" },
-      brain: { detector: new ScriptedDetector(() => (cupVisible ? [{ label: "cup", score: 0.9, cls: 41, box: [220, 160, 40, 20] }] : [])) }, log: () => {} });
-    const ws = new WebSocket(srv.phoneUrls[0]!.replace(/^http/, "ws").replace(/\/phone\/$/, "/phone/events"));
-    const toPhone: any[] = [];
-    ws.on("message", (d, bin) => { if (!bin) toPhone.push(JSON.parse(String(d))); });
-    await new Promise((ok) => ws.on("open", ok));
-    let n = 0;
-    // 판단 뒤에도 대상을 다시 보도록 조건이 맞을 때까지 엔진 프레임을 150ms마다 보낸다(최대 10초)
-    const pump = async (until: () => boolean | Promise<boolean>) => {
-      for (const end = Date.now() + 10_000; Date.now() < end; ) {
-        if (await until()) return;
-        ws.send(encodeFramePacket({ kind: "engine", width: 480, height: 360, captured_at: Date.now(), time_err_ms: 0 }, Buffer.from([0xff, 0xd8, n++ % 256, n >> 8])));
-        await new Promise((r) => setTimeout(r, 150));
-      }
-      throw new Error("조건이 10초 안에 맞지 않음");
-    };
-    await pump(() => toPhone.some((m) => m.type === "action" && m.active));
-    const ask = toPhone.find((m) => m.type === "action" && m.active);
-    ws.send(JSON.stringify({ type: "brain_reply", id: ask.id, choice: "done" }));
-    cupVisible = false;
-    const hist = async () => (await (await fetch(`${srv!.url}/api/history?kinds=vlm,pam_text,decision,execution`)).json()).rows as { kind: string; text: string }[];
-    await pump(async () => (await hist()).some((r) => r.kind === "execution" && r.text === "완료"));
-    const kinds = new Set((await hist()).map((r) => r.kind));
-    expect([...kinds].sort()).toEqual(["decision", "execution", "pam_text", "vlm"]);
-    ws.close();
-  }, 30_000);
-});
-```
-(기본 집은 마곡 아파트(식탁·싱크대가 있음)다. 맞추기 전이라 물체 위치는 모름이고, 사라짐은 Task 20의 「눈 자세 없는 프레임은 시야 안」 규칙으로 센다.)
-
-- [ ] **Step 2: 실패 확인** — `H npx vitest run tests/noonchi-e2e.test.ts` / Expected: FAIL(연결이 빠진 곳에서 멈춤)
-- [ ] **Step 3: 빠진 연결을 고친다** — 실패 메시지가 가리키는 곳(`home.ts` 연결, `/api/history` 응답 모양 `{ ok: true, rows }`)을 고친다. `docs/reference.md`에 흐름·API·환경 변수를, `README.md` 빠른 시작에 `INFERENCE_MODE=mock`으로 로컬 실행과 `docker compose up -d --build`를 쓴다. `scripts/container-smoke.ts`는 health 뒤 `/api/health`의 `ready.ok`와 `/api/history`가 200인지 본다.
-- [ ] **Step 4: 통과 확인** — 그룹 끝 검사 전부(`H npx vitest run` … `H npx tsx scripts/container-smoke.ts`). 폰 화면은 `H npm run capture`로 한 번 연다. Expected: 모두 PASS
+- [ ] **Step 1: 시험** — `tests/noonchi-e2e.test.ts`
+  - 가짜 OpenAI 호환 서버(VLM), 시험용 PAM 자리(`startFakePam`, 늘 컵 치우기 0), `ScriptedDetector`(컵 보임·안 보임을 바꿈), `PAM_MIN_GAP_MS=0`, 기본 집(식탁·싱크대가 있는 마곡 아파트), `STALE_MS`는 기본값.
+  - 대시보드 `/events`와 폰 `/phone/events`는 `openWebSocket`으로 연다. 엔진 프레임을 150ms마다 보내며 기다린다(최대 15초).
+  - 폰에 `{ type: "action", task: "컵 치우기", text: "식탁 위 컵을 치워 주세요", speak: true, dry_run: true, id: plan:pam-N }`가 오면 「치웠어요」라고 말한다 → 답 「고마워요. 컵이 안 보이는지 확인할게요」 → 컵을 안 보이게 → `/api/history`에 그 계획의 `execution` 「완료」.
+  - 기록 종류 `decision·detection·execution·feedback·pam_text·plan·vlm`이 모두 있고, 그 계획의 실행 줄은 판단·계획·실행 중·결과 확인·완료, `feedback`은 「치웠어요 · 부탁: 식탁 위 컵을 치워 주세요」. PAM에 보낸 관찰 텍스트에 「컵 cup_1 보임」.
+  - 대시보드 계획 메시지: brain·모의·판단 이유, 집기 단계 대상 `cup_1`, 마지막은 done. `execution` done 기록과 폰 부탁 거둠(`active: false`).
+- [ ] **Step 2: 확인** — `H npx vitest run tests/noonchi-e2e.test.ts` / Task 27~30이 연결을 모두 해서 처음부터 PASS다. 실행 추적을 붙이기 전 `home.ts`(Task 28 커밋)로 바꾸면 「조건이 15초 안에 맞지 않음」으로 FAIL인 것을 본다.
+- [ ] **Step 3: 문서·확인 스크립트**
+  - `docs/reference.md` 「관찰 흐름」 머리에 한 흐름과 단계 표(코드·나가는 것). `README.md` 로컬 실행 아래에 NOONCHI 흐름(mock 키, PAM 서비스, `BRAIN=1 PHONE_PORT=8210 npm start`, 가짜 서버, `docker compose up -d --build`, gpu 프로필).
+  - `scripts/container-smoke.ts`: 확인용 env에 `BRAIN: "1"`, health의 `brain`이 true, 폰 포트(8510)로 회색 64×48 JPEG 엔진 프레임 한 장(포트 전달 오류면 다시 시도) → 30초 안에 `/api/history?kinds=vlm`에 줄이 생기는지. `tests/deploy-files.test.ts`에 그 확인이 있는지 본다.
+- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/noonchi-e2e.test.ts tests/deploy-files.test.ts tests/self-contained.test.ts`, `H npx tsc --noEmit`. 그룹 끝 검사는 Task 32 뒤에 한 번에 돌린다. Expected: PASS
 - [ ] **Step 5: 커밋**
 
 ```bash
-git add tests/noonchi-e2e.test.ts src/server/home.ts src/server/app.ts docs/reference.md README.md scripts/container-smoke.ts
+git add tests/noonchi-e2e.test.ts docs/reference.md README.md scripts/container-smoke.ts tests/deploy-files.test.ts
 git commit -m "test: run the whole observation-to-execution flow against the fake model server and document it"
 ```
 

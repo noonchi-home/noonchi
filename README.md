@@ -140,6 +140,12 @@ npm start              # builds the pages, then http://127.0.0.1:8200
 
 Without an API key, the rule-based mock agent runs. Try "TV 켜줘", "에어컨 24도로 맞춰줘" or "현관문 열어줘" (asks for approval).
 
+**NOONCHI 관찰·판단 흐름**
+
+- 로컬(`INFERENCE_MODE=mock`, GPU 없음): `.env`에 `OPENAI_API_KEY`(VLM)와 `OPENROUTER_API_KEY`(PAM LLM)를 넣는다. PAM 서비스를 띄우고(`services/pam`, [reference](docs/reference.md#pam-서비스-servicespam)) `BRAIN=1 PHONE_PORT=8210 npm start`로 시작한다. 폰 사진 한 장마다 VLM을 한 번 부른다.
+- 키 없이 돌려 보기: `npx tsx scripts/fake-openai.ts --port 8500`을 띄우고 `VLM_BASE_URL`·`PAM_LLM_BASE_URL`을 `http://127.0.0.1:8500/v1`로 둔다.
+- 서버 한 대(compose): `cp .env.example .env`로 값을 채우고 `docker compose up -d --build`. GPU 서버는 `docker compose --profile gpu up -d --build`([deploy](docs/deploy.md)).
+
 | Command | What it does |
 |---|---|
 | `npm test` | Unit, Matter integration and end-to-end tests (Vitest) |

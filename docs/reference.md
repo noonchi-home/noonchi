@@ -198,7 +198,7 @@ twin-home 서버: http://127.0.0.1:8200  (허브 matter/network, 에이전트 mo
 | `GET /api/history/day/{YYYY-MM-DD}` | | `{ ok, day, observation_text, action_summary, counts, dropped }` 하루 요약(아래 "기록과 반성"). 없는 날짜 400 |
 | `POST /api/reflection/run` | `{ day? }`(기본 오늘) | 그날을 바로 반성한다. `{ ok, day, version, appliesDay }`. 없는 날짜 400, 그날 기록이 없거나 이미 반성 중이면 409, PAM 실패 502 |
 | `GET /api/decisions?limit=` | | `{ ok, decisions: [{ id, at_ms, day, text, text_sent, seq, status, prediction, memory_version, world }] }` 최근 판단과 그때 보낸 관찰 텍스트(기본 20, 최대 500) |
-| `GET /events` (WebSocket) | | 붙으면 `{type:"hello", home}`, 모든 기기의 `{type:"state", state}`, 지금 배치 보정의 `{type:"layout"}`들, `{type:"plan"}`, (`BRAIN=1`이면) `{type:"world"}`. 이후 바뀔 때마다 `{type:"state"}`, `{type:"agent", event:"action"\|"reply"\|"pending"\|"confirmed"\|"cancelled", ...}`, `{type:"layout"}`, `{type:"focus"}`, `{type:"eye"}`, `{type:"photo"}`, `{type:"brain", event}`(관찰·World State 변화·판단 기록, `src/contract/events.ts` `BrainLog`), `{type:"world"}` (모양은 [plan.md](plan.md)) |
+| `GET /events` (WebSocket) | | 붙으면 `{type:"hello", home}`, 모든 기기의 `{type:"state", state}`, 지금 배치 보정의 `{type:"layout"}`들, `{type:"plan"}`, (`BRAIN=1`이면) `{type:"world"}`. 이후 바뀔 때마다 `{type:"state"}`, `{type:"agent", event:"action"\|"reply"\|"pending"\|"confirmed"\|"cancelled", ...}`, `{type:"layout"}`, `{type:"focus"}`, `{type:"eye"}`, `{type:"photo"}`, `{type:"brain", event}`(관찰·World State 변화·판단·실행·연결·판단 시점·반성 기록, `src/contract/events.ts` `BrainLog`), `{type:"world"}` (모양은 [plan.md](plan.md)) |
 
 - `command`는 `docs/plan.md`의 `Command` 객체다. 줄임으로 문자열(`"on"`, `"off"`, `"lock"` …)도 받는다.
 - 정적 파일: `/`·`/setup/`은 React 빌드 `ui/dist/`다. `/twin/`은 고른 집의 twin-studio 산출물 폴더(아파트는 `apartment/`, 원룸 예시는 `homes/oneroom/`), `/twin/viewer/`는 모든 집이 함께 쓰는 뷰어(`homes.json` viewer), `/twin/lib/`은 모든 종류의 GLB(`homes.json` library)다. 경로 탈출(`..`)은 막는다.
@@ -325,6 +325,17 @@ npm start
 - 폰 말에는 인증이 없다(같은 와이파이의 누구나 보낼 수 있다). 내부 테스트용이다.
 
 ## 관찰 흐름 (src/observe, src/world)
+
+한 흐름: 폰 엔진 프레임 → YOLOX·VLM → World State → 관찰 텍스트 → PAM 서비스(`pam-predict/2`) → 클로이드 계획 → 실행 전 검사 → 폰 부탁·질문(소리) → 답·결과 확인 → 기록 DB(`noonchi.db`) → 하루 끝 반성(`pam-reflect/2`) → 다음 날 기억. 사진은 PAM에 가지 않는다. `tests/noonchi-e2e.test.ts`가 가짜 OpenAI 호환 서버와 시험용 PAM 자리로 이 흐름 전체를 돌린다.
+
+| 단계 | 코드 | 나가는 것 |
+|---|---|---|
+| 엔진 프레임·고리 | `src/phone/`, `src/observe/ring.ts` | `GET /api/brain` |
+| YOLOX·VLM | `src/observe/pipeline.ts`, `src/observe/scene.ts` | `{type:"brain", event:{type:"observe"}}`, 기록 `vlm`·`yolo` |
+| World State | `src/world/state.ts` | `{type:"world"}`, `world_change`, `GET /api/world`, 기록 `detection`·`world` |
+| 판단 | `src/world/decide.ts`, `src/brain/pam.ts` | `decision`, 기록 `pam_text`·`decision`, `GET /api/decisions` |
+| 계획·검사·실행 | `src/act/` | `{type:"plan"}`, `execution`, 폰 `{type:"action"}`, 기록 `plan`·`execution`·`feedback` |
+| 반성 | `src/history/reflect.ts` | `reflection`, 기록 `reflection`, `POST /api/reflection/run` |
 
 폰 엔진 프레임마다 YOLOX와 VLM이 둘 다 분석하고, World State가 둘을 물체별로 합친다. 분석한 사진은 메모리(최근 20초)에만 두고 디스크에 쓰지 않는다(`DATASET_COLLECT=1`일 때만 시험 자료로 쓴다).
 

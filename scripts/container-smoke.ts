@@ -1,5 +1,6 @@
 // 키 없는 컨테이너 확인: compose 프로젝트 noonchi-check로 noonchi(127.0.0.1:8500 허브·8510 폰), pam(8520), 가짜 OpenAI 호환 서버(check 프로필)를 띄우고
 // ready.ok가 true인지(VLM·PAM 서비스·PAM LLM이 모두 가짜 서버로 답함), 에이전트가 가짜 서버의 답을 돌려주는지, PAM 서비스가 관찰 텍스트로 판단하는지, 폰 화면이 열리는지,
+// 관찰 흐름(BRAIN=1)이 엔진 프레임 한 장을 YOLOX·가짜 VLM으로 분석해 기록 DB에 vlm 줄을 남기는지(GET /api/history),
 // docker stop(SIGTERM)에 종료 코드 0으로 끝나는지 본 뒤 내린다(볼륨까지 지운다).
 // 저장소 .env와 셸의 키·토큰은 넘기지 않는다: 확인용 값만 적은 임시 env 파일을 --env-file과 NOONCHI_ENV_FILE로 준다.
 // 모델·PAM LLM·에이전트(OpenAI 공급자) 주소는 compose 안의 가짜 서버(fake-openai:8500)다. 실제 AI API를 부르지 않는다.
@@ -10,6 +11,9 @@ import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import jpeg from "jpeg-js";
+import WebSocket from "ws";
+import { encodeFramePacket } from "../src/phone/packet.js";
 import { fetchRetry } from "../src/server/net.js";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -18,7 +22,7 @@ const PHONE_URL = "http://127.0.0.1:8510";
 const PAM_URL = "http://127.0.0.1:8520";
 const FAKE = "http://fake-openai:8500/v1";
 const CHECK_ENV = {
-  HUB: "memory", INFERENCE_MODE: "live", VLM_BASE_URL: "http://fake-openai:8500/v1", PAM_LLM_BASE_URL: "http://fake-openai:8500/v1",
+  HUB: "memory", BRAIN: "1", INFERENCE_MODE: "live", VLM_BASE_URL: "http://fake-openai:8500/v1", PAM_LLM_BASE_URL: "http://fake-openai:8500/v1",
   AGENT_PROVIDER: "openai", OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: "http://fake-openai:8500/v1",
 };
 
@@ -47,6 +51,26 @@ async function waitJson(url: string, ms: number, until: (b: Record<string, any>)
     await sleep(2000);
   }
   return last;
+}
+
+/** 폰 이벤트 소켓으로 엔진 프레임(회색 64×48 JPEG) 한 장을 보낸다. 포트 전달의 일시 오류면 다시 시도한다. */
+async function sendEngineFrame(): Promise<void> {
+  const w = 64, h = 48;
+  const body = jpeg.encode({ data: Buffer.alloc(w * h * 4, 128), width: w, height: h }, 80).data;
+  for (let attempt = 1; ; attempt++) {
+    const ws = new WebSocket(`${PHONE_URL.replace(/^http/, "ws")}/phone/events`);
+    try {
+      await new Promise<void>((ok, no) => { ws.once("open", () => ok()); ws.once("error", no); });
+      ws.send(encodeFramePacket({ kind: "engine", width: w, height: h, captured_at: Date.now(), time_err_ms: 0 }, body));
+      await sleep(500);
+      ws.close();
+      return;
+    } catch (e) {
+      ws.terminate();
+      if (attempt >= 5) throw e;
+      await sleep(500 * attempt);
+    }
+  }
 }
 
 /** ms 안에 TCP로 붙지 않는 호스트 포트(127.0.0.1). 컨테이너 앞의 Docker 포트 전달이 열렸는지만 본다. */
@@ -113,6 +137,12 @@ try {
   if (!(limits?.reflect_input_bytes > 0) || limits?.max_model_len !== 32768) fails.push(`PAM /health 입력 한도가 없어요(${JSON.stringify(limits)})`);
   const phone = await fetchRetry(`${PHONE_URL}/phone/`, { signal: AbortSignal.timeout(5000) }).then((r) => r.status, (e: Error & { cause?: { code?: string; syscall?: string } }) => { console.log(`폰 화면 요청 오류: ${e.message} ${e.cause?.code ?? ""} ${e.cause?.syscall ?? ""}`); return 0; });
   if (phone !== 200) fails.push(`폰 화면이 열리지 않아요(${phone})`);
+  if (h.brain !== true) fails.push("관찰 흐름(BRAIN=1)이 켜지지 않았어요");
+  // 관찰 흐름: 엔진 프레임 한 장 → YOLOX·가짜 VLM → 기록 DB vlm 줄
+  await sendEngineFrame().catch((e: Error) => fails.push(`엔진 프레임을 보내지 못했어요(${e.message})`));
+  const vlm = await waitJson(`${HUB_URL}/api/history?kinds=vlm`, 30_000, (b) => (b.rows?.length ?? 0) > 0);
+  console.log(`기록 vlm 줄: ${JSON.stringify(vlm?.rows?.[0]?.text ?? null)}`);
+  if (vlm?.ok !== true || !(vlm.rows?.length > 0)) fails.push("/api/history에 엔진 프레임의 vlm 줄이 없어요");
   // docker stop(SIGTERM) → 서버가 닫고 0으로 끝나야 한다
   if (compose(["stop", "noonchi"]).status !== 0) fails.push("compose stop 실패");
   const id = compose(["ps", "-a", "-q", "noonchi"], true).stdout.trim();

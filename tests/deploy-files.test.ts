@@ -130,6 +130,13 @@ describe("배포 파일", () => {
     expect(s).toContain("clearInterval(keepAlive)");
   });
 
+  it("키 없는 컨테이너 확인: 관찰 흐름을 켜고 엔진 프레임 한 장의 vlm 줄을 기록 API로 본다", () => {
+    const s = read("scripts/container-smoke.ts");
+    expect(s).toContain('BRAIN: "1"');
+    expect(s).toContain('kind: "engine"');
+    expect(s).toContain("/api/history?kinds=vlm");
+  });
+
   it(".env.example에 PAM 서비스 설정 자리가 있다", () => {
     const keys = read(".env.example").split(/\r?\n/).map((l) => /^#?\s*([A-Z0-9_]+)=/.exec(l)?.[1]).filter(Boolean);
     for (const k of ["OPENROUTER_API_KEY", "PAM_LLM_BASE_URL", "PAM_LLM_MODEL", "PAM_LLM_API_KEY", "PAM_HOST_PORT"]) expect(keys, k).toContain(k);
