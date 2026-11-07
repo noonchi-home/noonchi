@@ -101,6 +101,8 @@ HUB=memory npm run demo
 | `VLM_MAX_INFLIGHT`, `DETECT_QUEUE_MAX` | `4`, `8` | VLM 동시 요청 상한(넘친 프레임은 「요청이 몰려 VLM 분석 없음」), YOLOX 대기열 상한(넘친 프레임은 「요청이 몰려 YOLOX·VLM 분석 없음」). 틀린 값이면 시작하지 않는다 |
 | `BRAIN_DETECTOR`, `BRAIN_YOLO_PATH`, `BRAIN_YOLO_THREADS` | `yolox_tiny`, `runtime/models/<모델>.onnx`, `4` | YOLOX 감지기(`yolox_tiny`·`yolox_nano`·`off`). 모델 파일이 없으면 VLM만 쓴다 |
 | `PAM_TIMEOUT_MS` | `30000` | 판단 한 번 제한 시간. 판단은 늘 PAM 서비스(`PAM_URL`, 계약 `docs/pam-interface.md`)다 |
+| `PAM_TRIGGER` | `event` | 판단 호출 시점: `event`(World State에 의미 있는 변화가 있을 때) · `periodic`(사람이 보이는 동안 주기마다, 사람 없음·등장 사라짐 없음이 이어지면 멈춤). 다른 값이면 시작하지 않는다 |
+| `PAM_MIN_GAP_MS`, `PAM_PERIOD_MS`, `PAM_IDLE_STOP_MS`, `PAM_MAX_INFLIGHT` | `3000`, `1000`, `1800000`, event `1`·periodic `4` | event 최소 간격, periodic 주기, periodic 멈춤까지 시간, 동시에 나가 있는 판단 상한 |
 | `FOCUS` | (끔) | `1`이면 초점 표시(클로이드가 다룬 물건의 고리·"클로이드 주목")를 대시보드·폰·3D로 보낸다. 기본은 보내지 않는다 |
 | `PORT` | `8200` | HTTP 포트(`0`이면 빈 포트) |
 | `HOST` | `127.0.0.1` | HTTP 바인드 주소. `0.0.0.0`이면 LAN에서도 열린다(인증 없음) |
@@ -321,7 +323,8 @@ npm start
 - **VLM:** 프레임마다 한 번, YOLOX 감지 목록(임시 번호·종류·박스)을 같이 보내 보이는 사실만 받는다(`{scene, observations: [{object_id, state}], summary}`, JSON Schema). 동시 요청은 `VLM_MAX_INFLIGHT`(기본 4)까지, 제한 시간(`VLM_TIMEOUT_MS`, 기본 20초)이 지나면 HTTP 요청을 끊는다. 답은 프레임 번호로 맞춘다. 상한 초과·시간 초과·형식 오류·호출 오류 프레임은 「… VLM 분석 없음」으로 남긴다.
 - **World State:** 사람은 2장, 물건은 3장 연속일 때 등장·사라짐을 인정한다. 맞춘 뒤에는 박스 아래 가운데 광선이 트윈의 식탁·책상·조리대·싱크대 윗면(없으면 바닥)과 만나는 점을 물건 위치로 쓰고, 같은 종류가 0.25m 안이면 같은 물체로 본다. 그 자리가 시야 밖이면 「시야 밖」이고 사라짐을 세지 않는다. 맞추기 전에는 위치를 모르고 폰이 한 곳을 비춘다고 본다. VLM 사실은 면(자리·쓰는 중·안 내용·자세·행동)마다 두고 같은 값이 두 번 이어지면 확인됨이다. 컵·병·그릇에는 관계표로 식기세척기를 붙이고, 식기세척기의 상태(작동 중·이용 가능)·바뀐 시각·이력·남은 시간(`course_min`)을 쌓는다.
 - **기록:** 프레임마다 `{type:"brain", event:{type:"observe"}}`(YOLOX 글 또는 `yolo_missing`, VLM 요약 또는 `vlm_missing`)가 반드시 나가고, World State가 바뀌면 `world_change`와 `{type:"world"}`가 나간다. 상태는 `GET /api/brain`, World State는 `GET /api/world`.
-- **화면:** 대시보드 판단 기록의 「클로이드 · 관찰과 판단」 카드에 World State 변화 줄과 지금 YOLOX·VLM 한 줄씩. 트윈 식탁 말풍선 메모는 마지막 YOLOX 글이다.
+- **판단 호출:** 기본(`PAM_TRIGGER=event`)은 World State에 의미 있는 변화(사람·물건 등장·사라짐, 물건 상태 변화, 식기세척기 변화)가 있을 때 PAM 서비스(`PAM_URL`)를 부른다(최소 간격 `PAM_MIN_GAP_MS`, 동시 `PAM_MAX_INFLIGHT`). `periodic`은 사람이 보이는 동안 `PAM_PERIOD_MS`마다 부르고, 사람 없음·등장 사라짐 없음이 `PAM_IDLE_STOP_MS`(30분) 이어지면 멈췄다가 등장·사라짐이 생기면 다시 부른다. 넘기는 것은 관찰 텍스트(최근 60초 변화 줄, 이어진 같은 줄은 「처음~마지막 글 N번」, `[지속]` 물건·사람·식기세척기 상태와 남은 시간, `[눈]` 눈 위치) + 기억(지금은 컵 FSM 기억) + 행동 목록이다. 판단마다 `{type:"brain", event:{type:"decision"}}`(번호 seq, 보낸 관찰 텍스트, PAM 답, World State 요약)이 나가고, PAM 연결 끊김·연결됨(`link`)과 판단 멈춤·다시 시작(`trigger`)은 바뀔 때 한 번씩 나간다.
+- **화면:** 대시보드 판단 기록의 「클로이드 · 관찰과 판단」 카드에 World State 변화·연결·판단 시점 줄과 지금 YOLOX·VLM 한 줄씩. 판단 줄(고른 행동·대기·판단 실패와 이유)이 카드를 닫는다. 트윈 식탁 말풍선 메모는 마지막 YOLOX 글이다.
 
 실행(폰은 Tailscale 주소로 연다):
 

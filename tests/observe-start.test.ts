@@ -1,4 +1,5 @@
-// startServer(BRAIN=1) + 폰: 엔진 프레임 → 관찰 흐름 → 대시보드 observe 기록·World State, /api/brain·/api/world. VLM은 가짜 OpenAI 호환 서버.
+// startServer(BRAIN=1) + 폰: 엔진 프레임 → 관찰 흐름 → 대시보드 observe 기록·World State → PAM 판단, /api/brain·/api/world.
+// VLM은 가짜 OpenAI 호환 서버, PAM 서비스는 시험용 PAM 자리(tests/helpers/pam.ts).
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,16 +11,20 @@ import { encodeFramePacket } from "../src/phone/packet.js";
 import { fetchRetry } from "../src/server/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { ScriptedDetector } from "./helpers/detectors.js";
+import { startFakePam, type FakePam } from "./helpers/pam.js";
 import { openWebSocket } from "./helpers/ws.js";
 
 type Msg = Record<string, any>;
 let srv: RunningServer | undefined;
 let fake: FakeServer | undefined;
+let pam: FakePam | undefined;
 afterEach(async () => {
   await srv?.close();
   srv = undefined;
   await fake?.close();
   fake = undefined;
+  await pam?.close();
+  pam = undefined;
 });
 
 const env = (extra: Record<string, string> = {}) => ({ HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), ...extra });
@@ -48,10 +53,11 @@ describe("startServer(BRAIN=1) + 관찰 흐름", () => {
     expect((await fetchRetry(`${srv.url}/api/world`)).status).toBe(404);
   });
 
-  it("엔진 프레임마다 YOLOX·VLM 기록이 대시보드로 가고 World State가 바뀌면 보낸다. 표시 프레임은 관찰 흐름에 들어가지 않는다", async () => {
+  it("엔진 프레임마다 YOLOX·VLM 기록이 대시보드로 가고 World State가 바뀌면 보내고 PAM을 부른다. 표시 프레임은 관찰 흐름에 들어가지 않는다", async () => {
     fake = await startFakeOpenAI();
+    pam = await startFakePam();
     srv = await startServer({
-      env: env({ PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, VLM_MODEL: "fake-vlm", ENGINE_FRAME_MS: "500" }),
+      env: env({ PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, VLM_MODEL: "fake-vlm", ENGINE_FRAME_MS: "500", PAM_URL: pam.url }),
       log: () => {}, brain: { detector: new ScriptedDetector(() => [cup]) },
     });
     const phoneUrl = new URL(srv.phoneUrls[0]!);
@@ -72,6 +78,10 @@ describe("startServer(BRAIN=1) + 관찰 흐름", () => {
       const world = await until(dashBox, (m) => m.type === "world" && m.world.objects.length === 1);
       expect(world.world.objects[0]).toMatchObject({ id: "cup_1", cls: "cup", status: "present" });
       await until(dashBox, (m) => m.type === "brain" && m.event.type === "world_change" && m.event.kind === "appeared");
+      const decision = await until(dashBox, (m) => m.type === "brain" && m.event.type === "decision");
+      expect(decision.event).toMatchObject({ seq: 1, status: "valid", action: null, memory_version: 0, world: { objects: [{ id: "cup_1" }] } });
+      expect((pam.bodies[0] as { observation_text: string }).observation_text).toContain("컵 cup_1 보임");
+      expect(decision.event.text_sent).toBe((pam.bodies[0] as { observation_text: string }).observation_text);
       const status = (await (await fetchRetry(`${srv.url}/api/brain`)).json()) as Msg;
       expect(status).toMatchObject({ ok: true, frames: 3, detected: 3, time_source: "phone" });
       expect(((await (await fetchRetry(`${srv.url}/api/world`)).json()) as Msg).world.objects).toHaveLength(1);

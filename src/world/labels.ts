@@ -33,3 +33,13 @@ export const objectName = (cls: string, id: string) => `${OBJECT_NAME[cls] ?? cl
 
 /** 놓인 면 글(식탁 위). */
 export const onSurface = (label: string) => `${label} 위`;
+
+/** 관찰 텍스트 사실 글. */
+export const PLACE_UNKNOWN = "자리 모름";
+export const OUT_OF_VIEW_NOW = "지금 시야 밖";
+export const EYE_TEXT = "클로이드 눈:";
+export const ROOM_UNKNOWN = "방 모름";
+
+/** PAM 연결과 주기 판단 멈춤 기록 글. */
+export const LINK_TEXT = { up: "PAM 연결됨", down: "PAM 연결 끊김" } as const;
+export const TRIGGER_TEXT = { paused: "사람이 없어 판단을 멈춤", resumed: "판단을 다시 시작함" } as const;

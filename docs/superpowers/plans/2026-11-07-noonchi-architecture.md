@@ -4362,7 +4362,7 @@ git commit -m "feat: replace the cup brain with the observation pipeline that an
 
 **Files:**
 - Create: `src/world/trigger.ts`, `src/world/decide.ts`, `tests/world-trigger.test.ts`, `tests/world-decide.test.ts`
-- Modify: `src/world/text.ts`(`textFromWorld`), `src/world/labels.ts`(연결·멈춤 글), `src/server/home.ts`(판단 연결), `.env.example`, `docs/provenance.md`
+- Modify: `src/world/text.ts`(`textFromWorld`), `src/world/labels.ts`(연결·멈춤 글, 관찰 텍스트 사실 글), `src/brain/decision.ts`(`checkInput`이 텍스트 칸만 받음), `src/server/home.ts`(판단 연결), `tests/world-text.test.ts`, `tests/observe-start.test.ts`(시작한 서버가 PAM을 부르는지), `.env.example`, `docs/provenance.md`, `docs/reference.md`
 
 **Interfaces:**
 - Consumes: `PamClient`(Task 15), `WorldState`, `WorldChange`, `CUP_TASKS`·`CUP_FSM_MEMORY`(`src/brain/decision.ts`)
@@ -4372,7 +4372,7 @@ git commit -m "feat: replace the cup brain with the observation pipeline that an
 // src/world/trigger.ts
 export type TriggerMode = "event" | "periodic";
 export interface TriggerConfig { mode: TriggerMode; minGapMs: number /* 3000 */; periodMs: number /* 1000 */; idleStopMs: number /* 1_800_000 */; maxInflight: number /* event 1, periodic 4 */ }
-export function loadTriggerConfig(env): TriggerConfig;   // PAM_TRIGGER, PAM_MIN_GAP_MS, PAM_PERIOD_MS, PAM_IDLE_STOP_MS, PAM_MAX_INFLIGHT
+export function loadTriggerConfig(env): TriggerConfig;   // PAM_TRIGGER, PAM_MIN_GAP_MS, PAM_PERIOD_MS, PAM_IDLE_STOP_MS, PAM_MAX_INFLIGHT. 틀린 값이면 던진다
 export class Trigger {
   constructor(cfg: TriggerConfig, startedAtMs: number);
   onChanges(changes: WorldChange[]): void;
@@ -4381,7 +4381,7 @@ export class Trigger {
   called(nowMs: number): void;
 }
 // src/world/text.ts
-export function textFromWorld(world: WorldView, recent: WorldChange[], o: { nowMs: number; offsetMinutes: number; windowMs?: number /* 60000 */ }): string;
+export function textFromWorld(world: WorldView, recent: readonly WorldChange[], o: { nowMs: number; offsetMinutes: number; windowMs?: number /* 60000 */ }): string;
 // src/world/decide.ts
 export interface DecisionRecord { id: string; seq: number; atMs: number; textSent: string; finalTime: string; status: "valid" | "failed"; prediction: Prediction | null; action: string | null; error?: string; memoryVersion: number; world: DecisionWorld }
 export function decisionWorld(w: WorldView): DecisionWorld;   // 판단 기록에 붙이는 World State 요약
@@ -4438,65 +4438,98 @@ describe("PAM 호출 시점", () => {
 
 ```ts
 // tests/world-decide.test.ts
-import { createServer, type Server } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
-import { PamClient } from "../src/brain/pam.js";
 import { CUP_FSM_MEMORY, CUP_TASKS } from "../src/brain/decision.js";
+import { PamClient } from "../src/brain/pam.js";
+import type { BrainLog } from "../src/contract/events.js";
 import { Decider, type DecisionRecord } from "../src/world/decide.js";
-import { Trigger } from "../src/world/trigger.js";
 import { WorldState } from "../src/world/state.js";
+import { Trigger } from "../src/world/trigger.js";
+import { startFakePam, type FakePam } from "./helpers/pam.js";
 
-let srv: Server | undefined;
-afterEach(() => { srv?.close(); srv = undefined; });
-const sent: { observation_text: string }[] = [];
-const startPam = () => new Promise<string>((ok) => {
-  srv = createServer(async (req, res) => {
-    let raw = ""; for await (const c of req) raw += c;
-    sent.push(JSON.parse(raw));
-    const pred = { observation: "o", reasoning: "r", task_index: -1 };
-    res.writeHead(200, { "content-type": "application/json" });
-    res.end(JSON.stringify({ status: "valid", raw_response: JSON.stringify(pred), prediction: pred, selected_action: null, errors: [] }));
-  }).listen(0, "127.0.0.1", () => ok(`http://127.0.0.1:${(srv!.address() as { port: number }).port}`));
-});
+let pam: FakePam | undefined;
+afterEach(async () => { await pam?.close(); pam = undefined; });
+const emptyWorld = () => new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] });
+const memory = () => ({ memory: CUP_FSM_MEMORY, kind: "fsm" as const, version: 0 });
+const event = () => new Trigger({ mode: "event", minGapMs: 0, periodMs: 1000, idleStopMs: 1e9, maxInflight: 1 }, 0);
 
 describe("판단 호출", () => {
-  it("의미 있는 변화에 PAM을 부르고, 보낸 관찰 텍스트와 결과를 기록한다", async () => {
-    const url = await startPam();
-    const world = new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] });
+  it("의미 있는 변화에 PAM을 부르고, 보낸 관찰 텍스트·World State 요약·결과를 기록한다", async () => {
+    pam = await startFakePam();
     const records: DecisionRecord[] = [];
-    let now = 10_000;
-    const d = new Decider({ pam: new PamClient({ url }), world, trigger: new Trigger({ mode: "event", minGapMs: 0, periodMs: 1000, idleStopMs: 1e9, maxInflight: 1 }, 0),
-      tasks: () => [...CUP_TASKS], memory: () => ({ memory: CUP_FSM_MEMORY, kind: "fsm", version: 0 }), emit: () => {}, onDecision: (r) => records.push(r),
-      offsetMinutes: 540, clock: { now: () => now } });
+    const logs: BrainLog[] = [];
+    const now = 10_000;
+    const d = new Decider({ pam: new PamClient({ url: pam.url }), world: emptyWorld(), trigger: event(),
+      tasks: () => [...CUP_TASKS], memory, emit: (l) => logs.push(l), onDecision: (r) => records.push(r), offsetMinutes: 540, clock: { now: () => now } });
+    d.tick();
+    expect(pam.bodies).toEqual([]);   // 변화가 없으면 부르지 않는다
     d.onChanges([{ kind: "person_gone", at_ms: 9000, subject: "person", text: "사람 안 보임", meaningful: true },
       { kind: "vlm", at_ms: 9100, subject: "e9", text: "VLM: 식탁에 컵 하나", meaningful: false }]);
     d.tick();
     await d.idle();
-    expect(records[0]).toMatchObject({ seq: 1, status: "valid", action: null, memoryVersion: 0, world: { person_visible: false } });
-    expect(sent[0]!.observation_text).toContain("사람 안 보임");
-    expect(sent[0]!.observation_text).toContain("VLM: 식탁에 컵 하나");   // 바뀐 VLM 요약도 관찰 텍스트에 든다
-    expect(records[0]!.textSent).toBe(sent[0]!.observation_text);
+    expect(records[0]).toMatchObject({ seq: 1, status: "valid", action: null, memoryVersion: 0, world: { person_visible: false, objects: [] } });
+    const sent = pam.bodies[0] as { observation_text: string; final_time: string; memory_kind: string; tasks: string[] };
+    expect(sent.observation_text).toContain("사람 안 보임");
+    expect(sent.observation_text).toContain("VLM: 식탁에 컵 하나");   // 바뀐 VLM 요약도 관찰 텍스트에 든다
+    expect(sent).toMatchObject({ final_time: "1970-01-01T09:00:10.000+09:00", memory_kind: "fsm", tasks: [...CUP_TASKS] });
+    expect(records[0]!.textSent).toBe(sent.observation_text);
+    expect(logs.filter((l) => l.type === "decision")).toEqual([expect.objectContaining({ id: "pam-1", seq: 1, text_sent: sent.observation_text, status: "valid" })]);
+    d.tick();
+    await d.idle();
+    expect(pam.bodies).toHaveLength(1);   // 이미 부른 변화로 다시 부르지 않는다
   });
 
-  it("PAM에 닿지 않다가 닿으면 연결 끊김·연결됨을 한 번씩 기록한다", async () => {
+  it("PAM에 닿지 않다가 닿으면 연결 끊김·연결됨을 한 번씩 기록한다. 닿지 않은 판단은 실패로 남긴다", async () => {
     const logs: BrainLog[] = [];
+    const records: DecisionRecord[] = [];
     let url = "http://127.0.0.1:9";
-    const pam = { predict: (r: any) => new PamClient({ url }).predict(r) } as unknown as PamClient;
+    const client = { predict: (r: Parameters<PamClient["predict"]>[0]) => new PamClient({ url }).predict(r) } as unknown as PamClient;
     let now = 10_000;
-    const d = new Decider({ pam, world: new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }),
-      trigger: new Trigger({ mode: "event", minGapMs: 0, periodMs: 1000, idleStopMs: 1e9, maxInflight: 1 }, 0),
-      tasks: () => [...CUP_TASKS], memory: () => ({ memory: CUP_FSM_MEMORY, kind: "fsm", version: 0 }), emit: (l) => logs.push(l), offsetMinutes: 540, clock: { now: () => now } });
-    const poke = async () => { d.onChanges([{ kind: "appeared", at_ms: now, subject: "cup_1", text: "컵 보임", meaningful: true }]); d.tick(); await d.idle(); now += 1000; };
+    const d = new Decider({ pam: client, world: emptyWorld(), trigger: event(), tasks: () => [...CUP_TASKS], memory,
+      emit: (l) => logs.push(l), onDecision: (r) => records.push(r), offsetMinutes: 540, clock: { now: () => now } });
+    const poke = async () => { d.onChanges([{ kind: "appeared", at_ms: now, subject: "cup_1", text: "컵 cup_1 보임", meaningful: true }]); d.tick(); await d.idle(); now += 1000; };
     await poke(); await poke();
-    url = await startPam();
+    pam = await startFakePam();
+    url = pam.url;
     await poke();
-    expect(logs.filter((l) => l.type === "link").map((l) => l.type === "link" && l.up)).toEqual([false, true]);
+    expect(logs.filter((l) => l.type === "link").map((l) => l.type === "link" && [l.up, l.text])).toEqual([[false, "PAM 연결 끊김"], [true, "PAM 연결됨"]]);
+    expect(records.map((r) => r.status)).toEqual(["failed", "failed", "valid"]);
+    expect(records[0]!.error).toMatch(/PAM 연결 실패/);
+  }, 20_000);
+
+  it("주기 판단이 멈추고 다시 시작하면 한 번씩 기록한다", async () => {
+    pam = await startFakePam();
+    const logs: BrainLog[] = [];
+    let now = 0;
+    const d = new Decider({ pam: new PamClient({ url: pam.url }), world: emptyWorld(),
+      trigger: new Trigger({ mode: "periodic", minGapMs: 0, periodMs: 1000, idleStopMs: 5000, maxInflight: 4 }, 0),
+      tasks: () => [...CUP_TASKS], memory, emit: (l) => logs.push(l), offsetMinutes: 540, clock: { now: () => now } });
+    now = 6000;
+    d.tick(); d.tick();
+    d.onChanges([{ kind: "appeared", at_ms: 6500, subject: "cup_1", text: "컵 cup_1 보임", meaningful: true }]);
+    now = 7000;
+    d.tick();
+    await d.idle();
+    expect(logs.filter((l) => l.type === "trigger").map((l) => l.type === "trigger" && [l.paused, l.text])).toEqual([[true, "사람이 없어 판단을 멈춤"], [false, "판단을 다시 시작함"]]);
+    expect(pam.bodies).toHaveLength(1);
+  });
+
+  it("멈추면 늦게 온 답을 기록하지 않는다", async () => {
+    pam = await startFakePam();
+    const logs: BrainLog[] = [];
+    const d = new Decider({ pam: new PamClient({ url: pam.url }), world: emptyWorld(), trigger: event(), tasks: () => [...CUP_TASKS], memory,
+      emit: (l) => logs.push(l), offsetMinutes: 540, clock: { now: () => 10_000 } });
+    d.onChanges([{ kind: "appeared", at_ms: 9000, subject: "cup_1", text: "컵 cup_1 보임", meaningful: true }]);
+    d.tick();
+    d.stop();
+    await d.idle();
+    expect(logs.filter((l) => l.type === "decision")).toEqual([]);
   });
 });
 ```
-(`world-decide.test.ts` 맨 위에 `import type { BrainLog } from "../src/contract/events.js";`.)
+(시험용 PAM 자리는 `tests/helpers/pam.ts`의 `startFakePam`이다. `tests/world-trigger.test.ts`에는 `loadTriggerConfig` 기본값·틀린 값 시험을 더한다.)
 
-- [ ] **Step 2: 실패 확인** — `H npx vitest run tests/world-trigger.test.ts tests/world-decide.test.ts` / Expected: FAIL
+- [ ] **Step 2: 실패 확인** — `H npx vitest run tests/world-trigger.test.ts tests/world-decide.test.ts tests/world-text.test.ts` / Expected: FAIL
 - [ ] **Step 3: 구현**
 
 ```ts
@@ -4508,13 +4541,19 @@ import type { WorldChange } from "../contract/world.js";
 export type TriggerMode = "event" | "periodic";
 export interface TriggerConfig { mode: TriggerMode; minGapMs: number; periodMs: number; idleStopMs: number; maxInflight: number }
 const ACTIVITY = new Set(["appeared", "gone", "person_appeared", "person_gone"]);
-const num = (raw: string | undefined, d: number) => { const v = Number(raw); return raw?.trim() && Number.isFinite(v) && v >= 0 ? v : d; };
+const num = (env: Record<string, string | undefined>, key: string, d: number) => {
+  const raw = env[key]?.trim();
+  if (!raw) return d;
+  const v = Number(raw);
+  if (!Number.isFinite(v) || v < 0) throw new Error(`${key}=${raw}: 0 이상의 숫자여야 합니다`);
+  return v;
+};
 
 export function loadTriggerConfig(env: Record<string, string | undefined>): TriggerConfig {
   const mode = env.PAM_TRIGGER?.trim() || "event";
   if (mode !== "event" && mode !== "periodic") throw new Error(`PAM_TRIGGER=${mode}: event 또는 periodic이어야 합니다`);
-  return { mode, minGapMs: num(env.PAM_MIN_GAP_MS, 3000), periodMs: num(env.PAM_PERIOD_MS, 1000), idleStopMs: num(env.PAM_IDLE_STOP_MS, 1_800_000),
-    maxInflight: Math.max(1, Math.floor(num(env.PAM_MAX_INFLIGHT, mode === "event" ? 1 : 4))) };
+  return { mode, minGapMs: num(env, "PAM_MIN_GAP_MS", 3000), periodMs: num(env, "PAM_PERIOD_MS", 1000), idleStopMs: num(env, "PAM_IDLE_STOP_MS", 1_800_000),
+    maxInflight: Math.max(1, Math.floor(num(env, "PAM_MAX_INFLIGHT", mode === "event" ? 1 : 4))) };
 }
 
 export class Trigger {
@@ -4544,74 +4583,115 @@ export class Trigger {
   called(nowMs: number): void { this.lastCall = nowMs; this.pending = false; }
 }
 ```
-주기 시험의 「등장이면 다시」는 `onChanges`의 `lastActivity`가 `at_ms`(0)로 남으므로 `pending`이 true가 되어 다시 부른다. `docs/provenance.md`에 줄을 더한다: `| src/world/trigger.ts | noonchi-server f8545a1 noonchi/sendrule.py | 주기 규칙(사람이 보이면 1초마다, 사람 없음·등장 사라짐 없음 30분이면 멈춤) |`.
+주기 시험의 「등장이면 다시」는 `onChanges`의 `lastActivity`가 `at_ms`(0)로 남으므로 `pending`이 true가 되어 다시 부른다. `docs/provenance.md`에 줄을 더한다: `| src/world/trigger.ts (periodic) | noonchi-server f8545a1 noonchi/sendrule.py | 사람이 보이는 동안 주기마다 판단, 사람 없음·등장 사라짐 없음 30분이면 멈춤, 등장·사라짐이 생기면 다시 |`.
 
 `src/world/text.ts`에 더한다:
 ```ts
-/** World State → PAM 관찰 텍스트: 최근 windowMs의 변화 줄 + 오래 이어진 사실 + 눈 위치. */
-export function textFromWorld(world: WorldView, recent: WorldChange[], o: { nowMs: number; offsetMinutes: number; windowMs?: number }): string {
+/** 오래 이어진 시간: 1분 아래는 초째, 그 위는 분째. */
+const lasting = (ms: number) => (ms < 60_000 ? `${Math.max(0, Math.round(ms / 1000))}초째` : `${Math.floor(ms / 60_000)}분째`);
+
+/** World State → PAM 관찰 텍스트: 최근 windowMs(기본 60초)의 변화 줄 + 오래 이어진 사실(물건·사람·상태가 있는 가전) + 눈 위치. */
+export function textFromWorld(world: WorldView, recent: readonly WorldChange[], o: { nowMs: number; offsetMinutes: number; windowMs?: number }): string {
   const since = o.nowMs - (o.windowMs ?? 60_000);
-  const lines = recent.filter((c) => c.at_ms >= since).map((c) => ({ atMs: c.at_ms, text: c.text }));
-  const dur = (ms: number) => (ms < 60_000 ? `${Math.round(ms / 1000)}초째` : `${Math.floor(ms / 60_000)}분째`);
+  const lines = recent.filter((c) => c.at_ms >= since && c.at_ms <= o.nowMs).map((c) => ({ atMs: c.at_ms, text: c.text }));
+  const at = (ms: number) => clock(ms, o.offsetMinutes);
   const facts: string[] = [];
   for (const ob of world.objects.filter((x) => x.status !== "gone")) {
-    const where = ob.surface ? `${ob.surface} 위` : ob.facts.place ? STATE_TEXT[ob.facts.place.value] ?? ob.facts.place.value : "자리 모름";
-    const extra = Object.values(ob.facts).filter((f) => f && f !== ob.facts.place).map((f) => STATE_TEXT[f!.value] ?? f!.value);
-    facts.push(`${objectName(ob.cls, ob.id)} ${where}${extra.length ? ` · ${extra.join(" · ")}` : ""}: ${clock(ob.first_seen_ms, o.offsetMinutes)}부터 ${dur(o.nowMs - ob.first_seen_ms)}, 마지막 확인 ${clock(ob.last_seen_ms, o.offsetMinutes)}${ob.status === "out_of_view" ? ", 지금 시야 밖" : ""}`);
+    const place = ob.facts.place;
+    const where = ob.surface_label ? onSurface(ob.surface_label) : place ? STATE_TEXT[place.value] ?? place.value : PLACE_UNKNOWN;
+    const extra = (Object.entries(ob.facts) as [string, WorldFact | undefined][])
+      .filter(([k, f]) => f && k !== "place").map(([, f]) => STATE_TEXT[f!.value] ?? f!.value);
+    facts.push(`${objectName(ob.cls, ob.id)} ${where}${extra.length ? ` · ${extra.join(" · ")}` : ""}: ${at(ob.first_seen_ms)}부터 ${lasting(o.nowMs - ob.first_seen_ms)}, 마지막 확인 ${at(ob.last_seen_ms)}${ob.status === "out_of_view" ? `, ${OUT_OF_VIEW_NOW}` : ""}`);
   }
-  facts.push(`사람 ${world.person.visible ? "보임" : "안 보임"}: ${clock(world.person.since_ms, o.offsetMinutes)}부터 ${dur(o.nowMs - world.person.since_ms)}`);
+  const person = world.person.visible ? CHANGE_TEXT.personAppeared : CHANGE_TEXT.personGone;
+  facts.push(world.person.since_ms === null ? person : `${person}: ${at(world.person.since_ms)}부터 ${lasting(o.nowMs - world.person.since_ms)}`);
   for (const d of world.devices.filter((x) => x.status)) {
-    facts.push(`${d.label}(${d.id}): ${d.status}, ${clock(d.changed_ms, o.offsetMinutes)}에 바뀜${d.remaining_min !== null ? `, ${CHANGE_TEXT.remaining(d.remaining_min)}` : ""}`);
+    facts.push(`${d.label} ${d.id}: ${d.status}, ${at(d.changed_ms)}에 바뀜${d.remaining_min !== null ? `, ${CHANGE_TEXT.remaining(d.remaining_min)}` : ""}`);
   }
-  const eye = world.eye ? `클로이드 눈: ${world.eye.room ?? "방 모름"}` : null;
+  const eye = world.eye ? `${EYE_TEXT} ${world.eye.room ?? ROOM_UNKNOWN}` : null;
   return buildPamText({ lines, facts, eye, offsetMinutes: o.offsetMinutes });
 }
 ```
-(`STATE_TEXT`·`objectName`·`CHANGE_TEXT`는 `src/world/labels.ts`에서 가져온다.) `tests/world-text.test.ts`에 「`textFromWorld`는 최근 창의 변화 줄(바뀐 VLM 요약·분석 없음 포함, 같은 줄은 묶음)과 남은 시간이 있는 가전을 담는다」를 더한다: 식기세척기 `remaining_min: 42`이면 `[지속] 식기세척기(dishwasher_1): 작동 중, 21:00:00에 바뀜, 남은 시간 42분`.
+(글은 모두 `src/world/labels.ts`에서 가져온다. 괄호 없이 「식기세척기 dishwasher_1」.) `tests/world-text.test.ts`에 「`textFromWorld`는 최근 창의 변화 줄(바뀐 VLM 요약·분석 없음 포함, 같은 줄은 묶음), 오래 이어진 사실, 남은 시간이 있는 가전, 눈 위치를 담는다」(창 밖 줄·사라진 물건은 빠짐, 시야 밖 물건은 「지금 시야 밖」, 식기세척기 `remaining_min: 42`이면 `[지속] 식기세척기 dishwasher_1: 작동 중, 21:00:00에 바뀜, 남은 시간 42분`)와 「첫 프레임 전이면 사람 줄에 시각을 붙이지 않는다」를 더하고, 이미 있는 시험의 물건 이름을 「컵 cup_1」로 바꾼다.
 
 `src/world/decide.ts`:
 ```ts
 // 판단 호출: Trigger가 허락하면 World State 관찰 텍스트 + 기억 + 행동 목록으로 PAM을 부른다. 요청마다 번호(seq)를 붙인다.
-// 동시 상한을 넘으면 부르지 않는다(Trigger.due가 false). 결과는 기록(decision)과 onDecision으로 넘긴다. 늦게 온 답의 처리는 실행 추적(Task 29)이 seq로 한다.
+// 동시 상한을 넘으면 부르지 않는다(Trigger.due가 false). 결과는 기록(decision)과 onDecision으로 넘긴다. 늦게 온 답의 처리는 실행 추적이 seq로 한다.
 // PAM 연결 끊김·연결됨(link)과 주기 판단 멈춤·다시 시작(trigger)은 바뀔 때 한 번씩 기록한다.
 import type { BrainLog, DecisionWorld } from "../contract/events.js";
 import type { WorldChange, WorldView } from "../contract/world.js";
-import { isoWithOffset, type PamMemory, type Prediction } from "../brain/decision.js";
+import { checkInput, isoWithOffset, type PamMemory, type Prediction } from "../brain/decision.js";
 import { PamLinkError, type PamClient } from "../brain/pam.js";
 import { LINK_TEXT, TRIGGER_TEXT } from "./labels.js";
 import type { WorldState } from "./state.js";
 import { textFromWorld } from "./text.js";
 import type { Trigger } from "./trigger.js";
 
-export interface DecisionRecord { id: string; seq: number; atMs: number; textSent: string; finalTime: string; status: "valid" | "failed"; prediction: Prediction | null; action: string | null; error?: string; memoryVersion: number; world: DecisionWorld }
+/** 관찰 텍스트에 넣을 변화를 이만큼 둔다(텍스트 창은 그 안의 최근 60초). */
+const RECENT_KEEP_MS = 600_000;
 
+export interface DecisionRecord {
+  id: string;
+  seq: number;
+  atMs: number;
+  /** PAM에 보낸 관찰 텍스트. */
+  textSent: string;
+  finalTime: string;
+  status: "valid" | "failed";
+  prediction: Prediction | null;
+  /** 고른 행동(대기·실패면 null). */
+  action: string | null;
+  error?: string;
+  memoryVersion: number;
+  world: DecisionWorld;
+}
+
+/** 판단 기록에 붙이는 World State 요약: 사라지지 않은 물건의 상태·면·위치 오차·사실, 사람이 보이는가, 분석 없음 수. */
 export function decisionWorld(w: WorldView): DecisionWorld {
   return {
-    objects: w.objects.filter((o) => o.status !== "gone").map((o) => ({ id: o.id, cls: o.cls, status: o.status, surface: o.surface, error_m: o.error_m,
-      facts: Object.fromEntries(Object.entries(o.facts).map(([k, f]) => [k, { value: f!.value, certainty: f!.certainty }])) })),
+    objects: w.objects.filter((o) => o.status !== "gone").map((o) => ({
+      id: o.id, cls: o.cls, status: o.status, surface: o.surface, error_m: o.error_m,
+      facts: Object.fromEntries(Object.entries(o.facts).flatMap(([k, f]) => (f ? [[k, { value: f.value, certainty: f.certainty }]] : []))),
+    })),
     person_visible: w.person.visible, vlm_missing: w.vlm_missing, yolo_missing: w.yolo_missing,
   };
 }
 
+export interface DeciderOptions {
+  pam: PamClient;
+  world: WorldState;
+  trigger: Trigger;
+  tasks: () => string[];
+  memory: () => { memory: PamMemory; kind: "list" | "fsm"; version: number };
+  emit: (log: BrainLog) => void;
+  onDecision?: (d: DecisionRecord) => void;
+  /** 관찰 텍스트·마지막 관찰 시각의 시간대(분). */
+  offsetMinutes: number;
+  clock?: { now(): number };
+}
+
 export class Decider {
-  private readonly recent: WorldChange[] = [];
+  private recent: WorldChange[] = [];
   private readonly running = new Set<Promise<void>>();
   private seq = 0;
   private stopped = false;
   private link: boolean | null = null;
   private paused = false;
   private readonly clock: { now(): number };
-  constructor(private readonly o: { pam: PamClient; world: WorldState; trigger: Trigger; tasks: () => string[]; memory: () => { memory: PamMemory; kind: "list" | "fsm"; version: number }; emit: (log: BrainLog) => void; onDecision?: (d: DecisionRecord) => void; offsetMinutes: number; clock?: { now(): number } }) {
+
+  constructor(private readonly o: DeciderOptions) {
     this.clock = o.clock ?? { now: () => Date.now() };
   }
 
   onChanges(changes: WorldChange[]): void {
+    if (this.stopped) return;
     const now = this.clock.now();
-    this.recent.push(...changes);
-    while (this.recent.length && this.recent[0]!.at_ms < now - 600_000) this.recent.shift();
+    this.recent = [...this.recent, ...changes].filter((c) => c.at_ms >= now - RECENT_KEEP_MS);
     this.o.trigger.onChanges(changes);
   }
 
+  /** 타이머(250ms)가 부른다. 멈춤·다시 시작이 바뀌면 기록하고, 부를 때면 PAM을 부른다. */
   tick(): void {
     if (this.stopped) return;
     const now = this.clock.now();
@@ -4624,52 +4704,81 @@ export class Decider {
     if (!this.o.trigger.due(now, view.person.visible, this.running.size)) return;
     this.o.trigger.called(now);
     const seq = ++this.seq;
-    const id = `pam-${seq}`;
     const textSent = textFromWorld(view, this.recent, { nowMs: now, offsetMinutes: this.o.offsetMinutes });
     const finalTime = isoWithOffset(now, this.o.offsetMinutes);
-    const world = decisionWorld(view);
     const tasks = this.o.tasks();
     const mem = this.o.memory();
-    const base = { id, seq, atMs: now, textSent, finalTime, memoryVersion: mem.version, world };
-    const job = this.o.pam.predict({ final_time: finalTime, observation_text: textSent, memory_kind: mem.kind, memory: mem.memory, tasks }).then(
-      (p) => { this.setLink(true); this.finish({ ...base, status: "valid", prediction: p, action: p.task_index === -1 ? null : tasks[p.task_index]! }); },
-      (e: unknown) => { if (e instanceof PamLinkError) this.setLink(false); else this.setLink(true);
-        this.finish({ ...base, status: "failed", prediction: null, action: null, error: (e as Error).message }); },
-    ).finally(() => this.running.delete(job));
+    const base = { id: `pam-${seq}`, seq, atMs: now, textSent, finalTime, memoryVersion: mem.version, world: decisionWorld(view) };
+    const job: Promise<void> = Promise.resolve()
+      .then(() => {
+        checkInput({ text: textSent, finalTime, memory: mem.memory, memoryKind: mem.kind, tasks });
+        return this.o.pam.predict({ final_time: finalTime, observation_text: textSent, memory_kind: mem.kind, memory: mem.memory, tasks });
+      })
+      .then(
+        (p) => {
+          this.setLink(true);
+          this.finish({ ...base, status: "valid", prediction: p, action: p.task_index === -1 ? null : tasks[p.task_index] ?? null });
+        },
+        (e: unknown) => {
+          if (e instanceof PamLinkError) this.setLink(false);
+          this.finish({ ...base, status: "failed", prediction: null, action: null, error: (e as Error).message });
+        },
+      )
+      .finally(() => { this.running.delete(job); });
     this.running.add(job);
   }
 
+  /** 처음부터 닿으면 기록하지 않는다. 그 뒤로는 바뀔 때 한 번씩. */
   private setLink(up: boolean): void {
     if (this.stopped || this.link === up) return;
-    if (this.link === null && up) { this.link = true; return; }    // 처음부터 닿으면 기록하지 않는다
+    const first = this.link === null;
     this.link = up;
+    if (first && up) return;
     this.o.emit({ type: "link", at_ms: this.clock.now(), target: "pam", up, text: up ? LINK_TEXT.up : LINK_TEXT.down });
   }
 
   private finish(r: DecisionRecord): void {
     if (this.stopped) return;
-    this.o.emit({ type: "decision", at_ms: this.clock.now(), id: r.id, seq: r.seq, text_sent: r.textSent, status: r.status, prediction: r.prediction, action: r.action,
-      ...(r.error ? { error: r.error } : {}), memory_version: r.memoryVersion, world: r.world });
+    this.o.emit({
+      type: "decision", at_ms: this.clock.now(), id: r.id, seq: r.seq, text_sent: r.textSent, status: r.status, prediction: r.prediction, action: r.action,
+      ...(r.error ? { error: r.error } : {}), memory_version: r.memoryVersion, world: r.world,
+    });
     this.o.onDecision?.(r);
   }
 
-  async idle(): Promise<void> { while (this.running.size) await Promise.all([...this.running]); }
-  stop(): void { this.stopped = true; }
+  /** 나가 있는 판단이 끝날 때까지 기다린다(시험용). */
+  async idle(): Promise<void> {
+    while (this.running.size) await Promise.all([...this.running]);
+  }
+
+  /** 멈추면 새로 부르지 않고, 늦게 온 답도 기록하지 않는다. */
+  stop(): void {
+    this.stopped = true;
+  }
 }
 ```
+보내기 전에 `checkInput`(관찰 텍스트·시간대·작업 목록·기억 모양)을 부른다. `checkInput`은 `Pick<DecisionInput, "text" | "finalTime" | "memory" | "memoryKind" | "tasks">`를 받는다.
+
 `src/world/labels.ts`에 더한다:
 ```ts
+/** 관찰 텍스트 사실 글. */
+export const PLACE_UNKNOWN = "자리 모름";
+export const OUT_OF_VIEW_NOW = "지금 시야 밖";
+export const EYE_TEXT = "클로이드 눈:";
+export const ROOM_UNKNOWN = "방 모름";
+
+/** PAM 연결과 주기 판단 멈춤 기록 글. */
 export const LINK_TEXT = { up: "PAM 연결됨", down: "PAM 연결 끊김" } as const;
 export const TRIGGER_TEXT = { paused: "사람이 없어 판단을 멈춤", resumed: "판단을 다시 시작함" } as const;
 ```
 
-`home.ts`: 파이프라인 `onChanges: (c) => decider.onChanges(c)`, `setInterval(() => decider.tick(), 250).unref()`, 기억은 G4 전까지 `{ memory: CUP_FSM_MEMORY, kind: "fsm", version: 0 }`, 행동 목록 `CUP_TASKS`. 닫을 때 타이머·`decider.stop()`. `.env.example`에 `PAM_TRIGGER=`(event | periodic), `PAM_MIN_GAP_MS=`, `PAM_PERIOD_MS=`, `PAM_IDLE_STOP_MS=`, `PAM_MAX_INFLIGHT=`(`ENGINE_FRAME_MS`·`VLM_MAX_INFLIGHT`·`DETECT_QUEUE_MAX`는 Task 21, `VLM_TIMEOUT_MS`·`PAM_TIMEOUT_MS`는 이미 있다).
+`home.ts`: `Decider({ pam: new PamClient({ url: loadEndpoints(env).pamUrl, timeoutMs: PAM_TIMEOUT_MS }), trigger: new Trigger(loadTriggerConfig(env), 지금), offsetMinutes: -new Date().getTimezoneOffset(), clock: ctx.brain?.clock })`를 파이프라인보다 먼저 만들고, 파이프라인 `onChanges: (c) => decider.onChanges(c)`, `setInterval(() => decider.tick(), 250).unref()`, 기억은 G4 전까지 `{ memory: CUP_FSM_MEMORY, kind: "fsm", version: 0 }`, 행동 목록 `CUP_TASKS`, `emit`은 대시보드 `{type:"brain"}`. 닫을 때 타이머·`decider.stop()`. `docs/reference.md` 「관찰 흐름」 절에 판단 호출 줄, 환경 변수 표에 `PAM_TRIGGER`·`PAM_MIN_GAP_MS`·`PAM_PERIOD_MS`·`PAM_IDLE_STOP_MS`·`PAM_MAX_INFLIGHT`. `.env.example`에 `PAM_TRIGGER=`(event | periodic), `PAM_MIN_GAP_MS=`, `PAM_PERIOD_MS=`, `PAM_IDLE_STOP_MS=`, `PAM_MAX_INFLIGHT=`(`ENGINE_FRAME_MS`·`VLM_MAX_INFLIGHT`·`DETECT_QUEUE_MAX`는 Task 21, `VLM_TIMEOUT_MS`·`PAM_TIMEOUT_MS`는 이미 있다).
 
-- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/world-trigger.test.ts tests/world-decide.test.ts tests/world-text.test.ts tests/observe-pipeline.test.ts tests/self-contained.test.ts` 그리고 `H npm run lint` / Expected: PASS
+- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/world-trigger.test.ts tests/world-decide.test.ts tests/world-text.test.ts tests/observe-pipeline.test.ts tests/observe-start.test.ts tests/pam-text-only.test.ts tests/brain-pam.test.ts tests/lint-ui-copy.test.ts tests/self-contained.test.ts` 그리고 `H npm run lint` / Expected: PASS
 - [ ] **Step 5: 커밋**
 
 ```bash
-git add src/world/trigger.ts src/world/decide.ts src/world/text.ts src/world/labels.ts src/server/home.ts .env.example tests/world-trigger.test.ts tests/world-decide.test.ts tests/world-text.test.ts docs/provenance.md
+git add src/world/trigger.ts src/world/decide.ts src/world/text.ts src/world/labels.ts src/brain/decision.ts src/server/home.ts .env.example tests/world-trigger.test.ts tests/world-decide.test.ts tests/world-text.test.ts tests/observe-start.test.ts docs/provenance.md docs/reference.md docs/superpowers/plans/2026-11-07-noonchi-architecture.md
 git commit -m "feat: call PAM on meaningful World State changes or a periodic rule with the World State observation text"
 ```
 

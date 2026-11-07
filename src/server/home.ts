@@ -6,9 +6,12 @@ import { join } from "node:path";
 import { Agent } from "../agent/agent.js";
 import { Policy } from "../agent/policy.js";
 import { createProvider } from "../agent/providers/index.js";
-import type { ReadyView } from "../contract/events.js";
+import { CUP_FSM_MEMORY, CUP_TASKS } from "../brain/decision.js";
+import { PamClient } from "../brain/pam.js";
+import type { BrainLog, ReadyView } from "../contract/events.js";
 import type { ControlMode } from "../contract/setup.js";
 import { SignalHub, type SignalSource } from "../hub/signals.js";
+import { loadEndpoints } from "../infer/endpoints.js";
 import { createPipeline, type ObservationPipeline, type PipelineInject } from "../observe/pipeline.js";
 import type { DeviceHub } from "../hub/types.js";
 import type { LayoutEditor } from "../layout/editor.js";
@@ -26,7 +29,9 @@ import { TouchStore, eyeHeightOf, floorLookup, homeBounds, readTouchPoints, touc
 import { PlanHub } from "../plan/hub.js";
 import { floorPlanFrom, roomAt } from "../plan/route.js";
 import { surfacesFromLayout, type PlaneSurface } from "../world/place.js";
+import { Decider } from "../world/decide.js";
 import { WorldState } from "../world/state.js";
+import { Trigger, loadTriggerConfig } from "../world/trigger.js";
 import type { ThinqLink } from "../thinq/link.js";
 import { createApp, type TwinHomeApp } from "./app.js";
 import { startHub, type HubKind, type MatterTransport, type StartHubOptions } from "./hubFactory.js";
@@ -119,6 +124,8 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
   if (none > 0) log(`신호 출처: 신호 없음 ${none}개(상태를 모름으로 보임)`);
   let pipeline: ObservationPipeline | null = null;
   let unsubWorld = () => {};
+  let decider: Decider | null = null;
+  let decideTimer: NodeJS.Timeout | undefined;
   let app: TwinHomeApp | undefined;
   let phone: PhoneServer | undefined;
   try {
@@ -169,12 +176,23 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       })
       : null;
     if (world) {
-      pipeline = await createPipeline({
-        env, runtimeDir, log, world, inject: ctx.brain,
-        emit: (event) => appRef.current?.broadcast({ type: "brain", event }),
-        broadcastWorld: (w) => appRef.current?.broadcast({ type: "world", world: w }),
-      });
       const now = () => ctx.brain?.clock?.now() ?? Date.now();
+      const emit = (event: BrainLog) => appRef.current?.broadcast({ type: "brain", event });
+      // 판단 호출(src/world/decide.ts): World State 관찰 텍스트 + 기억 + 행동 목록으로 PAM 서비스를 부른다. 기억은 반성(G4) 전까지 컵 FSM 기억
+      const pamTimeout = Number(env.PAM_TIMEOUT_MS);
+      const decide = new Decider({
+        pam: new PamClient({ url: loadEndpoints(env).pamUrl, timeoutMs: Number.isFinite(pamTimeout) && pamTimeout > 0 ? pamTimeout : undefined }),
+        world, trigger: new Trigger(loadTriggerConfig(env), now()), tasks: () => [...CUP_TASKS],
+        memory: () => ({ memory: CUP_FSM_MEMORY, kind: "fsm", version: 0 }), emit, offsetMinutes: -new Date().getTimezoneOffset(), clock: ctx.brain?.clock,
+      });
+      decider = decide;
+      pipeline = await createPipeline({
+        env, runtimeDir, log, world, inject: ctx.brain, emit,
+        broadcastWorld: (w) => appRef.current?.broadcast({ type: "world", world: w }),
+        onChanges: (c) => decide.onChanges(c),
+      });
+      decideTimer = setInterval(() => decide.tick(), 250);
+      decideTimer.unref?.();
       for (const s of signals.states()) world.applyDevice(s, now()); // 시작 상태는 변화로 내지 않는다
       const observing = pipeline;
       unsubWorld = signals.subscribe((s) => observing.onDevice(s));
@@ -263,7 +281,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         closed = true;
         // 한 단계가 실패해도 나머지(특히 폰 포트·허브)는 닫는다. 새 집이 같은 포트를 다시 잡아야 한다
         const steps: [string, () => unknown][] = [
-          ["초점", unsubFocus], ["관찰 흐름", () => { unsubWorld(); return pipeline?.close(); }], ["눈 화면", () => feed?.close()],
+          ["초점", unsubFocus], ["관찰 흐름", () => { clearInterval(decideTimer); decider?.stop(); unsubWorld(); return pipeline?.close(); }], ["눈 화면", () => feed?.close()],
           ["폰 서버", () => phoneNow?.close()], ["앱", () => appNow.close()], ["배치", () => layout?.editor.close()], ["ThinQ", () => link?.stop()],
           ["허브", () => signals.stop()],
         ];
@@ -279,6 +297,8 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
   } catch (e) {
     await phone?.close().catch(() => {});
     await app?.close().catch(() => {});
+    clearInterval(decideTimer);
+    decider?.stop();
     unsubWorld();
     await pipeline?.close().catch(() => {});
     await signals.stop().catch(() => {});

@@ -230,7 +230,7 @@ export const CUP_FSM_MEMORY: FsmMemory = {
 export const MAX_OBSERVATION_TEXT = 20_000;
 
 /** 보내기 전 검사: 관찰 텍스트, 시간대 있는 마지막 관찰 시각, 작업 목록, 기억 모양. */
-export function checkInput(input: DecisionInput): void {
+export function checkInput(input: Pick<DecisionInput, "text" | "finalTime" | "memory" | "memoryKind" | "tasks">): void {
   if (typeof input.text !== "string" || !input.text.trim()) throw new ContractError("관찰 텍스트가 비어 있습니다");
   if (input.text.length > MAX_OBSERVATION_TEXT) throw new ContractError(`관찰 텍스트는 ${MAX_OBSERVATION_TEXT}자까지입니다(지금 ${input.text.length}자)`);
   if (!TZ.test(input.finalTime) || Number.isNaN(Date.parse(input.finalTime))) throw new ContractError("finalTime: 시간대가 있는 ISO 시각이어야 합니다");
