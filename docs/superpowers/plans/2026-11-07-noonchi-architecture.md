@@ -1333,8 +1333,10 @@ describe("가짜 OpenAI 호환 서버", () => {
 });
 ```
 
+시험에 둘을 더한다: 판단 답의 `finish_reason`이 `stop`인지, 명령(`node --import tsx scripts/fake-openai.ts --port 0`, cwd 저장소 뿌리)이 첫 줄에 `listening <포트>`를 찍고 그 포트에서 답하는지. 시험의 요청은 `fetchRetry`로 보낸다.
+
 - [ ] **Step 2: 실패 확인** — `H npx vitest run tests/fake-openai.test.ts` / Expected: FAIL 모듈 없음
-- [ ] **Step 3: 구현**
+- [ ] **Step 3: 구현** (본문이 JSON이 아니면 400, 명령은 SIGTERM·SIGINT에 닫고 0으로 끝난다)
 
 ```ts
 // scripts/fake-openai.ts
@@ -1343,8 +1345,8 @@ describe("가짜 OpenAI 호환 서버", () => {
 // 답: 장면 스키마(scene_observation) → 감지 번호마다 contents_unknown, PAM 판단(task inference module) → 대기(-1),
 //     PAM 반성(procedural memory) → 받은 Current memory 그대로, 에이전트(POST /v1/responses) → 글 답 「가짜 답」.
 import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
 import { pathToFileURL } from "node:url";
+import { listenRetry } from "../src/server/net.js";
 
 export interface FakeRequest { method: string; path: string; body: any }
 export interface FakeServer { url: string; requests: FakeRequest[]; close(): Promise<void> }
@@ -1395,8 +1397,7 @@ export async function startFakeOpenAI(o: { port?: number; host?: string; reply?:
     send(404, { error: { message: `없는 경로: ${path}` } });
   });
   const host = o.host ?? "127.0.0.1";
-  await new Promise<void>((ok) => server.listen(o.port ?? 0, host, ok));
-  const port = (server.address() as AddressInfo).port;
+  const { port } = await listenRetry(server, o.port ?? 0, host);
   return { url: `http://${host === "0.0.0.0" ? "127.0.0.1" : host}:${port}`, requests,
     close: () => new Promise((ok) => { server.closeAllConnections(); server.close(() => ok()); }) };
 }
