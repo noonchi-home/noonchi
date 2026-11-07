@@ -1,0 +1,40 @@
+# 검사와 이미지 빌드만 한다. 이미지를 올리지 않는다. 실제 AI API·ThinQ를 부르지 않는다.
+name: ci
+on:
+  push:
+  pull_request:
+jobs:
+  node:
+    runs-on: ubuntu-24.04
+    env:
+      # YOLOX는 CPU로 돈다. onnxruntime-node의 CUDA 파일은 받지 않는다
+      ONNXRUNTIME_NODE_INSTALL: skip
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            ui/package-lock.json
+      - run: npm ci
+      - run: npm --prefix ui ci
+      - run: npm run lint
+      - run: npx tsc --noEmit
+      - run: npm --prefix ui run typecheck
+      - run: npx vitest run
+      - run: npm --prefix ui test
+      - run: npm --prefix ui run build
+  image:
+    runs-on: ubuntu-24.04
+    env:
+      ONNXRUNTIME_NODE_INSTALL: skip
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - run: npm ci
+      - run: docker build -t noonchi:ci .
+      - run: npx tsx scripts/container-smoke.ts

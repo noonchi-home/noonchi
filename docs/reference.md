@@ -25,6 +25,8 @@ cp .env.example .env    # 선택. 키는 .env에만 넣는다(git에 올리지 �
 npm start               # 화면을 빌드하고 http://127.0.0.1:8200  (허브 matter, network 전송)
 ```
 
+서버 배포(AWS GPU 서버 한 대, `compose.yaml`, Tailscale)는 [`docs/deploy.md`](deploy.md)를 따른다. 이미지 확인: `docker build -t noonchi:check .` 뒤 `npx tsx scripts/container-smoke.ts`(키 없이 127.0.0.1:8500·8510에 띄워 보고 지운다).
+
 브라우저로 <http://127.0.0.1:8200/>을 열고 채팅에 "거실 불 켜고 TV 꺼줘", "에어컨 24도로 맞춰줘", "현관문 열어줘"(승인 후 실행)를 입력한다. 가운데 3D 트윈에 바로 보인다(아래 "3D 트윈 연결").
 
 ## 구조

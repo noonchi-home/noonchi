@@ -1194,10 +1194,19 @@ git commit -m "feat: add the noonchi image, compose file with a gpu profile and 
 - [ ] **Step 1: 실패하는 시험** (`tests/deploy-files.test.ts`에 추가)
 
 ```ts
-it("CI: 화면 글·타입·시험·화면 빌드·이미지 빌드를 하고 이미지를 올리지 않는다", () => {
+it("CI: 화면 글·타입·시험·화면 빌드·이미지 빌드·키 없는 확인을 하고 이미지를 올리지 않는다", () => {
   const ci = read(".github/workflows/ci.yml");
-  for (const s of ["npm run lint", "npx tsc --noEmit", "npm --prefix ui run typecheck", "npx vitest run", "npm --prefix ui test", "npm --prefix ui run build", "docker build", "node-version-file: .node-version"]) expect(ci).toContain(s);
+  for (const s of ["npm run lint", "npx tsc --noEmit", "npm --prefix ui run typecheck", "npx vitest run", "npm --prefix ui test", "npm --prefix ui run build",
+    "docker build", "npx tsx scripts/container-smoke.ts", "node-version-file: .node-version"]) expect(ci).toContain(s);
   expect(ci).not.toMatch(/docker push|push: true/);
+  const jobs = (parse(ci) as { jobs: Record<string, { env?: Record<string, string> }> }).jobs;
+  for (const [name, j] of Object.entries(jobs)) expect(j.env?.ONNXRUNTIME_NODE_INSTALL, name).toBe("skip");
+});
+
+it("배포 문서: GPU 서버 크기·Tailscale 인증서·두 모드의 에이전트 키·두 모델 확인·호출량", () => {
+  const d = read("docs/deploy.md");
+  for (const s of ["g6e.2xlarge", "MagicDNS", "HTTPS Certificates", "tailscale serve --bg --https=443 http://127.0.0.1:8200", "tailscale serve --bg --https=8443 http://127.0.0.1:8210",
+    "`ANTHROPIC_API_KEY` 또는 `OPENAI_API_KEY`", "curl -s http://127.0.0.1:8410/v1/models", "curl -s http://127.0.0.1:8420/v1/models", "3,600", "vllm/vllm-openai:v0.17.0"]) expect(d).toContain(s);
 });
 ```
 
@@ -1206,6 +1215,7 @@ it("CI: 화면 글·타입·시험·화면 빌드·이미지 빌드를 하고 �
 
 `.github/workflows/ci.yml`:
 ```yaml
+# 검사와 이미지 빌드만 한다. 이미지를 올리지 않는다. 실제 AI API·ThinQ를 부르지 않는다.
 name: ci
 on:
   push:
@@ -1213,6 +1223,9 @@ on:
 jobs:
   node:
     runs-on: ubuntu-24.04
+    env:
+      # YOLOX는 CPU로 돈다. onnxruntime-node의 CUDA 파일은 받지 않는다
+      ONNXRUNTIME_NODE_INSTALL: skip
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -1232,6 +1245,8 @@ jobs:
       - run: npm --prefix ui run build
   image:
     runs-on: ubuntu-24.04
+    env:
+      ONNXRUNTIME_NODE_INSTALL: skip
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -1242,86 +1257,7 @@ jobs:
       - run: npx tsx scripts/container-smoke.ts
 ```
 
-`docs/deploy.md`:
-```markdown
-# 배포: AWS GPU 서버 한 대
-
-NOONCHI는 이 저장소 하나로 AWS EC2 GPU 서버 한 대에서 돈다. CPU에서 noonchi(서버·YOLOX)와 PAM 서비스가, GPU에서 vLLM 모델 서버 두 개가 돈다.
-
-## 1. 서버 준비
-
-1. 서비스 할당량(Service Quotas)에서 서울 리전(`ap-northeast-2`) 「Running On-Demand G and VT instances」 vCPU 한도 증가를 먼저 신청한다. 새 계정은 0이라 인스턴스를 못 띄운다.
-2. 인스턴스: g6e.2xlarge(8 vCPU, 64GiB, L40S 48GB). PAM 27B 4비트(약 14GB)와 Qwen3-VL-4B를 함께 올리고, CPU로 noonchi·YOLOX·PAM 서비스를 돌린다. g5·g6(24GB)면 PAM 모델을 줄인다. 처음 띄운 뒤 `docker stats`와 `/api/brain`의 `detect_ms`·VLM 분석 없음 수를 보고 크기를 정한다.
-3. AMI: NVIDIA 드라이버와 NVIDIA Container Toolkit이 든 Deep Learning AMI(Ubuntu). 다른 AMI면 드라이버, Docker, NVIDIA Container Toolkit을 설치한다.
-4. 저장소: 루트 볼륨과 따로 EBS 볼륨(gp3, 200GB 이상)을 `/srv`에 붙이고, Docker 데이터 폴더를 거기로 둔다(`/etc/docker/daemon.json`: `{"data-root": "/srv/docker"}`). 기록 DB, 기억, 사진 찍기 사진, 모델 캐시가 여기 남아 인스턴스를 멈춰도 그대로다.
-5. 보안 그룹: 들어오는 규칙을 모두 지운다. 나가는 규칙만 둔다.
-
-## 2. Tailscale
-
-1. tailnet 관리 화면(login.tailscale.com/admin/dns)에서 MagicDNS와 HTTPS Certificates를 켠다.
-2. 서버에서:
-
-    curl -fsSL https://tailscale.com/install.sh | sh
-    sudo tailscale up --ssh
-    sudo tailscale serve --bg --https=443 http://127.0.0.1:8200
-    sudo tailscale serve --bg --https=8443 http://127.0.0.1:8210
-    tailscale serve status
-
-- 대시보드: `https://<서버>.<tailnet>.ts.net/`, 폰: `https://<서버>.<tailnet>.ts.net:8443/phone/`
-- Funnel은 켜지 않는다. 폰·PC는 같은 tailnet에 로그인한다.
-
-## 3. 받기와 설정
-
-    git clone <NOONCHI 저장소 주소> /srv/noonchi && cd /srv/noonchi
-    cp .env.example .env
-
-`.env`에 넣는 값:
-
-| 이름 | 값 |
-|---|---|
-| `INFERENCE_MODE` | `live`(GPU 서버) / `mock`(외부 API) |
-| `ALLOWED_ORIGINS` | `https://<서버>.<tailnet>.ts.net` |
-| `PHONE_URL` | `https://<서버>.<tailnet>.ts.net:8443/phone/` |
-| `PHONE_PORT` | `8210` |
-| `BRAIN` | `1` |
-| `PAM_URL` | `http://pam:8300` |
-| `VLM_LIVE_MODEL` | live VLM Hugging Face 모델(기본 `Qwen/Qwen3-VL-4B-Instruct`). vLLM은 `vlm`이라는 이름으로 내건다 |
-| `PAM_LIVE_MODEL` | live PAM LLM Hugging Face 모델. vLLM은 `pam`이라는 이름으로 내건다 |
-| `PAM_MAX_MODEL_LEN` | PAM LLM 문맥 길이(기본 32768). vLLM과 PAM 서비스가 같이 쓴다 |
-| `ANTHROPIC_API_KEY` 또는 `OPENAI_API_KEY` | 에이전트(폰 음성 요청). 두 모드 모두 |
-| `OPENAI_API_KEY`, `OPENROUTER_API_KEY` | mock의 VLM·PAM LLM |
-| `THINQ_TOKEN` | 실제 모드를 쓸 때만 |
-
-키는 `.env`에만 둔다. 이미지에는 들어가지 않는다.
-
-## 4. 띄우기
-
-    docker compose up -d --build                  # mock: noonchi·pam(CPU)
-    docker compose --profile gpu up -d --build    # live: vLLM 두 개를 더한다
-    docker compose ps                             # 모두 healthy인지
-    curl -s http://127.0.0.1:8200/api/health      # ready.ok가 true인지
-
-- vLLM 이미지는 `vllm/vllm-openai:v0.17.0`(Qwen3-VL·Qwen3.5 지원)이다. 바꿀 때만 `VLLM_IMAGE`에 적는다. vllm-pam은 vllm-vlm이 healthy가 된 뒤에 뜬다.
-- 두 모델이 떴는지 본다(각각 id `vlm`, `pam`이 나와야 한다):
-
-      curl -s http://127.0.0.1:8410/v1/models
-      curl -s http://127.0.0.1:8420/v1/models
-      docker compose --profile gpu logs --tail 50 vllm-vlm vllm-pam
-
-- GPU 메모리 몫: `VLLM_VLM_GPU_SHARE`(기본 0.30), `VLLM_PAM_GPU_SHARE`(기본 0.60). 두 값의 합은 0.9를 넘기지 않는다. PAM LLM이 메모리 부족으로 못 뜨면 `PAM_MAX_MODEL_LEN`을 줄인다.
-
-## 5. 호출량
-
-엔진 프레임 간격은 `ENGINE_FRAME_MS`(기본 1000)다. 사진 한 장마다 VLM을 한 번 부르므로 1초 간격이면 한 시간에 약 3,600번이다. mock에서는 이만큼 OpenAI를 부른다.
-
-## 6. 멈추기·고치기
-
-    docker compose --profile gpu down             # 볼륨은 남는다
-    git pull && docker compose --profile gpu up -d --build
-
-- 인스턴스를 멈추면 대시보드·폰·판단이 함께 멈춘다. 데이터는 EBS에 남는다.
-- 컨테이너는 SIGTERM을 받으면 기록을 마치고 닫는다(최대 20초).
-```
+`docs/deploy.md`: 저장소의 그 파일(커밋 판)을 쓴다. 절: 1 서버 준비(vCPU 한도, g6e.2xlarge, Deep Learning AMI, EBS `/srv`·Docker data-root, 들어오는 규칙 없음), 2 Tailscale(MagicDNS·HTTPS Certificates 켜기, `tailscale serve` 443→8200·8443→8210, Funnel 끔), 3 받기와 설정(`.env` 표: INFERENCE_MODE·ALLOWED_ORIGINS·PHONE_URL·BRAIN·PAM_URL·VLM_LIVE_MODEL·PAM_LIVE_MODEL·PAM_MAX_MODEL_LEN·에이전트 키 두 모드·mock 키·HF_TOKEN·THINQ_TOKEN, 컨테이너 안 값은 compose가 정함), 4 띄우기(두 모델 확인 `curl -s http://127.0.0.1:8410/v1/models`·`8420`, `VLLM_API_KEY`면 Authorization 헤더, GPU 몫, `ready` 뜻), 5 호출량(1초 간격이면 한 시간 약 3,600번), 6 멈추기·고치기, 7 키 없는 확인(개발 PC·CI).
 
 - [ ] **Step 4: 통과 확인** — `H npx vitest run tests/deploy-files.test.ts tests/self-contained.test.ts` / Expected: PASS
 - [ ] **Step 5: 커밋**

@@ -55,6 +55,21 @@ describe("배포 파일", () => {
     }
   });
 
+  it("CI: 화면 글·타입·시험·화면 빌드·이미지 빌드·키 없는 확인을 하고 이미지를 올리지 않는다", () => {
+    const ci = read(".github/workflows/ci.yml");
+    for (const s of ["npm run lint", "npx tsc --noEmit", "npm --prefix ui run typecheck", "npx vitest run", "npm --prefix ui test", "npm --prefix ui run build",
+      "docker build", "npx tsx scripts/container-smoke.ts", "node-version-file: .node-version"]) expect(ci).toContain(s);
+    expect(ci).not.toMatch(/docker push|push: true/);
+    const jobs = (parse(ci) as { jobs: Record<string, { env?: Record<string, string> }> }).jobs;
+    for (const [name, j] of Object.entries(jobs)) expect(j.env?.ONNXRUNTIME_NODE_INSTALL, name).toBe("skip");
+  });
+
+  it("배포 문서: GPU 서버 크기·Tailscale 인증서·두 모드의 에이전트 키·두 모델 확인·호출량", () => {
+    const d = read("docs/deploy.md");
+    for (const s of ["g6e.2xlarge", "MagicDNS", "HTTPS Certificates", "tailscale serve --bg --https=443 http://127.0.0.1:8200", "tailscale serve --bg --https=8443 http://127.0.0.1:8210",
+      "`ANTHROPIC_API_KEY` 또는 `OPENAI_API_KEY`", "curl -s http://127.0.0.1:8410/v1/models", "curl -s http://127.0.0.1:8420/v1/models", "3,600", "vllm/vllm-openai:v0.17.0"]) expect(d).toContain(s);
+  });
+
   it("키 없는 컨테이너 확인: 저장소 .env와 셸의 키를 넘기지 않고 8500·8510에 띄운다", () => {
     const s = read("scripts/container-smoke.ts");
     expect(s).toContain('"--env-file", envFile');
