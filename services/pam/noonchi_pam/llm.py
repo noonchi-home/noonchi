@@ -1,5 +1,6 @@
 """OpenAI 호환 chat completions 한 번. 고치거나 다시 묻지 않는다. 잘린 답(finish_reason != stop)은 오류다.
-요청 칸은 두 모드가 같다(model, messages, temperature, max_tokens, stream=false, 생각 켜기·끄기). 제공자 칸(extra)만 모드마다 다르다."""
+요청 칸 model, messages, temperature, max_tokens, stream=false는 두 모드가 같다. 그 주소가 받는 제공자 칸은 모드마다 다르다:
+생각 켜기·끄기는 mock(OpenRouter) reasoning.enabled, live(vLLM) chat_template_kwargs.enable_thinking이고, mock은 provider·plugins(extra)를 더 보낸다."""
 from __future__ import annotations
 
 import httpx
