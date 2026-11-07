@@ -1,5 +1,5 @@
 import { CircleHelp, TriangleAlert } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { DeviceView } from "../../../src/contract/events.ts";
 import type { Check, CheckVerb } from "../checks/checks";
 import { Avatar, AvatarFallback } from "../components/ui/avatar";
@@ -7,6 +7,7 @@ import { Status, StatusIndicator } from "../components/ui/status";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../components/ui/tooltip";
 import { cn } from "../lib/utils";
 import type { ScreenPoint } from "../twin/use-anchors";
+import { ALIGN_EDGE, placeBubbles, type Box, type BubbleSize, type Placement, type Rect } from "./place";
 import { deviceSummary, type Tone } from "./summary";
 
 /** 번호 동그라미 색(21st.dev Avatar tone). 상태는 색만으로 말하지 않는다: 경고는 TriangleAlert, 모름은 CircleHelp를 번호 옆에 둔다. */
@@ -19,8 +20,11 @@ const VERB: Record<CheckVerb, "default" | "success" | "warning" | "error" | "bra
 /** 겹칠 때 위아래: 모름이 맨 아래, 경고가 그 위, 방금 다룬 기기가 맨 위. */
 const LAYER: Record<Tone, string> = { unknown: "z-0", off: "z-10", on: "z-10", alert: "z-20" };
 
-/** 말풍선 크기: md는 작은 화면, lg는 트윈이 큰 화면(대시보드). */
-export type BubbleSize = "md" | "lg";
+/** 말풍선 크기: md는 작은 화면, lg는 트윈이 큰 화면(대시보드). 자리가 모자라면 lg도 md로 줄인다. */
+export type { BubbleSize } from "./place";
+
+/** 자리를 먼저 잡는 차례: 방금 다룬 기기 → 경고 → 켜짐·꺼짐 → 모름. */
+const RANK: Record<Tone, number> = { alert: 1, on: 2, off: 2, unknown: 3 };
 
 type Shown = { id: string; title: string; line?: string; tone?: Tone; order?: number };
 
@@ -40,8 +44,15 @@ function shownOf(c: Check, devices: Map<string, DeviceView>, objects: Map<string
  * 말풍선 하나: 기기 자리(p)에 둔 0×0 상자. 판은 21st.dev Tooltip(화살표 끝이 기기 자리)이고, 상자 안(container)에 그려 상자와 함께 움직인다.
  * 늘 열어 두고 마우스를 받지 않는다.
  */
-function Bubble({ s, verb, p, big, size }: { s: Shown; verb: CheckVerb; p: ScreenPoint; big: boolean; size: BubbleSize }) {
+function Bubble({ s, verb, p, big, place, measure, onSize }: {
+  s: Shown; verb: CheckVerb; p: ScreenPoint; big: boolean; place: Placement;
+  measure: (el: HTMLElement) => Box; onSize: (key: string, box: Box) => void;
+}) {
+  const size = place.size;
   const [box, setBox] = useState<HTMLDivElement | null>(null);
+  const content = useRef<HTMLDivElement>(null);
+  // 그린 판 크기를 알린다(자리 고르기에 쓴다)
+  useLayoutEffect(() => { if (content.current) onSize(`${s.id}:${size}`, measure(content.current)); });
   return (
     <div
       ref={setBox}
@@ -54,7 +65,8 @@ function Bubble({ s, verb, p, big, size }: { s: Shown; verb: CheckVerb; p: Scree
         <TooltipTrigger asChild><span aria-hidden="true" className="block size-0" /></TooltipTrigger>
         {box && (
           <TooltipContent
-            container={box} side="top" sideOffset={0} avoidCollisions={false} showArrow tone="twin" size={size} focus={big}
+            ref={content} container={box} side={place.side} align={place.align} alignOffset={place.align === "center" ? 0 : -ALIGN_EDGE} sideOffset={0}
+            avoidCollisions={false} showArrow tone="twin" size={size} focus={big}
             aria-label={[s.title, verb, s.line].filter(Boolean).join(" ")}
             className="pointer-events-none w-max max-w-none motion-reduce:animate-none"
           >
@@ -79,12 +91,17 @@ function Bubble({ s, verb, p, big, size }: { s: Shown; verb: CheckVerb; p: Scree
   );
 }
 
+const naturalSize = (el: HTMLElement): Box => ({ w: el.offsetWidth, h: el.offsetHeight });
+const relative = (r: DOMRect, o: DOMRect): Rect => ({ left: r.left - o.left, top: r.top - o.top, right: r.right - o.left, bottom: r.bottom - o.top });
+const OPEN: Rect = { left: -Infinity, top: -Infinity, right: Infinity, bottom: Infinity };
+
 /**
  * 에이전트가 판단하면서 확인한 기기·물건(checks)에만 말풍선을 띄운다. 화살표 끝이 points의 자리에 온다.
  * 기기 = 번호 + 이름 + verb + 지금 상태 한 줄, 물건(식탁) = 이름 + verb + 판정 요약.
  * 말풍선은 보기만 한다: 층과 말풍선 모두 마우스를 받지 않아 클릭·끌기가 3D 트윈으로 간다.
+ * 말풍선끼리와 avoid(CSS 선택자)에 맞는 패널을 비키고, 덮개(층의 부모) 안에 들게 판을 기기 위·아래·옆으로 옮긴다(place.ts).
  */
-export function BubbleLayer({ checks, devices, objects = new Map(), points, focusId, size = "md" }: {
+export function BubbleLayer({ checks, devices, objects = new Map(), points, focusId, size = "md", avoid, measure = naturalSize }: {
   checks: Check[];
   devices: Map<string, DeviceView>;
   /** 물건 id → 이름(식탁). */
@@ -92,17 +109,45 @@ export function BubbleLayer({ checks, devices, objects = new Map(), points, focu
   points: Map<string, ScreenPoint>;
   focusId?: string | null;
   size?: BubbleSize;
+  /** 말풍선이 덮지 않을 패널(CSS 선택자). */
+  avoid?: string;
+  /** 말풍선 판 크기 재기(시험은 고정 크기를 넘긴다). */
+  measure?: (el: HTMLElement) => Box;
 }) {
+  const layer = useRef<HTMLDivElement>(null);
+  const [sizes, setSizes] = useState<Record<string, Box>>({});
+  const onSize = useCallback((k: string, b: Box) => setSizes((old) => (old[k]?.w === b.w && old[k]?.h === b.h ? old : { ...old, [k]: b })), []);
+  const [frame, setFrame] = useState<{ bounds: Rect; avoid: Rect[] }>({ bounds: OPEN, avoid: [] });
+  const shown = checks.flatMap((c) => {
+    const s = shownOf(c, devices, objects);
+    const p = s && points.get(s.id);
+    if (!s || !p?.visible) return [];
+    return [{ c, s, p, big: c.deviceId !== undefined && c.deviceId === focusId }];
+  });
+  const order = [...shown].sort((a, b) => Number(b.big) - Number(a.big) || (a.s.tone ? RANK[a.s.tone] : 2) - (b.s.tone ? RANK[b.s.tone] : 2));
+  const places = placeBubbles(order.map(({ s, p, big }) => ({
+    id: s.id, x: p.x, y: p.y, scale: big ? 1.25 : 1,
+    sizes: { lg: sizes[`${s.id}:lg`], md: sizes[`${s.id}:md`] },
+  })), frame.bounds, frame.avoid, size);
+
+  // 그린 뒤 덮개·패널 자리를 재고, 바뀌었으면 자리를 다시 고른다
+  useLayoutEffect(() => {
+    const el = layer.current;
+    if (!el) return;
+    const origin = el.getBoundingClientRect();
+    const box = el.parentElement?.getBoundingClientRect();
+    const bounds = box && box.width > 0 && box.height > 0 ? relative(box, origin) : OPEN;
+    const panels = avoid ? [...el.ownerDocument.querySelectorAll(avoid)].map((p) => relative(p.getBoundingClientRect(), origin)).filter((r) => r.right > r.left && r.bottom > r.top) : [];
+    const f = { bounds, avoid: panels };
+    if (JSON.stringify(f) !== JSON.stringify(frame)) setFrame(f);
+  });
+
   return (
     <TooltipProvider delayDuration={0}>
-      <div className="pointer-events-none absolute left-0 top-0 h-0 w-0" aria-label="확인한 것">
-        {checks.map((c) => {
-          const s = shownOf(c, devices, objects);
-          const p = s && points.get(s.id);
-          if (!s || !p?.visible) return null;
-          const big = c.deviceId !== undefined && c.deviceId === focusId;
-          return <Bubble key={c.key} s={s} verb={c.verb} p={p} big={big} size={size} />;
-        })}
+      <div ref={layer} className="pointer-events-none absolute left-0 top-0 h-0 w-0" aria-label="확인한 것">
+        {shown.map(({ c, s, p, big }) => (
+          <Bubble key={c.key} s={s} verb={c.verb} p={p} big={big} place={places.get(s.id)!} measure={measure} onSize={onSize} />
+        ))}
       </div>
     </TooltipProvider>
   );

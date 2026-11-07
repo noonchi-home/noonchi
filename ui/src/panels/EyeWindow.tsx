@@ -109,7 +109,7 @@ export function EyeBody({ health, connected, large }: { health: HealthView | nul
 export function EyeWindow({ health, connected }: { health: HealthView | null; connected?: boolean | null }) {
   const [open, setOpen] = useState(true);
   return (
-    <section aria-label="클로이드의 눈" className="absolute left-3 top-16 z-50 min-[1440px]:top-3 max-sm:relative max-sm:inset-auto max-sm:self-start">
+    <section aria-label="클로이드의 눈" data-panel className="absolute left-3 top-16 z-50 min-[1440px]:top-3 max-sm:relative max-sm:inset-auto max-sm:self-start">
       {open ? (
         <LiquidGlass radius={16} contentClassName="relative">
           <EyeBody health={health} connected={connected} />

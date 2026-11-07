@@ -118,6 +118,18 @@ describe("BubbleLayer", () => {
     expect(Number(z("현관문"))).toBeLessThan(Number(z("안방 조명")));
   });
 
+  it("기기 자리가 같은 두 말풍선은 서로 비켜 선다(앞은 방금 다룬 기기)", async () => {
+    const devices = new Map([dev("a", "거실 조명", "on"), dev("b", "안방 조명", "off")]);
+    render(<BubbleLayer checks={[checked("a", 1), checked("b", 2)]} devices={devices} points={at(["a", "b"], { x: 600, y: 400, visible: true })} focusId="b" measure={() => ({ w: 310, h: 92 })} />);
+    const spot = (label: string) => {
+      const c = bubbleOf(label).querySelector("[data-tone=twin]")!;
+      return `${c.getAttribute("data-side")} ${c.getAttribute("data-align")}`;
+    };
+    await screen.findByText("거실 조명");
+    expect(spot("안방 조명")).toBe("top center");
+    expect(spot("거실 조명")).not.toBe("top center");
+  });
+
   it("층 자체는 크기가 없어 3D 조작을 막지 않는다", () => {
     render(<BubbleLayer checks={[]} devices={new Map()} points={new Map()} />);
     expect(screen.getByLabelText("확인한 것")).toHaveClass("w-0", "h-0");

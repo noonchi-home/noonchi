@@ -19,7 +19,7 @@ export function StatusPill({ connected, health }: { connected: boolean | null; h
   const agent = health ? `에이전트 ${health.provider ?? "없음"}${health.model ? ` · ${health.model}` : ""}` : "에이전트 -";
   return (
     // 1440px부터는 눈 창(왼쪽 12px + 224px)과 판단 기록(오른쪽 12px + 380px)이 같은 줄로 올라온다. 알약은 둘 사이 빈칸(12px씩 띄움) 가운데에 두고 빈칸보다 넓어지지 않게 한다. 칩이 빈칸보다 길면 다음 줄로 넘긴다.
-    <section aria-label="집 상태" className="absolute left-1/2 top-3 z-50 w-max max-w-[calc(100%-1.5rem)] -translate-x-1/2 min-[1440px]:left-[calc(50%-78px)] min-[1440px]:max-w-[calc(100%-652px)]">
+    <section aria-label="집 상태" data-panel className="absolute left-1/2 top-3 z-50 w-max max-w-[calc(100%-1.5rem)] -translate-x-1/2 min-[1440px]:left-[calc(50%-78px)] min-[1440px]:max-w-[calc(100%-652px)]">
       <LiquidGlass tint={0.6} radius={20} contentClassName="flex flex-wrap items-center justify-center gap-1 p-1">
         <span className="flex shrink-0 items-center gap-1.5 ps-1 pe-2">
           <Avatar shape="logo" className="size-6"><AvatarImage src="/brand/face-64.png" alt="" /></Avatar>

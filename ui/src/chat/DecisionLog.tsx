@@ -217,6 +217,7 @@ export function DecisionLog({ turns, view, onView, phone }: { turns: Turn[]; vie
   return (
     <section
       aria-label="판단 기록"
+      data-panel
       className={cn(
         "absolute right-3 top-16 z-50 w-[380px] max-w-[calc(100%-1.5rem)] min-[1440px]:top-3 max-sm:relative max-sm:inset-auto max-sm:max-w-full",
         open && "bottom-3 max-sm:min-h-0 max-sm:flex-1",
