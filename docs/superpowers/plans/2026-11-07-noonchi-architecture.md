@@ -3279,6 +3279,7 @@ describe("VLM 동시 요청", () => {
   });
 });
 ```
+(넷째 시험: `stop()`하면 나가 있는 요청이 끊기고 결과를 내지 않으며, 그 뒤 `submit`은 `"skipped"`.)
 
 ```ts
 // tests/observe-scene.test.ts
@@ -3309,6 +3310,7 @@ describe("VLM 장면 분석", () => {
   });
 });
 ```
+(`SCENE_JSON_SCHEMA`가 엄격 모드(`additionalProperties: false`, 세 칸 필수)인지 보는 시험도 더한다.)
 
 - [ ] **Step 2: 실패 확인** — `H npx vitest run tests/observe-scene.test.ts tests/observe-vlm-pool.test.ts` / Expected: FAIL
 - [ ] **Step 3: 구현**
@@ -3368,7 +3370,8 @@ import type { SceneDetection, SceneObservation } from "./scene.js";
 
 export type VlmMissing = "cap" | "timeout" | "format" | "error";
 export interface VlmResult { frameId: string; capturedAtMs: number; scene: SceneObservation | null; missing?: VlmMissing; costUsd: number }
-type Analyze = (frame: EngineFrame, dets: SceneDetection[], signal: AbortSignal) => Promise<{ scene: SceneObservation | null; costUsd: number; error?: string }>;
+type Analysis = { scene: SceneObservation | null; costUsd: number; error?: string };
+type Analyze = (frame: EngineFrame, dets: SceneDetection[], signal: AbortSignal) => Promise<Analysis>;
 
 export class VlmPool {
   private readonly running = new Set<Promise<void>>();
@@ -3384,40 +3387,66 @@ export class VlmPool {
     this.o.onResult({ frameId: frame.id, capturedAtMs: frame.capturedAtMs, scene: null, missing: why, costUsd });
   }
 
+  /** 상한 안이면 바로 보낸다("sent"). 넘으면 VLM 분석 없음(cap)을 onResult로 내고 "skipped". 멈춘 뒤에는 아무것도 내지 않는다. */
   submit(frame: EngineFrame, dets: SceneDetection[]): "sent" | "skipped" {
     if (this.stopped) return "skipped";
-    if (this.running.size >= this.o.maxInflight) { this.miss(frame, "cap"); return "skipped"; }
+    if (this.running.size >= this.o.maxInflight) {
+      this.miss(frame, "cap");
+      return "skipped";
+    }
     this.sent++;
     const ac = new AbortController();
     this.controllers.add(ac);
     const timer = setTimeout(() => ac.abort(new Error("시간 초과")), this.o.timeoutMs ?? 20_000);
     timer.unref?.();
-    const job = Promise.resolve().then(() => this.o.analyze(frame, dets, ac.signal)).then(
+    let call: Promise<Analysis>;
+    try {
+      call = this.o.analyze(frame, dets, ac.signal);
+    } catch (e) {
+      call = Promise.reject(e);
+    }
+    const job: Promise<void> = call.then(
       (r) => {
         if (this.stopped) return;
-        if (ac.signal.aborted) return this.miss(frame, "timeout", r.costUsd);
         this.cost += r.costUsd;
+        if (ac.signal.aborted) return this.miss(frame, "timeout", r.costUsd);
         if (!r.scene) return this.miss(frame, r.error?.includes("형식") ? "format" : "error", r.costUsd);
         this.o.onResult({ frameId: frame.id, capturedAtMs: frame.capturedAtMs, scene: r.scene, costUsd: r.costUsd });
       },
-      () => { if (!this.stopped) this.miss(frame, ac.signal.aborted ? "timeout" : "error"); },
-    ).finally(() => { clearTimeout(timer); this.controllers.delete(ac); this.running.delete(job); });
+      () => {
+        if (!this.stopped) this.miss(frame, ac.signal.aborted ? "timeout" : "error");
+      },
+    ).finally(() => {
+      clearTimeout(timer);
+      this.controllers.delete(ac);
+      this.running.delete(job);
+    });
     this.running.add(job);
     return "sent";
   }
 
-  stats() { return { sent: this.sent, missing: { ...this.missing }, inflight: this.running.size, costUsd: this.cost }; }
-  async idle(): Promise<void> { while (this.running.size) await Promise.all([...this.running]); }
-  /** 멈추면 나가 있는 요청을 모두 끊는다. */
-  stop(): void { this.stopped = true; for (const ac of this.controllers) ac.abort(new Error("멈춤")); }
+  stats(): { sent: number; missing: Record<VlmMissing, number>; inflight: number; costUsd: number } {
+    return { sent: this.sent, missing: { ...this.missing }, inflight: this.running.size, costUsd: Math.round(this.cost * 1e5) / 1e5 };
+  }
+
+  async idle(): Promise<void> {
+    while (this.running.size) await Promise.all([...this.running]);
+  }
+
+  /** 멈추면 나가 있는 요청을 모두 끊고, 그 뒤 끝난 답은 내지 않는다. */
+  stop(): void {
+    this.stopped = true;
+    for (const ac of this.controllers) ac.abort(new Error("멈춤"));
+  }
 }
 ```
+`analyze`는 `submit` 안에서 바로 부른다(첫 시험은 `submit` 직후 `gates`가 차 있어야 한다). 시간 초과로 끊긴 요청의 비용도 셈에 넣는다.
 
 - [ ] **Step 4: 통과 확인** — `H npx vitest run tests/observe-scene.test.ts tests/observe-vlm-pool.test.ts tests/self-contained.test.ts` / Expected: PASS
 - [ ] **Step 5: 커밋**
 
 ```bash
-git add src/observe/scene.ts src/observe/vlm-pool.ts tests/observe-scene.test.ts tests/observe-vlm-pool.test.ts
+git add src/observe/scene.ts src/observe/vlm-pool.ts tests/observe-scene.test.ts tests/observe-vlm-pool.test.ts docs/superpowers/plans/2026-11-07-noonchi-architecture.md
 git commit -m "feat: analyze every engine frame with a schema-checked VLM scene call and record missing analyses"
 ```
 
