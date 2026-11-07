@@ -4,6 +4,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { checkPlan, loadActConfig } from "../act/check.js";
+import { matchChoice } from "../act/tasks.js";
 import { ExecutionTracker } from "../act/track.js";
 import { Agent } from "../agent/agent.js";
 import { Policy } from "../agent/policy.js";
@@ -16,7 +17,7 @@ import type { ControlMode } from "../contract/setup.js";
 import type { HistoryDb } from "../history/db.js";
 import type { DeviceNote } from "../history/recorder.js";
 import { memoryForDay, type ReflectResult } from "../history/reflect.js";
-import { PHOTO_TEXT } from "../history/labels.js";
+import { FEEDBACK_TEXT, PHOTO_TEXT } from "../history/labels.js";
 import { datasetWriter } from "../history/retention.js";
 import { SignalHub, type SignalSource } from "../hub/signals.js";
 import { loadEndpoints } from "../infer/endpoints.js";
@@ -213,6 +214,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       : null;
     // 실행 설정(STALE_MS). 틀린 값이면 시작을 막는다
     const act = loadActConfig(env);
+    const nowMs = () => ctx.brain?.clock?.now() ?? Date.now();
     if (world) {
       const now = () => ctx.brain?.clock?.now() ?? Date.now();
       const emit = (event: BrainLog) => {
@@ -297,7 +299,22 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         },
         onConfirm: async (token) => ({ reply: (await agent.confirm(token)).reply }),
         onCancel: async (token) => ({ reply: agent.cancel(token).reply }),
-        onBrainReply: (id, choice) => tracker?.onReply(id, choice),
+        // 클로이드 부탁·질문의 답(버튼·말). 답과 묻는 동안의 말은 반성 피드백으로 남긴다
+        onBrainReply: (id, choice) => {
+          const open = tracker?.openRequest();
+          const picked = open?.planId === id ? open.choices.find((c) => c.id === choice) : undefined;
+          if (open && picked) history.db.add("feedback", nowMs(), FEEDBACK_TEXT.answer(picked.label, open.kind, open.text), { subject: id, data: { choice, via: "button" } });
+          tracker?.onReply(id, choice);
+        },
+        onAnswer: (text) => {
+          const open = tracker?.openRequest();
+          if (!open) return { handled: false };
+          const picked = matchChoice(text, open.choices);
+          history.db.add("feedback", nowMs(), FEEDBACK_TEXT.answer(text, open.kind, open.text), { subject: open.planId, data: { choice: picked?.id ?? null, via: "voice" } });
+          if (!picked) return { handled: false };
+          tracker?.onReply(open.planId, picked.id);
+          return { handled: true, reply: picked.reply };
+        },
         ...(observe ? {
           engineMs: observe.config.engineMs,
           onEngine: (jpeg, h, eye, view, at) => observe.onEngine(jpeg, h, eye, view, at),

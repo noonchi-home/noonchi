@@ -159,7 +159,7 @@ describe("실행 추적", () => {
     const { t, logs } = setup();
     expect(t.openRequest()).toBeNull();
     t.onDecision(ask("pam-1", 1));
-    expect(t.openRequest()).toMatchObject({ planId: "plan:pam-1", task: "사용자에게 물어보기", choices: [{ id: "clear" }, { id: "keep" }] });
+    expect(t.openRequest()).toMatchObject({ planId: "plan:pam-1", task: "사용자에게 물어보기", kind: "ask", text: "컵을 치울까요?", choices: [{ id: "clear" }, { id: "keep" }] });
     t.stop();
     const n = logs.length;
     t.onDecision({ ...decision, id: "pam-2", seq: 2 });

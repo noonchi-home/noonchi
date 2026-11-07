@@ -5,7 +5,7 @@ import type { ObjClass, WorldObject, WorldView } from "../contract/world.js";
 import type { FloorPlan } from "../plan/floor.js";
 import { askPlan, cupPlan } from "../plan/planner.js";
 import type { DecisionRecord } from "../world/decide.js";
-import { PROMPTS, type ActionPrompt, type TaskName } from "./prompts.js";
+import { PROMPTS, type ActionChoice, type ActionPrompt, type TaskName } from "./prompts.js";
 
 /** pick_place: 대상 물건을 집어 옮긴다(로봇이 없어 폰으로 사람에게 부탁). ask: 폰으로 묻는다. */
 export interface TaskSpec { name: TaskName; kind: "pick_place" | "ask"; target?: ObjClass; prompt: ActionPrompt }
@@ -39,4 +39,13 @@ export function planFor(fp: FloorPlan, d: DecisionRecord, world: WorldView, nowI
   const id = planIdOf(d.id);
   const base = spec.kind === "ask" ? askPlan(fp, id, nowIso) : cupPlan(fp, id, nowIso, targetOf(spec, world));
   return base && { ...base, judgment: d.prediction.reasoning };
+}
+
+const squash = (t: string) => t.replace(/[\s.,!?~·]+/g, "");
+
+/** 폰에서 말한 답 → 선택지. 버튼 글이나 그 선택지의 말(words)이 들어 있는 첫 선택지. 없으면 null. */
+export function matchChoice(text: string, choices: readonly ActionChoice[]): ActionChoice | null {
+  const said = squash(text);
+  if (!said) return null;
+  return choices.find((c) => [c.label, ...c.words].some((w) => said.includes(squash(w)))) ?? null;
 }

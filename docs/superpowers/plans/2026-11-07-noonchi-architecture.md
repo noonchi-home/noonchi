@@ -5483,53 +5483,38 @@ git commit -m "feat: track plan execution from decision to verified result in te
 
 **Files:**
 - Create: `tests/phone-voice.test.ts`
-- Modify: `web/phone/phone.js`(행동 부탁 `speak`면 소리로 읽기), `src/phone/server.ts`(열린 부탁이 있으면 다음 말을 답으로), `src/server/home.ts`(답·말을 기록 `feedback`으로), `web/phone/*.d.ts` 필요한 것
+- Modify: `src/phone/server.ts`(`onAnswer`), `src/server/home.ts`(말·버튼 답 → 실행 추적, 기록 `feedback`), `src/act/prompts.ts`(선택지 `words`·`reply`), `src/act/tasks.ts`(`matchChoice`), `src/act/track.ts`(`openRequest`에 kind·text), `src/history/labels.ts`(`FEEDBACK_TEXT`), `web/phone/phone.js`(`speak`일 때만 소리로), `docs/reference.md`, `tests/act-track.test.ts`
 
 **Interfaces:**
-- Produces: `PhoneServerOptions.onAnswer?: (text: string) => { handled: boolean; reply?: string }` — 열린 부탁이 있을 때 폰의 `say`를 먼저 넘긴다. 처리하면 에이전트로 보내지 않는다.
-
-- [ ] **Step 1: 실패하는 시험**
+- Produces:
 
 ```ts
-// tests/phone-voice.test.ts
-import { afterEach, describe, expect, it } from "vitest";
-import { WebSocket } from "ws";
-import { createPhoneServer, type PhoneServer } from "../src/phone/server.js";
-
-let phone: PhoneServer | undefined;
-afterEach(async () => { await phone?.close(); phone = undefined; });
-
-describe("폰 음성 질문", () => {
-  it("열린 부탁이 있으면 말을 답으로 받고 에이전트로 보내지 않는다", async () => {
-    const said: string[] = [];
-    phone = createPhoneServer({ targets: [], onEye: () => {}, log: () => {},
-      onSay: async (t) => { said.push(t); return { reply: "에이전트", pending: [] }; },
-      onAnswer: (t) => (t.includes("치웠") ? { handled: true, reply: "확인할게요" } : { handled: false }) });
-    const { port } = await phone.listen(0, "127.0.0.1");
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/phone/events`);
-    const replies: any[] = [];
-    ws.on("message", (d) => replies.push(JSON.parse(String(d))));
-    await new Promise((ok) => ws.on("open", ok));
-    ws.send(JSON.stringify({ type: "say", text: "치웠어요" }));
-    ws.send(JSON.stringify({ type: "say", text: "불 꺼 줘" }));
-    await new Promise((r) => setTimeout(r, 200));
-    expect(replies.filter((m) => m.type === "reply").map((m) => m.text)).toEqual(["확인할게요", "에이전트"]);
-    expect(said).toEqual(["불 꺼 줘"]);
-    ws.close();
-  });
-});
+// src/phone/server.ts
+PhoneServerOptions.onAnswer?: (text: string) => { handled: boolean; reply?: string };   // say를 에이전트보다 먼저. handled면 에이전트로 보내지 않는다
+// src/act/prompts.ts
+export interface ActionChoice { id: string; label: string; words: string[]; reply: string }
+// src/act/tasks.ts
+export function matchChoice(text: string, choices: readonly ActionChoice[]): ActionChoice | null;   // 띄어쓰기·문장부호를 빼고 버튼 글이나 words가 들어 있는 첫 선택지
+// src/history/labels.ts
+export const FEEDBACK_TEXT = { answer: (said, kind, asked) => `${said} · ${kind === "ask" ? "질문" : "부탁"}: ${asked}` };
 ```
 
-- [ ] **Step 2: 실패 확인** — `H npx vitest run tests/phone-voice.test.ts` / Expected: FAIL(첫 말도 에이전트로 감)
+- 선택지 말: 치웠어요 `치웠`·`다 했`, 나중에 `나중`·`이따`, 치워 주세요 `치워`, 그대로 둬요 `그대로`·`둬`. 말로 답하면 폰이 `reply`를 읽는다(「고마워요. 컵이 안 보이는지 확인할게요」 등).
+- [ ] **Step 1: 실패하는 시험** — `tests/phone-voice.test.ts`
+  - 폰 서버: `onAnswer`가 handled면 그 reply, 아니면 에이전트(`onSay`) 답. `onAnswer`는 앞뒤 공백을 뺀 말을 받는다. 기준점은 두 곳을 준다(`createPhoneServer`가 막는다). 소켓은 `openWebSocket`으로 연다(EFAULT 다시 시도).
+  - `matchChoice`: 「치웠어요」·「응 다 치웠어」·「이따가 나중에 할게」·「치워 줘」·「그냥 그대로 둬」, 맞지 않는 말·빈 말은 null.
+  - `startServer(BRAIN=1)`: 가짜 PAM이 물어보기(1)를 고르면 폰에 `speak: true` 질문이 오고, 「그냥 그대로 둬」라고 말하면 답 「알겠어요. 그대로 둘게요」, 기록 `feedback` 「그냥 그대로 둬 · 질문: 컵을 치울까요?」, `execution` 「완료: 그대로 둬요」, 폰 질문이 `active: false`로 거둬진다.
+- [ ] **Step 2: 실패 확인** — `H npx vitest run tests/phone-voice.test.ts` / Expected: FAIL(말이 에이전트로 감, `matchChoice` 없음)
 - [ ] **Step 3: 구현**
-  - `server.ts` `talk`: `msg.type === "say"`이면 `const a = opts.onAnswer?.(text); if (a?.handled) return reply(ws, { type: "reply", text: a.reply ?? "", pending: [] });` 뒤 지금처럼 `onSay`.
-  - `home.ts` `onAnswer`: `tracker.current()`가 `running`이면 그 부탁의 선택지 글(`치웠어요`·`나중에`·`치워 주세요`·`그대로 둬요`)과 말을 맞춰(포함 여부) `tracker.onReply(planId, choice.id)`를 부르고 `{ handled: true, reply: 선택지 글 }`. 맞는 선택지가 없으면 `{ handled: false }`. 열린 부탁이 있는 동안의 말과 답은 모두 `db.add("feedback", now, text)`로 남긴다(반성 피드백).
-  - `phone.js`: `{type:"action", speak: true}`를 받으면 지금 카드 표시에 더해 `speechSynthesis.speak(new SpeechSynthesisUtterance(msg.text))`(언어 `ko-KR`). `active: false`면 카드를 거둔다(지금 동작).
-- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/phone-voice.test.ts tests/phone-server.test.ts tests/self-contained.test.ts` 그리고 `H npm run lint` / Expected: PASS
+  - `server.ts` `talk`: `say`면 빈 말 검사 뒤 `const a = opts.onAnswer?.(text); if (a?.handled) return reply(ws, { type: "reply", text: a.reply ?? "", pending: [] });`, 그다음 지금처럼 `onSay`.
+  - `home.ts` `onAnswer`: `tracker.openRequest()`가 없으면 `{ handled: false }`. 있으면 말을 `feedback`으로 남기고(`subject` 계획 id, `data: { choice, via: "voice" }`), `matchChoice`가 맞으면 `tracker.onReply(planId, choice.id)` 뒤 `{ handled: true, reply: choice.reply }`, 아니면 `{ handled: false }`.
+  - `home.ts` `onBrainReply`(버튼): 열린 부탁의 선택지면 그 버튼 글을 `feedback`(`via: "button"`)으로 남기고 `tracker.onReply`.
+  - `phone.js`: `{type:"action", speak: true}`면 카드에 더해 소리로 읽는다(`speak()`, ko-KR). `active: false`면 카드를 거둔다(지금 동작).
+- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/phone-voice.test.ts tests/phone-server.test.ts tests/self-contained.test.ts tests/lint-ui-copy.test.ts tests/act-track.test.ts tests/act-tasks.test.ts tests/history-summary.test.ts tests/history-reflect.test.ts`, `H npx tsc --noEmit`, `H npm run lint` / Expected: PASS
 - [ ] **Step 5: 커밋**
 
 ```bash
-git add src/phone/server.ts src/server/home.ts web/phone/phone.js tests/phone-voice.test.ts
+git add src/phone/server.ts src/server/home.ts src/act/prompts.ts src/act/tasks.ts src/act/track.ts src/history/labels.ts web/phone/phone.js docs/reference.md tests/phone-voice.test.ts tests/act-track.test.ts
 git commit -m "feat: speak Cloid's questions on the phone, take spoken answers for the open request and record them as feedback"
 ```
 

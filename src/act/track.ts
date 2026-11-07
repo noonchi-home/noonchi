@@ -49,9 +49,9 @@ export class ExecutionTracker {
   }
 
   /** 폰에 띄운 부탁·질문(답을 기다리는 중). 없으면 null. */
-  openRequest(): { planId: string; task: string; choices: ActionChoice[] } | null {
+  openRequest(): { planId: string; task: string; kind: TaskSpec["kind"]; text: string; choices: ActionChoice[] } | null {
     const r = this.run;
-    return r && r.state === "running" ? { planId: r.plan.id, task: r.spec.name, choices: r.spec.prompt.choices } : null;
+    return r && r.state === "running" ? { planId: r.plan.id, task: r.spec.name, kind: r.spec.kind, text: r.spec.prompt.text, choices: r.spec.prompt.choices } : null;
   }
 
   onDecision(d: DecisionRecord): void {

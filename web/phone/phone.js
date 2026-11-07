@@ -8,7 +8,8 @@
 // 초점: 서버가 보낸 대상(AR 좌표)을 화면에 고리로 그리고, 대시보드로 가는 화면 프레임에도 그린다(사진에는 그리지 않음).
 // 엔진 프레임(서버 BRAIN=1): 서버가 상태 메시지 engine_ms로 알려 준 간격마다 분석용 JPEG을 따로 보낸다(초점 고리 없음,
 // 촬영 순간 자세·투영 행렬·서버 시계 촬영 시각과 오차를 붙인다). 시계는 clock 핑(NTP식)으로 맞추고 프레임·사진에도 붙인다.
-// 서버가 보내는 부탁(request)은 화면 가운데 큰 글씨로, 행동 부탁(action, 모의)은 버튼 카드로 보인다.
+// 서버가 보내는 부탁(request)은 화면 가운데 큰 글씨로, 행동 부탁·질문(action, 모의)은 버튼 카드로 보이고 speak면 소리로 읽는다.
+// 부탁·질문이 떠 있는 동안 말한 답은 서버가 그 답으로 받는다(버튼을 눌러도 된다).
 
 import { createGrabber, framePacket } from "./capture.js";
 import { createDisplayEncoder } from "./display-encoder.js";
@@ -145,7 +146,7 @@ function showAction(msg) {
     return b;
   }));
   $("brain-action").hidden = false;
-  speak(msg.text);
+  if (msg.speak) speak(msg.text);
 }
 
 const send = (msg) => {

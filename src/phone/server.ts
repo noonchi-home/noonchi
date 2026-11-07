@@ -1,6 +1,7 @@
 // 폰 AR 페이지와 자세 WebSocket만 여는 작은 서버(SSOT 9.6). 같은 와이파이의 폰이 붙도록 0.0.0.0에 열 수 있다.
 // 기기 제어 REST는 여기 없다. 본 서버(127.0.0.1)는 그대로 두고 눈 자세는 onEye로, 폰의 말(say)과 승인은 onSay·onConfirm·onCancel로
-// 넘긴다(그 뒤는 에이전트·승인 정책이 맡는다). 내부 테스트용이라 같은 와이파이의 누구나 말을 보낼 수 있다.
+// 넘긴다(그 뒤는 에이전트·승인 정책이 맡는다). 클로이드가 폰으로 묻는 중이면 말을 먼저 그 답으로 맞춰 본다(onAnswer).
+// 내부 테스트용이라 같은 와이파이의 누구나 말을 보낼 수 있다.
 
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { networkInterfaces } from "node:os";
@@ -45,8 +46,10 @@ export interface PhoneServerOptions {
   onEngine?: (jpeg: Buffer, header: FrameHeader, eye: EyeEvent | null, view: CameraView | null, receivedAtMs: number) => void;
   /** 엔진 프레임 간격(ms). 있으면 상태 메시지에 engine_ms로 실어 폰이 그 간격으로 보낸다. */
   engineMs?: number;
-  /** 폰 행동 부탁·질문의 답. */
+  /** 폰 행동 부탁·질문의 답(버튼). */
   onBrainReply?: (id: string, choice: string) => void;
+  /** 폰의 말(say)을 에이전트보다 먼저 받는다. 열린 부탁·질문의 답이면 handled이고, 그때는 에이전트로 보내지 않고 reply를 돌려준다. */
+  onAnswer?: (text: string) => { handled: boolean; reply?: string };
 }
 
 export interface PhoneReply {
@@ -166,6 +169,8 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
       if (msg.type === "say") {
         const text = typeof msg.text === "string" ? msg.text.trim().slice(0, MAX_SAY) : "";
         if (!text) return reply(ws, { type: "reply", text: "말이 비어 있어요. 다시 말해 주세요.", pending: [] });
+        const answer = opts.onAnswer?.(text);
+        if (answer?.handled) return reply(ws, { type: "reply", text: answer.reply ?? "", pending: [] });
         if (!opts.onSay) return reply(ws, { type: "reply", text: "에이전트가 연결되지 않았어요.", pending: [] });
         const r = await opts.onSay(text);
         return reply(ws, { type: "reply", text: r.reply, pending: r.pending });
