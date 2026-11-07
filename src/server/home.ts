@@ -80,6 +80,8 @@ export interface HomeContext {
   webDir?: string;
   /** 허용할 브라우저 출처(ALLOWED_ORIGINS). 없으면 이 PC만. */
   allowOrigin?: (origin: string) => boolean;
+  /** 계획 보내기 토큰(PLAN_TOKEN). */
+  planToken?: string;
   /** 준비 상태(/api/health ready). 집을 바꿔도 같은 것을 쓴다. */
   ready?: () => Promise<ReadyView>;
   /** 기록 DB·기록기·반성. */
@@ -268,7 +270,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     app = createApp({
       hub: signals, policy, agent, rooms: twin.rooms, twinDir, viewerDir: home.viewerDir, libraryDir: home.libraryDir, hubKind, log, eye: feed,
       brain: observe ?? undefined, world: worldNow ?? undefined,
-      home: { id: home.id, name: home.name }, homes: listHomes(twin.dir), layout: layout?.editor, phoneUrls: () => phoneUrls, mode: ctx.mode, webDir: ctx.webDir, allowOrigin: ctx.allowOrigin, ready: ctx.ready,
+      home: { id: home.id, name: home.name }, homes: listHomes(twin.dir), layout: layout?.editor, phoneUrls: () => phoneUrls, mode: ctx.mode, webDir: ctx.webDir, allowOrigin: ctx.allowOrigin, planToken: ctx.planToken, ready: ctx.ready,
       touch: touchStore && {
         get: () => touchStore.get(), save: (raw) => touchStore.save(raw), clear: () => touchStore.clear(), eyeHeightM,
         auto: (raw) => autoCorners(plan, parseWallPick(raw), bounds),

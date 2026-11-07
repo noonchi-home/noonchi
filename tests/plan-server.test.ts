@@ -8,7 +8,7 @@ import { Agent } from "../src/agent/agent.js";
 import { MockProvider } from "../src/agent/providers/mock.js";
 import type { PlanView } from "../src/contract/plan.js";
 import { PlanHub } from "../src/plan/hub.js";
-import { createApp, isLoopback } from "../src/server/app.js";
+import { canSendPlan, createApp, isLoopback } from "../src/server/app.js";
 import { fetchRetry } from "../src/server/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { smallFloor } from "./helpers/floor.js";
@@ -118,6 +118,26 @@ describe("/api/plan", () => {
   it("같은 PC 주소만 계획을 보낼 수 있다", () => {
     expect(["127.0.0.1", "::1", "::ffff:127.0.0.1"].map(isLoopback)).toEqual([true, true, true]);
     expect(["192.168.0.5", "::ffff:10.0.0.2", undefined].map(isLoopback)).toEqual([false, false, false]);
+  });
+
+  it("PLAN_TOKEN을 정하면 그 토큰을 붙인 요청은 다른 주소(compose 포트 전달)에서도 계획을 보낼 수 있다", () => {
+    expect(canSendPlan("172.18.0.1", "Bearer t0k-1", "t0k-1")).toBe(true);
+    expect(canSendPlan("::ffff:172.18.0.1", "Bearer t0k-1", "t0k-1")).toBe(true);
+    expect(canSendPlan("172.18.0.1", "Bearer nope", "t0k-1")).toBe(false);
+    expect(canSendPlan("172.18.0.1", undefined, "t0k-1")).toBe(false);
+    expect(canSendPlan("172.18.0.1", "Bearer t0k-1", undefined)).toBe(false);
+    expect(canSendPlan("127.0.0.1", undefined, "t0k-1")).toBe(true);
+    expect(canSendPlan("127.0.0.1", undefined, undefined)).toBe(true);
+  });
+
+  it("PLAN_TOKEN을 정한 서버는 토큰을 붙인 계획을 받는다", async () => {
+    const home = makeHome();
+    const plan = new PlanHub(smallFloor(), () => {}, () => "2026-11-06T00:00:00Z");
+    const app = createApp({ hub: home.hub, policy: home.policy, rooms: ROOMS, log: () => {}, plan, planToken: "t0k-1" });
+    const { url } = await app.listen(0, "127.0.0.1");
+    cleanups.push(() => app.close());
+    const r = await fetchRetry(`${url}/api/plan`, { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer t0k-1" }, body: JSON.stringify({ plan: docPlan() }) });
+    expect(r.status).toBe(200);
   });
 });
 

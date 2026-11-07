@@ -1,6 +1,7 @@
 // HTTP + WebSocket 서버(docs/plan.md "서버"). DeviceHub 하나를 받아 REST·WS·웹 화면을 제공한다.
 // 정책(승인)은 Policy, 자연어는 Agent가 맡는다. 외부 라이브러리는 ws만 쓴다.
 
+import { createHash, timingSafeEqual } from "node:crypto";
 import { existsSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { join, resolve } from "node:path";
@@ -49,6 +50,8 @@ export interface AppOptions {
   layout?: LayoutEditor;
   /** 허용할 브라우저 출처(기본: localhost·127.0.0.1·[::1]의 모든 포트). */
   allowOrigin?: (origin: string) => boolean;
+  /** 계획 보내기 토큰(PLAN_TOKEN). 있으면 Authorization: Bearer <토큰>을 붙인 요청은 어느 주소에서나 받는다. */
+  planToken?: string;
   log?: (msg: string) => void;
   /** /api/health에 보일 허브 종류. */
   hubKind?: string;
@@ -198,6 +201,16 @@ function parsePlan(raw: unknown): PlanView {
 
 /** 같은 PC에서 온 요청인가(127.0.0.1·::1). */
 export const isLoopback = (address: string | undefined): boolean => !!address && /^(127\.\d+\.\d+\.\d+|::1|::ffff:127\.\d+\.\d+\.\d+)$/.test(address);
+
+const digest = (s: string) => createHash("sha256").update(s).digest();
+
+/** 계획을 보낼 수 있는가: 같은 PC 주소이거나, PLAN_TOKEN이 있고 Authorization: Bearer <토큰>이 맞다.
+ *  compose로 띄우면 호스트·tailscale serve에서 온 요청도 컨테이너에는 Docker 브리지 주소로 보이므로 토큰을 쓴다. */
+export function canSendPlan(address: string | undefined, authorization: string | undefined, token: string | undefined): boolean {
+  if (isLoopback(address)) return true;
+  const got = /^Bearer\s+(.+)$/i.exec(authorization?.trim() ?? "")?.[1];
+  return !!token && !!got && timingSafeEqual(digest(got), digest(token));
+}
 
 function parseCommand(raw: unknown): Command {
   const value = typeof raw === "string" ? { type: raw } : raw;
@@ -417,7 +430,7 @@ export function createApp(opts: AppOptions): TwinHomeApp {
   route("GET", /^\/api\/plan$/, async () => ({ ok: true, plan: opts.plan?.current() ?? null }));
   const requirePlan = (req: IncomingMessage) => {
     if (!opts.plan) throw new HttpError(404, "계획을 받을 수 없습니다(집이 아직 없음).");
-    if (!isLoopback(req.socket.remoteAddress)) throw new HttpError(403, "계획은 서버와 같은 PC에서만 보낼 수 있습니다.");
+    if (!canSendPlan(req.socket.remoteAddress, req.headers.authorization, opts.planToken)) throw new HttpError(403, "계획은 서버와 같은 PC에서 보내거나 PLAN_TOKEN을 붙여 보내야 합니다.");
     if (closed) throw new HttpError(503, "집을 바꾸는 중이에요. 잠시 뒤 다시 해 주세요.");
     return opts.plan;
   };
