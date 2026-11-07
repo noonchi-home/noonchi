@@ -132,7 +132,7 @@ interface DeviceHub {
 - 1순위: 그 집 `<out>/scene.json`의 objects 중 `attrs`가 있는 것.
 - 없으면 그 집 `<data>`의 `placement.json` + `floorplan.json`(문) + 카탈로그를 읽는다.
 - 카탈로그: `<data>/catalog` → 공용 `data/catalog` → (옛 체크아웃) `data/apartment/catalog` 순서로 찾는다.
-- 경로는 `TWIN_STUDIO_DIR`(기본 `../twin-studio`)이다.
+- 경로는 `TWIN_STUDIO_DIR`(기본 저장소 `twin/`)이다. `twin/`은 twin-studio 결과물을 `scripts/twin-assets.ts`로 복사한 폴더다.
 - twin 상태 초기값은 `state` 또는 catalog `states.*.default`다.
 
 ## 3D 트윈 연결 (2단계, 완료 2026-10-11)
