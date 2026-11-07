@@ -70,7 +70,10 @@ export type ExecState = "decided" | "planned" | "running" | "verifying" | "done"
 
 /** 판단에 쓴 World State 요약(판단 기록 화면이 펼쳐 보인다). */
 export interface DecisionWorld {
-  objects: { id: string; cls: string; status: string; surface: string | null; error_m: number | null; facts: Record<string, { value: string; certainty: "confirmed" | "inferred" }> }[];
+  objects: {
+    id: string; cls: string; status: string; surface: string | null; surface_label: string | null; error_m: number | null;
+    facts: Record<string, { value: string; certainty: "confirmed" | "inferred" }>;
+  }[];
   person_visible: boolean;
   vlm_missing: number;
   yolo_missing: number;

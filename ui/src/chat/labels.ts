@@ -1,4 +1,4 @@
-import type { AgentAction, BrainLog, ExecState } from "../../../src/contract/events.ts";
+import type { AgentAction, BrainLog, DecisionWorld, ExecState } from "../../../src/contract/events.ts";
 import type { VlmMissing, YoloMissing } from "../../../src/contract/world.ts";
 
 /** 도구 이름 → 화면 이름. */
@@ -54,3 +54,42 @@ export const YOLO_MISSING: Record<YoloMissing, string> = { cap: "요청이 몰�
 
 /** 실행 단계 → 판단 카드 알약 글. */
 export const EXEC_LABEL: Record<ExecState, string> = { decided: "판단", planned: "계획", running: "실행 중", verifying: "결과 확인", done: "완료", failed: "실패" };
+
+// ── 판단 근거(판단 줄 펼침) ──────────────────────────────
+
+/** 펼친 판단 줄의 칸 이름. */
+export const DECISION_DETAIL = { region: "판단 근거", text: "보낸 관찰", world: "판단할 때 상태", memory: "참조한 기억" } as const;
+
+/** VLM 사실의 확신도. */
+export const CERTAINTY: Record<"confirmed" | "inferred", string> = { confirmed: "확인됨", inferred: "추정" };
+
+export const memoryLabel = (v: number) => `기억 ${v}판`;
+
+/** 물건 종류 → 이름. */
+const OBJECT_NAME: Record<string, string> = { cup: "컵", bottle: "병", bowl: "그릇", person: "사람" };
+
+/** VLM 상태 값 → 글. */
+const FACT_TEXT: Record<string, string> = {
+  on_table: "식탁 위", on_counter: "조리대 위", in_sink: "싱크대 안", on_floor: "바닥", in_hand: "손에 있음", in_use: "쓰는 중",
+  empty: "비어 있음", has_contents: "내용물 있음", contents_unknown: "안이 안 보임", sitting: "앉아 있음", standing: "서 있음",
+  holding_object: "물건을 들고 있음", eating_or_drinking: "먹거나 마시는 중", not_visible: "안 보임",
+};
+
+type DecisionObject = DecisionWorld["objects"][number];
+
+/** 물건 머리줄: 「컵 cup_1 · 식탁 위」. 시야 밖이면 그 상태, 면을 모르면 이름만. */
+export function objectLine(o: DecisionObject): string {
+  const name = `${OBJECT_NAME[o.cls] ?? o.cls} ${o.id}`;
+  if (o.status === "out_of_view") return `${name} · 시야 밖`;
+  return o.surface_label ? `${name} · ${o.surface_label} 위` : name;
+}
+
+/** 사실 한 줄: 「비어 있음 · 확인됨」. */
+export const factLine = (f: { value: string; certainty: "confirmed" | "inferred" }) => `${FACT_TEXT[f.value] ?? f.value} · ${CERTAINTY[f.certainty]}`;
+
+/** 위치 오차: 「위치 오차 ±0.12m」, 모르면 「위치 모름」. */
+export const errorLine = (m: number | null) => (m === null ? "위치 모름" : `위치 오차 ±${m.toFixed(2)}m`);
+
+/** 사람과 분석 없음 수 한 줄. */
+export const worldLine = (w: DecisionWorld) =>
+  `${w.person_visible ? "사람 보임" : "사람 안 보임"} · VLM 분석 없음 ${w.vlm_missing}장 · YOLOX 분석 없음 ${w.yolo_missing}장`;

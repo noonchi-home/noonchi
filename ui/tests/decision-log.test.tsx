@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import type { AgentAction, PendingView, ServerMessage } from "../../src/contract/events.ts";
+import type { AgentAction, BrainLog, DecisionWorld, PendingView, ServerMessage } from "../../src/contract/events.ts";
 import { DecisionLog } from "../src/chat/DecisionLog";
 import { turnsReducer, type Turn } from "../src/chat/turns";
 
@@ -82,6 +82,53 @@ describe("DecisionLog", () => {
     expect(within(c).getByText("변화")).toBeInTheDocument();
     expect(within(c).getByText("컵 0.90")).toBeInTheDocument();
     expect(within(c).getByText("시간 초과로 VLM 분석 없음")).toBeInTheDocument();
+  });
+
+  it("판단 줄을 누르면 보낸 관찰 텍스트·World State·확신도·위치 오차·기억 판본이 보이고 반성 결과 줄이 있다", async () => {
+    const world: DecisionWorld = {
+      objects: [{ id: "cup_1", cls: "cup", status: "present", surface: "table_1", surface_label: "식탁", error_m: 0.12,
+        facts: { contents: { value: "empty", certainty: "confirmed" }, place: { value: "on_table", certainty: "inferred" } } }],
+      person_visible: false, vlm_missing: 2, yolo_missing: 0,
+    };
+    const brainMsg = (event: BrainLog): ServerMessage => ({ type: "brain", event });
+    show(turnsOf([
+      brainMsg({ type: "decision", at_ms: 1, id: "pam-1", seq: 1, text_sent: "21:00:00 사람 안 보임\n[지속] 컵 cup_1 식탁 위", status: "valid",
+        prediction: { observation: "o", reasoning: "자리를 비워 컵을 치운다", task_index: 0 }, action: "컵 치우기", memory_version: 3, world }),
+      brainMsg({ type: "reflection", at_ms: 2, day: "2026-11-07", ok: true, version: 4, applies_day: "2026-11-08", text: "반성 완료: 기억 4판, 2026-11-08부터" }),
+    ]));
+    const c = document.querySelector('[data-turn="b0"]') as HTMLElement;
+    await userEvent.click(within(c).getByRole("button", { name: "컵 치우기" }));
+    const row = within(c).getByRole("button", { name: /컵 치우기 · 자리를 비워 컵을 치운다/ });
+    expect(row).toHaveAttribute("aria-expanded", "false");
+    expect(within(c).queryByText(/21:00:00 사람 안 보임/)).toBeNull();
+    await userEvent.click(row);
+    expect(row).toHaveAttribute("aria-expanded", "true");
+    const detail = within(c).getByRole("region", { name: "판단 근거" });
+    expect(within(detail).getByText(/21:00:00 사람 안 보임/)).toBeInTheDocument();
+    expect(within(detail).getByText("컵 cup_1 · 식탁 위")).toBeInTheDocument();
+    expect(within(detail).getByText("비어 있음 · 확인됨")).toBeInTheDocument();
+    expect(within(detail).getByText("식탁 위 · 추정")).toBeInTheDocument();
+    expect(within(detail).getByText("위치 오차 ±0.12m")).toBeInTheDocument();
+    expect(within(detail).getByText("사람 안 보임 · VLM 분석 없음 2장 · YOLOX 분석 없음 0장")).toBeInTheDocument();
+    expect(within(detail).getByText("기억 3판")).toBeInTheDocument();
+    expect(screen.getByText(/반성 완료: 기억 4판/)).toBeInTheDocument();
+    expect(document.querySelector("input, textarea, select, form, [contenteditable]")).toBeNull();
+    await userEvent.click(row);
+    expect(within(c).queryByRole("region", { name: "판단 근거" })).toBeNull();
+  });
+
+  it("판단 근거의 물건: 위치를 모르면 위치 모름, 시야 밖이면 그 상태", async () => {
+    const world: DecisionWorld = {
+      objects: [{ id: "bottle_1", cls: "bottle", status: "out_of_view", surface: null, surface_label: null, error_m: null, facts: {} }],
+      person_visible: true, vlm_missing: 0, yolo_missing: 1,
+    };
+    show(turnsOf([{ type: "brain", event: { type: "decision", at_ms: 1, id: "pam-2", seq: 2, text_sent: "t", status: "valid",
+      prediction: { observation: "o", reasoning: "더 본다", task_index: -1 }, action: null, memory_version: 1, world } }]));
+    await userEvent.click(screen.getByRole("button", { name: /대기 · 더 본다/ }));
+    const detail = screen.getByRole("region", { name: "판단 근거" });
+    expect(within(detail).getByText("병 bottle_1 · 시야 밖")).toBeInTheDocument();
+    expect(within(detail).getByText("위치 모름")).toBeInTheDocument();
+    expect(within(detail).getByText("사람 보임 · VLM 분석 없음 0장 · YOLOX 분석 없음 1장")).toBeInTheDocument();
   });
 
   it("알약 탭으로 판단 기록과 폰 화면을 바꾼다", async () => {

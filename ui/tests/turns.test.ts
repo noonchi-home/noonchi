@@ -119,6 +119,19 @@ describe("관찰과 판단 카드", () => {
     expect(t[1]).toMatchObject({ source: "brain", state: "busy", now: { seen: "감지 없음", judged: "" } });
   });
 
+  it("판단 줄에는 펼쳐 볼 근거(보낸 관찰 텍스트·World State·기억 판본)가 붙고, 반성은 줄 하나를 더한다", () => {
+    const t = run([decision({ text_sent: "21:00 컵 보임", memory_version: 3 })]);
+    const row = t[0]!.steps.at(-1)!;
+    expect(row).toMatchObject({ kind: "line", mark: "decision", detail: { text_sent: "21:00 컵 보임", memory_version: 3, world: { objects: [], vlm_missing: 0 } } });
+    const r = run([
+      { type: "brain", event: { type: "reflection", at_ms: 0, day: "2026-11-07", ok: true, version: 4, applies_day: "2026-11-08", text: "반성 완료: 기억 4판, 2026-11-08부터" } },
+      { type: "brain", event: { type: "reflection", at_ms: 0, day: "2026-11-07", ok: false, version: null, applies_day: null, text: "반성 실패: x" } },
+    ]);
+    expect(lines(r[0]!)).toEqual(["반성 완료: 기억 4판, 2026-11-08부터", "반성 실패: x"]);
+    expect(r[0]!.steps.map((s) => s.kind === "line" && s.tone)).toEqual([undefined, "fail"]);
+    expect(r[0]!.steps.every((s) => s.kind === "line" && !s.detail)).toBe(true);
+  });
+
   it("대기는 대기, 판단 실패는 fail", () => {
     expect(run([decision({ action: null, prediction: { observation: "o", reasoning: "더 본다", task_index: -1 } })])[0]).toMatchObject({ state: "ok", label: "대기" });
     const f = run([decision({ status: "failed", prediction: null, action: null, error: "PAM 연결 실패" })]);

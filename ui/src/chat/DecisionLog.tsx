@@ -3,7 +3,7 @@ import {
   MapPin, MessageSquare, Monitor, Pause, Play, Plug, Power, Save, ScanSearch, Search, ShieldCheck, SlidersHorizontal, Smartphone, Square, Thermometer, TriangleAlert,
   Undo2, Wrench, type LucideIcon,
 } from "lucide-react";
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { AssistantTabPanel, AssistantTabsList, Tabs, type AssistantTab } from "../components/ui/assistant-tabs";
 import {
   ChainOfThought, ChainOfThoughtContent, ChainOfThoughtStep, ChainOfThoughtStepContent, ChainOfThoughtStepTitle, ChainOfThoughtTrigger,
@@ -13,8 +13,8 @@ import ChatPanel, { ChatAction, ChatRegion, Section } from "../components/ui/cha
 import { AgentToolTimeline, CallState, TimelineEmpty, type AgentCallStatus, type AgentToolCall } from "../components/ui/tool-timeline";
 import { cn } from "../lib/utils";
 import { Surface } from "../components/Surface";
-import { LOG_KIND, observedOf, stepKind, targetOf, toolLabel } from "./labels";
-import { STATE_LABELS, type PendingCard, type Step, type Turn, type TurnState } from "./turns";
+import { DECISION_DETAIL, errorLine, factLine, LOG_KIND, memoryLabel, objectLine, observedOf, stepKind, targetOf, toolLabel, worldLine } from "./labels";
+import { STATE_LABELS, type DecisionDetail, type PendingCard, type Step, type Turn, type TurnState } from "./turns";
 
 export type LogView = "log" | "phone";
 
@@ -61,7 +61,7 @@ function callsOf(turn: Turn): AgentToolCall[] {
   });
 }
 
-type Thought = { key: string; icon: ReactNode; title: string; text: string; status: ChainOfThoughtStepStatus };
+type Thought = { key: string; icon: ReactNode; title: string; text: string; status: ChainOfThoughtStepStatus; detail?: DecisionDetail };
 
 /** 생각 단계: 행동마다 그 이유, 그리고 초점·승인 결과 줄. 관찰과 판단 카드는 기록 줄 전부. */
 function thoughtsOf(turn: Turn): Thought[] {
@@ -75,10 +75,48 @@ function thoughtsOf(turn: Turn): Thought[] {
     if (s.label === "답" || s.label === "찍은 자리") return [];
     const I = LINE_ICON[s.mark ?? s.label] ?? MessageSquare;
     const title = s.mark ? LOG_KIND[s.mark as keyof typeof LOG_KIND] ?? s.mark : s.label || "단계";
-    return [{ key, icon: <I className="size-4" aria-hidden="true" />, title, text: s.text, status: s.tone === "fail" ? "error" : "completed" }];
+    return [{ key, icon: <I className="size-4" aria-hidden="true" />, title, text: s.text, status: s.tone === "fail" ? "error" : "completed", ...(s.detail ? { detail: s.detail } : {}) }];
   });
   if (turn.state === "busy" && out.length) out[out.length - 1] = { ...out[out.length - 1]!, status: "active" };
   return out;
+}
+
+/** 판단 줄: 누르면 그 판단에 쓴 근거(보낸 관찰 텍스트, 판단할 때 World State, 참조한 기억 판본)를 펼친다. 보기만 한다. */
+function DecisionRow({ text, detail }: { text: string; detail: DecisionDetail }) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  const { world } = detail;
+  return (
+    <div>
+      <button
+        type="button" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}
+        className="flex w-full cursor-pointer items-start gap-1 text-left text-xs leading-5 text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <span className="min-w-0 flex-1">{text}</span>
+        <ChevronDown className={cn("mt-0.5 size-3.5 shrink-0 transition-transform", open && "rotate-180")} aria-hidden="true" />
+      </button>
+      {open && (
+        <div id={id} role="region" aria-label={DECISION_DETAIL.region} className="mt-2 flex flex-col gap-3 rounded-lg border border-border bg-background/40 p-2.5">
+          <Section label={DECISION_DETAIL.text} body={<pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-4">{detail.text_sent}</pre>} />
+          <Section label={DECISION_DETAIL.world} body={(
+            <ul className="flex flex-col gap-2 text-xs leading-5">
+              {world.objects.map((o) => (
+                <li key={o.id}>
+                  <p className="font-medium text-ink">{objectLine(o)}</p>
+                  <ul className="text-muted-foreground">
+                    {Object.entries(o.facts).map(([facet, f]) => <li key={facet}>{factLine(f)}</li>)}
+                    <li>{errorLine(o.error_m)}</li>
+                  </ul>
+                </li>
+              ))}
+              <li className="text-muted-foreground">{worldLine(world)}</li>
+            </ul>
+          )} />
+          <Section label={DECISION_DETAIL.memory} body={<p className="text-xs leading-5">{memoryLabel(detail.memory_version)}</p>} />
+        </div>
+      )}
+    </div>
+  );
 }
 
 function Who({ turn }: { turn: Turn }) {
@@ -103,7 +141,9 @@ function Thinking({ turn, open, onOpen }: { turn: Turn; open: boolean; onOpen: (
         {thoughts.map((t) => (
           <ChainOfThoughtStep key={t.key} status={t.status} hasContent autoCloseOnComplete={false}>
             <ChainOfThoughtStepTitle icon={t.icon}>{t.title}</ChainOfThoughtStepTitle>
-            <ChainOfThoughtStepContent><p className="text-xs leading-5 text-muted-foreground">{t.text}</p></ChainOfThoughtStepContent>
+            <ChainOfThoughtStepContent>
+              {t.detail ? <DecisionRow text={t.text} detail={t.detail} /> : <p className="text-xs leading-5 text-muted-foreground">{t.text}</p>}
+            </ChainOfThoughtStepContent>
           </ChainOfThoughtStep>
         ))}
       </ChainOfThoughtContent>

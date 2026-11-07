@@ -5545,46 +5545,32 @@ git commit -m "test: run the whole observation-to-execution flow against the fak
 ### Task 32: 판단 기록 화면 (보낸 관찰 텍스트·World State·확신도·기억 판본·반성 결과)
 
 **Files:**
-- Modify: `ui/src/chat/turns.ts`(판단 줄에 펼침 내용, `reflection`·`link`·`trigger` 줄), `ui/src/chat/labels.ts`(확신도·기억 판본·반성 글), `ui/src/chat/DecisionLog.tsx`(판단 줄을 누르면 펼침), `ui/tests/turns.test.ts`, `ui/tests/decision-log.test.tsx`
+- Modify: `ui/src/chat/turns.ts`(판단 줄에 `detail`), `ui/src/chat/labels.ts`(판단 근거 글), `ui/src/chat/DecisionLog.tsx`(판단 줄을 누르면 펼침), `src/contract/events.ts`·`src/world/decide.ts`(`DecisionWorld` 물건에 `surface_label`), `docs/reference.md`, `ui/tests/turns.test.ts`, `ui/tests/decision-log.test.tsx`
 - `ui/src/plan/`과 `ui/src/dashboard/Dashboard.tsx`는 고치지 않는다.
 
 **Interfaces:**
-- Consumes: `BrainLog` `decision`(`text_sent`, `world: DecisionWorld`, `memory_version`, `prediction`), `reflection`(Task 25), `observe`(`yolo` 신뢰도 글).
-- Produces: `Step`에 `detail?: { text_sent: string; world: DecisionWorld; memory_version: number }`. 화면 글(`ui/src/chat/labels.ts`):
+- Consumes: `BrainLog` `decision`(`text_sent`, `world: DecisionWorld`, `memory_version`, `prediction`), `reflection`(Task 25), `link`·`trigger`.
+- Produces: `Step` 줄에 `detail?: DecisionDetail`(`{ text_sent: string; world: DecisionWorld; memory_version: number }`). `DecisionWorld` 물건에 `surface_label: string | null`(면 이름, 「식탁」). 화면 글(`ui/src/chat/labels.ts`, 화면 빌드에 서버 코드를 끌어오지 않으려고 화면 쪽에 둔다):
 
 ```ts
+export const DECISION_DETAIL = { region: "판단 근거", text: "보낸 관찰", world: "판단할 때 상태", memory: "참조한 기억" } as const;
 export const CERTAINTY: Record<"confirmed" | "inferred", string> = { confirmed: "확인됨", inferred: "추정" };
 export const memoryLabel = (v: number) => `기억 ${v}판`;
-export const DECISION_DETAIL = { text: "보낸 관찰", world: "판단할 때 상태", memory: "참조한 기억" } as const;
+export function objectLine(o): string;     // 「컵 cup_1 · 식탁 위」, 시야 밖이면 「병 bottle_1 · 시야 밖」, 면을 모르면 이름만
+export const factLine = (f) => …;          // 「비어 있음 · 확인됨」
+export const errorLine = (m) => …;         // 「위치 오차 ±0.12m」, 모르면 「위치 모름」
+export const worldLine = (w) => …;         // 「사람 안 보임 · VLM 분석 없음 2장 · YOLOX 분석 없음 0장」
 ```
 
 - [ ] **Step 1: 실패하는 시험**
-
-```ts
-// ui/tests/decision-log.test.tsx 에 더한다
-it("판단 줄을 누르면 보낸 관찰 텍스트·World State·확신도·기억 판본이 보이고 반성 결과 줄이 있다", async () => {
-  const world = { objects: [{ id: "cup_1", cls: "cup", status: "present", surface: "table_1", error_m: 0.12,
-    facts: { contents: { value: "empty", certainty: "confirmed" as const }, place: { value: "on_table", certainty: "inferred" as const } } }],
-    person_visible: false, vlm_missing: 2, yolo_missing: 0 };
-  const brainMsg = (event: BrainLog): ServerMessage => ({ type: "brain", event });
-  show(turnsOf([brainMsg({ type: "decision", at_ms: 1, id: "pam-1", seq: 1, text_sent: "21:00:00 사람 안 보임\n[지속] 컵(cup_1) 식탁 위", status: "valid",
-      prediction: { observation: "o", reasoning: "자리를 비워 컵을 치운다", task_index: 0 }, action: "컵 치우기", memory_version: 3, world }),
-    brainMsg({ type: "reflection", at_ms: 2, day: "2026-11-07", ok: true, version: 4, applies_day: "2026-11-08", text: "반성 완료: 기억 4판, 2026-11-08부터" })]));
-  await userEvent.click(screen.getByRole("button", { name: /컵 치우기/ }));
-  expect(screen.getByText(/21:00:00 사람 안 보임/)).toBeInTheDocument();
-  expect(screen.getByText(/확인됨/)).toBeInTheDocument();
-  expect(screen.getByText(/추정/)).toBeInTheDocument();
-  expect(screen.getByText("기억 3판")).toBeInTheDocument();
-  expect(screen.getByText(/반성 완료: 기억 4판/)).toBeInTheDocument();
-  expect(document.querySelector("input, textarea, select, form, [contenteditable]")).toBeNull();
-});
-```
-(`show`·`turnsOf`는 이 파일에 이미 있는 도우미다. `BrainLog`를 `../../src/contract/events.ts`에서 가져온다.) `ui/tests/turns.test.ts`에 「`decision`이면 판단 줄에 `detail`이 붙고, `reflection`은 줄 하나를 더한다」를 더한다.
-
+  - `ui/tests/decision-log.test.tsx`: 판단·반성 기록으로 카드 두 장. 판단 카드(`data-turn="b0"`)는 마지막 카드가 아니라 접혀 있어 알약 단추(「컵 치우기」)로 먼저 연다. 판단 줄 단추(「컵 치우기 · 자리를 비워 컵을 치운다」)는 `aria-expanded="false"`이고 관찰 텍스트가 안 보인다. 누르면 `region` 「판단 근거」 안에 관찰 텍스트, 「컵 cup_1 · 식탁 위」, 「비어 있음 · 확인됨」, 「식탁 위 · 추정」, 「위치 오차 ±0.12m」, 사람·분석 없음 줄, 「기억 3판」. 반성 줄 「반성 완료: 기억 4판, …」. 입력창 없음. 다시 누르면 접힌다.
+  - 위치 모름·시야 밖 물건, 사람 보임·YOLOX 분석 없음 1장도 본다.
+  - `ui/tests/turns.test.ts`: 판단 줄에 `detail`, 반성 줄(실패면 fail)에는 `detail` 없음.
 - [ ] **Step 2: 실패 확인** — `H npm --prefix ui test -- decision-log turns` / Expected: FAIL(펼침 없음)
 - [ ] **Step 3: 구현**
-  - `turns.ts` `onBrain`: `decision`이면 판단 줄(행동 이름 또는 「대기」, 이유)에 `detail: { text_sent, world, memory_version }`을 붙인다. `reflection`은 `text` 줄 하나(실패면 `tone: "fail"`), `link`·`trigger`도 `text` 줄 하나.
-  - `DecisionLog.tsx`: `detail`이 있는 줄은 `<button aria-expanded>`로 그리고, 누르면 아래를 펼친다: 「보낸 관찰」(`text_sent`를 `<pre>`로), 「판단할 때 상태」(물건마다 `컵 cup_1 · 식탁 위` 아래 사실별 `비어 있음 · 확인됨`, 위치 오차 `±0.12m`, VLM 분석 없음 수), 「참조한 기억」(`memoryLabel(memory_version)`). 입력창은 두지 않는다(펼침 버튼만).
+  - `turns.ts` `onBrain`: `decision`이면 판단 줄(행동 이름 또는 「대기」·「판단 실패」, 이유)에 `detail`을 붙인다. `reflection`·`link`·`trigger`는 지금처럼 `text` 줄 하나(실패·끊김이면 `tone: "fail"`).
+  - `DecisionLog.tsx`: `detail`이 있는 줄은 `<button aria-expanded aria-controls>`(줄 글 + 접힘 표시)로 그리고, 누르면 아래에 `role="region"` 「판단 근거」를 펼친다: 「보낸 관찰」 `<pre>`, 「판단할 때 상태」 물건마다 머리줄·사실 줄·위치 오차와 사람·분석 없음 줄, 「참조한 기억」 `memoryLabel`. 입력창은 두지 않는다.
+  - `decisionWorld()`가 물건의 `surface_label`도 싣는다.
   - 관찰 줄(`observe`)의 YOLOX 글은 지금처럼 신뢰도(`컵 0.91`)를 그대로 보인다.
 - [ ] **Step 4: 통과 확인**
 
@@ -5592,14 +5578,15 @@ it("판단 줄을 누르면 보낸 관찰 텍스트·World State·확신도·기
 H npm --prefix ui test
 H npm --prefix ui run typecheck
 H npm run lint
-H npx vitest run tests/self-contained.test.ts tests/lint-ui-copy.test.ts
+H npx vitest run tests/world-decide.test.ts tests/observe-start.test.ts tests/history-record.test.ts tests/history-api.test.ts tests/lint-ui-copy.test.ts tests/self-contained.test.ts tests/contract.test.ts
+H npx tsc --noEmit
 ```
 Expected: PASS(`no-input.test.tsx`·`bubble-layer.test.tsx` 포함)
 
 - [ ] **Step 5: 커밋**
 
 ```bash
-git add ui/src/chat/turns.ts ui/src/chat/labels.ts ui/src/chat/DecisionLog.tsx ui/tests/turns.test.ts ui/tests/decision-log.test.tsx
+git add ui/src/chat/turns.ts ui/src/chat/labels.ts ui/src/chat/DecisionLog.tsx src/contract/events.ts src/world/decide.ts docs/reference.md ui/tests/turns.test.ts ui/tests/decision-log.test.tsx
 git commit -m "feat(ui): expand a decision row into the observation text sent, World State with certainty, memory version, and show reflection results"
 ```
 

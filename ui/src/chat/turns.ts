@@ -1,7 +1,7 @@
 // 판단 기록(순수 리듀서). 대시보드는 보기만 한다: 요청·승인은 폰에서 음성으로 오고, 서버 메시지만으로 카드를 쌓는다.
 // 요청마다 카드 한 장: 행동 단계(실시간 action 이벤트, 없으면 답의 actions)와 답·초점·승인 결과 줄이 쌓인다.
 // 실시간 행동은 세션마다 진행 중 카드에 붙고, 그 세션의 답이 카드를 끝낸다. 사진, 관찰과 판단 흐름도 같은 목록에 카드로 쌓인다.
-import type { AgentAction, BrainLog, PendingView, PhotoRecord, ServerMessage } from "../../../src/contract/events.ts";
+import type { AgentAction, BrainLog, DecisionWorld, PendingView, PhotoRecord, ServerMessage } from "../../../src/contract/events.ts";
 import { BRAIN_CARD, EXEC_LABEL, VLM_MISSING, YOLO_MISSING } from "./labels";
 
 /** 폰(클로이드의 눈)에서 말한 대화의 세션 id(서버 start.ts와 같다). */
@@ -14,10 +14,13 @@ export type TurnState = "busy" | "ok" | "wait" | "fail" | "cancel";
 export type PendingStatus = "open" | "ok" | "fail" | "cancel";
 export type PendingCard = PendingView & { status: PendingStatus };
 
-/** 행동 한 단계, 또는 글 한 줄(답·초점·취소·승인 결과·찍은 자리·관찰 기록). mark는 관찰 기록 줄의 종류(아이콘·단계 이름). */
+/** 판단 줄을 펼치면 보이는 근거: PAM에 보낸 관찰 텍스트, 판단할 때 World State 요약, 참조한 기억 판본. */
+export interface DecisionDetail { text_sent: string; world: DecisionWorld; memory_version: number }
+
+/** 행동 한 단계, 또는 글 한 줄(답·초점·취소·승인 결과·찍은 자리·관찰 기록). mark는 관찰 기록 줄의 종류(아이콘·단계 이름). detail은 판단 줄의 근거. */
 export type Step =
   | { kind: "action"; action: AgentAction }
-  | { kind: "line"; label: string; text: string; tone?: "fail" | "wait"; mark?: string };
+  | { kind: "line"; label: string; text: string; tone?: "fail" | "wait"; mark?: string; detail?: DecisionDetail };
 
 export interface Turn {
   id: string;
@@ -48,7 +51,7 @@ const lastIndex = (turns: Turn[], ok: (t: Turn) => boolean) => {
   for (let i = turns.length - 1; i >= 0; i--) if (ok(turns[i]!)) return i;
   return -1;
 };
-const line = (label: string, text: string, extra: { tone?: "fail" | "wait"; mark?: string } = {}): Step => ({ kind: "line", label, text, ...extra });
+const line = (label: string, text: string, extra: { tone?: "fail" | "wait"; mark?: string; detail?: DecisionDetail } = {}): Step => ({ kind: "line", label, text, ...extra });
 const isFocus = (s: Step) => s.kind === "line" && s.label === "초점";
 
 function finish(turn: Turn, text: string, actions: AgentAction[] = [], pending: PendingView[] = []): Turn {
@@ -113,7 +116,7 @@ function onBrain(turns: Turn[], e: BrainLog): Turn[] {
   }
   const t = turns[i]!;
   const now = t.now ?? { seen: "", judged: "" };
-  const add = (text: string, extra: { tone?: "fail" | "wait" } = {}) => ({ ...t, steps: [...t.steps, line("", text, { ...extra, mark: e.type })].slice(-MAX_BRAIN_STEPS) });
+  const add = (text: string, extra: { tone?: "fail" | "wait"; detail?: DecisionDetail } = {}) => ({ ...t, steps: [...t.steps, line("", text, { ...extra, mark: e.type })].slice(-MAX_BRAIN_STEPS) });
   switch (e.type) {
     case "observe": {
       const seen = e.yolo ?? (e.yolo_missing ? YOLO_MISSING[e.yolo_missing] : null);
@@ -124,7 +127,8 @@ function onBrain(turns: Turn[], e: BrainLog): Turn[] {
       const ok = e.status === "valid";
       const choice = ok ? e.action ?? BRAIN_CARD.wait : BRAIN_CARD.failed;
       const why = ok ? e.prediction?.reasoning : e.error;
-      const next = add(why ? `${choice} · ${why}` : choice, ok ? {} : { tone: "fail" });
+      const detail: DecisionDetail = { text_sent: e.text_sent, world: e.world, memory_version: e.memory_version };
+      const next = add(why ? `${choice} · ${why}` : choice, ok ? { detail } : { tone: "fail", detail });
       return at(turns, i, { ...next, ended: true, state: ok ? "ok" : "fail", label: choice, decision: e.id });
     }
     case "link":
