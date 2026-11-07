@@ -1,4 +1,5 @@
-import type { AgentAction, BrainState } from "../../../src/contract/events.ts";
+import type { AgentAction, BrainLog } from "../../../src/contract/events.ts";
+import type { VlmMissing, YoloMissing } from "../../../src/contract/world.ts";
 
 /** 도구 이름 → 화면 이름. */
 export const TOOL_LABELS: Record<string, string> = {
@@ -31,17 +32,22 @@ export const RESULT_LABELS: Record<ActionResult, string> = { ok: "완료", wait:
 /** 결과 한 줄: 관찰, 없으면 도구 메시지·오류, 그것도 없으면 결과 이름. */
 export const observedOf = (a: AgentAction) => a.observation ?? (a.ok ? a.message : a.error) ?? RESULT_LABELS[resultOf(a)];
 
-/** 컵 두뇌 상태 → 화면 이름. */
-export const BRAIN_STATE: Record<BrainState, string> = {
-  watching: "지켜봄", in_use: "사용 중", away_check: "자리 비움 확인", requesting: "사진 요청", deciding: "판단 중", confirming: "재확인", acting: "모의 행동", done: "끝",
-};
-
 /** 상태를 읽기만 하는 도구(단계 종류 「확인」). 나머지는 「행동」. */
 const READ_TOOLS = new Set(["list_rooms", "list_devices", "find_devices", "get_state", "find_objects", "find_object_types"]);
 export const stepKind = (tool: string) => (READ_TOOLS.has(tool) ? "확인" : "행동");
 
-/** 컵 두뇌 단계(줄의 mark) → 화면 이름. */
-export const BRAIN_STAGE: Record<string, string> = {
-  use: "사용", away: "자리 비움", request: "사진 요청", answer: "답 사진", decide: "판단", confirm: "재확인", act: "행동", result: "결과",
-  wait: "기다림", cancel: "취소", stale: "오래됨", error: "오류", phone: "폰 부탁", would: "클로이드라면",
+/** 관찰과 판단 카드 글. */
+export const BRAIN_CARD = { ask: "관찰과 판단", watching: "관찰 중", wait: "대기", failed: "판단 실패" };
+
+/** 관찰 흐름 기록 종류(줄의 mark) → 단계 이름. */
+export const LOG_KIND: Record<BrainLog["type"], string> = {
+  observe: "관찰", world_change: "변화", decision: "판단", execution: "실행", link: "연결", trigger: "판단 시점", reflection: "반성",
 };
+
+/** VLM 분석 없음 이유 → 글. */
+export const VLM_MISSING: Record<VlmMissing, string> = {
+  cap: "요청이 몰려 VLM 분석 없음", timeout: "시간 초과로 VLM 분석 없음", format: "형식 오류로 VLM 분석 없음", error: "호출 오류로 VLM 분석 없음",
+};
+
+/** YOLOX 분석 없음 이유 → 글. */
+export const YOLO_MISSING: Record<YoloMissing, string> = { cap: "요청이 몰려 YOLOX·VLM 분석 없음", error: "감지 오류로 YOLOX 분석 없음" };

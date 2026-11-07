@@ -3930,8 +3930,8 @@ git commit -m "feat: merge YOLOX and VLM results per object into a World State w
 ### Task 21: 관찰 흐름 연결 (컵 두뇌를 바꾼다)
 
 **Files:**
-- Create: `src/observe/pipeline.ts`, `tests/observe-pipeline.test.ts`
-- Modify: `src/server/home.ts`(BRAIN=1이면 `ObservationPipeline`, `surfacesFrom` 대신 `surfacesFromLayout`), `src/server/start.ts`(`CreateLiveBrainOptions` 대신 `StartServerOptions.brain`을 파이프라인 주입 `{ detector?, vlm?, clock? }`로), `src/phone/server.ts`(`onFrame`·`onPhoto` 지움), `tests/phone-server.test.ts`, `src/server/app.ts`(`/api/brain` → 파이프라인 상태, 접속 때 World State 보냄), `src/contract/events.ts`(`BrainLog`를 새 모양으로, `BrainStage`·`BrainState`·`BrainEvent`·`PerceptionLog`·`PresenceLog` 지움), `src/brain/decision.ts`(`perception.ts`의 `Contents` 대신 이 파일에 `type Contents`를 둔다), `src/plan/hub.ts`(컵 두뇌 이벤트 처리 지움), `src/plan/labels.ts`(`JUDGMENT`·`ASK_JUDGMENT`와 `BrainStage` import 지움), `tests/plan-hub.test.ts`, `ui/src/chat/turns.ts`, `ui/src/chat/labels.ts`(`BRAIN_STATE`·`BRAIN_STAGE` 대신 새 기록 글), `ui/src/chat/DecisionLog.tsx`(`LINE_ICON`의 두뇌 단계 표시를 새 기록 종류로, 「컵 지켜보기」 이름을 「클로이드 · 관찰과 판단」으로), `ui/src/checks/checks.ts`(`noteOf`를 새 `observe` 기록으로), `ui/tests/turns.test.ts`, `ui/tests/decision-log.test.tsx`, `ui/tests/checks.test.ts`, `ui/tests/use-checks.test.tsx`, `docs/reference.md`
+- Create: `src/observe/pipeline.ts`, `tests/observe-pipeline.test.ts`, `tests/observe-start.test.ts`(BRAIN=1 시작: 폰 엔진 프레임 → `/events` observe·world, `/api/brain`·`/api/world`, BRAIN=1인데 PHONE_PORT 없음)
+- Modify: `src/server/home.ts`(BRAIN=1이면 `WorldState`·`ObservationPipeline`, `surfacesFrom` 대신 `surfacesFromLayout`), `src/world/labels.ts`(`YOLO_TEXT` 감지 없음·감지기 없음, 컵 두뇌 글 `LINE`·`CONTENTS_FACT` 지움), `tests/lint-ui-copy.test.ts`(지운 판단 글 `JUDGMENT` 기대를 뺌), `.env.example`(`ENGINE_FRAME_MS=`·`VLM_MAX_INFLIGHT=`·`DETECT_QUEUE_MAX=`, Task 22에서 옮김), `src/server/start.ts`(`CreateLiveBrainOptions` 대신 `StartServerOptions.brain`을 파이프라인 주입 `{ detector?, vlm?, clock? }`로), `src/phone/server.ts`(`onFrame`·`onPhoto` 지움), `tests/phone-server.test.ts`, `src/server/app.ts`(`/api/brain` → 파이프라인 상태, 접속 때 World State 보냄), `src/contract/events.ts`(`BrainLog`를 새 모양으로, `BrainStage`·`BrainState`·`BrainEvent`·`PerceptionLog`·`PresenceLog`·`ActionOutcome`·`Tri` 지움), `src/brain/decision.ts`(`perception.ts`의 `Contents` 대신 이 파일에 `type Contents`를 둔다), `src/plan/hub.ts`(컵 두뇌 이벤트 처리 지움), `src/plan/labels.ts`(`JUDGMENT`·`ASK_JUDGMENT`와 `BrainStage` import 지움), `tests/plan-hub.test.ts`, `ui/src/chat/turns.ts`, `ui/src/chat/labels.ts`(`BRAIN_STATE`·`BRAIN_STAGE` 대신 새 기록 글), `ui/src/chat/DecisionLog.tsx`(`LINE_ICON`의 두뇌 단계 표시를 새 기록 종류로, 「컵 지켜보기」 이름을 「클로이드 · 관찰과 판단」으로), `ui/src/checks/checks.ts`(`noteOf`를 새 `observe` 기록으로), `ui/tests/turns.test.ts`, `ui/tests/decision-log.test.tsx`, `ui/tests/checks.test.ts`, `ui/tests/use-checks.test.tsx`, `docs/reference.md`
 - Delete: `src/brain/brain.ts`, `src/brain/machine.ts`, `src/brain/loop.ts`, `src/brain/presence.ts`, `src/brain/window.ts`, `src/brain/live.ts`, `src/brain/config.ts`, `src/brain/perception.ts`, `tests/brain-machine.test.ts`, `tests/brain-runner.test.ts`, `tests/brain-fusion.test.ts`, `tests/brain-gate.test.ts`, `tests/brain-presence.test.ts`, `tests/brain-perception.test.ts`, `tests/brain-live.test.ts`, `tests/helpers/perceivers.ts`
 
 **Interfaces:**
@@ -3957,16 +3957,18 @@ export interface DecisionWorld {
 }
 // src/observe/pipeline.ts
 export interface ObserveConfig { engineMs: number; vlmMaxInflight: number; vlmTimeoutMs: number; detectQueueMax: number; keepMs: number }
-export function loadObserveConfig(env): ObserveConfig;   // ENGINE_FRAME_MS(1000), VLM_MAX_INFLIGHT(4), VLM_TIMEOUT_MS(20000, vlmTimeoutMs), DETECT_QUEUE_MAX(8)
+export function loadObserveConfig(env): ObserveConfig;   // ENGINE_FRAME_MS(1000, 200 이상), VLM_MAX_INFLIGHT(4), VLM_TIMEOUT_MS(20000, vlmTimeoutMs), DETECT_QUEUE_MAX(8). 틀린 값이면 던진다(시작을 막음)
+export interface PipelineInject { detector?: Detector | null; vlm?: VlmClient; clock?: { now(): number } }
 export class ObservationPipeline {
   constructor(o: { config: ObserveConfig; detector: Detector | null; vlm: VlmClient; world: WorldState; emit: (log: BrainLog) => void; broadcastWorld: (w: WorldView) => void; onChanges?: (c: WorldChange[]) => void; clock?: { now(): number } });
+  get config(): ObserveConfig;   // home.ts가 폰 서버 engineMs로 넘긴다
   onEngine(jpeg: Buffer, header: FrameHeader, eye: EyeEvent | null, view: CameraView | null, receivedAtMs: number): void;
   onDevice(s: DeviceState): void;
-  status(): { frames: number; duplicates: number; detected: number; detect_ms: number | null; queued: number; yolo_missing: Record<YoloMissing, number>; vlm: ReturnType<VlmPool["stats"]>; time_source: "phone" | "received" | null };
+  status(): { frames: number; duplicates: number; detector: string | null; vlm_model: string; detected: number; detect_ms: number | null; queued: number; yolo_missing: Record<YoloMissing, number>; vlm: ReturnType<VlmPool["stats"]>; time_source: "phone" | "received" | null; time_err_ms: number | null };
   idle(): Promise<void>;
   close(): Promise<void>;
 }
-export async function createPipeline(o: { env; runtimeDir; world: WorldState; emit; broadcastWorld; onChanges?; log; inject?: { detector?: Detector | null; vlm?: VlmClient; clock? } }): Promise<ObservationPipeline>;
+export async function createPipeline(o: { env; runtimeDir; world: WorldState; emit; broadcastWorld; onChanges?; log; inject?: PipelineInject }): Promise<ObservationPipeline>;
 ```
 
 - [ ] **Step 1: 실패하는 시험**
@@ -4060,8 +4062,8 @@ describe("관찰 흐름", () => {
   });
 });
 ```
-(`Detector` 타입은 `../src/brain/detector.js`에서 가져온다.)
-`tests/plan-server.test.ts`·`tests/start.test.ts`에서 `BRAIN=1` 시작 시험은 파이프라인(`inject.detector`·`inject.vlm` 가짜 서버)으로 바꾼다. 분석한 엔진 프레임이 디스크에 남지 않는지 G4 Task 27에서 본다.
+(`Detector` 타입은 `../src/brain/detector.js`에서 가져온다. 둘째 시험은 감지기 없이 돌면 YOLOX 글이 「감지기 없음」인지도 본다.)
+`tests/plan-server.test.ts`·`tests/start.test.ts`에는 `BRAIN=1` 시작 시험이 없다. `tests/brain-live.test.ts`의 시작 시험 두 개를 `tests/observe-start.test.ts`로 바꿔 쓴다(가짜 OpenAI 호환 서버 `VLM_BASE_URL`, `brain.detector`는 `ScriptedDetector`, 폰 상태의 `engine_ms`, 표시 프레임은 관찰 흐름에 안 들어감, 늦게 붙은 대시보드도 `{type:"world"}`를 받음). `tests/phone-server.test.ts`의 엔진 시험에 「`frame` 패킷은 `onEngine`으로 가지 않는다」를 더한다. 분석한 엔진 프레임이 디스크에 남지 않는지 G4 Task 26에서 본다.
 
 - [ ] **Step 2: 실패 확인** — `H npx vitest run tests/observe-pipeline.test.ts` / Expected: FAIL
 - [ ] **Step 3: 구현** (`src/observe/pipeline.ts`)
@@ -4070,30 +4072,81 @@ describe("관찰 흐름", () => {
 // 관찰 흐름(BRAIN=1): 엔진 프레임 → 고리(중복 버림) → YOLOX(워커, 상한 있는 대기열에서 하나씩) → VLM(동시 요청) → World State → /events.
 // 프레임마다 observe 기록이 반드시 남는다: 대기열이 차면 YOLOX·VLM 분석 없음, 감지 실패면 YOLOX 분석 없음(VLM은 그대로 분석).
 // 분석한 사진은 메모리 고리에만 있다. 디스크에 쓰지 않는다.
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import type { BrainLog } from "../contract/events.js";
 import type { WorldChange, WorldView, YoloMissing } from "../contract/world.js";
 import type { DeviceState } from "../hub/types.js";
-import type { Detection, Detector } from "../brain/detector.js";
+import { WorkerDetector, YOLOX_MODELS, type Detection, type Detector, type YoloxModel } from "../brain/detector.js";
 import { vlmTimeoutMs } from "../infer/endpoints.js";
+import { createInference } from "../infer/inference.js";
 import type { VlmClient } from "../infer/vlm.js";
 import type { FrameHeader } from "../phone/packet.js";
 import type { CameraView, EyeEvent } from "../phone/session.js";
-import { OBJECT_NAME } from "../world/labels.js";
+import { OBJECT_NAME, YOLO_TEXT } from "../world/labels.js";
 import type { WorldState } from "../world/state.js";
 import { captureTime, FrameRing, sha256, type EngineFrame } from "./ring.js";
 import { analyzeScene, type SceneDetection } from "./scene.js";
 import { VlmPool } from "./vlm-pool.js";
 
-export interface ObserveConfig { engineMs: number; vlmMaxInflight: number; vlmTimeoutMs: number; detectQueueMax: number; keepMs: number }
-const int = (raw: string | undefined, d: number, min: number) => { const v = Number(raw); return raw?.trim() && Number.isFinite(v) && v >= min ? Math.floor(v) : d; };
-export const loadObserveConfig = (env: Record<string, string | undefined>): ObserveConfig => ({
-  engineMs: int(env.ENGINE_FRAME_MS, 1000, 200), vlmMaxInflight: int(env.VLM_MAX_INFLIGHT, 4, 1), vlmTimeoutMs: vlmTimeoutMs(env),
-  detectQueueMax: int(env.DETECT_QUEUE_MAX, 8, 1), keepMs: 20_000,
+type Env = Record<string, string | undefined>;
+
+export interface ObserveConfig {
+  /** 엔진 프레임 간격(ms). 폰 서버가 상태 메시지로 폰에 알린다. */
+  engineMs: number;
+  vlmMaxInflight: number;
+  vlmTimeoutMs: number;
+  /** YOLOX 대기열 상한. 차면 그 프레임은 YOLOX·VLM 분석 없음. */
+  detectQueueMax: number;
+  /** 메모리 고리 길이(ms). */
+  keepMs: number;
+}
+
+const int = (env: Env, key: string, d: number, min: number) => {
+  const raw = env[key]?.trim();
+  if (!raw) return d;
+  const v = Number(raw);
+  if (!Number.isFinite(v) || v < min) throw new Error(`${key}=${raw}: ${min} 이상의 숫자여야 합니다`);
+  return Math.floor(v);
+};
+
+/** ENGINE_FRAME_MS(기본 1000, 200 이상), VLM_MAX_INFLIGHT(4), VLM_TIMEOUT_MS(20000), DETECT_QUEUE_MAX(8). 틀린 값이면 시작을 막는다. */
+export const loadObserveConfig = (env: Env): ObserveConfig => ({
+  engineMs: int(env, "ENGINE_FRAME_MS", 1000, 200), vlmMaxInflight: int(env, "VLM_MAX_INFLIGHT", 4, 1), vlmTimeoutMs: vlmTimeoutMs(env),
+  detectQueueMax: int(env, "DETECT_QUEUE_MAX", 8, 1), keepMs: 20_000,
 });
-/** World State 변화 중 프레임마다 생기는 분석 없음은 observe 기록으로 남기므로 world_change로 다시 보내지 않는다. */
+
+/** 프레임마다 생기는 분석 없음은 observe 기록으로 남기므로 world_change로 다시 보내지 않는다. */
 const PER_FRAME = new Set(["vlm_missing", "yolo_missing"]);
 
-const yoloText = (dets: Detection[]) => dets.length ? dets.map((d) => `${OBJECT_NAME[d.label] ?? d.label} ${d.score.toFixed(2)}`).join(" · ") : "감지 없음";
+const yoloText = (dets: Detection[]) => (dets.length ? dets.map((d) => `${OBJECT_NAME[d.label] ?? d.label} ${d.score.toFixed(2)}`).join(" · ") : YOLO_TEXT.none);
+
+export interface PipelineOptions {
+  config: ObserveConfig;
+  /** null이면 감지기 없이 VLM만(모델 파일이 없을 때). */
+  detector: Detector | null;
+  vlm: VlmClient;
+  world: WorldState;
+  emit: (log: BrainLog) => void;
+  broadcastWorld: (w: WorldView) => void;
+  /** World State 변화(분석 없음 포함). 판단 호출 시점이 받는다. */
+  onChanges?: (c: WorldChange[]) => void;
+  clock?: { now(): number };
+}
+
+export interface PipelineStatus {
+  frames: number;
+  duplicates: number;
+  detector: string | null;
+  vlm_model: string;
+  detected: number;
+  detect_ms: number | null;
+  queued: number;
+  yolo_missing: Record<YoloMissing, number>;
+  vlm: ReturnType<VlmPool["stats"]>;
+  time_source: "phone" | "received" | null;
+  time_err_ms: number | null;
+}
 
 export class ObservationPipeline {
   private readonly ring: FrameRing;
@@ -4108,15 +4161,17 @@ export class ObservationPipeline {
   private readonly yoloMissing: Record<YoloMissing, number> = { cap: 0, error: 0 };
   private detectMs: number[] = [];
   private timeSource: "phone" | "received" | null = null;
+  private timeErr: number | null = null;
   private closed = false;
 
-  constructor(private readonly o: { config: ObserveConfig; detector: Detector | null; vlm: VlmClient; world: WorldState; emit: (log: BrainLog) => void; broadcastWorld: (w: WorldView) => void; onChanges?: (c: WorldChange[]) => void; clock?: { now(): number } }) {
+  constructor(private readonly o: PipelineOptions) {
     this.clock = o.clock ?? { now: () => Date.now() };
     this.ring = new FrameRing(o.config.keepMs);
     this.pool = new VlmPool({
       maxInflight: o.config.vlmMaxInflight, timeoutMs: o.config.vlmTimeoutMs,
       analyze: (f, d, signal) => analyzeScene(o.vlm, f, d, signal),
       onResult: (r) => {
+        if (this.closed) return;
         const ids = this.idsOf.get(r.frameId) ?? new Map<string, string>();
         const changes = r.scene ? o.world.applyScene(r.frameId, r.capturedAtMs, r.scene, ids) : o.world.applyMissing(r.frameId, r.capturedAtMs, { vlm: r.missing! });
         o.emit({ type: "observe", at_ms: this.clock.now(), frame_id: r.frameId, captured_at_ms: r.capturedAtMs, yolo: null, vlm: r.scene?.summary ?? null, ...(r.missing ? { vlm_missing: r.missing } : {}) });
@@ -4125,22 +4180,34 @@ export class ObservationPipeline {
     });
   }
 
+  get config(): ObserveConfig {
+    return this.o.config;
+  }
+
   private publish(changes: WorldChange[]): void {
-    if (this.closed) return;
+    if (this.closed || !changes.length) return;
     for (const c of changes) if (!PER_FRAME.has(c.kind)) this.o.emit({ type: "world_change", at_ms: this.clock.now(), kind: c.kind, text: c.text });
-    if (changes.length) { this.o.onChanges?.(changes); this.o.broadcastWorld(this.o.world.view(this.clock.now())); }
+    this.o.onChanges?.(changes);
+    this.o.broadcastWorld(this.o.world.view(this.clock.now()));
   }
 
   onEngine(jpeg: Buffer, header: FrameHeader, eye: EyeEvent | null, view: CameraView | null, receivedAtMs: number): void {
     if (this.closed) return;
     const t = captureTime({ receivedAtMs, capturedAt: header.captured_at, timeErrMs: header.time_err_ms });
     this.timeSource = t.source;
+    this.timeErr = t.source === "phone" ? header.time_err_ms ?? null : null;
     const frame: EngineFrame = { id: `e${++this.seq}`, capturedAtMs: t.atMs, latestAtMs: t.latestMs, jpeg, sha256: sha256(jpeg), width: header.width, height: header.height, eye, view };
     if (!this.ring.push(frame)) return;
     this.frames++;
     this.o.world.setEye(eye, t.atMs);
-    if (!this.o.detector) { this.analyze(frame, []); return; }
-    if (this.queue.length >= this.o.config.detectQueueMax) { this.overflow(frame); return; }
+    if (!this.o.detector) {
+      this.analyze(frame, undefined);
+      return;
+    }
+    if (this.queue.length >= this.o.config.detectQueueMax) {
+      this.overflow(frame);
+      return;
+    }
     this.queue.push(frame);
     if (!this.detecting) this.detecting = this.drain().finally(() => { this.detecting = null; });
   }
@@ -4152,22 +4219,26 @@ export class ObservationPipeline {
     this.publish(this.o.world.applyMissing(frame.id, frame.capturedAtMs, { yolo: "cap", vlm: "cap" }));
   }
 
-  /** YOLOX 결과(실패면 null)를 World State에 넣고 같은 프레임을 VLM에 보낸다. */
-  private analyze(frame: EngineFrame, dets: Detection[] | null): void {
-    if (dets) {
+  /** YOLOX 결과(실패면 null, 감지기가 없으면 undefined)를 World State에 넣고 같은 프레임을 VLM에 보낸다. */
+  private analyze(frame: EngineFrame, dets: Detection[] | null | undefined): void {
+    const base = { type: "observe" as const, frame_id: frame.id, captured_at_ms: frame.capturedAtMs, vlm: null };
+    if (dets === undefined) {
+      this.idsOf.set(frame.id, new Map());
+      this.o.emit({ ...base, at_ms: this.clock.now(), yolo: YOLO_TEXT.noDetector });
+    } else if (dets) {
       const { changes, ids } = this.o.world.applyDetections(frame, dets);
       this.idsOf.set(frame.id, ids);
+      this.o.emit({ ...base, at_ms: this.clock.now(), yolo: yoloText(dets) });
       this.publish(changes);
-      this.o.emit({ type: "observe", at_ms: this.clock.now(), frame_id: frame.id, captured_at_ms: frame.capturedAtMs, yolo: yoloText(dets), vlm: null });
     } else {
       this.yoloMissing.error++;
       this.idsOf.set(frame.id, new Map());
-      this.o.emit({ type: "observe", at_ms: this.clock.now(), frame_id: frame.id, captured_at_ms: frame.capturedAtMs, yolo: null, yolo_missing: "error", vlm: null });
+      this.o.emit({ ...base, at_ms: this.clock.now(), yolo: null, yolo_missing: "error" });
       this.publish(this.o.world.applyMissing(frame.id, frame.capturedAtMs, { yolo: "error" }));
     }
     for (const k of this.idsOf.keys()) if (!this.ring.get(k)) this.idsOf.delete(k);
     const sceneDets: SceneDetection[] = (dets ?? []).map((d, i) => ({ id: `d${i + 1}`, class: d.label, box: d.box, score: d.score }));
-    this.pool.submit(frame, sceneDets);   // 상한을 넘으면 풀이 VLM 분석 없음(cap)을 onResult로 낸다
+    this.pool.submit(frame, sceneDets); // 상한을 넘으면 풀이 VLM 분석 없음(cap)을 onResult로 낸다
   }
 
   private async drain(): Promise<void> {
@@ -4186,16 +4257,25 @@ export class ObservationPipeline {
     }
   }
 
-  onDevice(s: DeviceState): void { this.publish(this.o.world.applyDevice(s, this.clock.now())); }
-
-  status() {
-    return { frames: this.frames, duplicates: this.ring.dropped, detected: this.detected,
-      detect_ms: this.detectMs.length ? Math.round(this.detectMs.reduce((a, b) => a + b, 0) / this.detectMs.length) : null,
-      queued: this.queue.length, yolo_missing: { ...this.yoloMissing }, vlm: this.pool.stats(), time_source: this.timeSource };
+  onDevice(s: DeviceState): void {
+    if (!this.closed) this.publish(this.o.world.applyDevice(s, this.clock.now()));
   }
 
-  async idle(): Promise<void> { while (this.detecting) await this.detecting; await this.pool.idle(); }
+  status(): PipelineStatus {
+    return {
+      frames: this.frames, duplicates: this.ring.dropped, detector: this.o.detector?.name ?? null, vlm_model: this.o.vlm.model, detected: this.detected,
+      detect_ms: this.detectMs.length ? Math.round(this.detectMs.reduce((a, b) => a + b, 0) / this.detectMs.length) : null,
+      queued: this.queue.length, yolo_missing: { ...this.yoloMissing }, vlm: this.pool.stats(), time_source: this.timeSource, time_err_ms: this.timeErr,
+    };
+  }
 
+  /** 진행 중인 감지·VLM 요청이 끝날 때까지 기다린다(시험용). */
+  async idle(): Promise<void> {
+    while (this.detecting) await this.detecting;
+    await this.pool.idle();
+  }
+
+  /** 닫기: 나가 있는 VLM 요청을 끊고 감지기를 닫는다. 닫은 뒤 끝난 결과는 내지 않는다. */
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
@@ -4205,27 +4285,64 @@ export class ObservationPipeline {
     await this.detecting?.catch(() => {});
   }
 }
+
+/** 시험용 주입. detector는 null이면 감지기 없이(VLM만). */
+export interface PipelineInject { detector?: Detector | null; vlm?: VlmClient; clock?: { now(): number } }
+
+/** 감지기: BRAIN_DETECTOR(yolox_tiny 기본·yolox_nano·off), BRAIN_YOLO_PATH, BRAIN_YOLO_THREADS(4). 모델 파일이 없으면 VLM만(경고). */
+async function createDetector(env: Env, runtimeDir: string, log: (line: string) => void): Promise<Detector | null> {
+  const want = (env.BRAIN_DETECTOR?.trim() || "yolox_tiny") as YoloxModel | "off";
+  if (want === "off") return null;
+  const model = YOLOX_MODELS[want];
+  const path = env.BRAIN_YOLO_PATH?.trim() || (model ? join(runtimeDir, "models", model.file) : "");
+  if (!model && !env.BRAIN_YOLO_PATH) {
+    log(`[경고] BRAIN_DETECTOR=${want}: yolox_tiny·yolox_nano·off 중 하나여야 합니다. VLM만 씁니다.`);
+    return null;
+  }
+  if (!existsSync(path)) {
+    log(`[경고] YOLO 모델 파일이 없습니다(${path}). VLM만 씁니다. 받기: npx tsx scripts/brain-yolo-fetch.ts ${want}`);
+    return null;
+  }
+  try {
+    return await WorkerDetector.create(path, { threads: Number(env.BRAIN_YOLO_THREADS) || 4 });
+  } catch (e) {
+    log(`[경고] YOLO를 불러오지 못했습니다(${(e as Error).message}). VLM만 씁니다.`);
+    return null;
+  }
+}
+
+/** 환경 변수로 관찰 흐름을 만든다. VLM은 추론 모드가 고른 OpenAI 호환 주소(src/infer)다. */
+export async function createPipeline(o: {
+  env: Env; runtimeDir: string; world: WorldState; emit: (log: BrainLog) => void; broadcastWorld: (w: WorldView) => void;
+  onChanges?: (c: WorldChange[]) => void; log: (line: string) => void; inject?: PipelineInject;
+}): Promise<ObservationPipeline> {
+  const config = loadObserveConfig(o.env);
+  const detector = o.inject && "detector" in o.inject ? o.inject.detector ?? null : await createDetector(o.env, o.runtimeDir, o.log);
+  const vlm = o.inject?.vlm ?? createInference(o.env).vlm;
+  o.log(`관찰 흐름: 엔진 프레임 ${config.engineMs}ms · 감지 ${detector?.name ?? "없음(VLM만)"} · VLM ${vlm.model} 동시 ${config.vlmMaxInflight}개 · 감지 대기열 ${config.detectQueueMax}`);
+  return new ObservationPipeline({ config, detector, vlm, world: o.world, emit: o.emit, broadcastWorld: o.broadcastWorld, onChanges: o.onChanges, clock: o.inject?.clock });
+}
 ```
 `observe` 기록: YOLOX 결과는 한 줄(`yolo` 글, `vlm: null`), VLM 답이나 VLM 분석 없음은 한 줄(`yolo: null`), 감지 실패는 `yolo_missing: "error"` 한 줄, 대기열 초과는 `yolo_missing: "cap"`·`vlm_missing: "cap"` 한 줄이다. 프레임 번호가 observe 기록에 없는 프레임은 없다.
 
-`createPipeline`: `loadObserveConfig(env)`, 감지기는 지금 `createLiveBrain`의 감지기 만들기(`BRAIN_DETECTOR`, `BRAIN_YOLO_PATH`, `BRAIN_YOLO_THREADS`, 파일 없으면 경고)를 그대로 옮긴다. VLM은 `createInference(env).vlm`.
+감지기가 없으면(모델 파일 없음) YOLOX 글은 「감지기 없음」이고 `applyDetections`를 부르지 않는다(VLM만). `createPipeline`: `loadObserveConfig(env)`, 감지기는 지금 `createLiveBrain`의 감지기 만들기(`BRAIN_DETECTOR`, `BRAIN_YOLO_PATH`, `BRAIN_YOLO_THREADS`, 파일 없으면 경고)를 그대로 옮긴다. VLM은 `createInference(env).vlm`.
 
-`home.ts`: BRAIN=1이고 PHONE_PORT가 있으면 `WorldState`(surfaces = `surfacesFromLayout`(배치 편집기 물건, 지금 `surfaceSource`가 하던 변환), floorAt = `floorLookup(plan.rooms)`, roomAt = `roomAt(floorPlan, p)`, devices = `signals.list()`)와 `createPipeline`을 만든다. 폰 서버 `onEngine: (j, h, e, v, r) => pipeline.onEngine(j, h, e, v, r)`, `engineMs: config.engineMs`. 폰 서버의 `onFrame`·`onPhoto`(요청 답 사진) 옵션과 그 호출을 지운다: `frame`은 표시만, `photo`는 저장만 한다. `tests/phone-server.test.ts`에 「`frame` 패킷은 관찰 흐름으로 가지 않는다」를 더한다. `signals.subscribe((s) => pipeline.onDevice(s))`. 대시보드로 `emit` → `appRef.current?.broadcast({ type: "brain", event })`, `broadcastWorld` → `broadcast({ type: "world", world })`. 닫을 때 `pipeline.close()`.
+`home.ts`: BRAIN=1이고 PHONE_PORT가 있으면 `WorldState`(surfaces = `surfacesFromLayout`(배치 편집기 물건, 지금 `surfaceSource`가 하던 변환), floorAt = `floorLookup(plan.rooms)`, roomAt = `roomAt(floorPlan, p)`, devices = `signals.list()`)와 `createPipeline`을 만든다. 시작할 때 `signals.states()`를 `world.applyDevice`로 넣고 그 변화는 버린다(시작 상태는 변화가 아니다). 폰 서버 `onEngine: (j, h, e, v, r) => pipeline.onEngine(j, h, e, v, r)`, `engineMs: pipeline.config.engineMs`. 폰 서버의 `onFrame`·`onPhoto`(요청 답 사진) 옵션과 그 호출을 지운다: `frame`은 표시만, `photo`는 저장만 한다. `tests/phone-server.test.ts`에 「`frame` 패킷은 관찰 흐름으로 가지 않는다」를 더한다. `signals.subscribe((s) => pipeline.onDevice(s))`(닫을 때 푼다). 대시보드로 `emit` → `appRef.current?.broadcast({ type: "brain", event })`, `broadcastWorld` → `broadcast({ type: "world", world })`. 앱에 `brain: pipeline`, `world: () => world.view(now)`. 닫을 때 `pipeline.close()`.
 
-`app.ts`: `/api/brain`은 `{ ok: true, ...pipeline.status() }`. `/api/world` 라우트(`world.view(now)`), `/events` 접속 때 World State가 있으면 `{type:"world"}`를 먼저 보낸다.
+`app.ts`: 옵션 `world?: () => WorldView`. `/api/brain`은 `{ ok: true, ...pipeline.status() }`. `/api/world`는 `{ ok: true, world }`(없으면 404). `/events` 접속 때 World State가 있으면 계획 다음에 `{type:"world"}`를 보낸다.
 
-`src/plan/hub.ts`: `onDashboard`·`onBrain`과 컵 계획 분기를 지우고 `onAgent`·`onEye`·`put`·`setStep`만 남긴다(G5가 판단 계획을 더한다). `tests/plan-hub.test.ts`의 두뇌 이벤트 시험을 지운다.
+`src/plan/hub.ts`: `onDashboard`·`onBrain`과 컵 계획 분기(`brainPlan`·`stage`·`generation`·`judgmentFor`)를 지우고 `onAgent`·`onEye`·`put`·`setStep`만 남긴다(G5가 판단 계획을 더한다). `tests/plan-hub.test.ts`의 두뇌 이벤트 시험을 지우고, 눈 시험은 에이전트 기기 계획으로, 「진행 중인 컵 계획은 덮지 않는다」는 planner 계획으로 바꾼다.
 
-`ui/src/chat/turns.ts`: `onBrain`을 새 `BrainLog`로 바꾼다 — `observe`는 지금 턴의 `now.seen`을 YOLOX 글로, `now.judged`를 `vlm ?? labels.vlmMissing[vlm_missing] ?? labels.yoloMissing[yolo_missing]`로 갈아 끼우고, `world_change`는 단계 줄로 쌓고, `decision`은 판단 줄(행동 이름 또는 대기, 이유)을 쌓는다. `link`·`trigger`는 단계 줄 하나다. 글은 `ui/src/chat/labels.ts`에 두고(괄호 없이: 「요청이 몰려 VLM 분석 없음」, 「시간 초과로 VLM 분석 없음」, 「형식 오류로 VLM 분석 없음」, 「호출 오류로 VLM 분석 없음」, 「요청이 몰려 YOLOX·VLM 분석 없음」, 「감지 오류로 YOLOX 분석 없음」) `BRAIN_STATE`·`BRAIN_STAGE`는 지운다. `ui/src/chat/DecisionLog.tsx`: `LINE_ICON`의 옛 두뇌 단계 키(use·away·request…)를 새 기록 종류(observe·world_change·decision·execution·link·trigger)로 바꾸고, `WHO.brain`을 「클로이드 · 관찰과 판단」으로 한다. `ui/src/checks/checks.ts` `noteOf`: `observe` 기록의 `yolo` 글(감지 없음이면 「감지 없음」)을 확인 목록의 메모로 쓴다(`presence`·`perception`을 지운다). `ui/tests/turns.test.ts`·`decision-log.test.tsx`·`checks.test.ts`·`use-checks.test.tsx`의 컵 두뇌 기록을 새 기록으로 바꾼다. 말풍선 규칙 시험(`bubble-layer.test.tsx`·`checks.test.ts`)은 이 Task에서 통과해야 한다.
+`ui/src/chat/turns.ts`: `onBrain`을 새 `BrainLog`로 바꾼다 — `observe`는 지금 카드의 `now.seen`을 YOLOX 글(없으면 `YOLO_MISSING[yolo_missing]`)로, `now.judged`를 `vlm`(없으면 `VLM_MISSING[vlm_missing]`)로 갈아 끼우고, `world_change`·`link`·`trigger`·`execution`·`reflection`은 단계 줄(mark는 기록 종류)로 쌓고, `decision`은 판단 줄(「행동 이름 또는 대기 · 이유」, 실패면 「판단 실패 · 오류」)을 쌓고 카드를 닫는다(다음 기록은 새 카드). 카드 이름 「관찰과 판단」, 진행 중 알약 「관찰 중」, 닫힌 카드 알약은 고른 행동·대기·판단 실패. 카드 줄은 40개까지. 글은 `ui/src/chat/labels.ts`(`BRAIN_CARD`, `LOG_KIND`, `VLM_MISSING`, `YOLO_MISSING`)에 두고(괄호 없이: 「요청이 몰려 VLM 분석 없음」, 「시간 초과로 VLM 분석 없음」, 「형식 오류로 VLM 분석 없음」, 「호출 오류로 VLM 분석 없음」, 「요청이 몰려 YOLOX·VLM 분석 없음」, 「감지 오류로 YOLOX 분석 없음」) `BRAIN_STATE`·`BRAIN_STAGE`는 지운다. `ui/src/chat/DecisionLog.tsx`: `LINE_ICON`의 옛 두뇌 단계 키(use·away·request…)를 새 기록 종류(observe·world_change·decision·execution·link·trigger·reflection)로, 줄 제목을 `LOG_KIND`로 바꾸고, `WHO.brain`을 「클로이드 · 관찰과 판단」으로 한다. `ui/src/checks/checks.ts` `noteOf`: `observe` 기록의 `yolo` 글(감지 없음이면 「감지 없음」)을 확인 목록의 메모로 쓴다(`presence`·`perception`을 지운다). `ui/tests/turns.test.ts`·`decision-log.test.tsx`·`checks.test.ts`·`use-checks.test.tsx`의 컵 두뇌 기록을 새 기록으로 바꾼다. 말풍선 규칙 시험(`bubble-layer.test.tsx`·`checks.test.ts`)은 이 Task에서 통과해야 한다.
 
 `src/brain/decision.ts`: `import type { Contents } from "./perception.js"`를 지우고 `export type Contents = "empty" | "not_empty" | "unknown"`(지금 perception.ts 26줄 정의)을 둔다. `src/plan/labels.ts`: `JUDGMENT`·`ASK_JUDGMENT`와 `BrainStage` import를 지운다(이 파일은 Task 28·29가 다시 채운다). `src/server/start.ts`: `CreateLiveBrainOptions` import를 지우고 `StartServerOptions.brain`을 `{ detector?: Detector | null; vlm?: VlmClient; clock?: { now(): number } }`로 바꿔 `createPipeline`의 `inject`로 넘긴다.
 
-`docs/reference.md` 「상위 판단」 절을 「관찰 흐름」으로 다시 쓰고 `ENGINE_FRAME_MS`·`VLM_MAX_INFLIGHT`·`VLM_TIMEOUT_MS`·`DETECT_QUEUE_MAX`를 환경 변수 표에 둔다(지운 `BRAIN_*` 줄은 뺀다). `.env.example`에 `DETECT_QUEUE_MAX=`.
+`docs/reference.md` 「상위 판단」 절을 「관찰 흐름」으로 다시 쓰고 `ENGINE_FRAME_MS`·`VLM_MAX_INFLIGHT`·`DETECT_QUEUE_MAX`를 환경 변수 표에 둔다(`VLM_TIMEOUT_MS`는 이미 있다. 지운 `BRAIN_*` 줄은 뺀다). REST 표에 `GET /api/brain`·`GET /api/world`, `/events`에 `brain`·`world`. `.env.example`에 `ENGINE_FRAME_MS=`·`VLM_MAX_INFLIGHT=`·`DETECT_QUEUE_MAX=`.
 
 - [ ] **Step 4: 통과 확인**
 
 ```
-H npx vitest run tests/observe-pipeline.test.ts tests/plan-hub.test.ts tests/plan-server.test.ts tests/start.test.ts tests/e2e.test.ts tests/phone-server.test.ts tests/self-contained.test.ts
+H npx vitest run tests/observe-pipeline.test.ts tests/observe-start.test.ts tests/plan-hub.test.ts tests/plan-server.test.ts tests/start.test.ts tests/e2e.test.ts tests/phone-server.test.ts tests/lint-ui-copy.test.ts tests/contract.test.ts tests/self-contained.test.ts
 H npm --prefix ui test
 H npx tsc --noEmit
 H npm --prefix ui run typecheck
@@ -4236,7 +4353,7 @@ Expected: PASS(화면 시험의 `checks.test.ts`·`bubble-layer.test.tsx` 포함
 - [ ] **Step 5: 커밋**
 
 ```bash
-git add src/observe/pipeline.ts src/server/home.ts src/server/start.ts src/phone/server.ts tests/phone-server.test.ts src/server/app.ts src/contract/events.ts src/brain/decision.ts src/plan/hub.ts src/plan/labels.ts tests/observe-pipeline.test.ts tests/plan-hub.test.ts tests/plan-server.test.ts tests/start.test.ts ui/src/chat/turns.ts ui/src/chat/labels.ts ui/src/chat/DecisionLog.tsx ui/src/checks/checks.ts ui/tests/turns.test.ts ui/tests/decision-log.test.tsx ui/tests/checks.test.ts ui/tests/use-checks.test.tsx docs/reference.md .env.example
+git add src/observe/pipeline.ts src/server/home.ts src/server/start.ts src/phone/server.ts tests/phone-server.test.ts src/server/app.ts src/contract/events.ts src/brain/decision.ts src/plan/hub.ts src/plan/labels.ts src/world/labels.ts tests/observe-pipeline.test.ts tests/observe-start.test.ts tests/plan-hub.test.ts tests/lint-ui-copy.test.ts ui/src/chat/turns.ts ui/src/chat/labels.ts ui/src/chat/DecisionLog.tsx ui/src/checks/checks.ts ui/tests/turns.test.ts ui/tests/decision-log.test.tsx ui/tests/checks.test.ts ui/tests/use-checks.test.tsx docs/reference.md .env.example docs/superpowers/plans/2026-11-07-noonchi-architecture.md
 git rm src/brain/brain.ts src/brain/machine.ts src/brain/loop.ts src/brain/presence.ts src/brain/window.ts src/brain/live.ts src/brain/config.ts src/brain/perception.ts tests/brain-machine.test.ts tests/brain-runner.test.ts tests/brain-fusion.test.ts tests/brain-gate.test.ts tests/brain-presence.test.ts tests/brain-perception.test.ts tests/brain-live.test.ts tests/helpers/perceivers.ts
 git commit -m "feat: replace the cup brain with the observation pipeline that analyzes every engine frame into the World State"
 ```
@@ -4546,7 +4663,7 @@ export const LINK_TEXT = { up: "PAM 연결됨", down: "PAM 연결 끊김" } as c
 export const TRIGGER_TEXT = { paused: "사람이 없어 판단을 멈춤", resumed: "판단을 다시 시작함" } as const;
 ```
 
-`home.ts`: 파이프라인 `onChanges: (c) => decider.onChanges(c)`, `setInterval(() => decider.tick(), 250).unref()`, 기억은 G4 전까지 `{ memory: CUP_FSM_MEMORY, kind: "fsm", version: 0 }`, 행동 목록 `CUP_TASKS`. 닫을 때 타이머·`decider.stop()`. `.env.example`에 `ENGINE_FRAME_MS=`, `VLM_MAX_INFLIGHT=`, `VLM_TIMEOUT_MS=`, `PAM_TRIGGER=`(event | periodic), `PAM_MIN_GAP_MS=`, `PAM_PERIOD_MS=`, `PAM_IDLE_STOP_MS=`, `PAM_MAX_INFLIGHT=`, `PAM_TIMEOUT_MS=`.
+`home.ts`: 파이프라인 `onChanges: (c) => decider.onChanges(c)`, `setInterval(() => decider.tick(), 250).unref()`, 기억은 G4 전까지 `{ memory: CUP_FSM_MEMORY, kind: "fsm", version: 0 }`, 행동 목록 `CUP_TASKS`. 닫을 때 타이머·`decider.stop()`. `.env.example`에 `PAM_TRIGGER=`(event | periodic), `PAM_MIN_GAP_MS=`, `PAM_PERIOD_MS=`, `PAM_IDLE_STOP_MS=`, `PAM_MAX_INFLIGHT=`(`ENGINE_FRAME_MS`·`VLM_MAX_INFLIGHT`·`DETECT_QUEUE_MAX`는 Task 21, `VLM_TIMEOUT_MS`·`PAM_TIMEOUT_MS`는 이미 있다).
 
 - [ ] **Step 4: 통과 확인** — `H npx vitest run tests/world-trigger.test.ts tests/world-decide.test.ts tests/world-text.test.ts tests/observe-pipeline.test.ts tests/self-contained.test.ts` 그리고 `H npm run lint` / Expected: PASS
 - [ ] **Step 5: 커밋**

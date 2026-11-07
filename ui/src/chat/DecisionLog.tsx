@@ -1,6 +1,6 @@
 import {
-  Blinds, Bot, Box, Brain, Camera, ChevronDown, ChevronUp, CircleCheck, Coffee, Crosshair, Droplet, Eye, Footprints, Hourglass, List, ListChecks, Lock, LockOpen,
-  MapPin, MessageSquare, Monitor, Pause, Play, Power, Save, ScanSearch, Search, ShieldCheck, SlidersHorizontal, Smartphone, Square, Thermometer, TriangleAlert,
+  Blinds, Bot, Box, Brain, ChevronDown, ChevronUp, CircleCheck, Crosshair, Droplet, Eye, List, ListChecks, Lock, LockOpen,
+  MapPin, MessageSquare, Monitor, Pause, Play, Plug, Power, Save, ScanSearch, Search, ShieldCheck, SlidersHorizontal, Smartphone, Square, Thermometer, TriangleAlert,
   Undo2, Wrench, type LucideIcon,
 } from "lucide-react";
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
@@ -13,7 +13,7 @@ import ChatPanel, { ChatAction, ChatRegion, Section } from "../components/ui/cha
 import { AgentToolTimeline, CallState, TimelineEmpty, type AgentCallStatus, type AgentToolCall } from "../components/ui/tool-timeline";
 import { cn } from "../lib/utils";
 import { Surface } from "../components/Surface";
-import { BRAIN_STAGE, observedOf, stepKind, targetOf, toolLabel } from "./labels";
+import { LOG_KIND, observedOf, stepKind, targetOf, toolLabel } from "./labels";
 import { STATE_LABELS, type PendingCard, type Step, type Turn, type TurnState } from "./turns";
 
 export type LogView = "log" | "phone";
@@ -28,18 +28,17 @@ const TOOL_ICON: Record<string, LucideIcon> = {
   set_climate: Thermometer, set_covering: Blinds, lock: Lock, unlock: LockOpen, start: Play, stop: Square, set_valve: Droplet,
   find_objects: Search, move_object: Box, add_object: Box, remove_object: Box, find_object_types: Search, save_layout: Save, confirm: ShieldCheck,
 };
-/** 글 줄 아이콘: 초점·승인 결과는 label로, 두뇌 단계는 mark로. */
+/** 글 줄 아이콘: 초점·승인 결과는 label로, 관찰 기록 줄은 기록 종류(mark)로. */
 const LINE_ICON: Record<string, LucideIcon> = {
   초점: Crosshair, 취소: Undo2, "승인 후 실행": CircleCheck, "승인 실패": TriangleAlert, "찍은 자리": MapPin,
-  use: Coffee, away: Footprints, request: Camera, answer: Eye, decide: Brain, confirm: ScanSearch, act: Bot, result: CircleCheck,
-  wait: Pause, cancel: Undo2, stale: Hourglass, error: TriangleAlert, phone: Smartphone, would: Bot,
+  observe: Eye, world_change: ScanSearch, decision: Brain, execution: Play, link: Plug, trigger: Pause, reflection: Bot,
 };
 const TURN_CALL: Record<TurnState, AgentCallStatus> = { busy: "running", ok: "done", wait: "wait", fail: "error", cancel: "queued" };
 const PENDING: Record<PendingCard["status"], { status: AgentCallStatus; label: string }> = {
   open: { status: "wait", label: "폰에서 승인 대기" }, ok: { status: "done", label: "승인함" }, fail: { status: "error", label: "실패" }, cancel: { status: "queued", label: "취소함" },
 };
 const WHO: Record<Turn["source"], { icon: LucideIcon; text: string }> = {
-  phone: { icon: Smartphone, text: "거주자 · 폰" }, brain: { icon: Bot, text: "클로이드 · 컵 지켜보기" }, other: { icon: Monitor, text: "다른 화면" },
+  phone: { icon: Smartphone, text: "거주자 · 폰" }, brain: { icon: Bot, text: "클로이드 · 관찰과 판단" }, other: { icon: Monitor, text: "다른 화면" },
 };
 
 /** 단계 시각(시:분:초). 모르면 없음. */
@@ -64,7 +63,7 @@ function callsOf(turn: Turn): AgentToolCall[] {
 
 type Thought = { key: string; icon: ReactNode; title: string; text: string; status: ChainOfThoughtStepStatus };
 
-/** 생각 단계: 행동마다 그 이유, 그리고 초점·승인 결과 줄. 두뇌 카드는 판단 단계 줄 전부. */
+/** 생각 단계: 행동마다 그 이유, 그리고 초점·승인 결과 줄. 관찰과 판단 카드는 기록 줄 전부. */
 function thoughtsOf(turn: Turn): Thought[] {
   const out = turn.steps.flatMap((s: Step, i): Thought[] => {
     const key = `${turn.id}-t${i}`;
@@ -75,7 +74,7 @@ function thoughtsOf(turn: Turn): Thought[] {
     }
     if (s.label === "답" || s.label === "찍은 자리") return [];
     const I = LINE_ICON[s.mark ?? s.label] ?? MessageSquare;
-    const title = s.mark ? BRAIN_STAGE[s.mark] ?? s.mark : s.label || "단계";
+    const title = s.mark ? LOG_KIND[s.mark as keyof typeof LOG_KIND] ?? s.mark : s.label || "단계";
     return [{ key, icon: <I className="size-4" aria-hidden="true" />, title, text: s.text, status: s.tone === "fail" ? "error" : "completed" }];
   });
   if (turn.state === "busy" && out.length) out[out.length - 1] = { ...out[out.length - 1]!, status: "active" };

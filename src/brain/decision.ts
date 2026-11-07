@@ -1,9 +1,8 @@
 // 판단 모델(PAM)을 도구로 부르는 자리. 검사 규칙은 services/pam/pam/contracts.py와 같다:
 // decide(관찰 텍스트, 마지막 관찰 시각, 기억, 작업 목록) → {observation, reasoning, task_index}. task_index -1은 대기다. 사진은 넘기지 않는다.
-// 판단 모델은 무엇을 도울지만 정한다. 언제 더 볼지·행동 전 재확인은 상태 기계(machine.ts)가 정한다.
+// 판단 모델은 무엇을 도울지만 정한다. 언제 부를지는 판단 호출 시점(src/world/trigger.ts)이 정한다.
 // 검사 메시지는 PAM 원문(영어)과 같게 두어 두 쪽 기록을 대조하기 쉽게 한다.
 
-import type { Contents } from "./perception.js";
 
 export class ContractError extends Error {}
 
@@ -166,6 +165,9 @@ export function isoWithOffset(ms: number, offsetMinutes: number): string {
   const a = Math.abs(offsetMinutes);
   return `${local}${offsetMinutes >= 0 ? "+" : "-"}${pad(Math.floor(a / 60))}:${pad(a % 60)}`;
 }
+
+/** 컵 안: 비어 있음·남음·모름. */
+export type Contents = "empty" | "not_empty" | "unknown";
 
 /** 우리 쪽 관찰 사실. PAM은 관찰 텍스트와 기억만 보고, 시험용 판단 모델과 기록은 이것을 쓴다. */
 export interface DecisionFacts { contents: Contents }

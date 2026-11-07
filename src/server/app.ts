@@ -11,6 +11,7 @@ import type { Agent } from "../agent/agent.js";
 import { newSessionId } from "../agent/agent.js";
 import { Policy } from "../agent/policy.js";
 import type { HealthView, ReadyView } from "../contract/events.js";
+import type { WorldView } from "../contract/world.js";
 import type { PlanView } from "../contract/plan.js";
 import type { ControlMode } from "../contract/setup.js";
 import { deviceViews, roomViews } from "../agent/tools.js";
@@ -55,8 +56,10 @@ export interface AppOptions {
     get(): TouchPoint[] | null; save(raw: unknown): TouchPoint[]; clear(): void; auto(raw: unknown): TouchPoint[]; room(raw: unknown): string | null;
     eyeHeightM: number;
   };
-  /** 상위 판단(BRAIN=1, src/brain/live.ts). 있으면 GET /api/brain에 상태를 보인다. */
+  /** 관찰 흐름(BRAIN=1, src/observe/pipeline.ts). 있으면 GET /api/brain에 상태를 보인다. */
   brain?: { status(): object };
+  /** 지금 World State(BRAIN=1). 있으면 GET /api/world, /events 접속 때 {type:"world"}. */
+  world?: () => WorldView;
   /** 지금 운영 모드(/api/health). 없으면 시험 모드. */
   mode?: () => ControlMode;
   /** 준비 상태(/api/health ready, src/server/ready.ts). 없으면 준비 안 됨. */
@@ -263,8 +266,13 @@ export function createApp(opts: AppOptions): TwinHomeApp {
   }));
 
   route("GET", /^\/api\/brain$/, async () => {
-    if (!opts.brain) throw new HttpError(404, "상위 판단이 꺼져 있습니다(BRAIN=1, PHONE_PORT 필요)");
+    if (!opts.brain) throw new HttpError(404, "관찰 흐름이 꺼져 있습니다(BRAIN=1, PHONE_PORT 필요)");
     return { ok: true, ...opts.brain.status() };
+  });
+
+  route("GET", /^\/api\/world$/, async () => {
+    if (!opts.world) throw new HttpError(404, "관찰 흐름이 꺼져 있습니다(BRAIN=1, PHONE_PORT 필요)");
+    return { ok: true, world: opts.world() };
   });
 
   // ── 배치 보정 ──
@@ -591,6 +599,7 @@ export function createApp(opts: AppOptions): TwinHomeApp {
     for (const state of hub.states()) send(ws, { type: "state", state });
     for (const m of opts.layout?.syncMessages() ?? []) send(ws, m);
     send(ws, { type: "plan", plan: opts.plan?.current() ?? null });
+    if (opts.world) send(ws, { type: "world", world: opts.world() });
     ws.on("error", () => {});
   });
 

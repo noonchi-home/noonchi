@@ -118,9 +118,9 @@ describe("서버가 화면에 그대로 내보내는 계획 글(src/plan/labels.
     expect(lintUiCopy([worldLabels])).toEqual([]);
     expect(texts.filter((t) => /[()→]/.test(t))).toEqual([]);
   });
-  it("판단·단계·기기 동작 글을 꺼낸다", () => {
+  it("단계·목표·기기 동작 글을 꺼낸다", () => {
     const texts = fileCopy(labels, readFileSync(labels, "utf8")).map((c) => c.text);
-    expect(texts).toEqual(expect.arrayContaining(["사람이 돌아와 멈췄어요", "식탁으로 가기", "컵 치우기", "켜기"]));
+    expect(texts).toEqual(expect.arrayContaining(["식탁으로 가기", "컵 치우기", "켜기"]));
   });
   it("파일 하나를 줘도 검사한다", () => {
     const dir = mkdtempSync(join(tmpdir(), "twin-home-labels-"));

@@ -1,7 +1,7 @@
-// 트윈 위 말풍선 목록(순수 리듀서). 에이전트가 판단하면서 확인한 기기와 컵 두뇌가 지켜보는 식탁만 담는다.
+// 트윈 위 말풍선 목록(순수 리듀서). 에이전트가 판단하면서 확인한 기기와 클로이드가 지켜보는 식탁만 담는다.
 // 에이전트: 이번 요청에서 다룬 기기마다 한 줄(번호는 처음 다룬 차례). 새 요청이 시작되면 지운다.
-// 컵 두뇌: 두뇌 메시지가 오는 동안 식탁에 「지켜봄」 한 줄. 마지막 메시지 뒤 30초가 지나면 지운다.
-import type { AgentAction, BrainLog, PendingView, ServerMessage, Tri } from "../../../src/contract/events.ts";
+// 관찰 흐름: 관찰 기록이 오는 동안 식탁에 「지켜봄」 한 줄(메모는 마지막 YOLOX 글). 마지막 기록 뒤 30초가 지나면 지운다.
+import type { AgentAction, BrainLog, PendingView, ServerMessage } from "../../../src/contract/events.ts";
 import { stepKind } from "../chat/labels";
 
 export type CheckVerb = "확인" | "바꿈" | "승인 대기" | "실패" | "취소" | "지켜봄";
@@ -36,7 +36,7 @@ export type ChecksEvent =
 
 export const EMPTY_CHECKS: ChecksState = { turn: [], brain: [], brainAt: null, open: null };
 
-/** 마지막 두뇌 메시지 뒤 이만큼 지나면 식탁 줄을 지운다. */
+/** 마지막 관찰 기록 뒤 이만큼 지나면 식탁 줄을 지운다. */
 export const BRAIN_TTL_MS = 30_000;
 
 function verbOf(a: AgentAction): CheckVerb {
@@ -65,17 +65,9 @@ function settle(turn: Check[], match: (c: Check) => boolean, verb: CheckVerb, no
     : turn;
 }
 
-const HAS: Record<Tri, string> = { yes: "있음", no: "없음", unknown: "모름" };
-const YN: Record<string, Tri> = { 예: "yes", 아니오: "no", 모름: "unknown" };
-const seen = (person: Tri, cup: Tri) => `사람 ${HAS[person]} · 컵 ${HAS[cup]}`;
-
-/** 판정 요약 한 줄: YOLO 존재 판정, 또는 VLM 판정 요약(src/brain/brain.ts summarize)의 사람·컵. 못 읽으면 null. */
+/** 메모: 관찰 기록의 YOLOX 글(감지 없음 포함). 다른 기록이면 null. */
 function noteOf(e: BrainLog): string | null {
-  if (e.type === "presence") return seen(e.person, e.cup);
-  if (e.type !== "perception" || e.error) return null;
-  const person = /^사람 (예|아니오|모름)/.exec(e.summary)?.[1];
-  const cup = /(?:^| · )컵 (예|아니오|모름)/.exec(e.summary)?.[1];
-  return person && cup ? seen(YN[person]!, YN[cup]!) : null;
+  return e.type === "observe" ? e.yolo : null;
 }
 
 function onBrain(s: ChecksState, e: BrainLog, now: number): ChecksState {

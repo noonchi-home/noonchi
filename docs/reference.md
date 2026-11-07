@@ -96,11 +96,11 @@ HUB=memory npm run demo
 | `PHONE_PORT`, `PHONE_HOST` | (끔), `0.0.0.0` | 폰 AR 서버(아래 "폰 AR") |
 | `PHONE_URL` | (없음) | 폰에서 열 주소. 대시보드 QR에 맨 앞 주소가 나온다. 없으면 `tailscale serve`가 폰 포트로 잇는 https 주소, 그다음 와이파이 주소 |
 | `PHONE_MAX_MISMATCH_M`, `PHONE_PHOTO_DIR` | `0.3`, `RUNTIME_DIR/photos` | 기준점 거리 차이 허용값, 사진 폴더 |
-| `BRAIN` | (끔) | `1`이면 폰 카메라로 상위 판단(클로이드 두뇌, 아래 "상위 판단")을 돌린다. `PHONE_PORT`가 있어야 한다. VLM은 `INFERENCE_MODE`가 고른 주소로 부른다(mock은 `OPENAI_API_KEY`) |
-| `BRAIN_DETECTOR`, `BRAIN_YOLO_PATH`, `BRAIN_YOLO_THREADS` | `yolox_tiny`, `runtime/models/<모델>.onnx`, `4` | YOLO 존재 감지기(`yolox_tiny`·`yolox_nano`·`off`). 모델 파일이 없으면 VLM만 쓴다 |
+| `BRAIN` | (끔) | `1`이면 폰 엔진 프레임으로 관찰 흐름(아래 "관찰 흐름")을 돌린다. `PHONE_PORT`가 있어야 한다. VLM은 `INFERENCE_MODE`가 고른 주소로 부른다(mock은 `OPENAI_API_KEY`) |
+| `ENGINE_FRAME_MS` | `1000` | 엔진 프레임 간격(200 이상). 폰 서버가 상태 메시지로 폰에 알린다. mock은 사진 한 장마다 VLM을 한 번 부르므로 1초면 시간당 약 3,600번이다 |
+| `VLM_MAX_INFLIGHT`, `DETECT_QUEUE_MAX` | `4`, `8` | VLM 동시 요청 상한(넘친 프레임은 「요청이 몰려 VLM 분석 없음」), YOLOX 대기열 상한(넘친 프레임은 「요청이 몰려 YOLOX·VLM 분석 없음」). 틀린 값이면 시작하지 않는다 |
+| `BRAIN_DETECTOR`, `BRAIN_YOLO_PATH`, `BRAIN_YOLO_THREADS` | `yolox_tiny`, `runtime/models/<모델>.onnx`, `4` | YOLOX 감지기(`yolox_tiny`·`yolox_nano`·`off`). 모델 파일이 없으면 VLM만 쓴다 |
 | `PAM_TIMEOUT_MS` | `30000` | 판단 한 번 제한 시간. 판단은 늘 PAM 서비스(`PAM_URL`, 계약 `docs/pam-interface.md`)다 |
-| `BRAIN_AWAY_MS`, `BRAIN_STALE_MS`, `BRAIN_HOLD_MS`, `BRAIN_CLEAR_MS` | `5000`, `3000`, `600`, `2000` | 자리 비움 시간, 근거가 이보다 오래되면 모름, YOLO 존재 창, 치워짐 판정 시간 |
-| `BRAIN_INTERVAL_MS`, `BRAIN_CALL_CAP`, `BRAIN_REQUEST_TIMEOUT_MS`, `BRAIN_ACTION_TIMEOUT_MS` | `1000`, `120`, `60000`, `120000` | VLM 호출 간격·상한, 사진 요청·행동 결과 기다리는 시간 |
 | `FOCUS` | (끔) | `1`이면 초점 표시(클로이드가 다룬 물건의 고리·"클로이드 주목")를 대시보드·폰·3D로 보낸다. 기본은 보내지 않는다 |
 | `PORT` | `8200` | HTTP 포트(`0`이면 빈 포트) |
 | `HOST` | `127.0.0.1` | HTTP 바인드 주소. `0.0.0.0`이면 LAN에서도 열린다(인증 없음) |
@@ -185,7 +185,9 @@ twin-home 서버: http://127.0.0.1:8200  (허브 matter/network, 에이전트 mo
 | `GET /api/agent/pending?sessionId=` | | 승인 대기 목록 |
 | `GET /api/matter` | | `{ ok, transport, commissioning: "none"\|"new"\|"reused", port, controllerPort?, subscribed?, pairing: { manualPairingCode, qrPairingCode, passcode, discriminator, commissioned, fabrics } }`. MemoryHub면 404 |
 | `POST /api/matter/commissioning-window` | `{ timeoutSeconds? }`(180~900, 기본 900) | `{ ok, timeoutSeconds, pairing, reply }`. 다른 Matter 컨트롤러용 페어링 창을 연다. local 전송이면 400 |
-| `GET /events` (WebSocket) | | 붙으면 `{type:"hello", home}`, 모든 기기의 `{type:"state", state}`, 지금 배치 보정의 `{type:"layout"}`들. 이후 바뀔 때마다 `{type:"state"}`, `{type:"agent", event:"action"\|"reply"\|"pending"\|"confirmed"\|"cancelled", ...}`, `{type:"layout"}`, `{type:"focus"}`, `{type:"eye"}`, `{type:"photo"}` (모양은 [plan.md](plan.md)) |
+| `GET /api/brain` | | 관찰 흐름 상태 `{ ok, frames, duplicates, detector, vlm_model, detected, detect_ms, queued, yolo_missing: { cap, error }, vlm: { sent, missing: { cap, timeout, format, error }, inflight, costUsd }, time_source, time_err_ms }`. `BRAIN=1`이 아니면 404 |
+| `GET /api/world` | | `{ ok, world }` 지금 World State(`src/contract/world.ts` `WorldView`). `BRAIN=1`이 아니면 404 |
+| `GET /events` (WebSocket) | | 붙으면 `{type:"hello", home}`, 모든 기기의 `{type:"state", state}`, 지금 배치 보정의 `{type:"layout"}`들, `{type:"plan"}`, (`BRAIN=1`이면) `{type:"world"}`. 이후 바뀔 때마다 `{type:"state"}`, `{type:"agent", event:"action"\|"reply"\|"pending"\|"confirmed"\|"cancelled", ...}`, `{type:"layout"}`, `{type:"focus"}`, `{type:"eye"}`, `{type:"photo"}`, `{type:"brain", event}`(관찰·World State 변화·판단 기록, `src/contract/events.ts` `BrainLog`), `{type:"world"}` (모양은 [plan.md](plan.md)) |
 
 - `command`는 `docs/plan.md`의 `Command` 객체다. 줄임으로 문자열(`"on"`, `"off"`, `"lock"` …)도 받는다.
 - 정적 파일: `/`·`/setup/`은 React 빌드 `ui/dist/`다. `/twin/`은 고른 집의 twin-studio 산출물 폴더(아파트는 `apartment/`, 원룸 예시는 `homes/oneroom/`), `/twin/viewer/`는 모든 집이 함께 쓰는 뷰어(`homes.json` viewer), `/twin/lib/`은 모든 종류의 GLB(`homes.json` library)다. 경로 탈출(`..`)은 막는다.
@@ -310,16 +312,16 @@ npm start
 - AR을 켠 채로 음성 인식이 되는지는 실제 폰에서 아직 확인하지 않았다. 안 되면 글 입력을 쓴다.
 - 폰 말에는 인증이 없다(같은 와이파이의 누구나 보낼 수 있다). 내부 테스트용이다.
 
-## 상위 판단 (클로이드 두뇌, src/brain)
+## 관찰 흐름 (src/observe, src/world)
 
-폰으로 실시간 촬영하면 컵 시나리오를 돈다: 컵으로 마심 → 컵만 두고 자리 비움 → 폰에 "컵 안이 보이게 위에서 찍어 주세요" → 📷 답 → 판단 모델 → 행동 직전 재확인 → 클로이드 행동(모의) → 결과 확인(컵이 치워졌나). 판단 흐름은 코드(상태 기계 `machine.ts`)가 정하고, 모델은 보고 말하기만 한다. 계획서는 `docs/superpowers/plans/2026-11-04-brain-cup.md`(1단계)·`2026-11-04-brain-live.md`(2단계).
+폰 엔진 프레임마다 YOLOX와 VLM이 둘 다 분석하고, World State가 둘을 물체별로 합친다. 분석한 사진은 메모리(최근 20초)에만 두고 디스크에 쓰지 않는다.
 
-- **YOLO + VLM:** YOLO(YOLOX-Tiny, Apache-2.0, 이 PC 4스레드 장당 약 70ms)가 매 장면 사람·컵이 있는지 본다(최근 0.6초 안에 한 장이라도 보이면 있음). VLM은 마심·들고 있음·컵 안만 본다. 자리 비움은 YOLO "사람 없음·컵 있음" 5초 + 그 사이 찍힌 VLM "사람 없음"이 둘 다 있어야 정한다. VLM은 볼 것이 있거나 장면이 바뀔 때만 부른다.
-- **식탁을 비추는가:** 폰 위치를 맞춘 뒤에는 눈 자세와 트윈의 식탁·책상으로 계산한다(앞 30° 안, 6m 안). 맞추기 전은 모름이라 막지 않는다.
-- **행동은 모두 모의다.** 실제·트윈 기기 명령이나 LG ThinQ 호출이 없다. "컵 치우기"는 로봇이 없어 폰으로 사람에게 부탁하고(치웠어요·나중에), "사용자에게 물어보기"는 폰으로 묻는다. 치워짐은 식탁을 비추며 컵이 2초 안 보이면 정한다. 맞추기 전에는 "치웠어요"를 누른 뒤의 컵 없음만 센다.
-- **판단 모델:** 늘 PAM 서비스(`PAM_URL`, `services/pam/`)다. 사진은 넘기지 않고, 마지막 관찰까지 10초 안의 YOLO·VLM 기록 줄과 확신한 컵 안 사실(`[지속]`)을 관찰 텍스트로 넘긴다(`pam-predict/2`, 계약 `docs/pam-interface.md`). PAM 서비스가 없으면 판단마다 실패로 기록된다.
-- **시각:** 폰이 2초마다 서버와 시계를 맞춰(NTP식) 프레임마다 서버 시계 촬영 시각과 오차를 보낸다. 서버는 "가장 이른 가능 시각"을 써서 근거 나이를 보수적으로 잰다.
-- **화면:** 대시보드 추론 과정 칸에 🤖 카드(단계 글 + 최근 YOLO·VLM 한 줄), 폰에는 위 상태 한 줄·가운데 큰 요청 글·행동 부탁 카드(모의 표시). 상태는 `GET /api/brain`.
+- **엔진 프레임:** `BRAIN=1`이면 폰 서버가 상태 메시지 `engine_ms`(`ENGINE_FRAME_MS`, 기본 1초)로 간격을 알리고, 폰은 그 간격마다 분석용 JPEG을 촬영 자세·투영 행렬·서버 시계 촬영 시각과 함께 보낸다. 직전 프레임과 SHA-256이 같으면 버린다. 표시 프레임·사진은 관찰 흐름에 들어가지 않는다.
+- **YOLOX:** 사람·컵·병·그릇(COCO person·cup·wine glass·bottle·bowl)을 워커 스레드에서 하나씩 본다(YOLOX-Tiny, Apache-2.0, 이 PC 4스레드 장당 약 70ms). 대기열(`DETECT_QUEUE_MAX`, 기본 8)이 차면 그 프레임은 「요청이 몰려 YOLOX·VLM 분석 없음」, 감지가 실패하면 「감지 오류로 YOLOX 분석 없음」(VLM은 그 프레임도 분석)이다. 모델 파일이 없으면 「감지기 없음」으로 VLM만 돈다.
+- **VLM:** 프레임마다 한 번, YOLOX 감지 목록(임시 번호·종류·박스)을 같이 보내 보이는 사실만 받는다(`{scene, observations: [{object_id, state}], summary}`, JSON Schema). 동시 요청은 `VLM_MAX_INFLIGHT`(기본 4)까지, 제한 시간(`VLM_TIMEOUT_MS`, 기본 20초)이 지나면 HTTP 요청을 끊는다. 답은 프레임 번호로 맞춘다. 상한 초과·시간 초과·형식 오류·호출 오류 프레임은 「… VLM 분석 없음」으로 남긴다.
+- **World State:** 사람은 2장, 물건은 3장 연속일 때 등장·사라짐을 인정한다. 맞춘 뒤에는 박스 아래 가운데 광선이 트윈의 식탁·책상·조리대·싱크대 윗면(없으면 바닥)과 만나는 점을 물건 위치로 쓰고, 같은 종류가 0.25m 안이면 같은 물체로 본다. 그 자리가 시야 밖이면 「시야 밖」이고 사라짐을 세지 않는다. 맞추기 전에는 위치를 모르고 폰이 한 곳을 비춘다고 본다. VLM 사실은 면(자리·쓰는 중·안 내용·자세·행동)마다 두고 같은 값이 두 번 이어지면 확인됨이다. 컵·병·그릇에는 관계표로 식기세척기를 붙이고, 식기세척기의 상태(작동 중·이용 가능)·바뀐 시각·이력·남은 시간(`course_min`)을 쌓는다.
+- **기록:** 프레임마다 `{type:"brain", event:{type:"observe"}}`(YOLOX 글 또는 `yolo_missing`, VLM 요약 또는 `vlm_missing`)가 반드시 나가고, World State가 바뀌면 `world_change`와 `{type:"world"}`가 나간다. 상태는 `GET /api/brain`, World State는 `GET /api/world`.
+- **화면:** 대시보드 판단 기록의 「클로이드 · 관찰과 판단」 카드에 World State 변화 줄과 지금 YOLOX·VLM 한 줄씩. 트윈 식탁 말풍선 메모는 마지막 YOLOX 글이다.
 
 실행(폰은 Tailscale 주소로 연다):
 
@@ -329,7 +331,7 @@ HUB=memory HOME_ID=mokryeon_180b PHONE_PORT=8210 BRAIN=1 npm start
 tailscale serve --bg 8210   # 이미 켜져 있으면 생략. 폰: https://<이 PC 이름>.<tailnet>.ts.net/phone/
 ```
 
-- VLM은 `INFERENCE_MODE`가 고른 OpenAI 호환 주소로 부른다(`src/infer/vlm.ts`, chat completions + JSON Schema). mock은 OpenAI `gpt-5.4-mini`(키 `OPENAI_API_KEY`), live는 같은 서버 vLLM `vlm`. 호출은 세션당 `BRAIN_CALL_CAP`(120)회까지, mock 1회 약 $0.001.
+- VLM은 `INFERENCE_MODE`가 고른 OpenAI 호환 주소로 부른다(`src/infer/vlm.ts`, chat completions + JSON Schema). mock은 OpenAI `gpt-5.4-mini`(키 `OPENAI_API_KEY`), live는 같은 서버 vLLM `vlm`. mock은 1회 약 $0.001, 1초 간격이면 시간당 약 3,600번이다.
 - 키 없이 돌려 보기: `npx tsx scripts/fake-openai.ts --port 8500`을 띄우고 `VLM_BASE_URL=http://127.0.0.1:8500/v1`로 시작한다.
 
 ## PAM 서비스 (services/pam)
@@ -351,7 +353,7 @@ cd services/pam && .venv/Scripts/python.exe -m uvicorn noonchi_pam.app:create_ap
 
 `npm start` 뒤 `http://127.0.0.1:8200/`을 열면 설정을 끝내지 않았을 때 `/setup/`으로 간다. 대시보드 **설정 다시 하기**로 언제든 다시 연다. 계획: [2026-11-05-setup-flow](superpowers/plans/2026-11-05-setup-flow.md).
 
-1. **집 고르기**: twin-studio `homes.json`의 집. 다른 집을 고르면 서버를 끄지 않고 허브·에이전트·폰 서버·두뇌를 새 집으로 다시 띄운다(포트 그대로, HUB=matter local 전송에서 약 2초).
+1. **집 고르기**: twin-studio `homes.json`의 집. 다른 집을 고르면 서버를 끄지 않고 허브·에이전트·폰 서버·관찰 흐름을 새 집으로 다시 띄운다(포트 그대로, HUB=matter local 전송에서 약 2초).
 2. **가전 선택**: 집 배치에 놓인 가전마다 **가상**(트윈 시뮬레이터 값을 읽음) 또는 **신호 없음**(상태를 「모름」으로 두고 사진·질문으로만 알아냄). 명령은 둘 다 트윈에서 실행된다. 신호 없는 기기는 에이전트·대시보드 카드·3D 뷰어 모두 새 상태를 받지 않는다.
 3. **운영 모드**: 아래 "운영 모드". 기본은 시험 모드.
 4. **위치 동기화**: 3D에서 폰 기준점 A·B(아래 "벽 대기")와 배치 보정 저장·되돌리기, 폰 주소. 건너뛰면 폰 사진에 위치가 붙지 않는다(`pose_note: not_aligned`).

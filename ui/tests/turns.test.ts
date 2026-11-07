@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ActionPlan, AgentAction, PendingView, ServerMessage } from "../../src/contract/events.ts";
+import type { AgentAction, BrainLog, PendingView, ServerMessage } from "../../src/contract/events.ts";
 import { turnsReducer, type Turn } from "../src/chat/turns";
 
 const action: AgentAction = { tool: "turn_on", args: {}, ok: true, deviceId: "ac", deviceLabel: "거실 에어컨", reason: "덥다고 해서", observation: "켜짐", at: "t" };
@@ -87,43 +87,47 @@ describe("turnsReducer", () => {
   });
 });
 
-describe("컵 두뇌 카드", () => {
-  const brain = (stage: string, state: string, text: string): ServerMessage => ({ type: "brain", event: { type: "brain", stage, state, text, at_ms: 0, evidence_age_ms: 1500, generation: 1 } as never });
+describe("관찰과 판단 카드", () => {
+  type Observe = Extract<BrainLog, { type: "observe" }>;
+  const observe = (extra: Partial<Observe>): ServerMessage => ({ type: "brain", event: { type: "observe", at_ms: 0, frame_id: "e1", captured_at_ms: 0, yolo: null, vlm: null, ...extra } });
+  const change = (text: string): ServerMessage => ({ type: "brain", event: { type: "world_change", at_ms: 0, kind: "appeared", text } });
+  const decision = (extra: Partial<Extract<BrainLog, { type: "decision" }>> = {}): ServerMessage => ({ type: "brain", event: {
+    type: "decision", at_ms: 0, id: "pam-1", seq: 1, text_sent: "t", status: "valid", prediction: { observation: "o", reasoning: "컵이 비어 있음", task_index: 0 },
+    action: "컵 치우기", memory_version: 0, world: { objects: [], person_visible: false, vlm_missing: 0, yolo_missing: 0 }, ...extra,
+  } });
 
-  it("단계 글을 쌓고, 지금 보이는 것·판정은 갈아 끼운다", () => {
-    const t = run([
-      { type: "brain", event: { type: "presence", at_ms: 0, evidence_age_ms: 0, person: "yes", cup: "no", table: "yes", scores: { person: 0.9, cup: 0.1 }, summary: "x" } },
-      { type: "brain", event: { type: "presence", at_ms: 1, evidence_age_ms: 0, person: "no", cup: "yes", table: "yes", scores: { person: 0.1, cup: 0.8 }, summary: "x" } },
-      { type: "brain", event: { type: "perception", at_ms: 1, evidence_age_ms: 2000, frames: 3, summary: "컵 있음", cost_usd: 0 } },
-      brain("away", "away_check", "자리를 비웠어요"),
-    ]);
+  it("YOLOX·VLM 기록은 지금·판정 두 줄에서 갈아 끼우고, 분석 없음은 그 글로 보인다", () => {
+    const t = run([observe({ yolo: "컵 0.90" }), observe({ vlm: "컵이 식탁 위" }), observe({ frame_id: "e2", yolo_missing: "cap", vlm_missing: "cap" })]);
     expect(t).toHaveLength(1);
-    expect(t[0]).toMatchObject({ source: "brain", ask: "컵 지켜보기", state: "busy", label: "자리 비움 확인", answer: "자리를 비웠어요 · 근거 1.5초 전" });
-    expect(t[0]!.now).toEqual({ seen: "사람 없음 · 컵 있음", judged: "컵 있음 · 근거 2.0초 전" });
-    expect(lines(t[0]!)).toEqual(["자리를 비웠어요 · 근거 1.5초 전"]);
+    expect(t[0]).toMatchObject({ source: "brain", ask: "관찰과 판단", state: "busy", label: "관찰 중" });
+    expect(t[0]!.now).toEqual({ seen: "요청이 몰려 YOLOX·VLM 분석 없음", judged: "요청이 몰려 VLM 분석 없음" });
+    const u = run([observe({ yolo_missing: "error" }), observe({ vlm_missing: "timeout" }), observe({ vlm_missing: "format" })]);
+    expect(u[0]!.now).toEqual({ seen: "감지 오류로 YOLOX 분석 없음", judged: "형식 오류로 VLM 분석 없음" });
   });
 
-  it("폰 부탁과 결과로 끝나면 카드를 닫고, 다음 이벤트는 새 카드", () => {
-    const plan: ActionPlan = { id: "a", task: "t", kind: "ask_person_to_clear", dry_run: true, would: "컵을 치워요", dashboard: "치워 달라고 해요", prompt: { text: "컵을 치워 주세요", choices: [] }, check: "cup_gone" };
+  it("World State 변화·연결·판단 멈춤은 단계 줄, 판단 줄이 카드를 닫고 다음 기록은 새 카드", () => {
     const t = run([
-      { type: "brain", event: { type: "action", id: "a", task: "t", plan, active: true, at_ms: 0 } },
-      { type: "brain", event: { type: "result", id: "a", task: "t", outcome: "declined", text: "거절", at_ms: 0 } },
-      brain("result", "done", "끝났어요"),
-      brain("use", "in_use", "컵을 쓰고 있어요"),
+      change("컵 cup_1 보임"),
+      { type: "brain", event: { type: "link", at_ms: 0, target: "pam", up: false, text: "PAM 연결 끊김" } },
+      { type: "brain", event: { type: "trigger", at_ms: 0, paused: true, text: "사람이 없어 판단을 멈춤" } },
+      decision(),
+      observe({ yolo: "감지 없음" }),
     ]);
     expect(t).toHaveLength(2);
-    expect(t[0]).toMatchObject({ state: "wait", label: "끝", ended: true });
-    expect(lines(t[0]!)).toEqual(["폰에 부탁: 컵을 치워 주세요", "클로이드라면: 컵을 치워요", "끝났어요 · 근거 1.5초 전"]);
-    expect(t[1]).toMatchObject({ source: "brain", state: "busy", label: "사용 중" });
+    expect(lines(t[0]!)).toEqual(["컵 cup_1 보임", "PAM 연결 끊김", "사람이 없어 판단을 멈춤", "컵 치우기 · 컵이 비어 있음"]);
+    expect(t[0]).toMatchObject({ state: "ok", label: "컵 치우기", ended: true });
+    expect(t[1]).toMatchObject({ source: "brain", state: "busy", now: { seen: "감지 없음", judged: "" } });
   });
 
-  it("오류로 끝나면 fail", () => {
-    const t = run([brain("error", "done", "판단하지 못했어요")]);
-    expect(t[0]).toMatchObject({ state: "fail", ended: true });
+  it("대기는 대기, 판단 실패는 fail", () => {
+    expect(run([decision({ action: null, prediction: { observation: "o", reasoning: "더 본다", task_index: -1 } })])[0]).toMatchObject({ state: "ok", label: "대기" });
+    const f = run([decision({ status: "failed", prediction: null, action: null, error: "PAM 연결 실패" })]);
+    expect(f[0]).toMatchObject({ state: "fail", label: "판단 실패", ended: true });
+    expect(lines(f[0]!)).toEqual(["판단 실패 · PAM 연결 실패"]);
   });
 
-  it("폰 행동은 두뇌 카드에 붙지 않는다", () => {
-    const t = run([brain("use", "in_use", "컵을 쓰고 있어요"), acted("phone")]);
+  it("폰 행동은 관찰 카드에 붙지 않는다", () => {
+    const t = run([observe({ yolo: "컵 0.90" }), acted("phone")]);
     expect(t.map((x) => x.source)).toEqual(["brain", "phone"]);
   });
 });

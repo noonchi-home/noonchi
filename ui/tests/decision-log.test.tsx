@@ -70,16 +70,18 @@ describe("DecisionLog", () => {
     expect(within(card("작은방 에어컨 켜줘")).getByRole("list", { name: "단계" })).toBeInTheDocument();
   });
 
-  it("컵 두뇌 카드는 판단 단계와 지금 보이는 것·판정을 보인다", () => {
+  it("관찰과 판단 카드는 World State 변화 줄과 지금 보이는 것·판정을 보인다", () => {
     show(turnsOf([
-      { type: "brain", event: { type: "presence", at_ms: 0, evidence_age_ms: 0, person: "no", cup: "yes", table: "yes", scores: { person: 0.1, cup: 0.8 }, summary: "x" } },
-      { type: "brain", event: { type: "brain", stage: "away", state: "away_check", text: "자리를 비웠어요", at_ms: 0, evidence_age_ms: null, generation: 1 } },
+      { type: "brain", event: { type: "observe", at_ms: 0, frame_id: "e1", captured_at_ms: 0, yolo: "컵 0.90", vlm: null } },
+      { type: "brain", event: { type: "observe", at_ms: 0, frame_id: "e1", captured_at_ms: 0, yolo: null, vlm: null, vlm_missing: "timeout" } },
+      { type: "brain", event: { type: "world_change", at_ms: 0, kind: "appeared", text: "컵 cup_1 보임" } },
     ]));
-    const c = card("자리를 비웠어요");
+    const c = card("컵 cup_1 보임");
     expect(c.dataset.source).toBe("brain");
-    expect(within(c).getByText("클로이드 · 컵 지켜보기")).toBeInTheDocument();
-    expect(within(c).getByText("자리 비움")).toBeInTheDocument();
-    expect(within(c).getByText("사람 없음 · 컵 있음")).toBeInTheDocument();
+    expect(within(c).getByText("클로이드 · 관찰과 판단")).toBeInTheDocument();
+    expect(within(c).getByText("변화")).toBeInTheDocument();
+    expect(within(c).getByText("컵 0.90")).toBeInTheDocument();
+    expect(within(c).getByText("시간 초과로 VLM 분석 없음")).toBeInTheDocument();
   });
 
   it("알약 탭으로 판단 기록과 폰 화면을 바꾼다", async () => {

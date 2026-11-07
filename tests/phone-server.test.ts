@@ -183,17 +183,18 @@ describe("엔진 프레임", () => {
     ws.close();
   });
 
-  it("engine 패킷은 onEngine으로 가고 표시 화면으로는 가지 않는다. 맞춘 뒤면 투영과 트윈 원점을 붙인다", async () => {
+  it("engine 패킷은 onEngine으로 가고 표시 화면으로는 가지 않는다. frame 패킷은 관찰 흐름으로 가지 않는다. 맞춘 뒤면 투영과 트윈 원점을 붙인다", async () => {
     const { feed, got, phoneBase } = await engineSetup();
     const ws = await alignedPhone(phoneBase);
     const projection = Array.from({ length: 16 }, (_, i) => (i % 5 === 0 ? 1 : 0));
+    ws.send(encodeFramePacket({ kind: "frame", width: 480, height: 360 }, JPEG));
     ws.send(encodeFramePacket({ kind: "engine", width: 480, height: 360, position: [3.9, 1.4, 5], orientation: [0, 0, 0, 1], captured_at: 1000, time_err_ms: 5, projection }, JPEG));
     for (let i = 0; i < 40 && !got.length; i++) await new Promise((r) => setTimeout(r, 25));
     expect(got).toHaveLength(1);
     expect(got[0]!.header).toMatchObject({ kind: "engine", captured_at: 1000 });
     expect(got[0]!.eye).toMatchObject({ position: [3.9, 5], height_m: 1.4 });
     expect(got[0]!.view).toMatchObject({ origin: [3.9, 1.4, 5], projection });
-    expect(feed.stats().frames).toBe(0);
+    expect(feed.stats().frames).toBe(1);
     ws.close();
   });
 });

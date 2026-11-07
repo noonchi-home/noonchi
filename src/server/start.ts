@@ -6,7 +6,6 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Agent } from "../agent/agent.js";
 import type { Policy } from "../agent/policy.js";
-import type { CreateLiveBrainOptions } from "../brain/live.js";
 import type { ControlMode, SetupView, ThinqDeviceView } from "../contract/setup.js";
 import type { SignalHub } from "../hub/signals.js";
 import { HistoryDb } from "../history/db.js";
@@ -14,6 +13,7 @@ import type { DeviceHub } from "../hub/types.js";
 import { loadEndpoints } from "../infer/endpoints.js";
 import type { LayoutEditor } from "../layout/editor.js";
 import { KIND_LABELS } from "../model/mapping.js";
+import type { PipelineInject } from "../observe/pipeline.js";
 import { resolveTwinStudioDir, type TwinData } from "../model/devices.js";
 import { listHomes } from "../model/homes.js";
 import { SetupError, SetupStore, effectiveSources, parsePairs, parseSources } from "../setup/store.js";
@@ -47,7 +47,8 @@ export interface StartServerOptions {
    *  PHONE_PORT(있으면 폰 AR 서버), PHONE_HOST(기본 0.0.0.0), PHONE_MAX_MISMATCH_M(기준점 거리 차이 허용값, 기본 0.3),
    *  PHONE_EYE_HEIGHT_M(벽 대기 맞춤의 눈 높이, 기본 1.5),
    *  FOCUS(1이면 초점 표시를 보낸다, 기본 끔), PHONE_PHOTO_DIR(사진 폴더, 기본 runtime/photos), RUNTIME_DIR(배치 수정본·설정의 바탕, 기본 runtime),
-   *  BRAIN(1이면 폰 카메라로 상위 판단을 돌린다. PHONE_PORT 필요, VLM은 추론 모드가 고른 주소, BRAIN_* 는 docs/reference.md),
+   *  BRAIN(1이면 폰 엔진 프레임으로 관찰 흐름을 돌린다. PHONE_PORT 필요, VLM은 추론 모드가 고른 주소),
+   *  ENGINE_FRAME_MS·VLM_MAX_INFLIGHT·DETECT_QUEUE_MAX·BRAIN_DETECTOR·BRAIN_YOLO_PATH·BRAIN_YOLO_THREADS(src/observe/pipeline.ts),
    *  THINQ_TOKEN(실제 모드), THINQ_REGION·THINQ_COUNTRY·THINQ_CLIENT_ID·THINQ_API_KEY·THINQ_BASE_URL·THINQ_TIMEOUT_MS(src/thinq/client.ts),
    *  THINQ_POLL_MS(짝지은 기기 읽기 간격, 기본 15000, 0이면 처음 한 번), THINQ_READBACK_MS(명령 뒤 다시 읽기 전 기다림, 기본 1000,2000,4000)을 읽는다. */
   env?: Env;
@@ -58,8 +59,8 @@ export interface StartServerOptions {
   importer?: StartHubOptions["importer"];
   /** MatterHub 추가 옵션. */
   matter?: Record<string, unknown>;
-  /** 테스트용: 두뇌의 판정기·감지기·판단 모델·시계. */
-  brain?: CreateLiveBrainOptions["inject"];
+  /** 테스트용: 관찰 흐름의 감지기·VLM·시계. */
+  brain?: PipelineInject;
   /** 폰 포트로 이어진 https 주소 찾기(main.ts는 tailscale serve 설정을 읽는다). 없으면 찾지 않는다. */
   servedPhoneUrls?: (phonePort: number) => Promise<string[]>;
   /** 대시보드·설정 화면 폴더. 기본은 React 빌드(ui/dist). */

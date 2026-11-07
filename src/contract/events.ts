@@ -3,7 +3,7 @@
 import type { Command, DeviceSpec, DeviceState } from "../hub/types.js";
 import type { PlanView } from "./plan.js";
 import type { ControlMode } from "./setup.js";
-import type { WorldView } from "./world.js";
+import type { VlmMissing, WorldChangeKind, WorldView, YoloMissing } from "./world.js";
 
 // 좌표
 
@@ -63,7 +63,7 @@ export type AgentEvent =
   | { event: "confirmed"; sessionId?: string; token: string; ok: boolean; reply: string; deviceId?: string }
   | { event: "cancelled"; sessionId?: string; token: string };
 
-// 판단·행동(컵 시나리오)
+// 판단·행동
 
 export interface ActionChoice { id: string; label: string }
 
@@ -82,46 +82,30 @@ export interface ActionPlan {
   check: "cup_gone" | "none";
 }
 
-export type BrainState = "watching" | "in_use" | "away_check" | "requesting" | "deciding" | "confirming" | "acting" | "done";
-export type BrainStage = "use" | "away" | "request" | "answer" | "decide" | "confirm" | "act" | "result" | "wait" | "cancel" | "stale" | "error";
-export type ActionOutcome = "cleared" | "declined" | "answered" | "unconfirmed" | "unsupported" | "withdrawn";
+/** 실행 흐름 단계(판단 → 계획 → 실행 중 → 결과 확인 → 완료·실패). */
+export type ExecState = "decided" | "planned" | "running" | "verifying" | "done" | "failed";
 
-export type BrainEvent =
-  | { type: "brain"; stage: BrainStage; state: BrainState; text: string; at_ms: number; evidence_age_ms: number | null; generation: number }
-  | { type: "request"; id: string; text: string; active: boolean; at_ms: number }
-  | { type: "action"; id: string; task: string; plan: ActionPlan; active: boolean; at_ms: number }
-  | { type: "result"; id: string; task: string; outcome: ActionOutcome; text: string; at_ms: number };
-
-export type Tri = "yes" | "no" | "unknown";
-
-/** 판정(VLM) 기록 한 줄. */
-export interface PerceptionLog {
-  type: "perception";
-  at_ms: number;
-  evidence_age_ms: number;
-  frames: number;
-  summary: string;
-  cost_usd: number;
-  /** 요청 답 사진 한 장으로 본 판정. */
-  answer?: true;
-  error?: string;
+/** 판단에 쓴 World State 요약(판단 기록 화면이 펼쳐 보인다). */
+export interface DecisionWorld {
+  objects: { id: string; cls: string; status: string; surface: string | null; error_m: number | null; facts: Record<string, { value: string; certainty: "confirmed" | "inferred" }> }[];
+  person_visible: boolean;
+  vlm_missing: number;
+  yolo_missing: number;
 }
 
-/** 존재 판정(YOLO)이 바뀔 때만 내는 기록. */
-export interface PresenceLog {
-  type: "presence";
-  at_ms: number;
-  evidence_age_ms: number;
-  person: Tri;
-  cup: Tri;
-  table: Tri;
-  /** 창 안 가장 높은 점수(기록용). */
-  scores: { person: number; cup: number };
-  summary: string;
-}
-
-/** 컵 두뇌가 대시보드로 보내는 것 전부(src/brain/live.ts route). */
-export type BrainLog = BrainEvent | PerceptionLog | PresenceLog;
+/** 관찰 흐름·판단이 대시보드로 보내는 기록(/events {type:"brain", event}). 엔진 프레임 하나는 observe 기록으로 반드시 남는다:
+ *  YOLOX 결과(yolo) 또는 yolo_missing, VLM 답(vlm) 또는 vlm_missing. */
+export type BrainLog =
+  | { type: "observe"; at_ms: number; frame_id: string; captured_at_ms: number; yolo: string | null; yolo_missing?: YoloMissing; vlm: string | null; vlm_missing?: VlmMissing }
+  | { type: "world_change"; at_ms: number; kind: WorldChangeKind; text: string }
+  | {
+    type: "decision"; at_ms: number; id: string; seq: number; text_sent: string; status: "valid" | "failed";
+    prediction: { observation: string; reasoning: string; task_index: number } | null; action: string | null; error?: string; memory_version: number; world: DecisionWorld;
+  }
+  | { type: "execution"; at_ms: number; plan_id: string; state: ExecState; text: string }
+  | { type: "link"; at_ms: number; target: "pam"; up: boolean; text: string }
+  | { type: "trigger"; at_ms: number; paused: boolean; text: string }
+  | { type: "reflection"; at_ms: number; day: string; ok: boolean; version: number | null; applies_day: string | null; text: string };
 
 // 기기
 
@@ -204,7 +188,7 @@ export interface PhotoRecord {
   pose_note?: "not_aligned";
 }
 
-/** /events로 화면이 받는 메시지 전체. 서버의 send·broadcast와 같은 모양이다(src/server/app.ts·home.ts, src/brain/live.ts, src/phone/feed.ts). */
+/** /events로 화면이 받는 메시지 전체. 서버의 send·broadcast와 같은 모양이다(src/server/app.ts·home.ts, src/observe/pipeline.ts, src/phone/feed.ts). */
 export type ServerMessage =
   | { type: "hello"; devices: number; provider: string | null; hub: string; home: string | null }
   | { type: "state"; state: DeviceState }

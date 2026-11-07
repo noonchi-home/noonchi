@@ -45,10 +45,6 @@ export interface PhoneServerOptions {
   onEngine?: (jpeg: Buffer, header: FrameHeader, eye: EyeEvent | null, view: CameraView | null, receivedAtMs: number) => void;
   /** 엔진 프레임 간격(ms). 있으면 상태 메시지에 engine_ms로 실어 폰이 그 간격으로 보낸다. */
   engineMs?: number;
-  /** 상위 판단(BRAIN=1): 화면 프레임·사진을 그 순간의 눈 자세(맞추기 전 null)와 함께 넘긴다. */
-  onFrame?: (jpeg: Buffer, header: FrameHeader, eye: EyeEvent | null, receivedAtMs: number) => void;
-  /** 사진. 요청 답으로 받았으면 "answer". */
-  onPhoto?: (jpeg: Buffer, header: FrameHeader, eye: EyeEvent | null, receivedAtMs: number) => "answer" | "no_request" | undefined;
   /** 폰 행동 부탁·질문의 답. */
   onBrainReply?: (id: string, choice: string) => void;
 }
@@ -154,16 +150,15 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
       opts.onEngine?.(jpeg, header, eyeOf(), view, receivedAtMs);
       return;
     }
+    // 화면 프레임은 표시만, 사진은 저장만 한다(관찰 흐름에는 엔진 프레임만 들어간다)
     if (header.kind === "frame") {
       opts.feed?.pushFrame(jpeg, header.width, header.height);
-      if (opts.onFrame) opts.onFrame(jpeg, header, eyeOf(), receivedAtMs);
       return;
     }
-    const eye = eyeOf();
-    const answer = opts.onPhoto?.(jpeg, header, eye, receivedAtMs) === "answer";
     if (!opts.feed) return;
+    const eye = eyeOf();
     const photo = opts.feed.savePhoto(jpeg, header.width, header.height, eye);
-    reply(ws, { type: "photo_saved", id: photo.id, aligned: eye !== null, ...(answer ? { answer: true } : {}) });
+    reply(ws, { type: "photo_saved", id: photo.id, aligned: eye !== null });
   };
 
   const talk = async (ws: WebSocket, msg: Record<string, unknown>) => {
