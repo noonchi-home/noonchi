@@ -6,9 +6,11 @@
 // 무거운 일 잠금 안에서 돌린다: npm run heavy -- npx tsx scripts/container-smoke.ts
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
+import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { fetchRetry } from "../src/server/net.js";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const HUB_URL = "http://127.0.0.1:8500";
@@ -36,7 +38,7 @@ async function waitJson(url: string, ms: number, until: (b: Record<string, any>)
   let last: Record<string, any> | null = null;
   while (Date.now() < end) {
     try {
-      const r = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      const r = await fetchRetry(url, { signal: AbortSignal.timeout(5000) });
       if (r.ok) {
         last = (await r.json()) as Record<string, any>;
         if (until(last)) return last;
@@ -47,10 +49,42 @@ async function waitJson(url: string, ms: number, until: (b: Record<string, any>)
   return last;
 }
 
+/** ms 안에 TCP로 붙지 않는 호스트 포트(127.0.0.1). 컨테이너 앞의 Docker 포트 전달이 열렸는지만 본다. */
+async function closedPorts(ports: number[], ms: number): Promise<number[]> {
+  const open = (port: number) => new Promise<boolean>((ok) => {
+    const s = connect(port, "127.0.0.1");
+    s.setTimeout(2000, () => { s.destroy(); ok(false); });
+    s.once("connect", () => { s.destroy(); ok(true); });
+    s.once("error", () => ok(false));
+  });
+  const end = Date.now() + ms;
+  let closed = ports;
+  while (closed.length && Date.now() < end) {
+    closed = (await Promise.all(closed.map(async (p) => ((await open(p)) ? null : p)))).filter((p): p is number => p !== null);
+    if (closed.length) await sleep(1000);
+  }
+  return closed;
+}
+
 let code = 1;
+// 기다리던 요청이 이 PC의 EFAULT로 손잡이 없이 멈춰도 프로세스가 정리 없이 끝나지 않게 붙잡아 둔다(제한 시간이 돌고 down -v가 돈다)
+const keepAlive = setInterval(() => {}, 1000);
 try {
   if (compose(["build"]).status !== 0) throw new Error("compose build 실패");
-  if (compose(["up", "-d", "noonchi", "pam", "fake-openai"]).status !== 0) throw new Error("compose up 실패");
+  // 이 PC(Windows)는 포트를 열 때 가끔 EFAULT(invalid pointer address)로 실패하고, up이 성공해도 호스트 포트 하나가 안 열릴 때가 있다
+  // (src/server/net.ts). 그때만 내리고 다시 띄운다
+  for (let attempt = 1; ; attempt++) {
+    const up = compose(["up", "-d", "noonchi", "pam", "fake-openai"], true);
+    process.stdout.write(up.stdout ?? "");
+    process.stderr.write(up.stderr ?? "");
+    const closed = up.status === 0 ? await closedPorts([8500, 8510, 8520], 15_000) : [];
+    if (up.status === 0 && !closed.length) break;
+    const flaky = up.status === 0 || /invalid pointer address/i.test(`${up.stdout}${up.stderr}`);
+    if (attempt >= 8 || !flaky) throw new Error(up.status === 0 ? `호스트 포트가 열리지 않아요(${closed.join(", ")})` : "compose up 실패");
+    console.log(`compose up: ${up.status === 0 ? `호스트 포트 ${closed.join(", ")} 안 열림` : "포트 열기 일시 오류(EFAULT)"}, ${attempt}번째 다시 시도`);
+    compose(["down"]);
+    await sleep(1000 * attempt);
+  }
   const h = await waitJson(`${HUB_URL}/api/health`, 120_000, (b) => b.ready?.ok === true);
   if (!h) throw new Error("120초 안에 /api/health가 답하지 않았어요");
   console.log(`health: hub=${h.hub} provider=${h.provider} eye=${h.eye} twin=${h.twin}`);
@@ -62,14 +96,14 @@ try {
   if (h.ready?.db !== true) fails.push("기록 DB를 열지 못했어요");
   if (h.ready?.inference_mode !== "live" || h.ready?.vlm?.base_url !== FAKE) fails.push("추론 설정이 확인용 env 파일 값이 아니에요");
   if (h.ready?.pam?.url !== "http://pam:8300" || h.ready?.pam?.llm?.base_url !== FAKE) fails.push("PAM 서비스·PAM LLM 주소가 compose·확인용 값이 아니에요");
-  const chat = await fetch(`${HUB_URL}/api/agent/chat`, {
+  const chat = await fetchRetry(`${HUB_URL}/api/agent/chat`, {
     method: "POST", headers: { "content-type": "application/json", origin: HUB_URL }, body: JSON.stringify({ message: "안녕" }), signal: AbortSignal.timeout(30_000),
   }).then(async (r) => ({ status: r.status, body: (await r.json()) as Record<string, any> }), (e: Error) => ({ status: 0, body: { error: e.message } as Record<string, any> }));
   console.log(`에이전트: ${chat.status} ${JSON.stringify(chat.body.reply ?? chat.body)}`);
   if (chat.status !== 200 || !String(chat.body.reply ?? "").includes("가짜 답")) fails.push("에이전트가 가짜 서버의 답(가짜 답)을 돌려주지 않았어요");
   // PAM 서비스: 관찰 텍스트로 판단 한 번(가짜 PAM LLM은 대기 -1), /health의 입력 한도
   const memory = { initial_state: "s", states: [{ id: "s", description: "d", rules: [], next: [] }] };
-  const predict = await fetch(`${PAM_URL}/predict`, {
+  const predict = await fetchRetry(`${PAM_URL}/predict`, {
     method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(30_000),
     body: JSON.stringify({ contract: "pam-predict/2", final_time: "2026-11-07T21:00:08+09:00", observation_text: "21:00:00 사람 보임", memory_kind: "fsm", memory, tasks: ["컵 치우기"] }),
   }).then(async (r) => ({ status: r.status, body: (await r.json()) as Record<string, any> }), (e: Error) => ({ status: 0, body: { error: e.message } as Record<string, any> }));
@@ -77,7 +111,7 @@ try {
   if (predict.status !== 200 || predict.body.status !== "valid" || predict.body.prediction?.task_index !== -1) fails.push("PAM 서비스 판단이 가짜 PAM LLM의 대기(-1)가 아니에요");
   const limits = (await waitJson(`${PAM_URL}/health`, 10_000))?.limits;
   if (!(limits?.reflect_input_bytes > 0) || limits?.max_model_len !== 32768) fails.push(`PAM /health 입력 한도가 없어요(${JSON.stringify(limits)})`);
-  const phone = await fetch(`${PHONE_URL}/phone/`, { signal: AbortSignal.timeout(5000) }).then((r) => r.status, () => 0);
+  const phone = await fetchRetry(`${PHONE_URL}/phone/`, { signal: AbortSignal.timeout(5000) }).then((r) => r.status, (e: Error & { cause?: { code?: string; syscall?: string } }) => { console.log(`폰 화면 요청 오류: ${e.message} ${e.cause?.code ?? ""} ${e.cause?.syscall ?? ""}`); return 0; });
   if (phone !== 200) fails.push(`폰 화면이 열리지 않아요(${phone})`);
   // docker stop(SIGTERM) → 서버가 닫고 0으로 끝나야 한다
   if (compose(["stop", "noonchi"]).status !== 0) fails.push("compose stop 실패");
@@ -93,5 +127,6 @@ try {
   compose(["logs", "--tail", "80", "noonchi", "pam", "fake-openai"]);
 } finally {
   compose(["down", "-v"]);
+  clearInterval(keepAlive);
 }
 process.exit(code);

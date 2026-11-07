@@ -124,6 +124,10 @@ describe("배포 파일", () => {
     expect(s).toContain("ready.ok");
     expect(s).toContain("/api/agent/chat");
     expect(s).toContain("가짜 답");
+    // 이 PC의 일시 EFAULT: 호스트 요청은 fetchRetry, 포트 열기 실패는 내리고 다시 띄우고, 멈춘 요청이 있어도 down -v까지 간다
+    expect(s).not.toMatch(/\bawait fetch\(/);
+    expect(s).toContain("invalid pointer address");
+    expect(s).toContain("clearInterval(keepAlive)");
   });
 
   it(".env.example에 PAM 서비스 설정 자리가 있다", () => {
