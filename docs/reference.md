@@ -88,6 +88,8 @@ HUB=memory npm run demo
 | `RUNTIME_DIR` | `runtime` | 실행 중 만든 파일의 바탕 폴더: 배치 수정본 `homes/<id>/edits.json`, 사진 `photos/`, 기록 DB `noonchi.db`(SQLite, 커밋하지 않음) |
 | `HISTORY_TZ_MINUTES` | `540` | 기록 DB가 날짜(하루 요약·반성)를 나누는 시간대(분, -720~840). PAM 관찰 텍스트 시각도 이 시간대다. 틀린 값이면 시작하지 않는다 |
 | `REFLECT_AT` | `23:30` | 매일 그날을 반성하는 시각(HH:MM, 기록 시간대). `off`면 끈다. 틀린 값이면 시작하지 않는다 |
+| `PHOTO_RETENTION_DAYS`, `DATASET_RETENTION_DAYS` | `7`, `7` | 폰 사진 찍기 사진·시험 자료 보관 일(0보다 큰 숫자). 지나면 파일과 표 줄을 지운다. 틀린 값이면 시작하지 않는다 |
+| `DATASET_COLLECT` | (끔) | `1`이면 엔진 프레임을 시험 자료로 `RUNTIME_DIR/dataset/<날짜>/`에 JPEG과 같은 이름의 `.json`(크기·자세·카메라)으로 쓴다 |
 | `INFERENCE_MODE` | `mock` | `mock`(GPU 없음, VLM은 OpenAI) · `live`(GPU 서버, VLM은 같은 서버 vLLM `http://vllm-vlm:8000/v1`, 모델 이름 `vlm`). 두 모드는 같은 코드 경로이고 주소·모델 이름만 다르다. 다른 값이면 시작하지 않는다 |
 | `VLM_BASE_URL`, `VLM_MODEL`, `VLM_API_KEY`, `VLM_EXTRA_BODY` | 모드 기본값 | 따로 주면 모드 기본값 대신 쓴다(OpenAI 호환 주소). mock 기본: `https://api.openai.com/v1`·`gpt-5.4-mini`·`OPENAI_API_KEY`·`{"reasoning_effort":"none"}`, live 기본: `http://vllm-vlm:8000/v1`·`vlm`·`VLLM_API_KEY`·`{}` |
 | `VLM_TIMEOUT_MS` | `20000` | 사진 한 장 VLM 분석 제한 시간(1000 이상) |
@@ -189,7 +191,7 @@ twin-home 서버: http://127.0.0.1:8200  (허브 matter/network, 에이전트 mo
 | `GET /api/agent/pending?sessionId=` | | 승인 대기 목록 |
 | `GET /api/matter` | | `{ ok, transport, commissioning: "none"\|"new"\|"reused", port, controllerPort?, subscribed?, pairing: { manualPairingCode, qrPairingCode, passcode, discriminator, commissioned, fabrics } }`. MemoryHub면 404 |
 | `POST /api/matter/commissioning-window` | `{ timeoutSeconds? }`(180~900, 기본 900) | `{ ok, timeoutSeconds, pairing, reply }`. 다른 Matter 컨트롤러용 페어링 창을 연다. local 전송이면 400 |
-| `GET /api/brain` | | 관찰 흐름 상태 `{ ok, frames, duplicates, detector, vlm_model, detected, detect_ms, queued, yolo_missing: { cap, error }, vlm: { sent, missing: { cap, timeout, format, error }, inflight, costUsd }, time_source, time_err_ms }`. `BRAIN=1`이 아니면 404 |
+| `GET /api/brain` | | 관찰 흐름 상태 `{ ok, frames, duplicates, detector, vlm_model, detected, detect_ms, queued, yolo_missing: { cap, error }, vlm: { sent, missing: { cap, timeout, format, error }, inflight, costUsd }, time_source, time_err_ms, dataset }`(`dataset`: `DATASET_COLLECT=1`이면 `{ saved, failed }`, 아니면 null). `BRAIN=1`이 아니면 404 |
 | `GET /api/world` | | `{ ok, world }` 지금 World State(`src/contract/world.ts` `WorldView`). `BRAIN=1`이 아니면 404 |
 | `GET /api/history?since=&until=&kinds=&limit=` | | `{ ok, rows: HistoryRow[] }` 한 시간축 기록(시각 순). `since`가 없으면 최근 `limit`줄, 있으면 그 시각부터 `limit`줄(기본 500, 최대 5000). `kinds`는 쉼표 목록. 모르는 종류·숫자가 아닌 시각·범위 밖 limit은 400 |
 | `GET /api/history/day/{YYYY-MM-DD}` | | `{ ok, day, observation_text, action_summary, counts, dropped }` 하루 요약(아래 "기록과 반성"). 없는 날짜 400 |
@@ -322,7 +324,7 @@ npm start
 
 ## 관찰 흐름 (src/observe, src/world)
 
-폰 엔진 프레임마다 YOLOX와 VLM이 둘 다 분석하고, World State가 둘을 물체별로 합친다. 분석한 사진은 메모리(최근 20초)에만 두고 디스크에 쓰지 않는다.
+폰 엔진 프레임마다 YOLOX와 VLM이 둘 다 분석하고, World State가 둘을 물체별로 합친다. 분석한 사진은 메모리(최근 20초)에만 두고 디스크에 쓰지 않는다(`DATASET_COLLECT=1`일 때만 시험 자료로 쓴다).
 
 - **엔진 프레임:** `BRAIN=1`이면 폰 서버가 상태 메시지 `engine_ms`(`ENGINE_FRAME_MS`, 기본 1초)로 간격을 알리고, 폰은 그 간격마다 분석용 JPEG을 촬영 자세·투영 행렬·서버 시계 촬영 시각과 함께 보낸다. 직전 프레임과 SHA-256이 같으면 버린다. 표시 프레임·사진은 관찰 흐름에 들어가지 않는다.
 - **YOLOX:** 사람·컵·병·그릇(COCO person·cup·wine glass·bottle·bowl)을 워커 스레드에서 하나씩 본다(YOLOX-Tiny, Apache-2.0, 이 PC 4스레드 장당 약 70ms). 대기열(`DETECT_QUEUE_MAX`, 기본 8)이 차면 그 프레임은 「요청이 몰려 YOLOX·VLM 분석 없음」, 감지가 실패하면 「감지 오류로 YOLOX 분석 없음」(VLM은 그 프레임도 분석)이다. 모델 파일이 없으면 「감지기 없음」으로 VLM만 돈다.
@@ -364,6 +366,7 @@ tailscale serve --bg 8210   # 이미 켜져 있으면 생략. 폰: https://<이 
   - PAM 서비스 `GET /health`의 `reflect_input_bytes`에서 기억 JSON·피드백 크기를 빼고, 그 안으로 하루 요약을 줄여 `pam-reflect/2`로 보낸다.
   - 새 기억은 다음 날부터 쓴다. 다음 날 판단이 이미 다른 판본으로 시작했으면 그다음 날부터다.
   - 결과는 기록 DB(`reflection`)와 대시보드 판단 기록(`{type:"brain", event:{type:"reflection"}}`)에 남는다. 그날 기록이 없으면 PAM을 부르지 않고 실패로 남긴다.
+- **사진 보관(`photos` 표):** 디스크에는 폰 사진 찍기 사진(`photos/`, 기록 `photo`)과 `DATASET_COLLECT=1`일 때의 시험 자료(`dataset/`)만 쓴다. 시작 때와 1시간마다 보관 기간(`PHOTO_RETENTION_DAYS`·`DATASET_RETENTION_DAYS`, 기본 7일)이 지난 파일과 같은 이름의 `.json`을 지운다.
 
 ## PAM 서비스 (services/pam)
 

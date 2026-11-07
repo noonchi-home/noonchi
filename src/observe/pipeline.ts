@@ -1,6 +1,6 @@
 // 관찰 흐름(BRAIN=1): 엔진 프레임 → 고리(중복 버림) → YOLOX(워커, 상한 있는 대기열에서 하나씩) → VLM(동시 요청) → World State → /events.
 // 프레임마다 observe 기록이 반드시 남는다: 대기열이 차면 YOLOX·VLM 분석 없음, 감지 실패면 YOLOX 분석 없음(VLM은 그대로 분석).
-// 분석한 사진은 메모리 고리에만 있다. 디스크에 쓰지 않는다.
+// 분석한 사진은 메모리 고리에만 있다. 디스크에 쓰지 않는다. DATASET_COLLECT=1이면 dataset(시험 자료 저장, src/history/retention.ts)이 고리에 넣은 프레임을 받는다.
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { BrainLog } from "../contract/events.js";
@@ -60,6 +60,8 @@ export interface PipelineOptions {
   broadcastWorld: (w: WorldView) => void;
   /** World State 변화(분석 없음 포함). 판단 호출 시점이 받는다. */
   onChanges?: (c: WorldChange[]) => void;
+  /** 시험 자료 저장(DATASET_COLLECT=1일 때만). 고리에 넣은 프레임마다 부른다. */
+  dataset?: (f: EngineFrame) => void;
   clock?: { now(): number };
 }
 
@@ -75,6 +77,8 @@ export interface PipelineStatus {
   vlm: ReturnType<VlmPool["stats"]>;
   time_source: "phone" | "received" | null;
   time_err_ms: number | null;
+  /** 시험 자료로 쓴 프레임 수와 쓰지 못한 수(DATASET_COLLECT=1이 아니면 null). */
+  dataset: { saved: number; failed: number } | null;
 }
 
 export class ObservationPipeline {
@@ -91,6 +95,7 @@ export class ObservationPipeline {
   private detectMs: number[] = [];
   private timeSource: "phone" | "received" | null = null;
   private timeErr: number | null = null;
+  private readonly datasetCount = { saved: 0, failed: 0 };
   private closed = false;
 
   constructor(private readonly o: PipelineOptions) {
@@ -128,6 +133,14 @@ export class ObservationPipeline {
     const frame: EngineFrame = { id: `e${++this.seq}`, capturedAtMs: t.atMs, latestAtMs: t.latestMs, jpeg, sha256: sha256(jpeg), width: header.width, height: header.height, eye, view };
     if (!this.ring.push(frame)) return;
     this.frames++;
+    if (this.o.dataset) {
+      try {
+        this.o.dataset(frame);
+        this.datasetCount.saved++;
+      } catch {
+        this.datasetCount.failed++;
+      }
+    }
     this.o.world.setEye(eye, t.atMs);
     if (!this.o.detector) {
       this.analyze(frame, undefined);
@@ -195,6 +208,7 @@ export class ObservationPipeline {
       frames: this.frames, duplicates: this.ring.dropped, detector: this.o.detector?.name ?? null, vlm_model: this.o.vlm.model, detected: this.detected,
       detect_ms: this.detectMs.length ? Math.round(this.detectMs.reduce((a, b) => a + b, 0) / this.detectMs.length) : null,
       queued: this.queue.length, yolo_missing: { ...this.yoloMissing }, vlm: this.pool.stats(), time_source: this.timeSource, time_err_ms: this.timeErr,
+      dataset: this.o.dataset ? { ...this.datasetCount } : null,
     };
   }
 
@@ -243,11 +257,12 @@ async function createDetector(env: Env, runtimeDir: string, log: (line: string) 
 /** 환경 변수로 관찰 흐름을 만든다. VLM은 추론 모드가 고른 OpenAI 호환 주소(src/infer)다. */
 export async function createPipeline(o: {
   env: Env; runtimeDir: string; world: WorldState; emit: (log: BrainLog) => void; broadcastWorld: (w: WorldView) => void;
-  onChanges?: (c: WorldChange[]) => void; log: (line: string) => void; inject?: PipelineInject;
+  onChanges?: (c: WorldChange[]) => void; log: (line: string) => void; inject?: PipelineInject; dataset?: (f: EngineFrame) => void;
 }): Promise<ObservationPipeline> {
   const config = loadObserveConfig(o.env);
   const detector = o.inject && "detector" in o.inject ? o.inject.detector ?? null : await createDetector(o.env, o.runtimeDir, o.log);
   const vlm = o.inject?.vlm ?? createInference(o.env).vlm;
   o.log(`관찰 흐름: 엔진 프레임 ${config.engineMs}ms · 감지 ${detector?.name ?? "없음(VLM만)"} · VLM ${vlm.model} 동시 ${config.vlmMaxInflight}개 · 감지 대기열 ${config.detectQueueMax}`);
-  return new ObservationPipeline({ config, detector, vlm, world: o.world, emit: o.emit, broadcastWorld: o.broadcastWorld, onChanges: o.onChanges, clock: o.inject?.clock });
+  if (o.dataset) o.log("[경고] 시험 자료 모으기가 켜져 있습니다. 엔진 프레임을 디스크에 씁니다.");
+  return new ObservationPipeline({ config, detector, vlm, world: o.world, emit: o.emit, broadcastWorld: o.broadcastWorld, onChanges: o.onChanges, dataset: o.dataset, clock: o.inject?.clock });
 }

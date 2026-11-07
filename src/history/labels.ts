@@ -17,6 +17,9 @@ export const SUMMARY_TEXT = {
   tally: (vlm: number, vlmMissing: number, yoloMissing: number) => `[하루] VLM 분석 ${vlm}장 · VLM 분석 없음 ${vlmMissing}장 · YOLOX 분석 없음 ${yoloMissing}장`,
 };
 
+/** 사진 찍기 기록 글. */
+export const PHOTO_TEXT = { saved: "사진 찍기 사진 저장" };
+
 /** 반성 결과 글(판단 기록·기록 DB). 비어 있는 하루 요약 칸에 넣는 글. */
 export const REFLECT_TEXT = {
   done: (version: number, day: string) => `반성 완료: 기억 ${version}판, ${day}부터`,

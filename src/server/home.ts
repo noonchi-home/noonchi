@@ -14,6 +14,8 @@ import type { ControlMode } from "../contract/setup.js";
 import type { HistoryDb } from "../history/db.js";
 import type { DeviceNote } from "../history/recorder.js";
 import { memoryForDay, type ReflectResult } from "../history/reflect.js";
+import { PHOTO_TEXT } from "../history/labels.js";
+import { datasetWriter } from "../history/retention.js";
 import { SignalHub, type SignalSource } from "../hub/signals.js";
 import { loadEndpoints } from "../infer/endpoints.js";
 import { createPipeline, type ObservationPipeline, type PipelineInject } from "../observe/pipeline.js";
@@ -163,7 +165,14 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     // 사진 이벤트는 본 서버 /events로 나간다. 앱보다 먼저 만들어 /api/eye/*를 앱에 넘기므로 broadcast는 나중에 잇는다
     const appRef: { current?: TwinHomeApp } = {};
     const feed = phoneOn
-      ? new EyeFeed({ photoDir: env.PHONE_PHOTO_DIR?.trim() || join(runtimeDir, "photos"), broadcast: (m) => appRef.current?.broadcast(m) })
+      ? new EyeFeed({
+        photoDir: env.PHONE_PHOTO_DIR?.trim() || join(runtimeDir, "photos"), broadcast: (m) => appRef.current?.broadcast(m),
+        // 사진 찍기 사진은 보관 기간이 지나면 지운다(src/history/retention.ts)
+        onSaved: (p) => {
+          history.db.addPhoto({ ...p, origin: "photo" });
+          history.db.add("photo", p.atMs, PHOTO_TEXT.saved, { subject: p.id });
+        },
+      })
       : undefined;
     // 벽 대기 맞춤 기준점 A·B(설정 4단계에서 고름). 저장·지우면 실행 중인 폰 세션의 기준점이 바로 바뀐다
     const eyeHeightM = eyeHeightOf(env.PHONE_EYE_HEIGHT_M);
@@ -218,6 +227,8 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         env, runtimeDir, log, world, inject: ctx.brain, emit,
         broadcastWorld: (w) => appRef.current?.broadcast({ type: "world", world: w }),
         onChanges: (c) => decide.onChanges(c),
+        // 분석한 프레임은 디스크에 쓰지 않는다. DATASET_COLLECT=1일 때만 시험 자료로 RUNTIME_DIR/dataset에 쓴다
+        dataset: env.DATASET_COLLECT?.trim() === "1" ? datasetWriter(join(runtimeDir, "dataset"), history.db) : undefined,
       });
       decideTimer = setInterval(() => decide.tick(), 250);
       decideTimer.unref?.();

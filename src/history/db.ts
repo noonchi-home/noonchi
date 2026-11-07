@@ -33,6 +33,9 @@ export function historyTzMinutes(env: Record<string, string | undefined>): numbe
 /** latest면 조건에 맞는 마지막 limit줄(시각 순으로 돌려줌). 아니면 처음부터 limit줄. */
 export interface HistoryQuery { since?: number; until?: number; kinds?: HistoryKind[]; day?: string; limit?: number; latest?: boolean }
 
+/** 디스크에 둔 사진: photo 폰 사진 찍기, dataset DATASET_COLLECT=1일 때의 시험 자료. */
+export interface StoredPhoto { id: string; atMs: number; path: string; origin: "photo" | "dataset" }
+
 /** 기억 판본 하나. appliesDay는 쓰기 시작하는 날(seed는 null). */
 export interface MemoryVersion { version: number; kind: "list" | "fsm"; memory: unknown; appliesDay: string | null }
 type RawMemory = { version: number; kind: "list" | "fsm"; memory: string; applies_day: string | null };
@@ -107,6 +110,20 @@ export class HistoryDb {
   /** 그날 판본을 고정한다. 이미 고정한 날은 바꾸지 않는다. */
   pinMemory(day: string, version: number): void {
     this.db.prepare("INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING").run(`memory_day:${day}`, String(version));
+  }
+
+  /** 디스크에 둔 사진 하나(photo 사진 찍기, dataset 시험 자료). 보관 기간이 지나면 retention.sweep이 지운다. */
+  addPhoto(p: StoredPhoto): void {
+    this.db.prepare("INSERT OR REPLACE INTO photos(id, at_ms, path, origin) VALUES (?, ?, ?, ?)").run(p.id, p.atMs, p.path, p.origin);
+  }
+
+  listPhotos(): StoredPhoto[] {
+    return (this.db.prepare("SELECT id, at_ms, path, origin FROM photos ORDER BY at_ms, id").all() as unknown as { id: string; at_ms: number; path: string; origin: StoredPhoto["origin"] }[])
+      .map((r) => ({ id: r.id, atMs: r.at_ms, path: r.path, origin: r.origin }));
+  }
+
+  removePhoto(id: string): void {
+    this.db.prepare("DELETE FROM photos WHERE id = ?").run(id);
   }
 
   /** 그날 종류별 줄 수. */

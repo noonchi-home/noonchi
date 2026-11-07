@@ -5201,126 +5201,84 @@ git commit -m "feat: reflect each day over pam-reflect/2 within the PAM input li
 
 **Files:**
 - Create: `src/history/retention.ts`, `tests/history-retention.test.ts`, `tests/no-frames-on-disk.test.ts`
-- Modify: `src/phone/feed.ts`(사진 찍기 사진을 `photos` 표에 적음), `src/observe/pipeline.ts`(`DATASET_COLLECT=1`일 때만 엔진 프레임 저장), `src/server/start.ts`(시작 때와 1시간마다 정리), `.env.example`
+- Modify: `src/history/db.ts`(`photos` 표 `addPhoto`·`listPhotos`·`removePhoto`), `src/history/labels.ts`(`PHOTO_TEXT`), `src/phone/feed.ts`(사진 찍기 뒤 `onSaved`), `src/observe/pipeline.ts`(`dataset` 옵션, status `dataset`), `src/server/home.ts`(사진 찍기를 `photos` 표와 `photo` 기록에, `DATASET_COLLECT=1`이면 `datasetWriter`), `src/server/start.ts`(시작 때와 1시간마다 정리), `.env.example`, `docs/reference.md`
 
 **Interfaces:**
-- Produces: `sweep(db: HistoryDb, o: { photoDays: number; datasetDays: number; nowMs: number }): { photos: number; dataset: number }`, `datasetWriter(dir: string, db: HistoryDb): (frame: EngineFrame) => void`
+- Produces: `interface StoredPhoto { id; atMs; path; origin: "photo" | "dataset" }`, `HistoryDb.addPhoto(p)`, `listPhotos()`, `removePhoto(id)`, `loadRetention(env): { photoDays; datasetDays }`(비우면 7, 0보다 큰 숫자가 아니면 시작을 막음), `sweep(db, { photoDays, datasetDays, nowMs }): { photos: number; dataset: number }`, `datasetWriter(dir, db): (frame: EngineFrame) => void`
 
 - [ ] **Step 1: 실패하는 시험**
 
-```ts
-// tests/no-frames-on-disk.test.ts
-// 분석한 엔진 프레임은 디스크에 쓰지 않는다. DATASET_COLLECT=1일 때만 dataset/에 쓴다.
-import { mkdtempSync, readdirSync, statSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-import { WebSocket } from "ws";
-import { startFakeOpenAI, type FakeServer } from "../scripts/fake-openai.js";
-import { encodeFramePacket } from "../src/phone/packet.js";
-import { startServer, type RunningServer } from "../src/server/start.js";
-import { ScriptedDetector } from "./helpers/detectors.js";
+`tests/no-frames-on-disk.test.ts`: `startServer`(BRAIN=1, 폰, VLM은 가짜 OpenAI 호환 서버, 감지기 `ScriptedDetector`, 임시 RUNTIME_DIR)에 엔진 프레임 3장과 사진 찍기 1장을 보내고 VLM 기록 3줄을 기다린다.
+- 런타임 폴더의 사진 파일(jpg·png·bin)은 `photos/`의 사진 찍기 하나뿐이고, `listPhotos()`에 `origin: "photo"`, 기록 `photo` 「사진 찍기 사진 저장」.
+- `DATASET_COLLECT=1`이면 `dataset/<오늘>/`에 JPEG 3장, 같은 이름 `.json`에 크기·`eye: null`·`view: null`, `photos` 표에 `dataset` 3줄.
 
-let srv: RunningServer | undefined;
-let fake: FakeServer | undefined;
-afterEach(async () => { await srv?.close(); await fake?.close(); srv = undefined; fake = undefined; });
-const files = (d: string): string[] => readdirSync(d).flatMap((n) => (statSync(join(d, n)).isDirectory() ? files(join(d, n)) : [join(d, n)]));
+`tests/history-retention.test.ts`:
+- 사진 찍기 7일·시험 자료 2일이면 8일 된 사진·3일 된 시험 자료와 그 `.json`을 지우고 1일 된 사진은 둔다(`{ photos: 1, dataset: 1 }`, 다시 돌리면 0).
+- 파일이 이미 없어도 표 줄을 지운다.
+- `loadRetention`: 비우면 7·7, `30`·`0.5` 됨, `0`·`일주일`은 오류.
 
-async function sendEngineFrames(env: Record<string, string>) {
-  fake = await startFakeOpenAI();
-  const runtime = mkdtempSync(join(tmpdir(), "rt-"));
-  srv = await startServer({ env: { HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock", RUNTIME_DIR: runtime, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", BRAIN: "1",
-    VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: "http://127.0.0.1:9", ...env }, brain: { detector: new ScriptedDetector(() => []) }, log: () => {} });
-  const ws = new WebSocket(srv.phoneUrls[0]!.replace(/^http/, "ws").replace(/\/phone\/$/, "/phone/events"));
-  await new Promise((ok) => ws.on("open", ok));
-  for (let i = 0; i < 3; i++) ws.send(encodeFramePacket({ kind: "engine", width: 2, height: 2, captured_at: Date.now(), time_err_ms: 0 }, Buffer.from([0xff, 0xd8, i])));
-  await new Promise((r) => setTimeout(r, 500));
-  ws.close();
-  return runtime;
-}
-
-describe("사진은 디스크에 쓰지 않는다", () => {
-  it("엔진 프레임을 분석해도 런타임 폴더에 사진 파일이 없다", async () => {
-    const runtime = await sendEngineFrames({});
-    expect(files(runtime).filter((f) => /\.(jpe?g|png|bin)$/i.test(f))).toEqual([]);
-  });
-  it("DATASET_COLLECT=1이면 dataset/에만 쓴다", async () => {
-    const runtime = await sendEngineFrames({ DATASET_COLLECT: "1" });
-    const jpgs = files(runtime).filter((f) => /\.jpe?g$/i.test(f));
-    expect(jpgs.length).toBeGreaterThan(0);
-    expect(jpgs.every((f) => f.includes(join(runtime, "dataset")))).toBe(true);
-  });
-});
-```
-(`brain.inject`는 Task 21의 `createPipeline` 주입 `{ detector, vlm, clock }`이다.)
-
-```ts
-// tests/history-retention.test.ts
-import { mkdtempSync, writeFileSync, existsSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { describe, expect, it } from "vitest";
-import { HistoryDb } from "../src/history/db.js";
-import { sweep } from "../src/history/retention.js";
-
-describe("보관 기간", () => {
-  it("기간이 지난 사진 찍기 사진과 시험 자료만 지운다", () => {
-    const dir = mkdtempSync(join(tmpdir(), "ph-"));
-    const db = HistoryDb.open(":memory:");
-    const day = 86_400_000, now = 100 * day;
-    for (const [id, at, origin] of [["old", now - 8 * day, "photo"], ["new", now - day, "photo"], ["ds", now - 8 * day, "dataset"]] as const) {
-      writeFileSync(join(dir, `${id}.jpg`), "x");
-      db.addPhoto({ id, atMs: at, path: join(dir, `${id}.jpg`), origin });
-    }
-    expect(sweep(db, { photoDays: 7, datasetDays: 7, nowMs: now })).toEqual({ photos: 1, dataset: 1 });
-    expect(existsSync(join(dir, "old.jpg"))).toBe(false);
-    expect(existsSync(join(dir, "new.jpg"))).toBe(true);
-  });
-});
-```
-
-- [ ] **Step 2: 실패 확인** — `H npx vitest run tests/no-frames-on-disk.test.ts tests/history-retention.test.ts` / Expected: FAIL
+- [ ] **Step 2: 실패 확인** — `H npx vitest run tests/no-frames-on-disk.test.ts tests/history-retention.test.ts` / Expected: FAIL(첫 시험은 사진 파일 검사는 통과하고 `listPhotos` 없음에서, 둘째는 dataset 0장에서 실패)
 - [ ] **Step 3: 구현**
 
 ```ts
-// src/history/retention.ts
-// 보관 기간: 폰 사진 찍기 사진(PHOTO_RETENTION_DAYS, 기본 7)과 시험 자료(DATASET_RETENTION_DAYS, 기본 7)가 지나면 파일과 표 줄을 지운다.
+// 사진 보관: 분석한 엔진 프레임은 디스크에 쓰지 않는다. 디스크에는 폰 사진 찍기 사진과 DATASET_COLLECT=1일 때의 시험 자료만 쓰고
+// photos 표에 적는다. 보관 기간(PHOTO_RETENTION_DAYS, DATASET_RETENTION_DAYS, 기본 7일)이 지나면 파일(같은 이름의 .json 포함)과 표 줄을 지운다.
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { EngineFrame } from "../observe/ring.js";
 import type { HistoryDb } from "./db.js";
 
+const DAY_MS = 86_400_000;
+
+const days = (env: Record<string, string | undefined>, key: string) => {
+  const raw = env[key]?.trim();
+  if (!raw) return 7;
+  const v = Number(raw);
+  if (!Number.isFinite(v) || v <= 0) throw new Error(`${key}=${raw}: 0보다 큰 숫자(일)여야 합니다`);
+  return v;
+};
+
+/** 보관 기간(일). 틀린 값이면 시작을 막는다. */
+export function loadRetention(env: Record<string, string | undefined>): { photoDays: number; datasetDays: number } {
+  return { photoDays: days(env, "PHOTO_RETENTION_DAYS"), datasetDays: days(env, "DATASET_RETENTION_DAYS") };
+}
+
 export function sweep(db: HistoryDb, o: { photoDays: number; datasetDays: number; nowMs: number }): { photos: number; dataset: number } {
   const out = { photos: 0, dataset: 0 };
   for (const p of db.listPhotos()) {
-    const days = p.origin === "dataset" ? o.datasetDays : o.photoDays;
-    if (o.nowMs - p.atMs < days * 86_400_000) continue;
+    const keep = (p.origin === "dataset" ? o.datasetDays : o.photoDays) * DAY_MS;
+    if (o.nowMs - p.atMs < keep) continue;
     rmSync(p.path, { force: true });
-    rmSync(p.path.replace(/\.jpg$/, ".json"), { force: true });
+    rmSync(p.path.replace(/\.jpe?g$/i, ".json"), { force: true });
     db.removePhoto(p.id);
-    if (p.origin === "dataset") out.dataset++; else out.photos++;
+    if (p.origin === "dataset") out.dataset++;
+    else out.photos++;
   }
   return out;
 }
 
-/** DATASET_COLLECT=1일 때만 쓰는 시험 자료 저장. */
+/** DATASET_COLLECT=1일 때만 쓰는 시험 자료 저장: dir/<날짜>/<프레임>-<촬영 ms>.jpg와 같은 이름의 .json(크기·자세·카메라). */
 export function datasetWriter(dir: string, db: HistoryDb): (frame: EngineFrame) => void {
   return (frame) => {
     const day = db.dayOf(frame.capturedAtMs);
+    const name = `${frame.id}-${frame.capturedAtMs}`;
     mkdirSync(join(dir, day), { recursive: true });
-    const path = join(dir, day, `${frame.id}-${frame.capturedAtMs}.jpg`);
+    const path = join(dir, day, `${name}.jpg`);
     writeFileSync(path, frame.jpeg);
-    db.addPhoto({ id: `${day}/${frame.id}-${frame.capturedAtMs}`, atMs: frame.capturedAtMs, path, origin: "dataset" });
+    writeFileSync(join(dir, day, `${name}.json`), JSON.stringify({
+      id: frame.id, captured_at_ms: frame.capturedAtMs, latest_at_ms: frame.latestAtMs, sha256: frame.sha256, width: frame.width, height: frame.height, eye: frame.eye, view: frame.view,
+    }, null, 2));
+    db.addPhoto({ id: `${day}/${name}`, atMs: frame.capturedAtMs, path, origin: "dataset" });
   };
 }
 ```
-`db.ts`: `addPhoto({id, atMs, path, origin})`, `listPhotos()`, `removePhoto(id)`(`photos` 표). `feed.ts` `savePhoto`: `opts.onSaved?.({ id, atMs, path })` 콜백을 더해 `home.ts`가 `db.addPhoto(..., origin: "photo")`와 기록(`photo`)을 한다. `pipeline.ts`: 생성 옵션 `dataset?: (f: EngineFrame) => void`가 있으면 고리에 넣은 프레임마다 부른다. `createPipeline`은 `env.DATASET_COLLECT === "1"`일 때만 `datasetWriter(join(runtimeDir, "dataset"), db)`를 넘긴다. `start.ts`: 시작 때와 1시간마다 `sweep(db, { photoDays: Number(env.PHOTO_RETENTION_DAYS) || 7, datasetDays: Number(env.DATASET_RETENTION_DAYS) || 7, nowMs: Date.now() })`. `.env.example`: `PHOTO_RETENTION_DAYS=`, `DATASET_COLLECT=`(1이면 엔진 프레임을 시험 자료로 저장), `DATASET_RETENTION_DAYS=`.
+`db.ts`: `addPhoto`(`INSERT OR REPLACE INTO photos`), `listPhotos()`(시각 순), `removePhoto(id)`. `feed.ts`: `EyeFeedOptions.onSaved?.({ id, atMs, path })`를 저장 뒤에 부른다. `home.ts`: `onSaved`가 `history.db.addPhoto({ ...p, origin: "photo" })`와 기록 `photo`(「사진 찍기 사진 저장」, subject 사진 id)를 한다. `pipeline.ts`: 옵션 `dataset?: (f: EngineFrame) => void`가 있으면 고리에 넣은 프레임마다 부르고(실패는 세기만 한다, status `dataset: { saved, failed }`), 켜져 있으면 시작 로그에 경고를 남긴다. `home.ts`는 `env.DATASET_COLLECT === "1"`일 때만 `datasetWriter(join(runtimeDir, "dataset"), history.db)`를 넘긴다. `start.ts`: `loadRetention(env)`(DB를 열기 전), 시작 때와 1시간마다 `sweep(db, { ...retention, nowMs: Date.now() })`, 지운 것이 있으면 로그, 닫을 때 타이머를 멈춘다. `.env.example`: `PHOTO_RETENTION_DAYS=`, `DATASET_COLLECT=`(1이면 엔진 프레임을 시험 자료로 저장), `DATASET_RETENTION_DAYS=`. `docs/reference.md`: 환경 변수 표, `/api/brain` `dataset`, 「기록과 반성」 사진 보관.
 
-- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/no-frames-on-disk.test.ts tests/history-retention.test.ts tests/phone-feed.test.ts tests/self-contained.test.ts` / Expected: PASS
+- [ ] **Step 4: 통과 확인** — `H npx vitest run tests/no-frames-on-disk.test.ts tests/history-retention.test.ts tests/phone-feed.test.ts tests/observe-pipeline.test.ts tests/observe-start.test.ts tests/self-contained.test.ts tests/lint-ui-copy.test.ts`, `H npx tsc --noEmit` / Expected: PASS
 - [ ] **Step 5: 커밋**
 
 ```bash
-git add src/history/retention.ts src/history/db.ts src/phone/feed.ts src/observe/pipeline.ts src/server/home.ts src/server/start.ts .env.example tests/no-frames-on-disk.test.ts tests/history-retention.test.ts
+git add src/history/retention.ts src/history/db.ts src/history/labels.ts src/phone/feed.ts src/observe/pipeline.ts src/server/home.ts src/server/start.ts .env.example docs/reference.md tests/no-frames-on-disk.test.ts tests/history-retention.test.ts docs/superpowers/plans/2026-11-07-noonchi-architecture.md
 git commit -m "feat: keep analyzed frames off disk and delete saved photos and opt-in dataset frames after their retention days"
 ```
 
