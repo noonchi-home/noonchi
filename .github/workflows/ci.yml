@@ -52,6 +52,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - run: pip install -e "services/pam[test]"
+      - run: pip install --require-hashes -r services/pam/requirements-test.lock
       - run: pytest services/pam -q
       - run: docker build -t noonchi-pam:ci services/pam

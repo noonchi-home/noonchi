@@ -388,10 +388,11 @@ tailscale serve --bg 8210   # 이미 켜져 있으면 생략. 폰: https://<이 
 
 ```bash
 py -3.13 -m venv services/pam/.venv                                   # 한 번만
-services/pam/.venv/Scripts/python.exe -m pip install -e "services/pam[test]"
+services/pam/.venv/Scripts/python.exe -m pip install --require-hashes -r services/pam/requirements-test.lock
 cd services/pam && .venv/Scripts/python.exe -m uvicorn noonchi_pam.app:create_app --factory --port 8300
 ```
 
+- 의존성은 판과 sha256을 고정한 `requirements.lock`(이미지)·`requirements-test.lock`(시험)으로 깐다. `pyproject.toml`의 판을 바꾸면 두 파일 머리의 `uv pip compile` 명령으로 다시 만든다.
 - 직접 띄우면 셸 환경 변수만 읽는다(`.env`는 compose가 넘긴다). mock은 `OPENROUTER_API_KEY`가 있어야 판단·반성이 된다.
 - 가짜 서버로 띄우기: `INFERENCE_MODE=live PAM_LLM_BASE_URL=http://127.0.0.1:8500/v1`(가짜 서버를 먼저 띄운다).
 - 답: 계약에 맞지 않으면 400, 문맥 길이를 넘으면 413, PAM LLM 오류·잘린 답은 502.

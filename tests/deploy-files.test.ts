@@ -62,10 +62,29 @@ describe("배포 파일", () => {
     expect(fake.command.join(" ")).toContain("scripts/fake-openai.ts --port 8500 --host 0.0.0.0");
   });
 
-  it("PAM 이미지: 저장소 안 services/pam만 쓰고 pyproject와 같은 판의 의존성을 깐다", () => {
+  it("PAM 이미지: 저장소 안 services/pam만 쓰고 해시를 고정한 잠금 파일로 pyproject와 같은 판의 의존성을 깐다", () => {
     const d = read("services/pam/Dockerfile");
     expect(d).toMatch(/^FROM python:3\.13\.\d+-slim-bookworm/m);
-    for (const dep of /dependencies = \[([^\]]*)\]/.exec(read("services/pam/pyproject.toml"))![1]!.match(/"[^"]+"/g)!) expect(d).toContain(dep.slice(1, -1));
+    expect(d).toContain("COPY requirements.lock ./");
+    expect(d).toContain("pip install --no-cache-dir --require-hashes -r requirements.lock");
+    const pyproject = read("services/pam/pyproject.toml");
+    const pins = (re: RegExp) => re.exec(pyproject)![1]!.match(/"[^"]+"/g)!.map((x) => x.slice(1, -1).toLowerCase());
+    const runtime = pins(/dependencies = \[([^\]]*)\]/);
+    const test = pins(/test = \[([^\]]*)\]/);
+    for (const [file, need] of [["services/pam/requirements.lock", runtime], ["services/pam/requirements-test.lock", [...runtime, ...test]]] as const) {
+      // 판을 ==로 고정한 줄마다 sha256 해시 줄이 따른다
+      const reqs: { pin: string; hashes: number }[] = [];
+      for (const line of read(file).split(/\r?\n/)) {
+        if (/^[A-Za-z0-9]/.test(line)) reqs.push({ pin: line.split(/[ ;]/)[0]!.toLowerCase(), hashes: 0 });
+        else if (/^\s+--hash=sha256:[0-9a-f]{64}/.test(line) && reqs.length) reqs.at(-1)!.hashes++;
+      }
+      expect(reqs.length, file).toBeGreaterThan(need.length);
+      for (const r of reqs) {
+        expect(r.pin, file).toMatch(/^[a-z0-9._-]+==\S+$/);
+        expect(r.hashes, `${file} ${r.pin}`).toBeGreaterThan(0);
+      }
+      for (const dep of need) expect(reqs.map((r) => r.pin), file).toContain(dep);
+    }
     for (const x of ["COPY pam pam", "COPY noonchi_pam noonchi_pam", "COPY prompts prompts", "COPY config config", "COPY scenarios scenarios", "USER pam", "EXPOSE 8300"]) expect(d).toContain(x);
     expect(d).toContain('CMD ["uvicorn", "noonchi_pam.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8300"]');
     const i = read("services/pam/.dockerignore").split(/\r?\n/);
@@ -91,7 +110,7 @@ describe("배포 파일", () => {
     expect(ci).not.toMatch(/docker push|push: true/);
     const jobs = (parse(ci) as { jobs: Record<string, { env?: Record<string, string> }> }).jobs;
     for (const [name, j] of Object.entries(jobs)) expect(j.env?.ONNXRUNTIME_NODE_INSTALL, name).toBe("skip");
-    expect(ci).toContain('pip install -e "services/pam[test]"');
+    expect(ci).toContain("pip install --require-hashes -r services/pam/requirements-test.lock");
     expect(ci).toContain("pytest services/pam");
     expect(ci).toContain("docker build -t noonchi-pam:ci services/pam");
   });
