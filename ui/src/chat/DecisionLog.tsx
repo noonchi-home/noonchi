@@ -43,6 +43,8 @@ const PENDING: Record<PendingCard["status"], { status: AgentCallStatus; label: s
 };
 /** 저절로 접히고 펼칠 때(사용자가 누르지 않았을 때)는 움직임 없이 바뀐다. */
 const STILL = "data-[state=closed]:animate-none data-[state=open]:animate-none";
+/** 움직임 줄이기 설정이면 펼침도 움직이지 않는다. */
+const CALM = "motion-reduce:animate-none";
 const WHO: Record<Turn["source"], { icon: LucideIcon; text: string }> = {
   phone: { icon: Smartphone, text: "거주자 · 폰" }, brain: { icon: Bot, text: "클로이드 · 관찰과 판단" }, other: { icon: Monitor, text: "다른 화면" },
 };
@@ -93,7 +95,7 @@ function DecisionRow({ text, detail }: { text: string; detail: DecisionDetail })
   return (
     <ChainOfThought defaultOpen={false} autoCloseOnAllComplete={false} disableShimmer>
       <ChainOfThoughtTrigger label={text} />
-      <ChainOfThoughtContent role="region" aria-label={DECISION_DETAIL.region} className="flex flex-col gap-3">
+      <ChainOfThoughtContent role="region" aria-label={DECISION_DETAIL.region} className={cn("flex flex-col gap-3", CALM)}>
         <Section label={DECISION_DETAIL.text} body={<pre className="m-0 max-h-48 overflow-auto whitespace-pre-wrap break-words">{detail.text_sent}</pre>} />
         <Section label={DECISION_DETAIL.world} body={(
           <div className="flex flex-col gap-2">
@@ -132,11 +134,11 @@ function Thinking({ turn, open, auto, onOpen }: { turn: Turn; open: boolean; aut
   return (
     <ChainOfThought open={open} onOpenChange={onOpen} disableShimmer className="mb-4">
       <ChainOfThoughtTrigger label={label} icon={<Brain className="size-4 shrink-0" aria-hidden="true" />} />
-      <ChainOfThoughtContent className={auto ? STILL : undefined}>
+      <ChainOfThoughtContent className={cn(auto && STILL, CALM)}>
         {thoughts.map((t) => (
           <ChainOfThoughtStep key={t.key} status={t.status} hasContent autoCloseOnComplete={false}>
             <ChainOfThoughtStepTitle icon={t.icon}>{t.title}</ChainOfThoughtStepTitle>
-            <ChainOfThoughtStepContent>
+            <ChainOfThoughtStepContent className={CALM}>
               {t.detail ? <DecisionRow text={t.text} detail={t.detail} /> : t.text}
             </ChainOfThoughtStepContent>
           </ChainOfThoughtStep>
