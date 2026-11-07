@@ -229,6 +229,9 @@ export const CUP_FSM_MEMORY: FsmMemory = {
 /** PAM 판단 관찰 텍스트 상한(글자 수). PAM 서비스 pam-predict/2와 같다. */
 export const MAX_OBSERVATION_TEXT = 20_000;
 
+/** PAM 반성 칸 상한(글자 수). PAM 서비스 pam-reflect/2와 같다. UTF-8 바이트로 이 안에 맞추면 글자 수도 넘지 않는다. */
+export const MAX_REFLECT_TEXT = { observation: 100_000, action: 50_000, feedback: 8_000 } as const;
+
 /** 보내기 전 검사: 관찰 텍스트, 시간대 있는 마지막 관찰 시각, 작업 목록, 기억 모양. */
 export function checkInput(input: Pick<DecisionInput, "text" | "finalTime" | "memory" | "memoryKind" | "tasks">): void {
   if (typeof input.text !== "string" || !input.text.trim()) throw new ContractError("관찰 텍스트가 비어 있습니다");

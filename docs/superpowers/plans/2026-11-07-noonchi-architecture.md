@@ -8,7 +8,7 @@
 
 **Tech Stack:** Node 22.15 + TypeScript(tsx), zod, ws, vitest, onnxruntime-node(YOLOX-Tiny), `node:sqlite`, React(`ui/`), Python 3.11+ FastAPI·pydantic·httpx·pytest, Docker Compose(`gpu` 프로필, vLLM), GitHub Actions, Tailscale.
 
-**Spec:** docs 저장소 `01_Product/구현명세서 SSOT.md` 1.0(브랜치 `ssot/noonchi-architecture`, 커밋 53ae1ce) 3·4·6·11·12·13·15·17·20.6절, 이 저장소 `CLAUDE.md` 규칙 표. 판단 엔진·장면 그래프·시뮬레이터·시점 계획기·세션·시계·하네스는 SSOT 19절(다음 단계) 범위다.
+**Spec:** docs 저장소 `01_Product/구현명세서 SSOT.md` 1.1(브랜치 `ssot/noonchi-architecture`, 커밋 a53080c) 3·4·6·11·12·13·15·17·20.6절, 이 저장소 `CLAUDE.md` 규칙 표. 판단 엔진·장면 그래프·시뮬레이터·시점 계획기·세션·시계·하네스는 SSOT 19절(다음 단계) 범위다.
 
 ## Global Constraints
 
@@ -4985,6 +4985,7 @@ git commit -m "feat: record device changes, detections, VLM observations, World 
 // 하루 요약(출처: docs/provenance.md): 관찰 텍스트(등장·사라짐, World State 변화, 가전 변화, 하루 분석 수)와
 // 행동 요약(판단·실행·사용자 말)을 시각 순으로. 프레임마다 쓰는 vlm·yolo 줄은 세기만 한다. 이어진 같은 줄은 묶는다.
 // maxBytes(UTF-8)를 넘으면 오래된 줄부터 빼고 첫 줄에 「앞선 기록 N줄 생략」을 둔다. 관찰 텍스트가 70%, 행동 요약이 30%를 쓰고, 한쪽이 덜 쓰면 남는 몫을 다른 쪽이 쓴다.
+// caps는 칸마다의 상한(바이트, PAM 반성 칸 상한)이다.
 import type { DaySummary, HistoryKind } from "../contract/history.js";
 import { collapseLines } from "../world/text.js";
 import type { HistoryDb } from "./db.js";
@@ -4997,9 +4998,9 @@ const bytes = (s: string) => Buffer.byteLength(s, "utf8");
 const joinedBytes = (lines: string[]) => lines.reduce((a, l) => a + bytes(l) + 1, 0);
 
 /** 다 들어가면 그대로. 아니면 최근 줄부터 budget 바이트까지 담고 뺀 줄 수를 첫 줄에 적는다. tail은 늘 끝에 둔다. */
-function fit(lines: string[], budget: number | undefined, tail: string[] = []): { text: string; dropped: number } {
+function fit(lines: string[], budget: number, tail: string[] = []): { text: string; dropped: number } {
   const all = [...lines, ...tail];
-  if (budget === undefined || joinedBytes(all) - 1 <= budget) return { text: all.join("\n"), dropped: 0 };
+  if (joinedBytes(all) - 1 <= budget) return { text: all.join("\n"), dropped: 0 };
   let used = joinedBytes(tail) + bytes(SUMMARY_TEXT.dropped(lines.length)) + 1;
   let i = lines.length;
   while (i > 0 && used + bytes(lines[i - 1]!) + 1 <= budget) used += bytes(lines[--i]!) + 1;
@@ -5013,7 +5014,7 @@ export function isDay(day: string): boolean {
   return !Number.isNaN(ms) && new Date(ms).toISOString().slice(0, 10) === day;
 }
 
-export function daySummary(db: HistoryDb, day: string, o: { maxBytes?: number } = {}): DaySummary {
+export function daySummary(db: HistoryDb, day: string, o: { maxBytes?: number; caps?: { observation: number; action: number } } = {}): DaySummary {
   const lines = (kinds: HistoryKind[]) =>
     collapseLines(db.list({ day, kinds, limit: 10_000_000 }).map((r) => ({ atMs: r.at_ms, text: `${PREFIX[r.kind] ?? ""}${r.text}` })), db.offsetMinutes);
   const observed = lines(OBSERVED);
@@ -5022,13 +5023,11 @@ export function daySummary(db: HistoryDb, day: string, o: { maxBytes?: number } 
   // 프레임마다 쓰는 vlm·yolo 줄은 넣지 않고 센다. 대기열 초과 yolo 줄은 VLM도 분석하지 않았다
   const n = db.analysisTally(day);
   const tail = [SUMMARY_TEXT.tally(n.vlm, n.vlmMissing, n.yoloMissing)];
-  if (o.maxBytes === undefined) {
-    const obs = fit(observed, undefined, tail);
-    return { day, observation_text: obs.text, action_summary: acted.join("\n"), counts, dropped: { observation: 0, action: 0 } };
-  }
+  const total = o.maxBytes ?? Number.POSITIVE_INFINITY;
+  const caps = o.caps ?? { observation: Number.POSITIVE_INFINITY, action: Number.POSITIVE_INFINITY };
   const actFull = Math.max(0, joinedBytes(acted) - 1);
-  const obs = fit(observed, Math.max(Math.floor(o.maxBytes * 0.7), o.maxBytes - actFull), tail);
-  const act = fit(acted, o.maxBytes - bytes(obs.text));
+  const obs = fit(observed, Math.min(caps.observation, Math.max(Math.floor(total * 0.7), total - actFull)), tail);
+  const act = fit(acted, Math.min(caps.action, total - bytes(obs.text)));
   return { day, observation_text: obs.text, action_summary: act.text, counts, dropped: { observation: obs.dropped, action: act.dropped } };
 }
 ```
@@ -5063,6 +5062,8 @@ HistoryDb.pinnedMemory(day: string): number | null;  HistoryDb.pinMemory(day: st
 export function memoryForDay(db: HistoryDb, day: string): { memory: PamMemory; kind: "list" | "fsm"; version: number };   // 고정된 판본(validateMemory로 검사), 없으면 정해서 고정. 판본이 없으면 CUP_FSM_MEMORY를 seed로 저장
 export type ReflectResult = { ok: true; version: number; appliesDay: string } | { ok: false; error: string; empty?: true };
 export async function runReflection(db: HistoryDb, pam: PamClient, day: string, o?: { now?: () => number; emit?: (l: BrainLog) => void }): Promise<ReflectResult>;
+// src/brain/decision.ts: MAX_REFLECT_TEXT = { observation: 100_000, action: 50_000, feedback: 8_000 } (PAM 서비스 pam-reflect/2 칸 상한)
+// daySummary(db, day, { maxBytes, caps: { observation, action } }): 칸마다 바이트 상한
 export function loadReflectAt(env): string | null;   // REFLECT_AT: 비우면 "23:30", off면 null, HH:MM이 아니면 시작을 막는다
 export function scheduleReflection(o: { at: string /* "23:30" */; offsetMinutes: number; run: (day: string) => Promise<unknown>; now?: () => number }): { stop(): void };
 ```
@@ -5074,6 +5075,7 @@ export function scheduleReflection(o: { at: string /* "23:30" */; offsetMinutes:
 - 반성: `pam-reflect/2`(`day`·`memory_kind`·`memory`·`feedback`)로 보내고 관찰 텍스트에 `08:00:00 사람 보임`, 행동 요약은 `08:01:00 클로이드 판단: 컵 치우기\n08:02:00 사용자: 다 마신 뒤에만 치워 줘`. 결과 `{ ok: true, version: 2, appliesDay: "2026-11-08" }`, 11-07은 1판·11-08은 2판, 기록 DB `reflection` 줄 「반성 완료: 기억 2판, 2026-11-08부터」, emit `{type:"reflection", …}` 하나.
 - 11-08 판단이 먼저 판본을 정했으면 11-09부터.
 - 3000줄을 한도(관찰+행동+기억 JSON ≤ 30,000) 안으로 줄이고 첫 줄 「앞선 기록 N줄 생략」, 행동이 없으면 「행동 없음」.
+- 입력 한도가 커도 `pam-reflect/2` 칸 상한(관찰 100,000·행동 50,000·피드백 8,000자, `MAX_REFLECT_TEXT`)을 바이트로 넘지 않고, 피드백은 최근 줄부터 담는다.
 - 그날 기록이 없으면 PAM을 부르지 않고 `{ ok: false, empty: true, error: "그날 기록 없음" }`, 기록 「반성 실패: 그날 기록 없음」.
 - PAM에 닿지 않으면 「반성 실패: PAM 연결 실패…」, 기억 그대로.
 - `REFLECT_AT`: 비우면 23:30, `07:05`, `off`면 null, `7:5`·`24:00`·`23:60`·`밤`은 오류.
@@ -5089,8 +5091,9 @@ export function scheduleReflection(o: { at: string /* "23:30" */; offsetMinutes:
 // 하루 끝 반성: 그날 관찰 텍스트 + 행동 요약 + 사용자 피드백 → pam-reflect/2 → 새 기억 판본.
 // 새 판본은 다음 날부터 쓴다. 그날 판단은 그날 처음 정한 판본만 쓴다(논문 memory_lifecycle: fixed_during_day, following_day).
 // 다음 날 판단이 이미 판본을 정했으면 그다음 날부터 쓴다. 보내기 전에 PAM /health의 입력 한도(reflect_input_bytes)에서
-// 기억 JSON·피드백 크기를 빼고 그 안으로 하루 요약을 줄인다. 결과는 기록 DB(reflection)와 판단 기록(brain)에 남긴다.
-import { CUP_FSM_MEMORY, validateMemory, type PamMemory } from "../brain/decision.js";
+// 기억 JSON·피드백 크기를 빼고 그 안으로 하루 요약을 줄인다. 칸마다 pam-reflect/2 상한도 넘지 않게 하고, 피드백은 최근 것부터 담는다.
+// 결과는 기록 DB(reflection)와 판단 기록(brain)에 남긴다.
+import { CUP_FSM_MEMORY, MAX_REFLECT_TEXT, validateMemory, type PamMemory } from "../brain/decision.js";
 import type { PamClient } from "../brain/pam.js";
 import type { BrainLog } from "../contract/events.js";
 import type { HistoryDb } from "./db.js";
@@ -5099,6 +5102,19 @@ import { daySummary } from "./summary.js";
 
 const nextDay = (day: string) => new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
 const bytes = (s: string) => Buffer.byteLength(s, "utf8");
+
+/** 최근 줄부터 max 바이트까지 담는다(시각 순으로 돌려줌). */
+function latestWithin(lines: string[], max: number): string[] {
+  const out: string[] = [];
+  let used = 0;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const b = bytes(lines[i]!) + (out.length ? 1 : 0);
+    if (used + b > max) break;
+    out.unshift(lines[i]!);
+    used += b;
+  }
+  return out;
+}
 /** 그날 기록이 있다고 보는 종류. */
 const DAY_KINDS = ["detection", "world", "device", "vlm", "yolo", "decision", "execution", "feedback"] as const;
 
@@ -5131,11 +5147,11 @@ export async function runReflection(db: HistoryDb, pam: PamClient, day: string, 
   }
   try {
     const cur = memoryForDay(db, day);
-    const feedback = db.list({ day, kinds: ["feedback"] }).map((r) => r.text).join("\n") || null;
+    const feedback = latestWithin(db.list({ day, kinds: ["feedback"] }).map((r) => r.text), MAX_REFLECT_TEXT.feedback).join("\n") || null;
     const limits = await pam.limits();
     const maxBytes = limits.reflect_input_bytes - bytes(JSON.stringify(cur.memory, null, 2)) - bytes(feedback ?? "");
     if (maxBytes <= 0) throw new Error(REFLECT_TEXT.tooBig);
-    const summary = daySummary(db, day, { maxBytes });
+    const summary = daySummary(db, day, { maxBytes, caps: MAX_REFLECT_TEXT });
     const memory = await pam.reflect({
       day, memory_kind: cur.kind, memory: cur.memory, observation_text: summary.observation_text || REFLECT_TEXT.noObservation,
       action_summary: summary.action_summary || REFLECT_TEXT.noAction, feedback,

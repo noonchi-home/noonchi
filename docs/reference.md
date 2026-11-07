@@ -363,7 +363,7 @@ tailscale serve --bg 8210   # 이미 켜져 있으면 생략. 폰: https://<이 
   - 크기 한도를 주면 관찰 텍스트 70%·행동 요약 30%로 나누고(한쪽이 덜 쓰면 다른 쪽이 씀), 넘으면 오래된 줄부터 빼고 첫 줄에 「앞선 기록 N줄 생략」을 둔다.
 - **기억 판본(`memories` 표):** 판단은 그날 처음 정한 판본을 하루 내내 쓴다(`meta` `memory_day:<날짜>`). 판본이 없으면 컵 FSM 기억을 1판으로 저장한다.
 - **반성:** 매일 `REFLECT_AT`(기본 23:30)이나 `POST /api/reflection/run`으로 돈다. 한 번에 하나만 돈다.
-  - PAM 서비스 `GET /health`의 `reflect_input_bytes`에서 기억 JSON·피드백 크기를 빼고, 그 안으로 하루 요약을 줄여 `pam-reflect/2`로 보낸다.
+  - PAM 서비스 `GET /health`의 `reflect_input_bytes`에서 기억 JSON·피드백 크기를 빼고, 그 안으로 하루 요약을 줄여 `pam-reflect/2`로 보낸다. 칸 상한(관찰 100,000·행동 50,000·피드백 8,000자)도 넘지 않게 하고, 피드백은 최근 것부터 담는다.
   - 새 기억은 다음 날부터 쓴다. 다음 날 판단이 이미 다른 판본으로 시작했으면 그다음 날부터다.
   - 결과는 기록 DB(`reflection`)와 대시보드 판단 기록(`{type:"brain", event:{type:"reflection"}}`)에 남는다. 그날 기록이 없으면 PAM을 부르지 않고 실패로 남긴다.
 - **사진 보관(`photos` 표):** 디스크에는 폰 사진 찍기 사진(`photos/`, 기록 `photo`)과 `DATASET_COLLECT=1`일 때의 시험 자료(`dataset/`)만 쓴다. 시작 때와 1시간마다 보관 기간(`PHOTO_RETENTION_DAYS`·`DATASET_RETENTION_DAYS`, 기본 7일)이 지난 파일과 같은 이름의 `.json`을 지운다.

@@ -30,12 +30,12 @@ afterEach(async () => {
 
 const got: Record<string, any>[] = [];
 const LIMITS = { max_model_len: 32768, predict_input_bytes: 60_000, reflect_input_bytes: 30_000 };
-async function startPam(memory: unknown): Promise<string> {
+async function startPam(memory: unknown, limits: Record<string, number> = LIMITS): Promise<string> {
   srv = createServer(async (req, res) => {
     let raw = "";
     for await (const c of req) raw += c;
     res.writeHead(200, { "content-type": "application/json" });
-    if (req.method === "GET" && req.url === "/health") return res.end(JSON.stringify({ ok: true, llm: null, limits: LIMITS }));
+    if (req.method === "GET" && req.url === "/health") return res.end(JSON.stringify({ ok: true, llm: null, limits }));
     got.push(JSON.parse(raw) as Record<string, any>);
     res.end(JSON.stringify({ status: "valid", raw_response: JSON.stringify(memory), memory, errors: [] }));
   });
@@ -100,6 +100,23 @@ describe("반성", () => {
     expect(size).toBeLessThanOrEqual(LIMITS.reflect_input_bytes);
     expect(sent.observation_text.split("\n")[0]).toMatch(/^앞선 기록 \d+줄 생략$/);
     expect(sent.action_summary).toBe("행동 없음");
+  });
+
+  it("입력 한도가 커도 pam-reflect/2 칸 상한(관찰 100,000·행동 50,000·피드백 8,000자)을 넘지 않는다", async () => {
+    const db = HistoryDb.open(":memory:");
+    const at = (i: number) => Date.UTC(2026, 10, 7, 0, 0, 0, i * 10);
+    for (let i = 0; i < 4000; i++) db.add("world", at(i), `컵 cup_${i % 5} 상태 바뀜 번호 ${i}`);
+    for (let i = 0; i < 2000; i++) db.add("decision", at(i), `컵 치우기 판단 번호 ${i}`);
+    for (let i = 0; i < 400; i++) db.add("feedback", at(i), `피드백 번호 ${i} 다 마신 뒤에 치워 줘`);
+    const r = await runReflection(db, new PamClient({ url: await startPam(CUP_FSM_MEMORY, { ...LIMITS, reflect_input_bytes: 10_000_000 }) }), "2026-11-07");
+    expect(r.ok).toBe(true);
+    const sent = got.at(-1)!;
+    expect(Buffer.byteLength(sent.observation_text)).toBeLessThanOrEqual(100_000);
+    expect(Buffer.byteLength(sent.action_summary)).toBeLessThanOrEqual(50_000);
+    expect(Buffer.byteLength(sent.feedback)).toBeLessThanOrEqual(8_000);
+    expect(sent.observation_text.split("\n")[0]).toMatch(/^앞선 기록 \d+줄 생략$/);
+    expect(sent.action_summary.split("\n")[0]).toMatch(/^앞선 기록 \d+줄 생략$/);
+    expect(sent.feedback.split("\n").at(-1)).toBe("피드백 번호 399 다 마신 뒤에 치워 줘");
   });
 
   it("그날 기록이 없으면 PAM을 부르지 않고 실패를 기록한다", async () => {

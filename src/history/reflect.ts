@@ -1,8 +1,9 @@
 // 하루 끝 반성: 그날 관찰 텍스트 + 행동 요약 + 사용자 피드백 → pam-reflect/2 → 새 기억 판본.
 // 새 판본은 다음 날부터 쓴다. 그날 판단은 그날 처음 정한 판본만 쓴다(논문 memory_lifecycle: fixed_during_day, following_day).
 // 다음 날 판단이 이미 판본을 정했으면 그다음 날부터 쓴다. 보내기 전에 PAM /health의 입력 한도(reflect_input_bytes)에서
-// 기억 JSON·피드백 크기를 빼고 그 안으로 하루 요약을 줄인다. 결과는 기록 DB(reflection)와 판단 기록(brain)에 남긴다.
-import { CUP_FSM_MEMORY, validateMemory, type PamMemory } from "../brain/decision.js";
+// 기억 JSON·피드백 크기를 빼고 그 안으로 하루 요약을 줄인다. 칸마다 pam-reflect/2 상한도 넘지 않게 하고, 피드백은 최근 것부터 담는다.
+// 결과는 기록 DB(reflection)와 판단 기록(brain)에 남긴다.
+import { CUP_FSM_MEMORY, MAX_REFLECT_TEXT, validateMemory, type PamMemory } from "../brain/decision.js";
 import type { PamClient } from "../brain/pam.js";
 import type { BrainLog } from "../contract/events.js";
 import type { HistoryDb } from "./db.js";
@@ -11,6 +12,19 @@ import { daySummary } from "./summary.js";
 
 const nextDay = (day: string) => new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
 const bytes = (s: string) => Buffer.byteLength(s, "utf8");
+
+/** 최근 줄부터 max 바이트까지 담는다(시각 순으로 돌려줌). */
+function latestWithin(lines: string[], max: number): string[] {
+  const out: string[] = [];
+  let used = 0;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const b = bytes(lines[i]!) + (out.length ? 1 : 0);
+    if (used + b > max) break;
+    out.unshift(lines[i]!);
+    used += b;
+  }
+  return out;
+}
 /** 그날 기록이 있다고 보는 종류. */
 const DAY_KINDS = ["detection", "world", "device", "vlm", "yolo", "decision", "execution", "feedback"] as const;
 
@@ -43,11 +57,11 @@ export async function runReflection(db: HistoryDb, pam: PamClient, day: string, 
   }
   try {
     const cur = memoryForDay(db, day);
-    const feedback = db.list({ day, kinds: ["feedback"] }).map((r) => r.text).join("\n") || null;
+    const feedback = latestWithin(db.list({ day, kinds: ["feedback"] }).map((r) => r.text), MAX_REFLECT_TEXT.feedback).join("\n") || null;
     const limits = await pam.limits();
     const maxBytes = limits.reflect_input_bytes - bytes(JSON.stringify(cur.memory, null, 2)) - bytes(feedback ?? "");
     if (maxBytes <= 0) throw new Error(REFLECT_TEXT.tooBig);
-    const summary = daySummary(db, day, { maxBytes });
+    const summary = daySummary(db, day, { maxBytes, caps: MAX_REFLECT_TEXT });
     const memory = await pam.reflect({
       day, memory_kind: cur.kind, memory: cur.memory, observation_text: summary.observation_text || REFLECT_TEXT.noObservation,
       action_summary: summary.action_summary || REFLECT_TEXT.noAction, feedback,
