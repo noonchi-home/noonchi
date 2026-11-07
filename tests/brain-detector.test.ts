@@ -67,6 +67,20 @@ describe("decodeYolox", () => {
     expect(dets.map((d) => [d.label, d.cls])).toEqual([["cup", 40]]);
   });
 
+  it("병(39)·그릇(45)도 찾고, 종류 순서는 사람·컵·병·그릇", () => {
+    const out = new Float32Array(ANCHORS * 85);
+    out.set([0, 0, 0, 0, 0.9], 0);
+    out[5 + 45] = 0.8; // bowl
+    out.set([0, 0, 0, 0, 0.9], 85);
+    out[85 + 5 + 39] = 0.7; // bottle
+    out.set([0, 0, 0, 0, 0.9], 2 * 85);
+    out[2 * 85 + 5 + 41] = 0.5; // cup
+    out.set([0, 0, 0, 0, 0.9], 3 * 85);
+    out[3 * 85 + 5 + 0] = 0.4; // person
+    const dets = decodeYolox(out, ANCHORS, S, 1, { minScore: 0.25 });
+    expect(dets.map((d) => [d.label, d.cls])).toEqual([["person", 0], ["cup", 41], ["bottle", 39], ["bowl", 45]]);
+  });
+
   it("출력 길이가 격자 수와 다르면 오류", () => {
     expect(() => decodeYolox(new Float32Array(10 * 85), 10, S, 1, { minScore: 0.25 })).toThrow(/격자/);
   });

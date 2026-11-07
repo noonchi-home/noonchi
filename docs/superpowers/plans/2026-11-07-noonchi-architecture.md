@@ -3141,7 +3141,7 @@ describe("등장·사라짐 확인", () => {
   });
 });
 ```
-`tests/brain-detector.test.ts`에 합성 격자로 bottle(39)·bowl(45) 상자가 나오는 시험을 더한다.
+`tests/brain-detector.test.ts`에 합성 격자로 bottle(39)·bowl(45) 상자가 나오고 결과 순서가 사람·컵·병·그릇인 시험을 더한다.
 
 - [ ] **Step 2: 실패 확인** — `H npx vitest run tests/world-confirm.test.ts tests/brain-detector.test.ts` / Expected: FAIL
 - [ ] **Step 3: 구현**
@@ -3175,15 +3175,17 @@ export class Confirmer {
   }
 }
 ```
-`detector.ts`: `LABELS = { 0: "person", 41: "cup", 40: "cup", 39: "bottle", 45: "bowl" }`, `decodeYolox`의 클래스 반복을 `[0, 41, 40, 39, 45]`로.
+`detector.ts`: `LABELS = { 0: "person", 41: "cup", 40: "cup", 39: "bottle", 45: "bowl" }`, `decodeYolox`의 클래스 반복을 `[0, 41, 40, 39, 45]`로, `nms` 결과 정렬은 `LABEL_ORDER`(person·cup·bottle·bowl) 순서로(종류 둘일 때의 `person ? -1 : 1` 비교를 바꾼다). 머리 주석은 「엔진 프레임마다 사람·컵·병·그릇의 종류·박스·신뢰도」로.
 
 `docs/provenance.md`(옮긴 동작의 출처. 한 저장소 시험이 보지 않는 문서라 옆 저장소 이름을 여기에만 쓴다):
 ```markdown
 # 옮긴 동작의 출처
 
+이 저장소로 옮겨 온 동작과 그 출처다. 코드 주석에는 옆 저장소 이름을 쓰지 않고 이 문서를 가리킨다.
+
 | 이 저장소 | 출처 | 옮긴 것 |
 |---|---|---|
-| `src/world/confirm.ts` | noonchi-server(신지훈) f8545a1 `noonchi/changes.py` | 사람 2장·물건 3장 연속 확인, 시야 밖은 세지 않음 |
+| `src/world/confirm.ts` | noonchi-server(신지훈) f8545a1 `noonchi/changes.py` | 사람 2장·물건 3장 연속일 때 등장·사라짐 인정 |
 ```
 Task 20·22·24가 줄을 더한다.
 
@@ -3191,7 +3193,7 @@ Task 20·22·24가 줄을 더한다.
 - [ ] **Step 5: 커밋**
 
 ```bash
-git add src/world/confirm.ts src/brain/detector.ts tests/world-confirm.test.ts tests/brain-detector.test.ts docs/provenance.md
+git add src/world/confirm.ts src/brain/detector.ts tests/world-confirm.test.ts tests/brain-detector.test.ts docs/provenance.md docs/superpowers/plans/2026-11-07-noonchi-architecture.md
 git commit -m "feat: detect bottles and bowls and confirm appear/disappear over 2 person frames or 3 object frames"
 ```
 
