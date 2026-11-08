@@ -56,10 +56,14 @@ export function planFor(fp: FloorPlan, d: DecisionRecord, world: WorldView, nowI
 }
 
 const squash = (t: string) => t.replace(/[\s.,!?~·]+/g, "");
+/** whole 답 앞에 붙어도 되는 말. */
+const LEAD = /^(응|어|네|예|자|이제)+/;
 
-/** 폰에서 말한 답 → 선택지. 버튼 글이나 그 선택지의 말(words)이 들어 있는 첫 선택지. 없으면 null. */
+/** 폰에서 말한 답 → 선택지. 버튼 글이나 그 선택지의 말(words)이 들어 있는 첫 선택지(whole이면 말 전체가 그 말일 때만). 없으면 null. */
 export function matchChoice(text: string, choices: readonly ActionChoice[]): ActionChoice | null {
   const said = squash(text);
   if (!said) return null;
-  return choices.find((c) => [c.label, ...c.words].some((w) => said.includes(squash(w)))) ?? null;
+  const core = said.replace(LEAD, "");
+  const hit = (c: ActionChoice, w: string) => (c.whole ? core === squash(w) || core === `${squash(w)}요` : said.includes(squash(w)));
+  return choices.find((c) => [c.label, ...c.words].some((w) => hit(c, w))) ?? null;
 }

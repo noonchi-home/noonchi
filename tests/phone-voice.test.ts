@@ -69,6 +69,10 @@ describe("말과 선택지 맞추기", () => {
     expect(matchChoice("치워 줘", ask)?.id).toBe("clear");
     expect(matchChoice("그냥 그대로 둬", ask)?.id).toBe("keep");
   });
+  it("「완료」「다 했어」「그만」은 짧은 말 전체일 때만 맞춘다(늘 듣기의 주변 말에 걸리지 않게)", () => {
+    for (const said of ["다 했어요", "응, 완료", "그만해요", "그만둬", "이제 그만!"]) expect(matchChoice(said, [STEP_DONE, STOP]), said).not.toBeNull();
+    for (const said of ["그만큼 좋아", "그만이야", "숙제 다 했어?", "완료 버튼 어디 있어", "다 했어 그럼 밥 먹자"]) expect(matchChoice(said, [STEP_DONE, STOP]), said).toBeNull();
+  });
   it("맞는 선택지가 없거나 빈 말이면 null", () => {
     expect(matchChoice("불 꺼 줘", step)).toBeNull();
     expect(matchChoice("  ", ask)).toBeNull();
