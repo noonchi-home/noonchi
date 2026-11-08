@@ -80,11 +80,20 @@ interface Session {
 
 const AFFIRMATIVE = /^(응|어|엉|네|넹|예|그래|좋아|확인|승인|ㅇㅇ|ㅇㅋ|오케이|ok|okay|yes|진행)(요|해|해요|해줘|해주세요|할게|합니다|이요)?[\s.!~,]*(열어\s*줘|해\s*줘|진행해\s*줘|부탁해)?[\s.!~]*$/i;
 const NEGATIVE = /^(아니|아냐|ㄴㄴ|싫어|취소|하지\s*마|안\s*돼|no\b|nope|그만|됐어)/i;
+/** 늘 듣는 실제 폰의 말로 승인할 때: 「승인」이 든 짧은 말 전체만(주변의 응·네·어로는 확정하지 않는다). */
+const EXPLICIT_APPROVAL = /^승인(해|해요|해\s*줘|해\s*주세요|할게|할게요|합니다)?[\s.!~]*$/;
 const TOKEN_MISSING = "승인 토큰이 없거나 만료되었습니다.";
 
 export function isAffirmative(text: string): boolean {
   return AFFIRMATIVE.test(text.trim());
 }
+
+export function isExplicitApproval(text: string): boolean {
+  return EXPLICIT_APPROVAL.test(text.trim());
+}
+
+/** heard: 늘 듣는 실제 폰이 들은 말. 승인 대기는 「승인」「승인해 줘」처럼 분명한 말로만 확정한다. */
+export interface ChatOptions { heard?: boolean }
 
 export function isNegative(text: string): boolean {
   return NEGATIVE.test(text.trim());
@@ -137,9 +146,9 @@ export class Agent {
   }
 
   /** 사용자 메시지 하나를 처리한다. 같은 세션의 요청은 차례로 처리한다. */
-  chat(sessionId: string, message: string): Promise<ChatResult> {
+  chat(sessionId: string, message: string, opts: ChatOptions = {}): Promise<ChatResult> {
     const s = this.session(sessionId);
-    return this.serialize(s, () => this.handle(s, message));
+    return this.serialize(s, () => this.handle(s, message, opts));
   }
 
   /** 승인 토큰으로 대기 중인 명령을 실행한다(화면 승인 버튼, POST /api/agent/confirm). */
@@ -179,11 +188,12 @@ export class Agent {
 
   // ── 내부 ────────────────────────────────────────────────
 
-  private async handle(s: Session, message: string): Promise<ChatResult> {
+  private async handle(s: Session, message: string, opts: ChatOptions): Promise<ChatResult> {
     const actions: AgentAction[] = [];
     this.prune(s);
     let reply: string;
-    if (s.pending.size > 0 && isAffirmative(message)) reply = await this.confirmAll(s, message, actions);
+    const approves = opts.heard ? isExplicitApproval(message) : isAffirmative(message);
+    if (s.pending.size > 0 && approves) reply = await this.confirmAll(s, message, actions);
     else if (s.pending.size > 0 && isNegative(message)) reply = this.cancelAll(s, message);
     else reply = await this.runModel(s, message, actions);
     const pendingConfirmations = this.pending(s.id);

@@ -296,8 +296,9 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
           plans.onEye([eye.position[0], eye.position[1]], eye.estimated === true);
           tracker?.onEye([eye.position[0], eye.position[1]], eye.estimated === true);
         },
+        // 실제 폰은 늘 듣는다: 주변의 응·네·어로 가전 승인을 확정하지 않게 분명한 말(「승인」)로만 확정한다
         onSay: async (text) => {
-          const r = await agent.chat(PHONE_SESSION, text);
+          const r = await agent.chat(PHONE_SESSION, text, { heard: true });
           return { reply: r.reply, pending: r.pendingConfirmations.map((p) => ({ token: p.token, deviceLabel: p.deviceLabel, reason: p.reason })) };
         },
         onConfirm: async (token) => ({ reply: (await agent.confirm(token)).reply }),

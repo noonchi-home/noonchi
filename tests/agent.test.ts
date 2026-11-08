@@ -259,6 +259,19 @@ describe("Agent + OpenAI 공급자(가짜 서버): 한국어 요청", () => {
     expect(r2.reply).toContain("현관문");
   });
 
+  it("늘 듣는 실제 폰의 말(heard)은 '응'·'네'·'어'로 승인하지 않고 모델에게 보낸다. '승인해 줘'처럼 분명한 말로만 확정한다", async () => {
+    const { hub, policy, agent } = llmAgent();
+    await agent.chat("s", "현관문 열어줘", { heard: true });
+    for (const said of ["응", "네", "어", "예 진행해 줘"]) {
+      expect((await agent.chat("s", said, { heard: true })).reply, said).toBe("가짜 답");
+      expect(twin(hub, "door_main").lock).toBe("locked");
+    }
+    expect(policy.pending()).toHaveLength(1);
+    const r = await agent.chat("s", "승인해 줘", { heard: true });
+    expect(r.actions[0]).toMatchObject({ tool: "unlock", ok: true });
+    expect(twin(hub, "door_main").lock).toBe("unlocked");
+  });
+
   it("승인 버튼(agent.confirm)으로도 확정하고, 확정한 일은 다음 요청의 대화에 남는다", async () => {
     const events: AgentEvent[] = [];
     const { hub, agent } = llmAgent(events);

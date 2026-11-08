@@ -11,7 +11,7 @@ import { encodeFramePacket } from "../src/phone/packet.js";
 import { createPhoneServer, type PhoneServer } from "../src/phone/server.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { ScriptedDetector } from "./helpers/detectors.js";
-import { startFakeLlm, type FakeLlm } from "./helpers/llm.js";
+import { HOME_SCRIPT, startFakeLlm, type FakeLlm } from "./helpers/llm.js";
 import { startFakePam, type FakePam } from "./helpers/pam.js";
 import { openWebSocket } from "./helpers/ws.js";
 
@@ -137,5 +137,43 @@ describe("startServer(BRAIN=1): 클로이드 질문을 폰 말로 답한다", ()
     expect(rows.filter((r) => r.kind === "feedback").map((r) => r.text)).toEqual(["그냥 그대로 둬 · 질문: 컵을 치울까요?"]);
     expect(rows.some((r) => r.kind === "execution" && r.subject === ask.id && r.text === "완료: 그대로 둬요")).toBe(true);
     expect(box.some((m) => m.type === "command_clear" && m.id === ask.id)).toBe(true);
+  }, 30_000);
+});
+
+describe("startServer: 실제 폰의 말로 하는 승인", () => {
+  let srv: RunningServer | undefined;
+  let llm: FakeLlm | undefined;
+  afterEach(async () => {
+    ws?.close();
+    ws = undefined;
+    await srv?.close();
+    srv = undefined;
+    await llm?.close();
+    llm = undefined;
+  });
+
+  it("실제 폰은 늘 들으므로 주변의 '네'·'어'로는 가전 승인을 확정하지 않고, '승인'이라고 말해야 확정한다", async () => {
+    llm = await startFakeLlm({ ...HOME_SCRIPT });
+    srv = await startServer({
+      env: { HUB: "memory", PORT: "0", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", ...llm.env }, log: () => {},
+    });
+    const phoneUrl = new URL(srv.phoneUrls[0]!);
+    const replies: Msg[] = [];
+    ws = await openWebSocket(`ws://${phoneUrl.host}/phone/events`, { options: { origin: phoneUrl.origin }, setup: (s) => s.on("message", (d, bin) => {
+      const m = bin ? null : (JSON.parse(String(d)) as Msg);
+      if (m?.type === "reply") replies.push(m);
+    }) });
+    const lock = async () => srv!.hub.get("door_main")?.twin.lock;
+    ws.send(JSON.stringify({ type: "say", text: "현관문 열어줘" }));
+    await until(replies, 1, 5000);
+    expect(replies[0]!.pending).toHaveLength(1);
+    for (const [i, said] of ["네", "어"].entries()) {
+      ws.send(JSON.stringify({ type: "say", text: said }));
+      await until(replies, i + 2, 5000);
+      expect(await lock()).toBe("locked");
+    }
+    ws.send(JSON.stringify({ type: "say", text: "승인" }));
+    await until(replies, 4, 5000);
+    expect(await lock()).toBe("unlocked");
   }, 30_000);
 });
