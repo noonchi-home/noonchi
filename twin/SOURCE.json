@@ -1363,6 +1363,12 @@
       "sha256": "0c8b98353d3e435fe3e5ccbc6e2e92528b65fd222570e0bc28f2b4e273d7e6e1"
     },
     {
+      "path": "data/homes/mokryeon_180b/drawn_fixtures.json",
+      "bytes": 2018,
+      "sha256": "048b4201261c2cdeb2ec2c2fadd1f99d43f00cfe1511b21f66e93099446a2064",
+      "commit": "b9e984fcd4ae6ec99fb5444930e528fe2954cbe4"
+    },
+    {
       "path": "data/homes/mokryeon_180b/floorplan.json",
       "bytes": 25131,
       "sha256": "7c995a5df1d57bef74bc1938af02b4573635f9eafdf0d10fbeb8e6d0db3a055e"

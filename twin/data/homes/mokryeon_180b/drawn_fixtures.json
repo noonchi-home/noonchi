@@ -1,0 +1,16 @@
+{
+  "source": "reference.jpg(공개 180B 도면)에 그려진 욕실·주방 설비. 자리는 도면 그림에서 읽고 벽 면에 붙였다. 미리 그린 그림(prerender)만 쓴다.",
+  "items": [
+    {"id": "toilet_bath_west", "kind": "toilet", "room": "bath_west", "position": [0.53, 4.63], "facing_deg": 90.0, "footprint": [0.4, 0.68], "height": 0.78},
+    {"id": "vanity_bath_west", "kind": "vanity", "room": "bath_west", "position": [1.53, 4.496], "facing_deg": 90.0, "footprint": [0.6, 0.46], "height": 0.86},
+    {"id": "toilet_bath_center", "kind": "toilet", "room": "bath_center", "position": [5.89, 4.606], "facing_deg": 90.0, "footprint": [0.4, 0.68], "height": 0.78},
+    {"id": "vanity_bath_center", "kind": "vanity", "room": "bath_center", "position": [6.66, 4.496], "facing_deg": 90.0, "footprint": [0.6, 0.46], "height": 0.86},
+    {"id": "tub_bath_center", "kind": "bathtub", "room": "bath_center", "position": [7.43, 5.066], "facing_deg": 180.0, "footprint": [1.6, 0.72], "height": 0.55},
+    {"id": "toilet_bath_east", "kind": "toilet", "room": "bath_east", "position": [14.22, 6.406], "facing_deg": 90.0, "footprint": [0.4, 0.68], "height": 0.78},
+    {"id": "vanity_bath_east", "kind": "vanity", "room": "bath_east", "position": [15.04, 6.296], "facing_deg": 90.0, "footprint": [0.6, 0.46], "height": 0.86},
+    {"id": "tub_bath_east", "kind": "bathtub", "room": "bath_east", "position": [15.76, 6.866], "facing_deg": 180.0, "footprint": [1.6, 0.68], "height": 0.55},
+    {"id": "sink_counter_kitchen", "kind": "sink_counter", "room": "kitchen", "position": [5.853, 0.761], "facing_deg": 0.0, "footprint": [2.278, 0.65], "height": 0.9, "sink": [5.86, 1.38]},
+    {"id": "counter_kitchen_w", "kind": "counter", "room": "kitchen", "position": [6.391, -0.0715], "facing_deg": 90.0, "footprint": [0.426, 0.611], "height": 0.9},
+    {"id": "counter_kitchen_e", "kind": "counter", "room": "kitchen", "position": [7.66, -0.0715], "facing_deg": 90.0, "footprint": [0.34, 0.611], "height": 0.9}
+  ]
+}

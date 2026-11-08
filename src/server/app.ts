@@ -48,6 +48,8 @@ export interface AppOptions {
   phoneUrls?: () => string[];
   /** 배치 보정(docs/plan.md 계약 B·C). 있으면 /api/layout*, /events layout 메시지. */
   layout?: LayoutEditor;
+  /** 서버 장면(scene.json + 도면 설비, src/model/scene.ts). GET /api/scene. 없거나 null이면 404. */
+  scene?: () => unknown;
   /** 허용할 브라우저 출처(기본: localhost·127.0.0.1·[::1]의 모든 포트). */
   allowOrigin?: (origin: string) => boolean;
   /** 계획 보내기 토큰(PLAN_TOKEN). 있으면 Authorization: Bearer <토큰>을 붙인 요청은 어느 주소에서나 받는다. */
@@ -343,7 +345,13 @@ export function createApp(opts: AppOptions): TwinHomeApp {
   });
   route("GET", /^\/api\/decisions$/, async (_req, url) => ({ ok: true, decisions: requireHistory().decisions(limitParam(url, 20, 500)) }));
 
-  // ── 배치 보정 ──
+  // ── 집 장면·배치 보정 ──
+
+  route("GET", /^\/api\/scene$/, async () => {
+    const scene = opts.scene?.();
+    if (!scene) throw new HttpError(404, "집 장면이 없어요.");
+    return { ok: true, scene };
+  });
 
   const requireLayout = () => {
     if (!opts.layout) throw new HttpError(404, "배치 보정을 쓸 수 없습니다(집 scene.json이 없음).");
