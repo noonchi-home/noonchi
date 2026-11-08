@@ -189,7 +189,7 @@ describe("배포 파일", () => {
     for (const f of ["docs/deploy.md", ".env.example", "README.md", "docs/reference.md", "docs/plan.md"]) expect(read(f), f).not.toMatch(/규칙 기반|rule-based|rules-ko|mock 에이전트|mock 공급자|anthropic` \/ `mock|openai \| anthropic \| mock/);
   });
 
-  it("키 없는 컨테이너 확인: 저장소 .env와 셸의 키를 넘기지 않고 8500·8510에 띄운다", () => {
+  it("키 없는 컨테이너 확인: 저장소 .env와 셸의 키를 넘기지 않고 확인용 호스트 포트(기본 8500·8510·8530)에 띄운다", () => {
     const s = read("scripts/container-smoke.ts");
     expect(s).toContain('"--env-file", envFile');
     expect(s).toContain("(KEY|TOKEN|SECRET)$");
@@ -197,10 +197,10 @@ describe("배포 파일", () => {
     expect(s).toContain("!SERVICE_ENV.has(k)");
     expect(s).toContain('"--profile", "gpu", "--profile", "check", "config", "--format", "json"');
     expect(s).toContain("KEY_OWNERS");
-    expect(s).toContain('NOONCHI_PORT: "8500"');
-    expect(s).toContain('NOONCHI_PHONE_PORT: "8510"');
+    expect(s).toContain("NOONCHI_PORT: String(PORTS.hub)");
+    expect(s).toContain("NOONCHI_PHONE_PORT: String(PORTS.phone)");
     expect(s).toContain('"down", "-v"');
-    expect(s).toContain('PAM_HOST_PORT: "8520"');
+    expect(s).toContain("PAM_HOST_PORT: String(PORTS.pam)");
   });
 
   it("키 없는 컨테이너 확인: 모델·PAM LLM·에이전트를 모두 가짜 서버에 붙이고 ready.ok와 에이전트 답을 본다", () => {

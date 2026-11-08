@@ -144,7 +144,8 @@ docker build -t noonchi-pam:check services/pam
 npx tsx scripts/container-smoke.ts
 ```
 
-- 저장소 `.env`와 셸의 키를 넘기지 않고, 확인용 값만 적은 임시 env 파일로 띄운다: noonchi `127.0.0.1:8500`(허브)·`8510`(폰), pam `8520`, `--profile check`의 가짜 OpenAI 호환 서버 `fake-openai`(포트를 열지 않음).
+- 저장소 `.env`와 셸의 키를 넘기지 않고, 확인용 값만 적은 임시 env 파일로 띄운다: noonchi `127.0.0.1:8500`(허브)·`8510`(폰), pam `8530`, `--profile check`의 가짜 OpenAI 호환 서버 `fake-openai`(포트를 열지 않음).
+- 호스트 포트는 `CHECK_HUB_PORT`·`CHECK_PHONE_PORT`·`CHECK_PAM_PORT`로 바꾼다. 예: `CHECK_PAM_PORT=8535 npx tsx scripts/container-smoke.ts`. 셋이 겹치거나 포트가 아니면 띄우기 전에 멈춘다. 8520~8529는 화면 캡처 서버 자리라 기본값으로 쓰지 않는다.
 - `INFERENCE_MODE=live`로 VLM·PAM LLM·에이전트 주소를 모두 `http://fake-openai:8500/v1`에 붙인다. 실제 AI API를 부르지 않는다.
 - `ready.ok` true, 에이전트 답 「가짜 답」, PAM 서비스 판단(`pam-predict/2`, 가짜 PAM LLM은 대기 −1)과 `/health` 입력 한도, 트윈·기록 DB, 폰 화면, 이미지 안 YOLOX(`/api/brain`의 `detector`가 `yolox_tiny`, 엔진 프레임 분석 수), 호스트에서 보낸 계획(토큰 없으면 403, `PLAN_TOKEN`을 붙이면 200), `/api/health` 폰 주소가 확인용 `PHONE_URL` 하나뿐인지, `docker stop` 뒤 종료 코드 0, 멈춘 noonchi 컨테이너에 onnxruntime 원격 측정 파일(`~/.cache/Microsoft/DeveloperTools/.onnxruntime`)이 없는지(`docker diff`)를 본 뒤 볼륨까지 지운다.
 - 띄우기 전에 모든 키에 확인용 값을 넣은 env 파일로 `docker compose --profile gpu --profile check config`를 풀어, 키가 그 키를 쓰는 서비스에만 가는지 본다.
