@@ -2,13 +2,13 @@
 // 듣기는 AR 중 늘 켜 두고(끝나면 다시 켬), 명령·답을 소리로 읽는 동안은 멈췄다가 다 읽으면(끝 알림, 오지 않으면 정해진 시간 뒤) 다시 켠다.
 // 들은 말은 그대로 서버로 간다(say: 명령의 답이면 서버가 그 답으로 받고, 아니면 에이전트로). 명령·질문(command, src/contract/phone.ts)이 speak로 오면 읽는다.
 // 답 단추는 받은 명령의 id·step으로 answer를 보낸다. 말의 답(reply)이 빈 글이면 보이지도 읽지도 않는다. 잠깐 알릴 말은 4초.
-// 명령 대상 고리: 명령이 떠 있고 찍기·맞추기 중이 아닐 때만 서버 초점(focus)의 첫 대상 하나를 그린다. 조준점은 찍기·맞추기 때만(draw.aim).
+// 명령 대상 고리: 위 줄·엄지 자리에 명령이 보일 때만(handOf) 서버 초점(focus)의 첫 대상 하나를 그린다. 조준점은 찍기·맞추기 때만(draw.aim).
 import type { PhoneCommand, PhoneCommandClear } from "../../../src/contract/phone.ts";
 import { createAr } from "./core/ar.js";
 import { createLink, phoneSocketUrl } from "./core/link.js";
 import { createListener, recognition, speak as speakAloud, type RecognitionCtor } from "./core/talk.js";
 import {
-  createStore, initialView, onStatus,
+  createStore, handOf, initialView, onStatus,
   type Anchor, type AlignMode, type FocusMark, type Pending, type PhoneActions, type PhoneView,
 } from "./state";
 
@@ -98,8 +98,8 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
         syncFrame(hit);
       },
       onMarks: (marks) => {
-        const v = store.get();
-        draw.marks(v.command && !v.setup ? marks.slice(0, 1) : []);
+        // 위 줄·엄지 자리에 명령이 보일 때만(승인 대기·찍기·맞추기가 차지하면 그리지 않는다)
+        draw.marks(handOf(store.get()).thumb?.kind === "command" ? marks.slice(0, 1) : []);
         syncFrame();
       },
       onPerf: () => syncFrame(),

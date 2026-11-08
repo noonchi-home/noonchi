@@ -306,15 +306,20 @@ describe("기준점 찍기·물건 자리 맞추기·설정", () => {
 });
 
 describe("AR 화면 그림", () => {
-  it("명령 대상 고리: 명령이 떠 있을 때만 첫 대상 하나. 기준점 찍기 중에는 없다", async () => {
+  it("명령 대상 고리: 명령이 떠 있을 때만 첫 대상 하나. 승인 대기가 위 줄·엄지 자리를 차지하거나 기준점 찍기 중에는 없다", async () => {
     const { c, ws, session, marks, startAr } = make();
     await startAr();
+    ws.push(status({ aligned: true }));
     ws.push({ type: "focus", targets: [{ id: "cup", label: "컵", ar: [0, 0, -0.5] }, { id: "tv", label: "TV", ar: [0.2, 0, -0.5] }], ttl_ms: 8000 });
     session.step(100, frame());
     expect(marks.at(-1)).toEqual([]);
     ws.push(command({ speak: false }));
     session.step(200, frame());
     expect(marks.at(-1)!.map((m) => m.label)).toEqual(["컵"]);
+    ws.push({ type: "reply", text: "", pending: [{ token: "t1", deviceLabel: "현관문", reason: "현관문 잠금 해제" }] });
+    session.step(250, frame());
+    expect(marks.at(-1)).toEqual([]);
+    ws.push({ type: "reply", text: "", pending: [] });
     c.actions.startAnchors();
     session.step(300, frame());
     expect(marks.at(-1)).toEqual([]);
