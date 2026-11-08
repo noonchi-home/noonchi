@@ -1,4 +1,4 @@
-// 폰 화면이 쓰는 부품 변형: 영상 위 글 14px(body-sm 토큰), 상태 줄 scrim 바탕, 사진 요청 brand 바탕·headline 글.
+// 폰 화면이 쓰는 부품 변형: 영상 위 글 14px(body-sm 토큰), 상태 줄 scrim 바탕, 사진 요청 brand 바탕·headline 글(제목 굵기 700).
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { Alert, AlertTitle } from "../src/components/ui/alert";
@@ -23,11 +23,14 @@ describe("폰용 부품 변형", () => {
     expect(w).not.toContain("text-label");
   });
 
-  it("Alert brand는 brand 바탕에 on-brand 글, size lg는 headline 글", () => {
+  it("Alert brand는 brand 바탕에 on-brand 글, size lg는 headline 글. 제목도 headline 굵기(700)", () => {
     render(<Alert variant="brand" size="lg"><AlertTitle>컵 안을 비춰 주세요</AlertTitle></Alert>);
     const w = words(screen.getByRole("alert"));
-    expect(w).toEqual(expect.arrayContaining(["bg-brand", "text-on-brand", "text-headline"]));
+    expect(w).toEqual(expect.arrayContaining(["bg-brand", "text-on-brand", "text-headline", "*:data-[slot=alert-title]:font-bold"]));
     expect(w).not.toContain("text-body-sm");
+    // 기본 크기 제목은 받은 그대로 font-medium
+    render(<Alert><AlertTitle>연결됨</AlertTitle></Alert>);
+    expect(words(screen.getByText("연결됨").closest("[role=alert]")!)).not.toContain("*:data-[slot=alert-title]:font-bold");
   });
 
   it("기본 변형은 그대로다", () => {
