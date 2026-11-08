@@ -75,11 +75,23 @@ describe("실행 추적: 단계마다 실제 폰 명령", () => {
     // 3 이동: 컵이 손에 있음
     expect(last()).toMatchObject({ step: "plan:pam-1:3", text: "싱크대로 가 주세요", vision: "컵 · 손에 있음 · 싱크대까지 2.3m", speak: true });
     expect(steps()).toEqual(["done", "done", "active", "pending"]);
+    // 싱크대에서 1.3m면 아직 안 넘긴다(비전 상태만 바뀐다)
+    clock.t += 600;
+    t.onEye([5, 2.3]);
+    t.tick();
+    expect(last()).toMatchObject({ step: "plan:pam-1:3", vision: "컵 · 손에 있음 · 싱크대까지 1.3m", speak: false });
+    expect(steps()).toEqual(["done", "done", "active", "pending"]);
     clock.t += 600;
     t.onEye([5.3, 1.5]);
     t.tick();
     // 4 내려놓기
     expect(last()).toMatchObject({ step: "plan:pam-1:4", text: "컵을 싱크대에 넣어 주세요", vision: "컵 · 손에 있음", speak: true });
+    expect(steps()).toEqual(["done", "done", "done", "active"]);
+    // 컵이 아직 손에 있으면 안 넘긴다
+    clock.t += 600;
+    t.onWorld();
+    t.tick();
+    expect(last()).toMatchObject({ step: "plan:pam-1:4" });
     expect(steps()).toEqual(["done", "done", "done", "active"]);
     clock.t += 600;
     w = world([cup("present", "in_sink")]);
