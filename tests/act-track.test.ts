@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { ExecutionTracker, TRACK_DEFAULTS, type TrackerOptions } from "../src/act/track.js";
 import type { CheckResult } from "../src/act/check.js";
 import type { BrainLog } from "../src/contract/events.js";
-import type { PhoneCommand, PhoneCommandMessage } from "../src/contract/phone.js";
+import type { PlannedCommand, PlannedCommandMessage } from "../src/contract/phone.js";
 import type { WorldObject, WorldView } from "../src/contract/world.js";
 import { PlanHub } from "../src/plan/hub.js";
 import { EXEC_TEXT, STEP_COMMAND } from "../src/plan/labels.js";
@@ -31,21 +31,27 @@ const decision: DecisionRecord = {
 };
 const ask = (id: string, seq: number): DecisionRecord => ({ ...decision, id, seq, action: "사용자에게 물어보기", prediction: { ...pred, task_index: 1 } });
 const DONE = [{ id: "done", label: "완료" }];
+/** 평면도 물건의 트윈 자리(고리 대상). */
+const PLACES: Record<string, { label: string; position: [number, number, number] }> = {
+  table_1: { label: "식탁", position: [7, 0.75, 3] }, sink_1: { label: "싱크대", position: [5, 0.9, 1] },
+};
+const TABLE = { id: "table_1", ...PLACES.table_1! };
+const SINK = { id: "sink_1", ...PLACES.sink_1! };
 
 function setup(over: Partial<TrackerOptions> & { w?: () => WorldView; check?: () => CheckResult } = {}) {
   const logs: BrainLog[] = [];
-  const phone: PhoneCommandMessage[] = [];
+  const phone: PlannedCommandMessage[] = [];
   const clock = { t: 10_000, now() { return this.t; } };
   const plans = new PlanHub(smallFloor(), () => {}, () => "t");
   const t = new ExecutionTracker({
     plans, world: over.w ?? (() => world([cup("present")])), check: over.check ?? (() => ({ ok: true })), floor: () => plans.floor(),
-    toPhone: (m) => phone.push(m), emit: (l) => logs.push(l), clock, ...over,
+    toPhone: (m) => phone.push(m), emit: (l) => logs.push(l), clock, locate: (id) => PLACES[id], ...over,
   });
   const exec = () => logs.flatMap((l) => (l.type === "execution" ? [l] : []));
   const commands = () => phone.flatMap((m) => (m.type === "command" ? [m] : []));
   /** 새로 읽은 명령(speak)만. */
   const spoken = () => commands().filter((m) => m.speak).map((m) => m.text);
-  const last = () => phone.at(-1) as PhoneCommand;
+  const last = () => phone.at(-1) as PlannedCommand;
   const steps = () => plans.current()!.steps.map((s) => s.status);
   return { t, logs, phone, clock, plans, exec, commands, spoken, last, steps };
 }
@@ -56,7 +62,8 @@ describe("실행 추적: 단계마다 실제 폰 명령", () => {
     const { t, phone, clock, plans, exec, commands, spoken, last, steps } = setup({ w: () => w });
     t.onDecision(decision);
     // 1 이동: 폰 눈을 아직 모르면 거리 모름
-    expect(phone).toEqual([{ type: "command", id: "plan:pam-1", step: "plan:pam-1:1", text: "식탁으로 가 주세요", vision: "식탁까지 거리 모름", choices: DONE, speak: true }]);
+    // 명령 대상(실제 폰 고리)은 식탁 → 컵 → 싱크대 → 싱크대
+    expect(phone).toEqual([{ type: "command", id: "plan:pam-1", step: "plan:pam-1:1", text: "식탁으로 가 주세요", vision: "식탁까지 거리 모름", choices: DONE, target: TABLE, speak: true }]);
     expect(plans.current()).toMatchObject({ id: "plan:pam-1", status: "running" });
     expect(steps()).toEqual(["active", "pending", "pending", "pending"]);
     clock.t += 600;
@@ -67,13 +74,16 @@ describe("실행 추적: 단계마다 실제 폰 명령", () => {
     t.onEye([6.2, 3]);
     t.tick();
     // 2 집기: 식탁 가까이(1.2m 안)라 다음 명령, 컵 자리는 World State
-    expect(last()).toEqual({ type: "command", id: "plan:pam-1", step: "plan:pam-1:2", text: "컵을 들어 주세요", vision: "컵 · 식탁 위", choices: DONE, speak: true });
+    expect(last()).toEqual({
+      type: "command", id: "plan:pam-1", step: "plan:pam-1:2", text: "컵을 들어 주세요", vision: "컵 · 식탁 위", choices: DONE,
+      target: { id: "cup_1", label: "컵", position: [2, 0.75, 1] }, speak: true,
+    });
     expect(steps()).toEqual(["done", "active", "pending", "pending"]);
     clock.t += 600;
     w = world([cup("present", "in_hand")]);
     t.onWorld();
     // 3 이동: 컵이 손에 있음
-    expect(last()).toMatchObject({ step: "plan:pam-1:3", text: "싱크대로 가 주세요", vision: "컵 · 손에 있음 · 싱크대까지 2.3m", speak: true });
+    expect(last()).toMatchObject({ step: "plan:pam-1:3", text: "싱크대로 가 주세요", vision: "컵 · 손에 있음 · 싱크대까지 2.3m", target: SINK, speak: true });
     expect(steps()).toEqual(["done", "done", "active", "pending"]);
     // 싱크대에서 1.3m면 아직 안 넘긴다(비전 상태만 바뀐다)
     clock.t += 600;
@@ -85,7 +95,7 @@ describe("실행 추적: 단계마다 실제 폰 명령", () => {
     t.onEye([5.3, 1.5]);
     t.tick();
     // 4 내려놓기
-    expect(last()).toMatchObject({ step: "plan:pam-1:4", text: "컵을 싱크대에 넣어 주세요", vision: "컵 · 손에 있음", speak: true });
+    expect(last()).toMatchObject({ step: "plan:pam-1:4", text: "컵을 싱크대에 넣어 주세요", vision: "컵 · 손에 있음", target: SINK, speak: true });
     expect(steps()).toEqual(["done", "done", "done", "active"]);
     // 컵이 아직 손에 있으면 안 넘긴다
     clock.t += 600;
@@ -246,7 +256,7 @@ describe("실행 추적: 단계마다 실제 폰 명령", () => {
     a.t.onDecision(ask("pam-1", 1));
     expect(a.phone).toEqual([{
       type: "command", id: "plan:pam-1", step: "plan:pam-1:1", text: "컵을 치울까요?", vision: null,
-      choices: [{ id: "clear", label: "치워 주세요" }, { id: "keep", label: "그대로 둬요" }], speak: true,
+      choices: [{ id: "clear", label: "치워 주세요" }, { id: "keep", label: "그대로 둬요" }], target: null, speak: true,
     }]);
     expect(a.steps()).toEqual(["active"]);
     expect(a.t.onAnswer("plan:pam-1", "plan:pam-1:1", "done")).toBe(false);

@@ -73,7 +73,7 @@ describe("NOONCHI 처음부터 끝까지", () => {
 
     await pump(() => !!said("식탁으로 가 주세요"));
     const first = said("식탁으로 가 주세요")!;
-    expect(first).toEqual({ type: "command", id: expect.stringMatching(/^plan:pam-\d+$/), step: `${first.id}:1`, text: "식탁으로 가 주세요", vision: "식탁까지 거리 모름", choices: [{ id: "done", label: "완료" }], speak: true });
+    expect(first).toEqual({ type: "command", id: expect.stringMatching(/^plan:pam-\d+$/), step: `${first.id}:1`, text: "식탁으로 가 주세요", vision: "식탁까지 거리 모름", choices: [{ id: "done", label: "완료" }], target: null, speak: true });
     const planId = first.id as string;
     // 1 이동: 「완료」 단추
     ws.send(JSON.stringify({ type: "answer", id: planId, step: first.step, choice: "done" }));

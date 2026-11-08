@@ -238,8 +238,9 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         ? [{ deviceId: s.target.deviceId, paired: signals.sources()[s.target.deviceId]?.kind === "thinq" }] : []));
       tracker = new ExecutionTracker({
         plans, floor: () => plans.floor(), world: () => world.view(now()), emit, clock: ctx.brain?.clock,
-        // 실제 폰 명령(src/contract/phone.ts). 폰 서버가 지금 명령을 기억해 새로 붙은 폰에도 보낸다
+        // 실제 폰 명령(src/contract/phone.ts). 폰 서버가 지금 명령을 기억해 새로 붙은 폰에도 보낸다. 명령 대상 자리는 배치(물건 가운데)에서
         toPhone: (m) => phoneRef.current?.command(m),
+        locate: (id) => layout?.editor.center(id),
         check: (d, p) => checkPlan({
           decision: d, tasks: [...CUP_TASKS], plan: p, world: world.view(now()), nowMs: now(), staleMs: act.staleMs, mode: ctx.mode?.() ?? "test", deviceSteps: deviceSteps(p),
         }),

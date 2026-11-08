@@ -5,6 +5,9 @@
 /** 아래 엄지 자리 답 단추 하나. 단계 명령이면 「완료」 하나(id "done"), 질문이면 답마다 하나. */
 export interface PhoneChoice { id: string; label: string }
 
+/** 명령 대상 하나(실제 폰은 이것에만 작은 고리를 그린다). ar: 실제 폰 AR 좌표(폰 서버가 맞춘 기준점으로 트윈 자리를 바꾼 것). */
+export interface PhoneTarget { id: string; label: string; ar: [number, number, number] }
+
 /**
  * 서버 → 실제 폰: 지금 할 명령. 바뀔 때마다 통째로 보낸다. 같은 id·step이면 같은 명령이고 비전 상태만 바뀐 것이다.
  * 새로 붙은 폰은 상태(status) 다음에 지금 명령을 speak false로 받는다.
@@ -20,8 +23,15 @@ export interface PhoneCommand {
   /** 아래 엄지 자리 답 단추 바로 위 한 줄: 비전이 보는 지금 상태(「식탁까지 2.4m」·「컵 · 손에 있음」). 질문이면 null. */
   vision: string | null;
   choices: PhoneChoice[];
-  /** true면 text를 소리로 읽는다: 새 명령, 한 단계가 오래 걸려 다시 읽을 때. 비전 상태만 바뀌면 false. */
+  /** 명령 대상(식탁·컵·싱크대). 질문이거나, 기준점을 맞추기 전이거나, 자리를 모르면 null. 맞추면 같은 명령이 대상과 함께 다시 온다. */
+  target: PhoneTarget | null;
+  /** true면 text를 소리로 읽는다: 새 명령, 한 단계가 오래 걸려 다시 읽을 때. 비전 상태·대상만 바뀌면 false. */
   speak: boolean;
+}
+
+/** 서버 안(실행 추적 → 폰 서버)의 명령: 대상 자리가 트윈 좌표 [x, 높이, y]다. 폰 서버가 AR 좌표로 바꿔 PhoneCommand로 보낸다. */
+export interface PlannedCommand extends Omit<PhoneCommand, "target"> {
+  target: { id: string; label: string; position: [number, number, number] } | null;
 }
 
 /** 서버 → 실제 폰: 명령을 지운다(계획 완료·실패·그만·새 계획으로 바뀜). id가 있으면 그 명령일 때만, 없으면 무엇이든 지운다(명령이 없는 서버에 붙은 폰). */
@@ -42,3 +52,5 @@ export interface PhoneTalkReply { type: "reply"; text: string; pending?: PhonePe
 
 /** 서버가 실제 폰에 보내는 명령 메시지. */
 export type PhoneCommandMessage = PhoneCommand | PhoneCommandClear;
+/** 실행 추적이 폰 서버에 넘기는 명령 메시지. */
+export type PlannedCommandMessage = PlannedCommand | PhoneCommandClear;

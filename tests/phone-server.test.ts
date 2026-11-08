@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
-import type { PhoneCommand } from "../src/contract/phone.js";
+import type { PlannedCommand } from "../src/contract/phone.js";
 import type { AnchorTarget } from "../src/phone/anchors.js";
 import { EyeFeed } from "../src/phone/feed.js";
 import { encodeFramePacket } from "../src/phone/packet.js";
@@ -362,7 +362,7 @@ describe("폰 대화·승인·초점", () => {
     const { phone, phoneBase } = await talkSetup();
     const first = await connect(phoneBase, 2);
     expect(first.box).toEqual([expect.objectContaining({ type: "status" }), { type: "command_clear" }]);
-    const cmd: PhoneCommand = { type: "command", id: "plan:pam-1", step: "plan:pam-1:1", text: "식탁으로 가 주세요", vision: "식탁까지 2.4m", choices: [{ id: "done", label: "완료" }], speak: true };
+    const cmd: PlannedCommand = { type: "command", id: "plan:pam-1", step: "plan:pam-1:1", text: "식탁으로 가 주세요", vision: "식탁까지 2.4m", choices: [{ id: "done", label: "완료" }], target: null, speak: true };
     let got = next(first.ws, (m) => m.type === "command");
     phone.command(cmd);
     expect(await got).toEqual(cmd);
@@ -380,6 +380,24 @@ describe("폰 대화·승인·초점", () => {
     phone.command({ type: "command_clear", id: "plan:pam-1" });
     await got;
     expect((await connect(phoneBase, 2)).box[1]).toEqual({ type: "command_clear" });
+  });
+
+  it("명령 대상: 트윈 자리를 맞춘 기준점으로 AR 자리로 바꿔 보낸다. 맞추기 전에는 null이고, 맞추면 지금 명령을 대상과 함께 다시 보낸다", async () => {
+    const { phone, phoneBase } = await talkSetup();
+    const first = await connect(phoneBase, 2);
+    const cmd: PlannedCommand = {
+      type: "command", id: "plan:pam-1", step: "plan:pam-1:2", text: "컵을 들어 주세요", vision: "컵 · 식탁 위", choices: [{ id: "done", label: "완료" }],
+      target: { id: "cup_1", label: "컵", position: [1, 0.9, 3.7] }, speak: true,
+    };
+    let got = next(first.ws, (m) => m.type === "command");
+    phone.command(cmd);
+    expect(await got).toEqual({ ...cmd, target: null });
+    got = next(first.ws, (m) => m.type === "command" && m.target !== null);
+    first.ws.send(JSON.stringify({ type: "anchor", id: "dock", point: [3.9, 0, 5.51] }));
+    first.ws.send(JSON.stringify({ type: "anchor", id: "door_main", point: [2.4, 0, 3.55] }));
+    expect(await got).toEqual({ ...cmd, target: { id: "cup_1", label: "컵", ar: [1, 0.9, 3.7] }, speak: false });
+    const later = await connect(phoneBase, 2);
+    expect(later.box[1]).toEqual({ ...cmd, target: { id: "cup_1", label: "컵", ar: [1, 0.9, 3.7] }, speak: false });
   });
 
   it("실제 폰 위에는 명령만 보낸다: 판단·관찰 말풍선 글(brain_line)을 보내지 않는다", async () => {

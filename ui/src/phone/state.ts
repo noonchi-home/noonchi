@@ -14,8 +14,8 @@ export type Support =
 export interface Anchor { id: string; label: string; recorded: boolean }
 export interface Pending { token: string; deviceLabel: string; reason: string }
 export interface Choice { id: string; label: string }
-/** 서버가 보낸 지금 명령·질문(src/contract/phone.ts PhoneCommand에서 speak를 뺀 것). */
-export interface Command { id: string; step: string; text: string; vision: string | null; choices: Choice[] }
+/** 서버가 보낸 지금 명령·질문(src/contract/phone.ts PhoneCommand에서 speak를 빼고 대상은 id만). target: 고리를 그릴 명령 대상 id(없으면 null). */
+export interface Command { id: string; step: string; text: string; vision: string | null; choices: Choice[]; target: string | null }
 /** 화면 위 초점 표시 하나(core/project.js focusMarks와 같은 모양). */
 export interface FocusMark { id: string; label: string; u: number; v: number; off: boolean; angle: number }
 /** 조준점을 쓰는 일: 기준점 찍기, 물건 자리 맞추기(「여기」 말하기). */

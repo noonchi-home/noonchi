@@ -87,7 +87,7 @@ function make(over: Partial<ControllerDeps> = {}) {
   ws.open();
   const sent = () => ws.sent.filter((m) => m.type !== "clock");
   const drawn: string[] = [];
-  const marks: { label: string }[][] = [];
+  const marks: { id: string; label: string }[][] = [];
   const draw: ControllerDraw = { start: () => drawn.push("start"), aim: (on) => drawn.push(`aim ${on}`), hit: () => {}, marks: (m) => marks.push(m) };
   c.attach(document.createElement("div"), draw);
   /** AR을 연다(가짜 세션). */
@@ -100,7 +100,8 @@ function make(over: Partial<ControllerDeps> = {}) {
 const anchors = [{ id: "a", label: "거실 창가", recorded: true }, { id: "b", label: "현관", recorded: false }];
 const status = (over: Record<string, unknown> = {}) => ({ type: "status", mode: "floor", revision: 3, anchors, aligned: false, mismatch_m: null, ...over });
 const done = [{ id: "done", label: "완료" }];
-const command = (over: Record<string, unknown> = {}) => ({ type: "command", id: "plan:pam-1", step: "plan:pam-1:2", text: "컵을 들어 주세요", vision: "컵 · 식탁 위", choices: done, speak: true, ...over });
+const command = (over: Record<string, unknown> = {}) => ({ type: "command", id: "plan:pam-1", step: "plan:pam-1:2", text: "컵을 들어 주세요", vision: "컵 · 식탁 위", choices: done, target: null, speak: true, ...over });
+const CUP = { id: "cup_1", label: "컵", ar: [0, 0, -0.5] };
 
 describe("연결·지원", () => {
   it("https 주소면 wss로 /phone/events에 붙는다", () => {
@@ -210,7 +211,7 @@ describe("명령·질문·승인", () => {
   it("명령: 지금 명령으로 두고, 답은 받은 id·step 그대로. 연결이 끊기면 잠깐 알릴 말", () => {
     const { c, ws, sent } = make();
     ws.push(command());
-    expect(c.view().command).toEqual({ id: "plan:pam-1", step: "plan:pam-1:2", text: "컵을 들어 주세요", vision: "컵 · 식탁 위", choices: done });
+    expect(c.view().command).toEqual({ id: "plan:pam-1", step: "plan:pam-1:2", text: "컵을 들어 주세요", vision: "컵 · 식탁 위", choices: done, target: null });
     c.actions.answer("plan:pam-1", "plan:pam-1:2", "done");
     expect(sent()).toEqual([{ type: "answer", id: "plan:pam-1", step: "plan:pam-1:2", choice: "done" }]);
     ws.readyState = 3;
@@ -306,14 +307,36 @@ describe("기준점 찍기·물건 자리 맞추기·설정", () => {
 });
 
 describe("AR 화면 그림", () => {
-  it("명령 대상 고리: 명령이 떠 있을 때만 첫 대상 하나. 승인 대기가 위 줄·엄지 자리를 차지하거나 기준점 찍기 중에는 없다", async () => {
+  it("명령 대상 고리: 명령에 실린 대상 하나에만 그린다. 에이전트 초점(다른 물건)은 그리지 않는다", async () => {
+    const { ws, session, marks, startAr } = make();
+    await startAr();
+    ws.push(status({ aligned: true }));
+    ws.push({ type: "focus", targets: [{ id: "tv", label: "TV", ar: [0.2, 0, -0.5] }], ttl_ms: 8000 });
+    session.step(100, frame());
+    expect(marks.at(-1)).toEqual([]);
+    ws.push(command({ speak: false, target: CUP }));
+    session.step(200, frame());
+    expect(marks.at(-1)!.map((m) => m.id)).toEqual(["cup_1"]);
+    // 명령 중에 온 에이전트 초점은 고리를 바꾸지 않는다
+    ws.push({ type: "focus", targets: [{ id: "tv", label: "TV", ar: [0.2, 0, -0.5] }], ttl_ms: 8000 });
+    session.step(300, frame());
+    expect(marks.at(-1)!.map((m) => m.id)).toEqual(["cup_1"]);
+    // 대상이 없는 명령(맞추기 전·질문)이나 명령을 지우면 고리 없음
+    ws.push(command({ speak: false, target: null }));
+    session.step(400, frame());
+    expect(marks.at(-1)).toEqual([]);
+    ws.push(command({ speak: false, target: CUP }));
+    ws.push({ type: "command_clear", id: "plan:pam-1" });
+    ws.push({ type: "focus", targets: [{ id: "tv", label: "TV", ar: [0.2, 0, -0.5] }], ttl_ms: 8000 });
+    session.step(500, frame());
+    expect(marks.at(-1)).toEqual([]);
+  });
+
+  it("명령 대상 고리: 승인 대기가 위 줄·엄지 자리를 차지하거나 기준점 찍기 중에는 없다", async () => {
     const { c, ws, session, marks, startAr } = make();
     await startAr();
     ws.push(status({ aligned: true }));
-    ws.push({ type: "focus", targets: [{ id: "cup", label: "컵", ar: [0, 0, -0.5] }, { id: "tv", label: "TV", ar: [0.2, 0, -0.5] }], ttl_ms: 8000 });
-    session.step(100, frame());
-    expect(marks.at(-1)).toEqual([]);
-    ws.push(command({ speak: false }));
+    ws.push(command({ speak: false, target: CUP }));
     session.step(200, frame());
     expect(marks.at(-1)!.map((m) => m.label)).toEqual(["컵"]);
     ws.push({ type: "reply", text: "", pending: [{ token: "t1", deviceLabel: "현관문", reason: "현관문 잠금 해제" }] });

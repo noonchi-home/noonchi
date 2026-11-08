@@ -5,12 +5,13 @@
 // 「완료」(단추·말)는 지금 단계 하나를 넘기고, 말로 「그만」이면 계획을 그만둔다. 한 단계가 repeatMs마다 명령을 다시 읽고
 // stepTimeoutMs가 지나면 실패로 닫는다(폰을 닫고 나가도 이렇게 끝난다). 비전 상태는 바뀔 때만, visionMs에 한 번까지 보낸다.
 // 물어보기는 같은 자리에 질문과 답 단추를 띄우고 답을 받으면 완료. PlanHub 단계 상태(active·done)가 지금 단계를 따라간다.
+// 명령마다 대상 하나(식탁·그 컵·싱크대, 트윈 자리)를 같이 보내 실제 폰이 그것에만 고리를 그린다.
 // 실행 전 검사는 통과할 때까지 tick마다 다시 보고, recheckMs가 지나도 안 되면 그 이유로 실패한다.
 // 로봇은 한 번에 한 계획만 실행한다: 진행 중인 계획과 행동·대상이 같은 판단은 기록만 하고, 지금 계획보다 먼저 보낸(seq가 작은) 판단은 버린다.
 // 대상 컵: 기준점을 맞춘 뒤 컵이 identityM 넘게 움직이면 World State가 새 id를 붙인다(src/world/state.ts). 그래서 계획을 만들 때 고른 컵과
 // 그 뒤에 새로 생긴 같은 종류 물건을 모두 그 컵으로 본다(계획 전부터 있던 다른 컵은 빼고). 대상이 그중 하나로 바뀌거나 안 보여도 같은 행동이다.
 import type { BrainLog, ExecState } from "../contract/events.js";
-import type { PhoneCommand, PhoneCommandMessage } from "../contract/phone.js";
+import type { PlannedCommand, PlannedCommandMessage } from "../contract/phone.js";
 import type { PlanStep, PlanView, XZ } from "../contract/plan.js";
 import type { WorldObject, WorldView } from "../contract/world.js";
 import type { FloorPlan } from "../plan/floor.js";
@@ -28,8 +29,10 @@ export interface TrackerOptions {
   /** 실행 전 검사(src/act/check.ts checkPlan). */
   check: (d: DecisionRecord, plan: PlanView) => CheckResult;
   floor: () => FloorPlan;
-  /** 실제 폰으로 보낸다: 명령(command)·지우기(command_clear). */
-  toPhone: (msg: PhoneCommandMessage) => void;
+  /** 실제 폰으로 보낸다: 명령(command)·지우기(command_clear). 폰 서버가 명령 대상 자리를 AR 자리로 바꾼다. */
+  toPhone: (msg: PlannedCommandMessage) => void;
+  /** 평면도 물건(식탁·싱크대)의 이름과 트윈 자리 [x, 높이, y](명령 대상 고리). 모르면 undefined. */
+  locate?: (id: string) => { label: string; position: [number, number, number] } | undefined;
   emit: (l: BrainLog) => void;
   clock?: { now(): number };
   /** 이동 단계: 폰 눈이 목표 물건(평면도 자리)에서 이 거리(m) 안이면 도착. */
@@ -50,7 +53,7 @@ export const TRACK_DEFAULTS = { arriveM: 1.2, repeatMs: 30_000, stepTimeoutMs: 1
 /** targetId: 계획을 만들 때 World State에서 고른 대상 물건(없으면 null). others: 그때 있던 같은 종류의 다른 물건. at: 지금 단계 번호(실행 전 -1). sent: 실제 폰에 띄운 지금 명령. */
 interface Run {
   plan: PlanView; decision: DecisionRecord; spec: TaskSpec; targetId: string | null; others: ReadonlySet<string>; state: ExecState; since: number;
-  at: number; stepAt: number; spokeAt: number; visionAt: number; sent: PhoneCommand | null;
+  at: number; stepAt: number; spokeAt: number; visionAt: number; sent: PlannedCommand | null;
 }
 
 const OPEN = new Set<ExecState>(["planned", "running", "verifying"]);
@@ -166,9 +169,9 @@ export class ExecutionTracker {
   }
 
   /** 명령을 띄운 채 진행 중인 계획. */
-  private live(): (Run & { sent: PhoneCommand }) | null {
+  private live(): (Run & { sent: PlannedCommand }) | null {
     const r = this.run;
-    return !this.stopped && r && r.state === "running" && r.sent ? (r as Run & { sent: PhoneCommand }) : null;
+    return !this.stopped && r && r.state === "running" && r.sent ? (r as Run & { sent: PlannedCommand }) : null;
   }
 
   private tryStart(last: boolean): void {
@@ -201,13 +204,13 @@ export class ExecutionTracker {
       type: "command", id: r.plan.id, step: step.id,
       text: r.spec.kind === "ask" ? r.spec.prompt.text : key ? STEP_COMMAND[key] : step.label,
       vision: r.spec.kind === "ask" ? null : this.vision(r, step, key, this.o.world()),
-      choices: choicesOf(r.spec).map(({ id, label }) => ({ id, label })), speak: true,
+      choices: choicesOf(r.spec).map(({ id, label }) => ({ id, label })), target: this.target(r, step, key, this.o.world()), speak: true,
     };
     this.o.toPhone(r.sent);
   }
 
   /** 지금 단계가 됐으면 다음 단계로 넘기고 true. 아니면 비전 상태가 바뀌었을 때 보낸다(visionMs에 한 번까지). */
-  private look(r: Run & { sent: PhoneCommand }): boolean {
+  private look(r: Run & { sent: PlannedCommand }): boolean {
     const step = r.plan.steps[r.at];
     if (!step || r.spec.kind === "ask") return false;
     const key = cupStepOf(step);
@@ -251,6 +254,16 @@ export class ExecutionTracker {
       case "placeCup": return cup;
       default: return null;
     }
+  }
+
+  /** 명령 대상(실제 폰 고리 하나): 집기는 그 컵(World State 자리), 그 밖의 단계는 단계 목표 물건(평면도). 질문이거나 자리를 모르면 null. */
+  private target(r: Run, step: PlanStep, key: CupStep | null, world: WorldView): PlannedCommand["target"] {
+    if (r.spec.kind === "ask") return null;
+    const cup = key === "pickCup" ? cupsOf(r, world)[0] : undefined;
+    if (cup?.position) return { id: cup.id, label: VISION_TEXT.cup, position: cup.position };
+    const id = step.target?.objectId;
+    const at = id ? this.o.locate?.(id) : undefined;
+    return id && at ? { id, label: at.label, position: at.position } : null;
   }
 
   /** 폰 눈에서 단계 목표 물건(평면도 자리)까지 거리(m). 눈이나 목표 자리를 모르면 null. */

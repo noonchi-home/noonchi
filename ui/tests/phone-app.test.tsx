@@ -117,7 +117,7 @@ describe("실제 폰 화면 뿌리(PhoneApp)", () => {
     expect(FakeSocket.last.sent).toContainEqual({ type: "say", text: "TV 켜줘" });
   });
 
-  it("AR 시작: 덮개 div를 DOM 오버레이 뿌리로 세션을 연다. 평소에는 조준점이 없고, 명령이 떠 있으면 그 대상 하나에 이름표 없는 고리", async () => {
+  it("AR 시작: 덮개 div를 DOM 오버레이 뿌리로 세션을 연다. 평소에는 조준점이 없고, 명령이 떠 있으면 명령 대상 하나에 이름표 없는 고리(에이전트 초점은 그리지 않음)", async () => {
     const ops = paintLog();
     const { session, requested, ws, overlay, start } = arApp();
     act(() => ws.push(status));
@@ -129,7 +129,7 @@ describe("실제 폰 화면 뿌리(PhoneApp)", () => {
     });
     expect(ops.filter((o) => o.op === "arc")).toEqual([]);
     act(() => {
-      ws.push(command);
+      ws.push({ ...command, target: { id: "cup", label: "컵", ar: [0.2, -0.2, -0.5] } });
       session.step(200, frame());
     });
     const canvas = overlay.querySelector("canvas")!;
@@ -168,9 +168,9 @@ describe("실제 폰 화면 뿌리(PhoneApp)", () => {
     const top = overlay.querySelector<HTMLElement>("[data-phone-zone=top]")!;
     vi.spyOn(top, "getBoundingClientRect").mockReturnValue({ top: 0, bottom: 72, height: 72, left: 16, right: 374, width: 358 } as DOMRect);
     await start();
-    // 머리 위(화면 밖 위쪽) 대상
+    // 머리 위(화면 밖 위쪽) 명령 대상
     act(() => {
-      ws.push({ type: "focus", targets: [{ id: "aircon", label: "에어컨", ar: [0, 3, -1] }], ttl_ms: 8000 });
+      ws.push({ ...command, target: { id: "aircon", label: "에어컨", ar: [0, 3, -1] } });
       session.step(100, frame());
     });
     const tip = ops.filter((o) => o.op === "move").at(-1)!;

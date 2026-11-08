@@ -2,7 +2,8 @@
 // 듣기는 AR 중 늘 켜 두고(끝나면 다시 켬), 명령·답을 소리로 읽는 동안은 멈췄다가 다 읽으면(끝 알림, 오지 않으면 정해진 시간 뒤) 다시 켠다.
 // 들은 말은 그대로 서버로 간다(say: 명령의 답이면 서버가 그 답으로 받고, 아니면 에이전트로). 명령·질문(command, src/contract/phone.ts)이 speak로 오면 읽는다.
 // 답 단추는 받은 명령의 id·step으로 answer를 보낸다. 말의 답(reply)이 빈 글이면 보이지도 읽지도 않는다. 잠깐 알릴 말은 4초.
-// 명령 대상 고리: 위 줄·엄지 자리에 명령이 보일 때만(handOf) 서버 초점(focus)의 첫 대상 하나를 그린다. 조준점은 찍기·맞추기 때만(draw.aim).
+// 명령 대상 고리: 명령에 실린 대상(target, AR 자리) 하나만, 위 줄·엄지 자리에 그 명령이 보일 때만(handOf) 그린다. 에이전트 초점(focus)은
+// 명령이 없을 때만 AR에 넘긴다(대시보드로 가는 화면 프레임에만 그려지고 실제 폰 화면에는 그리지 않는다). 조준점은 찍기·맞추기 때만(draw.aim).
 import type { PhoneCommand, PhoneCommandClear } from "../../../src/contract/phone.ts";
 import { createAr } from "./core/ar.js";
 import { createLink, phoneSocketUrl } from "./core/link.js";
@@ -13,6 +14,8 @@ import {
 } from "./state";
 
 const NOTE_MS = 4000;
+/** 명령 대상 초점은 명령이 지워질 때까지(command_clear) 둔다. */
+const COMMAND_FOCUS_MS = 3_600_000;
 /** 소리 끝 알림이 오지 않을 때 다시 듣기까지: 2초 + 글자마다 0.3초. */
 const speakMs = (text: string) => 2000 + text.length * 300;
 
@@ -98,8 +101,10 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
         syncFrame(hit);
       },
       onMarks: (marks) => {
-        // 위 줄·엄지 자리에 명령이 보일 때만(승인 대기·찍기·맞추기가 차지하면 그리지 않는다)
-        draw.marks(handOf(store.get()).thumb?.kind === "command" ? marks.slice(0, 1) : []);
+        // 위 줄·엄지 자리에 명령이 보일 때만(승인 대기·찍기·맞추기가 차지하면 그리지 않는다), 그 명령 대상 하나만
+        const t = handOf(store.get()).thumb;
+        const target = t?.kind === "command" ? t.command.target : null;
+        draw.marks(target ? marks.filter((m) => m.id === target).slice(0, 1) : []);
         syncFrame();
       },
       onPerf: () => syncFrame(),
@@ -140,15 +145,18 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
       const text = String(msg.text ?? "");
       set((v) => ({ ...v, reply: text || null, pending: pending ?? v.pending }));
       if (text) sayAloud(text);
-    } else if (msg.type === "focus") ar.setFocus(msg.targets, msg.ttl_ms);
-    else if (msg.type === "command") {
+    } else if (msg.type === "focus") {
+      if (!store.get().command) ar.setFocus(msg.targets, msg.ttl_ms);
+    } else if (msg.type === "command") {
       const m = msg as PhoneCommand;
-      set((v) => ({ ...v, command: { id: m.id, step: m.step, text: m.text, vision: m.vision, choices: m.choices } }));
+      set((v) => ({ ...v, command: { id: m.id, step: m.step, text: m.text, vision: m.vision, choices: m.choices, target: m.target?.id ?? null } }));
+      ar.setFocus(m.target ? [m.target] : [], COMMAND_FOCUS_MS);
       if (m.speak) sayAloud(m.text);
     } else if (msg.type === "command_clear") {
       const m = msg as PhoneCommandClear;
       if (m.id !== undefined && m.id !== store.get().command?.id) return;
       set((v) => ({ ...v, command: null }));
+      ar.setFocus([], 0);
     }
   }
 

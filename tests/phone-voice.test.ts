@@ -121,7 +121,7 @@ describe("startServer(BRAIN=1): 클로이드 질문을 폰 말로 답한다", ()
       throw new Error("질문이 오지 않았습니다");
     };
     const ask = await asked();
-    expect(ask).toEqual({ type: "command", id: expect.stringMatching(/^plan:pam-\d+$/), step: `${ask.id}:1`, text: "컵을 치울까요?", vision: null, speak: true,
+    expect(ask).toEqual({ type: "command", id: expect.stringMatching(/^plan:pam-\d+$/), step: `${ask.id}:1`, text: "컵을 치울까요?", vision: null, target: null, speak: true,
       choices: [{ id: "clear", label: "치워 주세요" }, { id: "keep", label: "그대로 둬요" }] });
     const replies = async (n: number) => {
       for (const end = Date.now() + 5000; box.filter((m) => m.type === "reply").length < n; ) {

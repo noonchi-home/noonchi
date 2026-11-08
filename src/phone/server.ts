@@ -1,7 +1,8 @@
 // 폰 AR 페이지와 자세 WebSocket만 여는 작은 서버(SSOT 9.6). 같은 와이파이의 폰이 붙도록 0.0.0.0에 열 수 있다.
 // 기기 제어 REST는 여기 없다. 본 서버(127.0.0.1)는 그대로 두고 눈 자세는 onEye로, 폰의 말(say)과 승인은 onSay·onConfirm·onCancel로
 // 넘긴다(그 뒤는 에이전트·승인 정책이 맡는다). 실제 폰에 명령·질문이 떠 있으면 말을 먼저 그 답으로 맞춰 보고(onAnswer),
-// 답 단추(answer)는 onChoice로 넘긴다(src/contract/phone.ts).
+// 답 단추(answer)는 onChoice로 넘긴다(src/contract/phone.ts). 명령 대상의 트윈 자리는 맞춘 기준점으로 AR 자리로 바꿔 보내고(맞추기 전 null),
+// 맞춤이 바뀌면 지금 명령을 다시 보낸다(speak false).
 // 내부 테스트용이라 같은 와이파이의 누구나 말을 보낼 수 있다.
 // 폰 화면은 React 빌드 ui/dist/phone/이고 빌드 파일은 /assets/다(대시보드와 같은 빌드).
 
@@ -12,7 +13,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocket, WebSocketServer } from "ws";
 import type { FocusTarget } from "../contract/events.js";
-import type { PhoneCommand, PhoneCommandMessage, PhoneTalkReply } from "../contract/phone.js";
+import type { PhoneCommand, PhoneTalkReply, PlannedCommand, PlannedCommandMessage } from "../contract/phone.js";
 import { listenRetry } from "../server/net.js";
 import { serveFile } from "../server/static.js";
 import type { AnchorTarget } from "./anchors.js";
@@ -79,7 +80,7 @@ export interface PhoneServer {
   setTargets(targets: AnchorTarget[], mode: AlignMode): void;
   /** 실제 폰 명령(command)·지우기(command_clear)를 연결된 폰 모두에 보내고 지금 명령으로 둔다. 새로 붙은 폰은 상태 다음에
    *  지금 명령을 speak false로, 명령이 없으면 id 없는 command_clear를 받는다(다시 켠 서버에 다시 붙은 폰의 이전 명령이 지워진다). */
-  command(msg: PhoneCommandMessage): void;
+  command(msg: PlannedCommandMessage): void;
   listen(port: number, host: string): Promise<{ port: number; urls: string[] }>;
   close(): Promise<void>;
 }
@@ -210,7 +211,18 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
   };
 
   let connections = 0;
-  let current: PhoneCommand | null = null;
+  let current: PlannedCommand | null = null;
+  /** 실제 폰에 보낼 명령: 대상 트윈 자리 → AR 자리(맞추기 전이면 대상 null). */
+  const wire = (c: PlannedCommand, speak = c.speak): PhoneCommand => {
+    const ar = c.target ? session.toAr(c.target.position) : null;
+    return { ...c, target: c.target && ar ? { id: c.target.id, label: c.target.label, ar } : null, speak };
+  };
+  /** 맞춤이 바뀌었으면 지금 명령을 새 대상 자리로 다시 보낸다. */
+  const resendIf = (wasAligned: boolean) => {
+    if (!current || session.aligned === wasAligned) return;
+    const msg = wire(current, false);
+    for (const ws of wss.clients) reply(ws, msg);
+  };
   wss.on("connection", (ws) => {
     const source = ++connections;
     log(`[phone] 폰 연결(지금 ${wss.clients.size}대)`);
@@ -219,7 +231,7 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
       log(`[phone] 폰 끊김(지금 ${wss.clients.size}대)`);
     });
     reply(ws, status());
-    reply(ws, current ? { ...current, speak: false } : { type: "command_clear" });
+    reply(ws, current ? wire(current, false) : { type: "command_clear" });
     ws.on("message", (data, isBinary) => {
       if (isBinary) {
         onPacket(ws, source, Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data as Buffer));
@@ -250,9 +262,11 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
         }
         return;
       }
+      const wasAligned = session.aligned;
       const out = session.handle(raw);
       if (out.reply) reply(ws, withEngine(out.reply));
       if (out.eye) opts.onEye(out.eye);
+      resendIf(wasAligned);
     });
     ws.on("error", () => {});
   });
@@ -269,13 +283,16 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
       for (const ws of wss.clients) if (ws.readyState === WebSocket.OPEN) ws.send(msg);
     },
     setTargets(targets, mode) {
+      const wasAligned = session.aligned;
       session.setTargets(targets, mode);
       for (const ws of wss.clients) reply(ws, status());
+      resendIf(wasAligned);
     },
     command(msg) {
       if (msg.type === "command") current = msg;
       else if (msg.id === undefined || msg.id === current?.id) current = null;
-      for (const ws of wss.clients) reply(ws, msg);
+      const out = msg.type === "command" ? wire(msg) : msg;
+      for (const ws of wss.clients) reply(ws, out);
     },
     async listen(port, host) {
       const addr = await listenRetry(server, port, host, { log });

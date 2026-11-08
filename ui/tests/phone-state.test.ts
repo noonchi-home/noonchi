@@ -10,7 +10,7 @@ import {
 
 const anchors: Anchor[] = [{ id: "A", label: "거실 창 오른쪽 벽", recorded: true }, { id: "B", label: "반대편 벽", recorded: false }];
 const done = [{ id: STEP_DONE.id, label: STEP_DONE.label }];
-const cmd = (over: Partial<Command> = {}): Command => ({ id: "plan:pam-1", step: "plan:pam-1:2", text: STEP_COMMAND.pickCup, vision: "컵 · 식탁 위", choices: done, ...over });
+const cmd = (over: Partial<Command> = {}): Command => ({ id: "plan:pam-1", step: "plan:pam-1:2", text: STEP_COMMAND.pickCup, vision: "컵 · 식탁 위", choices: done, target: "cup_1", ...over });
 const ar = (over: Partial<PhoneView> = {}): PhoneView => ({
   ...initialView(), ar: true, connected: true, listening: "on", mode: "touch", anchors: anchors.map((a) => ({ ...a, recorded: true })), aligned: true, mismatchM: 0.06, ...over,
 });
