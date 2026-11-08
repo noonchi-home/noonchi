@@ -5,6 +5,7 @@
 // 도구 이름 줄은 단계 종류(확인·행동), 걸린 시간 칸은 단계 시각, 자세히는 결과 글이다. 아이콘은 밖에서 넣는다.
 // 카드 위 머리(누가)·생각(thought)·아래(승인 대기·사진) 자리를 더했다. 영어 글은 한국어로 바꿨다.
 // 글 크기 text-[9px]~[11px] → caption, text-xs → label, text-[13px]·text-sm → body-sm 토큰(줄 높이도 토큰). CallState는 className을 받는다.
+// 「진행 중」 반짝임(CallState)은 끈다: 판단 기록이 CallState에 reduced를 늘 넘긴다. 2026-11-08 사용자 결정, 반짝임이 화면 바꾸기를 멈추게 했다.
 import * as React from "react";
 import { Check, ChevronDown, Workflow } from "lucide-react";
 import { cn } from "@/lib/utils";

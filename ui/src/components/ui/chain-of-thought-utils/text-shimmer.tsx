@@ -2,6 +2,7 @@
 // 21st.dev「Text Shimmer」(id 1169, ibelick/text-shimmer) 받은 코드.
 // 바꾼 것: framer-motion → motion/react(같은 API, motion() → motion.create()를 한 번만 만든다), #a1a1aa·#000 → muted-foreground·foreground 토큰, #0000 → transparent, dark: 줄 지움.
 // Chain of Thought가 넘기는 invertLight(띠와 바탕 색을 바꿈)·disableShimmer(그냥 글) 두 prop과 글이 아닌 children을 잇는다. 기본 태그 p → span(단추 안에 들어간다).
+// 대시보드 판단 기록에서는 disableShimmer로 반짝임을 끈다: 2026-11-08 사용자 결정, 반짝임이 화면 바꾸기를 멈추게 했다.
 import React, { useMemo, type JSX } from 'react';
 import { motion } from 'motion/react';
 import { cn } from '@/lib/utils';

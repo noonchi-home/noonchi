@@ -2,6 +2,7 @@
 
 // 21st.dev「Chain of Thought」(id 28391, nexus-ui/chain-of-thought) 받은 코드.
 // 바꾼 것: text-sm → body-sm 토큰(destructive는 error 토큰 별칭). 뿌리에 disableShimmer를 이어 반짝임을 끌 수 있다(대시보드·움직임 줄이기 설정).
+// 대시보드 판단 기록은 disableShimmer로 글 반짝임을 끈다: 2026-11-08 사용자 결정, 반짝임이 화면 바꾸기를 멈추게 했다.
 // 도우미 text-shimmer(21st.dev id 1169)·use-on-change는 chain-of-thought-utils/에 있다.
 import * as React from "react";
 import { AlertTriangle, ChevronDown } from "lucide-react";

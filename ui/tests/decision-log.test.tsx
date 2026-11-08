@@ -162,4 +162,24 @@ describe("DecisionLog", () => {
     await userEvent.click(screen.getByRole("button", { name: "판단 기록 펴기" }));
     expect(screen.getByText("폰에서 클로이드에게 말해 보세요.")).toBeInTheDocument();
   });
+
+  it("움직임을 허용해도 진행 중 상태·생각 글·승인 대기가 반짝이지 않는다(2026-11-08 사용자 결정: 반짝임이 화면 바꾸기를 멈추게 했다)", async () => {
+    const animate = vi.fn((_frames: Keyframe[]) => ({ cancel() {}, finished: Promise.resolve() }));
+    (Element.prototype as unknown as { animate: unknown }).animate = animate;
+    vi.stubGlobal("matchMedia", (q: string) => ({ matches: false, media: q, onchange: null, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => false }));
+    try {
+      show(turnsOf([reply("현관문 열어줘", "폰에서 승인해 주세요", [], [pending]), { type: "agent", event: "action", sessionId: "phone", action: find }]));
+      const panel = screen.getByRole("region", { name: "판단 기록" });
+      expect(panel.querySelector("[data-call-status=running]")).not.toBeNull();
+      expect(panel.querySelector("[data-call-status=wait]")).not.toBeNull();
+      await waitFor(() => expect(panel.querySelector("[data-state=open]")).not.toBeNull());
+      await new Promise<void>((r) => queueMicrotask(r));
+      for (const s of panel.querySelectorAll("[data-running-shimmer]")) expect(s.getAttribute("class")).toBe("");
+      expect(panel.querySelector(".bg-clip-text, [style*='background-position']")).toBeNull();
+      expect(animate.mock.calls.filter(([frames]) => JSON.stringify(frames).includes("backgroundPosition"))).toEqual([]);
+    } finally {
+      delete (Element.prototype as unknown as { animate?: unknown }).animate;
+      vi.unstubAllGlobals();
+    }
+  });
 });
