@@ -23,10 +23,10 @@ afterEach(async () => {
   while (cleanups.length) await cleanups.pop()!();
 });
 
-async function start(opts: { twinDir?: string; webDir?: string; agent?: boolean } = {}) {
+async function start(opts: { twinDir?: string; webDir?: string; agent?: boolean; scene?: () => unknown } = {}) {
   const home = makeHome();
   const agent = opts.agent === false ? undefined : new Agent({ hub: home.hub, policy: home.policy, rooms: ROOMS, provider: llm.provider() });
-  const app: TwinHomeApp = createApp({ hub: home.hub, policy: home.policy, agent, rooms: ROOMS, twinDir: opts.twinDir, webDir: opts.webDir, log: () => {} });
+  const app: TwinHomeApp = createApp({ hub: home.hub, policy: home.policy, agent, rooms: ROOMS, twinDir: opts.twinDir, webDir: opts.webDir, scene: opts.scene, log: () => {} });
   const { url } = await app.listen(0, "127.0.0.1");
   cleanups.push(() => app.close());
   return { ...home, app, url };
@@ -102,6 +102,17 @@ describe("REST 읽기", () => {
     expect(nope.json.error).toContain("기기를 찾을 수 없습니다");
     const route = await api(url, "/api/nothing");
     expect(route.status).toBe(404);
+  });
+
+  it("GET /api/scene: 서버 장면(scene.json + 도면 설비), 장면이 없으면 404", async () => {
+    const { url } = await start({ scene: () => ({ plan: {}, objects: [{ id: "a" }] }) });
+    const r = await api(url, "/api/scene");
+    expect(r.status).toBe(200);
+    expect(r.json).toEqual({ ok: true, scene: { plan: {}, objects: [{ id: "a" }] } });
+    const none = await start();
+    const missing = await api(none.url, "/api/scene");
+    expect(missing.status).toBe(404);
+    expect(missing.json.error).toContain("집 장면이 없어요");
   });
 });
 
