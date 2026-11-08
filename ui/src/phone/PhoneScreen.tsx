@@ -162,9 +162,9 @@ function Settings({ view, act, root, open }: { view: PhoneView; act: PhoneAction
             </Item>
           ))}
         </ItemGroup>
-        {/* 좁은 화면에서는 아래부터 쌓인다(뒤 단추가 위): 기준점 다시 찍기, 물건 자리 맞추기, 닫기 차례로 보인다 */}
+        {/* 좁은 화면에서는 아래부터 쌓인다(뒤 단추가 위): 기준점 다시 찍기, 물건 자리 맞추기, 닫기 차례로 보인다. 간격은 footer gap 하나(닫기의 mt-2를 뺀다) */}
         <AlertDialogFooter className="gap-2 sm:gap-0">
-          <AlertDialogCancel className="h-12">닫기</AlertDialogCancel>
+          <AlertDialogCancel className="mt-0 h-12">닫기</AlertDialogCancel>
           <AlertDialogAction variant="outline" className="h-12" onClick={act.startPlace}>물건 자리 맞추기</AlertDialogAction>
           <AlertDialogAction className="h-12" onClick={act.startAnchors}>기준점 다시 찍기</AlertDialogAction>
         </AlertDialogFooter>

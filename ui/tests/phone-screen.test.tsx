@@ -186,6 +186,12 @@ describe("미어캣: 설정", () => {
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "설정" }));
   });
 
+  it("설정 모달 세 단추 사이는 footer gap(8px) 하나뿐: 「닫기」에 부품의 mt-2가 남지 않는다", () => {
+    show(SHOTS.settings.view);
+    const dialog = within(screen.getByRole("alertdialog", { name: "설정" }));
+    for (const name of ["닫기", "물건 자리 맞추기", "기준점 다시 찍기"]) expect(dialog.getByRole("button", { name }).className.split(/\s+/), name).not.toContain("mt-2");
+  });
+
   it.each([["기준점 다시 찍기", "startAnchors"], ["물건 자리 맞추기", "startPlace"]] as const)("설정의 「%s」", async (label, fn) => {
     const { act } = show(SHOTS.settings.view);
     await userEvent.click(within(screen.getByRole("alertdialog", { name: "설정" })).getByRole("button", { name: label }));
