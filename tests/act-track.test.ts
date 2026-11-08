@@ -9,6 +9,10 @@ import type { WorldObject, WorldView } from "../src/contract/world.js";
 import { PlanHub } from "../src/plan/hub.js";
 import { EXEC_TEXT, STEP_COMMAND } from "../src/plan/labels.js";
 import type { DecisionRecord } from "../src/world/decide.js";
+import { WorldState } from "../src/world/state.js";
+import { sha256, type EngineFrame } from "../src/observe/ring.js";
+import type { Detection } from "../src/brain/detector.js";
+import type { CameraView } from "../src/phone/session.js";
 import { smallFloor } from "./helpers/floor.js";
 
 // smallFloor: 로봇 [1, 2], 식탁 table_1 [7, 3], 싱크대 sink_1 [5, 1]
@@ -101,6 +105,32 @@ describe("실행 추적: 단계마다 실제 폰 명령", () => {
     w = world([cup("present")], "holding_object");
     t.onWorld();
     expect(last()).toMatchObject({ step: "plan:pam-1:3", text: "싱크대로 가 주세요" });
+  });
+
+  it("컵이 움직여 World State가 새 id를 붙여도(맞춘 카메라, 0.25m 넘게) 같은 컵으로 보고, 그 사이 판단은 같은 행동으로 이어 간다", () => {
+    // cup_9는 계획 전부터 싱크대 안에 있던 다른 컵: 내려놓기로 보지 않는다
+    const other = { ...cup("present", "in_sink", 8_000), id: "cup_9" };
+    let w = world([cup("present"), other]);
+    const { t, logs, plans, last, steps } = setup({ w: () => w });
+    t.onDecision(decision);
+    t.onAnswer("plan:pam-1", "plan:pam-1:1", "done");
+    // 집기: 손에 든 컵이 cup_2로 보이고 식탁 자리 cup_1은 사라짐
+    w = world([{ ...cup("gone"), last_seen_ms: 9_000 }, { ...cup("present", "in_hand", 9_500), id: "cup_2", first_seen_ms: 9_400 }, other]);
+    t.onWorld();
+    expect(last()).toMatchObject({ step: "plan:pam-1:3", vision: "컵 · 손에 있음 · 싱크대까지 거리 모름" });
+    // 새 판단의 대상이 새 id(cup_2)여도 같은 행동: 1단계부터 다시 하지 않는다
+    t.onDecision({ ...decision, id: "pam-2", seq: 2 });
+    expect(logs.at(-1)).toMatchObject({ type: "execution", plan_id: "plan:pam-2", text: EXEC_TEXT.same });
+    expect(plans.current()).toMatchObject({ id: "plan:pam-1", status: "running" });
+    t.onAnswer("plan:pam-1", "plan:pam-1:3", "done");
+    expect(last()).toMatchObject({ step: "plan:pam-1:4", vision: "컵 · 손에 있음" });
+    t.tick();
+    expect(steps()).toEqual(["done", "done", "done", "active"]);
+    // 내려놓기: 싱크대 안 컵이 또 새 id(cup_3)
+    w = world([{ ...cup("gone"), last_seen_ms: 9_000 }, { ...cup("gone", "in_hand", 9_500), id: "cup_2" }, { ...cup("present", "in_sink", 9_900), id: "cup_3", first_seen_ms: 9_800 }, other]);
+    t.onWorld();
+    expect(last()).toEqual({ type: "command_clear", id: "plan:pam-1" });
+    expect(plans.current()).toMatchObject({ id: "plan:pam-1", status: "done" });
   });
 
   it("완료 단추와 말(완료·다 했어)은 지금 단계 하나만 넘긴다. 지난 단계·다른 계획·없는 답은 무시한다", () => {
@@ -295,5 +325,41 @@ describe("실행 추적: 한 번에 한 계획, 실행 전 검사", () => {
     expect(t.onHeard("완료")).toBeNull();
     expect(logs).toHaveLength(n);
     expect(phone).toHaveLength(m);
+  });
+});
+
+describe("실행 추적 + 실제 World State(기준점을 맞춘 카메라)", () => {
+  // 카메라: 트윈 (0, 1.5, 0)에서 45° 아래로 숙이고 +x를 본다(tests/world-state.test.ts와 같다). 90° 시야 투영(열 우선)
+  const P = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1.0002, -1, 0, 0, -0.020002, 0];
+  const mul = (a: number[], b: number[]) => [a[3]! * b[0]! + a[0]! * b[3]! + a[1]! * b[2]! - a[2]! * b[1]!, a[3]! * b[1]! - a[0]! * b[2]! + a[1]! * b[3]! + a[2]! * b[0]!, a[3]! * b[2]! + a[0]! * b[1]! - a[1]! * b[0]! + a[2]! * b[3]!, a[3]! * b[3]! - a[0]! * b[0]! - a[1]! * b[1]! - a[2]! * b[2]!];
+  const tilt = [Math.sin(-Math.PI / 8), 0, 0, Math.cos(-Math.PI / 8)];
+  const look: CameraView = { origin: [0, 1.5, 0], orientation: mul([0, Math.sin(-Math.PI / 4), 0, Math.cos(-Math.PI / 4)], tilt) as [number, number, number, number], theta: 0, projection: P };
+  const frame = (i: number): EngineFrame => ({ id: `e${i}`, capturedAtMs: i * 1000, latestAtMs: i * 1000, jpeg: Buffer.from(`${i}`), sha256: sha256(Buffer.from(`${i}`)), width: 480, height: 360, eye: null, view: look });
+  const box = (b: [number, number, number, number]): Detection => ({ label: "cup", score: 0.9, cls: 41, box: b });
+  const onTable = box([220, 160, 40, 20]);
+  const moved = box([60, 300, 40, 20]);
+
+  it("식탁 위 컵을 들어 옮기면 새 id(cup_2)가 붙어도 집기·내려놓기가 비전으로 넘어가고 비전 상태 줄이 그 컵을 따라간다", () => {
+    const ws = new WorldState({
+      surfaces: () => [{ id: "table_1", label: "식탁", center: [2, 0], top: 0.75, radius: 0.6 }, { id: "sink_1", label: "싱크대", center: [1.2, 0.8], top: 0.9, radius: 0.5 }],
+      floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices: () => [],
+    });
+    const see = (i: number, d: Detection, state: string) => {
+      const { ids } = ws.applyDetections(frame(i), [d]);
+      ws.applyScene(`e${i}`, i * 1000, { scene: "k", observations: [{ object_id: "d1", state }], summary: "s" }, ids);
+    };
+    for (let i = 1; i <= 3; i++) see(i, onTable, "on_table");
+    const { t, last } = setup({ w: () => ws.view(10_000) });
+    t.onDecision({ ...decision, atMs: 0 });
+    t.onAnswer("plan:pam-1", "plan:pam-1:1", "done");
+    expect(last()).toMatchObject({ step: "plan:pam-1:2", vision: "컵 · 식탁 위" });
+    for (let i = 4; i <= 6; i++) see(i, moved, "in_hand");
+    expect(ws.view(6000).objects.map((o) => [o.id, o.status])).toEqual([["cup_1", "gone"], ["cup_2", "present"]]);
+    t.onWorld();
+    expect(last()).toMatchObject({ step: "plan:pam-1:3", vision: "컵 · 손에 있음 · 싱크대까지 거리 모름" });
+    t.onAnswer("plan:pam-1", "plan:pam-1:3", "done");
+    see(7, moved, "in_sink");
+    t.onWorld();
+    expect(last()).toEqual({ type: "command_clear", id: "plan:pam-1" });
   });
 });

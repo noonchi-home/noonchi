@@ -7,6 +7,8 @@
 // 물어보기는 같은 자리에 질문과 답 단추를 띄우고 답을 받으면 완료. PlanHub 단계 상태(active·done)가 지금 단계를 따라간다.
 // 실행 전 검사는 통과할 때까지 tick마다 다시 보고, recheckMs가 지나도 안 되면 그 이유로 실패한다.
 // 로봇은 한 번에 한 계획만 실행한다: 진행 중인 계획과 행동·대상이 같은 판단은 기록만 하고, 지금 계획보다 먼저 보낸(seq가 작은) 판단은 버린다.
+// 대상 컵: 기준점을 맞춘 뒤 컵이 identityM 넘게 움직이면 World State가 새 id를 붙인다(src/world/state.ts). 그래서 계획을 만들 때 고른 컵과
+// 그 뒤에 새로 생긴 같은 종류 물건을 모두 그 컵으로 본다(계획 전부터 있던 다른 컵은 빼고). 대상이 그중 하나로 바뀌거나 안 보여도 같은 행동이다.
 import type { BrainLog, ExecState } from "../contract/events.js";
 import type { PhoneCommand, PhoneCommandMessage } from "../contract/phone.js";
 import type { PlanStep, PlanView, XZ } from "../contract/plan.js";
@@ -45,9 +47,9 @@ export interface TrackerOptions {
 /** 기본값: 도착 1.2m(식탁·싱크대 가장자리에 선 사람 손의 폰), 다시 읽기 30초, 단계 실패 2분, 비전 상태 0.5초에 한 번, 검사 3초. */
 export const TRACK_DEFAULTS = { arriveM: 1.2, repeatMs: 30_000, stepTimeoutMs: 120_000, visionMs: 500, recheckMs: 3000 } as const;
 
-/** targetId: 계획을 만들 때 World State에서 고른 대상 물건(없으면 null). at: 지금 단계 번호(실행 전 -1). sent: 실제 폰에 띄운 지금 명령. */
+/** targetId: 계획을 만들 때 World State에서 고른 대상 물건(없으면 null). others: 그때 있던 같은 종류의 다른 물건. at: 지금 단계 번호(실행 전 -1). sent: 실제 폰에 띄운 지금 명령. */
 interface Run {
-  plan: PlanView; decision: DecisionRecord; spec: TaskSpec; targetId: string | null; state: ExecState; since: number;
+  plan: PlanView; decision: DecisionRecord; spec: TaskSpec; targetId: string | null; others: ReadonlySet<string>; state: ExecState; since: number;
   at: number; stepAt: number; spokeAt: number; visionAt: number; sent: PhoneCommand | null;
 }
 
@@ -88,7 +90,7 @@ export class ExecutionTracker {
     const world = this.o.world();
     const targetId = spec ? targetOf(spec, world)?.id ?? null : null;
     const open = this.run && OPEN.has(this.run.state) ? this.run : null;
-    if (open && spec && open.spec.name === spec.name && open.targetId === targetId) return this.note(d, EXEC_TEXT.same);
+    if (open && spec && open.spec.name === spec.name && (targetId === null || isOurs(open, targetId))) return this.note(d, EXEC_TEXT.same);
     this.lastSeq = d.seq;
     const now = this.clock.now();
     const plan = spec && planFor(this.o.floor(), d, world, new Date(now).toISOString());
@@ -99,7 +101,8 @@ export class ExecutionTracker {
       this.emit(planIdOf(d.id), "failed", EXEC_TEXT.noPlan);
       return;
     }
-    this.run = { plan, decision: d, spec, targetId, state: "decided", since: now, at: -1, stepAt: now, spokeAt: now, visionAt: now, sent: null };
+    const others = new Set(spec.target ? world.objects.filter((o) => o.cls === spec.target && o.id !== targetId).map((o) => o.id) : []);
+    this.run = { plan, decision: d, spec, targetId, others, state: "decided", since: now, at: -1, stepAt: now, spokeAt: now, visionAt: now, sent: null };
     this.step("decided");
     this.o.plans.onDecision(plan);
     this.step("planned");
@@ -225,22 +228,22 @@ export class ExecutionTracker {
 
   /** 단계가 됐는가: 이동은 폰 눈이 목표 가까이, 집기는 컵이 손에 있음(또는 사람이 물건을 들고 있음), 내려놓기는 컵이 싱크대 안. 컵 단계가 아니면 「완료」로만 넘긴다. */
   private reached(r: Run, step: PlanStep, key: CupStep | null, world: WorldView): boolean {
-    const place = this.cup(r, world)?.facts.place?.value;
+    const at = (place: string) => cupsOf(r, world).some((c) => c.facts.place?.value === place);
     switch (key) {
       case "goTable":
       case "goSink": {
         const d = this.distance(step);
         return d !== null && d <= this.cfg.arriveM;
       }
-      case "pickCup": return place === "in_hand" || world.person.facts.action?.value === "holding_object";
-      case "placeCup": return place === "in_sink";
+      case "pickCup": return at("in_hand") || world.person.facts.action?.value === "holding_object";
+      case "placeCup": return at("in_sink");
       default: return false;
     }
   }
 
   /** 비전 상태 한 줄: 식탁으로는 남은 거리, 집기·내려놓기는 컵 자리, 싱크대로는 컵 자리와 남은 거리. */
   private vision(r: Run, step: PlanStep, key: CupStep | null, world: WorldView): string | null {
-    const cup = `${VISION_TEXT.cup} · ${cupPlace(this.cup(r, world))}`;
+    const cup = `${VISION_TEXT.cup} · ${cupPlace(cupsOf(r, world)[0] ?? null)}`;
     switch (key) {
       case "goTable": return VISION_TEXT.distance(VISION_TEXT.table, this.distance(step));
       case "goSink": return `${cup} · ${VISION_TEXT.distance(VISION_TEXT.sink, this.distance(step))}`;
@@ -248,10 +251,6 @@ export class ExecutionTracker {
       case "placeCup": return cup;
       default: return null;
     }
-  }
-
-  private cup(r: Run, world: WorldView): WorldObject | null {
-    return world.objects.find((x) => x.id === r.targetId) ?? null;
   }
 
   /** 폰 눈에서 단계 목표 물건(평면도 자리)까지 거리(m). 눈이나 목표 자리를 모르면 null. */
@@ -287,6 +286,15 @@ export class ExecutionTracker {
   private emit(planId: string, state: ExecState, text?: string): void {
     this.o.emit({ type: "execution", at_ms: this.clock.now(), plan_id: planId, state, text: text ?? EXEC_TEXT[state] });
   }
+}
+
+/** 계획의 대상 물건 id인가: 처음 고른 물건이거나, 계획 뒤에 새로 생긴 같은 종류 물건(움직여 새 id가 붙은 그 물건). */
+const isOurs = (r: Run, id: string) => id === r.targetId || !r.others.has(id);
+
+/** 계획의 대상 물건(사라지지 않은 것), 가장 최근에 본 것부터. 대상이 없는 행동이면 빈 목록. */
+function cupsOf(r: Run, world: WorldView): WorldObject[] {
+  if (!r.spec.target) return [];
+  return world.objects.filter((o) => o.cls === r.spec.target && o.status !== "gone" && isOurs(r, o.id)).sort((a, b) => b.last_seen_ms - a.last_seen_ms);
 }
 
 /** 단계 명령은 「완료」 하나, 질문은 그 답들. */
