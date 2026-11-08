@@ -1,43 +1,104 @@
-// 폰 화면 상태(state.ts): 옮기기 전 phone.js의 render·renderStatus·showRequest·showAction 글과 규칙 그대로인지 본다.
+// 실제 폰 화면 상태(state.ts): 실제 폰은 에이전트의 손이다. 위에는 지금 할 명령 한 줄, 아래 엄지 자리에는 비전 상태 한 줄과 그 바로 아래 답 단추.
+// 일이 멈추는 문제(연결 끊김·마이크 꺼짐·기준점 안 맞음)는 모달, 잠깐 생기는 문제(추적 약함·잠깐 알릴 말)는 비전 상태 줄에만.
 import { describe, expect, it, vi } from "vitest";
+import { ASK_PROMPT, STEP_DONE } from "../../src/act/prompts.ts";
+import { STEP_COMMAND } from "../../src/plan/labels.ts";
 import {
-  anchorCount, anchorLabel, anchorNames, createStore, initialView, onAction, onRequest, onStatus, photoSavedText, statusLine, supportText, wouldLine,
-  type Anchor,
+  anchorCount, anchorNames, createStore, handOf, initialView, nextAnchor, onStatus, PLACE_LINE, problemOf, settingsRows, setupLine, supportText,
+  type Anchor, type Command, type PhoneView,
 } from "../src/phone/state";
 
-const anchors: Anchor[] = [{ id: "A", label: "거실 창가", recorded: true }, { id: "B", label: "현관", recorded: false }];
-const base = { aligned: false, mismatchM: null, limited: false, anchorCount: "1/2", note: null };
+const anchors: Anchor[] = [{ id: "A", label: "거실 창 오른쪽 벽", recorded: true }, { id: "B", label: "반대편 벽", recorded: false }];
+const done = [{ id: STEP_DONE.id, label: STEP_DONE.label }];
+const cmd = (over: Partial<Command> = {}): Command => ({ id: "plan:pam-1", step: "plan:pam-1:2", text: STEP_COMMAND.pickCup, vision: "컵 · 식탁 위", choices: done, ...over });
+const ar = (over: Partial<PhoneView> = {}): PhoneView => ({
+  ...initialView(), ar: true, connected: true, listening: "on", mode: "touch", anchors: anchors.map((a) => ({ ...a, recorded: true })), aligned: true, mismatchM: 0.06, ...over,
+});
 
-describe("위 상태 줄", () => {
-  it("맞추기 전: 바닥 기준점은 창가 기준 방향만, 벽 기준점은 벽 지점 수", () => {
-    expect(statusLine({ ...base, mode: "floor" }).text).toBe("맞추기 전 · 창가 기준 방향만 · 기준점 1/2 기록");
-    expect(statusLine({ ...base, mode: "touch" }).text).toBe("맞추기 전 · 벽 지점 1/2 기록");
+describe("엄지 자리와 위 한 줄(handOf)", () => {
+  it("명령이 없으면 위도 아래도 비어 있다(미어캣만)", () => {
+    expect(handOf(ar())).toEqual({ top: null, thumb: null, vision: null });
   });
-  it("맞춤: 거리 차이 cm, 벽 기준점은 근사, 추적이 약하면 덧붙인다", () => {
-    expect(statusLine({ ...base, mode: "floor", aligned: true, mismatchM: 0.123 }).text).toBe("맞춤 ✓ · 거리 차이 12cm");
-    expect(statusLine({ ...base, mode: "touch", aligned: true, mismatchM: 0.05, limited: true }).text).toBe("근사 맞춤 ✓ · 거리 차이 5cm · 추적 약함");
+
+  it("명령: 위는 명령 글, 아래는 비전 상태 한 줄과 답 단추", () => {
+    const c = cmd();
+    expect(handOf(ar({ command: c }))).toEqual({ top: "컵을 들어 주세요", thumb: { kind: "command", command: c }, vision: { text: "컵 · 식탁 위", tone: "plain" } });
   });
-  it("잠깐 알릴 말이 있으면 그 말, title은 늘 맞춤 상태", () => {
-    expect(statusLine({ ...base, mode: "floor", note: "AR을 먼저 시작하세요" })).toEqual({ text: "AR을 먼저 시작하세요", title: "맞추기 전 · 창가 기준 방향만 · 기준점 1/2 기록" });
+
+  it("질문은 비전 상태 줄 없이 답 단추만", () => {
+    const q = cmd({ text: ASK_PROMPT.text, vision: null, choices: ASK_PROMPT.choices.map(({ id, label }) => ({ id, label })) });
+    expect(handOf(ar({ command: q }))).toMatchObject({ top: "컵을 치울까요?", vision: null });
   });
-  it("처음 값: 바닥을 비춰 주세요, 0 fps, 측정 전", () => {
-    const v = initialView(true);
-    expect([v.status.text, v.fps, v.perfDetail, v.speech, v.support]).toEqual(["바닥을 비춰 주세요", "0 fps", "측정 전", true, { kind: "checking" }]);
+
+  it("추적이 약하면 비전 상태 줄이 「추적이 약해요」(경고), 잠깐 알릴 말이 있으면 그 말", () => {
+    expect(handOf(ar({ command: cmd(), limited: true })).vision).toEqual({ text: "추적이 약해요", tone: "warn" });
+    expect(handOf(ar({ command: cmd(), limited: true, note: "서버와 연결이 끊겨 답을 보내지 못했어요" })).vision).toEqual({ text: "서버와 연결이 끊겨 답을 보내지 못했어요", tone: "warn" });
+  });
+
+  it("승인 대기(실제 모드 가전)는 명령 자리: 위에 「기기: 까닭」, 아래 승인·취소. 명령보다 먼저", () => {
+    const pending = [{ token: "t1", deviceLabel: "현관문", reason: "현관문 잠금 해제" }, { token: "t2", deviceLabel: "창문", reason: "창문 열기" }];
+    expect(handOf(ar({ command: cmd(), pending }))).toEqual({ top: "현관문: 현관문 잠금 해제", thumb: { kind: "pending", item: pending[0] }, vision: null });
+  });
+
+  it("기준점 찍기: 위는 다음 기준점 안내, 아래는 바닥에 닿음·기록 수와 「기록」. 명령보다 먼저", () => {
+    const v = ar({ setup: "anchors", aligned: false, anchors, command: cmd(), hit: true });
+    expect(handOf(v)).toEqual({ top: "B 반대편 벽 바로 아래 바닥을 가리켜 주세요", thumb: { kind: "record", anchor: anchors[1] }, vision: { text: "바닥에 닿음 · 기준점 1/2", tone: "ok" } });
+    expect(handOf({ ...v, hit: false }).vision).toEqual({ text: "바닥에 안 닿음 · 기준점 1/2", tone: "plain" });
+  });
+
+  it("물건 자리 맞추기: 위는 「여기」 말하기 안내, 아래는 바닥에 닿음과 「완료」", () => {
+    expect(handOf(ar({ setup: "place", hit: true }))).toEqual({ top: PLACE_LINE, thumb: { kind: "place" }, vision: { text: "바닥에 닿음", tone: "ok" } });
+    expect(PLACE_LINE).toBe('물건 아래 바닥을 가리키고 "냉장고 여기로"라고 말해 주세요');
   });
 });
 
-describe("기준점 글", () => {
-  it("기록 수/전체, 첫 안내 이름(상태 전이면 방 모서리), 단추 글", () => {
-    expect(anchorCount(anchors)).toBe("1/2");
-    expect(anchorNames("floor", null)).toBe("방 모서리");
-    expect(anchorNames("floor", anchors)).toBe("거실 창가, 현관");
-    expect(anchorNames("touch", anchors)).toBe("A 거실 창가, B 현관");
-    expect(anchorLabel("floor", anchors[0]!)).toBe("✓ 거실 창가 지점 기록");
-    expect(anchorLabel("touch", anchors[1]!)).toBe("B 현관 아래 바닥 조준하고 기록");
+describe("기준점 안내", () => {
+  it("다음 기준점은 아직 안 찍은 첫 곳, 다 찍었으면 첫 곳", () => {
+    expect(nextAnchor(anchors)).toBe(anchors[1]);
+    expect(nextAnchor(anchors.map((a) => ({ ...a, recorded: true })))?.id).toBe("A");
+    expect(nextAnchor(null)).toBeNull();
+  });
+
+  it("벽 기준점은 「A 이름 바로 아래 바닥」, 바닥 기준점은 「이름 바닥」", () => {
+    expect(setupLine("touch", anchors[0]!)).toBe("A 거실 창 오른쪽 벽 바로 아래 바닥을 가리켜 주세요");
+    expect(setupLine("floor", { id: "a1", label: "거실 창 앞", recorded: false })).toBe("거실 창 앞 바닥을 가리켜 주세요");
   });
 });
 
-describe("처음 화면·알림 글", () => {
+describe("문제(problemOf): 일이 멈추면 모달 하나", () => {
+  it("AR 중에만. 연결 끊김 → 마이크 꺼짐 → 기준점 안 맞음 순으로 하나", () => {
+    expect(problemOf(ar())).toBeNull();
+    expect(problemOf(ar({ ar: false, connected: false }))).toBeNull();
+    expect(problemOf(ar({ connected: false, listening: "denied", aligned: false }))).toBe("offline");
+    expect(problemOf(ar({ listening: "denied", aligned: false }))).toBe("mic");
+    expect(problemOf(ar({ aligned: false }))).toBe("align");
+  });
+
+  it("기준점을 찍는 중이거나 아직 서버 상태가 없으면 기준점 모달을 띄우지 않는다. 추적 약함은 모달이 아니다", () => {
+    expect(problemOf(ar({ aligned: false, setup: "anchors" }))).toBeNull();
+    expect(problemOf(ar({ aligned: false, anchors: null }))).toBeNull();
+    expect(problemOf(ar({ limited: true }))).toBeNull();
+  });
+});
+
+describe("설정 줄(settingsRows)", () => {
+  it("연결·듣기·기준점 상태", () => {
+    expect(settingsRows(ar())).toEqual([
+      { name: "연결", value: "됨", tone: "ok" },
+      { name: "듣기", value: "켜짐", tone: "ok" },
+      { name: "기준점", value: "맞음 · 6cm", tone: "ok" },
+    ]);
+    expect(settingsRows(ar({ connected: false, listening: "denied", aligned: false, anchors }))).toEqual([
+      { name: "연결", value: "끊김", tone: "error" },
+      { name: "듣기", value: "꺼짐", tone: "error" },
+      { name: "기준점", value: "안 맞음 · 1/2", tone: "warn" },
+    ]);
+    expect(settingsRows(ar({ listening: "paused" }))[1]).toEqual({ name: "듣기", value: "켜짐", tone: "ok" });
+    expect(settingsRows(ar({ listening: "off" }))[1]).toEqual({ name: "듣기", value: "꺼짐", tone: "plain" });
+  });
+});
+
+describe("처음 화면 글", () => {
   it("AR 지원 줄", () => {
     expect(supportText({ kind: "checking" })).toBe("AR 지원을 확인하는 중…");
     expect(supportText({ kind: "insecure" })).toBe("보안 연결이 아니라 AR을 켤 수 없어요. https 주소로 여세요.");
@@ -45,31 +106,28 @@ describe("처음 화면·알림 글", () => {
     expect(supportText({ kind: "ready" })).toBe("준비됐어요. 폰을 세로로 들고 첫 기준점 근처에서 AR을 시작하세요.");
     expect(supportText({ kind: "failed", message: "거부됨" })).toBe("AR을 시작하지 못했어요: 거부됨");
   });
-  it("사진 보냄 알림, 클로이드라면 줄", () => {
-    expect(photoSavedText({ answer: true })).toBe("요청한 컵 사진을 보냈어요");
-    expect(photoSavedText({ aligned: true })).toBe("사진을 위치와 함께 보냈어요");
-    expect(photoSavedText({})).toBe("위치 없이 사진을 보냈어요");
-    expect(wouldLine("컵 집기")).toBe("클로이드라면: 컵 집기 · 기기 명령은 보내지 않아요");
-    expect(wouldLine(null)).toBeNull();
+
+  it("기록 수/전체, 첫 안내 이름(상태 전이면 방 모서리)", () => {
+    expect(anchorCount(anchors)).toBe("1/2");
+    expect(anchorNames("floor", null)).toBe("방 모서리");
+    expect(anchorNames("touch", anchors)).toBe("A 거실 창 오른쪽 벽, B 반대편 벽");
+  });
+
+  it("처음 값: 연결 전, 듣기 꺼짐, 명령·설정·기준점 찍기 없음", () => {
+    expect(initialView()).toMatchObject({ support: { kind: "checking" }, ar: false, connected: false, listening: "off", command: null, setup: null, settingsOpen: false, pending: [] });
   });
 });
 
 describe("메시지 → 상태", () => {
-  it("상태 메시지: 방식·기준점·맞춤(방식이 없으면 floor)", () => {
-    const v = onStatus(initialView(false), { anchors, aligned: true });
-    expect([v.mode, v.anchors, v.aligned]).toEqual(["floor", anchors, true]);
+  it("상태 메시지: 방식·기준점·맞춤·거리 차이(방식이 없으면 floor)", () => {
+    const v = onStatus(initialView(), { anchors, aligned: true, mismatch_m: 0.12 });
+    expect([v.mode, v.anchors, v.aligned, v.mismatchM]).toEqual(["floor", anchors, true, 0.12]);
   });
-  it("사진 요청: 거둘 때까지 둔다. 다른 요청을 거두는 말은 무시한다", () => {
-    const shown = onRequest(initialView(false), { id: "r1", text: "컵 안을 비춰 주세요", active: true });
-    expect(shown.request).toEqual({ id: "r1", text: "컵 안을 비춰 주세요" });
-    expect(onRequest(shown, { id: "r0", text: "", active: false })).toBe(shown);
-    expect(onRequest(shown, { id: "r1", text: "", active: false }).request).toBeNull();
-  });
-  it("행동 부탁: 같은 부탁을 거둘 때만 지운다. 선택·클로이드라면이 없으면 빈 값", () => {
-    const shown = onAction(initialView(false), { id: "a1", text: "식탁 위 컵을 치워 주세요", active: true });
-    expect(shown.action).toEqual({ id: "a1", text: "식탁 위 컵을 치워 주세요", would: null, choices: [] });
-    expect(onAction(shown, { id: "a0", active: false })).toBe(shown);
-    expect(onAction(shown, { id: "a1", active: false }).action).toBeNull();
+
+  it("맞추면 기준점 찍기를 끝낸다(물건 자리 맞추기는 그대로)", () => {
+    expect(onStatus({ ...initialView(), setup: "anchors" }, { anchors, aligned: true }).setup).toBeNull();
+    expect(onStatus({ ...initialView(), setup: "anchors" }, { anchors, aligned: false }).setup).toBe("anchors");
+    expect(onStatus({ ...initialView(), setup: "place" }, { anchors, aligned: true }).setup).toBe("place");
   });
 });
 

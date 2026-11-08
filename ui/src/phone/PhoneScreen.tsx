@@ -1,26 +1,28 @@
-// 실제 폰 화면(클로이드의 눈). 처음 화면: 마스코트(세로에서만)·제목·AR 지원 줄·안내 둘·AR 시작, 대화(답 줄·승인 대기·누르고 말하기·글 입력).
-// AR 덮개(DOM 오버레이 뿌리): 조준점·초점 그림(canvas), 위 상태 줄(두 줄까지)·보낸 장 수(가로만)·⋯, 마스코트 말풍선, 알림, 사진 요청, 행동 부탁, 기준점 단추, 큰 단추 셋, 승인 대기, ⋯ 메뉴.
-// 실제 폰은 세로로 든다. 세로가 기본 배치다: 위 줄(말풍선·알림·사진 요청)은 조준점 위, 엄지 자리(승인 대기·행동 부탁·기준점 단추)는
-// 조준점 아래, 큰 단추는 맨 아래 가로 줄. 두 칸 모두 가운데 조준점을 비키고, 엄지 자리는 넘치면 그 칸만 스크롤한다.
-// 가로로 들면 landscape:로 큰 단추는 오른쪽 세로 줄, 위 줄은 조준점 오른쪽, 엄지 자리는 조준점 왼쪽에 둔다. 방향 알림은 없다.
-// 마스코트 말풍선(얼굴 + 화살표가 얼굴을 가리키는 Tooltip)은 서버가 보낸 지금 하는 일(brain_line)을 위 줄 맨 위에 보인다. 판단 줄은 따로 없다.
-// 초점 그림 canvas는 위 줄 위, 누르는 것들 아래에 둔다(말풍선·알림이 초점 고리를 가리지 않게). AR 중에는 덮개만 보이므로 글 입력은 ⋯ 메뉴에 둔다.
-// 부품은 ui/src/components/ui의 21st.dev 부품만 쓰고(components.json F1~F15), 여기서는 배치만 한다.
-import { Camera, Ellipsis, MessageSquare, Mic, RotateCcw, Square, TriangleAlert } from "lucide-react";
-import { useState, type Dispatch, type FormEvent, type PointerEvent as ReactPointerEvent, type Ref, type SetStateAction } from "react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+// 실제 폰 화면(에이전트의 손). 처음 화면: 마스코트(세로에서만)·제목·AR 지원 줄·기준점 안내·AR 시작, 답 줄·승인 대기·글 입력.
+// AR 덮개(DOM 오버레이 뿌리): 맨 아래 canvas(명령 대상 고리·화면 밖 세모, 찍기·맞추기 때만 조준점), 위 줄(왼쪽 위 미어캣 = 설정 단추, 그 옆 지금 명령 한 줄),
+// 엄지 자리(명령·질문·승인·찍기가 있을 때만 카드 하나: 비전 상태 한 줄, 그 바로 아래 답 단추). 설정과 문제 모달(연결 끊김·마이크 꺼짐·기준점 안 맞음)은
+// Alert Dialog를 덮개 뿌리 안에 띄운다(AR 중에는 그 안만 보인다). 세로가 기본 배치이고, 가로면 엄지 자리만 오른쪽 아래로 옮긴다(landscape:).
+// 부품은 ui/src/components/ui의 21st.dev 부품만 쓰고 여기서는 배치만 한다. 글 크기는 부품 원래 크기, 누르는 것은 48px(h-12·size-12).
+import { MessageSquare } from "lucide-react";
+import { useCallback, useState, type FormEvent, type Ref } from "react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Avatar, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Item, ItemActions, ItemContent, ItemTitle } from "@/components/ui/item";
+import { Item, ItemActions, ItemContent, ItemGroup, ItemTitle } from "@/components/ui/item";
 import { LiquidGlass } from "@/components/ui/liquid-glass";
-import { Status } from "@/components/ui/status";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { anchorLabel, anchorNames, supportText, wouldLine, type BrainAction, type Pending, type PhoneActions, type PhoneView, type TalkSpot } from "./state";
+import { Status, StatusIndicator } from "@/components/ui/status";
+import {
+  anchorNames, handOf, PROBLEM_TEXT, problemOf, settingsRows, supportText,
+  type Hand, type Pending, type PhoneActions, type PhoneView, type Problem, type Tone,
+} from "./state";
 
-/** AR 위 큰 단추(말하기·사진·끝내기): 76×64px, 아이콘 위·이름 아래. */
-const BIG = "h-16 w-[76px] flex-col gap-0.5 px-1";
+/** 상태 줄 색: Status 부품 variant. */
+const TONE: Record<Tone, "default" | "success" | "warning" | "error"> = { plain: "default", ok: "success", warn: "warning", error: "error" };
 
 export interface PhoneScreenProps {
   view: PhoneView;
@@ -29,31 +31,28 @@ export interface PhoneScreenProps {
   canvasRef?: Ref<HTMLCanvasElement>;
 }
 
+function assign<T>(ref: Ref<T> | undefined, value: T | null) {
+  if (typeof ref === "function") ref(value);
+  else if (ref) (ref as { current: T | null }).current = value;
+}
+
 export function PhoneScreen({ view, act, overlayRef, canvasRef }: PhoneScreenProps) {
-  // 처음 화면과 ⋯ 메뉴의 글 입력이 같은 글을 이어 쓴다(옮기기 전에는 같은 입력칸을 옮겼다)
-  const [draft, setDraft] = useState("");
+  // 모달은 덮개 뿌리 안에 그린다: 뿌리 요소를 상태로도 들고 있는다
+  const [root, setRoot] = useState<HTMLDivElement | null>(null);
+  const attach = useCallback((el: HTMLDivElement | null) => {
+    setRoot(el);
+    assign(overlayRef, el);
+  }, [overlayRef]);
   return (
     <>
-      <Intro view={view} act={act} draft={draft} setDraft={setDraft} />
-      <Overlay view={view} act={act} draft={draft} setDraft={setDraft} overlayRef={overlayRef} canvasRef={canvasRef} />
+      <Intro view={view} act={act} />
+      <Overlay view={view} act={act} root={root} attach={attach} canvasRef={canvasRef} />
     </>
   );
 }
 
-/** 누르는 동안 듣고, 떼거나 손가락이 벗어나면 멈춘다. 길게 눌러도 메뉴가 뜨지 않게 한다. */
-function hold(act: PhoneActions, spot: TalkSpot) {
-  return {
-    onPointerDown: (e: ReactPointerEvent) => { e.preventDefault(); act.talkDown(spot); },
-    onPointerUp: () => act.talkUp(spot),
-    onPointerCancel: () => act.talkUp(spot),
-    onPointerLeave: () => act.talkUp(spot),
-    onContextMenu: (e: { preventDefault(): void }) => e.preventDefault(),
-  };
-}
-
-type DraftProps = { act: PhoneActions; draft: string; setDraft: Dispatch<SetStateAction<string>> };
-
-function TalkForm({ act, draft, setDraft }: DraftProps) {
+function TalkForm({ act }: { act: PhoneActions }) {
+  const [draft, setDraft] = useState("");
   const submit = (e: FormEvent) => {
     e.preventDefault();
     act.say(draft);
@@ -63,7 +62,7 @@ function TalkForm({ act, draft, setDraft }: DraftProps) {
     <form className="flex gap-2" autoComplete="off" onSubmit={submit}>
       <Input className="h-12 min-w-0 flex-1" maxLength={500} value={draft} onChange={(e) => setDraft(e.target.value)}
         placeholder="예: TV 켜줘 / 냉장고 위치 여기로 맞춰줘" aria-label="클로이드에게 할 말" />
-      <Button type="submit" variant="outline" size="touch" className="h-12">보내기</Button>
+      <Button type="submit" variant="outline" className="h-12">보내기</Button>
     </form>
   );
 }
@@ -75,8 +74,8 @@ function PendingList({ items, act }: { items: Pending[]; act: PhoneActions }) {
         <Item key={p.token} size="sm">
           <ItemContent><ItemTitle>{p.deviceLabel}: {p.reason}</ItemTitle></ItemContent>
           <ItemActions>
-            <Button size="touch" className="h-12" onClick={() => act.confirm(p.token)}>승인</Button>
-            <Button variant="outline" size="touch" className="h-12" onClick={() => act.cancel(p.token)}>취소</Button>
+            <Button className="h-12" onClick={() => act.confirm(p.token)}>승인</Button>
+            <Button variant="outline" className="h-12" onClick={() => act.cancel(p.token)}>취소</Button>
           </ItemActions>
         </Item>
       ))}
@@ -84,7 +83,7 @@ function PendingList({ items, act }: { items: Pending[]; act: PhoneActions }) {
   );
 }
 
-function Intro({ view, act, draft, setDraft }: { view: PhoneView } & DraftProps) {
+function Intro({ view, act }: { view: PhoneView; act: PhoneActions }) {
   const names = anchorNames(view.mode, view.anchors);
   const canStart = view.support.kind === "ready" || view.support.kind === "failed";
   return (
@@ -100,12 +99,11 @@ function Intro({ view, act, draft, setDraft }: { view: PhoneView } & DraftProps)
           <ol className="flex list-decimal flex-col gap-2 ps-5">
             {view.mode === "touch"
               ? <li>{names} 바로 아래 바닥에 조준점을 맞추고 <b>기록</b>을 눌러요. 초록이면 닿은 거예요</li>
-              : <li>{names} 바닥에 차례로 조준점을 맞추고 <b>지점 기록</b>을 눌러요</li>}
-            <li>물건 아래 바닥을 조준하고 <b>말하기</b>를 누른 채 "냉장고 여기로"라고 말해요</li>
+              : <li>{names} 바닥에 차례로 조준점을 맞추고 <b>기록</b>을 눌러요</li>}
           </ol>
         </CardContent>
         <CardFooter>
-          <Button size="touch" className="h-12 w-full" disabled={!canStart} onClick={act.startAr}>AR 시작</Button>
+          <Button className="h-12 w-full" disabled={!canStart} onClick={act.startAr}>AR 시작</Button>
         </CardFooter>
       </Card>
       <section aria-label="클로이드와 대화" className="flex flex-col gap-2">
@@ -113,130 +111,117 @@ function Intro({ view, act, draft, setDraft }: { view: PhoneView } & DraftProps)
           <Alert role="status" aria-live="polite"><MessageSquare /><AlertDescription>{view.reply}</AlertDescription></Alert>
         )}
         {!view.ar && view.pending.length > 0 && <PendingList items={view.pending} act={act} />}
-        {view.speech && (
-          <Button size="touch" variant={view.listening === "intro" ? "destructive" : "default"} className="h-12 w-full gap-2 touch-none select-none" {...hold(act, "intro")}>
-            <Mic className="size-4" />{view.listening === "intro" ? "듣는 중… 손을 떼면 보내요" : "누르고 말하기"}
-          </Button>
-        )}
-        {!view.ar && <TalkForm act={act} draft={draft} setDraft={setDraft} />}
+        {!view.ar && <TalkForm act={act} />}
       </section>
     </main>
   );
 }
 
-function ActionCard({ action, act }: { action: BrainAction; act: PhoneActions }) {
-  const would = wouldLine(action.would);
+/** 엄지 자리 답 단추: 첫 답이 주 단추(default), 나머지는 outline. variant를 식으로 고르면 부품 lint가 "outline"을 class로 본다. */
+function Answers({ hand, act }: { hand: Hand; act: PhoneActions }) {
+  const t = hand.thumb!;
+  if (t.kind === "record") return <Button className="h-12 flex-1" onClick={() => act.recordAnchor(t.anchor.id)}>기록</Button>;
+  if (t.kind === "place") return <Button className="h-12 flex-1" onClick={act.endSetup}>완료</Button>;
+  if (t.kind === "pending") {
+    return (
+      <>
+        <Button className="h-12 flex-1" onClick={() => act.confirm(t.item.token)}>승인</Button>
+        <Button variant="outline" className="h-12 flex-1" onClick={() => act.cancel(t.item.token)}>취소</Button>
+      </>
+    );
+  }
+  const { id, step, choices } = t.command;
   return (
-    <Card className="w-full">
-      <CardHeader className="p-4">
-        <CardTitle className="flex flex-wrap items-center gap-2">
-          <Status variant="warning" size="touch"><TriangleAlert className="size-4" />모의</Status>
-          {action.text}
-        </CardTitle>
-      </CardHeader>
-      {would && <CardContent className="px-4 pb-2">{would}</CardContent>}
-      <CardFooter className="gap-2 p-4 pt-0">
-        {/* 첫 선택이 주 단추(default), 나머지는 outline. variant를 식으로 고르면 부품 lint가 "outline"을 class로 본다 */}
-        {action.choices.map((c, i) => {
-          const pick = () => act.brainReply(action.id, c.id);
-          return i === 0
-            ? <Button key={c.id} size="touch" className="h-12 flex-1" onClick={pick}>{c.label}</Button>
-            : <Button key={c.id} size="touch" variant="outline" className="h-12 flex-1" onClick={pick}>{c.label}</Button>;
-        })}
-      </CardFooter>
-    </Card>
+    <>
+      {choices.map((c, i) => {
+        const pick = () => act.answer(id, step, c.id);
+        return i === 0
+          ? <Button key={c.id} className="h-12 flex-1" onClick={pick}>{c.label}</Button>
+          : <Button key={c.id} variant="outline" className="h-12 flex-1" onClick={pick}>{c.label}</Button>;
+      })}
+    </>
   );
 }
 
-/** 마스코트 말풍선: 얼굴(브랜드 얼굴 상자)과 그 오른쪽에서 화살표가 얼굴을 가리키는 Tooltip. 높이는 두 줄로 정해 두어 아래 알림이 움직이지 않는다. */
-function MascotBubble({ text }: { text: string }) {
-  const [box, setBox] = useState<HTMLDivElement | null>(null);
+/** 미어캣(설정 단추)과 설정 모달: 연결·듣기·기준점 상태, 기준점 다시 찍기, 물건 자리 맞추기, 닫기. 닫으면 미어캣으로 초점이 돌아온다. */
+function Settings({ view, act, root, open }: { view: PhoneView; act: PhoneActions; root: HTMLElement | null; open: boolean }) {
   return (
-    <div ref={setBox} data-phone-mascot="" role="status" aria-live="polite" className="flex h-16 w-full shrink-0 items-center">
-      <TooltipProvider>
-        <Tooltip open>
-          <TooltipTrigger asChild>
-            <Avatar shape="logo" className="size-10"><AvatarImage src="/brand/face-128.png" alt="" /></Avatar>
-          </TooltipTrigger>
-          {box && (
-            <TooltipContent
-              container={box} side="right" align="center" sideOffset={6} avoidCollisions={false} showArrow tone="twin" size="body"
-              aria-label={text} data-phone-zone="bubble"
-              className="pointer-events-none max-w-[calc(100vw-84px)] motion-reduce:animate-none landscape:max-w-[calc(50vw-172px)]"
-            >
-              <p aria-hidden="true" className="line-clamp-2 break-keep">{text}</p>
-            </TooltipContent>
-          )}
-        </Tooltip>
-      </TooltipProvider>
-    </div>
+    <AlertDialog open={open} onOpenChange={act.setSettings}>
+      <AlertDialogTrigger asChild>
+        <Button variant="ghost" size="icon" aria-label="설정" className="size-12 shrink-0 p-0">
+          <Avatar shape="logo" className="size-10"><AvatarImage src="/brand/face-128.png" alt="" /></Avatar>
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent container={root} aria-describedby={undefined} className="motion-reduce:animate-none">
+        <AlertDialogHeader><AlertDialogTitle>설정</AlertDialogTitle></AlertDialogHeader>
+        <ItemGroup>
+          {settingsRows(view).map((r) => (
+            <Item key={r.name} size="sm" role="listitem">
+              <ItemContent><ItemTitle>{r.name}</ItemTitle></ItemContent>
+              <ItemActions><Status variant={TONE[r.tone]}>{r.value}</Status></ItemActions>
+            </Item>
+          ))}
+        </ItemGroup>
+        {/* 좁은 화면에서는 아래부터 쌓인다(뒤 단추가 위): 기준점 다시 찍기, 물건 자리 맞추기, 닫기 차례로 보인다 */}
+        <AlertDialogFooter className="gap-2 sm:gap-0">
+          <AlertDialogCancel className="h-12">닫기</AlertDialogCancel>
+          <AlertDialogAction variant="outline" className="h-12" onClick={act.startPlace}>물건 자리 맞추기</AlertDialogAction>
+          <AlertDialogAction className="h-12" onClick={act.startAnchors}>기준점 다시 찍기</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
-function Overlay({ view, act, draft, setDraft, overlayRef, canvasRef }: { view: PhoneView; overlayRef?: Ref<HTMLDivElement>; canvasRef?: Ref<HTMLCanvasElement> } & DraftProps) {
-  const pending = view.ar && view.pending.length > 0;
-  const anchors = view.anchors && !view.aligned ? view.anchors : [];
+/** 일이 멈추는 문제 모달: 제목과 고치는 단추(연결 끊김은 단추 없이 다시 붙으면 닫힌다). 닫히는 동안에도 마지막 글을 보인다. */
+function ProblemDialog({ problem, act, root }: { problem: Problem | null; act: PhoneActions; root: HTMLElement | null }) {
+  const [last, setLast] = useState<Problem | null>(problem);
+  if (problem !== null && problem !== last) setLast(problem);
+  const shown = problem ?? last;
+  const text = shown ? PROBLEM_TEXT[shown] : null;
+  const fix = shown === "mic" ? act.micOn : act.startAnchors;
   return (
-    <div ref={overlayRef} hidden={!view.ar} data-phone-overlay="" className="fixed inset-0">
-      {/* 위 줄: 마스코트 말풍선·알림·사진 요청. 누르는 것이 없고, 조준점 위(세로)·오른쪽(가로)에서 잘린다 */}
-      <div data-phone-zone="top" className="pointer-events-none fixed top-16 right-4 left-4 flex max-h-[calc(50dvh-86px)] flex-col items-center gap-2 overflow-hidden landscape:right-24 landscape:left-[calc(50vw+24px)] landscape:max-h-[calc(100dvh-76px)]">
-        {view.brainLine !== null && <MascotBubble text={view.brainLine} />}
-        {view.toast !== null && (
-          <LiquidGlass mode="opaque" role="status" aria-live="polite" className="max-w-full" contentClassName="px-3.5 py-2 text-center">
-            {view.toast}
+    <AlertDialog open={problem !== null}>
+      <AlertDialogContent container={root} aria-describedby={undefined} className="motion-reduce:animate-none">
+        <AlertDialogHeader><AlertDialogTitle>{text?.title}</AlertDialogTitle></AlertDialogHeader>
+        {text?.fix && (
+          <AlertDialogFooter><AlertDialogAction className="h-12" onClick={fix}>{text.fix}</AlertDialogAction></AlertDialogFooter>
+        )}
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+function Overlay({ view, act, root, attach, canvasRef }: { view: PhoneView; act: PhoneActions; root: HTMLElement | null; attach: (el: HTMLDivElement | null) => void; canvasRef?: Ref<HTMLCanvasElement> }) {
+  const hand = handOf(view);
+  const problem = view.ar ? problemOf(view) : null;
+  return (
+    <div ref={attach} hidden={!view.ar} data-phone-overlay="" className="fixed inset-0">
+      <canvas ref={canvasRef} aria-hidden="true" className="pointer-events-none fixed inset-0 size-full" />
+      {/* 위 줄: 왼쪽 위 미어캣(늘), 그 옆 지금 할 명령 한 줄(있을 때만) */}
+      <div data-phone-zone="top" className="fixed inset-x-0 top-0 flex items-start gap-2 px-4 pt-2">
+        <Settings view={view} act={act} root={root} open={view.ar && view.settingsOpen && problem === null} />
+        {hand.top !== null && (
+          <LiquidGlass mode="opaque" radius={16} role="status" aria-live="polite" className="min-w-0 flex-1" contentClassName="px-3.5 py-3">
+            <p data-phone-text="명령" className="break-keep">{hand.top}</p>
           </LiquidGlass>
         )}
-        {view.request && (
-          <Alert variant="brand" size="lg"><Camera /><AlertTitle>{view.request.text}</AlertTitle></Alert>
-        )}
       </div>
-      <canvas ref={canvasRef} aria-hidden="true" className="pointer-events-none fixed inset-0 size-full" />
-      <div className="fixed inset-x-0 top-0 flex items-center gap-2 px-4 pt-2">
-        {/* 상태 줄 글은 두 줄까지 다 보이고, 줄 높이는 보낸 장 수처럼 본문 토큰(20px)이다. 세로에서는 보낸 장 수를 숨겨(⋯ 메뉴 측정 글에 있다) 상태 줄 폭을 넓힌다 */}
-        <Status variant="scrim" size="touch" role="status" title={view.status.title} className="min-w-0 flex-1 whitespace-normal">
-          <span data-phone-text="상태 줄" className="line-clamp-2 break-keep">{view.status.text}</span>
-        </Status>
-        <Status variant="scrim" size="touch" title="최근 2초 동안 대시보드로 보낸 화면 장 수" className="hidden tabular-nums landscape:inline-flex">{view.fps}</Status>
-        <LiquidGlass mode="opaque" className="shrink-0">
-          <Button variant="ghost" size="touch" aria-label="메뉴" aria-expanded={view.menuOpen} aria-controls="phone-menu" className="size-12 px-0" onClick={() => act.setMenu(!view.menuOpen)}>
-            <Ellipsis />
-          </Button>
-        </LiquidGlass>
-      </div>
-      {/* 엄지 자리: 승인 대기·행동 부탁·기준점 단추. 큰 단추 위에서 조준점 아래(세로)·조준점 왼쪽(가로)까지만 크고 넘치면 스크롤한다 */}
-      {(pending || view.action || anchors.length > 0) && (
-        <div data-phone-zone="thumb" className="fixed right-4 bottom-24 left-4 flex max-h-[calc(50dvh-120px)] flex-col gap-2 overflow-y-auto landscape:right-[calc(50vw+24px)] landscape:bottom-3 landscape:max-h-[calc(100dvh-76px)]">
-          {pending && <PendingList items={view.pending} act={act} />}
-          {view.action && <ActionCard action={view.action} act={act} />}
-          {anchors.map((a) => (
-            <Button key={a.id} variant="outline" size="touch" className="h-12 w-full shrink-0 justify-start" onClick={() => act.recordAnchor(a.id)}>
-              {anchorLabel(view.mode, a)}
-            </Button>
-          ))}
+      {/* 엄지 자리: 비전 상태 한 줄, 그 바로 아래 답 단추. 세로는 맨 아래 폭 전체, 가로는 오른쪽 아래 */}
+      {hand.thumb && (
+        <div data-phone-zone="thumb" className="fixed right-4 bottom-[calc(env(safe-area-inset-bottom)+16px)] left-4 landscape:left-auto landscape:w-[min(360px,calc(50vw-40px))]">
+          <LiquidGlass mode="opaque" radius={16} contentClassName="flex flex-col gap-2 p-2.5">
+            {hand.vision && (
+              <Status variant={TONE[hand.vision.tone]} className="max-w-full whitespace-normal">
+                <StatusIndicator />
+                <span data-phone-text="비전 상태" className="break-keep">{hand.vision.text}</span>
+              </Status>
+            )}
+            <div className="flex gap-2"><Answers hand={hand} act={act} /></div>
+          </LiquidGlass>
         </div>
       )}
-      {/* 큰 단추 셋: 맨 아래 가로 줄(세로), 오른쪽 세로 줄(가로) */}
-      <div className="fixed right-0 bottom-[calc(env(safe-area-inset-bottom)+16px)] left-0 flex justify-center gap-3.5 landscape:top-1/2 landscape:right-2.5 landscape:bottom-auto landscape:left-auto landscape:-translate-y-1/2 landscape:flex-col landscape:gap-2.5">
-        {view.speech && (
-          <Button size="touch" variant={view.listening === "ar" ? "destructive" : "default"} aria-label="누르고 말하기" className={`${BIG} touch-none select-none`} {...hold(act, "ar")}>
-            <Mic className="size-6" />{view.listening === "ar" ? "듣는 중" : "말하기"}
-          </Button>
-        )}
-        <Button size="touch" variant="outline" aria-label="사진 찍기" className={BIG} onClick={act.takePhoto}>
-          <Camera className="size-6" />{view.request ? "컵 안" : "사진"}
-        </Button>
-        <Button size="touch" variant="outline" aria-label="끝내기" className={BIG} onClick={act.stopAr}>
-          <Square className="size-6" />끝내기
-        </Button>
-      </div>
-      <LiquidGlass id="phone-menu" hidden={!view.menuOpen} mode="opaque" radius={16}
-        className="fixed top-16 right-4 max-h-[calc(100dvh-164px)] w-[min(380px,calc(100vw-32px))] overflow-auto landscape:right-24 landscape:max-h-[calc(100dvh-72px)]"
-        contentClassName="flex flex-col gap-2 p-2.5">
-        {view.ar && <TalkForm act={act} draft={draft} setDraft={setDraft} />}
-        <Button variant="outline" size="touch" className="h-12 gap-2" onClick={act.resetAnchors}><RotateCcw className="size-4" />기준점 다시 찍기</Button>
-        <Card><CardContent className="p-2"><div className="whitespace-pre-wrap">{view.perfDetail}</div></CardContent></Card>
-        <Button variant="outline" size="touch" className="h-12" onClick={() => act.setMenu(false)}>닫기</Button>
-      </LiquidGlass>
+      <ProblemDialog problem={problem} act={act} root={root} />
     </div>
   );
 }

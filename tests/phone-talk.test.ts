@@ -2,7 +2,7 @@
 // 폰이 소리로 읽는 동안(pause)은 끄고 resume으로 다시 켠다. 마이크 권한이 없으면 denied로 멈추고, start()를 다시 부르면 새로 켠다.
 // speak는 다 읽으면(끝·오류) done을 부른다. 음성 합성이 없거나 글이 비면 바로 done.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createListener, createPressToTalk, recognition, speak } from "../ui/src/phone/core/talk.js";
+import { createListener, recognition, speak } from "../ui/src/phone/core/talk.js";
 
 type Result = { isFinal: boolean; 0: { transcript: string }; length: 1 };
 class FakeRec {
@@ -152,63 +152,4 @@ describe("소리로 읽기(speak)", () => {
     said[1]!.onerror();
     expect(done).toHaveBeenCalledTimes(2);
   });
-});
-
-class PressRec {
-  static last: PressRec;
-  lang = "";
-  interimResults = false;
-  maxAlternatives = 0;
-  onresult: ((e: { results: { transcript: string }[][] }) => void) | null = null;
-  onerror: ((e: { error: string }) => void) | null = null;
-  onend: (() => void) | null = null;
-  started = 0;
-  constructor() { PressRec.last = this; }
-  start() { this.started += 1; }
-  stop() { this.onend?.(); }
-}
-
-function hooks() {
-  const log: string[] = [];
-  return {
-    log,
-    h: {
-      onListening: (on: boolean) => log.push(on ? "듣는 중" : "멈춤"),
-      onLine: (text: string, ms?: number) => log.push(`줄 ${text}${ms ? ` ${ms}` : ""}`),
-      onHeard: (text: string) => log.push(`보냄 ${text}`),
-    },
-  };
-}
-
-describe("누르고 말하기(createPressToTalk)", () => {
-  it("누르면 ko-KR로 듣고, 들은 글을 15초 줄로, 떼면 그 글을 보낸다. 듣는 중에 또 눌러도 새로 만들지 않는다", () => {
-    const { log, h } = hooks();
-    const talk = createPressToTalk(PressRec as never, h);
-    talk.down();
-    const rec = PressRec.last;
-    expect([rec.lang, rec.interimResults, rec.maxAlternatives, rec.started]).toEqual(["ko-KR", true, 1, 1]);
-    talk.down();
-    expect(PressRec.last).toBe(rec);
-    rec.onresult!({ results: [[{ transcript: "TV " }], [{ transcript: "켜줘" }]] });
-    talk.up();
-    expect(log).toEqual(["듣는 중", "줄 🎙 TV 켜줘 15000", "멈춤", "보냄 TV 켜줘"]);
-  });
-
-  it("아무 말도 없으면 보내지 않는다. 마이크 권한이 없으면 허용하라고, 다른 오류는 그 이름", () => {
-    const { log, h } = hooks();
-    const talk = createPressToTalk(PressRec as never, h);
-    talk.down();
-    PressRec.last.onerror!({ error: "not-allowed" });
-    PressRec.last.onerror!({ error: "network" });
-    talk.up();
-    expect(log).toEqual(["듣는 중", "줄 마이크 권한이 없어요. 크롬 사이트 설정에서 마이크를 허용해 주세요.", "줄 음성 인식 오류: network", "멈춤"]);
-  });
-
-  it("시작이 실패하면 그 까닭을 보이고 듣지 않는다", () => {
-    class Busy extends PressRec { override start() { throw new Error("busy"); } }
-    const { log, h } = hooks();
-    createPressToTalk(Busy as never, h).down();
-    expect(log).toEqual(["줄 음성 인식을 시작하지 못했어요: busy"]);
-  });
-
 });

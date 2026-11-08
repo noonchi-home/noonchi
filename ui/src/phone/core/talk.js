@@ -95,43 +95,6 @@ export function createListener(Recognition, hooks, { restartMs = 300 } = {}) {
   };
 }
 
-/** 누르고 말하기: 누르면 듣고, 손을 떼면 멈추고 들은 말을 보낸다. hooks: onListening(on) 단추 모양, onLine(text, ms) 들은 말·오류 줄, onHeard(text) 들은 말 보내기. */
-export function createPressToTalk(Recognition, hooks) {
-  let rec = null;
-  let heard = "";
-  return {
-    down() {
-      if (rec) return;
-      heard = "";
-      rec = new Recognition();
-      rec.lang = "ko-KR";
-      rec.interimResults = true;
-      rec.maxAlternatives = 1;
-      rec.onresult = (e) => {
-        heard = Array.from(e.results).map((r) => r[0].transcript).join("");
-        hooks.onLine(`🎙 ${heard}`, 15000);
-      };
-      rec.onerror = (e) => hooks.onLine(e.error === "not-allowed" ? "마이크 권한이 없어요. 크롬 사이트 설정에서 마이크를 허용해 주세요." : `음성 인식 오류: ${e.error}`);
-      rec.onend = () => {
-        rec = null;
-        hooks.onListening(false);
-        if (heard.trim()) hooks.onHeard(heard);
-      };
-      try {
-        rec.start();
-        globalThis.speechSynthesis?.cancel();
-        hooks.onListening(true);
-      } catch (error) {
-        rec = null;
-        hooks.onLine(`음성 인식을 시작하지 못했어요: ${error.message}`);
-      }
-    },
-    up() {
-      rec?.stop();
-    },
-  };
-}
-
 /** 소리로 읽기(ko-KR, 1.05배). 다 읽거나 오류가 나면 done. 음성 합성이 없거나 글이 비면 바로 done. */
 export function speak(text, done = () => {}) {
   if (!("speechSynthesis" in globalThis) || !text) return done();

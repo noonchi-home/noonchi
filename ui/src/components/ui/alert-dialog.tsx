@@ -3,6 +3,7 @@
 // 21st.dev「Alert Dialog」(id 358, originui/alert-dialog) 받은 코드.
 // 바꾼 것: 덮개 bg-black/80 → scrim 토큰, shadow-black/5 → shadow-shade/5, text-lg·text-sm → title-sm·body-sm 토큰. buttonVariants는 button.tsx(133)에서 온다.
 // 「Alert dialog with icon」 데모의 아이콘 동그라미를 AlertDialogIcon으로 내보낸다(아이콘은 children). AlertDialogAction은 단추 variant를 받는다(위험 동작은 destructive).
+// AlertDialogContent는 Portal에 container prop을 잇는다(실제 폰 AR은 DOM 오버레이 뿌리 안만 보여서 그 안에 그린다).
 import * as AlertDialogPrimitive from "@radix-ui/react-alert-dialog";
 import * as React from "react";
 
@@ -32,9 +33,9 @@ AlertDialogOverlay.displayName = AlertDialogPrimitive.Overlay.displayName;
 
 const AlertDialogContent = React.forwardRef<
   React.ElementRef<typeof AlertDialogPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Content>
->(({ className, ...props }, ref) => (
-  <AlertDialogPortal>
+  React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Content> & { container?: HTMLElement | null }
+>(({ className, container, ...props }, ref) => (
+  <AlertDialogPortal container={container ?? undefined}>
     <AlertDialogOverlay />
     <AlertDialogPrimitive.Content
       ref={ref}

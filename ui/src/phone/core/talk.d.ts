@@ -15,9 +15,6 @@ export type RecognitionCtor = new () => {
 export type ListenState = "on" | "paused" | "denied" | "off";
 export interface ListenHooks { onState(state: ListenState): void; onHeard(text: string): void }
 export interface Listener { start(): void; stop(): void; pause(): void; resume(): void }
-export interface TalkHooks { onListening(on: boolean): void; onLine(text: string, ms?: number): void; onHeard(text: string): void }
-export interface PressToTalk { down(): void; up(): void }
-export function createPressToTalk(Recognition: RecognitionCtor, hooks: TalkHooks): PressToTalk;
 export function recognition(w?: object): RecognitionCtor | null;
 export function createListener(Recognition: RecognitionCtor, hooks: ListenHooks, opts?: { restartMs?: number }): Listener;
 export function speak(text: string, done?: () => void): void;
