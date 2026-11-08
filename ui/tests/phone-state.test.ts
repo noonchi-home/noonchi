@@ -96,6 +96,10 @@ describe("설정 줄(settingsRows)", () => {
     expect(settingsRows(ar({ listening: "paused" }))[1]).toEqual({ name: "듣기", value: "켜짐", tone: "ok" });
     expect(settingsRows(ar({ listening: "off" }))[1]).toEqual({ name: "듣기", value: "꺼짐", tone: "plain" });
   });
+  it("카메라 화면을 못 보내면 그 줄이 남는다(엄지 자리 카드가 없어도 미어캣 설정에서 보인다)", () => {
+    expect(settingsRows(ar({ cameraOff: true })).at(-1)).toEqual({ name: "카메라", value: "못 보냄", tone: "warn" });
+    expect(settingsRows(ar()).map((r) => r.name)).not.toContain("카메라");
+  });
 });
 
 describe("처음 화면 글", () => {

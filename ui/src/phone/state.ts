@@ -38,6 +38,8 @@ export interface PhoneView {
   limited: boolean;
   /** 조준점이 바닥에 닿음. */
   hit: boolean;
+  /** 이번 AR에서 카메라 화면을 못 보냄(위치만 보냄). 설정 모달에 그 줄이 남는다. */
+  cameraOff: boolean;
   /** 잠깐 알릴 말(비전 상태 줄, 4초). */
   note: string | null;
   /** 처음 화면 답 줄. */
@@ -69,7 +71,7 @@ export interface PhoneActions {
 
 export const initialView = (): PhoneView => ({
   support: { kind: "checking" }, ar: false, connected: false, listening: "off", mode: "floor", anchors: null, aligned: false, mismatchM: null,
-  limited: false, hit: false, note: null, reply: null, pending: [], command: null, setup: null, settingsOpen: false,
+  limited: false, hit: false, cameraOff: false, note: null, reply: null, pending: [], command: null, setup: null, settingsOpen: false,
 });
 
 export const WEAK_TEXT = "추적이 약해요";
@@ -132,7 +134,7 @@ export function problemOf(v: PhoneView): Problem | null {
   return null;
 }
 
-/** 설정 모달의 상태 줄: 연결·듣기·기준점. */
+/** 설정 모달의 상태 줄: 연결·듣기·기준점, 카메라 화면을 못 보내면 카메라. */
 export function settingsRows(v: PhoneView): { name: string; value: string; tone: Tone }[] {
   const listen = v.listening === "on" || v.listening === "paused" ? { value: "켜짐", tone: "ok" as const }
     : { value: "꺼짐", tone: v.listening === "denied" ? ("error" as const) : ("plain" as const) };
@@ -145,6 +147,7 @@ export function settingsRows(v: PhoneView): { name: string; value: string; tone:
         ? { value: `맞음 · ${Math.round((v.mismatchM ?? 0) * 100)}cm`, tone: "ok" as const }
         : { value: v.anchors ? `안 맞음 · ${anchorCount(v.anchors)}` : "안 맞음", tone: "warn" as const }),
     },
+    ...(v.cameraOff ? [{ name: "카메라", value: "못 보냄", tone: "warn" as const }] : []),
   ];
 }
 

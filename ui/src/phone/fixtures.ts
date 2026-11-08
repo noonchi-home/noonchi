@@ -6,7 +6,7 @@ import { STEP_COMMAND, VISION_TEXT } from "../../../src/plan/labels.ts";
 import { initialView, type Anchor, type Command, type FocusMark, type PhoneView } from "./state";
 
 export const SHOT_NAMES = [
-  "intro", "go-table", "pick-cup", "low-cup", "go-sink", "put-cup", "idle", "weak", "align", "mic", "offline", "settings", "anchors", "place", "question", "approve",
+  "intro", "go-table", "pick-cup", "low-cup", "go-sink", "put-cup", "idle", "weak", "align", "mic", "offline", "settings", "no-camera", "anchors", "place", "question", "approve",
 ] as const;
 export type ShotName = (typeof SHOT_NAMES)[number];
 export interface Shot { view: PhoneView; marks: FocusMark[] }
@@ -44,6 +44,7 @@ export const SHOTS: Record<ShotName, Shot> = {
   mic: { view: { ...live, listening: "denied" }, marks: [] },
   offline: { view: { ...live, connected: false, command: pickCup }, marks: [] },
   settings: { view: { ...live, settingsOpen: true }, marks: [] },
+  "no-camera": { view: { ...live, settingsOpen: true, cameraOff: true }, marks: [] },
   anchors: { view: { ...live, ...notAligned, setup: "anchors", hit: true }, marks: [] },
   place: { view: { ...live, setup: "place", hit: true }, marks: [] },
   question: {

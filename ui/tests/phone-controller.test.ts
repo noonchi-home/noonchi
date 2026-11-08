@@ -348,6 +348,20 @@ describe("AR 화면 그림", () => {
     expect(marks.at(-1)).toEqual([]);
   });
 
+  it("AR을 켜고 3초 안에 카메라 화면이 없으면 cameraOff(설정 줄 「카메라 · 못 보냄」). 다시 켜면 지운다", async () => {
+    vi.useFakeTimers();
+    const { c, session, startAr } = make();
+    await startAr();
+    expect(c.view().cameraOff).toBe(false);
+    vi.advanceTimersByTime(3000);
+    expect(c.view()).toMatchObject({ cameraOff: true, note: "카메라 화면을 보낼 수 없어요. 위치만 보내요" });
+    vi.advanceTimersByTime(4000);
+    expect(c.view()).toMatchObject({ cameraOff: true, note: null });
+    session.end();
+    await startAr();
+    expect(c.view().cameraOff).toBe(false);
+  });
+
   it("추적이 약하면 limited(비전 상태 줄 「추적이 약해요」), 돌아오면 false", async () => {
     const { c, session, startAr } = make();
     await startAr();
