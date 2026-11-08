@@ -1,5 +1,5 @@
 // 폰 화면 제어(controller.ts)를 가짜 소켓·가짜 음성·가짜 XR로 돌린다. 옮기기 전 phone.js 규칙 그대로인지 본다:
-// 알림 5초(승인이 있으면 12초), 판단 줄 8초, 잠깐 알릴 말 4초, 부탁은 소리로 읽고, 답은 말이나 단추로 보낸다.
+// 알림 5초(승인이 있으면 12초), 잠깐 알릴 말 4초, 부탁은 소리로 읽고, 답은 말이나 단추로 보낸다. 마스코트 말풍선 글은 서버가 바꿀 때까지 둔다.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createPhoneController, type ControllerDeps } from "../src/phone/controller";
 import { supportText } from "../src/phone/state";
@@ -153,12 +153,16 @@ describe("폰 화면 제어(controller.ts)", () => {
     expect(c.view().status.text).toBe("서버와 연결이 끊겨 답을 보내지 못했어요");
   });
 
-  it("판단 줄은 8초, 사진 보냄 알림은 위치·요청에 따라", () => {
+  it("마스코트 말풍선 글은 다음 brain_line까지 남고 빈 글이면 지운다. 사진 보냄 알림은 위치·요청에 따라", () => {
     vi.useFakeTimers();
     const { c, ws } = make();
     ws.push({ type: "brain_line", text: "식탁 위 컵을 보고 있어요" });
     expect(c.view().brainLine).toBe("식탁 위 컵을 보고 있어요");
-    vi.advanceTimersByTime(8000);
+    vi.advanceTimersByTime(60_000);
+    expect(c.view().brainLine).toBe("식탁 위 컵을 보고 있어요");
+    ws.push({ type: "brain_line", text: "자리를 비워 컵을 치운다" });
+    expect(c.view().brainLine).toBe("자리를 비워 컵을 치운다");
+    ws.push({ type: "brain_line", text: "" });
     expect(c.view().brainLine).toBeNull();
     ws.push({ type: "photo_saved", id: "p1", aligned: true });
     expect(c.view().toast).toBe("사진을 위치와 함께 보냈어요");

@@ -34,6 +34,7 @@ export interface PhoneView {
   reply: string | null;
   toast: string | null;
   pending: Pending[];
+  /** 마스코트 말풍선 글(서버 brain_line: 열린 계획의 판단 글, 없으면 마지막 판단의 관찰). 없으면 null. */
   brainLine: string | null;
   request: { id: string; text: string } | null;
   action: BrainAction | null;

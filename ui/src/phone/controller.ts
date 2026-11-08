@@ -1,5 +1,6 @@
 // 폰 화면 제어: 연결(core/link.js)·AR(core/ar.js)·누르고 말하기(core/talk.js)를 묶고, 서버 메시지와 단추를 화면 상태(state.ts)로 바꾼다.
-// 규칙은 옮기기 전 web/phone/phone.js 그대로다: 알림 5초(답에 승인이 있으면 12초), 판단 줄 8초, 잠깐 알릴 말 4초.
+// 규칙은 옮기기 전 web/phone/phone.js 그대로다: 알림 5초(답에 승인이 있으면 12초), 잠깐 알릴 말 4초.
+// 마스코트 말풍선 글(brain_line)은 서버가 바꾸거나 빈 글로 지울 때까지 둔다(src/phone/mascot.ts).
 // 상태 줄은 상태 메시지·잠깐 알릴 말·1초마다의 측정 때 다시 만든다. 부탁·질문이 뜨면 소리로 읽고, 답은 말이나 단추로 보낸다.
 import { createAr } from "./core/ar.js";
 import { createLink, phoneSocketUrl } from "./core/link.js";
@@ -11,7 +12,6 @@ import {
 
 const TOAST_MS = 5000;
 const NOTE_MS = 4000;
-const BRAIN_LINE_MS = 8000;
 
 type XrLike = { isSessionSupported(mode: string): Promise<boolean> };
 export interface ControllerDeps {
@@ -54,7 +54,6 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
   let overlay: HTMLElement | null = null;
   let draw: ControllerDraw = { start: () => {}, hit: () => {}, marks: () => {} };
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
-  let lineTimer: ReturnType<typeof setTimeout> | undefined;
 
   const link = createLink({ url: phoneSocketUrl(deps.location), onMessage, Socket: deps.Socket, now: undefined });
   const ar = createAr({
@@ -133,9 +132,8 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
       set((v) => onAction(v, msg as { id: string; text?: string; would?: string | null; choices?: Choice[]; active: boolean }));
       if (msg.active && msg.speak) speak(msg.text);
     } else if (msg.type === "brain_line") {
-      set((v) => ({ ...v, brainLine: String(msg.text ?? "") }));
-      clearTimeout(lineTimer);
-      lineTimer = setTimeout(() => set((v) => ({ ...v, brainLine: null })), BRAIN_LINE_MS);
+      const text = String(msg.text ?? "").trim();
+      set((v) => ({ ...v, brainLine: text || null }));
     }
   }
 
@@ -209,7 +207,6 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
       link.close();
       ar.stop();
       clearTimeout(toastTimer);
-      clearTimeout(lineTimer);
     },
   };
 }
