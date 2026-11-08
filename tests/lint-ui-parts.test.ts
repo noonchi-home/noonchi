@@ -1,7 +1,7 @@
 // 21st.dev 부품 검사(scripts/lint-ui-parts.ts): 화면 부품은 21st.dev에서 받은 코드(ui/src/components/ui, 출처 줄)만 쓰고, 화면 코드는 배치만 한다.
 // 예시는 실제로 화면 코드에 들어갔던 손 꾸밈이다.
 import { describe, expect, it } from "vitest";
-import { PARTS_FIX, PARTS_TARGET, headerProblems, lintUiParts, screenFiles, screenProblems } from "../scripts/lint-ui-parts.js";
+import { PARTS_FIX, PARTS_TARGET, RAW_FIX, headerProblems, lintUiParts, screenFiles, screenProblems } from "../scripts/lint-ui-parts.js";
 
 const found = (file: string, src: string) => screenProblems(file, src).map((p) => `${p.line} ${p.rule} ${p.text}`);
 
@@ -93,14 +93,29 @@ describe("화면 코드는 배치만", () => {
     expect(PARTS_FIX).toContain("ui/src/components/ui");
     expect(PARTS_FIX).toContain("21st.dev");
   });
+
+  it("폰 화면(ui/src/phone)에는 날 button·input·select·textarea가 없다. core 모듈과 다른 화면은 이 규칙 밖", () => {
+    expect(found("ui/src/phone/PhoneScreen.tsx", 'const A = () => <button type="button">말하기</button>;')).toEqual(["1 날 요소 <button"]);
+    expect(found("ui/src/phone/X.tsx", 'const A = () => <form><input aria-label="할 말" /><textarea /></form>;')).toEqual(["1 날 요소 <input", "1 날 요소 <textarea"]);
+    expect(found("ui/src/phone/X.tsx", "const A = () => <Button>말하기</Button>;")).toEqual([]);
+    expect(found("ui/src/setup/X.tsx", 'const A = () => <button type="button">다음</button>;')).toEqual([]);
+  });
+
+  it("날 요소 오류 글은 Button·Input 부품을 쓰라고 말한다", () => {
+    expect(RAW_FIX).toContain("Button");
+    expect(RAW_FIX).toContain("Input");
+  });
 });
 
 describe("ui/src 전체", () => {
-  it("화면 코드는 components/ui 밖 .ts·.tsx다", () => {
+  it("화면 코드는 components/ui 밖 .ts·.tsx·.js다", () => {
     const files = screenFiles(PARTS_TARGET).map((f) => f.replace(/\\/g, "/"));
     expect(files.some((f) => f.endsWith("ui/src/dashboard/Dashboard.tsx"))).toBe(true);
     expect(files.some((f) => f.endsWith("ui/src/setup/SetupApp.tsx"))).toBe(true);
     expect(files.some((f) => f.includes("/components/ui/"))).toBe(false);
+    expect(files.some((f) => f.endsWith("ui/src/phone/PhoneScreen.tsx"))).toBe(true);
+    expect(files.some((f) => f.endsWith("ui/src/phone/core/marks.js"))).toBe(true);
+    expect(files.some((f) => f.endsWith(".d.ts"))).toBe(false);
   });
 
   it("21st.dev 부품 검사에 걸리는 곳이 없다(npm run lint)", () => {

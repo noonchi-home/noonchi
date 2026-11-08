@@ -93,7 +93,7 @@ Today the Decide stage is an LLM tool agent. The judgment engine designed in the
 ### 2. Tools & Architecture
 
 ```text
-Phone (web/phone/)       — CLOiD's eye: WebXR pose + aim point · camera frames (worker JPEG) · photos · voice
+Phone (ui/src/phone/)    — CLOiD's eye: WebXR pose + aim point · camera frames (worker JPEG) · photos · voice
         ↓  WebSocket /phone/events (Wi-Fi)
 Phone server (src/phone) — Align to the twin (room corners) · eye pose · "here" · voice relay · focus · MJPEG feed · stats
         ↓

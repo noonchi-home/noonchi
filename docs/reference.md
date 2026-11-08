@@ -44,8 +44,7 @@ src/
   server/app.ts         REST + WebSocket + 정적 파일
   server/main.ts        npm start 진입점(.env, 출력, 종료 신호)
   mcp/                  MCP stdio 서버(server.ts)와 REST 백엔드(client.ts)
-ui/                     대시보드·설정 화면(React+TypeScript, 빌드 결과 ui/dist/)
-web/phone/              폰 화면(빌드 없는 ES 모듈)
+ui/                     대시보드·설정·폰 화면(React+TypeScript, 빌드 결과 ui/dist/)
 scripts/demo.ts         npm run demo
 scripts/scenarios.ts    데모 시나리오(데모와 e2e 테스트가 함께 씀)
 scripts/matter-smoke.ts Matter 연기 시험
@@ -211,7 +210,7 @@ React+TypeScript 화면(`ui/`, Vite 다중 페이지)이다. 서버는 빌드 �
 
 - **대시보드** (`/`): 3D 트윈이 화면 전체 배경이고 그 위에 패널이 떠 있다. 위 가운데 상태 알약(연결·집·운영 모드·허브·에이전트·설정 다시 하기), 왼쪽 위 클로이드의 눈(접기), 오른쪽 판단 기록(요청마다 카드, 「폰 화면」 탭). 입력창이 없다. 요청·승인은 폰에서 음성으로 한다. 말풍선은 에이전트가 판단하면서 확인한 기기·물건에만 뜬다. 패널·알약·말풍선은 21st.dev 부품의 흰 카드다.
 - **설정 화면** (`/setup/`): 아래 "설정 흐름". 설정을 안 끝냈으면(`npm start`) 서버가 `/`를 `/setup/`으로 보낸다(302).
-- **폰 화면** (`web/phone/`): 폰 서버가 `/phone/`으로 내준다(빌드 없는 ES 모듈).
+- **폰 화면** (`/phone/`, `ui/phone/index.html`·`ui/src/phone/`): 폰 서버가 `ui/dist`에서 폰 화면과 그 빌드 파일(`/assets/`)·브랜드 그림·파비콘만 내준다. tailscale serve는 폰 포트를 사이트 뿌리(`/`)로 잇는다.
 - WebSocket `/events`로 실시간 반영하고, 끊기면 다시 연결한다.
 
 ## 3D 트윈 연결
@@ -275,7 +274,7 @@ npm start
 
 ## 폰 AR (클로이드의 눈)
 
-폰(안드로이드 크롬)이 WebXR AR로 자기 위치·방향을 재고, 3D 트윈에 '클로이드의 눈' 원뿔로 실시간 표시한다. 계약은 [plan.md](plan.md) "폰 AR 눈", 코드는 `src/phone/`·`web/phone/`, 뷰어 쪽은 twin-studio `apartment/viewer/eye.mjs`다.
+폰(안드로이드 크롬)이 WebXR AR로 자기 위치·방향을 재고, 3D 트윈에 '클로이드의 눈' 원뿔로 실시간 표시한다. 계약은 [plan.md](plan.md) "폰 AR 눈", 코드는 `src/phone/`·`ui/src/phone/`, 뷰어 쪽은 twin-studio `apartment/viewer/eye.mjs`다.
 
 1. PC: `PHONE_PORT=8210 npm start` (PowerShell: `$env:PHONE_PORT=8210; npm start`). 시작 로그의 `폰 AR http://<PC IP>:8210/phone/`를 확인한다. Windows 방화벽 창이 뜨면 **개인 네트워크**를 허용한다.
 2. 폰(같은 와이파이): 크롬 `chrome://flags`에서 **Insecure origins treated as secure**를 켜고 `http://<PC IP>:8210`을 넣은 뒤 크롬을 다시 시작한다. WebXR은 보안 출처에서만 켜지기 때문이다.

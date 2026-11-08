@@ -1,4 +1,4 @@
-// 날 색 검사: 대시보드·설정(ui/src, 입구 HTML)과 폰·서버 화면(web/)의 HTML·CSS·JS·TS·TSX에서 날 색 값을 찾는다.
+// 날 색 검사: 대시보드·설정·폰(ui/src, 입구 HTML)과 폰 입구(ui/phone)·web/의 HTML·CSS·JS·TS·TSX에서 날 색 값을 찾는다.
 // 날 색: #hex(%23hex), rgb()·hsl()·oklch() 같은 색 함수, CSS 이름 색(white·black…), Tailwind 팔레트(bg-red-500), 임의 색 값([#…]).
 // 색은 src/design/tokens.json 하나에서 온다. 그 원본에서 만든 파일(TOKEN_OUTPUTS)만 날 값을 가진다.
 // 사용: npm run lint (tests/lint-ui-color.test.ts도 같은 검사를 돌린다)
@@ -12,11 +12,12 @@ export type ColorProblem = { file: string; line: number; text: string; rule: str
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
 
-/** npm run lint가 보는 곳: 대시보드·설정 코드, 입구 HTML 둘, 서버가 내주는 폰 화면(web/). */
+/** npm run lint가 보는 곳: 대시보드·설정·폰 코드, 입구 HTML(대시보드·설정·폰), web/. */
 export const COLOR_TARGETS = [
   fileURLToPath(new URL("../ui/src/", import.meta.url)),
   fileURLToPath(new URL("../ui/index.html", import.meta.url)),
   fileURLToPath(new URL("../ui/setup/index.html", import.meta.url)),
+  fileURLToPath(new URL("../ui/phone/", import.meta.url)),
   fileURLToPath(new URL("../web/", import.meta.url)),
 ];
 
@@ -147,7 +148,7 @@ function htmlHits(src: string, ui: boolean): Hit[] {
   return out;
 }
 
-/** 파일 하나의 날 색. file은 저장소 기준 경로(ui/src/…, web/phone/…). 토큰에서 만든 파일은 보지 않는다. */
+/** 파일 하나의 날 색. file은 저장소 기준 경로(ui/src/…, ui/phone/…). 토큰에서 만든 파일은 보지 않는다. */
 export function fileColors(file: string, src: string): ColorProblem[] {
   const path = file.replace(/\\/g, "/");
   if (TOKEN_OUTPUTS.some((t) => path === t || path.endsWith(`/${t}`))) return [];

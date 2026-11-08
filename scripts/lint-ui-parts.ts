@@ -2,6 +2,7 @@
 // (1) ui/src/components/ui/ 파일마다 맨 위에 출처 줄(21st.dev 이름·id·작성자/slug)과 바꾼 것 줄이 있다.
 // (2) 그 밖의 화면 코드(ui/src)는 부품을 놓기만 한다: 요소에 꾸밈 class(배경·글자색·테두리·모서리·그림자·링·흐림·글꼴)나 꾸밈 style이 없다.
 //     배치 class(flex·grid·gap·여백·크기·위치·inset·z·overflow·order·정렬·숨김·pointer-events·transform)는 된다. three.js 장면 코드는 규칙 밖이다.
+// (3) 폰 화면(ui/src/phone, core 밖)에는 날 button·input·select·textarea를 두지 않는다. Button·Input 부품을 쓴다.
 // 사용: npm run lint (tests/lint-ui-parts.test.ts도 같은 검사를 돌린다)
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -18,6 +19,10 @@ export const HEADER_FIX =
   "ui/src/components/ui에는 21st.dev에서 받은 코드만 둬요(mcp__21st__get_component). 맨 위에 「// 21st.dev「이름」(id N, 작성자/slug) 받은 코드.」 줄과 그다음 「// 바꾼 것: …」 줄을 두세요.";
 export const PARTS_FIX =
   "화면 코드는 부품을 놓기만 해요. 배경·글자색·테두리·모서리·그림자·링·흐림·글꼴은 ui/src/components/ui의 21st.dev 부품을 쓰세요. 맞는 부품이 없으면 21st.dev에서 받아 그 폴더에 두세요.";
+export const RAW_FIX = "폰 화면의 단추·입력칸은 ui/src/components/ui의 21st.dev 부품(Button·Input)으로 놓아요.";
+/** 날 요소 규칙을 받는 화면: 폰 화면 코드(core 모듈 밖). */
+const PHONE_SCREEN = /(^|\/)ui\/src\/phone\/(?!core\/)/;
+const RAW_TAG = /<(button|input|select|textarea)\b/g;
 
 const HEADER = /^\/\/ 21st\.dev「[^」]+」\(id \d+, [\w.-]+\/[\w.-]+\) 받은 코드\.$/;
 const CHANGED = /^\/\/ 바꾼 것: \S/;
@@ -127,6 +132,8 @@ export function screenProblems(file: string, src: string): PartsProblem[] {
   }
   // 변수로 넘긴 style(style={s})은 칸을 볼 수 없어 실패로 본다. 자리는 style={{ left, top }}로 바로 쓴다
   if (jsx) for (const m of code.matchAll(/\bstyle=\{(?!\{)\s*([^}]*?)\s*\}/g)) hits.push({ at: m.index!, text: `style={${m[1]}}`, rule: "꾸밈 style" });
+  // 폰 화면의 날 단추·입력칸
+  if (jsx && PHONE_SCREEN.test(file)) for (const m of code.matchAll(RAW_TAG)) hits.push({ at: m.index!, text: `<${m[1]}`, rule: "날 요소" });
   // SVG·아이콘 색 속성(fill="…", stroke="…", color=…)
   if (jsx) for (const m of code.matchAll(/<[A-Za-z][\w.]*\b[^<>]*?\s(fill|stroke|stopColor|color)=/g)) {
     hits.push({ at: m.index! + m[0].lastIndexOf(m[1]!), text: m[1]!, rule: "꾸밈 style" });
@@ -148,11 +155,11 @@ function walk(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
     const p = join(dir, e.name);
     if (e.isDirectory()) return e.name === "tests" || e.name === "node_modules" ? [] : walk(p);
-    return /\.(ts|tsx)$/.test(e.name) && !/\.d\.ts$|\.test\.tsx?$/.test(e.name) ? [p] : [];
+    return /\.(ts|tsx|js|jsx)$/.test(e.name) && !/\.d\.ts$|\.test\.[jt]sx?$/.test(e.name) ? [p] : [];
   });
 }
 
-/** 화면 코드: ui/src 아래 .ts·.tsx 중 ui/src/components/ui 밖. */
+/** 화면 코드: ui/src 아래 .ts·.tsx·.js 중 ui/src/components/ui 밖. */
 export function screenFiles(dir: string): string[] {
   return walk(dir).filter((f) => !isPart(f));
 }
@@ -174,6 +181,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   for (const p of problems) console.log(`${p.file}:${p.line}  [${p.rule}] ${p.text}`);
   if (problems.some((p) => p.rule === "출처 줄" || p.rule === "바꾼 것 줄")) console.log(`  → ${HEADER_FIX}`);
   if (problems.some((p) => p.rule.startsWith("꾸밈"))) console.log(`  → ${PARTS_FIX}`);
+  if (problems.some((p) => p.rule === "날 요소")) console.log(`  → ${RAW_FIX}`);
   if (problems.length) console.log(`21st.dev 부품 검사 ${problems.length}곳`);
   process.exitCode = problems.length ? 1 : 0;
 }

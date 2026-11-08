@@ -8,6 +8,7 @@ import { COPY_TARGETS, blurbSlots, copyFiles, copyRules, fileCopy, htmlCopy, jsC
 
 const webDir = fileURLToPath(new URL("../web/", import.meta.url));
 const uiDir = fileURLToPath(new URL("../ui/src/", import.meta.url));
+const uiPhoneDir = fileURLToPath(new URL("../ui/phone/", import.meta.url));
 
 describe("화면 글 규칙", () => {
   it("실제로 들어갔던 글을 잡는다", () => {
@@ -92,7 +93,12 @@ describe("TSX 글 꺼내기", () => {
   });
 });
 
-describe("web/(폰)과 ui/src 전체", () => {
+describe("web/·ui/src·폰 입구 전체", () => {
+  it("폰 입구 HTML(ui/phone/index.html)과 폰 화면 코드(ui/src/phone)를 본다", () => {
+    const files = copyFiles(COPY_TARGETS).map((f) => f.replace(/\\/g, "/"));
+    for (const p of ["ui/phone/index.html", "ui/src/phone/PhoneScreen.tsx", "ui/src/phone/core/ar.js"]) expect(files.some((f) => f.endsWith(p)), p).toBe(true);
+  });
+
   it("ui/src의 .tsx·.ts를 본다(.d.ts·tests/는 뺀다)", () => {
     const files = copyFiles([webDir, uiDir]);
     expect(files.some((f) => f.endsWith(".tsx"))).toBe(true);
@@ -111,7 +117,7 @@ describe("서버가 화면에 그대로 내보내는 계획 글(src/plan/labels.
   const historyLabels = fileURLToPath(new URL("../src/history/labels.ts", import.meta.url));
   const prompts = fileURLToPath(new URL("../src/act/prompts.ts", import.meta.url));
   it("npm run lint가 web/·ui/src와 함께 본다", () => {
-    expect(COPY_TARGETS).toEqual([webDir, uiDir, labels, worldLabels, historyLabels, prompts]);
+    expect(COPY_TARGETS).toEqual([webDir, uiDir, uiPhoneDir, labels, worldLabels, historyLabels, prompts]);
     expect(copyFiles([labels])).toEqual([labels]);
   });
   it("World State 글(src/world/labels.ts)도 꺼내 검사한다. 괄호·화살표는 템플릿 글에도 없다", () => {
