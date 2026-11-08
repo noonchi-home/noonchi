@@ -1,4 +1,5 @@
 // 폰 ↔ 폰 서버 연결(phone.js에서 옮겼다): /phone/events WebSocket. 끊기면 1초 뒤 다시 붙는다(close() 뒤에는 기다리던 것도 멈춘다).
+// 붙으면 onOpen, 끊기면 onClose(close() 뒤에는 부르지 않는다): 화면의 「다시 연결하는 중」이 쓴다.
 // 시계 맞춤: 붙으면 바로, 그 뒤 2초마다 clock 핑(NTP식)을 보내고, 최근 10개 표본 중 왕복이 가장 짧은 것으로 서버 시계와의 차(offset)를 정한다. 오차는 왕복의 절반.
 
 const CLOCK_MS = 2000;
@@ -10,8 +11,8 @@ export function phoneSocketUrl(loc) {
   return `${loc.protocol === "https:" ? "wss" : "ws"}://${loc.host}/phone/events`;
 }
 
-/** onMessage: 서버 JSON 메시지(clock 답은 여기서 쓰고 넘기지 않는다). Socket·now는 시험이 바꾼다. */
-export function createLink({ url, onMessage, Socket = WebSocket, now = phoneNow }) {
+/** onMessage: 서버 JSON 메시지(clock 답은 여기서 쓰고 넘기지 않는다). onOpen·onClose: 붙음·끊김. Socket·now는 시험이 바꾼다. */
+export function createLink({ url, onMessage, onOpen = () => {}, onClose = () => {}, Socket = WebSocket, now = phoneNow }) {
   let ws = null;
   let closed = false;
   let clockSamples = [];
@@ -46,6 +47,7 @@ export function createLink({ url, onMessage, Socket = WebSocket, now = phoneNow 
       ping();
       clearInterval(clockTimer);
       clockTimer = setInterval(ping, CLOCK_MS);
+      onOpen();
     });
     ws.addEventListener("message", (event) => {
       const msg = JSON.parse(event.data);
@@ -54,7 +56,9 @@ export function createLink({ url, onMessage, Socket = WebSocket, now = phoneNow 
     });
     ws.addEventListener("close", () => {
       clearInterval(clockTimer);
-      if (!closed) reconnectTimer = setTimeout(connect, RECONNECT_MS);
+      if (closed) return;
+      onClose();
+      reconnectTimer = setTimeout(connect, RECONNECT_MS);
     });
   }
   connect();

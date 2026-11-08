@@ -11,6 +11,8 @@ export function phoneSocketUrl(loc: { protocol: string; host: string }): string;
 export function createLink(opts: {
   url: string;
   onMessage: (msg: Record<string, any>) => void;
+  onOpen?: () => void;
+  onClose?: () => void;
   Socket?: unknown;
   now?: () => number;
 }): PhoneLink;

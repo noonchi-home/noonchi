@@ -68,6 +68,17 @@ describe("폰 연결(link.js)", () => {
     expect(FakeSocket.all).toHaveLength(2);
   });
 
+  it("붙으면 onOpen, 끊기면 onClose. close() 뒤에는 onClose를 부르지 않는다", () => {
+    const log: string[] = [];
+    const link = createLink({ url: "ws://pc/phone/events", onMessage: () => {}, onOpen: () => log.push("open"), onClose: () => log.push("close"), Socket: FakeSocket as never, now: () => t });
+    FakeSocket.all[0]!.open();
+    FakeSocket.all[0]!.close();
+    vi.advanceTimersByTime(1000);
+    FakeSocket.all[1]!.open();
+    link.close();
+    expect(log).toEqual(["open", "close", "open"]);
+  });
+
   it("끊겨 다시 붙기를 기다리는 1초 안에 close()하면 새 소켓을 만들지 않고 clock 핑도 없다", () => {
     const link = make();
     FakeSocket.all[0]!.open();
