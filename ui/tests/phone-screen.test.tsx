@@ -123,6 +123,12 @@ describe("덮개: 판단 줄·알림·메뉴", () => {
     await userEvent.click(menu.getByRole("button", { name: "닫기" }));
     expect(act.setMenu).toHaveBeenCalledWith(false);
   });
+
+  it("메뉴 판은 top-16(64px)에서 시작해 세로는 큰 단추 위 100px까지, 가로는 아래 8px까지만 크다", () => {
+    const { overlay } = show(SHOTS.menu.view);
+    const menu = overlay.querySelector<HTMLElement>("#phone-menu")!;
+    expect(words(menu)).toEqual(expect.arrayContaining(["top-16", "max-h-[calc(100dvh-164px)]", "landscape:max-h-[calc(100dvh-72px)]", "overflow-auto"]));
+  });
 });
 
 describe("사진 요청·행동 부탁", () => {

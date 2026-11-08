@@ -202,7 +202,7 @@ function Overlay({ view, act, draft, setDraft, overlayRef, canvasRef }: { view: 
         </Button>
       </div>
       <LiquidGlass id="phone-menu" hidden={!view.menuOpen} mode="opaque" radius={16}
-        className="fixed right-4 top-16 max-h-[calc(100dvh-140px)] w-[min(380px,calc(100vw-32px))] overflow-auto landscape:right-24 landscape:max-h-[calc(100dvh-56px)]"
+        className="fixed right-4 top-16 max-h-[calc(100dvh-164px)] w-[min(380px,calc(100vw-32px))] overflow-auto landscape:right-24 landscape:max-h-[calc(100dvh-72px)]"
         contentClassName="flex flex-col gap-2 p-2.5">
         {view.ar && <TalkForm act={act} draft={draft} setDraft={setDraft} />}
         <Button variant="outline" size="touch" className="h-12 gap-2" onClick={act.resetAnchors}><RotateCcw />기준점 다시 찍기</Button>
