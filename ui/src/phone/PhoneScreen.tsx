@@ -206,7 +206,7 @@ function Overlay({ view, act, draft, setDraft, overlayRef, canvasRef }: { view: 
         contentClassName="flex flex-col gap-2 p-2.5">
         {view.ar && <TalkForm act={act} draft={draft} setDraft={setDraft} />}
         <Button variant="outline" size="touch" className="h-12 gap-2" onClick={act.resetAnchors}><RotateCcw className="size-4" />기준점 다시 찍기</Button>
-        <Card><CardContent className="p-2"><pre className="m-0 whitespace-pre-wrap">{view.perfDetail}</pre></CardContent></Card>
+        <Card><CardContent className="p-2"><div className="whitespace-pre-wrap">{view.perfDetail}</div></CardContent></Card>
         <Button variant="outline" size="touch" className="h-12" onClick={() => act.setMenu(false)}>닫기</Button>
       </LiquidGlass>
     </div>

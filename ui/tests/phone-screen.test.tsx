@@ -131,7 +131,11 @@ describe("덮개: 판단 줄·알림·메뉴", () => {
     expect(input).toHaveValue("");
     await userEvent.click(menu.getByRole("button", { name: "기준점 다시 찍기" }));
     expect(act.resetAnchors).toHaveBeenCalledOnce();
-    expect(menu.getByText(/보낸 화면 11\.5 \/ 목표 12 fps/)).toBeInTheDocument();
+    // 측정 글은 본문 글꼴로 줄을 지킨다(날 pre면 고정폭 글꼴)
+    const perf = menu.getByText(/보낸 화면 11\.5 \/ 목표 12 fps/);
+    expect(perf.tagName).toBe("DIV");
+    expect(words(perf)).toContain("whitespace-pre-wrap");
+    expect(overlay.querySelector("pre")).toBeNull();
     await userEvent.click(menu.getByRole("button", { name: "닫기" }));
     expect(act.setMenu).toHaveBeenCalledWith(false);
   });
