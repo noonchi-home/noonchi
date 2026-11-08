@@ -4,6 +4,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { checkPlan, loadActConfig } from "../act/check.js";
+import { sayLine } from "../act/say.js";
 import { ExecutionTracker } from "../act/track.js";
 import { Agent } from "../agent/agent.js";
 import { Policy } from "../agent/policy.js";
@@ -11,6 +12,7 @@ import { createProvider } from "../agent/providers/index.js";
 import { CUP_TASKS } from "../brain/decision.js";
 import { PamClient } from "../brain/pam.js";
 import type { BrainLog, ReadyView } from "../contract/events.js";
+import type { PlannedCommand } from "../contract/phone.js";
 import type { PlanView } from "../contract/plan.js";
 import type { ControlMode } from "../contract/setup.js";
 import type { HistoryDb } from "../history/db.js";
@@ -201,9 +203,12 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       : undefined;
     // 클로이드 계획(src/plan/hub.ts): 에이전트 기기 행동·맞춘 눈 → 계획을 /events로. 경로는 scene.json 평면도로 찾는다
     const floorPlan = floorPlanFrom(readScene(home.scenePath) ?? {});
+    // 대시보드 말풍선 카드(src/act/say.ts): 계획 방송·실제 폰 명령·World State 바뀜·판단 타이머 뒤에 다시 보고, 글이 바뀔 때만 보낸다
+    let speak = () => {};
     const plans = new PlanHub(floorPlan, (m) => {
       appRef.current?.broadcast(m);
       if (m.type === "plan" && m.plan) history.plan(m.plan);
+      speak();
     });
     // 관찰 흐름(BRAIN=1): 폰 엔진 프레임마다 YOLOX·VLM이 분석하고 World State가 합친다(src/observe/pipeline.ts)
     const brainWanted = /^(1|true|on)$/i.test(env.BRAIN?.trim() ?? "");
@@ -216,9 +221,23 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     // 실행 설정(STALE_MS). 틀린 값이면 시작을 막는다
     const act = loadActConfig(env);
     const nowMs = () => ctx.brain?.clock?.now() ?? Date.now();
+    // 실제 폰에 낸 지금 명령(실행 추적이 보낸 것), 마지막 판단, 상자 있는 마지막 observe: 새로 붙은 대시보드에도 보낸다
+    let command: PlannedCommand | null = null;
+    let lastDecision: BrainLog | null = null;
+    let lastBoxes: BrainLog | null = null;
+    let said: string | null = null;
+    // 끝난 지 20초는 계획 updatedAt(PlanHub, Date.now)과 같은 시계로 잰다
+    speak = () => {
+      const text = sayLine({ plan: plans.current(), command, world: world?.view(nowMs()) ?? null, nowMs: Date.now() });
+      if (text === said) return;
+      said = text;
+      appRef.current?.broadcast({ type: "say", text });
+    };
     if (world) {
       const now = () => ctx.brain?.clock?.now() ?? Date.now();
       const emit = (event: BrainLog) => {
+        if (event.type === "decision") lastDecision = event;
+        else if (event.type === "observe" && event.boxes) lastBoxes = event;
         appRef.current?.broadcast({ type: "brain", event });
         history.brain(event);
       };
@@ -239,7 +258,12 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       tracker = new ExecutionTracker({
         plans, floor: () => plans.floor(), world: () => world.view(now()), emit, clock: ctx.brain?.clock,
         // 실제 폰 명령(src/contract/phone.ts). 폰 서버가 지금 명령을 기억해 새로 붙은 폰에도 보낸다. 명령 대상 자리는 배치(물건 가운데)에서
-        toPhone: (m) => phoneRef.current?.command(m),
+        toPhone: (m) => {
+          if (m.type === "command") command = m;
+          else if (!m.id || command?.id === m.id) command = null;
+          phoneRef.current?.command(m);
+          if (m.type === "command") speak();
+        },
         locate: (id) => layout?.editor.center(id),
         check: (d, p) => checkPlan({
           decision: d, tasks: [...CUP_TASKS], plan: p, world: world.view(now()), nowMs: now(), staleMs: act.staleMs, mode: ctx.mode?.() ?? "test", deviceSteps: deviceSteps(p),
@@ -248,7 +272,10 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       const tracking = tracker;
       pipeline = await createPipeline({
         env, runtimeDir, log, world, inject: ctx.brain, emit,
-        broadcastWorld: (w) => appRef.current?.broadcast({ type: "world", world: w }),
+        broadcastWorld: (w) => {
+          appRef.current?.broadcast({ type: "world", world: w });
+          speak();
+        },
         onChanges: (c) => {
           tracking.onWorld();
           decide.onChanges(c);
@@ -259,11 +286,17 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       decideTimer = setInterval(() => {
         decide.tick();
         tracking.tick();
+        speak();
       }, 250);
       decideTimer.unref?.();
       for (const s of signals.states()) world.applyDevice(s, now()); // 시작 상태는 변화로 내지 않는다
       const observing = pipeline;
       unsubWorld = signals.subscribe((s) => observing.onDevice(s));
+    }
+    if (!decideTimer) {
+      // 관찰 흐름이 꺼져 판단 타이머가 없으면 말풍선 글만 본다(끝난 지 20초가 지나면 지켜보기로)
+      decideTimer = setInterval(speak, 1000);
+      decideTimer.unref?.();
     }
     const observe = pipeline;
     const worldNow = world && (() => world.view(ctx.brain?.clock?.now() ?? Date.now()));
@@ -278,9 +311,11 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         room: (raw) => pickedRoom(plan, parseWallPick(raw)),
       },
       plan: plans, history: history.db, reflect: history.reflect,
+      brainLast: () => [lastDecision, lastBoxes].filter((e): e is BrainLog => e !== null), say: () => said,
     });
     const appNow = app;
     appRef.current = app;
+    speak();
     let phonePort: number | undefined;
     if (phoneOn) {
       const floor = loadAnchorTargets(home.scenePath, join(home.dataDir, "floorplan.json"));

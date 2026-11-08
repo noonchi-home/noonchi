@@ -1,4 +1,5 @@
 // 서버가 만들어 화면에 그대로 나가는 글. npm run lint가 이 파일도 검사한다(60자 아래, 화살표·괄호 없음).
+import { josa } from "../agent/phrases.js";
 
 export const STEP_LABEL = {
   goTable: "식탁으로 가기", pickCup: "컵 집기", goSink: "싱크대로 가기", placeCup: "컵 내려놓기",
@@ -17,6 +18,20 @@ export const VISION_TEXT = {
 };
 
 export const GOAL = { clearCup: "컵 치우기", askUser: "사용자에게 물어보기" };
+
+/** 대시보드 말풍선 카드 한 문장(src/act/say.ts). 클로이드가 정한 것과 실제 폰에 낸 명령이다. 클로이드가 몸으로 하는 말로 쓰지 않는다. */
+export const SAY_TEXT = {
+  watching: "지켜보고 있어요.",
+  looking: (surface: string) => `${josa(surface, "을/를")} 보고 있어요.`,
+  decided: (goal: string, surface: string | null = null) =>
+    goal === GOAL.clearCup && surface ? `${surface} 컵을 치우기로 했어요.` : DECIDED[goal] ?? `${josa(goal, "을/를")} 하기로 했어요.`,
+  told: { goTable: "식탁으로 가라고 했어요.", pickCup: "컵을 들라고 했어요.", goSink: "싱크대로 가라고 했어요.", placeCup: "컵을 싱크대에 넣으라고 했어요." },
+  asked: "폰으로 물어봤어요.",
+  done: (goal: string) => DONE[goal] ?? `${josa(goal, "을/를")} 마쳤어요.`,
+  stopped: (goal: string) => `${josa(goal, "을/를")} 그만뒀어요.`,
+};
+const DECIDED: Record<string, string> = { [GOAL.clearCup]: "컵을 치우기로 했어요.", [GOAL.askUser]: "폰으로 물어보기로 했어요." };
+const DONE: Record<string, string> = { [GOAL.clearCup]: "컵을 다 치웠어요." };
 
 /** 기기를 바꾸는 에이전트 도구 → 단계 글 끝말. 여기 없는 도구(읽기·배치)는 계획을 만들지 않는다. */
 export const DEVICE_VERB: Record<string, string> = {

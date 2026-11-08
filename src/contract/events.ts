@@ -79,10 +79,17 @@ export interface DecisionWorld {
   yolo_missing: number;
 }
 
+/** YOLOX 상자 하나(대시보드 폰 칸에 그린다). box는 엔진 프레임 픽셀 [x, y, w, h]. */
+export interface BoxView { label: "person" | "cup" | "bottle" | "bowl"; score: number; box: [number, number, number, number] }
+
 /** 관찰 흐름·판단이 대시보드로 보내는 기록(/events {type:"brain", event}). 엔진 프레임 하나는 observe 기록으로 반드시 남는다:
- *  YOLOX 결과(yolo) 또는 yolo_missing, VLM 답(vlm) 또는 vlm_missing. */
+ *  YOLOX 결과(yolo) 또는 yolo_missing, VLM 답(vlm) 또는 vlm_missing.
+ *  YOLOX 결과에만 상자(boxes, 감지 없음이면 [])와 엔진 프레임 크기(frame)가 있다. 분석 없음·VLM 답에는 없다. */
 export type BrainLog =
-  | { type: "observe"; at_ms: number; frame_id: string; captured_at_ms: number; yolo: string | null; yolo_missing?: YoloMissing; vlm: string | null; vlm_missing?: VlmMissing }
+  | {
+    type: "observe"; at_ms: number; frame_id: string; captured_at_ms: number; yolo: string | null; yolo_missing?: YoloMissing; vlm: string | null; vlm_missing?: VlmMissing;
+    boxes?: BoxView[]; frame?: { width: number; height: number };
+  }
   | { type: "world_change"; at_ms: number; kind: WorldChangeKind; text: string }
   | {
     type: "decision"; at_ms: number; id: string; seq: number; text_sent: string; status: "valid" | "failed";
@@ -188,4 +195,6 @@ export type ServerMessage =
   /** 클로이드 지금 계획(src/contract/plan.ts). null이면 계획을 지운다. */
   | { type: "plan"; plan: PlanView | null }
   /** World State(src/contract/world.ts). 바뀔 때마다, 그리고 접속 때 한 번. */
-  | { type: "world"; world: WorldView };
+  | { type: "world"; world: WorldView }
+  /** 대시보드 말풍선 카드 한 문장(src/act/say.ts). 바뀔 때마다, 그리고 접속 때 한 번. null이면 글 없음. */
+  | { type: "say"; text: string | null };
