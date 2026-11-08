@@ -1,6 +1,6 @@
 // 실제 폰 화면 상태 예시: 화면 시험(ui/tests/phone-screen.test.tsx)과 화면 사진 페이지(shots.tsx)가 함께 쓴다.
 // 명령·비전 상태·질문 글은 서버 글(src/plan/labels.ts STEP_COMMAND·VISION_TEXT, src/act/prompts.ts) 그대로다. marks는 명령 대상(command.target) 고리 하나다.
-// 모든 상태를 세로(390×844·412×915·360×780)로 찍고, 가로(844×390)는 pick-cup과 intro를 찍어 본다.
+// 모든 상태를 세로(390×844·412×915·360×780)로 찍고, 가로는 pick-cup(844×390)과 intro(844×390·780×360)를 찍어 본다.
 import { ASK_PROMPT, STEP_DONE } from "../../../src/act/prompts.ts";
 import { STEP_COMMAND, VISION_TEXT } from "../../../src/plan/labels.ts";
 import { initialView, type Anchor, type Command, type FocusMark, type PhoneView } from "./state";
