@@ -1,13 +1,15 @@
 // 폰 화면 제어: 연결(core/link.js)·AR(core/ar.js)·누르고 말하기(core/talk.js)를 묶고, 서버 메시지와 단추를 화면 상태(state.ts)로 바꾼다.
 // 규칙은 옮기기 전 web/phone/phone.js 그대로다: 알림 5초(답에 승인이 있으면 12초), 잠깐 알릴 말 4초.
 // 마스코트 말풍선 글(brain_line)은 서버가 바꾸거나 빈 글로 지울 때까지 둔다(src/phone/mascot.ts).
-// 상태 줄은 상태 메시지·잠깐 알릴 말·1초마다의 측정 때 다시 만든다. 부탁·질문이 뜨면 소리로 읽고, 답은 말이나 단추로 보낸다.
+// 상태 줄은 상태 메시지·잠깐 알릴 말·1초마다의 측정 때 다시 만든다. 명령·질문(command, src/contract/phone.ts)이 speak로 오면 소리로 읽고,
+// 답은 말이나 단추(answer: 받은 명령의 id·step)로 보낸다. 말의 답(reply)이 빈 글이면 보이지도 읽지도 않는다.
+import type { PhoneCommand, PhoneCommandClear } from "../../../src/contract/phone.ts";
 import { createAr } from "./core/ar.js";
 import { createLink, phoneSocketUrl } from "./core/link.js";
 import { createPressToTalk, recognition, speak as speakAloud, type PressToTalk, type RecognitionCtor } from "./core/talk.js";
 import {
   anchorCount, createStore, initialView, onAction, onRequest, onStatus, photoSavedText, statusLine,
-  type Anchor, type AlignMode, type Choice, type FocusMark, type Pending, type PhoneActions, type PhoneView, type TalkSpot,
+  type Anchor, type AlignMode, type FocusMark, type Pending, type PhoneActions, type PhoneView, type TalkSpot,
 } from "./state";
 
 const TOAST_MS = 5000;
@@ -54,6 +56,8 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
   let overlay: HTMLElement | null = null;
   let draw: ControllerDraw = { start: () => {}, hit: () => {}, marks: () => {} };
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
+  /** 지금 명령(답에 그대로 돌려줄 id·step). */
+  let command: { id: string; step: string } | null = null;
 
   const link = createLink({ url: phoneSocketUrl(deps.location), onMessage, Socket: deps.Socket, now: undefined });
   const ar = createAr({
@@ -120,17 +124,29 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
     } else if (msg.type === "photo_saved") toast(photoSavedText(msg));
     else if (msg.type === "reply") {
       const pending: Pending[] = msg.pending ?? [];
-      showLine(msg.text, pending.length ? 12000 : TOAST_MS);
-      speak(msg.text);
+      if (msg.text) {
+        showLine(msg.text, pending.length ? 12000 : TOAST_MS);
+        speak(msg.text);
+      } else {
+        clearTimeout(toastTimer);
+        set((v) => ({ ...v, reply: null, toast: null }));
+      }
       set((v) => ({ ...v, pending }));
     } else if (msg.type === "focus") ar.setFocus(msg.targets, msg.ttl_ms);
     else if (msg.type === "request") {
       if (!msg.active && msg.id !== store.get().request?.id) return;
       set((v) => onRequest(v, msg as { id: string; text: string; active: boolean }));
       if (msg.active) speak(msg.text);
-    } else if (msg.type === "action") {
-      set((v) => onAction(v, msg as { id: string; text?: string; would?: string | null; choices?: Choice[]; active: boolean }));
-      if (msg.active && msg.speak) speak(msg.text);
+    } else if (msg.type === "command") {
+      const m = msg as PhoneCommand;
+      command = { id: m.id, step: m.step };
+      set((v) => onAction(v, { id: m.id, text: m.text, would: null, choices: m.choices, active: true }));
+      if (m.speak) speak(m.text);
+    } else if (msg.type === "command_clear") {
+      const m = msg as PhoneCommandClear;
+      if (m.id !== undefined && m.id !== command?.id) return;
+      command = null;
+      set((v) => ({ ...v, action: null }));
     } else if (msg.type === "brain_line") {
       const text = String(msg.text ?? "").trim();
       set((v) => ({ ...v, brainLine: text || null }));
@@ -180,8 +196,8 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
       link.send({ type: "cancel", token });
     },
     brainReply(id, choice) {
-      if (!link.send({ type: "brain_reply", id, choice })) showNote("서버와 연결이 끊겨 답을 보내지 못했어요");
-      else if (choice === "done") toast("고마워요. 컵이 안 보이는지 확인할게요", 3000);
+      const step = command?.id === id ? command.step : "";
+      if (!link.send({ type: "answer", id, step, choice })) showNote("서버와 연결이 끊겨 답을 보내지 못했어요");
     },
     talkDown: (spot) => talk[spot]?.down(),
     talkUp: (spot) => talk[spot]?.up(),

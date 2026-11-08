@@ -1,6 +1,6 @@
-// 처음부터 끝까지(가짜 서버): 폰 엔진 프레임 → YOLOX(대본)·VLM(가짜 OpenAI 호환 서버) → World State → PAM(시험용 PAM 자리: 컵 치우기)
-// → 계획 → 실행 전 검사 → 폰 부탁(소리) → 말로 답 → 결과 확인(컵 사라짐) → 완료, 그리고 한 시간축 기록·대시보드 메시지.
-// 기본 집(마곡 아파트, 식탁·싱크대 있음). 맞추기 전이라 물건 위치는 모르고, 눈 자세 없는 프레임은 시야 안으로 보고 사라짐을 센다.
+// 처음부터 끝까지(가짜 서버): 폰 엔진 프레임 → YOLOX(대본)·VLM(가짜 OpenAI 호환 서버, 컵 자리 대본) → World State → PAM(시험용 PAM 자리: 컵 치우기)
+// → 계획 → 실행 전 검사 → 실제 폰 단계 명령(소리) → 「완료」 단추·World State 컵 자리·말 「다 했어」로 한 단계씩 → 완료, 그리고 한 시간축 기록·대시보드 메시지.
+// 기본 집(마곡 아파트, 식탁·싱크대 있음). 맞추기 전이라 폰 눈 위치를 몰라 이동 단계는 「완료」나 말로 넘긴다.
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -33,14 +33,23 @@ afterEach(async () => {
 const inbox = (list: Msg[]) => (ws: WebSocket) => ws.on("message", (d, bin) => { if (!bin) list.push(JSON.parse(String(d)) as Msg); });
 
 describe("NOONCHI 처음부터 끝까지", () => {
-  it("관찰부터 실행 결과까지 한 흐름으로 돌고 기록·대시보드에 남는다", async () => {
-    fake = await startFakeOpenAI();
-    pam = await startFakePam({ predict: () => ({ observation: "빈 컵이 식탁에 남음", reasoning: "자리를 비워 컵을 치운다", task_index: 0 }) });
-    let cupVisible = true;
+  it("관찰부터 단계 명령·실행 결과까지 한 흐름으로 돌고 기록·대시보드에 남는다", async () => {
+    let cupPlace = "on_table";
+    fake = await startFakeOpenAI({
+      reply: (body) => {
+        if (body?.response_format?.json_schema?.name !== "scene_observation") return null;
+        const parts = (body.messages as { role: string; content: unknown }[]).filter((m) => m.role === "user").flatMap((m) => (Array.isArray(m.content) ? m.content : [{ text: m.content }]));
+        const text = parts.map((p: { text?: unknown }) => (typeof p.text === "string" ? p.text : "")).join("\n");
+        const dets = JSON.parse(/Detections: (\[.*\])/.exec(text)?.[1] ?? "[]") as { id: string }[];
+        return JSON.stringify({ scene: "kitchen", observations: dets.map((d) => ({ object_id: d.id, state: cupPlace })), summary: "컵" });
+      },
+    });
+    // 싱크대에 넣은 뒤에는 대기(같은 컵으로 새 계획을 만들지 않게)
+    pam = await startFakePam({ predict: () => ({ observation: "빈 컵이 식탁에 남음", reasoning: "자리를 비워 컵을 치운다", task_index: cupPlace === "in_sink" ? -1 : 0 }) });
     srv = await startServer({
       env: { HUB: "memory", PORT: "0", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
         BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url, PAM_MIN_GAP_MS: "0" },
-      brain: { detector: new ScriptedDetector(() => (cupVisible ? [{ label: "cup", score: 0.9, cls: 41, box: [220, 160, 40, 20] }] : [])) }, log: () => {},
+      brain: { detector: new ScriptedDetector(() => [{ label: "cup", score: 0.9, cls: 41, box: [220, 160, 40, 20] }]) }, log: () => {},
     });
     const dash: Msg[] = [];
     sockets.push(await openWebSocket(`${srv.url.replace(/^http/, "ws")}/events`, { setup: inbox(dash) }));
@@ -59,40 +68,50 @@ describe("NOONCHI 처음부터 끝까지", () => {
       throw new Error("조건이 15초 안에 맞지 않음");
     };
     const history = async (kinds: string) => ((await (await fetchRetry(`${srv!.url}/api/history?kinds=${kinds}`)).json()) as { ok: boolean; rows: HistoryRow[] });
+    const said = (text: string) => phone.find((m) => m.type === "command" && m.speak && m.text === text);
 
-    await pump(() => phone.some((m) => m.type === "action" && m.active));
-    const ask = phone.find((m) => m.type === "action" && m.active)!;
-    expect(ask).toMatchObject({ task: "컵 치우기", text: "식탁 위 컵을 치워 주세요", speak: true, dry_run: true });
-    expect(ask.id).toMatch(/^plan:pam-\d+$/);
-    ws.send(JSON.stringify({ type: "say", text: "치웠어요" }));
+    await pump(() => !!said("식탁으로 가 주세요"));
+    const first = said("식탁으로 가 주세요")!;
+    expect(first).toEqual({ type: "command", id: expect.stringMatching(/^plan:pam-\d+$/), step: `${first.id}:1`, text: "식탁으로 가 주세요", vision: "식탁까지 거리 모름", choices: [{ id: "done", label: "완료" }], speak: true });
+    const planId = first.id as string;
+    // 1 이동: 「완료」 단추
+    ws.send(JSON.stringify({ type: "answer", id: planId, step: first.step, choice: "done" }));
+    await pump(() => !!said("컵을 들어 주세요"));
+    expect(said("컵을 들어 주세요")).toMatchObject({ id: planId, step: `${planId}:2`, vision: "컵 · 식탁 위" });
+    // 2 집기: VLM이 컵을 손에 있음으로 본다
+    cupPlace = "in_hand";
+    await pump(() => !!said("싱크대로 가 주세요"));
+    expect(said("싱크대로 가 주세요")).toMatchObject({ id: planId, step: `${planId}:3`, vision: "컵 · 손에 있음 · 싱크대까지 거리 모름" });
+    // 3 이동: 말로 「다 했어」(답 글은 비어 있고 다음 명령이 따로 온다)
+    ws.send(JSON.stringify({ type: "say", text: "다 했어" }));
+    await pump(() => !!said("컵을 싱크대에 넣어 주세요"));
     await pump(() => phone.some((m) => m.type === "reply"));
-    expect(phone.find((m) => m.type === "reply")).toMatchObject({ text: "고마워요. 컵이 안 보이는지 확인할게요" });
-    cupVisible = false;
-    await pump(async () => (await history("execution")).rows.some((r) => r.subject === ask.id && r.text === "완료"));
+    expect(phone.find((m) => m.type === "reply")).toEqual({ type: "reply", text: "", pending: [] });
+    // 4 내려놓기: VLM이 컵을 싱크대 안으로 본다 → 명령을 지우고 완료
+    cupPlace = "in_sink";
+    await pump(() => phone.some((m) => m.type === "command_clear" && m.id === planId));
+    await pump(async () => (await history("execution")).rows.some((r) => r.subject === planId && r.text === "완료"));
 
+    expect(phone.filter((m) => m.type === "command" && m.speak).map((m) => m.text)).toEqual(["식탁으로 가 주세요", "컵을 들어 주세요", "싱크대로 가 주세요", "컵을 싱크대에 넣어 주세요"]);
     const all = await history("vlm,detection,pam_text,decision,plan,execution,feedback");
     expect(all.ok).toBe(true);
     expect([...new Set(all.rows.map((r) => r.kind))].sort()).toEqual(["decision", "detection", "execution", "feedback", "pam_text", "plan", "vlm"]);
-    const steps = all.rows.filter((r) => r.kind === "execution" && r.subject === ask.id).sort((a, b) => a.id - b.id).map((r) => r.text);
-    expect(steps).toEqual(["판단", "계획", "실행 중", "결과 확인", "완료"]);
-    expect(all.rows.filter((r) => r.kind === "feedback").map((r) => r.text)).toEqual(["치웠어요 · 부탁: 식탁 위 컵을 치워 주세요"]);
-    const decided = all.rows.find((r) => r.kind === "decision" && `plan:${r.subject}` === ask.id)!;
+    const steps = all.rows.filter((r) => r.kind === "execution" && r.subject === planId).sort((a, b) => a.id - b.id).map((r) => r.text);
+    expect(steps).toEqual(["판단", "계획", "실행 중", "완료"]);
+    expect(all.rows.filter((r) => r.kind === "feedback").sort((a, b) => a.id - b.id).map((r) => r.text)).toEqual(["완료 · 부탁: 식탁으로 가 주세요", "다 했어 · 부탁: 싱크대로 가 주세요"]);
+    const decided = all.rows.find((r) => r.kind === "decision" && `plan:${r.subject}` === planId)!;
     expect(decided.text).toBe("컵 치우기");
     expect((pam.bodies[0] as { observation_text: string }).observation_text).toContain("컵 cup_1 보임");
-    // 대시보드: 판단·실행 기록과 계획(집기 대상 cup_1, 끝나면 done)
-    const planMsgs = dash.filter((m) => m.type === "plan" && m.plan?.id === ask.id).map((m) => m.plan);
+    // 대시보드: 판단·실행 기록과 계획(집기 대상 cup_1). 단계 상태가 지금 단계를 따라가고 끝나면 done
+    const planMsgs = dash.filter((m) => m.type === "plan" && m.plan?.id === planId).map((m) => m.plan);
     expect(planMsgs[0]).toMatchObject({ source: "brain", dryRun: true, judgment: "자리를 비워 컵을 치운다" });
     expect(planMsgs[0].steps.find((s: Msg) => s.kind === "act").target).toMatchObject({ objectId: "cup_1" });
+    const progress = planMsgs.map((p) => p.steps.map((s: Msg) => s.status).join(","));
+    expect(progress).toEqual([
+      "pending,pending,pending,pending", "active,pending,pending,pending", "done,active,pending,pending",
+      "done,done,active,pending", "done,done,done,active", "done,done,done,done",
+    ]);
     expect(planMsgs.at(-1)).toMatchObject({ status: "done" });
-    expect(dash.some((m) => m.type === "brain" && m.event.type === "execution" && m.event.plan_id === ask.id && m.event.state === "done")).toBe(true);
-    expect(phone.some((m) => m.type === "action" && m.id === ask.id && m.active === false)).toBe(true);
-    // 폰 마스코트 말풍선: 계획이 열린 동안 그 판단 글, 끝나면 마지막 판단의 관찰(대시보드가 받은 계획·판단과 같은 글)
-    const lines = () => phone.filter((m) => m.type === "brain_line").map((m) => m.text as string);
-    for (const end = Date.now() + 3000; lines().at(-1) !== "빈 컵이 식탁에 남음" && Date.now() < end; ) await new Promise((r) => setTimeout(r, 50));
-    const said = lines();
-    const judged = said.indexOf("자리를 비워 컵을 치운다");
-    expect(judged, said.join(" / ")).toBeGreaterThanOrEqual(0);
-    expect(said.slice(judged + 1), said.join(" / ")).toContain("빈 컵이 식탁에 남음");
-    expect(said.at(-1)).toBe("빈 컵이 식탁에 남음");
-  }, 40_000);
+    expect(dash.some((m) => m.type === "brain" && m.event.type === "execution" && m.event.plan_id === planId && m.event.state === "done")).toBe(true);
+  }, 60_000);
 });

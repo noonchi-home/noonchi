@@ -294,8 +294,10 @@ describe("폰 대화·승인·초점", () => {
   async function talkSetup() {
     const said: string[] = [];
     const confirmed: string[] = [];
+    const picked: string[][] = [];
     const phone = createPhoneServer({
       targets: TARGETS, onEye: () => {}, log: () => {},
+      onChoice: (id, step, choice) => picked.push([id, step, choice]),
       onSay: async (text) => {
         said.push(text);
         return { reply: "현관문 잠금 해제는 승인이 필요해요.", pending: [{ token: "tok1", deviceLabel: "현관문", reason: "현관문 잠금 해제" }] };
@@ -308,8 +310,21 @@ describe("폰 대화·승인·초점", () => {
     });
     const { port } = await phone.listen(0, "127.0.0.1");
     cleanups.push(() => phone.close());
-    return { phone, said, confirmed, phoneBase: `http://127.0.0.1:${port}` };
+    return { phone, said, confirmed, picked, phoneBase: `http://127.0.0.1:${port}` };
   }
+
+  it("answer(답 단추)는 id·step·choice를 onChoice로 넘기고, 모양이 틀리거나 너무 길면 버린다", async () => {
+    const { phoneBase, picked } = await talkSetup();
+    const ws = await alignedPhone(phoneBase);
+    ws.send(JSON.stringify({ type: "answer", id: "plan:pam-1", step: "plan:pam-1:2", choice: "done" }));
+    ws.send(JSON.stringify({ type: "answer", id: "plan:pam-1", choice: "done" }));
+    ws.send(JSON.stringify({ type: "answer", id: "x".repeat(65), step: "plan:pam-1:2", choice: "done" }));
+    ws.send(JSON.stringify({ type: "answer", id: "plan:pam-1", step: "plan:pam-1:2", choice: 1 }));
+    ws.send(JSON.stringify({ type: "brain_reply", id: "plan:pam-1", choice: "done" }));
+    ws.send(JSON.stringify({ type: "answer", id: "plan:pam-1", step: "plan:pam-1:3", choice: "done" }));
+    for (const end = Date.now() + 2000; picked.length < 2 && Date.now() < end; ) await new Promise((r) => setTimeout(r, 20));
+    expect(picked).toEqual([["plan:pam-1", "plan:pam-1:2", "done"], ["plan:pam-1", "plan:pam-1:3", "done"]]);
+  });
 
   it("say는 에이전트 답과 승인 대기를 reply로 돌려주고, confirm·cancel은 그대로 넘긴다", async () => {
     const { phoneBase, said, confirmed } = await talkSetup();

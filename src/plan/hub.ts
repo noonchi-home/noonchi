@@ -99,9 +99,15 @@ export class PlanHub {
 
   /** 지금 계획의 단계 상태 하나를 바꾼다. 계획·단계가 없으면 false. */
   setStep(planId: string, stepId: string, status: StepStatus): boolean {
+    return this.setSteps(planId, { [stepId]: status });
+  }
+
+  /** 지금 계획의 단계 상태 여럿을 한 번에 바꾸고 한 번만 보낸다(실행 추적이 단계를 넘길 때: 앞 단계 done, 다음 단계 active). 계획이 다르거나 없는 단계가 있으면 false. */
+  setSteps(planId: string, changes: Record<string, StepStatus>): boolean {
     const p = this.plan;
-    if (!p || p.id !== planId || !p.steps.some((s) => s.id === stepId)) return false;
-    const steps = p.steps.map((s) => (s.id === stepId ? { ...s, status } : s));
+    const ids = Object.keys(changes);
+    if (!p || p.id !== planId || ids.length === 0 || !ids.every((id) => p.steps.some((s) => s.id === id))) return false;
+    const steps = p.steps.map((s) => (Object.hasOwn(changes, s.id) ? { ...s, status: changes[s.id]! } : s));
     this.commit({ ...p, steps, status: statusOf(p.status, steps) });
     return true;
   }

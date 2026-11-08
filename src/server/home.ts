@@ -4,7 +4,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { checkPlan, loadActConfig } from "../act/check.js";
-import { matchChoice } from "../act/tasks.js";
 import { ExecutionTracker } from "../act/track.js";
 import { Agent } from "../agent/agent.js";
 import { Policy } from "../agent/policy.js";
@@ -261,7 +260,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         env, runtimeDir, log, world, inject: ctx.brain, emit,
         broadcastWorld: (w) => appRef.current?.broadcast({ type: "world", world: w }),
         onChanges: (c) => {
-          tracking.onWorld(c);
+          tracking.onWorld();
           decide.onChanges(c);
         },
         // 분석한 프레임은 디스크에 쓰지 않는다. DATASET_COLLECT=1일 때만 시험 자료로 RUNTIME_DIR/dataset에 쓴다
@@ -306,6 +305,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         onEye: (eye) => {
           appNow.broadcast({ type: "eye", eye });
           plans.onEye([eye.position[0], eye.position[1]], eye.estimated === true);
+          tracker?.onEye([eye.position[0], eye.position[1]], eye.estimated === true);
         },
         onSay: async (text) => {
           const r = await agent.chat(PHONE_SESSION, text);
@@ -313,21 +313,20 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         },
         onConfirm: async (token) => ({ reply: (await agent.confirm(token)).reply }),
         onCancel: async (token) => ({ reply: agent.cancel(token).reply }),
-        // 클로이드 부탁·질문의 답(버튼·말). 답과 묻는 동안의 말은 반성 피드백으로 남긴다
-        onBrainReply: (id, choice) => {
-          const open = tracker?.openRequest();
-          const picked = open?.planId === id ? open.choices.find((c) => c.id === choice) : undefined;
-          if (open && picked) history.db.add("feedback", nowMs(), FEEDBACK_TEXT.answer(picked.label, open.kind, open.text), { subject: id, data: { choice, via: "button" } });
-          tracker?.onReply(id, choice);
+        // 실제 폰 명령·질문의 답(「완료」·질문 답 단추, 말 「완료」「다 했어」「그만」). 답과 명령이 떠 있는 동안의 말은 반성 피드백으로 남긴다
+        onChoice: (id, step, choice) => {
+          const open = tracker?.openCommand();
+          const picked = open?.choices.find((c) => c.id === choice);
+          if (open && picked && tracker?.onAnswer(id, step, choice)) {
+            history.db.add("feedback", nowMs(), FEEDBACK_TEXT.answer(picked.label, open.kind, open.text), { subject: id, data: { choice, via: "button" } });
+          }
         },
         onAnswer: (text) => {
-          const open = tracker?.openRequest();
+          const open = tracker?.openCommand();
           if (!open) return { handled: false };
-          const picked = matchChoice(text, open.choices);
+          const picked = tracker!.onHeard(text);
           history.db.add("feedback", nowMs(), FEEDBACK_TEXT.answer(text, open.kind, open.text), { subject: open.planId, data: { choice: picked?.id ?? null, via: "voice" } });
-          if (!picked) return { handled: false };
-          tracker?.onReply(open.planId, picked.id);
-          return { handled: true, reply: picked.reply };
+          return picked ? { handled: true, reply: picked.reply } : { handled: false };
         },
         ...(observe ? {
           engineMs: observe.config.engineMs,

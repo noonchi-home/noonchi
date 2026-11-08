@@ -132,14 +132,15 @@ describe("서버가 화면에 그대로 내보내는 계획 글(src/plan/labels.
     expect(lintUiCopy([historyLabels])).toEqual([]);
     expect(texts.filter((t) => /[()→]/.test(t))).toEqual([]);
   });
-  it("폰 부탁 글(src/act/prompts.ts)도 꺼내 검사한다", () => {
+  it("실제 폰 답 글(src/act/prompts.ts)도 꺼내 검사한다", () => {
     const texts = fileCopy(prompts, readFileSync(prompts, "utf8")).map((c) => c.text);
-    expect(texts).toEqual(expect.arrayContaining(["식탁 위 컵을 치워 주세요", "치웠어요", "그대로 둬요"]));
+    expect(texts).toEqual(expect.arrayContaining(["컵을 치울까요?", "완료", "그만", "그대로 둬요"]));
     expect(lintUiCopy([prompts])).toEqual([]);
   });
-  it("단계·목표·기기 동작 글을 꺼낸다", () => {
+  it("단계·목표·기기 동작 글과 실제 폰 단계 명령·비전 상태 글을 꺼낸다", () => {
     const texts = fileCopy(labels, readFileSync(labels, "utf8")).map((c) => c.text);
-    expect(texts).toEqual(expect.arrayContaining(["식탁으로 가기", "컵 치우기", "켜기"]));
+    expect(texts).toEqual(expect.arrayContaining(["식탁으로 가기", "컵 치우기", "켜기", "컵을 들어 주세요", "…까지 거리 모름"]));
+    expect(lintUiCopy([labels])).toEqual([]);
   });
   it("파일 하나를 줘도 검사한다", () => {
     const dir = mkdtempSync(join(tmpdir(), "twin-home-labels-"));

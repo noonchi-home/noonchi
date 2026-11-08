@@ -120,6 +120,21 @@ describe("PlanHub PAM 판단 계획", () => {
     expect(hub.current()).toMatchObject({ status: "failed", steps: [{ status: "failed" }, { status: "skipped" }, { status: "skipped" }, { status: "skipped" }] });
     expect(hub.close(p.id, "done")).toBe(false);
   });
+  it("setSteps: 여러 단계를 한 번에 바꾸고 한 번만 보낸다. 다른 계획이나 없는 단계가 있으면 바꾸지 않는다", () => {
+    const { hub, sent } = hubWithLog();
+    const p = cupPlan(smallFloor(), "plan:pam-1", "t")!;
+    hub.onDecision(p);
+    const [s1, s2] = p.steps;
+    expect(hub.setSteps(p.id, { [s1!.id]: "active" })).toBe(true);
+    const n = sent.length;
+    expect(hub.setSteps(p.id, { [s1!.id]: "done", [s2!.id]: "active" })).toBe(true);
+    expect(sent).toHaveLength(n + 1);
+    expect(hub.current()).toMatchObject({ status: "running", revision: 3, steps: [{ status: "done" }, { status: "active" }, { status: "pending" }, { status: "pending" }] });
+    expect(hub.setSteps("plan:other", { [s1!.id]: "failed" })).toBe(false);
+    expect(hub.setSteps(p.id, { [s2!.id]: "done", "plan:pam-1:9": "active" })).toBe(false);
+    expect(hub.setSteps(p.id, {})).toBe(false);
+    expect(sent).toHaveLength(n + 1);
+  });
   it("끝난 판단 계획 다음 계획에는 supersedes가 없다", () => {
     const { hub } = hubWithLog();
     const first = askPlan(smallFloor(), "plan:pam-1", "t");

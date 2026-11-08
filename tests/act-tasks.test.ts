@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { WorldObject, WorldView } from "../src/contract/world.js";
-import { planFor, planTargetId, targetOf, TASKS } from "../src/act/tasks.js";
+import { cupStepOf, planFor, planTargetId, targetOf, TASKS } from "../src/act/tasks.js";
+import { STEP_COMMAND } from "../src/plan/labels.js";
 import type { DecisionRecord } from "../src/world/decide.js";
 import { smallFloor } from "./helpers/floor.js";
 
@@ -49,8 +50,13 @@ describe("PAM 결과 → 계획", () => {
     expect(planFor(smallFloor(), { ...decision(0), status: "failed", prediction: null, action: null }, world(), "x")).toBeNull();
     expect(planFor(smallFloor(), { ...decision(0), action: "춤추기" }, world(), "x")).toBeNull();
   });
-  it("행동 목록의 행동마다 계획 모양과 폰 부탁 글이 있다", () => {
+  it("행동 목록의 행동마다 계획 모양이 있다. 컵 치우기 단계마다 실제 폰 명령이 있고, 물어보기는 질문과 답이 있다", () => {
     expect(Object.keys(TASKS)).toEqual(["컵 치우기", "사용자에게 물어보기"]);
-    for (const spec of Object.values(TASKS)) expect(spec.prompt.choices.length).toBeGreaterThan(0);
+    const cup = planFor(smallFloor(), decision(0), world(), "x")!;
+    expect(cup.steps.map((s) => cupStepOf(s))).toEqual(["goTable", "pickCup", "goSink", "placeCup"]);
+    expect(cup.steps.map((s) => STEP_COMMAND[cupStepOf(s)!])).toEqual(["식탁으로 가 주세요", "컵을 들어 주세요", "싱크대로 가 주세요", "컵을 싱크대에 넣어 주세요"]);
+    const asked = TASKS["사용자에게 물어보기"]!;
+    expect(asked.kind === "ask" && asked.prompt.choices.length).toBeGreaterThan(0);
+    expect(cupStepOf(planFor(smallFloor(), decision(1), world(), "x")!.steps[0]!)).toBeNull();
   });
 });

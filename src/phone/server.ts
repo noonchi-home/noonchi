@@ -1,6 +1,7 @@
 // 폰 AR 페이지와 자세 WebSocket만 여는 작은 서버(SSOT 9.6). 같은 와이파이의 폰이 붙도록 0.0.0.0에 열 수 있다.
 // 기기 제어 REST는 여기 없다. 본 서버(127.0.0.1)는 그대로 두고 눈 자세는 onEye로, 폰의 말(say)과 승인은 onSay·onConfirm·onCancel로
-// 넘긴다(그 뒤는 에이전트·승인 정책이 맡는다). 클로이드가 폰으로 묻는 중이면 말을 먼저 그 답으로 맞춰 본다(onAnswer).
+// 넘긴다(그 뒤는 에이전트·승인 정책이 맡는다). 실제 폰에 명령·질문이 떠 있으면 말을 먼저 그 답으로 맞춰 보고(onAnswer),
+// 답 단추(answer)는 onChoice로 넘긴다(src/contract/phone.ts).
 // 내부 테스트용이라 같은 와이파이의 누구나 말을 보낼 수 있다.
 // 폰 화면은 React 빌드 ui/dist/phone/이고 빌드 파일은 /assets/다(대시보드와 같은 빌드).
 
@@ -54,9 +55,9 @@ export interface PhoneServerOptions {
   onEngine?: (jpeg: Buffer, header: FrameHeader, eye: EyeEvent | null, view: CameraView | null, receivedAtMs: number) => void;
   /** 엔진 프레임 간격(ms). 있으면 상태 메시지에 engine_ms로 실어 폰이 그 간격으로 보낸다. */
   engineMs?: number;
-  /** 폰 행동 부탁·질문의 답(버튼). */
-  onBrainReply?: (id: string, choice: string) => void;
-  /** 폰의 말(say)을 에이전트보다 먼저 받는다. 열린 부탁·질문의 답이면 handled이고, 그때는 에이전트로 보내지 않고 reply를 돌려준다. */
+  /** 실제 폰 답 단추({type:"answer", id, step, choice}: 「완료」·질문 답). */
+  onChoice?: (id: string, step: string, choice: string) => void;
+  /** 폰의 말(say)을 에이전트보다 먼저 받는다. 명령·질문의 답(「완료」「그만」 등)이면 handled이고, 그때는 에이전트로 보내지 않고 reply를 돌려준다. */
   onAnswer?: (text: string) => { handled: boolean; reply?: string };
 }
 
@@ -241,9 +242,11 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
         if (typeof t0 === "number" && Number.isFinite(t0)) reply(ws, { type: "clock", t0, server: Date.now() });
         return;
       }
-      if (type === "brain_reply") {
-        const { id, choice } = raw as { id?: unknown; choice?: unknown };
-        if (typeof id === "string" && typeof choice === "string" && id.length <= 64 && choice.length <= 32) opts.onBrainReply?.(id, choice);
+      if (type === "answer") {
+        const { id, step, choice } = raw as { id?: unknown; step?: unknown; choice?: unknown };
+        if (typeof id === "string" && typeof step === "string" && typeof choice === "string" && id.length <= 64 && step.length <= 80 && choice.length <= 32) {
+          opts.onChoice?.(id, step, choice);
+        }
         return;
       }
       const out = session.handle(raw);

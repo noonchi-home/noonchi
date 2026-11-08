@@ -1,5 +1,5 @@
 // 폰 화면 제어(controller.ts)를 가짜 소켓·가짜 음성·가짜 XR로 돌린다. 옮기기 전 phone.js 규칙 그대로인지 본다:
-// 알림 5초(승인이 있으면 12초), 잠깐 알릴 말 4초, 부탁은 소리로 읽고, 답은 말이나 단추로 보낸다. 마스코트 말풍선 글은 서버가 바꿀 때까지 둔다.
+// 알림 5초(승인이 있으면 12초), 잠깐 알릴 말 4초, 명령은 소리로 읽고, 답은 말이나 단추로 보낸다. 마스코트 말풍선 글은 서버가 바꿀 때까지 둔다.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createPhoneController, type ControllerDeps } from "../src/phone/controller";
 import { supportText } from "../src/phone/state";
@@ -132,25 +132,36 @@ describe("폰 화면 제어(controller.ts)", () => {
     expect(spoken).toEqual(["컵 안을 비춰 주세요"]);
   });
 
-  it("행동 부탁: speak면 읽고, 고르면 brain_reply. done이면 고맙다는 알림 3초. 연결이 끊기면 상태 줄", () => {
-    vi.useFakeTimers();
+  it("명령: speak면 읽고, 비전 상태만 바뀐 명령은 읽지 않는다. 고르면 받은 id·step으로 answer. 지우기는 그 명령일 때만. 연결이 끊기면 상태 줄", () => {
     const { c, ws, spoken, sent } = make();
-    const choices = [{ id: "done", label: "치웠어요" }, { id: "later", label: "나중에" }];
-    ws.push({ type: "action", id: "a1", text: "식탁 위 컵을 치워 주세요", would: "로봇이 식탁의 컵을 싱크대로 옮긴다", choices, active: true, speak: true });
-    expect(c.view().action).toEqual({ id: "a1", text: "식탁 위 컵을 치워 주세요", would: "로봇이 식탁의 컵을 싱크대로 옮긴다", choices });
-    expect(spoken).toEqual(["식탁 위 컵을 치워 주세요"]);
-    c.actions.brainReply("a1", "done");
-    expect(sent()).toEqual([{ type: "brain_reply", id: "a1", choice: "done" }]);
-    expect(c.view().toast).toBe("고마워요. 컵이 안 보이는지 확인할게요");
-    vi.advanceTimersByTime(3000);
+    const choices = [{ id: "done", label: "완료" }];
+    ws.push({ type: "command", id: "plan:pam-1", step: "plan:pam-1:2", text: "컵을 들어 주세요", vision: "컵 · 식탁 위", choices, speak: true });
+    expect(c.view().action).toEqual({ id: "plan:pam-1", text: "컵을 들어 주세요", would: null, choices });
+    ws.push({ type: "command", id: "plan:pam-1", step: "plan:pam-1:2", text: "컵을 들어 주세요", vision: "컵 · 손에 있음", choices, speak: false });
+    expect(spoken).toEqual(["컵을 들어 주세요"]);
+    c.actions.brainReply("plan:pam-1", "done");
+    expect(sent()).toEqual([{ type: "answer", id: "plan:pam-1", step: "plan:pam-1:2", choice: "done" }]);
     expect(c.view().toast).toBeNull();
-    ws.push({ type: "action", id: "a0", active: false });
+    ws.push({ type: "command_clear", id: "plan:pam-0" });
     expect(c.view().action).not.toBeNull();
-    ws.push({ type: "action", id: "a1", active: false });
+    ws.push({ type: "command_clear", id: "plan:pam-1" });
+    expect(c.view().action).toBeNull();
+    ws.push({ type: "command", id: "plan:pam-2", step: "plan:pam-2:1", text: "식탁으로 가 주세요", vision: null, choices, speak: true });
+    ws.push({ type: "command_clear" });
     expect(c.view().action).toBeNull();
     ws.readyState = 3;
-    c.actions.brainReply("a1", "later");
+    c.actions.brainReply("plan:pam-2", "done");
     expect(c.view().status.text).toBe("서버와 연결이 끊겨 답을 보내지 못했어요");
+  });
+
+  it("말의 답이 빈 글이면 보이지도 읽지도 않고 생각 중 알림을 지운다", () => {
+    const { c, ws, spoken } = make();
+    c.actions.say("다 했어");
+    expect(c.view().toast).toMatch(/생각 중/);
+    ws.push({ type: "reply", text: "", pending: [] });
+    expect(c.view().toast).toBeNull();
+    expect(c.view().reply).toBeNull();
+    expect(spoken).toEqual([]);
   });
 
   it("마스코트 말풍선 글은 다음 brain_line까지 남고 빈 글이면 지운다. 사진 보냄 알림은 위치·요청에 따라", () => {

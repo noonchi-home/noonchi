@@ -1,4 +1,4 @@
-// 폰 음성 질문: 열린 부탁이 있으면 폰의 말(say)을 먼저 답으로 맞춰 보고, 맞으면 에이전트로 보내지 않는다.
+// 실제 폰 말: 명령·질문이 떠 있으면 폰의 말(say)을 먼저 답으로 맞춰 보고(「완료」「다 했어」, 질문 답, 「그만」), 맞으면 에이전트로 보내지 않는다.
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type WebSocket from "ws";
 import { startFakeOpenAI, type FakeServer } from "../scripts/fake-openai.js";
 import { matchChoice } from "../src/act/tasks.js";
-import { PROMPTS } from "../src/act/prompts.js";
+import { ASK_PROMPT, STEP_DONE, STOP } from "../src/act/prompts.js";
 import { encodeFramePacket } from "../src/phone/packet.js";
 import { createPhoneServer, type PhoneServer } from "../src/phone/server.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
@@ -33,13 +33,13 @@ async function until(list: Msg[], n: number, ms = 3000): Promise<void> {
 }
 
 describe("폰 음성 질문", () => {
-  it("열린 부탁이 있으면 말을 답으로 받고 에이전트로 보내지 않는다. 맞지 않는 말은 에이전트로 간다", async () => {
+  it("명령이 떠 있으면 말을 답으로 받고 에이전트로 보내지 않는다. 맞지 않는 말은 에이전트로 간다", async () => {
     const said: string[] = [];
     const answered: string[] = [];
     phone = createPhoneServer({
       targets: TARGETS, onEye: () => {}, log: () => {},
       onSay: async (t) => { said.push(t); return { reply: "에이전트", pending: [] }; },
-      onAnswer: (t) => { answered.push(t); return t.includes("치웠") ? { handled: true, reply: "확인할게요" } : { handled: false }; },
+      onAnswer: (t) => { answered.push(t); return t.includes("완료") ? { handled: true, reply: "" } : { handled: false }; },
     });
     const { port } = await phone.listen(0, "127.0.0.1");
     const replies: Msg[] = [];
@@ -47,29 +47,30 @@ describe("폰 음성 질문", () => {
       const m = JSON.parse(String(d)) as Msg;
       if (m.type === "reply") replies.push(m);
     }) });
-    ws.send(JSON.stringify({ type: "say", text: "  치웠어요 " }));
+    ws.send(JSON.stringify({ type: "say", text: "  완료 " }));
     await until(replies, 1);
     ws.send(JSON.stringify({ type: "say", text: "불 꺼 줘" }));
     await until(replies, 2);
-    expect(replies.map((m) => m.text)).toEqual(["확인할게요", "에이전트"]);
+    expect(replies.map((m) => m.text)).toEqual(["", "에이전트"]);
     expect(replies[0]).toMatchObject({ pending: [] });
-    expect(answered).toEqual(["치웠어요", "불 꺼 줘"]);
+    expect(answered).toEqual(["완료", "불 꺼 줘"]);
     expect(said).toEqual(["불 꺼 줘"]);
   });
 });
 
 describe("말과 선택지 맞추기", () => {
-  const clear = PROMPTS["컵 치우기"].choices;
-  const ask = PROMPTS["사용자에게 물어보기"].choices;
+  const step = [STEP_DONE];
+  const ask = ASK_PROMPT.choices;
   it("버튼 글이나 그 선택지의 말이 들어 있으면 그 선택지", () => {
-    expect(matchChoice("치웠어요", clear)?.id).toBe("done");
-    expect(matchChoice("응 다 치웠어", clear)?.id).toBe("done");
-    expect(matchChoice("이따가 나중에 할게", clear)?.id).toBe("later");
+    expect(matchChoice("완료", step)?.id).toBe("done");
+    expect(matchChoice("응 다 했어", step)?.id).toBe("done");
+    expect(matchChoice("이제 그만", [STOP])?.id).toBe("stop");
+    expect(matchChoice("이따가 나중에 할게", step)).toBeNull();
     expect(matchChoice("치워 줘", ask)?.id).toBe("clear");
     expect(matchChoice("그냥 그대로 둬", ask)?.id).toBe("keep");
   });
   it("맞는 선택지가 없거나 빈 말이면 null", () => {
-    expect(matchChoice("불 꺼 줘", clear)).toBeNull();
+    expect(matchChoice("불 꺼 줘", step)).toBeNull();
     expect(matchChoice("  ", ask)).toBeNull();
   });
 });
@@ -101,7 +102,7 @@ describe("startServer(BRAIN=1): 클로이드 질문을 폰 말로 답한다", ()
     let n = 0;
     const asked = async () => {
       for (const end = Date.now() + 10_000; Date.now() < end; ) {
-        const m = box.find((x) => x.type === "action" && x.active);
+        const m = box.find((x) => x.type === "command");
         if (m) return m;
         ws!.send(encodeFramePacket({ kind: "engine", width: 4, height: 3, captured_at: Date.now(), time_err_ms: 0 }, Buffer.from([0xff, 0xd8, n++ % 256, n >> 8])));
         await new Promise((r) => setTimeout(r, 100));
@@ -109,7 +110,8 @@ describe("startServer(BRAIN=1): 클로이드 질문을 폰 말로 답한다", ()
       throw new Error("질문이 오지 않았습니다");
     };
     const ask = await asked();
-    expect(ask).toMatchObject({ task: "사용자에게 물어보기", text: "컵을 치울까요?", speak: true, choices: [{ label: "치워 주세요" }, { label: "그대로 둬요" }] });
+    expect(ask).toEqual({ type: "command", id: expect.stringMatching(/^plan:pam-\d+$/), step: `${ask.id}:1`, text: "컵을 치울까요?", vision: null, speak: true,
+      choices: [{ id: "clear", label: "치워 주세요" }, { id: "keep", label: "그대로 둬요" }] });
     ws.send(JSON.stringify({ type: "say", text: "그냥 그대로 둬" }));
     for (const end = Date.now() + 5000; !box.some((m) => m.type === "reply"); ) {
       if (Date.now() > end) throw new Error("답이 오지 않았습니다");
@@ -119,6 +121,6 @@ describe("startServer(BRAIN=1): 클로이드 질문을 폰 말로 답한다", ()
     const rows = srv.history.list({ kinds: ["feedback", "execution"] });
     expect(rows.filter((r) => r.kind === "feedback").map((r) => r.text)).toEqual(["그냥 그대로 둬 · 질문: 컵을 치울까요?"]);
     expect(rows.some((r) => r.kind === "execution" && r.subject === ask.id && r.text === "완료: 그대로 둬요")).toBe(true);
-    expect(box.some((m) => m.type === "action" && m.id === ask.id && m.active === false)).toBe(true);
+    expect(box.some((m) => m.type === "command_clear" && m.id === ask.id)).toBe(true);
   }, 30_000);
 });
