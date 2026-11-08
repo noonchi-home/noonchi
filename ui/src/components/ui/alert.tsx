@@ -1,5 +1,5 @@
 // 21st.dev「Alert」(id 11326, coss.com/alert) 받은 코드.
-// 바꾼 것: red·emerald·amber → error·ok·warn 토큰(/5 바탕, /30 테두리는 그대로), info variant 뺌, dark: 줄 지움, import "./utils" → @/lib/utils, text-sm → body-sm 토큰. 폰 사진 요청용 brand variant(brand 바탕, on-brand 글·아이콘)와 size lg(headline 토큰, 제목 굵기도 headline 700: AlertTitle font-medium을 덮음)를 더함.
+// 바꾼 것: red·emerald·amber → error·ok·warn 토큰(/5 바탕, /30 테두리는 그대로), info variant 뺌, dark: 줄 지움, import "./utils" → @/lib/utils, text-sm → body-sm 토큰. 폰 사진 요청용 brand variant(brand 바탕, on-brand 글·아이콘)와 size lg(headline 토큰, 제목 굵기도 headline 700: AlertTitle font-medium을 덮음, 아이콘과 아이콘 칸 너비 16 → 18px: 제목 아이콘 크기)를 더함.
 import { cva, type VariantProps } from "class-variance-authority";
 import type * as React from "react";
 import { cn } from "@/lib/utils";
@@ -26,7 +26,7 @@ const alertVariants = cva(
       },
       size: {
         default: "",
-        lg: "text-headline *:data-[slot=alert-title]:font-bold",
+        lg: "text-headline *:data-[slot=alert-title]:font-bold has-[>svg]:grid-cols-[calc(var(--spacing)*4.5)_1fr] [&>svg]:w-4.5",
       },
     },
   },

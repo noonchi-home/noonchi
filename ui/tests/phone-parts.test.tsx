@@ -28,6 +28,9 @@ describe("폰용 부품 변형", () => {
     const w = words(screen.getByRole("alert"));
     expect(w).toEqual(expect.arrayContaining(["bg-brand", "text-on-brand", "text-headline", "*:data-[slot=alert-title]:font-bold"]));
     expect(w).not.toContain("text-body-sm");
+    // 제목 옆 아이콘은 18px(spec 6절 제목 아이콘), 아이콘 칸도 같은 너비
+    expect(w).toEqual(expect.arrayContaining(["[&>svg]:w-4.5", "has-[>svg]:grid-cols-[calc(var(--spacing)*4.5)_1fr]"]));
+    expect(w).not.toContain("[&>svg]:w-4");
     // 기본 크기 제목은 받은 그대로 font-medium
     render(<Alert><AlertTitle>연결됨</AlertTitle></Alert>);
     expect(words(screen.getByText("연결됨").closest("[role=alert]")!)).not.toContain("*:data-[slot=alert-title]:font-bold");

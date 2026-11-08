@@ -88,6 +88,18 @@ describe("카메라 중(AR)", () => {
     for (const zone of overlay.querySelectorAll("[data-phone-zone]")) expect(words(zone)).toContain("inset-x-4");
   });
 
+  it("글이 있는 단추의 아이콘은 본문 16px(size-4), 큰 단추는 24px(size-6)", () => {
+    for (const name of ["intro", "menu", "busy"] as const) {
+      const { container, unmount } = show(SHOTS[name].view);
+      for (const b of container.querySelectorAll("button")) {
+        const svg = b.querySelector("svg");
+        if (!svg || !b.textContent?.trim()) continue;
+        expect([b.textContent, words(svg).filter((w) => w.startsWith("size-"))], name).toEqual([b.textContent, [words(b).includes("h-16") ? "size-6" : "size-4"]]);
+      }
+      unmount();
+    }
+  });
+
   it("영상 위 글은 14px 이상(label·caption 토큰 없음), 누르는 것은 48px 이상", () => {
     for (const name of ["camera", "overlay", "menu", "request", "busy", "busy-anchors"] as const) {
       const { overlay, unmount } = show(SHOTS[name].view);

@@ -110,7 +110,7 @@ function Intro({ view, act, draft, setDraft }: { view: PhoneView } & DraftProps)
         {!view.ar && view.pending.length > 0 && <PendingList items={view.pending} act={act} />}
         {view.speech && (
           <Button size="touch" variant={view.listening === "intro" ? "destructive" : "default"} className="h-12 w-full gap-2 touch-none select-none" {...hold(act, "intro")}>
-            <Mic />{view.listening === "intro" ? "듣는 중… 손을 떼면 보내요" : "누르고 말하기"}
+            <Mic className="size-4" />{view.listening === "intro" ? "듣는 중… 손을 떼면 보내요" : "누르고 말하기"}
           </Button>
         )}
         {!view.ar && <TalkForm act={act} draft={draft} setDraft={setDraft} />}
@@ -205,7 +205,7 @@ function Overlay({ view, act, draft, setDraft, overlayRef, canvasRef }: { view: 
         className="fixed right-4 top-16 max-h-[calc(100dvh-164px)] w-[min(380px,calc(100vw-32px))] overflow-auto landscape:right-24 landscape:max-h-[calc(100dvh-72px)]"
         contentClassName="flex flex-col gap-2 p-2.5">
         {view.ar && <TalkForm act={act} draft={draft} setDraft={setDraft} />}
-        <Button variant="outline" size="touch" className="h-12 gap-2" onClick={act.resetAnchors}><RotateCcw />기준점 다시 찍기</Button>
+        <Button variant="outline" size="touch" className="h-12 gap-2" onClick={act.resetAnchors}><RotateCcw className="size-4" />기준점 다시 찍기</Button>
         <Card><CardContent className="p-2"><pre className="m-0 whitespace-pre-wrap">{view.perfDetail}</pre></CardContent></Card>
         <Button variant="outline" size="touch" className="h-12" onClick={() => act.setMenu(false)}>닫기</Button>
       </LiquidGlass>
