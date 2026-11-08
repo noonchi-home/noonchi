@@ -67,4 +67,14 @@ describe("폰 연결(link.js)", () => {
     vi.advanceTimersByTime(5000);
     expect(FakeSocket.all).toHaveLength(2);
   });
+
+  it("끊겨 다시 붙기를 기다리는 1초 안에 close()하면 새 소켓을 만들지 않고 clock 핑도 없다", () => {
+    const link = make();
+    FakeSocket.all[0]!.open();
+    FakeSocket.all[0]!.close();
+    link.close();
+    vi.advanceTimersByTime(5000);
+    expect(FakeSocket.all).toHaveLength(1);
+    expect(FakeSocket.all[0]!.sent.filter((s) => JSON.parse(s).type === "clock")).toHaveLength(1);
+  });
 });

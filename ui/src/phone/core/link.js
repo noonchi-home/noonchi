@@ -1,4 +1,4 @@
-// 폰 ↔ 폰 서버 연결(phone.js에서 옮겼다): /phone/events WebSocket. 끊기면 1초 뒤 다시 붙는다.
+// 폰 ↔ 폰 서버 연결(phone.js에서 옮겼다): /phone/events WebSocket. 끊기면 1초 뒤 다시 붙는다(close() 뒤에는 기다리던 것도 멈춘다).
 // 시계 맞춤: 붙으면 바로, 그 뒤 2초마다 clock 핑(NTP식)을 보내고, 최근 10개 표본 중 왕복이 가장 짧은 것으로 서버 시계와의 차(offset)를 정한다. 오차는 왕복의 절반.
 
 const CLOCK_MS = 2000;
@@ -16,6 +16,7 @@ export function createLink({ url, onMessage, Socket = WebSocket, now = phoneNow 
   let closed = false;
   let clockSamples = [];
   let clockTimer = null;
+  let reconnectTimer = null;
 
   const send = (msg) => {
     if (ws?.readyState !== Socket.OPEN) return false;
@@ -37,6 +38,7 @@ export function createLink({ url, onMessage, Socket = WebSocket, now = phoneNow 
   }
 
   function connect() {
+    if (closed) return;
     ws = new Socket(url);
     ws.addEventListener("open", () => {
       clockSamples = [];
@@ -52,7 +54,7 @@ export function createLink({ url, onMessage, Socket = WebSocket, now = phoneNow 
     });
     ws.addEventListener("close", () => {
       clearInterval(clockTimer);
-      if (!closed) setTimeout(connect, RECONNECT_MS);
+      if (!closed) reconnectTimer = setTimeout(connect, RECONNECT_MS);
     });
   }
   connect();
@@ -70,6 +72,7 @@ export function createLink({ url, onMessage, Socket = WebSocket, now = phoneNow 
     close() {
       closed = true;
       clearInterval(clockTimer);
+      clearTimeout(reconnectTimer);
       ws?.close();
     },
   };
