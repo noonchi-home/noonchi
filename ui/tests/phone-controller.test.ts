@@ -192,6 +192,15 @@ describe("폰 화면 제어(controller.ts)", () => {
     await vi.waitFor(() => expect(supportText(bad.c.view().support)).toBe("AR을 시작하지 못했어요: 거부됨"));
   });
 
+  it("덮개 뿌리를 잇기 전에 AR 시작을 누르면 세션을 열지 않고 처음 화면에 까닭", async () => {
+    const requestSession = vi.fn();
+    const { c } = make({ arDeps: { xr: () => ({ requestSession }) } });
+    await vi.waitFor(() => expect(c.view().support).toEqual({ kind: "ready" }));
+    c.actions.startAr();
+    expect(requestSession).not.toHaveBeenCalled();
+    expect(supportText(c.view().support)).toBe("AR을 시작하지 못했어요: 페이지를 새로 고쳐 주세요");
+  });
+
   it("누르고 말하기: 누르는 동안 그 자리 단추만 듣는 중, 떼면 들은 말을 보낸다", () => {
     class Rec {
       static last: Rec;

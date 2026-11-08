@@ -146,8 +146,9 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
   const actions: PhoneActions = {
     startAr() {
       // 사용자 동작 안에서 바로 requestSession까지 간다(await 없이)
-      if (!overlay) return;
-      ar.start(overlay).catch((error: Error) => set((v) => ({ ...v, support: { kind: "failed", message: error.message } })));
+      const failed = (message: string) => set((v) => ({ ...v, support: { kind: "failed", message } }));
+      if (!overlay) return failed("페이지를 새로 고쳐 주세요");
+      ar.start(overlay).catch((error: Error) => failed(error.message));
     },
     stopAr: () => ar.stop(),
     takePhoto: () => ar.requestPhoto(),
