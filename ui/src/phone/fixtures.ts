@@ -69,13 +69,21 @@ export const SHOTS: Record<ShotName, Shot> = {
     view: { ...camera, brainLine: "식탁 위 컵을 보고 있어요", pending: doorPending, action: cupAction },
     draw: { hit: false, marks: [] },
   },
-  // 긴 상태 줄 둘: 추적 약함(맞춘 뒤, 행동 부탁), 바닥 기준점 맞추기 전(기준점 단추)
+  // 긴 상태 줄 둘: 추적 약함(맞춘 뒤, 행동 부탁), 바닥 기준점 맞추기 전(기준점 단추).
+  // 추적 약함 상태에는 위·아래 화면 밖 화살표를 그린다(위는 말풍선 줄 아래, 아래는 엄지 자리 위에 와야 한다)
   limited: {
     view: {
       ...aligned, brainLine: "식탁 위 컵을 보고 있어요", action: cupAction,
       status: statusLine({ aligned: true, mode: "touch", mismatchM: 0.06, limited: true, anchorCount: "2/2", note: null }),
     },
-    draw: { hit: true, marks: [cup] },
+    draw: {
+      hit: true,
+      marks: [
+        cup,
+        { id: "aircon", label: "에어컨", u: 0.3, v: 0.08, off: true, angle: -90 },
+        { id: "robot", label: "로봇청소기", u: 0.7, v: 0.92, off: true, angle: 90 },
+      ],
+    },
   },
   floor: {
     view: {

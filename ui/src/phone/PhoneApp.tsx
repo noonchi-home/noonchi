@@ -3,7 +3,7 @@
 // 그 뒤로는 조준점이 바뀌거나 초점이 있을 때만 다시 그린다(초점이 없던 프레임에 또 없으면 그대로 둔다).
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import type { PhoneController } from "./controller";
-import { drawOverlay, fitCanvas, labelFont, markLabel, type OverlayScene } from "./draw";
+import { drawOverlay, fitCanvas, labelFont, markLabel, overlayEdges, type OverlayScene } from "./draw";
 import { PhoneScreen } from "./PhoneScreen";
 
 export function PhoneApp({ controller }: { controller: PhoneController }) {
@@ -18,7 +18,8 @@ export function PhoneApp({ controller }: { controller: PhoneController }) {
       const canvas = canvasRef.current;
       if (!canvas) return;
       const ctx = fitCanvas(canvas, innerWidth, innerHeight, devicePixelRatio || 1);
-      if (ctx) drawOverlay(ctx, { width: innerWidth, height: innerHeight }, scene, performance.now(), reduced.matches);
+      // 화면 밖 화살표가 위 줄·엄지 자리를 비키도록 그릴 때마다 두 칸을 잰다(말풍선·카드가 뜨고 지면 바뀐다)
+      if (ctx) drawOverlay(ctx, { width: innerWidth, height: innerHeight }, scene, performance.now(), reduced.matches, overlayEdges(overlayRef.current, innerHeight));
     };
     controller.attach(overlayRef.current, {
       start() {

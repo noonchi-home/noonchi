@@ -2,9 +2,10 @@
 // 조준점: 28px, 심 3px(못 맞춤 error-vivid·맞춤 ok-vivid), 안팎 흰 테 2px·숯색 1px, 맞으면 가운데 점(지름 10px).
 // 초점 고리: 64px, 심 3px brand, 고리+이름표 묶음의 가운데가 그 점, 이름표는 4px 아래 scrim-phone 위 on-scrim 14px.
 // 그리는 순서: 초점 표시 다음 조준점(조준점이 맨 위).
+// 세로 화면의 화면 밖 화살표 묶음은 위 줄(말풍선·알림) 아래, 엄지 자리 위에 둔다(덮개 칸을 잰 값 overlayEdges).
 import { describe, expect, it } from "vitest";
 import { color, rgba, twin } from "../../src/design/tokens.ts";
-import { drawOverlay, labelFont, pulse } from "../src/phone/draw";
+import { drawOverlay, labelFont, overlayEdges, pulse } from "../src/phone/draw";
 
 const F = twin.phoneFocus;
 type Op = { op: string; [k: string]: any };
@@ -113,22 +114,66 @@ describe("초점 표시", () => {
 });
 
 describe("세로 화면(390×844)의 화면 밖 화살표·이름표", () => {
-  function draw(m: { u: number; v: number; angle: number }) {
+  function draw(m: { u: number; v: number; angle: number }, edges?: { top: number; bottom: number }) {
     const { ctx, ops } = recorder();
-    drawOverlay(ctx, SIZE, { hit: false, marks: [{ id: "x", label: "TV", off: true, ...m }] }, 0, true);
-    return { arrow: of(ops, "move")[0]!, label: of(ops, "round")[0]! };
+    const drawn = drawOverlay(ctx, SIZE, { hit: false, marks: [{ id: "x", label: "TV", off: true, ...m }] }, 0, true, edges);
+    return { arrow: of(ops, "move")[0]!, label: of(ops, "round")[0]!, drawn };
   }
 
-  it("아래쪽 화살표 묶음은 큰 단추 줄(아래 88px) 위에 둔다", () => {
+  it("엄지 자리가 없으면 아래쪽 화살표 묶음은 큰 단추 줄(아래 88px) 위에 둔다", () => {
     const { label } = draw({ u: 0.5, v: 0.97, angle: 90 });
     expect(label.y + label.h).toBe(844 - 88);
     expect(label.y).toBe(844 - 88 - 24);
   });
 
-  it("위쪽 화살표 묶음은 위 상태 줄(64px) 아래, 오른쪽 화살표 이름표는 화면 가장자리 8px 안", () => {
+  it("위 줄이 비면 위쪽 화살표 묶음은 위 상태 줄(64px) 아래, 오른쪽 화살표 이름표는 화면 가장자리 8px 안", () => {
     expect(draw({ u: 0.5, v: 0.03, angle: -90 }).label.y).toBe(64 + 28 + 4);
     const right = draw({ u: 0.98, v: 0.5, angle: 0 });
     expect(right.label.x + right.label.w).toBeLessThanOrEqual(390 - 8);
+  });
+
+  it("위 줄(말풍선·알림·사진 요청)이 있으면 위쪽 화살표 묶음은 그 아래 8px부터 둔다(말풍선 글을 가리지 않는다)", () => {
+    // 말풍선 한 줄: 위 줄이 64~128px
+    const { arrow, label } = draw({ u: 0.5, v: 0.03, angle: -90 }, { top: 128, bottom: 0 });
+    expect(label.y).toBe(128 + 8 + 28 + 4);
+    expect(arrow.y).toBeCloseTo(128 + 8 + 14 + 18, 5);
+  });
+
+  it("엄지 자리(승인·부탁·기준점)가 있으면 아래쪽 화살표 묶음은 그 위 8px까지 둔다(엄지 자리에 깔리지 않는다)", () => {
+    // 엄지 자리 위 끝이 564px: 아래에서 280px
+    const { label } = draw({ u: 0.5, v: 0.97, angle: 90 }, { top: 0, bottom: 280 });
+    expect(label.y + label.h).toBe(844 - 280 - 8);
+    // 옆을 가리키는 화살표도 엄지 자리 위로 올린다
+    const right = draw({ u: 0.92, v: 0.9, angle: 10 }, { top: 0, bottom: 280 });
+    expect(right.label.y + right.label.h).toBe(844 - 280 - 8);
+  });
+
+  it("그린 화면 밖 화살표 묶음(세모+이름표)의 자리를 돌려준다. 화면 안 고리는 넣지 않는다", () => {
+    const { label, drawn } = draw({ u: 0.5, v: 0.03, angle: -90 }, { top: 128, bottom: 0 });
+    expect(drawn).toHaveLength(1);
+    const [group] = drawn;
+    expect(group!.name).toBe("TV");
+    expect(group!.box.top).toBeGreaterThanOrEqual(128 + 8 - 3);
+    expect(group!.box.bottom).toBe(label.y + label.h);
+    expect(group!.box.left).toBeLessThanOrEqual(label.x);
+    expect(group!.box.right).toBeGreaterThanOrEqual(label.x + label.w);
+    const { ctx } = recorder();
+    expect(drawOverlay(ctx, SIZE, { hit: false, marks: [{ id: "cup", label: "컵", u: 0.5, v: 0.3, off: false, angle: 0 }] }, 0, true)).toEqual([]);
+  });
+});
+
+describe("덮개 칸 재기(overlayEdges)", () => {
+  const zone = (bottom: number, top: number) => ({ getBoundingClientRect: () => ({ top, bottom, height: bottom - top }) });
+  const root = (zones: Record<string, ReturnType<typeof zone> | null>) =>
+    ({ querySelector: (sel: string) => zones[/data-phone-zone=(\w+)/.exec(sel)![1]!] ?? null }) as unknown as ParentNode;
+
+  it("위 줄 아래 끝 y와, 화면 높이에서 엄지 자리 위 끝 y를 뺀 값", () => {
+    expect(overlayEdges(root({ top: zone(128, 64), thumb: zone(748, 564) }), 844)).toEqual({ top: 128, bottom: 280 });
+  });
+
+  it("빈 칸(높이 0)이나 없는 칸은 0", () => {
+    expect(overlayEdges(root({ top: zone(64, 64), thumb: null }), 844)).toEqual({ top: 0, bottom: 0 });
+    expect(overlayEdges(null, 844)).toEqual({ top: 0, bottom: 0 });
   });
 });
 
@@ -141,8 +186,11 @@ describe("가로 화면(844×390)의 화면 밖 화살표·이름표", () => {
     return { arrow: of(ops, "move")[0]!, label: of(ops, "round")[0]! };
   }
 
-  it("위쪽 화살표 묶음은 위 상태 줄(64px) 아래에 둔다", () => {
+  it("위쪽 화살표 묶음은 위 상태 줄(64px) 아래에 둔다. 위 줄·엄지 자리는 조준점 옆 칸이라 재지 않는다", () => {
     const { arrow, label } = draw({ u: 0.5, v: 0.08, angle: -90 });
+    const { ctx, ops } = recorder();
+    drawOverlay(ctx, LAND, { hit: false, marks: [{ id: "x", label: "TV", off: true, u: 0.5, v: 0.08, angle: -90 }] }, 0, true, { top: 200, bottom: 200 });
+    expect(of(ops, "round")[0]!.y).toBe(label.y);
     // 위를 가리키는 세모의 첫 꼭짓점: 세모 가운데(64 + 14)에서 18px 아래
     expect(arrow.y).toBeCloseTo(64 + 14 + 18, 5);
     expect(label.y).toBe(64 + 28 + 4);

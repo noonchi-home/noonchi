@@ -54,7 +54,8 @@ function paintLog() {
   const ops: { op: string; [k: string]: unknown }[] = [];
   const ctx = {
     lineWidth: 0, strokeStyle: "", fillStyle: "", font: "", textAlign: "", textBaseline: "", lineJoin: "",
-    setTransform() {}, beginPath() {}, closePath() {}, moveTo() {}, lineTo() {}, roundRect() {}, fill() {},
+    setTransform() {}, beginPath() {}, closePath() {}, moveTo() {}, lineTo() {}, fill() {},
+    roundRect(x: number, y: number) { ops.push({ op: "round", x, y }); },
     stroke() { ops.push({ op: "stroke", color: ctx.strokeStyle }); },
     clearRect() { ops.push({ op: "clear" }); },
     arc(x: number, y: number) { ops.push({ op: "arc", x, y }); },
@@ -69,7 +70,7 @@ function paintLog() {
 }
 
 const made: { close(): void }[] = [];
-afterEach(() => { while (made.length) made.pop()!.close(); vi.restoreAllMocks(); });
+afterEach(() => { while (made.length) made.pop()!.close(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 function arApp() {
   const session = fakeSession();
@@ -123,6 +124,26 @@ describe("폰 화면 뿌리(PhoneApp)", () => {
     // 조준점(화면 가운데 고리)과 초점 이름표
     expect(ops.some((o) => o.op === "arc" && o.x === innerWidth / 2 && o.y === innerHeight / 2)).toBe(true);
     expect(ops.filter((o) => o.op === "text").map((o) => o.text)).toContain("클로이드 주목 · 컵");
+  });
+
+  it("세로 화면의 화면 밖 화살표는 그릴 때 잰 위 줄 아래에 둔다(말풍선 글을 가리지 않는다)", async () => {
+    vi.stubGlobal("innerWidth", 390);
+    vi.stubGlobal("innerHeight", 844);
+    const ops = paintLog();
+    const { session, ws, container } = arApp();
+    const overlay = container.querySelector<HTMLElement>("[data-phone-overlay]")!;
+    const top = overlay.querySelector<HTMLElement>("[data-phone-zone=top]")!;
+    // 말풍선 한 줄이 뜬 위 줄: 64~128px
+    vi.spyOn(top, "getBoundingClientRect").mockReturnValue({ top: 64, bottom: 128, height: 64, left: 16, right: 374, width: 358 } as DOMRect);
+    await userEvent.click(await screen.findByRole("button", { name: "AR 시작" }));
+    await vi.waitFor(() => expect(overlay.hidden).toBe(false));
+    // 머리 위(화면 밖 위쪽) 에어컨
+    act(() => {
+      ws.push({ type: "focus", targets: [{ id: "aircon", label: "에어컨", ar: [0, 3, -1] }], ttl_ms: 8000 });
+      session.step(100, frame());
+    });
+    const label = ops.filter((o) => o.op === "round").at(-1)!;
+    expect(label.y).toBe(128 + 8 + 28 + 4);
   });
 
   it("덮개를 열 때 한 번 그린다(조준점이 바로 보임). 초점이 없고 조준점이 그대로인 프레임은 다시 그리지 않는다. 다시 열면 지난 그림 대신 새로 그린다", async () => {

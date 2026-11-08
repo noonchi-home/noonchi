@@ -1,6 +1,7 @@
 // 폰 덮개 배치 검사(layout-check.ts): 화면 사진 페이지(shots.tsx)가 크롬에서 잰 자리로 부른다.
 // 단추는 화면 안(또는 화면 안 스크롤 칸 안)에 있어야 하고, 위 줄·말풍선·엄지 자리는 가운데 조준점(28px)과 그 칸 밖 단추(큰 단추·⋯)를 가리면 안 된다.
 // 세로 화면에서 큰 단추 셋(말하기·사진·끝내기)은 엄지가 닿는 아래 1/3 안에 있어야 한다. 위 상태 줄 글은 잘리지 않아야 한다.
+// 화면 밖 화살표 묶음(세모+이름표)은 위 줄·말풍선·엄지 자리 칸과 단추에 겹치지 않아야 한다.
 import { describe, expect, it } from "vitest";
 import { clipIssues, introIssues, layoutIssues } from "../src/phone/layout-check";
 
@@ -58,6 +59,28 @@ describe("폰 덮개 배치 검사", () => {
     expect(layoutIssues(PORTRAIT, [{ name: "치웠어요", box: box(16, 460, 190, 508), scroller: null }], [])).toEqual([]);
     const column = ["누르고 말하기", "사진 찍기", "끝내기"].map((name, i) => ({ name, box: box(758, 49 + i * 74, 834, 113 + i * 74), scroller: null }));
     expect(layoutIssues(LANDSCAPE, column, [])).toEqual([]);
+  });
+});
+
+describe("화면 밖 화살표 검사", () => {
+  const top = { name: "위 줄", box: box(16, 64, 374, 128) };
+  const thumb = { name: "엄지 자리", box: box(16, 564, 374, 748) };
+  const talk = { name: "누르고 말하기", box: box(67, 764, 143, 828), scroller: null };
+
+  it("위 줄 아래·엄지 자리 위에 있는 화살표 묶음은 문제 없음", () => {
+    expect(layoutIssues(PORTRAIT, [talk], [top, thumb], [{ name: "에어컨", box: box(140, 143, 250, 192) }, { name: "로봇청소기", box: box(220, 500, 382, 556) }])).toEqual([]);
+  });
+
+  it("화살표 묶음이 위 줄(말풍선 글 위에 그려짐)이나 엄지 자리(그 아래 깔림), 큰 단추와 겹치면 문제", () => {
+    expect(layoutIssues(PORTRAIT, [talk], [top, thumb], [
+      { name: "에어컨", box: box(140, 71, 250, 120) },
+      { name: "로봇청소기", box: box(220, 700, 382, 756) },
+      { name: "TV", box: box(60, 760, 170, 800) },
+    ])).toEqual([
+      "「에어컨」 화살표가 「위 줄」 칸과 겹쳐요",
+      "「로봇청소기」 화살표가 「엄지 자리」 칸과 겹쳐요",
+      "「TV」 화살표가 「누르고 말하기」 단추와 겹쳐요",
+    ]);
   });
 });
 
