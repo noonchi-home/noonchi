@@ -29,6 +29,7 @@ import { FOCUS_TTL_MS, focusFromActions, type Focus } from "../layout/focus.js";
 import { loadLayout } from "../layout/load.js";
 import { loadTwin, type TwinData } from "../model/devices.js";
 import { listHomes } from "../model/homes.js";
+import { loadScene } from "../model/scene.js";
 import { loadAnchorTargets, type AnchorTarget } from "../phone/anchors.js";
 import { autoCorners, parseWallPick, pickedRoom, readScenePlan } from "../phone/corners.js";
 import { EyeFeed } from "../phone/feed.js";
@@ -112,15 +113,6 @@ export interface HomeRuntime {
   close(): Promise<void>;
 }
 
-/** scene.json 전체(클로이드 경로 평면도). 없거나 읽지 못하면 null. */
-function readScene(scenePath: string): unknown {
-  try {
-    return JSON.parse(readFileSync(scenePath, "utf8").replace(/^﻿/, "")) as unknown;
-  } catch {
-    return null;
-  }
-}
-
 /** 트윈의 식탁·책상·조리대·싱크대 윗면(물건의 트윈 위치). 배치가 바뀌면 다시 만든다. */
 function surfaceSource(editor: LayoutEditor | undefined): () => PlaneSurface[] {
   if (!editor) return () => [];
@@ -202,8 +194,9 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         else phoneRef.current.setTargets(phoneRef.floor, "floor");
       }, savedTouch)
       : undefined;
-    // 클로이드 계획(src/plan/hub.ts): 에이전트 기기 행동·맞춘 눈 → 계획을 /events로. 경로는 scene.json 평면도로 찾는다
-    const floorPlan = floorPlanFrom(readScene(home.scenePath) ?? {});
+    // 클로이드 계획(src/plan/hub.ts): 에이전트 기기 행동·맞춘 눈 → 계획을 /events로. 경로는 서버 장면(scene.json + 도면 설비)으로 찾는다
+    const scene = loadScene(home);
+    const floorPlan = floorPlanFrom(scene ?? {});
     const plans = new PlanHub(floorPlan, (m) => {
       appRef.current?.broadcast(m);
       if (m.type === "plan" && m.plan) history.plan(m.plan);
@@ -280,7 +273,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         auto: (raw) => autoCorners(plan, parseWallPick(raw), bounds),
         room: (raw) => pickedRoom(plan, parseWallPick(raw)),
       },
-      plan: plans, history: history.db, reflect: history.reflect,
+      plan: plans, history: history.db, reflect: history.reflect, scene: () => scene,
     });
     const appNow = app;
     appRef.current = app;
