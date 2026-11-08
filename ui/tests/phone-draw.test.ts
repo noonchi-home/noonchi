@@ -110,3 +110,43 @@ describe("초점 표시", () => {
     expect(left).toMatchObject({ x: 8 });
   });
 });
+
+describe("가로 화면(844×390)의 화면 밖 화살표·이름표", () => {
+  const LAND = { width: 844, height: 390 };
+  const group = 28 + 4 + 24; // 세모 + 사이 + 이름표
+  function draw(m: { u: number; v: number; angle: number; off?: boolean }) {
+    const { ctx, ops } = recorder();
+    drawOverlay(ctx, LAND, { hit: false, marks: [{ id: "x", label: "TV", off: true, ...m }] }, 0, true);
+    return { arrow: of(ops, "move")[0]!, label: of(ops, "round")[0]! };
+  }
+
+  it("위쪽 화살표 묶음은 위 상태 줄(64px) 아래에 둔다", () => {
+    const { arrow, label } = draw({ u: 0.5, v: 0.08, angle: -90 });
+    // 위를 가리키는 세모의 첫 꼭짓점: 세모 가운데(64 + 14)에서 18px 아래
+    expect(arrow.y).toBeCloseTo(64 + 14 + 18, 5);
+    expect(label.y).toBe(64 + 28 + 4);
+    expect(label.y + label.h).toBe(64 + group);
+  });
+
+  it("오른쪽 화살표 묶음은 큰 단추 줄(오른쪽 96px) 왼쪽에 두고, 이름표도 그 안에 민다", () => {
+    const { arrow, label } = draw({ u: 0.92, v: 0.5, angle: 0 });
+    expect(arrow.x).toBe(844 - 96 - 18 - 18);
+    expect(label.x + label.w).toBeLessThanOrEqual(844 - 96);
+  });
+
+  it("아래쪽·왼쪽 화살표는 화면 가장자리 8px 안", () => {
+    const down = draw({ u: 0.5, v: 0.92, angle: 90 });
+    expect(down.label.y + down.label.h).toBeLessThanOrEqual(390 - 8);
+    const left = draw({ u: 0.08, v: 0.5, angle: 180 });
+    expect(left.label.x).toBeGreaterThanOrEqual(8);
+  });
+
+  it("화면 안 고리는 물건 자리 그대로 두고, 이름표만 화면 아래 8px 안으로 올린다", () => {
+    const { ctx, ops } = recorder();
+    drawOverlay(ctx, LAND, { hit: false, marks: [{ id: "cup", label: "컵", u: 0.3, v: 0.97, off: false, angle: 0 }] }, 0, true);
+    const ring = of(ops, "arc").slice(5);
+    expect(ring.every((a) => a.x === 0.3 * 844 && a.y === 0.97 * 390 - (64 + 4 + 24) / 2 + 32)).toBe(true);
+    const label = of(ops, "round")[0]!;
+    expect(label.y + label.h).toBe(390 - 8);
+  });
+});

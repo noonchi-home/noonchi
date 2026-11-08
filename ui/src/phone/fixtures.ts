@@ -1,8 +1,9 @@
 // 폰 화면 상태 예시: 화면 시험(ui/tests/phone-screen.test.tsx)과 화면 사진 페이지(shots.tsx)가 함께 쓴다.
-// 부탁 글·선택은 src/act/prompts.ts의 「컵 치우기」와 같다.
+// 부탁 글·선택은 src/act/prompts.ts의 「컵 치우기」와 같다. 마스코트 말풍선 글(brainLine)은 서버가 보내는 판단 글·관찰 모양이다.
+// AR 상태는 가로(844×390·915×412·780×360)로 찍고, rotate만 세로(390×844)로 찍어 「가로로 돌려 주세요」를 본다.
 import { initialView, statusLine, type Anchor, type FocusMark, type PhoneView } from "./state";
 
-export const SHOT_NAMES = ["intro", "camera", "overlay", "menu", "request", "busy", "busy-anchors", "talk", "listening", "error"] as const;
+export const SHOT_NAMES = ["intro", "camera", "overlay", "menu", "request", "busy", "busy-anchors", "rotate", "talk", "listening", "error"] as const;
 export type ShotName = (typeof SHOT_NAMES)[number];
 export interface Shot { view: PhoneView; draw: { hit: boolean; marks: FocusMark[] } }
 
@@ -45,7 +46,10 @@ export const SHOTS: Record<ShotName, Shot> = {
     draw: none,
   },
   request: {
-    view: { ...aligned, request: { id: "r1", text: "컵 안을 비춰 주세요" }, action: cupAction },
+    view: {
+      ...aligned, request: { id: "r1", text: "컵 안을 비춰 주세요" }, action: cupAction,
+      brainLine: "사람이 자리를 비웠고 식탁에 컵이 남아 있어서 컵 안이 비었는지 보려고 해요",
+    },
     draw: { hit: true, marks: [cup] },
   },
   // 모두 뜬 상태: 판단 줄·알림·사진 요청·승인 대기·행동 부탁(맞춘 뒤)
@@ -60,6 +64,11 @@ export const SHOTS: Record<ShotName, Shot> = {
   "busy-anchors": {
     view: { ...camera, brainLine: "식탁 위 컵을 보고 있어요", pending: doorPending, action: cupAction },
     draw: { hit: false, marks: [] },
+  },
+  // 세로로 든 AR(세로 크기로 찍는다): 위 줄 맨 위에 「가로로 돌려 주세요」, 그 아래 말풍선
+  rotate: {
+    view: { ...camera, brainLine: "식탁 위 컵을 보고 있어요" },
+    draw: { hit: true, marks: [] },
   },
   talk: {
     view: { ...intro, reply: "현관문 잠금 해제는 승인이 필요해요.", pending: [{ token: "t1", deviceLabel: "현관문", reason: "현관문 잠금 해제" }] },

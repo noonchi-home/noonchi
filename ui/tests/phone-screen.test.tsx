@@ -3,7 +3,7 @@
 import { act as flush, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SHOTS } from "../src/phone/fixtures";
+import { SHOTS, SHOT_NAMES } from "../src/phone/fixtures";
 import { PhoneScreen } from "../src/phone/PhoneScreen";
 import type { PhoneActions, PhoneView, Support } from "../src/phone/state";
 
@@ -264,6 +264,14 @@ describe("마스코트 말풍선", () => {
     const bubble = overlay.querySelector<HTMLElement>("[data-phone-zone=bubble]")!;
     expect(words(bubble)).toEqual(expect.arrayContaining(["pointer-events-none", "max-w-[calc(50vw-172px)]", "portrait:max-w-[calc(100vw-84px)]"]));
     expect(words(bubble)).not.toContain("max-w-[280px]");
+  });
+
+  it("화면 사진 상태: AR 상태마다 말풍선이 있고(카메라 중·메뉴 빼고), 세로 알림 상태(rotate)도 AR 중이다", () => {
+    expect(SHOT_NAMES).toContain("rotate");
+    const withBubble = SHOT_NAMES.filter((n) => SHOTS[n].view.ar && SHOTS[n].view.brainLine !== null);
+    expect(withBubble).toEqual(["overlay", "request", "busy", "busy-anchors", "rotate"]);
+    // 두 줄을 넘는 말은 잘라 보인다(가장 좁은 780px 가로에서 확인할 긴 말)
+    expect(SHOTS.request.view.brainLine!.length).toBeGreaterThan(30);
   });
 
   it("말이 없으면 말풍선을 그리지 않는다", () => {

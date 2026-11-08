@@ -2,7 +2,8 @@
 // 모양·크기는 옮기기 전 phone.css와 같다. 조준점 28px(심 3px, 안팎 흰 테 2px·숯색 1px), 맞으면 가운데 점(지름 10px)을 채운다.
 // 초점 고리 64px(심 3px brand), 1.2초마다 1.12배로 숨쉬고(움직임 줄이기면 멈춤), 4px 아래 이름표 「클로이드 주목 · 이름」.
 // 화면 밖이면 그쪽을 가리키는 세모(22×28px). 고리(또는 세모)+이름표 묶음의 가운데가 그 점이다(옛 DOM 배치와 같음).
-// 이름표는 화면 가장자리 8px 안으로 민다(가장자리 화살표의 이름표가 잘리지 않게).
+// 이름표는 화면 가장자리 8px 안으로 민다(가장자리 화살표의 이름표가 잘리지 않게). 화면 안 고리는 물건 자리에 두고 이름표만 민다.
+// 화면 밖 화살표 묶음은 덮개가 가리는 자리를 비킨다: 위 상태 줄(64px), 큰 단추 줄(가로 오른쪽 96px, 세로 아래 88px).
 import { radius, type } from "../../../src/design/tokens.json";
 import { font, twin } from "../../../src/design/tokens.ts";
 import type { FocusMark } from "./state";
@@ -16,6 +17,13 @@ const EDGE_PX = 8;
 /** 옛 CSS 세모 상자: 왼쪽 테두리 22px + 오른쪽 투명 14px, 높이 28px. */
 const ARROW = { box: 36, height: 28, tip: 22 };
 const LABEL = { padX: 8, padY: 2, size: type["body-sm"].size.phone, line: type["body-sm"].lineHeight.phone, weight: type["body-sm"].weight, radius: radius["radius-lg"] };
+/** 화면 밖 화살표 묶음이 비키는 가장자리(CSS px): 위 상태 줄 64, 큰 단추 줄(가로는 오른쪽, 세로는 아래), 나머지는 8. */
+export function arrowInsets(size: { width: number; height: number }) {
+  return size.width > size.height
+    ? { top: 64, right: 96, bottom: EDGE_PX, left: EDGE_PX }
+    : { top: 64, right: EDGE_PX, bottom: 88, left: EDGE_PX };
+}
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(v, hi));
 const PULSE_MS = 1200;
 const PULSE = 0.12;
 
@@ -102,19 +110,21 @@ function drawArrow(ctx: CanvasRenderingContext2D, x: number, y: number, angle: n
 }
 
 function drawMark(ctx: CanvasRenderingContext2D, m: FocusMark, size: { width: number; height: number }, now: number, reduced: boolean) {
-  const x = m.u * size.width;
-  const y = m.v * size.height;
   const boxH = m.off ? ARROW.height : RING_PX;
   const labelH = LABEL.line + 2 * LABEL.padY;
-  const top = y - (boxH + GAP_PX + labelH) / 2;
+  const groupH = boxH + GAP_PX + labelH;
+  const edge = m.off ? arrowInsets(size) : { top: EDGE_PX, right: EDGE_PX, bottom: EDGE_PX, left: EDGE_PX };
+  const x = m.off ? clamp(m.u * size.width, edge.left + ARROW.box / 2, size.width - edge.right - ARROW.box / 2) : m.u * size.width;
+  const y = m.off ? clamp(m.v * size.height, edge.top + groupH / 2, size.height - edge.bottom - groupH / 2) : m.v * size.height;
+  const top = y - groupH / 2;
   const cy = top + boxH / 2;
   if (m.off) drawArrow(ctx, x, cy, m.angle);
   else rings(ctx, x, cy, RING_PX / 2 - F.ring.width / 2, F.ring.width, F.ring.color, pulse(now, reduced));
   const text = markLabel(m.label);
   ctx.font = labelFont;
   const w = ctx.measureText(text).width + 2 * LABEL.padX;
-  const ly = top + boxH + GAP_PX;
-  const lx = Math.max(EDGE_PX, Math.min(x - w / 2, size.width - EDGE_PX - w));
+  const ly = clamp(top + boxH + GAP_PX, edge.top, size.height - edge.bottom - labelH);
+  const lx = Math.max(edge.left, Math.min(x - w / 2, size.width - edge.right - w));
   ctx.beginPath();
   ctx.roundRect(lx, ly, w, labelH, LABEL.radius);
   ctx.fillStyle = F.labelBg;
