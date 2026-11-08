@@ -85,7 +85,7 @@ describe("토큰은 통과한다", () => {
   });
 
   it("토큰 원본에서 만든 파일은 보지 않는다", () => {
-    expect(TOKEN_OUTPUTS).toEqual(["ui/src/tokens.css", "web/phone/tokens.css", "web/phone/tokens.js"]);
+    expect(TOKEN_OUTPUTS).toEqual(["ui/src/tokens.css"]);
     for (const f of TOKEN_OUTPUTS) expect(rules(f, ':root { --brand: #a1143e; --scrim: rgb(42 38 39 / 0.6); }\nexport const brand = "#a1143e";')).toEqual([]);
     expect(colorFiles(COLOR_TARGETS).some((f) => TOKEN_OUTPUTS.some((t) => f.replace(/\\/g, "/").endsWith(t)))).toBe(false);
     expect(colorFiles([at("ui/index.html")])).toEqual([at("ui/index.html")]);
@@ -94,7 +94,7 @@ describe("토큰은 통과한다", () => {
   it("오류 글은 쓸 토큰 파일을 말한다", () => {
     expect(COLOR_FIX).toContain("src/design/tokens.json");
     expect(COLOR_FIX).toContain("ui/src/tokens.css");
-    expect(COLOR_FIX).toContain("web/phone/tokens.css");
+    expect(COLOR_FIX).not.toContain("web/phone");
     expect(COLOR_FIX).toContain("src/design/tokens.ts");
   });
 });

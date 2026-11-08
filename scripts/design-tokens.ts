@@ -1,14 +1,12 @@
 // 디자인 토큰 만들기: 원본 src/design/tokens.json 하나에서 화면마다 쓰는 파일을 만든다.
-//   ui/src/tokens.css      대시보드·설정(Tailwind @theme와 :root 변수)
-//   web/phone/tokens.css   폰 화면 CSS 변수
-//   web/phone/tokens.js    폰 캔버스·인코딩 워커가 쓰는 색 값(ESM)
-//   src/design/tokens.ts   트윈·SVG·캔버스·3D 계획 색(TS 값)
-// 같이 옮기는 것: 묶은 글꼴(@fontsource-variable/noto-sans-kr)·라이선스를 web/phone/fonts/와 ui/public/fonts/로, 파비콘·마스코트를 ui/public에서 web/phone으로.
-//   ui/src/phone/core/font-faces.js  인코딩 워커가 FontFace로 넣는 글꼴 조각 목록(꾸러미 CSS에서 만든다, 파일은 ui 빌드가 ?url로 묶는다)
+//   ui/src/tokens.css      대시보드·설정·폰(Tailwind @theme와 :root 변수, 화면 글 크기는 html[data-surface])
+//   src/design/tokens.ts   트윈·SVG·캔버스(폰 조준점·초점 그림 포함)·3D 계획 색(TS 값)
+//   ui/src/phone/core/font-faces.js  폰 인코딩 워커가 FontFace로 넣는 글꼴 조각 목록(꾸러미 CSS에서 만든다, 파일은 ui 빌드가 ?url로 묶는다)
+// 같이 옮기는 것: 글꼴 라이선스를 ui/public/fonts/로.
 // 원본의 {"ref": 이름}은 hex(또는 rgb(… / α))로, 값이 더 있는 {"ref": 이름, width, opacity}는 { color, width, opacity }로 푼다.
 // 사용: npm run tokens (tests/design-tokens.test.ts가 만든 파일이 원본과 같은지 본다)
 
-import { copyFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -33,7 +31,7 @@ export interface Tokens {
 }
 
 export const SOURCE = "src/design/tokens.json";
-export const OUTPUTS = ["ui/src/tokens.css", "web/phone/tokens.css", "web/phone/tokens.js", "src/design/tokens.ts"] as const;
+export const OUTPUTS = ["ui/src/tokens.css", "src/design/tokens.ts"] as const;
 
 const rgb = (hex: string, alpha: number) => {
   const n = parseInt(hex.slice(1), 16);
@@ -137,54 +135,10 @@ function uiCss(t: Tokens, value: (n: string) => string): string {
   ].join("\n");
 }
 
-function phoneCss(t: Tokens, value: (n: string) => string): string {
-  return [
-    HEAD(t, "/*") + " */",
-    ":root {",
-    ...rootVars(t, value),
-    `  --font-sans: ${t.font.sans.family};`,
-    `  --font-mono: ${t.font.mono.family};`,
-    `  --font-weight-brand: ${t.font.weights.brand};`,
-    ...Object.entries(t.radius).map(([k, v]) => `  --${k}: ${px(v)};`),
-    ...Object.entries(t.shadow).map(([k, v]) => `  --${k}: ${shadow(t, value, v)};`),
-    ...Object.entries(t.type).flatMap(([name, ty]) => [...typeVars({ ...t, type: { [name]: ty } }, "phone"), ...(ty.size.phone == null ? [] : [`  --type-${name}-weight: ${ty.weight};`, `  --type-${name}-tracking: ${ty.tracking === "0" ? "0em" : ty.tracking};`])]),
-    "}",
-    "",
-  ].join("\n");
-}
-
 /** 캔버스 글꼴: font.canvas 틀의 글꼴 이름 부분. */
 const canvasFamily = (t: Tokens) => /\}px (.+?)`/.exec(t.font.canvas)?.[1] ?? t.font.sans.family;
 
 const js = (v: unknown) => JSON.stringify(v, null, 2);
-
-/** 설명 글(한국어) 칸을 뺀다. 폰 화면 파일은 화면 글 검사(lint-ui-copy)를 받는다. */
-const values = (v: Json): Json => {
-  if (Array.isArray(v)) return v.map(values);
-  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).filter(([, x]) => !(typeof x === "string" && /[가-힣]/.test(x))).map(([k, x]) => [k, values(x)]));
-  return v;
-};
-
-function phoneJs(t: Tokens, value: (n: string) => string, deep: (v: Json) => Json): string {
-  const color = Object.fromEntries(Object.keys(t.color).map((n) => [n, value(n)]));
-  const rgba = Object.fromEntries(Object.keys(t.colorRgba).map((n) => [n, value(n)]));
-  return [
-    HEAD(t, "//"),
-    "// 폰 화면 캔버스(marks.js)와 인코딩 워커가 import한다.",
-    "",
-    `export const color = ${js(color)};`,
-    "",
-    `export const rgba = ${js(rgba)};`,
-    "",
-    `/** 트윈·지도·폰 영상 위 표시는 세 겹(바깥 숯색, 흰 테, 심). */`,
-    `export const overlayLine = ${js(values(deep(t.overlayLine)))};`,
-    "",
-    `export const focus = ${js(values(deep((t.twin as Obj).phoneFocus!)))};`,
-    "",
-    `export const canvasFont = ${js(canvasFamily(t))};`,
-    "",
-  ].join("\n");
-}
 
 function designTs(t: Tokens, value: (n: string) => string, deep: (v: Json) => Json): string {
   const color = Object.fromEntries(Object.keys(t.color).map((n) => [n, value(n)]));
@@ -213,13 +167,11 @@ function designTs(t: Tokens, value: (n: string) => string, deep: (v: Json) => Js
   ].join("\n");
 }
 
-/** 원본에서 만든 파일 넷: 저장소 기준 경로 → 내용. */
+/** 원본에서 만든 파일 둘: 저장소 기준 경로 → 내용. */
 export function renderTokens(t: Tokens): Record<(typeof OUTPUTS)[number], string> {
   const { value, deep } = resolver(t);
   return {
     "ui/src/tokens.css": uiCss(t, value),
-    "web/phone/tokens.css": phoneCss(t, value),
-    "web/phone/tokens.js": phoneJs(t, value, deep),
     "src/design/tokens.ts": designTs(t, value, deep),
   };
 }
@@ -230,17 +182,9 @@ export const readTokens = (): Tokens => JSON.parse(readFileSync(repoPath(SOURCE)
 const FONT_PKG = "ui/node_modules/@fontsource-variable/noto-sans-kr";
 export const FONT_FACES = "ui/src/phone/core/font-faces.js";
 
-/** 그대로 옮기는 파일: 저장소 기준 경로 from → to. */
+/** 그대로 옮기는 파일: 글꼴 라이선스. */
 export function copies(): { from: string; to: string }[] {
-  const woff2 = readdirSync(repoPath(`${FONT_PKG}/files`)).filter((f) => f.endsWith(".woff2")).sort();
-  return [
-    ...woff2.map((f) => ({ from: `${FONT_PKG}/files/${f}`, to: `web/phone/fonts/files/${f}` })),
-    { from: `${FONT_PKG}/index.css`, to: "web/phone/fonts/noto-sans-kr.css" },
-    { from: `${FONT_PKG}/LICENSE`, to: "web/phone/fonts/OFL-noto-sans-kr.txt" },
-    { from: `${FONT_PKG}/LICENSE`, to: "ui/public/fonts/OFL-noto-sans-kr.txt" },
-    ...["favicon.ico", "favicon-32.png", "apple-touch-icon.png", "icon-192.png"].map((f) => ({ from: `ui/public/${f}`, to: `web/phone/${f}` })),
-    { from: "ui/public/brand/mascot@1x.webp", to: "web/phone/brand/mascot@1x.webp" },
-  ];
+  return [{ from: `${FONT_PKG}/LICENSE`, to: "ui/public/fonts/OFL-noto-sans-kr.txt" }];
 }
 
 /** 꾸러미 CSS의 @font-face(파일·unicode-range)를 워커용 ESM 목록으로. 파일은 ?url import라 ui 빌드가 묶은 주소가 들어간다. */
@@ -275,5 +219,5 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     mkdirSync(dirname(repoPath(c.to)), { recursive: true });
     copyFileSync(repoPath(c.from), repoPath(c.to));
   }
-  console.log(`옮김 ${list.length}개(글꼴·라이선스·파비콘·마스코트)`);
+  console.log(`옮김 ${list.length}개(글꼴 라이선스)`);
 }

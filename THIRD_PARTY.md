@@ -3,8 +3,8 @@
 ## 글꼴
 
 - Noto Sans KR Variable: npm `@fontsource-variable/noto-sans-kr` 5.3.1, SIL Open Font License 1.1.
-  - 대시보드·설정은 `ui`가 꾸러미를 묶어 내준다. 폰 화면은 `npm run tokens`가 `web/phone/fonts/`로 옮긴 파일을 `/phone/fonts/`로 내준다. 외부 CDN을 쓰지 않는다.
-  - 라이선스 글: `ui/public/fonts/OFL-noto-sans-kr.txt`, `web/phone/fonts/OFL-noto-sans-kr.txt`.
+  - 대시보드·설정·폰 화면은 `ui`가 꾸러미를 묶어 내준다. 폰 인코딩 워커는 `ui/src/phone/core/font-faces.js` 목록으로 같은 파일을 넣는다. 외부 CDN을 쓰지 않는다.
+  - 라이선스 글: `ui/public/fonts/OFL-noto-sans-kr.txt`.
 
 ## 브랜드 그림
 

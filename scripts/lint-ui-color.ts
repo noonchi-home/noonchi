@@ -20,11 +20,11 @@ export const COLOR_TARGETS = [
   fileURLToPath(new URL("../web/", import.meta.url)),
 ];
 
-/** 토큰 원본(src/design/tokens.json)에서 npm run tokens가 만든 파일. 날 값은 여기에만 있다. */
-export const TOKEN_OUTPUTS = ["ui/src/tokens.css", "web/phone/tokens.css", "web/phone/tokens.js"];
+/** 토큰 원본(src/design/tokens.json)에서 npm run tokens가 만든 파일. 날 값은 여기에만 있다(src/design/tokens.ts는 검사 범위 밖). */
+export const TOKEN_OUTPUTS = ["ui/src/tokens.css"];
 
 export const COLOR_FIX =
-  "날 색 대신 src/design/tokens.json의 토큰을 쓰세요. 대시보드·설정은 ui/src/tokens.css의 토큰 class(bg-surface·text-ink…), 폰은 web/phone/tokens.css 변수와 web/phone/tokens.js 값, 트윈·SVG·캔버스 색은 src/design/tokens.ts예요.";
+  "날 색 대신 src/design/tokens.json의 토큰을 쓰세요. 대시보드·설정·폰 화면은 ui/src/tokens.css의 토큰 class(bg-surface·text-ink…), 트윈·SVG·캔버스 색은 src/design/tokens.ts예요.";
 export const ACCENT_FIX = "accent(옛 파랑)는 없어요. 브랜드 색은 brand 토큰(bg-brand·text-brand·var(--brand))을 쓰세요.";
 
 /** CSS 이름 색. transparent·currentColor·inherit는 색이 아니라서 뺀다. */

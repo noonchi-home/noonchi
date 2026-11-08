@@ -7,21 +7,19 @@ const tokens = readTokens();
 const onDisk = (p: string) => (existsSync(repoPath(p)) ? readFileSync(repoPath(p), "utf8").replace(/\r\n/g, "\n") : null);
 
 describe("디자인 토큰 원본", () => {
-  it("만든 파일 넷이 원본과 같다(다르면 npm run tokens)", () => {
+  it("만든 파일 둘이 원본과 같다(다르면 npm run tokens)", () => {
+    expect([...OUTPUTS]).toEqual(["ui/src/tokens.css", "src/design/tokens.ts"]);
     const want = renderTokens(tokens);
     expect(Object.keys(want)).toEqual([...OUTPUTS]);
     const stale = OUTPUTS.filter((p) => onDisk(p) !== want[p]);
     expect(stale, `${stale.join(", ")}: ${SOURCE}에서 다시 만드세요(npm run tokens)`).toEqual([]);
   });
 
-  it("폰에 옮긴 글꼴·라이선스와 파비콘·마스코트가 원본과 같다(다르면 npm run tokens)", () => {
-    const list = copies();
-    expect(list.some((c) => c.to.endsWith("web/phone/fonts/files/noto-sans-kr-0-wght-normal.woff2"))).toBe(true);
-    expect(list.map((c) => c.to)).toEqual(expect.arrayContaining(["web/phone/fonts/noto-sans-kr.css", "web/phone/fonts/OFL-noto-sans-kr.txt", "ui/public/fonts/OFL-noto-sans-kr.txt", "web/phone/favicon.ico", "web/phone/brand/mascot@1x.webp"]));
-    // 글(.css·.txt)은 git이 줄끝을 바꿔 꺼낼 수 있어 줄끝을 맞춰 본다
-    const bytes = (p: string) => (/\.(css|txt)$/.test(p) ? Buffer.from(readFileSync(repoPath(p), "utf8").replace(/\r\n/g, "\n")) : readFileSync(repoPath(p)));
-    const stale = list.filter((c) => !existsSync(repoPath(c.to)) || !bytes(c.from).equals(bytes(c.to))).map((c) => c.to);
-    expect(stale, "npm run tokens로 다시 옮기세요").toEqual([]);
+  it("글꼴 라이선스만 ui/public/fonts로 옮긴다. 폰 전용 사본(web/phone)은 없다", () => {
+    expect(copies()).toEqual([{ from: "ui/node_modules/@fontsource-variable/noto-sans-kr/LICENSE", to: "ui/public/fonts/OFL-noto-sans-kr.txt" }]);
+    const text = (p: string) => readFileSync(repoPath(p), "utf8").replace(/\r\n/g, "\n");
+    expect(text("ui/public/fonts/OFL-noto-sans-kr.txt")).toBe(text("ui/node_modules/@fontsource-variable/noto-sans-kr/LICENSE"));
+    expect(existsSync(repoPath("web/phone"))).toBe(false);
   });
 
   it("워커 글꼴 목록(ui/src/phone/core/font-faces.js)이 꾸러미 CSS와 같고, 글꼴 파일은 ui 빌드가 묶는다(?url)", () => {
