@@ -149,7 +149,7 @@ function Overlay({ view, act, draft, setDraft, overlayRef, canvasRef }: { view: 
   return (
     <div ref={overlayRef} hidden={!view.ar} data-phone-overlay="" className="fixed inset-0">
       <canvas ref={canvasRef} aria-hidden="true" className="pointer-events-none fixed inset-0 size-full" />
-      <div className="fixed inset-x-0 top-0 flex items-center gap-2 px-2 pt-2">
+      <div className="fixed inset-x-0 top-0 flex items-center gap-2 px-4 pt-2">
         <Status variant="scrim" size="touch" role="status" title={view.status.title} className="min-w-0 flex-1">
           <StatusLabel className="truncate">{view.status.text}</StatusLabel>
         </Status>
@@ -202,7 +202,7 @@ function Overlay({ view, act, draft, setDraft, overlayRef, canvasRef }: { view: 
         </Button>
       </div>
       <LiquidGlass id="phone-menu" hidden={!view.menuOpen} mode="opaque" radius={16}
-        className="fixed right-2 top-16 max-h-[calc(100dvh-140px)] w-[min(380px,calc(100vw-16px))] overflow-auto landscape:right-24 landscape:max-h-[calc(100dvh-56px)]"
+        className="fixed right-4 top-16 max-h-[calc(100dvh-140px)] w-[min(380px,calc(100vw-32px))] overflow-auto landscape:right-24 landscape:max-h-[calc(100dvh-56px)]"
         contentClassName="flex flex-col gap-2 p-2.5">
         {view.ar && <TalkForm act={act} draft={draft} setDraft={setDraft} />}
         <Button variant="outline" size="touch" className="h-12 gap-2" onClick={act.resetAnchors}><RotateCcw />기준점 다시 찍기</Button>

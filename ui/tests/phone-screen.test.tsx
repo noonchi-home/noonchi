@@ -80,6 +80,14 @@ describe("카메라 중(AR)", () => {
     expect(o.queryByRole("button", { name: /조준하고 기록/ })).toBeNull();
   });
 
+  it("옆 여백 16px: 위 상태 줄·⋯ 메뉴·위 줄·엄지 자리", () => {
+    const { o, overlay } = show(SHOTS.busy.view);
+    expect(words(o.getByText("11.5 fps").parentElement!)).toEqual(expect.arrayContaining(["px-4"]));
+    const menu = overlay.querySelector<HTMLElement>("#phone-menu")!;
+    expect(words(menu)).toEqual(expect.arrayContaining(["right-4", "w-[min(380px,calc(100vw-32px))]"]));
+    for (const zone of overlay.querySelectorAll("[data-phone-zone]")) expect(words(zone)).toContain("inset-x-4");
+  });
+
   it("영상 위 글은 14px 이상(label·caption 토큰 없음), 누르는 것은 48px 이상", () => {
     for (const name of ["camera", "overlay", "menu", "request", "busy", "busy-anchors"] as const) {
       const { overlay, unmount } = show(SHOTS[name].view);
