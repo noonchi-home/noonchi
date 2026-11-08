@@ -1834,7 +1834,7 @@ describe("카메라 중(AR)", () => {
     await userEvent.click(o.getByRole("button", { name: "사진 찍기" }));
     await userEvent.click(o.getByRole("button", { name: "끝내기" }));
     await userEvent.click(o.getByRole("button", { name: "메뉴" }));
-    expect([act.takePhoto, act.stopAr].map((f) => f.mock.calls.length)).toEqual([1, 1]);
+    expect([act.takePhoto, act.stopAr].map((f) => vi.mocked(f).mock.calls.length)).toEqual([1, 1]);
     expect(act.setMenu).toHaveBeenCalledWith(true);
     expect(o.getByRole("button", { name: "사진 찍기" })).toHaveTextContent("사진");
   });
@@ -1907,7 +1907,7 @@ describe("사진 요청·행동 부탁", () => {
     expect(words(o.getByRole("button", { name: "나중에" }))).toContain("border-input");
     await userEvent.click(o.getByRole("button", { name: "치웠어요" }));
     await userEvent.click(o.getByRole("button", { name: "나중에" }));
-    expect(act.brainReply.mock.calls).toEqual([["a1", "done"], ["a1", "later"]]);
+    expect(vi.mocked(act.brainReply).mock.calls).toEqual([["a1", "done"], ["a1", "later"]]);
   });
 });
 
@@ -1918,7 +1918,7 @@ describe("묻고 답하기", () => {
     expect(screen.getByText("현관문: 현관문 잠금 해제")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "승인" }));
     await userEvent.click(screen.getByRole("button", { name: "취소" }));
-    expect([act.confirm.mock.calls, act.cancel.mock.calls]).toEqual([[["t1"]], [["t1"]]]);
+    expect([vi.mocked(act.confirm).mock.calls, vi.mocked(act.cancel).mock.calls]).toEqual([[["t1"]], [["t1"]]]);
   });
 
   it("듣는 중이면 그 단추가 destructive에 「듣는 중… 손을 떼면 보내요」, 떼면 talkUp(처음 화면 자리)", () => {
@@ -2098,11 +2098,13 @@ function ActionCard({ action, act }: { action: BrainAction; act: PhoneActions })
       </CardHeader>
       {would && <CardContent className="px-4 pb-2">{would}</CardContent>}
       <CardFooter className="gap-2 p-4 pt-0">
-        {action.choices.map((c, i) => (
-          <Button key={c.id} size="touch" variant={i === 0 ? "default" : "outline"} className="h-12 flex-1" onClick={() => act.brainReply(action.id, c.id)}>
-            {c.label}
-          </Button>
-        ))}
+        {/* 첫 선택이 주 단추(default), 나머지는 outline. variant를 식으로 고르면 부품 lint가 "outline"을 class로 본다 */}
+        {action.choices.map((c, i) => {
+          const pick = () => act.brainReply(action.id, c.id);
+          return i === 0
+            ? <Button key={c.id} size="touch" className="h-12 flex-1" onClick={pick}>{c.label}</Button>
+            : <Button key={c.id} size="touch" variant="outline" className="h-12 flex-1" onClick={pick}>{c.label}</Button>;
+        })}
       </CardFooter>
     </Card>
   );
