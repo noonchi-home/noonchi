@@ -1,22 +1,30 @@
 // 폰 덮개 배치 검사: 화면 사진 페이지(shots.tsx)가 크롬에서 잰 자리(CSS px)로 부른다. 문제가 있으면 console.error로 내서 npm run capture가 실패한다.
 // 단추는 화면 안에 있거나, 화면 안에 있는 스크롤 칸 안에 있어야 누를 수 있다. 위 줄·말풍선·엄지 자리 칸은 가운데 조준점(28px)과
-// 그 칸 밖 단추(큰 단추·⋯·다른 칸의 단추)를 가리지 않는다.
-// 처음 화면은 「AR 시작」 단추가 스크롤하지 않은 첫 화면 안에 있어야 한다(가로로 들어도).
+// 그 칸 밖 단추(큰 단추·⋯·다른 칸의 단추)를 가리지 않는다. 세로 화면에서 큰 단추 셋은 엄지가 닿는 아래 1/3 안에 있다.
+// 처음 화면은 「AR 시작」 단추가 스크롤하지 않은 첫 화면 안에 있어야 한다(세로·가로 모두).
 
 export interface Box { left: number; top: number; right: number; bottom: number }
 /** 단추 하나. scroller는 그 단추를 담은 스크롤 칸(없으면 null), zone은 그 단추를 담은 칸 이름(없으면 비움). */
 export interface Target { name: string; box: Box; scroller: Box | null; zone?: string }
 
 const RETICLE_HALF = 14;
+/** 큰 단추 셋(PhoneScreen.tsx의 aria-label). */
+const BIG_BUTTONS = new Set(["누르고 말하기", "사진 찍기", "끝내기"]);
 const inside = (b: Box, w: number, h: number) => b.left >= 0 && b.top >= 0 && b.right <= w && b.bottom <= h;
 const overlaps = (a: Box, b: Box) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
 const where = (b: Box) => `${Math.round(b.left)},${Math.round(b.top)}–${Math.round(b.right)},${Math.round(b.bottom)}`;
 
 export function layoutIssues(view: { width: number; height: number }, targets: Target[], panels: { name: string; box: Box }[]): string[] {
   const issues: string[] = [];
+  const size = `${view.width}×${view.height}`;
   for (const t of targets) {
     const reach = t.scroller ?? t.box;
-    if (!inside(reach, view.width, view.height)) issues.push(`「${t.name}」 단추가 화면 밖이에요(${where(reach)} / ${view.width}×${view.height})`);
+    if (!inside(reach, view.width, view.height)) issues.push(`「${t.name}」 단추가 화면 밖이에요(${where(reach)} / ${size})`);
+  }
+  if (view.height > view.width) {
+    for (const t of targets) {
+      if (BIG_BUTTONS.has(t.name) && t.box.top < (view.height * 2) / 3) issues.push(`「${t.name}」 단추가 엄지가 닿는 아래 1/3 밖이에요(${where(t.box)} / ${size})`);
+    }
   }
   const cx = view.width / 2;
   const cy = view.height / 2;

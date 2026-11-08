@@ -112,6 +112,26 @@ describe("초점 표시", () => {
   });
 });
 
+describe("세로 화면(390×844)의 화면 밖 화살표·이름표", () => {
+  function draw(m: { u: number; v: number; angle: number }) {
+    const { ctx, ops } = recorder();
+    drawOverlay(ctx, SIZE, { hit: false, marks: [{ id: "x", label: "TV", off: true, ...m }] }, 0, true);
+    return { arrow: of(ops, "move")[0]!, label: of(ops, "round")[0]! };
+  }
+
+  it("아래쪽 화살표 묶음은 큰 단추 줄(아래 88px) 위에 둔다", () => {
+    const { label } = draw({ u: 0.5, v: 0.97, angle: 90 });
+    expect(label.y + label.h).toBe(844 - 88);
+    expect(label.y).toBe(844 - 88 - 24);
+  });
+
+  it("위쪽 화살표 묶음은 위 상태 줄(64px) 아래, 오른쪽 화살표 이름표는 화면 가장자리 8px 안", () => {
+    expect(draw({ u: 0.5, v: 0.03, angle: -90 }).label.y).toBe(64 + 28 + 4);
+    const right = draw({ u: 0.98, v: 0.5, angle: 0 });
+    expect(right.label.x + right.label.w).toBeLessThanOrEqual(390 - 8);
+  });
+});
+
 describe("가로 화면(844×390)의 화면 밖 화살표·이름표", () => {
   const LAND = { width: 844, height: 390 };
   const group = 28 + 4 + 24; // 세모 + 사이 + 이름표
