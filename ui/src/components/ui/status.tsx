@@ -1,6 +1,6 @@
 // 21st.dev「Status」(id 25393, diceui/status) 받은 코드.
 // 바꾼 것: success·warning·error 바탕 green-500/10·orange-500/10·destructive/10 → 불투명 ok-tint·warn-tint·error-tint, 글·점 → ok·warn·error 토큰(테두리 /20 그대로).
-// info variant 뺌, brand variant 더함(cream 바탕, brand 글·점). 점 퍼짐(animate-ping)은 data-live가 있을 때만, 움직임 줄이기면 끈다. radix-ui Slot → @radix-ui/react-slot.
+// info variant 뺌, brand variant 더함(cream 바탕, brand 글·점), scrim variant 더함(대시보드 폰 칸 영상 위 YOLO 이름표: scrim-phone 바탕, on-scrim 글·점, 글 크기는 그대로). 점 퍼짐(animate-ping)은 data-live가 있을 때만, 움직임 줄이기면 끈다. radix-ui Slot → @radix-ui/react-slot.
 // 원래 글 크기: text-xs(12px). 받은 크기 그대로다. 더 큰 글은 npm run lint(scripts/lint-ui-type.ts)가 막는다.
 import { cva, type VariantProps } from "class-variance-authority";
 import { Slot } from "@radix-ui/react-slot";
@@ -22,6 +22,8 @@ const statusVariants = cva(
           "border-warn/20 bg-warn-tint text-warn **:data-[slot=status-indicator]:bg-warn",
         brand:
           "border-transparent bg-muted text-brand **:data-[slot=status-indicator]:bg-brand",
+        scrim:
+          "border-transparent bg-scrim-phone text-on-scrim **:data-[slot=status-indicator]:bg-on-scrim",
       },
     },
     defaultVariants: {
