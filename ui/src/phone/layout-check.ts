@@ -48,7 +48,7 @@ export interface TextBox { name: string; line: number; scroll: { width: number; 
 export function clipIssues(texts: TextBox[]): string[] {
   return texts
     .filter((t) => t.scroll.width > t.client.width + 1 || t.scroll.height - t.client.height >= t.line / 2)
-    .map((t) => `「${t.name}」 글이 잘려요(${t.scroll.width}×${t.scroll.height} / 칸 ${t.client.width}×${t.client.height})`);
+    .map((t) => `「${t.name}」 글이 잘려요(${t.scroll.width}×${t.scroll.height} / ${t.client.width}×${t.client.height})`);
 }
 
 /** 처음 화면: 「AR 시작」 단추(start, 스크롤 0에서 잰 자리)가 첫 화면 안에 있는지. */
