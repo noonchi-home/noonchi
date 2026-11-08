@@ -302,7 +302,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         },
         onConfirm: async (token) => ({ reply: (await agent.confirm(token)).reply }),
         onCancel: async (token) => ({ reply: agent.cancel(token).reply }),
-        // 실제 폰 명령·질문의 답(「완료」·질문 답 단추, 말 「완료」「다 했어」「그만」). 답과 명령이 떠 있는 동안의 말은 반성 피드백으로 남긴다
+        // 실제 폰 명령·질문의 답(「완료」·질문 답 단추, 말 「완료」「다 했어」「그만」). 답으로 맞은 것만 반성 피드백으로 남긴다(늘 듣기의 주변 말은 남기지 않는다)
         onChoice: (id, step, choice) => {
           const open = tracker?.openCommand();
           const picked = open?.choices.find((c) => c.id === choice);
@@ -314,8 +314,9 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
           const open = tracker?.openCommand();
           if (!open) return { handled: false };
           const picked = tracker!.onHeard(text);
-          history.db.add("feedback", nowMs(), FEEDBACK_TEXT.answer(text, open.kind, open.text), { subject: open.planId, data: { choice: picked?.id ?? null, via: "voice" } });
-          return picked ? { handled: true, reply: picked.reply } : { handled: false };
+          if (!picked) return { handled: false };
+          history.db.add("feedback", nowMs(), FEEDBACK_TEXT.answer(text, open.kind, open.text), { subject: open.planId, data: { choice: picked.id, via: "voice" } });
+          return { handled: true, reply: picked.reply };
         },
         ...(observe ? {
           engineMs: observe.config.engineMs,

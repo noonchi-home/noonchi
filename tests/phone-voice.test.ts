@@ -11,6 +11,7 @@ import { encodeFramePacket } from "../src/phone/packet.js";
 import { createPhoneServer, type PhoneServer } from "../src/phone/server.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { ScriptedDetector } from "./helpers/detectors.js";
+import { startFakeLlm, type FakeLlm } from "./helpers/llm.js";
 import { startFakePam, type FakePam } from "./helpers/pam.js";
 import { openWebSocket } from "./helpers/ws.js";
 
@@ -83,6 +84,7 @@ describe("startServer(BRAIN=1): 클로이드 질문을 폰 말로 답한다", ()
   let srv: RunningServer | undefined;
   let fake: FakeServer | undefined;
   let pam: FakePam | undefined;
+  let llm: FakeLlm | undefined;
   afterEach(async () => {
     await srv?.close();
     srv = undefined;
@@ -90,14 +92,17 @@ describe("startServer(BRAIN=1): 클로이드 질문을 폰 말로 답한다", ()
     fake = undefined;
     await pam?.close();
     pam = undefined;
+    await llm?.close();
+    llm = undefined;
   });
 
-  it("질문이 소리로 오고, 말한 답은 에이전트로 가지 않고 실행을 끝내며 반성 피드백으로 남는다", async () => {
+  it("질문이 소리로 오고, 말한 답은 에이전트로 가지 않고 실행을 끝내며 반성 피드백으로 남는다. 답이 아닌 말은 피드백으로 남기지 않는다", async () => {
     fake = await startFakeOpenAI();
+    llm = await startFakeLlm({ "TV 소리 좀 줄여 봐": ["알겠어요"] });
     pam = await startFakePam({ predict: () => ({ observation: "컵이 식탁에 있음", reasoning: "치울지 묻는다", task_index: 1 }) });
     srv = await startServer({
       env: { HUB: "memory", PORT: "0", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
-        BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url, PAM_MIN_GAP_MS: "0" },
+        BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url, PAM_MIN_GAP_MS: "0", ...llm.env },
       brain: { detector: new ScriptedDetector(() => [{ label: "cup", score: 0.9, cls: 41, box: [1, 1, 2, 1] }]) }, log: () => {},
     });
     const phoneUrl = new URL(srv.phoneUrls[0]!);
@@ -116,12 +121,18 @@ describe("startServer(BRAIN=1): 클로이드 질문을 폰 말로 답한다", ()
     const ask = await asked();
     expect(ask).toEqual({ type: "command", id: expect.stringMatching(/^plan:pam-\d+$/), step: `${ask.id}:1`, text: "컵을 치울까요?", vision: null, speak: true,
       choices: [{ id: "clear", label: "치워 주세요" }, { id: "keep", label: "그대로 둬요" }] });
+    const replies = async (n: number) => {
+      for (const end = Date.now() + 5000; box.filter((m) => m.type === "reply").length < n; ) {
+        if (Date.now() > end) throw new Error("답이 오지 않았습니다");
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      return box.filter((m) => m.type === "reply");
+    };
+    // 질문이 떠 있는 동안 들은 답이 아닌 말: 에이전트로 가고 피드백으로 남지 않는다
+    ws.send(JSON.stringify({ type: "say", text: "TV 소리 좀 줄여 봐" }));
+    expect((await replies(1))[0]).toMatchObject({ text: "알겠어요" });
     ws.send(JSON.stringify({ type: "say", text: "그냥 그대로 둬" }));
-    for (const end = Date.now() + 5000; !box.some((m) => m.type === "reply"); ) {
-      if (Date.now() > end) throw new Error("답이 오지 않았습니다");
-      await new Promise((r) => setTimeout(r, 20));
-    }
-    expect(box.find((m) => m.type === "reply")).toMatchObject({ text: "알겠어요. 그대로 둘게요" });
+    expect((await replies(2))[1]).toMatchObject({ text: "알겠어요. 그대로 둘게요" });
     const rows = srv.history.list({ kinds: ["feedback", "execution"] });
     expect(rows.filter((r) => r.kind === "feedback").map((r) => r.text)).toEqual(["그냥 그대로 둬 · 질문: 컵을 치울까요?"]);
     expect(rows.some((r) => r.kind === "execution" && r.subject === ask.id && r.text === "완료: 그대로 둬요")).toBe(true);
