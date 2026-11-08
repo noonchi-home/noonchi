@@ -1,4 +1,4 @@
-// 실행 전 검사(결정론): 아는 행동이고 계획이 있다, 대상 물건이 있고 판단 뒤에 찍힌 프레임으로 다시 봤고 STALE_MS 안이다,
+// 실행 전 검사(결정론): 아는 행동이고 계획이 있다, 대상 물건이 있고 이미 싱크대 안이 아니다(남은 같은 종류가 모두 싱크대 안이면 그 이유), 판단 뒤에 찍힌 프레임으로 다시 봤고 STALE_MS 안이다,
 // 사람이 그 물건을 들고 있거나 쓰는 중이 아니다, 이동 단계가 있으면 경로가 있다, 시험 모드에서는 짝지은 실제 가전 단계를 막는다.
 // 통과하지 못하면 실행하지 않고 이유(CHECK_TEXT)를 낸다.
 import type { PlanView } from "../contract/plan.js";
@@ -6,7 +6,7 @@ import type { ControlMode } from "../contract/setup.js";
 import type { WorldView } from "../contract/world.js";
 import { CHECK_TEXT } from "../plan/labels.js";
 import type { DecisionRecord } from "../world/decide.js";
-import { planTargetId, taskOf } from "./tasks.js";
+import { planTargetId, putAway, taskOf } from "./tasks.js";
 
 export type CheckFail = keyof typeof CHECK_TEXT;
 export type CheckResult = { ok: true } | { ok: false; reason: CheckFail; text: string };
@@ -32,7 +32,10 @@ export function checkPlan(i: CheckInput): CheckResult {
   if (spec.kind === "pick_place") {
     const id = planTargetId(i.plan);
     const o = i.world.objects.find((x) => x.id === id);
-    if (!o || o.status === "gone") return fail("no_target");
+    if (!o || o.status === "gone") {
+      return fail(i.world.objects.some((x) => x.cls === spec.target && x.status !== "gone" && putAway(x)) ? "in_sink" : "no_target");
+    }
+    if (putAway(o)) return fail("in_sink");
     if (o.last_seen_ms <= i.decision.atMs || i.nowMs - o.last_seen_ms > i.staleMs) return fail("stale");
     if (o.facts.place?.value === "in_hand" || o.facts.use?.value === "in_use" || i.world.person.facts.action?.value === "holding_object") return fail("in_hand");
   }

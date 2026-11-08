@@ -28,6 +28,7 @@ export const DEVICE_VERB: Record<string, string> = {
 export const CHECK_TEXT = {
   unknown_task: "행동 목록에 없는 행동이라 실행하지 않아요",
   no_target: "대상 물건이 보이지 않아 실행하지 않아요",
+  in_sink: "대상 물건이 이미 싱크대 안이라 실행하지 않아요",
   stale: "판단 뒤에 대상을 다시 확인하지 못했어요",
   in_hand: "사람이 그 물건을 쓰는 중이라 실행하지 않아요",
   unreachable: "갈 수 있는 길이 없어 실행하지 않아요",

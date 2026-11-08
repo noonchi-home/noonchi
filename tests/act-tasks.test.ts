@@ -36,9 +36,10 @@ describe("PAM 결과 → 계획", () => {
     const toTable = unknown.path[unknown.legs[0]!.end]!;
     expect(Math.hypot(toTable[0] - 7, toTable[1] - 3)).toBeCloseTo(0.55, 2);
   });
-  it("대상은 사라지지 않은 같은 종류 중 가장 최근에 본 것. 없으면 집기 단계는 식탁을 가리킨다", () => {
+  it("대상은 사라지지 않았고 싱크대 안이 아닌 같은 종류 중 가장 최근에 본 것. 없으면 집기 단계는 식탁을 가리킨다", () => {
+    const inSink = { place: { value: "in_sink", at_ms: 40, certainty: "confirmed" as const } };
     const objects = [cupAt({ id: "cup_1", last_seen_ms: 5 }), cupAt({ id: "cup_2", last_seen_ms: 9 }), cupAt({ id: "cup_3", last_seen_ms: 20, status: "gone" }),
-      cupAt({ id: "bottle_1", cls: "bottle", last_seen_ms: 30 })];
+      cupAt({ id: "bottle_1", cls: "bottle", last_seen_ms: 30 }), cupAt({ id: "cup_4", last_seen_ms: 40, facts: inSink })];
     expect(targetOf(TASKS["컵 치우기"]!, world(objects))?.id).toBe("cup_2");
     expect(targetOf(TASKS["사용자에게 물어보기"]!, world(objects))).toBeNull();
     const none = planFor(smallFloor(), decision(0), world([]), "x")!;

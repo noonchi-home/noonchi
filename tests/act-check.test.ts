@@ -34,6 +34,13 @@ describe("실행 전 검사", () => {
     expect(checkPlan(base({ world: { ...base().world, objects: [] } }))).toMatchObject({ reason: "no_target" });
     expect(checkPlan(base({ world: { ...base().world, objects: [obj({ status: "gone" })] } }))).toMatchObject({ reason: "no_target" });
   });
+  it("대상이 이미 싱크대 안이거나, 남은 같은 종류 물건이 모두 싱크대 안", () => {
+    const inSink = { place: fact("in_sink") };
+    expect(checkPlan(base({ world: { ...base().world, objects: [obj({ facts: inSink })] } }))).toEqual({ ok: false, reason: "in_sink", text: CHECK_TEXT.in_sink });
+    const noTarget = { ...base().plan!, steps: [base().plan!.steps[0]!, { ...base().plan!.steps[1]!, target: { objectId: "table_1" } }] };
+    expect(checkPlan(base({ plan: noTarget, world: { ...base().world, objects: [obj({ facts: inSink })] } }))).toMatchObject({ reason: "in_sink" });
+    expect(checkPlan(base({ plan: noTarget, world: { ...base().world, objects: [obj({ facts: inSink, status: "gone" })] } }))).toMatchObject({ reason: "no_target" });
+  });
   it("판단 뒤에 다시 보지 않았거나 STALE_MS가 넘은 근거", () => {
     expect(checkPlan(base({ world: { ...base().world, objects: [obj({ last_seen_ms: 8_000 })] } }))).toMatchObject({ reason: "stale" });
     expect(checkPlan(base({ nowMs: 12_001 }))).toMatchObject({ reason: "stale" });

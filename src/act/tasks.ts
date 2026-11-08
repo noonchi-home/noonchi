@@ -31,10 +31,13 @@ export function taskOf(action: string | null): TaskSpec | null {
   return action && Object.hasOwn(TASKS, action) ? TASKS[action]! : null;
 }
 
-/** 대상 종류 중 사라지지 않고 가장 최근에 본 물건. 대상이 없는 행동이거나 못 찾으면 null. */
+/** 이미 치운 물건: World State 자리가 싱크대 안. */
+export const putAway = (o: WorldObject) => o.facts.place?.value === "in_sink";
+
+/** 대상 종류 중 사라지지 않았고 이미 치우지 않은(싱크대 안이 아닌) 물건 가운데 가장 최근에 본 것. 대상이 없는 행동이거나 못 찾으면 null. */
 export function targetOf(spec: TaskSpec, world: WorldView): WorldObject | null {
   if (!spec.target) return null;
-  return world.objects.filter((o) => o.cls === spec.target && o.status !== "gone").sort((a, b) => b.last_seen_ms - a.last_seen_ms)[0] ?? null;
+  return world.objects.filter((o) => o.cls === spec.target && o.status !== "gone" && !putAway(o)).sort((a, b) => b.last_seen_ms - a.last_seen_ms)[0] ?? null;
 }
 
 /** 계획이 다루는 물건: 첫 act 단계의 대상 물건 id. 없으면 null. */

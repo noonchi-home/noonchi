@@ -9,6 +9,7 @@ import type WebSocket from "ws";
 import { startFakeOpenAI, type FakeServer } from "../scripts/fake-openai.js";
 import type { HistoryRow } from "../src/contract/history.js";
 import { encodeFramePacket } from "../src/phone/packet.js";
+import { CHECK_TEXT } from "../src/plan/labels.js";
 import { fetchRetry } from "../src/server/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { ScriptedDetector } from "./helpers/detectors.js";
@@ -44,8 +45,8 @@ describe("NOONCHI 처음부터 끝까지", () => {
         return JSON.stringify({ scene: "kitchen", observations: dets.map((d) => ({ object_id: d.id, state: cupPlace })), summary: "컵" });
       },
     });
-    // 싱크대에 넣은 뒤에는 대기(같은 컵으로 새 계획을 만들지 않게)
-    pam = await startFakePam({ predict: () => ({ observation: "빈 컵이 식탁에 남음", reasoning: "자리를 비워 컵을 치운다", task_index: cupPlace === "in_sink" ? -1 : 0 }) });
+    // PAM은 끝난 뒤에도 컵 치우기를 고른다: 싱크대 안 컵으로는 새 명령을 보내지 않아야 한다
+    pam = await startFakePam({ predict: () => ({ observation: "빈 컵이 식탁에 남음", reasoning: "자리를 비워 컵을 치운다", task_index: 0 }) });
     srv = await startServer({
       env: { HUB: "memory", PORT: "0", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
         BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url, PAM_MIN_GAP_MS: "0" },
@@ -91,6 +92,8 @@ describe("NOONCHI 처음부터 끝까지", () => {
     cupPlace = "in_sink";
     await pump(() => phone.some((m) => m.type === "command_clear" && m.id === planId));
     await pump(async () => (await history("execution")).rows.some((r) => r.subject === planId && r.text === "완료"));
+    // 다음 판단(컵 치우기)은 싱크대 안 컵을 대상으로 삼지 않고 실행 전 검사에서 멈춘다
+    await pump(async () => (await history("execution")).rows.some((r) => r.subject !== planId && r.text === CHECK_TEXT.in_sink));
 
     expect(phone.filter((m) => m.type === "command" && m.speak).map((m) => m.text)).toEqual(["식탁으로 가 주세요", "컵을 들어 주세요", "싱크대로 가 주세요", "컵을 싱크대에 넣어 주세요"]);
     const all = await history("vlm,detection,pam_text,decision,plan,execution,feedback");
