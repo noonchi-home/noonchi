@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
+import type { PhoneCommand } from "../src/contract/phone.js";
 import type { AnchorTarget } from "../src/phone/anchors.js";
 import { EyeFeed } from "../src/phone/feed.js";
 import { encodeFramePacket } from "../src/phone/packet.js";
@@ -345,49 +346,47 @@ describe("폰 대화·승인·초점", () => {
     expect((await got).text).toMatch(/말이 비어/);
   });
 
-  it("setLine: 마스코트 말풍선 글이 바뀔 때만 brain_line으로 보내고, 새로 붙은 폰에는 상태 뒤에 지금 글을 보낸다. 없으면 빈 글", async () => {
-    const { phone, phoneBase } = await talkSetup();
-    const url = `${phoneBase.replace(/^http/, "ws")}/phone/events`;
-    const first = new WebSocket(url, { origin: phoneBase });
-    const box: Msg[] = [];
-    first.on("message", (d) => box.push(JSON.parse(String(d)) as Msg));
-    await opened(first);
-    cleanups.push(() => first.close());
-    // 붙자마자: 상태 다음에 빈 글(아직 글이 없다)
-    const start = Date.now() + 2000;
-    while (box.length < 2 && Date.now() < start) await new Promise((r) => setTimeout(r, 20));
-    expect(box).toEqual([expect.objectContaining({ type: "status" }), { type: "brain_line", text: "" }]);
-    let got = next(first, (m) => m.type === "brain_line");
-    phone.setLine("자리를 비워 컵을 치운다");
-    expect(await got).toEqual({ type: "brain_line", text: "자리를 비워 컵을 치운다" });
-    phone.setLine("자리를 비워 컵을 치운다");
-    // 새로 붙은 폰: 상태 다음에 지금 글
-    const later = new WebSocket(url, { origin: phoneBase });
-    const laterBox: Msg[] = [];
-    later.on("message", (d) => laterBox.push(JSON.parse(String(d)) as Msg));
-    cleanups.push(() => later.close());
-    await opened(later);
-    const end = Date.now() + 2000;
-    while (laterBox.length < 2 && Date.now() < end) await new Promise((r) => setTimeout(r, 20));
-    expect(laterBox.map((m) => m.type)).toEqual(["status", "brain_line"]);
-    expect(laterBox[1]).toEqual({ type: "brain_line", text: "자리를 비워 컵을 치운다" });
-    got = next(first, (m) => m.type === "brain_line");
-    phone.setLine(null);
-    expect(await got).toEqual({ type: "brain_line", text: "" });
-    expect(box.filter((m) => m.type === "brain_line").map((m) => m.text)).toEqual(["", "자리를 비워 컵을 치운다", ""]);
-  });
-
-  it("글이 없는 서버(다시 켠 서버)에 붙은 폰도 상태 다음에 빈 brain_line을 받아 이전 글을 지운다", async () => {
-    const { phoneBase } = await talkSetup();
+  /** 붙자마자 받는 메시지 n개. */
+  async function connect(phoneBase: string, n: number) {
     const ws = new WebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events`, { origin: phoneBase });
     const box: Msg[] = [];
     ws.on("message", (d) => box.push(JSON.parse(String(d)) as Msg));
     cleanups.push(() => ws.close());
     await opened(ws);
-    const end = Date.now() + 2000;
-    while (box.length < 2 && Date.now() < end) await new Promise((r) => setTimeout(r, 20));
-    expect(box.map((m) => m.type)).toEqual(["status", "brain_line"]);
-    expect(box[1]).toEqual({ type: "brain_line", text: "" });
+    for (const end = Date.now() + 2000; box.length < n && Date.now() < end; ) await new Promise((r) => setTimeout(r, 20));
+    return { ws, box };
+  }
+
+  it("command: 실제 폰 모두에 보내고 지금 명령으로 둔다. 새로 붙은 폰은 상태 다음에 지금 명령을 읽지 않게 받고, 그 명령을 지우면 command_clear", async () => {
+    const { phone, phoneBase } = await talkSetup();
+    const first = await connect(phoneBase, 2);
+    expect(first.box).toEqual([expect.objectContaining({ type: "status" }), { type: "command_clear" }]);
+    const cmd: PhoneCommand = { type: "command", id: "plan:pam-1", step: "plan:pam-1:1", text: "식탁으로 가 주세요", vision: "식탁까지 2.4m", choices: [{ id: "done", label: "완료" }], speak: true };
+    let got = next(first.ws, (m) => m.type === "command");
+    phone.command(cmd);
+    expect(await got).toEqual(cmd);
+    got = next(first.ws, (m) => m.type === "command" && m.vision === "식탁까지 1.8m");
+    phone.command({ ...cmd, vision: "식탁까지 1.8m", speak: false });
+    await got;
+    const later = await connect(phoneBase, 2);
+    expect(later.box).toEqual([expect.objectContaining({ type: "status" }), { ...cmd, vision: "식탁까지 1.8m", speak: false }]);
+    // 다른 명령을 지우는 말은 지금 명령을 그대로 둔다
+    got = next(first.ws, (m) => m.type === "command_clear");
+    phone.command({ type: "command_clear", id: "plan:pam-0" });
+    expect(await got).toEqual({ type: "command_clear", id: "plan:pam-0" });
+    expect((await connect(phoneBase, 2)).box[1]).toMatchObject({ type: "command", id: "plan:pam-1" });
+    got = next(first.ws, (m) => m.type === "command_clear" && m.id === "plan:pam-1");
+    phone.command({ type: "command_clear", id: "plan:pam-1" });
+    await got;
+    expect((await connect(phoneBase, 2)).box[1]).toEqual({ type: "command_clear" });
+  });
+
+  it("실제 폰 위에는 명령만 보낸다: 판단·관찰 말풍선 글(brain_line)을 보내지 않는다", async () => {
+    const { phone, phoneBase } = await talkSetup();
+    const { box } = await connect(phoneBase, 2);
+    await new Promise((r) => setTimeout(r, 200));
+    expect(box.map((m) => m.type)).toEqual(["status", "command_clear"]);
+    expect("setLine" in phone).toBe(false);
   });
 
   it("here()는 폰이 보낸 조준점, sendFocus는 트윈 좌표를 AR 좌표로 바꿔 폰에 보낸다", async () => {

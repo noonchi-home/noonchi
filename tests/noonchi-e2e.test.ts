@@ -113,5 +113,7 @@ describe("NOONCHI 처음부터 끝까지", () => {
     ]);
     expect(planMsgs.at(-1)).toMatchObject({ status: "done" });
     expect(dash.some((m) => m.type === "brain" && m.event.type === "execution" && m.event.plan_id === planId && m.event.state === "done")).toBe(true);
+    // 실제 폰 위에는 명령만 온다(판단·관찰 글을 보내지 않는다)
+    expect(phone.some((m) => m.type === "brain_line")).toBe(false);
   }, 60_000);
 });

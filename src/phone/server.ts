@@ -12,6 +12,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocket, WebSocketServer } from "ws";
 import type { FocusTarget } from "../contract/events.js";
+import type { PhoneCommand, PhoneCommandMessage } from "../contract/phone.js";
 import { listenRetry } from "../server/net.js";
 import { serveFile } from "../server/static.js";
 import type { AnchorTarget } from "./anchors.js";
@@ -76,10 +77,9 @@ export interface PhoneServer {
   sendFocus(targets: FocusTarget[], ttlMs: number): void;
   /** 기준점·방식을 바꾸고(기록·맞춤은 지움) 연결된 폰에 새 상태를 보낸다. */
   setTargets(targets: AnchorTarget[], mode: AlignMode): void;
-  /** 연결된 폰 모두에 보낸다(행동 부탁 등). */
-  send(msg: unknown): void;
-  /** 마스코트 말풍선 글(mascot.ts). 바뀔 때만 brain_line으로 보내고(없으면 빈 글), 새로 붙은 폰에는 상태 뒤에 지금 글(없으면 빈 글)을 보낸다. */
-  setLine(text: string | null): void;
+  /** 실제 폰 명령(command)·지우기(command_clear)를 연결된 폰 모두에 보내고 지금 명령으로 둔다. 새로 붙은 폰은 상태 다음에
+   *  지금 명령을 speak false로, 명령이 없으면 id 없는 command_clear를 받는다(다시 켠 서버에 다시 붙은 폰의 이전 명령이 지워진다). */
+  command(msg: PhoneCommandMessage): void;
   listen(port: number, host: string): Promise<{ port: number; urls: string[] }>;
   close(): Promise<void>;
 }
@@ -208,7 +208,7 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
   };
 
   let connections = 0;
-  let line: string | null = null;
+  let current: PhoneCommand | null = null;
   wss.on("connection", (ws) => {
     const source = ++connections;
     log(`[phone] 폰 연결(지금 ${wss.clients.size}대)`);
@@ -217,8 +217,7 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
       log(`[phone] 폰 끊김(지금 ${wss.clients.size}대)`);
     });
     reply(ws, status());
-    // 글이 없어도 빈 글을 보낸다(다시 켠 서버에 다시 붙은 폰이 이전 서버의 글을 지운다)
-    reply(ws, { type: "brain_line", text: line ?? "" });
+    reply(ws, current ? { ...current, speak: false } : { type: "command_clear" });
     ws.on("message", (data, isBinary) => {
       if (isBinary) {
         onPacket(ws, source, Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data as Buffer));
@@ -271,14 +270,10 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
       session.setTargets(targets, mode);
       for (const ws of wss.clients) reply(ws, status());
     },
-    send(msg) {
+    command(msg) {
+      if (msg.type === "command") current = msg;
+      else if (msg.id === undefined || msg.id === current?.id) current = null;
       for (const ws of wss.clients) reply(ws, msg);
-    },
-    setLine(text) {
-      const next = text?.trim() || null;
-      if (next === line) return;
-      line = next;
-      for (const ws of wss.clients) reply(ws, { type: "brain_line", text: line ?? "" });
     },
     async listen(port, host) {
       const addr = await listenRetry(server, port, host, { log });
