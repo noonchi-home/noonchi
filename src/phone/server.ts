@@ -77,7 +77,7 @@ export interface PhoneServer {
   setTargets(targets: AnchorTarget[], mode: AlignMode): void;
   /** 연결된 폰 모두에 보낸다(행동 부탁 등). */
   send(msg: unknown): void;
-  /** 마스코트 말풍선 글(mascot.ts). 바뀔 때만 brain_line으로 보내고(없으면 빈 글), 새로 붙은 폰에는 상태 뒤에 지금 글을 보낸다. */
+  /** 마스코트 말풍선 글(mascot.ts). 바뀔 때만 brain_line으로 보내고(없으면 빈 글), 새로 붙은 폰에는 상태 뒤에 지금 글(없으면 빈 글)을 보낸다. */
   setLine(text: string | null): void;
   listen(port: number, host: string): Promise<{ port: number; urls: string[] }>;
   close(): Promise<void>;
@@ -216,7 +216,8 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
       log(`[phone] 폰 끊김(지금 ${wss.clients.size}대)`);
     });
     reply(ws, status());
-    if (line) reply(ws, { type: "brain_line", text: line });
+    // 글이 없어도 빈 글을 보낸다(다시 켠 서버에 다시 붙은 폰이 이전 서버의 글을 지운다)
+    reply(ws, { type: "brain_line", text: line ?? "" });
     ws.on("message", (data, isBinary) => {
       if (isBinary) {
         onPacket(ws, source, Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data as Buffer));

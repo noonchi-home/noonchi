@@ -338,6 +338,10 @@ describe("폰 대화·승인·초점", () => {
     first.on("message", (d) => box.push(JSON.parse(String(d)) as Msg));
     await opened(first);
     cleanups.push(() => first.close());
+    // 붙자마자: 상태 다음에 빈 글(아직 글이 없다)
+    const start = Date.now() + 2000;
+    while (box.length < 2 && Date.now() < start) await new Promise((r) => setTimeout(r, 20));
+    expect(box).toEqual([expect.objectContaining({ type: "status" }), { type: "brain_line", text: "" }]);
     let got = next(first, (m) => m.type === "brain_line");
     phone.setLine("자리를 비워 컵을 치운다");
     expect(await got).toEqual({ type: "brain_line", text: "자리를 비워 컵을 치운다" });
@@ -355,7 +359,20 @@ describe("폰 대화·승인·초점", () => {
     got = next(first, (m) => m.type === "brain_line");
     phone.setLine(null);
     expect(await got).toEqual({ type: "brain_line", text: "" });
-    expect(box.filter((m) => m.type === "brain_line").map((m) => m.text)).toEqual(["자리를 비워 컵을 치운다", ""]);
+    expect(box.filter((m) => m.type === "brain_line").map((m) => m.text)).toEqual(["", "자리를 비워 컵을 치운다", ""]);
+  });
+
+  it("글이 없는 서버(다시 켠 서버)에 붙은 폰도 상태 다음에 빈 brain_line을 받아 이전 글을 지운다", async () => {
+    const { phoneBase } = await talkSetup();
+    const ws = new WebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events`, { origin: phoneBase });
+    const box: Msg[] = [];
+    ws.on("message", (d) => box.push(JSON.parse(String(d)) as Msg));
+    cleanups.push(() => ws.close());
+    await opened(ws);
+    const end = Date.now() + 2000;
+    while (box.length < 2 && Date.now() < end) await new Promise((r) => setTimeout(r, 20));
+    expect(box.map((m) => m.type)).toEqual(["status", "brain_line"]);
+    expect(box[1]).toEqual({ type: "brain_line", text: "" });
   });
 
   it("here()는 폰이 보낸 조준점, sendFocus는 트윈 좌표를 AR 좌표로 바꿔 폰에 보낸다", async () => {
