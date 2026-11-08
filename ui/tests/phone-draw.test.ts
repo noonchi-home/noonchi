@@ -28,6 +28,12 @@ function recorder() {
 }
 const SIZE = { width: 390, height: 844 };
 const of = (ops: Op[], op: string) => ops.filter((o) => o.op === op);
+/** 표시 하나를 그리고 이름표 판 자리를 돌려준다. */
+function drawOverlayLabel(m: { id: string; label: string; u: number; v: number; off: boolean; angle: number }) {
+  const { ctx, ops } = recorder();
+  drawOverlay(ctx, SIZE, { hit: false, marks: [m] }, 0, true);
+  return of(ops, "round")[0];
+}
 
 describe("토큰", () => {
   it("이름표는 scrim-phone 위 on-scrim, 화면 밖 화살표는 brand, 글꼴은 묶은 Noto Sans KR 14px", () => {
@@ -91,5 +97,16 @@ describe("초점 표시", () => {
     expect(of(ops, "line")).toEqual([{ op: "line", x: x + 4, y: 408 }, { op: "line", x: x - 18, y: 422 }]);
     expect(of(ops, "stroke").slice(5).map((s) => [s.color, s.width])).toEqual([[F.edge.color, 6], [F.casing.color, 4]]);
     expect(of(ops, "fill").map((f) => f.color)).toEqual([F.offscreenArrow, F.labelBg]);
+  });
+
+  it("이름표는 화면 가장자리 8px 안에 머문다(세모는 그 점에 둔다)", () => {
+    const { ctx, ops } = recorder();
+    drawOverlay(ctx, SIZE, { hit: false, marks: [{ id: "fridge", label: "냉장고", u: 0.92, v: 0.6, off: true, angle: 15 }] }, 0, true);
+    const w = "클로이드 주목 · 냉장고".length * 10 + 16;
+    const [label] = of(ops, "round");
+    expect(label).toMatchObject({ x: 390 - 8 - w, w });
+    expect(of(ops, "text")[0]).toMatchObject({ x: 390 - 8 - w / 2 });
+    const left = drawOverlayLabel({ id: "a", label: "냉장고", u: 0.02, v: 0.5, off: true, angle: 180 });
+    expect(left).toMatchObject({ x: 8 });
   });
 });

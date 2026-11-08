@@ -107,7 +107,7 @@ function Intro({ view, act, draft, setDraft }: { view: PhoneView } & DraftProps)
         )}
         {!view.ar && view.pending.length > 0 && <PendingList items={view.pending} act={act} />}
         {view.speech && (
-          <Button size="touch" variant={view.listening === "intro" ? "destructive" : "default"} className="h-12 w-full touch-none select-none" {...hold(act, "intro")}>
+          <Button size="touch" variant={view.listening === "intro" ? "destructive" : "default"} className="h-12 w-full gap-2 touch-none select-none" {...hold(act, "intro")}>
             <Mic />{view.listening === "intro" ? "듣는 중… 손을 떼면 보내요" : "누르고 말하기"}
           </Button>
         )}
@@ -120,7 +120,7 @@ function Intro({ view, act, draft, setDraft }: { view: PhoneView } & DraftProps)
 function ActionCard({ action, act }: { action: BrainAction; act: PhoneActions }) {
   const would = wouldLine(action.would);
   return (
-    <Card className="fixed inset-x-4 top-[22%]">
+    <Card className="pointer-events-auto w-full">
       <CardHeader className="p-4">
         <CardTitle className="flex flex-wrap items-center gap-2">
           <Status variant="warning" size="touch"><TriangleAlert className="size-4" />모의</Status>
@@ -156,17 +156,26 @@ function Overlay({ view, act, draft, setDraft, overlayRef, canvasRef }: { view: 
           </Button>
         </LiquidGlass>
       </div>
-      {view.brainLine !== null && (
-        <Status variant="scrim" size="touch" role="status" aria-live="polite" className="fixed inset-x-2 top-16 w-auto">
-          <Bot className="size-4" /><StatusLabel className="min-w-0 truncate">{view.brainLine}</StatusLabel>
-        </Status>
-      )}
-      {view.request && (
-        <Alert variant="brand" size="lg" className="pointer-events-none fixed inset-x-4 top-[30%] w-auto -translate-y-1/2">
-          <Camera /><AlertTitle>{view.request.text}</AlertTitle>
-        </Alert>
-      )}
-      {view.action && <ActionCard action={view.action} act={act} />}
+      {/* 판단 줄·알림·사진 요청·승인 대기·행동 부탁은 위 상태 줄 아래 한 세로 줄에 차례로 쌓는다(서로 겹치지 않게) */}
+      <div className="pointer-events-none fixed inset-x-4 top-16 flex flex-col items-center gap-2 landscape:right-24">
+        {view.brainLine !== null && (
+          <Status variant="scrim" size="touch" role="status" aria-live="polite" className="w-full">
+            <Bot className="size-4" /><StatusLabel className="min-w-0 truncate">{view.brainLine}</StatusLabel>
+          </Status>
+        )}
+        {view.toast !== null && (
+          <LiquidGlass mode="opaque" role="status" aria-live="polite" className="max-w-full" contentClassName="px-3.5 py-2 text-center">
+            {view.toast}
+          </LiquidGlass>
+        )}
+        {view.request && (
+          <Alert variant="brand" size="lg"><Camera /><AlertTitle>{view.request.text}</AlertTitle></Alert>
+        )}
+        {view.ar && view.pending.length > 0 && (
+          <div className="pointer-events-auto w-full max-w-[480px]"><PendingList items={view.pending} act={act} /></div>
+        )}
+        {view.action && <ActionCard action={view.action} act={act} />}
+      </div>
       {view.anchors && !view.aligned && (
         <div className="fixed inset-x-4 bottom-24 flex flex-col gap-2 landscape:right-auto landscape:bottom-3 landscape:max-w-[42vw]">
           {view.anchors.map((a) => (
@@ -189,19 +198,11 @@ function Overlay({ view, act, draft, setDraft, overlayRef, canvasRef }: { view: 
           <Square className="size-6" />끝내기
         </Button>
       </div>
-      {view.ar && view.pending.length > 0 && (
-        <div className="fixed left-1/2 top-24 w-[min(90vw,480px)] -translate-x-1/2"><PendingList items={view.pending} act={act} /></div>
-      )}
-      {view.toast !== null && (
-        <LiquidGlass mode="opaque" role="status" aria-live="polite" className="fixed left-1/2 top-28 max-w-[min(90vw,520px)] -translate-x-1/2" contentClassName="px-3.5 py-2 text-center">
-          {view.toast}
-        </LiquidGlass>
-      )}
       <LiquidGlass id="phone-menu" hidden={!view.menuOpen} mode="opaque" radius={16}
         className="fixed right-2 top-16 max-h-[calc(100dvh-140px)] w-[min(380px,calc(100vw-16px))] overflow-auto landscape:right-24 landscape:max-h-[calc(100dvh-56px)]"
         contentClassName="flex flex-col gap-2 p-2.5">
         {view.ar && <TalkForm act={act} draft={draft} setDraft={setDraft} />}
-        <Button variant="outline" size="touch" className="h-12" onClick={act.resetAnchors}><RotateCcw />기준점 다시 찍기</Button>
+        <Button variant="outline" size="touch" className="h-12 gap-2" onClick={act.resetAnchors}><RotateCcw />기준점 다시 찍기</Button>
         <Card><CardContent className="p-2"><pre className="m-0 whitespace-pre-wrap">{view.perfDetail}</pre></CardContent></Card>
         <Button variant="outline" size="touch" className="h-12" onClick={() => act.setMenu(false)}>닫기</Button>
       </LiquidGlass>

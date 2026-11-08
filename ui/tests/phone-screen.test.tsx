@@ -118,6 +118,18 @@ describe("덮개: 판단 줄·알림·메뉴", () => {
 });
 
 describe("사진 요청·행동 부탁", () => {
+  it("판단 줄·알림·사진 요청·승인 대기·행동 부탁은 위 상태 줄 아래 한 세로 줄에 차례로 쌓여 겹치지 않는다", () => {
+    const { o } = show({
+      ...SHOTS.request.view, brainLine: "식탁 위 컵을 보고 있어요", toast: "A 지점을 기록했어요",
+      pending: [{ token: "t1", deviceLabel: "현관문", reason: "현관문 잠금 해제" }],
+    });
+    const column = o.getByRole("alert").parentElement!;
+    expect(words(column)).toEqual(expect.arrayContaining(["fixed", "flex", "flex-col"]));
+    const items = [o.getByText("식탁 위 컵을 보고 있어요"), o.getByText("A 지점을 기록했어요"), o.getByRole("alert"), o.getByText("현관문: 현관문 잠금 해제"), o.getByText("식탁 위 컵을 치워 주세요")];
+    expect(items.map((el) => [...column.children].findIndex((c) => c.contains(el)))).toEqual([0, 1, 2, 3, 4]);
+    expect([...column.querySelectorAll("[class]")].filter((el) => words(el).includes("fixed"))).toEqual([]);
+  });
+
   it("사진 요청은 큰 글 알림(role=alert), 사진 단추는 「컵 안」", () => {
     const { o } = show(SHOTS.request.view);
     expect(o.getByRole("alert")).toHaveTextContent("컵 안을 비춰 주세요");
