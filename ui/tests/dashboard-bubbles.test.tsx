@@ -40,7 +40,7 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe("대시보드 트윈 말풍선 크기", () => {
-  it("방금 다룬 기기 말풍선도 글은 label, 번호는 20px: far 글·44px 번호를 쓰지 않는다", async () => {
+  it("방금 다룬 기기 말풍선도 글은 text-xs, 번호는 20px: far 글·44px 번호를 쓰지 않는다", async () => {
     render(<Dashboard />);
     await waitFor(() => expect(FakeSocket.last).not.toBeNull());
     await act(async () => { await Promise.resolve(); });
@@ -52,7 +52,7 @@ describe("대시보드 트윈 말풍선 크기", () => {
     });
     expect(bubble).toHaveAttribute("data-focus", "true");
     const card = bubble.querySelector("[data-tone=twin]")!;
-    expect(card).toHaveClass("text-label");
+    expect(card).toHaveClass("text-xs");
     expect(card.outerHTML).not.toContain("text-far");
     expect(bubble.querySelector("[data-order]")).toHaveClass("size-5");
     expect(bubble.querySelector("[data-order]")).not.toHaveClass("size-11");

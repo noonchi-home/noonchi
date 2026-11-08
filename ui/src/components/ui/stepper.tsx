@@ -1,8 +1,10 @@
 "use client";
 
 // 21st.dev「Stepper」(id 769, originui/stepper) 받은 코드.
-// 바꾼 것: @radix-ui/react-icons CheckIcon → lucide Check, text-xs·text-sm → caption·body-sm 토큰, 끝난 단계 색 data-[state=completed]:bg-primary·text-primary-foreground → bg-ok·text-on-status, 잇는 선 group-data-[state=completed]/step:bg-primary → bg-ok.
-// 지금 단계(active)만 brand(primary). 안 한 단계 bg-muted는 그대로(muted=cream).
+// 바꾼 것: @radix-ui/react-icons CheckIcon → lucide Check. 세로 배치는 같은 부품의 「Vertical with inline titles and descriptions」 데모(id 778)를 따른다.
+// 색만 바꿈: 끝난 단계(data-state=completed) 표시·잇는 선 bg-primary → ok·on-status, 지금 단계만 primary(brand). 받은 「Progress」 데모 막대(StepperIndicator asChild, h-2 w-full rounded-none bg-border)를 StepperBar로 옮겨 내보낸다.
+// 원래 글 크기: text-sm(14px). 받은 크기 그대로다(번호 text-xs, 제목·설명 text-sm). 더 큰 글은 npm run lint(scripts/lint-ui-type.ts)가 막는다.
+
 import { cn } from "@/lib/utils";
 import { Check, LoaderCircle } from "lucide-react";
 import * as React from "react";
@@ -206,7 +208,7 @@ const StepperIndicator = React.forwardRef<
     <div
       ref={ref}
       className={cn(
-        "relative flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-caption font-medium text-muted-foreground data-[state=active]:bg-primary data-[state=completed]:bg-ok data-[state=active]:text-primary-foreground data-[state=completed]:text-on-status",
+        "relative flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium text-muted-foreground data-[state=active]:bg-primary data-[state=completed]:bg-ok data-[state=active]:text-primary-foreground data-[state=completed]:text-on-status",
         className,
       )}
       data-state={state}
@@ -242,12 +244,22 @@ const StepperIndicator = React.forwardRef<
 });
 StepperIndicator.displayName = "StepperIndicator";
 
+/** 받은 「Progress」 데모의 단계 막대: 끝난 칸 ok, 지금 칸 brand, 남은 칸 border. */
+const StepperBar = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ className, children, ...props }, ref) => (
+    <StepperIndicator ref={ref} asChild className={cn("h-2 w-full rounded-none bg-border", className)} {...props}>
+      {children}
+    </StepperIndicator>
+  ),
+);
+StepperBar.displayName = "StepperBar";
+
 // StepperTitle
 const StepperTitle = React.forwardRef<
   HTMLHeadingElement,
   React.HTMLAttributes<HTMLHeadingElement>
 >(({ className, ...props }, ref) => (
-  <h3 ref={ref} className={cn("text-body-sm font-medium", className)} {...props} />
+  <h3 ref={ref} className={cn("text-sm font-medium", className)} {...props} />
 ));
 StepperTitle.displayName = "StepperTitle";
 
@@ -258,7 +270,7 @@ const StepperDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <p
     ref={ref}
-    className={cn("text-body-sm text-muted-foreground", className)}
+    className={cn("text-sm text-muted-foreground", className)}
     {...props}
   />
 ));
@@ -284,6 +296,7 @@ StepperSeparator.displayName = "StepperSeparator";
 
 export {
   Stepper,
+  StepperBar,
   StepperDescription,
   StepperIndicator,
   StepperItem,

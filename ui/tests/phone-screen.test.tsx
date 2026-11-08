@@ -251,7 +251,7 @@ describe("배치·글 크기", () => {
     expect(words(overlay.firstElementChild!)).toContain("pointer-events-none");
   });
 
-  it.each(AR_SHOTS)("%s: 단추 글은 부품 원래 크기(label), 큰 글 토큰이 없고, 누르는 것은 48px", async (name) => {
+  it.each(AR_SHOTS)("%s: 단추 글은 부품 원래 크기(text-sm), 큰 글 토큰이 없고, 누르는 것은 48px", async (name) => {
     const { overlay } = show(SHOTS[name].view);
     await flush(async () => {});
     const roots = [overlay, ...document.querySelectorAll<HTMLElement>("[role=alertdialog]")];
@@ -259,7 +259,7 @@ describe("배치·글 크기", () => {
     expect(all.flatMap(words).filter((w) => ["text-headline", "text-display", "text-title", "text-far", "text-body"].includes(w)), name).toEqual([]);
     const buttons = roots.flatMap((r) => [...r.querySelectorAll("button")]);
     for (const b of buttons) {
-      expect(words(b), `${name} ${b.textContent}`).toContain("text-label");
+      expect(words(b), `${name} ${b.textContent}`).toContain("text-sm");
       expect(words(b).some((w) => w === "h-12" || w === "size-12"), `${name} ${b.textContent}`).toBe(true);
     }
   });

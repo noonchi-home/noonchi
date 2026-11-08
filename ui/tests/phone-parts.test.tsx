@@ -29,7 +29,7 @@ describe("실제 폰 화면이 쓰는 부품", () => {
 
   it("기본 변형은 그대로다", () => {
     render(<><Button>설정</Button><Status><StatusLabel>연결됨</StatusLabel></Status></>);
-    expect(words(screen.getByRole("button", { name: "설정" }))).toEqual(expect.arrayContaining(["text-label", "h-9"]));
-    expect(words(screen.getByText("연결됨").closest("[data-slot=status]")!)).toContain("text-label");
+    expect(words(screen.getByRole("button", { name: "설정" }))).toEqual(expect.arrayContaining(["text-sm", "h-9"]));
+    expect(words(screen.getByText("연결됨").closest("[data-slot=status]")!)).toContain("text-xs");
   });
 });
