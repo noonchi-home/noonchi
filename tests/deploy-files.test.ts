@@ -219,6 +219,12 @@ describe("배포 파일", () => {
     expect(s).toContain("clearInterval(keepAlive)");
   });
 
+  it("키 없는 컨테이너 확인: 폰 화면 HTML만이 아니라 그 script·link 파일과 인코딩 워커까지 200인지 본다", () => {
+    const s = read("scripts/container-smoke.ts");
+    expect(s).toContain("phoneAssetFailures(PHONE_URL");
+    expect(s).not.toContain("fetchRetry(`${PHONE_URL}/phone/`");
+  });
+
   it("키 없는 컨테이너 확인: /api/health 폰 주소가 PHONE_URL 하나뿐인지(컨테이너 안 주소 없음) 본다", () => {
     const s = read("scripts/container-smoke.ts");
     expect(s).toContain('PHONE_URL: CHECK_PHONE_URL');

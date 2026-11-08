@@ -1,5 +1,5 @@
 // 키 없는 컨테이너 확인: compose 프로젝트 noonchi-check로 noonchi(호스트 허브·폰 포트), pam(호스트 pam 포트), 가짜 OpenAI 호환 서버(check 프로필)를 띄우고
-// ready.ok가 true인지(VLM·PAM 서비스·PAM LLM이 모두 가짜 서버로 답함), /api/health 폰 주소가 확인용 PHONE_URL 하나뿐인지, 에이전트가 가짜 서버의 답을 돌려주는지, PAM 서비스가 관찰 텍스트로 판단하는지, 폰 화면이 열리는지,
+// ready.ok가 true인지(VLM·PAM 서비스·PAM LLM이 모두 가짜 서버로 답함), /api/health 폰 주소가 확인용 PHONE_URL 하나뿐인지, 에이전트가 가짜 서버의 답을 돌려주는지, PAM 서비스가 관찰 텍스트로 판단하는지, 폰 화면(HTML·script·link 파일·인코딩 워커)이 열리는지,
 // 이미지 안 YOLOX가 떴고(GET /api/brain detector yolox_tiny) 관찰 흐름(BRAIN=1)이 엔진 프레임 한 장을 YOLOX·가짜 VLM으로 분석해 기록 DB에 vlm 줄을 남기는지(GET /api/history·/api/brain detected),
 // 호스트에서 보낸 계획(POST /api/plan)이 토큰 없이는 403, PLAN_TOKEN을 붙이면 200인지,
 // docker stop(SIGTERM)에 종료 코드 0으로 끝나는지, 멈춘 컨테이너에 onnxruntime 원격 측정 파일(~/.cache/Microsoft/DeveloperTools/.onnxruntime)이 없는지(docker diff) 본 뒤 내린다(볼륨까지 지운다).
@@ -19,6 +19,7 @@ import WebSocket from "ws";
 import { parse } from "yaml";
 import { checkPorts, type CheckPorts } from "./check-ports.js";
 import { KEY_OWNERS } from "./compose-keys.js";
+import { phoneAssetFailures } from "./phone-assets.js";
 import { encodeFramePacket } from "../src/phone/packet.js";
 import { fetchRetry } from "../src/server/net.js";
 
@@ -172,8 +173,12 @@ try {
   if (predict.status !== 200 || predict.body.status !== "valid" || predict.body.prediction?.task_index !== -1) fails.push("PAM 서비스 판단이 가짜 PAM LLM의 대기(-1)가 아니에요");
   const limits = (await waitJson(`${PAM_URL}/health`, 10_000))?.limits;
   if (!(limits?.reflect_input_bytes > 0) || limits?.max_model_len !== 32768) fails.push(`PAM /health 입력 한도가 없어요(${JSON.stringify(limits)})`);
-  const phone = await fetchRetry(`${PHONE_URL}/phone/`, { signal: AbortSignal.timeout(5000) }).then((r) => r.status, (e: Error & { cause?: { code?: string; syscall?: string } }) => { console.log(`폰 화면 요청 오류: ${e.message} ${e.cause?.code ?? ""} ${e.cause?.syscall ?? ""}`); return 0; });
-  if (phone !== 200) fails.push(`폰 화면이 열리지 않아요(${phone})`);
+  // 폰 화면: /phone/ HTML, 그 script·link 파일, 폰 JS가 띄우는 인코딩 워커가 모두 200이어야 화면이 뜬다
+  const phone = await phoneAssetFailures(PHONE_URL, (url) => fetchRetry(url, { signal: AbortSignal.timeout(5000) }).catch((e: Error & { cause?: { code?: string; syscall?: string } }) => {
+    throw new Error(`${e.message} ${e.cause?.code ?? ""} ${e.cause?.syscall ?? ""}`.trim());
+  }));
+  console.log(`폰 화면 파일: ${phone.checked}개 받음, ${phone.failures.length ? phone.failures.join(", ") : "모두 200"}`);
+  fails.push(...phone.failures);
   if (h.brain !== true) fails.push("관찰 흐름(BRAIN=1)이 켜지지 않았어요");
   const brain0 = await waitJson(`${HUB_URL}/api/brain`, 10_000);
   console.log(`감지기: ${brain0?.detector ?? null}`);
