@@ -4,6 +4,7 @@
 // 화면 밖이면 그쪽을 가리키는 세모(22×28px). 고리(또는 세모)+이름표 묶음의 가운데가 그 점이다(옛 DOM 배치와 같음).
 // 이름표는 화면 가장자리 8px 안으로 민다(가장자리 화살표의 이름표가 잘리지 않게). 화면 안 고리는 물건 자리에 두고 이름표만 민다.
 // 화면 밖 화살표 묶음은 덮개가 가리는 자리를 비킨다: 위 상태 줄(64px), 큰 단추 줄(가로 오른쪽 96px, 세로 아래 88px).
+// 조준점은 맨 위에 그린다. 고리·이름표가 화면 가운데에 와도 조준점을 가리지 않는다.
 import { radius, type } from "../../../src/design/tokens.json";
 import { font, twin } from "../../../src/design/tokens.ts";
 import type { FocusMark } from "./state";
@@ -135,9 +136,9 @@ function drawMark(ctx: CanvasRenderingContext2D, m: FocusMark, size: { width: nu
   ctx.fillText(text, lx + w / 2, ly + labelH / 2);
 }
 
-/** 한 장 그리기: 지우고, 조준점, 그 위에 초점 표시(옛 DOM 순서와 같다). size는 CSS px. */
+/** 한 장 그리기: 지우고, 초점 표시, 맨 위에 조준점(이름표가 조준점 자리에 와도 조준점이 보인다). size는 CSS px. */
 export function drawOverlay(ctx: CanvasRenderingContext2D, size: { width: number; height: number }, scene: OverlayScene, now: number, reduced: boolean): void {
   ctx.clearRect(0, 0, size.width, size.height);
-  drawReticle(ctx, size.width / 2, size.height / 2, scene.hit);
   for (const m of scene.marks) drawMark(ctx, m, size, now, reduced);
+  drawReticle(ctx, size.width / 2, size.height / 2, scene.hit);
 }

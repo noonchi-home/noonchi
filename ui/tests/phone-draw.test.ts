@@ -1,6 +1,7 @@
 // 폰 AR 위 그림(draw.ts): 조준점·초점 고리·화면 밖 화살표·이름표의 색·크기·자리가 옮기기 전 phone.css와 같은지 본다.
 // 조준점: 28px, 심 3px(못 맞춤 error-vivid·맞춤 ok-vivid), 안팎 흰 테 2px·숯색 1px, 맞으면 가운데 점(지름 10px).
 // 초점 고리: 64px, 심 3px brand, 고리+이름표 묶음의 가운데가 그 점, 이름표는 4px 아래 scrim-phone 위 on-scrim 14px.
+// 그리는 순서: 초점 표시 다음 조준점(조준점이 맨 위).
 import { describe, expect, it } from "vitest";
 import { color, rgba, twin } from "../../src/design/tokens.ts";
 import { drawOverlay, labelFont, pulse } from "../src/phone/draw";
@@ -69,10 +70,10 @@ describe("초점 표시", () => {
   it("화면 안: brand 고리(64px, 심 3px)와 4px 아래 이름표 「클로이드 주목 · 컵」. 묶음의 가운데가 그 점이라 고리 가운데는 14px 위", () => {
     const { ctx, ops } = recorder();
     drawOverlay(ctx, SIZE, { hit: false, marks: [cup] }, 0, true);
-    const ring = of(ops, "arc").slice(5);
+    const ring = of(ops, "arc").slice(0, 5);
     expect(ring.map((a) => a.r)).toEqual([34.5, 26.5, 33, 28, 30.5]);
     expect(ring.every((a) => a.x === 195 && a.y === 408)).toBe(true);
-    expect(of(ops, "stroke").at(-1)).toEqual({ op: "stroke", color: F.ring.color, width: 3 });
+    expect(of(ops, "stroke")[4]).toEqual({ op: "stroke", color: F.ring.color, width: 3 });
     const w = "클로이드 주목 · 컵".length * 10 + 16; // 글 너비(시험 measureText) + 좌우 8px
     expect(of(ops, "round")).toEqual([{ op: "round", x: 195 - w / 2, y: 444, w, h: 24, r: 8 }]);
     expect(of(ops, "fill").map((f) => f.color)).toEqual([F.labelBg]);
@@ -86,7 +87,7 @@ describe("초점 표시", () => {
     expect(pulse(600, true)).toBe(1);
     const { ctx, ops } = recorder();
     drawOverlay(ctx, SIZE, { hit: false, marks: [cup] }, 600, false);
-    expect(of(ops, "arc").at(-1)!.r).toBeCloseTo(30.5 * 1.12);
+    expect(of(ops, "arc")[4]!.r).toBeCloseTo(30.5 * 1.12);
   });
 
   it("화면 밖: 그쪽을 가리키는 세모(22×28px)를 숯색·흰 테로 두르고 brand로 채운다", () => {
@@ -95,7 +96,7 @@ describe("초점 표시", () => {
     drawOverlay(ctx, SIZE, { hit: false, marks: [{ id: "tv", label: "TV", u: 0.9, v: 0.5, off: true, angle: 0 }] }, 0, true);
     expect(of(ops, "move")).toEqual([{ op: "move", x: x - 18, y: 394 }]);
     expect(of(ops, "line")).toEqual([{ op: "line", x: x + 4, y: 408 }, { op: "line", x: x - 18, y: 422 }]);
-    expect(of(ops, "stroke").slice(5).map((s) => [s.color, s.width])).toEqual([[F.edge.color, 6], [F.casing.color, 4]]);
+    expect(of(ops, "stroke").slice(0, 2).map((s) => [s.color, s.width])).toEqual([[F.edge.color, 6], [F.casing.color, 4]]);
     expect(of(ops, "fill").map((f) => f.color)).toEqual([F.offscreenArrow, F.labelBg]);
   });
 
@@ -144,9 +145,23 @@ describe("가로 화면(844×390)의 화면 밖 화살표·이름표", () => {
   it("화면 안 고리는 물건 자리 그대로 두고, 이름표만 화면 아래 8px 안으로 올린다", () => {
     const { ctx, ops } = recorder();
     drawOverlay(ctx, LAND, { hit: false, marks: [{ id: "cup", label: "컵", u: 0.3, v: 0.97, off: false, angle: 0 }] }, 0, true);
-    const ring = of(ops, "arc").slice(5);
+    const ring = of(ops, "arc").slice(0, 5);
     expect(ring.every((a) => a.x === 0.3 * 844 && a.y === 0.97 * 390 - (64 + 4 + 24) / 2 + 32)).toBe(true);
     const label = of(ops, "round")[0]!;
     expect(label.y + label.h).toBe(390 - 8);
+  });
+
+  it("조준점은 초점 고리·이름표 위에 그린다. 이름표가 조준점 자리에 와도 조준점이 보인다", () => {
+    const { ctx, ops } = recorder();
+    drawOverlay(ctx, LAND, { hit: false, marks: [{ id: "cup", label: "컵", u: 0.5, v: 0.42, off: false, angle: 0 }] }, 0, true);
+    // 이름표(y 185.8~209.8)가 조준점 상자(195 ± 14)와 겹치는 자리
+    const label = of(ops, "round")[0]!;
+    expect(label.y).toBeLessThan(195 + 14);
+    expect(label.y + label.h).toBeGreaterThan(195 - 14);
+    const arcs = of(ops, "arc");
+    expect(arcs.slice(-5).every((a) => a.x === 422 && a.y === 195)).toBe(true);
+    expect(arcs.slice(-5).map((a) => a.r)).toEqual([16.5, 8.5, 15, 10, 12.5]);
+    expect(ops.map((o) => o.op).lastIndexOf("text")).toBeLessThan(ops.indexOf(arcs.at(-5)!));
+    expect(of(ops, "stroke").at(-1)).toEqual({ op: "stroke", color: F.aim.miss, width: 3 });
   });
 });
