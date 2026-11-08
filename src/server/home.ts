@@ -1,4 +1,5 @@
 // 집 하나의 실행 묶음: twin 데이터 → 허브(신호 출처로 감쌈) → 정책·에이전트 → 배치·기준점 → 관찰 흐름·World State·판단·실행 추적·계획 → 앱 → 폰 서버.
+// 승인 기억(runtime/homes/<집>/approvals.json, src/agent/approval.ts)은 집마다 하나이고 정책(가전 명령)과 실행 추적(PAM 계획)이 같이 쓴다.
 // 집을 바꾸면 이 묶음을 통째로 닫고 새로 만든다(src/server/start.ts). 앱은 직접 듣지 않고, 껍데기 서버가 요청을 넘긴다(shell.ts).
 
 import { existsSync, readFileSync } from "node:fs";
@@ -6,6 +7,7 @@ import { join } from "node:path";
 import { checkPlan, loadActConfig } from "../act/check.js";
 import { ExecutionTracker } from "../act/track.js";
 import { Agent } from "../agent/agent.js";
+import { ApprovalStore, approvalsPath } from "../agent/approval.js";
 import { Policy } from "../agent/policy.js";
 import { createProvider } from "../agent/providers/index.js";
 import { CUP_TASKS } from "../brain/decision.js";
@@ -157,10 +159,11 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
   let app: TwinHomeApp | undefined;
   let phone: PhoneServer | undefined;
   try {
-    const policy = new Policy();
+    const { home } = twin;
+    const approvals = new ApprovalStore(approvalsPath(runtimeDir, home.id));
+    const policy = new Policy({ approvals });
     const { provider, warning } = createProvider(env);
     if (warning) log(`[경고] ${warning}`);
-    const { home } = twin;
     const layout = loadLayout(home, { runtimeDir, log });
     if (!layout) log(`[경고] ${home.scenePath}이 없어 배치 보정을 끕니다(twin-studio에서 집을 먼저 빌드하세요).`);
     const agent = new Agent({ hub: signals, policy, rooms: twin.rooms, provider, layout });
@@ -237,7 +240,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       const deviceSteps = (p: PlanView) => p.steps.flatMap((s) => (s.target?.deviceId
         ? [{ deviceId: s.target.deviceId, paired: signals.sources()[s.target.deviceId]?.kind === "thinq" }] : []));
       tracker = new ExecutionTracker({
-        plans, floor: () => plans.floor(), world: () => world.view(now()), emit, clock: ctx.brain?.clock,
+        plans, floor: () => plans.floor(), world: () => world.view(now()), emit, clock: ctx.brain?.clock, approvals,
         // 실제 폰 명령(src/contract/phone.ts). 폰 서버가 지금 명령을 기억해 새로 붙은 폰에도 보낸다. 명령 대상 자리는 배치(물건 가운데)에서
         toPhone: (m) => phoneRef.current?.command(m),
         locate: (id) => layout?.editor.center(id),
@@ -300,9 +303,10 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         // 실제 폰은 늘 듣는다: 주변의 응·네·어로 가전 승인을 확정하지 않게 분명한 말(「승인」)로만 확정한다
         onSay: async (text) => {
           const r = await agent.chat(PHONE_SESSION, text, { heard: true });
-          return { reply: r.reply, pending: r.pendingConfirmations.map((p) => ({ token: p.token, deviceLabel: p.deviceLabel, reason: p.reason })) };
+          return { reply: r.reply, pending: r.pendingConfirmations.map((p) => ({ token: p.token, deviceLabel: p.deviceLabel, reason: p.reason, choices: p.choices })) };
         },
-        onConfirm: async (token) => ({ reply: (await agent.confirm(token)).reply }),
+        // 승인 답(이번만·앞으로도·하지 마)은 정책이 승인 기억에 남긴다
+        onConfirm: async (token, choice) => ({ reply: (await agent.confirm(token, choice)).reply }),
         onCancel: async (token) => ({ reply: agent.cancel(token).reply }),
         // 실제 폰 명령·질문의 답(「완료」·질문 답 단추, 말 「완료」「다 했어」「그만」). 답으로 맞은 것만 반성 피드백으로 남긴다(늘 듣기의 주변 말은 남기지 않는다)
         onChoice: (id, step, choice) => {

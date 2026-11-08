@@ -21,7 +21,7 @@ class FakeSocket {
 const waiting: ServerMessage = {
   type: "agent", event: "reply", sessionId: "phone", message: "현관문 열어줘", reply: "폰에서 승인해 주세요",
   actions: [{ tool: "unlock", args: {}, ok: false, needsConfirmation: true, deviceId: "lock", deviceLabel: "현관 도어록", reason: "열어 달라고 해서", at: "t" }],
-  pendingConfirmations: [{ token: "k", deviceId: "lock", deviceLabel: "현관 도어록", command: { type: "unlock" }, reason: "문을 열어요", expiresAt: "t" }],
+  pendingConfirmations: [{ token: "k", deviceId: "lock", deviceLabel: "현관 도어록", command: { type: "unlock" }, reason: "문을 열어요", choices: [], expiresAt: "t" }],
 };
 
 beforeEach(() => {

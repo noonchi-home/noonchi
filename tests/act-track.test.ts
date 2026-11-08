@@ -1,13 +1,17 @@
 // 실행 추적(src/act/track.ts): 실제 폰은 에이전트의 손이다. 계획 단계마다 사람에게 명령 하나를 보내고, 그 단계가 됐는지를
 // 폰 눈 위치(이동)와 World State(컵 자리)로 본 뒤 다음 명령을 보낸다. 「완료」(단추·말)는 지금 단계 하나를 넘기고 「그만」은 계획을 그만둔다.
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { ExecutionTracker, TRACK_DEFAULTS, type TrackerOptions } from "../src/act/track.js";
+import { ApprovalStore, type ApprovalAnswer } from "../src/agent/approval.js";
 import type { CheckResult } from "../src/act/check.js";
 import type { BrainLog } from "../src/contract/events.js";
 import type { PlannedCommand, PlannedCommandMessage } from "../src/contract/phone.js";
 import type { WorldObject, WorldView } from "../src/contract/world.js";
 import { PlanHub } from "../src/plan/hub.js";
-import { EXEC_TEXT, STEP_COMMAND } from "../src/plan/labels.js";
+import { APPROVAL_TEXT, EXEC_TEXT, STEP_COMMAND } from "../src/plan/labels.js";
 import type { DecisionRecord } from "../src/world/decide.js";
 import { WorldState } from "../src/world/state.js";
 import { sha256, type EngineFrame } from "../src/observe/ring.js";
@@ -38,14 +42,23 @@ const PLACES: Record<string, { label: string; position: [number, number, number]
 const TABLE = { id: "table_1", ...PLACES.table_1! };
 const SINK = { id: "sink_1", ...PLACES.sink_1! };
 
+/** 승인 기억(파일). remembered: 미리 넣어 둘 답. */
+function store(remembered: Record<string, ApprovalAnswer> = {}): ApprovalStore {
+  const s = new ApprovalStore(join(mkdtempSync(join(tmpdir(), "track-")), "homes", "h", "approvals.json"), () => "t");
+  for (const [key, a] of Object.entries(remembered)) s.answer(key, a);
+  return s;
+}
+
+/** approvals가 없으면 컵 치우기에 「앞으로도」를 받아 둔 기억으로 만든다(승인 질문 없이 첫 단계부터). */
 function setup(over: Partial<TrackerOptions> & { w?: () => WorldView; check?: () => CheckResult } = {}) {
   const logs: BrainLog[] = [];
   const phone: PlannedCommandMessage[] = [];
   const clock = { t: 10_000, now() { return this.t; } };
   const plans = new PlanHub(smallFloor(), () => {}, () => "t");
+  const approvals = over.approvals ?? store({ "task:컵 치우기": "always" });
   const t = new ExecutionTracker({
     plans, world: over.w ?? (() => world([cup("present")])), check: over.check ?? (() => ({ ok: true })), floor: () => plans.floor(),
-    toPhone: (m) => phone.push(m), emit: (l) => logs.push(l), clock, locate: (id) => PLACES[id], ...over,
+    toPhone: (m) => phone.push(m), emit: (l) => logs.push(l), clock, locate: (id) => PLACES[id], ...over, approvals,
   });
   const exec = () => logs.flatMap((l) => (l.type === "execution" ? [l] : []));
   const commands = () => phone.flatMap((m) => (m.type === "command" ? [m] : []));
@@ -53,7 +66,7 @@ function setup(over: Partial<TrackerOptions> & { w?: () => WorldView; check?: ()
   const spoken = () => commands().filter((m) => m.speak).map((m) => m.text);
   const last = () => phone.at(-1) as PlannedCommand;
   const steps = () => plans.current()!.steps.map((s) => s.status);
-  return { t, logs, phone, clock, plans, exec, commands, spoken, last, steps };
+  return { t, logs, phone, clock, plans, exec, commands, spoken, last, steps, approvals };
 }
 
 describe("실행 추적: 단계마다 실제 폰 명령", () => {
@@ -347,6 +360,89 @@ describe("실행 추적: 한 번에 한 계획, 실행 전 검사", () => {
     expect(t.onHeard("완료")).toBeNull();
     expect(logs).toHaveLength(n);
     expect(phone).toHaveLength(m);
+  });
+});
+
+describe("실행 추적: 승인(처음 하는 PAM 계획, 「하지 마」를 기억한 계획)", () => {
+  const APPROVE = [{ id: "once", label: "이번만" }, { id: "always", label: "앞으로도" }, { id: "never", label: "하지 마" }];
+
+  it("처음 컵 치우기는 실제 폰에 「컵 치우기를 할까요?」를 묻고, 「앞으로도」면 기억하고 첫 명령을 보낸다", () => {
+    const { t, phone, plans, approvals, spoken, exec } = setup({ approvals: store() });
+    t.onDecision(decision);
+    expect(phone).toEqual([{ type: "command", id: "plan:pam-1", step: "plan:pam-1:approve", text: "컵 치우기를 할까요?", vision: null, choices: APPROVE, target: null, speak: true }]);
+    expect(APPROVAL_TEXT.ask("컵 치우기")).toBe("컵 치우기를 할까요?");
+    expect(plans.current()).toMatchObject({ id: "plan:pam-1", status: "planned", steps: [{ status: "pending" }, { status: "pending" }, { status: "pending" }, { status: "pending" }] });
+    expect(t.current()).toMatchObject({ state: "planned" });
+    expect(t.openCommand()).toMatchObject({ planId: "plan:pam-1", stepId: "plan:pam-1:approve", kind: "ask", text: "컵 치우기를 할까요?" });
+    // 「완료」는 승인 답이 아니다
+    expect(t.onAnswer("plan:pam-1", "plan:pam-1:approve", "done")).toBe(false);
+    expect(t.onHeard("완료")).toBeNull();
+    expect(t.onAnswer("plan:pam-1", "plan:pam-1:approve", "always")).toBe(true);
+    expect(approvals.memory()).toEqual({ always: { "task:컵 치우기": "t" }, never: {} });
+    expect(spoken()).toEqual(["컵 치우기를 할까요?", "식탁으로 가 주세요"]);
+    expect(phone.at(-1)).toMatchObject({ step: "plan:pam-1:1", text: "식탁으로 가 주세요", choices: [{ id: "done", label: "완료" }] });
+    expect(plans.current()).toMatchObject({ status: "running" });
+    expect(exec().map((l) => l.state)).toEqual(["decided", "planned", "running"]);
+  });
+
+  it("「이번만」(말)은 기억하지 않고 첫 명령으로 간다. 다음 컵 치우기는 또 묻는다", () => {
+    const { t, approvals, spoken } = setup({ approvals: store() });
+    t.onDecision(decision);
+    expect(t.onHeard("이번만 해")).toMatchObject({ id: "once", reply: "" });
+    expect(approvals.memory()).toEqual({ always: {}, never: {} });
+    expect(spoken()).toEqual(["컵 치우기를 할까요?", "식탁으로 가 주세요"]);
+    for (let s = 1; s <= 4; s++) t.onAnswer("plan:pam-1", `plan:pam-1:${s}`, "done");
+    t.onDecision({ ...decision, id: "pam-2", seq: 2 });
+    expect(spoken().at(-1)).toBe("컵 치우기를 할까요?");
+  });
+
+  it("기억에 「앞으로도」가 있으면 묻지 않고 첫 명령이 바로 「식탁으로 가 주세요」", () => {
+    const { t, spoken, phone } = setup({ approvals: store({ "task:컵 치우기": "always" }) });
+    t.onDecision(decision);
+    expect(spoken()).toEqual(["식탁으로 가 주세요"]);
+    expect(phone.some((m) => m.type === "command" && m.step.endsWith(":approve"))).toBe(false);
+  });
+
+  it("말 「하지 마」면 기억하고 계획을 취소한다. 실행 기록은 「사용자가 하지 말라고 한 일」, 다음 판단은 명령 없이 같은 기록만", () => {
+    const { t, phone, plans, approvals, exec, last } = setup({ approvals: store() });
+    t.onDecision(decision);
+    expect(t.onHeard("하지 마")).toMatchObject({ id: "never" });
+    expect(approvals.memory()).toEqual({ always: {}, never: { "task:컵 치우기": "t" } });
+    expect(last()).toEqual({ type: "command_clear", id: "plan:pam-1" });
+    expect(plans.current()).toMatchObject({ id: "plan:pam-1", status: "cancelled" });
+    expect(exec().at(-1)).toMatchObject({ plan_id: "plan:pam-1", state: "failed", text: APPROVAL_TEXT.refused });
+    expect(APPROVAL_TEXT.refused).toBe("사용자가 하지 말라고 한 일");
+    const sent = phone.length;
+    t.onDecision({ ...decision, id: "pam-2", seq: 2 });
+    expect(phone).toHaveLength(sent);
+    expect(exec().filter((l) => l.plan_id === "plan:pam-2")).toEqual([expect.objectContaining({ state: "decided", text: APPROVAL_TEXT.refused })]);
+    expect(plans.current()).toMatchObject({ id: "plan:pam-1" });
+  });
+
+  it("「하지 마」는 말 전체일 때만 맞춘다. 주변 말에 걸리지 않는다", () => {
+    const { t } = setup({ approvals: store() });
+    t.onDecision(decision);
+    expect(t.onHeard("그거 하지 마라고 했잖아")).toBeNull();
+    expect(t.openCommand()).toMatchObject({ stepId: "plan:pam-1:approve" });
+  });
+
+  it("승인 답을 2분 안에 받지 못하면 실패(답을 받지 못함)로 닫는다. 그 사이 30초마다 다시 읽는다", () => {
+    const { t, clock, spoken, exec, last } = setup({ approvals: store() });
+    t.onDecision(decision);
+    clock.t += 30_000;
+    t.tick();
+    expect(spoken()).toEqual(["컵 치우기를 할까요?", "컵 치우기를 할까요?"]);
+    clock.t += 90_001;
+    t.tick();
+    expect(exec().at(-1)).toMatchObject({ state: "failed", text: EXEC_TEXT.noAnswer });
+    expect(last()).toEqual({ type: "command_clear", id: "plan:pam-1" });
+  });
+
+  it("기억이 비어 있어도 질문 계획(사용자에게 물어보기)은 승인을 묻지 않고 첫 명령이 바로 그 질문이다", () => {
+    const { t, spoken, phone } = setup({ approvals: store() });
+    t.onDecision(ask("pam-1", 1));
+    expect(spoken()).toEqual(["컵을 치울까요?"]);
+    expect(phone[0]).toMatchObject({ step: "plan:pam-1:1", choices: [{ id: "clear", label: "치워 주세요" }, { id: "keep", label: "그대로 둬요" }] });
   });
 });
 

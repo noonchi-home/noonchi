@@ -59,7 +59,7 @@ describe("PlanHub 에이전트 기기 행동", () => {
   });
   it("승인 대기는 planned, 승인하면 done, 취소하면 cancelled", () => {
     const { hub } = hubWithLog();
-    const pending = { token: "tok", deviceId: "tv_1", deviceLabel: "TV", command: { type: "on" as const }, reason: "", expiresAt: "" };
+    const pending = { token: "tok", deviceId: "tv_1", deviceLabel: "TV", command: { type: "on" as const }, reason: "", choices: [], expiresAt: "" };
     hub.onAgent({ event: "action", sessionId: "s", action: deviceAct({ ok: false, needsConfirmation: true }) });
     hub.onAgent({ event: "pending", sessionId: "s", pending });
     expect(hub.current()).toMatchObject({ status: "planned", steps: [{ status: "pending" }] });

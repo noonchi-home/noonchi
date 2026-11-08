@@ -7,7 +7,7 @@ import { turnsReducer, type Turn } from "../src/chat/turns";
 
 const find: AgentAction = { tool: "find_devices", args: { query: "작은방 에어컨" }, ok: true, reason: "'작은방 에어컨'가 어느 기기인지 먼저 찾으려고", observation: "1개 찾음", at: "2026-11-06T05:01:12.000Z" };
 const turnOn: AgentAction = { tool: "turn_on", args: {}, ok: true, deviceId: "ac_bed2", deviceLabel: "작은방 에어컨", reason: "켜 달라고 해서", observation: "켜짐 · 냉방 · 24°C", at: "2026-11-06T05:01:13.000Z" };
-const pending: PendingView = { token: "tok", deviceId: "lock", deviceLabel: "현관 도어록", command: { type: "unlock" }, reason: "문을 열어요", expiresAt: "t" };
+const pending: PendingView = { token: "tok", deviceId: "lock", deviceLabel: "현관 도어록", command: { type: "unlock" }, reason: "문을 열어요", choices: [], expiresAt: "t" };
 const turnsOf = (messages: ServerMessage[]) => messages.reduce<Turn[]>(turnsReducer, []);
 const reply = (message: string, text: string, actions: AgentAction[] = [], pendingConfirmations: PendingView[] = []): ServerMessage =>
   ({ type: "agent", event: "reply", sessionId: "phone", message, reply: text, actions, pendingConfirmations });

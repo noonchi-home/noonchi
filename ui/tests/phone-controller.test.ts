@@ -231,16 +231,18 @@ describe("명령·질문·승인", () => {
     expect(c.view().command).toBeNull();
   });
 
-  it("말의 답: 글이 있으면 처음 화면 답 줄과 소리, 빈 글이면 지운다. 승인 대기·승인·취소", () => {
+  it("말의 답: 글이 있으면 처음 화면 답 줄과 소리, 빈 글이면 지운다. 승인 대기와 답(이번만·앞으로도·하지 마)", () => {
     const { c, ws, spoken, sent } = make();
     c.actions.say(" TV 켜줘 ");
     expect(sent()).toEqual([{ type: "say", text: "TV 켜줘" }]);
-    ws.push({ type: "reply", text: "현관문 잠금 해제는 승인이 필요해요.", pending: [{ token: "t1", deviceLabel: "현관문", reason: "현관문 잠금 해제" }, { token: "t2", deviceLabel: "창문", reason: "창문 열기" }] });
+    const once = { id: "once", label: "이번만" };
+    const never = { id: "never", label: "하지 마" };
+    ws.push({ type: "reply", text: "현관문 잠금 해제는 승인이 필요해요.", pending: [{ token: "t1", deviceLabel: "현관문", reason: "현관문 잠금 해제", choices: [once, never] }, { token: "t2", deviceLabel: "창문", reason: "창문 열기", choices: [once, never] }] });
     expect([c.view().reply, spoken]).toEqual(["현관문 잠금 해제는 승인이 필요해요.", ["현관문 잠금 해제는 승인이 필요해요."]]);
-    c.actions.confirm("t1");
-    c.actions.cancel("t2");
+    c.actions.confirm("t1", "never");
+    c.actions.confirm("t2", "once");
     expect(c.view().pending).toEqual([]);
-    expect(sent().slice(1)).toEqual([{ type: "confirm", token: "t1" }, { type: "cancel", token: "t2" }]);
+    expect(sent().slice(1)).toEqual([{ type: "confirm", token: "t1", choice: "never" }, { type: "confirm", token: "t2", choice: "once" }]);
     ws.push({ type: "reply", text: "", pending: [] });
     expect([c.view().reply, spoken.length]).toEqual([null, 1]);
   });

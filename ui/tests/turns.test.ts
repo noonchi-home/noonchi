@@ -3,7 +3,7 @@ import type { AgentAction, BrainLog, ExecState, PendingView, ServerMessage } fro
 import { turnsReducer, type Turn } from "../src/chat/turns";
 
 const action: AgentAction = { tool: "turn_on", args: {}, ok: true, deviceId: "ac", deviceLabel: "거실 에어컨", reason: "덥다고 해서", observation: "켜짐", at: "t" };
-const pending: PendingView = { token: "k", deviceId: "lock", deviceLabel: "현관 도어록", command: { type: "unlock" }, reason: "문을 열어요", expiresAt: "t" };
+const pending: PendingView = { token: "k", deviceId: "lock", deviceLabel: "현관 도어록", command: { type: "unlock" }, reason: "문을 열어요", choices: [], expiresAt: "t" };
 const run = (messages: ServerMessage[], start: Turn[] = []) => messages.reduce(turnsReducer, start);
 const lines = (t: Turn) => t.steps.flatMap((s) => (s.kind === "line" ? [`${s.label} ${s.text}`.trim()] : []));
 const acted = (sessionId: string, a: AgentAction = action): ServerMessage => ({ type: "agent", event: "action", sessionId, action: a });

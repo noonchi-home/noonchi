@@ -1,4 +1,4 @@
-// 실제 폰 화면(에이전트의 손). 처음 화면: 마스코트(세로에서만)·제목·AR 지원 줄·기준점 안내·AR 시작, 답 줄·승인 대기·글 입력.
+// 실제 폰 화면(에이전트의 손). 처음 화면: 마스코트(세로에서만)·제목·AR 지원 줄·기준점 안내·AR 시작, 답 줄·승인 대기(답마다 단추 하나)·글 입력.
 // AR 덮개(DOM 오버레이 뿌리): 맨 아래 canvas(명령 대상 고리·화면 밖 세모, 찍기·맞추기 때만 조준점), 위 줄(왼쪽 위 미어캣 = 설정 단추, 그 옆 지금 명령 한 줄),
 // 엄지 자리(명령·질문·승인·찍기가 있을 때만 카드 하나: 비전 상태 한 줄, 그 바로 아래 답 단추). 설정과 문제 모달(연결 끊김·마이크 꺼짐·기준점 안 맞음)은
 // Alert Dialog를 덮개 뿌리 안에 띄운다(AR 중에는 그 안만 보인다). 세로가 기본 배치이고, 가로면 엄지 자리만 오른쪽 아래로 옮긴다(landscape:).
@@ -16,9 +16,10 @@ import { Input } from "@/components/ui/input";
 import { Item, ItemActions, ItemContent, ItemGroup, ItemTitle } from "@/components/ui/item";
 import { LiquidGlass } from "@/components/ui/liquid-glass";
 import { Status, StatusIndicator } from "@/components/ui/status";
+import type { ApprovalAnswer } from "../../../src/contract/phone.ts";
 import {
   anchorNames, handOf, PROBLEM_TEXT, problemOf, settingsRows, supportText,
-  type Hand, type Pending, type PhoneActions, type PhoneView, type Problem, type Tone,
+  type Choice, type Hand, type Pending, type PhoneActions, type PhoneView, type Problem, type Tone,
 } from "./state";
 
 /** 상태 줄 색: Status 부품 variant. */
@@ -67,16 +68,25 @@ function TalkForm({ act }: { act: PhoneActions }) {
   );
 }
 
+/** 답마다 단추 하나: 첫 답이 주 단추(default), 나머지는 outline. variant를 식으로 고르면 부품 lint가 "outline"을 class로 본다. */
+function ChoiceButtons({ choices, pick, grow }: { choices: Choice[]; pick: (id: string) => void; grow?: boolean }) {
+  const size = grow ? "h-12 flex-1" : "h-12";
+  return (
+    <>
+      {choices.map((c, i) => (i === 0
+        ? <Button key={c.id} className={size} onClick={() => pick(c.id)}>{c.label}</Button>
+        : <Button key={c.id} variant="outline" className={size} onClick={() => pick(c.id)}>{c.label}</Button>))}
+    </>
+  );
+}
+
 function PendingList({ items, act }: { items: Pending[]; act: PhoneActions }) {
   return (
     <Card className="flex flex-col gap-1.5 p-1.5">
       {items.map((p) => (
         <Item key={p.token} size="sm">
           <ItemContent><ItemTitle>{p.deviceLabel}: {p.reason}</ItemTitle></ItemContent>
-          <ItemActions>
-            <Button className="h-12" onClick={() => act.confirm(p.token)}>승인</Button>
-            <Button variant="outline" className="h-12" onClick={() => act.cancel(p.token)}>취소</Button>
-          </ItemActions>
+          <ItemActions><ChoiceButtons choices={p.choices} pick={(id) => act.confirm(p.token, id as ApprovalAnswer)} /></ItemActions>
         </Item>
       ))}
     </Card>
@@ -117,30 +127,14 @@ function Intro({ view, act }: { view: PhoneView; act: PhoneActions }) {
   );
 }
 
-/** 엄지 자리 답 단추: 첫 답이 주 단추(default), 나머지는 outline. variant를 식으로 고르면 부품 lint가 "outline"을 class로 본다. */
+/** 엄지 자리 답 단추: 승인 대기는 그 토큰과 답으로 승인, 명령·질문은 그 명령의 id·step으로 답한다. */
 function Answers({ hand, act }: { hand: Hand; act: PhoneActions }) {
   const t = hand.thumb!;
   if (t.kind === "record") return <Button className="h-12 flex-1" onClick={() => act.recordAnchor(t.anchor.id)}>기록</Button>;
   if (t.kind === "place") return <Button className="h-12 flex-1" onClick={act.endSetup}>완료</Button>;
-  if (t.kind === "pending") {
-    return (
-      <>
-        <Button className="h-12 flex-1" onClick={() => act.confirm(t.item.token)}>승인</Button>
-        <Button variant="outline" className="h-12 flex-1" onClick={() => act.cancel(t.item.token)}>취소</Button>
-      </>
-    );
-  }
+  if (t.kind === "pending") return <ChoiceButtons grow choices={t.item.choices} pick={(c) => act.confirm(t.item.token, c as ApprovalAnswer)} />;
   const { id, step, choices } = t.command;
-  return (
-    <>
-      {choices.map((c, i) => {
-        const pick = () => act.answer(id, step, c.id);
-        return i === 0
-          ? <Button key={c.id} className="h-12 flex-1" onClick={pick}>{c.label}</Button>
-          : <Button key={c.id} variant="outline" className="h-12 flex-1" onClick={pick}>{c.label}</Button>;
-      })}
-    </>
-  );
+  return <ChoiceButtons grow choices={choices} pick={(c) => act.answer(id, step, c)} />;
 }
 
 /** 미어캣(설정 단추)과 설정 모달: 연결·듣기·기준점 상태, 기준점 다시 찍기, 물건 자리 맞추기, 닫기. 닫으면 미어캣으로 초점이 돌아온다. */

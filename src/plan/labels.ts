@@ -1,4 +1,5 @@
 // 서버가 만들어 화면에 그대로 나가는 글. npm run lint가 이 파일도 검사한다(60자 아래, 화살표·괄호 없음).
+import { josa } from "../agent/phrases.js";
 
 export const STEP_LABEL = {
   goTable: "식탁으로 가기", pickCup: "컵 집기", goSink: "싱크대로 가기", placeCup: "컵 내려놓기",
@@ -34,6 +35,12 @@ export const CHECK_TEXT = {
   unreachable: "갈 수 있는 길이 없어 실행하지 않아요",
   device_mode: "시험 모드라 실제 가전은 부르지 않아요",
 } as const;
+
+/** 승인(src/act/track.ts): 처음 하는 계획을 실제 폰에 묻는 글, 「하지 마」를 받았거나 기억한 계획의 실행 기록. */
+export const APPROVAL_TEXT = {
+  ask: (task: string) => `${josa(task, "을/를")} 할까요?`,
+  refused: "사용자가 하지 말라고 한 일",
+};
 
 /** 실행 추적 글(src/act/track.ts): 단계 이름과 끝난 까닭. */
 export const EXEC_TEXT = {

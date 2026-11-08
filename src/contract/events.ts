@@ -1,6 +1,7 @@
 // 서버↔화면 메시지 계약(WebSocket /events, /api 응답). 순수 타입만 둔다: ui/가 이 파일을 그대로 가져다 쓴다.
 // 바꾸면 ui/src/lib/messages.ts의 parseMessage와 화면 테스트를 같이 고친다.
 import type { Command, DeviceSpec, DeviceState } from "../hub/types.js";
+import type { PhoneChoice } from "./phone.js";
 import type { PlanView } from "./plan.js";
 import type { ControlMode } from "./setup.js";
 import type { VlmMissing, WorldChangeKind, WorldView, YoloMissing } from "./world.js";
@@ -34,6 +35,8 @@ export interface PendingView {
   deviceLabel: string;
   command: Command;
   reason: string;
+  /** 실제 폰 답 단추(src/agent/approval.ts approvalChoices): 위험 목록은 이번만·하지 마, 「하지 마」를 기억한 명령은 셋. */
+  choices: PhoneChoice[];
   expiresAt: string;
 }
 

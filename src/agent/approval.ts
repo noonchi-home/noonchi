@@ -1,0 +1,92 @@
+// 승인 규칙: 묻는 때는 셋뿐이다. (1) 허락 없이 하면 위험할 때(위험 목록, src/agent/policy.ts CONFIRM_RULES), (2) 처음 하는 일이라 전에 승인받은 적
+// 없을 때(PAM 계획), (3) 기억해 둔 「하지 마」와 반대일 때. 그 밖에는 묻지 않고 바로 한다. 말로 시킨 가전 명령은 그 말이 승인이다.
+// 답은 이번만(기억 안 함)·앞으로도(기억, 다음부터 묻지 않음, 「하지 마」 기억은 지움)·하지 마(기억, 「앞으로도」 기억은 지움).
+// 위험 목록은 「앞으로도」를 받아도 늘 묻는다. 기억은 runtime/homes/<집>/approvals.json(재시작에도 남음). 대시보드에는 승인을 보이지 않는다.
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { APPROVE, type ActionChoice } from "../act/prompts.js";
+import type { ApprovalAnswer } from "../contract/phone.js";
+
+export type { ApprovalAnswer } from "../contract/phone.js";
+/** 왜 묻는가: 위험 목록, 처음 하는 일, 기억한 「하지 마」와 반대. */
+export type ApprovalWhy = "risky" | "first" | "preference";
+/** device:<기기 id>:<정규화된 명령 type> 또는 task:<행동 이름>. */
+export type ApprovalKey = string;
+/** 열쇠마다 답한 때(ISO). */
+export interface ApprovalMemory { always: Record<ApprovalKey, string>; never: Record<ApprovalKey, string> }
+/** 기억을 읽고 답을 남기는 곳(ApprovalStore, 또는 파일 없는 memoryApprovals). */
+export interface ApprovalBook { memory(): ApprovalMemory; answer(key: ApprovalKey, a: ApprovalAnswer): void }
+
+export const deviceKey = (deviceId: string, commandType: string): ApprovalKey => `device:${deviceId}:${commandType}`;
+export const taskKey = (task: string): ApprovalKey => `task:${task}`;
+
+/** 기억 파일 자리. */
+export const approvalsPath = (runtimeDir: string, homeId: string) => join(runtimeDir, "homes", homeId, "approvals.json");
+
+const empty = (): ApprovalMemory => ({ always: {}, never: {} });
+
+/** 물을지(ask), 하지 않을지(skip). requested: 사용자가 말로 시킨 일(가전 명령). */
+export function approvalNeed(o: { key: ApprovalKey; risky: boolean; requested: boolean; memory: ApprovalMemory }): { ask: ApprovalWhy | null; skip: boolean } {
+  if (Object.hasOwn(o.memory.never, o.key)) return o.requested ? { ask: "preference", skip: false } : { ask: null, skip: true };
+  if (o.risky) return { ask: "risky", skip: false };
+  if (o.requested || Object.hasOwn(o.memory.always, o.key)) return { ask: null, skip: false };
+  return { ask: "first", skip: false };
+}
+
+/** 답을 기억에 넣은 새 기억. 이번만은 그대로. */
+export function remember(m: ApprovalMemory, key: ApprovalKey, answer: ApprovalAnswer, at: string): ApprovalMemory {
+  if (answer === "once") return m;
+  const without = (r: Record<ApprovalKey, string>) => Object.fromEntries(Object.entries(r).filter(([k]) => k !== key));
+  return answer === "always"
+    ? { always: { ...m.always, [key]: at }, never: without(m.never) }
+    : { always: without(m.always), never: { ...m.never, [key]: at } };
+}
+
+/** 실제 폰에 띄우는 답: 위험 목록은 이번만·하지 마 둘, 그 밖에는 셋. */
+export function approvalChoices(why: ApprovalWhy): ActionChoice[] {
+  return why === "risky" ? APPROVE.filter((c) => c.id !== "always") : APPROVE;
+}
+
+const isStamps = (v: unknown): v is Record<string, string> =>
+  !!v && typeof v === "object" && !Array.isArray(v) && Object.values(v).every((x) => typeof x === "string");
+
+function read(path: string): ApprovalMemory {
+  try {
+    const raw = JSON.parse(readFileSync(path, "utf8").replace(/^﻿/, "")) as Partial<ApprovalMemory> | null;
+    return raw && isStamps(raw.always) && isStamps(raw.never) ? { always: { ...raw.always }, never: { ...raw.never } } : empty();
+  } catch {
+    return empty();
+  }
+}
+
+/** 파일에 남는 승인 기억. 폴더가 없으면 만들고, 임시 파일에 쓴 뒤 이름을 바꾼다. 파일이 없거나 깨졌으면 빈 기억으로 시작한다. */
+export class ApprovalStore implements ApprovalBook {
+  private mem: ApprovalMemory;
+
+  constructor(private readonly path: string, private readonly now: () => string = () => new Date().toISOString()) {
+    this.mem = read(path);
+  }
+
+  memory(): ApprovalMemory {
+    return structuredClone(this.mem);
+  }
+
+  answer(key: ApprovalKey, a: ApprovalAnswer): void {
+    const next = remember(this.mem, key, a, this.now());
+    if (next === this.mem) return;
+    this.mem = next;
+    mkdirSync(dirname(this.path), { recursive: true });
+    const tmp = `${this.path}.${process.pid}.tmp`;
+    writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`);
+    renameSync(tmp, this.path);
+  }
+}
+
+/** 파일 없이 이 프로세스 안에서만 기억한다(집 묶음 밖에서 만든 정책). */
+export function memoryApprovals(now: () => string = () => new Date().toISOString()): ApprovalBook {
+  let mem = empty();
+  return {
+    memory: () => structuredClone(mem),
+    answer: (key, a) => { mem = remember(mem, key, a, now()); },
+  };
+}

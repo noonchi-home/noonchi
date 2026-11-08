@@ -17,7 +17,7 @@ import type { PhoneActions } from "./state";
 const noop = () => {};
 const act: PhoneActions = {
   startAr: noop, recordAnchor: noop, startAnchors: noop, startPlace: noop, endSetup: noop, setSettings: noop, micOn: noop,
-  say: noop, confirm: noop, cancel: noop, answer: noop,
+  say: noop, confirm: noop, answer: noop,
 };
 
 const ZONE_NAMES: Record<string, string> = { top: "위 줄", thumb: "엄지 자리" };
