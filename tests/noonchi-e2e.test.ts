@@ -86,5 +86,13 @@ describe("NOONCHI 처음부터 끝까지", () => {
     expect(planMsgs.at(-1)).toMatchObject({ status: "done" });
     expect(dash.some((m) => m.type === "brain" && m.event.type === "execution" && m.event.plan_id === ask.id && m.event.state === "done")).toBe(true);
     expect(phone.some((m) => m.type === "action" && m.id === ask.id && m.active === false)).toBe(true);
+    // 폰 마스코트 말풍선: 계획이 열린 동안 그 판단 글, 끝나면 마지막 판단의 관찰(대시보드가 받은 계획·판단과 같은 글)
+    const lines = () => phone.filter((m) => m.type === "brain_line").map((m) => m.text as string);
+    for (const end = Date.now() + 3000; lines().at(-1) !== "빈 컵이 식탁에 남음" && Date.now() < end; ) await new Promise((r) => setTimeout(r, 50));
+    const said = lines();
+    const judged = said.indexOf("자리를 비워 컵을 치운다");
+    expect(judged, said.join(" / ")).toBeGreaterThanOrEqual(0);
+    expect(said.slice(judged + 1), said.join(" / ")).toContain("빈 컵이 식탁에 남음");
+    expect(said.at(-1)).toBe("빈 컵이 식탁에 남음");
   }, 40_000);
 });

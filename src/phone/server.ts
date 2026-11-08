@@ -75,8 +75,10 @@ export interface PhoneServer {
   sendFocus(targets: FocusTarget[], ttlMs: number): void;
   /** 기준점·방식을 바꾸고(기록·맞춤은 지움) 연결된 폰에 새 상태를 보낸다. */
   setTargets(targets: AnchorTarget[], mode: AlignMode): void;
-  /** 연결된 폰 모두에 보낸다(두뇌 요청·행동 부탁·상태 한 줄). */
+  /** 연결된 폰 모두에 보낸다(행동 부탁 등). */
   send(msg: unknown): void;
+  /** 마스코트 말풍선 글(mascot.ts). 바뀔 때만 brain_line으로 보내고(없으면 빈 글), 새로 붙은 폰에는 상태 뒤에 지금 글을 보낸다. */
+  setLine(text: string | null): void;
   listen(port: number, host: string): Promise<{ port: number; urls: string[] }>;
   close(): Promise<void>;
 }
@@ -205,6 +207,7 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
   };
 
   let connections = 0;
+  let line: string | null = null;
   wss.on("connection", (ws) => {
     const source = ++connections;
     log(`[phone] 폰 연결(지금 ${wss.clients.size}대)`);
@@ -213,6 +216,7 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
       log(`[phone] 폰 끊김(지금 ${wss.clients.size}대)`);
     });
     reply(ws, status());
+    if (line) reply(ws, { type: "brain_line", text: line });
     ws.on("message", (data, isBinary) => {
       if (isBinary) {
         onPacket(ws, source, Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data as Buffer));
@@ -265,6 +269,12 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
     },
     send(msg) {
       for (const ws of wss.clients) reply(ws, msg);
+    },
+    setLine(text) {
+      const next = text?.trim() || null;
+      if (next === line) return;
+      line = next;
+      for (const ws of wss.clients) reply(ws, { type: "brain_line", text: line ?? "" });
     },
     async listen(port, host) {
       const addr = await listenRetry(server, port, host, { log });

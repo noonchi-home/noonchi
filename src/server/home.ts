@@ -32,6 +32,7 @@ import { loadAnchorTargets, type AnchorTarget } from "../phone/anchors.js";
 import { autoCorners, parseWallPick, pickedRoom, readScenePlan } from "../phone/corners.js";
 import { EyeFeed } from "../phone/feed.js";
 import { orderPhoneUrls } from "../phone/links.js";
+import { MascotLine } from "../phone/mascot.js";
 import { createPhoneServer, type PhoneServer } from "../phone/server.js";
 import { estimateViewpoint } from "../phone/session.js";
 import { TouchStore, eyeHeightOf, floorLookup, homeBounds, readTouchPoints, touchPointsPath, touchTargets, type TouchPoint } from "../phone/touch.js";
@@ -202,8 +203,15 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       : undefined;
     // 클로이드 계획(src/plan/hub.ts): 에이전트 기기 행동·맞춘 눈 → 계획을 /events로. 경로는 scene.json 평면도로 찾는다
     const floorPlan = floorPlanFrom(readScene(home.scenePath) ?? {});
+    // 폰 마스코트 말풍선(src/phone/mascot.ts): 대시보드로 가는 계획·판단과 같은 자료로 정하고, 바뀌면 폰에 보낸다
+    const mascot = new MascotLine();
+    const sayLine = () => phoneRef.current?.setLine(mascot.text());
     const plans = new PlanHub(floorPlan, (m) => {
       appRef.current?.broadcast(m);
+      if (m.type === "plan") {
+        mascot.onPlan(m.plan);
+        sayLine();
+      }
       if (m.type === "plan" && m.plan) history.plan(m.plan);
     });
     // 관찰 흐름(BRAIN=1): 폰 엔진 프레임마다 YOLOX·VLM이 분석하고 World State가 합친다(src/observe/pipeline.ts)
@@ -222,6 +230,10 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       const emit = (event: BrainLog) => {
         appRef.current?.broadcast({ type: "brain", event });
         history.brain(event);
+        if (event.type === "decision") {
+          mascot.onBrain(event);
+          sayLine();
+        }
       };
       // 판단 호출(src/world/decide.ts): World State 관찰 텍스트 + 기억 + 행동 목록으로 PAM 서비스를 부른다.
       // 기억은 그날 처음 정한 판본(src/history/reflect.ts). 관찰 텍스트 시각은 기록 DB와 같은 시간대
@@ -325,6 +337,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       const phoneServer = phone;
       phoneRef.current = phone;
       phoneRef.floor = floor;
+      sayLine();
       layout?.editor.setHere(() => phoneServer.here());
       const wantedPhone = ctx.phonePort ?? Number(env.PHONE_PORT);
       const listened = await phone.listen(Number.isInteger(wantedPhone) && wantedPhone >= 0 ? wantedPhone : 8210, env.PHONE_HOST?.trim() || "0.0.0.0");
