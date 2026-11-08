@@ -32,6 +32,19 @@ describe("도면 설비를 서버 장면에 넣기", () => {
     expect(rot("tub_bath_center")).toBeCloseTo(Math.PI / 2, 6); // facing 180
     expect(Math.abs(rot("toilet_bath_west"))).toBeCloseTo(Math.PI, 6); // facing 90
   });
+  it("구운 GLB의 drawn_<id> 노드와 자리·방향이 같다", () => {
+    const glb = readFileSync(join(home.outDir, "bake", "mokryeon_180b_baked.glb"));
+    type Node = { name: string; translation?: number[]; rotation?: number[] };
+    const nodes = (JSON.parse(glb.subarray(20, 20 + glb.readUInt32LE(12)).toString("utf8")) as { nodes: Node[] }).nodes;
+    const scene = objects(loadScene(home)!);
+    for (const f of file.items) {
+      const n = nodes.find((x) => x.name === `drawn_${f.id}`)!;
+      const o = scene.find((x) => x.id === f.id)!;
+      expect(n.translation![0], f.id).toBeCloseTo(o.position[0], 4);
+      expect(n.translation![2], f.id).toBeCloseTo(o.position[2], 4);
+      expect(Math.cos(2 * Math.atan2(n.rotation![1]!, n.rotation![3]!) - o.rotation[1]), f.id).toBeCloseTo(1, 4);
+    }
+  });
   it("scene.json에 같은 id가 있으면 더하지 않는다", () => {
     const once = withDrawn(raw(home.scenePath), file.items);
     expect(withDrawn(once, file.items).objects).toHaveLength(once.objects.length);
