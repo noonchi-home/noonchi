@@ -451,7 +451,7 @@ describe("누르고 말하기(talk.js)", () => {
   });
 
   it("시작이 실패하면 그 까닭을 보이고 듣지 않는다", () => {
-    class Busy extends FakeRec { start() { throw new Error("busy"); } }
+    class Busy extends FakeRec { override start() { throw new Error("busy"); } }
     const { log, h } = hooks();
     createPressToTalk(Busy as never, h).down();
     expect(log).toEqual(["줄 음성 인식을 시작하지 못했어요: busy"]);
