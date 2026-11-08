@@ -35,7 +35,11 @@ describe("처음 화면", () => {
   it("마스코트·제목·AR 지원 줄·안내 둘. 준비되면 AR 시작을 누를 수 있다. 덮개는 숨어 있다", async () => {
     const { act, overlay, container } = show(SHOTS.intro.view);
     expect(overlay.hidden).toBe(true);
-    expect(container.querySelector('img[src="/brand/mascot@1x.webp"]')).toHaveAttribute("alt", "");
+    const mascot = container.querySelector('img[src="/brand/mascot@1x.webp"]')!;
+    expect(mascot).toHaveAttribute("alt", "");
+    // 가로로 들면 마스코트 그림을 숨겨 AR 시작 단추가 첫 화면에 들어온다(세로에서는 보인다)
+    expect(words(mascot)).toContain("landscape:hidden");
+    expect(words(mascot)).not.toContain("hidden");
     expect(screen.getByRole("heading", { name: "클로이드의 눈" })).toBeInTheDocument();
     expect(screen.getByText("준비됐어요. 폰을 세로로 들고 첫 기준점 근처에서 AR을 시작하세요.")).toHaveAttribute("data-support", "ready");
     expect(screen.getAllByRole("listitem").map((li) => li.textContent)).toEqual([

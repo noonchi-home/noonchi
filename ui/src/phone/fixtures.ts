@@ -1,6 +1,6 @@
 // 실제 폰 화면 상태 예시: 화면 시험(ui/tests/phone-screen.test.tsx)과 화면 사진 페이지(shots.tsx)가 함께 쓴다.
 // 부탁 글·선택은 src/act/prompts.ts의 「컵 치우기」와 같다. 마스코트 말풍선 글(brainLine)은 서버가 보내는 판단 글·관찰 모양이다.
-// 모든 상태를 세로(390×844·412×915·360×780)로 찍고, 가로 배치는 busy 하나를 844×390으로 찍어 본다.
+// 모든 상태를 세로(390×844·412×915·360×780)로 찍고, 가로 배치는 busy를 844×390, 처음 화면(intro)을 844×390·780×360으로 찍어 본다.
 import { initialView, statusLine, type Anchor, type FocusMark, type PhoneView } from "./state";
 
 export const SHOT_NAMES = ["intro", "camera", "overlay", "menu", "request", "busy", "busy-anchors", "limited", "floor", "talk", "listening", "error"] as const;
