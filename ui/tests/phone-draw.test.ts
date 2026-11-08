@@ -102,7 +102,7 @@ describe("명령 대상 고리", () => {
 describe("화면 밖 화살표 자리", () => {
   function draw(size: { width: number; height: number }, m: { u: number; v: number; angle: number }, edges?: { top: number; bottom: number }) {
     const { ctx, ops } = recorder();
-    const drawn = drawOverlay(ctx, size, scene({ marks: [{ id: "x", label: "TV", off: true, ...m }] }), 0, true, edges);
+    const drawn = drawOverlay(ctx, size, scene({ marks: [{ id: "x", label: "TV", off: true, ...m }] }), 0, true, edges).arrows;
     const pts = [...of(ops, "move"), ...of(ops, "line")];
     return { top: Math.min(...pts.map((p) => p.y)), bottom: Math.max(...pts.map((p) => p.y)), left: Math.min(...pts.map((p) => p.x)), right: Math.max(...pts.map((p) => p.x)), drawn };
   }
@@ -133,7 +133,43 @@ describe("화면 밖 화살표 자리", () => {
     expect(box.left).toBeLessThanOrEqual(left);
     expect(box.right).toBeGreaterThanOrEqual(right);
     const { ctx } = recorder();
-    expect(drawOverlay(ctx, SIZE, scene({ marks: [{ id: "cup", label: "컵", u: 0.5, v: 0.3, off: false, angle: 0 }] }), 0, true)).toEqual([]);
+    expect(drawOverlay(ctx, SIZE, scene({ marks: [{ id: "cup", label: "컵", u: 0.5, v: 0.3, off: false, angle: 0 }] }), 0, true).arrows).toEqual([]);
+  });
+});
+
+describe("위 줄·엄지 자리 칸 밑에 비친 대상", () => {
+  const edges = { top: 72, bottom: 130 };
+  const at = (v: number) => {
+    const { ctx, ops } = recorder();
+    const drawn = drawOverlay(ctx, SIZE, scene({ marks: [{ id: "cup", label: "컵", u: 0.5, v, off: false, angle: 0 }] }), 0, true, edges);
+    const pts = [...of(ops, "move"), ...of(ops, "line")];
+    return { ops, drawn, top: Math.min(...pts.map((p) => p.y)), bottom: Math.max(...pts.map((p) => p.y)) };
+  };
+
+  it("엄지 자리 카드 밑이면 고리 대신 카드 위 8px 안에 아래를 가리키는 세모 하나", () => {
+    const low = at(0.9);
+    expect(of(low.ops, "arc")).toEqual([]);
+    expect(low.drawn.arrows.map((a) => a.name)).toEqual(["컵"]);
+    expect(low.drawn.rings).toEqual([]);
+    expect(low.bottom).toBeLessThanOrEqual(844 - 130 - 8);
+    // 꼭짓점이 아래(가장 큰 y)
+    const tip = of(low.ops, "line")[0]!;
+    expect(tip.y).toBe(low.bottom);
+  });
+
+  it("위 줄 밑이면 위 줄 아래 8px부터 위를 가리키는 세모. 고리가 칸에 조금만 걸려도 세모로 그린다", () => {
+    const high = at(0.05);
+    expect(of(high.ops, "arc")).toEqual([]);
+    expect(high.top).toBeGreaterThanOrEqual(72 + 8);
+    expect(of(high.ops, "line")[0]!.y).toBe(high.top);
+    expect(of(at((72 + 10) / 844).ops, "arc")).toEqual([]);
+  });
+
+  it("두 칸 사이면 고리 그대로, 그린 고리 자리를 돌려준다", () => {
+    const mid = at(0.5);
+    expect(of(mid.ops, "arc")).toHaveLength(5);
+    expect(mid.drawn.arrows).toEqual([]);
+    expect(mid.drawn.rings).toEqual([{ name: "컵", box: { left: 195 - 23, top: 422 - 23, right: 195 + 23, bottom: 422 + 23 } }]);
   });
 });
 

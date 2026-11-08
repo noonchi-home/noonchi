@@ -6,7 +6,7 @@ import { STEP_COMMAND, VISION_TEXT } from "../../../src/plan/labels.ts";
 import { initialView, type Anchor, type Command, type FocusMark, type PhoneView } from "./state";
 
 export const SHOT_NAMES = [
-  "intro", "go-table", "pick-cup", "go-sink", "put-cup", "idle", "weak", "align", "mic", "offline", "settings", "anchors", "place", "question", "approve",
+  "intro", "go-table", "pick-cup", "low-cup", "go-sink", "put-cup", "idle", "weak", "align", "mic", "offline", "settings", "anchors", "place", "question", "approve",
 ] as const;
 export type ShotName = (typeof SHOT_NAMES)[number];
 export interface Shot { view: PhoneView; marks: FocusMark[] }
@@ -30,6 +30,8 @@ export const SHOTS: Record<ShotName, Shot> = {
   intro: { view: intro, marks: [] },
   "go-table": { view: { ...live, command: step(1, STEP_COMMAND.goTable, VISION_TEXT.distance(VISION_TEXT.table, 6.1), "table") }, marks: [ring("table", "식탁", 0.44, 0.6)] },
   "pick-cup": { view: { ...live, command: pickCup }, marks: [ring("cup", "컵", 0.5, 0.56)] },
+  // 컵이 엄지 자리 카드 밑에 비침: 고리 대신 카드 위에 아래를 가리키는 세모
+  "low-cup": { view: { ...live, command: pickCup }, marks: [ring("cup", "컵", 0.5, 0.92)] },
   // 싱크대가 화면 밖(오른쪽): 가장자리 화살표 하나
   "go-sink": {
     view: { ...live, command: step(3, STEP_COMMAND.goSink, `${cup} · ${VISION_TEXT.distance(VISION_TEXT.sink, 2.3)}`, "sink") },

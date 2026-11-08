@@ -2,6 +2,7 @@
 // 조준점은 기준점 찍기·물건 자리 맞추기 때만(scene.aim): 28px(심 3px, 안팎 흰 테 2px·숯색 1px), 맞으면 가운데 점(지름 10px)을 채운다. 맨 위에 그린다.
 // 명령 대상 고리: 40px(심 3px brand), 1.2초마다 1.12배로 숨쉰다(움직임 줄이기면 멈춤). 화면 밖이면 그쪽을 가리키는 세모(22×28px) 하나.
 // 화면 밖 세모는 덮개 칸을 비킨다: 그릴 때 잰 위 줄(미어캣·명령) 아래 8px부터 엄지 자리 위 8px까지, 옆은 화면 가장자리 8px 안(가로·세로 같다).
+// 화면 안이어도 고리가 위 줄·엄지 자리 칸에 걸리면(canvas가 맨 아래라 그 밑에 깔린다) 고리 대신 그 칸 가장자리에 그쪽(위·아래)을 가리키는 세모를 그린다.
 import { twin } from "../../../src/design/tokens.ts";
 import type { Box } from "./layout-check";
 import type { FocusMark } from "./state";
@@ -9,6 +10,8 @@ import type { FocusMark } from "./state";
 const F = twin.phoneFocus;
 const RETICLE_PX = 28;
 const RING_PX = 40;
+/** 고리 바깥 끝까지 반지름(숨쉬기 전): 심 가운데 + 심 반 + 흰 테 + 숯색. */
+const RING_OUTER = RING_PX / 2 + F.casing.width + F.edge.width;
 const EDGE_PX = 8;
 /** 옛 CSS 세모 상자: 왼쪽 테두리 22px + 오른쪽 투명 14px, 높이 28px. */
 const ARROW = { box: 36, height: 28, tip: 22 };
@@ -36,8 +39,10 @@ const PULSE_MS = 1200;
 const PULSE = 0.12;
 
 export interface OverlayScene { aim: boolean; hit: boolean; marks: FocusMark[] }
-/** 그린 화면 밖 세모 하나의 자리(CSS px). 배치 검사가 덮개 칸과 겹치는지 본다. */
+/** 그린 세모·고리 하나의 자리(CSS px). 배치 검사가 덮개 칸과 겹치는지 본다. */
 export interface ArrowBox { name: string; box: Box }
+/** 그린 것: 화면 밖(또는 칸 밑) 세모, 화면 안 고리(숨쉬기 전 크기). */
+export interface Drawn { arrows: ArrowBox[]; rings: ArrowBox[] }
 
 /** 숨쉬기 배율: 0.6초 동안 1 → 1.12, 다음 0.6초 동안 1.12 → 1(ease-in-out). 움직임 줄이기면 1. */
 export function pulse(now: number, reduced: boolean): number {
@@ -133,15 +138,29 @@ function drawArrow(ctx: CanvasRenderingContext2D, m: FocusMark, size: { width: n
   };
 }
 
-/** 한 장 그리기: 지우고, 명령 대상 고리(또는 화면 밖 세모), 맨 위에 조준점(aim일 때만). size·edges는 CSS px.
- * 그린 화면 밖 세모의 자리를 돌려준다(화면 안 고리는 넣지 않는다). */
-export function drawOverlay(ctx: CanvasRenderingContext2D, size: { width: number; height: number }, scene: OverlayScene, now: number, reduced: boolean, edges: Edges = NO_EDGES): ArrowBox[] {
+/** 화면 안 고리가 덮개 칸에 걸리면 그 칸 쪽 각도(위 -90, 아래 90), 아니면 null. 칸이 없으면(0) 보지 않는다. */
+function underPanel(y: number, height: number, edges: Edges): number | null {
+  if (edges.top > 0 && y - RING_OUTER < edges.top) return -90;
+  if (edges.bottom > 0 && y + RING_OUTER > height - edges.bottom) return 90;
+  return null;
+}
+
+/** 한 장 그리기: 지우고, 명령 대상 고리(화면 밖이나 칸 밑이면 세모), 맨 위에 조준점(aim일 때만). size·edges는 CSS px.
+ * 그린 세모와 고리의 자리를 돌려준다. */
+export function drawOverlay(ctx: CanvasRenderingContext2D, size: { width: number; height: number }, scene: OverlayScene, now: number, reduced: boolean, edges: Edges = NO_EDGES): Drawn {
   ctx.clearRect(0, 0, size.width, size.height);
-  const arrows: ArrowBox[] = [];
+  const drawn: Drawn = { arrows: [], rings: [] };
   for (const m of scene.marks) {
-    if (m.off) arrows.push({ name: m.label, box: drawArrow(ctx, m, size, edges) });
-    else rings(ctx, m.u * size.width, m.v * size.height, RING_PX / 2 - F.ring.width / 2, F.ring.width, F.ring.color, pulse(now, reduced));
+    const x = m.u * size.width;
+    const y = m.v * size.height;
+    const toward = m.off ? m.angle : underPanel(y, size.height, edges);
+    if (toward !== null) {
+      drawn.arrows.push({ name: m.label, box: drawArrow(ctx, { ...m, angle: toward }, size, edges) });
+      continue;
+    }
+    rings(ctx, x, y, RING_PX / 2 - F.ring.width / 2, F.ring.width, F.ring.color, pulse(now, reduced));
+    drawn.rings.push({ name: m.label, box: { left: x - RING_OUTER, top: y - RING_OUTER, right: x + RING_OUTER, bottom: y + RING_OUTER } });
   }
   if (scene.aim) drawReticle(ctx, size.width / 2, size.height / 2, scene.hit);
-  return arrows;
+  return drawn;
 }
