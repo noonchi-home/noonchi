@@ -1,8 +1,8 @@
 // 폰 덮개 배치 검사(layout-check.ts): 화면 사진 페이지(shots.tsx)가 크롬에서 잰 자리로 부른다.
 // 단추는 화면 안(또는 화면 안 스크롤 칸 안)에 있어야 하고, 위 줄·말풍선·엄지 자리는 가운데 조준점(28px)과 그 칸 밖 단추(큰 단추·⋯)를 가리면 안 된다.
-// 세로 화면에서 큰 단추 셋(말하기·사진·끝내기)은 엄지가 닿는 아래 1/3 안에 있어야 한다.
+// 세로 화면에서 큰 단추 셋(말하기·사진·끝내기)은 엄지가 닿는 아래 1/3 안에 있어야 한다. 위 상태 줄 글은 잘리지 않아야 한다.
 import { describe, expect, it } from "vitest";
-import { introIssues, layoutIssues } from "../src/phone/layout-check";
+import { clipIssues, introIssues, layoutIssues } from "../src/phone/layout-check";
 
 const box = (left: number, top: number, right: number, bottom: number) => ({ left, top, right, bottom });
 const PORTRAIT = { width: 390, height: 844 };
@@ -58,6 +58,20 @@ describe("폰 덮개 배치 검사", () => {
     expect(layoutIssues(PORTRAIT, [{ name: "치웠어요", box: box(16, 460, 190, 508), scroller: null }], [])).toEqual([]);
     const column = ["누르고 말하기", "사진 찍기", "끝내기"].map((name, i) => ({ name, box: box(758, 49 + i * 74, 834, 113 + i * 74), scroller: null }));
     expect(layoutIssues(LANDSCAPE, column, [])).toEqual([]);
+  });
+});
+
+describe("글 잘림 검사", () => {
+  // 줄 높이가 글자보다 좁으면(예: 14px 글에 줄 높이 14px) 한글 글자 위아래가 줄 상자를 3px쯤 넘어 scroll 높이가 그만큼 크다
+  const text = (line: number, scrollW: number, scrollH: number, clientW: number, clientH: number) => ({ name: "상태 줄", line, scroll: { width: scrollW, height: scrollH }, client: { width: clientW, height: clientH } });
+
+  it("글이 칸 안에 다 들어가면 문제 없음(폭 1px 반올림, 줄 높이 절반보다 작은 글자 넘침은 괜찮다)", () => {
+    expect(clipIssues([text(14, 240, 17, 249, 14), text(20, 250, 40, 249, 40), text(14, 249, 31, 249, 28)])).toEqual([]);
+  });
+
+  it("한 줄에서 옆으로 넘치거나(…로 잘림) 두 줄을 넘쳐 아래 줄이 잘리면 문제", () => {
+    expect(clipIssues([text(14, 277, 17, 168, 14)])).toEqual(["「상태 줄」 글이 잘려요(277×17 / 칸 168×14)"]);
+    expect(clipIssues([text(20, 249, 60, 249, 40)])).toEqual(["「상태 줄」 글이 잘려요(249×60 / 칸 249×40)"]);
   });
 });
 

@@ -1,5 +1,5 @@
 // 실제 폰 화면(클로이드의 눈). 처음 화면: 마스코트(세로에서만)·제목·AR 지원 줄·안내 둘·AR 시작, 대화(답 줄·승인 대기·누르고 말하기·글 입력).
-// AR 덮개(DOM 오버레이 뿌리): 조준점·초점 그림(canvas), 위 상태 줄·보낸 장 수·⋯, 마스코트 말풍선, 알림, 사진 요청, 행동 부탁, 기준점 단추, 큰 단추 셋, 승인 대기, ⋯ 메뉴.
+// AR 덮개(DOM 오버레이 뿌리): 조준점·초점 그림(canvas), 위 상태 줄(두 줄까지)·보낸 장 수(가로만)·⋯, 마스코트 말풍선, 알림, 사진 요청, 행동 부탁, 기준점 단추, 큰 단추 셋, 승인 대기, ⋯ 메뉴.
 // 실제 폰은 세로로 든다. 세로가 기본 배치다: 위 줄(말풍선·알림·사진 요청)은 조준점 위, 엄지 자리(승인 대기·행동 부탁·기준점 단추)는
 // 조준점 아래, 큰 단추는 맨 아래 가로 줄. 두 칸 모두 가운데 조준점을 비키고, 엄지 자리는 넘치면 그 칸만 스크롤한다.
 // 가로로 들면 landscape:로 큰 단추는 오른쪽 세로 줄, 위 줄은 조준점 오른쪽, 엄지 자리는 조준점 왼쪽에 둔다. 방향 알림은 없다.
@@ -15,7 +15,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input";
 import { Item, ItemActions, ItemContent, ItemTitle } from "@/components/ui/item";
 import { LiquidGlass } from "@/components/ui/liquid-glass";
-import { Status, StatusLabel } from "@/components/ui/status";
+import { Status } from "@/components/ui/status";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { anchorLabel, anchorNames, supportText, wouldLine, type BrainAction, type Pending, type PhoneActions, type PhoneView, type TalkSpot } from "./state";
 
@@ -192,10 +192,11 @@ function Overlay({ view, act, draft, setDraft, overlayRef, canvasRef }: { view: 
       </div>
       <canvas ref={canvasRef} aria-hidden="true" className="pointer-events-none fixed inset-0 size-full" />
       <div className="fixed inset-x-0 top-0 flex items-center gap-2 px-4 pt-2">
-        <Status variant="scrim" size="touch" role="status" title={view.status.title} className="min-w-0 flex-1">
-          <StatusLabel className="truncate">{view.status.text}</StatusLabel>
+        {/* 상태 줄 글은 두 줄까지 다 보이고, 줄 높이는 보낸 장 수처럼 본문 토큰(20px)이다. 세로에서는 보낸 장 수를 숨겨(⋯ 메뉴 측정 글에 있다) 상태 줄 폭을 넓힌다 */}
+        <Status variant="scrim" size="touch" role="status" title={view.status.title} className="min-w-0 flex-1 whitespace-normal">
+          <span data-phone-text="상태 줄" className="line-clamp-2 break-keep">{view.status.text}</span>
         </Status>
-        <Status variant="scrim" size="touch" title="최근 2초 동안 대시보드로 보낸 화면 장 수" className="tabular-nums">{view.fps}</Status>
+        <Status variant="scrim" size="touch" title="최근 2초 동안 대시보드로 보낸 화면 장 수" className="hidden tabular-nums landscape:inline-flex">{view.fps}</Status>
         <LiquidGlass mode="opaque" className="shrink-0">
           <Button variant="ghost" size="touch" aria-label="메뉴" aria-expanded={view.menuOpen} aria-controls="phone-menu" className="size-12 px-0" onClick={() => act.setMenu(!view.menuOpen)}>
             <Ellipsis />

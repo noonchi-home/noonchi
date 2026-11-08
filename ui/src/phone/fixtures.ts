@@ -3,7 +3,7 @@
 // 모든 상태를 세로(390×844·412×915·360×780)로 찍고, 가로 배치는 busy 하나를 844×390으로 찍어 본다.
 import { initialView, statusLine, type Anchor, type FocusMark, type PhoneView } from "./state";
 
-export const SHOT_NAMES = ["intro", "camera", "overlay", "menu", "request", "busy", "busy-anchors", "talk", "listening", "error"] as const;
+export const SHOT_NAMES = ["intro", "camera", "overlay", "menu", "request", "busy", "busy-anchors", "limited", "floor", "talk", "listening", "error"] as const;
 export type ShotName = (typeof SHOT_NAMES)[number];
 export interface Shot { view: PhoneView; draw: { hit: boolean; marks: FocusMark[] } }
 
@@ -11,7 +11,11 @@ const anchors: Anchor[] = [
   { id: "A", label: "거실 창 오른쪽 벽", recorded: true },
   { id: "B", label: "반대편 벽", recorded: false },
 ];
-const intro: PhoneView = { ...initialView(true), support: { kind: "ready" }, mode: "touch", anchors };
+const floorAnchors: Anchor[] = [
+  { id: "a1", label: "거실 창 앞", recorded: true },
+  { id: "a2", label: "주방 입구", recorded: false },
+];
+const intro: PhoneView ={ ...initialView(true), support: { kind: "ready" }, mode: "touch", anchors };
 const camera: PhoneView = {
   ...intro, ar: true, fps: "11.5 fps",
   status: statusLine({ aligned: false, mode: "touch", mismatchM: null, limited: false, anchorCount: "1/2", note: null }),
@@ -63,6 +67,21 @@ export const SHOTS: Record<ShotName, Shot> = {
   // 맞추기 전에 뜬 상태: 기준점 단추·승인 대기·행동 부탁·판단 줄
   "busy-anchors": {
     view: { ...camera, brainLine: "식탁 위 컵을 보고 있어요", pending: doorPending, action: cupAction },
+    draw: { hit: false, marks: [] },
+  },
+  // 긴 상태 줄 둘: 추적 약함(맞춘 뒤, 행동 부탁), 바닥 기준점 맞추기 전(기준점 단추)
+  limited: {
+    view: {
+      ...aligned, brainLine: "식탁 위 컵을 보고 있어요", action: cupAction,
+      status: statusLine({ aligned: true, mode: "touch", mismatchM: 0.06, limited: true, anchorCount: "2/2", note: null }),
+    },
+    draw: { hit: true, marks: [cup] },
+  },
+  floor: {
+    view: {
+      ...camera, mode: "floor", anchors: floorAnchors, brainLine: "식탁 위 컵을 보고 있어요",
+      status: statusLine({ aligned: false, mode: "floor", mismatchM: null, limited: false, anchorCount: "1/2", note: null }),
+    },
     draw: { hit: false, marks: [] },
   },
   talk: {

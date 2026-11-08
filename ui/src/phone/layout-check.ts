@@ -1,6 +1,7 @@
 // 폰 덮개 배치 검사: 화면 사진 페이지(shots.tsx)가 크롬에서 잰 자리(CSS px)로 부른다. 문제가 있으면 console.error로 내서 npm run capture가 실패한다.
 // 단추는 화면 안에 있거나, 화면 안에 있는 스크롤 칸 안에 있어야 누를 수 있다. 위 줄·말풍선·엄지 자리 칸은 가운데 조준점(28px)과
 // 그 칸 밖 단추(큰 단추·⋯·다른 칸의 단추)를 가리지 않는다. 세로 화면에서 큰 단추 셋은 엄지가 닿는 아래 1/3 안에 있다.
+// 위 상태 줄 글(data-phone-text)은 …나 줄 자름으로 잘리지 않는다.
 // 처음 화면은 「AR 시작」 단추가 스크롤하지 않은 첫 화면 안에 있어야 한다(세로·가로 모두).
 
 export interface Box { left: number; top: number; right: number; bottom: number }
@@ -34,6 +35,15 @@ export function layoutIssues(view: { width: number; height: number }, targets: T
     for (const t of targets) if (t.zone !== p.name && overlaps(p.box, t.box)) issues.push(`「${p.name}」 칸이 「${t.name}」 단추를 가려요`);
   }
   return issues;
+}
+
+/** 잘리면 안 되는 글(data-phone-text). 폭이 칸보다 1px 넘게 크면 …로 잘린 것이고, 높이가 줄 높이(line) 절반 이상 크면
+ * 줄 자름으로 아래 줄이 숨은 것이다(글자 위아래가 줄 상자를 조금 넘는 것은 잘림이 아니다). */
+export interface TextBox { name: string; line: number; scroll: { width: number; height: number }; client: { width: number; height: number } }
+export function clipIssues(texts: TextBox[]): string[] {
+  return texts
+    .filter((t) => t.scroll.width > t.client.width + 1 || t.scroll.height - t.client.height >= t.line / 2)
+    .map((t) => `「${t.name}」 글이 잘려요(${t.scroll.width}×${t.scroll.height} / 칸 ${t.client.width}×${t.client.height})`);
 }
 
 /** 처음 화면: 「AR 시작」 단추(start, 스크롤 0에서 잰 자리)가 첫 화면 안에 있는지. */

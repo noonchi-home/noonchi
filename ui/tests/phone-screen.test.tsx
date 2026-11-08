@@ -1,4 +1,4 @@
-// 실제 폰 화면(PhoneScreen.tsx)을 상태마다 그린다: 처음 화면, 카메라 중, 덮개(마스코트 말풍선·알림·초점), 메뉴, 사진 요청·행동 부탁, 묻고 답하기, 오류, 가로로 들 때.
+// 실제 폰 화면(PhoneScreen.tsx)을 상태마다 그린다: 처음 화면, 카메라 중, 긴 상태 줄, 덮개(마스코트 말풍선·알림·초점), 메뉴, 사진 요청·행동 부탁, 묻고 답하기, 오류, 가로로 들 때.
 // AR 덮개는 세로가 기본 배치다(class에 portrait: 없음, 가로는 landscape:). 영상 위 글은 14px 이상(label·caption 토큰 없음), 누르는 것은 48px 이상(h-12·h-16·size-12)인지도 본다.
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -87,13 +87,31 @@ describe("카메라 중(AR)", () => {
     expect(act.talkUp).toHaveBeenCalledWith("ar");
   });
 
+  it("위 상태 줄 글은 두 줄까지 다 보인다(…로 자르지 않음). 세로에서는 보낸 장 수를 숨겨 상태 줄 폭을 넓힌다", () => {
+    for (const [name, line] of [["limited", "근사 맞춤 ✓ · 거리 차이 6cm · 추적 약함"], ["floor", "맞추기 전 · 창가 기준 방향만 · 기준점 1/2 기록"]] as const) {
+      const { o, unmount } = show(SHOTS[name].view);
+      const text = o.getByText(line);
+      expect(text, name).toHaveAttribute("data-phone-text", "상태 줄");
+      expect(words(text), name).toEqual(expect.arrayContaining(["line-clamp-2", "break-keep"]));
+      expect(words(text), name).not.toContain("truncate");
+      expect(words(text.closest("[data-slot=status]")!), name).toContain("whitespace-normal");
+      // 두 줄 사이가 붙지 않게 줄 높이는 Status의 본문 토큰(20px)을 쓴다(StatusLabel은 leading-none)
+      expect(text.closest("[data-slot=status-label]"), name).toBeNull();
+      unmount();
+    }
+    const { o } = show(SHOTS.limited.view);
+    const fps = o.getByText("11.5 fps");
+    expect(words(fps)).toEqual(expect.arrayContaining(["hidden", "landscape:inline-flex"]));
+    expect(words(fps)).not.toContain("inline-flex");
+  });
+
   it("맞추면 기준점 단추가 사라진다", () => {
     const { o } = show(SHOTS.overlay.view);
     expect(o.queryByRole("button", { name: /조준하고 기록/ })).toBeNull();
   });
 
   it("세로가 기본 배치: 덮개 class에 portrait:가 없고, 가로는 landscape:로만 바꾼다", () => {
-    for (const name of ["camera", "overlay", "menu", "request", "busy", "busy-anchors"] as const) {
+    for (const name of ["camera", "overlay", "menu", "request", "busy", "busy-anchors", "limited", "floor"] as const) {
       const { overlay, unmount } = show(SHOTS[name].view);
       const classes = [...overlay.querySelectorAll("[class]")].flatMap(words);
       expect(classes.filter((w) => w.startsWith("portrait:")), name).toEqual([]);
@@ -136,7 +154,7 @@ describe("카메라 중(AR)", () => {
   });
 
   it("영상 위 글은 14px 이상(label·caption 토큰 없음), 누르는 것은 48px 이상", () => {
-    for (const name of ["camera", "overlay", "menu", "request", "busy", "busy-anchors"] as const) {
+    for (const name of ["camera", "overlay", "menu", "request", "busy", "busy-anchors", "limited", "floor"] as const) {
       const { overlay, unmount } = show(SHOTS[name].view);
       const small = [...overlay.querySelectorAll("[class]")].filter((el) => words(el).some((w) => w === "text-label" || w === "text-caption"));
       expect(small.map((el) => el.textContent), name).toEqual([]);
@@ -263,7 +281,7 @@ describe("마스코트 말풍선", () => {
 
   it("화면 사진 상태: AR 상태마다 말풍선이 있다(카메라 중·메뉴 빼고)", () => {
     const withBubble = SHOT_NAMES.filter((n) => SHOTS[n].view.ar && SHOTS[n].view.brainLine !== null);
-    expect(withBubble).toEqual(["overlay", "request", "busy", "busy-anchors"]);
+    expect(withBubble).toEqual(["overlay", "request", "busy", "busy-anchors", "limited", "floor"]);
     // 두 줄을 넘는 말은 잘라 보인다(가장 좁은 360px 세로에서 확인할 긴 말)
     expect(SHOTS.request.view.brainLine!.length).toBeGreaterThan(30);
   });
