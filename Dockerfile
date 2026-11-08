@@ -34,7 +34,6 @@ WORKDIR /app
 COPY --from=deps /app/node_modules node_modules
 COPY package.json tsconfig.json ./
 COPY src src
-COPY web web
 COPY twin twin
 COPY scripts scripts
 COPY --from=ui /app/ui/dist ui/dist

@@ -1,6 +1,6 @@
 // 누르고 말하기(talk.js): 누르면 크롬 음성 인식(ko-KR)으로 듣고, 들은 글을 15초 줄로 보이고, 떼면 그 글을 보낸다.
 import { describe, expect, it } from "vitest";
-import { createPressToTalk, recognition } from "../web/phone/talk.js";
+import { createPressToTalk, recognition } from "../ui/src/phone/core/talk.js";
 
 class FakeRec {
   static last: FakeRec;

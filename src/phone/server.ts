@@ -2,10 +2,12 @@
 // 기기 제어 REST는 여기 없다. 본 서버(127.0.0.1)는 그대로 두고 눈 자세는 onEye로, 폰의 말(say)과 승인은 onSay·onConfirm·onCancel로
 // 넘긴다(그 뒤는 에이전트·승인 정책이 맡는다). 클로이드가 폰으로 묻는 중이면 말을 먼저 그 답으로 맞춰 본다(onAnswer).
 // 내부 테스트용이라 같은 와이파이의 누구나 말을 보낼 수 있다.
+// 폰 화면은 React 빌드 ui/dist/phone/이고 빌드 파일은 /assets/다(대시보드와 같은 빌드).
 
+import { existsSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { networkInterfaces } from "node:os";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocket, WebSocketServer } from "ws";
 import type { FocusTarget } from "../contract/events.js";
@@ -19,7 +21,12 @@ import { PhoneSession, type AlignMode, type CameraView, type EyeEvent, type Fall
 
 export type { FocusTarget } from "../contract/events.js";
 
-const DEFAULT_WEB_DIR = fileURLToPath(new URL("../../web/phone/", import.meta.url));
+/** 폰 화면 빌드 폴더: ui/dist(대시보드와 같은 빌드). npm start·npm run dev가 먼저 빌드한다. */
+export const DEFAULT_UI_DIR = fileURLToPath(new URL("../../ui/dist/", import.meta.url));
+/** 빌드 전이면 /phone/ 요청에 주는 글. */
+export const PHONE_NOT_BUILT = "폰 화면이 아직 빌드되지 않았어요. npm run ui:build";
+/** /phone/ 밖에서 내주는 ui/dist 파일: 빌드 파일·브랜드 그림·글꼴 라이선스 폴더와 파비콘. 대시보드·설정 화면은 내주지 않는다. */
+const PHONE_FILES = /^\/(assets|brand|fonts)\/(.+)$|^\/(favicon\.ico|favicon-32\.png|apple-touch-icon\.png|icon-192\.png|icon-512\.png)$/;
 
 export interface PhoneServerOptions {
   targets: AnchorTarget[];
@@ -36,7 +43,8 @@ export interface PhoneServerOptions {
   eyeHeightM?: number;
   /** 평면 점이 있는 방의 바닥 높이(touch 모드 눈 높이에 더한다). */
   floorAt?: (p: Plan2) => number;
-  webDir?: string;
+  /** 화면 빌드 폴더(기본 ui/dist). 폰 화면은 그 안 phone/index.html. */
+  uiDir?: string;
   log?: (msg: string) => void;
   /** 폰에서 말하거나 쓴 문장(음성 인식 결과). 에이전트 답과 승인 대기를 돌려준다. */
   onSay?: (text: string) => Promise<PhoneReply>;
@@ -93,7 +101,7 @@ export function lanUrls(port: number, host: string): string[] {
 }
 
 export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
-  const webDir = resolve(opts.webDir ?? DEFAULT_WEB_DIR);
+  const uiDir = resolve(opts.uiDir ?? DEFAULT_UI_DIR);
   const log = opts.log ?? ((m: string) => console.log(m));
   const session = new PhoneSession(opts.targets, {
     maxMismatchM: opts.maxMismatchM, fallback: opts.fallback, mode: opts.mode, eyeHeightM: opts.eyeHeightM, floorAt: opts.floorAt,
@@ -111,7 +119,17 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
       res.end();
       return;
     }
-    if (path.startsWith("/phone/") && serveFile(res, webDir, path.slice("/phone/".length), req.method === "HEAD")) return;
+    const head = req.method === "HEAD";
+    // 폴더마다 그 폴더를 뿌리로 내준다(..%2F로 ui/dist의 대시보드·설정 화면에 닿지 않게)
+    const file = PHONE_FILES.exec(path);
+    if (path.startsWith("/phone/")) {
+      if (serveFile(res, join(uiDir, "phone"), path.slice("/phone/".length), head)) return;
+      if (!existsSync(join(uiDir, "phone", "index.html"))) {
+        res.writeHead(503, { "content-type": "text/plain; charset=utf-8" });
+        res.end(PHONE_NOT_BUILT);
+        return;
+      }
+    } else if (file && serveFile(res, file[1] ? join(uiDir, file[1]) : uiDir, file[2] ?? file[3]!, head)) return;
     res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
     res.end("없는 경로입니다");
   });

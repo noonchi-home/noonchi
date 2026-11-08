@@ -11,7 +11,7 @@ const page = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 export default defineConfig({
   plugins: [react(), tailwind()],
   resolve: { alias: { "@": page("src") } },
-  build: { outDir: "dist", emptyOutDir: true, rollupOptions: { input: { main: page("index.html"), setup: page("setup/index.html") } } },
+  build: { outDir: "dist", emptyOutDir: true, rollupOptions: { input: { main: page("index.html"), setup: page("setup/index.html"), phone: page("phone/index.html") } } },
   server: {
     host: "127.0.0.1", port: 5173, strictPort: true,
     proxy: { "/api": SERVER, "/twin": SERVER, "/events": { target: SERVER.replace(/^http/, "ws"), ws: true } },

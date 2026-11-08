@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { engineDue } from "../web/phone/engine.js";
+import { engineDue } from "../ui/src/phone/core/engine.js";
 import { encodeFramePacket, parsePacket } from "../src/phone/packet.js";
 
 describe("엔진 프레임", () => {

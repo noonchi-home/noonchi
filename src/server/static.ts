@@ -1,4 +1,4 @@
-// 폴더 안의 파일만 내주는 정적 응답(본 서버 web/·/twin/, 폰 서버 web/phone/ 공용).
+// 폴더 안의 파일만 내주는 정적 응답(본 서버 ui/dist·/twin/, 폰 서버 ui/dist 공용).
 
 import { readFileSync, statSync } from "node:fs";
 import type { ServerResponse } from "node:http";

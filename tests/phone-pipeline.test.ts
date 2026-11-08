@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createFramePipeline, createSendStats, frameWidth } from "../web/phone/pipeline.js";
+import { createFramePipeline, createSendStats, frameWidth } from "../ui/src/phone/core/pipeline.js";
 
 describe("프레임 인코딩 큐", () => {
   it("한 번에 두 장까지, 늦게 끝난 오래된 프레임은 버린다", () => {

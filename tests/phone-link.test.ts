@@ -1,6 +1,6 @@
 // 폰 ↔ 폰 서버 연결(link.js): https면 wss로 /phone/events, 붙으면 시계 핑(바로·2초마다), clock 답으로 촬영 시각·오차를 맞추고, 끊기면 1초 뒤 다시 붙는다.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createLink, phoneSocketUrl } from "../web/phone/link.js";
+import { createLink, phoneSocketUrl } from "../ui/src/phone/core/link.js";
 
 class FakeSocket {
   static OPEN = 1;

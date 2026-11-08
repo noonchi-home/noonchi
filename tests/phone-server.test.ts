@@ -1,12 +1,12 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import type { AnchorTarget } from "../src/phone/anchors.js";
 import { EyeFeed } from "../src/phone/feed.js";
 import { encodeFramePacket } from "../src/phone/packet.js";
-import { createPhoneServer, sameHost } from "../src/phone/server.js";
+import { createPhoneServer, DEFAULT_UI_DIR, sameHost } from "../src/phone/server.js";
 import { createApp, type TwinHomeApp } from "../src/server/app.js";
 import { fetchRetry } from "../src/server/net.js";
 import { ROOMS, makeHome } from "./helpers/home.js";
@@ -21,6 +21,27 @@ const cleanups: (() => Promise<void> | void)[] = [];
 afterEach(async () => {
   while (cleanups.length) await cleanups.pop()!();
 });
+
+/** 가짜 ui/dist: 폰 화면·빌드 파일·브랜드 그림·파비콘과 대시보드·설정 화면. */
+function fakeUiDist(): string {
+  const dir = mkdtempSync(join(tmpdir(), "phone-ui-"));
+  cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+  const files: [string, string][] = [
+    ["phone/index.html", '<title>폰 테스트</title><script type="module" src="/assets/phone-x.js"></script>'],
+    ["assets/phone-x.js", "export {};"],
+    ["assets/noto-sans-kr-0-wght-normal-x.woff2", "w"],
+    ["brand/mascot@1x.webp", "m"],
+    ["favicon.ico", "i"],
+    ["fonts/OFL-noto-sans-kr.txt", "ofl"],
+    ["index.html", "<title>대시보드</title>"],
+    ["setup/index.html", "<title>설정</title>"],
+  ];
+  for (const [p, body] of files) {
+    mkdirSync(dirname(join(dir, p)), { recursive: true });
+    writeFileSync(join(dir, p), body);
+  }
+  return dir;
+}
 
 const opened = (ws: WebSocket) =>
   new Promise<void>((res, rej) => {
@@ -51,10 +72,7 @@ async function setup(opts: { log?: (m: string) => void } = {}) {
   const { url } = await app.listen(0, "127.0.0.1");
   const main = app;
   cleanups.push(() => main.close());
-  const webDir = mkdtempSync(join(tmpdir(), "phone-web-"));
-  cleanups.push(() => rmSync(webDir, { recursive: true, force: true }));
-  writeFileSync(join(webDir, "index.html"), "<title>폰 테스트</title>");
-  const phone = createPhoneServer({ targets: TARGETS, webDir, feed, onEye: (eye) => main.broadcast({ type: "eye", eye }), log: opts.log ?? (() => {}) });
+  const phone = createPhoneServer({ targets: TARGETS, uiDir: fakeUiDist(), feed, onEye: (eye) => main.broadcast({ type: "eye", eye }), log: opts.log ?? (() => {}) });
   const { port } = await phone.listen(0, "127.0.0.1");
   cleanups.push(() => phone.close());
   return { url, phoneBase: `http://127.0.0.1:${port}` };
@@ -161,12 +179,9 @@ describe("엔진 프레임", () => {
     const photoDir = mkdtempSync(join(tmpdir(), "phone-photos-"));
     cleanups.push(() => rmSync(photoDir, { recursive: true, force: true }));
     const feed = new EyeFeed({ photoDir, broadcast: () => {} });
-    const webDir = mkdtempSync(join(tmpdir(), "phone-web-"));
-    cleanups.push(() => rmSync(webDir, { recursive: true, force: true }));
-    writeFileSync(join(webDir, "index.html"), "<title>폰</title>");
     const got: { header: Msg; eye: Msg | null; view: Msg | null; at: number }[] = [];
     const phone = createPhoneServer({
-      targets: TARGETS, webDir, feed, onEye: () => {}, log: () => {}, engineMs: 1000,
+      targets: TARGETS, feed, onEye: () => {}, log: () => {}, engineMs: 1000,
       onEngine: (_jpeg, header, eye, view, at) => got.push({ header, eye, view, at }),
     });
     const { port } = await phone.listen(0, "127.0.0.1");
@@ -234,15 +249,36 @@ describe("phone server", () => {
     await expect(opened(ws)).rejects.toThrow();
   });
 
-  it("web/phone의 실제 페이지와 스크립트를 준다", async () => {
-    const phone = createPhoneServer({ targets: TARGETS, onEye: () => {}, log: () => {} });
+  it("ui/dist에서 폰 화면·빌드 파일·브랜드 그림·글꼴 라이선스·파비콘만 준다. 대시보드·설정 화면은 주지 않는다", async () => {
+    const phone = createPhoneServer({ targets: TARGETS, uiDir: fakeUiDist(), onEye: () => {}, log: () => {} });
     const { port } = await phone.listen(0, "127.0.0.1");
     cleanups.push(() => phone.close());
-    const page = await fetchRetry(`http://127.0.0.1:${port}/phone/`);
-    expect(await page.text()).toContain("클로이드의 눈");
-    const script = await fetchRetry(`http://127.0.0.1:${port}/phone/phone.js`);
-    expect(script.status).toBe(200);
-    expect(script.headers.get("content-type")).toContain("javascript");
+    const base = `http://127.0.0.1:${port}`;
+    expect(await (await fetchRetry(`${base}/phone/`)).text()).toContain("폰 테스트");
+    const js = await fetchRetry(`${base}/assets/phone-x.js`);
+    expect(js.status).toBe(200);
+    expect(js.headers.get("content-type")).toContain("javascript");
+    expect((await fetchRetry(`${base}/assets/noto-sans-kr-0-wght-normal-x.woff2`)).headers.get("content-type")).toBe("font/woff2");
+    for (const p of ["/brand/mascot@1x.webp", "/favicon.ico", "/fonts/OFL-noto-sans-kr.txt"]) expect((await fetchRetry(`${base}${p}`)).status, p).toBe(200);
+    for (const p of ["/index.html", "/setup/", "/setup/index.html", "/api/devices", "/phone/..%2Findex.html", "/brand/..%2Findex.html", "/assets/..%2Fsetup%2Findex.html"]) {
+      expect((await fetchRetry(`${base}${p}`)).status, p).toBe(404);
+    }
+    expect((await fetchRetry(`${base}/`, { redirect: "manual" })).headers.get("location")).toBe("/phone/");
+  });
+
+  it("기본 화면 폴더는 ui/dist", () => {
+    expect(DEFAULT_UI_DIR.replace(/\\/g, "/")).toMatch(/\/ui\/dist\/$/);
+  });
+
+  it("빌드 전이면 /phone/은 503과 빌드 명령", async () => {
+    const empty = mkdtempSync(join(tmpdir(), "phone-ui-empty-"));
+    cleanups.push(() => rmSync(empty, { recursive: true, force: true }));
+    const phone = createPhoneServer({ targets: TARGETS, uiDir: empty, onEye: () => {}, log: () => {} });
+    const { port } = await phone.listen(0, "127.0.0.1");
+    cleanups.push(() => phone.close());
+    const r = await fetchRetry(`http://127.0.0.1:${port}/phone/`);
+    expect(r.status).toBe(503);
+    expect(await r.text()).toContain("npm run ui:build");
   });
 
   it("폰 페이지만 주고 기기 API는 없다", async () => {
@@ -258,11 +294,8 @@ describe("폰 대화·승인·초점", () => {
   async function talkSetup() {
     const said: string[] = [];
     const confirmed: string[] = [];
-    const webDir = mkdtempSync(join(tmpdir(), "phone-web-"));
-    cleanups.push(() => rmSync(webDir, { recursive: true, force: true }));
-    writeFileSync(join(webDir, "index.html"), "<title>폰</title>");
     const phone = createPhoneServer({
-      targets: TARGETS, webDir, onEye: () => {}, log: () => {},
+      targets: TARGETS, onEye: () => {}, log: () => {},
       onSay: async (text) => {
         said.push(text);
         return { reply: "현관문 잠금 해제는 승인이 필요해요.", pending: [{ token: "tok1", deviceLabel: "현관문", reason: "현관문 잠금 해제" }] };

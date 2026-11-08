@@ -31,6 +31,7 @@ describe("배포 파일", () => {
     expect(d).toContain("npm ci --omit=dev");
     expect(d).toContain("npm --prefix ui run build");
     expect(d).toContain("COPY twin twin");
+    expect(d).not.toContain("COPY web web");
     expect(d).toContain(YOLOX_MODELS.yolox_tiny.url);
     expect(d).toContain(YOLOX_MODELS.yolox_tiny.sha256);
     expect(d).toMatch(/sha256sum -c/);

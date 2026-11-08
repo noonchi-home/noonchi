@@ -4,7 +4,7 @@
 //   web/phone/tokens.js    폰 캔버스·인코딩 워커가 쓰는 색 값(ESM)
 //   src/design/tokens.ts   트윈·SVG·캔버스·3D 계획 색(TS 값)
 // 같이 옮기는 것: 묶은 글꼴(@fontsource-variable/noto-sans-kr)·라이선스를 web/phone/fonts/와 ui/public/fonts/로, 파비콘·마스코트를 ui/public에서 web/phone으로.
-//   web/phone/fonts/faces.js  인코딩 워커가 FontFace로 넣는 글꼴 조각 목록(꾸러미 CSS에서 만든다)
+//   ui/src/phone/core/font-faces.js  인코딩 워커가 FontFace로 넣는 글꼴 조각 목록(꾸러미 CSS에서 만든다, 파일은 ui 빌드가 ?url로 묶는다)
 // 원본의 {"ref": 이름}은 hex(또는 rgb(… / α))로, 값이 더 있는 {"ref": 이름, width, opacity}는 { color, width, opacity }로 푼다.
 // 사용: npm run tokens (tests/design-tokens.test.ts가 만든 파일이 원본과 같은지 본다)
 
@@ -228,7 +228,7 @@ export const repoPath = (p: string) => fileURLToPath(new URL(`../${p}`, import.m
 export const readTokens = (): Tokens => JSON.parse(readFileSync(repoPath(SOURCE), "utf8")) as Tokens;
 
 const FONT_PKG = "ui/node_modules/@fontsource-variable/noto-sans-kr";
-export const FONT_FACES = "web/phone/fonts/faces.js";
+export const FONT_FACES = "ui/src/phone/core/font-faces.js";
 
 /** 그대로 옮기는 파일: 저장소 기준 경로 from → to. */
 export function copies(): { from: string; to: string }[] {
@@ -243,21 +243,23 @@ export function copies(): { from: string; to: string }[] {
   ];
 }
 
-/** 꾸러미 CSS의 @font-face(파일·unicode-range)를 워커용 ESM 목록으로. */
+/** 꾸러미 CSS의 @font-face(파일·unicode-range)를 워커용 ESM 목록으로. 파일은 ?url import라 ui 빌드가 묶은 주소가 들어간다. */
 export function renderFontFaces(): string {
   const css = readFileSync(repoPath(`${FONT_PKG}/index.css`), "utf8");
   const faces = [...css.matchAll(/@font-face\s*\{([^}]*)\}/g)].map((m) => ({
-    src: /url\(\.\/([^)]+)\)/.exec(m[1]!)![1]!,
+    file: /url\(\.\/files\/([^)]+)\)/.exec(m[1]!)![1]!,
     unicodeRange: /unicode-range:\s*([^;]+);/.exec(m[1]!)![1]!.trim(),
   }));
   const family = /font-family:\s*'([^']+)'/.exec(css)![1]!;
   return [
     "// 만든 파일: npm run tokens가 @fontsource-variable/noto-sans-kr 꾸러미 CSS에서 만든다. 손으로 고치지 않는다.",
-    "// 인코딩 워커(encoder-worker.js)가 이 목록으로 FontFace를 넣는다. 파일은 fonts/files/에 있다.",
+    "// 인코딩 워커(encoder-worker.js)가 이 목록으로 FontFace를 넣는다. 글꼴 파일은 ui 빌드가 묶는다(?url).",
+    "",
+    ...faces.map((f, i) => `import f${i} from "@fontsource-variable/noto-sans-kr/files/${f.file}?url";`),
     "",
     `export const family = ${JSON.stringify(family)};`,
     "",
-    `export const faces = [\n${faces.map((f) => `  { src: ${JSON.stringify(f.src)}, unicodeRange: ${JSON.stringify(f.unicodeRange)} },`).join("\n")}\n];`,
+    `export const faces = [\n${faces.map((f, i) => `  { url: f${i}, unicodeRange: ${JSON.stringify(f.unicodeRange)} },`).join("\n")}\n];`,
     "",
   ].join("\n");
 }

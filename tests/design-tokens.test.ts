@@ -24,9 +24,13 @@ describe("디자인 토큰 원본", () => {
     expect(stale, "npm run tokens로 다시 옮기세요").toEqual([]);
   });
 
-  it("워커 글꼴 목록(web/phone/fonts/faces.js)이 꾸러미 CSS와 같다", () => {
+  it("워커 글꼴 목록(ui/src/phone/core/font-faces.js)이 꾸러미 CSS와 같고, 글꼴 파일은 ui 빌드가 묶는다(?url)", () => {
+    expect(FONT_FACES).toBe("ui/src/phone/core/font-faces.js");
     expect(onDisk(FONT_FACES)).toBe(renderFontFaces());
-    expect(renderFontFaces()).toMatch(/unicodeRange: "U\+/);
+    const css = readFileSync(repoPath("ui/node_modules/@fontsource-variable/noto-sans-kr/index.css"), "utf8");
+    const imports = renderFontFaces().match(/^import f\d+ from "@fontsource-variable\/noto-sans-kr\/files\/[\w-]+\.woff2\?url";$/gm) ?? [];
+    expect(imports).toHaveLength(css.match(/@font-face/g)!.length);
+    expect(renderFontFaces()).toMatch(/\{ url: f0, unicodeRange: "U\+/);
   });
 
   it("원본이 바뀌면 만든 파일도 바뀐다", () => {

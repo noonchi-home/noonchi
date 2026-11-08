@@ -1,7 +1,7 @@
 // 폰 AR(ar.js)을 가짜 XR 세션으로 돌린다. 옮기기 전 phone.js와 같은 규칙인지 본다: 시작하면 원점 이름을 새로 정해 reset,
 // 자세는 0.1초마다, 조준점·초점은 hooks로, 카메라가 있으면 화면 프레임(0.55, 초점 고리)·사진(원본, 0.9)·엔진 프레임(0.8, 투영 행렬·촬영 시각).
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createAr } from "../web/phone/ar.js";
+import { createAr } from "../ui/src/phone/core/ar.js";
 
 type Fn = (...a: any[]) => void;
 const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];

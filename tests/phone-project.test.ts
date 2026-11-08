@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { focusMarks, project, toEdge } from "../web/phone/project.js";
+import { focusMarks, project, toEdge } from "../ui/src/phone/core/project.js";
 
 // 세로 화각 90°, 가로세로 1, near 0.1, far 100인 원근 투영(열 우선)
 const n = 0.1;

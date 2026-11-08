@@ -1,7 +1,10 @@
 // 초점 고리 그리기. 화면(capture.js)과 JPEG 인코딩 워커(encoder-worker.js)가 함께 쓴다(DOM 없음).
-// 색·굵기는 web/phone/tokens.js(원본 src/design/tokens.json): 영상 위 표시는 세 겹(바깥 숯색, 흰 테, brand 심)이라 어떤 바탕에서도 보인다.
+// 색·굵기는 src/design/tokens.ts(원본 src/design/tokens.json): 영상 위 표시는 세 겹(바깥 숯색, 흰 테, brand 심)이라 어떤 바탕에서도 보인다.
 
-import { canvasFont, focus } from "./tokens.js";
+import { font, twin } from "../../../../src/design/tokens.ts";
+
+const focus = twin.phoneFocus;
+const canvasFont = font.canvas;
 
 /** 이름표 글꼴: 묶은 Noto Sans KR Variable(화면은 @font-face, 워커는 FontFace로 넣는다). */
 export function markFont(width) {

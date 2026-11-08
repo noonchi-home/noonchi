@@ -2261,7 +2261,9 @@ function fakeUiDist(): string {
     expect(js.headers.get("content-type")).toContain("javascript");
     expect((await fetchRetry(`${base}/assets/noto-sans-kr-0-wght-normal-x.woff2`)).headers.get("content-type")).toBe("font/woff2");
     for (const p of ["/brand/mascot@1x.webp", "/favicon.ico", "/fonts/OFL-noto-sans-kr.txt"]) expect((await fetchRetry(`${base}${p}`)).status, p).toBe(200);
-    for (const p of ["/index.html", "/setup/", "/setup/index.html", "/api/devices"]) expect((await fetchRetry(`${base}${p}`)).status, p).toBe(404);
+    for (const p of ["/index.html", "/setup/", "/setup/index.html", "/api/devices", "/phone/..%2Findex.html", "/brand/..%2Findex.html", "/assets/..%2Fsetup%2Findex.html"]) {
+      expect((await fetchRetry(`${base}${p}`)).status, p).toBe(404);
+    }
     expect((await fetchRetry(`${base}/`, { redirect: "manual" })).headers.get("location")).toBe("/phone/");
   });
 
@@ -2975,8 +2977,8 @@ createRoot(document.getElementById("root")!).render(<StrictMode><MotionConfig re
 export const DEFAULT_UI_DIR = fileURLToPath(new URL("../../ui/dist/", import.meta.url));
 /** 빌드 전이면 /phone/ 요청에 주는 글. */
 export const PHONE_NOT_BUILT = "폰 화면이 아직 빌드되지 않았어요. npm run ui:build";
-/** /phone/ 밖에서 내주는 ui/dist 파일: 빌드 파일·브랜드 그림·글꼴 라이선스·파비콘. 대시보드·설정 화면은 내주지 않는다. */
-const PHONE_FILES = /^(?:assets|brand|fonts)\/.+|^(?:favicon\.ico|favicon-32\.png|apple-touch-icon\.png|icon-192\.png|icon-512\.png)$/;
+/** /phone/ 밖에서 내주는 ui/dist 파일: 빌드 파일·브랜드 그림·글꼴 라이선스 폴더와 파비콘. 대시보드·설정 화면은 내주지 않는다. */
+const PHONE_FILES = /^\/(assets|brand|fonts)\/(.+)$|^\/(favicon\.ico|favicon-32\.png|apple-touch-icon\.png|icon-192\.png|icon-512\.png)$/;
 ```
 
 옵션 `webDir?: string;`을 바꾼다:
@@ -2990,14 +2992,16 @@ const PHONE_FILES = /^(?:assets|brand|fonts)\/.+|^(?:favicon\.ico|favicon-32\.pn
 
 ```ts
     const head = req.method === "HEAD";
+    // 폴더마다 그 폴더를 뿌리로 내준다(..%2F로 ui/dist의 대시보드·설정 화면에 닿지 않게)
+    const file = PHONE_FILES.exec(path);
     if (path.startsWith("/phone/")) {
-      if (serveFile(res, uiDir, `phone/${path.slice("/phone/".length)}`, head)) return;
+      if (serveFile(res, join(uiDir, "phone"), path.slice("/phone/".length), head)) return;
       if (!existsSync(join(uiDir, "phone", "index.html"))) {
         res.writeHead(503, { "content-type": "text/plain; charset=utf-8" });
         res.end(PHONE_NOT_BUILT);
         return;
       }
-    } else if (PHONE_FILES.test(path.slice(1)) && serveFile(res, uiDir, path.slice(1), head)) return;
+    } else if (file && serveFile(res, file[1] ? join(uiDir, file[1]) : uiDir, file[2] ?? file[3]!, head)) return;
     res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
     res.end("없는 경로입니다");
 ```

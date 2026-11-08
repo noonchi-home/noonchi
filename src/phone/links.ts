@@ -7,7 +7,7 @@ export type RunCommand = (cmd: string, args: string[]) => Promise<string>;
 const LOCAL_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
-/** `tailscale serve status --json` 설정에서 이 PC의 폰 포트로 이어진 https 사이트를 /phone/ 주소로. */
+/** `tailscale serve status --json` 설정에서 이 PC의 폰 포트로 이어진 https 사이트를 /phone/ 주소로. 폰 화면 빌드 파일이 /assets/에 있어서 사이트 뿌리(/)로 이은 것만 쓴다. */
 export function servedPhoneUrls(config: unknown, phonePort: number): string[] {
   const web = isRecord(config) ? config.Web : undefined;
   if (!isRecord(web)) return [];
@@ -26,8 +26,8 @@ export function servedPhoneUrls(config: unknown, phonePort: number): string[] {
         continue;
       }
       const targetPort = Number(target.port || (target.protocol === "https:" ? 443 : 80));
-      if (!LOCAL_HOSTS.has(target.hostname) || targetPort !== phonePort || target.pathname !== "/") continue;
-      out.push(`https://${host}${port === "443" ? "" : `:${port}`}${mount.replace(/\/+$/, "")}/phone/`);
+      if (!LOCAL_HOSTS.has(target.hostname) || targetPort !== phonePort || target.pathname !== "/" || mount !== "/") continue;
+      out.push(`https://${host}${port === "443" ? "" : `:${port}`}/phone/`);
     }
   }
   return out;

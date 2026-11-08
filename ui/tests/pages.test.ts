@@ -9,14 +9,14 @@ const at = (p: string) => fileURLToPath(new URL(`../${p}`, import.meta.url));
 const page = (p: string) => readFileSync(at(p), "utf8");
 
 describe("입구 HTML", () => {
-  it.each([["index.html", "hub"], ["setup/index.html", "setup"]])("%s는 얼굴 상자 파비콘을 넣고 data-surface=%s를 단다", (p, surface) => {
+  it.each([["index.html", "hub"], ["setup/index.html", "setup"], ["phone/index.html", "phone"]])("%s는 얼굴 상자 파비콘을 넣고 data-surface=%s를 단다", (p, surface) => {
     const html = page(p);
     expect(html).toContain(`<html lang="ko" data-surface="${surface}">`);
     expect(html).toContain('<link rel="icon" href="/favicon.ico" sizes="any">');
     expect(html).toContain('<link rel="icon" type="image/png" href="/favicon-32.png">');
     expect(html).toContain('<link rel="apple-touch-icon" href="/apple-touch-icon.png">');
     expect(html).not.toContain("data:image/svg+xml");
-    expect(html).toContain("<title>NOONCHI");
+    expect(html).toMatch(/<title>[^<]*NOONCHI[^<]*<\/title>/);
   });
 
   it("파비콘·로고·마스코트 그림과 출처 글이 ui/public에 있다", () => {
@@ -26,7 +26,7 @@ describe("입구 HTML", () => {
     expect(page("public/brand/README.md")).toContain("noonchi-home/wiki");
   });
 
-  it.each(["src/dashboard/main.tsx", "src/setup/main.tsx"])("%s는 묶은 글꼴을 싣는다(외부 CDN 없음)", (p) => {
+  it.each(["src/dashboard/main.tsx", "src/setup/main.tsx", "src/phone/main.tsx"])("%s는 묶은 글꼴을 싣는다(외부 CDN 없음)", (p) => {
     expect(page(p)).toContain('import "@fontsource-variable/noto-sans-kr";');
   });
 });
