@@ -1,6 +1,8 @@
 // 폰 화면(클로이드의 눈). 처음 화면: 마스코트·제목·AR 지원 줄·안내 둘·AR 시작, 대화(답 줄·승인 대기·누르고 말하기·글 입력).
 // AR 덮개(DOM 오버레이 뿌리): 조준점·초점 그림(canvas), 위 상태 줄·보낸 장 수·⋯, 판단 줄, 사진 요청, 행동 부탁, 기준점 단추, 큰 단추 셋, 승인 대기, 알림, ⋯ 메뉴.
-// AR 중에는 덮개만 보이므로 글 입력은 ⋯ 메뉴에, 승인 대기는 위 가운데에 둔다. 가로로 돌리면 큰 단추가 오른쪽 세로 줄로 간다.
+// AR 중에는 덮개만 보이므로 글 입력은 ⋯ 메뉴에 둔다. 판단 줄·알림·사진 요청은 위 줄, 누르는 승인 대기·행동 부탁·기준점 단추는
+// 아래 엄지 자리(큰 단추 위)에 쌓는다. 두 칸 모두 가운데 조준점을 비키고, 엄지 자리는 넘치면 그 칸만 스크롤한다.
+// 가로로 돌리면 큰 단추가 오른쪽 세로 줄로 가고, 엄지 자리는 조준점 왼쪽, 위 줄은 조준점 오른쪽으로 간다.
 // 부품은 ui/src/components/ui의 21st.dev 부품만 쓰고(components.json F1~F15), 여기서는 배치만 한다.
 import { Bot, Camera, Ellipsis, MessageSquare, Mic, RotateCcw, Square, TriangleAlert } from "lucide-react";
 import { useState, type Dispatch, type FormEvent, type PointerEvent as ReactPointerEvent, type Ref, type SetStateAction } from "react";
@@ -120,7 +122,7 @@ function Intro({ view, act, draft, setDraft }: { view: PhoneView } & DraftProps)
 function ActionCard({ action, act }: { action: BrainAction; act: PhoneActions }) {
   const would = wouldLine(action.would);
   return (
-    <Card className="pointer-events-auto w-full">
+    <Card className="w-full">
       <CardHeader className="p-4">
         <CardTitle className="flex flex-wrap items-center gap-2">
           <Status variant="warning" size="touch"><TriangleAlert className="size-4" />모의</Status>
@@ -142,6 +144,8 @@ function ActionCard({ action, act }: { action: BrainAction; act: PhoneActions })
 }
 
 function Overlay({ view, act, draft, setDraft, overlayRef, canvasRef }: { view: PhoneView; overlayRef?: Ref<HTMLDivElement>; canvasRef?: Ref<HTMLCanvasElement> } & DraftProps) {
+  const pending = view.ar && view.pending.length > 0;
+  const anchors = view.anchors && !view.aligned ? view.anchors : [];
   return (
     <div ref={overlayRef} hidden={!view.ar} data-phone-overlay="" className="fixed inset-0">
       <canvas ref={canvasRef} aria-hidden="true" className="pointer-events-none fixed inset-0 size-full" />
@@ -156,8 +160,8 @@ function Overlay({ view, act, draft, setDraft, overlayRef, canvasRef }: { view: 
           </Button>
         </LiquidGlass>
       </div>
-      {/* 판단 줄·알림·사진 요청·승인 대기·행동 부탁은 위 상태 줄 아래 한 세로 줄에 차례로 쌓는다(서로 겹치지 않게) */}
-      <div className="pointer-events-none fixed inset-x-4 top-16 flex flex-col items-center gap-2 landscape:right-24">
+      {/* 위 줄: 판단 줄·알림·사진 요청. 누르는 것이 없고, 조준점 위(세로)·오른쪽(가로)에서 잘린다 */}
+      <div data-phone-zone="top" className="pointer-events-none fixed inset-x-4 top-16 flex max-h-[calc(50dvh-86px)] flex-col items-center gap-2 overflow-hidden landscape:left-[calc(50vw+24px)] landscape:right-24 landscape:max-h-[calc(100dvh-76px)]">
         {view.brainLine !== null && (
           <Status variant="scrim" size="touch" role="status" aria-live="polite" className="w-full">
             <Bot className="size-4" /><StatusLabel className="min-w-0 truncate">{view.brainLine}</StatusLabel>
@@ -171,15 +175,14 @@ function Overlay({ view, act, draft, setDraft, overlayRef, canvasRef }: { view: 
         {view.request && (
           <Alert variant="brand" size="lg"><Camera /><AlertTitle>{view.request.text}</AlertTitle></Alert>
         )}
-        {view.ar && view.pending.length > 0 && (
-          <div className="pointer-events-auto w-full max-w-[480px]"><PendingList items={view.pending} act={act} /></div>
-        )}
-        {view.action && <ActionCard action={view.action} act={act} />}
       </div>
-      {view.anchors && !view.aligned && (
-        <div className="fixed inset-x-4 bottom-24 flex flex-col gap-2 landscape:right-auto landscape:bottom-3 landscape:max-w-[42vw]">
-          {view.anchors.map((a) => (
-            <Button key={a.id} variant="outline" size="touch" className="h-12 w-full justify-start" onClick={() => act.recordAnchor(a.id)}>
+      {/* 엄지 자리: 승인 대기·행동 부탁·기준점 단추를 큰 단추 위에 쌓는다. 조준점 아래(세로)·왼쪽(가로)까지만 크고 넘치면 스크롤한다 */}
+      {(pending || view.action || anchors.length > 0) && (
+        <div data-phone-zone="thumb" className="fixed inset-x-4 bottom-24 flex max-h-[calc(50dvh-120px)] flex-col gap-2 overflow-y-auto landscape:right-[calc(50vw+24px)] landscape:bottom-3 landscape:max-h-[calc(100dvh-76px)]">
+          {pending && <PendingList items={view.pending} act={act} />}
+          {view.action && <ActionCard action={view.action} act={act} />}
+          {anchors.map((a) => (
+            <Button key={a.id} variant="outline" size="touch" className="h-12 w-full shrink-0 justify-start" onClick={() => act.recordAnchor(a.id)}>
               {anchorLabel(view.mode, a)}
             </Button>
           ))}

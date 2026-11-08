@@ -2,7 +2,7 @@
 // 부탁 글·선택은 src/act/prompts.ts의 「컵 치우기」와 같다.
 import { initialView, statusLine, type Anchor, type FocusMark, type PhoneView } from "./state";
 
-export const SHOT_NAMES = ["intro", "camera", "overlay", "menu", "request", "talk", "listening", "error"] as const;
+export const SHOT_NAMES = ["intro", "camera", "overlay", "menu", "request", "busy", "busy-anchors", "talk", "listening", "error"] as const;
 export type ShotName = (typeof SHOT_NAMES)[number];
 export interface Shot { view: PhoneView; draw: { hit: boolean; marks: FocusMark[] } }
 
@@ -21,6 +21,8 @@ const aligned: PhoneView = {
 };
 const none = { hit: false, marks: [] as FocusMark[] };
 const cup: FocusMark = { id: "cup", label: "컵", u: 0.5, v: 0.42, off: false, angle: 0 };
+const cupAction = { id: "a1", text: "식탁 위 컵을 치워 주세요", would: "로봇이 식탁의 컵을 싱크대로 옮긴다", choices: [{ id: "done", label: "치웠어요" }, { id: "later", label: "나중에" }] };
+const doorPending = [{ token: "t1", deviceLabel: "현관문", reason: "현관문 잠금 해제" }];
 
 export const SHOTS: Record<ShotName, Shot> = {
   intro: { view: intro, draw: none },
@@ -43,12 +45,21 @@ export const SHOTS: Record<ShotName, Shot> = {
     draw: none,
   },
   request: {
+    view: { ...aligned, request: { id: "r1", text: "컵 안을 비춰 주세요" }, action: cupAction },
+    draw: { hit: true, marks: [cup] },
+  },
+  // 모두 뜬 상태: 판단 줄·알림·사진 요청·승인 대기·행동 부탁(맞춘 뒤)
+  busy: {
     view: {
-      ...aligned,
-      request: { id: "r1", text: "컵 안을 비춰 주세요" },
-      action: { id: "a1", text: "식탁 위 컵을 치워 주세요", would: "로봇이 식탁의 컵을 싱크대로 옮긴다", choices: [{ id: "done", label: "치웠어요" }, { id: "later", label: "나중에" }] },
+      ...aligned, brainLine: "식탁 위 컵을 보고 있어요", toast: "사진을 위치와 함께 보냈어요",
+      request: { id: "r1", text: "컵 안을 비춰 주세요" }, pending: doorPending, action: cupAction,
     },
     draw: { hit: true, marks: [cup] },
+  },
+  // 맞추기 전에 뜬 상태: 기준점 단추·승인 대기·행동 부탁·판단 줄
+  "busy-anchors": {
+    view: { ...camera, brainLine: "식탁 위 컵을 보고 있어요", pending: doorPending, action: cupAction },
+    draw: { hit: false, marks: [] },
   },
   talk: {
     view: { ...intro, reply: "현관문 잠금 해제는 승인이 필요해요.", pending: [{ token: "t1", deviceLabel: "현관문", reason: "현관문 잠금 해제" }] },

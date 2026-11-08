@@ -81,7 +81,7 @@ describe("카메라 중(AR)", () => {
   });
 
   it("영상 위 글은 14px 이상(label·caption 토큰 없음), 누르는 것은 48px 이상", () => {
-    for (const name of ["camera", "overlay", "menu", "request"] as const) {
+    for (const name of ["camera", "overlay", "menu", "request", "busy", "busy-anchors"] as const) {
       const { overlay, unmount } = show(SHOTS[name].view);
       const small = [...overlay.querySelectorAll("[class]")].filter((el) => words(el).some((w) => w === "text-label" || w === "text-caption"));
       expect(small.map((el) => el.textContent), name).toEqual([]);
@@ -118,16 +118,37 @@ describe("덮개: 판단 줄·알림·메뉴", () => {
 });
 
 describe("사진 요청·행동 부탁", () => {
-  it("판단 줄·알림·사진 요청·승인 대기·행동 부탁은 위 상태 줄 아래 한 세로 줄에 차례로 쌓여 겹치지 않는다", () => {
-    const { o } = show({
-      ...SHOTS.request.view, brainLine: "식탁 위 컵을 보고 있어요", toast: "A 지점을 기록했어요",
-      pending: [{ token: "t1", deviceLabel: "현관문", reason: "현관문 잠금 해제" }],
-    });
-    const column = o.getByRole("alert").parentElement!;
-    expect(words(column)).toEqual(expect.arrayContaining(["fixed", "flex", "flex-col"]));
-    const items = [o.getByText("식탁 위 컵을 보고 있어요"), o.getByText("A 지점을 기록했어요"), o.getByRole("alert"), o.getByText("현관문: 현관문 잠금 해제"), o.getByText("식탁 위 컵을 치워 주세요")];
-    expect(items.map((el) => [...column.children].findIndex((c) => c.contains(el)))).toEqual([0, 1, 2, 3, 4]);
-    expect([...column.querySelectorAll("[class]")].filter((el) => words(el).includes("fixed"))).toEqual([]);
+  it("판단 줄·알림·사진 요청은 위 줄, 승인 대기·행동 부탁은 아래 엄지 자리(큰 단추 위)에 차례로 쌓는다", () => {
+    const { o, overlay } = show(SHOTS.busy.view);
+    const top = overlay.querySelector<HTMLElement>("[data-phone-zone=top]")!;
+    const thumb = overlay.querySelector<HTMLElement>("[data-phone-zone=thumb]")!;
+    const order = (zone: HTMLElement, els: HTMLElement[]) => els.map((el) => [...zone.children].findIndex((c) => c.contains(el)));
+    expect(order(top, [o.getByText("식탁 위 컵을 보고 있어요"), o.getByText("사진을 위치와 함께 보냈어요"), o.getByRole("alert")])).toEqual([0, 1, 2]);
+    expect(within(top).queryAllByRole("button")).toEqual([]);
+    expect(order(thumb, [o.getByText("현관문: 현관문 잠금 해제"), o.getByText("식탁 위 컵을 치워 주세요")])).toEqual([0, 1]);
+    expect(within(thumb).getAllByRole("button").map((b) => b.textContent)).toEqual(["승인", "취소", "치웠어요", "나중에"]);
+    // 위 줄은 터치를 받지 않고 조준점 위에서 잘린다. 엄지 자리는 조준점 아래까지만 크고, 넘치면 그 칸만 스크롤한다
+    expect(words(top)).toEqual(expect.arrayContaining(["pointer-events-none", "overflow-hidden", "max-h-[calc(50dvh-86px)]"]));
+    expect(words(thumb)).toEqual(expect.arrayContaining(["bottom-24", "overflow-y-auto", "max-h-[calc(50dvh-120px)]"]));
+    expect(words(thumb)).not.toContain("pointer-events-none");
+    // 가로 화면: 엄지 자리는 조준점 왼쪽, 위 줄은 조준점 오른쪽
+    expect(words(thumb)).toEqual(expect.arrayContaining(["landscape:right-[calc(50vw+24px)]", "landscape:max-h-[calc(100dvh-76px)]"]));
+    expect(words(top)).toEqual(expect.arrayContaining(["landscape:left-[calc(50vw+24px)]", "landscape:right-24"]));
+    for (const zone of [top, thumb]) expect([...zone.querySelectorAll("[class]")].filter((el) => words(el).includes("fixed"))).toEqual([]);
+  });
+
+  it("맞추기 전에는 기준점 단추도 엄지 자리 맨 아래에 쌓는다", () => {
+    const { o, overlay } = show(SHOTS["busy-anchors"].view);
+    const thumb = within(overlay.querySelector<HTMLElement>("[data-phone-zone=thumb]")!);
+    expect(thumb.getAllByRole("button").map((b) => b.textContent)).toEqual([
+      "승인", "취소", "치웠어요", "나중에", "✓ A 거실 창 오른쪽 벽 아래 바닥 조준하고 기록", "B 반대편 벽 아래 바닥 조준하고 기록",
+    ]);
+    expect(o.getByText("식탁 위 컵을 보고 있어요")).toBeInTheDocument();
+  });
+
+  it("엄지 자리에 놓을 것이 없으면 그 칸을 그리지 않는다", () => {
+    const { overlay } = show(SHOTS.overlay.view);
+    expect(overlay.querySelector("[data-phone-zone=thumb]")).toBeNull();
   });
 
   it("사진 요청은 큰 글 알림(role=alert), 사진 단추는 「컵 안」", () => {
