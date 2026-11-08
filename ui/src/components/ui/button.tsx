@@ -1,5 +1,5 @@
 // 21st.dev「Button」(id 133, originui/button) 받은 코드.
-// 바꾼 것: shadow-black/5 → shadow-shade/5, text-sm·text-xs → label 토큰, hover:bg-accent·hover:text-accent-foreground → hover:bg-hover·hover:text-ink(accent 별칭 없음).
+// 바꾼 것: shadow-black/5 → shadow-shade/5, text-sm·text-xs → label 토큰, hover:bg-accent·hover:text-accent-foreground → hover:bg-hover·hover:text-ink(accent 별칭 없음). 폰 영상 위 글 14px를 위해 size touch(default 크기에 body-sm 토큰)를 더함.
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 import * as React from "react";
@@ -27,6 +27,7 @@ const buttonVariants = cva(
         sm: "h-8 rounded-lg px-3 text-label",
         lg: "h-10 rounded-lg px-8",
         icon: "h-9 w-9",
+        touch: "h-9 px-4 py-2 text-body-sm",
       },
     },
     defaultVariants: {

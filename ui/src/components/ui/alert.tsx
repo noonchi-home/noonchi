@@ -1,5 +1,5 @@
 // 21st.dev「Alert」(id 11326, coss.com/alert) 받은 코드.
-// 바꾼 것: red·emerald·amber → error·ok·warn 토큰(/5 바탕, /30 테두리는 그대로), info variant 뺌, dark: 줄 지움, import "./utils" → @/lib/utils, text-sm → body-sm 토큰.
+// 바꾼 것: red·emerald·amber → error·ok·warn 토큰(/5 바탕, /30 테두리는 그대로), info variant 뺌, dark: 줄 지움, import "./utils" → @/lib/utils, text-sm → body-sm 토큰. 폰 사진 요청용 brand variant(brand 바탕, on-brand 글·아이콘)와 size lg(headline 토큰)를 더함.
 import { cva, type VariantProps } from "class-variance-authority";
 import type * as React from "react";
 import { cn } from "@/lib/utils";
@@ -9,6 +9,7 @@ const alertVariants = cva(
   {
     defaultVariants: {
       variant: "default",
+      size: "default",
     },
     variants: {
       variant: {
@@ -20,6 +21,12 @@ const alertVariants = cva(
           "border-ok/30 bg-ok/5 text-ok [&>svg]:text-ok",
         warning:
           "border-warn/30 bg-warn/5 text-warn [&>svg]:text-warn",
+        brand:
+          "border-brand bg-brand text-on-brand [&>svg]:text-on-brand",
+      },
+      size: {
+        default: "",
+        lg: "text-headline",
       },
     },
   },
@@ -28,12 +35,13 @@ const alertVariants = cva(
 export function Alert({
   className,
   variant,
+  size,
   ...props
 }: React.ComponentProps<"div"> &
   VariantProps<typeof alertVariants>): React.ReactElement {
   return (
     <div
-      className={cn(alertVariants({ variant }), className)}
+      className={cn(alertVariants({ variant, size }), className)}
       data-slot="alert"
       role="alert"
       {...props}

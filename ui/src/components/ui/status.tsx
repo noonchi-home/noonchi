@@ -1,6 +1,7 @@
 // 21st.dev「Status」(id 25393, diceui/status) 받은 코드.
 // 바꾼 것: success·warning·error 바탕 /10 → 불투명 ok-tint·warn-tint·error-tint, 글·점 → ok·warn·error 토큰(테두리 /20은 그대로). info variant 뺌, brand variant 더함(cream 바탕, brand 글·점).
 // 점의 ping은 data-live가 있을 때만, 움직임 줄이기 설정에서는 끔. text-xs → label 토큰. radix-ui Slot → @radix-ui/react-slot. dark: 줄 지움.
+// 폰 AR 상태 줄용 scrim variant(scrim-phone 바탕, on-scrim 글·점)와 size touch(body-sm 토큰, 영상 위 글 14px)를 더함.
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 import type * as React from "react";
@@ -21,10 +22,17 @@ const statusVariants = cva(
           "border-warn/20 bg-warn-tint text-warn **:data-[slot=status-indicator]:bg-warn",
         brand:
           "border-transparent bg-muted text-brand **:data-[slot=status-indicator]:bg-brand",
+        scrim:
+          "border-transparent bg-scrim-phone text-on-scrim **:data-[slot=status-indicator]:bg-on-scrim",
+      },
+      size: {
+        default: "",
+        touch: "text-body-sm",
       },
     },
     defaultVariants: {
       variant: "default",
+      size: "default",
     },
   },
 );
@@ -35,7 +43,7 @@ interface StatusProps
 }
 
 function Status(props: StatusProps) {
-  const { className, variant = "default", asChild, ...rootProps } = props;
+  const { className, variant = "default", size = "default", asChild, ...rootProps } = props;
 
   const RootPrimitive = asChild ? Slot : "div";
 
@@ -44,7 +52,7 @@ function Status(props: StatusProps) {
       data-slot="status"
       data-variant={variant}
       {...rootProps}
-      className={cn(statusVariants({ variant }), className)}
+      className={cn(statusVariants({ variant, size }), className)}
     />
   );
 }
