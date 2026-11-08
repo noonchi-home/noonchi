@@ -5,6 +5,7 @@
 // 초점: 서버가 보낸 대상(AR 좌표)을 화면 표시(hooks.onMarks)와 대시보드로 가는 화면 프레임에 그린다(사진·엔진 프레임에는 그리지 않음).
 // 엔진 프레임(서버 BRAIN=1): 서버가 상태 메시지 engine_ms로 알려 준 간격마다 분석용 JPEG을 따로 보낸다(촬영 순간 자세·투영 행렬·서버 시계 촬영 시각과 오차).
 // 화면은 hooks로만 바꾼다: onStart·onEnd(덮개), onHit(조준점이 바닥에 닿음), onMarks(초점 표시), onPerf(1초마다 측정), note(잠깐 알릴 말).
+// 끝나면 세션마다 만든 인코딩 워커·WebGL 컨텍스트·타이머를 놓는다.
 
 import { createGrabber, framePacket } from "./capture.js";
 import { createDisplayEncoder } from "./display-encoder.js";
@@ -82,7 +83,7 @@ export function createAr({ link, params, hooks, deps = {} }) {
     state.encoder = grabber?.encoderMode ?? "카메라 없음";
     display = grabber ? d.createDisplayEncoder({ gl, flipY: FLIP, socket: ws, params, onError: hooks.note }) : null;
     let cameraSeen = false;
-    setTimeout(() => {
+    const cameraTimer = setTimeout(() => {
       if (!cameraSeen) hooks.note("카메라 화면을 보낼 수 없어요. 위치만 보내요");
     }, 3000);
     const perfTimer = setInterval(hooks.onPerf, 1000);
@@ -91,6 +92,10 @@ export function createAr({ link, params, hooks, deps = {} }) {
       state.lastFloor = null;
       display?.close();
       display = null;
+      // 세션마다 새로 만드는 인코딩 워커·WebGL 컨텍스트를 놓는다(다시 시작할 때 쌓이지 않게)
+      grabber?.close();
+      gl.getExtension?.("WEBGL_lose_context")?.loseContext();
+      clearTimeout(cameraTimer);
       clearInterval(perfTimer);
       session = null;
       hooks.onMarks([]);
@@ -115,7 +120,8 @@ export function createAr({ link, params, hooks, deps = {} }) {
         })
         .catch((error) => {
           pipeline.fail(id);
-          hooks.note(`화면을 보내지 못했어요: ${error.message}`);
+          // 끝내면서 거절된 인코딩은 알리지 않는다
+          if (session === xrSession) hooks.note(`화면을 보내지 못했어요: ${error.message}`);
         });
     };
 

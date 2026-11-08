@@ -75,16 +75,22 @@ export function createGrabber(gl, { flipY = true } = {}) {
     return encoder.encode(pixels, width, height, quality, marks);
   }
 
-  return { grab, toJpeg, get encoderMode() { return encoder.mode; } };
+  /** AR이 끝나면 부른다: 인코딩 워커를 끝낸다. */
+  const close = () => encoder.close();
+
+  return { grab, toJpeg, close, get encoderMode() { return encoder.mode; } };
 }
 
 const ENCODE_TIMEOUT_MS = 2000;
+const CLOSED = "인코딩을 멈췄어요";
 
 /** 픽셀 → JPEG Blob. 워커(OffscreenCanvas) 두 개로 두 장까지 동시에 인코딩하고, 워커를 못 쓰면 메인 스레드 canvas.toBlob으로 한다.
- *  메인 스레드 toBlob은 AR 중에 화면을 터치해야 진행되는 일이 있어(encoder-worker.js 설명) 대체 경로로만 쓴다. */
+ *  메인 스레드 toBlob은 AR 중에 화면을 터치해야 진행되는 일이 있어(encoder-worker.js 설명) 대체 경로로만 쓴다.
+ *  close()는 워커를 끝내고 기다리던 요청을 거절한다. 그 뒤 encode는 거절한다. */
 export function createEncoder({ workers: count = 2 } = {}) {
   const pool = []; // { worker, busy }
   let seq = 0;
+  let closed = false;
   const waiting = new Map(); // id → { resolve, reject, slot }
   const drop = (slot, message) => {
     const i = pool.indexOf(slot);
@@ -135,6 +141,7 @@ export function createEncoder({ workers: count = 2 } = {}) {
   }
 
   function encode(pixels, width, height, quality, marks = []) {
+    if (closed) return Promise.reject(new Error(CLOSED));
     if (pool.length === 0) return onMainThread(pixels, width, height, quality, marks);
     const slot = pool.reduce((a, b) => (b.busy < a.busy ? b : a));
     return new Promise((resolve, reject) => {
@@ -150,7 +157,15 @@ export function createEncoder({ workers: count = 2 } = {}) {
     });
   }
 
-  return { encode, get mode() { return pool.length ? `worker×${pool.length}` : "main"; } };
+  function close() {
+    closed = true;
+    for (const slot of [...pool]) {
+      slot.worker.terminate();
+      drop(slot, CLOSED);
+    }
+  }
+
+  return { encode, close, get mode() { return pool.length ? `worker×${pool.length}` : "main"; } };
 }
 
 /** [헤더 길이 4바이트][JSON 헤더][JPEG] Blob. */

@@ -17,7 +17,8 @@ function fakeSession() {
     async requestHitTestSource() { return "hits"; },
     addEventListener(t: string, f: Fn) { (on[t] ??= []).push(f); },
     requestAnimationFrame(f: Fn) { raf = f; },
-    end() { for (const f of on.end ?? []) f(); },
+    // 세션은 한 번만 끝난다(같은 가짜를 다시 열면 새 end 처리만 남는다)
+    end() { const ends = on.end ?? []; on.end = []; for (const f of ends) f(); },
     fire(t: string) { for (const f of on[t] ?? []) f(); },
     step(time: number, frame: unknown) { const f = raf; raf = null; f?.(time, frame); },
   };
@@ -43,6 +44,7 @@ async function header(blob: Blob) {
 
 function setup({ camera = false } = {}) {
   const session = fakeSession();
+  const released = { grabber: 0, gl: 0 };
   const sent: Record<string, any>[] = [];
   const socket = { readyState: 1, bufferedAmount: 0, binary: [] as Blob[], send(d: Blob) { this.binary.push(d); } };
   const link = { send: (m: Record<string, unknown>) => { sent.push(m); return true; }, socket: () => socket, open: () => true, stamp: () => ({ captured_at: 5, time_err_ms: 1 }), close() {} };
@@ -56,15 +58,21 @@ function setup({ camera = false } = {}) {
   const toJpeg = vi.fn(async (..._args: unknown[]) => new Blob([new Uint8Array([0xff, 0xd8, 0xff])]));
   const deps = {
     xr: () => ({ requestSession: async (mode: string, opts: unknown) => { session.requested.push([mode, opts]); return session; } }),
-    gl: () => ({ FRAMEBUFFER: 1, COLOR_BUFFER_BIT: 2, bindFramebuffer() {}, clearColor() {}, clear() {} }),
+    gl: () => ({
+      FRAMEBUFFER: 1, COLOR_BUFFER_BIT: 2, bindFramebuffer() {}, clearColor() {}, clear() {},
+      getExtension: (name: string) => (name === "WEBGL_lose_context" ? { loseContext: () => { released.gl += 1; } } : null),
+    }),
     layer: () => ({}),
     binding: () => (camera ? { getCameraImage: () => "texture" } : null),
-    createGrabber: () => ({ encoderMode: "worker×2", grab: (_t: unknown, w: number, h: number) => new Uint8Array(w * h * 4), toJpeg }),
+    createGrabber: () => ({
+      encoderMode: "worker×2", grab: (_t: unknown, w: number, h: number) => new Uint8Array(w * h * 4), toJpeg,
+      close: () => { released.grabber += 1; },
+    }),
     createDisplayEncoder: () => ({ frame() {}, close() {}, describe: () => "표시 영상 시험" }),
   };
   const ar = createAr({ link, params: new URLSearchParams(""), hooks, deps });
   stops.push(() => ar.stop());
-  return { ar, session, sent, socket, log, marks, toJpeg };
+  return { ar, session, sent, socket, log, marks, toJpeg, released };
 }
 
 const overlay = {};
@@ -136,6 +144,27 @@ describe("폰 AR(ar.js)", () => {
     expect(t.marks.at(-1)).toEqual([]);
     expect(t.log.at(-1)).toBe("end");
     expect(t.ar.state.on).toBe(false);
+  });
+
+  it("끝내면 인코딩 워커(잡기)와 WebGL 컨텍스트를 놓는다. 다시 시작하면 새로 만들고 끝낼 때 또 놓는다", async () => {
+    const t = setup({ camera: true });
+    await t.ar.start(overlay);
+    t.ar.stop();
+    expect(t.released).toEqual({ grabber: 1, gl: 1 });
+    await t.ar.start(overlay);
+    t.ar.stop();
+    expect(t.released).toEqual({ grabber: 2, gl: 2 });
+  });
+
+  it("3초 안에 끝내면 카메라 확인 알림을 띄우지 않는다", async () => {
+    vi.useFakeTimers();
+    try {
+      const t = setup();
+      await t.ar.start(overlay);
+      t.ar.stop();
+      vi.advanceTimersByTime(5000);
+      expect(t.log.filter((l) => l.startsWith("note"))).toEqual([]);
+    } finally { vi.useRealTimers(); }
   });
 
   it("카메라가 있으면 화면 프레임·사진·엔진 프레임을 보낸다", async () => {
