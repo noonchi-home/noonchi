@@ -1,8 +1,8 @@
-// 폰 화면(PhoneScreen.tsx)을 상태마다 그린다: 처음 화면, 카메라 중, 덮개(판단 줄·알림·초점), 메뉴, 사진 요청·행동 부탁, 묻고 답하기, 오류.
-// 영상 위 글은 14px 이상(label·caption 토큰 없음), 누르는 것은 48px 이상(h-12·h-16·size-12)인지도 본다.
-import { fireEvent, render, screen, within } from "@testing-library/react";
+// 폰 화면(PhoneScreen.tsx)을 상태마다 그린다: 처음 화면, 카메라 중, 덮개(마스코트 말풍선·알림·초점), 메뉴, 사진 요청·행동 부탁, 묻고 답하기, 오류, 세로 알림.
+// AR 덮개는 가로가 기본 배치다(class에 landscape: 없음, 세로는 portrait:). 영상 위 글은 14px 이상(label·caption 토큰 없음), 누르는 것은 48px 이상(h-12·h-16·size-12)인지도 본다.
+import { act as flush, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { SHOTS } from "../src/phone/fixtures";
 import { PhoneScreen } from "../src/phone/PhoneScreen";
 import type { PhoneActions, PhoneView, Support } from "../src/phone/state";
@@ -18,6 +18,27 @@ function show(view: PhoneView) {
   return { act, overlay, o: within(overlay), ...r };
 }
 const words = (el: Element) => (el.getAttribute("class") ?? "").split(/\s+/);
+/** 보이는 글 사본(말풍선 부품이 화면 읽기용으로 둔 role=tooltip 사본은 뺀다). */
+const shown = (root: HTMLElement, text: string) => within(root).queryAllByText(text).filter((el) => !el.closest("[role=tooltip]"));
+
+/** 방향을 바꿀 수 있는 가짜 matchMedia. 세로면 「(orientation: portrait)」가 맞는다. */
+function orientation(portrait: boolean) {
+  const state = { portrait };
+  const listeners = new Set<() => void>();
+  vi.stubGlobal("matchMedia", (q: string) => ({
+    get matches() { return q.includes("orientation: portrait") ? state.portrait : q.includes("prefers-reduced-motion"); },
+    media: q, onchange: null,
+    addEventListener: (_t: string, f: () => void) => listeners.add(f), removeEventListener: (_t: string, f: () => void) => listeners.delete(f),
+    addListener() {}, removeListener() {}, dispatchEvent: () => false,
+  }));
+  return {
+    /** 방향을 바꾸고 matchMedia change를 알린다. */
+    turn(next: boolean) { state.portrait = next; flush(() => { for (const f of [...listeners]) f(); }); },
+    /** 방향을 바꾸고 창 크기 바뀜(resize)만 알린다. */
+    resize(next: boolean) { state.portrait = next; flush(() => { window.dispatchEvent(new Event("resize")); }); },
+  };
+}
+afterEach(() => { vi.unstubAllGlobals(); });
 
 describe("처음 화면", () => {
   it("마스코트·제목·AR 지원 줄·안내 둘. 준비되면 AR 시작을 누를 수 있다. 덮개는 숨어 있다", async () => {
@@ -25,7 +46,7 @@ describe("처음 화면", () => {
     expect(overlay.hidden).toBe(true);
     expect(container.querySelector('img[src="/brand/mascot@1x.webp"]')).toHaveAttribute("alt", "");
     expect(screen.getByRole("heading", { name: "클로이드의 눈" })).toBeInTheDocument();
-    expect(screen.getByText("준비됐어요. 첫 기준점 근처에서 AR을 시작하세요.")).toHaveAttribute("data-support", "ready");
+    expect(screen.getByText("준비됐어요. 폰을 가로로 들고 첫 기준점 근처에서 AR을 시작하세요.")).toHaveAttribute("data-support", "ready");
     expect(screen.getAllByRole("listitem").map((li) => li.textContent)).toEqual([
       "A 거실 창 오른쪽 벽, B 반대편 벽 바로 아래 바닥에 조준점을 맞추고 기록을 눌러요. 초록이면 닿은 거예요",
       '물건 아래 바닥을 조준하고 말하기를 누른 채 "냉장고 여기로"라고 말해요',
@@ -80,12 +101,31 @@ describe("카메라 중(AR)", () => {
     expect(o.queryByRole("button", { name: /조준하고 기록/ })).toBeNull();
   });
 
-  it("옆 여백 16px: 위 상태 줄·⋯ 메뉴·위 줄·엄지 자리", () => {
+  it("가로가 기본 배치: 덮개 class에 landscape:가 없고, 세로는 portrait:로만 바꾼다", () => {
+    for (const name of ["camera", "overlay", "menu", "request", "busy", "busy-anchors"] as const) {
+      const { overlay, unmount } = show(SHOTS[name].view);
+      const classes = [...overlay.querySelectorAll("[class]")].flatMap(words);
+      expect(classes.filter((w) => w.startsWith("landscape:")), name).toEqual([]);
+      unmount();
+    }
+  });
+
+  it("옆 여백 16px: 위 상태 줄, 엄지 자리 왼쪽. ⋯ 메뉴와 위 줄은 오른쪽 큰 단추 줄(96px) 안쪽, 세로면 16px", () => {
     const { o, overlay } = show(SHOTS.busy.view);
     expect(words(o.getByText("11.5 fps").parentElement!)).toEqual(expect.arrayContaining(["px-4"]));
     const menu = overlay.querySelector<HTMLElement>("#phone-menu")!;
-    expect(words(menu)).toEqual(expect.arrayContaining(["right-4", "w-[min(380px,calc(100vw-32px))]"]));
-    for (const zone of overlay.querySelectorAll("[data-phone-zone]")) expect(words(zone)).toContain("inset-x-4");
+    expect(words(menu)).toEqual(expect.arrayContaining(["right-24", "portrait:right-4", "w-[min(380px,calc(100vw-32px))]"]));
+    const top = overlay.querySelector<HTMLElement>("[data-phone-zone=top]")!;
+    const thumb = overlay.querySelector<HTMLElement>("[data-phone-zone=thumb]")!;
+    expect(words(top)).toEqual(expect.arrayContaining(["right-24", "portrait:left-4", "portrait:right-4"]));
+    expect(words(thumb)).toEqual(expect.arrayContaining(["left-4", "portrait:right-4"]));
+  });
+
+  it("큰 단추 셋은 오른쪽 세로 줄(가운데 높이), 세로면 아래 가로 줄", () => {
+    const { o } = show(SHOTS.camera.view);
+    const column = o.getByRole("button", { name: "끝내기" }).parentElement!;
+    expect(words(column)).toEqual(expect.arrayContaining(["right-2.5", "top-1/2", "-translate-y-1/2", "flex-col", "portrait:flex-row", "portrait:bottom-[calc(env(safe-area-inset-bottom)+16px)]"]));
+    expect([...column.children].map((b) => b.getAttribute("aria-label"))).toEqual(["누르고 말하기", "사진 찍기", "끝내기"]);
   });
 
   it("글이 있는 단추의 아이콘은 본문 16px(size-4), 큰 단추는 24px(size-6)", () => {
@@ -113,9 +153,8 @@ describe("카메라 중(AR)", () => {
 });
 
 describe("덮개: 판단 줄·알림·메뉴", () => {
-  it("판단 줄과 알림은 role=status, 맞춤이면 근사 맞춤과 거리 차이", () => {
+  it("알림은 role=status, 맞춤이면 근사 맞춤과 거리 차이", () => {
     const { o } = show(SHOTS.overlay.view);
-    expect(o.getByText("식탁 위 컵을 보고 있어요").closest("[role=status]")).not.toBeNull();
     expect(o.getByText("A 지점을 기록했어요").closest("[role=status]")).not.toBeNull();
     expect(o.getByText("근사 맞춤 ✓ · 거리 차이 6cm")).toBeInTheDocument();
   });
@@ -140,30 +179,30 @@ describe("덮개: 판단 줄·알림·메뉴", () => {
     expect(act.setMenu).toHaveBeenCalledWith(false);
   });
 
-  it("메뉴 판은 top-16(64px)에서 시작해 세로는 큰 단추 위 100px까지, 가로는 아래 8px까지만 크다", () => {
+  it("메뉴 판은 top-16(64px)에서 시작해 아래 8px까지만 크다. 세로면 큰 단추 위 100px까지", () => {
     const { overlay } = show(SHOTS.menu.view);
     const menu = overlay.querySelector<HTMLElement>("#phone-menu")!;
-    expect(words(menu)).toEqual(expect.arrayContaining(["top-16", "max-h-[calc(100dvh-164px)]", "landscape:max-h-[calc(100dvh-72px)]", "overflow-auto"]));
+    expect(words(menu)).toEqual(expect.arrayContaining(["top-16", "max-h-[calc(100dvh-72px)]", "portrait:max-h-[calc(100dvh-164px)]", "overflow-auto"]));
   });
 });
 
 describe("사진 요청·행동 부탁", () => {
-  it("판단 줄·알림·사진 요청은 위 줄, 승인 대기·행동 부탁은 아래 엄지 자리(큰 단추 위)에 차례로 쌓는다", () => {
+  it("마스코트 말풍선·알림·사진 요청은 위 줄, 승인 대기·행동 부탁은 엄지 자리에 차례로 쌓는다", () => {
     const { o, overlay } = show(SHOTS.busy.view);
     const top = overlay.querySelector<HTMLElement>("[data-phone-zone=top]")!;
     const thumb = overlay.querySelector<HTMLElement>("[data-phone-zone=thumb]")!;
     const order = (zone: HTMLElement, els: HTMLElement[]) => els.map((el) => [...zone.children].findIndex((c) => c.contains(el)));
-    expect(order(top, [o.getByText("식탁 위 컵을 보고 있어요"), o.getByText("사진을 위치와 함께 보냈어요"), o.getByRole("alert")])).toEqual([0, 1, 2]);
+    expect(order(top, [shown(top, "식탁 위 컵을 보고 있어요")[0]!, o.getByText("사진을 위치와 함께 보냈어요"), o.getByRole("alert")])).toEqual([0, 1, 2]);
     expect(within(top).queryAllByRole("button")).toEqual([]);
     expect(order(thumb, [o.getByText("현관문: 현관문 잠금 해제"), o.getByText("식탁 위 컵을 치워 주세요")])).toEqual([0, 1]);
     expect(within(thumb).getAllByRole("button").map((b) => b.textContent)).toEqual(["승인", "취소", "치웠어요", "나중에"]);
-    // 위 줄은 터치를 받지 않고 조준점 위에서 잘린다. 엄지 자리는 조준점 아래까지만 크고, 넘치면 그 칸만 스크롤한다
-    expect(words(top)).toEqual(expect.arrayContaining(["pointer-events-none", "overflow-hidden", "max-h-[calc(50dvh-86px)]"]));
-    expect(words(thumb)).toEqual(expect.arrayContaining(["bottom-24", "overflow-y-auto", "max-h-[calc(50dvh-120px)]"]));
+    // 가로: 위 줄은 조준점 오른쪽(큰 단추 줄 안쪽), 엄지 자리는 조준점 왼쪽. 위 줄은 터치를 받지 않고 잘리며, 엄지 자리는 넘치면 그 칸만 스크롤한다
+    expect(words(top)).toEqual(expect.arrayContaining(["pointer-events-none", "overflow-hidden", "top-16", "left-[calc(50vw+24px)]", "right-24", "max-h-[calc(100dvh-76px)]"]));
+    expect(words(thumb)).toEqual(expect.arrayContaining(["right-[calc(50vw+24px)]", "bottom-3", "overflow-y-auto", "max-h-[calc(100dvh-76px)]"]));
     expect(words(thumb)).not.toContain("pointer-events-none");
-    // 가로 화면: 엄지 자리는 조준점 왼쪽, 위 줄은 조준점 오른쪽
-    expect(words(thumb)).toEqual(expect.arrayContaining(["landscape:right-[calc(50vw+24px)]", "landscape:max-h-[calc(100dvh-76px)]"]));
-    expect(words(top)).toEqual(expect.arrayContaining(["landscape:left-[calc(50vw+24px)]", "landscape:right-24"]));
+    // 세로: 위 줄은 조준점 위, 엄지 자리는 조준점 아래(큰 단추 위)
+    expect(words(top)).toEqual(expect.arrayContaining(["portrait:max-h-[calc(50dvh-86px)]"]));
+    expect(words(thumb)).toEqual(expect.arrayContaining(["portrait:bottom-24", "portrait:max-h-[calc(50dvh-120px)]"]));
     for (const zone of [top, thumb]) expect([...zone.querySelectorAll("[class]")].filter((el) => words(el).includes("fixed"))).toEqual([]);
   });
 
@@ -173,7 +212,7 @@ describe("사진 요청·행동 부탁", () => {
     expect(thumb.getAllByRole("button").map((b) => b.textContent)).toEqual([
       "승인", "취소", "치웠어요", "나중에", "✓ A 거실 창 오른쪽 벽 아래 바닥 조준하고 기록", "B 반대편 벽 아래 바닥 조준하고 기록",
     ]);
-    expect(o.getByText("식탁 위 컵을 보고 있어요")).toBeInTheDocument();
+    expect(shown(o.getByRole("button", { name: "끝내기" }).closest<HTMLElement>("[data-phone-overlay]")!, "식탁 위 컵을 보고 있어요")).toHaveLength(1);
   });
 
   it("엄지 자리에 놓을 것이 없으면 그 칸을 그리지 않는다", () => {
@@ -197,6 +236,82 @@ describe("사진 요청·행동 부탁", () => {
     await userEvent.click(o.getByRole("button", { name: "치웠어요" }));
     await userEvent.click(o.getByRole("button", { name: "나중에" }));
     expect(vi.mocked(act.brainReply).mock.calls).toEqual([["a1", "done"], ["a1", "later"]]);
+  });
+});
+
+describe("마스코트 말풍선", () => {
+  it("위 줄 맨 위에 마스코트 얼굴과, 화살표가 얼굴을 가리키는 말풍선(Tooltip). 글은 한 번만 보인다", () => {
+    const { overlay } = show(SHOTS.overlay.view);
+    const top = overlay.querySelector<HTMLElement>("[data-phone-zone=top]")!;
+    const row = top.querySelector<HTMLElement>("[data-phone-mascot]")!;
+    expect(top.firstElementChild).toBe(row);
+    expect(row).toHaveAttribute("role", "status");
+    expect(row.querySelector("[data-shape=logo]")).not.toBeNull();
+    const bubble = row.querySelector<HTMLElement>("[data-phone-zone=bubble]")!;
+    expect(bubble).toHaveAttribute("data-side", "right");
+    expect(bubble).toHaveAttribute("data-tone", "twin");
+    expect(bubble.querySelector("svg")).not.toBeNull(); // 화살표
+    expect(within(row).getByRole("tooltip")).toHaveTextContent("식탁 위 컵을 보고 있어요");
+    // 같은 말을 두 번 보이지 않는다: 판단 줄이 없고, 보이는 글은 말풍선 안 하나
+    const seen = shown(overlay, "식탁 위 컵을 보고 있어요");
+    expect(seen).toHaveLength(1);
+    expect(bubble.contains(seen[0]!)).toBe(true);
+    expect(words(seen[0]!)).toEqual(expect.arrayContaining(["line-clamp-2", "break-keep"]));
+  });
+
+  it("말풍선은 터치를 받지 않고, 가로에서는 위 줄 안(큰 단추 줄 안쪽)까지만 넓다. 세로는 화면 폭 안", () => {
+    const { overlay } = show(SHOTS.overlay.view);
+    const bubble = overlay.querySelector<HTMLElement>("[data-phone-zone=bubble]")!;
+    expect(words(bubble)).toEqual(expect.arrayContaining(["pointer-events-none", "max-w-[calc(50vw-172px)]", "portrait:max-w-[calc(100vw-84px)]"]));
+    expect(words(bubble)).not.toContain("max-w-[280px]");
+  });
+
+  it("말이 없으면 말풍선을 그리지 않는다", () => {
+    const { overlay } = show(SHOTS.camera.view);
+    expect(overlay.querySelector("[data-phone-mascot]")).toBeNull();
+  });
+
+  it("초점 그림(canvas)은 위 줄 위에 그리고, 상태 줄·엄지 자리·큰 단추·메뉴는 그 위에 둔다", () => {
+    const { overlay } = show(SHOTS.busy.view);
+    const kids = [...overlay.children];
+    const at = (el: Element | null) => kids.indexOf(el!);
+    const canvas = at(overlay.querySelector("canvas"));
+    expect(at(overlay.querySelector("[data-phone-zone=top]"))).toBeLessThan(canvas);
+    for (const el of [overlay.querySelector("[data-phone-zone=thumb]"), overlay.querySelector("#phone-menu"), within(overlay).getByRole("button", { name: "끝내기" }).parentElement]) {
+      expect(at(el)).toBeGreaterThan(canvas);
+    }
+  });
+});
+
+describe("세로로 들면", () => {
+  it("AR 중 세로면 위 줄 맨 위에 「가로로 돌려 주세요」(Alert). 덮개와 단추는 그대로, 가로로 돌리면 사라진다", () => {
+    const turn = orientation(false);
+    const { act, overlay, o } = show(SHOTS.overlay.view);
+    expect(o.queryByText("가로로 돌려 주세요")).toBeNull();
+    turn.turn(true);
+    const notice = o.getByText("가로로 돌려 주세요").closest<HTMLElement>("[data-slot=alert]")!;
+    expect(notice).toHaveAttribute("role", "alert");
+    expect(overlay.querySelector("[data-phone-zone=top]")!.firstElementChild).toBe(notice);
+    expect(overlay.hidden).toBe(false);
+    expect(o.getByRole("button", { name: "끝내기" })).toBeInTheDocument();
+    expect(act.stopAr).not.toHaveBeenCalled();
+    turn.turn(false);
+    expect(o.queryByText("가로로 돌려 주세요")).toBeNull();
+  });
+
+  it("창 크기 바뀜(resize)으로도 다시 본다", () => {
+    const turn = orientation(false);
+    const { o } = show(SHOTS.camera.view);
+    turn.resize(true);
+    expect(o.getByText("가로로 돌려 주세요")).toBeInTheDocument();
+    turn.resize(false);
+    expect(o.queryByText("가로로 돌려 주세요")).toBeNull();
+  });
+
+  it("AR 전 처음 화면에는 띄우지 않는다", () => {
+    orientation(true);
+    show(SHOTS.intro.view);
+    expect(screen.queryByText("가로로 돌려 주세요")).toBeNull();
   });
 });
 
