@@ -72,6 +72,11 @@
   --color-marker-b: var(--marker-b);
   --color-marker-a-ink: var(--marker-a-ink);
   --color-marker-b-ink: var(--marker-b-ink);
+  --color-scene-bg: var(--scene-bg);
+  --color-scene-cap: var(--scene-cap);
+  --color-scene-window: var(--scene-window);
+  --color-scene-rail: var(--scene-rail);
+  --color-scene-light: var(--scene-light);
   --color-glass: var(--glass);
   --color-glass-soft: var(--glass-soft);
   --color-glass-edge: var(--glass-edge);
@@ -180,6 +185,11 @@
   --marker-b: #1c7ed6;
   --marker-a-ink: #ffffff;
   --marker-b-ink: #ffffff;
+  --scene-bg: #bdbdbd;
+  --scene-cap: #4e4b48;
+  --scene-window: #d0d1d1;
+  --scene-rail: #e4eaec;
+  --scene-light: #ffffff;
   --glass: rgb(255 252 248 / 0.9);
   --glass-soft: rgb(255 252 248 / 0.6);
   --glass-edge: rgb(66 64 63 / 0.12);

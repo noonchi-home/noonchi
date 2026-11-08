@@ -1,6 +1,6 @@
 // 디자인 토큰 만들기: 원본 src/design/tokens.json 하나에서 화면마다 쓰는 파일을 만든다.
 //   ui/src/tokens.css      대시보드·설정·폰(Tailwind @theme와 :root 변수, 화면 글 크기는 html[data-surface])
-//   src/design/tokens.ts   트윈·SVG·캔버스(폰 조준점·초점 그림 포함)·3D 계획 색(TS 값)
+//   src/design/tokens.ts   트윈·SVG·캔버스(폰 조준점·초점 그림 포함)·3D 계획·3D 장면 색(TS 값)
 //   ui/src/phone/core/font-faces.js  폰 인코딩 워커가 FontFace로 넣는 글꼴 조각 목록(꾸러미 CSS에서 만든다, 파일은 ui 빌드가 ?url로 묶는다)
 // 같이 옮기는 것: 글꼴 라이선스를 ui/public/fonts/로.
 // 원본의 {"ref": 이름}은 hex(또는 rgb(… / α))로, 값이 더 있는 {"ref": 이름, width, opacity}는 { color, width, opacity }로 푼다.
@@ -28,6 +28,7 @@ export interface Tokens {
   overlayLine: Obj;
   twin: Obj;
   viz: Obj;
+  scene3d: Obj;
 }
 
 export const SOURCE = "src/design/tokens.json";
@@ -146,7 +147,7 @@ function designTs(t: Tokens, value: (n: string) => string, deep: (v: Json) => Js
   const alias = Object.fromEntries(Object.keys(t.alias).map((n) => [n, value(n)]));
   return [
     HEAD(t, "//"),
-    "// 트윈 위 표시·SVG·캔버스·3D 계획(VIZ) 색은 여기 값만 쓴다.",
+    "// 트윈 위 표시·SVG·캔버스·3D 계획(VIZ)·3D 장면(scene3d) 색은 여기 값만 쓴다.",
     "",
     `export const color = ${js(color)} as const;`,
     "",
@@ -159,6 +160,8 @@ function designTs(t: Tokens, value: (n: string) => string, deep: (v: Json) => Js
     `export const twin = ${js(deep(t.twin))} as const;`,
     "",
     `export const viz = ${js(deep(t.viz))} as const;`,
+    "",
+    `export const scene3d = ${js(deep(t.scene3d))} as const;`,
     "",
     `export const font = ${js({ sans: t.font.sans.family, mono: t.font.mono.family, canvas: canvasFamily(t), weights: t.font.weights })} as const;`,
     "",

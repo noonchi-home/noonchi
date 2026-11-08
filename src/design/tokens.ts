@@ -1,5 +1,5 @@
 // 만든 파일: src/design/tokens.json(NOONCHI 1.1.0)에서 npm run tokens가 만든다. 고칠 때는 원본을 고치고 npm run tokens를 돌린다.
-// 트윈 위 표시·SVG·캔버스·3D 계획(VIZ) 색은 여기 값만 쓴다.
+// 트윈 위 표시·SVG·캔버스·3D 계획(VIZ)·3D 장면(scene3d) 색은 여기 값만 쓴다.
 
 export const color = {
   "brand": "#a1143e",
@@ -43,7 +43,12 @@ export const color = {
   "marker-a": "#e8590c",
   "marker-b": "#1c7ed6",
   "marker-a-ink": "#ffffff",
-  "marker-b-ink": "#ffffff"
+  "marker-b-ink": "#ffffff",
+  "scene-bg": "#bdbdbd",
+  "scene-cap": "#4e4b48",
+  "scene-window": "#d0d1d1",
+  "scene-rail": "#e4eaec",
+  "scene-light": "#ffffff"
 } as const;
 
 export const rgba = {
@@ -330,6 +335,20 @@ export const viz = {
     "a": "#e8590c",
     "b": "#1c7ed6"
   }
+} as const;
+
+export const scene3d = {
+  "background": "#bdbdbd",
+  "wallCap": "#4e4b48",
+  "windowGlass": {
+    "color": "#d0d1d1",
+    "opacity": 0.88
+  },
+  "railGlass": {
+    "color": "#e4eaec",
+    "opacity": 0.22
+  },
+  "light": "#ffffff"
 } as const;
 
 export const font = {

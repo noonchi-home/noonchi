@@ -2,6 +2,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { FONT_FACES, OUTPUTS, SOURCE, copies, readTokens, renderFontFaces, renderTokens, repoPath, resolver } from "../scripts/design-tokens.js";
+import { scene3d } from "../src/design/tokens.js";
 
 const tokens = readTokens();
 const onDisk = (p: string) => (existsSync(repoPath(p)) ? readFileSync(repoPath(p), "utf8").replace(/\r\n/g, "\n") : null);
@@ -69,5 +70,13 @@ describe("디자인 토큰 원본", () => {
     const { deep } = resolver(tokens);
     expect(deep({ ref: "brand" })).toBe("#a1143e");
     expect(deep({ ref: "twin-casing", width: 9, opacity: 0.95 })).toEqual({ color: "#ffffff", width: 9, opacity: 0.95 });
+  });
+
+  it("3D 장면 색(scene3d)도 tokens.ts로 푼다", () => {
+    expect(renderTokens(readTokens())["src/design/tokens.ts"]).toContain("export const scene3d = ");
+    expect(scene3d).toEqual({
+      background: "#bdbdbd", wallCap: "#4e4b48", light: "#ffffff",
+      windowGlass: { color: "#d0d1d1", opacity: 0.88 }, railGlass: { color: "#e4eaec", opacity: 0.22 },
+    });
   });
 });
