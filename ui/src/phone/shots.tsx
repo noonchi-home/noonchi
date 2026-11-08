@@ -2,6 +2,7 @@
 // AR 상태는 카메라 자리에 ink-4 바탕을 깔고 조준점·초점 그림을 그 위에 그린다. 다 그리면 html에 data-shot을 단다(npm run capture --ready).
 // AR 상태는 그린 뒤 배치를 잰다(layout-check.ts): 화면 밖 단추, 조준점이나 그 칸 밖 단추를 가리는 칸(위 줄·말풍선·엄지 자리)이 있으면
 // console.error로 내서 capture가 실패한다. 말풍선 자리는 부품이 그린 뒤 정해지므로 두 화면 그림 뒤에 잰다.
+// 처음 화면은 「AR 시작」 단추가 첫 화면 밖이면 같은 방법으로 실패한다.
 import { useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import "@fontsource-variable/noto-sans-kr";
@@ -9,7 +10,7 @@ import "../styles.css";
 import { color } from "../../../src/design/tokens.ts";
 import { drawOverlay, fitCanvas, labelFont, markLabel } from "./draw";
 import { SHOTS, SHOT_NAMES, type ShotName } from "./fixtures";
-import { layoutIssues, type Box } from "./layout-check";
+import { introIssues, layoutIssues, type Box } from "./layout-check";
 import { PhoneScreen } from "./PhoneScreen";
 import type { PhoneActions } from "./state";
 
@@ -42,6 +43,14 @@ function measureOverlay(): string[] {
   return layoutIssues({ width: innerWidth, height: innerHeight }, targets, panels);
 }
 
+/** 처음 화면이 보이면 「AR 시작」 단추가 첫 화면 안에 있는지 잰다. */
+function measureIntro(): string[] {
+  const intro = document.querySelector("main");
+  if (!intro || intro.hidden) return [];
+  const start = [...intro.querySelectorAll("button")].find((b) => b.textContent?.trim() === "AR 시작");
+  return introIssues({ width: innerWidth, height: innerHeight }, start ? rect(start) : null);
+}
+
 function Shot({ name }: { name: ShotName }) {
   const shot = SHOTS[name];
   const backdrop = useRef<HTMLCanvasElement>(null);
@@ -69,7 +78,7 @@ function Shot({ name }: { name: ShotName }) {
       }
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
       if (!live) return;
-      for (const issue of measureOverlay()) console.error(`배치: ${issue}`);
+      for (const issue of [...measureIntro(), ...measureOverlay()]) console.error(`배치: ${issue}`);
       document.documentElement.dataset.shot = name;
     })();
     return () => { live = false; };

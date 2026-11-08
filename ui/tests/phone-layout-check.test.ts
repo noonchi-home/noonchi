@@ -1,7 +1,7 @@
 // 폰 덮개 배치 검사(layout-check.ts): 화면 사진 페이지(shots.tsx)가 크롬에서 잰 자리로 부른다.
 // 단추는 화면 안(또는 화면 안 스크롤 칸 안)에 있어야 하고, 위 줄·말풍선·엄지 자리는 가운데 조준점(28px)과 그 칸 밖 단추(큰 단추·⋯)를 가리면 안 된다.
 import { describe, expect, it } from "vitest";
-import { layoutIssues } from "../src/phone/layout-check";
+import { introIssues, layoutIssues } from "../src/phone/layout-check";
 
 const box = (left: number, top: number, right: number, bottom: number) => ({ left, top, right, bottom });
 const PORTRAIT = { width: 390, height: 844 };
@@ -34,5 +34,16 @@ describe("폰 덮개 배치 검사", () => {
     expect(layoutIssues(PORTRAIT, [], [{ name: "엄지 자리", box: box(16, 308, 374, 492) }])).toEqual(["「엄지 자리」 칸이 조준점을 가려요"]);
     // 조준점 바로 옆(14px 밖)은 괜찮다
     expect(layoutIssues(LANDSCAPE, [], [{ name: "엄지 자리", box: box(16, 64, 408, 378) }, { name: "위 줄", box: box(436, 64, 748, 300) }])).toEqual([]);
+  });
+});
+
+describe("처음 화면 배치 검사", () => {
+  it("AR 시작 단추는 스크롤하지 않은 첫 화면 안에 있어야 한다", () => {
+    expect(introIssues(LANDSCAPE, box(216, 247, 628, 295))).toEqual([]);
+    expect(introIssues(LANDSCAPE, box(216, 379, 628, 427))).toEqual(["「AR 시작」 단추가 첫 화면 밖이에요(216,379–628,427 / 844×390)"]);
+  });
+
+  it("AR 시작 단추가 없으면 문제", () => {
+    expect(introIssues(PORTRAIT, null)).toEqual(["「AR 시작」 단추가 없어요"]);
   });
 });

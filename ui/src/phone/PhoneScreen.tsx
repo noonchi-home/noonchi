@@ -1,4 +1,4 @@
-// 폰 화면(클로이드의 눈). 처음 화면: 마스코트·제목·AR 지원 줄·안내 둘·AR 시작, 대화(답 줄·승인 대기·누르고 말하기·글 입력).
+// 폰 화면(클로이드의 눈). 처음 화면: 마스코트(세로에서만)·제목·AR 지원 줄·안내 둘·AR 시작, 대화(답 줄·승인 대기·누르고 말하기·글 입력).
 // AR 덮개(DOM 오버레이 뿌리): 조준점·초점 그림(canvas), 위 상태 줄·보낸 장 수·⋯, 마스코트 말풍선, 알림, 사진 요청, 행동 부탁, 기준점 단추, 큰 단추 셋, 승인 대기, ⋯ 메뉴.
 // 폰은 클로이드 눈처럼 가로로 든다. 가로가 기본 배치다: 큰 단추는 오른쪽 세로 줄, 위 줄(말풍선·알림·사진 요청)은 조준점 오른쪽,
 // 엄지 자리(승인 대기·행동 부탁·기준점 단추)는 조준점 왼쪽. 두 칸 모두 가운데 조준점을 비키고, 엄지 자리는 넘치면 그 칸만 스크롤한다.
@@ -90,7 +90,8 @@ function Intro({ view, act, draft, setDraft }: { view: PhoneView } & DraftProps)
   const canStart = view.support.kind === "ready" || view.support.kind === "failed";
   return (
     <main hidden={view.ar} className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col gap-4 px-4 pt-6 pb-4">
-      <img src="/brand/mascot@1x.webp" alt="" width={55} height={96} className="mx-auto my-2.5 h-24 w-auto" />
+      {/* 가로로 들면 마스코트 그림을 숨겨 AR 시작 단추가 첫 화면에 들어오게 한다 */}
+      <img src="/brand/mascot@1x.webp" alt="" width={55} height={96} className="mx-auto my-2.5 h-24 w-auto landscape:hidden" />
       <Card>
         <CardHeader>
           <CardTitle>클로이드의 눈</CardTitle>
