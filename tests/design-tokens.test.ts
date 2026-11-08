@@ -31,6 +31,14 @@ describe("디자인 토큰 원본", () => {
     expect(renderFontFaces()).toMatch(/\{ url: f0, unicodeRange: "U\+/);
   });
 
+  it("원본의 글꼴 설명이 지금 길과 같다: 폰 글꼴은 ui 빌드 /assets/, 워커는 font-faces.js, 라이선스는 ui/public/fonts 하나", () => {
+    const sans = (JSON.parse(readFileSync(repoPath(SOURCE), "utf8")) as { font: { sans: Record<string, string> } }).font.sans;
+    expect(JSON.stringify(sans)).not.toContain("web/phone");
+    expect(sans.phone).toContain("/assets/");
+    expect(sans.phone).toContain(FONT_FACES);
+    expect(sans.licenseFile).toBe(`node_modules/@fontsource-variable/noto-sans-kr/LICENSE → ${copies()[0]!.to}`);
+  });
+
   it("원본이 바뀌면 만든 파일도 바뀐다", () => {
     const changed = structuredClone(tokens);
     changed.color.brand!.value = "#000001";
