@@ -87,7 +87,7 @@ describe("NOONCHI 처음부터 끝까지", () => {
     ws.send(JSON.stringify({ type: "say", text: "다 했어" }));
     await pump(() => !!said("컵을 싱크대에 넣어 주세요"));
     await pump(() => phone.some((m) => m.type === "reply"));
-    expect(phone.find((m) => m.type === "reply")).toEqual({ type: "reply", text: "", pending: [] });
+    expect(phone.find((m) => m.type === "reply")).toEqual({ type: "reply", text: "" });
     // 4 내려놓기: VLM이 컵을 싱크대 안으로 본다 → 명령을 지우고 완료
     cupPlace = "in_sink";
     await pump(() => phone.some((m) => m.type === "command_clear" && m.id === planId));

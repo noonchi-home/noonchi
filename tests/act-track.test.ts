@@ -356,7 +356,7 @@ describe("실행 추적 + 실제 World State(기준점을 맞춘 카메라)", ()
       surfaces: () => [{ id: "table_1", label: "식탁", center: [2, 0], top: 0.75, radius: 0.6 }, { id: "sink_1", label: "싱크대", center: [1.2, 0.8], top: 0.9, radius: 0.5 }],
       floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices: () => [],
     });
-    const see = (i: number, d: Detection, state: string) => {
+    const see = (i: number, d: Detection, state: "on_table" | "in_hand" | "in_sink") => {
       const { ids } = ws.applyDetections(frame(i), [d]);
       ws.applyScene(`e${i}`, i * 1000, { scene: "k", observations: [{ object_id: "d1", state }], summary: "s" }, ids);
     };

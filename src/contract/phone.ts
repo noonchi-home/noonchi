@@ -36,8 +36,9 @@ export interface PhonePending { token: string; deviceLabel: string; reason: stri
 /** 실제 폰 → 서버: 들은 말(say), 승인(confirm)·취소(cancel). 들은 말이 명령·질문의 답이면 서버가 그 답으로 받는다(「완료」「다 했어」, 「그만」은 계획을 그만둔다). */
 export type PhoneTalk = { type: "say"; text: string } | { type: "confirm" | "cancel"; token: string };
 
-/** 서버 → 실제 폰: 말·승인의 답. text가 빈 글이면 보이지도 읽지도 않는다(명령의 답을 말로 한 때: 다음 명령이 따로 온다). */
-export interface PhoneTalkReply { type: "reply"; text: string; pending: PhonePending[] }
+/** 서버 → 실제 폰: 말·승인의 답. text가 빈 글이면 보이지도 읽지도 않는다(명령의 답을 말로 한 때: 다음 명령이 따로 온다).
+ *  pending은 에이전트 답에만 싣는 지금 승인 대기 목록이다. 없으면(명령의 답·승인·취소·오류) 실제 폰은 목록을 그대로 둔다. */
+export interface PhoneTalkReply { type: "reply"; text: string; pending?: PhonePending[] }
 
 /** 서버가 실제 폰에 보내는 명령 메시지. */
 export type PhoneCommandMessage = PhoneCommand | PhoneCommandClear;

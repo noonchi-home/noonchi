@@ -12,7 +12,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocket, WebSocketServer } from "ws";
 import type { FocusTarget } from "../contract/events.js";
-import type { PhoneCommand, PhoneCommandMessage } from "../contract/phone.js";
+import type { PhoneCommand, PhoneCommandMessage, PhoneTalkReply } from "../contract/phone.js";
 import { listenRetry } from "../server/net.js";
 import { serveFile } from "../server/static.js";
 import type { AnchorTarget } from "./anchors.js";
@@ -185,25 +185,27 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
     reply(ws, { type: "photo_saved", id: photo.id, aligned: eye !== null });
   };
 
+  // 답(PhoneTalkReply): 에이전트 답만 승인 대기 목록(pending)을 싣는다. 명령의 답·승인·취소·오류는 그 칸을 빼서 실제 폰이 목록을 그대로 둔다
   const talk = async (ws: WebSocket, msg: Record<string, unknown>) => {
+    const say = (text: string, pending?: PhoneReply["pending"]): void => reply(ws, { type: "reply", text, ...(pending ? { pending } : {}) } satisfies PhoneTalkReply);
     try {
       if (msg.type === "say") {
         const text = typeof msg.text === "string" ? msg.text.trim().slice(0, MAX_SAY) : "";
-        if (!text) return reply(ws, { type: "reply", text: "말이 비어 있어요. 다시 말해 주세요.", pending: [] });
+        if (!text) return say("말이 비어 있어요. 다시 말해 주세요.");
         const answer = opts.onAnswer?.(text);
-        if (answer?.handled) return reply(ws, { type: "reply", text: answer.reply ?? "", pending: [] });
-        if (!opts.onSay) return reply(ws, { type: "reply", text: "에이전트가 연결되지 않았어요.", pending: [] });
+        if (answer?.handled) return say(answer.reply ?? "");
+        if (!opts.onSay) return say("에이전트가 연결되지 않았어요.");
         const r = await opts.onSay(text);
-        return reply(ws, { type: "reply", text: r.reply, pending: r.pending });
+        return say(r.reply, r.pending);
       }
       const token = typeof msg.token === "string" ? msg.token : "";
       const fn = msg.type === "confirm" ? opts.onConfirm : opts.onCancel;
-      if (!token || !fn) return reply(ws, { type: "reply", text: "승인할 작업을 찾지 못했어요.", pending: [] });
+      if (!token || !fn) return say("승인할 작업을 찾지 못했어요.");
       const r = await fn(token);
-      return reply(ws, { type: "reply", text: r.reply, pending: [] });
+      return say(r.reply);
     } catch (e) {
       log(`[phone] 대화 처리 실패: ${(e as Error).message}`);
-      return reply(ws, { type: "reply", text: `처리하지 못했어요: ${(e as Error).message}`, pending: [] });
+      return say(`처리하지 못했어요: ${(e as Error).message}`);
     }
   };
 

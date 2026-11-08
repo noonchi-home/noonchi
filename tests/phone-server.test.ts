@@ -336,7 +336,8 @@ describe("폰 대화·승인·초점", () => {
     expect(said).toEqual(["현관문 열어줘"]);
     got = next(ws, (m) => m.type === "reply");
     ws.send(JSON.stringify({ type: "confirm", token: "tok1" }));
-    expect((await got).text).toBe("현관문을 열었어요.");
+    // 승인·취소의 답은 승인 대기 칸을 싣지 않는다(남은 승인 대기를 실제 폰이 지우지 않게)
+    expect(await got).toEqual({ type: "reply", text: "현관문을 열었어요." });
     expect(confirmed).toEqual(["tok1"]);
     got = next(ws, (m) => m.type === "reply");
     ws.send(JSON.stringify({ type: "cancel", token: "tok2" }));

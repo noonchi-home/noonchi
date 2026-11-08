@@ -244,6 +244,16 @@ describe("명령·질문·승인", () => {
     expect([c.view().reply, spoken.length]).toEqual([null, 1]);
   });
 
+  it("pending 칸이 없는 답(말로 한 「완료」·승인·취소의 답)은 승인 대기 목록을 그대로 둔다", () => {
+    const { c, ws } = make();
+    const door = { token: "t1", deviceLabel: "현관문", reason: "현관문 잠금 해제" };
+    ws.push({ type: "reply", text: "승인이 필요해요.", pending: [door] });
+    ws.push({ type: "reply", text: "" });
+    expect(c.view().pending).toEqual([door]);
+    ws.push({ type: "reply", text: "취소했어요.", pending: [] });
+    expect(c.view().pending).toEqual([]);
+  });
+
   it("빈 말은 보내지 않는다", () => {
     const { c, sent } = make();
     c.actions.say("   ");

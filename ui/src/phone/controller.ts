@@ -135,9 +135,10 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
       set((v) => ({ ...onStatus(v, msg as { mode?: AlignMode; anchors: Anchor[]; aligned: boolean; mismatch_m?: number | null }), connected: true }));
       if (msg.error) showNote(msg.error);
     } else if (msg.type === "reply") {
-      const pending: Pending[] = msg.pending ?? [];
+      // pending 칸이 없으면(명령의 답·승인·취소의 답) 승인 대기 목록을 그대로 둔다
+      const pending: Pending[] | undefined = msg.pending;
       const text = String(msg.text ?? "");
-      set((v) => ({ ...v, reply: text || null, pending }));
+      set((v) => ({ ...v, reply: text || null, pending: pending ?? v.pending }));
       if (text) sayAloud(text);
     } else if (msg.type === "focus") ar.setFocus(msg.targets, msg.ttl_ms);
     else if (msg.type === "command") {

@@ -53,7 +53,9 @@ describe("폰 음성 질문", () => {
     ws.send(JSON.stringify({ type: "say", text: "불 꺼 줘" }));
     await until(replies, 2);
     expect(replies.map((m) => m.text)).toEqual(["", "에이전트"]);
-    expect(replies[0]).toMatchObject({ pending: [] });
+    // 명령의 답에는 승인 대기 칸을 싣지 않는다(실제 폰이 승인 대기 목록을 그대로 둔다)
+    expect(replies[0]).not.toHaveProperty("pending");
+    expect(replies[1]).toMatchObject({ pending: [] });
     expect(answered).toEqual(["완료", "불 꺼 줘"]);
     expect(said).toEqual(["불 꺼 줘"]);
   });
