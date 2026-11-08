@@ -29,4 +29,11 @@ describe("입구 HTML", () => {
   it.each(["src/dashboard/main.tsx", "src/setup/main.tsx", "src/phone/main.tsx"])("%s는 묶은 글꼴을 싣는다(외부 CDN 없음)", (p) => {
     expect(page(p)).toContain('import "@fontsource-variable/noto-sans-kr";');
   });
+
+  it("화면 사진 페이지(ui/phone/shots/)는 폰 글자 크기로 상태 예시를 그린다", () => {
+    const html = page("phone/shots/index.html");
+    expect(html).toContain('<html lang="ko" data-surface="phone">');
+    expect(html).toContain('src="/src/phone/shots.tsx"');
+    expect(page("src/phone/shots.tsx")).toContain('import "@fontsource-variable/noto-sans-kr";');
+  });
 });

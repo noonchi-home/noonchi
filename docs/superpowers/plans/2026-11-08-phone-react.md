@@ -3378,7 +3378,7 @@ createRoot(document.getElementById("root")!).render(<Shot name={SHOT_NAMES.inclu
 
 ```ts
 // 화면 사진 페이지(ui/phone/shots/)는 PHONE_SHOTS=1 빌드에만 넣는다(상태마다 npm run capture로 찍을 때).
-const shots = process.env.PHONE_SHOTS === "1" ? { phoneShots: page("phone/shots/index.html") } : {};
+const shots: Record<string, string> = process.env.PHONE_SHOTS === "1" ? { phoneShots: page("phone/shots/index.html") } : {};
 ```
 
 ```ts
