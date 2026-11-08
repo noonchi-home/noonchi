@@ -14,14 +14,14 @@ import { TwinStage } from "../twin/TwinStage";
 import { useAnchors } from "../twin/use-anchors";
 import { useViewer } from "../twin/viewer";
 
-/** 확인 목록만 말풍선으로. 두뇌 줄은 장면의 식탁(dining_table)에 붙는다. 자리는 확인한 것만 센다. 트윈이 화면 전체라 큰 말풍선(lg). 말풍선은 패널(data-panel)을 비킨다. */
+/** 확인 목록만 말풍선으로. 두뇌 줄은 장면의 식탁(dining_table)에 붙는다. 자리는 확인한 것만 센다. 말풍선은 패널(data-panel)을 비킨다. */
 function Overlay({ devices, checks, focusId }: { devices: ReturnType<typeof useDevices>["devices"]; checks: ChecksState; focusId: string | null }) {
   const v = useViewer();
   const table = useMemo(() => v?.objects().find((o) => o.type === "dining_table") ?? null, [v]);
   const list = useMemo(() => checkList(checks, table?.id ?? null), [checks, table]);
   const objects = useMemo(() => new Map<string, string>(table ? [[table.id, table.name ?? "식탁"]] : []), [table]);
   const points = useAnchors(list.map((c) => c.deviceId ?? c.objectId!));
-  return <BubbleLayer checks={list} devices={devices} objects={objects} points={points} focusId={focusId} size="lg" avoid="[data-panel]" />;
+  return <BubbleLayer checks={list} devices={devices} objects={objects} points={points} focusId={focusId} avoid="[data-panel]" />;
 }
 
 /**

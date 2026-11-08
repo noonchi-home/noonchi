@@ -3,7 +3,7 @@
 // 21st.dev「Tooltip」(id 208, originui/tooltip) 받은 코드.
 // 바꾼 것: 「Tooltip with arrow」 데모 그대로 showArrow. Portal에 container prop을 잇는다(말풍선 층 안에 그려 판과 함께 움직인다).
 // tone="twin"이면 트윈 위: 테두리 border-border → twin-edge(charcoal 불투명), 화살표 drop-shadow hsl(var(--border)) → var(--twin-edge), 그림자 shadow-float 토큰.
-// focus면 테두리 brand 2px(확인한 기기 강조). 글 text-sm → 크기별 토큰(md: label, lg: 이름·verb far, data-line 줄 body).
+// focus면 테두리 brand 2px(확인한 기기 강조). 글 text-sm → 크기별 토큰(sm·md: label, body: body). 트윈 말풍선은 md(디자인 시스템 전 크기, 2026-11-08 사용자 결정).
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import * as React from "react";
 
@@ -18,7 +18,6 @@ const TooltipTrigger = TooltipPrimitive.Trigger;
 const SIZE = {
   sm: "text-label",
   md: "text-label",
-  lg: "text-far [&_[data-slot=status]]:text-far [&_[data-line]]:text-body",
   body: "text-body",
 } as const;
 

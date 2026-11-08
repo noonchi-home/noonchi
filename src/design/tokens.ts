@@ -224,8 +224,7 @@ export const twin = {
       "unknown": "CircleHelp"
     },
     "numberSize": {
-      "md": 20,
-      "lg": 44
+      "md": 20
     },
     "objectDot": "#a1143e",
     "verb": {

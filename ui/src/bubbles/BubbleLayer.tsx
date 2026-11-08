@@ -7,7 +7,7 @@ import { Status, StatusIndicator } from "../components/ui/status";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../components/ui/tooltip";
 import { cn } from "../lib/utils";
 import type { ScreenPoint } from "../twin/use-anchors";
-import { ALIGN_EDGE, placeBubbles, type Box, type BubbleSize, type Placement, type Rect } from "./place";
+import { ALIGN_EDGE, placeBubbles, type Box, type Placement, type Rect } from "./place";
 import { deviceSummary, type Tone } from "./summary";
 
 /** 번호 동그라미 색(21st.dev Avatar tone). 상태는 색만으로 말하지 않는다: 경고는 TriangleAlert, 모름은 CircleHelp를 번호 옆에 둔다. */
@@ -20,8 +20,8 @@ const VERB: Record<CheckVerb, "default" | "success" | "warning" | "error" | "bra
 /** 겹칠 때 위아래: 모름이 맨 아래, 경고가 그 위, 방금 다룬 기기가 맨 위. */
 const LAYER: Record<Tone, string> = { unknown: "z-0", off: "z-10", on: "z-10", alert: "z-20" };
 
-/** 말풍선 크기: md는 작은 화면, lg는 트윈이 큰 화면(대시보드). 자리가 모자라면 lg도 md로 줄인다. */
-export type { BubbleSize } from "./place";
+/** 말풍선 크기는 하나다: 디자인 시스템 전 크기(글 label, 번호 20px). 2026-11-08 사용자 결정. */
+const SIZE = "md";
 
 /** 자리를 먼저 잡는 차례: 방금 다룬 기기 → 경고 → 켜짐·꺼짐 → 모름. */
 const RANK: Record<Tone, number> = { alert: 1, on: 2, off: 2, unknown: 3 };
@@ -46,13 +46,12 @@ function shownOf(c: Check, devices: Map<string, DeviceView>, objects: Map<string
  */
 function Bubble({ s, verb, p, big, place, measure, onSize }: {
   s: Shown; verb: CheckVerb; p: ScreenPoint; big: boolean; place: Placement;
-  measure: (el: HTMLElement) => Box; onSize: (key: string, box: Box) => void;
+  measure: (el: HTMLElement) => Box; onSize: (id: string, box: Box) => void;
 }) {
-  const size = place.size;
   const [box, setBox] = useState<HTMLDivElement | null>(null);
   const content = useRef<HTMLDivElement>(null);
   // 그린 판 크기를 알린다(자리 고르기에 쓴다)
-  useLayoutEffect(() => { if (content.current) onSize(`${s.id}:${size}`, measure(content.current)); });
+  useLayoutEffect(() => { if (content.current) onSize(s.id, measure(content.current)); });
   return (
     <div
       ref={setBox}
@@ -66,14 +65,14 @@ function Bubble({ s, verb, p, big, place, measure, onSize }: {
         {box && (
           <TooltipContent
             ref={content} container={box} side={place.side} align={place.align} alignOffset={place.align === "center" ? 0 : -ALIGN_EDGE} sideOffset={0}
-            avoidCollisions={false} showArrow tone="twin" size={size} focus={big}
+            avoidCollisions={false} showArrow tone="twin" size={SIZE} focus={big}
             aria-label={[s.title, verb, s.line].filter(Boolean).join(" ")}
             className="pointer-events-none w-max max-w-none motion-reduce:animate-none"
           >
             <div className="flex items-center gap-1.5">
               {s.order !== undefined && s.tone ? (
                 <>
-                  <Avatar data-order size={size}><AvatarFallback tone={ORDER[s.tone]}>{s.order}</AvatarFallback></Avatar>
+                  <Avatar data-order size={SIZE}><AvatarFallback tone={ORDER[s.tone]}>{s.order}</AvatarFallback></Avatar>
                   {s.tone === "alert" && <TriangleAlert className="size-4 shrink-0" aria-hidden="true" />}
                   {s.tone === "unknown" && <CircleHelp className="size-4 shrink-0" aria-hidden="true" />}
                 </>
@@ -101,14 +100,13 @@ const OPEN: Rect = { left: -Infinity, top: -Infinity, right: Infinity, bottom: I
  * 말풍선은 보기만 한다: 층과 말풍선 모두 마우스를 받지 않아 클릭·끌기가 3D 트윈으로 간다.
  * 말풍선끼리와 avoid(CSS 선택자)에 맞는 패널을 비키고, 덮개(층의 부모) 안에 들게 판을 기기 위·아래·옆으로 옮긴다(place.ts).
  */
-export function BubbleLayer({ checks, devices, objects = new Map(), points, focusId, size = "md", avoid, measure = naturalSize }: {
+export function BubbleLayer({ checks, devices, objects = new Map(), points, focusId, avoid, measure = naturalSize }: {
   checks: Check[];
   devices: Map<string, DeviceView>;
   /** 물건 id → 이름(식탁). */
   objects?: Map<string, string>;
   points: Map<string, ScreenPoint>;
   focusId?: string | null;
-  size?: BubbleSize;
   /** 말풍선이 덮지 않을 패널(CSS 선택자). */
   avoid?: string;
   /** 말풍선 판 크기 재기(시험은 고정 크기를 넘긴다). */
@@ -125,10 +123,7 @@ export function BubbleLayer({ checks, devices, objects = new Map(), points, focu
     return [{ c, s, p, big: c.deviceId !== undefined && c.deviceId === focusId }];
   });
   const order = [...shown].sort((a, b) => Number(b.big) - Number(a.big) || (a.s.tone ? RANK[a.s.tone] : 2) - (b.s.tone ? RANK[b.s.tone] : 2));
-  const places = placeBubbles(order.map(({ s, p, big }) => ({
-    id: s.id, x: p.x, y: p.y, scale: big ? 1.25 : 1,
-    sizes: { lg: sizes[`${s.id}:lg`], md: sizes[`${s.id}:md`] },
-  })), frame.bounds, frame.avoid, size);
+  const places = placeBubbles(order.map(({ s, p, big }) => ({ id: s.id, x: p.x, y: p.y, scale: big ? 1.25 : 1, box: sizes[s.id] })), frame.bounds, frame.avoid);
 
   // 그린 뒤 덮개·패널 자리를 재고, 바뀌었으면 자리를 다시 고른다
   useLayoutEffect(() => {
