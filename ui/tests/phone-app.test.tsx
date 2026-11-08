@@ -3,6 +3,7 @@
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { twin } from "../../src/design/tokens.ts";
 import { createPhoneController } from "../src/phone/controller";
 import { PhoneApp } from "../src/phone/PhoneApp";
 
@@ -53,7 +54,8 @@ function paintLog() {
   const ops: { op: string; [k: string]: unknown }[] = [];
   const ctx = {
     lineWidth: 0, strokeStyle: "", fillStyle: "", font: "", textAlign: "", textBaseline: "", lineJoin: "",
-    setTransform() {}, beginPath() {}, closePath() {}, moveTo() {}, lineTo() {}, roundRect() {}, fill() {}, stroke() {},
+    setTransform() {}, beginPath() {}, closePath() {}, moveTo() {}, lineTo() {}, roundRect() {}, fill() {},
+    stroke() { ops.push({ op: "stroke", color: ctx.strokeStyle }); },
     clearRect() { ops.push({ op: "clear" }); },
     arc(x: number, y: number) { ops.push({ op: "arc", x, y }); },
     fillText(text: string) { ops.push({ op: "text", text }); },
@@ -121,5 +123,29 @@ describe("폰 화면 뿌리(PhoneApp)", () => {
     // 조준점(화면 가운데 고리)과 초점 이름표
     expect(ops.some((o) => o.op === "arc" && o.x === innerWidth / 2 && o.y === innerHeight / 2)).toBe(true);
     expect(ops.filter((o) => o.op === "text").map((o) => o.text)).toContain("클로이드 주목 · 컵");
+  });
+
+  it("덮개를 열 때 한 번 그린다(조준점이 바로 보임). 초점이 없고 조준점이 그대로인 프레임은 다시 그리지 않는다. 다시 열면 지난 그림 대신 새로 그린다", async () => {
+    const ops = paintLog();
+    const { c, session, container } = arApp();
+    const overlay = container.querySelector<HTMLElement>("[data-phone-overlay]")!;
+    const clears = () => ops.filter((o) => o.op === "clear").length;
+    /** 마지막 조준점 심 색(조준점 고리 다섯 겹 중 마지막). */
+    const aim = () => ops.filter((o) => o.op === "stroke").at(-1)?.color;
+    await userEvent.click(await screen.findByRole("button", { name: "AR 시작" }));
+    await vi.waitFor(() => expect(overlay.hidden).toBe(false));
+    expect(clears()).toBe(1);
+    expect(aim()).toBe(twin.phoneFocus.aim.miss);
+    act(() => { for (const time of [100, 200, 300, 400]) session.step(time, frame()); });
+    // 조준점이 바닥에 닿은 첫 프레임만 다시 그린다
+    expect(clears()).toBe(2);
+    expect(aim()).toBe(twin.phoneFocus.aim.hit);
+    act(() => c.actions.stopAr());
+    await vi.waitFor(() => expect(overlay.hidden).toBe(true));
+    expect(clears()).toBe(2);
+    await userEvent.click(screen.getByRole("button", { name: "AR 시작" }));
+    await vi.waitFor(() => expect(overlay.hidden).toBe(false));
+    expect(clears()).toBe(3);
+    expect(aim()).toBe(twin.phoneFocus.aim.miss);
   });
 });

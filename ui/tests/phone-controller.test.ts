@@ -180,14 +180,14 @@ describe("폰 화면 제어(controller.ts)", () => {
   it("AR 시작·끝: 덮개를 보이고 숨긴다. 시작이 실패하면 처음 화면에 까닭", async () => {
     const session = fakeSession();
     const { c, sent } = make({ arDeps: { xr: () => ({ requestSession: async () => session }), gl: () => gl, layer: () => ({}), binding: () => null } });
-    c.attach(document.createElement("div"), { hit() {}, marks() {} });
+    c.attach(document.createElement("div"), { start() {}, hit() {}, marks() {} });
     c.actions.startAr();
     await vi.waitFor(() => expect(sent().some((m) => m.type === "reset" && typeof m.epoch === "string")).toBe(true));
     expect(c.view().ar).toBe(true);
     c.actions.stopAr();
     expect(c.view().ar).toBe(false);
     const bad = make({ arDeps: { xr: () => ({ requestSession: async () => { throw new Error("거부됨"); } }) } });
-    bad.c.attach(document.createElement("div"), { hit() {}, marks() {} });
+    bad.c.attach(document.createElement("div"), { start() {}, hit() {}, marks() {} });
     bad.c.actions.startAr();
     await vi.waitFor(() => expect(supportText(bad.c.view().support)).toBe("AR을 시작하지 못했어요: 거부됨"));
   });

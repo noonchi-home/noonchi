@@ -27,7 +27,8 @@ export interface ControllerDeps {
   xr?: XrLike | null;
   arDeps?: Record<string, unknown>;
 }
-export interface ControllerDraw { hit(on: boolean): void; marks(marks: FocusMark[]): void }
+/** canvas 그림: start는 덮개를 열 때 한 번(조준점을 바로 그리고 지난 세션 그림을 지운다), hit·marks는 XR 프레임마다. */
+export interface ControllerDraw { start(): void; hit(on: boolean): void; marks(marks: FocusMark[]): void }
 export interface PhoneController {
   view(): PhoneView;
   subscribe(fn: () => void): () => void;
@@ -51,7 +52,7 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
   let mismatchM: number | null = null;
   let note: { text: string; until: number } | null = null;
   let overlay: HTMLElement | null = null;
-  let draw: ControllerDraw = { hit: () => {}, marks: () => {} };
+  let draw: ControllerDraw = { start: () => {}, hit: () => {}, marks: () => {} };
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
   let lineTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -59,7 +60,10 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
   const ar = createAr({
     link, params, deps: deps.arDeps,
     hooks: {
-      onStart: () => set((v) => ({ ...v, ar: true })),
+      onStart: () => {
+        draw.start();
+        set((v) => ({ ...v, ar: true }));
+      },
       onEnd: () => set((v) => ({ ...v, ar: false })),
       onHit: (hit) => draw.hit(hit),
       onMarks: (marks) => draw.marks(marks),
