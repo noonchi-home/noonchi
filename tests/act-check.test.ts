@@ -85,5 +85,9 @@ describe("계획 전 검사(에이전트를 부르기 전)", () => {
     expect(pre([obj({ facts: { place: { value: "in_sink", at_ms: 0, since_ms: 0, certainty: "confirmed" } } })])).toMatchObject({ reason: "in_sink" });
     expect(pre([], "춤추기")).toMatchObject({ reason: "unknown_task" });
     expect(pre([], "사용자에게 물어보기")).toEqual({ ok: true });
+    // 감지가 끊겨 남은 「보임」(10초 넘게 못 본 컵)으로는 부르지 않는다
+    const at = (nowMs: number) => checkDecision({ decision: base().decision, tasks: base().tasks, world: w([obj({ last_seen_ms: 9_000 })]), nowMs });
+    expect(at(19_000)).toEqual({ ok: true });
+    expect(at(19_001)).toMatchObject({ reason: "no_target" });
   });
 });

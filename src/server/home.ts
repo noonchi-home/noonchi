@@ -274,7 +274,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       tracker = new ExecutionTracker({
         plans, floor: () => plans.floor(), world: () => world.view(now()), emit, clock: ctx.brain?.clock, approvals, devices, offsetMinutes: history.db.offsetMinutes,
         // 계획 전 검사(LLM 없음) → 에이전트 계획 모드 한 번. 손 자리는 맞춘 눈(PlanHub 평면도의 로봇 자리)
-        precheck: (d) => checkDecision({ decision: d, tasks: [...TASK_NAMES], world: world.view(now()) }),
+        precheck: (d) => checkDecision({ decision: d, tasks: [...TASK_NAMES], world: world.view(now()), nowMs: now() }),
         planner: (d, signal) => {
           const task = taskOf(d.action);
           if (!task) return { ok: false, error: "행동 목록에 없는 행동" };

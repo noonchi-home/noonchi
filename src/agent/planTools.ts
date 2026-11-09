@@ -25,14 +25,15 @@ export const HUMAN_KINDS: readonly AgentStepKind[] = ["go", "pick", "place"];
 /** 에이전트 단계 → 화면 단계 종류(src/contract/plan.ts). */
 export const VIEW_KIND: Record<AgentStepKind, StepKind> = { go: "move", pick: "act", place: "act", ask: "ask", say: "ask", device: "device", wait: "wait" };
 
+/** 알림 단계에 끝나는 조건이 없으면 이만큼(초) 뒤에 넘긴다. */
+export const SAY_HOLD_S = 4;
+
 /** 계획 한도: 단계 수, 단계 종류마다 시간 한도(초), 답 단추 수. */
 export const PLAN_LIMITS = {
   maxSteps: 8,
-  timeoutS: { go: [10, 1800], pick: [10, 1800], place: [10, 1800], ask: [10, 1800], say: [3, 600], device: [10, 600], wait: [10, 14_400] } as Record<AgentStepKind, [number, number]>,
+  timeoutS: { go: [10, 1800], pick: [10, 1800], place: [10, 1800], ask: [10, 1800], say: [SAY_HOLD_S + 1, 600], device: [10, 600], wait: [10, 14_400] } as Record<AgentStepKind, [number, number]>,
   choices: [2, 3] as [number, number],
 };
-/** 알림 단계에 끝나는 조건이 없으면 이만큼(초) 뒤에 넘긴다. */
-export const SAY_HOLD_S = 4;
 
 /** 기기 단계에 쓸 수 있는 도구: 기기를 바꾸는 도구(src/agent/tools.ts). */
 export const DEVICE_TOOLS = Object.keys(DEVICE_VERB) as [string, ...string[]];
@@ -177,6 +178,16 @@ export class PlanDraft {
     return { ok: true, step: n };
   }
 
+  /** 받지 않은 add_step: 그 번호(없으면 다음 번호)부터 지우고 고칠 때까지 끝내지 않는다. */
+  reject(raw: unknown): void {
+    if (this.done) return;
+    const step = (raw as { step?: unknown } | null)?.step;
+    const n = typeof step === "number" && Number.isInteger(step) && step >= 1 ? Math.min(step, this.added.length + 1) : this.added.length + 1;
+    if (n > PLAN_LIMITS.maxSteps) return;
+    this.added.length = Math.min(this.added.length, n - 1);
+    this.blocked = n;
+  }
+
   /** 손이 계획상 있을 자리(앞 이동 단계 목적지, 없으면 폰 자리)에서 그 자리까지 길(사람이 걷는 길이라 모든 방). */
   route(target: string): ToolResult {
     const to = this.placeAt(target);
@@ -198,6 +209,12 @@ export class PlanDraft {
     const missing = this.ctx.task.allow.need.filter((k) => !this.added.some((a) => a.step.kind === k));
     if (missing.length) return { ok: false, error: `이 할 일(${this.ctx.task.name})에는 ${missing.join(", ")} 단계가 있어야 합니다. 그 단계가 들어갈 번호(step)부터 다시 보내세요.` };
     if (this.added.slice(0, -1).some((a) => a.step.kind === "ask")) return { ok: false, error: "질문(ask)은 답으로 갈라지지 않게 마지막 단계에만 둡니다." };
+    // 가전 단계는 그 가전 자리에서 사람이 하는 단계(가기·꺼내기·넣기) 뒤에 둔다(사람이 넣기 전에 건조기를 켜지 않게)
+    for (const [i, a] of this.added.entries()) {
+      const dev = a.step.device?.deviceId;
+      const later = dev ? this.added.slice(i + 1).findIndex((b) => HUMAN_KINDS.includes(b.step.kind) && b.step.target === dev) : -1;
+      if (later >= 0) return { ok: false, error: `${i + 1}번 가전 단계는 같은 가전 자리에서 사람이 하는 ${i + 2 + later}번 단계 뒤에 둡니다.` };
+    }
     const { decision, task, floor, nowIso } = this.ctx;
     const id = planIdOf(decision.id);
     const steps: AgentStep[] = this.added.map((a, i) => ({ ...a.step, id: `${id}:${i + 1}` }));

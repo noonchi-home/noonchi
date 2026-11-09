@@ -80,6 +80,8 @@ export class Planner {
       const results: ToolCallResult[] = [];
       for (const call of r.calls) {
         const result = await runTool(call.name, call.args, backend, tools);
+        // 모양이 틀려 초안까지 가지 못한 add_step도 틀린 단계로 적는다(같은 응답의 finish_plan이 고치기 전 계획을 끝내지 않게)
+        if (call.name === "add_step" && !result.ok) draft.reject(call.args);
         if (draft.finished) return { ok: true, plan: draft.finished };
         results.push({ call, content: JSON.stringify(result), isError: !result.ok, result });
       }

@@ -25,6 +25,7 @@ import { AGAIN_TEXT, APPROVAL_TEXT, EXEC_TEXT, VISION_TEXT, placeShort } from ".
 import { roomAt } from "../plan/route.js";
 import { OBJECT_NAME, PLACE_UNKNOWN, STATE_TEXT, onSurface } from "../world/labels.js";
 import { ConditionWatch, type ConditionContext } from "../world/conditions.js";
+import { NEAR_M } from "../world/vocab.js";
 import type { DecisionRecord } from "../world/decide.js";
 import { approvalNeed, taskKey, type ApprovalAnswer, type ApprovalBook } from "../agent/approval.js";
 import { HUMAN_KINDS, objectNames, type AgentPlan, type AgentStep, type PlanResult } from "../agent/planTools.js";
@@ -90,6 +91,8 @@ interface Run {
   plan: AgentPlan; decision: DecisionRecord; state: ExecState; since: number;
   at: number; stepAt: number; spokeAt: number; visionAt: number; sent: PlannedCommand | null;
   asking: Asking | null; askAt: number; watch: ConditionWatch | null; others: Map<string, Set<string>>; alias: Map<string, string>; carried: Set<string>;
+  /** 평면도 물건의 평면 자리(따라가기 거리). */
+  placeAt: (id: string | null) => XZ | null;
   deadline: number; again: boolean; device: "idle" | "running" | "done" | "sent"; gen: number;
 }
 
@@ -186,6 +189,16 @@ export class ExecutionTracker {
     const picked = choicesOf(r, step).find((c) => c.id === choice);
     if (!picked) return false;
     const a = r.asking;
+    // 기한이 지난 답은 받지 않는다(시간 초과가 먼저다)
+    const now = this.clock.now();
+    if (a && now - r.askAt > this.cfg.askMs) {
+      this.finish(r, "failed", EXEC_TEXT.noAnswer);
+      return false;
+    }
+    if (!a && step && now > r.deadline) {
+      this.timeout(r, step);
+      return false;
+    }
     if (a?.why === "plan") this.approvedPlan(r, picked.id as ApprovalAnswer);
     else if (a?.why === "device") this.approvedDevice(r, a.token, picked.id as ApprovalAnswer);
     else if (a?.why === "again") {
@@ -305,7 +318,7 @@ export class ExecutionTracker {
     const others = new Map([...ids].map((id) => [id, new Set(world.objects.filter((o) => o.cls === clsOf(world, id) && o.id !== id).map((o) => o.id))]));
     const run: Run = {
       plan: r.plan, decision: d, state: "decided", since: now, at: -1, stepAt: now, spokeAt: now, visionAt: now, sent: null,
-      asking: null, askAt: now, watch: null, others, alias: new Map([...ids].map((id) => [id, id])), carried: new Set(), deadline: now, again: false, device: "idle", gen: 0,
+      asking: null, askAt: now, watch: null, others, alias: new Map([...ids].map((id) => [id, id])), carried: new Set(), placeAt: (id) => (id ? this.o.floor().objects.get(id)?.position ?? null : null), deadline: now, again: false, device: "idle", gen: 0,
     };
     this.run = run;
     this.o.plans.onDecision(r.plan.view);
@@ -613,7 +626,11 @@ function ours(r: Run, id: string, world: WorldView): WorldObject[] {
   const others = r.others.get(id) ?? new Set<string>();
   const seen = new Set(r.alias.values());
   const after = own?.last_seen_ms ?? -Infinity;
-  const next = world.objects.filter((o) => o.cls === cls && o.id !== cur && o.id !== id && !others.has(o.id) && !seen.has(o.id) && o.status !== "gone" && o.first_seen_ms > after);
+  // 들고 다니다 시야 밖이 된 물건은 내려놓기 목표 자리 가까이(NEAR_M 안)에서 새로 보인 것만 잇는다(그 자리를 모르면 거리는 보지 않는다)
+  const step = r.plan.steps[r.at];
+  const near = own?.status === "out_of_view" && step?.kind === "place" ? r.placeAt(step.target) : null;
+  const next = world.objects.filter((o) => o.cls === cls && o.id !== cur && o.id !== id && !others.has(o.id) && !seen.has(o.id) && o.status !== "gone" && o.first_seen_ms > after
+    && (!near || !o.position || Math.hypot(o.position[0] - near[0], o.position[2] - near[1]) <= NEAR_M));
   if (next.length === 1) {
     r.alias.set(id, next[0]!.id);
     return [next[0]!];

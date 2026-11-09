@@ -521,3 +521,64 @@ describe("계획 모드: 경합·시간 한도", () => {
     expect(evaluate({ person_holding: "cup" }, holding([]), x)).toBe(true);
   });
 });
+
+describe("계획 모드: 코드 리뷰 2회차 고침", () => {
+  const cupIds = { table: "table_1", sink: "sink_1", cup: "cup_1" };
+  const ctx = (): PlanContext => planContext({ decision: decision("컵 치우기"), world: view([cup()]), floor: floor() });
+
+  it("모양이 틀려 받지 않은 add_step이 있으면 같은 응답의 finish_plan으로 고치기 전 계획을 끝내지 않는다", () => {
+    const d = new PlanDraft(ctx());
+    cupSteps(cupIds).forEach((s, i) => expect(d.add({ step: i + 1, ...s })).toMatchObject({ ok: true }));
+    d.reject({ step: 2, kind: "pick", label: 3 });
+    expect(d.finish()).toMatchObject({ ok: false, error: expect.stringMatching(/2번 단계가 틀린 채/) });
+    cupSteps(cupIds).slice(1).forEach((s, i) => expect(d.add({ step: i + 2, ...s })).toMatchObject({ ok: true }));
+    expect(d.finish()).toMatchObject({ ok: true });
+  });
+
+  it("가전 단계는 같은 가전 자리에서 사람이 하는 단계 뒤에 둔다(넣기 전에 건조기를 켜지 않는다)", () => {
+    const d = new PlanDraft(planContext({ decision: decision("세탁물 건조기로 옮기기"), world: view([]), floor: floor(), hub: new MemoryHub(DEVICES) }));
+    const steps = [
+      { kind: "device", label: "건조기 시작", target: "dryer_1", tool: "start", timeout_s: 60 },
+      { kind: "go", label: "세탁기로 가기", target: "washer_1", command: "세탁기로 가 주세요", timeout_s: 300 },
+      { kind: "pick", label: "세탁물 꺼내기", target: "washer_1", command: "세탁물을 꺼내 주세요", timeout_s: 300 },
+      { kind: "place", label: "세탁물 넣기", target: "dryer_1", command: "세탁물을 건조기에 넣어 주세요", timeout_s: 300 },
+    ];
+    steps.forEach((s, i) => expect(d.add({ step: i + 1, ...s })).toMatchObject({ ok: true }));
+    expect(d.finish()).toMatchObject({ ok: false, error: expect.stringMatching(/1번 가전 단계는 .*4번 단계 뒤/) });
+  });
+
+  it("시간 한도가 지난 「완료」·승인 답은 받지 않고 시간 초과·답 없음으로 닫는다. 늦은 승인은 기억하지 않는다", async () => {
+    const a = rig({ objects: () => [cup()], approvals: store({ "task:컵 치우기": "approve" }) });
+    await a.decide(decision("컵 치우기"));
+    a.clock.t += 120_001;
+    expect(a.t.onAnswer("plan:pam-1", "plan:pam-1:1", "done")).toBe(false);
+    expect(a.exec().at(-1)).toMatchObject({ state: "failed", text: EXEC_TEXT.timeout });
+    const approvals = store();
+    const b = rig({ objects: () => [cup()], approvals });
+    await b.decide(decision("컵 치우기"));
+    b.clock.t += 120_001;
+    expect(b.t.onAnswer("plan:pam-1", "plan:pam-1:approve", "approve")).toBe(false);
+    expect(b.exec().at(-1)).toMatchObject({ state: "failed", text: EXEC_TEXT.noAnswer });
+    expect(approvals.memory()).toEqual({ always: {} });
+  });
+
+  it("들고 다니다 시야 밖이 된 컵은 내려놓기 자리(싱크대) 가까이에서 새로 보인 컵에만 잇는다", async () => {
+    let objects = [cup()];
+    const r = rig({ objects: () => objects, approvals: store({ "task:컵 치우기": "approve" }) });
+    await r.decide(decision("컵 치우기"));
+    const at = (t: number) => ({ value: "in_hand", at_ms: t, since_ms: t, certainty: "confirmed" as const });
+    r.t.onAnswer("plan:pam-1", "plan:pam-1:1", "done");
+    objects = [cup({ facts: { place: at(r.clock.t) } })];
+    r.t.onWorld();
+    r.t.onAnswer("plan:pam-1", "plan:pam-1:3", "done");
+    expect(r.steps()).toEqual(["done", "done", "done", "active"]);
+    const sink = (t: number) => ({ place: { value: "in_sink", at_ms: t, since_ms: t, certainty: "confirmed" as const } });
+    // 식탁 자리(싱크대에서 2.8m)에 새로 보인 컵은 잇지 않는다
+    objects = [cup({ status: "out_of_view", last_seen_ms: r.clock.t - 1 }), cup({ id: "cup_2", position: [7, 0.75, 3], first_seen_ms: r.clock.t, last_seen_ms: r.clock.t, facts: sink(r.clock.t) })];
+    r.t.onWorld();
+    expect(r.plans.current()).toMatchObject({ status: "running" });
+    objects = [...objects, cup({ id: "cup_3", position: [5, 0.9, 1], first_seen_ms: r.clock.t, last_seen_ms: r.clock.t, facts: sink(r.clock.t) })];
+    r.t.onWorld();
+    expect(r.plans.current()).toMatchObject({ status: "done" });
+  });
+});

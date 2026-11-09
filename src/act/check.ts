@@ -28,11 +28,15 @@ export interface CheckInput {
 const fail = (reason: CheckFail): CheckResult => ({ ok: false, reason, text: CHECK_TEXT[reason] });
 
 /** 계획 전 검사: 에이전트를 부를 만한 판단인가(LLM을 부르지 않고 본다). */
-export function checkDecision(i: Pick<CheckInput, "decision" | "tasks" | "world">): CheckResult {
+/** 계획 전 검사의 대상은 이만큼(ms) 안에 본 것이어야 한다(감지가 끊겨 남은 「보임」으로 모델을 부르지 않는다). */
+export const PRECHECK_FRESH_MS = 10_000;
+
+export function checkDecision(i: Pick<CheckInput, "decision" | "tasks" | "world"> & { nowMs?: number }): CheckResult {
   const spec = taskOf(i.decision.action);
   if (!spec || !i.tasks.includes(spec.name)) return fail("unknown_task");
   // 지금 보이는 대상만(시야 밖의 낡은 물건으로 모델을 부르지 않는다)
-  if (spec.target && !i.world.objects.some((o) => o.cls === spec.target && o.status === "present" && !putAway(o))) {
+  const fresh = (o: { last_seen_ms: number }) => i.nowMs === undefined || i.nowMs - o.last_seen_ms <= PRECHECK_FRESH_MS;
+  if (spec.target && !i.world.objects.some((o) => o.cls === spec.target && o.status === "present" && fresh(o) && !putAway(o))) {
     return fail(i.world.objects.some((x) => x.cls === spec.target && x.status !== "gone" && putAway(x)) ? "in_sink" : "no_target");
   }
   return { ok: true };
