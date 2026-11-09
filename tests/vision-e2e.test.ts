@@ -1,4 +1,4 @@
-// 한양목련 끝까지(가짜 서버, 시험 모드): 기준점을 맞춘 폰이 주방에서 냉장고를 비춤 → YOLO(대본) 냉장고 상자 → VLM(가짜 OpenAI 호환 서버) 「열림」
+// 한양목련 끝까지(가짜 서버, 시험 모드): 시작 위치로 맞춘 폰이 주방에서 냉장고를 비춤 → YOLO(대본) 냉장고 상자 → VLM(가짜 OpenAI 호환 서버) 「열림」
 // → World State가 트윈 냉장고에 맞춤 → 허브 상태 문 열림(카메라로 봄) → 대시보드 state 메시지·PAM 관찰 텍스트.
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -8,6 +8,7 @@ import type WebSocket from "ws";
 import { startFakeOpenAI, type FakeServer } from "../scripts/fake-openai.js";
 import { encodeFramePacket } from "../src/phone/packet.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
+import { alignOnServer } from "./helpers/align.js";
 import { ScriptedDetector } from "./helpers/detectors.js";
 import { startFakePam, type FakePam } from "./helpers/pam.js";
 import { openWebSocket } from "./helpers/ws.js";
@@ -29,8 +30,6 @@ afterEach(async () => {
 
 const inbox = (list: Msg[]) => (ws: WebSocket) => ws.on("message", (d, bin) => { if (!bin) list.push(JSON.parse(String(d)) as Msg); });
 
-// 기준점 두 곳을 AR 점 = 평면 점으로 찍어 맞춤을 그대로 둔다(tests/mokryeon-e2e.test.ts와 같다)
-const ANCHORS = [{ id: "alpha_corner", point: [0.1, 0, 6.065625] }, { id: "bed_ne_corner", point: [16.1, 0, 2.296875] }];
 const PROJECTION = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1.0002, -1, 0, 0, -0.020002, 0];
 const mul = (a: number[], b: number[]) => [a[3]! * b[0]! + a[0]! * b[3]! + a[1]! * b[2]! - a[2]! * b[1]!, a[3]! * b[1]! - a[0]! * b[2]! + a[1]! * b[3]! + a[2]! * b[0]!, a[3]! * b[2]! + a[0]! * b[1]! - a[1]! * b[0]! + a[2]! * b[3]!, a[3]! * b[3]! - a[0]! * b[0]! - a[1]! * b[1]! - a[2]! * b[2]!];
 // 폰 눈: 주방·식당에서 냉장고 가운데([5.9191, 0.925, 2.4596])를 화면 한가운데로 본다
@@ -68,7 +67,8 @@ describe("카메라로 가전 상태 맞추기, 한양목련 끝까지", () => {
       for (const end = Date.now() + 5000; Date.now() < end; await new Promise((r) => setTimeout(r, 20))) if (ok()) return;
       throw new Error(`5초 안에 오지 않음: ${what}`);
     };
-    for (const a of ANCHORS) ws.send(JSON.stringify({ type: "anchor", ...a }));
+    // 위치 맞춤: 눈 자리에 시작 위치를 저장하고 「여기서 시작」 + 그 자리의 벽·바닥 점(AR 점 = 평면 점, tests/mokryeon-e2e.test.ts와 같다)
+    await alignOnServer(srv.url, (t) => ws.send(t), join(srv.twin.dir, "homes", "mokryeon_180b", "scene.json"), [EYE[0], EYE[2]]);
     await until(() => phone.some((m) => m.type === "status" && m.aligned), "맞춤");
     ws.send(JSON.stringify({ type: "pose", position: EYE, orientation: ORIENTATION, tracking: "ok" }));
     await until(() => dash.some((m) => m.type === "eye"), "눈");
