@@ -141,6 +141,9 @@ describe("물건 기준점", () => {
     expect(s.aligned).toBe(true);
     expect(s.source).toBe("objects");
     expect(s.anchors).toBeGreaterThanOrEqual(3);
+    // 짝지은 트윈 물건 id(하나뿐인 냉장고·소파와 여럿 중 하나인 침대도 가장 가까운 것으로)
+    expect(s.anchorIds).toHaveLength(s.anchors);
+    expect(s.anchorIds.every((id) => MARKS.some((m) => m.id === id))).toBe(true);
     expect(s.residualM).toBeLessThan(0.35);
     const after = errAt(s.rigid!);
     expect(after.shiftM).toBeLessThan(Math.min(0.15, before.shiftM));

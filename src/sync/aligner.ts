@@ -71,8 +71,9 @@ export interface SyncState {
   source: SyncSource | null;
   /** 이 AR에서 「여기서 시작」을 했다. */
   started: boolean;
-  /** 짝지은 물건 수와 그 RMS(m). */
+  /** 짝지은 물건 수, 그 트윈 물건 id, RMS(m). */
   anchors: number;
+  anchorIds: string[];
   anchorRmsM: number | null;
   /** 벽에 맞는 점 수와 그 RMS(m), 벽이 두 방향 이상인지. */
   wallPoints: number;
@@ -118,7 +119,7 @@ export interface AlignerOptions {
 
 interface Match { cluster: LandmarkCluster; cand: TwinLandmark; r: number }
 interface Evaluated {
-  anchors: number; anchorRmsM: number | null; wallPoints: number; wallRmsM: number | null; ratio: number; twoD: boolean;
+  anchors: number; anchorIds: string[]; anchorRmsM: number | null; wallPoints: number; wallRmsM: number | null; ratio: number; twoD: boolean;
 }
 
 const median = (vs: number[]) => {
@@ -136,7 +137,7 @@ export class SyncAligner {
   private start: { pose: StartPose; position: Vec3; rigid: Rigid; at: number } | null = null;
   private manualFloorY: number | null = null;
   private manualResidual: number | null = null;
-  private quality: Evaluated = { anchors: 0, anchorRmsM: null, wallPoints: 0, wallRmsM: null, ratio: 0, twoD: false };
+  private quality: Evaluated = { anchors: 0, anchorIds: [], anchorRmsM: null, wallPoints: 0, wallRmsM: null, ratio: 0, twoD: false };
   private readonly surface = new SurfacePoints();
   private readonly store: LandmarkStore;
   private floorHints: number[] = [];
@@ -180,7 +181,7 @@ export class SyncAligner {
     this.start = null;
     this.manualFloorY = null;
     this.manualResidual = null;
-    this.quality = { anchors: 0, anchorRmsM: null, wallPoints: 0, wallRmsM: null, ratio: 0, twoD: false };
+    this.quality = { anchors: 0, anchorIds: [], anchorRmsM: null, wallPoints: 0, wallRmsM: null, ratio: 0, twoD: false };
     this.surface.clear();
     this.store.clear();
     this.floorHints = [];
@@ -282,6 +283,7 @@ export class SyncAligner {
       source: this.source,
       started: this.start !== null,
       anchors: q.anchors,
+      anchorIds: [...q.anchorIds],
       anchorRmsM: q.anchorRmsM,
       wallPoints: q.wallPoints,
       wallRmsM: q.wallRmsM,
@@ -415,6 +417,7 @@ export class SyncAligner {
     const m = this.matchObjects(T, clusters, L.objInlierM, floor);
     return {
       anchors: m.length,
+      anchorIds: m.map((x) => x.cand.id).sort(),
       anchorRmsM: m.length ? Math.sqrt(m.reduce((s, x) => s + x.r * x.r, 0) / m.length) : null,
       wallPoints: w.inliers, wallRmsM: w.rmsM, ratio: w.ratio, twoD: w.twoD,
     };

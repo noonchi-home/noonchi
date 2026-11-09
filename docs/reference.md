@@ -202,7 +202,7 @@ twin-home 서버: http://127.0.0.1:8200  (허브 matter/network, 에이전트 op
 | `GET /api/phone/start-pose` | | `{ ok, start: { position, yaw_deg, label, facing_label } \| null }` 폰 위치 맞추기 시작 자리(아래 "위치 맞추기"). 집 scene.json이 없으면 404 |
 | `POST /api/phone/start-pose` | `{ home?, position: [x, y], yaw_deg, label?, facing_label? }` | 저장하고 실행 중인 폰에 바로 알린다. 이름을 비우면 채운다. 집 범위 밖·숫자 아님 400, 다른 집 409 |
 | `POST /api/phone/start-pose/clear` | `{ home? }` | `{ ok, start: null }` |
-| `GET /api/phone/sync` | | `{ ok, sync }` 위치 맞춤 모듈 상태(`rigid`, `floorY`, `aligned`, `source`, `started`, `anchors`, `wallPoints`, `residualM`, `observed`). 폰 서버가 없거나 `PHONE_SYNC=0`이면 `sync: null` |
+| `GET /api/phone/sync` | | `{ ok, sync }` 위치 맞춤 모듈 상태(`rigid`, `floorY`, `aligned`, `source`, `started`, `anchors`, `anchorIds`(짝지은 트윈 물건), `wallPoints`, `residualM`, `observed`). 폰 서버가 없거나 `PHONE_SYNC=0`이면 `sync: null` |
 | `GET /api/decisions?limit=` | | `{ ok, decisions: [{ id, at_ms, day, text, text_sent, seq, status, prediction, memory_version, world }] }` 최근 판단과 그때 보낸 관찰 텍스트(기본 20, 최대 500) |
 | `GET /events` (WebSocket) | | 붙으면 `{type:"hello", home}`, 모든 기기의 `{type:"state", state}`, 지금 배치 보정의 `{type:"layout"}`들, `{type:"plan"}`, (`BRAIN=1`이면) `{type:"world"}`와 마지막 판단·상자 있는 마지막 observe의 `{type:"brain", event}` 하나씩. 맨 끝은 늘 말풍선 카드 글 `{type:"say", text}`(글이 없으면 `null`). 이후 바뀔 때마다 `{type:"state"}`, `{type:"agent", event:"action"\|"reply"\|"pending"\|"confirmed"\|"cancelled", ...}`, `{type:"layout"}`, `{type:"focus"}`, `{type:"eye"}`, `{type:"photo"}`, `{type:"brain", event}`(관찰·World State 변화·판단·실행·연결·판단 시점·반성 기록, `src/contract/events.ts` `BrainLog`), `{type:"world"}`, `{type:"say"}`(글이 바뀔 때만, `src/act/say.ts`) (모양은 [plan.md](plan.md)) |
 
