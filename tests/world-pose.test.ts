@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { DETECTOR_MODELS, MODELS_DIR, OnnxDetector, POSE_MODELS, decodeYolo26Pose, type Keypoint } from "../src/brain/detector.js";
-import { describePose, heldBy, mainPerson } from "../src/world/pose.js";
+import { describePose, heldBy, heldByAny, mainPerson } from "../src/world/pose.js";
 import { poseOf } from "./helpers/poses.js";
 
 const pose = poseOf;
@@ -25,11 +25,19 @@ describe("describePose: 관절 → 자세", () => {
     expect(describePose(pose({ 5: [100, 100, 0.9], 6: [100, 120, 0.9], 11: [200, 115, 0.9], 12: [200, 135, 0.9] })).posture).toBe("lying");
   });
 
-  it("무릎이 안 보이면(0.3 아래) 다리 가림(upright), 어깨·엉덩이가 없고 상자가 가로로 길면 누움이지만 쓴 관절이 없으면 불확실(low)", () => {
+  it("무릎이 안 보이면(0.3 아래) 다리 가림(upright), 엉덩이 없이 어깨만 보여도 다리 가림", () => {
     expect(describePose(pose({ ...SHOULDERS, ...HIPS, 13: [115, 280, 0.2] })).posture).toBe("upright");
-    const wide = describePose(pose({}, [0, 0, 300, 100]));
-    expect([wide.posture, wide.level]).toEqual(["lying", "low"]);
+    expect(describePose(pose({ ...SHOULDERS })).posture).toBe("upright");
     expect(describePose(pose({})).posture).toBe("unknown");
+  });
+
+  it("상자 모양으로는 누움을 정하지 않는다: 가로로 긴 상자의 팔 조각·상반신 근접(Pexels 4828603 f001·8164292 f001 관절)은 모름·다리 가림", () => {
+    // 식탁 위로 뻗은 팔: 손목만 보이고 상자가 가로로 길다
+    const arm = describePose(pose({ 8: [332, 552, 0.39], 10: [119, 508, 0.58] }, [8, 450, 352, 146], 0.32));
+    expect([arm.posture, arm.level]).toEqual(["unknown", "low"]);
+    // 컵을 입에 댄 상반신 근접(가로 480 프레임): 어깨는 보이고 엉덩이는 화면 밖
+    const close = describePose(pose({ 5: [319, 203, 0.99], 6: [112, 219, 0.89], 9: [373, 212, 0.81] }, [76, 16, 349, 237], 0.88));
+    expect(close.posture).toBe("upright");
   });
 
   it("손목은 0.3 이상만 쓰고, 크기 기준(scale)은 어깨 너비·몸통 길이×0.6·상자 짧은 변×0.25 중 큰 값", () => {
@@ -63,6 +71,13 @@ describe("heldBy: 손에 듦", () => {
 
   it("손목이 안 보이면 들지 않은 것", () => {
     expect(heldBy(describePose(pose({ ...SHOULDERS, ...HIPS })), [0, 0, 1000, 1000])).toBeNull();
+  });
+
+  it("heldByAny: 관절 여럿 가운데 하나의 손목이라도 들었으면 든 것(한 사람이 팔 조각으로 나뉠 때)", () => {
+    const body = describePose(pose({ ...SHOULDERS, ...HIPS }));
+    const arm = describePose(pose({ 9: [173, 267, 0.95] }, [0, 84, 243, 520], 0.43));
+    expect(heldByAny([body, arm], [112, 250, 76, 92])).toBe(true);
+    expect(heldByAny([body], [112, 250, 76, 92])).toBe(false);
   });
 });
 

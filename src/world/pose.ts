@@ -1,9 +1,12 @@
 // 사람 관절 규칙(출처: docs/provenance.md). YOLO26-pose 관절 17개(COCO) → 자세·손목, 한 사람 고르기, 손에 듦.
 // - 자세: 어깨·엉덩이 가운데를 이은 몸통이 수직에서 60° 넘게 기울면 누움, 아니면 엉덩이·무릎을 이은 허벅지가 45° 넘으면 앉음, 아니면 서 있음.
-//   무릎이 안 보이면 다리 가림(upright), 어깨·엉덩이가 없고 상자가 가로로 1.4배 넘게 길면 누움. 관절은 신뢰도 0.3 이상만 쓴다.
+//   무릎이 안 보이면 다리 가림(upright), 엉덩이가 안 보이고 어깨만 보여도 다리 가림. 관절은 신뢰도 0.3 이상만 쓴다.
+//   출처 규칙의 「어깨·엉덩이가 없고 상자가 가로로 1.4배 넘게 길면 누움」은 쓰지 않는다: 팔만 보이거나 상반신이 가까운 폰 프레임에서
+//   누움으로 잘못 나왔다(Pexels 프레임 43장 중 7장, 맞은 것 없음).
 // - 확실함: 자세를 모르거나 쓴 관절이 없으면 low, 쓴 관절이 모두 0.5 이상이고 다리 가림이 아니면 high, 그 밖은 mid.
-// - 한 사람(1인 가구): low가 아닌 사람 먼저, 그 안에서 점수 × 상자 넓이가 큰 사람.
+// - 한 사람(1인 가구, 자세에 씀): low가 아닌 사람 먼저, 그 안에서 점수 × 상자 넓이가 큰 사람.
 // - 손에 듦: 사람 상자 넓이의 25%를 넘는 큰 물건은 손목이 상자 안, 작은 물건은 손목과 상자 사이가 scale × 0.35 안.
+//   관절 모델이 한 사람을 팔 조각 여럿으로 낼 때가 있어 World State는 모든 관절의 손목을 본다(heldByAny).
 //   scale은 어깨 너비, 몸통 길이 × 0.6, 상자 짧은 변 × 0.25, 1 가운데 큰 값.
 import type { Keypoint, Pose } from "../brain/detector.js";
 
@@ -41,7 +44,7 @@ export function describePose(p: Pose): PoseInfo {
   const k = p.keypoints;
   const shL = kp(k, L_SH), shR = kp(k, R_SH);
   const sh = mid(shL, shR), hip = mid(kp(k, L_HIP), kp(k, R_HIP)), knee = mid(kp(k, L_KNEE), kp(k, R_KNEE));
-  const [, , bw, bh] = p.box;
+  const [, , bw, bh] = p.box; // 거리 기준(scale)에만 쓴다
   const shW = shL && shR ? dist(shL, shR) : 0;
   const torso = sh && hip ? dist(sh, hip) : 0;
   const scale = Math.max(shW, torso * 0.6, Math.min(bw, bh) * 0.25, 1);
@@ -53,8 +56,7 @@ export function describePose(p: Pose): PoseInfo {
     if (tilt(sh, hip) > 60) posture = "lying";
     else if (knee) posture = tilt(hip, knee) > 45 ? "sitting" : "standing";
     else posture = "upright";
-  } else if (bw > bh * 1.4) posture = "lying";
-  else if (sh && !hip) posture = "upright";
+  } else if (sh) posture = "upright";
 
   const wrists: PoseInfo["wrists"] = {};
   for (const [side, i] of [["left", L_WR], ["right", R_WR]] as const) {
@@ -93,3 +95,6 @@ export function heldBy(person: PoseInfo, box: Box): "left" | "right" | null {
   }
   return best?.side ?? null;
 }
+
+/** 관절 여럿 가운데 하나라도 이 물건을 들었는가. */
+export const heldByAny = (people: readonly PoseInfo[], box: Box): boolean => people.some((p) => heldBy(p, box) !== null);

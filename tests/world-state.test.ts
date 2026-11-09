@@ -229,6 +229,15 @@ describe("World State + 관절", () => {
     expect(v.objects[0]!.facts.place).toBeUndefined();
   });
 
+  it("자세는 가장 확실한 한 사람으로, 손에 듦은 모든 관절의 손목으로 본다(팔 조각의 손목이 컵 상자 안)", () => {
+    const w = ws();
+    const arm = poseOf({ 10: [235, 170, 0.6] }, [200, 120, 150, 60], 0.3);
+    for (let i = 1; i <= 3; i++) w.applyDetections(frame(i), [person, cup], [apart, arm]);
+    const v = w.view(3000);
+    expect(v.objects[0]!.facts.place?.value).toBe("in_hand");
+    expect(v.person.facts).toMatchObject({ action: { value: "holding_object" }, posture: { value: "standing" } });
+  });
+
   it("관절로 앉아 있음·누워 있음, 다리가 가려 모르면 자세를 바꾸지 않는다", () => {
     const w = ws();
     const sit = poseOf({ 5: [110, 100, 0.9], 6: [150, 100, 0.9], 11: [115, 200, 0.9], 12: [145, 200, 0.9], 13: [190, 215, 0.9], 14: [210, 215, 0.9] });

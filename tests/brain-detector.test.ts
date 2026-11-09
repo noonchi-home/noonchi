@@ -211,12 +211,14 @@ const y26 = join(MODELS_DIR, DETECTOR_MODELS.yolo26n.file);
 const gray = Buffer.from(jpeg.encode(rgba(360, 780, () => [128, 128, 128]), 80).data);
 
 describe("YOLO26n 실제 모델(저장소 models/)", () => {
-  it("회색 세로 그림 한 장: 출력 [1, 84, 8400]을 풀어 감지가 없다", async () => {
-    const det = await OnnxDetector.create({ modelPath: y26, kind: "yolo26" });
+  it("회색 세로 그림 한 장: 출력 [1, 84, 8400]을 풀어 감지가 없고, 사람이 없으니 관절은 돌리지 않는다", async () => {
+    const det = await OnnxDetector.create({ modelPath: y26, kind: "yolo26", posePath: join(MODELS_DIR, POSE_MODELS["yolo26n-pose"].file) });
     try {
-      expect(det.name).toBe("yolo26n");
+      expect([det.name, det.pose]).toEqual(["yolo26n", "yolo26n-pose"]);
       const r = await det.detect(gray);
       expect(r.detections).toEqual([]);
+      expect(r.poses).toBeUndefined();
+      expect(r.poseMs).toBeUndefined();
       expect([r.width, r.height]).toEqual([360, 780]);
     } finally {
       await det.close();

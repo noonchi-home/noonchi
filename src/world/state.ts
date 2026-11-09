@@ -18,7 +18,7 @@ import type { SceneObservation } from "../observe/scene.js";
 import { Confirmer } from "./confirm.js";
 import { CHANGE_TEXT, OBJECT_NAME, objectName, onSurface } from "./labels.js";
 import { inView, placeBox, type PlaneSurface } from "./place.js";
-import { heldBy, mainPerson, type Posture } from "./pose.js";
+import { describePose, heldByAny, mainPerson, type Posture } from "./pose.js";
 import { RELATED_KINDS, RemainingTracker, deviceStatus, relatedDeviceIds, DEVICE_STATUS } from "./relations.js";
 
 type V3 = [number, number, number];
@@ -238,15 +238,17 @@ export class WorldState {
     return { changes, ids };
   }
 
-  /** 관절로 본 사실(규칙: src/world/pose.ts). 손목이 물건 상자 안·가까이면 그 물건 손에 있음과 사람 물건을 들고 있음, 자세는 서 있음·앉아 있음·누워 있음.
+  /** 관절로 본 사실(규칙: src/world/pose.ts). 어느 관절이든 손목이 물건 상자 안·가까이면 그 물건 손에 있음과 사람 물건을 들고 있음,
+   *  자세는 가장 확실한 한 사람의 서 있음·앉아 있음·누워 있음.
    *  손목이 보이는데 든 것이 없으면 관절이 붙인 손에 있음·들고 있음만 지운다(VLM이 붙인 사실은 둔다). */
   private applyPose(at: number, poses: Pose[], boxes: { obj: Obj; box: Detection["box"] }[], changes: WorldChange[]): void {
     const person = mainPerson(poses);
     if (!person) return;
-    const wrists = Object.keys(person.wrists).length > 0;
+    const people = poses.map(describePose);
+    const wrists = people.some((p) => Object.keys(p.wrists).length > 0);
     let holding = false;
     for (const { obj, box } of boxes) {
-      if (!heldBy(person, box)) {
+      if (!heldByAny(people, box)) {
         if (wrists) this.dropPoseFact(obj.facts, "place", "in_hand");
         continue;
       }

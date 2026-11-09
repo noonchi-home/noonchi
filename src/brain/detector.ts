@@ -310,7 +310,8 @@ export interface DetectorSpec {
   threads?: number;
   /** 감지·관절 최소 점수(기본 0.25). */
   minScore?: number;
-  /** 이 점수 이상인 사람이 있을 때만 관절을 돌린다(기본 0.5, World State 사람 기준과 같다). */
+  /** 이 점수 이상인 사람 감지가 있을 때만 관절을 돌린다(기본 minScore). World State 사람 기준(0.5)보다 낮게 둔다:
+   *  손에 듦은 컵 사실이라, 사람이 흐리게 잡힌 프레임(0.46·0.49)에서도 손목을 본다. */
   poseMinPerson?: number;
 }
 
@@ -342,7 +343,7 @@ export class OnnxDetector implements Detector {
     }
     return new OnnxDetector(
       fileName(spec.modelPath), spec.posePath ? fileName(spec.posePath) : null,
-      { modelPath: spec.modelPath, kind: spec.kind, minScore: spec.minScore ?? 0.25, poseMinPerson: spec.poseMinPerson ?? 0.5 },
+      { modelPath: spec.modelPath, kind: spec.kind, minScore: spec.minScore ?? 0.25, poseMinPerson: spec.poseMinPerson ?? spec.minScore ?? 0.25 },
       session, poseSession, ort.Tensor as unknown as TensorCtor,
     );
   }
