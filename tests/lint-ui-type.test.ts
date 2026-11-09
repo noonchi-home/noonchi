@@ -65,9 +65,9 @@ describe("사용자가 허락한 큰 글", () => {
 })
 const title = cn("flex w-fit items-center gap-2 ${title} leading-snug font-medium", className)`;
 
-  it("설정 1~3단계 큰 글: Button·Alert setup 줄 text-base, Status setup 줄 text-sm만 되고 다른 줄·더 큰 글은 잡는다", () => {
-    const quote = "1,2,3 번은 글씨 키워도되겠다 설정화면사진봤는데";
-    for (const part of ["components/ui/button.tsx", "components/ui/alert.tsx", "components/ui/status.tsx", "components/ui/card.tsx", "components/ui/radio-group.tsx"]) {
+  it("설정 1~3단계 큰 글: Button·Alert setup 줄 text-lg, Status setup 줄 text-base만 되고 다른 줄·더 큰 글은 잡는다", () => {
+    const quote = "1,2,3 글씨 더 키워도될거같고";
+    for (const part of ["components/ui/button.tsx", "components/ui/alert.tsx", "components/ui/status.tsx", "components/ui/card.tsx", "components/ui/radio-group.tsx", "components/ui/input.tsx", "components/ui/badge.tsx", "components/ui/select-native.tsx"]) {
       expect(USER_SIZES.filter((u) => u.part === part).every((u) => u.quote === quote && u.date === "2026-11-09")).toBe(true);
       expect(USER_SIZES.some((u) => u.part === part)).toBe(true);
     }
@@ -78,9 +78,9 @@ const title = cn("flex w-fit items-center gap-2 ${title} leading-snug font-mediu
     },
   },
 })`;
-    expect(fileProblems("ui/src/components/ui/button.tsx", button(`setup: "h-10 px-4 py-2 text-base",`), "part")).toEqual([]);
-    expect(texts(fileProblems("ui/src/components/ui/button.tsx", button(`setup: "h-10 px-4 py-2 text-lg",`), "part"))).toEqual(["text-lg"]);
-    expect(texts(fileProblems("ui/src/components/ui/button.tsx", button(`lg: "h-10 px-4 py-2 text-base",`), "part"))).toEqual(["text-base"]);
+    expect(fileProblems("ui/src/components/ui/button.tsx", button(`setup: "h-12 px-5 py-2 text-lg",`), "part")).toEqual([]);
+    expect(texts(fileProblems("ui/src/components/ui/button.tsx", button(`setup: "h-12 px-5 py-2 text-xl",`), "part"))).toEqual(["text-xl"]);
+    expect(texts(fileProblems("ui/src/components/ui/button.tsx", button(`lg: "h-12 px-5 py-2 text-lg",`), "part"))).toEqual(["text-lg"]);
     const status = (line: string) => `${head("Status", "text-xs(12px)")}const statusVariants = cva("text-xs", {
   variants: {
     size: {
@@ -88,13 +88,13 @@ const title = cn("flex w-fit items-center gap-2 ${title} leading-snug font-mediu
     },
   },
 })`;
-    expect(fileProblems("ui/src/components/ui/status.tsx", status(`setup: "text-sm",`), "part")).toEqual([]);
-    expect(texts(fileProblems("ui/src/components/ui/status.tsx", status(`setup: "text-base",`), "part"))).toEqual(["text-base"]);
+    expect(fileProblems("ui/src/components/ui/status.tsx", status(`setup: "text-base",`), "part")).toEqual([]);
+    expect(texts(fileProblems("ui/src/components/ui/status.tsx", status(`setup: "text-lg",`), "part"))).toEqual(["text-lg"]);
     expect(texts(fileProblems("ui/src/components/ui/alert.tsx", `${head("Alert", "text-sm(14px)")}const a = {
   size: {
-    big: "text-base",
+    big: "text-lg",
   },
-}`, "part"))).toEqual(["text-base"]);
+}`, "part"))).toEqual(["text-lg"]);
   });
 
   it("마스코트 말풍선 카드 글(item.tsx say 크기 줄) text-base(16px), 사용자 말과 날짜가 있다", () => {

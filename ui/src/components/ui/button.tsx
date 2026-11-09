@@ -1,5 +1,5 @@
 // 21st.dev「Button」(id 133, originui/button) 받은 코드.
-// 바꾼 것: shadow-black/5 → shadow-shade/5, hover:bg-accent·hover:text-accent-foreground → hover:bg-hover·hover:text-ink(accent 별칭 없음). 설정 1~3단계 큰 글(사용자 2026-11-09 「1,2,3 번은 글씨 키워도되겠다」): size setup(text-base)·setup-sm(text-sm)을 더했다.
+// 바꾼 것: shadow-black/5 → shadow-shade/5, hover:bg-accent·hover:text-accent-foreground → hover:bg-hover·hover:text-ink(accent 별칭 없음). 설정 1~3단계 큰 글(사용자 2026-11-09 「1,2,3 번은 글씨 키워도되겠다」, 「1,2,3 글씨 더 키워도될거같고」): size setup(text-lg, 높이 48px)·setup-sm(text-base, 높이 40px)을 더했다.
 // 원래 글 크기: text-sm(14px). 받은 크기 그대로다(sm은 text-xs). 더 큰 글은 npm run lint(scripts/lint-ui-type.ts)가 막는다.
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
@@ -26,8 +26,8 @@ const buttonVariants = cva(
       size: {
         default: "h-9 px-4 py-2",
         sm: "h-8 rounded-lg px-3 text-xs",
-        setup: "h-10 px-4 py-2 text-base",
-        "setup-sm": "h-9 rounded-lg px-3 text-sm",
+        setup: "h-12 px-5 py-2 text-lg",
+        "setup-sm": "h-10 rounded-lg px-4 text-base",
         lg: "h-10 rounded-lg px-8",
         icon: "h-9 w-9",
       },

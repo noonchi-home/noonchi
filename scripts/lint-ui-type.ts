@@ -24,24 +24,56 @@ export const USER_SIZES = [
     quote: "말풍선 안에 글씨만 가운데 정렬 + 좀 더 크게 + 굵은글씨 가자", date: "2026-11-09",
   },
   {
-    part: "components/ui/button.tsx", line: /^\s*setup\s*:/, size: "text-base", px: 16,
-    where: "설정 1~3단계 이전·다음 단추(Button size setup)", quote: "1,2,3 번은 글씨 키워도되겠다 설정화면사진봤는데", date: "2026-11-09",
+    part: "components/ui/button.tsx", line: /^\s*setup\s*:/, size: "text-lg", px: 18,
+    where: "설정 1~3단계 이전·다음 단추(Button size setup)", quote: "1,2,3 글씨 더 키워도될거같고", date: "2026-11-09",
   },
   {
-    part: "components/ui/alert.tsx", line: /^\s*setup\s*:/, size: "text-base", px: 16,
-    where: "설정 1~3단계 알림 줄·안내 칸(Alert size setup)", quote: "1,2,3 번은 글씨 키워도되겠다 설정화면사진봤는데", date: "2026-11-09",
+    part: "components/ui/button.tsx", line: /^\s*"setup-sm"\s*:/, size: "text-base", px: 16,
+    where: "설정 1~3단계 방 단추·모두 추가·모두 빼기·다시 불러오기(Button size setup-sm)", quote: "1,2,3 글씨 더 키워도될거같고", date: "2026-11-09",
   },
   {
-    part: "components/ui/status.tsx", line: /^\s*setup\s*:/, size: "text-sm", px: 14,
-    where: "설정 1~3단계 상태 칩(Status size setup)", quote: "1,2,3 번은 글씨 키워도되겠다 설정화면사진봤는데", date: "2026-11-09",
+    part: "components/ui/alert.tsx", line: /^\s*setup\s*:/, size: "text-lg", px: 18,
+    where: "설정 1~3단계 알림 줄·안내 칸(Alert size setup)", quote: "1,2,3 글씨 더 키워도될거같고", date: "2026-11-09",
   },
   {
-    part: "components/ui/card.tsx", line: /size === "lg" && "text-headline"/, size: "text-headline", px: 22,
-    where: "설정 1~3단계 말풍선 제목(CardTitle size lg, headline 토큰)", quote: "1,2,3 번은 글씨 키워도되겠다 설정화면사진봤는데", date: "2026-11-09",
+    part: "components/ui/status.tsx", line: /^\s*setup\s*:/, size: "text-base", px: 16,
+    where: "설정 1~3단계 상태 칩(Status size setup)", quote: "1,2,3 글씨 더 키워도될거같고", date: "2026-11-09",
   },
   {
-    part: "components/ui/radio-group.tsx", line: /size === "lg" && "text-body(?:-sm)?"/, size: "text-body", px: 15,
-    where: "설정 1~3단계 고르기 카드 이름 body·설명 body-sm(RadioCard size lg)", quote: "1,2,3 번은 글씨 키워도되겠다 설정화면사진봤는데", date: "2026-11-09",
+    part: "components/ui/item.tsx", line: /^\s*setup\s*:/, size: "text-base", px: 16,
+    where: "설정 1~3단계 검색 결과 줄·ThinQ 짝 줄(Item size setup)", quote: "1,2,3 글씨 더 키워도될거같고", date: "2026-11-09",
+  },
+  {
+    part: "components/ui/card.tsx", line: /size === "lg" && "text-3xl"/, size: "text-3xl", px: 30,
+    where: "설정 1~3단계 말풍선 제목(CardTitle size lg)", quote: "1,2,3 글씨 더 키워도될거같고", date: "2026-11-09",
+  },
+  {
+    part: "components/ui/card.tsx", line: /size === "md" && "text-xl"/, size: "text-xl", px: 20,
+    where: "설정 1~3단계 ThinQ 짝 카드 제목(CardTitle size md)", quote: "1,2,3 글씨 더 키워도될거같고", date: "2026-11-09",
+  },
+  {
+    part: "components/ui/card.tsx", line: /size === "lg" && "text-base"/, size: "text-base", px: 16,
+    where: "설정 1~3단계 ThinQ 짝 카드 설명(CardDescription size lg)", quote: "1,2,3 글씨 더 키워도될거같고", date: "2026-11-09",
+  },
+  {
+    part: "components/ui/radio-group.tsx", line: /size === "lg" && "text-lg"/, size: "text-lg", px: 18,
+    where: "설정 1~3단계 고르기 카드 이름(RadioCard size lg)", quote: "1,2,3 글씨 더 키워도될거같고", date: "2026-11-09",
+  },
+  {
+    part: "components/ui/radio-group.tsx", line: /size === "lg" && "text-base"/, size: "text-base", px: 16,
+    where: "설정 1~3단계 고르기 카드 설명(RadioCard size lg)", quote: "1,2,3 글씨 더 키워도될거같고", date: "2026-11-09",
+  },
+  {
+    part: "components/ui/input.tsx", line: /textSize === "lg" && "h-11 text-base"/, size: "text-base", px: 16,
+    where: "설정 1~3단계 가전 검색칸(SearchInput textSize lg)", quote: "1,2,3 글씨 더 키워도될거같고", date: "2026-11-09",
+  },
+  {
+    part: "components/ui/select-native.tsx", line: /textSize === "lg" && "h-11 text-base"/, size: "text-base", px: 16,
+    where: "설정 1~3단계 ThinQ 기기 고르기(SelectNative textSize lg)", quote: "1,2,3 글씨 더 키워도될거같고", date: "2026-11-09",
+  },
+  {
+    part: "components/ui/badge.tsx", line: /size === "lg" && "text-base"/, size: "text-base", px: 16,
+    where: "설정 1~3단계 추가한 가전 배지(RemovableBadge size lg)", quote: "1,2,3 글씨 더 키워도될거같고", date: "2026-11-09",
   },
 ] as const;
 const userSize = (file: string, lineText: string, size: string) =>

@@ -52,7 +52,7 @@ export function DeviceStep({ view, sources, onSources, onBack, onNext, busy }: {
         <div className="grid max-w-2xl gap-2">
           <SearchInput
             ref={box} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onKey}
-            placeholder="가전이나 방 이름으로 검색" aria-label="가전 검색" aria-controls="device-results" autoComplete="off"
+            textSize="lg" placeholder="가전이나 방 이름으로 검색" aria-label="가전 검색" aria-controls="device-results" autoComplete="off"
           />
           <div aria-label="방으로 찾기" className="flex flex-wrap gap-1">
             {rooms.map((label) => (
@@ -66,7 +66,7 @@ export function DeviceStep({ view, sources, onSources, onBack, onNext, busy }: {
                   <Alert size="setup"><AlertTitle>맞는 가전이 없어요.</AlertTitle></Alert>
                 ) : (
                   <>
-                    <Item size="sm">
+                    <Item size="setup">
                       <ItemHeader>
                         <ItemDescription>{`${hits.length}개`}</ItemDescription>
                         {rest.length > 1 && (
@@ -77,7 +77,7 @@ export function DeviceStep({ view, sources, onSources, onBack, onNext, busy }: {
                     {hits.map((d) => {
                       const on = isPicked(d.id);
                       return (
-                        <Item key={d.id} size="sm" asChild>
+                        <Item key={d.id} size="setup" asChild>
                           <button type="button" aria-pressed={on} onClick={() => set([[d.id, on ? "none" : "virtual"]])} className="w-full flex-nowrap text-left">
                             <ItemContent className="min-w-0">
                               <ItemTitle className="min-w-0 truncate">{deviceName(d)}</ItemTitle>
@@ -104,7 +104,7 @@ export function DeviceStep({ view, sources, onSources, onBack, onNext, busy }: {
             : (
               <div role="list" aria-label="추가한 가전" className="flex flex-wrap gap-1.5">
                 {picked.map((d) => (
-                  <RemovableBadge key={d.id} role="listitem" removeLabel={`${d.roomLabel} ${d.label} 빼기`} onRemove={() => set([[d.id, "none"]])}>
+                  <RemovableBadge key={d.id} size="lg" role="listitem" removeLabel={`${d.roomLabel} ${d.label} 빼기`} onRemove={() => set([[d.id, "none"]])}>
                     {!d.label.includes(d.roomLabel) && <span className="me-1.5">{d.roomLabel}</span>}
                     <span>{deviceName(d)}</span>
                   </RemovableBadge>

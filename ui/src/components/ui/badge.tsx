@@ -1,7 +1,7 @@
 "use client";
 
 // 21st.dev「Removable Badges」(id 25370, bundui/badge10) 받은 코드.
-// 바꾼 것: 꾸러미의 의존 부품 badge.tsx와 받은 빼기 단추 틀을 RemovableBadge로 내보낸다. text-xs → label 토큰, text-foreground/60 → ink-3 토큰, aria-label Delete → 「빼기」.
+// 바꾼 것: 꾸러미의 의존 부품 badge.tsx와 받은 빼기 단추 틀을 RemovableBadge로 내보낸다. text-xs → label 토큰, text-foreground/60 → ink-3 토큰, aria-label Delete → 「빼기」. 설정 1~3단계 큰 글(사용자 2026-11-09 「1,2,3 글씨 더 키워도될거같고」): RemovableBadge size lg(text-base)를 더했다.
 // 목록 상태(useState)는 뺐다. 글과 빼기 동작은 밖에서 받는다(데이터 연결).
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
@@ -40,9 +40,9 @@ function Badge({ className, variant, ...props }: BadgeProps) {
 }
 
 /** 빼기 단추가 붙은 칩(받은 Removable Badges 틀). */
-function RemovableBadge({ children, onRemove, removeLabel = "빼기", ...props }: Omit<BadgeProps, "variant"> & { onRemove: () => void; removeLabel?: string }) {
+function RemovableBadge({ children, onRemove, removeLabel = "빼기", size = "default", ...props }: Omit<BadgeProps, "variant"> & { onRemove: () => void; removeLabel?: string; size?: "default" | "lg" }) {
   return (
-    <Badge className="gap-0 rounded-md px-2 py-1" variant="outline" {...props}>
+    <Badge className={cn("gap-0 rounded-md px-2 py-1", size === "lg" && "text-base")} variant="outline" {...props}>
       {children}
       <button
         aria-label={removeLabel}

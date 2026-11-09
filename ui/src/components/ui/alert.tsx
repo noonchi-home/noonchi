@@ -1,5 +1,5 @@
 // 21st.dev「Alert」(id 11326, coss.com/alert) 받은 코드.
-// 바꾼 것: red·emerald·amber → error·ok·warn 토큰(/5 바탕, /30 테두리는 그대로), info variant 뺌, dark: 줄 지움, import "./utils" → @/lib/utils. 설정 1~3단계 큰 글(사용자 2026-11-09 「1,2,3 번은 글씨 키워도되겠다」): size setup(text-base)을 더했다.
+// 바꾼 것: red·emerald·amber → error·ok·warn 토큰(/5 바탕, /30 테두리는 그대로), info variant 뺌, dark: 줄 지움, import "./utils" → @/lib/utils. 설정 1~3단계 큰 글(사용자 2026-11-09 「1,2,3 번은 글씨 키워도되겠다」, 「1,2,3 글씨 더 키워도될거같고」): size setup(text-lg)을 더했다.
 // 원래 글 크기: text-sm(14px). 받은 크기 그대로다. 더 큰 글은 npm run lint(scripts/lint-ui-type.ts)가 막는다.
 import { cva, type VariantProps } from "class-variance-authority";
 import type * as React from "react";
@@ -25,7 +25,7 @@ const alertVariants = cva(
       },
       size: {
         default: "",
-        setup: "text-base",
+        setup: "text-lg",
       },
     },
   },

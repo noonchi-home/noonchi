@@ -1,15 +1,16 @@
 // 21st.dev「Select (Native)」(id 262, originui/select-native) 받은 코드.
-// 바꾼 것: ChevronDownIcon(radix-icons) → lucide ChevronDown, shadow-black/5 → shadow-shade/5, text-sm → body-sm 토큰, [&_option:checked]:bg-accent → bg-hover(accent 별칭 없음).
+// 바꾼 것: ChevronDownIcon(radix-icons) → lucide ChevronDown, shadow-black/5 → shadow-shade/5, text-sm → body-sm 토큰, [&_option:checked]:bg-accent → bg-hover(accent 별칭 없음). 설정 1~3단계 큰 글(사용자 2026-11-09 「1,2,3 글씨 더 키워도될거같고」): textSize lg(text-base, 높이 44px)를 더했다.
 import { cn } from "@/lib/utils";
 import * as React from "react";
 import { ChevronDown } from "lucide-react";
 
 export interface SelectPropsNative extends React.SelectHTMLAttributes<HTMLSelectElement> {
   children: React.ReactNode;
+  textSize?: "default" | "lg";
 }
 
 const SelectNative = React.forwardRef<HTMLSelectElement, SelectPropsNative>(
-  ({ className, children, ...props }, ref) => {
+  ({ className, children, textSize = "default", ...props }, ref) => {
     return (
       <div className="relative">
         <select
@@ -18,6 +19,7 @@ const SelectNative = React.forwardRef<HTMLSelectElement, SelectPropsNative>(
             props.multiple
               ? "py-1 [&>*]:px-3 [&>*]:py-1 [&_option:checked]:bg-hover"
               : "h-9 pe-8 ps-3",
+            textSize === "lg" && "h-11 text-base",
             className,
           )}
           ref={ref}
