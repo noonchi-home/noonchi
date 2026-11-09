@@ -1,6 +1,7 @@
 // HTTP + WebSocket 서버(docs/plan.md "서버"). DeviceHub 하나를 받아 REST·WS·웹 화면을 제공한다.
 // 정책(승인)은 Policy, 자연어는 Agent가 맡는다. 외부 라이브러리는 ws만 쓴다.
 
+import { createHash, timingSafeEqual } from "node:crypto";
 import { existsSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { join, resolve } from "node:path";
@@ -10,12 +11,19 @@ import { z } from "zod";
 import type { Agent } from "../agent/agent.js";
 import { newSessionId } from "../agent/agent.js";
 import { Policy } from "../agent/policy.js";
-import type { HealthView } from "../contract/events.js";
+import type { BrainLog, HealthView, ReadyView } from "../contract/events.js";
+import type { HistoryKind } from "../contract/history.js";
+import type { WorldView } from "../contract/world.js";
+import type { PlanView } from "../contract/plan.js";
 import type { ControlMode } from "../contract/setup.js";
 import { deviceViews, roomViews } from "../agent/tools.js";
 import type { Command, CommandResult, DeviceHub, RoomSpec } from "../hub/types.js";
+import { HISTORY_KINDS, type HistoryDb } from "../history/db.js";
+import type { ReflectResult } from "../history/reflect.js";
+import { daySummary, isDay } from "../history/summary.js";
 import type { LayoutEditor } from "../layout/editor.js";
 import { TouchPointsError, type TouchPoint } from "../phone/touch.js";
+import type { PlanHub } from "../plan/hub.js";
 import { twinChange } from "../model/mapping.js";
 import { listenRetry } from "./net.js";
 import { serveFile } from "./static.js";
@@ -40,8 +48,12 @@ export interface AppOptions {
   phoneUrls?: () => string[];
   /** 배치 보정(docs/plan.md 계약 B·C). 있으면 /api/layout*, /events layout 메시지. */
   layout?: LayoutEditor;
+  /** 서버 장면(scene.json + 도면 설비, src/model/scene.ts). GET /api/scene. 없거나 null이면 404. */
+  scene?: () => unknown;
   /** 허용할 브라우저 출처(기본: localhost·127.0.0.1·[::1]의 모든 포트). */
   allowOrigin?: (origin: string) => boolean;
+  /** 계획 보내기 토큰(PLAN_TOKEN). 있으면 Authorization: Bearer <토큰>을 붙인 요청은 어느 주소에서나 받는다. */
+  planToken?: string;
   log?: (msg: string) => void;
   /** /api/health에 보일 허브 종류. */
   hubKind?: string;
@@ -53,10 +65,24 @@ export interface AppOptions {
     get(): TouchPoint[] | null; save(raw: unknown): TouchPoint[]; clear(): void; auto(raw: unknown): TouchPoint[]; room(raw: unknown): string | null;
     eyeHeightM: number;
   };
-  /** 상위 판단(BRAIN=1, src/brain/live.ts). 있으면 GET /api/brain에 상태를 보인다. */
+  /** 관찰 흐름(BRAIN=1, src/observe/pipeline.ts). 있으면 GET /api/brain에 상태를 보인다. */
   brain?: { status(): object };
+  /** 지금 World State(BRAIN=1). 있으면 GET /api/world, /events 접속 때 {type:"world"}. */
+  world?: () => WorldView;
+  /** 마지막 판단과 상자 있는 마지막 observe(BRAIN=1). /events 접속 때 world 다음에 하나씩 {type:"brain", replay:true}로 보낸다. */
+  brainLast?: () => BrainLog[];
+  /** 지금 대시보드 말풍선 카드 글(src/act/say.ts). /events 접속 때 {type:"say"}. 없으면 null. */
+  say?: () => string | null;
   /** 지금 운영 모드(/api/health). 없으면 시험 모드. */
   mode?: () => ControlMode;
+  /** 준비 상태(/api/health ready, src/server/ready.ts). 없으면 준비 안 됨. */
+  ready?: () => Promise<ReadyView>;
+  /** 클로이드 계획 보관(src/plan/hub.ts). 있으면 에이전트 행동을 넘기고 POST /api/plan*을 받는다. 접속 때 지금 계획을 보낸다. */
+  plan?: Pick<PlanHub, "current" | "onAgent" | "put" | "setStep">;
+  /** 기록 DB(src/history/db.ts). 있으면 GET /api/history·/api/history/day/{날짜}·/api/decisions. */
+  history?: HistoryDb;
+  /** 그날 반성(src/history/reflect.ts). 있으면 POST /api/reflection/run. */
+  reflect?: (day: string) => Promise<ReflectResult>;
 }
 
 /** MatterHub에서 서버가 쓰는 부분(src/matter/matterHub.ts를 직접 불러오지 않으려고 모양만 적는다). */
@@ -85,9 +111,26 @@ export const DEFAULT_WEB_DIR = fileURLToPath(new URL("../../ui/dist/", import.me
 /** 화면 폴더에 index.html이 없을 때(빌드 전) 화면 요청에 주는 오류. */
 export const NOT_BUILT = "화면이 아직 빌드되지 않았어요. npm run ui:build";
 const LOCAL_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
+/** 준비 상태를 모를 때(앱만 따로 띄운 시험). */
+const NOT_READY: ReadyView = {
+  ok: false, inference_mode: "mock", vlm: { base_url: "", model: "", key: false, reachable: false },
+  pam: { url: "", reachable: false, llm: null }, agent: { provider: "openai", base_url: "", model: "", key: false, reachable: false }, db: false,
+};
 
 /** 기본 허용 출처: 이 PC(localhost·127.0.0.1·[::1])의 모든 포트. */
 export const isLocalOrigin = (origin: string): boolean => LOCAL_ORIGIN.test(origin);
+
+/** 허용 출처: 이 PC(localhost·127.0.0.1·[::1]) + ALLOWED_ORIGINS(쉼표로 나눈 https://호스트[:포트], tailscale serve 주소). */
+export function originChecker(raw: string | undefined): (origin: string) => boolean {
+  const listed = new Set((raw ?? "").split(",").map((s) => s.trim()).filter(Boolean).map((s) => {
+    try {
+      return new URL(s).origin;
+    } catch {
+      throw new Error(`ALLOWED_ORIGINS에 주소가 아닌 값이 있어요: ${s} (예: https://<서버>.<tailnet>.ts.net)`);
+    }
+  }));
+  return (origin) => isLocalOrigin(origin) || listed.has(origin);
+}
 const MAX_BODY = 1 << 20;
 
 export class HttpError extends Error {
@@ -118,6 +161,62 @@ const CommandSchema = z.discriminatedUnion("type", [
 ]);
 
 const KO_ERRORS = z.locales.ko().localeError;
+
+// 클로이드 계획(docs/plan-contract.md). 글은 화면에 그대로 나가므로 화면 글 규칙(60자 아래, 화살표·괄호 없음)을 여기서도 본다
+const PlanCopy = z.string().max(60).refine((t) => !/→|⇒|->|=>|[()]/.test(t), { error: "화살표·괄호 없이 지금 상태나 할 일만 써 주세요" });
+const XZSchema = z.tuple([z.number(), z.number()]);
+const PlanSchema = z.object({
+  id: z.string().min(1).max(200),
+  revision: z.number().int().min(1),
+  supersedes: z.string().min(1).max(200).optional(),
+  origin: z.enum(["live", "mock"]).optional(),
+  source: z.enum(["brain", "agent", "planner"]),
+  goal: PlanCopy.min(1),
+  judgment: PlanCopy,
+  dryRun: z.boolean(),
+  robot: z.object({ position: XZSchema.nullable(), room: z.string().nullable() }),
+  path: z.array(XZSchema).max(1000),
+  legs: z.array(z.object({ stepId: z.string(), end: z.number().int().min(0) })),
+  steps: z.array(z.object({
+    id: z.string().min(1).max(200),
+    kind: z.enum(["move", "act", "ask", "device", "wait"]),
+    label: PlanCopy.min(1),
+    target: z.object({ objectId: z.string().optional(), deviceId: z.string().optional(), room: z.string().optional(), position: XZSchema.optional() }).optional(),
+    status: z.enum(["pending", "active", "done", "failed", "skipped"]),
+  })).min(1).max(50),
+  status: z.enum(["planned", "running", "done", "cancelled", "failed"]),
+  updatedAt: z.string().max(64),
+}).superRefine((p, ctx) => {
+  if (p.robot.position === null && p.path.length > 0) ctx.addIssue({ code: "custom", path: ["path"], message: "로봇 위치를 모르면 path는 []" });
+  const moves = new Set(p.steps.filter((s) => s.kind === "move").map((s) => s.id));
+  p.legs.forEach((l, i) => {
+    if (!moves.has(l.stepId)) ctx.addIssue({ code: "custom", path: ["legs", i, "stepId"], message: "move 단계 id가 아님" });
+    if (l.end >= p.path.length) ctx.addIssue({ code: "custom", path: ["legs", i, "end"], message: "path 밖 점 번호" });
+  });
+});
+const StepStatusSchema = PlanSchema.shape.steps.element.shape.status;
+
+function parsePlan(raw: unknown): PlanView {
+  const r = PlanSchema.safeParse(raw, { error: KO_ERRORS });
+  if (!r.success) {
+    const issues = r.error.issues.map((i) => `${i.path.join(".") || "plan"}: ${i.message}`).join("; ");
+    throw new HttpError(400, `계획 형식이 올바르지 않습니다: ${issues}`);
+  }
+  return r.data as PlanView;
+}
+
+/** 같은 PC에서 온 요청인가(127.0.0.1·::1). */
+export const isLoopback = (address: string | undefined): boolean => !!address && /^(127\.\d+\.\d+\.\d+|::1|::ffff:127\.\d+\.\d+\.\d+)$/.test(address);
+
+const digest = (s: string) => createHash("sha256").update(s).digest();
+
+/** 계획을 보낼 수 있는가: 같은 PC 주소이거나, PLAN_TOKEN이 있고 Authorization: Bearer <토큰>이 맞다.
+ *  compose로 띄우면 호스트·tailscale serve에서 온 요청도 컨테이너에는 Docker 브리지 주소로 보이므로 토큰을 쓴다. */
+export function canSendPlan(address: string | undefined, authorization: string | undefined, token: string | undefined): boolean {
+  if (isLoopback(address)) return true;
+  const got = /^Bearer\s+(.+)$/i.exec(authorization?.trim() ?? "")?.[1];
+  return !!token && !!got && timingSafeEqual(digest(got), digest(token));
+}
 
 function parseCommand(raw: unknown): Command {
   const value = typeof raw === "string" ? { type: raw } : raw;
@@ -190,14 +289,73 @@ export function createApp(opts: AppOptions): TwinHomeApp {
     ok: true, devices: hub.list().length, hub: opts.hubKind ?? "memory", transport: matterInfo()?.transport ?? null,
     provider: agent?.provider.name ?? null, model: agent?.provider.model ?? null, twin: !!twinDir && existsSync(twinDir),
     eye: !!opts.eye, home: opts.home ?? null, phone_urls: opts.phoneUrls?.() ?? [], brain: !!opts.brain, mode: opts.mode?.() ?? "test",
+    ready: opts.ready ? await opts.ready() : NOT_READY,
   }));
 
   route("GET", /^\/api\/brain$/, async () => {
-    if (!opts.brain) throw new HttpError(404, "상위 판단이 꺼져 있습니다(BRAIN=1, PHONE_PORT, OPENAI_API_KEY 필요)");
+    if (!opts.brain) throw new HttpError(404, "관찰 흐름이 꺼져 있습니다(BRAIN=1, PHONE_PORT 필요)");
     return { ok: true, ...opts.brain.status() };
   });
 
-  // ── 배치 보정 ──
+  route("GET", /^\/api\/world$/, async () => {
+    if (!opts.world) throw new HttpError(404, "관찰 흐름이 꺼져 있습니다(BRAIN=1, PHONE_PORT 필요)");
+    return { ok: true, world: opts.world() };
+  });
+
+  // ── 기록 ──
+
+  const requireHistory = () => {
+    if (!opts.history) throw new HttpError(404, "기록 DB가 없습니다.");
+    return opts.history;
+  };
+  const msParam = (url: URL, key: string) => {
+    const raw = url.searchParams.get(key)?.trim();
+    if (!raw) return undefined;
+    const v = Number(raw);
+    if (!Number.isFinite(v) || v < 0) throw new HttpError(400, `${key}는 0 이상의 시각(ms)이어야 합니다.`);
+    return v;
+  };
+  const limitParam = (url: URL, fallback: number, max: number) => {
+    const raw = url.searchParams.get("limit")?.trim();
+    if (!raw) return fallback;
+    const v = Number(raw);
+    if (!Number.isInteger(v) || v < 1 || v > max) throw new HttpError(400, `limit는 1~${max} 사이 정수여야 합니다.`);
+    return v;
+  };
+  // since가 없으면 최근 limit줄, 있으면 since부터 limit줄(둘 다 시각 순)
+  route("GET", /^\/api\/history$/, async (_req, url) => {
+    const db = requireHistory();
+    const kinds = (url.searchParams.get("kinds") ?? "").split(",").map((k) => k.trim()).filter(Boolean);
+    const unknown = kinds.filter((k) => !HISTORY_KINDS.includes(k as HistoryKind));
+    if (unknown.length) throw new HttpError(400, `모르는 기록 종류입니다: ${unknown.join(", ")} (있는 종류: ${HISTORY_KINDS.join(", ")})`);
+    const since = msParam(url, "since");
+    return { ok: true, rows: db.list({ since, until: msParam(url, "until"), kinds: kinds as HistoryKind[], limit: limitParam(url, 500, 5000), latest: since === undefined }) };
+  });
+  route("GET", /^\/api\/history\/day\/(\d{4}-\d{2}-\d{2})$/, async (_req, _url, [day]) => {
+    const db = requireHistory();
+    if (!isDay(day!)) throw new HttpError(400, `없는 날짜입니다: ${day}`);
+    return { ok: true, ...daySummary(db, day!) };
+  });
+  // 반성 바로 하기: day(기본 오늘). 그날 기록이 없거나 이미 반성 중이면 409, PAM 실패는 502
+  route("POST", /^\/api\/reflection\/run$/, async (req) => {
+    const db = requireHistory();
+    if (!opts.reflect) throw new HttpError(404, "반성을 쓸 수 없습니다.");
+    const body = await readJson(req);
+    const day = body.day ?? db.dayOf(Date.now());
+    if (typeof day !== "string" || !isDay(day)) throw new HttpError(400, "day는 YYYY-MM-DD 날짜여야 합니다.");
+    const r = await opts.reflect(day);
+    if (!r.ok) throw new HttpError(r.empty ? 409 : 502, r.error);
+    return { ok: true, day, version: r.version, appliesDay: r.appliesDay };
+  });
+  route("GET", /^\/api\/decisions$/, async (_req, url) => ({ ok: true, decisions: requireHistory().decisions(limitParam(url, 20, 500)) }));
+
+  // ── 집 장면·배치 보정 ──
+
+  route("GET", /^\/api\/scene$/, async () => {
+    const scene = opts.scene?.();
+    if (!scene) throw new HttpError(404, "집 장면이 없어요.");
+    return { ok: true, scene };
+  });
 
   const requireLayout = () => {
     if (!opts.layout) throw new HttpError(404, "배치 보정을 쓸 수 없습니다(집 scene.json이 없음).");
@@ -277,6 +435,28 @@ export function createApp(opts: AppOptions): TwinHomeApp {
     sameHome(await readJson(req));
     requireTouch().clear();
     return touchView(null);
+  });
+
+  // ── 클로이드 계획 ──
+
+  route("GET", /^\/api\/plan$/, async () => ({ ok: true, plan: opts.plan?.current() ?? null }));
+  const requirePlan = (req: IncomingMessage) => {
+    if (!opts.plan) throw new HttpError(404, "계획을 받을 수 없습니다(집이 아직 없음).");
+    if (!canSendPlan(req.socket.remoteAddress, req.headers.authorization, opts.planToken)) throw new HttpError(403, "계획은 서버와 같은 PC에서 보내거나 PLAN_TOKEN을 붙여 보내야 합니다.");
+    if (closed) throw new HttpError(503, "집을 바꾸는 중이에요. 잠시 뒤 다시 해 주세요.");
+    return opts.plan;
+  };
+  route("POST", /^\/api\/plan$/, async (req) => {
+    const plans = requirePlan(req);
+    plans.put(parsePlan((await readJson(req)).plan));
+    return { ok: true, plan: plans.current() };
+  });
+  route("POST", /^\/api\/plan\/([^/]+)\/steps\/([^/]+)$/, async (req, _url, [id, stepId]) => {
+    const plans = requirePlan(req);
+    const r = StepStatusSchema.safeParse((await readJson(req)).status);
+    if (!r.success) throw new HttpError(400, "status는 pending·active·done·failed·skipped 중 하나여야 합니다.");
+    if (!plans.setStep(id!, stepId!, r.data)) throw new HttpError(404, `지금 계획에 없는 단계입니다: ${id} ${stepId}`);
+    return { ok: true, plan: plans.current() };
   });
 
   route("GET", /^\/api\/homes$/, async () => ({ current: opts.home?.id ?? null, homes: opts.homes ?? (opts.home ? [opts.home] : []) }));
@@ -498,11 +678,18 @@ export function createApp(opts: AppOptions): TwinHomeApp {
     send(ws, { type: "hello", devices: hub.list().length, provider: agent?.provider.name ?? null, hub: opts.hubKind ?? "memory", home: opts.home?.id ?? null });
     for (const state of hub.states()) send(ws, { type: "state", state });
     for (const m of opts.layout?.syncMessages() ?? []) send(ws, m);
+    send(ws, { type: "plan", plan: opts.plan?.current() ?? null });
+    if (opts.world) send(ws, { type: "world", world: opts.world() });
+    for (const event of opts.brainLast?.() ?? []) send(ws, { type: "brain", event, replay: true });
+    send(ws, { type: "say", text: opts.say?.() ?? null });
     ws.on("error", () => {});
   });
 
   const unsubHub = hub.subscribe((state) => broadcast({ type: "state", state }));
-  const unsubAgent = agent?.subscribe((e) => broadcast({ type: "agent", ...e }));
+  const unsubAgent = agent?.subscribe((e) => {
+    broadcast({ type: "agent", ...e });
+    opts.plan?.onAgent(e);
+  });
   const unsubLayout = opts.layout?.subscribe((m) => broadcast(m));
 
   let closed = false;

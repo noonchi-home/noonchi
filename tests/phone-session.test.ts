@@ -164,6 +164,26 @@ describe("여기(조준점)와 트윈 → AR", () => {
   });
 });
 
+describe("엔진 프레임 카메라(viewAt)", () => {
+  const P = Array.from({ length: 16 }, (_, i) => (i % 5 === 0 ? 1 : 0));
+  it("맞춘 뒤에만 트윈 원점 [x, 높이, y]·AR 회전·맞춤 회전·투영을 준다", () => {
+    const s = new PhoneSession(TARGETS);
+    expect(s.viewAt([3.9, 1.4, 5], [0, 0, 0, 1], P, undefined)).toBeNull();
+    s.handle({ type: "anchor", id: "dock", point: [3.9, 0, 5.51] });
+    s.handle({ type: "anchor", id: "door_main", point: [2.4, 0, 3.55] });
+    const v = s.viewAt([3.9, 1.4, 5], [0, 0, 0, 1], P, undefined)!;
+    expect(v).toMatchObject({ origin: [3.9, 1.4, 5], orientation: [0, 0, 0, 1], projection: P });
+    expect(v.theta).toBeCloseTo(0, 6);
+  });
+  it("투영이 없거나 16개가 아니거나 다른 AR 원점이면 null", () => {
+    const s = aligned();
+    expect(s.viewAt([3.9, 1.4, 5], [0, 0, 0, 1], undefined, undefined)).toBeNull();
+    expect(s.viewAt([3.9, 1.4, 5], [0, 0, 0, 1], [1, 2], undefined)).toBeNull();
+    s.handle({ type: "reset", epoch: "a" });
+    expect(s.viewAt([3.9, 1.4, 5], [0, 0, 0, 1], P, "b")).toBeNull();
+  });
+});
+
 describe("맞추기 전 추정 눈(창가 고정 위치 + 폰 방향)", () => {
   const FALLBACK = { position: [2, 0.8] as [number, number], yawDeg: 90, heightM: 1.3 };
   const s45 = Math.SQRT1_2;

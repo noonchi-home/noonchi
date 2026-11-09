@@ -1,0 +1,93 @@
+{
+  "type": "dryer",
+  "label": "건조기",
+  "family": "bath_utility",
+  "category": "appliances",
+  "node_type": "device",
+  "mount": "surface",
+  "footprint": [
+    0.6,
+    0.65
+  ],
+  "height": 0.85,
+  "model": "assets/appliances/dryer.glb",
+  "blocks_walk": false,
+  "blocks_view": false,
+  "anchors": {
+    "front": [
+      0.0,
+      0.65
+    ],
+    "door": [
+      0.0,
+      0.33,
+      0.42
+    ]
+  },
+  "attrs": {
+    "running": [
+      false,
+      true
+    ]
+  },
+  "states": {
+    "running": {
+      "default": false,
+      "effects": {
+        "false": [
+          {
+            "part": "display",
+            "visible": false
+          },
+          {
+            "part": "dial_ring",
+            "emissive": 0.0
+          },
+          {
+            "part": "drum_light",
+            "emissive": 0.0
+          },
+          {
+            "part": "status_bar",
+            "emissive": 0.0
+          },
+          {
+            "light": "drum_glow",
+            "intensity": 0.0
+          }
+        ],
+        "true": [
+          {
+            "part": "display",
+            "visible": true
+          },
+          {
+            "part": "dial_ring",
+            "emissive": 1.0
+          },
+          {
+            "part": "drum_light",
+            "emissive": 1.0
+          },
+          {
+            "part": "status_bar",
+            "emissive": 1.0
+          },
+          {
+            "light": "drum_glow",
+            "intensity": 1.0
+          },
+          {
+            "part": "drum",
+            "spin": [
+              0,
+              0,
+              0.5
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "notes": "세탁기 위에 올리는 히트펌프 건조기(적층 키트 포함, 세탁기와 같은 폭·깊이). running → 주황 표시·상태 줄·드럼 조명, 바닥 상태등, 회전."
+}

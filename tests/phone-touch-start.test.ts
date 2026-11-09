@@ -23,7 +23,7 @@ const runtime = () => {
   return dir;
 };
 const env = (runtimeDir: string, extra: Record<string, string> = {}) => ({
-  HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock", PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", RUNTIME_DIR: runtimeDir, ...extra,
+  HUB: "memory", PORT: "0", PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", RUNTIME_DIR: runtimeDir, ...extra,
 });
 
 /** 열기 전부터 받은 메시지를 모아 두고 조건에 맞는 것을 기다린다(연결 직후 status를 놓치지 않게). */
@@ -112,7 +112,7 @@ describe("벽 대기 맞춤(startServer)", () => {
 
   it("저장해 둔 A·B가 있으면 벽 대기로 시작하고, PHONE_EYE_HEIGHT_M로 눈 높이를 바꾼다", async () => {
     const dir = runtime();
-    const probe = await startServer({ env: { HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock" }, log: () => {} });
+    const probe = await startServer({ env: { HUB: "memory", PORT: "0", RUNTIME_DIR: runtime() }, log: () => {} });
     const homeId = probe.twin.home.id;
     await probe.close();
     mkdirSync(join(dir, "homes", homeId), { recursive: true });
@@ -174,7 +174,7 @@ describe("벽 대기 맞춤(startServer)", () => {
 
   it("깨진 파일이면 경고하고 바닥 조준으로 시작한다", async () => {
     const dir = runtime();
-    const probe = await startServer({ env: { HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock" }, log: () => {} });
+    const probe = await startServer({ env: { HUB: "memory", PORT: "0", RUNTIME_DIR: runtime() }, log: () => {} });
     const homeId = probe.twin.home.id;
     await probe.close();
     mkdirSync(join(dir, "homes", homeId), { recursive: true });

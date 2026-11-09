@@ -1,0 +1,6842 @@
+{
+ "version": 1,
+ "generator": "twin-studio apartment",
+ "units": "m",
+ "up": "+Y",
+ "front": "+Z",
+ "rotationOrder": "XYZ",
+ "plan": {
+  "name": "한양목련 180B · 공개 도면 기준",
+  "ceiling_height": 2.3,
+  "wall_cut_height": 1.05,
+  "z_min": -0.112,
+  "rooms": [
+   {
+    "id": "vestibule",
+    "label": "전실",
+    "polygon": [
+     [
+      0.871875,
+      2.025
+     ],
+     [
+      5.428125,
+      2.025
+     ],
+     [
+      5.428125,
+      4.190625
+     ],
+     [
+      0.871875,
+      4.190625
+     ]
+    ],
+    "observable": true,
+    "floor": "tile_entrance",
+    "floor_z": -0.1,
+    "wall_finish": "paint",
+    "kind": "entry",
+    "interior": [
+     [
+      0.972,
+      4.116
+     ],
+     [
+      5.353,
+      4.116
+     ],
+     [
+      5.353,
+      2.125
+     ],
+     [
+      0.972,
+      2.125
+     ],
+     [
+      0.972,
+      4.091
+     ]
+    ],
+    "center": [
+     3.163,
+     3.12
+    ],
+    "area": 9.87,
+    "neighbors": [
+     "entrance"
+    ]
+   },
+   {
+    "id": "entrance",
+    "label": "현관",
+    "polygon": [
+     [
+      3.6,
+      4.190625
+     ],
+     [
+      5.428125,
+      4.190625
+     ],
+     [
+      5.428125,
+      5.990625
+     ],
+     [
+      3.6,
+      5.990625
+     ]
+    ],
+    "observable": true,
+    "floor": "tile_entrance",
+    "floor_z": -0.1,
+    "wall_finish": "paint",
+    "kind": "entry",
+    "interior": [
+     [
+      5.353,
+      5.991
+     ],
+     [
+      5.353,
+      4.266
+     ],
+     [
+      3.675,
+      4.266
+     ],
+     [
+      3.675,
+      5.991
+     ]
+    ],
+    "center": [
+     4.514,
+     5.105
+    ],
+    "area": 3.29,
+    "neighbors": [
+     "living",
+     "vestibule"
+    ]
+   },
+   {
+    "id": "bath_west",
+    "label": "욕실 1",
+    "polygon": [
+     [
+      0.0,
+      4.190625
+     ],
+     [
+      2.053125,
+      4.190625
+     ],
+     [
+      2.053125,
+      5.990625
+     ],
+     [
+      0.0,
+      5.990625
+     ]
+    ],
+    "observable": true,
+    "floor": "tile_bath",
+    "floor_z": 0.0,
+    "wall_finish": "tile",
+    "kind": "bath",
+    "interior": [
+     [
+      0.972,
+      4.266
+     ],
+     [
+      0.972,
+      4.291
+     ],
+     [
+      0.1,
+      4.291
+     ],
+     [
+      0.1,
+      5.916
+     ],
+     [
+      1.978,
+      5.916
+     ],
+     [
+      1.978,
+      4.266
+     ]
+    ],
+    "center": [
+     1.039,
+     5.103
+    ],
+    "area": 3.7,
+    "neighbors": [
+     "alpha"
+    ]
+   },
+   {
+    "id": "closet",
+    "label": "수납공간",
+    "polygon": [
+     [
+      2.053125,
+      4.190625
+     ],
+     [
+      3.6,
+      4.190625
+     ],
+     [
+      3.6,
+      5.990625
+     ],
+     [
+      2.053125,
+      5.990625
+     ]
+    ],
+    "observable": true,
+    "floor": "wood",
+    "floor_z": 0.0,
+    "wall_finish": "paint",
+    "kind": "storage",
+    "interior": [
+     [
+      3.525,
+      5.916
+     ],
+     [
+      3.525,
+      4.753
+     ],
+     [
+      2.128,
+      4.753
+     ],
+     [
+      2.128,
+      5.916
+     ]
+    ],
+    "center": [
+     2.944,
+     5.334
+    ],
+    "area": 2.78,
+    "neighbors": [
+     "alpha"
+    ]
+   },
+   {
+    "id": "alpha",
+    "label": "알파룸",
+    "polygon": [
+     [
+      0.0,
+      5.990625
+     ],
+     [
+      3.6,
+      5.990625
+     ],
+     [
+      3.6,
+      10.63125
+     ],
+     [
+      0.0,
+      10.63125
+     ]
+    ],
+    "observable": true,
+    "floor": "wood",
+    "floor_z": 0.0,
+    "wall_finish": "paint",
+    "kind": "room",
+    "interior": [
+     [
+      0.1,
+      6.066
+     ],
+     [
+      0.1,
+      10.556
+     ],
+     [
+      3.525,
+      10.556
+     ],
+     [
+      3.525,
+      6.066
+     ],
+     [
+      2.128,
+      6.066
+     ],
+     [
+      1.978,
+      6.066
+     ]
+    ],
+    "center": [
+     1.812,
+     8.311
+    ],
+    "area": 16.71,
+    "neighbors": [
+     "balcony_west",
+     "bath_west",
+     "closet",
+     "living"
+    ]
+   },
+   {
+    "id": "balcony_west",
+    "label": "서측 발코니",
+    "polygon": [
+     [
+      0.0,
+      10.63125
+     ],
+     [
+      3.6,
+      10.63125
+     ],
+     [
+      3.6,
+      12.234375
+     ],
+     [
+      0.0,
+      12.234375
+     ]
+    ],
+    "observable": true,
+    "floor": "tile_balcony",
+    "floor_z": -0.1,
+    "wall_finish": "paint",
+    "kind": "balcony",
+    "interior": [
+     [
+      0.1,
+      10.706
+     ],
+     [
+      0.1,
+      12.134
+     ],
+     [
+      3.5,
+      12.134
+     ],
+     [
+      3.525,
+      12.134
+     ],
+     [
+      3.525,
+      10.706
+     ]
+    ],
+    "center": [
+     1.812,
+     11.42
+    ],
+    "area": 5.77,
+    "neighbors": [
+     "alpha"
+    ]
+   },
+   {
+    "id": "bed_sw",
+    "label": "침실 1",
+    "polygon": [
+     [
+      3.6,
+      7.81875
+     ],
+     [
+      6.834375,
+      7.81875
+     ],
+     [
+      6.834375,
+      12.234375
+     ],
+     [
+      3.6,
+      12.234375
+     ]
+    ],
+    "observable": true,
+    "floor": "wood",
+    "floor_z": 0.0,
+    "wall_finish": "paint",
+    "kind": "bedroom",
+    "interior": [
+     [
+      6.759,
+      12.159
+     ],
+     [
+      6.759,
+      7.894
+     ],
+     [
+      3.675,
+      7.894
+     ],
+     [
+      3.675,
+      12.134
+     ],
+     [
+      3.7,
+      12.134
+     ],
+     [
+      3.7,
+      12.159
+     ]
+    ],
+    "center": [
+     5.217,
+     10.014
+    ],
+    "area": 14.28,
+    "neighbors": [
+     "balcony_front",
+     "living"
+    ]
+   },
+   {
+    "id": "bed_se",
+    "label": "침실 2",
+    "polygon": [
+     [
+      11.784375,
+      7.81875
+     ],
+     [
+      16.2,
+      7.81875
+     ],
+     [
+      16.2,
+      12.234375
+     ],
+     [
+      11.784375,
+      12.234375
+     ]
+    ],
+    "observable": true,
+    "floor": "wood",
+    "floor_z": 0.0,
+    "wall_finish": "paint",
+    "kind": "bedroom",
+    "interior": [
+     [
+      16.1,
+      7.894
+     ],
+     [
+      13.744,
+      7.894
+     ],
+     [
+      13.594,
+      7.894
+     ],
+     [
+      11.859,
+      7.894
+     ],
+     [
+      11.859,
+      12.159
+     ],
+     [
+      16.1,
+      12.159
+     ]
+    ],
+    "center": [
+     13.98,
+     10.027
+    ],
+    "area": 19.5,
+    "neighbors": [
+     "balcony_front",
+     "bath_east",
+     "living"
+    ]
+   },
+   {
+    "id": "bed_ne",
+    "label": "침실 3",
+    "polygon": [
+     [
+      11.784375,
+      2.221875
+     ],
+     [
+      16.2,
+      2.221875
+     ],
+     [
+      16.2,
+      5.990625
+     ],
+     [
+      11.784375,
+      5.990625
+     ]
+    ],
+    "observable": true,
+    "floor": "wood",
+    "floor_z": 0.0,
+    "wall_finish": "paint",
+    "kind": "bedroom",
+    "interior": [
+     [
+      16.1,
+      5.147
+     ],
+     [
+      16.1,
+      2.297
+     ],
+     [
+      11.859,
+      2.297
+     ],
+     [
+      11.859,
+      5.916
+     ],
+     [
+      15.525,
+      5.916
+     ],
+     [
+      15.525,
+      5.147
+     ]
+    ],
+    "center": [
+     13.98,
+     4.106
+    ],
+    "area": 16.64,
+    "neighbors": [
+     "living"
+    ]
+   },
+   {
+    "id": "bath_center",
+    "label": "욕실 2",
+    "polygon": [
+     [
+      5.428125,
+      4.190625
+     ],
+     [
+      8.775,
+      4.190625
+     ],
+     [
+      8.775,
+      5.990625
+     ],
+     [
+      5.428125,
+      5.990625
+     ]
+    ],
+    "observable": true,
+    "floor": "tile_bath",
+    "floor_z": 0.0,
+    "wall_finish": "tile",
+    "kind": "bath",
+    "interior": [
+     [
+      5.503,
+      4.266
+     ],
+     [
+      5.503,
+      5.916
+     ],
+     [
+      8.7,
+      5.916
+     ],
+     [
+      8.7,
+      4.978
+     ],
+     [
+      7.959,
+      4.978
+     ],
+     [
+      7.959,
+      4.266
+     ]
+    ],
+    "center": [
+     7.102,
+     5.091
+    ],
+    "area": 6.02,
+    "neighbors": [
+     "living"
+    ]
+   },
+   {
+    "id": "bath_east",
+    "label": "욕실 3",
+    "polygon": [
+     [
+      13.66875,
+      5.990625
+     ],
+     [
+      16.2,
+      5.990625
+     ],
+     [
+      16.2,
+      7.81875
+     ],
+     [
+      13.66875,
+      7.81875
+     ]
+    ],
+    "observable": true,
+    "floor": "tile_bath",
+    "floor_z": 0.0,
+    "wall_finish": "tile",
+    "kind": "bath",
+    "interior": [
+     [
+      16.1,
+      6.066
+     ],
+     [
+      13.744,
+      6.066
+     ],
+     [
+      13.744,
+      7.744
+     ],
+     [
+      16.1,
+      7.744
+     ]
+    ],
+    "center": [
+     14.583,
+     6.905
+    ],
+    "area": 4.63,
+    "neighbors": [
+     "bed_se"
+    ]
+   },
+   {
+    "id": "kitchen",
+    "label": "주방·식당",
+    "polygon": [
+     [
+      5.428125,
+      -0.478125
+     ],
+     [
+      7.93125,
+      -0.478125
+     ],
+     [
+      7.93125,
+      0.0
+     ],
+     [
+      8.465625,
+      0.0
+     ],
+     [
+      8.465625,
+      2.221875
+     ],
+     [
+      8.775,
+      2.221875
+     ],
+     [
+      8.775,
+      4.190625
+     ],
+     [
+      5.428125,
+      4.190625
+     ]
+    ],
+    "observable": true,
+    "floor": "wood",
+    "floor_z": 0.0,
+    "wall_finish": "paint",
+    "kind": "kitchen",
+    "interior": [
+     [
+      8.775,
+      2.297
+     ],
+     [
+      8.541,
+      2.297
+     ],
+     [
+      8.391,
+      2.297
+     ],
+     [
+      8.391,
+      0.1
+     ],
+     [
+      8.031,
+      0.1
+     ],
+     [
+      7.831,
+      0.1
+     ],
+     [
+      7.831,
+      -0.378
+     ],
+     [
+      5.528,
+      -0.378
+     ],
+     [
+      5.528,
+      1.925
+     ],
+     [
+      5.528,
+      2.125
+     ],
+     [
+      5.503,
+      2.125
+     ],
+     [
+      5.503,
+      4.116
+     ],
+     [
+      8.775,
+      4.116
+     ]
+    ],
+    "center": [
+     6.964,
+     2.606
+    ],
+    "area": 14.53,
+    "neighbors": [
+     "balcony_north",
+     "living"
+    ]
+   },
+   {
+    "id": "balcony_north",
+    "label": "후면 발코니",
+    "polygon": [
+     [
+      8.465625,
+      0.0
+     ],
+     [
+      9.9,
+      0.0
+     ],
+     [
+      9.9,
+      0.759375
+     ],
+     [
+      16.2,
+      0.759375
+     ],
+     [
+      16.2,
+      2.221875
+     ],
+     [
+      8.465625,
+      2.221875
+     ]
+    ],
+    "observable": true,
+    "floor": "tile_balcony",
+    "floor_z": -0.1,
+    "wall_finish": "paint",
+    "kind": "balcony",
+    "interior": [
+     [
+      8.541,
+      2.147
+     ],
+     [
+      15.328,
+      2.147
+     ],
+     [
+      15.328,
+      0.859
+     ],
+     [
+      10.0,
+      0.859
+     ],
+     [
+      9.8,
+      0.859
+     ],
+     [
+      9.8,
+      0.1
+     ],
+     [
+      8.541,
+      0.1
+     ]
+    ],
+    "center": [
+     9.31,
+     1.415
+    ],
+    "area": 12.4,
+    "neighbors": [
+     "kitchen"
+    ]
+   },
+   {
+    "id": "living",
+    "label": "거실·복도",
+    "polygon": [
+     [
+      3.6,
+      5.990625
+     ],
+     [
+      8.775,
+      5.990625
+     ],
+     [
+      8.775,
+      2.221875
+     ],
+     [
+      11.784375,
+      2.221875
+     ],
+     [
+      11.784375,
+      5.990625
+     ],
+     [
+      13.66875,
+      5.990625
+     ],
+     [
+      13.66875,
+      7.81875
+     ],
+     [
+      11.784375,
+      7.81875
+     ],
+     [
+      11.784375,
+      12.234375
+     ],
+     [
+      6.834375,
+      12.234375
+     ],
+     [
+      6.834375,
+      7.81875
+     ],
+     [
+      3.6,
+      7.81875
+     ]
+    ],
+    "observable": true,
+    "floor": "wood",
+    "floor_z": 0.0,
+    "wall_finish": "paint",
+    "kind": "living",
+    "interior": [
+     [
+      3.675,
+      5.991
+     ],
+     [
+      3.675,
+      6.066
+     ],
+     [
+      3.675,
+      7.744
+     ],
+     [
+      6.909,
+      7.744
+     ],
+     [
+      6.909,
+      7.894
+     ],
+     [
+      6.909,
+      12.159
+     ],
+     [
+      11.709,
+      12.159
+     ],
+     [
+      11.709,
+      7.894
+     ],
+     [
+      11.709,
+      7.744
+     ],
+     [
+      13.594,
+      7.744
+     ],
+     [
+      13.594,
+      6.066
+     ],
+     [
+      11.859,
+      6.066
+     ],
+     [
+      11.709,
+      6.066
+     ],
+     [
+      11.709,
+      2.297
+     ],
+     [
+      8.775,
+      2.297
+     ],
+     [
+      8.775,
+      4.116
+     ],
+     [
+      8.85,
+      4.116
+     ],
+     [
+      8.85,
+      4.266
+     ],
+     [
+      8.85,
+      5.916
+     ],
+     [
+      8.85,
+      6.066
+     ],
+     [
+      5.503,
+      6.066
+     ],
+     [
+      5.353,
+      6.066
+     ],
+     [
+      5.353,
+      5.991
+     ]
+    ],
+    "center": [
+     9.312,
+     9.03
+    ],
+    "area": 51.61,
+    "neighbors": [
+     "alpha",
+     "balcony_front",
+     "bath_center",
+     "bed_ne",
+     "bed_se",
+     "bed_sw",
+     "entrance",
+     "kitchen"
+    ]
+   },
+   {
+    "id": "balcony_front",
+    "label": "전면 발코니",
+    "polygon": [
+     [
+      3.6,
+      12.234375
+     ],
+     [
+      16.2,
+      12.234375
+     ],
+     [
+      16.2,
+      13.640625
+     ],
+     [
+      10.378125,
+      13.640625
+     ],
+     [
+      9.759375,
+      14.175
+     ],
+     [
+      8.409375,
+      14.175
+     ],
+     [
+      7.790625,
+      13.640625
+     ],
+     [
+      3.6,
+      13.640625
+     ]
+    ],
+    "observable": true,
+    "floor": "tile_balcony",
+    "floor_z": -0.1,
+    "wall_finish": "paint",
+    "kind": "balcony",
+    "interior": [
+     [
+      7.78,
+      13.5
+     ],
+     [
+      7.828,
+      13.541
+     ],
+     [
+      7.891,
+      13.541
+     ],
+     [
+      7.891,
+      13.595
+     ],
+     [
+      7.836,
+      13.548
+     ],
+     [
+      8.447,
+      14.075
+     ],
+     [
+      9.722,
+      14.075
+     ],
+     [
+      9.618,
+      14.165
+     ],
+     [
+      10.278,
+      13.595
+     ],
+     [
+      10.278,
+      13.541
+     ],
+     [
+      10.341,
+      13.541
+     ],
+     [
+      10.388,
+      13.5
+     ],
+     [
+      10.424,
+      13.541
+     ],
+     [
+      16.1,
+      13.541
+     ],
+     [
+      16.1,
+      12.309
+     ],
+     [
+      11.859,
+      12.309
+     ],
+     [
+      11.709,
+      12.309
+     ],
+     [
+      6.909,
+      12.309
+     ],
+     [
+      6.759,
+      12.309
+     ],
+     [
+      3.7,
+      12.309
+     ],
+     [
+      3.7,
+      13.541
+     ],
+     [
+      7.745,
+      13.541
+     ],
+     [
+      7.658,
+      13.641
+     ]
+    ],
+    "center": [
+     8.98,
+     13.189
+    ],
+    "area": 18.77,
+    "neighbors": [
+     "bed_se",
+     "bed_sw",
+     "living"
+    ]
+   }
+  ],
+  "walls": [
+   {
+    "id": "E01",
+    "kind": "exterior",
+    "thickness": 0.2,
+    "a": [
+     0.0,
+     4.190625
+    ],
+    "b": [
+     0.871875,
+     4.190625
+    ],
+    "faces": [
+     {
+      "room": "bath_west",
+      "normal": [
+       0.0,
+       1.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "E02",
+    "kind": "exterior",
+    "thickness": 0.2,
+    "a": [
+     0.871875,
+     4.190625
+    ],
+    "b": [
+     0.871875,
+     2.025
+    ],
+    "faces": [
+     {
+      "room": "vestibule",
+      "normal": [
+       1.0,
+       0.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "E03",
+    "kind": "exterior",
+    "thickness": 0.2,
+    "a": [
+     0.871875,
+     2.025
+    ],
+    "b": [
+     5.428125,
+     2.025
+    ],
+    "faces": [
+     {
+      "room": "vestibule",
+      "normal": [
+       0.0,
+       1.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "E04",
+    "kind": "exterior",
+    "thickness": 0.2,
+    "a": [
+     5.428125,
+     2.025
+    ],
+    "b": [
+     5.428125,
+     -0.478125
+    ],
+    "faces": [
+     {
+      "room": "kitchen",
+      "normal": [
+       1.0,
+       0.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "E05",
+    "kind": "exterior",
+    "thickness": 0.2,
+    "a": [
+     5.428125,
+     -0.478125
+    ],
+    "b": [
+     7.93125,
+     -0.478125
+    ],
+    "faces": [
+     {
+      "room": "kitchen",
+      "normal": [
+       0.0,
+       1.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "E06",
+    "kind": "exterior",
+    "thickness": 0.2,
+    "a": [
+     7.93125,
+     -0.478125
+    ],
+    "b": [
+     7.93125,
+     0.0
+    ],
+    "faces": [
+     {
+      "room": "kitchen",
+      "normal": [
+       -1.0,
+       0.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "E07",
+    "kind": "exterior",
+    "thickness": 0.2,
+    "a": [
+     7.93125,
+     0.0
+    ],
+    "b": [
+     9.9,
+     0.0
+    ],
+    "faces": [
+     {
+      "room": "kitchen",
+      "normal": [
+       0.0,
+       1.0
+      ]
+     },
+     {
+      "room": "balcony_north",
+      "normal": [
+       0.0,
+       1.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "E08",
+    "kind": "exterior",
+    "thickness": 0.2,
+    "a": [
+     9.9,
+     0.0
+    ],
+    "b": [
+     9.9,
+     0.759375
+    ],
+    "faces": [
+     {
+      "room": "balcony_north",
+      "normal": [
+       -1.0,
+       0.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "E09",
+    "kind": "exterior",
+    "thickness": 0.2,
+    "a": [
+     9.9,
+     0.759375
+    ],
+    "b": [
+     16.2,
+     0.759375
+    ],
+    "faces": [
+     {
+      "room": "balcony_north",
+      "normal": [
+       0.0,
+       1.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "E10",
+    "kind": "exterior",
+    "thickness": 0.2,
+    "a": [
+     16.2,
+     0.759375
+    ],
+    "b": [
+     16.2,
+     13.640625
+    ],
+    "faces": [
+     {
+      "room": "bed_ne",
+      "normal": [
+       -1.0,
+       0.0
+      ]
+     },
+     {
+      "room": "bath_east",
+      "normal": [
+       -1.0,
+       0.0
+      ]
+     },
+     {
+      "room": "bed_se",
+      "normal": [
+       -1.0,
+       0.0
+      ]
+     },
+     {
+      "room": "balcony_front",
+      "normal": [
+       -1.0,
+       0.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "E11",
+    "kind": "exterior",
+    "thickness": 0.2,
+    "a": [
+     16.2,
+     13.640625
+    ],
+    "b": [
+     10.378125,
+     13.640625
+    ],
+    "faces": [
+     {
+      "room": "balcony_front",
+      "normal": [
+       0.0,
+       -1.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "E12",
+    "kind": "exterior",
+    "thickness": 0.2,
+    "a": [
+     10.378125,
+     13.640625
+    ],
+    "b": [
+     9.759375,
+     14.175
+    ],
+    "faces": [
+     {
+      "room": "balcony_front",
+      "normal": [
+       -0.65362,
+       -0.756823
+      ]
+     }
+    ]
+   },
+   {
+    "id": "E13",
+    "kind": "exterior",
+    "thickness": 0.2,
+    "a": [
+     9.759375,
+     14.175
+    ],
+    "b": [
+     8.409375,
+     14.175
+    ],
+    "faces": [
+     {
+      "room": "balcony_front",
+      "normal": [
+       0.0,
+       -1.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "E14",
+    "kind": "exterior",
+    "thickness": 0.2,
+    "a": [
+     8.409375,
+     14.175
+    ],
+    "b": [
+     7.790625,
+     13.640625
+    ],
+    "faces": [
+     {
+      "room": "balcony_front",
+      "normal": [
+       0.65362,
+       -0.756823
+      ]
+     }
+    ]
+   },
+   {
+    "id": "E15",
+    "kind": "exterior",
+    "thickness": 0.2,
+    "a": [
+     7.790625,
+     13.640625
+    ],
+    "b": [
+     3.6,
+     13.640625
+    ],
+    "faces": [
+     {
+      "room": "balcony_front",
+      "normal": [
+       0.0,
+       -1.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "E16",
+    "kind": "exterior",
+    "thickness": 0.2,
+    "a": [
+     3.6,
+     13.640625
+    ],
+    "b": [
+     3.6,
+     12.234375
+    ],
+    "faces": [
+     {
+      "room": "balcony_front",
+      "normal": [
+       1.0,
+       0.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "E17",
+    "kind": "exterior",
+    "thickness": 0.2,
+    "a": [
+     3.6,
+     12.234375
+    ],
+    "b": [
+     0.0,
+     12.234375
+    ],
+    "faces": [
+     {
+      "room": "balcony_west",
+      "normal": [
+       0.0,
+       -1.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "E18",
+    "kind": "exterior",
+    "thickness": 0.2,
+    "a": [
+     0.0,
+     12.234375
+    ],
+    "b": [
+     0.0,
+     4.190625
+    ],
+    "faces": [
+     {
+      "room": "balcony_west",
+      "normal": [
+       1.0,
+       0.0
+      ]
+     },
+     {
+      "room": "alpha",
+      "normal": [
+       1.0,
+       0.0
+      ]
+     },
+     {
+      "room": "bath_west",
+      "normal": [
+       1.0,
+       0.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "vest_kitchen",
+    "kind": "interior",
+    "thickness": 0.15,
+    "a": [
+     5.428125,
+     2.025
+    ],
+    "b": [
+     5.428125,
+     4.190625
+    ],
+    "faces": [
+     {
+      "room": "vestibule",
+      "normal": [
+       -1.0,
+       0.0
+      ]
+     },
+     {
+      "room": "kitchen",
+      "normal": [
+       1.0,
+       0.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "vest_bottom",
+    "kind": "interior",
+    "thickness": 0.15,
+    "a": [
+     0.871875,
+     4.190625
+    ],
+    "b": [
+     5.428125,
+     4.190625
+    ],
+    "faces": [
+     {
+      "room": "bath_west",
+      "normal": [
+       0.0,
+       1.0
+      ]
+     },
+     {
+      "room": "entrance",
+      "normal": [
+       0.0,
+       1.0
+      ]
+     },
+     {
+      "room": "vestibule",
+      "normal": [
+       0.0,
+       -1.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "bath_west_right",
+    "kind": "interior",
+    "thickness": 0.15,
+    "a": [
+     2.053125,
+     4.190625
+    ],
+    "b": [
+     2.053125,
+     5.990625
+    ],
+    "faces": [
+     {
+      "room": "bath_west",
+      "normal": [
+       -1.0,
+       0.0
+      ]
+     },
+     {
+      "room": "closet",
+      "normal": [
+       1.0,
+       0.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "closet_right",
+    "kind": "interior",
+    "thickness": 0.15,
+    "a": [
+     3.6,
+     4.190625
+    ],
+    "b": [
+     3.6,
+     5.990625
+    ],
+    "faces": [
+     {
+      "room": "closet",
+      "normal": [
+       -1.0,
+       0.0
+      ]
+     },
+     {
+      "room": "entrance",
+      "normal": [
+       1.0,
+       0.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "alpha_top",
+    "kind": "interior",
+    "thickness": 0.15,
+    "a": [
+     0.0,
+     5.990625
+    ],
+    "b": [
+     3.6,
+     5.990625
+    ],
+    "faces": [
+     {
+      "room": "alpha",
+      "normal": [
+       0.0,
+       1.0
+      ]
+     },
+     {
+      "room": "bath_west",
+      "normal": [
+       0.0,
+       -1.0
+      ]
+     },
+     {
+      "room": "closet",
+      "normal": [
+       0.0,
+       -1.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "alpha_right",
+    "kind": "interior",
+    "thickness": 0.15,
+    "a": [
+     3.6,
+     5.990625
+    ],
+    "b": [
+     3.6,
+     12.234375
+    ],
+    "faces": [
+     {
+      "room": "alpha",
+      "normal": [
+       -1.0,
+       0.0
+      ]
+     },
+     {
+      "room": "balcony_west",
+      "normal": [
+       -1.0,
+       0.0
+      ]
+     },
+     {
+      "room": "living",
+      "normal": [
+       1.0,
+       0.0
+      ]
+     },
+     {
+      "room": "bed_sw",
+      "normal": [
+       1.0,
+       0.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "alpha_balcony",
+    "kind": "interior",
+    "thickness": 0.15,
+    "a": [
+     0.0,
+     10.63125
+    ],
+    "b": [
+     3.6,
+     10.63125
+    ],
+    "faces": [
+     {
+      "room": "balcony_west",
+      "normal": [
+       0.0,
+       1.0
+      ]
+     },
+     {
+      "room": "alpha",
+      "normal": [
+       0.0,
+       -1.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "kitchen_bath",
+    "kind": "interior",
+    "thickness": 0.15,
+    "a": [
+     5.428125,
+     4.190625
+    ],
+    "b": [
+     8.775,
+     4.190625
+    ],
+    "faces": [
+     {
+      "room": "bath_center",
+      "normal": [
+       0.0,
+       1.0
+      ]
+     },
+     {
+      "room": "kitchen",
+      "normal": [
+       0.0,
+       -1.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "bath_center_left",
+    "kind": "interior",
+    "thickness": 0.15,
+    "a": [
+     5.428125,
+     4.190625
+    ],
+    "b": [
+     5.428125,
+     5.990625
+    ],
+    "faces": [
+     {
+      "room": "entrance",
+      "normal": [
+       -1.0,
+       0.0
+      ]
+     },
+     {
+      "room": "bath_center",
+      "normal": [
+       1.0,
+       0.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "bath_center_bottom",
+    "kind": "interior",
+    "thickness": 0.15,
+    "a": [
+     5.428125,
+     5.990625
+    ],
+    "b": [
+     8.775,
+     5.990625
+    ],
+    "faces": [
+     {
+      "room": "living",
+      "normal": [
+       0.0,
+       1.0
+      ]
+     },
+     {
+      "room": "bath_center",
+      "normal": [
+       0.0,
+       -1.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "bath_center_right",
+    "kind": "interior",
+    "thickness": 0.15,
+    "a": [
+     8.775,
+     4.190625
+    ],
+    "b": [
+     8.775,
+     5.990625
+    ],
+    "faces": [
+     {
+      "room": "bath_center",
+      "normal": [
+       -1.0,
+       0.0
+      ]
+     },
+     {
+      "room": "living",
+      "normal": [
+       1.0,
+       0.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "kitchen_balcony",
+    "kind": "interior",
+    "thickness": 0.15,
+    "a": [
+     8.465625,
+     0.0
+    ],
+    "b": [
+     8.465625,
+     2.221875
+    ],
+    "faces": [
+     {
+      "room": "kitchen",
+      "normal": [
+       -1.0,
+       0.0
+      ]
+     },
+     {
+      "room": "balcony_north",
+      "normal": [
+       1.0,
+       0.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "balcony_north_bottom",
+    "kind": "interior",
+    "thickness": 0.15,
+    "a": [
+     8.465625,
+     2.221875
+    ],
+    "b": [
+     16.2,
+     2.221875
+    ],
+    "faces": [
+     {
+      "room": "kitchen",
+      "normal": [
+       0.0,
+       1.0
+      ]
+     },
+     {
+      "room": "living",
+      "normal": [
+       0.0,
+       1.0
+      ]
+     },
+     {
+      "room": "bed_ne",
+      "normal": [
+       0.0,
+       1.0
+      ]
+     },
+     {
+      "room": "balcony_north",
+      "normal": [
+       0.0,
+       -1.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "bed_ne_left",
+    "kind": "interior",
+    "thickness": 0.15,
+    "a": [
+     11.784375,
+     2.221875
+    ],
+    "b": [
+     11.784375,
+     5.990625
+    ],
+    "faces": [
+     {
+      "room": "living",
+      "normal": [
+       -1.0,
+       0.0
+      ]
+     },
+     {
+      "room": "bed_ne",
+      "normal": [
+       1.0,
+       0.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "bed_ne_bottom",
+    "kind": "interior",
+    "thickness": 0.15,
+    "a": [
+     11.784375,
+     5.990625
+    ],
+    "b": [
+     16.2,
+     5.990625
+    ],
+    "faces": [
+     {
+      "room": "living",
+      "normal": [
+       0.0,
+       1.0
+      ]
+     },
+     {
+      "room": "bath_east",
+      "normal": [
+       0.0,
+       1.0
+      ]
+     },
+     {
+      "room": "bed_ne",
+      "normal": [
+       0.0,
+       -1.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "bath_east_left",
+    "kind": "interior",
+    "thickness": 0.15,
+    "a": [
+     13.66875,
+     5.990625
+    ],
+    "b": [
+     13.66875,
+     7.81875
+    ],
+    "faces": [
+     {
+      "room": "living",
+      "normal": [
+       -1.0,
+       0.0
+      ]
+     },
+     {
+      "room": "bath_east",
+      "normal": [
+       1.0,
+       0.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "bed_se_top",
+    "kind": "interior",
+    "thickness": 0.15,
+    "a": [
+     11.784375,
+     7.81875
+    ],
+    "b": [
+     16.2,
+     7.81875
+    ],
+    "faces": [
+     {
+      "room": "bed_se",
+      "normal": [
+       0.0,
+       1.0
+      ]
+     },
+     {
+      "room": "living",
+      "normal": [
+       0.0,
+       -1.0
+      ]
+     },
+     {
+      "room": "bath_east",
+      "normal": [
+       0.0,
+       -1.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "bed_se_left",
+    "kind": "interior",
+    "thickness": 0.15,
+    "a": [
+     11.784375,
+     7.81875
+    ],
+    "b": [
+     11.784375,
+     12.234375
+    ],
+    "faces": [
+     {
+      "room": "living",
+      "normal": [
+       -1.0,
+       0.0
+      ]
+     },
+     {
+      "room": "bed_se",
+      "normal": [
+       1.0,
+       0.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "bed_sw_top",
+    "kind": "interior",
+    "thickness": 0.15,
+    "a": [
+     3.6,
+     7.81875
+    ],
+    "b": [
+     6.834375,
+     7.81875
+    ],
+    "faces": [
+     {
+      "room": "bed_sw",
+      "normal": [
+       0.0,
+       1.0
+      ]
+     },
+     {
+      "room": "living",
+      "normal": [
+       0.0,
+       -1.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "bed_sw_right",
+    "kind": "interior",
+    "thickness": 0.15,
+    "a": [
+     6.834375,
+     7.81875
+    ],
+    "b": [
+     6.834375,
+     12.234375
+    ],
+    "faces": [
+     {
+      "room": "bed_sw",
+      "normal": [
+       -1.0,
+       0.0
+      ]
+     },
+     {
+      "room": "living",
+      "normal": [
+       1.0,
+       0.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "front_boundary",
+    "kind": "interior",
+    "thickness": 0.15,
+    "a": [
+     3.6,
+     12.234375
+    ],
+    "b": [
+     16.2,
+     12.234375
+    ],
+    "faces": [
+     {
+      "room": "balcony_front",
+      "normal": [
+       0.0,
+       1.0
+      ]
+     },
+     {
+      "room": "bed_sw",
+      "normal": [
+       0.0,
+       -1.0
+      ]
+     },
+     {
+      "room": "living",
+      "normal": [
+       0.0,
+       -1.0
+      ]
+     },
+     {
+      "room": "bed_se",
+      "normal": [
+       0.0,
+       -1.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "shaft_nw",
+    "kind": "solid",
+    "thickness": null,
+    "a": null,
+    "b": null,
+    "label": "수납 상부 구조체",
+    "polygon": [
+     [
+      2.053125,
+      4.190625
+     ],
+     [
+      3.6,
+      4.190625
+     ],
+     [
+      3.6,
+      4.753125
+     ],
+     [
+      2.053125,
+      4.753125
+     ]
+    ],
+    "faces": [
+     {
+      "room": "closet",
+      "normal": [
+       0.0,
+       1.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "shaft_center",
+    "kind": "solid",
+    "thickness": null,
+    "a": null,
+    "b": null,
+    "label": "욕실 샤프트",
+    "polygon": [
+     [
+      7.959375,
+      4.190625
+     ],
+     [
+      8.775,
+      4.190625
+     ],
+     [
+      8.775,
+      4.978125
+     ],
+     [
+      7.959375,
+      4.978125
+     ]
+    ],
+    "faces": [
+     {
+      "room": "bath_center",
+      "normal": [
+       0.0,
+       1.0
+      ]
+     },
+     {
+      "room": "bath_center",
+      "normal": [
+       -1.0,
+       0.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "shaft_ne",
+    "kind": "solid",
+    "thickness": null,
+    "a": null,
+    "b": null,
+    "label": "후면 샤프트",
+    "polygon": [
+     [
+      15.328125,
+      0.759375
+     ],
+     [
+      16.2,
+      0.759375
+     ],
+     [
+      16.2,
+      2.221875
+     ],
+     [
+      15.328125,
+      2.221875
+     ]
+    ],
+    "faces": [
+     {
+      "room": "balcony_north",
+      "normal": [
+       -1.0,
+       0.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "column_ne",
+    "kind": "solid",
+    "thickness": null,
+    "a": null,
+    "b": null,
+    "label": "침실 기둥",
+    "polygon": [
+     [
+      15.525,
+      5.146875
+     ],
+     [
+      16.2,
+      5.146875
+     ],
+     [
+      16.2,
+      5.990625
+     ],
+     [
+      15.525,
+      5.990625
+     ]
+    ],
+    "faces": [
+     {
+      "room": "bed_ne",
+      "normal": [
+       0.0,
+       -1.0
+      ]
+     },
+     {
+      "room": "bed_ne",
+      "normal": [
+       -1.0,
+       0.0
+      ]
+     }
+    ]
+   }
+  ],
+  "solids": [
+   {
+    "id": "shaft_nw",
+    "label": "수납 상부 구조체",
+    "polygon": [
+     [
+      2.053125,
+      4.190625
+     ],
+     [
+      3.6,
+      4.190625
+     ],
+     [
+      3.6,
+      4.753125
+     ],
+     [
+      2.053125,
+      4.753125
+     ]
+    ],
+    "faces": [
+     {
+      "room": "closet",
+      "normal": [
+       0.0,
+       1.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "shaft_center",
+    "label": "욕실 샤프트",
+    "polygon": [
+     [
+      7.959375,
+      4.190625
+     ],
+     [
+      8.775,
+      4.190625
+     ],
+     [
+      8.775,
+      4.978125
+     ],
+     [
+      7.959375,
+      4.978125
+     ]
+    ],
+    "faces": [
+     {
+      "room": "bath_center",
+      "normal": [
+       0.0,
+       1.0
+      ]
+     },
+     {
+      "room": "bath_center",
+      "normal": [
+       -1.0,
+       0.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "shaft_ne",
+    "label": "후면 샤프트",
+    "polygon": [
+     [
+      15.328125,
+      0.759375
+     ],
+     [
+      16.2,
+      0.759375
+     ],
+     [
+      16.2,
+      2.221875
+     ],
+     [
+      15.328125,
+      2.221875
+     ]
+    ],
+    "faces": [
+     {
+      "room": "balcony_north",
+      "normal": [
+       -1.0,
+       0.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "column_ne",
+    "label": "침실 기둥",
+    "polygon": [
+     [
+      15.525,
+      5.146875
+     ],
+     [
+      16.2,
+      5.146875
+     ],
+     [
+      16.2,
+      5.990625
+     ],
+     [
+      15.525,
+      5.990625
+     ]
+    ],
+    "faces": [
+     {
+      "room": "bed_ne",
+      "normal": [
+       0.0,
+       -1.0
+      ]
+     },
+     {
+      "room": "bed_ne",
+      "normal": [
+       -1.0,
+       0.0
+      ]
+     }
+    ]
+   }
+  ],
+  "doors": [
+   {
+    "id": "door_main",
+    "wall": "E02",
+    "position": [
+     0.871875,
+     3.403125
+    ],
+    "width": 0.7875,
+    "height": 2.05,
+    "kind": "swing",
+    "asset": "mk_door_main_l",
+    "connects": [
+     "vestibule",
+     "outside"
+    ],
+    "swing_into": "outside",
+    "hinge": "left",
+    "facing_deg": 180.0,
+    "elevation": -0.1,
+    "z": [
+     -0.112,
+     2.05
+    ]
+   },
+   {
+    "id": "door_entry",
+    "wall": "vest_bottom",
+    "position": [
+     4.359375,
+     4.190625
+    ],
+    "width": 0.815625,
+    "height": 2.05,
+    "kind": "swing",
+    "asset": "mk_door_entry_r",
+    "connects": [
+     "entrance",
+     "vestibule"
+    ],
+    "swing_into": "vestibule",
+    "hinge": "right",
+    "facing_deg": 270.0,
+    "elevation": -0.1,
+    "z": [
+     -0.112,
+     2.05
+    ]
+   },
+   {
+    "id": "door_alpha",
+    "wall": "alpha_right",
+    "position": [
+     3.6,
+     6.75
+    ],
+    "width": 0.759375,
+    "height": 2.05,
+    "kind": "swing",
+    "asset": "mk_door_alpha_l",
+    "connects": [
+     "alpha",
+     "living"
+    ],
+    "swing_into": "alpha",
+    "hinge": "left",
+    "facing_deg": 180.0,
+    "elevation": 0.0,
+    "z": [
+     -0.112,
+     2.05
+    ]
+   },
+   {
+    "id": "door_bath_west",
+    "wall": "alpha_top",
+    "position": [
+     1.575,
+     5.990625
+    ],
+    "width": 0.646875,
+    "height": 2.05,
+    "kind": "swing",
+    "asset": "mk_door_bath_west_r",
+    "connects": [
+     "bath_west",
+     "alpha"
+    ],
+    "swing_into": "bath_west",
+    "hinge": "right",
+    "facing_deg": 270.0,
+    "elevation": 0.0,
+    "z": [
+     -0.112,
+     2.05
+    ]
+   },
+   {
+    "id": "door_closet",
+    "wall": "alpha_top",
+    "position": [
+     2.784375,
+     5.990625
+    ],
+    "width": 1.125,
+    "height": 2.05,
+    "kind": "sliding",
+    "asset": "mk_door_closet",
+    "connects": [
+     "closet",
+     "alpha"
+    ],
+    "swing_into": null,
+    "hinge": null,
+    "facing_deg": 270.0,
+    "elevation": 0.0,
+    "z": [
+     -0.112,
+     2.05
+    ]
+   },
+   {
+    "id": "door_bath_center",
+    "wall": "bath_center_bottom",
+    "position": [
+     6.01875,
+     5.990625
+    ],
+    "width": 0.703125,
+    "height": 2.05,
+    "kind": "swing",
+    "asset": "mk_door_bath_center_l",
+    "connects": [
+     "bath_center",
+     "living"
+    ],
+    "swing_into": "bath_center",
+    "hinge": "left",
+    "facing_deg": 270.0,
+    "elevation": 0.0,
+    "z": [
+     -0.112,
+     2.05
+    ]
+   },
+   {
+    "id": "door_bath_east",
+    "wall": "bed_se_top",
+    "position": [
+     14.34375,
+     7.81875
+    ],
+    "width": 0.703125,
+    "height": 2.05,
+    "kind": "swing",
+    "asset": "mk_door_bath_east_l",
+    "connects": [
+     "bath_east",
+     "bed_se"
+    ],
+    "swing_into": "bath_east",
+    "hinge": "left",
+    "facing_deg": 270.0,
+    "elevation": 0.0,
+    "z": [
+     -0.112,
+     2.05
+    ]
+   },
+   {
+    "id": "door_bed_sw",
+    "wall": "bed_sw_top",
+    "position": [
+     6.24375,
+     7.81875
+    ],
+    "width": 0.759375,
+    "height": 2.05,
+    "kind": "swing",
+    "asset": "mk_door_bed_sw_r",
+    "connects": [
+     "bed_sw",
+     "living"
+    ],
+    "swing_into": "bed_sw",
+    "hinge": "right",
+    "facing_deg": 90.0,
+    "elevation": 0.0,
+    "z": [
+     -0.112,
+     2.05
+    ]
+   },
+   {
+    "id": "door_bed_se",
+    "wall": "bed_se_top",
+    "position": [
+     12.4875,
+     7.81875
+    ],
+    "width": 0.759375,
+    "height": 2.05,
+    "kind": "swing",
+    "asset": "mk_door_bed_se_l",
+    "connects": [
+     "bed_se",
+     "living"
+    ],
+    "swing_into": "bed_se",
+    "hinge": "left",
+    "facing_deg": 90.0,
+    "elevation": 0.0,
+    "z": [
+     -0.112,
+     2.05
+    ]
+   },
+   {
+    "id": "door_bed_ne",
+    "wall": "bed_ne_bottom",
+    "position": [
+     12.4875,
+     5.990625
+    ],
+    "width": 0.759375,
+    "height": 2.05,
+    "kind": "swing",
+    "asset": "mk_door_bed_ne_l",
+    "connects": [
+     "bed_ne",
+     "living"
+    ],
+    "swing_into": "bed_ne",
+    "hinge": "left",
+    "facing_deg": 270.0,
+    "elevation": 0.0,
+    "z": [
+     -0.112,
+     2.05
+    ]
+   },
+   {
+    "id": "door_balcony_north",
+    "wall": "kitchen_balcony",
+    "position": [
+     8.465625,
+     1.4625
+    ],
+    "width": 0.815625,
+    "height": 2.05,
+    "kind": "swing",
+    "asset": "mk_door_balcony_north_l",
+    "connects": [
+     "kitchen",
+     "balcony_north"
+    ],
+    "swing_into": "kitchen",
+    "hinge": "left",
+    "facing_deg": 180.0,
+    "elevation": 0.0,
+    "z": [
+     -0.112,
+     2.05
+    ]
+   },
+   {
+    "id": "door_balcony_west",
+    "wall": "alpha_balcony",
+    "position": [
+     1.6875,
+     10.63125
+    ],
+    "width": 2.7,
+    "height": 2.05,
+    "kind": "sliding",
+    "asset": "mk_door_balcony_west",
+    "connects": [
+     "alpha",
+     "balcony_west"
+    ],
+    "swing_into": null,
+    "hinge": null,
+    "facing_deg": 270.0,
+    "elevation": 0.0,
+    "z": [
+     -0.112,
+     2.05
+    ]
+   },
+   {
+    "id": "door_balcony_sw",
+    "wall": "front_boundary",
+    "position": [
+     5.175,
+     12.234375
+    ],
+    "width": 2.64375,
+    "height": 2.05,
+    "kind": "sliding",
+    "asset": "mk_door_balcony_sw",
+    "connects": [
+     "bed_sw",
+     "balcony_front"
+    ],
+    "swing_into": null,
+    "hinge": null,
+    "facing_deg": 270.0,
+    "elevation": 0.0,
+    "z": [
+     -0.112,
+     2.05
+    ]
+   },
+   {
+    "id": "door_balcony_living",
+    "wall": "front_boundary",
+    "position": [
+     9.028125,
+     12.234375
+    ],
+    "width": 3.15,
+    "height": 2.05,
+    "kind": "sliding",
+    "asset": "mk_door_balcony_living",
+    "connects": [
+     "living",
+     "balcony_front"
+    ],
+    "swing_into": null,
+    "hinge": null,
+    "facing_deg": 270.0,
+    "elevation": 0.0,
+    "z": [
+     -0.112,
+     2.05
+    ]
+   },
+   {
+    "id": "door_balcony_se",
+    "wall": "front_boundary",
+    "position": [
+     13.3875,
+     12.234375
+    ],
+    "width": 2.8125,
+    "height": 2.05,
+    "kind": "sliding",
+    "asset": "mk_door_balcony_se",
+    "connects": [
+     "bed_se",
+     "balcony_front"
+    ],
+    "swing_into": null,
+    "hinge": null,
+    "facing_deg": 270.0,
+    "elevation": 0.0,
+    "z": [
+     -0.112,
+     2.05
+    ]
+   }
+  ],
+  "windows": [
+   {
+    "id": "win_vestibule",
+    "wall": "E03",
+    "position": [
+     3.121875,
+     2.025
+    ],
+    "width": 3.909375,
+    "sill": 0.9,
+    "head": 2.15,
+    "asset": "mk_win_vestibule",
+    "room": "vestibule",
+    "facing_deg": 90.0
+   },
+   {
+    "id": "win_kitchen",
+    "wall": "E05",
+    "position": [
+     6.665625,
+     -0.478125
+    ],
+    "width": 0.9,
+    "sill": 0.9,
+    "head": 2.15,
+    "asset": "mk_win_kitchen",
+    "room": "kitchen",
+    "facing_deg": 90.0
+   },
+   {
+    "id": "win_balcony_north",
+    "wall": "E09",
+    "position": [
+     12.403125,
+     0.759375
+    ],
+    "width": 4.55625,
+    "sill": 0.15,
+    "head": 2.15,
+    "asset": "mk_win_balcony_north",
+    "room": "balcony_north",
+    "facing_deg": 90.0
+   },
+   {
+    "id": "win_bed_ne",
+    "wall": "E10",
+    "position": [
+     16.2,
+     3.740625
+    ],
+    "width": 2.109375,
+    "sill": 0.9,
+    "head": 2.15,
+    "asset": "mk_win_bed_ne",
+    "room": "bed_ne",
+    "facing_deg": 180.0
+   },
+   {
+    "id": "win_balcony_west",
+    "wall": "E17",
+    "position": [
+     1.659375,
+     12.234375
+    ],
+    "width": 2.86875,
+    "sill": 0.15,
+    "head": 2.15,
+    "asset": "mk_win_balcony_west",
+    "room": "balcony_west",
+    "facing_deg": 270.0
+   },
+   {
+    "id": "win_balcony_front_w",
+    "wall": "E15",
+    "position": [
+     5.540625,
+     13.640625
+    ],
+    "width": 3.290625,
+    "sill": 0.15,
+    "head": 2.15,
+    "asset": "mk_win_balcony_front_w",
+    "room": "balcony_front",
+    "facing_deg": 270.0
+   },
+   {
+    "id": "win_balcony_front_e",
+    "wall": "E11",
+    "position": [
+     12.965625,
+     13.640625
+    ],
+    "width": 4.55625,
+    "sill": 0.15,
+    "head": 2.15,
+    "asset": "mk_win_balcony_front_e",
+    "room": "balcony_front",
+    "facing_deg": 270.0
+   },
+   {
+    "id": "win_curve_1",
+    "wall": "E12",
+    "position": [
+     10.06875,
+     13.907813
+    ],
+    "width": 0.311312,
+    "sill": 0.15,
+    "head": 2.15,
+    "asset": "mk_win_curve_1",
+    "room": "balcony_front",
+    "facing_deg": 229.184916
+   },
+   {
+    "id": "win_curve_2",
+    "wall": "E13",
+    "position": [
+     9.084375,
+     14.175
+    ],
+    "width": 0.84375,
+    "sill": 0.15,
+    "head": 2.15,
+    "asset": "mk_win_curve_2",
+    "room": "balcony_front",
+    "facing_deg": 270.0
+   },
+   {
+    "id": "win_curve_3",
+    "wall": "E14",
+    "position": [
+     8.1,
+     13.907813
+    ],
+    "width": 0.311312,
+    "sill": 0.15,
+    "head": 2.15,
+    "asset": "mk_win_curve_3",
+    "room": "balcony_front",
+    "facing_deg": 310.815084
+   }
+  ],
+  "open_edges": [
+   [
+    "entrance",
+    "living"
+   ],
+   [
+    "kitchen",
+    "living"
+   ]
+  ],
+  "source": {
+   "image": "reference.jpg",
+   "m_per_px": 0.028125,
+   "origin_px": [
+    171,
+    97
+   ],
+   "note": "KB 180B 기본형 수동 트레이싱. 16200mm/576px. 치수는 벽 중심선 기준 근사이며 시공·실측 도면이 아님."
+  },
+  "ar_anchors": [
+   {
+    "id": "alpha_corner",
+    "label": "도면 기준 후보·미보정: 알파룸 욕실 쪽 왼쪽 벽면 모서리",
+    "position": [
+     0.1,
+     6.065625
+    ]
+   },
+   {
+    "id": "bed_ne_corner",
+    "label": "도면 기준 후보·미보정: 침실 3 후면 발코니 쪽 오른쪽 벽면 모서리",
+    "position": [
+     16.1,
+     2.296875
+    ]
+   }
+  ]
+ },
+ "stage": {
+  "camera": {
+   "type": "orthographic",
+   "target": [
+    8.1,
+    1.0,
+    6.8484
+   ],
+   "direction": [
+    0.4545,
+    0.766,
+    0.4545
+   ],
+   "elevation_deg": 50.0,
+   "heading": [
+    0.7071067690849304,
+    0.7071067690849304
+   ]
+  },
+  "sun": {
+   "direction": [
+    -0.5792,
+    0.5736,
+    0.5792
+   ],
+   "elevation_deg": 35.0,
+   "color": "#FFEDD6"
+  },
+  "background": "#DCDAD6",
+  "wall_cut_height": 1.05
+ },
+ "objects": [
+  {
+   "id": "walls",
+   "name": "벽",
+   "type": "walls",
+   "asset": "assets/structure/walls.glb",
+   "category": "structure",
+   "node_type": "fixture",
+   "mount": "floor",
+   "room": null,
+   "plan": {
+    "position": [
+     0.0,
+     0.0
+    ],
+    "facing_deg": 90.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "rotation": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": false,
+   "attrs": {},
+   "states": {},
+   "state": {}
+  },
+  {
+   "id": "floors",
+   "name": "바닥",
+   "type": "floors",
+   "asset": "assets/structure/floors.glb",
+   "category": "structure",
+   "node_type": "fixture",
+   "mount": "floor",
+   "room": null,
+   "plan": {
+    "position": [
+     0.0,
+     0.0
+    ],
+    "facing_deg": 90.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "rotation": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": false,
+   "attrs": {},
+   "states": {},
+   "state": {}
+  },
+  {
+   "id": "stand_ac_dc22b8f3",
+   "name": "거실·복도 에어컨",
+   "type": "stand_ac",
+   "asset": "assets/appliances/stand_ac.glb",
+   "category": "appliances",
+   "node_type": "device",
+   "mount": "floor",
+   "room": "living",
+   "plan": {
+    "position": [
+     7.322,
+     11.9774
+    ],
+    "facing_deg": 270.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    7.322,
+    0.0,
+    11.9774
+   ],
+   "rotation": [
+    0.0,
+    -3.141593,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {
+    "power": [
+     "off",
+     "on"
+    ]
+   },
+   "states": {
+    "power": {
+     "default": "off",
+     "effects": {
+      "off": [
+       {
+        "part": "display",
+        "emissive": 0.0
+       },
+       {
+        "part": "led_ring",
+        "emissive": 0.0
+       },
+       {
+        "part": "airflow",
+        "visible": false
+       },
+       {
+        "part": "shutter",
+        "rotate": [
+         0,
+         0,
+         0
+        ]
+       }
+      ],
+      "on": [
+       {
+        "part": "display",
+        "emissive": 1.0
+       },
+       {
+        "part": "led_ring",
+        "emissive": 1.0
+       },
+       {
+        "part": "airflow",
+        "visible": true
+       },
+       {
+        "part": "shutter",
+        "rotate": [
+         -100,
+         0,
+         0
+        ]
+       }
+      ]
+     }
+    }
+   },
+   "state": {
+    "power": "off"
+   },
+   "provenance": {
+    "origin": "label",
+    "size": "model",
+    "facing": "inferred",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "stand_ac"
+   }
+  },
+  {
+   "id": "wall_ac_703d00ba",
+   "name": "침실 1 에어컨",
+   "type": "wall_ac",
+   "asset": "assets/appliances/wall_ac.glb",
+   "category": "appliances",
+   "node_type": "device",
+   "mount": "wall",
+   "room": "bed_sw",
+   "plan": {
+    "position": [
+     6.7594,
+     11.6023
+    ],
+    "facing_deg": 180.0,
+    "elevation": 1.95,
+    "on": null,
+    "surface": null,
+    "wall": "bed_sw_right"
+   },
+   "position": [
+    6.7594,
+    1.95,
+    11.6023
+   ],
+   "rotation": [
+    0.0,
+    -1.570796,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {
+    "power": [
+     "off",
+     "on"
+    ]
+   },
+   "states": {
+    "power": {
+     "default": "off",
+     "effects": {
+      "off": [
+       {
+        "part": "display",
+        "visible": false,
+        "emissive": 0.0
+       },
+       {
+        "part": "led",
+        "emissive": 0.0
+       },
+       {
+        "part": "top_glow",
+        "emissive": 0.0
+       },
+       {
+        "part": "louver",
+        "rotate": [
+         0,
+         0,
+         0
+        ]
+       },
+       {
+        "part": "airflow",
+        "visible": false
+       }
+      ],
+      "on": [
+       {
+        "part": "display",
+        "visible": true,
+        "emissive": 1.0
+       },
+       {
+        "part": "led",
+        "emissive": 1.0
+       },
+       {
+        "part": "top_glow",
+        "emissive": 1.0
+       },
+       {
+        "part": "louver",
+        "rotate": [
+         65,
+         0,
+         0
+        ]
+       },
+       {
+        "part": "airflow",
+        "visible": true
+       }
+      ]
+     }
+    }
+   },
+   "state": {
+    "power": "off"
+   },
+   "provenance": {
+    "origin": "label",
+    "size": "label",
+    "facing": "inferred",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "wall_ac"
+   }
+  },
+  {
+   "id": "bed_single_100dda69",
+   "name": "침실 1 침대",
+   "type": "bed_single",
+   "asset": "assets/furniture/bed_single.glb",
+   "category": "furniture",
+   "node_type": "furniture",
+   "mount": "floor",
+   "room": "bed_sw",
+   "plan": {
+    "position": [
+     4.3504,
+     10.9614
+    ],
+    "facing_deg": 270.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    4.3504,
+    0.0,
+    10.9614
+   ],
+   "rotation": [
+    0.0,
+    -3.141593,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "label",
+    "size": "label",
+    "facing": "inferred",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "bed_single"
+   }
+  },
+  {
+   "id": "bed_single_2f581c50",
+   "name": "침실 2 침대",
+   "type": "bed_single_2",
+   "asset": "assets/furniture/bed_single_2.glb",
+   "category": "furniture",
+   "node_type": "furniture",
+   "mount": "floor",
+   "room": "bed_se",
+   "plan": {
+    "position": [
+     14.2706,
+     10.9614
+    ],
+    "facing_deg": 270.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    14.2706,
+    0.0,
+    10.9614
+   ],
+   "rotation": [
+    0.0,
+    -3.141593,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "label",
+    "size": "label",
+    "facing": "inferred",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "bed_single"
+   }
+  },
+  {
+   "id": "bed_queen_aedb6a01",
+   "name": "알파룸 침대",
+   "type": "bed_queen",
+   "asset": "assets/furniture/bed_queen.glb",
+   "category": "furniture",
+   "node_type": "furniture",
+   "mount": "floor",
+   "room": "alpha",
+   "plan": {
+    "position": [
+     2.409,
+     9.4605
+    ],
+    "facing_deg": 180.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    2.409,
+    0.0,
+    9.4605
+   ],
+   "rotation": [
+    0.0,
+    -1.570796,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "label",
+    "size": "label",
+    "facing": "inferred",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "bed_queen"
+   }
+  },
+  {
+   "id": "bed_queen_08dcffff",
+   "name": "침실 3 침대",
+   "type": "bed_queen",
+   "asset": "assets/furniture/bed_queen.glb",
+   "category": "furniture",
+   "node_type": "furniture",
+   "mount": "floor",
+   "room": "bed_ne",
+   "plan": {
+    "position": [
+     14.409,
+     5.1761
+    ],
+    "facing_deg": 180.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    14.409,
+    0.0,
+    5.1761
+   ],
+   "rotation": [
+    0.0,
+    -1.570796,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "label",
+    "size": "label",
+    "facing": "inferred",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "bed_queen"
+   }
+  },
+  {
+   "id": "sofa_a848b595",
+   "name": "거실·복도 소파",
+   "type": "sofa",
+   "asset": "assets/furniture/sofa.glb",
+   "category": "furniture",
+   "node_type": "furniture",
+   "mount": "floor",
+   "room": "living",
+   "plan": {
+    "position": [
+     7.3864,
+     9.8138
+    ],
+    "facing_deg": 0.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    7.3864,
+    0.0,
+    9.8138
+   ],
+   "rotation": [
+    0.0,
+    1.570796,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "label",
+    "size": "model",
+    "facing": "inferred",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "sofa"
+   }
+  },
+  {
+   "id": "coffee_table_38536572",
+   "name": "거실·복도 테이블",
+   "type": "coffee_table",
+   "asset": "assets/furniture/coffee_table.glb",
+   "category": "furniture",
+   "node_type": "furniture",
+   "mount": "floor",
+   "room": "living",
+   "plan": {
+    "position": [
+     9.2324,
+     9.9616
+    ],
+    "facing_deg": 0.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    9.2324,
+    0.0,
+    9.9616
+   ],
+   "rotation": [
+    0.0,
+    1.570796,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "label",
+    "size": "model",
+    "facing": "inferred",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "coffee_table"
+   }
+  },
+  {
+   "id": "armchair_d3ed5f21",
+   "name": "거실·복도 의자 1",
+   "type": "armchair",
+   "asset": "assets/furniture/armchair.glb",
+   "category": "furniture",
+   "node_type": "furniture",
+   "mount": "floor",
+   "room": "living",
+   "plan": {
+    "position": [
+     8.6218,
+     8.041
+    ],
+    "facing_deg": 90.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    8.6218,
+    0.0,
+    8.041
+   ],
+   "rotation": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "label",
+    "size": "label",
+    "facing": "inferred",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "armchair"
+   }
+  },
+  {
+   "id": "armchair_39fafa97",
+   "name": "거실·복도 의자 2",
+   "type": "armchair",
+   "asset": "assets/furniture/armchair.glb",
+   "category": "furniture",
+   "node_type": "furniture",
+   "mount": "floor",
+   "room": "living",
+   "plan": {
+    "position": [
+     9.4714,
+     8.0437
+    ],
+    "facing_deg": 90.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    9.4714,
+    0.0,
+    8.0437
+   ],
+   "rotation": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "label",
+    "size": "label",
+    "facing": "inferred",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "armchair"
+   }
+  },
+  {
+   "id": "tv_stand_2fdbdf48",
+   "name": "거실·복도 TV수납장",
+   "type": "tv_stand",
+   "asset": "assets/furniture/tv_stand.glb",
+   "category": "furniture",
+   "node_type": "furniture",
+   "mount": "floor",
+   "room": "living",
+   "plan": {
+    "position": [
+     11.4909,
+     9.9222
+    ],
+    "facing_deg": 180.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    11.4909,
+    0.0,
+    9.9222
+   ],
+   "rotation": [
+    0.0,
+    -1.570796,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "label",
+    "size": "label",
+    "facing": "inferred",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "tv_stand"
+   }
+  },
+  {
+   "id": "storage_cabinet_f657b011",
+   "name": "거실·복도 수납장",
+   "type": "storage_cabinet",
+   "asset": "assets/furniture/storage_cabinet.glb",
+   "category": "furniture",
+   "node_type": "furniture",
+   "mount": "floor",
+   "room": "living",
+   "plan": {
+    "position": [
+     13.4212,
+     6.8918
+    ],
+    "facing_deg": 180.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    13.4212,
+    0.0,
+    6.8918
+   ],
+   "rotation": [
+    0.0,
+    -1.570796,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "label",
+    "size": "label",
+    "facing": "inferred",
+    "height": "catalog",
+    "model": "substitute",
+    "builder": "wardrobe"
+   }
+  },
+  {
+   "id": "dish_cabinet_6c6899cf",
+   "name": "거실·복도 식기수납장",
+   "type": "dish_cabinet",
+   "asset": "assets/furniture/dish_cabinet.glb",
+   "category": "furniture",
+   "node_type": "furniture",
+   "mount": "floor",
+   "room": "living",
+   "plan": {
+    "position": [
+     11.3924,
+     3.8651
+    ],
+    "facing_deg": 180.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    11.3924,
+    0.0,
+    3.8651
+   ],
+   "rotation": [
+    0.0,
+    -1.570796,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "label",
+    "size": "label",
+    "facing": "inferred",
+    "height": "catalog",
+    "model": "substitute",
+    "builder": "counter_base_60"
+   }
+  },
+  {
+   "id": "dining_table_978b20c7",
+   "name": "거실·복도 식탁",
+   "type": "dining_table",
+   "asset": "assets/furniture/dining_table.glb",
+   "category": "furniture",
+   "node_type": "furniture",
+   "mount": "floor",
+   "room": "living",
+   "plan": {
+    "position": [
+     9.9612,
+     3.9242
+    ],
+    "facing_deg": 0.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    9.9612,
+    0.0,
+    3.9242
+   ],
+   "rotation": [
+    0.0,
+    1.570796,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "label",
+    "size": "label",
+    "facing": "inferred",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "dining_table"
+   }
+  },
+  {
+   "id": "fridge_bbc363a3",
+   "name": "주방·식당 냉장고",
+   "type": "fridge",
+   "asset": "assets/appliances/fridge.glb",
+   "category": "appliances",
+   "node_type": "device",
+   "mount": "floor",
+   "room": "kitchen",
+   "plan": {
+    "position": [
+     5.9191,
+     2.4596
+    ],
+    "facing_deg": 0.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    5.9191,
+    0.0,
+    2.4596
+   ],
+   "rotation": [
+    0.0,
+    1.570796,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {
+    "door": [
+     "closed",
+     "open"
+    ]
+   },
+   "states": {
+    "door": {
+     "default": "closed",
+     "effects": {
+      "closed": [
+       {
+        "part": "door_left",
+        "rotate": [
+         0,
+         0,
+         0
+        ]
+       },
+       {
+        "part": "door_right",
+        "rotate": [
+         0,
+         0,
+         0
+        ]
+       },
+       {
+        "part": "interior_light",
+        "emissive": 0.0
+       },
+       {
+        "light": "fridge_light",
+        "intensity": 0.0
+       }
+      ],
+      "open": [
+       {
+        "part": "door_left",
+        "rotate": [
+         0,
+         -100,
+         0
+        ]
+       },
+       {
+        "part": "door_right",
+        "rotate": [
+         0,
+         100,
+         0
+        ]
+       },
+       {
+        "part": "interior_light",
+        "emissive": 1.0
+       },
+       {
+        "light": "fridge_light",
+        "intensity": 1.0
+       }
+      ]
+     }
+    }
+   },
+   "state": {
+    "door": "closed"
+   },
+   "provenance": {
+    "origin": "label",
+    "size": "label",
+    "facing": "inferred",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "fridge"
+   }
+  },
+  {
+   "id": "induction_counter_5641ccf0",
+   "name": "주방·식당 인덕션",
+   "type": "induction_counter",
+   "asset": "assets/appliances/induction_counter.glb",
+   "category": "appliances",
+   "node_type": "device",
+   "mount": "floor",
+   "room": "kitchen",
+   "plan": {
+    "position": [
+     7.0471,
+     -0.0706
+    ],
+    "facing_deg": 90.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    7.0471,
+    0.0,
+    -0.0706
+   ],
+   "rotation": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {
+    "power": [
+     "off",
+     "on"
+    ]
+   },
+   "states": {
+    "power": {
+     "default": "off",
+     "effects": {
+      "off": [
+       {
+        "part": "zones",
+        "emissive": 0.0
+       },
+       {
+        "part": "touch_display",
+        "emissive": 0.0
+       },
+       {
+        "light": "heat_glow",
+        "intensity": 0.0
+       }
+      ],
+      "on": [
+       {
+        "part": "zones",
+        "emissive": 1.0
+       },
+       {
+        "part": "touch_display",
+        "emissive": 1.0
+       },
+       {
+        "light": "heat_glow",
+        "intensity": 1.0
+       }
+      ]
+     }
+    }
+   },
+   "state": {
+    "power": "off"
+   },
+   "provenance": {
+    "origin": "label",
+    "size": "label",
+    "facing": "inferred",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "induction_counter"
+   }
+  },
+  {
+   "id": "washer_d559f0ae",
+   "name": "후면 발코니 세탁기",
+   "type": "washer",
+   "asset": "assets/appliances/washer.glb",
+   "category": "appliances",
+   "node_type": "device",
+   "mount": "floor",
+   "room": "balcony_north",
+   "plan": {
+    "position": [
+     9.4321,
+     0.427
+    ],
+    "facing_deg": 90.0,
+    "elevation": -0.1,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    9.4321,
+    -0.1,
+    0.427
+   ],
+   "rotation": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {
+    "running": [
+     false,
+     true
+    ],
+    "door": [
+     "closed",
+     "open"
+    ]
+   },
+   "states": {
+    "running": {
+     "default": false,
+     "effects": {
+      "false": [
+       {
+        "part": "display",
+        "visible": false
+       },
+       {
+        "part": "dial_ring",
+        "emissive": 0.0
+       },
+       {
+        "part": "drum_light",
+        "emissive": 0.0
+       },
+       {
+        "part": "status_bar",
+        "emissive": 0.0
+       },
+       {
+        "light": "drum_glow",
+        "intensity": 0.0
+       }
+      ],
+      "true": [
+       {
+        "part": "display",
+        "visible": true
+       },
+       {
+        "part": "dial_ring",
+        "emissive": 1.0
+       },
+       {
+        "part": "drum_light",
+        "emissive": 1.0
+       },
+       {
+        "part": "status_bar",
+        "emissive": 1.0
+       },
+       {
+        "light": "drum_glow",
+        "intensity": 1.0
+       },
+       {
+        "part": "drum",
+        "spin": [
+         0,
+         0,
+         0.8
+        ]
+       }
+      ]
+     }
+    },
+    "door": {
+     "default": "closed",
+     "effects": {
+      "closed": [
+       {
+        "part": "door",
+        "rotate": [
+         0,
+         0,
+         0
+        ]
+       },
+       {
+        "part": "door_lamp",
+        "emissive": 0.0
+       },
+       {
+        "light": "door_light",
+        "intensity": 0.0
+       }
+      ],
+      "open": [
+       {
+        "part": "door",
+        "rotate": [
+         0,
+         -100,
+         0
+        ]
+       },
+       {
+        "part": "door_lamp",
+        "emissive": 1.0
+       },
+       {
+        "light": "door_light",
+        "intensity": 1.0
+       }
+      ]
+     }
+    }
+   },
+   "state": {
+    "running": false,
+    "door": "closed"
+   },
+   "provenance": {
+    "origin": "label",
+    "size": "model",
+    "facing": "inferred",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "washer"
+   }
+  },
+  {
+   "id": "dryer_7aa61816",
+   "name": "후면 발코니 건조기",
+   "type": "dryer",
+   "asset": "assets/appliances/dryer.glb",
+   "category": "appliances",
+   "node_type": "device",
+   "mount": "floor",
+   "room": "balcony_north",
+   "plan": {
+    "position": [
+     10.2999,
+     1.1864
+    ],
+    "facing_deg": 90.0,
+    "elevation": -0.1,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    10.2999,
+    -0.1,
+    1.1864
+   ],
+   "rotation": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {
+    "running": [
+     false,
+     true
+    ]
+   },
+   "states": {
+    "running": {
+     "default": false,
+     "effects": {
+      "false": [
+       {
+        "part": "display",
+        "visible": false
+       },
+       {
+        "part": "dial_ring",
+        "emissive": 0.0
+       },
+       {
+        "part": "drum_light",
+        "emissive": 0.0
+       },
+       {
+        "part": "status_bar",
+        "emissive": 0.0
+       },
+       {
+        "light": "drum_glow",
+        "intensity": 0.0
+       }
+      ],
+      "true": [
+       {
+        "part": "display",
+        "visible": true
+       },
+       {
+        "part": "dial_ring",
+        "emissive": 1.0
+       },
+       {
+        "part": "drum_light",
+        "emissive": 1.0
+       },
+       {
+        "part": "status_bar",
+        "emissive": 1.0
+       },
+       {
+        "light": "drum_glow",
+        "intensity": 1.0
+       },
+       {
+        "part": "drum",
+        "spin": [
+         0,
+         0,
+         0.5
+        ]
+       }
+      ]
+     }
+    }
+   },
+   "state": {
+    "running": false
+   },
+   "provenance": {
+    "origin": "label",
+    "size": "model",
+    "facing": "inferred",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "dryer"
+   }
+  },
+  {
+   "id": "freezer_0c022ae2",
+   "name": "후면 발코니 냉동고",
+   "type": "freezer",
+   "asset": "assets/appliances/freezer.glb",
+   "category": "appliances",
+   "node_type": "device",
+   "mount": "floor",
+   "room": "balcony_north",
+   "plan": {
+    "position": [
+     12.7989,
+     1.7609
+    ],
+    "facing_deg": 270.0,
+    "elevation": -0.1,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    12.7989,
+    -0.1,
+    1.7609
+   ],
+   "rotation": [
+    0.0,
+    -3.141593,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "label",
+    "size": "label",
+    "facing": "inferred",
+    "height": "catalog",
+    "model": "substitute",
+    "builder": "kimchi_fridge"
+   }
+  },
+  {
+   "id": "kimchi_fridge_bce0bf96",
+   "name": "후면 발코니 김치냉장고",
+   "type": "kimchi_fridge",
+   "asset": "assets/appliances/kimchi_fridge.glb",
+   "category": "appliances",
+   "node_type": "device",
+   "mount": "floor",
+   "room": "balcony_north",
+   "plan": {
+    "position": [
+     13.8527,
+     1.8394
+    ],
+    "facing_deg": 270.0,
+    "elevation": -0.1,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    13.8527,
+    -0.1,
+    1.8394
+   ],
+   "rotation": [
+    0.0,
+    -3.141593,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "label",
+    "size": "label",
+    "facing": "inferred",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "kimchi_fridge"
+   }
+  },
+  {
+   "id": "kitchen_cabinet_23109a26",
+   "name": "주방·식당 주방수납장",
+   "type": "kitchen_cabinet",
+   "asset": "assets/furniture/kitchen_cabinet.glb",
+   "category": "furniture",
+   "node_type": "furniture",
+   "mount": "floor",
+   "room": "kitchen",
+   "plan": {
+    "position": [
+     7.2047,
+     3.7391
+    ],
+    "facing_deg": 270.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    7.2047,
+    0.0,
+    3.7391
+   ],
+   "rotation": [
+    0.0,
+    -3.141593,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "label",
+    "size": "label",
+    "facing": "inferred",
+    "height": "catalog",
+    "model": "substitute",
+    "builder": "counter_base_60"
+   }
+  },
+  {
+   "id": "wardrobe_0358a8fe",
+   "name": "침실 2 옷장",
+   "type": "wardrobe",
+   "asset": "assets/furniture/wardrobe.glb",
+   "category": "furniture",
+   "node_type": "furniture",
+   "mount": "floor",
+   "room": "bed_se",
+   "plan": {
+    "position": [
+     15.708,
+     10.0151
+    ],
+    "facing_deg": 180.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    15.708,
+    0.0,
+    10.0151
+   ],
+   "rotation": [
+    0.0,
+    -1.570796,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "label",
+    "size": "label",
+    "facing": "inferred",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "wardrobe"
+   }
+  },
+  {
+   "id": "tv_stand_4136aadf",
+   "name": "침실 2 TV수납장",
+   "type": "tv_stand_2",
+   "asset": "assets/furniture/tv_stand_2.glb",
+   "category": "furniture",
+   "node_type": "furniture",
+   "mount": "floor",
+   "room": "bed_se",
+   "plan": {
+    "position": [
+     12.3144,
+     10.8733
+    ],
+    "facing_deg": 0.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    12.3144,
+    0.0,
+    10.8733
+   ],
+   "rotation": [
+    0.0,
+    1.570796,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "label",
+    "size": "label",
+    "facing": "inferred",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "tv_stand"
+   }
+  },
+  {
+   "id": "wardrobe_4ef026d4",
+   "name": "침실 1 옷장 1",
+   "type": "wardrobe_2",
+   "asset": "assets/furniture/wardrobe_2.glb",
+   "category": "furniture",
+   "node_type": "furniture",
+   "mount": "floor",
+   "room": "bed_sw",
+   "plan": {
+    "position": [
+     4.0258,
+     8.3093
+    ],
+    "facing_deg": 90.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    4.0258,
+    0.0,
+    8.3093
+   ],
+   "rotation": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "label",
+    "size": "label",
+    "facing": "inferred",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "wardrobe"
+   }
+  },
+  {
+   "id": "wardrobe_9135a34e",
+   "name": "침실 1 옷장 2",
+   "type": "wardrobe_3",
+   "asset": "assets/furniture/wardrobe_3.glb",
+   "category": "furniture",
+   "node_type": "furniture",
+   "mount": "floor",
+   "room": "bed_sw",
+   "plan": {
+    "position": [
+     4.781,
+     8.3093
+    ],
+    "facing_deg": 90.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    4.781,
+    0.0,
+    8.3093
+   ],
+   "rotation": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "label",
+    "size": "label",
+    "facing": "inferred",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "wardrobe"
+   }
+  },
+  {
+   "id": "bookcase_6b627971",
+   "name": "침실 1 책장",
+   "type": "bookcase",
+   "asset": "assets/furniture/bookcase.glb",
+   "category": "furniture",
+   "node_type": "furniture",
+   "mount": "floor",
+   "room": "bed_sw",
+   "plan": {
+    "position": [
+     6.5704,
+     9.7702
+    ],
+    "facing_deg": 180.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    6.5704,
+    0.0,
+    9.7702
+   ],
+   "rotation": [
+    0.0,
+    -1.570796,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "label",
+    "size": "label",
+    "facing": "inferred",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "bookcase"
+   }
+  },
+  {
+   "id": "desk_small_ce7e768b",
+   "name": "침실 1 책상",
+   "type": "desk_small",
+   "asset": "assets/furniture/desk_small.glb",
+   "category": "furniture",
+   "node_type": "furniture",
+   "mount": "floor",
+   "room": "bed_sw",
+   "plan": {
+    "position": [
+     6.2357,
+     11.7339
+    ],
+    "facing_deg": 270.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    6.2357,
+    0.0,
+    11.7339
+   ],
+   "rotation": [
+    0.0,
+    -3.141593,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "label",
+    "size": "label",
+    "facing": "inferred",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "desk_small"
+   }
+  },
+  {
+   "id": "wardrobe_dba14d56",
+   "name": "알파룸 옷장",
+   "type": "wardrobe_4",
+   "asset": "assets/furniture/wardrobe_4.glb",
+   "category": "furniture",
+   "node_type": "furniture",
+   "mount": "floor",
+   "room": "alpha",
+   "plan": {
+    "position": [
+     0.3965,
+     7.5545
+    ],
+    "facing_deg": 0.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    0.3965,
+    0.0,
+    7.5545
+   ],
+   "rotation": [
+    0.0,
+    1.570796,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "label",
+    "size": "label",
+    "facing": "inferred",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "wardrobe"
+   }
+  },
+  {
+   "id": "dresser_6e620743",
+   "name": "알파룸 화장대",
+   "type": "dresser",
+   "asset": "assets/furniture/dresser.glb",
+   "category": "furniture",
+   "node_type": "furniture",
+   "mount": "floor",
+   "room": "alpha",
+   "plan": {
+    "position": [
+     3.247,
+     8.0565
+    ],
+    "facing_deg": 180.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    3.247,
+    0.0,
+    8.0565
+   ],
+   "rotation": [
+    0.0,
+    -1.570796,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "label",
+    "size": "label",
+    "facing": "inferred",
+    "height": "catalog",
+    "model": "substitute",
+    "builder": "desk_small"
+   }
+  },
+  {
+   "id": "tv_stand_48d2767d",
+   "name": "알파룸 TV수납장",
+   "type": "tv_stand_3",
+   "asset": "assets/furniture/tv_stand_3.glb",
+   "category": "furniture",
+   "node_type": "furniture",
+   "mount": "floor",
+   "room": "alpha",
+   "plan": {
+    "position": [
+     1.4002,
+     6.3531
+    ],
+    "facing_deg": 90.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    1.4002,
+    0.0,
+    6.3531
+   ],
+   "rotation": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "label",
+    "size": "label",
+    "facing": "inferred",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "tv_stand"
+   }
+  },
+  {
+   "id": "door_main",
+   "name": "door_main (도면 기준)",
+   "type": "mk_door_main_l",
+   "asset": "assets/fixtures/mk_door_main_l.glb",
+   "category": "fixtures",
+   "node_type": "fixture",
+   "mount": "opening",
+   "room": "vestibule",
+   "plan": {
+    "position": [
+     0.871875,
+     3.403125
+    ],
+    "facing_deg": 180.0,
+    "elevation": -0.1,
+    "on": null,
+    "surface": null,
+    "wall": "E02"
+   },
+   "position": [
+    0.871875,
+    -0.1,
+    3.403125
+   ],
+   "rotation": [
+    0.0,
+    -1.570796,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": false,
+   "attrs": {
+    "door": [
+     "closed",
+     "open"
+    ],
+    "lock": [
+     "locked",
+     "unlocked"
+    ]
+   },
+   "states": {
+    "door": {
+     "default": "closed",
+     "effects": {
+      "closed": [
+       {
+        "part": "leaf",
+        "rotate": [
+         0,
+         0,
+         0
+        ]
+       },
+       {
+        "part": "open_light",
+        "visible": false
+       }
+      ],
+      "open": [
+       {
+        "part": "leaf",
+        "rotate": [
+         0,
+         -95,
+         0
+        ]
+       },
+       {
+        "part": "open_light",
+        "visible": true
+       }
+      ]
+     }
+    },
+    "lock": {
+     "default": "locked",
+     "effects": {
+      "locked": [
+       {
+        "part": "lock_red",
+        "emissive": 1.0
+       },
+       {
+        "part": "lock_green",
+        "emissive": 0.0
+       },
+       {
+        "part": "keypad_red",
+        "visible": true
+       },
+       {
+        "part": "keypad_green",
+        "visible": false
+       },
+       {
+        "light": "unlock_glow_out",
+        "intensity": 0.0
+       },
+       {
+        "light": "unlock_glow_in",
+        "intensity": 0.0
+       },
+       {
+        "part": "unlock_pool",
+        "visible": false
+       }
+      ],
+      "unlocked": [
+       {
+        "part": "lock_red",
+        "emissive": 0.0
+       },
+       {
+        "part": "lock_green",
+        "emissive": 1.0
+       },
+       {
+        "part": "keypad_red",
+        "visible": false
+       },
+       {
+        "part": "keypad_green",
+        "visible": true
+       },
+       {
+        "light": "unlock_glow_out",
+        "intensity": 1.0
+       },
+       {
+        "light": "unlock_glow_in",
+        "intensity": 1.0
+       },
+       {
+        "part": "unlock_pool",
+        "visible": true
+       }
+      ]
+     }
+    }
+   },
+   "state": {
+    "door": "closed",
+    "lock": "locked"
+   },
+   "provenance": {
+    "origin": "plan",
+    "size": "catalog",
+    "facing": "plan",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "door_main"
+   }
+  },
+  {
+   "id": "door_entry",
+   "name": "door_entry (도면 기준)",
+   "type": "mk_door_entry_r",
+   "asset": "assets/fixtures/mk_door_entry_r.glb",
+   "category": "fixtures",
+   "node_type": "fixture",
+   "mount": "opening",
+   "room": "vestibule",
+   "plan": {
+    "position": [
+     4.359375,
+     4.190625
+    ],
+    "facing_deg": 270.0,
+    "elevation": -0.1,
+    "on": null,
+    "surface": null,
+    "wall": "vest_bottom"
+   },
+   "position": [
+    4.359375,
+    -0.1,
+    4.190625
+   ],
+   "rotation": [
+    0.0,
+    -3.141593,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": false,
+   "attrs": {
+    "door": [
+     "closed",
+     "open"
+    ]
+   },
+   "states": {
+    "door": {
+     "default": "closed",
+     "effects": {
+      "closed": [
+       {
+        "part": "leaf",
+        "rotate": [
+         0,
+         0,
+         0
+        ]
+       }
+      ],
+      "open": [
+       {
+        "part": "leaf",
+        "rotate": [
+         0,
+         95,
+         0
+        ]
+       }
+      ]
+     }
+    }
+   },
+   "state": {
+    "door": "closed"
+   },
+   "provenance": {
+    "origin": "plan",
+    "size": "catalog",
+    "facing": "plan",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "door_room_r"
+   }
+  },
+  {
+   "id": "door_alpha",
+   "name": "door_alpha (도면 기준)",
+   "type": "mk_door_alpha_l",
+   "asset": "assets/fixtures/mk_door_alpha_l.glb",
+   "category": "fixtures",
+   "node_type": "fixture",
+   "mount": "opening",
+   "room": "alpha",
+   "plan": {
+    "position": [
+     3.6,
+     6.75
+    ],
+    "facing_deg": 180.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": "alpha_right"
+   },
+   "position": [
+    3.6,
+    0.0,
+    6.75
+   ],
+   "rotation": [
+    0.0,
+    -1.570796,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": false,
+   "attrs": {
+    "door": [
+     "closed",
+     "open"
+    ]
+   },
+   "states": {
+    "door": {
+     "default": "closed",
+     "effects": {
+      "closed": [
+       {
+        "part": "leaf",
+        "rotate": [
+         0,
+         0,
+         0
+        ]
+       }
+      ],
+      "open": [
+       {
+        "part": "leaf",
+        "rotate": [
+         0,
+         -95,
+         0
+        ]
+       }
+      ]
+     }
+    }
+   },
+   "state": {
+    "door": "closed"
+   },
+   "provenance": {
+    "origin": "plan",
+    "size": "catalog",
+    "facing": "plan",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "door_room_l"
+   }
+  },
+  {
+   "id": "door_bath_west",
+   "name": "door_bath_west (도면 기준)",
+   "type": "mk_door_bath_west_r",
+   "asset": "assets/fixtures/mk_door_bath_west_r.glb",
+   "category": "fixtures",
+   "node_type": "fixture",
+   "mount": "opening",
+   "room": "bath_west",
+   "plan": {
+    "position": [
+     1.575,
+     5.990625
+    ],
+    "facing_deg": 270.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": "alpha_top"
+   },
+   "position": [
+    1.575,
+    0.0,
+    5.990625
+   ],
+   "rotation": [
+    0.0,
+    -3.141593,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": false,
+   "attrs": {
+    "door": [
+     "closed",
+     "open"
+    ]
+   },
+   "states": {
+    "door": {
+     "default": "closed",
+     "effects": {
+      "closed": [
+       {
+        "part": "leaf",
+        "rotate": [
+         0,
+         0,
+         0
+        ]
+       }
+      ],
+      "open": [
+       {
+        "part": "leaf",
+        "rotate": [
+         0,
+         95,
+         0
+        ]
+       }
+      ]
+     }
+    }
+   },
+   "state": {
+    "door": "closed"
+   },
+   "provenance": {
+    "origin": "plan",
+    "size": "catalog",
+    "facing": "plan",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "door_bath_r"
+   }
+  },
+  {
+   "id": "door_closet",
+   "name": "door_closet (도면 기준)",
+   "type": "mk_door_closet",
+   "asset": "assets/fixtures/mk_door_closet.glb",
+   "category": "fixtures",
+   "node_type": "fixture",
+   "mount": "opening",
+   "room": "closet",
+   "plan": {
+    "position": [
+     2.784375,
+     5.990625
+    ],
+    "facing_deg": 270.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": "alpha_top"
+   },
+   "position": [
+    2.784375,
+    0.0,
+    5.990625
+   ],
+   "rotation": [
+    0.0,
+    -3.141593,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": false,
+   "attrs": {
+    "door": [
+     "closed",
+     "open"
+    ]
+   },
+   "states": {
+    "door": {
+     "default": "closed",
+     "effects": {
+      "closed": [
+       {
+        "part": "panel",
+        "translate": [
+         0,
+         0,
+         0
+        ]
+       }
+      ],
+      "open": [
+       {
+        "part": "panel",
+        "translate": [
+         -0.9562499999999999,
+         0,
+         0
+        ]
+       }
+      ]
+     }
+    }
+   },
+   "state": {
+    "door": "closed"
+   },
+   "provenance": {
+    "origin": "plan",
+    "size": "catalog",
+    "facing": "plan",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "sliding_door_110"
+   }
+  },
+  {
+   "id": "door_bath_center",
+   "name": "door_bath_center (도면 기준)",
+   "type": "mk_door_bath_center_l",
+   "asset": "assets/fixtures/mk_door_bath_center_l.glb",
+   "category": "fixtures",
+   "node_type": "fixture",
+   "mount": "opening",
+   "room": "bath_center",
+   "plan": {
+    "position": [
+     6.01875,
+     5.990625
+    ],
+    "facing_deg": 270.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": "bath_center_bottom"
+   },
+   "position": [
+    6.01875,
+    0.0,
+    5.990625
+   ],
+   "rotation": [
+    0.0,
+    -3.141593,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": false,
+   "attrs": {
+    "door": [
+     "closed",
+     "open"
+    ]
+   },
+   "states": {
+    "door": {
+     "default": "closed",
+     "effects": {
+      "closed": [
+       {
+        "part": "leaf",
+        "rotate": [
+         0,
+         0,
+         0
+        ]
+       }
+      ],
+      "open": [
+       {
+        "part": "leaf",
+        "rotate": [
+         0,
+         -95,
+         0
+        ]
+       }
+      ]
+     }
+    }
+   },
+   "state": {
+    "door": "closed"
+   },
+   "provenance": {
+    "origin": "plan",
+    "size": "catalog",
+    "facing": "plan",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "door_bath_l"
+   }
+  },
+  {
+   "id": "door_bath_east",
+   "name": "door_bath_east (도면 기준)",
+   "type": "mk_door_bath_east_l",
+   "asset": "assets/fixtures/mk_door_bath_east_l.glb",
+   "category": "fixtures",
+   "node_type": "fixture",
+   "mount": "opening",
+   "room": "bath_east",
+   "plan": {
+    "position": [
+     14.34375,
+     7.81875
+    ],
+    "facing_deg": 270.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": "bed_se_top"
+   },
+   "position": [
+    14.34375,
+    0.0,
+    7.81875
+   ],
+   "rotation": [
+    0.0,
+    -3.141593,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": false,
+   "attrs": {
+    "door": [
+     "closed",
+     "open"
+    ]
+   },
+   "states": {
+    "door": {
+     "default": "closed",
+     "effects": {
+      "closed": [
+       {
+        "part": "leaf",
+        "rotate": [
+         0,
+         0,
+         0
+        ]
+       }
+      ],
+      "open": [
+       {
+        "part": "leaf",
+        "rotate": [
+         0,
+         -95,
+         0
+        ]
+       }
+      ]
+     }
+    }
+   },
+   "state": {
+    "door": "closed"
+   },
+   "provenance": {
+    "origin": "plan",
+    "size": "catalog",
+    "facing": "plan",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "door_bath_l"
+   }
+  },
+  {
+   "id": "door_bed_sw",
+   "name": "door_bed_sw (도면 기준)",
+   "type": "mk_door_bed_sw_r",
+   "asset": "assets/fixtures/mk_door_bed_sw_r.glb",
+   "category": "fixtures",
+   "node_type": "fixture",
+   "mount": "opening",
+   "room": "bed_sw",
+   "plan": {
+    "position": [
+     6.24375,
+     7.81875
+    ],
+    "facing_deg": 90.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": "bed_sw_top"
+   },
+   "position": [
+    6.24375,
+    0.0,
+    7.81875
+   ],
+   "rotation": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": false,
+   "attrs": {
+    "door": [
+     "closed",
+     "open"
+    ]
+   },
+   "states": {
+    "door": {
+     "default": "closed",
+     "effects": {
+      "closed": [
+       {
+        "part": "leaf",
+        "rotate": [
+         0,
+         0,
+         0
+        ]
+       }
+      ],
+      "open": [
+       {
+        "part": "leaf",
+        "rotate": [
+         0,
+         95,
+         0
+        ]
+       }
+      ]
+     }
+    }
+   },
+   "state": {
+    "door": "closed"
+   },
+   "provenance": {
+    "origin": "plan",
+    "size": "catalog",
+    "facing": "plan",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "door_room_r"
+   }
+  },
+  {
+   "id": "door_bed_se",
+   "name": "door_bed_se (도면 기준)",
+   "type": "mk_door_bed_se_l",
+   "asset": "assets/fixtures/mk_door_bed_se_l.glb",
+   "category": "fixtures",
+   "node_type": "fixture",
+   "mount": "opening",
+   "room": "bed_se",
+   "plan": {
+    "position": [
+     12.4875,
+     7.81875
+    ],
+    "facing_deg": 90.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": "bed_se_top"
+   },
+   "position": [
+    12.4875,
+    0.0,
+    7.81875
+   ],
+   "rotation": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": false,
+   "attrs": {
+    "door": [
+     "closed",
+     "open"
+    ]
+   },
+   "states": {
+    "door": {
+     "default": "closed",
+     "effects": {
+      "closed": [
+       {
+        "part": "leaf",
+        "rotate": [
+         0,
+         0,
+         0
+        ]
+       }
+      ],
+      "open": [
+       {
+        "part": "leaf",
+        "rotate": [
+         0,
+         -95,
+         0
+        ]
+       }
+      ]
+     }
+    }
+   },
+   "state": {
+    "door": "closed"
+   },
+   "provenance": {
+    "origin": "plan",
+    "size": "catalog",
+    "facing": "plan",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "door_room_l"
+   }
+  },
+  {
+   "id": "door_bed_ne",
+   "name": "door_bed_ne (도면 기준)",
+   "type": "mk_door_bed_ne_l",
+   "asset": "assets/fixtures/mk_door_bed_ne_l.glb",
+   "category": "fixtures",
+   "node_type": "fixture",
+   "mount": "opening",
+   "room": "bed_ne",
+   "plan": {
+    "position": [
+     12.4875,
+     5.990625
+    ],
+    "facing_deg": 270.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": "bed_ne_bottom"
+   },
+   "position": [
+    12.4875,
+    0.0,
+    5.990625
+   ],
+   "rotation": [
+    0.0,
+    -3.141593,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": false,
+   "attrs": {
+    "door": [
+     "closed",
+     "open"
+    ]
+   },
+   "states": {
+    "door": {
+     "default": "closed",
+     "effects": {
+      "closed": [
+       {
+        "part": "leaf",
+        "rotate": [
+         0,
+         0,
+         0
+        ]
+       }
+      ],
+      "open": [
+       {
+        "part": "leaf",
+        "rotate": [
+         0,
+         -95,
+         0
+        ]
+       }
+      ]
+     }
+    }
+   },
+   "state": {
+    "door": "closed"
+   },
+   "provenance": {
+    "origin": "plan",
+    "size": "catalog",
+    "facing": "plan",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "door_room_l"
+   }
+  },
+  {
+   "id": "door_balcony_north",
+   "name": "door_balcony_north (도면 기준)",
+   "type": "mk_door_balcony_north_l",
+   "asset": "assets/fixtures/mk_door_balcony_north_l.glb",
+   "category": "fixtures",
+   "node_type": "fixture",
+   "mount": "opening",
+   "room": "kitchen",
+   "plan": {
+    "position": [
+     8.465625,
+     1.4625
+    ],
+    "facing_deg": 180.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": "kitchen_balcony"
+   },
+   "position": [
+    8.465625,
+    0.0,
+    1.4625
+   ],
+   "rotation": [
+    0.0,
+    -1.570796,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": false,
+   "attrs": {
+    "door": [
+     "closed",
+     "open"
+    ]
+   },
+   "states": {
+    "door": {
+     "default": "closed",
+     "effects": {
+      "closed": [
+       {
+        "part": "leaf",
+        "rotate": [
+         0,
+         0,
+         0
+        ]
+       }
+      ],
+      "open": [
+       {
+        "part": "leaf",
+        "rotate": [
+         0,
+         -95,
+         0
+        ]
+       }
+      ]
+     }
+    }
+   },
+   "state": {
+    "door": "closed"
+   },
+   "provenance": {
+    "origin": "plan",
+    "size": "catalog",
+    "facing": "plan",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "door_glass_l"
+   }
+  },
+  {
+   "id": "door_balcony_west",
+   "name": "door_balcony_west (도면 기준)",
+   "type": "mk_door_balcony_west",
+   "asset": "assets/fixtures/mk_door_balcony_west.glb",
+   "category": "fixtures",
+   "node_type": "fixture",
+   "mount": "opening",
+   "room": "alpha",
+   "plan": {
+    "position": [
+     1.6875,
+     10.63125
+    ],
+    "facing_deg": 270.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": "alpha_balcony"
+   },
+   "position": [
+    1.6875,
+    0.0,
+    10.63125
+   ],
+   "rotation": [
+    0.0,
+    -3.141593,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": false,
+   "attrs": {
+    "door": [
+     "closed",
+     "open"
+    ]
+   },
+   "states": {
+    "door": {
+     "default": "closed",
+     "effects": {
+      "closed": [
+       {
+        "part": "panel",
+        "translate": [
+         0,
+         0,
+         0
+        ]
+       }
+      ],
+      "open": [
+       {
+        "part": "panel",
+        "translate": [
+         -2.295,
+         0,
+         0
+        ]
+       }
+      ]
+     }
+    }
+   },
+   "state": {
+    "door": "closed"
+   },
+   "provenance": {
+    "origin": "plan",
+    "size": "catalog",
+    "facing": "plan",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "sliding_door_110"
+   }
+  },
+  {
+   "id": "door_balcony_sw",
+   "name": "door_balcony_sw (도면 기준)",
+   "type": "mk_door_balcony_sw",
+   "asset": "assets/fixtures/mk_door_balcony_sw.glb",
+   "category": "fixtures",
+   "node_type": "fixture",
+   "mount": "opening",
+   "room": "bed_sw",
+   "plan": {
+    "position": [
+     5.175,
+     12.234375
+    ],
+    "facing_deg": 270.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": "front_boundary"
+   },
+   "position": [
+    5.175,
+    0.0,
+    12.234375
+   ],
+   "rotation": [
+    0.0,
+    -3.141593,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": false,
+   "attrs": {
+    "door": [
+     "closed",
+     "open"
+    ]
+   },
+   "states": {
+    "door": {
+     "default": "closed",
+     "effects": {
+      "closed": [
+       {
+        "part": "panel",
+        "translate": [
+         0,
+         0,
+         0
+        ]
+       }
+      ],
+      "open": [
+       {
+        "part": "panel",
+        "translate": [
+         -2.2471875,
+         0,
+         0
+        ]
+       }
+      ]
+     }
+    }
+   },
+   "state": {
+    "door": "closed"
+   },
+   "provenance": {
+    "origin": "plan",
+    "size": "catalog",
+    "facing": "plan",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "sliding_door_110"
+   }
+  },
+  {
+   "id": "door_balcony_living",
+   "name": "door_balcony_living (도면 기준)",
+   "type": "mk_door_balcony_living",
+   "asset": "assets/fixtures/mk_door_balcony_living.glb",
+   "category": "fixtures",
+   "node_type": "fixture",
+   "mount": "opening",
+   "room": "living",
+   "plan": {
+    "position": [
+     9.028125,
+     12.234375
+    ],
+    "facing_deg": 270.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": "front_boundary"
+   },
+   "position": [
+    9.028125,
+    0.0,
+    12.234375
+   ],
+   "rotation": [
+    0.0,
+    -3.141593,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": false,
+   "attrs": {
+    "door": [
+     "closed",
+     "open"
+    ]
+   },
+   "states": {
+    "door": {
+     "default": "closed",
+     "effects": {
+      "closed": [
+       {
+        "part": "panel",
+        "translate": [
+         0,
+         0,
+         0
+        ]
+       }
+      ],
+      "open": [
+       {
+        "part": "panel",
+        "translate": [
+         -2.6774999999999998,
+         0,
+         0
+        ]
+       }
+      ]
+     }
+    }
+   },
+   "state": {
+    "door": "closed"
+   },
+   "provenance": {
+    "origin": "plan",
+    "size": "catalog",
+    "facing": "plan",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "sliding_door_110"
+   }
+  },
+  {
+   "id": "door_balcony_se",
+   "name": "door_balcony_se (도면 기준)",
+   "type": "mk_door_balcony_se",
+   "asset": "assets/fixtures/mk_door_balcony_se.glb",
+   "category": "fixtures",
+   "node_type": "fixture",
+   "mount": "opening",
+   "room": "bed_se",
+   "plan": {
+    "position": [
+     13.3875,
+     12.234375
+    ],
+    "facing_deg": 270.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": "front_boundary"
+   },
+   "position": [
+    13.3875,
+    0.0,
+    12.234375
+   ],
+   "rotation": [
+    0.0,
+    -3.141593,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": false,
+   "attrs": {
+    "door": [
+     "closed",
+     "open"
+    ]
+   },
+   "states": {
+    "door": {
+     "default": "closed",
+     "effects": {
+      "closed": [
+       {
+        "part": "panel",
+        "translate": [
+         0,
+         0,
+         0
+        ]
+       }
+      ],
+      "open": [
+       {
+        "part": "panel",
+        "translate": [
+         -2.390625,
+         0,
+         0
+        ]
+       }
+      ]
+     }
+    }
+   },
+   "state": {
+    "door": "closed"
+   },
+   "provenance": {
+    "origin": "plan",
+    "size": "catalog",
+    "facing": "plan",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "sliding_door_110"
+   }
+  },
+  {
+   "id": "win_vestibule",
+   "name": "win_vestibule (도면 기준)",
+   "type": "mk_win_vestibule",
+   "asset": "assets/fixtures/mk_win_vestibule.glb",
+   "category": "fixtures",
+   "node_type": "fixture",
+   "mount": "opening",
+   "room": "vestibule",
+   "plan": {
+    "position": [
+     3.121875,
+     2.025
+    ],
+    "facing_deg": 90.0,
+    "elevation": 0.9,
+    "on": null,
+    "surface": null,
+    "wall": "E03"
+   },
+   "position": [
+    3.121875,
+    0.9,
+    2.025
+   ],
+   "rotation": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": false,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "plan",
+    "size": "catalog",
+    "facing": "plan",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "window_living"
+   }
+  },
+  {
+   "id": "win_kitchen",
+   "name": "win_kitchen (도면 기준)",
+   "type": "mk_win_kitchen",
+   "asset": "assets/fixtures/mk_win_kitchen.glb",
+   "category": "fixtures",
+   "node_type": "fixture",
+   "mount": "opening",
+   "room": "kitchen",
+   "plan": {
+    "position": [
+     6.665625,
+     -0.478125
+    ],
+    "facing_deg": 90.0,
+    "elevation": 0.9,
+    "on": null,
+    "surface": null,
+    "wall": "E05"
+   },
+   "position": [
+    6.665625,
+    0.9,
+    -0.478125
+   ],
+   "rotation": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": false,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "plan",
+    "size": "catalog",
+    "facing": "plan",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "window_small"
+   }
+  },
+  {
+   "id": "win_balcony_north",
+   "name": "win_balcony_north (도면 기준)",
+   "type": "mk_win_balcony_north",
+   "asset": "assets/fixtures/mk_win_balcony_north.glb",
+   "category": "fixtures",
+   "node_type": "fixture",
+   "mount": "opening",
+   "room": "balcony_north",
+   "plan": {
+    "position": [
+     12.403125,
+     0.759375
+    ],
+    "facing_deg": 90.0,
+    "elevation": 0.15,
+    "on": null,
+    "surface": null,
+    "wall": "E09"
+   },
+   "position": [
+    12.403125,
+    0.15,
+    0.759375
+   ],
+   "rotation": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": false,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "plan",
+    "size": "catalog",
+    "facing": "plan",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "window_living"
+   }
+  },
+  {
+   "id": "win_bed_ne",
+   "name": "win_bed_ne (도면 기준)",
+   "type": "mk_win_bed_ne",
+   "asset": "assets/fixtures/mk_win_bed_ne.glb",
+   "category": "fixtures",
+   "node_type": "fixture",
+   "mount": "opening",
+   "room": "bed_ne",
+   "plan": {
+    "position": [
+     16.2,
+     3.740625
+    ],
+    "facing_deg": 180.0,
+    "elevation": 0.9,
+    "on": null,
+    "surface": null,
+    "wall": "E10"
+   },
+   "position": [
+    16.200001,
+    0.9,
+    3.740625
+   ],
+   "rotation": [
+    0.0,
+    -1.570796,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": false,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "plan",
+    "size": "catalog",
+    "facing": "plan",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "window_bed"
+   }
+  },
+  {
+   "id": "win_balcony_west",
+   "name": "win_balcony_west (도면 기준)",
+   "type": "mk_win_balcony_west",
+   "asset": "assets/fixtures/mk_win_balcony_west.glb",
+   "category": "fixtures",
+   "node_type": "fixture",
+   "mount": "opening",
+   "room": "balcony_west",
+   "plan": {
+    "position": [
+     1.659375,
+     12.234375
+    ],
+    "facing_deg": 270.0,
+    "elevation": 0.15,
+    "on": null,
+    "surface": null,
+    "wall": "E17"
+   },
+   "position": [
+    1.659375,
+    0.15,
+    12.234375
+   ],
+   "rotation": [
+    0.0,
+    -3.141593,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": false,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "plan",
+    "size": "catalog",
+    "facing": "plan",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "window_living"
+   }
+  },
+  {
+   "id": "win_balcony_front_w",
+   "name": "win_balcony_front_w (도면 기준)",
+   "type": "mk_win_balcony_front_w",
+   "asset": "assets/fixtures/mk_win_balcony_front_w.glb",
+   "category": "fixtures",
+   "node_type": "fixture",
+   "mount": "opening",
+   "room": "balcony_front",
+   "plan": {
+    "position": [
+     5.540625,
+     13.640625
+    ],
+    "facing_deg": 270.0,
+    "elevation": 0.15,
+    "on": null,
+    "surface": null,
+    "wall": "E15"
+   },
+   "position": [
+    5.540625,
+    0.15,
+    13.640625
+   ],
+   "rotation": [
+    0.0,
+    -3.141593,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": false,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "plan",
+    "size": "catalog",
+    "facing": "plan",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "window_living"
+   }
+  },
+  {
+   "id": "win_balcony_front_e",
+   "name": "win_balcony_front_e (도면 기준)",
+   "type": "mk_win_balcony_front_e",
+   "asset": "assets/fixtures/mk_win_balcony_front_e.glb",
+   "category": "fixtures",
+   "node_type": "fixture",
+   "mount": "opening",
+   "room": "balcony_front",
+   "plan": {
+    "position": [
+     12.965625,
+     13.640625
+    ],
+    "facing_deg": 270.0,
+    "elevation": 0.15,
+    "on": null,
+    "surface": null,
+    "wall": "E11"
+   },
+   "position": [
+    12.965625,
+    0.15,
+    13.640625
+   ],
+   "rotation": [
+    0.0,
+    -3.141593,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": false,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "plan",
+    "size": "catalog",
+    "facing": "plan",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "window_living"
+   }
+  },
+  {
+   "id": "win_curve_1",
+   "name": "win_curve_1 (도면 기준)",
+   "type": "mk_win_curve_1",
+   "asset": "assets/fixtures/mk_win_curve_1.glb",
+   "category": "fixtures",
+   "node_type": "fixture",
+   "mount": "opening",
+   "room": "balcony_front",
+   "plan": {
+    "position": [
+     10.06875,
+     13.907813
+    ],
+    "facing_deg": 229.184916,
+    "elevation": 0.15,
+    "on": null,
+    "surface": null,
+    "wall": "E12"
+   },
+   "position": [
+    10.06875,
+    0.15,
+    13.907813
+   ],
+   "rotation": [
+    0.0,
+    -2.429235,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": false,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "plan",
+    "size": "catalog",
+    "facing": "plan",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "window_small"
+   }
+  },
+  {
+   "id": "win_curve_2",
+   "name": "win_curve_2 (도면 기준)",
+   "type": "mk_win_curve_2",
+   "asset": "assets/fixtures/mk_win_curve_2.glb",
+   "category": "fixtures",
+   "node_type": "fixture",
+   "mount": "opening",
+   "room": "balcony_front",
+   "plan": {
+    "position": [
+     9.084375,
+     14.175
+    ],
+    "facing_deg": 270.0,
+    "elevation": 0.15,
+    "on": null,
+    "surface": null,
+    "wall": "E13"
+   },
+   "position": [
+    9.084375,
+    0.15,
+    14.175
+   ],
+   "rotation": [
+    0.0,
+    -3.141593,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": false,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "plan",
+    "size": "catalog",
+    "facing": "plan",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "window_small"
+   }
+  },
+  {
+   "id": "win_curve_3",
+   "name": "win_curve_3 (도면 기준)",
+   "type": "mk_win_curve_3",
+   "asset": "assets/fixtures/mk_win_curve_3.glb",
+   "category": "fixtures",
+   "node_type": "fixture",
+   "mount": "opening",
+   "room": "balcony_front",
+   "plan": {
+    "position": [
+     8.1,
+     13.907813
+    ],
+    "facing_deg": 310.815084,
+    "elevation": 0.15,
+    "on": null,
+    "surface": null,
+    "wall": "E14"
+   },
+   "position": [
+    8.1,
+    0.15,
+    13.907813
+   ],
+   "rotation": [
+    0.0,
+    -3.85395,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": false,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "plan",
+    "size": "catalog",
+    "facing": "plan",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "window_small"
+   }
+  }
+ ]
+}

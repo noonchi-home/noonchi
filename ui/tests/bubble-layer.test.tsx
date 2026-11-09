@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import type { DeviceView } from "../../src/contract/events.ts";
 import { BubbleLayer } from "../src/bubbles/BubbleLayer";
 import type { Check } from "../src/checks/checks";
-import { LookContext } from "../src/look/look";
 
 const dev = (id: string, label: string, power: string): [string, DeviceView] => [id, {
   id, label, room: "r", roomLabel: "거실", twinType: "t", kind: "light", matterDeviceType: "x", capabilities: [], sensors: [], twinAttrs: {},
@@ -62,11 +61,21 @@ describe("BubbleLayer", () => {
     expect(bubble.style.top).toBe("20px");
   });
 
-  it("꼬리는 밝은 바닥·어두운 바닥 모두에서 보이게 밝은 심에 어두운 테두리를 두른다", () => {
+  it("꼬리는 21st.dev Tooltip 화살표: 판 색 심에 숯색 테두리(twin-edge)라 밝은 바닥·어두운 바닥 모두에서 보인다", () => {
     render(<BubbleLayer checks={[checked("a", 1)]} devices={new Map([dev("a", "거실 조명", "on")])} points={at(["a"])} />);
-    const tail = bubbleOf("거실 조명").lastElementChild;
-    expect(tail).toHaveClass("bg-white", "ring-1");
-    expect(tail).not.toHaveClass("w-px");
+    const arrow = bubbleOf("거실 조명").querySelector("[data-tone=twin] svg");
+    expect(arrow).toHaveClass("fill-popover");
+    expect(arrow?.getAttribute("class")).toContain("var(--twin-edge)");
+  });
+
+  it("경고 번호 옆에는 TriangleAlert, 모름 번호 옆에는 CircleHelp를 둔다(색만으로 말하지 않는다)", () => {
+    const unknown: [string, DeviceView] = ["u", { ...dev("u", "후드", "off")[1], state: { id: "u", online: true, twin: {}, matter: {}, updatedAt: "t", signal: "none" } }];
+    const alert: [string, DeviceView] = ["x", { ...dev("x", "현관문", "on")[1], kind: "contact", state: { id: "x", online: true, twin: { door: "open" }, matter: {}, updatedAt: "t" } }];
+    render(<BubbleLayer checks={[checked("u", 1), checked("x", 2), checked("a", 3)]} devices={new Map([unknown, alert, dev("a", "거실 조명", "on")])} points={at(["u", "x", "a"])} />);
+    expect(bubbleOf("현관문").querySelector(".lucide-triangle-alert")).not.toBeNull();
+    expect(bubbleOf("후드").querySelector(".lucide-circle-question-mark, .lucide-circle-help")).not.toBeNull();
+    expect(bubbleOf("거실 조명").querySelector(".lucide-triangle-alert, .lucide-circle-question-mark, .lucide-circle-help")).toBeNull();
+    expect(bubbleOf("현관문").querySelector("[data-order] [data-tone]")).toHaveAttribute("data-tone", "error");
   });
 
   it("말풍선은 보기만 한다: 마우스·끌기가 3D 트윈으로 간다", () => {
@@ -78,27 +87,24 @@ describe("BubbleLayer", () => {
     expect(document.querySelector("[aria-label='확인한 것'] .pointer-events-auto")).toBeNull();
   });
 
-  it("부품 모양은 흰 카드, 유리 모양은 유리 말풍선. 모름도 점선 테두리를 쓰지 않는다", () => {
+  it("말풍선 판은 21st.dev Tooltip(트윈 테두리)이다. 모름도 점선 테두리를 쓰지 않는다", () => {
     const unknown: [string, DeviceView] = ["u", { ...dev("u", "후드", "off")[1], state: { id: "u", online: true, twin: {}, matter: {}, updatedAt: "t", signal: "none" } }];
     const devices = new Map([dev("a", "거실 조명", "on"), unknown]);
     const checks = [checked("a", 1), checked("u", 2, "확인")];
     const points = new Map([["a", { x: 10, y: 20, visible: true }], ["u", { x: 50, y: 20, visible: true }]]);
-    const surface = (label: string) => bubbleOf(label).querySelector<HTMLElement>("[data-surface]")!;
-    const { unmount } = render(<BubbleLayer checks={checks} devices={devices} points={points} />);
-    expect(surface("거실 조명").dataset.surface).toBe("card");
-    expect(document.querySelector(".border-dashed")).toBeNull();
-    unmount();
-    render(<LookContext.Provider value="glass"><BubbleLayer checks={checks} devices={devices} points={points} /></LookContext.Provider>);
-    expect(surface("거실 조명").dataset.surface).toBe("glass");
-    expect(surface("후드").dataset.surface).toBe("glass");
+    render(<BubbleLayer checks={checks} devices={devices} points={points} />);
+    expect(bubbleOf("거실 조명").querySelector("[data-tone=twin]")).not.toBeNull();
+    expect(bubbleOf("후드").querySelector("[data-tone=twin]")).not.toBeNull();
     expect(document.querySelector(".border-dashed")).toBeNull();
   });
 
-  it("방금 다룬 기기는 크게", () => {
+  it("방금 다룬 기기는 크기는 그대로(한 크기 md)이고 테두리 강조(focus)만 한다", () => {
     const devices = new Map([dev("a", "거실 조명", "off"), dev("b", "안방 조명", "off")]);
     render(<BubbleLayer checks={[checked("a", 1), checked("b", 2)]} devices={devices} points={at(["a", "b"])} focusId="b" />);
     expect(bubbleOf("안방 조명")).toHaveAttribute("data-focus", "true");
     expect(bubbleOf("거실 조명")).not.toHaveAttribute("data-focus");
+    expect(bubbleOf("안방 조명").querySelector("[data-tone=twin]")).toHaveAttribute("data-focus", "true");
+    for (const label of ["안방 조명", "거실 조명"]) expect(bubbleOf(label).className, label).not.toMatch(/(^|\s)scale-/);
   });
 
   it("겹치면 모름 < 꺼짐·켜짐 < 경고 < 방금 다룬 기기 순으로 위에 온다", () => {
@@ -111,6 +117,27 @@ describe("BubbleLayer", () => {
     expect(Number(z("후드"))).toBeLessThan(Number(z("거실 조명")));
     expect(Number(z("거실 조명"))).toBeLessThan(Number(z("현관문")));
     expect(Number(z("현관문"))).toBeLessThan(Number(z("안방 조명")));
+  });
+
+  it("기기 자리가 같은 두 말풍선은 서로 비켜 선다(앞은 방금 다룬 기기)", async () => {
+    const devices = new Map([dev("a", "거실 조명", "on"), dev("b", "안방 조명", "off")]);
+    render(<BubbleLayer checks={[checked("a", 1), checked("b", 2)]} devices={devices} points={at(["a", "b"], { x: 600, y: 400, visible: true })} focusId="b" measure={() => ({ w: 310, h: 92 })} />);
+    const spot = (label: string) => {
+      const c = bubbleOf(label).querySelector("[data-tone=twin]")!;
+      return `${c.getAttribute("data-side")} ${c.getAttribute("data-align")}`;
+    };
+    await screen.findByText("거실 조명");
+    expect(spot("안방 조명")).toBe("top center");
+    expect(spot("거실 조명")).not.toBe("top center");
+  });
+
+  it("클로이드·목적지 표시 자리(keep)를 덮지 않게 판을 옮긴다", async () => {
+    const devices = new Map([dev("a", "거실 조명", "on")]);
+    const keep = [{ left: 576, top: 336, right: 624, bottom: 384 }];
+    render(<BubbleLayer checks={[checked("a", 1)]} devices={devices} points={at(["a"], { x: 600, y: 400, visible: true })} keep={keep} measure={() => ({ w: 168, h: 66 })} />);
+    await screen.findByText("거실 조명");
+    const c = bubbleOf("거실 조명").querySelector("[data-tone=twin]")!;
+    expect(c.getAttribute("data-side")).toBe("bottom");
   });
 
   it("층 자체는 크기가 없어 3D 조작을 막지 않는다", () => {

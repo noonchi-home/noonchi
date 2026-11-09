@@ -1,28 +1,33 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { Agent } from "../src/agent/agent.js";
-import { MockProvider } from "../src/agent/providers/mock.js";
+import type { BrainLog } from "../src/contract/events.js";
 import { MemoryHub } from "../src/hub/memory.js";
 import type { DeviceHub } from "../src/hub/types.js";
 import { createApp, type TwinHomeApp } from "../src/server/app.js";
 import { createHub } from "../src/server/hubFactory.js";
 import { fetchRetry } from "../src/server/net.js";
 import { ROOMS, homeDevices, makeHome, twin } from "./helpers/home.js";
+import { HOME_SCRIPT, startFakeLlm, type FakeLlm } from "./helpers/llm.js";
 
 type Msg = Record<string, any>;
 
+// 에이전트는 실제 OpenAI 공급자, 모델 자리는 가짜 OpenAI 호환 서버
+let llm: FakeLlm;
+beforeAll(async () => { llm = await startFakeLlm(HOME_SCRIPT); });
+afterAll(async () => { await llm?.close(); });
 const cleanups: (() => Promise<void> | void)[] = [];
 afterEach(async () => {
   while (cleanups.length) await cleanups.pop()!();
 });
 
-async function start(opts: { twinDir?: string; webDir?: string; agent?: boolean } = {}) {
+async function start(opts: { twinDir?: string; webDir?: string; agent?: boolean; scene?: () => unknown } = {}) {
   const home = makeHome();
-  const agent = opts.agent === false ? undefined : new Agent({ hub: home.hub, policy: home.policy, rooms: ROOMS, provider: new MockProvider() });
-  const app: TwinHomeApp = createApp({ hub: home.hub, policy: home.policy, agent, rooms: ROOMS, twinDir: opts.twinDir, webDir: opts.webDir, log: () => {} });
+  const agent = opts.agent === false ? undefined : new Agent({ hub: home.hub, policy: home.policy, rooms: ROOMS, provider: llm.provider() });
+  const app: TwinHomeApp = createApp({ hub: home.hub, policy: home.policy, agent, rooms: ROOMS, twinDir: opts.twinDir, webDir: opts.webDir, scene: opts.scene, log: () => {} });
   const { url } = await app.listen(0, "127.0.0.1");
   cleanups.push(() => app.close());
   return { ...home, app, url };
@@ -76,7 +81,7 @@ describe("REST 읽기", () => {
   it("GET /api/health, /api/rooms, /api/devices", async () => {
     const { url, devices } = await start();
     const h = await api(url, "/api/health");
-    expect(h.json).toMatchObject({ ok: true, devices: devices.length, provider: "mock" });
+    expect(h.json).toMatchObject({ ok: true, devices: devices.length, provider: "openai", model: "gpt-5.5" });
     const rooms = await api(url, "/api/rooms");
     expect(rooms.status).toBe(200);
     expect(rooms.json.find((r: Msg) => r.id === "living_room")).toMatchObject({ label: "거실" });
@@ -98,6 +103,17 @@ describe("REST 읽기", () => {
     expect(nope.json.error).toContain("기기를 찾을 수 없습니다");
     const route = await api(url, "/api/nothing");
     expect(route.status).toBe(404);
+  });
+
+  it("GET /api/scene: 서버 장면(scene.json + 도면 설비), 장면이 없으면 404", async () => {
+    const { url } = await start({ scene: () => ({ plan: {}, objects: [{ id: "a" }] }) });
+    const r = await api(url, "/api/scene");
+    expect(r.status).toBe(200);
+    expect(r.json).toEqual({ ok: true, scene: { plan: {}, objects: [{ id: "a" }] } });
+    const none = await start();
+    const missing = await api(none.url, "/api/scene");
+    expect(missing.status).toBe(404);
+    expect(missing.json.error).toContain("집 장면이 없어요");
   });
 });
 
@@ -122,6 +138,34 @@ describe("REST 명령 + WS 이벤트", () => {
     await waitFor((m) => m.type === "hello");
     await waitFor((m) => m.type === "state" && m.state.id === devices[devices.length - 1]!.id);
     expect(messages.filter((m) => m.type === "state")).toHaveLength(devices.length);
+  });
+
+  it("WS에 붙으면 world 다음에 마지막 판단·상자 있는 observe를 다시 보냄 표시(replay)를 단 brain으로 한 번씩, 그다음 말풍선 글을 보낸다", async () => {
+    const home = makeHome();
+    const world = { at_ms: 1, objects: [], person: { visible: false, since_ms: null, last_seen_ms: null, facts: {} }, devices: [], eye: null, vlm_missing: 0, yolo_missing: 0 };
+    const decision: BrainLog = {
+      type: "decision", at_ms: 10, id: "pam-1", seq: 1, text_sent: "t", status: "valid", prediction: { observation: "o", reasoning: "r", task_index: 0 }, action: "컵 치우기", memory_version: 1,
+      world: { objects: [], person_visible: false, vlm_missing: 0, yolo_missing: 0 },
+    };
+    const observe: BrainLog = {
+      type: "observe", at_ms: 11, frame_id: "e7", captured_at_ms: 9, yolo: "컵 0.83", vlm: null,
+      boxes: [{ label: "cup", score: 0.83, box: [100, 50, 40, 60] }], frame: { width: 360, height: 640 },
+    };
+    const app = createApp({ hub: home.hub, policy: home.policy, rooms: ROOMS, log: () => {}, world: () => world, brainLast: () => [decision, observe], say: () => "컵을 들라고 했어요." });
+    const { url } = await app.listen(0, "127.0.0.1");
+    cleanups.push(() => app.close());
+    const { waitFor, messages } = await listen(url);
+    await waitFor((m) => m.type === "say");
+    const tail = messages.slice(messages.findIndex((m) => m.type === "world"));
+    expect(tail).toEqual([{ type: "world", world }, { type: "brain", event: decision, replay: true }, { type: "brain", event: observe, replay: true }, { type: "say", text: "컵을 들라고 했어요." }]);
+  });
+
+  it("마지막 판단·말풍선 글이 없으면 brain 없이 say null", async () => {
+    const { url } = await start();
+    const { waitFor, messages } = await listen(url);
+    expect(await waitFor((m) => m.type === "say")).toEqual({ type: "say", text: null });
+    expect(messages.filter((m) => m.type === "brain")).toEqual([]);
+    expect(messages.at(-1)).toEqual({ type: "say", text: null });
   });
 
   it("승인이 필요한 명령은 409 needsConfirmation, 토큰을 주면 실행", async () => {
@@ -171,7 +215,7 @@ describe("에이전트 REST", () => {
     const r = await api(url, "/api/agent/chat", { body: { message: "거실 TV 켜줘", sessionId: "t1" } });
     expect(r.status).toBe(200);
     expect(r.json.sessionId).toBe("t1");
-    expect(r.json.reply).toContain("켰");
+    expect(r.json.reply).toBe("거실 TV를 켰어요.");
     expect(r.json.actions.some((a: Msg) => a.tool === "turn_on")).toBe(true);
     expect(r.json.pendingConfirmations).toEqual([]);
     expect(twin(hub, "tv_living").power).toBe("on");

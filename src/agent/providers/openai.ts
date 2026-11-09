@@ -1,5 +1,5 @@
 // OpenAI 공급자: Responses API 함수 호출, 직접 돌리는 루프의 한 단계(step)씩.
-// 응답 output(추론 항목 포함)을 그대로 input에 덧붙여 다음 호출에 넘긴다.
+// 응답 output(추론 항목 포함)을 그대로 input에 덧붙여 다음 호출에 넘긴다. 키가 없으면 요청을 보내지 않고 실패한다.
 
 import OpenAI from "openai";
 import type { LlmProvider, StepOptions, StepResult, ToolCallResult } from "../agent.js";
@@ -58,6 +58,7 @@ export class OpenAIProvider implements LlmProvider {
 
   async step(state: unknown, opts: StepOptions): Promise<StepResult> {
     const s = state as State;
+    if (!this.#apiKey) throw new Error("OPENAI_API_KEY가 없습니다");
     const res = await this.client.responses.create({
       model: this.model,
       instructions: opts.system,

@@ -1,8 +1,13 @@
 import { useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { SetupDeviceView, SetupView } from "../../../src/contract/setup.ts";
-import { cn } from "../lib/utils";
+import { Alert, AlertTitle } from "../components/ui/alert";
+import { RemovableBadge } from "../components/ui/badge";
+import { Button } from "../components/ui/button";
+import { Card, CardContent, CardFooter } from "../components/ui/card";
+import { SearchInput } from "../components/ui/input";
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemHeader, ItemTitle } from "../components/ui/item";
+import { Status } from "../components/ui/status";
 import { searchDevices } from "./device-search";
-import { btn, primary, small } from "./setup-api";
 
 export type SourceKind = "virtual" | "none";
 
@@ -13,7 +18,7 @@ export function sourcesFrom(view: SetupView): Map<string, SourceKind> {
 
 const deviceName = (d: SetupDeviceView) => (d.label.includes(d.kindLabel) ? d.label : `${d.label} · ${d.kindLabel}`);
 
-/** 2 가전 선택. */
+/** 2 가전 선택. 제목(h-devices)은 설정 화면 말풍선이 단다. */
 export function DeviceStep({ view, sources, onSources, onBack, onNext, busy }: {
   view: SetupView; sources: Map<string, SourceKind>; onSources: (next: Map<string, SourceKind>) => void;
   onBack: () => void; onNext: () => void; busy: boolean;
@@ -42,75 +47,76 @@ export function DeviceStep({ view, sources, onSources, onBack, onNext, busy }: {
   };
 
   return (
-    <section aria-labelledby="h-devices" className="flex min-h-0 flex-1 flex-col gap-3">
-      <h2 id="h-devices" className="text-[18px] font-semibold">어떤 가전의 상태를 읽을까요?</h2>
-      <div className="grid max-w-2xl gap-2">
-        <input
-          ref={box} type="search" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onKey}
-          placeholder="가전이나 방 이름으로 검색" aria-label="가전 검색" aria-controls="device-results" autoComplete="off"
-          className="w-full rounded-xl border border-glass-line bg-field px-3 py-2.5 text-[15px] text-ink outline-none placeholder:text-ink-dim focus:border-on"
-        />
-        <div aria-label="방으로 찾기" className="flex flex-wrap gap-1">
-          {rooms.map((label) => (
-            <button key={label} type="button" className={small} onClick={() => { setQuery(label); box.current?.focus(); }}>{label}</button>
-          ))}
-        </div>
-        {query.trim() && (
-          <ul id="device-results" aria-label="검색 결과" className="max-h-80 overflow-auto rounded-xl border border-glass-line bg-field p-1">
-            {hits.length === 0 ? <li className="p-2 text-sm text-ink-dim">맞는 가전이 없어요.</li> : (
-              <>
-                <li className="flex items-center justify-between gap-2 px-2 py-1 text-xs text-ink-dim">
-                  <span>{`${hits.length}개`}</span>
-                  {rest.length > 1 && (
-                    <button type="button" className={small} onClick={() => set(rest.map((d) => [d.id, "virtual"]))}>{`모두 추가 (${rest.length})`}</button>
-                  )}
-                </li>
-                {hits.map((d) => {
-                  const on = isPicked(d.id);
-                  return (
-                    <li key={d.id}>
-                      <button
-                        type="button" aria-pressed={on} onClick={() => set([[d.id, on ? "none" : "virtual"]])}
-                        className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm hover:bg-field-strong"
-                      >
-                        <span className="whitespace-nowrap text-xs text-ink-dim">{d.roomLabel}</span>
-                        <span className="min-w-0 flex-1 truncate">{deviceName(d)}</span>
-                        <span className={cn("whitespace-nowrap text-xs font-semibold", on ? "text-on" : "text-ink")}>{on ? "추가됨 ✓" : "추가"}</span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </>
-            )}
-          </ul>
-        )}
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="rounded-full bg-field px-2.5 py-1 text-xs text-ink-dim">{`추가 ${picked.length} · 신호 없음 ${devices.length - picked.length}`}</span>
-        {picked.length > 0 && <button type="button" className={small} onClick={() => set(devices.map((d) => [d.id, "none"]))}>모두 빼기</button>}
-      </div>
-      <div className="min-h-0 flex-1 overflow-auto">
-        {devices.length === 0 ? <p className="text-sm text-ink-dim">이 집 배치에 가전이 없어요.</p>
-          : picked.length === 0 ? <p className="text-sm text-ink-dim">아직 추가한 가전이 없어요. 위에서 검색해서 추가하세요.</p>
-          : (
-            <ul aria-label="추가한 가전" className="flex flex-wrap gap-1.5">
-              {picked.map((d) => (
-                <li key={d.id} className="inline-flex items-center gap-1.5 rounded-full bg-on/15 py-1 pl-3 pr-1 text-sm">
-                  {!d.label.includes(d.roomLabel) && <span className="text-xs text-ink-dim">{d.roomLabel}</span>}
-                  <span>{deviceName(d)}</span>
-                  <button
-                    type="button" aria-label={`${d.roomLabel} ${d.label} 빼기`} onClick={() => set([[d.id, "none"]])}
-                    className="grid size-6 place-items-center rounded-full text-ink-dim hover:bg-field-strong hover:text-alert"
-                  >×</button>
-                </li>
-              ))}
-            </ul>
+    <section aria-labelledby="h-devices" className="flex min-h-0 flex-1 flex-col">
+      <CardContent className="flex min-h-0 flex-1 flex-col gap-3">
+        <div className="grid max-w-2xl gap-2">
+          <SearchInput
+            ref={box} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onKey}
+            textSize="lg" placeholder="가전이나 방 이름으로 검색" aria-label="가전 검색" aria-controls="device-results" autoComplete="off"
+          />
+          <div aria-label="방으로 찾기" className="flex flex-wrap gap-1">
+            {rooms.map((label) => (
+              <Button key={label} variant="outline" size="setup-sm" onClick={() => { setQuery(label); box.current?.focus(); }}>{label}</Button>
+            ))}
+          </div>
+          {query.trim() && (
+            <Card className="max-h-80 overflow-auto">
+              <ItemGroup id="device-results" aria-label="검색 결과">
+                {hits.length === 0 ? (
+                  <Alert size="setup"><AlertTitle>맞는 가전이 없어요.</AlertTitle></Alert>
+                ) : (
+                  <>
+                    <Item size="setup">
+                      <ItemHeader>
+                        <ItemDescription>{`${hits.length}개`}</ItemDescription>
+                        {rest.length > 1 && (
+                          <Button variant="ghost" size="setup-sm" onClick={() => set(rest.map((d) => [d.id, "virtual"]))}>{`모두 추가 (${rest.length})`}</Button>
+                        )}
+                      </ItemHeader>
+                    </Item>
+                    {hits.map((d) => {
+                      const on = isPicked(d.id);
+                      return (
+                        <Item key={d.id} size="setup" asChild>
+                          <button type="button" aria-pressed={on} onClick={() => set([[d.id, on ? "none" : "virtual"]])} className="w-full flex-nowrap text-left">
+                            <ItemContent className="min-w-0">
+                              <ItemTitle className="min-w-0 truncate">{deviceName(d)}</ItemTitle>
+                              <ItemDescription>{d.roomLabel}</ItemDescription>
+                            </ItemContent>
+                            <ItemActions>{on ? <Status variant="success" size="setup">추가됨</Status> : <Status size="setup">추가</Status>}</ItemActions>
+                          </button>
+                        </Item>
+                      );
+                    })}
+                  </>
+                )}
+              </ItemGroup>
+            </Card>
           )}
-      </div>
-      <div className="flex justify-end gap-2 pt-1">
-        <button type="button" className={btn} onClick={onBack}>이전</button>
-        <button type="button" className={primary} disabled={busy} onClick={onNext}>다음</button>
-      </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Status size="setup">{`추가 ${picked.length} · 신호 없음 ${devices.length - picked.length}`}</Status>
+          {picked.length > 0 && <Button variant="ghost" size="setup-sm" onClick={() => set(devices.map((d) => [d.id, "none"]))}>모두 빼기</Button>}
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto">
+          {devices.length === 0 ? <Alert size="setup"><AlertTitle>이 집 배치에 가전이 없어요.</AlertTitle></Alert>
+            : picked.length === 0 ? <Alert size="setup"><AlertTitle>아직 추가한 가전이 없어요. 위에서 검색해서 추가하세요.</AlertTitle></Alert>
+            : (
+              <div role="list" aria-label="추가한 가전" className="flex flex-wrap gap-1.5">
+                {picked.map((d) => (
+                  <RemovableBadge key={d.id} size="lg" role="listitem" removeLabel={`${d.roomLabel} ${d.label} 빼기`} onRemove={() => set([[d.id, "none"]])}>
+                    {!d.label.includes(d.roomLabel) && <span className="me-1.5">{d.roomLabel}</span>}
+                    <span>{deviceName(d)}</span>
+                  </RemovableBadge>
+                ))}
+              </div>
+            )}
+        </div>
+      </CardContent>
+      <CardFooter className="justify-end gap-2">
+        <Button variant="outline" size="setup" onClick={onBack}>이전</Button>
+        <Button size="setup" disabled={busy} onClick={onNext}>다음</Button>
+      </CardFooter>
     </section>
   );
 }

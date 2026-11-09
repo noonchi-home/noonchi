@@ -1,5 +1,6 @@
-// npm run demo: npm start와 같은 경로(startServer)로 임의 포트에 서버를 띄우고(기본 HUB=matter, local 전송, mock 에이전트)
+// npm run demo: npm start와 같은 경로(startServer)로 임의 포트에 서버를 띄우고(기본 HUB=matter, local 전송)
 // 시나리오 5개(+승인)를 REST·WS로 돌려 결과 표를 찍는다. 모두 기대대로면 종료 코드 0.
+// 에이전트는 셸의 키(OPENAI_API_KEY 등)로 실제 LLM을 부른다. 키가 없으면 대화가 실패한다.
 //   MATTER_TRANSPORT=network npm run demo  → 브리지를 실제로 커미셔닝해서 돌린다(임시 저장 폴더·임의 포트)
 //   HUB=memory npm run demo                → Matter 없이
 
@@ -27,7 +28,6 @@ async function main(): Promise<void> {
   const env = {
     ...process.env,
     PORT: "0",
-    AGENT_PROVIDER: "mock",
     MATTER_TRANSPORT: process.env.MATTER_TRANSPORT ?? "local",
     MATTER_STORAGE_DIR: storageDir,
     // 실행 중인 npm start(5540)와 겹치지 않게
@@ -36,7 +36,8 @@ async function main(): Promise<void> {
   const quiet: string[] = [];
   const srv = await startServer({ env, log: (m) => (m.startsWith("[경고]") ? console.log(m) : quiet.push(m)) });
   const hubText = `${srv.hubKind}${srv.transport ? `/${srv.transport}` : ""}`;
-  console.log(`twin-home 데모 서버: ${srv.url} (기기 ${srv.twin.devices.length}개, ${srv.twin.source}, 허브 ${hubText}, mock 에이전트)\n`);
+  const { provider } = srv.agent;
+  console.log(`twin-home 데모 서버: ${srv.url} (기기 ${srv.twin.devices.length}개, ${srv.twin.source}, 허브 ${hubText}, 에이전트 ${provider.name}/${provider.model})\n`);
 
   let rows: ScenarioRow[] = [];
   try {

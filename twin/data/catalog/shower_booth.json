@@ -1,0 +1,69 @@
+{
+  "type": "shower_booth",
+  "label": "샤워 부스",
+  "family": "bath_utility",
+  "category": "fixtures",
+  "node_type": "fixture",
+  "mount": "floor",
+  "footprint": [
+    0.9,
+    0.9
+  ],
+  "height": 2.0,
+  "model": "assets/fixtures/shower_booth.glb",
+  "blocks_walk": true,
+  "blocks_view": true,
+  "anchors": {
+    "front": [
+      0.0,
+      0.75
+    ],
+    "drain": [
+      0.0,
+      0.0,
+      0.04
+    ]
+  },
+  "attrs": {
+    "water": [
+      "off",
+      "on"
+    ]
+  },
+  "states": {
+    "water": {
+      "default": "off",
+      "effects": {
+        "off": [
+          {
+            "part": "water",
+            "visible": false
+          },
+          {
+            "part": "spray",
+            "visible": false
+          },
+          {
+            "part": "steam",
+            "visible": false
+          }
+        ],
+        "on": [
+          {
+            "part": "water",
+            "visible": true
+          },
+          {
+            "part": "spray",
+            "visible": true
+          },
+          {
+            "part": "steam",
+            "visible": true
+          }
+        ]
+      }
+    }
+  },
+  "notes": "코너 부스: 뒤(+y)·왼쪽(-x)은 벽이라 유리가 없고 앞·오른쪽(+x)에 유리. water on → 물줄기(water)·물보라 기둥(spray)·김 서린 유리와 김(steam), 모두 효과 부품. 유리 밖 손잡이는 bounds=False."
+}

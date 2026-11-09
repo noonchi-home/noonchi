@@ -1,0 +1,22 @@
+{
+  "type": "desk",
+  "label": "양수 책상",
+  "family": "reuse",
+  "category": "furniture",
+  "node_type": "furniture",
+  "mount": "floor",
+  "footprint": [
+    2.3,
+    0.62
+  ],
+  "height": 0.75,
+  "model": "assets/furniture/desk.glb",
+  "blocks_walk": true,
+  "blocks_view": false,
+  "surfaces": [
+    {
+      "name": "top",
+      "height": 0.75
+    }
+  ]
+}

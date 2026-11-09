@@ -1,0 +1,58 @@
+{
+  "type": "pendant_lamp",
+  "label": "식탁 펜던트",
+  "family": "lighting",
+  "category": "fixtures",
+  "node_type": "fixture",
+  "mount": "ceiling",
+  "footprint": [
+    0.38,
+    0.38
+  ],
+  "height": 0.75,
+  "model": "assets/fixtures/pendant_lamp.glb",
+  "blocks_walk": false,
+  "blocks_view": false,
+  "attrs": {
+    "power": [
+      "off",
+      "on"
+    ]
+  },
+  "states": {
+    "power": {
+      "default": "off",
+      "effects": {
+        "off": [
+          {
+            "part": "shade",
+            "emissive": 0.0
+          },
+          {
+            "part": "bulb",
+            "emissive": 0.0
+          },
+          {
+            "light": "glow",
+            "intensity": 0.0
+          }
+        ],
+        "on": [
+          {
+            "part": "shade",
+            "emissive": 1.0
+          },
+          {
+            "part": "bulb",
+            "emissive": 1.0
+          },
+          {
+            "light": "glow",
+            "intensity": 1.0
+          }
+        ]
+      }
+    }
+  },
+  "notes": "천장 캡에서 갓 아래 끝까지 0.75. shade 부품은 바깥(무광 차콜)과 안쪽(발광) 재질 두 개이고 emissive가 안쪽만 바꾼다. 스폿 100° 250 W"
+}

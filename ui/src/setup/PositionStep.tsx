@@ -1,11 +1,26 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Smartphone, TriangleAlert } from "lucide-react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import type { SetupView } from "../../../src/contract/setup.ts";
+import { Alert, AlertTitle } from "../components/ui/alert";
+import { Avatar, AvatarFallback } from "../components/ui/avatar";
+import { Button } from "../components/ui/button";
+import { Card, CardContent, CardDescription } from "../components/ui/card";
+import { Item, ItemContent, ItemMedia, ItemTitle } from "../components/ui/item";
+import { QRCode } from "../components/ui/qr-code";
+import { Input } from "../components/ui/input";
+import { Skeleton } from "../components/ui/skeleton";
+import { Status } from "../components/ui/status";
 import { cn } from "../lib/utils";
+import { pickPhoneUrl, urlParts } from "../panels/phone-url";
 import { hideViewerBar } from "../twin/embed";
 import { waitForViewer } from "../twin/viewer";
-import { btn, call, failText, isOk, primary, small } from "./setup-api";
+import { call, failText, isOk } from "./setup-api";
 
 // 4 위치 동기화: 3D 트윈에서 벽 두 곳(A·B)을 골라 저장하면 폰이 실제 그 벽 바로 아래 바닥을 조준해 맞춘다(높이는 눈높이 고정).
+// 말풍선 안은 트윈 칸(data-twin-box) 하나이고 모든 일을 그 위에 떠 있는 부품으로 한다(사용자 2026-11-09 「4번은 트윈화면만 띄워놓고 다 해결가능하게 수정해」):
+// 위쪽 띠에 지금 할 일 한 줄과 그 아래 한 줄로 A·B 칩(이름·다시 고르기: 집 위 핀 이름표를 가리지 않게 띠 안에만), 오른쪽 위 폰 칩(누르면 주소·QR), 아래 가운데 저장·지우기, 왼쪽 아래 배치 보정(고친 게 있을 때), 오른쪽 아래 이전·완료.
+// 뷰어가 핀 누름을 알려 주지 않아 핀 대신 A·B 칩으로 이름을 고치고 다시 고른다. 점이 없으면 트윈이 뜨자마자 벽 고르기가 켜져 벽 하나로 A·B를 잡는다.
+// 「완료하고 대시보드로」는 A·B를 저장한 뒤에만 누를 수 있다(기준점 맞추기가 꺼진 집은 바로). 좁은 화면(lg 아래)은 떠 있는 부품이 트윈 아래로 쌓인다.
 // 고르기는 같은 출처 iframe의 뷰어 API(aptViewer.startPick)를 쓰고, 저장한 점은 3D에 핀으로 보인다.
 // "벽 하나로 A·B 고르기"는 누른 벽 하나를 서버(/api/phone/touch-points/auto)에 보내 A·B 구석을 받는다. 저장은 따로 한다.
 // 손으로 다시 고른 점의 「<방> 벽」 이름은 서버(/api/phone/touch-points/room)가 정한 방으로 짓는다. 같은 쪽을 여러 방이 쓰는 벽에서 뷰어는 첫 방을 보낸다.
@@ -56,10 +71,10 @@ interface LayoutView {
 }
 
 /**
- * 3D 트윈 iframe. 뜨면 뷰어 위 막대를 숨기고, 집을 다 불러오면 배지를 끄고 캔버스를 다시 맞춘 뒤 onReady.
- * 그때까지 불투명한 덮개로 가린다. 뷰어는 load 전부터 막대·가전 패널을 그리고, embed 접기는 장면을 받은 뒤에 한다.
+ * 3D 트윈 iframe(21st.dev Card 안). 뜨면 뷰어 위 막대를 숨기고, 집을 다 불러오면 배지를 끄고 캔버스를 다시 맞춘 뒤 onReady.
+ * 그때까지 트윈을 숨기고(invisible) Skeleton·글로 자리를 채운다. 뷰어는 load 전부터 막대·가전 패널을 그리고, embed 접기는 장면을 받은 뒤에 한다.
  */
-function TwinBox({ home, frame, onReady }: { home: string; frame: React.RefObject<HTMLIFrameElement | null>; onReady: () => void }) {
+function TwinBox({ home, frame, onReady, className }: { home: string; frame: React.RefObject<HTMLIFrameElement | null>; onReady: () => void; className?: string }) {
   const [twin, setTwin] = useState<"checking" | "none" | "loading" | "failed" | "ready">("checking");
   const onLoad = () => {
     const f = frame.current;
@@ -83,18 +98,24 @@ function TwinBox({ home, frame, onReady }: { home: string; frame: React.RefObjec
     return () => { live = false; };
   }, [home]);
   const cover = { checking: "3D 트윈 불러오는 중…", loading: "3D 트윈 불러오는 중…", none: "3D 트윈을 찾을 수 없어요.", failed: "3D 트윈을 불러오지 못했어요.", ready: null }[twin];
+  const waiting = twin === "checking" || twin === "loading";
   return (
-    <div className="relative min-h-[360px] overflow-hidden rounded-xl border border-glass-line bg-black/30">
+    <Card className={cn("relative min-h-[360px] overflow-hidden", className)}>
       {twin !== "checking" && twin !== "none" && (
         <iframe
           ref={frame} title="3D 집 트윈" src={`${TWIN_SRC}&home=${encodeURIComponent(home)}`}
-          className="absolute inset-0 size-full border-0" onLoad={onLoad}
+          className={cn("absolute inset-0 size-full", cover && "invisible")} onLoad={onLoad}
         />
       )}
-      {cover && (
-        <p className="absolute inset-0 m-0 grid place-items-center bg-canvas p-4 text-center text-ink-dim">{cover}</p>
+      {cover && waiting && (
+        <Skeleton className="absolute inset-0 grid place-items-center p-4"><CardDescription>{cover}</CardDescription></Skeleton>
       )}
-    </div>
+      {cover && !waiting && (
+        <div className="absolute inset-0 grid place-items-center p-4">
+          <Alert variant="error" className="w-auto"><TriangleAlert aria-hidden="true" /><AlertTitle>{cover}</AlertTitle></Alert>
+        </div>
+      )}
+    </Card>
   );
 }
 
@@ -103,7 +124,9 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
 }) {
   const home = view.home!.id;
   const frame = useRef<HTMLIFrameElement>(null);
-  const [touchOn, setTouchOn] = useState(false);
+  const [touchOn, setTouchOn] = useState<boolean | null>(null);
+  const [twinReady, setTwinReady] = useState(false);
+  const [phoneOpen, setPhoneOpen] = useState(false);
   const [points, setPointsState] = useState<Record<Id, Pos | null>>({ A: null, B: null });
   const pointsRef = useRef(points);
   const setPoints = (p: Record<Id, Pos | null>) => { pointsRef.current = p; setPointsState(p); };
@@ -114,7 +137,8 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
   // 저장 파일에는 누가 쓴 이름인지 없어서, 처음 불러온 이름은 아는 방의 이름 꼴(autoLabels)이면 앱이 채운 것으로 본다
   const filled = useRef<Record<Id, string | null>>({ A: null, B: null });
   const [saved, setSaved] = useState(false);
-  const [info, setInfo] = useState<{ text: string; error?: boolean }>({ text: "벽 하나로 A·B 구석을 고르세요." });
+  const [info, setInfo] = useState<{ text: string; error?: boolean }>({ text: "트윈이 뜨면 벽 하나를 눌러 A·B를 잡아요." });
+  const [arm, setArm] = useState(0); // 벽 하나로 A·B 고르기를 켤 차례(트윈이 뜰 때·지운 뒤)
   const [picking, setPicking] = useState(false);
   const [layout, setLayout] = useState<LayoutView | null>(null);
 
@@ -163,7 +187,10 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
     call<TouchView>("/api/phone/touch-points").then((r) => {
       if (!live) return;
       setTouchOn(isOk(r)); // 집 scene.json이 없으면 쓰지 않는다
-      if (isOk(r)) apply(r.json, true);
+      if (!isOk(r)) return;
+      apply(r.json, true);
+      // 저장한 A·B를 불러오면 할 일 줄은 저장한 상태를 보인다
+      if (r.json.points) setInfo({ text: r.json.distance_m === null ? "저장했어요." : `저장했어요. A–B ${r.json.distance_m.toFixed(2)}m.` });
     });
     return () => { live = false; };
   }, [home]);
@@ -246,6 +273,7 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
     if (!isOk(r)) return setInfo({ text: failText(r, "지우지 못했어요."), error: true });
     apply(r.json);
     setInfo({ text: "지웠어요. 폰은 평면도 바닥 기준점으로 맞춰요." });
+    setArm((n) => n + 1);
   };
   const layoutAct = async (what: "save" | "reset") => {
     const r = await call<{ ok: true; count?: number; path?: string; reverted?: number }>(`/api/layout/${what}`, { home });
@@ -254,71 +282,93 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
     void loadLayout();
   };
 
+  // 점이 없으면 트윈이 뜨자마자(그리고 지운 뒤) 벽 하나로 A·B 고르기를 켠다
+  useEffect(() => {
+    if (!twinReady || !touchOn || pointsRef.current.A || pointsRef.current.B) return;
+    pickWall();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [twinReady, touchOn, arm]);
+
   const urls = view.position.phone_urls;
+  const best = pickPhoneUrl(urls).best;
   const both = Boolean(points.A && points.B);
+  const any = Boolean(points.A || points.B);
+  const canFinish = touchOn === false || (touchOn === true && saved);
   return (
-    <section aria-labelledby="h-position" className="flex min-h-0 flex-1 flex-col gap-3">
-      <h2 id="h-position" className="text-[18px] font-semibold">폰과 트윈의 위치를 맞춰요</h2>
-      <div className="grid min-h-[420px] flex-1 gap-3 md:grid-cols-[minmax(0,1fr)_360px]">
-        <TwinBox home={home} frame={frame} onReady={() => showMarkers(pointsRef.current, labelsRef.current)} />
-        <div className="flex flex-col gap-3 overflow-auto text-sm">
+    <section aria-labelledby="h-position" className="flex min-h-0 flex-1 flex-col">
+      <CardContent className="flex min-h-0 flex-1">
+        <div data-twin-box className="relative flex min-h-0 flex-1 flex-col gap-2 lg:block">
+          <TwinBox
+            home={home} frame={frame} className="lg:absolute lg:inset-0 lg:min-h-0"
+            onReady={() => { showMarkers(pointsRef.current, labelsRef.current); setTwinReady(true); }}
+          />
           {touchOn && (
-            <section aria-label="폰 기준점" className="rounded-xl border border-glass-line bg-field p-3">
-              <h3 className="mb-2 font-semibold">폰 기준점 A·B</h3>
-              {!picking && <button type="button" className={cn(btn, "mb-2 w-full")} onClick={pickWall}>벽 하나로 A·B 고르기</button>}
-              {!picking && IDS.map((id) => (
-                <div key={id} className="mb-2 grid grid-cols-[auto_1fr_auto] items-center gap-1.5">
-                  <b className={cn("grid size-6 place-items-center rounded-full text-xs text-white", id === "A" ? "bg-[#e8590c]" : "bg-[#1c7ed6]")}>{id}</b>
-                  <input
-                    type="text" maxLength={MAX_LABEL} value={labels[id]} aria-label={`${id} 지점 이름`}
-                    placeholder={id === "A" ? "예: 거실 창 오른쪽 벽" : "예: 반대편 벽"}
-                    onChange={(e) => { const l = { ...labels, [id]: e.target.value }; setLabels(l); showMarkers(points, l); }}
-                    className="min-w-0 rounded-md border border-glass-line bg-black/20 px-2 py-1 text-ink outline-none focus:border-on"
-                  />
-                  <button type="button" className={small} onClick={() => pick(id)}>3D에서 고르기</button>
-                  <span className="col-start-2 col-end-4 text-xs text-ink-dim">
-                    {points[id] ? `벽 위치 (${points[id]![0].toFixed(2)}, ${points[id]![1].toFixed(2)})m` : "미지정"}
-                  </span>
+            <section aria-label="폰 기준점" className="flex flex-col gap-2 lg:pointer-events-none lg:absolute lg:inset-0">
+              <div className="flex flex-col items-start gap-2 lg:pointer-events-auto lg:absolute lg:left-3 lg:right-48 lg:top-3">
+                <Item role="status" aria-live="polite" variant="muted" size="sm">
+                  {info.error && <ItemMedia><TriangleAlert aria-hidden="true" /></ItemMedia>}
+                  <ItemContent><ItemTitle>{info.text}</ItemTitle></ItemContent>
+                </Item>
+                <div data-pin-chips className="flex w-full flex-col gap-2 lg:flex-row">
+                {IDS.map((id) => (
+                  <Card key={id} className="flex items-center gap-1.5 p-2 lg:w-72">
+                    <Avatar size="marker" aria-hidden="true"><AvatarFallback tone={id === "A" ? "marker-a" : "marker-b"}>{id}</AvatarFallback></Avatar>
+                    <Input
+                      type="text" maxLength={MAX_LABEL} value={labels[id]} aria-label={`${id} 지점 이름`}
+                      placeholder={id === "A" ? "예: 거실 창 오른쪽 벽" : "예: 반대편 벽"}
+                      onChange={(e) => { const l = { ...labels, [id]: e.target.value }; setLabels(l); showMarkers(points, l); }}
+                      className="min-w-0 flex-1"
+                    />
+                    <Button variant="secondary" size="sm" aria-label={`${id} 다시 고르기`} onClick={() => pick(id)}>다시 고르기</Button>
+                  </Card>
+                ))}
                 </div>
-              ))}
-              <p role="status" aria-live="polite" className={cn("my-2 text-xs", info.error && "text-alert")}>{info.text}</p>
-              <div className="flex justify-end gap-1.5">
-                {picking ? <button type="button" className={small} onClick={() => viewer()?.cancelPick?.()}>고르기 취소</button> : (
-                  <>
-                    <button type="button" className={btn} disabled={!both} onClick={save}>저장</button>
-                    <button type="button" className={small} disabled={!points.A && !points.B && !saved} onClick={clear}>지우기</button>
-                  </>
-                )}
               </div>
+              {(any || saved) && (
+                <Card className="flex justify-center gap-1.5 self-center p-2 lg:pointer-events-auto lg:absolute lg:bottom-3 lg:left-1/2 lg:-translate-x-1/2">
+                  {picking && any ? <Button variant="ghost" size="sm" onClick={() => viewer()?.cancelPick?.()}>고르기 취소</Button> : (
+                    <>
+                      <Button size="sm" disabled={!both} onClick={save}>저장</Button>
+                      <Button variant="outline" size="sm" disabled={!points.A && !points.B && !saved} onClick={clear}>지우기</Button>
+                    </>
+                  )}
+                </Card>
+              )}
             </section>
           )}
-          {layout && (
-            <section aria-label="배치 보정" className="rounded-xl border border-glass-line bg-field p-3">
-              <h3 className="mb-2 font-semibold">배치 보정</h3>
-              <p className="mb-2">
-                <span className={cn("rounded-full px-2 py-0.5 text-xs", layout.dirty ? "bg-alert/15 text-alert" : "bg-on/15 text-on")}>
-                  {layout.edits === 0 ? "보정 없음" : `보정 ${layout.edits}건 · ${layout.dirty ? "저장 안 함" : "저장됨"}`}
-                </span>
-              </p>
-              <div className="flex justify-end gap-1.5">
-                <button type="button" className={small} disabled={layout.edits === 0} onClick={() => layoutAct("reset")}>되돌리기</button>
-                <button type="button" className={btn} disabled={layout.edits === 0 && !layout.dirty} onClick={() => layoutAct("save")}>저장</button>
-              </div>
+          <div className="flex flex-col items-end gap-2 lg:absolute lg:right-3 lg:top-3">
+            {urls.length > 0 ? (
+              <Button variant="outline" size="sm" aria-expanded={phoneOpen} onClick={() => setPhoneOpen((o) => !o)}>
+                <Smartphone aria-hidden="true" />폰 연결
+              </Button>
+            ) : (
+              <Status variant="error">폰 서버가 꺼져 있어요.</Status>
+            )}
+            {phoneOpen && urls.length > 0 && (
+              <Card className="flex w-64 flex-col items-center gap-2 p-3">
+                {best && <QRCode value={best} size={132} variant="squares" aria-label="폰 연결 QR" />}
+                <CardDescription>폰 크롬에서 이 주소를 열고 기준점을 조준해 기록하세요.</CardDescription>
+                <ul className="m-0 w-full list-disc break-words pl-5">
+                  {urls.map((u) => <li key={u}><code>{urlParts(u).map((p, i) => <Fragment key={i}>{p}<wbr /></Fragment>)}</code></li>)}
+                </ul>
+              </Card>
+            )}
+          </div>
+          {layout && layout.edits > 0 && (
+            <section aria-label="배치 보정" className="lg:absolute lg:bottom-3 lg:left-3">
+              <Card className="flex flex-wrap items-center gap-1.5 p-2">
+                <Status variant={layout.dirty ? "error" : "success"}>{`보정 ${layout.edits}건 · ${layout.dirty ? "저장 안 함" : "저장됨"}`}</Status>
+                <Button variant="outline" size="sm" onClick={() => layoutAct("reset")}>되돌리기</Button>
+                <Button size="sm" disabled={!layout.dirty} onClick={() => layoutAct("save")}>저장</Button>
+              </Card>
             </section>
           )}
-          <section aria-label="폰 연결" className="rounded-xl border border-glass-line bg-field p-3">
-            <h3 className="mb-2 font-semibold">폰</h3>
-            <p className="mb-1 text-xs">{urls.length > 0 ? "폰 크롬에서 이 주소를 열고 기준점을 조준해 기록하세요." : "폰 서버가 꺼져 있어요."}</p>
-            <ul className="list-disc break-all pl-5 text-xs">
-              {urls.map((u) => <li key={u}><code>{u}</code></li>)}
-            </ul>
-          </section>
+          <div className="flex justify-end gap-2 lg:absolute lg:bottom-3 lg:right-3">
+            <Button variant="outline" onClick={onBack}>이전</Button>
+            <Button disabled={!canFinish} onClick={onDone}>완료하고 대시보드로</Button>
+          </div>
         </div>
-      </div>
-      <div className="flex justify-end gap-2 pt-1">
-        <button type="button" className={btn} onClick={onBack}>이전</button>
-        <button type="button" className={primary} onClick={onDone}>{saved ? "완료하고 대시보드로" : "건너뛰고 대시보드로"}</button>
-      </div>
+      </CardContent>
     </section>
   );
 }

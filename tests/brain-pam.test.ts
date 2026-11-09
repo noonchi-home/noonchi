@@ -1,32 +1,17 @@
-// PAM HTTP 연결 자리: 요청 본문, 모의 PAM 서버와 왕복, invalid·틀린 답·시간 초과.
-
-import type { AddressInfo } from "node:net";
-import type { Server } from "node:http";
+// PAM 서비스 연결(pam-predict/2·pam-reflect/2): 요청 본문, 원문 다시 검사, invalid·틀린 답, 연결 실패(PamLinkError)와 형식 오류(ContractError), 입력 한도.
 import { afterEach, describe, expect, it } from "vitest";
-import { createMockPamServer } from "../scripts/pam-mock-server.js";
 import { CUP_FSM_MEMORY, CUP_TASKS, ContractError, validateMemory, type DecisionInput } from "../src/brain/decision.js";
-import { PAM_CONTRACT, PamDecision, buildPamRequest, checkPamResponse } from "../src/brain/pam.js";
-import { listenRetry } from "../src/server/net.js";
+import { PAM_PREDICT, PAM_REFLECT, PamClient, PamDecision, PamLinkError } from "../src/brain/pam.js";
+import { startFakePam, type FakePam } from "./helpers/pam.js";
 
-const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
-const frames = () => [0, 2, 4, 6, 8].map((s) => ({ timestamp: `2026-11-04T21:00:0${s}.000+09:00`, jpeg: JPEG }));
+let pam: FakePam | undefined;
+afterEach(async () => { await pam?.close(); pam = undefined; });
+
 const input = (over: Partial<DecisionInput> = {}): DecisionInput => ({
-  frames: frames(), memory: CUP_FSM_MEMORY, memoryKind: "fsm", tasks: [...CUP_TASKS], facts: { contents: "unknown" }, ...over,
+  text: "21:00:00 사람 보임\n21:00:04 사람 안 보임", finalTime: "2026-11-07T21:00:08.000+09:00",
+  memory: CUP_FSM_MEMORY, memoryKind: "fsm", tasks: [...CUP_TASKS], facts: { contents: "unknown" }, ...over,
 });
-const answerPhoto = { kind: "cup_contents" as const, value: "empty" as const, certain: true, timestamp: "2026-11-04T21:00:07.400+09:00", source: "request_answer_photo" as const, jpeg: JPEG };
-
-let server: Server | undefined;
-afterEach(async () => {
-  await new Promise<void>((r) => (server ? server.close(() => r()) : r()));
-  server = undefined;
-});
-
-/** 이 PC는 127.0.0.1 listen·connect가 가끔 EFAULT로 실패해 다시 시도한다(src/server/net.ts). */
-async function serve(s: Server): Promise<string> {
-  server = s;
-  const addr: AddressInfo = await listenRetry(s, 0, "127.0.0.1");
-  return `http://127.0.0.1:${addr.port}/predict`;
-}
+const predictArgs = () => ({ final_time: "2026-11-07T21:00:08.000+09:00", observation_text: "t", memory_kind: "fsm" as const, memory: CUP_FSM_MEMORY, tasks: [...CUP_TASKS] });
 
 describe("컵 FSM 기억", () => {
   it("PAM fsm 기억 모양이다", () => {
@@ -34,62 +19,98 @@ describe("컵 FSM 기억", () => {
   });
 });
 
-describe("buildPamRequest", () => {
-  it("한 카메라 사진 5장(base64)·fsm 기억·작업 목록·장면 밖 근거(답 사진)를 담는다", () => {
-    const body = buildPamRequest(input({ evidence: [answerPhoto] }));
-    expect(body).toMatchObject({ contract: PAM_CONTRACT, camera: "single", memory_kind: "fsm", tasks: [...CUP_TASKS], final_frame_time: "2026-11-04T21:00:08.000+09:00" });
-    expect(body.frames).toHaveLength(5);
-    expect(body.frames[0]!.image).toEqual({ mime_type: "image/jpeg", base64: JPEG.toString("base64") });
-    expect(body.evidence[0]).toMatchObject({ kind: "cup_contents", value: "empty", source: "request_answer_photo", image: { mime_type: "image/jpeg" } });
-    expect("jpeg" in body.evidence[0]!).toBe(false);
-  });
-
-  it("사진이 4장이거나 간격이 틀리면 보내기 전에 막는다", () => {
-    expect(() => buildPamRequest(input({ frames: frames().slice(1) }))).toThrow(ContractError);
-  });
-});
-
-describe("checkPamResponse", () => {
-  const tasks = [...CUP_TASKS];
-  const raw = JSON.stringify({ observation: "o", reasoning: "r", task_index: 0 });
-  it("valid면 원문을 다시 검사한 예측", () => {
-    expect(checkPamResponse({ status: "valid", raw_response: raw, prediction: JSON.parse(raw), selected_action: "컵 치우기", errors: [] }, tasks)).toMatchObject({ task_index: 0 });
-  });
-  it("invalid는 대기와 구분해 실패", () => {
-    expect(() => checkPamResponse({ status: "invalid", raw_response: "```json", prediction: null, selected_action: null, errors: ["bad"] }, tasks)).toThrow(/대기와 다름/);
-  });
-  it("키 순서만 다른 같은 예측은 받는다", () => {
-    expect(checkPamResponse({ status: "valid", raw_response: raw, prediction: { task_index: 0, reasoning: "r", observation: "o" }, selected_action: "컵 치우기", errors: [] }, tasks)).toMatchObject({ task_index: 0 });
-  });
-  it("prediction이 원문과 다르면 실패", () => {
-    expect(() => checkPamResponse({ status: "valid", raw_response: raw, prediction: { observation: "o", reasoning: "r", task_index: 1 }, selected_action: "사용자에게 물어보기", errors: [] }, tasks)).toThrow(/원문과 다릅니다/);
-  });
-});
-
-describe("PamDecision ↔ 모의 PAM 서버", () => {
-  it("답 사진 근거가 빈 컵이면 컵 치우기", async () => {
-    const url = await serve(createMockPamServer());
-    const p = await new PamDecision({ url }).decide(input({ evidence: [answerPhoto] }));
+describe("PamDecision ↔ PAM 서비스", () => {
+  it("관찰 텍스트·최종 시각·기억·작업 목록을 pam-predict/2로 보낸다", async () => {
+    pam = await startFakePam({ predict: () => ({ observation: "o", reasoning: "r", task_index: 0 }) });
+    const p = await new PamDecision(new PamClient({ url: pam.url })).decide(input());
     expect(p.task_index).toBe(0);
+    expect(pam.paths).toEqual(["POST /predict"]);
+    expect(pam.bodies[0]).toEqual({
+      contract: PAM_PREDICT, final_time: "2026-11-07T21:00:08.000+09:00", observation_text: "21:00:00 사람 보임\n21:00:04 사람 안 보임",
+      memory_kind: "fsm", memory: CUP_FSM_MEMORY, tasks: [...CUP_TASKS],
+    });
   });
 
-  it("근거가 없으면 사용자에게 물어보기", async () => {
-    const url = await serve(createMockPamServer());
-    expect((await new PamDecision({ url }).decide(input())).task_index).toBe(1);
+  it("보내기 전에 입력을 검사한다: 빈 관찰 텍스트·시간대 없는 시각·틀린 기억은 보내지 않는다", async () => {
+    pam = await startFakePam();
+    const d = new PamDecision(new PamClient({ url: pam.url }));
+    await expect(d.decide(input({ text: " " }))).rejects.toThrow(ContractError);
+    await expect(d.decide(input({ finalTime: "2026-11-07T21:00:08" }))).rejects.toThrow(/시간대/);
+    await expect(d.decide(input({ memory: { rules: [] }, memoryKind: "fsm" }))).rejects.toThrow(ContractError);
+    expect(pam.bodies).toHaveLength(0);
   });
 
-  it("PAM 원문이 틀리면(invalid) 판단 실패", async () => {
-    const url = await serve(createMockPamServer({ answer: () => "```json {}```" }));
-    await expect(new PamDecision({ url }).decide(input())).rejects.toThrow(/대기와 다름/);
+  it("PAM 원문이 틀리면(invalid) 대기와 구분해 판단 실패", async () => {
+    pam = await startFakePam({ predict: () => "```json {}```" });
+    await expect(new PamDecision(new PamClient({ url: pam.url })).decide(input())).rejects.toThrow(/대기와 다름/);
+  });
+});
+
+describe("PamClient 답 검사", () => {
+  const reply = (body: unknown): typeof fetch => (async () => new Response(JSON.stringify(body), { status: 200 })) as unknown as typeof fetch;
+  const raw = JSON.stringify({ observation: "o", reasoning: "r", task_index: 0 });
+  const client = (fetchImpl: typeof fetch) => new PamClient({ url: "http://pam.invalid", fetchImpl });
+
+  it("valid면 원문을 다시 검사한 예측(키 순서만 다른 같은 예측도 받는다)", async () => {
+    const p = await client(reply({ status: "valid", raw_response: raw, prediction: { task_index: 0, reasoning: "r", observation: "o" }, selected_action: "컵 치우기", errors: [] })).predict(predictArgs());
+    expect(p).toEqual({ observation: "o", reasoning: "r", task_index: 0 });
   });
 
-  it("PAM_URL이 없으면 실패", async () => {
-    await expect(new PamDecision().decide(input())).rejects.toThrow(/PAM_URL/);
+  it("prediction·selected_action이 원문과 다르면 실패", async () => {
+    await expect(client(reply({ status: "valid", raw_response: raw, prediction: { observation: "o", reasoning: "r", task_index: 1 }, selected_action: "사용자에게 물어보기", errors: [] })).predict(predictArgs()))
+      .rejects.toThrow(/원문과 다릅니다/);
+    await expect(client(reply({ status: "valid", raw_response: raw, prediction: JSON.parse(raw), selected_action: null, errors: [] })).predict(predictArgs()))
+      .rejects.toThrow(/원문과 다릅니다/);
   });
 
-  it("답이 늦으면 시간 초과로 실패", async () => {
+  it("원문이 우리 검사에서 틀리면 실패", async () => {
+    const bad = JSON.stringify({ observation: "o", reasoning: "r", task_index: 0, task_index2: 1 });
+    await expect(client(reply({ status: "valid", raw_response: bad, prediction: { observation: "o", reasoning: "r", task_index: 0 }, selected_action: "컵 치우기", errors: [] })).predict(predictArgs()))
+      .rejects.toThrow(/우리 검사/);
+  });
+});
+
+describe("연결 실패와 형식 오류", () => {
+  it("닿지 않는 주소는 PamLinkError", async () => {
+    const e = await new PamClient({ url: "http://127.0.0.1:9" }).predict(predictArgs()).catch((x: unknown) => x);
+    expect(e).toBeInstanceOf(PamLinkError);
+  });
+
+  it("HTTP 5xx는 PamLinkError, 400·413은 ContractError", async () => {
+    pam = await startFakePam({ status: { "/predict": 502 } });
+    await expect(new PamClient({ url: pam.url }).predict(predictArgs())).rejects.toBeInstanceOf(PamLinkError);
+    await pam.close();
+    pam = await startFakePam({ status: { "/predict": 400, "/reflect": 413 } });
+    const c = new PamClient({ url: pam.url });
+    const bad400 = await c.predict(predictArgs()).catch((x: unknown) => x);
+    expect(bad400).toBeInstanceOf(ContractError);
+    expect(bad400).not.toBeInstanceOf(PamLinkError);
+    const bad413 = await c.reflect({ day: "2026-11-07", memory_kind: "fsm", memory: CUP_FSM_MEMORY, observation_text: "t", action_summary: "a", feedback: null }, "fsm").catch((x: unknown) => x);
+    expect(bad413).toBeInstanceOf(ContractError);
+    expect(String(bad413)).toMatch(/문맥 길이/);
+  });
+
+  it("답이 늦으면 시간 초과로 PamLinkError", async () => {
     // 답하지 않는 PAM: 소켓 없이 신호(abort)만 기다린다(전체 시험 중 부하에도 흔들리지 않게)
     const hang: typeof fetch = (_url, init) => new Promise((_, reject) => init!.signal!.addEventListener("abort", () => reject(init!.signal!.reason)));
-    await expect(new PamDecision({ url: "http://pam.invalid/predict", timeoutMs: 200, fetchImpl: hang }).decide(input())).rejects.toThrow();
+    await expect(new PamClient({ url: "http://pam.invalid", timeoutMs: 200, fetchImpl: hang }).predict(predictArgs())).rejects.toBeInstanceOf(PamLinkError);
+  });
+});
+
+describe("반성과 입력 한도", () => {
+  it("pam-reflect/2로 보내고 고친 기억을 검사해 돌려준다", async () => {
+    pam = await startFakePam();
+    const m = await new PamClient({ url: pam.url }).reflect({ day: "2026-11-07", memory_kind: "fsm", memory: CUP_FSM_MEMORY, observation_text: "07:58:02 사람 보임", action_summary: "08:10:40 컵 치우기 부탁", feedback: null }, "fsm");
+    expect(m).toEqual(CUP_FSM_MEMORY);
+    expect(pam.bodies[0]).toMatchObject({ contract: PAM_REFLECT, day: "2026-11-07", feedback: null });
+  });
+
+  it("limits()는 /health의 입력 한도를 읽고, 없으면 ContractError", async () => {
+    pam = await startFakePam();
+    expect(await new PamClient({ url: pam.url }).limits()).toEqual({ max_model_len: 32768, predict_input_bytes: 80_000, reflect_input_bytes: 40_000 });
+    await pam.close();
+    pam = await startFakePam({ limits: null });
+    await expect(new PamClient({ url: pam.url }).limits()).rejects.toBeInstanceOf(ContractError);
+    await expect(new PamClient({ url: "http://127.0.0.1:9" }).limits()).rejects.toBeInstanceOf(PamLinkError);
   });
 });

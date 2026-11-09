@@ -1,21 +1,23 @@
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
 import { listenRetry } from "../src/server/net.js";
 import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Agent, type AgentEvent, type LlmProvider, type StepOptions, type StepResult, type ToolCallResult } from "../src/agent/agent.js";
+import { ApprovalStore } from "../src/agent/approval.js";
 import { Policy } from "../src/agent/policy.js";
 import { buildSystemPrompt } from "../src/agent/prompts.js";
 import { AnthropicProvider } from "../src/agent/providers/anthropic.js";
-import { createProvider, resolveProviderName } from "../src/agent/providers/index.js";
-import { MockProvider } from "../src/agent/providers/mock.js";
+import { agentEndpoint, createProvider, resolveProviderName } from "../src/agent/providers/index.js";
 import { OpenAIProvider } from "../src/agent/providers/openai.js";
 import { findDevices } from "../src/agent/search.js";
 import { AGENT_TOOLS, MCP_TOOLS, TOOLS, localBackend, runTool, toolJsonSchema } from "../src/agent/tools.js";
 import { MemoryHub } from "../src/hub/memory.js";
 import { loadTwin, resolveTwinStudioDir } from "../src/model/devices.js";
 import { ROOMS, homeDevices, makeHome, twin } from "./helpers/home.js";
+import { HOME_SCRIPT, startFakeLlm, toolOutputs, type FakeLlm } from "./helpers/llm.js";
 
 const ids = (r: { devices: { id: string }[] }) => r.devices.map((d) => d.id).sort();
 
@@ -199,51 +201,83 @@ describe("Agent: 도구 호출 루프", () => {
   });
 });
 
-function mockAgent(events?: AgentEvent[]) {
+// 에이전트 + 실제 OpenAI 공급자 + 가짜 OpenAI 호환 서버(같은 주소 자리, OPENAI_BASE_URL)
+let llm: FakeLlm;
+beforeAll(async () => { llm = await startFakeLlm({ ...HOME_SCRIPT }); });
+afterAll(async () => { await llm?.close(); });
+
+function llmAgent(events?: AgentEvent[]) {
   const home = makeHome();
-  const agent = new Agent({ hub: home.hub, policy: home.policy, rooms: ROOMS, provider: new MockProvider(), onEvent: (e) => events?.push(e) });
+  const agent = new Agent({ hub: home.hub, policy: home.policy, rooms: ROOMS, provider: llm.provider(), onEvent: (e) => events?.push(e) });
   return { ...home, agent };
 }
+/** 이 시험이 보낸 요청만 보려고 지금까지 보낸 수를 적어 둔다. */
+const sent = () => {
+  const from = llm.bodies().length;
+  return () => llm.bodies().slice(from);
+};
 
-describe("Agent + mock 공급자: 한국어 시나리오", () => {
-  it("거실 TV 켜줘 → turn_on(tv_living) → 켜짐", async () => {
-    const { hub, agent } = mockAgent();
+describe("Agent + OpenAI 공급자(가짜 서버): 한국어 요청", () => {
+  it("거실 TV 켜줘 → 모델의 turn_on(tv_living) → 켜짐, 결과를 모델에 돌려주고 모델 답을 낸다", async () => {
+    const { hub, agent } = llmAgent();
+    const bodies = sent();
     const r = await agent.chat("s", "거실 TV 켜줘");
-    expect(r.actions.some((a) => a.tool === "turn_on" && a.args.device_id === "tv_living" && a.ok)).toBe(true);
+    expect(r.provider).toBe("openai");
+    expect(r.actions).toEqual([expect.objectContaining({ tool: "turn_on", args: { device_id: "tv_living" }, ok: true, reason: "거실 TV를 켜 달라고 해서" })]);
     expect(twin(hub, "tv_living").power).toBe("on");
-    expect(r.reply).toContain("거실 TV");
-    expect(r.reply).toContain("켰");
+    expect(r.reply).toBe("거실 TV를 켰어요.");
+    const [first, second] = bodies();
+    expect(first).toMatchObject({ model: "gpt-5.5", tool_choice: "auto", input: [{ role: "user", content: "거실 TV 켜줘" }] });
+    expect(toolOutputs(second)).toEqual([expect.objectContaining({ ok: true, device: { id: "tv_living", label: "거실 TV" } })]);
   });
 
-  it("거실 불 켜고 TV 꺼줘 → 두 조명 켜짐, TV 꺼짐", async () => {
-    const { hub, agent } = mockAgent();
+  it("거실 불 켜고 TV 꺼줘 → 찾기 뒤 한 차례에 세 도구 → 두 조명 켜짐, TV 꺼짐", async () => {
+    const { hub, agent } = llmAgent();
     await hub.command("tv_living", { type: "on" });
     const r = await agent.chat("s", "거실 불 켜고 TV 꺼줘");
+    expect(r.actions.map((a) => a.tool)).toEqual(["find_devices", "turn_on", "turn_on", "turn_off"]);
     expect(twin(hub, "light_living").power).toBe("on");
     expect(twin(hub, "lamp_living").power).toBe("on");
     expect(twin(hub, "tv_living").power).toBe("off");
-    expect(r.actions.filter((a) => a.tool === "find_devices").length).toBeGreaterThanOrEqual(2);
-    expect(r.reply).toContain("켰");
-    expect(r.reply).toContain("껐");
   });
 
-  it("현관문 열어줘 → 승인 요청 → '응' → 잠금 해제", async () => {
-    const { hub, agent } = mockAgent();
+  it("현관문 열어줘 → 승인 요청 → '응' → 잠금 해제(모델을 다시 부르지 않음)", async () => {
+    const { hub, agent } = llmAgent();
+    const bodies = sent();
     const r1 = await agent.chat("s", "현관문 열어줘");
     expect(r1.pendingConfirmations).toHaveLength(1);
     expect(r1.pendingConfirmations[0]).toMatchObject({ deviceId: "door_main", command: { type: "unlock" } });
     expect(r1.reply).toContain("승인");
     expect(twin(hub, "door_main").lock).toBe("locked");
+    // 모델은 토큰 없이 승인 대기만 본다
+    expect(toolOutputs(bodies()[1])[0]).toMatchObject({ ok: false, pendingApproval: { reason: expect.stringContaining("승인") } });
+    expect(JSON.stringify(bodies())).not.toContain(r1.pendingConfirmations[0]!.token);
+    const asked = bodies().length;
     const r2 = await agent.chat("s", "응");
+    expect(bodies()).toHaveLength(asked);
     expect(twin(hub, "door_main").lock).toBe("unlocked");
     expect(r2.pendingConfirmations).toEqual([]);
     expect(r2.actions[0]).toMatchObject({ tool: "unlock", ok: true });
     expect(r2.reply).toContain("현관문");
   });
 
-  it("승인 버튼(agent.confirm)으로도 확정한다", async () => {
+  it("늘 듣는 실제 폰의 말(heard)은 '응'·'네'·'어'로 승인하지 않고 모델에게 보낸다. '승인해 줘'처럼 분명한 말로만 확정한다", async () => {
+    const { hub, policy, agent } = llmAgent();
+    await agent.chat("s", "현관문 열어줘", { heard: true });
+    for (const said of ["응", "네", "어", "예 진행해 줘"]) {
+      expect((await agent.chat("s", said, { heard: true })).reply, said).toBe("가짜 답");
+      expect(twin(hub, "door_main").lock).toBe("locked");
+    }
+    expect(policy.pending()).toHaveLength(1);
+    const r = await agent.chat("s", "승인해 줘", { heard: true });
+    expect(r.actions[0]).toMatchObject({ tool: "unlock", ok: true });
+    expect(twin(hub, "door_main").lock).toBe("unlocked");
+  });
+
+  it("승인 버튼(agent.confirm)으로도 확정하고, 확정한 일은 다음 요청의 대화에 남는다", async () => {
     const events: AgentEvent[] = [];
-    const { hub, agent } = mockAgent(events);
+    const { hub, agent } = llmAgent(events);
+    const bodies = sent();
     const r1 = await agent.chat("s", "현관문 열어줘");
     const c = await agent.confirm(r1.pendingConfirmations[0]!.token);
     expect(c.ok).toBe(true);
@@ -253,10 +287,12 @@ describe("Agent + mock 공급자: 한국어 시나리오", () => {
     expect(events.some((e) => e.event === "confirmed")).toBe(true);
     // 같은 토큰은 다시 못 쓴다
     expect((await agent.confirm(r1.pendingConfirmations[0]!.token)).ok).toBe(false);
+    await agent.chat("s", "고마워");
+    expect(bodies().at(-1).input).toContainEqual({ role: "assistant", content: c.reply });
   });
 
   it("'아니'는 대기 중인 승인을 취소한다", async () => {
-    const { hub, policy, agent } = mockAgent();
+    const { hub, policy, agent } = llmAgent();
     await agent.chat("s", "현관문 열어줘");
     const r = await agent.chat("s", "아니 취소해");
     expect(r.reply).toContain("취소");
@@ -264,45 +300,51 @@ describe("Agent + mock 공급자: 한국어 시나리오", () => {
     expect(twin(hub, "door_main").lock).toBe("locked");
   });
 
-  it("다른 세션의 '응'은 남의 승인을 확정하지 않는다", async () => {
-    const { hub, agent } = mockAgent();
+  it("다른 세션의 '응'은 남의 승인을 확정하지 않고 모델에게 간다", async () => {
+    const { hub, agent } = llmAgent();
     await agent.chat("a", "현관문 열어줘");
-    await agent.chat("b", "응");
+    const r = await agent.chat("b", "응");
+    expect(r.reply).toBe("가짜 답");
     expect(twin(hub, "door_main").lock).toBe("locked");
   });
 
-  it("에어컨 24도로 맞춰줘 → 방을 안 말하면 거실 에어컨", async () => {
-    const { hub, agent } = mockAgent();
-    const r = await agent.chat("s", "에어컨 24도로 맞춰줘");
+  it("세션 대화를 기억한다: 다음 요청에 앞 요청·도구 호출·답을 함께 보낸다", async () => {
+    const { agent } = llmAgent();
+    const bodies = sent();
+    await agent.chat("s", "거실 TV 켜줘");
+    await agent.chat("s", "에어컨 24도로 맞춰줘");
+    const input = bodies().find((b) => b.input.some((x: any) => x.content === "에어컨 24도로 맞춰줘")).input;
+    expect(input[0]).toEqual({ role: "user", content: "거실 TV 켜줘" });
+    expect(input).toContainEqual(expect.objectContaining({ type: "function_call", name: "turn_on" }));
+    expect(input).toContainEqual(expect.objectContaining({ role: "assistant" }));
+    // 다른 세션은 따로
+    const other = sent();
+    await agent.chat("t", "에어컨 24도로 맞춰줘");
+    expect(other()[0].input).toEqual([{ role: "user", content: "에어컨 24도로 맞춰줘" }]);
+  });
+
+  it("모델이 고른 인자대로 실행한다: 에어컨 24도·커튼 닫기·밝기 30%·보일러·로봇청소기", async () => {
+    llm.script["집안일 해줘"] = [[
+      ["set_climate", { device_id: "ac_living", setpoint_c: 24 }], ["set_covering", { device_id: "curtain_master", open_percent: 0 }],
+      ["set_level", { device_id: "light_living", percent: 30 }], ["turn_on", { device_id: "boiler_1" }], ["start", { device_id: "robot_vacuum_1" }],
+    ], "다 했어요."];
+    llm.script["청소기 멈춰"] = [[["stop", { device_id: "robot_vacuum_1" }]], "멈췄어요."];
+    const { hub, agent } = llmAgent();
+    const r = await agent.chat("s", "집안일 해줘");
+    expect(r.actions.every((a) => a.ok)).toBe(true);
     expect(hub.get("ac_living")!.matter).toMatchObject({ onOff: true, setpointC: 24 });
-    expect(twin(hub, "ac_master").power).toBe("off");
-    expect(r.reply).toContain("24");
-  });
-
-  it("직전에 말한 방을 기억한다", async () => {
-    const { hub, agent } = mockAgent();
-    await agent.chat("s", "안방 불 켜줘");
-    await agent.chat("s", "에어컨 22도로 해줘");
-    expect(hub.get("ac_master")!.matter).toMatchObject({ onOff: true, setpointC: 22 });
-    expect(twin(hub, "ac_living").power).toBe("off");
-  });
-
-  it("안방 커튼 닫아줘 / 거실 불 밝기 30% / 보일러 켜줘 / 로봇청소기 시작", async () => {
-    const { hub, agent } = mockAgent();
-    await agent.chat("s", "안방 커튼 닫아줘");
     expect(twin(hub, "curtain_master").curtain).toBe("closed");
-    await agent.chat("s", "거실 천장등 밝기 30%로 해줘");
     expect(hub.get("light_living")!.matter).toMatchObject({ onOff: true, level: 30 });
-    await agent.chat("s", "보일러 켜줘");
     expect(twin(hub, "boiler_1").heating).toBe("on");
-    await agent.chat("s", "로봇청소기 시작해줘");
     expect(twin(hub, "robot_vacuum_1").running).toBe(true);
-    await agent.chat("s", "로봇청소기 멈춰");
+    await agent.chat("s", "청소기 멈춰");
     expect(twin(hub, "robot_vacuum_1").running).toBe(false);
   });
 
-  it("현관문 잠가줘 / 인덕션 켜줘(승인 필요)", async () => {
-    const { hub, agent } = mockAgent();
+  it("현관문 잠그기는 바로, 인덕션 켜기는 승인 필요", async () => {
+    llm.script["현관문 잠가줘"] = [[["lock", { device_id: "door_main" }]], "잠갔어요."];
+    llm.script["인덕션 켜줘"] = [[["turn_on", { device_id: "induction_1" }]], "켤까요?"];
+    const { hub, agent } = llmAgent();
     await hub.command("door_main", { type: "unlock" });
     await agent.chat("s", "현관문 잠가줘");
     expect(twin(hub, "door_main").lock).toBe("locked");
@@ -311,54 +353,158 @@ describe("Agent + mock 공급자: 한국어 시나리오", () => {
     expect(twin(hub, "induction_1").power).toBe("off");
   });
 
-  it("센서 문은 바꾸지 않고 이유를 말한다", async () => {
-    const { hub, agent } = mockAgent();
+  it("센서 문은 바꾸지 않고, 그 이유를 모델에게 돌려준다", async () => {
+    llm.script["작은방 문 열어줘"] = [[["unlock", { device_id: "door_bed2" }]], "작은방 문은 센서라 열 수 없어요."];
+    const { hub, agent } = llmAgent();
+    const bodies = sent();
     const r = await agent.chat("s", "작은방 문 열어줘");
     expect(twin(hub, "door_bed2").door).toBe("closed");
-    expect(r.reply).toContain("센서");
+    expect(r.actions[0]).toMatchObject({ ok: false, error: expect.stringContaining("센서") });
+    expect(toolOutputs(bodies()[1])[0].error).toContain("센서");
   });
 
-  it("모르는 말에는 예시를 준다", async () => {
-    const { agent } = mockAgent();
+  it("도구 호출 없는 답은 그대로 낸다", async () => {
+    const { agent } = llmAgent();
     const r = await agent.chat("s", "안녕");
     expect(r.actions).toEqual([]);
-    expect(r.reply).toContain("예:");
+    expect(r.reply).toBe("가짜 답");
   });
 
-  it("상태 질문은 get_state로 답한다", async () => {
-    const { agent } = mockAgent();
+  it("상태 질문은 get_state 결과를 모델에게 돌려준다", async () => {
+    llm.script["현관문 상태 알려줘"] = [[["get_state", { device_id: "door_main" }]], "현관문은 닫혀 있고 잠겨 있어요."];
+    const { agent } = llmAgent();
+    const bodies = sent();
     const r = await agent.chat("s", "현관문 상태 알려줘");
-    expect(r.actions.some((a) => a.tool === "get_state")).toBe(true);
-    expect(r.reply).toContain("잠김");
+    expect(r.actions[0]).toMatchObject({ tool: "get_state", ok: true });
+    expect(toolOutputs(bodies()[1])[0].data.state).toEqual({ door: "closed", lock: "locked" });
   });
 
   it("onEvent로 action·reply 이벤트를 낸다", async () => {
     const events: AgentEvent[] = [];
-    const { agent } = mockAgent(events);
+    const { agent } = llmAgent(events);
     await agent.chat("s", "거실 TV 켜줘");
     expect(events.some((e) => e.event === "action" && e.sessionId === "s")).toBe(true);
     expect(events.some((e) => e.event === "reply")).toBe(true);
   });
 });
 
+describe("Agent + 승인 규칙: 말로 시킨 가전 명령", () => {
+  const BOTH = [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }];
+  /** 승인 기억 파일을 쓰는 정책과 에이전트. old: 미리 써 둔 예전 기억 파일 내용. */
+  function approvalAgent(old?: unknown) {
+    llm.script["거실 불 켜 줘"] = [[["turn_on", { device_id: "light_living", reason: "거실 불을 켜 달라고 해서" }]], "거실 천장등을 켰어요."];
+    llm.script["현관문 열어 줘"] = [[["unlock", { device_id: "door_main", reason: "현관문을 열어 달라고 해서" }]], "열까요?"];
+    const path = join(mkdtempSync(join(tmpdir(), "agent-ap-")), "approvals.json");
+    if (old !== undefined) writeFileSync(path, JSON.stringify(old));
+    const approvals = new ApprovalStore(path, () => "t");
+    const { hub } = makeHome();
+    const policy = new Policy({ approvals });
+    const agent = new Agent({ hub, policy, rooms: ROOMS, provider: llm.provider() });
+    return { hub, policy, agent, approvals };
+  }
+
+  it("말로 「거실 불 켜 줘」 → 승인 없이 바로 켠다", async () => {
+    const { hub, agent } = approvalAgent();
+    const r = await agent.chat("s", "거실 불 켜 줘", { heard: true });
+    expect(r.pendingConfirmations).toEqual([]);
+    expect(r.actions[0]).toMatchObject({ tool: "turn_on", ok: true });
+    expect(twin(hub, "light_living").power).toBe("on");
+  });
+
+  it("「현관문 열어 줘」 → 위험 목록이라 대기, 답은 승인·거절 둘. 예전에 승인을 기억해 둔 적이 있어도 또 묻는다", async () => {
+    const { hub, agent } = approvalAgent({ always: { "device:door_main:unlock": "t0" }, never: {} });
+    const r = await agent.chat("s", "현관문 열어 줘", { heard: true });
+    expect(r.pendingConfirmations).toEqual([expect.objectContaining({ deviceId: "door_main", choices: BOTH })]);
+    expect(twin(hub, "door_main").lock).toBe("locked");
+  });
+
+  it("예전 파일에 「하지 마」로 남은 가전 명령도 말로 시키면 바로 한다(하지 마 기억은 버린다)", async () => {
+    const { hub, agent, approvals } = approvalAgent({ always: {}, never: { "device:light_living:on": "t0" } });
+    const r = await agent.chat("s", "거실 불 켜 줘", { heard: true });
+    expect(r.pendingConfirmations).toEqual([]);
+    expect(twin(hub, "light_living").power).toBe("on");
+    expect(approvals.memory()).toEqual({ always: {} });
+  });
+
+  it("예전 파일에 「하지 마」로 남은 위험 목록 명령도 답 둘로 묻는다", async () => {
+    const { hub, agent } = approvalAgent({ always: {}, never: { "device:door_main:unlock": "t0" } });
+    const r = await agent.chat("s", "현관문 열어 줘", { heard: true });
+    expect(r.pendingConfirmations).toEqual([expect.objectContaining({ deviceId: "door_main", choices: BOTH })]);
+    expect(twin(hub, "door_main").lock).toBe("locked");
+  });
+
+  it("위험 목록의 답은 둘 다 이번만: 「승인」은 열고 기억하지 않아 다음에 또 묻고, 「거절」은 열지 않고 기억하지 않는다", async () => {
+    const { hub, agent, approvals } = approvalAgent();
+    const r1 = await agent.chat("s", "현관문 열어 줘", { heard: true });
+    const c = await agent.confirm(r1.pendingConfirmations[0]!.token, "approve");
+    expect(c.ok).toBe(true);
+    expect(twin(hub, "door_main").lock).toBe("unlocked");
+    expect(approvals.memory()).toEqual({ always: {} });
+    await hub.command("door_main", { type: "lock" });
+    const r2 = await agent.chat("s", "현관문 열어 줘", { heard: true });
+    expect(r2.pendingConfirmations).toEqual([expect.objectContaining({ deviceId: "door_main", choices: BOTH })]);
+    const n = await agent.confirm(r2.pendingConfirmations[0]!.token, "reject");
+    expect(n.ok).toBe(false);
+    expect(n.reply).toBe("현관문 잠금 풀기는 하지 않을게요.");
+    expect(twin(hub, "door_main").lock).toBe("locked");
+    expect(approvals.memory()).toEqual({ always: {} });
+    expect(agent.pending("s")).toEqual([]);
+    const r3 = await agent.chat("s", "현관문 열어 줘", { heard: true });
+    expect(r3.pendingConfirmations).toEqual([expect.objectContaining({ deviceId: "door_main", choices: BOTH })]);
+  });
+
+  it("승인 대기 중 실제 폰의 말로 답한다: 「거절」「아니요」「하지 마」는 실행하지 않고, 「승인」「좋아요」는 실행한다", async () => {
+    const { hub, policy, agent, approvals } = approvalAgent();
+    for (const no of ["거절", "아니요", "하지 마"]) {
+      await agent.chat("s", "현관문 열어 줘", { heard: true });
+      const r = await agent.chat("s", no, { heard: true });
+      expect(r.reply, no).toBe("현관문 잠금 풀기는 하지 않을게요.");
+      expect(policy.pending(), no).toEqual([]);
+      expect(twin(hub, "door_main").lock, no).toBe("locked");
+    }
+    for (const yes of ["승인", "좋아요"]) {
+      await agent.chat("s", "현관문 열어 줘", { heard: true });
+      const r = await agent.chat("s", yes, { heard: true });
+      expect(r.actions[0], yes).toMatchObject({ tool: "unlock", ok: true });
+      expect(twin(hub, "door_main").lock, yes).toBe("unlocked");
+      await hub.command("door_main", { type: "lock" });
+    }
+    expect(approvals.memory()).toEqual({ always: {} });
+  });
+
+  it("실제 폰이 들은 주변 말에 승인·거절 말이 들어 있어도 답으로 받지 않는다", async () => {
+    const ambient = ["승인 받았다고 했잖아", "그거 좋아 보여", "아니 그게 아니라", "하지 마라고 했잖아", "거절당했어", "응", "네"];
+    for (const said of ambient) llm.script[said] = ["네."];
+    const { hub, policy, agent } = approvalAgent();
+    await agent.chat("s", "현관문 열어 줘", { heard: true });
+    for (const said of ambient) {
+      await agent.chat("s", said, { heard: true });
+      expect(twin(hub, "door_main").lock, said).toBe("locked");
+      expect(policy.pending(), said).toHaveLength(1);
+    }
+  });
+});
+
 const realDir = resolveTwinStudioDir();
-describe.skipIf(!existsSync(join(realDir, "data", "apartment", "placement.json")) && !existsSync(join(realDir, "apartment", "scene.json")))("Agent + mock: 실제 twin-studio 데이터", () => {
+describe.skipIf(!existsSync(join(realDir, "data", "apartment", "placement.json")) && !existsSync(join(realDir, "apartment", "scene.json")))("Agent + OpenAI 공급자(가짜 서버): 실제 트윈 데이터", () => {
   it("거실 불 켜고 TV 꺼줘 / 현관문 열어줘 → 승인 후 열림", async () => {
     const data = loadTwin(realDir);
     const hub = MemoryHub.fromTwin(data);
     const policy = new Policy();
-    const agent = new Agent({ hub, policy, rooms: data.rooms, provider: new MockProvider() });
     const tv = data.devices.find((d) => d.kind === "tv" && d.room === "living_room")!;
-    await hub.command(tv.id, { type: "on" });
-    await agent.chat("s", "거실 불 켜고 TV 꺼줘");
     const lights = data.devices.filter((d) => d.kind === "light" && d.room === "living_room");
+    const lock = data.devices.find((d) => d.kind === "lock")!;
     expect(lights.length).toBeGreaterThan(0);
+    llm.script["실제 집: 거실 불 켜고 TV 꺼줘"] = [[...lights.map((l): [string, Record<string, unknown>] => ["turn_on", { device_id: l.id }]), ["turn_off", { device_id: tv.id }]], "했어요."];
+    llm.script["실제 집: 현관문 열어줘"] = [[["unlock", { device_id: lock.id }]], "열까요?"];
+    const agent = new Agent({ hub, policy, rooms: data.rooms, provider: llm.provider() });
+    await hub.command(tv.id, { type: "on" });
+    await agent.chat("s", "실제 집: 거실 불 켜고 TV 꺼줘");
     for (const l of lights) expect(hub.get(l.id)!.twin.power).toBe("on");
     expect(hub.get(tv.id)!.twin.power).toBe("off");
-    const r = await agent.chat("s", "현관문 열어줘");
+    const r = await agent.chat("s", "실제 집: 현관문 열어줘");
     expect(r.pendingConfirmations).toHaveLength(1);
     await agent.chat("s", "응");
-    const lock = data.devices.find((d) => d.kind === "lock")!;
     expect(hub.get(lock.id)!.twin.lock).toBe("unlocked");
   });
 });
@@ -372,16 +518,17 @@ describe("시스템 프롬프트·공급자 선택", () => {
     expect(p).toMatch(/짧게/);
   });
 
-  it("AGENT_PROVIDER > ANTHROPIC_API_KEY > OPENAI_API_KEY > mock", () => {
-    expect(resolveProviderName({ AGENT_PROVIDER: "mock", ANTHROPIC_API_KEY: "x" })).toEqual({ name: "mock" });
+  it("AGENT_PROVIDER > ANTHROPIC_API_KEY > openai, 공급자는 openai·anthropic뿐이다", () => {
+    expect(resolveProviderName({ AGENT_PROVIDER: "openai", ANTHROPIC_API_KEY: "x" })).toEqual({ name: "openai" });
     expect(resolveProviderName({ ANTHROPIC_API_KEY: "x", OPENAI_API_KEY: "y" })).toEqual({ name: "anthropic" });
     expect(resolveProviderName({ OPENAI_API_KEY: "y" })).toEqual({ name: "openai" });
-    const none = resolveProviderName({});
-    expect(none.name).toBe("mock");
-    expect(none.warning).toMatch(/키/);
+    expect(resolveProviderName({})).toEqual({ name: "openai" });
+    const old = resolveProviderName({ AGENT_PROVIDER: "mock" });
+    expect(old.name).toBe("openai");
+    expect(old.warning).toMatch(/AGENT_PROVIDER=mock.*openai\|anthropic/);
   });
 
-  it("공급자 기본 모델과 키 비노출", () => {
+  it("공급자 기본 모델·주소와 키 비노출", () => {
     const secret = "sk-test-SECRET-123";
     const a = createProvider({ AGENT_PROVIDER: "anthropic", ANTHROPIC_API_KEY: secret });
     expect(a.provider.name).toBe("anthropic");
@@ -389,9 +536,27 @@ describe("시스템 프롬프트·공급자 선택", () => {
     const o = createProvider({ AGENT_PROVIDER: "openai", OPENAI_API_KEY: secret });
     expect(o.provider.model).toBe("gpt-5.5");
     expect(JSON.stringify(a) + JSON.stringify(o)).not.toContain(secret);
-    const bad = createProvider({ AGENT_PROVIDER: "openai" });
-    expect(bad.provider.name).toBe("mock");
-    expect(bad.warning).toContain("OPENAI_API_KEY");
+    expect(agentEndpoint({ OPENAI_API_KEY: secret })).toMatchObject({ provider: "openai", baseUrl: "https://api.openai.com/v1", model: "gpt-5.5", apiKey: secret });
+    expect(agentEndpoint({ ANTHROPIC_API_KEY: secret, ANTHROPIC_MODEL: "m" })).toMatchObject({ provider: "anthropic", baseUrl: "https://api.anthropic.com", model: "m" });
+    expect(agentEndpoint({ OPENAI_BASE_URL: "http://127.0.0.1:9/v1/" }).baseUrl).toBe("http://127.0.0.1:9/v1");
+  });
+
+  it("키가 없어도 다른 공급자로 바꾸지 않는다: 그 공급자로 뜨고 경고, 부르면 요청 없이 키가 없다고 실패한다", async () => {
+    for (const env of [{}, { AGENT_PROVIDER: "openai" }, { AGENT_PROVIDER: "anthropic" }] as Record<string, string>[]) {
+      const { provider, warning } = createProvider(env);
+      expect(provider.name).toBe(env.AGENT_PROVIDER ?? "openai");
+      expect(warning).toMatch(/(OPENAI|ANTHROPIC)_API_KEY/);
+      const { hub, policy } = makeHome();
+      const r = await new Agent({ hub, policy, rooms: ROOMS, provider }).chat("s", "거실 TV 켜줘");
+      expect(r.reply).toMatch(/실패.*(OPENAI|ANTHROPIC)_API_KEY/);
+      expect(r.actions).toEqual([]);
+    }
+    // 키가 없으면 가짜 서버 주소를 줘도 보내지 않는다
+    const before = llm.bodies().length;
+    const { provider } = createProvider({ OPENAI_BASE_URL: llm.env.OPENAI_BASE_URL });
+    const { hub, policy } = makeHome();
+    await new Agent({ hub, policy, rooms: ROOMS, provider }).chat("s", "거실 TV 켜줘");
+    expect(llm.bodies()).toHaveLength(before);
   });
 });
 

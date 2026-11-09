@@ -1,0 +1,46 @@
+{
+  "type": "vacuum_dock",
+  "label": "로봇청소기 충전대",
+  "family": "robots",
+  "category": "appliances",
+  "node_type": "device",
+  "mount": "floor",
+  "footprint": [
+    0.35,
+    0.3
+  ],
+  "height": 0.4,
+  "model": "assets/appliances/vacuum_dock.glb",
+  "blocks_walk": true,
+  "blocks_view": false,
+  "anchors": {
+    "front": [
+      0.0,
+      0.35
+    ]
+  },
+  "attrs": {
+    "charging": [
+      "off",
+      "on"
+    ]
+  },
+  "states": {
+    "charging": {
+      "default": "off",
+      "effects": {
+        "off": [
+          {"part": "led", "emissive": 0.0},
+          {"part": "status", "emissive": 0.0},
+          {"light": "glow", "intensity": 0.0}
+        ],
+        "on": [
+          {"part": "led", "emissive": 1.0},
+          {"part": "status", "emissive": 1.0},
+          {"light": "glow", "intensity": 1.0}
+        ]
+      }
+    }
+  },
+  "notes": "자동 먼지 비움 스테이션: 흰 탑(뚜껑·먼지 봉투 창)과 앞쪽 경사판(충전 접점·흡입구). charging on: 먼지 창 둘레 빛 테두리(led)·뚜껑 위 고리(status) 발광 + 경사판을 비추는 스폿(glow)."
+}

@@ -1,0 +1,16 @@
+{
+  "type": "plant_monstera",
+  "label": "몬스테라",
+  "family": "reuse",
+  "category": "decorations",
+  "node_type": "decor",
+  "mount": "floor",
+  "footprint": [
+    0.93,
+    1.0
+  ],
+  "height": 0.89,
+  "model": "assets/decorations/plant_monstera.glb",
+  "blocks_walk": true,
+  "blocks_view": true
+}

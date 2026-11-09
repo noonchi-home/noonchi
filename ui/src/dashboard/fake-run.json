@@ -1,0 +1,774 @@
+{
+  "moments": [
+    {
+      "index": 0,
+      "eye": "table-far",
+      "messages": [
+        {
+          "type": "plan",
+          "plan": null
+        },
+        {
+          "type": "eye",
+          "eye": {
+            "position": [
+              10.6,
+              8.6
+            ],
+            "height_m": 1.1,
+            "yaw_deg": 262.2,
+            "pitch_deg": -10,
+            "tracking": "ok",
+            "at": "2026-11-09T09:00:00.000Z"
+          }
+        },
+        {
+          "type": "brain",
+          "event": {
+            "type": "decision",
+            "at_ms": 1794214800000,
+            "id": "pam-0",
+            "seq": 1,
+            "text_sent": "컵 1개가 식탁 위에 있어요. 사람이 안 보여요.",
+            "status": "valid",
+            "prediction": {
+              "observation": "식탁 위에 컵이 있고 사람이 자리를 비웠어요.",
+              "reasoning": "자리를 비운 지 얼마 안 됐어요.",
+              "task_index": -1
+            },
+            "action": null,
+            "memory_version": 1,
+            "world": {
+              "objects": [
+                {
+                  "id": "cup_1",
+                  "cls": "cup",
+                  "status": "present",
+                  "surface": "dining_table_978b20c7",
+                  "surface_label": "식탁",
+                  "error_m": null,
+                  "facts": {}
+                }
+              ],
+              "person_visible": false,
+              "vlm_missing": 0,
+              "yolo_missing": 0
+            }
+          }
+        },
+        {
+          "type": "brain",
+          "event": {
+            "type": "observe",
+            "at_ms": 1794214800000,
+            "frame_id": "fake-0",
+            "captured_at_ms": 1794214800000,
+            "yolo": "컵 0.82",
+            "vlm": null,
+            "boxes": [
+              {
+                "label": "cup",
+                "score": 0.82,
+                "box": [
+                  168,
+                  332,
+                  24,
+                  25
+                ]
+              }
+            ],
+            "frame": {
+              "width": 405,
+              "height": 720
+            }
+          }
+        },
+        {
+          "type": "say",
+          "text": "식탁을 보고 있어요."
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "eye": "table-far",
+      "messages": [
+        {
+          "type": "plan",
+          "plan": {
+            "id": "plan:pam-1",
+            "revision": 1,
+            "robot": {
+              "position": [
+                10.6,
+                8.6
+              ],
+              "room": "living"
+            },
+            "updatedAt": "2026-11-09T09:00:04.000Z",
+            "source": "brain",
+            "goal": "컵 치우기",
+            "judgment": "사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.",
+            "dryRun": true,
+            "path": [
+              [
+                10.6,
+                8.6
+              ],
+              [
+                10.036,
+                4.469
+              ],
+              [
+                8.775,
+                3.206
+              ],
+              [
+                6.275,
+                1.114
+              ]
+            ],
+            "legs": [
+              {
+                "stepId": "plan:pam-1:1",
+                "end": 1
+              },
+              {
+                "stepId": "plan:pam-1:3",
+                "end": 3
+              }
+            ],
+            "steps": [
+              {
+                "id": "plan:pam-1:1",
+                "kind": "move",
+                "label": "식탁으로 가기",
+                "target": {
+                  "objectId": "dining_table_978b20c7",
+                  "room": "living"
+                },
+                "status": "active"
+              },
+              {
+                "id": "plan:pam-1:2",
+                "kind": "act",
+                "label": "컵 집기",
+                "target": {
+                  "objectId": "dining_table_978b20c7"
+                },
+                "status": "pending"
+              },
+              {
+                "id": "plan:pam-1:3",
+                "kind": "move",
+                "label": "싱크대로 가기",
+                "target": {
+                  "objectId": "sink_counter_kitchen",
+                  "room": "kitchen"
+                },
+                "status": "pending"
+              },
+              {
+                "id": "plan:pam-1:4",
+                "kind": "act",
+                "label": "컵 내려놓기",
+                "target": {
+                  "objectId": "sink_counter_kitchen"
+                },
+                "status": "pending"
+              }
+            ],
+            "status": "running"
+          }
+        },
+        {
+          "type": "eye",
+          "eye": {
+            "position": [
+              10.6,
+              8.6
+            ],
+            "height_m": 1.1,
+            "yaw_deg": 262.2,
+            "pitch_deg": -10,
+            "tracking": "ok",
+            "at": "2026-11-09T09:00:04.000Z"
+          }
+        },
+        {
+          "type": "brain",
+          "event": {
+            "type": "decision",
+            "at_ms": 1794214804000,
+            "id": "pam-1",
+            "seq": 2,
+            "text_sent": "컵 1개가 식탁 위에 있어요. 사람이 안 보여요.",
+            "status": "valid",
+            "prediction": {
+              "observation": "식탁 위에 컵이 있고 사람이 자리를 비웠어요.",
+              "reasoning": "사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.",
+              "task_index": 0
+            },
+            "action": "컵 치우기",
+            "memory_version": 1,
+            "world": {
+              "objects": [
+                {
+                  "id": "cup_1",
+                  "cls": "cup",
+                  "status": "present",
+                  "surface": "dining_table_978b20c7",
+                  "surface_label": "식탁",
+                  "error_m": null,
+                  "facts": {}
+                }
+              ],
+              "person_visible": false,
+              "vlm_missing": 0,
+              "yolo_missing": 0
+            }
+          }
+        },
+        {
+          "type": "brain",
+          "event": {
+            "type": "observe",
+            "at_ms": 1794214804000,
+            "frame_id": "fake-1",
+            "captured_at_ms": 1794214804000,
+            "yolo": "컵 0.86",
+            "vlm": null,
+            "boxes": [
+              {
+                "label": "cup",
+                "score": 0.86,
+                "box": [
+                  168,
+                  332,
+                  24,
+                  25
+                ]
+              }
+            ],
+            "frame": {
+              "width": 405,
+              "height": 720
+            }
+          }
+        },
+        {
+          "type": "say",
+          "text": "식탁으로 가라고 했어요."
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "eye": "table-near",
+      "messages": [
+        {
+          "type": "plan",
+          "plan": {
+            "id": "plan:pam-1",
+            "revision": 2,
+            "robot": {
+              "position": [
+                10.6,
+                8.6
+              ],
+              "room": "living"
+            },
+            "updatedAt": "2026-11-09T09:00:08.000Z",
+            "source": "brain",
+            "goal": "컵 치우기",
+            "judgment": "사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.",
+            "dryRun": true,
+            "path": [
+              [
+                10.6,
+                8.6
+              ],
+              [
+                10.036,
+                4.469
+              ],
+              [
+                8.775,
+                3.206
+              ],
+              [
+                6.275,
+                1.114
+              ]
+            ],
+            "legs": [
+              {
+                "stepId": "plan:pam-1:1",
+                "end": 1
+              },
+              {
+                "stepId": "plan:pam-1:3",
+                "end": 3
+              }
+            ],
+            "steps": [
+              {
+                "id": "plan:pam-1:1",
+                "kind": "move",
+                "label": "식탁으로 가기",
+                "target": {
+                  "objectId": "dining_table_978b20c7",
+                  "room": "living"
+                },
+                "status": "done"
+              },
+              {
+                "id": "plan:pam-1:2",
+                "kind": "act",
+                "label": "컵 집기",
+                "target": {
+                  "objectId": "dining_table_978b20c7"
+                },
+                "status": "active"
+              },
+              {
+                "id": "plan:pam-1:3",
+                "kind": "move",
+                "label": "싱크대로 가기",
+                "target": {
+                  "objectId": "sink_counter_kitchen",
+                  "room": "kitchen"
+                },
+                "status": "pending"
+              },
+              {
+                "id": "plan:pam-1:4",
+                "kind": "act",
+                "label": "컵 내려놓기",
+                "target": {
+                  "objectId": "sink_counter_kitchen"
+                },
+                "status": "pending"
+              }
+            ],
+            "status": "running"
+          }
+        },
+        {
+          "type": "eye",
+          "eye": {
+            "position": [
+              10.036,
+              4.469
+            ],
+            "height_m": 1.1,
+            "yaw_deg": 262.2,
+            "pitch_deg": -10,
+            "tracking": "ok",
+            "at": "2026-11-09T09:00:08.000Z"
+          }
+        },
+        {
+          "type": "brain",
+          "event": {
+            "type": "decision",
+            "at_ms": 1794214804000,
+            "id": "pam-1",
+            "seq": 2,
+            "text_sent": "컵 1개가 식탁 위에 있어요. 사람이 안 보여요.",
+            "status": "valid",
+            "prediction": {
+              "observation": "식탁 위에 컵이 있고 사람이 자리를 비웠어요.",
+              "reasoning": "사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.",
+              "task_index": 0
+            },
+            "action": "컵 치우기",
+            "memory_version": 1,
+            "world": {
+              "objects": [
+                {
+                  "id": "cup_1",
+                  "cls": "cup",
+                  "status": "present",
+                  "surface": "dining_table_978b20c7",
+                  "surface_label": "식탁",
+                  "error_m": null,
+                  "facts": {}
+                }
+              ],
+              "person_visible": false,
+              "vlm_missing": 0,
+              "yolo_missing": 0
+            }
+          }
+        },
+        {
+          "type": "brain",
+          "event": {
+            "type": "observe",
+            "at_ms": 1794214808000,
+            "frame_id": "fake-2",
+            "captured_at_ms": 1794214808000,
+            "yolo": "컵 0.95",
+            "vlm": null,
+            "boxes": [
+              {
+                "label": "cup",
+                "score": 0.95,
+                "box": [
+                  160,
+                  238,
+                  85,
+                  108
+                ]
+              }
+            ],
+            "frame": {
+              "width": 405,
+              "height": 720
+            }
+          }
+        },
+        {
+          "type": "say",
+          "text": "컵을 들라고 했어요."
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "eye": "sink",
+      "messages": [
+        {
+          "type": "plan",
+          "plan": {
+            "id": "plan:pam-1",
+            "revision": 3,
+            "robot": {
+              "position": [
+                10.6,
+                8.6
+              ],
+              "room": "living"
+            },
+            "updatedAt": "2026-11-09T09:00:12.000Z",
+            "source": "brain",
+            "goal": "컵 치우기",
+            "judgment": "사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.",
+            "dryRun": true,
+            "path": [
+              [
+                10.6,
+                8.6
+              ],
+              [
+                10.036,
+                4.469
+              ],
+              [
+                8.775,
+                3.206
+              ],
+              [
+                6.275,
+                1.114
+              ]
+            ],
+            "legs": [
+              {
+                "stepId": "plan:pam-1:1",
+                "end": 1
+              },
+              {
+                "stepId": "plan:pam-1:3",
+                "end": 3
+              }
+            ],
+            "steps": [
+              {
+                "id": "plan:pam-1:1",
+                "kind": "move",
+                "label": "식탁으로 가기",
+                "target": {
+                  "objectId": "dining_table_978b20c7",
+                  "room": "living"
+                },
+                "status": "done"
+              },
+              {
+                "id": "plan:pam-1:2",
+                "kind": "act",
+                "label": "컵 집기",
+                "target": {
+                  "objectId": "dining_table_978b20c7"
+                },
+                "status": "done"
+              },
+              {
+                "id": "plan:pam-1:3",
+                "kind": "move",
+                "label": "싱크대로 가기",
+                "target": {
+                  "objectId": "sink_counter_kitchen",
+                  "room": "kitchen"
+                },
+                "status": "active"
+              },
+              {
+                "id": "plan:pam-1:4",
+                "kind": "act",
+                "label": "컵 내려놓기",
+                "target": {
+                  "objectId": "sink_counter_kitchen"
+                },
+                "status": "pending"
+              }
+            ],
+            "status": "running"
+          }
+        },
+        {
+          "type": "eye",
+          "eye": {
+            "position": [
+              8.209,
+              2.733
+            ],
+            "height_m": 1.1,
+            "yaw_deg": 219.9,
+            "pitch_deg": -10,
+            "tracking": "ok",
+            "at": "2026-11-09T09:00:12.000Z"
+          }
+        },
+        {
+          "type": "brain",
+          "event": {
+            "type": "decision",
+            "at_ms": 1794214804000,
+            "id": "pam-1",
+            "seq": 2,
+            "text_sent": "컵 1개가 식탁 위에 있어요. 사람이 안 보여요.",
+            "status": "valid",
+            "prediction": {
+              "observation": "식탁 위에 컵이 있고 사람이 자리를 비웠어요.",
+              "reasoning": "사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.",
+              "task_index": 0
+            },
+            "action": "컵 치우기",
+            "memory_version": 1,
+            "world": {
+              "objects": [
+                {
+                  "id": "cup_1",
+                  "cls": "cup",
+                  "status": "present",
+                  "surface": "dining_table_978b20c7",
+                  "surface_label": "식탁",
+                  "error_m": null,
+                  "facts": {}
+                }
+              ],
+              "person_visible": false,
+              "vlm_missing": 0,
+              "yolo_missing": 0
+            }
+          }
+        },
+        {
+          "type": "brain",
+          "event": {
+            "type": "observe",
+            "at_ms": 1794214812000,
+            "frame_id": "fake-3",
+            "captured_at_ms": 1794214812000,
+            "yolo": "감지 없음",
+            "vlm": null,
+            "boxes": [],
+            "frame": {
+              "width": 405,
+              "height": 720
+            }
+          }
+        },
+        {
+          "type": "say",
+          "text": "싱크대로 가라고 했어요."
+        }
+      ]
+    },
+    {
+      "index": 4,
+      "eye": "sink-cup",
+      "messages": [
+        {
+          "type": "plan",
+          "plan": {
+            "id": "plan:pam-1",
+            "revision": 4,
+            "robot": {
+              "position": [
+                10.6,
+                8.6
+              ],
+              "room": "living"
+            },
+            "updatedAt": "2026-11-09T09:00:16.000Z",
+            "source": "brain",
+            "goal": "컵 치우기",
+            "judgment": "사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.",
+            "dryRun": true,
+            "path": [
+              [
+                10.6,
+                8.6
+              ],
+              [
+                10.036,
+                4.469
+              ],
+              [
+                8.775,
+                3.206
+              ],
+              [
+                6.275,
+                1.114
+              ]
+            ],
+            "legs": [
+              {
+                "stepId": "plan:pam-1:1",
+                "end": 1
+              },
+              {
+                "stepId": "plan:pam-1:3",
+                "end": 3
+              }
+            ],
+            "steps": [
+              {
+                "id": "plan:pam-1:1",
+                "kind": "move",
+                "label": "식탁으로 가기",
+                "target": {
+                  "objectId": "dining_table_978b20c7",
+                  "room": "living"
+                },
+                "status": "done"
+              },
+              {
+                "id": "plan:pam-1:2",
+                "kind": "act",
+                "label": "컵 집기",
+                "target": {
+                  "objectId": "dining_table_978b20c7"
+                },
+                "status": "done"
+              },
+              {
+                "id": "plan:pam-1:3",
+                "kind": "move",
+                "label": "싱크대로 가기",
+                "target": {
+                  "objectId": "sink_counter_kitchen",
+                  "room": "kitchen"
+                },
+                "status": "done"
+              },
+              {
+                "id": "plan:pam-1:4",
+                "kind": "act",
+                "label": "컵 내려놓기",
+                "target": {
+                  "objectId": "sink_counter_kitchen"
+                },
+                "status": "active"
+              }
+            ],
+            "status": "running"
+          }
+        },
+        {
+          "type": "eye",
+          "eye": {
+            "position": [
+              6.275,
+              1.114
+            ],
+            "height_m": 1.1,
+            "yaw_deg": 219.9,
+            "pitch_deg": -10,
+            "tracking": "ok",
+            "at": "2026-11-09T09:00:16.000Z"
+          }
+        },
+        {
+          "type": "brain",
+          "event": {
+            "type": "decision",
+            "at_ms": 1794214804000,
+            "id": "pam-1",
+            "seq": 2,
+            "text_sent": "컵 1개가 식탁 위에 있어요. 사람이 안 보여요.",
+            "status": "valid",
+            "prediction": {
+              "observation": "식탁 위에 컵이 있고 사람이 자리를 비웠어요.",
+              "reasoning": "사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.",
+              "task_index": 0
+            },
+            "action": "컵 치우기",
+            "memory_version": 1,
+            "world": {
+              "objects": [
+                {
+                  "id": "cup_1",
+                  "cls": "cup",
+                  "status": "present",
+                  "surface": "dining_table_978b20c7",
+                  "surface_label": "식탁",
+                  "error_m": null,
+                  "facts": {}
+                }
+              ],
+              "person_visible": false,
+              "vlm_missing": 0,
+              "yolo_missing": 0
+            }
+          }
+        },
+        {
+          "type": "brain",
+          "event": {
+            "type": "observe",
+            "at_ms": 1794214816000,
+            "frame_id": "fake-4",
+            "captured_at_ms": 1794214816000,
+            "yolo": "컵 0.92",
+            "vlm": null,
+            "boxes": [
+              {
+                "label": "cup",
+                "score": 0.92,
+                "box": [
+                  155,
+                  243,
+                  95,
+                  115
+                ]
+              }
+            ],
+            "frame": {
+              "width": 405,
+              "height": 720
+            }
+          }
+        },
+        {
+          "type": "say",
+          "text": "컵을 싱크대에 넣으라고 했어요."
+        }
+      ]
+    }
+  ]
+}

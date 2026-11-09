@@ -1,0 +1,16 @@
+{
+  "type": "picture_frame_botanical",
+  "label": "꽃 족자",
+  "family": "reuse",
+  "category": "decorations",
+  "node_type": "decor",
+  "mount": "wall",
+  "footprint": [
+    0.56,
+    0.02
+  ],
+  "height": 0.79,
+  "model": "assets/decorations/picture_frame_botanical.glb",
+  "blocks_walk": false,
+  "blocks_view": false
+}

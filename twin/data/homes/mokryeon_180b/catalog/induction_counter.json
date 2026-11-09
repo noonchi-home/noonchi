@@ -1,0 +1,66 @@
+{
+  "type": "induction_counter",
+  "label": "인덕션 하부장",
+  "family": "kitchen",
+  "category": "appliances",
+  "node_type": "device",
+  "mount": "floor",
+  "footprint": [
+    0.886,
+    0.611
+  ],
+  "height": 0.9,
+  "model": "assets/appliances/induction_counter.glb",
+  "blocks_walk": true,
+  "blocks_view": true,
+  "surfaces": [
+    {
+      "name": "top",
+      "height": 0.9
+    }
+  ],
+  "attrs": {
+    "power": [
+      "off",
+      "on"
+    ]
+  },
+  "states": {
+    "power": {
+      "default": "off",
+      "effects": {
+        "off": [
+          {
+            "part": "zones",
+            "emissive": 0.0
+          },
+          {
+            "part": "touch_display",
+            "emissive": 0.0
+          },
+          {
+            "light": "heat_glow",
+            "intensity": 0.0
+          }
+        ],
+        "on": [
+          {
+            "part": "zones",
+            "emissive": 1.0
+          },
+          {
+            "part": "touch_display",
+            "emissive": 1.0
+          },
+          {
+            "light": "heat_glow",
+            "intensity": 1.0
+          }
+        ]
+      }
+    }
+  },
+  "notes": "상판에 평평하게 묻힌 검은 유리 쿡탑(화구 셋). 켜면 화구 고리와 유리 전체가 붉게 빛나고(zones), 앞 터치 띠가 켜지며(touch_display) 화구 위 0.15 m에서 아래로 넓게 비추는 따뜻한 스폿(heat_glow)이 켜진다",
+  "builder": "induction_counter",
+  "generated_by": "import-labels"
+}

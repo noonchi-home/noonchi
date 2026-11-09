@@ -1,0 +1,16 @@
+{
+  "type": "plant",
+  "label": "올리브 나무",
+  "family": "reuse",
+  "category": "decorations",
+  "node_type": "decor",
+  "mount": "floor",
+  "footprint": [
+    0.83,
+    0.87
+  ],
+  "height": 1.63,
+  "model": "assets/decorations/plant.glb",
+  "blocks_walk": true,
+  "blocks_view": true
+}

@@ -1,0 +1,31 @@
+{
+  "type": "tv_stand_3",
+  "label": "TV장",
+  "family": "living",
+  "category": "furniture",
+  "node_type": "furniture",
+  "mount": "floor",
+  "footprint": [
+    1.261,
+    0.571
+  ],
+  "height": 0.45,
+  "model": "assets/furniture/tv_stand_3.glb",
+  "blocks_walk": true,
+  "blocks_view": false,
+  "surfaces": [
+    {
+      "name": "top",
+      "height": 0.45
+    }
+  ],
+  "anchors": {
+    "front": [
+      0.0,
+      0.626
+    ]
+  },
+  "notes": "흰 래커 몸통, 오크 상판(3cm)·벌어진 다리·손잡이. 양쪽 홈 파인 플랩 문, 가운데 서랍 둘(틈 3mm).",
+  "builder": "tv_stand",
+  "generated_by": "import-labels"
+}

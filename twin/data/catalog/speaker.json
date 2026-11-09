@@ -1,0 +1,56 @@
+{
+  "type": "speaker",
+  "label": "AI 스피커",
+  "family": "living",
+  "category": "appliances",
+  "node_type": "device",
+  "mount": "surface",
+  "footprint": [
+    0.11,
+    0.11
+  ],
+  "height": 0.2,
+  "model": "assets/appliances/speaker.glb",
+  "blocks_walk": false,
+  "blocks_view": false,
+  "anchors": {
+    "front": [
+      0.0,
+      0.35
+    ]
+  },
+  "attrs": {
+    "power": [
+      "off",
+      "on"
+    ]
+  },
+  "states": {
+    "power": {
+      "default": "off",
+      "effects": {
+        "off": [
+          {
+            "part": "ring",
+            "emissive": 0.0
+          },
+          {
+            "light": "glow",
+            "intensity": 0.0
+          }
+        ],
+        "on": [
+          {
+            "part": "ring",
+            "emissive": 1.0
+          },
+          {
+            "light": "glow",
+            "intensity": 1.0
+          }
+        ]
+      }
+    }
+  },
+  "notes": "SSOT 초안의 스탠드형(0.3 x 0.3 x 0.9) 대신 탁상형. 회색 니트 원통, 위 가장자리 빛 고리(윗면 + 옆 띠)가 켜지면 청록으로 빛나고 작은 점광원이 켜진다."
+}

@@ -1,0 +1,44 @@
+{
+  "type": "robot_vacuum",
+  "label": "로봇청소기",
+  "family": "robots",
+  "category": "appliances",
+  "node_type": "device",
+  "mount": "floor",
+  "footprint": [
+    0.35,
+    0.35
+  ],
+  "height": 0.1,
+  "model": "assets/appliances/robot_vacuum.glb",
+  "blocks_walk": false,
+  "blocks_view": false,
+  "attrs": {
+    "running": [
+      false,
+      true
+    ]
+  },
+  "states": {
+    "running": {
+      "default": false,
+      "effects": {
+        "false": [
+          {"part": "ring", "emissive": 0.02},
+          {"part": "floor_glow", "visible": false},
+          {"part": "side_brush_l", "spin": [0, 0, 0]},
+          {"part": "side_brush_r", "spin": [0, 0, 0]},
+          {"light": "headlight", "intensity": 0.0}
+        ],
+        "true": [
+          {"part": "ring", "emissive": 1.0},
+          {"part": "floor_glow", "visible": true},
+          {"part": "side_brush_l", "spin": [0, 2, 0]},
+          {"part": "side_brush_r", "spin": [0, -2, 0]},
+          {"light": "headlight", "intensity": 1.0}
+        ]
+      }
+    }
+  },
+  "notes": "SSOT 9.2 종류(running 불리언). 흰 원반 몸통, 회색 범퍼, 무늬 금속 윗판, LiDAR 탑, 옆솔 둘(회전축 side_brush_l·r, 솔은 크기 계산에서 뺌). running: 윗면 LED 고리(ring) 발광 + 바닥 빛 번짐(floor_glow 효과 부품) + 앞 조명(spot) + 옆솔 회전(spin, 뷰어 전용)."
+}

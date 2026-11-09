@@ -1,17 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
-  CUP_MEMORY, CUP_TASKS, MockDecision, findDuplicateKey, parsePrediction, selectDecisionFrames, validateDecisionFrames,
+  CUP_MEMORY, CUP_TASKS, checkInput, findDuplicateKey, isoWithOffset, parsePrediction,
   validateMemory, validatePrediction, validateTasks, type DecisionInput,
 } from "../src/brain/decision.js";
-import { PamDecision } from "../src/brain/pam.js";
 
-const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
-const frames = (n = 5) => Array.from({ length: n }, (_, i) => ({ timestamp: `2026-11-04T12:00:0${i * 2}.000+09:00`, jpeg: JPEG }));
-const input = (contents: "empty" | "not_empty" | "unknown"): DecisionInput => ({
-  frames: frames(), memory: CUP_MEMORY, memoryKind: "list", tasks: [...CUP_TASKS], facts: { contents },
+const input = (over: Partial<DecisionInput> = {}): DecisionInput => ({
+  text: "12:00:00 사람 보임", finalTime: "2026-11-04T12:00:08.000+09:00", memory: CUP_MEMORY, memoryKind: "list", tasks: [...CUP_TASKS],
+  facts: { contents: "empty" }, ...over,
 });
 
-describe("PAM 계약 검사(ai/pam/contracts.py와 같은 규칙)", () => {
+describe("PAM 계약 검사(services/pam/pam/contracts.py와 같은 규칙)", () => {
   it("작업 목록은 비어 있지 않은 글 목록", () => {
     expect(validateTasks(["컵 치우기"])).toEqual(["컵 치우기"]);
     expect(() => validateTasks([])).toThrow(/at least one/);
@@ -59,56 +57,27 @@ describe("PAM 계약 검사(ai/pam/contracts.py와 같은 규칙)", () => {
     expect(findDuplicateKey('{"a":{"b":1,"c":"\\"b\\":"},"d":[{"b":1},{"b":2}]}')).toBeNull();
     expect(findDuplicateKey('{"a":{"b":1,"b":2}}')).toBe("b");
   });
-
-  it("판단 사진은 2초 격자(PAM predictor 규칙)", () => {
-    const off = frames().map((f, i) => (i === 4 ? { ...f, timestamp: "2026-11-04T12:00:08.500+09:00" } : f));
-    expect(() => validateDecisionFrames(off)).toThrow(/2초 간격/);
-  });
-
-  it("버퍼에서 t-8..t 자리마다 ±0.5초 안의 실제 사진을 고르고 명목 시각을 붙인다", () => {
-    const buf = Array.from({ length: 12 * 9 + 1 }, (_, i) => ({ id: `f${i}`, capturedAtMs: Math.round((i * 1000) / 12), jpeg: JPEG }));
-    const picked = selectDecisionFrames(buf, 9000, { stepMs: 2000, toleranceMs: 500, offsetMinutes: 540, epochMs: Date.parse("2026-11-04T03:00:00Z") });
-    expect(picked).not.toBeNull();
-    expect(picked!.map((f) => f.timestamp)).toEqual([
-      "2026-11-04T12:00:01.000+09:00", "2026-11-04T12:00:03.000+09:00", "2026-11-04T12:00:05.000+09:00",
-      "2026-11-04T12:00:07.000+09:00", "2026-11-04T12:00:09.000+09:00",
-    ]);
-    expect(picked!.every((f, i) => Math.abs(f.capturedAtMs! - (1000 + i * 2000)) <= 500)).toBe(true);
-    expect(() => validateDecisionFrames(picked!)).not.toThrow();
-    const gap = buf.filter((f) => f.capturedAtMs < 4000 || f.capturedAtMs > 6000);
-    expect(selectDecisionFrames(gap, 9000, { stepMs: 2000, toleranceMs: 500, offsetMinutes: 540, epochMs: 0 })).toBeNull();
-  });
-
-  it("판단 사진은 정확히 5장, 시간대 있는 시각, 증가 순서", () => {
-    expect(() => validateDecisionFrames(frames())).not.toThrow();
-    expect(() => validateDecisionFrames(frames(4))).toThrow(/5장/);
-    const noTz = frames().map((f, i) => (i === 2 ? { ...f, timestamp: "2026-11-04T12:00:04" } : f));
-    expect(() => validateDecisionFrames(noTz)).toThrow(/시간대/);
-    const back = frames().map((f, i) => (i === 3 ? { ...f, timestamp: "2026-11-04T12:00:01.000+09:00" } : f));
-    expect(() => validateDecisionFrames(back)).toThrow(/증가/);
-  });
 });
 
-describe("판단 모델", () => {
-  const mock = new MockDecision();
-
-  it("빈 컵이면 컵 치우기, 남았으면 대기, 모르면 묻기", async () => {
-    const tasks = [...CUP_TASKS];
-    expect(tasks[(await mock.decide(input("empty"))).task_index]).toBe("컵 치우기");
-    expect((await mock.decide(input("not_empty"))).task_index).toBe(-1);
-    expect(tasks[(await mock.decide(input("unknown"))).task_index]).toBe("사용자에게 물어보기");
+describe("판단 입력(텍스트)", () => {
+  it("관찰 텍스트·시간대 있는 최종 시각·작업 목록·기억 모양을 검사한다", () => {
+    expect(() => checkInput(input())).not.toThrow();
+    expect(() => checkInput(input({ text: "  " }))).toThrow(/관찰 텍스트/);
+    expect(() => checkInput(input({ text: "가".repeat(20_001) }))).toThrow(/20000/);
+    expect(() => checkInput(input({ finalTime: "2026-11-04T12:00:08" }))).toThrow(/시간대/);
+    expect(() => checkInput(input({ finalTime: "어제" }))).toThrow(/시간대/);
+    expect(() => checkInput(input({ tasks: [] }))).toThrow(/at least one/);
+    expect(() => checkInput(input({ memoryKind: "fsm" }))).toThrow(/incorrect fields/);
   });
 
-  it("what-if로 내용물이 결정을 바꾸는지 알 수 있다", () => {
-    expect(mock.whatIf({ contents: "empty" }, [...CUP_TASKS])).not.toBe(mock.whatIf({ contents: "not_empty" }, [...CUP_TASKS]));
+  it("판단 입력 타입에 사진 칸이 없다", () => {
+    // @ts-expect-error 판단 입력에는 사진 칸이 없다
+    const bad: DecisionInput = { ...input(), frames: [] };
+    expect(bad).toBeTruthy();
   });
 
-  it("계약에 어긋난 입력은 거절한다", async () => {
-    await expect(mock.decide({ ...input("empty"), frames: frames(3) })).rejects.toThrow(/5장/);
-    await expect(mock.decide({ ...input("empty"), tasks: [] })).rejects.toThrow();
-  });
-
-  it("PAM은 주소(PAM_URL) 없이는 부르지 않는다(pam.ts)", async () => {
-    await expect(new PamDecision().decide(input("empty"))).rejects.toThrow(/PAM/);
+  it("시각은 그 시간대의 ISO", () => {
+    expect(isoWithOffset(Date.parse("2026-11-04T03:00:01Z"), 540)).toBe("2026-11-04T12:00:01.000+09:00");
+    expect(isoWithOffset(Date.parse("2026-11-04T03:00:01Z"), -90)).toBe("2026-11-04T01:30:01.000-01:30");
   });
 });

@@ -1,0 +1,74 @@
+{
+  "type": "microwave",
+  "label": "전자레인지",
+  "family": "kitchen",
+  "category": "appliances",
+  "node_type": "device",
+  "mount": "surface",
+  "footprint": [
+    0.5,
+    0.4
+  ],
+  "height": 0.3,
+  "model": "assets/appliances/microwave.glb",
+  "blocks_walk": false,
+  "blocks_view": false,
+  "attrs": {
+    "power": [
+      "off",
+      "on"
+    ]
+  },
+  "states": {
+    "power": {
+      "default": "off",
+      "effects": {
+        "off": [
+          {
+            "part": "cavity",
+            "emissive": 0.0
+          },
+          {
+            "part": "display",
+            "emissive": 0.0
+          },
+          {
+            "part": "turntable",
+            "spin": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "light": "cavity_light",
+            "intensity": 0.0
+          }
+        ],
+        "on": [
+          {
+            "part": "cavity",
+            "emissive": 1.0
+          },
+          {
+            "part": "display",
+            "emissive": 1.0
+          },
+          {
+            "part": "turntable",
+            "spin": [
+              0,
+              0.2,
+              0
+            ]
+          },
+          {
+            "light": "cavity_light",
+            "intensity": 1.0
+          }
+        ]
+      }
+    }
+  },
+  "notes": "켜면 안쪽이 따뜻하게 빛나 짙은 유리창으로 보이고(cavity), 회전 접시가 돌며 표시창이 켜진다 뒤로 나가는 전원선은 bounds=False(크기 검사 제외). cavity_light는 창 앞(조리실 높이 가운데)에 두어 문 앞 조리대를 비춘다(창으로 새는 빛). 조리실은 꺼지면 어둡다."
+}

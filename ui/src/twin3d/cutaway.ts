@@ -1,0 +1,183 @@
+// 기본 보기 벽·자르기(스파이크 docs/twin3d-spike/main.mjs 296~387줄, 벽 보기 auto 하나): 안쪽 면이 카메라를 향한 바깥벽만 세우고
+// 나머지 벽 위쪽은 숨긴다. 낮춘 벽의 문·창, 키 큰 가구(view.clip)는 자르기 높이(cut)에서 자르고 단면을 스텐실 뚜껑으로 어둡게 칠한다.
+// 키 큰 가구는 속이 보이는 열린 상자, 낮춘 벽의 창은 그 자리 낮은 유리 난간, 낮춘 벽의 문짝은 숨긴다.
+import * as THREE from "three";
+import { cameraHeading, collectWalls, cutAction, upperVisible } from "@viewer/walls.mjs";
+import { scene3d } from "../../../src/design/tokens.ts";
+import type { Manifest } from "./materials";
+import type { OrthoCamera } from "./projection";
+import { placeCamera, viewTarget } from "./view";
+
+/** 자른 가구 속(뒷면) = 몸통 색 × 이 값(구운 빛 없이 그늘 정도). */
+const INSIDE = 0.62;
+
+export interface PlanWall { id: string; kind?: string; faces?: { room?: string; normal: number[] }[] }
+/** 서버 장면(/api/scene)에서 쓰는 칸만. */
+export interface SceneData {
+  plan: {
+    walls: PlanWall[];
+    doors?: { id: string; wall?: string; kind?: string }[];
+    windows?: { id: string; wall?: string }[];
+    wall_cut_height?: number;
+  };
+  objects: SceneEntry[];
+}
+export interface SceneEntry {
+  id: string;
+  category?: string;
+  mount?: string;
+  plan?: { wall?: string | null; elevation?: number } | null;
+  attrs?: Record<string, unknown[]>;
+  states?: Record<string, unknown>;
+  state?: Record<string, unknown>;
+}
+
+/** 구운 보기 카메라의 수평 방향(평면도 x, y = three x, z). */
+export function viewHeading(v: OrthoCamera): [number, number] {
+  const cam = new THREE.OrthographicCamera();
+  placeCamera(cam, v, { cx: v.width / 2, cy: v.height / 2, scale: 1 }, { width: v.width, height: v.height });
+  return cameraHeading(cam.position.toArray(), viewTarget(v).toArray());
+}
+
+/** 기본 보기(auto)에서 위쪽까지 세우는 벽 id(정렬). */
+export function raisedWalls(planWalls: PlanWall[], heading: [number, number]): string[] {
+  return planWalls.filter((w) => upperVisible(w, { mode: "auto", heading })).map((w) => w.id).sort();
+}
+
+type Mats = THREE.Material | THREE.Material[];
+const flat = (m: Mats) => [m].flat();
+
+export function applyDefaultView(o: {
+  root: THREE.Object3D;
+  scene: THREE.Object3D;
+  data: SceneData;
+  view: Manifest["view"];
+  heading: [number, number];
+  cut: number;
+  /** 단면 뚜껑 판의 가운데(three 좌표). */
+  target: THREE.Vector3;
+  find: (id: string) => THREE.Object3D | null;
+}): { raised: string[]; actions: Record<string, number>; uppers: THREE.Object3D[]; rails: THREE.Object3D[] } {
+  const { root, scene, data, view, heading, cut, target, find } = o;
+  const walls = collectWalls(root, data.plan.walls);
+  const upperByWall = new Map(walls.map((w) => [w.id, upperVisible(w as PlanWall, { mode: "auto", heading })]));
+  for (const w of walls) if (w.upper) w.upper.visible = upperByWall.get(w.id)!;
+  const wallOf = new Map<string, string>();
+  for (const d of [...(data.plan.doors ?? []), ...(data.plan.windows ?? [])]) if (d.wall) wallOf.set(d.id, d.wall);
+
+  const cutPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), cut);
+  // 단면 뚜껑(스텐실): 자른 메시의 뒷면 +1·앞면 -1을 세고, 자르기 높이의 큰 판을 0이 아닌 곳에만 칠한다(three.js clipping stencil 예제와 같은 방식).
+  const stencilMat = (side: THREE.Side, op: THREE.StencilOp) => new THREE.MeshBasicMaterial({
+    side, clippingPlanes: [cutPlane], colorWrite: false, depthWrite: false, depthTest: false,
+    stencilWrite: true, stencilFunc: THREE.AlwaysStencilFunc, stencilFail: op, stencilZFail: op, stencilZPass: op,
+  });
+  const stencilBack = stencilMat(THREE.BackSide, THREE.IncrementWrapStencilOp);
+  const stencilFront = stencilMat(THREE.FrontSide, THREE.DecrementWrapStencilOp);
+  const capPlane = new THREE.Mesh(new THREE.PlaneGeometry(400, 400).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({
+    name: "cap_plane", color: scene3d.wallCap, toneMapped: false, stencilWrite: true, stencilRef: 0, stencilFunc: THREE.NotEqualStencilFunc,
+    stencilFail: THREE.ReplaceStencilOp, stencilZFail: THREE.ReplaceStencilOp, stencilZPass: THREE.ReplaceStencilOp,
+  }));
+  capPlane.position.set(target.x, cut, target.z);
+  capPlane.renderOrder = 2;
+  capPlane.name = "cap_plane";
+  scene.add(capPlane);
+
+  const clipState = new Map<THREE.Mesh, { orig: Mats; clipped: Mats; marks: THREE.Mesh[] }>();
+  // 자른 재질은 원래 재질마다 하나: 메시마다 복사하면 그릴 때 재질을 메시 수만큼 바꾼다
+  const clippedMats = new Map<string, THREE.Material>();
+  const clippedOf = (x: THREE.Material) => {
+    let c = clippedMats.get(x.uuid);
+    if (!c) { c = Object.assign(x.clone(), { clippingPlanes: [cutPlane] }); clippedMats.set(x.uuid, c); }
+    return c;
+  };
+  const setClipped = (node: THREE.Object3D, on: boolean, stencil = true) => {
+    node.traverse((m) => {
+      if (!(m instanceof THREE.Mesh) || m.userData.isStencil) return;
+      let st = clipState.get(m);
+      if (!st && !on) return;
+      if (!st) {
+        const orig = m.material as Mats;
+        const clipped = flat(orig).map(clippedOf);
+        const solid = stencil && !flat(orig).some((x) => x.transparent);
+        const marks = solid ? [stencilBack, stencilFront].map((mat) => {
+          const s = new THREE.Mesh(m.geometry, mat);
+          s.userData.isStencil = true;
+          s.renderOrder = 1;
+          s.name = `${m.name}_stencil`;
+          m.add(s);
+          return s;
+        }) : [];
+        st = { orig, clipped: Array.isArray(orig) ? clipped : clipped[0]!, marks };
+        clipState.set(m, st);
+      }
+      m.material = on ? st.clipped : st.orig;
+      for (const s of st.marks) s.visible = on;
+    });
+  };
+  // 자른 키 큰 가구는 속이 보이는 열린 상자: 뒷면을 몸통 색(그늘 정도로 어둡게)으로 그린다
+  const insideMats = new Map<string, THREE.MeshBasicMaterial>();
+  const insideOf = (m: THREE.Material) => {
+    let mat = insideMats.get(m.uuid);
+    if (!mat) {
+      const own = m as THREE.Material & { color?: THREE.Color; map?: THREE.Texture | null };
+      mat = new THREE.MeshBasicMaterial({ name: `${m.name}_inside`, map: own.map ?? null, side: THREE.BackSide, clippingPlanes: [cutPlane] });
+      if (own.color) mat.color.copy(own.color);
+      mat.color.multiplyScalar(INSIDE);
+      insideMats.set(m.uuid, mat);
+    }
+    return mat;
+  };
+  const insides = new Map<THREE.Mesh, THREE.Mesh>();
+  const setInside = (node: THREE.Object3D, on: boolean) => {
+    node.traverse((m) => {
+      if (!(m instanceof THREE.Mesh) || m.userData.isStencil || m.userData.isInside) return;
+      if (!insides.has(m) && on) {
+        const mats = flat(m.material as Mats);
+        if (mats.some((x) => x.transparent)) return;
+        const inner = new THREE.Mesh(m.geometry, Array.isArray(m.material) ? mats.map(insideOf) : insideOf(mats[0]!));
+        inner.userData.isInside = true;
+        inner.name = `${m.name}_inside`;
+        m.add(inner);
+        insides.set(m, inner);
+      }
+      const inner = insides.get(m);
+      if (inner) inner.visible = on;
+    });
+  };
+
+  const tallClip = new Set(view.clip);
+  const hideIds = new Set(view.hide);
+  const railOf = new Map<string, THREE.Object3D>();
+  for (const [win, name] of Object.entries(view.rails ?? {})) {
+    const n = root.getObjectByName(name);
+    if (n) railOf.set(win, n);
+  }
+  const doorPart = new Map((data.plan.doors ?? []).map((d) => [d.id, d.kind === "swing" ? "leaf" : "panel"]));
+  const actions: Record<string, number> = {};
+  for (const e of data.objects) {
+    const node = find(e.id);
+    if (!node) continue;
+    let act: string = cutAction(e, upperByWall, cut, wallOf);
+    if (tallClip.has(e.id)) act = "clip";
+    if (hideIds.has(e.id) && e.plan?.wall && upperByWall.get(e.plan.wall) === false) act = "hide"; // 낮춘 벽에 높이 걸린 가전도
+    const rail = railOf.get(e.id);
+    if (rail) { // 낮춘 벽의 창: 창을 숨기고 그 자리 낮은 유리 난간
+      rail.visible = act === "clip";
+      if (act === "clip") act = "rail";
+    }
+    node.visible = act !== "hide" && act !== "rail";
+    if (tallClip.has(e.id)) {
+      setClipped(node, act === "clip", false);
+      setInside(node, act === "clip");
+    } else setClipped(node, act === "clip");
+    const part = doorPart.get(e.id); // 낮춘 벽의 문짝(여닫이 leaf·미닫이 panel)은 숨긴다. 문틀은 남는다
+    if (part) node.traverse((n) => { if (n.userData?.part === part) n.visible = act !== "clip"; });
+    actions[act] = (actions[act] ?? 0) + 1;
+  }
+  return {
+    raised: walls.filter((w) => upperByWall.get(w.id)).map((w) => w.id).sort(),
+    actions,
+    uppers: walls.flatMap((w) => (w.upper ? [w.upper as unknown as THREE.Object3D] : [])),
+    rails: [...railOf.values()],
+  };
+}

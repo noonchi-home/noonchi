@@ -1,0 +1,50 @@
+{
+  "type": "ceiling_panel",
+  "label": "사각 LED 평판등",
+  "family": "lighting",
+  "category": "fixtures",
+  "node_type": "fixture",
+  "mount": "ceiling",
+  "footprint": [
+    0.6,
+    0.6
+  ],
+  "height": 0.06,
+  "model": "assets/fixtures/ceiling_panel.glb",
+  "blocks_walk": false,
+  "blocks_view": false,
+  "attrs": {
+    "power": [
+      "off",
+      "on"
+    ]
+  },
+  "states": {
+    "power": {
+      "default": "off",
+      "effects": {
+        "off": [
+          {
+            "part": "diffuser",
+            "emissive": 0.0
+          },
+          {
+            "light": "glow",
+            "intensity": 0.0
+          }
+        ],
+        "on": [
+          {
+            "part": "diffuser",
+            "emissive": 1.0
+          },
+          {
+            "light": "glow",
+            "intensity": 1.0
+          }
+        ]
+      }
+    }
+  },
+  "notes": "가장자리까지 나온 아크릴 확산판(옆면도 빛남), 약 4000K 면광원 0.55 m 110 W"
+}

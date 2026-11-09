@@ -1,7 +1,8 @@
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SetupApp } from "../src/setup/SetupApp";
+import { SetupApp, UPPER_BODY } from "../src/setup/SetupApp";
+import { MASCOT } from "../src/dashboard/mascot-image";
 import { FakeWebSocket, fakeSetupApi, setupView } from "./helpers/setup-api";
 
 beforeEach(() => {
@@ -29,6 +30,30 @@ describe("설정 1단계: 집 고르기", () => {
     expect(steps[0]).toHaveAttribute("aria-current", "step");
     expect(screen.getByRole("radio", { name: /원룸/ })).toBeChecked();
     expect(screen.getByText("지금 띄운 집")).toBeInTheDocument();
+  });
+
+  it("단계 표시 너비는 가로 변형(data-[orientation=horizontal]:)으로 줘서 받은 w-full을 이긴다(잇는 선이 보인다)", async () => {
+    open();
+    await screen.findByRole("heading", { name: "어느 집을 쓸까요?" });
+    const classes = screen.getByRole("list", { name: "설정 단계" }).className.split(/\s+/);
+    expect(classes).toContain("data-[orientation=horizontal]:w-[min(640px,60vw)]");
+    expect(classes).not.toContain("data-[orientation=horizontal]:w-full");
+  });
+
+  it("좁은 화면에서 단계 표시는 번호만 보이게 줄여 머리줄을 넘지 않는다(이름은 화면 읽기용으로 남김)", async () => {
+    open();
+    await screen.findByRole("heading", { name: "어느 집을 쓸까요?" });
+    const list = screen.getByRole("list", { name: "설정 단계" });
+    expect(list.className.split(/\s+/)).toContain("max-sm:data-[orientation=horizontal]:w-40");
+    for (const t of within(list).getAllByText(/집 고르기|가전 선택|운영 모드|위치 동기화/)) expect(t.className.split(/\s+/)).toContain("max-sm:sr-only");
+  });
+
+  it("머리줄은 로고 짝(얼굴 상자 + NOONCHI)과 「설정」", async () => {
+    open();
+    await screen.findByRole("heading", { name: "어느 집을 쓸까요?" });
+    expect(screen.getByRole("heading", { name: "NOONCHI" })).toBeInTheDocument();
+    expect(screen.getByText("설정")).toBeInTheDocument();
+    expect(document.querySelector("header [data-shape=logo]")).not.toBeNull();
   });
 
   it("다른 집을 고르고 다음: 집을 바꾸고 2단계로", async () => {
@@ -112,13 +137,15 @@ describe("설정 2단계: 가전 선택", () => {
 });
 
 describe("설정 4단계: 위치 동기화", () => {
-  it("트윈·폰 서버·기준점이 없으면 상태만 보이고, 건너뛰면 끝내고 대시보드로", async () => {
+  it("트윈·폰 서버·기준점이 없으면 상태만 보이고, 기준점 맞추기가 꺼진 집은 완료하고 대시보드로를 바로 누른다(건너뛰기 없음)", async () => {
     const { api, navigate, user } = open("#position");
     expect(await screen.findByText("3D 트윈을 찾을 수 없어요.")).toBeInTheDocument();
     expect(screen.getByText("폰 서버가 꺼져 있어요.")).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "폰 기준점" })).toBeNull();
     expect(screen.queryByRole("region", { name: "배치 보정" })).toBeNull();
-    await user.click(screen.getByRole("button", { name: "건너뛰고 대시보드로" }));
+    expect(screen.queryByRole("button", { name: "건너뛰고 대시보드로" })).toBeNull();
+    await waitFor(() => expect(screen.getByRole("button", { name: "완료하고 대시보드로" })).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: "완료하고 대시보드로" }));
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/"));
     expect(api.posts("/api/setup/done")[0]!.body).toEqual({ home: "oneroom" });
   });
@@ -128,13 +155,39 @@ describe("설정 4단계: 위치 동기화", () => {
       "GET /api/phone/touch-points": () => [200, { ok: true, points: null, mode: "floor", eye_height_m: 1.5, distance_m: null }],
       "GET /api/layout": () => [200, { ok: true, edits: 2, dirty: true }],
     });
-    expect(await screen.findByText("https://pc.tail:8210/phone/")).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "폰 연결" }));
+    const addr = await screen.findByText("https://pc.tail:8210/phone/");
+    expect(screen.getByRole("img", { name: "폰 연결 QR" })).toBeInTheDocument();
+    // 주소는 / 뒤에서만 줄을 바꾼다
+    expect(addr.closest("ul")!.className).not.toMatch(/break-all/);
+    expect([...addr.childNodes].map((n) => (n.nodeName === "WBR" ? "|" : n.textContent)).join("")).toBe("https://|pc.tail:8210/|phone/|");
     expect(screen.getByText("폰 크롬에서 이 주소를 열고 기준점을 조준해 기록하세요.")).toBeInTheDocument();
     const touch = await screen.findByRole("region", { name: "폰 기준점" });
-    expect(within(touch).getAllByRole("button", { name: "3D에서 고르기" })).toHaveLength(2);
-    expect(within(touch).getByRole("button", { name: "저장" })).toBeDisabled();
-    expect(within(touch).getAllByText("미지정")).toHaveLength(2);
+    expect(within(touch).getByRole("button", { name: "A 다시 고르기" })).toBeInTheDocument();
+    expect(within(touch).getByRole("button", { name: "B 다시 고르기" })).toBeInTheDocument();
+    expect(within(touch).queryByRole("button", { name: "저장" })).toBeNull();
     expect(await screen.findByText("보정 2건 · 저장 안 함")).toBeInTheDocument();
+  });
+
+  it("말풍선 안은 트윈 칸 하나: 옆 카드 줄이 없고, 안내 줄·폰 칩·A·B·배치 보정·이전·완료가 모두 트윈 칸 안에 떠 있다", async () => {
+    open("#position", setupView({ position: { touch: true, layout: true, phone_urls: ["https://pc.tail:8210/phone/"] } }), {
+      "GET /api/phone/touch-points": () => [200, { ok: true, points: null, mode: "floor", eye_height_m: 1.5, distance_m: null }],
+      "GET /api/layout": () => [200, { ok: true, edits: 2, dirty: true }],
+      "HEAD /twin/viewer/": () => [200, null],
+    });
+    await screen.findByText("보정 2건 · 저장 안 함");
+    const box = document.querySelector<HTMLElement>("[data-twin-box]")!;
+    expect(box).not.toBeNull();
+    for (const el of [
+      screen.getByTitle("3D 집 트윈"), screen.getByRole("region", { name: "폰 기준점" }), screen.getByRole("region", { name: "배치 보정" }),
+      screen.getByRole("button", { name: "폰 연결" }), screen.getByRole("button", { name: "이전" }),
+      screen.getByRole("button", { name: "완료하고 대시보드로" }), screen.getAllByRole("status")[0]!,
+    ]) expect(box.contains(el)).toBe(true);
+    expect(screen.queryByRole("heading", { name: "폰 기준점 A·B" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "배치 보정" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "폰" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "벽 하나로 A·B 고르기" })).toBeNull();
   });
 });
 
@@ -154,6 +207,10 @@ describe("설정 4단계: 벽 하나로 A·B 구석 고르기", () => {
       "GET /api/phone/touch-points": () => [200, { ok: true, points: saved, mode: saved ? "touch" : "floor", eye_height_m: 1.5, distance_m: saved ? 5.403 : null }],
       "POST /api/phone/touch-points/auto": auto,
       "POST /api/phone/touch-points/room": (b: { room?: string }) => [200, { ok: true, room: b.room ?? null }],
+      "POST /api/phone/touch-points/clear": () => {
+        saved = null;
+        return [200, { ok: true, points: null, mode: "floor", eye_height_m: 1.5, distance_m: null }];
+      },
       "POST /api/phone/touch-points": (b: { points: { label: string; position: number[] }[] }) => {
         saved = b.points.map((p, i) => ({ id: i ? "B" : "A", ...p }));
         return [200, { ok: true, points: saved, mode: "touch", eye_height_m: 1.5, distance_m: 5.403 }];
@@ -162,9 +219,13 @@ describe("설정 4단계: 벽 하나로 A·B 구석 고르기", () => {
     });
     const attach = async (opened: ReturnType<typeof open>) => {
       let cb: ((hit: Hit) => void) | null = null;
-      const viewer = { startPick: vi.fn((fn: (hit: Hit) => void) => { cb = fn; }), cancelPick: vi.fn(), setTouchPoints: vi.fn() };
+      const viewer = {
+        ready: Promise.resolve(), loading: false, results: { mode: "scene" }, setBadges: vi.fn(), setWallMode: vi.fn(),
+        startPick: vi.fn((fn: (hit: Hit) => void) => { cb = fn; }), cancelPick: vi.fn(), setTouchPoints: vi.fn(),
+      };
       const frame = (await screen.findByTitle("3D 집 트윈")) as HTMLIFrameElement;
       (frame.contentWindow as unknown as { aptViewer: typeof viewer }).aptViewer = viewer;
+      act(() => { frame.dispatchEvent(new Event("load")); });
       const touch = await screen.findByRole("region", { name: "폰 기준점" });
       const pick = async (hit: Hit) => { await act(async () => { cb!(hit); }); };
       return { ...opened, viewer, touch, pick };
@@ -175,14 +236,13 @@ describe("설정 4단계: 벽 하나로 A·B 구석 고르기", () => {
 
   it("벽 하나를 누르면 A·B 구석과 이름·거리를 채우고, 저장은 그 두 점을 보낸다", async () => {
     const { api, user, viewer, touch, pick } = await withViewer(() => [200, { ok: true, points: [A, B], distance_m: 5.403 }]);
-    await user.click(within(touch).getByRole("button", { name: "벽 하나로 A·B 고르기" }));
+    await waitFor(() => expect(viewer.startPick).toHaveBeenCalled());
     expect(within(touch).getByRole("status")).toHaveTextContent("3D 트윈에서 벽 하나를 누르세요.");
     await pick({ position: [3, 0.1], room: "room", normal: [0, 1] });
     expect(api.posts("/api/phone/touch-points/auto")[0]!.body).toEqual({ home: "oneroom", position: [3, 0.1], room: "room", normal: [0, 1] });
     await waitFor(() => expect(within(touch).getByRole("status")).toHaveTextContent("A–B 수평 거리 5.40m. 저장하면 폰이 이 두 구석으로 맞춰요."));
     expect(within(touch).getByRole("textbox", { name: "A 지점 이름" })).toHaveValue("방 구석");
     expect(within(touch).getByRole("textbox", { name: "B 지점 이름" })).toHaveValue("방 맞은편 구석");
-    expect(within(touch).getByText("벽 위치 (3.90, 0.10)m")).toBeInTheDocument();
     expect(viewer.setTouchPoints).toHaveBeenLastCalledWith([
       { id: "A", label: "방 구석", position: [3.9, 0.1] },
       { id: "B", label: "방 맞은편 구석", position: [0.1, 3.94] },
@@ -194,15 +254,14 @@ describe("설정 4단계: 벽 하나로 A·B 구석 고르기", () => {
   });
 
   it("A만 오면 B를 비우고 B를 고르라고 한다. B는 손으로 고른다", async () => {
-    const { user, touch, pick, api } = await withViewer(() => [200, { ok: true, points: [A], distance_m: null }]);
-    await user.click(within(touch).getByRole("button", { name: "벽 하나로 A·B 고르기" }));
+    const { user, touch, pick, api, viewer } = await withViewer(() => [200, { ok: true, points: [A], distance_m: null }]);
+    await waitFor(() => expect(viewer.startPick).toHaveBeenCalled());
     await pick({ position: [3, 0.1], room: "room", normal: [0, 1] });
     await waitFor(() => expect(within(touch).getByRole("status")).toHaveTextContent("A 구석을 골랐어요. B 지점을 고르세요."));
     expect(within(touch).getByRole("textbox", { name: "A 지점 이름" })).toHaveValue("방 구석");
     expect(within(touch).getByRole("textbox", { name: "B 지점 이름" })).toHaveValue("");
-    expect(within(touch).getByText("미지정")).toBeInTheDocument();
     expect(within(touch).getByRole("button", { name: "저장" })).toBeDisabled();
-    await user.click(within(touch).getAllByRole("button", { name: "3D에서 고르기" })[1]!);
+    await user.click(within(touch).getByRole("button", { name: "B 다시 고르기" }));
     await pick({ position: [0.1, 3.94], room: "room", normal: [1, 0] });
     await waitFor(() => expect(within(touch).getByRole("status")).toHaveTextContent("A–B 수평 거리 5.40m. 저장하면 폰이 이 두 벽으로 맞춰요."));
     await user.click(within(touch).getByRole("button", { name: "저장" }));
@@ -212,17 +271,43 @@ describe("설정 4단계: 벽 하나로 A·B 구석 고르기", () => {
   });
 
   it("구석이 없으면 점을 그대로 두고 알린다", async () => {
-    const { user, touch, pick, api } = await withViewer(() => [200, { ok: true, points: [], distance_m: null }]);
-    await user.click(within(touch).getByRole("button", { name: "벽 하나로 A·B 고르기" }));
+    const { user, touch, pick, api, viewer } = await withViewer(() => [200, { ok: true, points: [], distance_m: null }]);
+    await waitFor(() => expect(viewer.startPick).toHaveBeenCalled());
     await pick({ position: [2, 2] });
     expect(api.posts("/api/phone/touch-points/auto")[0]!.body).toEqual({ home: "oneroom", position: [2, 2] });
     await waitFor(() => expect(within(touch).getByRole("status")).toHaveTextContent("이 벽에서 구석을 찾지 못했어요. 다른 벽을 누르거나 A·B를 직접 고르세요."));
-    expect(within(touch).getAllByText("미지정")).toHaveLength(2);
+  });
+
+  it("A·B 칩은 큰 화면에서 트윈 위쪽 띠에 한 줄로 놓여 집 위 핀 이름표를 가리지 않는다", async () => {
+    await withViewer(() => [200, { ok: true, points: [A, B], distance_m: 5.403 }]);
+    const row = document.querySelector<HTMLElement>("[data-pin-chips]")!;
+    expect(row).not.toBeNull();
+    expect(row.className.split(/\s+/)).toContain("lg:flex-row");
+    expect(row.querySelectorAll("input")).toHaveLength(2);
+  });
+
+  it("저장한 A·B를 불러오면 할 일 줄은 저장한 상태를 보인다", async () => {
+    const { touch } = await withViewer(() => [200, { ok: true, points: [A, B], distance_m: 5.403 }], {}, {
+      "GET /api/phone/touch-points": () => [200, { ok: true, points: [A, B], mode: "touch", eye_height_m: 1.5, distance_m: 5.403 }],
+    });
+    await waitFor(() => expect(within(touch).getByRole("status")).toHaveTextContent("저장했어요. A–B 5.40m."));
+  });
+
+  it("완료하고 대시보드로는 A·B를 저장한 뒤에만 누를 수 있다", async () => {
+    const { user, pick, viewer } = await withViewer(() => [200, { ok: true, points: [A, B], distance_m: 5.403 }]);
+    expect(screen.getByRole("button", { name: "완료하고 대시보드로" })).toBeDisabled();
+    await waitFor(() => expect(viewer.startPick).toHaveBeenCalled());
+    expect(screen.queryByRole("button", { name: "저장" })).toBeNull(); // 핀이 없으면 저장·지우기를 띄우지 않는다
+    await pick({ position: [3, 0.1], room: "room", normal: [0, 1] });
+    await waitFor(() => expect(screen.getByRole("button", { name: "저장" })).toBeEnabled());
+    expect(screen.getByRole("button", { name: "완료하고 대시보드로" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "저장" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "완료하고 대시보드로" })).toBeEnabled());
   });
 
   it("고르기를 취소하면 서버에 묻지 않는다", async () => {
-    const { user, touch, pick, api } = await withViewer(() => [200, { ok: true, points: [A, B], distance_m: 5.403 }]);
-    await user.click(within(touch).getByRole("button", { name: "벽 하나로 A·B 고르기" }));
+    const { user, touch, pick, api, viewer } = await withViewer(() => [200, { ok: true, points: [A, B], distance_m: 5.403 }]);
+    await waitFor(() => expect(viewer.startPick).toHaveBeenCalled());
     await pick(null);
     expect(within(touch).getByRole("status")).toHaveTextContent("고르기를 취소했어요.");
     expect(api.posts("/api/phone/touch-points/auto")).toHaveLength(0);
@@ -247,12 +332,14 @@ describe("설정 4단계: 벽 하나로 A·B 구석 고르기", () => {
         await waitFor(() => expect(within(v.touch).getByRole("status")).toHaveTextContent("저장했어요."));
       };
       const auto = async () => {
-        await v.user.click(within(v.touch).getByRole("button", { name: "벽 하나로 A·B 고르기" }));
+        const clear = within(v.touch).queryByRole("button", { name: "지우기" });
+        if (clear && !(clear as HTMLButtonElement).disabled) await v.user.click(clear);
+        await waitFor(() => expect(within(v.touch).getByRole("status")).toHaveTextContent("3D 트윈에서 벽 하나를 누르세요."));
         await v.pick({ position: [3, 0.1], room: "room", normal: [0, 1] });
         await waitFor(() => expect(name(v.touch, "B")).toHaveValue("방 맞은편 구석"));
       };
       const byHand = async (id: "A" | "B", hit: Hit) => {
-        await v.user.click(within(v.touch).getAllByRole("button", { name: "3D에서 고르기" })[id === "A" ? 0 : 1]!);
+        await v.user.click(within(v.touch).getByRole("button", { name: `${id} 다시 고르기` }));
         await v.pick(hit);
         await waitFor(() => expect(within(v.touch).getByRole("status")).not.toHaveTextContent("지점의 벽을 누르세요."));
       };
@@ -288,7 +375,6 @@ describe("설정 4단계: 벽 하나로 A·B 구석 고르기", () => {
       await user.type(name(touch, "B"), "창가 쪽 벽");
       await byHand("B", { position: [2, 3.94], room: "room", normal: [0, -1] });
       expect(name(touch, "B")).toHaveValue("창가 쪽 벽");
-      expect(within(touch).getByText("벽 위치 (2.00, 3.94)m")).toBeInTheDocument();
       expect(name(touch, "A")).toHaveValue("방 구석");
     });
 
@@ -316,7 +402,6 @@ describe("설정 4단계: 벽 하나로 A·B 구석 고르기", () => {
       await byHand("A", { position: [0.1, 1.5], room: "bathroom", normal: [1, 0] });
       expect(name(touch, "A")).toHaveValue("방 벽");
       expect(api.posts("/api/phone/touch-points/room")[0]!.body).toEqual({ home: "oneroom", position: [0.1, 1.5], room: "bathroom", normal: [1, 0] });
-      expect(within(touch).getByText("벽 위치 (0.10, 1.50)m")).toBeInTheDocument();
       expect(viewer.setTouchPoints).toHaveBeenLastCalledWith([
         { id: "A", label: "방 벽", position: [0.1, 1.5] },
         { id: "B", label: "방 맞은편 구석", position: [0.1, 3.94] },
@@ -328,7 +413,6 @@ describe("설정 4단계: 벽 하나로 A·B 구석 고르기", () => {
       await auto();
       await byHand("B", { position: [2, 3.94], room: "room", normal: [0, -1] });
       expect(name(touch, "B")).toHaveValue("");
-      expect(within(touch).getByText("벽 위치 (2.00, 3.94)m")).toBeInTheDocument();
     });
 
     it("손으로 고른 뒤 벽 하나로 다시 고르면 두 구석 이름으로 돌아가고, 다시 손으로 고르면 또 바꾼다", async () => {
@@ -412,7 +496,6 @@ describe("설정 4단계: 벽 하나로 A·B 구석 고르기", () => {
       expect(name(v.touch, "A")).toHaveValue("창가 쪽 벽");
       await byHand("B", { position: [2, 3.94], room: "room", normal: [0, -1] });
       expect(name(v.touch, "B")).toHaveValue("부엌 구석");
-      expect(within(v.touch).getByText("벽 위치 (2.00, 3.94)m")).toBeInTheDocument();
       expect(v.api.posts("/api/phone/touch-points/room")).toHaveLength(0);
     });
   });
@@ -469,11 +552,11 @@ describe("설정 4단계: 3D 트윈 보기", () => {
     });
     return (await screen.findByTitle("3D 집 트윈")) as HTMLIFrameElement;
   };
-  /** 3D를 가리는 덮개: 불투명해서 뒤의 뷰어 막대·패널이 비치지 않고, 마우스를 막는다. */
+  /** 3D를 가리는 동안: 트윈은 숨겨 뒤의 뷰어 막대·패널이 비치지 않고, 덮개 글이 보이고 마우스를 막는다. */
   const expectCover = (text: string) => {
     const cover = screen.getByText(text);
-    expect(cover).toHaveClass("bg-canvas");
-    expect(cover.className).not.toMatch(/pointer-events-none|bg-transparent|bg-canvas\//);
+    expect(screen.getByTitle("3D 집 트윈")).toHaveClass("invisible");
+    expect(cover.closest(".pointer-events-none")).toBeNull();
   };
 
   it("뷰어가 집을 다 불러오고 막대를 숨기고 배지를 끌 때까지 불투명한 덮개로 가리고, 그 뒤에 걷는다", async () => {
@@ -523,5 +606,145 @@ describe("다른 화면에서 집을 바꾸면", () => {
     act(() => FakeWebSocket.instances.at(-1)!.emit({ type: "hello", devices: 3, provider: null, hub: "memory", home: "apartment" }));
     expect(await screen.findByText("다른 화면에서 집을 바꿨어요. 처음 단계부터 다시 볼게요.")).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "어느 집을 쓸까요?" })).toBeInTheDocument();
+  });
+});
+
+describe("설정 화면 배치: 마스코트가 묻고 말풍선에서 고른다", () => {
+  const bubble = () => {
+    const b = document.querySelector<HTMLElement>("[data-slot=message-bubble]");
+    expect(b).not.toBeNull();
+    return b!;
+  };
+
+  it("큰 마스코트 그림은 말풍선 밖에 있고, 1단계 카드의 작은 마스코트는 없다", async () => {
+    open();
+    await screen.findByRole("heading", { name: "어느 집을 쓸까요?" });
+    const mascot = document.querySelector('img[src="/brand/mascot.png"]');
+    expect(mascot).not.toBeNull();
+    expect(bubble().contains(mascot)).toBe(false);
+    expect(document.querySelector('img[src="/brand/mascot@1x.webp"]')).toBeNull();
+  });
+
+  it.each([
+    ["", "어느 집을 쓸까요?", ["다음"]],
+    ["#devices", "어떤 가전의 상태를 읽을까요?", ["이전", "다음"]],
+    ["#mode", "가전을 어떻게 다룰까요?", ["이전", "다음"]],
+    ["#position", "폰과 트윈의 위치를 맞춰요", ["이전", "완료하고 대시보드로"]],
+  ])("주소 「%s」: 단계 질문이 말풍선 제목이고 단계 단추가 말풍선 안에 있다", async (hash, question, buttons) => {
+    open(hash);
+    const title = await screen.findByRole("heading", { name: question });
+    expect(within(bubble()).getAllByRole("heading")[0]).toBe(title);
+    for (const name of buttons) expect(within(bubble()).getByRole("button", { name })).toBeInTheDocument();
+  });
+
+  it("알림 줄은 말풍선 안, 제목 바로 아래에 있다", async () => {
+    const { user } = open();
+    await user.click(await screen.findByRole("radio", { name: /마곡 아파트/ }));
+    await user.click(screen.getByRole("button", { name: "다음" }));
+    const title = await screen.findByRole("heading", { name: "어떤 가전의 상태를 읽을까요?" });
+    const notice = screen.getByRole("status");
+    expect(notice).toHaveTextContent("마곡 아파트(으)로 바꿨어요.");
+    expect(bubble().contains(notice)).toBe(true);
+    expect(title.compareDocumentPosition(notice) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(notice.compareDocumentPosition(screen.getByRole("searchbox", { name: "가전 검색" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
+describe("설정 화면: 상반신 마스코트와 생각 말풍선", () => {
+  it("마스코트는 머리부터 LG 표시 바로 아래까지(상반신)만 보이고, LG 표시는 작은 여백을 두고 다 보인다", async () => {
+    open();
+    await screen.findByRole("heading", { name: "어느 집을 쓸까요?" });
+    const logoBottom = MASCOT.logo.center[1] + MASCOT.logo.r;
+    expect(UPPER_BODY.top).toBeLessThan(MASCOT.headTop[1]);
+    expect(UPPER_BODY.cut - logoBottom).toBeGreaterThanOrEqual(8);
+    expect(UPPER_BODY.cut - logoBottom).toBeLessThanOrEqual(40);
+    const box = document.querySelector('img[src="/brand/mascot.png"]')!.parentElement!;
+    expect(box.style.height).toBe(`calc(${UPPER_BODY.cut - UPPER_BODY.top} * var(--s))`);
+  });
+
+  it("마스코트 크기는 전의 2/3: 큰 화면은 (화면 높이 3/4·너비 34% 중 작은 쪽)의 2/3, 좁은 화면은 160px의 2/3", async () => {
+    open();
+    await screen.findByRole("heading", { name: "어느 집을 쓸까요?" });
+    const shown = UPPER_BODY.cut - UPPER_BODY.top;
+    const boxW = MASCOT.x1 - MASCOT.x0;
+    const main = document.querySelector<HTMLElement>("main")!;
+    expect(main.style.getPropertyValue("--s-wide")).toBe(`calc(min(75dvh / ${shown}, 34vw / ${boxW}) * 2 / 3)`);
+    expect(main.style.getPropertyValue("--s-narrow")).toBe(`calc(160px / ${shown} * 2 / 3)`);
+  });
+
+  it("말풍선 밖에 빈 동그라미 셋(점점 작아짐)이 마스코트 쪽으로 이어진다", async () => {
+    open();
+    await screen.findByRole("heading", { name: "어느 집을 쓸까요?" });
+    const main = document.querySelector<HTMLElement>("[data-slot=message-bubble][data-shape=bubble]")!;
+    expect(within(main).getByRole("heading", { name: "어느 집을 쓸까요?" })).toBeInTheDocument();
+    const dots = [...document.querySelectorAll<HTMLElement>("[data-slot=message-bubble][data-shape=dot]")];
+    expect(dots).toHaveLength(3);
+    for (const d of dots) {
+      expect(main.contains(d)).toBe(false);
+      expect(d.textContent).toBe("");
+      expect(d.closest("[aria-hidden=true]")).not.toBeNull();
+    }
+    expect(dots.map((d) => d.dataset.size)).toEqual(["lg", "md", "sm"]);
+    // 화면 바탕 위에서 보이게 테두리 input-line 토큰(canvas 대비 3.27:1)
+    for (const d of dots) expect(d.className.split(/\s+/)).toContain("border-input-line");
+  });
+});
+
+describe("설정 1단계: 집 이름", () => {
+  it("집 이름은 괄호 덧붙임을 뺀 앞 이름으로 보인다", async () => {
+    const homes = [{ id: "oneroom", name: "원룸 예시 (테스트용)" }, { id: "mokryeon_180b", name: "한양목련 180B (도면 기준 · 방 4·욕실 3)" }];
+    open("", setupView({ home: homes[0]!, homes }));
+    expect(await screen.findByRole("radio", { name: /한양목련 180B/ })).toBeInTheDocument();
+    expect(screen.queryByText(/도면 기준/)).toBeNull();
+    expect(screen.queryByText(/테스트용/)).toBeNull();
+  });
+});
+
+describe("설정 1~3단계 큰 글(사용자 2026-11-09 「1,2,3 글씨 더 키워도될거같고」)", () => {
+  const cls = (el: Element | null) => (el?.className ?? "").toString().split(/\s+/);
+  it.each([
+    ["", "어느 집을 쓸까요?", "다음"],
+    ["#devices", "어떤 가전의 상태를 읽을까요?", "다음"],
+    ["#mode", "가전을 어떻게 다룰까요?", "다음"],
+  ])("주소 「%s」: 제목은 text-3xl, 이전·다음 단추는 text-lg", async (hash, question, next) => {
+    open(hash);
+    const title = await screen.findByRole("heading", { name: question });
+    expect(cls(title)).toContain("text-3xl");
+    expect(cls(screen.getByRole("button", { name: next }))).toContain("text-lg");
+  });
+
+  it("1단계 집 카드 이름은 text-lg, 설명 칩은 text-base", async () => {
+    open();
+    await screen.findByRole("heading", { name: "어느 집을 쓸까요?" });
+    expect(cls(screen.getByText("원룸").closest("label"))).toContain("text-lg");
+    expect(cls(screen.getByText("지금 띄운 집").closest("[data-slot=status]") ?? screen.getByText("지금 띄운 집"))).toContain("text-base");
+  });
+
+  it("알림 줄은 text-lg", async () => {
+    const { user } = open();
+    await user.click(await screen.findByRole("radio", { name: /마곡 아파트/ }));
+    await user.click(screen.getByRole("button", { name: "다음" }));
+    await screen.findByRole("heading", { name: "어떤 가전의 상태를 읽을까요?" });
+    expect(cls(screen.getByRole("status"))).toContain("text-lg");
+  });
+
+  it("2단계 검색칸·검색 결과 줄·추가한 가전 배지는 text-base", async () => {
+    const { user } = open("#devices");
+    const box = await screen.findByRole("searchbox", { name: "가전 검색" });
+    expect(cls(box)).toContain("text-base");
+    await user.type(box, "거실");
+    const row = within(screen.getByRole("list", { name: "검색 결과" })).getAllByRole("button", { pressed: false })[0]!;
+    expect(row.closest("[data-slot=item]") ?? row).toHaveAttribute("data-size", "setup");
+    await user.click(row);
+    const badge = within(screen.getByRole("list", { name: "추가한 가전" })).getAllByRole("listitem")[0]!;
+    expect(cls(badge)).toContain("text-base");
+  });
+
+  it("4단계는 그대로: 제목 title, 단추에 text-base 없음", async () => {
+    open("#position");
+    const title = await screen.findByRole("heading", { name: "폰과 트윈의 위치를 맞춰요" });
+    expect(cls(title)).toContain("text-title");
+    expect(cls(title)).not.toContain("text-headline");
+    expect(cls(screen.getByRole("button", { name: "완료하고 대시보드로" }))).not.toContain("text-lg");
   });
 });

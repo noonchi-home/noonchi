@@ -1,0 +1,80 @@
+{
+  "type": "stand_ac",
+  "label": "스탠드 에어컨",
+  "family": "living",
+  "category": "appliances",
+  "node_type": "device",
+  "mount": "floor",
+  "footprint": [
+    0.36,
+    0.36
+  ],
+  "height": 1.85,
+  "model": "assets/appliances/stand_ac.glb",
+  "blocks_walk": true,
+  "blocks_view": true,
+  "anchors": {
+    "front": [
+      0.0,
+      0.7
+    ]
+  },
+  "attrs": {
+    "power": [
+      "off",
+      "on"
+    ]
+  },
+  "states": {
+    "power": {
+      "default": "off",
+      "effects": {
+        "off": [
+          {
+            "part": "display",
+            "emissive": 0.0
+          },
+          {
+            "part": "led_ring",
+            "emissive": 0.0
+          },
+          {
+            "part": "airflow",
+            "visible": false
+          },
+          {
+            "part": "shutter",
+            "rotate": [
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "on": [
+          {
+            "part": "display",
+            "emissive": 1.0
+          },
+          {
+            "part": "led_ring",
+            "emissive": 1.0
+          },
+          {
+            "part": "airflow",
+            "visible": true
+          },
+          {
+            "part": "shutter",
+            "rotate": [
+              -100,
+              0,
+              0
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "notes": "LG 휘센풍 흰 기둥(0.36 x 0.34). 위 둥근 토출구(지름 0.27)의 덮개가 위 경첩(shutter)으로 100도 들려 바람 기둥 위 차양이 되고, 표시창(파란 18)·토출구 LED 고리가 빛나며, 앞쪽 아래로 1.25m 퍼지는 반투명 바람 기둥(airflow, 효과 부품)이 나타난다. 옆(facing 315)·위에서도 바람 기둥과 들린 덮개가 보인다."
+}

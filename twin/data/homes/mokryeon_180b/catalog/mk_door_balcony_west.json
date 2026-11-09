@@ -1,0 +1,66 @@
+{
+  "type": "mk_door_balcony_west",
+  "label": "door_balcony_west (도면 기준)",
+  "family": "openings",
+  "category": "fixtures",
+  "node_type": "fixture",
+  "mount": "opening",
+  "footprint": [
+    2.7,
+    0.15
+  ],
+  "height": 2.05,
+  "model": "assets/fixtures/mk_door_balcony_west.glb",
+  "blocks_walk": false,
+  "blocks_view": true,
+  "attrs": {
+    "door": [
+      "closed",
+      "open"
+    ]
+  },
+  "states": {
+    "door": {
+      "default": "closed",
+      "effects": {
+        "closed": [
+          {
+            "part": "panel",
+            "translate": [
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "open": [
+          {
+            "part": "panel",
+            "translate": [
+              -2.295,
+              0,
+              0
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "anchors": {
+    "front": [
+      0.0,
+      0.6
+    ],
+    "back": [
+      0.0,
+      -0.6
+    ],
+    "handle": [
+      0.51,
+      0.1,
+      1.04
+    ]
+  },
+  "notes": "정면(-y) = connects[0] 쪽 벽 면에 단 미닫이(위 레일 + 흰 패널). 열림 = 패널 회전축 panel을 로컬 -x로 0.935 m(폭 × 0.85) 밀어 왼쪽 벽 위로 겹친다. footprint 깊이는 벽 두께(0.12)다: 패널·레일은 정면 벽 면에서 0.07 m 나오지만 opening 원점(벽 중심선 대칭) 검사를 지키려고 크기 계산에서 뺀다(no_bounds). 레일은 개구부 왼쪽으로 1.02 m 더 뻗는다.",
+  "builder": "sliding_door_110"
+}

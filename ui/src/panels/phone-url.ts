@@ -9,3 +9,8 @@ export function pickPhoneUrl(urls: string[]): { best: string | null; others: str
   const sorted = [...urls].sort((a, b) => rank(a) - rank(b));
   return { best: sorted[0] ?? null, others: sorted.slice(1) };
 }
+
+/** 주소를 줄바꿈 자리(/ 뒤, // 가운데는 빼고)로 나눈다. 조각마다 뒤에 <wbr>을 두면 IP·이름 가운데서 끊기지 않는다. */
+export function urlParts(url: string): string[] {
+  return url.split(/(?<=\/)(?!\/)/);
+}

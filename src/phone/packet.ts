@@ -1,6 +1,6 @@
 // 폰 → 서버 바이너리 패킷: [헤더 길이 4바이트(big-endian)][JSON 헤더][본문].
 // JSON으로 감싸면 base64로 33% 커지므로 /phone/events에 바이너리 메시지로 그대로 보낸다.
-// 본문: frame·photo는 JPEG, video_config는 H.264 디코더 설정(avcC), video는 H.264 청크(표시 전용, src/phone/video.ts).
+// 본문: engine(분석용)·frame(표시용)·photo는 JPEG, video_config는 H.264 디코더 설정(avcC), video는 H.264 청크(표시 전용, src/phone/video.ts).
 
 import { z } from "zod";
 import type { Quat, Vec3 } from "./align.js";
@@ -14,7 +14,7 @@ const MAX_DESCRIPTION_BYTES = 64 * 1024;
 const num = z.number().refine(Number.isFinite);
 const size = z.number().int().min(1).max(8192);
 const HeaderSchema = z.object({
-  kind: z.enum(["frame", "photo"]),
+  kind: z.enum(["frame", "photo", "engine"]),
   width: size,
   height: size,
   position: z.tuple([num, num, num]).optional(),
@@ -22,9 +22,11 @@ const HeaderSchema = z.object({
   tracking: z.enum(["ok", "limited"]).optional(),
   /** 찍은 순간의 AR 원점(session.ts). 사진 위치는 이 원점이 지금 맞춤과 같을 때만 붙인다. */
   epoch: z.string().min(1).max(64).optional(),
-  /** 서버 시계로 옮긴 촬영 시각(ms)과 그 오차(clock 핑 왕복의 절반). 두뇌가 근거 시각으로 쓴다(src/brain/live.ts). */
+  /** 서버 시계로 옮긴 촬영 시각(ms)과 그 오차(clock 핑 왕복의 절반). 관찰 흐름이 촬영 시각으로 쓴다(src/observe/ring.ts captureTime). */
   captured_at: num.optional(),
   time_err_ms: z.number().min(0).max(60_000).optional(),
+  /** 엔진 프레임: 찍은 순간 XRView.projectionMatrix(16개, 열 우선). 물건의 트윈 위치를 구할 때 쓴다. */
+  projection: z.array(num).length(16).optional(),
 });
 // 코덱 이름은 대시보드가 VideoDecoder에 그대로 넘기므로 avc1.42E01F 같은 모양만 받는다
 const VideoHeaderSchema = z.discriminatedUnion("kind", [
@@ -33,7 +35,7 @@ const VideoHeaderSchema = z.discriminatedUnion("kind", [
 ]);
 
 export interface FrameHeader {
-  kind: "frame" | "photo";
+  kind: "frame" | "photo" | "engine";
   width: number;
   height: number;
   position?: Vec3;
@@ -42,6 +44,8 @@ export interface FrameHeader {
   epoch?: string;
   captured_at?: number;
   time_err_ms?: number;
+  /** 엔진 프레임의 투영 행렬(16개, 열 우선). */
+  projection?: number[];
 }
 
 /** 표시 영상 패킷 헤더. ts는 폰 인코더 시각(µs), width·height는 인코딩 크기. */
@@ -60,7 +64,7 @@ export function encodeFramePacket(header: FrameHeader | VideoHeader, body: Uint8
 
 const issues = (e: z.ZodError) => `헤더가 올바르지 않습니다: ${e.issues.map((i) => i.path.join(".")).join(", ")}`;
 
-/** 패킷 하나를 JPEG(frame·photo) 또는 영상(video_config·video)으로 읽는다. */
+/** 패킷 하나를 JPEG(engine·frame·photo) 또는 영상(video_config·video)으로 읽는다. */
 export function parsePacket(buf: Buffer): ParsedPacket {
   if (buf.length < 4) return { error: "패킷이 너무 짧습니다" };
   const n = buf.readUInt32BE(0);
@@ -86,7 +90,7 @@ export function parsePacket(buf: Buffer): ParsedPacket {
   return { header: parsed.data as FrameHeader, jpeg: body };
 }
 
-/** JPEG 패킷(frame·photo)만 받는다. */
+/** JPEG 패킷(engine·frame·photo)만 받는다. */
 export function parseFramePacket(buf: Buffer): { header: FrameHeader; jpeg: Buffer } | { error: string } {
   const packet = parsePacket(buf);
   return "video" in packet ? { error: "JPEG 패킷이 아닙니다" } : packet;

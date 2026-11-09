@@ -1,0 +1,41 @@
+{
+  "type": "pantry_shelf",
+  "label": "수납 선반",
+  "family": "bath_utility",
+  "category": "furniture",
+  "node_type": "furniture",
+  "mount": "floor",
+  "footprint": [
+    1.2,
+    0.45
+  ],
+  "height": 2.0,
+  "model": "assets/furniture/pantry_shelf.glb",
+  "blocks_walk": true,
+  "blocks_view": true,
+  "surfaces": [
+    {
+      "name": "shelf_1",
+      "height": 0.45
+    },
+    {
+      "name": "shelf_2",
+      "height": 0.9
+    },
+    {
+      "name": "shelf_3",
+      "height": 1.35
+    },
+    {
+      "name": "top",
+      "height": 2.0
+    }
+  ],
+  "anchors": {
+    "front": [
+      0.0,
+      0.6
+    ]
+  },
+  "notes": "검은 철제 + 원목 판. surfaces는 판 윗면 높이. 쌀 포대·라면 상자·수납함·감자 바구니·유리병·기름병·통조림·키친타월은 붙박이 장식 부품. top은 비워 둔다."
+}

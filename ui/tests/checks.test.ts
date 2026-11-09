@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentAction, BrainLog, PendingView, ServerMessage } from "../../src/contract/events.ts";
+import type { PlanStatus, PlanStep, PlanView } from "../../src/contract/plan.ts";
 import { checkList, checksReducer, EMPTY_CHECKS, type ChecksState } from "../src/checks/checks";
 
 const act = (tool: string, deviceId: string | undefined, extra: Partial<AgentAction> = {}): AgentAction =>
@@ -8,9 +9,8 @@ const acted = (a: AgentAction, sessionId = "phone"): ServerMessage => ({ type: "
 const replied = (actions: AgentAction[] = [], pendingConfirmations: PendingView[] = [], sessionId = "phone"): ServerMessage =>
   ({ type: "agent", event: "reply", sessionId, message: "m", reply: "r", actions, pendingConfirmations });
 const brain = (event: BrainLog): ServerMessage => ({ type: "brain", event });
-const presence = (person: "yes" | "no" | "unknown", cup: "yes" | "no" | "unknown"): ServerMessage =>
-  brain({ type: "presence", at_ms: 0, evidence_age_ms: 0, person, cup, table: "unknown", scores: { person: 0, cup: 0 }, summary: "" });
-const pending: PendingView = { token: "k", deviceId: "lock", deviceLabel: "현관 도어록", command: { type: "unlock" }, reason: "문을 열어요", expiresAt: "t" };
+const yolo = (text: string): ServerMessage => brain({ type: "observe", at_ms: 0, frame_id: "e1", captured_at_ms: 0, yolo: text, vlm: null });
+const pending: PendingView = { token: "k", deviceId: "lock", deviceLabel: "현관 도어록", command: { type: "unlock" }, reason: "문을 열어요", choices: [], expiresAt: "t" };
 
 /** 메시지를 차례로 넣는다. now는 메시지마다 1초씩 늘린다. */
 const run = (messages: ServerMessage[], start: ChecksState = EMPTY_CHECKS, from = 0) =>
@@ -73,29 +73,28 @@ describe("checksReducer · 에이전트", () => {
   });
 });
 
-describe("checksReducer · 컵 두뇌", () => {
-  it("두뇌 메시지가 오면 식탁에 「지켜봄」 한 줄, note는 사람·컵 판정", () => {
-    const s = run([presence("yes", "no")]);
-    expect(s.brain).toEqual([expect.objectContaining({ source: "brain", verb: "지켜봄", note: "사람 있음 · 컵 없음" })]);
+describe("checksReducer · 관찰 흐름", () => {
+  it("관찰 기록이 오면 식탁에 「지켜봄」 한 줄, note는 YOLOX 글", () => {
+    const s = run([yolo("사람 0.91 · 컵 0.80")]);
+    expect(s.brain).toEqual([expect.objectContaining({ source: "brain", verb: "지켜봄", note: "사람 0.91 · 컵 0.80" })]);
     expect(s.brainAt).toBe(0);
-    const t = run([presence("no", "yes")], s, 4000);
-    expect(t.brain[0]!.note).toBe("사람 없음 · 컵 있음");
+    const t = run([yolo("감지 없음")], s, 4000);
+    expect(t.brain[0]!.note).toBe("감지 없음");
   });
 
-  it("VLM 판정 요약에서도 사람·컵을 읽고, 판정 실패나 단계 글은 note를 바꾸지 않는다", () => {
-    const judged = brain({ type: "perception", at_ms: 0, evidence_age_ms: 0, frames: 3, cost_usd: 0, summary: "사람 예 · 들고 있음 아니오 · 마심 아니오 · 컵 예(table) · 내용물 empty" });
-    let s = run([judged]);
-    expect(s.brain[0]!.note).toBe("사람 있음 · 컵 있음");
+  it("VLM 답·분석 없음·변화·판단 기록은 note를 바꾸지 않고 시각만 새로 한다", () => {
+    let s = run([yolo("컵 0.80")]);
     s = run([
-      brain({ type: "perception", at_ms: 0, evidence_age_ms: 0, frames: 0, cost_usd: 0, summary: "", error: "x" }),
-      brain({ type: "brain", stage: "use", state: "in_use", text: "컵을 쓰는 중", at_ms: 0, evidence_age_ms: null, generation: 1 }),
+      brain({ type: "observe", at_ms: 0, frame_id: "e1", captured_at_ms: 0, yolo: null, vlm: "컵이 식탁 위" }),
+      brain({ type: "observe", at_ms: 0, frame_id: "e2", captured_at_ms: 0, yolo: null, yolo_missing: "error", vlm: null }),
+      brain({ type: "world_change", at_ms: 0, kind: "appeared", text: "컵 cup_1 보임" }),
     ], s, 1000);
-    expect(s.brain[0]!.note).toBe("사람 있음 · 컵 있음");
-    expect(s.brainAt).toBe(2000);
+    expect(s.brain[0]!.note).toBe("컵 0.80");
+    expect(s.brainAt).toBe(3000);
   });
 
   it("마지막 두뇌 메시지 뒤 30초가 지나면 지운다", () => {
-    const s = run([presence("yes", "yes")], EMPTY_CHECKS, 1000);
+    const s = run([yolo("사람 0.90 · 컵 0.80")], EMPTY_CHECKS, 1000);
     expect(checksReducer(s, { type: "tick", now: 30_999 }).brain).toHaveLength(1);
     const gone = checksReducer(s, { type: "tick", now: 31_000 });
     expect(gone.brain).toEqual([]);
@@ -103,8 +102,22 @@ describe("checksReducer · 컵 두뇌", () => {
   });
 
   it("두뇌 목록은 에이전트 새 요청에 지워지지 않는다", () => {
-    const s = run([presence("yes", "yes"), acted(act("turn_on", "ac")), replied(), acted(act("turn_on", "tv"))]);
+    const s = run([yolo("사람 0.90 · 컵 0.80"), acted(act("turn_on", "ac")), replied(), acted(act("turn_on", "tv"))]);
     expect(s.brain).toHaveLength(1);
+  });
+
+  it("접속 묶음으로 다시 온 옛 판단·observe(replay)는 식탁 줄을 넣지 않고, 이미 있는 줄의 note·시각도 바꾸지 않는다", () => {
+    const decision: BrainLog = {
+      type: "decision", at_ms: 10, id: "pam-1", seq: 1, text_sent: "t", status: "valid", prediction: { observation: "o", reasoning: "r", task_index: 0 }, action: "컵 치우기", memory_version: 1,
+      world: { objects: [], person_visible: false, vlm_missing: 0, yolo_missing: 0 },
+    };
+    const observe: BrainLog = { type: "observe", at_ms: 11, frame_id: "e7", captured_at_ms: 9, yolo: "컵 0.83", vlm: null, boxes: [{ label: "cup", score: 0.83, box: [100, 50, 40, 60] }] };
+    const replayed: ServerMessage[] = [{ type: "brain", event: decision, replay: true }, { type: "brain", event: observe, replay: true }];
+    const s = run(replayed);
+    expect(s).toBe(EMPTY_CHECKS);
+    expect(checkList(s, "table_1")).toEqual([]);
+    const watching = run([yolo("사람 0.90")], EMPTY_CHECKS, 5000);
+    expect(run(replayed, watching, 9000)).toBe(watching);
   });
 
   it("다른 메시지는 상태를 그대로 둔다", () => {
@@ -116,8 +129,32 @@ describe("checksReducer · 컵 두뇌", () => {
 
 describe("checkList", () => {
   it("에이전트 목록 뒤에 두뇌 목록. 두뇌 줄은 식탁 id에 붙고, 식탁이 없으면 빠진다", () => {
-    const s = run([presence("yes", "yes"), acted(act("turn_on", "ac"))]);
+    const s = run([yolo("사람 0.90 · 컵 0.80"), acted(act("turn_on", "ac"))]);
     expect(checkList(s, "table_1").map((c) => [c.deviceId ?? c.objectId, c.verb])).toEqual([["ac", "바꿈"], ["table_1", "지켜봄"]]);
     expect(checkList(s, null).map((c) => c.deviceId)).toEqual(["ac"]);
+  });
+});
+
+describe("checksReducer · 지금 계획의 대상", () => {
+  const plan = (status: PlanStatus, steps: PlanStep[], extra: Partial<PlanView> = {}): ServerMessage => ({ type: "plan", plan: {
+    id: "plan:pam-1", revision: 1, source: "brain", goal: "컵 치우기", judgment: "", dryRun: true, robot: { position: null, room: null }, path: [], legs: [], steps, status, updatedAt: "t", ...extra,
+  } });
+  const cupSteps: PlanStep[] = [
+    { id: "s1", kind: "move", label: "식탁으로 가기", target: { objectId: "table_1" }, status: "active" },
+    { id: "s2", kind: "act", label: "컵 집기", target: { objectId: "cup_1", position: [1, 2] }, status: "pending" },
+    { id: "s3", kind: "device", label: "식기세척기 시작", target: { deviceId: "dishwasher" }, status: "pending" },
+  ];
+
+  it("열린 판단 계획의 집기 대상 물건과 가전을 확인 목록에 넣고, 계획이 끝나면 뺀다", () => {
+    const s = run([plan("running", cupSteps)]);
+    expect(checkList(s, null).map((c) => [c.objectId ?? c.deviceId, c.verb])).toEqual([["cup_1", "확인"], ["dishwasher", "확인"]]);
+    expect(checkList(run([plan("done", cupSteps)], s), null)).toEqual([]);
+    expect(checkList(run([{ type: "plan", plan: null }], s), null)).toEqual([]);
+  });
+
+  it("에이전트 기기 계획은 넣지 않는다(에이전트 행동 줄이 이미 있다). 같은 기기가 에이전트 줄에 있으면 한 번만", () => {
+    expect(checkList(run([plan("planned", cupSteps, { source: "agent" })]), null)).toEqual([]);
+    const s = run([acted(act("turn_on", "dishwasher")), plan("running", cupSteps)]);
+    expect(checkList(s, null).map((c) => c.objectId ?? c.deviceId)).toEqual(["dishwasher", "cup_1"]);
   });
 });

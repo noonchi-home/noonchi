@@ -8,7 +8,7 @@ twin-studio가 만든 아파트 트윈의 가전 65개를 **가상 Matter 기기
 
 ![웹 화면: 기기 카드 | 3D 트윈 | 대화. "거실 불 켜고 TV 켜줘" 뒤](screenshot-3d.png)
 
-*`npm start`(허브 matter · network, mock 에이전트)로 띄우고 헤드리스 Chrome으로 채팅에 "거실 불 켜고 TV 켜줘"를 입력해 찍었다. 가운데 3D 트윈(`/twin/viewer/?live=auto&embed=1`)에서 거실 TV 화면이 켜지고 "거실 TV 켜짐·거실 천장등 켜짐·플로어 스탠드 켜짐" 배지가 뜬다. 위쪽 칩은 뷰어의 실시간 연결 상태다.*
+*`npm start`(허브 matter · network)로 띄우고 헤드리스 Chrome으로 채팅에 "거실 불 켜고 TV 켜줘"를 입력해 찍었다. 가운데 3D 트윈(`/twin/viewer/?live=auto&embed=1`)에서 거실 TV 화면이 켜지고 "거실 TV 켜짐·거실 천장등 켜짐·플로어 스탠드 켜짐" 배지가 뜬다. 위쪽 칩은 뷰어의 실시간 연결 상태다.*
 
 ![웹 화면: "거실 불 켜고 TV 꺼줘" 뒤 거실 카드](screenshot.png)
 
@@ -16,14 +16,16 @@ twin-studio가 만든 아파트 트윈의 가전 65개를 **가상 Matter 기기
 
 ## 빠른 시작
 
-Node 22 이상. twin-studio 레포가 옆 폴더(`../twin-studio`)에 있어야 한다.
+Node 22.15. 트윈 결과물(뷰어·집·카탈로그)은 저장소 `twin/`에 있다. twin-studio에서 집을 다시 빌드했으면 `npx tsx scripts/twin-assets.ts --from <twin-studio 폴더>`로 `twin/`을 다시 채운다(`twin/SOURCE.json`에 twin-studio 커밋과 파일 sha256이 남는다).
 
 ```bash
 npm install
 npm --prefix ui install # 화면(React) 패키지
-cp .env.example .env    # 선택. 키는 .env에만 넣는다(git에 올리지 않음). 키가 없으면 mock 에이전트
+cp .env.example .env    # 키는 .env에만 넣는다(git에 올리지 않음). 에이전트는 OPENAI_API_KEY 또는 ANTHROPIC_API_KEY
 npm start               # 화면을 빌드하고 http://127.0.0.1:8200  (허브 matter, network 전송)
 ```
+
+서버 배포(AWS GPU 서버 한 대, `compose.yaml`, Tailscale)는 [`docs/deploy.md`](deploy.md)를 따른다. 이미지 확인: `docker build -t noonchi:check .` 뒤 `npx tsx scripts/container-smoke.ts`(키 없이 127.0.0.1:8500·8510에 띄워 보고 지운다).
 
 브라우저로 <http://127.0.0.1:8200/>을 열고 채팅에 "거실 불 켜고 TV 꺼줘", "에어컨 24도로 맞춰줘", "현관문 열어줘"(승인 후 실행)를 입력한다. 가운데 3D 트윈에 바로 보인다(아래 "3D 트윈 연결").
 
@@ -42,8 +44,7 @@ src/
   server/app.ts         REST + WebSocket + 정적 파일
   server/main.ts        npm start 진입점(.env, 출력, 종료 신호)
   mcp/                  MCP stdio 서버(server.ts)와 REST 백엔드(client.ts)
-ui/                     대시보드·설정 화면(React+TypeScript, 빌드 결과 ui/dist/)
-web/phone/              폰 화면(빌드 없는 ES 모듈)
+ui/                     대시보드·설정·폰 화면(React+TypeScript, 빌드 결과 ui/dist/)
 scripts/demo.ts         npm run demo
 scripts/scenarios.ts    데모 시나리오(데모와 e2e 테스트가 함께 씀)
 scripts/matter-smoke.ts Matter 연기 시험
@@ -59,9 +60,11 @@ tests/                  vitest (helpers/: 작은 집, REST·WS·MCP 도우미)
 | `npm run ui:dev` | 화면 개발 서버(5173, API는 8200으로 넘김) |
 | `npm test` | vitest 전체(단위 + Matter 통합 + e2e, 실제 커미셔닝 포함) |
 | `npm run typecheck` | `tsc --noEmit` |
-| `npm run demo` | 임의 포트에 서버(matter/local + mock)를 띄워 시나리오 5개(6단계)를 REST·WS로 돌리고 표를 찍는다. 모두 통과면 종료 코드 0 |
+| `npm run demo` | 임의 포트에 서버(matter/local)를 띄워 시나리오 5개(6단계)를 REST·WS로 돌리고 표를 찍는다. 에이전트는 셸의 키로 실제 LLM을 부른다. 모두 통과면 종료 코드 0 |
 | `npm run mcp` | MCP stdio 서버(실행 중인 서버의 REST를 부른다) |
 | `npx tsx scripts/matter-smoke.ts` | Matter만: 커미셔닝 → 거실 TV·천장등 토글 → 상태 출력 |
+| `npx tsx scripts/fake-openai.ts --port 8500` | 가짜 OpenAI 호환 서버(정해진 답, 밖으로 나가지 않음). 첫 줄에 `listening <포트>`. 모델 주소 자리(`VLM_BASE_URL`, `PAM_LLM_BASE_URL`, `OPENAI_BASE_URL`)에 `http://127.0.0.1:8500/v1`로 붙인다 |
+| `npx tsx scripts/container-smoke.ts` | 키 없는 컨테이너 확인(noonchi·pam·가짜 서버, `docs/deploy.md` 7절) |
 
 ```bash
 HUB=memory npm start                     # Matter 없이(빠름)
@@ -74,26 +77,41 @@ HUB=memory npm run demo
 
 | 이름 | 기본값 | 뜻 |
 |---|---|---|
-| `AGENT_PROVIDER` | (자동) | `openai` / `anthropic` / `mock`. 비우면 `ANTHROPIC_API_KEY` → anthropic, 없고 `OPENAI_API_KEY` → openai, 둘 다 없으면 mock(경고) |
-| `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL` | `gpt-5.5` | OpenAI(Responses API) |
+| `AGENT_PROVIDER` | (자동) | `openai` / `anthropic`. 비우면 `ANTHROPIC_API_KEY`가 있으면 anthropic, 없으면 openai. 키가 없어도 다른 공급자로 바꾸지 않는다: 시작 로그에 경고, 에이전트는 준비 안 됨(`/api/health` `ready.agent`)이고 대화가 실패한다 |
+| `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL` | `gpt-5.5`, `https://api.openai.com/v1` | OpenAI(Responses API). 시험·키 없는 확인은 `OPENAI_BASE_URL`을 가짜 OpenAI 호환 서버(`scripts/fake-openai.ts`)에 붙인다 |
 | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | `claude-opus-5-5` | Anthropic(Messages API) |
 | `ANTHROPIC_EFFORT` | `low` | `low`…`max` |
 | `ANTHROPIC_FALLBACKS` | (켬) | `off`면 서버 측 거절 대체를 끈다 |
-| `TWIN_STUDIO_DIR` | `../twin-studio` | twin-studio 레포(상대 경로는 실행 위치 기준) |
+| `TWIN_STUDIO_DIR` | `twin/` | 트윈 결과물 폴더(상대 경로는 실행 위치 기준) |
 | `HOME_ID` | `homes.json`의 `default` | 불러올 집(twin-studio `homes.json`의 id, 예: `oneroom`) |
-| `RUNTIME_DIR` | `runtime` | 실행 중 만든 파일의 바탕 폴더: 배치 수정본 `homes/<id>/edits.json`, 사진 `photos/`(커밋하지 않음) |
+| `RUNTIME_DIR` | `runtime` | 실행 중 만든 파일의 바탕 폴더: 배치 수정본 `homes/<id>/edits.json`, 사진 `photos/`, 기록 DB `noonchi.db`(SQLite, 커밋하지 않음) |
+| `HISTORY_TZ_MINUTES` | `540` | 기록 DB가 날짜(하루 요약·반성)를 나누는 시간대(분, -720~840). PAM 관찰 텍스트 시각도 이 시간대다. 틀린 값이면 시작하지 않는다 |
+| `REFLECT_AT` | `23:30` | 매일 그날을 반성하는 시각(HH:MM, 기록 시간대). `off`면 끈다. 틀린 값이면 시작하지 않는다 |
+| `PHOTO_RETENTION_DAYS`, `DATASET_RETENTION_DAYS` | `7`, `7` | 폰 사진 찍기 사진·시험 자료 보관 일(0보다 큰 숫자). 지나면 파일과 표 줄을 지운다. 틀린 값이면 시작하지 않는다 |
+| `DATASET_COLLECT` | (끔) | `1`이면 엔진 프레임을 시험 자료로 `RUNTIME_DIR/dataset/<날짜>/`에 JPEG과 같은 이름의 `.json`(크기·자세·카메라)으로 쓴다 |
+| `INFERENCE_MODE` | `mock` | `mock`(GPU 없음, VLM은 OpenAI) · `live`(GPU 서버, VLM은 같은 서버 vLLM `http://vllm-vlm:8000/v1`, 모델 이름 `vlm`). 두 모드는 같은 코드 경로이고 주소·모델 이름만 다르다. 다른 값이면 시작하지 않는다 |
+| `VLM_BASE_URL`, `VLM_MODEL`, `VLM_API_KEY`, `VLM_EXTRA_BODY` | 모드 기본값 | 따로 주면 모드 기본값 대신 쓴다(OpenAI 호환 주소). mock 기본: `https://api.openai.com/v1`·`gpt-5.4-mini`·`OPENAI_API_KEY`·`{"reasoning_effort":"none"}`, live 기본: `http://vllm-vlm:8000/v1`·`vlm`·`VLLM_API_KEY`·`{}` |
+| `VLM_TIMEOUT_MS` | `20000` | 사진 한 장 VLM 분석 제한 시간(1000 이상) |
+| `PAM_URL` | `http://127.0.0.1:8300` | PAM 서비스 주소(compose 안은 compose가 `http://pam:8300`으로 둔다) |
+| `PAM_LLM_BASE_URL`, `PAM_LLM_MODEL`, `PAM_LLM_API_KEY` | 모드 기본값 | PAM 서비스(`services/pam/`)가 부르는 PAM LLM(OpenAI 호환 주소). mock 기본: `https://openrouter.ai/api/v1`·`qwen/qwen3.5-27b`(provider alibaba 고정)·`OPENROUTER_API_KEY`, live 기본: `http://vllm-pam:8000/v1`·`pam`·`VLLM_API_KEY` |
+| `PAM_LLM_TIMEOUT_S`, `PAM_MAX_MODEL_LEN` | `120`, `32768` | PAM LLM 한 번 제한 시간(초), 문맥 길이(vLLM `--max-model-len`과 같은 값, 반성 출력 16384보다 커야 한다). 입력이 넘으면 PAM 서비스가 413 |
+| `PAM_HOST_PORT` | `8300` | compose가 호스트 127.0.0.1에 여는 PAM 서비스 포트 |
 | `PHONE_PORT`, `PHONE_HOST` | (끔), `0.0.0.0` | 폰 AR 서버(아래 "폰 AR") |
 | `PHONE_URL` | (없음) | 폰에서 열 주소. 대시보드 QR에 맨 앞 주소가 나온다. 없으면 `tailscale serve`가 폰 포트로 잇는 https 주소, 그다음 와이파이 주소 |
+| `PHONE_LAN_URLS` | `1` | `0`이면 폰 주소에 이 기계의 네트워크 주소(와이파이)를 넣지 않는다. compose는 `0`으로 둔다(컨테이너 안 주소는 밖에서 열 수 없다). 그때 폰 주소는 `PHONE_URL`뿐이다 |
 | `PHONE_MAX_MISMATCH_M`, `PHONE_PHOTO_DIR` | `0.3`, `RUNTIME_DIR/photos` | 기준점 거리 차이 허용값, 사진 폴더 |
-| `BRAIN` | (끔) | `1`이면 폰 카메라로 상위 판단(클로이드 두뇌, 아래 "상위 판단")을 돌린다. `PHONE_PORT`·`OPENAI_API_KEY`가 있어야 한다 |
-| `BRAIN_DETECTOR`, `BRAIN_YOLO_PATH`, `BRAIN_YOLO_THREADS` | `yolox_tiny`, `runtime/models/<모델>.onnx`, `4` | YOLO 존재 감지기(`yolox_tiny`·`yolox_nano`·`off`). 모델 파일이 없으면 VLM만 쓴다 |
-| `BRAIN_VLM_MODEL` | `OPENAI_MODEL` → `gpt-5.4-mini` | 사진 판정 VLM(OpenAI Responses API) |
-| `BRAIN_DECISION`, `PAM_URL`, `PAM_TIMEOUT_MS` | `mock`, (없음), `20000` | 판단 모델. `pam`이면 `PAM_URL`로 HTTP(계약 `docs/pam-interface.md`) |
-| `BRAIN_AWAY_MS`, `BRAIN_STALE_MS`, `BRAIN_HOLD_MS`, `BRAIN_CLEAR_MS` | `5000`, `3000`, `600`, `2000` | 자리 비움 시간, 근거가 이보다 오래되면 모름, YOLO 존재 창, 치워짐 판정 시간 |
-| `BRAIN_INTERVAL_MS`, `BRAIN_CALL_CAP`, `BRAIN_REQUEST_TIMEOUT_MS`, `BRAIN_ACTION_TIMEOUT_MS` | `1000`, `120`, `60000`, `120000` | VLM 호출 간격·상한, 사진 요청·행동 결과 기다리는 시간 |
+| `BRAIN` | (끔) | `1`이면 폰 엔진 프레임으로 관찰 흐름(아래 "관찰 흐름")을 돌린다. `PHONE_PORT`가 있어야 한다. VLM은 `INFERENCE_MODE`가 고른 주소로 부른다(mock은 `OPENAI_API_KEY`) |
+| `ENGINE_FRAME_MS` | `2000` | 엔진 프레임 간격(200 이상). 폰 서버가 상태 메시지로 폰에 알린다. mock은 사진 한 장마다 VLM을 한 번 부르므로 2초면 시간당 약 1,800번이다 |
+| `VLM_MAX_INFLIGHT`, `DETECT_QUEUE_MAX` | `4`, `8` | VLM 동시 요청 상한(넘친 프레임은 「요청이 몰려 VLM 분석 없음」), YOLOX 대기열 상한(넘친 프레임은 「요청이 몰려 YOLOX·VLM 분석 없음」). 틀린 값이면 시작하지 않는다 |
+| `BRAIN_DETECTOR`, `BRAIN_YOLO_PATH`, `BRAIN_YOLO_THREADS` | `yolox_tiny`, `runtime/models/<모델>.onnx`, `4` | YOLOX 감지기(`yolox_tiny`·`yolox_nano`·`off`). 모델 파일이 없으면 VLM만 쓴다 |
+| `PAM_TIMEOUT_MS` | `30000` | 판단 한 번 제한 시간. 판단은 늘 PAM 서비스(`PAM_URL`, 계약 `docs/pam-interface.md`)다 |
+| `PAM_TRIGGER` | `event` | 판단 호출 시점: `event`(World State에 의미 있는 변화가 있을 때) · `periodic`(사람이 보이는 동안 주기마다, 사람 없음·등장 사라짐 없음이 이어지면 멈춤). 다른 값이면 시작하지 않는다 |
+| `PAM_MIN_GAP_MS`, `PAM_PERIOD_MS`, `PAM_IDLE_STOP_MS`, `PAM_MAX_INFLIGHT` | `3000`, `1000`, `1800000`, event `1`·periodic `4` | event 최소 간격, periodic 주기, periodic 멈춤까지 시간, 동시에 나가 있는 판단 상한 |
+| `STALE_MS` | `3000` | 실행 전 검사: 대상을 마지막으로 본 뒤 이만큼 지나면 낡은 근거로 보고 실행하지 않는다. 0 이하·숫자가 아니면 시작하지 않는다 |
 | `FOCUS` | (끔) | `1`이면 초점 표시(클로이드가 다룬 물건의 고리·"클로이드 주목")를 대시보드·폰·3D로 보낸다. 기본은 보내지 않는다 |
 | `PORT` | `8200` | HTTP 포트(`0`이면 빈 포트) |
 | `HOST` | `127.0.0.1` | HTTP 바인드 주소. `0.0.0.0`이면 LAN에서도 열린다(인증 없음) |
+| `ALLOWED_ORIGINS` | (없음) | 이 PC 말고 대시보드를 여는 출처(쉼표로 여러 개, 예: `https://<서버>.<tailnet>.ts.net`). 쓰기 요청과 `/events`를 허용한다. 주소가 아닌 값이면 시작하지 않는다 |
 | `HUB` | `matter` | `matter` / `memory` |
 | `MATTER_TRANSPORT` | `network` | `network`(실제 커미셔닝) / `local`(같은 프로세스 behavior API) |
 | `MATTER_COMMISSION_TIMEOUT_MS` | `30000` | network 커미셔닝·연결 단계별 제한 시간. 넘기면 local로 대신 뜬다 |
@@ -139,7 +157,7 @@ twin 데이터: scene (…\twin-studio) · 기기 65개 · 방 13개
   QR 페이로드:     MT:Y.K90YDA1327ZK2AG00
   (passcode 20261011, discriminator 3011) 이미 커미셔닝됨: 같은 LAN의 다른 컨트롤러(Home Assistant 등)는 먼저 페어링 창을 연 뒤(POST /api/matter/commissioning-window) 이 코드로 추가한다.
 [Matter 컨트롤러] 저장된 커미셔닝을 다시 쓴다(peer1).
-twin-home 서버: http://127.0.0.1:8200  (허브 matter/network, 에이전트 mock/rules-ko)
+twin-home 서버: http://127.0.0.1:8200  (허브 matter/network, 에이전트 openai/gpt-5.5)
   웹 화면   http://127.0.0.1:8200/
   WS 이벤트 ws://127.0.0.1:8200/events
   3D 트윈   http://127.0.0.1:8200/twin/
@@ -150,7 +168,7 @@ twin-home 서버: http://127.0.0.1:8200  (허브 matter/network, 에이전트 mo
 
 | 메서드·경로 | 본문 | 응답 |
 |---|---|---|
-| `GET /api/health` | | `{ ok, devices, hub, transport, provider, model, twin, eye, home: { id, name }, phone_urls, brain, mode }`(`mode`: `test` 시험 · `live` 실제) |
+| `GET /api/health` | | `{ ok, devices, hub, transport, provider, model, twin, eye, home: { id, name }, phone_urls, brain, mode, ready }`(`mode`: `test` 시험 · `live` 실제). `ready`: `{ ok, inference_mode, vlm: { base_url, model, key, reachable }, pam: { url, reachable, llm: { base_url, model, reachable } | null }, db }`. 모델은 부르지 않고 VLM `GET {base}/models`(30초 캐시)·PAM `GET {url}/health`만 본다. 답하지 않아도 200이고 `ready.ok`가 false다 |
 | `GET /api/homes` | | `{ current, homes: [{ id, name }] }` (twin-studio `homes.json`) |
 | `GET /api/setup` | | 설정 상태 `{ ok, persist, done, switching, error, home, homes, rooms, devices: [{ ..., source, pairable }], position, mode, thinq: { ready }, pairs }` (아래 "설정 흐름", 형은 `src/contract/setup.ts`) |
 | `POST /api/setup/home` | `{ home }` | 다른 집이면 허브·에이전트·폰 서버를 새 집으로 다시 띄운다. 없는 집 400, 바꾸는 중 409 |
@@ -174,7 +192,13 @@ twin-home 서버: http://127.0.0.1:8200  (허브 matter/network, 에이전트 mo
 | `GET /api/agent/pending?sessionId=` | | 승인 대기 목록 |
 | `GET /api/matter` | | `{ ok, transport, commissioning: "none"\|"new"\|"reused", port, controllerPort?, subscribed?, pairing: { manualPairingCode, qrPairingCode, passcode, discriminator, commissioned, fabrics } }`. MemoryHub면 404 |
 | `POST /api/matter/commissioning-window` | `{ timeoutSeconds? }`(180~900, 기본 900) | `{ ok, timeoutSeconds, pairing, reply }`. 다른 Matter 컨트롤러용 페어링 창을 연다. local 전송이면 400 |
-| `GET /events` (WebSocket) | | 붙으면 `{type:"hello", home}`, 모든 기기의 `{type:"state", state}`, 지금 배치 보정의 `{type:"layout"}`들. 이후 바뀔 때마다 `{type:"state"}`, `{type:"agent", event:"action"\|"reply"\|"pending"\|"confirmed"\|"cancelled", ...}`, `{type:"layout"}`, `{type:"focus"}`, `{type:"eye"}`, `{type:"photo"}` (모양은 [plan.md](plan.md)) |
+| `GET /api/brain` | | 관찰 흐름 상태 `{ ok, frames, duplicates, detector, vlm_model, detected, detect_ms, queued, yolo_missing: { cap, error }, vlm: { sent, missing: { cap, timeout, format, error }, inflight, costUsd }, time_source, time_err_ms, dataset }`(`dataset`: `DATASET_COLLECT=1`이면 `{ saved, failed }`, 아니면 null). `BRAIN=1`이 아니면 404 |
+| `GET /api/world` | | `{ ok, world }` 지금 World State(`src/contract/world.ts` `WorldView`). `BRAIN=1`이 아니면 404 |
+| `GET /api/history?since=&until=&kinds=&limit=` | | `{ ok, rows: HistoryRow[] }` 한 시간축 기록(시각 순). `since`가 없으면 최근 `limit`줄, 있으면 그 시각부터 `limit`줄(기본 500, 최대 5000). `kinds`는 쉼표 목록. 모르는 종류·숫자가 아닌 시각·범위 밖 limit은 400 |
+| `GET /api/history/day/{YYYY-MM-DD}` | | `{ ok, day, observation_text, action_summary, counts, dropped }` 하루 요약(아래 "기록과 반성"). 없는 날짜 400 |
+| `POST /api/reflection/run` | `{ day? }`(기본 오늘) | 그날을 바로 반성한다. `{ ok, day, version, appliesDay }`. 없는 날짜 400, 그날 기록이 없거나 이미 반성 중이면 409, PAM 실패 502 |
+| `GET /api/decisions?limit=` | | `{ ok, decisions: [{ id, at_ms, day, text, text_sent, seq, status, prediction, memory_version, world }] }` 최근 판단과 그때 보낸 관찰 텍스트(기본 20, 최대 500) |
+| `GET /events` (WebSocket) | | 붙으면 `{type:"hello", home}`, 모든 기기의 `{type:"state", state}`, 지금 배치 보정의 `{type:"layout"}`들, `{type:"plan"}`, (`BRAIN=1`이면) `{type:"world"}`와 마지막 판단·상자 있는 마지막 observe의 `{type:"brain", event}` 하나씩. 맨 끝은 늘 말풍선 카드 글 `{type:"say", text}`(글이 없으면 `null`). 이후 바뀔 때마다 `{type:"state"}`, `{type:"agent", event:"action"\|"reply"\|"pending"\|"confirmed"\|"cancelled", ...}`, `{type:"layout"}`, `{type:"focus"}`, `{type:"eye"}`, `{type:"photo"}`, `{type:"brain", event}`(관찰·World State 변화·판단·실행·연결·판단 시점·반성 기록, `src/contract/events.ts` `BrainLog`), `{type:"world"}`, `{type:"say"}`(글이 바뀔 때만, `src/act/say.ts`) (모양은 [plan.md](plan.md)) |
 
 - `command`는 `docs/plan.md`의 `Command` 객체다. 줄임으로 문자열(`"on"`, `"off"`, `"lock"` …)도 받는다.
 - 정적 파일: `/`·`/setup/`은 React 빌드 `ui/dist/`다. `/twin/`은 고른 집의 twin-studio 산출물 폴더(아파트는 `apartment/`, 원룸 예시는 `homes/oneroom/`), `/twin/viewer/`는 모든 집이 함께 쓰는 뷰어(`homes.json` viewer), `/twin/lib/`은 모든 종류의 GLB(`homes.json` library)다. 경로 탈출(`..`)은 막는다.
@@ -184,9 +208,9 @@ twin-home 서버: http://127.0.0.1:8200  (허브 matter/network, 에이전트 mo
 
 React+TypeScript 화면(`ui/`, Vite 다중 페이지)이다. 서버는 빌드 결과 `ui/dist/`를 내준다. `npm start`·`npm run dev`가 먼저 `npm run ui:build`로 빌드하고, 빌드 전이면 화면 요청은 503(「화면이 아직 빌드되지 않았어요. npm run ui:build」)이다. 화면만 고칠 때는 `npm run ui:dev`(5173, `/api`·`/twin`·`/events`를 8200으로 넘김).
 
-- **대시보드** (`/`): 3D 트윈이 화면 전체 배경이고 그 위에 패널이 떠 있다. 위 가운데 상태 알약(연결·집·운영 모드·허브·에이전트·설정 다시 하기), 왼쪽 위 클로이드의 눈(접기), 오른쪽 판단 기록(요청마다 카드, 「폰 화면」 탭). 입력창이 없다. 요청·승인은 폰에서 음성으로 한다. 말풍선은 에이전트가 판단하면서 확인한 기기·물건에만 뜬다. 모양은 `?look=parts`(기본)·`?look=glass`.
+- **대시보드** (`/`): 3D 트윈이 화면 전체 배경이고 그 위에 패널이 떠 있다. 위 가운데 상태 알약(연결·집·운영 모드·허브·에이전트·설정 다시 하기), 왼쪽 위 클로이드의 눈(접기), 오른쪽 판단 기록(요청마다 카드, 「폰 화면」 탭). 입력창이 없다. 요청·승인은 폰에서 음성으로 한다. 말풍선은 에이전트가 판단하면서 확인한 기기·물건에만 뜬다. 패널·알약·말풍선은 21st.dev 부품의 흰 카드다.
 - **설정 화면** (`/setup/`): 아래 "설정 흐름". 설정을 안 끝냈으면(`npm start`) 서버가 `/`를 `/setup/`으로 보낸다(302).
-- **폰 화면** (`web/phone/`): 폰 서버가 `/phone/`으로 내준다(빌드 없는 ES 모듈).
+- **폰 화면** (`/phone/`, `ui/phone/index.html`·`ui/src/phone/`): 폰 서버가 `ui/dist`에서 폰 화면과 그 빌드 파일(`/assets/`)·브랜드 그림·파비콘만 내준다. tailscale serve는 폰 포트를 사이트 뿌리(`/`)로 잇는다.
 - WebSocket `/events`로 실시간 반영하고, 끊기면 다시 연결한다.
 
 ## 3D 트윈 연결
@@ -196,8 +220,8 @@ twin-studio 아파트 뷰어(`apartment/viewer/`)에 `?live=`를 주면 twin-hom
 ### 실행
 
 ```bash
-# 1) twin-home(이 레포). /twin/에 ../twin-studio/apartment/를 붙인다
-TWIN_STUDIO_DIR=../twin-studio npm start
+# 1) twin-home(이 레포). /twin/에 twin/apartment/를 붙인다(TWIN_STUDIO_DIR 기본값 twin/)
+npm start
 #    → http://127.0.0.1:8200/              웹 화면(3D | 대화, "기기 카드"로 카드 칸 추가), 3D 칸은 같은 출처 /twin/viewer/?live=auto&embed=1
 #    → http://127.0.0.1:8200/twin/viewer/?live=auto   뷰어만 크게
 
@@ -238,7 +262,7 @@ TWIN_STUDIO_DIR=../twin-studio npm start
 
 ### 확인한 것(2026-10-11, 이 PC)
 
-헤드리스 Chrome(CDP)으로 `npm start`(matter/network, mock) + `:8100` 미리보기 서버에서 13개 항목을 확인했다: 3D 칸 기본 표시, 스냅숏 반영(기기 65, 무시 0), 채팅 "거실 불 켜고 TV 켜줘" → 3D의 거실 천장등·플로어 스탠드·TV `on`(REST와 같음), 뷰어 패널 스위치 → REST `on`(클릭 → 3D 반영 33~55ms), 뷰어 현관문 잠금 해제 → 승인 알림·잠김 유지 → 승인 → `unlocked`, `:8100` 다른 출처 뷰어의 수신·패널 POST(CORS), 3D 토글, 390px 가로 스크롤 없음·3D 탭.
+헤드리스 Chrome(CDP)으로 `npm start`(matter/network) + `:8100` 미리보기 서버에서 13개 항목을 확인했다: 3D 칸 기본 표시, 스냅숏 반영(기기 65, 무시 0), 채팅 "거실 불 켜고 TV 켜줘" → 3D의 거실 천장등·플로어 스탠드·TV `on`(REST와 같음), 뷰어 패널 스위치 → REST `on`(클릭 → 3D 반영 33~55ms), 뷰어 현관문 잠금 해제 → 승인 알림·잠김 유지 → 승인 → `unlocked`, `:8100` 다른 출처 뷰어의 수신·패널 POST(CORS), 3D 토글, 390px 가로 스크롤 없음·3D 탭.
 
 따로 한 번 더 확인했다(16개 항목).
 - **채팅 → 3D·카드:** "안방 불 켜줘"는 안방 조명 3개, 이어서 "에어컨 켜줘"는 `ac_master`를 켰다. 원격 상태를 반영하는 동안 뷰어가 보낸 요청은 0회였다.
@@ -250,18 +274,18 @@ TWIN_STUDIO_DIR=../twin-studio npm start
 
 ## 폰 AR (클로이드의 눈)
 
-폰(안드로이드 크롬)이 WebXR AR로 자기 위치·방향을 재고, 3D 트윈에 '클로이드의 눈' 원뿔로 실시간 표시한다. 계약은 [plan.md](plan.md) "폰 AR 눈", 코드는 `src/phone/`·`web/phone/`, 뷰어 쪽은 twin-studio `apartment/viewer/eye.mjs`다.
+폰(안드로이드 크롬)이 WebXR AR로 자기 위치·방향을 재고, 3D 트윈에 '클로이드의 눈' 원뿔로 실시간 표시한다. 계약은 [plan.md](plan.md) "폰 AR 눈", 코드는 `src/phone/`·`ui/src/phone/`, 뷰어 쪽은 twin-studio `apartment/viewer/eye.mjs`다.
 
 1. PC: `PHONE_PORT=8210 npm start` (PowerShell: `$env:PHONE_PORT=8210; npm start`). 시작 로그의 `폰 AR http://<PC IP>:8210/phone/`를 확인한다. Windows 방화벽 창이 뜨면 **개인 네트워크**를 허용한다.
 2. 폰(같은 와이파이): 크롬 `chrome://flags`에서 **Insecure origins treated as secure**를 켜고 `http://<PC IP>:8210`을 넣은 뒤 크롬을 다시 시작한다. WebXR은 보안 출처에서만 켜지기 때문이다.
-3. 폰에서 `http://<PC IP>:8210/phone/` → AR 시작 → 평면도에 정한 기준점 두 곳(방 모서리, 폰 버튼에 이름이 나온다)의 바닥을 차례로 조준해 기록한다. 거리 차이가 30cm를 넘으면 다시 맞춘다. 기준점은 twin-studio `floorplan.json`의 `ar_anchors`이고, 없는 예전 집은 도크·현관문 문턱이다.
+3. 폰에서 `http://<PC IP>:8210/phone/` → AR 시작 → 「기준점이 안 맞아요」 모달의 **기준점 다시 찍기** → 위 줄에 뜨는 기준점(평면도에 정한 방 모서리 두 곳)의 바닥을 차례로 조준하고 아래 **기록**을 누른다. 거리 차이가 30cm를 넘으면 다시 맞춘다. 기준점은 twin-studio `floorplan.json`의 `ar_anchors`이고, 없는 예전 집은 도크·현관문 문턱이다.
 4. PC 브라우저 `http://127.0.0.1:8200/`의 3D에서 눈 마커가 폰을 따라 움직인다. 추적이 약하면 마커가 회색이 된다.
-5. 대시보드 오른쪽 위 "클로이드의 눈" 칸에 폰 카메라 실시간 화면(기본 초당 12장, 폰 주소 뒤에 `?fps=20`·`?w=640`처럼 붙여 바꾼다)이 뜬다. 폰의 **사진 찍기**를 누르면 카메라 원본 크기 사진이 찍은 위치·방향과 함께 대화에 남고 `runtime/photos/`에 저장된다.
+5. 대시보드 오른쪽 위 "클로이드의 눈" 칸에 폰 카메라 실시간 화면(기본 초당 12장, 폰 주소 뒤에 `?fps=20`·`?w=640`처럼 붙여 바꾼다)이 뜬다.
 
 - 아이폰은 Safari가 WebXR AR을 지원하지 않아 쓸 수 없다.
 - 흰 벽·어두운 곳·빠른 움직임에서는 추적이 약해진다. 오래 걸으면 조금씩 밀리므로 기준점에서 다시 맞춘다.
 - 트윈과 같은 구조의 집에서만 위치가 맞는다. 기준점 거리 차이가 30cm를 넘으면 맞춤을 받지 않는다. 구조가 다른 집에서 시험만 하려면 `PHONE_MAX_MISMATCH_M=3`처럼 늘린다(위치는 틀린다).
-- 크롬이 AR 카메라 접근(`camera-access`)을 주지 않으면 폰에 "카메라 화면을 보낼 수 없어요"가 뜨고 위치만 보낸다.
+- 크롬이 AR 카메라 접근(`camera-access`)을 주지 않으면 위치만 보낸다. 그 AR 동안 실제 폰 설정 모달(미어캣)에 「카메라 · 못 보냄」 줄이 남고, 엄지 자리 카드가 있으면 비전 상태 줄에 「카메라 화면을 보낼 수 없어요. 위치만 보내요」가 4초 뜬다. 비전이 컵을 못 보므로 집기·내려놓기는 「완료」로 넘긴다.
 - 카메라 화면이 위아래가 뒤집혀 보이면 폰 주소에 `?flip=0`을 붙인다(카메라 텍스처 방향은 실제 폰에서만 확인할 수 있다).
 - 실시간 화면은 암호화하지 않은 http로 같은 와이파이 안에서만 오간다.
 
@@ -271,7 +295,7 @@ TWIN_STUDIO_DIR=../twin-studio npm start
 
 1. 설정 4단계(**위치 동기화**)의 **폰 기준점 A·B** → **벽 하나로 A·B 고르기** → 3D 트윈에서 벽 하나를 누른다. A는 그 벽의 가까운 구석, B는 같은 방 맞은편 벽에서 A와 먼 구석, 이름은 「<방> 구석」·「<방> 맞은편 구석」으로 채워진다. 맞은편 벽이 없거나 A–B가 0.5m보다 가까우면 A만 채운다. 기둥에 가린 벽을 누르면 기둥 옆 구석을 쓴다. 벽 가운데 점은 실제 집에서 옆으로 20cm만 틀려도 3.5m 앞 방향이 약 3° 돌고 거리 검사로도 못 잡아서 구석을 쓴다. 계획: [2026-11-06-auto-corners](superpowers/plans/2026-11-06-auto-corners.md).
    가구가 구석을 가리면 그 줄의 **3D에서 고르기**로 다시 고른다(가구는 뚫고 벽·문·창을 잡고, 점은 그 벽의 방 쪽 면에 붙는다). 고치지 않은 이름은 누른 점이 든 방의 「<방> 벽」으로 바뀐다. 저장하고 다시 열어도 방 이름으로 된 「<방> 구석」·「<방> 맞은편 구석」·「<방> 벽」은 고치지 않은 이름으로 본다. 이름을 고치고 **저장**. 3D에 A·B 핀이 뜨고 `runtime/homes/<집>/phone-touch.json`에 저장된다. 두 점은 0.5m 이상, 멀수록 방향이 정확하다.
-2. 저장하면 실행 중인 폰이 바로 벽 기준점 모드로 바뀐다. 폰에서 AR 시작 → 화면 가운데 조준점을 실제 A 벽 **바로 아래 바닥**(벽과 바닥이 만나는 선)에 맞추고(초록이면 바닥에 닿음) **A … 아래 바닥 조준하고 기록**. B도 같게. 거리 차이가 `PHONE_MAX_MISMATCH_M`(기본 30cm) 안이면 맞춤.
+2. 저장하면 실행 중인 폰이 바로 벽 기준점 모드로 바뀐다. 폰에서 AR 시작 → 「기준점이 안 맞아요」 모달의 **기준점 다시 찍기** → 위에 「A … 바로 아래 바닥을 가리켜 주세요」가 뜨면 화면 가운데 조준점을 실제 A 벽 **바로 아래 바닥**(벽과 바닥이 만나는 선)에 맞추고(초록이면 바닥에 닿음) 아래 **기록**. B도 같게. 거리 차이가 `PHONE_MAX_MISMATCH_M`(기본 30cm) 안이면 맞춤.
 3. **지우기**를 누르면 평면도 바닥 기준점(`ar_anchors`) 방식으로 돌아간다.
 
 - 근사 맞춤이다. 대시보드의 A·B는 벽의 방 쪽 면 위 점이고 폰은 그 아래 바닥을 조준하므로, 조준이 벽선에서 벗어난 만큼(보통 몇 cm) 어긋난다.
@@ -280,34 +304,59 @@ TWIN_STUDIO_DIR=../twin-studio npm start
 - AR을 새로 시작하거나 추적 원점이 다시 잡히면 맞춤이 지워진다(다시 기록). 폰은 자세·기록·사진마다 그 AR 원점 이름(epoch)을 붙여 보내므로, 그 순간 연결이 끊겨 있었어도 다시 붙으면 서버가 이전 맞춤을 버린다. 버린 원점의 늦은 자세는 무시하고 늦은 기록은 받지 않으며, 다른 원점에서 찍은 사진에는 위치를 붙이지 않는다. 폰 한 대만 쓴다고 본다(여러 폰이 붙으면 맞춤 하나를 같이 쓴다).
 - 기록하는 사이 대시보드에서 A·B를 바꾸거나 지우면 그 기록은 버린다(상태의 `revision`). 설정 4단계 3D에는 뷰어 위 막대(벽·방·CCTV·천장 보기·상태 배지·실시간 칩)가 없고, 벽은 온전히 보이며 기기 배지는 뜨지 않는다. 집을 다 불러올 때까지 3D 자리는 「3D 트윈 불러오는 중…」으로 가려지고, 못 불러오면 「3D 트윈을 불러오지 못했어요.」가 뜬다.
 
-### 폰 화면(가로 촬영)과 속도 측정
+### 실제 폰 화면(세로 기본)과 속도 측정
 
-- 폰은 가로로 든다. 가운데 조준점, 오른쪽 큰 버튼(🎙 말하기·📷 사진·■ 끝내기), 위 상태 줄(맞춤 상태·거리 차이·추적 약함·보내는 fps). 기준점 버튼은 맞추기 전에만 보이고, 글 입력·다시 맞추기·측정 상세는 ⋯ 메뉴에 있다. 답은 위에 5초 보이고 사라진다. 세로로 들면 "가로로 돌려 주세요"가 뜬다. AR 시작 때 전체 화면·가로 고정을 시도하지만 안 되는 폰이 많다(⋯ 메뉴에 결과).
+- 실제 폰은 에이전트의 손이다. 세로로 든다. 처음 화면(마스코트 그림·제목·준비 줄·기준점 안내·AR 시작·답 줄·글 입력)은 390×844·412×915·360×780에서 AR 시작 단추까지 스크롤 없이 보인다. 폰을 닫으면 끝난다.
+- AR 화면(`ui/src/phone/PhoneScreen.tsx`): 위는 왼쪽 위 미어캣 아이콘(설정 단추)과 그 옆 지금 할 명령 한 줄뿐이다. 명령이 없으면 미어캣만 있다. 아래는 명령이 있을 때만 엄지 자리 카드 하나: 비전 상태 한 줄, 그 바로 아래 「완료」. 질문이면 위에 질문, 아래 답 단추이고, 실제 모드 가전 승인이면 위에 「기기: 까닭」, 아래 승인·취소다. 계획·할 일 이름·몇 번째 단계·판단 글은 대시보드에만 있다. 큰 단추(말하기·사진·끝내기)·상태 줄·fps·⋯ 메뉴·「나중에」·YOLO 상자와 이름표·판단 말풍선은 폰에 없다.
+- 미어캣을 누르면 설정 모달(21st.dev Alert Dialog, 덮개 뿌리 안): 연결·듣기·기준점 상태, **기준점 다시 찍기**, **물건 자리 맞추기**, **닫기**. 닫으면 초점이 미어캣으로 돌아온다.
+- 문제: 일이 멈추는 문제는 모달 하나와 고치는 단추다. 연결 끊김 「다시 연결하는 중」(단추 없음, 다시 붙으면 닫힘), 마이크 꺼짐 「마이크가 꺼져 있어요」와 **마이크 켜기**(듣기를 다시 켜서 브라우저가 되면 권한을 다시 묻는다), 기준점 안 맞음 「기준점이 안 맞아요」와 **기준점 다시 찍기**. 여럿이면 이 차례로 하나만 뜨고 설정 모달은 닫힌다. 추적 약함은 모달 없이 비전 상태 줄이 「추적이 약해요」가 된다. 잠깐 알릴 말(기록 실패·서버 오류)도 비전 상태 줄에 4초 뜬다.
+- 기준점 찍기: 위 명령이 다음 기준점(벽 기준점 「A … 바로 아래 바닥을 가리켜 주세요」, 바닥 기준점 「… 바닥을 가리켜 주세요」), 비전 상태 줄이 「바닥에 닿음 · 기준점 1/2」, 그 아래 **기록**. 이때만 화면 가운데 조준점이 보이고, 맞추면 저절로 끝난다. 물건 자리 맞추기: 조준점과 위 「물건 아래 바닥을 가리키고 "냉장고 여기로"라고 말해 주세요」, 아래 「바닥에 닿음」과 **완료**(끝내기).
+- 늘 듣기: AR 중 크롬 음성 인식(ko-KR)을 이어서 켜 두고, 끝나면 0.3초 뒤 다시 켠다. 끝난 말마다 서버로 보낸다(`say`). 폰이 명령·답을 소리로 읽는 동안은 듣기를 멈추고, 다 읽으면(끝 알림이 안 오면 2초 + 글자마다 0.3초 뒤) 다시 켠다. 마이크 권한이 없거나 마이크가 없으면 멈추고 「마이크가 꺼져 있어요」가 뜬다.
+- 명령 대상 고리: 명령마다 대상 하나(`target`: 식탁 → 집을 컵 → 싱크대 → 싱크대)가 같이 온다. 위 줄·엄지 자리에 그 명령이 보일 때만(승인 대기·찍기·맞추기 중이 아닐 때) 그 대상에 작은 고리(40px, 이름표 없음)를 그린다. 화면 밖이거나, 화면 안이어도 고리가 위 줄·엄지 자리 칸에 걸리면 그쪽 가장자리 세모 하나. 세모는 위 줄 아래 8px부터 엄지 자리 위 8px까지(그릴 때 두 칸을 잰다), 옆은 화면 가장자리 8px 안에 둔다. 대상 자리는 서버가 배치(물건 가운데)와 World State(컵)에서 트윈 자리로 잡고, 폰 서버가 맞춘 기준점으로 AR 자리로 바꾼다. 기준점을 맞추기 전에는 대상이 없고, 맞추면 지금 명령이 대상과 함께 다시 온다. 에이전트 초점(`FOCUS=1`)은 실제 폰 화면에 그리지 않는다.
+- 가로로 들어도 AR·자세·화면 보내기는 그대로이고 방향 알림은 없다. 엄지 자리 카드만 오른쪽 아래(폭 360px까지)로 간다. 배치는 CSS 방향 조건(Tailwind `landscape:`)으로만 바꾼다. 화면 방향 고정·전체 화면은 요청하지 않는다. 같이 요청하면 DOM 오버레이 AR 화면이 나오지 않았다. 추적은 폰 위치와 카메라가 보는 방향만 쓰므로 가로·세로가 같다.
+- 글 크기는 부품 원래 크기(단추는 label 토큰)이고 넓은 화면이라고 키우지 않는다. 누르는 것은 48px이다.
+- 실제 폰 명령(`src/contract/phone.ts`): 실제 폰은 에이전트의 손이다. 서버는 계획 단계마다 `{type:"command", id, step, text, vision, choices, speak}`를 보낸다. `text`는 위 한 줄(사람에게 하는 명령이나 질문), `vision`은 아래 답 단추 바로 위 비전 상태 한 줄(질문이면 null), `choices`는 답 단추(단계 명령은 「완료」 하나), `speak`가 true면 소리로 읽는다(새 명령, 오래 걸려 다시 읽기). 비전 상태만 바뀌면 같은 id·step을 speak false로 다시 보낸다. 끝나면 `{type:"command_clear", id}`. 새로 붙은 폰은 상태 다음에 지금 명령(speak false)을, 명령이 없으면 id 없는 `command_clear`를 받는다. 답 단추는 `{type:"answer", id, step, choice}`로 받은 명령의 id·step을 그대로 돌려준다. 판단·관찰 글은 폰에 보내지 않는다(대시보드에만 있다).
+- 화면 사진 페이지(`PHONE_SHOTS=1`로 빌드한 `/phone/shots/#상태`)는 상태 예시(`ui/src/phone/fixtures.ts`)를 그린 뒤 배치를 잰다. 화면 밖 단추, 세로 화면 아래 1/3 밖의 엄지 자리 단추, 조준점이나 그 칸 밖 단추를 가리는 칸(위 줄·엄지 자리, 모달 안 단추는 빼고), 잘린 명령·비전 상태 글, 칸·단추와 겹친 화면 밖 세모, 칸 밑에 깔린 고리가 있으면 콘솔 오류를 내서 `npm run capture`가 실패한다. 처음 화면은 AR 시작 단추가 첫 화면 밖이면 실패한다. 상태는 `intro`, 네 명령 `go-table`·`pick-cup`·`go-sink`·`put-cup`, 컵이 엄지 자리 카드 밑에 비침 `low-cup`, 명령 없음 `idle`, 추적 약함 `weak`, 문제 모달 `align`·`mic`·`offline`, 설정 `settings`, 카메라 못 보냄 설정 `no-camera`, 기준점 찍기 `anchors`, 물건 자리 맞추기 `place`, 질문 `question`, 승인 `approve`다. 모두 세로 390×844·412×915·360×780으로 찍고, 가로는 `pick-cup`을 844×390으로, `intro`를 844×390·780×360으로 찍어 본다.
 - 화면 프레임: 기본 초당 12장, 가로 촬영 가로 480px·세로 360px, JPEG 품질 0.55(`?fps=`·`?w=`로 바꾼다). 인코딩은 워커 두 개로 두 장까지 겹치고, 순서가 뒤바뀐 오래된 프레임은 버린다.
-- 측정: 폰 ⋯ 메뉴에 최근 2초 보낸 fps·장당 KB, readPixels·인코딩 ms, 와이파이 대기(bufferedAmount), 건너뛴 이유별 횟수(인코딩 중·버퍼 가득·순서 뒤바뀜). 서버는 `/api/eye/stats`에 받은 fps·장당 KB를 내고, 대시보드 눈 캡션에 보인다.
+- 엔진 프레임(분석용): 서버가 상태 메시지 `engine_ms`로 간격을 알려 주면 화면 프레임과 따로 그 간격마다 한 장(`kind: "engine"`, 같은 크기, JPEG 품질 0.8, 초점 고리 없음)을 보낸다. 찍은 순간 자세·투영 행렬(`projection`, 16개)·서버 시계 촬영 시각과 오차를 붙인다. 엔진 프레임은 표시 화면에 쓰지 않는다.
+- 측정: 서버는 `/api/eye/stats`에 받은 fps·장당 KB를 내고, 대시보드 눈 캡션에 보인다. 실제 폰에는 측정 글이 없다.
 
 ### 말하기·'여기'·초점
 
 - 맞추기 전에도 3D 트윈에 눈 원뿔이 보인다: 위치는 가장 넓은 방의 창에서 방 안쪽 0.8m·높이 1.3m에 고정하고, 방향만 폰을 따라간다(AR을 시작할 때 폰이 보던 방향 = 창에서 방 안쪽). 이 추정 눈(`estimated: true`)은 사진의 찍은 위치에는 쓰지 않는다. 기준점 두 곳을 맞추면 실제 위치로 바뀐다.
 
-6. 폰의 **🎙 누르고 말하기**를 누른 채 말하고 손을 뗀다(크롬 내장 음성 인식, 한국어). 받아쓴 문장은 에이전트(세션 `phone`)로 가고, 답은 폰이 읽어 준다. 음성 인식이 없거나 막히면 아래 글 입력으로 보낸다. 승인이 필요하면 폰에 승인·취소 버튼이 뜬다("응"이라고 말해도 된다).
-7. 물건 아래 바닥을 조준점으로 가리키고 "냉장고 위치 여기로 맞춰줘"·"냉장고는 여기 있어"·"TV 여기로 옮겨줘"라고 하면 트윈의 그 물건이 조준점 자리로 옮겨진다(바닥 물건은 폰 쪽을 보게, 벽걸이는 가장 가까운 벽에 붙는다). "배치 저장해"면 수정본을 저장한다(아래 "집 고르기와 배치 보정").
-8. (`FOCUS=1`일 때만) 에이전트가 다룬 물건(켠 TV, 옮긴 냉장고 등)은 폰 화면에 파란 고리와 `클로이드 주목 · 이름`으로 8초 동안 보인다. 화면 밖이면 가장자리 화살표로 방향을 가리킨다. 3D 트윈에도 같은 고리가 뜬다.
+6. AR 중에는 그냥 말한다. 폰이 늘 듣는다(크롬 내장 음성 인식, 한국어, 누르는 단추 없음). 받아쓴 문장은 에이전트(세션 `phone`)로 가고, 답은 폰이 읽어 준다. 처음 화면에서는 글 입력으로 보낸다. 승인이 필요하면 엄지 자리에 승인·취소가 뜬다. 말로 승인하려면 「승인」·「승인해 줘」라고 한다. 폰이 늘 들어서 「응」·「네」·「어」로는 확정하지 않는다(대시보드 채팅은 「응」으로도 된다).
+   - 실제 폰에 명령·질문이 떠 있는 동안(`BRAIN=1`, 아래 "관찰 흐름")에는 말을 먼저 그 답으로 맞춰 본다. 「그만」·「완료」·「다 했어」는 짧은 말 전체일 때만(앞의 「응」·「이제」, 끝의 「요」는 된다. 「그만큼」·「숙제 다 했어?」는 아니다) 그 답으로 받는다. 「그만」이면 계획을 그만둔다. 질문의 답은 단추 글이나 그 답의 말(`src/act/prompts.ts` `words`, 예: 「치워」·「그대로」)이 들어 있으면 받는다. 받은 답은 에이전트로 보내지 않는다. 명령의 답을 말로 하면 답 글(`reply`)은 빈 글이고 다음 명령이 따로 온다. 맞는 답이 없으면 에이전트로 간다. 답으로 받은 말과 단추 답만 기록 DB에 `feedback`(「다 했어 · 부탁: 싱크대로 가 주세요」·「그냥 그대로 둬 · 질문: 컵을 치울까요?」)으로 남아 그날 반성의 사용자 피드백이 된다.
+7. 미어캣 → **물건 자리 맞추기**로 조준점을 켜고, 물건 아래 바닥을 조준점으로 가리키고 "냉장고 위치 여기로 맞춰줘"·"냉장고는 여기 있어"·"TV 여기로 옮겨줘"라고 하면 트윈의 그 물건이 조준점 자리로 옮겨진다(바닥 물건은 폰 쪽을 보게, 벽걸이는 가장 가까운 벽에 붙는다). "배치 저장해"면 수정본을 저장한다(아래 "집 고르기와 배치 보정").
+8. (`FOCUS=1`일 때만) 에이전트가 다룬 물건(켠 TV, 옮긴 냉장고 등)은 8초 동안 초점이 된다. 대시보드 눈 영상과 3D 트윈에는 고리와 `클로이드 주목 · 이름`이 뜬다(명령이 떠 있을 때는 대시보드 눈 영상의 고리도 명령 대상이다). 실제 폰 화면에는 명령 대상 고리만 그린다.
 
-- 폰 화면 고리와 대시보드 프레임 고리는 XR 시점의 투영 행렬로 그린다. 카메라 이미지가 그 투영과 같다고 보고 그리므로 실제 폰에서 어긋나는지 확인이 필요하다.
-- AR을 켠 채로 음성 인식이 되는지는 실제 폰에서 아직 확인하지 않았다. 안 되면 글 입력을 쓴다.
+- 실제 폰 고리와 대시보드 프레임 고리는 XR 시점의 투영 행렬로 그린다. 카메라 이미지가 그 투영과 같다고 보고 그리므로 실제 폰에서 어긋나는지 확인이 필요하다.
+- AR을 켠 채로 이어서 듣기가 되는지, 다시 켤 때 크롬이 알림 소리를 내는지는 실제 폰에서 아직 확인하지 않았다.
 - 폰 말에는 인증이 없다(같은 와이파이의 누구나 보낼 수 있다). 내부 테스트용이다.
 
-## 상위 판단 (클로이드 두뇌, src/brain)
+## 관찰 흐름 (src/observe, src/world)
 
-폰으로 실시간 촬영하면 컵 시나리오를 돈다: 컵으로 마심 → 컵만 두고 자리 비움 → 폰에 "컵 안이 보이게 위에서 찍어 주세요" → 📷 답 → 판단 모델 → 행동 직전 재확인 → 클로이드 행동(모의) → 결과 확인(컵이 치워졌나). 판단 흐름은 코드(상태 기계 `machine.ts`)가 정하고, 모델은 보고 말하기만 한다. 계획서는 `docs/superpowers/plans/2026-11-04-brain-cup.md`(1단계)·`2026-11-04-brain-live.md`(2단계).
+한 흐름: 폰 엔진 프레임 → YOLOX·VLM → World State → 관찰 텍스트 → PAM 서비스(`pam-predict/2`) → 클로이드 계획 → 실행 전 검사 → 실제 폰 단계 명령(소리) → 폰 위치·World State로 단계 확인 → 기록 DB(`noonchi.db`) → 하루 끝 반성(`pam-reflect/2`) → 다음 날 기억. 사진은 PAM에 가지 않는다. `tests/noonchi-e2e.test.ts`가 가짜 OpenAI 호환 서버와 시험용 PAM 자리로 이 흐름 전체를 돌린다.
 
-- **YOLO + VLM:** YOLO(YOLOX-Tiny, Apache-2.0, 이 PC 4스레드 장당 약 70ms)가 매 장면 사람·컵이 있는지 본다(최근 0.6초 안에 한 장이라도 보이면 있음). VLM은 마심·들고 있음·컵 안만 본다. 자리 비움은 YOLO "사람 없음·컵 있음" 5초 + 그 사이 찍힌 VLM "사람 없음"이 둘 다 있어야 정한다. VLM은 볼 것이 있거나 장면이 바뀔 때만 부른다.
-- **식탁을 비추는가:** 폰 위치를 맞춘 뒤에는 눈 자세와 트윈의 식탁·책상으로 계산한다(앞 30° 안, 6m 안). 맞추기 전은 모름이라 막지 않는다.
-- **행동은 모두 모의다.** 실제·트윈 기기 명령이나 LG ThinQ 호출이 없다. "컵 치우기"는 로봇이 없어 폰으로 사람에게 부탁하고(치웠어요·나중에), "사용자에게 물어보기"는 폰으로 묻는다. 치워짐은 식탁을 비추며 컵이 2초 안 보이면 정한다. 맞추기 전에는 "치웠어요"를 누른 뒤의 컵 없음만 센다.
-- **판단 모델:** 기본은 모의 모델. `BRAIN_DECISION=pam`이면 박석준 PAM을 HTTP로 부른다(계약 `docs/pam-interface.md`, 모의 서버 `npx tsx scripts/pam-mock-server.ts`).
-- **시각:** 폰이 2초마다 서버와 시계를 맞춰(NTP식) 프레임마다 서버 시계 촬영 시각과 오차를 보낸다. 서버는 "가장 이른 가능 시각"을 써서 근거 나이를 보수적으로 잰다.
-- **화면:** 대시보드 추론 과정 칸에 🤖 카드(단계 글 + 최근 YOLO·VLM 한 줄), 폰에는 위 상태 한 줄·가운데 큰 요청 글·행동 부탁 카드(모의 표시). 상태는 `GET /api/brain`.
+| 단계 | 코드 | 나가는 것 |
+|---|---|---|
+| 엔진 프레임·고리 | `src/phone/`, `src/observe/ring.ts` | `GET /api/brain` |
+| YOLOX·VLM | `src/observe/pipeline.ts`, `src/observe/scene.ts` | `{type:"brain", event:{type:"observe"}}`, 기록 `vlm`·`yolo` |
+| World State | `src/world/state.ts` | `{type:"world"}`, `world_change`, `GET /api/world`, 기록 `detection`·`world` |
+| 판단 | `src/world/decide.ts`, `src/brain/pam.ts` | `decision`, 기록 `pam_text`·`decision`, `GET /api/decisions` |
+| 계획·검사·실행 | `src/act/` | `{type:"plan"}`, `execution`, 실제 폰 `{type:"command"}`·`{type:"command_clear"}`, 기록 `plan`·`execution`·`feedback` |
+| 반성 | `src/history/reflect.ts` | `reflection`, 기록 `reflection`, `POST /api/reflection/run` |
+
+폰 엔진 프레임마다 YOLOX와 VLM이 둘 다 분석하고, World State가 둘을 물체별로 합친다. 분석한 사진은 메모리(최근 20초)에만 두고 디스크에 쓰지 않는다(`DATASET_COLLECT=1`일 때만 시험 자료로 쓴다).
+
+- **엔진 프레임:** `BRAIN=1`이면 폰 서버가 상태 메시지 `engine_ms`(`ENGINE_FRAME_MS`, 기본 2초)로 간격을 알리고, 폰은 그 간격마다 분석용 JPEG을 촬영 자세·투영 행렬·서버 시계 촬영 시각과 함께 보낸다. 직전 프레임과 SHA-256이 같으면 버린다. 표시 프레임·사진은 관찰 흐름에 들어가지 않는다.
+- **YOLOX:** 사람·컵·병·그릇(COCO person·cup·wine glass·bottle·bowl)을 워커 스레드에서 하나씩 본다(YOLOX-Tiny, Apache-2.0, 이 PC 4스레드 장당 약 70ms). 대기열(`DETECT_QUEUE_MAX`, 기본 8)이 차면 그 프레임은 「요청이 몰려 YOLOX·VLM 분석 없음」, 감지가 실패하면 「감지 오류로 YOLOX 분석 없음」(VLM은 그 프레임도 분석)이다. 모델 파일이 없으면 「감지기 없음」으로 VLM만 돈다.
+- **VLM:** 프레임마다 한 번, YOLOX 감지 목록(임시 번호·종류·박스)을 같이 보내 보이는 사실만 받는다(`{scene, observations: [{object_id, state}], summary}`, JSON Schema). 동시 요청은 `VLM_MAX_INFLIGHT`(기본 4)까지, 제한 시간(`VLM_TIMEOUT_MS`, 기본 20초)이 지나면 HTTP 요청을 끊는다. 답은 프레임 번호로 맞춘다. 상한 초과·시간 초과·형식 오류·호출 오류 프레임은 「… VLM 분석 없음」으로 남긴다.
+- **World State:** 사람은 2장, 물건은 3장 연속일 때 등장·사라짐을 인정한다. 맞춘 뒤에는 박스 아래 가운데 광선이 트윈의 식탁·책상·조리대·싱크대 윗면(없으면 바닥)과 만나는 점을 물건 위치로 쓰고, 같은 종류가 0.25m 안이면 같은 물체로 본다. 그 자리가 시야 밖이면 「시야 밖」이고 사라짐을 세지 않는다. 맞추기 전에는 위치를 모르고 폰이 한 곳을 비춘다고 본다. VLM 사실은 면(자리·쓰는 중·안 내용·자세·행동)마다 두고 같은 값이 두 번 이어지면 확인됨이다. 컵·병·그릇에는 관계표로 식기세척기를 붙이고, 식기세척기의 상태(작동 중·이용 가능)·바뀐 시각·이력·남은 시간(`course_min`)을 쌓는다.
+- **기록:** 프레임마다 `{type:"brain", event:{type:"observe"}}`(YOLOX 글 또는 `yolo_missing`, VLM 요약 또는 `vlm_missing`)가 반드시 나가고(YOLOX 결과에는 상자 `boxes`(엔진 프레임 픽셀 `[x, y, w, h]`, 감지 없음이면 `[]`)와 프레임 크기 `frame`), World State가 바뀌면 `world_change`와 `{type:"world"}`가 나간다. 상태는 `GET /api/brain`, World State는 `GET /api/world`.
+- **판단 호출:** 기본(`PAM_TRIGGER=event`)은 World State에 의미 있는 변화(사람·물건 등장·사라짐, 물건 상태 변화, 식기세척기 변화)가 있을 때 PAM 서비스(`PAM_URL`)를 부른다(최소 간격 `PAM_MIN_GAP_MS`, 동시 `PAM_MAX_INFLIGHT`). `periodic`은 사람이 보이는 동안 `PAM_PERIOD_MS`마다 부르고, 사람 없음·등장 사라짐 없음이 `PAM_IDLE_STOP_MS`(30분) 이어지면 멈췄다가 등장·사라짐이 생기면 다시 부른다. 넘기는 것은 관찰 텍스트(최근 60초 변화 줄, 이어진 같은 줄은 「처음~마지막 글 N번」, `[지속]` 물건·사람·식기세척기 상태와 남은 시간, `[눈]` 눈이 있는 방 이름) + 기억(그날 처음 정한 기억 판본, 아래 "기록과 반성") + 행동 목록이다. 판단마다 `{type:"brain", event:{type:"decision"}}`(번호 seq, 보낸 관찰 텍스트, PAM 답, World State 요약)이 나가고, PAM 연결 끊김·연결됨(`link`)과 판단 멈춤·다시 시작(`trigger`)은 바뀔 때 한 번씩 나간다.
+- **계획·검사·실행(src/act):** 고른 행동은 계획 모양(`src/act/tasks.ts`)대로 클로이드 계획이 된다. 컵 치우기는 World State의 컵(사라지지 않고 가장 최근에 본 것)을 집기 대상으로 하는 식탁·싱크대 네 단계, 물어보기는 폰 질문 한 단계다. 실행 전 검사(`src/act/check.ts`): 아는 행동, 대상 물건이 있고 판단 뒤에 찍힌 프레임으로 다시 봤고 `STALE_MS`(기본 3초) 안, 사람이 들고 있거나 쓰는 중 아님, 이동 단계면 경로 있음, 시험 모드면 짝지은 실제 가전 단계 없음. 검사는 통과할 때까지 250ms마다 다시 보고 3초가 지나도 안 되면 그 이유로 실패한다. 통과하면 계획 단계마다 실제 폰에 명령 하나를 보내고 소리로 읽는다(`{type:"command"}`, 위 "실제 폰 명령"). 컵 치우기 명령과 넘어가는 때: 「식탁으로 가 주세요」(비전 상태 「식탁까지 2.4m」, 폰 눈이 식탁에서 1.2m 안), 「컵을 들어 주세요」(「컵 · 식탁 위」, World State 컵 자리가 손에 있음이거나 사람이 물건을 들고 있음), 「싱크대로 가 주세요」(「컵 · 손에 있음 · 싱크대까지 3.1m」, 폰 눈이 싱크대에서 1.2m 안), 「컵을 싱크대에 넣어 주세요」(「컵 · 손에 있음」, 컵 자리가 싱크대 안이면 명령을 지우고 완료). 거리는 맞춘 폰 눈 자리에서 평면도의 식탁·싱크대 자리까지이고, 맞추기 전에는 「거리 모름」이다. 한 번 볼 때(250ms tick·World State 변화·답) 한 단계만 넘긴다. 「완료」 단추나 말 「완료」「다 했어」는 지금 단계 하나를 넘기고, 말 「그만」은 계획을 취소한다(실행 기록은 「사용자가 그만둠」). 비전 상태는 바뀔 때만 0.5초에 한 번까지 보낸다. 한 단계가 30초마다 명령을 다시 읽고 2분 안에 안 끝나면 실패로 닫는다(폰을 닫고 나가도 이렇게 끝난다). 물어보기는 같은 자리에 질문과 답 단추를 띄우고 답을 받으면 완료. 대시보드 계획의 단계 상태(진행 중·완료)가 지금 단계를 따라간다. 단계마다 `{type:"brain", event:{type:"execution", plan_id, state, text}}`(판단·계획·실행 중·완료·실패)가 나간다. 진행 중 계획과 행동·대상이 같은 판단은 「같은 행동을 진행 중」, 지금 계획보다 seq가 작은 늦은 답은 「앞선 판단이라 쓰지 않음」으로 기록만 하고, 다른 행동을 고른 판단은 진행 중 계획을 바꾼다(앞 계획은 취소, 새 계획에 `supersedes`, 실제 폰의 앞 명령은 지운다).
+- **화면:** 대시보드 판단 기록의 「클로이드 · 관찰과 판단」 카드에 World State 변화·연결·판단 시점 줄과 지금 YOLOX·VLM 한 줄씩. 판단 줄(고른 행동·대기·판단 실패와 이유)이 카드를 닫고, 그 판단의 실행 줄은 같은 카드에 쌓인다(알약은 실행 단계). 판단 줄을 누르면 「판단 근거」가 펼쳐진다: 보낸 관찰 텍스트, 판단할 때 World State(물건마다 면, 사실별 확인됨·추정, 위치 오차, 사람·분석 없음 수), 참조한 기억 판본. 반성·연결·판단 시점은 줄 하나씩이다. 트윈 식탁 말풍선 메모는 마지막 YOLOX 글이고, 열린 판단 계획의 집기 대상 물건·가전도 확인 목록에 든다.
 
 실행(폰은 Tailscale 주소로 연다):
 
@@ -317,14 +366,53 @@ HUB=memory HOME_ID=mokryeon_180b PHONE_PORT=8210 BRAIN=1 npm start
 tailscale serve --bg 8210   # 이미 켜져 있으면 생략. 폰: https://<이 PC 이름>.<tailnet>.ts.net/phone/
 ```
 
-- `OPENAI_API_KEY`는 `.env`에서 읽는다. VLM 호출은 세션당 `BRAIN_CALL_CAP`(120)회까지, 1회 약 $0.001.
-- 녹화 재생: `npx tsx scripts/brain-replay.ts --detector`(YOLO + 라벨 대본, 호출 0회), `--live --detector --cap 10`(실제 VLM).
+- VLM은 `INFERENCE_MODE`가 고른 OpenAI 호환 주소로 부른다(`src/infer/vlm.ts`, chat completions + JSON Schema). mock은 OpenAI `gpt-5.4-mini`(키 `OPENAI_API_KEY`), live는 같은 서버 vLLM `vlm`. mock은 1회 약 $0.001, 2초 간격(기본)이면 시간당 약 1,800번이다.
+- 키 없이 돌려 보기: `npx tsx scripts/fake-openai.ts --port 8500`을 띄우고 `VLM_BASE_URL=http://127.0.0.1:8500/v1`로 시작한다.
+
+## 기록과 반성 (src/history)
+
+기록 DB는 `RUNTIME_DIR/noonchi.db`(SQLite 파일 하나)다. 재시작해도 남는다.
+
+- **한 시간축(`events` 표):** 종류(`src/contract/history.ts` `HistoryKind`)마다 시각·날짜·대상·글·data를 적는다.
+  - `device` 가전 값 변화(시작 상태는 적지 않음), `detection` 사람·물건 등장·사라짐, `world` 나머지 World State 변화
+  - `vlm` 프레임마다 VLM 답 또는 「… VLM 분석 없음」, `yolo` 「감지 오류로 YOLOX 분석 없음」·「요청이 몰려 YOLOX·VLM 분석 없음」
+  - `pam_text` PAM에 보낸 관찰 텍스트, `decision` 판단(고른 행동·대기·판단 실패), `plan` 계획(목표·상태), `execution` 실행 단계, `mode` 운영 모드 변경
+  - `link` PAM 연결 끊김·연결됨, `trigger` 판단 멈춤·다시 시작
+  - 사진은 적지 않는다. YOLOX 결과는 등장·사라짐으로 남는다.
+- 날짜는 `HISTORY_TZ_MINUTES`(기본 서울) 기준이다.
+- **하루 요약(`GET /api/history/day/{날짜}`):** 반성 입력이다.
+  - 관찰 텍스트: `detection`·`world`·`device` 줄을 시각 순으로 쓰고, 맨 끝에 `[하루] VLM 분석 N장 · VLM 분석 없음 M장 · YOLOX 분석 없음 K장` 한 줄. 프레임마다 쓰는 `vlm`·`yolo` 줄은 세기만 한다.
+  - 행동 요약: 「클로이드 판단: …」·「클로이드 실행: …」·「사용자: …」(피드백).
+  - 이어진 같은 줄은 「처음~마지막 글 N번」 한 줄로 묶는다.
+  - 크기 한도를 주면 관찰 텍스트 70%·행동 요약 30%로 나누고(한쪽이 덜 쓰면 다른 쪽이 씀), 넘으면 오래된 줄부터 빼고 첫 줄에 「앞선 기록 N줄 생략」을 둔다.
+- **기억 판본(`memories` 표):** 판단은 그날 처음 정한 판본을 하루 내내 쓴다(`meta` `memory_day:<날짜>`). 판본이 없으면 컵 FSM 기억을 1판으로 저장한다.
+- **반성:** 매일 `REFLECT_AT`(기본 23:30)이나 `POST /api/reflection/run`으로 돈다. 한 번에 하나만 돈다.
+  - PAM 서비스 `GET /health`의 `reflect_input_bytes`에서 기억 JSON·피드백 크기를 빼고, 그 안으로 하루 요약을 줄여 `pam-reflect/2`로 보낸다. 칸 상한(관찰 100,000·행동 50,000·피드백 8,000자)도 넘지 않게 하고, 피드백은 최근 것부터 담는다.
+  - 새 기억은 다음 날부터 쓴다. 다음 날 판단이 이미 다른 판본으로 시작했으면 그다음 날부터다.
+  - 결과는 기록 DB(`reflection`)와 대시보드 판단 기록(`{type:"brain", event:{type:"reflection"}}`)에 남는다. 그날 기록이 없으면 PAM을 부르지 않고 실패로 남긴다.
+- **사진 보관(`photos` 표):** 디스크에는 폰 사진 찍기 사진(`photos/`, 기록 `photo`)과 `DATASET_COLLECT=1`일 때의 시험 자료(`dataset/`)만 쓴다. 시작 때와 1시간마다 보관 기간(`PHOTO_RETENTION_DAYS`·`DATASET_RETENTION_DAYS`, 기본 7일)이 지난 파일과 같은 이름의 `.json`을 지운다.
+
+## PAM 서비스 (services/pam)
+
+판단·반성을 HTTP로 내준다: `POST /predict`(`pam-predict/2`), `POST /reflect`(`pam-reflect/2`), `GET /health`(`llm`, `limits`). 계약은 `docs/pam-interface.md`. 논문 PAM 코드·프롬프트(`pam/`, `prompts/`, `config/`)를 옮겨 왔고 출처는 `services/pam/PROVENANCE.md`·`THIRD_PARTY.md`다.
+
+```bash
+py -3.13 -m venv services/pam/.venv                                   # 한 번만
+services/pam/.venv/Scripts/python.exe -m pip install --require-hashes -r services/pam/requirements-test.lock
+cd services/pam && .venv/Scripts/python.exe -m uvicorn noonchi_pam.app:create_app --factory --port 8300
+```
+
+- 의존성은 판과 sha256을 고정한 `requirements.lock`(이미지)·`requirements-test.lock`(시험)으로 깐다. `pyproject.toml`의 판을 바꾸면 두 파일 머리의 `uv pip compile` 명령으로 다시 만든다.
+- 직접 띄우면 셸 환경 변수만 읽는다(`.env`는 compose가 넘긴다). mock은 `OPENROUTER_API_KEY`가 있어야 판단·반성이 된다.
+- 가짜 서버로 띄우기: `INFERENCE_MODE=live PAM_LLM_BASE_URL=http://127.0.0.1:8500/v1`(가짜 서버를 먼저 띄운다).
+- 답: 계약에 맞지 않으면 400, 문맥 길이를 넘으면 413, PAM LLM 오류·잘린 답은 502.
+- 시험: `npm run heavy -- services\pam\.venv\Scripts\python.exe -m pytest services/pam -q`(가짜 OpenAI 호환 서버를 띄워 쓴다).
 
 ## 설정 흐름 (집 → 가전 → 운영 모드 → 위치 동기화 → 대시보드)
 
 `npm start` 뒤 `http://127.0.0.1:8200/`을 열면 설정을 끝내지 않았을 때 `/setup/`으로 간다. 대시보드 **설정 다시 하기**로 언제든 다시 연다. 계획: [2026-11-05-setup-flow](superpowers/plans/2026-11-05-setup-flow.md).
 
-1. **집 고르기**: twin-studio `homes.json`의 집. 다른 집을 고르면 서버를 끄지 않고 허브·에이전트·폰 서버·두뇌를 새 집으로 다시 띄운다(포트 그대로, HUB=matter local 전송에서 약 2초).
+1. **집 고르기**: twin-studio `homes.json`의 집. 다른 집을 고르면 서버를 끄지 않고 허브·에이전트·폰 서버·관찰 흐름을 새 집으로 다시 띄운다(포트 그대로, HUB=matter local 전송에서 약 2초).
 2. **가전 선택**: 집 배치에 놓인 가전마다 **가상**(트윈 시뮬레이터 값을 읽음) 또는 **신호 없음**(상태를 「모름」으로 두고 사진·질문으로만 알아냄). 명령은 둘 다 트윈에서 실행된다. 신호 없는 기기는 에이전트·대시보드 카드·3D 뷰어 모두 새 상태를 받지 않는다.
 3. **운영 모드**: 아래 "운영 모드". 기본은 시험 모드.
 4. **위치 동기화**: 3D에서 폰 기준점 A·B(아래 "벽 대기")와 배치 보정 저장·되돌리기, 폰 주소. 건너뛰면 폰 사진에 위치가 붙지 않는다(`pose_note: not_aligned`).
@@ -351,16 +439,16 @@ tailscale serve --bg 8210   # 이미 켜져 있으면 생략. 폰: https://<이 
 twin-studio는 평면도마다 집 패키지를 하나씩 둔다(`homes.json`). twin-home은 설정에서 고른 집(없으면 `HOME_ID`)을 불러온다.
 
 ```bash
-# 먼저 twin-studio에서 빌드: uv run python -m studio apartment --home oneroom --no-render
+# 집 3개(apartment·oneroom·mokryeon_180b)는 twin/에 들어 있다
 HOME_ID=oneroom PHONE_PORT=8210 npm start
 ```
 
 1. 실제 집에 맞게 트윈을 고친다: 폰 '여기'(위), 또는 대시보드·폰 채팅("냉장고 오른쪽으로 0.5m", "공기청정기 추가해줘", "TV 빼줘"). 3D 트윈이 바로 바뀌고, 설정 3단계 배치 보정 칸에 `보정 N건 · 저장 안 함`이 뜬다.
 2. "배치 저장해" 또는 설정 3단계 **배치 보정 → 저장** → `runtime/homes/<id>/edits.json`. 다시 시작해도 저장한 보정은 다시 적용된다. **되돌리기**는 저장하지 않은 것까지 모두 버린다.
-3. 확정: twin-studio에서 `uv run python -m studio apply-edits --home <id> <edits.json>`(먼저 `--dry-run`으로 볼 수 있다) → `uv run python -m studio apartment --home <id> --no-render` → twin-home 재시작. 추가한 가전은 이때부터 Matter 기기로 켜고 끌 수 있다.
+3. 확정: twin-studio에서 `uv run python -m studio apply-edits --home <id> <edits.json>`(먼저 `--dry-run`으로 볼 수 있다) → `uv run python -m studio apartment --home <id> --no-render` → 이 저장소에서 `npx tsx scripts/twin-assets.ts --from <twin-studio 폴더>`로 `twin/`을 다시 채움 → twin-home 재시작. 추가한 가전은 이때부터 Matter 기기로 켜고 끌 수 있다.
 
 - 문·창·벽·바닥·천장 고정 설비는 옮기지 않는다. 다른 물건 위에 놓는 종류(TV·전자레인지 등)는 더할 수 없고, 옮기면 받침째 옮긴다.
-- 새 종류의 3D 모델은 집 산출물 → twin-studio `library/`(`python -m studio library`) 순서로 찾고, 둘 다 없으면 회색 상자로 보인다.
+- 새 종류의 3D 모델은 집 산출물 → `twin/library/`(twin-studio `python -m studio library`에서 복사) 순서로 찾고, 둘 다 없으면 회색 상자로 보인다.
 
 ## 에이전트 (src/agent)
 
@@ -373,7 +461,8 @@ HOME_ID=oneroom PHONE_PORT=8210 npm start
 - **공급자**(`providers/`)
   - `anthropic`: Messages API 도구 사용, `ANTHROPIC_MODEL`(기본 `claude-opus-5-5`). 이 모델은 thinking을 끌 수 없어 `thinking`을 보내지 않고 `output_config.effort`(`ANTHROPIC_EFFORT`, 기본 `low`)로 깊이를 정한다. 거절 대체 `fallbacks: "default"`(beta `server-side-fallback-2026-07-01`)를 기본으로 켠다.
   - `openai`: Responses API 함수 호출, `OPENAI_MODEL`(기본 `gpt-5.5`).
-  - `mock`: 규칙 기반 한국어 해석기. LLM처럼 `find_devices` → 제어 도구 순서로 부른다. 켜/꺼/열어/닫아/잠가/잠금 해제/시작/멈춰/상태, `N도`, `밝기·음량 N%`, 냉방·난방·제습·송풍, 바람 세기를 알아듣고, "~고/그리고/,/~랑"으로 여러 요청을 한 번에 받는다.
+  - 키가 없어도 다른 공급자로 바꾸지 않는다. 부르면 요청을 보내지 않고 키가 없다고 실패한다. `/api/health` `ready.agent`(키·주소 응답)가 준비 안 됨이다.
+  - 시험은 같은 OpenAI 공급자를 가짜 OpenAI 호환 서버(`tests/helpers/llm.ts`, `OPENAI_BASE_URL`)에 붙인다. 가짜 서버는 사용자 말마다 정한 도구 호출과 답을 낸다.
   - 키는 로그·응답에 넣지 않는다.
 
 ## MCP (src/mcp/server.ts)
@@ -383,7 +472,7 @@ stdio MCP 서버다. 에이전트 도구를 그대로 노출하고, **실행 중
 ```bash
 npm start                                                       # 먼저 서버를 띄운다(다른 터미널)
 claude mcp add twin-home -- npx tsx src/mcp/server.ts           # 이 레포 폴더에서
-claude mcp add twin-home -e TWIN_HOME_URL=http://127.0.0.1:8200 -- npx tsx C:/Users/ABC/Desktop/소웨공/twin-home/src/mcp/server.ts   # 다른 폴더에서
+claude mcp add twin-home -e TWIN_HOME_URL=http://127.0.0.1:8200 -- npx tsx <저장소 폴더>/src/mcp/server.ts   # 다른 폴더에서
 ```
 
 Claude Desktop(`claude_desktop_config.json`)은 같은 명령을 이렇게 적는다(이 형식은 여기서 실행해 보지 않았다).
@@ -393,7 +482,7 @@ Claude Desktop(`claude_desktop_config.json`)은 같은 명령을 이렇게 적�
   "mcpServers": {
     "twin-home": {
       "command": "npx",
-      "args": ["-y", "tsx", "C:/Users/ABC/Desktop/소웨공/twin-home/src/mcp/server.ts"],
+      "args": ["-y", "tsx", "<저장소 폴더>/src/mcp/server.ts"],
       "env": { "TWIN_HOME_URL": "http://127.0.0.1:8200" }
     }
   }
@@ -531,21 +620,21 @@ matter.js 0.17.9에 매핑 표의 기기 종류 21개가 모두 있어 **대체�
 | 파일 | 다루는 것 |
 |---|---|
 | `mapping`, `devices`, `memory`, `policy` | 매핑 표, twin 데이터 읽기(실제 twin-studio 데이터 포함), MemoryHub, 승인 토큰 |
-| `agent` | 도구, 기기 찾기, mock 시나리오, 공급자 배선(가짜 API로 요청 모양 확인) |
+| `agent` | 도구, 기기 찾기, 가짜 OpenAI 호환 서버로 한국어 요청 시나리오·승인·세션 기억, 공급자 선택(키가 없어도 바꾸지 않음), 공급자 배선(가짜 API로 요청 모양 확인) |
 | `server` | REST·WS(임의 포트), CORS, Matter 정보·페어링 API |
 | `twin-sync` | 3D 트윈 → `POST /api/devices/:id/twin`: `twinChange` 매핑(명령·센서·오류), 정책 409 + `/api/agent/confirm`, `confirmToken`, 없는 attr·값 400, 뷰어 출처 CORS |
 | `mcp` | MCP stdio 서버를 실제로 띄워 SDK 클라이언트로 호출 |
 | `start` | HUB 기본값 matter, network → local → memory 대체 경로 |
 | `matter` | 모든 기기 종류의 엔드포인트·명령(local), 실제 커미셔닝·구독·재사용·multi-admin 창(network) |
-| `homes`, `layout-editor`, `layout-agent`, `layout-server` | homes.json 읽기·카탈로그 순서, 배치 편집기(옮기기·받침·벽 붙이기·더하기·빼기·되돌리기·수정본·재적용), 배치 도구·mock 의도, REST·WS |
+| `homes`, `layout-editor`, `layout-agent`, `layout-server` | homes.json 읽기·카탈로그 순서, 배치 편집기(옮기기·받침·벽 붙이기·더하기·빼기·되돌리기·수정본·재적용), 배치 도구·가짜 서버의 배치 말, REST·WS |
 | `phone-session`, `phone-server`, `phone-project`, `focus` | 폰 '여기'·트윈→AR, 말·승인·초점 전달, 초점 투영, `HOME_ID` 통합(폰 "냉장고 위치 여기로 맞춰줘" → layout·focus·저장) |
-| `react` | 추론 과정: 서버 안 에이전트 도구의 필수 reason(MCP에는 없음), 실행 전 떼기, 관찰 문장, mock reason |
+| `react` | 추론 과정: 서버 안 에이전트 도구의 필수 reason(MCP에는 없음), 실행 전 떼기, 관찰 문장 |
 | `e2e` | `startServer()`(npm start 경로)로 실제 기기 65개 MatterHub를 띄우고: 데모 시나리오를 REST 에이전트로 돌려 **브리지의 Matter 속성**(`onOff`, `occupiedCoolingSetpoint`, `currentPositionLiftPercent100ths`, `lockState`)과 WS 이벤트를 확인, MCP 클라이언트로 `turn_on`·`unlock`→`confirm_action`, network 전송으로 같은 흐름 + 기기 쪽 변경이 구독으로 WS까지 오는지 + 페어링 창, 커미셔닝 제한 시간 초과 → local 대체 |
 
 ## 제한 사항
 
 - **외부 Matter 컨트롤러로는 아직 해 보지 않았다.** 페어링 창이 열리는 것(`windowStatus ≠ 0`)까지는 테스트하지만, Home Assistant·SmartThings 앱으로 실제 추가한 적은 없다. 인증받지 않은 테스트 vendor(0xFFF1)다.
-- **실제 LLM 호출을 해 보지 않았다.** 키가 없어 anthropic·openai 공급자는 가짜 HTTP API로 요청·도구 루프 모양만 확인했다. 키가 없으면 mock 에이전트로 뜬다.
+- **실제 LLM 호출을 해 보지 않았다.** 키가 없어 anthropic·openai 공급자는 가짜 HTTP API로 요청·도구 루프 모양만 확인했다. 키가 없으면 에이전트가 준비 안 됨이다.
 - `DeviceState.online`은 항상 true다(브리지 연결 상태를 따르지 않는다).
 - local로 대신 뜨면 외부 컨트롤러를 붙일 수 없다(시작 로그의 `[경고]`와 `/api/health`의 `transport`로 알 수 있다).
 - 시작 시간: 기기 65개 network는 보통 7~10초. 이 PC에 무거운 작업(Blender 빌드 등)이 돌 때는 local도 30초, network 재시작이 2분 가까이 걸린 적이 있다. 커미셔닝 단계별 제한 시간(`MATTER_COMMISSION_TIMEOUT_MS`)은 한 단계에 적용되므로 전체 시작은 그보다 길 수 있다.

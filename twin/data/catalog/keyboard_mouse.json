@@ -1,0 +1,17 @@
+{
+  "type": "keyboard_mouse",
+  "label": "키보드·마우스",
+  "family": "bedroom",
+  "category": "decorations",
+  "node_type": "decor",
+  "mount": "surface",
+  "footprint": [
+    0.5,
+    0.13
+  ],
+  "height": 0.035,
+  "model": "assets/decorations/keyboard_mouse.glb",
+  "blocks_walk": false,
+  "blocks_view": false,
+  "notes": "알루미늄 텐키리스 키보드(위가 좁은 흰 키캡 87개)와 무선 마우스."
+}

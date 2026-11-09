@@ -1,82 +1,72 @@
-# PAM 연결 형식 (twin-home 클로이드 두뇌 ↔ 박석준 PAM)
+# PAM 연결 형식 (noonchi ↔ PAM 서비스)
 
-twin-home 두뇌가 PAM 예측기(predictor)를 HTTP로 부를 때의 입력·결과 형식이다. 한 카메라, FSM 기억 기준이다. 결과는 PAM `parse_prediction` 결과와 같은 모양이다. 박석준과 정하면서 바꾼다.
-
-## 역할 나누기
+noonchi 서버가 PAM 서비스(`services/pam/`)를 부르는 형식이다. PAM에는 사진을 넘기지 않는다. World State가 YOLOX와 VLM 결과를 합친 관찰 텍스트를 넘긴다.
 
 | 누가 | 하는 일 |
 |---|---|
-| twin-home 두뇌 | 언제 PAM을 부를지 정한다. 컵을 두고 자리를 비운 것이 확인됐을 때만 부른다(YOLO 5초 + VLM 사람 없음) |
-| twin-home 두뇌 | 사진을 모은다. 한 카메라 5장, 2초 간격(t−8, t−6, t−4, t−2, t초) |
-| twin-home 두뇌 | 장면 밖 근거를 붙인다. 컵 안 요청 답 사진과 VLM이 확신한 컵 안 |
-| PAM | 무엇을 도울지 하나 고른다: `task_index`, −1은 대기 |
-| twin-home 두뇌 | 행동 직전 다시 확인한다. 실행은 지금 모두 모의다 |
+| noonchi | 언제 부를지 정한다(World State의 의미 있는 변화, 또는 주기 설정) |
+| noonchi | 관찰 텍스트를 만든다: 시각이 붙은 줄 + `[지속]` 오래 이어진 사실 + `[눈]` 클로이드 눈이 있는 방 이름(`src/world/text.ts`) |
+| PAM 서비스 | 논문 프롬프트에 관찰 텍스트를 넣어 PAM LLM을 부르고 원문을 돌려준다 |
+| noonchi | 원문을 다시 검사하고, 실행 전 검사를 거쳐 실행한다 |
 
-## 요청
+## 판단 `POST {PAM_URL}/predict` (`pam-predict/2`)
 
-`POST {PAM_URL}`(예: `http://127.0.0.1:8300/predict`), `Content-Type: application/json`
+요청:
 
 ```json
 {
-  "contract": "pam-predict/1",
-  "camera": "single",
-  "final_frame_time": "2026-11-04T21:00:08.000+09:00",
-  "frames": [
-    { "timestamp": "2026-11-04T21:00:00.000+09:00", "image": { "mime_type": "image/jpeg", "base64": "..." } },
-    { "timestamp": "2026-11-04T21:00:02.000+09:00", "image": { "mime_type": "image/jpeg", "base64": "..." } },
-    { "timestamp": "2026-11-04T21:00:04.000+09:00", "image": { "mime_type": "image/jpeg", "base64": "..." } },
-    { "timestamp": "2026-11-04T21:00:06.000+09:00", "image": { "mime_type": "image/jpeg", "base64": "..." } },
-    { "timestamp": "2026-11-04T21:00:08.000+09:00", "image": { "mime_type": "image/jpeg", "base64": "..." } }
-  ],
+  "contract": "pam-predict/2",
+  "final_time": "2026-11-07T21:00:08.000+09:00",
+  "observation_text": "21:00:01 사람 보임\n21:00:02 컵 cup_1 보임\n21:00:02 VLM: 사람이 식탁 옆에 서 있고 컵이 식탁 위에 있다\n21:00:02 사람 서 있음\n21:00:02 컵 cup_1 식탁 위\n21:00:04 사람 안 보임\n21:00:04 VLM: 식탁 위에 빈 컵이 있다\n21:00:04 컵 cup_1 비어 있음\n[지속] 컵 cup_1 식탁 위 · 비어 있음: 21:00:00부터 8초째, 마지막 확인 21:00:04\n[지속] 사람 안 보임: 21:00:04부터 4초째\n[눈] 클로이드 눈: 주방",
   "memory_kind": "fsm",
   "memory": { "initial_state": "drinking", "states": [ ... ] },
-  "tasks": ["컵 치우기", "사용자에게 물어보기"],
-  "evidence": [
-    {
-      "kind": "cup_contents", "value": "empty", "certain": true,
-      "timestamp": "2026-11-04T21:00:07.400+09:00", "source": "request_answer_photo",
-      "image": { "mime_type": "image/jpeg", "base64": "..." }
-    }
-  ]
+  "tasks": ["컵 치우기", "사용자에게 물어보기"]
 }
 ```
 
-- **`frames`:** 정확히 5장, 시각이 2초씩 늘어난다. 시각은 2초 격자의 이름 시각이고, 실제 사진은 그 자리 ±0.5초 안에서 고른다. 시간대가 꼭 있다. PAM `_frame_content(frames, 5, stride=2)` 규칙과 같고, 좌우 두 장이 아니라 한 장이다.
-- **`memory`:** PAM `validate_memory(memory, "fsm")` 모양이다. 지금은 임시 컵 기억 `CUP_FSM_MEMORY`(`src/brain/decision.ts`)를 보낸다: `drinking` → `left_cup`. 실제 기억은 PAM 반성기가 만든 것을 쓴다.
-- **`tasks`:** 순서가 있는 작업 목록이다. `task_index`가 이 순서를 가리킨다.
-- **`evidence`(새로 더함):** 5장 격자 밖의 근거다. 지금은 컵 안(`cup_contents`)만 보낸다.
-  - `value`: `empty`(빈 컵) / `not_empty`(음료 남음)
-  - `source`: `request_answer_photo`(폰 요청 답 사진) / `scene_frame`(장면 사진)
-  - VLM이 확신했을 때만 보낸다. 사진이 5장 격자에 들지 않으면 PAM이 컵 안을 알 수 없어서 따로 보낸다. 근거가 없으면 빈 배열이다.
-
-## 답
-
-HTTP 200, PAM `parse_prediction` 결과 그대로:
+답(HTTP 200, PAM `parse_prediction` 모양):
 
 ```json
-{
-  "status": "valid",
-  "raw_response": "{\"observation\": \"...\", \"reasoning\": \"...\", \"task_index\": 0}",
-  "prediction": { "observation": "...", "reasoning": "...", "task_index": 0 },
-  "selected_action": "컵 치우기",
-  "errors": []
-}
+{ "status": "valid", "raw_response": "{...}", "prediction": { "observation": "...", "reasoning": "...", "task_index": 0 }, "selected_action": "컵 치우기", "errors": [] }
 ```
 
-- 원문(`raw_response`)을 고치지 않고 그대로 준다. 우리 쪽이 원문을 다시 검사해, `prediction`·`selected_action`이 원문과 다르면 실패로 본다.
-- 형식이 틀린 답은 `status: "invalid"`, `prediction: null`, `errors`에 이유를 담는다. **invalid는 대기(−1)와 다르다.** 우리 쪽은 판단 실패로 기록하고 아무것도 하지 않는다.
-- 요청이 계약에 맞지 않으면 HTTP 400 `{ "error": "..." }`를 준다(사진 수·간격·시간대·기억 모양).
-- 제한 시간은 기본 20초다(`PAM_TIMEOUT_MS`). 넘기면 판단 실패다.
+## 반성 `POST {PAM_URL}/reflect` (`pam-reflect/2`)
 
-## 박석준과 정할 것
+요청:
 
-1. 한 카메라 버전의 프롬프트에 `evidence`를 어떻게 넣을지. 이미지로 붙일지, 글로 붙일지, 둘 다일지.
-2. FSM 기억의 언어. PAM 예시는 영어이고, 지금 임시 기억과 작업 이름은 한국어다.
-3. 서버를 띄울 곳과 키. OpenRouter `qwen/qwen3.5-27b`, `OPENROUTER_API_KEY`가 필요하다.
-4. 작업 목록 확정. 지금은 `컵 치우기`, `사용자에게 물어보기` 두 개다.
+```json
+{ "contract": "pam-reflect/2", "day": "2026-11-07", "memory_kind": "fsm", "memory": { ... },
+  "observation_text": "하루 관찰 텍스트", "action_summary": "하루 행동 요약", "feedback": "사용자 피드백 또는 null" }
+```
+
+답: `{ "status": "valid", "raw_response": "...", "memory": { ... }, "errors": [] }`
+
+## 상태 `GET {PAM_URL}/health`
+
+`{ "ok": true, "llm": { "base_url", "model", "reachable" }, "limits": { "max_model_len", "predict_input_bytes", "reflect_input_bytes" } }`
+
+## 규칙
+
+- 두 계약 모두 사진 칸이 없다. 모르는 칸이 오면 400이다. noonchi는 보내기 전에 사진 칸·`data:image` 값을 막는다(`assertTextOnly`).
+- 칸 상한: 판단 관찰 텍스트 20,000자, 반성 관찰 텍스트 100,000자·행동 요약 50,000자·피드백 8,000자.
+- `status: "invalid"`는 대기(−1)와 다른 판단 실패다.
+- 판단 프롬프트는 논문 프롬프트(`services/pam/prompts/paper/`)의 판단 규칙 문장을 그대로 두고, 입력 설명 문장과 공간 문장만 `services/pam/scenarios/noonchi/scenario.json`대로 바꾼다.
+- PAM LLM 주소: `INFERENCE_MODE`가 고른다(mock: OpenRouter `qwen/qwen3.5-27b` provider alibaba, live: 같은 서버 vLLM, 모델 이름 `pam`). `PAM_LLM_BASE_URL`·`PAM_LLM_MODEL`이 앞선다.
+- 전송 값은 `services/pam/config/openrouter.json`이다: max_tokens 판단 2048·반성 16384, 시간 제한 120초, `stream: false`. mock은 provider alibaba 고정과 문맥 압축 끔(`plugins`)을 더 보낸다. 잘린 답(`finish_reason`이 `stop`이 아님)과 LLM 오류는 502다.
+- 문맥 길이: `PAM_MAX_MODEL_LEN`(기본 32768, vLLM `--max-model-len`과 같은 값). `입력 추정 + max_tokens`가 넘으면 413이고 LLM을 부르지 않는다. `GET /health`의 `limits`(`predict_input_bytes`, `reflect_input_bytes`)가 바뀌는 글(관찰 텍스트·행동 요약·피드백·기억 JSON)에 쓸 수 있는 UTF-8 바이트 수다. noonchi는 반성 전에 이 값을 읽어 하루 요약을 줄인다.
+- 제한 시간: 판단 `PAM_TIMEOUT_MS`(기본 30000), 반성 300초.
+- 연결 실패·시간 초과·5xx는 `PamLinkError`(PAM 연결 끊김으로 기록), 400·413·답 형식 오류는 `ContractError`(판단 실패)다.
+- 기억: 반성으로 고친 기억은 다음 날부터 쓴다. 그날 판단은 그날 처음 정한 기억 판본만 쓴다(논문 `config/paper.json`의 `memory_lifecycle`).
+
+## 박석준과 맞출 것
+
+1. 입력 설명 문장·공간 문장과 관찰 텍스트의 언어·형식.
+2. 판단 규칙 문장의 책상(desk) 표현: 「the person sets it down on the desk」를 집에 맞게 바꿀지. 지금은 논문 문장 그대로다.
+3. 행동 목록. 지금은 `컵 치우기`, `사용자에게 물어보기`.
+4. live PAM LLM 모델(Qwen3.5-27B 4비트 / 7B급).
 
 ## 시험
 
-- 모의 PAM 서버: `npx tsx scripts/pam-mock-server.ts --port 8300`. 이 계약대로 요청을 검사하고 규칙으로 답한다: 근거가 빈 컵이면 컵 치우기, 음료가 남았으면 대기, 근거가 없으면 물어보기.
-- 두뇌를 모의 PAM에 붙이기: `BRAIN=1 BRAIN_DECISION=pam PAM_URL=http://127.0.0.1:8300/predict`
-- 시험 코드: `tests/brain-pam.test.ts`
+- 서비스: `npm run heavy -- services\pam\.venv\Scripts\python.exe -m pytest services/pam -q`(가짜 OpenAI 호환 서버 사용)
+- noonchi 쪽: `tests/pam-text-only.test.ts`, `tests/brain-pam.test.ts`(시험용 PAM 자리 `tests/helpers/pam.ts`)
+- 두뇌를 키 없이 PAM에 붙이기: `npx tsx scripts/fake-openai.ts --port 8500`, PAM 서비스를 `INFERENCE_MODE=live PAM_LLM_BASE_URL=http://127.0.0.1:8500/v1`로 띄우고 `BRAIN=1 PAM_URL=http://127.0.0.1:8300`

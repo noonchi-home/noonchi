@@ -1,0 +1,58 @@
+{
+  "type": "robot",
+  "label": "CLOiD 로봇",
+  "family": "robots",
+  "category": "props",
+  "node_type": "prop",
+  "mount": "floor",
+  "footprint": [
+    0.4,
+    0.4
+  ],
+  "height": 1.0,
+  "model": "assets/props/robot.glb",
+  "blocks_walk": true,
+  "blocks_view": true,
+  "anchors": {
+    "front": [
+      0.0,
+      0.45
+    ]
+  },
+  "attrs": {
+    "mode": [
+      "sleep",
+      "active"
+    ]
+  },
+  "states": {
+    "mode": {
+      "default": "sleep",
+      "effects": {
+        "sleep": [
+          {"part": "eyes_open", "visible": false},
+          {"part": "eyes_closed", "visible": true},
+          {"part": "ring", "emissive": 0.015},
+          {"part": "crown", "emissive": 0.015},
+          {"part": "ears", "emissive": 0.0},
+          {"part": "head", "rotate": [10, 0, 0]},
+          {"part": "arm_l", "rotate": [0, 0, 0]},
+          {"part": "arm_r", "rotate": [0, 0, 0]},
+          {"light": "glow", "intensity": 0.0}
+        ],
+        "active": [
+          {"part": "eyes_open", "visible": true},
+          {"part": "eyes_closed", "visible": false},
+          {"part": "ring", "emissive": 1.0},
+          {"part": "crown", "emissive": 1.0},
+          {"part": "ears", "emissive": 1.0},
+          {"part": "head", "rotate": [-5, 0, 0]},
+          {"part": "arm_l", "rotate": [-12, 0, 0]},
+          {"part": "arm_r", "rotate": [-12, 0, 0]},
+          {"light": "glow", "intensity": 1.0}
+        ]
+      }
+    }
+  },
+  "notes": "SSOT 소품. 충전대 위에 둘 때는 on: dock. 흰 유광 몸통·검은 유리 얼굴·바퀴 받침·짧은 팔. active: 청록 눈(eyes_open)·허리 띠(ring)·머리 위 띠(crown)·귀 빛·앞쪽 점광원, 고개를 살짝 들고 팔을 앞으로. sleep: 감은 눈 선(eyes_closed)만 희미하게, 고개를 숙인다."
+}

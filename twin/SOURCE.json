@@ -1,0 +1,2369 @@
+{
+  "source": "twin-studio",
+  "commit": "9e3aecf",
+  "homes": [
+    "apartment",
+    "oneroom",
+    "mokryeon_180b"
+  ],
+  "files": [
+    {
+      "path": "apartment/assets/appliances/air_purifier.glb",
+      "bytes": 243504,
+      "sha256": "1b69e0e051fea21d29a560f6462a061b2c809e49316e455f3bf8a515739cacf7"
+    },
+    {
+      "path": "apartment/assets/appliances/bedside_lamp.glb",
+      "bytes": 110988,
+      "sha256": "f9e1d20dd647ee36013c46e1d2ded3cdc17f00a1bffd1c3b0d1ca12b42c3ca18"
+    },
+    {
+      "path": "apartment/assets/appliances/boiler.glb",
+      "bytes": 387012,
+      "sha256": "ea8635a1f7092d1f86025164f9f9eecdc3752c05ca7655651bea842de3ad779b"
+    },
+    {
+      "path": "apartment/assets/appliances/desk_lamp.glb",
+      "bytes": 88292,
+      "sha256": "d9b8245e564016c048479ba92845ccae83a823a61b882649810b08ae86ebecb6"
+    },
+    {
+      "path": "apartment/assets/appliances/dishwasher.glb",
+      "bytes": 300340,
+      "sha256": "f60dfb1820dafbb13121567b85bca4b5f754ecfb4e89f5638562fcc8645a24c6"
+    },
+    {
+      "path": "apartment/assets/appliances/dryer.glb",
+      "bytes": 430664,
+      "sha256": "e3d9647222aaf42f47c495c0fd30e770b9ea293db7947d10a3ee43877d10762c"
+    },
+    {
+      "path": "apartment/assets/appliances/floor_lamp.glb",
+      "bytes": 140584,
+      "sha256": "ba08a446525db4c7b73758c6307779cdd9ddc3ae331a57921f6be065f3d49370"
+    },
+    {
+      "path": "apartment/assets/appliances/fridge.glb",
+      "bytes": 399636,
+      "sha256": "1b2d634943fc5cf0850d2a187f3dc4beefda297d6c323699c6b5e6082e889177"
+    },
+    {
+      "path": "apartment/assets/appliances/humidifier.glb",
+      "bytes": 135440,
+      "sha256": "deae87cb1fff53b340e7701ef6aeacb9c4a69e130b92a9a8933825705015fdfa"
+    },
+    {
+      "path": "apartment/assets/appliances/induction_counter.glb",
+      "bytes": 169968,
+      "sha256": "96037be63e7e7effb2be6f02723e818fefcfbdd1a8b544dbec9e95aec6d1cbfa"
+    },
+    {
+      "path": "apartment/assets/appliances/kettle.glb",
+      "bytes": 183420,
+      "sha256": "dd1a6cdb0c0e979f64ac354ab87824f3fb35f90c768aeec6ccd022565fdae8b3"
+    },
+    {
+      "path": "apartment/assets/appliances/kimchi_fridge.glb",
+      "bytes": 109760,
+      "sha256": "e2855e3963032a53f5650ecb3590f61bd247e2ff3be7468cc362e420ac0c6347"
+    },
+    {
+      "path": "apartment/assets/appliances/microwave.glb",
+      "bytes": 136516,
+      "sha256": "90e7b574e12d7f7a3f9ef85570bb589dc897b70f8692600197ebc68b773da96d"
+    },
+    {
+      "path": "apartment/assets/appliances/monitor.glb",
+      "bytes": 118944,
+      "sha256": "ac06baa6a65d57ab7b006dace224facbcf33fce3a45d4771196e65f4c0b5486f"
+    },
+    {
+      "path": "apartment/assets/appliances/range_hood.glb",
+      "bytes": 138488,
+      "sha256": "25e4dc14c53681c2b2503f611a38131980a6d82af9e82de8efd1c717e1fabe37"
+    },
+    {
+      "path": "apartment/assets/appliances/rice_cooker.glb",
+      "bytes": 150716,
+      "sha256": "4fb2f8262f3a6413ef2d58fd4297aa1ac23c098817c08e8daf14c3a1a5426a69"
+    },
+    {
+      "path": "apartment/assets/appliances/robot_dock.glb",
+      "bytes": 204824,
+      "sha256": "5448ab525290a2b318a9ab3c5f976665581989b9b501652b21b3f05907c97b13"
+    },
+    {
+      "path": "apartment/assets/appliances/robot_vacuum.glb",
+      "bytes": 360876,
+      "sha256": "703fbadb0f61c9c434c9f96eec96ae32c9d035012bb8d3b55f6ec4ce8d084041"
+    },
+    {
+      "path": "apartment/assets/appliances/speaker.glb",
+      "bytes": 106692,
+      "sha256": "d164424c32ecbf66ff4a12507e325b5cf4cf4589c6deae99655e9c8044f8ac7e"
+    },
+    {
+      "path": "apartment/assets/appliances/stand_ac.glb",
+      "bytes": 275864,
+      "sha256": "a5e6343e2334289c9b15a9a66d5746f95f1b57655633d0d3aff3535383491e6b"
+    },
+    {
+      "path": "apartment/assets/appliances/stick_vacuum.glb",
+      "bytes": 167572,
+      "sha256": "02c05d9a94789c1a983063649d864272026111e18366eee3cff8d0477a9fa3e3"
+    },
+    {
+      "path": "apartment/assets/appliances/tv.glb",
+      "bytes": 113476,
+      "sha256": "9cfd7f8b83075fa33a7f9b63bf15c6eeb1c3662ff52218419d4e7dee724aa47d"
+    },
+    {
+      "path": "apartment/assets/appliances/vacuum_dock.glb",
+      "bytes": 236916,
+      "sha256": "b14032b973d5b8e1ae24755ab746b296964364467e3dccd485c7718fff6e8e52"
+    },
+    {
+      "path": "apartment/assets/appliances/wall_ac.glb",
+      "bytes": 140236,
+      "sha256": "4bbb0ad1ba19837539c341def7864329c03331ebe8ef4b43de2e6b2230d8e3b8"
+    },
+    {
+      "path": "apartment/assets/appliances/wall_pad.glb",
+      "bytes": 48316,
+      "sha256": "df23fe8cc44ffda228f2530c0b022afee7a2d08bd9a0f2f4006a3d7fa96b3681"
+    },
+    {
+      "path": "apartment/assets/appliances/washer.glb",
+      "bytes": 426976,
+      "sha256": "348c6839932a6ca0b6b765b1d0301a3211e4864e520f1c644998fef0a8a97385"
+    },
+    {
+      "path": "apartment/assets/decorations/basket.glb",
+      "bytes": 71304,
+      "sha256": "95d0b17d395b750b3181f95bf9ba1d3560f53d293ec37f7c4778a3615f8d9020"
+    },
+    {
+      "path": "apartment/assets/decorations/books_row.glb",
+      "bytes": 83900,
+      "sha256": "0246fd617c946bbc1e5c5b2e6da87870db1a0b939b680536d066828dfc9c0e76"
+    },
+    {
+      "path": "apartment/assets/decorations/extinguisher.glb",
+      "bytes": 103076,
+      "sha256": "5db0f55fc1741787ae79714bd8e4edabb6051d2ad8938d52cfe469f91ef11ea4"
+    },
+    {
+      "path": "apartment/assets/decorations/keyboard_mouse.glb",
+      "bytes": 99804,
+      "sha256": "b980c7fd0e078d2cb3db2bb7f6f67b51fa672e16da79a6787529971ca1299ad5"
+    },
+    {
+      "path": "apartment/assets/decorations/magazine.glb",
+      "bytes": 21968,
+      "sha256": "852f35dc8597206a00d14e0157b4db994c7c4adb02dbd5114a0ac17634259bbc"
+    },
+    {
+      "path": "apartment/assets/decorations/picture_frame.glb",
+      "bytes": 42544,
+      "sha256": "79811c97eb14c0816b96acfe41a9ca59a1bbd86b0f2a7dfa6fef6d0c9fab9780"
+    },
+    {
+      "path": "apartment/assets/decorations/picture_frame_abstract.glb",
+      "bytes": 48196,
+      "sha256": "b231c1eb906dcf99bc2cde28f9be60500819f97b3865f2f034e07cafb809c03f"
+    },
+    {
+      "path": "apartment/assets/decorations/picture_frame_botanical.glb",
+      "bytes": 42532,
+      "sha256": "67bd130e3a98175f8a51c711c725e71efa83c2daf47a96e70d6a0462f71c7342"
+    },
+    {
+      "path": "apartment/assets/decorations/plant.glb",
+      "bytes": 432728,
+      "sha256": "ca6b73754d0c600541cd7807b7bba475a14e1fd4e0f006f655f28f8951472788"
+    },
+    {
+      "path": "apartment/assets/decorations/plant_herb.glb",
+      "bytes": 42252,
+      "sha256": "c5440d2475443f1e97f95204aaec463c4115cf7688a5e74cbaa640af46356dc1"
+    },
+    {
+      "path": "apartment/assets/decorations/plant_monstera.glb",
+      "bytes": 48384,
+      "sha256": "9b51dc0f2ecfbd6a51ee8549a8d7721bb37b1845cc8bf05f41db875fa87e19dc"
+    },
+    {
+      "path": "apartment/assets/decorations/plant_pothos.glb",
+      "bytes": 97264,
+      "sha256": "a288b36a2f1ba0dfd9b1cedf43d75a78dbb0d1bcd83953fb61bf4008555103de"
+    },
+    {
+      "path": "apartment/assets/decorations/plant_small.glb",
+      "bytes": 108540,
+      "sha256": "e872f4dd21078aac33cec0ec093401ae29927d22d304b867f9d0a2c41abcadb3"
+    },
+    {
+      "path": "apartment/assets/decorations/rug.glb",
+      "bytes": 98416,
+      "sha256": "52d70878c68fa7dcd9f5b15c066b8ec09ea39b4196c59a727a0fc84438efa59c"
+    },
+    {
+      "path": "apartment/assets/decorations/slippers.glb",
+      "bytes": 53420,
+      "sha256": "760699289e9db1d65218e5ca9ac8e16549e4b6f9a1274e0a5c48f143f6e6eef6"
+    },
+    {
+      "path": "apartment/assets/decorations/storage_box.glb",
+      "bytes": 21316,
+      "sha256": "eb341a45c9c065fc45d540a91694b4eb659fab6a6dc54ba5aa29f696d3ec43cb"
+    },
+    {
+      "path": "apartment/assets/decorations/vase_flowers.glb",
+      "bytes": 42592,
+      "sha256": "ee5c60eb6aebc8458dca81164cea5eb447b4760e166fd1f6018b1d205096a73e"
+    },
+    {
+      "path": "apartment/assets/fixtures/blind_175.glb",
+      "bytes": 84220,
+      "sha256": "37a0ddd81acd01193d25c844ae30dc269fa3705d51bce9d230231bd50471f0c6"
+    },
+    {
+      "path": "apartment/assets/fixtures/ceiling_light.glb",
+      "bytes": 65792,
+      "sha256": "246ad412c7a3396582891c0736d3b097eac519cae6f7d4169fa530bf83959351"
+    },
+    {
+      "path": "apartment/assets/fixtures/ceiling_panel.glb",
+      "bytes": 38164,
+      "sha256": "c33bc49513f6362b971647473cde6c1fe95b9a2e6b9bcbc18d4f78537e871687"
+    },
+    {
+      "path": "apartment/assets/fixtures/curtain_250.glb",
+      "bytes": 414376,
+      "sha256": "b62cc962a36095bf36d0d004729fd46bdbf491a7d44dfaefa4a8ac9b3d49bd97"
+    },
+    {
+      "path": "apartment/assets/fixtures/curtain_290.glb",
+      "bytes": 454884,
+      "sha256": "0a575610febe407aa74ea1c5a901fb7090040a34bb80a146e6d909d4631760f3"
+    },
+    {
+      "path": "apartment/assets/fixtures/door_bath_r.glb",
+      "bytes": 215076,
+      "sha256": "36bb78b3d4dbbf4197db6b887846cf1dcd483f40aa8f9c0fc0d4b7b3734e75f8"
+    },
+    {
+      "path": "apartment/assets/fixtures/door_fire_l.glb",
+      "bytes": 205072,
+      "sha256": "e09add33a222f3b7b4e56ae7aba66827e6b9db6f9ca96cf88ca0e9dccf06477f"
+    },
+    {
+      "path": "apartment/assets/fixtures/door_glass_l.glb",
+      "bytes": 144556,
+      "sha256": "bee2e9f6ea40cafe68cad79c3244dd1aacf3dbc367f0fb0b81a6fb625bbf35fa"
+    },
+    {
+      "path": "apartment/assets/fixtures/door_main.glb",
+      "bytes": 390016,
+      "sha256": "c14980e5cc4ec1ccfa421594d21f2d2e65b771f2fe1a199a5db9f92ef22fa694"
+    },
+    {
+      "path": "apartment/assets/fixtures/door_room_l.glb",
+      "bytes": 222448,
+      "sha256": "f71caaa7edd4686e3285c56c2a31391dd8020f04caae57a294f49f87bb395538"
+    },
+    {
+      "path": "apartment/assets/fixtures/door_room_r.glb",
+      "bytes": 222416,
+      "sha256": "10cebeebb9c4705c7f85a745ac0983a7669d67efdfc3f9654e19b8547da77b8d"
+    },
+    {
+      "path": "apartment/assets/fixtures/downlight.glb",
+      "bytes": 59692,
+      "sha256": "bb5d5b74bd6aa06c9d94e6b68f7e802176347df5827ae6647c6fb42ca943eac7"
+    },
+    {
+      "path": "apartment/assets/fixtures/mirror_cabinet.glb",
+      "bytes": 80556,
+      "sha256": "0258a1c50afc02d7c0ce7e9eecca395d3915ab91956a94d3cf9fe7b5f7697631"
+    },
+    {
+      "path": "apartment/assets/fixtures/pendant_lamp.glb",
+      "bytes": 93872,
+      "sha256": "5f2ab7a7abd7b2e460f1279d79c0e789045188aed84244f5782f5ffacf373550"
+    },
+    {
+      "path": "apartment/assets/fixtures/shower_booth.glb",
+      "bytes": 404616,
+      "sha256": "3e8f8e51f51928db39ed869e22d5d3cdaa236cda2468fd42570ddf14aaa2ce66"
+    },
+    {
+      "path": "apartment/assets/fixtures/sliding_door_110.glb",
+      "bytes": 161320,
+      "sha256": "197429d6ccdb60ba97e1f929c90d543ca0cb2b0f02dac7274be08dbd227a1f01"
+    },
+    {
+      "path": "apartment/assets/fixtures/sliding_door_95.glb",
+      "bytes": 160616,
+      "sha256": "86aa3e3bcd7d6c5546a6a87d501f3c037cee4310c191a0f4a51c98140051b5df"
+    },
+    {
+      "path": "apartment/assets/fixtures/toilet.glb",
+      "bytes": 175856,
+      "sha256": "c4e373fecd0eb134cc779d176451fd036f11ad8707545f25913d6a67ece35719"
+    },
+    {
+      "path": "apartment/assets/fixtures/utility_sink.glb",
+      "bytes": 570448,
+      "sha256": "b7a9369c568e6543af9ae10d3427e0c02be4c00904bbc3b2772bf4ee84093ee7"
+    },
+    {
+      "path": "apartment/assets/fixtures/vanity.glb",
+      "bytes": 329424,
+      "sha256": "b2f0cb530aec6061909244597b9a8f4ef40a4690b5bb77345c836b5e8be8d0bc"
+    },
+    {
+      "path": "apartment/assets/fixtures/vent_fan.glb",
+      "bytes": 159816,
+      "sha256": "09084790af5594dbf2d28e125c6fcd5534e178dc5e3853cec417f77b6e3a9bba"
+    },
+    {
+      "path": "apartment/assets/fixtures/window_bed.glb",
+      "bytes": 298984,
+      "sha256": "95e81b2981efbf0fa3f4e181ea01a0c4298140bd306e6329b0b922734a029eb6"
+    },
+    {
+      "path": "apartment/assets/fixtures/window_inner.glb",
+      "bytes": 299612,
+      "sha256": "03f305c4cc4aa2fb12d92bd20f0b438e16d26e73903bce32dd2ac16ac3fb865a"
+    },
+    {
+      "path": "apartment/assets/fixtures/window_living.glb",
+      "bytes": 300856,
+      "sha256": "e71b348ec2d3df54e5a50d8014bacd2b5b817de87d1a3c5613e45314a789c66e"
+    },
+    {
+      "path": "apartment/assets/fixtures/window_master.glb",
+      "bytes": 305800,
+      "sha256": "2e09c81d24c219806c311e9f7bc4ccf3e9714797e1388d12e360eec193dd0e14"
+    },
+    {
+      "path": "apartment/assets/fixtures/window_small.glb",
+      "bytes": 296512,
+      "sha256": "6ebe6c735792add47f8ac82798dc04904fe589da270aa5aba20a0aa43a5f953f"
+    },
+    {
+      "path": "apartment/assets/furniture/armchair.glb",
+      "bytes": 265268,
+      "sha256": "0934245ed02335247586cda546f42347df59945537c16e1682c7b491c96c3745"
+    },
+    {
+      "path": "apartment/assets/furniture/bed_queen.glb",
+      "bytes": 415412,
+      "sha256": "d103376be331f018d66fe92fef45ca40ae28b6483598bf89a0db0be6498d77af"
+    },
+    {
+      "path": "apartment/assets/furniture/bed_single.glb",
+      "bytes": 320444,
+      "sha256": "0acbcf9aae44773de3467d21192841db6bca621eafae891ba61f620588883307"
+    },
+    {
+      "path": "apartment/assets/furniture/bookcase.glb",
+      "bytes": 97748,
+      "sha256": "151b01f5a1447bc4f48c71fecf12a339bc581575b136273dc92841909d292c61"
+    },
+    {
+      "path": "apartment/assets/furniture/cabinet.glb",
+      "bytes": 93860,
+      "sha256": "a777866184694e82748e8e1929620d87d42326346ae8b8fae7f2a3e2dd076459"
+    },
+    {
+      "path": "apartment/assets/furniture/chair.glb",
+      "bytes": 104640,
+      "sha256": "542ac69826640eb5626a394cfdbc66b442a10240ae4e50c73b2005410d2d7b78"
+    },
+    {
+      "path": "apartment/assets/furniture/coffee_table.glb",
+      "bytes": 39308,
+      "sha256": "9e8bc651f695651d3f1dbeb9e68889fc533079062b0e05ce02f434778d42c050"
+    },
+    {
+      "path": "apartment/assets/furniture/counter_base_60.glb",
+      "bytes": 73832,
+      "sha256": "aa835c4b0d5391d6b9fbf3a8b0e85d0fcb8bbb3257255ceff5fd16533c973b1e"
+    },
+    {
+      "path": "apartment/assets/furniture/counter_drawer_60.glb",
+      "bytes": 99652,
+      "sha256": "6bce1121c1e9e9d332e1118d7333a5f27441aab470de13594d24a1a8a82d4bfb"
+    },
+    {
+      "path": "apartment/assets/furniture/counter_filler.glb",
+      "bytes": 73624,
+      "sha256": "7e647075ab3f2f4971aefc8a8e78d36a19c7468a556f35de98b13210b16331b1"
+    },
+    {
+      "path": "apartment/assets/furniture/desk.glb",
+      "bytes": 129400,
+      "sha256": "5a7f885cecab77462b7e560cad057a33d0d06b4badede18e94ad1d355c779dcb"
+    },
+    {
+      "path": "apartment/assets/furniture/desk_small.glb",
+      "bytes": 115592,
+      "sha256": "210fb64e79de20bca95db8118c9cbce2039b207741c302b761d60f6ecc6057d6"
+    },
+    {
+      "path": "apartment/assets/furniture/dining_chair.glb",
+      "bytes": 116016,
+      "sha256": "cc8eac419082729f2d7dd11b1178e07602d6b214726747e6c4617aeeac451fc4"
+    },
+    {
+      "path": "apartment/assets/furniture/dining_table.glb",
+      "bytes": 59912,
+      "sha256": "d8d9a99b78d9630bcf7f44a9c11c3b3c87b909f2bc9f8d7c8819fdd5d4d84c40"
+    },
+    {
+      "path": "apartment/assets/furniture/nightstand.glb",
+      "bytes": 120192,
+      "sha256": "c63a5edfc9f12e31900d3f4ea71f17b0f7e56a5b3058a70f7aed9fb77d22d40e"
+    },
+    {
+      "path": "apartment/assets/furniture/pantry_shelf.glb",
+      "bytes": 572688,
+      "sha256": "bdeabb54d20a4509c377ac1254e534c7fced3a3e6bd7b8d0945d5bc90667ce2a"
+    },
+    {
+      "path": "apartment/assets/furniture/shoe_cabinet.glb",
+      "bytes": 136796,
+      "sha256": "3dde9e4c3e5632e50f8e559bf331c44ccfd7bf7a16220f5c56e54f0b99fc7e25"
+    },
+    {
+      "path": "apartment/assets/furniture/sink_counter.glb",
+      "bytes": 235736,
+      "sha256": "967708d8f5bb951530beab5c58ceb0777548a3fd3b3508d9fd20eb8077cf625b"
+    },
+    {
+      "path": "apartment/assets/furniture/sofa.glb",
+      "bytes": 250880,
+      "sha256": "b938b42b2b7612afc00695be5a574144ae9cf8aa79ba82d8513c9ca71d677ef8"
+    },
+    {
+      "path": "apartment/assets/furniture/tv_stand.glb",
+      "bytes": 181640,
+      "sha256": "228bd7665fb45aedc6239d59608cec32f06b4eda51818494f9b667b1edbee921"
+    },
+    {
+      "path": "apartment/assets/furniture/upper_cabinet_40.glb",
+      "bytes": 58092,
+      "sha256": "fe60c117c62f62c67a896d1f3f40e21c39ce8c1fd97bdfda61390d187784272e"
+    },
+    {
+      "path": "apartment/assets/furniture/upper_cabinet_60.glb",
+      "bytes": 62040,
+      "sha256": "702d33766fd1f7638d0799618532886c975ec9e7612a3efd6593a6f8e22863c9"
+    },
+    {
+      "path": "apartment/assets/furniture/upper_cabinet_80.glb",
+      "bytes": 61780,
+      "sha256": "0e78beb7e80098b5996eaa2d6bedf1764ec743d2885aae4283fc9614c8d6bc1b"
+    },
+    {
+      "path": "apartment/assets/furniture/wardrobe.glb",
+      "bytes": 136840,
+      "sha256": "718ac84f3f45c185b518a33957f6af7dcf1b4394a1f2f301cd0f224363a2eb62"
+    },
+    {
+      "path": "apartment/assets/furniture/wardrobe_module.glb",
+      "bytes": 23148,
+      "sha256": "cd47d5aad7b71ce7ccd810a88aec3f5c8f1cdd9eca4cc44bc1ce47df9a8309e7"
+    },
+    {
+      "path": "apartment/assets/props/pot.glb",
+      "bytes": 77648,
+      "sha256": "f92fb74b819f50983627683039286926c87d1e0558d3c769cb2c43f68947a457"
+    },
+    {
+      "path": "apartment/assets/props/robot.glb",
+      "bytes": 484076,
+      "sha256": "1ee06f6a494b248c97d6afdb1b674a02467e6f7bd44335e8c000e67edd8c387e"
+    },
+    {
+      "path": "apartment/assets/structure/floors.glb",
+      "bytes": 392636,
+      "sha256": "a86856a9a8fd840eebc95042bb25355df1ad4dca36160ee30bfaac3a9d827f5e"
+    },
+    {
+      "path": "apartment/assets/structure/walls.glb",
+      "bytes": 294884,
+      "sha256": "2017fee27b258b1312f77b6f33e9eef94b0a3a17c9219385d8f9c442a3469297"
+    },
+    {
+      "path": "apartment/scene.json",
+      "bytes": 189452,
+      "sha256": "c71b47b83a45f393b006637328883c0d8b1937b44045be51fe6346a563993d38"
+    },
+    {
+      "path": "apartment/viewer/cctv.mjs",
+      "bytes": 8253,
+      "sha256": "b3fad71479a29da9325a5e4406bcf6a98485d6a952dd367daebec1436d38a576"
+    },
+    {
+      "path": "apartment/viewer/eye.mjs",
+      "bytes": 937,
+      "sha256": "1a73ecdcad1fbaac571da186092d490013428cb319a271521707810268a4ec11"
+    },
+    {
+      "path": "apartment/viewer/index.html",
+      "bytes": 3957,
+      "sha256": "4c4acd8ea64d8df6d1c382f2738433a4c10b96cdb780057c43d099dea226d6af"
+    },
+    {
+      "path": "apartment/viewer/layout.mjs",
+      "bytes": 3763,
+      "sha256": "57fff96af904b35767c6e1253dd125cbe11b92bf9e0b37474a5a7985f2cfad91"
+    },
+    {
+      "path": "apartment/viewer/live.mjs",
+      "bytes": 16116,
+      "sha256": "af2ee63a7bc24e9ea2437b2d9b96e17d6454635d7468104abc14f3c5a5d3f910"
+    },
+    {
+      "path": "apartment/viewer/main.mjs",
+      "bytes": 68645,
+      "sha256": "5b0fd9a118c10df9bda581951980022daba874fe6b7726fcab32199a7a99d2c4"
+    },
+    {
+      "path": "apartment/viewer/plan.mjs",
+      "bytes": 3516,
+      "sha256": "70fee1c4c98a3f94df6929c0ab0d16f41a49e1c0e3376d7d5d1ca894e7cf1b31"
+    },
+    {
+      "path": "apartment/viewer/scene.mjs",
+      "bytes": 5893,
+      "sha256": "8a321c5fe06b99771060c8a14db0544f1ba3611e1d286c464059138f56fe22dc"
+    },
+    {
+      "path": "apartment/viewer/states.mjs",
+      "bytes": 15974,
+      "sha256": "810dc27373dd05983a1833f7c2627186ed6d52d413f91c2c9565a5c8784423fb"
+    },
+    {
+      "path": "apartment/viewer/style.css",
+      "bytes": 8277,
+      "sha256": "215e10250b633223c71297ac4b76392eb430e5b9ec6955c18e52d982a32e3fcb"
+    },
+    {
+      "path": "apartment/viewer/touch.mjs",
+      "bytes": 4258,
+      "sha256": "1beb69116afd298b56f51be42c276fc7df5bba46041cbf0b681e83a48df24d82"
+    },
+    {
+      "path": "apartment/viewer/walls.mjs",
+      "bytes": 7283,
+      "sha256": "12edbedbced4da13f353e587025a1b3b485cd1b22e736ac73054ab19622fdb08"
+    },
+    {
+      "path": "data/apartment/floorplan.json",
+      "bytes": 9512,
+      "sha256": "f48eeb4dd7eb0dc95379237e49e11fa51710dd4c88832902917a1aadd6c57ec2"
+    },
+    {
+      "path": "data/apartment/placement.json",
+      "bytes": 19230,
+      "sha256": "b6575af92c7cd39260ea36904d90c280f4d5aa2b4fb2e93e210bb46d333c2bf4"
+    },
+    {
+      "path": "data/catalog/air_purifier.json",
+      "bytes": 1337,
+      "sha256": "b936af5bb95f0076f9be1a911753012ad9c73b6bef63865d1ce6dedf7f190133"
+    },
+    {
+      "path": "data/catalog/armchair.json",
+      "bytes": 457,
+      "sha256": "1b514b6aec6aca740f4cb8ea9883e54b559c622a3352ed9ccb4433fdf0b7aef5"
+    },
+    {
+      "path": "data/catalog/basket.json",
+      "bytes": 299,
+      "sha256": "18c11490c3e20f9f6b62b6cb9367727681da5e37b7580cb3db9ebfb3b1d297e5"
+    },
+    {
+      "path": "data/catalog/bed_queen.json",
+      "bytes": 790,
+      "sha256": "dd223e8feaa9027156ce5aa19c94445d784ca2cdb806f811b8af5ca61eebdc17"
+    },
+    {
+      "path": "data/catalog/bed_single.json",
+      "bytes": 699,
+      "sha256": "53458740c46d5338043b4c86ac62d60ad7574ab7521db90d598b93993bd40695"
+    },
+    {
+      "path": "data/catalog/bedside_lamp.json",
+      "bytes": 1183,
+      "sha256": "43e4ebb616e354731b47025cbd0c66c5f6e1e6e9858383266ed21b708b30fb26"
+    },
+    {
+      "path": "data/catalog/blind_175.json",
+      "bytes": 915,
+      "sha256": "f8cc76a428bf3c4dcd051c614c4fb1a47aa869781722ae3951769cae2349b22f"
+    },
+    {
+      "path": "data/catalog/boiler.json",
+      "bytes": 1585,
+      "sha256": "63906299c16ce8500251a011e8dde71f2b8984cd4fd641f3cede83682abb22d7"
+    },
+    {
+      "path": "data/catalog/bookcase.json",
+      "bytes": 742,
+      "sha256": "be161ad82e982771514daa15b368acc9cd04dee26a811e16ee7b8b08aba574de"
+    },
+    {
+      "path": "data/catalog/books_row.json",
+      "bytes": 489,
+      "sha256": "dc792dda51d4743c52200611780fe6d9d0bdcbd25057cd8715f3171e6dc799b0"
+    },
+    {
+      "path": "data/catalog/cabinet.json",
+      "bytes": 373,
+      "sha256": "403283a4060f6cf34635c9cfc317370c25bcddc7502cf3edc0f6e292be81d4ea"
+    },
+    {
+      "path": "data/catalog/ceiling_light.json",
+      "bytes": 1096,
+      "sha256": "e8f471d9d217f7c22b6bd8e52fbeecf15c7a5820ff36c27ac154523204ff387f"
+    },
+    {
+      "path": "data/catalog/ceiling_panel.json",
+      "bytes": 970,
+      "sha256": "9cbdeff13fb2eaec030d879fd04560be2db7b503fd8feba259bd8a57467efdf3"
+    },
+    {
+      "path": "data/catalog/chair.json",
+      "bytes": 295,
+      "sha256": "f04031f24521d9664b0b017cac3b09fbb264f3bc8c68b8e359b9ad9a275af4d0"
+    },
+    {
+      "path": "data/catalog/coffee_table.json",
+      "bytes": 392,
+      "sha256": "31d084433f65d986d196e74dcae785148ba064675d2faddddd2456624ea5c22d"
+    },
+    {
+      "path": "data/catalog/counter_base_60.json",
+      "bytes": 394,
+      "sha256": "c1d97240ce03c1a7e7285e61cc114a2874d626826aa18b065fb2832b10980d38"
+    },
+    {
+      "path": "data/catalog/counter_drawer_60.json",
+      "bytes": 395,
+      "sha256": "23aea62433c68edfbd5d0fcd51623d9c52c0075741caf1bbf074ad2696bde392"
+    },
+    {
+      "path": "data/catalog/counter_filler.json",
+      "bytes": 393,
+      "sha256": "cbe41d0cc7bd0453a2d6099cb1f88470df9998f5677ef5148d0bdf7b9c0d5c2a"
+    },
+    {
+      "path": "data/catalog/curtain_250.json",
+      "bytes": 1170,
+      "sha256": "cce089348a0a53af0da6f281cdc7f7ba8ac05cc94f4d85c3e6b48bb31c311aa2"
+    },
+    {
+      "path": "data/catalog/curtain_290.json",
+      "bytes": 1580,
+      "sha256": "aae621c94ed23b43d5c6698972193d82d940999cc11a26964b24c754ecc313a9"
+    },
+    {
+      "path": "data/catalog/desk.json",
+      "bytes": 365,
+      "sha256": "0b2efcf968770348a0ec8c09b199fdb054fad5ff2a29a520e3bd415ffd2ed487"
+    },
+    {
+      "path": "data/catalog/desk_lamp.json",
+      "bytes": 1283,
+      "sha256": "b3b7d1be8f9ee7e4747b19727b2fd4b62dc743361d76c5ec6a0821838c889c23"
+    },
+    {
+      "path": "data/catalog/desk_small.json",
+      "bytes": 571,
+      "sha256": "8cabc5b4e10041d215af848d7afdaf8d6ee09da4da410e42b8566db76a412ea1"
+    },
+    {
+      "path": "data/catalog/dining_chair.json",
+      "bytes": 307,
+      "sha256": "f026087160f8c0f4c31eb8b609445fae3c831e3ef69dabf2d245751e8b16747f"
+    },
+    {
+      "path": "data/catalog/dining_table.json",
+      "bytes": 380,
+      "sha256": "7db223fe098fdcf7031fa6c16fce183f37ac0572ada2cc53da9dc2aff7530f5c"
+    },
+    {
+      "path": "data/catalog/dishwasher.json",
+      "bytes": 1929,
+      "sha256": "59bd1f2a1061ca21d781806ec7b0164f06ee0fdc729c96dd8d8dad0a6febc0ef"
+    },
+    {
+      "path": "data/catalog/door_bath_l.json",
+      "bytes": 1277,
+      "sha256": "23923797d24e2b45da13c133e83c24364e7538cdb4ad9311ad0a8c585fe3fbd8"
+    },
+    {
+      "path": "data/catalog/door_bath_r.json",
+      "bytes": 1283,
+      "sha256": "b9fae067a724a11f3e73ac0b7cf9c6a73776ec5e1709427ef2d4d46de82d38ab"
+    },
+    {
+      "path": "data/catalog/door_fire_l.json",
+      "bytes": 1289,
+      "sha256": "2741ee1b28cb9d77af53283380fdf307ddd9df16220f5859d7093fe5102dd32f"
+    },
+    {
+      "path": "data/catalog/door_fire_r.json",
+      "bytes": 1295,
+      "sha256": "2bdb74edc1212b837bd11d5b07f4fdbd762f49c56e02c5a66531bbe5d1db01f4"
+    },
+    {
+      "path": "data/catalog/door_glass_l.json",
+      "bytes": 1289,
+      "sha256": "d26c0e755e00c87739e31173ae7356e9c8a7bd0c15bdd978f0f295584a6b203e"
+    },
+    {
+      "path": "data/catalog/door_glass_r.json",
+      "bytes": 1295,
+      "sha256": "baa35c908bcf777e3251bbc11826c8a8a807995b2fc9982a7ae7fae966376a4f"
+    },
+    {
+      "path": "data/catalog/door_main.json",
+      "bytes": 3411,
+      "sha256": "90c0cd497df7f0e94ac8dec6a5c740ecb454534150e16f62bdda8cc97ecdcc43"
+    },
+    {
+      "path": "data/catalog/door_room_l.json",
+      "bytes": 1272,
+      "sha256": "073f33beff1abeaa1bb5a1da978ebd64e635ce225e16e437de689c60dee8f5d4"
+    },
+    {
+      "path": "data/catalog/door_room_r.json",
+      "bytes": 1278,
+      "sha256": "3469f9150471abb52f4c57e7b31b8aa94be1c685817438e1e0cbd4517f6c19f2"
+    },
+    {
+      "path": "data/catalog/downlight.json",
+      "bytes": 1154,
+      "sha256": "3bd3edc25e6f41dc3db7be642138b5021bf524a0523eee0fe72ec80d30ec997b"
+    },
+    {
+      "path": "data/catalog/dryer.json",
+      "bytes": 1835,
+      "sha256": "a32db9fd0e3592d5dccebdf940b3bcb51f1ee3973cb4d336383e3e00cc171a80"
+    },
+    {
+      "path": "data/catalog/extinguisher.json",
+      "bytes": 484,
+      "sha256": "282172067a0c97464284d41126c2bfe07abde667f0c4f3ae6daaa170dc5b6478"
+    },
+    {
+      "path": "data/catalog/floor_lamp.json",
+      "bytes": 1456,
+      "sha256": "be99fc4e703abfec6e22936bf69af6829fb381cd27cd54a09f6347b4da3ac6b8"
+    },
+    {
+      "path": "data/catalog/fridge.json",
+      "bytes": 1716,
+      "sha256": "796453c73398ac41dd99efd3638c761602dcabd63f0b45098c59386d62d0d24e"
+    },
+    {
+      "path": "data/catalog/humidifier.json",
+      "bytes": 1510,
+      "sha256": "09fae947fadf379b724a3d5bfcc19f08544e5e9414ad13a0b07ffd26b8aada28"
+    },
+    {
+      "path": "data/catalog/induction_counter.json",
+      "bytes": 1399,
+      "sha256": "d48e91e6c643cadb9f2d28f470f8455154517d54324894f39b1353b0b2ba7e94"
+    },
+    {
+      "path": "data/catalog/kettle.json",
+      "bytes": 1547,
+      "sha256": "8c18afc1f4009001e0e490b1c5af242b020908202314d0a4a41c5596f7de4ca2"
+    },
+    {
+      "path": "data/catalog/keyboard_mouse.json",
+      "bytes": 426,
+      "sha256": "e54951896f8c451f9992df8e460641a2c11ae9463e0731f17c17d45e860f0d16"
+    },
+    {
+      "path": "data/catalog/kimchi_fridge.json",
+      "bytes": 320,
+      "sha256": "01767241933c71918d693fdd090dafae23b899596233cd350f61868ad88ded8a"
+    },
+    {
+      "path": "data/catalog/magazine.json",
+      "bytes": 295,
+      "sha256": "553d78f1fa6a32374e789d4c8ab1c09a30f80a0a438190e116d7d5e8a7eb6e7a"
+    },
+    {
+      "path": "data/catalog/microwave.json",
+      "bytes": 1672,
+      "sha256": "c7a83e6f6a3751673ac8746685187dbbae9cab92175de2d8ce8ffdf7e4b2c009"
+    },
+    {
+      "path": "data/catalog/mirror_cabinet.json",
+      "bytes": 477,
+      "sha256": "b9cac7d7485f21ccdee8887b90657ccd41a6e1932c54dd0834249f70a72c8888"
+    },
+    {
+      "path": "data/catalog/monitor.json",
+      "bytes": 1846,
+      "sha256": "334bad1ea2d245ac44e69a6a439186a5dfe1328538d1a4e52b63b3f265f1f406"
+    },
+    {
+      "path": "data/catalog/nightstand.json",
+      "bytes": 568,
+      "sha256": "c9cad26b2e3022e70b4c2f7b19fa6ec22fdec393952e97d78d667719a2f1584e"
+    },
+    {
+      "path": "data/catalog/pantry_shelf.json",
+      "bytes": 848,
+      "sha256": "646f28c98839f3bfd53f707bdd0bfe256ce4a0977f096f0bf740a0b58a164f11"
+    },
+    {
+      "path": "data/catalog/pendant_lamp.json",
+      "bytes": 1197,
+      "sha256": "16a8dcc3dca2a226e88394e1c872dcf378954267b5476cd6f7cb6e3d4c42ca04"
+    },
+    {
+      "path": "data/catalog/picture_frame.json",
+      "bytes": 311,
+      "sha256": "78a164a57bbe511b9839f1aa7b5d696395c036c2b902cbbc500227f48d0a5920"
+    },
+    {
+      "path": "data/catalog/picture_frame_abstract.json",
+      "bytes": 328,
+      "sha256": "882807fcfb67d0c6c33f1eefd4167fc2708c04443f23efdd3fc90a9596a5bff6"
+    },
+    {
+      "path": "data/catalog/picture_frame_botanical.json",
+      "bytes": 326,
+      "sha256": "097966ee7cec3174237322137782e8b169d6ee439be4e82a1ed6b29c0925bd13"
+    },
+    {
+      "path": "data/catalog/picture_frame_figure.json",
+      "bytes": 325,
+      "sha256": "8df7a89453cdc794a22a51d337e1faa52c9de3fb588e3fa342533f46a28394c0"
+    },
+    {
+      "path": "data/catalog/picture_frame_quote.json",
+      "bytes": 321,
+      "sha256": "456c0976fadce12de2dc01d8352bc0a4196630a778f1cacd7a662ccdf21c9cdf"
+    },
+    {
+      "path": "data/catalog/picture_frame_sketch.json",
+      "bytes": 326,
+      "sha256": "6b653c0f904b8792c3dbaf8e1fdaa916791c8c004cf40d93b3af71fe7a0752e7"
+    },
+    {
+      "path": "data/catalog/plant.json",
+      "bytes": 295,
+      "sha256": "b0d6e2053e2035974a0260fa02c7e0e09972c1500e2c375dabcc7ff57d986b32"
+    },
+    {
+      "path": "data/catalog/plant_herb.json",
+      "bytes": 304,
+      "sha256": "7ccc36b8a3a72c0c16635bbf6ae816aae53cc16c005785be76c58bbf7f03d3f7"
+    },
+    {
+      "path": "data/catalog/plant_monstera.json",
+      "bytes": 308,
+      "sha256": "e7f73fad4588e7d21490d20af8bd0b0b334745d1273935f437feed5d395b6d3f"
+    },
+    {
+      "path": "data/catalog/plant_pothos.json",
+      "bytes": 306,
+      "sha256": "b1953b375ece7b088b14f1aa0420bf2e86856ed89e6ead8f6423fe21d9027952"
+    },
+    {
+      "path": "data/catalog/plant_small.json",
+      "bytes": 304,
+      "sha256": "92466aaa2c01aabfad25bd130ca8a7c7bcbe49f064eaf11a88c2167b218d3ec9"
+    },
+    {
+      "path": "data/catalog/plant_succulent.json",
+      "bytes": 316,
+      "sha256": "70a3927a5b2c34cfda58e224e308b4531dac26860cd396e476468804fc315112"
+    },
+    {
+      "path": "data/catalog/pot.json",
+      "bytes": 307,
+      "sha256": "e4f6f53a4786c7440d3e087bcb0910be6663f205c9251fc4fbbc84b86b80fc5a"
+    },
+    {
+      "path": "data/catalog/range_hood.json",
+      "bytes": 1553,
+      "sha256": "23338609e65b0cf1403e0efd7ae7279295319d7ce9b6dcb95b6a6cafc4cc74c1"
+    },
+    {
+      "path": "data/catalog/rice_cooker.json",
+      "bytes": 1588,
+      "sha256": "1befa4ef3e4b0f6b5ca65a6a71565cec71220df6e27a19aae12e8caeb75049fc"
+    },
+    {
+      "path": "data/catalog/robot.json",
+      "bytes": 1784,
+      "sha256": "5d2a76bb3d997ce30d6228f6a290330ce84c04010ea7d49c0d09d0c8066886ff"
+    },
+    {
+      "path": "data/catalog/robot_dock.json",
+      "bytes": 1215,
+      "sha256": "68237a39d765c6a4050140c6dff61afd2850f242c2fe017610f6b0b1d133e800"
+    },
+    {
+      "path": "data/catalog/robot_vacuum.json",
+      "bytes": 1373,
+      "sha256": "b102396645500c298be04ef7cb178403a1fb4d66152e6ab430698c7bea76425a"
+    },
+    {
+      "path": "data/catalog/rug.json",
+      "bytes": 281,
+      "sha256": "f606033e008219222683f0188d7c95704773429198d93a721eb861b789f35ca7"
+    },
+    {
+      "path": "data/catalog/shoe_cabinet.json",
+      "bytes": 530,
+      "sha256": "4bdd6327d1b05f3ead1c4354048bb38bbdc139ac21ae074882bb8ee3ecdc063b"
+    },
+    {
+      "path": "data/catalog/shower_booth.json",
+      "bytes": 1383,
+      "sha256": "ea2b81127af4290a0bebc3c868a877c05e0647a459cf343c9db8e4ef1b435d83"
+    },
+    {
+      "path": "data/catalog/side_table.json",
+      "bytes": 384,
+      "sha256": "f2db3a3b1252ebcf3d1d18dd9a4c7e2bfa442a4365642b186998d31b25382f87"
+    },
+    {
+      "path": "data/catalog/sink_counter.json",
+      "bytes": 1547,
+      "sha256": "f3051b49e77beb030c74eda9ef369ef648ae0e696a22dcdd0d84ecda69010083"
+    },
+    {
+      "path": "data/catalog/sliding_door_110.json",
+      "bytes": 1450,
+      "sha256": "4c92c639f6c38835b330f85db01df11c30e4a726bffe0ee5ad56ad946ca1dce7"
+    },
+    {
+      "path": "data/catalog/sliding_door_95.json",
+      "bytes": 1452,
+      "sha256": "4359fd38e4062c0d39a9d69e8818c24454723b1d1824e70d30754e72207f09a4"
+    },
+    {
+      "path": "data/catalog/slippers.json",
+      "bytes": 296,
+      "sha256": "0a709944da6b2bb023c3008fc5097ba3497f3fde547d8d72f593f40ce4addbbf"
+    },
+    {
+      "path": "data/catalog/sofa.json",
+      "bytes": 297,
+      "sha256": "15144ec275200cdf9549f0c209eb2c0658c9b7503d22e36a2f7591b6da9acde4"
+    },
+    {
+      "path": "data/catalog/speaker.json",
+      "bytes": 1107,
+      "sha256": "df29bc390345c78c688310a44b30d06785e4f4a0352a2d39ac0b2456be40965a"
+    },
+    {
+      "path": "data/catalog/stand_ac.json",
+      "bytes": 1775,
+      "sha256": "65769f51b1732103e6b7d8ab3e2b6bbc12f6f6a67b4cdb0ed5eda40c27520b2a"
+    },
+    {
+      "path": "data/catalog/stick_vacuum.json",
+      "bytes": 1694,
+      "sha256": "939c5fb774655e12efaad3c8ff8371e928f18a33120284dc22c15ae21c2cac75"
+    },
+    {
+      "path": "data/catalog/storage_box.json",
+      "bytes": 382,
+      "sha256": "04c015a751a869fb6bd7573e44a811ed80d796ca66da5826424c450073183e04"
+    },
+    {
+      "path": "data/catalog/toilet.json",
+      "bytes": 591,
+      "sha256": "a77fa5f6851ec29aef094831f8787b701dc0b816ef7f0837205f87d6fff5a8e7"
+    },
+    {
+      "path": "data/catalog/tv.json",
+      "bytes": 1392,
+      "sha256": "15a364db9943b329b222a605228e5bd1503f64e84739d8e1141a61860830520e"
+    },
+    {
+      "path": "data/catalog/tv_stand.json",
+      "bytes": 572,
+      "sha256": "bef0b4ba46b9f998ba9c626c91b06c3c512f3206f1afa5c1889d90979f3d0734"
+    },
+    {
+      "path": "data/catalog/upper_cabinet_40.json",
+      "bytes": 566,
+      "sha256": "a92a63e3f161ad6001badb1d7ef5040f5e61e4adf0599af1e043c77a86bb8c33"
+    },
+    {
+      "path": "data/catalog/upper_cabinet_60.json",
+      "bytes": 566,
+      "sha256": "2c827aab84e518bec2e88b40c81c7a99844a34b0071c601db6e1623ab102a64a"
+    },
+    {
+      "path": "data/catalog/upper_cabinet_80.json",
+      "bytes": 566,
+      "sha256": "b8b58d8b3599fa337a076acecc2d4993521ba548a1a619fc21376032d1fc0631"
+    },
+    {
+      "path": "data/catalog/utility_sink.json",
+      "bytes": 1185,
+      "sha256": "659280b83a670e2ec0c299a61c9edac301f9fb53b46d28c3fdf1bbac20cfc564"
+    },
+    {
+      "path": "data/catalog/vacuum_dock.json",
+      "bytes": 1120,
+      "sha256": "21fb9e65dc9d65d35a13c6ab72bffa536de6f313a43dbd4616fa406bbd1e7e58"
+    },
+    {
+      "path": "data/catalog/vanity.json",
+      "bytes": 683,
+      "sha256": "0f817912233faaecb1a60362d8f21ada82d4823b43b4f4a72cdc9395a645772a"
+    },
+    {
+      "path": "data/catalog/vase_flowers.json",
+      "bytes": 303,
+      "sha256": "aa45bb820bb0aaa0a3cfa839ec618cf4064b7dff6a31e4f8dc6cd1cba37bf8d8"
+    },
+    {
+      "path": "data/catalog/vent_fan.json",
+      "bytes": 1510,
+      "sha256": "d404c185f150bf69f49af4df8fabd9bb7df53637f15f1abd141fb6b7d63d802b"
+    },
+    {
+      "path": "data/catalog/wall_ac.json",
+      "bytes": 2076,
+      "sha256": "4269682db3d5e7b83e35138c8740f533b79770fab6be4d56142005aa310af08e"
+    },
+    {
+      "path": "data/catalog/wall_pad.json",
+      "bytes": 1199,
+      "sha256": "7b3d4612afbc31b9dc31f0d044afd6e48acd46f63108ff993e782f5cf7c885f9"
+    },
+    {
+      "path": "data/catalog/wall_shelf.json",
+      "bytes": 298,
+      "sha256": "36cfc6a91cdba36b0b913372ff89763139b5cebcaa0b2cbf75ec590837785f0b"
+    },
+    {
+      "path": "data/catalog/wardrobe.json",
+      "bytes": 528,
+      "sha256": "8c46dc2554a3fdbf96174dec626f6df83f0acfbdec518c260d33e182cf9eb20b"
+    },
+    {
+      "path": "data/catalog/wardrobe_module.json",
+      "bytes": 654,
+      "sha256": "c9a7ab62122e6695c7f400ad5e8917caf788aba705fbd9cddd16dab7136f99d8"
+    },
+    {
+      "path": "data/catalog/washer.json",
+      "bytes": 3116,
+      "sha256": "9edb1f787814f8747fbe9da2f1311bec5653f487fb06940ac5bf6eb2a6d7380e"
+    },
+    {
+      "path": "data/catalog/window_bed.json",
+      "bytes": 734,
+      "sha256": "2754d71976a0a274b30cda3585ce11e3e07bcf9779ee6585db9f8d09c7dc88b9"
+    },
+    {
+      "path": "data/catalog/window_inner.json",
+      "bytes": 747,
+      "sha256": "cc82b7e81ca5fd2ca5089b2e449b61c390462487f01f9bc6bc5ecc728e4e905e"
+    },
+    {
+      "path": "data/catalog/window_living.json",
+      "bytes": 743,
+      "sha256": "b76470e3fb7ed632c84b8085d54fb2f1dce097b2c509dcafc4f83eaf22c65d2d"
+    },
+    {
+      "path": "data/catalog/window_master.json",
+      "bytes": 736,
+      "sha256": "87e3685805ce53b6f4400d464f89c1ef5384b4d5197822f875cee28aa7ae73cb"
+    },
+    {
+      "path": "data/catalog/window_small.json",
+      "bytes": 757,
+      "sha256": "493ed0ecaf91b046558224e00267c4bc8894a7ae63275a988ca36b8b2901c8ea"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/armchair.json",
+      "bytes": 520,
+      "sha256": "f27600b2f4ccd648a9dfd23cbcccac4820c991025e2b0aaa6a63d7d01887fd09"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/bed_queen.json",
+      "bytes": 857,
+      "sha256": "ceecef7426a4241baa88568994f19025c3adbf3ed7fb7d3e4505f833d1b7c3bb"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/bed_single.json",
+      "bytes": 765,
+      "sha256": "4aa6b33c39380c77e6585759d09ce8cc16f5f9c5173ac861bcaec5f7210ac408"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/bed_single_2.json",
+      "bytes": 769,
+      "sha256": "ee21ba6e957adeb98e92358c43deb7b84dbed1bc73fc2c5b98dc6f555d7c640d"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/bookcase.json",
+      "bytes": 806,
+      "sha256": "a4952c1bd54612a6d47e773e110c2f6f1d4203b2e9a1e6714b03011bc5bab8b2"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/coffee_table.json",
+      "bytes": 456,
+      "sha256": "537da5b05e0dada16273fdf2636c20e811dc69c5d4e5a4d1623ac18d1881781a"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/desk_small.json",
+      "bytes": 639,
+      "sha256": "a6b851aa09186c163a721b9e5007455057e1b838040cda9b996f5e9034f12c43"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/dining_table.json",
+      "bytes": 448,
+      "sha256": "e63e439ee3c5b9e67538b52b39fedca1609d4beffaf9c9e824fbec06628b75b0"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/dish_cabinet.json",
+      "bytes": 451,
+      "sha256": "216add2ffd8cddba7472960416976cea8a3d4b465caa84881549b4d3884d0565"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/dresser.json",
+      "bytes": 634,
+      "sha256": "6a4d8846bc65b18eea2a382678adf237cd722a2bb3990d388aad601230d415c1"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/dryer.json",
+      "bytes": 1889,
+      "sha256": "f7b90c08e303a6beeb910122fd13208fb97cce3663c85140d633ca72282ae578"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/freezer.json",
+      "bytes": 360,
+      "sha256": "010f14db592f281b688e78d1251e7f23c1bcb2599292caed4b85c48d7f87c25b"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/fridge.json",
+      "bytes": 1776,
+      "sha256": "1fcbf6b96eff8a0d128a0afcb77ba9be9cdc73bef1b019b3bbf3578d49a35ab6"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/induction_counter.json",
+      "bytes": 1472,
+      "sha256": "9df257b86adf91fe6fc8c8e32071ca49375aec4106da9474fc79507be9b4014c"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/kimchi_fridge.json",
+      "bytes": 388,
+      "sha256": "213125180179968af3108deef222858b0d1124258beb3963759a5802fc990cf6"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/kitchen_cabinet.json",
+      "bytes": 459,
+      "sha256": "e76cb213e568e6e8d11e04a898f3e45401b9d2b5c95bda7619e5ccac05081007"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/mk_door_alpha_l.json",
+      "bytes": 1319,
+      "sha256": "cbd5219cf14befc179e6aa36edab7412a5756127203eaedf343ecf65451d2d67"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/mk_door_balcony_living.json",
+      "bytes": 1523,
+      "sha256": "2d11af0a5c369e85bda2472d7260d5fd121ea783f883001b9fcaf5c266d53faf"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/mk_door_balcony_north_l.json",
+      "bytes": 1346,
+      "sha256": "776dd5cb3771e2d3466ba70bb97a2a617025e340035dea0846c17b485c0953c2"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/mk_door_balcony_se.json",
+      "bytes": 1503,
+      "sha256": "37760b015e0b1129ec4aa3b2b3a5fe78a9acc63c58b1d6d9d608b46e32c71c84"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/mk_door_balcony_sw.json",
+      "bytes": 1505,
+      "sha256": "3e9904ccdb592a9d70b69df095e860005fe31ebb9eeee862d64037c9793d5454"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/mk_door_balcony_west.json",
+      "bytes": 1503,
+      "sha256": "763f0c6082e3b656b796d7b20c2623ae9889ced121004500a0fa6b3f3a5c8482"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/mk_door_bath_center_l.json",
+      "bytes": 1338,
+      "sha256": "25369a48fcc168d0c109f4aebea9c339b685c0ef00a34560d7a8d777ead72c27"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/mk_door_bath_east_l.json",
+      "bytes": 1332,
+      "sha256": "77f7ececaf7bd6b697bfd2c26f9774742ee04e1eeff611a5b55e2e7839e3457f"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/mk_door_bath_west_r.json",
+      "bytes": 1335,
+      "sha256": "830efd030383a46072d68b15f1b3a809558c2f57f5ac394212cbf71d77b05fbe"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/mk_door_bed_ne_l.json",
+      "bytes": 1322,
+      "sha256": "7b63ae155ff2177d3601f1cd8130d3bf2a2fa289a6d0e7e78a68cac7835b39ba"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/mk_door_bed_se_l.json",
+      "bytes": 1322,
+      "sha256": "8b0e15d312119232b8e60492119bfbcc94a5241f07a99d0d9f9f6d72498cc26d"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/mk_door_bed_sw_r.json",
+      "bytes": 1325,
+      "sha256": "2cc8ba0ead76d59d386e6ffa1f54cbe828a8e2c0b527e119a2e5a92e70f5fbca"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/mk_door_closet.json",
+      "bytes": 1500,
+      "sha256": "ea21772a7f06df8b143fc7355a2a10e1ae195c5d842bd49afe692a5226eea37f"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/mk_door_entry_r.json",
+      "bytes": 1322,
+      "sha256": "83f8717702ded6d7b30e44b104bb2590a20ea900cbe5e5460f4f53d4bcc3feb7"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/mk_door_main_l.json",
+      "bytes": 3324,
+      "sha256": "724c25c91890d2a9218d4d9a15e1530bbd85edab623105f5aef0508bfa8fe273"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/mk_win_balcony_front_e.json",
+      "bytes": 798,
+      "sha256": "63d005f0fbf12fe8194fcc22d47398ce788e1c3ccb7c36c332b738e0ee22d794"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/mk_win_balcony_front_w.json",
+      "bytes": 799,
+      "sha256": "8e49819ce03331538f7be109a2f694860c3259d2f1cfc6f5a1ca69ea127fa7fd"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/mk_win_balcony_north.json",
+      "bytes": 792,
+      "sha256": "ee915162a3fc97343dd8e63c6312f137b3e4381dacb84f19edcc52083f02a536"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/mk_win_balcony_west.json",
+      "bytes": 789,
+      "sha256": "2c16883cb20e66592c40f1cde023f8280b6743e5763860c47de36ee901597e68"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/mk_win_bed_ne.json",
+      "bytes": 784,
+      "sha256": "6667daca7a3efa6cf747e9c76fb5be5d5c3421decad2d7ff5907ece35a0b1832"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/mk_win_curve_1.json",
+      "bytes": 788,
+      "sha256": "37d9795ce39a946c63202e4d98f11dd18fafd1f1492990b13629df63ce8ff910"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/mk_win_curve_2.json",
+      "bytes": 787,
+      "sha256": "b93f07f8506cb1041ee672af7acdd57f0aea86731093e9f8562a39cf02b3623a"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/mk_win_curve_3.json",
+      "bytes": 788,
+      "sha256": "450d292a3fed72527c64fd1ef8bde0410f92c322faca8f52d943208e1d86b346"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/mk_win_kitchen.json",
+      "bytes": 784,
+      "sha256": "f2b92986267b8e478452e65398d34e033027bde2cb991f24a5431ceaf7d4c0e6"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/mk_win_vestibule.json",
+      "bytes": 782,
+      "sha256": "48e9f340835d6a71a046307071f2fdd469973c0cffe18c22892798391f61c599"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/sofa.json",
+      "bytes": 353,
+      "sha256": "5c13142136b07bcfc44f9e861228363edbc838e38344eb9de17ea1a449595167"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/stand_ac.json",
+      "bytes": 1835,
+      "sha256": "2003bbc398e386062c7524bb83298f3776de84089527ef08c28b48acd322a45b"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/storage_cabinet.json",
+      "bytes": 611,
+      "sha256": "a1a3c1bab7b44f1bff4f4a55f8213674e27f50f80be4394b1cfc19bcbacf8189"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/tv_stand.json",
+      "bytes": 636,
+      "sha256": "4b77c25b82b3468378c0f1e2789ee6b928005d68f4a76fe0eb4a80cd7edddc88"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/tv_stand_2.json",
+      "bytes": 640,
+      "sha256": "9d376f5601e847efed2107792dd11e27625565a0ca7251537a036debc50284cb"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/tv_stand_3.json",
+      "bytes": 640,
+      "sha256": "5b73b18ec6855985b37146d8f26e621cb4f37e283966fa5738c101c7bc1eda31"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/wall_ac.json",
+      "bytes": 2138,
+      "sha256": "93f43ab026640a1224414def7849301e59289f3d3bac5a9cc1763c5c82254e0b"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/wardrobe.json",
+      "bytes": 592,
+      "sha256": "51ac554209e75a57ddfc31b16e74f55d4063eb1240c2dc9d56e6f16da681c9f7"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/wardrobe_2.json",
+      "bytes": 598,
+      "sha256": "122e782cdfab21cb3952c90c97efb37ab5d409be60ef06033ea75b24d63535b4"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/wardrobe_3.json",
+      "bytes": 598,
+      "sha256": "d131e1979919bf3e1dcbbdcfc92b608e22d4cffe68341ea29c87de6ae883aac2"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/wardrobe_4.json",
+      "bytes": 598,
+      "sha256": "4e506b5dad0c127963b9b28b2fa793ef15c76faecabd367aa694dcaa719db194"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/washer.json",
+      "bytes": 3174,
+      "sha256": "0c8b98353d3e435fe3e5ccbc6e2e92528b65fd222570e0bc28f2b4e273d7e6e1"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/drawn_fixtures.json",
+      "bytes": 2018,
+      "sha256": "048b4201261c2cdeb2ec2c2fadd1f99d43f00cfe1511b21f66e93099446a2064",
+      "commit": "b9e984fcd4ae6ec99fb5444930e528fe2954cbe4"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/floorplan.json",
+      "bytes": 25131,
+      "sha256": "7c995a5df1d57bef74bc1938af02b4573635f9eafdf0d10fbeb8e6d0db3a055e"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/placement.json",
+      "bytes": 5682,
+      "sha256": "6f2d47f68dfb0106bb6e5e0a33a8aa0239c283c4f20eb2a8fbe2f80989de80af"
+    },
+    {
+      "path": "data/homes/oneroom/floorplan.json",
+      "bytes": 2788,
+      "sha256": "d1a77bc487dc874e8eceb587d753819927cd96d4af62620bb98d0c05ba219082"
+    },
+    {
+      "path": "data/homes/oneroom/placement.json",
+      "bytes": 2537,
+      "sha256": "e3561954000f3da0b54aea2ef97ffd6ef13beaa60fda2d1e2329c4f960dd56fc"
+    },
+    {
+      "path": "homes.json",
+      "bytes": 521,
+      "sha256": "b489ae5a9bbab33c2b370d6219890ae221c2c1feafcde9a74ce83084347a549c"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/appliances/dryer.glb",
+      "bytes": 430664,
+      "sha256": "ded3096b560bc71b35850dd0df1b4e4619ac301de994b0f12597e5551c760526"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/appliances/freezer.glb",
+      "bytes": 110792,
+      "sha256": "a70f36d0b11005c601571b25421cc10d9d918a60b9cedef8e13b00cc27b03c03"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/appliances/fridge.glb",
+      "bytes": 400444,
+      "sha256": "b75a54f5ac3382759f00b45723c5980e482aee96db6957aa21132efe4cda2299"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/appliances/induction_counter.glb",
+      "bytes": 168996,
+      "sha256": "7847d75c15eb237ae2f4d180b698d5965c07ea4111ff594138409041c35a1d99"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/appliances/kimchi_fridge.glb",
+      "bytes": 110084,
+      "sha256": "c935eb0c9d42b5a25e1d827aa523555fe2d4da6a0138300dd0cb3aac7ebad0a1"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/appliances/stand_ac.glb",
+      "bytes": 275864,
+      "sha256": "a5e6343e2334289c9b15a9a66d5746f95f1b57655633d0d3aff3535383491e6b"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/appliances/wall_ac.glb",
+      "bytes": 140468,
+      "sha256": "dbf96b01a72c42efbba0f3750fc0527df2092f06854c621d7769435011d3e223"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/appliances/washer.glb",
+      "bytes": 426976,
+      "sha256": "2ed390c154cda38083deb1178bd390fa1c83aa153ec77ec7ea5ff72fd6ec3f29"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/fixtures/mk_door_alpha_l.glb",
+      "bytes": 220424,
+      "sha256": "5ee1a538b334f569b190c2deb1c411c3be30feedc1929d5c5bb5a0dccf9beeac"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/fixtures/mk_door_balcony_living.glb",
+      "bytes": 164700,
+      "sha256": "cfa4ac11a48a02669bb01a419c396e2e0cbde97141335eeedee1b11607463e84"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/fixtures/mk_door_balcony_north_l.glb",
+      "bytes": 145336,
+      "sha256": "2c276cd85543b3f90a769d600e75bd0e428ff26492f8c8bb079d5d5a48d86aff"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/fixtures/mk_door_balcony_se.glb",
+      "bytes": 162572,
+      "sha256": "9af9c668f4f562f1178d2d9cd191a95686c9234ec391c33cbff01c89ac54aad1"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/fixtures/mk_door_balcony_sw.glb",
+      "bytes": 162700,
+      "sha256": "474fa681052fd714aecd176f922a8725a35ed3bf8f6e8e3120e8c05e7915dce5"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/fixtures/mk_door_balcony_west.glb",
+      "bytes": 163740,
+      "sha256": "3bb06c5919259b600e3b5ef70ed56cb6edee5f0280097431fd7f0ebd4a2f11a2"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/fixtures/mk_door_bath_center_l.glb",
+      "bytes": 215900,
+      "sha256": "0063255ee0044b224960f1269798907831d605b47d96756e0e957c6cf0ff6569"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/fixtures/mk_door_bath_east_l.glb",
+      "bytes": 215864,
+      "sha256": "5247769b2a1011f835319fdf60b9fa9d908cc86f52a8dd913843f48bd1e9eb7e"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/fixtures/mk_door_bath_west_r.glb",
+      "bytes": 214692,
+      "sha256": "19419b14ea43f9f98465d4d40e496e13e04e7358d4096a048fd07519cdd63737"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/fixtures/mk_door_bed_ne_l.glb",
+      "bytes": 220248,
+      "sha256": "c284d9807883cb66e6f23f8839ca14ac87ea847f595820f2dd6fc7b13165a459"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/fixtures/mk_door_bed_se_l.glb",
+      "bytes": 219960,
+      "sha256": "27f970d882233cc84e032b13f88fd2f324af1e8f1a714fbab2d5e60f9b39225c"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/fixtures/mk_door_bed_sw_r.glb",
+      "bytes": 220152,
+      "sha256": "c5bca8e38a02cb2fc415b997a4abbad83823bb386f317f5bfcfdcd7adb41d260"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/fixtures/mk_door_closet.glb",
+      "bytes": 161368,
+      "sha256": "64a5b34a24d939e6d2aadbb838178dd0600de0b3bf4da6b5516f9e036f64e759"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/fixtures/mk_door_entry_r.glb",
+      "bytes": 220396,
+      "sha256": "9bcaf4178417fef3659509ff80a71bd32eddbd4e2c487d03311f27e9ee9413f0"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/fixtures/mk_door_main_l.glb",
+      "bytes": 388808,
+      "sha256": "d283a56112cf289053ca930c5f26e52e2d3446990f517290aa1ff831bff36c6c"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/fixtures/mk_win_balcony_front_e.glb",
+      "bytes": 304076,
+      "sha256": "44f7acdfcded710032d3eaac8d9800b4ffcd8d0498cea0deca535f6012dc2876"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/fixtures/mk_win_balcony_front_w.glb",
+      "bytes": 298208,
+      "sha256": "f8666cefcfdaa43a7774a210a4f70c5e7b2ad705e39cb77f85da25cae4d46713"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/fixtures/mk_win_balcony_north.glb",
+      "bytes": 304036,
+      "sha256": "df26d7aff2dd4a46ff86d31a565ca6a8e098e7e88c2ac9225a97cc4c03c3892c"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/fixtures/mk_win_balcony_west.glb",
+      "bytes": 297876,
+      "sha256": "e24a5570c4a423f721467cf2fb92d825fe0b2b978ef9b29d25338d25b3173423"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/fixtures/mk_win_bed_ne.glb",
+      "bytes": 303068,
+      "sha256": "8379664eb134f5c04c3f8214b9c227d87402afd7cc5019b3d93e8c3aa498a4eb"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/fixtures/mk_win_curve_1.glb",
+      "bytes": 302232,
+      "sha256": "a9fa73fa43f2d4ca2502eb9a43a64ced5faf365fd231f76330e808c0341ebef1"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/fixtures/mk_win_curve_2.glb",
+      "bytes": 301468,
+      "sha256": "5f7a9d0b76b612dbbe287f606f89d079f1bbf1ab9802c5eb299f0b83245d47a2"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/fixtures/mk_win_curve_3.glb",
+      "bytes": 302232,
+      "sha256": "cec009f577e52c59c0eddec681967cc39fbba549fa66adea8c9f9096c9211709"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/fixtures/mk_win_kitchen.glb",
+      "bytes": 299480,
+      "sha256": "56db0db9ed80a0e35cdbb3f3698a0a24cc2f2482371d5c33eee7de3de45a023c"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/fixtures/mk_win_vestibule.glb",
+      "bytes": 295820,
+      "sha256": "116ace253c914ecf9a8f6a86c51735e5f276207e4c37336fadc6759cf505d7f4"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/furniture/armchair.glb",
+      "bytes": 265680,
+      "sha256": "be6a1e3fda98ce1aeb24e0d503d24daa82a5cc9a701ef8978797297a8b348c9f"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/furniture/bed_queen.glb",
+      "bytes": 393948,
+      "sha256": "0fe5f03cb51a6c3b078632939a0b8d09f66298c33e221a6e6b577691b5995c94"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/furniture/bed_single.glb",
+      "bytes": 359316,
+      "sha256": "01d9f537a13524467eabba57a87ba39c719a632e6bd4fd074f589bd2eea02dd9"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/furniture/bed_single_2.glb",
+      "bytes": 375112,
+      "sha256": "e894a1ab9f30a5a0033f9b1b206080ba47464946c90b61af5e0327c285831c81"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/furniture/bookcase.glb",
+      "bytes": 97524,
+      "sha256": "690a62b0b417d5f29e5bbb88e2f5509ae5fa80ca7f8a5bb43536cf728c95efe9"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/furniture/coffee_table.glb",
+      "bytes": 39308,
+      "sha256": "9e8bc651f695651d3f1dbeb9e68889fc533079062b0e05ce02f434778d42c050"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/furniture/desk_small.glb",
+      "bytes": 116692,
+      "sha256": "0cc35acdbd356f51f6fbc04ff3168ebcb9165f5fcc435805795bd4b89cf5276c"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/furniture/dining_table.glb",
+      "bytes": 59944,
+      "sha256": "641b209ef82defbd19d6a668ae1fde0b0f02dec02206ab7d187285cda8005161"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/furniture/dish_cabinet.glb",
+      "bytes": 75376,
+      "sha256": "cc4d7d180195062a2cbf2deed515c913bcbdffa48f4f800b3d287623841663cb"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/furniture/dresser.glb",
+      "bytes": 116168,
+      "sha256": "8fd64f363cb9fa2bc2452eb3dbc7b3fba72bf6b7e561df1c0733587523239baf"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/furniture/kitchen_cabinet.glb",
+      "bytes": 74408,
+      "sha256": "34ade0c1ae2aa5098c7f5433c3011c1fd6e17709f0538f3ff527d26438fe5b45"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/furniture/sofa.glb",
+      "bytes": 250880,
+      "sha256": "b938b42b2b7612afc00695be5a574144ae9cf8aa79ba82d8513c9ca71d677ef8"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/furniture/storage_cabinet.glb",
+      "bytes": 137684,
+      "sha256": "e657355be3a4d673a5ef1ffb9a93cd845f8fe39bae1cc00f48ed7a666144b918"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/furniture/tv_stand.glb",
+      "bytes": 181796,
+      "sha256": "66084360fea1a64200dfc8c2170127f35139ec0445083a0fcc7e68a9c4895774"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/furniture/tv_stand_2.glb",
+      "bytes": 182204,
+      "sha256": "12c79b29aaf9132e677101b328df1119e87814aea211102ce8405e0b0aa95263"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/furniture/tv_stand_3.glb",
+      "bytes": 181792,
+      "sha256": "d84bd4b2f244aed0a1b9cb587a2baae6ea21e31f1bf6b1897ee7311298710989"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/furniture/wardrobe.glb",
+      "bytes": 137352,
+      "sha256": "88b454cefbbf3ba5b7c78b864c2fbca37f0805a158ab8cc19a74ed758fccef20"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/furniture/wardrobe_2.glb",
+      "bytes": 136948,
+      "sha256": "135241cf0bbb046ed00cbb21ace1929748e9ef96a2c67c01b3ab497b3e88ed94"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/furniture/wardrobe_3.glb",
+      "bytes": 136784,
+      "sha256": "d4c14789e7b6da0d932d9cbad0155cb138851df43dd88d299ef3797f857fe4eb"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/furniture/wardrobe_4.glb",
+      "bytes": 137716,
+      "sha256": "4410cc0f5d75c4c1eb1d33e3c6b412b35d9d1594445429c1891a86c16495f521"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/structure/floors.glb",
+      "bytes": 365632,
+      "sha256": "b3f17c8488a7bc2bb3146a5e3a407f97eb5c7452583af020c17c431494fdf719"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/structure/walls.glb",
+      "bytes": 433732,
+      "sha256": "0b167ffff41f16a59c4fd02443c5796a73929d8f2ecb34cd76e9dce0fb36a59e"
+    },
+    {
+      "path": "homes/mokryeon_180b/bake/ground.png",
+      "bytes": 29503,
+      "sha256": "e168b38bd9b2875f7ec2de5c5a127ab75590447f94e24688351a0d2eb7a4b8b2",
+      "commit": "b9e984fcd4ae6ec99fb5444930e528fe2954cbe4"
+    },
+    {
+      "path": "homes/mokryeon_180b/bake/lm0.webp",
+      "bytes": 672278,
+      "sha256": "d8e69902d7561078114abfaaa5bdcd21d0cac6ba123d63780d2e2e81e937db12",
+      "commit": "b9e984fcd4ae6ec99fb5444930e528fe2954cbe4"
+    },
+    {
+      "path": "homes/mokryeon_180b/bake/lm1.webp",
+      "bytes": 573288,
+      "sha256": "66dd54056c7750d882dd3ee5e24c0dc0ea927f0954b42a395a0a491c9f805473",
+      "commit": "b9e984fcd4ae6ec99fb5444930e528fe2954cbe4"
+    },
+    {
+      "path": "homes/mokryeon_180b/bake/lm2.webp",
+      "bytes": 647432,
+      "sha256": "8731562c00fd9c2bda46266ef82871f4170cc1a4a9045715a77675ba16cbe3db",
+      "commit": "b9e984fcd4ae6ec99fb5444930e528fe2954cbe4"
+    },
+    {
+      "path": "homes/mokryeon_180b/bake/lm3.webp",
+      "bytes": 112646,
+      "sha256": "38c686c148fa625b95b85e433530b8fa988c4cd6c50de427ab5d495848ded07d",
+      "commit": "b9e984fcd4ae6ec99fb5444930e528fe2954cbe4"
+    },
+    {
+      "path": "homes/mokryeon_180b/bake/manifest.json",
+      "bytes": 24554,
+      "sha256": "cfd593e3886c35034888bee9fcfa7a2d5f53ea033c4aa8e11016de12bf2c74f9",
+      "commit": "b9e984fcd4ae6ec99fb5444930e528fe2954cbe4"
+    },
+    {
+      "path": "homes/mokryeon_180b/bake/mokryeon_180b_baked.glb",
+      "bytes": 19815628,
+      "sha256": "49dbddd31856f6aa0c39eecfcea9b2e1b40814575fbe856e1f31c9ab58eb8a76",
+      "commit": "b9e984fcd4ae6ec99fb5444930e528fe2954cbe4"
+    },
+    {
+      "path": "homes/mokryeon_180b/scene.json",
+      "bytes": 102688,
+      "sha256": "974086945c576de6db23ad64b4a938638a5a59c1aa5fc66315692d1f99f1f637"
+    },
+    {
+      "path": "homes/oneroom/assets/appliances/air_purifier.glb",
+      "bytes": 243504,
+      "sha256": "1b69e0e051fea21d29a560f6462a061b2c809e49316e455f3bf8a515739cacf7"
+    },
+    {
+      "path": "homes/oneroom/assets/appliances/fridge.glb",
+      "bytes": 399636,
+      "sha256": "8ac54178f7c3e66205c9ea14d92405543a17bf957c40d3bb45c63fc9e180edf6"
+    },
+    {
+      "path": "homes/oneroom/assets/appliances/induction_counter.glb",
+      "bytes": 169968,
+      "sha256": "96037be63e7e7effb2be6f02723e818fefcfbdd1a8b544dbec9e95aec6d1cbfa"
+    },
+    {
+      "path": "homes/oneroom/assets/appliances/robot_dock.glb",
+      "bytes": 204824,
+      "sha256": "f048f0e8d4af478057b5f69510e4be62a28e7fcdc61a21b2dcfc0d76bbee3df8"
+    },
+    {
+      "path": "homes/oneroom/assets/appliances/robot_vacuum.glb",
+      "bytes": 360876,
+      "sha256": "45738e0b1ff584f48dabdb14a0511fa8815b2b66b7af9f5e6e1475a66a70a83e"
+    },
+    {
+      "path": "homes/oneroom/assets/appliances/tv.glb",
+      "bytes": 113476,
+      "sha256": "9cfd7f8b83075fa33a7f9b63bf15c6eeb1c3662ff52218419d4e7dee724aa47d"
+    },
+    {
+      "path": "homes/oneroom/assets/appliances/vacuum_dock.glb",
+      "bytes": 236916,
+      "sha256": "a701cb5d7fc3a2f9d3a71e900826ecc174ef1373841e8085e611eaaf262a124a"
+    },
+    {
+      "path": "homes/oneroom/assets/appliances/wall_ac.glb",
+      "bytes": 140236,
+      "sha256": "77be6d046a6c04d01adef148e539c6f9c77abee4a1ccb330823eb7cc9526e1da"
+    },
+    {
+      "path": "homes/oneroom/assets/appliances/wall_pad.glb",
+      "bytes": 48316,
+      "sha256": "df23fe8cc44ffda228f2530c0b022afee7a2d08bd9a0f2f4006a3d7fa96b3681"
+    },
+    {
+      "path": "homes/oneroom/assets/appliances/washer.glb",
+      "bytes": 426976,
+      "sha256": "0cf0f015b9b2a696a01d955629db1465ac861b2c671e9ed625320353aec7b213"
+    },
+    {
+      "path": "homes/oneroom/assets/fixtures/ceiling_light.glb",
+      "bytes": 65792,
+      "sha256": "026e9074857bc9b7a31c6bb0576a3a14dc2d591ac8ac212a3bf8ea327427ecc7"
+    },
+    {
+      "path": "homes/oneroom/assets/fixtures/door_bath_r.glb",
+      "bytes": 215076,
+      "sha256": "5b367e100475d1c64dcd7b182aa37f95b449d1bbe1534328f0902a33fa0b7223"
+    },
+    {
+      "path": "homes/oneroom/assets/fixtures/door_main.glb",
+      "bytes": 390016,
+      "sha256": "c14980e5cc4ec1ccfa421594d21f2d2e65b771f2fe1a199a5db9f92ef22fa694"
+    },
+    {
+      "path": "homes/oneroom/assets/fixtures/downlight.glb",
+      "bytes": 59692,
+      "sha256": "792c18acf6490767b4724eca91670ba4797b7605b55887a4939212ae468d7b1e"
+    },
+    {
+      "path": "homes/oneroom/assets/fixtures/toilet.glb",
+      "bytes": 175856,
+      "sha256": "c4e373fecd0eb134cc779d176451fd036f11ad8707545f25913d6a67ece35719"
+    },
+    {
+      "path": "homes/oneroom/assets/fixtures/vanity.glb",
+      "bytes": 329424,
+      "sha256": "39e0c34b127082da2ca338bae8673b8791e25148327bf08185aee6b97482c1db"
+    },
+    {
+      "path": "homes/oneroom/assets/fixtures/window_bed.glb",
+      "bytes": 298984,
+      "sha256": "32d5ab63216259fa6d8ba3b3bacd28493f429c3db5ba3081f01aba6c1543bd07"
+    },
+    {
+      "path": "homes/oneroom/assets/furniture/bed_single.glb",
+      "bytes": 320444,
+      "sha256": "63b53192908a6d39544fd13a43be1635a2aacc1f773f19a634ff5d92c709a833"
+    },
+    {
+      "path": "homes/oneroom/assets/furniture/chair.glb",
+      "bytes": 104640,
+      "sha256": "542ac69826640eb5626a394cfdbc66b442a10240ae4e50c73b2005410d2d7b78"
+    },
+    {
+      "path": "homes/oneroom/assets/furniture/desk_small.glb",
+      "bytes": 115592,
+      "sha256": "210fb64e79de20bca95db8118c9cbce2039b207741c302b761d60f6ecc6057d6"
+    },
+    {
+      "path": "homes/oneroom/assets/furniture/sink_counter.glb",
+      "bytes": 235736,
+      "sha256": "fcc4d1b608f17021a22a7eff1b9c01c7a4b64f50e5ad7239867e5c08dd46268d"
+    },
+    {
+      "path": "homes/oneroom/assets/furniture/tv_stand.glb",
+      "bytes": 181640,
+      "sha256": "228bd7665fb45aedc6239d59608cec32f06b4eda51818494f9b667b1edbee921"
+    },
+    {
+      "path": "homes/oneroom/assets/structure/floors.glb",
+      "bytes": 217676,
+      "sha256": "b029aadfc1258097dccabecfd7c78746264138e4a8f3ed5999ffbf25e20f0821"
+    },
+    {
+      "path": "homes/oneroom/assets/structure/walls.glb",
+      "bytes": 81532,
+      "sha256": "35a1e1813eccfe9887f859722a8f7753f618e20d1113cb2a226077324a6fc908"
+    },
+    {
+      "path": "homes/oneroom/scene.json",
+      "bytes": 37831,
+      "sha256": "cbfa8eeed12e21a6d3753ac1ce37e69704b7eda048c3f22fc5ab326538d90966"
+    },
+    {
+      "path": "library/assets/appliances/air_purifier.glb",
+      "bytes": 243504,
+      "sha256": "1b69e0e051fea21d29a560f6462a061b2c809e49316e455f3bf8a515739cacf7"
+    },
+    {
+      "path": "library/assets/appliances/bedside_lamp.glb",
+      "bytes": 110988,
+      "sha256": "f9e1d20dd647ee36013c46e1d2ded3cdc17f00a1bffd1c3b0d1ca12b42c3ca18"
+    },
+    {
+      "path": "library/assets/appliances/boiler.glb",
+      "bytes": 387012,
+      "sha256": "a685146fd09256c296430e96a8d7688c8e838a6eba80e3670b0dfce758876715"
+    },
+    {
+      "path": "library/assets/appliances/desk_lamp.glb",
+      "bytes": 88292,
+      "sha256": "794a82af90037b05c3552befaca7197d6bbfea94a802257e89cf955741152dba"
+    },
+    {
+      "path": "library/assets/appliances/dishwasher.glb",
+      "bytes": 300340,
+      "sha256": "f60dfb1820dafbb13121567b85bca4b5f754ecfb4e89f5638562fcc8645a24c6"
+    },
+    {
+      "path": "library/assets/appliances/dryer.glb",
+      "bytes": 430664,
+      "sha256": "a5d232dbea7e660f43ede3df772b38c223848ddffe6da659a56f9aec22eb1396"
+    },
+    {
+      "path": "library/assets/appliances/floor_lamp.glb",
+      "bytes": 140584,
+      "sha256": "ba08a446525db4c7b73758c6307779cdd9ddc3ae331a57921f6be065f3d49370"
+    },
+    {
+      "path": "library/assets/appliances/fridge.glb",
+      "bytes": 399636,
+      "sha256": "eaf6cd1528429bd6768fbd537ace897134689679d4ab74cb99b45e2be51afe39"
+    },
+    {
+      "path": "library/assets/appliances/humidifier.glb",
+      "bytes": 135440,
+      "sha256": "deae87cb1fff53b340e7701ef6aeacb9c4a69e130b92a9a8933825705015fdfa"
+    },
+    {
+      "path": "library/assets/appliances/induction_counter.glb",
+      "bytes": 169968,
+      "sha256": "96037be63e7e7effb2be6f02723e818fefcfbdd1a8b544dbec9e95aec6d1cbfa"
+    },
+    {
+      "path": "library/assets/appliances/kettle.glb",
+      "bytes": 183420,
+      "sha256": "42638fa0a7a1f809a707e60863c486ce344218b09439743a8d5aba4bb466940a"
+    },
+    {
+      "path": "library/assets/appliances/kimchi_fridge.glb",
+      "bytes": 109760,
+      "sha256": "38a2d1f6c6a97c68aaefbdcf73725c43648f5f67df12889f2e180d98e6d8ef35"
+    },
+    {
+      "path": "library/assets/appliances/microwave.glb",
+      "bytes": 136516,
+      "sha256": "e9881094739ea3ddbc62133ace3142542e1240f9c062d0dcc1e1f4cde8712a85"
+    },
+    {
+      "path": "library/assets/appliances/monitor.glb",
+      "bytes": 118944,
+      "sha256": "16b0e6b5fb3d8efe803f529741c29a153db1a9a579232577168377a33a5c4755"
+    },
+    {
+      "path": "library/assets/appliances/range_hood.glb",
+      "bytes": 138488,
+      "sha256": "a88deb9fc6abebd366eaa1e4a4a9fb356e8b7017b7a63cb68ab4f3e3a3cd61be"
+    },
+    {
+      "path": "library/assets/appliances/rice_cooker.glb",
+      "bytes": 150716,
+      "sha256": "4fb2f8262f3a6413ef2d58fd4297aa1ac23c098817c08e8daf14c3a1a5426a69"
+    },
+    {
+      "path": "library/assets/appliances/robot_dock.glb",
+      "bytes": 204824,
+      "sha256": "3ce4ef6e428c42d302c0afb70c4446a6dd93ab7bcab9bd6e172a193318db29d1"
+    },
+    {
+      "path": "library/assets/appliances/robot_vacuum.glb",
+      "bytes": 360876,
+      "sha256": "e89a21978c64bd93f1444e12522d98a130519bd39b5cf2058098ae0c09a24df1"
+    },
+    {
+      "path": "library/assets/appliances/speaker.glb",
+      "bytes": 106692,
+      "sha256": "d164424c32ecbf66ff4a12507e325b5cf4cf4589c6deae99655e9c8044f8ac7e"
+    },
+    {
+      "path": "library/assets/appliances/stand_ac.glb",
+      "bytes": 275864,
+      "sha256": "a5e6343e2334289c9b15a9a66d5746f95f1b57655633d0d3aff3535383491e6b"
+    },
+    {
+      "path": "library/assets/appliances/stick_vacuum.glb",
+      "bytes": 167572,
+      "sha256": "77fc2b7725a3b514e5befea39571773d5466b51ea224dc8ad041aca394379770"
+    },
+    {
+      "path": "library/assets/appliances/tv.glb",
+      "bytes": 113476,
+      "sha256": "9cfd7f8b83075fa33a7f9b63bf15c6eeb1c3662ff52218419d4e7dee724aa47d"
+    },
+    {
+      "path": "library/assets/appliances/vacuum_dock.glb",
+      "bytes": 236916,
+      "sha256": "87571f9174c40bf6ff7f7aa7ed54f66a4e91a1163fcf83cecd5b71a74edc5fb8"
+    },
+    {
+      "path": "library/assets/appliances/wall_ac.glb",
+      "bytes": 140236,
+      "sha256": "77be6d046a6c04d01adef148e539c6f9c77abee4a1ccb330823eb7cc9526e1da"
+    },
+    {
+      "path": "library/assets/appliances/wall_pad.glb",
+      "bytes": 48316,
+      "sha256": "df23fe8cc44ffda228f2530c0b022afee7a2d08bd9a0f2f4006a3d7fa96b3681"
+    },
+    {
+      "path": "library/assets/appliances/washer.glb",
+      "bytes": 426976,
+      "sha256": "b21c1c06a533617ee1c86f3cf04b1b414a62ab12b0aa9d5aef808d2ef41af4ed"
+    },
+    {
+      "path": "library/assets/decorations/basket.glb",
+      "bytes": 71304,
+      "sha256": "95d0b17d395b750b3181f95bf9ba1d3560f53d293ec37f7c4778a3615f8d9020"
+    },
+    {
+      "path": "library/assets/decorations/books_row.glb",
+      "bytes": 83900,
+      "sha256": "0246fd617c946bbc1e5c5b2e6da87870db1a0b939b680536d066828dfc9c0e76"
+    },
+    {
+      "path": "library/assets/decorations/extinguisher.glb",
+      "bytes": 103012,
+      "sha256": "d22a71c218f4b25bb65e45fe5e3d9a2c06ca2e0fce240204e31bd284b8861d17"
+    },
+    {
+      "path": "library/assets/decorations/keyboard_mouse.glb",
+      "bytes": 99804,
+      "sha256": "b980c7fd0e078d2cb3db2bb7f6f67b51fa672e16da79a6787529971ca1299ad5"
+    },
+    {
+      "path": "library/assets/decorations/magazine.glb",
+      "bytes": 21968,
+      "sha256": "852f35dc8597206a00d14e0157b4db994c7c4adb02dbd5114a0ac17634259bbc"
+    },
+    {
+      "path": "library/assets/decorations/picture_frame.glb",
+      "bytes": 42544,
+      "sha256": "79811c97eb14c0816b96acfe41a9ca59a1bbd86b0f2a7dfa6fef6d0c9fab9780"
+    },
+    {
+      "path": "library/assets/decorations/picture_frame_abstract.glb",
+      "bytes": 48196,
+      "sha256": "b231c1eb906dcf99bc2cde28f9be60500819f97b3865f2f034e07cafb809c03f"
+    },
+    {
+      "path": "library/assets/decorations/picture_frame_botanical.glb",
+      "bytes": 42532,
+      "sha256": "67bd130e3a98175f8a51c711c725e71efa83c2daf47a96e70d6a0462f71c7342"
+    },
+    {
+      "path": "library/assets/decorations/picture_frame_figure.glb",
+      "bytes": 27296,
+      "sha256": "5dbe7fd21cc738116ea3343d445a3960431730dd28f65fa139d980c3da80015c"
+    },
+    {
+      "path": "library/assets/decorations/picture_frame_quote.glb",
+      "bytes": 35372,
+      "sha256": "11802b0a96cc1e8ac781b2df1067ad42d6318987aa9ac84fcda069e04198e1d3"
+    },
+    {
+      "path": "library/assets/decorations/picture_frame_sketch.glb",
+      "bytes": 32656,
+      "sha256": "fe7b9aec568f11c50e56d2099ceea378029779efb2887843873f7c8090031567"
+    },
+    {
+      "path": "library/assets/decorations/plant.glb",
+      "bytes": 432728,
+      "sha256": "ca6b73754d0c600541cd7807b7bba475a14e1fd4e0f006f655f28f8951472788"
+    },
+    {
+      "path": "library/assets/decorations/plant_herb.glb",
+      "bytes": 42252,
+      "sha256": "c5440d2475443f1e97f95204aaec463c4115cf7688a5e74cbaa640af46356dc1"
+    },
+    {
+      "path": "library/assets/decorations/plant_monstera.glb",
+      "bytes": 48384,
+      "sha256": "9b51dc0f2ecfbd6a51ee8549a8d7721bb37b1845cc8bf05f41db875fa87e19dc"
+    },
+    {
+      "path": "library/assets/decorations/plant_pothos.glb",
+      "bytes": 97264,
+      "sha256": "a288b36a2f1ba0dfd9b1cedf43d75a78dbb0d1bcd83953fb61bf4008555103de"
+    },
+    {
+      "path": "library/assets/decorations/plant_small.glb",
+      "bytes": 108540,
+      "sha256": "e872f4dd21078aac33cec0ec093401ae29927d22d304b867f9d0a2c41abcadb3"
+    },
+    {
+      "path": "library/assets/decorations/plant_succulent.glb",
+      "bytes": 31412,
+      "sha256": "53dc709056c59fbc20ac0fba8af313870152bace28090feb6d293cca84c99439"
+    },
+    {
+      "path": "library/assets/decorations/rug.glb",
+      "bytes": 98416,
+      "sha256": "cdf8c32867f911ebf5b3e3b77dae32d3bcb2e7a3131e42fc16e545b2e8839d15"
+    },
+    {
+      "path": "library/assets/decorations/slippers.glb",
+      "bytes": 53420,
+      "sha256": "760699289e9db1d65218e5ca9ac8e16549e4b6f9a1274e0a5c48f143f6e6eef6"
+    },
+    {
+      "path": "library/assets/decorations/storage_box.glb",
+      "bytes": 21316,
+      "sha256": "eb341a45c9c065fc45d540a91694b4eb659fab6a6dc54ba5aa29f696d3ec43cb"
+    },
+    {
+      "path": "library/assets/decorations/vase_flowers.glb",
+      "bytes": 42592,
+      "sha256": "ee5c60eb6aebc8458dca81164cea5eb447b4760e166fd1f6018b1d205096a73e"
+    },
+    {
+      "path": "library/assets/fixtures/blind_175.glb",
+      "bytes": 84220,
+      "sha256": "9f1efdb85df51d7292ec829abfa129778131fd385588a44f4037d293a9fe3998"
+    },
+    {
+      "path": "library/assets/fixtures/ceiling_light.glb",
+      "bytes": 65792,
+      "sha256": "b09c5d2160a2fec07ba76f7b10dc83d30cc3afa8570a8b57d1fcae0c3036c66c"
+    },
+    {
+      "path": "library/assets/fixtures/ceiling_panel.glb",
+      "bytes": 38164,
+      "sha256": "c33bc49513f6362b971647473cde6c1fe95b9a2e6b9bcbc18d4f78537e871687"
+    },
+    {
+      "path": "library/assets/fixtures/curtain_250.glb",
+      "bytes": 414376,
+      "sha256": "e956bb9d8392375eaf97eebe4c1368b6764b6a3c102cf91c1a31225cd9851817"
+    },
+    {
+      "path": "library/assets/fixtures/curtain_290.glb",
+      "bytes": 454884,
+      "sha256": "f43e868abf8be280b7c6093db531b519d2346d4e2486634c92d189495992f6a8"
+    },
+    {
+      "path": "library/assets/fixtures/door_bath_l.glb",
+      "bytes": 215072,
+      "sha256": "b35a024e0864831fb0d1f21bb566cd039614c4f32763b9389e0e9677b89131c6"
+    },
+    {
+      "path": "library/assets/fixtures/door_bath_r.glb",
+      "bytes": 215076,
+      "sha256": "fbfcdeb30f8885583d65403daa1e3ac3477278d5dc92ff14ba7f4c99541649a0"
+    },
+    {
+      "path": "library/assets/fixtures/door_fire_l.glb",
+      "bytes": 205072,
+      "sha256": "b8998a456d8217110e47f1c9a736d1f41f4e8d738a1f37d109356e62711aba78"
+    },
+    {
+      "path": "library/assets/fixtures/door_fire_r.glb",
+      "bytes": 205008,
+      "sha256": "e0a3e5a9a00c2d7f70294e67017e862c842688b8cfbd27be79895a07c27c9f34"
+    },
+    {
+      "path": "library/assets/fixtures/door_glass_l.glb",
+      "bytes": 144588,
+      "sha256": "3871721ed0fcdb722df86acfd2cc454b5b12d593d474c831d2b0f8ef46d8a74e"
+    },
+    {
+      "path": "library/assets/fixtures/door_glass_r.glb",
+      "bytes": 144588,
+      "sha256": "a2e8fed908c1b23a4a6a0147ede026f000cf99fecf532e7d73b3c25d7d50e775"
+    },
+    {
+      "path": "library/assets/fixtures/door_main.glb",
+      "bytes": 390016,
+      "sha256": "c14980e5cc4ec1ccfa421594d21f2d2e65b771f2fe1a199a5db9f92ef22fa694"
+    },
+    {
+      "path": "library/assets/fixtures/door_room_l.glb",
+      "bytes": 222480,
+      "sha256": "902251be6550d7c953b3ab990e1862187e71b85e4481c43a1ae01de4c2e65b97"
+    },
+    {
+      "path": "library/assets/fixtures/door_room_r.glb",
+      "bytes": 222768,
+      "sha256": "a0176a373d354767dcdc92abd8db10c4835e88eaf708dd25e6bb3b24307a8f53"
+    },
+    {
+      "path": "library/assets/fixtures/downlight.glb",
+      "bytes": 59692,
+      "sha256": "d8d954692de03b6a0901cca5bde61d80680ede124b2107a18a13a680d8c5d4ec"
+    },
+    {
+      "path": "library/assets/fixtures/mirror_cabinet.glb",
+      "bytes": 80556,
+      "sha256": "0258a1c50afc02d7c0ce7e9eecca395d3915ab91956a94d3cf9fe7b5f7697631"
+    },
+    {
+      "path": "library/assets/fixtures/pendant_lamp.glb",
+      "bytes": 93872,
+      "sha256": "0b63c458873dbaf2d95a999a53e60eb768d7a73dc996e685206c8a57f28d51a1"
+    },
+    {
+      "path": "library/assets/fixtures/shower_booth.glb",
+      "bytes": 404584,
+      "sha256": "4fc60d209f9e541ab60fb943671035b47207c46f75fc8404ef88ee8122620840"
+    },
+    {
+      "path": "library/assets/fixtures/sliding_door_110.glb",
+      "bytes": 161320,
+      "sha256": "d2367a72a7523d7e78d9aee23d07ca2992d721bd129f3cbb0c0a27287bba160c"
+    },
+    {
+      "path": "library/assets/fixtures/sliding_door_95.glb",
+      "bytes": 160616,
+      "sha256": "a0402c05a8679941f6a5885c4021c9a535f161dda9c2720e7ffc61da85795433"
+    },
+    {
+      "path": "library/assets/fixtures/toilet.glb",
+      "bytes": 175856,
+      "sha256": "e87108d0048499f19cb9f677ae6ca253813423cd082122d7df7e91eb7301aeeb"
+    },
+    {
+      "path": "library/assets/fixtures/utility_sink.glb",
+      "bytes": 570416,
+      "sha256": "54d16b1abf9e9d0e0ede7eac95c53fc3dee3a754ea88da4f3f0088cbf2dd81b8"
+    },
+    {
+      "path": "library/assets/fixtures/vanity.glb",
+      "bytes": 329424,
+      "sha256": "62b06d2bc5bd8c69e0d358d8f4547814c4e5e585112b36883fa5ba0ae8e9a5e3"
+    },
+    {
+      "path": "library/assets/fixtures/vent_fan.glb",
+      "bytes": 159816,
+      "sha256": "824f6607b421463550ccfde263dc542f0065197bbd7ae832bc62859b7cffd089"
+    },
+    {
+      "path": "library/assets/fixtures/window_bed.glb",
+      "bytes": 298984,
+      "sha256": "f872c5f01110da20e8fbbde47c2b3164498c002688f4289e5362f2be5516bc68"
+    },
+    {
+      "path": "library/assets/fixtures/window_inner.glb",
+      "bytes": 299772,
+      "sha256": "f143f99fe5f4dadb7caceae6c9ed4d659abb46e2024294fc2e71c07b057913e9"
+    },
+    {
+      "path": "library/assets/fixtures/window_living.glb",
+      "bytes": 300696,
+      "sha256": "aa6c5f868d8c68ae8243ac3920233b587b7b55c65c0e8e98e92dae3d5ced4776"
+    },
+    {
+      "path": "library/assets/fixtures/window_master.glb",
+      "bytes": 305800,
+      "sha256": "ab5d6af3e22099bd0c6b32ad45adba7fe94bc29442cf39dfcc5a10a62c74fbdf"
+    },
+    {
+      "path": "library/assets/fixtures/window_small.glb",
+      "bytes": 296384,
+      "sha256": "fcbcac4048a4df8b0d03b68c32477f1bf55e92b250db910c496c137c7c939bb1"
+    },
+    {
+      "path": "library/assets/furniture/armchair.glb",
+      "bytes": 265268,
+      "sha256": "0934245ed02335247586cda546f42347df59945537c16e1682c7b491c96c3745"
+    },
+    {
+      "path": "library/assets/furniture/bed_queen.glb",
+      "bytes": 415412,
+      "sha256": "4d8b3043c58a983ec6b1aa7a4b39b47d38e27f5b0ce8213a9600a0e4f6ba8832"
+    },
+    {
+      "path": "library/assets/furniture/bed_single.glb",
+      "bytes": 320444,
+      "sha256": "18c4bdfbacd1dcced13eaa4d55a5b7daf2c4601e38bf2d1efbad4da870750425"
+    },
+    {
+      "path": "library/assets/furniture/bookcase.glb",
+      "bytes": 97748,
+      "sha256": "151b01f5a1447bc4f48c71fecf12a339bc581575b136273dc92841909d292c61"
+    },
+    {
+      "path": "library/assets/furniture/cabinet.glb",
+      "bytes": 93860,
+      "sha256": "a777866184694e82748e8e1929620d87d42326346ae8b8fae7f2a3e2dd076459"
+    },
+    {
+      "path": "library/assets/furniture/chair.glb",
+      "bytes": 104640,
+      "sha256": "542ac69826640eb5626a394cfdbc66b442a10240ae4e50c73b2005410d2d7b78"
+    },
+    {
+      "path": "library/assets/furniture/coffee_table.glb",
+      "bytes": 39308,
+      "sha256": "9e8bc651f695651d3f1dbeb9e68889fc533079062b0e05ce02f434778d42c050"
+    },
+    {
+      "path": "library/assets/furniture/counter_base_60.glb",
+      "bytes": 73832,
+      "sha256": "aa835c4b0d5391d6b9fbf3a8b0e85d0fcb8bbb3257255ceff5fd16533c973b1e"
+    },
+    {
+      "path": "library/assets/furniture/counter_drawer_60.glb",
+      "bytes": 99652,
+      "sha256": "6bce1121c1e9e9d332e1118d7333a5f27441aab470de13594d24a1a8a82d4bfb"
+    },
+    {
+      "path": "library/assets/furniture/counter_filler.glb",
+      "bytes": 73624,
+      "sha256": "7e647075ab3f2f4971aefc8a8e78d36a19c7468a556f35de98b13210b16331b1"
+    },
+    {
+      "path": "library/assets/furniture/desk.glb",
+      "bytes": 129400,
+      "sha256": "5a7f885cecab77462b7e560cad057a33d0d06b4badede18e94ad1d355c779dcb"
+    },
+    {
+      "path": "library/assets/furniture/desk_small.glb",
+      "bytes": 115592,
+      "sha256": "210fb64e79de20bca95db8118c9cbce2039b207741c302b761d60f6ecc6057d6"
+    },
+    {
+      "path": "library/assets/furniture/dining_chair.glb",
+      "bytes": 116016,
+      "sha256": "27344525e3f84ff09895d98676559d51c3e46149e20c030064533bf72ed0220e"
+    },
+    {
+      "path": "library/assets/furniture/dining_table.glb",
+      "bytes": 59912,
+      "sha256": "d8d9a99b78d9630bcf7f44a9c11c3b3c87b909f2bc9f8d7c8819fdd5d4d84c40"
+    },
+    {
+      "path": "library/assets/furniture/nightstand.glb",
+      "bytes": 120192,
+      "sha256": "c63a5edfc9f12e31900d3f4ea71f17b0f7e56a5b3058a70f7aed9fb77d22d40e"
+    },
+    {
+      "path": "library/assets/furniture/pantry_shelf.glb",
+      "bytes": 572688,
+      "sha256": "5d53c47baf07c0a271bc15f9f65cf933b5103ad225f1054dace9061e04e7db93"
+    },
+    {
+      "path": "library/assets/furniture/shoe_cabinet.glb",
+      "bytes": 136796,
+      "sha256": "3dde9e4c3e5632e50f8e559bf331c44ccfd7bf7a16220f5c56e54f0b99fc7e25"
+    },
+    {
+      "path": "library/assets/furniture/side_table.glb",
+      "bytes": 33468,
+      "sha256": "c3e4815c9ce3d60c19fcf029d5149760954e20a4f20dbe55672d5572606b9440"
+    },
+    {
+      "path": "library/assets/furniture/sink_counter.glb",
+      "bytes": 235736,
+      "sha256": "690dd0227038d0b4553afaa594a03cd9fee688b032c6858bd7af313e4c18f376"
+    },
+    {
+      "path": "library/assets/furniture/sofa.glb",
+      "bytes": 250880,
+      "sha256": "b938b42b2b7612afc00695be5a574144ae9cf8aa79ba82d8513c9ca71d677ef8"
+    },
+    {
+      "path": "library/assets/furniture/tv_stand.glb",
+      "bytes": 181640,
+      "sha256": "228bd7665fb45aedc6239d59608cec32f06b4eda51818494f9b667b1edbee921"
+    },
+    {
+      "path": "library/assets/furniture/upper_cabinet_40.glb",
+      "bytes": 58092,
+      "sha256": "fe60c117c62f62c67a896d1f3f40e21c39ce8c1fd97bdfda61390d187784272e"
+    },
+    {
+      "path": "library/assets/furniture/upper_cabinet_60.glb",
+      "bytes": 62040,
+      "sha256": "702d33766fd1f7638d0799618532886c975ec9e7612a3efd6593a6f8e22863c9"
+    },
+    {
+      "path": "library/assets/furniture/upper_cabinet_80.glb",
+      "bytes": 61780,
+      "sha256": "0e78beb7e80098b5996eaa2d6bedf1764ec743d2885aae4283fc9614c8d6bc1b"
+    },
+    {
+      "path": "library/assets/furniture/wall_shelf.glb",
+      "bytes": 31772,
+      "sha256": "383d38f60edaf3ea1c0d1ca9ee0cefbb74eaadf7e23171abc28184907cb6dfc7"
+    },
+    {
+      "path": "library/assets/furniture/wardrobe.glb",
+      "bytes": 136840,
+      "sha256": "571acd7ca223070e09fb895be2a33a6975275368ea97ad2547d36674255b74fd"
+    },
+    {
+      "path": "library/assets/furniture/wardrobe_module.glb",
+      "bytes": 23148,
+      "sha256": "cd47d5aad7b71ce7ccd810a88aec3f5c8f1cdd9eca4cc44bc1ce47df9a8309e7"
+    },
+    {
+      "path": "library/assets/props/pot.glb",
+      "bytes": 77648,
+      "sha256": "f92fb74b819f50983627683039286926c87d1e0558d3c769cb2c43f68947a457"
+    },
+    {
+      "path": "library/assets/props/robot.glb",
+      "bytes": 484076,
+      "sha256": "568dd70157aa1af5de88f13d117bdeba315e0a596ee9b3caa56181a58f8a43f3"
+    }
+  ]
+}

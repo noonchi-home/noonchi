@@ -1,0 +1,72 @@
+{
+  "type": "floor_lamp",
+  "label": "플로어 스탠드",
+  "family": "living",
+  "category": "appliances",
+  "node_type": "device",
+  "mount": "floor",
+  "footprint": [
+    0.34,
+    0.34
+  ],
+  "height": 1.6,
+  "model": "assets/appliances/floor_lamp.glb",
+  "blocks_walk": true,
+  "blocks_view": true,
+  "anchors": {
+    "front": [
+      0.0,
+      0.45
+    ]
+  },
+  "attrs": {
+    "power": [
+      "off",
+      "on"
+    ]
+  },
+  "states": {
+    "power": {
+      "default": "off",
+      "effects": {
+        "off": [
+          {
+            "part": "shade",
+            "emissive": 0.0
+          },
+          {
+            "part": "liner",
+            "emissive": 0.0
+          },
+          {
+            "part": "bulb",
+            "emissive": 0.0
+          },
+          {
+            "light": "glow",
+            "intensity": 0.0
+          }
+        ],
+        "on": [
+          {
+            "part": "shade",
+            "emissive": 1.0
+          },
+          {
+            "part": "liner",
+            "emissive": 1.0
+          },
+          {
+            "part": "bulb",
+            "emissive": 1.0
+          },
+          {
+            "light": "glow",
+            "intensity": 1.0
+          }
+        ]
+      }
+    }
+  },
+  "notes": "검은 금속 받침·기둥, 리넨 드럼 갓(지름 0.34, 높이 0.3). 켜지면 갓 바깥이 은은히, 안감·전구가 밝게 빛나고 따뜻한 점광원(60W)이 바닥에 빛 웅덩이를 만든다."
+}

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "default": "apartment",
+  "viewer": "apartment/viewer",
+  "library": "library",
+  "homes": [
+    {"id": "apartment", "name": "마곡 보타닉 아파트 (방 3·욕실 2)", "data": "data/apartment", "out": "apartment"},
+    {"id": "oneroom", "name": "원룸 예시 (테스트용)", "data": "data/homes/oneroom", "out": "homes/oneroom"},
+    {"id": "mokryeon_180b", "name": "한양목련 180B (도면 기준 · 방 4·욕실 3)", "data": "data/homes/mokryeon_180b", "out": "homes/mokryeon_180b"}
+  ]
+}

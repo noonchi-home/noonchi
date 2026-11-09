@@ -1,73 +1,236 @@
-import { useCallback, useMemo, useState } from "react";
-import type { ServerMessage } from "../../../src/contract/events.ts";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { DeviceView, EyeEvent, ServerMessage } from "../../../src/contract/events.ts";
+import type { PlanView } from "../../../src/contract/plan.ts";
 import { BubbleLayer } from "../bubbles/BubbleLayer";
-import { DecisionLog, type LogView } from "../chat/DecisionLog";
-import { checkList, type ChecksState } from "../checks/checks";
+import { checkList, dashboardChecks, type ChecksState } from "../checks/checks";
 import { useChecks } from "../checks/use-checks";
-import { useLog } from "../chat/use-log";
-import { GlassFilter } from "../components/ui/liquid-glass";
 import { useDevices } from "../lib/use-devices";
 import { useEvents } from "../lib/use-events";
 import { useHealth } from "../lib/use-health";
-import { LookContext, lookOf } from "../look/look";
-import { EyeBody, EyeWindow } from "../panels/EyeWindow";
-import { StatusPill } from "../panels/StatusPill";
 import { TwinStage } from "../twin/TwinStage";
 import { useAnchors } from "../twin/use-anchors";
 import { useViewer } from "../twin/viewer";
+import type { TwinEngine } from "../twin3d/engine";
+import { LiveQueue, attachLive } from "../twin3d/live";
+import { BAKE_VIEWS } from "../twin3d/projection";
+import { Twin3D, useLayoutBox } from "../twin3d/Twin3D";
+import { focusOf, still, wideCamera, type Camera } from "./camera";
+import { currentStep, facingOf, fsmOf, isOpen, stepIndex } from "./data";
+import { DashboardScreen } from "./DashboardScreen";
+import { debugPhone, debugQuery, useDebugSteps, type Moment } from "./debug";
+import { roomSetsOf, twinFrame } from "./frame";
+import { homeIndexOf, type HomeIndex } from "./home";
+import { hubOf } from "./hub";
+import type { PageLayout } from "./layout";
+import { MapOverlay } from "./MapOverlay";
+import { CAMERA_MS, useReducedMotionNow } from "./motion";
+import type { PhoneSlot } from "./PhonePane";
+import { useDash } from "./use-dash";
 
-/** 확인 목록만 말풍선으로. 두뇌 줄은 장면의 식탁(dining_table)에 붙는다. 자리는 확인한 것만 센다. */
+declare global {
+  interface Window { __twin3d?: { engine: TwinEngine | null; ready: boolean } }
+}
+
+/** 트윈 위에 얹힌 것: 말풍선이 덮지 않을 자리. */
+const AVOID = "[data-say-card], [data-mascot], [data-progress], [data-chips]";
+
+/** 확인 목록만 말풍선으로(승인 대기 줄은 뺀다). 두뇌 줄은 장면의 식탁(dining_table)에 붙는다. 자리는 확인한 것만 센다. 말풍선은 트윈 위에 얹힌 것(AVOID)을 비킨다. */
 function Overlay({ devices, checks, focusId }: { devices: ReturnType<typeof useDevices>["devices"]; checks: ChecksState; focusId: string | null }) {
   const v = useViewer();
   const table = useMemo(() => v?.objects().find((o) => o.type === "dining_table") ?? null, [v]);
-  const list = useMemo(() => checkList(checks, table?.id ?? null), [checks, table]);
+  const list = useMemo(() => dashboardChecks(checkList(checks, table?.id ?? null)), [checks, table]);
   const objects = useMemo(() => new Map<string, string>(table ? [[table.id, table.name ?? "식탁"]] : []), [table]);
   const points = useAnchors(list.map((c) => c.deviceId ?? c.objectId!));
-  return <BubbleLayer checks={list} devices={devices} objects={objects} points={points} focusId={focusId} />;
+  return <BubbleLayer checks={list} devices={devices} objects={objects} points={points} focusId={focusId} avoid={AVOID} />;
+}
+
+/** 3D 트윈을 다 불러왔으면 알린다. */
+function MapReady({ onReady }: { onReady: (ready: boolean) => void }) {
+  const v = useViewer();
+  useEffect(() => { onReady(v !== null); }, [v, onReady]);
+  return null;
+}
+
+/** 트윈 칸 종류: 구운 보기가 있는 집이고 /twin/bake/manifest.json이 있으면 three.js("three"), 아니면 iframe 뷰어. 집을 아직 모르면 null. */
+function useTwinKind(homeId: string | null, known: boolean): "three" | "iframe" | null {
+  const [kind, setKind] = useState<"three" | "iframe" | null>(null);
+  useEffect(() => {
+    if (!known) return;
+    if (!homeId || !BAKE_VIEWS[homeId]) { setKind("iframe"); return; }
+    let live = true;
+    fetch("/twin/bake/manifest.json", { method: "HEAD" })
+      .then((r) => { if (live) setKind(r.ok ? "three" : "iframe"); }, () => { if (live) setKind("iframe"); });
+    return () => { live = false; };
+  }, [homeId, known]);
+  return kind;
+}
+
+interface HomeData { index: HomeIndex; tableId: string | null; names: Map<string, string> }
+type SceneJson = Parameters<typeof homeIndexOf>[0];
+
+/** 구운 트윈 집의 평면 색인(/api/scene), 식탁 id, 물건 이름. 집을 모르거나 장면을 받지 못하면 null. */
+function useHomeData(home: string | null): HomeData | null {
+  const [data, setData] = useState<HomeData | null>(null);
+  useEffect(() => {
+    const cam = home ? BAKE_VIEWS[home] : undefined;
+    setData(null);
+    if (!cam) return;
+    let live = true;
+    fetch("/api/scene")
+      .then(async (r) => (r.ok ? ((await r.json()) as { scene?: SceneJson }).scene ?? null : null))
+      .then((scene) => {
+        if (!live || !scene?.plan || !Array.isArray(scene.objects)) return;
+        const index = homeIndexOf(scene, cam);
+        const table = (scene.objects as { id?: unknown; type?: unknown }[]).find((o) => o.type === "dining_table");
+        setData({ index, tableId: typeof table?.id === "string" ? table.id : null, names: new Map([...index.objects].map(([id, o]) => [id, o.name])) });
+      }, () => {});
+    return () => { live = false; };
+  }, [home]);
+  return data;
 }
 
 /**
- * A 구조: 3D 트윈이 화면 전체 배경, 그 위에 패널(위 가운데 상태 알약, 왼쪽 위 눈 창, 오른쪽 판단 기록)이 떠 있다.
- * 대시보드에는 입력이 없다: 요청·승인은 폰에서 음성으로 오고, 판단 기록은 서버 메시지로만 쌓인다.
- * 판단 기록의 「폰 화면」 탭을 고르면 폰 화면을 오른쪽 패널에 크게 띄우고 왼쪽 위 눈 창은 숨긴다.
- * 모양은 주소의 ?look=로 고른다: parts(기본, 밝은 카드)와 glass(Liquid Glass). [data-look]가 토큰 값을 바꾼다.
- * 패널은 덮개 층의 바로 아래 자식(눈 창·판단 기록은 그 아래 쌓기 상자의 자식)이라 패널 밖 빈 곳의 마우스는 3D로 간다.
+ * 구운 3D 트윈(TwinStage와 같은 틀): 캔버스와 그 위 표시 판(MapOverlay: 경로·클로이드·확인한 것·어둡게 한 방·말풍선).
+ * 계획·맞춘 눈은 대시보드 자료(data.ts)의 것이다.
+ * 지도 카메라는 그 단계에 중요한 것(focusOf)을 지도 카메라 칸(layout.camPad 안쪽)에 맞추고, 작은 눈 움직임(still)에는 그대로 둔다.
+ * 바뀌면 CAMERA_MS 동안 옮긴다(움직임 줄이기면 바로). 종류를 정하기 전(home null)에는 캔버스 없이 틀만.
+ * 엔진이 뜨고 버려질 때 onEngine, 첫 그림을 그리면 onReady.
+ */
+function BakedStage({ home, layout, plan, eye, checks, devices, onEngine: toLive, onReady: toReady }: {
+  home: string | null;
+  layout: PageLayout;
+  plan: PlanView | null;
+  eye: EyeEvent | null;
+  checks: ChecksState;
+  devices: Map<string, DeviceView>;
+  onEngine: (engine: TwinEngine | null) => void;
+  onReady: () => void;
+}) {
+  const box = useRef<HTMLElement>(null);
+  const size = useLayoutBox(box);
+  const v = home ? BAKE_VIEWS[home] : undefined;
+  const [engine, setEngine] = useState<TwinEngine | null>(null);
+  const homeData = useHomeData(home);
+  const list = useMemo(() => dashboardChecks(checkList(checks, homeData?.tableId ?? null)), [checks, homeData]);
+  const frame = useMemo(
+    () => (v && homeData ? twinFrame({ plan, eye, checks: list, anchor: (id) => engine?.anchor(id) ?? null, home: homeData.index, cam: v }) : null),
+    [v, homeData, plan, eye, list, engine],
+  );
+  const roomSets = useMemo(() => (frame?.plan && homeData ? roomSetsOf(frame.plan, homeData.index) : []), [frame?.plan, homeData]);
+  const want = v && size.width > 0 && size.height > 0 ? wideCamera(v, size, frame && homeData ? focusOf(frame, homeData.index.shapes) : null, layout.camPad) : null;
+  const last = useRef<Camera | null>(null);
+  const cam = want && last.current && still(last.current, want) ? last.current : want;
+  useLayoutEffect(() => { last.current = cam; });
+  const moveMs = useReducedMotionNow() ? 0 : CAMERA_MS;
+  // 말풍선 카드·마스코트 자리(트윈 칸 px)
+  const blocked = useMemo(() => layout.blocked.map((r) => ({
+    x0: r.left - layout.twin.left, y0: r.top - layout.twin.top, x1: r.left + r.width - layout.twin.left, y1: r.top + r.height - layout.twin.top,
+  })), [layout]);
+  const debug = useMemo(() => new URLSearchParams(location.search).has("debug"), []);
+  const onEngine = useCallback((e: TwinEngine | null) => {
+    setEngine(e);
+    toLive(e);
+    if (debug) window.__twin3d = { engine: e, ready: false };
+  }, [debug, toLive]);
+  const onReady = useCallback(() => {
+    if (debug && window.__twin3d) window.__twin3d.ready = true;
+    toReady();
+  }, [debug, toReady]);
+  return (
+    <section ref={box} className="absolute inset-0" aria-label="3D 트윈">
+      {home && cam && <Twin3D key={home} home={home} box={size} view={cam} moveMs={moveMs} onEngine={onEngine} onReady={onReady} />}
+      {v && cam && frame && homeData && (
+        <MapOverlay
+          frame={frame} checks={list} shapes={homeData.index.shapes} roomSets={roomSets} image={v} size={size} cam={cam} engine={engine}
+          devices={devices} objects={homeData.names} moveMs={moveMs} blocked={blocked} avoid={AVOID}
+        />
+      )}
+    </section>
+  );
+}
+
+/**
+ * 대시보드: 서버에서 받은 것(health·/events·기기·확인 목록·대시보드 자료)을 화면 틀(DashboardScreen)에 넘긴다.
+ * 대시보드 자료(data.ts): 열린 계획의 단계 번호·진행도, 마스코트 방향(열린 계획이면 트윈), 말풍선 카드 말, FSM 카드(마지막 유효 판단), YOLO 상자(받은 뒤 3초), 클로이드 자리를 아는가.
+ * 트윈 칸 지도 자리: 한양목련처럼 구운 3D가 있는 집은 three.js 캔버스와 그 위 계획 경로·클로이드·확인한 것·어둡게 한 방(BakedStage),
+ * 다른 집은 iframe 뷰어(TwinStage)와 그 위 확인 목록 말풍선.
+ * 구운 트윈의 가전 상태·배치는 같은 소켓 메시지로 바꾸고, 엔진이 뜨기 전에 온 메시지는 모아 두었다가 엔진이 뜨면 넣는다.
+ * 대시보드 폰 칸은 폰 서버가 켜져 있으면 실시간 영상, 아니면 연결 QR이다. health 전에는 빈 칸이다.
+ * 대시보드에는 입력이 없다: 요청·승인은 폰에서 음성으로 온다. 승인 대기는 보이지 않는다. 설정에서 집을 바꾸면 다시 불러온다.
+ * ?debug=steps(debug.ts)면 대시보드 자료·확인 목록·대시보드 폰 칸·연결은 가짜 단계 순간 것이고, 트윈과 health는 서버 것이다.
  */
 export function Dashboard() {
-  const look = useMemo(() => lookOf(location.search), []);
+  const debug = useMemo(() => debugQuery(location.search), []);
   const { devices, apply } = useDevices();
   const health = useHealth();
-  const { turns, onMessage: toLog } = useLog();
   const { checks, onMessage: toChecks } = useChecks();
-  const [view, setView] = useState<LogView>("log");
+  const { dash, boxes, onMessage: toDash, load } = useDash({ hold: debug !== null });
   const [connected, setConnected] = useState<boolean | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
+  const [viewerReady, setViewerReady] = useState(false);
+  const [bakedReady, setBakedReady] = useState(false);
+  const [screenReady, setScreenReady] = useState(false);
   const homeId = health?.home?.id ?? null;
+  const live = useRef<ReturnType<typeof attachLive> | null>(null);
+  const queue = useRef(new LiveQueue());
+  const kindRef = useRef<"three" | "iframe" | null>(null);
   const onMessage = useCallback((m: ServerMessage) => {
     if (m.type === "hello" && homeId && m.home && m.home !== homeId) {
       location.reload(); // 설정에서 집을 바꿨다
       return;
     }
     apply(m);
-    toLog(m);
-    toChecks(m);
+    if (!debug) {
+      toChecks(m);
+      toDash(m);
+    }
     if (m.type === "agent" && m.event === "action" && m.action.deviceId) setFocusId(m.action.deviceId);
-  }, [apply, toLog, toChecks, homeId]);
+    if (live.current) live.current.handle(m);
+    else if (kindRef.current !== "iframe") queue.current.push(m);
+  }, [apply, toChecks, toDash, homeId, debug]);
   useEvents(onMessage, setConnected);
+  const onMoment = useCallback((m: Moment) => {
+    load(m.messages);
+    for (const message of m.messages) toChecks(message);
+  }, [load, toChecks]);
+  const kind = useTwinKind(homeId, health !== null);
+  kindRef.current = kind;
+  // 트윈이 없는 집은 기다리지 않는다
+  const mapReady = (kind === "iframe" ? viewerReady : kind === "three" && bakedReady) || health?.twin === false;
+  // 가짜 단계 재생은 화면이 다 뜬 뒤(미리 그려 보기 뒤 data-ready)부터 센다
+  const moment = useDebugSteps(debug, onMoment, screenReady);
+  useEffect(() => { if (kind === "iframe") queue.current.drain(); }, [kind]);
+  const onEngine = useCallback((engine: TwinEngine | null) => {
+    live.current?.dispose();
+    live.current = null;
+    if (!engine) { setBakedReady(false); return; }
+    const l = attachLive(engine);
+    live.current = l;
+    for (const m of queue.current.drain()) l.handle(m);
+  }, []);
+  const onBakedReady = useCallback(() => setBakedReady(true), []);
+  const onScreenReady = useCallback(() => setScreenReady(true), []);
+  const online = debug ? !debug.offline : connected;
+  const hub = useMemo(() => hubOf(health, online), [health, online]);
+  const phone: PhoneSlot = debug && moment ? debugPhone(debug, moment, hub.phoneUrl)
+    : !health ? { kind: "none" } : health.eye ? { kind: "live", url: hub.phoneUrl } : { kind: "qr", url: hub.phoneUrl };
+  const map = kind === "iframe"
+    ? (
+      <TwinStage>
+        <Overlay devices={devices} checks={checks} focusId={focusId} />
+        <MapReady onReady={setViewerReady} />
+      </TwinStage>
+    )
+    : (layout: PageLayout) => (
+      <BakedStage home={kind === "three" ? homeId : null} layout={layout} plan={dash.plan} eye={dash.eye} checks={checks} devices={devices} onEngine={onEngine} onReady={onBakedReady} />
+    );
+  const plan = isOpen(dash.plan) ? dash.plan : null;
+  const { observation, action } = fsmOf(dash);
   return (
-    <LookContext.Provider value={look}>
-      <main data-look={look} className="relative h-full w-full overflow-hidden">
-        {look === "glass" && <GlassFilter />}
-        <TwinStage>
-          <Overlay devices={devices} checks={checks} focusId={focusId} />
-          <StatusPill connected={connected} health={health} />
-          {/* 640px보다 좁으면 눈 창 아래에 판단 기록을 쌓는다(나란히 두면 판단 기록이 눈 창 접기 단추를 덮는다). 넓으면 상자 없이 각자 자리에 뜬다. */}
-          <div className="contents *:pointer-events-auto max-sm:pointer-events-none! max-sm:absolute max-sm:inset-x-3 max-sm:top-16 max-sm:bottom-3 max-sm:flex max-sm:flex-col max-sm:items-end max-sm:gap-3">
-            {view === "log" && <EyeWindow health={health} connected={connected} />}
-            <DecisionLog turns={turns} view={view} onView={setView} phone={<EyeBody health={health} connected={connected} large />} />
-          </div>
-        </TwinStage>
-      </main>
-    </LookContext.Provider>
+    <DashboardScreen
+      index={stepIndex(plan)} plan={plan} step={currentStep(plan)} robotKnown={dash.eye !== null} connected={online} map={map} mapReady={mapReady}
+      phone={phone} boxes={boxes} frame={dash.boxes?.observe.frame ?? null} observation={observation} action={action} say={dash.say ?? ""}
+      facing={facingOf(plan)} hub={hub} settingsOpen={debug?.settings} onReady={onScreenReady}
+    />
   );
 }

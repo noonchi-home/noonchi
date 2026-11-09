@@ -1,18 +1,23 @@
 // 운영 모드(시험 · 실제): 설정 API, /api/health의 mode, 실제 모드에서 짝지은 에어컨·냉장고를 ThinQ로 다루기.
-// 실제 ThinQ는 부르지 않는다. 가짜 ThinQ 서버(tests/helpers/thinq.ts)와 HUB=memory, mock 에이전트, 실제 twin-studio 집(oneroom)으로 돈다.
+// 실제 ThinQ는 부르지 않는다. 가짜 ThinQ 서버(tests/helpers/thinq.ts)와 HUB=memory, 가짜 OpenAI 호환 서버에 붙인 에이전트, 실제 twin-studio 집(oneroom)으로 돈다.
 
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { fetchRetry } from "../src/server/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
+import { startFakeLlm, toolOutputs, type FakeLlm } from "./helpers/llm.js";
 import { FAKE_AC, FAKE_FRIDGE, startFakeThinq, type FakeThinq } from "./helpers/thinq.js";
 
 type Msg = Record<string, any>;
 const TOKEN = "thinq_pat_for_tests_only_9012";
 let srv: RunningServer | undefined;
 let fake: FakeThinq | undefined;
+const setTo = (c: number) => [[["set_climate", { device_id: "ac_1", setpoint_c: c }]], "맞췄어요."] as [[string, Record<string, unknown>][], string];
+let llm: FakeLlm;
+beforeAll(async () => { llm = await startFakeLlm({ "에어컨 26도로 맞춰줘": setTo(26), "에어컨 27도로 맞춰줘": setTo(27), "에어컨 28도로 맞춰줘": setTo(28) }); });
+afterAll(async () => { await llm?.close(); });
 const dirs: string[] = [];
 afterEach(async () => {
   await srv?.close();
@@ -31,7 +36,7 @@ const runtime = () => {
 async function start(opts: { token?: boolean; runtimeDir?: string; persist?: boolean; logs?: string[] } = {}) {
   fake ??= await startFakeThinq();
   const env: Record<string, string> = {
-    HUB: "memory", PORT: "0", AGENT_PROVIDER: "mock", HOME_ID: "oneroom", RUNTIME_DIR: opts.runtimeDir ?? runtime(),
+    HUB: "memory", PORT: "0", ...llm.env, HOME_ID: "oneroom", RUNTIME_DIR: opts.runtimeDir ?? runtime(),
     THINQ_BASE_URL: fake.url, THINQ_POLL_MS: "0", THINQ_READBACK_MS: "0,10",
   };
   if (opts.token !== false) env.THINQ_TOKEN = TOKEN;
@@ -126,6 +131,14 @@ describe("실제 모드로 바꾸기", () => {
     expect(list.json.devices.map((d: Msg) => [d.id, d.kind])).toEqual([[FAKE_AC, "aircon"], [FAKE_FRIDGE, "fridge"]]);
     expect(JSON.stringify(list.json)).not.toContain(TOKEN);
     expect(logs.join("\n")).not.toContain(TOKEN);
+  });
+
+  it("모드를 바꾸면 기록 DB에 한 줄 남고, 같은 모드를 다시 골라도 적지 않는다", async () => {
+    await start();
+    expect((await goLive()).status).toBe(200);
+    expect((await goLive()).status).toBe(200);
+    expect((await post("/api/setup/mode", { mode: "test" })).status).toBe(200);
+    expect(srv!.history.list({ kinds: ["mode"] }).map((r) => [r.text, r.data])).toEqual([["실제 모드", { mode: "live" }], ["시험 모드", { mode: "test" }]]);
   });
 });
 
@@ -245,34 +258,39 @@ describe("저장(npm start 방식)", () => {
   });
 });
 
-describe("에이전트 답(실제 모드)", () => {
+describe("에이전트가 모델에게 돌려주는 결과(실제 모드)", () => {
   const chat = async (message: string) => (await post("/api/agent/chat", { message })).json;
   const climate = (r: Msg) => r.actions.find((a: Msg) => a.tool === "set_climate");
+  /** from 뒤에 에이전트가 모델에게 돌려준 set_climate 결과. */
+  const shown = (from: number) => toolOutputs(llm.bodies().slice(from).at(-1))[0];
 
-  it("다시 읽어 같으면 맞췄다고 한다", async () => {
+  it("다시 읽어 같으면 맞췄다고 돌려준다", async () => {
     await start();
     await livePaired();
+    const from = llm.bodies().length;
     const r = await chat("에어컨 26도로 맞춰줘");
-    expect(r.reply).toMatch(/26°C로 맞췄어요/);
-    expect(climate(r)).toMatchObject({ ok: true });
+    expect(climate(r)).toMatchObject({ ok: true, message: expect.stringMatching(/26°C로 맞췄어요/) });
+    expect(shown(from).message).toMatch(/26°C로 맞췄어요/);
   });
 
-  it("받았지만 확인되지 않으면 맞췄다고 하지 않고, 확인하지 못했다고 한다", async () => {
+  it("받았지만 확인되지 않으면 맞췄다고 하지 않고, 확인하지 못했다고 돌려준다", async () => {
     await start();
     await livePaired();
     fake!.behavior[FAKE_AC] = "ignore";
+    const from = llm.bodies().length;
     const r = await chat("에어컨 27도로 맞춰줘");
-    expect(r.reply).toMatch(/확인하지 못했어요/);
-    expect(r.reply).not.toMatch(/맞췄어요/);
     expect(climate(r).observation).toMatch(/확인하지 못했어요/);
+    expect(shown(from)).toMatchObject({ unverified: true, message: expect.stringMatching(/확인하지 못했어요/) });
+    expect(shown(from).message).not.toMatch(/맞췄어요/);
   });
 
-  it("거부하면 실패 이유를 전한다", async () => {
+  it("거부하면 실패 이유를 돌려준다", async () => {
     await start();
     await livePaired();
     fake!.behavior[FAKE_AC] = "reject";
+    const from = llm.bodies().length;
     const r = await chat("에어컨 28도로 맞춰줘");
-    expect(r.reply).toMatch(/거부/);
     expect(climate(r).ok).toBe(false);
+    expect(shown(from)).toMatchObject({ ok: false, error: expect.stringMatching(/거부/) });
   });
 });

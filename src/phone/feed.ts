@@ -40,6 +40,8 @@ export interface EyeFeedOptions {
   photoDir: string;
   broadcast: (msg: unknown) => void;
   now?: () => Date;
+  /** 사진 찍기 사진을 저장한 뒤(보관 기간 표에 적는다, src/history/retention.ts). */
+  onSaved?: (p: { id: string; atMs: number; path: string }) => void;
 }
 
 export class EyeFeed {
@@ -93,8 +95,10 @@ export class EyeFeed {
       ...(eye ? {} : { pose_note: "not_aligned" as const }),
     };
     mkdirSync(this.opts.photoDir, { recursive: true });
-    writeFileSync(join(this.opts.photoDir, `${id}.jpg`), jpeg);
+    const path = join(this.opts.photoDir, `${id}.jpg`);
+    writeFileSync(path, jpeg);
     writeFileSync(join(this.opts.photoDir, `${id}.json`), JSON.stringify(record, null, 2));
+    this.opts.onSaved?.({ id, atMs: Date.parse(at), path });
     this.opts.broadcast({ type: "photo", photo: record });
     return record;
   }

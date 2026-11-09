@@ -1,0 +1,66 @@
+{
+  "type": "vent_fan",
+  "label": "욕실 환풍기",
+  "family": "lighting",
+  "category": "fixtures",
+  "node_type": "device",
+  "mount": "ceiling",
+  "footprint": [
+    0.26,
+    0.26
+  ],
+  "height": 0.05,
+  "model": "assets/fixtures/vent_fan.glb",
+  "blocks_walk": false,
+  "blocks_view": false,
+  "attrs": {
+    "power": [
+      "off",
+      "on"
+    ]
+  },
+  "states": {
+    "power": {
+      "default": "off",
+      "effects": {
+        "off": [
+          {
+            "part": "led",
+            "emissive": 0.0
+          },
+          {
+            "part": "airflow",
+            "visible": false
+          },
+          {
+            "light": "glow",
+            "intensity": 0.0
+          }
+        ],
+        "on": [
+          {
+            "part": "led",
+            "emissive": 1.0
+          },
+          {
+            "part": "airflow",
+            "visible": true
+          },
+          {
+            "part": "blades",
+            "spin": [
+              0,
+              4,
+              0
+            ]
+          },
+          {
+            "light": "glow",
+            "intensity": 1.0
+          }
+        ]
+      }
+    }
+  },
+  "notes": "켜면 격자 뒤 날개가 돌고(spin) LED 고리가 빛나며, 아래 0.7 m에서 빨려 올라가는 반투명 소용돌이(airflow, 효과 부품)가 보인다 켜면 격자 둘레 LED 등(glow, 푸른빛 면광원)이 아래를 비춘다: 천장 환풍기는 위에서 몸통만 보이므로 바닥·세면대의 빛으로 켬/끔을 알린다."
+}

@@ -1,0 +1,22 @@
+{
+  "type": "dining_table",
+  "label": "4인 식탁",
+  "family": "kitchen",
+  "category": "furniture",
+  "node_type": "furniture",
+  "mount": "floor",
+  "footprint": [
+    1.4,
+    0.8
+  ],
+  "height": 0.75,
+  "model": "assets/furniture/dining_table.glb",
+  "blocks_walk": true,
+  "blocks_view": false,
+  "surfaces": [
+    {
+      "name": "top",
+      "height": 0.75
+    }
+  ]
+}

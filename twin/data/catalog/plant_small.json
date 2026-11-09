@@ -1,0 +1,16 @@
+{
+  "type": "plant_small",
+  "label": "작은 화분",
+  "family": "reuse",
+  "category": "decorations",
+  "node_type": "decor",
+  "mount": "floor",
+  "footprint": [
+    0.38,
+    0.4
+  ],
+  "height": 0.67,
+  "model": "assets/decorations/plant_small.glb",
+  "blocks_walk": true,
+  "blocks_view": false
+}

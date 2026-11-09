@@ -1,10 +1,14 @@
 // 화면 글 검사(scripts/lint-ui-copy.ts): 생각 과정·구현 설명이 화면에 들어가면 실패한다. 예시는 실제로 화면에 들어갔던 글이다.
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { blurbSlots, copyFiles, copyRules, htmlCopy, jsCopy, lintUiCopy, tsxCopy } from "../scripts/lint-ui-copy.js";
+import { COPY_TARGETS, blurbSlots, copyFiles, copyRules, fileCopy, htmlCopy, jsCopy, lintUiCopy, tsxCopy } from "../scripts/lint-ui-copy.js";
 
 const webDir = fileURLToPath(new URL("../web/", import.meta.url));
 const uiDir = fileURLToPath(new URL("../ui/src/", import.meta.url));
+const uiPhoneDir = fileURLToPath(new URL("../ui/phone/", import.meta.url));
 
 describe("화면 글 규칙", () => {
   it("실제로 들어갔던 글을 잡는다", () => {
@@ -89,7 +93,12 @@ describe("TSX 글 꺼내기", () => {
   });
 });
 
-describe("web/(폰)과 ui/src 전체", () => {
+describe("web/·ui/src·폰 입구 전체", () => {
+  it("폰 입구 HTML(ui/phone/index.html)과 폰 화면 코드(ui/src/phone)를 본다", () => {
+    const files = copyFiles(COPY_TARGETS).map((f) => f.replace(/\\/g, "/"));
+    for (const p of ["ui/phone/index.html", "ui/src/phone/PhoneScreen.tsx", "ui/src/phone/core/ar.js"]) expect(files.some((f) => f.endsWith(p)), p).toBe(true);
+  });
+
   it("ui/src의 .tsx·.ts를 본다(.d.ts·tests/는 뺀다)", () => {
     const files = copyFiles([webDir, uiDir]);
     expect(files.some((f) => f.endsWith(".tsx"))).toBe(true);
@@ -97,7 +106,50 @@ describe("web/(폰)과 ui/src 전체", () => {
   });
 
   it("화면 글 검사에 걸리는 곳이 없다(npm run lint)", () => {
-    const problems = lintUiCopy([webDir, uiDir]);
+    const problems = lintUiCopy(COPY_TARGETS);
     expect(problems.map((p) => `${p.file}:${p.line} [${p.rule}] ${p.text}`)).toEqual([]);
+  });
+});
+
+describe("서버가 화면에 그대로 내보내는 계획 글(src/plan/labels.ts)", () => {
+  const labels = fileURLToPath(new URL("../src/plan/labels.ts", import.meta.url));
+  const worldLabels = fileURLToPath(new URL("../src/world/labels.ts", import.meta.url));
+  const historyLabels = fileURLToPath(new URL("../src/history/labels.ts", import.meta.url));
+  const prompts = fileURLToPath(new URL("../src/act/prompts.ts", import.meta.url));
+  it("npm run lint가 web/·ui/src와 함께 본다", () => {
+    expect(COPY_TARGETS).toEqual([webDir, uiDir, uiPhoneDir, labels, worldLabels, historyLabels, prompts]);
+    expect(copyFiles([labels])).toEqual([labels]);
+  });
+  it("World State 글(src/world/labels.ts)도 꺼내 검사한다. 괄호·화살표는 템플릿 글에도 없다", () => {
+    const texts = fileCopy(worldLabels, readFileSync(worldLabels, "utf8")).map((c) => c.text);
+    expect(texts).toEqual(expect.arrayContaining(["사람", "컵", "식탁 위", "… 보임…", "… 시야 밖", "요청이 몰려 VLM 분석 없음", "감지 오류로 YOLOX 분석 없음", "요청이 몰려 YOLOX·VLM 분석 없음"]));
+    expect(lintUiCopy([worldLabels])).toEqual([]);
+    expect(texts.filter((t) => /[()→]/.test(t))).toEqual([]);
+  });
+  it("기록 글(src/history/labels.ts)도 꺼내 검사한다. 괄호·화살표는 템플릿 글에도 없다", () => {
+    const texts = fileCopy(historyLabels, readFileSync(historyLabels, "utf8")).map((c) => c.text);
+    expect(texts).toEqual(expect.arrayContaining(["실제 모드", "진행 중", "판단 실패: …"]));
+    expect(lintUiCopy([historyLabels])).toEqual([]);
+    expect(texts.filter((t) => /[()→]/.test(t))).toEqual([]);
+  });
+  it("실제 폰 답 글(src/act/prompts.ts)도 꺼내 검사한다", () => {
+    const texts = fileCopy(prompts, readFileSync(prompts, "utf8")).map((c) => c.text);
+    expect(texts).toEqual(expect.arrayContaining(["컵을 치울까요?", "완료", "그만", "그대로 둬요"]));
+    expect(lintUiCopy([prompts])).toEqual([]);
+  });
+  it("단계·목표·기기 동작 글과 실제 폰 단계 명령·비전 상태 글을 꺼낸다", () => {
+    const texts = fileCopy(labels, readFileSync(labels, "utf8")).map((c) => c.text);
+    expect(texts).toEqual(expect.arrayContaining(["식탁으로 가기", "컵 치우기", "켜기", "컵을 들어 주세요", "…까지 거리 모름"]));
+    expect(lintUiCopy([labels])).toEqual([]);
+  });
+  it("파일 하나를 줘도 검사한다", () => {
+    const dir = mkdtempSync(join(tmpdir(), "twin-home-labels-"));
+    try {
+      const file = join(dir, "labels.ts");
+      writeFileSync(file, 'export const STEP_LABEL = { goTable: "식탁 → 싱크대" };\n', "utf8");
+      expect(lintUiCopy([file]).map((p) => p.rule)).toEqual(["흐름 나열"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

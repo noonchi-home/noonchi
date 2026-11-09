@@ -3,7 +3,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Agent } from "../src/agent/agent.js";
-import { MockProvider } from "../src/agent/providers/mock.js";
+import { createProvider } from "../src/agent/providers/index.js";
 import { createApp, type TwinHomeApp } from "../src/server/app.js";
 import { ROOMS, makeHome, twin } from "./helpers/home.js";
 
@@ -18,7 +18,7 @@ describe("MCP stdio 서버(SDK 클라이언트로 실제 실행)", () => {
   let stderr = "";
 
   beforeAll(async () => {
-    const agent = new Agent({ hub: home.hub, policy: home.policy, rooms: ROOMS, provider: new MockProvider() });
+    const agent = new Agent({ hub: home.hub, policy: home.policy, rooms: ROOMS, provider: createProvider({}).provider }); // 모델은 부르지 않는다
     app = createApp({ hub: home.hub, policy: home.policy, agent, rooms: ROOMS, log: () => {} });
     const { url } = await app.listen(0, "127.0.0.1");
     const env: Record<string, string> = {};

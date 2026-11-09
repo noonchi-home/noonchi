@@ -1,4 +1,5 @@
-// 빠른 존재 감지기(YOLO). 매 장면 사람·컵이 "있는지"만 본다. 마심·들고 있음·컵 안은 VLM(perception.ts)이 본다.
+// 물체 감지기(YOLOX). 엔진 프레임마다 사람·컵·병·그릇의 종류·박스·신뢰도를 낸다. 놓인 자리·쓰는 중·안 내용은 VLM이 본다.
+// 가구·가전 자리는 트윈 배치에서 읽으므로 찾지 않는다.
 // 기본 모델은 YOLOX(Megvii 공식 ONNX, Apache-2.0)다. Ultralytics YOLO는 AGPL-3.0이라 쓰지 않았다.
 // 이 PC(4스레드) 측정: Tiny 추론 54ms + 전처리 16ms, Nano 16ms + 14ms(480×270 JPEG).
 //
@@ -8,14 +9,14 @@
 
 import jpeg from "jpeg-js";
 
-export type DetLabel = "person" | "cup";
+export type DetLabel = "person" | "cup" | "bottle" | "bowl";
 
 export interface Detection {
   label: DetLabel;
   score: number;
   /** 원본 사진 픽셀 [x, y, w, h]. */
   box: [number, number, number, number];
-  /** COCO 클래스 번호(0 person, 41 cup, 40 wine glass). */
+  /** COCO 클래스 번호(0 person, 41 cup, 40 wine glass, 39 bottle, 45 bowl). */
   cls: number;
 }
 
@@ -34,7 +35,10 @@ export interface Detector {
 }
 
 /** 보는 COCO 클래스. 유리컵(wine glass)도 마시는 컵으로 본다. */
-const LABELS: Record<number, DetLabel> = { 0: "person", 41: "cup", 40: "cup" };
+const LABELS: Record<number, DetLabel> = { 0: "person", 41: "cup", 40: "cup", 39: "bottle", 45: "bowl" };
+const CLASSES = [0, 41, 40, 39, 45];
+/** 결과 순서(종류끼리 점수 순). */
+const LABEL_ORDER: DetLabel[] = ["person", "cup", "bottle", "bowl"];
 
 export const YOLOX_MODELS = {
   yolox_tiny: {
@@ -88,7 +92,7 @@ export function decodeYolox(out: Float32Array, anchors: number, size: number, ra
         const o = idx * k;
         const obj = out[o + 4]!;
         if (obj < opts.minScore) continue;
-        for (const cls of [0, 41, 40]) {
+        for (const cls of CLASSES) {
           const score = obj * out[o + 5 + cls]!;
           if (score < opts.minScore) continue;
           const cx = (out[o]! + gx) * s;
@@ -118,7 +122,7 @@ export function nms(dets: Detection[], iouMax: number): Detection[] {
     if (kept.some((k) => k.label === d.label && iou(k.box, d.box) > iouMax)) continue;
     kept.push(d);
   }
-  return kept.sort((a, b) => (a.label === b.label ? b.score - a.score : a.label === "person" ? -1 : 1));
+  return kept.sort((a, b) => (a.label === b.label ? b.score - a.score : LABEL_ORDER.indexOf(a.label) - LABEL_ORDER.indexOf(b.label)));
 }
 
 interface OrtSession {
@@ -167,7 +171,7 @@ export class YoloxDetector implements Detector {
   }
 }
 
-/** YoloxDetector를 워커 스레드에서 돌린다(detector-thread.ts). 실시간 두뇌는 이것을 쓴다: 추론이 부른 스레드를 막기 때문. */
+/** YoloxDetector를 워커 스레드에서 돌린다(detector-thread.ts). 관찰 흐름(src/observe/pipeline.ts)은 이것을 쓴다: 추론이 부른 스레드를 막기 때문. */
 export class WorkerDetector implements Detector {
   private seq = 0;
   private readonly waiting = new Map<number, { resolve: (r: DetectResult) => void; reject: (e: Error) => void }>();
@@ -242,15 +246,5 @@ export class WorkerDetector implements Detector {
     // 워커가 끝났다는 알림 직후 프로세스가 끝나면 onnxruntime 스레드 정리와 겹쳐 프로세스가 멈췄다(이 PC, 100ms 기다림은 멈춤,
     // 300ms는 통과). 그래서 조금 더 기다린다
     await new Promise((r) => setTimeout(r, 500));
-  }
-}
-
-/** 시험·재생용: 함수가 감지를 정한다. */
-export class ScriptedDetector implements Detector {
-  readonly name = "scripted";
-  constructor(private readonly script: (jpegBytes: Buffer) => Detection[]) {}
-
-  async detect(jpegBytes: Buffer): Promise<DetectResult> {
-    return { detections: this.script(jpegBytes), ms: 0, width: 0, height: 0 };
   }
 }

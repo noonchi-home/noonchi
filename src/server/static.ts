@@ -1,4 +1,4 @@
-// 폴더 안의 파일만 내주는 정적 응답(본 서버 web/·/twin/, 폰 서버 web/phone/ 공용).
+// 폴더 안의 파일만 내주는 정적 응답(본 서버 ui/dist·/twin/, 폰 서버 ui/dist 공용).
 
 import { readFileSync, statSync } from "node:fs";
 import type { ServerResponse } from "node:http";
@@ -9,7 +9,7 @@ export const TYPES: Record<string, string> = {
   ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png",
   ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".ico": "image/x-icon", ".glb": "model/gltf-binary",
   ".gltf": "model/gltf+json", ".bin": "application/octet-stream", ".wasm": "application/wasm", ".txt": "text/plain; charset=utf-8",
-  ".hdr": "application/octet-stream", ".ktx2": "image/ktx2", ".md": "text/markdown; charset=utf-8",
+  ".hdr": "application/octet-stream", ".ktx2": "image/ktx2", ".md": "text/markdown; charset=utf-8", ".woff2": "font/woff2",
 };
 
 export function serveFile(res: ServerResponse, root: string, rel: string, head: boolean): boolean {

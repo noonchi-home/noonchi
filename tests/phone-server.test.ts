@@ -1,12 +1,13 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
+import type { PlannedCommand } from "../src/contract/phone.js";
 import type { AnchorTarget } from "../src/phone/anchors.js";
 import { EyeFeed } from "../src/phone/feed.js";
 import { encodeFramePacket } from "../src/phone/packet.js";
-import { createPhoneServer, sameHost } from "../src/phone/server.js";
+import { createPhoneServer, DEFAULT_UI_DIR, sameHost } from "../src/phone/server.js";
 import { createApp, type TwinHomeApp } from "../src/server/app.js";
 import { fetchRetry } from "../src/server/net.js";
 import { ROOMS, makeHome } from "./helpers/home.js";
@@ -17,10 +18,32 @@ const TARGETS: AnchorTarget[] = [
   { id: "dock", label: "도크", plan: [3.9, 5.51] },
   { id: "door_main", label: "현관문 문턱 가운데", plan: [2.4, 3.55] },
 ];
+const BOTH = [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }];
 const cleanups: (() => Promise<void> | void)[] = [];
 afterEach(async () => {
   while (cleanups.length) await cleanups.pop()!();
 });
+
+/** 가짜 ui/dist: 폰 화면·빌드 파일·브랜드 그림·파비콘과 대시보드·설정 화면. */
+function fakeUiDist(): string {
+  const dir = mkdtempSync(join(tmpdir(), "phone-ui-"));
+  cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+  const files: [string, string][] = [
+    ["phone/index.html", '<title>폰 테스트</title><script type="module" src="/assets/phone-x.js"></script>'],
+    ["assets/phone-x.js", "export {};"],
+    ["assets/noto-sans-kr-0-wght-normal-x.woff2", "w"],
+    ["brand/mascot@1x.webp", "m"],
+    ["favicon.ico", "i"],
+    ["fonts/OFL-noto-sans-kr.txt", "ofl"],
+    ["index.html", "<title>대시보드</title>"],
+    ["setup/index.html", "<title>설정</title>"],
+  ];
+  for (const [p, body] of files) {
+    mkdirSync(dirname(join(dir, p)), { recursive: true });
+    writeFileSync(join(dir, p), body);
+  }
+  return dir;
+}
 
 const opened = (ws: WebSocket) =>
   new Promise<void>((res, rej) => {
@@ -51,10 +74,7 @@ async function setup(opts: { log?: (m: string) => void } = {}) {
   const { url } = await app.listen(0, "127.0.0.1");
   const main = app;
   cleanups.push(() => main.close());
-  const webDir = mkdtempSync(join(tmpdir(), "phone-web-"));
-  cleanups.push(() => rmSync(webDir, { recursive: true, force: true }));
-  writeFileSync(join(webDir, "index.html"), "<title>폰 테스트</title>");
-  const phone = createPhoneServer({ targets: TARGETS, webDir, feed, onEye: (eye) => main.broadcast({ type: "eye", eye }), log: opts.log ?? (() => {}) });
+  const phone = createPhoneServer({ targets: TARGETS, uiDir: fakeUiDist(), feed, onEye: (eye) => main.broadcast({ type: "eye", eye }), log: opts.log ?? (() => {}) });
   const { port } = await phone.listen(0, "127.0.0.1");
   cleanups.push(() => phone.close());
   return { url, phoneBase: `http://127.0.0.1:${port}` };
@@ -156,6 +176,46 @@ describe("phone camera", () => {
   });
 });
 
+describe("엔진 프레임", () => {
+  async function engineSetup() {
+    const photoDir = mkdtempSync(join(tmpdir(), "phone-photos-"));
+    cleanups.push(() => rmSync(photoDir, { recursive: true, force: true }));
+    const feed = new EyeFeed({ photoDir, broadcast: () => {} });
+    const got: { header: Msg; eye: Msg | null; view: Msg | null; at: number }[] = [];
+    const phone = createPhoneServer({
+      targets: TARGETS, feed, onEye: () => {}, log: () => {}, engineMs: 1000,
+      onEngine: (_jpeg, header, eye, view, at) => got.push({ header, eye, view, at }),
+    });
+    const { port } = await phone.listen(0, "127.0.0.1");
+    cleanups.push(() => phone.close());
+    return { feed, got, phoneBase: `http://127.0.0.1:${port}` };
+  }
+
+  it("engineMs를 주면 연결 직후 상태에 engine_ms를 싣는다", async () => {
+    const { phoneBase } = await engineSetup();
+    const ws = new WebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events`, { origin: phoneBase });
+    const status = next(ws, (m) => m.type === "status");
+    await opened(ws);
+    expect(await status).toMatchObject({ engine_ms: 1000 });
+    ws.close();
+  });
+
+  it("engine 패킷은 onEngine으로 가고 표시 화면으로는 가지 않는다. frame 패킷은 관찰 흐름으로 가지 않는다. 맞춘 뒤면 투영과 트윈 원점을 붙인다", async () => {
+    const { feed, got, phoneBase } = await engineSetup();
+    const ws = await alignedPhone(phoneBase);
+    const projection = Array.from({ length: 16 }, (_, i) => (i % 5 === 0 ? 1 : 0));
+    ws.send(encodeFramePacket({ kind: "frame", width: 480, height: 360 }, JPEG));
+    ws.send(encodeFramePacket({ kind: "engine", width: 480, height: 360, position: [3.9, 1.4, 5], orientation: [0, 0, 0, 1], captured_at: 1000, time_err_ms: 5, projection }, JPEG));
+    for (let i = 0; i < 40 && !got.length; i++) await new Promise((r) => setTimeout(r, 25));
+    expect(got).toHaveLength(1);
+    expect(got[0]!.header).toMatchObject({ kind: "engine", captured_at: 1000 });
+    expect(got[0]!.eye).toMatchObject({ position: [3.9, 5], height_m: 1.4 });
+    expect(got[0]!.view).toMatchObject({ origin: [3.9, 1.4, 5], projection });
+    expect(feed.stats().frames).toBe(1);
+    ws.close();
+  });
+});
+
 describe("sameHost", () => {
   it("출처 호스트가 요청 호스트와 같을 때만 받는다", () => {
     expect(sameHost(undefined, "192.168.0.5:8210")).toBe(true);
@@ -191,15 +251,36 @@ describe("phone server", () => {
     await expect(opened(ws)).rejects.toThrow();
   });
 
-  it("web/phone의 실제 페이지와 스크립트를 준다", async () => {
-    const phone = createPhoneServer({ targets: TARGETS, onEye: () => {}, log: () => {} });
+  it("ui/dist에서 폰 화면·빌드 파일·브랜드 그림·글꼴 라이선스·파비콘만 준다. 대시보드·설정 화면은 주지 않는다", async () => {
+    const phone = createPhoneServer({ targets: TARGETS, uiDir: fakeUiDist(), onEye: () => {}, log: () => {} });
     const { port } = await phone.listen(0, "127.0.0.1");
     cleanups.push(() => phone.close());
-    const page = await fetchRetry(`http://127.0.0.1:${port}/phone/`);
-    expect(await page.text()).toContain("클로이드의 눈");
-    const script = await fetchRetry(`http://127.0.0.1:${port}/phone/phone.js`);
-    expect(script.status).toBe(200);
-    expect(script.headers.get("content-type")).toContain("javascript");
+    const base = `http://127.0.0.1:${port}`;
+    expect(await (await fetchRetry(`${base}/phone/`)).text()).toContain("폰 테스트");
+    const js = await fetchRetry(`${base}/assets/phone-x.js`);
+    expect(js.status).toBe(200);
+    expect(js.headers.get("content-type")).toContain("javascript");
+    expect((await fetchRetry(`${base}/assets/noto-sans-kr-0-wght-normal-x.woff2`)).headers.get("content-type")).toBe("font/woff2");
+    for (const p of ["/brand/mascot@1x.webp", "/favicon.ico", "/fonts/OFL-noto-sans-kr.txt"]) expect((await fetchRetry(`${base}${p}`)).status, p).toBe(200);
+    for (const p of ["/index.html", "/setup/", "/setup/index.html", "/api/devices", "/phone/..%2Findex.html", "/brand/..%2Findex.html", "/assets/..%2Fsetup%2Findex.html"]) {
+      expect((await fetchRetry(`${base}${p}`)).status, p).toBe(404);
+    }
+    expect((await fetchRetry(`${base}/`, { redirect: "manual" })).headers.get("location")).toBe("/phone/");
+  });
+
+  it("기본 화면 폴더는 ui/dist", () => {
+    expect(DEFAULT_UI_DIR.replace(/\\/g, "/")).toMatch(/\/ui\/dist\/$/);
+  });
+
+  it("빌드 전이면 /phone/은 503과 빌드 명령", async () => {
+    const empty = mkdtempSync(join(tmpdir(), "phone-ui-empty-"));
+    cleanups.push(() => rmSync(empty, { recursive: true, force: true }));
+    const phone = createPhoneServer({ targets: TARGETS, uiDir: empty, onEye: () => {}, log: () => {} });
+    const { port } = await phone.listen(0, "127.0.0.1");
+    cleanups.push(() => phone.close());
+    const r = await fetchRetry(`http://127.0.0.1:${port}/phone/`);
+    expect(r.status).toBe(503);
+    expect(await r.text()).toContain("npm run ui:build");
   });
 
   it("폰 페이지만 주고 기기 API는 없다", async () => {
@@ -214,44 +295,135 @@ describe("phone server", () => {
 describe("폰 대화·승인·초점", () => {
   async function talkSetup() {
     const said: string[] = [];
-    const confirmed: string[] = [];
-    const webDir = mkdtempSync(join(tmpdir(), "phone-web-"));
-    cleanups.push(() => rmSync(webDir, { recursive: true, force: true }));
-    writeFileSync(join(webDir, "index.html"), "<title>폰</title>");
+    const confirmed: [string, string][] = [];
+    const picked: string[][] = [];
     const phone = createPhoneServer({
-      targets: TARGETS, webDir, onEye: () => {}, log: () => {},
+      targets: TARGETS, onEye: () => {}, log: () => {},
+      onChoice: (id, step, choice) => picked.push([id, step, choice]),
       onSay: async (text) => {
         said.push(text);
-        return { reply: "현관문 잠금 해제는 승인이 필요해요.", pending: [{ token: "tok1", deviceLabel: "현관문", reason: "현관문 잠금 해제" }] };
+        return { reply: "현관문 잠금 해제는 승인이 필요해요.", pending: [{ token: "tok1", deviceLabel: "현관문", reason: "현관문 잠금 해제", choices: BOTH }] };
       },
-      onConfirm: async (token) => {
-        confirmed.push(token);
+      onConfirm: async (token, choice) => {
+        confirmed.push([token, choice]);
         return { reply: "현관문을 열었어요." };
       },
       onCancel: async (token) => ({ reply: `취소했어요(${token}).` }),
     });
     const { port } = await phone.listen(0, "127.0.0.1");
     cleanups.push(() => phone.close());
-    return { phone, said, confirmed, phoneBase: `http://127.0.0.1:${port}` };
+    return { phone, said, confirmed, picked, phoneBase: `http://127.0.0.1:${port}` };
   }
+
+  it("answer(답 단추)는 id·step·choice를 onChoice로 넘기고, 모양이 틀리거나 너무 길면 버린다", async () => {
+    const { phoneBase, picked } = await talkSetup();
+    const ws = await alignedPhone(phoneBase);
+    ws.send(JSON.stringify({ type: "answer", id: "plan:pam-1", step: "plan:pam-1:2", choice: "done" }));
+    ws.send(JSON.stringify({ type: "answer", id: "plan:pam-1", choice: "done" }));
+    ws.send(JSON.stringify({ type: "answer", id: "x".repeat(65), step: "plan:pam-1:2", choice: "done" }));
+    ws.send(JSON.stringify({ type: "answer", id: "plan:pam-1", step: "plan:pam-1:2", choice: 1 }));
+    ws.send(JSON.stringify({ type: "brain_reply", id: "plan:pam-1", choice: "done" }));
+    ws.send(JSON.stringify({ type: "answer", id: "plan:pam-1", step: "plan:pam-1:3", choice: "done" }));
+    for (const end = Date.now() + 2000; picked.length < 2 && Date.now() < end; ) await new Promise((r) => setTimeout(r, 20));
+    expect(picked).toEqual([["plan:pam-1", "plan:pam-1:2", "done"], ["plan:pam-1", "plan:pam-1:3", "done"]]);
+  });
 
   it("say는 에이전트 답과 승인 대기를 reply로 돌려주고, confirm·cancel은 그대로 넘긴다", async () => {
     const { phoneBase, said, confirmed } = await talkSetup();
     const ws = await alignedPhone(phoneBase);
     let got = next(ws, (m) => m.type === "reply");
     ws.send(JSON.stringify({ type: "say", text: "  현관문 열어줘 " }));
-    expect(await got).toEqual({ type: "reply", text: "현관문 잠금 해제는 승인이 필요해요.", pending: [{ token: "tok1", deviceLabel: "현관문", reason: "현관문 잠금 해제" }] });
+    expect(await got).toEqual({ type: "reply", text: "현관문 잠금 해제는 승인이 필요해요.", pending: [{ token: "tok1", deviceLabel: "현관문", reason: "현관문 잠금 해제", choices: BOTH }] });
     expect(said).toEqual(["현관문 열어줘"]);
     got = next(ws, (m) => m.type === "reply");
     ws.send(JSON.stringify({ type: "confirm", token: "tok1" }));
-    expect((await got).text).toBe("현관문을 열었어요.");
-    expect(confirmed).toEqual(["tok1"]);
+    // 승인·취소의 답은 승인 대기 칸을 싣지 않는다(남은 승인 대기를 실제 폰이 지우지 않게)
+    expect(await got).toEqual({ type: "reply", text: "현관문을 열었어요." });
+    // 답(choice)이 없으면 승인
+    expect(confirmed).toEqual([["tok1", "approve"]]);
     got = next(ws, (m) => m.type === "reply");
     ws.send(JSON.stringify({ type: "cancel", token: "tok2" }));
     expect((await got).text).toBe("취소했어요(tok2).");
     got = next(ws, (m) => m.type === "reply");
     ws.send(JSON.stringify({ type: "say", text: "   " }));
     expect((await got).text).toMatch(/말이 비어/);
+  });
+
+  it("confirm의 답(승인·거절)을 onConfirm에 그대로 넘기고, 모르는 답(예전 이번만·앞으로도·하지 마 포함)은 넘기지 않는다", async () => {
+    const { phoneBase, confirmed } = await talkSetup();
+    const ws = await alignedPhone(phoneBase);
+    for (const choice of ["reject", "approve"]) {
+      const got = next(ws, (m) => m.type === "reply");
+      ws.send(JSON.stringify({ type: "confirm", token: `tok-${choice}`, choice }));
+      await got;
+    }
+    for (const choice of ["forever", "once", "always", "never"]) {
+      const got = next(ws, (m) => m.type === "reply");
+      ws.send(JSON.stringify({ type: "confirm", token: "tok-x", choice }));
+      expect((await got).text, choice).toBe("승인할 작업을 찾지 못했어요.");
+    }
+    expect(confirmed).toEqual([["tok-reject", "reject"], ["tok-approve", "approve"]]);
+  });
+
+  /** 붙자마자 받는 메시지 n개. */
+  async function connect(phoneBase: string, n: number) {
+    const ws = new WebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events`, { origin: phoneBase });
+    const box: Msg[] = [];
+    ws.on("message", (d) => box.push(JSON.parse(String(d)) as Msg));
+    cleanups.push(() => ws.close());
+    await opened(ws);
+    for (const end = Date.now() + 2000; box.length < n && Date.now() < end; ) await new Promise((r) => setTimeout(r, 20));
+    return { ws, box };
+  }
+
+  it("command: 실제 폰 모두에 보내고 지금 명령으로 둔다. 새로 붙은 폰은 상태 다음에 지금 명령을 읽지 않게 받고, 그 명령을 지우면 command_clear", async () => {
+    const { phone, phoneBase } = await talkSetup();
+    const first = await connect(phoneBase, 2);
+    expect(first.box).toEqual([expect.objectContaining({ type: "status" }), { type: "command_clear" }]);
+    const cmd: PlannedCommand = { type: "command", id: "plan:pam-1", step: "plan:pam-1:1", text: "식탁으로 가 주세요", vision: "식탁까지 2.4m", choices: [{ id: "done", label: "완료" }], target: null, speak: true };
+    let got = next(first.ws, (m) => m.type === "command");
+    phone.command(cmd);
+    expect(await got).toEqual(cmd);
+    got = next(first.ws, (m) => m.type === "command" && m.vision === "식탁까지 1.8m");
+    phone.command({ ...cmd, vision: "식탁까지 1.8m", speak: false });
+    await got;
+    const later = await connect(phoneBase, 2);
+    expect(later.box).toEqual([expect.objectContaining({ type: "status" }), { ...cmd, vision: "식탁까지 1.8m", speak: false }]);
+    // 다른 명령을 지우는 말은 지금 명령을 그대로 둔다
+    got = next(first.ws, (m) => m.type === "command_clear");
+    phone.command({ type: "command_clear", id: "plan:pam-0" });
+    expect(await got).toEqual({ type: "command_clear", id: "plan:pam-0" });
+    expect((await connect(phoneBase, 2)).box[1]).toMatchObject({ type: "command", id: "plan:pam-1" });
+    got = next(first.ws, (m) => m.type === "command_clear" && m.id === "plan:pam-1");
+    phone.command({ type: "command_clear", id: "plan:pam-1" });
+    await got;
+    expect((await connect(phoneBase, 2)).box[1]).toEqual({ type: "command_clear" });
+  });
+
+  it("명령 대상: 트윈 자리를 맞춘 기준점으로 AR 자리로 바꿔 보낸다. 맞추기 전에는 null이고, 맞추면 지금 명령을 대상과 함께 다시 보낸다", async () => {
+    const { phone, phoneBase } = await talkSetup();
+    const first = await connect(phoneBase, 2);
+    const cmd: PlannedCommand = {
+      type: "command", id: "plan:pam-1", step: "plan:pam-1:2", text: "컵을 들어 주세요", vision: "컵 · 식탁 위", choices: [{ id: "done", label: "완료" }],
+      target: { id: "cup_1", label: "컵", position: [1, 0.9, 3.7] }, speak: true,
+    };
+    let got = next(first.ws, (m) => m.type === "command");
+    phone.command(cmd);
+    expect(await got).toEqual({ ...cmd, target: null });
+    got = next(first.ws, (m) => m.type === "command" && m.target !== null);
+    first.ws.send(JSON.stringify({ type: "anchor", id: "dock", point: [3.9, 0, 5.51] }));
+    first.ws.send(JSON.stringify({ type: "anchor", id: "door_main", point: [2.4, 0, 3.55] }));
+    expect(await got).toEqual({ ...cmd, target: { id: "cup_1", label: "컵", ar: [1, 0.9, 3.7] }, speak: false });
+    const later = await connect(phoneBase, 2);
+    expect(later.box[1]).toEqual({ ...cmd, target: { id: "cup_1", label: "컵", ar: [1, 0.9, 3.7] }, speak: false });
+  });
+
+  it("실제 폰 위에는 명령만 보낸다: 판단·관찰 말풍선 글(brain_line)을 보내지 않는다", async () => {
+    const { phone, phoneBase } = await talkSetup();
+    const { box } = await connect(phoneBase, 2);
+    await new Promise((r) => setTimeout(r, 200));
+    expect(box.map((m) => m.type)).toEqual(["status", "command_clear"]);
+    expect("setLine" in phone).toBe(false);
   });
 
   it("here()는 폰이 보낸 조준점, sendFocus는 트윈 좌표를 AR 좌표로 바꿔 폰에 보낸다", async () => {

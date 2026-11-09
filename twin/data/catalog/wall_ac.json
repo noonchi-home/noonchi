@@ -1,0 +1,90 @@
+{
+  "type": "wall_ac",
+  "label": "벽걸이 에어컨",
+  "family": "bedroom",
+  "category": "appliances",
+  "node_type": "device",
+  "mount": "wall",
+  "footprint": [
+    0.85,
+    0.22
+  ],
+  "height": 0.27,
+  "model": "assets/appliances/wall_ac.glb",
+  "blocks_walk": false,
+  "blocks_view": false,
+  "anchors": {
+    "front": [
+      0.0,
+      1.02
+    ]
+  },
+  "attrs": {
+    "power": [
+      "off",
+      "on"
+    ]
+  },
+  "states": {
+    "power": {
+      "default": "off",
+      "effects": {
+        "off": [
+          {
+            "part": "display",
+            "visible": false,
+            "emissive": 0.0
+          },
+          {
+            "part": "led",
+            "emissive": 0.0
+          },
+          {
+            "part": "top_glow",
+            "emissive": 0.0
+          },
+          {
+            "part": "louver",
+            "rotate": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "part": "airflow",
+            "visible": false
+          }
+        ],
+        "on": [
+          {
+            "part": "display",
+            "visible": true,
+            "emissive": 1.0
+          },
+          {
+            "part": "led",
+            "emissive": 1.0
+          },
+          {
+            "part": "top_glow",
+            "emissive": 1.0
+          },
+          {
+            "part": "louver",
+            "rotate": [
+              65,
+              0,
+              0
+            ]
+          },
+          {
+            "part": "airflow",
+            "visible": true
+          }
+        ]
+      }
+    }
+  },
+  "notes": "흰 벽걸이 에어컨(0.85 × 0.22 × 0.27). power on → 루버 회전축이 65° 열림, 표시창(24°) 보임·발광, 앞 띠 조명과 윗면 흡입구 속 판이 푸르게 발광, 반투명 푸른 바람(airflow, 효과 부품)이 앞·아래로 흐름. 벽 높이(1.95 m)에 걸려 등·윗면만 보일 때(facing 270)는 윗면 발광과 바람이 단서. 빛 기준점은 없다(1.95 m에서 바닥 빛 웅덩이는 거의 안 보이고 검사 틀만 넓힌다)."
+}

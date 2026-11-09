@@ -1,0 +1,43 @@
+{
+  "name": "원룸 예시 (테스트용)",
+  "source": {"image": "", "m_per_px": 0.01, "origin_px": [0, 0],
+             "note": "테스트용 예시, 흔한 원룸 크기로 그림. 실제 평면도 그림이 생기면 그 집을 새 폴더로 만든다."},
+  "ceiling_height": 2.3,
+  "wall_cut_height": 1.05,
+  "rooms": [
+    {"id": "room", "label": "방", "polygon": [[0.0, 0.0], [4.0, 0.0], [4.0, 4.0], [0.0, 4.0]],
+     "observable": true, "floor": "wood", "floor_z": 0.0, "wall_finish": "paint"},
+    {"id": "bathroom", "label": "욕실", "polygon": [[0.0, 4.0], [1.7, 4.0], [1.7, 6.6], [0.0, 6.6]],
+     "observable": true, "floor": "tile_bath", "floor_z": 0.0, "wall_finish": "tile"},
+    {"id": "kitchen", "label": "주방", "polygon": [[1.7, 4.0], [4.0, 4.0], [4.0, 5.5], [1.7, 5.5]],
+     "observable": true, "floor": "wood", "floor_z": 0.0, "wall_finish": "paint"},
+    {"id": "entrance", "label": "현관", "polygon": [[1.7, 5.5], [4.0, 5.5], [4.0, 6.6], [1.7, 6.6]],
+     "observable": true, "floor": "tile_entrance", "floor_z": -0.1, "wall_finish": "paint"}
+  ],
+  "walls": [
+    {"id": "E01", "a": [0.0, 0.0], "b": [4.0, 0.0], "thickness": 0.2, "kind": "exterior"},
+    {"id": "E02", "a": [4.0, 0.0], "b": [4.0, 6.6], "thickness": 0.2, "kind": "exterior"},
+    {"id": "E03", "a": [4.0, 6.6], "b": [0.0, 6.6], "thickness": 0.2, "kind": "exterior"},
+    {"id": "E04", "a": [0.0, 6.6], "b": [0.0, 0.0], "thickness": 0.2, "kind": "exterior"},
+    {"id": "I01", "a": [0.0, 4.0], "b": [1.7, 4.0], "thickness": 0.12, "kind": "interior"},
+    {"id": "I02", "a": [1.7, 4.0], "b": [1.7, 6.6], "thickness": 0.12, "kind": "interior"}
+  ],
+  "solids": [],
+  "doors": [
+    {"id": "door_main", "position": [2.85, 6.6], "connects": ["entrance", "outside"], "wall": "E03",
+     "width": 0.95, "height": 2.1, "kind": "swing", "asset": "door_main", "swing_into": "outside", "hinge": "left"},
+    {"id": "door_bath", "position": [1.7, 5.9], "connects": ["entrance", "bathroom"], "wall": "I02",
+     "width": 0.75, "height": 2.1, "kind": "swing", "asset": "door_bath_r", "swing_into": "bathroom", "hinge": "right"}
+  ],
+  "windows": [
+    {"id": "win_room", "wall": "E01", "position": [2.0, 0.0], "width": 1.65, "sill": 0.9, "head": 2.15,
+     "asset": "window_bed", "room": "room"}
+  ],
+  "open_edges": [["room", "kitchen"], ["kitchen", "entrance"]],
+  "scale_reference": {"length_m": 0.95, "note": "현관문 폭"},
+  "robot": {"radius": 0.22, "dock": "dock", "reachable_rooms": ["room", "kitchen"]},
+  "ar_anchors": [
+    {"id": "corner_ne", "label": "책상 쪽 창가 모서리(창문 오른쪽, 방 북동쪽 구석)", "position": [3.9, 0.1]},
+    {"id": "corner_bath_sw", "label": "욕실 들어가서 왼쪽 안쪽 구석(세면대·변기 반대편)", "position": [0.1, 6.5]}
+  ]
+}

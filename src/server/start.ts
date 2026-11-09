@@ -2,24 +2,36 @@
 // 설정 흐름(집 → 가전 → 운영 모드 → 위치 동기화 → 대시보드): 집을 고르면 묶음을 닫고 새 집으로 다시 만든다. 포트는 그대로다.
 // 운영 모드: 시험(기본, ThinQ를 부르지 않음) · 실제(짝지은 에어컨·냉장고는 ThinQ). ThinQ 클라이언트는 실제 모드에서만 만든다.
 
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Agent } from "../agent/agent.js";
 import type { Policy } from "../agent/policy.js";
-import type { CreateLiveBrainOptions } from "../brain/live.js";
+import { agentEndpoint } from "../agent/providers/index.js";
+import type { BrainLog } from "../contract/events.js";
+import type { PlanView } from "../contract/plan.js";
 import type { ControlMode, SetupView, ThinqDeviceView } from "../contract/setup.js";
 import type { SignalHub } from "../hub/signals.js";
-import type { DeviceHub } from "../hub/types.js";
+import { HistoryDb, historyTzMinutes } from "../history/db.js";
+import { REFLECT_TEXT } from "../history/labels.js";
+import { attachRecorder, topic, type DeviceNote } from "../history/recorder.js";
+import { loadReflectAt, runReflection, scheduleReflection, type ReflectResult } from "../history/reflect.js";
+import { loadRetention, sweep } from "../history/retention.js";
+import { PamClient } from "../brain/pam.js";
+import type { DeviceHub, DeviceState } from "../hub/types.js";
+import { loadEndpoints } from "../infer/endpoints.js";
 import type { LayoutEditor } from "../layout/editor.js";
 import { KIND_LABELS } from "../model/mapping.js";
+import type { PipelineInject } from "../observe/pipeline.js";
 import { resolveTwinStudioDir, type TwinData } from "../model/devices.js";
 import { listHomes } from "../model/homes.js";
 import { SetupError, SetupStore, effectiveSources, parsePairs, parseSources } from "../setup/store.js";
 import { PAIRABLE_KINDS, fitsKind } from "../thinq/appliance.js";
 import { ThinqClient, ThinqError, thinqConfig } from "../thinq/client.js";
 import { DEFAULT_POLL_MS, DEFAULT_READBACK_MS, ThinqLink } from "../thinq/link.js";
-import { HttpError, type TwinHomeApp } from "./app.js";
+import { HttpError, originChecker, type TwinHomeApp } from "./app.js";
 import type { HubKind, MatterTransport, StartHubOptions } from "./hubFactory.js";
 import { startHome, type HomeContext, type HomeRuntime } from "./home.js";
+import { makeReady } from "./ready.js";
 import { createShell } from "./shell.js";
 
 type Env = Record<string, string | undefined>;
@@ -38,10 +50,15 @@ const msListOf = (raw: string | undefined, fallback: number[]) => {
 
 export interface StartServerOptions {
   /** 기본 process.env. HUB, MATTER_*, AGENT_PROVIDER, TWIN_STUDIO_DIR, HOME_ID(저장한 집이 없을 때 띄울 집, 기본 집), PORT(0이면 빈 포트), HOST,
+   *  ALLOWED_ORIGINS(이 PC 말고 대시보드를 여는 출처, 쉼표로 여러 개), PLAN_TOKEN(다른 주소에서 POST /api/plan을 받을 토큰),
+   *  추론 모드(mock 기본·live)·VLM_BASE_URL·VLM_MODEL·VLM_API_KEY·VLM_EXTRA_BODY·PAM_URL(src/infer/endpoints.ts),
+   *  기록 DB는 RUNTIME_DIR/noonchi.db, HISTORY_TZ_MINUTES(기록 날짜의 시간대 분, 기본 540), REFLECT_AT(매일 반성 시각 HH:MM, 기본 23:30, off면 끔),
+   *  PHOTO_RETENTION_DAYS·DATASET_RETENTION_DAYS(사진 찍기 사진·시험 자료 보관 일, 기본 7), DATASET_COLLECT(1이면 엔진 프레임을 시험 자료로 저장),
    *  PHONE_PORT(있으면 폰 AR 서버), PHONE_HOST(기본 0.0.0.0), PHONE_MAX_MISMATCH_M(기준점 거리 차이 허용값, 기본 0.3),
-   *  PHONE_EYE_HEIGHT_M(벽 대기 맞춤의 눈 높이, 기본 1.5),
+   *  PHONE_EYE_HEIGHT_M(벽 대기 맞춤의 눈 높이, 기본 1.5), PHONE_URL(폰 주소 맨 앞), PHONE_LAN_URLS(0이면 폰 주소에 이 기계 네트워크 주소를 넣지 않음, compose),
    *  FOCUS(1이면 초점 표시를 보낸다, 기본 끔), PHONE_PHOTO_DIR(사진 폴더, 기본 runtime/photos), RUNTIME_DIR(배치 수정본·설정의 바탕, 기본 runtime),
-   *  BRAIN(1이면 폰 카메라로 상위 판단을 돌린다. PHONE_PORT·OPENAI_API_KEY 필요, BRAIN_* 는 docs/reference.md),
+   *  BRAIN(1이면 폰 엔진 프레임으로 관찰 흐름을 돌린다. PHONE_PORT 필요, VLM은 추론 모드가 고른 주소),
+   *  ENGINE_FRAME_MS·VLM_MAX_INFLIGHT·DETECT_QUEUE_MAX·BRAIN_DETECTOR·BRAIN_YOLO_PATH·BRAIN_YOLO_THREADS(src/observe/pipeline.ts),
    *  THINQ_TOKEN(실제 모드), THINQ_REGION·THINQ_COUNTRY·THINQ_CLIENT_ID·THINQ_API_KEY·THINQ_BASE_URL·THINQ_TIMEOUT_MS(src/thinq/client.ts),
    *  THINQ_POLL_MS(짝지은 기기 읽기 간격, 기본 15000, 0이면 처음 한 번), THINQ_READBACK_MS(명령 뒤 다시 읽기 전 기다림, 기본 1000,2000,4000)을 읽는다. */
   env?: Env;
@@ -52,8 +69,8 @@ export interface StartServerOptions {
   importer?: StartHubOptions["importer"];
   /** MatterHub 추가 옵션. */
   matter?: Record<string, unknown>;
-  /** 테스트용: 두뇌의 판정기·감지기·판단 모델·시계. */
-  brain?: CreateLiveBrainOptions["inject"];
+  /** 테스트용: 관찰 흐름의 감지기·VLM·시계. */
+  brain?: PipelineInject;
   /** 폰 포트로 이어진 https 주소 찾기(main.ts는 tailscale serve 설정을 읽는다). 없으면 찾지 않는다. */
   servedPhoneUrls?: (phonePort: number) => Promise<string[]>;
   /** 대시보드·설정 화면 폴더. 기본은 React 빌드(ui/dist). */
@@ -85,6 +102,8 @@ export interface RunningServer {
   readonly setup: SetupStore;
   /** 지금 운영 모드. */
   readonly mode: ControlMode;
+  /** 기록 DB(RUNTIME_DIR/noonchi.db). 집을 바꿔도 같다. */
+  readonly history: HistoryDb;
   /** 다른 집으로 바꾼다(POST /api/setup/home과 같음). */
   switchHome(id: string): Promise<void>;
   close(): Promise<void>;
@@ -100,9 +119,36 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     log("[경고] ThinQ 토큰이 없어 시험 모드로 띄웁니다. 실제 모드는 THINQ_TOKEN을 넣고 설정에서 다시 고르세요.");
     mode = "test";
   }
+  // 대시보드를 여는 출처: 이 PC + ALLOWED_ORIGINS(tailscale serve 주소). 쓰기 요청과 /events에 쓴다
+  const allowOrigin = originChecker(env.ALLOWED_ORIGINS);
+  // 추론 모드(mock|live)와 모델 주소. 모르는 모드면 여기서 시작을 막는다
+  const endpoints = loadEndpoints(env);
+  const reflectAt = loadReflectAt(env);
+  const retention = loadRetention(env);
+  // 기록 DB(RUNTIME_DIR/noonchi.db)와 기록기. 집 묶음이 가전·관찰·판단·계획을 넘기고, 운영 모드는 여기서 넘긴다. 시작이 실패하면 닫는다
+  const db = HistoryDb.open(join(runtimeDir, "noonchi.db"), historyTzMinutes(env));
+  const feed = { device: topic<[DeviceState, DeviceNote?]>(), brain: topic<[BrainLog]>(), plan: topic<[PlanView]>(), mode: topic<[ControlMode]>() };
+  const stopRecorder = attachRecorder(db, { onDevice: feed.device.on, onBrain: feed.brain.on, onPlan: feed.plan.on, onMode: feed.mode.on });
+  const closeDb = () => {
+    stopRecorder();
+    db.close();
+  };
+  // 반성: 한 번에 하나. 결과는 지금 집의 대시보드 판단 기록으로 보낸다(기록 DB에는 runReflection이 적는다)
+  const pam = new PamClient({ url: endpoints.pamUrl });
+  let reflecting = false;
+  const reflect = async (day: string): Promise<ReflectResult> => {
+    if (reflecting) throw new HttpError(409, REFLECT_TEXT.running);
+    reflecting = true;
+    try {
+      return await runReflection(db, pam, day, { emit: (event) => current?.app.broadcast({ type: "brain", event }) });
+    } finally {
+      reflecting = false;
+    }
+  };
   const ctx: HomeContext = {
     env, log, runtimeDir, importer: opts.importer, matter: opts.matter, brain: opts.brain, servedPhoneUrls: opts.servedPhoneUrls, webDir: opts.webDir,
-    sources: (homeId, ids) => store.sources(homeId, ids), mode: () => mode,
+    sources: (homeId, ids) => store.sources(homeId, ids), mode: () => mode, allowOrigin, planToken: env.PLAN_TOKEN?.trim() || undefined, ready: makeReady({ endpoints, agent: agentEndpoint(env), db }),
+    history: { db, device: feed.device.emit, brain: feed.brain.emit, plan: feed.plan.emit, reflect },
   };
   const studioDir = resolveTwinStudioDir(env.TWIN_STUDIO_DIR);
   const pollMs = msOf(env.THINQ_POLL_MS, DEFAULT_POLL_MS);
@@ -145,11 +191,16 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   const fallbackHome = env.HOME_ID?.trim() || undefined;
   let rt: HomeRuntime;
   try {
-    rt = await openHome(saved ?? fallbackHome);
+    try {
+      rt = await openHome(saved ?? fallbackHome);
+    } catch (e) {
+      if (!saved) throw e;
+      log(`[경고] 저장한 집 ${saved}를 띄우지 못했습니다(${(e as Error).message}). ${fallbackHome ?? "기본 집"}으로 띄웁니다.`);
+      rt = await openHome(fallbackHome);
+    }
   } catch (e) {
-    if (!saved) throw e;
-    log(`[경고] 저장한 집 ${saved}를 띄우지 못했습니다(${(e as Error).message}). ${fallbackHome ?? "기본 집"}으로 띄웁니다.`);
-    rt = await openHome(fallbackHome);
+    closeDb();
+    throw e;
   }
   if (mode === "live") log("운영 모드: 실제(짝지은 가전은 ThinQ)");
   ctx.phonePort = rt.phonePort;
@@ -237,6 +288,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   const shell = createShell({
     current: () => current?.app ?? null,
     webDir: opts.webDir,
+    allowOrigin,
     log,
     setup: {
       view,
@@ -270,8 +322,10 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
           client = null;
           thinqList = null;
         }
+        const changed = mode !== want;
         mode = want;
         store.setMode(want);
+        if (changed) feed.mode.emit(want);
         if (current) applyControl(current);
         log(`운영 모드: ${want === "live" ? "실제(짝지은 가전은 ThinQ)" : "시험"}`);
         return view();
@@ -328,9 +382,24 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     listened = await shell.listen(Number.isInteger(wanted) && wanted >= 0 ? wanted : 8200, host);
   } catch (e) {
     await rt.close().catch(() => {});
+    closeDb();
     throw e;
   }
 
+  // 보관 기간: 시작 때와 1시간마다 지난 사진 찍기 사진·시험 자료를 지운다
+  const clean = () => {
+    try {
+      const n = sweep(db, { ...retention, nowMs: Date.now() });
+      if (n.photos || n.dataset) log(`보관 기간이 지난 사진을 지웠어요: 사진 찍기 ${n.photos}장, 시험 자료 ${n.dataset}장`);
+    } catch (e) {
+      log(`[경고] 지난 사진을 지우지 못했어요: ${(e as Error).message}`);
+    }
+  };
+  clean();
+  const cleaner = setInterval(clean, 3_600_000);
+  cleaner.unref?.();
+  const schedule = reflectAt ? scheduleReflection({ at: reflectAt, offsetMinutes: db.offsetMinutes, run: reflect }) : null;
+  if (reflectAt) log(`반성: 매일 ${reflectAt}`);
   const live = () => current ?? last;
   return {
     url: listened.url, port: listened.port,
@@ -348,6 +417,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     get phoneUrls() { return live().phoneUrls; },
     setup: store,
     get mode() { return mode; },
+    history: db,
     switchHome: async (id) => {
       await switchHome(id);
       store.setHome(id);
@@ -355,10 +425,13 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     async close() {
       if (closed) return;
       closed = true;
+      schedule?.stop();
+      clearInterval(cleaner);
       await job;
       // 앱이 /events 소켓을 먼저 끊어야 껍데기 서버 close가 기다리지 않는다
       await current?.close();
       await shell.close();
+      closeDb();
     },
   };
 }

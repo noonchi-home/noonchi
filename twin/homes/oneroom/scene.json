@@ -1,0 +1,2523 @@
+{
+ "version": 1,
+ "generator": "twin-studio apartment",
+ "units": "m",
+ "up": "+Y",
+ "front": "+Z",
+ "rotationOrder": "XYZ",
+ "plan": {
+  "name": "원룸 예시 (테스트용)",
+  "ceiling_height": 2.3,
+  "wall_cut_height": 1.05,
+  "z_min": -0.112,
+  "rooms": [
+   {
+    "id": "room",
+    "label": "방",
+    "polygon": [
+     [
+      0.0,
+      0.0
+     ],
+     [
+      4.0,
+      0.0
+     ],
+     [
+      4.0,
+      4.0
+     ],
+     [
+      0.0,
+      4.0
+     ]
+    ],
+    "observable": true,
+    "floor": "wood",
+    "floor_z": 0.0,
+    "wall_finish": "paint",
+    "kind": "room",
+    "interior": [
+     [
+      3.9,
+      4.0
+     ],
+     [
+      3.9,
+      0.1
+     ],
+     [
+      0.1,
+      0.1
+     ],
+     [
+      0.1,
+      3.94
+     ],
+     [
+      1.76,
+      3.94
+     ],
+     [
+      1.76,
+      4.0
+     ]
+    ],
+    "center": [
+     2.0,
+     2.02
+    ],
+    "area": 16.0,
+    "neighbors": [
+     "kitchen"
+    ]
+   },
+   {
+    "id": "bathroom",
+    "label": "욕실",
+    "polygon": [
+     [
+      0.0,
+      4.0
+     ],
+     [
+      1.7,
+      4.0
+     ],
+     [
+      1.7,
+      6.6
+     ],
+     [
+      0.0,
+      6.6
+     ]
+    ],
+    "observable": true,
+    "floor": "tile_bath",
+    "floor_z": 0.0,
+    "wall_finish": "tile",
+    "kind": "bath",
+    "interior": [
+     [
+      0.1,
+      6.5
+     ],
+     [
+      1.64,
+      6.5
+     ],
+     [
+      1.64,
+      4.06
+     ],
+     [
+      0.1,
+      4.06
+     ]
+    ],
+    "center": [
+     0.87,
+     5.73
+    ],
+    "area": 4.42,
+    "neighbors": [
+     "entrance"
+    ]
+   },
+   {
+    "id": "kitchen",
+    "label": "주방",
+    "polygon": [
+     [
+      1.7,
+      4.0
+     ],
+     [
+      4.0,
+      4.0
+     ],
+     [
+      4.0,
+      5.5
+     ],
+     [
+      1.7,
+      5.5
+     ]
+    ],
+    "observable": true,
+    "floor": "wood",
+    "floor_z": 0.0,
+    "wall_finish": "paint",
+    "kind": "kitchen",
+    "interior": [
+     [
+      1.76,
+      4.0
+     ],
+     [
+      1.76,
+      4.06
+     ],
+     [
+      1.76,
+      5.5
+     ],
+     [
+      3.9,
+      5.5
+     ],
+     [
+      3.9,
+      4.0
+     ]
+    ],
+    "center": [
+     2.83,
+     4.75
+    ],
+    "area": 3.45,
+    "neighbors": [
+     "entrance",
+     "room"
+    ]
+   },
+   {
+    "id": "entrance",
+    "label": "현관",
+    "polygon": [
+     [
+      1.7,
+      5.5
+     ],
+     [
+      4.0,
+      5.5
+     ],
+     [
+      4.0,
+      6.6
+     ],
+     [
+      1.7,
+      6.6
+     ]
+    ],
+    "observable": true,
+    "floor": "tile_entrance",
+    "floor_z": -0.1,
+    "wall_finish": "paint",
+    "kind": "entry",
+    "interior": [
+     [
+      1.76,
+      5.5
+     ],
+     [
+      1.76,
+      6.5
+     ],
+     [
+      3.9,
+      6.5
+     ],
+     [
+      3.9,
+      5.5
+     ]
+    ],
+    "center": [
+     3.4,
+     6.0
+    ],
+    "area": 2.53,
+    "neighbors": [
+     "bathroom",
+     "kitchen"
+    ]
+   }
+  ],
+  "walls": [
+   {
+    "id": "E01",
+    "kind": "exterior",
+    "thickness": 0.2,
+    "a": [
+     0.0,
+     0.0
+    ],
+    "b": [
+     4.0,
+     0.0
+    ],
+    "faces": [
+     {
+      "room": "room",
+      "normal": [
+       0.0,
+       1.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "E02",
+    "kind": "exterior",
+    "thickness": 0.2,
+    "a": [
+     4.0,
+     0.0
+    ],
+    "b": [
+     4.0,
+     6.6
+    ],
+    "faces": [
+     {
+      "room": "room",
+      "normal": [
+       -1.0,
+       0.0
+      ]
+     },
+     {
+      "room": "kitchen",
+      "normal": [
+       -1.0,
+       0.0
+      ]
+     },
+     {
+      "room": "entrance",
+      "normal": [
+       -1.0,
+       0.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "E03",
+    "kind": "exterior",
+    "thickness": 0.2,
+    "a": [
+     4.0,
+     6.6
+    ],
+    "b": [
+     0.0,
+     6.6
+    ],
+    "faces": [
+     {
+      "room": "entrance",
+      "normal": [
+       0.0,
+       -1.0
+      ]
+     },
+     {
+      "room": "bathroom",
+      "normal": [
+       0.0,
+       -1.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "E04",
+    "kind": "exterior",
+    "thickness": 0.2,
+    "a": [
+     0.0,
+     6.6
+    ],
+    "b": [
+     0.0,
+     0.0
+    ],
+    "faces": [
+     {
+      "room": "bathroom",
+      "normal": [
+       1.0,
+       0.0
+      ]
+     },
+     {
+      "room": "room",
+      "normal": [
+       1.0,
+       0.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "I01",
+    "kind": "interior",
+    "thickness": 0.12,
+    "a": [
+     0.0,
+     4.0
+    ],
+    "b": [
+     1.7,
+     4.0
+    ],
+    "faces": [
+     {
+      "room": "bathroom",
+      "normal": [
+       0.0,
+       1.0
+      ]
+     },
+     {
+      "room": "room",
+      "normal": [
+       0.0,
+       -1.0
+      ]
+     }
+    ]
+   },
+   {
+    "id": "I02",
+    "kind": "interior",
+    "thickness": 0.12,
+    "a": [
+     1.7,
+     4.0
+    ],
+    "b": [
+     1.7,
+     6.6
+    ],
+    "faces": [
+     {
+      "room": "bathroom",
+      "normal": [
+       -1.0,
+       0.0
+      ]
+     },
+     {
+      "room": "kitchen",
+      "normal": [
+       1.0,
+       0.0
+      ]
+     },
+     {
+      "room": "entrance",
+      "normal": [
+       1.0,
+       0.0
+      ]
+     }
+    ]
+   }
+  ],
+  "solids": [],
+  "doors": [
+   {
+    "id": "door_main",
+    "wall": "E03",
+    "position": [
+     2.85,
+     6.6
+    ],
+    "width": 0.95,
+    "height": 2.1,
+    "kind": "swing",
+    "asset": "door_main",
+    "connects": [
+     "entrance",
+     "outside"
+    ],
+    "swing_into": "outside",
+    "hinge": "left",
+    "facing_deg": 90.0,
+    "elevation": -0.1,
+    "z": [
+     -0.112,
+     2.1
+    ]
+   },
+   {
+    "id": "door_bath",
+    "wall": "I02",
+    "position": [
+     1.7,
+     5.9
+    ],
+    "width": 0.75,
+    "height": 2.1,
+    "kind": "swing",
+    "asset": "door_bath_r",
+    "connects": [
+     "entrance",
+     "bathroom"
+    ],
+    "swing_into": "bathroom",
+    "hinge": "right",
+    "facing_deg": 180.0,
+    "elevation": 0.0,
+    "z": [
+     -0.112,
+     2.1
+    ]
+   }
+  ],
+  "windows": [
+   {
+    "id": "win_room",
+    "wall": "E01",
+    "position": [
+     2.0,
+     0.0
+    ],
+    "width": 1.65,
+    "sill": 0.9,
+    "head": 2.15,
+    "asset": "window_bed",
+    "room": "room",
+    "facing_deg": 90.0
+   }
+  ],
+  "open_edges": [
+   [
+    "room",
+    "kitchen"
+   ],
+   [
+    "kitchen",
+    "entrance"
+   ]
+  ],
+  "robot": {
+   "radius": 0.22,
+   "dock": "dock",
+   "reachable_rooms": [
+    "room",
+    "kitchen"
+   ]
+  },
+  "scale_reference": {
+   "length_m": 0.95,
+   "note": "현관문 폭"
+  },
+  "source": {
+   "image": "",
+   "m_per_px": 0.01,
+   "origin_px": [
+    0,
+    0
+   ],
+   "note": "테스트용 예시, 흔한 원룸 크기로 그림. 실제 평면도 그림이 생기면 그 집을 새 폴더로 만든다."
+  },
+  "ar_anchors": [
+   {
+    "id": "corner_ne",
+    "label": "책상 쪽 창가 모서리(창문 오른쪽, 방 북동쪽 구석)",
+    "position": [
+     3.9,
+     0.1
+    ]
+   },
+   {
+    "id": "corner_bath_sw",
+    "label": "욕실 들어가서 왼쪽 안쪽 구석(세면대·변기 반대편)",
+    "position": [
+     0.1,
+     6.5
+    ]
+   }
+  ]
+ },
+ "stage": {
+  "camera": {
+   "type": "orthographic",
+   "target": [
+    2.0,
+    1.0,
+    3.3
+   ],
+   "direction": [
+    0.4545,
+    0.766,
+    0.4545
+   ],
+   "elevation_deg": 50.0,
+   "heading": [
+    0.7071067690849304,
+    0.7071067690849304
+   ]
+  },
+  "sun": {
+   "direction": [
+    -0.5792,
+    0.5736,
+    0.5792
+   ],
+   "elevation_deg": 35.0,
+   "color": "#FFEDD6"
+  },
+  "background": "#DCDAD6",
+  "wall_cut_height": 1.05
+ },
+ "objects": [
+  {
+   "id": "walls",
+   "name": "벽",
+   "type": "walls",
+   "asset": "assets/structure/walls.glb",
+   "category": "structure",
+   "node_type": "fixture",
+   "mount": "floor",
+   "room": null,
+   "plan": {
+    "position": [
+     0.0,
+     0.0
+    ],
+    "facing_deg": 90.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "rotation": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": false,
+   "attrs": {},
+   "states": {},
+   "state": {}
+  },
+  {
+   "id": "floors",
+   "name": "바닥",
+   "type": "floors",
+   "asset": "assets/structure/floors.glb",
+   "category": "structure",
+   "node_type": "fixture",
+   "mount": "floor",
+   "room": null,
+   "plan": {
+    "position": [
+     0.0,
+     0.0
+    ],
+    "facing_deg": 90.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "rotation": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": false,
+   "attrs": {},
+   "states": {},
+   "state": {}
+  },
+  {
+   "id": "bed_1",
+   "name": "침대",
+   "type": "bed_single",
+   "asset": "assets/furniture/bed_single.glb",
+   "category": "furniture",
+   "node_type": "furniture",
+   "mount": "floor",
+   "room": "room",
+   "plan": {
+    "position": [
+     0.65,
+     1.125
+    ],
+    "facing_deg": 90.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    0.65,
+    0.0,
+    1.125
+   ],
+   "rotation": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "manual",
+    "size": "catalog",
+    "facing": "manual",
+    "height": "catalog",
+    "model": "builder",
+    "builder": null
+   }
+  },
+  {
+   "id": "desk_1",
+   "name": "책상",
+   "type": "desk_small",
+   "asset": "assets/furniture/desk_small.glb",
+   "category": "furniture",
+   "node_type": "furniture",
+   "mount": "floor",
+   "room": "room",
+   "plan": {
+    "position": [
+     3.6,
+     1.0
+    ],
+    "facing_deg": 180.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    3.6,
+    0.0,
+    1.0
+   ],
+   "rotation": [
+    0.0,
+    -1.570796,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "manual",
+    "size": "catalog",
+    "facing": "manual",
+    "height": "catalog",
+    "model": "builder",
+    "builder": null
+   }
+  },
+  {
+   "id": "chair_1",
+   "name": "의자",
+   "type": "chair",
+   "asset": "assets/furniture/chair.glb",
+   "category": "furniture",
+   "node_type": "furniture",
+   "mount": "floor",
+   "room": "room",
+   "plan": {
+    "position": [
+     3.05,
+     1.0
+    ],
+    "facing_deg": 0.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    3.05,
+    0.0,
+    1.0
+   ],
+   "rotation": [
+    0.0,
+    1.570796,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "manual",
+    "size": "catalog",
+    "facing": "manual",
+    "height": "catalog",
+    "model": "builder",
+    "builder": null
+   }
+  },
+  {
+   "id": "purifier_1",
+   "name": "공기청정기",
+   "type": "air_purifier",
+   "asset": "assets/appliances/air_purifier.glb",
+   "category": "appliances",
+   "node_type": "device",
+   "mount": "floor",
+   "room": "room",
+   "plan": {
+    "position": [
+     3.7,
+     1.95
+    ],
+    "facing_deg": 180.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    3.7,
+    0.0,
+    1.95
+   ],
+   "rotation": [
+    0.0,
+    -1.570796,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {
+    "power": [
+     "off",
+     "on"
+    ]
+   },
+   "states": {
+    "power": {
+     "default": "off",
+     "effects": {
+      "off": [
+       {
+        "part": "ring",
+        "emissive": 0.0
+       },
+       {
+        "part": "display",
+        "emissive": 0.0
+       },
+       {
+        "part": "plume",
+        "visible": false
+       }
+      ],
+      "on": [
+       {
+        "part": "ring",
+        "emissive": 1.0
+       },
+       {
+        "part": "display",
+        "emissive": 1.0
+       },
+       {
+        "part": "plume",
+        "visible": true
+       }
+      ]
+     }
+    }
+   },
+   "state": {
+    "power": "off"
+   },
+   "provenance": {
+    "origin": "manual",
+    "size": "catalog",
+    "facing": "manual",
+    "height": "catalog",
+    "model": "builder",
+    "builder": null
+   }
+  },
+  {
+   "id": "ac_1",
+   "name": "벽걸이 에어컨",
+   "type": "wall_ac",
+   "asset": "assets/appliances/wall_ac.glb",
+   "category": "appliances",
+   "node_type": "device",
+   "mount": "wall",
+   "room": "room",
+   "plan": {
+    "position": [
+     3.9,
+     2.7
+    ],
+    "facing_deg": 180.0,
+    "elevation": 1.95,
+    "on": null,
+    "surface": null,
+    "wall": "E02"
+   },
+   "position": [
+    3.9,
+    1.95,
+    2.7
+   ],
+   "rotation": [
+    0.0,
+    -1.570796,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {
+    "power": [
+     "off",
+     "on"
+    ]
+   },
+   "states": {
+    "power": {
+     "default": "off",
+     "effects": {
+      "off": [
+       {
+        "part": "display",
+        "visible": false,
+        "emissive": 0.0
+       },
+       {
+        "part": "led",
+        "emissive": 0.0
+       },
+       {
+        "part": "top_glow",
+        "emissive": 0.0
+       },
+       {
+        "part": "louver",
+        "rotate": [
+         0,
+         0,
+         0
+        ]
+       },
+       {
+        "part": "airflow",
+        "visible": false
+       }
+      ],
+      "on": [
+       {
+        "part": "display",
+        "visible": true,
+        "emissive": 1.0
+       },
+       {
+        "part": "led",
+        "emissive": 1.0
+       },
+       {
+        "part": "top_glow",
+        "emissive": 1.0
+       },
+       {
+        "part": "louver",
+        "rotate": [
+         65,
+         0,
+         0
+        ]
+       },
+       {
+        "part": "airflow",
+        "visible": true
+       }
+      ]
+     }
+    }
+   },
+   "state": {
+    "power": "off"
+   },
+   "provenance": {
+    "origin": "manual",
+    "size": "catalog",
+    "facing": "manual",
+    "height": "catalog",
+    "model": "builder",
+    "builder": null
+   }
+  },
+  {
+   "id": "light_room",
+   "name": "방 천장등",
+   "type": "ceiling_light",
+   "asset": "assets/fixtures/ceiling_light.glb",
+   "category": "fixtures",
+   "node_type": "fixture",
+   "mount": "ceiling",
+   "room": "room",
+   "plan": {
+    "position": [
+     2.0,
+     2.0
+    ],
+    "facing_deg": 90.0,
+    "elevation": 2.3,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    2.0,
+    2.3,
+    2.0
+   ],
+   "rotation": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": false,
+   "attrs": {
+    "power": [
+     "off",
+     "on"
+    ]
+   },
+   "states": {
+    "power": {
+     "default": "off",
+     "effects": {
+      "off": [
+       {
+        "part": "diffuser",
+        "emissive": 0.0
+       },
+       {
+        "light": "glow",
+        "intensity": 0.0
+       }
+      ],
+      "on": [
+       {
+        "part": "diffuser",
+        "emissive": 1.0
+       },
+       {
+        "light": "glow",
+        "intensity": 1.0
+       }
+      ]
+     }
+    }
+   },
+   "state": {
+    "power": "off"
+   },
+   "provenance": {
+    "origin": "manual",
+    "size": "catalog",
+    "facing": "manual",
+    "height": "catalog",
+    "model": "builder",
+    "builder": null
+   }
+  },
+  {
+   "id": "tv_stand_1",
+   "name": "TV장",
+   "type": "tv_stand",
+   "asset": "assets/furniture/tv_stand.glb",
+   "category": "furniture",
+   "node_type": "furniture",
+   "mount": "floor",
+   "room": "room",
+   "plan": {
+    "position": [
+     1.0,
+     3.73
+    ],
+    "facing_deg": 270.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    1.0,
+    0.0,
+    3.73
+   ],
+   "rotation": [
+    0.0,
+    -3.141593,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "manual",
+    "size": "catalog",
+    "facing": "manual",
+    "height": "catalog",
+    "model": "builder",
+    "builder": null
+   }
+  },
+  {
+   "id": "tv_1",
+   "name": "TV",
+   "type": "tv",
+   "asset": "assets/appliances/tv.glb",
+   "category": "appliances",
+   "node_type": "device",
+   "mount": "surface",
+   "room": "room",
+   "plan": {
+    "position": [
+     1.0,
+     3.75
+    ],
+    "facing_deg": 270.0,
+    "elevation": 0.45,
+    "on": "tv_stand_1",
+    "surface": "top",
+    "wall": null
+   },
+   "position": [
+    1.0,
+    0.45,
+    3.75
+   ],
+   "rotation": [
+    0.0,
+    -3.141593,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {
+    "power": [
+     "off",
+     "on"
+    ]
+   },
+   "states": {
+    "power": {
+     "default": "off",
+     "effects": {
+      "off": [
+       {
+        "part": "screen",
+        "emissive": 0.0
+       },
+       {
+        "part": "standby",
+        "emissive": 1.0
+       },
+       {
+        "light": "glow",
+        "intensity": 0.0
+       }
+      ],
+      "on": [
+       {
+        "part": "screen",
+        "emissive": 1.0
+       },
+       {
+        "part": "standby",
+        "emissive": 0.0
+       },
+       {
+        "light": "glow",
+        "intensity": 1.0
+       }
+      ]
+     }
+    }
+   },
+   "state": {
+    "power": "off"
+   },
+   "provenance": {
+    "origin": "manual",
+    "size": "catalog",
+    "facing": "manual",
+    "height": "catalog",
+    "model": "builder",
+    "builder": null
+   }
+  },
+  {
+   "id": "dock",
+   "name": "로봇 충전대",
+   "type": "robot_dock",
+   "asset": "assets/appliances/robot_dock.glb",
+   "category": "appliances",
+   "node_type": "device",
+   "mount": "floor",
+   "room": "room",
+   "plan": {
+    "position": [
+     2.6,
+     3.55
+    ],
+    "facing_deg": 270.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    2.6,
+    0.0,
+    3.55
+   ],
+   "rotation": [
+    0.0,
+    -3.141593,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {
+    "charging": [
+     "off",
+     "on"
+    ]
+   },
+   "states": {
+    "charging": {
+     "default": "off",
+     "effects": {
+      "off": [
+       {
+        "part": "strip",
+        "emissive": 0.0
+       },
+       {
+        "part": "floor_glow",
+        "visible": false
+       },
+       {
+        "light": "glow",
+        "intensity": 0.0
+       }
+      ],
+      "on": [
+       {
+        "part": "strip",
+        "emissive": 1.0
+       },
+       {
+        "part": "floor_glow",
+        "visible": true
+       },
+       {
+        "light": "glow",
+        "intensity": 1.0
+       }
+      ]
+     }
+    }
+   },
+   "state": {
+    "charging": "off"
+   },
+   "provenance": {
+    "origin": "manual",
+    "size": "catalog",
+    "facing": "manual",
+    "height": "catalog",
+    "model": "builder",
+    "builder": null
+   }
+  },
+  {
+   "id": "vacuum_dock_1",
+   "name": "로봇청소기 충전대",
+   "type": "vacuum_dock",
+   "asset": "assets/appliances/vacuum_dock.glb",
+   "category": "appliances",
+   "node_type": "device",
+   "mount": "floor",
+   "room": "room",
+   "plan": {
+    "position": [
+     3.75,
+     3.65
+    ],
+    "facing_deg": 180.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    3.75,
+    0.0,
+    3.65
+   ],
+   "rotation": [
+    0.0,
+    -1.570796,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {
+    "charging": [
+     "off",
+     "on"
+    ]
+   },
+   "states": {
+    "charging": {
+     "default": "off",
+     "effects": {
+      "off": [
+       {
+        "part": "led",
+        "emissive": 0.0
+       },
+       {
+        "part": "status",
+        "emissive": 0.0
+       },
+       {
+        "light": "glow",
+        "intensity": 0.0
+       }
+      ],
+      "on": [
+       {
+        "part": "led",
+        "emissive": 1.0
+       },
+       {
+        "part": "status",
+        "emissive": 1.0
+       },
+       {
+        "light": "glow",
+        "intensity": 1.0
+       }
+      ]
+     }
+    }
+   },
+   "state": {
+    "charging": "off"
+   },
+   "provenance": {
+    "origin": "manual",
+    "size": "catalog",
+    "facing": "manual",
+    "height": "catalog",
+    "model": "builder",
+    "builder": null
+   }
+  },
+  {
+   "id": "robot_vacuum_1",
+   "name": "로봇청소기",
+   "type": "robot_vacuum",
+   "asset": "assets/appliances/robot_vacuum.glb",
+   "category": "appliances",
+   "node_type": "device",
+   "mount": "floor",
+   "room": "room",
+   "plan": {
+    "position": [
+     3.4,
+     3.65
+    ],
+    "facing_deg": 180.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    3.4,
+    0.0,
+    3.65
+   ],
+   "rotation": [
+    0.0,
+    -1.570796,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {
+    "running": [
+     false,
+     true
+    ]
+   },
+   "states": {
+    "running": {
+     "default": false,
+     "effects": {
+      "false": [
+       {
+        "part": "ring",
+        "emissive": 0.02
+       },
+       {
+        "part": "floor_glow",
+        "visible": false
+       },
+       {
+        "part": "side_brush_l",
+        "spin": [
+         0,
+         0,
+         0
+        ]
+       },
+       {
+        "part": "side_brush_r",
+        "spin": [
+         0,
+         0,
+         0
+        ]
+       },
+       {
+        "light": "headlight",
+        "intensity": 0.0
+       }
+      ],
+      "true": [
+       {
+        "part": "ring",
+        "emissive": 1.0
+       },
+       {
+        "part": "floor_glow",
+        "visible": true
+       },
+       {
+        "part": "side_brush_l",
+        "spin": [
+         0,
+         2,
+         0
+        ]
+       },
+       {
+        "part": "side_brush_r",
+        "spin": [
+         0,
+         -2,
+         0
+        ]
+       },
+       {
+        "light": "headlight",
+        "intensity": 1.0
+       }
+      ]
+     }
+    }
+   },
+   "state": {
+    "running": false
+   },
+   "provenance": {
+    "origin": "manual",
+    "size": "catalog",
+    "facing": "manual",
+    "height": "catalog",
+    "model": "builder",
+    "builder": null
+   }
+  },
+  {
+   "id": "induction_1",
+   "name": "인덕션",
+   "type": "induction_counter",
+   "asset": "assets/appliances/induction_counter.glb",
+   "category": "appliances",
+   "node_type": "device",
+   "mount": "floor",
+   "room": "kitchen",
+   "plan": {
+    "position": [
+     3.6,
+     4.35
+    ],
+    "facing_deg": 180.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    3.6,
+    0.0,
+    4.35
+   ],
+   "rotation": [
+    0.0,
+    -1.570796,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {
+    "power": [
+     "off",
+     "on"
+    ]
+   },
+   "states": {
+    "power": {
+     "default": "off",
+     "effects": {
+      "off": [
+       {
+        "part": "zones",
+        "emissive": 0.0
+       },
+       {
+        "part": "touch_display",
+        "emissive": 0.0
+       },
+       {
+        "light": "heat_glow",
+        "intensity": 0.0
+       }
+      ],
+      "on": [
+       {
+        "part": "zones",
+        "emissive": 1.0
+       },
+       {
+        "part": "touch_display",
+        "emissive": 1.0
+       },
+       {
+        "light": "heat_glow",
+        "intensity": 1.0
+       }
+      ]
+     }
+    }
+   },
+   "state": {
+    "power": "off"
+   },
+   "provenance": {
+    "origin": "manual",
+    "size": "catalog",
+    "facing": "manual",
+    "height": "catalog",
+    "model": "builder",
+    "builder": null
+   }
+  },
+  {
+   "id": "sink_1",
+   "name": "싱크대",
+   "type": "sink_counter",
+   "asset": "assets/furniture/sink_counter.glb",
+   "category": "furniture",
+   "node_type": "furniture",
+   "mount": "floor",
+   "room": "kitchen",
+   "plan": {
+    "position": [
+     3.6,
+     5.1
+    ],
+    "facing_deg": 180.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    3.6,
+    0.0,
+    5.1
+   ],
+   "rotation": [
+    0.0,
+    -1.570796,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {
+    "faucet": [
+     "off",
+     "on"
+    ]
+   },
+   "states": {
+    "faucet": {
+     "default": "off",
+     "effects": {
+      "off": [
+       {
+        "part": "water",
+        "visible": false
+       },
+       {
+        "part": "pool",
+        "visible": false
+       },
+       {
+        "part": "splash",
+        "visible": false
+       }
+      ],
+      "on": [
+       {
+        "part": "water",
+        "visible": true
+       },
+       {
+        "part": "pool",
+        "visible": true
+       },
+       {
+        "part": "splash",
+        "visible": true
+       }
+      ]
+     }
+    }
+   },
+   "state": {
+    "faucet": "off"
+   },
+   "provenance": {
+    "origin": "manual",
+    "size": "catalog",
+    "facing": "manual",
+    "height": "catalog",
+    "model": "builder",
+    "builder": null
+   }
+  },
+  {
+   "id": "fridge_1",
+   "name": "냉장고",
+   "type": "fridge",
+   "asset": "assets/appliances/fridge.glb",
+   "category": "appliances",
+   "node_type": "device",
+   "mount": "floor",
+   "room": "kitchen",
+   "plan": {
+    "position": [
+     2.135,
+     4.5
+    ],
+    "facing_deg": 0.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    2.135,
+    0.0,
+    4.5
+   ],
+   "rotation": [
+    0.0,
+    1.570796,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {
+    "door": [
+     "closed",
+     "open"
+    ]
+   },
+   "states": {
+    "door": {
+     "default": "closed",
+     "effects": {
+      "closed": [
+       {
+        "part": "door_left",
+        "rotate": [
+         0,
+         0,
+         0
+        ]
+       },
+       {
+        "part": "door_right",
+        "rotate": [
+         0,
+         0,
+         0
+        ]
+       },
+       {
+        "part": "interior_light",
+        "emissive": 0.0
+       },
+       {
+        "light": "fridge_light",
+        "intensity": 0.0
+       }
+      ],
+      "open": [
+       {
+        "part": "door_left",
+        "rotate": [
+         0,
+         -100,
+         0
+        ]
+       },
+       {
+        "part": "door_right",
+        "rotate": [
+         0,
+         100,
+         0
+        ]
+       },
+       {
+        "part": "interior_light",
+        "emissive": 1.0
+       },
+       {
+        "light": "fridge_light",
+        "intensity": 1.0
+       }
+      ]
+     }
+    }
+   },
+   "state": {
+    "door": "closed"
+   },
+   "provenance": {
+    "origin": "manual",
+    "size": "catalog",
+    "facing": "manual",
+    "height": "catalog",
+    "model": "builder",
+    "builder": null
+   }
+  },
+  {
+   "id": "vanity_1",
+   "name": "세면대",
+   "type": "vanity",
+   "asset": "assets/fixtures/vanity.glb",
+   "category": "fixtures",
+   "node_type": "fixture",
+   "mount": "floor",
+   "room": "bathroom",
+   "plan": {
+    "position": [
+     0.5,
+     4.29
+    ],
+    "facing_deg": 90.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    0.5,
+    0.0,
+    4.29
+   ],
+   "rotation": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": false,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "manual",
+    "size": "catalog",
+    "facing": "manual",
+    "height": "catalog",
+    "model": "builder",
+    "builder": null
+   }
+  },
+  {
+   "id": "washer_1",
+   "name": "세탁기",
+   "type": "washer",
+   "asset": "assets/appliances/washer.glb",
+   "category": "appliances",
+   "node_type": "device",
+   "mount": "floor",
+   "room": "bathroom",
+   "plan": {
+    "position": [
+     1.3,
+     4.385
+    ],
+    "facing_deg": 90.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    1.3,
+    0.0,
+    4.385
+   ],
+   "rotation": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {
+    "running": [
+     false,
+     true
+    ],
+    "door": [
+     "closed",
+     "open"
+    ]
+   },
+   "states": {
+    "running": {
+     "default": false,
+     "effects": {
+      "false": [
+       {
+        "part": "display",
+        "visible": false
+       },
+       {
+        "part": "dial_ring",
+        "emissive": 0.0
+       },
+       {
+        "part": "drum_light",
+        "emissive": 0.0
+       },
+       {
+        "part": "status_bar",
+        "emissive": 0.0
+       },
+       {
+        "light": "drum_glow",
+        "intensity": 0.0
+       }
+      ],
+      "true": [
+       {
+        "part": "display",
+        "visible": true
+       },
+       {
+        "part": "dial_ring",
+        "emissive": 1.0
+       },
+       {
+        "part": "drum_light",
+        "emissive": 1.0
+       },
+       {
+        "part": "status_bar",
+        "emissive": 1.0
+       },
+       {
+        "light": "drum_glow",
+        "intensity": 1.0
+       },
+       {
+        "part": "drum",
+        "spin": [
+         0,
+         0,
+         0.8
+        ]
+       }
+      ]
+     }
+    },
+    "door": {
+     "default": "closed",
+     "effects": {
+      "closed": [
+       {
+        "part": "door",
+        "rotate": [
+         0,
+         0,
+         0
+        ]
+       },
+       {
+        "part": "door_lamp",
+        "emissive": 0.0
+       },
+       {
+        "light": "door_light",
+        "intensity": 0.0
+       }
+      ],
+      "open": [
+       {
+        "part": "door",
+        "rotate": [
+         0,
+         -100,
+         0
+        ]
+       },
+       {
+        "part": "door_lamp",
+        "emissive": 1.0
+       },
+       {
+        "light": "door_light",
+        "intensity": 1.0
+       }
+      ]
+     }
+    }
+   },
+   "state": {
+    "running": false,
+    "door": "closed"
+   },
+   "provenance": {
+    "origin": "manual",
+    "size": "catalog",
+    "facing": "manual",
+    "height": "catalog",
+    "model": "builder",
+    "builder": null
+   }
+  },
+  {
+   "id": "toilet_1",
+   "name": "변기",
+   "type": "toilet",
+   "asset": "assets/fixtures/toilet.glb",
+   "category": "fixtures",
+   "node_type": "fixture",
+   "mount": "floor",
+   "room": "bathroom",
+   "plan": {
+    "position": [
+     0.45,
+     5.2
+    ],
+    "facing_deg": 0.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    0.45,
+    0.0,
+    5.2
+   ],
+   "rotation": [
+    0.0,
+    1.570796,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": false,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "manual",
+    "size": "catalog",
+    "facing": "manual",
+    "height": "catalog",
+    "model": "builder",
+    "builder": null
+   }
+  },
+  {
+   "id": "light_bath",
+   "name": "욕실 등",
+   "type": "downlight",
+   "asset": "assets/fixtures/downlight.glb",
+   "category": "fixtures",
+   "node_type": "fixture",
+   "mount": "ceiling",
+   "room": "bathroom",
+   "plan": {
+    "position": [
+     0.85,
+     5.3
+    ],
+    "facing_deg": 90.0,
+    "elevation": 2.3,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    0.85,
+    2.3,
+    5.3
+   ],
+   "rotation": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": false,
+   "attrs": {
+    "power": [
+     "off",
+     "on"
+    ]
+   },
+   "states": {
+    "power": {
+     "default": "off",
+     "effects": {
+      "off": [
+       {
+        "part": "lens",
+        "emissive": 0.0
+       },
+       {
+        "part": "reflector",
+        "emissive": 0.0
+       },
+       {
+        "light": "glow",
+        "intensity": 0.0
+       }
+      ],
+      "on": [
+       {
+        "part": "lens",
+        "emissive": 1.0
+       },
+       {
+        "part": "reflector",
+        "emissive": 1.0
+       },
+       {
+        "light": "glow",
+        "intensity": 1.0
+       }
+      ]
+     }
+    }
+   },
+   "state": {
+    "power": "off"
+   },
+   "provenance": {
+    "origin": "manual",
+    "size": "catalog",
+    "facing": "manual",
+    "height": "catalog",
+    "model": "builder",
+    "builder": null
+   }
+  },
+  {
+   "id": "wallpad_1",
+   "name": "월패드",
+   "type": "wall_pad",
+   "asset": "assets/appliances/wall_pad.glb",
+   "category": "appliances",
+   "node_type": "device",
+   "mount": "wall",
+   "room": "entrance",
+   "plan": {
+    "position": [
+     3.9,
+     6.0
+    ],
+    "facing_deg": 180.0,
+    "elevation": 1.3,
+    "on": null,
+    "surface": null,
+    "wall": "E02"
+   },
+   "position": [
+    3.9,
+    1.3,
+    6.0
+   ],
+   "rotation": [
+    0.0,
+    -1.570796,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {
+    "screen": [
+     "off",
+     "on"
+    ]
+   },
+   "states": {
+    "screen": {
+     "default": "off",
+     "effects": {
+      "off": [
+       {
+        "part": "screen",
+        "visible": false
+       },
+       {
+        "part": "keys",
+        "emissive": 0.0
+       }
+      ],
+      "on": [
+       {
+        "part": "screen",
+        "visible": true
+       },
+       {
+        "part": "keys",
+        "emissive": 1.0
+       }
+      ]
+     }
+    }
+   },
+   "state": {
+    "screen": "off"
+   },
+   "provenance": {
+    "origin": "manual",
+    "size": "catalog",
+    "facing": "manual",
+    "height": "catalog",
+    "model": "builder",
+    "builder": null
+   }
+  },
+  {
+   "id": "door_main",
+   "name": "현관문(도어록)",
+   "type": "door_main",
+   "asset": "assets/fixtures/door_main.glb",
+   "category": "fixtures",
+   "node_type": "fixture",
+   "mount": "opening",
+   "room": "entrance",
+   "plan": {
+    "position": [
+     2.85,
+     6.6
+    ],
+    "facing_deg": 90.0,
+    "elevation": -0.1,
+    "on": null,
+    "surface": null,
+    "wall": "E03"
+   },
+   "position": [
+    2.85,
+    -0.1,
+    6.6
+   ],
+   "rotation": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": false,
+   "attrs": {
+    "door": [
+     "closed",
+     "open"
+    ],
+    "lock": [
+     "locked",
+     "unlocked"
+    ]
+   },
+   "states": {
+    "door": {
+     "default": "closed",
+     "effects": {
+      "closed": [
+       {
+        "part": "leaf",
+        "rotate": [
+         0,
+         0,
+         0
+        ]
+       },
+       {
+        "part": "open_light",
+        "visible": false
+       }
+      ],
+      "open": [
+       {
+        "part": "leaf",
+        "rotate": [
+         0,
+         -95,
+         0
+        ]
+       },
+       {
+        "part": "open_light",
+        "visible": true
+       }
+      ]
+     }
+    },
+    "lock": {
+     "default": "locked",
+     "effects": {
+      "locked": [
+       {
+        "part": "lock_red",
+        "emissive": 1.0
+       },
+       {
+        "part": "lock_green",
+        "emissive": 0.0
+       },
+       {
+        "part": "keypad_red",
+        "visible": true
+       },
+       {
+        "part": "keypad_green",
+        "visible": false
+       },
+       {
+        "light": "unlock_glow_out",
+        "intensity": 0.0
+       },
+       {
+        "light": "unlock_glow_in",
+        "intensity": 0.0
+       },
+       {
+        "part": "unlock_pool",
+        "visible": false
+       }
+      ],
+      "unlocked": [
+       {
+        "part": "lock_red",
+        "emissive": 0.0
+       },
+       {
+        "part": "lock_green",
+        "emissive": 1.0
+       },
+       {
+        "part": "keypad_red",
+        "visible": false
+       },
+       {
+        "part": "keypad_green",
+        "visible": true
+       },
+       {
+        "light": "unlock_glow_out",
+        "intensity": 1.0
+       },
+       {
+        "light": "unlock_glow_in",
+        "intensity": 1.0
+       },
+       {
+        "part": "unlock_pool",
+        "visible": true
+       }
+      ]
+     }
+    }
+   },
+   "state": {
+    "door": "closed",
+    "lock": "locked"
+   },
+   "provenance": {
+    "origin": "plan",
+    "size": "catalog",
+    "facing": "plan",
+    "height": "catalog",
+    "model": "builder",
+    "builder": null
+   }
+  },
+  {
+   "id": "door_bath",
+   "name": "욕실문(오른쪽 경첩)",
+   "type": "door_bath_r",
+   "asset": "assets/fixtures/door_bath_r.glb",
+   "category": "fixtures",
+   "node_type": "fixture",
+   "mount": "opening",
+   "room": "bathroom",
+   "plan": {
+    "position": [
+     1.7,
+     5.9
+    ],
+    "facing_deg": 180.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": "I02"
+   },
+   "position": [
+    1.7,
+    0.0,
+    5.9
+   ],
+   "rotation": [
+    0.0,
+    -1.570796,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": false,
+   "attrs": {
+    "door": [
+     "closed",
+     "open"
+    ]
+   },
+   "states": {
+    "door": {
+     "default": "closed",
+     "effects": {
+      "closed": [
+       {
+        "part": "leaf",
+        "rotate": [
+         0,
+         0,
+         0
+        ]
+       }
+      ],
+      "open": [
+       {
+        "part": "leaf",
+        "rotate": [
+         0,
+         95,
+         0
+        ]
+       }
+      ]
+     }
+    }
+   },
+   "state": {
+    "door": "closed"
+   },
+   "provenance": {
+    "origin": "plan",
+    "size": "catalog",
+    "facing": "plan",
+    "height": "catalog",
+    "model": "builder",
+    "builder": null
+   }
+  },
+  {
+   "id": "win_room",
+   "name": "작은방 창",
+   "type": "window_bed",
+   "asset": "assets/fixtures/window_bed.glb",
+   "category": "fixtures",
+   "node_type": "fixture",
+   "mount": "opening",
+   "room": "room",
+   "plan": {
+    "position": [
+     2.0,
+     0.0
+    ],
+    "facing_deg": 90.0,
+    "elevation": 0.9,
+    "on": null,
+    "surface": null,
+    "wall": "E01"
+   },
+   "position": [
+    2.0,
+    0.9,
+    0.0
+   ],
+   "rotation": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": false,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "plan",
+    "size": "catalog",
+    "facing": "plan",
+    "height": "catalog",
+    "model": "builder",
+    "builder": null
+   }
+  }
+ ]
+}

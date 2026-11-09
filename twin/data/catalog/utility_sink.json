@@ -1,0 +1,61 @@
+{
+  "type": "utility_sink",
+  "label": "다용도 싱크",
+  "family": "bath_utility",
+  "category": "fixtures",
+  "node_type": "fixture",
+  "mount": "floor",
+  "footprint": [
+    0.6,
+    0.5
+  ],
+  "height": 1.06,
+  "model": "assets/fixtures/utility_sink.glb",
+  "blocks_walk": true,
+  "blocks_view": true,
+  "anchors": {
+    "front": [
+      0.0,
+      0.55
+    ],
+    "basin": [
+      0.0,
+      0.035,
+      0.85
+    ]
+  },
+  "attrs": {
+    "faucet": [
+      "off",
+      "on"
+    ]
+  },
+  "states": {
+    "faucet": {
+      "default": "off",
+      "effects": {
+        "off": [
+          {
+            "part": "stream",
+            "visible": false
+          },
+          {
+            "part": "basin_water",
+            "visible": false
+          }
+        ],
+        "on": [
+          {
+            "part": "stream",
+            "visible": true
+          },
+          {
+            "part": "basin_water",
+            "visible": true
+          }
+        ]
+      }
+    }
+  },
+  "notes": "깊은 스테인리스 빨래 싱크 + 철제 받침. height는 거위목 수전 끝(1.06). faucet on → 물줄기·물보라·세제 거품(stream)과 거의 가득 찬 물(basin_water)."
+}

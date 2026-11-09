@@ -1,0 +1,39 @@
+{
+  "type": "bed_single",
+  "label": "슈퍼싱글 침대",
+  "family": "bedroom",
+  "category": "furniture",
+  "node_type": "furniture",
+  "mount": "floor",
+  "footprint": [
+    1.297,
+    2.392
+  ],
+  "height": 0.9,
+  "model": "assets/furniture/bed_single.glb",
+  "blocks_walk": true,
+  "blocks_view": true,
+  "surfaces": [
+    {
+      "name": "mattress",
+      "height": 0.55
+    }
+  ],
+  "anchors": {
+    "front": [
+      0.0,
+      1.641
+    ],
+    "side_left": [
+      -0.9,
+      0.2
+    ],
+    "side_right": [
+      0.9,
+      0.2
+    ]
+  },
+  "notes": "퀸 침대와 같은 구성(채널 누빔 헤드보드 0.9 m, 베개 1, 세이지 뜨개 담요). 표면 mattress = 이불 윗면 높이.",
+  "builder": "bed_single",
+  "generated_by": "import-labels"
+}

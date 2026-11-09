@@ -1,0 +1,66 @@
+{
+  "type": "curtain_250",
+  "label": "안방 커튼(2.5m)",
+  "family": "lighting",
+  "category": "fixtures",
+  "node_type": "fixture",
+  "mount": "wall",
+  "footprint": [
+    2.5,
+    0.18
+  ],
+  "height": 2.25,
+  "model": "assets/fixtures/curtain_250.glb",
+  "blocks_walk": false,
+  "blocks_view": false,
+  "attrs": {
+    "curtain": [
+      "open",
+      "closed"
+    ]
+  },
+  "states": {
+    "curtain": {
+      "default": "open",
+      "effects": {
+        "open": [
+          {
+            "part": "panel_l",
+            "scale": [
+              0.22,
+              1,
+              1.8
+            ]
+          },
+          {
+            "part": "panel_r",
+            "scale": [
+              0.22,
+              1,
+              1.8
+            ]
+          }
+        ],
+        "closed": [
+          {
+            "part": "panel_l",
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            "part": "panel_r",
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "notes": "curtain_290과 같은 빌더(폭만 다름)"
+}

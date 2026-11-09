@@ -1,0 +1,1499 @@
+{
+  "name": "한양목련 180B · 공개 도면 기준",
+  "source": {
+    "image": "reference.jpg",
+    "m_per_px": 0.028125,
+    "origin_px": [
+      171,
+      97
+    ],
+    "note": "KB 180B 기본형 수동 트레이싱. 16200mm/576px. 치수는 벽 중심선 기준 근사이며 시공·실측 도면이 아님."
+  },
+  "ceiling_height": 2.3,
+  "wall_cut_height": 1.05,
+  "rooms": [
+    {
+      "id": "vestibule",
+      "label": "전실",
+      "polygon": [
+        [
+          0.871875,
+          2.025
+        ],
+        [
+          5.428125,
+          2.025
+        ],
+        [
+          5.428125,
+          4.190625
+        ],
+        [
+          0.871875,
+          4.190625
+        ]
+      ],
+      "observable": true,
+      "floor": "tile_entrance",
+      "floor_z": -0.1,
+      "wall_finish": "paint"
+    },
+    {
+      "id": "entrance",
+      "label": "현관",
+      "polygon": [
+        [
+          3.6,
+          4.190625
+        ],
+        [
+          5.428125,
+          4.190625
+        ],
+        [
+          5.428125,
+          5.990625
+        ],
+        [
+          3.6,
+          5.990625
+        ]
+      ],
+      "observable": true,
+      "floor": "tile_entrance",
+      "floor_z": -0.1,
+      "wall_finish": "paint"
+    },
+    {
+      "id": "bath_west",
+      "label": "욕실 1",
+      "polygon": [
+        [
+          0.0,
+          4.190625
+        ],
+        [
+          2.053125,
+          4.190625
+        ],
+        [
+          2.053125,
+          5.990625
+        ],
+        [
+          0.0,
+          5.990625
+        ]
+      ],
+      "observable": true,
+      "floor": "tile_bath",
+      "floor_z": 0,
+      "wall_finish": "tile"
+    },
+    {
+      "id": "closet",
+      "label": "수납공간",
+      "polygon": [
+        [
+          2.053125,
+          4.190625
+        ],
+        [
+          3.6,
+          4.190625
+        ],
+        [
+          3.6,
+          5.990625
+        ],
+        [
+          2.053125,
+          5.990625
+        ]
+      ],
+      "observable": true,
+      "floor": "wood",
+      "floor_z": 0,
+      "wall_finish": "paint"
+    },
+    {
+      "id": "alpha",
+      "label": "알파룸",
+      "polygon": [
+        [
+          0.0,
+          5.990625
+        ],
+        [
+          3.6,
+          5.990625
+        ],
+        [
+          3.6,
+          10.63125
+        ],
+        [
+          0.0,
+          10.63125
+        ]
+      ],
+      "observable": true,
+      "floor": "wood",
+      "floor_z": 0,
+      "wall_finish": "paint"
+    },
+    {
+      "id": "balcony_west",
+      "label": "서측 발코니",
+      "polygon": [
+        [
+          0.0,
+          10.63125
+        ],
+        [
+          3.6,
+          10.63125
+        ],
+        [
+          3.6,
+          12.234375
+        ],
+        [
+          0.0,
+          12.234375
+        ]
+      ],
+      "observable": true,
+      "floor": "tile_balcony",
+      "floor_z": -0.1,
+      "wall_finish": "paint"
+    },
+    {
+      "id": "bed_sw",
+      "label": "침실 1",
+      "polygon": [
+        [
+          3.6,
+          7.81875
+        ],
+        [
+          6.834375,
+          7.81875
+        ],
+        [
+          6.834375,
+          12.234375
+        ],
+        [
+          3.6,
+          12.234375
+        ]
+      ],
+      "observable": true,
+      "floor": "wood",
+      "floor_z": 0,
+      "wall_finish": "paint"
+    },
+    {
+      "id": "bed_se",
+      "label": "침실 2",
+      "polygon": [
+        [
+          11.784375,
+          7.81875
+        ],
+        [
+          16.2,
+          7.81875
+        ],
+        [
+          16.2,
+          12.234375
+        ],
+        [
+          11.784375,
+          12.234375
+        ]
+      ],
+      "observable": true,
+      "floor": "wood",
+      "floor_z": 0,
+      "wall_finish": "paint"
+    },
+    {
+      "id": "bed_ne",
+      "label": "침실 3",
+      "polygon": [
+        [
+          11.784375,
+          2.221875
+        ],
+        [
+          16.2,
+          2.221875
+        ],
+        [
+          16.2,
+          5.990625
+        ],
+        [
+          11.784375,
+          5.990625
+        ]
+      ],
+      "observable": true,
+      "floor": "wood",
+      "floor_z": 0,
+      "wall_finish": "paint"
+    },
+    {
+      "id": "bath_center",
+      "label": "욕실 2",
+      "polygon": [
+        [
+          5.428125,
+          4.190625
+        ],
+        [
+          8.775,
+          4.190625
+        ],
+        [
+          8.775,
+          5.990625
+        ],
+        [
+          5.428125,
+          5.990625
+        ]
+      ],
+      "observable": true,
+      "floor": "tile_bath",
+      "floor_z": 0,
+      "wall_finish": "tile"
+    },
+    {
+      "id": "bath_east",
+      "label": "욕실 3",
+      "polygon": [
+        [
+          13.66875,
+          5.990625
+        ],
+        [
+          16.2,
+          5.990625
+        ],
+        [
+          16.2,
+          7.81875
+        ],
+        [
+          13.66875,
+          7.81875
+        ]
+      ],
+      "observable": true,
+      "floor": "tile_bath",
+      "floor_z": 0,
+      "wall_finish": "tile"
+    },
+    {
+      "id": "kitchen",
+      "label": "주방·식당",
+      "polygon": [
+        [
+          5.428125,
+          -0.478125
+        ],
+        [
+          7.93125,
+          -0.478125
+        ],
+        [
+          7.93125,
+          0.0
+        ],
+        [
+          8.465625,
+          0.0
+        ],
+        [
+          8.465625,
+          2.221875
+        ],
+        [
+          8.775,
+          2.221875
+        ],
+        [
+          8.775,
+          4.190625
+        ],
+        [
+          5.428125,
+          4.190625
+        ]
+      ],
+      "observable": true,
+      "floor": "wood",
+      "floor_z": 0,
+      "wall_finish": "paint"
+    },
+    {
+      "id": "balcony_north",
+      "label": "후면 발코니",
+      "polygon": [
+        [
+          8.465625,
+          0.0
+        ],
+        [
+          9.9,
+          0.0
+        ],
+        [
+          9.9,
+          0.759375
+        ],
+        [
+          16.2,
+          0.759375
+        ],
+        [
+          16.2,
+          2.221875
+        ],
+        [
+          8.465625,
+          2.221875
+        ]
+      ],
+      "observable": true,
+      "floor": "tile_balcony",
+      "floor_z": -0.1,
+      "wall_finish": "paint"
+    },
+    {
+      "id": "living",
+      "label": "거실·복도",
+      "polygon": [
+        [
+          3.6,
+          5.990625
+        ],
+        [
+          8.775,
+          5.990625
+        ],
+        [
+          8.775,
+          2.221875
+        ],
+        [
+          11.784375,
+          2.221875
+        ],
+        [
+          11.784375,
+          5.990625
+        ],
+        [
+          13.66875,
+          5.990625
+        ],
+        [
+          13.66875,
+          7.81875
+        ],
+        [
+          11.784375,
+          7.81875
+        ],
+        [
+          11.784375,
+          12.234375
+        ],
+        [
+          6.834375,
+          12.234375
+        ],
+        [
+          6.834375,
+          7.81875
+        ],
+        [
+          3.6,
+          7.81875
+        ]
+      ],
+      "observable": true,
+      "floor": "wood",
+      "floor_z": 0,
+      "wall_finish": "paint"
+    },
+    {
+      "id": "balcony_front",
+      "label": "전면 발코니",
+      "polygon": [
+        [
+          3.6,
+          12.234375
+        ],
+        [
+          16.2,
+          12.234375
+        ],
+        [
+          16.2,
+          13.640625
+        ],
+        [
+          10.378125,
+          13.640625
+        ],
+        [
+          9.759375,
+          14.175
+        ],
+        [
+          8.409375,
+          14.175
+        ],
+        [
+          7.790625,
+          13.640625
+        ],
+        [
+          3.6,
+          13.640625
+        ]
+      ],
+      "observable": true,
+      "floor": "tile_balcony",
+      "floor_z": -0.1,
+      "wall_finish": "paint"
+    }
+  ],
+  "walls": [
+    {
+      "id": "E01",
+      "a": [
+        0.0,
+        4.190625
+      ],
+      "b": [
+        0.871875,
+        4.190625
+      ],
+      "kind": "exterior",
+      "thickness": 0.2
+    },
+    {
+      "id": "E02",
+      "a": [
+        0.871875,
+        4.190625
+      ],
+      "b": [
+        0.871875,
+        2.025
+      ],
+      "kind": "exterior",
+      "thickness": 0.2
+    },
+    {
+      "id": "E03",
+      "a": [
+        0.871875,
+        2.025
+      ],
+      "b": [
+        5.428125,
+        2.025
+      ],
+      "kind": "exterior",
+      "thickness": 0.2
+    },
+    {
+      "id": "E04",
+      "a": [
+        5.428125,
+        2.025
+      ],
+      "b": [
+        5.428125,
+        -0.478125
+      ],
+      "kind": "exterior",
+      "thickness": 0.2
+    },
+    {
+      "id": "E05",
+      "a": [
+        5.428125,
+        -0.478125
+      ],
+      "b": [
+        7.93125,
+        -0.478125
+      ],
+      "kind": "exterior",
+      "thickness": 0.2
+    },
+    {
+      "id": "E06",
+      "a": [
+        7.93125,
+        -0.478125
+      ],
+      "b": [
+        7.93125,
+        0.0
+      ],
+      "kind": "exterior",
+      "thickness": 0.2
+    },
+    {
+      "id": "E07",
+      "a": [
+        7.93125,
+        0.0
+      ],
+      "b": [
+        9.9,
+        0.0
+      ],
+      "kind": "exterior",
+      "thickness": 0.2
+    },
+    {
+      "id": "E08",
+      "a": [
+        9.9,
+        0.0
+      ],
+      "b": [
+        9.9,
+        0.759375
+      ],
+      "kind": "exterior",
+      "thickness": 0.2
+    },
+    {
+      "id": "E09",
+      "a": [
+        9.9,
+        0.759375
+      ],
+      "b": [
+        16.2,
+        0.759375
+      ],
+      "kind": "exterior",
+      "thickness": 0.2
+    },
+    {
+      "id": "E10",
+      "a": [
+        16.2,
+        0.759375
+      ],
+      "b": [
+        16.2,
+        13.640625
+      ],
+      "kind": "exterior",
+      "thickness": 0.2
+    },
+    {
+      "id": "E11",
+      "a": [
+        16.2,
+        13.640625
+      ],
+      "b": [
+        10.378125,
+        13.640625
+      ],
+      "kind": "exterior",
+      "thickness": 0.2
+    },
+    {
+      "id": "E12",
+      "a": [
+        10.378125,
+        13.640625
+      ],
+      "b": [
+        9.759375,
+        14.175
+      ],
+      "kind": "exterior",
+      "thickness": 0.2
+    },
+    {
+      "id": "E13",
+      "a": [
+        9.759375,
+        14.175
+      ],
+      "b": [
+        8.409375,
+        14.175
+      ],
+      "kind": "exterior",
+      "thickness": 0.2
+    },
+    {
+      "id": "E14",
+      "a": [
+        8.409375,
+        14.175
+      ],
+      "b": [
+        7.790625,
+        13.640625
+      ],
+      "kind": "exterior",
+      "thickness": 0.2
+    },
+    {
+      "id": "E15",
+      "a": [
+        7.790625,
+        13.640625
+      ],
+      "b": [
+        3.6,
+        13.640625
+      ],
+      "kind": "exterior",
+      "thickness": 0.2
+    },
+    {
+      "id": "E16",
+      "a": [
+        3.6,
+        13.640625
+      ],
+      "b": [
+        3.6,
+        12.234375
+      ],
+      "kind": "exterior",
+      "thickness": 0.2
+    },
+    {
+      "id": "E17",
+      "a": [
+        3.6,
+        12.234375
+      ],
+      "b": [
+        0.0,
+        12.234375
+      ],
+      "kind": "exterior",
+      "thickness": 0.2
+    },
+    {
+      "id": "E18",
+      "a": [
+        0.0,
+        12.234375
+      ],
+      "b": [
+        0.0,
+        4.190625
+      ],
+      "kind": "exterior",
+      "thickness": 0.2
+    },
+    {
+      "id": "vest_kitchen",
+      "a": [
+        5.428125,
+        2.025
+      ],
+      "b": [
+        5.428125,
+        4.190625
+      ],
+      "kind": "interior",
+      "thickness": 0.15
+    },
+    {
+      "id": "vest_bottom",
+      "a": [
+        0.871875,
+        4.190625
+      ],
+      "b": [
+        5.428125,
+        4.190625
+      ],
+      "kind": "interior",
+      "thickness": 0.15
+    },
+    {
+      "id": "bath_west_right",
+      "a": [
+        2.053125,
+        4.190625
+      ],
+      "b": [
+        2.053125,
+        5.990625
+      ],
+      "kind": "interior",
+      "thickness": 0.15
+    },
+    {
+      "id": "closet_right",
+      "a": [
+        3.6,
+        4.190625
+      ],
+      "b": [
+        3.6,
+        5.990625
+      ],
+      "kind": "interior",
+      "thickness": 0.15
+    },
+    {
+      "id": "alpha_top",
+      "a": [
+        0.0,
+        5.990625
+      ],
+      "b": [
+        3.6,
+        5.990625
+      ],
+      "kind": "interior",
+      "thickness": 0.15
+    },
+    {
+      "id": "alpha_right",
+      "a": [
+        3.6,
+        5.990625
+      ],
+      "b": [
+        3.6,
+        12.234375
+      ],
+      "kind": "interior",
+      "thickness": 0.15
+    },
+    {
+      "id": "alpha_balcony",
+      "a": [
+        0.0,
+        10.63125
+      ],
+      "b": [
+        3.6,
+        10.63125
+      ],
+      "kind": "interior",
+      "thickness": 0.15
+    },
+    {
+      "id": "kitchen_bath",
+      "a": [
+        5.428125,
+        4.190625
+      ],
+      "b": [
+        8.775,
+        4.190625
+      ],
+      "kind": "interior",
+      "thickness": 0.15
+    },
+    {
+      "id": "bath_center_left",
+      "a": [
+        5.428125,
+        4.190625
+      ],
+      "b": [
+        5.428125,
+        5.990625
+      ],
+      "kind": "interior",
+      "thickness": 0.15
+    },
+    {
+      "id": "bath_center_bottom",
+      "a": [
+        5.428125,
+        5.990625
+      ],
+      "b": [
+        8.775,
+        5.990625
+      ],
+      "kind": "interior",
+      "thickness": 0.15
+    },
+    {
+      "id": "bath_center_right",
+      "a": [
+        8.775,
+        4.190625
+      ],
+      "b": [
+        8.775,
+        5.990625
+      ],
+      "kind": "interior",
+      "thickness": 0.15
+    },
+    {
+      "id": "kitchen_balcony",
+      "a": [
+        8.465625,
+        0.0
+      ],
+      "b": [
+        8.465625,
+        2.221875
+      ],
+      "kind": "interior",
+      "thickness": 0.15
+    },
+    {
+      "id": "balcony_north_bottom",
+      "a": [
+        8.465625,
+        2.221875
+      ],
+      "b": [
+        16.2,
+        2.221875
+      ],
+      "kind": "interior",
+      "thickness": 0.15
+    },
+    {
+      "id": "bed_ne_left",
+      "a": [
+        11.784375,
+        2.221875
+      ],
+      "b": [
+        11.784375,
+        5.990625
+      ],
+      "kind": "interior",
+      "thickness": 0.15
+    },
+    {
+      "id": "bed_ne_bottom",
+      "a": [
+        11.784375,
+        5.990625
+      ],
+      "b": [
+        16.2,
+        5.990625
+      ],
+      "kind": "interior",
+      "thickness": 0.15
+    },
+    {
+      "id": "bath_east_left",
+      "a": [
+        13.66875,
+        5.990625
+      ],
+      "b": [
+        13.66875,
+        7.81875
+      ],
+      "kind": "interior",
+      "thickness": 0.15
+    },
+    {
+      "id": "bed_se_top",
+      "a": [
+        11.784375,
+        7.81875
+      ],
+      "b": [
+        16.2,
+        7.81875
+      ],
+      "kind": "interior",
+      "thickness": 0.15
+    },
+    {
+      "id": "bed_se_left",
+      "a": [
+        11.784375,
+        7.81875
+      ],
+      "b": [
+        11.784375,
+        12.234375
+      ],
+      "kind": "interior",
+      "thickness": 0.15
+    },
+    {
+      "id": "bed_sw_top",
+      "a": [
+        3.6,
+        7.81875
+      ],
+      "b": [
+        6.834375,
+        7.81875
+      ],
+      "kind": "interior",
+      "thickness": 0.15
+    },
+    {
+      "id": "bed_sw_right",
+      "a": [
+        6.834375,
+        7.81875
+      ],
+      "b": [
+        6.834375,
+        12.234375
+      ],
+      "kind": "interior",
+      "thickness": 0.15
+    },
+    {
+      "id": "front_boundary",
+      "a": [
+        3.6,
+        12.234375
+      ],
+      "b": [
+        16.2,
+        12.234375
+      ],
+      "kind": "interior",
+      "thickness": 0.15
+    }
+  ],
+  "doors": [
+    {
+      "id": "door_main",
+      "position": [
+        0.871875,
+        3.403125
+      ],
+      "wall": "E02",
+      "connects": [
+        "vestibule",
+        "outside"
+      ],
+      "width": 0.7875,
+      "height": 2.05,
+      "kind": "swing",
+      "asset": "mk_door_main_l",
+      "swing_into": "outside",
+      "hinge": "left"
+    },
+    {
+      "id": "door_entry",
+      "position": [
+        4.359375,
+        4.190625
+      ],
+      "wall": "vest_bottom",
+      "connects": [
+        "entrance",
+        "vestibule"
+      ],
+      "width": 0.815625,
+      "height": 2.05,
+      "kind": "swing",
+      "asset": "mk_door_entry_r",
+      "swing_into": "vestibule",
+      "hinge": "right"
+    },
+    {
+      "id": "door_alpha",
+      "position": [
+        3.6,
+        6.75
+      ],
+      "wall": "alpha_right",
+      "connects": [
+        "alpha",
+        "living"
+      ],
+      "width": 0.759375,
+      "height": 2.05,
+      "kind": "swing",
+      "asset": "mk_door_alpha_l",
+      "swing_into": "alpha",
+      "hinge": "left"
+    },
+    {
+      "id": "door_bath_west",
+      "position": [
+        1.575,
+        5.990625
+      ],
+      "wall": "alpha_top",
+      "connects": [
+        "bath_west",
+        "alpha"
+      ],
+      "width": 0.646875,
+      "height": 2.05,
+      "kind": "swing",
+      "asset": "mk_door_bath_west_r",
+      "swing_into": "bath_west",
+      "hinge": "right"
+    },
+    {
+      "id": "door_closet",
+      "position": [
+        2.784375,
+        5.990625
+      ],
+      "wall": "alpha_top",
+      "connects": [
+        "closet",
+        "alpha"
+      ],
+      "width": 1.125,
+      "height": 2.05,
+      "kind": "sliding",
+      "asset": "mk_door_closet"
+    },
+    {
+      "id": "door_bath_center",
+      "position": [
+        6.01875,
+        5.990625
+      ],
+      "wall": "bath_center_bottom",
+      "connects": [
+        "bath_center",
+        "living"
+      ],
+      "width": 0.703125,
+      "height": 2.05,
+      "kind": "swing",
+      "asset": "mk_door_bath_center_l",
+      "swing_into": "bath_center",
+      "hinge": "left"
+    },
+    {
+      "id": "door_bath_east",
+      "position": [
+        14.34375,
+        7.81875
+      ],
+      "wall": "bed_se_top",
+      "connects": [
+        "bath_east",
+        "bed_se"
+      ],
+      "width": 0.703125,
+      "height": 2.05,
+      "kind": "swing",
+      "asset": "mk_door_bath_east_l",
+      "swing_into": "bath_east",
+      "hinge": "left"
+    },
+    {
+      "id": "door_bed_sw",
+      "position": [
+        6.24375,
+        7.81875
+      ],
+      "wall": "bed_sw_top",
+      "connects": [
+        "bed_sw",
+        "living"
+      ],
+      "width": 0.759375,
+      "height": 2.05,
+      "kind": "swing",
+      "asset": "mk_door_bed_sw_r",
+      "swing_into": "bed_sw",
+      "hinge": "right"
+    },
+    {
+      "id": "door_bed_se",
+      "position": [
+        12.4875,
+        7.81875
+      ],
+      "wall": "bed_se_top",
+      "connects": [
+        "bed_se",
+        "living"
+      ],
+      "width": 0.759375,
+      "height": 2.05,
+      "kind": "swing",
+      "asset": "mk_door_bed_se_l",
+      "swing_into": "bed_se",
+      "hinge": "left"
+    },
+    {
+      "id": "door_bed_ne",
+      "position": [
+        12.4875,
+        5.990625
+      ],
+      "wall": "bed_ne_bottom",
+      "connects": [
+        "bed_ne",
+        "living"
+      ],
+      "width": 0.759375,
+      "height": 2.05,
+      "kind": "swing",
+      "asset": "mk_door_bed_ne_l",
+      "swing_into": "bed_ne",
+      "hinge": "left"
+    },
+    {
+      "id": "door_balcony_north",
+      "position": [
+        8.465625,
+        1.4625
+      ],
+      "wall": "kitchen_balcony",
+      "connects": [
+        "kitchen",
+        "balcony_north"
+      ],
+      "width": 0.815625,
+      "height": 2.05,
+      "kind": "swing",
+      "asset": "mk_door_balcony_north_l",
+      "swing_into": "kitchen",
+      "hinge": "left"
+    },
+    {
+      "id": "door_balcony_west",
+      "position": [
+        1.6875,
+        10.63125
+      ],
+      "wall": "alpha_balcony",
+      "connects": [
+        "alpha",
+        "balcony_west"
+      ],
+      "width": 2.7,
+      "height": 2.05,
+      "kind": "sliding",
+      "asset": "mk_door_balcony_west"
+    },
+    {
+      "id": "door_balcony_sw",
+      "position": [
+        5.175,
+        12.234375
+      ],
+      "wall": "front_boundary",
+      "connects": [
+        "bed_sw",
+        "balcony_front"
+      ],
+      "width": 2.64375,
+      "height": 2.05,
+      "kind": "sliding",
+      "asset": "mk_door_balcony_sw"
+    },
+    {
+      "id": "door_balcony_living",
+      "position": [
+        9.028125,
+        12.234375
+      ],
+      "wall": "front_boundary",
+      "connects": [
+        "living",
+        "balcony_front"
+      ],
+      "width": 3.15,
+      "height": 2.05,
+      "kind": "sliding",
+      "asset": "mk_door_balcony_living"
+    },
+    {
+      "id": "door_balcony_se",
+      "position": [
+        13.3875,
+        12.234375
+      ],
+      "wall": "front_boundary",
+      "connects": [
+        "bed_se",
+        "balcony_front"
+      ],
+      "width": 2.8125,
+      "height": 2.05,
+      "kind": "sliding",
+      "asset": "mk_door_balcony_se"
+    }
+  ],
+  "windows": [
+    {
+      "id": "win_vestibule",
+      "position": [
+        3.121875,
+        2.025
+      ],
+      "wall": "E03",
+      "width": 3.909375,
+      "room": "vestibule",
+      "asset": "mk_win_vestibule",
+      "sill": 0.9,
+      "head": 2.15
+    },
+    {
+      "id": "win_kitchen",
+      "position": [
+        6.665625,
+        -0.478125
+      ],
+      "wall": "E05",
+      "width": 0.9,
+      "room": "kitchen",
+      "asset": "mk_win_kitchen",
+      "sill": 0.9,
+      "head": 2.15
+    },
+    {
+      "id": "win_balcony_north",
+      "position": [
+        12.403125,
+        0.759375
+      ],
+      "wall": "E09",
+      "width": 4.55625,
+      "room": "balcony_north",
+      "asset": "mk_win_balcony_north",
+      "sill": 0.15,
+      "head": 2.15
+    },
+    {
+      "id": "win_bed_ne",
+      "position": [
+        16.2,
+        3.740625
+      ],
+      "wall": "E10",
+      "width": 2.109375,
+      "room": "bed_ne",
+      "asset": "mk_win_bed_ne",
+      "sill": 0.9,
+      "head": 2.15
+    },
+    {
+      "id": "win_balcony_west",
+      "position": [
+        1.659375,
+        12.234375
+      ],
+      "wall": "E17",
+      "width": 2.86875,
+      "room": "balcony_west",
+      "asset": "mk_win_balcony_west",
+      "sill": 0.15,
+      "head": 2.15
+    },
+    {
+      "id": "win_balcony_front_w",
+      "position": [
+        5.540625,
+        13.640625
+      ],
+      "wall": "E15",
+      "width": 3.290625,
+      "room": "balcony_front",
+      "asset": "mk_win_balcony_front_w",
+      "sill": 0.15,
+      "head": 2.15
+    },
+    {
+      "id": "win_balcony_front_e",
+      "position": [
+        12.965625,
+        13.640625
+      ],
+      "wall": "E11",
+      "width": 4.55625,
+      "room": "balcony_front",
+      "asset": "mk_win_balcony_front_e",
+      "sill": 0.15,
+      "head": 2.15
+    },
+    {
+      "id": "win_curve_1",
+      "position": [
+        10.06875,
+        13.907813
+      ],
+      "wall": "E12",
+      "width": 0.311312,
+      "room": "balcony_front",
+      "asset": "mk_win_curve_1",
+      "sill": 0.15,
+      "head": 2.15
+    },
+    {
+      "id": "win_curve_2",
+      "position": [
+        9.084375,
+        14.175
+      ],
+      "wall": "E13",
+      "width": 0.84375,
+      "room": "balcony_front",
+      "asset": "mk_win_curve_2",
+      "sill": 0.15,
+      "head": 2.15
+    },
+    {
+      "id": "win_curve_3",
+      "position": [
+        8.1,
+        13.907813
+      ],
+      "wall": "E14",
+      "width": 0.311312,
+      "room": "balcony_front",
+      "asset": "mk_win_curve_3",
+      "sill": 0.15,
+      "head": 2.15
+    }
+  ],
+  "solids": [
+    {
+      "id": "shaft_nw",
+      "label": "수납 상부 구조체",
+      "polygon": [
+        [
+          2.053125,
+          4.190625
+        ],
+        [
+          3.6,
+          4.190625
+        ],
+        [
+          3.6,
+          4.753125
+        ],
+        [
+          2.053125,
+          4.753125
+        ]
+      ]
+    },
+    {
+      "id": "shaft_center",
+      "label": "욕실 샤프트",
+      "polygon": [
+        [
+          7.959375,
+          4.190625
+        ],
+        [
+          8.775,
+          4.190625
+        ],
+        [
+          8.775,
+          4.978125
+        ],
+        [
+          7.959375,
+          4.978125
+        ]
+      ]
+    },
+    {
+      "id": "shaft_ne",
+      "label": "후면 샤프트",
+      "polygon": [
+        [
+          15.328125,
+          0.759375
+        ],
+        [
+          16.2,
+          0.759375
+        ],
+        [
+          16.2,
+          2.221875
+        ],
+        [
+          15.328125,
+          2.221875
+        ]
+      ]
+    },
+    {
+      "id": "column_ne",
+      "label": "침실 기둥",
+      "polygon": [
+        [
+          15.525,
+          5.146875
+        ],
+        [
+          16.2,
+          5.146875
+        ],
+        [
+          16.2,
+          5.990625
+        ],
+        [
+          15.525,
+          5.990625
+        ]
+      ]
+    }
+  ],
+  "open_edges": [
+    [
+      "entrance",
+      "living"
+    ],
+    [
+      "kitchen",
+      "living"
+    ]
+  ],
+  "ar_anchors": [
+    {
+      "id": "alpha_corner",
+      "label": "도면 기준 후보·미보정: 알파룸 욕실 쪽 왼쪽 벽면 모서리",
+      "position": [
+        0.1,
+        6.065625
+      ]
+    },
+    {
+      "id": "bed_ne_corner",
+      "label": "도면 기준 후보·미보정: 침실 3 후면 발코니 쪽 오른쪽 벽면 모서리",
+      "position": [
+        16.1,
+        2.296875
+      ]
+    }
+  ]
+}

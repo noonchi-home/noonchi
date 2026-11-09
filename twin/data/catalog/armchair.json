@@ -1,0 +1,17 @@
+{
+  "type": "armchair",
+  "label": "1인 암체어",
+  "family": "living",
+  "category": "furniture",
+  "node_type": "furniture",
+  "mount": "floor",
+  "footprint": [
+    0.75,
+    0.8
+  ],
+  "height": 0.85,
+  "model": "assets/furniture/armchair.glb",
+  "blocks_walk": true,
+  "blocks_view": true,
+  "notes": "세이지색 트위드 라운지 의자: 둥근 팔걸이, 9도 기운 등받이, 방석·등쿠션·테라코타 허리 쿠션, 오크 다리."
+}

@@ -5,8 +5,9 @@ import { join } from "node:path";
 import jpeg from "jpeg-js";
 import { describe, expect, it } from "vitest";
 import {
-  ScriptedDetector, WorkerDetector, YOLOX_MODELS, YoloxDetector, decodeYolox, letterbox, nms, type Detection,
+  WorkerDetector, YOLOX_MODELS, YoloxDetector, decodeYolox, letterbox, nms, type Detection,
 } from "../src/brain/detector.js";
+import { ScriptedDetector } from "./helpers/detectors.js";
 
 const S = 416;
 const ANCHORS = (S / 8) ** 2 + (S / 16) ** 2 + (S / 32) ** 2; // 3549
@@ -64,6 +65,20 @@ describe("decodeYolox", () => {
     out[85 + 5 + 0] = 0.3; // 0.15 < 0.25
     const dets = decodeYolox(out, ANCHORS, S, 1, { minScore: 0.25 });
     expect(dets.map((d) => [d.label, d.cls])).toEqual([["cup", 40]]);
+  });
+
+  it("병(39)·그릇(45)도 찾고, 종류 순서는 사람·컵·병·그릇", () => {
+    const out = new Float32Array(ANCHORS * 85);
+    out.set([0, 0, 0, 0, 0.9], 0);
+    out[5 + 45] = 0.8; // bowl
+    out.set([0, 0, 0, 0, 0.9], 85);
+    out[85 + 5 + 39] = 0.7; // bottle
+    out.set([0, 0, 0, 0, 0.9], 2 * 85);
+    out[2 * 85 + 5 + 41] = 0.5; // cup
+    out.set([0, 0, 0, 0, 0.9], 3 * 85);
+    out[3 * 85 + 5 + 0] = 0.4; // person
+    const dets = decodeYolox(out, ANCHORS, S, 1, { minScore: 0.25 });
+    expect(dets.map((d) => [d.label, d.cls])).toEqual([["person", 0], ["cup", 41], ["bottle", 39], ["bowl", 45]]);
   });
 
   it("출력 길이가 격자 수와 다르면 오류", () => {

@@ -1,7 +1,11 @@
 // 서버↔화면 메시지 계약(WebSocket /events, /api 응답). 순수 타입만 둔다: ui/가 이 파일을 그대로 가져다 쓴다.
 // 바꾸면 ui/src/lib/messages.ts의 parseMessage와 화면 테스트를 같이 고친다.
 import type { Command, DeviceSpec, DeviceState } from "../hub/types.js";
+import type { LayoutMessage } from "./layout.js";
+import type { PhoneChoice } from "./phone.js";
+import type { PlanView } from "./plan.js";
 import type { ControlMode } from "./setup.js";
+import type { VlmMissing, WorldChangeKind, WorldView, YoloMissing } from "./world.js";
 
 // 좌표
 
@@ -32,6 +36,8 @@ export interface PendingView {
   deviceLabel: string;
   command: Command;
   reason: string;
+  /** 실제 폰 답 단추(src/act/prompts.ts APPROVE): 승인·거절. */
+  choices: PhoneChoice[];
   expiresAt: string;
 }
 
@@ -61,65 +67,42 @@ export type AgentEvent =
   | { event: "confirmed"; sessionId?: string; token: string; ok: boolean; reply: string; deviceId?: string }
   | { event: "cancelled"; sessionId?: string; token: string };
 
-// 판단·행동(컵 시나리오)
+// 판단·행동
 
-export interface ActionChoice { id: string; label: string }
+/** 실행 흐름 단계(판단 → 계획 → 실행 중 → 결과 확인 → 완료·실패). */
+export type ExecState = "decided" | "planned" | "running" | "verifying" | "done" | "failed";
 
-export interface ActionPlan {
-  id: string;
-  task: string;
-  kind: "ask_person_to_clear" | "ask_user" | "unsupported";
-  dry_run: true;
-  /** 실제 로봇·기기라면 했을 일(기록용). */
-  would: string;
-  /** 대시보드 추론 과정에 보일 글. */
-  dashboard: string;
-  /** 폰에 띄울 부탁·질문과 버튼. 없으면 기록만. */
-  prompt: { text: string; choices: ActionChoice[] } | null;
-  /** cup_gone: 컵이 안 보이게 되는지 본다. none: 답만 기록. */
-  check: "cup_gone" | "none";
+/** 판단에 쓴 World State 요약(판단 기록 화면이 펼쳐 보인다). */
+export interface DecisionWorld {
+  objects: {
+    id: string; cls: string; status: string; surface: string | null; surface_label: string | null; error_m: number | null;
+    facts: Record<string, { value: string; certainty: "confirmed" | "inferred" }>;
+  }[];
+  person_visible: boolean;
+  vlm_missing: number;
+  yolo_missing: number;
 }
 
-export type BrainState = "watching" | "in_use" | "away_check" | "requesting" | "deciding" | "confirming" | "acting" | "done";
-export type BrainStage = "use" | "away" | "request" | "answer" | "decide" | "confirm" | "act" | "result" | "wait" | "cancel" | "stale" | "error";
-export type ActionOutcome = "cleared" | "declined" | "answered" | "unconfirmed" | "unsupported" | "withdrawn";
+/** YOLOX 상자 하나(대시보드 폰 칸에 그린다). box는 엔진 프레임 픽셀 [x, y, w, h]. */
+export interface BoxView { label: "person" | "cup" | "bottle" | "bowl"; score: number; box: [number, number, number, number] }
 
-export type BrainEvent =
-  | { type: "brain"; stage: BrainStage; state: BrainState; text: string; at_ms: number; evidence_age_ms: number | null; generation: number }
-  | { type: "request"; id: string; text: string; active: boolean; at_ms: number }
-  | { type: "action"; id: string; task: string; plan: ActionPlan; active: boolean; at_ms: number }
-  | { type: "result"; id: string; task: string; outcome: ActionOutcome; text: string; at_ms: number };
-
-export type Tri = "yes" | "no" | "unknown";
-
-/** 판정(VLM) 기록 한 줄. */
-export interface PerceptionLog {
-  type: "perception";
-  at_ms: number;
-  evidence_age_ms: number;
-  frames: number;
-  summary: string;
-  cost_usd: number;
-  /** 요청 답 사진 한 장으로 본 판정. */
-  answer?: true;
-  error?: string;
-}
-
-/** 존재 판정(YOLO)이 바뀔 때만 내는 기록. */
-export interface PresenceLog {
-  type: "presence";
-  at_ms: number;
-  evidence_age_ms: number;
-  person: Tri;
-  cup: Tri;
-  table: Tri;
-  /** 창 안 가장 높은 점수(기록용). */
-  scores: { person: number; cup: number };
-  summary: string;
-}
-
-/** 컵 두뇌가 대시보드로 보내는 것 전부(src/brain/live.ts route). */
-export type BrainLog = BrainEvent | PerceptionLog | PresenceLog;
+/** 관찰 흐름·판단이 대시보드로 보내는 기록(/events {type:"brain", event}). 엔진 프레임 하나는 observe 기록으로 반드시 남는다:
+ *  YOLOX 결과(yolo) 또는 yolo_missing, VLM 답(vlm) 또는 vlm_missing.
+ *  YOLOX 결과에만 상자(boxes, 감지 없음이면 [])와 엔진 프레임 크기(frame)가 있다. 분석 없음·VLM 답에는 없다. */
+export type BrainLog =
+  | {
+    type: "observe"; at_ms: number; frame_id: string; captured_at_ms: number; yolo: string | null; yolo_missing?: YoloMissing; vlm: string | null; vlm_missing?: VlmMissing;
+    boxes?: BoxView[]; frame?: { width: number; height: number };
+  }
+  | { type: "world_change"; at_ms: number; kind: WorldChangeKind; text: string }
+  | {
+    type: "decision"; at_ms: number; id: string; seq: number; text_sent: string; status: "valid" | "failed";
+    prediction: { observation: string; reasoning: string; task_index: number } | null; action: string | null; error?: string; memory_version: number; world: DecisionWorld;
+  }
+  | { type: "execution"; at_ms: number; plan_id: string; state: ExecState; text: string }
+  | { type: "link"; at_ms: number; target: "pam"; up: boolean; text: string }
+  | { type: "trigger"; at_ms: number; paused: boolean; text: string }
+  | { type: "reflection"; at_ms: number; day: string; ok: boolean; version: number | null; applies_day: string | null; text: string };
 
 // 기기
 
@@ -148,6 +131,23 @@ export interface HealthView {
   brain: boolean;
   /** 운영 모드: test 시험(트윈만), live 실제(짝지은 가전은 ThinQ). */
   mode: ControlMode;
+  /** 준비 상태: 추론 모드, 모델 주소 응답, 기록 DB. 모델 주소가 답하지 않아도 health는 200이고 ready.ok가 false다. */
+  ready: ReadyView;
+}
+
+/** 준비 상태(/api/health ready). 모델은 부르지 않고 주소가 답하는지만 본다. */
+export interface ReadyView {
+  /** VLM·PAM 서비스·PAM LLM·에이전트·기록 DB가 모두 준비됐는가. */
+  ok: boolean;
+  /** 추론 모드: mock(외부 AI API) · live(같은 서버 vLLM). 두 모드는 같은 코드 경로다. */
+  inference_mode: "mock" | "live";
+  vlm: { base_url: string; model: string; key: boolean; reachable: boolean };
+  /** PAM 서비스(PAM_URL)와 그 서비스가 부르는 LLM. 서비스가 답하지 않으면 llm은 null. */
+  pam: { url: string; reachable: boolean; llm: { base_url: string; model: string; reachable: boolean } | null };
+  /** 폰 대화 에이전트(상용 LLM). 키가 있고 주소가 답해야 준비됨이다. 키가 없어도 다른 공급자로 바꾸지 않는다. */
+  agent: { provider: "openai" | "anthropic"; base_url: string; model: string; key: boolean; reachable: boolean };
+  /** 기록 DB(RUNTIME_DIR/noonchi.db)를 쓸 수 있는가. */
+  db: boolean;
 }
 
 // 초점
@@ -187,12 +187,21 @@ export interface PhotoRecord {
   pose_note?: "not_aligned";
 }
 
-/** /events로 화면이 받는 메시지 전체. 서버의 send·broadcast와 같은 모양이다(src/server/app.ts·home.ts, src/brain/live.ts, src/phone/feed.ts). */
+/** /events로 화면이 받는 메시지 전체. 서버의 send·broadcast와 같은 모양이다(src/server/app.ts·home.ts, src/observe/pipeline.ts, src/phone/feed.ts). */
 export type ServerMessage =
   | { type: "hello"; devices: number; provider: string | null; hub: string; home: string | null }
   | { type: "state"; state: DeviceState }
   | ({ type: "agent" } & AgentEvent)
-  | { type: "brain"; event: BrainLog }
+  /** replay: 접속 때 다시 보낸 마지막 판단·상자 있는 observe(새 관찰이 아님). 확인 목록은 건너뛴다. */
+  | { type: "brain"; event: BrainLog; replay?: true }
   | { type: "photo"; photo: PhotoRecord }
   | { type: "focus"; focus: Focus }
-  | { type: "eye"; eye: EyeEvent };
+  | { type: "eye"; eye: EyeEvent }
+  /** 클로이드 지금 계획(src/contract/plan.ts). null이면 계획을 지운다. */
+  | { type: "plan"; plan: PlanView | null }
+  /** World State(src/contract/world.ts). 바뀔 때마다, 그리고 접속 때 한 번. */
+  | { type: "world"; world: WorldView }
+  /** 실행 중 배치 보정(src/contract/layout.ts). 바뀔 때마다, 그리고 접속 때 맞추기 메시지. */
+  | LayoutMessage
+  /** 대시보드 말풍선 카드 한 문장(src/act/say.ts). 바뀔 때마다, 그리고 접속 때 한 번. null이면 글 없음. */
+  | { type: "say"; text: string | null };

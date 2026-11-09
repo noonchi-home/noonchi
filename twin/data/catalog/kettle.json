@@ -1,0 +1,66 @@
+{
+  "type": "kettle",
+  "label": "전기주전자",
+  "family": "kitchen",
+  "category": "appliances",
+  "node_type": "device",
+  "mount": "surface",
+  "footprint": [
+    0.24,
+    0.17
+  ],
+  "height": 0.25,
+  "model": "assets/appliances/kettle.glb",
+  "blocks_walk": false,
+  "blocks_view": false,
+  "attrs": {
+    "power": [
+      "off",
+      "on"
+    ]
+  },
+  "states": {
+    "power": {
+      "default": "off",
+      "effects": {
+        "off": [
+          {
+            "part": "water",
+            "emissive": 0.0
+          },
+          {
+            "part": "glow_ring",
+            "emissive": 0.0
+          },
+          {
+            "part": "steam",
+            "visible": false
+          },
+          {
+            "light": "base_glow",
+            "intensity": 0.0
+          }
+        ],
+        "on": [
+          {
+            "part": "water",
+            "emissive": 1.0
+          },
+          {
+            "part": "glow_ring",
+            "emissive": 1.0
+          },
+          {
+            "part": "steam",
+            "visible": true
+          },
+          {
+            "light": "base_glow",
+            "intensity": 1.0
+          }
+        ]
+      }
+    }
+  },
+  "notes": "유리 주전자. 켜면 안의 물과 받침 둘레가 파랗게 빛나고 입에서 김(steam)이 오른다 받침 뒤 전원선은 bounds=False(크기 검사 제외). 크기는 손잡이(+x)~따르는 입(-x) 포함. base_glow는 받침 둘레 파란 빛이 조리대에 번지는 것이다(상부장 아래라 몸체가 가려져도 보인다)."
+}

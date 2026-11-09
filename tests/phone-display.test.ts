@@ -1,7 +1,7 @@
-// 폰 표시 영상의 순수 계산(web/phone/video.js): 영상 크기, 코덱 후보, 패킷, 보내기 관문.
+// 폰 표시 영상의 순수 계산(ui/src/phone/core/video.js): 영상 크기, 코덱 후보, 패킷, 보내기 관문.
 import { describe, expect, it } from "vitest";
 import { parsePacket } from "../src/phone/packet.js";
-import { codecCandidates, createBacklogWatch, createSendGate, videoPacket, videoSize } from "../web/phone/video.js";
+import { codecCandidates, createBacklogWatch, createSendGate, videoPacket, videoSize } from "../ui/src/phone/core/video.js";
 
 describe("영상 크기", () => {
   it("긴 변 1280·짧은 변 720 안으로 줄이고 16 배수로 맞춘다(세로·가로 그대로)", () => {

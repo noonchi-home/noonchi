@@ -1,0 +1,66 @@
+{
+  "type": "rice_cooker",
+  "label": "전기밥솥",
+  "family": "kitchen",
+  "category": "appliances",
+  "node_type": "device",
+  "mount": "surface",
+  "footprint": [
+    0.28,
+    0.35
+  ],
+  "height": 0.28,
+  "model": "assets/appliances/rice_cooker.glb",
+  "blocks_walk": false,
+  "blocks_view": false,
+  "attrs": {
+    "power": [
+      "off",
+      "on"
+    ]
+  },
+  "states": {
+    "power": {
+      "default": "off",
+      "effects": {
+        "off": [
+          {
+            "part": "display",
+            "emissive": 0.0
+          },
+          {
+            "part": "top_panel",
+            "emissive": 0.0
+          },
+          {
+            "part": "steam",
+            "visible": false
+          },
+          {
+            "light": "status_glow",
+            "intensity": 0.0
+          }
+        ],
+        "on": [
+          {
+            "part": "display",
+            "emissive": 1.0
+          },
+          {
+            "part": "top_panel",
+            "emissive": 1.0
+          },
+          {
+            "part": "steam",
+            "visible": true
+          },
+          {
+            "light": "status_glow",
+            "intensity": 1.0
+          }
+        ]
+      }
+    }
+  },
+  "notes": "IH 압력밥솥. 켜면 앞 경사 LCD가 빛나고 뒤쪽 배출구에서 김(steam)이 오른다 뒤로 나가는 전원선은 bounds=False(크기 검사 제외). 뚜껑 윗판 표시(top_panel, 검은 유리 + 파란 고리)가 함께 켜져 위에서 보는 아파트 카메라에도 켬/끔이 보인다. status_glow는 앞 조리대에 비치는 LCD 빛(파랑)이다."
+}

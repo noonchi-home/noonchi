@@ -1,0 +1,289 @@
+{
+  "schema_version": 1,
+  "source_pdf": {
+    "path": "papers/2610.21211v1.pdf",
+    "sha256": "1fe0e4954d4fefaffb1e9d1619a2e52e1918b2872ca789485ec437e95f82a364",
+    "page_count": 40
+  },
+  "extractor": {
+    "path": "tools/extract_paper_prompts.py",
+    "version": 1,
+    "engine": "PyMuPDF",
+    "validated_version": "1.28.0",
+    "text_encoding": "UTF-8",
+    "newline": "LF"
+  },
+  "prompts": {
+    "predictor_no_memory": {
+      "file": "prompts/paper/predictor_no_memory.txt",
+      "pages": [
+        31
+      ],
+      "section": "E.1",
+      "sha256": "69b23e0f699089a5ea55b46d0c99c69afb9cce61345b5138ec3ca5849d8609a5",
+      "non_whitespace_sha256": "7fb1cf008d82282caf4995e79316e6e60a7a5e3b07db341df2d01fd570b3d297",
+      "placeholders": [
+        "n_tasks_minus_one",
+        "tasks_block",
+        "window"
+      ],
+      "regions": [
+        {
+          "page": 31,
+          "bbox": [
+            108.0,
+            216.0598,
+            503.3829,
+            703.2333
+          ]
+        }
+      ],
+      "cleanup": [
+        "Selected the printed monospace prompt listing within its appendix section; excluded section headings, explanatory prose, and page footers.",
+        "Rejoined PDF fragments on the same printed baseline and recovered indentation/blank-line spacing from coordinates; retained printed line wrapping and joined page continuations with one LF.",
+        "Removed trailing whitespace and wrote UTF-8/LF with a final newline; no wording, symbol, model instruction, or scenario was changed."
+      ]
+    },
+    "predictor_list": {
+      "file": "prompts/paper/predictor_list.txt",
+      "pages": [
+        32
+      ],
+      "section": "E.2",
+      "sha256": "b839d48a7fd4bcf00c30e8536786a6cee9120dc4927288791d4654b20bca0027",
+      "non_whitespace_sha256": "42703124385cfebda1337dddf3c46dd7c2313031c8dd2444d9a429cb732d1e7b",
+      "placeholders": [
+        "n_tasks_minus_one",
+        "rules_block",
+        "tasks_block",
+        "window"
+      ],
+      "regions": [
+        {
+          "page": 32,
+          "bbox": [
+            108.0,
+            99.8559,
+            503.3829,
+            706.5813
+          ]
+        }
+      ],
+      "cleanup": [
+        "Selected the printed monospace prompt listing within its appendix section; excluded section headings, explanatory prose, and page footers.",
+        "Rejoined PDF fragments on the same printed baseline and recovered indentation/blank-line spacing from coordinates; retained printed line wrapping and joined page continuations with one LF.",
+        "Removed trailing whitespace and wrote UTF-8/LF with a final newline; no wording, symbol, model instruction, or scenario was changed."
+      ]
+    },
+    "predictor_fsm": {
+      "file": "prompts/paper/predictor_fsm.txt",
+      "pages": [
+        33,
+        34
+      ],
+      "section": "E.3",
+      "sha256": "ff37a14499d99fcc745bc798485229581ec3d7a3840e7d4930d929b8790be235",
+      "non_whitespace_sha256": "a708b6f6cad90f4b23a94901766b0bf82768f73f9e4a5b87c37c21c6b3bcdb39",
+      "placeholders": [
+        "fsm_block",
+        "n_tasks_minus_one",
+        "tasks_block",
+        "window"
+      ],
+      "regions": [
+        {
+          "page": 33,
+          "bbox": [
+            108.0,
+            95.1429,
+            503.3829,
+            721.7933
+          ]
+        },
+        {
+          "page": 34,
+          "bbox": [
+            108.0,
+            74.7899,
+            503.3829,
+            123.6063
+          ]
+        }
+      ],
+      "cleanup": [
+        "Selected the printed monospace prompt listing within its appendix section; excluded section headings, explanatory prose, and page footers.",
+        "Rejoined PDF fragments on the same printed baseline and recovered indentation/blank-line spacing from coordinates; retained printed line wrapping and joined page continuations with one LF.",
+        "Removed trailing whitespace and wrote UTF-8/LF with a final newline; no wording, symbol, model instruction, or scenario was changed."
+      ]
+    },
+    "reflector_list_build": {
+      "file": "prompts/paper/reflector_list_build.txt",
+      "pages": [
+        34,
+        35
+      ],
+      "section": "F.1",
+      "sha256": "4825e77794c326d92e0d5659c00239b935a70cd557f6b7670d209e8fbd7da420",
+      "non_whitespace_sha256": "e8c5db4893a6edee80ee9801d5a65a664d3f51e58d6dfb132f73f55c3d672559",
+      "placeholders": [],
+      "regions": [
+        {
+          "page": 34,
+          "bbox": [
+            108.0,
+            294.3959,
+            503.3919,
+            721.7933
+          ]
+        },
+        {
+          "page": 35,
+          "bbox": [
+            108.0,
+            74.7899,
+            503.3829,
+            482.2613
+          ]
+        }
+      ],
+      "cleanup": [
+        "Selected the printed monospace prompt listing within its appendix section; excluded section headings, explanatory prose, and page footers.",
+        "Rejoined PDF fragments on the same printed baseline and recovered indentation/blank-line spacing from coordinates; retained printed line wrapping and joined page continuations with one LF.",
+        "Removed trailing whitespace and wrote UTF-8/LF with a final newline; no wording, symbol, model instruction, or scenario was changed."
+      ]
+    },
+    "reflector_list_update": {
+      "file": "prompts/paper/reflector_list_update.txt",
+      "pages": [
+        35,
+        36,
+        37
+      ],
+      "section": "F.2",
+      "sha256": "63e55037c413a52cc843a7109f7112d095256f2e20d33cd27567e669614d23ad",
+      "non_whitespace_sha256": "3861477275fd41ca48ed7556abca3857cd89007bb0f915d1535d13fd66312c98",
+      "placeholders": [],
+      "regions": [
+        {
+          "page": 35,
+          "bbox": [
+            108.0,
+            533.4989,
+            503.3829,
+            721.7933
+          ]
+        },
+        {
+          "page": 36,
+          "bbox": [
+            108.0,
+            84.7519,
+            503.3829,
+            711.4023
+          ]
+        },
+        {
+          "page": 37,
+          "bbox": [
+            108.0,
+            74.7899,
+            371.5901,
+            143.5312
+          ]
+        }
+      ],
+      "cleanup": [
+        "Selected the printed monospace prompt listing within its appendix section; excluded section headings, explanatory prose, and page footers.",
+        "Rejoined PDF fragments on the same printed baseline and recovered indentation/blank-line spacing from coordinates; retained printed line wrapping and joined page continuations with one LF.",
+        "Removed trailing whitespace and wrote UTF-8/LF with a final newline; no wording, symbol, model instruction, or scenario was changed."
+      ]
+    },
+    "reflector_fsm_build": {
+      "file": "prompts/paper/reflector_fsm_build.txt",
+      "pages": [
+        37,
+        38
+      ],
+      "section": "F.3",
+      "sha256": "595b3fb423f47eb6ecc06ad21a45f73ce3867a3ec609bd9041b9e9d0dc8d27d8",
+      "non_whitespace_sha256": "7f3dd173c9cb95f97b366cdfe240937e55c0b1e0734b30a5f96daa37187aa725",
+      "placeholders": [],
+      "regions": [
+        {
+          "page": 37,
+          "bbox": [
+            108.0,
+            184.8069,
+            503.3919,
+            721.7933
+          ]
+        },
+        {
+          "page": 38,
+          "bbox": [
+            108.0,
+            74.7899,
+            503.3829,
+            542.0373
+          ]
+        }
+      ],
+      "cleanup": [
+        "Selected the printed monospace prompt listing within its appendix section; excluded section headings, explanatory prose, and page footers.",
+        "Rejoined PDF fragments on the same printed baseline and recovered indentation/blank-line spacing from coordinates; retained printed line wrapping and joined page continuations with one LF.",
+        "Removed trailing whitespace and wrote UTF-8/LF with a final newline; no wording, symbol, model instruction, or scenario was changed."
+      ]
+    },
+    "reflector_fsm_update": {
+      "file": "prompts/paper/reflector_fsm_update.txt",
+      "pages": [
+        38,
+        39,
+        40
+      ],
+      "section": "F.4",
+      "sha256": "e7e476fc6027d9b18e9a633a7f4216305ca3d3bb1fdb5e55be673024907372ef",
+      "non_whitespace_sha256": "bd6ac1c9a663600420568cb00c2cfcfc139f8c8bda19c7963213399480054913",
+      "placeholders": [],
+      "regions": [
+        {
+          "page": 38,
+          "bbox": [
+            108.0,
+            593.2749,
+            503.3829,
+            711.8303
+          ]
+        },
+        {
+          "page": 39,
+          "bbox": [
+            108.0,
+            74.7899,
+            503.3829,
+            721.3653
+          ]
+        },
+        {
+          "page": 40,
+          "bbox": [
+            108.0,
+            84.7519,
+            503.3829,
+            322.8593
+          ]
+        }
+      ],
+      "cleanup": [
+        "Selected the printed monospace prompt listing within its appendix section; excluded section headings, explanatory prose, and page footers.",
+        "Rejoined PDF fragments on the same printed baseline and recovered indentation/blank-line spacing from coordinates; retained printed line wrapping and joined page continuations with one LF.",
+        "Removed trailing whitespace and wrote UTF-8/LF with a final newline; no wording, symbol, model instruction, or scenario was changed."
+      ]
+    }
+  },
+  "preserved_printed_quirks": [
+    "E.1/E.2/E.3 retain the printed 'sampled at 1 fps' wording; actual input stride is 2 seconds (p.31 introduction and A.2).",
+    "Reflector prompts retain the printed (*@\\textbar@*) marker and printed punctuation, including the en-dash/hyphen sequence.",
+    "Printed line wrapping and placeholder text are retained; the example output blocks are templates, not standalone valid JSON documents."
+  ]
+}

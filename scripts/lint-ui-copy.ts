@@ -1,11 +1,12 @@
-// 화면 글 검사: web/(폰)과 ui/src 아래 HTML·JS·TS·TSX에서 사용자에게 보이는 한국어 글을 꺼내, 생각 과정·구현 설명이 들어갔는지 본다.
+// 화면 글 검사: web/·ui/src·폰 입구(ui/phone) 아래 HTML·JS·TS·TSX, 서버가 화면에 그대로 내보내는 계획 글(src/plan/labels.ts)·World State 글(src/world/labels.ts)·기록 글(src/history/labels.ts)·폰 부탁 글(src/act/prompts.ts)에서
+// 사용자에게 보이는 한국어 글을 꺼내, 생각 과정·구현 설명이 들어갔는지 본다.
 // 사용: npm run lint (tests/lint-ui-copy.test.ts도 같은 검사를 돌린다)
 
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export type Copy = { text: string; line: number };
+export type Copy = { text: string; line: number; start?: number };
 export type Problem = { file: string; line: number; text: string; rule: string };
 
 const HANGUL = /[가-힣ㄱ-ㅎ]/;
@@ -41,11 +42,12 @@ const decodeEntities = (t: string) =>
  * JS·TS(·TSX) 글 꺼내기. 주석·정규식은 건너뛰고 문자열·템플릿 글을 꺼낸다(템플릿의 ${…}는 「…」로).
  * console.* 안의 글은 화면 글이 아니라서 뺀다. jsx면 JSX 글과 속성 글도 꺼낸다.
  */
-function codeCopy(src: string, jsx: boolean): Copy[] {
+function codeCopy(src: string, jsx: boolean, all = false): Copy[] {
   const out: Copy[] = [];
   let i = 0;
   let code = ""; // 지금까지 본 코드(정규식·JSX·console 판단용). 문자열·정규식·JSX 덩어리는 「0」 하나로 둔다
   const push = (text: string, start: number) => {
+    if (all) { out.push({ text, line: lineAt(src, start), start }); return; }
     if (!HANGUL.test(text)) return;
     if (/console\.\w+\([^;]*$/.test(code.slice(-300))) return;
     out.push({ text: text.replace(/\s+/g, " ").trim(), line: lineAt(src, start) });
@@ -121,6 +123,7 @@ function codeCopy(src: string, jsx: boolean): Copy[] {
     acc.text += text;
   };
   const flush = (acc: Chunk) => {
+    if (all) { acc.text = ""; acc.start = -1; return; }
     const text = decodeEntities(acc.text).replace(/\s+/g, " ").trim();
     if (HANGUL.test(text)) out.push({ text, line: lineAt(src, acc.start) });
     acc.text = "";
@@ -211,6 +214,11 @@ export function jsCopy(src: string): Copy[] {
   return codeCopy(src, false);
 }
 
+/** 문자열·템플릿·JSX 속성 글을 모두 꺼낸다(한국어가 아니어도, JSX 글은 빼고). start는 src 안 글이 시작하는 자리다. 꾸밈 검사(lint-ui-color·lint-ui-parts)가 쓴다. */
+export function codeStrings(src: string, jsx: boolean): (Copy & { start: number })[] {
+  return codeCopy(src, jsx, true) as (Copy & { start: number })[];
+}
+
 /** TSX: jsCopy에 더해 JSX 글(`>`와 `<` 사이, {식}은 「…」, 꾸밈 태그는 풀어서 한 덩어리)과 속성 글(title·placeholder·aria-label·alt 등)을 꺼낸다. */
 export function tsxCopy(src: string): Copy[] {
   return codeCopy(src, true);
@@ -246,8 +254,9 @@ export function blurbSlots(src: string): Copy[] {
   return [...code.matchAll(BLURB_CLASS)].map((m) => ({ text: m[1]!, line: lineAt(code, m.index!) }));
 }
 
-/** 화면 글을 볼 파일: .html·.js·.ts·.tsx. 타입 선언(.d.ts)·시험(tests/, *.test.*)·node_modules는 뺀다. */
+/** 화면 글을 볼 파일: .html·.js·.ts·.tsx. 타입 선언(.d.ts)·시험(tests/, *.test.*)·node_modules는 뺀다. 파일을 주면 그 파일 하나. */
 function walk(dir: string): string[] {
+  if (statSync(dir).isFile()) return [dir];
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
     const p = join(dir, e.name);
     if (e.isDirectory()) return e.name === "tests" || e.name === "node_modules" ? [] : walk(p);
@@ -266,7 +275,17 @@ export function fileCopy(file: string, src: string): Copy[] {
 }
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
-/** 보고에 쓸 경로: 저장소 안이면 저장소 기준(web/phone/phone.js, ui/src/…), 밖이면 검사한 폴더 이름부터. */
+/** npm run lint가 보는 곳: 폰 화면, 대시보드·설정 화면, 서버가 만들어 화면에 그대로 내보내는 계획 글·World State 글·기록 글·폰 부탁 글. */
+export const COPY_TARGETS = [
+  fileURLToPath(new URL("../web/", import.meta.url)),
+  fileURLToPath(new URL("../ui/src/", import.meta.url)),
+  fileURLToPath(new URL("../ui/phone/", import.meta.url)),
+  fileURLToPath(new URL("../src/plan/labels.ts", import.meta.url)),
+  fileURLToPath(new URL("../src/world/labels.ts", import.meta.url)),
+  fileURLToPath(new URL("../src/history/labels.ts", import.meta.url)),
+  fileURLToPath(new URL("../src/act/prompts.ts", import.meta.url)),
+];
+/** 보고에 쓸 경로: 저장소 안이면 저장소 기준(ui/src/phone/PhoneScreen.tsx, ui/src/…), 밖이면 검사한 폴더 이름부터. */
 const shown = (dir: string, file: string) => {
   const r = relative(ROOT, file);
   return (r.startsWith("..") ? relative(dirname(dir.replace(/[\\/]+$/, "")), file) : r).replace(/\\/g, "/");
@@ -286,7 +305,7 @@ export function lintUiCopy(dirs: string[]): Problem[] {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  const dirs = [fileURLToPath(new URL("../web/", import.meta.url)), fileURLToPath(new URL("../ui/src/", import.meta.url))];
+  const dirs = COPY_TARGETS;
   if (process.argv.includes("--dump")) {
     for (const dir of dirs) {
       for (const file of walk(dir)) {

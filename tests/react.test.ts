@@ -3,7 +3,6 @@
 import { describe, expect, it } from "vitest";
 import { Agent, type LlmProvider, type StepOptions, type StepResult, type ToolCallResult } from "../src/agent/agent.js";
 import { observe } from "../src/agent/observe.js";
-import { MockProvider } from "../src/agent/providers/mock.js";
 import { MCP_TOOLS, toolJsonSchema } from "../src/agent/tools.js";
 import { makeHome } from "./helpers/home.js";
 
@@ -57,15 +56,6 @@ describe("reason(생각)", () => {
     const r = await agent.chat("s", "TV 켜줘");
     expect(r.actions[0]).toMatchObject({ ok: true });
     expect(r.actions[0]!.reason).toBeUndefined();
-  });
-
-  it("mock도 도구마다 그럴듯한 reason을 쓴다", async () => {
-    const home = makeHome();
-    const agent = new Agent({ hub: home.hub, policy: home.policy, rooms: home.rooms, provider: new MockProvider() });
-    const r = await agent.chat("s", "거실 TV 켜줘");
-    expect(r.actions.map((a) => a.tool)).toEqual(["find_devices", "turn_on"]);
-    for (const a of r.actions) expect(a.reason).toMatch(/[가-힣]/);
-    expect(r.actions[1]!.reason).toMatch(/거실 TV/);
   });
 });
 

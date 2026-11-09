@@ -1,15 +1,15 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Agent } from "../src/agent/agent.js";
 import { LAYOUT_TOOLS, type LayoutTools } from "../src/agent/layoutTools.js";
 import { buildSystemPrompt } from "../src/agent/prompts.js";
-import { MockProvider } from "../src/agent/providers/mock.js";
 import { MCP_TOOLS, localBackend, runTool } from "../src/agent/tools.js";
 import { LayoutEditor, type HereResolver } from "../src/layout/editor.js";
 import { makeHome } from "./helpers/home.js";
 import { CATALOG, scene } from "./helpers/layout.js";
+import { startFakeLlm, toolOutputs, type FakeLlm, type LlmTurn } from "./helpers/llm.js";
 
 const temps: string[] = [];
 afterAll(() => {
@@ -23,8 +23,7 @@ function setup(here?: HereResolver) {
   const layout: LayoutTools = { editor, catalog: CATALOG };
   const home = makeHome();
   const backend = localBackend(home.hub, home.policy, home.rooms, layout);
-  const agent = new Agent({ hub: home.hub, policy: home.policy, rooms: home.rooms, provider: new MockProvider(), layout });
-  return { ...home, editor, layout, backend, agent, dir };
+  return { ...home, editor, layout, backend, dir };
 }
 
 describe("배치 도구", () => {
@@ -82,43 +81,66 @@ describe("배치 도구", () => {
   });
 });
 
-describe("mock 에이전트의 배치 말", () => {
-  it.each(["냉장고 위치 여기로 맞춰줘", "냉장고는 여기 있어", "냉장고 여기로 옮겨줘", "냉장고 여기야"])("'%s' → find_objects → move_object(here)", async (said) => {
-    const { agent, editor } = setup(() => ({ position: [3, 3] }));
-    const r = await agent.chat("s", said);
+describe("에이전트의 배치 말(OpenAI 공급자, 가짜 서버)", () => {
+  const here = (query: string, id: string): LlmTurn[] => [
+    [["find_objects", { query, reason: `${query}을 찾으려고` }]],
+    [["move_object", { object_id: id, to: "here", reason: "조준점 자리로 옮기려고" }]],
+    `${query}를 여기로 옮겼어요.`,
+  ];
+  let llm: FakeLlm;
+  beforeAll(async () => {
+    llm = await startFakeLlm({
+      "냉장고 위치 여기로 맞춰줘": here("냉장고", "fridge_1"), "냉장고는 여기 있어": here("냉장고", "fridge_1"),
+      "TV는 여기로 옮겨줘": here("TV", "tv_1"),
+      "피아노는 여기 있어": [[["find_objects", { query: "피아노" }]], "피아노를 찾지 못했어요."],
+      "배치 저장해": [[["save_layout", {}]], "배치를 저장했어요."],
+    });
+  });
+  afterAll(async () => { await llm?.close(); });
+  const agentOf = (s: ReturnType<typeof setup>) => new Agent({ hub: s.hub, policy: s.policy, rooms: s.rooms, provider: llm.provider(), layout: s.layout });
+
+  it.each(["냉장고 위치 여기로 맞춰줘", "냉장고는 여기 있어"])("'%s' → 모델의 find_objects → move_object(here) → 조준점으로 옮김", async (said) => {
+    const s = setup(() => ({ position: [3, 3] }));
+    const r = await agentOf(s).chat("s", said);
     expect(r.actions.map((a) => a.tool)).toEqual(["find_objects", "move_object"]);
     expect(r.actions[1]).toMatchObject({ ok: true, deviceId: "fridge_1", args: { object_id: "fridge_1", to: "here" } });
-    expect(r.reply).toMatch(/냉장고.*옮겼어요/);
-    expect(editor.object("fridge_1")!.plan.position).toEqual([3, 3]);
+    expect(s.editor.object("fridge_1")!.plan.position).toEqual([3, 3]);
   });
 
-  it("'TV는 여기로 옮겨줘'도 같은 뜻, 조준점이 없으면 이유를 말한다", async () => {
-    const { agent } = setup(() => ({ error: "조준점이 바닥에 닿지 않았어요." }));
-    const r = await agent.chat("s", "TV는 여기로 옮겨줘");
-    expect(r.actions.at(-1)).toMatchObject({ tool: "move_object", ok: false });
-    expect(r.reply).toMatch(/조준점/);
+  it("조준점이 없으면 옮기지 않고 그 이유를 모델에게 돌려준다", async () => {
+    const s = setup(() => ({ error: "조준점이 바닥에 닿지 않았어요." }));
+    const from = llm.bodies().length;
+    const r = await agentOf(s).chat("s", "TV는 여기로 옮겨줘");
+    expect(r.actions.at(-1)).toMatchObject({ tool: "move_object", ok: false, error: expect.stringMatching(/조준점/) });
+    expect(toolOutputs(llm.bodies().slice(from).at(-1)).at(-1).error).toMatch(/조준점/);
   });
 
-  it("없는 물건은 찾지 못했다고 말한다", async () => {
-    const { agent } = setup(() => ({ position: [3, 3] }));
-    const r = await agent.chat("s", "피아노는 여기 있어");
+  it("없는 물건은 빈 찾기 결과를 모델에게 돌려준다", async () => {
+    const s = setup(() => ({ position: [3, 3] }));
+    const from = llm.bodies().length;
+    const r = await agentOf(s).chat("s", "피아노는 여기 있어");
     expect(r.actions.map((a) => a.tool)).toEqual(["find_objects"]);
-    expect(r.reply).toMatch(/피아노.*찾지 못했어요/);
+    expect(toolOutputs(llm.bodies().slice(from).at(-1))[0]).toMatchObject({ ok: true, data: [], message: expect.stringMatching(/피아노/) });
   });
 
-  it("'배치 저장해' → save_layout", async () => {
-    const { agent, dir } = setup(() => ({ position: [3, 3] }));
+  it("'배치 저장해' → save_layout → 수정본 파일", async () => {
+    const s = setup(() => ({ position: [3, 3] }));
+    const agent = agentOf(s);
     await agent.chat("s", "냉장고 위치 여기로 맞춰줘");
     const r = await agent.chat("s", "배치 저장해");
     expect(r.actions.map((a) => a.tool)).toEqual(["save_layout"]);
-    expect(r.reply).toMatch(/1건을 저장했어요/);
-    expect(existsSync(join(dir, "edits.json"))).toBe(true);
+    expect(r.actions[0]!.message).toMatch(/1건/);
+    expect(existsSync(join(s.dir, "edits.json"))).toBe(true);
   });
 
-  it("배치 보정이 꺼져 있으면 기존 기기 제어만 한다", async () => {
+  it("배치 보정이 꺼져 있으면 모델에게 배치 도구를 주지 않고, 불러도 실행하지 않는다", async () => {
     const home = makeHome();
-    const agent = new Agent({ hub: home.hub, policy: home.policy, rooms: home.rooms, provider: new MockProvider() });
+    const from = llm.bodies().length;
+    const agent = new Agent({ hub: home.hub, policy: home.policy, rooms: home.rooms, provider: llm.provider() });
     const r = await agent.chat("s", "냉장고 위치 여기로 맞춰줘");
-    expect(r.actions.map((a) => a.tool)).not.toContain("move_object");
+    const tools = llm.bodies()[from].tools.map((t: { name: string }) => t.name);
+    expect(tools).toContain("turn_on");
+    expect(tools).not.toContain("move_object");
+    expect(r.actions.every((a) => !a.ok)).toBe(true);
   });
 });

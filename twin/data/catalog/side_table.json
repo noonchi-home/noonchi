@@ -1,0 +1,22 @@
+{
+  "type": "side_table",
+  "label": "사이드 테이블",
+  "family": "reuse",
+  "category": "furniture",
+  "node_type": "furniture",
+  "mount": "floor",
+  "footprint": [
+    0.45,
+    0.45
+  ],
+  "height": 0.52,
+  "model": "assets/furniture/side_table.glb",
+  "blocks_walk": true,
+  "blocks_view": false,
+  "surfaces": [
+    {
+      "name": "top",
+      "height": 0.52
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "type": "storage_box",
+  "label": "수납 상자",
+  "family": "reuse",
+  "category": "decorations",
+  "node_type": "decor",
+  "mount": "floor",
+  "footprint": [
+    0.27,
+    0.31
+  ],
+  "height": 0.23,
+  "model": "assets/decorations/storage_box.glb",
+  "blocks_walk": false,
+  "blocks_view": false,
+  "surfaces": [
+    {
+      "name": "top",
+      "height": 0.225
+    }
+  ]
+}

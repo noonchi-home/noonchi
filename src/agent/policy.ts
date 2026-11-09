@@ -1,9 +1,13 @@
-// 승인 정책: 위험한 명령(현관 잠금 해제, 인덕션 켜기, 전자레인지 시작)은 사용자 승인 토큰이 있어야 실행한다.
+// 승인 정책(src/agent/approval.ts 규칙): 가전 명령은 말로 시킨 것이라 그 말이 승인이다. 위험 목록(현관 잠금 해제, 인덕션 켜기, 전자레인지 시작)만
+// 승인 토큰이 있어야 실행하고 늘 묻는다. 위험 목록의 답(승인·거절)은 둘 다 이번만이라 승인 기억에 남기지 않는다.
 
 import { randomUUID } from "node:crypto";
 import { isUnknown } from "../hub/signals.js";
 import type { Command, CommandResult, CommandType, DeviceHub, DeviceKind, DeviceSpec } from "../hub/types.js";
 import { checkCommand, normalizeCommand } from "../model/mapping.js";
+import { DEVICE_VERB, STEP_LABEL } from "../plan/labels.js";
+import { approvalNeed, deviceKey, memoryApprovals, type ApprovalBook } from "./approval.js";
+import { josa, toolForCommand } from "./phrases.js";
 
 export interface ConfirmRule {
   kind: DeviceKind;
@@ -17,6 +21,14 @@ export const CONFIRM_RULES: ConfirmRule[] = [
   { kind: "microwave", command: "start", reason: (l) => `${l} 시작은 사용자 승인이 필요합니다.` },
 ];
 
+/** 승인 대기에 「거절」로 답했을 때의 답. what: 「현관문 잠금 풀기」. */
+export const REFUSED_REPLY = (what: string) => `${josa(what, "은/는")} 하지 않을게요.`;
+
+/** 명령 이름: 「거실 천장등 켜기」. */
+export function commandName(label: string, cmd: Command): string {
+  return STEP_LABEL.device(label, DEVICE_VERB[toolForCommand(cmd)] ?? "");
+}
+
 export interface PendingConfirmation {
   token: string;
   deviceId: string;
@@ -28,6 +40,8 @@ export interface PendingConfirmation {
 export interface PolicyOptions {
   ttlMs?: number;
   now?: () => number;
+  /** 승인 기억(src/server/home.ts가 runtime/homes/<집>/approvals.json으로 만든다). 없으면 이 프로세스 안에서만 기억한다. 실행 추적과 같은 기억을 쓴다. */
+  approvals?: ApprovalBook;
 }
 
 export const CONFIRM_TTL_MS = 5 * 60 * 1000;
@@ -47,13 +61,15 @@ export class Policy {
   private readonly tokens = new Map<string, PendingConfirmation>();
   private readonly ttlMs: number;
   private readonly now: () => number;
+  readonly approvals: ApprovalBook;
 
   constructor(opts: PolicyOptions = {}) {
     this.ttlMs = opts.ttlMs ?? CONFIRM_TTL_MS;
     this.now = opts.now ?? Date.now;
+    this.approvals = opts.approvals ?? memoryApprovals();
   }
 
-  /** 승인이 필요하면 한국어 이유, 아니면 null. */
+  /** 위험 목록 명령이면 한국어 이유, 아니면 null. */
   requiresConfirmation(device: Pick<DeviceSpec, "kind" | "label" | "capabilities">, cmd: Command): string | null {
     const c = normalizeCommand(device, cmd);
     const rule = CONFIRM_RULES.find((r) => r.kind === device.kind && r.command === c.type);
@@ -80,7 +96,7 @@ export class Policy {
     return [...this.tokens.values()].map((p) => structuredClone(p));
   }
 
-  /** 정책을 거쳐 명령한다. 승인이 필요하면 needsConfirmation(토큰)을 돌려주고 실행하지 않는다. */
+  /** 정책을 거쳐 명령한다(말로 시킨 명령). 승인이 필요하면 needsConfirmation(토큰)을 돌려주고 실행하지 않는다. */
   async guard(hub: DeviceHub, id: string, cmd: Command, confirmToken?: string): Promise<CommandResult> {
     const spec = hub.list().find((d) => d.id === id);
     if (!spec) return { ok: false, error: `기기를 찾을 수 없습니다: ${id}` };
@@ -89,8 +105,11 @@ export class Policy {
     // 상태를 모르면 상태에 기대는 사전 검사는 건너뛴다. 실행할 수 있는지는 안쪽 허브가 실제 상태로 다시 본다
     const invalid = checkCommand(spec, c, isUnknown(state) ? undefined : state);
     if (invalid) return { ok: false, error: invalid, state };
-    const reason = this.requiresConfirmation(spec, c);
-    if (!reason) return hub.command(id, c);
+    const risky = this.requiresConfirmation(spec, c);
+    // 말로 시킨 명령이라 위험 목록만 묻는다(approvalNeed)
+    const need = approvalNeed({ key: deviceKey(id, c.type), risky: risky !== null, requested: true, memory: this.approvals.memory() });
+    if (!need || risky === null) return hub.command(id, c);
+    const reason = risky;
 
     if (confirmToken !== undefined) {
       const p = this.peek(confirmToken);
@@ -103,7 +122,7 @@ export class Policy {
     return this.ask(id, c, reason, state, reason);
   }
 
-  /** 토큰만으로 대기 중인 명령을 실행한다(POST /api/agent/confirm, 화면 승인 버튼). */
+  /** 「승인」: 토큰만으로 대기 중인 명령을 실행한다(POST /api/agent/confirm, 실제 폰 답 단추). 위험 목록이라 기억하지 않는다. */
   async confirm(hub: DeviceHub, token: string): Promise<CommandResult> {
     const p = this.consume(token);
     if (!p) return { ok: false, error: TOKEN_MISSING };

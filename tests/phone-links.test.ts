@@ -21,6 +21,10 @@ describe("servedPhoneUrls", () => {
     expect(servedPhoneUrls(serve({ [`${FAKE}:443`]: { Handlers: { "/": { Path: "/srv" } } } }), 8210)).toEqual([]);
     for (const bad of [null, {}, "x", { Web: [] }, { Web: { "no-port": {} } }]) expect(servedPhoneUrls(bad, 8210)).toEqual([]);
   });
+
+  it("사이트 뿌리(/)로 이은 것만 쓴다(폰 화면 빌드 파일이 /assets/에 있다)", () => {
+    expect(servedPhoneUrls(serve({ [`${FAKE}:443`]: { Handlers: { "/eye": { Proxy: "http://127.0.0.1:8210" } } } }), 8210)).toEqual([]);
+  });
 });
 
 describe("orderPhoneUrls", () => {

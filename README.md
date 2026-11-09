@@ -1,162 +1,168 @@
 <div align="center">
 
-<h1>twin-home</h1>
+<h1>NOONCHI (twin-home)</h1>
 
-**The runtime that shows CLOiD's brain: it loads a home from twin-studio and lets you watch what CLOiD sees, what it knows about the home, how it decides, and what it does**
+**홈 로봇 클로이드(CLOiD)가 집을 보고, 알고, 판단하고, 사람에게 할 일을 알려 주는 과정을 돌리고 보여 주는 서버**
 
-Team 2026-SWE | 26-2 Software Engineering
+noonchi-home | 26-2 소프트웨어공학
 
 ![Node.js](https://img.shields.io/badge/Node.js-22-5FA04E?logo=nodedotjs&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-7.0-3178C6?logo=typescript&logoColor=white)
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
+![three.js](https://img.shields.io/badge/three.js-r187-000000?logo=threedotjs&logoColor=white)
 ![Matter](https://img.shields.io/badge/matter.js-0.17-1A1A1A)
 ![MCP](https://img.shields.io/badge/MCP_SDK-1.32-D97757)
 ![OpenAI](https://img.shields.io/badge/OpenAI_SDK-7-412991?logo=openai&logoColor=white)
-![Windows](https://img.shields.io/badge/Windows-11-0078D4)
 
 </div>
 
 ---
 
-### Description
+### 소개
 
-twin-home is where CLOiD's brain runs and becomes visible. [twin-studio](https://github.com/2026-SWE/twin-studio) builds and keeps the assets of each home; twin-home loads one home's assets and runs the loop a home robot needs:
+[twin-studio](https://github.com/noonchi-home/twin-studio)가 집마다 3D 모델과 장면을 만들고, 이 저장소는 한 집을 불러와 클로이드의 머리를 돌린다.
 
-| Stage | What twin-home does | Where you see it |
+| 단계 | 하는 일 | 보이는 곳 |
 |---|---|---|
-| **Sense** | A phone acts as CLOiD's eye: its AR pose and camera stream in, and each photo carries where it was taken | CLOiD's eye pane, eye marker in the 3D twin |
-| **Model** | Keeps the home's state: its appliances as virtual Matter devices, mirrored in the 3D twin | 3D twin, device cards |
-| **Decide** | An agent turns a request into tool calls and stops at risky ones for approval | Reasoning pane: thought, action and observation for each step |
-| **Act** | Every command passes the approval policy and changes a Matter attribute | 3D twin updates, Matter state |
+| **보기** | 실제 폰이 클로이드의 눈이다. 카메라 화면과 AR 위치가 들어오고, 사진마다 YOLO와 VLM이 따로 분석한다. | 대시보드 폰 칸(YOLO 상자) |
+| **알기** | World State가 YOLO·VLM 결과와 집 장면(가전·가구·도면 설비)을 합쳐 지금 상태와 관찰 글을 만든다. 가전은 Matter 가상 기기다. | 3D 트윈, FSM 카드 |
+| **판단** | PAM이 관찰 글만 받아 할 일을 고른다. 사진은 넘기지 않는다. 말로 시킨 가전 명령은 에이전트(LLM 도구)가 맡는다. | 말풍선 카드 |
+| **행동** | 고른 일을 단계로 나눠 실제 폰으로 사람에게 하나씩 지시하고, World State와 폰 위치로 그 단계가 된 것을 본 뒤 다음 단계를 지시한다. 가전 명령은 승인 규칙을 거쳐 Matter 속성을 바꾼다. | 실제 폰, 트윈 진행도 |
 
-Today the Decide stage is an LLM tool agent. The judgment engine designed in the [docs](https://github.com/2026-SWE/docs) repo (knowing what it does not know, checking only what changes a decision) is meant to replace it here.
+예: 식탁에 컵이 남아 있고 사람이 자리를 비우면 PAM이 컵 치우기를 고른다. 실제 폰에 「식탁으로 가 주세요」 → 「컵을 들어 주세요」 → 「싱크대로 가 주세요」 → 「컵을 싱크대에 넣어 주세요」가 차례로 뜬다. 폰이 식탁 1.2 m 안에 들어오면 다음, 컵이 손에 있으면 다음, 싱크대 안이면 끝이다.
 
-<img src="docs/screenshot-dashboard.png" alt="Dashboard: the one-room 3D twin with a focus ring on the TV, the CLOiD's eye pane waiting for a phone, and an expanded reasoning card for 'TV 켜줘'" />
-
----
-
-### 1. Key Features
-
-#### 01. Three-Pane Dashboard
-
-- The left pane is the 3D twin, where the results of what CLOiD did show up. The top right is CLOiD's eye, the live phone camera, marked as display only and not engine input. The bottom right is the reasoning log.
-- The reasoning log has one card per request. Collapsed, it shows the request and the answer. Expanded, each step shows a thought, an action and an observation, followed by the answer and the focus target.
-  - The thought is the model's own explanation of why it calls a tool. It is labeled as such and is not the evidence.
-  - The action is the tool and its target. The observation is built from the tool result, not by the model.
-- Approval buttons sit inside the card that asked for them. Phone talk, photos and layout saves appear in the same log.
-- Device cards (Matter attributes, sensor simulation) are hidden by default and open as a drawer.
-
-#### 02. Virtual Matter Appliances
-
-- Expose the home's lights, TV, air conditioners, cooktop, door lock, curtains and more as devices on one matter.js bridge: 65 for the apartment, 14 for the one-room sample.
-- Devices are commissioned over the real Matter protocol, so a device's Matter attributes are the single source of its state.
-
-#### 03. Chat Control Agent
-
-- Control the home in plain Korean: "TV 켜줘", "에어컨 24도로 맞춰줘".
-- The agent calls device and layout tools through OpenAI, Anthropic, or a rule-based mock that needs no API key. Every tool call carries a short `reason`, which becomes the thought in the reasoning log.
-
-#### 04. Approval Policy
-
-- Risky commands, such as unlocking the front door, turning on the cooktop, or starting the microwave, wait for the user's approval.
-- The LLM can never approve for itself. Approval tokens work once and expire after 5 minutes.
-
-#### 05. Live 3D Twin Sync
-
-- Every change from chat, device cards or MCP is pushed over WebSocket to the twin-studio viewer embedded in the page.
-- Changes made in the 3D view travel back through the same approval policy.
-
-#### 06. MCP Server
-
-- The device tools are available over MCP, so Claude Code or Claude Desktop can act as the home's agent. Layout tools and the `reason` argument are only for the agent inside the server.
-
-#### 07. CLOiD's Eye (phone AR)
-
-- An Android phone opens a web page in Chrome and becomes CLOiD's eye. WebXR AR tracks its position and direction, and two room corners set in the floor plan (`ar_anchors`) align it to the twin. Homes without them use the dock and the front door.
-- The phone is held in landscape: aim point in the middle, large talk, photo and stop buttons on one side, a thin status line on top, and the rest in a ⋯ menu.
-- Camera frames are encoded to JPEG in web workers, two at a time, and sent at up to 12 frames per second by default, 480 px wide in landscape and 360 px in portrait (`?fps=`, `?w=`). The phone menu shows the frames sent, readPixels and encoding time, and why frames were skipped. The server reports the frames it receives at `/api/eye/stats`, and the eye pane shows that rate.
-- "Take photo" saves a full-size photo with the twin position and direction it was taken from.
-- The phone server listens on the Wi-Fi network but serves only the phone page and its WebSocket. Device control REST stays on 127.0.0.1; the phone reaches the agent only through its talk messages.
-
-#### 08. Any Home, Corrected on Site
-
-- Pick a home from twin-studio's `homes.json` with `HOME_ID` (the apartment, or the one-room sample). The viewer, device list and AR anchors follow that home.
-- Fix the twin to match the real room by chat, or by aiming the phone at the floor and saying "냉장고 위치 여기로 맞춰줘" (move the fridge here). Furniture and appliances can be moved, turned, added and removed, and the 3D twin changes at once.
-- "배치 저장해" (save the layout) writes `runtime/homes/<id>/edits.json`. twin-studio's `apply-edits` folds it into the home; after a rebuild and restart, added appliances become Matter devices.
-
-#### 09. Voice and Focus
-
-- Hold the talk button on the phone and speak Korean. Chrome's built-in speech recognition, which sends the audio through Google's servers, turns it into a chat message, and the reply is read aloud. Risky actions ask for approval on the phone or the dashboard.
-- Whatever CLOiD just handled (the TV it turned on, the fridge it moved) gets a blue focus ring in the 3D twin and on the phone screen, and the phone draws the same ring into the live eye view.
+<img src="docs/screenshot-dashboard.webp" alt="대시보드: 왼쪽 한양목련 3D 트윈에 식탁에서 싱크대로 가는 경로와 확인한 기기 말풍선, 아래 말풍선 카드 「컵을 들라고 했어요.」, 오른쪽 폰 칸에 컵 YOLO 상자와 FSM 카드, 가운데 선에 마스코트" />
 
 ---
 
-### 2. Tools & Architecture
+### 1. 주요 기능
+
+#### 01. 대시보드
+
+- 왼쪽은 3D 트윈, 오른쪽은 세로 폰 칸이다. 두 칸은 붙어 있고 둘 다 화면 높이를 다 쓴다. 대시보드에는 입력창이 없다.
+- 3D 트윈: 한양목련 180B는 빛을 구운 three.js 트윈으로 그린다. 카메라는 각도가 고정된 정사영이고 계획 단계를 따라 확대·이동한다. 경로, 클로이드, 판단하며 확인한 기기의 말풍선을 그 위에 그린다. 다른 집은 iframe 뷰어로 보인다.
+- 진행도 칩: 할 일 이름과 지금 단계(예: 컵 치우기 2/4 · 컵 집기).
+- 폰 칸: 실제 폰 영상과 YOLO 상자. 위에 반투명 FSM 카드가 PAM 관찰 한 문장과 고른 행동을 보인다.
+- 말풍선 카드: 클로이드가 정한 것이나 폰으로 내린 명령을 한 줄로 쓴다(예: 「컵을 들라고 했어요.」).
+- 마스코트: 두 칸 사이 선 위에 선다. 지켜볼 때는 영상 쪽을, 행동하기로 하면 몸을 돌려 트윈 쪽을 본다. 누르면 설정 창이 열린다(연결, 운영 모드, 허브, 에이전트, 집, 폰 연결 QR, 「집 다시 설정하기」).
+- 서버 연결이 끊긴 동안만 트윈 오른쪽 위에 「연결 끊김 · 다시 연결 중」이 뜬다. 승인 대기는 대시보드에 보이지 않는다.
+- 단계가 바뀔 때는 transform·opacity만 움직이고, 가장 긴 그림 간격은 50 ms 이하다. 첫 바뀜 끊김은 화면이 뜰 때 한 번 미리 그려서 막는다([view-switch](docs/view-switch.md)).
+
+#### 02. 실제 폰: 클로이드의 눈과 손
+
+- 안드로이드 크롬에서 폰 페이지를 연다. WebXR AR이 위치와 방향을 따고, 설정 화면에서 고른 두 기준점(A·B)으로 트윈에 맞춘다.
+- 위: 미어캣 아이콘과 지금 할 명령 한 줄. 계획이나 판단 글은 대시보드에만 있다.
+- 아래: 비전 상태 줄(예: 「식탁까지 2.4m」, 「컵 · 손에 있음」)과 바로 밑 「완료」 단추. 비전이 못 알아볼 때 사람이 「완료」를 누르거나 말하면 다음 단계로 간다.
+- 늘 듣는다(크롬 음성 인식). 명령은 소리로 읽고, 읽는 동안은 듣지 않는다. 「그만」이라고 하면 계획을 그만둔다.
+- 일이 멈추는 문제(기준점 안 맞음, 마이크 꺼짐, 연결 끊김)는 고치는 단추가 있는 창으로, 잠깐 생기는 문제(추적 약함)는 비전 상태 줄로 알린다.
+- 카메라 프레임은 늘 서버로 간다. 폰 서버는 Wi-Fi에서 폰 페이지와 그 WebSocket만 내주고, 기기 제어 REST는 127.0.0.1에만 둔다.
+
+#### 03. 승인 규칙
+
+- 묻는 때는 둘뿐이다: 허락 없이 하면 위험할 때(현관 잠금 해제, 인덕션 켜기, 전자레인지 시작), 전에 승인한 적 없는 처음 하는 일일 때. 그 밖에는 바로 한다.
+- 실제 폰에 질문과 「승인」·「거절」 두 단추가 뜬다. 승인은 기억해서 같은 일은 다음부터 묻지 않고, 거절은 이번만이라 다음에 또 묻는다. 위험 목록은 늘 묻는다.
+- 말로 답할 때는 말 전체가 답일 때만 받는다(승인: 「승인」「좋아」, 거절: 「거절」「아니」「하지 마」「취소」). 주변 말 속의 낱말로는 승인되지 않는다.
+- 말로 시킨 가전 명령은 그 말이 곧 승인이다. 기억은 `runtime/homes/<집>/approvals.json`에 둔다.
+
+#### 04. 설정 화면 (`/setup/`)
+
+<img src="docs/screenshot-setup.webp" alt="설정 화면: 왼쪽 아래 상반신 마스코트에서 생각 동그라미가 이어지고, 오른쪽 말풍선 안에 「어느 집을 쓸까요?」와 집 고르기 카드" />
+
+- 왼쪽 아래 마스코트가 묻고, 오른쪽 생각 말풍선 안에서 고른다. 집 고르기, 가전 선택, 운영 모드(시험·실제), 위치 동기화 네 단계다.
+- 위치 동기화는 말풍선 안을 트윈 하나가 채운다. 벽 하나를 누르면 A·B 기준점이 잡히고, 이름 고치기·다시 고르기·저장·폰 연결 QR·배치 보정은 모두 트윈 위에 떠 있다. A·B를 저장해야 「완료하고 대시보드로」가 눌린다.
+
+#### 05. 가상 Matter 가전
+
+- 집의 조명, TV, 에어컨, 인덕션, 도어락, 커튼 같은 가전을 matter.js 브리지 하나의 기기로 띄운다. 실제 Matter 프로토콜로 연결되고, 기기 상태의 원본은 Matter 속성이다.
+- 운영 모드가 실제면 짝지은 가전은 ThinQ로 실제 기기를 움직인다.
+
+#### 06. 집 고르기와 배치 보정
+
+- `HOME_ID`나 설정 화면으로 집을 고른다(한양목련 180B, 마곡 보타닉, 원룸 예시). 도면에 그려진 싱크대·조리대·변기·세면대·욕조도 서버 장면에 들어간다.
+- 말이나 폰 조준(「냉장고 위치 여기로 맞춰줘」)으로 가구·가전을 옮기고, 돌리고, 넣고, 뺄 수 있다. 트윈에는 바로 보이고, 「배치 저장해」면 `runtime/homes/<id>/edits.json`에 남는다.
+
+#### 07. MCP 서버
+
+- 기기 도구를 MCP로 내준다. Claude Code나 Claude Desktop이 이 집의 에이전트가 될 수 있다.
+
+---
+
+### 2. 구조
 
 ```text
-Phone (web/phone/)       — CLOiD's eye: WebXR pose + aim point · camera frames (worker JPEG) · photos · voice
-        ↓  WebSocket /phone/events (Wi-Fi)
-Phone server (src/phone) — Align to the twin (room corners) · eye pose · "here" · voice relay · focus · MJPEG feed · stats
+실제 폰 (ui/src/phone)        — 눈과 손: WebXR 위치 · 카메라 프레임 · 늘 듣기 · 지금 명령과 「완료」
+        ↓  WebSocket (Wi-Fi)
+폰 서버 (src/phone)           — 기준점 맞춤 · 폰 눈 위치 · 말 전달 · 명령 보내기
         ↓
-Web UI (ui/, React)      — 3D twin · status pill · CLOiD's eye · decision log (no input)
-        ↓  REST / WebSocket /events (127.0.0.1)
-Server (src/server)      — Node.js 22
-├── Agent (src/agent)    — Decide: LLM tool loop (OpenAI · Anthropic · mock), device + layout tools, thought and observation per step
-├── Layout (src/layout)  — Runtime corrections on top of the home's scene.json · focus
-├── Policy               — Approval for risky commands
-└── Device hub           — Model + Act
-    ├── MatterHub        — matter.js bridge + controller
-    └── MemoryHub        — No-Matter mode for fast tests
+서버 (src/server)             — Node.js 22
+├── 관찰 (src/brain · src/observe · src/world) — YOLOX(onnxruntime) · VLM · World State → 관찰 글
+├── 판단 (services/pam)       — PAM(Python): 관찰 글만 받아 행동을 고른다
+├── 계획·실행 (src/plan · src/act) — 단계마다 폰 명령, World State와 폰 위치로 다음 단계
+├── 에이전트 (src/agent)      — 말로 시킨 가전 명령(OpenAI · Anthropic 도구) · 승인 규칙
+├── 장면 (src/model · src/layout) — scene.json + 도면 설비 · 배치 보정
+└── 기기 허브 (src/hub)       — MatterHub(matter.js) · MemoryHub(시험용)
+        ↓  REST · WebSocket /events (127.0.0.1)
+화면 (ui/, React)             — 대시보드 · three.js 트윈(ui/src/twin3d) · 설정 화면(ui/src/setup)
 
-MCP server (src/mcp)     — Device tools over stdio, calls the server's REST API
-twin-studio              — Home packages (homes.json): scene.json → device list and anchors · viewer at /twin/viewer/ · library at /twin/lib/
+MCP 서버 (src/mcp)            — 기기 도구를 stdio로, 서버 REST를 부른다
+twin/                         — twin-studio에서 가져온 집 자산: 장면 · 뷰어 · 구운 3D
 ```
 
-Every command, wherever it comes from, passes the approval policy and changes a Matter attribute. The server then broadcasts that change to the web UI and the 3D twin. What the phone sees is shown, never fed to the decision step.
+어디서 온 명령이든 승인 규칙을 거쳐 Matter 속성을 바꾸고, 서버가 그 변화를 화면과 트윈에 알린다. 폰이 본 것은 YOLO·VLM과 World State를 거쳐 글로만 판단에 들어간다.
 
 ---
 
-### 3. GenAI Development Tool
+### 3. 개발 도구
 
 - Claude Code (Claude Opus 5.5)
 
-### 4. Platform
+### 4. 플랫폼
 
-- Node.js server with a web UI, and an Android Chrome page for the phone
-- Windows 11
+- Node.js 서버와 웹 화면, 안드로이드 크롬 폰 페이지
+- Windows 11, Docker Compose(서버 한 대·GPU 서버)
 
 ---
 
 <details>
-<summary><b>Run it locally</b></summary>
+<summary><b>로컬에서 돌리기</b></summary>
 
-Requires Node.js 22+ and [twin-studio](https://github.com/2026-SWE/twin-studio) cloned next to this repo (`../twin-studio`). The device list comes from twin-studio's data. The 3D view needs the home built there first (`uv run python -m studio apartment`, or `--home oneroom --no-render` for the one-room sample).
+Node.js 22.15가 필요하다. 집 자산(뷰어, 집, 카탈로그, 구운 3D)은 `twin/`에 있다. twin-studio에서 다시 빌드했으면 `npx tsx scripts/twin-assets.ts --from <twin-studio 폴더>`로 `twin/`을 채운다.
 
 ```bash
 npm install
-npm --prefix ui install  # dashboard and setup pages (React)
-cp .env.example .env   # optional: OPENAI_API_KEY or ANTHROPIC_API_KEY
-npm start              # builds the pages, then http://127.0.0.1:8200
+npm --prefix ui install   # 대시보드·설정·폰 화면(React)
+cp .env.example .env      # 에이전트·VLM용 OPENAI_API_KEY, PAM LLM용 OPENROUTER_API_KEY
+npm start                 # 화면을 빌드하고 http://127.0.0.1:8200
 ```
 
-Without an API key, the rule-based mock agent runs. Try "TV 켜줘", "에어컨 24도로 맞춰줘" or "현관문 열어줘" (asks for approval).
+- 관찰·판단까지 돌리기: PAM 서비스(`services/pam`, [reference](docs/reference.md#pam-서비스-servicespam))를 띄우고 `BRAIN=1 PHONE_PORT=8210 npm start`. 폰은 설정 창의 QR로 연다.
+- 키 없이 돌려 보기: `npx tsx scripts/fake-openai.ts --port 8500`을 띄우고 `VLM_BASE_URL`·`PAM_LLM_BASE_URL`·`OPENAI_BASE_URL`을 `http://127.0.0.1:8500/v1`로, `OPENAI_API_KEY`를 `fake-key`로 둔다.
+- 서버 한 대: `docker compose up -d --build`. GPU 서버는 `docker compose --profile gpu up -d --build`([deploy](docs/deploy.md)).
+- 대시보드 순간 보기: `?debug=steps&step=N`은 서버 자료 대신 `ui/src/dashboard/fake-run.json`의 순간(지켜보기, 1~4단계)을 보인다([twin3d](docs/twin3d.md)).
 
-| Command | What it does |
+| 명령 | 하는 일 |
 |---|---|
-| `npm test` | Unit, Matter integration and end-to-end tests (Vitest) |
+| `npm test` | 서버·Matter·처음부터 끝까지 시험과 화면 시험(Vitest) |
+| `npm run lint` | 화면 글·색·21st.dev 부품·글 크기 검사 |
 | `npm run typecheck` | `tsc --noEmit` |
-| `npm run demo` | Run 5 demo scenarios against a fresh server and print the results |
-| `HUB=memory npm start` | Start without Matter (faster) |
-| `PHONE_PORT=8210 npm start` | Also serve the phone AR page that moves CLOiD's eye in the 3D twin ([setup](docs/reference.md#폰-ar-클로이드의-눈)) |
-| `HOME_ID=oneroom PHONE_PORT=8210 npm start` | Load the one-room sample from twin-studio's `homes.json` with the phone page ([correcting it on site](docs/reference.md#집-고르기와-배치-보정)) |
-| `claude mcp add twin-home -- npx tsx src/mcp/server.ts` | Register the MCP server in Claude Code (keep `npm start` running) |
+| `npm run heavy -- <명령>` | 3D 크롬·시험·빌드를 한 번에 하나만 돌리는 잠금 |
+| `npm run dev3d -- start` | 사진·끊김 재기용 시험 모드 서버(8201, 모델 주소 닫힘) |
+| `npm run capture -- …` | 대시보드 사진 찍기 |
+| `npm run tokens` | 디자인 토큰(`src/design/tokens.json`)에서 화면 파일 만들기 |
+| `HUB=memory npm start` | Matter 없이 시작(빠름) |
+| `HOME_ID=oneroom PHONE_PORT=8210 npm start` | 원룸 예시와 폰 페이지로 시작 |
+| `claude mcp add twin-home -- npx tsx src/mcp/server.ts` | Claude Code에 MCP 서버 등록(`npm start`는 켜 둔다) |
 
 </details>
 
 <details>
-<summary><b>Documentation</b></summary>
+<summary><b>문서</b></summary>
 
-- [Contract](docs/plan.md): interfaces and formats. Change this first before changing them in code.
-- [Full reference](docs/reference.md) (Korean): environment variables, REST and WebSocket API, 3D sync, phone AR, layout corrections, Matter pairing, device mapping, tests, known limits
-- [Phone stream speed experiment](docs/experiments/2026-10-24-phone-stream-speed.md) (Korean): why the live eye view was slow, what was changed, and what to measure next
+- [계약](docs/plan.md): 형식과 연결. 코드보다 먼저 고친다.
+- [전체 참고](docs/reference.md): 환경 변수, REST·WebSocket API, 폰 AR, 관찰 흐름, PAM, 설정 흐름, 승인, 시험
+- [PAM 연결 형식](docs/pam-interface.md), [계획 계약](docs/plan-contract.md)
+- [대시보드 3D 트윈](docs/twin3d.md): 구운 자산, 다시 굽기, 사진 찍기
+- [단계 바뀜 끊김 막기](docs/view-switch.md): 규칙과 잰 값
+- [배포](docs/deploy.md)
 
 </details>

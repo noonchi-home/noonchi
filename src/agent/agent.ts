@@ -1,11 +1,16 @@
 // 에이전트: LLM 공급자 + 도구 호출 루프(최대 6라운드) + 세션별 대화 기억 + 승인 대기 관리.
-// 승인 토큰은 LLM에게 보여 주지 않는다. 사용자가 화면 버튼(confirm)이나 다음 메시지 "응"으로만 확정한다.
+// 승인 토큰은 LLM에게 보여 주지 않는다. 사용자가 실제 폰 답 단추(confirm, 승인·거절)나 다음 말로만 확정한다.
+// 승인 대기는 위험 목록뿐이라(src/agent/policy.ts) 답은 둘 다 이번만이다: 승인이면 실행하고, 거절이면 실행하지 않는다. 둘 다 기억하지 않아 다음에 또 묻는다.
+// 늘 듣는 실제 폰의 말(heard)은 말 전체가 답일 때만 받는다(src/act/prompts.ts APPROVE). 글로 한 말은 「응」「아니」로도 답한다.
 
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { AgentAction, AgentEvent, ChatResult, ConfirmResult, PendingView } from "../contract/events.js";
-import type { Command, DeviceHub, RoomSpec } from "../hub/types.js";
-import type { Policy } from "./policy.js";
+import type { DeviceHub, RoomSpec } from "../hub/types.js";
+import { matchChoice } from "../act/tasks.js";
+import { APPROVE } from "../act/prompts.js";
+import type { ApprovalAnswer } from "./approval.js";
+import { REFUSED_REPLY, commandName, type PendingConfirmation, type Policy } from "./policy.js";
 import { askApproval, doneSentence, toolForCommand } from "./phrases.js";
 import { buildSystemPrompt } from "./prompts.js";
 import { LAYOUT_TOOLS, type LayoutTools } from "./layoutTools.js";
@@ -86,6 +91,9 @@ export function isAffirmative(text: string): boolean {
   return AFFIRMATIVE.test(text.trim());
 }
 
+/** heard: 늘 듣는 실제 폰이 들은 말. 승인 대기는 말 전체가 승인·거절 답일 때만 확정한다(「승인해 줘」「거절」). */
+export interface ChatOptions { heard?: boolean }
+
 export function isNegative(text: string): boolean {
   return NEGATIVE.test(text.trim());
 }
@@ -137,15 +145,16 @@ export class Agent {
   }
 
   /** 사용자 메시지 하나를 처리한다. 같은 세션의 요청은 차례로 처리한다. */
-  chat(sessionId: string, message: string): Promise<ChatResult> {
+  chat(sessionId: string, message: string, opts: ChatOptions = {}): Promise<ChatResult> {
     const s = this.session(sessionId);
-    return this.serialize(s, () => this.handle(s, message));
+    return this.serialize(s, () => this.handle(s, message, opts));
   }
 
-  /** 승인 토큰으로 대기 중인 명령을 실행한다(화면 승인 버튼, POST /api/agent/confirm). */
-  confirm(token: string): Promise<ConfirmResult> {
+  /** 승인 토큰과 답으로 대기 중인 명령에 답한다(실제 폰 답 단추, POST /api/agent/confirm). 거절이면 실행하지 않는다. */
+  confirm(token: string, choice: ApprovalAnswer = "approve"): Promise<ConfirmResult> {
     const s = this.owner(token);
     const run = async () => {
+      if (choice === "reject") return this.refuseToken(token, s);
       const r = await this.confirmToken(token, s);
       if (s && r.ok) this.provider.addExchange?.(s.state, "(화면에서 승인 버튼을 눌렀다)", r.reply);
       this.emit({ event: "confirmed", sessionId: s?.id, token, ok: r.ok, reply: r.reply, deviceId: r.deviceId });
@@ -179,12 +188,15 @@ export class Agent {
 
   // ── 내부 ────────────────────────────────────────────────
 
-  private async handle(s: Session, message: string): Promise<ChatResult> {
+  private async handle(s: Session, message: string, opts: ChatOptions): Promise<ChatResult> {
     const actions: AgentAction[] = [];
     this.prune(s);
     let reply: string;
-    if (s.pending.size > 0 && isAffirmative(message)) reply = await this.confirmAll(s, message, actions);
-    else if (s.pending.size > 0 && isNegative(message)) reply = this.cancelAll(s, message);
+    const waiting = s.pending.size > 0;
+    const answer = waiting ? this.spokenAnswer(message) : null;
+    if (answer) reply = await this.answerAll(s, message, answer, actions);
+    else if (waiting && !opts.heard && isAffirmative(message)) reply = await this.answerAll(s, message, "approve", actions);
+    else if (waiting && !opts.heard && isNegative(message)) reply = this.cancelAll(s, message);
     else reply = await this.runModel(s, message, actions);
     const pendingConfirmations = this.pending(s.id);
     this.emit({ event: "reply", sessionId: s.id, message, reply, actions, pendingConfirmations });
@@ -241,15 +253,20 @@ export class Agent {
       shown = {
         ...rest,
         pendingApproval: { reason: needsConfirmation.reason },
-        message: "사용자 승인을 기다리는 중입니다. 같은 명령을 다시 부르지 말고, 사용자에게 승인할지 물으세요(화면의 승인 버튼 또는 '응').",
+        message: "사용자 승인을 기다리는 중입니다. 같은 명령을 다시 부르지 말고, 사용자에게 승인할지 물으세요(실제 폰의 답 단추 또는 말).",
       };
     }
     return { call, content: JSON.stringify(shown), isError: !result.ok && !result.needsConfirmation, result: shown };
   }
 
-  private async confirmAll(s: Session, message: string, actions: AgentAction[]): Promise<string> {
+  /** 대기 중인 승인 모두에 같은 답을 한다(말로 한 답). */
+  private async answerAll(s: Session, message: string, choice: ApprovalAnswer, actions: AgentAction[]): Promise<string> {
     const replies: string[] = [];
     for (const token of [...s.pending]) {
+      if (choice === "reject") {
+        replies.push((await this.refuseToken(token, s)).reply);
+        continue;
+      }
       const r = await this.confirmToken(token, s);
       if (r.action) actions.push(r.action);
       replies.push(r.reply);
@@ -258,6 +275,22 @@ export class Agent {
     const reply = replies.join(" ");
     this.provider.addExchange?.(s.state, message, reply);
     return reply;
+  }
+
+  /** 말 전체가 승인 답(승인·거절)이면 그 답. */
+  private spokenAnswer(message: string): ApprovalAnswer | null {
+    return (matchChoice(message, APPROVE)?.id as ApprovalAnswer | undefined) ?? null;
+  }
+
+  /** 거절: 실행하지 않는다. 기억하지 않아 다음에 또 묻는다. */
+  private async refuseToken(token: string, s?: Session): Promise<ConfirmResult> {
+    s?.pending.delete(token);
+    const p = this.policy.consume(token);
+    if (!p) return { ok: false, error: TOKEN_MISSING, reply: "승인할 작업이 없거나 시간이 지나 만료되었어요. 다시 요청해 주세요." };
+    const reply = REFUSED_REPLY(commandName(this.label(p.deviceId), p.command));
+    if (s) this.provider.addExchange?.(s.state, "(거절이라고 답했다)", reply);
+    this.emit({ event: "cancelled", sessionId: s?.id, token });
+    return { ok: false, reply, deviceId: p.deviceId };
   }
 
   private cancelAll(s: Session, message: string): string {
@@ -286,8 +319,11 @@ export class Agent {
     return { ok: r.ok, reply, error: r.error, deviceId: p.deviceId, state: r.state, action };
   }
 
-  private view(p: { token: string; deviceId: string; command: Command; reason: string; expiresAt: number }): PendingView {
-    return { token: p.token, deviceId: p.deviceId, deviceLabel: this.label(p.deviceId), command: p.command, reason: p.reason, expiresAt: new Date(p.expiresAt).toISOString() };
+  private view(p: PendingConfirmation): PendingView {
+    return {
+      token: p.token, deviceId: p.deviceId, deviceLabel: this.label(p.deviceId), command: p.command, reason: p.reason,
+      choices: APPROVE.map(({ id, label }) => ({ id, label })), expiresAt: new Date(p.expiresAt).toISOString(),
+    };
   }
 
   private label(id: string): string {

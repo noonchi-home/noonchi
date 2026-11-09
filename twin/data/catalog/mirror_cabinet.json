@@ -1,0 +1,23 @@
+{
+  "type": "mirror_cabinet",
+  "label": "거울 수납장",
+  "family": "bath_utility",
+  "category": "fixtures",
+  "node_type": "fixture",
+  "mount": "wall",
+  "footprint": [
+    0.6,
+    0.15
+  ],
+  "height": 0.7,
+  "model": "assets/fixtures/mirror_cabinet.glb",
+  "blocks_walk": false,
+  "blocks_view": false,
+  "anchors": {
+    "front": [
+      0.0,
+      0.6
+    ]
+  },
+  "notes": "거울 문 둘(금속 1·거칠기 0.03) + 아래 트인 선반(0.12). 상태 없음."
+}

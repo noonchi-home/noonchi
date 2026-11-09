@@ -1,0 +1,72 @@
+{
+  "type": "humidifier",
+  "label": "가습기",
+  "family": "bedroom",
+  "category": "appliances",
+  "node_type": "device",
+  "mount": "floor",
+  "footprint": [
+    0.22,
+    0.22
+  ],
+  "height": 0.35,
+  "model": "assets/appliances/humidifier.glb",
+  "blocks_walk": true,
+  "blocks_view": false,
+  "anchors": {
+    "front": [
+      0.0,
+      0.46
+    ]
+  },
+  "attrs": {
+    "power": [
+      "off",
+      "on"
+    ]
+  },
+  "states": {
+    "power": {
+      "default": "off",
+      "effects": {
+        "off": [
+          {
+            "part": "led",
+            "emissive": 0.0
+          },
+          {
+            "part": "night_ring",
+            "emissive": 0.0
+          },
+          {
+            "part": "mist",
+            "visible": false
+          },
+          {
+            "light": "mist_light",
+            "intensity": 0.0
+          }
+        ],
+        "on": [
+          {
+            "part": "led",
+            "emissive": 1.0
+          },
+          {
+            "part": "night_ring",
+            "emissive": 1.0
+          },
+          {
+            "part": "mist",
+            "visible": true
+          },
+          {
+            "light": "mist_light",
+            "intensity": 1.0
+          }
+        ]
+      }
+    }
+  },
+  "notes": "원통 가습기: 회색 받침과 무드등 띠, 물이 비치는 투명 물통, 흰 윗덮개와 분사구, 파란 LED 고리. power on → 김 기둥(mist, 효과 부품) 보임, LED·무드등 발광, 김을 비추는 푸른 점광원(mist_light)."
+}

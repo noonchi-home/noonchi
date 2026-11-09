@@ -1,0 +1,152 @@
+{
+  "type": "door_main",
+  "label": "현관문(도어록)",
+  "family": "openings",
+  "category": "fixtures",
+  "node_type": "fixture",
+  "mount": "opening",
+  "footprint": [
+    0.95,
+    0.2
+  ],
+  "height": 2.1,
+  "model": "assets/fixtures/door_main.glb",
+  "blocks_walk": false,
+  "blocks_view": true,
+  "attrs": {
+    "door": [
+      "closed",
+      "open"
+    ],
+    "lock": [
+      "locked",
+      "unlocked"
+    ]
+  },
+  "states": {
+    "door": {
+      "default": "closed",
+      "effects": {
+        "closed": [
+          {
+            "part": "leaf",
+            "rotate": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "part": "open_light",
+            "visible": false
+          }
+        ],
+        "open": [
+          {
+            "part": "leaf",
+            "rotate": [
+              0,
+              -95,
+              0
+            ]
+          },
+          {
+            "part": "open_light",
+            "visible": true
+          }
+        ]
+      }
+    },
+    "lock": {
+      "default": "locked",
+      "effects": {
+        "locked": [
+          {
+            "part": "lock_red",
+            "emissive": 1.0
+          },
+          {
+            "part": "lock_green",
+            "emissive": 0.0
+          },
+          {
+            "part": "keypad_red",
+            "visible": true
+          },
+          {
+            "part": "keypad_green",
+            "visible": false
+          },
+          {
+            "light": "unlock_glow_out",
+            "intensity": 0.0
+          },
+          {
+            "light": "unlock_glow_in",
+            "intensity": 0.0
+          },
+          {
+            "part": "unlock_pool",
+            "visible": false
+          }
+        ],
+        "unlocked": [
+          {
+            "part": "lock_red",
+            "emissive": 0.0
+          },
+          {
+            "part": "lock_green",
+            "emissive": 1.0
+          },
+          {
+            "part": "keypad_red",
+            "visible": false
+          },
+          {
+            "part": "keypad_green",
+            "visible": true
+          },
+          {
+            "light": "unlock_glow_out",
+            "intensity": 1.0
+          },
+          {
+            "light": "unlock_glow_in",
+            "intensity": 1.0
+          },
+          {
+            "part": "unlock_pool",
+            "visible": true
+          }
+        ]
+      }
+    }
+  },
+  "anchors": {
+    "front": [
+      0.0,
+      0.6
+    ],
+    "back": [
+      0.0,
+      -0.6
+    ],
+    "handle": [
+      0.334,
+      0.0,
+      1.0
+    ],
+    "keypad": [
+      0.334,
+      0.13,
+      1.115
+    ],
+    "keypad_inside": [
+      0.334,
+      -0.14,
+      1.02
+    ]
+  },
+  "notes": "정면(-y) = 바깥(복도)이고 바깥으로 열린다. 경첩은 정면에서 볼 때 왼쪽. 열림 = 문짝 회전축 leaf를 세로축 -95°. 잠금은 양면 손잡이 쪽 세로 띠와 도어록 표시등(lock_red/lock_green 발광)과 번호판 색(keypad_red/keypad_green 보이기)으로, 열림일 때는 양면 초록 스폿(unlock_glow_out/in)과 문 앞 바닥의 초록 빛 웅덩이(효과 부품 unlock_pool)도 켠다. 열림일 때는 바깥 면에서 문 구멍을 채우는 복도 빛과 실내 바닥 빛 띠(효과 부품 open_light)를 켠다. 문틀이 개구부(0.95 × 2.1 × 벽 0.2)를 채우고 양면 몰딩(0.06 × 0.012)은 크기 계산에서 뺀다."
+}

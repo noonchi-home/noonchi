@@ -1,7 +1,7 @@
-// 폰 화면의 벽 대기 기록: 버튼을 누른 뒤 0.5초 동안의 폰 위치를 모아 평균을 낸다(web/phone/touch.js).
+// 폰 화면의 벽 대기 기록: 버튼을 누른 뒤 0.5초 동안의 폰 위치를 모아 평균을 낸다(ui/src/phone/core/touch.js).
 
 import { describe, expect, it } from "vitest";
-import { createTouchSampler, floorCandidate } from "../web/phone/touch.js";
+import { createTouchSampler, floorCandidate } from "../ui/src/phone/core/touch.js";
 
 const steady = (sampler: ReturnType<typeof createTouchSampler>, from: number, to: number, step = 33, at = [1, 1.2, 2]) => {
   for (let t = from; t <= to; t += step) sampler.add(t, at, "ok", [at[0], -0.3, at[2]]);

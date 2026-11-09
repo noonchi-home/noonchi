@@ -1,0 +1,17 @@
+{
+  "type": "pot",
+  "label": "냄비",
+  "family": "kitchen",
+  "category": "props",
+  "node_type": "prop",
+  "mount": "surface",
+  "footprint": [
+    0.32,
+    0.22
+  ],
+  "height": 0.14,
+  "model": "assets/props/pot.glb",
+  "blocks_walk": false,
+  "blocks_view": false,
+  "notes": "SSOT 소품 수치"
+}

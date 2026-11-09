@@ -1,10 +1,12 @@
-// 고른 집의 배치 편집기 만들기: scene.json + 카탈로그 + (있으면) 저장해 둔 수정본(runtime/homes/<id>/edits.json).
+// 고른 집의 배치 편집기 만들기: 서버 장면(scene.json + 도면 설비 drawn_fixtures.json, src/model/scene.ts) + 카탈로그
+// + (있으면) 저장해 둔 수정본(runtime/homes/<id>/edits.json). 도면 설비는 고정 설비라 옮길 수 없다.
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Home } from "../model/homes.js";
+import { loadScene } from "../model/scene.js";
 import { loadCatalog, type TypeInfo } from "./catalog.js";
-import { LayoutEditor, type Edit, type SceneJson } from "./editor.js";
+import { LayoutEditor, type Edit } from "./editor.js";
 
 export interface LoadedLayout {
   editor: LayoutEditor;
@@ -13,8 +15,8 @@ export interface LoadedLayout {
 
 /** scene.json이 없으면(빌드 전) undefined. */
 export function loadLayout(home: Home, opts: { runtimeDir: string; log: (line: string) => void }): LoadedLayout | undefined {
-  if (!existsSync(home.scenePath)) return undefined;
-  const scene = JSON.parse(readFileSync(home.scenePath, "utf8").replace(/^﻿/, "")) as SceneJson;
+  const scene = loadScene(home);
+  if (!scene) return undefined;
   const catalog = loadCatalog(home.catalogDir);
   const savePath = join(opts.runtimeDir, "homes", home.id, "edits.json");
   const editor = new LayoutEditor({ homeId: home.id, scene, catalog, savePath, outDir: home.outDir, libraryDir: home.libraryDir });

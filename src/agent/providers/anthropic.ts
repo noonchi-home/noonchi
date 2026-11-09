@@ -1,6 +1,6 @@
 // Anthropic(Claude) 공급자: Messages API 도구 사용, 직접 돌리는 루프의 한 단계(step)씩.
 // Claude Opus 5.5는 생각(thinking)이 항상 켜져 있어 thinking 인자는 보내지 않고 effort로 깊이를 정한다.
-// 응답 content(생각 블록 포함)는 그대로 대화에 덧붙인다(앞 대화를 고치지 않는다).
+// 응답 content(생각 블록 포함)는 그대로 대화에 덧붙인다(앞 대화를 고치지 않는다). 키가 없으면 요청을 보내지 않고 실패한다.
 
 import Anthropic from "@anthropic-ai/sdk";
 import type { LlmProvider, StepOptions, StepResult, ToolCallResult } from "../agent.js";
@@ -62,6 +62,7 @@ export class AnthropicProvider implements LlmProvider {
 
   async step(state: unknown, opts: StepOptions): Promise<StepResult> {
     const s = state as State;
+    if (!this.#apiKey) throw new Error("ANTHROPIC_API_KEY가 없습니다");
     const tools: Anthropic.Beta.BetaTool[] = opts.tools.map((t) => ({
       name: t.name,
       description: t.description,

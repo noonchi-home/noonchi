@@ -1,0 +1,23 @@
+{
+  "type": "extinguisher",
+  "label": "소화기",
+  "family": "bath_utility",
+  "category": "decorations",
+  "node_type": "decor",
+  "mount": "floor",
+  "footprint": [
+    0.15,
+    0.17
+  ],
+  "height": 0.49,
+  "model": "assets/decorations/extinguisher.glb",
+  "blocks_walk": false,
+  "blocks_view": false,
+  "anchors": {
+    "front": [
+      0.0,
+      0.4
+    ]
+  },
+  "notes": "분말 소화기 3.3 kg(빨간 몸통·둘레 표지·압력계·호스). 장식, 상태 없음."
+}

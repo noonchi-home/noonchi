@@ -1,0 +1,22 @@
+{
+  "type": "counter_filler",
+  "label": "하부장 코너 채움",
+  "family": "kitchen",
+  "category": "furniture",
+  "node_type": "furniture",
+  "mount": "floor",
+  "footprint": [
+    0.5,
+    0.4
+  ],
+  "height": 0.9,
+  "model": "assets/furniture/counter_filler.glb",
+  "blocks_walk": true,
+  "blocks_view": true,
+  "surfaces": [
+    {
+      "name": "top",
+      "height": 0.9
+    }
+  ]
+}
