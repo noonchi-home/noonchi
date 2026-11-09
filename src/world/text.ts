@@ -57,7 +57,7 @@ const current = (target: Target, facet: string, f: WorldFact | undefined, nowMs:
 const said = (xs: (string | null)[]) => xs.filter((t): t is string => t !== null);
 
 /** World State → PAM 관찰 텍스트: 최근 windowMs(기본 60초)의 변화 줄 + 오래 이어진 사실(물건·가전 설비·사람·가전) + 때 + 눈 위치.
- *  가전은 켜짐·작동 중·열림 같은 상태이거나, 관련 가전(식기세척기·냉장고)이거나, 10분 안에 바뀐 것만 둔다. */
+ *  가전은 켜짐·작동 중·열림 같은 상태이거나, 관련 가전(식기세척기·냉장고)이거나, 10분 안에 바뀐 것만 둔다. 카메라로 본 상태면 줄 끝에 마지막으로 본 시각. */
 export function textFromWorld(world: WorldView, recent: readonly WorldChange[], o: { nowMs: number; offsetMinutes: number; windowMs?: number }): string {
   const since = o.nowMs - (o.windowMs ?? 60_000);
   const lines = recent.filter((c) => c.at_ms >= since && c.at_ms <= o.nowMs).map((c) => ({ atMs: c.at_ms, text: c.text }));
@@ -88,7 +88,7 @@ export function textFromWorld(world: WorldView, recent: readonly WorldChange[], 
   }
   for (const d of world.devices.filter((x) => x.status && (x.active || RELATED_KINDS.has(x.kind) || (x.event_ms !== null && o.nowMs - x.event_ms <= RECENT_DEVICE_MS)))) {
     const from = d.event_ms ?? d.changed_ms;
-    facts.push(`${d.label} ${d.id}: ${d.status}, ${at(from)}부터 ${lasting(o.nowMs - from)}${d.remaining_min !== null ? `, ${CHANGE_TEXT.remaining(d.remaining_min)}` : ""}`);
+    facts.push(`${d.label} ${d.id}: ${d.status}, ${at(from)}부터 ${lasting(o.nowMs - from)}${d.remaining_min !== null ? `, ${CHANGE_TEXT.remaining(d.remaining_min)}` : ""}${d.vision ? `, ${CHANGE_TEXT.seenAt(at(d.vision.at_ms))}` : ""}`);
   }
   const eye = world.eye ? `${EYE_TEXT} ${world.eye.room_label ?? ROOM_UNKNOWN}` : null;
   return buildPamText({ lines, facts, time: timeText(o.nowMs, o.offsetMinutes), eye, offsetMinutes: o.offsetMinutes });

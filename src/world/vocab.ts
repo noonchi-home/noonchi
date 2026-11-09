@@ -229,6 +229,37 @@ export const DEVICE_LONG = {
 } as const satisfies Record<string, { state: DeviceStateKey; kinds: readonly string[]; afterMs: number; label: string }>;
 export type DeviceLongKey = keyof typeof DEVICE_LONG;
 
+// ── 카메라로 맞추는 가전 상태 ──
+
+export interface SightRule {
+  /** 가전 설비 사실 면. */
+  facet: Facet;
+  /** 트윈 가전 속성. 이 속성이 없는 가전에는 넘기지 않는다. */
+  attr: string;
+  /** VLM 값 → 트윈 속성 값. */
+  values: Partial<Record<StateKey, string | boolean>>;
+  /** 그 프레임 VLM 답이 이 면 값을 하나도 말하지 않았을 때의 트윈 값(쓰는 중은 지금만 맞는 면이라 답에 없으면 안 쓰는 중). 없으면 아무것도 넘기지 않는다. */
+  absent?: string | boolean;
+}
+
+/** 가전 설비 종류 → 카메라로 맞추는 트윈 가전 상태(CLASSES deviceKind 종류의 가전). 오븐·토스터는 트윈 가전 종류가 없어 맞추지 않는다. */
+export const SIGHT = {
+  tv: [{ facet: "screen", attr: "power", values: { screen_on: "on", screen_off: "off" } }],
+  refrigerator: [{ facet: "open", attr: "door", values: { open: "open", closed: "closed" } }],
+  microwave: [
+    { facet: "use", attr: "power", values: { in_use: "on" }, absent: "off" },
+    { facet: "open", attr: "door", values: { open: "open", closed: "closed" } },
+  ],
+  sink: [{ facet: "use", attr: "faucet", values: { water_running: "on" }, absent: "off" }],
+} as const satisfies Partial<Record<FixtureClass, readonly SightRule[]>>;
+
+/** 카메라 상태 안정: 같은 가전·속성에서 같은 값이 연속 frames번(엔진 프레임 2초면 2장) 이어야 넘긴다. 앞 값과 withinMs 넘게 떨어지면 처음부터 센다. */
+export const SIGHT_STABLE = { frames: 2, withinMs: 4000 } as const;
+
+/** 카메라로 가전 고르기: 가운데가 화면(NDC ±1) 밖으로 viewMargin까지 나가도 시야 안. 상자 가운데 광선과 가전 가운데 방향의 각이 maxDeg 넘으면 아님,
+ *  둘 이상이면 가장 가까운 것이 다음 것보다 marginDeg 넘게 가까워야 고른다. 실제 프레임으로 아직 맞추지 않은 값이다. */
+export const SIGHT_MATCH = { viewMargin: 0.25, maxDeg: 25, marginDeg: 8 } as const;
+
 // ── 사람 위치 ──
 
 /** 사람이 이 거리(m) 안이면 그 가전·가구 가까이. */

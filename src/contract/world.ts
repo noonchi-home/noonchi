@@ -67,7 +67,13 @@ export interface WorldFixture {
   last_seen_ms: number;
   facts: Partial<Record<Facet, WorldFact>>;
   answered_ms: number | null;
+  /** 이 설비를 카메라로 트윈 가전에 맞춘 마지막 결과(src/world/sight.ts): 고른 가전 id, 못 골랐으면 null과 까닭. 그 사진의 촬영 시각. 맞춰 본 적 없으면 없음. */
+  link?: { device: string | null; miss: SightMiss | null; at_ms: number };
 }
+
+/** 카메라로 가전을 못 고른 까닭: no_view 맞추기 전(카메라 없음), no_room 사진의 방 모름, no_device 그 방에 그 종류 가전 없음,
+ *  out_of_view 그 가전이 시야 밖, off_box 상자 방향이 가전과 멂, ambiguous 같은 종류 둘 이상을 상자 방향으로 가르지 못함. */
+export type SightMiss = "no_view" | "no_room" | "no_device" | "out_of_view" | "off_box" | "ambiguous";
 
 export interface WorldDevice {
   id: string;
@@ -87,6 +93,8 @@ export interface WorldDevice {
   /** 남은 분(코스 시간이 없으면 null). */
   remaining_min: number | null;
   history: { attr: string; from: unknown; to: unknown; at_ms: number }[];
+  /** 지금 상태가 카메라로 본 것(실제 신호가 없음)이면 마지막으로 본 촬영 시각. 실제 신호 상태면 없음. */
+  vision?: { at_ms: number };
 }
 
 /** 클로이드 눈(폰) 위치. room은 방 id, room_label은 방 이름(관찰 텍스트의 [눈] 줄). */
