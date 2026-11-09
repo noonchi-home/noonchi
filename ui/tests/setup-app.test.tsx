@@ -40,6 +40,14 @@ describe("설정 1단계: 집 고르기", () => {
     expect(classes).not.toContain("data-[orientation=horizontal]:w-full");
   });
 
+  it("좁은 화면에서 단계 표시는 번호만 보이게 줄여 머리줄을 넘지 않는다(이름은 화면 읽기용으로 남김)", async () => {
+    open();
+    await screen.findByRole("heading", { name: "어느 집을 쓸까요?" });
+    const list = screen.getByRole("list", { name: "설정 단계" });
+    expect(list.className.split(/\s+/)).toContain("max-sm:data-[orientation=horizontal]:w-40");
+    for (const t of within(list).getAllByText(/집 고르기|가전 선택|운영 모드|위치 동기화/)) expect(t.className.split(/\s+/)).toContain("max-sm:sr-only");
+  });
+
   it("머리줄은 로고 짝(얼굴 상자 + NOONCHI)과 「설정」", async () => {
     open();
     await screen.findByRole("heading", { name: "어느 집을 쓸까요?" });
@@ -268,6 +276,21 @@ describe("설정 4단계: 벽 하나로 A·B 구석 고르기", () => {
     await pick({ position: [2, 2] });
     expect(api.posts("/api/phone/touch-points/auto")[0]!.body).toEqual({ home: "oneroom", position: [2, 2] });
     await waitFor(() => expect(within(touch).getByRole("status")).toHaveTextContent("이 벽에서 구석을 찾지 못했어요. 다른 벽을 누르거나 A·B를 직접 고르세요."));
+  });
+
+  it("A·B 칩은 큰 화면에서 트윈 위쪽 띠에 한 줄로 놓여 집 위 핀 이름표를 가리지 않는다", async () => {
+    await withViewer(() => [200, { ok: true, points: [A, B], distance_m: 5.403 }]);
+    const row = document.querySelector<HTMLElement>("[data-pin-chips]")!;
+    expect(row).not.toBeNull();
+    expect(row.className.split(/\s+/)).toContain("lg:flex-row");
+    expect(row.querySelectorAll("input")).toHaveLength(2);
+  });
+
+  it("저장한 A·B를 불러오면 할 일 줄은 저장한 상태를 보인다", async () => {
+    const { touch } = await withViewer(() => [200, { ok: true, points: [A, B], distance_m: 5.403 }], {}, {
+      "GET /api/phone/touch-points": () => [200, { ok: true, points: [A, B], mode: "touch", eye_height_m: 1.5, distance_m: 5.403 }],
+    });
+    await waitFor(() => expect(within(touch).getByRole("status")).toHaveTextContent("저장했어요. A–B 5.40m."));
   });
 
   it("완료하고 대시보드로는 A·B를 저장한 뒤에만 누를 수 있다", async () => {
@@ -662,6 +685,8 @@ describe("설정 화면: 상반신 마스코트와 생각 말풍선", () => {
       expect(d.closest("[aria-hidden=true]")).not.toBeNull();
     }
     expect(dots.map((d) => d.dataset.size)).toEqual(["lg", "md", "sm"]);
+    // 화면 바탕 위에서 보이게 테두리 input-line 토큰(canvas 대비 3.27:1)
+    for (const d of dots) expect(d.className.split(/\s+/)).toContain("border-input-line");
   });
 });
 

@@ -18,7 +18,7 @@ import { call, failText, isOk } from "./setup-api";
 
 // 4 위치 동기화: 3D 트윈에서 벽 두 곳(A·B)을 골라 저장하면 폰이 실제 그 벽 바로 아래 바닥을 조준해 맞춘다(높이는 눈높이 고정).
 // 말풍선 안은 트윈 칸(data-twin-box) 하나이고 모든 일을 그 위에 떠 있는 부품으로 한다(사용자 2026-11-09 「4번은 트윈화면만 띄워놓고 다 해결가능하게 수정해」):
-// 왼쪽 위 지금 할 일 한 줄과 A·B 칩(이름·다시 고르기), 오른쪽 위 폰 칩(누르면 주소·QR), 아래 가운데 저장·지우기, 왼쪽 아래 배치 보정(고친 게 있을 때), 오른쪽 아래 이전·완료.
+// 위쪽 띠에 지금 할 일 한 줄과 그 아래 한 줄로 A·B 칩(이름·다시 고르기: 집 위 핀 이름표를 가리지 않게 띠 안에만), 오른쪽 위 폰 칩(누르면 주소·QR), 아래 가운데 저장·지우기, 왼쪽 아래 배치 보정(고친 게 있을 때), 오른쪽 아래 이전·완료.
 // 뷰어가 핀 누름을 알려 주지 않아 핀 대신 A·B 칩으로 이름을 고치고 다시 고른다. 점이 없으면 트윈이 뜨자마자 벽 고르기가 켜져 벽 하나로 A·B를 잡는다.
 // 「완료하고 대시보드로」는 A·B를 저장한 뒤에만 누를 수 있다(기준점 맞추기가 꺼진 집은 바로). 좁은 화면(lg 아래)은 떠 있는 부품이 트윈 아래로 쌓인다.
 // 고르기는 같은 출처 iframe의 뷰어 API(aptViewer.startPick)를 쓰고, 저장한 점은 3D에 핀으로 보인다.
@@ -187,7 +187,10 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
     call<TouchView>("/api/phone/touch-points").then((r) => {
       if (!live) return;
       setTouchOn(isOk(r)); // 집 scene.json이 없으면 쓰지 않는다
-      if (isOk(r)) apply(r.json, true);
+      if (!isOk(r)) return;
+      apply(r.json, true);
+      // 저장한 A·B를 불러오면 할 일 줄은 저장한 상태를 보인다
+      if (r.json.points) setInfo({ text: r.json.distance_m === null ? "저장했어요." : `저장했어요. A–B ${r.json.distance_m.toFixed(2)}m.` });
     });
     return () => { live = false; };
   }, [home]);
@@ -301,13 +304,14 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
           />
           {touchOn && (
             <section aria-label="폰 기준점" className="flex flex-col gap-2 lg:pointer-events-none lg:absolute lg:inset-0">
-              <div className="flex flex-col gap-2 lg:pointer-events-auto lg:absolute lg:left-3 lg:top-3 lg:w-[min(26rem,55%)]">
+              <div className="flex flex-col items-start gap-2 lg:pointer-events-auto lg:absolute lg:left-3 lg:right-48 lg:top-3">
                 <Item role="status" aria-live="polite" variant="muted" size="sm">
                   {info.error && <ItemMedia><TriangleAlert aria-hidden="true" /></ItemMedia>}
                   <ItemContent><ItemTitle>{info.text}</ItemTitle></ItemContent>
                 </Item>
+                <div data-pin-chips className="flex w-full flex-col gap-2 lg:flex-row">
                 {IDS.map((id) => (
-                  <Card key={id} className="flex items-center gap-1.5 p-2">
+                  <Card key={id} className="flex items-center gap-1.5 p-2 lg:w-72">
                     <Avatar size="marker" aria-hidden="true"><AvatarFallback tone={id === "A" ? "marker-a" : "marker-b"}>{id}</AvatarFallback></Avatar>
                     <Input
                       type="text" maxLength={MAX_LABEL} value={labels[id]} aria-label={`${id} 지점 이름`}
@@ -318,6 +322,7 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
                     <Button variant="secondary" size="sm" aria-label={`${id} 다시 고르기`} onClick={() => pick(id)}>다시 고르기</Button>
                   </Card>
                 ))}
+                </div>
               </div>
               {(any || saved) && (
                 <Card className="flex justify-center gap-1.5 self-center p-2 lg:pointer-events-auto lg:absolute lg:bottom-3 lg:left-1/2 lg:-translate-x-1/2">
