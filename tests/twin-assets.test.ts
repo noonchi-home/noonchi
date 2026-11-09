@@ -1,6 +1,6 @@
 // 트윈 결과물 복사(scripts/twin-assets.ts): twin-studio에서 서버·뷰어가 읽는 파일만 twin/으로 옮긴다.
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -33,6 +33,9 @@ function fakeStudio(): string {
   ]) put(s, f);
   return s;
 }
+
+const sha = (s: string) => createHash("sha256").update(s).digest("hex");
+const target = () => join(mkdtempSync(join(tmpdir(), "twin-")), "twin");
 
 describe("트윈 결과물 복사", () => {
   it("서버·뷰어가 읽는 파일만 복사하고 출처 커밋과 sha256을 적는다", () => {
@@ -95,5 +98,46 @@ describe("트윈 결과물 복사", () => {
 
   it("git 폴더가 아니고 --commit이 없으면 멈춘다", () => {
     expect(() => copyTwinAssets({ from: fakeStudio(), to: join(tmpdir(), "nope-twin") })).toThrow(/--commit/);
+  });
+
+  it("집 data의 drawn_fixtures.json도 복사한다", () => {
+    const from = fakeStudio();
+    put(from, "data/homes/oneroom/drawn_fixtures.json", "{}");
+    const to = target();
+    copyTwinAssets({ from, to, commit: "a" });
+    expect(list(to)).toContain("data/homes/oneroom/drawn_fixtures.json");
+  });
+
+  it("구운 결과는 glb·lm<n>.webp·ground.png·manifest.json만 복사한다", () => {
+    const from = fakeStudio();
+    for (const f of ["x_baked.glb", "lm0.webp", "lm0.png", "ground.png", "manifest.json", "bake.blend", "layout.json", "timings.json", "lm/lm0.npy"]) put(from, `homes/oneroom/bake/${f}`);
+    const to = target();
+    copyTwinAssets({ from, to, commit: "a" });
+    expect(list(to).filter((p) => p.includes("/bake/"))).toEqual([
+      "homes/oneroom/bake/ground.png", "homes/oneroom/bake/lm0.webp", "homes/oneroom/bake/manifest.json", "homes/oneroom/bake/x_baked.glb",
+    ]);
+  });
+
+  it("only는 고른 경로만 바꾸고 다른 파일과 SOURCE.json 줄은 그대로 둔다", () => {
+    const from = fakeStudio();
+    const to = target();
+    copyTwinAssets({ from, to, commit: "a" });
+    const before = JSON.parse(readFileSync(join(to, "SOURCE.json"), "utf8"));
+    put(from, "data/homes/oneroom/drawn_fixtures.json", '{"items":[]}');
+    put(from, "apartment/scene.json", "changed");
+    rmSync(join(from, "homes/oneroom/scene.json"));
+    copyTwinAssets({ from, to, commit: "b", only: ["data/homes/oneroom/drawn_fixtures.json"] });
+    const after = JSON.parse(readFileSync(join(to, "SOURCE.json"), "utf8"));
+    expect(readFileSync(join(to, "apartment/scene.json"), "utf8")).toBe("x");
+    expect(after.commit).toBe("a");
+    expect(after.files.find((f: { path: string }) => f.path === "data/homes/oneroom/drawn_fixtures.json")).toMatchObject({ commit: "b", sha256: sha('{"items":[]}') });
+    expect(after.files.filter((f: { path: string }) => f.path !== "data/homes/oneroom/drawn_fixtures.json")).toEqual(before.files);
+  });
+
+  it("only가 어느 파일에도 맞지 않으면 멈춘다", () => {
+    const from = fakeStudio();
+    const to = target();
+    copyTwinAssets({ from, to, commit: "a" });
+    expect(() => copyTwinAssets({ from, to, commit: "b", only: ["nope/"] })).toThrow(/맞는 파일이 없어요/);
   });
 });

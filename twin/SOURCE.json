@@ -1363,6 +1363,12 @@
       "sha256": "0c8b98353d3e435fe3e5ccbc6e2e92528b65fd222570e0bc28f2b4e273d7e6e1"
     },
     {
+      "path": "data/homes/mokryeon_180b/drawn_fixtures.json",
+      "bytes": 2018,
+      "sha256": "048b4201261c2cdeb2ec2c2fadd1f99d43f00cfe1511b21f66e93099446a2064",
+      "commit": "b9e984fcd4ae6ec99fb5444930e528fe2954cbe4"
+    },
+    {
       "path": "data/homes/mokryeon_180b/floorplan.json",
       "bytes": 25131,
       "sha256": "7c995a5df1d57bef74bc1938af02b4573635f9eafdf0d10fbeb8e6d0db3a055e"
@@ -1661,6 +1667,48 @@
       "path": "homes/mokryeon_180b/assets/structure/walls.glb",
       "bytes": 433732,
       "sha256": "0b167ffff41f16a59c4fd02443c5796a73929d8f2ecb34cd76e9dce0fb36a59e"
+    },
+    {
+      "path": "homes/mokryeon_180b/bake/ground.png",
+      "bytes": 29503,
+      "sha256": "e168b38bd9b2875f7ec2de5c5a127ab75590447f94e24688351a0d2eb7a4b8b2",
+      "commit": "b9e984fcd4ae6ec99fb5444930e528fe2954cbe4"
+    },
+    {
+      "path": "homes/mokryeon_180b/bake/lm0.webp",
+      "bytes": 672278,
+      "sha256": "d8e69902d7561078114abfaaa5bdcd21d0cac6ba123d63780d2e2e81e937db12",
+      "commit": "b9e984fcd4ae6ec99fb5444930e528fe2954cbe4"
+    },
+    {
+      "path": "homes/mokryeon_180b/bake/lm1.webp",
+      "bytes": 573288,
+      "sha256": "66dd54056c7750d882dd3ee5e24c0dc0ea927f0954b42a395a0a491c9f805473",
+      "commit": "b9e984fcd4ae6ec99fb5444930e528fe2954cbe4"
+    },
+    {
+      "path": "homes/mokryeon_180b/bake/lm2.webp",
+      "bytes": 647432,
+      "sha256": "8731562c00fd9c2bda46266ef82871f4170cc1a4a9045715a77675ba16cbe3db",
+      "commit": "b9e984fcd4ae6ec99fb5444930e528fe2954cbe4"
+    },
+    {
+      "path": "homes/mokryeon_180b/bake/lm3.webp",
+      "bytes": 112646,
+      "sha256": "38c686c148fa625b95b85e433530b8fa988c4cd6c50de427ab5d495848ded07d",
+      "commit": "b9e984fcd4ae6ec99fb5444930e528fe2954cbe4"
+    },
+    {
+      "path": "homes/mokryeon_180b/bake/manifest.json",
+      "bytes": 24554,
+      "sha256": "cfd593e3886c35034888bee9fcfa7a2d5f53ea033c4aa8e11016de12bf2c74f9",
+      "commit": "b9e984fcd4ae6ec99fb5444930e528fe2954cbe4"
+    },
+    {
+      "path": "homes/mokryeon_180b/bake/mokryeon_180b_baked.glb",
+      "bytes": 19815628,
+      "sha256": "49dbddd31856f6aa0c39eecfcea9b2e1b40814575fbe856e1f31c9ab58eb8a76",
+      "commit": "b9e984fcd4ae6ec99fb5444930e528fe2954cbe4"
     },
     {
       "path": "homes/mokryeon_180b/scene.json",

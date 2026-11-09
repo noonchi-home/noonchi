@@ -12,10 +12,12 @@ const shots: Record<string, string> = process.env.PHONE_SHOTS === "1" ? { phoneS
 
 export default defineConfig({
   plugins: [react(), tailwind()],
-  resolve: { alias: { "@": page("src") } },
+  // @viewer: 저장소 안 트윈 뷰어 모듈(twin/apartment/viewer). 대시보드 트윈이 벽 보기·상태 규칙을 그대로 import한다.
+  resolve: { alias: { "@": page("src"), "@viewer": page("../twin/apartment/viewer") } },
   build: { outDir: "dist", emptyOutDir: true, rollupOptions: { input: { main: page("index.html"), setup: page("setup/index.html"), phone: page("phone/index.html"), ...shots } } },
   server: {
     host: "127.0.0.1", port: 5173, strictPort: true,
+    fs: { allow: [page("..")] },
     proxy: { "/api": SERVER, "/twin": SERVER, "/events": { target: SERVER.replace(/^http/, "ws"), ws: true } },
   },
   test: { environment: "jsdom", include: ["tests/**/*.test.{ts,tsx}"], setupFiles: ["tests/setup.ts"] },
