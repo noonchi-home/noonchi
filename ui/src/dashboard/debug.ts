@@ -1,7 +1,7 @@
 // 가짜 단계(?debug=steps): 서버 자료 대신 fake-run.json(scripts/twin3d/fake-run.ts)의 순간마다 메시지 묶음을 대시보드 자료·확인 목록에 넣는다.
 // 순간은 0 지켜보기, 1~4 컵 치우기 계획 단계다. 트윈(집·가전 상태·배치)과 health는 서버 것 그대로 쓴다.
 //   &step=N      그 순간(없으면 0, play면 2)
-//   &play=MS     MS마다 다음 순간: 2→3→4→0→1→2…
+//   &play=MS     지도(트윈) 첫 그림 뒤 MS마다 다음 순간: 2→3→4→0→1→2…
 //   &eye=0       대시보드 폰 칸 영상 없음(연결 QR)
 //   &offline=1   서버 연결 끊김
 //   &settings=1  설정 창을 연 채
@@ -57,10 +57,10 @@ export function debugPhone(q: DebugQuery, m: Moment, url: string): PhoneSlot {
 }
 
 /**
- * 가짜 단계 순간 고르기. q.step에서 시작하고 play면 그 간격마다 다음 순간으로 간다(window.__dash.step(n)으로 넘기면 거기서 다시 센다).
+ * 가짜 단계 순간 고르기. q.step에서 시작하고 play면 ready(지도 첫 그림) 뒤부터 그 간격마다 다음 순간으로 간다(window.__dash.step(n)으로 넘기면 거기서 다시 센다).
  * 순간이 바뀔 때마다 onMoment로 그 순간을 넘기고, 지금 순간을 돌려준다. q가 null이면 아무것도 하지 않고 null이다.
  */
-export function useDebugSteps(q: DebugQuery | null, onMoment: (m: Moment) => void): Moment | null {
+export function useDebugSteps(q: DebugQuery | null, onMoment: (m: Moment) => void, ready = true): Moment | null {
   const [index, setIndex] = useState(q?.step ?? 0);
   const report = useRef(onMoment);
   report.current = onMoment;
@@ -71,9 +71,9 @@ export function useDebugSteps(q: DebugQuery | null, onMoment: (m: Moment) => voi
     return () => { delete window.__dash; };
   }, [q]);
   useEffect(() => {
-    if (!q?.play) return;
+    if (!q?.play || !ready) return;
     const timer = setTimeout(() => setIndex(nextMoment), q.play);
     return () => clearTimeout(timer);
-  }, [q, index]);
+  }, [q, index, ready]);
   return q ? MOMENTS[index]! : null;
 }

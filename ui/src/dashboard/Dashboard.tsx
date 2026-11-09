@@ -192,9 +192,11 @@ export function Dashboard() {
     load(m.messages);
     for (const message of m.messages) toChecks(message);
   }, [load, toChecks]);
-  const moment = useDebugSteps(debug, onMoment);
   const kind = useTwinKind(homeId, health !== null);
   kindRef.current = kind;
+  // 트윈이 없는 집은 기다리지 않는다
+  const mapReady = (kind === "iframe" ? viewerReady : kind === "three" && bakedReady) || health?.twin === false;
+  const moment = useDebugSteps(debug, onMoment, mapReady);
   useEffect(() => { if (kind === "iframe") queue.current.drain(); }, [kind]);
   const onEngine = useCallback((engine: TwinEngine | null) => {
     live.current?.dispose();
@@ -219,8 +221,6 @@ export function Dashboard() {
     : (layout: PageLayout) => (
       <BakedStage home={kind === "three" ? homeId : null} layout={layout} plan={dash.plan} eye={dash.eye} checks={checks} devices={devices} onEngine={onEngine} onReady={onBakedReady} />
     );
-  // 트윈이 없는 집은 기다리지 않는다
-  const mapReady = (kind === "iframe" ? viewerReady : kind === "three" && bakedReady) || health?.twin === false;
   const plan = isOpen(dash.plan) ? dash.plan : null;
   const { observation, action } = fsmOf(dash);
   return (

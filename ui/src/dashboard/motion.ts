@@ -74,8 +74,8 @@ export function useFadeIn(ref: RefObject<HTMLElement | null>, key: string, on: b
 }
 
 /**
- * 글에 쓰는 글꼴 조각(unicode-range로 나뉜 woff2)을 미리 받는다. text의 글자와 지금 화면 글을 덮는 조각을 모두 받으면 true.
- * 단계가 바뀔 때 처음 나오는 글자가 새 조각을 받으면 글꼴이 바뀐 글을 모두 다시 배치하고 다시 그려 단계 바뀜이 끊긴다.
+ * 글에 쓰는 글꼴 조각(unicode-range로 나뉜 woff2)을 미리 받는다. text의 글자와 지금 화면 글을 덮는 조각을 처음 다 받으면 true이고, 그 뒤로 그대로다.
+ * 단계가 바뀌어 text가 바뀌면 새 글자의 조각을 받기만 한다: false로 돌리지 않아 화면을 한 번 더 그리지 않고, 화면 글은 textContent로 읽어 배치를 다시 셈하지 않는다.
  * document.fonts가 없으면(시험) 바로 true.
  */
 export function useFontsLoaded(family: string, text: string): boolean {
@@ -83,8 +83,7 @@ export function useFontsLoaded(family: string, text: string): boolean {
   useLayoutEffect(() => {
     if (typeof document === "undefined" || typeof document.fonts?.load !== "function") { setDone(true); return; }
     let live = true;
-    setDone(false);
-    const all = text + (document.body?.innerText ?? "");
+    const all = text + (document.body?.textContent ?? "");
     document.fonts.load(`16px "${family}"`, all).catch(() => []).then(() => document.fonts.ready).then(() => { if (live) setDone(true); });
     return () => { live = false; };
   }, [family, text]);

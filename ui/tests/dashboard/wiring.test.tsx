@@ -32,10 +32,10 @@ const device = (id: string, label: string, kind: DeviceView["kind"], twin: Recor
 });
 const DEVICES = [device("lamp", "플로어 스탠드", "light", { power: "on" }), device("lock", "현관 도어록", "lock", { locked: true })];
 
-/** 구운 3D가 없는 집(id "h"): 트윈 칸 지도 자리는 iframe 트윈과 확인 목록 말풍선이다. eye는 폰 서버가 켜졌는가. */
-function stubServer(eye: boolean) {
+/** 구운 3D가 없는 집(id "h"): 트윈 칸 지도 자리는 iframe 트윈(시험에서는 첫 그림을 그리지 않는다)과 확인 목록 말풍선이다. eye는 폰 서버가 켜졌는가, twin은 트윈이 있는 집인가. */
+function stubServer(eye: boolean, twin = true) {
   const health: HealthView = {
-    ok: true, devices: 2, hub: "memory", transport: null, provider: "openai", model: "m", twin: true, eye,
+    ok: true, devices: 2, hub: "memory", transport: null, provider: "openai", model: "m", twin, eye,
     home: { id: "h", name: "우리 집" }, phone_urls: [PHONE_URL], brain: true, mode: "test",
     ready: { ok: false, inference_mode: "mock", vlm: { base_url: "", model: "", key: false, reachable: false }, pam: { url: "", reachable: false, llm: null },
       agent: { provider: "openai", base_url: "", model: "", key: false, reachable: false }, db: false },
@@ -210,11 +210,19 @@ describe("가짜 단계(?debug=steps)", () => {
     expect(document.querySelector("[data-progress]")).toBeNull();
   });
 
-  it("&play=MS면 MS마다 4→0→1 차례로 넘긴다", async () => {
+  it("&play=MS면 지도가 준비된 뒤부터 MS마다 4→0→1 차례로 넘긴다", async () => {
+    stubServer(true, false);
     open("&step=4&play=40");
     expect(document.querySelector("main")).toHaveAttribute("data-step", "4");
     await waitFor(() => expect(document.querySelector("main")).toHaveAttribute("data-step", "0"));
     await waitFor(() => expect(document.querySelector("main")).toHaveAttribute("data-step", "1"));
+  });
+
+  it("&play=MS여도 트윈이 첫 그림을 그리기 전에는 넘기지 않는다", async () => {
+    open("&step=4&play=40");
+    await waitFor(() => expect(called("/api/health")).toBe(true));
+    await act(async () => { await new Promise((r) => setTimeout(r, 200)); });
+    expect(document.querySelector("main")).toHaveAttribute("data-step", "4");
   });
 
   it("&eye=0이면 연결 QR, &offline=1이면 연결 끊김 칩, &settings=1이면 설정 창이 열려 있다", async () => {

@@ -1,6 +1,6 @@
 // 대시보드 단계가 바뀔 때 끊기지 않게: 대시보드 폰 칸·트윈 칸은 다시 만들지 않고 크기·자리(레이아웃)도 바꾸지 않으며, 움직이는 것(말풍선 말)은
 // transform·opacity만 움직인다. 실제 크롬에서 재는 것은 ui/scripts/measure-switch.mjs.
-import { render } from "@testing-library/react";
+import { act, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DashboardScreen, type ScreenProps } from "../../src/dashboard/DashboardScreen";
 import { EYE_FRAMES, imageSlot, PHONE_URL, SAY, screenAt } from "./fixtures";
@@ -126,6 +126,29 @@ describe("대시보드 단계 바뀜", () => {
     const view = render(<DashboardScreen {...screenAt(2)} />);
     expect(view.container.querySelector("[data-veil]")).toBeNull();
     expect(view.container.querySelector("[data-rehearsal]")).toBeNull();
+  });
+
+  it("준비된 뒤 단계가 바뀌면 화면을 한 번만 다시 그리고 data-ready를 떼지 않는다(새 말의 글꼴 조각은 그리기를 막지 않고 받는다)", async () => {
+    const loads: string[] = [];
+    const fonts = {
+      // 처음 받기만 끝나고, 그 뒤 받기는 끝나지 않는다(단계가 바뀐 그 그림 안에서는 조각이 아직 안 왔다)
+      load: vi.fn((_font: string, text: string) => (loads.push(text) === 1 ? Promise.resolve([]) : new Promise<never>(() => {}))),
+      ready: Promise.resolve(),
+    };
+    Object.defineProperty(document, "fonts", { value: fonts, configurable: true });
+    restore.push(() => { delete (document as unknown as { fonts?: unknown }).fonts; });
+    let draws = 0;
+    const map = () => { draws++; return null; };
+    const view = render(<DashboardScreen {...screenAt(1, { map })} />);
+    const main = view.container.querySelector("main")!;
+    await waitFor(() => expect(main).toHaveAttribute("data-ready"));
+    draws = 0;
+    view.rerender(<DashboardScreen {...screenAt(2, { map })} />);
+    await act(async () => { await Promise.resolve(); });
+    expect(main).toHaveAttribute("data-step", "2");
+    expect(main).toHaveAttribute("data-ready");
+    expect(draws).toBe(1);
+    expect(loads.at(-1)).toContain(SAY[2]);
   });
 
   it("움직임 줄이기를 켠 화면에서는 단계가 바뀌어도 움직이지 않는다", () => {
