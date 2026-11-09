@@ -40,6 +40,14 @@ describe("설정 1단계: 집 고르기", () => {
     expect(classes).not.toContain("data-[orientation=horizontal]:w-full");
   });
 
+  it("좁은 화면에서 단계 표시는 번호만 보이게 줄여 머리줄을 넘지 않는다(이름은 화면 읽기용으로 남김)", async () => {
+    open();
+    await screen.findByRole("heading", { name: "어느 집을 쓸까요?" });
+    const list = screen.getByRole("list", { name: "설정 단계" });
+    expect(list.className.split(/\s+/)).toContain("max-sm:data-[orientation=horizontal]:w-40");
+    for (const t of within(list).getAllByText(/집 고르기|가전 선택|운영 모드|위치 동기화/)) expect(t.className.split(/\s+/)).toContain("max-sm:sr-only");
+  });
+
   it("머리줄은 로고 짝(얼굴 상자 + NOONCHI)과 「설정」", async () => {
     open();
     await screen.findByRole("heading", { name: "어느 집을 쓸까요?" });
