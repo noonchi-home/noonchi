@@ -1,0 +1,88 @@
+// 대시보드 화면 시험 자료: 지켜보기(0)와 컵 치우기 4단계 계획(1~4, 계획 계약 PlanView), 세로 그림 칸(가짜 단계용 image), YOLO 상자 하나,
+// 눈 그림 넷(405×720)과 그림마다 YOLO 상자(EYE_FRAMES). 상자는 시안 scenario.ts BOX를 EYE_CROP_X0만큼 옮겨 그림 끝에서 자른 값이다.
+import { createElement } from "react";
+import type { HealthView } from "../../../src/contract/events.ts";
+import type { PlanStep, PlanView } from "../../../src/contract/plan.ts";
+import type { ScreenProps } from "../../src/dashboard/DashboardScreen";
+import type { Detection } from "../../src/dashboard/detections";
+import { hubOf } from "../../src/dashboard/hub";
+import type { PhoneSlot } from "../../src/dashboard/PhonePane";
+import { WORDS } from "../../src/dashboard/words";
+
+export const PHONE_URL = "http://192.168.0.7:8210/phone/";
+
+export const HEALTH: HealthView = {
+  ok: true, devices: 2, hub: "memory", transport: null, provider: "openai", model: "gpt-5-mini", twin: true, eye: true,
+  home: { id: "mokryeon_180b", name: "한양목련 180B" }, phone_urls: [PHONE_URL], brain: true, mode: "test",
+  ready: {
+    ok: false, inference_mode: "mock", vlm: { base_url: "", model: "", key: false, reachable: false }, pam: { url: "", reachable: false, llm: null },
+    agent: { provider: "openai", base_url: "", model: "", key: false, reachable: false }, db: false,
+  },
+};
+export const HUB = hubOf(HEALTH, true);
+
+export type EyeFrameId = "table-far" | "table-near" | "sink" | "sink-cup";
+export interface EyeFrame { id: EyeFrameId; width: number; height: number; boxes: Detection[] }
+
+/** 눈 그림 넷과 그 위 YOLO 상자(그림 픽셀 [왼쪽, 위, 오른쪽, 아래]). */
+export const EYE_FRAMES: EyeFrame[] = [
+  { id: "table-far", width: 405, height: 720, boxes: [
+    { label: "식탁", score: 0.91, box: [106, 338, 298, 528] },
+    { label: "컵", score: 0.84, box: [168, 332, 192, 357] },
+  ] },
+  { id: "table-near", width: 405, height: 720, boxes: [
+    { label: "컵", score: 0.95, box: [160, 238, 245, 346] },
+    { label: "식탁", score: 0.89, box: [0, 162, 405, 720] },
+  ] },
+  { id: "sink", width: 405, height: 720, boxes: [
+    { label: "싱크대", score: 0.87, box: [0, 262, 405, 325] },
+  ] },
+  { id: "sink-cup", width: 405, height: 720, boxes: [
+    { label: "싱크대", score: 0.93, box: [0, 100, 405, 370] },
+    { label: "컵", score: 0.92, box: [155, 243, 250, 358] },
+  ] },
+];
+
+export const FRAME = { width: 405, height: 720 };
+/** 세로 그림 칸(가짜 단계용). */
+export const imageSlot = (id: EyeFrameId = "table-far"): PhoneSlot => ({ kind: "image", src: `/debug-eye/eye-${id}.webp`, ...FRAME });
+/** YOLO 상자 하나(먼 식탁 위 컵). */
+export const BOX: Detection = { label: "컵", score: 0.84, box: [168, 332, 192, 357] };
+
+const STEPS: PlanStep[] = [
+  { id: "cup:1", kind: "move", label: "식탁으로 가기", target: { objectId: "dining_table", room: "living" }, status: "pending" },
+  { id: "cup:2", kind: "act", label: "컵 집기", target: { objectId: "cup" }, status: "pending" },
+  { id: "cup:3", kind: "move", label: "싱크대로 가기", target: { objectId: "sink", room: "kitchen" }, status: "pending" },
+  { id: "cup:4", kind: "act", label: "컵 내려놓기", target: { objectId: "sink" }, status: "pending" },
+];
+
+/** 컵 치우기 4단계 계획: n번째 단계가 지금(앞은 끝남, 뒤는 남음). */
+export function planAt(n: number): PlanView {
+  return {
+    id: "cup", revision: n, origin: "mock", source: "planner", goal: "컵 치우기", judgment: "식탁 컵을 치우기로 했어요", dryRun: false,
+    robot: { position: [10.6, 8.6], room: "living" }, path: [], legs: [],
+    steps: STEPS.map((s, i) => ({ ...s, status: i + 1 < n ? "done" : i + 1 === n ? "active" : "pending" })),
+    status: "running", updatedAt: "2026-11-09T00:00:00.000Z",
+  };
+}
+export const PLAN = planAt(1);
+
+/** 단계마다 말풍선 카드 말(0 지켜보기, 1~4 실제 폰 명령). */
+export const SAY = ["식탁을 보고 있어요.", "식탁으로 가 주세요.", "컵을 들어 주세요.", "싱크대로 가 주세요.", "컵을 싱크대에 넣어 주세요."];
+export const WATCHING = "사람이 식탁에서 컵으로 마시고 있어요.";
+export const LEFT_CUP = "식탁 위에 컵이 있고 사람이 자리를 비웠어요.";
+export const CLEAR_CUP = "컵 치우기";
+
+/** 트윈 칸 지도 자리에 넣는 그림(캔버스). */
+export const MAP = createElement("canvas", { "data-fixture-map": "" });
+
+/** n번째 순간의 화면 자료(0 지켜보기, 1~4 계획 단계). */
+export function screenAt(n: number, over: Partial<ScreenProps> = {}): ScreenProps {
+  const plan = n > 0 ? planAt(n) : null;
+  return {
+    index: n, plan, step: plan ? plan.steps[n - 1]! : null, robotKnown: true, connected: true, map: MAP, mapReady: true,
+    phone: imageSlot(), boxes: [BOX], frame: FRAME,
+    observation: n > 0 ? LEFT_CUP : WATCHING, action: n > 0 ? CLEAR_CUP : WORDS.wait, say: SAY[n]!, facing: n > 0 ? "twin" : "video", hub: HUB,
+    ...over,
+  };
+}

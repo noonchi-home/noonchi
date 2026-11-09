@@ -1,0 +1,136 @@
+// 대시보드 단계가 바뀔 때 끊기지 않게: 대시보드 폰 칸·트윈 칸은 다시 만들지 않고 크기·자리(레이아웃)도 바꾸지 않으며, 움직이는 것(말풍선 말)은
+// transform·opacity만 움직인다. 실제 크롬에서 재는 것은 ui/scripts/measure-switch.mjs.
+import { render } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DashboardScreen, type ScreenProps } from "../../src/dashboard/DashboardScreen";
+import { EYE_FRAMES, imageSlot, PHONE_URL, SAY, screenAt } from "./fixtures";
+
+const STAGE = { width: 1504, height: 896 };
+const ALLOWED = new Set(["transform", "opacity", "offset", "easing", "composite"]);
+
+type Call = { el: Element; keyframes: Record<string, unknown>[] };
+let calls: Call[] = [];
+let restore: (() => void)[] = [];
+
+/** 움직임 줄이기를 끈 화면(실제 허브 화면과 같다). jsdom 기본값(tests/setup.ts)은 줄이기 켬. */
+const motionOn = () => {
+  const media = window.matchMedia;
+  window.matchMedia = ((q: string) => ({ ...media(q), matches: false })) as typeof window.matchMedia;
+  restore.push(() => { window.matchMedia = media; });
+};
+
+beforeEach(() => {
+  calls = [];
+  restore = [];
+  // 모든 상자가 같은 크기로 재진다(jsdom은 0을 준다)
+  const rect = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
+    { x: 0, y: 0, left: 0, top: 0, right: STAGE.width, bottom: STAGE.height, ...STAGE, toJSON: () => ({}) } as DOMRect,
+  );
+  // Element.animate 기록(jsdom에는 없다)
+  const proto = Element.prototype as unknown as { animate?: unknown; getAnimations?: unknown };
+  const had = { animate: proto.animate, getAnimations: proto.getAnimations };
+  proto.animate = function (this: Element, kf: Keyframe[] | PropertyIndexedKeyframes) {
+    const list = Array.isArray(kf) ? kf : [kf];
+    calls.push({ el: this, keyframes: list as Record<string, unknown>[] });
+    const anim = { finished: Promise.resolve(), cancel: () => {}, finish: () => {}, onfinish: null, oncancel: null, playState: "running" };
+    return anim as unknown as Animation;
+  };
+  proto.getAnimations = () => [];
+  restore.push(() => rect.mockRestore(), () => { proto.animate = had.animate; proto.getAnimations = had.getAnimations; });
+});
+afterEach(() => { for (const r of restore.reverse()) r(); });
+
+const phoneOf = (c: HTMLElement) => c.querySelector<HTMLElement>('section[aria-label="폰 카메라"]')!;
+const twinOf = (c: HTMLElement) => c.querySelector<HTMLElement>('section[aria-label="트윈"]')!;
+const box = (el: HTMLElement) => [el.style.left, el.style.top, el.style.width, el.style.height, el.style.aspectRatio].join(" ");
+
+/** from 순간으로 띄운 뒤 to 순간으로 넘긴다. */
+function step(from: ScreenProps, to: ScreenProps) {
+  const view = render(<DashboardScreen {...from} />);
+  const phone = phoneOf(view.container);
+  const twin = twinOf(view.container);
+  const was = {
+    phone, twin, phoneImg: phone.querySelector("img"), canvas: twin.querySelector("canvas"),
+    boxes: { phone: box(phone), twin: box(twin), stage: box(phone.parentElement!) },
+  };
+  calls = [];
+  view.rerender(<DashboardScreen {...to} />);
+  return { view, was };
+}
+
+describe("대시보드 단계 바뀜", () => {
+  it("단계가 바뀌어도 대시보드 폰 칸·트윈 칸과 그 안 지도 캔버스·영상 그림을 다시 만들지 않는다", () => {
+    const { view, was } = step(screenAt(2), screenAt(3, { phone: imageSlot("sink"), boxes: EYE_FRAMES[2]!.boxes }));
+    expect(phoneOf(view.container)).toBe(was.phone);
+    expect(twinOf(view.container)).toBe(was.twin);
+    expect(was.phone.querySelector("img")).toBe(was.phoneImg);
+    expect(was.phone.querySelector("img")?.getAttribute("src")).toBe("/debug-eye/eye-sink.webp");
+    expect(was.twin.querySelector("canvas")).toBe(was.canvas);
+    expect(was.canvas).not.toBeNull();
+  });
+
+  it("폰 서버 영상(live)도 단계가 바뀌어도 같은 영상 그림이다", () => {
+    const live = { kind: "live", url: PHONE_URL } as const;
+    const { view, was } = step(screenAt(1, { phone: live }), screenAt(2, { phone: live }));
+    expect(phoneOf(view.container).querySelector("img")).toBe(was.phoneImg);
+    expect(was.phoneImg).not.toBeNull();
+  });
+
+  it("지켜보기에서 1단계로 넘어가도 칸과 그 안 그림을 다시 만들지 않고, 크기 style이 그대로이며 움직임에는 transform·opacity만 쓴다", () => {
+    motionOn();
+    const { view, was } = step(screenAt(0), screenAt(1));
+    expect(view.container.querySelector("main")).toHaveAttribute("data-step", "1");
+    expect(phoneOf(view.container)).toBe(was.phone);
+    expect(twinOf(view.container)).toBe(was.twin);
+    expect(was.twin.querySelector("canvas")).toBe(was.canvas);
+    expect(box(was.phone)).toBe(was.boxes.phone);
+    expect(box(was.twin)).toBe(was.boxes.twin);
+    expect(box(was.phone.parentElement!)).toBe(was.boxes.stage);
+    expect(calls.length).toBeGreaterThan(0);
+    for (const c of calls) {
+      for (const k of c.keyframes) for (const p of Object.keys(k)) expect(ALLOWED.has(p), p).toBe(true);
+    }
+  });
+
+  it("두 판의 크기·자리는 그대로이고, 레이아웃 값을 움직이지 않는다", () => {
+    const { view, was } = step(screenAt(2), screenAt(3));
+    expect(box(was.phone)).toBe(was.boxes.phone);
+    expect(box(was.twin)).toBe(was.boxes.twin);
+    for (const el of view.container.querySelectorAll<HTMLElement>("*")) {
+      expect(el.style.transitionProperty, el.tagName).not.toMatch(/left|top|width|height|inset|all|border-radius/);
+    }
+  });
+
+  it("말풍선 말이 바뀌면 앞 말은 opacity로 사라지고 새 말은 opacity·transform으로 떠오른다", () => {
+    motionOn();
+    const { view } = step(screenAt(1), screenAt(2));
+    const lines = [...view.container.querySelectorAll<HTMLElement>("[data-say-line]")];
+    expect(lines.map((l) => l.textContent)).toEqual([SAY[1], SAY[2]]);
+    const [old, now] = lines;
+    const out = calls.filter((c) => c.el === old);
+    const into = calls.filter((c) => c.el === now);
+    expect(out).toHaveLength(1);
+    expect(into).toHaveLength(1);
+    expect(out[0]!.keyframes.map((k) => k.opacity)).toEqual([1, 0]);
+    expect(into[0]!.keyframes.map((k) => k.opacity)).toEqual([0, 1]);
+    expect(into[0]!.keyframes.some((k) => "transform" in k)).toBe(true);
+  });
+
+  it("폰 영상 그림은 늘 따로 합성한다(단계가 바뀌어 상자·카드 글이 바뀌어도 영상 그림을 다시 그리지 않는다)", () => {
+    const view = render(<DashboardScreen {...screenAt(2)} />);
+    const img = phoneOf(view.container).querySelector("img")!;
+    expect(img.className).toMatch(/(^|\s)will-change-transform(\s|$)/);
+  });
+
+  it("가림판·미리 그려 보기가 없다", () => {
+    const view = render(<DashboardScreen {...screenAt(2)} />);
+    expect(view.container.querySelector("[data-veil]")).toBeNull();
+    expect(view.container.querySelector("[data-rehearsal]")).toBeNull();
+  });
+
+  it("움직임 줄이기를 켠 화면에서는 단계가 바뀌어도 움직이지 않는다", () => {
+    const { view } = step(screenAt(1), screenAt(2));
+    expect(view.container.querySelectorAll("[data-say-line]").length).toBeGreaterThan(0);
+    expect(calls).toEqual([]);
+  });
+});

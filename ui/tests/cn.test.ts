@@ -27,6 +27,6 @@ describe("cn과 디자인 토큰", () => {
     // Button은 cn(buttonVariants(…))로 class를 만든다
     const sm = words(cn(buttonVariants({ variant: "default", size: "sm" })));
     expect(sm).toContain("text-primary-foreground");
-    expect(sm).toContain("text-label");
+    expect(sm).toContain("text-xs");
   });
 });

@@ -1,5 +1,8 @@
 // 21st.dev「Basic Item」(id 28573, bundui/item1) 받은 코드.
-// 바꾼 것: 꾸러미의 의존 부품 item.tsx(shadcn Item)를 쓴다. text-sm → body-sm 토큰, [a]:hover:bg-accent/50 → [a]:hover:bg-hover/50(accent 별칭 없음). muted variant bg-muted/50은 그대로(muted=cream).
+// 바꾼 것: 꾸러미의 의존 부품 item.tsx(shadcn Item)를 쓴다. [a]:hover:bg-accent/50 → [a]:hover:bg-hover/50(accent 별칭 없음). muted variant bg-muted/50은 그대로(muted=cream). size say(마스코트 말풍선 카드: sm 여백에 글 text-base 굵게 가운데)를 더함.
+// 원래 글 크기: text-sm(14px). 받은 크기 그대로다(item·제목·설명 text-sm). 더 큰 글은 npm run lint(scripts/lint-ui-type.ts)가 막는다.
+// say 줄의 text-base(16px)만 사용자가 허락했다(2026-11-09, scripts/lint-ui-type.ts USER_SIZES).
+
 import * as React from "react"
 import { Slot } from "@radix-ui/react-slot"
 import { cva, type VariantProps } from "class-variance-authority"
@@ -33,7 +36,7 @@ function ItemSeparator({
 }
 
 const itemVariants = cva(
-  "group/item flex items-center border border-transparent text-body-sm rounded-md transition-colors [a]:hover:bg-hover/50 [a]:transition-colors duration-100 flex-wrap outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
+  "group/item flex items-center border border-transparent text-sm rounded-md transition-colors [a]:hover:bg-hover/50 [a]:transition-colors duration-100 flex-wrap outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
   {
     variants: {
       variant: {
@@ -44,6 +47,7 @@ const itemVariants = cva(
       size: {
         default: "p-4 gap-4 ",
         sm: "py-3 px-4 gap-2.5",
+        say: "py-3 px-4 gap-2.5 text-base font-bold text-center",
       },
     },
     defaultVariants: {
@@ -123,7 +127,7 @@ function ItemTitle({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="item-title"
       className={cn(
-        "flex w-fit items-center gap-2 text-body-sm leading-snug font-medium",
+        "flex w-fit items-center gap-2 text-sm leading-snug font-medium",
         className
       )}
       {...props}
@@ -136,7 +140,7 @@ function ItemDescription({ className, ...props }: React.ComponentProps<"p">) {
     <p
       data-slot="item-description"
       className={cn(
-        "text-muted-foreground line-clamp-2 text-body-sm leading-normal font-normal text-balance",
+        "text-muted-foreground line-clamp-2 text-sm leading-normal font-normal text-balance",
         "[&>a:hover]:text-primary [&>a]:underline [&>a]:underline-offset-4",
         className
       )}

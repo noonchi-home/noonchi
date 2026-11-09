@@ -1,5 +1,6 @@
 // 21st.dev「QR Code」(id 35184, kevingirelli/qr-code) 받은 코드.
 // 바꾼 것: color #0b0b0c → qr-ink 토큰, background #ffffff → qr-bg 토큰. 쓰지 않는 reveal(QRCodeReveal) 뺌.
+// 원래 글 크기: 없음. 받은 코드에 글 크기가 없다. 글 크기를 넣으면 npm run lint(scripts/lint-ui-type.ts)가 막는다.
 import { create } from "qrcode";
 import type { ComponentProps, ReactNode } from "react";
 

@@ -14,7 +14,7 @@
     "dev": "tsx watch src/server/main.ts",
     "test": "vitest run && npm --prefix ui test",
     "typecheck": "tsc --noEmit",
-    "lint": "tsx scripts/lint-ui-copy.ts && tsx scripts/lint-ui-color.ts && tsx scripts/lint-ui-parts.ts",
+    "lint": "tsx scripts/lint-ui-copy.ts && tsx scripts/lint-ui-color.ts && tsx scripts/lint-ui-parts.ts && tsx scripts/lint-ui-type.ts",
     "tokens": "tsx scripts/design-tokens.ts",
     "demo": "tsx scripts/demo.ts",
     "mcp": "tsx src/mcp/server.ts",

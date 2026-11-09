@@ -1,14 +1,16 @@
 "use client";
 
 // 21st.dev「Liquid Glass」(id 40333, manuarora700/liquid-glass) 받은 코드.
-// 바꾼 것: tint 색 흰색 → surface 토큰, 기본 tint 0.12 → 0.9(glass 토큰). simple 모드 bg-white/70 → bg-glass, opaque 모드 bg-white → bg-surface, dark: 줄 지움.
-// mode prop("auto"|"opaque")으로 불투명 모드를 밖에서 고른다. 데모의 그림자 → shadow-glass 토큰, 바깥 1px 선 glass-edge 토큰.
+// 바꾼 것: 몸 색 흰색 → surface 토큰(glass), 기본 tint 0.12 → 0.9, simple 모드 bg-white/70 → bg-glass, opaque 모드 bg-white → bg-surface, dark: 줄 지움.
+// mode prop("auto" | "opaque")을 이어 움직이는 판은 처음부터 불투명으로 그린다. 데모의 그림자는 shadow-glass 토큰, 바깥 1px 선은 glass-edge 토큰으로 판에 둔다.
+// 뿌리에 data-slot·data-glass(그리는 방식)·data-tint(tint 값)를 단다.
+// 원래 글 크기: 없음. 받은 코드에 글 크기가 없다. 글 크기를 넣으면 npm run lint(scripts/lint-ui-type.ts)가 막는다.
+
 import {
   useEffect,
   useId,
   useRef,
   useState,
-  type CSSProperties,
   type HTMLAttributes,
 } from "react";
 import { cn } from "@/lib/utils";
@@ -25,9 +27,9 @@ export type LiquidGlassProps = HTMLAttributes<HTMLDivElement> & {
   aberration?: number;
   /** Extra blur after refraction, in px. */
   frost?: number;
-  /** surface 토큰 바탕 0–1. */
+  /** surface 몸 tint 0–1(판 위에 바로 글이 있으면 0.9, 글이 칩·단추 안에만 있으면 0.6). */
   tint?: number;
-  /** opaque: 굴절 없이 불투명 판(움직이는 판·크기가 바뀌는 판). */
+  /** "opaque"면 굴절·흐림 없이 처음부터 불투명 판(transform으로 움직이는 판, 크기가 바뀌는 판). */
   mode?: "auto" | "opaque";
 };
 
@@ -63,7 +65,8 @@ export function LiquidGlass({
   );
 
   useEffect(() => {
-    if (modeProp === "opaque" || prefersReducedTransparency()) setMode("opaque");
+    if (modeProp === "opaque") setMode("opaque");
+    else if (prefersReducedTransparency()) setMode("opaque");
     else if (isSafariLike() || !supportsUrlBackdropFilter()) setMode("simple");
   }, [modeProp]);
 
@@ -161,8 +164,9 @@ export function LiquidGlass({
     <div
       ref={rootRef}
       data-slot="liquid-glass"
-      data-mode={mode}
       data-refract={mode === "pending" && filter ? "true" : "false"}
+      data-glass={mode}
+      data-tint={tint}
       className={cn(
         "relative overflow-hidden shadow-glass ring-1 ring-glass-edge",
         mode === "simple" && "bg-glass",
@@ -172,11 +176,13 @@ export function LiquidGlass({
       style={{
         borderRadius: radius,
         backgroundColor:
-          mode === "pending" ? `color-mix(in srgb, var(--surface) ${Math.round(tint * 100)}%, transparent)` : undefined,
+          mode === "pending"
+            ? `color-mix(in srgb, var(--surface) ${Math.round(tint * 100)}%, transparent)`
+            : undefined,
         backdropFilter: backdrop,
         WebkitBackdropFilter: backdrop,
         ...style,
-      } as CSSProperties}
+      }}
       {...rest}
     >
       {filter ? (
@@ -261,17 +267,17 @@ function bendFromDepth(x: number) {
 function buildPhiTable(bevelPx: number) {
   const n = Math.max(1, Math.ceil(bevelPx));
   const phi = new Float32Array(n + 1);
-  for (let d = 1; d <= n; d++) phi[d] = phi[d - 1]! + bendFromDepth(d / n);
+  for (let d = 1; d <= n; d++) phi[d] = phi[d - 1] + bendFromDepth(d / n);
   return phi;
 }
 
 function samplePhi(phi: Float32Array, depth: number) {
   const max = phi.length - 1;
-  if (depth <= 0) return phi[0]!;
-  if (depth >= max) return phi[max]!;
+  if (depth <= 0) return phi[0];
+  if (depth >= max) return phi[max];
   const i = Math.floor(depth);
   const f = depth - i;
-  return phi[i]! * (1 - f) + phi[i + 1]! * f;
+  return phi[i] * (1 - f) + phi[i + 1] * f;
 }
 
 function computeDisplacementData(opts: DisplacementOptions) {
@@ -318,8 +324,8 @@ function computeDisplacementData(opts: DisplacementOptions) {
       const x1 = Math.min(W - 1, x + 1);
       const y0 = Math.max(0, y - 1);
       const y1 = Math.min(H - 1, y + 1);
-      const dPhiX = (field[y * W + x1]! - field[y * W + x0]!) / (x1 - x0 || 1);
-      const dPhiY = (field[y1 * W + x]! - field[y0 * W + x]!) / (y1 - y0 || 1);
+      const dPhiX = (field[y * W + x1] - field[y * W + x0]) / (x1 - x0 || 1);
+      const dPhiY = (field[y1 * W + x] - field[y0 * W + x]) / (y1 - y0 || 1);
 
       // Cap so the rim compresses but never folds over itself.
       const dx = Math.max(-1, Math.min(1, dPhiX * gain));
