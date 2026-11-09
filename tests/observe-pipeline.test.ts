@@ -5,6 +5,7 @@ import { ObservationPipeline, loadObserveConfig } from "../src/observe/pipeline.
 import { WorldState } from "../src/world/state.js";
 import type { Detection, Detector } from "../src/brain/detector.js";
 import { ScriptedDetector } from "./helpers/detectors.js";
+import { standing } from "./helpers/poses.js";
 import type { BrainLog } from "../src/contract/events.js";
 import type { WorldView } from "../src/contract/world.js";
 
@@ -112,6 +113,22 @@ describe("관찰 흐름", () => {
     expect(sent[0]).not.toContain("bottle");
     expect(sent[0]).not.toContain(`"d3"`);
     expect(sent[1]).toBe("Detections: []");
+    await p.close();
+  });
+
+  it("감지기가 낸 관절을 World State에 넣는다: 손목이 컵 상자 안이면 컵 손에 있음. 상태에 관절 모델 이름과 관절을 돌린 프레임 수", async () => {
+    const worlds: WorldView[] = [];
+    const vlm = { model: "v", json: async () => ({ value: { scene: "k", observations: [], summary: "s" }, costUsd: 0, model: "v", attempts: 1 }) } as unknown as VlmClient;
+    const dets: Detection[] = [{ label: "person", score: 0.9, cls: 0, box: [150, 40, 160, 300] }, { label: "cup", score: 0.9, cls: 41, box: [220, 160, 40, 20] }];
+    let n = 0;
+    const p = new ObservationPipeline({ config: { engineMs: 1000, vlmMaxInflight: 4, vlmTimeoutMs: 5000, detectQueueMax: 8, keepMs: 20_000 },
+      detector: new ScriptedDetector(() => dets, () => (++n === 4 ? undefined : [standing({ 10: [235, 170, 0.9] })])), vlm,
+      world: new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }), emit: () => {}, broadcastWorld: (w) => worlds.push(w) });
+    for (let i = 1; i <= 4; i++) p.onEngine(jpeg(i), { kind: "engine", width: 360, height: 780, captured_at: i * 1000, time_err_ms: 0 }, null, null, i * 1000 + 5);
+    await p.idle();
+    expect(worlds.at(-1)!.objects[0]!.facts.place).toMatchObject({ value: "in_hand", certainty: "confirmed" });
+    expect(worlds.at(-1)!.person.facts).toMatchObject({ posture: { value: "standing" } });
+    expect(p.status()).toMatchObject({ detector: "scripted", pose: "scripted-pose", detected: 4, posed: 3, pose_ms: 0 });
     await p.close();
   });
 

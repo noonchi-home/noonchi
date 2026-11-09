@@ -7,7 +7,7 @@ export const YOLO_TEXT = { none: "감지 없음", noDetector: "감지기 없음"
 /** VLM 상태 값 → 글. */
 export const STATE_TEXT: Record<string, string> = {
   on_table: "식탁 위", on_counter: "조리대 위", in_sink: "싱크대 안", on_floor: "바닥", in_hand: "손에 있음", in_use: "쓰는 중",
-  empty: "비어 있음", has_contents: "내용물 있음", contents_unknown: "안이 안 보임", sitting: "앉아 있음", standing: "서 있음",
+  empty: "비어 있음", has_contents: "내용물 있음", contents_unknown: "안이 안 보임", sitting: "앉아 있음", standing: "서 있음", lying: "누워 있음",
   holding_object: "물건을 들고 있음", eating_or_drinking: "먹거나 마시는 중",
 };
 

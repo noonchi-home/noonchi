@@ -1,4 +1,4 @@
-// 관찰 흐름(BRAIN=1): 엔진 프레임 → 고리(중복 버림) → YOLO(워커, 상한 있는 대기열에서 하나씩) → VLM(동시 요청) → World State → /events.
+// 관찰 흐름(BRAIN=1): 엔진 프레임 → 고리(중복 버림) → YOLO 감지·관절(워커, 상한 있는 대기열에서 하나씩, 관절은 사람이 보일 때만) → VLM(동시 요청) → World State → /events.
 // 프레임마다 observe 기록이 반드시 남는다: 대기열이 차면 YOLO·VLM 분석 없음, 감지 실패면 YOLO 분석 없음(VLM은 그대로 분석),
 // 고리 범위(keepMs)보다 앞서 찍힌 늦은 프레임은 분석하지 않고 YOLO·VLM 분석 없음(stale). 늦은 프레임은 World State·눈 자세에 넣지 않는다.
 // 감지 번호(d1…)와 물체 id의 짝은 그 프레임의 VLM 답(또는 분석 없음)이 올 때까지 둔다.
@@ -8,7 +8,7 @@ import type { BrainLog } from "../contract/events.js";
 import type { WorldChange, WorldView, YoloMissing } from "../contract/world.js";
 import type { DeviceState } from "../hub/types.js";
 import {
-  DETECTOR_MODELS, POSE_MODELS, WorkerDetector, modelPath, type Detection, type Detector, type DetectorModel, type DetectorSpec, type PoseModel,
+  DETECTOR_MODELS, POSE_MODELS, WorkerDetector, modelPath, type Detection, type Detector, type DetectorModel, type DetectorSpec, type Pose, type PoseModel,
 } from "../brain/detector.js";
 import { vlmTimeoutMs } from "../infer/endpoints.js";
 import { createInference } from "../infer/inference.js";
@@ -181,15 +181,16 @@ export class ObservationPipeline {
 
   /** YOLO 결과(실패면 null, 감지기가 없으면 undefined)를 World State에 넣고 같은 프레임을 VLM에 보낸다.
    *  YOLO 결과 observe에만 상자(엔진 프레임 픽셀)와 프레임 크기를 싣는다(대시보드 폰 칸).
-   *  World State가 받지 않는 낮은 신뢰도 감지는 상자·YOLO 글·VLM 감지 목록에서 뺀다: 화면·VLM·World State가 같은 감지를 본다. */
-  private analyze(frame: EngineFrame, raw: Detection[] | null | undefined): void {
+   *  World State가 받지 않는 낮은 신뢰도 감지는 상자·YOLO 글·VLM 감지 목록에서 뺀다: 화면·VLM·World State가 같은 감지를 본다.
+   *  관절(poses)은 World State만 받는다(자세·손에 듦 사실). */
+  private analyze(frame: EngineFrame, raw: Detection[] | null | undefined, poses?: Pose[]): void {
     const dets = raw && raw.filter((d) => this.o.world.accepts(d));
     const base = { type: "observe" as const, frame_id: frame.id, captured_at_ms: frame.capturedAtMs, vlm: null };
     if (dets === undefined) {
       this.idsOf.set(frame.id, new Map());
       this.o.emit({ ...base, at_ms: this.clock.now(), yolo: YOLO_TEXT.noDetector });
     } else if (dets) {
-      const { changes, ids } = this.o.world.applyDetections(frame, dets);
+      const { changes, ids } = this.o.world.applyDetections(frame, dets, poses);
       this.idsOf.set(frame.id, ids);
       this.o.emit({
         ...base, at_ms: this.clock.now(), yolo: yoloText(dets),
@@ -210,6 +211,7 @@ export class ObservationPipeline {
     while (this.queue.length && !this.closed) {
       const frame = this.queue.shift()!;
       let dets: Detection[] | null;
+      let poses: Pose[] | undefined;
       try {
         const r = await this.o.detector!.detect(frame.jpeg);
         this.detected++;
@@ -219,10 +221,11 @@ export class ObservationPipeline {
           this.poseMs = [...this.poseMs.slice(-49), r.poseMs];
         }
         dets = r.detections;
+        poses = r.poses;
       } catch {
         dets = null;
       }
-      if (!this.closed) this.analyze(frame, dets);
+      if (!this.closed) this.analyze(frame, dets, poses);
     }
   }
 

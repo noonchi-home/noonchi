@@ -18,6 +18,7 @@ import { sha256, type EngineFrame } from "../src/observe/ring.js";
 import type { Detection } from "../src/brain/detector.js";
 import type { CameraView } from "../src/phone/session.js";
 import { smallFloor } from "./helpers/floor.js";
+import { standing } from "./helpers/poses.js";
 
 // smallFloor: 로봇 [1, 2], 식탁 table_1 [7, 3], 싱크대 sink_1 [5, 1]
 const cup = (status: WorldObject["status"], place?: string, seen = 9_000): WorldObject => ({
@@ -493,5 +494,31 @@ describe("실행 추적 + 실제 World State(기준점을 맞춘 카메라)", ()
     see(7, moved, "in_sink");
     t.onWorld();
     expect(last()).toEqual({ type: "command_clear", id: "plan:pam-1" });
+  });
+
+  it("관절: 손목이 컵 상자 안이면 같은 프레임 VLM 답이 「식탁 위」여도 「컵을 들어 주세요」 단계가 비전으로 넘어간다. 손목이 멀면 넘기지 않는다", () => {
+    const ws = new WorldState({
+      surfaces: () => [{ id: "table_1", label: "식탁", center: [2, 0], top: 0.75, radius: 0.6 }],
+      floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices: () => [],
+    });
+    const person: Detection = { label: "person", score: 0.9, cls: 0, box: [150, 40, 160, 300] };
+    for (let i = 1; i <= 3; i++) {
+      const { ids } = ws.applyDetections(frame(i), [onTable]);
+      ws.applyScene(`e${i}`, i * 1000, { scene: "k", observations: [{ object_id: "d1", state: "on_table" }], summary: "s" }, ids);
+    }
+    const { t, last } = setup({ w: () => ws.view(10_000) });
+    t.onDecision({ ...decision, atMs: 0 });
+    t.onAnswer("plan:pam-1", "plan:pam-1:1", "done");
+    expect(last()).toMatchObject({ step: "plan:pam-1:2", text: STEP_COMMAND.pickCup, vision: "컵 · 식탁 위" });
+    const grab = (i: number, wrist: [number, number]) => {
+      const { ids } = ws.applyDetections(frame(i), [person, onTable], [standing({ 10: [...wrist, 0.9] }, [150, 40, 160, 300])]);
+      ws.applyScene(`e${i}`, i * 1000, { scene: "k", observations: [{ object_id: "d2", state: "on_table" }], summary: "s" }, ids);
+      t.onWorld();
+    };
+    grab(4, [160, 300]); // 손목이 컵 상자 [220, 160, 40, 20]에서 멀다
+    expect(last()).toMatchObject({ step: "plan:pam-1:2", vision: "컵 · 식탁 위" });
+    grab(5, [235, 170]); // 손목이 컵 상자 안
+    expect(ws.view(5000).objects[0]!.facts.place?.value).toBe("in_hand");
+    expect(last()).toMatchObject({ step: "plan:pam-1:3", text: STEP_COMMAND.goSink, vision: "컵 · 손에 있음 · 싱크대까지 거리 모름" });
   });
 });

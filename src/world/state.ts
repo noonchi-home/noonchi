@@ -3,19 +3,22 @@
 // - 등장·사라짐: Confirmer(사람 2장, 물건 3장). 사라짐은 그 자리가 시야 안인 프레임만 센다. 등장 확인 전 물체는 view()에 내지 않는다.
 // - VLM 사실: 면(facet)마다 하나. 촬영 시각이 더 오래된 답은 버리고, 같은 값이 연속 두 번이면 confirmed. 요약은 바뀔 때만 변화로 낸다.
 //   쓰는 중(use)·사람 행동(action)은 지금만 맞는 사실이다: 그 물체를 본 프레임의 VLM 답에 없으면 지운다. 사람이 안 보이면 사람 사실을 지운다.
+// - 관절(applyDetections의 poses): 손목이 컵·병·그릇 상자 안·가까이면 손에 있음과 사람 물건을 들고 있음, 관절 자세(서 있음·앉아 있음·누워 있음).
+//   같은 프레임에서는 관절 사실이 VLM 답보다 앞선다. 손목이 떨어지거나 사람이 안 보이면 관절이 붙인 손에 있음만 지운다.
 // - 분석 없음(applyMissing): 셈과 변화 하나만 남기고 등장·사라짐 셈에는 넣지 않는다.
 // - 가전: 관계표에 든 종류만 본다. 바뀐 속성의 이력, 상태 이름, 남은 시간(RemainingTracker).
 import type { EyePose } from "../contract/events.js";
 import type {
   Facet, ObjClass, VlmMissing, WorldChange, WorldDevice, WorldEye, WorldFact, WorldObject, WorldPerson, WorldView, YoloMissing,
 } from "../contract/world.js";
-import type { Detection } from "../brain/detector.js";
+import type { Detection, Pose } from "../brain/detector.js";
 import type { DeviceState } from "../hub/types.js";
 import type { EngineFrame } from "../observe/ring.js";
 import type { SceneObservation } from "../observe/scene.js";
 import { Confirmer } from "./confirm.js";
 import { CHANGE_TEXT, OBJECT_NAME, objectName, onSurface } from "./labels.js";
 import { inView, placeBox, type PlaneSurface } from "./place.js";
+import { heldBy, mainPerson, type Posture } from "./pose.js";
 import { RELATED_KINDS, RemainingTracker, deviceStatus, relatedDeviceIds, DEVICE_STATUS } from "./relations.js";
 
 type V3 = [number, number, number];
@@ -24,9 +27,11 @@ type Plan2 = [number, number];
 const OBJ_CLASSES: ReadonlySet<string> = new Set<ObjClass>(["cup", "bottle", "bowl"]);
 const FACET: Record<string, Facet> = {
   on_table: "place", on_counter: "place", in_sink: "place", on_floor: "place", in_hand: "place", in_use: "use",
-  empty: "contents", has_contents: "contents", contents_unknown: "contents", sitting: "posture", standing: "posture",
+  empty: "contents", has_contents: "contents", contents_unknown: "contents", sitting: "posture", standing: "posture", lying: "posture",
   holding_object: "action", eating_or_drinking: "action",
 };
+/** 관절 자세 → 사람 자세 사실 값. 다리 가림·모름은 사실을 바꾸지 않는다. */
+const POSTURE_FACT: Partial<Record<Posture, string>> = { standing: "standing", sitting: "sitting", lying: "lying" };
 const OBJECT_FACETS: ReadonlySet<Facet> = new Set<Facet>(["place", "use", "contents"]);
 const PERSON_FACETS: ReadonlySet<Facet> = new Set<Facet>(["posture", "action"]);
 /** 지금만 맞는 면. 그 물체를 본 프레임의 답에 없으면 지운다. */
@@ -83,6 +88,8 @@ export class WorldState {
   private summaryAt = Number.NEGATIVE_INFINITY;
   private vlmMissing = 0;
   private yoloMissing = 0;
+  /** 관절이 붙인 사실(그 사실 객체). VLM이 같은 면을 다시 쓰면 새 객체라 빠진다. */
+  private readonly byPose = new WeakSet<WorldFact>();
   private readonly identityM: number;
   private readonly minScore: { person: number; object: number };
 
@@ -140,7 +147,8 @@ export class WorldState {
     return objectName(obj.cls, obj.id);
   }
 
-  applyDetections(frame: EngineFrame, dets: Detection[]): { changes: WorldChange[]; ids: Map<string, string> } {
+  /** poses: 이 프레임의 관절(YOLO26-pose). 없으면(관절 모델이 없거나 사람이 없어 돌리지 않음) 자세·손에 듦을 보지 않는다. */
+  applyDetections(frame: EngineFrame, dets: Detection[], poses?: Pose[]): { changes: WorldChange[]; ids: Map<string, string> } {
     const at = frame.capturedAtMs;
     this.start(at);
     const view = frame.view;
@@ -148,6 +156,7 @@ export class WorldState {
     const ids = new Map<string, string>();
     const seen = new Set<string>();
     const used = new Set<string>();
+    const boxes: { obj: Obj; box: Detection["box"] }[] = [];
     dets.forEach((d, i) => {
       const tmp = `d${i + 1}`;
       if (!this.accepts(d)) return;
@@ -162,6 +171,7 @@ export class WorldState {
       used.add(obj.id);
       ids.set(tmp, obj.id);
       seen.add(obj.id);
+      boxes.push({ obj, box: d.box });
       obj.lastSeen = Math.max(obj.lastSeen, at);
       obj.lastInView = Math.max(obj.lastInView, at);
       if (placed?.position) {
@@ -182,7 +192,10 @@ export class WorldState {
       if (e.key === PERSON) {
         this.person.visible = e.kind === "appeared";
         this.person.since_ms = at;
-        if (e.kind === "gone") this.person.facts = {};
+        if (e.kind === "gone") {
+          this.person.facts = {};
+          for (const o of this.objects.values()) this.dropPoseFact(o.facts, "place", "in_hand"); // 사람이 없으면 손에 있을 수 없다
+        }
         changes.push({ kind: e.kind === "appeared" ? "person_appeared" : "person_gone", at_ms: at, subject: PERSON, meaningful: true,
           text: e.kind === "appeared" ? CHANGE_TEXT.personAppeared : CHANGE_TEXT.personGone });
         continue;
@@ -221,7 +234,54 @@ export class WorldState {
         changes.push({ kind: "out_of_view", at_ms: at, subject: obj.id, meaningful: false, text: CHANGE_TEXT.outOfView(this.name(obj)) });
       }
     }
+    if (poses) this.applyPose(at, poses, boxes, changes);
     return { changes, ids };
+  }
+
+  /** 관절로 본 사실(규칙: src/world/pose.ts). 손목이 물건 상자 안·가까이면 그 물건 손에 있음과 사람 물건을 들고 있음, 자세는 서 있음·앉아 있음·누워 있음.
+   *  손목이 보이는데 든 것이 없으면 관절이 붙인 손에 있음·들고 있음만 지운다(VLM이 붙인 사실은 둔다). */
+  private applyPose(at: number, poses: Pose[], boxes: { obj: Obj; box: Detection["box"] }[], changes: WorldChange[]): void {
+    const person = mainPerson(poses);
+    if (!person) return;
+    const wrists = Object.keys(person.wrists).length > 0;
+    let holding = false;
+    for (const { obj, box } of boxes) {
+      if (!heldBy(person, box)) {
+        if (wrists) this.dropPoseFact(obj.facts, "place", "in_hand");
+        continue;
+      }
+      holding = true;
+      if (this.setPoseFact(obj.facts, "place", "in_hand", at) && obj.confirmed && obj.status !== "gone") {
+        changes.push({ kind: "state", at_ms: at, subject: obj.id, meaningful: true, text: CHANGE_TEXT.state(this.name(obj), "in_hand") });
+      }
+    }
+    const personFact = (facet: Facet, value: string) => {
+      if (this.setPoseFact(this.person.facts, facet, value, at) && this.person.visible) {
+        changes.push({ kind: "person_state", at_ms: at, subject: PERSON, meaningful: false, text: CHANGE_TEXT.state(OBJECT_NAME.person!, value) });
+      }
+    };
+    if (holding) personFact("action", "holding_object");
+    else if (wrists) this.dropPoseFact(this.person.facts, "action", "holding_object");
+    const posture = POSTURE_FACT[person.posture];
+    if (posture && person.level !== "low") personFact("posture", posture);
+  }
+
+  private setPoseFact(facts: Partial<Record<Facet, WorldFact>>, facet: Facet, value: string, atMs: number): boolean {
+    const changed = this.setFact(facts, facet, value, atMs);
+    const f = facts[facet];
+    if (f && f.value === value && f.at_ms === atMs) this.byPose.add(f);
+    return changed;
+  }
+
+  /** 관절이 붙인 그 값이면 지운다. */
+  private dropPoseFact(facts: Partial<Record<Facet, WorldFact>>, facet: Facet, value: string): void {
+    const f = facts[facet];
+    if (f && f.value === value && this.byPose.has(f)) delete facts[facet];
+  }
+
+  /** 관절이 이 프레임(또는 더 새 프레임)에서 붙인 사실이면 VLM 답이 바꾸거나 지우지 않는다. */
+  private poseHolds(f: WorldFact | undefined, capturedAtMs: number): boolean {
+    return !!f && this.byPose.has(f) && f.at_ms >= capturedAtMs;
   }
 
   private forget(id: string): void {
@@ -258,6 +318,7 @@ export class WorldState {
       const target = ids.get(ob.object_id);
       if (!facet || !target) continue;
       said.add(`${target}|${facet}`);
+      if (this.poseHolds((target === PERSON ? this.person.facts : this.objects.get(target)?.facts)?.[facet], capturedAtMs)) continue;
       if (target === PERSON) {
         if (PERSON_FACETS.has(facet) && this.setFact(this.person.facts, facet, ob.state, capturedAtMs) && this.person.visible) {
           changes.push({ kind: "person_state", at_ms: capturedAtMs, subject: PERSON, meaningful: false, text: CHANGE_TEXT.state(OBJECT_NAME.person!, ob.state) });
@@ -276,7 +337,7 @@ export class WorldState {
       if (!facts) continue;
       for (const f of NOW_FACETS) {
         const prev = facts[f];
-        if (prev && prev.at_ms <= capturedAtMs && !said.has(`${target}|${f}`)) delete facts[f];
+        if (prev && prev.at_ms <= capturedAtMs && !said.has(`${target}|${f}`) && !this.poseHolds(prev, capturedAtMs)) delete facts[f];
       }
     }
     return changes;

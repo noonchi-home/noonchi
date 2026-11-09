@@ -4,6 +4,7 @@ import { sha256, type EngineFrame } from "../src/observe/ring.js";
 import type { Detection } from "../src/brain/detector.js";
 import type { CameraView } from "../src/phone/session.js";
 import { checkPlan } from "../src/act/check.js";
+import { poseOf, standing } from "./helpers/poses.js";
 
 const surfaces = () => [{ id: "table_1", label: "식탁", center: [2, 0] as [number, number], top: 0.75, radius: 0.6 }];
 const devices = () => [{ id: "dishwasher_1", kind: "dishwasher", label: "식기세척기" }];
@@ -164,5 +165,79 @@ describe("World State", () => {
     const w = ws();
     expect(w.applyDevice({ id: "dishwasher_1", online: false, twin: {}, matter: {}, updatedAt: "", signal: "none" }, 0)).toEqual([]);
     expect(w.view(0).devices[0]).toMatchObject({ status: null });
+  });
+});
+
+// 관절(YOLO26-pose)로 본 사실: 손목이 컵 상자 안·가까이면 컵 「손에 있음」과 사람 「물건을 들고 있음」, 관절로 서 있음·앉아 있음·누워 있음.
+// 같은 프레임에서는 관절 사실이 VLM 답보다 앞선다. 손목이 떨어지면 관절이 붙인 「손에 있음」만 지운다.
+describe("World State + 관절", () => {
+  const grip = standing({ 10: [230, 170, 0.9] }); // 오른 손목이 컵 상자 [220, 160, 40, 20] 안
+  const apart = standing({ 10: [120, 230, 0.9] }); // 손목이 컵에서 멀다
+  it("손목이 컵 상자 안이면 컵 손에 있음·사람 물건을 들고 있음·서 있음, 변화 글은 등장 다음에", () => {
+    const w = ws();
+    let changes: ReturnType<WorldState["applyDetections"]>["changes"] = [];
+    for (let i = 1; i <= 3; i++) changes = w.applyDetections(frame(i), [person, cup], [grip]).changes;
+    expect(changes.map((c) => [c.kind, c.text, c.meaningful])).toEqual([
+      ["appeared", "컵 cup_1 보임", true],
+    ]);
+    const v = w.view(3000);
+    expect(v.objects[0]!.facts.place).toMatchObject({ value: "in_hand", certainty: "confirmed" });
+    expect(v.person.facts).toMatchObject({ action: { value: "holding_object" }, posture: { value: "standing" } });
+    // 사람은 2장째에 보임이 되고, 그때 사람 사실이 변화로 나간다
+    const w2 = ws();
+    w2.applyDetections(frame(1), [person, cup], [grip]);
+    expect(w2.applyDetections(frame(2), [person, cup], [grip]).changes.map((c) => c.text)).toEqual(["사람 보임"]);
+    const w3 = ws();
+    w3.applyDetections(frame(1), [person, cup], [apart]);
+    w3.applyDetections(frame(2), [person, cup], [apart]);
+    expect(w3.applyDetections(frame(3), [person, cup], [grip]).changes.map((c) => c.text)).toEqual(["컵 cup_1 보임", "컵 cup_1 손에 있음", "사람 물건을 들고 있음"]);
+  });
+
+  it("같은 프레임 VLM 답이 식탁 위·앉아 있음이라 해도 관절 사실이 남고, 들고 있음도 지우지 않는다. 다음 프레임 VLM 답은 그대로 받는다", () => {
+    const w = ws();
+    let ids = new Map<string, string>();
+    for (let i = 1; i <= 3; i++) ids = w.applyDetections(frame(i), [person, cup], [grip]).ids;
+    w.applyScene("e3", 3000, { scene: "k", observations: [{ object_id: "d2", state: "on_table" }, { object_id: "d1", state: "sitting" }, { object_id: "d2", state: "empty" }], summary: "s" }, ids);
+    let v = w.view(3000);
+    expect(v.objects[0]!.facts).toMatchObject({ place: { value: "in_hand" }, contents: { value: "empty" } });
+    expect(v.person.facts).toMatchObject({ action: { value: "holding_object" }, posture: { value: "standing" } });
+    // 관절이 없는 프레임(사람 상자만): VLM 답이 그대로 들어간다
+    ids = w.applyDetections(frame(4), [person, cup]).ids;
+    w.applyScene("e4", 4000, { scene: "k", observations: [{ object_id: "d2", state: "on_table" }, { object_id: "d1", state: "sitting" }], summary: "s" }, ids);
+    v = w.view(4000);
+    expect(v.objects[0]!.facts.place?.value).toBe("on_table");
+    expect(v.person.facts.posture?.value).toBe("sitting");
+    expect(v.person.facts.action).toBeUndefined();
+  });
+
+  it("손목이 컵에서 떨어지면 관절이 붙인 손에 있음·들고 있음을 지우고, VLM이 붙인 손에 있음은 두며, 사람이 안 보이게 되면 관절의 손에 있음도 지운다", () => {
+    const w = ws();
+    let ids = new Map<string, string>();
+    for (let i = 1; i <= 3; i++) w.applyDetections(frame(i), [person, cup], [grip]);
+    w.applyDetections(frame(4), [person, cup], [apart]);
+    let v = w.view(4000);
+    expect(v.objects[0]!.facts.place).toBeUndefined();
+    expect(v.person.facts.action).toBeUndefined();
+    ids = w.applyDetections(frame(5), [person, cup], [apart]).ids;
+    w.applyScene("e5", 5000, { scene: "k", observations: [{ object_id: "d2", state: "in_hand" }], summary: "s" }, ids);
+    w.applyDetections(frame(6), [person, cup], [apart]);
+    expect(w.view(6000).objects[0]!.facts.place?.value).toBe("in_hand"); // VLM 사실은 관절이 지우지 않는다
+    w.applyDetections(frame(7), [person, cup], [grip]);
+    for (let i = 8; i <= 9; i++) w.applyDetections(frame(i), [cup]);
+    v = w.view(9000);
+    expect(v.person.visible).toBe(false);
+    expect(v.objects[0]!.facts.place).toBeUndefined();
+  });
+
+  it("관절로 앉아 있음·누워 있음, 다리가 가려 모르면 자세를 바꾸지 않는다", () => {
+    const w = ws();
+    const sit = poseOf({ 5: [110, 100, 0.9], 6: [150, 100, 0.9], 11: [115, 200, 0.9], 12: [145, 200, 0.9], 13: [190, 215, 0.9], 14: [210, 215, 0.9] });
+    const hidden = poseOf({ 5: [110, 100, 0.9], 6: [150, 100, 0.9], 11: [115, 200, 0.9], 12: [145, 200, 0.9] });
+    const lie = poseOf({ 5: [100, 100, 0.9], 6: [100, 120, 0.9], 11: [200, 115, 0.9], 12: [200, 135, 0.9] });
+    w.applyDetections(frame(1), [person], [sit]);
+    expect(w.applyDetections(frame(2), [person], [sit]).changes.map((c) => c.text)).toEqual(["사람 보임"]);
+    expect(w.view(2000).person.facts.posture).toMatchObject({ value: "sitting", certainty: "confirmed" });
+    expect(w.applyDetections(frame(3), [person], [hidden]).changes).toEqual([]);
+    expect(w.applyDetections(frame(4), [person], [lie]).changes.map((c) => [c.kind, c.text, c.meaningful])).toEqual([["person_state", "사람 누워 있음", false]]);
   });
 });
