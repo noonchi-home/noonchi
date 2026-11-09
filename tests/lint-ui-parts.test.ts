@@ -1,22 +1,22 @@
 // 21st.dev 부품 검사(scripts/lint-ui-parts.ts): 화면 부품은 21st.dev에서 받은 코드(ui/src/components/ui, 출처 줄)만 쓰고, 화면 코드는 배치만 한다.
 // 예시는 실제로 화면 코드에 들어갔던 손 꾸밈이다.
 import { describe, expect, it } from "vitest";
-import { PARTS_FIX, PARTS_TARGET, RAW_FIX, headerProblems, lintUiParts, screenFiles, screenProblems } from "../scripts/lint-ui-parts.js";
+import { PARTS_FIX, PARTS_TARGET, RAW_FIX, headerProblems, lintUiParts, screenFiles, screenProblems, unusedParts } from "../scripts/lint-ui-parts.js";
 
 const found = (file: string, src: string) => screenProblems(file, src).map((p) => `${p.line} ${p.rule} ${p.text}`);
 
 describe("ui/src/components/ui 출처 줄", () => {
   it("21st.dev 이름·id·작성자/slug와 바꾼 것 줄이 있으면 통과", () => {
-    const src = '"use client";\n\n// 21st.dev「Chat Panel」(id 23601, theshanelevine/chat) 받은 코드.\n// 바꾼 것: 입력칸을 뺐다.\nexport {};\n';
-    expect(headerProblems("ui/src/components/ui/chat-panel.tsx", src)).toEqual([]);
+    const src = '"use client";\n\n// 21st.dev「Stepper」(id 769, originui/stepper) 받은 코드.\n// 바꾼 것: 색을 토큰으로.\nexport {};\n';
+    expect(headerProblems("ui/src/components/ui/stepper.tsx", src)).toEqual([]);
     expect(headerProblems("ui/src/components/ui/alert.tsx", "// 21st.dev「Alert」(id 11326, coss.com/alert) 받은 코드.\n// 바꾼 것: 색을 토큰으로.\n")).toEqual([]);
   });
 
   it("출처 줄이 없거나 id·slug가 없거나 바꾼 것 줄이 없으면 실패", () => {
-    const tabs = '"use client";\n\n// shadcn tabs(21st.dev Assistant Tabs 의존 부품, 받은 코드 그대로).\nimport * as React from "react";\n';
-    expect(headerProblems("ui/src/components/ui/tabs.tsx", tabs).map((p) => p.rule)).toEqual(["출처 줄"]);
-    const cot = '"use client";\n\n// 21st.dev「Chain of Thought」(id 28391, nexus-ui/chain-of-thought) 받은 코드 그대로.\n// 도우미는 받은 꾸러미에 없어서 두었다.\n';
-    expect(headerProblems("ui/src/components/ui/chain-of-thought.tsx", cot).map((p) => p.rule)).toEqual(["출처 줄"]);
+    const badge = '"use client";\n\n// shadcn badge(21st.dev Status 의존 부품, 받은 코드 그대로).\nimport * as React from "react";\n';
+    expect(headerProblems("ui/src/components/ui/badge.tsx", badge).map((p) => p.rule)).toEqual(["출처 줄"]);
+    const item = '"use client";\n\n// 21st.dev「Basic Item」(id 28573, bundui/item1) 받은 코드 그대로.\n// 도우미는 받은 꾸러미에 없어서 두었다.\n';
+    expect(headerProblems("ui/src/components/ui/item.tsx", item).map((p) => p.rule)).toEqual(["출처 줄"]);
     const noChange = "// 21st.dev「Button」(id 133, originui/button) 받은 코드.\nimport * as React from \"react\";\n";
     expect(headerProblems("ui/src/components/ui/button.tsx", noChange).map((p) => p.rule)).toEqual(["바꾼 것 줄"]);
   });
@@ -116,6 +116,10 @@ describe("ui/src 전체", () => {
     expect(files.some((f) => f.endsWith("ui/src/phone/PhoneScreen.tsx"))).toBe(true);
     expect(files.some((f) => f.endsWith("ui/src/phone/core/marks.js"))).toBe(true);
     expect(files.some((f) => f.endsWith(".d.ts"))).toBe(false);
+  });
+
+  it("부품 파일은 모두 화면 입구(대시보드·설정·폰·폰 촬영)에서 import로 닿는다", () => {
+    expect(unusedParts(PARTS_TARGET).map((p) => p.file)).toEqual([]);
   });
 
   it("21st.dev 부품 검사에 걸리는 곳이 없다(npm run lint)", () => {

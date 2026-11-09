@@ -1,4 +1,4 @@
-// 움직임 줄이기(prefers-reduced-motion: reduce)면 저절로 움직이는 것이 멈춘다: 말풍선(Tooltip), 확인 창(AlertDialog), 단계 상태 반짝임(CallState).
+// 움직임 줄이기(prefers-reduced-motion: reduce)면 저절로 움직이는 것이 멈춘다: 말풍선(Tooltip), 확인 창(AlertDialog).
 // jsdom은 CSS를 계산하지 않아 class·prop·Element.animate로 본다.
 // tests/setup.ts가 matchMedia를 움직임 줄이기로 둔다.
 import { render, screen } from "@testing-library/react";
@@ -6,7 +6,6 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DeviceView } from "../../src/contract/events.ts";
 import { BubbleLayer } from "../src/bubbles/BubbleLayer";
-import { AgentToolTimeline, type AgentToolCall } from "../src/components/ui/tool-timeline";
 import { SetupApp } from "../src/setup/SetupApp";
 import { FakeWebSocket, fakeSetupApi, setupView } from "./helpers/setup-api";
 
@@ -35,17 +34,6 @@ describe("움직임 줄이기", () => {
     render(<BubbleLayer checks={[{ key: "device:a", order: 1, source: "agent", deviceId: "a", verb: "바꿈", at: 0 }]} devices={new Map([["a", dev]])} points={new Map([["a", { x: 1, y: 1, visible: true }]])} />);
     const tip = document.querySelector("[data-check] [data-tone=twin]")!;
     expect(stillWhenReduced(tip)).toBe(true);
-  });
-
-  it("단계 상태(CallState) 반짝임: 움직임 줄이기면 없고, 아니면 있다", () => {
-    const calls: AgentToolCall[] = [{ id: "c1", title: "켜기", kind: "행동", status: "running", icon: null }];
-    const { unmount } = render(<AgentToolTimeline calls={calls} status="running" />);
-    expect(document.querySelector("[data-running-shimmer]")?.getAttribute("class")).toBe("");
-    expect(animate).not.toHaveBeenCalled();
-    unmount();
-    vi.stubGlobal("matchMedia", (q: string) => ({ matches: false, media: q, onchange: null, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => false }));
-    render(<AgentToolTimeline calls={calls} status="running" />);
-    expect(document.querySelector("[data-running-shimmer]")?.getAttribute("class")).toContain("bg-clip-text");
   });
 
   it("설정의 확인 창(AlertDialog)은 움직이지 않고 열린다", async () => {

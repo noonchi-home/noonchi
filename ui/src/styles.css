@@ -3,12 +3,6 @@
 /* 색·글꼴·모서리·그림자 토큰: src/design/tokens.json에서 npm run tokens가 만든 파일 */
 @import "./tokens.css";
 
-/* Chat Panel(21st.dev id 23601) 답 칸이 쓰는 움직임 */
-@keyframes fade-up {
-  0% { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
 @layer base {
   /* 받은 shadcn 부품의 border는 border 토큰 색(Tailwind v4 기본은 currentColor) */
   *, ::after, ::before, ::backdrop, ::file-selector-button { border-color: var(--border); }

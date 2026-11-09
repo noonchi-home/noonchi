@@ -80,7 +80,7 @@ export function fileProblems(file: string, src: string, kind: "part" | "screen")
 }
 
 /** 입구에서 import(타입만 가져오는 것 포함)로 닿는 src 안 .ts·.tsx 파일. */
-function reach(src: string, entry: string): string[] {
+export function reach(src: string, entry: string): string[] {
   const seen = new Set<string>();
   const todo = [entry];
   while (todo.length) {

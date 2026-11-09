@@ -6,23 +6,6 @@ import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "re
 export const EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
 export const CAMERA_MS = 380;
 
-/**
- * transform을 from → to로 옮긴다. 움직이는 중이면 지금 보이는 자리에서 이어 간다. 움직이는 동안 will-change를 둔다
- * (지도 그림 판은 class로 늘 두어, 다 옮긴 뒤 새 배율로 다시 그리지 않는다).
- */
-export function moveTransform(el: HTMLElement, from: string, to: string, ms: number, easing = EASE): Animation | null {
-  if (typeof el.animate !== "function") return null;
-  const running = el.getAnimations?.() ?? [];
-  const start = running.length ? getComputedStyle(el).transform || from : from;
-  for (const a of running) a.cancel();
-  el.style.willChange = "transform";
-  const anim = el.animate([{ transform: start }, { transform: to }], { duration: ms, easing });
-  const clear = () => { if (!(el.getAnimations?.() ?? []).some((a) => a !== anim && a.playState === "running")) el.style.willChange = ""; };
-  anim.onfinish = clear;
-  anim.oncancel = clear;
-  return anim;
-}
-
 /** 움직임 줄이기 설정. 처음 그릴 때 바로 읽는다(가림판이 한 번 깜빡이지 않게). */
 export function useReducedMotionNow(): boolean {
   const query = "(prefers-reduced-motion: reduce)";
@@ -37,30 +20,6 @@ export function useReducedMotionNow(): boolean {
     return () => media.removeEventListener?.("change", update);
   }, []);
   return reduced;
-}
-
-/** 가린 채 그려 보는 한 장면 길이(ms). 그 사이 GPU가 그리기 방식(셰이더)을 만들고 그림을 푼다. */
-export const WARM_HOLD_MS = 120;
-
-/** 가린 채 그려 보는 것: index면 그 단계를 바로 보인다(null이면 지금 단계). veiled 동안 트윈·대시보드 폰 칸을 가린다. */
-export type WarmUp = { index: number | null; veiled: boolean };
-
-/**
- * 화면이 뜬 뒤 가림판 아래에서 미리 그려 본다. 새 크롬 프로필에서는 GPU가 처음 그리는 것(새 폰 영상 그림, 새 YOLO 상자, 밝힌 방이 바뀐 지도)마다
- * 그리기 방식을 만드느라 0.05~0.2초 멈추는데, 그 일을 사람이 보기 전에 끝낸다. 단계마다 WARM_HOLD_MS씩 바로(움직임 없이) 보인다.
- * planned가 아니면(움직임 줄이기) 하지 않는다. ready(처음 크기를 재고 그림을 풀고 글꼴 조각을 받은 뒤)가 되면 시작한다.
- */
-export function useWarmUp(planned: boolean, ready: boolean, count: number): WarmUp {
-  // -1 기다림, 0..count-1 단계마다 그려 보기, count 끝
-  const [phase, setPhase] = useState(planned ? -1 : count);
-  useEffect(() => {
-    if (phase >= count) return;
-    if (!planned) { setPhase(count); return; }
-    if (phase < 0) { if (ready) setPhase(0); return; }
-    const id = window.setTimeout(() => setPhase(phase + 1), WARM_HOLD_MS);
-    return () => window.clearTimeout(id);
-  }, [planned, ready, phase, count]);
-  return { index: phase >= 0 && phase < count ? phase : null, veiled: phase < count };
 }
 
 /** key가 바뀔 때마다 ref 요소를 delay 뒤 ms 동안 opacity 0 → 1로 띄운다(합성기). on이 아니면 바로 보인다. */

@@ -3,12 +3,14 @@
 // (2) 그 밖의 화면 코드(ui/src)는 부품을 놓기만 한다: 요소에 꾸밈 class(배경·글자색·테두리·모서리·그림자·링·흐림·글꼴)나 꾸밈 style이 없다.
 //     배치 class(flex·grid·gap·여백·크기·위치·inset·z·overflow·order·정렬·숨김·pointer-events·transform)는 된다. three.js 장면 코드는 규칙 밖이다.
 // (3) 폰 화면(ui/src/phone, core 밖)에는 날 button·input·select·textarea를 두지 않는다. Button·Input 부품을 쓴다.
+// (4) 부품 파일은 화면 입구(대시보드·설정·폰·폰 촬영 화면) 어디에서든 import로 닿는다. 아무도 쓰지 않는 부품은 지운다.
 // 사용: npm run lint (tests/lint-ui-parts.test.ts도 같은 검사를 돌린다)
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { codeStrings } from "./lint-ui-copy.js";
+import { reach } from "./lint-ui-type.js";
 
 export type PartsProblem = { file: string; line: number; text: string; rule: string };
 
@@ -19,6 +21,9 @@ export const HEADER_FIX =
   "ui/src/components/ui에는 21st.dev에서 받은 코드만 둬요(mcp__21st__get_component). 맨 위에 「// 21st.dev「이름」(id N, 작성자/slug) 받은 코드.」 줄과 그다음 「// 바꾼 것: …」 줄을 두세요.";
 export const PARTS_FIX =
   "화면 코드는 부품을 놓기만 해요. 배경·글자색·테두리·모서리·그림자·링·흐림·글꼴은 ui/src/components/ui의 21st.dev 부품을 쓰세요. 맞는 부품이 없으면 21st.dev에서 받아 그 폴더에 두세요.";
+export const UNUSED_FIX = "화면 입구 어디에서도 쓰지 않는 부품이에요. 파일을 지우세요.";
+/** 화면 입구(ui/index.html·ui/setup·ui/phone·ui/phone/shots가 여는 파일). */
+export const ENTRIES = ["dashboard/main.tsx", "setup/main.tsx", "phone/main.tsx", "phone/shots.tsx"];
 export const RAW_FIX = "폰 화면의 단추·입력칸은 ui/src/components/ui의 21st.dev 부품(Button·Input)으로 놓아요.";
 /** 날 요소 규칙을 받는 화면: 폰 화면 코드(core 모듈 밖). */
 const PHONE_SCREEN = /(^|\/)ui\/src\/phone\/(?!core\/)/;
@@ -169,9 +174,17 @@ export function partFiles(dir: string): string[] {
   return walk(dir).filter(isPart);
 }
 
+/** 화면 입구 어디에서도 import로 닿지 않는 부품 파일. */
+export function unusedParts(dir: string): PartsProblem[] {
+  const root = resolve(dir);
+  const used = new Set(ENTRIES.flatMap((e) => reach(root, join(root, e))));
+  return partFiles(root).filter((f) => !used.has(f)).map((f) => ({ file: shown(f), line: 1, text: "", rule: "안 쓰는 부품" }));
+}
+
 export function lintUiParts(dir: string): PartsProblem[] {
   return [
     ...partFiles(dir).flatMap((f) => headerProblems(shown(f), readFileSync(f, "utf8"))),
+    ...unusedParts(dir),
     ...screenFiles(dir).flatMap((f) => screenProblems(shown(f), readFileSync(f, "utf8"))),
   ];
 }
@@ -182,6 +195,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   if (problems.some((p) => p.rule === "출처 줄" || p.rule === "바꾼 것 줄")) console.log(`  → ${HEADER_FIX}`);
   if (problems.some((p) => p.rule.startsWith("꾸밈"))) console.log(`  → ${PARTS_FIX}`);
   if (problems.some((p) => p.rule === "날 요소")) console.log(`  → ${RAW_FIX}`);
+  if (problems.some((p) => p.rule === "안 쓰는 부품")) console.log(`  → ${UNUSED_FIX}`);
   if (problems.length) console.log(`21st.dev 부품 검사 ${problems.length}곳`);
   process.exitCode = problems.length ? 1 : 0;
 }

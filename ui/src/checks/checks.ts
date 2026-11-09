@@ -4,7 +4,6 @@
 // 계획: 열린 판단 계획의 집기 대상 물건·가전마다 「확인」 한 줄. 계획이 끝나면 지운다.
 import type { AgentAction, BrainLog, PendingView, ServerMessage } from "../../../src/contract/events.ts";
 import type { PlanView } from "../../../src/contract/plan.ts";
-import { stepKind } from "../chat/labels";
 
 export type CheckVerb = "확인" | "바꿈" | "승인 대기" | "실패" | "취소" | "지켜봄";
 
@@ -43,10 +42,13 @@ export const EMPTY_CHECKS: ChecksState = { turn: [], plan: [], brain: [], brainA
 /** 마지막 관찰 기록 뒤 이만큼 지나면 식탁 줄을 지운다. */
 export const BRAIN_TTL_MS = 30_000;
 
+/** 상태를 읽기만 하는 도구. 나머지는 바꾸는 도구다. */
+const READ_TOOLS = new Set(["list_rooms", "list_devices", "find_devices", "get_state", "find_objects", "find_object_types"]);
+
 function verbOf(a: AgentAction): CheckVerb {
   if (a.needsConfirmation) return "승인 대기";
   if (!a.ok) return "실패";
-  return stepKind(a.tool) === "확인" ? "확인" : "바꿈";
+  return READ_TOOLS.has(a.tool) ? "확인" : "바꿈";
 }
 
 /** 기기 한 줄을 더하거나 고친다. 같은 기기는 번호를 두고 verb만 바꾼다. 바꾼·기다리는·실패한 기기를 다시 읽기만 하면 verb를 그대로 둔다. */
