@@ -6,7 +6,7 @@ import type { ControlMode } from "../contract/setup.js";
 import type { WorldView } from "../contract/world.js";
 import { CHECK_TEXT } from "../plan/labels.js";
 import type { DecisionRecord } from "../world/decide.js";
-import { planTargetId, putAway, taskOf } from "./tasks.js";
+import { holdsTarget, planTargetId, putAway, taskOf } from "./tasks.js";
 
 export type CheckFail = keyof typeof CHECK_TEXT;
 export type CheckResult = { ok: true } | { ok: false; reason: CheckFail; text: string };
@@ -37,7 +37,7 @@ export function checkPlan(i: CheckInput): CheckResult {
     }
     if (putAway(o)) return fail("in_sink");
     if (o.last_seen_ms <= i.decision.atMs || i.nowMs - o.last_seen_ms > i.staleMs) return fail("stale");
-    if (o.facts.place?.value === "in_hand" || o.facts.use?.value === "in_use" || i.world.person.facts.holding?.value === "holding_object") return fail("in_hand");
+    if (o.facts.place?.value === "in_hand" || o.facts.use?.value === "in_use" || holdsTarget(i.world, spec.target)) return fail("in_hand");
   }
   if (i.plan.steps.some((s) => s.kind === "move") && i.plan.path.length === 0) return fail("unreachable");
   if (i.mode === "test" && (i.deviceSteps ?? []).some((d) => d.paired)) return fail("device_mode");

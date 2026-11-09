@@ -34,6 +34,13 @@ export function taskOf(action: string | null): TaskSpec | null {
 /** 이미 치운 물건: World State 자리가 싱크대 안. */
 export const putAway = (o: WorldObject) => o.facts.place?.value === "in_sink";
 
+/** 사람이 물건을 들고 있고, 든 것을 모르거나 그 종류 물건이다(관절로 든 것이 책·리모컨 같은 다른 종류뿐이면 아니다). */
+export function holdsTarget(world: WorldView, cls: string | undefined): boolean {
+  if (world.person.facts.holding?.value !== "holding_object") return false;
+  const held = world.objects.filter((o) => world.person.holding.includes(o.id));
+  return held.length === 0 || held.some((o) => o.cls === cls);
+}
+
 /** 대상 종류 중 사라지지 않았고 이미 치우지 않은(싱크대 안이 아닌) 물건 가운데 가장 최근에 본 것. 대상이 없는 행동이거나 못 찾으면 null. */
 export function targetOf(spec: TaskSpec, world: WorldView): WorldObject | null {
   if (!spec.target) return null;

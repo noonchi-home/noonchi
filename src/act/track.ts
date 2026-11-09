@@ -25,7 +25,7 @@ import type { DecisionRecord } from "../world/decide.js";
 import { approvalNeed, taskKey, type ApprovalAnswer, type ApprovalBook } from "../agent/approval.js";
 import type { CheckResult } from "./check.js";
 import { APPROVE, STEP_DONE, STOP, type ActionChoice } from "./prompts.js";
-import { cupStepOf, matchChoice, planFor, planIdOf, targetOf, taskOf, type CupStep, type TaskSpec } from "./tasks.js";
+import { cupStepOf, holdsTarget, matchChoice, planFor, planIdOf, targetOf, taskOf, type CupStep, type TaskSpec } from "./tasks.js";
 
 export interface TrackerOptions {
   plans: PlanHub;
@@ -285,7 +285,7 @@ export class ExecutionTracker {
         const d = this.distance(step);
         return d !== null && d <= this.cfg.arriveM;
       }
-      case "pickCup": return at("in_hand") || world.person.facts.holding?.value === "holding_object";
+      case "pickCup": return at("in_hand") || holdsTarget(world, r.spec.target);
       case "placeCup": return at("in_sink");
       default: return false;
     }

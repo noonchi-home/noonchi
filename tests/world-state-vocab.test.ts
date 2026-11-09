@@ -79,7 +79,7 @@ describe("World State + 낱말 표", () => {
     let out: string[] = [];
     let ids = new Map<string, string>();
     for (let i = 1; i <= 3; i++) {
-      const r = w.applyDetections(frame(i), [tv]);
+      const r = w.applyDetections({ ...frame(i), eye: { position: [1, 2], height_m: 1.2, yaw_deg: 0, pitch_deg: -10 } }, [tv]);
       ids = r.ids;
       out.push(...r.changes.map((c) => c.kind));
     }
@@ -92,6 +92,39 @@ describe("World State + 낱말 표", () => {
     for (let i = 4; i <= 9; i++) out.push(...w.applyDetections(frame(i), []).changes.map((c) => c.kind));
     expect(out).toEqual([]);
     expect(w.view(9000).fixtures[0]!.facts.screen?.value).toBe("screen_on"); // 안 보여도 마지막 상태
+  });
+
+  it("가전 설비 방은 그 사진을 찍은 눈의 방이다(분석이 끝난 때의 눈이 아니다)", () => {
+    const w = new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: (p) => (p[0] < 5 ? { id: "living", label: "거실" } : { id: "kitchen", label: "주방" }), devices });
+    const eye = { position: [1, 2] as [number, number], height_m: 1.2, yaw_deg: 0, pitch_deg: -10 };
+    w.setEye({ ...eye, position: [8, 2] }, 0); // 폰은 이미 주방으로 옮겼다
+    const r = w.applyDetections({ ...frame(1), eye }, [tv]);
+    expect(r.ids.get("d1")).toBe("tv_living");
+  });
+
+  it("VLM이 가렸다(not_visible)고 한 대상은 답이 아니다: 지금만 맞는 사실을 지우지 않고 답 시각도 두지 않는다", () => {
+    const w = ws();
+    w.setEye({ position: [1, 2], height_m: 1.2, yaw_deg: 0, pitch_deg: -10 }, 0);
+    const mw = det("microwave", [300, 100, 120, 80]);
+    let ids = w.applyDetections(frame(1), [mw]).ids;
+    w.applyScene("e1", 1000, scene([{ object_id: "d1", state: "in_use" }]), ids);
+    ids = w.applyDetections(frame(2), [mw]).ids;
+    w.applyScene("e2", 2000, scene([{ object_id: "d1", state: "not_visible" }]), ids);
+    expect(w.view(2000).fixtures[0]).toMatchObject({ answered_ms: 1000, facts: { use: expect.objectContaining({ value: "in_use", at_ms: 1000 }) } });
+  });
+
+  it("지금만 맞는 사실은 답이 10초 넘게 끊겼다 다시 같은 값이면 처음 보인 시각을 새로 둔다", () => {
+    const w = ws();
+    let ids = new Map<string, string>();
+    for (let i = 1; i <= 2; i++) ids = w.applyDetections(frame(i), [person]).ids;
+    w.applyScene("e2", 2000, scene([{ object_id: "d1", state: "drinking" }, { object_id: "d1", state: "sitting" }]), ids);
+    ids = w.applyDetections(frame(4), [person]).ids;
+    w.applyScene("e4", 4000, scene([{ object_id: "d1", state: "drinking" }, { object_id: "d1", state: "sitting" }]), ids);
+    expect(w.view(4000).person.facts.activity?.since_ms).toBe(2000);
+    ids = w.applyDetections(frame(20), [person]).ids;
+    w.applyScene("e20", 20_000, scene([{ object_id: "d1", state: "drinking" }, { object_id: "d1", state: "sitting" }]), ids);
+    expect(w.view(20_000).person.facts.activity?.since_ms).toBe(20_000);
+    expect(w.view(20_000).person.facts.posture?.since_ms).toBe(2000); // 자세는 이어지는 사실
   });
 
   it("사람 수는 마지막 프레임의 사람 감지 수, 맞추기 전이면 사람 방은 모름(눈의 방으로 대신하지 않는다)", () => {
@@ -115,6 +148,12 @@ describe("World State + 낱말 표", () => {
     at(3, [200, 100, 80, 260]); // 아래가 프레임 끝(360)
     expect(w.view(3000).person.position_ms).toBe(2000);
     expect(w.view(9000).person.near).toEqual([]); // 발 자리가 오래됨
+    const outside = new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: (p) => (p[0] < 1 ? { id: "living", label: "거실" } : null), devices });
+    outside.applyDetections({ ...frame(1), view: look }, [det("person", [200, 0, 80, 300])]); // 발 자리 x≈0.6
+    outside.applyDetections({ ...frame(2), view: look }, [det("person", [200, 0, 80, 300])]);
+    expect(outside.view(2000).person.room).toBe("living");
+    outside.applyDetections({ ...frame(3), view: look }, [det("person", [200, 0, 80, 180])]); // 발 자리 x≈1.5, 집 안 방이 아님
+    expect(outside.view(3000).person).toMatchObject({ room: null, position_ms: 3000 });
   });
 
   it("가전: 상태 키, 사건 줄(세탁 끝남·에어컨 켜짐), 냉장고 문이 1분 넘게 열리면 한 번", () => {
@@ -130,5 +169,10 @@ describe("World State + 낱말 표", () => {
     expect(w.tick(69_000)).toEqual([]);
     expect(w.tick(70_000)).toEqual([expect.objectContaining({ kind: "device", subject: "fridge_1", text: "주방 냉장고 문이 1분 넘게 열림", meaningful: true })]);
     expect(w.tick(90_000)).toEqual([]);
+    // 신호가 끊기면 오래 이어진 상태도 없다
+    w.applyDevice({ id: "fridge_1", online: true, twin: { door: "closed" }, matter: {}, updatedAt: "" }, 100_000);
+    w.applyDevice({ id: "fridge_1", online: true, twin: { door: "open" }, matter: {}, updatedAt: "" }, 110_000);
+    w.applyDevice({ id: "fridge_1", online: false, twin: {}, matter: {}, updatedAt: "", signal: "none" }, 120_000);
+    expect(w.tick(200_000)).toEqual([]);
   });
 });

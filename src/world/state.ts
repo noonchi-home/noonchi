@@ -24,7 +24,7 @@ import { inView, placeBox, type PlaneSurface } from "./place.js";
 import { describePose, heldByAny, mainPerson } from "./pose.js";
 import { RemainingTracker, becameKey, deviceStateKeys, deviceStatus, deviceText, relatedDeviceIds } from "./relations.js";
 import {
-  CLASSES, DEVICE_LONG, DEVICE_STATES, FRESH_MS, NEAR_M, NOW_FACETS, POSE_HOLD, POSE_POSTURE, STATES, type ClassKey, type DeviceStateKey, type StateKey, type Target,
+  CLASSES, DEVICE_LONG, DEVICE_STATES, FACT_FRESH_MS, FRESH_MS, NEAR_M, NOW_FACETS, POSE_HOLD, POSE_POSTURE, STATES, VLM_ONLY, type ClassKey, type DeviceStateKey, type StateKey, type Target,
 } from "./vocab.js";
 
 type V3 = [number, number, number];
@@ -169,13 +169,12 @@ export class WorldState {
     return objectName(obj.cls, obj.id);
   }
 
-  /** 가전 설비 하나: 클로이드 눈의 방마다 종류 하나(tv_living). */
-  private fixture(cls: FixtureClass, atMs: number): Fix {
-    const room = this.eye?.room ?? null;
-    const id = `${cls}_${room ?? "room"}`;
+  /** 가전 설비 하나: 그 사진을 찍은 클로이드 눈의 방마다 종류 하나(tv_living). */
+  private fixture(cls: FixtureClass, atMs: number, room: { id: string; label: string } | null): Fix {
+    const id = `${cls}_${room?.id ?? "room"}`;
     let f = this.fixtures.get(id);
     if (!f) {
-      f = { id, cls, room, roomLabel: this.eye?.room_label ?? null, firstSeen: atMs, lastSeen: atMs, facts: {}, answered: null };
+      f = { id, cls, room: room?.id ?? null, roomLabel: room?.label ?? null, firstSeen: atMs, lastSeen: atMs, facts: {}, answered: null };
       this.fixtures.set(id, f);
     }
     f.lastSeen = Math.max(f.lastSeen, atMs);
@@ -194,6 +193,7 @@ export class WorldState {
     const used = new Set<string>();
     const boxes: { obj: Obj; box: Detection["box"] }[] = [];
     const people: Detection[] = [];
+    const eyeRoom = frame.eye ? this.o.roomAt([frame.eye.position[0], frame.eye.position[1]]) : null;
     dets.forEach((d, i) => {
       const tmp = `d${i + 1}`;
       if (!this.accepts(d)) return;
@@ -204,7 +204,7 @@ export class WorldState {
         return;
       }
       if (FIXTURE_CLASSES.has(d.label)) {
-        ids.set(tmp, this.fixture(d.label as FixtureClass, at).id);
+        ids.set(tmp, this.fixture(d.label as FixtureClass, at, eyeRoom).id);
         return;
       }
       if (!OBJ_CLASSES.has(d.label)) return;
@@ -284,9 +284,10 @@ export class WorldState {
     }
     // 사람 방: 보이는 동안 바뀌거나 사람이 막 보이면 변화 하나
     const next = this.nextRoom;
-    this.nextRoom = null;
+    this.nextRoom = undefined;
     const appeared = events.some((e) => e.key === PERSON && e.kind === "appeared");
-    if (next && next.id !== this.person.room?.id) {
+    if (next === null) this.person.room = null;
+    else if (next && next.id !== this.person.room?.id) {
       this.person.room = next;
       if (this.person.visible) changes.push(this.roomChange(at));
     } else if (appeared && this.person.room) changes.push(this.roomChange(at));
@@ -306,8 +307,8 @@ export class WorldState {
     this.nextRoom = this.o.roomAt(position);
   }
 
-  /** 이번 프레임에서 본 방(roomChange가 반영한다). */
-  private nextRoom: { id: string; label: string } | null = null;
+  /** 이번 프레임의 발 자리에서 본 방. undefined는 새 발 자리 없음, null은 집 안 방이 아님(방을 모름으로). */
+  private nextRoom: { id: string; label: string } | null | undefined = undefined;
 
   private roomChange(at: number): WorldChange {
     return { kind: "person_room", at_ms: at, subject: PERSON, meaningful: true, text: CHANGE_TEXT.personRoom(this.person.room!.label) };
@@ -344,7 +345,7 @@ export class WorldState {
   }
 
   private setPoseFact(facts: Facts, facet: Facet, value: string, atMs: number): boolean {
-    const changed = this.setFact(facts, facet, value, atMs);
+    const changed = this.setFact(facts, facet, value, atMs, facet === "holding");
     const f = facts[facet];
     if (f && f.value === value && f.at_ms === atMs) this.byPose.add(f);
     return changed;
@@ -366,12 +367,14 @@ export class WorldState {
     this.confirmer.forget(id);
   }
 
-  /** 같은 면의 사실보다 오래된 답은 버린다. 값이 새로 생기거나 바뀌면 true. */
-  private setFact(facts: Facts, facet: Facet, value: string, atMs: number): boolean {
+  /** 같은 면의 사실보다 오래된 답은 버린다. 값이 새로 생기거나 바뀌면 true.
+   *  지금만 맞는 면(now)은 같은 값이어도 앞 답과 FACT_FRESH_MS 넘게 떨어지면 그 사이를 모르므로 처음 보인 시각을 새로 둔다. */
+  private setFact(facts: Facts, facet: Facet, value: string, atMs: number, now = false): boolean {
     const prev = facts[facet];
     if (prev && atMs < prev.at_ms) return false;
     if (prev && prev.value === value) {
-      facts[facet] = { value, at_ms: atMs, since_ms: prev.since_ms, certainty: "confirmed" };
+      const since = now && atMs - prev.at_ms > FACT_FRESH_MS ? atMs : prev.since_ms;
+      facts[facet] = { value, at_ms: atMs, since_ms: since, certainty: "confirmed" };
       return false;
     }
     facts[facet] = { value, at_ms: atMs, since_ms: atMs, certainty: "inferred" };
@@ -399,6 +402,7 @@ export class WorldState {
       }
     }
     const said = new Set<string>();
+    const hidden = new Set(scene.observations.filter((o) => (VLM_ONLY as readonly string[]).includes(o.state)).map((o) => ids.get(o.object_id)).filter((x): x is string => !!x));
     for (const ob of scene.observations) {
       const id = ids.get(ob.object_id);
       const target = id ? this.targetOf(id) : null;
@@ -408,7 +412,7 @@ export class WorldState {
       const facet = STATES[value].facet;
       said.add(`${id}|${facet}`);
       if (this.poseHolds(target.facts[facet], capturedAtMs)) continue;
-      if (!this.setFact(target.facts, facet, value, capturedAtMs)) continue;
+      if (!this.setFact(target.facts, facet, value, capturedAtMs, NOW_FACETS[target.kind].includes(facet))) continue;
       if (target.kind === "person") {
         if (this.person.visible) changes.push({ kind: "person_state", at_ms: capturedAtMs, subject: PERSON, meaningful: false, text: CHANGE_TEXT.state(OBJECT_NAME.person!, value) });
       } else if (target.kind === "fixture") {
@@ -422,7 +426,7 @@ export class WorldState {
     // 이 프레임에서 본 대상의 지금만 맞는 사실: 이 답에 없으면 지운다(더 새 답의 사실은 그대로)
     for (const id of new Set(ids.values())) {
       const target = this.targetOf(id);
-      if (!target) continue;
+      if (!target || hidden.has(id)) continue;
       const owner = id === PERSON ? this.person : this.objects.get(id) ?? this.fixtures.get(id)!;
       owner.answered = Math.max(owner.answered ?? capturedAtMs, capturedAtMs);
       for (const f of NOW_FACETS[target.kind]) {
@@ -455,6 +459,7 @@ export class WorldState {
     if (s.signal === "none") {
       d.status = null;
       d.state = [];
+      d.since = {};
       this.remaining.update(s.id, {}, atMs);
       return [];
     }
@@ -489,7 +494,7 @@ export class WorldState {
     for (const d of this.devs.values()) {
       for (const [key, rule] of Object.entries(DEVICE_LONG)) {
         const since = d.since[rule.state];
-        if (since === undefined || !(rule.kinds as readonly string[]).includes(d.kind) || nowMs - since < rule.afterMs) continue;
+        if (since === undefined || d.status === null || !d.state.includes(rule.state) || !(rule.kinds as readonly string[]).includes(d.kind) || nowMs - since < rule.afterMs) continue;
         const mark = `${key}@${since}`;
         if (d.long.has(mark)) continue;
         d.long.add(mark);

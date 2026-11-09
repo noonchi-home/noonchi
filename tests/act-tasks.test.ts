@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { WorldObject, WorldView } from "../src/contract/world.js";
-import { cupStepOf, planFor, planTargetId, targetOf, TASKS } from "../src/act/tasks.js";
+import { cupStepOf, holdsTarget, planFor, planTargetId, targetOf, TASKS } from "../src/act/tasks.js";
 import { STEP_COMMAND } from "../src/plan/labels.js";
 import type { DecisionRecord } from "../src/world/decide.js";
 import { smallFloor } from "./helpers/floor.js";
@@ -59,5 +59,19 @@ describe("PAM 결과 → 계획", () => {
     const asked = TASKS["사용자에게 물어보기"]!;
     expect(asked.kind === "ask" && asked.prompt.choices.length).toBeGreaterThan(0);
     expect(cupStepOf(planFor(smallFloor(), decision(1), world(), "x")!.steps[0]!)).toBeNull();
+  });
+});
+
+describe("사람이 그 물건을 들고 있는가(holdsTarget)", () => {
+  const holding = (objects: WorldObject[], held: string[]): WorldView => {
+    const w = world(objects);
+    return { ...w, person: { ...w.person, visible: true, holding: held, facts: { holding: { value: "holding_object", at_ms: 0, since_ms: 0, certainty: "confirmed" } } } };
+  };
+  it("든 것을 모르거나 컵이면 컵을 든 것이고, 관절로 든 것이 책·리모컨뿐이면 아니다(컵 집기 단계·실행 전 검사가 쓴다)", () => {
+    const book = cupAt({ id: "book_1", cls: "book" });
+    expect(holdsTarget(holding([cupAt()], []), "cup")).toBe(true);
+    expect(holdsTarget(holding([cupAt(), book], ["cup_1"]), "cup")).toBe(true);
+    expect(holdsTarget(holding([cupAt(), book], ["book_1"]), "cup")).toBe(false);
+    expect(holdsTarget(world(), "cup")).toBe(false);
   });
 });

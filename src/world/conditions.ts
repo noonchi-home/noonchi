@@ -170,16 +170,17 @@ function factIs(f: WorldFact | undefined, value: StateKey, target: Target, answe
 const factsAre = (facts: Partial<Record<Facet, WorldFact>>, want: FactMap | undefined, target: Target, answeredMs: number | null, x: ConditionContext): Tri =>
   and(Object.values(want ?? {}).map((v) => factIs(facts[STATES[v].facet], v, target, answeredMs, x)));
 
-/** 물건 후보. own은 그 id·종류. follow면 원래 물건이 보이지 않는 동안 moved(단계 시작 뒤 새로 생긴 같은 종류 물건)도 본다. */
+/** 물건 후보. own은 그 id·종류. follow면 원래 물건이 사라졌을 때(그 자리가 보이는데 없음, 시야 밖은 아님) 단계 시작 뒤 새로 생긴 같은 종류 물건(moved)도 본다.
+ *  얼굴처럼 다시 알아보는 근거가 없으므로 새로 생긴 것이 여럿이면 어느 것인지 모른다(모름). */
 function candidates(name: string, follow: boolean, w: WorldView, sinceMs: number): { own: WorldView["objects"]; moved: WorldView["objects"] } {
   const own = w.objects.filter((o) => o.id === name || o.cls === name);
-  if (!follow || own.some((o) => o.status === "present")) return { own, moved: [] };
+  if (!follow || !own.length || own.some((o) => o.status !== "gone")) return { own, moved: [] };
   const cls = classOf(name);
   return { own, moved: w.objects.filter((o) => o.id !== name && o.cls === cls && o.first_seen_ms >= sinceMs && o.status !== "gone") };
 }
 
-/** 옮겨 새로 생긴 물건이 여럿이면 어느 것이 그 물건인지 모르므로 모두 같은 답일 때만 그 답. */
-const agree = (xs: Tri[]): Tri => (xs.length && xs.every((r) => r === xs[0]) ? xs[0]! : null);
+/** 새로 생긴 물건이 하나면 그 답, 여럿이면 모름. */
+const agree = (xs: Tri[]): Tri => (xs.length === 1 ? xs[0]! : null);
 
 interface Memo { held: Map<string, { since: number; last: number }>; stage: Map<string, { at: number; since: number }> }
 
