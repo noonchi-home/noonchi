@@ -23,6 +23,26 @@ export const USER_SIZES = [
     where: "마스코트 말풍선 카드 글(Item size say: 굵게·가운데)",
     quote: "말풍선 안에 글씨만 가운데 정렬 + 좀 더 크게 + 굵은글씨 가자", date: "2026-11-09",
   },
+  {
+    part: "components/ui/button.tsx", line: /^\s*setup\s*:/, size: "text-base", px: 16,
+    where: "설정 1~3단계 이전·다음 단추(Button size setup)", quote: "1,2,3 번은 글씨 키워도되겠다 설정화면사진봤는데", date: "2026-11-09",
+  },
+  {
+    part: "components/ui/alert.tsx", line: /^\s*setup\s*:/, size: "text-base", px: 16,
+    where: "설정 1~3단계 알림 줄·안내 칸(Alert size setup)", quote: "1,2,3 번은 글씨 키워도되겠다 설정화면사진봤는데", date: "2026-11-09",
+  },
+  {
+    part: "components/ui/status.tsx", line: /^\s*setup\s*:/, size: "text-sm", px: 14,
+    where: "설정 1~3단계 상태 칩(Status size setup)", quote: "1,2,3 번은 글씨 키워도되겠다 설정화면사진봤는데", date: "2026-11-09",
+  },
+  {
+    part: "components/ui/card.tsx", line: /size === "lg" && "text-headline"/, size: "text-headline", px: 22,
+    where: "설정 1~3단계 말풍선 제목(CardTitle size lg, headline 토큰)", quote: "1,2,3 번은 글씨 키워도되겠다 설정화면사진봤는데", date: "2026-11-09",
+  },
+  {
+    part: "components/ui/radio-group.tsx", line: /size === "lg" && "text-body(?:-sm)?"/, size: "text-body", px: 15,
+    where: "설정 1~3단계 고르기 카드 이름 body·설명 body-sm(RadioCard size lg)", quote: "1,2,3 번은 글씨 키워도되겠다 설정화면사진봤는데", date: "2026-11-09",
+  },
 ] as const;
 const userSize = (file: string, lineText: string, size: string) =>
   USER_SIZES.some((u) => file.replaceAll("\\", "/").endsWith(u.part) && u.line.test(lineText) && u.size === size);

@@ -17,13 +17,13 @@ export function HomeStep({ view, picked, onPick, onNext, busy }: {
           {view.homes.map((h) => (
             <RadioCard
               key={h.id} value={h.id} label={shortName(h.name)} icon={<House />}
-              description={h.id === view.home?.id ? <Status>지금 띄운 집</Status> : undefined}
+              size="lg" description={h.id === view.home?.id ? <Status size="setup">지금 띄운 집</Status> : undefined}
             />
           ))}
         </RadioGroup>
       </CardContent>
       <CardFooter className="mt-auto justify-end gap-2">
-        <Button disabled={busy || !picked} onClick={onNext}>다음</Button>
+        <Button size="setup" disabled={busy || !picked} onClick={onNext}>다음</Button>
       </CardFooter>
     </section>
   );

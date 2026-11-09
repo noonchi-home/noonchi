@@ -1,5 +1,5 @@
 // 21st.dev「Status」(id 25393, diceui/status) 받은 코드.
-// 바꾼 것: success·warning·error 바탕 green-500/10·orange-500/10·destructive/10 → 불투명 ok-tint·warn-tint·error-tint, 글·점 → ok·warn·error 토큰(테두리 /20 그대로).
+// 바꾼 것: success·warning·error 바탕 green-500/10·orange-500/10·destructive/10 → 불투명 ok-tint·warn-tint·error-tint, 글·점 → ok·warn·error 토큰(테두리 /20 그대로). 설정 1~3단계 큰 글(사용자 2026-11-09 「1,2,3 번은 글씨 키워도되겠다」): size setup(text-sm)을 더했다.
 // info variant 뺌, brand variant 더함(cream 바탕, brand 글·점), scrim variant 더함(대시보드 폰 칸 영상 위 YOLO 이름표: scrim-phone 바탕, on-scrim 글·점, 글 크기는 그대로). 점 퍼짐(animate-ping)은 data-live가 있을 때만, 움직임 줄이기면 끈다. radix-ui Slot → @radix-ui/react-slot.
 // 원래 글 크기: text-xs(12px). 받은 크기 그대로다. 더 큰 글은 npm run lint(scripts/lint-ui-type.ts)가 막는다.
 import { cva, type VariantProps } from "class-variance-authority";
@@ -25,9 +25,14 @@ const statusVariants = cva(
         scrim:
           "border-transparent bg-scrim-phone text-on-scrim **:data-[slot=status-indicator]:bg-on-scrim",
       },
+      size: {
+        default: "",
+        setup: "text-sm",
+      },
     },
     defaultVariants: {
       variant: "default",
+      size: "default",
     },
   },
 );
@@ -38,7 +43,7 @@ interface StatusProps
 }
 
 function Status(props: StatusProps) {
-  const { className, variant = "default", asChild, ...rootProps } = props;
+  const { className, variant = "default", size, asChild, ...rootProps } = props;
 
   const RootPrimitive = asChild ? Slot : "div";
 
@@ -47,7 +52,7 @@ function Status(props: StatusProps) {
       data-slot="status"
       data-variant={variant}
       {...rootProps}
-      className={cn(statusVariants({ variant }), className)}
+      className={cn(statusVariants({ variant, size }), className)}
     />
   );
 }
