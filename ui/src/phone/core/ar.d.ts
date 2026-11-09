@@ -8,7 +8,6 @@ export interface ArState {
   hitPoint: number[] | null;
   /** 조준점이 hit-test 점이 아니라 어림 바닥 점. */
   hitEstimated: boolean;
-  lastFloor: number[] | null;
   limited: boolean;
   /** 마지막 폰 자세(AR). AR 전·끝난 뒤는 null. */
   position: number[] | null;

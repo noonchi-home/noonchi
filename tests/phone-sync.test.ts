@@ -1,6 +1,6 @@
 // 폰 세션 + 위치 맞춤 모듈: 「여기서 시작」이면 어림(estimated) 눈, 벽·물건이 기준을 넘으면 맞춤. 앱도 같은 메시지(start·pose·surface·landmarks)를 보낸다.
 import { describe, expect, it } from "vitest";
-import type { HomePlan } from "../src/phone/corners.js";
+import type { HomePlan } from "../src/phone/home-plan.js";
 import { PhoneSession, type PhoneStatus } from "../src/phone/session.js";
 import type { TwinLandmark } from "../src/sync/landmarks.js";
 import { applyRigid, invertRigid, rigidGap, type P2, type Rigid } from "../src/sync/rigid.js";
@@ -26,12 +26,11 @@ const MARKS: TwinLandmark[] = [
 ];
 const TRUTH: Rigid = { theta: deg(40), tx: 2, ty: 1 };
 const START: StartPose = { position: [2.5, 2.5], yawDeg: 0, label: "거실 가운데", facingLabel: "식탁" };
-const TARGETS = [{ id: "A", label: "거실 구석", plan: [0.1, 0.1] as P2 }, { id: "B", label: "거실 맞은편 구석", plan: [5.9, 4.9] as P2 }];
 const FALLBACK = { position: [1, 1] as P2, yawDeg: 90, heightM: 1.3 };
 
 function setup(start: StartPose | null = START) {
   let t = 0;
-  const s = new PhoneSession(TARGETS, {
+  const s = new PhoneSession({
     now: () => new Date(Date.UTC(2026, 10, 10) + t), fallback: FALLBACK, sync: { landmarks: MARKS, walls: WALLS, start },
   });
   const sim = new SimHome({ truth: TRUTH, floorY: -1.4, walls: WALLS, landmarks: MARKS, seed: 3 });
@@ -143,21 +142,13 @@ describe("폰 세션 위치 맞춤", () => {
     expect(env.s.status().sync!.start).toEqual({ label: "거실 가운데", facing: "식탁" });
   });
 
-  it("A·B 기록으로 맞추면 맞춤(source touch), 새 AR 원점이면 모두 지운다", () => {
+  it("맞춘 뒤 새 AR 원점이면 모두 지운다(시작부터 다시)", () => {
     const env = setup();
-    env.s.setTargets(TARGETS, "touch");
-    const a = applyRigid(invertRigid(TRUTH), TARGETS[0]!.plan), b = applyRigid(invertRigid(TRUTH), TARGETS[1]!.plan);
-    env.s.handle({ type: "anchor", id: "A", point: [a[0], -1.4, a[1]], floor: [a[0], -1.4, a[1]], epoch: "e1", revision: 2 });
-    const out = env.s.handle({ type: "anchor", id: "B", point: [b[0], -1.4, b[1]], floor: [b[0], -1.4, b[1]], epoch: "e1", revision: 2 });
-    expect(out.reply).toMatchObject({ aligned: true, mismatch_m: 0, sync: { state: "aligned", source: "touch" } });
-    const p = env.sim.pose([3, 3], 0, deg(-10));
+    const p = env.sim.pose(START.position, 0, deg(-10));
+    env.s.handle({ type: "start", position: p.position, orientation: p.orientation, epoch: "e1" });
+    walkRoom(env);
+    expect(env.s.status().sync.state).toBe("aligned");
     const reset = env.s.handle({ type: "pose", position: p.position, orientation: p.orientation, epoch: "e2" });
     expect(reset.reply).toMatchObject({ aligned: false, sync: { state: "none", started: false } });
-  });
-
-  it("위치 맞춤을 끄면(sync 없음) 상태에 sync 칸이 없고 예전과 같다", () => {
-    const s = new PhoneSession(TARGETS, { fallback: FALLBACK });
-    expect(s.status().sync).toBeUndefined();
-    expect(s.handle({ type: "start", position: [0, 0, 0], orientation: [0, 0, 0, 1] }).reply!.error).toContain("시작 위치");
   });
 });

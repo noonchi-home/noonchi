@@ -1,7 +1,7 @@
 // 폰 AR 페이지와 자세 WebSocket만 여는 작은 서버(SSOT 9.6). 같은 와이파이의 폰이 붙도록 0.0.0.0에 열 수 있다.
 // 기기 제어 REST는 여기 없다. 본 서버(127.0.0.1)는 그대로 두고 눈 자세는 onEye로, 폰의 말(say)과 승인 답(승인·거절)은 onSay·onConfirm·onCancel로
 // 넘긴다(그 뒤는 에이전트·승인 정책이 맡는다). 실제 폰에 명령·질문이 떠 있으면 말을 먼저 그 답으로 맞춰 보고(onAnswer),
-// 답 단추(answer)는 onChoice로 넘긴다(src/contract/phone.ts). 명령 대상의 트윈 자리는 맞춘 기준점으로 AR 자리로 바꿔 보내고(맞추기 전 null),
+// 답 단추(answer)는 onChoice로 넘긴다(src/contract/phone.ts). 명령 대상의 트윈 자리는 맞춘 변환으로 AR 자리로 바꿔 보내고(맞추기 전 null),
 // 맞춤이 바뀌면 지금 명령을 다시 보낸다(speak false). 위치 맞춤 모듈(src/sync)의 상태가 바뀌면 붙은 폰 모두에 상태를 보낸다.
 // 내부 테스트용이라 같은 와이파이의 누구나 말을 보낼 수 있다.
 // 폰 화면은 React 빌드 ui/dist/phone/이고 빌드 파일은 /assets/다(대시보드와 같은 빌드).
@@ -16,11 +16,10 @@ import type { FocusTarget } from "../contract/events.js";
 import type { ApprovalAnswer, PhoneCommand, PhonePending, PhoneTalkReply, PlannedCommand, PlannedCommandMessage } from "../contract/phone.js";
 import { listenRetry } from "../server/net.js";
 import { serveFile } from "../server/static.js";
-import type { AnchorTarget } from "./anchors.js";
 import type { EyeFeed } from "./feed.js";
 import { MAX_PACKET_BYTES, parsePacket, type FrameHeader } from "./packet.js";
 import type { Plan2 } from "./align.js";
-import { PhoneSession, type AlignMode, type CameraView, type EyeEvent, type FallbackViewpoint, type HerePoint, type LandmarkBoxIn, type PhoneSessionOptions, type PhoneStatus } from "./session.js";
+import { PhoneSession, type CameraView, type EyeEvent, type FallbackViewpoint, type HerePoint, type LandmarkBoxIn, type PhoneSessionOptions, type PhoneStatus } from "./session.js";
 import type { SyncState } from "../sync/aligner.js";
 import type { TwinLandmark } from "../sync/landmarks.js";
 import type { StartPose } from "../sync/start.js";
@@ -35,22 +34,17 @@ export const PHONE_NOT_BUILT = "폰 화면이 아직 빌드되지 않았어요. 
 const PHONE_FILES = /^\/(assets|brand|fonts)\/(.+)$|^\/(favicon\.ico|favicon-32\.png|apple-touch-icon\.png|icon-192\.png|icon-512\.png)$/;
 
 export interface PhoneServerOptions {
-  targets: AnchorTarget[];
   onEye: (eye: EyeEvent) => void;
   /** 카메라 프레임·사진을 받을 곳. 없으면 바이너리 메시지를 무시한다. */
   feed?: EyeFeed;
-  /** 기준점 거리 차이 허용값(m). 기본 0.3. */
-  maxMismatchM?: number;
   /** 있으면 맞추기 전에도 창가 고정 위치 + 폰 방향으로 추정 눈을 보낸다(session.ts estimateFor). */
   fallback?: FallbackViewpoint;
-  /** 기준점 방식(기본 floor). touch면 targets는 대시보드에서 고른 벽 지점 A·B다(touch.ts). */
-  mode?: AlignMode;
-  /** touch 모드의 눈 높이(방 바닥 위 m, 기본 1.5). */
+  /** 바닥 hit이 없을 때 폰 높이에서 빼는 눈높이(m, 기본 1.5). */
   eyeHeightM?: number;
-  /** 평면 점이 있는 방의 바닥 높이(touch 모드 눈 높이에 더한다). */
+  /** 평면 점이 있는 방의 바닥 높이(floor_z). */
   floorAt?: (p: Plan2) => number;
-  /** 위치 맞춤 모듈(시작 위치·물건·벽 모양, session.ts). 없으면 기준점 두 곳으로만 맞춘다. */
-  sync?: PhoneSessionOptions["sync"];
+  /** 위치 맞춤(시작 위치·물건·벽 모양, session.ts): 트윈 물건 기준점, 방 쪽 벽 면, 이 집의 시작 위치. */
+  sync: PhoneSessionOptions["sync"];
   /** 화면 빌드 폴더(기본 ui/dist). 폰 화면은 그 안 phone/index.html. */
   uiDir?: string;
   log?: (msg: string) => void;
@@ -83,16 +77,14 @@ export interface PhoneServer {
   here(): HerePoint;
   /** 클로이드가 지금 다루는 물건을 폰 화면에 표시하게 보낸다(맞추기 전이면 보내지 않는다). */
   sendFocus(targets: FocusTarget[], ttlMs: number): void;
-  /** 기준점·방식을 바꾸고(기록·맞춤은 지움) 연결된 폰에 새 상태를 보낸다. */
-  setTargets(targets: AnchorTarget[], mode: AlignMode): void;
   /** 이 집의 시작 위치를 바꾸고(설정 저장·지우기) 연결된 폰에 새 상태를 보낸다. */
   setStart(start: StartPose | null): void;
   /** 트윈 물건 기준점을 바꾼다(배치 보정). */
   setLandmarks(list: readonly TwinLandmark[]): void;
   /** 엔진 프레임 YOLO 기준점 상자(관찰 흐름이 넘긴다). 맞춤이 바뀌면 폰에 상태를 보낸다. */
   landmarks(header: FrameHeader, boxes: readonly LandmarkBoxIn[]): void;
-  /** 위치 맞춤 모듈 상태(모듈이 없으면 null). */
-  syncState(): SyncState | null;
+  /** 위치 맞춤 모듈 상태. */
+  syncState(): SyncState;
   /** 실제 폰 명령(command)·지우기(command_clear)를 연결된 폰 모두에 보내고 지금 명령으로 둔다. 새로 붙은 폰은 상태 다음에
    *  지금 명령을 speak false로, 명령이 없으면 id 없는 command_clear를 받는다(다시 켠 서버에 다시 붙은 폰의 이전 명령이 지워진다). */
   command(msg: PlannedCommandMessage): void;
@@ -122,9 +114,7 @@ export function lanUrls(port: number, host: string): string[] {
 export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
   const uiDir = resolve(opts.uiDir ?? DEFAULT_UI_DIR);
   const log = opts.log ?? ((m: string) => console.log(m));
-  const session = new PhoneSession(opts.targets, {
-    maxMismatchM: opts.maxMismatchM, fallback: opts.fallback, mode: opts.mode, eyeHeightM: opts.eyeHeightM, floorAt: opts.floorAt, sync: opts.sync,
-  });
+  const session = new PhoneSession({ fallback: opts.fallback, eyeHeightM: opts.eyeHeightM, floorAt: opts.floorAt, sync: opts.sync });
 
   const server = createServer((req, res) => {
     const path = new URL(req.url ?? "/", "http://localhost").pathname;
@@ -304,12 +294,6 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
         targets: targets.map((t) => ({ id: t.id, label: t.label, ar: session.toAr(t.position)! })),
       });
       for (const ws of wss.clients) if (ws.readyState === WebSocket.OPEN) ws.send(msg);
-    },
-    setTargets(targets, mode) {
-      const wasAligned = session.aligned;
-      session.setTargets(targets, mode);
-      for (const ws of wss.clients) reply(ws, status());
-      resendIf(wasAligned);
     },
     setStart(start) {
       session.setStart(start);

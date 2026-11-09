@@ -36,13 +36,11 @@ import { loadLayout } from "../layout/load.js";
 import { loadTwin, type TwinData } from "../model/devices.js";
 import { listHomes } from "../model/homes.js";
 import { loadScene } from "../model/scene.js";
-import { loadAnchorTargets, type AnchorTarget } from "../phone/anchors.js";
-import { autoCorners, parseWallPick, pickedRoom, readScenePlan } from "../phone/corners.js";
 import { EyeFeed } from "../phone/feed.js";
 import { orderPhoneUrls } from "../phone/links.js";
 import { createPhoneServer, type PhoneServer } from "../phone/server.js";
 import { estimateViewpoint } from "../phone/session.js";
-import { TouchStore, eyeHeightOf, floorLookup, homeBounds, readTouchPoints, touchPointsPath, touchTargets, type TouchPoint } from "../phone/touch.js";
+import { eyeHeightOf, floorLookup, homeBounds, readScenePlan } from "../phone/home-plan.js";
 import type { FrameHeader } from "../phone/packet.js";
 import { twinLandmarks } from "../sync/landmarks.js";
 import { StartStore, describeStart, readStartPose, startPosePath, type StartPose } from "../sync/start.js";
@@ -112,8 +110,6 @@ export interface HomeRuntime {
   policy: Policy;
   agent: Agent;
   layout?: LayoutEditor;
-  /** 기준점 A·B 저장소(집 scene.json이 있을 때). */
-  touch?: TouchStore;
   /** 폰 위치 맞추기 시작 위치 저장소(집 scene.json이 있을 때). */
   start?: StartStore;
   app: TwinHomeApp;
@@ -189,28 +185,12 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         },
       })
       : undefined;
-    // 벽 대기 맞춤 기준점 A·B(설정 4단계에서 고름). 저장·지우면 실행 중인 폰 세션의 기준점이 바로 바뀐다
+    // 폰 위치 맞추기(src/sync): 시작 위치(설정 4단계에서 자리·방향) + 물건 기준점(엔진 프레임 YOLO) + 벽 모양(hit 벽 점)
     const eyeHeightM = eyeHeightOf(env.PHONE_EYE_HEIGHT_M);
-    const touchPath = touchPointsPath(runtimeDir, home.id);
-    let savedTouch: TouchPoint[] | null = null;
-    try {
-      savedTouch = readTouchPoints(touchPath);
-    } catch (e) {
-      log(`[경고] ${(e as Error).message}. 평면도 바닥 기준점으로 맞춥니다.`);
-    }
-    const phoneRef: { current?: PhoneServer; floor?: AnchorTarget[] } = {};
-    // 방·벽(기준점 범위 검사·방 바닥 높이·벽 하나로 구석 찾기). scene.json이 없거나 깨졌으면 빈 목록
+    const phoneRef: { current?: PhoneServer } = {};
+    // 방·벽(시작 위치 범위·방 검사, 방 바닥 높이, 벽 모양 짝). scene.json이 없거나 깨졌으면 빈 목록
     const plan = readScenePlan(home.scenePath);
     const bounds = homeBounds(plan.rooms);
-    const touchStore = existsSync(home.scenePath)
-      ? new TouchStore(touchPath, bounds, (points) => {
-        if (!phoneRef.current || !phoneRef.floor) return;
-        if (points) phoneRef.current.setTargets(touchTargets(points), "touch");
-        else phoneRef.current.setTargets(phoneRef.floor, "floor");
-      }, savedTouch)
-      : undefined;
-    // 폰 위치 맞추기(src/sync): 시작 위치(설정에서 자리·방향) + 물건 기준점(엔진 프레임 YOLO) + 벽 모양(hit 벽 점). PHONE_SYNC=0이면 끈다
-    const syncOn = !/^(0|false|off)$/i.test(env.PHONE_SYNC?.trim() ?? "");
     const startPath = startPosePath(runtimeDir, home.id);
     let savedStart: StartPose | null = null;
     try {
@@ -220,7 +200,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     }
     const twinObjects = () => layout?.editor.objects() ?? [];
     const startStore = existsSync(home.scenePath)
-      ? new StartStore(startPath, bounds, (p, yaw) => describeStart(twinObjects(), plan.rooms, p, yaw), (s) => phoneRef.current?.setStart(s), savedStart)
+      ? new StartStore(startPath, bounds, (p, yaw) => describeStart(twinObjects(), plan.rooms, p, yaw), (s) => phoneRef.current?.setStart(s), savedStart, plan.rooms)
       : undefined;
     const landmarksNow = () => (layout ? twinLandmarks(layout.editor.objects(), layout.catalog) : []);
     // 「냉장고 여기로」처럼 배치를 고치면 기준점 자리도 바꾼다
@@ -362,12 +342,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       hub: signals, policy, agent, rooms: twin.rooms, twinDir, viewerDir: home.viewerDir, libraryDir: home.libraryDir, hubKind, log, eye: feed,
       brain: observe ?? undefined, world: worldNow ?? undefined,
       home: { id: home.id, name: home.name }, homes: listHomes(twin.dir), layout: layout?.editor, phoneUrls: () => phoneUrls, mode: ctx.mode, webDir: ctx.webDir, allowOrigin: ctx.allowOrigin, planToken: ctx.planToken, ready: ctx.ready,
-      touch: touchStore && {
-        get: () => touchStore.get(), save: (raw) => touchStore.save(raw), clear: () => touchStore.clear(), eyeHeightM,
-        auto: (raw) => autoCorners(plan, parseWallPick(raw), bounds),
-        room: (raw) => pickedRoom(plan, parseWallPick(raw)),
-      },
-      start: startStore && { get: () => startStore.get(), save: (raw) => startStore.save(raw), clear: () => startStore.clear() },
+      start: startStore && { get: () => startStore.get(), save: (raw) => startStore.save(raw), preview: (raw) => startStore.preview(raw), clear: () => startStore.clear() },
       phoneSync: () => phoneRef.current?.syncState() ?? null,
       plan: plans, history: history.db, reflect: history.reflect, scene: () => scene,
       brainLast: () => [lastDecision, lastBoxes].filter((e): e is BrainLog => e !== null), say: () => said,
@@ -377,16 +352,11 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     speak();
     let phonePort: number | undefined;
     if (phoneOn) {
-      const floor = loadAnchorTargets(home.scenePath, join(home.dataDir, "floorplan.json"));
-      const touch = touchStore?.get() ?? null;
       // 맞추기 전에도 원뿔이 보이게: 창가 고정 위치 + 폰 방향(추정, 사진에는 쓰지 않음)
       const fallback = estimateViewpoint(JSON.parse(readFileSync(home.scenePath, "utf8").replace(/^﻿/, "")));
-      const maxMismatch = Number(env.PHONE_MAX_MISMATCH_M);
       phone = createPhoneServer({
-        targets: touch ? touchTargets(touch) : floor, mode: touch ? "touch" : "floor", eyeHeightM, feed, log, fallback,
-        floorAt: floorLookup(plan.rooms),
-        sync: syncOn ? { landmarks: landmarksNow(), walls: wallSegments(plan), start: startStore?.get() ?? null } : undefined,
-        maxMismatchM: Number.isFinite(maxMismatch) && maxMismatch > 0 ? maxMismatch : undefined,
+        eyeHeightM, feed, log, fallback, floorAt: floorLookup(plan.rooms),
+        sync: { landmarks: landmarksNow(), walls: wallSegments(plan), start: startStore?.get() ?? null },
         onEye: (eye) => {
           appNow.broadcast({ type: "eye", eye });
           plans.onEye([eye.position[0], eye.position[1]], eye.estimated === true);
@@ -426,7 +396,6 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       });
       const phoneServer = phone;
       phoneRef.current = phone;
-      phoneRef.floor = floor;
       layout?.editor.setHere(() => phoneServer.here());
       const wantedPhone = ctx.phonePort ?? Number(env.PHONE_PORT);
       const listened = await phone.listen(Number.isInteger(wantedPhone) && wantedPhone >= 0 ? wantedPhone : 8210, env.PHONE_HOST?.trim() || "0.0.0.0");
@@ -456,7 +425,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     let link: ThinqLink | null = null;
     return {
       twin, hub: started.hub, signals, hubKind, transport: started.transport, warnings: started.warnings, policy, agent, layout: layout?.editor,
-      touch: touchStore, start: startStore, app: appNow, twinDir, phoneUrls, phonePort,
+      start: startStore, app: appNow, twinDir, phoneUrls, phonePort,
       setLink(next) {
         link?.stop();
         link = closed ? null : next;

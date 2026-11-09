@@ -1,6 +1,6 @@
 // 벽 모양: hit-test 점을 벽·바닥으로 가르고, 10cm 칸으로 줄이고, 평면도 방 쪽 벽 면과 짝지어(거리·법선·보이는 쪽) 점-선 항을 만든다.
 import { describe, expect, it } from "vitest";
-import { readScenePlan, roomFaces, type HomePlan } from "../src/phone/corners.js";
+import { readScenePlan, roomFaces, type HomePlan } from "../src/phone/home-plan.js";
 import { IDENTITY, type P2 } from "../src/sync/rigid.js";
 import { SurfacePoints, classifyHit, wallQuality, wallSegments, wallTerms, type WallPoint } from "../src/sync/walls.js";
 

@@ -1,11 +1,12 @@
 // startServer가 PHONE_PORT를 보고 폰 AR 서버를 함께 띄우는지(HUB=memory로 빠르게).
 
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
-import { loadAnchorTargets } from "../src/phone/anchors.js";
+import { estimateViewpoint } from "../src/phone/session.js";
+import { alignOnServer } from "./helpers/align.js";
 import { fetchRetry } from "../src/server/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 
@@ -38,19 +39,23 @@ describe("startServer + 폰 AR", () => {
     expect(srv.phoneUrls).toHaveLength(1);
     expect(((await (await fetchRetry(`${srv.url}/api/health`)).json()) as { phone_urls?: string[] }).phone_urls).toEqual(srv.phoneUrls);
     const phoneUrl = new URL(srv.phoneUrls[0]!);
-    const [dock, door] = loadAnchorTargets(join(srv.twin.dir, "apartment", "scene.json"), join(srv.twin.dir, "data", "apartment", "floorplan.json"));
+    // 시작 위치: 기본 집(아파트) 가장 넓은 방 창가 안쪽
+    const scenePath = join(srv.twin.dir, "apartment", "scene.json");
+    const spot = estimateViewpoint(JSON.parse(readFileSync(scenePath, "utf8"))).position;
 
     const dash = new WebSocket(`${srv.url.replace(/^http/, "ws")}/events`);
     await opened(dash);
     const phone = new WebSocket(`ws://${phoneUrl.host}/phone/events`, { origin: phoneUrl.origin });
     await opened(phone);
     const aligned = next(phone, (m) => m.type === "status" && m.aligned);
-    phone.send(JSON.stringify({ type: "anchor", id: dock!.id, point: [dock!.plan[0], 0, dock!.plan[1]] }));
-    phone.send(JSON.stringify({ type: "anchor", id: door!.id, point: [door!.plan[0], 0, door!.plan[1]] }));
+    await alignOnServer(srv.url, (t) => phone.send(t), scenePath, spot);
     await aligned;
-    const eye = next(dash, (m) => m.type === "eye");
-    phone.send(JSON.stringify({ type: "pose", position: [dock!.plan[0], 1.3, dock!.plan[1]], orientation: [0, 0, 0, 1] }));
-    expect((await eye).eye).toMatchObject({ position: dock!.plan, height_m: 1.3 });
+    const eye = next(dash, (m) => m.type === "eye" && m.eye.estimated === undefined);
+    phone.send(JSON.stringify({ type: "pose", position: [spot[0], 1.3, spot[1]], orientation: [0, 0, 0, 1] }));
+    const got = (await eye).eye;
+    expect(got.position[0]).toBeCloseTo(spot[0], 2);
+    expect(got.position[1]).toBeCloseTo(spot[1], 2);
+    expect(got.height_m).toBeCloseTo(1.3, 2);
     dash.close();
     phone.close();
   });
@@ -89,24 +94,12 @@ describe("startServer + 폰 AR", () => {
     expect(health.eye).toBe(false);
   });
 
-  it("PHONE_MAX_MISMATCH_M로 거리 차이 허용값을 바꾸고, 눈 화면 API를 연다", async () => {
+  it("PHONE_PHOTO_DIR로 사진 폴더를 정하고 눈 화면 API를 연다", async () => {
     const photoDir = mkdtempSync(join(tmpdir(), "start-photos-"));
     try {
-      srv = await startServer({ env: { ...baseEnv(), PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", PHONE_MAX_MISMATCH_M: "2", PHONE_PHOTO_DIR: photoDir }, log: () => {} });
+      srv = await startServer({ env: { ...baseEnv(), PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", PHONE_PHOTO_DIR: photoDir }, log: () => {} });
       const health = (await (await fetchRetry(`${srv.url}/api/health`)).json()) as { eye?: boolean };
       expect(health.eye).toBe(true);
-      const phoneUrl = new URL(srv.phoneUrls[0]!);
-      const [dock, door] = loadAnchorTargets(join(srv.twin.dir, "apartment", "scene.json"), join(srv.twin.dir, "data", "apartment", "floorplan.json"));
-      const phone = new WebSocket(`ws://${phoneUrl.host}/phone/events`, { origin: phoneUrl.origin });
-      await opened(phone);
-      const status = next(phone, (m) => m.type === "status" && m.anchors.every((a: { recorded: boolean }) => a.recorded));
-      // 두 번째 기준점을 1m 더 멀리 찍는다: 기본 허용값(0.3m)은 넘고 PHONE_MAX_MISMATCH_M=2 안쪽
-      const len = Math.hypot(door!.plan[0] - dock!.plan[0], door!.plan[1] - dock!.plan[1]);
-      const far = [door!.plan[0] + (door!.plan[0] - dock!.plan[0]) / len, 0, door!.plan[1] + (door!.plan[1] - dock!.plan[1]) / len];
-      phone.send(JSON.stringify({ type: "anchor", id: dock!.id, point: [dock!.plan[0], 0, dock!.plan[1]] }));
-      phone.send(JSON.stringify({ type: "anchor", id: door!.id, point: far }));
-      expect(await status).toMatchObject({ aligned: true });
-      phone.close();
     } finally {
       await srv?.close();
       srv = undefined;

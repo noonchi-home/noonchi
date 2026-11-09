@@ -24,7 +24,7 @@ import { applyRigid, limitStep, ransacRigid, rigidGap, solveTerms, type P2, type
 import { startRigid, type StartPose } from "./start.js";
 import { SurfacePoints, classifyHit, normalRotation, wallQuality, wallTerms, type WallPoint, type WallSeg } from "./walls.js";
 
-export type SyncSource = "start" | "objects" | "walls" | "touch" | "floor";
+export type SyncSource = "start" | "objects" | "walls";
 
 export const SYNC_LIMITS = {
   startSigmaM: 0.3,
@@ -79,7 +79,7 @@ export interface SyncState {
   wallPoints: number;
   wallRmsM: number | null;
   twoD: boolean;
-  /** 보여 줄 오차(m): 벽이 기준을 넘으면 벽 RMS, 아니면 물건 RMS, A·B면 거리 차이. */
+  /** 보여 줄 오차(m): 벽이 기준을 넘으면 벽 RMS, 아니면 물건 RMS. */
   residualM: number | null;
   /** 받아들인 고침 수. */
   updates: number;
@@ -135,8 +135,6 @@ export class SyncAligner {
   private aligned = false;
   private source: SyncSource | null = null;
   private start: { pose: StartPose; position: Vec3; rigid: Rigid; at: number } | null = null;
-  private manualFloorY: number | null = null;
-  private manualResidual: number | null = null;
   private quality: Evaluated = { anchors: 0, anchorIds: [], anchorRmsM: null, wallPoints: 0, wallRmsM: null, ratio: 0, twoD: false };
   private readonly surface = new SurfacePoints();
   private readonly store: LandmarkStore;
@@ -162,6 +160,8 @@ export class SyncAligner {
     // 묶는 거리: 그 종류에서 가장 큰 물건 대각선의 0.6배(1m 이상), 버리는 거리: 대각선의 절반(0.4m 이상)
     const diag = (cls: LandmarkClass) => Math.max(0, ...(this.byClass.get(cls) ?? []).map((l) => Math.hypot(...l.footprint)));
     this.store = new LandmarkStore({ radiusM: (c) => Math.max(1, 0.6 * diag(c)), outlierM: (c) => Math.max(0.4, 0.5 * diag(c)) });
+    // 처음 목록은 고칠 거리가 아니다(아직 증거가 없다)
+    this.dirty = false;
   }
 
   /** 트윈 물건이 바뀌면(배치 보정) 짝 목록을 바꾼다. 모은 관찰은 그대로 둔다. */
@@ -179,8 +179,6 @@ export class SyncAligner {
     this.aligned = false;
     this.source = null;
     this.start = null;
-    this.manualFloorY = null;
-    this.manualResidual = null;
     this.quality = { anchors: 0, anchorIds: [], anchorRmsM: null, wallPoints: 0, wallRmsM: null, ratio: 0, twoD: false };
     this.surface.clear();
     this.store.clear();
@@ -191,16 +189,6 @@ export class SyncAligner {
     this.dirty = false;
   }
 
-  /** A·B·바닥 기준점으로 맞춘 변환(src/phone/session.ts)을 맞춤으로 넣는다. 그 뒤에도 벽·물건이 기준을 넘으면 고친다. */
-  seed(al: Rigid & { floorY: number }, source: "touch" | "floor", residualM: number): void {
-    this.rigid = { theta: al.theta, tx: al.tx, ty: al.ty };
-    this.manualFloorY = al.floorY;
-    this.manualResidual = residualM;
-    this.aligned = true;
-    this.source = source;
-    this.dirty = true;
-  }
-
   /** 시작 자리에 서서 그 방향을 본 순간의 자세. 변환을 그 자세로 바로 정하고 어림으로 둔다(모은 증거는 남겨 곧 다시 맞춘다). */
   confirmStart(pose: StartPose, position: Vec3, orientation: Quat): void {
     const rigid = startRigid(pose, position, orientation);
@@ -208,15 +196,14 @@ export class SyncAligner {
     this.rigid = rigid;
     this.aligned = false;
     this.source = "start";
-    this.manualResidual = null;
     this.lastCamera = [position[0], position[2]];
     this.lastPhoneY = position[1];
     this.dirty = true;
   }
 
-  /** 트윈 높이 0의 AR y: 실제 바닥 hit 중앙값 → A·B 기록 → 폰 어림 바닥 → 시작 높이 − 눈높이 → 마지막 폰 높이 − 눈높이. */
+  /** 트윈 높이 0의 AR y: 실제 바닥 hit 중앙값 → 폰 어림 바닥 → 시작 높이 − 눈높이 → 마지막 폰 높이 − 눈높이. */
   floorY(): number | null {
-    return this.surface.floorY() ?? this.manualFloorY ?? (this.floorHints.length ? median(this.floorHints) : null)
+    return this.surface.floorY() ?? (this.floorHints.length ? median(this.floorHints) : null)
       ?? (this.start ? this.start.position[1] - this.eyeHeightM : null) ?? (this.lastPhoneY !== null ? this.lastPhoneY - this.eyeHeightM : null);
   }
 
@@ -288,7 +275,7 @@ export class SyncAligner {
       wallPoints: q.wallPoints,
       wallRmsM: q.wallRmsM,
       twoD: q.twoD,
-      residualM: (this.source === "touch" || this.source === "floor") ? this.manualResidual : wallOk ? q.wallRmsM : q.anchorRmsM,
+      residualM: wallOk ? q.wallRmsM : q.anchorRmsM,
       updates: this.updates,
       observed: { landmarks: this.store.size(), walls: this.surface.wallCount() },
     };
@@ -359,7 +346,6 @@ export class SyncAligner {
     this.rigid = step.T;
     if (full && !step.clamped) this.aligned = true;
     this.source = wallOk ? "walls" : "objects";
-    this.manualResidual = null;
     this.quality = step.clamped ? this.evaluate(step.T, walls, clusters, floor) : q;
     this.updates += 1;
     const moved = !was || rigidGap(was, step.T, [this.lastCamera ?? [0, 0]]).shiftM > 1e-4 || rigidGap(was, step.T, []).rotDeg > 1e-3;

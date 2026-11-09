@@ -1,5 +1,6 @@
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import * as THREE from "three";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SetupApp, UPPER_BODY } from "../src/setup/SetupApp";
 import { MASCOT } from "../src/dashboard/mascot-image";
@@ -137,11 +138,11 @@ describe("설정 2단계: 가전 선택", () => {
 });
 
 describe("설정 4단계: 위치 동기화", () => {
-  it("트윈·폰 서버·기준점이 없으면 상태만 보이고, 기준점 맞추기가 꺼진 집은 완료하고 대시보드로를 바로 누른다(건너뛰기 없음)", async () => {
+  it("트윈·폰 서버·시작 위치를 못 쓰는 집은 상태만 보이고, 완료하고 대시보드로를 바로 누른다(건너뛰기 없음)", async () => {
     const { api, navigate, user } = open("#position");
     expect(await screen.findByText("3D 트윈을 찾을 수 없어요.")).toBeInTheDocument();
     expect(screen.getByText("폰 서버가 꺼져 있어요.")).toBeInTheDocument();
-    expect(screen.queryByRole("region", { name: "폰 기준점" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "시작 위치" })).toBeNull();
     expect(screen.queryByRole("region", { name: "배치 보정" })).toBeNull();
     expect(screen.queryByRole("button", { name: "건너뛰고 대시보드로" })).toBeNull();
     await waitFor(() => expect(screen.getByRole("button", { name: "완료하고 대시보드로" })).toBeEnabled());
@@ -150,9 +151,9 @@ describe("설정 4단계: 위치 동기화", () => {
     expect(api.posts("/api/setup/done")[0]!.body).toEqual({ home: "oneroom" });
   });
 
-  it("폰 주소·기준점·배치 보정이 있으면 보인다", async () => {
-    open("#position", setupView({ position: { touch: true, layout: true, phone_urls: ["https://pc.tail:8210/phone/"] } }), {
-      "GET /api/phone/touch-points": () => [200, { ok: true, points: null, mode: "floor", eye_height_m: 1.5, distance_m: null }],
+  it("폰 주소·시작 위치·배치 보정이 있으면 보인다", async () => {
+    open("#position", setupView({ position: { start: true, layout: true, phone_urls: ["https://pc.tail:8210/phone/"] } }), {
+      "GET /api/phone/start-pose": () => [200, { ok: true, start: null }],
       "GET /api/layout": () => [200, { ok: true, edits: 2, dirty: true }],
     });
     const user = userEvent.setup();
@@ -162,17 +163,16 @@ describe("설정 4단계: 위치 동기화", () => {
     // 주소는 / 뒤에서만 줄을 바꾼다
     expect(addr.closest("ul")!.className).not.toMatch(/break-all/);
     expect([...addr.childNodes].map((n) => (n.nodeName === "WBR" ? "|" : n.textContent)).join("")).toBe("https://|pc.tail:8210/|phone/|");
-    expect(screen.getByText("폰 크롬에서 이 주소를 열고 기준점을 조준해 기록하세요.")).toBeInTheDocument();
-    const touch = await screen.findByRole("region", { name: "폰 기준점" });
-    expect(within(touch).getByRole("button", { name: "A 다시 고르기" })).toBeInTheDocument();
-    expect(within(touch).getByRole("button", { name: "B 다시 고르기" })).toBeInTheDocument();
-    expect(within(touch).queryByRole("button", { name: "저장" })).toBeNull();
+    expect(screen.getByText("폰 크롬에서 이 주소를 열고 시작 자리에서 「여기서 시작」을 하세요.")).toBeInTheDocument();
+    const start = await screen.findByRole("region", { name: "시작 위치" });
+    expect(within(start).getByRole("status")).toHaveTextContent("트윈 바닥을 눌러 폰을 켤 자리를 고르세요.");
+    expect(within(start).queryByRole("button", { name: "저장" })).toBeNull();
     expect(await screen.findByText("보정 2건 · 저장 안 함")).toBeInTheDocument();
   });
 
-  it("말풍선 안은 트윈 칸 하나: 옆 카드 줄이 없고, 안내 줄·폰 칩·A·B·배치 보정·이전·완료가 모두 트윈 칸 안에 떠 있다", async () => {
-    open("#position", setupView({ position: { touch: true, layout: true, phone_urls: ["https://pc.tail:8210/phone/"] } }), {
-      "GET /api/phone/touch-points": () => [200, { ok: true, points: null, mode: "floor", eye_height_m: 1.5, distance_m: null }],
+  it("말풍선 안은 트윈 칸 하나: 안내 줄·폰 칩·시작 위치·배치 보정·이전·완료가 모두 트윈 칸 안에 떠 있다. A·B 칩과 벽 고르기는 없다", async () => {
+    open("#position", setupView({ position: { start: true, layout: true, phone_urls: ["https://pc.tail:8210/phone/"] } }), {
+      "GET /api/phone/start-pose": () => [200, { ok: true, start: null }],
       "GET /api/layout": () => [200, { ok: true, edits: 2, dirty: true }],
       "HEAD /twin/viewer/": () => [200, null],
     });
@@ -180,342 +180,194 @@ describe("설정 4단계: 위치 동기화", () => {
     const box = document.querySelector<HTMLElement>("[data-twin-box]")!;
     expect(box).not.toBeNull();
     for (const el of [
-      screen.getByTitle("3D 집 트윈"), screen.getByRole("region", { name: "폰 기준점" }), screen.getByRole("region", { name: "배치 보정" }),
+      screen.getByTitle("3D 집 트윈"), screen.getByRole("region", { name: "시작 위치" }), screen.getByRole("region", { name: "배치 보정" }),
       screen.getByRole("button", { name: "폰 연결" }), screen.getByRole("button", { name: "이전" }),
       screen.getByRole("button", { name: "완료하고 대시보드로" }), screen.getAllByRole("status")[0]!,
     ]) expect(box.contains(el)).toBe(true);
-    expect(screen.queryByRole("heading", { name: "폰 기준점 A·B" })).toBeNull();
-    expect(screen.queryByRole("heading", { name: "배치 보정" })).toBeNull();
-    expect(screen.queryByRole("heading", { name: "폰" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "폰 기준점" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "A 다시 고르기" })).toBeNull();
     expect(screen.queryByRole("button", { name: "벽 하나로 A·B 고르기" })).toBeNull();
+    expect(touchCalls()).toEqual([]);
   });
 });
 
-describe("설정 4단계: 벽 하나로 A·B 구석 고르기", () => {
-  type Hit = { position: [number, number]; room?: string; normal?: [number, number] } | null;
-  const A = { id: "A", label: "방 구석", position: [3.9, 0.1] };
-  const B = { id: "B", label: "방 맞은편 구석", position: [0.1, 3.94] };
+/** 지난 A·B 주소를 부른 적이 있는지(없어야 한다). */
+function touchCalls() {
+  return (vi.mocked(fetch).mock.calls as [RequestInfo | URL][]).map(([u]) => String(u)).filter((u) => u.includes("touch-points"));
+}
+
+describe("설정 4단계: 트윈에서 시작 자리와 방향 고르기", () => {
+  type Start = { position: [number, number]; yaw_deg: number; label: string; facing_label: string };
+  /** 위에서 보는 정사영 카메라: 캔버스 400×400 px가 평면 x 0~4, y 0~4(아래로 커짐). 픽셀 (u, v) = 평면 (u/100, v/100). */
+  function topCamera() {
+    const cam = new THREE.OrthographicCamera(-2, 2, 2, -2, 0.1, 100);
+    cam.position.set(2, 10, 2);
+    cam.up.set(0, 0, -1);
+    cam.lookAt(2, 0, 2);
+    cam.updateProjectionMatrix();
+    cam.updateMatrixWorld();
+    return cam;
+  }
 
   /**
-   * 3D 트윈 iframe에 가짜 뷰어를 붙인다. pick(hit)으로 벽을 누른 것처럼 한다. 방 묻기는 기본으로 뷰어가 보낸 방을 그대로 답한다.
-   * 저장한 점은 가짜 서버에 남고, reopen()은 화면을 닫았다 다시 열어 그 점을 불러온다.
+   * 3D 트윈 iframe에 가짜 뷰어(three 카메라와 캔버스)를 붙인다. click(u, v)는 캔버스를 그 픽셀에서 짧게 누른다.
+   * 저장한 시작 위치는 가짜 서버에 남고, 이름 미리 보기는 자리 → 「방 시작 위치」, 보는 쪽은 yaw가 0이면 「TV」.
    */
-  async function withViewer(auto: (body: any) => [number, unknown], over: Parameters<typeof setupView>[0] = {}, routes: Record<string, (body: any) => [number, unknown]> = {}) {
-    let saved: { id: string; label: string; position: number[] }[] | null = null;
-    const start = () => open("#position", setupView({ position: { touch: true, layout: false, phone_urls: [] }, ...over }), {
+  async function withViewer(routes: Record<string, (body: any) => [number, unknown]> = {}, saved0: Start | null = null) {
+    let saved = saved0;
+    const names = (b: { yaw_deg: number }) => ({ label: "방 시작 위치", facing_label: Math.round(b.yaw_deg) === 0 ? "TV" : "" });
+    const opened = open("#position", setupView({ position: { start: true, layout: false, phone_urls: [] } }), {
       "HEAD /twin/viewer/": () => [200, null],
-      "GET /api/phone/touch-points": () => [200, { ok: true, points: saved, mode: saved ? "touch" : "floor", eye_height_m: 1.5, distance_m: saved ? 5.403 : null }],
-      "POST /api/phone/touch-points/auto": auto,
-      "POST /api/phone/touch-points/room": (b: { room?: string }) => [200, { ok: true, room: b.room ?? null }],
-      "POST /api/phone/touch-points/clear": () => {
-        saved = null;
-        return [200, { ok: true, points: null, mode: "floor", eye_height_m: 1.5, distance_m: null }];
+      "GET /api/phone/start-pose": () => [200, { ok: true, start: saved }],
+      "POST /api/phone/start-pose/preview": (b: Start) => [200, { ok: true, start: { position: b.position, yaw_deg: b.yaw_deg, ...names(b) } }],
+      "POST /api/phone/start-pose": (b: Start) => {
+        const n = names(b);
+        saved = { position: b.position, yaw_deg: b.yaw_deg, label: b.label || n.label, facing_label: b.facing_label || n.facing_label };
+        return [200, { ok: true, start: saved }];
       },
-      "POST /api/phone/touch-points": (b: { points: { label: string; position: number[] }[] }) => {
-        saved = b.points.map((p, i) => ({ id: i ? "B" : "A", ...p }));
-        return [200, { ok: true, points: saved, mode: "touch", eye_height_m: 1.5, distance_m: 5.403 }];
+      "POST /api/phone/start-pose/clear": () => {
+        saved = null;
+        return [200, { ok: true, start: null }];
       },
       ...routes,
     });
-    const attach = async (opened: ReturnType<typeof open>) => {
-      let cb: ((hit: Hit) => void) | null = null;
-      const viewer = {
-        ready: Promise.resolve(), loading: false, results: { mode: "scene" }, setBadges: vi.fn(), setWallMode: vi.fn(),
-        startPick: vi.fn((fn: (hit: Hit) => void) => { cb = fn; }), cancelPick: vi.fn(), setTouchPoints: vi.fn(),
-      };
-      const frame = (await screen.findByTitle("3D 집 트윈")) as HTMLIFrameElement;
-      (frame.contentWindow as unknown as { aptViewer: typeof viewer }).aptViewer = viewer;
-      act(() => { frame.dispatchEvent(new Event("load")); });
-      const touch = await screen.findByRole("region", { name: "폰 기준점" });
-      const pick = async (hit: Hit) => { await act(async () => { cb!(hit); }); };
-      return { ...opened, viewer, touch, pick };
+    const frame = (await screen.findByTitle("3D 집 트윈")) as HTMLIFrameElement;
+    const canvas = frame.contentDocument!.createElement("canvas");
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 400, height: 400, right: 400, bottom: 400, x: 0, y: 0, toJSON: () => ({}) });
+    const camera = topCamera();
+    const viewer = {
+      THREE, camera, cctvCamera: camera, renderer: { domElement: canvas }, view: { cctv: false },
+      ready: Promise.resolve(), loading: false, results: { mode: "scene" }, setBadges: vi.fn(), setWallMode: vi.fn(),
     };
-    const first = await attach(start());
-    return { ...first, reopen: async () => { cleanup(); return attach(start()); } };
+    (frame.contentWindow as unknown as { aptViewer: typeof viewer }).aptViewer = viewer;
+    act(() => { frame.dispatchEvent(new Event("load")); });
+    const start = await screen.findByRole("region", { name: "시작 위치" });
+    await waitFor(() => expect(viewer.setBadges).toHaveBeenCalledWith(false));
+    const press = async (down: [number, number], up: [number, number] = down) => {
+      await act(async () => {
+        canvas.dispatchEvent(new MouseEvent("pointerdown", { clientX: down[0], clientY: down[1], bubbles: true }));
+        canvas.dispatchEvent(new MouseEvent("pointerup", { clientX: up[0], clientY: up[1], bubbles: true }));
+      });
+    };
+    return { ...opened, start, viewer, canvas, click: (u: number, v: number) => press([u, v]), press, saved: () => saved };
   }
 
-  it("벽 하나를 누르면 A·B 구석과 이름·거리를 채우고, 저장은 그 두 점을 보낸다", async () => {
-    const { api, user, viewer, touch, pick } = await withViewer(() => [200, { ok: true, points: [A, B], distance_m: 5.403 }]);
-    await waitFor(() => expect(viewer.startPick).toHaveBeenCalled());
-    expect(within(touch).getByRole("status")).toHaveTextContent("3D 트윈에서 벽 하나를 누르세요.");
-    await pick({ position: [3, 0.1], room: "room", normal: [0, 1] });
-    expect(api.posts("/api/phone/touch-points/auto")[0]!.body).toEqual({ home: "oneroom", position: [3, 0.1], room: "room", normal: [0, 1] });
-    await waitFor(() => expect(within(touch).getByRole("status")).toHaveTextContent("A–B 수평 거리 5.40m. 저장하면 폰이 이 두 구석으로 맞춰요."));
-    expect(within(touch).getByRole("textbox", { name: "A 지점 이름" })).toHaveValue("방 구석");
-    expect(within(touch).getByRole("textbox", { name: "B 지점 이름" })).toHaveValue("방 맞은편 구석");
-    expect(viewer.setTouchPoints).toHaveBeenLastCalledWith([
-      { id: "A", label: "방 구석", position: [3.9, 0.1] },
-      { id: "B", label: "방 맞은편 구석", position: [0.1, 3.94] },
-    ]);
-    await user.click(within(touch).getByRole("button", { name: "저장" }));
-    expect(api.posts("/api/phone/touch-points")[0]!.body).toEqual({
-      home: "oneroom", points: [{ label: "방 구석", position: [3.9, 0.1] }, { label: "방 맞은편 구석", position: [0.1, 3.94] }],
-    });
-  });
-
-  it("A만 오면 B를 비우고 B를 고르라고 한다. B는 손으로 고른다", async () => {
-    const { user, touch, pick, api, viewer } = await withViewer(() => [200, { ok: true, points: [A], distance_m: null }]);
-    await waitFor(() => expect(viewer.startPick).toHaveBeenCalled());
-    await pick({ position: [3, 0.1], room: "room", normal: [0, 1] });
-    await waitFor(() => expect(within(touch).getByRole("status")).toHaveTextContent("A 구석을 골랐어요. B 지점을 고르세요."));
-    expect(within(touch).getByRole("textbox", { name: "A 지점 이름" })).toHaveValue("방 구석");
-    expect(within(touch).getByRole("textbox", { name: "B 지점 이름" })).toHaveValue("");
-    expect(within(touch).getByRole("button", { name: "저장" })).toBeDisabled();
-    await user.click(within(touch).getByRole("button", { name: "B 다시 고르기" }));
-    await pick({ position: [0.1, 3.94], room: "room", normal: [1, 0] });
-    await waitFor(() => expect(within(touch).getByRole("status")).toHaveTextContent("A–B 수평 거리 5.40m. 저장하면 폰이 이 두 벽으로 맞춰요."));
-    await user.click(within(touch).getByRole("button", { name: "저장" }));
-    expect(api.posts("/api/phone/touch-points")[0]!.body).toEqual({
-      home: "oneroom", points: [{ label: "방 구석", position: [3.9, 0.1] }, { label: "", position: [0.1, 3.94] }],
-    });
-  });
-
-  it("구석이 없으면 점을 그대로 두고 알린다", async () => {
-    const { user, touch, pick, api, viewer } = await withViewer(() => [200, { ok: true, points: [], distance_m: null }]);
-    await waitFor(() => expect(viewer.startPick).toHaveBeenCalled());
-    await pick({ position: [2, 2] });
-    expect(api.posts("/api/phone/touch-points/auto")[0]!.body).toEqual({ home: "oneroom", position: [2, 2] });
-    await waitFor(() => expect(within(touch).getByRole("status")).toHaveTextContent("이 벽에서 구석을 찾지 못했어요. 다른 벽을 누르거나 A·B를 직접 고르세요."));
-  });
-
-  it("A·B 칩은 큰 화면에서 트윈 위쪽 띠에 한 줄로 놓여 집 위 핀 이름표를 가리지 않는다", async () => {
-    await withViewer(() => [200, { ok: true, points: [A, B], distance_m: 5.403 }]);
-    const row = document.querySelector<HTMLElement>("[data-pin-chips]")!;
-    expect(row).not.toBeNull();
-    expect(row.className.split(/\s+/)).toContain("lg:flex-row");
-    expect(row.querySelectorAll("input")).toHaveLength(2);
-  });
-
-  it("저장한 A·B를 불러오면 할 일 줄은 저장한 상태를 보인다", async () => {
-    const { touch } = await withViewer(() => [200, { ok: true, points: [A, B], distance_m: 5.403 }], {}, {
-      "GET /api/phone/touch-points": () => [200, { ok: true, points: [A, B], mode: "touch", eye_height_m: 1.5, distance_m: 5.403 }],
-    });
-    await waitFor(() => expect(within(touch).getByRole("status")).toHaveTextContent("저장했어요. A–B 5.40m."));
-  });
-
-  it("완료하고 대시보드로는 A·B를 저장한 뒤에만 누를 수 있다", async () => {
-    const { user, pick, viewer } = await withViewer(() => [200, { ok: true, points: [A, B], distance_m: 5.403 }]);
+  it("바닥을 누르면 그 자리에 시작 핀, 이름은 서버가 채우고, 다른 곳을 누르면 그쪽을 본다. 저장은 자리·방향과 고치지 않은 이름(빈 글)을 보낸다", async () => {
+    const { api, user, start, click } = await withViewer();
+    expect(within(start).getByRole("status")).toHaveTextContent("트윈 바닥을 눌러 폰을 켤 자리를 고르세요.");
+    await click(150, 250);
+    await waitFor(() => expect(within(start).getByRole("textbox", { name: "시작 자리 이름" })).toHaveValue("방 시작 위치"));
+    expect(api.posts("/api/phone/start-pose/preview").at(-1)!.body).toEqual({ home: "oneroom", position: [1.5, 2.5], yaw_deg: 0 });
+    expect(within(start).getByRole("textbox", { name: "보는 쪽 이름" })).toHaveValue("TV");
+    expect(within(start).getByRole("status")).toHaveTextContent("볼 쪽을 누르거나 화살표 끝을 끌어 방향을 정하고 저장하세요.");
+    await waitFor(() => expect(document.querySelector("[data-start-spot]")).not.toBeNull());
+    // 위쪽(평면 y가 작은 쪽)을 누르면 그쪽을 본다: 270°
+    await click(150, 50);
+    await waitFor(() => expect(api.posts("/api/phone/start-pose/preview").at(-1)!.body).toEqual({ home: "oneroom", position: [1.5, 2.5], yaw_deg: 270 }));
+    await waitFor(() => expect(within(start).getByRole("textbox", { name: "보는 쪽 이름" })).toHaveValue(""));
     expect(screen.getByRole("button", { name: "완료하고 대시보드로" })).toBeDisabled();
-    await waitFor(() => expect(viewer.startPick).toHaveBeenCalled());
-    expect(screen.queryByRole("button", { name: "저장" })).toBeNull(); // 핀이 없으면 저장·지우기를 띄우지 않는다
-    await pick({ position: [3, 0.1], room: "room", normal: [0, 1] });
-    await waitFor(() => expect(screen.getByRole("button", { name: "저장" })).toBeEnabled());
+    await user.click(within(start).getByRole("button", { name: "저장" }));
+    expect(api.posts("/api/phone/start-pose").at(-1)!.body).toEqual({ home: "oneroom", position: [1.5, 2.5], yaw_deg: 270, label: "", facing_label: "" });
+    await waitFor(() => expect(within(start).getByRole("status")).toHaveTextContent("저장했어요. 폰에서 이 자리에 서서 「여기서 시작」을 하세요."));
+    expect(screen.getByRole("button", { name: "완료하고 대시보드로" })).toBeEnabled();
+  });
+
+  it("끌면(카메라 돌리기) 자리를 고르지 않는다. 자리 30cm 안을 누르면 방향을 바꾸지 않는다", async () => {
+    const { api, start, click, press } = await withViewer();
+    await press([100, 100], [180, 160]);
+    expect(api.posts("/api/phone/start-pose/preview")).toEqual([]);
+    expect(within(start).queryByRole("textbox", { name: "시작 자리 이름" })).toBeNull();
+    await click(150, 250);
+    await waitFor(() => expect(api.posts("/api/phone/start-pose/preview")).toHaveLength(1));
+    await click(160, 255);
+    expect(api.posts("/api/phone/start-pose/preview")).toHaveLength(1);
+  });
+
+  it("방 바닥이 아니면 서버가 거절한 까닭을 안내 줄에 띄운다", async () => {
+    const { start, click } = await withViewer({
+      "POST /api/phone/start-pose/preview": () => [400, { ok: false, error: "방 바닥을 눌러 주세요. 벽이나 집 밖은 시작 위치가 될 수 없어요" }],
+    });
+    await click(10, 10);
+    await waitFor(() => expect(within(start).getByRole("status")).toHaveTextContent("방 바닥을 눌러 주세요. 벽이나 집 밖은 시작 위치가 될 수 없어요"));
+  });
+
+  it("돌리기 단추는 15°씩, 화면에서 그 방향으로 돈다(평면 각이 늘면 이 카메라에서는 시계 방향)", async () => {
+    const { api, user, start, click } = await withViewer();
+    await click(150, 250);
+    await waitFor(() => expect(document.querySelector("[data-start-knob]")).not.toBeNull());
+    await user.click(within(start).getByRole("button", { name: "시계 방향으로 15° 돌리기" }));
+    await waitFor(() => expect(api.posts("/api/phone/start-pose/preview").at(-1)!.body).toMatchObject({ yaw_deg: 15 }));
+    await user.click(within(start).getByRole("button", { name: "반시계 방향으로 15° 돌리기" }));
+    await user.click(within(start).getByRole("button", { name: "반시계 방향으로 15° 돌리기" }));
+    await waitFor(() => expect(api.posts("/api/phone/start-pose/preview").at(-1)!.body).toMatchObject({ yaw_deg: 345 }));
+  });
+
+  it("화살표 끝 손잡이를 끌면 끈 쪽을 본다", async () => {
+    const { api, click } = await withViewer();
+    await click(150, 250);
+    const knob = await waitFor(() => {
+      const k = document.querySelector<HTMLElement>("[data-start-knob]");
+      expect(k).not.toBeNull();
+      return k!;
+    });
+    // 화살표 끝: 자리(1.5, 2.5)에서 +x로 1.2m = 픽셀 (270, 250)
+    expect(knob.style.left).toBe("270px");
+    expect(knob.style.top).toBe("250px");
+    await act(async () => {
+      knob.dispatchEvent(new MouseEvent("pointerdown", { clientX: 270, clientY: 250, bubbles: true }));
+      window.dispatchEvent(new MouseEvent("pointermove", { clientX: 150, clientY: 130 }));
+      window.dispatchEvent(new MouseEvent("pointerup", { clientX: 150, clientY: 130 }));
+    });
+    await waitFor(() => expect(api.posts("/api/phone/start-pose/preview").at(-1)!.body).toMatchObject({ yaw_deg: 270 }));
+  });
+
+  it("고친 이름은 저장에 그대로 보내고, 방향을 바꿔도 덮지 않는다. 다시 고르기는 다음 누름을 새 자리로 쓴다", async () => {
+    const { api, user, start, click } = await withViewer();
+    await click(150, 250);
+    const name = await within(start).findByRole("textbox", { name: "시작 자리 이름" });
+    await waitFor(() => expect(name).toHaveValue("방 시작 위치"));
+    await user.clear(name);
+    await user.type(name, "현관 앞 매트");
+    await click(350, 250);
+    await waitFor(() => expect(api.posts("/api/phone/start-pose/preview")).toHaveLength(2));
+    expect(name).toHaveValue("현관 앞 매트");
+    await user.click(within(start).getByRole("button", { name: "시작 자리 다시 고르기" }));
+    expect(within(start).getByRole("status")).toHaveTextContent("트윈 바닥을 눌러 새 자리를 고르세요.");
+    await click(250, 150);
+    await waitFor(() => expect(api.posts("/api/phone/start-pose/preview").at(-1)!.body).toMatchObject({ position: [2.5, 1.5] }));
+    await user.click(within(start).getByRole("button", { name: "저장" }));
+    expect(api.posts("/api/phone/start-pose").at(-1)!.body).toMatchObject({ position: [2.5, 1.5], label: "현관 앞 매트", facing_label: "" });
+  });
+
+  it("저장한 시작 위치를 불러오면 이름·안내 줄이 저장한 상태이고 완료를 누를 수 있다. 지우면 다시 고르고, 완료는 막힌다", async () => {
+    const { user, start, saved } = await withViewer({}, { position: [1, 1], yaw_deg: 0, label: "소파 앞", facing_label: "TV" });
+    await waitFor(() => expect(within(start).getByRole("textbox", { name: "시작 자리 이름" })).toHaveValue("소파 앞"));
+    expect(within(start).getByRole("textbox", { name: "보는 쪽 이름" })).toHaveValue("TV");
+    expect(within(start).getByRole("status")).toHaveTextContent("저장했어요. 폰에서 이 자리에 서서 「여기서 시작」을 하세요.");
+    expect(screen.getByRole("button", { name: "완료하고 대시보드로" })).toBeEnabled();
+    expect(within(start).getByRole("button", { name: "저장" })).toBeDisabled();
+    await user.click(within(start).getByRole("button", { name: "지우기" }));
+    await waitFor(() => expect(within(start).getByRole("status")).toHaveTextContent("지웠어요. 트윈 바닥을 눌러 다시 고르세요."));
+    expect(saved()).toBeNull();
+    expect(within(start).queryByRole("textbox", { name: "시작 자리 이름" })).toBeNull();
     expect(screen.getByRole("button", { name: "완료하고 대시보드로" })).toBeDisabled();
-    await user.click(screen.getByRole("button", { name: "저장" }));
-    await waitFor(() => expect(screen.getByRole("button", { name: "완료하고 대시보드로" })).toBeEnabled());
-  });
-
-  it("고르기를 취소하면 서버에 묻지 않는다", async () => {
-    const { user, touch, pick, api, viewer } = await withViewer(() => [200, { ok: true, points: [A, B], distance_m: 5.403 }]);
-    await waitFor(() => expect(viewer.startPick).toHaveBeenCalled());
-    await pick(null);
-    expect(within(touch).getByRole("status")).toHaveTextContent("고르기를 취소했어요.");
-    expect(api.posts("/api/phone/touch-points/auto")).toHaveLength(0);
-  });
-
-  describe("손으로 다시 고른 지점 이름", () => {
-    const rooms = { rooms: [{ id: "room", label: "방" }, { id: "bathroom", label: "욕실" }, { id: "living", label: "거실" }, { id: "long", label: "가".repeat(45) }] };
-    const both = (): [number, unknown] => [200, { ok: true, points: [A, B], distance_m: 5.403 }];
-    const name = (touch: HTMLElement, id: "A" | "B") => within(touch).getByRole("textbox", { name: `${id} 지점 이름` });
-
-    async function steps(routes: Record<string, (body: any) => [number, unknown]> = {}) {
-      const first = await withViewer(both, rooms, routes);
-      let v: Awaited<ReturnType<typeof first.reopen>> = first;
-      /** 화면을 닫았다 다시 연다. 저장한 점을 불러온 뒤 새 화면을 돌려준다. auto·byHand는 새 화면에서 돈다. */
-      const reopen = async (id: "A" | "B", label: string) => {
-        v = await first.reopen();
-        await waitFor(() => expect(name(v.touch, id)).toHaveValue(label));
-        return v;
-      };
-      const save = async () => {
-        await v.user.click(within(v.touch).getByRole("button", { name: "저장" }));
-        await waitFor(() => expect(within(v.touch).getByRole("status")).toHaveTextContent("저장했어요."));
-      };
-      const auto = async () => {
-        const clear = within(v.touch).queryByRole("button", { name: "지우기" });
-        if (clear && !(clear as HTMLButtonElement).disabled) await v.user.click(clear);
-        await waitFor(() => expect(within(v.touch).getByRole("status")).toHaveTextContent("3D 트윈에서 벽 하나를 누르세요."));
-        await v.pick({ position: [3, 0.1], room: "room", normal: [0, 1] });
-        await waitFor(() => expect(name(v.touch, "B")).toHaveValue("방 맞은편 구석"));
-      };
-      const byHand = async (id: "A" | "B", hit: Hit) => {
-        await v.user.click(within(v.touch).getByRole("button", { name: `${id} 다시 고르기` }));
-        await v.pick(hit);
-        await waitFor(() => expect(within(v.touch).getByRole("status")).not.toHaveTextContent("지점의 벽을 누르세요."));
-      };
-      return { ...first, auto, byHand, save, reopen };
-    }
-
-    it("구석을 채운 뒤 손으로 다시 고르면 그 방 벽 이름으로 바꾸고, 방 이름을 모르면 비운다", async () => {
-      const { api, user, viewer, touch, auto, byHand } = await steps();
-      await auto();
-      await byHand("B", { position: [2, 3.94], room: "room", normal: [0, -1] });
-      expect(name(touch, "B")).toHaveValue("방 벽");
-      expect(name(touch, "A")).toHaveValue("방 구석");
-      expect(viewer.setTouchPoints).toHaveBeenLastCalledWith([
-        { id: "A", label: "방 구석", position: [3.9, 0.1] },
-        { id: "B", label: "방 벽", position: [2, 3.94] },
-      ]);
-      await byHand("A", { position: [0.1, 1], room: "hall", normal: [1, 0] });
-      expect(name(touch, "A")).toHaveValue("");
-      expect(viewer.setTouchPoints).toHaveBeenLastCalledWith([
-        { id: "A", label: "A 지점", position: [0.1, 1] },
-        { id: "B", label: "방 벽", position: [2, 3.94] },
-      ]);
-      await user.click(within(touch).getByRole("button", { name: "저장" }));
-      expect(api.posts("/api/phone/touch-points")[0]!.body).toEqual({
-        home: "oneroom", points: [{ label: "", position: [0.1, 1] }, { label: "방 벽", position: [2, 3.94] }],
-      });
-    });
-
-    it("구석 이름을 고친 뒤 손으로 다시 고르면 고친 이름을 둔다", async () => {
-      const { user, touch, auto, byHand } = await steps();
-      await auto();
-      await user.clear(name(touch, "B"));
-      await user.type(name(touch, "B"), "창가 쪽 벽");
-      await byHand("B", { position: [2, 3.94], room: "room", normal: [0, -1] });
-      expect(name(touch, "B")).toHaveValue("창가 쪽 벽");
-      expect(name(touch, "A")).toHaveValue("방 구석");
-    });
-
-    it("손으로만 고르면 이름을 그대로 둔다", async () => {
-      const { api, user, touch, byHand } = await steps();
-      await byHand("A", { position: [3, 0.1], room: "room", normal: [0, 1] });
-      expect(name(touch, "A")).toHaveValue("");
-      await user.type(name(touch, "B"), "창가 벽");
-      await byHand("B", { position: [0.1, 3.94], room: "room", normal: [1, 0] });
-      expect(name(touch, "B")).toHaveValue("창가 벽");
-      await byHand("A", { position: [2, 0.1], room: "room", normal: [0, 1] });
-      expect(name(touch, "A")).toHaveValue("");
-      await user.click(within(touch).getByRole("button", { name: "저장" }));
-      expect(api.posts("/api/phone/touch-points/auto")).toHaveLength(0);
-      expect(api.posts("/api/phone/touch-points/room")).toHaveLength(0);
-      expect(api.posts("/api/phone/touch-points")[0]!.body).toEqual({
-        home: "oneroom", points: [{ label: "", position: [2, 0.1] }, { label: "창가 벽", position: [0.1, 3.94] }],
-      });
-    });
-
-    it("같은 쪽을 여러 방이 쓰는 벽은 뷰어가 보낸 방이 아니라 서버가 정한 방 이름을 쓴다", async () => {
-      const { api, viewer, touch, auto, byHand } = await steps({ "POST /api/phone/touch-points/room": () => [200, { ok: true, room: "room" }] });
-      await auto();
-      // 원룸 서쪽 벽 E04: 뷰어는 그 벽의 첫 방(욕실)을 보낸다
-      await byHand("A", { position: [0.1, 1.5], room: "bathroom", normal: [1, 0] });
-      expect(name(touch, "A")).toHaveValue("방 벽");
-      expect(api.posts("/api/phone/touch-points/room")[0]!.body).toEqual({ home: "oneroom", position: [0.1, 1.5], room: "bathroom", normal: [1, 0] });
-      expect(viewer.setTouchPoints).toHaveBeenLastCalledWith([
-        { id: "A", label: "방 벽", position: [0.1, 1.5] },
-        { id: "B", label: "방 맞은편 구석", position: [0.1, 3.94] },
-      ]);
-    });
-
-    it("서버가 방을 정하지 못하면 이름을 비운다", async () => {
-      const { touch, auto, byHand } = await steps({ "POST /api/phone/touch-points/room": () => [500, { ok: false, error: "실패" }] });
-      await auto();
-      await byHand("B", { position: [2, 3.94], room: "room", normal: [0, -1] });
-      expect(name(touch, "B")).toHaveValue("");
-    });
-
-    it("손으로 고른 뒤 벽 하나로 다시 고르면 두 구석 이름으로 돌아가고, 다시 손으로 고르면 또 바꾼다", async () => {
-      const { user, touch, auto, byHand } = await steps();
-      await auto();
-      await byHand("B", { position: [2, 3.94], room: "room", normal: [0, -1] });
-      expect(name(touch, "B")).toHaveValue("방 벽");
-      await user.clear(name(touch, "A"));
-      await user.type(name(touch, "A"), "내 이름");
-      await auto();
-      expect(name(touch, "A")).toHaveValue("방 구석");
-      expect(name(touch, "B")).toHaveValue("방 맞은편 구석");
-      await byHand("A", { position: [3, 2], room: "room", normal: [-1, 0] });
-      expect(name(touch, "A")).toHaveValue("방 벽");
-      expect(name(touch, "B")).toHaveValue("방 맞은편 구석");
-    });
-
-    it("바꾼 벽 이름도 고치지 않았으면 다시 고를 때 또 바꾸고, 40자를 넘지 않는다", async () => {
-      const { user, touch, auto, byHand } = await steps();
-      await auto();
-      await byHand("B", { position: [2, 3.94], room: "room", normal: [0, -1] });
-      expect(name(touch, "B")).toHaveValue("방 벽");
-      await byHand("B", { position: [5, 1], room: "living", normal: [0, 1] });
-      expect(name(touch, "B")).toHaveValue("거실 벽");
-      await byHand("B", { position: [6, 1], room: "long", normal: [0, 1] });
-      expect(name(touch, "B")).toHaveValue(`${"가".repeat(38)} 벽`);
-      await user.clear(name(touch, "B"));
-      await user.type(name(touch, "B"), "내 벽");
-      await byHand("B", { position: [2, 3.94], room: "room", normal: [0, -1] });
-      expect(name(touch, "B")).toHaveValue("내 벽");
-    });
-
-    it("저장한 구석·벽 이름을 고치지 않았으면 다시 열어 손으로 고를 때도 그 방 벽 이름으로 바꾼다", async () => {
-      const { auto, byHand, save, reopen } = await steps();
-      await auto();
-      await save();
-      let v = await reopen("B", "방 맞은편 구석");
-      await byHand("B", { position: [2, 3.94], room: "room", normal: [0, -1] });
-      expect(name(v.touch, "B")).toHaveValue("방 벽");
-      await byHand("A", { position: [5, 1], room: "living", normal: [0, 1] });
-      expect(name(v.touch, "A")).toHaveValue("거실 벽");
-      expect(v.viewer.setTouchPoints).toHaveBeenLastCalledWith([
-        { id: "A", label: "거실 벽", position: [5, 1] },
-        { id: "B", label: "방 벽", position: [2, 3.94] },
-      ]);
-      await byHand("B", { position: [6, 1], room: "long", normal: [0, 1] });
-      await save();
-      v = await reopen("B", `${"가".repeat(38)} 벽`);
-      await byHand("B", { position: [2, 3.94], room: "room", normal: [0, -1] });
-      expect(name(v.touch, "B")).toHaveValue("방 벽");
-      await byHand("A", { position: [3, 2], room: "room", normal: [-1, 0] });
-      expect(name(v.touch, "A")).toHaveValue("방 벽");
-    });
-
-    it("40자로 줄인 긴 방 구석 이름도 다시 열면 앱이 채운 이름으로 본다", async () => {
-      const long = "가".repeat(33);
-      const { touch, byHand } = await steps({
-        "GET /api/phone/touch-points": () => [200, {
-          ok: true, mode: "touch", eye_height_m: 1.5, distance_m: 5.403,
-          points: [{ id: "A", label: `${long} 구석`, position: [3.9, 0.1] }, { id: "B", label: `${long} 맞은편 구석`, position: [0.1, 3.94] }],
-        }],
-      });
-      await waitFor(() => expect(name(touch, "B")).toHaveValue(`${long} 맞은편 구석`));
-      await byHand("A", { position: [3, 2], room: "room", normal: [-1, 0] });
-      expect(name(touch, "A")).toHaveValue("방 벽");
-      await byHand("B", { position: [2, 3.94], room: "room", normal: [0, -1] });
-      expect(name(touch, "B")).toHaveValue("방 벽");
-    });
-
-    it("고친 이름은 저장하고 다시 열어도 손으로 다시 고를 때 그대로 둔다", async () => {
-      const { user, touch, auto, byHand, save, reopen } = await steps();
-      await auto();
-      await user.clear(name(touch, "A"));
-      await user.type(name(touch, "A"), "창가 쪽 벽");
-      // 방 목록에 없는 방 이름은 앱이 채운 꼴이 아니다
-      await user.clear(name(touch, "B"));
-      await user.type(name(touch, "B"), "부엌 구석");
-      await save();
-      const v = await reopen("A", "창가 쪽 벽");
-      await byHand("A", { position: [3, 2], room: "room", normal: [-1, 0] });
-      expect(name(v.touch, "A")).toHaveValue("창가 쪽 벽");
-      await byHand("B", { position: [2, 3.94], room: "room", normal: [0, -1] });
-      expect(name(v.touch, "B")).toHaveValue("부엌 구석");
-      expect(v.api.posts("/api/phone/touch-points/room")).toHaveLength(0);
-    });
   });
 });
 
 describe("설정 4단계: 3D 트윈 보기", () => {
   type Loading = {
     ready: Promise<void>; loading: boolean; results: Record<string, unknown>;
-    setBadges: ReturnType<typeof vi.fn>; setWallMode: ReturnType<typeof vi.fn>; setTouchPoints: ReturnType<typeof vi.fn>;
+    setBadges: ReturnType<typeof vi.fn>; setWallMode: ReturnType<typeof vi.fn>;
   };
 
-  it("뷰어 위 막대를 숨기고, 집을 다 불러오면 배지를 끄고 캔버스를 다시 맞춘다. 벽은 낮추지 않고 저장한 핀을 보인다", async () => {
-    const saved = [{ id: "A", label: "방 구석", position: [3.9, 0.1] }, { id: "B", label: "방 맞은편 구석", position: [0.1, 3.94] }];
-    open("#position", setupView({ position: { touch: true, layout: false, phone_urls: [] } }), {
+  it("뷰어 위 막대를 숨기고, 집을 다 불러오면 배지를 끄고 캔버스를 다시 맞춘다. 벽은 낮추지 않는다", async () => {
+    open("#position", setupView({ position: { start: true, layout: false, phone_urls: [] } }), {
       "HEAD /twin/viewer/": () => [200, null],
-      "GET /api/phone/touch-points": () => [200, { ok: true, points: saved, mode: "touch", eye_height_m: 1.5, distance_m: 5.403 }],
+      "GET /api/phone/start-pose": () => [200, { ok: true, start: { position: [1, 1], yaw_deg: 0, label: "소파 앞", facing_label: "" } }],
     });
     const frame = (await screen.findByTitle("3D 집 트윈")) as HTMLIFrameElement;
     expect(frame.getAttribute("src")).toBe("/twin/viewer/?live=auto&embed=1&home=oneroom");
-    await waitFor(() => expect(screen.getByRole("textbox", { name: "B 지점 이름" })).toHaveValue("방 맞은편 구석"));
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "시작 자리 이름" })).toHaveValue("소파 앞"));
     const doc = frame.contentDocument!;
     doc.open();
     doc.write('<!doctype html><html><head></head><body><header class="bar">벽</header><main class="stage"></main></body></html>');
@@ -523,10 +375,7 @@ describe("설정 4단계: 3D 트윈 보기", () => {
     const resized = vi.fn();
     frame.contentWindow!.addEventListener("resize", resized);
     let finish!: () => void;
-    const viewer: Loading = {
-      ready: new Promise<void>((r) => { finish = r; }), loading: true, results: {},
-      setBadges: vi.fn(), setWallMode: vi.fn(), setTouchPoints: vi.fn(),
-    };
+    const viewer: Loading = { ready: new Promise<void>((r) => { finish = r; }), loading: true, results: {}, setBadges: vi.fn(), setWallMode: vi.fn() };
     (frame.contentWindow as unknown as { aptViewer: Loading }).aptViewer = viewer;
     act(() => { frame.dispatchEvent(new Event("load")); });
     expect(frame.contentDocument!.getElementById("twin-home-embed")?.textContent).toMatch(/\.bar\s*\{\s*display:\s*none/);
@@ -538,17 +387,13 @@ describe("설정 4단계: 3D 트윈 보기", () => {
     finish();
     await waitFor(() => expect(viewer.setBadges).toHaveBeenCalledWith(false));
     expect(resized.mock.calls.length).toBeGreaterThan(atLoad);
-    expect(viewer.setTouchPoints).toHaveBeenLastCalledWith([
-      { id: "A", label: "방 구석", position: [3.9, 0.1] },
-      { id: "B", label: "방 맞은편 구석", position: [0.1, 3.94] },
-    ]);
     expect(viewer.setWallMode).not.toHaveBeenCalled();
   });
 
   const openTwin = async () => {
-    open("#position", setupView({ position: { touch: true, layout: false, phone_urls: [] } }), {
+    open("#position", setupView({ position: { start: true, layout: false, phone_urls: [] } }), {
       "HEAD /twin/viewer/": () => [200, null],
-      "GET /api/phone/touch-points": () => [200, { ok: true, points: null, mode: "floor", eye_height_m: 1.5, distance_m: null }],
+      "GET /api/phone/start-pose": () => [200, { ok: true, start: null }],
     });
     return (await screen.findByTitle("3D 집 트윈")) as HTMLIFrameElement;
   };
@@ -569,7 +414,7 @@ describe("설정 4단계: 3D 트윈 보기", () => {
     let badgesCovered: boolean | null = null;
     const viewer: Loading = {
       ready: new Promise<void>((r) => { finish = r; }), loading: true, results: {},
-      setBadges: vi.fn(() => { badgesCovered = covered(); }), setWallMode: vi.fn(), setTouchPoints: vi.fn(),
+      setBadges: vi.fn(() => { badgesCovered = covered(); }), setWallMode: vi.fn(),
     };
     (frame.contentWindow as unknown as { aptViewer: Loading }).aptViewer = viewer;
     act(() => { frame.dispatchEvent(new Event("load")); });
@@ -587,10 +432,7 @@ describe("설정 4단계: 3D 트윈 보기", () => {
 
   it("뷰어가 집을 불러오지 못하면 덮개에 못 불러왔다고 띄운다", async () => {
     const frame = await openTwin();
-    const viewer: Loading = {
-      ready: Promise.resolve(), loading: false, results: { error: "scene.json 없음" },
-      setBadges: vi.fn(), setWallMode: vi.fn(), setTouchPoints: vi.fn(),
-    };
+    const viewer: Loading = { ready: Promise.resolve(), loading: false, results: { error: "scene.json 없음" }, setBadges: vi.fn(), setWallMode: vi.fn() };
     (frame.contentWindow as unknown as { aptViewer: Loading }).aptViewer = viewer;
     act(() => { frame.dispatchEvent(new Event("load")); });
     await waitFor(() => expectCover("3D 트윈을 불러오지 못했어요."));

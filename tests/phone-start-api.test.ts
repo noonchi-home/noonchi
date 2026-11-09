@@ -106,14 +106,6 @@ describe("시작 위치 REST와 폰", () => {
     expect((await json("/api/phone/start-pose", { home: "oneroom", position: [8.3, 10.6], yaw_deg: 0 })).status).toBe(409);
   });
 
-  it("PHONE_SYNC=0이면 폰 상태에 sync가 없고 /api/phone/sync는 null", async () => {
-    srv = await startServer({ env: env({ PHONE_SYNC: "0" }) });
-    const p = await phone(srv);
-    expect((await p.wait((m) => m.type === "status")).sync).toBeUndefined();
-    expect((await json("/api/phone/sync")).json).toEqual({ ok: true, sync: null });
-    p.ws.close();
-  });
-
   it("엔진 프레임 YOLO의 기준점 상자가 그 프레임 자세와 함께 위치 맞추기로 간다(관찰 흐름 BRAIN=1)", async () => {
     fake = await startFakeOpenAI();
     pam = await startFakePam();

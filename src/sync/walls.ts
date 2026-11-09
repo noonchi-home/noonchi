@@ -1,5 +1,5 @@
 // 벽 모양: AR 중 자세마다 오는 실제 hit-test 점(어림 바닥 점은 빼고)을 벽 점·바닥 점으로 가르고,
-// 벽 점을 평면도 방 쪽 벽 면(src/phone/corners.ts roomFaces)에 2D ICP로 맞출 점-선 항을 만든다.
+// 벽 점을 평면도 방 쪽 벽 면(src/phone/home-plan.ts roomFaces)에 2D ICP로 맞출 점-선 항을 만든다.
 //
 // - 가르기: 면 법선이 거의 수평(|y| ≤ 0.3)이면 벽 점, 위를 보고(|y| ≥ 0.9) 폰보다 0.9m 이상 아래면 바닥 점(바닥 높이만 쓴다).
 //   탁자·조리대 윗면과 비스듬한 면은 버린다.
@@ -8,7 +8,7 @@
 //   면 길이 안(끝에서 15cm 여유)이고, 거리가 gateM 안일 때만. 남은 짝 중 거리가 먼 15%는 잘라낸다.
 //   한 면에 점이 30개를 넘으면 그 면 점마다 시그마를 키워 한 벽이 다른 증거를 누르지 않게 한다.
 
-import { roomFaces, type HomePlan } from "../phone/corners.js";
+import { roomFaces, type HomePlan } from "../phone/home-plan.js";
 import type { Vec3 } from "../phone/align.js";
 import { applyRigid, rotateVec, type LineTerm, type P2, type Rigid } from "./rigid.js";
 

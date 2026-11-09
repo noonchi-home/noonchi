@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { dirname, join } from "node:path";
 import { z } from "zod";
 import { forwardOf, rotate3, type Plan2, type Quat, type Vec3 } from "../phone/align.js";
-import { MAX_LABEL, inBounds, insidePolygon, type Bounds } from "../phone/touch.js";
+import { inBounds, insidePolygon, type Bounds } from "../phone/home-plan.js";
 import { rotateVec, wrapAngle, type Rigid } from "./rigid.js";
 
 export interface StartPose {
@@ -22,6 +22,9 @@ export interface StartPose {
 }
 
 export class StartPoseError extends Error {}
+
+/** 자리·보는 쪽 이름 길이 한도. */
+export const MAX_LABEL = 40;
 
 const num = z.number().refine(Number.isFinite);
 const BodySchema = z.object({
@@ -38,8 +41,9 @@ const norm360 = (d: number) => {
   return Math.round(v * 10) / 10 === 360 ? 0 : Math.round(v * 10) / 10;
 };
 
-/** 요청 본문 {position, yaw_deg, label?, facing_label?} → 시작 위치. 이름이 비면 describe로 채운다. 틀리면 StartPoseError(한국어). */
-export function parseStartPose(raw: unknown, bounds: Bounds | null, describe: Describe): StartPose {
+/** 요청 본문 {position, yaw_deg, label?, facing_label?} → 시작 위치. 이름이 비면 describe로 채운다. 틀리면 StartPoseError(한국어).
+ *  rooms가 있으면 그중 한 방 바닥 안이어야 한다(벽·바깥은 받지 않는다). */
+export function parseStartPose(raw: unknown, bounds: Bounds | null, describe: Describe, rooms: readonly { polygon?: number[][] }[] = []): StartPose {
   const parsed = BodySchema.safeParse(raw);
   if (!parsed.success) {
     const missingYaw = parsed.error.issues.some((i) => i.path[0] === "yaw_deg");
@@ -48,6 +52,8 @@ export function parseStartPose(raw: unknown, bounds: Bounds | null, describe: De
   const { position, yaw_deg: yaw, label, facing_label: facing } = parsed.data;
   const p: Plan2 = [position[0], position[1]];
   if (!inBounds(p, bounds)) throw new StartPoseError(`시작 위치 (${p[0]}, ${p[1]})가 집 범위 밖입니다`);
+  const polys = rooms.flatMap((r) => (Array.isArray(r.polygon) && r.polygon.length >= 3 ? [r.polygon] : []));
+  if (polys.length && !polys.some((poly) => insidePolygon(p, poly))) throw new StartPoseError("방 바닥을 눌러 주세요. 벽이나 집 밖은 시작 위치가 될 수 없어요");
   const yawDeg = norm360(yaw);
   const auto = describe(p, yawDeg);
   const name = (label ?? "").trim() || auto.label;
@@ -124,6 +130,7 @@ export class StartStore {
     private readonly describe: Describe,
     private readonly onChange: (start: StartPose | null) => void,
     initial: StartPose | null = null,
+    private readonly rooms: readonly { polygon?: number[][] }[] = [],
   ) {
     this.start = initial;
   }
@@ -133,12 +140,17 @@ export class StartStore {
   }
 
   save(raw: unknown): StartPose {
-    const start = parseStartPose(raw, this.bounds, this.describe);
+    const start = parseStartPose(raw, this.bounds, this.describe, this.rooms);
     mkdirSync(dirname(this.path), { recursive: true });
     writeFileSync(this.path, `${JSON.stringify({ version: 1, start }, null, 2)}\n`);
     this.start = start;
     this.onChange(this.get());
     return this.get()!;
+  }
+
+  /** 저장하지 않고 검사하고 이름만 채워 본다(설정 화면이 자리·방향을 바꿀 때). */
+  preview(raw: unknown): StartPose {
+    return parseStartPose(raw, this.bounds, this.describe, this.rooms);
   }
 
   clear(): void {

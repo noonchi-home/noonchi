@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { HomePlan } from "../src/phone/corners.js";
+import type { HomePlan } from "../src/phone/home-plan.js";
 import { SyncAligner } from "../src/sync/aligner.js";
 import type { TwinLandmark } from "../src/sync/landmarks.js";
 import { applyRigid, invertRigid, rigidGap, type P2, type Rigid } from "../src/sync/rigid.js";
@@ -221,18 +221,12 @@ describe("벽 모양", () => {
   });
 });
 
-describe("지우기·A·B 기록", () => {
+describe("지우기", () => {
   it("reset은 변환·증거·시작을 모두 지운다", () => {
     const sim = new SimHome({ truth: TRUTH, floorY: -1.4, walls: WALLS });
     const al = new SyncAligner({ landmarks: MARKS, walls: WALLS });
     startOff(sim, al, 0, 0, 0);
     al.reset();
     expect(al.state()).toMatchObject({ rigid: null, aligned: false, started: false, source: null, wallPoints: 0, anchors: 0 });
-  });
-
-  it("A·B로 맞춘 변환을 넣으면 맞춤이다", () => {
-    const al = new SyncAligner({ landmarks: MARKS, walls: WALLS });
-    al.seed({ ...TRUTH, floorY: -1.4 }, "touch", 0.04);
-    expect(al.state()).toMatchObject({ aligned: true, source: "touch", residualM: 0.04, floorY: -1.4 });
   });
 });

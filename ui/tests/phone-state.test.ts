@@ -1,19 +1,19 @@
 // 실제 폰 화면 상태(state.ts): 실제 폰은 에이전트의 손이다. 위에는 지금 할 명령 한 줄, 아래 엄지 자리에는 비전 상태 한 줄과 그 바로 아래 답 단추.
-// 일이 멈추는 문제(연결 끊김·마이크 꺼짐·기준점 안 맞음)는 모달, 잠깐 생기는 문제(추적 약함·잠깐 알릴 말)는 비전 상태 줄에만.
+// 일이 멈추는 문제(연결 끊김·마이크 꺼짐·시작 위치 없음)는 모달, 잠깐 생기는 문제(추적 약함·잠깐 알릴 말)는 비전 상태 줄에만.
+// 위치 맞춤은 서버 status.sync: 시작 위치에서 「여기서 시작」, 걸으며 벽 모양·물건으로 맞춘다.
 import { describe, expect, it, vi } from "vitest";
 import { ASK_PROMPT, STEP_DONE } from "../../src/act/prompts.ts";
 import { STEP_COMMAND } from "../../src/plan/labels.ts";
 import {
-  anchorCount, anchorNames, createStore, handOf, initialView, isStartWord, nextAnchor, onStatus, PLACE_LINE, problemOf, settingsRows, setupLine, START_BUTTON,
-  startLine, supportText, type Anchor, type Command, type PhoneView, type SyncView,
+  createStore, handOf, initialView, isStartWord, onStatus, PLACE_LINE, problemOf, settingsRows, START_BUTTON,
+  startLine, supportText, type Command, type PhoneView, type SyncView,
 } from "../src/phone/state";
 
-const anchors: Anchor[] = [{ id: "A", label: "거실 창 오른쪽 벽", recorded: true }, { id: "B", label: "반대편 벽", recorded: false }];
+const start = { label: "거실·복도 테이블 앞", facing: "거실·복도 TV수납장" };
+const sync = (over: Partial<SyncView> = {}): SyncView => ({ state: "aligned", source: "walls", start, started: true, anchors: 0, wallPoints: 60, residualM: 0.06, ...over });
 const done = [{ id: STEP_DONE.id, label: STEP_DONE.label }];
 const cmd = (over: Partial<Command> = {}): Command => ({ id: "plan:pam-1", step: "plan:pam-1:2", text: STEP_COMMAND.pickCup, vision: "컵 · 식탁 위", choices: done, target: "cup_1", ...over });
-const ar = (over: Partial<PhoneView> = {}): PhoneView => ({
-  ...initialView(), ar: true, connected: true, listening: "on", mode: "touch", anchors: anchors.map((a) => ({ ...a, recorded: true })), aligned: true, mismatchM: 0.06, ...over,
-});
+const ar = (over: Partial<PhoneView> = {}): PhoneView => ({ ...initialView(), ar: true, connected: true, listening: "on", aligned: true, sync: sync(), ...over });
 
 describe("엄지 자리와 위 한 줄(handOf)", () => {
   it("명령이 없으면 위도 아래도 비어 있다(미어캣만)", () => {
@@ -41,111 +41,12 @@ describe("엄지 자리와 위 한 줄(handOf)", () => {
     expect(handOf(ar({ command: cmd(), pending }))).toEqual({ top: "현관문: 현관문 잠금 해제", thumb: { kind: "pending", item: pending[0] }, vision: null });
   });
 
-  it("기준점 찍기: 위는 다음 기준점 안내, 아래는 바닥에 닿음·기록 수와 「기록」. 명령보다 먼저", () => {
-    const v = ar({ setup: "anchors", aligned: false, anchors, command: cmd(), hit: true });
-    expect(handOf(v)).toEqual({ top: "B 반대편 벽 바로 아래 바닥을 가리켜 주세요", thumb: { kind: "record", anchor: anchors[1] }, vision: { text: "바닥에 닿음 · 기준점 1/2", tone: "ok" } });
-    expect(handOf({ ...v, hit: false }).vision).toEqual({ text: "바닥에 안 닿음 · 기준점 1/2", tone: "plain" });
-  });
-
-  it("조준점이 어림 바닥이면 「어림잡은 바닥에 닿음」(경고 색), 기록은 그대로 「기록」", () => {
-    const v = ar({ setup: "anchors", aligned: false, anchors, hit: true, hitEstimated: true });
-    expect(handOf(v)).toMatchObject({ thumb: { kind: "record" }, vision: { text: "어림잡은 바닥에 닿음 · 기준점 1/2", tone: "warn" } });
-    expect(handOf(ar({ setup: "place", hit: true, hitEstimated: true })).vision).toEqual({ text: "어림잡은 바닥에 닿음", tone: "warn" });
-    expect(initialView().hitEstimated).toBe(false);
-  });
-
-  it("물건 자리 맞추기: 위는 「여기」 말하기 안내, 아래는 바닥에 닿음과 「완료」", () => {
+  it("물건 자리 맞추기: 위는 「여기」 말하기 안내, 아래는 바닥에 닿음과 「완료」. 어림 바닥이면 경고 색", () => {
     expect(handOf(ar({ setup: "place", hit: true }))).toEqual({ top: PLACE_LINE, thumb: { kind: "place" }, vision: { text: "바닥에 닿음", tone: "ok" } });
+    expect(handOf(ar({ setup: "place", hit: true, hitEstimated: true })).vision).toEqual({ text: "어림잡은 바닥에 닿음", tone: "warn" });
+    expect(handOf(ar({ setup: "place", hit: false })).vision).toEqual({ text: "바닥에 안 닿음", tone: "plain" });
     expect(PLACE_LINE).toBe('물건 아래 바닥을 가리키고 "냉장고 여기로"라고 말해 주세요');
   });
-});
-
-describe("기준점 안내", () => {
-  it("다음 기준점은 아직 안 찍은 첫 곳, 다 찍었으면 첫 곳", () => {
-    expect(nextAnchor(anchors)).toBe(anchors[1]);
-    expect(nextAnchor(anchors.map((a) => ({ ...a, recorded: true })))?.id).toBe("A");
-    expect(nextAnchor(null)).toBeNull();
-  });
-
-  it("벽 기준점은 「A 이름 바로 아래 바닥」, 바닥 기준점은 「이름 바닥」", () => {
-    expect(setupLine("touch", anchors[0]!)).toBe("A 거실 창 오른쪽 벽 바로 아래 바닥을 가리켜 주세요");
-    expect(setupLine("floor", { id: "a1", label: "거실 창 앞", recorded: false })).toBe("거실 창 앞 바닥을 가리켜 주세요");
-  });
-});
-
-describe("문제(problemOf): 일이 멈추면 모달 하나", () => {
-  it("AR 중에만. 연결 끊김 → 마이크 꺼짐 → 기준점 안 맞음 순으로 하나", () => {
-    expect(problemOf(ar())).toBeNull();
-    expect(problemOf(ar({ ar: false, connected: false }))).toBeNull();
-    expect(problemOf(ar({ connected: false, listening: "denied", aligned: false }))).toBe("offline");
-    expect(problemOf(ar({ listening: "denied", aligned: false }))).toBe("mic");
-    expect(problemOf(ar({ aligned: false }))).toBe("align");
-  });
-
-  it("기준점을 찍는 중이거나 아직 서버 상태가 없으면 기준점 모달을 띄우지 않는다. 추적 약함은 모달이 아니다", () => {
-    expect(problemOf(ar({ aligned: false, setup: "anchors" }))).toBeNull();
-    expect(problemOf(ar({ aligned: false, anchors: null }))).toBeNull();
-    expect(problemOf(ar({ limited: true }))).toBeNull();
-  });
-});
-
-describe("설정 줄(settingsRows)", () => {
-  it("연결·듣기·위치 상태", () => {
-    expect(settingsRows(ar())).toEqual([
-      { name: "연결", value: "됨", tone: "ok" },
-      { name: "듣기", value: "켜짐", tone: "ok" },
-      { name: "위치", value: "맞음 · 6cm", tone: "ok" },
-    ]);
-    expect(settingsRows(ar({ connected: false, listening: "denied", aligned: false, anchors }))).toEqual([
-      { name: "연결", value: "끊김", tone: "error" },
-      { name: "듣기", value: "꺼짐", tone: "error" },
-      { name: "위치", value: "안 맞음 · 1/2", tone: "warn" },
-    ]);
-    expect(settingsRows(ar({ listening: "paused" }))[1]).toEqual({ name: "듣기", value: "켜짐", tone: "ok" });
-    expect(settingsRows(ar({ listening: "off" }))[1]).toEqual({ name: "듣기", value: "꺼짐", tone: "plain" });
-  });
-  it("카메라 화면을 못 보내면 그 줄이 남는다(엄지 자리 카드가 없어도 미어캣 설정에서 보인다)", () => {
-    expect(settingsRows(ar({ cameraOff: true })).at(-1)).toEqual({ name: "카메라", value: "못 보냄", tone: "warn" });
-    expect(settingsRows(ar()).map((r) => r.name)).not.toContain("카메라");
-  });
-});
-
-describe("처음 화면 글", () => {
-  it("AR 지원 줄", () => {
-    expect(supportText({ kind: "checking" })).toBe("AR 지원을 확인하는 중…");
-    expect(supportText({ kind: "insecure" })).toBe("보안 연결이 아니라 AR을 켤 수 없어요. https 주소로 여세요.");
-    expect(supportText({ kind: "no-ar" })).toBe("이 브라우저는 AR을 지원하지 않아요. 안드로이드 크롬으로 여세요.");
-    expect(supportText({ kind: "ready" })).toBe("준비됐어요. 폰을 세로로 들고 첫 기준점 근처에서 AR을 시작하세요.");
-    expect(supportText({ kind: "failed", message: "거부됨" })).toBe("AR을 시작하지 못했어요: 거부됨");
-  });
-
-  it("기록 수/전체, 첫 안내 이름(상태 전이면 방 모서리)", () => {
-    expect(anchorCount(anchors)).toBe("1/2");
-    expect(anchorNames("floor", null)).toBe("방 모서리");
-    expect(anchorNames("touch", anchors)).toBe("A 거실 창 오른쪽 벽, B 반대편 벽");
-  });
-
-  it("처음 값: 연결 전, 듣기 꺼짐, 명령·설정·기준점 찍기 없음", () => {
-    expect(initialView()).toMatchObject({ support: { kind: "checking" }, ar: false, connected: false, listening: "off", command: null, setup: null, settingsOpen: false, pending: [] });
-  });
-});
-
-describe("메시지 → 상태", () => {
-  it("상태 메시지: 방식·기준점·맞춤·거리 차이(방식이 없으면 floor)", () => {
-    const v = onStatus(initialView(), { anchors, aligned: true, mismatch_m: 0.12 });
-    expect([v.mode, v.anchors, v.aligned, v.mismatchM]).toEqual(["floor", anchors, true, 0.12]);
-  });
-
-  it("맞추면 기준점 찍기를 끝낸다(물건 자리 맞추기는 그대로)", () => {
-    expect(onStatus({ ...initialView(), setup: "anchors" }, { anchors, aligned: true }).setup).toBeNull();
-    expect(onStatus({ ...initialView(), setup: "anchors" }, { anchors, aligned: false }).setup).toBe("anchors");
-    expect(onStatus({ ...initialView(), setup: "place" }, { anchors, aligned: true }).setup).toBe("place");
-  });
-});
-
-describe("위치 맞춤(시작 위치·물건·벽 모양)", () => {
-  const start = { label: "거실·복도 테이블 앞", facing: "거실·복도 TV수납장" };
-  const sync = (over: Partial<SyncView> = {}): SyncView => ({ state: "estimated", source: "start", start, started: true, anchors: 0, wallPoints: 0, residualM: null, ...over });
 
   it("시작 위치 맞추기: 위는 「<자리>에 서서 <보는 쪽> 쪽을 봐 주세요」, 아래는 「여기서 시작」. 명령보다 먼저", () => {
     const v = ar({ aligned: false, setup: "start", command: cmd(), sync: sync({ state: "none", started: false, source: null }) });
@@ -156,46 +57,91 @@ describe("위치 맞춤(시작 위치·물건·벽 모양)", () => {
   });
 
   it("맞추는 중(어림)이면 명령의 비전 상태 줄 앞에 「위치 맞추는 중」, 맞추면 그대로", () => {
-    expect(handOf(ar({ aligned: false, command: cmd(), sync: sync() })).vision).toEqual({ text: "위치 맞추는 중 · 컵 · 식탁 위", tone: "plain" });
-    expect(handOf(ar({ command: cmd(), sync: sync({ state: "aligned" }) })).vision).toEqual({ text: "컵 · 식탁 위", tone: "plain" });
+    expect(handOf(ar({ aligned: false, command: cmd(), sync: sync({ state: "estimated", source: "start" }) })).vision).toEqual({ text: "위치 맞추는 중 · 컵 · 식탁 위", tone: "plain" });
+    expect(handOf(ar({ command: cmd() })).vision).toEqual({ text: "컵 · 식탁 위", tone: "plain" });
+  });
+});
+
+describe("문제(problemOf): 일이 멈추면 모달 하나", () => {
+  it("AR 중에만. 연결 끊김 → 마이크 꺼짐 → 시작 위치 없음 순으로 하나", () => {
+    const noStart = sync({ state: "none", start: null, started: false, source: null });
+    expect(problemOf(ar())).toBeNull();
+    expect(problemOf(ar({ ar: false, connected: false, sync: noStart }))).toBeNull();
+    expect(problemOf(ar({ connected: false, listening: "denied", sync: noStart }))).toBe("offline");
+    expect(problemOf(ar({ listening: "denied", sync: noStart }))).toBe("mic");
+    expect(problemOf(ar({ aligned: false, sync: noStart }))).toBe("start");
   });
 
-  it("어림이거나 시작 위치가 있으면 「기준점이 안 맞아요」 모달을 띄우지 않는다(시작 위치 맞추기가 열린다)", () => {
-    expect(problemOf(ar({ aligned: false, sync: sync() }))).toBeNull();
+  it("시작 위치가 있거나, 시작 위치 없이도 물건으로 변환이 생겼거나, 서버 상태 전이면 모달이 없다. 추적 약함도 모달이 아니다", () => {
     expect(problemOf(ar({ aligned: false, sync: sync({ state: "none", started: false }) }))).toBeNull();
-    expect(problemOf(ar({ aligned: false, setup: "start", sync: sync({ state: "none", started: false, start: null }) }))).toBeNull();
-    expect(problemOf(ar({ aligned: false, sync: sync({ state: "none", started: false, start: null }) }))).toBe("align");
+    expect(problemOf(ar({ aligned: false, sync: sync({ state: "estimated", start: null, source: "objects" }) }))).toBeNull();
+    expect(problemOf(ar({ aligned: false, sync: null }))).toBeNull();
+    expect(problemOf(ar({ limited: true }))).toBeNull();
   });
+});
 
-  it("설정 줄: 위치(맞음·어림·안 맞음과 오차), 기준(시작 위치·물건 수·벽 점 수)", () => {
-    expect(settingsRows(ar({ sync: sync({ state: "aligned", source: "walls", anchors: 2, wallPoints: 84, residualM: 0.03 }) })).slice(2)).toEqual([
+describe("설정 줄(settingsRows)", () => {
+  it("연결·듣기·위치(맞음과 오차)·기준(시작 위치·물건 수·벽 점 수)", () => {
+    expect(settingsRows(ar({ sync: sync({ anchors: 2, wallPoints: 84, residualM: 0.03 }) }))).toEqual([
+      { name: "연결", value: "됨", tone: "ok" },
+      { name: "듣기", value: "켜짐", tone: "ok" },
       { name: "위치", value: "맞음 · 3cm", tone: "ok" },
       { name: "기준", value: "시작 위치 · 물건 2 · 벽 84점", tone: "plain" },
     ]);
-    expect(settingsRows(ar({ aligned: false, sync: sync() })).slice(2)).toEqual([
+    expect(settingsRows(ar({ connected: false, listening: "denied", aligned: false, sync: sync({ state: "none", started: false, wallPoints: 0, source: null }) }))).toEqual([
+      { name: "연결", value: "끊김", tone: "error" },
+      { name: "듣기", value: "꺼짐", tone: "error" },
+      { name: "위치", value: "안 맞음", tone: "warn" },
+    ]);
+    expect(settingsRows(ar({ aligned: false, sync: sync({ state: "estimated", source: "start", wallPoints: 0 }) })).slice(2)).toEqual([
       { name: "위치", value: "어림", tone: "warn" },
       { name: "기준", value: "시작 위치", tone: "plain" },
     ]);
-    // A·B로 맞추면 오차는 거리 차이, 기준은 기준점 두 곳
-    expect(settingsRows(ar({ sync: sync({ state: "aligned", source: "touch", started: false, residualM: 0.06 }) })).slice(2)).toEqual([
-      { name: "위치", value: "맞음 · 6cm", tone: "ok" },
-      { name: "기준", value: "기준점 두 곳", tone: "plain" },
-    ]);
-    expect(settingsRows(ar({ aligned: false, anchors, sync: sync({ state: "none", started: false, source: null }) })).slice(2)).toEqual([
-      { name: "위치", value: "안 맞음 · 1/2", tone: "warn" },
-    ]);
+    expect(settingsRows(ar({ listening: "paused" }))[1]).toEqual({ name: "듣기", value: "켜짐", tone: "ok" });
+    expect(settingsRows(ar({ listening: "off" }))[1]).toEqual({ name: "듣기", value: "꺼짐", tone: "plain" });
   });
 
-  it("상태 메시지 → sync. AR 중 시작 위치가 있고 아직 안 했으면 시작 위치 맞추기를 열고, 하면(또는 A·B로 맞추면) 닫는다", () => {
-    const wire = { state: "none" as const, source: null, start, started: false, anchors: 0, wall_points: 0, residual_m: null };
-    const v = onStatus(ar({ aligned: false }), { anchors, aligned: false, sync: wire });
+  it("카메라 화면을 못 보내면 그 줄이 남는다(엄지 자리 카드가 없어도 미어캣 설정에서 보인다)", () => {
+    expect(settingsRows(ar({ cameraOff: true })).at(-1)).toEqual({ name: "카메라", value: "못 보냄", tone: "warn" });
+    expect(settingsRows(ar()).map((r) => r.name)).not.toContain("카메라");
+  });
+});
+
+describe("처음 화면 글", () => {
+  it("AR 지원 줄: 시작 위치가 있으면 그 자리에서 시작하라고", () => {
+    expect(supportText({ kind: "checking" })).toBe("AR 지원을 확인하는 중…");
+    expect(supportText({ kind: "insecure" })).toBe("보안 연결이 아니라 AR을 켤 수 없어요. https 주소로 여세요.");
+    expect(supportText({ kind: "no-ar" })).toBe("이 브라우저는 AR을 지원하지 않아요. 안드로이드 크롬으로 여세요.");
+    expect(supportText({ kind: "ready" }, true)).toBe("준비됐어요. 폰을 세로로 들고 시작 위치에서 AR을 시작하세요.");
+    expect(supportText({ kind: "ready" })).toBe("준비됐어요. 폰을 세로로 들고 AR을 시작하세요.");
+    expect(supportText({ kind: "failed", message: "거부됨" })).toBe("AR을 시작하지 못했어요: 거부됨");
+  });
+
+  it("처음 값: 연결 전, 듣기 꺼짐, 명령·설정·맞추기 없음, 위치 맞춤 상태 전", () => {
+    expect(initialView()).toMatchObject({ support: { kind: "checking" }, ar: false, connected: false, listening: "off", command: null, setup: null, settingsOpen: false, pending: [], sync: null });
+  });
+});
+
+describe("메시지 → 상태", () => {
+  const wire = { state: "none" as const, source: null, start, started: false, anchors: 0, wall_points: 0, residual_m: null };
+
+  it("상태 메시지 → 맞춤·sync", () => {
+    const v = onStatus(ar({ aligned: false }), { aligned: false, sync: wire });
+    expect(v.aligned).toBe(false);
     expect(v.sync).toEqual({ state: "none", source: null, start, started: false, anchors: 0, wallPoints: 0, residualM: null });
-    expect(v.setup).toBe("start");
-    expect(onStatus({ ...ar(), ar: false }, { anchors, aligned: false, sync: wire }).setup).toBeNull();
-    expect(onStatus(v, { anchors, aligned: false, sync: { ...wire, state: "estimated", started: true } }).setup).toBeNull();
-    expect(onStatus(v, { anchors, aligned: true, sync: { ...wire, state: "aligned", source: "touch" } }).setup).toBeNull();
-    expect(onStatus(ar({ setup: "anchors", aligned: false }), { anchors, aligned: false, sync: wire }).setup).toBe("anchors");
-    expect(onStatus(ar(), { anchors, aligned: true }).sync).toBeNull();
+    expect(onStatus(ar(), { aligned: true }).sync).toBeNull();
+  });
+
+  it("AR 중 시작 위치가 있고 아직 시작하지 않았으면(변환 없음) 시작 위치 맞추기를 연다. AR 밖·물건 자리 맞추기 중에는 열지 않는다", () => {
+    expect(onStatus(ar({ aligned: false }), { aligned: false, sync: wire }).setup).toBe("start");
+    expect(onStatus({ ...ar(), ar: false }, { aligned: false, sync: wire }).setup).toBeNull();
+    expect(onStatus(ar({ setup: "place", aligned: false }), { aligned: false, sync: wire }).setup).toBe("place");
+  });
+
+  it("다시 맞추기로 연 시작 위치 맞추기는 상태가 와도 그대로다(「여기서 시작」을 보내면 controller가 닫는다). 시작 위치가 지워지면 닫는다", () => {
+    const open = ar({ setup: "start" });
+    expect(onStatus(open, { aligned: true, sync: { ...wire, state: "aligned", source: "walls", started: true } }).setup).toBe("start");
+    expect(onStatus(open, { aligned: true, sync: { ...wire, start: null, state: "aligned", source: "walls", started: true } }).setup).toBeNull();
   });
 
   it("「여기서 시작」 말: 말 전체가 시작일 때만(늘 듣기라 다른 말 속 「시작」은 아니다)", () => {
