@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { DeviceView } from "../../../src/contract/events.ts";
 import { BubbleLayer } from "../bubbles/BubbleLayer";
 import { deviceSummary } from "../bubbles/summary";
@@ -12,7 +12,7 @@ import { edgeFade } from "./checks";
 import type { BoxSize } from "./fit";
 import type { TwinFrame } from "./frame";
 import { otherRooms, roomsPath, type RoomShape } from "./home";
-import { useFadeIn } from "./motion";
+import { PreDrawing, useFadeIn } from "./motion";
 import { checkDotLayers, cloidLayers, destinationLayers, dimLayer, lineLayers, roomEdgeLayer, type Layer, type MarkTone } from "./marks";
 import { legAheadOf, mapScene, type Box } from "./scene";
 
@@ -27,7 +27,7 @@ const lineOf = (pts: Px[]) => (pts.length ? `M${pts.map(([u, v]) => `${u.toFixed
  * 판 transform은 엔진이 그림을 그릴 때마다 그 지도 카메라로 바꾼다(React 상태를 거치지 않아 3D 그림과 같은 그림에 움직인다).
  * 어둡게 한 층은 계획의 밝힌 방 묶음(roomSets)마다 미리 만들고 지금 묶음만 opacity 1이다: 밝힌 방이 바뀌어도 새 모양을 그리지 않는다.
  * 선 굵기는 카메라가 다 옮긴 뒤 한 번 새 배율에 맞춘다. 방 이름표·확인한 기기 말풍선은 판 밖 상자 px에 두고(scene.ts가 고른다),
- * 카메라가 다 옮긴 뒤 떠오른다. 보기만 한다: 마우스를 받지 않는다.
+ * 카메라가 다 옮긴 뒤 떠오른다. 화면이 뜰 때 미리 그려 보는 동안(PreDrawing)만 이름표·말풍선 층을 단계가 바뀔 때처럼 따로 합성해 그려 둔다. 보기만 한다: 마우스를 받지 않는다.
  */
 export function MapOverlay({ frame, checks, shapes, roomSets, image, size, cam, engine, devices, objects, moveMs, blocked, avoid }: {
   frame: TwinFrame;
@@ -83,6 +83,15 @@ export function MapOverlay({ frame, checks, shapes, roomSets, image, size, cam, 
 
   useFadeIn(marks, plateTransform(cam, size), moveMs > 0, moveMs);
 
+  // 화면이 뜰 때 미리 그려 보는 동안 이름표·말풍선 층을 단계가 바뀔 때처럼 따로 합성해 그려 본다(opacity는 1 그대로라 보이는 것은 같다)
+  const predraw = useContext(PreDrawing);
+  useLayoutEffect(() => {
+    const el = marks.current;
+    if (!predraw || !el || typeof el.animate !== "function") return;
+    const a = el.animate([{ opacity: 1 }, { opacity: 1 }], { duration: 1000 });
+    return () => a.cancel();
+  }, [predraw]);
+
   // 밝힌 방 묶음마다 어둡게 한 층(지금 묶음만 보인다). 밝힐 방이 없으면 모두 숨긴다
   const dims = useMemo(() => {
     const m = new Map<string, string>();
@@ -130,7 +139,7 @@ export function MapOverlay({ frame, checks, shapes, roomSets, image, size, cam, 
         })}
         {robot && <div data-robot className="absolute inset-0">{draw(cloidLayers(robot.px, robot.angle, k))}</div>}
       </div>
-      <div ref={marks} className="absolute inset-0">
+      <div ref={marks} data-map-marks className="absolute inset-0">
         {labels.map((l) => (
           <div key={l.id} data-room={l.id} className="absolute -translate-x-1/2 -translate-y-1/2" style={{ left: l.at.x, top: l.at.y }}>
             <Status>{l.label}</Status>

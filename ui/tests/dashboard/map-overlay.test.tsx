@@ -8,6 +8,7 @@ import { coverScale, focusOf, wideCamera } from "../../src/dashboard/camera";
 import { Dashboard } from "../../src/dashboard/Dashboard";
 import { roomSetsOf, twinFrame } from "../../src/dashboard/frame";
 import { MapOverlay } from "../../src/dashboard/MapOverlay";
+import { PreDrawing } from "../../src/dashboard/motion";
 import { TwinEngine } from "../../src/twin3d/engine";
 import { plateTransform, type MapCamera } from "../../src/twin3d/view";
 import { anchorOf, CAM, HOME, IMAGE, moment, PLAN, PLAN_CHECKS, SCENE, SINK } from "./cup-run";
@@ -127,6 +128,32 @@ describe("트윈 위 표시 판", () => {
     expect(container.querySelector(`[data-check="${SINK}"]`)).not.toBeNull();
     expect(container.querySelector(`[data-check="${FRIDGE}"]`)).toBeNull();
     for (const el of container.querySelectorAll("[data-check]")) expect(el.closest(".pointer-events-none")).not.toBeNull();
+  });
+
+  it("화면이 뜰 때 미리 그려 보는 동안만 이름표·말풍선 층을 opacity 1 그대로 따로 합성해 그려 보고, 단계가 바뀔 때는 하지 않는다", () => {
+    const anims: { el: Element; opacity: unknown[]; cancel: ReturnType<typeof vi.fn> }[] = [];
+    const proto = Element.prototype as unknown as { animate?: unknown };
+    const had = proto.animate;
+    proto.animate = function (this: Element, kf: Keyframe[]) {
+      const cancel = vi.fn();
+      anims.push({ el: this, opacity: kf.map((k) => k.opacity), cancel });
+      return { cancel } as unknown as Animation;
+    };
+    try {
+      const at = (n: number, predraw: boolean) => <PreDrawing.Provider value={predraw}>{overlay(n, null)}</PreDrawing.Provider>;
+      const view = render(at(3, true));
+      const layer = view.container.querySelector("[data-map-marks]")!;
+      expect(layer.querySelector(`[data-check="${SINK}"]`)).not.toBeNull();
+      const on = anims.filter((a) => a.el === layer);
+      expect(on).toHaveLength(1);
+      expect(on[0]!.opacity).toEqual([1, 1]);
+      view.rerender(at(3, false));
+      expect(on[0]!.cancel).toHaveBeenCalled();
+      for (const n of [4, 0, 1, 2, 3]) view.rerender(at(n, false));
+      expect(anims.filter((a) => a.el === layer)).toHaveLength(1);
+    } finally {
+      proto.animate = had;
+    }
   });
 
   it("확인한 기기는 말풍선이 있다", () => {

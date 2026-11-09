@@ -69,7 +69,7 @@ const PROBE = `(() => {
   const mo = new MutationObserver((list) => {
     for (const m of list) {
       const el = m.target;
-      // 처음 다 그린 때: main에 data-ready가 처음 붙은 때(트윈 첫 그림·글꼴·마스코트 그림). 가짜 단계 재생도 지도 첫 그림부터 센다
+      // 처음 다 그린 때: main에 data-ready가 처음 붙은 때(트윈 첫 그림·글꼴·마스코트 그림·미리 그려 보기). 가짜 단계 재생도 이때부터 센다
       if (S.mounted === null && document.querySelector("main[data-ready]")) S.mounted = performance.now();
       if (m.type === "attributes" && m.attributeName === "data-step" && el.tagName === "MAIN") {
         const t = performance.now();

@@ -1,4 +1,4 @@
-import { useMemo, useRef, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import type { PlanStep, PlanView } from "../../../src/contract/plan.ts";
 import { LiquidGlass } from "../components/ui/liquid-glass";
 import { Separator } from "../components/ui/separator";
@@ -8,7 +8,7 @@ import type { HubState } from "./hub";
 import { pageLayout, type PageLayout } from "./layout";
 import { Mascot, type Facing } from "./Mascot";
 import { MASCOT } from "./mascot-image";
-import { useFontsLoaded, usePredecode, useReducedMotionNow } from "./motion";
+import { PreDrawing, useFontsLoaded, usePredecode, usePreDraw, useReducedMotionNow } from "./motion";
 import { PhonePane, type PhoneSlot } from "./PhonePane";
 import { SayCard } from "./SayCard";
 import { TwinPane } from "./TwinPane";
@@ -41,6 +41,8 @@ export interface ScreenProps {
   hub: HubState;
   /** 설정 창을 연 채 그린다(가짜 단계 화면 찍기). */
   settingsOpen?: boolean;
+  /** 화면이 다 뜬 때(data-ready를 단 때) 한 번 부른다. */
+  onReady?: () => void;
 }
 
 /**
@@ -50,9 +52,9 @@ export interface ScreenProps {
  * 마스코트는 판 없이 가운데 축을 나눔선 위에 두고 아래 끝을 화면 밑 선에 댄다(누르면 설정 창). 보는 쪽은 facing 그대로다(transform).
  * 말풍선(그 순간 말)은 트윈 아래쪽 지도 위, 마스코트 왼쪽에 얹힌 꼬리 없는 카드 하나다.
  * 자리·크기는 화면 크기로만 정해지고 단계가 바뀌어도 그대로다. 말풍선 말은 opacity·transform으로 바뀐다(SayCard).
- * 글꼴 조각·마스코트 그림 풀기·지도 첫 그림이 다 되면 main에 data-ready를 단다.
+ * 글꼴 조각·마스코트 그림 풀기·지도 첫 그림이 다 되면 한 번 미리 그려 보고(usePreDraw, 단계가 바뀔 때는 하지 않는다) 그 뒤 main에 data-ready를 달고 onReady를 부른다.
  */
-export function DashboardScreen({ index, plan, step, robotKnown, connected, map, mapReady, phone, boxes, frame, observation, action, say, facing, hub, settingsOpen }: ScreenProps) {
+export function DashboardScreen({ index, plan, step, robotKnown, connected, map, mapReady, phone, boxes, frame, observation, action, say, facing, hub, settingsOpen, onReady }: ScreenProps) {
   const main = useRef<HTMLElement>(null);
   const view = useBoxSize(main);
   const L = useMemo(() => pageLayout(view, MASCOT), [view]);
@@ -61,14 +63,20 @@ export function DashboardScreen({ index, plan, step, robotKnown, connected, map,
   // 지금 화면 글이 쓰는 글꼴 조각을 받는다(처음 나오는 글자가 새 조각을 받으면 글을 다시 그린다)
   const text = JSON.stringify([say, plan?.goal, plan?.steps.map((s) => s.label), observation, action, WORDS]);
   const fonts = useFontsLoaded("Noto Sans KR Variable", text);
-  const ready = fonts && decoded && mapReady;
+  const phase = usePreDraw(fonts && decoded && mapReady);
+  const ready = phase === "done";
+  const report = useRef(onReady);
+  report.current = onReady;
+  useEffect(() => { if (ready) report.current?.(); }, [ready]);
   const stage = { left: L.twin.left, top: L.twin.top, width: L.video.left + L.video.width - L.twin.left, height: L.twin.height };
   const card = { left: L.card.left - L.video.left, top: L.card.top - L.video.top, width: L.card.width, height: L.card.height };
 
   return (
     <main ref={main} data-step={index} data-ready={ready || undefined} className="relative h-full w-full overflow-hidden">
       <LiquidGlass mode="opaque" radius={16} className="absolute flex" style={{ left: stage.left, top: stage.top, width: stage.width, height: stage.height }}>
-        <TwinPane plan={plan} step={step} robotKnown={robotKnown} connected={connected} map={typeof map === "function" ? map(L) : map} />
+        <PreDrawing.Provider value={phase === "drawing"}>
+          <TwinPane plan={plan} step={step} robotKnown={robotKnown} connected={connected} map={typeof map === "function" ? map(L) : map} />
+        </PreDrawing.Provider>
         <Separator orientation="vertical" data-divider />
         <PhonePane slot={phone} boxes={boxes} frame={frame} observation={observation} action={action} width={L.video.width} card={card} connected={connected} />
       </LiquidGlass>

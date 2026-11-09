@@ -126,10 +126,9 @@ describe("대시보드 단계 바뀜", () => {
     expect(img.className).toMatch(/(^|\s)will-change-transform(\s|$)/);
   });
 
-  it("가림판·미리 그려 보기가 없다", () => {
+  it("가림판이 없다(미리 그려 보기는 화면이 뜰 때 한 번뿐이다: predraw.test.tsx)", () => {
     const view = render(<DashboardScreen {...screenAt(2)} />);
     expect(view.container.querySelector("[data-veil]")).toBeNull();
-    expect(view.container.querySelector("[data-rehearsal]")).toBeNull();
   });
 
   it("준비된 뒤 단계가 바뀌면 화면을 한 번만 다시 그리고 data-ready를 떼지 않는다(새 말의 글꼴 조각은 그리기를 막지 않고 받는다)", async () => {

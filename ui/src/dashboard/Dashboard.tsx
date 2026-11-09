@@ -169,6 +169,7 @@ export function Dashboard() {
   const [focusId, setFocusId] = useState<string | null>(null);
   const [viewerReady, setViewerReady] = useState(false);
   const [bakedReady, setBakedReady] = useState(false);
+  const [screenReady, setScreenReady] = useState(false);
   const homeId = health?.home?.id ?? null;
   const live = useRef<ReturnType<typeof attachLive> | null>(null);
   const queue = useRef(new LiveQueue());
@@ -196,7 +197,8 @@ export function Dashboard() {
   kindRef.current = kind;
   // 트윈이 없는 집은 기다리지 않는다
   const mapReady = (kind === "iframe" ? viewerReady : kind === "three" && bakedReady) || health?.twin === false;
-  const moment = useDebugSteps(debug, onMoment, mapReady);
+  // 가짜 단계 재생은 화면이 다 뜬 뒤(미리 그려 보기 뒤 data-ready)부터 센다
+  const moment = useDebugSteps(debug, onMoment, screenReady);
   useEffect(() => { if (kind === "iframe") queue.current.drain(); }, [kind]);
   const onEngine = useCallback((engine: TwinEngine | null) => {
     live.current?.dispose();
@@ -207,6 +209,7 @@ export function Dashboard() {
     for (const m of queue.current.drain()) l.handle(m);
   }, []);
   const onBakedReady = useCallback(() => setBakedReady(true), []);
+  const onScreenReady = useCallback(() => setScreenReady(true), []);
   const online = debug ? !debug.offline : connected;
   const hub = useMemo(() => hubOf(health, online), [health, online]);
   const phone: PhoneSlot = debug && moment ? debugPhone(debug, moment, hub.phoneUrl)
@@ -227,7 +230,7 @@ export function Dashboard() {
     <DashboardScreen
       index={stepIndex(plan)} plan={plan} step={currentStep(plan)} robotKnown={dash.eye !== null} connected={online} map={map} mapReady={mapReady}
       phone={phone} boxes={boxes} frame={dash.boxes?.observe.frame ?? null} observation={observation} action={action} say={dash.say ?? ""}
-      facing={facingOf(plan)} hub={hub} settingsOpen={debug?.settings}
+      facing={facingOf(plan)} hub={hub} settingsOpen={debug?.settings} onReady={onScreenReady}
     />
   );
 }
