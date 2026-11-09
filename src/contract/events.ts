@@ -189,7 +189,8 @@ export type ServerMessage =
   | { type: "hello"; devices: number; provider: string | null; hub: string; home: string | null }
   | { type: "state"; state: DeviceState }
   | ({ type: "agent" } & AgentEvent)
-  | { type: "brain"; event: BrainLog }
+  /** replay: 접속 때 다시 보낸 마지막 판단·상자 있는 observe(새 관찰이 아님). 확인 목록은 건너뛴다. */
+  | { type: "brain"; event: BrainLog; replay?: true }
   | { type: "photo"; photo: PhotoRecord }
   | { type: "focus"; focus: Focus }
   | { type: "eye"; eye: EyeEvent }

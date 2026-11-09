@@ -140,7 +140,7 @@ describe("REST 명령 + WS 이벤트", () => {
     expect(messages.filter((m) => m.type === "state")).toHaveLength(devices.length);
   });
 
-  it("WS에 붙으면 world 다음에 마지막 판단·상자 있는 observe를 brain으로 한 번씩, 그다음 말풍선 글을 보낸다", async () => {
+  it("WS에 붙으면 world 다음에 마지막 판단·상자 있는 observe를 다시 보냄 표시(replay)를 단 brain으로 한 번씩, 그다음 말풍선 글을 보낸다", async () => {
     const home = makeHome();
     const world = { at_ms: 1, objects: [], person: { visible: false, since_ms: null, last_seen_ms: null, facts: {} }, devices: [], eye: null, vlm_missing: 0, yolo_missing: 0 };
     const decision: BrainLog = {
@@ -157,7 +157,7 @@ describe("REST 명령 + WS 이벤트", () => {
     const { waitFor, messages } = await listen(url);
     await waitFor((m) => m.type === "say");
     const tail = messages.slice(messages.findIndex((m) => m.type === "world"));
-    expect(tail).toEqual([{ type: "world", world }, { type: "brain", event: decision }, { type: "brain", event: observe }, { type: "say", text: "컵을 들라고 했어요." }]);
+    expect(tail).toEqual([{ type: "world", world }, { type: "brain", event: decision, replay: true }, { type: "brain", event: observe, replay: true }, { type: "say", text: "컵을 들라고 했어요." }]);
   });
 
   it("마지막 판단·말풍선 글이 없으면 brain 없이 say null", async () => {

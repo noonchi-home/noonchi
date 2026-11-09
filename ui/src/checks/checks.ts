@@ -1,6 +1,6 @@
 // 트윈 위 말풍선 목록(순수 리듀서). 에이전트가 판단하면서 확인한 기기와 클로이드가 지켜보는 식탁만 담는다.
 // 에이전트: 이번 요청에서 다룬 기기마다 한 줄(번호는 처음 다룬 차례). 새 요청이 시작되면 지운다.
-// 관찰 흐름: 관찰 기록이 오는 동안 식탁에 「지켜봄」 한 줄(메모는 마지막 YOLOX 글). 마지막 기록 뒤 30초가 지나면 지운다.
+// 관찰 흐름: 관찰 기록이 오는 동안 식탁에 「지켜봄」 한 줄(메모는 마지막 YOLOX 글). 마지막 기록 뒤 30초가 지나면 지운다. 접속 때 다시 온 옛 기록(replay)은 넣지 않는다.
 // 계획: 열린 판단 계획의 집기 대상 물건·가전마다 「확인」 한 줄. 계획이 끝나면 지운다.
 import type { AgentAction, BrainLog, PendingView, ServerMessage } from "../../../src/contract/events.ts";
 import type { PlanView } from "../../../src/contract/plan.ts";
@@ -127,7 +127,7 @@ export function checksReducer(s: ChecksState, e: ChecksEvent): ChecksState {
     const next = onAgent(s, m, e.now);
     return next.turn === s.turn && next.open === s.open ? s : next;
   }
-  if (m.type === "brain") return onBrain(s, m.event, e.now);
+  if (m.type === "brain") return m.replay ? s : onBrain(s, m.event, e.now);
   if (m.type === "plan") return onPlan(s, m.plan, e.now);
   return s;
 }

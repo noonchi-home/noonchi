@@ -69,7 +69,7 @@ export interface AppOptions {
   brain?: { status(): object };
   /** 지금 World State(BRAIN=1). 있으면 GET /api/world, /events 접속 때 {type:"world"}. */
   world?: () => WorldView;
-  /** 마지막 판단과 상자 있는 마지막 observe(BRAIN=1). /events 접속 때 world 다음에 하나씩 {type:"brain"}으로 보낸다. */
+  /** 마지막 판단과 상자 있는 마지막 observe(BRAIN=1). /events 접속 때 world 다음에 하나씩 {type:"brain", replay:true}로 보낸다. */
   brainLast?: () => BrainLog[];
   /** 지금 대시보드 말풍선 카드 글(src/act/say.ts). /events 접속 때 {type:"say"}. 없으면 null. */
   say?: () => string | null;
@@ -680,7 +680,7 @@ export function createApp(opts: AppOptions): TwinHomeApp {
     for (const m of opts.layout?.syncMessages() ?? []) send(ws, m);
     send(ws, { type: "plan", plan: opts.plan?.current() ?? null });
     if (opts.world) send(ws, { type: "world", world: opts.world() });
-    for (const event of opts.brainLast?.() ?? []) send(ws, { type: "brain", event });
+    for (const event of opts.brainLast?.() ?? []) send(ws, { type: "brain", event, replay: true });
     send(ws, { type: "say", text: opts.say?.() ?? null });
     ws.on("error", () => {});
   });
