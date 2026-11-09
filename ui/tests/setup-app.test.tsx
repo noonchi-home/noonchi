@@ -634,3 +634,40 @@ describe("설정 1단계: 집 이름", () => {
     expect(screen.queryByText(/테스트용/)).toBeNull();
   });
 });
+
+describe("설정 1~3단계 큰 글(사용자 2026-11-09 「1,2,3 번은 글씨 키워도되겠다」)", () => {
+  const cls = (el: Element | null) => (el?.className ?? "").toString().split(/\s+/);
+  it.each([
+    ["", "어느 집을 쓸까요?", "다음"],
+    ["#devices", "어떤 가전의 상태를 읽을까요?", "다음"],
+    ["#mode", "가전을 어떻게 다룰까요?", "다음"],
+  ])("주소 「%s」: 제목은 headline, 이전·다음 단추는 text-base", async (hash, question, next) => {
+    open(hash);
+    const title = await screen.findByRole("heading", { name: question });
+    expect(cls(title)).toContain("text-headline");
+    expect(cls(screen.getByRole("button", { name: next }))).toContain("text-base");
+  });
+
+  it("1단계 집 카드 이름은 body, 설명 칩은 text-sm", async () => {
+    open();
+    await screen.findByRole("heading", { name: "어느 집을 쓸까요?" });
+    expect(cls(screen.getByText("원룸").closest("label"))).toContain("text-body");
+    expect(cls(screen.getByText("지금 띄운 집").closest("[data-slot=status]") ?? screen.getByText("지금 띄운 집"))).toContain("text-sm");
+  });
+
+  it("알림 줄은 text-base", async () => {
+    const { user } = open();
+    await user.click(await screen.findByRole("radio", { name: /마곡 아파트/ }));
+    await user.click(screen.getByRole("button", { name: "다음" }));
+    await screen.findByRole("heading", { name: "어떤 가전의 상태를 읽을까요?" });
+    expect(cls(screen.getByRole("status"))).toContain("text-base");
+  });
+
+  it("4단계는 그대로: 제목 title, 단추에 text-base 없음", async () => {
+    open("#position");
+    const title = await screen.findByRole("heading", { name: "폰과 트윈의 위치를 맞춰요" });
+    expect(cls(title)).toContain("text-title");
+    expect(cls(title)).not.toContain("text-headline");
+    expect(cls(screen.getByRole("button", { name: "건너뛰고 대시보드로" }))).not.toContain("text-base");
+  });
+});

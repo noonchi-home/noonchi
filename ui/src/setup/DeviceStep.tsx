@@ -56,21 +56,21 @@ export function DeviceStep({ view, sources, onSources, onBack, onNext, busy }: {
           />
           <div aria-label="방으로 찾기" className="flex flex-wrap gap-1">
             {rooms.map((label) => (
-              <Button key={label} variant="outline" size="sm" onClick={() => { setQuery(label); box.current?.focus(); }}>{label}</Button>
+              <Button key={label} variant="outline" size="setup-sm" onClick={() => { setQuery(label); box.current?.focus(); }}>{label}</Button>
             ))}
           </div>
           {query.trim() && (
             <Card className="max-h-80 overflow-auto">
               <ItemGroup id="device-results" aria-label="검색 결과">
                 {hits.length === 0 ? (
-                  <Alert><AlertTitle>맞는 가전이 없어요.</AlertTitle></Alert>
+                  <Alert size="setup"><AlertTitle>맞는 가전이 없어요.</AlertTitle></Alert>
                 ) : (
                   <>
                     <Item size="sm">
                       <ItemHeader>
                         <ItemDescription>{`${hits.length}개`}</ItemDescription>
                         {rest.length > 1 && (
-                          <Button variant="ghost" size="sm" onClick={() => set(rest.map((d) => [d.id, "virtual"]))}>{`모두 추가 (${rest.length})`}</Button>
+                          <Button variant="ghost" size="setup-sm" onClick={() => set(rest.map((d) => [d.id, "virtual"]))}>{`모두 추가 (${rest.length})`}</Button>
                         )}
                       </ItemHeader>
                     </Item>
@@ -83,7 +83,7 @@ export function DeviceStep({ view, sources, onSources, onBack, onNext, busy }: {
                               <ItemTitle className="min-w-0 truncate">{deviceName(d)}</ItemTitle>
                               <ItemDescription>{d.roomLabel}</ItemDescription>
                             </ItemContent>
-                            <ItemActions>{on ? <Status variant="success">추가됨</Status> : <Status>추가</Status>}</ItemActions>
+                            <ItemActions>{on ? <Status variant="success" size="setup">추가됨</Status> : <Status size="setup">추가</Status>}</ItemActions>
                           </button>
                         </Item>
                       );
@@ -95,12 +95,12 @@ export function DeviceStep({ view, sources, onSources, onBack, onNext, busy }: {
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Status>{`추가 ${picked.length} · 신호 없음 ${devices.length - picked.length}`}</Status>
-          {picked.length > 0 && <Button variant="ghost" size="sm" onClick={() => set(devices.map((d) => [d.id, "none"]))}>모두 빼기</Button>}
+          <Status size="setup">{`추가 ${picked.length} · 신호 없음 ${devices.length - picked.length}`}</Status>
+          {picked.length > 0 && <Button variant="ghost" size="setup-sm" onClick={() => set(devices.map((d) => [d.id, "none"]))}>모두 빼기</Button>}
         </div>
         <div className="min-h-0 flex-1 overflow-auto">
-          {devices.length === 0 ? <Alert><AlertTitle>이 집 배치에 가전이 없어요.</AlertTitle></Alert>
-            : picked.length === 0 ? <Alert><AlertTitle>아직 추가한 가전이 없어요. 위에서 검색해서 추가하세요.</AlertTitle></Alert>
+          {devices.length === 0 ? <Alert size="setup"><AlertTitle>이 집 배치에 가전이 없어요.</AlertTitle></Alert>
+            : picked.length === 0 ? <Alert size="setup"><AlertTitle>아직 추가한 가전이 없어요. 위에서 검색해서 추가하세요.</AlertTitle></Alert>
             : (
               <div role="list" aria-label="추가한 가전" className="flex flex-wrap gap-1.5">
                 {picked.map((d) => (
@@ -114,8 +114,8 @@ export function DeviceStep({ view, sources, onSources, onBack, onNext, busy }: {
         </div>
       </CardContent>
       <CardFooter className="justify-end gap-2">
-        <Button variant="outline" onClick={onBack}>이전</Button>
-        <Button disabled={busy} onClick={onNext}>다음</Button>
+        <Button variant="outline" size="setup" onClick={onBack}>이전</Button>
+        <Button size="setup" disabled={busy} onClick={onNext}>다음</Button>
       </CardFooter>
     </section>
   );

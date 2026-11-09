@@ -129,18 +129,18 @@ export function ModeStep({ view, onView, onNotice, onBack, onNext }: {
         <RadioGroup aria-labelledby="h-mode" value={view.mode} onValueChange={(v) => pick(v as ControlMode)} className="max-w-xl gap-2">
           {MODES.map((m) => (
             <RadioCard
-              key={m.id} value={m.id} label={m.name} disabled={m.id === "live" && !view.thinq.ready}
+              key={m.id} value={m.id} label={m.name} size="lg" disabled={m.id === "live" && !view.thinq.ready}
               icon={m.id === "live" ? <PlugZap /> : <FlaskConical />}
-              description={m.id === "live" ? <Status variant="warning">{m.line}</Status> : m.line}
+              description={m.id === "live" ? <Status variant="warning" size="setup">{m.line}</Status> : m.line}
             />
           ))}
         </RadioGroup>
-        {!view.thinq.ready && <Alert className="max-w-xl"><Info aria-hidden="true" /><AlertTitle>ThinQ 토큰이 없어요.</AlertTitle></Alert>}
+        {!view.thinq.ready && <Alert size="setup" className="max-w-xl"><Info aria-hidden="true" /><AlertTitle>ThinQ 토큰이 없어요.</AlertTitle></Alert>}
         {view.mode === "live" && view.home && <Pairs view={view} onView={onView} onNotice={onNotice} />}
       </CardContent>
       <CardFooter className="mt-auto justify-end gap-2">
-        <Button variant="outline" onClick={onBack}>이전</Button>
-        <Button onClick={onNext}>다음</Button>
+        <Button variant="outline" size="setup" onClick={onBack}>이전</Button>
+        <Button size="setup" onClick={onNext}>다음</Button>
       </CardFooter>
       <AskLive open={asking} busy={busy} onYes={() => void change("live")} onNo={() => setAsking(false)} />
     </section>

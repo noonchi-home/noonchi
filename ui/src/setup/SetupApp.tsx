@@ -161,6 +161,8 @@ export function SetupApp({ navigate = (url: string) => location.assign(url) }: {
 
   const at = STEPS.findIndex((s) => s.id === step);
   const ready = step === "home" || step === "devices" ? Boolean(view) : Boolean(view?.home);
+  // 1~3단계는 큰 글(사용자 2026-11-09 「1,2,3 번은 글씨 키워도되겠다」), 4단계는 부품 원래 크기
+  const big = step !== "position";
   return (
     <div className="flex min-h-full flex-col lg:h-full lg:overflow-hidden">
       <header>
@@ -196,10 +198,10 @@ export function SetupApp({ navigate = (url: string) => location.assign(url) }: {
         >
           <MessageBubble className="flex min-h-0 w-full max-w-full flex-1 flex-col overflow-auto">
             {view && ready && (
-              <CardHeader><CardTitle id={`h-${step}`}>{STEPS[at]!.question}</CardTitle></CardHeader>
+              <CardHeader><CardTitle id={`h-${step}`} size={big ? "lg" : "default"}>{STEPS[at]!.question}</CardTitle></CardHeader>
             )}
             {notice && (
-              <Alert role="status" aria-live="polite" variant={notice.error ? "error" : "success"} className="mx-6 mb-4 w-auto">
+              <Alert role="status" aria-live="polite" variant={notice.error ? "error" : "success"} size={big ? "setup" : "default"} className="mx-6 mb-4 w-auto">
                 {notice.error ? <TriangleAlert aria-hidden="true" /> : <CircleCheck aria-hidden="true" />}
                 <AlertTitle>{notice.text}</AlertTitle>
               </Alert>

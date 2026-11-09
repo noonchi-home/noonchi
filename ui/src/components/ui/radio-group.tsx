@@ -1,7 +1,7 @@
 "use client";
 
 // 21st.dev「Radio Group」(id 748, originui/radio-group) 받은 코드.
-// 바꾼 것: shadow-black/5 → shadow-shade/5. 「Card with icon」 데모의 카드 틀을 RadioCard로 내보낸다(has-[[data-state=checked]]:border-ring 그대로, ring=brand).
+// 바꾼 것: shadow-black/5 → shadow-shade/5. 「Card with icon」 데모의 카드 틀을 RadioCard로 내보낸다(has-[[data-state=checked]]:border-ring 그대로, ring=brand). 설정 1~3단계 큰 글(사용자 2026-11-09 「1,2,3 번은 글씨 키워도되겠다」): RadioCard size lg(이름 body, 설명 body-sm 토큰)를 더했다.
 // 카드사 그림 svg는 뺐고 그 자리에 lucide 아이콘(icon)을 받는다. 이름·덧이름·설명 글은 밖에서 받는다(데이터 연결), text-xs → label 토큰(굵기는 받은 대로 보통).
 import * as RadioGroupPrimitive from "@radix-ui/react-radio-group";
 import * as React from "react";
@@ -59,10 +59,11 @@ type RadioCardProps = {
   description?: React.ReactNode;
   icon?: React.ReactNode;
   disabled?: boolean;
+  size?: "default" | "lg";
 };
 
 /** 「Card with icon」 데모 카드 한 장. */
-function RadioCard({ value, label, sublabel, description, icon, disabled }: RadioCardProps) {
+function RadioCard({ value, label, sublabel, description, icon, disabled, size = "default" }: RadioCardProps) {
   const id = React.useId();
   return (
     <div className="relative flex w-full items-start gap-2 rounded-lg border border-input p-4 shadow-sm shadow-shade/5 has-[[data-state=checked]]:border-ring">
@@ -76,7 +77,7 @@ function RadioCard({ value, label, sublabel, description, icon, disabled }: Radi
       <div className="flex grow items-start gap-3">
         {icon && <span className="shrink-0 [&_svg]:size-6" aria-hidden="true">{icon}</span>}
         <div className="grid grow gap-2">
-          <Label htmlFor={`${id}-1`}>
+          <Label htmlFor={`${id}-1`} className={cn(size === "lg" && "text-body")}>
             {label}{sublabel && " "}
             {sublabel && (
               <span className="text-label font-normal leading-[inherit] text-muted-foreground">
@@ -85,7 +86,7 @@ function RadioCard({ value, label, sublabel, description, icon, disabled }: Radi
             )}
           </Label>
           {description && (
-            <div id={`${id}-1-description`} className="text-label font-normal text-muted-foreground">
+            <div id={`${id}-1-description`} className={cn("text-label font-normal text-muted-foreground", size === "lg" && "text-body-sm")}>
               {description}
             </div>
           )}
