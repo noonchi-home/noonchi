@@ -74,7 +74,8 @@ interface DeviceState { id: string; online: boolean;
   matter: Record<string, unknown>;            // 보기 좋은 Matter 속성 요약 (onOff, level, lockState, fanMode, operationalState, setpoint...)
   updatedAt: string;
   signal?: "none";                            // 신호 없는 기기: 상태를 모름(twin·matter 비움, 아래 「설정 흐름」)
-  readback?: { source: "thinq"; deviceId: string; at: string }; } // 실제 가전(ThinQ)에서 읽은 값(아래 「운영 모드」)
+  readback?: { source: "thinq"; deviceId: string; at: string };   // 실제 가전(ThinQ)에서 읽은 값(아래 「운영 모드」)
+  vision?: { twin: Record<string, unknown>; at: string; applied: boolean }; } // 카메라로 본 값(applied: 실제 출처가 없어 이 값이 상태, docs/world-vocabulary.md)
 type Command =
   | { type: "on" } | { type: "off" } | { type: "level"; percent: number }
   | { type: "climate"; mode?: "cool" | "heat" | "auto" | "dry" | "fan"; setpointC?: number; fan?: "low" | "medium" | "high" | "auto" }

@@ -11,8 +11,17 @@ export const YOLO_TEXT = { none: "감지 없음", noDetector: "감지기 없음"
 /** 사실 값 → 글. */
 export const STATE_TEXT: Record<string, string> = Object.fromEntries(Object.entries(STATES).map(([k, s]) => [k, s.label]));
 
+/** 카메라로 본 가전 상태 표시: 변화 줄·[지속] 줄 끝, 대시보드 말풍선 줄 끝. */
+export const SEEN_TEXT = "카메라로 봄";
+
 /** World State 변화 글(관찰 텍스트 줄, 판단 기록 줄). */
 export const CHANGE_TEXT = {
+  /** 카메라로 본 값이 가전 상태가 됨(거실 TV 켜짐 · 카메라로 봄). */
+  deviceSeen: (label: string, status: string) => `${label} ${status} · ${SEEN_TEXT}`,
+  /** 실제 상태와 카메라로 본 값이 다름(판단 계기 아님). */
+  deviceMismatch: (label: string, seen: string, real: string) => `${label} 카메라로는 ${seen} · 기기 값은 ${real}`,
+  /** [지속] 가전 줄 끝: 카메라로 본 상태와 마지막으로 본 시각. */
+  seenAt: (clock: string) => `${SEEN_TEXT}, 마지막 확인 ${clock}`,
   appeared: (name: string, where: string | null) => `${name} 보임${where ? ` · ${where}` : ""}`,
   gone: (name: string) => `${name} 사라짐`,
   outOfView: (name: string) => `${name} 시야 밖`,

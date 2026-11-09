@@ -34,6 +34,12 @@ describe("deviceSummary", () => {
   it("닫힌 커튼은 켜짐으로 치지 않는다", () => {
     expect(deviceSummary({ ...st({ curtain: "closed" }), kind: "covering" })).toMatchObject({ line: "닫힘", tone: "off" });
   });
+  it("카메라로 본 상태는 줄 끝에 「카메라로 봄」, 실제 상태가 이긴 보임 기록은 붙이지 않는다", () => {
+    const fridge = { ...base, id: "fridge", label: "냉장고", kind: "fridge" as const };
+    const seen = (applied: boolean) => ({ ...fridge, state: { id: "fridge", online: true, twin: { door: "open" }, matter: {}, updatedAt: "t", vision: { twin: { door: "open" }, at: "t", applied } } });
+    expect(deviceSummary(seen(true))).toEqual({ title: "냉장고", line: "문 열림 · 카메라로 봄", tone: "alert" });
+    expect(deviceSummary(seen(false))).toMatchObject({ line: "문 열림" });
+  });
   it("모르는 상태 이름은 글로 내지 않는다", () => {
     expect(deviceSummary(st({ mystery: 3 }))).toMatchObject({ line: "꺼짐", tone: "off" });
   });

@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { loadTwin } from "../src/model/devices.js";
 import { deviceStateKeys, deviceText } from "../src/world/relations.js";
 import { CLASS_DOC, DEVICE_LONG_DOC, DEVICE_STATE_DOC, STATE_DOC } from "../src/world/vocab-doc.js";
-import { CLASSES, DEVICE_LONG, DEVICE_STATES, STATES, type ClassKey, type DeviceStateKey, type StateKey } from "../src/world/vocab.js";
+import { CLASSES, DEVICE_LONG, DEVICE_STATES, SIGHT, STATES, type ClassKey, type DeviceStateKey, type FixtureClass, type SightRule, type StateKey } from "../src/world/vocab.js";
 
 export const DOC_PATH = fileURLToPath(new URL("../docs/world-vocabulary.md", import.meta.url));
 /** 문서 가전 표의 집. */
@@ -46,13 +46,29 @@ function devices(): string {
   return table(["키", "트윈 속성", "상태 글", "사건 글", "늘 보임", "계기 예"], [...rows, ...long]);
 }
 
+const SIGHT_RULES = Object.entries(SIGHT) as [FixtureClass, readonly SightRule[]][];
+const sightValue = (r: SightRule) => Object.entries(r.values).map(([k, v]) => `${code(k)} ${r.attr} = ${String(v)}`).join(", ");
+
+function sight(): string {
+  return table(["가전 설비", "트윈 가전 종류", "면", "본 값", "답에 그 면 값이 없으면"], SIGHT_RULES.flatMap(([cls, rules]) => rules.map((r) => [
+    `${code(cls)} ${CLASSES[cls].label}`, (CLASSES[cls] as { deviceKind?: string }).deviceKind ?? "—", FACET[r.facet], sightValue(r), r.absent !== undefined ? `${r.attr} = ${String(r.absent)}` : "—",
+  ])));
+}
+
+/** 그 가전을 카메라로 맞추는 값(가전 설비 글 + 값 글). 없으면 —. */
+function sightOf(d: { kind: string; twinAttrs: Record<string, unknown[]> }): string {
+  const hits = SIGHT_RULES.filter(([cls]) => (CLASSES[cls] as { deviceKind?: string }).deviceKind === d.kind)
+    .flatMap(([cls, rules]) => rules.filter((r) => r.attr in d.twinAttrs).map((r) => `${CLASSES[cls].label} ${Object.keys(r.values).map((k) => STATES[k as StateKey].label).join("·")}`));
+  return hits.join(", ") || "—";
+}
+
 function home(): string {
   const twin = loadTwin(undefined, { home: DOC_HOME });
-  return table(["가전 id", "이름", "종류", "상태 키", "사건 줄"], twin.devices.map((d) => {
+  return table(["가전 id", "이름", "종류", "상태 키", "사건 줄", "카메라로 맞춤"], twin.devices.map((d) => {
     const keys = Object.entries(d.twinAttrs).flatMap(([attr, values]) => values.flatMap((v) => deviceStateKeys(d.kind, { [attr]: v })));
     const events = keys.map((k) => `${d.label} ${deviceText(d.kind, k).became}`);
     const long = Object.values(DEVICE_LONG).filter((l) => (l.kinds as readonly string[]).includes(d.kind)).map((l) => `${d.label} ${l.label}`);
-    return [code(d.id), d.label, d.kind, keys.map(code).join(", "), [...events, ...long].join(", ")];
+    return [code(d.id), d.label, d.kind, keys.map(code).join(", "), [...events, ...long].join(", "), sightOf(d)];
   }));
 }
 
@@ -62,7 +78,7 @@ function rooms(): string {
 }
 
 export function renderTables(): Record<string, string> {
-  return { classes: classes(), states: states(), rooms: rooms(), devices: devices(), home: home() };
+  return { classes: classes(), states: states(), rooms: rooms(), devices: devices(), home: home(), sight: sight() };
 }
 
 /** 문서의 표 자리를 만든 표로 바꾼 글(줄 끝은 LF). 자리가 없으면 던진다. */

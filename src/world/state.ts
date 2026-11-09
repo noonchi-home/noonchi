@@ -10,12 +10,14 @@
 // - 사람 자리·방: 맞춘 뒤 가장 큰 사람 상자의 발(상자 아래가 프레임 끝에 닿지 않음)이 보이면 그 바닥 자리와 방. 눈의 방으로 대신하지 않는다. 바뀌면 변화 하나.
 // - 분석 없음(applyMissing): 셈과 변화 하나만 남기고 등장·사라짐 셈에는 넣지 않는다.
 // - 가전: 모든 가전의 상태 키(vocab DEVICE_STATES), 바뀐 속성의 이력, 사건 줄(세탁 끝남), 남은 시간, 오래 이어진 상태(tick: 냉장고 문 1분).
+// - 카메라로 가전 상태 맞추기(src/world/sight.ts): 가전 설비 상자마다 그 사진의 방·시야·상자 방향으로 트윈 가전 하나를 고르고(못 고르면 설비 link에 까닭),
+//   그 프레임 VLM 답의 값이 연속으로 이어지면 see(허브 observe)로 넘긴다. 카메라로 본 값이 상태가 된 가전 줄은 「카메라로 봄」을 붙이고, 실제 상태와 다르면 다름 줄 하나.
 import type { EyePose } from "../contract/events.js";
 import type {
   Facet, FixtureClass, ObjClass, VlmMissing, WorldChange, WorldDevice, WorldEye, WorldFact, WorldFixture, WorldObject, WorldPerson, WorldView, YoloMissing,
 } from "../contract/world.js";
 import type { Detection, Pose } from "../brain/detector.js";
-import type { DeviceState } from "../hub/types.js";
+import type { DeviceState, VisionResult, VisionSeen } from "../hub/types.js";
 import type { EngineFrame } from "../observe/ring.js";
 import type { SceneObservation } from "../observe/scene.js";
 import { Confirmer } from "./confirm.js";
@@ -23,8 +25,9 @@ import { CHANGE_TEXT, OBJECT_NAME, fixtureName, objectName, onSurface } from "./
 import { inView, placeBox, type PlaneSurface } from "./place.js";
 import { describePose, heldByAny, mainPerson } from "./pose.js";
 import { RemainingTracker, becameKey, deviceStateKeys, deviceStatus, deviceText, relatedDeviceIds } from "./relations.js";
+import { SightReadings, linkDevice, sightValues, type SightLink } from "./sight.js";
 import {
-  CLASSES, DEVICE_LONG, DEVICE_STATES, FACT_FRESH_MS, FRESH_MS, NEAR_M, NOW_FACETS, POSE_HOLD, POSE_POSTURE, STATES, VLM_ONLY, type ClassKey, type DeviceStateKey, type StateKey, type Target,
+  CLASSES, DEVICE_LONG, DEVICE_STATES, FACT_FRESH_MS, FRESH_MS, NEAR_M, NOW_FACETS, POSE_HOLD, POSE_POSTURE, SIGHT, STATES, VLM_ONLY, type ClassKey, type DeviceStateKey, type StateKey, type Target,
 } from "./vocab.js";
 
 type V3 = [number, number, number];
@@ -40,6 +43,8 @@ const HISTORY_MAX = 20;
 const GONE_KEEP_MS = 600_000;
 /** 상자 아래가 프레임 높이의 이 비율보다 아래면 발이 잘린 것으로 본다. */
 const FEET_EDGE = 0.98;
+/** VLM 답이 오지 않은 프레임의 가전 맞춤은 이만큼(촬영 시각 기준) 두었다가 버린다. */
+const LINK_KEEP_MS = 60_000;
 
 interface Obj {
   id: string;
@@ -60,7 +65,11 @@ interface Obj {
   answered: number | null;
 }
 
-interface Fix { id: string; cls: FixtureClass; room: string | null; roomLabel: string | null; firstSeen: number; lastSeen: number; facts: Facts; answered: number | null }
+interface Fix {
+  id: string; cls: FixtureClass; room: string | null; roomLabel: string | null; firstSeen: number; lastSeen: number; facts: Facts; answered: number | null;
+  /** 카메라로 트윈 가전에 맞춘 마지막 결과와 그 촬영 시각. */
+  link: (SightLink & { at_ms: number }) | null;
+}
 
 interface Dev {
   id: string; kind: string; label: string; twin: Record<string, unknown>; status: string | null; state: DeviceStateKey[]; changed: number; eventAt: number | null;
@@ -69,6 +78,8 @@ interface Dev {
   /** 이미 낸 오래 이어진 사건(규칙@시작 시각). */
   long: Set<string>;
   history: WorldDevice["history"]; known: boolean;
+  /** 지금 상태가 카메라로 본 것이면 그 기록(허브 vision, applied). */
+  vision: VisionSeen | null;
 }
 
 export interface WorldStateOptions {
@@ -76,10 +87,14 @@ export interface WorldStateOptions {
   floorAt: (p: Plan2) => number;
   /** 평면 위 점이 있는 방(id와 이름). 집 밖이면 null. */
   roomAt: (p: Plan2) => { id: string; label: string } | null;
-  /** 가전 목록. room은 방 id(가전 설비를 같은 방 가전에 붙인다). */
-  devices: () => readonly { id: string; kind: string; label: string; room?: string }[];
+  /** 가전 목록. room은 방 id(가전 설비를 같은 방 가전에 붙인다), twinAttrs는 트윈 속성(카메라로 넘길 속성이 있는지). */
+  devices: () => readonly { id: string; kind: string; label: string; room?: string; twinAttrs?: Readonly<Record<string, readonly unknown[]>> }[];
   /** 가전 평면 자리 [x, y](사람 가까이). 모르면 null. */
   locate?: (id: string) => Plan2 | null;
+  /** 가전 가운데 트윈 자리 [x, 높이, y](카메라로 가전을 고를 때 시야·방향). 없거나 모르면 그 가전을 고르지 않는다. */
+  place?: (id: string) => V3 | null;
+  /** 카메라로 이어 본 가전 상태를 허브에 넘긴다(src/hub/signals.ts observe). 없으면 넘기지 않는다. */
+  see?: (id: string, twin: Record<string, unknown>, atMs: number) => VisionResult;
   /** 같은 물체로 볼 기본 거리(m, 기본 0.25). 종류에 identityM이 있으면 그 값. */
   identityM?: number;
 }
@@ -116,6 +131,12 @@ export class WorldState {
   /** 관절이 붙인 사실(그 사실 객체). VLM이 같은 면을 다시 쓰면 새 객체라 빠진다. */
   private readonly byPose = new WeakSet<WorldFact>();
   private readonly identityM: number;
+  /** 프레임 id → 감지 번호마다 카메라로 고른 가전(그 프레임 VLM 답이 올 때까지). */
+  private readonly links = new Map<string, { at: number; dets: Map<string, { cls: FixtureClass; link: SightLink }> }>();
+  /** 가전마다 카메라로 이어 본 값의 수. */
+  private readonly readings = new SightReadings();
+  /** 가전마다 카메라로 마지막으로 본 촬영 시각. */
+  private readonly sighted = new Map<string, number>();
 
   constructor(private readonly o: WorldStateOptions) {
     this.identityM = o.identityM ?? 0.25;
@@ -176,11 +197,57 @@ export class WorldState {
     const id = `${cls}_${room?.id ?? "room"}`;
     let f = this.fixtures.get(id);
     if (!f) {
-      f = { id, cls, room: room?.id ?? null, roomLabel: room?.label ?? null, firstSeen: atMs, lastSeen: atMs, facts: {}, answered: null };
+      f = { id, cls, room: room?.id ?? null, roomLabel: room?.label ?? null, firstSeen: atMs, lastSeen: atMs, facts: {}, answered: null, link: null };
       this.fixtures.set(id, f);
     }
     f.lastSeen = Math.max(f.lastSeen, atMs);
     return f;
+  }
+
+  /** 가전 설비 상자 하나를 트윈 가전에 맞춰 두고(SIGHT에 있는 종류만), 그 프레임 VLM 답을 기다린다. */
+  private sight(frame: EngineFrame, tmp: string, fix: Fix, box: Detection["box"], room: { id: string } | null): void {
+    if (!(fix.cls in SIGHT)) return;
+    const at = frame.capturedAtMs;
+    const link = linkDevice({
+      cls: fix.cls, box, size: { width: frame.width, height: frame.height }, view: frame.view, room: room?.id ?? null, devices: this.o.devices(), place: this.o.place ?? (() => null),
+    });
+    if (!fix.link || at >= fix.link.at_ms) fix.link = { ...link, at_ms: at };
+    if (link.device) this.sighted.set(link.device, Math.max(this.sighted.get(link.device) ?? at, at));
+    let m = this.links.get(frame.id);
+    if (!m) {
+      m = { at, dets: new Map() };
+      this.links.set(frame.id, m);
+    }
+    m.dets.set(tmp, { cls: fix.cls, link });
+  }
+
+  /** 그 프레임 VLM 답에서 고른 가전의 값을 읽고, 이어 본 값은 허브에 넘긴다. 실제 상태와 처음 다르면 다름 줄(판단 계기 아님). */
+  private seeDevices(frameId: string, capturedAtMs: number, scene: SceneObservation): WorldChange[] {
+    const m = this.links.get(frameId);
+    this.links.delete(frameId);
+    for (const [id, x] of this.links) if (x.at < capturedAtMs - LINK_KEEP_MS) this.links.delete(id);
+    if (!m) return [];
+    const stable: [string, Record<string, unknown>][] = [];
+    for (const [tmp, { cls, link }] of m.dets) {
+      const device = link.device;
+      if (!device) continue;
+      const said = scene.observations.filter((o) => o.object_id === tmp).map((o) => o.state as string);
+      if (said.some((s) => (VLM_ONLY as readonly string[]).includes(s))) continue; // 가렸다: 답이 아니다
+      const keys = said.filter((s): s is StateKey => s in STATES && fits(s as StateKey, cls, "fixture"));
+      const values = sightValues(cls, keys, this.o.devices().find((d) => d.id === device)?.twinAttrs);
+      const kept = Object.entries(values).filter(([attr, v]) => this.readings.read(device, attr, v, capturedAtMs));
+      if (kept.length) stable.push([device, Object.fromEntries(kept)]);
+    }
+    const changes: WorldChange[] = [];
+    for (const [id, twin] of stable) {
+      const r = this.o.see?.(id, twin, capturedAtMs);
+      if (r?.kind !== "mismatch") continue;
+      const spec = this.o.devices().find((d) => d.id === id);
+      const text = (t: Record<string, unknown>) => deviceStatus(spec?.kind ?? "", t) ?? Object.entries(t).map(([a, v]) => `${a} ${String(v)}`).join(" · ");
+      const seen = Object.fromEntries(Object.keys(r.real).map((a) => [a, twin[a]]));
+      changes.push({ kind: "device", at_ms: capturedAtMs, subject: id, meaningful: false, text: CHANGE_TEXT.deviceMismatch(spec?.label ?? id, text(seen), text(r.real)) });
+    }
+    return changes;
   }
 
   /** poses: 이 프레임의 관절(YOLO26-pose). 없으면(관절 모델이 없거나 사람이 없어 돌리지 않음) 자세·손에 듦을 보지 않는다. */
@@ -206,7 +273,9 @@ export class WorldState {
         return;
       }
       if (FIXTURE_CLASSES.has(d.label)) {
-        ids.set(tmp, this.fixture(d.label as FixtureClass, at, eyeRoom).id);
+        const fix = this.fixture(d.label as FixtureClass, at, eyeRoom);
+        ids.set(tmp, fix.id);
+        this.sight(frame, tmp, fix, d.box, eyeRoom);
         return;
       }
       if (!OBJ_CLASSES.has(d.label)) return;
@@ -442,28 +511,34 @@ export class WorldState {
         if (prev && prev.at_ms <= capturedAtMs && !said.has(`${id}|${f}`) && !this.poseHolds(prev, capturedAtMs)) delete target.facts[f];
       }
     }
+    changes.push(...this.seeDevices(frameId, capturedAtMs, scene));
     return changes;
   }
 
-  /** 분석 없음 프레임: 셈을 늘리고 변화 하나. 등장·사라짐 셈은 그대로다. */
+  /** 분석 없음 프레임: 셈을 늘리고 변화 하나. 등장·사라짐 셈은 그대로다. VLM 답이 없으면 그 프레임의 가전 맞춤도 버린다(값이 아니다). */
   applyMissing(frameId: string, capturedAtMs: number, m: { yolo?: YoloMissing; vlm?: VlmMissing }): WorldChange[] {
     this.start(capturedAtMs);
     if (m.yolo) this.yoloMissing++;
-    if (m.vlm) this.vlmMissing++;
+    if (m.vlm) {
+      this.vlmMissing++;
+      this.links.delete(frameId);
+    }
     if (m.yolo) return [{ kind: "yolo_missing", at_ms: capturedAtMs, subject: frameId, meaningful: false, text: CHANGE_TEXT.yoloMissing[m.yolo] }];
     if (m.vlm) return [{ kind: "vlm_missing", at_ms: capturedAtMs, subject: frameId, meaningful: false, text: CHANGE_TEXT.vlmMissing[m.vlm] }];
     return [];
   }
 
-  /** 가전 상태. 처음 받은 상태는 상태 이름 변화 하나, 그 뒤로는 바뀐 속성마다 이력과 사건 줄(아는 상태가 아니면 속성 줄, 판단 계기 아님). */
+  /** 가전 상태. 처음 받은 상태는 상태 이름 변화 하나, 그 뒤로는 바뀐 속성마다 이력과 사건 줄(아는 상태가 아니면 속성 줄, 판단 계기 아님).
+   *  카메라로 본 값이 상태가 된 속성(vision.applied)의 줄은 「카메라로 봄」을 붙인다. */
   applyDevice(s: DeviceState, atMs: number): WorldChange[] {
     const spec = this.o.devices().find((d) => d.id === s.id);
     if (!spec) return [];
     let d = this.devs.get(s.id);
     if (!d) {
-      d = { id: s.id, kind: spec.kind, label: spec.label, twin: {}, status: null, state: [], changed: atMs, eventAt: null, since: {}, long: new Set(), history: [], known: false };
+      d = { id: s.id, kind: spec.kind, label: spec.label, twin: {}, status: null, state: [], changed: atMs, eventAt: null, since: {}, long: new Set(), history: [], known: false, vision: null };
       this.devs.set(s.id, d);
     }
+    d.vision = s.signal !== "none" && s.vision?.applied ? s.vision : null;
     if (s.signal === "none") {
       d.status = null;
       d.state = [];
@@ -471,6 +546,7 @@ export class WorldState {
       this.remaining.update(s.id, {}, atMs);
       return [];
     }
+    const seen = (attr: string, to: unknown) => !!d.vision && attr in d.vision.twin && same(d.vision.twin[attr], to);
     const changes: WorldChange[] = [];
     for (const [attr, to] of Object.entries(s.twin)) {
       const from = d.twin[attr];
@@ -482,11 +558,14 @@ export class WorldState {
       if (!d.known) continue;
       if (key) {
         d.eventAt = atMs;
-        changes.push({ kind: "device", at_ms: atMs, subject: d.id, meaningful: true, text: CHANGE_TEXT.device(d.label, deviceText(d.kind, key).became) });
+        const became = deviceText(d.kind, key).became;
+        changes.push({ kind: "device", at_ms: atMs, subject: d.id, meaningful: true, text: seen(attr, to) ? CHANGE_TEXT.deviceSeen(d.label, became) : CHANGE_TEXT.device(d.label, became) });
       } else changes.push({ kind: "device", at_ms: atMs, subject: d.id, meaningful: false, text: CHANGE_TEXT.deviceAttr(d.label, attr, to) });
     }
     const status = deviceStatus(d.kind, s.twin);
-    if (!d.known && status !== null) changes.push({ kind: "device", at_ms: atMs, subject: d.id, meaningful: true, text: CHANGE_TEXT.device(d.label, status) });
+    if (!d.known && status !== null) {
+      changes.push({ kind: "device", at_ms: atMs, subject: d.id, meaningful: true, text: d.vision ? CHANGE_TEXT.deviceSeen(d.label, status) : CHANGE_TEXT.device(d.label, status) });
+    }
     d.status = status;
     d.state = deviceStateKeys(d.kind, s.twin);
     for (const k of Object.keys(d.since) as DeviceStateKey[]) if (!d.state.includes(k)) delete d.since[k];
@@ -507,7 +586,8 @@ export class WorldState {
         const mark = `${key}@${since}`;
         if (d.long.has(mark)) continue;
         d.long.add(mark);
-        changes.push({ kind: "device", at_ms: nowMs, subject: d.id, meaningful: true, text: CHANGE_TEXT.device(d.label, rule.label) });
+        const seen = !!d.vision && DEVICE_STATES[rule.state].attr in d.vision.twin;
+        changes.push({ kind: "device", at_ms: nowMs, subject: d.id, meaningful: true, text: seen ? CHANGE_TEXT.deviceSeen(d.label, rule.label) : CHANGE_TEXT.device(d.label, rule.label) });
       }
     }
     return changes;
@@ -529,6 +609,7 @@ export class WorldState {
     const fixtures: WorldFixture[] = [...this.fixtures.values()].map((f) => ({
       id: f.id, cls: f.cls, room: f.room, room_label: f.roomLabel, first_seen_ms: f.firstSeen, last_seen_ms: f.lastSeen, facts: { ...f.facts }, answered_ms: f.answered,
       device: devices.find((d) => d.kind === (CLASSES[f.cls] as { deviceKind?: string }).deviceKind && d.room !== undefined && d.room === f.room)?.id ?? null,
+      ...(f.link ? { link: { device: f.link.device, miss: f.link.miss, at_ms: f.link.at_ms } } : {}),
     }));
     const p = this.person;
     const near = p.visible && p.position && p.positionAt !== null && nowMs - p.positionAt <= FRESH_MS && this.o.locate
@@ -546,6 +627,7 @@ export class WorldState {
       devices: [...this.devs.values()].map((d) => ({
         id: d.id, kind: d.kind, label: d.label, status: d.status, state: [...d.state], active: d.state.some((k) => DEVICE_STATES[k].active),
         changed_ms: d.changed, event_ms: d.eventAt, started_ms: this.remaining.startedAt(d.id), remaining_min: this.remaining.remainingMin(d.id, nowMs), history: [...d.history],
+        ...(d.vision ? { vision: { at_ms: Math.max(this.sighted.get(d.id) ?? 0, Date.parse(d.vision.at) || 0) } } : {}),
       })),
       eye: this.eye, frame_ms: this.frameAt, vlm_missing: this.vlmMissing, yolo_missing: this.yoloMissing,
     };

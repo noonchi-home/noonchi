@@ -65,15 +65,20 @@ export function placeBox(view: CameraView, box: [number, number, number, number]
   return { position: p.map((x) => Math.round(x * 1000) / 1000) as V3, surface: best.id, errorM: Math.round((0.05 + 0.03 * best.t) * 100) / 100 };
 }
 
-/** 트윈 점이 카메라 시야(NDC 안, 카메라 앞)에 드는가. */
-export function inView(view: CameraView, point: V3): boolean {
+/** 트윈 점의 화면 자리(NDC [x, y], 화면 안이면 -1..1). 카메라 뒤면 null. */
+export function ndc(view: CameraView, point: V3): [number, number] | null {
   const rel: V3 = [point[0] - view.origin[0], point[1] - view.origin[1], point[2] - view.origin[2]];
   const [ax, az] = rotate2(-view.theta, [rel[0], rel[2]]);
   const local = rotate3(conj(view.orientation), [ax, rel[1], az]);
-  if (local[2] >= 0) return false;
+  if (local[2] >= 0) return null;
   const c = apply4(view.projection, [local[0], local[1], local[2], 1]);
-  const nx = c[0] / c[3], ny = c[1] / c[3];
-  return Math.abs(nx) <= 1 && Math.abs(ny) <= 1;
+  return [c[0] / c[3], c[1] / c[3]];
+}
+
+/** 트윈 점이 카메라 시야(NDC 안, 카메라 앞)에 드는가. margin만큼 화면 밖도 시야로 본다. */
+export function inView(view: CameraView, point: V3, margin = 0): boolean {
+  const n = ndc(view, point);
+  return !!n && Math.abs(n[0]) <= 1 + margin && Math.abs(n[1]) <= 1 + margin;
 }
 
 const SURFACE_TYPE = /table|desk|counter|sink/;
