@@ -27,7 +27,8 @@ const empty = (): ApprovalMemory => ({ always: {}, never: {} });
 
 /** 물을지(ask), 하지 않을지(skip). requested: 사용자가 말로 시킨 일(가전 명령). */
 export function approvalNeed(o: { key: ApprovalKey; risky: boolean; requested: boolean; memory: ApprovalMemory }): { ask: ApprovalWhy | null; skip: boolean } {
-  if (Object.hasOwn(o.memory.never, o.key)) return o.requested ? { ask: "preference", skip: false } : { ask: null, skip: true };
+  // 위험 목록은 「하지 마」를 기억해도 위험 목록으로 묻는다(답 둘). 「앞으로도」를 골라도 다음에 또 물으므로 그 답을 띄우지 않는다
+  if (Object.hasOwn(o.memory.never, o.key)) return o.requested ? { ask: o.risky ? "risky" : "preference", skip: false } : { ask: null, skip: true };
   if (o.risky) return { ask: "risky", skip: false };
   if (o.requested || Object.hasOwn(o.memory.always, o.key)) return { ask: null, skip: false };
   return { ask: "first", skip: false };

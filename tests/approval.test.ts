@@ -22,6 +22,9 @@ describe("승인 규칙", () => {
   it("위험 목록은 앞으로도를 받았어도 늘 묻는다", () => {
     expect(need({ key: "device:door_main:unlock", risky: true, requested: true, memory: remember(EMPTY, "device:door_main:unlock", "always", "t") })).toEqual({ ask: "risky", skip: false });
   });
+  it("위험 목록은 하지 마를 기억해도 위험 목록으로 묻는다(답 둘)", () => {
+    expect(need({ key: "device:door_main:unlock", risky: true, requested: true, memory: remember(EMPTY, "device:door_main:unlock", "never", "t") })).toEqual({ ask: "risky", skip: false });
+  });
   it("앞으로도는 하지 마 기억을 지우고, 하지 마는 앞으로도 기억을 지운다", () => {
     const a = remember(remember(EMPTY, "k", "never", "t1"), "k", "always", "t2");
     expect(a).toEqual({ always: { k: "t2" }, never: {} });

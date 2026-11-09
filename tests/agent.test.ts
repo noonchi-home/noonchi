@@ -426,6 +426,13 @@ describe("Agent + 승인 규칙: 말로 시킨 가전 명령", () => {
     expect(twin(hub, "light_living").power).toBe("off");
   });
 
+  it("위험 목록 명령에 「하지 마」라고 답한 뒤 다시 시켜도 답은 이번만·하지 마 둘이다", async () => {
+    const { hub, agent } = approvalAgent(["device:door_main:unlock"]);
+    const r = await agent.chat("s", "현관문 열어 줘", { heard: true });
+    expect(r.pendingConfirmations).toEqual([expect.objectContaining({ deviceId: "door_main", choices: ONCE_NEVER })]);
+    expect(twin(hub, "door_main").lock).toBe("locked");
+  });
+
   it("승인 답: 「앞으로도」는 실행하고 「하지 마」 기억을 지워 다음에는 바로 한다. 「하지 마」는 실행하지 않고 기억한다", async () => {
     const { hub, agent, approvals } = approvalAgent(["device:light_living:on"]);
     const r1 = await agent.chat("s", "거실 불 켜 줘", { heard: true });
