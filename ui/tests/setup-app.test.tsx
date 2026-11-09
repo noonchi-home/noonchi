@@ -1,7 +1,8 @@
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SetupApp } from "../src/setup/SetupApp";
+import { SetupApp, UPPER_BODY } from "../src/setup/SetupApp";
+import { MASCOT } from "../src/dashboard/mascot-image";
 import { FakeWebSocket, fakeSetupApi, setupView } from "./helpers/setup-api";
 
 beforeEach(() => {
@@ -583,5 +584,43 @@ describe("설정 화면 배치: 마스코트가 묻고 말풍선에서 고른다
     expect(bubble().contains(notice)).toBe(true);
     expect(title.compareDocumentPosition(notice) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(notice.compareDocumentPosition(screen.getByRole("searchbox", { name: "가전 검색" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
+describe("설정 화면: 상반신 마스코트와 생각 말풍선", () => {
+  it("마스코트는 머리부터 LG 표시 바로 아래까지(상반신)만 보이고, LG 표시는 작은 여백을 두고 다 보인다", async () => {
+    open();
+    await screen.findByRole("heading", { name: "어느 집을 쓸까요?" });
+    const logoBottom = MASCOT.logo.center[1] + MASCOT.logo.r;
+    expect(UPPER_BODY.top).toBe(MASCOT.headTop[1]);
+    expect(UPPER_BODY.cut - logoBottom).toBeGreaterThanOrEqual(8);
+    expect(UPPER_BODY.cut - logoBottom).toBeLessThanOrEqual(40);
+    const box = document.querySelector('img[src="/brand/mascot.png"]')!.parentElement!;
+    expect(box.style.height).toBe(`calc(${UPPER_BODY.cut - UPPER_BODY.top} * var(--s))`);
+  });
+
+  it("말풍선 밖에 빈 동그라미 셋(점점 작아짐)이 마스코트 쪽으로 이어진다", async () => {
+    open();
+    await screen.findByRole("heading", { name: "어느 집을 쓸까요?" });
+    const main = document.querySelector<HTMLElement>("[data-slot=message-bubble][data-shape=bubble]")!;
+    expect(within(main).getByRole("heading", { name: "어느 집을 쓸까요?" })).toBeInTheDocument();
+    const dots = [...document.querySelectorAll<HTMLElement>("[data-slot=message-bubble][data-shape=dot]")];
+    expect(dots).toHaveLength(3);
+    for (const d of dots) {
+      expect(main.contains(d)).toBe(false);
+      expect(d.textContent).toBe("");
+      expect(d.closest("[aria-hidden=true]")).not.toBeNull();
+    }
+    expect(dots.map((d) => d.dataset.size)).toEqual(["lg", "md", "sm"]);
+  });
+});
+
+describe("설정 1단계: 집 이름", () => {
+  it("집 이름은 괄호 덧붙임을 뺀 앞 이름으로 보인다", async () => {
+    const homes = [{ id: "oneroom", name: "원룸 예시 (테스트용)" }, { id: "mokryeon_180b", name: "한양목련 180B (도면 기준 · 방 4·욕실 3)" }];
+    open("", setupView({ home: homes[0]!, homes }));
+    expect(await screen.findByRole("radio", { name: /한양목련 180B/ })).toBeInTheDocument();
+    expect(screen.queryByText(/도면 기준/)).toBeNull();
+    expect(screen.queryByText(/테스트용/)).toBeNull();
   });
 });

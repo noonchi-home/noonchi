@@ -20,7 +20,7 @@ export interface HubState {
 }
 
 /** 화면에 보일 집 이름: 괄호 덧붙임(「(도면 기준 · 방 4·욕실 3)」)을 뺀 앞 이름. 이름은 twin/homes.json(twin-studio 복사본)에서 온다. */
-const shortName = (name: string) => name.replace(/\s*[(（].*$/, "").trim() || name;
+export const shortName = (name: string) => name.replace(/\s*[(（].*$/, "").trim() || name;
 
 /** health(아직 없으면 null)와 실시간 연결(모르면 null) → 설정 창 허브 상태. */
 export function hubOf(h: HealthView | null, connected: boolean | null): HubState {
