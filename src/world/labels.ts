@@ -1,7 +1,7 @@
 // 서버가 화면·PAM 관찰 텍스트에 그대로 내보내는 World State 글. npm run lint가 검사한다(60자 아래, 화살표·괄호 없음).
 export const OBJECT_NAME: Record<string, string> = { person: "사람", cup: "컵", bottle: "병", bowl: "그릇" };
 
-/** YOLOX 기록 글: 이 프레임에 찾은 것이 없음, 감지기가 없어 VLM만 돎. */
+/** YOLO 기록 글: 이 프레임에 찾은 것이 없음, 감지기가 없어 VLM만 돎. */
 export const YOLO_TEXT = { none: "감지 없음", noDetector: "감지기 없음" };
 
 /** VLM 상태 값 → 글. */
@@ -25,7 +25,7 @@ export const CHANGE_TEXT = {
   remaining: (min: number) => `남은 시간 ${min}분`,
   vlm: (summary: string) => `VLM: ${summary}`,
   vlmMissing: { cap: "요청이 몰려 VLM 분석 없음", timeout: "시간 초과로 VLM 분석 없음", format: "형식 오류로 VLM 분석 없음", error: "호출 오류로 VLM 분석 없음", stale: "늦게 온 사진이라 VLM 분석 없음" },
-  yoloMissing: { cap: "요청이 몰려 YOLOX·VLM 분석 없음", error: "감지 오류로 YOLOX 분석 없음", stale: "늦게 온 사진이라 YOLOX·VLM 분석 없음" },
+  yoloMissing: { cap: "요청이 몰려 YOLO·VLM 분석 없음", error: "감지 오류로 YOLO 분석 없음", stale: "늦게 온 사진이라 YOLO·VLM 분석 없음" },
 };
 
 /** 물건 이름: 종류 글 + id(컵 cup_1). */

@@ -49,7 +49,7 @@ const round = (v: number, d = 3) => Math.round(v * 10 ** d) / 10 ** d;
 const iso = (ms: number) => new Date(ms).toISOString();
 const yawOf = (a: XZ, b: XZ) => round(((Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI + 360) % 360, 1) % 360;
 
-/** 가로 그림 컵 상자 → 세로 눈 그림 YOLOX 상자 [x, y, w, h](그림 끝에서 자름). */
+/** 가로 그림 컵 상자 → 세로 눈 그림 YOLO 상자 [x, y, w, h](그림 끝에서 자름). */
 function cupBox(eye: EyeFrameId, score: number): BoxView[] {
   const b = CUP_BOX[eye];
   if (!b) return [];

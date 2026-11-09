@@ -24,7 +24,7 @@ function gatedVlm() {
 const head = (at: number) => ({ kind: "engine" as const, width: 100, height: 100, captured_at: at, time_err_ms: 0 });
 
 describe("관찰 흐름", () => {
-  it("엔진 프레임마다 YOLOX와 VLM이 둘 다 분석하고, 같은 사진은 버리고, World State를 보낸다", async () => {
+  it("엔진 프레임마다 YOLO와 VLM이 둘 다 분석하고, 같은 사진은 버리고, World State를 보낸다", async () => {
     fake = await startFakeOpenAI();
     const logs: BrainLog[] = [];
     const worlds: WorldView[] = [];
@@ -58,7 +58,7 @@ describe("관찰 흐름", () => {
     await p.close();
   });
 
-  it("감지기가 느려도 앞 프레임을 덮어쓰지 않고, 대기열을 넘친 프레임은 YOLOX·VLM 분석 없음으로 남긴다", async () => {
+  it("감지기가 느려도 앞 프레임을 덮어쓰지 않고, 대기열을 넘친 프레임은 YOLO·VLM 분석 없음으로 남긴다", async () => {
     fake = await startFakeOpenAI();
     const logs: BrainLog[] = [];
     const slow = { detect: () => new Promise<{ detections: []; ms: number }>((ok) => setTimeout(() => ok({ detections: [], ms: 30 }), 30)), close: async () => {} } as unknown as Detector;
@@ -74,12 +74,12 @@ describe("관찰 흐름", () => {
     expect(capped.length).toBeGreaterThan(0);
     expect(capped.every((l) => l.vlm_missing === "cap")).toBe(true);
     expect(capped.every((l) => !("boxes" in l) && !("frame" in l))).toBe(true);
-    expect(observed.filter((l) => l.yolo !== null).length + capped.length).toBe(10);               // 나머지는 모두 YOLOX를 거쳤다
+    expect(observed.filter((l) => l.yolo !== null).length + capped.length).toBe(10);               // 나머지는 모두 YOLO를 거쳤다
     expect(p.status().yolo_missing.cap).toBe(capped.length);
     await p.close();
   });
 
-  it("World State가 받지 않는 낮은 신뢰도 감지(사람 0.5·물건 0.4 아래)는 상자·YOLOX 글·VLM 감지 목록에 넣지 않는다", async () => {
+  it("World State가 받지 않는 낮은 신뢰도 감지(사람 0.5·물건 0.4 아래)는 상자·YOLO 글·VLM 감지 목록에 넣지 않는다", async () => {
     const logs: BrainLog[] = [];
     const sent: string[] = [];
     const vlm = { model: "cap", json: async (req: { texts: string[] }) => {
@@ -115,7 +115,7 @@ describe("관찰 흐름", () => {
     await p.close();
   });
 
-  it("감지가 실패한 프레임은 물체를 사라짐으로 세지 않고 YOLOX 분석 없음으로 남기며, VLM은 그 프레임도 분석한다", async () => {
+  it("감지가 실패한 프레임은 물체를 사라짐으로 세지 않고 YOLO 분석 없음으로 남기며, VLM은 그 프레임도 분석한다", async () => {
     fake = await startFakeOpenAI();
     const logs: BrainLog[] = [];
     let fail = false;
@@ -148,7 +148,7 @@ describe("관찰 흐름", () => {
     await p.close();
   });
 
-  it("YOLOX observe에 상자와 엔진 프레임 크기를 싣는다(감지 없음은 빈 목록, 실패·VLM 답에는 없음)", async () => {
+  it("YOLO observe에 상자와 엔진 프레임 크기를 싣는다(감지 없음은 빈 목록, 실패·VLM 답에는 없음)", async () => {
     fake = await startFakeOpenAI();
     const logs: BrainLog[] = [];
     const script: (() => Detection[] | null)[] = [
@@ -198,7 +198,7 @@ describe("관찰 흐름", () => {
     await p.close();
   });
 
-  it("고리 범위보다 늦게 온 프레임은 분석하지 않고 YOLOX·VLM 분석 없음(stale)으로 남긴다", async () => {
+  it("고리 범위보다 늦게 온 프레임은 분석하지 않고 YOLO·VLM 분석 없음(stale)으로 남긴다", async () => {
     const { vlm, gates } = gatedVlm();
     const logs: BrainLog[] = [];
     let detected = 0;

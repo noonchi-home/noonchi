@@ -1,6 +1,6 @@
 // npm run heavy -- npx tsx scripts/twin3d/e2e-dashboard.ts --out <폴더> [--port 8202] [--size 1920x1080] [--gpu] [--timeout 60]
 // 한양목련 컵 치우기를 실제 대시보드로 처음부터 끝까지 돌린다(시험 모드, 실제 모델·ThinQ 없음). 같은 프로세스에서 가짜 서버(가짜 OpenAI 호환 VLM,
-// 시험용 PAM, 대본 YOLOX)와 본 서버(HUB=memory, 화면 ui/dist, 폰 서버 켬, 새 RUNTIME_DIR)를 띄우고, 크롬 하나로 대시보드를 연 채
+// 시험용 PAM, 대본 YOLO)와 본 서버(HUB=memory, 화면 ui/dist, 폰 서버 켬, 새 RUNTIME_DIR)를 띄우고, 크롬 하나로 대시보드를 연 채
 // 폰 메시지(기준점·눈·엔진 프레임·표시 프레임·답)로 흐름을 몬다. 엔진·표시 프레임은 docs/superpowers/specs/2026-11-06-twin3d-baseline/room_kitchen.jpg다.
 // 순간마다(0 지켜보기, 1~4 단계, 끝) main[data-step]과 그 순간 말풍선 글을 기다려 <out>/step-<n>.png를 찍고 본다:
 // 진행도 「n/4 · 단계 이름」(끝·지켜보기는 없음), 마스코트 보는 쪽(계획 중 twin, 아니면 video), YOLO 상자 하나 이상, 문서 글에 「승인」·승인 질문 없음, 페이지 오류 없음.
@@ -32,7 +32,7 @@ const momentMs = Number(arg("timeout", "60")) * 1000;
 const HOME = "mokryeon_180b";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// 엔진·표시 프레임(가로 1280×800). YOLOX 상자 아래 가운데가 그림 한가운데
+// 엔진·표시 프레임(가로 1280×800). YOLO 상자 아래 가운데가 그림 한가운데
 const JPEG = readFileSync(join(ROOT, "docs/superpowers/specs/2026-11-06-twin3d-baseline/room_kitchen.jpg"));
 const FRAME = { width: 1280, height: 800 };
 const CUP_BOX: [number, number, number, number] = [FRAME.width / 2 - 20, FRAME.height / 2 - 20, 40, 20];

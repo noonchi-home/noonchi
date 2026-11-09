@@ -53,7 +53,7 @@ describe("startServer(BRAIN=1) + 관찰 흐름", () => {
     expect((await fetchRetry(`${srv.url}/api/world`)).status).toBe(404);
   });
 
-  it("엔진 프레임마다 YOLOX·VLM 기록이 대시보드로 가고 World State가 바뀌면 보내고 PAM을 부른다. 표시 프레임은 관찰 흐름에 들어가지 않는다", async () => {
+  it("엔진 프레임마다 YOLO·VLM 기록이 대시보드로 가고 World State가 바뀌면 보내고 PAM을 부른다. 표시 프레임은 관찰 흐름에 들어가지 않는다", async () => {
     fake = await startFakeOpenAI();
     pam = await startFakePam();
     srv = await startServer({
@@ -82,7 +82,7 @@ describe("startServer(BRAIN=1) + 관찰 흐름", () => {
       expect(decision.event).toMatchObject({ seq: 1, status: "valid", action: null, memory_version: 1, world: { objects: [{ id: "cup_1" }] } });
       expect((pam.bodies[0] as { observation_text: string }).observation_text).toContain("컵 cup_1 보임");
       expect(decision.event.text_sent).toBe((pam.bodies[0] as { observation_text: string }).observation_text);
-      // 기록 DB 한 시간축: VLM 답, 등장, PAM에 보낸 텍스트, 판단. YOLOX 결과 줄은 적지 않는다
+      // 기록 DB 한 시간축: VLM 답, 등장, PAM에 보낸 텍스트, 판단. YOLO 결과 줄은 적지 않는다
       const kinds = new Set(srv.history.list({}).map((r) => r.kind));
       expect([...kinds]).toEqual(expect.arrayContaining(["vlm", "detection", "pam_text", "decision"]));
       expect(srv.history.list({ kinds: ["vlm"] })[0]).toMatchObject({ text: "가짜 장면" });

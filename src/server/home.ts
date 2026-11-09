@@ -206,7 +206,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       if (m.type === "plan" && m.plan) history.plan(m.plan);
       speak();
     });
-    // 관찰 흐름(BRAIN=1): 폰 엔진 프레임마다 YOLOX·VLM이 분석하고 World State가 합친다(src/observe/pipeline.ts)
+    // 관찰 흐름(BRAIN=1): 폰 엔진 프레임마다 YOLO·VLM이 분석하고 World State가 합친다(src/observe/pipeline.ts)
     const brainWanted = /^(1|true|on)$/i.test(env.BRAIN?.trim() ?? "");
     if (brainWanted && !phoneOn) log("[경고] BRAIN=1은 PHONE_PORT가 있어야 합니다(폰 카메라가 입력). 관찰 흐름을 끕니다.");
     const world = brainWanted && phoneOn

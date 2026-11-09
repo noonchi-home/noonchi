@@ -1,4 +1,4 @@
-// 시험용 감지기: 함수가 감지를 정한다. 실제 감지기는 src/brain/detector.ts의 YoloxDetector·WorkerDetector.
+// 시험용 감지기: 함수가 감지를 정한다. 실제 감지기는 src/brain/detector.ts의 OnnxDetector·WorkerDetector.
 import type { DetectResult, Detection, Detector } from "../../src/brain/detector.js";
 
 export class ScriptedDetector implements Detector {

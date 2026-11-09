@@ -21,7 +21,7 @@ describe("메시지 계약", () => {
 });
 
 // 대시보드가 받는 상자·말풍선 글. 계약에서 빠지거나 모양이 바뀌면 typecheck가 여기서 실패한다.
-// 상자 이름은 YOLOX 감지 이름(DetLabel)과 같다: 한쪽만 바꾸면 두 표 중 하나가 typecheck에서 실패한다.
+// 상자 이름은 YOLO 감지 이름(DetLabel)과 같다: 한쪽만 바꾸면 두 표 중 하나가 typecheck에서 실패한다.
 const BOX_OF_DET: Record<DetLabel, BoxView["label"]> = { person: "person", cup: "cup", bottle: "bottle", bowl: "bowl" };
 const DET_OF_BOX: Record<BoxView["label"], DetLabel> = { person: "person", cup: "cup", bottle: "bottle", bowl: "bowl" };
 const OBSERVE_WITH_BOXES: Extract<BrainLog, { type: "observe" }> = {

@@ -132,7 +132,7 @@ export class HistoryDb {
     return Object.fromEntries(rows.map((r) => [r.kind, r.n]));
   }
 
-  /** 그날 분석 수: VLM 답(vlm 줄 중 이유 없음), VLM 분석 없음(이유 있는 vlm 줄 + VLM도 못 한 yolo 줄), YOLOX 분석 없음(yolo 줄). */
+  /** 그날 분석 수: VLM 답(vlm 줄 중 이유 없음), VLM 분석 없음(이유 있는 vlm 줄 + VLM도 못 한 yolo 줄), YOLO 분석 없음(yolo 줄). */
   analysisTally(day: string): { vlm: number; vlmMissing: number; yoloMissing: number } {
     const r = this.db.prepare(`SELECT
       COALESCE(SUM(kind = 'vlm' AND json_extract(data, '$.missing') IS NULL), 0) AS vlm,

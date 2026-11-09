@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { isKeyName, KEY_OWNERS } from "../scripts/compose-keys.js";
-import { YOLOX_MODELS } from "../src/brain/detector.js";
+import { DETECTOR_MODELS, POSE_MODELS } from "../src/brain/detector.js";
 
 const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
 type Service = { environment?: Record<string, unknown> | string[]; env_file?: unknown };
@@ -22,19 +22,24 @@ function serverEnvNames(): Set<string> {
   return new Set(files.flatMap((f) => { const t = readFileSync(f, "utf8"); return res.flatMap((re) => [...t.matchAll(re)].map((m) => m[1]!)); }));
 }
 /** 컨테이너에 넘기지 않는 서버 설정: 호스트 경로(이미지 안 twin/·모델, RUNTIME_DIR/photos), MCP 서버용 주소, matter.js 안쪽 값. */
-const NOT_FOR_CONTAINER = new Set(["TWIN_STUDIO_DIR", "PHONE_PHOTO_DIR", "BRAIN_YOLO_PATH", "TWIN_HOME_URL", "MATTER_RUNTIME_SIGNALS"]);
+const NOT_FOR_CONTAINER = new Set(["TWIN_STUDIO_DIR", "PHONE_PHOTO_DIR", "BRAIN_YOLO_PATH", "BRAIN_POSE_PATH", "TWIN_HOME_URL", "MATTER_RUNTIME_SIGNALS"]);
 
 describe("배포 파일", () => {
-  it("Dockerfile: Node 22.15 이상 22.x, 운영 의존성만, 화면 빌드, 트윈 포함, YOLOX sha256 검사", () => {
+  it("Dockerfile: Node 22.15 이상 22.x, 운영 의존성만, 화면 빌드, 트윈 포함, 저장소 models/의 YOLO26 두 개 sha256 검사", () => {
     const d = read("Dockerfile");
     expect(d).toMatch(/node:22\.(1[5-9]|[2-9]\d)\.\d+-bookworm-slim/);
     expect(d).toContain("npm ci --omit=dev");
     expect(d).toContain("npm --prefix ui run build");
     expect(d).toContain("COPY twin twin");
     expect(d).not.toContain("COPY web web");
-    expect(d).toContain(YOLOX_MODELS.yolox_tiny.url);
-    expect(d).toContain(YOLOX_MODELS.yolox_tiny.sha256);
+    // 모델은 받지 않고 저장소 models/를 복사한 뒤 표(src/brain/detector.ts)의 sha256으로 확인한다
+    expect(d).toContain("COPY models models");
+    expect(d).not.toContain(DETECTOR_MODELS.yolox_tiny.url);
+    for (const [file, sha] of [[DETECTOR_MODELS.yolo26n.file, DETECTOR_MODELS.yolo26n.sha256], [POSE_MODELS["yolo26n-pose"].file, POSE_MODELS["yolo26n-pose"].sha256]]) {
+      expect(d).toContain(`${sha}  models/${file}`);
+    }
     expect(d).toMatch(/sha256sum -c/);
+    expect(d).not.toContain("BRAIN_YOLO_PATH"); // 기본 경로(/app/models/)를 쓴다
     expect(d).toMatch(/USER node/);
     expect(d).toContain('CMD ["node", "--import", "tsx", "src/server/main.ts"]');
   });
@@ -238,14 +243,15 @@ describe("배포 파일", () => {
     expect(s).toContain("/api/history?kinds=vlm");
   });
 
-  it("키 없는 컨테이너 확인: 이미지 안 YOLOX가 떠서 분석했는지, 호스트에서 보낸 계획이 토큰으로만 들어가는지 본다", () => {
+  it("키 없는 컨테이너 확인: 이미지 안 YOLO26n·관절 모델이 떠서 분석했는지, 호스트에서 보낸 계획이 토큰으로만 들어가는지 본다", () => {
     const s = read("scripts/container-smoke.ts");
     expect(s).toContain("/api/brain");
-    expect(s).toContain('detector !== "yolox_tiny"');
+    expect(s).toContain('detector !== "yolo26n"');
+    expect(s).toContain('pose !== "yolo26n-pose"');
     expect(s).toContain("detected");
     expect(s).toContain("/api/plan");
     expect(s).toContain("planNoToken !== 403 || planToken !== 200");
-    // YOLOX가 돈 뒤 멈춘 컨테이너에 onnxruntime 원격 측정 파일(~/.cache/Microsoft/DeveloperTools/.onnxruntime)이 없는지 docker diff로 본다
+    // YOLO가 돈 뒤 멈춘 컨테이너에 onnxruntime 원격 측정 파일(~/.cache/Microsoft/DeveloperTools/.onnxruntime)이 없는지 docker diff로 본다
     expect(s).toContain('["diff", id]');
     expect(s).toContain("DeveloperTools");
   });

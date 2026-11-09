@@ -122,7 +122,7 @@ describe("서버가 화면에 그대로 내보내는 계획 글(src/plan/labels.
   });
   it("World State 글(src/world/labels.ts)도 꺼내 검사한다. 괄호·화살표는 템플릿 글에도 없다", () => {
     const texts = fileCopy(worldLabels, readFileSync(worldLabels, "utf8")).map((c) => c.text);
-    expect(texts).toEqual(expect.arrayContaining(["사람", "컵", "식탁 위", "… 보임…", "… 시야 밖", "요청이 몰려 VLM 분석 없음", "감지 오류로 YOLOX 분석 없음", "요청이 몰려 YOLOX·VLM 분석 없음"]));
+    expect(texts).toEqual(expect.arrayContaining(["사람", "컵", "식탁 위", "… 보임…", "… 시야 밖", "요청이 몰려 VLM 분석 없음", "감지 오류로 YOLO 분석 없음", "요청이 몰려 YOLO·VLM 분석 없음"]));
     expect(lintUiCopy([worldLabels])).toEqual([]);
     expect(texts.filter((t) => /[()→]/.test(t))).toEqual([]);
   });

@@ -17,7 +17,7 @@ import { aimPoint, floorCandidate } from "./touch.js";
 
 const SEND_MS = 100;
 const FRAME_QUALITY = 0.55; // 장 수를 늘린 만큼 한 장 크기를 줄인다(사진은 0.9)
-const ENGINE_QUALITY = 0.8; // 엔진 프레임은 YOLOX·VLM이 분석한다
+const ENGINE_QUALITY = 0.8; // 엔진 프레임은 YOLO·VLM이 분석한다
 const MAX_BUFFERED = 512 * 1024; // 와이파이가 느리면 프레임을 쌓지 않고 건너뛴다
 const OPEN = 1; // WebSocket.OPEN
 const clamp = (raw, lo, hi, fallback) => {

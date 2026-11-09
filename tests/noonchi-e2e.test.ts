@@ -1,4 +1,4 @@
-// 처음부터 끝까지(가짜 서버): 폰 엔진 프레임 → YOLOX(대본)·VLM(가짜 OpenAI 호환 서버, 컵 자리 대본) → World State → PAM(시험용 PAM 자리: 컵 치우기)
+// 처음부터 끝까지(가짜 서버): 폰 엔진 프레임 → YOLO(대본)·VLM(가짜 OpenAI 호환 서버, 컵 자리 대본) → World State → PAM(시험용 PAM 자리: 컵 치우기)
 // → 계획 → 실행 전 검사 → 실제 폰 단계 명령(소리) → 「완료」 단추·World State 컵 자리·말 「다 했어」로 한 단계씩 → 완료, 그리고 한 시간축 기록·대시보드 메시지.
 // 기본 집(마곡 아파트, 식탁·싱크대 있음). 맞추기 전이라 폰 눈 위치를 몰라 이동 단계는 「완료」나 말로 넘긴다.
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";

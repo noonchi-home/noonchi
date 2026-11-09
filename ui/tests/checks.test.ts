@@ -74,7 +74,7 @@ describe("checksReducer · 에이전트", () => {
 });
 
 describe("checksReducer · 관찰 흐름", () => {
-  it("관찰 기록이 오면 식탁에 「지켜봄」 한 줄, note는 YOLOX 글", () => {
+  it("관찰 기록이 오면 식탁에 「지켜봄」 한 줄, note는 YOLO 글", () => {
     const s = run([yolo("사람 0.91 · 컵 0.80")]);
     expect(s.brain).toEqual([expect.objectContaining({ source: "brain", verb: "지켜봄", note: "사람 0.91 · 컵 0.80" })]);
     expect(s.brainAt).toBe(0);

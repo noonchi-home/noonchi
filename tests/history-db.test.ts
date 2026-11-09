@@ -99,7 +99,7 @@ describe("기록기", () => {
   it("관찰·판단·계획·모드·가전 변화·연결·멈춤을 받아 적는다(사진은 적지 않는다)", () => {
     const { db, subs } = wired();
     subs.brain!({ type: "observe", at_ms: 1, frame_id: "e1", captured_at_ms: 1, yolo: null, vlm: "컵이 식탁 위" });
-    subs.brain!({ type: "observe", at_ms: 1, frame_id: "e1", captured_at_ms: 1, yolo: "컵 0.90", vlm: null }); // YOLOX 결과 줄은 적지 않는다
+    subs.brain!({ type: "observe", at_ms: 1, frame_id: "e1", captured_at_ms: 1, yolo: "컵 0.90", vlm: null }); // YOLO 결과 줄은 적지 않는다
     subs.brain!({ type: "observe", at_ms: 1, frame_id: "e2", captured_at_ms: 1, yolo: null, yolo_missing: "cap", vlm: null, vlm_missing: "cap" });
     subs.brain!({ type: "world_change", at_ms: 2, kind: "appeared", text: "컵 cup_1 보임" });
     subs.brain!({
@@ -112,7 +112,7 @@ describe("기록기", () => {
     subs.mode!("live");
     subs.device!({ id: "dishwasher_1", online: true, twin: { running: true }, matter: {}, updatedAt: "2026-11-07T12:00:00.000Z" });
     expect(db.list({}).map((r) => r.kind)).toEqual(["vlm", "yolo", "detection", "pam_text", "decision", "link", "trigger", "mode", "device"]);
-    expect(db.list({ kinds: ["yolo"] })[0]).toMatchObject({ subject: "e2", text: "요청이 몰려 YOLOX·VLM 분석 없음", data: { yolo_missing: "cap", vlm_missing: "cap" } });
+    expect(db.list({ kinds: ["yolo"] })[0]).toMatchObject({ subject: "e2", text: "요청이 몰려 YOLO·VLM 분석 없음", data: { yolo_missing: "cap", vlm_missing: "cap" } });
     expect(db.list({ kinds: ["vlm"] })[0]).toMatchObject({ subject: "e1", text: "컵이 식탁 위", data: { captured_at_ms: 1, missing: null } });
     expect(db.list({ kinds: ["pam_text"] })[0]).toMatchObject({ subject: "pam-1", text: "21:00:00 사람 보임" });
     expect(db.list({ kinds: ["decision"] })[0]).toMatchObject({ subject: "pam-1", text: "대기", data: { seq: 1, memory_version: 1, status: "valid", prediction: { task_index: -1 } } });
@@ -127,7 +127,7 @@ describe("기록기", () => {
     subs.brain!({ type: "observe", at_ms: 2, frame_id: "e2", captured_at_ms: 2, yolo: null, yolo_missing: "error", vlm: null });
     expect(db.list({}).map((r) => [r.kind, r.text, r.data])).toEqual([
       ["vlm", "시간 초과로 VLM 분석 없음", { captured_at_ms: 1, missing: "timeout" }],
-      ["yolo", "감지 오류로 YOLOX 분석 없음", { captured_at_ms: 2, yolo_missing: "error", vlm_missing: null }],
+      ["yolo", "감지 오류로 YOLO 분석 없음", { captured_at_ms: 2, yolo_missing: "error", vlm_missing: null }],
     ]);
   });
 

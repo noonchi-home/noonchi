@@ -83,12 +83,12 @@ export interface DecisionWorld {
   yolo_missing: number;
 }
 
-/** YOLOX 상자 하나(대시보드 폰 칸에 그린다). box는 엔진 프레임 픽셀 [x, y, w, h]. */
+/** YOLO 상자 하나(대시보드 폰 칸에 그린다). box는 엔진 프레임 픽셀 [x, y, w, h]. */
 export interface BoxView { label: "person" | "cup" | "bottle" | "bowl"; score: number; box: [number, number, number, number] }
 
 /** 관찰 흐름·판단이 대시보드로 보내는 기록(/events {type:"brain", event}). 엔진 프레임 하나는 observe 기록으로 반드시 남는다:
- *  YOLOX 결과(yolo) 또는 yolo_missing, VLM 답(vlm) 또는 vlm_missing.
- *  YOLOX 결과에만 상자(boxes, 감지 없음이면 [])와 엔진 프레임 크기(frame)가 있다. 분석 없음·VLM 답에는 없다. */
+ *  YOLO 결과(yolo) 또는 yolo_missing, VLM 답(vlm) 또는 vlm_missing.
+ *  YOLO 결과에만 상자(boxes, 감지 없음이면 [])와 엔진 프레임 크기(frame)가 있다. 분석 없음·VLM 답에는 없다. */
 export type BrainLog =
   | {
     type: "observe"; at_ms: number; frame_id: string; captured_at_ms: number; yolo: string | null; yolo_missing?: YoloMissing; vlm: string | null; vlm_missing?: VlmMissing;

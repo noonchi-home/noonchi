@@ -1,4 +1,4 @@
-// World State: 엔진 프레임마다 YOLOX 감지와 VLM 관찰을 물체별로 합치고, 시간에 따른 변화(등장·사라짐·시야 밖·상태·가전)를 낸다.
+// World State: 엔진 프레임마다 YOLO 감지와 VLM 관찰을 물체별로 합치고, 시간에 따른 변화(등장·사라짐·시야 밖·상태·가전)를 낸다.
 // - 같은 물체: 트윈 위치 + 종류(identityM 안). 맞추기 전(카메라 없음)에는 위치를 모르므로 같은 종류의 물체에 차례로 붙인다.
 // - 등장·사라짐: Confirmer(사람 2장, 물건 3장). 사라짐은 그 자리가 시야 안인 프레임만 센다. 등장 확인 전 물체는 view()에 내지 않는다.
 // - VLM 사실: 면(facet)마다 하나. 촬영 시각이 더 오래된 답은 버리고, 같은 값이 연속 두 번이면 confirmed. 요약은 바뀔 때만 변화로 낸다.
@@ -91,7 +91,7 @@ export class WorldState {
     this.minScore = o.minScore ?? { person: 0.5, object: 0.4 };
   }
 
-  /** 이 감지를 받는가: 사람은 minScore.person, 컵·병·그릇은 minScore.object 이상. 관찰 흐름은 받는 감지만 상자·YOLOX 글·VLM 감지 목록에 싣는다. */
+  /** 이 감지를 받는가: 사람은 minScore.person, 컵·병·그릇은 minScore.object 이상. 관찰 흐름은 받는 감지만 상자·YOLO 글·VLM 감지 목록에 싣는다. */
   accepts(d: Pick<Detection, "label" | "score">): boolean {
     if (d.label === "person") return d.score >= this.minScore.person;
     return OBJ_CLASSES.has(d.label) && d.score >= this.minScore.object;

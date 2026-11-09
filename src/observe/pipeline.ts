@@ -1,14 +1,15 @@
-// 관찰 흐름(BRAIN=1): 엔진 프레임 → 고리(중복 버림) → YOLOX(워커, 상한 있는 대기열에서 하나씩) → VLM(동시 요청) → World State → /events.
-// 프레임마다 observe 기록이 반드시 남는다: 대기열이 차면 YOLOX·VLM 분석 없음, 감지 실패면 YOLOX 분석 없음(VLM은 그대로 분석),
-// 고리 범위(keepMs)보다 앞서 찍힌 늦은 프레임은 분석하지 않고 YOLOX·VLM 분석 없음(stale). 늦은 프레임은 World State·눈 자세에 넣지 않는다.
+// 관찰 흐름(BRAIN=1): 엔진 프레임 → 고리(중복 버림) → YOLO(워커, 상한 있는 대기열에서 하나씩) → VLM(동시 요청) → World State → /events.
+// 프레임마다 observe 기록이 반드시 남는다: 대기열이 차면 YOLO·VLM 분석 없음, 감지 실패면 YOLO 분석 없음(VLM은 그대로 분석),
+// 고리 범위(keepMs)보다 앞서 찍힌 늦은 프레임은 분석하지 않고 YOLO·VLM 분석 없음(stale). 늦은 프레임은 World State·눈 자세에 넣지 않는다.
 // 감지 번호(d1…)와 물체 id의 짝은 그 프레임의 VLM 답(또는 분석 없음)이 올 때까지 둔다.
 // 분석한 사진은 메모리 고리에만 있다. 디스크에 쓰지 않는다. DATASET_COLLECT=1이면 dataset(시험 자료 저장, src/history/retention.ts)이 고리에 넣은 프레임을 받는다.
 import { existsSync } from "node:fs";
-import { join } from "node:path";
 import type { BrainLog } from "../contract/events.js";
 import type { WorldChange, WorldView, YoloMissing } from "../contract/world.js";
 import type { DeviceState } from "../hub/types.js";
-import { WorkerDetector, YOLOX_MODELS, type Detection, type Detector, type YoloxModel } from "../brain/detector.js";
+import {
+  DETECTOR_MODELS, POSE_MODELS, WorkerDetector, modelPath, type Detection, type Detector, type DetectorModel, type DetectorSpec, type PoseModel,
+} from "../brain/detector.js";
 import { vlmTimeoutMs } from "../infer/endpoints.js";
 import { createInference } from "../infer/inference.js";
 import type { VlmClient } from "../infer/vlm.js";
@@ -27,7 +28,7 @@ export interface ObserveConfig {
   engineMs: number;
   vlmMaxInflight: number;
   vlmTimeoutMs: number;
-  /** YOLOX 대기열 상한. 차면 그 프레임은 YOLOX·VLM 분석 없음. */
+  /** YOLO 대기열 상한. 차면 그 프레임은 YOLO·VLM 분석 없음. */
   detectQueueMax: number;
   /** 메모리 고리 길이(ms). */
   keepMs: number;
@@ -50,7 +51,9 @@ export const loadObserveConfig = (env: Env): ObserveConfig => ({
 /** 프레임마다 생기는 분석 없음은 observe 기록으로 남기므로 world_change로 다시 보내지 않는다. */
 const PER_FRAME = new Set(["vlm_missing", "yolo_missing"]);
 
-const yoloText = (dets: Detection[]) => (dets.length ? dets.map((d) => `${OBJECT_NAME[d.label] ?? d.label} ${d.score.toFixed(2)}`).join(" · ") : YOLO_TEXT.none);
+const mean = (xs: number[]) => (xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : null);
+
+const yoloText =(dets: Detection[]) => (dets.length ? dets.map((d) => `${OBJECT_NAME[d.label] ?? d.label} ${d.score.toFixed(2)}`).join(" · ") : YOLO_TEXT.none);
 
 export interface PipelineOptions {
   config: ObserveConfig;
@@ -71,9 +74,14 @@ export interface PipelineStatus {
   frames: number;
   duplicates: number;
   detector: string | null;
+  /** 관절 모델 이름(없으면 null). */
+  pose: string | null;
   vlm_model: string;
   detected: number;
   detect_ms: number | null;
+  /** 관절을 돌린 프레임 수와 평균 시간(ms). 사람이 보인 프레임만 돌린다. */
+  posed: number;
+  pose_ms: number | null;
   queued: number;
   yolo_missing: Record<YoloMissing, number>;
   vlm: ReturnType<VlmPool["stats"]>;
@@ -95,6 +103,8 @@ export class ObservationPipeline {
   private detected = 0;
   private readonly yoloMissing: Record<YoloMissing, number> = { cap: 0, error: 0, stale: 0 };
   private detectMs: number[] = [];
+  private poseMs: number[] = [];
+  private posed = 0;
   private timeSource: "phone" | "received" | null = null;
   private timeErr: number | null = null;
   private readonly datasetCount = { saved: 0, failed: 0 };
@@ -162,16 +172,16 @@ export class ObservationPipeline {
     if (!this.detecting) this.detecting = this.drain().finally(() => { this.detecting = null; });
   }
 
-  /** 대기열이 찬 프레임(cap)·늦게 온 프레임(stale): YOLOX·VLM 둘 다 분석하지 못한 것으로 남긴다. */
+  /** 대기열이 찬 프레임(cap)·늦게 온 프레임(stale): YOLO·VLM 둘 다 분석하지 못한 것으로 남긴다. */
   private missBoth(frame: EngineFrame, why: "cap" | "stale"): void {
     this.yoloMissing[why]++;
     this.o.emit({ type: "observe", at_ms: this.clock.now(), frame_id: frame.id, captured_at_ms: frame.capturedAtMs, yolo: null, yolo_missing: why, vlm: null, vlm_missing: why });
     this.publish(this.o.world.applyMissing(frame.id, frame.capturedAtMs, { yolo: why, vlm: why }));
   }
 
-  /** YOLOX 결과(실패면 null, 감지기가 없으면 undefined)를 World State에 넣고 같은 프레임을 VLM에 보낸다.
-   *  YOLOX 결과 observe에만 상자(엔진 프레임 픽셀)와 프레임 크기를 싣는다(대시보드 폰 칸).
-   *  World State가 받지 않는 낮은 신뢰도 감지는 상자·YOLOX 글·VLM 감지 목록에서 뺀다: 화면·VLM·World State가 같은 감지를 본다. */
+  /** YOLO 결과(실패면 null, 감지기가 없으면 undefined)를 World State에 넣고 같은 프레임을 VLM에 보낸다.
+   *  YOLO 결과 observe에만 상자(엔진 프레임 픽셀)와 프레임 크기를 싣는다(대시보드 폰 칸).
+   *  World State가 받지 않는 낮은 신뢰도 감지는 상자·YOLO 글·VLM 감지 목록에서 뺀다: 화면·VLM·World State가 같은 감지를 본다. */
   private analyze(frame: EngineFrame, raw: Detection[] | null | undefined): void {
     const dets = raw && raw.filter((d) => this.o.world.accepts(d));
     const base = { type: "observe" as const, frame_id: frame.id, captured_at_ms: frame.capturedAtMs, vlm: null };
@@ -204,6 +214,10 @@ export class ObservationPipeline {
         const r = await this.o.detector!.detect(frame.jpeg);
         this.detected++;
         this.detectMs = [...this.detectMs.slice(-49), r.ms];
+        if (r.poseMs !== undefined) {
+          this.posed++;
+          this.poseMs = [...this.poseMs.slice(-49), r.poseMs];
+        }
         dets = r.detections;
       } catch {
         dets = null;
@@ -218,8 +232,8 @@ export class ObservationPipeline {
 
   status(): PipelineStatus {
     return {
-      frames: this.frames, duplicates: this.ring.dropped, detector: this.o.detector?.name ?? null, vlm_model: this.o.vlm.model, detected: this.detected,
-      detect_ms: this.detectMs.length ? Math.round(this.detectMs.reduce((a, b) => a + b, 0) / this.detectMs.length) : null,
+      frames: this.frames, duplicates: this.ring.dropped, detector: this.o.detector?.name ?? null, pose: this.o.detector?.pose ?? null, vlm_model: this.o.vlm.model,
+      detected: this.detected, detect_ms: mean(this.detectMs), posed: this.posed, pose_ms: mean(this.poseMs),
       queued: this.queue.length, yolo_missing: { ...this.yoloMissing }, vlm: this.pool.stats(), time_source: this.timeSource, time_err_ms: this.timeErr,
       dataset: this.o.dataset ? { ...this.datasetCount } : null,
     };
@@ -245,22 +259,38 @@ export class ObservationPipeline {
 /** 시험용 주입. detector는 null이면 감지기 없이(VLM만). */
 export interface PipelineInject { detector?: Detector | null; vlm?: VlmClient; clock?: { now(): number } }
 
-/** 감지기: BRAIN_DETECTOR(yolox_tiny 기본·yolox_nano·off), BRAIN_YOLO_PATH, BRAIN_YOLO_THREADS(4). 모델 파일이 없으면 VLM만(경고). */
+/** 감지기 고르기: BRAIN_DETECTOR(yolo26n 기본·yolox_tiny·yolox_nano·off), BRAIN_POSE(yolo26n-pose 기본·off), BRAIN_YOLO_PATH·BRAIN_POSE_PATH(파일 직접),
+ *  BRAIN_YOLO_THREADS(4). 모르는 이름이면 그 모델 없이(감지기는 VLM만, 관절은 감지만) 경고를 낸다. */
+export function chooseDetector(env: Env, runtimeDir: string): { spec: DetectorSpec | null; warn?: string } {
+  const want = env.BRAIN_DETECTOR?.trim() || "yolo26n";
+  if (want === "off") return { spec: null };
+  const model = (DETECTOR_MODELS as Record<string, (typeof DETECTOR_MODELS)[DetectorModel] | undefined>)[want];
+  if (!model) return { spec: null, warn: `[경고] BRAIN_DETECTOR=${want}: ${Object.keys(DETECTOR_MODELS).join("·")}·off 중 하나여야 합니다. VLM만 씁니다.` };
+  const poseWant = env.BRAIN_POSE?.trim() || "yolo26n-pose";
+  const pose = (POSE_MODELS as Record<string, (typeof POSE_MODELS)[PoseModel] | undefined>)[poseWant];
+  const warn = poseWant !== "off" && !pose ? `[경고] BRAIN_POSE=${poseWant}: ${Object.keys(POSE_MODELS).join("·")}·off 중 하나여야 합니다. 관절 없이 감지만 씁니다.` : undefined;
+  const spec: DetectorSpec = {
+    modelPath: env.BRAIN_YOLO_PATH?.trim() || modelPath(model, runtimeDir), kind: model.kind,
+    posePath: pose ? env.BRAIN_POSE_PATH?.trim() || modelPath(pose, runtimeDir) : null, threads: Number(env.BRAIN_YOLO_THREADS) || 4,
+  };
+  return warn ? { spec, warn } : { spec };
+}
+
+/** 감지기를 워커로 띄운다. 감지 모델 파일이 없으면 VLM만, 관절 모델 파일이 없으면 감지만(경고). */
 async function createDetector(env: Env, runtimeDir: string, log: (line: string) => void): Promise<Detector | null> {
-  const want = (env.BRAIN_DETECTOR?.trim() || "yolox_tiny") as YoloxModel | "off";
-  if (want === "off") return null;
-  const model = YOLOX_MODELS[want];
-  const path = env.BRAIN_YOLO_PATH?.trim() || (model ? join(runtimeDir, "models", model.file) : "");
-  if (!model && !env.BRAIN_YOLO_PATH) {
-    log(`[경고] BRAIN_DETECTOR=${want}: yolox_tiny·yolox_nano·off 중 하나여야 합니다. VLM만 씁니다.`);
+  const { spec, warn } = chooseDetector(env, runtimeDir);
+  if (warn) log(warn);
+  if (!spec) return null;
+  if (!existsSync(spec.modelPath)) {
+    log(`[경고] YOLO 모델 파일이 없습니다(${spec.modelPath}). VLM만 씁니다. 확인·받기: npx tsx scripts/brain-yolo-fetch.ts ${env.BRAIN_DETECTOR?.trim() ?? ""}`.trimEnd());
     return null;
   }
-  if (!existsSync(path)) {
-    log(`[경고] YOLO 모델 파일이 없습니다(${path}). VLM만 씁니다. 받기: npx tsx scripts/brain-yolo-fetch.ts ${want}`);
-    return null;
+  if (spec.posePath && !existsSync(spec.posePath)) {
+    log(`[경고] 관절 모델 파일이 없습니다(${spec.posePath}). 관절 없이 감지만 씁니다.`);
+    spec.posePath = null;
   }
   try {
-    return await WorkerDetector.create(path, { threads: Number(env.BRAIN_YOLO_THREADS) || 4 });
+    return await WorkerDetector.create(spec);
   } catch (e) {
     log(`[경고] YOLO를 불러오지 못했습니다(${(e as Error).message}). VLM만 씁니다.`);
     return null;
