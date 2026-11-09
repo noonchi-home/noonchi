@@ -37,8 +37,8 @@ export interface ControllerDeps {
   xr?: XrLike | null;
   arDeps?: Record<string, unknown>;
 }
-/** canvas 그림: start는 덮개를 열 때 한 번(지난 세션 그림을 지운다), aim은 조준점 켜고 끄기, hit·marks는 XR 프레임마다. */
-export interface ControllerDraw { start(): void; aim(on: boolean): void; hit(on: boolean): void; marks(marks: FocusMark[]): void }
+/** canvas 그림: start는 덮개를 열 때 한 번(지난 세션 그림을 지운다), aim은 조준점 켜고 끄기, hit(닿음, 어림 바닥)·marks는 XR 프레임마다. */
+export interface ControllerDraw { start(): void; aim(on: boolean): void; hit(on: boolean, estimated: boolean): void; marks(marks: FocusMark[]): void }
 export interface PhoneController {
   view(): PhoneView;
   subscribe(fn: () => void): () => void;
@@ -82,11 +82,11 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
     ? createListener(Recognition, { onState: (s) => set((v) => ({ ...v, listening: s })), onHeard: (text) => actions.say(text) })
     : null;
 
-  /** XR 프레임마다: 바닥 닿음·추적 약함이 바뀔 때만 화면 상태를 바꾼다. */
-  function syncFrame(hit?: boolean) {
+  /** XR 프레임마다: 바닥 닿음(어림 바닥인지)·추적 약함이 바뀔 때만 화면 상태를 바꾼다. */
+  function syncFrame(hit?: boolean, hitEstimated?: boolean) {
     const v = store.get();
-    const next = { hit: hit ?? v.hit, limited: ar.state.limited };
-    if (next.hit !== v.hit || next.limited !== v.limited) set((w) => ({ ...w, ...next }));
+    const next = { hit: hit ?? v.hit, hitEstimated: hitEstimated ?? v.hitEstimated, limited: ar.state.limited };
+    if (next.hit !== v.hit || next.hitEstimated !== v.hitEstimated || next.limited !== v.limited) set((w) => ({ ...w, ...next }));
   }
   const ar = createAr({
     link, params, deps: deps.arDeps,
@@ -98,11 +98,11 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
       },
       onEnd: () => {
         listener?.stop();
-        set((v) => ({ ...v, ar: false, setup: null, settingsOpen: false, limited: false, hit: false }));
+        set((v) => ({ ...v, ar: false, setup: null, settingsOpen: false, limited: false, hit: false, hitEstimated: false }));
       },
-      onHit: (hit) => {
-        draw.hit(hit);
-        syncFrame(hit);
+      onHit: (hit, estimated) => {
+        draw.hit(hit, estimated);
+        syncFrame(hit, estimated);
       },
       onMarks: (marks) => {
         // 위 줄·엄지 자리에 명령이 보일 때만(승인 대기·찍기·맞추기가 차지하면 그리지 않는다), 그 명령 대상 하나만
@@ -168,11 +168,15 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
     }
   }
 
-  /** 벽 기준점 기록: 조준점이 닿은 바닥 점(벽 바로 아래)을 그 기준점으로 보낸다. 점 자체가 바닥이라 floor도 같은 점이다. */
+  /** 벽 기준점 기록: 조준점이 닿은 바닥 점(벽 바로 아래)을 그 기준점으로 보낸다. 점 자체가 바닥이라 floor도 같은 점이다.
+   *  estimated: 그 점이 어림 바닥(core/ar.js hitEstimated)이다. */
   function aimTouch(id: string) {
     if (!ar.state.on) return showNote("AR을 먼저 시작하세요");
     if (!ar.state.lastFloor) return showNote(`조준점이 바닥에 닿지 않았어요. ${id} 벽 바로 아래 바닥을 천천히 비춰 주세요`);
-    if (!link.send({ type: "anchor", id, point: ar.state.lastFloor, floor: ar.state.lastFloor, epoch: ar.state.epoch, revision })) showNote("서버와 연결이 끊겨 기록하지 못했어요");
+    const sent = link.send({
+      type: "anchor", id, point: ar.state.lastFloor, floor: ar.state.lastFloor, estimated: ar.state.hitEstimated, epoch: ar.state.epoch, revision,
+    });
+    if (!sent) showNote("서버와 연결이 끊겨 기록하지 못했어요");
   }
 
   const actions: PhoneActions = {
@@ -186,7 +190,7 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
       if (store.get().mode === "touch") return aimTouch(id);
       if (!ar.state.on) return showNote("AR을 먼저 시작하세요");
       if (!ar.state.hitPoint) return showNote("조준점이 바닥에 닿지 않았어요. 바닥을 천천히 비춰 주세요");
-      if (!link.send({ type: "anchor", id, point: ar.state.hitPoint, epoch: ar.state.epoch, revision })) showNote("서버와 연결이 끊겨 기록하지 못했어요");
+      if (!link.send({ type: "anchor", id, point: ar.state.hitPoint, estimated: ar.state.hitEstimated, epoch: ar.state.epoch, revision })) showNote("서버와 연결이 끊겨 기록하지 못했어요");
     },
     startAnchors() {
       // 같은 AR 공간에서 다시 맞추기: 원점(epoch)은 그대로 두고 기록만 지운다

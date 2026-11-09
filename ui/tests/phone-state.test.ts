@@ -47,6 +47,13 @@ describe("엄지 자리와 위 한 줄(handOf)", () => {
     expect(handOf({ ...v, hit: false }).vision).toEqual({ text: "바닥에 안 닿음 · 기준점 1/2", tone: "plain" });
   });
 
+  it("조준점이 어림 바닥이면 「어림잡은 바닥에 닿음」(경고 색), 기록은 그대로 「기록」", () => {
+    const v = ar({ setup: "anchors", aligned: false, anchors, hit: true, hitEstimated: true });
+    expect(handOf(v)).toMatchObject({ thumb: { kind: "record" }, vision: { text: "어림잡은 바닥에 닿음 · 기준점 1/2", tone: "warn" } });
+    expect(handOf(ar({ setup: "place", hit: true, hitEstimated: true })).vision).toEqual({ text: "어림잡은 바닥에 닿음", tone: "warn" });
+    expect(initialView().hitEstimated).toBe(false);
+  });
+
   it("물건 자리 맞추기: 위는 「여기」 말하기 안내, 아래는 바닥에 닿음과 「완료」", () => {
     expect(handOf(ar({ setup: "place", hit: true }))).toEqual({ top: PLACE_LINE, thumb: { kind: "place" }, vision: { text: "바닥에 닿음", tone: "ok" } });
     expect(PLACE_LINE).toBe('물건 아래 바닥을 가리키고 "냉장고 여기로"라고 말해 주세요');

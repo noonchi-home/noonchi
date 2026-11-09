@@ -21,13 +21,16 @@ const MessageSchema = z.discriminatedUnion("type", [
     tracking: z.enum(["ok", "limited"]).default("ok"),
     /** 화면 가운데 조준점이 닿은 바닥 점(AR 공간). 닿지 않으면 null. */
     hit: Vec3Schema.nullable().optional(),
+    /** hit이 hit-test 점이 아니라 어림 바닥 점(시선과 local-floor 또는 폰 1.5m 아래 면이 만나는 점). */
+    hit_estimated: z.boolean().optional(),
     epoch: Epoch,
   }),
   /** floor: touch 모드에서 기록하는 순간 조준점이 닿은 바닥 점(바닥 높이를 잴 때만 쓴다).
+   *  estimated: 기록한 점이 어림 바닥 점이다(pose hit_estimated와 같다).
    *  revision: 기록을 시작할 때 본 기준점 판(status.revision). 그 사이 기준점이 바뀌었으면 받지 않는다. */
   z.object({
     type: z.literal("anchor"), id: z.string(), point: Vec3Schema, floor: Vec3Schema.nullable().optional(),
-    epoch: Epoch, revision: z.number().int().optional(),
+    estimated: z.boolean().optional(), epoch: Epoch, revision: z.number().int().optional(),
   }),
   /** epoch: 폰의 지금 AR 원점. 같으면 기록만 지우고(메뉴 '다시 맞추기'), 새 원점이면 이전 원점을 버린다. */
   z.object({ type: z.literal("reset"), epoch: Epoch }),

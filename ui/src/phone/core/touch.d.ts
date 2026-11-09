@@ -11,3 +11,13 @@ export const FLOOR_MIN_DROP_M: number;
 export function floorCandidate(
   position: number[] | null, orientation: number[] | null, viewer: number[] | null,
 ): number[] | null;
+export const HOLD_HEIGHT_M: number;
+export const FLOOR_MAX_DROP_M: number;
+export const AIM_MAX_M: number;
+export function floorRayPoint(viewer: number[], orientation: number[], floorY: number, maxM?: number): number[] | null;
+export function floorPlaneY(viewerY: number, localFloorY: number | null | undefined): number;
+export interface AimPoint { point: number[]; orientation: number[] | null; estimated: boolean }
+export function aimPoint(opts: {
+  hit: number[] | null; hitOrientation: number[] | null;
+  viewer: number[] | null; viewerOrientation: number[] | null; localFloorY: number | null | undefined;
+}): AimPoint | null;

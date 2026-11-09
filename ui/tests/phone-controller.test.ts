@@ -65,6 +65,15 @@ const frame = (emulated = false) => ({
     views: [{ projectionMatrix: identity, transform: { inverse: { matrix: identity } } }],
   }),
 });
+/** hit-test 점이 없고 45° 아래를 보는 XR 프레임: 조준점은 폰 1.5m 아래 어림 바닥 (0, 0, -1.5). */
+const looseFloor = () => ({
+  getHitTestResults: () => [],
+  getViewerPose: () => ({
+    emulatedPosition: false,
+    transform: { position: { x: 0, y: 1.5, z: 0 }, orientation: { x: -Math.sin(Math.PI / 8), y: 0, z: 0, w: Math.cos(Math.PI / 8) } },
+    views: [{ projectionMatrix: identity, transform: { inverse: { matrix: identity } } }],
+  }),
+});
 const gl = { FRAMEBUFFER: 1, COLOR_BUFFER_BIT: 2, bindFramebuffer() {}, clearColor() {}, clear() {} };
 
 const made: { close(): void }[] = [];
@@ -292,9 +301,26 @@ describe("기준점 찍기·물건 자리 맞추기·설정", () => {
     ws.push(status());
     c.actions.startAnchors();
     session.step(100, frame());
-    expect(c.view().hit).toBe(true);
+    expect([c.view().hit, c.view().hitEstimated]).toEqual([true, false]);
     c.actions.recordAnchor("b");
-    expect(sent().at(-1)).toMatchObject({ type: "anchor", id: "b", point: [0, 0, -1], revision: 3 });
+    expect(sent().at(-1)).toMatchObject({ type: "anchor", id: "b", point: [0, 0, -1], estimated: false, revision: 3 });
+  });
+
+  it("기록(벽 기준점): 조준점이 어림 바닥이어도 그 점을 기록하고, 어림이라고 같이 보낸다", async () => {
+    const { c, ws, sent, session, startAr } = make();
+    await startAr();
+    ws.push(status({ mode: "touch", anchors: [{ id: "A", label: "거실 구석", recorded: false }, { id: "B", label: "거실 맞은편 구석", recorded: false }] }));
+    c.actions.startAnchors();
+    session.step(100, looseFloor());
+    expect([c.view().hit, c.view().hitEstimated]).toEqual([true, true]);
+    c.actions.recordAnchor("A");
+    const m = sent().at(-1)!;
+    expect(m).toMatchObject({ type: "anchor", id: "A", estimated: true, revision: 3 });
+    expect(m.floor).toEqual(m.point);
+    (m.point as number[]).forEach((v, i) => expect(v).toBeCloseTo([0, 0, -1.5][i]!, 6));
+    // hit-test 점이 생기면 어림이 아니다
+    session.step(200, frame());
+    expect([c.view().hit, c.view().hitEstimated]).toEqual([true, false]);
   });
 
   it("물건 자리 맞추기: 열면 조준점, endSetup이면 닫는다", () => {

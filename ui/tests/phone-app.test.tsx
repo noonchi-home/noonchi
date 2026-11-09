@@ -38,12 +38,15 @@ function fakeSession() {
     step(time: number, frame: unknown) { const f = raf; raf = null; f?.(time, frame); },
   };
 }
-/** 조준점이 바닥에 닿고(hit) 자세가 있는 XR 프레임. */
-const frame = (hit = true) => ({
+/** 조준점이 바닥에 닿고(hit) 자세가 있는 XR 프레임. down이면 45° 아래를 본다(hit-test 점이 없으면 어림 바닥). */
+const frame = (hit = true, down = false) => ({
   getHitTestResults: () => (hit ? [{ getPose: () => ({ transform: { position: { x: 0, y: 0, z: -1 }, orientation: { x: 0, y: 0, z: 0, w: 1 } } }) }] : []),
   getViewerPose: () => ({
     emulatedPosition: false,
-    transform: { position: { x: 0, y: 1.5, z: 0 }, orientation: { x: 0, y: 0, z: 0, w: 1 } },
+    transform: {
+      position: { x: 0, y: 1.5, z: 0 },
+      orientation: down ? { x: -Math.sin(Math.PI / 8), y: 0, z: 0, w: Math.cos(Math.PI / 8) } : { x: 0, y: 0, z: 0, w: 1 },
+    },
     views: [{ projectionMatrix: identity, transform: { inverse: { matrix: identity } } }],
   }),
 });
@@ -157,6 +160,11 @@ describe("실제 폰 화면 뿌리(PhoneApp)", () => {
     act(() => session.step(200, frame(true)));
     expect(ops.filter((o) => o.op === "stroke").at(-1)!.color).toBe(twin.phoneFocus.aim.hit);
     expect(screen.getByText("바닥에 닿음 · 기준점 0/2")).toBeInTheDocument();
+    // hit-test 점이 없어도 아래를 보면 어림 바닥에 닿는다: 조준점은 aim.estimated, 기록 단추는 그대로
+    act(() => session.step(300, frame(false, true)));
+    expect(ops.filter((o) => o.op === "stroke").at(-1)!.color).toBe(twin.phoneFocus.aim.estimated);
+    expect(screen.getByText("어림잡은 바닥에 닿음 · 기준점 0/2")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "기록" })).toBeEnabled();
   });
 
   it("세로 화면의 화면 밖 화살표는 그릴 때 잰 위 줄(미어캣·명령) 아래에 둔다", async () => {

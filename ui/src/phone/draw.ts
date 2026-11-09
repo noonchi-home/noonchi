@@ -1,5 +1,6 @@
 // 실제 폰 AR 위 그림(components.json F5·F13 「그림(규칙 밖)」): 조준점과 명령 대상 고리·화면 밖 화살표를 canvas에 그린다. 이름표는 없다.
 // 조준점은 기준점 찍기·물건 자리 맞추기 때만(scene.aim): 28px(심 3px, 안팎 흰 테 2px·숯색 1px), 맞으면 가운데 점(지름 10px)을 채운다. 맨 위에 그린다.
+// 색은 못 맞춤 aim.miss, 맞춤 aim.hit, 어림 바닥에 닿음 aim.estimated(모양은 맞춤과 같다).
 // 명령 대상 고리: 40px(심 3px brand), 1.2초마다 1.12배로 숨쉰다(움직임 줄이기면 멈춤). 화면 밖이면 그쪽을 가리키는 세모(22×28px) 하나.
 // 화면 밖 세모는 덮개 칸을 비킨다: 그릴 때 잰 위 줄(미어캣·명령) 아래 8px부터 엄지 자리 위 8px까지, 옆은 화면 가장자리 8px 안(가로·세로 같다).
 // 화면 안이어도 고리가 위 줄·엄지 자리 칸에 걸리면(canvas가 맨 아래라 그 밑에 깔린다) 고리 대신 그 칸 가장자리에 그쪽(위·아래)을 가리키는 세모를 그린다.
@@ -38,7 +39,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(v, hi
 const PULSE_MS = 1200;
 const PULSE = 0.12;
 
-export interface OverlayScene { aim: boolean; hit: boolean; marks: FocusMark[] }
+export interface OverlayScene { aim: boolean; hit: boolean; hitEstimated: boolean; marks: FocusMark[] }
 /** 그린 세모·고리 하나의 자리(CSS px). 배치 검사가 덮개 칸과 겹치는지 본다. */
 export interface ArrowBox { name: string; box: Box }
 /** 그린 것: 화면 밖(또는 칸 밑) 세모, 화면 안 고리(숨쉬기 전 크기). */
@@ -87,8 +88,8 @@ function rings(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, w
   }
 }
 
-function drawReticle(ctx: CanvasRenderingContext2D, x: number, y: number, hit: boolean) {
-  const core = hit ? F.aim.hit : F.aim.miss;
+function drawReticle(ctx: CanvasRenderingContext2D, x: number, y: number, hit: boolean, estimated: boolean) {
+  const core = !hit ? F.aim.miss : estimated ? F.aim.estimated : F.aim.hit;
   rings(ctx, x, y, RETICLE_PX / 2 - F.ring.width / 2, F.ring.width, core);
   if (!hit) return;
   // 맞춤: 가운데 점(지름 10px)을 흰 테 1px·숯색 1px로 두른다
@@ -161,6 +162,6 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, size: { width: number
     rings(ctx, x, y, RING_PX / 2 - F.ring.width / 2, F.ring.width, F.ring.color, pulse(now, reduced));
     drawn.rings.push({ name: m.label, box: { left: x - RING_OUTER, top: y - RING_OUTER, right: x + RING_OUTER, bottom: y + RING_OUTER } });
   }
-  if (scene.aim) drawReticle(ctx, size.width / 2, size.height / 2, scene.hit);
+  if (scene.aim) drawReticle(ctx, size.width / 2, size.height / 2, scene.hit, scene.hitEstimated);
   return drawn;
 }

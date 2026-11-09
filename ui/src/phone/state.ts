@@ -40,6 +40,8 @@ export interface PhoneView {
   limited: boolean;
   /** 조준점이 바닥에 닿음. */
   hit: boolean;
+  /** 닿은 바닥이 어림 바닥(hit-test 점이 없어 시선과 어림 바닥 면이 만나는 점). 기록은 그대로 된다. */
+  hitEstimated: boolean;
   /** 이번 AR에서 카메라 화면을 못 보냄(위치만 보냄). 설정 모달에 그 줄이 남는다. */
   cameraOff: boolean;
   /** 잠깐 알릴 말(비전 상태 줄, 4초). */
@@ -73,7 +75,7 @@ export interface PhoneActions {
 
 export const initialView = (): PhoneView => ({
   support: { kind: "checking" }, ar: false, connected: false, listening: "off", mode: "floor", anchors: null, aligned: false, mismatchM: null,
-  limited: false, hit: false, cameraOff: false, note: null, reply: null, pending: [], command: null, setup: null, settingsOpen: false,
+  limited: false, hit: false, hitEstimated: false, cameraOff: false, note: null, reply: null, pending: [], command: null, setup: null, settingsOpen: false,
 });
 
 export const WEAK_TEXT = "추적이 약해요";
@@ -102,7 +104,7 @@ export type Thumb =
 export type Tone = "plain" | "ok" | "warn" | "error";
 export interface Hand { top: string | null; thumb: Thumb | null; vision: { text: string; tone: Tone } | null }
 
-const floorLine = (hit: boolean) => (hit ? "바닥에 닿음" : "바닥에 안 닿음");
+const floorLine = (v: PhoneView) => (!v.hit ? "바닥에 안 닿음" : v.hitEstimated ? "어림잡은 바닥에 닿음" : "바닥에 닿음");
 
 /** 위 한 줄·엄지 자리·비전 상태 줄. */
 export function handOf(v: PhoneView): Hand {
@@ -118,9 +120,9 @@ export function handOf(v: PhoneView): Hand {
     : thumb.kind === "place" ? PLACE_LINE
     : thumb.kind === "pending" ? `${thumb.item.deviceLabel}: ${thumb.item.reason}`
     : thumb.command.text;
-  const tone: Tone = v.hit ? "ok" : "plain";
-  const base = thumb.kind === "record" ? { text: `${floorLine(v.hit)} · 기준점 ${anchorCount(v.anchors!)}`, tone }
-    : thumb.kind === "place" ? { text: floorLine(v.hit), tone }
+  const tone: Tone = !v.hit ? "plain" : v.hitEstimated ? "warn" : "ok";
+  const base = thumb.kind === "record" ? { text: `${floorLine(v)} · 기준점 ${anchorCount(v.anchors!)}`, tone }
+    : thumb.kind === "place" ? { text: floorLine(v), tone }
     : thumb.kind === "command" && thumb.command.vision ? { text: thumb.command.vision, tone: "plain" as const }
     : null;
   const vision = v.note ? { text: v.note, tone: "warn" as const } : v.limited ? { text: WEAK_TEXT, tone: "warn" as const } : base;

@@ -6,14 +6,18 @@ import { createAr } from "../ui/src/phone/core/ar.js";
 type Fn = (...a: any[]) => void;
 const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
-function fakeSession() {
+/** localFloor: 크롬이 local-floor를 주면 true(아니면 그 공간을 거절한다). */
+function fakeSession({ localFloor = false } = {}) {
   const on: Record<string, Fn[]> = {};
   let raf: Fn | null = null;
   return {
     requested: [] as unknown[],
     renderState: { baseLayer: { framebuffer: "fb" } },
     updateRenderState() {},
-    async requestReferenceSpace(kind: string) { return { kind, addEventListener: (t: string, f: Fn) => { (on[`space-${t}`] ??= []).push(f); } }; },
+    async requestReferenceSpace(kind: string) {
+      if (kind === "local-floor" && !localFloor) throw new Error("NotSupportedError");
+      return { kind, addEventListener: (t: string, f: Fn) => { (on[`space-${t}`] ??= []).push(f); } };
+    },
     async requestHitTestSource() { return "hits"; },
     addEventListener(t: string, f: Fn) { (on[t] ??= []).push(f); },
     requestAnimationFrame(f: Fn) { raf = f; },
@@ -24,12 +28,18 @@ function fakeSession() {
   };
 }
 
-function frame({ hit = [0, 0, -1] as number[] | null, pose = true, camera = false, limited = false } = {}) {
+/** x축으로 deg도 돌린 폰 방향(음수면 아래를 본다). */
+const pitch = (deg: number) => { const r = (deg * Math.PI) / 360; return { x: Math.sin(r), y: 0, z: 0, w: Math.cos(r) }; };
+
+/** look: 폰 방향(기본은 수평 앞). floorY: local-floor 원점의 local 높이. */
+function frame({ hit = [0, 0, -1] as number[] | null, pose = true, camera = false, limited = false, look = { x: 0, y: 0, z: 0, w: 1 }, floorY = 0 } = {}) {
   return {
     getHitTestResults: () => (hit ? [{ getPose: () => ({ transform: { position: { x: hit[0], y: hit[1], z: hit[2] }, orientation: { x: 0, y: 0, z: 0, w: 1 } } }) }] : []),
+    getPose: (space: { kind: string }, base: { kind: string }) =>
+      (space.kind === "local-floor" && base.kind === "local" ? { transform: { position: { x: 0, y: floorY, z: 0 } } } : null),
     getViewerPose: () => (pose ? {
       emulatedPosition: limited,
-      transform: { position: { x: 0, y: 1.5, z: 0 }, orientation: { x: 0, y: 0, z: 0, w: 1 } },
+      transform: { position: { x: 0, y: 1.5, z: 0 }, orientation: look },
       views: [{ projectionMatrix: identity, transform: { inverse: { matrix: identity } }, camera: camera ? { width: 640, height: 480 } : undefined }],
     } : null),
   };
@@ -42,8 +52,8 @@ async function header(blob: Blob) {
   return JSON.parse(new TextDecoder().decode(b.subarray(4, 4 + n)));
 }
 
-function setup({ camera = false } = {}) {
-  const session = fakeSession();
+function setup({ camera = false, localFloor = false } = {}) {
+  const session = fakeSession({ localFloor });
   const released = { grabber: 0, gl: 0 };
   const sent: Record<string, any>[] = [];
   const socket = { readyState: 1, bufferedAmount: 0, binary: [] as Blob[], send(d: Blob) { this.binary.push(d); } };
@@ -52,7 +62,7 @@ function setup({ camera = false } = {}) {
   const marks: unknown[][] = [];
   const hooks = {
     onStart: () => log.push("start"), onEnd: () => log.push("end"),
-    onHit: (h: boolean) => log.push(h ? "hit" : "miss"), onMarks: (m: unknown[]) => marks.push(m),
+    onHit: (h: boolean, estimated: boolean) => log.push(h ? (estimated ? "estimated" : "hit") : "miss"), onMarks: (m: unknown[]) => marks.push(m),
     onPerf: () => log.push("perf"), note: (text: string) => log.push(`note ${text}`),
   };
   const toJpeg = vi.fn(async (..._args: unknown[]) => new Blob([new Uint8Array([0xff, 0xd8, 0xff])]));
@@ -83,7 +93,7 @@ describe("폰 AR(ar.js)", () => {
   it("시작: DOM 오버레이·hit-test로 세션을 열고, 새 원점 이름으로 reset을 보낸다. 카메라가 없으면 「카메라 없음」", async () => {
     const t = setup();
     await t.ar.start(overlay);
-    expect(t.session.requested).toEqual([["immersive-ar", { requiredFeatures: ["local", "hit-test", "dom-overlay"], optionalFeatures: ["camera-access"], domOverlay: { root: overlay } }]]);
+    expect(t.session.requested).toEqual([["immersive-ar", { requiredFeatures: ["local", "hit-test", "dom-overlay"], optionalFeatures: ["camera-access", "local-floor"], domOverlay: { root: overlay } }]]);
     expect(t.log[0]).toBe("start");
     expect(t.ar.state.on).toBe(true);
     expect(t.ar.state.epoch).toMatch(/^[0-9a-z]+-[0-9a-z]{1,6}$/);
@@ -97,12 +107,38 @@ describe("폰 AR(ar.js)", () => {
     for (const time of [100, 150, 200]) t.session.step(time, frame());
     const poses = t.sent.filter((m) => m.type === "pose");
     expect(poses).toHaveLength(2);
-    expect(poses[0]).toEqual({ type: "pose", position: [0, 1.5, 0], orientation: [0, 0, 0, 1], tracking: "ok", hit: [0, 0, -1], epoch: t.ar.state.epoch });
+    expect(poses[0]).toEqual({ type: "pose", position: [0, 1.5, 0], orientation: [0, 0, 0, 1], tracking: "ok", hit: [0, 0, -1], hit_estimated: false, epoch: t.ar.state.epoch });
     expect(t.log.filter((l) => l === "hit")).toHaveLength(3);
     expect(t.ar.state.lastFloor).toEqual([0, 0, -1]);
     t.session.step(300, frame({ hit: null }));
     expect(t.log.at(-1)).toBe("miss");
     expect(t.ar.state.lastFloor).toBeNull();
+  });
+
+  it("hit-test 점이 없으면 시선이 어림 바닥(폰 1.5m 아래)과 만나는 점을 조준점·바닥 후보로 쓰고, 어림이라고 알린다", async () => {
+    const t = setup();
+    await t.ar.start(overlay);
+    t.session.step(100, frame({ hit: null, look: pitch(-45) }));
+    expect(t.log.at(-1)).toBe("estimated");
+    expect(t.ar.state.hitEstimated).toBe(true);
+    const pose = t.sent.filter((m) => m.type === "pose").at(-1)!;
+    expect(pose.hit_estimated).toBe(true);
+    pose.hit.forEach((v: number, i: number) => expect(v).toBeCloseTo([0, 0, -1.5][i]!, 6));
+    expect(t.ar.state.lastFloor).toEqual(t.ar.state.hitPoint);
+    // hit-test 점이 생기면 그 점(어림 아님)
+    t.session.step(200, frame({ look: pitch(-45) }));
+    expect([t.log.at(-1), t.ar.state.hitEstimated, t.ar.state.hitPoint]).toEqual(["hit", false, [0, 0, -1]]);
+    // 위를 보면 닿지 않음
+    t.session.step(300, frame({ hit: null, look: pitch(10) }));
+    expect([t.log.at(-1), t.ar.state.hitPoint, t.ar.state.lastFloor]).toEqual(["miss", null, null]);
+  });
+
+  it("크롬이 local-floor를 주면 그 바닥 높이(local 좌표)로 어림한다", async () => {
+    const t = setup({ localFloor: true });
+    await t.ar.start(overlay);
+    t.session.step(100, frame({ hit: null, look: pitch(-45), floorY: 0.2 }));
+    t.ar.state.hitPoint!.forEach((v, i) => expect(v).toBeCloseTo([0, 0.2, -1.3][i]!, 6));
+    expect(t.ar.state.hitEstimated).toBe(true);
   });
 
   it("자세가 없으면 바닥 후보를 지우고 자세·초점을 보내지 않는다. 추적이 약하면 limited", async () => {

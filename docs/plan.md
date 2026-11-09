@@ -146,7 +146,7 @@ interface DeviceHub {
 ## 폰 AR 눈 (3단계)
 
 - `PHONE_PORT`(예: 8210)를 주면 폰 전용 서버가 `PHONE_HOST`(기본 0.0.0.0)에 뜬다. 주는 것은 `/phone/`(페이지)과 `/phone/events`(WebSocket)뿐이다. 기기 API는 본 서버(127.0.0.1)에만 있다.
-- 폰 → 서버: `{type:"pose", position:[x,y,z], orientation:[x,y,z,w], tracking:"ok"|"limited"}`(WebXR local 공간, 초당 10번) · `{type:"anchor", id:<기준점 id>, point:[x,y,z]}`(조준점이 닿은 바닥 점) · `{type:"reset"}`. 서버 → 폰: `{type:"status", anchors, aligned, mismatch_m, error?}`.
+- 폰 → 서버: `{type:"pose", position:[x,y,z], orientation:[x,y,z,w], tracking:"ok"|"limited", hit:[x,y,z]|null, hit_estimated}`(WebXR local 공간, 초당 10번, hit_estimated는 조준점이 어림 바닥 점일 때 true) · `{type:"anchor", id:<기준점 id>, point:[x,y,z], estimated}`(조준점이 닿은 바닥 점) · `{type:"reset"}`. 서버 → 폰: `{type:"status", anchors, aligned, mismatch_m, error?}`.
 - 기준점 두 곳은 평면도에 지정한 방 모서리다: scene.json `plan.ar_anchors` → 집 data `floorplan.json`의 `ar_anchors`(`[{id, label, position:[x,y]}]`, 정확히 2개) → 없으면 예전 방식(`dock`·`door_main` 객체의 평면 위치) 순서로 읽는다(`src/phone/anchors.ts`). 폰 버튼은 `<label> 지점 기록`이다. 두 점으로 수평 회전·이동·바닥 높이를 구한다(`src/phone/align.ts`). 두 점이 0.5m보다 가까우면 거절하고, 실제·트윈 거리 차이를 `mismatch_m`으로 알린다.
 - 맞춘 뒤 자세는 본 서버 `/events`로 `{type:"eye", eye:{position:[x,y], height_m, yaw_deg, pitch_deg, tracking, at}}`가 된다. 뷰어는 `aptViewer.setEye`로 눈 마커만 움직인다. 판단에는 쓰지 않는다.
 - WebSocket은 페이지를 준 호스트와 같은 출처만 받는다.

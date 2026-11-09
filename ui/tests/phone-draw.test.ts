@@ -29,7 +29,7 @@ function recorder() {
 const SIZE = { width: 390, height: 844 };
 const LAND = { width: 844, height: 390 };
 const of = (ops: Op[], op: string) => ops.filter((o) => o.op === op);
-const scene = (over: Partial<{ aim: boolean; hit: boolean; marks: { id: string; label: string; u: number; v: number; off: boolean; angle: number }[] }> = {}) => ({ aim: false, hit: false, marks: [], ...over });
+const scene = (over: Partial<{ aim: boolean; hit: boolean; hitEstimated: boolean; marks: { id: string; label: string; u: number; v: number; off: boolean; angle: number }[] }> = {}) => ({ aim: false, hit: false, hitEstimated: false, marks: [], ...over });
 
 describe("조준점(찍기·맞추기 때만)", () => {
   it("평소(aim false)에는 지우기만 하고 아무것도 그리지 않는다", () => {
@@ -53,6 +53,15 @@ describe("조준점(찍기·맞추기 때만)", () => {
     expect(of(ops, "stroke").at(-1)).toEqual({ op: "stroke", color: F.aim.hit, width: 3 });
     expect(of(ops, "arc").slice(5).map((a) => a.r)).toEqual([7, 6, 5]);
     expect(of(ops, "fill").map((f) => f.color)).toEqual([F.edge.color, F.casing.color, F.aim.hit]);
+  });
+
+  it("어림 바닥에 닿음: 맞춤과 같은 모양(가운데 점)을 aim.estimated 색으로", () => {
+    const { ctx, ops } = recorder();
+    drawOverlay(ctx, SIZE, scene({ aim: true, hit: true, hitEstimated: true }), 0, true);
+    expect(of(ops, "stroke").at(-1)).toEqual({ op: "stroke", color: F.aim.estimated, width: 3 });
+    expect(of(ops, "fill").map((f) => f.color)).toEqual([F.edge.color, F.casing.color, F.aim.estimated]);
+    expect(F.aim.estimated).not.toBe(F.aim.hit);
+    expect(F.aim.estimated).not.toBe(F.aim.miss);
   });
 
   it("조준점은 고리 위에 그린다", () => {
