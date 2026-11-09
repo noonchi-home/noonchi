@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { ServerMessage } from "../../../src/contract/events.ts";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
+import type { DeviceView, EyeEvent, ServerMessage } from "../../../src/contract/events.ts";
+import type { PlanView } from "../../../src/contract/plan.ts";
 import { BubbleLayer } from "../bubbles/BubbleLayer";
 import { checkList, type ChecksState } from "../checks/checks";
 import { useChecks } from "../checks/use-checks";
@@ -9,12 +10,18 @@ import { useHealth } from "../lib/use-health";
 import { TwinStage } from "../twin/TwinStage";
 import { useAnchors } from "../twin/use-anchors";
 import { useViewer } from "../twin/viewer";
-import { wholeCamera, type TwinEngine } from "../twin3d/engine";
+import type { TwinEngine } from "../twin3d/engine";
 import { LiveQueue, attachLive } from "../twin3d/live";
 import { BAKE_VIEWS } from "../twin3d/projection";
 import { Twin3D, useLayoutBox } from "../twin3d/Twin3D";
+import { focusOf, still, wideCamera, type Camera } from "./camera";
 import { DashboardScreen } from "./DashboardScreen";
+import { roomSetsOf, twinChecks, twinFrame } from "./frame";
+import { homeIndexOf, type HomeIndex } from "./home";
 import { hubOf } from "./hub";
+import type { PageLayout } from "./layout";
+import { MapOverlay } from "./MapOverlay";
+import { CAMERA_MS, useReducedMotionNow } from "./motion";
 import type { PhoneSlot } from "./PhonePane";
 import { WORDS } from "./words";
 
@@ -56,21 +63,82 @@ function useTwinKind(homeId: string | null, known: boolean): "three" | "iframe" 
   return kind;
 }
 
-/** 구운 3D 트윈(TwinStage와 같은 틀): 집 전체 카메라로 그린 캔버스 + 그 위 덮개 층. 종류를 정하기 전에는 캔버스 없이 덮개만. 엔진이 뜨고 버려질 때 onEngine, 첫 그림을 그리면 onReady. */
-function BakedStage({ home, onEngine: toLive, onReady: toReady, children }: {
+/** 트윈 위 표시가 쓰는 계획·맞춘 눈. */
+interface PlanEye { plan: PlanView | null; eye: EyeEvent | null }
+const NO_PLAN_EYE: PlanEye = { plan: null, eye: null };
+
+/** hello면 지운다(접속 스냅숏이 뒤따름). 같은 계획의 옛 번호와 추정 눈(맞추기 전)은 버린다. */
+function reducePlanEye(s: PlanEye, m: ServerMessage): PlanEye {
+  if (m.type === "hello") return NO_PLAN_EYE;
+  if (m.type === "plan") return m.plan && s.plan && m.plan.id === s.plan.id && m.plan.revision < s.plan.revision ? s : { ...s, plan: m.plan };
+  if (m.type === "eye") return m.eye.estimated ? s : { ...s, eye: m.eye };
+  return s;
+}
+
+interface HomeData { index: HomeIndex; tableId: string | null; names: Map<string, string> }
+type SceneJson = Parameters<typeof homeIndexOf>[0];
+
+/** 구운 트윈 집의 평면 색인(/api/scene), 식탁 id, 물건 이름. 집을 모르거나 장면을 받지 못하면 null. */
+function useHomeData(home: string | null): HomeData | null {
+  const [data, setData] = useState<HomeData | null>(null);
+  useEffect(() => {
+    const cam = home ? BAKE_VIEWS[home] : undefined;
+    setData(null);
+    if (!cam) return;
+    let live = true;
+    fetch("/api/scene")
+      .then(async (r) => (r.ok ? ((await r.json()) as { scene?: SceneJson }).scene ?? null : null))
+      .then((scene) => {
+        if (!live || !scene?.plan || !Array.isArray(scene.objects)) return;
+        const index = homeIndexOf(scene, cam);
+        const table = (scene.objects as { id?: unknown; type?: unknown }[]).find((o) => o.type === "dining_table");
+        setData({ index, tableId: typeof table?.id === "string" ? table.id : null, names: new Map([...index.objects].map(([id, o]) => [id, o.name])) });
+      }, () => {});
+    return () => { live = false; };
+  }, [home]);
+  return data;
+}
+
+/**
+ * 구운 3D 트윈(TwinStage와 같은 틀): 캔버스와 그 위 표시 판(MapOverlay: 경로·클로이드·확인한 것·어둡게 한 방·말풍선).
+ * 지도 카메라는 그 단계에 중요한 것(focusOf)을 지도 카메라 칸(layout.camPad 안쪽)에 맞추고, 작은 눈 움직임(still)에는 그대로 둔다.
+ * 바뀌면 CAMERA_MS 동안 옮긴다(움직임 줄이기면 바로). 종류를 정하기 전(home null)에는 캔버스 없이 틀만.
+ * 엔진이 뜨고 버려질 때 onEngine, 첫 그림을 그리면 onReady.
+ */
+function BakedStage({ home, layout, view, checks, devices, onEngine: toLive, onReady: toReady }: {
   home: string | null;
+  layout: PageLayout;
+  view: PlanEye;
+  checks: ChecksState;
+  devices: Map<string, DeviceView>;
   onEngine: (engine: TwinEngine | null) => void;
   onReady: () => void;
-  children?: ReactNode;
 }) {
   const box = useRef<HTMLElement>(null);
   const size = useLayoutBox(box);
   const v = home ? BAKE_VIEWS[home] : undefined;
-  const view = useMemo(() => (v && size.width && size.height ? wholeCamera(v, size) : null), [v, size]);
+  const [engine, setEngine] = useState<TwinEngine | null>(null);
+  const homeData = useHomeData(home);
+  const list = useMemo(() => twinChecks(checkList(checks, homeData?.tableId ?? null)), [checks, homeData]);
+  const frame = useMemo(
+    () => (v && homeData ? twinFrame({ plan: view.plan, eye: view.eye, checks: list, anchor: (id) => engine?.anchor(id) ?? null, home: homeData.index, cam: v }) : null),
+    [v, homeData, view, list, engine],
+  );
+  const roomSets = useMemo(() => (frame?.plan && homeData ? roomSetsOf(frame.plan, homeData.index) : []), [frame?.plan, homeData]);
+  const want = v && size.width > 0 && size.height > 0 ? wideCamera(v, size, frame && homeData ? focusOf(frame, homeData.index.shapes) : null, layout.camPad) : null;
+  const last = useRef<Camera | null>(null);
+  const cam = want && last.current && still(last.current, want) ? last.current : want;
+  useLayoutEffect(() => { last.current = cam; });
+  const moveMs = useReducedMotionNow() ? 0 : CAMERA_MS;
+  // 말풍선 카드·마스코트 자리(트윈 칸 px)
+  const blocked = useMemo(() => layout.blocked.map((r) => ({
+    x0: r.left - layout.twin.left, y0: r.top - layout.twin.top, x1: r.left + r.width - layout.twin.left, y1: r.top + r.height - layout.twin.top,
+  })), [layout]);
   const debug = useMemo(() => new URLSearchParams(location.search).has("debug"), []);
-  const onEngine = useCallback((engine: TwinEngine | null) => {
-    toLive(engine);
-    if (debug) window.__twin3d = { engine, ready: false };
+  const onEngine = useCallback((e: TwinEngine | null) => {
+    setEngine(e);
+    toLive(e);
+    if (debug) window.__twin3d = { engine: e, ready: false };
   }, [debug, toLive]);
   const onReady = useCallback(() => {
     if (debug && window.__twin3d) window.__twin3d.ready = true;
@@ -78,15 +146,21 @@ function BakedStage({ home, onEngine: toLive, onReady: toReady, children }: {
   }, [debug, toReady]);
   return (
     <section ref={box} className="absolute inset-0" aria-label="3D 트윈">
-      {home && view && <Twin3D key={home} home={home} box={size} view={view} onEngine={onEngine} onReady={onReady} />}
-      <div className="pointer-events-none absolute inset-0 *:pointer-events-auto">{children}</div>
+      {home && cam && <Twin3D key={home} home={home} box={size} view={cam} moveMs={moveMs} onEngine={onEngine} onReady={onReady} />}
+      {v && cam && frame && homeData && (
+        <MapOverlay
+          frame={frame} checks={list} shapes={homeData.index.shapes} roomSets={roomSets} image={v} size={size} cam={cam} engine={engine}
+          devices={devices} objects={homeData.names} moveMs={moveMs} blocked={blocked} avoid={AVOID}
+        />
+      )}
     </section>
   );
 }
 
 /**
  * 대시보드: 서버에서 받은 것(health·/events·기기·확인 목록)을 화면 틀(DashboardScreen)에 넘긴다.
- * 트윈 칸 지도 자리: 한양목련처럼 구운 3D가 있는 집은 three.js 캔버스(BakedStage), 다른 집은 iframe 뷰어(TwinStage)와 그 위 확인 목록 말풍선.
+ * 트윈 칸 지도 자리: 한양목련처럼 구운 3D가 있는 집은 three.js 캔버스와 그 위 계획 경로·클로이드·확인한 것·어둡게 한 방(BakedStage),
+ * 다른 집은 iframe 뷰어(TwinStage)와 그 위 확인 목록 말풍선.
  * 구운 트윈의 가전 상태·배치는 같은 소켓 메시지로 바꾸고, 엔진이 뜨기 전에 온 메시지는 모아 두었다가 엔진이 뜨면 넣는다.
  * 대시보드 폰 칸은 폰 서버가 켜져 있으면 실시간 영상, 아니면 연결 QR이다. health 전에는 빈 칸이다.
  * 대시보드에는 입력이 없다: 요청·승인은 폰에서 음성으로 온다. 설정에서 집을 바꾸면 다시 불러온다.
@@ -95,6 +169,7 @@ export function Dashboard() {
   const { devices, apply } = useDevices();
   const health = useHealth();
   const { checks, onMessage: toChecks } = useChecks();
+  const [planEye, toPlanEye] = useReducer(reducePlanEye, NO_PLAN_EYE);
   const [connected, setConnected] = useState<boolean | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
   const [viewerReady, setViewerReady] = useState(false);
@@ -110,6 +185,7 @@ export function Dashboard() {
     }
     apply(m);
     toChecks(m);
+    toPlanEye(m);
     if (m.type === "agent" && m.event === "action" && m.action.deviceId) setFocusId(m.action.deviceId);
     if (live.current) live.current.handle(m);
     else if (kindRef.current !== "iframe") queue.current.push(m);
@@ -136,7 +212,9 @@ export function Dashboard() {
         <MapReady onReady={setViewerReady} />
       </TwinStage>
     )
-    : <BakedStage home={kind === "three" ? homeId : null} onEngine={onEngine} onReady={onBakedReady} />;
+    : (layout: PageLayout) => (
+      <BakedStage home={kind === "three" ? homeId : null} layout={layout} view={planEye} checks={checks} devices={devices} onEngine={onEngine} onReady={onBakedReady} />
+    );
   // 트윈이 없는 집은 기다리지 않는다
   const mapReady = (kind === "iframe" ? viewerReady : kind === "three" && bakedReady) || health?.twin === false;
   return (

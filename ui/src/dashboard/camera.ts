@@ -1,0 +1,120 @@
+// 트윈 지도 카메라(순수 함수, 시안 A에서 옮김). 계획 전 지켜보기는 집 전체를 보이고, 이동 중이면 지금 구간과 목적지 둘레를 당겨 보이고,
+// 서 있는 단계면 관계된 곳(밝힐 방·다음 길·목적지·확인한 것)을 맞춰 보인다.
+// 카메라는 「상자 가운데에 올 구운 보기 그림 픽셀 자리 + 배율」(twin3d/view.ts MapCamera와 같음)이다.
+import type { BoxSize } from "./fit";
+import type { TwinFrame } from "./frame";
+import type { RoomShape } from "./home";
+
+export type Px = [number, number];
+export interface Bounds { x0: number; y0: number; x1: number; y1: number }
+export interface Camera { cx: number; cy: number; scale: number }
+export interface Pad { top: number; right: number; bottom: number; left: number }
+
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
+/** 이동 중 지도가 맞출 곳의 가장 작은 크기(그림 픽셀). 이보다 좁으면 가운데를 두고 넓힌다. */
+export const MIN_FOCUS = { w: 440, h: 360 };
+/** 목적지 방이 이보다 크면(거실처럼 집 절반) 맞출 곳에 넣지 않는다(그림 픽셀). */
+export const ROOM_MAX = 640;
+/** 그림을 이보다 크게 늘리지 않는다(흐려짐). */
+export const MAX_SCALE = 1.3;
+
+export function boundsOf(points: Px[]): Bounds | null {
+  if (points.length === 0) return null;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const [u, v] of points) {
+    x0 = Math.min(x0, u); y0 = Math.min(y0, v); x1 = Math.max(x1, u); y1 = Math.max(y1, v);
+  }
+  return { x0, y0, x1, y1 };
+}
+
+/** 지금 단계의 이동 구간. 이동 단계가 아니면 다음 이동 구간, 없으면(계획 전 지켜보기 포함) null. */
+export function legOf(frame: TwinFrame): { from: number; to: number; now: boolean } | null {
+  const { plan, step } = frame;
+  if (!plan || !step) return null;
+  const order = (id: string) => plan.steps.findIndex((s) => s.id === id);
+  const now = frame.route.legs.find((l) => l.stepId === step.id);
+  if (now) return { from: now.from, to: now.to, now: true };
+  const next = frame.route.legs.find((l) => order(l.stepId) > order(step.id));
+  return next ? { from: next.from, to: next.to, now: false } : null;
+}
+
+/** 가운데를 두고 min 크기까지 넓힌다. */
+export function atLeast(b: Bounds | null, min: { w: number; h: number }): Bounds | null {
+  if (!b) return null;
+  const w = Math.max(b.x1 - b.x0, min.w);
+  const h = Math.max(b.y1 - b.y0, min.h);
+  const cx = (b.x0 + b.x1) / 2;
+  const cy = (b.y0 + b.y1) / 2;
+  return { x0: cx - w / 2, y0: cy - h / 2, x1: cx + w / 2, y1: cy + h / 2 };
+}
+
+/** 이동 중 맞출 곳: 지금 구간 전체, 목적지, 목적지 물건, 작은 목적지 방. 구간 전체라 이동하는 동안 지도가 흔들리지 않는다. */
+function moveFocus(frame: TwinFrame, shapes: RoomShape[], leg: { from: number; to: number }): Bounds | null {
+  const pts: Px[] = frame.route.points.slice(leg.from, leg.to + 1);
+  if (frame.target) pts.push(frame.target);
+  const goal = frame.step?.target;
+  const room = goal?.room ? shapes.find((s) => s.id === goal.room) : undefined;
+  const roomBox = room ? boundsOf([...room.floor, ...room.top]) : null;
+  if (room && roomBox && roomBox.x1 - roomBox.x0 <= ROOM_MAX && roomBox.y1 - roomBox.y0 <= ROOM_MAX) pts.push(...room.floor, ...room.top);
+  const id = goal?.deviceId ?? goal?.objectId;
+  const mark = id ? frame.marks.find((m) => m.id === id) : undefined;
+  if (mark) pts.push(mark.px);
+  return atLeast(boundsOf(pts), MIN_FOCUS);
+}
+
+/**
+ * 지도가 맞출 곳. 계획 전 지켜보기(열린 계획 없음)는 null(집 전체). 이동 중이면 지금 구간과 목적지 둘레만(moveFocus).
+ * 서 있는 단계면 밝힐 방, 다음 이동 길, 목적지, 확인한 것. 움직이는 로봇은 넣지 않는다(이동 길 위에 있다).
+ */
+export function focusOf(frame: TwinFrame, shapes: RoomShape[]): Bounds | null {
+  if (!frame.plan) return null;
+  const now = legOf(frame);
+  if (now?.now && frame.robot) return moveFocus(frame, shapes, now);
+  const pts: Px[] = [];
+  for (const s of shapes) if (frame.rooms.includes(s.id)) pts.push(...s.floor, ...s.top);
+  const leg = legOf(frame);
+  if (leg) pts.push(...frame.route.points.slice(leg.from, leg.to + 1));
+  if (frame.target) pts.push(frame.target);
+  for (const m of frame.marks) pts.push(m.px);
+  if (pts.length === 0 && frame.robot) pts.push(frame.robot.px);
+  return boundsOf(pts);
+}
+
+/** 그림이 상자를 빈 곳 없이 덮는 가장 작은 배율. */
+export const coverScale = (image: BoxSize, box: BoxSize) =>
+  image.width > 0 && image.height > 0 ? Math.max(box.width / image.width, box.height / image.height) : 0;
+
+/** 그림 밖 빈 곳이 보이지 않게: 그 방향으로 그림이 상자보다 크면 가장자리 안으로, 작으면 가운데로. */
+export function clampCamera(c: Camera, image: BoxSize, box: BoxSize): Camera {
+  if (c.scale <= 0) return c;
+  const keep = (len: number, view: number, v: number) => {
+    const seen = view / c.scale;
+    return seen >= len ? len / 2 : clamp(v, seen / 2, len - seen / 2);
+  };
+  return { scale: c.scale, cx: keep(image.width, box.width, c.cx), cy: keep(image.height, box.height, c.cy) };
+}
+
+/**
+ * 지도: focus가 pad 안쪽에 다 보이게. 배율은 그림이 상자를 빈 곳 없이 덮는 배율(cover)에서 maxZoom배 사이, 그림 MAX_SCALE배까지.
+ * 그림 가장자리가 상자 안으로 들어오지 않게 가운데를 당긴다(clampCamera): 지도는 상자를 늘 꽉 채운다.
+ */
+export function wideCamera(image: BoxSize, box: BoxSize, focus: Bounds | null, pad: Pad, maxZoom = 2.4): Camera {
+  const c0 = coverScale(image, box);
+  if (!focus || c0 <= 0) return { cx: image.width / 2, cy: image.height / 2, scale: c0 };
+  const aw = Math.max(1, box.width - pad.left - pad.right);
+  const ah = Math.max(1, box.height - pad.top - pad.bottom);
+  const scale = clamp(Math.min(aw / Math.max(1, focus.x1 - focus.x0), ah / Math.max(1, focus.y1 - focus.y0)), c0, Math.max(c0, Math.min(c0 * maxZoom, MAX_SCALE)));
+  // focus 가운데를 pad 안쪽 가운데에 둔다
+  const cx = (focus.x0 + focus.x1) / 2 + (box.width / 2 - (pad.left + aw / 2)) / scale;
+  const cy = (focus.y0 + focus.y1) / 2 + (box.height / 2 - (pad.top + ah / 2)) / scale;
+  return clampCamera({ cx, cy, scale }, image, box);
+}
+
+/** 카메라를 그대로 두는 차이: 가운데가 화면에서 px 안, 배율이 ratio 몫 안. 클로이드가 조금 움직일 때마다 지도를 다시 맞추지 않는다. */
+export const STILL = { px: 6, ratio: 0.015 };
+export const still = (a: Camera, b: Camera) =>
+  a.scale > 0 && b.scale > 0 && Math.abs(a.scale / b.scale - 1) < STILL.ratio && Math.hypot(a.cx - b.cx, a.cy - b.cy) * b.scale < STILL.px;
+
+/** 그림 픽셀 → 상자 안 자리. */
+export const toScreen = (c: Camera, box: BoxSize, [u, v]: Px) => ({ x: box.width / 2 + (u - c.cx) * c.scale, y: box.height / 2 + (v - c.cy) * c.scale });
