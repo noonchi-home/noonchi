@@ -46,6 +46,8 @@ export interface SceneWall {
   a: Vec2;
   b: Vec2;
   thickness?: number;
+  /** 방 쪽 면(twin-studio가 쓴다): 그 면이 보는 방과 바깥 법선. 폰 위치 맞추기 벽 모양 짝에 쓴다(src/phone/home-plan.ts). */
+  faces?: { room: string; normal: Vec2 }[];
 }
 
 export interface SceneJson {
