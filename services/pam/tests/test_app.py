@@ -101,6 +101,32 @@ def test_presets_pick_addresses_only():
         Settings.from_env({"INFERENCE_MODE": "live", "PAM_MAX_MODEL_LEN": "16384"})
 
 
+def test_openai_provider_sends_openai_fields():
+    s = Settings.from_env({"PAM_LLM_PROVIDER": "openai", "OPENAI_API_KEY": "k"})
+    assert (s.mode, s.base_url, s.model, s.thinking, s.extra, s.api_key) == ("mock", "https://api.openai.com/v1", "gpt-5.4-mini", "openai", {}, "k")
+    sent = []
+
+    def handler(req):
+        sent.append(json.loads(req.content))
+        return httpx.Response(200, json={"choices": [{"message": {"content": "{}"}, "finish_reason": "stop"}]})
+    client = LlmClient(s, transport=httpx.MockTransport(handler))
+    client.complete([{"role": "user", "content": "x"}], {"temperature": 0.3, "enable_thinking": False})
+    client.complete([{"role": "user", "content": "x"}], {"temperature": 0.3, "enable_thinking": True})
+    predictor, reflector = sent
+    # OpenAI는 max_tokens 대신 max_completion_tokens, 생각은 reasoning_effort다. 생각을 켜면 temperature는 기본값만 받는다.
+    assert predictor == {"model": "gpt-5.4-mini", "messages": [{"role": "user", "content": "x"}], "max_completion_tokens": 2048,
+                         "stream": False, "reasoning_effort": "none", "temperature": 0.3}
+    assert reflector == {"model": "gpt-5.4-mini", "messages": [{"role": "user", "content": "x"}], "max_completion_tokens": 16384,
+                         "stream": False, "reasoning_effort": "medium"}
+
+
+def test_unknown_provider_is_rejected():
+    with pytest.raises(ValueError, match="PAM_LLM_PROVIDER"):
+        Settings.from_env({"PAM_LLM_PROVIDER": "gemini"})
+    with pytest.raises(ValueError, match="PAM_LLM_PROVIDER"):
+        Settings.from_env({"INFERENCE_MODE": "live", "PAM_LLM_PROVIDER": "openai"})
+
+
 def test_unknown_mode_is_rejected():
     with pytest.raises(ValueError, match="mock 또는 live"):
         Settings.from_env({"INFERENCE_MODE": "replay"})

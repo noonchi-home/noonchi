@@ -125,12 +125,14 @@ services:
     # 비면 서비스 기본값(services/pam/noonchi_pam/settings.py)
     environment:
       INFERENCE_MODE:
+      PAM_LLM_PROVIDER:
       PAM_LLM_BASE_URL:
       PAM_LLM_MODEL:
       PAM_LLM_API_KEY:
       PAM_LLM_TIMEOUT_S:
       PAM_MAX_MODEL_LEN:
       OPENROUTER_API_KEY:
+      OPENAI_API_KEY:
       VLLM_API_KEY:
     ports: ["127.0.0.1:${PAM_HOST_PORT:-8300}:8300"]
     healthcheck:

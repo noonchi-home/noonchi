@@ -1,4 +1,5 @@
 """PAM LLM 주소: INFERENCE_MODE(mock|live)가 미리 정한 주소·모델 이름만 고른다. PAM_LLM_BASE_URL·PAM_LLM_MODEL·PAM_LLM_API_KEY가 있으면 그 값을 쓴다.
+mock은 PAM_LLM_PROVIDER=openai면 OpenRouter 대신 OpenAI(gpt-5.4-mini, OPENAI_API_KEY)를 부른다.
 전송 값(max_tokens·시간 제한·OpenRouter provider)은 config/openrouter.json에서 읽는다.
 문맥 길이 PAM_MAX_MODEL_LEN(기본 32768)은 compose vllm-pam의 --max-model-len과 같은 값이다. live 모델 이름 pam은 vllm-pam의 --served-model-name이다."""
 from __future__ import annotations
@@ -15,6 +16,10 @@ PRESETS = {
     "mock": {"base_url": TRANSPORT["endpoint"].removesuffix("/chat/completions"), "model": TRANSPORT["model"], "key_env": TRANSPORT["api_key_env"],
              "thinking": "openrouter", "extra": {"provider": TRANSPORT["provider"], "plugins": NO_COMPRESSION}},
     "live": {"base_url": "http://vllm-pam:8000/v1", "model": "pam", "key_env": "VLLM_API_KEY", "thinking": "chat_template", "extra": {}},
+}
+# mock에서 OpenRouter 대신 쓰는 제공자(PAM_LLM_PROVIDER). VLM과 같은 OpenAI 모델·키를 쓴다.
+PROVIDERS = {
+    "openai": {"base_url": "https://api.openai.com/v1", "model": "gpt-5.4-mini", "key_env": "OPENAI_API_KEY", "thinking": "openai", "extra": {}},
 }
 
 
@@ -39,6 +44,12 @@ class Settings:
 
         def get(k: str) -> str | None:
             return (env.get(k) or "").strip() or None
+
+        provider = get("PAM_LLM_PROVIDER")
+        if provider:
+            if mode != "mock" or provider not in PROVIDERS:
+                raise ValueError(f"PAM_LLM_PROVIDER={provider}: mock에서 {', '.join(PROVIDERS)}만 됩니다")
+            p = PROVIDERS[provider]
 
         max_model_len = int(get("PAM_MAX_MODEL_LEN") or 32768)
         max_tokens = dict(TRANSPORT["max_tokens"])

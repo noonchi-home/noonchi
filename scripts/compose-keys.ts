@@ -3,7 +3,7 @@
 
 /** 키 → 그 키를 받는 서비스. */
 export const KEY_OWNERS: Record<string, readonly string[]> = {
-  OPENAI_API_KEY: ["noonchi"],
+  OPENAI_API_KEY: ["noonchi", "pam"],
   ANTHROPIC_API_KEY: ["noonchi"],
   VLM_API_KEY: ["noonchi"],
   THINQ_TOKEN: ["noonchi"],
