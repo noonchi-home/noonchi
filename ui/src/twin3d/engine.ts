@@ -129,7 +129,8 @@ export class TwinEngine {
     this.merge = new StaticMerge(this.scene, statics, (m) => owner.get(m) ?? null);
     const merged = this.merge.build();
     this.info = { raised: shown.raised, actions: shown.actions, materials: { ...materials }, merged };
-    this.layout = new LayoutOps(this);
+    const entries = new Map(data.objects.map((e) => [e.id, e]));
+    this.layout = new LayoutOps(this, { entry: (id) => entries.get(id) });
     this.loop = new RenderLoop((now) => this.draw(now));
   }
 

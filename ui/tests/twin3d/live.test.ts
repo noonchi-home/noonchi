@@ -7,7 +7,7 @@ import type { ServerMessage } from "../../../src/contract/events.ts";
 import type { LayoutMessage, SceneObject, Vec3 } from "../../../src/contract/layout.ts";
 import { scene3d } from "../../../src/design/tokens.ts";
 import scene from "../../../twin/homes/mokryeon_180b/scene.json";
-import { LayoutOps, LiveQueue, attachLive, liveViewer } from "../../src/twin3d/live";
+import { LayoutOps, LiveQueue, attachLive, liveViewer, type StateEntry } from "../../src/twin3d/live";
 import { StaticMerge } from "../../src/twin3d/merge";
 import { TwinStates } from "../../src/twin3d/states";
 
@@ -75,7 +75,7 @@ function fakeEngine(o: { fridge?: Record<string, unknown>; load?: (url: string) 
     forgetAnchor: vi.fn((id?: string) => { if (id === undefined) anchors.clear(); else anchors.delete(id); }),
     requestRender: vi.fn(),
   };
-  engine.layout = new LayoutOps(engine, { load: o.load });
+  engine.layout = new LayoutOps(engine, { load: o.load, entry: (id) => scene.objects.find((x) => x.id === id) as StateEntry | undefined });
   const setState = vi.spyOn(states, "setState");
   const detach = vi.spyOn(merge, "detach");
   return { engine, sofa, table, fridge, setState, detach };
@@ -290,6 +290,47 @@ describe("접속 때 맞추기", () => {
     });
     expect(look(two)).toEqual(look(one));
     expect(look(two)).toEqual({ sofa: [6.5, 0, 9.2], fridge: false, boxes: 1, box: [8, 0, 9], detach: [[SOFA]] });
+  });
+
+  it("끊긴 사이 배치가 원래대로 돌아가면, 다시 접속한 hello에서 옮긴 것·뺀 것·더한 것을 원래대로 돌린 뒤 빈 맞추기를 받는다", async () => {
+    const f = fakeEngine();
+    const live = attachLive(f.engine);
+    const sofaAt = close(f.sofa.position);
+    const sofaTurn = close(f.sofa.rotation);
+    const tableAt = close(f.table.position);
+    for (const m of sync) live.handle(m);
+    live.handle({ type: "layout", op: "remove", id: TABLE });
+    live.handle({ type: "layout", op: "add", object: { ...entryOf(TABLE), position: [2, 0, 2] } });
+    await flush();
+    expect(close(f.table.position)).toEqual([2, 0, 2]);
+    const moved = f.engine.anchor(SOFA);
+    f.engine.requestRender.mockClear();
+    live.handle(hello);
+    expect(f.engine.requestRender).toHaveBeenCalledTimes(1);
+    expect([close(f.sofa.position), close(f.sofa.rotation)]).toEqual([sofaAt, sofaTurn]);
+    expect(close(f.table.position)).toEqual(tableAt);
+    expect(f.fridge.visible).toBe(true);
+    expect(f.engine.find("box_1")).toBeNull();
+    expect(f.engine.layout.isRemoved(FRIDGE)).toBe(false);
+    expect(f.engine.anchor(SOFA)).toEqual(boxAt(f.sofa));
+    expect(f.engine.anchor(SOFA)).not.toEqual(moved);
+    live.handle(state(FRIDGE, { door: "open" }));
+    expect(f.setState.mock.calls).toEqual([[FRIDGE, "door", "open"]]);
+    live.handle(hello);
+    expect(f.engine.requestRender).toHaveBeenCalledTimes(2);
+  });
+
+  it("더하는 중에 다시 접속하면 그 더하기는 버린다", async () => {
+    let done!: (g: THREE.Object3D) => void;
+    const { engine } = fakeEngine({ load: () => new Promise((r) => { done = r; }) });
+    const live = attachLive(engine);
+    live.handle({ type: "layout", op: "add", object: { ...crate, asset: "assets/props/box.glb" } });
+    live.handle(hello);
+    const g = new THREE.Group();
+    g.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), fabric));
+    done(g);
+    await flush();
+    expect(engine.find("box_1")).toBeNull();
   });
 });
 

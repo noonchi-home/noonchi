@@ -10,7 +10,8 @@ import { assetRoot } from "@viewer/scene.mjs";
 import type { ServerMessage } from "../../../src/contract/events.ts";
 import { scene3d } from "../../../src/design/tokens.ts";
 
-type StateEntry = { attrs?: Record<string, unknown[]>; state?: Record<string, unknown>; states?: unknown };
+/** 물건의 상태 칸(scene.json attrs·state·states). */
+export type StateEntry = { attrs?: Record<string, unknown[]>; state?: Record<string, unknown>; states?: unknown };
 
 /** 실시간 연결이 쓰는 가전 상태 저장소(TwinStates). */
 export interface LiveStates {
@@ -56,10 +57,15 @@ function noShadow(node: THREE.Object3D): void {
   node.traverse((n) => { if (n instanceof THREE.Mesh) { n.castShadow = false; n.receiveShadow = false; } });
 }
 
-/** 배치 보정(옮기기·더하기·빼기)을 엔진 장면에 바로 넣는다. 정적(합친) 물건은 합친 메시에서 뗀 뒤 바꾼다. */
+/** 배치 보정(옮기기·더하기·빼기)을 엔진 장면에 바로 넣는다. 정적(합친) 물건은 합친 메시에서 뗀 뒤 바꾼다. 다시 접속하면 restore로 원래 장면에 돌린다. */
 export class LayoutOps {
   /** 뺀 물건 id → 빼기 전 보이기(다시 더하면 되돌린다). 노드는 장면에 숨겨 둔다. */
   private readonly removed = new Map<string, boolean>();
+  /** 장면 원래 물건 id → 처음 옮기기 전 변환(원래 자리). */
+  private readonly origin = new Map<string, { position: THREE.Vector3; quaternion: THREE.Quaternion }>();
+  /** 더한 물건 id → 그 노드(장면 원래 물건이 아님). */
+  private readonly added = new Map<string, THREE.Object3D>();
+  private readonly entry: (id: string) => StateEntry | undefined;
   /** 물건 그림을 받는 중인 더하기. 그동안 온 옮기기는 여기에 넣고, 빼기는 지운다. */
   private readonly pending = new Map<string, { object: AddObject }>();
   private readonly assets = new Map<string, Promise<THREE.Object3D>>();
@@ -67,8 +73,10 @@ export class LayoutOps {
   private boxMaterial: THREE.Material | null = null;
   private closed = false;
 
-  constructor(private readonly host: LayoutHost, o: { load?: (url: string) => Promise<THREE.Object3D> } = {}) {
+  /** entry: 장면 원래 물건의 상태 칸(/api/scene 물건). 뺀 물건을 restore로 다시 보일 때 상태를 다시 잇는다. */
+  constructor(private readonly host: LayoutHost, o: { load?: (url: string) => Promise<THREE.Object3D>; entry?: (id: string) => StateEntry | undefined } = {}) {
     this.load = o.load ?? ((url) => new GLTFLoader().loadAsync(url).then((g) => g.scene));
+    this.entry = o.entry ?? (() => undefined);
   }
 
   /** 뺀 물건인가(기준점이 없다). */
@@ -84,6 +92,7 @@ export class LayoutOps {
     const node = this.host.find(id);
     if (!node || this.removed.has(id)) return false;
     if (this.host.merge.mergedOf(id)) this.host.merge.detach(id);
+    this.keep(id, node);
     place(node, patch);
     this.host.forgetAnchor(id);
     return true;
@@ -98,6 +107,7 @@ export class LayoutOps {
     if (shown !== undefined && node) {
       this.removed.delete(id);
       node.visible = shown;
+      this.keep(id, node);
       place(node, object);
       this.host.states.add(id, node, stateEntry(object));
       this.host.forgetAnchor(id);
@@ -118,6 +128,7 @@ export class LayoutOps {
     holder.add(body);
     noShadow(holder);
     this.host.root.add(holder);
+    this.added.set(id, holder);
     place(holder, ticket.object);
     this.host.states.add(id, holder, stateEntry(ticket.object));
     this.host.forgetAnchor(id);
@@ -138,10 +149,54 @@ export class LayoutOps {
     return true;
   }
 
+  /**
+   * 다시 접속할 때(hello): 바꾼 배치를 원래 장면으로 돌린다. 서버의 맞추기 메시지는 원래 장면과의 차이만 보내기 때문이다.
+   * 받는 중인 더하기는 버리고, 더한 물건은 지우고, 뺀 물건은 다시 보이며 상태를 다시 잇고, 옮긴 물건은 원래 자리로. 장면이 바뀌면 true.
+   */
+  restore(): boolean {
+    if (this.closed) return false;
+    this.pending.clear();
+    let changed = false;
+    for (const [id, node] of this.added) {
+      this.host.states.remove(id);
+      this.removed.delete(id);
+      node.removeFromParent();
+      node.traverse((n) => { if (n instanceof THREE.Mesh && n.material === this.boxMaterial) n.geometry.dispose(); });
+      changed = true;
+    }
+    this.added.clear();
+    for (const [id, shown] of this.removed) {
+      const node = this.host.find(id);
+      if (!node) continue;
+      node.visible = shown;
+      const e = this.entry(id);
+      if (e) this.host.states.add(id, node, e);
+      changed = true;
+    }
+    this.removed.clear();
+    for (const [id, t] of this.origin) {
+      const node = this.host.find(id);
+      if (!node) continue;
+      node.position.copy(t.position);
+      node.quaternion.copy(t.quaternion);
+      node.updateMatrixWorld(true);
+      changed = true;
+    }
+    this.origin.clear();
+    if (changed) this.host.forgetAnchor();
+    return changed;
+  }
+
   /** 엔진을 버릴 때: 받는 중인 더하기를 버린다. */
   dispose(): void {
     this.closed = true;
     this.pending.clear();
+  }
+
+  /** 장면 원래 물건을 처음 옮기기 전에 그 자리를 적어 둔다. */
+  private keep(id: string, node: THREE.Object3D): void {
+    if (this.added.has(id) || this.origin.has(id)) return;
+    this.origin.set(id, { position: node.position.clone(), quaternion: node.quaternion.clone() });
   }
 
   private async body(o: AddObject): Promise<THREE.Object3D> {
@@ -171,7 +226,8 @@ export interface LiveEngine {
   requestRender(): void;
 }
 
-/** 엔진에 /events 메시지를 잇는다. 상태·배치가 바뀌면 그리게 한다. 대시보드는 기기를 바꾸지 않으므로 보내기는 없다. */
+/** 엔진에 /events 메시지를 잇는다. 상태·배치가 바뀌면 그리게 한다. hello(다시 접속)면 배치를 원래 장면으로 돌린다: 뒤따르는 맞추기 메시지가 지금 배치를 다시 넣는다.
+ *  대시보드는 기기를 바꾸지 않으므로 보내기는 없다. */
 export function attachLive(engine: LiveEngine): { handle(m: ServerMessage): void; dispose(): void } {
   let off = false;
   let dirty = false;
@@ -189,6 +245,10 @@ export function attachLive(engine: LiveEngine): { handle(m: ServerMessage): void
   return {
     handle(m) {
       if (off) return;
+      if (m.type === "hello") {
+        if (engine.layout.restore()) engine.requestRender();
+        return;
+      }
       dirty = false;
       sync.handleMessage(m);
       if (dirty) engine.requestRender();
