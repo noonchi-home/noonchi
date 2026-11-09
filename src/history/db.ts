@@ -82,8 +82,8 @@ export class HistoryDb {
     return q.latest ? rows.reverse() : rows;
   }
 
-  /** 기억 판본을 저장하고 새 번호를 돌려준다(1부터). appliesDay가 없으면(seed) 어느 날에나 쓸 수 있다. */
-  saveMemory(m: { kind: "list" | "fsm"; memory: unknown; day: string | null; appliesDay: string | null; source: "seed" | "reflection" }): number {
+  /** 기억 판본을 저장하고 새 번호를 돌려준다(1부터). appliesDay가 없으면(seed) 어느 날에나 쓸 수 있다. synthetic은 합성 기록(scripts/seed-history.ts)이다. */
+  saveMemory(m: { kind: "list" | "fsm"; memory: unknown; day: string | null; appliesDay: string | null; source: "seed" | "reflection" | "synthetic" }): number {
     const next = (this.db.prepare("SELECT COALESCE(MAX(version), 0) + 1 AS v FROM memories").get() as { v: number }).v;
     this.db.prepare("INSERT INTO memories(version, created_ms, day, applies_day, kind, memory, source) VALUES (?, ?, ?, ?, ?, ?, ?)")
       .run(next, Date.now(), m.day, m.appliesDay, m.kind, JSON.stringify(m.memory), m.source);
@@ -154,6 +154,24 @@ export class HistoryDb {
         prediction: d.prediction ?? null, memory_version: d.memory_version ?? 0, world: d.world ?? null,
       };
     });
+  }
+
+  /** 합성 기록(scripts/seed-history.ts)만 지운다: data.synthetic이 참인 줄, source가 synthetic인 기억 판본, 그 판본에 고정한 날. 지운 수를 돌려준다. */
+  removeSynthetic(): { events: number; memories: number; pins: number } {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const versions = (this.db.prepare("SELECT version FROM memories WHERE source = 'synthetic'").all() as { version: number }[]).map((r) => String(r.version));
+      const pins = versions.length
+        ? Number(this.db.prepare(`DELETE FROM meta WHERE key LIKE 'memory_day:%' AND value IN (${versions.map(() => "?").join(",")})`).run(...versions).changes)
+        : 0;
+      const memories = Number(this.db.prepare("DELETE FROM memories WHERE source = 'synthetic'").run().changes);
+      const events = Number(this.db.prepare("DELETE FROM events WHERE json_extract(data, '$.synthetic') = 1").run().changes);
+      this.db.exec("COMMIT");
+      return { events, memories, pins };
+    } catch (e) {
+      this.db.exec("ROLLBACK");
+      throw e;
+    }
   }
 
   close(): void {
