@@ -54,7 +54,7 @@ export function checkDotLayers(at: Px, mark: MarkTone, k: number): Layer[] {
 }
 
 /** 머리 방향 화살촉 테두리(오른쪽을 본다, 길이 단위 1). 굵은 선으로 그려 속이 찬다. */
-const HEADING = [[6.5, 0], [-3.2, -4.5], [-1.2, 0], [-3.2, 4.5]] as const;
+const HEADING = [[5.8, 0], [-2.8, -3.9], [-1, 0], [-2.8, 3.9]] as const;
 
 export function cloidLayers([x, y]: Px, angle: number, k: number): Layer[] {
   const C = TWIN.cloid;
@@ -66,6 +66,6 @@ export function cloidLayers([x, y]: Px, angle: number, k: number): Layer[] {
     disk("cloidEdge", [x, y], (12 + casing + edge) * k),
     disk("cloidCasing", [x, y], (12 + casing) * k),
     disk("cloidFill", [x, y], 12 * k),
-    { tone: "cloidHeading", d: `M${head.join("L")}Z`, width: 2 * k },
+    { tone: "cloidHeading", d: `M${head.join("L")}Z`, width: 3.2 * k },
   ];
 }
