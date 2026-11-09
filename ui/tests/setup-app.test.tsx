@@ -599,6 +599,16 @@ describe("설정 화면: 상반신 마스코트와 생각 말풍선", () => {
     expect(box.style.height).toBe(`calc(${UPPER_BODY.cut - UPPER_BODY.top} * var(--s))`);
   });
 
+  it("마스코트 크기는 전의 2/3: 큰 화면은 (화면 높이 3/4·너비 34% 중 작은 쪽)의 2/3, 좁은 화면은 160px의 2/3", async () => {
+    open();
+    await screen.findByRole("heading", { name: "어느 집을 쓸까요?" });
+    const shown = UPPER_BODY.cut - UPPER_BODY.top;
+    const boxW = MASCOT.x1 - MASCOT.x0;
+    const main = document.querySelector<HTMLElement>("main")!;
+    expect(main.style.getPropertyValue("--s-wide")).toBe(`calc(min(75dvh / ${shown}, 34vw / ${boxW}) * 2 / 3)`);
+    expect(main.style.getPropertyValue("--s-narrow")).toBe(`calc(160px / ${shown} * 2 / 3)`);
+  });
+
   it("말풍선 밖에 빈 동그라미 셋(점점 작아짐)이 마스코트 쪽으로 이어진다", async () => {
     open();
     await screen.findByRole("heading", { name: "어느 집을 쓸까요?" });

@@ -35,19 +35,20 @@ type StepId = (typeof STEPS)[number]["id"];
 type Notice = { text: string; error?: boolean } | null;
 
 // 마스코트 그림(1254×1254)에서 보이는 칸: 가로 x0~x1, 세로 머리 꼭대기 위 8px~LG 표시 아래 20px(cut, 화면 밑선).
-// 세로 칸이 화면 높이의 3/4가 되게 키우되 가로가 화면 너비의 34%를 넘지 않게 한다(좁은 화면은 세로 160px).
+// 크기는 (화면 높이 3/4·가로 화면 너비 34% 중 작은 쪽)의 2/3, 좁은 화면은 세로 160px의 2/3.
 export const UPPER_BODY = { top: MASCOT.headTop[1] - 8, cut: MASCOT.logo.center[1] + MASCOT.logo.r + 20 };
 const SHOWN = UPPER_BODY.cut - UPPER_BODY.top;
 const BOX_W = MASCOT.x1 - MASCOT.x0;
 const px = (n: number) => `calc(${n} * var(--s))`;
-const BUBBLE_LEFT = `max(28%, calc(2.5% + ${BOX_W} * var(--s) + 7rem))`;
+const SCALE = { wide: `calc(min(75dvh / ${SHOWN}, 34vw / ${BOX_W}) * 2 / 3)`, narrow: `calc(160px / ${SHOWN} * 2 / 3)` };
+const BUBBLE_LEFT = `max(20%, calc(2.5% + ${BOX_W} * var(--s) + 7rem))`;
 // 생각 동그라미 줄: 말풍선 왼쪽 아래(FOOT)에서 마스코트 주둥이 위(HEAD)로. t는 FOOT에서 HEAD 쪽으로 간 몫, px는 큰 화면 지름.
 const FOOT = { x: `(${BUBBLE_LEFT} - 20px)`, b: "(5dvh + 20%)" };
 const HEAD = { x: `(2.5% + ${MASCOT.snout[0] - MASCOT.x0} * var(--s) + 14px)`, b: `(${UPPER_BODY.cut - MASCOT.snout[1] + 20} * var(--s))` };
 const DOTS = [
-  { size: "lg", t: 0.15, px: 48, className: "size-6 lg:size-12", place: "left-[100px] top-0" },
-  { size: "md", t: 0.5, px: 30, className: "size-4 lg:size-[30px]", place: "left-[84px] top-[26px]" },
-  { size: "sm", t: 0.82, px: 18, className: "size-2.5 lg:size-[18px]", place: "left-[72px] top-[46px]" },
+  { size: "lg", t: 0.15, px: 48, className: "size-6 lg:size-12", place: "left-[80px] top-0" },
+  { size: "md", t: 0.5, px: 30, className: "size-4 lg:size-[30px]", place: "left-[64px] top-[26px]" },
+  { size: "sm", t: 0.82, px: 18, className: "size-2.5 lg:size-[18px]", place: "left-[54px] top-[46px]" },
 ] as const;
 const along = (a: string, b: string, t: number, r: number) => `calc(${a} * ${1 - t} + ${b} * ${t} - ${r}px)`;
 // 처음 들어올 때 아래에서 올라온다(단계가 바뀌어도 다시 하지 않는다). 움직임 줄이기면 입구의 MotionConfig가 바로 끝낸다.
@@ -175,8 +176,8 @@ export function SetupApp({ navigate = (url: string) => location.assign(url) }: {
         </SimpleNavbar>
       </header>
       <main
-        className="relative flex min-h-0 flex-1 flex-col gap-4 p-4 [--s:calc(160px/var(--shown))] lg:block lg:overflow-hidden lg:p-0 lg:[--s:min(calc(75dvh/var(--shown)),calc(34vw/var(--box-w)))]"
-        style={{ "--shown": SHOWN, "--box-w": BOX_W } as CSSProperties}
+        className="relative flex min-h-0 flex-1 flex-col gap-4 p-4 [--s:var(--s-narrow)] lg:block lg:overflow-hidden lg:p-0 lg:[--s:var(--s-wide)]"
+        style={{ "--s-wide": SCALE.wide, "--s-narrow": SCALE.narrow } as CSSProperties}
       >
         <div aria-hidden="true" className="pointer-events-none order-last self-start lg:absolute lg:bottom-0 lg:left-[2.5%]">
           <ScrollReveal once variants={RISE} transition={{ duration: 0.5, ease: "easeOut" }}>
