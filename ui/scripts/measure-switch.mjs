@@ -17,6 +17,8 @@
 // --from FILE              크롬을 띄우지 않고 저장한 결과 json(--out의 switch-*.json)을 다시 판정한다
 // --profile DIR           크롬 프로필을 이 폴더에 두고 다시 쓴다(기본은 새 임시 폴더라 GPU 셰이더 캐시가 비어 첫 바뀜이 늦다)
 // --css RULES             원인을 가를 때 덧붙일 CSS(예: "[data-say-line]{animation:none!important}")
+// --runs N                새 크롬으로 N번 재고(실행마다 OUT/run-i), 첫 바뀜 가장 긴 간격을 모아 보인다. 첫 바뀜은 실행마다 한 번뿐이라 여러 번 띄워야 잡힌다
+// --gl                    WebGL 부르기마다 걸린 시간을 잰다(1ms 넘는 부르기와 100ms 칸마다 이름별 합). 첫 바뀜 끊김의 원인을 가를 때만 쓴다
 // --url URL --out DIR(trace·결과 json 저장)
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -38,7 +40,8 @@ const LIMITS_RUN = {
   minFrameShare: Number(args["min-frames"] ?? LIMITS.minFrameShare),
   maxDropShare: Number(args["max-late"] ?? LIMITS.maxDropShare),
 };
-const OUT = args.out ?? null;
+const OUT_BASE = args.out ?? null;
+let OUT = OUT_BASE;
 const PORT = Number(args.port ?? 9531);
 const STEP_MS = 4000;
 const START_STEP = 2;
@@ -77,6 +80,29 @@ const PROBE = `(() => {
   });
   const start = () => mo.observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-step", "data-ready"] });
   if (document.documentElement) start(); else document.addEventListener("DOMContentLoaded", start);
+})();`;
+
+/** --gl: WebGL 부르기 시간 재기(부르기 1ms 이상은 하나씩, 그 밖은 100ms 칸마다 이름별 합). */
+const GL_PROBE = `(() => {
+  const G = window.__gl = { calls: [], sum: {} };
+  for (const P of [window.WebGL2RenderingContext?.prototype, window.WebGLRenderingContext?.prototype]) {
+    if (!P) continue;
+    for (const n of Object.getOwnPropertyNames(P)) {
+      const d0 = Object.getOwnPropertyDescriptor(P, n);
+      if (!d0 || typeof d0.value !== "function" || n === "constructor") continue;
+      const f = d0.value;
+      P[n] = function (...a) {
+        const t = performance.now();
+        const r = f.apply(this, a);
+        const d = performance.now() - t;
+        const b = Math.floor(t / 100);
+        const s = G.sum[b] ??= {};
+        s[n] = (s[n] ?? 0) + d;
+        if (d >= 1) G.calls.push({ t, n, d: Math.round(d * 10) / 10, w: a.find((x) => x && typeof x === "object" && "width" in x)?.width ?? null });
+        return r;
+      };
+    }
+  }
 })();`;
 
 const CATS = [
@@ -230,6 +256,19 @@ function pageSwitch(S, sw, vsync) {
   };
 }
 
+/** --gl 한 바뀜: 창 안 1ms 넘는 WebGL 부르기(바뀐 때 기준 ms)와, 이름별 합이 큰 100ms 칸. */
+function glSwitch(G, sw) {
+  const a = sw.t - WIN.before;
+  const b = sw.t + WIN.after;
+  const calls = G.calls.filter((c) => c.t >= a && c.t <= b).map((c) => ({ at: Math.round(c.t - sw.t), n: c.n, d: c.d, ...(c.w ? { w: c.w } : {}) }));
+  const buckets = Object.entries(G.sum).filter(([k]) => Number(k) * 100 + 100 >= a && Number(k) * 100 <= b).map(([k, v]) => {
+    const total = Object.values(v).reduce((s, x) => s + x, 0);
+    const top = Object.entries(v).sort((x, y) => y[1] - x[1]).slice(0, 4).map(([n, d]) => `${n} ${Math.round(d)}`);
+    return { at: Math.round(Number(k) * 100 - sw.t), total: Math.round(total), top };
+  }).filter((x) => x.total >= 20);
+  return { calls, buckets };
+}
+
 async function devtools(path) {
   for (let i = 0; i < 120; i++) {
     try { return await (await fetch(`http://127.0.0.1:${PORT}${path}`)).json(); } catch { await wait(250); }
@@ -269,6 +308,7 @@ async function main() {
     await send("Page.addScriptToEvaluateOnNewDocument", { source: PROBE });
     // --css: 원인을 가를 때만 쓰는 덧칠(예: 어떤 움직임을 끈 채 재기)
     if (args.css) await send("Page.addScriptToEvaluateOnNewDocument", { source: `document.addEventListener("DOMContentLoaded", () => { const s = document.createElement("style"); s.textContent = ${JSON.stringify(args.css)}; document.head.append(s); });` });
+    if (args.gl) await send("Page.addScriptToEvaluateOnNewDocument", { source: GL_PROBE });
     if (MODE === "visible") await send("Page.bringToFront");
     const url = URL_BASE + (URL_BASE.includes("?") ? "&" : "?") + "step=" + START_STEP;
     await send("Page.navigate", { url });
@@ -306,6 +346,7 @@ async function main() {
     const left = wallAt + SECONDS * 1000 - Date.now();
     if (left > 0) await wait(left);
     const S = await evaluate("JSON.parse(JSON.stringify(window.__sw))");
+    const GL = args.gl ? await evaluate("JSON.parse(JSON.stringify(window.__gl ?? null))") : null;
     ws.close();
 
     const gapsAll = S.raf.slice(1).map((t, i) => t - S.raf[i]).filter((g) => g > 0).sort((x, y) => x - y);
@@ -325,7 +366,8 @@ async function main() {
         const mark = tr.marks.find((m) => m.name === `sw-${n}`);
         if (mark) { t = traceSwitch(tr, mark); break; }
       }
-      result.switches.push({ n: i + 1, at: Math.round(sw.t - S.mounted), to: `${sw.step}단계`, page: p, trace: t });
+      const gl = GL ? glSwitch(GL, sw) : undefined;
+      result.switches.push({ n: i + 1, at: Math.round(sw.t - S.mounted), to: `${sw.step}단계`, page: p, trace: t, ...(gl ? { gl } : {}) });
     }
     if (OUT) {
       mkdirSync(OUT, { recursive: true });
@@ -355,6 +397,10 @@ function report(r) {
       lines.push(`    그리기·풀기 ${JSON.stringify(t.side)}, 그림 상태 ${JSON.stringify(t.frames)}`);
       for (const lt of t.longTasks) lines.push(`    일 ${lt.at}ms ${lt.ms}ms ${JSON.stringify(lt.kinds)}`);
     }
+    if (s.gl) {
+      for (const c of s.gl.calls.filter((x) => x.d >= 5)) lines.push(`    GL ${c.at}ms ${c.n} ${c.d}ms${c.w ? ` (${c.w}px)` : ""}`);
+      for (const k of s.gl.buckets) lines.push(`    GL 칸 ${k.at}ms 합 ${k.total}ms: ${k.top.join(", ")}`);
+    }
   }
   const share = verdict.expected ? verdict.dropped / verdict.expected : 0;
   lines.push(`합: 떨군 그림 ${verdict.dropped}/${verdict.expected} (${(share * 100).toFixed(1)}%), 가장 긴 일 ${Math.round(verdict.worstTask)}ms`);
@@ -368,4 +414,20 @@ function report(r) {
 
 if (args.from) process.exit(report(JSON.parse(readFileSync(args.from, "utf8"))));
 
-main().then((r) => process.exit(report(r)), (e) => { console.error(e); process.exit(3); });
+/** --runs N: 새 크롬(새 프로필)을 N번 띄워 재고, 실행마다 판정한 뒤 화면이 뜬 뒤 첫 바뀜의 가장 긴 간격을 모아 보인다. 하나라도 실패면 1. */
+async function runs(n) {
+  const firsts = [];
+  let failed = 0;
+  for (let i = 1; i <= n; i++) {
+    console.log(`== 실행 ${i}/${n}`);
+    OUT = OUT_BASE && join(OUT_BASE, `run-${i}`);
+    const r = await main();
+    if (report(r)) failed++;
+    firsts.push(r.switches[0]?.page.worstGap ?? null);
+  }
+  console.log(`첫 바뀜 가장 긴 간격(ms): ${firsts.join(", ")} · 실패한 실행 ${failed}/${n}`);
+  return failed ? 1 : 0;
+}
+
+if (Number(args.runs) > 1) runs(Number(args.runs)).then((code) => process.exit(code), (e) => { console.error(e); process.exit(3); });
+else main().then((r) => process.exit(report(r)), (e) => { console.error(e); process.exit(3); });
