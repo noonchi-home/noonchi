@@ -1,7 +1,7 @@
 // 폰 AR(WebXR local 공간) 자세를 트윈 평면 좌표의 눈 자세로 바꾼다. 순수 함수만 둔다.
 //
 // WebXR 공간은 오른손, +Y 위, 미터다. 트윈 three 좌표도 (평면 x, 높이, 평면 y)라 축 모양이 같으므로
-// AR (x, z)를 평면 (x, y)로 읽고 수평 회전 하나와 이동만 구하면 된다. 크기는 둘 다 미터라 맞출 필요가 없다.
+// AR (x, z)를 평면 (x, y)로 읽고 수평 회전 하나와 이동만 있으면 된다(위치 맞추기 src/sync가 구한다). 크기는 둘 다 미터라 맞출 필요가 없다.
 // 회전 각은 평면 규칙(yaw 0 = +x, 90 = +y)을 따른다.
 
 import type { EyePose, Plan2, Vec3 } from "../contract/events.js";
@@ -9,21 +9,13 @@ import type { EyePose, Plan2, Vec3 } from "../contract/events.js";
 export type { EyePose, Plan2, Vec3 } from "../contract/events.js";
 export type Quat = [number, number, number, number]; // x, y, z, w
 
-export interface FloorPoint {
-  ar: Vec3;
-  plan: Plan2;
-}
-
+/** AR → 트윈 맞춤: 수평 회전 theta·이동 tx·ty(src/sync/rigid.ts Rigid)와 트윈 높이 0의 AR y. */
 export interface Alignment {
   theta: number;
   tx: number;
   ty: number;
   floorY: number;
-  mismatchM: number;
 }
-
-/** 두 기준점이 이보다 가까우면 방향이 불안정하다. */
-export const MIN_BASELINE_M = 0.5;
 
 const round = (v: number, digits: number) => Math.round(v * 10 ** digits) / 10 ** digits;
 const deg = (rad: number) => (rad * 180) / Math.PI;
@@ -43,17 +35,6 @@ export function rotate3([qx, qy, qz, qw]: Quat, [vx, vy, vz]: Vec3): Vec3 {
 /** 카메라가 보는 방향. WebXR 시점은 자기 -Z를 본다. */
 export function forwardOf(q: Quat): Vec3 {
   return rotate3(q, [0, 0, -1]);
-}
-
-/** 바닥 기준점 두 곳(AR 점 ↔ 평면 점)으로 수평 회전·이동·바닥 높이를 구한다. */
-export function solveAlignment(a: FloorPoint, b: FloorPoint): Alignment {
-  const da: Plan2 = [b.ar[0] - a.ar[0], b.ar[2] - a.ar[2]];
-  const dt: Plan2 = [b.plan[0] - a.plan[0], b.plan[1] - a.plan[1]];
-  const lenA = Math.hypot(...da), lenT = Math.hypot(...dt);
-  if (lenA < MIN_BASELINE_M || lenT < MIN_BASELINE_M) throw new Error(`두 기준점이 ${MIN_BASELINE_M}m보다 가깝습니다`);
-  const theta = Math.atan2(dt[1], dt[0]) - Math.atan2(da[1], da[0]);
-  const [rx, ry] = rotate2(theta, [a.ar[0], a.ar[2]]);
-  return { theta, tx: a.plan[0] - rx, ty: a.plan[1] - ry, floorY: (a.ar[1] + b.ar[1]) / 2, mismatchM: Math.abs(lenT - lenA) };
 }
 
 export function toTwin(position: Vec3, orientation: Quat, al: Alignment): EyePose {

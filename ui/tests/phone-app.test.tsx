@@ -1,5 +1,5 @@
 // 실제 폰 화면 뿌리(PhoneApp): 제어(controller.ts)의 상태를 그대로 그리고, AR 덮개 div를 DOM 오버레이 뿌리로, canvas 그림(draw.ts)을 controller에 잇는다.
-// 평소 AR에는 조준점이 없고, 명령이 떠 있으면 그 대상 하나에 작은 고리(이름표 없음). 미어캣 → 설정 → 기준점 다시 찍기를 고르면 조준점이 보인다.
+// 평소 AR에는 조준점이 없고, 명령이 떠 있으면 그 대상 하나에 작은 고리(이름표 없음). 미어캣 → 설정 → 물건 자리 맞추기를 고르면 조준점이 보인다.
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -95,13 +95,14 @@ function arApp() {
   };
   return { c, session, requested, ws: FakeSocket.last, overlay, start, ...r };
 }
-const status = { type: "status", mode: "floor", revision: 1, anchors: [{ id: "a", label: "거실 창가", recorded: true }, { id: "b", label: "현관", recorded: true }], aligned: true, mismatch_m: 0.05 };
+const START = { label: "거실·복도 테이블 앞", facing: "거실·복도 TV수납장" };
+const status = { type: "status", aligned: true, sync: { state: "aligned", source: "walls", start: START, started: true, anchors: 0, wall_points: 60, residual_m: 0.05 } };
 const command = { type: "command", id: "plan:pam-1", step: "plan:pam-1:2", text: "컵을 들어 주세요", vision: "컵 · 식탁 위", choices: [{ id: "done", label: "완료" }], speak: false };
 /** 화면 가운데(조준점 자리) 고리. */
 const centerArcs = (ops: { op: string; [k: string]: unknown }[]) => ops.filter((o) => o.op === "arc" && o.x === innerWidth / 2 && o.y === innerHeight / 2);
 
 describe("실제 폰 화면 뿌리(PhoneApp)", () => {
-  it("상태 메시지가 오면 첫 안내에 기준점 이름, AR이 없으면 까닭, 글을 보내면 서버로 say", async () => {
+  it("상태 메시지가 오면 첫 안내에 시작 위치 이름, AR이 없으면 까닭, 글을 보내면 서버로 say", async () => {
     const c = createPhoneController({
       location: { protocol: "http:", host: "127.0.0.1:8521", search: "" }, Socket: FakeSocket, Recognition: null,
       speak: () => {}, secure: true, xr: { isSessionSupported: async () => false },
@@ -110,10 +111,10 @@ describe("실제 폰 화면 뿌리(PhoneApp)", () => {
     render(<PhoneApp controller={c} />);
     act(() => {
       FakeSocket.last.open();
-      FakeSocket.last.push({ type: "status", mode: "floor", revision: 1, anchors: [{ id: "a", label: "거실 창가", recorded: false }], aligned: false, mismatch_m: null });
+      FakeSocket.last.push({ ...status, aligned: false, sync: { ...status.sync, state: "none", source: null, started: false, wall_points: 0, residual_m: null } });
     });
     const main = within(screen.getByRole("main"));
-    expect(main.getAllByRole("listitem")[0]).toHaveTextContent("거실 창가 바닥에 차례로 조준점을 맞추고 기록을 눌러요");
+    expect(main.getAllByRole("listitem")[0]).toHaveTextContent("거실·복도 테이블 앞에 서서 거실·복도 TV수납장 쪽을 보고 여기서 시작을 눌러요");
     expect(await main.findByText("이 브라우저는 AR을 지원하지 않아요. 안드로이드 크롬으로 여세요.")).toBeInTheDocument();
     await userEvent.type(main.getByRole("textbox", { name: "클로이드에게 할 말" }), "TV 켜줘");
     await userEvent.click(main.getByRole("button", { name: "보내기" }));
@@ -144,7 +145,7 @@ describe("실제 폰 화면 뿌리(PhoneApp)", () => {
     expect(ops.filter((o) => o.op === "text" || o.op === "round")).toEqual([]);
   });
 
-  it("미어캣 → 설정 → 기준점 다시 찍기를 고르면 조준점이 보이고, 바닥에 닿으면 초록이 된다", async () => {
+  it("미어캣 → 설정 → 물건 자리 맞추기를 고르면 조준점이 보이고, 바닥에 닿으면 초록이 된다", async () => {
     const ops = paintLog();
     const { session, ws, start } = arApp();
     act(() => ws.push(status));
@@ -152,19 +153,17 @@ describe("실제 폰 화면 뿌리(PhoneApp)", () => {
     act(() => session.step(100, frame(false)));
     expect(centerArcs(ops)).toEqual([]);
     await userEvent.click(screen.getByRole("button", { name: "설정" }));
-    await userEvent.click(within(screen.getByRole("alertdialog", { name: "설정" })).getByRole("button", { name: "기준점 다시 찍기" }));
-    expect(ws.sent.filter((m) => m.type === "reset")).toHaveLength(2);
-    act(() => ws.push({ ...status, aligned: false, mismatch_m: null, anchors: status.anchors.map((a) => ({ ...a, recorded: false })) }));
+    await userEvent.click(within(screen.getByRole("alertdialog", { name: "설정" })).getByRole("button", { name: "물건 자리 맞추기" }));
     expect(centerArcs(ops)).toHaveLength(5);
     expect(ops.filter((o) => o.op === "stroke").at(-1)!.color).toBe(twin.phoneFocus.aim.miss);
     act(() => session.step(200, frame(true)));
     expect(ops.filter((o) => o.op === "stroke").at(-1)!.color).toBe(twin.phoneFocus.aim.hit);
-    expect(screen.getByText("바닥에 닿음 · 기준점 0/2")).toBeInTheDocument();
-    // hit-test 점이 없어도 아래를 보면 어림 바닥에 닿는다: 조준점은 aim.estimated, 기록 단추는 그대로
+    expect(screen.getByText("바닥에 닿음")).toBeInTheDocument();
+    // hit-test 점이 없어도 아래를 보면 어림 바닥에 닿는다: 조준점은 aim.estimated, 「완료」는 그대로
     act(() => session.step(300, frame(false, true)));
     expect(ops.filter((o) => o.op === "stroke").at(-1)!.color).toBe(twin.phoneFocus.aim.estimated);
-    expect(screen.getByText("어림잡은 바닥에 닿음 · 기준점 0/2")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "기록" })).toBeEnabled();
+    expect(screen.getByText("어림잡은 바닥에 닿음")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "완료" })).toBeEnabled();
   });
 
   it("세로 화면의 화면 밖 화살표는 그릴 때 잰 위 줄(미어캣·명령) 아래에 둔다", async () => {

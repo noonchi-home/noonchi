@@ -15,6 +15,7 @@ import { ScriptedDetector } from "./helpers/detectors.js";
 import { startFakePam, type FakePam } from "./helpers/pam.js";
 import { CUP_SCRIPTS, plannerRespond } from "./helpers/planner.js";
 import { openWebSocket } from "./helpers/ws.js";
+import { alignOnServer } from "./helpers/align.js";
 
 type Msg = Record<string, any>;
 let srv: RunningServer | undefined;
@@ -33,8 +34,7 @@ afterEach(async () => {
 
 const inbox = (list: Msg[]) => (ws: WebSocket) => ws.on("message", (d, bin) => { if (!bin) list.push(JSON.parse(String(d)) as Msg); });
 
-// 기준점 두 곳(twin/homes/mokryeon_180b/scene.json plan.ar_anchors)을 AR 점 = 평면 점으로 찍어 맞춤을 그대로 둔다(회전 0, 이동 0)
-const ANCHORS = [{ id: "alpha_corner", point: [0.1, 0, 6.065625] }, { id: "bed_ne_corner", point: [16.1, 0, 2.296875] }];
+// 위치 맞춤: 눈 자리에 시작 위치를 저장하고 「여기서 시작」 + 그 자리의 벽·바닥 점(AR 점 = 평면 점, 회전 0, 이동 0, tests/helpers/align.ts)
 // 폰 눈: 식탁 가운데([9.9612, 3.9242], 윗면 0.75 m)에서 1.5 m 떨어진 거실에서 높이 1.5 m로 +x를 보고 식탁 윗면 가운데를 향해 숙인다.
 // 식탁·싱크대에서 1.2 m 밖이라 이동 단계는 눈 자리로 넘어가지 않는다. 90° 시야 투영(열 우선, tests/act-track.test.ts와 같다)
 const PROJECTION = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1.0002, -1, 0, 0, -0.020002, 0];
@@ -79,7 +79,7 @@ describe("한양목련 처음부터 끝까지", () => {
       for (const end = Date.now() + 5000; Date.now() < end; await new Promise((r) => setTimeout(r, 20))) if (ok()) return;
       throw new Error(`5초 안에 오지 않음: ${what}`);
     };
-    for (const a of ANCHORS) ws.send(JSON.stringify({ type: "anchor", ...a }));
+    await alignOnServer(srv.url, (t) => ws.send(t), join(srv.twin.dir, "homes", "mokryeon_180b", "scene.json"), [EYE[0], EYE[2]]);
     await until(() => phone.some((m) => m.type === "status" && m.aligned), "맞춤");
     // 맞춘 눈 = 클로이드 자리(계획 경로의 출발점)
     ws.send(JSON.stringify({ type: "pose", position: EYE, orientation: ORIENTATION, tracking: "ok" }));

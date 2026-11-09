@@ -1,6 +1,6 @@
-// 클로이드의 눈 AR(phone.js에서 옮겼다): WebXR AR로 폰 자세를 재고, 화면 가운데 조준점이 가리키는 바닥 점을 기준점·'여기'로 쓴다.
-// 조준점은 hit-test 점이고, 없으면 시선이 어림 바닥(local-floor, 없으면 폰 1.5m 아래)과 만나는 점이다(touch.js aimPoint, hitEstimated).
-// 자세(+조준점)는 초당 10번, 카메라 화면은 기본 초당 12장(가로 촬영 가로 480px·세로 360px JPEG, ?fps=·?w=로 바꾼다) /phone/events로 보낸다.
+// 클로이드의 눈 AR(phone.js에서 옮겼다): WebXR AR로 폰 자세를 재고, 화면 가운데 조준점이 가리키는 바닥 점을 '여기'로 쓴다.
+// 조준점은 hit-test 점이고, 없으면 시선이 어림 바닥(local-floor, 없으면 폰 1.5m 아래)과 만나는 점이다(aim.js aimPoint, hitEstimated).
+// 자세(+조준점, 실제 hit이면 면 법선 hit_normal, 어림 바닥 높이 floor_y)는 초당 10번(서버 위치 맞추기가 벽 점·바닥 높이로 쓴다), 카메라 화면은 기본 초당 12장(가로 촬영 가로 480px·세로 360px JPEG, ?fps=·?w=로 바꾼다) /phone/events로 보낸다.
 // 인코딩은 워커 두 개로 두 장까지 겹치고(capture.js), 순서가 뒤바뀐 오래된 프레임과 와이파이에 쌓인 프레임은 건너뛴다(pipeline.js).
 // '사진 찍기'는 카메라 원본 크기로 한 장을 보내고, 서버가 그 순간의 눈 자세를 붙여 저장한다. 트윈 좌표 계산은 서버(src/phone)가 한다.
 // 초점: 서버가 보낸 대상(AR 좌표)을 화면 표시(hooks.onMarks)와 대시보드로 가는 화면 프레임에 그린다(사진·엔진 프레임에는 그리지 않음).
@@ -13,7 +13,7 @@ import { createDisplayEncoder } from "./display-encoder.js";
 import { engineDue } from "./engine.js";
 import { createFramePipeline, createSendStats, frameWidth } from "./pipeline.js";
 import { focusMarks } from "./project.js";
-import { aimPoint, floorCandidate } from "./touch.js";
+import { aimPoint, floorPlaneY, planeNormal } from "./aim.js";
 
 const SEND_MS = 100;
 const FRAME_QUALITY = 0.55; // 장 수를 늘린 만큼 한 장 크기를 줄인다(사진은 0.9)
@@ -44,8 +44,9 @@ export function createAr({ link, params, hooks, deps = {} }) {
   const FLIP = params.get("flip") !== "0";
   const pipeline = createFramePipeline({ maxInFlight: 2 });
   const stats = createSendStats({ windowMs: 2000 });
-  /** on(AR 중), epoch(원점 이름), hitPoint(조준점 바닥 점), hitEstimated(조준점이 어림 바닥), lastFloor(바닥 후보), limited(추적 약함), size·encoder(측정 글). */
-  const state = { on: false, epoch: null, hitPoint: null, hitEstimated: false, lastFloor: null, limited: false, size: "-", encoder: "-" };
+  /** on(AR 중), epoch(원점 이름), hitPoint(조준점 바닥 점), hitEstimated(조준점이 어림 바닥), limited(추적 약함),
+   *  position·orientation(마지막 폰 자세, 「여기서 시작」에 쓴다), size·encoder(측정 글). */
+  const state = { on: false, epoch: null, hitPoint: null, hitEstimated: false, limited: false, position: null, orientation: null, size: "-", encoder: "-" };
   let session = null;
   let display = null; // 표시 영상(H.264, display-encoder.js). 분석용 JPEG와 따로 대시보드 화면에만 간다
   let wantPhoto = false;
@@ -73,10 +74,9 @@ export function createAr({ link, params, hooks, deps = {} }) {
     state.epoch = newEpoch();
     link.send({ type: "reset", epoch: state.epoch });
     space.addEventListener?.("reset", () => {
-      state.lastFloor = null;
       state.epoch = newEpoch();
       link.send({ type: "reset", epoch: state.epoch });
-      hooks.note("추적 원점이 바뀌어 맞춤을 지웠어요. 기준점을 다시 기록해 주세요");
+      hooks.note("추적 원점이 바뀌어 맞춤을 지웠어요. 시작 위치에서 다시 맞춰 주세요");
     });
     const hitSource = await xrSession.requestHitTestSource({ space: await xrSession.requestReferenceSpace("viewer") });
     // 어림 바닥 높이: 크롬이 local-floor를 주면 그 원점의 local 높이를 프레임마다 읽는다
@@ -92,9 +92,10 @@ export function createAr({ link, params, hooks, deps = {} }) {
     const perfTimer = setInterval(hooks.onPerf, 1000);
     xrSession.addEventListener("end", () => {
       state.on = false;
-      state.lastFloor = null;
       state.hitPoint = null;
       state.hitEstimated = false;
+      state.position = null;
+      state.orientation = null;
       display?.close();
       display = null;
       // 세션마다 새로 만드는 인코딩 워커·WebGL 컨텍스트를 놓는다(다시 시작할 때 쌓이지 않게)
@@ -144,27 +145,31 @@ export function createAr({ link, params, hooks, deps = {} }) {
       const o = pose?.transform.orientation;
       const position = p ? [p.x, p.y, p.z] : null;
       const orientation = o ? [o.x, o.y, o.z, o.w] : null;
+      const localFloorY = floorSpace ? frame.getPose?.(floorSpace, space)?.transform.position.y : null;
       const aim = aimPoint({
         hit: hit ? [hit.transform.position.x, hit.transform.position.y, hit.transform.position.z] : null,
         hitOrientation: ho ? [ho.x, ho.y, ho.z, ho.w] : null,
         viewer: position,
         viewerOrientation: orientation,
-        localFloorY: floorSpace ? frame.getPose?.(floorSpace, space)?.transform.position.y : null,
+        localFloorY,
       });
       state.hitPoint = aim?.point ?? null;
       state.hitEstimated = aim?.estimated ?? false;
       hooks.onHit(Boolean(state.hitPoint), state.hitEstimated);
 
-      if (!pose) {
-        state.lastFloor = null;
-        return;
-      }
+      if (!pose) return;
       const tracking = pose.emulatedPosition ? "limited" : "ok";
       state.limited = tracking === "limited";
-      state.lastFloor = floorCandidate(state.hitPoint, aim?.orientation ?? null, position);
+      state.position = position;
+      state.orientation = orientation;
       if (time - lastSent >= SEND_MS) {
         lastSent = time;
-        link.send({ type: "pose", position, orientation, tracking, hit: state.hitPoint, hit_estimated: state.hitEstimated, epoch: state.epoch });
+        // 실제 hit-test 점이면 그 면 법선(벽·바닥 가르기), 어림 바닥 점이면 법선 없음
+        const normal = aim && !aim.estimated && aim.orientation ? planeNormal(aim.orientation) : null;
+        link.send({
+          type: "pose", position, orientation, tracking, hit: state.hitPoint, hit_estimated: state.hitEstimated,
+          ...(normal ? { hit_normal: normal } : {}), floor_y: floorPlaneY(position[1], localFloorY), epoch: state.epoch,
+        });
       }
 
       const xrView = pose.views[0];

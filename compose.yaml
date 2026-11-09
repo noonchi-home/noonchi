@@ -58,7 +58,6 @@ services:
       VLM_MAX_INFLIGHT:
       DETECT_QUEUE_MAX:
       PHONE_URL:
-      PHONE_MAX_MISMATCH_M:
       PHONE_EYE_HEIGHT_M:
       FOCUS:
       # 추론(VLM·PAM 호출)

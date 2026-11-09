@@ -146,11 +146,10 @@ interface DeviceHub {
 ## 폰 AR 눈 (3단계)
 
 - `PHONE_PORT`(예: 8210)를 주면 폰 전용 서버가 `PHONE_HOST`(기본 0.0.0.0)에 뜬다. 주는 것은 `/phone/`(페이지)과 `/phone/events`(WebSocket)뿐이다. 기기 API는 본 서버(127.0.0.1)에만 있다.
-- 폰 → 서버: `{type:"pose", position:[x,y,z], orientation:[x,y,z,w], tracking:"ok"|"limited", hit:[x,y,z]|null, hit_estimated}`(WebXR local 공간, 초당 10번, hit_estimated는 조준점이 어림 바닥 점일 때 true) · `{type:"anchor", id:<기준점 id>, point:[x,y,z], estimated}`(조준점이 닿은 바닥 점) · `{type:"reset"}`. 서버 → 폰: `{type:"status", anchors, aligned, mismatch_m, error?}`.
-- 기준점 두 곳은 평면도에 지정한 방 모서리다: scene.json `plan.ar_anchors` → 집 data `floorplan.json`의 `ar_anchors`(`[{id, label, position:[x,y]}]`, 정확히 2개) → 없으면 예전 방식(`dock`·`door_main` 객체의 평면 위치) 순서로 읽는다(`src/phone/anchors.ts`). 폰 버튼은 `<label> 지점 기록`이다. 두 점으로 수평 회전·이동·바닥 높이를 구한다(`src/phone/align.ts`). 두 점이 0.5m보다 가까우면 거절하고, 실제·트윈 거리 차이를 `mismatch_m`으로 알린다.
+- 폰 → 서버: `{type:"pose", position:[x,y,z], orientation:[x,y,z,w], tracking:"ok"|"limited", hit:[x,y,z]|null, hit_estimated}`(WebXR local 공간, 초당 10번, hit_estimated는 조준점이 어림 바닥 점일 때 true) · `{type:"start"}`(시작 자리에서 「여기서 시작」) · `{type:"surface", points}`(실제 hit 점) · `{type:"reset"}`. 서버 → 폰: `{type:"status", aligned, sync, error?}`.
+- 위치 맞추기는 `src/sync/`가 한다: 설정에서 저장한 시작 자리·방향(어림), 걸으며 보이는 큰 가구(YOLO26n), 벽 모양(hit-test 벽 점 ICP). 결과는 수평 회전·이동·바닥 높이(`src/phone/align.ts` `Alignment`)다. 자세한 규칙은 [reference.md](reference.md) "위치 맞추기".
 - 맞춘 뒤 자세는 본 서버 `/events`로 `{type:"eye", eye:{position:[x,y], height_m, yaw_deg, pitch_deg, tracking, at}}`가 된다. 뷰어는 `aptViewer.setEye`로 눈 마커만 움직인다. 판단에는 쓰지 않는다.
 - WebSocket은 페이지를 준 호스트와 같은 출처만 받는다.
-- 기준점 거리 차이가 `PHONE_MAX_MISMATCH_M`(기본 0.3m)을 넘으면 맞춤을 받지 않고 다시 찍게 한다.
 - 카메라(WebXR `camera-access`): 폰은 `/phone/events`에 바이너리 패킷 `[헤더 길이 4바이트 BE][JSON 헤더][JPEG]`(`src/phone/packet.ts`, 최대 4MB)을 보낸다. 헤더 `{kind:"frame"|"photo", width, height, position?, orientation?, tracking?}`. `frame`은 기본 초당 12장·가로 480px·품질 0.55(폰 주소 `?fps=`·`?w=`로 바꾼다, 인코딩 중이거나 와이파이에 쌓이면 건너뜀), `photo`는 카메라 원본 크기.
 - 본 서버(127.0.0.1)의 `GET /api/eye/stream`(MJPEG), `/api/eye/frame.jpg`(최신), `/api/eye/photos/<id>.jpg`, `/api/eye/stats`(최근 2초 받은 fps·장당 KB·마지막 크기, 대시보드 눈 캡션에 fps). 실시간 화면은 표시 전용이며 엔진 입력이 아니다.
 - `photo`는 `PHONE_PHOTO_DIR`(기본 `runtime/photos/`)에 JPEG·JSON으로 저장하고 `/events`로 `{type:"photo", photo:{id, at, url, width, height, measured_pose, pose_note?}}`를 보낸다. 맞추기 전이면 `measured_pose: null`, `pose_note: "not_aligned"`. 폰에는 `{type:"photo_saved", id, aligned}`.
@@ -162,7 +161,7 @@ interface DeviceHub {
 **A. 집 고르기** (twin-studio `homes.json`)
 - `{ version, default, viewer, library, homes: [{ id, name, data, out }] }`. 경로는 twin-studio 루트 기준. 없으면 아파트 한 집(`data/apartment`, `apartment`).
 - twin-home은 `HOME_ID`로 집 하나를 불러온다. 정적 경로: `/twin/viewer/*` → `viewer`(모든 집 공용 뷰어), `/twin/lib/*` → `library`(모든 종류 GLB), `/twin/*` → 그 집 `out`. 대시보드 뷰어 주소는 그대로 `/twin/viewer/?live=auto&embed=1`.
-- 폰 AR 기준점은 그 집의 `ar_anchors`(방 모서리 두 곳)다. 없으면 `dock`·`door_main`.
+- 폰 시작 자리는 집마다 `RUNTIME_DIR/homes/<id>/phone-start.json`이다.
 
 **B. 보정 수정본** `RUNTIME_DIR/homes/<id>/edits.json`(기본 `runtime/`, 커밋하지 않음)
 - `{ version: 1, home, saved_at, edits: [...] }`. edits: `{op:"move", id, position:[x,y], facing_deg, room}` · `{op:"add", id, type, label, room, position, facing_deg, elevation?}`(벽걸이는 elevation) · `{op:"remove", id}`.
@@ -190,7 +189,7 @@ interface DeviceHub {
 
 상세 계획: [2026-11-05-setup-flow.md](superpowers/plans/2026-11-05-setup-flow.md). 대시보드는 관찰만 하고, 설정은 `/setup/`에서 한다.
 
-**A. 집 실행 묶음** (`src/server/home.ts`): 집 하나에 딸린 허브·정책·에이전트·배치 편집기·기준점·폰 서버·두뇌·앱. 집을 바꾸면 통째로 닫고 새로 만든다. 본 서버 포트는 껍데기 서버(`src/server/shell.ts`)가 계속 잡고 `/api/setup*`만 직접 처리하며, 나머지 요청과 `/events`는 지금 묶음의 앱으로 넘긴다. 폰 서버는 처음 잡은 포트를 다시 쓴다. 바꾸는 동안 다른 API는 503, 설정 화면 파일은 그대로 나온다. 실패하면 이전 집으로 되돌린다.
+**A. 집 실행 묶음** (`src/server/home.ts`): 집 하나에 딸린 허브·정책·에이전트·배치 편집기·시작 자리·폰 서버·두뇌·앱. 집을 바꾸면 통째로 닫고 새로 만든다. 본 서버 포트는 껍데기 서버(`src/server/shell.ts`)가 계속 잡고 `/api/setup*`만 직접 처리하며, 나머지 요청과 `/events`는 지금 묶음의 앱으로 넘긴다. 폰 서버는 처음 잡은 포트를 다시 쓴다. 바꾸는 동안 다른 API는 503, 설정 화면 파일은 그대로 나온다. 실패하면 이전 집으로 되돌린다.
 
 **B. 신호 출처** (`src/hub/signals.ts`, 구현명세서 6.3 정보 확보 수단·7.1 `read_appliance`): 기기마다 `virtual`(트윈 시뮬레이터), `none`(신호 없음), `{ kind: "thinq", deviceId }`(실제 모드에서 ThinQ와 짝지은 기기, 아래 「운영 모드」).
 - 엔진·대시보드는 `SignalHub`로 읽는다. `none` 기기는 상태가 `{ twin: {}, matter: {}, signal: "none" }`(모름)이고, 바뀌어도 `/events`에 보내지 않는다. 출처를 바꾸면 그 기기 상태를 한 번 보낸다.
@@ -204,10 +203,10 @@ interface DeviceHub {
 - 시작 집: 저장한 집 → (없거나 못 띄우면) `HOME_ID` → 기본 집. `startServer`(테스트·데모)는 파일을 읽지 않고 「끝냄」으로 시작한다.
 
 **D. 설정 API** (쓰기는 같은 PC 출처만)
-- `GET /api/setup` → `{ ok, persist, done, switching, error, home, homes, rooms, devices: [{ id, label, room, roomLabel, kind, kindLabel, source }], position: { touch, layout, phone_urls } }`
+- `GET /api/setup` → `{ ok, persist, done, switching, error, home, homes, rooms, devices: [{ id, label, room, roomLabel, kind, kindLabel, source }], position: { start, layout, phone_urls } }`
 - `POST /api/setup/home { home }`: 다른 집이면 묶음을 다시 만든다. 없는 집 400, 바꾸는 중 409.
 - `POST /api/setup/devices { home, sources: { <id>: "virtual"|"none" } }`, `POST /api/setup/done { home }`: `home`이 지금 집과 다르면 409(다른 탭에서 바꿈).
-- 설정 4단계의 `POST /api/phone/touch-points*`·`/api/layout/save|reset`도 `home`을 같이 보낸다(다르면 409).
+- 설정 4단계의 `POST /api/phone/start-pose*`·`/api/layout/save|reset`도 `home`을 같이 보낸다(다르면 409).
 - `/events`의 `hello`에 `home`(집 id)이 붙는다. 대시보드는 집이 바뀌면 새로 고친다.
 
 ## 테스트

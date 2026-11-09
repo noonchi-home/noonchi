@@ -11,6 +11,7 @@ import { startServer, type RunningServer } from "../src/server/start.js";
 import { CATALOG, scene } from "./helpers/layout.js";
 import { startFakeLlm, type FakeLlm } from "./helpers/llm.js";
 import { openWebSocket } from "./helpers/ws.js";
+import { alignOnServer } from "./helpers/align.js";
 
 type Msg = Record<string, any>;
 // 에이전트는 실제 OpenAI 공급자, 모델 자리는 가짜 OpenAI 호환 서버
@@ -102,8 +103,7 @@ describe("HOME_ID로 고른 집: 폰 말 → 배치 보정 → 초점", () => {
     const dash = await listen(`${srv.url.replace(/^http/, "ws")}/events`);
     const phoneUrl = new URL(srv.phoneUrls[0]!);
     const phone = await listen(`ws://${phoneUrl.host}/phone/events`);
-    phone.ws.send(JSON.stringify({ type: "anchor", id: "dock", point: [1, 0, 3] }));
-    phone.ws.send(JSON.stringify({ type: "anchor", id: "door_main", point: [3, 0, 5] }));
+    await alignOnServer(srv.url, (t) => phone.ws.send(t), join(studio, "homes", "oneroom", "scene.json"), [2, 2]);
     await phone.waitFor((m) => m.type === "status" && m.aligned);
     phone.ws.send(JSON.stringify({ type: "pose", position: [3, 1.4, 2], orientation: [0, 0, 0, 1], hit: [3, 0, 3] }));
     await dash.waitFor((m) => m.type === "eye");
@@ -143,8 +143,7 @@ describe("HOME_ID로 고른 집: 폰 말 → 배치 보정 → 초점", () => {
     const dash = await listen(`${srv.url.replace(/^http/, "ws")}/events`);
     const phoneUrl = new URL(srv.phoneUrls[0]!);
     const phone = await listen(`ws://${phoneUrl.host}/phone/events`);
-    phone.ws.send(JSON.stringify({ type: "anchor", id: "dock", point: [1, 0, 3] }));
-    phone.ws.send(JSON.stringify({ type: "anchor", id: "door_main", point: [3, 0, 5] }));
+    await alignOnServer(srv.url, (t) => phone.ws.send(t), join(studio, "homes", "oneroom", "scene.json"), [2, 2]);
     await phone.waitFor((m) => m.type === "status" && m.aligned);
     const res = await fetchRetry(`${srv.url}/api/agent/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "TV 켜줘", sessionId: "s1" }) });
     expect(((await res.json()) as Msg).reply).toMatch(/켰어요/);

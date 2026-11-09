@@ -40,7 +40,8 @@ export interface SetupView {
   rooms: RoomSpec[];
   devices: SetupDeviceView[];
   devices_saved: boolean;
-  position: { touch: boolean; layout: boolean; phone_urls: string[] };
+  /** 4단계: start는 시작 위치를 쓸 수 있다(집 scene.json이 있음), layout은 배치 보정을 쓸 수 있다. */
+  position: { start: boolean; layout: boolean; phone_urls: string[] };
   mode: ControlMode;
   /** ready: ThinQ 토큰이 있어 실제 모드로 바꿀 수 있다. */
   thinq: { ready: boolean };

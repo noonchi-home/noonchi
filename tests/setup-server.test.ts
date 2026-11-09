@@ -206,7 +206,7 @@ describe("설정 흐름 서버", () => {
     expect((await post("/api/setup/done", {})).status).toBe(400);
   });
 
-  it("집을 바꾸면 이전 집 배치 편집기는 닫히고, 다른 집을 적은 기준점·배치 쓰기는 409", async () => {
+  it("집을 바꾸면 이전 집 배치 편집기는 닫히고, 다른 집을 적은 시작 위치·배치 쓰기는 409", async () => {
     srv = await startServer({ env: env(runtime()), log: () => {} });
     const oldLayout = srv.layout!;
     const movable = oldLayout.objects().find((o) => o.type === "fridge" || o.type === "sofa") ?? oldLayout.objects()[0]!;
@@ -214,24 +214,24 @@ describe("설정 흐름 서버", () => {
     expect(() => oldLayout.move(movable.id, { dx: 0.1, dy: 0 })).toThrow(/집을 바꿔서/);
     expect(() => oldLayout.save()).toThrow(/집을 바꿔서/);
     expect((await post("/api/layout/save", { home: "oneroom" })).status).toBe(409);
-    expect((await post("/api/phone/touch-points/clear", { home: "oneroom" })).status).toBe(409);
+    expect((await post("/api/phone/start-pose/clear", { home: "oneroom" })).status).toBe(409);
     expect((await post("/api/layout/save", { home: "apartment" })).status).toBe(200);
   });
 
-  it("본문을 기다리던 기준점 저장이 집을 바꾼 뒤 도착하면 쓰지 않는다", async () => {
+  it("본문을 기다리던 시작 위치 저장이 집을 바꾼 뒤 도착하면 쓰지 않는다", async () => {
     const dir = runtime();
     srv = await startServer({ env: env(dir), log: () => {} });
-    const url = new URL(`${srv.url}/api/phone/touch-points`);
+    const url = new URL(`${srv.url}/api/phone/start-pose`);
     const req = request({ host: url.hostname, port: url.port, path: url.pathname, method: "POST", headers: { "content-type": "application/json" } });
     const response = new Promise<IncomingMessage>((r) => req.on("response", r));
     req.flushHeaders();
     await new Promise((r) => setTimeout(r, 100));
     await srv.switchHome("apartment");
-    req.end(JSON.stringify({ home: "oneroom", points: [{ position: [0.5, 0.5] }, { position: [2.5, 2.5] }] }));
+    req.end(JSON.stringify({ home: "oneroom", position: [0.5, 0.5], yaw_deg: 0 }));
     const res = await response;
     res.resume();
     expect(res.statusCode).toBe(503);
-    expect(existsSync(join(dir, "homes", "oneroom", "phone-touch.json"))).toBe(false);
+    expect(existsSync(join(dir, "homes", "oneroom", "phone-start.json"))).toBe(false);
   });
 
   it("신호 없는 기기는 승인 뒤 실행해도 결과를 모른다고 답한다", async () => {

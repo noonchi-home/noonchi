@@ -9,7 +9,7 @@ import { join } from "node:path";
 import type { BrainLog } from "../contract/events.js";
 import type { WorldChange, WorldView, YoloMissing } from "../contract/world.js";
 import type { DeviceState } from "../hub/types.js";
-import { DETECTOR_MODEL, MODELS_DIR, POSE_MODEL, WorkerDetector, type Detection, type Detector, type DetectorSpec, type Pose } from "../brain/detector.js";
+import { DETECTOR_MODEL, MODELS_DIR, POSE_MODEL, WorkerDetector, type DetectResult, type Detection, type Detector, type DetectorSpec, type Pose } from "../brain/detector.js";
 import { vlmTimeoutMs } from "../infer/endpoints.js";
 import { createInference } from "../infer/inference.js";
 import type { VlmClient } from "../infer/vlm.js";
@@ -81,6 +81,8 @@ export interface PipelineOptions {
   onFrame?: () => void;
   /** 시험 자료 저장(DATASET_COLLECT=1일 때만). 고리에 넣은 프레임마다 부른다. */
   dataset?: (f: EngineFrame) => void;
+  /** 감지가 끝난 프레임(받은 JPEG 그대로)과 감지 결과. 폰 위치 맞추기가 기준점 상자(landmarks)를 쓴다(src/server/home.ts). */
+  onDetected?: (jpeg: Buffer, result: DetectResult) => void;
   clock?: { now(): number };
 }
 
@@ -238,6 +240,11 @@ export class ObservationPipeline {
         }
         dets = r.detections;
         poses = r.poses;
+        try {
+          this.o.onDetected?.(frame.jpeg, r);
+        } catch {
+          // 위치 맞추기가 실패해도 관찰 흐름은 그대로 간다
+        }
       } catch {
         dets = null;
       }
@@ -314,6 +321,7 @@ async function createDetector(env: Env, log: (line: string) => void): Promise<De
 export async function createPipeline(o: {
   env: Env; world: WorldState; emit: (log: BrainLog) => void; broadcastWorld: (w: WorldView) => void;
   onChanges?: (c: WorldChange[]) => void; onFrame?: () => void; log: (line: string) => void; inject?: PipelineInject; dataset?: (f: EngineFrame) => void;
+  onDetected?: (jpeg: Buffer, result: DetectResult) => void;
 }): Promise<ObservationPipeline> {
   const config = loadObserveConfig(o.env);
   const detector = o.inject && "detector" in o.inject ? o.inject.detector ?? null : await createDetector(o.env, o.log);
@@ -321,6 +329,6 @@ export async function createPipeline(o: {
   o.log(`관찰 흐름: 엔진 프레임 ${config.engineMs}ms · 감지 ${detector?.name ?? "없음(VLM만)"} · VLM ${vlm.model} 최근 ${config.vlmWindowFrames}장 동시 ${config.vlmMaxInflight}개 · 감지 대기열 ${config.detectQueueMax}`);
   if (o.dataset) o.log("[경고] 시험 자료 모으기가 켜져 있습니다. 엔진 프레임을 디스크에 씁니다.");
   return new ObservationPipeline({
-    config, detector, vlm, world: o.world, emit: o.emit, broadcastWorld: o.broadcastWorld, onChanges: o.onChanges, onFrame: o.onFrame, dataset: o.dataset, clock: o.inject?.clock,
+    config, detector, vlm, world: o.world, emit: o.emit, broadcastWorld: o.broadcastWorld, onChanges: o.onChanges, onFrame: o.onFrame, dataset: o.dataset, onDetected: o.onDetected, clock: o.inject?.clock,
   });
 }

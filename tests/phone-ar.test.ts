@@ -101,21 +101,21 @@ describe("폰 AR(ar.js)", () => {
     expect(t.ar.state.encoder).toBe("카메라 없음");
   });
 
-  it("자세는 0.1초마다 조준점·원점 이름과 함께. 조준점이 바닥에 닿으면 hit, 바닥 후보도 그 점", async () => {
+  it("자세는 0.1초마다 조준점·원점 이름과 함께. 조준점이 바닥에 닿으면 hit", async () => {
     const t = setup();
     await t.ar.start(overlay);
     for (const time of [100, 150, 200]) t.session.step(time, frame());
     const poses = t.sent.filter((m) => m.type === "pose");
     expect(poses).toHaveLength(2);
-    expect(poses[0]).toEqual({ type: "pose", position: [0, 1.5, 0], orientation: [0, 0, 0, 1], tracking: "ok", hit: [0, 0, -1], hit_estimated: false, epoch: t.ar.state.epoch });
+    expect(poses[0]).toEqual({ type: "pose", position: [0, 1.5, 0], orientation: [0, 0, 0, 1], tracking: "ok", hit: [0, 0, -1], hit_estimated: false, hit_normal: [0, 1, 0], floor_y: 0, epoch: t.ar.state.epoch });
+    expect([t.ar.state.position, t.ar.state.orientation]).toEqual([[0, 1.5, 0], [0, 0, 0, 1]]);
     expect(t.log.filter((l) => l === "hit")).toHaveLength(3);
-    expect(t.ar.state.lastFloor).toEqual([0, 0, -1]);
     t.session.step(300, frame({ hit: null }));
     expect(t.log.at(-1)).toBe("miss");
-    expect(t.ar.state.lastFloor).toBeNull();
+    expect(t.ar.state.hitPoint).toBeNull();
   });
 
-  it("hit-test 점이 없으면 시선이 어림 바닥(폰 1.5m 아래)과 만나는 점을 조준점·바닥 후보로 쓰고, 어림이라고 알린다", async () => {
+  it("hit-test 점이 없으면 시선이 어림 바닥(폰 1.5m 아래)과 만나는 점을 조준점으로 쓰고, 어림이라고 알린다", async () => {
     const t = setup();
     await t.ar.start(overlay);
     t.session.step(100, frame({ hit: null, look: pitch(-45) }));
@@ -124,13 +124,12 @@ describe("폰 AR(ar.js)", () => {
     const pose = t.sent.filter((m) => m.type === "pose").at(-1)!;
     expect(pose.hit_estimated).toBe(true);
     pose.hit.forEach((v: number, i: number) => expect(v).toBeCloseTo([0, 0, -1.5][i]!, 6));
-    expect(t.ar.state.lastFloor).toEqual(t.ar.state.hitPoint);
     // hit-test 점이 생기면 그 점(어림 아님)
     t.session.step(200, frame({ look: pitch(-45) }));
     expect([t.log.at(-1), t.ar.state.hitEstimated, t.ar.state.hitPoint]).toEqual(["hit", false, [0, 0, -1]]);
     // 위를 보면 닿지 않음
     t.session.step(300, frame({ hit: null, look: pitch(10) }));
-    expect([t.log.at(-1), t.ar.state.hitPoint, t.ar.state.lastFloor]).toEqual(["miss", null, null]);
+    expect([t.log.at(-1), t.ar.state.hitPoint]).toEqual(["miss", null]);
   });
 
   it("크롬이 local-floor를 주면 그 바닥 높이(local 좌표)로 어림한다", async () => {
@@ -141,11 +140,10 @@ describe("폰 AR(ar.js)", () => {
     expect(t.ar.state.hitEstimated).toBe(true);
   });
 
-  it("자세가 없으면 바닥 후보를 지우고 자세·초점을 보내지 않는다. 추적이 약하면 limited", async () => {
+  it("자세가 없으면 자세·초점을 보내지 않는다. 추적이 약하면 limited", async () => {
     const t = setup();
     await t.ar.start(overlay);
     t.session.step(100, frame({ pose: false }));
-    expect(t.ar.state.lastFloor).toBeNull();
     expect(t.sent.filter((m) => m.type === "pose")).toEqual([]);
     expect(t.marks).toEqual([]);
     t.session.step(200, frame({ limited: true }));
@@ -170,7 +168,7 @@ describe("폰 AR(ar.js)", () => {
     t.session.fire("space-reset");
     expect(t.ar.state.epoch).not.toBe(first);
     expect(t.sent.at(-1)).toEqual({ type: "reset", epoch: t.ar.state.epoch });
-    expect(t.log).toContain("note 추적 원점이 바뀌어 맞춤을 지웠어요. 기준점을 다시 기록해 주세요");
+    expect(t.log).toContain("note 추적 원점이 바뀌어 맞춤을 지웠어요. 시작 위치에서 다시 맞춰 주세요");
   });
 
   it("끝내면 초점 표시를 지우고 덮개를 닫는다", async () => {
