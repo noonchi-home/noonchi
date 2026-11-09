@@ -2,7 +2,7 @@
 // 「폰 카메라」(세로 9:16 영상에 YOLO 상자, 영상 안 위쪽에 떠 있는 FSM·행동 반투명 카드, 영상이 없으면 연결 QR)가 화면 높이를 다 쓴다.
 // 두 칸은 틈 없이 한 판(LiquidGlass)으로 붙고 사이에 나눔선 하나만 있다. 마스코트는 판 없이 가운데 축을 나눔선에 두고 아래 끝을 화면 밑 선에 대며(누르면 설정 창),
 // 말풍선은 트윈 아래쪽 카드 하나다. 자리는 화면 크기로만 정해진다(layout.ts). 자료는 fixtures.ts.
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import tokens from "../../../src/design/tokens.json";
 import { DashboardScreen, type ScreenProps } from "../../src/dashboard/DashboardScreen";
@@ -53,13 +53,13 @@ describe("대시보드 배치", () => {
     expect(screen.queryByRole("list", { name: "판단 기록" })).toBeNull();
   });
 
-  it("main에 단계 번호(data-step)를 달고, 글꼴·마스코트 그림·지도가 준비되면 data-ready를 단다", () => {
+  it("main에 단계 번호(data-step)를 달고, 글꼴·마스코트 그림·지도가 준비되고 미리 그려 본 뒤 data-ready를 단다", async () => {
     const { container, rerender } = draw(screenAt(3, { mapReady: false }));
     const main = container.querySelector("main")!;
     expect(main).toHaveAttribute("data-step", "3");
     expect(main).not.toHaveAttribute("data-ready");
     rerender(<DashboardScreen {...screenAt(3)} />);
-    expect(main).toHaveAttribute("data-ready");
+    await waitFor(() => expect(main).toHaveAttribute("data-ready"));
   });
 
   it("마스코트는 칸·카드·유리 판 없이 화면 바탕(main) 위에 바로 있다", () => {
@@ -544,7 +544,7 @@ describe("대시보드 트윈", () => {
 
   it("단계 막대 칸: 끝난 칸 completed, 지금 칸 active, 남은 칸 inactive", () => {
     draw(screenAt(2));
-    const segs = [...twinPane().querySelectorAll("[data-segment]")].map((e) => e.getAttribute("data-state"));
+    const segs = [...twinPane().querySelector("[data-progress]")!.querySelectorAll("[data-segment]")].map((e) => e.getAttribute("data-state"));
     expect(segs).toEqual(["completed", "active", "inactive", "inactive"]);
   });
 

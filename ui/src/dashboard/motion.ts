@@ -1,6 +1,6 @@
 // 대시보드 움직임 도우미. 단계가 바뀔 때 움직이는 것(지도 카메라, 표시 나타남)은 transform·opacity만 합성기에서 움직인다.
 // 판 크기·자리(레이아웃)를 바꾸지 않으니 폰 영상·지도 그림을 다시 그리지 않는다. 나중에 지도가 three.js 캔버스, 대시보드 폰 칸 그림이 영상이 되어도 같다.
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { createContext, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 
 /** 지도 카메라가 옮겨 가는 움직임(빨리 시작해 부드럽게 멈춤)과 그 길이(300~450ms 사이). */
 export const EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
@@ -20,6 +20,30 @@ export function useReducedMotionNow(): boolean {
     return () => media.removeEventListener?.("change", update);
   }, []);
   return reduced;
+}
+
+/** 미리 그려 보는 그림 수. 첫 그림에 칸을 그리고, 그 뒤 그림 동안 GPU가 타일 그리기·셰이더 만들기를 끝낸다. */
+export const PREDRAW_FRAMES = 3;
+
+/** 미리 그려 보는 중인가(DashboardScreen이 넣고, 트윈 칸·표시 판이 읽는다). */
+export const PreDrawing = createContext(false);
+
+/**
+ * 화면이 뜰 때 한 번만 미리 그려 본다. start(트윈 첫 그림·글꼴·마스코트 그림)가 처음 true가 되면 "drawing"이고, PREDRAW_FRAMES 그림 뒤 "done"이다.
+ * "done" 뒤로는 그대로다: 단계가 바뀌어도 다시 그려 보지 않는다. requestAnimationFrame이 없으면 바로 "done".
+ */
+export function usePreDraw(start: boolean): "wait" | "drawing" | "done" {
+  const [phase, setPhase] = useState<"wait" | "drawing" | "done">("wait");
+  if (start && phase === "wait") setPhase("drawing");
+  useEffect(() => {
+    if (phase !== "drawing") return;
+    if (typeof requestAnimationFrame !== "function") { setPhase("done"); return; }
+    let n = 0;
+    const tick = () => { if (++n >= PREDRAW_FRAMES) setPhase("done"); else id = requestAnimationFrame(tick); };
+    let id = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(id);
+  }, [phase]);
+  return phase;
 }
 
 /** key가 바뀔 때마다 ref 요소를 delay 뒤 ms 동안 opacity 0 → 1로 띄운다(합성기). on이 아니면 바로 보인다. */
