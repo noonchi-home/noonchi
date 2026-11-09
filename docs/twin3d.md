@@ -17,7 +17,7 @@
 
 그림자를 지금 배치에 맞추려면 손으로 다시 굽는다(약 7분). 무거운 일은 단계마다 이 저장소 잠금으로 돌린다(`npm --prefix <twin-home 폴더> run heavy -- <명령>`).
 
-1. twin-studio-bake 폴더에서 굽는다. 결과는 그 폴더의 `homes/mokryeon_180b/bake/`에 쌓인다.
+1. twin-studio 저장소의 main(굽기 코드와 `docs/bake.md`)에서 굽는다. 결과는 그 폴더의 `homes/mokryeon_180b/bake/`에 쌓인다.
 
    ```powershell
    uv run python -m studio bake --home mokryeon_180b --out homes/mokryeon_180b/bake --step scene --density 32 --max-size 1024
@@ -28,13 +28,13 @@
 2. 이 저장소로 들인다. 7개 파일과 `twin/SOURCE.json`의 그 7줄만 바뀐다.
 
    ```powershell
-   npx tsx scripts/twin-assets.ts --from <twin-studio-bake 폴더> --only homes/mokryeon_180b/bake/
+   npx tsx scripts/twin-assets.ts --from <twin-studio 폴더> --only homes/mokryeon_180b/bake/
    ```
 
 3. 반구광을 다시 셈한다. 하늘빛이나 그 세기를 바꿨을 때만 값이 바뀐다.
 
    ```powershell
-   npx tsx ui/scripts/bake-light.ts --hdr <twin-studio-bake 폴더>/external_cache/studio_small_09/studio_small_09_1k.hdr --manifest twin/homes/mokryeon_180b/bake/manifest.json --out ui/src/twin3d/homes/mokryeon_180b.light.json
+   npx tsx ui/scripts/bake-light.ts --hdr <twin-studio 폴더>/external_cache/studio_small_09/studio_small_09_1k.hdr --manifest twin/homes/mokryeon_180b/bake/manifest.json --out ui/src/twin3d/homes/mokryeon_180b.light.json
    ```
 
 4. 화면을 다시 빌드한다: `npm run heavy -- npm --prefix ui run build`.
