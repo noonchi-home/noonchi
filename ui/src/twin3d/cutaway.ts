@@ -83,6 +83,13 @@ export function applyDefaultView(o: {
   scene.add(capPlane);
 
   const clipState = new Map<THREE.Mesh, { orig: Mats; clipped: Mats; marks: THREE.Mesh[] }>();
+  // 자른 재질은 원래 재질마다 하나: 메시마다 복사하면 그릴 때 재질을 메시 수만큼 바꾼다
+  const clippedMats = new Map<string, THREE.Material>();
+  const clippedOf = (x: THREE.Material) => {
+    let c = clippedMats.get(x.uuid);
+    if (!c) { c = Object.assign(x.clone(), { clippingPlanes: [cutPlane] }); clippedMats.set(x.uuid, c); }
+    return c;
+  };
   const setClipped = (node: THREE.Object3D, on: boolean, stencil = true) => {
     node.traverse((m) => {
       if (!(m instanceof THREE.Mesh) || m.userData.isStencil) return;
@@ -90,7 +97,7 @@ export function applyDefaultView(o: {
       if (!st && !on) return;
       if (!st) {
         const orig = m.material as Mats;
-        const clipped = flat(orig).map((x) => Object.assign(x.clone(), { clippingPlanes: [cutPlane] }));
+        const clipped = flat(orig).map(clippedOf);
         const solid = stencil && !flat(orig).some((x) => x.transparent);
         const marks = solid ? [stencilBack, stencilFront].map((mat) => {
           const s = new THREE.Mesh(m.geometry, mat);
