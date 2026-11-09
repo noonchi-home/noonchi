@@ -396,6 +396,18 @@ describe("실행 추적: 승인(처음 하는 PAM 계획, 「하지 마」를 �
     expect(spoken().at(-1)).toBe("컵 치우기를 할까요?");
   });
 
+  it("승인 질문 중 들은 주변 말(「앞으로 가 봐」「이번에만 봐줄게」)은 답으로 받지 않는다. 「앞으로도 해 줘」는 받는다", () => {
+    const { t, approvals, spoken } = setup({ approvals: store() });
+    t.onDecision(decision);
+    expect(t.onHeard("앞으로 가 봐")).toBeNull();
+    expect(t.onHeard("이번에만 봐줄게")).toBeNull();
+    expect(t.onHeard("계속 틀어 놔")).toBeNull();
+    expect(approvals.memory()).toEqual({ always: {}, never: {} });
+    expect(spoken()).toEqual(["컵 치우기를 할까요?"]);
+    expect(t.onHeard("앞으로도 해 줘")).toMatchObject({ id: "always" });
+    expect(approvals.memory()).toEqual({ always: { "task:컵 치우기": "t" }, never: {} });
+  });
+
   it("기억에 「앞으로도」가 있으면 묻지 않고 첫 명령이 바로 「식탁으로 가 주세요」", () => {
     const { t, spoken, phone } = setup({ approvals: store({ "task:컵 치우기": "always" }) });
     t.onDecision(decision);

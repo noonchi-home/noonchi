@@ -467,6 +467,24 @@ describe("Agent + 승인 규칙: 말로 시킨 가전 명령", () => {
     expect(twin(hub, "light_living").power).toBe("on");
     expect(approvals.memory().never).toHaveProperty("device:light_living:on");
   });
+
+  it("실제 폰이 들은 주변 말에 「이번에만」「앞으로」가 들어 있어도 승인 답으로 받지 않는다", async () => {
+    llm.script["이번에만 봐줄게"] = ["네."];
+    llm.script["앞으로 가 봐"] = ["네."];
+    const { hub, policy, agent, approvals } = approvalAgent(["device:light_living:on"]);
+    await agent.chat("s", "현관문 열어 줘", { heard: true });
+    await agent.chat("s", "이번에만 봐줄게", { heard: true });
+    expect(twin(hub, "door_main").lock).toBe("locked");
+    expect(policy.pending()).toHaveLength(1);
+    agent.cancel(policy.pending()[0]!.token);
+    await agent.chat("s", "거실 불 켜 줘", { heard: true });
+    await agent.chat("s", "앞으로 가 봐", { heard: true });
+    expect(twin(hub, "light_living").power).toBe("off");
+    expect(approvals.memory().always).toEqual({});
+    const yes = await agent.chat("s", "앞으로도 해 줘", { heard: true });
+    expect(yes.actions[0]).toMatchObject({ tool: "turn_on", ok: true });
+    expect(approvals.memory().always).toHaveProperty("device:light_living:on");
+  });
 });
 
 const realDir = resolveTwinStudioDir();

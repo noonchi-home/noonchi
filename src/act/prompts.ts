@@ -2,7 +2,7 @@
 // npm run lint가 이 파일도 검사한다(60자 아래, 화살표·괄호 없음).
 
 /** 답 하나. words: 폰에서 말로 답할 때 이 답으로 보는 말(단추 글도 같이 본다). reply: 말로 답하면 폰이 읽어 줄 글(빈 글이면 읽지 않는다).
- *  whole: 말 전체가 그 말일 때만 맞춘다(앞의 응·이제, 끝의 요는 된다). 실제 폰이 늘 들어서 주변 말에 걸리면 안 되는 답에 쓴다. */
+ *  whole: 말 전체가 그 말일 때만 맞춘다(앞의 응·이제, 끝의 요·해·해 줘는 된다). 실제 폰이 늘 들어서 주변 말에 걸리면 안 되는 답에 쓴다. */
 export interface ActionChoice { id: string; label: string; words: string[]; reply: string; whole?: boolean }
 export interface ActionPrompt { text: string; choices: ActionChoice[] }
 
@@ -21,10 +21,10 @@ export const ASK_PROMPT: ActionPrompt = {
 export const STEP_DONE: ActionChoice = { id: "done", label: "완료", words: ["완료", "다 했어", "다 했습니다"], reply: "", whole: true };
 
 /** 승인 답(src/agent/approval.ts): 처음 하는 계획·「하지 마」를 기억한 가전 명령은 셋, 위험 목록 가전 명령은 이번만·하지 마 둘.
- *  이번만·앞으로도는 다음 명령을 읽으므로 읽어 줄 글이 없다. 하지 마는 주변 말에 걸리지 않게 말 전체일 때만 맞춘다. */
+ *  이번만·앞으로도는 다음 명령을 읽으므로 읽어 줄 글이 없다. 셋 다 주변 말에 걸리지 않게 말 전체일 때만 맞춘다. */
 export const APPROVE: ActionChoice[] = [
-  { id: "once", label: "이번만", words: ["이번만", "이번에만"], reply: "" },
-  { id: "always", label: "앞으로도", words: ["앞으로도", "앞으로", "항상", "계속"], reply: "" },
+  { id: "once", label: "이번만", words: ["이번만", "이번에만"], reply: "", whole: true },
+  { id: "always", label: "앞으로도", words: ["앞으로도", "앞으로", "항상", "계속"], reply: "", whole: true },
   { id: "never", label: "하지 마", words: ["하지 마", "하지마", "안 돼", "싫어"], reply: "알겠어요. 하지 않을게요", whole: true },
 ];
 
