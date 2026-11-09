@@ -170,8 +170,8 @@ class Week {
     const steps = d.action === "컵 치우기"
       ? cupSteps({ table: type("dining_table"), sink: type("sink_counter"), cup: targetOf(TASKS["컵 치우기"]!, view)?.id ?? "" })
       : askSteps();
-    for (const s of steps) {
-      const r = draft.add(s);
+    for (const [i, s] of steps.entries()) {
+      const r = draft.add({ step: i + 1, ...s });
       if (!r.ok) return r;
     }
     return draft.finish();

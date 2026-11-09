@@ -26,7 +26,8 @@ describe("행동 목록", () => {
       expect(Object.keys(t).sort()).toEqual(["allow", "description", "name", ...(t.target ? ["target"] : [])].sort());
     }
     expect(TASKS["컵 치우기"]!.allow.kinds).toEqual(["go", "pick", "place"]);
-    expect(TASKS["사용자에게 물어보기"]!.allow).toEqual({ kinds: ["ask", "say"] });
+    expect(TASKS["사용자에게 물어보기"]!.allow).toEqual({ kinds: ["ask", "say"], need: ["ask"] });
+    expect(TASKS["컵 치우기"]!.allow.need).toEqual(["go", "pick", "place"]);
     expect(TASKS["에어컨 켜기"]!.allow.devices).toEqual({ kinds: ["aircon"], tools: ["turn_on"] });
     expect(taskOf("춤추기")).toBeNull();
     expect(taskOf(null)).toBeNull();

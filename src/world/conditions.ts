@@ -3,7 +3,7 @@
 // - 판정은 참·거짓·모름 세 값이다. 안 보여서 모르는 것은 모름이고, not(모름)도 모름이다. 단계는 참일 때만 넘어간다.
 // - 단계가 시작된 뒤(sinceMs) 본 사실만 쓴다: 그 전 사실은 모름. 「모름」 값(안이 안 보임·하는 일 모름)은 다른 값과 견주면 모름.
 // - 지금만 맞는 면(하는 일·순간 동작·쓰는 중 등)은 FACT_FRESH_MS 안의 VLM 답만 쓴다. 값이 없으면 그 안에 그 대상 답이 있었을 때만 거짓.
-// - person_holding: 사람이 물건을 들고 있고(지금만 맞는 면), 든 것을 모르거나 그 종류·id(관절로 든 확인 전 물건 포함).
+// - person_holding: 사람이 물건을 들고 있고(지금만 맞는 면), 든 것을 모르거나 그 종류(종류 이름)·그 id(id, 따라간 같은 물건 포함). 관절로 든 확인 전 물건도 본다.
 // - 사람 방·가까이는 발이 보인 바닥 자리로만 본다(FRESH_MS 안). 폰 근처는 폰 자리(FRESH_MS 안)와 그 자리가 같은 방이고 평면 거리 안. 방을 모르면 모름.
 // - became: 그 단계(seq면 그 칸)가 시작된 뒤 가전이 그 상태가 됨(가전 이력). seq: 앞 칸이 참이 된 뒤 다음 칸이 참이고, 칸마다 기준 시각이 그때로 바뀐다.
 // - for_s: 그 시간 넘게 이어서 참(거짓·모름이면 다시 센다).
@@ -243,8 +243,14 @@ function check(c: Condition, w: WorldView, x: ConditionContext, m: Memo, path: s
     // 든 물건 id에는 확인 전 물건도 들어 있어 종류를 id 앞(book_3 → book)으로 본다. 든 것을 모르면(빈 목록) 그 물건일 수 있다
     const holds = p.visible ? factIs(p.facts.holding, "holding_object", "person", p.answered_ms, x) : null;
     if (holds !== true) return holds;
-    const cls = classOf(c.person_holding);
-    return p.holding.length === 0 || p.holding.some((id) => id === c.person_holding || id.replace(/_\d+$/, "") === cls);
+    if (p.holding.length === 0) return true;
+    const name = c.person_holding;
+    // id면 그 id(실행 추적이 따라간 같은 물건 포함)만, 종류면 그 종류 아무 물건
+    if (/_\d+$/.test(name)) {
+      const same = new Set([name, ...(x.follow?.(name) ?? [])]);
+      return p.holding.some((id) => same.has(id));
+    }
+    return p.holding.some((id) => id.replace(/_\d+$/, "") === name);
   }
   if ("object" in c) {
     const { own, moved } = candidates(c.object, c.follow === true, w, x);

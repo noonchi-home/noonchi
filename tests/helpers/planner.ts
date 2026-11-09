@@ -22,8 +22,8 @@ import type { LlmTurn } from "./llm.js";
 /** 입력 글 → 차례 목록(첫 요청, 도구 결과를 받은 뒤 요청, …). */
 export type PlanScript = (input: string) => LlmTurn[];
 
-/** add_step 인자 목록 → 한 차례(모든 단계와 finish_plan을 함께 부른다). */
-export const planCalls = (steps: Record<string, unknown>[]): LlmTurn => [...steps.map((s) => ["add_step", s] as [string, Record<string, unknown>]), ["finish_plan", {}]];
+/** add_step 인자 목록 → 한 차례(번호를 붙여 모든 단계와 finish_plan을 함께 부른다). */
+export const planCalls = (steps: Record<string, unknown>[]): LlmTurn => [...steps.map((s, i) => ["add_step", { step: i + 1, ...s }] as [string, Record<string, unknown>]), ["finish_plan", {}]];
 
 /** 컵 치우기 네 단계(지금 서버와 같은 명령·조건). */
 export function cupSteps(ids: { table: string; sink: string; cup: string }): Record<string, unknown>[] {

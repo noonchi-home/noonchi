@@ -97,6 +97,7 @@ const choiceSchema = z.object({
 
 /** add_step 인자. 종류마다 쓰는 칸은 PlanDraft.add가 본다. */
 export const STEP_ARGS = z.object({
+  step: z.number().int().min(1).describe("몇 번째 단계인지(1부터). 고칠 때는 같은 번호로 다시 보낸다"),
   kind: z.enum(["go", "pick", "place", "device", "ask", "say", "wait"]).describe("go 이동·pick 집기·place 내려놓기(사람이 함), device 가전 조작, ask 질문, say 알림, wait 기다리기"),
   label: z.string().min(1).max(30).describe("화면 단계 이름(예: 식탁으로 가기)"),
   target: z.string().min(1).optional().describe("go·place: 평면도 id, pick: World State 물건 id 또는 평면도 id, device: 가전 id"),
@@ -140,6 +141,8 @@ interface Added { step: Omit<AgentStep, "id">; at: XZ | null }
 export class PlanDraft {
   private readonly added: Added[] = [];
   private done: AgentPlan | null = null;
+  /** 틀린 단계가 있으면 그 번호: 고칠 때까지 끝내기를 받지 않는다. */
+  private blocked: number | null = null;
   private readonly home: ConditionHome;
 
   constructor(readonly ctx: PlanContext) {
@@ -154,16 +157,24 @@ export class PlanDraft {
     return this.done;
   }
 
-  /** 단계 하나를 검사하고 더한다. 틀리면 까닭(모델에게 돌려줄 한국어). */
+  /** 단계 하나를 검사하고 그 번호(step) 자리에 둔다. 이미 있는 번호면 그 단계와 뒤 단계를 지우고 다시 둔다(고쳐 다시 보낼 때).
+   *  틀리면 그 번호부터 지우고 까닭을 돌려준다(모델에게 돌려줄 한국어). 그 뒤 번호는 앞 번호가 없어 받지 않는다. */
   add(raw: unknown): { ok: true; step: number } | { ok: false; error: string } {
     if (this.done) return { ok: false, error: "이미 finish_plan으로 끝낸 계획입니다." };
     const parsed = STEP_ARGS.safeParse(raw);
     if (!parsed.success) return { ok: false, error: parsed.error.issues.map((i) => `${i.path.join(".") || "(전체)"}: ${i.message}`).join("; ") };
-    if (this.added.length >= PLAN_LIMITS.maxSteps) return { ok: false, error: `단계는 ${PLAN_LIMITS.maxSteps}개까지입니다.` };
+    const n = parsed.data.step;
+    if (n > PLAN_LIMITS.maxSteps) return { ok: false, error: `단계는 ${PLAN_LIMITS.maxSteps}개까지입니다.` };
+    if (n > this.added.length + 1) return { ok: false, error: `${n}번 앞에 ${this.added.length + 1}번 단계가 없습니다. ${this.added.length + 1}번부터 번호 순서대로 보내세요.` };
+    this.added.length = n - 1;
     const r = this.check(parsed.data);
-    if (typeof r === "string") return { ok: false, error: r };
+    if (typeof r === "string") {
+      this.blocked = n;
+      return { ok: false, error: `${n}번 단계: ${r}. ${n}번을 고쳐 다시 보내고 그 뒤 단계도 다시 보내세요.` };
+    }
+    this.blocked = null;
     this.added.push(r);
-    return { ok: true, step: this.added.length };
+    return { ok: true, step: n };
   }
 
   /** 손이 계획상 있을 자리(앞 이동 단계 목적지, 없으면 폰 자리)에서 그 자리까지 길(사람이 걷는 길이라 모든 방). */
@@ -183,6 +194,9 @@ export class PlanDraft {
   finish(): { ok: true; plan: AgentPlan } | { ok: false; error: string } {
     if (this.done) return { ok: true, plan: this.done };
     if (this.added.length === 0) return { ok: false, error: "단계가 없습니다. add_step으로 단계를 먼저 더하세요." };
+    if (this.blocked !== null) return { ok: false, error: `${this.blocked}번 단계가 틀린 채라 끝내지 않습니다. 그 단계부터 고쳐 다시 더하세요.` };
+    const missing = this.ctx.task.allow.need.filter((k) => !this.added.some((a) => a.step.kind === k));
+    if (missing.length) return { ok: false, error: `이 할 일(${this.ctx.task.name})에는 ${missing.join(", ")} 단계가 있어야 합니다. 그 단계가 들어갈 번호(step)부터 다시 보내세요.` };
     if (this.added.slice(0, -1).some((a) => a.step.kind === "ask")) return { ok: false, error: "질문(ask)은 답으로 갈라지지 않게 마지막 단계에만 둡니다." };
     const { decision, task, floor, nowIso } = this.ctx;
     const id = planIdOf(decision.id);
@@ -257,7 +271,10 @@ export class PlanDraft {
     switch (a.kind) {
       case "go":
         need("target", !!target);
-        if (target && !floor.objects.has(target)) errors.push(`go target은 평면도 id여야 합니다: ${target}`);
+        if (target && !floor.objects.has(target)) {
+          const inRoom = floor.rooms.some((r) => r.id === target) ? [...floor.objects.values()].filter((o) => o.room === target).map((o) => o.id) : [];
+          errors.push(`go target은 평면도 물건 id여야 합니다(방 id 아님): ${target}${inRoom.length ? `. 그 방 물건: ${inRoom.slice(0, 8).join(", ")}` : ""}`);
+        }
         break;
       case "pick":
         need("target", !!target);
@@ -303,6 +320,8 @@ export class PlanDraft {
       case "say":
         none("target");
         need("text", !!a.text);
+        // 알림은 지금 상태를 알리는 말이다. 클로이드가 스스로 하겠다는 말(「옮길게요」)이나 부탁(「주세요」)은 받지 않는다
+        if (a.text && /(게요|주세요)[.!]?$/.test(a.text.trim())) errors.push("say text는 지금 상태를 알리는 말입니다(예: 세탁이 끝났어요). 「…게요」·「…주세요」로 끝내지 않습니다");
         break;
       case "wait":
         need("until", a.until !== undefined);
@@ -314,7 +333,9 @@ export class PlanDraft {
       if (!c.success) errors.push(`until이 조건 낱말 모양이 아닙니다: ${c.error.issues.slice(0, 3).map((i) => `${i.path.join(".") || "(전체)"}: ${i.message}`).join("; ")}`);
       else {
         until = c.data;
-        errors.push(...checkCondition(until, this.home).map((e) => `until: ${e}`));
+        const bad = checkCondition(until, this.home);
+        errors.push(...bad.map((e) => `until: ${e}`));
+        if (bad.some((e) => e.startsWith("물건 종류나 id가 아님"))) errors.push("World State 물건 종류에 없는 것(세탁물 등)은 until 없이 두면 사람이 「완료」로 넘깁니다");
         for (const name of objectNames(until)) if (isId(name) && !worldObject(world, name)) errors.push(`until: World State에 없는 물건 id: ${name}`);
       }
       // 기기 결과를 확인하는 조건은 그 가전의 상태 하나이고, 그 도구가 만드는 상태다(다른 가전·종류·시간으로 확인을 건너뛰지 않게)
@@ -392,7 +413,7 @@ export function planTools(draft: PlanDraft): ToolDef[] {
     },
     {
       name: "add_step", title: "단계 더하기",
-      description: "계획 끝에 단계 하나를 더합니다. 틀리면 까닭을 돌려주니 고쳐서 다시 부르세요.",
+      description: "step번째 단계를 둡니다(1부터 차례로). 이미 있는 번호면 그 단계와 뒤 단계를 바꿉니다. 틀리면 까닭을 돌려주니 그 번호부터 고쳐 다시 보내세요.",
       schema: STEP_ARGS,
       run: async (_b, args) => {
         const r = draft.add(args);

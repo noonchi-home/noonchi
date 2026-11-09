@@ -6,8 +6,9 @@ import type { ObjClass, WorldObject, WorldView } from "../contract/world.js";
 import type { DeviceKind } from "../hub/types.js";
 import type { ActionChoice } from "./prompts.js";
 
-/** 이 행동의 계획에 쓸 수 있는 단계: 단계 종류(src/agent/planTools.ts AgentStepKind), 기기 단계의 가전 종류·도구. 승인한 일의 범위다. */
-export interface TaskAllow { kinds: readonly ("go" | "pick" | "place" | "device" | "ask" | "say" | "wait")[]; devices?: { kinds: readonly DeviceKind[]; tools: readonly string[] } }
+type Kind = "go" | "pick" | "place" | "device" | "ask" | "say" | "wait";
+/** 이 행동의 계획에 쓸 수 있는 단계: 단계 종류(src/agent/planTools.ts AgentStepKind), 꼭 있어야 하는 단계 종류(need), 기기 단계의 가전 종류·도구. 승인한 일의 범위다. */
+export interface TaskAllow { kinds: readonly Kind[]; need: readonly Kind[]; devices?: { kinds: readonly DeviceKind[]; tools: readonly string[] } }
 
 /** 행동 하나: 이름, 에이전트에게 주는 설명, 쓸 수 있는 단계, 계획 전 검사의 대상 종류(이 종류 중 치우지 않은 물건이 보여야 부른다). */
 export interface TaskSpec { name: string; description: string; allow: TaskAllow; target?: ObjClass }
@@ -17,16 +18,16 @@ const HAND = ["go", "pick", "place"] as const;
 export const TASKS: Record<string, TaskSpec> = {
   "컵 치우기": {
     name: "컵 치우기", description: "사람이 자리를 비운 뒤 식탁 등에 남은 컵을 사람이 싱크대에 넣게 한다.", target: "cup",
-    allow: { kinds: HAND },
+    allow: { kinds: HAND, need: HAND },
   },
-  "사용자에게 물어보기": { name: "사용자에게 물어보기", description: "컵 안을 확인할 수 없는 등 애매할 때 폰으로 사용자에게 어떻게 할지 묻는다.", allow: { kinds: ["ask", "say"] } },
+  "사용자에게 물어보기": { name: "사용자에게 물어보기", description: "컵 안을 확인할 수 없는 등 애매할 때 폰으로 사용자에게 어떻게 할지 묻는다.", allow: { kinds: ["ask", "say"], need: ["ask"] } },
   "세탁물 건조기로 옮기기": {
     name: "세탁물 건조기로 옮기기", description: "세탁기가 멈추면 사람이 세탁물을 꺼내 건조기에 넣게 하고 건조기를 시작한다.",
-    allow: { kinds: ["wait", ...HAND, "device", "ask", "say"], devices: { kinds: ["dryer"], tools: ["start"] } },
+    allow: { kinds: ["wait", ...HAND, "device", "ask", "say"], need: [...HAND, "device"], devices: { kinds: ["dryer"], tools: ["start"] } },
   },
   "에어컨 켜기": {
     name: "에어컨 켜기", description: "더울 때 사람이 있는 방의 에어컨을 켠다.",
-    allow: { kinds: ["device", "say"], devices: { kinds: ["aircon"], tools: ["turn_on"] } },
+    allow: { kinds: ["device", "say"], need: ["device"], devices: { kinds: ["aircon"], tools: ["turn_on"] } },
   },
 };
 

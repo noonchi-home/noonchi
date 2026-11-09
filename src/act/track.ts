@@ -135,6 +135,8 @@ export class ExecutionTracker {
   onDecision(d: DecisionRecord): void {
     if (this.stopped) return;
     if (d.seq < this.lastSeq) return this.note(d, EXEC_TEXT.late);
+    // 받은 가장 새 판단 번호: 기록만 한 판단(같은 행동 등)보다 먼저 보낸 판단이 늦게 와도 쓰지 않는다
+    this.lastSeq = d.seq;
     // 기다리기·기기 단계 전에 보낸 판단이 그 뒤에 오면 낡은 관찰이라 쓰지 않는다(다시 부르는 판단이 새 관찰로 정한다)
     if (d.atMs < this.quietFrom && this.open()?.decision.action !== d.action) return this.note(d, EXEC_TEXT.late);
     if (d.status !== "valid") return this.note(d, EXEC_TEXT.decisionFailed);
@@ -152,7 +154,6 @@ export class ExecutionTracker {
     const now = this.clock.now();
     const last = this.planAt.get(d.action);
     if (last !== undefined && now - last < this.cfg.planGapMs) return this.note(d, EXEC_TEXT.held);
-    this.lastSeq = d.seq;
     this.planAt.set(d.action, now);
     // 계획을 만드는 중이던 다른 행동은 끊고 버린다(답이 와도 쓰지 않는다)
     this.dropPlanning(EXEC_TEXT.superseded);
@@ -243,6 +244,8 @@ export class ExecutionTracker {
   stop(): void {
     this.planning?.abort.abort();
     this.planning = null;
+    const a = this.run?.asking;
+    if (a?.why === "device") this.o.devices?.cancel(a.token);
     this.stopped = true;
   }
 
@@ -287,6 +290,8 @@ export class ExecutionTracker {
     this.planning = null;
     const d = job.decision;
     if (!r.ok) return this.emit(planIdOf(d.id), "failed", EXEC_TEXT.badPlan);
+    // 만드는 사이 진행 중 계획이 기다리기·기기 단계에 들어갔으면 바꾸지 않는다(그 판단은 그 단계 전 관찰이다)
+    if (this.waiting() || d.atMs < this.quietFrom) return this.emit(planIdOf(d.id), "failed", EXEC_TEXT.busy);
     const open = this.open();
     // 새 계획이 있으면 PlanHub.onDecision이 지금 계획을 취소로 닫고 supersedes를 단다
     if (open) this.finish(open, "failed", EXEC_TEXT.superseded, null);
@@ -361,6 +366,8 @@ export class ExecutionTracker {
     }
     const gen = r.gen;
     r.device = "running";
+    // 승인을 기다린 시간은 이 단계 시간 한도에 넣지 않는다
+    r.deadline = this.clock.now() + (this.stepOf(r)?.timeoutMs ?? 0);
     this.o.devices!.confirm(token, () => this.live(r, gen)).then((res) => this.deviceResult(r, gen, res), () => this.deviceResult(r, gen, { ok: false }));
   }
 
@@ -453,6 +460,11 @@ export class ExecutionTracker {
     const step = this.stepOf(r);
     if (!step || r.state !== "running" || step.kind === "ask") return false;
     if (r.asking && r.asking.why !== "again") return false;
+    // 시간 한도가 지난 뒤 온 관찰·기기 결과로는 넘기지 않는다(시간 초과가 먼저다)
+    if (!r.asking && this.clock.now() > r.deadline) {
+      this.timeout(r, step);
+      return true;
+    }
     if (step.kind === "device" && r.device !== "done" && r.device !== "sent") return false;
     const world = this.o.world();
     const reached = r.watch ? r.watch.check(this.conditionView(world), this.context(r, world)) : step.kind === "device" && r.device === "done";

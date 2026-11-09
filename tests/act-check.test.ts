@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkPlan, loadActConfig, type CheckInput } from "../src/act/check.js";
+import { checkDecision, checkPlan, loadActConfig, type CheckInput } from "../src/act/check.js";
 import { CHECK_TEXT } from "../src/plan/labels.js";
 import type { WorldObject } from "../src/contract/world.js";
 
@@ -73,5 +73,17 @@ describe("실행 전 검사", () => {
     expect(loadActConfig({ STALE_MS: "60000" }).staleMs).toBe(60_000);
     expect(() => loadActConfig({ STALE_MS: "-1" })).toThrow(/STALE_MS/);
     expect(() => loadActConfig({ STALE_MS: "abc" })).toThrow(/STALE_MS/);
+  });
+});
+
+describe("계획 전 검사(에이전트를 부르기 전)", () => {
+  const w = (objects: WorldObject[]) => ({ ...base().world, objects });
+  const pre = (objects: WorldObject[], action = "컵 치우기") => checkDecision({ decision: { ...base().decision, action }, tasks: base().tasks, world: w(objects) });
+  it("지금 보이는 치우지 않은 대상이 있어야 부른다. 시야 밖의 낡은 컵·싱크대 안 컵만 있으면 부르지 않는다", () => {
+    expect(pre([obj()])).toEqual({ ok: true });
+    expect(pre([obj({ status: "out_of_view" })])).toMatchObject({ reason: "no_target" });
+    expect(pre([obj({ facts: { place: { value: "in_sink", at_ms: 0, since_ms: 0, certainty: "confirmed" } } })])).toMatchObject({ reason: "in_sink" });
+    expect(pre([], "춤추기")).toMatchObject({ reason: "unknown_task" });
+    expect(pre([], "사용자에게 물어보기")).toEqual({ ok: true });
   });
 });

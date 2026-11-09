@@ -94,14 +94,14 @@ const store = (remembered: Record<string, ApprovalAnswer> = {}) => {
 const AC: PlanScript = () => [planCalls([{ kind: "device", label: "거실 에어컨 켜기", target: "ac_living", tool: "turn_on", until: { device: "ac_living", state: "on" }, timeout_s: 60 }])];
 const COOKTOP: PlanScript = () => [planCalls([{ kind: "device", label: "인덕션 켜기", target: "induction_1", tool: "turn_on", timeout_s: 60 }])];
 const laundry = (waitS = 7200): PlanScript => () => [planCalls([
-  { kind: "wait", label: "세탁 멈춤", until: { device: "washer_1", became: "stopped" }, timeout_s: waitS, on_timeout: "ask" },
+  { kind: "wait", label: "세탁 멈춤", until: { device: "washer_1", state: "stopped" }, timeout_s: waitS, on_timeout: "ask" },
   { kind: "go", label: "세탁기로 가기", target: "washer_1", command: "세탁기로 가 주세요", timeout_s: 300 },
   { kind: "pick", label: "세탁물 꺼내기", target: "washer_1", command: "세탁물을 꺼내 주세요", timeout_s: 300 },
   { kind: "go", label: "건조기로 가기", target: "dryer_1", command: "건조기로 가 주세요", timeout_s: 300 },
   { kind: "place", label: "세탁물 넣기", target: "dryer_1", command: "세탁물을 건조기에 넣어 주세요", timeout_s: 300 },
   { kind: "device", label: "건조기 시작", target: "dryer_1", tool: "start", until: { device: "dryer_1", state: "running" }, timeout_s: 60 },
 ])];
-const COOKTOP_TASK: TaskInfo = { name: "인덕션 켜기", description: "시험용 위험 목록 가전 단계", allow: { kinds: ["device"], devices: { kinds: ["cooktop"], tools: ["turn_on"] } } };
+const COOKTOP_TASK: TaskInfo = { name: "인덕션 켜기", description: "시험용 위험 목록 가전 단계", allow: { kinds: ["device"], need: ["device"], devices: { kinds: ["cooktop"], tools: ["turn_on"] } } };
 
 let llm: FakePlanner;
 beforeAll(async () => {
@@ -110,12 +110,12 @@ beforeAll(async () => {
 afterAll(async () => { await llm.close(); });
 
 /** 실행 추적 + 계획 모드 에이전트(가짜 모델) + 메모리 허브·정책. w: World State(허브 가전 상태를 넣는다). */
-function rig(o: { objects?: () => WorldObject[]; history?: () => Record<string, WorldDevice["history"]>; approvals?: ApprovalStore; task?: TaskInfo; over?: Partial<TrackerOptions> } = {}) {
+function rig(o: { objects?: () => WorldObject[]; history?: () => Record<string, WorldDevice["history"]>; approvals?: ApprovalStore; task?: TaskInfo; over?: Partial<TrackerOptions>; initial?: Record<string, Record<string, unknown>> } = {}) {
   const logs: BrainLog[] = [];
   const phone: PlannedCommandMessage[] = [];
   const clock = { t: 10_000, now() { return this.t; } };
   const plans = new PlanHub(floor(), () => {}, () => "t");
-  const hub = new MemoryHub(DEVICES);
+  const hub = new MemoryHub(DEVICES, o.initial ?? { washer_1: { running: true } });
   const policy = new Policy();
   const planner = testPlanner(llm, { hub, policy });
   const w = () => view(o.objects?.() ?? [], devicesOf(hub, o.history?.()));
@@ -207,11 +207,8 @@ describe("계획 모드: 기기 단계와 승인", () => {
 });
 
 describe("계획 모드: 행동 중 기다리기", () => {
-  const STOPPED = (at: number) => ({ washer_1: [{ attr: "running", from: true, to: false, at_ms: at }] });
-
   it("세탁물 옮기기: 세탁이 멈출 때까지 실제 폰에는 아무것도 보내지 않고 대시보드 진행도만 기다리기, 멈추면 사람 단계 명령, 마지막에 건조기를 켠다", async () => {
-    let history: Record<string, WorldDevice["history"]> = {};
-    const r = rig({ approvals: store({ "task:세탁물 건조기로 옮기기": "approve" }), history: () => history });
+    const r = rig({ approvals: store({ "task:세탁물 건조기로 옮기기": "approve" }) });
     await r.decide(decision("세탁물 건조기로 옮기기"));
     const plan = r.plans.current()!;
     expect(plan.steps.map((s) => s.kind)).toEqual(["wait", "move", "act", "move", "act", "device"]);
@@ -228,7 +225,7 @@ describe("계획 모드: 행동 중 기다리기", () => {
     expect(r.planned.map((d) => d.id)).toEqual(["pam-1"]);
     for (let i = 0; i < 4; i++) { r.clock.t += 60_000; r.t.tick(); }
     expect(r.phone).toEqual([]);
-    history = STOPPED(r.clock.t);
+    expect((await r.hub.command("washer_1", { type: "stop" })).ok).toBe(true);
     r.t.onWorld();
     expect(r.spoken()).toEqual(["세탁기로 가 주세요"]);
     expect(r.t.waiting()).toBe(false);
@@ -315,9 +312,9 @@ describe("계획 모드: 행동 중 기다리기", () => {
 describe("계획 모드: 계획 검사", () => {
   const ctx = (action = "컵 치우기"): PlanContext => planContext({ decision: decision(action), world: view([cup()]), floor: floor(), hub: new MemoryHub(DEVICES) });
   const cupIds = { table: "table_1", sink: "sink_1", cup: "cup_1" };
-  const ok = (draft: PlanDraft, s: Record<string, unknown>) => expect(draft.add(s)).toMatchObject({ ok: true });
+  const ok = (draft: PlanDraft, step: number, s: Record<string, unknown>) => expect(draft.add({ step, ...s })).toMatchObject({ ok: true, step });
   const bad = (s: Record<string, unknown>, why: RegExp, action?: string) => {
-    const r = new PlanDraft(ctx(action)).add(s);
+    const r = new PlanDraft(ctx(action)).add({ step: 1, ...s });
     expect(r.ok, JSON.stringify(s)).toBe(false);
     expect(r.ok ? "" : r.error).toMatch(why);
   };
@@ -325,7 +322,8 @@ describe("계획 모드: 계획 검사", () => {
 
   it("사람 명령은 「주세요」로 끝나고, 대상·조건 낱말·시간·화면 글이 맞아야 한다", () => {
     bad({ ...go, command: "식탁으로 갈게요" }, /주세요/);
-    bad({ ...go, target: "table_9" }, /평면도 id/);
+    bad({ ...go, target: "table_9" }, /평면도 물건 id/);
+    bad({ ...go, target: "kitchen" }, /그 방 물건: table_1, sink_1/);
     bad({ ...go, until: { object: "cup_1", facts: { place: "on_moon" } } }, /조건 낱말/);
     bad({ ...go, until: { phone_near: "table_9" } }, /없는 자리/);
     bad({ ...go, until: { object: "cup_7", facts: { place: "in_hand" } } }, /없는 물건 id/);
@@ -346,19 +344,39 @@ describe("계획 모드: 계획 검사", () => {
     bad({ kind: "wait", label: "세탁 멈춤", until: { elapsed_s: 60 }, timeout_s: 20_000 }, /10~14400/, "세탁물 건조기로 옮기기");
   });
 
+  it("단계는 번호 순서대로 두고, 틀리면 그 번호부터 지워 같은 번호로 고쳐 보내게 하며, 빠진 단계가 있으면 끝내지 않는다", () => {
+    const d = new PlanDraft(ctx());
+    const steps = cupSteps(cupIds);
+    expect(d.add({ step: 2, ...steps[1]! })).toMatchObject({ ok: false, error: expect.stringMatching(/1번부터/) });
+    ok(d, 1, steps[0]!);
+    expect(d.add({ step: 2, ...steps[1]!, command: "컵을 들게요" })).toMatchObject({ ok: false, error: expect.stringMatching(/^2번 단계: .*주세요/) });
+    expect(d.add({ step: 3, ...steps[2]! })).toMatchObject({ ok: false, error: expect.stringMatching(/2번부터/) });
+    expect(d.finish()).toMatchObject({ ok: false, error: expect.stringMatching(/2번 단계가 틀린 채/) });
+    ok(d, 2, steps[1]!);
+    ok(d, 3, steps[2]!);
+    expect(d.finish()).toMatchObject({ ok: false, error: expect.stringMatching(/place 단계가 있어야/) });
+    ok(d, 3, steps[2]!);
+    ok(d, 4, steps[3]!);
+    expect(d.finish()).toMatchObject({ ok: true, plan: { steps: [{ kind: "go" }, { kind: "pick" }, { kind: "go" }, { kind: "place" }] } });
+    // 알림은 지금 상태를 알리는 말이다(클로이드가 스스로 하겠다는 말이 아니다)
+    bad({ kind: "say", label: "알림", text: "세탁물을 건조기로 옮길게요", timeout_s: 10 }, /게요/, "에어컨 켜기");
+    // World State에 없는 것(세탁물)을 조건에 쓰면 조건 없이 두라고 알려 준다
+    bad({ kind: "pick", label: "세탁물 꺼내기", target: "washer_1", command: "세탁물을 꺼내 주세요", until: { person_holding: "cloth" }, timeout_s: 60 }, /until 없이/, "세탁물 건조기로 옮기기");
+  });
+
   it("단계는 8개까지, 질문은 마지막에만, 내려놓기 물건은 앞에서 집은 물건이다", () => {
     const many = new PlanDraft(ctx());
-    for (let i = 0; i < 8; i++) ok(many, go);
-    expect(many.add(go)).toMatchObject({ ok: false, error: expect.stringMatching(/8개까지/) });
+    for (let i = 1; i <= 8; i++) ok(many, i, go);
+    expect(many.add({ step: 9, ...go })).toMatchObject({ ok: false, error: expect.stringMatching(/8개까지/) });
     const ask = new PlanDraft(ctx("사용자에게 물어보기"));
     const q = { kind: "ask", label: "폰으로 물어보기", question: "컵을 치울까요?", choices: [{ id: "a", label: "네" }, { id: "b", label: "아니요" }], timeout_s: 120 };
-    ok(ask, q);
-    ok(ask, { kind: "say", label: "알림", text: "알겠어요", timeout_s: 10 });
+    ok(ask, 1, q);
+    ok(ask, 2, { kind: "say", label: "알림", text: "컵이 그대로 있어요", timeout_s: 10 });
     expect(ask.finish()).toMatchObject({ ok: false, error: expect.stringMatching(/마지막 단계/) });
     const view2 = view([cup(), cup({ id: "cup_2", last_seen_ms: 8_000 })]);
     const swap = new PlanDraft(planContext({ decision: decision("컵 치우기"), world: view2, floor: floor() }));
-    for (const s of cupSteps(cupIds).slice(0, 3)) ok(swap, s);
-    ok(swap, { ...cupSteps(cupIds)[3]!, object: "cup_2", until: { object: "cup_2", follow: true, facts: { place: "in_sink" } } });
+    cupSteps(cupIds).slice(0, 3).forEach((s, i) => ok(swap, i + 1, s));
+    ok(swap, 4, { ...cupSteps(cupIds)[3]!, object: "cup_2", until: { object: "cup_2", follow: true, facts: { place: "in_sink" } } });
     expect(swap.finish()).toMatchObject({ ok: false, error: expect.stringMatching(/앞에서 집은 물건/) });
   });
 
@@ -422,5 +440,84 @@ describe("계획 모드: 판단마다 한 번", () => {
   it("계획 모드에 쓰는 행동 목록에는 설명과 쓸 수 있는 단계가 있다", () => {
     expect(Object.keys(TASKS)).toContain("세탁물 건조기로 옮기기");
     expect(deviceViews(new MemoryHub(DEVICES)).map((d) => d.kind)).toEqual(["aircon", "cooktop", "washer", "dryer"]);
+  });
+});
+
+describe("계획 모드: 경합·시간 한도", () => {
+  it("다른 행동 계획을 만드는 사이 진행 중 계획이 기다리기 단계에 들어가면 새 계획을 쓰지 않는다", async () => {
+    const r = rig({ approvals: store({ "task:세탁물 건조기로 옮기기": "approve", "task:에어컨 켜기": "approve" }) });
+    // 세탁물 옮기기 첫 단계(사람 단계) 중에 에어컨 판단이 와 계획을 만드는 사이, 세탁물 계획이 기다리기 단계에 들어간다
+    llm.scripts["세탁물 건조기로 옮기기"] = () => [planCalls([
+      { kind: "go", label: "세탁기로 가기", target: "washer_1", command: "세탁기로 가 주세요", timeout_s: 300 },
+      { kind: "wait", label: "세탁 멈춤", until: { device: "washer_1", state: "stopped" }, timeout_s: 7200 },
+      { kind: "pick", label: "세탁물 꺼내기", target: "washer_1", command: "세탁물을 꺼내 주세요", timeout_s: 300 },
+      { kind: "place", label: "세탁물 넣기", target: "dryer_1", command: "세탁물을 건조기에 넣어 주세요", timeout_s: 300 },
+      { kind: "device", label: "건조기 시작", target: "dryer_1", tool: "start", timeout_s: 60 },
+    ])];
+    try {
+      await r.decide(decision("세탁물 건조기로 옮기기"));
+      expect(r.spoken()).toEqual(["세탁기로 가 주세요"]);
+      llm.scripts["에어컨 켜기"] = () => [planCalls([{ kind: "device", label: "거실 에어컨 켜기", target: "ac_living", tool: "turn_on", timeout_s: 60 }])];
+      r.t.onDecision({ ...decision("에어컨 켜기", "pam-2", 2), atMs: r.clock.t });
+      r.t.onAnswer("plan:pam-1", "plan:pam-1:1", "done");
+      expect(r.t.waiting()).toBe(true);
+      await r.t.idle();
+      expect(r.exec().find((l) => l.plan_id === "plan:pam-2" && l.state === "failed")).toMatchObject({ text: EXEC_TEXT.busy });
+      expect(r.plans.current()).toMatchObject({ id: "plan:pam-1", status: "running" });
+      expect(r.hub.get("ac_living")!.twin.power).toBe("off");
+    } finally {
+      llm.scripts["세탁물 건조기로 옮기기"] = laundry();
+      llm.scripts["에어컨 켜기"] = AC;
+    }
+  });
+
+  it("기록만 한 새 판단보다 먼저 보낸 다른 행동 판단이 늦게 오면 쓰지 않는다", async () => {
+    const r = rig({ objects: () => [cup()], approvals: store({ "task:컵 치우기": "approve" }) });
+    await r.decide(decision("컵 치우기", "pam-1", 1));
+    await r.decide(decision("컵 치우기", "pam-3", 3));
+    await r.decide(decision("에어컨 켜기", "pam-2", 2));
+    expect(r.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-2", text: EXEC_TEXT.late });
+    expect(r.planned.map((d) => d.id)).toEqual(["pam-1"]);
+  });
+
+  it("시간 한도가 지난 뒤 온 관찰로는 넘기지 않고 시간 초과로 닫는다. 위험 가전 승인을 기다린 시간은 단계 시간에 넣지 않는다", async () => {
+    const a = rig({ objects: () => [cup()], approvals: store({ "task:컵 치우기": "approve" }) });
+    await a.decide(decision("컵 치우기"));
+    a.clock.t += 120_001;
+    a.t.onEye([7, 3]);
+    a.t.onWorld();
+    expect(a.exec().at(-1)).toMatchObject({ state: "failed", text: EXEC_TEXT.timeout });
+    const b = rig({ approvals: store({ "task:인덕션 켜기": "approve" }), task: COOKTOP_TASK });
+    await b.decide(decision("인덕션 켜기"));
+    await b.settle();
+    b.clock.t += 90_000;
+    b.t.tick();
+    expect(b.t.onAnswer("plan:pam-1", "plan:pam-1:1:approve", "approve")).toBe(true);
+    b.t.tick();
+    await b.settle();
+    expect(b.plans.current()).toMatchObject({ status: "done" });
+    expect(b.hub.get("induction_1")!.twin.power).toBe("on");
+  });
+
+  it("멈추면(집을 닫을 때) 기다리던 위험 가전 승인 토큰을 버린다", async () => {
+    const r = rig({ approvals: store({ "task:인덕션 켜기": "approve" }), task: COOKTOP_TASK });
+    await r.decide(decision("인덕션 켜기"));
+    await r.settle();
+    expect(r.policy.pending()).toHaveLength(1);
+    r.t.stop();
+    expect(r.policy.pending()).toEqual([]);
+  });
+
+  it("person_holding: 종류면 그 종류 아무 물건, id면 그 id만(같은 종류 다른 물건은 아님), 든 것을 모르면 참", async () => {
+    const { evaluate } = await import("../src/world/conditions.js");
+    const holding = (held: string[]): WorldView => ({
+      ...view([]), person: { ...PERSON, visible: true, holding: held, facts: { holding: { value: "holding_object", at_ms: 10_000, since_ms: 10_000, certainty: "confirmed" } } },
+    });
+    const x = { nowMs: 10_000, sinceMs: 9_000, locate: () => null, roomOf: () => null };
+    expect(evaluate({ person_holding: "cup" }, holding(["cup_2"]), x)).toBe(true);
+    expect(evaluate({ person_holding: "cup_1" }, holding(["cup_2"]), x)).toBe(false);
+    expect(evaluate({ person_holding: "cup_1" }, holding(["cup_2"]), { ...x, follow: () => ["cup_2"] })).toBe(true);
+    expect(evaluate({ person_holding: "cup" }, holding(["book_1"]), x)).toBe(false);
+    expect(evaluate({ person_holding: "cup" }, holding([]), x)).toBe(true);
   });
 });

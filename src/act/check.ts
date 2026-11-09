@@ -7,7 +7,7 @@ import type { ControlMode } from "../contract/setup.js";
 import type { WorldView } from "../contract/world.js";
 import { CHECK_TEXT } from "../plan/labels.js";
 import type { DecisionRecord } from "../world/decide.js";
-import { holdsTarget, planTargetId, putAway, targetOf, taskOf } from "./tasks.js";
+import { holdsTarget, planTargetId, putAway, taskOf } from "./tasks.js";
 
 export type CheckFail = keyof typeof CHECK_TEXT;
 export type CheckResult = { ok: true } | { ok: false; reason: CheckFail; text: string };
@@ -31,7 +31,8 @@ const fail = (reason: CheckFail): CheckResult => ({ ok: false, reason, text: CHE
 export function checkDecision(i: Pick<CheckInput, "decision" | "tasks" | "world">): CheckResult {
   const spec = taskOf(i.decision.action);
   if (!spec || !i.tasks.includes(spec.name)) return fail("unknown_task");
-  if (spec.target && !targetOf(spec, i.world)) {
+  // 지금 보이는 대상만(시야 밖의 낡은 물건으로 모델을 부르지 않는다)
+  if (spec.target && !i.world.objects.some((o) => o.cls === spec.target && o.status === "present" && !putAway(o))) {
     return fail(i.world.objects.some((x) => x.cls === spec.target && x.status !== "gone" && putAway(x)) ? "in_sink" : "no_target");
   }
   return { ok: true };

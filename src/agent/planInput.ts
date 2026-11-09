@@ -18,7 +18,7 @@ export const PLANNER_PROMPT = `너는 이 집 스마트홈 에이전트의 계�
 - pick: 집기. target은 보이는 World State 물건 id(없으면 평면도 id). 물건 id면 until은 {"any": [{"object": id, "follow": true, "facts": {"place": "in_hand"}}, {"person_holding": 종류}]}.
 - place: 내려놓기·넣기. target은 평면도 id, object는 든 물건 id(앞 pick 물건이면 생략). until은 그 물건 자리 사실(예: {"object": id, "follow": true, "facts": {"place": "in_sink"}}). 비전으로 못 보는 것(세탁물 등)은 until 없이 두면 사람이 「완료」로 넘긴다.
 - device: 가전 조작. tool은 기기를 바꾸는 도구 이름(turn_on·turn_off·set_level·set_climate·set_covering·lock·unlock·start·stop·set_valve), target은 가전 id, args는 그 도구의 나머지 인자(device_id 없이). 실행할 때 승인 규칙을 거친다. until은 그 가전 상태(예: {"device": id, "state": "on"}).
-- wait: 행동 중에 기다리기(예: 세탁이 멈추기). until은 World State 조건(예: {"device": 세탁기 id, "became": "stopped"}) 또는 {"elapsed_s": 초}. 폰에는 아무것도 보내지 않는다. 행동을 시작하기 전 기다림은 PAM이 맡으니 넣지 않는다.
+- wait: 행동 중에 기다리기(예: 세탁이 멈추기). until은 World State 조건(예: {"device": 세탁기 id, "state": "stopped"}, 이미 멈췄으면 바로 넘어간다) 또는 {"elapsed_s": 초}. 폰에는 아무것도 보내지 않는다. 행동을 시작하기 전 기다림은 PAM이 맡으니 넣지 않는다.
 - ask: 사람에게 묻기. question은 「?」로 끝나고 choices는 2~3개(id 영문 소문자, label 짧게). 답으로 갈라지지 않게 마지막 단계에만 둔다.
 - say: 폰으로 알릴 한 줄(text).
 
@@ -27,8 +27,21 @@ export const PLANNER_PROMPT = `너는 이 집 스마트홈 에이전트의 계�
 - id는 입력에 있는 것만 쓴다. 조건(until)은 [조건 낱말]의 키만 쓴다.
 - 모든 단계에 timeout_s를 준다: 사람 단계·질문 보통 120, 가전 60, 기다리기는 그 일에 맞게(예: 세탁 7200). 오래 걸리는 단계는 on_timeout을 ask(계속할지 묻기)로, 그 밖에는 fail.
 - label은 화면 단계 이름(예: 「식탁으로 가기」, 「컵 집기」, 「싱크대로 가기」, 「컵 내려놓기」). 30자 아래, 화살표·괄호 없이 쓴다.
-- 필요하면 read_world·read_floor_plan·list_devices·find_devices·get_state·route_to로 확인한다. 그다음 add_step을 순서대로 모두 부르고 마지막에 finish_plan을 부른다. 한 번에 함께 불러도 된다. 단계는 8개까지.
-- 도구 결과가 오류면 그 단계를 고쳐 다시 add_step을 부른다. 답 글은 쓰지 않는다.`;
+- 순서: 사람은 먼저 물건이 있는 자리로 가고(go), 집고(pick), 둘 자리로 가서(go) 내려놓는다(place). 이미 그 자리에 있으면 go를 뺀다.
+- 비전으로 볼 수 있는 일(컵 같은 World State 물건)은 pick·place에 until을 꼭 쓴다.
+- 필요하면 read_world·read_floor_plan·list_devices·find_devices·get_state·route_to로 확인한다. 그다음 add_step을 step 1부터 차례로 모두 부르고 마지막에 finish_plan을 부른다. 한 번에 함께 불러도 된다. 단계는 8개까지.
+- 도구 결과가 오류면 그 번호(step)부터 고쳐 다시 보내고 그 뒤 단계도 다시 보낸다(틀린 단계 뒤 단계는 받지 않는다). 답 글은 쓰지 않는다.
+
+예(컵 치우기, 식탁 table_1 위 컵 cup_1, 싱크대 sink_1)
+1. go table_1 「식탁으로 가 주세요」 until {"phone_near": "table_1"}
+2. pick cup_1 「컵을 들어 주세요」 until {"any": [{"object": "cup_1", "follow": true, "facts": {"place": "in_hand"}}, {"person_holding": "cup"}]}
+3. go sink_1 「싱크대로 가 주세요」 until {"phone_near": "sink_1"}
+4. place sink_1 object cup_1 「컵을 싱크대에 넣어 주세요」 until {"object": "cup_1", "follow": true, "facts": {"place": "in_sink"}}
+
+예(세탁물 옮기기, 세탁기 washer_1, 건조기 dryer_1)
+1. wait until {"device": "washer_1", "state": "stopped"} timeout_s 7200 on_timeout ask
+2. go washer_1 「세탁기로 가 주세요」 3. pick washer_1 「세탁물을 꺼내 주세요」 4. go dryer_1 「건조기로 가 주세요」
+5. place dryer_1 「세탁물을 건조기에 넣어 주세요」 6. device dryer_1 tool start until {"device": "dryer_1", "state": "running"}`;
 
 const xz = (p: readonly number[] | null | undefined) => (p ? `[${p.map((n) => Math.round(n * 100) / 100).join(", ")}]` : "모름");
 const factsOf = (f: Record<string, { value: string } | undefined>) =>
