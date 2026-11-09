@@ -685,6 +685,8 @@ describe("설정 화면: 상반신 마스코트와 생각 말풍선", () => {
       expect(d.closest("[aria-hidden=true]")).not.toBeNull();
     }
     expect(dots.map((d) => d.dataset.size)).toEqual(["lg", "md", "sm"]);
+    // 화면 바탕 위에서 보이게 테두리 input-line 토큰(canvas 대비 3.27:1)
+    for (const d of dots) expect(d.className.split(/\s+/)).toContain("border-input-line");
   });
 });
 
