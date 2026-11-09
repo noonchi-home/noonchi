@@ -45,15 +45,16 @@ describe("NOONCHI 처음부터 끝까지", () => {
         return JSON.stringify({ scene: "kitchen", observations: dets.map((d) => ({ object_id: d.id, state: cupPlace })), summary: "컵" });
       },
     });
-    // PAM은 끝난 뒤에도 컵 치우기를 고른다: 싱크대 안 컵으로는 새 명령을 보내지 않아야 한다
-    pam = await startFakePam({ predict: () => ({ observation: "빈 컵이 식탁에 남음", reasoning: "자리를 비워 컵을 치운다", task_index: 0 }) });
+    // PAM은 기본 주기(5초)로 불린다. 관찰 텍스트에 컵이 있으면 컵 치우기를 고르고(끝난 뒤에도: 싱크대 안 컵으로는 새 명령을 보내지 않아야 한다), 없으면 대기
+    pam = await startFakePam({ predict: (b) => (/컵 cup_\d/.test(String(b.observation_text))
+      ? { observation: "빈 컵이 식탁에 남음", reasoning: "자리를 비워 컵을 치운다", task_index: 0 } : { observation: "컵 없음", reasoning: "할 일 없음", task_index: -1 }) });
     // 컵 치우기는 전에 승인을 받은 일: 승인을 묻지 않고 첫 명령부터(기본 집 apartment). 승인 답 흐름은 tests/act-track.test.ts가 본다
     const runtimeDir = mkdtempSync(join(tmpdir(), "rt-"));
     mkdirSync(join(runtimeDir, "homes", "apartment"), { recursive: true });
     writeFileSync(join(runtimeDir, "homes", "apartment", "approvals.json"), JSON.stringify({ always: { "task:컵 치우기": "2026-11-09T00:00:00.000Z" }, never: {} }));
     srv = await startServer({
       env: { HUB: "memory", PORT: "0", RUNTIME_DIR: runtimeDir, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
-        BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url, PAM_MIN_GAP_MS: "0" },
+        BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url },
       brain: { detector: new ScriptedDetector(() => [{ label: "cup", score: 0.9, cls: 41, box: [220, 160, 40, 20] }]) }, log: () => {},
     });
     const dash: Msg[] = [];
@@ -108,7 +109,7 @@ describe("NOONCHI 처음부터 끝까지", () => {
     expect(all.rows.filter((r) => r.kind === "feedback").sort((a, b) => a.id - b.id).map((r) => r.text)).toEqual(["완료 · 부탁: 식탁으로 가 주세요", "다 했어 · 부탁: 싱크대로 가 주세요"]);
     const decided = all.rows.find((r) => r.kind === "decision" && `plan:${r.subject}` === planId)!;
     expect(decided.text).toBe("컵 치우기");
-    expect((pam.bodies[0] as { observation_text: string }).observation_text).toContain("컵 cup_1 보임");
+    expect(pam.bodies.some((b) => String(b.observation_text).includes("컵 cup_1 보임"))).toBe(true);
     // 대시보드: 판단·실행 기록과 계획(집기 대상 cup_1). 단계 상태가 지금 단계를 따라가고 끝나면 done
     const planMsgs = dash.filter((m) => m.type === "plan" && m.plan?.id === planId).map((m) => m.plan);
     expect(planMsgs[0]).toMatchObject({ source: "brain", dryRun: true, judgment: "자리를 비워 컵을 치운다" });

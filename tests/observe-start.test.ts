@@ -53,7 +53,7 @@ describe("startServer(BRAIN=1) + 관찰 흐름", () => {
     expect((await fetchRetry(`${srv.url}/api/world`)).status).toBe(404);
   });
 
-  it("엔진 프레임마다 YOLO·VLM 기록이 대시보드로 가고 World State가 바뀌면 보내고 PAM을 부른다. 표시 프레임은 관찰 흐름에 들어가지 않는다", async () => {
+  it("엔진 프레임마다 YOLO·VLM 기록이 대시보드로 가고 World State가 바뀌면 보내고, 프레임이 오는 동안 PAM을 5초마다 부른다. 표시 프레임은 관찰 흐름에 들어가지 않는다", async () => {
     fake = await startFakeOpenAI();
     pam = await startFakePam();
     srv = await startServer({
@@ -78,15 +78,16 @@ describe("startServer(BRAIN=1) + 관찰 흐름", () => {
       const world = await until(dashBox, (m) => m.type === "world" && m.world.objects.length === 1);
       expect(world.world.objects[0]).toMatchObject({ id: "cup_1", cls: "cup", status: "present" });
       await until(dashBox, (m) => m.type === "brain" && m.event.type === "world_change" && m.event.kind === "appeared");
-      const decision = await until(dashBox, (m) => m.type === "brain" && m.event.type === "decision");
-      expect(decision.event).toMatchObject({ seq: 1, status: "valid", action: null, memory_version: 1, world: { objects: [{ id: "cup_1" }] } });
-      expect((pam.bodies[0] as { observation_text: string }).observation_text).toContain("컵 cup_1 보임");
-      expect(decision.event.text_sent).toBe((pam.bodies[0] as { observation_text: string }).observation_text);
+      // 첫 판단은 첫 프레임 직후(컵을 인정하기 전일 수 있다), 다음 판단은 5초 뒤
+      const decision = await until(dashBox, (m) => m.type === "brain" && m.event.type === "decision" && m.event.world.objects.some((o: Msg) => o.id === "cup_1"), 8000);
+      expect(decision.event).toMatchObject({ status: "valid", action: null, memory_version: 1, world: { objects: [{ id: "cup_1" }] } });
+      expect(decision.event.text_sent).toContain("컵 cup_1 보임");
+      expect(pam.bodies.map((b) => b.observation_text)).toContain(decision.event.text_sent);
       // 기록 DB 한 시간축: VLM 답, 등장, PAM에 보낸 텍스트, 판단. YOLO 결과 줄은 적지 않는다
       const kinds = new Set(srv.history.list({}).map((r) => r.kind));
       expect([...kinds]).toEqual(expect.arrayContaining(["vlm", "detection", "pam_text", "decision"]));
       expect(srv.history.list({ kinds: ["vlm"] })[0]).toMatchObject({ text: "가짜 장면" });
-      expect(srv.history.list({ kinds: ["pam_text"] })[0]!.text).toBe(decision.event.text_sent);
+      expect(srv.history.list({ kinds: ["pam_text"] }).map((r) => r.text)).toContain(decision.event.text_sent);
       const status = (await (await fetchRetry(`${srv.url}/api/brain`)).json()) as Msg;
       expect(status).toMatchObject({ ok: true, frames: 3, detected: 3, time_source: "phone" });
       expect(((await (await fetchRetry(`${srv.url}/api/world`)).json()) as Msg).world.objects).toHaveLength(1);

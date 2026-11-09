@@ -1,6 +1,6 @@
 // 판단 호출: Trigger가 허락하면 World State 관찰 텍스트 + 기억 + 행동 목록으로 PAM을 부른다. 요청마다 번호(seq)를 붙인다.
 // 동시 상한을 넘으면 부르지 않는다(Trigger.due가 false). 결과는 기록(decision)과 onDecision으로 넘긴다. 늦게 온 답의 처리는 실행 추적이 seq로 한다.
-// PAM 연결 끊김·연결됨(link)과 주기 판단 멈춤·다시 시작(trigger)은 바뀔 때 한 번씩 기록한다.
+// PAM 연결 끊김·연결됨(link)과 주기 판단 멈춤(폰 사진 없음·사람 없음)·다시 시작(trigger)은 바뀔 때 한 번씩 기록한다.
 import type { BrainLog, DecisionWorld } from "../contract/events.js";
 import type { WorldChange, WorldView } from "../contract/world.js";
 import { checkInput, isoWithOffset, type PamMemory, type Prediction } from "../brain/decision.js";
@@ -8,7 +8,7 @@ import { PamLinkError, type PamClient } from "../brain/pam.js";
 import { LINK_TEXT, TRIGGER_TEXT } from "./labels.js";
 import type { WorldState } from "./state.js";
 import { textFromWorld } from "./text.js";
-import type { Trigger } from "./trigger.js";
+import type { Trigger, TriggerPause } from "./trigger.js";
 
 /** 관찰 텍스트에 넣을 변화를 이만큼 둔다(텍스트 창은 그 안의 최근 60초). */
 const RECENT_KEEP_MS = 600_000;
@@ -59,7 +59,7 @@ export class Decider {
   private seq = 0;
   private stopped = false;
   private link: boolean | null = null;
-  private paused = false;
+  private paused: TriggerPause | null = null;
   private readonly clock: { now(): number };
 
   constructor(private readonly o: DeciderOptions) {
@@ -73,15 +73,20 @@ export class Decider {
     this.o.trigger.onChanges(changes);
   }
 
+  /** 관찰 흐름이 엔진 프레임마다 부른다(주기 판단은 프레임이 오는 동안만 부른다). */
+  onFrame(): void {
+    if (!this.stopped) this.o.trigger.onFrame(this.clock.now());
+  }
+
   /** 타이머(250ms)가 부른다. 멈춤·다시 시작이 바뀌면 기록하고, 부를 때면 PAM을 부른다. */
   tick(): void {
     if (this.stopped) return;
     const now = this.clock.now();
     const view = this.o.world.view(now);
-    const paused = this.o.trigger.paused(now, view.person.visible);
+    const paused = this.o.trigger.pause(now, view.person.visible);
     if (paused !== this.paused) {
       this.paused = paused;
-      this.o.emit({ type: "trigger", at_ms: now, paused, text: paused ? TRIGGER_TEXT.paused : TRIGGER_TEXT.resumed });
+      this.o.emit({ type: "trigger", at_ms: now, paused: paused !== null, text: paused ? TRIGGER_TEXT[paused] : TRIGGER_TEXT.resumed });
     }
     if (!this.o.trigger.due(now, view.person.visible, this.running.size)) return;
     this.o.trigger.called(now);

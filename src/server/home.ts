@@ -276,6 +276,8 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
           tracking.onWorld();
           decide.onChanges(c);
         },
+        // 주기 판단(기본 5초)은 엔진 프레임이 오는 동안만 부른다
+        onFrame: () => decide.onFrame(),
         // 분석한 프레임은 디스크에 쓰지 않는다. DATASET_COLLECT=1일 때만 시험 자료로 RUNTIME_DIR/dataset에 쓴다
         dataset: env.DATASET_COLLECT?.trim() === "1" ? datasetWriter(join(runtimeDir, "dataset"), history.db) : undefined,
       });

@@ -4,7 +4,8 @@ noonchi 서버가 PAM 서비스(`services/pam/`)를 부르는 형식이다. PAM�
 
 | 누가 | 하는 일 |
 |---|---|
-| noonchi | 언제 부를지 정한다(World State의 의미 있는 변화, 또는 주기 설정) |
+| noonchi | 폰 엔진 프레임이 오는 동안 5초마다 그때 관찰 텍스트로 부른다(`PAM_TRIGGER=periodic` 기본, `PAM_PERIOD_MS`). 프레임이 10초 넘게 안 오거나 사람 없음·등장 사라짐 없음이 30분이면 멈춘다. `event`면 World State에 의미 있는 변화가 있을 때 |
+| PAM 서비스 | 그 관찰에서 무엇을 할지(계기·행동)는 PAM의 FSM 기억으로 정한다 |
 | noonchi | 관찰 텍스트를 만든다: 시각이 붙은 줄 + `[지속]` 오래 이어진 사실 + `[눈]` 클로이드 눈이 있는 방 이름(`src/world/text.ts`) |
 | PAM 서비스 | 논문 프롬프트에 관찰 텍스트를 넣어 PAM LLM을 부르고 원문을 돌려준다 |
 | noonchi | 원문을 다시 검사하고, 실행 전 검사를 거쳐 실행한다 |

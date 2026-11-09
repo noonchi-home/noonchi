@@ -70,6 +70,21 @@ describe("관찰 흐름", () => {
     await p.close();
   });
 
+  it("엔진 프레임이 올 때마다(같은 사진·늦은 프레임 포함) onFrame을 부른다: 판단 시점이 관찰이 살아 있는지 본다", async () => {
+    let frames = 0;
+    const vlm = { model: "w", json: async () => ({ value: { scene: "k", observations: [], summary: "s" }, costUsd: 0, model: "w", attempts: 1 }) } as unknown as VlmClient;
+    const p = new ObservationPipeline({ config: { engineMs: 2000, vlmMaxInflight: 4, vlmTimeoutMs: 5000, detectQueueMax: 8, keepMs: 20_000 }, detector: cupDet(), vlm,
+      world: new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }), emit: () => {}, broadcastWorld: () => {}, onFrame: () => frames++ });
+    p.onEngine(jpeg(1), head(40_000), null, null, 40_005);
+    p.onEngine(jpeg(1), head(42_000), null, null, 42_005);
+    p.onEngine(jpeg(2), head(10_000), null, null, 42_100);
+    await p.idle();
+    expect(frames).toBe(3);
+    await p.close();
+    p.onEngine(jpeg(3), head(44_000), null, null, 44_005);
+    expect(frames).toBe(3);
+  });
+
   it("창 크기 1이면 그 프레임 한 장만 보낸다", async () => {
     const counts: number[] = [];
     const vlm = { model: "w", json: async (req: { images: Buffer[] }) => {

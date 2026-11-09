@@ -42,4 +42,4 @@ export const ROOM_UNKNOWN = "방 모름";
 
 /** PAM 연결과 주기 판단 멈춤 기록 글. */
 export const LINK_TEXT = { up: "PAM 연결됨", down: "PAM 연결 끊김" } as const;
-export const TRIGGER_TEXT = { paused: "사람이 없어 판단을 멈춤", resumed: "판단을 다시 시작함" } as const;
+export const TRIGGER_TEXT = { idle: "사람이 없어 판단을 멈춤", no_frames: "폰 사진이 오지 않아 판단을 멈춤", resumed: "판단을 다시 시작함" } as const;

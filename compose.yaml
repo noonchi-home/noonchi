@@ -75,6 +75,7 @@ services:
       PAM_TRIGGER:
       PAM_MIN_GAP_MS:
       PAM_PERIOD_MS:
+      PAM_LIVE_MS:
       PAM_IDLE_STOP_MS:
       PAM_MAX_INFLIGHT:
       STALE_MS:

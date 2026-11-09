@@ -57,11 +57,13 @@ describe("한양목련 처음부터 끝까지", () => {
         return JSON.stringify({ scene: "kitchen", observations: dets.map((d) => ({ object_id: d.id, state: cupPlace })), summary: "컵" });
       },
     });
-    pam = await startFakePam({ predict: () => ({ observation: "빈 컵이 식탁에 남음", reasoning: "자리를 비워 컵을 치운다", task_index: 0 }) });
+    // PAM은 기본 주기(5초)로 불린다. 관찰 텍스트에 컵이 있으면 컵 치우기, 없으면 대기
+    pam = await startFakePam({ predict: (b) => (/컵 cup_\d/.test(String(b.observation_text))
+      ? { observation: "빈 컵이 식탁에 남음", reasoning: "자리를 비워 컵을 치운다", task_index: 0 } : { observation: "컵 없음", reasoning: "할 일 없음", task_index: -1 }) });
     const runtimeDir = mkdtempSync(join(tmpdir(), "rt-"));
     srv = await startServer({
       env: { HUB: "memory", PORT: "0", HOME_ID: "mokryeon_180b", RUNTIME_DIR: runtimeDir, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
-        BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url, PAM_MIN_GAP_MS: "0" },
+        BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url },
       brain: { detector: new ScriptedDetector(() => [{ label: "cup", score: 0.9, cls: 41, box: CUP_BOX }]) }, log: () => {},
     });
     const dash: Msg[] = [];

@@ -78,6 +78,8 @@ export interface PipelineOptions {
   broadcastWorld: (w: WorldView) => void;
   /** World State 변화(분석 없음 포함). 판단 호출 시점이 받는다. */
   onChanges?: (c: WorldChange[]) => void;
+  /** 엔진 프레임이 올 때마다(같은 사진·늦은 프레임 포함). 판단 호출 시점이 관찰이 살아 있는지 본다. */
+  onFrame?: () => void;
   /** 시험 자료 저장(DATASET_COLLECT=1일 때만). 고리에 넣은 프레임마다 부른다. */
   dataset?: (f: EngineFrame) => void;
   clock?: { now(): number };
@@ -154,6 +156,7 @@ export class ObservationPipeline {
 
   onEngine(jpeg: Buffer, header: FrameHeader, eye: EyeEvent | null, view: CameraView | null, receivedAtMs: number): void {
     if (this.closed) return;
+    this.o.onFrame?.();
     const t = captureTime({ receivedAtMs, capturedAt: header.captured_at, timeErrMs: header.time_err_ms });
     this.timeSource = t.source;
     this.timeErr = t.source === "phone" ? header.time_err_ms ?? null : null;
@@ -317,12 +320,14 @@ async function createDetector(env: Env, runtimeDir: string, log: (line: string) 
 /** 환경 변수로 관찰 흐름을 만든다. VLM은 추론 모드가 고른 OpenAI 호환 주소(src/infer)다. */
 export async function createPipeline(o: {
   env: Env; runtimeDir: string; world: WorldState; emit: (log: BrainLog) => void; broadcastWorld: (w: WorldView) => void;
-  onChanges?: (c: WorldChange[]) => void; log: (line: string) => void; inject?: PipelineInject; dataset?: (f: EngineFrame) => void;
+  onChanges?: (c: WorldChange[]) => void; onFrame?: () => void; log: (line: string) => void; inject?: PipelineInject; dataset?: (f: EngineFrame) => void;
 }): Promise<ObservationPipeline> {
   const config = loadObserveConfig(o.env);
   const detector = o.inject && "detector" in o.inject ? o.inject.detector ?? null : await createDetector(o.env, o.runtimeDir, o.log);
   const vlm = o.inject?.vlm ?? createInference(o.env).vlm;
   o.log(`관찰 흐름: 엔진 프레임 ${config.engineMs}ms · 감지 ${detector?.name ?? "없음(VLM만)"} · VLM ${vlm.model} 최근 ${config.vlmWindowFrames}장 동시 ${config.vlmMaxInflight}개 · 감지 대기열 ${config.detectQueueMax}`);
   if (o.dataset) o.log("[경고] 시험 자료 모으기가 켜져 있습니다. 엔진 프레임을 디스크에 씁니다.");
-  return new ObservationPipeline({ config, detector, vlm, world: o.world, emit: o.emit, broadcastWorld: o.broadcastWorld, onChanges: o.onChanges, dataset: o.dataset, clock: o.inject?.clock });
+  return new ObservationPipeline({
+    config, detector, vlm, world: o.world, emit: o.emit, broadcastWorld: o.broadcastWorld, onChanges: o.onChanges, onFrame: o.onFrame, dataset: o.dataset, clock: o.inject?.clock,
+  });
 }
