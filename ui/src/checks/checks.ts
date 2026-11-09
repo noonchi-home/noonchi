@@ -138,3 +138,8 @@ export function checkList(s: ChecksState, tableId: string | null): Check[] {
   const plan = s.plan.filter((c) => !c.deviceId || !known.has(c.deviceId));
   return [...s.turn, ...plan, ...(tableId ? s.brain.map((c) => ({ ...c, objectId: tableId })) : [])];
 }
+
+/** 대시보드에 그릴 목록: 승인 대기 줄을 뺀다. 대시보드에는 승인을 기다리는 것을 보이지 않는다(승인은 실제 폰에서 한다). */
+export function dashboardChecks(list: Check[]): Check[] {
+  return list.filter((c) => c.verb !== "승인 대기");
+}

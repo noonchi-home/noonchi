@@ -39,6 +39,8 @@ export interface ScreenProps {
   say: string;
   facing: Facing;
   hub: HubState;
+  /** 설정 창을 연 채 그린다(가짜 단계 화면 찍기). */
+  settingsOpen?: boolean;
 }
 
 /**
@@ -50,7 +52,7 @@ export interface ScreenProps {
  * 자리·크기는 화면 크기로만 정해지고 단계가 바뀌어도 그대로다. 말풍선 말은 opacity·transform으로 바뀐다(SayCard).
  * 글꼴 조각·마스코트 그림 풀기·지도 첫 그림이 다 되면 main에 data-ready를 단다.
  */
-export function DashboardScreen({ index, plan, step, robotKnown, connected, map, mapReady, phone, boxes, frame, observation, action, say, facing, hub }: ScreenProps) {
+export function DashboardScreen({ index, plan, step, robotKnown, connected, map, mapReady, phone, boxes, frame, observation, action, say, facing, hub, settingsOpen }: ScreenProps) {
   const main = useRef<HTMLElement>(null);
   const view = useBoxSize(main);
   const L = useMemo(() => pageLayout(view, MASCOT), [view]);
@@ -71,7 +73,7 @@ export function DashboardScreen({ index, plan, step, robotKnown, connected, map,
         <PhonePane slot={phone} boxes={boxes} frame={frame} observation={observation} action={action} width={L.video.width} card={card} connected={connected} />
       </LiquidGlass>
       <SayCard say={say} box={L.bubble} animate={!reduced} />
-      <Mascot image={MASCOT} hub={hub} box={L.mascot} imageBox={L.image} logoBox={L.logo} facing={facing} />
+      <Mascot image={MASCOT} hub={hub} box={L.mascot} imageBox={L.image} logoBox={L.logo} facing={facing} settingsOpen={settingsOpen} />
     </main>
   );
 }
