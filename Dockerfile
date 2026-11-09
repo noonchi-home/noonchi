@@ -7,6 +7,9 @@ WORKDIR /app
 COPY ui/package.json ui/package-lock.json ui/
 RUN npm --prefix ui ci
 COPY src src
+# ui 타입 검사(tsconfig include tests)가 3D 트윈 시험에서 한양목련 장면·구운 목록 JSON을 읽는다
+COPY twin/homes/mokryeon_180b/scene.json twin/homes/mokryeon_180b/scene.json
+COPY twin/homes/mokryeon_180b/bake/manifest.json twin/homes/mokryeon_180b/bake/manifest.json
 COPY ui ui
 RUN npm --prefix ui run build
 
