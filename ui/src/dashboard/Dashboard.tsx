@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { DeviceView, EyeEvent, ServerMessage } from "../../../src/contract/events.ts";
 import type { PlanView } from "../../../src/contract/plan.ts";
 import { BubbleLayer } from "../bubbles/BubbleLayer";
@@ -18,7 +18,7 @@ import { focusOf, still, wideCamera, type Camera } from "./camera";
 import { currentStep, facingOf, fsmOf, isOpen, stepIndex } from "./data";
 import { DashboardScreen } from "./DashboardScreen";
 import { debugPhone, debugQuery, useDebugSteps, type Moment } from "./debug";
-import { roomSetsOf, twinChecks, twinFrame } from "./frame";
+import { roomSetsOf, twinFrame } from "./frame";
 import { homeIndexOf, type HomeIndex } from "./home";
 import { hubOf } from "./hub";
 import type { PageLayout } from "./layout";
@@ -65,18 +65,6 @@ function useTwinKind(homeId: string | null, known: boolean): "three" | "iframe" 
   return kind;
 }
 
-/** 트윈 위 표시가 쓰는 계획·맞춘 눈. */
-interface PlanEye { plan: PlanView | null; eye: EyeEvent | null }
-const NO_PLAN_EYE: PlanEye = { plan: null, eye: null };
-
-/** hello면 지운다(접속 스냅숏이 뒤따름). 같은 계획의 옛 번호와 추정 눈(맞추기 전)은 버린다. */
-function reducePlanEye(s: PlanEye, m: ServerMessage): PlanEye {
-  if (m.type === "hello") return NO_PLAN_EYE;
-  if (m.type === "plan") return m.plan && s.plan && m.plan.id === s.plan.id && m.plan.revision < s.plan.revision ? s : { ...s, plan: m.plan };
-  if (m.type === "eye") return m.eye.estimated ? s : { ...s, eye: m.eye };
-  return s;
-}
-
 interface HomeData { index: HomeIndex; tableId: string | null; names: Map<string, string> }
 type SceneJson = Parameters<typeof homeIndexOf>[0];
 
@@ -103,14 +91,16 @@ function useHomeData(home: string | null): HomeData | null {
 
 /**
  * 구운 3D 트윈(TwinStage와 같은 틀): 캔버스와 그 위 표시 판(MapOverlay: 경로·클로이드·확인한 것·어둡게 한 방·말풍선).
+ * 계획·맞춘 눈은 대시보드 자료(data.ts)의 것이다.
  * 지도 카메라는 그 단계에 중요한 것(focusOf)을 지도 카메라 칸(layout.camPad 안쪽)에 맞추고, 작은 눈 움직임(still)에는 그대로 둔다.
  * 바뀌면 CAMERA_MS 동안 옮긴다(움직임 줄이기면 바로). 종류를 정하기 전(home null)에는 캔버스 없이 틀만.
  * 엔진이 뜨고 버려질 때 onEngine, 첫 그림을 그리면 onReady.
  */
-function BakedStage({ home, layout, view, checks, devices, onEngine: toLive, onReady: toReady }: {
+function BakedStage({ home, layout, plan, eye, checks, devices, onEngine: toLive, onReady: toReady }: {
   home: string | null;
   layout: PageLayout;
-  view: PlanEye;
+  plan: PlanView | null;
+  eye: EyeEvent | null;
   checks: ChecksState;
   devices: Map<string, DeviceView>;
   onEngine: (engine: TwinEngine | null) => void;
@@ -121,10 +111,10 @@ function BakedStage({ home, layout, view, checks, devices, onEngine: toLive, onR
   const v = home ? BAKE_VIEWS[home] : undefined;
   const [engine, setEngine] = useState<TwinEngine | null>(null);
   const homeData = useHomeData(home);
-  const list = useMemo(() => twinChecks(checkList(checks, homeData?.tableId ?? null)), [checks, homeData]);
+  const list = useMemo(() => dashboardChecks(checkList(checks, homeData?.tableId ?? null)), [checks, homeData]);
   const frame = useMemo(
-    () => (v && homeData ? twinFrame({ plan: view.plan, eye: view.eye, checks: list, anchor: (id) => engine?.anchor(id) ?? null, home: homeData.index, cam: v }) : null),
-    [v, homeData, view, list, engine],
+    () => (v && homeData ? twinFrame({ plan, eye, checks: list, anchor: (id) => engine?.anchor(id) ?? null, home: homeData.index, cam: v }) : null),
+    [v, homeData, plan, eye, list, engine],
   );
   const roomSets = useMemo(() => (frame?.plan && homeData ? roomSetsOf(frame.plan, homeData.index) : []), [frame?.plan, homeData]);
   const want = v && size.width > 0 && size.height > 0 ? wideCamera(v, size, frame && homeData ? focusOf(frame, homeData.index.shapes) : null, layout.camPad) : null;
@@ -175,7 +165,6 @@ export function Dashboard() {
   const health = useHealth();
   const { checks, onMessage: toChecks } = useChecks();
   const { dash, boxes, onMessage: toDash, load } = useDash({ hold: debug !== null });
-  const [planEye, toPlanEye] = useReducer(reducePlanEye, NO_PLAN_EYE);
   const [connected, setConnected] = useState<boolean | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
   const [viewerReady, setViewerReady] = useState(false);
@@ -193,7 +182,6 @@ export function Dashboard() {
     if (!debug) {
       toChecks(m);
       toDash(m);
-      toPlanEye(m);
     }
     if (m.type === "agent" && m.event === "action" && m.action.deviceId) setFocusId(m.action.deviceId);
     if (live.current) live.current.handle(m);
@@ -229,7 +217,7 @@ export function Dashboard() {
       </TwinStage>
     )
     : (layout: PageLayout) => (
-      <BakedStage home={kind === "three" ? homeId : null} layout={layout} view={planEye} checks={checks} devices={devices} onEngine={onEngine} onReady={onBakedReady} />
+      <BakedStage home={kind === "three" ? homeId : null} layout={layout} plan={dash.plan} eye={dash.eye} checks={checks} devices={devices} onEngine={onEngine} onReady={onBakedReady} />
     );
   // 트윈이 없는 집은 기다리지 않는다
   const mapReady = (kind === "iframe" ? viewerReady : kind === "three" && bakedReady) || health?.twin === false;

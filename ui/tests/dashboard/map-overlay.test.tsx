@@ -182,8 +182,32 @@ describe("대시보드 구운 트윈 위 표시", () => {
   afterEach(() => {
     load.mockRestore();
     vi.unstubAllGlobals();
+    history.replaceState(null, "", "/");
     Object.defineProperty(HTMLElement.prototype, "offsetWidth", width);
     Object.defineProperty(HTMLElement.prototype, "offsetHeight", height);
+  });
+
+  it("?debug=steps면 트윈 위 표시도 그 순간 것이고 서버 계획은 쓰지 않는다: 순간 3은 경로·목적지·클로이드·주방 묶음, 순간 0은 목적지 없이 집 전체", async () => {
+    history.replaceState(null, "", "/?debug=steps&step=3");
+    const { container } = render(<Dashboard />);
+    await waitFor(() => expect(load).toHaveBeenCalled());
+    await waitFor(() => expect(container.querySelector("[data-robot]")).not.toBeNull());
+    for (const sel of ['[data-line="leg-ahead"]', "[data-target]", `[data-mark="${SINK}"]`]) expect(container.querySelector(sel), sel).not.toBeNull();
+    const lit = () => [...container.querySelectorAll<HTMLElement>("[data-map-dim]")].filter((d) => d.style.opacity === "1").map((d) => d.dataset.mapDim);
+    expect(lit()).toEqual(["kitchen+living"]);
+    const cover = coverScale(IMAGE, SIZE);
+    const moved = engine.setView.mock.calls.at(-1)!;
+    expect(moved[0].scale).toBeGreaterThan(cover);
+    // 서버에서 온 계획은 쓰지 않는다
+    await waitFor(() => expect(FakeSocket.last).not.toBeNull());
+    act(() => FakeSocket.last!.push({ type: "plan", plan: moment(1).plan }));
+    expect(lit()).toEqual(["kitchen+living"]);
+    expect(engine.setView.mock.calls.at(-1)).toBe(moved);
+    act(() => window.__dash!.step(0));
+    await waitFor(() => expect(container.querySelector("[data-target]")).toBeNull());
+    expect(container.querySelector("[data-robot]")).not.toBeNull();
+    expect(lit()).toEqual([]);
+    expect(engine.setView.mock.calls.at(-1)![0].scale).toBeCloseTo(cover, 6);
   });
 
   it("계획·맞춘 눈이 오면 트윈 위에 경로·목적지·클로이드·확인한 것을 그리고, 카메라가 그 단계로 옮긴다", async () => {

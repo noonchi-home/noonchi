@@ -3,9 +3,10 @@
 // 열린 계획(planned·running)만 쓴다. 클로이드 자리는 맞춘 눈만(추정 눈은 쓰지 않는다).
 import type { EyeEvent } from "../../../src/contract/events.ts";
 import type { PlanStep, PlanView, XZ } from "../../../src/contract/plan.ts";
-import type { Check } from "../checks/checks";
+import { dashboardChecks, type Check } from "../checks/checks";
 import { planDirToScreen, planToPixel, screenAngle, type OrthoCamera } from "../twin3d/projection";
 import type { Px } from "./camera";
+import { isOpen, stepIndex } from "./data";
 import type { HomeIndex } from "./home";
 
 /** 지도 위 로봇: 평면 자리, 그림 픽셀 자리, 머리 방향(그림 위 각도, 오른쪽 0 시계 +), 지금 방. */
@@ -34,19 +35,6 @@ export interface TwinFrame {
 
 const len = (a: XZ, b: XZ) => Math.hypot(b[0] - a[0], b[1] - a[1]);
 const same = (a: XZ, b: XZ) => len(a, b) < 1e-9;
-
-/** 계획이 열려 있는가(planned·running). */
-const isOpen = (p: PlanView | null): p is PlanView => p !== null && (p.status === "planned" || p.status === "running");
-
-/** 0 지켜보기, n = 진행 중(없으면 처음 예정) 단계 번호. 열린 계획이 아니면 0. */
-function stepIndex(p: PlanView | null): number {
-  if (!isOpen(p)) return 0;
-  const active = p.steps.findIndex((s) => s.status === "active");
-  return (active >= 0 ? active : p.steps.findIndex((s) => s.status === "pending")) + 1;
-}
-
-/** 트윈 위에 표시할 확인 목록: 승인을 기다리는 줄은 대시보드에 보이지 않는다(D37). */
-export const twinChecks = (list: Check[]): Check[] => list.filter((c) => c.verb !== "승인 대기");
 
 /** 꺾은선 위 길이 비례 자리와 그 구간 방향. t는 0~1. */
 export function along(path: XZ[], t: number): { at: XZ; dir: XZ } {
@@ -180,7 +168,7 @@ export function twinFrame(o: {
   const points = path.map((q) => planToPixel(cam, q));
 
   const marks: MapMark[] = [];
-  for (const c of twinChecks(o.checks)) {
+  for (const c of dashboardChecks(o.checks)) {
     const id = c.deviceId ?? c.objectId;
     if (!id || marks.some((m) => m.id === id)) continue;
     const a = o.anchor(id);
