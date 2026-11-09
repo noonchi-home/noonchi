@@ -29,7 +29,7 @@ const L = (cls: TwinLandmark["cls"], id: string, center: P2, footprint: [number,
 const MARKS: TwinLandmark[] = [
   L("refrigerator", "fridge", [0.6, 4.4], [0.9, 0.75], 0, true),
   L("couch", "sofa", [3, 0.6], [2, 0.9], 90, true),
-  L("dining table", "table", [4.6, 3.4], [1.4, 0.8], 0, true),
+  L("dining_table", "table", [4.6, 3.4], [1.4, 0.8], 0, true),
   L("bed", "bed1", [5.2, 1.2], [1.1, 2], 180, false),
 ];
 const TRUTH: Rigid = { theta: deg(-63), tx: 1.7, ty: 2.9 };

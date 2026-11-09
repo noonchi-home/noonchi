@@ -22,7 +22,7 @@ const WALLS = wallSegments(PLAN);
 const MARKS: TwinLandmark[] = [
   { cls: "refrigerator", id: "fridge", label: "냉장고", center: [0.6, 4.4], footprint: [0.9, 0.75], facingDeg: 0, baseM: 0, unique: true },
   { cls: "couch", id: "sofa", label: "소파", center: [3, 0.6], footprint: [2, 0.9], facingDeg: 90, baseM: 0, unique: true },
-  { cls: "dining table", id: "table", label: "식탁", center: [4.6, 3.4], footprint: [1.4, 0.8], facingDeg: 0, baseM: 0, unique: true },
+  { cls: "dining_table", id: "table", label: "식탁", center: [4.6, 3.4], footprint: [1.4, 0.8], facingDeg: 0, baseM: 0, unique: true },
 ];
 const TRUTH: Rigid = { theta: deg(40), tx: 2, ty: 1 };
 const START: StartPose = { position: [2.5, 2.5], yawDeg: 0, label: "거실 가운데", facingLabel: "식탁" };

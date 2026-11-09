@@ -100,7 +100,7 @@ export interface PoseInput {
 }
 
 export interface LandmarkBoxInput {
-  /** 기준점 종류 이름(src/sync/classes.ts) 또는 COCO 번호. */
+  /** 기준점 종류(낱말 표 키, src/sync/classes.ts) 또는 COCO 번호. */
   label: string | number;
   score: number;
   /** 원본 픽셀 [x, y, w, h]. */

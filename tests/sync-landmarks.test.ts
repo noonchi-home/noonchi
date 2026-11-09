@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { loadCatalog } from "../src/layout/catalog.js";
 import { loadScene } from "../src/model/scene.js";
 import type { SceneObject } from "../src/contract/layout.js";
-import { LANDMARK_COCO, landmarkClass } from "../src/sync/classes.js";
+import { LANDMARK_IDS, LANDMARK_KEYS, landmarkClass } from "../src/sync/classes.js";
 import {
   LANDMARK_TYPES, LandmarkStore, edgePoint, floorPoint, twinLandmarks, type LandmarkObs, type TwinLandmark,
 } from "../src/sync/landmarks.js";
@@ -17,16 +17,17 @@ const ofClass = (cls: string) => mokryeon.filter((l) => l.cls === cls);
 
 describe("종류 표", () => {
   it("COCO 번호: 소파·침대·식탁·변기·TV·전자레인지·오븐·싱크대·냉장고", () => {
-    expect(LANDMARK_COCO).toEqual({ 57: "couch", 59: "bed", 60: "dining table", 61: "toilet", 62: "tv", 68: "microwave", 69: "oven", 71: "sink", 72: "refrigerator" });
+    expect(LANDMARK_KEYS).toEqual(["couch", "bed", "dining_table", "toilet", "tv", "microwave", "oven", "sink", "refrigerator"]);
+    expect(Object.fromEntries(LANDMARK_IDS.map((n) => [n, landmarkClass(n)]))).toEqual({ 57: "couch", 59: "bed", 60: "dining_table", 61: "toilet", 62: "tv", 68: "microwave", 69: "oven", 71: "sink", 72: "refrigerator" });
     expect(landmarkClass(72)).toBe("refrigerator");
     expect(landmarkClass(41)).toBeNull();
     // 표의 모든 기준점 종류에 트윈 종류가 있다
-    expect(Object.keys(LANDMARK_TYPES).sort()).toEqual(Object.values(LANDMARK_COCO).sort());
+    expect(Object.keys(LANDMARK_TYPES).sort()).toEqual([...LANDMARK_KEYS].sort());
   });
 
   it("목련 트윈: 소파·식탁은 하나, 냉장고·변기·침대·싱크대·TV 자리는 여럿, 오븐·전자레인지는 없다", () => {
-    const count = Object.fromEntries(Object.values(LANDMARK_COCO).map((c) => [c, ofClass(c).length]));
-    expect(count).toEqual({ couch: 1, bed: 4, "dining table": 1, toilet: 3, tv: 3, microwave: 0, oven: 0, sink: 4, refrigerator: 3 });
+    const count = Object.fromEntries(LANDMARK_KEYS.map((c) => [c, ofClass(c).length]));
+    expect(count).toEqual({ couch: 1, bed: 4, dining_table: 1, toilet: 3, tv: 3, microwave: 0, oven: 0, sink: 4, refrigerator: 3 });
     expect(ofClass("refrigerator").map((l) => l.id).sort()).toEqual(["freezer_0c022ae2", "fridge_bbc363a3", "kimchi_fridge_bce0bf96"]);
     expect(ofClass("couch")[0]).toMatchObject({ id: "sofa_a848b595", center: [7.3864, 9.8138], baseM: 0, unique: true });
     expect(ofClass("bed").every((l) => !l.unique)).toBe(true);

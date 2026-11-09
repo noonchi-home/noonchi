@@ -12,7 +12,7 @@
 
 import { rayDir } from "../world/place.js";
 import type { Quat, Vec3 } from "../phone/align.js";
-import { LANDMARK_COCO, type LandmarkClass } from "./classes.js";
+import { LANDMARK_KEYS, type LandmarkClass } from "./classes.js";
 import type { P2 } from "./rigid.js";
 
 type Rest = "floor" | "top" | "rest";
@@ -25,7 +25,7 @@ export const LANDMARK_TYPES: Record<LandmarkClass, { groups: TypeGroup[]; footpr
   toilet: { groups: [{ types: ["toilet"], rest: "floor" }], footprint: [0.45, 0.7] },
   bed: { groups: [{ types: ["bed_single", "bed_queen", "bed_double", "bed_king", "bed"], rest: "floor" }], footprint: [1.4, 2] },
   couch: { groups: [{ types: ["sofa"], rest: "floor" }], footprint: [2, 0.9] },
-  "dining table": { groups: [{ types: ["dining_table"], rest: "floor" }], footprint: [1.4, 0.8] },
+  dining_table: { groups: [{ types: ["dining_table"], rest: "floor" }], footprint: [1.4, 0.8] },
   oven: { groups: [{ types: ["oven", "range"], rest: "floor" }], footprint: [0.6, 0.6] },
   microwave: { groups: [{ types: ["microwave"], rest: "rest" }], footprint: [0.5, 0.4] },
   // TV 화면은 얇다: TV수납장으로 쓸 때도 깊이를 화면 두께로 둔다
@@ -218,7 +218,7 @@ export class LandmarkStore {
   /** 쓸 수 있는 묶음(관찰 minObs개 이상). 종류 표 차례, 같은 종류는 관찰이 많은 묶음부터. */
   clusters(): LandmarkCluster[] {
     const out: LandmarkCluster[] = [];
-    for (const cls of Object.values(LANDMARK_COCO)) {
+    for (const cls of LANDMARK_KEYS) {
       const list = this.byClass.get(cls);
       if (!list?.length) continue;
       const radius = this.o.radiusM(cls), outlier = this.o.outlierM(cls);
