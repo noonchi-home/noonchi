@@ -5,7 +5,7 @@ import { Separator } from "../components/ui/separator";
 import type { Detection } from "./detections";
 import { useBoxSize } from "./fit";
 import type { HubState } from "./hub";
-import { pageLayout } from "./layout";
+import { pageLayout, type PageLayout } from "./layout";
 import { Mascot, type Facing } from "./Mascot";
 import { MASCOT } from "./mascot-image";
 import { useFontsLoaded, usePredecode, useReducedMotionNow } from "./motion";
@@ -24,8 +24,8 @@ export interface ScreenProps {
   robotKnown: boolean;
   /** 서버와 실시간 연결: 이어짐 true, 끊김 false, 모름 null. */
   connected: boolean | null;
-  /** 트윈 칸을 꽉 채우는 지도(3D 트윈). */
-  map: ReactNode;
+  /** 트윈 칸을 꽉 채우는 지도(3D 트윈). 함수면 화면 배치(지도 카메라 칸·가린 자리)를 받아 그린다. */
+  map: ReactNode | ((layout: PageLayout) => ReactNode);
   /** 지도가 첫 그림을 다 그렸는가. */
   mapReady: boolean;
   phone: PhoneSlot;
@@ -68,7 +68,7 @@ export function DashboardScreen({ index, plan, step, robotKnown, connected, map,
   return (
     <main ref={main} data-step={index} data-ready={ready || undefined} className="relative h-full w-full overflow-hidden">
       <LiquidGlass mode="opaque" radius={16} className="absolute flex" style={{ left: stage.left, top: stage.top, width: stage.width, height: stage.height }}>
-        <TwinPane plan={plan} step={step} robotKnown={robotKnown} connected={connected} map={map} />
+        <TwinPane plan={plan} step={step} robotKnown={robotKnown} connected={connected} map={typeof map === "function" ? map(L) : map} />
         <Separator orientation="vertical" data-divider />
         <PhonePane slot={phone} boxes={boxes} frame={frame} observation={observation} action={action} width={L.video.width} card={card} connected={connected} />
       </LiquidGlass>
