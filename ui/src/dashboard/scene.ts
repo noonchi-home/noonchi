@@ -1,6 +1,7 @@
 // 트윈 위 표시 고르기(순수 함수, 시안 A 그대로). 카메라와 상자 크기 → 확인한 것의 화면 자리, 지금 이동 구간의 남은 길,
 // 띄울 기기 말풍선(최근 것만, 지금 갈 길을 가리지 않고, 겹치면 최신 것만), 밝힌 방 이름표 자리.
 // 가린 자리(blocked: 지도 위에 얹은 마스코트 말풍선·마스코트)에 걸리는 말풍선은 빼고, 이름표는 비켜 둔다.
+// 클로이드·목적지 표시 둘레(keep)는 말풍선이 덮지 않게 BubbleLayer가 판을 옆·아래로 옮긴다.
 import type { Check } from "../checks/checks";
 import type { ScreenPoint } from "../twin/use-anchors";
 import type { BoxSize } from "./fit";
@@ -9,11 +10,14 @@ import type { RoomShape } from "./home";
 import { legOf, toScreen, type Camera, type Px } from "./camera";
 import { BUBBLE_BOX, clearOfRoute, recentChecks, spread, thingId } from "./checks";
 import { avoidBoxes, LABEL, placeLabel, type Box } from "./labels";
+import type { Rect } from "../bubbles/place";
 
 export type { Box } from "./labels";
 
 /** 방 이름표 하나의 크기(px, 대략). */
 export const LABEL_BOX = LABEL;
+/** 클로이드·목적지 표시 둘레 반지름(px, LineDrawSvg cloid·destination 바깥 원). */
+const MARK_R = { robot: 20, target: 24 };
 /** 말풍선이 겹친다고 볼 꼬리 끝 사이(px). */
 const SPREAD = { dx: 168, dy: 70 };
 
@@ -29,6 +33,8 @@ export interface MapScene {
   checks: Check[];
   /** 밝힌 방 이름표(상자 안 가운데 자리). */
   labels: { id: string; label: string; at: { x: number; y: number } }[];
+  /** 말풍선이 덮지 않을 클로이드·목적지 표시 둘레(상자 px). */
+  keep: Rect[];
 }
 
 /** 지금 이동 중인 구간의 남은 길: 남은 길에서 그 구간 끝 점까지. */
@@ -93,5 +99,13 @@ export function mapScene(frame: TwinFrame, checks: Check[], shapes: RoomShape[],
       if (at) labels.push({ id: r.id, label: r.label, at });
     }
   }
-  return { points, legAhead, checks: shown, labels };
+  const keep: Rect[] = [];
+  if (cam.scale > 0) {
+    for (const [q, r] of [[frame.robot?.px, MARK_R.robot], [frame.target ?? undefined, MARK_R.target]] as const) {
+      if (!q) continue;
+      const p = toScreen(cam, size, q);
+      keep.push({ left: p.x - r, top: p.y - r, right: p.x + r, bottom: p.y + r });
+    }
+  }
+  return { points, legAhead, checks: shown, labels, keep };
 }

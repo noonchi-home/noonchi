@@ -93,14 +93,15 @@ function Bubble({ s, verb, p, big, place, measure, onSize }: {
 const naturalSize = (el: HTMLElement): Box => ({ w: el.offsetWidth, h: el.offsetHeight });
 const relative = (r: DOMRect, o: DOMRect): Rect => ({ left: r.left - o.left, top: r.top - o.top, right: r.right - o.left, bottom: r.bottom - o.top });
 const OPEN: Rect = { left: -Infinity, top: -Infinity, right: Infinity, bottom: Infinity };
+const NONE: Rect[] = [];
 
 /**
  * 에이전트가 판단하면서 확인한 기기·물건(checks)에만 말풍선을 띄운다. 화살표 끝이 points의 자리에 온다.
  * 기기 = 번호 + 이름 + verb + 지금 상태 한 줄, 물건(식탁) = 이름 + verb + 판정 요약.
  * 말풍선은 보기만 한다: 층과 말풍선 모두 마우스를 받지 않아 클릭·끌기가 3D 트윈으로 간다.
- * 말풍선끼리와 avoid(CSS 선택자)에 맞는 패널을 비키고, 덮개(층의 부모) 안에 들게 판을 기기 위·아래·옆으로 옮긴다(place.ts).
+ * 말풍선끼리와 avoid(CSS 선택자)에 맞는 패널, keep(클로이드·목적지 표시 자리)을 비키고, 덮개(층의 부모) 안에 들게 판을 기기 위·아래·옆으로 옮긴다(place.ts).
  */
-export function BubbleLayer({ checks, devices, objects = new Map(), points, focusId, avoid, measure = naturalSize }: {
+export function BubbleLayer({ checks, devices, objects = new Map(), points, focusId, avoid, keep = NONE, measure = naturalSize }: {
   checks: Check[];
   devices: Map<string, DeviceView>;
   /** 물건 id → 이름(식탁). */
@@ -109,6 +110,8 @@ export function BubbleLayer({ checks, devices, objects = new Map(), points, focu
   focusId?: string | null;
   /** 말풍선이 덮지 않을 패널(CSS 선택자). */
   avoid?: string;
+  /** 말풍선이 덮지 않을 표시 자리(층 좌표: points와 같은 px). */
+  keep?: Rect[];
   /** 말풍선 판 크기 재기(시험은 고정 크기를 넘긴다). */
   measure?: (el: HTMLElement) => Box;
 }) {
@@ -123,7 +126,7 @@ export function BubbleLayer({ checks, devices, objects = new Map(), points, focu
     return [{ c, s, p, big: c.deviceId !== undefined && c.deviceId === focusId }];
   });
   const order = [...shown].sort((a, b) => Number(b.big) - Number(a.big) || (a.s.tone ? RANK[a.s.tone] : 2) - (b.s.tone ? RANK[b.s.tone] : 2));
-  const places = placeBubbles(order.map(({ s, p }) => ({ id: s.id, x: p.x, y: p.y, scale: 1, box: sizes[s.id] })), frame.bounds, frame.avoid);
+  const places = placeBubbles(order.map(({ s, p }) => ({ id: s.id, x: p.x, y: p.y, scale: 1, box: sizes[s.id] })), frame.bounds, [...frame.avoid, ...keep]);
 
   // 그린 뒤 덮개·패널 자리를 재고, 바뀌었으면 자리를 다시 고른다
   useLayoutEffect(() => {

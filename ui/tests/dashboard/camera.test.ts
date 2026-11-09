@@ -101,6 +101,16 @@ describe.each([[1920, 1080], [1440, 900]])("%i×%i", (width, height) => {
     expect(kept.checks.length > 0).toBe(n > 0);
     expect(kept.labels.map((l) => l.id).sort()).toEqual([...frame.rooms].sort());
   });
+
+  it.each([1, 2, 3, 4])("순간 %i: 말풍선이 덮지 않을 자리(keep)에 클로이드·목적지 표시 둘레가 다 들어 있다", (n) => {
+    const { frame, cam } = view(n);
+    const scene = mapScene(frame, checksAt(n), HOME.shapes, box, cam, blocked);
+    const covers = (p: { x: number; y: number }, r: number) =>
+      scene.keep.some((k) => k.left <= p.x - r + 0.5 && k.top <= p.y - r + 0.5 && k.right >= p.x + r - 0.5 && k.bottom >= p.y + r - 0.5);
+    if (frame.robot) expect(covers(toScreen(cam, box, frame.robot.px), 20), "클로이드").toBe(true);
+    if (frame.target) expect(covers(toScreen(cam, box, frame.target), 24), "목적지").toBe(true);
+    expect(scene.keep.length).toBe(Number(!!frame.robot) + Number(!!frame.target));
+  });
 });
 
 describe("작은 눈 움직임", () => {

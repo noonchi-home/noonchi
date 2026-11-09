@@ -131,6 +131,15 @@ describe("BubbleLayer", () => {
     expect(spot("거실 조명")).not.toBe("top center");
   });
 
+  it("클로이드·목적지 표시 자리(keep)를 덮지 않게 판을 옮긴다", async () => {
+    const devices = new Map([dev("a", "거실 조명", "on")]);
+    const keep = [{ left: 576, top: 336, right: 624, bottom: 384 }];
+    render(<BubbleLayer checks={[checked("a", 1)]} devices={devices} points={at(["a"], { x: 600, y: 400, visible: true })} keep={keep} measure={() => ({ w: 168, h: 66 })} />);
+    await screen.findByText("거실 조명");
+    const c = bubbleOf("거실 조명").querySelector("[data-tone=twin]")!;
+    expect(c.getAttribute("data-side")).toBe("bottom");
+  });
+
   it("층 자체는 크기가 없어 3D 조작을 막지 않는다", () => {
     render(<BubbleLayer checks={[]} devices={new Map()} points={new Map()} />);
     expect(screen.getByLabelText("확인한 것")).toHaveClass("w-0", "h-0");

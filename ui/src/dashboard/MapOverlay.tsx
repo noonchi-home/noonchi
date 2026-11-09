@@ -96,7 +96,7 @@ export function MapOverlay({ frame, checks, shapes, roomSets, image, size, cam, 
   const litPath = useMemo(() => roomsPath(frame.rooms, shapes), [frame.rooms, shapes]);
   const { robot, route, target } = frame;
   const legAhead = useMemo(() => legAheadOf(frame), [frame]);
-  const { points, checks: shownChecks, labels } = mapScene(frame, checks, shapes, size, cam, blocked, legAhead);
+  const { points, checks: shownChecks, labels, keep } = mapScene(frame, checks, shapes, size, cam, blocked, legAhead);
   const markTone = (id: string): MarkTone => {
     const d = devices.get(id);
     return d ? deviceSummary(d).tone : "object";
@@ -134,7 +134,7 @@ export function MapOverlay({ frame, checks, shapes, roomSets, image, size, cam, 
             <Status>{l.label}</Status>
           </div>
         ))}
-        <BubbleLayer checks={shownChecks} devices={devices} objects={objects} points={points} avoid={avoid} />
+        <BubbleLayer checks={shownChecks} devices={devices} objects={objects} points={points} avoid={avoid} keep={keep} />
       </div>
     </div>
   );
