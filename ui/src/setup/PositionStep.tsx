@@ -187,7 +187,10 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
     call<TouchView>("/api/phone/touch-points").then((r) => {
       if (!live) return;
       setTouchOn(isOk(r)); // 집 scene.json이 없으면 쓰지 않는다
-      if (isOk(r)) apply(r.json, true);
+      if (!isOk(r)) return;
+      apply(r.json, true);
+      // 저장한 A·B를 불러오면 할 일 줄은 저장한 상태를 보인다
+      if (r.json.points) setInfo({ text: r.json.distance_m === null ? "저장했어요." : `저장했어요. A–B ${r.json.distance_m.toFixed(2)}m.` });
     });
     return () => { live = false; };
   }, [home]);

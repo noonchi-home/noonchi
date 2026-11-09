@@ -270,6 +270,13 @@ describe("설정 4단계: 벽 하나로 A·B 구석 고르기", () => {
     await waitFor(() => expect(within(touch).getByRole("status")).toHaveTextContent("이 벽에서 구석을 찾지 못했어요. 다른 벽을 누르거나 A·B를 직접 고르세요."));
   });
 
+  it("저장한 A·B를 불러오면 할 일 줄은 저장한 상태를 보인다", async () => {
+    const { touch } = await withViewer(() => [200, { ok: true, points: [A, B], distance_m: 5.403 }], {}, {
+      "GET /api/phone/touch-points": () => [200, { ok: true, points: [A, B], mode: "touch", eye_height_m: 1.5, distance_m: 5.403 }],
+    });
+    await waitFor(() => expect(within(touch).getByRole("status")).toHaveTextContent("저장했어요. A–B 5.40m."));
+  });
+
   it("완료하고 대시보드로는 A·B를 저장한 뒤에만 누를 수 있다", async () => {
     const { user, pick, viewer } = await withViewer(() => [200, { ok: true, points: [A, B], distance_m: 5.403 }]);
     expect(screen.getByRole("button", { name: "완료하고 대시보드로" })).toBeDisabled();
