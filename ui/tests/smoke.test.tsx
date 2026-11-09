@@ -6,9 +6,9 @@ import { Dashboard } from "../src/dashboard/Dashboard";
 import { TwinEngine } from "../src/twin3d/engine";
 
 /** /api/health는 집 id, /twin/bake/manifest.json은 manifest 상태로 답한다. 나머지는 404. */
-function stubHealth(home: string, manifest: number) {
+function stubHealth(home: string, manifest: number, eye = false) {
   const health: HealthView = {
-    ok: true, devices: 0, hub: "memory", transport: null, provider: "openai", model: "m", twin: true, eye: false,
+    ok: true, devices: 0, hub: "memory", transport: null, provider: "openai", model: "m", twin: true, eye,
     home: { id: home, name: "우리 집" }, phone_urls: [], brain: false, mode: "test",
     ready: { ok: false, inference_mode: "mock", vlm: { base_url: "", model: "", key: false, reachable: false }, pam: { url: "", reachable: false, llm: null },
       agent: { provider: "openai", base_url: "", model: "", key: false, reachable: false }, db: false },
@@ -82,11 +82,25 @@ describe("대시보드 뼈대", () => {
     expect(document.getElementById("glass-blur")).toBeNull();
   });
 
-  it("health 전에는 연결 QR·영상 없이 빈 대시보드 폰 칸이다", () => {
+  it("health 전에는 연결 QR·영상·상태 글 없이 빈 대시보드 폰 칸이다", () => {
     const { container } = render(<Dashboard />);
     const phone = container.querySelector<HTMLElement>('section[aria-label="폰 카메라"]')!;
     expect(phone.querySelector("img")).toBeNull();
     expect(within(phone).queryByRole("img", { name: "폰 연결 QR" })).toBeNull();
+    expect(phone.textContent).toBe("");
+  });
+
+  it("폰 주소가 없으면 대시보드 폰 칸에 지금 상태 한 줄: 폰 서버가 꺼졌으면 「폰 서버가 꺼져 있어요.」, 켜졌으면 「폰에서 AR을 시작하세요.」", async () => {
+    stubHealth("h", 404);
+    const off = render(<Dashboard />);
+    const phone = () => off.container.querySelector<HTMLElement>('section[aria-label="폰 카메라"]')!;
+    await waitFor(() => expect(phone()).toHaveTextContent("폰 서버가 꺼져 있어요."));
+    off.unmount();
+    stubHealth("h", 404, true);
+    const on = render(<Dashboard />);
+    const live = on.container.querySelector<HTMLElement>('section[aria-label="폰 카메라"]')!;
+    await waitFor(() => expect(live).toHaveTextContent("폰에서 AR을 시작하세요."));
+    expect(live).not.toHaveTextContent("폰 서버가 꺼져 있어요.");
   });
 });
 

@@ -467,10 +467,33 @@ describe("대시보드 폰 카메라(대시보드 폰 칸)", () => {
     expect(slot).toHaveTextContent(PHONE_URL);
   });
 
-  it("폰 주소를 모르면 QR을 그리지 않는다", () => {
+  it("폰 서버가 꺼져 있고(qr) 폰 주소가 없으면 QR 대신 영상 칸에 「폰 서버가 꺼져 있어요.」 한 줄(Item sm)만 보인다", () => {
     draw(screenAt(3, { phone: { kind: "qr", url: "" } }));
     expect(qrOf()).toBeNull();
     expect(phonePane().querySelector("[data-fsm-card]")).toBeNull();
+    const slot = slotOf(phonePane());
+    expect(slot.textContent).toBe("폰 서버가 꺼져 있어요.");
+    expect(within(slot).getByText("폰 서버가 꺼져 있어요.").closest("[data-slot=item]")).toHaveAttribute("data-size", "sm");
+  });
+
+  it("폰 서버는 켜졌는데(live) 폰 주소가 없으면 첫 장 전에 「폰에서 AR을 시작하세요.」 한 줄을 보이고, 첫 장이 오면 없앤다", () => {
+    draw(screenAt(1, { phone: { kind: "live", url: "" } }));
+    const slot = slotOf(phonePane());
+    expect(qrOf()).toBeNull();
+    expect(slot).toHaveTextContent("폰에서 AR을 시작하세요.");
+    expect(within(slot).getByText("폰에서 AR을 시작하세요.").closest("[data-slot=item]")).toHaveAttribute("data-size", "sm");
+    expect(slot).not.toHaveTextContent("폰 서버가 꺼져 있어요.");
+    fireEvent.load(slot.querySelector<HTMLImageElement>("img")!);
+    expect(slot).not.toHaveTextContent("폰에서 AR을 시작하세요.");
+    expect(slot.querySelector("[data-fsm-card]")).not.toBeNull();
+  });
+
+  it("health 전(none)에는 영상 칸이 비어 있다", () => {
+    draw(screenAt(1, { phone: { kind: "none" } }));
+    const slot = slotOf(phonePane());
+    expect(slot.textContent).toBe("");
+    expect(slot.querySelector("img")).toBeNull();
+    expect(qrOf()).toBeNull();
   });
 
   it("폰 서버가 켜져 있으면(live) 첫 장 전에는 연결 QR만 있고 FSM 카드·상자가 없다. 영상 그림에 첫 장이 오면 QR이 없어지고 FSM 카드·상자가 보인다", () => {
@@ -602,9 +625,11 @@ describe("대시보드 글 크기", () => {
     } finally { rect.mockRestore(); }
   });
 
-  it("연결 QR 칸 글도 부품 원래 크기다", () => {
-    draw(screenAt(0, { phone: { kind: "qr", url: PHONE_URL } }));
-    for (const c of sizesIn(phonePane())) expect(["text-xs", "text-sm"], c).toContain(c);
+  it.each([["qr", PHONE_URL], ["qr", ""], ["live", ""]] as const)("연결 QR 칸·상태 한 줄 글도 부품 원래 크기다(%s, 주소 %j)", (kind, url) => {
+    draw(screenAt(0, { phone: { kind, url } }));
+    const sizes = sizesIn(phonePane());
+    expect(sizes.size).toBeGreaterThan(0);
+    for (const c of sizes) expect(["text-xs", "text-sm"], c).toContain(c);
   });
 
   it("설정 창 글은 Dialog 제목 18px(text-[18px]/7)과 부품 원래 크기(text-xs·text-sm)뿐이다", async () => {

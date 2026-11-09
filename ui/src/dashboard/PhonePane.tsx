@@ -14,10 +14,10 @@ import type { Rect } from "./layout";
 import { WORDS } from "./words";
 
 /**
- * 대시보드 폰 칸 영상 자리에 놓을 것. qr: 폰 영상이 없다(폰 서버 꺼짐). live: 폰 서버의 실시간 영상(첫 장 전에는 url 연결 QR).
- * image: 그림 한 장(가짜 단계용, 그림 픽셀 크기).
+ * 대시보드 폰 칸 영상 자리에 놓을 것. none: 폰 서버 상태를 아직 모른다(빈 칸). qr: 폰 영상이 없다(폰 서버 꺼짐).
+ * live: 폰 서버의 실시간 영상(첫 장 전에는 url 연결 QR). image: 그림 한 장(가짜 단계용, 그림 픽셀 크기).
  */
-export type PhoneSlot = { kind: "qr"; url: string } | { kind: "live"; url: string } | { kind: "image"; src: string; width: number; height: number };
+export type PhoneSlot = { kind: "none" } | { kind: "qr"; url: string } | { kind: "live"; url: string } | { kind: "image"; src: string; width: number; height: number };
 
 /** 받은 Bounding Box Selector는 감싼 것 바깥 8px에 테두리를 그린다. 상자 테두리가 YOLO 상자 가장자리에 오게 그만큼 줄여 감싼다. */
 const BOX_INSET = 8;
@@ -27,9 +27,22 @@ const CARD_TINT = tokens.colorRgba["glass-soft"].alpha;
 const QR_PAD = 48;
 const QR_MIN = 96;
 
-/** 폰 연결 QR과 그 아래 할 일 한 줄·주소(Item). 폰 영상이 없을 때 영상 칸 자리에 보인다. 주소를 모르면 그리지 않는다. */
-function ConnectQr({ url, slot }: { url: string; slot: { width: number; height: number } }) {
-  if (!url) return null;
+/**
+ * 폰 연결 QR과 그 아래 할 일 한 줄·주소(Item). 폰 영상이 없을 때 영상 칸 자리에 보인다.
+ * 주소가 없으면 지금 상태 한 줄(Item sm): 폰 서버가 꺼졌으면 「폰 서버가 꺼져 있어요.」, 켜졌으면(live) 「폰에서 AR을 시작하세요.」.
+ */
+function ConnectQr({ url, live, slot }: { url: string; live: boolean; slot: { width: number; height: number } }) {
+  if (!url) {
+    return (
+      <div className="flex size-full items-center justify-center p-6">
+        <Item size="sm" className="w-auto min-w-0">
+          <ItemContent className="min-w-0">
+            <ItemTitle>{live ? WORDS.startAr : WORDS.phoneOff}</ItemTitle>
+          </ItemContent>
+        </Item>
+      </div>
+    );
+  }
   const size = Math.max(QR_MIN, Math.floor(Math.min(slot.width, slot.height) - QR_PAD));
   return (
     <div className="flex size-full flex-col items-center justify-center gap-4 p-6">
@@ -85,7 +98,8 @@ function Decision({ observation, action }: { observation: string | null; action:
  * 칸을 다 채우는 영상 칸에 폰에서 온 영상을 잘리지 않게(contain) 깔고 그 위에 YOLO 상자(Bounding Box Selector)와 이름·신뢰도(Status)를 그린다.
  * 가로 영상이 오면 위아래를 비우고 다 보인다. 관찰과 도출한 행동은 영상 안 위쪽에 끝에서 띄운 둥근 유리 카드(LiquidGlass glass-soft, 자리 card)로 띄운다:
  * 영상이 비쳐 보이고, 상자와 이름표는 카드 아래에만 그려 카드가 가리지 않는다. FSM 카드와 상자는 영상이 보일 때만(image, 또는 live 첫 장 뒤) 그린다.
- * 영상이 없으면(qr) 영상 칸 자리에 칸에 맞춘 연결 QR을 보이고, live는 첫 장이 오기 전까지 영상 위에 연결 QR을 둔다.
+ * 영상이 없으면(qr) 영상 칸 자리에 칸에 맞춘 연결 QR을 보이고, live는 첫 장이 오기 전까지 영상 위에 연결 QR을 둔다. 폰 주소가 없으면 QR 대신 지금 상태 한 줄이다.
+ * 폰 서버 상태를 아직 모르면(none) 빈 칸이다.
  * 영상 종류·자료와 상관없이 크기가 바뀌지 않는다. 보기만 한다.
  */
 export function PhonePane({ slot, boxes, frame, observation, action, width, card, connected }: {
@@ -139,8 +153,8 @@ export function PhonePane({ slot, boxes, frame, observation, action, width, card
               </LiquidGlass>
             </div>
           </>
-        ) : (
-          <ConnectQr url={slot.url} slot={size} />
+        ) : slot.kind === "none" ? null : (
+          <ConnectQr url={slot.url} live={live} slot={size} />
         )}
       </div>
     </section>

@@ -88,7 +88,7 @@ function BakedStage({ home, onEngine: toLive, onReady: toReady, children }: {
  * 대시보드: 서버에서 받은 것(health·/events·기기·확인 목록)을 화면 틀(DashboardScreen)에 넘긴다.
  * 트윈 칸 지도 자리: 한양목련처럼 구운 3D가 있는 집은 three.js 캔버스(BakedStage), 다른 집은 iframe 뷰어(TwinStage)와 그 위 확인 목록 말풍선.
  * 구운 트윈의 가전 상태·배치는 같은 소켓 메시지로 바꾸고, 엔진이 뜨기 전에 온 메시지는 모아 두었다가 엔진이 뜨면 넣는다.
- * 대시보드 폰 칸은 폰 서버가 켜져 있으면 실시간 영상, 아니면 연결 QR이다.
+ * 대시보드 폰 칸은 폰 서버가 켜져 있으면 실시간 영상, 아니면 연결 QR이다. health 전에는 빈 칸이다.
  * 대시보드에는 입력이 없다: 요청·승인은 폰에서 음성으로 온다. 설정에서 집을 바꾸면 다시 불러온다.
  */
 export function Dashboard() {
@@ -128,7 +128,7 @@ export function Dashboard() {
   }, []);
   const onBakedReady = useCallback(() => setBakedReady(true), []);
   const hub = useMemo(() => hubOf(health, connected), [health, connected]);
-  const phone: PhoneSlot = health?.eye ? { kind: "live", url: hub.phoneUrl } : { kind: "qr", url: hub.phoneUrl };
+  const phone: PhoneSlot = !health ? { kind: "none" } : health.eye ? { kind: "live", url: hub.phoneUrl } : { kind: "qr", url: hub.phoneUrl };
   const map = kind === "iframe"
     ? (
       <TwinStage>

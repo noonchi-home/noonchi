@@ -6,6 +6,8 @@ export const WORDS = {
   noObservation: "아직 판단 없음",
   offline: "연결 끊김 · 다시 연결 중",
   noRobot: "클로이드 위치 모름",
+  phoneOff: "폰 서버가 꺼져 있어요.",
+  startAr: "폰에서 AR을 시작하세요.",
 } as const;
 
 export const BOX_NAME: Record<string, string> = { person: "사람", cup: "컵", bottle: "병", bowl: "그릇" };
