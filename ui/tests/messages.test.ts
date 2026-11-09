@@ -10,6 +10,10 @@ describe("parseMessage", () => {
     expect(parseMessage('{"type":"plan","plan":null}')?.type).toBe("plan");
   });
   it("배치 메시지도 받는다", () => expect(parseMessage('{"type":"layout","op":"remove","id":"sofa_1"}')?.type).toBe("layout"));
+  it("말풍선 글 메시지도 받는다(text: null은 글 없음)", () => {
+    expect(parseMessage('{"type":"say","text":"컵을 들라고 했어요."}')).toEqual({ type: "say", text: "컵을 들라고 했어요." });
+    expect(parseMessage('{"type":"say","text":null}')?.type).toBe("say");
+  });
   it("모르는 type·깨진 JSON은 null", () => {
     expect(parseMessage("{oops")).toBeNull();
     expect(parseMessage(JSON.stringify({ type: "nope" }))).toBeNull();

@@ -169,7 +169,8 @@ export class ObservationPipeline {
     this.publish(this.o.world.applyMissing(frame.id, frame.capturedAtMs, { yolo: why, vlm: why }));
   }
 
-  /** YOLOX 결과(실패면 null, 감지기가 없으면 undefined)를 World State에 넣고 같은 프레임을 VLM에 보낸다. */
+  /** YOLOX 결과(실패면 null, 감지기가 없으면 undefined)를 World State에 넣고 같은 프레임을 VLM에 보낸다.
+   *  YOLOX 결과 observe에만 상자(엔진 프레임 픽셀)와 프레임 크기를 싣는다(대시보드 폰 칸). */
   private analyze(frame: EngineFrame, dets: Detection[] | null | undefined): void {
     const base = { type: "observe" as const, frame_id: frame.id, captured_at_ms: frame.capturedAtMs, vlm: null };
     if (dets === undefined) {
@@ -178,7 +179,10 @@ export class ObservationPipeline {
     } else if (dets) {
       const { changes, ids } = this.o.world.applyDetections(frame, dets);
       this.idsOf.set(frame.id, ids);
-      this.o.emit({ ...base, at_ms: this.clock.now(), yolo: yoloText(dets) });
+      this.o.emit({
+        ...base, at_ms: this.clock.now(), yolo: yoloText(dets),
+        boxes: dets.map(({ label, score, box }) => ({ label, score, box })), frame: { width: frame.width, height: frame.height },
+      });
       this.publish(changes);
     } else {
       this.yoloMissing.error++;

@@ -1,5 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import type { DetLabel } from "../src/brain/detector.js";
+import type { BoxView, BrainLog, ServerMessage } from "../src/contract/events.js";
 import type { PlanView } from "../src/contract/plan.js";
 
 const CONTRACT_DIR = new URL("../src/contract/", import.meta.url);
@@ -15,6 +17,24 @@ describe("메시지 계약", () => {
       expect(src, f).not.toMatch(/node:|from "zod"/);
       expect(src, f).not.toMatch(/^\s*export\s+(const|let|var|function|class|enum|default)\b/m);
     }
+  });
+});
+
+// 대시보드가 받는 상자·말풍선 글. 계약에서 빠지거나 모양이 바뀌면 typecheck가 여기서 실패한다.
+// 상자 이름은 YOLOX 감지 이름(DetLabel)과 같다: 한쪽만 바꾸면 두 표 중 하나가 typecheck에서 실패한다.
+const BOX_OF_DET: Record<DetLabel, BoxView["label"]> = { person: "person", cup: "cup", bottle: "bottle", bowl: "bowl" };
+const DET_OF_BOX: Record<BoxView["label"], DetLabel> = { person: "person", cup: "cup", bottle: "bottle", bowl: "bowl" };
+const OBSERVE_WITH_BOXES: Extract<BrainLog, { type: "observe" }> = {
+  type: "observe", at_ms: 1, frame_id: "e1", captured_at_ms: 1, yolo: "컵 0.83", vlm: null,
+  boxes: [{ label: "cup", score: 0.83, box: [100, 50, 40, 60] }], frame: { width: 360, height: 640 },
+};
+const SAYS: Extract<ServerMessage, { type: "say" }>[] = [{ type: "say", text: "지켜보고 있어요." }, { type: "say", text: null }];
+
+describe("대시보드 메시지 계약", () => {
+  it("observe는 엔진 프레임 픽셀 상자 [x, y, w, h]와 프레임 크기를 싣고, say는 글 하나 또는 null", () => {
+    expect(Object.keys(BOX_OF_DET).sort()).toEqual(Object.keys(DET_OF_BOX).sort());
+    expect(OBSERVE_WITH_BOXES.boxes?.[0]?.box).toHaveLength(4);
+    expect(SAYS.map((m) => m.text)).toEqual(["지켜보고 있어요.", null]);
   });
 });
 

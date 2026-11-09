@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { Agent } from "../src/agent/agent.js";
+import type { BrainLog } from "../src/contract/events.js";
 import { MemoryHub } from "../src/hub/memory.js";
 import type { DeviceHub } from "../src/hub/types.js";
 import { createApp, type TwinHomeApp } from "../src/server/app.js";
@@ -137,6 +138,34 @@ describe("REST 명령 + WS 이벤트", () => {
     await waitFor((m) => m.type === "hello");
     await waitFor((m) => m.type === "state" && m.state.id === devices[devices.length - 1]!.id);
     expect(messages.filter((m) => m.type === "state")).toHaveLength(devices.length);
+  });
+
+  it("WS에 붙으면 world 다음에 마지막 판단·상자 있는 observe를 brain으로 한 번씩, 그다음 말풍선 글을 보낸다", async () => {
+    const home = makeHome();
+    const world = { at_ms: 1, objects: [], person: { visible: false, since_ms: null, last_seen_ms: null, facts: {} }, devices: [], eye: null, vlm_missing: 0, yolo_missing: 0 };
+    const decision: BrainLog = {
+      type: "decision", at_ms: 10, id: "pam-1", seq: 1, text_sent: "t", status: "valid", prediction: { observation: "o", reasoning: "r", task_index: 0 }, action: "컵 치우기", memory_version: 1,
+      world: { objects: [], person_visible: false, vlm_missing: 0, yolo_missing: 0 },
+    };
+    const observe: BrainLog = {
+      type: "observe", at_ms: 11, frame_id: "e7", captured_at_ms: 9, yolo: "컵 0.83", vlm: null,
+      boxes: [{ label: "cup", score: 0.83, box: [100, 50, 40, 60] }], frame: { width: 360, height: 640 },
+    };
+    const app = createApp({ hub: home.hub, policy: home.policy, rooms: ROOMS, log: () => {}, world: () => world, brainLast: () => [decision, observe], say: () => "컵을 들라고 했어요." });
+    const { url } = await app.listen(0, "127.0.0.1");
+    cleanups.push(() => app.close());
+    const { waitFor, messages } = await listen(url);
+    await waitFor((m) => m.type === "say");
+    const tail = messages.slice(messages.findIndex((m) => m.type === "world"));
+    expect(tail).toEqual([{ type: "world", world }, { type: "brain", event: decision }, { type: "brain", event: observe }, { type: "say", text: "컵을 들라고 했어요." }]);
+  });
+
+  it("마지막 판단·말풍선 글이 없으면 brain 없이 say null", async () => {
+    const { url } = await start();
+    const { waitFor, messages } = await listen(url);
+    expect(await waitFor((m) => m.type === "say")).toEqual({ type: "say", text: null });
+    expect(messages.filter((m) => m.type === "brain")).toEqual([]);
+    expect(messages.at(-1)).toEqual({ type: "say", text: null });
   });
 
   it("승인이 필요한 명령은 409 needsConfirmation, 토큰을 주면 실행", async () => {

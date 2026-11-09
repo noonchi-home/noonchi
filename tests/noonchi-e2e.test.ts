@@ -118,5 +118,21 @@ describe("NOONCHI 처음부터 끝까지", () => {
     expect(dash.some((m) => m.type === "brain" && m.event.type === "execution" && m.event.plan_id === planId && m.event.state === "done")).toBe(true);
     // 실제 폰 위에는 명령만 온다(판단·관찰 글을 보내지 않는다)
     expect(phone.some((m) => m.type === "brain_line")).toBe(false);
+    // 대시보드 말풍선 카드: 정한 것 → 실제 폰에 낸 명령 넷 → 끝낸 일. 글이 바뀔 때만 보낸다
+    const says = dash.filter((m) => m.type === "say").map((m) => m.text as string | null);
+    expect(says.every((t, i) => i === 0 || t !== says[i - 1])).toBe(true);
+    const told = says.indexOf("식탁으로 가라고 했어요.");
+    expect(says[told - 1]).toMatch(/컵을 치우기로 했어요\.$/);
+    expect(says.slice(told, told + 5)).toEqual(["식탁으로 가라고 했어요.", "컵을 들라고 했어요.", "싱크대로 가라고 했어요.", "컵을 싱크대에 넣으라고 했어요.", "컵을 다 치웠어요."]);
+    // 새로 붙은 대시보드: world 다음에 마지막 판단과 상자 있는 마지막 observe, 그다음 지금 말풍선 글
+    const late: Msg[] = [];
+    sockets.push(await openWebSocket(`${srv.url.replace(/^http/, "ws")}/events`, { setup: inbox(late) }));
+    for (const end = Date.now() + 3000; !late.some((m) => m.type === "say") && Date.now() < end; ) await new Promise((r) => setTimeout(r, 20));
+    const from = late.findIndex((m) => m.type === "world");
+    expect(late.slice(from, late.findIndex((m) => m.type === "say") + 1).map((m) => (m.type === "brain" ? `brain:${m.event.type}` : m.type))).toEqual(["world", "brain:decision", "brain:observe", "say"]);
+    expect(late.find((m) => m.type === "brain" && m.event.type === "observe")!.event).toMatchObject({
+      boxes: [{ label: "cup", score: 0.9, box: [220, 160, 40, 20] }], frame: { width: 480, height: 360 },
+    });
+    expect(typeof late.find((m) => m.type === "say")!.text).toBe("string");
   }, 60_000);
 });
