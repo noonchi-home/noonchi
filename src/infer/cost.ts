@@ -2,6 +2,8 @@
 const PRICES: Record<string, { input: number; cached: number; output: number }> = {
   "gpt-5.4-mini": { input: 0.75, cached: 0.075, output: 4.5 },
   "gpt-5.4-mini-2026-03-17": { input: 0.75, cached: 0.075, output: 4.5 },
+  "gpt-5.4-nano": { input: 0.2, cached: 0.02, output: 1.25 },
+  "gpt-5.4-nano-2026-03-17": { input: 0.2, cached: 0.02, output: 1.25 },
 };
 
 export function estimateCostUsd(model: string, u: { prompt: number; completion: number; cached: number }): number {

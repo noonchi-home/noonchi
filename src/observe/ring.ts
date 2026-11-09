@@ -68,4 +68,10 @@ export class FrameRing {
   frames(): readonly EngineFrame[] {
     return this.list;
   }
+
+  /** VLM 창: frame과 그보다 앞서 찍힌 프레임 가운데 가장 새 count장(frame 포함), 오래된 것부터. frame보다 spanMs 이상 앞선 프레임은 뺀다. */
+  window(frame: EngineFrame, count: number, spanMs: number): EngineFrame[] {
+    const before = this.list.filter((f) => f !== frame && f.capturedAtMs <= frame.capturedAtMs && frame.capturedAtMs - f.capturedAtMs < spanMs);
+    return [...before.slice(Math.max(0, before.length - (Math.max(1, count) - 1))), frame];
+  }
 }

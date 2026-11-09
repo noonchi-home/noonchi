@@ -56,6 +56,7 @@ services:
       BRAIN_POSE:
       BRAIN_YOLO_THREADS:
       ENGINE_FRAME_MS:
+      VLM_WINDOW_FRAMES:
       VLM_MAX_INFLIGHT:
       DETECT_QUEUE_MAX:
       PHONE_URL:

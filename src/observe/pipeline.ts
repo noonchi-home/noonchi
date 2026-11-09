@@ -1,4 +1,5 @@
 // 관찰 흐름(BRAIN=1): 엔진 프레임 → 고리(중복 버림) → YOLO 감지·관절(워커, 상한 있는 대기열에서 하나씩, 관절은 사람이 보일 때만) → VLM(동시 요청) → World State → /events.
+// VLM은 엔진 프레임마다 한 번, 그 프레임과 앞선 프레임을 창 크기(VLM_WINDOW_FRAMES, 기본 5장 = 2초 간격이면 10초)까지 오래된 것부터 받는다.
 // 프레임마다 observe 기록이 반드시 남는다: 대기열이 차면 YOLO·VLM 분석 없음, 감지 실패면 YOLO 분석 없음(VLM은 그대로 분석),
 // 고리 범위(keepMs)보다 앞서 찍힌 늦은 프레임은 분석하지 않고 YOLO·VLM 분석 없음(stale). 늦은 프레임은 World State·눈 자세에 넣지 않는다.
 // 감지 번호(d1…)와 물체 id의 짝은 그 프레임의 VLM 답(또는 분석 없음)이 올 때까지 둔다.
@@ -32,7 +33,13 @@ export interface ObserveConfig {
   detectQueueMax: number;
   /** 메모리 고리 길이(ms). */
   keepMs: number;
+  /** VLM 한 번에 보내는 최근 엔진 프레임 수(그 프레임 포함, 없으면 VLM_WINDOW_DEFAULT). 창 시간은 이 수 × engineMs. */
+  vlmWindowFrames?: number;
 }
+
+/** VLM 창 기본 크기: PAM 원래 입력처럼 2초 간격 5장. */
+export const VLM_WINDOW_DEFAULT = 5;
+const VLM_WINDOW_MAX = 10;
 
 const int = (env: Env, key: string, d: number, min: number) => {
   const raw = env[key]?.trim();
@@ -42,11 +49,17 @@ const int = (env: Env, key: string, d: number, min: number) => {
   return Math.floor(v);
 };
 
-/** ENGINE_FRAME_MS(기본 2000, 200 이상), VLM_MAX_INFLIGHT(4), VLM_TIMEOUT_MS(20000), DETECT_QUEUE_MAX(8). 틀린 값이면 시작을 막는다. */
-export const loadObserveConfig = (env: Env): ObserveConfig => ({
-  engineMs: int(env, "ENGINE_FRAME_MS", 2000, 200), vlmMaxInflight: int(env, "VLM_MAX_INFLIGHT", 4, 1), vlmTimeoutMs: vlmTimeoutMs(env),
-  detectQueueMax: int(env, "DETECT_QUEUE_MAX", 8, 1), keepMs: 20_000,
-});
+/** ENGINE_FRAME_MS(기본 2000, 200 이상), VLM_MAX_INFLIGHT(4), VLM_TIMEOUT_MS(20000), DETECT_QUEUE_MAX(8), VLM_WINDOW_FRAMES(5, 1~10).
+ *  고리는 20초, 창 시간이 더 길면 창 시간. 틀린 값이면 시작을 막는다. */
+export function loadObserveConfig(env: Env): ObserveConfig {
+  const engineMs = int(env, "ENGINE_FRAME_MS", 2000, 200);
+  const vlmWindowFrames = int(env, "VLM_WINDOW_FRAMES", VLM_WINDOW_DEFAULT, 1);
+  if (vlmWindowFrames > VLM_WINDOW_MAX) throw new Error(`VLM_WINDOW_FRAMES=${env.VLM_WINDOW_FRAMES}: 1~${VLM_WINDOW_MAX}이어야 합니다`);
+  return {
+    engineMs, vlmMaxInflight: int(env, "VLM_MAX_INFLIGHT", 4, 1), vlmTimeoutMs: vlmTimeoutMs(env),
+    detectQueueMax: int(env, "DETECT_QUEUE_MAX", 8, 1), keepMs: Math.max(20_000, vlmWindowFrames * engineMs), vlmWindowFrames,
+  };
+}
 
 /** 프레임마다 생기는 분석 없음은 observe 기록으로 남기므로 world_change로 다시 보내지 않는다. */
 const PER_FRAME = new Set(["vlm_missing", "yolo_missing"]);
@@ -113,9 +126,10 @@ export class ObservationPipeline {
   constructor(private readonly o: PipelineOptions) {
     this.clock = o.clock ?? { now: () => Date.now() };
     this.ring = new FrameRing(o.config.keepMs);
+    const windowFrames = o.config.vlmWindowFrames ?? VLM_WINDOW_DEFAULT;
     this.pool = new VlmPool({
       maxInflight: o.config.vlmMaxInflight, timeoutMs: o.config.vlmTimeoutMs,
-      analyze: (f, d, signal) => analyzeScene(o.vlm, f, d, signal),
+      analyze: (f, d, signal) => analyzeScene(o.vlm, this.ring.window(f, windowFrames, windowFrames * o.config.engineMs), d, signal),
       onResult: (r) => {
         if (this.closed) return;
         const ids = this.idsOf.get(r.frameId) ?? new Map<string, string>();
@@ -308,7 +322,7 @@ export async function createPipeline(o: {
   const config = loadObserveConfig(o.env);
   const detector = o.inject && "detector" in o.inject ? o.inject.detector ?? null : await createDetector(o.env, o.runtimeDir, o.log);
   const vlm = o.inject?.vlm ?? createInference(o.env).vlm;
-  o.log(`관찰 흐름: 엔진 프레임 ${config.engineMs}ms · 감지 ${detector?.name ?? "없음(VLM만)"} · VLM ${vlm.model} 동시 ${config.vlmMaxInflight}개 · 감지 대기열 ${config.detectQueueMax}`);
+  o.log(`관찰 흐름: 엔진 프레임 ${config.engineMs}ms · 감지 ${detector?.name ?? "없음(VLM만)"} · VLM ${vlm.model} 최근 ${config.vlmWindowFrames}장 동시 ${config.vlmMaxInflight}개 · 감지 대기열 ${config.detectQueueMax}`);
   if (o.dataset) o.log("[경고] 시험 자료 모으기가 켜져 있습니다. 엔진 프레임을 디스크에 씁니다.");
   return new ObservationPipeline({ config, detector, vlm, world: o.world, emit: o.emit, broadcastWorld: o.broadcastWorld, onChanges: o.onChanges, dataset: o.dataset, clock: o.inject?.clock });
 }

@@ -47,6 +47,45 @@ describe("관찰 흐름", () => {
     await p.close();
   });
 
+  it("엔진 프레임마다 VLM을 한 번 부르고, 최근 프레임을 창 크기(기본 5장)까지 오래된 것부터 보낸다. 처음에는 있는 만큼, 창 시간보다 앞선 프레임은 빼고", async () => {
+    const calls: { images: Buffer[]; captions: string[] }[] = [];
+    const vlm = { model: "w", json: async (req: { images: Buffer[]; captions: string[] }) => {
+      calls.push({ images: req.images, captions: req.captions });
+      return { value: { scene: "k", observations: [], summary: "s" }, costUsd: 0.001, model: "w", attempts: 1 };
+    } } as unknown as VlmClient;
+    const p = new ObservationPipeline({ config: { engineMs: 2000, vlmMaxInflight: 1, vlmTimeoutMs: 5000, detectQueueMax: 8, keepMs: 20_000 }, detector: cupDet(), vlm,
+      world: new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }), emit: () => {}, broadcastWorld: () => {} });
+    for (let i = 1; i <= 7; i++) {
+      p.onEngine(jpeg(i), head(i * 2000), null, null, i * 2000 + 5);
+      await p.idle();
+    }
+    // 앞 프레임과 16초 떨어진 프레임: 고리(20초)에는 앞 프레임이 남아 있어도 창(5장 × 2초 = 10초)보다 앞서므로 한 장만
+    p.onEngine(jpeg(8), head(30_000), null, null, 30_005);
+    await p.idle();
+    expect(calls.map((c) => c.images.length)).toEqual([1, 2, 3, 4, 5, 5, 5, 1]);
+    expect(calls[6]!.images.map((b) => b[2])).toEqual([3, 4, 5, 6, 7]);
+    expect(calls[6]!.captions).toEqual(["Photo 1 of 5, t-8s", "Photo 2 of 5, t-6s", "Photo 3 of 5, t-4s", "Photo 4 of 5, t-2s", "Photo 5 of 5, t-0s (latest)"]);
+    expect(calls[7]!.images.map((b) => b[2])).toEqual([8]);
+    expect(p.status().vlm).toMatchObject({ sent: 8, costUsd: 0.008 });
+    await p.close();
+  });
+
+  it("창 크기 1이면 그 프레임 한 장만 보낸다", async () => {
+    const counts: number[] = [];
+    const vlm = { model: "w", json: async (req: { images: Buffer[] }) => {
+      counts.push(req.images.length);
+      return { value: { scene: "k", observations: [], summary: "s" }, costUsd: 0, model: "w", attempts: 1 };
+    } } as unknown as VlmClient;
+    const p = new ObservationPipeline({ config: { engineMs: 2000, vlmMaxInflight: 1, vlmTimeoutMs: 5000, detectQueueMax: 8, keepMs: 20_000, vlmWindowFrames: 1 }, detector: cupDet(), vlm,
+      world: new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }), emit: () => {}, broadcastWorld: () => {} });
+    for (let i = 1; i <= 3; i++) {
+      p.onEngine(jpeg(i), head(i * 2000), null, null, i * 2000 + 5);
+      await p.idle();
+    }
+    expect(counts).toEqual([1, 1, 1]);
+    await p.close();
+  });
+
   it("VLM 상한을 넘은 프레임은 VLM 분석 없음으로 기록한다", async () => {
     const logs: BrainLog[] = [];
     const hang = { json: () => new Promise(() => {}) } as unknown as VlmClient;
@@ -241,5 +280,12 @@ describe("관찰 흐름 설정", () => {
     expect(3_600_000 / loadObserveConfig({}).engineMs).toBe(1800);
     expect(loadObserveConfig({ ENGINE_FRAME_MS: "500" }).engineMs).toBe(500);
     expect(() => loadObserveConfig({ ENGINE_FRAME_MS: "100" })).toThrow(/ENGINE_FRAME_MS=100/);
+  });
+  it("VLM 창 크기(VLM_WINDOW_FRAMES) 기본은 5장, 1~10장이고 고리는 창보다 짧지 않다", () => {
+    expect(loadObserveConfig({}).vlmWindowFrames).toBe(5);
+    expect(loadObserveConfig({ VLM_WINDOW_FRAMES: "1" }).vlmWindowFrames).toBe(1);
+    expect(() => loadObserveConfig({ VLM_WINDOW_FRAMES: "0" })).toThrow(/VLM_WINDOW_FRAMES=0/);
+    expect(() => loadObserveConfig({ VLM_WINDOW_FRAMES: "11" })).toThrow(/VLM_WINDOW_FRAMES=11/);
+    expect(loadObserveConfig({ VLM_WINDOW_FRAMES: "8", ENGINE_FRAME_MS: "5000" }).keepMs).toBe(40_000);
   });
 });
