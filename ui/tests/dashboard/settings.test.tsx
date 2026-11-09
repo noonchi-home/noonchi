@@ -47,6 +47,11 @@ describe("허브 상태(hubOf)", () => {
     expect(hubOf(HEALTH, null).connected).toBe(false);
   });
 
+  it("집 이름은 괄호 덧붙임을 뺀 짧은 이름만 보인다", () => {
+    expect(hubOf({ ...HEALTH, home: { id: "mokryeon_180b", name: "한양목련 180B (도면 기준 · 방 4·욕실 3)" } }, true).home).toBe("한양목련 180B");
+    expect(hubOf({ ...HEALTH, home: { id: "oneroom", name: "원룸 예시 (테스트용)" } }, true).home).toBe("원룸 예시");
+  });
+
   it("health를 아직 못 받았으면 빈 값과 시험 모드다", () => {
     expect(hubOf(null, null)).toEqual({ connected: false, mode: "test", hub: "", agent: "", home: "", phoneUrl: "", setupHref: "/setup/" });
   });
