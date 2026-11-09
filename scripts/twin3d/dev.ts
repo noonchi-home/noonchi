@@ -1,7 +1,7 @@
 // npm run dev3d -- start [--home <id>] | stop: 3D 작업용 서버(8201)와 화면(Vite 5174)을 함께 켜고 끈다. 8200·5173은 건드리지 않는다.
 // start: 같은 집 서버가 이미 켜져 있으면 그대로 둔다. 다른 집이면 내가 띄운 서버만 다시 켜고, 남이 띄운 서버면 멈춘다.
 // 둘 다 답할 때까지 기다리고, 서버가 띄운 집이 요청과 같은지 본 뒤, 화면 모듈을 한 번 훑어 Vite 의존성 묶기를 끝낸다.
-// 서버는 npm start에서 화면 빌드(prestart)를 뺀 것과 같고 폰 서버·두뇌는 끈다. 화면은 5174의 Vite가 내준다.
+// 서버는 npm start에서 화면 빌드(prestart)를 뺀 것과 같고 폰 서버·두뇌는 끈다. 모델 주소는 닫힌 포트라 실제 모델을 부르지 않는다. 화면은 5174의 Vite가 내준다.
 // pid는 띄운 때와 함께 적고, 끌 때는 지금도 그때 띄운 node인지 본다(재부팅 뒤 같은 pid를 쓰는 다른 프로세스를 끄지 않게).
 import { spawn } from "node:child_process";
 import { closeSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -38,11 +38,16 @@ async function servedHome(): Promise<{ home: string | null } | null> {
   } catch { return null; }
 }
 
-/** 3D 작업 서버 환경. 폰 서버·두뇌는 빈 값으로 넣는다(지우면 서버의 dotenv가 .env 값으로 다시 채운다). */
+/** 닫힌 이 PC 포트(discard): 준비 검사(/api/health)가 모델 주소에 GET을 보내도 밖으로 나가지 않는다. */
+const CLOSED = "http://127.0.0.1:9";
+
+/** 3D 작업 서버 환경. 폰 서버·두뇌는 빈 값, VLM·PAM·에이전트 주소는 닫힌 포트, 모델 키는 빈 값으로 넣는다(지우면 서버의 dotenv가 .env 값으로 다시 채운다). */
 export function serverEnv(home: string, base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   return {
     ...base, PORT: String(SERVER_PORT), HUB: "memory", HOME_ID: home,
     RUNTIME_DIR: "runtime-3d", TWIN_STUDIO_DIR: base.TWIN_STUDIO_DIR?.trim() || resolve(ROOT, "twin"), PHONE_PORT: "", BRAIN: "",
+    INFERENCE_MODE: "mock", AGENT_PROVIDER: "openai", OPENAI_BASE_URL: `${CLOSED}/v1`, VLM_BASE_URL: `${CLOSED}/v1`, PAM_URL: CLOSED,
+    OPENAI_API_KEY: "", ANTHROPIC_API_KEY: "", VLM_API_KEY: "",
   };
 }
 

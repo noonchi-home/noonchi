@@ -42,6 +42,7 @@
 ## 띄워 보기
 
 - 서버: `npm run heavy -- npm --prefix ui run build` 뒤 `npm run dev3d -- start`(서버 8201이 `ui/dist`를 내줌, 화면 Vite 5174). 끄기는 `npm run dev3d -- stop`.
+- dev3d 서버는 시험 모드다: VLM·PAM·에이전트 주소는 닫힌 이 PC 포트(`127.0.0.1:9`), 모델 키는 빈 값이라 `/api/health` 준비 검사가 밖으로 나가지 않는다. 다른 방법으로 서버를 띄울 때도 이 값을 넣는다.
 - `runtime-3d/`에 설정을 끝낸 적이 없으면 `/`가 `/setup/`으로 간다. 처음 한 번 `http://127.0.0.1:8201/setup/`에서 집을 고르고 끝낸다.
 
 ### 가짜 단계
@@ -72,7 +73,10 @@ npm run capture -- --url "http://127.0.0.1:8201/?debug=steps&step=2" --ready "ma
 
 ### 처음부터 끝까지
 
+`ui/dist`를 그대로 내주므로 먼저 화면을 빌드한다. 옛 빌드면 옛 화면으로 판정한다.
+
 ```powershell
+npm run heavy -- npm --prefix ui run build
 npm run heavy -- npx tsx scripts/twin3d/e2e-dashboard.ts --out runtime-3d/e2e
 ```
 
