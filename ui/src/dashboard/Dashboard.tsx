@@ -14,6 +14,7 @@ import { TwinStage } from "../twin/TwinStage";
 import { useAnchors } from "../twin/use-anchors";
 import { useViewer } from "../twin/viewer";
 import { wholeCamera, type TwinEngine } from "../twin3d/engine";
+import { LiveQueue, attachLive } from "../twin3d/live";
 import { BAKE_VIEWS } from "../twin3d/projection";
 import { Twin3D, useLayoutBox } from "../twin3d/Twin3D";
 
@@ -45,14 +46,17 @@ function useTwinKind(homeId: string | null, known: boolean): "three" | "iframe" 
   return kind;
 }
 
-/** 구운 3D 트윈 칸(TwinStage와 같은 틀): 집 전체 카메라로 그린 캔버스 + 그 위 덮개 층. 종류를 정하기 전에는 캔버스 없이 덮개만. */
-function BakedStage({ home, children }: { home: string | null; children?: ReactNode }) {
+/** 구운 3D 트윈 칸(TwinStage와 같은 틀): 집 전체 카메라로 그린 캔버스 + 그 위 덮개 층. 종류를 정하기 전에는 캔버스 없이 덮개만. 엔진이 뜨고 버려질 때 onEngine. */
+function BakedStage({ home, onEngine: toLive, children }: { home: string | null; onEngine: (engine: TwinEngine | null) => void; children?: ReactNode }) {
   const box = useRef<HTMLElement>(null);
   const size = useLayoutBox(box);
   const v = home ? BAKE_VIEWS[home] : undefined;
   const view = useMemo(() => (v && size.width && size.height ? wholeCamera(v, size) : null), [v, size]);
   const debug = useMemo(() => new URLSearchParams(location.search).has("debug"), []);
-  const onEngine = useCallback((engine: TwinEngine | null) => { if (debug) window.__twin3d = { engine, ready: false }; }, [debug]);
+  const onEngine = useCallback((engine: TwinEngine | null) => {
+    toLive(engine);
+    if (debug) window.__twin3d = { engine, ready: false };
+  }, [debug, toLive]);
   const onReady = useCallback(() => { if (debug && window.__twin3d) window.__twin3d.ready = true; }, [debug]);
   return (
     <section ref={box} className="absolute inset-0" aria-label="3D 트윈">
@@ -68,6 +72,7 @@ function BakedStage({ home, children }: { home: string | null; children?: ReactN
  * 판단 기록의 「폰 화면」 탭을 고르면 폰 화면을 오른쪽 패널에 크게 띄우고 왼쪽 위 눈 창은 숨긴다.
  * 패널은 덮개 층의 바로 아래 자식(눈 창·판단 기록은 그 아래 쌓기 상자의 자식)이라 패널 밖 빈 곳의 마우스는 3D로 간다.
  * 한양목련처럼 구운 3D가 있는 집은 트윈을 three.js 캔버스로(BakedStage), 다른 집은 iframe 뷰어(TwinStage)로 그린다.
+ * 구운 트윈의 가전 상태·배치는 같은 소켓 메시지로 바꾸고, 엔진이 뜨기 전에 온 메시지는 모아 두었다가 엔진이 뜨면 넣는다.
  */
 export function Dashboard() {
   const { devices, apply } = useDevices();
@@ -78,6 +83,9 @@ export function Dashboard() {
   const [connected, setConnected] = useState<boolean | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
   const homeId = health?.home?.id ?? null;
+  const live = useRef<ReturnType<typeof attachLive> | null>(null);
+  const queue = useRef(new LiveQueue());
+  const kindRef = useRef<"three" | "iframe" | null>(null);
   const onMessage = useCallback((m: ServerMessage) => {
     if (m.type === "hello" && homeId && m.home && m.home !== homeId) {
       location.reload(); // 설정에서 집을 바꿨다
@@ -87,9 +95,21 @@ export function Dashboard() {
     toLog(m);
     toChecks(m);
     if (m.type === "agent" && m.event === "action" && m.action.deviceId) setFocusId(m.action.deviceId);
+    if (live.current) live.current.handle(m);
+    else if (kindRef.current !== "iframe") queue.current.push(m);
   }, [apply, toLog, toChecks, homeId]);
   useEvents(onMessage, setConnected);
   const kind = useTwinKind(homeId, health !== null);
+  kindRef.current = kind;
+  useEffect(() => { if (kind === "iframe") queue.current.drain(); }, [kind]);
+  const onEngine = useCallback((engine: TwinEngine | null) => {
+    live.current?.dispose();
+    live.current = null;
+    if (!engine) return;
+    const l = attachLive(engine);
+    live.current = l;
+    for (const m of queue.current.drain()) l.handle(m);
+  }, []);
   const layer = (
     <>
       <Overlay devices={devices} checks={checks} focusId={focusId} />
@@ -103,7 +123,7 @@ export function Dashboard() {
   );
   return (
     <main className="relative h-full w-full overflow-hidden">
-      {kind === "iframe" ? <TwinStage>{layer}</TwinStage> : <BakedStage home={kind === "three" ? homeId : null}>{layer}</BakedStage>}
+      {kind === "iframe" ? <TwinStage>{layer}</TwinStage> : <BakedStage home={kind === "three" ? homeId : null} onEngine={onEngine}>{layer}</BakedStage>}
     </main>
   );
 }

@@ -8,68 +8,14 @@ import { josa } from "../agent/phrases.js";
 import { compact, detectRooms, stripParticle } from "../agent/search.js";
 import type { TypeInfo } from "./catalog.js";
 
-export type Vec2 = [number, number];
-export type Vec3 = [number, number, number];
-
-export interface ScenePlace {
-  position: Vec2;
-  facing_deg: number;
-  elevation: number;
-  on?: string | null;
-  surface?: string | null;
-  wall?: string | null;
-}
-
-export interface SceneObject {
-  id: string;
-  name: string;
-  type: string;
-  asset: string | null;
-  category: string;
-  mount: string;
-  room: string | null;
-  plan: ScenePlace;
-  position: Vec3;
-  rotation: Vec3;
-  scale: Vec3;
-  interactive: boolean;
-  attrs: Record<string, unknown>;
-  states: Record<string, unknown>;
-  state: Record<string, unknown>;
-  footprint?: Vec2;
-  height?: number;
-  [key: string]: unknown;
-}
-
-export interface SceneRoom {
-  id: string;
-  label?: string;
-  polygon?: Vec2[];
-  floor_z?: number;
-}
-
-export interface SceneWall {
-  id: string;
-  a: Vec2;
-  b: Vec2;
-  thickness?: number;
-}
-
-export interface SceneJson {
-  plan: { ceiling_height?: number; rooms?: SceneRoom[]; walls?: SceneWall[]; [key: string]: unknown };
-  objects: unknown[];
-  [key: string]: unknown;
-}
+// 장면·배치 메시지 타입은 계약(src/contract/layout.ts)에 있다. 다른 파일이 이 파일에서 가져가던 이름을 그대로 내보낸다.
+import type { LayoutMessage, SceneJson, SceneObject, SceneRoom, SceneWall, Vec2, Vec3 } from "../contract/layout.js";
+export type { LayoutMessage, SceneJson, SceneObject, ScenePlace, SceneRoom, SceneWall, Vec2, Vec3 } from "../contract/layout.js";
 
 /** "여기": 폰 조준점의 평면도 점과(있으면) 그때 폰 위치. 모르면 이유. */
 export type HerePoint = { position: Vec2; from?: Vec2 } | { error: string };
 export type HereResolver = () => HerePoint;
 export type To = { x: number; y: number } | { dx: number; dy: number } | "here";
-
-export type LayoutMessage =
-  | { type: "layout"; op: "move"; id: string; room: string | null; plan: { position: Vec2; facing_deg: number; elevation: number }; position: Vec3; rotation: Vec3 }
-  | { type: "layout"; op: "add"; object: SceneObject }
-  | { type: "layout"; op: "remove"; id: string };
 
 export type Edit =
   | { op: "move"; id: string; position: Vec2; facing_deg: number; room: string | null }

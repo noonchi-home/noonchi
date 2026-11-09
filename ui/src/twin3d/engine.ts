@@ -1,5 +1,6 @@
 // 대시보드 트윈 엔진 한 덩어리: 구운 GLB(r2b)를 고정 정사영 카메라(구운 보기)로 그린다. 카메라는 확대·이동만 하고, 바뀔 때만 그린다.
 // 불러오기 차례: 톤 → 렌더러 → 장면·자산 받기 → 구운 재질 → 빛 → 기본 보기 벽 → 땅 그림자 → 상태 → 정적 합치기 → 첫 그림.
+// 가전 상태(states)·배치 보정(layout)은 live.ts attachLive가 /events 메시지로 바꾼다.
 // 색은 토큰(scene3d)만 쓴다.
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
@@ -7,6 +8,7 @@ import { scene3d } from "../../../src/design/tokens.ts";
 import { applyDefaultView, viewHeading, type SceneData } from "./cutaway";
 import { bakedGround } from "./ground";
 import { HOME_LIGHTS, addLights } from "./light";
+import { LayoutOps } from "./live";
 import { asLightmap, bakeMaterials, type Lightmaps, type Manifest } from "./materials";
 import { StaticMerge } from "./merge";
 import { BAKE_VIEWS, type OrthoCamera } from "./projection";
@@ -36,6 +38,8 @@ export class TwinEngine {
   readonly root: THREE.Group;
   readonly states: TwinStates;
   readonly merge: StaticMerge;
+  /** 배치 보정(옮기기·더하기·빼기). */
+  readonly layout: LayoutOps;
   readonly info: { raised: string[]; actions: Record<string, number>; materials: Record<string, number>; merged: { before: number; after: number } };
   private readonly loop: RenderLoop;
   private readonly views = new Set<(c: MapCamera) => void>();
@@ -125,6 +129,7 @@ export class TwinEngine {
     this.merge = new StaticMerge(this.scene, statics, (m) => owner.get(m) ?? null);
     const merged = this.merge.build();
     this.info = { raised: shown.raised, actions: shown.actions, materials: { ...materials }, merged };
+    this.layout = new LayoutOps(this);
     this.loop = new RenderLoop((now) => this.draw(now));
   }
 
@@ -146,8 +151,9 @@ export class TwinEngine {
     return () => { this.views.delete(cb); };
   }
 
-  /** 물건 노드 상자 가운데 x·z와 윗면 높이(three 좌표). 없는 물건이면 null. */
+  /** 물건 노드 상자 가운데 x·z와 윗면 높이(three 좌표). 없는 물건·뺀 물건이면 null. */
   anchor(id: string): [number, number, number] | null {
+    if (this.layout.isRemoved(id)) return null;
     if (!this.anchors.has(id)) {
       const node = this.find(id);
       let at: [number, number, number] | null = null;
@@ -198,6 +204,7 @@ export class TwinEngine {
     this.disposed = true;
     this.loop.stop();
     this.views.clear();
+    this.layout.dispose();
     this.states.dispose();
     const textures = new Set<THREE.Texture>();
     this.scene.traverse((n) => {

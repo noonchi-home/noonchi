@@ -38,6 +38,8 @@ declare module "@viewer/states.mjs" {
 declare module "@viewer/scene.mjs" {
   export function statesOf(entry: unknown, node: unknown): Record<string, { default?: unknown; effects?: Record<string, unknown[]> }>;
   export function parseProp(value: unknown): Record<string, unknown> | null;
+  /** 개별 GLB(gltf.scene)에서 파일 이름과 같은 최상위 노드. 없으면 던진다. */
+  export function assetRoot<T extends { children: { name: string }[] }>(gltfScene: T, assetPath: string): T["children"][number];
 }
 
 declare module "@viewer/live.mjs" {
@@ -57,7 +59,10 @@ declare module "@viewer/live.mjs" {
 }
 
 declare module "@viewer/layout.mjs" {
-  export function routeLayout<T>(msg: unknown, ops: { move(id: string, patch: unknown): T; add(object: unknown): T; remove(id: string): T }): T | null;
+  /** move 메시지에서 고른 값(movePatch). */
+  export interface MovePatch { position: [number, number, number]; rotation: [number, number, number]; room?: string; plan?: Record<string, unknown> }
+  /** 메시지를 ops.move·add·remove로 넘기고 그 결과를 돌려준다. 모르는 메시지·틀린 위치는 null. add 객체는 normalizeObject로 채운 것. */
+  export function routeLayout<M, A, R>(msg: unknown, ops: { move(id: string, patch: MovePatch): M; add(object: Record<string, unknown> & { id: string; position: [number, number, number] }): A; remove(id: string): R }): M | A | R | null;
   export function normalizeObject(object: Record<string, unknown>): Record<string, unknown>;
   export function boxSpec(object: Record<string, unknown>): { size: [number, number, number]; center: [number, number, number] };
 }

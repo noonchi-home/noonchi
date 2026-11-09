@@ -84,6 +84,16 @@ export class TwinStates {
     return applyAttr(this.ctx, it.targets, attr, it.states[attr], value);
   }
 
+  /** 물건을 뺄 때: 기본값으로 되돌려 켠 빛을 풀에 돌려주고 상태 연결을 끊는다. 상태 없는 물건이면 false. */
+  remove(id: string): boolean {
+    const it = this.items.get(id);
+    if (!it) return false;
+    const defaults = Object.fromEntries(Object.keys(it.states).map((a) => [a, defaultValue(it.states, it.attrs, a)]));
+    applyState(this.ctx, it.targets, it.states, it.attrs, defaults);
+    this.items.delete(id);
+    return true;
+  }
+
   /** 도는 드럼이 있다(이어 그려야 한다). */
   spinning(): boolean { return this.ctx.spins.size > 0; }
 

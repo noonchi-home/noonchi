@@ -7,7 +7,7 @@ const CONTRACT_DIR = new URL("../src/contract/", import.meta.url);
 describe("메시지 계약", () => {
   it("src/contract의 파일은 타입만 가져오고 타입만 내보낸다(화면 빌드에 서버 코드가 끌려오지 않게)", () => {
     const files = readdirSync(CONTRACT_DIR).filter((f) => f.endsWith(".ts"));
-    expect(files).toEqual(expect.arrayContaining(["events.ts", "plan.ts"]));
+    expect(files).toEqual(expect.arrayContaining(["events.ts", "plan.ts", "layout.ts"]));
     for (const f of files) {
       const src = readFileSync(new URL(f, CONTRACT_DIR), "utf8");
       const imports = src.split("\n").filter((l) => /^\s*import\b/.test(l));

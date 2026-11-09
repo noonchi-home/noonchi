@@ -9,6 +9,7 @@ describe("parseMessage", () => {
   it("계획 메시지도 받는다(plan: null은 계획 지움)", () => {
     expect(parseMessage('{"type":"plan","plan":null}')?.type).toBe("plan");
   });
+  it("배치 메시지도 받는다", () => expect(parseMessage('{"type":"layout","op":"remove","id":"sofa_1"}')?.type).toBe("layout"));
   it("모르는 type·깨진 JSON은 null", () => {
     expect(parseMessage("{oops")).toBeNull();
     expect(parseMessage(JSON.stringify({ type: "nope" }))).toBeNull();
