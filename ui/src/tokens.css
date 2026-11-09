@@ -77,6 +77,8 @@
   --color-scene-window: var(--scene-window);
   --color-scene-rail: var(--scene-rail);
   --color-scene-light: var(--scene-light);
+  --color-scene-shade: var(--scene-shade);
+  --color-scene-placeholder: var(--scene-placeholder);
   --color-glass: var(--glass);
   --color-glass-soft: var(--glass-soft);
   --color-glass-edge: var(--glass-edge);
@@ -190,6 +192,8 @@
   --scene-window: #d0d1d1;
   --scene-rail: #e4eaec;
   --scene-light: #ffffff;
+  --scene-shade: #000000;
+  --scene-placeholder: #bdbdbd;
   --glass: rgb(255 252 248 / 0.9);
   --glass-soft: rgb(255 252 248 / 0.6);
   --glass-edge: rgb(66 64 63 / 0.12);

@@ -211,7 +211,7 @@ export class LayoutOps {
       }
     }
     const { size, center } = boxSpec(o);
-    this.boxMaterial ??= new THREE.MeshStandardMaterial({ name: "layout_box", color: scene3d.background, roughness: 0.85 });
+    this.boxMaterial ??= new THREE.MeshStandardMaterial({ name: "layout_box", color: scene3d.placeholder, roughness: 0.85 });
     const box = new THREE.Mesh(new THREE.BoxGeometry(...size), this.boxMaterial);
     box.position.fromArray(center);
     box.name = `${typeof o.type === "string" ? o.type : o.id}_box`;

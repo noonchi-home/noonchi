@@ -128,6 +128,13 @@ function codeHits(src: string, jsx: boolean, ui: boolean): Hit[] {
   return out;
 }
 
+/** three.js 숫자 색: Color·setRGB·setHex·setHSL의 숫자 글 인자, 0x 색 값. 3D 장면 색도 토큰(src/design/tokens.ts scene3d)만 쓴다. 자료에서 온 값(…sky)과 주석은 뺀다. */
+const NUM_COLOR = /new\s+(?:THREE\.)?Color\(\s*(?:0x|-?\.?\d)|(?<![\w-])(?:color|emissive|specular|sheenColor|attenuationColor)\s*:\s*0x[0-9a-fA-F]+|\.(?:setRGB|setHex|setHSL)\(\s*(?:0x|-?\.?\d)/g;
+function numberColorHits(src: string): Hit[] {
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, blank).replace(/\/\/[^\n]*/g, blank);
+  return [...code.matchAll(NUM_COLOR)].map((m) => ({ at: m.index! + (m[0].startsWith(".") ? 1 : 0), text: m[0].replace(/^\./, "").replace(/\s+$/, ""), rule: "숫자 색" }));
+}
+
 /** HTML: <style>은 CSS로, <script>는 JS로, 나머지 속성 값(파비콘 data URI·style="…")에서 날 색을 찾는다. */
 function htmlHits(src: string, ui: boolean): Hit[] {
   const code = src.replace(/<!--[\s\S]*?-->/g, blank);
@@ -155,7 +162,7 @@ export function fileColors(file: string, src: string): ColorProblem[] {
   const ui = /(^|\/)ui\/src\/components\/ui\//.test(path);
   const hits = path.endsWith(".html") ? htmlHits(src, ui)
     : path.endsWith(".css") ? cssHits(src, 0, ui)
-      : codeHits(src, path.endsWith(".tsx") || path.endsWith(".jsx"), ui);
+      : [...codeHits(src, path.endsWith(".tsx") || path.endsWith(".jsx"), ui), ...numberColorHits(src)];
   const seen = new Set<string>();
   return hits
     .sort((a, b) => a.at - b.at)

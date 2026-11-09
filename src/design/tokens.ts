@@ -48,7 +48,9 @@ export const color = {
   "scene-cap": "#4e4b48",
   "scene-window": "#d0d1d1",
   "scene-rail": "#e4eaec",
-  "scene-light": "#ffffff"
+  "scene-light": "#ffffff",
+  "scene-shade": "#000000",
+  "scene-placeholder": "#bdbdbd"
 } as const;
 
 export const rgba = {
@@ -348,7 +350,9 @@ export const scene3d = {
     "color": "#e4eaec",
     "opacity": 0.22
   },
-  "light": "#ffffff"
+  "light": "#ffffff",
+  "groundShade": "#000000",
+  "placeholder": "#bdbdbd"
 } as const;
 
 export const font = {

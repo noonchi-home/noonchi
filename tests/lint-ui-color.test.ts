@@ -60,6 +60,17 @@ describe("날 색 값을 잡는다", () => {
     expect(rules("web/phone/marks.js", src)).toEqual(["1 #hex #2f6fde", "2 색 함수 rgb(", "3 이름 색 white", "4 #hex #6b6b6b"]);
   });
 
+  it("three.js 숫자 색: new THREE.Color(0, 0, 0)·0x 색·setRGB·setHex 숫자 인자. 주석·토큰·자료 인자는 뺀다", () => {
+    const src = [
+      "// 검정(new THREE.Color(0, 0, 0))이다",
+      "const shade = new THREE.Color(0, 0, 0);",
+      "const m = new THREE.MeshBasicMaterial({ color: 0x5d5b5c });",
+      "c.setRGB(1, 1, 1); c.setHex(0xffffff);",
+      "const ok = new THREE.Color(scene3d.groundShade); light.color.setRGB(...spec.color); new THREE.Color(...sky);",
+    ].join("\n");
+    expect(rules("ui/src/twin3d/ground.ts", src)).toEqual(["2 숫자 색 new THREE.Color(0", "3 숫자 색 color: 0x5d5b5c", "4 숫자 색 setRGB(1", "4 숫자 색 setHex(0x"]);
+  });
+
   it("HTML: 파비콘 data URI의 %23hex", () => {
     const src = '<link rel="icon" href="data:image/svg+xml,%3Csvg%3E%3Cpath fill=%22%232f6fde%22/%3E%3C/svg%3E">';
     expect(rules("ui/index.html", src)).toEqual(["1 #hex %232f6fde"]);

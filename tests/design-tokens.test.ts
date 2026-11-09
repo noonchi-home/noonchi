@@ -75,7 +75,7 @@ describe("디자인 토큰 원본", () => {
   it("3D 장면 색(scene3d)도 tokens.ts로 푼다", () => {
     expect(renderTokens(readTokens())["src/design/tokens.ts"]).toContain("export const scene3d = ");
     expect(scene3d).toEqual({
-      background: "#bdbdbd", wallCap: "#4e4b48", light: "#ffffff",
+      background: "#bdbdbd", wallCap: "#4e4b48", light: "#ffffff", groundShade: "#000000", placeholder: "#bdbdbd",
       windowGlass: { color: "#d0d1d1", opacity: 0.88 }, railGlass: { color: "#e4eaec", opacity: 0.22 },
     });
   });

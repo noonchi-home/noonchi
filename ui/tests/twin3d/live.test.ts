@@ -179,7 +179,7 @@ describe("배치 더하기", () => {
     expect((box.geometry as THREE.BoxGeometry).parameters).toMatchObject({ width: 0.4, height: 0.5, depth: 0.4 });
     expect(box.position.y).toBeCloseTo(0.25, 9);
     expect([box.castShadow, box.receiveShadow]).toEqual([false, false]);
-    expect((box.material as THREE.MeshStandardMaterial).color.getHexString()).toBe(new THREE.Color(scene3d.background).getHexString());
+    expect((box.material as THREE.MeshStandardMaterial).color.getHexString()).toBe(new THREE.Color(scene3d.placeholder).getHexString());
     expect(engine.requestRender).toHaveBeenCalledTimes(1);
   });
 
