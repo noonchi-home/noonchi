@@ -24,7 +24,7 @@ noonchi-home | 26-2 소프트웨어공학
 
 | 단계 | 하는 일 | 보이는 곳 |
 |---|---|---|
-| **보기** | 실제 폰이 클로이드의 눈이다. 카메라 화면과 AR 위치가 들어오고, 사진마다 YOLO와 VLM이 따로 분석한다. | 대시보드 폰 칸(YOLO 상자) |
+| **보기** | 실제 폰이 클로이드의 눈이다. 카메라 화면과 AR 위치가 들어오고, 사진마다 YOLO26n(물체·사람)과 VLM이 따로 분석한다. 사람이 보이면 YOLO26n-pose가 자세와 손에 든 컵을 본다. | 대시보드 폰 칸(YOLO 상자) |
 | **알기** | World State가 YOLO·VLM 결과와 집 장면(가전·가구·도면 설비)을 합쳐 지금 상태와 관찰 글을 만든다. 가전은 Matter 가상 기기다. | 3D 트윈, FSM 카드 |
 | **판단** | PAM이 관찰 글만 받아 할 일을 고른다. 사진은 넘기지 않는다. 말로 시킨 가전 명령은 에이전트(LLM 도구)가 맡는다. | 말풍선 카드 |
 | **행동** | 고른 일을 단계로 나눠 실제 폰으로 사람에게 하나씩 지시하고, World State와 폰 위치로 그 단계가 된 것을 본 뒤 다음 단계를 지시한다. 가전 명령은 승인 규칙을 거쳐 Matter 속성을 바꾼다. | 실제 폰, 트윈 진행도 |
@@ -95,7 +95,7 @@ noonchi-home | 26-2 소프트웨어공학
 폰 서버 (src/phone)           — 기준점 맞춤 · 폰 눈 위치 · 말 전달 · 명령 보내기
         ↓
 서버 (src/server)             — Node.js 22
-├── 관찰 (src/brain · src/observe · src/world) — YOLOX(onnxruntime) · VLM · World State → 관찰 글
+├── 관찰 (src/brain · src/observe · src/world) — YOLO26n 감지·YOLO26n-pose 관절(onnxruntime) · VLM · World State → 관찰 글
 ├── 판단 (services/pam)       — PAM(Python): 관찰 글만 받아 행동을 고른다
 ├── 계획·실행 (src/plan · src/act) — 단계마다 폰 명령, World State와 폰 위치로 다음 단계
 ├── 에이전트 (src/agent)      — 말로 시킨 가전 명령(OpenAI · Anthropic 도구) · 승인 규칙
@@ -136,6 +136,7 @@ npm start                 # 화면을 빌드하고 http://127.0.0.1:8200
 ```
 
 - 관찰·판단까지 돌리기: PAM 서비스(`services/pam`, [reference](docs/reference.md#pam-서비스-servicespam))를 띄우고 `BRAIN=1 PHONE_PORT=8210 npm start`. 폰은 설정 창의 QR로 연다.
+- 감지·관절 모델(YOLO26n·YOLO26n-pose ONNX, AGPL-3.0)은 저장소 `models/`에 있어 따로 받지 않는다. 출처·다시 내보내기는 [THIRD_PARTY](THIRD_PARTY.md#모델).
 - 키 없이 돌려 보기: `npx tsx scripts/fake-openai.ts --port 8500`을 띄우고 `VLM_BASE_URL`·`PAM_LLM_BASE_URL`·`OPENAI_BASE_URL`을 `http://127.0.0.1:8500/v1`로, `OPENAI_API_KEY`를 `fake-key`로 둔다.
 - 서버 한 대: `docker compose up -d --build`. GPU 서버는 `docker compose --profile gpu up -d --build`([deploy](docs/deploy.md)).
 - 대시보드 순간 보기: `?debug=steps&step=N`은 서버 자료 대신 `ui/src/dashboard/fake-run.json`의 순간(지켜보기, 1~4단계)을 보인다([twin3d](docs/twin3d.md)).

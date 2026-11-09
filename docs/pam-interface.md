@@ -1,6 +1,6 @@
 # PAM 연결 형식 (noonchi ↔ PAM 서비스)
 
-noonchi 서버가 PAM 서비스(`services/pam/`)를 부르는 형식이다. PAM에는 사진을 넘기지 않는다. World State가 YOLOX와 VLM 결과를 합친 관찰 텍스트를 넘긴다.
+noonchi 서버가 PAM 서비스(`services/pam/`)를 부르는 형식이다. PAM에는 사진을 넘기지 않는다. World State가 YOLO(감지·관절)와 VLM 결과를 합친 관찰 텍스트를 넘긴다.
 
 | 누가 | 하는 일 |
 |---|---|
