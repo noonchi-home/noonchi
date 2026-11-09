@@ -1,5 +1,6 @@
 // 도면 설비(twin-studio drawn_fixtures.json)가 서버가 읽는 장면에 plan_drawing 물건으로 들어간다.
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { SceneJson, SceneObject } from "../src/layout/editor.js";
@@ -7,6 +8,8 @@ import { DEFAULT_TWIN_DIR } from "../src/model/devices.js";
 import { withDrawn, type DrawnFixture } from "../src/model/drawn.js";
 import { resolveHome } from "../src/model/homes.js";
 import { loadScene } from "../src/model/scene.js";
+import { fetchRetry } from "../src/server/net.js";
+import { startServer } from "../src/server/start.js";
 
 const home = resolveHome(DEFAULT_TWIN_DIR, "mokryeon_180b");
 const file = JSON.parse(readFileSync(join(home.dataDir, "drawn_fixtures.json"), "utf8")) as { items: DrawnFixture[] };
@@ -48,6 +51,26 @@ describe("도면 설비를 서버 장면에 넣기", () => {
   it("scene.json에 같은 id가 있으면 더하지 않는다", () => {
     const once = withDrawn(raw(home.scenePath), file.items);
     expect(withDrawn(once, file.items).objects).toHaveLength(once.objects.length);
+  });
+  it("한양목련으로 띄운 서버(시험 모드)의 GET /api/scene에 도면 설비 11개와 싱크대가 있다", async () => {
+    const runtime = mkdtempSync(join(tmpdir(), "rt-scene-"));
+    const srv = await startServer({ env: {
+      HUB: "memory", PORT: "0", HOME_ID: "mokryeon_180b", RUNTIME_DIR: runtime, REFLECT_AT: "off",
+      VLM_BASE_URL: "http://127.0.0.1:9/v1", PAM_URL: "http://127.0.0.1:9", OPENAI_BASE_URL: "http://127.0.0.1:9/v1",
+    }, log: () => {} });
+    try {
+      expect(srv.mode).toBe("test");
+      const r = await fetchRetry(`${srv.url}/api/scene`);
+      expect(r.status).toBe(200);
+      const scene = objects(((await r.json()) as { scene: SceneJson }).scene);
+      const drawn = scene.filter((o) => (o.provenance as { origin?: string } | undefined)?.origin === "plan_drawing");
+      expect(drawn.map((o) => o.id).sort()).toEqual(file.items.map((f) => f.id).sort());
+      expect(drawn).toHaveLength(11);
+      expect(scene.find((o) => o.id === "sink_counter_kitchen")).toMatchObject({ type: "sink_counter", room: "kitchen" });
+    } finally {
+      await srv.close();
+      rmSync(runtime, { recursive: true, force: true });
+    }
   });
   it("도면 설비 파일이 없는 집은 scene.json 그대로다", () => {
     const apt = resolveHome(DEFAULT_TWIN_DIR, "apartment");
