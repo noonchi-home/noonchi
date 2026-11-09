@@ -1,7 +1,7 @@
 // 대시보드 트윈 칸(지도 자리의 iframe 트윈) 확인 목록 말풍선은 한 크기 md: 글은 부품 원래 크기 text-xs, 번호는 20px. far를 쓰지 않는다.
 import { act, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { DeviceView, ServerMessage } from "../../src/contract/events.ts";
+import type { DeviceView, HealthView, ServerMessage } from "../../src/contract/events.ts";
 import { Dashboard } from "../src/dashboard/Dashboard";
 
 const SPOT = new Map<string, { x: number; y: number; visible: boolean }>();
@@ -27,6 +27,13 @@ const lamp: DeviceView = {
   id: "lamp", label: "플로어 스탠드", room: "living", roomLabel: "거실", twinType: "t", kind: "light", matterDeviceType: "x", capabilities: [], sensors: [], twinAttrs: {},
   state: { id: "lamp", online: true, twin: { power: "on" }, matter: {}, updatedAt: "t" },
 };
+/** 구운 3D가 없는 집(id "h"): 트윈 칸 지도 자리는 iframe 트윈과 확인 목록 말풍선이다. */
+const health: HealthView = {
+  ok: true, devices: 1, hub: "memory", transport: null, provider: "openai", model: "m", twin: true, eye: false,
+  home: { id: "h", name: "우리 집" }, phone_urls: [], brain: false, mode: "test",
+  ready: { ok: false, inference_mode: "mock", vlm: { base_url: "", model: "", key: false, reachable: false }, pam: { url: "", reachable: false, llm: null },
+    agent: { provider: "openai", base_url: "", model: "", key: false, reachable: false }, db: false },
+};
 const turnedOn: ServerMessage = {
   type: "agent", event: "action", sessionId: "phone",
   action: { tool: "turn_on", args: {}, ok: true, deviceId: "lamp", deviceLabel: "플로어 스탠드", reason: "켜 달라고 해서", at: "2026-11-08T05:00:00.000Z" },
@@ -35,13 +42,14 @@ const turnedOn: ServerMessage = {
 beforeEach(() => {
   SPOT.clear();
   vi.stubGlobal("WebSocket", FakeSocket);
-  vi.stubGlobal("fetch", vi.fn(async (path: string) => (path === "/api/devices" ? Response.json([lamp]) : new Response("{}", { status: 404 }))));
+  vi.stubGlobal("fetch", vi.fn(async (path: string) => (path === "/api/devices" ? Response.json([lamp]) : path === "/api/health" ? Response.json(health) : new Response("{}", { status: 404 }))));
 });
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe("대시보드 트윈 말풍선 크기", () => {
   it("방금 다룬 기기 말풍선은 트윈 칸 지도 자리 안에 있고, 글은 text-xs, 번호는 20px(md): far 글·44px 번호를 쓰지 않는다", async () => {
-    render(<Dashboard />);
+    const { container } = render(<Dashboard />);
+    await waitFor(() => expect(container.querySelector('section[aria-label="트윈"] [data-map] iframe')).not.toBeNull());
     await waitFor(() => expect(FakeSocket.last).not.toBeNull());
     await act(async () => { await Promise.resolve(); });
     act(() => FakeSocket.last!.push(turnedOn));
