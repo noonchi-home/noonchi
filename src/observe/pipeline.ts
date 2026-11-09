@@ -249,6 +249,11 @@ export class ObservationPipeline {
     if (!this.closed) this.publish(this.o.world.applyDevice(s, this.clock.now()));
   }
 
+  /** 판단 타이머가 부른다: 시간이 지나야 나는 World State 사건(냉장고 문이 1분 넘게 열림)을 낸다. */
+  tick(): void {
+    if (!this.closed) this.publish(this.o.world.tick(this.clock.now()));
+  }
+
   status(): PipelineStatus {
     return {
       frames: this.frames, duplicates: this.ring.dropped, detector: this.o.detector?.name ?? null, pose: this.o.detector?.pose ?? null, vlm_model: this.o.vlm.model,

@@ -89,10 +89,10 @@ function build(): Moment[] {
 
   const cup: WorldObject = {
     id: "cup_1", cls: "cup", position: null, surface: table.id, surface_label: "식탁", room: table.room, error_m: null, status: "present",
-    first_seen_ms: T0, last_seen_ms: T0, last_in_view_ms: T0, facts: {}, devices: [],
+    first_seen_ms: T0, last_seen_ms: T0, last_in_view_ms: T0, facts: {}, answered_ms: null, devices: [],
   };
   const world: WorldView = {
-    at_ms: T0, objects: [cup], person: { visible: false, since_ms: T0, last_seen_ms: null, facts: {} }, devices: [], eye: null, vlm_missing: 0, yolo_missing: 0,
+    at_ms: T0, objects: [cup], person: { visible: false, since_ms: T0, last_seen_ms: null, count: 0, room: null, room_label: null, position: null, near: [], holding: [], position_ms: null, answered_ms: null, facts: {} }, fixtures: [], devices: [], eye: null, frame_ms: null, vlm_missing: 0, yolo_missing: 0,
   };
 
   return MOMENTS.map(({ eye, score }, n) => {

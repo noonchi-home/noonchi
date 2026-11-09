@@ -141,10 +141,10 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
   const none = Object.keys(signals.sources()).length;
   if (none > 0) log(`신호 출처: 신호 없음 ${none}개(상태를 모름으로 보임)`);
   // 가전 변화 기록: 시작 상태는 기억만 하고, 그 뒤 바뀐 값을 적는다
-  const labelOf = new Map(twin.devices.map((d) => [d.id, d.label]));
+  const specOf = new Map(twin.devices.map((d) => [d.id, d]));
   const { history } = ctx;
-  for (const s of signals.states()) history.device(s, { initial: true, label: labelOf.get(s.id) });
-  const unsubHistory = signals.subscribe((s) => history.device(s, { label: labelOf.get(s.id) }));
+  for (const s of signals.states()) history.device(s, { initial: true, label: specOf.get(s.id)?.label, kind: specOf.get(s.id)?.kind });
+  const unsubHistory = signals.subscribe((s) => history.device(s, { label: specOf.get(s.id)?.label, kind: specOf.get(s.id)?.kind }));
   let pipeline: ObservationPipeline | null = null;
   let unsubWorld = () => {};
   let decider: Decider | null = null;
@@ -212,6 +212,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     const world = brainWanted && phoneOn
       ? new WorldState({
         surfaces: surfaceSource(layout?.editor), floorAt: floorLookup(plan.rooms), roomAt: roomNamedAt(floorPlan, twin.rooms), devices: () => signals.list(),
+        locate: (id) => { const c = layout?.editor.center(id); return c ? [c.position[0], c.position[2]] : null; },
       })
       : null;
     // 실행 설정(STALE_MS). 틀린 값이면 시작을 막는다
@@ -281,7 +282,9 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         // 분석한 프레임은 디스크에 쓰지 않는다. DATASET_COLLECT=1일 때만 시험 자료로 RUNTIME_DIR/dataset에 쓴다
         dataset: env.DATASET_COLLECT?.trim() === "1" ? datasetWriter(join(runtimeDir, "dataset"), history.db) : undefined,
       });
+      const observed = pipeline;
       decideTimer = setInterval(() => {
+        observed.tick(); // 오래 이어진 가전 상태(냉장고 문 1분)
         decide.tick();
         tracking.tick();
         speak();

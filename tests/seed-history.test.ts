@@ -45,7 +45,7 @@ describe("합성 기록 넣기", () => {
     expect(texts("detection")).toContain("컵 cup_1 보임 · 거실·복도 식탁 위");
     expect(texts("world")).toContain("컵 cup_1 비어 있음");
     expect(texts("world").some((t) => t.startsWith("VLM: "))).toBe(true);
-    expect(texts("device")).toEqual(expect.arrayContaining(["거실·복도 에어컨 power on", "거실·복도 에어컨 power off", "침실 1 에어컨 power on"]));
+    expect(texts("device")).toEqual(expect.arrayContaining(["거실·복도 에어컨 켜짐", "거실·복도 에어컨 꺼짐", "침실 1 에어컨 켜짐"]));
     // 승인은 처음 한 번 묻고(거절은 기억하지 않아 또 묻는다), 답은 승인·거절 둘
     const feedback = db.list({ kinds: ["feedback"], limit: 1000 });
     expect(feedback.map((f) => f.text)).toEqual(expect.arrayContaining([

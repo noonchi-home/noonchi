@@ -1,4 +1,4 @@
-// 기록기: 가전 변화, 관찰(VLM 답·VLM 분석 없음, YOLO 분석 없음), World State 변화, PAM에 보낸 관찰 텍스트, 판단, 계획, 실행, 운영 모드,
+// 기록기: 가전 변화(낱말 표 사건 글, 거실 에어컨 켜짐), 관찰(VLM 답·VLM 분석 없음, YOLO 분석 없음), World State 변화, PAM에 보낸 관찰 텍스트, 판단, 계획, 실행, 운영 모드,
 // PAM 연결 끊김·연결됨, 주기 판단 멈춤·다시 시작을 한 시간축에 적는다. 사진은 적지 않는다. 반성은 runReflection이 적는다.
 // YOLO 결과는 등장·사라짐(detection)으로 남는다. 프레임마다 YOLO 분석 없음이면 yolo, VLM 답이나 VLM 분석 없음이면 vlm 줄이 남는다.
 import type { BrainLog } from "../contract/events.js";
@@ -6,11 +6,12 @@ import type { PlanView } from "../contract/plan.js";
 import type { ControlMode } from "../contract/setup.js";
 import type { DeviceState } from "../hub/types.js";
 import { CHANGE_TEXT } from "../world/labels.js";
+import { becameKey, deviceText } from "../world/relations.js";
 import type { HistoryDb } from "./db.js";
 import { DECISION_TEXT, MODE_TEXT, PLAN_STATUS_TEXT } from "./labels.js";
 
-/** 가전 상태와 함께 오는 것: initial이면 처음 알린 상태(적지 않고 기억만), label은 기록 글에 쓸 가전 이름. */
-export interface DeviceNote { initial?: boolean; label?: string }
+/** 가전 상태와 함께 오는 것: initial이면 처음 알린 상태(적지 않고 기억만), label은 기록 글에 쓸 가전 이름, kind는 사건 글(세탁 멈춤)을 고를 가전 종류. */
+export interface DeviceNote { initial?: boolean; label?: string; kind?: string }
 
 export interface RecorderSources {
   onDevice(cb: (s: DeviceState, note?: DeviceNote) => void): () => void;
@@ -43,7 +44,9 @@ export function attachRecorder(db: HistoryDb, o: RecorderSources): () => void {
       for (const [attr, to] of Object.entries(s.twin)) {
         const from = prev?.[attr] ?? null;
         if (prev && Object.is(prev[attr], to)) continue;
-        db.add("device", at, CHANGE_TEXT.deviceAttr(note?.label ?? s.id, attr, to), { subject: s.id, data: { attr, from, to } });
+        const key = becameKey(attr, to);
+        const label = note?.label ?? s.id;
+        db.add("device", at, key ? CHANGE_TEXT.device(label, deviceText(note?.kind ?? "", key).became) : CHANGE_TEXT.deviceAttr(label, attr, to), { subject: s.id, data: { attr, from, to } });
       }
     }),
     o.onBrain((l) => {

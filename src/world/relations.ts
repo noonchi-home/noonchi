@@ -1,14 +1,19 @@
-// 관계표: 물건 종류 → 관련 가전 종류, 가전 상태 이름, 남은 시간(출처: docs/provenance.md). 사실만 붙이고 할 일은 넣지 않는다.
+// 관계표와 가전 상태(출처: docs/provenance.md). 물건 종류 → 관련 가전 종류, 트윈 속성 값 → 가전 상태 키·글(src/world/vocab.ts DEVICE_STATES), 남은 시간.
+// 사실만 붙이고 할 일은 넣지 않는다.
 import type { ObjClass } from "../contract/world.js";
+import { DEVICE_STATES, DEVICE_TEXT, type DeviceStateKey } from "./vocab.js";
 
-export const RELATIONS: Record<ObjClass, string[]> = { cup: ["dishwasher"], bottle: ["dishwasher"], bowl: ["dishwasher"] };
-
-/** 가전 종류 → 상태 이름: attr이 true면 active, 아니면 inactive. */
-export const DEVICE_STATUS: Record<string, { attr: string; active: string; inactive: string }> = {
-  dishwasher: { attr: "running", active: "작동 중", inactive: "이용 가능" },
+const DISHES = ["dishwasher"];
+const FOOD = ["fridge"];
+/** 물건 종류 → 관련 가전 종류. 식기는 식기세척기, 음식은 냉장고. */
+export const RELATIONS: Record<ObjClass, string[]> = {
+  cup: DISHES, bottle: DISHES, bowl: DISHES, fork: DISHES, knife: DISHES, spoon: DISHES,
+  banana: FOOD, apple: FOOD, orange: FOOD, broccoli: FOOD, carrot: FOOD, sandwich: FOOD, hot_dog: FOOD, pizza: FOOD, donut: FOOD, cake: FOOD,
+  book: [], cell_phone: [], remote: [], laptop: [], scissors: [], toothbrush: [], hair_drier: [], teddy_bear: [], backpack: [], handbag: [], suitcase: [],
+  umbrella: [], cat: [], dog: [],
 };
 
-/** World State가 보는 가전 종류: 관계표에 든 것. */
+/** 관련 가전 종류: [지속] 줄에 상태가 늘 나온다. */
 export const RELATED_KINDS: ReadonlySet<string> = new Set(Object.values(RELATIONS).flat());
 
 export function relatedDeviceIds(cls: ObjClass, devices: readonly { id: string; kind: string }[]): string[] {
@@ -16,10 +21,29 @@ export function relatedDeviceIds(cls: ObjClass, devices: readonly { id: string; 
   return devices.filter((d) => kinds.includes(d.kind)).map((d) => d.id);
 }
 
-/** 상태 이름. 상태표가 없는 종류면 null. */
+const KEYS = Object.keys(DEVICE_STATES) as DeviceStateKey[];
+
+/** 트윈 속성 값 → 지금 가전 상태 키(속성 순서). 모르는 속성은 뺀다. */
+export function deviceStateKeys(_kind: string, twin: Record<string, unknown>): DeviceStateKey[] {
+  return Object.entries(twin).flatMap(([attr, v]) => KEYS.filter((k) => DEVICE_STATES[k].attr === attr && DEVICE_STATES[k].value === v));
+}
+
+/** 그 종류에서 쓰는 상태 글·사건 글(세탁기 작동 끝남 → 세탁 끝남). */
+export function deviceText(kind: string, key: DeviceStateKey): { label: string; became: string } {
+  const s = DEVICE_STATES[key];
+  const o = DEVICE_TEXT[kind]?.[key];
+  return { label: o?.label ?? s.label, became: o?.became ?? s.became };
+}
+
+/** 상태 이름: 아는 속성의 상태 글을 「 · 」로 잇는다. 아는 속성이 없으면 null. */
 export function deviceStatus(kind: string, twin: Record<string, unknown>): string | null {
-  const s = DEVICE_STATUS[kind];
-  return s ? (twin[s.attr] === true ? s.active : s.inactive) : null;
+  const keys = deviceStateKeys(kind, twin);
+  return keys.length ? keys.map((k) => deviceText(kind, k).label).join(" · ") : null;
+}
+
+/** 트윈 속성 하나가 바뀐 사건의 상태 키(그 값이 아는 상태가 아니면 null). */
+export function becameKey(attr: string, to: unknown): DeviceStateKey | null {
+  return KEYS.find((k) => DEVICE_STATES[k].attr === attr && DEVICE_STATES[k].value === to) ?? null;
 }
 
 /** 남은 시간: running이 참이 된 시각(받은 시각)을 시작으로 두고 course_min에서 지난 분을 뺀다. 코스 시간이 없으면 null(추정하지 않는다). */

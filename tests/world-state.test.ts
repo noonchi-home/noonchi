@@ -102,7 +102,7 @@ describe("World State", () => {
     for (let i = 1; i <= 3; i++) ids = w.applyDetections(frame(i), [person, cup]).ids;
     w.applyScene("e3", 3000, { scene: "k", observations: [{ object_id: "d1", state: "holding_object" }, { object_id: "d2", state: "in_use" }], summary: "마심" }, ids);
     expect(w.view(3000).objects[0]!.facts.use?.value).toBe("in_use");
-    expect(w.view(3000).person.facts.action?.value).toBe("holding_object");
+    expect(w.view(3000).person.facts.holding?.value).toBe("holding_object");
     for (let i = 4; i <= 100; i++) {
       ids = w.applyDetections(frame(i), [cup]).ids;
       w.applyScene(`e${i}`, i * 1000, { scene: "k", observations: [{ object_id: "d1", state: "on_table" }, { object_id: "d1", state: "empty" }], summary: "빈 컵" }, ids);
@@ -182,7 +182,7 @@ describe("World State + 관절", () => {
     ]);
     const v = w.view(3000);
     expect(v.objects[0]!.facts.place).toMatchObject({ value: "in_hand", certainty: "confirmed" });
-    expect(v.person.facts).toMatchObject({ action: { value: "holding_object" }, posture: { value: "standing" } });
+    expect(v.person.facts).toMatchObject({ holding: { value: "holding_object" }, posture: { value: "standing" } });
     // 사람은 2장째에 보임이 되고, 그때 사람 사실이 변화로 나간다
     const w2 = ws();
     w2.applyDetections(frame(1), [person, cup], [grip]);
@@ -200,14 +200,14 @@ describe("World State + 관절", () => {
     w.applyScene("e3", 3000, { scene: "k", observations: [{ object_id: "d2", state: "on_table" }, { object_id: "d1", state: "sitting" }, { object_id: "d2", state: "empty" }], summary: "s" }, ids);
     let v = w.view(3000);
     expect(v.objects[0]!.facts).toMatchObject({ place: { value: "in_hand" }, contents: { value: "empty" } });
-    expect(v.person.facts).toMatchObject({ action: { value: "holding_object" }, posture: { value: "standing" } });
+    expect(v.person.facts).toMatchObject({ holding: { value: "holding_object" }, posture: { value: "standing" } });
     // 관절이 없는 프레임(사람 상자만): VLM 답이 그대로 들어간다
     ids = w.applyDetections(frame(4), [person, cup]).ids;
     w.applyScene("e4", 4000, { scene: "k", observations: [{ object_id: "d2", state: "on_table" }, { object_id: "d1", state: "sitting" }], summary: "s" }, ids);
     v = w.view(4000);
     expect(v.objects[0]!.facts.place?.value).toBe("on_table");
     expect(v.person.facts.posture?.value).toBe("sitting");
-    expect(v.person.facts.action).toBeUndefined();
+    expect(v.person.facts.holding).toBeUndefined();
   });
 
   it("손목이 컵에서 떨어지면 관절이 붙인 손에 있음·들고 있음을 지우고, VLM이 붙인 손에 있음은 두며, 사람이 안 보이게 되면 관절의 손에 있음도 지운다", () => {
@@ -217,7 +217,7 @@ describe("World State + 관절", () => {
     w.applyDetections(frame(4), [person, cup], [apart]);
     let v = w.view(4000);
     expect(v.objects[0]!.facts.place).toBeUndefined();
-    expect(v.person.facts.action).toBeUndefined();
+    expect(v.person.facts.holding).toBeUndefined();
     ids = w.applyDetections(frame(5), [person, cup], [apart]).ids;
     w.applyScene("e5", 5000, { scene: "k", observations: [{ object_id: "d2", state: "in_hand" }], summary: "s" }, ids);
     w.applyDetections(frame(6), [person, cup], [apart]);
@@ -235,7 +235,7 @@ describe("World State + 관절", () => {
     for (let i = 1; i <= 3; i++) w.applyDetections(frame(i), [person, cup], [apart, arm]);
     const v = w.view(3000);
     expect(v.objects[0]!.facts.place?.value).toBe("in_hand");
-    expect(v.person.facts).toMatchObject({ action: { value: "holding_object" }, posture: { value: "standing" } });
+    expect(v.person.facts).toMatchObject({ holding: { value: "holding_object" }, posture: { value: "standing" } });
   });
 
   it("관절로 앉아 있음·누워 있음, 다리가 가려 모르면 자세를 바꾸지 않는다", () => {

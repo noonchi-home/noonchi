@@ -1,15 +1,15 @@
-// 서버가 화면·PAM 관찰 텍스트에 그대로 내보내는 World State 글. npm run lint가 검사한다(60자 아래, 화살표·괄호 없음).
-export const OBJECT_NAME: Record<string, string> = { person: "사람", cup: "컵", bottle: "병", bowl: "그릇" };
+// 서버가 화면·PAM 관찰 텍스트에 그대로 내보내는 World State 글. 종류·사실 값 글은 낱말 표(src/world/vocab.ts)에서 온다.
+// npm run lint가 검사한다(60자 아래, 화살표·괄호 없음).
+import { CLASSES, DAY_PARTS, STATES, WEEKDAYS } from "./vocab.js";
+
+/** 종류 → 글(컵). */
+export const OBJECT_NAME: Record<string, string> = Object.fromEntries(Object.entries(CLASSES).map(([k, c]) => [k, c.label]));
 
 /** YOLO 기록 글: 이 프레임에 찾은 것이 없음, 감지기가 없어 VLM만 돎. */
 export const YOLO_TEXT = { none: "감지 없음", noDetector: "감지기 없음" };
 
-/** VLM 상태 값 → 글. */
-export const STATE_TEXT: Record<string, string> = {
-  on_table: "식탁 위", on_counter: "조리대 위", in_sink: "싱크대 안", on_floor: "바닥", in_hand: "손에 있음", in_use: "쓰는 중",
-  empty: "비어 있음", has_contents: "내용물 있음", contents_unknown: "안이 안 보임", sitting: "앉아 있음", standing: "서 있음", lying: "누워 있음",
-  holding_object: "물건을 들고 있음", eating_or_drinking: "먹거나 마시는 중",
-};
+/** 사실 값 → 글. */
+export const STATE_TEXT: Record<string, string> = Object.fromEntries(Object.entries(STATES).map(([k, s]) => [k, s.label]));
 
 /** World State 변화 글(관찰 텍스트 줄, 판단 기록 줄). */
 export const CHANGE_TEXT = {
@@ -19,6 +19,9 @@ export const CHANGE_TEXT = {
   backInView: (name: string) => `${name} 다시 시야 안`,
   personAppeared: "사람 보임",
   personGone: "사람 안 보임",
+  personRoom: (room: string) => `사람 ${room}에 있음`,
+  people: (n: number) => `${n}명`,
+  near: (label: string) => `${label} 가까이`,
   state: (name: string, value: string) => `${name} ${STATE_TEXT[value] ?? value}`,
   device: (label: string, status: string) => `${label} ${status}`,
   deviceAttr: (label: string, attr: string, to: unknown) => `${label} ${attr} ${String(to)}`,
@@ -31,8 +34,17 @@ export const CHANGE_TEXT = {
 /** 물건 이름: 종류 글 + id(컵 cup_1). */
 export const objectName = (cls: string, id: string) => `${OBJECT_NAME[cls] ?? cls} ${id}`;
 
+/** 가전 설비 이름: 방 이름 + 종류 글 + id(거실 TV tv_living). */
+export const fixtureName = (cls: string, id: string, roomLabel: string | null) => `${roomLabel ? `${roomLabel} ` : ""}${objectName(cls, id)}`;
+
 /** 놓인 면 글(식탁 위). */
 export const onSurface = (label: string) => `${label} 위`;
+
+/** 때 글: 날짜·요일·하루 때(11월 7일 토요일 밤). 시:분은 그 시간대 기준. */
+export function dayText(month: number, day: number, weekday: number, hour: number): string {
+  const part = [...DAY_PARTS].reverse().find((p) => hour >= p.from)!;
+  return `${month}월 ${day}일 ${WEEKDAYS[weekday]} ${part.label}`;
+}
 
 /** 관찰 텍스트 사실 글. */
 export const PLACE_UNKNOWN = "자리 모름";

@@ -7,10 +7,10 @@ import { smallFloor } from "./helpers/floor.js";
 
 const cupAt = (over: Partial<WorldObject> = {}): WorldObject => ({
   id: "cup_1", cls: "cup", position: [7, 0.75, 3], surface: "table_1", surface_label: "식탁", room: "kitchen", error_m: 0.1, status: "present",
-  first_seen_ms: 0, last_seen_ms: 0, last_in_view_ms: 0, facts: {}, devices: [], ...over,
+  first_seen_ms: 0, last_seen_ms: 0, last_in_view_ms: 0, facts: {}, answered_ms: null, devices: [], ...over,
 });
 const world = (objects: WorldObject[] = [cupAt()]): WorldView => ({
-  at_ms: 0, vlm_missing: 0, yolo_missing: 0, eye: null, devices: [], person: { visible: false, since_ms: 0, last_seen_ms: null, facts: {} }, objects,
+  at_ms: 0, frame_ms: null, vlm_missing: 0, yolo_missing: 0, eye: null, fixtures: [], devices: [], person: { visible: false, since_ms: 0, last_seen_ms: null, count: 0, room: null, room_label: null, position: null, near: [], holding: [], position_ms: null, answered_ms: null, facts: {} }, objects,
 });
 const decision = (task_index: number): DecisionRecord => ({
   id: "pam-1", seq: 1, atMs: 0, textSent: "t", finalTime: "2026-11-07T21:00:00.000+09:00", status: "valid",
@@ -37,7 +37,7 @@ describe("PAM 결과 → 계획", () => {
     expect(Math.hypot(toTable[0] - 7, toTable[1] - 3)).toBeCloseTo(0.55, 2);
   });
   it("대상은 사라지지 않았고 싱크대 안이 아닌 같은 종류 중 가장 최근에 본 것. 없으면 집기 단계는 식탁을 가리킨다", () => {
-    const inSink = { place: { value: "in_sink", at_ms: 40, certainty: "confirmed" as const } };
+    const inSink = { place: { value: "in_sink", at_ms: 40, since_ms: 40, certainty: "confirmed" as const } };
     const objects = [cupAt({ id: "cup_1", last_seen_ms: 5 }), cupAt({ id: "cup_2", last_seen_ms: 9 }), cupAt({ id: "cup_3", last_seen_ms: 20, status: "gone" }),
       cupAt({ id: "bottle_1", cls: "bottle", last_seen_ms: 30 }), cupAt({ id: "cup_4", last_seen_ms: 40, facts: inSink })];
     expect(targetOf(TASKS["컵 치우기"]!, world(objects))?.id).toBe("cup_2");

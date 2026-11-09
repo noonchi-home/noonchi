@@ -285,7 +285,7 @@ export class ExecutionTracker {
         const d = this.distance(step);
         return d !== null && d <= this.cfg.arriveM;
       }
-      case "pickCup": return at("in_hand") || world.person.facts.action?.value === "holding_object";
+      case "pickCup": return at("in_hand") || world.person.facts.holding?.value === "holding_object";
       case "placeCup": return at("in_sink");
       default: return false;
     }

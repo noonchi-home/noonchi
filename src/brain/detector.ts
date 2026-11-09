@@ -1,5 +1,5 @@
-// 물체 감지기와 사람 관절. 엔진 프레임마다 사람·컵·병·그릇의 종류·박스·신뢰도를 내고, 사람이 보이면 관절 17개를 더 낸다.
-// 놓인 자리·쓰는 중·안 내용은 VLM이 본다. 가구·가전 자리는 트윈 배치에서 읽으므로 찾지 않는다.
+// 물체 감지기와 사람 관절. 엔진 프레임마다 낱말 표(src/world/vocab.ts)의 사람·물건·가전 설비 종류·박스·신뢰도를 내고, 사람이 보이면 관절 17개를 더 낸다.
+// 놓인 자리·쓰는 중·안 내용은 VLM이 본다. 가구 자리는 트윈 배치에서 읽으므로 가구 종류(식탁·의자…)는 거른다.
 //
 // 모델은 YOLO26n(감지)과 YOLO26n-pose(관절)다. Ultralytics 가중치를 이 저장소에서 ONNX로 내보내 models/에 커밋했다(AGPL-3.0,
 // 출처·sha256·다시 내보내기는 THIRD_PARTY.md).
@@ -12,15 +12,16 @@
 
 import { fileURLToPath } from "node:url";
 import jpeg from "jpeg-js";
+import { CLASSES, type ClassKey, type DetLabel } from "../world/vocab.js";
 
-export type DetLabel = "person" | "cup" | "bottle" | "bowl";
+export type { DetLabel };
 
 export interface Detection {
   label: DetLabel;
   score: number;
   /** 원본 사진 픽셀 [x, y, w, h]. */
   box: [number, number, number, number];
-  /** COCO 클래스 번호(0 person, 41 cup, 40 wine glass, 39 bottle, 45 bowl). */
+  /** COCO 클래스 번호(0 person, 41 cup, 40 wine glass …). */
   cls: number;
 }
 
@@ -55,10 +56,11 @@ export interface Detector {
   close?(): Promise<void>;
 }
 
-/** 보는 COCO 클래스. 유리컵(wine glass)도 마시는 컵으로 본다. */
-const LABELS: Record<number, DetLabel> = { 0: "person", 41: "cup", 40: "cup", 39: "bottle", 45: "bowl" };
-/** 결과 순서(종류끼리 점수 순). */
-const LABEL_ORDER: DetLabel[] = ["person", "cup", "bottle", "bowl"];
+const DET_KEYS = (Object.keys(CLASSES) as ClassKey[]).filter((k): k is DetLabel => CLASSES[k].role !== "scene");
+/** 보는 COCO 클래스 번호 → 종류(낱말 표에서 가구가 아닌 것). 유리컵(wine glass)도 마시는 컵으로 본다. */
+export const COCO_LABELS: Readonly<Record<number, DetLabel>> = Object.fromEntries(DET_KEYS.flatMap((k) => Object.keys(CLASSES[k].coco).map((n) => [Number(n), k])));
+/** 결과 순서(종류끼리 점수 순): 낱말 표 순서. */
+const LABEL_ORDER: readonly DetLabel[] = DET_KEYS;
 /** YOLO26 NMS IoU(ultralytics 8.4 predict 기본값 PREDICT_IOU, conf 0.25에서 COCO F1이 가장 높은 값). */
 export const YOLO26_IOU = 0.5;
 const COCO_CLASSES = 80;
@@ -164,7 +166,7 @@ export function decodeYolo26(out: Float32Array, dims: readonly number[], lb: Let
   const found: Detection[] = [];
   for (let i = 0; i < n; i++) {
     const score = best[i]!, cls = bestCls[i]!;
-    const label = LABELS[cls];
+    const label = COCO_LABELS[cls];
     if (!label || score < opts.minScore) continue;
     found.push({ label, score, cls, box: lbBox(out, n, i) });
   }
@@ -207,7 +209,7 @@ function suppress<T extends { score: number; box: Detection["box"] }>(items: T[]
   return kept;
 }
 
-/** 같은 종류(label)끼리 점수 순으로, iouMax보다 겹치는 뒤쪽 상자를 버린다. 결과는 종류 순(사람·컵·병·그릇), 종류 안은 점수 순. */
+/** 같은 종류(label)끼리 점수 순으로, iouMax보다 겹치는 뒤쪽 상자를 버린다. 결과는 낱말 표 종류 순(사람·컵·병·그릇…), 종류 안은 점수 순. */
 export function nms(dets: Detection[], iouMax: number): Detection[] {
   return suppress(dets, iouMax, (a, b) => a.label === b.label)
     .sort((a, b) => (a.label === b.label ? b.score - a.score : LABEL_ORDER.indexOf(a.label) - LABEL_ORDER.indexOf(b.label)));

@@ -23,11 +23,11 @@ import { standing } from "./helpers/poses.js";
 // smallFloor: 로봇 [1, 2], 식탁 table_1 [7, 3], 싱크대 sink_1 [5, 1]
 const cup = (status: WorldObject["status"], place?: string, seen = 9_000): WorldObject => ({
   id: "cup_1", cls: "cup", position: [2, 0.75, 1], surface: "t", surface_label: "식탁", room: "hall", error_m: 0.1, status,
-  first_seen_ms: 0, last_seen_ms: seen, last_in_view_ms: seen, facts: place ? { place: { value: place, at_ms: seen, certainty: "confirmed" } } : {}, devices: [],
+  first_seen_ms: 0, last_seen_ms: seen, last_in_view_ms: seen, facts: place ? { place: { value: place, at_ms: seen, since_ms: seen, certainty: "confirmed" } } : {}, answered_ms: null, devices: [],
 });
 const world = (objects: WorldObject[], personAction?: string): WorldView => ({
-  at_ms: 0, objects, person: { visible: !!personAction, since_ms: 0, last_seen_ms: null, facts: personAction ? { action: { value: personAction, at_ms: 0, certainty: "confirmed" } } : {} },
-  devices: [], eye: null, vlm_missing: 0, yolo_missing: 0,
+  at_ms: 0, objects, person: { visible: !!personAction, since_ms: 0, last_seen_ms: null, count: 0, room: null, room_label: null, position: null, near: [], holding: [], position_ms: null, answered_ms: null, facts: personAction ? { holding: { value: personAction, at_ms: 0, since_ms: 0, certainty: "confirmed" } } : {} },
+  fixtures: [], devices: [], eye: null, frame_ms: null, vlm_missing: 0, yolo_missing: 0,
 });
 const pred = { observation: "o", reasoning: "r", task_index: 0 };
 const decision: DecisionRecord = {

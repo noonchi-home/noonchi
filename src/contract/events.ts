@@ -5,6 +5,7 @@ import type { LayoutMessage } from "./layout.js";
 import type { PhoneChoice } from "./phone.js";
 import type { PlanView } from "./plan.js";
 import type { ControlMode } from "./setup.js";
+import type { DetLabel } from "../world/vocab.js";
 import type { VlmMissing, WorldChangeKind, WorldView, YoloMissing } from "./world.js";
 
 // 좌표
@@ -83,8 +84,8 @@ export interface DecisionWorld {
   yolo_missing: number;
 }
 
-/** YOLO 상자 하나(대시보드 폰 칸에 그린다). box는 엔진 프레임 픽셀 [x, y, w, h]. */
-export interface BoxView { label: "person" | "cup" | "bottle" | "bowl"; score: number; box: [number, number, number, number] }
+/** YOLO 상자 하나(대시보드 폰 칸에 그린다). label은 낱말 표 감지 종류, box는 엔진 프레임 픽셀 [x, y, w, h]. */
+export interface BoxView { label: DetLabel; score: number; box: [number, number, number, number] }
 
 /** 관찰 흐름·판단이 대시보드로 보내는 기록(/events {type:"brain", event}). 엔진 프레임 하나는 observe 기록으로 반드시 남는다:
  *  YOLO 결과(yolo) 또는 yolo_missing, VLM 답(vlm) 또는 vlm_missing.

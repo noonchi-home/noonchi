@@ -5,7 +5,7 @@ import type { WorldObject } from "../src/contract/world.js";
 
 const obj = (over: Partial<WorldObject> = {}): WorldObject => ({
   id: "cup_1", cls: "cup", position: [2, 0.75, 0], surface: "t", surface_label: "식탁", room: "kitchen", error_m: 0.1, status: "present",
-  first_seen_ms: 0, last_seen_ms: 9_000, last_in_view_ms: 9_000, facts: {}, devices: [], ...over,
+  first_seen_ms: 0, last_seen_ms: 9_000, last_in_view_ms: 9_000, facts: {}, answered_ms: null, devices: [], ...over,
 });
 const base = (over: Partial<CheckInput> = {}): CheckInput => ({
   decision: {
@@ -18,10 +18,10 @@ const base = (over: Partial<CheckInput> = {}): CheckInput => ({
     steps: [{ id: "s1", kind: "move", label: "l", target: { objectId: "table_1" }, status: "pending" }, { id: "s2", kind: "act", label: "l", target: { objectId: "cup_1" }, status: "pending" }],
     status: "planned", updatedAt: "",
   },
-  world: { at_ms: 10_000, objects: [obj()], person: { visible: false, since_ms: 0, last_seen_ms: null, facts: {} }, devices: [], eye: null, vlm_missing: 0, yolo_missing: 0 },
+  world: { at_ms: 10_000, objects: [obj()], person: { visible: false, since_ms: 0, last_seen_ms: null, count: 0, room: null, room_label: null, position: null, near: [], holding: [], position_ms: null, answered_ms: null, facts: {} }, fixtures: [], devices: [], eye: null, frame_ms: null, vlm_missing: 0, yolo_missing: 0 },
   nowMs: 10_000, staleMs: 3000, mode: "test", ...over,
 });
-const fact = (value: string) => ({ value, at_ms: 9_000, certainty: "inferred" as const });
+const fact = (value: string) => ({ value, at_ms: 9_000, since_ms: 9_000, certainty: "inferred" as const });
 
 describe("실행 전 검사", () => {
   it("판단 뒤에 다시 본 대상, 갈 수 있는 길이면 통과", () => expect(checkPlan(base())).toEqual({ ok: true }));
@@ -50,7 +50,7 @@ describe("실행 전 검사", () => {
     for (const facts of [{ place: fact("in_hand") }, { use: fact("in_use") }]) {
       expect(checkPlan(base({ world: { ...base().world, objects: [obj({ facts })] } }))).toMatchObject({ reason: "in_hand", text: CHECK_TEXT.in_hand });
     }
-    const holding = { ...base().world, person: { visible: true, since_ms: 0, last_seen_ms: 9_000, facts: { action: fact("holding_object") } } };
+    const holding = { ...base().world, person: { visible: true, since_ms: 0, last_seen_ms: 9_000, count: 0, room: null, room_label: null, position: null, near: [], holding: [], position_ms: null, answered_ms: null, facts: { holding: fact("holding_object") } } };
     expect(checkPlan(base({ world: holding }))).toMatchObject({ reason: "in_hand" });
   });
   it("물어보기는 대상 물건을 보지 않는다", () => {

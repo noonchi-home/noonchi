@@ -34,24 +34,19 @@ import { floorPlanFrom, roomNamedAt } from "../src/plan/route.js";
 import { decisionWorld, type DecisionRecord } from "../src/world/decide.js";
 import { CHANGE_TEXT, OBJECT_NAME, objectName, onSurface } from "../src/world/labels.js";
 import { textFromWorld } from "../src/world/text.js";
+import { NOW_FACETS, STATES, type StateKey } from "../src/world/vocab.js";
 
 const DEFAULT_RUNTIME_DIR = fileURLToPath(new URL("../runtime/", import.meta.url));
 const DAY_MS = 86_400_000;
 const addDays = (day: string, n: number) => new Date(Date.parse(`${day}T00:00:00Z`) + n * DAY_MS).toISOString().slice(0, 10);
 
-/** VLM 상태 → 면(src/world/state.ts와 같다). */
-const FACET: Record<string, Facet> = {
-  on_table: "place", on_counter: "place", in_sink: "place", on_floor: "place", in_hand: "place", in_use: "use",
-  empty: "contents", has_contents: "contents", contents_unknown: "contents", sitting: "posture", standing: "posture",
-  holding_object: "action", eating_or_drinking: "action",
-};
-/** 지금만 맞는 면: 그 프레임 답에 없으면 지운다. */
-const NOW_FACETS: Facet[] = ["use", "action"];
+/** VLM 상태 → 면(낱말 표, src/world/state.ts와 같다). */
+const facetOf = (s: string): Facet => STATES[s as StateKey].facet;
 const PERSON = "person";
 
 /** 면 하나: 평면도 물건(식탁·싱크대·거실 테이블). */
 interface Place { id: string; label: string; room: string | null; xz: XZ; top: number }
-interface Device { id: string; label: string }
+interface Device { id: string; label: string; kind: string }
 
 /** 시나리오가 쓰는 집 자료: 면과 가전 이름, 폰 눈 자리(거치대·식탁 앞·싱크대 앞·소파 쪽). */
 interface HomeInfo {
@@ -85,7 +80,7 @@ function loadHome(id: string, twinDir?: string): HomeInfo {
   const off = (p: Place, dx: number, dz: number): XZ => [p.xz[0] + dx, p.xz[1] + dz];
   const eye = { rest: off(table, 1.0, 1.2), table: off(table, 0.45, 0.6), sink: off(sink, 0.4, 0.7), sinkFar: off(sink, 1.2, 1.0), sofa: off(side, 1.6, -1.6) };
   for (const [k, p] of Object.entries(eye)) if (!roomAt(p)) throw new Error(`집 ${id}: 폰 눈 자리 ${k} [${p.join(", ")}]가 집 밖이에요`);
-  return { fp, roomAt, table, sink, side, livingAc: { id: livingAc.id, label: livingAc.label }, bedAc: { id: bedAc.id, label: bedAc.label }, eye };
+  return { fp, roomAt, table, sink, side, livingAc: { id: livingAc.id, label: livingAc.label, kind: livingAc.kind }, bedAc: { id: bedAc.id, label: bedAc.label, kind: bedAc.kind }, eye };
 }
 
 /** add마다 data.synthetic = true를 붙이는 기록 DB(나머지는 그대로). */
@@ -110,7 +105,7 @@ class Week {
   private readonly approvals = memoryApprovals(() => new Date(this.t).toISOString());
   private objects = new Map<string, WorldObject>();
   private counters = new Map<string, number>();
-  private person: WorldPerson = { visible: false, since_ms: null, last_seen_ms: null, facts: {} };
+  private person: WorldPerson = { visible: false, since_ms: null, last_seen_ms: null, count: 0, room: null, room_label: null, position: null, near: [], holding: [], position_ms: null, answered_ms: null, facts: {} };
   private eyeView: WorldEye | null = null;
   private recent: WorldChange[] = [];
   private summary = "";
@@ -149,7 +144,7 @@ class Week {
     this.day = day;
     this.at(hms);
     Object.assign(this, { seq: 0, frame: 0, objects: new Map(), counters: new Map(), recent: [], summary: "", vlmMissing: 0 });
-    this.person = { visible: false, since_ms: this.t, last_seen_ms: null, facts: {} };
+    this.person = { visible: false, since_ms: this.t, last_seen_ms: null, count: 0, room: null, room_label: null, position: null, near: [], holding: [], position_ms: null, answered_ms: null, facts: {} };
     this.plans = new PlanHub(this.home.fp, (m) => { if (m.type === "plan" && m.plan) this.plansOut.emit(m.plan); }, () => new Date(this.t).toISOString());
     this.tracker = new ExecutionTracker({
       plans: this.plans, world: () => this.view(), floor: () => this.plans.floor(), toPhone: () => {}, emit: (l) => this.brain.emit(l), approvals: this.approvals,
@@ -158,7 +153,7 @@ class Week {
     });
     for (const d of [this.home.livingAc, this.home.bedAc]) {
       if (!this.twin.has(d.id)) this.twin.set(d.id, { power: d === this.home.bedAc ? "on" : "off" });
-      this.devices.emit(this.state(d.id), { initial: true, label: d.label });
+      this.devices.emit(this.state(d.id), { initial: true, label: d.label, kind: d.kind });
     }
     this.eye(this.home.eye.rest);
   }
@@ -173,7 +168,7 @@ class Week {
 
   device(d: Device, attr: string, to: unknown): void {
     this.twin.set(d.id, { ...this.twin.get(d.id), [attr]: to });
-    this.devices.emit(this.state(d.id), { label: d.label });
+    this.devices.emit(this.state(d.id), { label: d.label, kind: d.kind });
   }
 
   /** 폰 눈(맞춘 자세) 자리. 계획 출발점과 이동 단계 확인에도 쓴다. */
@@ -187,7 +182,7 @@ class Week {
   view(): WorldView {
     return {
       at_ms: this.t, objects: [...this.objects.values()].map((o) => ({ ...o, facts: { ...o.facts } })), person: { ...this.person, facts: { ...this.person.facts } },
-      devices: [], eye: this.eyeView, vlm_missing: this.vlmMissing, yolo_missing: 0,
+      fixtures: [], devices: [], eye: this.eyeView, frame_ms: null, vlm_missing: this.vlmMissing, yolo_missing: 0,
     };
   }
 
@@ -213,7 +208,7 @@ class Week {
     const id = `${cls}_${n}`;
     this.objects.set(id, {
       id, cls, position: [on.xz[0], on.top, on.xz[1]], surface: on.id, surface_label: on.label, room: on.room, error_m: 0.12, status: "present",
-      first_seen_ms: this.t, last_seen_ms: this.t, last_in_view_ms: this.t, facts: {}, devices: [],
+      first_seen_ms: this.t, last_seen_ms: this.t, last_in_view_ms: this.t, facts: {}, answered_ms: null, devices: [],
     });
     this.change("appeared", id, CHANGE_TEXT.appeared(objectName(cls, id), onSurface(on.label)), true);
     return id;
@@ -228,14 +223,14 @@ class Week {
   gone(id: string): void {
     const o = this.objects.get(id)!;
     o.status = "gone";
-    for (const f of NOW_FACETS) delete o.facts[f];
+    for (const f of NOW_FACETS.object) delete o.facts[f];
     this.change("gone", id, CHANGE_TEXT.gone(objectName(o.cls, id)), true);
   }
 
   /** 같은 값이 두 번이면 확인됨. 새 값이거나 바뀌면 true. */
   private fact(facts: Partial<Record<Facet, WorldFact>>, facet: Facet, value: string): boolean {
     const prev = facts[facet];
-    facts[facet] = { value, at_ms: this.t, certainty: prev?.value === value ? "confirmed" : "inferred" };
+    facts[facet] = { value, at_ms: this.t, since_ms: prev?.value === value ? prev.since_ms : this.t, certainty: prev?.value === value ? "confirmed" : "inferred" };
     return prev?.value !== value;
   }
 
@@ -254,10 +249,10 @@ class Week {
         const isPerson = target === PERSON;
         const obj = isPerson ? null : this.objects.get(target)!;
         const into = isPerson ? this.person.facts : obj!.facts;
-        const said = new Set(states.map((s) => FACET[s]!));
-        for (const f of NOW_FACETS) if (!said.has(f)) delete into[f];
+        const said = new Set(states.map(facetOf));
+        for (const f of NOW_FACETS[isPerson ? "person" : "object"]) if (!said.has(f)) delete into[f];
         for (const s of states) {
-          if (!this.fact(into, FACET[s]!, s)) continue;
+          if (!this.fact(into, facetOf(s), s)) continue;
           if (isPerson) {
             if (this.person.visible) this.change("person_state", PERSON, CHANGE_TEXT.state(OBJECT_NAME.person!, s), false);
           } else this.change("state", target, CHANGE_TEXT.state(objectName(obj!.cls, target), s), true);
@@ -435,7 +430,7 @@ function morning(w: Week, i: number, start: string, weekend: boolean): void {
   w.decide(null, "사람이 식탁 옆에 서 있고 식탁 위에는 아무것도 없다.", "아침 커피를 막 시작하는 때라 지금 도울 일이 없다.");
   w.wait(140);
   const cup = w.put("cup", table);
-  w.see("A person sits at the dining table with a mug of coffee.", { person: ["sitting", "eating_or_drinking"], [cup]: ["on_table", "has_contents"] }, 3);
+  w.see("A person sits at the dining table with a mug of coffee.", { person: ["sitting", "drinking"], [cup]: ["on_table", "has_contents"] }, 3);
   w.decide(null, "사람이 식탁에 앉아 컵으로 커피를 마시고 있다.", "컵을 쓰는 중이라 지금 치우면 방해가 된다.");
   if (i % 3 === 2) { // 가끔 VLM 답이 늦는다
     w.wait(300);
@@ -443,7 +438,7 @@ function morning(w: Week, i: number, start: string, weekend: boolean): void {
     w.missing("timeout");
   }
   w.wait(weekend ? 1500 : 900);
-  w.see("A person sits at the dining table drinking from a mug.", { person: ["sitting", "eating_or_drinking"], [cup]: ["on_table", "has_contents"] }, 2);
+  w.see("A person sits at the dining table drinking from a mug.", { person: ["sitting", "drinking"], [cup]: ["on_table", "has_contents"] }, 2);
   if (i === 0) {
     w.wait(260);
     w.see("A person stands up from the dining table.", { person: ["standing"], [cup]: ["on_table", "empty"] }, 2);
@@ -491,7 +486,7 @@ function meal(w: Week, start: string, o: { ask?: boolean; lunch?: boolean } = {}
   const bowl = w.put("bowl", table);
   const cup = w.put("cup", table);
   w.see(`A person eats ${o.lunch ? "lunch" : "dinner"} at the dining table with a bowl and a cup.`,
-    { person: ["sitting", "eating_or_drinking"], [bowl]: ["on_table", "has_contents"], [cup]: ["on_table", "has_contents"] }, 3);
+    { person: ["sitting", "eating"], [bowl]: ["on_table", "has_contents"], [cup]: ["on_table", "has_contents"] }, 3);
   w.decide(null, "사람이 식탁에서 그릇과 컵으로 밥을 먹고 있다.", "식사 중이라 그릇과 컵을 쓰고 있어 기다린다.");
   w.wait(1650);
   w.see("A person stands up from the dining table after eating.", { person: ["standing"], [bowl]: ["on_table", "empty"], [cup]: ["on_table", o.ask ? "contents_unknown" : "empty"] }, 2);

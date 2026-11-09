@@ -1,4 +1,4 @@
-// 화면 글 검사: web/·ui/src·폰 입구(ui/phone) 아래 HTML·JS·TS·TSX, 서버가 화면에 그대로 내보내는 계획 글(src/plan/labels.ts)·World State 글(src/world/labels.ts)·기록 글(src/history/labels.ts)·폰 부탁 글(src/act/prompts.ts)에서
+// 화면 글 검사: web/·ui/src·폰 입구(ui/phone) 아래 HTML·JS·TS·TSX, 서버가 화면에 그대로 내보내는 계획 글(src/plan/labels.ts)·World State 글(src/world/labels.ts·낱말 표 src/world/vocab.ts)·기록 글(src/history/labels.ts)·폰 부탁 글(src/act/prompts.ts)에서
 // 사용자에게 보이는 한국어 글을 꺼내, 생각 과정·구현 설명이 들어갔는지 본다.
 // 사용: npm run lint (tests/lint-ui-copy.test.ts도 같은 검사를 돌린다)
 
@@ -282,6 +282,7 @@ export const COPY_TARGETS = [
   fileURLToPath(new URL("../ui/phone/", import.meta.url)),
   fileURLToPath(new URL("../src/plan/labels.ts", import.meta.url)),
   fileURLToPath(new URL("../src/world/labels.ts", import.meta.url)),
+  fileURLToPath(new URL("../src/world/vocab.ts", import.meta.url)),
   fileURLToPath(new URL("../src/history/labels.ts", import.meta.url)),
   fileURLToPath(new URL("../src/act/prompts.ts", import.meta.url)),
 ];
