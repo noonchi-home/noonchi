@@ -9,6 +9,8 @@ type Rect = { left: number; top: number; width: number; height: number };
 
 /** 보는 방향을 보여 줄 화살표 길이(m). */
 export const ARROW_M = 1.2;
+/** 화면에서 화살표가 이보다 짧으면(집 전체를 멀리서 볼 때) 같은 방향으로 이만큼(px) 늘려 그린다. */
+const MIN_ARROW_PX = 72;
 /** 누름으로 보는 픽셀 움직임·시간 한도(넘으면 카메라 돌리기로 본다). */
 const CLICK_PX = 6;
 const CLICK_MS = 600;
@@ -108,7 +110,8 @@ export function useOverlay(v: AptViewer | null, frame: RefObject<HTMLIFrameEleme
           return { x: Math.round(r.left + s.x), y: Math.round(r.top + s.y), visible: s.visible };
         };
         const size = b.getBoundingClientRect();
-        const next: Overlay = { width: Math.round(size.width), height: Math.round(size.height), spot: spot ? at(spot) : null, tip: spot ? at(ahead(spot, yawDeg)) : null };
+        const s = spot ? at(spot) : null;
+        const next: Overlay = { width: Math.round(size.width), height: Math.round(size.height), spot: s, tip: spot && s ? stretch(s, at(ahead(spot, yawDeg))) : null };
         const key = JSON.stringify(next);
         if (key !== last) { last = key; setOut(next); }
       }
@@ -118,6 +121,14 @@ export function useOverlay(v: AptViewer | null, frame: RefObject<HTMLIFrameEleme
     return () => cancelAnimationFrame(raf);
   }, [v, frame, box, spot?.[0], spot?.[1], yawDeg]);
   return out;
+}
+
+/** 화살표 끝이 화면에서 MIN_ARROW_PX보다 가까우면 같은 방향으로 그만큼 민다. */
+function stretch(spot: { x: number; y: number }, tip: { x: number; y: number; visible: boolean }): { x: number; y: number; visible: boolean } {
+  const dx = tip.x - spot.x, dy = tip.y - spot.y, len = Math.hypot(dx, dy);
+  if (len >= MIN_ARROW_PX || len < 1e-6) return tip;
+  const k = MIN_ARROW_PX / len;
+  return { x: Math.round(spot.x + dx * k), y: Math.round(spot.y + dy * k), visible: tip.visible };
 }
 
 /** 화살표 그림(트윈 칸 픽셀 SVG path): 자리 → 끝, 끝에 머리 두 줄. */

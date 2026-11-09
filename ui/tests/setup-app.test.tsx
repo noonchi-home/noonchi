@@ -321,6 +321,21 @@ describe("설정 4단계: 트윈에서 시작 자리와 방향 고르기", () =>
     await waitFor(() => expect(api.posts("/api/phone/start-pose/preview").at(-1)!.body).toMatchObject({ yaw_deg: 270 }));
   });
 
+  it("집 전체를 멀리서 보면 화살표를 화면에서 72px로 늘려 그린다(방향은 그대로)", async () => {
+    const { viewer, click } = await withViewer();
+    await click(150, 250);
+    await waitFor(() => expect(document.querySelector("[data-start-knob]")).not.toBeNull());
+    // 1m = 20px로 멀리 보기: 자리(1.5, 2.5) = 픽셀 (190, 210), 1.2m 끝은 24px 오른쪽이라 72px로 늘린다
+    Object.assign(viewer.camera, { left: -10, right: 10, top: 10, bottom: -10 });
+    viewer.camera.updateProjectionMatrix();
+    await waitFor(() => {
+      const k = document.querySelector<HTMLElement>("[data-start-knob]")!;
+      expect([k.style.left, k.style.top]).toEqual(["262px", "210px"]);
+    });
+    const spot = document.querySelector<HTMLElement>("[data-start-spot]")!;
+    expect([spot.style.left, spot.style.top]).toEqual(["190px", "210px"]);
+  });
+
   it("고친 이름은 저장에 그대로 보내고, 방향을 바꿔도 덮지 않는다. 다시 고르기는 다음 누름을 새 자리로 쓴다", async () => {
     const { api, user, start, click } = await withViewer();
     await click(150, 250);
