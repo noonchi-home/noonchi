@@ -51,5 +51,7 @@ describe("VLM 장면 분석", () => {
     await analyzeScene(vlm, [frameAt("e1", 5000, Buffer.from([0xff, 0xd8, 0]))], []);
     const content = (fake.requests.at(-1)!.body.messages as { content: Part[] }[])[0]!.content;
     expect(content.slice(-2).map((p) => (p.type === "text" ? p.text : p.type))).toEqual(["Photo 1 of 1, t-0s (latest)", "image_url"]);
+    // 실제 VLM(gpt-5.4-nano)은 한 장이면 「한 장뿐이라 변화를 볼 수 없다」 같은 말을 요약에 붙였다: 보이는 것만 쓰라고 한다
+    expect(String(content[0]!.text)).toContain("With one photo or no change, describe only what is visible");
   });
 });
