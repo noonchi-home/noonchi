@@ -3,7 +3,7 @@ import type { DeviceView } from "../../../src/contract/events.ts";
 import { BubbleLayer } from "../bubbles/BubbleLayer";
 import { deviceSummary } from "../bubbles/summary";
 import type { Check } from "../checks/checks";
-import { LineDrawSvg, type LineTone, type MarkTone } from "../components/ui/line-draw-svg";
+import { LineDrawSvg } from "../components/ui/line-draw-svg";
 import { Status } from "../components/ui/status";
 import type { TwinEngine } from "../twin3d/engine";
 import { plateTransform, type MapCamera } from "../twin3d/view";
@@ -13,6 +13,7 @@ import type { BoxSize } from "./fit";
 import type { TwinFrame } from "./frame";
 import { otherRooms, roomsPath, type RoomShape } from "./home";
 import { useFadeIn } from "./motion";
+import { checkDotLayers, cloidLayers, destinationLayers, dimLayer, lineLayers, roomEdgeLayer, type Layer, type MarkTone } from "./marks";
 import { legAheadOf, mapScene, type Box } from "./scene";
 
 /** 밝힌 방 묶음 이름(순서와 상관없음). */
@@ -102,31 +103,32 @@ export function MapOverlay({ frame, checks, shapes, roomSets, image, size, cam, 
     return d ? deviceSummary(d).tone : "object";
   };
 
-  const draw = (tone: LineTone, more: { path?: string; at?: Px; mark?: MarkTone; angle?: number } = {}) => (
-    <LineDrawSvg tone={tone} width={image.width} height={image.height} strokeScale={k} className="absolute inset-0 h-full w-full" {...more} />
-  );
-  const lines: [string, Px[], LineTone][] = [["passed", route.done, "routePassed"], ["ahead", route.ahead, "routeAhead"], ["leg-ahead", legAhead, "route"]];
+  // 21st.dev Line Draw SVG 한 장에 path 하나: 겹친 장들이 표시 하나다
+  const draw = (layers: Layer[]) => layers.map((l, i) => (
+    <LineDrawSvg key={i} tone={l.tone} path={l.d} strokeWidth={l.width} width={image.width} height={image.height} className="absolute inset-0 h-full w-full" />
+  ));
+  const lines: [string, Px[], "route" | "routeAhead" | "routePassed"][] = [["passed", route.done, "routePassed"], ["ahead", route.ahead, "routeAhead"], ["leg-ahead", legAhead, "route"]];
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden">
       <div ref={plate} data-map-plate className="absolute left-0 top-0 origin-top-left will-change-transform" style={{ width: image.width, height: image.height }}>
         {dims.map(([id, d]) => (
           <div key={id} data-map-dim={id} className="absolute inset-0 will-change-[opacity]" style={{ opacity: id === lit ? 1 : 0 }}>
-            {draw("dimRoom", { path: d })}
+            {draw([dimLayer(d)])}
           </div>
         ))}
-        {litPath && <div data-room-edge className="absolute inset-0">{draw("roomEdge", { path: litPath })}</div>}
-        {lines.map(([id, pts, tone]) => pts.length > 1 && <div key={id} data-line={id} className="absolute inset-0">{draw(tone, { path: lineOf(pts) })}</div>)}
-        {target && <div data-target className="absolute inset-0">{draw("destination", { at: target })}</div>}
+        {litPath && <div data-room-edge className="absolute inset-0">{draw([roomEdgeLayer(litPath, k)])}</div>}
+        {lines.map(([id, pts, tone]) => pts.length > 1 && <div key={id} data-line={id} className="absolute inset-0">{draw(lineLayers(tone, lineOf(pts), k))}</div>)}
+        {target && <div data-target className="absolute inset-0">{draw(destinationLayers(target, k))}</div>}
         {frame.marks.map((m) => {
           // 상자 가장자리에 걸린 표시는 반쪽만 보이지 않게 흐리게 지운다
           const p = points.get(m.id);
           return (
             <div key={m.id} data-mark={m.id} className="absolute inset-0" style={{ opacity: p ? edgeFade(p, size, 9) : 1 }}>
-              {draw("checkDot", { at: m.px, mark: markTone(m.id) })}
+              {draw(checkDotLayers(m.px, markTone(m.id), k))}
             </div>
           );
         })}
-        {robot && <div data-robot className="absolute inset-0">{draw("cloid", { at: robot.px, angle: robot.angle })}</div>}
+        {robot && <div data-robot className="absolute inset-0">{draw(cloidLayers(robot.px, robot.angle, k))}</div>}
       </div>
       <div ref={marks} className="absolute inset-0">
         {labels.map((l) => (

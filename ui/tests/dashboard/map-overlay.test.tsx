@@ -111,6 +111,17 @@ describe("트윈 위 표시 판", () => {
     expect(container.querySelector('[fill^="url("]')).toBeNull();
   });
 
+  it("표시는 21st.dev Line Draw SVG를 겹친 것이고, 한 장은 받은 코드처럼 path 하나만 그린다", () => {
+    const { container } = render(overlay(3, null));
+    const plate = container.querySelector("[data-map-plate]")!;
+    const svgs = [...plate.querySelectorAll("svg")];
+    expect(svgs.length).toBeGreaterThan(0);
+    for (const svg of svgs) expect([...svg.children].map((c) => c.tagName.toLowerCase())).toEqual(["path"]);
+    expect(container.querySelector("[data-robot]")!.querySelectorAll("svg")).toHaveLength(5);
+    expect(container.querySelector("[data-target]")!.querySelectorAll("svg")).toHaveLength(6);
+    expect(container.querySelector(`[data-mark="${SINK}"]`)!.querySelectorAll("svg")).toHaveLength(3);
+  });
+
   it("확인한 물건에만 말풍선이 있고 확인하지 않은 기기는 없다", () => {
     const { container } = render(overlay(3, null));
     expect(container.querySelector(`[data-check="${SINK}"]`)).not.toBeNull();
