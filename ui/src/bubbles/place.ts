@@ -15,7 +15,7 @@ const GAP = 6;
 const SIDES = ["top", "bottom"] as const;
 const ALIGNS = ["center", "end", "start"] as const;
 
-/** 기기 자리(x, y)에 꼬리 끝을 둔 말풍선 판의 자리. scale은 방금 다룬 기기(scale-125). */
+/** 기기 자리(x, y)에 꼬리 끝을 둔 말풍선 판의 자리. scale은 판 배율(말풍선은 한 크기라 1). */
 export function bubbleRect(x: number, y: number, box: Box, scale: number, p: Placement): Rect {
   const w = box.w * scale;
   const h = (box.h + ARROW) * scale;

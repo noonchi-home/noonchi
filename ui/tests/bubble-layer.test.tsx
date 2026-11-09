@@ -98,12 +98,13 @@ describe("BubbleLayer", () => {
     expect(document.querySelector(".border-dashed")).toBeNull();
   });
 
-  it("방금 다룬 기기는 크게", () => {
+  it("방금 다룬 기기는 크기는 그대로(한 크기 md)이고 테두리 강조(focus)만 한다", () => {
     const devices = new Map([dev("a", "거실 조명", "off"), dev("b", "안방 조명", "off")]);
     render(<BubbleLayer checks={[checked("a", 1), checked("b", 2)]} devices={devices} points={at(["a", "b"])} focusId="b" />);
     expect(bubbleOf("안방 조명")).toHaveAttribute("data-focus", "true");
     expect(bubbleOf("거실 조명")).not.toHaveAttribute("data-focus");
     expect(bubbleOf("안방 조명").querySelector("[data-tone=twin]")).toHaveAttribute("data-focus", "true");
+    for (const label of ["안방 조명", "거실 조명"]) expect(bubbleOf(label).className, label).not.toMatch(/(^|\s)scale-/);
   });
 
   it("겹치면 모름 < 꺼짐·켜짐 < 경고 < 방금 다룬 기기 순으로 위에 온다", () => {

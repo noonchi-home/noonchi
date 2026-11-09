@@ -20,7 +20,7 @@ const VERB: Record<CheckVerb, "default" | "success" | "warning" | "error" | "bra
 /** 겹칠 때 위아래: 모름이 맨 아래, 경고가 그 위, 방금 다룬 기기가 맨 위. */
 const LAYER: Record<Tone, string> = { unknown: "z-0", off: "z-10", on: "z-10", alert: "z-20" };
 
-/** 말풍선 크기는 하나다: 디자인 시스템 전 크기(글 label, 번호 20px). 2026-11-08 사용자 결정. */
+/** 말풍선 크기는 하나다: 디자인 시스템 전 크기(글 label, 번호 20px). 2026-11-08 사용자 결정. 방금 다룬 기기도 키우지 않고 테두리(focus)만 강조한다. */
 const SIZE = "md";
 
 /** 자리를 먼저 잡는 차례: 방금 다룬 기기 → 경고 → 켜짐·꺼짐 → 모름. */
@@ -57,7 +57,7 @@ function Bubble({ s, verb, p, big, place, measure, onSize }: {
       ref={setBox}
       data-check={s.id}
       data-focus={big ? "true" : undefined}
-      className={cn("pointer-events-none absolute h-0 w-0 transform-gpu", big ? "z-30 scale-125" : s.tone ? LAYER[s.tone] : "z-10")}
+      className={cn("pointer-events-none absolute h-0 w-0 transform-gpu", big ? "z-30" : s.tone ? LAYER[s.tone] : "z-10")}
       style={{ left: p.x, top: p.y }}
     >
       <Tooltip open>
@@ -123,7 +123,7 @@ export function BubbleLayer({ checks, devices, objects = new Map(), points, focu
     return [{ c, s, p, big: c.deviceId !== undefined && c.deviceId === focusId }];
   });
   const order = [...shown].sort((a, b) => Number(b.big) - Number(a.big) || (a.s.tone ? RANK[a.s.tone] : 2) - (b.s.tone ? RANK[b.s.tone] : 2));
-  const places = placeBubbles(order.map(({ s, p, big }) => ({ id: s.id, x: p.x, y: p.y, scale: big ? 1.25 : 1, box: sizes[s.id] })), frame.bounds, frame.avoid);
+  const places = placeBubbles(order.map(({ s, p }) => ({ id: s.id, x: p.x, y: p.y, scale: 1, box: sizes[s.id] })), frame.bounds, frame.avoid);
 
   // 그린 뒤 덮개·패널 자리를 재고, 바뀌었으면 자리를 다시 고른다
   useLayoutEffect(() => {
