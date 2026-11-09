@@ -170,8 +170,10 @@ export class ObservationPipeline {
   }
 
   /** YOLOX 결과(실패면 null, 감지기가 없으면 undefined)를 World State에 넣고 같은 프레임을 VLM에 보낸다.
-   *  YOLOX 결과 observe에만 상자(엔진 프레임 픽셀)와 프레임 크기를 싣는다(대시보드 폰 칸). */
-  private analyze(frame: EngineFrame, dets: Detection[] | null | undefined): void {
+   *  YOLOX 결과 observe에만 상자(엔진 프레임 픽셀)와 프레임 크기를 싣는다(대시보드 폰 칸).
+   *  World State가 받지 않는 낮은 신뢰도 감지는 상자·YOLOX 글·VLM 감지 목록에서 뺀다: 화면·VLM·World State가 같은 감지를 본다. */
+  private analyze(frame: EngineFrame, raw: Detection[] | null | undefined): void {
+    const dets = raw && raw.filter((d) => this.o.world.accepts(d));
     const base = { type: "observe" as const, frame_id: frame.id, captured_at_ms: frame.capturedAtMs, vlm: null };
     if (dets === undefined) {
       this.idsOf.set(frame.id, new Map());

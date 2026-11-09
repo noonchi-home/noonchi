@@ -91,6 +91,12 @@ export class WorldState {
     this.minScore = o.minScore ?? { person: 0.5, object: 0.4 };
   }
 
+  /** 이 감지를 받는가: 사람은 minScore.person, 컵·병·그릇은 minScore.object 이상. 관찰 흐름은 받는 감지만 상자·YOLOX 글·VLM 감지 목록에 싣는다. */
+  accepts(d: Pick<Detection, "label" | "score">): boolean {
+    if (d.label === "person") return d.score >= this.minScore.person;
+    return OBJ_CLASSES.has(d.label) && d.score >= this.minScore.object;
+  }
+
   /** 첫 프레임 시각을 사람 「안 보임」의 시작으로 둔다. */
   private start(atMs: number): void {
     if (this.person.since_ms === null) this.person.since_ms = atMs;
@@ -144,13 +150,12 @@ export class WorldState {
     const used = new Set<string>();
     dets.forEach((d, i) => {
       const tmp = `d${i + 1}`;
+      if (!this.accepts(d)) return;
       if (d.label === "person") {
-        if (d.score < this.minScore.person) return;
         ids.set(tmp, PERSON);
         seen.add(PERSON);
         return;
       }
-      if (!OBJ_CLASSES.has(d.label) || d.score < this.minScore.object) return;
       const cls = d.label as ObjClass;
       const placed = view ? placeBox(view, d.box, { width: frame.width, height: frame.height }, surfaces, this.o.floorAt) : null;
       const obj = this.match(cls, placed?.position ?? null, used) ?? this.create(cls, at);

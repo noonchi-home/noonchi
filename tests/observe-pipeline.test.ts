@@ -79,6 +79,42 @@ describe("관찰 흐름", () => {
     await p.close();
   });
 
+  it("World State가 받지 않는 낮은 신뢰도 감지(사람 0.5·물건 0.4 아래)는 상자·YOLOX 글·VLM 감지 목록에 넣지 않는다", async () => {
+    const logs: BrainLog[] = [];
+    const sent: string[] = [];
+    const vlm = { model: "cap", json: async (req: { texts: string[] }) => {
+      sent.push(req.texts.join("\n"));
+      return { value: { scene: "room", observations: [], summary: "s" }, costUsd: 0, model: "cap", attempts: 1 };
+    } } as unknown as VlmClient;
+    // 실제 폰 프레임에서 본 모양: 흐린 프레임의 사람 0.31·병 0.27 같은 낮은 점수 감지가 진짜 감지와 함께 나온다
+    const frames: Detection[][] = [
+      [
+        { label: "person", score: 0.62, cls: 0, box: [0, 0, 100, 300] },
+        { label: "person", score: 0.31, cls: 0, box: [200, 400, 80, 200] },
+        { label: "cup", score: 0.83, cls: 41, box: [50, 500, 40, 50] },
+        { label: "bottle", score: 0.27, cls: 39, box: [300, 600, 20, 60] },
+      ],
+      [{ label: "person", score: 0.49, cls: 0, box: [0, 0, 360, 780] }, { label: "bowl", score: 0.39, cls: 45, box: [10, 10, 50, 30] }],
+    ];
+    let n = 0;
+    const p = new ObservationPipeline({ config: { engineMs: 1000, vlmMaxInflight: 4, vlmTimeoutMs: 5000, detectQueueMax: 8, keepMs: 20_000 },
+      detector: new ScriptedDetector(() => frames[n++]!), vlm,
+      world: new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }), emit: (l) => logs.push(l), broadcastWorld: () => {} });
+    for (let i = 1; i <= 2; i++) p.onEngine(jpeg(i), { kind: "engine", width: 360, height: 780, captured_at: i * 1000, time_err_ms: 0 }, null, null, i * 1000 + 5);
+    await p.idle();
+    const yolo = (id: string) => logs.find((l): l is Extract<BrainLog, { type: "observe" }> => l.type === "observe" && l.frame_id === id && l.boxes !== undefined)!;
+    expect(yolo("e1")).toMatchObject({ yolo: "사람 0.62 · 컵 0.83", boxes: [{ label: "person", score: 0.62 }, { label: "cup", score: 0.83 }] });
+    expect(yolo("e1").boxes).toHaveLength(2);
+    expect(yolo("e2")).toMatchObject({ yolo: "감지 없음", boxes: [] });
+    expect(sent).toHaveLength(2);
+    expect(sent[0]).toContain(`{"id":"d1","class":"person"`);
+    expect(sent[0]).toContain(`{"id":"d2","class":"cup"`);
+    expect(sent[0]).not.toContain("bottle");
+    expect(sent[0]).not.toContain(`"d3"`);
+    expect(sent[1]).toBe("Detections: []");
+    await p.close();
+  });
+
   it("감지가 실패한 프레임은 물체를 사라짐으로 세지 않고 YOLOX 분석 없음으로 남기며, VLM은 그 프레임도 분석한다", async () => {
     fake = await startFakeOpenAI();
     const logs: BrainLog[] = [];
