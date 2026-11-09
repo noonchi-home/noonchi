@@ -82,6 +82,8 @@ export interface SyncState {
   residualM: number | null;
   /** 받아들인 고침 수. */
   updates: number;
+  /** 모아 둔 증거: 물건 관찰 수, 벽 점 칸 수. */
+  observed: { landmarks: number; walls: number };
 }
 
 export interface PoseInput {
@@ -155,11 +157,19 @@ export class SyncAligner {
     this.now = o.now ?? (() => Date.now());
     this.eyeHeightM = o.eyeHeightM ?? 1.5;
     this.floorAt = o.floorAt ?? (() => 0);
-    for (const l of o.landmarks) this.byClass.set(l.cls, [...(this.byClass.get(l.cls) ?? []), l]);
-    for (const [cls, list] of this.byClass) this.classBase.set(cls, median(list.map((l) => l.baseM)));
+    this.setLandmarks(o.landmarks);
     // 묶는 거리: 그 종류에서 가장 큰 물건 대각선의 0.6배(1m 이상), 버리는 거리: 대각선의 절반(0.4m 이상)
     const diag = (cls: LandmarkClass) => Math.max(0, ...(this.byClass.get(cls) ?? []).map((l) => Math.hypot(...l.footprint)));
     this.store = new LandmarkStore({ radiusM: (c) => Math.max(1, 0.6 * diag(c)), outlierM: (c) => Math.max(0.4, 0.5 * diag(c)) });
+  }
+
+  /** 트윈 물건이 바뀌면(배치 보정) 짝 목록을 바꾼다. 모은 관찰은 그대로 둔다. */
+  setLandmarks(list: readonly TwinLandmark[]): void {
+    this.byClass.clear();
+    this.classBase.clear();
+    for (const l of list) this.byClass.set(l.cls, [...(this.byClass.get(l.cls) ?? []), l]);
+    for (const [cls, items] of this.byClass) this.classBase.set(cls, median(items.map((l) => l.baseM)));
+    this.dirty = true;
   }
 
   /** 새 AR 원점·다시 맞추기: 변환·증거·시작을 모두 지운다. */
@@ -278,6 +288,7 @@ export class SyncAligner {
       twoD: q.twoD,
       residualM: (this.source === "touch" || this.source === "floor") ? this.manualResidual : wallOk ? q.wallRmsM : q.anchorRmsM,
       updates: this.updates,
+      observed: { landmarks: this.store.size(), walls: this.surface.wallCount() },
     };
   }
 

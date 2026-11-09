@@ -23,6 +23,8 @@ import type { ReflectResult } from "../history/reflect.js";
 import { daySummary, isDay } from "../history/summary.js";
 import type { LayoutEditor } from "../layout/editor.js";
 import { TouchPointsError, type TouchPoint } from "../phone/touch.js";
+import type { SyncState } from "../sync/aligner.js";
+import { StartPoseError, type StartPose } from "../sync/start.js";
 import type { PlanHub } from "../plan/hub.js";
 import { twinChange } from "../model/mapping.js";
 import { listenRetry } from "./net.js";
@@ -65,6 +67,10 @@ export interface AppOptions {
     get(): TouchPoint[] | null; save(raw: unknown): TouchPoint[]; clear(): void; auto(raw: unknown): TouchPoint[]; room(raw: unknown): string | null;
     eyeHeightM: number;
   };
+  /** 폰 위치 맞추기 시작 위치(src/sync/start.ts StartStore). 있으면 /api/phone/start-pose*. */
+  start?: { get(): StartPose | null; save(raw: unknown): StartPose; clear(): void };
+  /** 폰 위치 맞춤 모듈 상태(GET /api/phone/sync). 폰 서버가 없거나 모듈을 껐으면 null. */
+  phoneSync?: () => SyncState | null;
   /** 관찰 흐름(BRAIN=1, src/observe/pipeline.ts). 있으면 GET /api/brain에 상태를 보인다. */
   brain?: { status(): object };
   /** 지금 World State(BRAIN=1). 있으면 GET /api/world, /events 접속 때 {type:"world"}. */
@@ -436,6 +442,34 @@ export function createApp(opts: AppOptions): TwinHomeApp {
     requireTouch().clear();
     return touchView(null);
   });
+
+  // ── 폰 위치 맞추기: 시작 위치(자리·방향)와 맞춤 상태 ──
+
+  const requireStart = () => {
+    if (!opts.start) throw new HttpError(404, "시작 위치를 쓸 수 없습니다(집 scene.json이 없음).");
+    return opts.start;
+  };
+  const startView = (s: StartPose | null) => ({
+    ok: true, start: s ? { position: s.position, yaw_deg: s.yawDeg, label: s.label, facing_label: s.facingLabel } : null,
+  });
+  route("GET", /^\/api\/phone\/start-pose$/, async () => startView(requireStart().get()));
+  route("POST", /^\/api\/phone\/start-pose$/, async (req) => {
+    const store = requireStart();
+    const body = await readJson(req);
+    sameHome(body);
+    try {
+      return startView(store.save(body));
+    } catch (e) {
+      if (e instanceof StartPoseError) throw new HttpError(400, e.message);
+      throw e;
+    }
+  });
+  route("POST", /^\/api\/phone\/start-pose\/clear$/, async (req) => {
+    sameHome(await readJson(req));
+    requireStart().clear();
+    return startView(null);
+  });
+  route("GET", /^\/api\/phone\/sync$/, async () => ({ ok: true, sync: opts.phoneSync?.() ?? null }));
 
   // ── 클로이드 계획 ──
 

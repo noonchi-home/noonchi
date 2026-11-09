@@ -86,6 +86,10 @@ export class SurfacePoints {
     if (this.floors.length > this.maxFloor) this.floors.splice(0, this.floors.length - this.maxFloor);
   }
 
+  wallCount(): number {
+    return this.cells.size;
+  }
+
   walls(): WallPoint[] {
     return [...this.cells.values()];
   }

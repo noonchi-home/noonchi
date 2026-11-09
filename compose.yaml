@@ -60,6 +60,7 @@ services:
       PHONE_URL:
       PHONE_MAX_MISMATCH_M:
       PHONE_EYE_HEIGHT_M:
+      PHONE_SYNC:
       FOCUS:
       # 추론(VLM·PAM 호출)
       INFERENCE_MODE:

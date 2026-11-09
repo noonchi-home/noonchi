@@ -190,9 +190,9 @@ export class SimHome {
       if (!px) continue;
       const noise = this.o.pixelNoise ?? 3;
       const u = px[0] + gauss(this.r) * noise, v = px[1] + gauss(this.r) * noise;
-      if (v > SIZE.height * 0.95 || u < 12 || u > SIZE.width - 12) continue;
-      // 상자는 그림 안에 두고 아래 가운데가 u, v에 오게
-      const w = Math.min(90, 2 * (u - 4), 2 * (SIZE.width - 4 - u)), h = Math.min(160, v - 4);
+      if (v > SIZE.height * 0.95 || u < 16 || u > SIZE.width - 16) continue;
+      // 상자는 그림 안(가장자리에서 8px 안쪽)에 두고 아래 가운데가 u, v에 오게
+      const w = Math.min(90, 2 * (u - 8), 2 * (SIZE.width - 8 - u)), h = Math.min(160, v - 8);
       boxes.push({ label: l.cls, score: 0.7 + this.r() * 0.25, box: [u - w / 2, v - h, w, h] });
     }
     return { projection: this.projection, width: SIZE.width, height: SIZE.height, boxes };

@@ -2,7 +2,7 @@
 // 기기 제어 REST는 여기 없다. 본 서버(127.0.0.1)는 그대로 두고 눈 자세는 onEye로, 폰의 말(say)과 승인 답(승인·거절)은 onSay·onConfirm·onCancel로
 // 넘긴다(그 뒤는 에이전트·승인 정책이 맡는다). 실제 폰에 명령·질문이 떠 있으면 말을 먼저 그 답으로 맞춰 보고(onAnswer),
 // 답 단추(answer)는 onChoice로 넘긴다(src/contract/phone.ts). 명령 대상의 트윈 자리는 맞춘 기준점으로 AR 자리로 바꿔 보내고(맞추기 전 null),
-// 맞춤이 바뀌면 지금 명령을 다시 보낸다(speak false).
+// 맞춤이 바뀌면 지금 명령을 다시 보낸다(speak false). 위치 맞춤 모듈(src/sync)의 상태가 바뀌면 붙은 폰 모두에 상태를 보낸다.
 // 내부 테스트용이라 같은 와이파이의 누구나 말을 보낼 수 있다.
 // 폰 화면은 React 빌드 ui/dist/phone/이고 빌드 파일은 /assets/다(대시보드와 같은 빌드).
 
@@ -20,7 +20,10 @@ import type { AnchorTarget } from "./anchors.js";
 import type { EyeFeed } from "./feed.js";
 import { MAX_PACKET_BYTES, parsePacket, type FrameHeader } from "./packet.js";
 import type { Plan2 } from "./align.js";
-import { PhoneSession, type AlignMode, type CameraView, type EyeEvent, type FallbackViewpoint, type HerePoint, type PhoneStatus } from "./session.js";
+import { PhoneSession, type AlignMode, type CameraView, type EyeEvent, type FallbackViewpoint, type HerePoint, type LandmarkBoxIn, type PhoneSessionOptions, type PhoneStatus } from "./session.js";
+import type { SyncState } from "../sync/aligner.js";
+import type { TwinLandmark } from "../sync/landmarks.js";
+import type { StartPose } from "../sync/start.js";
 
 export type { FocusTarget } from "../contract/events.js";
 
@@ -46,6 +49,8 @@ export interface PhoneServerOptions {
   eyeHeightM?: number;
   /** 평면 점이 있는 방의 바닥 높이(touch 모드 눈 높이에 더한다). */
   floorAt?: (p: Plan2) => number;
+  /** 위치 맞춤 모듈(시작 위치·물건·벽 모양, session.ts). 없으면 기준점 두 곳으로만 맞춘다. */
+  sync?: PhoneSessionOptions["sync"];
   /** 화면 빌드 폴더(기본 ui/dist). 폰 화면은 그 안 phone/index.html. */
   uiDir?: string;
   log?: (msg: string) => void;
@@ -80,6 +85,14 @@ export interface PhoneServer {
   sendFocus(targets: FocusTarget[], ttlMs: number): void;
   /** 기준점·방식을 바꾸고(기록·맞춤은 지움) 연결된 폰에 새 상태를 보낸다. */
   setTargets(targets: AnchorTarget[], mode: AlignMode): void;
+  /** 이 집의 시작 위치를 바꾸고(설정 저장·지우기) 연결된 폰에 새 상태를 보낸다. */
+  setStart(start: StartPose | null): void;
+  /** 트윈 물건 기준점을 바꾼다(배치 보정). */
+  setLandmarks(list: readonly TwinLandmark[]): void;
+  /** 엔진 프레임 YOLO 기준점 상자(관찰 흐름이 넘긴다). 맞춤이 바뀌면 폰에 상태를 보낸다. */
+  landmarks(header: FrameHeader, boxes: readonly LandmarkBoxIn[]): void;
+  /** 위치 맞춤 모듈 상태(모듈이 없으면 null). */
+  syncState(): SyncState | null;
   /** 실제 폰 명령(command)·지우기(command_clear)를 연결된 폰 모두에 보내고 지금 명령으로 둔다. 새로 붙은 폰은 상태 다음에
    *  지금 명령을 speak false로, 명령이 없으면 id 없는 command_clear를 받는다(다시 켠 서버에 다시 붙은 폰의 이전 명령이 지워진다). */
   command(msg: PlannedCommandMessage): void;
@@ -110,7 +123,7 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
   const uiDir = resolve(opts.uiDir ?? DEFAULT_UI_DIR);
   const log = opts.log ?? ((m: string) => console.log(m));
   const session = new PhoneSession(opts.targets, {
-    maxMismatchM: opts.maxMismatchM, fallback: opts.fallback, mode: opts.mode, eyeHeightM: opts.eyeHeightM, floorAt: opts.floorAt,
+    maxMismatchM: opts.maxMismatchM, fallback: opts.fallback, mode: opts.mode, eyeHeightM: opts.eyeHeightM, floorAt: opts.floorAt, sync: opts.sync,
   });
 
   const server = createServer((req, res) => {
@@ -222,11 +235,15 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
     const ar = c.target ? session.toAr(c.target.position) : null;
     return { ...c, target: c.target && ar ? { id: c.target.id, label: c.target.label, ar } : null, speak };
   };
-  /** 맞춤이 바뀌었으면 지금 명령을 새 대상 자리로 다시 보낸다. */
-  const resendIf = (wasAligned: boolean) => {
-    if (!current || session.aligned === wasAligned) return;
+  /** 맞춤이 바뀌었으면(moved: 맞춘 변환이 움직였어도) 지금 명령을 새 대상 자리로 다시 보낸다. */
+  const resendIf = (wasAligned: boolean, moved = false) => {
+    if (!current || (session.aligned === wasAligned && !(moved && session.aligned))) return;
     const msg = wire(current, false);
     for (const ws of wss.clients) reply(ws, msg);
+  };
+  /** 위치 맞춤 상태가 바뀌면 붙은 폰 모두에 상태를 보낸다. */
+  const broadcastStatus = () => {
+    for (const ws of wss.clients) reply(ws, status());
   };
   wss.on("connection", (ws) => {
     const source = ++connections;
@@ -269,9 +286,10 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
       }
       const wasAligned = session.aligned;
       const out = session.handle(raw);
-      if (out.reply) reply(ws, withEngine(out.reply));
+      if (out.changed) broadcastStatus();
+      if (out.reply && !(out.changed && !out.reply.error)) reply(ws, withEngine(out.reply));
       if (out.eye) opts.onEye(out.eye);
-      resendIf(wasAligned);
+      resendIf(wasAligned, out.changed === true);
     });
     ws.on("error", () => {});
   });
@@ -293,6 +311,18 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
       for (const ws of wss.clients) reply(ws, status());
       resendIf(wasAligned);
     },
+    setStart(start) {
+      session.setStart(start);
+      broadcastStatus();
+    },
+    setLandmarks: (list) => session.setLandmarks(list),
+    landmarks(header, boxes) {
+      const wasAligned = session.aligned;
+      if (!session.landmarks(header, boxes)) return;
+      broadcastStatus();
+      resendIf(wasAligned, true);
+    },
+    syncState: () => session.syncState(),
     command(msg) {
       if (msg.type === "command") current = msg;
       else if (msg.id === undefined || msg.id === current?.id) current = null;

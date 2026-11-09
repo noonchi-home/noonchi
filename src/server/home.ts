@@ -43,6 +43,10 @@ import { orderPhoneUrls } from "../phone/links.js";
 import { createPhoneServer, type PhoneServer } from "../phone/server.js";
 import { estimateViewpoint } from "../phone/session.js";
 import { TouchStore, eyeHeightOf, floorLookup, homeBounds, readTouchPoints, touchPointsPath, touchTargets, type TouchPoint } from "../phone/touch.js";
+import type { FrameHeader } from "../phone/packet.js";
+import { twinLandmarks } from "../sync/landmarks.js";
+import { StartStore, describeStart, readStartPose, startPosePath, type StartPose } from "../sync/start.js";
+import { wallSegments } from "../sync/walls.js";
 import { PlanHub } from "../plan/hub.js";
 import { placeShort } from "../plan/labels.js";
 import { floorPlanFrom, roomNamedAt } from "../plan/route.js";
@@ -110,6 +114,8 @@ export interface HomeRuntime {
   layout?: LayoutEditor;
   /** 기준점 A·B 저장소(집 scene.json이 있을 때). */
   touch?: TouchStore;
+  /** 폰 위치 맞추기 시작 위치 저장소(집 scene.json이 있을 때). */
+  start?: StartStore;
   app: TwinHomeApp;
   twinDir: string;
   phoneUrls: string[];
@@ -203,6 +209,24 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         else phoneRef.current.setTargets(phoneRef.floor, "floor");
       }, savedTouch)
       : undefined;
+    // 폰 위치 맞추기(src/sync): 시작 위치(설정에서 자리·방향) + 물건 기준점(엔진 프레임 YOLO) + 벽 모양(hit 벽 점). PHONE_SYNC=0이면 끈다
+    const syncOn = !/^(0|false|off)$/i.test(env.PHONE_SYNC?.trim() ?? "");
+    const startPath = startPosePath(runtimeDir, home.id);
+    let savedStart: StartPose | null = null;
+    try {
+      savedStart = readStartPose(startPath);
+    } catch (e) {
+      log(`[경고] ${(e as Error).message}. 시작 위치 없이 시작합니다.`);
+    }
+    const twinObjects = () => layout?.editor.objects() ?? [];
+    const startStore = existsSync(home.scenePath)
+      ? new StartStore(startPath, bounds, (p, yaw) => describeStart(twinObjects(), plan.rooms, p, yaw), (s) => phoneRef.current?.setStart(s), savedStart)
+      : undefined;
+    const landmarksNow = () => (layout ? twinLandmarks(layout.editor.objects(), layout.catalog) : []);
+    // 「냉장고 여기로」처럼 배치를 고치면 기준점 자리도 바꾼다
+    layout?.editor.subscribe(() => phoneRef.current?.setLandmarks(landmarksNow()));
+    // 엔진 프레임 헤더(찍은 순간 AR 자세·투영): 감지가 끝나면 기준점 상자와 함께 폰 위치 맞추기로 넘긴다
+    const engineHeaders = new WeakMap<Buffer, FrameHeader>();
     // 클로이드 계획(src/plan/hub.ts): 에이전트 기기 행동·맞춘 눈 → 계획을 /events로. 경로는 서버 장면(scene.json + 도면 설비)으로 찾는다
     const scene = loadScene(home);
     const floorPlan = floorPlanFrom(scene ?? {});
@@ -309,6 +333,10 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         onFrame: () => decide.onFrame(),
         // 분석한 프레임은 디스크에 쓰지 않는다. DATASET_COLLECT=1일 때만 시험 자료로 RUNTIME_DIR/dataset에 쓴다
         dataset: env.DATASET_COLLECT?.trim() === "1" ? datasetWriter(join(runtimeDir, "dataset"), history.db) : undefined,
+        onDetected: (jpeg, r) => {
+          const h = engineHeaders.get(jpeg);
+          if (h && r.landmarks?.length) phoneRef.current?.landmarks(h, r.landmarks);
+        },
       });
       const observed = pipeline;
       decideTimer = setInterval(() => {
@@ -339,6 +367,8 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         auto: (raw) => autoCorners(plan, parseWallPick(raw), bounds),
         room: (raw) => pickedRoom(plan, parseWallPick(raw)),
       },
+      start: startStore && { get: () => startStore.get(), save: (raw) => startStore.save(raw), clear: () => startStore.clear() },
+      phoneSync: () => phoneRef.current?.syncState() ?? null,
       plan: plans, history: history.db, reflect: history.reflect, scene: () => scene,
       brainLast: () => [lastDecision, lastBoxes].filter((e): e is BrainLog => e !== null), say: () => said,
     });
@@ -355,6 +385,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       phone = createPhoneServer({
         targets: touch ? touchTargets(touch) : floor, mode: touch ? "touch" : "floor", eyeHeightM, feed, log, fallback,
         floorAt: floorLookup(plan.rooms),
+        sync: syncOn ? { landmarks: landmarksNow(), walls: wallSegments(plan), start: startStore?.get() ?? null } : undefined,
         maxMismatchM: Number.isFinite(maxMismatch) && maxMismatch > 0 ? maxMismatch : undefined,
         onEye: (eye) => {
           appNow.broadcast({ type: "eye", eye });
@@ -387,7 +418,10 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         },
         ...(observe ? {
           engineMs: observe.config.engineMs,
-          onEngine: (jpeg, h, eye, view, at) => observe.onEngine(jpeg, h, eye, view, at),
+          onEngine: (jpeg, h, eye, view, at) => {
+            engineHeaders.set(jpeg, h);
+            observe.onEngine(jpeg, h, eye, view, at);
+          },
         } : {}),
       });
       const phoneServer = phone;
@@ -422,7 +456,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     let link: ThinqLink | null = null;
     return {
       twin, hub: started.hub, signals, hubKind, transport: started.transport, warnings: started.warnings, policy, agent, layout: layout?.editor,
-      touch: touchStore, app: appNow, twinDir, phoneUrls, phonePort,
+      touch: touchStore, start: startStore, app: appNow, twinDir, phoneUrls, phonePort,
       setLink(next) {
         link?.stop();
         link = closed ? null : next;
