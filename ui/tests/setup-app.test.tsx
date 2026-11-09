@@ -274,6 +274,7 @@ describe("설정 4단계: 벽 하나로 A·B 구석 고르기", () => {
     const { user, pick, viewer } = await withViewer(() => [200, { ok: true, points: [A, B], distance_m: 5.403 }]);
     expect(screen.getByRole("button", { name: "완료하고 대시보드로" })).toBeDisabled();
     await waitFor(() => expect(viewer.startPick).toHaveBeenCalled());
+    expect(screen.queryByRole("button", { name: "저장" })).toBeNull(); // 핀이 없으면 저장·지우기를 띄우지 않는다
     await pick({ position: [3, 0.1], room: "room", normal: [0, 1] });
     await waitFor(() => expect(screen.getByRole("button", { name: "저장" })).toBeEnabled());
     expect(screen.getByRole("button", { name: "완료하고 대시보드로" })).toBeDisabled();

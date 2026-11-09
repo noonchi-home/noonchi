@@ -319,7 +319,7 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
                   </Card>
                 ))}
               </div>
-              {(any || saved || picking) && (
+              {(any || saved) && (
                 <Card className="flex justify-center gap-1.5 self-center p-2 lg:pointer-events-auto lg:absolute lg:bottom-3 lg:left-1/2 lg:-translate-x-1/2">
                   {picking && any ? <Button variant="ghost" size="sm" onClick={() => viewer()?.cancelPick?.()}>고르기 취소</Button> : (
                     <>
