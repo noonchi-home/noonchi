@@ -8,7 +8,7 @@
 2. 물건 기준점(걸으면서 저절로): 엔진 프레임 YOLO26n의 크고 바닥에 서는 물건(냉장고·싱크대·변기·침대·소파·식탁·오븐·전자레인지·TV). 상자 아래 가운데 광선이 AR 바닥 면과 만나는 점을 모으고, 트윈 물건 자리·크기와 짝지어 RANSAC + 최소제곱으로 푼다.
 3. 벽 모양(걸으면서 저절로): 자세마다 오는 실제 hit-test 점 중 법선이 수평인 벽 점을 모아 평면도 벽 면에 2D ICP(점-선 거리, Huber, 잘라내기)로 맞춘다. 지금 변환에서 시작하고 한 번에 움직이는 양을 묶는다.
 
-세 겹은 같은 풀이(가우스-뉴턴, 점-점·점-선 항)에 무게를 달리해 들어간다. 시작 위치는 약한 사전값이다. 기준을 넘을 때만 살아 있는 변환을 바꾸고, 한 번에 움직이는 양을 묶어 튀지 않게 한다. 예전 A·B 벽 대기·바닥 기준점은 그대로 두고, 기록하면 그 변환을 맞춘 상태로 넣는다.
+세 겹은 같은 풀이(가우스-뉴턴, 점-점·점-선 항)에 무게를 달리해 들어간다. 시작 위치는 약한 사전값이다. 기준을 넘을 때만 살아 있는 변환을 바꾸고, 한 번에 움직이는 양을 묶어 튀지 않게 한다. 맞추는 길은 이 세 겹뿐이다. A·B 벽 대기·바닥 기준점(`ar_anchors`)·자동 모서리는 쓰지 않는다(사용자 결정).
 
 **Tech Stack:** TypeScript·zod·Vitest(루트), React·Testing Library(ui). 새 의존성 없음.
 
@@ -17,7 +17,7 @@
 - 변환은 지금 `Alignment`(theta·tx·ty·floorY)와 같은 뜻이다: 평면 = R(theta)·[AR x, AR z] + t. 세션(`src/phone/session.ts`)은 맞춤 모듈의 변환을 눈·사진·고리·「여기」에 그대로 쓴다. 어림이면 눈만 `estimated: true`로 보내고 사진·World State·고리에는 쓰지 않는다.
 - 바닥 높이: 실제 hit-test 바닥 점(위를 보는 면, 폰보다 0.9m 이상 아래)의 중앙값, 없으면 폰이 보낸 어림 바닥(`floor_y`), 없으면 시작할 때 폰 높이 − 1.5m.
 - 물건 짝: 트윈의 물건 종류 표(`src/sync/landmarks.ts`)로 COCO 종류 → 트윈 종류. 집에 하나뿐인 종류를 먼저 쓰고, 변환이 생긴 뒤에는 가장 가까운 같은 종류를 더한다. 상자 아래 가운데는 물건 가운데가 아니라 카메라 쪽 앞 가장자리라서, 지금 변환으로 카메라 → 물건 가운데 선이 물건 바닥 사각형에 들어가는 점을 짝으로 쓴다.
-- 벽 면은 `src/phone/corners.ts`가 이미 만드는 방 쪽 면(방 다각형으로 자르고 고체 뺀 것)을 쓴다. 벽 점 법선은 부호를 보지 않고, 트윈 면이 카메라 쪽을 볼 때만 짝짓는다.
+- 벽 면은 `src/phone/home-plan.ts` `roomFaces`의 방 쪽 면(방 다각형으로 자르고 고체 뺀 것)을 쓴다. 벽 점 법선은 부호를 보지 않고, 트윈 면이 카메라 쪽을 볼 때만 짝짓는다.
 - 복도처럼 벽이 한 방향뿐이면 벽으로는 회전과 벽에 수직인 이동만 고치고 맞춤 표시는 어림으로 둔다. 길이 방향은 시작 위치·물건이 정한다.
 - QR 기준점은 만들지 않는다(사용자 결정).
 
@@ -29,20 +29,26 @@
 - [x] `src/brain/detector.ts`: 같은 출력에서 기준점 종류 상자(`landmarks`)를 따로 낸다. World State가 받는 `detections`는 그대로.
 
 ## Task 3: 벽 모양 (`src/sync/walls.ts`)
-- [x] 시험: 벽 점·바닥 점 가르기(법선), 10cm 칸 줄이기, ICP 짝(거리·법선·보이는 쪽), 잘라내기. 실패 확인 → 구현. `corners.ts`에 방 쪽 면 목록을 내보낸다.
+- [x] 시험: 벽 점·바닥 점 가르기(법선), 10cm 칸 줄이기, ICP 짝(거리·법선·보이는 쪽), 잘라내기. 실패 확인 → 구현. `home-plan.ts`에 방 쪽 면 목록을 둔다.
 
 ## Task 4: 시작 위치 (`src/sync/start.ts`)와 맞춤 모듈 (`src/sync/aligner.ts`)
-- [x] 시험: 시작 위치 저장 검사·파일, 그 자리 자세 → 변환(어림), 물건이 더해지면 맞춤으로 바뀌고 오차가 준다, 벽만으로 맞춤, 점이 적으면 안 바뀜, 한 걸음 묶기, AR 원점이 바뀌면 지움, A·B 기록을 넣으면 맞춤.
+- [x] 시험: 시작 위치 저장 검사·파일, 그 자리 자세 → 변환(어림), 물건이 더해지면 맞춤으로 바뀌고 오차가 준다, 벽만으로 맞춤, 점이 적으면 안 바뀜, 한 걸음 묶기, AR 원점이 바뀌면 지움.
 - [x] 걷기 모의 시험(`tests/sync-walk.test.ts`): 목련 트윈에서 정답 변환을 알고 자세·hit 점·YOLO 상자를 만든다(잡음, 가구에 가린 벽, 복도). 시작이 0.5m·15° 안이면 10cm·2° 안으로 돌아온다. 복도만 걸으면 어림으로 남고 길이 방향이 튀지 않는다.
 
 ## Task 5: 세션·폰 서버·집 연결
-- [x] 메시지: `pose`에 `hit_normal`·`floor_y`, 새 `start`·`surface`·`landmarks`. 상태에 `sync`. 엔진 프레임의 YOLO 기준점 상자를 맞춤 모듈로(관찰 흐름에 작은 고리 하나). REST `GET/POST /api/phone/start-pose`, `POST /api/phone/start-pose/clear`, `GET /api/phone/sync`.
+- [x] 메시지: `pose`에 `hit_normal`·`floor_y`, 새 `start`·`surface`·`landmarks`. 상태에 `sync`. 엔진 프레임의 YOLO 기준점 상자를 맞춤 모듈로(관찰 흐름에 작은 고리 하나). REST `GET/POST /api/phone/start-pose`, `POST /api/phone/start-pose/preview`, `POST /api/phone/start-pose/clear`, `GET /api/phone/sync`.
 - [x] 시험: 세션이 어림 변환으로 `estimated` 눈을 내고 사진에는 위치를 안 붙임, 맞춤이 되면 눈·고리, REST 저장·지우기, 폰 서버 메시지.
 
 ## Task 6: 폰 화면
 - [x] `ar.js`: 실제 hit의 면 법선과 어림 바닥 높이를 자세에 싣고, 마지막 자세를 들고 있는다. `controller.ts`: 「여기서 시작」(단추·말)으로 `start`. `state.ts`: 설정 모달 「위치」·「기준」 줄, 「시작 위치에서 다시 맞추기」, 맞추는 중 비전 줄. 시험(`ui/tests/phone-*.test.*`) 먼저.
 
-## Task 7: 설정 4단계 스케치와 문서
-- [x] 구조만 있는 HTML 스케치(시작 자리·방향 고르기). 화면은 확인 받은 뒤 만든다.
-- [x] `docs/reference.md`, README, `.env.example`(`PHONE_SYNC`).
-- [x] heavy 잠금으로 lint·tsc·루트 vitest·ui 시험·ui 빌드.
+## Task 7: 설정 4단계(시작 자리·방향 고르기)
+- [x] 구조만 있는 HTML 스케치를 확인받았다.
+- [x] `ui/src/setup/PositionStep.tsx`: 트윈이 말풍선을 채운다. 바닥을 누르면 시작 자리, 다른 곳을 누르거나 화살표 끝을 끌거나 15°씩 돌려 방향. 이름은 서버가 채우고(`preview`) 고칠 수 있다. 저장해야 「완료하고 대시보드로」. 3D 바닥 점 ↔ 화면 점은 `ui/src/setup/start-pick.ts`(뷰어 카메라 광선).
+- [x] 시험(`ui/tests/setup-app.test.tsx`) 먼저.
+
+## Task 8: A·B 벽 대기 없애기
+- [x] 서버: `src/phone/touch.ts`·`anchors.ts`·`corners.ts`, `touch-points` REST, 세션 `anchor` 메시지·기준점 상태, `PHONE_MAX_MISMATCH_M`·`PHONE_SYNC`. 평면도 읽기는 `src/phone/home-plan.ts`.
+- [x] 폰: 「기준점 다시 찍기」·찍기 단계·「기준점이 안 맞아요」 → 시작 위치가 없으면 「설정 화면에서 시작 위치를 정해 주세요」. 조준점(어림 바닥 포함)은 「물건 자리 맞추기」·「여기」에 쓰므로 `ui/src/phone/core/aim.js`로 남긴다.
+- [x] 예전 `phone-touch.json`은 읽지 않고 지우지도 않는다.
+- [x] 문서(`docs/reference.md`, `docs/plan.md`, README), heavy 잠금으로 lint·tsc·루트 vitest·ui 시험·ui 빌드.
