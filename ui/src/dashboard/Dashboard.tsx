@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ServerMessage } from "../../../src/contract/events.ts";
 import { BubbleLayer } from "../bubbles/BubbleLayer";
-import { checkList, type ChecksState } from "../checks/checks";
+import { checkList, dashboardChecks, type ChecksState } from "../checks/checks";
 import { useChecks } from "../checks/use-checks";
 import { useDevices } from "../lib/use-devices";
 import { useEvents } from "../lib/use-events";
@@ -13,10 +13,12 @@ import { wholeCamera, type TwinEngine } from "../twin3d/engine";
 import { LiveQueue, attachLive } from "../twin3d/live";
 import { BAKE_VIEWS } from "../twin3d/projection";
 import { Twin3D, useLayoutBox } from "../twin3d/Twin3D";
+import { currentStep, facingOf, fsmOf, isOpen, stepIndex } from "./data";
 import { DashboardScreen } from "./DashboardScreen";
+import { debugPhone, debugQuery, useDebugSteps, type Moment } from "./debug";
 import { hubOf } from "./hub";
 import type { PhoneSlot } from "./PhonePane";
-import { WORDS } from "./words";
+import { useDash } from "./use-dash";
 
 declare global {
   interface Window { __twin3d?: { engine: TwinEngine | null; ready: boolean } }
@@ -25,11 +27,11 @@ declare global {
 /** 트윈 위에 얹힌 것: 말풍선이 덮지 않을 자리. */
 const AVOID = "[data-say-card], [data-mascot], [data-progress], [data-chips]";
 
-/** 확인 목록만 말풍선으로. 두뇌 줄은 장면의 식탁(dining_table)에 붙는다. 자리는 확인한 것만 센다. 말풍선은 트윈 위에 얹힌 것(AVOID)을 비킨다. */
+/** 확인 목록만 말풍선으로(승인 대기 줄은 뺀다). 두뇌 줄은 장면의 식탁(dining_table)에 붙는다. 자리는 확인한 것만 센다. 말풍선은 트윈 위에 얹힌 것(AVOID)을 비킨다. */
 function Overlay({ devices, checks, focusId }: { devices: ReturnType<typeof useDevices>["devices"]; checks: ChecksState; focusId: string | null }) {
   const v = useViewer();
   const table = useMemo(() => v?.objects().find((o) => o.type === "dining_table") ?? null, [v]);
-  const list = useMemo(() => checkList(checks, table?.id ?? null), [checks, table]);
+  const list = useMemo(() => dashboardChecks(checkList(checks, table?.id ?? null)), [checks, table]);
   const objects = useMemo(() => new Map<string, string>(table ? [[table.id, table.name ?? "식탁"]] : []), [table]);
   const points = useAnchors(list.map((c) => c.deviceId ?? c.objectId!));
   return <BubbleLayer checks={list} devices={devices} objects={objects} points={points} focusId={focusId} avoid={AVOID} />;
@@ -85,16 +87,20 @@ function BakedStage({ home, onEngine: toLive, onReady: toReady, children }: {
 }
 
 /**
- * 대시보드: 서버에서 받은 것(health·/events·기기·확인 목록)을 화면 틀(DashboardScreen)에 넘긴다.
+ * 대시보드: 서버에서 받은 것(health·/events·기기·확인 목록·대시보드 자료)을 화면 틀(DashboardScreen)에 넘긴다.
+ * 대시보드 자료(data.ts): 열린 계획의 단계 번호·진행도, 마스코트 방향(열린 계획이면 트윈), 말풍선 카드 말, FSM 카드(마지막 유효 판단), YOLO 상자(받은 뒤 3초), 클로이드 자리를 아는가.
  * 트윈 칸 지도 자리: 한양목련처럼 구운 3D가 있는 집은 three.js 캔버스(BakedStage), 다른 집은 iframe 뷰어(TwinStage)와 그 위 확인 목록 말풍선.
  * 구운 트윈의 가전 상태·배치는 같은 소켓 메시지로 바꾸고, 엔진이 뜨기 전에 온 메시지는 모아 두었다가 엔진이 뜨면 넣는다.
  * 대시보드 폰 칸은 폰 서버가 켜져 있으면 실시간 영상, 아니면 연결 QR이다. health 전에는 빈 칸이다.
- * 대시보드에는 입력이 없다: 요청·승인은 폰에서 음성으로 온다. 설정에서 집을 바꾸면 다시 불러온다.
+ * 대시보드에는 입력이 없다: 요청·승인은 폰에서 음성으로 온다. 승인 대기는 보이지 않는다. 설정에서 집을 바꾸면 다시 불러온다.
+ * ?debug=steps(debug.ts)면 대시보드 자료·확인 목록·대시보드 폰 칸·연결은 가짜 단계 순간 것이고, 트윈과 health는 서버 것이다.
  */
 export function Dashboard() {
+  const debug = useMemo(() => debugQuery(location.search), []);
   const { devices, apply } = useDevices();
   const health = useHealth();
   const { checks, onMessage: toChecks } = useChecks();
+  const { dash, boxes, onMessage: toDash, load } = useDash({ hold: debug !== null });
   const [connected, setConnected] = useState<boolean | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
   const [viewerReady, setViewerReady] = useState(false);
@@ -109,12 +115,20 @@ export function Dashboard() {
       return;
     }
     apply(m);
-    toChecks(m);
+    if (!debug) {
+      toChecks(m);
+      toDash(m);
+    }
     if (m.type === "agent" && m.event === "action" && m.action.deviceId) setFocusId(m.action.deviceId);
     if (live.current) live.current.handle(m);
     else if (kindRef.current !== "iframe") queue.current.push(m);
-  }, [apply, toChecks, homeId]);
+  }, [apply, toChecks, toDash, homeId, debug]);
   useEvents(onMessage, setConnected);
+  const onMoment = useCallback((m: Moment) => {
+    load(m.messages);
+    for (const message of m.messages) toChecks(message);
+  }, [load, toChecks]);
+  const moment = useDebugSteps(debug, onMoment);
   const kind = useTwinKind(homeId, health !== null);
   kindRef.current = kind;
   useEffect(() => { if (kind === "iframe") queue.current.drain(); }, [kind]);
@@ -127,8 +141,10 @@ export function Dashboard() {
     for (const m of queue.current.drain()) l.handle(m);
   }, []);
   const onBakedReady = useCallback(() => setBakedReady(true), []);
-  const hub = useMemo(() => hubOf(health, connected), [health, connected]);
-  const phone: PhoneSlot = !health ? { kind: "none" } : health.eye ? { kind: "live", url: hub.phoneUrl } : { kind: "qr", url: hub.phoneUrl };
+  const online = debug ? !debug.offline : connected;
+  const hub = useMemo(() => hubOf(health, online), [health, online]);
+  const phone: PhoneSlot = debug && moment ? debugPhone(debug, moment, hub.phoneUrl)
+    : !health ? { kind: "none" } : health.eye ? { kind: "live", url: hub.phoneUrl } : { kind: "qr", url: hub.phoneUrl };
   const map = kind === "iframe"
     ? (
       <TwinStage>
@@ -139,10 +155,13 @@ export function Dashboard() {
     : <BakedStage home={kind === "three" ? homeId : null} onEngine={onEngine} onReady={onBakedReady} />;
   // 트윈이 없는 집은 기다리지 않는다
   const mapReady = (kind === "iframe" ? viewerReady : kind === "three" && bakedReady) || health?.twin === false;
+  const plan = isOpen(dash.plan) ? dash.plan : null;
+  const { observation, action } = fsmOf(dash);
   return (
     <DashboardScreen
-      index={0} plan={null} step={null} robotKnown connected={connected} map={map} mapReady={mapReady}
-      phone={phone} boxes={[]} frame={null} observation={null} action={WORDS.wait} say="" facing="video" hub={hub}
+      index={stepIndex(plan)} plan={plan} step={currentStep(plan)} robotKnown={dash.eye !== null} connected={online} map={map} mapReady={mapReady}
+      phone={phone} boxes={boxes} frame={dash.boxes?.observe.frame ?? null} observation={observation} action={action} say={dash.say ?? ""}
+      facing={facingOf(plan)} hub={hub} settingsOpen={debug?.settings}
     />
   );
 }
