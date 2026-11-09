@@ -22,27 +22,27 @@
 - QR 기준점은 만들지 않는다(사용자 결정).
 
 ## Task 1: 2D 강체 풀이 (`src/sync/rigid.ts`)
-- [ ] 시험: 가중 점 짝 닫힌 꼴, 잡음·이상치가 있을 때 RANSAC, 점-선 항 가우스-뉴턴(Huber), 한 방향만 있는 점-선(복도)에서 길이 방향이 안 움직임, 한 걸음 묶기. 실패 확인 → 구현.
+- [x] 시험: 가중 점 짝 닫힌 꼴, 잡음·이상치가 있을 때 RANSAC, 점-선 항 가우스-뉴턴(Huber), 한 방향만 있는 점-선(복도)에서 길이 방향이 안 움직임, 한 걸음 묶기. 실패 확인 → 구현.
 
 ## Task 2: 물건 기준점 (`src/sync/landmarks.ts`)
-- [ ] 시험: 종류 표(목련 트윈에서 소파·식탁 하나, 냉장고·변기·침대·싱크대 여럿, 없는 종류 빠짐), 광선-바닥 점(알려진 투영·자세로 상자 아래 가운데 → AR 바닥 점), 관찰 묶기와 이상치 버리기. 실패 확인 → 구현.
-- [ ] `src/brain/detector.ts`: 같은 출력에서 기준점 종류 상자(`landmarks`)를 따로 낸다. World State가 받는 `detections`는 그대로.
+- [x] 시험: 종류 표(목련 트윈에서 소파·식탁 하나, 냉장고·변기·침대·싱크대 여럿, 없는 종류 빠짐), 광선-바닥 점(알려진 투영·자세로 상자 아래 가운데 → AR 바닥 점), 관찰 묶기와 이상치 버리기. 실패 확인 → 구현.
+- [x] `src/brain/detector.ts`: 같은 출력에서 기준점 종류 상자(`landmarks`)를 따로 낸다. World State가 받는 `detections`는 그대로.
 
 ## Task 3: 벽 모양 (`src/sync/walls.ts`)
-- [ ] 시험: 벽 점·바닥 점 가르기(법선), 10cm 칸 줄이기, ICP 짝(거리·법선·보이는 쪽), 잘라내기. 실패 확인 → 구현. `corners.ts`에 방 쪽 면 목록을 내보낸다.
+- [x] 시험: 벽 점·바닥 점 가르기(법선), 10cm 칸 줄이기, ICP 짝(거리·법선·보이는 쪽), 잘라내기. 실패 확인 → 구현. `corners.ts`에 방 쪽 면 목록을 내보낸다.
 
 ## Task 4: 시작 위치 (`src/sync/start.ts`)와 맞춤 모듈 (`src/sync/aligner.ts`)
-- [ ] 시험: 시작 위치 저장 검사·파일, 그 자리 자세 → 변환(어림), 물건이 더해지면 맞춤으로 바뀌고 오차가 준다, 벽만으로 맞춤, 점이 적으면 안 바뀜, 한 걸음 묶기, AR 원점이 바뀌면 지움, A·B 기록을 넣으면 맞춤.
-- [ ] 걷기 모의 시험(`tests/sync-walk.test.ts`): 목련 트윈에서 정답 변환을 알고 자세·hit 점·YOLO 상자를 만든다(잡음, 가구에 가린 벽, 복도). 시작이 0.5m·15° 안이면 10cm·2° 안으로 돌아온다. 복도만 걸으면 어림으로 남고 길이 방향이 튀지 않는다.
+- [x] 시험: 시작 위치 저장 검사·파일, 그 자리 자세 → 변환(어림), 물건이 더해지면 맞춤으로 바뀌고 오차가 준다, 벽만으로 맞춤, 점이 적으면 안 바뀜, 한 걸음 묶기, AR 원점이 바뀌면 지움, A·B 기록을 넣으면 맞춤.
+- [x] 걷기 모의 시험(`tests/sync-walk.test.ts`): 목련 트윈에서 정답 변환을 알고 자세·hit 점·YOLO 상자를 만든다(잡음, 가구에 가린 벽, 복도). 시작이 0.5m·15° 안이면 10cm·2° 안으로 돌아온다. 복도만 걸으면 어림으로 남고 길이 방향이 튀지 않는다.
 
 ## Task 5: 세션·폰 서버·집 연결
-- [ ] 메시지: `pose`에 `hit_normal`·`floor_y`, 새 `start`·`surface`·`landmarks`. 상태에 `sync`. 엔진 프레임의 YOLO 기준점 상자를 맞춤 모듈로(관찰 흐름에 작은 고리 하나). REST `GET/POST /api/phone/start-pose`, `POST /api/phone/start-pose/clear`, `GET /api/phone/sync`.
-- [ ] 시험: 세션이 어림 변환으로 `estimated` 눈을 내고 사진에는 위치를 안 붙임, 맞춤이 되면 눈·고리, REST 저장·지우기, 폰 서버 메시지.
+- [x] 메시지: `pose`에 `hit_normal`·`floor_y`, 새 `start`·`surface`·`landmarks`. 상태에 `sync`. 엔진 프레임의 YOLO 기준점 상자를 맞춤 모듈로(관찰 흐름에 작은 고리 하나). REST `GET/POST /api/phone/start-pose`, `POST /api/phone/start-pose/clear`, `GET /api/phone/sync`.
+- [x] 시험: 세션이 어림 변환으로 `estimated` 눈을 내고 사진에는 위치를 안 붙임, 맞춤이 되면 눈·고리, REST 저장·지우기, 폰 서버 메시지.
 
 ## Task 6: 폰 화면
-- [ ] `ar.js`: 실제 hit의 면 법선과 어림 바닥 높이를 자세에 싣고, 마지막 자세를 들고 있는다. `controller.ts`: 「여기서 시작」(단추·말)으로 `start`. `state.ts`: 설정 모달 「위치」·「기준」 줄, 「시작 위치에서 다시 맞추기」, 맞추는 중 비전 줄. 시험(`ui/tests/phone-*.test.*`) 먼저.
+- [x] `ar.js`: 실제 hit의 면 법선과 어림 바닥 높이를 자세에 싣고, 마지막 자세를 들고 있는다. `controller.ts`: 「여기서 시작」(단추·말)으로 `start`. `state.ts`: 설정 모달 「위치」·「기준」 줄, 「시작 위치에서 다시 맞추기」, 맞추는 중 비전 줄. 시험(`ui/tests/phone-*.test.*`) 먼저.
 
 ## Task 7: 설정 4단계 스케치와 문서
-- [ ] 구조만 있는 HTML 스케치(시작 자리·방향 고르기). 화면은 확인 받은 뒤 만든다.
-- [ ] `docs/reference.md`, README, `.env.example`(`PHONE_SYNC`).
-- [ ] heavy 잠금으로 lint·tsc·루트 vitest·ui 시험·ui 빌드.
+- [x] 구조만 있는 HTML 스케치(시작 자리·방향 고르기). 화면은 확인 받은 뒤 만든다.
+- [x] `docs/reference.md`, README, `.env.example`(`PHONE_SYNC`).
+- [x] heavy 잠금으로 lint·tsc·루트 vitest·ui 시험·ui 빌드.
