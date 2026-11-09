@@ -1,12 +1,13 @@
-// 실행 전 검사(결정론): 아는 행동이고 계획이 있다, 대상 물건이 있고 이미 싱크대 안이 아니다(남은 같은 종류가 모두 싱크대 안이면 그 이유), 판단 뒤에 찍힌 프레임으로 다시 봤고 STALE_MS 안이다,
+// 검사(결정론) 둘. 통과하지 못하면 실행하지 않고 이유(CHECK_TEXT)를 낸다.
+// 계획 전 검사(checkDecision, 에이전트를 부르기 전): 행동 목록에 있는 행동이다, 대상 종류가 있는 행동이면 치우지 않은 대상이 보인다(남은 같은 종류가 모두 싱크대 안이면 그 이유).
+// 실행 전 검사(checkPlan, 에이전트가 만든 계획): 아는 행동이고 계획이 있다, 대상 물건이 있고 이미 싱크대 안이 아니다, 판단 뒤에 찍힌 프레임으로 다시 봤고 STALE_MS 안이다,
 // 사람이 그 물건을 들고 있거나 쓰는 중이 아니다, 이동 단계가 있으면 경로가 있다, 시험 모드에서는 짝지은 실제 가전 단계를 막는다.
-// 통과하지 못하면 실행하지 않고 이유(CHECK_TEXT)를 낸다.
 import type { PlanView } from "../contract/plan.js";
 import type { ControlMode } from "../contract/setup.js";
 import type { WorldView } from "../contract/world.js";
 import { CHECK_TEXT } from "../plan/labels.js";
 import type { DecisionRecord } from "../world/decide.js";
-import { holdsTarget, planTargetId, putAway, taskOf } from "./tasks.js";
+import { holdsTarget, planTargetId, putAway, targetOf, taskOf } from "./tasks.js";
 
 export type CheckFail = keyof typeof CHECK_TEXT;
 export type CheckResult = { ok: true } | { ok: false; reason: CheckFail; text: string };
@@ -26,20 +27,31 @@ export interface CheckInput {
 
 const fail = (reason: CheckFail): CheckResult => ({ ok: false, reason, text: CHECK_TEXT[reason] });
 
+/** 계획 전 검사: 에이전트를 부를 만한 판단인가(LLM을 부르지 않고 본다). */
+export function checkDecision(i: Pick<CheckInput, "decision" | "tasks" | "world">): CheckResult {
+  const spec = taskOf(i.decision.action);
+  if (!spec || !i.tasks.includes(spec.name)) return fail("unknown_task");
+  if (spec.target && !targetOf(spec, i.world)) {
+    return fail(i.world.objects.some((x) => x.cls === spec.target && x.status !== "gone" && putAway(x)) ? "in_sink" : "no_target");
+  }
+  return { ok: true };
+}
+
 export function checkPlan(i: CheckInput): CheckResult {
   const spec = taskOf(i.decision.action);
   if (!spec || !i.tasks.includes(spec.name) || !i.plan) return fail("unknown_task");
-  if (spec.kind === "pick_place") {
+  if (spec.target) {
     const id = planTargetId(i.plan);
     const o = i.world.objects.find((x) => x.id === id);
-    if (!o || o.status === "gone") {
+    if (!o || o.status === "gone" || o.cls !== spec.target) {
       return fail(i.world.objects.some((x) => x.cls === spec.target && x.status !== "gone" && putAway(x)) ? "in_sink" : "no_target");
     }
     if (putAway(o)) return fail("in_sink");
     if (o.last_seen_ms <= i.decision.atMs || i.nowMs - o.last_seen_ms > i.staleMs) return fail("stale");
     if (o.facts.place?.value === "in_hand" || o.facts.use?.value === "in_use" || holdsTarget(i.world, spec.target)) return fail("in_hand");
   }
-  if (i.plan.steps.some((s) => s.kind === "move") && i.plan.path.length === 0) return fail("unreachable");
+  // 손 자리를 모르면(맞추기 전) 길 없이 「완료」로 넘긴다. 자리를 아는데 길이 없을 때만 막는다
+  if (i.plan.robot.position && i.plan.steps.some((s) => s.kind === "move") && i.plan.path.length === 0) return fail("unreachable");
   if (i.mode === "test" && (i.deviceSteps ?? []).some((d) => d.paired)) return fail("device_mode");
   return { ok: true };
 }

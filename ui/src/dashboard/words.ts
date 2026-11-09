@@ -3,6 +3,7 @@ import { CLASSES } from "../../../src/world/vocab.ts";
 
 export const WORDS = {
   wait: "대기",
+  waiting: "기다리는 중",
   fsm: "FSM",
   action: "행동",
   noObservation: "아직 판단 없음",

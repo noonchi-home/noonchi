@@ -1,32 +1,39 @@
-// 행동 목록의 행동마다 계획 모양을 정해 둔다. PAM이 고른 행동(task_index → 행동 이름)을 클로이드 계획으로 바꾼다.
-// 대기(-1)·판단 실패·계획 모양이 없는 행동은 계획이 없다.
-import type { PlanStep, PlanView } from "../contract/plan.js";
+// 행동 목록(PAM에 보내는 작업 목록과 그 설명). PAM이 고른 행동(task_index → 행동 이름)은 에이전트가 계획 모드로 계획을 만든다(src/agent/planner.ts).
+// 목록은 services/pam/scenarios/noonchi/tasks.json과 같다(tests/agent-planner.test.ts). 최종 목록은 FSM 담당(박석준·김준형)이 정한다.
+// 여기에는 계획 모양이 없다: 무엇을 어떤 순서로 할지는 에이전트가 정한다. target은 계획 전 검사(LLM을 부르기 전)에만 쓴다.
+import type { PlanView } from "../contract/plan.js";
 import type { ObjClass, WorldObject, WorldView } from "../contract/world.js";
-import type { FloorPlan } from "../plan/floor.js";
-import { STEP_COMMAND, STEP_LABEL } from "../plan/labels.js";
-import { askPlan, cupPlan } from "../plan/planner.js";
-import type { DecisionRecord } from "../world/decide.js";
-import { ASK_PROMPT, type ActionChoice, type ActionPrompt, type TaskName } from "./prompts.js";
+import type { DeviceKind } from "../hub/types.js";
+import type { ActionChoice } from "./prompts.js";
 
-/** pick_place: 대상 물건을 집어 옮긴다(로봇이 없어 실제 폰으로 사람에게 단계마다 명령). ask: 실제 폰으로 묻는다. */
-export type TaskSpec =
-  | { name: TaskName; kind: "pick_place"; target: ObjClass }
-  | { name: TaskName; kind: "ask"; target?: undefined; prompt: ActionPrompt };
+/** 이 행동의 계획에 쓸 수 있는 단계: 단계 종류(src/agent/planTools.ts AgentStepKind), 기기 단계의 가전 종류·도구. 승인한 일의 범위다. */
+export interface TaskAllow { kinds: readonly ("go" | "pick" | "place" | "device" | "ask" | "say" | "wait")[]; devices?: { kinds: readonly DeviceKind[]; tools: readonly string[] } }
+
+/** 행동 하나: 이름, 에이전트에게 주는 설명, 쓸 수 있는 단계, 계획 전 검사의 대상 종류(이 종류 중 치우지 않은 물건이 보여야 부른다). */
+export interface TaskSpec { name: string; description: string; allow: TaskAllow; target?: ObjClass }
+
+const HAND = ["go", "pick", "place"] as const;
 
 export const TASKS: Record<string, TaskSpec> = {
-  "컵 치우기": { name: "컵 치우기", kind: "pick_place", target: "cup" },
-  "사용자에게 물어보기": { name: "사용자에게 물어보기", kind: "ask", prompt: ASK_PROMPT },
+  "컵 치우기": {
+    name: "컵 치우기", description: "사람이 자리를 비운 뒤 식탁 등에 남은 컵을 사람이 싱크대에 넣게 한다.", target: "cup",
+    allow: { kinds: HAND },
+  },
+  "사용자에게 물어보기": { name: "사용자에게 물어보기", description: "컵 안을 확인할 수 없는 등 애매할 때 폰으로 사용자에게 어떻게 할지 묻는다.", allow: { kinds: ["ask", "say"] } },
+  "세탁물 건조기로 옮기기": {
+    name: "세탁물 건조기로 옮기기", description: "세탁기가 멈추면 사람이 세탁물을 꺼내 건조기에 넣게 하고 건조기를 시작한다.",
+    allow: { kinds: ["wait", ...HAND, "device", "ask", "say"], devices: { kinds: ["dryer"], tools: ["start"] } },
+  },
+  "에어컨 켜기": {
+    name: "에어컨 켜기", description: "더울 때 사람이 있는 방의 에어컨을 켠다.",
+    allow: { kinds: ["device", "say"], devices: { kinds: ["aircon"], tools: ["turn_on"] } },
+  },
 };
 
-/** 컵 치우기 단계 열쇠(STEP_LABEL·STEP_COMMAND와 같다). 실행 추적이 단계마다 명령과 넘어가는 때를 고른다. */
-export type CupStep = keyof typeof STEP_COMMAND;
+/** PAM에 보내는 행동 목록(순서가 task_index다). */
+export const TASK_NAMES: readonly string[] = Object.keys(TASKS);
 
-/** 계획 단계 → 컵 치우기 단계 열쇠(cupPlan이 단 단계 글로 찾는다). 컵 치우기 단계가 아니면 null. */
-export function cupStepOf(step: PlanStep): CupStep | null {
-  return (Object.keys(STEP_COMMAND) as CupStep[]).find((k) => STEP_LABEL[k] === step.label) ?? null;
-}
-
-/** 행동 이름 → 계획 모양. 목록 밖이면 null. */
+/** 행동 이름 → 행동. 목록 밖이면 null. */
 export function taskOf(action: string | null): TaskSpec | null {
   return action && Object.hasOwn(TASKS, action) ? TASKS[action]! : null;
 }
@@ -43,7 +50,7 @@ export function holdsTarget(world: WorldView, cls: string | undefined): boolean 
 }
 
 /** 대상 종류 중 사라지지 않았고 이미 치우지 않은(싱크대 안이 아닌) 물건 가운데 가장 최근에 본 것. 대상이 없는 행동이거나 못 찾으면 null. */
-export function targetOf(spec: TaskSpec, world: WorldView): WorldObject | null {
+export function targetOf(spec: Pick<TaskSpec, "target">, world: WorldView): WorldObject | null {
   if (!spec.target) return null;
   return world.objects.filter((o) => o.cls === spec.target && o.status !== "gone" && !putAway(o)).sort((a, b) => b.last_seen_ms - a.last_seen_ms)[0] ?? null;
 }
@@ -54,14 +61,6 @@ export function planTargetId(plan: PlanView): string | null {
 }
 
 export const planIdOf = (decisionId: string) => `plan:${decisionId}`;
-
-export function planFor(fp: FloorPlan, d: DecisionRecord, world: WorldView, nowIso: string): PlanView | null {
-  const spec = taskOf(d.action);
-  if (d.status !== "valid" || !d.prediction || !spec) return null;
-  const id = planIdOf(d.id);
-  const base = spec.kind === "ask" ? askPlan(fp, id, nowIso) : cupPlan(fp, id, nowIso, targetOf(spec, world));
-  return base && { ...base, judgment: d.prediction.reasoning };
-}
 
 const squash = (t: string) => t.replace(/[\s.,!?~·]+/g, "");
 /** whole 답 앞에 붙어도 되는 말. */

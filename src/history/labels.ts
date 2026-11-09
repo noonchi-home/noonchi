@@ -33,5 +33,5 @@ export const REFLECT_TEXT = {
 
 /** 폰 부탁·질문의 답과 그동안의 말(반성 피드백). */
 export const FEEDBACK_TEXT = {
-  answer: (said: string, kind: "pick_place" | "ask", asked: string) => `${said} · ${kind === "ask" ? "질문" : "부탁"}: ${asked}`,
+  answer: (said: string, kind: "command" | "ask", asked: string) => `${said} · ${kind === "ask" ? "질문" : "부탁"}: ${asked}`,
 };

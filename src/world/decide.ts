@@ -51,6 +51,8 @@ export interface DeciderOptions {
   /** 관찰 텍스트·마지막 관찰 시각의 시간대(분). */
   offsetMinutes: number;
   clock?: { now(): number };
+  /** 참이면 부르지 않는다: 실행 추적이 행동 중 기다리기·기기 단계를 보는 동안(src/act/track.ts waiting). */
+  hold?: () => boolean;
 }
 
 export class Decider {
@@ -59,7 +61,7 @@ export class Decider {
   private seq = 0;
   private stopped = false;
   private link: boolean | null = null;
-  private paused: TriggerPause | null = null;
+  private paused: TriggerPause | "acting" | null = null;
   private readonly clock: { now(): number };
 
   constructor(private readonly o: DeciderOptions) {
@@ -83,12 +85,12 @@ export class Decider {
     if (this.stopped) return;
     const now = this.clock.now();
     const view = this.o.world.view(now);
-    const paused = this.o.trigger.pause(now, view.person.visible);
+    const paused = this.o.hold?.() ? "acting" : this.o.trigger.pause(now, view.person.visible);
     if (paused !== this.paused) {
       this.paused = paused;
       this.o.emit({ type: "trigger", at_ms: now, paused: paused !== null, text: paused ? TRIGGER_TEXT[paused] : TRIGGER_TEXT.resumed });
     }
-    if (!this.o.trigger.due(now, view.person.visible, this.running.size)) return;
+    if (paused === "acting" || !this.o.trigger.due(now, view.person.visible, this.running.size)) return;
     this.o.trigger.called(now);
     const seq = ++this.seq;
     const textSent = textFromWorld(view, this.recent, { nowMs: now, offsetMinutes: this.o.offsetMinutes });

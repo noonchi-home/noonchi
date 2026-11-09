@@ -1,188 +1,278 @@
-// 실행 추적: 판단 → 계획 → 실행 중 → 완료 또는 실패. 단계마다 execution 기록을 낸다(plan_id는 plan:<판단 id>).
-// 실제 폰은 에이전트의 손이다(src/contract/phone.ts): 계획의 단계마다 사람에게 명령 하나를 보내고(소리로도 읽음), 그 단계가 됐는지를
-// 폰 눈 위치(이동: 목표에서 arriveM 안)와 World State(집기: 컵이 손에 있음·사람이 물건을 들고 있음, 내려놓기: 컵이 싱크대 안)로 본 뒤
-// 다음 명령을 보낸다. 한 번 볼 때(tick·World State 변화·답) 한 단계만 넘긴다. 마지막 단계가 되면 명령을 지우고 계획을 완료로 닫는다.
-// 「완료」(단추·말)는 지금 단계 하나를 넘기고, 말로 「그만」이면 계획을 그만둔다. 한 단계가 repeatMs마다 명령을 다시 읽고
-// stepTimeoutMs가 지나면 실패로 닫는다(폰을 닫고 나가도 이렇게 끝난다). 비전 상태는 바뀔 때만, visionMs에 한 번까지 보낸다.
-// 물어보기는 같은 자리에 질문과 답 단추를 띄우고 답을 받으면 완료. PlanHub 단계 상태(active·done)가 지금 단계를 따라간다.
-// 명령마다 대상 하나(식탁·그 컵·싱크대, 트윈 자리)를 같이 보내 실제 폰이 그것에만 고리를 그린다.
-// 실행 전 검사는 통과할 때까지 tick마다 다시 보고, recheckMs가 지나도 안 되면 그 이유로 실패한다.
-// 승인(src/agent/approval.ts): 검사를 통과한 PAM 계획이 처음 하는 일이면(승인을 받은 적 없음) 첫 단계 전에 실제 폰에 「…를 할까요?」와
-// 답 둘(승인·거절)을 띄우고 답을 기다린다(그동안 계획은 planned). 승인이면 기억하고 첫 단계로, 거절이면 기억하지 않고 취소로 닫는다(다음 판단은 또 묻는다).
-// 질문 계획(사용자에게 물어보기)은 묻는 일 자체라 승인을 묻지 않는다.
-// 로봇은 한 번에 한 계획만 실행한다: 진행 중인 계획과 행동·대상이 같은 판단은 기록만 하고, 지금 계획보다 먼저 보낸(seq가 작은) 판단은 버린다.
-// 대상 컵: 기준점을 맞춘 뒤 컵이 identityM 넘게 움직이면 World State가 새 id를 붙인다(src/world/state.ts). 그래서 계획을 만들 때 고른 컵과
-// 그 뒤에 새로 생긴 같은 종류 물건을 모두 그 컵으로 본다(계획 전부터 있던 다른 컵은 빼고). 대상이 그중 하나로 바뀌거나 안 보여도 같은 행동이다.
+// 실행 추적: 판단 → 계획(에이전트 계획 모드) → 실행 중 → 완료 또는 실패. 단계마다 execution 기록을 낸다(plan_id는 plan:<판단 id>).
+// 판단 하나마다 한 번만 정한다: 늦은 답·판단 실패·대기·진행 중(또는 계획을 만드는 중)인 행동과 같은 행동은 기록만 하고, 계획 전 검사(LLM 없음)를
+// 통과하면 에이전트를 계획 모드로 한 번 부른다(planner). 같은 행동은 planGapMs 안에 다시 부르지 않는다. 주기 tick은 에이전트를 부르지 않는다.
+// 계획은 어떤 것이든 같은 방법으로 돌린다(src/agent/planTools.ts AgentStep):
+// - 사람 단계(go·pick·place): 실제 폰(에이전트의 손, src/contract/phone.ts)에 사람에게 하는 명령 하나와 「완료」를 보내고(소리로도 읽음),
+//   끝나는 조건(World State 낱말 조건, ConditionWatch)이 참이거나 「완료」면 다음 단계로. repeatMs마다 명령을 다시 읽는다.
+//   명령마다 대상 하나(목표 자리·그 물건, 트윈 자리)를 같이 보내 실제 폰이 그것에만 고리를 그린다. 비전 상태는 바뀔 때만, visionMs에 한 번까지.
+// - 질문(ask): 같은 자리에 질문과 답 단추. 답을 받으면 다음 단계(마지막이거나 끝내는 답이면 완료). 알림(say): 한 줄을 읽고 조건(기본 몇 초)이 되면 다음.
+// - 기기(device): 그 단계가 되면 기기 도구를 정책(승인 규칙)을 거쳐 부른다. 위험 목록이면 실제 폰에 승인 질문, 승인이면 실행, 거절이면 취소로 닫는다.
+// - 기다리기(wait): 실제 폰 명령을 지우고 아무것도 보내지 않는다. 조건이 참이면 다음. PAM에 다시 묻지 않는다(대시보드 진행도에만 보인다).
+// 한 번 볼 때(tick·World State 변화·답) 한 단계만 넘긴다. 단계마다 시간 한도가 있고, 넘으면 on_timeout대로 한 번 다시 묻거나(계속·그만) 실패로 닫는다.
+// 「그만」(말)은 계획을 그만둔다. 실행 전 검사는 통과할 때까지 tick마다 다시 보고, recheckMs가 지나도 안 되면 그 이유로 실패한다.
+// 승인(src/agent/approval.ts): 검사를 통과한 계획이 처음 하는 일이면(승인을 받은 적 없음) 첫 단계 전에 실제 폰에 「…를 할까요?」와 답 둘(승인·거절)을 띄운다.
+// 승인이면 기억하고 첫 단계로, 거절이면 기억하지 않고 취소로 닫는다. 질문·알림만 있는 계획은 묻지 않는다. 위험 목록 가전 승인은 기억하지 않는다.
+// 같은 물건 따라가기: 기준점을 맞춘 뒤 물건이 identityM 넘게 움직이면 World State가 새 id를 붙인다. 계획을 받을 때 그 종류의 다른 물건을 적어 두고,
+// 계획 물건과 그 뒤에 새로 생긴 같은 종류 물건을 모두 그 물건으로 본다(조건의 follow, 비전 상태 줄, 고리).
+// 폰 근처 조건은 실행 추적이 받은 맞춘 눈(받은 시각)과 World State 눈 중 새것으로 본다.
 import type { BrainLog, ExecState } from "../contract/events.js";
 import type { PlannedCommand, PlannedCommandMessage } from "../contract/phone.js";
-import type { PlanStep, PlanView, XZ } from "../contract/plan.js";
-import type { WorldObject, WorldView } from "../contract/world.js";
+import type { PlanView, XZ } from "../contract/plan.js";
+import type { WorldEye, WorldObject, WorldView } from "../contract/world.js";
 import type { FloorPlan } from "../plan/floor.js";
 import type { PlanHub } from "../plan/hub.js";
-import { APPROVAL_TEXT, EXEC_TEXT, STEP_COMMAND, VISION_TEXT } from "../plan/labels.js";
-import { PLACE_UNKNOWN, STATE_TEXT, onSurface } from "../world/labels.js";
+import { AGAIN_TEXT, APPROVAL_TEXT, EXEC_TEXT, VISION_TEXT, placeShort } from "../plan/labels.js";
+import { roomAt } from "../plan/route.js";
+import { OBJECT_NAME, PLACE_UNKNOWN, STATE_TEXT, onSurface } from "../world/labels.js";
+import { ConditionWatch, type ConditionContext } from "../world/conditions.js";
 import type { DecisionRecord } from "../world/decide.js";
 import { approvalNeed, taskKey, type ApprovalAnswer, type ApprovalBook } from "../agent/approval.js";
+import { HUMAN_KINDS, objectNames, type AgentPlan, type AgentStep, type PlanResult } from "../agent/planTools.js";
+import type { ToolResult } from "../agent/tools.js";
 import type { CheckResult } from "./check.js";
-import { APPROVE, STEP_DONE, STOP, type ActionChoice } from "./prompts.js";
-import { cupStepOf, holdsTarget, matchChoice, planFor, planIdOf, targetOf, taskOf, type CupStep, type TaskSpec } from "./tasks.js";
+import { AGAIN, APPROVE, STEP_DONE, STOP, type ActionChoice } from "./prompts.js";
+import { matchChoice, planIdOf } from "./tasks.js";
+
+/** 기기 단계 실행(src/server/home.ts: 기기 도구 + 정책). run이 승인 토큰을 내면 실제 폰에 묻고 confirm·cancel로 답한다.
+ *  결과의 unverified(ThinQ가 받았지만 다시 읽은 값이 다름)·state 「모름」(신호 없음)은 적용을 확인하지 못한 것이다. */
+export interface DeviceRunner {
+  /** live가 거짓이면(계획이 바뀌었거나 닫힘) 가전에 보내지 않는다. 보내기 바로 앞에서 본다. */
+  run(tool: string, deviceId: string, args: Record<string, unknown>, live: () => boolean): Promise<ToolResult>;
+  confirm(token: string, live: () => boolean): Promise<Pick<ToolResult, "ok" | "error" | "unverified" | "state">>;
+  cancel(token: string): void;
+}
 
 export interface TrackerOptions {
   plans: PlanHub;
   world: () => WorldView;
+  /** 계획 전 검사(src/act/check.ts checkDecision). 에이전트를 부르기 전에 본다. 없으면 통과. */
+  precheck?: (d: DecisionRecord) => CheckResult;
   /** 실행 전 검사(src/act/check.ts checkPlan). */
   check: (d: DecisionRecord, plan: PlanView) => CheckResult;
+  /** 에이전트 계획 모드(src/agent/planner.ts). 판단 하나에 한 번 부른다. 새 판단·「그만」·멈춤이면 signal을 끊는다. */
+  planner: (d: DecisionRecord, signal: AbortSignal) => PlanResult | Promise<PlanResult>;
   floor: () => FloorPlan;
   /** 실제 폰으로 보낸다: 명령(command)·지우기(command_clear). 폰 서버가 명령 대상 자리를 AR 자리로 바꾼다. */
   toPhone: (msg: PlannedCommandMessage) => void;
-  /** 평면도 물건(식탁·싱크대)의 이름과 트윈 자리 [x, 높이, y](명령 대상 고리). 모르면 undefined. */
+  /** 평면도 물건의 이름과 트윈 자리 [x, 높이, y](명령 대상 고리). 모르면 undefined. */
   locate?: (id: string) => { label: string; position: [number, number, number] } | undefined;
   emit: (l: BrainLog) => void;
   /** 승인 기억(task:<행동 이름>). 처음 하는 계획은 묻고, 답을 남긴다. */
   approvals: ApprovalBook;
+  /** 기기 단계 실행. 없으면 기기 단계는 실패한다. */
+  devices?: DeviceRunner;
   clock?: { now(): number };
-  /** 이동 단계: 폰 눈이 목표 물건(평면도 자리)에서 이 거리(m) 안이면 도착. */
-  arriveM?: number;
-  /** 한 단계가 이만큼(ms) 안 끝나면 명령을 다시 소리로 읽는다(그 뒤로도 이만큼마다). */
+  /** 하루 때 조건의 시간대(분). */
+  offsetMinutes?: number;
+  /** 사람 단계·질문이 이만큼(ms) 안 끝나면 다시 소리로 읽는다(그 뒤로도 이만큼마다). */
   repeatMs?: number;
-  /** 한 단계가 이만큼(ms) 안 끝나면 실패로 닫는다. */
-  stepTimeoutMs?: number;
   /** 비전 상태를 이보다 자주(ms) 보내지 않는다. */
   visionMs?: number;
   /** 검사를 다시 보는 시간(ms). */
   recheckMs?: number;
+  /** 승인·다시 묻기 질문의 답을 기다리는 시간(ms). */
+  askMs?: number;
+  /** 같은 행동의 계획을 다시 만들기 전 기다리는 시간(ms). */
+  planGapMs?: number;
 }
 
-/** 기본값: 도착 1.2m(식탁·싱크대 가장자리에 선 사람 손의 폰), 다시 읽기 30초, 단계 실패 2분, 비전 상태 0.5초에 한 번, 검사 3초. */
-export const TRACK_DEFAULTS = { arriveM: 1.2, repeatMs: 30_000, stepTimeoutMs: 120_000, visionMs: 500, recheckMs: 3000 } as const;
+/** 기본값: 다시 읽기 30초, 비전 상태 0.5초에 한 번, 검사 3초, 승인 답 2분, 같은 행동 다시 계획 15초. 단계 시간 한도는 계획 단계마다 있다. */
+export const TRACK_DEFAULTS = { repeatMs: 30_000, visionMs: 500, recheckMs: 3000, askMs: 120_000, planGapMs: 15_000 } as const;
 
-/** targetId: 계획을 만들 때 World State에서 고른 대상 물건(없으면 null). others: 그때 있던 같은 종류의 다른 물건. at: 지금 단계 번호(실행 전 -1).
- *  sent: 실제 폰에 띄운 지금 명령. asking: 첫 단계 전 승인 질문을 띄우고 답을 기다리는 중. */
+/** 실제 폰에 띄운 질문: 첫 단계 전 승인, 위험 목록 가전 승인(토큰), 시간 초과로 다시 묻기. */
+type Asking = { why: "plan" } | { why: "device"; token: string } | { why: "again" };
+
+/** at: 지금 단계 번호(실행 전 -1). sent: 실제 폰에 띄운 지금 명령. others: 계획 물건 id → 계획을 받을 때 있던 같은 종류의 다른 물건.
+ *  alias: 계획 물건 id → 지금 그 물건으로 보는 World State id(옮겨서 새 id가 붙으면 이어 간다). carried: 집기 단계를 마친(사람이 든) 계획 물건.
+ *  device: 기기 단계 실행 상태(sent는 보냈지만 적용을 확인하지 못함). gen: 단계가 바뀔 때마다 올라 늦게 온 기기 결과를 버린다.
+ *  deadline: 이 단계 시간 한도(계속이면 한 번 늘어난다). again: 이 단계에서 시간 초과로 한 번 다시 물었다. */
 interface Run {
-  plan: PlanView; decision: DecisionRecord; spec: TaskSpec; targetId: string | null; others: ReadonlySet<string>; state: ExecState; since: number;
-  at: number; stepAt: number; spokeAt: number; visionAt: number; sent: PlannedCommand | null; asking: boolean;
+  plan: AgentPlan; decision: DecisionRecord; state: ExecState; since: number;
+  at: number; stepAt: number; spokeAt: number; visionAt: number; sent: PlannedCommand | null;
+  asking: Asking | null; askAt: number; watch: ConditionWatch | null; others: Map<string, Set<string>>; alias: Map<string, string>; carried: Set<string>;
+  deadline: number; again: boolean; device: "idle" | "running" | "done" | "sent"; gen: number;
 }
 
-/** 승인 질문 단계 id. */
-const approveStep = (planId: string) => `${planId}:approve`;
+interface Job { decision: DecisionRecord; gen: number; abort: AbortController }
 
 const OPEN = new Set<ExecState>(["planned", "running", "verifying"]);
+const clsOf = (w: WorldView, id: string) => w.objects.find((o) => o.id === id)?.cls ?? id.replace(/_\d+$/, "");
 
 export class ExecutionTracker {
   private run: Run | null = null;
+  private planning: Job | null = null;
+  private readonly jobs = new Set<Promise<void>>();
+  private readonly planAt = new Map<string, number>();
+  private gen = 0;
   private lastSeq = 0;
+  /** 마지막으로 기다리기·기기 단계가 시작된 시각. 그 전에 보낸 다른 행동 판단은 쓰지 않는다. */
+  private quietFrom = -Infinity;
   private stopped = false;
-  private eye: XZ | null = null;
+  private eye: { position: XZ; at: number } | null = null;
   private readonly clock: { now(): number };
-  private readonly cfg: { arriveM: number; repeatMs: number; stepTimeoutMs: number; visionMs: number; recheckMs: number };
+  private readonly cfg: { repeatMs: number; visionMs: number; recheckMs: number; askMs: number; planGapMs: number };
 
   constructor(private readonly o: TrackerOptions) {
     this.clock = o.clock ?? { now: () => Date.now() };
     this.cfg = {
-      arriveM: o.arriveM ?? TRACK_DEFAULTS.arriveM, repeatMs: o.repeatMs ?? TRACK_DEFAULTS.repeatMs, stepTimeoutMs: o.stepTimeoutMs ?? TRACK_DEFAULTS.stepTimeoutMs,
-      visionMs: o.visionMs ?? TRACK_DEFAULTS.visionMs, recheckMs: o.recheckMs ?? TRACK_DEFAULTS.recheckMs,
+      repeatMs: o.repeatMs ?? TRACK_DEFAULTS.repeatMs, visionMs: o.visionMs ?? TRACK_DEFAULTS.visionMs, recheckMs: o.recheckMs ?? TRACK_DEFAULTS.recheckMs,
+      askMs: o.askMs ?? TRACK_DEFAULTS.askMs, planGapMs: o.planGapMs ?? TRACK_DEFAULTS.planGapMs,
     };
   }
 
   current(): { planId: string; state: ExecState } | null {
-    return this.run && { planId: this.run.plan.id, state: this.run.state };
+    return this.run && { planId: this.run.plan.view.id, state: this.run.state };
   }
 
-  /** 실제 폰에 띄운 지금 명령·질문(답을 기다리는 중). 승인 질문은 질문(ask)이다. 없으면 null. */
-  openCommand(): { planId: string; stepId: string; kind: TaskSpec["kind"]; text: string; choices: ActionChoice[] } | null {
+  /** 실제 폰에 띄운 지금 명령·질문(답을 기다리는 중). 승인·다시 묻기·질문 단계는 질문(ask), 그 밖은 부탁(command). 없으면 null. */
+  openCommand(): { planId: string; stepId: string; kind: "command" | "ask"; text: string; choices: ActionChoice[] } | null {
     const r = this.shown();
-    return r && { planId: r.plan.id, stepId: r.sent.step, kind: r.asking ? "ask" : r.spec.kind, text: r.sent.text, choices: choicesOf(r) };
+    if (!r) return null;
+    const ask = r.asking !== null || this.stepOf(r)?.kind === "ask";
+    return { planId: r.plan.view.id, stepId: r.sent.step, kind: ask ? "ask" : "command", text: r.sent.text, choices: choicesOf(r, this.stepOf(r)) };
   }
 
   onDecision(d: DecisionRecord): void {
     if (this.stopped) return;
     if (d.seq < this.lastSeq) return this.note(d, EXEC_TEXT.late);
-    const spec = taskOf(d.action);
+    // 기다리기·기기 단계 전에 보낸 판단이 그 뒤에 오면 낡은 관찰이라 쓰지 않는다(다시 부르는 판단이 새 관찰로 정한다)
+    if (d.atMs < this.quietFrom && this.open()?.decision.action !== d.action) return this.note(d, EXEC_TEXT.late);
     if (d.status !== "valid") return this.note(d, EXEC_TEXT.decisionFailed);
     if (!d.action) return this.note(d, EXEC_TEXT.wait);
-    const world = this.o.world();
-    const targetId = spec ? targetOf(spec, world)?.id ?? null : null;
-    const open = this.run && OPEN.has(this.run.state) ? this.run : null;
-    if (open && spec && open.spec.name === spec.name && (targetId === null || isOurs(open, targetId))) return this.note(d, EXEC_TEXT.same);
-    this.lastSeq = d.seq;
-    const now = this.clock.now();
-    const plan = spec && planFor(this.o.floor(), d, world, new Date(now).toISOString());
-    // 새 계획이 있으면 PlanHub.onDecision이 지금 계획을 취소로 닫고 supersedes를 단다
-    if (open) this.finish("failed", EXEC_TEXT.superseded, plan ? null : "cancelled");
-    if (!spec || !plan) {
+    const open = this.open();
+    if (open?.decision.action === d.action || this.planning?.decision.action === d.action) return this.note(d, EXEC_TEXT.same);
+    // 행동 중 기다리기·기기 단계에는 다른 판단으로 바꾸지 않는다(그동안 판단도 멈춘다, waiting)
+    if (open && this.waiting()) return this.note(d, EXEC_TEXT.busy);
+    const pre = this.o.precheck?.(d) ?? { ok: true };
+    if (!pre.ok) {
       this.emit(planIdOf(d.id), "decided");
-      this.emit(planIdOf(d.id), "failed", EXEC_TEXT.noPlan);
+      this.emit(planIdOf(d.id), "failed", pre.text);
       return;
     }
-    const others = new Set(spec.target ? world.objects.filter((o) => o.cls === spec.target && o.id !== targetId).map((o) => o.id) : []);
-    this.run = { plan, decision: d, spec, targetId, others, state: "decided", since: now, at: -1, stepAt: now, spokeAt: now, visionAt: now, sent: null, asking: false };
-    this.step("decided");
-    this.o.plans.onDecision(plan);
-    this.step("planned");
-    this.tryStart(false);
+    const now = this.clock.now();
+    const last = this.planAt.get(d.action);
+    if (last !== undefined && now - last < this.cfg.planGapMs) return this.note(d, EXEC_TEXT.held);
+    this.lastSeq = d.seq;
+    this.planAt.set(d.action, now);
+    // 계획을 만드는 중이던 다른 행동은 끊고 버린다(답이 와도 쓰지 않는다)
+    this.dropPlanning(EXEC_TEXT.superseded);
+    const job: Job = { decision: d, gen: ++this.gen, abort: new AbortController() };
+    this.planning = job;
+    this.emit(planIdOf(d.id), "decided");
+    let out: PlanResult | Promise<PlanResult>;
+    try {
+      out = this.o.planner(d, job.abort.signal);
+    } catch (e) {
+      out = { ok: false, error: (e as Error).message };
+    }
+    if (!(out instanceof Promise)) return this.planned(job, out);
+    const p = out.then((r) => this.planned(job, r), (e: unknown) => this.planned(job, { ok: false, error: (e as Error).message }))
+      .finally(() => { this.jobs.delete(p); });
+    this.jobs.add(p);
   }
 
   /** 폰 눈(맞춘 자세)의 평면 자리 [x, z]. 맞추기 전 추정 눈은 쓰지 않는다. 이동 단계는 다음 tick에 본다. */
   onEye(position: XZ, estimated = false): void {
     if (estimated || !position.every(Number.isFinite)) return;
-    this.eye = [position[0], position[1]];
+    this.eye = { position: [position[0], position[1]], at: this.clock.now() };
   }
 
-  /** 답 단추(「완료」·질문 답·승인 답). 지금 명령의 계획·단계·답이 아니면 무시한다. 받았으면 true. */
+  /** 답 단추(「완료」·질문 답·승인 답·계속·그만). 지금 명령의 계획·단계·답이 아니면 무시한다. 받았으면 true. */
   onAnswer(planId: string, stepId: string, choice: string): boolean {
     const r = this.shown();
-    if (!r || r.plan.id !== planId || r.sent.step !== stepId) return false;
-    const picked = choicesOf(r).find((c) => c.id === choice);
+    if (!r || r.plan.view.id !== planId || r.sent.step !== stepId) return false;
+    const step = this.stepOf(r);
+    const picked = choicesOf(r, step).find((c) => c.id === choice);
     if (!picked) return false;
-    if (r.asking) this.approved(r, picked.id as ApprovalAnswer);
-    else if (r.spec.kind === "ask") this.finish("done", EXEC_TEXT.answered(picked.label));
-    else this.advance(r);
+    const a = r.asking;
+    if (a?.why === "plan") this.approvedPlan(r, picked.id as ApprovalAnswer);
+    else if (a?.why === "device") this.approvedDevice(r, a.token, picked.id as ApprovalAnswer);
+    else if (a?.why === "again") {
+      if (picked.id === "continue") this.resume(r);
+      else this.finish(r, "failed", EXEC_TEXT.stopped, "cancelled");
+    } else if (step?.kind === "ask") {
+      if (r.at + 1 >= r.plan.steps.length || step.prompt?.ends.includes(picked.id)) this.finish(r, "done", EXEC_TEXT.answered(picked.label));
+      else this.advance(r);
+    } else this.advance(r);
     return true;
   }
 
   /** 폰에서 들은 말. 「그만」이면 계획을 그만두고, 지금 명령의 답(「완료」「다 했어」, 질문 답)이면 그 답으로 받는다. 받은 답, 아니면 null. */
   onHeard(text: string): ActionChoice | null {
-    const r = this.shown();
-    if (!r) return null;
-    if (matchChoice(text, [STOP])) {
-      this.finish("failed", EXEC_TEXT.stopped, "cancelled");
+    if (this.stopped) return null;
+    const open = this.open();
+    // 명령이 없는 단계(기다리기·기기)와 만드는 중인 계획에도 「그만」은 받는다
+    if ((open || this.planning) && matchChoice(text, [STOP])) {
+      this.dropPlanning(EXEC_TEXT.stopped);
+      if (open) this.finish(open, "failed", EXEC_TEXT.stopped, "cancelled");
       return STOP;
     }
-    const picked = matchChoice(text, choicesOf(r));
-    if (picked) this.onAnswer(r.plan.id, r.sent.step, picked.id);
+    if (!open) return null;
+    const r = this.shown();
+    if (!r) return null;
+    const picked = matchChoice(text, choicesOf(r, this.stepOf(r)));
+    if (picked) this.onAnswer(r.plan.view.id, r.sent.step, picked.id);
     return picked;
   }
 
   /** World State가 바뀌었다: 지금 단계가 됐는지 바로 본다. */
   onWorld(): void {
-    const r = this.live();
-    if (r) this.look(r);
+    const r = this.run;
+    if (!this.stopped && r?.state === "running") this.look(r);
   }
 
-  /** 타이머(250ms)가 부른다: 검사 다시 보기, 지금 단계 보기, 다시 읽기, 시간 초과. */
+  /** 타이머(250ms)가 부른다: 검사 다시 보기, 지금 단계 보기, 다시 읽기, 시간 초과. 에이전트는 부르지 않는다. */
   tick(): void {
     const r = this.run;
-    if (this.stopped || !r) return;
+    if (this.stopped || !r || !OPEN.has(r.state)) return;
     const now = this.clock.now();
-    if (r.state === "planned" && !r.asking) return this.tryStart(now - r.since >= this.cfg.recheckMs);
-    const live = this.shown();
-    if (!live || this.look(live)) return;
-    if (now - live.stepAt > this.cfg.stepTimeoutMs) return this.finish("failed", live.asking || live.spec.kind === "ask" ? EXEC_TEXT.noAnswer : EXEC_TEXT.timeout);
-    if (now - live.spokeAt >= this.cfg.repeatMs) {
-      live.spokeAt = now;
-      this.o.toPhone({ ...live.sent, speak: true });
+    if (r.state === "planned" && !r.asking) return this.tryStart(r, now - r.since >= this.cfg.recheckMs);
+    if (r.asking) {
+      if (r.asking.why === "again" && this.look(r)) return;
+      if (now - r.askAt > this.cfg.askMs) return this.finish(r, "failed", EXEC_TEXT.noAnswer);
+      return this.repeat(r, now);
     }
+    if (r.state !== "running" || this.look(r)) return;
+    const step = this.stepOf(r);
+    if (!step) return;
+    if (now > r.deadline) return this.timeout(r, step);
+    if (HUMAN_KINDS.includes(step.kind) || step.kind === "ask") this.repeat(r, now);
   }
 
-  /** 멈추면 더 기록하지 않고 폰에도 보내지 않는다. */
+  /** 멈추면 더 기록하지 않고 폰에도 보내지 않는다. 만들던 계획은 끊는다. */
   stop(): void {
+    this.planning?.abort.abort();
+    this.planning = null;
     this.stopped = true;
   }
 
-  /** 명령을 띄운 채 진행 중인 계획. */
-  private live(): (Run & { sent: PlannedCommand }) | null {
-    const r = this.shown();
-    return r && !r.asking ? r : null;
+  /** 행동 중 기다리기·기기 단계인가: 그동안 판단(PAM)을 멈추고 다른 행동으로 바꾸지 않는다(src/world/decide.ts hold). */
+  waiting(): boolean {
+    const r = this.run;
+    const kind = r && r.state === "running" ? this.stepOf(r)?.kind : undefined;
+    return !this.stopped && (kind === "wait" || kind === "device");
+  }
+
+  /** 만들던 계획을 끊고 그 판단 줄에 까닭을 남긴다. */
+  private dropPlanning(text: string): void {
+    const job = this.planning;
+    if (!job) return;
+    this.planning = null;
+    job.abort.abort();
+    this.emit(planIdOf(job.decision.id), "failed", text);
+  }
+
+  /** 만들던 계획이 끝날 때까지 기다린다(시험용). */
+  async idle(): Promise<void> {
+    while (this.jobs.size) await Promise.all([...this.jobs]);
+  }
+
+  private open(): Run | null {
+    return this.run && OPEN.has(this.run.state) ? this.run : null;
+  }
+
+  private stepOf(r: Run): AgentStep | undefined {
+    return r.plan.steps[r.at];
   }
 
   /** 실제 폰에 명령·질문을 띄운 계획: 진행 중이거나 승인 답을 기다리는 중. */
@@ -191,82 +281,187 @@ export class ExecutionTracker {
     return !this.stopped && r && r.sent && (r.state === "running" || (r.state === "planned" && r.asking)) ? (r as Run & { sent: PlannedCommand }) : null;
   }
 
-  /** 이 행동에 승인을 물을지. 질문 계획은 묻지 않는다. */
-  private approval(spec: TaskSpec): ReturnType<typeof approvalNeed> {
-    if (spec.kind === "ask") return null;
-    return approvalNeed({ key: taskKey(spec.name), risky: false, requested: false, memory: this.o.approvals.memory() });
+  /** 에이전트가 만든 계획을 받는다. 그 사이 다른 판단이 왔으면 버린다. 진행 중인 다른 계획은 새 계획이 바꾼다. */
+  private planned(job: Job, r: PlanResult): void {
+    if (this.stopped || this.planning !== job) return;
+    this.planning = null;
+    const d = job.decision;
+    if (!r.ok) return this.emit(planIdOf(d.id), "failed", EXEC_TEXT.badPlan);
+    const open = this.open();
+    // 새 계획이 있으면 PlanHub.onDecision이 지금 계획을 취소로 닫고 supersedes를 단다
+    if (open) this.finish(open, "failed", EXEC_TEXT.superseded, null);
+    const now = this.clock.now();
+    const world = this.o.world();
+    const ids = new Set<string>();
+    for (const s of r.plan.steps) {
+      if (s.object) ids.add(s.object);
+      if (s.until) for (const n of objectNames(s.until)) if (world.objects.some((o) => o.id === n)) ids.add(n);
+    }
+    const others = new Map([...ids].map((id) => [id, new Set(world.objects.filter((o) => o.cls === clsOf(world, id) && o.id !== id).map((o) => o.id))]));
+    const run: Run = {
+      plan: r.plan, decision: d, state: "decided", since: now, at: -1, stepAt: now, spokeAt: now, visionAt: now, sent: null,
+      asking: null, askAt: now, watch: null, others, alias: new Map([...ids].map((id) => [id, id])), carried: new Set(), deadline: now, again: false, device: "idle", gen: 0,
+    };
+    this.run = run;
+    this.o.plans.onDecision(r.plan.view);
+    this.step(run, "planned");
+    this.tryStart(run, false);
   }
 
-  private tryStart(last: boolean): void {
-    const r = this.run!;
-    const c = this.o.check(r.decision, r.plan);
+  /** 질문·알림만 있는 계획은 승인을 묻지 않는다. */
+  private approval(r: Run): ReturnType<typeof approvalNeed> {
+    if (r.plan.steps.every((s) => s.kind === "ask" || s.kind === "say")) return null;
+    return approvalNeed({ key: taskKey(r.plan.task), risky: false, requested: false, memory: this.o.approvals.memory() });
+  }
+
+  private tryStart(r: Run, last: boolean): void {
+    const c = this.o.check(r.decision, r.plan.view);
     if (!c.ok) {
-      if (last) this.finish("failed", c.text);
+      if (last) this.finish(r, "failed", c.text);
       return;
     }
-    if (this.approval(r.spec)) return this.ask(r);
+    if (this.approval(r)) return this.ask(r, { why: "plan" }, APPROVAL_TEXT.ask(r.plan.task), `${r.plan.view.id}:approve`);
     this.begin(r);
   }
 
   private begin(r: Run): void {
-    this.step("running");
-    if (r.plan.steps.length === 0) return this.finish("done");
+    this.step(r, "running");
+    if (r.plan.steps.length === 0) return this.finish(r, "done");
     this.activate(r, 0);
   }
 
-  /** 첫 단계 전 승인 질문: 실제 폰 위에 「…를 할까요?」, 아래 승인·거절. 계획은 planned 그대로. */
-  private ask(r: Run): void {
+  /** 실제 폰에 질문(승인·다시 묻기): 위에 질문, 아래 답 단추. */
+  private ask(r: Run, asking: Asking, text: string, stepId: string): void {
     const now = this.clock.now();
-    Object.assign(r, { asking: true, stepAt: now, spokeAt: now });
+    Object.assign(r, { asking, askAt: now, spokeAt: now });
     r.sent = {
-      type: "command", id: r.plan.id, step: approveStep(r.plan.id), text: APPROVAL_TEXT.ask(r.spec.name), vision: null,
-      choices: choicesOf(r).map(({ id, label }) => ({ id, label })), target: null, speak: true,
+      type: "command", id: r.plan.view.id, step: stepId, text, vision: null,
+      choices: choicesOf(r, this.stepOf(r)).map(({ id, label }) => ({ id, label })), target: null, speak: true,
     };
     this.o.toPhone(r.sent);
   }
 
-  /** 승인 답: 승인이면 기억하고 첫 단계로, 거절이면 기억하지 않고 취소로 닫는다. */
-  private approved(r: Run, answer: ApprovalAnswer): void {
-    this.o.approvals.answer(taskKey(r.spec.name), answer);
-    r.asking = false;
-    if (answer === "reject") return this.finish("failed", APPROVAL_TEXT.refused, "cancelled");
-    this.begin(r);
+  /** 첫 단계 전 승인 답: 승인이면 기억하고, 실행 전 검사를 다시 본 뒤 첫 단계로(답을 기다리는 사이 대상이 바뀌었을 수 있다). 거절이면 기억하지 않고 취소로 닫는다. */
+  private approvedPlan(r: Run, answer: ApprovalAnswer): void {
+    this.o.approvals.answer(taskKey(r.plan.task), answer);
+    if (answer === "reject") return this.finish(r, "failed", APPROVAL_TEXT.refused, "cancelled");
+    r.asking = null;
+    r.since = this.clock.now();
+    this.clear(r);
+    this.tryStart(r, false);
   }
 
-  /** 지금 단계를 끝내고 다음 단계로. 마지막이었으면 계획 완료. */
+  /** 위험 목록 가전 승인 답(기억하지 않음): 승인이면 그 토큰으로 실행, 거절이면 실행하지 않고 취소로 닫는다. */
+  private approvedDevice(r: Run, token: string, answer: ApprovalAnswer): void {
+    r.asking = null;
+    this.clear(r);
+    if (answer === "reject") {
+      this.o.devices?.cancel(token);
+      return this.finish(r, "failed", APPROVAL_TEXT.refused, "cancelled");
+    }
+    const gen = r.gen;
+    r.device = "running";
+    this.o.devices!.confirm(token, () => this.live(r, gen)).then((res) => this.deviceResult(r, gen, res), () => this.deviceResult(r, gen, { ok: false }));
+  }
+
+  /** 지금 단계를 끝내고 다음 단계로. 마지막이었으면 계획 완료. 집기를 마치면 그 물건은 사람이 들고 다닌다. */
   private advance(r: Run): void {
-    if (r.at + 1 >= r.plan.steps.length) return this.finish("done");
+    const done = this.stepOf(r);
+    if (done?.kind === "pick" && done.object) r.carried.add(done.object);
+    if (done?.kind === "place" && done.object) r.carried.delete(done.object);
+    if (r.at + 1 >= r.plan.steps.length) return this.finish(r, "done");
     this.activate(r, r.at + 1);
   }
 
-  /** i번째 단계를 지금 단계로: PlanHub 단계 상태(앞 단계 done, 이 단계 active)를 한 번에 바꾸고 새 명령을 소리로 읽게 보낸다. */
+  /** i번째 단계를 지금 단계로: PlanHub 단계 상태(앞 단계 done, 이 단계 active)를 한 번에 바꾸고 단계 종류대로 시작한다. */
   private activate(r: Run, i: number): void {
     const prev = r.plan.steps[r.at];
     const step = r.plan.steps[i]!;
     const now = this.clock.now();
-    Object.assign(r, { at: i, stepAt: now, spokeAt: now, visionAt: now });
-    this.o.plans.setSteps(r.plan.id, { ...(prev ? { [prev.id]: "done" as const } : {}), [step.id]: "active" });
-    const key = cupStepOf(step);
+    Object.assign(r, {
+      at: i, stepAt: now, spokeAt: now, visionAt: now, deadline: now + step.timeoutMs, asking: null, watch: step.until ? new ConditionWatch(step.until) : null,
+      again: false, device: "idle", gen: r.gen + 1,
+    });
+    this.o.plans.setSteps(r.plan.view.id, { ...(prev ? { [prev.id]: "done" as const } : {}), [step.id]: "active" });
+    if (step.kind === "wait" || step.kind === "device") this.quietFrom = now;
+    if (step.kind === "wait") return this.clear(r);
+    if (step.kind === "device") {
+      this.clear(r);
+      return this.runDevice(r, step);
+    }
+    this.show(r, step);
+  }
+
+  /** 사람 단계·질문·알림을 실제 폰에 띄운다(소리로 읽음). */
+  private show(r: Run, step: AgentStep): void {
+    const world = this.o.world();
+    const human = HUMAN_KINDS.includes(step.kind);
     r.sent = {
-      type: "command", id: r.plan.id, step: step.id,
-      text: r.spec.kind === "ask" ? r.spec.prompt.text : key ? STEP_COMMAND[key] : step.label,
-      vision: r.spec.kind === "ask" ? null : this.vision(r, step, key, this.o.world()),
-      choices: choicesOf(r).map(({ id, label }) => ({ id, label })), target: this.target(r, step, key, this.o.world()), speak: true,
+      type: "command", id: r.plan.view.id, step: step.id, text: (human ? step.command : step.kind === "ask" ? step.prompt?.text : step.text) ?? step.label,
+      vision: human ? this.vision(r, step, world) : null, choices: choicesOf(r, step).map(({ id, label }) => ({ id, label })),
+      target: human ? this.target(r, step, world) : null, speak: true,
     };
     this.o.toPhone(r.sent);
   }
 
-  /** 지금 단계가 됐으면 다음 단계로 넘기고 true. 아니면 비전 상태가 바뀌었을 때 보낸다(visionMs에 한 번까지). */
-  private look(r: Run & { sent: PlannedCommand }): boolean {
-    const step = r.plan.steps[r.at];
-    if (!step || r.asking || r.spec.kind === "ask") return false;
-    const key = cupStepOf(step);
+  /** 기기 단계: 정책을 거쳐 기기 도구를 부른다. 승인 토큰이 오면 실제 폰에 묻는다. */
+  private runDevice(r: Run, step: AgentStep): void {
+    const devices = this.o.devices;
+    if (!devices || !step.device) return this.finish(r, "failed", EXEC_TEXT.deviceFailed);
+    const gen = r.gen;
+    r.device = "running";
+    devices.run(step.device.tool, step.device.deviceId, step.device.args, () => this.live(r, gen)).then(
+      (res) => {
+        const token = res.needsConfirmation?.token;
+        if (!this.live(r, gen)) {
+          if (token) devices.cancel(token);
+          return;
+        }
+        if (token) return this.ask(r, { why: "device", token }, APPROVAL_TEXT.ask(step.label), `${step.id}:approve`);
+        this.deviceResult(r, gen, res);
+      },
+      () => this.deviceResult(r, gen, { ok: false }),
+    );
+  }
+
+  /** 기기 결과: 실패면 실패로 닫는다. 적용을 확인하지 못했으면(신호 없음·미확인) 끝나는 조건이 참이 될 때까지만 기다리고, 조건이 없으면 실패로 닫는다. */
+  private deviceResult(r: Run, gen: number, res: Pick<ToolResult, "ok" | "error" | "unverified" | "state">): void {
+    if (!this.live(r, gen)) return;
+    if (!res.ok) return this.finish(r, "failed", EXEC_TEXT.deviceFailed);
+    const verified = !res.unverified && res.state !== "모름";
+    if (!verified && !r.watch) return this.finish(r, "failed", EXEC_TEXT.deviceUnverified);
+    r.device = verified ? "done" : "sent";
+    this.look(r);
+  }
+
+  /** 시간 초과 질문에 「계속」: 시간 한도만 한 번 더 준다. 조건 기준 시각·기기 실행 기록은 그대로라 기기를 다시 보내지 않는다. */
+  private resume(r: Run): void {
+    const step = this.stepOf(r)!;
+    const now = this.clock.now();
+    Object.assign(r, { asking: null, deadline: now + step.timeoutMs });
+    if (HUMAN_KINDS.includes(step.kind) || step.kind === "ask" || step.kind === "say") this.show(r, step);
+    else this.clear(r);
+  }
+
+  /** 그 계획의 그 단계가 아직 진행 중인가(늦게 온 기기 결과를 버린다). */
+  private live(r: Run, gen: number): boolean {
+    return !this.stopped && this.run === r && r.gen === gen && r.state === "running";
+  }
+
+  /** 지금 단계가 됐으면 다음 단계로 넘기고 true. 아니면 사람 단계의 비전 상태가 바뀌었을 때 보낸다(visionMs에 한 번까지). */
+  private look(r: Run): boolean {
+    const step = this.stepOf(r);
+    if (!step || r.state !== "running" || step.kind === "ask") return false;
+    if (r.asking && r.asking.why !== "again") return false;
+    if (step.kind === "device" && r.device !== "done" && r.device !== "sent") return false;
     const world = this.o.world();
-    if (this.reached(r, step, key, world)) {
+    const reached = r.watch ? r.watch.check(this.conditionView(world), this.context(r, world)) : step.kind === "device" && r.device === "done";
+    if (reached) {
       this.advance(r);
       return true;
     }
-    const vision = this.vision(r, step, key, world);
+    if (!HUMAN_KINDS.includes(step.kind) || !r.sent || r.asking) return false;
+    const vision = this.vision(r, step, world);
     const now = this.clock.now();
     if (vision !== r.sent.vision && now - r.visionAt >= this.cfg.visionMs) {
       r.visionAt = now;
@@ -276,94 +471,163 @@ export class ExecutionTracker {
     return false;
   }
 
-  /** 단계가 됐는가: 이동은 폰 눈이 목표 가까이, 집기는 컵이 손에 있음(또는 사람이 물건을 들고 있음), 내려놓기는 컵이 싱크대 안. 컵 단계가 아니면 「완료」로만 넘긴다. */
-  private reached(r: Run, step: PlanStep, key: CupStep | null, world: WorldView): boolean {
-    const at = (place: string) => cupsOf(r, world).some((c) => c.facts.place?.value === place);
-    switch (key) {
-      case "goTable":
-      case "goSink": {
-        const d = this.distance(step);
-        return d !== null && d <= this.cfg.arriveM;
-      }
-      case "pickCup": return at("in_hand") || holdsTarget(world, r.spec.target);
-      case "placeCup": return at("in_sink");
-      default: return false;
+  /** 시간 한도를 넘은 단계: on_timeout이 ask이고 아직 묻지 않았으면 실제 폰에 계속할지 한 번 묻고, 아니면 실패로 닫는다. */
+  private timeout(r: Run, step: AgentStep): void {
+    if (step.onTimeout === "ask" && !r.again) {
+      r.again = true;
+      return this.ask(r, { why: "again" }, AGAIN_TEXT.ask(step.label), `${step.id}:again`);
     }
+    this.finish(r, "failed", step.kind === "ask" ? EXEC_TEXT.noAnswer : EXEC_TEXT.timeout);
   }
 
-  /** 비전 상태 한 줄: 식탁으로는 남은 거리, 집기·내려놓기는 컵 자리, 싱크대로는 컵 자리와 남은 거리. */
-  private vision(r: Run, step: PlanStep, key: CupStep | null, world: WorldView): string | null {
-    const cup = `${VISION_TEXT.cup} · ${cupPlace(cupsOf(r, world)[0] ?? null)}`;
-    switch (key) {
-      case "goTable": return VISION_TEXT.distance(VISION_TEXT.table, this.distance(step));
-      case "goSink": return `${cup} · ${VISION_TEXT.distance(VISION_TEXT.sink, this.distance(step))}`;
-      case "pickCup":
-      case "placeCup": return cup;
-      default: return null;
-    }
+  /** repeatMs마다 지금 명령·질문을 다시 읽는다. */
+  private repeat(r: Run, now: number): void {
+    if (!r.sent || now - r.spokeAt < this.cfg.repeatMs) return;
+    r.spokeAt = now;
+    this.o.toPhone({ ...r.sent, speak: true });
   }
 
-  /** 명령 대상(실제 폰 고리 하나): 집기는 그 컵(World State 자리), 그 밖의 단계는 단계 목표 물건(평면도). 질문이거나 자리를 모르면 null. */
-  private target(r: Run, step: PlanStep, key: CupStep | null, world: WorldView): PlannedCommand["target"] {
-    if (r.spec.kind === "ask") return null;
-    const cup = key === "pickCup" ? cupsOf(r, world)[0] : undefined;
-    if (cup?.position) return { id: cup.id, label: VISION_TEXT.cup, position: cup.position };
-    const id = step.target?.objectId;
+  /** 실제 폰 명령을 지운다(기다리기·기기 단계). */
+  private clear(r: Run): void {
+    if (!r.sent) return;
+    r.sent = null;
+    this.o.toPhone({ type: "command_clear", id: r.plan.view.id });
+  }
+
+  /** 조건을 볼 World State: 폰 자리는 실행 추적이 받은 맞춘 눈과 World State 눈 중 새것. */
+  private conditionView(w: WorldView): WorldView {
+    const e = this.eye;
+    if (!e || (w.eye && w.eye.at_ms >= e.at)) return w;
+    const eye: WorldEye = {
+      position: e.position, height_m: w.eye?.height_m ?? 0, yaw_deg: w.eye?.yaw_deg ?? 0, pitch_deg: w.eye?.pitch_deg ?? 0,
+      room: roomAt(this.o.floor(), e.position), room_label: null, at_ms: e.at,
+    };
+    return { ...w, eye };
+  }
+
+  private context(r: Run, world: WorldView): ConditionContext {
+    const fp = this.o.floor();
+    return {
+      nowMs: this.clock.now(), sinceMs: r.stepAt, offsetMinutes: this.o.offsetMinutes,
+      locate: (id) => fp.objects.get(id)?.position ?? null,
+      roomOf: (id) => {
+        const o = fp.objects.get(id);
+        return o ? o.room ?? roomAt(fp, o.position) : null;
+      },
+      follow: (id) => ours(r, id, world).map((o) => o.id),
+    };
+  }
+
+  /** 비전 상태 한 줄: go는 든 물건 자리와 목표까지 거리, pick·place는 그 물건 자리. 비전으로 못 보는 단계면 null. */
+  private vision(r: Run, step: AgentStep, world: WorldView): string | null {
+    if (step.kind === "go") {
+      const carried = this.carried(r);
+      const place = this.placeName(step.target);
+      const far = VISION_TEXT.distance(place, this.distance(step.target, world));
+      return carried ? `${objectLine(r, carried, world)} · ${far}` : far;
+    }
+    return step.object ? objectLine(r, step.object, world) : null;
+  }
+
+  /** 지금 단계 앞의 마지막 집기 물건(그 뒤에 내려놓기가 없을 때). */
+  private carried(r: Run): string | null {
+    for (let i = r.at - 1; i >= 0; i--) {
+      const s = r.plan.steps[i]!;
+      if (s.kind === "place") return null;
+      if (s.kind === "pick") return s.object;
+    }
+    return null;
+  }
+
+  private placeName(id: string | null): string {
+    if (!id) return PLACE_UNKNOWN;
+    const type = this.o.floor().objects.get(id)?.type;
+    return (type && placeShort(type)) || this.o.locate?.(id)?.label || id;
+  }
+
+  /** 명령 대상(실제 폰 고리 하나): 집기는 그 물건(World State 자리), 그 밖은 목표 자리(평면도). 자리를 모르면 null. */
+  private target(r: Run, step: AgentStep, world: WorldView): PlannedCommand["target"] {
+    const obj = step.kind === "pick" && step.object ? ours(r, step.object, world).find((o) => o.status !== "gone") : undefined;
+    if (obj?.position) return { id: obj.id, label: OBJECT_NAME[obj.cls] ?? obj.cls, position: obj.position };
+    const id = step.target;
     const at = id ? this.o.locate?.(id) : undefined;
     return id && at ? { id, label: at.label, position: at.position } : null;
   }
 
-  /** 폰 눈에서 단계 목표 물건(평면도 자리)까지 거리(m). 눈이나 목표 자리를 모르면 null. */
-  private distance(step: PlanStep): number | null {
-    const id = step.target?.objectId;
+  /** 폰 눈에서 평면도 물건까지 거리(m). 눈이나 목표 자리를 모르면 null. */
+  private distance(id: string | null, world: WorldView): number | null {
     const at = id ? this.o.floor().objects.get(id)?.position : undefined;
-    return this.eye && at ? Math.hypot(this.eye[0] - at[0], this.eye[1] - at[1]) : null;
+    const eye = this.conditionView(world).eye?.position;
+    return eye && at ? Math.hypot(eye[0] - at[0], eye[1] - at[1]) : null;
   }
 
-  /** close: 계획을 닫을 상태. null이면 닫지 않는다(새 판단이 바꾸면 PlanHub.onDecision이 취소로 닫는다). */
-  private finish(state: "done" | "failed", text?: string, close: "done" | "failed" | "cancelled" | null = state): void {
-    const r = this.run!;
-    this.step(state, text);
+  /** close: 계획을 닫을 상태. null이면 닫지 않는다(새 계획이 PlanHub.onDecision으로 취소로 닫는다). */
+  private finish(r: Run, state: "done" | "failed", text?: string, close: "done" | "failed" | "cancelled" | null = state): void {
+    if (r.asking?.why === "device") this.o.devices?.cancel(r.asking.token);
+    r.asking = null;
+    r.gen++;
+    this.step(r, state, text);
     if (r.sent) {
       r.sent = null;
-      this.o.toPhone({ type: "command_clear", id: r.plan.id });
+      this.o.toPhone({ type: "command_clear", id: r.plan.view.id });
     }
-    if (close) this.o.plans.close(r.plan.id, close);
+    if (close) this.o.plans.close(r.plan.view.id, close);
   }
 
-  private step(state: ExecState, text?: string): void {
-    const r = this.run!;
+  private step(r: Run, state: ExecState, text?: string): void {
     r.state = state;
     r.since = this.clock.now();
-    this.emit(r.plan.id, state, text);
+    this.emit(r.plan.view.id, state, text);
   }
 
-  /** 계획을 만들지 않는 판단(대기·실패·같은 행동·늦은 답)은 그 판단 줄에 기록만 한다. */
+  /** 계획을 만들지 않는 판단(대기·실패·같은 행동·늦은 답·잠시 뒤)은 그 판단 줄에 기록만 한다. */
   private note(d: DecisionRecord, text: string): void {
     this.emit(planIdOf(d.id), "decided", text);
   }
 
   private emit(planId: string, state: ExecState, text?: string): void {
+    if (this.stopped) return;
     this.o.emit({ type: "execution", at_ms: this.clock.now(), plan_id: planId, state, text: text ?? EXEC_TEXT[state] });
   }
 }
 
-/** 계획의 대상 물건 id인가: 처음 고른 물건이거나, 계획 뒤에 새로 생긴 같은 종류 물건(움직여 새 id가 붙은 그 물건). */
-const isOurs = (r: Run, id: string) => id === r.targetId || !r.others.has(id);
-
-/** 계획의 대상 물건(사라지지 않은 것), 가장 최근에 본 것부터. 대상이 없는 행동이면 빈 목록. */
-function cupsOf(r: Run, world: WorldView): WorldObject[] {
-  if (!r.spec.target) return [];
-  return world.objects.filter((o) => o.cls === r.spec.target && o.status !== "gone" && isOurs(r, o.id)).sort((a, b) => b.last_seen_ms - a.last_seen_ms);
+/** 계획 물건으로 보는 지금 World State 물건(하나, 없으면 빈 목록). 지금 id가 사라졌거나(그 자리가 시야 안인데 없음) 사람이 들고 다니다 시야 밖이 됐을 때만
+ *  그 뒤에 처음 보인 같은 종류 물건(계획 전부터 있던 것·앞서 이은 것은 뺀다)이 하나일 때 그것으로 이어 간다. 여럿이거나 들지 않은 물건이 시야 밖이면 잇지 않는다(「완료」로 넘긴다). */
+function ours(r: Run, id: string, world: WorldView): WorldObject[] {
+  const cur = r.alias.get(id) ?? id;
+  const own = world.objects.find((o) => o.id === cur);
+  if (own && own.status !== "gone" && !(own.status === "out_of_view" && r.carried.has(id))) return [own];
+  const cls = clsOf(world, id);
+  const others = r.others.get(id) ?? new Set<string>();
+  const seen = new Set(r.alias.values());
+  const after = own?.last_seen_ms ?? -Infinity;
+  const next = world.objects.filter((o) => o.cls === cls && o.id !== cur && o.id !== id && !others.has(o.id) && !seen.has(o.id) && o.status !== "gone" && o.first_seen_ms > after);
+  if (next.length === 1) {
+    r.alias.set(id, next[0]!.id);
+    return [next[0]!];
+  }
+  return own ? [own] : [];
 }
 
-/** 승인 질문은 승인·거절, 단계 명령은 「완료」 하나, 질문은 그 답들. */
-const choicesOf = (r: Run): ActionChoice[] => (r.asking ? APPROVE : r.spec.kind === "ask" ? r.spec.prompt.choices : [STEP_DONE]);
+/** 물건 줄: 「컵 · 손에 있음」. 사라지지 않은 같은 물건 중 가장 최근 것. */
+function objectLine(r: Run, id: string, world: WorldView): string {
+  const cls = clsOf(world, id);
+  return `${OBJECT_NAME[cls] ?? cls} · ${place(ours(r, id, world).find((o) => o.status !== "gone") ?? null)}`;
+}
 
-/** World State 컵 자리 글: VLM이 본 자리, 없으면 놓인 면, 그것도 없으면 자리 모름. 사라졌거나 없으면 안 보임. */
-function cupPlace(cup: WorldObject | null): string {
-  if (!cup || cup.status === "gone") return VISION_TEXT.unseen;
-  const place = cup.facts.place?.value;
-  if (place) return STATE_TEXT[place] ?? place;
-  return cup.surface_label ? onSurface(cup.surface_label) : PLACE_UNKNOWN;
+/** 승인 질문은 승인·거절, 다시 묻기는 계속·그만, 사람 단계는 「완료」 하나, 질문은 그 답들, 알림·기다리기·기기는 없음. */
+function choicesOf(r: Run, step: AgentStep | undefined): ActionChoice[] {
+  if (r.asking?.why === "again") return AGAIN;
+  if (r.asking) return APPROVE;
+  if (!step) return [];
+  if (step.kind === "ask") return step.prompt?.choices ?? [];
+  return HUMAN_KINDS.includes(step.kind) ? [STEP_DONE] : [];
+}
+
+/** World State 물건 자리 글: VLM이 본 자리, 없으면 놓인 면, 그것도 없으면 자리 모름. 없으면 안 보임. */
+function place(o: WorldObject | null): string {
+  if (!o) return VISION_TEXT.unseen;
+  const p = o.facts.place?.value;
+  if (p) return STATE_TEXT[p] ?? p;
+  return o.surface_label ? onSurface(o.surface_label) : PLACE_UNKNOWN;
 }

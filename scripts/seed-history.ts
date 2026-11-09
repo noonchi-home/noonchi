@@ -1,6 +1,6 @@
 // 합성 기록 넣기: 한 사람이 사는 집(기본 한양목련 180B)의 지난 며칠(기본 7일, 어제까지)을 기록 DB(RUNTIME_DIR/noonchi.db)에 넣는다.
 // 실시험 판단이 기댈 지난 기록(하루 요약·판단 기록·반성·기억 판본)을 만든다. PAM·OpenAI를 부르지 않는다.
-// 서버와 같은 길로 쓴다: 관찰(World State 글)·판단·계획(PlanHub)·실행 추적(ExecutionTracker: 실제 폰 명령·승인)을 기록기(attachRecorder)가 적고,
+// 서버와 같은 길로 쓴다: 관찰(World State 글)·판단·계획(PlanHub, 에이전트가 낼 도구 호출 대본을 같은 계획 검사 PlanDraft에 넣음)·실행 추적(ExecutionTracker: 실제 폰 명령·승인)을 기록기(attachRecorder)가 적고,
 // 피드백·반성 줄은 서버와 같은 글로 HistoryDb.add, 판단 기억은 memoryForDay, 기억 판본은 saveMemory로 쓴다. 관찰 텍스트는 textFromWorld가 만든다.
 // 방·면·가전 이름은 집 자료(twin/)에서 가져온다. VLM 요약은 지금 VLM 답처럼 영어 한 문장이다.
 // 줄마다 data.synthetic = true, 기억 판본은 source synthetic을 단다. --clear는 그것만 지운다(HistoryDb.removeSynthetic). 다시 넣으면 앞 합성 기록을 지우고 넣는다.
@@ -11,7 +11,8 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import dotenv from "dotenv";
 import { checkPlan } from "../src/act/check.js";
-import { planIdOf } from "../src/act/tasks.js";
+import { planIdOf, targetOf, TASKS } from "../src/act/tasks.js";
+import { PlanDraft, type PlanResult } from "../src/agent/planTools.js";
 import { ExecutionTracker } from "../src/act/track.js";
 import { memoryApprovals } from "../src/agent/approval.js";
 import { josa } from "../src/agent/phrases.js";
@@ -35,6 +36,7 @@ import { decisionWorld, type DecisionRecord } from "../src/world/decide.js";
 import { CHANGE_TEXT, OBJECT_NAME, objectName, onSurface } from "../src/world/labels.js";
 import { textFromWorld } from "../src/world/text.js";
 import { NOW_FACETS, STATES, type StateKey } from "../src/world/vocab.js";
+import { askSteps, cupSteps, planContext } from "../tests/helpers/planner.js";
 
 const DEFAULT_RUNTIME_DIR = fileURLToPath(new URL("../runtime/", import.meta.url));
 const DAY_MS = 86_400_000;
@@ -150,12 +152,29 @@ class Week {
       plans: this.plans, world: () => this.view(), floor: () => this.plans.floor(), toPhone: () => {}, emit: (l) => this.brain.emit(l), approvals: this.approvals,
       clock: { now: () => this.t },
       check: (d, p) => checkPlan({ decision: d, tasks: [...CUP_TASKS], plan: p, world: this.view(), nowMs: this.t, staleMs: 3000, mode: "test" }),
+      // OpenAI를 부르지 않으므로 에이전트가 낼 도구 호출(컵 치우기 네 단계·물어보기)을 같은 계획 검사(PlanDraft)에 넣는다
+      planner: (d) => this.plan(d),
     });
     for (const d of [this.home.livingAc, this.home.bedAc]) {
       if (!this.twin.has(d.id)) this.twin.set(d.id, { power: d === this.home.bedAc ? "on" : "off" });
       this.devices.emit(this.state(d.id), { initial: true, label: d.label, kind: d.kind });
     }
     this.eye(this.home.eye.rest);
+  }
+
+  /** 에이전트 계획 모드 대신: 서버 가짜 모델 시험과 같은 단계 대본을 계획 검사에 넣는다. */
+  private plan(d: DecisionRecord): PlanResult {
+    const view = this.view();
+    const draft = new PlanDraft(planContext({ decision: d, world: view, floor: this.plans.floor() }));
+    const type = (t: string) => [...this.home.fp.objects.values()].find((o) => o.type === t)?.id ?? "";
+    const steps = d.action === "컵 치우기"
+      ? cupSteps({ table: type("dining_table"), sink: type("sink_counter"), cup: targetOf(TASKS["컵 치우기"]!, view)?.id ?? "" })
+      : askSteps();
+    for (const s of steps) {
+      const r = draft.add(s);
+      if (!r.ok) return r;
+    }
+    return draft.finish();
   }
 
   mode(m: ControlMode): void {

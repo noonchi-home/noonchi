@@ -4,14 +4,18 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { checkPlan, loadActConfig } from "../act/check.js";
+import { checkDecision, checkPlan, loadActConfig } from "../act/check.js";
 import { sayLine } from "../act/say.js";
+import { TASK_NAMES, taskOf } from "../act/tasks.js";
+import { deviceRunner } from "../act/devices.js";
 import { ExecutionTracker } from "../act/track.js";
 import { Agent } from "../agent/agent.js";
 import { ApprovalStore, approvalsPath } from "../agent/approval.js";
+import { Planner } from "../agent/planner.js";
+import type { PlaceInfo } from "../agent/planTools.js";
 import { Policy } from "../agent/policy.js";
 import { createProvider } from "../agent/providers/index.js";
-import { CUP_TASKS } from "../brain/decision.js";
+import { deviceViews } from "../agent/tools.js";
 import { PamClient } from "../brain/pam.js";
 import type { BrainLog, ReadyView } from "../contract/events.js";
 import type { PlannedCommand } from "../contract/phone.js";
@@ -40,6 +44,7 @@ import { createPhoneServer, type PhoneServer } from "../phone/server.js";
 import { estimateViewpoint } from "../phone/session.js";
 import { TouchStore, eyeHeightOf, floorLookup, homeBounds, readTouchPoints, touchPointsPath, touchTargets, type TouchPoint } from "../phone/touch.js";
 import { PlanHub } from "../plan/hub.js";
+import { placeShort } from "../plan/labels.js";
 import { floorPlanFrom, roomNamedAt } from "../plan/route.js";
 import { surfacesFromLayout, type PlaneSurface } from "../world/place.js";
 import { Decider } from "../world/decide.js";
@@ -161,6 +166,8 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     const layout = loadLayout(home, { runtimeDir, log });
     if (!layout) log(`[경고] ${home.scenePath}이 없어 배치 보정을 끕니다(twin-studio에서 집을 먼저 빌드하세요).`);
     const agent = new Agent({ hub: signals, policy, rooms: twin.rooms, provider, layout });
+    // 에이전트 계획 모드(src/agent/planner.ts): PAM이 고른 행동 하나를 단계 계획으로. 말 요청 에이전트와 같은 공급자
+    const planner = new Planner({ provider, hub: signals, policy, rooms: twin.rooms });
     const twinDir = home.outDir;
     const hubKind = started.kind;
     const phoneOn = Boolean(env.PHONE_PORT?.trim());
@@ -199,6 +206,14 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     // 클로이드 계획(src/plan/hub.ts): 에이전트 기기 행동·맞춘 눈 → 계획을 /events로. 경로는 서버 장면(scene.json + 도면 설비)으로 찾는다
     const scene = loadScene(home);
     const floorPlan = floorPlanFrom(scene ?? {});
+    // 계획 입력의 평면도 물건(벽·바닥·문·창은 뺀다): 배치 이름과 비전 상태 줄의 짧은 이름
+    const places = (): PlaceInfo[] => {
+      const names = new Map((layout?.editor.objects() ?? []).map((o) => [o.id, o.name]));
+      return [...floorPlan.objects.values()].filter((o) => !/^(walls|floors)$|door|win/.test(o.type)).map((o) => {
+        const name = names.get(o.id) ?? o.id;
+        return { id: o.id, type: o.type, room: o.room, position: o.position, name, short: placeShort(o.type) ?? name };
+      });
+    };
     // 대시보드 말풍선 카드(src/act/say.ts): 계획 방송·실제 폰 명령·World State 바뀜·판단 타이머 뒤에 다시 보고, 글이 바뀔 때만 보낸다
     let speak = () => {};
     const plans = new PlanHub(floorPlan, (m) => {
@@ -243,8 +258,10 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       const pamTimeout = Number(env.PAM_TIMEOUT_MS);
       const decide = new Decider({
         pam: new PamClient({ url: loadEndpoints(env).pamUrl, timeoutMs: Number.isFinite(pamTimeout) && pamTimeout > 0 ? pamTimeout : undefined }),
-        world, trigger: new Trigger(loadTriggerConfig(env), now()), tasks: () => [...CUP_TASKS],
+        world, trigger: new Trigger(loadTriggerConfig(env), now()), tasks: () => [...TASK_NAMES],
         memory: () => memoryForDay(history.db, history.db.dayOf(now())), emit, offsetMinutes: history.db.offsetMinutes, clock: ctx.brain?.clock,
+        // 행동 중 기다리기·기기 단계 동안은 PAM을 부르지 않는다(실행 추적이 조건을 본다)
+        hold: () => tracker?.waiting() ?? false,
         // 판단 → 계획 → 실행 전 검사 → 실행 추적(src/act/)
         onDecision: (d) => tracker?.onDecision(d),
       });
@@ -252,8 +269,19 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       // 실행 전 검사(src/act/check.ts): 시험 모드에서는 짝지은 실제 가전 단계를 막는다
       const deviceSteps = (p: PlanView) => p.steps.flatMap((s) => (s.target?.deviceId
         ? [{ deviceId: s.target.deviceId, paired: signals.sources()[s.target.deviceId]?.kind === "thinq" }] : []));
+      // 기기 단계(src/act/devices.ts): 말 요청과 같은 기기 도구·정책(위험 목록은 승인 토큰). 보내기 바로 앞에서 그 계획 단계가 아직인지 본다
+      const devices = deviceRunner(signals, policy, twin.rooms);
       tracker = new ExecutionTracker({
-        plans, floor: () => plans.floor(), world: () => world.view(now()), emit, clock: ctx.brain?.clock, approvals,
+        plans, floor: () => plans.floor(), world: () => world.view(now()), emit, clock: ctx.brain?.clock, approvals, devices, offsetMinutes: history.db.offsetMinutes,
+        // 계획 전 검사(LLM 없음) → 에이전트 계획 모드 한 번. 손 자리는 맞춘 눈(PlanHub 평면도의 로봇 자리)
+        precheck: (d) => checkDecision({ decision: d, tasks: [...TASK_NAMES], world: world.view(now()) }),
+        planner: (d, signal) => {
+          const task = taskOf(d.action);
+          if (!task) return { ok: false, error: "행동 목록에 없는 행동" };
+          return planner.plan({
+            decision: d, task, world: world.view(now()), floor: plans.floor(), places: places(), rooms: twin.rooms, devices: deviceViews(signals), nowIso: new Date(now()).toISOString(),
+          }, signal);
+        },
         // 실제 폰 명령(src/contract/phone.ts). 폰 서버가 지금 명령을 기억해 새로 붙은 폰에도 보낸다. 명령 대상 자리는 배치(물건 가운데)에서
         toPhone: (m) => {
           if (m.type === "command") command = m;
@@ -263,7 +291,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         },
         locate: (id) => layout?.editor.center(id),
         check: (d, p) => checkPlan({
-          decision: d, tasks: [...CUP_TASKS], plan: p, world: world.view(now()), nowMs: now(), staleMs: act.staleMs, mode: ctx.mode?.() ?? "test", deviceSteps: deviceSteps(p),
+          decision: d, tasks: [...TASK_NAMES], plan: p, world: world.view(now()), nowMs: now(), staleMs: act.staleMs, mode: ctx.mode?.() ?? "test", deviceSteps: deviceSteps(p),
         }),
       });
       const tracking = tracker;
@@ -349,12 +377,12 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
             history.db.add("feedback", nowMs(), FEEDBACK_TEXT.answer(picked.label, open.kind, open.text), { subject: id, data: { choice, via: "button" } });
           }
         },
+        // 「그만」은 실제 폰 명령이 없는 단계(기다리기·기기)에도 진행 중인 계획을 그만둔다
         onAnswer: (text) => {
           const open = tracker?.openCommand();
-          if (!open) return { handled: false };
-          const picked = tracker!.onHeard(text);
+          const picked = tracker?.onHeard(text) ?? null;
           if (!picked) return { handled: false };
-          history.db.add("feedback", nowMs(), FEEDBACK_TEXT.answer(text, open.kind, open.text), { subject: open.planId, data: { choice: picked.id, via: "voice" } });
+          if (open) history.db.add("feedback", nowMs(), FEEDBACK_TEXT.answer(text, open.kind, open.text), { subject: open.planId, data: { choice: picked.id, via: "voice" } });
           return { handled: true, reply: picked.reply };
         },
         ...(observe ? {
@@ -406,7 +434,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         closed = true;
         // 한 단계가 실패해도 나머지(특히 폰 포트·허브)는 닫는다. 새 집이 같은 포트를 다시 잡아야 한다
         const steps: [string, () => unknown][] = [
-          ["초점", unsubFocus], ["관찰 흐름", () => { clearInterval(decideTimer); decider?.stop(); tracker?.stop(); unsubWorld(); return pipeline?.close(); }], ["눈 화면", () => feed?.close()],
+          ["초점", unsubFocus], ["관찰 흐름", () => { clearInterval(decideTimer); decider?.stop(); tracker?.stop(); planner.abort(); unsubWorld(); return pipeline?.close(); }], ["눈 화면", () => feed?.close()],
           ["폰 서버", () => phoneNow?.close()], ["앱", () => appNow.close()], ["배치", () => layout?.editor.close()], ["ThinQ", () => link?.stop()],
           ["기록", unsubHistory], ["허브", () => signals.stop()],
         ];

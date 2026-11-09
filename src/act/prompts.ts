@@ -6,9 +6,7 @@
 export interface ActionChoice { id: string; label: string; words: string[]; reply: string; whole?: boolean }
 export interface ActionPrompt { text: string; choices: ActionChoice[] }
 
-export type TaskName = "컵 치우기" | "사용자에게 물어보기";
-
-/** 사용자에게 물어보기: 실제 폰 위에 질문, 아래 엄지 자리에 답 단추. */
+/** 질문 단계 보기(컵 치우기에서 「사용자에게 물어보기」): 실제 폰 위에 질문, 아래 엄지 자리에 답 단추. 실제 질문은 에이전트가 계획에 쓴다. */
 export const ASK_PROMPT: ActionPrompt = {
   text: "컵을 치울까요?",
   choices: [
@@ -29,3 +27,9 @@ export const APPROVE: ActionChoice[] = [
 
 /** 말로 「그만」이면 지금 계획을 그만둔다. 단추는 없다. */
 export const STOP: ActionChoice = { id: "stop", label: "그만", words: ["그만해", "그만둬", "그만하자"], reply: "", whole: true };
+
+/** 단계가 시간 안에 끝나지 않아 다시 묻는 답(시간 초과 ask): 계속이면 그 단계를 다시 시작하고, 그만이면 계획을 그만둔다. */
+export const AGAIN: ActionChoice[] = [
+  { id: "continue", label: "계속", words: ["계속", "계속해"], reply: "", whole: true },
+  { id: "stop", label: "그만", words: ["그만"], reply: "알겠어요. 그만할게요", whole: true },
+];

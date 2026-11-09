@@ -24,7 +24,7 @@ task planner가 클로이드 계획(판단·단계·이동 경로)을 트윈 화
 | `revision` | 새 계획은 1, 같은 `id`를 고칠 때마다 +1 |
 | `supersedes` | 다시 계획했으면 바뀌기 전 계획 id. 첫 계획에는 없다 |
 | `origin` | 시험으로 보낸 계획이면 `"mock"`. 없으면 실제(`"live"`) |
-| `source` | task planner는 `"planner"`. 서버가 만든 계획은 `"brain"`(컵 시나리오)·`"agent"`(기기 행동) |
+| `source` | task planner는 `"planner"`. 서버가 만든 계획은 `"brain"`(PAM이 고른 행동을 에이전트가 계획 모드로 만든 것, `src/agent/planner.ts`)·`"agent"`(말로 시킨 기기 행동) |
 | `goal` | 할 일 이름. 예: 컵 치우기 |
 | `judgment` | 지금 상황 판단 한 줄 |
 | `dryRun` | `true`면 모의 계획. 화면에 「모의」가 붙는다 |
@@ -35,7 +35,7 @@ task planner가 클로이드 계획(판단·단계·이동 경로)을 트윈 화
 | `status` | `planned` · `running` · `done` · `cancelled` · `failed` |
 | `updatedAt` | ISO 시각 |
 
-- `kind`: `move` 이동, `act` 손으로 하는 일, `ask` 사람에게 묻기, `device` 기기 행동, `wait` 기다리기.
+- `kind`: `move` 이동, `act` 손으로 하는 일, `ask` 사람에게 묻기·알리기, `device` 기기 행동, `wait` 기다리기(행동 중, 예: 세탁 멈춤. 대시보드 진행도에 「기다리는 중 · 이름」, 실제 폰에는 보내지 않는다).
 - 단계 `status`: `pending` 아직, `active` 지금, `done` 끝남, `failed` 실패, `skipped` 건너뜀.
 - `target`: `objectId` · `deviceId` · `room` · `position` 중 아는 것만 넣는다.
 

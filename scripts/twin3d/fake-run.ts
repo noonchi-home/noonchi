@@ -1,12 +1,12 @@
 // 대시보드 가짜 단계 자료(ui/src/dashboard/fake-run.json)를 만든다. 실행: npx tsx scripts/twin3d/fake-run.ts
-// 한양목련 실제 장면·평면도(loadScene·floorPlanFrom)로 컵 치우기 계획(cupPlan, 로봇 [10.6, 8.6])을 짜고, 다섯 순간(0 지켜보기, 1~4 계획 단계)마다
+// 한양목련 실제 장면·평면도(loadScene·floorPlanFrom)로 컵 치우기 계획(에이전트 컵 계획이 맞춰야 할 모양 tests/helpers/cup-plan.ts, 로봇 [10.6, 8.6])을 짜고, 다섯 순간(0 지켜보기, 1~4 계획 단계)마다
 // 서버가 대시보드 /events로 보내는 메시지 묶음(plan·eye·brain decision·brain observe·say)을 적는다. 말은 sayLine에 그 단계 명령을 넣은 글이다.
 // 대시보드 폰 칸 그림은 시안 눈 그림(ui/public/debug-eye/, 세로 405×720)이고, 컵 상자는 시안 가로 그림 상자를 잘라 낸 자리만큼 옮긴 것이다.
 // 시각을 고정해서 다시 만들어도 같은 파일이 나온다.
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { sayLine } from "../../src/act/say.js";
-import { cupStepOf, planIdOf } from "../../src/act/tasks.js";
+import { planIdOf } from "../../src/act/tasks.js";
 import type { BoxView, BrainLog, EyeEvent, ServerMessage } from "../../src/contract/events.js";
 import type { PlannedCommand } from "../../src/contract/phone.js";
 import type { PlanView, XZ } from "../../src/contract/plan.js";
@@ -14,8 +14,8 @@ import type { WorldObject, WorldView } from "../../src/contract/world.js";
 import { DEFAULT_TWIN_DIR } from "../../src/model/devices.js";
 import { resolveHome } from "../../src/model/homes.js";
 import { loadScene } from "../../src/model/scene.js";
-import { STEP_COMMAND } from "../../src/plan/labels.js";
-import { cupPlan } from "../../src/plan/planner.js";
+import { STEP_COMMAND, STEP_LABEL } from "../../src/plan/labels.js";
+import { cupPlan } from "../../tests/helpers/cup-plan.js";
 import { floorPlanFrom, roomAt } from "../../src/plan/route.js";
 
 export type EyeFrameId = "table-far" | "table-near" | "sink" | "sink-cup";
@@ -102,7 +102,7 @@ function build(): Moment[] {
       steps: plan.steps.map((s, i) => ({ ...s, status: i < n - 1 ? "done" : i === n - 1 ? "active" : "pending" })),
     };
     const step = open?.steps[n - 1];
-    const key = step ? cupStepOf(step) : null;
+    const key = step ? (Object.keys(STEP_COMMAND) as (keyof typeof STEP_COMMAND)[]).find((k) => STEP_LABEL[k] === step.label) ?? null : null;
     const command: PlannedCommand | null = open && step && key
       ? { type: "command", id: open.id, step: step.id, text: STEP_COMMAND[key], vision: null, choices: [{ id: "done", label: "완료" }], target: null, speak: true }
       : null;

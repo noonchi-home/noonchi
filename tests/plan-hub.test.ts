@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentAction } from "../src/contract/events.js";
 import type { PlanView } from "../src/contract/plan.js";
 import { PlanHub } from "../src/plan/hub.js";
-import { askPlan, cupPlan } from "../src/plan/planner.js";
+import { askPlan, cupPlan } from "./helpers/cup-plan.js";
 // fp는 plan-planner.test.ts와 같은 평면도
 import { smallFloor } from "./helpers/floor.js";
 

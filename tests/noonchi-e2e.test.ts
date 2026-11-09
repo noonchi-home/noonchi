@@ -1,5 +1,5 @@
 // 처음부터 끝까지(가짜 서버): 폰 엔진 프레임 → YOLO(대본)·VLM(가짜 OpenAI 호환 서버, 컵 자리 대본) → World State → PAM(시험용 PAM 자리: 컵 치우기)
-// → 계획 → 실행 전 검사 → 실제 폰 단계 명령(소리) → 「완료」 단추·World State 컵 자리·말 「다 했어」로 한 단계씩 → 완료, 그리고 한 시간축 기록·대시보드 메시지.
+// → 에이전트 계획 모드(같은 가짜 서버의 도구 호출) → 실행 전 검사 → 실제 폰 단계 명령(소리) → 「완료」 단추·World State 컵 자리·말 「다 했어」로 한 단계씩 → 완료, 그리고 한 시간축 기록·대시보드 메시지.
 // 기본 집(마곡 아파트, 식탁·싱크대 있음). 맞추기 전이라 폰 눈 위치를 몰라 이동 단계는 「완료」나 말로 넘긴다.
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,6 +14,7 @@ import { fetchRetry } from "../src/server/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { ScriptedDetector } from "./helpers/detectors.js";
 import { startFakePam, type FakePam } from "./helpers/pam.js";
+import { CUP_SCRIPTS, plannerRespond } from "./helpers/planner.js";
 import { openWebSocket } from "./helpers/ws.js";
 
 type Msg = Record<string, any>;
@@ -44,6 +45,8 @@ describe("NOONCHI 처음부터 끝까지", () => {
         const dets = JSON.parse(/Detections: (\[.*\])/.exec(text)?.[1] ?? "[]") as { id: string }[];
         return JSON.stringify({ scene: "kitchen", observations: dets.map((d) => ({ object_id: d.id, state: cupPlace })), summary: "컵" });
       },
+      // 에이전트 계획 모드: 같은 가짜 서버가 컵 치우기 도구 호출(지금 서버와 같은 네 단계)을 낸다
+      respond: plannerRespond(CUP_SCRIPTS),
     });
     // PAM은 기본 주기(5초)로 불린다. 관찰 텍스트에 컵이 있으면 컵 치우기를 고르고(끝난 뒤에도: 싱크대 안 컵으로는 새 명령을 보내지 않아야 한다), 없으면 대기
     pam = await startFakePam({ predict: (b) => (/컵 cup_\d/.test(String(b.observation_text))
@@ -54,7 +57,7 @@ describe("NOONCHI 처음부터 끝까지", () => {
     writeFileSync(join(runtimeDir, "homes", "apartment", "approvals.json"), JSON.stringify({ always: { "task:컵 치우기": "2026-11-09T00:00:00.000Z" }, never: {} }));
     srv = await startServer({
       env: { HUB: "memory", PORT: "0", RUNTIME_DIR: runtimeDir, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
-        BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url },
+        BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url, OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: `${fake.url}/v1` },
       brain: { detector: new ScriptedDetector(() => [{ label: "cup", score: 0.9, cls: 41, box: [220, 160, 40, 20] }]) }, log: () => {},
     });
     const dash: Msg[] = [];

@@ -1,5 +1,5 @@
 // 한양목련 처음부터 끝까지(가짜 서버, 시험 모드): 기준점을 맞춘 폰 엔진 프레임 → YOLO(대본)·VLM(가짜 OpenAI 호환 서버, 컵 자리 대본)
-// → World State(컵은 거실·복도 식탁 위) → PAM(시험용 PAM 자리: 컵 치우기) → 처음 하는 일이라 실제 폰에 승인 질문 → 「승인」
+// → World State(컵은 거실·복도 식탁 위) → PAM(시험용 PAM 자리: 컵 치우기) → 에이전트 계획 모드(가짜 서버 도구 호출) → 처음 하는 일이라 실제 폰에 승인 질문 → 「승인」
 // → 실제 폰 단계 명령 넷(「완료」 단추·VLM 컵 자리·말 「다 했어」로 한 단계씩) → 완료. 대시보드 말풍선 글·계획 단계·상자, 승인 기억 파일.
 // 맞춘 눈은 식탁·싱크대에서 멀리 두어 이동 단계는 「완료」나 말로 넘긴다.
 import { mkdtempSync, readFileSync } from "node:fs";
@@ -13,6 +13,7 @@ import { APPROVAL_TEXT } from "../src/plan/labels.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { ScriptedDetector } from "./helpers/detectors.js";
 import { startFakePam, type FakePam } from "./helpers/pam.js";
+import { CUP_SCRIPTS, plannerRespond } from "./helpers/planner.js";
 import { openWebSocket } from "./helpers/ws.js";
 
 type Msg = Record<string, any>;
@@ -56,6 +57,8 @@ describe("한양목련 처음부터 끝까지", () => {
         const dets = JSON.parse(/Detections: (\[.*\])/.exec(text)?.[1] ?? "[]") as { id: string }[];
         return JSON.stringify({ scene: "kitchen", observations: dets.map((d) => ({ object_id: d.id, state: cupPlace })), summary: "컵" });
       },
+      // 에이전트 계획 모드: 같은 가짜 서버가 컵 치우기 도구 호출(지금 서버와 같은 네 단계)을 낸다
+      respond: plannerRespond(CUP_SCRIPTS),
     });
     // PAM은 기본 주기(5초)로 불린다. 관찰 텍스트에 컵이 있으면 컵 치우기, 없으면 대기
     pam = await startFakePam({ predict: (b) => (/컵 cup_\d/.test(String(b.observation_text))
@@ -63,7 +66,7 @@ describe("한양목련 처음부터 끝까지", () => {
     const runtimeDir = mkdtempSync(join(tmpdir(), "rt-"));
     srv = await startServer({
       env: { HUB: "memory", PORT: "0", HOME_ID: "mokryeon_180b", RUNTIME_DIR: runtimeDir, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
-        BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url },
+        BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url, OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: `${fake.url}/v1` },
       brain: { detector: new ScriptedDetector(() => [{ label: "cup", score: 0.9, cls: 41, box: CUP_BOX }]) }, log: () => {},
     });
     const dash: Msg[] = [];

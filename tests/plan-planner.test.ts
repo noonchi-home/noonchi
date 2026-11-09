@@ -4,14 +4,16 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { PlanView } from "../src/contract/plan.js";
 import { resolveTwinStudioDir } from "../src/model/devices.js";
-import { askPlan, cupPlan, devicePlan } from "../src/plan/planner.js";
+import { devicePlan } from "../src/plan/planner.js";
+import { askPlan, cupPlan } from "./helpers/cup-plan.js";
 import { floorPlanFrom } from "../src/plan/route.js";
 import { SMALL_SCENE, smallFloor } from "./helpers/floor.js";
 
 const fp = smallFloor();
 const dist = (a: number[], b: number[]) => Math.hypot(a[0]! - b[0]!, a[1]! - b[1]!);
 
-describe("cupPlan", () => {
+// cupPlan은 에이전트 컵 계획이 맞춰야 할 모양(tests/helpers/cup-plan.ts)이고, 경로는 src assemblePlan이 잇는다
+describe("cupPlan(assemblePlan 경로)", () => {
   const p = cupPlan(fp, "p1", "2026-11-06T00:00:00Z")!;
   it("네 단계: 식탁 가기, 컵 집기, 싱크대 가기, 내려놓기", () => {
     expect(p.steps.map((s) => [s.kind, s.label, s.target?.objectId])).toEqual([
@@ -40,10 +42,13 @@ describe("cupPlan", () => {
     scene.objects = scene.objects.filter((o) => o.type !== "dining_table");
     expect(cupPlan(floorPlanFrom(scene), "p1", "t")).toBeNull();
   });
-  it("로봇 자리는 있는데 식탁까지 길이 없으면 단계만, 경로 없음", () => {
+  it("사람이 걷는 길이라 로봇 이동 가능 방 밖이어도 길이 있고, 집 밖처럼 길이 없으면 단계만, 경로 없음", () => {
     const scene = structuredClone(SMALL_SCENE);
     scene.plan.robot.reachable_rooms = ["hall"];
-    const q = cupPlan(floorPlanFrom(scene), "p1", "t")!;
+    expect(cupPlan(floorPlanFrom(scene), "p1", "t")!.path.length).toBeGreaterThan(1);
+    const outside = structuredClone(SMALL_SCENE);
+    outside.objects = outside.objects.map((o) => (o.type === "dining_table" ? { ...o, plan: { position: [20, 20] } } : o));
+    const q = cupPlan(floorPlanFrom(outside), "p1", "t")!;
     expect(q.steps).toHaveLength(4);
     expect([q.path, q.legs, q.robot.position]).toEqual([[], [], [1, 2]]);
   });
