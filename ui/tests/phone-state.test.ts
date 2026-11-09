@@ -4,8 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 import { ASK_PROMPT, STEP_DONE } from "../../src/act/prompts.ts";
 import { STEP_COMMAND } from "../../src/plan/labels.ts";
 import {
-  anchorCount, anchorNames, createStore, handOf, initialView, nextAnchor, onStatus, PLACE_LINE, problemOf, settingsRows, setupLine, supportText,
-  type Anchor, type Command, type PhoneView,
+  anchorCount, anchorNames, createStore, handOf, initialView, isStartWord, nextAnchor, onStatus, PLACE_LINE, problemOf, settingsRows, setupLine, START_BUTTON,
+  startLine, supportText, type Anchor, type Command, type PhoneView, type SyncView,
 } from "../src/phone/state";
 
 const anchors: Anchor[] = [{ id: "A", label: "거실 창 오른쪽 벽", recorded: true }, { id: "B", label: "반대편 벽", recorded: false }];
@@ -90,16 +90,16 @@ describe("문제(problemOf): 일이 멈추면 모달 하나", () => {
 });
 
 describe("설정 줄(settingsRows)", () => {
-  it("연결·듣기·기준점 상태", () => {
+  it("연결·듣기·위치 상태", () => {
     expect(settingsRows(ar())).toEqual([
       { name: "연결", value: "됨", tone: "ok" },
       { name: "듣기", value: "켜짐", tone: "ok" },
-      { name: "기준점", value: "맞음 · 6cm", tone: "ok" },
+      { name: "위치", value: "맞음 · 6cm", tone: "ok" },
     ]);
     expect(settingsRows(ar({ connected: false, listening: "denied", aligned: false, anchors }))).toEqual([
       { name: "연결", value: "끊김", tone: "error" },
       { name: "듣기", value: "꺼짐", tone: "error" },
-      { name: "기준점", value: "안 맞음 · 1/2", tone: "warn" },
+      { name: "위치", value: "안 맞음 · 1/2", tone: "warn" },
     ]);
     expect(settingsRows(ar({ listening: "paused" }))[1]).toEqual({ name: "듣기", value: "켜짐", tone: "ok" });
     expect(settingsRows(ar({ listening: "off" }))[1]).toEqual({ name: "듣기", value: "꺼짐", tone: "plain" });
@@ -140,6 +140,67 @@ describe("메시지 → 상태", () => {
     expect(onStatus({ ...initialView(), setup: "anchors" }, { anchors, aligned: true }).setup).toBeNull();
     expect(onStatus({ ...initialView(), setup: "anchors" }, { anchors, aligned: false }).setup).toBe("anchors");
     expect(onStatus({ ...initialView(), setup: "place" }, { anchors, aligned: true }).setup).toBe("place");
+  });
+});
+
+describe("위치 맞춤(시작 위치·물건·벽 모양)", () => {
+  const start = { label: "거실·복도 테이블 앞", facing: "거실·복도 TV수납장" };
+  const sync = (over: Partial<SyncView> = {}): SyncView => ({ state: "estimated", source: "start", start, started: true, anchors: 0, wallPoints: 0, residualM: null, ...over });
+
+  it("시작 위치 맞추기: 위는 「<자리>에 서서 <보는 쪽> 쪽을 봐 주세요」, 아래는 「여기서 시작」. 명령보다 먼저", () => {
+    const v = ar({ aligned: false, setup: "start", command: cmd(), sync: sync({ state: "none", started: false, source: null }) });
+    expect(handOf(v)).toEqual({ top: "거실·복도 테이블 앞에 서서 거실·복도 TV수납장 쪽을 봐 주세요", thumb: { kind: "start" }, vision: null });
+    expect(startLine({ label: "현관", facing: "" })).toBe("현관에 서서 정한 방향을 봐 주세요");
+    expect(START_BUTTON).toBe("여기서 시작");
+    expect(handOf({ ...v, limited: true }).vision).toEqual({ text: "추적이 약해요", tone: "warn" });
+  });
+
+  it("맞추는 중(어림)이면 명령의 비전 상태 줄 앞에 「위치 맞추는 중」, 맞추면 그대로", () => {
+    expect(handOf(ar({ aligned: false, command: cmd(), sync: sync() })).vision).toEqual({ text: "위치 맞추는 중 · 컵 · 식탁 위", tone: "plain" });
+    expect(handOf(ar({ command: cmd(), sync: sync({ state: "aligned" }) })).vision).toEqual({ text: "컵 · 식탁 위", tone: "plain" });
+  });
+
+  it("어림이거나 시작 위치가 있으면 「기준점이 안 맞아요」 모달을 띄우지 않는다(시작 위치 맞추기가 열린다)", () => {
+    expect(problemOf(ar({ aligned: false, sync: sync() }))).toBeNull();
+    expect(problemOf(ar({ aligned: false, sync: sync({ state: "none", started: false }) }))).toBeNull();
+    expect(problemOf(ar({ aligned: false, setup: "start", sync: sync({ state: "none", started: false, start: null }) }))).toBeNull();
+    expect(problemOf(ar({ aligned: false, sync: sync({ state: "none", started: false, start: null }) }))).toBe("align");
+  });
+
+  it("설정 줄: 위치(맞음·어림·안 맞음과 오차), 기준(시작 위치·물건 수·벽 점 수)", () => {
+    expect(settingsRows(ar({ sync: sync({ state: "aligned", source: "walls", anchors: 2, wallPoints: 84, residualM: 0.03 }) })).slice(2)).toEqual([
+      { name: "위치", value: "맞음 · 3cm", tone: "ok" },
+      { name: "기준", value: "시작 위치 · 물건 2 · 벽 84점", tone: "plain" },
+    ]);
+    expect(settingsRows(ar({ aligned: false, sync: sync() })).slice(2)).toEqual([
+      { name: "위치", value: "어림", tone: "warn" },
+      { name: "기준", value: "시작 위치", tone: "plain" },
+    ]);
+    // A·B로 맞추면 오차는 거리 차이, 기준은 기준점 두 곳
+    expect(settingsRows(ar({ sync: sync({ state: "aligned", source: "touch", started: false, residualM: 0.06 }) })).slice(2)).toEqual([
+      { name: "위치", value: "맞음 · 6cm", tone: "ok" },
+      { name: "기준", value: "기준점 두 곳", tone: "plain" },
+    ]);
+    expect(settingsRows(ar({ aligned: false, anchors, sync: sync({ state: "none", started: false, source: null }) })).slice(2)).toEqual([
+      { name: "위치", value: "안 맞음 · 1/2", tone: "warn" },
+    ]);
+  });
+
+  it("상태 메시지 → sync. AR 중 시작 위치가 있고 아직 안 했으면 시작 위치 맞추기를 열고, 하면(또는 A·B로 맞추면) 닫는다", () => {
+    const wire = { state: "none" as const, source: null, start, started: false, anchors: 0, wall_points: 0, residual_m: null };
+    const v = onStatus(ar({ aligned: false }), { anchors, aligned: false, sync: wire });
+    expect(v.sync).toEqual({ state: "none", source: null, start, started: false, anchors: 0, wallPoints: 0, residualM: null });
+    expect(v.setup).toBe("start");
+    expect(onStatus({ ...ar(), ar: false }, { anchors, aligned: false, sync: wire }).setup).toBeNull();
+    expect(onStatus(v, { anchors, aligned: false, sync: { ...wire, state: "estimated", started: true } }).setup).toBeNull();
+    expect(onStatus(v, { anchors, aligned: true, sync: { ...wire, state: "aligned", source: "touch" } }).setup).toBeNull();
+    expect(onStatus(ar({ setup: "anchors", aligned: false }), { anchors, aligned: false, sync: wire }).setup).toBe("anchors");
+    expect(onStatus(ar(), { anchors, aligned: true }).sync).toBeNull();
+  });
+
+  it("「여기서 시작」 말: 말 전체가 시작일 때만(늘 듣기라 다른 말 속 「시작」은 아니다)", () => {
+    for (const t of ["여기서 시작", "시작", "여기서 시작할게", "시작해요", "응 시작", "여기서 시작!"]) expect(isStartWord(t), t).toBe(true);
+    for (const t of ["시작 위치가 어디야", "TV 켜고 시작해", "여기", "시작이 반이다"]) expect(isStartWord(t), t).toBe(false);
   });
 });
 

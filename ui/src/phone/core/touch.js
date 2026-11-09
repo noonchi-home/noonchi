@@ -77,6 +77,13 @@ export function floorPlaneY(viewerY, localFloorY) {
   return drop !== null && drop >= FLOOR_MIN_DROP_M && drop <= FLOOR_MAX_DROP_M ? localFloorY : viewerY - HOLD_HEIGHT_M;
 }
 
+/** hit 자세 쿼터니언의 +Y(면 법선, 길이 1). 서버 위치 맞추기가 벽 점(법선 수평)·바닥 점(법선 위)을 가른다. */
+export function planeNormal(orientation) {
+  const [x, y, z, w] = orientation;
+  const r = (v) => Math.round(v * 10000) / 10000 + 0;
+  return [r(2 * (x * y - w * z)), r(1 - 2 * (x * x + z * z)), r(2 * (y * z + w * x))];
+}
+
 /** 조준점: hit-test 점이 있으면 그 점, 없으면 시선과 어림 바닥이 만나는 점(estimated, 면은 위를 본다). 둘 다 없으면 null. */
 export function aimPoint({ hit, hitOrientation, viewer, viewerOrientation, localFloorY }) {
   if (hit) return { point: hit, orientation: hitOrientation, estimated: false };

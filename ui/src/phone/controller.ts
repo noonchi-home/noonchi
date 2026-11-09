@@ -4,6 +4,8 @@
 // 답 단추는 받은 명령의 id·step으로 answer를, 승인 대기 답 단추는 그 토큰과 답(승인·거절)으로 confirm을 보낸다.
 // 말의 답(reply)이 빈 글이면 보이지도 읽지도 않는다. 잠깐 알릴 말은 4초.
 // 카메라 화면을 못 보내면(core/ar.js 알림) 그 AR 동안 cameraOff로 두어 설정 모달에 「카메라 · 못 보냄」을 남긴다.
+// 위치 맞춤: 시작 위치가 있으면 AR을 켤 때 「여기서 시작」(시작 위치 맞추기)을 띄운다(state.ts onStatus). 단추나 말 「여기서 시작」이면
+// 마지막 폰 자세와 원점으로 {type:"start"}를 보낸다. 그 뒤 서버가 걸으면서 물건·벽 모양으로 맞춘다(src/sync).
 // 명령 대상 고리: 명령에 실린 대상(target, AR 자리) 하나만, 위 줄·엄지 자리에 그 명령이 보일 때만(handOf) 그린다. 에이전트 초점(focus)은
 // 명령이 없을 때만 AR에 넘긴다(대시보드로 가는 화면 프레임에만 그려지고 실제 폰 화면에는 그리지 않는다). 조준점은 찍기·맞추기 때만(draw.aim).
 import type { PhoneCommand, PhoneCommandClear } from "../../../src/contract/phone.ts";
@@ -11,8 +13,8 @@ import { createAr } from "./core/ar.js";
 import { createLink, phoneSocketUrl } from "./core/link.js";
 import { createListener, recognition, speak as speakAloud, type RecognitionCtor } from "./core/talk.js";
 import {
-  createStore, handOf, initialView, onStatus,
-  type Anchor, type AlignMode, type FocusMark, type Pending, type PhoneActions, type PhoneView,
+  createStore, handOf, initialView, isStartWord, onStatus,
+  type Anchor, type AlignMode, type FocusMark, type Pending, type PhoneActions, type PhoneView, type SyncWire,
 } from "./state";
 
 const NOTE_MS = 4000;
@@ -145,7 +147,7 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
     if (msg.type === "status") {
       revision = msg.revision ?? null;
       ar.setEngineMs(msg.engine_ms);
-      set((v) => ({ ...onStatus(v, msg as { mode?: AlignMode; anchors: Anchor[]; aligned: boolean; mismatch_m?: number | null }), connected: true }));
+      set((v) => ({ ...onStatus(v, msg as { mode?: AlignMode; anchors: Anchor[]; aligned: boolean; mismatch_m?: number | null; sync?: SyncWire }), connected: true }));
       if (msg.error) showNote(msg.error);
     } else if (msg.type === "reply") {
       // pending 칸이 없으면(명령의 답·승인·취소의 답) 승인 대기 목록을 그대로 둔다
@@ -198,12 +200,20 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
       set((v) => ({ ...v, setup: "anchors", settingsOpen: false }));
     },
     startPlace: () => set((v) => ({ ...v, setup: "place", settingsOpen: false })),
+    startFromSpot: () => set((v) => ({ ...v, setup: "start", settingsOpen: false })),
+    confirmStart() {
+      if (!ar.state.on) return showNote("AR을 먼저 시작하세요");
+      if (!ar.state.position || !ar.state.orientation) return showNote("폰 위치를 아직 몰라요. 폰을 조금 움직인 뒤 다시 눌러 주세요");
+      if (!link.send({ type: "start", position: ar.state.position, orientation: ar.state.orientation, epoch: ar.state.epoch })) showNote("서버와 연결이 끊겨 보내지 못했어요");
+    },
     endSetup: () => set((v) => ({ ...v, setup: null })),
     setSettings: (open) => set((v) => ({ ...v, settingsOpen: open })),
     micOn: () => listener?.start(),
     say(text) {
       const t = text.trim();
       if (!t) return;
+      // 시작 위치 맞추기 중 「여기서 시작」은 단추와 같다(에이전트로 보내지 않는다)
+      if (store.get().setup === "start" && isStartWord(t)) return actions.confirmStart();
       set((v) => ({ ...v, reply: `🎙 "${t}" … 생각 중` }));
       if (!link.send({ type: "say", text: t })) set((v) => ({ ...v, reply: "서버와 연결이 끊겼어요. 잠시 뒤 다시 말해 주세요." }));
     },

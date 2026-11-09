@@ -3,11 +3,11 @@
 // 모든 상태를 세로(390×844·412×915·360×780)로 찍고, 가로는 pick-cup(844×390)과 intro(844×390·780×360)를 찍어 본다.
 import { APPROVE, ASK_PROMPT, STEP_DONE } from "../../../src/act/prompts.ts";
 import { APPROVAL_TEXT, STEP_COMMAND, VISION_TEXT } from "../../../src/plan/labels.ts";
-import { initialView, type Anchor, type Command, type FocusMark, type PhoneView } from "./state";
+import { initialView, type Anchor, type Command, type FocusMark, type PhoneView, type SyncView } from "./state";
 
 export const SHOT_NAMES = [
   "intro", "go-table", "pick-cup", "low-cup", "go-sink", "put-cup", "idle", "weak", "align", "mic", "offline", "settings", "no-camera", "anchors", "place", "question", "approve",
-  "approve-task",
+  "approve-task", "intro-start", "start", "aligning", "settings-sync",
 ] as const;
 export type ShotName = (typeof SHOT_NAMES)[number];
 export interface Shot { view: PhoneView; marks: FocusMark[] }
@@ -27,6 +27,9 @@ const cup = `${VISION_TEXT.cup} · 손에 있음`;
 const pickCup = step(2, STEP_COMMAND.pickCup, `${VISION_TEXT.cup} · 식탁 위`, "cup");
 const ring = (id: string, label: string, u: number, v: number): FocusMark => ({ id, label, u, v, off: false, angle: 0 });
 const answers = (ids: string[]) => APPROVE.filter((c) => ids.includes(c.id)).map(({ id, label }) => ({ id, label }));
+// 위치 맞춤: 시작 위치 이름은 목련 트윈에서 설정이 채우는 글(가까운 물건 「… 앞」, 보는 쪽 물건)
+const spot = { label: "거실·복도 테이블 앞", facing: "거실·복도 TV수납장" };
+const sync = (over: Partial<SyncView> = {}): SyncView => ({ state: "none", source: null, start: spot, started: false, anchors: 0, wallPoints: 0, residualM: null, ...over });
 
 export const SHOTS: Record<ShotName, Shot> = {
   intro: { view: intro, marks: [] },
@@ -55,6 +58,13 @@ export const SHOTS: Record<ShotName, Shot> = {
   },
   // 위험 목록 가전 명령: 승인·거절
   approve: { view: { ...live, pending: [{ token: "t1", deviceLabel: "현관문", reason: "현관문 잠금 해제", choices: answers(["approve", "reject"]) }] }, marks: [] },
+  // 시작 위치가 있는 집의 처음 화면
+  "intro-start": { view: { ...intro, sync: sync() }, marks: [] },
+  // AR을 켜면 시작 위치 맞추기: 그 자리에 서서 그 쪽을 보고 「여기서 시작」
+  start: { view: { ...live, ...notAligned, setup: "start", sync: sync() }, marks: [] },
+  // 시작 위치로 어림 맞춤, 걸으며 맞추는 중
+  aligning: { view: { ...live, ...notAligned, command: pickCup, sync: sync({ state: "estimated", source: "start", started: true }) }, marks: [ring("cup", "컵", 0.5, 0.56)] },
+  "settings-sync": { view: { ...live, settingsOpen: true, mismatchM: null, sync: sync({ state: "aligned", source: "walls", started: true, anchors: 2, wallPoints: 84, residualM: 0.03 }) }, marks: [] },
   // 처음 하는 계획: 첫 단계 전에 묻는다
   "approve-task": {
     view: { ...live, command: { id: "plan:pam-3", step: "plan:pam-3:approve", text: APPROVAL_TEXT.ask("컵 치우기"), vision: null, choices: answers(["approve", "reject"]), target: null } },

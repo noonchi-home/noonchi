@@ -10,6 +10,9 @@ export interface ArState {
   hitEstimated: boolean;
   lastFloor: number[] | null;
   limited: boolean;
+  /** 마지막 폰 자세(AR). AR 전·끝난 뒤는 null. */
+  position: number[] | null;
+  orientation: number[] | null;
   size: string;
   encoder: string;
 }

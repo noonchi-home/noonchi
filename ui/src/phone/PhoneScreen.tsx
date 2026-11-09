@@ -1,6 +1,6 @@
 // 실제 폰 화면(에이전트의 손). 처음 화면: 마스코트(세로에서만)·제목·AR 지원 줄·기준점 안내·AR 시작, 답 줄·승인 대기(답마다 단추 하나)·글 입력.
 // AR 덮개(DOM 오버레이 뿌리): 맨 아래 canvas(명령 대상 고리·화면 밖 세모, 찍기·맞추기 때만 조준점), 위 줄(왼쪽 위 미어캣 = 설정 단추, 그 옆 지금 명령 한 줄),
-// 엄지 자리(명령·질문·승인·찍기가 있을 때만 카드 하나: 비전 상태 한 줄, 그 바로 아래 답 단추). 설정과 문제 모달(연결 끊김·마이크 꺼짐·기준점 안 맞음)은
+// 엄지 자리(명령·질문·승인·찍기·시작 위치 맞추기가 있을 때만 카드 하나: 비전 상태 한 줄, 그 바로 아래 답 단추). 설정과 문제 모달(연결 끊김·마이크 꺼짐·기준점 안 맞음)은
 // Alert Dialog를 덮개 뿌리 안에 띄운다(AR 중에는 그 안만 보인다). 세로가 기본 배치이고, 가로면 엄지 자리만 오른쪽 아래로 옮긴다(landscape:).
 // 부품은 ui/src/components/ui의 21st.dev 부품만 쓰고 여기서는 배치만 한다. 글 크기는 부품 원래 크기, 누르는 것은 48px(h-12·size-12).
 import { MessageSquare } from "lucide-react";
@@ -18,7 +18,7 @@ import { LiquidGlass } from "@/components/ui/liquid-glass";
 import { Status, StatusIndicator } from "@/components/ui/status";
 import type { ApprovalAnswer } from "../../../src/contract/phone.ts";
 import {
-  anchorNames, handOf, PROBLEM_TEXT, problemOf, settingsRows, supportText,
+  anchorNames, handOf, PROBLEM_TEXT, problemOf, RESTART_FROM_SPOT, settingsRows, START_BUTTON, supportText,
   type Choice, type Hand, type Pending, type PhoneActions, type PhoneView, type Problem, type Tone,
 } from "./state";
 
@@ -95,6 +95,7 @@ function PendingList({ items, act }: { items: Pending[]; act: PhoneActions }) {
 
 function Intro({ view, act }: { view: PhoneView; act: PhoneActions }) {
   const names = anchorNames(view.mode, view.anchors);
+  const spot = view.sync?.start ?? null;
   const canStart = view.support.kind === "ready" || view.support.kind === "failed";
   return (
     <main hidden={view.ar} className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col gap-4 px-4 pt-6 pb-4">
@@ -103,13 +104,15 @@ function Intro({ view, act }: { view: PhoneView; act: PhoneActions }) {
       <Card>
         <CardHeader>
           <CardTitle>클로이드의 눈</CardTitle>
-          <CardDescription role="status" data-support={view.support.kind}>{supportText(view.support)}</CardDescription>
+          <CardDescription role="status" data-support={view.support.kind}>{supportText(view.support, spot !== null)}</CardDescription>
         </CardHeader>
         <CardContent>
           <ol className="flex list-decimal flex-col gap-2 ps-5">
-            {view.mode === "touch"
-              ? <li>{names} 바로 아래 바닥에 조준점을 맞추고 <b>기록</b>을 눌러요. 초록이면 닿은 거예요</li>
-              : <li>{names} 바닥에 차례로 조준점을 맞추고 <b>기록</b>을 눌러요</li>}
+            {spot
+              ? <li>{spot.label}에 서서 {spot.facing || "정한 방향"} 쪽을 보고 <b>{START_BUTTON}</b>을 눌러요</li>
+              : view.mode === "touch"
+                ? <li>{names} 바로 아래 바닥에 조준점을 맞추고 <b>기록</b>을 눌러요. 초록이면 닿은 거예요</li>
+                : <li>{names} 바닥에 차례로 조준점을 맞추고 <b>기록</b>을 눌러요</li>}
           </ol>
         </CardContent>
         <CardFooter>
@@ -130,6 +133,7 @@ function Intro({ view, act }: { view: PhoneView; act: PhoneActions }) {
 /** 엄지 자리 답 단추: 승인 대기는 그 토큰과 답으로 승인, 명령·질문은 그 명령의 id·step으로 답한다. */
 function Answers({ hand, act }: { hand: Hand; act: PhoneActions }) {
   const t = hand.thumb!;
+  if (t.kind === "start") return <Button className="h-12 flex-1" onClick={act.confirmStart}>{START_BUTTON}</Button>;
   if (t.kind === "record") return <Button className="h-12 flex-1" onClick={() => act.recordAnchor(t.anchor.id)}>기록</Button>;
   if (t.kind === "place") return <Button className="h-12 flex-1" onClick={act.endSetup}>완료</Button>;
   if (t.kind === "pending") return <ChoiceButtons grow choices={t.item.choices} pick={(c) => act.confirm(t.item.token, c as ApprovalAnswer)} />;
@@ -137,7 +141,8 @@ function Answers({ hand, act }: { hand: Hand; act: PhoneActions }) {
   return <ChoiceButtons grow choices={choices} pick={(c) => act.answer(id, step, c)} />;
 }
 
-/** 미어캣(설정 단추)과 설정 모달: 연결·듣기·기준점 상태, 기준점 다시 찍기, 물건 자리 맞추기, 닫기. 닫으면 미어캣으로 초점이 돌아온다. */
+/** 미어캣(설정 단추)과 설정 모달: 연결·듣기·위치(·기준) 상태, 기준점 다시 찍기, 물건 자리 맞추기, 닫기. 시작 위치가 있으면 「시작 위치에서 다시 맞추기」가
+ *  주 단추이고 「기준점 다시 찍기」는 보조. 닫으면 미어캣으로 초점이 돌아온다. */
 function Settings({ view, act, root, open }: { view: PhoneView; act: PhoneActions; root: HTMLElement | null; open: boolean }) {
   return (
     <AlertDialog open={open} onOpenChange={act.setSettings}>
@@ -156,11 +161,14 @@ function Settings({ view, act, root, open }: { view: PhoneView; act: PhoneAction
             </Item>
           ))}
         </ItemGroup>
-        {/* 좁은 화면에서는 아래부터 쌓인다(뒤 단추가 위): 기준점 다시 찍기, 물건 자리 맞추기, 닫기 차례로 보인다. 간격은 footer gap 하나(닫기의 mt-2를 뺀다) */}
+        {/* 좁은 화면에서는 아래부터 쌓인다(뒤 단추가 위): 시작 위치에서 다시 맞추기, 기준점 다시 찍기, 물건 자리 맞추기, 닫기 차례로 보인다. 간격은 footer gap 하나(닫기의 mt-2를 뺀다) */}
         <AlertDialogFooter className="gap-2 sm:gap-0">
           <AlertDialogCancel className="mt-0 h-12">닫기</AlertDialogCancel>
           <AlertDialogAction variant="outline" className="h-12" onClick={act.startPlace}>물건 자리 맞추기</AlertDialogAction>
-          <AlertDialogAction className="h-12" onClick={act.startAnchors}>기준점 다시 찍기</AlertDialogAction>
+          {view.sync?.start
+            ? <AlertDialogAction variant="outline" className="h-12" onClick={act.startAnchors}>기준점 다시 찍기</AlertDialogAction>
+            : <AlertDialogAction className="h-12" onClick={act.startAnchors}>기준점 다시 찍기</AlertDialogAction>}
+          {view.sync?.start && <AlertDialogAction className="h-12" onClick={act.startFromSpot}>{RESTART_FROM_SPOT}</AlertDialogAction>}
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

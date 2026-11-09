@@ -16,7 +16,7 @@ import type { PhoneActions } from "./state";
 
 const noop = () => {};
 const act: PhoneActions = {
-  startAr: noop, recordAnchor: noop, startAnchors: noop, startPlace: noop, endSetup: noop, setSettings: noop, micOn: noop,
+  startAr: noop, recordAnchor: noop, startAnchors: noop, startPlace: noop, startFromSpot: noop, confirmStart: noop, endSetup: noop, setSettings: noop, micOn: noop,
   say: noop, confirm: noop, answer: noop,
 };
 

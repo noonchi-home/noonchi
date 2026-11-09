@@ -11,8 +11,8 @@ import { PhoneScreen } from "../src/phone/PhoneScreen";
 import type { PhoneActions, PhoneView, Support } from "../src/phone/state";
 
 const actions = (): PhoneActions => ({
-  startAr: vi.fn(), recordAnchor: vi.fn(), startAnchors: vi.fn(), startPlace: vi.fn(), endSetup: vi.fn(), setSettings: vi.fn(), micOn: vi.fn(),
-  say: vi.fn(), confirm: vi.fn(), answer: vi.fn(),
+  startAr: vi.fn(), recordAnchor: vi.fn(), startAnchors: vi.fn(), startPlace: vi.fn(), startFromSpot: vi.fn(), confirmStart: vi.fn(), endSetup: vi.fn(),
+  setSettings: vi.fn(), micOn: vi.fn(), say: vi.fn(), confirm: vi.fn(), answer: vi.fn(),
 });
 function show(view: PhoneView) {
   const act = actions();
@@ -37,6 +37,12 @@ describe("처음 화면", () => {
     ]);
     await userEvent.click(screen.getByRole("button", { name: "AR 시작" }));
     expect(act.startAr).toHaveBeenCalledOnce();
+  });
+
+  it("시작 위치가 있으면 안내가 「<자리>에 서서 <보는 쪽> 쪽을 보고 여기서 시작을 눌러요」", () => {
+    show(SHOTS["intro-start"].view);
+    expect(screen.getByText("준비됐어요. 폰을 세로로 들고 시작 위치에서 AR을 시작하세요.")).toHaveAttribute("data-support", "ready");
+    expect(screen.getAllByRole("listitem").map((li) => li.textContent)).toEqual(["거실·복도 테이블 앞에 서서 거실·복도 TV수납장 쪽을 보고 여기서 시작을 눌러요"]);
   });
 
   it("처음 화면의 승인 대기도 답마다 단추 하나", async () => {
@@ -172,6 +178,22 @@ describe("아래: 엄지 자리 카드(비전 상태 바로 아래 「완료」)
     expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 
+  it("시작 위치 맞추기: 위는 「<자리>에 서서 <보는 쪽> 쪽을 봐 주세요」, 아래는 「여기서 시작」 하나. 문제 모달은 없다", async () => {
+    const { act, zone } = show(SHOTS.start.view);
+    expect(zone("top")!).toHaveTextContent(/^거실·복도 테이블 앞에 서서 거실·복도 TV수납장 쪽을 봐 주세요$/);
+    const buttons = within(zone("thumb")!).getAllByRole("button");
+    expect(buttons.map((b) => b.textContent)).toEqual(["여기서 시작"]);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    await userEvent.click(buttons[0]!);
+    expect(act.confirmStart).toHaveBeenCalledOnce();
+  });
+
+  it("맞추는 중(어림)에는 명령의 비전 상태 줄 앞에 「위치 맞추는 중」. 문제 모달은 없다", () => {
+    const { zone } = show(SHOTS.aligning.view);
+    expect(within(zone("thumb")!).getByText("위치 맞추는 중 · 컵 · 식탁 위")).toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
   it("물건 자리 맞추기: 위는 「여기」 말하기 안내, 「완료」로 끝낸다", async () => {
     const { act, zone } = show(SHOTS.place.view);
     expect(zone("top")!).toHaveTextContent('물건 아래 바닥을 가리키고 "냉장고 여기로"라고 말해 주세요');
@@ -196,14 +218,14 @@ describe("미어캣: 설정", () => {
     return <PhoneScreen view={view} act={{ ...act, setSettings: (open) => { act.setSettings(open); setView((v) => ({ ...v, settingsOpen: open })); } }} />;
   }
 
-  it("미어캣을 누르면 설정(연결·듣기·기준점)이 열리고, 닫으면 미어캣으로 초점이 돌아온다", async () => {
+  it("미어캣을 누르면 설정(연결·듣기·위치)이 열리고, 닫으면 미어캣으로 초점이 돌아온다", async () => {
     const act = actions();
     render(<Live start={SHOTS["pick-cup"].view} act={act} />);
     const meerkat = screen.getByRole("button", { name: "설정" });
     await userEvent.click(meerkat);
     const dialog = screen.getByRole("alertdialog", { name: "설정" });
     expect(dialog.closest("[data-phone-overlay]")).not.toBeNull();
-    expect(within(dialog).getAllByRole("listitem").map((r) => r.textContent)).toEqual(["연결됨", "듣기켜짐", "기준점맞음 · 6cm"]);
+    expect(within(dialog).getAllByRole("listitem").map((r) => r.textContent)).toEqual(["연결됨", "듣기켜짐", "위치맞음 · 6cm"]);
     expect(within(dialog).getAllByRole("button").map((b) => b.textContent)).toEqual(["닫기", "물건 자리 맞추기", "기준점 다시 찍기"]);
     await userEvent.click(within(dialog).getByRole("button", { name: "닫기" }));
     expect(screen.queryByRole("alertdialog")).toBeNull();
@@ -215,6 +237,18 @@ describe("미어캣: 설정", () => {
     show(SHOTS.settings.view);
     const dialog = within(screen.getByRole("alertdialog", { name: "설정" }));
     for (const name of ["닫기", "물건 자리 맞추기", "기준점 다시 찍기"]) expect(dialog.getByRole("button", { name }).className.split(/\s+/), name).not.toContain("mt-2");
+  });
+
+  it("시작 위치가 있으면 설정에 위치·기준 줄과 「시작 위치에서 다시 맞추기」(주 단추). 누르면 시작 위치 맞추기", async () => {
+    const { act } = show(SHOTS["settings-sync"].view);
+    const dialog = within(screen.getByRole("alertdialog", { name: "설정" }));
+    expect(dialog.getAllByRole("listitem").map((r) => r.textContent)).toEqual(["연결됨", "듣기켜짐", "위치맞음 · 3cm", "기준시작 위치 · 물건 2 · 벽 84점"]);
+    const buttons = dialog.getAllByRole("button");
+    expect(buttons.map((b) => b.textContent)).toEqual(["닫기", "물건 자리 맞추기", "기준점 다시 찍기", "시작 위치에서 다시 맞추기"]);
+    expect(words(buttons[3]!)).toContain("bg-primary");
+    expect(words(buttons[2]!)).toContain("border-input");
+    await userEvent.click(buttons[3]!);
+    expect(act.startFromSpot).toHaveBeenCalledOnce();
   });
 
   it.each([["기준점 다시 찍기", "startAnchors"], ["물건 자리 맞추기", "startPlace"]] as const)("설정의 「%s」", async (label, fn) => {

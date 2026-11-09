@@ -17,6 +17,7 @@ export const AIM_MAX_M: number;
 export function floorRayPoint(viewer: number[], orientation: number[], floorY: number, maxM?: number): number[] | null;
 export function floorPlaneY(viewerY: number, localFloorY: number | null | undefined): number;
 export interface AimPoint { point: number[]; orientation: number[] | null; estimated: boolean }
+export function planeNormal(orientation: number[]): [number, number, number];
 export function aimPoint(opts: {
   hit: number[] | null; hitOrientation: number[] | null;
   viewer: number[] | null; viewerOrientation: number[] | null; localFloorY: number | null | undefined;

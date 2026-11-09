@@ -1,6 +1,7 @@
 // 실제 폰 화면 상태: 서버 메시지·AR·듣기가 바꾸는 값과, 화면 글을 만드는 순수 함수. 타이머·보내기는 controller.ts가 맡는다.
 // 실제 폰은 에이전트의 손이다: 위에는 지금 할 명령 한 줄(handOf top), 아래 엄지 자리에는 비전 상태 한 줄과 그 바로 아래 답 단추(thumb).
-// 엄지 자리 차례: 기준점 찍기·물건 자리 맞추기 > 승인 대기(가전) > 명령·질문. 일이 멈추는 문제는 모달(problemOf), 추적 약함·잠깐 알릴 말은 비전 상태 줄.
+// 엄지 자리 차례: 시작 위치 맞추기·기준점 찍기·물건 자리 맞추기 > 승인 대기(가전) > 명령·질문. 일이 멈추는 문제는 모달(problemOf), 추적 약함·잠깐 알릴 말은 비전 상태 줄.
+// 위치 맞춤(서버 status.sync, src/sync): 시작 위치가 있으면 AR을 켤 때 「여기서 시작」을 띄우고, 어림인 동안 명령의 비전 상태 줄 앞에 「위치 맞추는 중」.
 import type { ApprovalAnswer } from "../../../src/contract/phone.ts";
 import type { ListenState } from "./core/talk.js";
 
@@ -20,8 +21,19 @@ export interface Pending { token: string; deviceLabel: string; reason: string; c
 export interface Command { id: string; step: string; text: string; vision: string | null; choices: Choice[]; target: string | null }
 /** 화면 위 초점 표시 하나(core/project.js focusMarks와 같은 모양). */
 export interface FocusMark { id: string; label: string; u: number; v: number; off: boolean; angle: number }
-/** 조준점을 쓰는 일: 기준점 찍기, 물건 자리 맞추기(「여기」 말하기). */
-export type Setup = "anchors" | "place";
+/** 엄지 자리를 차지하는 일: 기준점 찍기, 물건 자리 맞추기(「여기」 말하기), 시작 위치 맞추기(「여기서 시작」). */
+export type Setup = "anchors" | "place" | "start";
+/** 서버 위치 맞춤 상태(status.sync). state: none 변환 없음, estimated 어림, aligned 맞춤. */
+export interface SyncView {
+  state: "none" | "estimated" | "aligned";
+  source: "start" | "objects" | "walls" | "touch" | "floor" | null;
+  /** 이 집 시작 위치 이름(없으면 null). */
+  start: { label: string; facing: string } | null;
+  started: boolean;
+  anchors: number;
+  wallPoints: number;
+  residualM: number | null;
+}
 /** 일이 멈추는 문제: 연결 끊김, 마이크 꺼짐, 기준점 안 맞음. */
 export type Problem = "offline" | "mic" | "align";
 
@@ -52,6 +64,8 @@ export interface PhoneView {
   command: Command | null;
   setup: Setup | null;
   settingsOpen: boolean;
+  /** 서버 위치 맞춤 상태. 서버가 맞춤 모듈을 껐거나 상태 전이면 null. */
+  sync: SyncView | null;
 }
 
 /** 화면의 단추가 부르는 것(controller.ts가 만든다). */
@@ -62,6 +76,10 @@ export interface PhoneActions {
   startAnchors(): void;
   /** 물건 자리 맞추기: 조준점을 켜고 「여기」 말하기를 기다린다. */
   startPlace(): void;
+  /** 시작 위치에서 다시 맞추기: 「여기서 시작」을 띄운다. */
+  startFromSpot(): void;
+  /** 「여기서 시작」: 지금 자세를 시작 위치로 보낸다. */
+  confirmStart(): void;
   endSetup(): void;
   setSettings(open: boolean): void;
   /** 마이크 켜기: 듣기를 다시 켠다(브라우저가 되면 권한을 다시 묻는다). */
@@ -75,10 +93,23 @@ export interface PhoneActions {
 
 export const initialView = (): PhoneView => ({
   support: { kind: "checking" }, ar: false, connected: false, listening: "off", mode: "floor", anchors: null, aligned: false, mismatchM: null,
-  limited: false, hit: false, hitEstimated: false, cameraOff: false, note: null, reply: null, pending: [], command: null, setup: null, settingsOpen: false,
+  limited: false, hit: false, hitEstimated: false, cameraOff: false, note: null, reply: null, pending: [], command: null, setup: null, settingsOpen: false, sync: null,
 });
 
 export const WEAK_TEXT = "추적이 약해요";
+export const START_BUTTON = "여기서 시작";
+export const ALIGNING_TEXT = "위치 맞추는 중";
+export const RESTART_FROM_SPOT = "시작 위치에서 다시 맞추기";
+
+/** 시작 위치 맞추기 위 한 줄. */
+export const startLine = (start: { label: string; facing: string }) =>
+  start.facing ? `${start.label}에 서서 ${start.facing} 쪽을 봐 주세요` : `${start.label}에 서서 정한 방향을 봐 주세요`;
+
+/** 늘 듣기에서 「여기서 시작」 답: 말 전체가 시작일 때만(앞의 응·네, 끝의 할게·해·해요·요는 된다). */
+export function isStartWord(text: string): boolean {
+  const t = text.trim().replace(/[.!?~,\s]+$/u, "");
+  return /^(?:(?:응|네|어)\s*)?(?:여기서\s*)?시작(?:할게|할게요|해|해요|하자|요)?$/u.test(t);
+}
 export const PLACE_LINE = '물건 아래 바닥을 가리키고 "냉장고 여기로"라고 말해 주세요';
 export const PROBLEM_TEXT: Record<Problem, { title: string; fix: string | null }> = {
   offline: { title: "다시 연결하는 중", fix: null },
@@ -97,6 +128,7 @@ export const setupLine = (mode: AlignMode, a: Anchor) =>
   mode === "touch" ? `${a.id} ${a.label} 바로 아래 바닥을 가리켜 주세요` : `${a.label} 바닥을 가리켜 주세요`;
 
 export type Thumb =
+  | { kind: "start" }
   | { kind: "record"; anchor: Anchor }
   | { kind: "place" }
   | { kind: "pending"; item: Pending }
@@ -110,47 +142,63 @@ const floorLine = (v: PhoneView) => (!v.hit ? "바닥에 안 닿음" : v.hitEsti
 export function handOf(v: PhoneView): Hand {
   const anchor = v.setup === "anchors" ? nextAnchor(v.anchors) : null;
   const pending = v.pending[0];
-  const thumb: Thumb | null = anchor ? { kind: "record", anchor }
+  const start = v.setup === "start" ? v.sync?.start ?? null : null;
+  const thumb: Thumb | null = start ? { kind: "start" }
+    : anchor ? { kind: "record", anchor }
     : v.setup === "place" ? { kind: "place" }
     : pending ? { kind: "pending", item: pending }
     : v.command ? { kind: "command", command: v.command }
     : null;
   if (!thumb) return { top: null, thumb: null, vision: null };
-  const top = thumb.kind === "record" ? setupLine(v.mode, thumb.anchor)
+  const top = thumb.kind === "start" ? startLine(start!)
+    : thumb.kind === "record" ? setupLine(v.mode, thumb.anchor)
     : thumb.kind === "place" ? PLACE_LINE
     : thumb.kind === "pending" ? `${thumb.item.deviceLabel}: ${thumb.item.reason}`
     : thumb.command.text;
   const tone: Tone = !v.hit ? "plain" : v.hitEstimated ? "warn" : "ok";
   const base = thumb.kind === "record" ? { text: `${floorLine(v)} · 기준점 ${anchorCount(v.anchors!)}`, tone }
     : thumb.kind === "place" ? { text: floorLine(v), tone }
-    : thumb.kind === "command" && thumb.command.vision ? { text: thumb.command.vision, tone: "plain" as const }
+    : thumb.kind === "command" && thumb.command.vision
+      ? { text: v.sync?.state === "estimated" ? `${ALIGNING_TEXT} · ${thumb.command.vision}` : thumb.command.vision, tone: "plain" as const }
     : null;
   const vision = v.note ? { text: v.note, tone: "warn" as const } : v.limited ? { text: WEAK_TEXT, tone: "warn" as const } : base;
   return { top, thumb, vision };
 }
 
-/** 일이 멈추는 문제(AR 중에만, 하나): 연결 끊김 → 마이크 꺼짐 → 기준점 안 맞음(찍는 중이 아닐 때). */
+/** 일이 멈추는 문제(AR 중에만, 하나): 연결 끊김 → 마이크 꺼짐 → 기준점 안 맞음(찍는 중이 아니고, 어림 변환도 시작 위치도 없을 때). */
 export function problemOf(v: PhoneView): Problem | null {
   if (!v.ar) return null;
   if (!v.connected) return "offline";
   if (v.listening === "denied") return "mic";
-  if (v.anchors && !v.aligned && v.setup !== "anchors") return "align";
+  const syncing = v.sync !== null && (v.sync.state !== "none" || v.sync.start !== null);
+  if (v.anchors && !v.aligned && v.setup !== "anchors" && v.setup !== "start" && !syncing) return "align";
   return null;
+}
+
+/** 설정 「기준」 줄: 이번 맞춤에 쓴 것. 없으면 null. */
+function basisOf(s: SyncView): string | null {
+  if (s.state === "none") return null;
+  if (s.source === "touch" || s.source === "floor") return "기준점 두 곳";
+  const parts = [s.started ? "시작 위치" : null, s.anchors > 0 ? `물건 ${s.anchors}` : null, s.wallPoints > 0 ? `벽 ${s.wallPoints}점` : null].filter(Boolean);
+  return parts.length ? parts.join(" · ") : null;
 }
 
 /** 설정 모달의 상태 줄: 연결·듣기·기준점, 카메라 화면을 못 보내면 카메라. */
 export function settingsRows(v: PhoneView): { name: string; value: string; tone: Tone }[] {
+  const basis = v.sync ? basisOf(v.sync) : null;
   const listen = v.listening === "on" || v.listening === "paused" ? { value: "켜짐", tone: "ok" as const }
     : { value: "꺼짐", tone: v.listening === "denied" ? ("error" as const) : ("plain" as const) };
   return [
     { name: "연결", ...(v.connected ? { value: "됨", tone: "ok" as const } : { value: "끊김", tone: "error" as const }) },
     { name: "듣기", ...listen },
     {
-      name: "기준점",
+      name: "위치",
       ...(v.aligned
-        ? { value: `맞음 · ${Math.round((v.mismatchM ?? 0) * 100)}cm`, tone: "ok" as const }
+        ? { value: `맞음 · ${Math.round((v.sync?.residualM ?? v.mismatchM ?? 0) * 100)}cm`, tone: "ok" as const }
+        : v.sync?.state === "estimated" ? { value: "어림", tone: "warn" as const }
         : { value: v.anchors ? `안 맞음 · ${anchorCount(v.anchors)}` : "안 맞음", tone: "warn" as const }),
     },
+    ...(basis ? [{ name: "기준", value: basis, tone: "plain" as const }] : []),
     ...(v.cameraOff ? [{ name: "카메라", value: "못 보냄", tone: "warn" as const }] : []),
   ];
 }
@@ -161,23 +209,32 @@ export function anchorNames(mode: AlignMode, anchors: Anchor[] | null): string {
   return anchors.map((a) => (mode === "touch" ? `${a.id} ${a.label}` : a.label)).join(", ");
 }
 
-/** 처음 화면 AR 지원 줄. */
-export function supportText(s: Support): string {
+/** 처음 화면 AR 지원 줄. start: 이 집에 시작 위치가 있다. */
+export function supportText(s: Support, start = false): string {
   switch (s.kind) {
     case "checking": return "AR 지원을 확인하는 중…";
     case "insecure": return "보안 연결이 아니라 AR을 켤 수 없어요. https 주소로 여세요.";
     case "no-ar": return "이 브라우저는 AR을 지원하지 않아요. 안드로이드 크롬으로 여세요.";
-    case "ready": return "준비됐어요. 폰을 세로로 들고 첫 기준점 근처에서 AR을 시작하세요.";
+    case "ready": return start ? "준비됐어요. 폰을 세로로 들고 시작 위치에서 AR을 시작하세요." : "준비됐어요. 폰을 세로로 들고 첫 기준점 근처에서 AR을 시작하세요.";
     case "failed": return `AR을 시작하지 못했어요: ${s.message}`;
   }
 }
 
-/** 서버 상태(status) → 방식·기준점·맞춤·거리 차이. 맞추면 기준점 찍기를 끝낸다. */
-export function onStatus(v: PhoneView, s: { mode?: AlignMode; anchors: Anchor[]; aligned: boolean; mismatch_m?: number | null }): PhoneView {
-  return {
-    ...v, mode: s.mode ?? "floor", anchors: s.anchors, aligned: s.aligned, mismatchM: s.mismatch_m ?? null,
-    setup: s.aligned && v.setup === "anchors" ? null : v.setup,
-  };
+/** 서버 status.sync 모양(src/phone/session.ts SyncStatus). */
+export interface SyncWire {
+  state: SyncView["state"]; source: SyncView["source"]; start: SyncView["start"]; started: boolean; anchors: number; wall_points: number; residual_m: number | null;
+}
+
+/** 서버 상태(status) → 방식·기준점·맞춤·거리 차이·위치 맞춤. 맞추면 기준점 찍기를 끝낸다.
+ *  AR 중 시작 위치가 있고 이번 AR에서 아직 시작하지 않았으면(변환 없음) 시작 위치 맞추기를 열고, 시작했거나 맞추면 닫는다. */
+export function onStatus(v: PhoneView, s: { mode?: AlignMode; anchors: Anchor[]; aligned: boolean; mismatch_m?: number | null; sync?: SyncWire }): PhoneView {
+  const sync: SyncView | null = s.sync
+    ? { state: s.sync.state, source: s.sync.source, start: s.sync.start, started: s.sync.started, anchors: s.sync.anchors, wallPoints: s.sync.wall_points, residualM: s.sync.residual_m }
+    : null;
+  let setup = s.aligned && v.setup === "anchors" ? null : v.setup;
+  if (setup === "start" && (!sync?.start || sync.started || s.aligned)) setup = null;
+  if (setup === null && v.ar && sync?.start && !sync.started && sync.state === "none") setup = "start";
+  return { ...v, mode: s.mode ?? "floor", anchors: s.anchors, aligned: s.aligned, mismatchM: s.mismatch_m ?? null, sync, setup };
 }
 
 /** 작은 저장소(useSyncExternalStore용). */

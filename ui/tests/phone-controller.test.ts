@@ -424,3 +424,60 @@ describe("AR 화면 그림", () => {
     expect(supportText(c.view().support)).toBe("AR을 시작하지 못했어요: 페이지를 새로 고쳐 주세요");
   });
 });
+
+describe("위치 맞춤: 「여기서 시작」", () => {
+  const start = { label: "거실·복도 테이블 앞", facing: "거실·복도 TV수납장" };
+  const sync = (over: Record<string, unknown> = {}) => ({ state: "none", source: null, start, started: false, anchors: 0, wall_points: 0, residual_m: null, ...over });
+
+  it("시작 위치가 있으면 AR을 켤 때 시작 위치 맞추기가 열리고, 「여기서 시작」은 지금 자세·원점으로 start를 보낸다", async () => {
+    const { c, ws, sent, session, startAr } = make();
+    ws.push(status({ sync: sync() }));
+    expect(c.view().setup).toBeNull();
+    await startAr();
+    ws.push(status({ sync: sync() }));
+    expect(c.view().setup).toBe("start");
+    session.step(100, frame());
+    c.actions.confirmStart();
+    const msg = sent().filter((m) => m.type === "start").at(-1)!;
+    expect(msg).toEqual({ type: "start", position: [0, 1.5, 0], orientation: [0, 0, 0, 1], epoch: expect.any(String) });
+    expect(msg.epoch).toBe(sent().find((m) => m.type === "reset")!.epoch);
+    ws.push(status({ sync: sync({ state: "estimated", source: "start", started: true }) }));
+    expect(c.view().setup).toBeNull();
+  });
+
+  it("시작 위치 맞추기 중 말 「여기서 시작」은 start로 보내고 에이전트로 보내지 않는다. 다른 말은 그대로 say", async () => {
+    const { c, ws, sent, session, startAr } = make();
+    await startAr();
+    ws.push(status({ sync: sync() }));
+    session.step(100, frame());
+    rec().hear("여기서 시작할게");
+    expect(sent().filter((m) => m.type === "start")).toHaveLength(1);
+    expect(sent().filter((m) => m.type === "say")).toHaveLength(0);
+    rec().hear("TV 켜 줘");
+    expect(sent().filter((m) => m.type === "say").map((m) => m.text)).toEqual(["TV 켜 줘"]);
+  });
+
+  it("자세가 아직 없으면 보내지 않고 알린다. 설정의 「시작 위치에서 다시 맞추기」는 시작 위치 맞추기를 연다", async () => {
+    const { c, ws, sent, startAr } = make();
+    await startAr();
+    ws.push(status({ sync: sync({ state: "aligned", source: "walls", started: true }), aligned: true }));
+    c.actions.setSettings(true);
+    c.actions.startFromSpot();
+    expect([c.view().setup, c.view().settingsOpen]).toEqual(["start", false]);
+    c.actions.confirmStart();
+    expect(sent().filter((m) => m.type === "start")).toHaveLength(0);
+    expect(c.view().note).toContain("폰 위치");
+  });
+
+  it("자세에 실제 hit 면 법선과 어림 바닥 높이를 싣는다(어림 조준점이면 법선 없음)", async () => {
+    const { ws, sent, session, startAr } = make();
+    void ws;
+    await startAr();
+    session.step(100, frame());
+    expect(sent().filter((m) => m.type === "pose").at(-1)).toMatchObject({ hit: [0, 0, -1], hit_normal: [0, 1, 0], floor_y: 0, hit_estimated: false });
+    session.step(250, looseFloor());
+    const loose = sent().filter((m) => m.type === "pose").at(-1)!;
+    expect(loose.hit_estimated).toBe(true);
+    expect(loose.hit_normal).toBeUndefined();
+  });
+});
