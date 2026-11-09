@@ -11,6 +11,7 @@ import { pageLayout, type Rect } from "../../src/dashboard/layout";
 import { MASCOT } from "../../src/dashboard/mascot-image";
 import { WORDS } from "../../src/dashboard/words";
 import { CLEAR_CUP, EYE_FRAMES, HUB, imageSlot, LEFT_CUP, PHONE_URL, PLAN, SAY, screenAt, WATCHING } from "./fixtures";
+import type { PlanView } from "../../../src/contract/plan.ts";
 
 /** WCAG 대비(hex 두 개). */
 const lum = (hex: string) => {
@@ -539,6 +540,21 @@ describe("대시보드 트윈", () => {
     expect(document.querySelectorAll("[data-progress]")).toHaveLength(1);
     expect(mascot()).not.toHaveTextContent(`2/${PLAN.steps.length}`);
     expect(say()).not.toHaveTextContent(`2/${PLAN.steps.length}`);
+  });
+
+  it("단계 막대 칸: 끝난 칸 completed, 지금 칸 active, 남은 칸 inactive", () => {
+    draw(screenAt(2));
+    const segs = [...twinPane().querySelectorAll("[data-segment]")].map((e) => e.getAttribute("data-state"));
+    expect(segs).toEqual(["completed", "active", "inactive", "inactive"]);
+  });
+
+  it("예정 계획(단계 모두 예정)은 「1/4」 글과 같이 단계 막대도 첫 칸이 지금 칸이고 끝난 칸이 없다", () => {
+    const plan: PlanView = { ...PLAN, status: "planned", steps: PLAN.steps.map((s) => ({ ...s, status: "pending" })) };
+    draw(screenAt(1, { plan, step: plan.steps[0]! }));
+    const progress = twinPane().querySelector<HTMLElement>("[data-progress]")!;
+    expect(progress.querySelector("[data-slot=item-description]")).toHaveTextContent(`1/${PLAN.steps.length} · ${PLAN.steps[0]!.label}`);
+    const segs = [...progress.querySelectorAll("[data-segment]")].map((e) => e.getAttribute("data-state"));
+    expect(segs).toEqual(["active", "inactive", "inactive", "inactive"]);
   });
 
   it("지켜보기(계획 없음)에는 할 일 진행도가 없다", () => {

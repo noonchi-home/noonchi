@@ -2,14 +2,12 @@ import { Bell, Footprints, Hand, Hourglass, Power, type LucideIcon } from "lucid
 import type { PlanView, StepKind } from "../../../src/contract/plan.ts";
 import { Stepper, StepperBar, StepperItem, StepperTrigger } from "../components/ui/stepper";
 import { cn } from "../lib/utils";
+import { stepIndex } from "./data";
 
 export const KIND_ICON: Record<StepKind, LucideIcon> = { move: Footprints, act: Hand, ask: Bell, device: Power, wait: Hourglass };
 
-/** Stepper 지금 단계(1부터). 지금 단계가 없으면 마지막 다음이라 모두 끝난 단계로 보인다. */
-const activeOf = (plan: PlanView) => {
-  const i = plan.steps.findIndex((s) => s.status === "active");
-  return i < 0 ? plan.steps.length + 1 : i + 1;
-};
+/** Stepper 지금 단계(1부터): 진행도 글과 같은 stepIndex(진행 중, 없으면 처음 예정 단계). 그것도 없으면 마지막 다음이라 모두 끝난 단계로 보인다. */
+const activeOf = (plan: PlanView) => stepIndex(plan) || plan.steps.length + 1;
 
 /**
  * 단계 막대(Stepper 「Progress」 데모 막대): 끝난 칸 ok, 지금 칸 brand, 남은 칸 border.
