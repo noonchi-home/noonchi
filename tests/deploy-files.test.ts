@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { isKeyName, KEY_OWNERS } from "../scripts/compose-keys.js";
-import { DETECTOR_MODELS, POSE_MODELS } from "../src/brain/detector.js";
+import { DETECTOR_MODEL, POSE_MODEL } from "../src/brain/detector.js";
 
 const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
 type Service = { environment?: Record<string, unknown> | string[]; env_file?: unknown };
@@ -34,8 +34,7 @@ describe("배포 파일", () => {
     expect(d).not.toContain("COPY web web");
     // 모델은 받지 않고 저장소 models/를 복사한 뒤 표(src/brain/detector.ts)의 sha256으로 확인한다
     expect(d).toContain("COPY models models");
-    expect(d).not.toContain(DETECTOR_MODELS.yolox_tiny.url);
-    for (const [file, sha] of [[DETECTOR_MODELS.yolo26n.file, DETECTOR_MODELS.yolo26n.sha256], [POSE_MODELS["yolo26n-pose"].file, POSE_MODELS["yolo26n-pose"].sha256]]) {
+    for (const { file, sha256: sha } of [DETECTOR_MODEL, POSE_MODEL]) {
       expect(d).toContain(`${sha}  models/${file}`);
     }
     expect(d).toMatch(/sha256sum -c/);

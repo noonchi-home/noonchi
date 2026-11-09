@@ -22,9 +22,8 @@
 |---|---|---|---|
 | `models/yolo26n.onnx` | Ultralytics YOLO26n `yolo26n.pt` (`https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26n.pt`, sha256 `9b09cc8bf347f0fc8a5f7657480587f25db09b34bf33b0652110fb03a8ad4fef`) | AGPL-3.0 | `b164246692cd533f5d2ea16426c1e81da686ad64d07740f35ab762715faaf4c3` |
 | `models/yolo26n-pose.onnx` | Ultralytics YOLO26n-pose `yolo26n-pose.pt` (`https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26n-pose.pt`, sha256 `eb3bb8268828aeaf515cec23a4bfafd793944a86fe9af94ba7823609c14522a9`) | AGPL-3.0 | `dd0e47a03ea0f2b9e766b038559de14fb1dd5e51d8dfb331051740998628d91e` |
-| `runtime/models/yolox_tiny.onnx`·`yolox_nano.onnx`(고를 때만 받음) | Megvii YOLOX 0.1.1rc0 공식 ONNX | Apache-2.0 | `src/brain/detector.ts` 표 |
 
-- YOLO26 두 파일은 AGPL-3.0이다(<https://ultralytics.com/license>). 이 저장소로 서버를 남에게 제공하면 AGPL-3.0의 소스 공개 조건이 따라온다. 그 조건을 피해야 하면 `BRAIN_DETECTOR=yolox_tiny`, `BRAIN_POSE=off`로 Apache-2.0 YOLOX만 쓴다.
+- YOLO26 두 파일은 AGPL-3.0이다(<https://ultralytics.com/license>). 이 저장소로 서버를 남에게 제공하면 AGPL-3.0의 소스 공개 조건이 따라온다.
 - 내보낸 환경: ultralytics 8.4.208, torch 2.15.0+cpu, onnx 1.23.2, onnxslim 0.1.99. 설정: `format=onnx imgsz=640 opset=17 simplify=True dynamic=False batch=1`, `nms`는 주지 않음(바깥 NMS, ONNX 메타데이터 `end2end=False`). 그래서 출력이 NMS 전 `[1,84,8400]`·`[1,56,8400]`이고, 서버가 NMS를 한다(`src/brain/detector.ts`).
 - 다시 내보내기(PC에서, 저장소 밖 폴더):
 

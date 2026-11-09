@@ -52,8 +52,6 @@ services:
       ANTHROPIC_FALLBACKS:
       # 관찰 흐름·폰
       BRAIN:
-      BRAIN_DETECTOR:
-      BRAIN_POSE:
       BRAIN_YOLO_THREADS:
       ENGINE_FRAME_MS:
       VLM_WINDOW_FRAMES:

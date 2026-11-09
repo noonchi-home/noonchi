@@ -1,20 +1,15 @@
 // 물체 감지기와 사람 관절. 엔진 프레임마다 사람·컵·병·그릇의 종류·박스·신뢰도를 내고, 사람이 보이면 관절 17개를 더 낸다.
 // 놓인 자리·쓰는 중·안 내용은 VLM이 본다. 가구·가전 자리는 트윈 배치에서 읽으므로 찾지 않는다.
 //
-// 기본 모델은 YOLO26n(감지)과 YOLO26n-pose(관절)다. Ultralytics 가중치를 이 저장소에서 ONNX로 내보내 models/에 커밋했다(AGPL-3.0,
-// 출처·sha256·다시 내보내기는 THIRD_PARTY.md). YOLOX-Tiny·Nano(Megvii 공식 ONNX, Apache-2.0)는 받아서 BRAIN_DETECTOR로 고를 때만 쓴다.
+// 모델은 YOLO26n(감지)과 YOLO26n-pose(관절)다. Ultralytics 가중치를 이 저장소에서 ONNX로 내보내 models/에 커밋했다(AGPL-3.0,
+// 출처·sha256·다시 내보내기는 THIRD_PARTY.md).
 //
 // YOLO26 ONNX 입출력(ultralytics 8.4, opset 17, imgsz 640): 입력 images [1,3,640,640] float32, RGB, 0~1, 가운데 레터박스(114 채움).
 // 감지 출력 output0 [1,84,8400] 채널 우선 = (cx, cy, w, h, 클래스 80개 점수). 물체 점수는 없고 클래스 점수는 시그모이드를 거쳤다.
 // 관절 출력 output0 [1,56,8400] = (cx, cy, w, h, 사람 점수, 관절 17개 × (x, y, 신뢰도)). 좌표는 640 레터박스 픽셀이다.
 // 이 내보내기는 한 물체에 겹친 상자를 여럿 낸다(컵 영상: 같은 컵 상위 상자끼리 IoU 0.99). 그래서 Ultralytics predict처럼
 // 앵커마다 가장 높은 클래스 하나를 보고 IoU 0.5로 NMS 한다(ultralytics 8.4 predict 기본값 PREDICT_IOU).
-//
-// YOLOX ONNX 입출력(0.1.1rc0 공식 내보내기): 입력 images [1,3,416,416] float32, BGR, 0~255 그대로(정규화 없음),
-// 레터박스는 왼쪽 위에 붙이고 나머지를 114로 채운다. 출력 [1,3549,85] = 보폭 8·16·32 격자마다
-// (dx, dy, log w, log h, 물체, 클래스 80개). 물체·클래스는 이미 시그모이드를 거쳤다.
 
-import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import jpeg from "jpeg-js";
 
@@ -62,68 +57,24 @@ export interface Detector {
 
 /** 보는 COCO 클래스. 유리컵(wine glass)도 마시는 컵으로 본다. */
 const LABELS: Record<number, DetLabel> = { 0: "person", 41: "cup", 40: "cup", 39: "bottle", 45: "bowl" };
-const CLASSES = [0, 41, 40, 39, 45];
 /** 결과 순서(종류끼리 점수 순). */
 const LABEL_ORDER: DetLabel[] = ["person", "cup", "bottle", "bowl"];
 /** YOLO26 NMS IoU(ultralytics 8.4 predict 기본값 PREDICT_IOU, conf 0.25에서 COCO F1이 가장 높은 값). */
 export const YOLO26_IOU = 0.5;
 const COCO_CLASSES = 80;
 const KEYPOINTS = 17;
+/** YOLO26 입력 한 변(감지·관절 같은 레터박스). */
+const INPUT_SIZE = 640;
 
-export type DetectorKind = "yolo26" | "yolox";
-interface ModelSpec { kind: DetectorKind; file: string; size: number; sha256: string; url?: string; bundled: boolean }
-
-/** 감지 모델. bundled는 저장소 models/에 커밋한 파일, 아니면 runtime/models/에 받는다(scripts/brain-yolo-fetch.ts). */
-export const DETECTOR_MODELS = {
-  yolo26n: { kind: "yolo26", file: "yolo26n.onnx", size: 640, sha256: "b164246692cd533f5d2ea16426c1e81da686ad64d07740f35ab762715faaf4c3", bundled: true },
-  yolox_tiny: {
-    kind: "yolox", file: "yolox_tiny.onnx", size: 416, bundled: false,
-    url: "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_tiny.onnx",
-    sha256: "427cc366d34e27ff7a03e2899b5e3671425c262ea2291f88bb942bc1cc70b0f7",
-  },
-  yolox_nano: {
-    kind: "yolox", file: "yolox_nano.onnx", size: 416, bundled: false,
-    url: "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_nano.onnx",
-    sha256: "c789161ed43c8269fcd4e67c67eeeb4e80c622da2eb296a20bc6007bd18a0b7d",
-  },
-} as const satisfies Record<string, ModelSpec>;
-export type DetectorModel = keyof typeof DETECTOR_MODELS;
-
-/** 관절 모델(저장소 models/에 커밋). */
-export const POSE_MODELS = {
-  "yolo26n-pose": { file: "yolo26n-pose.onnx", size: 640, sha256: "dd0e47a03ea0f2b9e766b038559de14fb1dd5e51d8dfb331051740998628d91e" },
-} as const;
-export type PoseModel = keyof typeof POSE_MODELS;
+/** 감지·관절 모델(저장소 models/에 커밋). sha256은 Dockerfile 확인 줄과 같다(scripts/brain-yolo-fetch.ts가 확인). */
+export const DETECTOR_MODEL = { file: "yolo26n.onnx", sha256: "b164246692cd533f5d2ea16426c1e81da686ad64d07740f35ab762715faaf4c3" } as const;
+export const POSE_MODEL = { file: "yolo26n-pose.onnx", sha256: "dd0e47a03ea0f2b9e766b038559de14fb1dd5e51d8dfb331051740998628d91e" } as const;
 
 /** 저장소에 커밋한 모델 폴더(models/). Docker 이미지에서는 /app/models/. */
 export const MODELS_DIR = fileURLToPath(new URL("../../models/", import.meta.url));
 
-/** 모델 기본 경로: 커밋한 모델은 models/, 받는 모델은 runtimeDir/models/. */
-export const modelPath = (m: { file: string; bundled?: boolean }, runtimeDir: string) => (m.bundled === false ? join(runtimeDir, "models", m.file) : join(MODELS_DIR, m.file));
-
 const PAD = 114;
 type Rgba = { data: Uint8Array; width: number; height: number };
-
-/** YOLOX 입력: RGBA → [3, size, size] BGR(0~255). 긴 변을 size에 맞추고(가까운 픽셀) 왼쪽 위에 붙인다. */
-export function letterboxYolox(img: Rgba, size: number): { tensor: Float32Array; ratio: number } {
-  const ratio = Math.min(size / img.width, size / img.height);
-  const nw = Math.min(size, Math.round(img.width * ratio));
-  const nh = Math.min(size, Math.round(img.height * ratio));
-  const plane = size * size;
-  const tensor = new Float32Array(3 * plane).fill(PAD);
-  const src = img.data;
-  for (let y = 0; y < nh; y++) {
-    const row = Math.min(img.height - 1, Math.floor(y / ratio)) * img.width;
-    const o = y * size;
-    for (let x = 0; x < nw; x++) {
-      const i = (row + Math.min(img.width - 1, Math.floor(x / ratio))) * 4;
-      tensor[o + x] = src[i + 2]!; // B
-      tensor[plane + o + x] = src[i + 1]!; // G
-      tensor[2 * plane + o + x] = src[i]!; // R
-    }
-  }
-  return { tensor, ratio };
-}
 
 /** 레터박스 자리: 원본 픽셀 = (레터박스 픽셀 − pad) / ratio. */
 export interface LetterboxPlace { ratio: number; padX: number; padY: number }
@@ -238,36 +189,6 @@ export function decodeYolo26Pose(out: Float32Array, dims: readonly number[], lb:
   });
 }
 
-/** YOLOX 출력을 풀어 보는 클래스만, minScore 이상, 원본 픽셀 상자로. 같은 종류끼리 NMS. */
-export function decodeYolox(out: Float32Array, anchors: number, size: number, ratio: number, opts: { minScore: number }): Detection[] {
-  const k = 85;
-  const strides = [8, 16, 32];
-  const expected = strides.reduce((a, s) => a + (size / s) ** 2, 0);
-  if (anchors !== expected || out.length !== anchors * k) throw new Error(`YOLOX 출력 격자 수가 맞지 않습니다(${anchors}, 기대 ${expected})`);
-  const found: Detection[] = [];
-  let idx = 0;
-  for (const s of strides) {
-    const g = size / s;
-    for (let gy = 0; gy < g; gy++) {
-      for (let gx = 0; gx < g; gx++, idx++) {
-        const o = idx * k;
-        const obj = out[o + 4]!;
-        if (obj < opts.minScore) continue;
-        for (const cls of CLASSES) {
-          const score = obj * out[o + 5 + cls]!;
-          if (score < opts.minScore) continue;
-          const cx = (out[o]! + gx) * s;
-          const cy = (out[o + 1]! + gy) * s;
-          const w = Math.exp(out[o + 2]!) * s;
-          const h = Math.exp(out[o + 3]!) * s;
-          found.push({ label: LABELS[cls]!, score, cls, box: [(cx - w / 2) / ratio, (cy - h / 2) / ratio, w / ratio, h / ratio] });
-        }
-      }
-    }
-  }
-  return nms(found, 0.45);
-}
-
 function iou(a: Detection["box"], b: Detection["box"]): number {
   const x1 = Math.max(a[0], b[0]), y1 = Math.max(a[1], b[1]);
   const x2 = Math.min(a[0] + a[2], b[0] + b[2]), y2 = Math.min(a[1] + a[3], b[1] + b[3]);
@@ -303,8 +224,8 @@ type TensorCtor = new (type: "float32", data: Float32Array, dims: number[]) => u
 
 /** 감지기 만들기 값(워커에도 그대로 넘긴다). */
 export interface DetectorSpec {
+  /** YOLO26 감지 파일. */
   modelPath: string;
-  kind: DetectorKind;
   /** YOLO26-pose 파일. 없으면 관절을 보지 않는다. */
   posePath?: string | null;
   threads?: number;
@@ -316,7 +237,6 @@ export interface DetectorSpec {
 }
 
 const fileName = (p: string) => p.replace(/^.*[\\/]/, "").replace(/\.onnx$/, "");
-const INPUT_SIZE: Record<DetectorKind, number> = { yolo26: 640, yolox: 416 };
 
 /** onnxruntime-node로 감지기(와 관절 모델)를 돌린다. onnxruntime는 감지기를 만들 때만 불러온다(BRAIN을 안 쓰면 읽지 않게).
  *  YOLO26 감지와 관절은 같은 640 레터박스 한 장을 쓴다. */
@@ -343,13 +263,13 @@ export class OnnxDetector implements Detector {
     }
     return new OnnxDetector(
       fileName(spec.modelPath), spec.posePath ? fileName(spec.posePath) : null,
-      { modelPath: spec.modelPath, kind: spec.kind, minScore: spec.minScore ?? 0.25, poseMinPerson: spec.poseMinPerson ?? spec.minScore ?? 0.25 },
+      { modelPath: spec.modelPath, minScore: spec.minScore ?? 0.25, poseMinPerson: spec.poseMinPerson ?? spec.minScore ?? 0.25 },
       session, poseSession, ort.Tensor as unknown as TensorCtor,
     );
   }
 
-  private async run(session: OrtSession, tensor: Float32Array, size: number): Promise<OrtTensor> {
-    const input = new this.Tensor("float32", tensor, [1, 3, size, size]);
+  private async run(session: OrtSession, tensor: Float32Array): Promise<OrtTensor> {
+    const input = new this.Tensor("float32", tensor, [1, 3, INPUT_SIZE, INPUT_SIZE]);
     const result = await session.run({ [session.inputNames[0]!]: input });
     return result[session.outputNames[0]!]!;
   }
@@ -358,23 +278,14 @@ export class OnnxDetector implements Detector {
     const t0 = performance.now();
     const img = jpeg.decode(jpegBytes, { useTArray: true, formatAsRGBA: true });
     const image = { width: img.width, height: img.height };
-    let y26: ReturnType<typeof letterboxYolo26> | null = null;
-    let detections: Detection[];
-    if (this.spec.kind === "yolo26") {
-      y26 = letterboxYolo26(img, INPUT_SIZE.yolo26);
-      const out = await this.run(this.session, y26.tensor, INPUT_SIZE.yolo26);
-      detections = decodeYolo26(out.data as Float32Array, out.dims, y26, image, { minScore: this.spec.minScore });
-    } else {
-      const { tensor, ratio } = letterboxYolox(img, INPUT_SIZE.yolox);
-      const out = await this.run(this.session, tensor, INPUT_SIZE.yolox);
-      detections = decodeYolox(out.data as Float32Array, out.dims[1]!, INPUT_SIZE.yolox, ratio, { minScore: this.spec.minScore });
-    }
+    const lb = letterboxYolo26(img, INPUT_SIZE);
+    const out = await this.run(this.session, lb.tensor);
+    const detections = decodeYolo26(out.data as Float32Array, out.dims, lb, image, { minScore: this.spec.minScore });
     const t1 = performance.now();
     const result: DetectResult = { detections, ms: t1 - t0, width: img.width, height: img.height };
     if (!this.poseSession || !detections.some((d) => d.label === "person" && d.score >= this.spec.poseMinPerson)) return result;
-    y26 ??= letterboxYolo26(img, INPUT_SIZE.yolo26);
-    const out = await this.run(this.poseSession, y26.tensor, INPUT_SIZE.yolo26);
-    result.poses = decodeYolo26Pose(out.data as Float32Array, out.dims, y26, image, { minScore: this.spec.minScore });
+    const poseOut = await this.run(this.poseSession, lb.tensor);
+    result.poses = decodeYolo26Pose(poseOut.data as Float32Array, poseOut.dims, lb, image, { minScore: this.spec.minScore });
     result.poseMs = performance.now() - t1;
     return result;
   }

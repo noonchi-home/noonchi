@@ -267,7 +267,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       });
       const tracking = tracker;
       pipeline = await createPipeline({
-        env, runtimeDir, log, world, inject: ctx.brain, emit,
+        env, log, world, inject: ctx.brain, emit,
         broadcastWorld: (w) => {
           appRef.current?.broadcast({ type: "world", world: w });
           speak();

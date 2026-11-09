@@ -5,12 +5,11 @@
 // 감지 번호(d1…)와 물체 id의 짝은 그 프레임의 VLM 답(또는 분석 없음)이 올 때까지 둔다.
 // 분석한 사진은 메모리 고리에만 있다. 디스크에 쓰지 않는다. DATASET_COLLECT=1이면 dataset(시험 자료 저장, src/history/retention.ts)이 고리에 넣은 프레임을 받는다.
 import { existsSync } from "node:fs";
+import { join } from "node:path";
 import type { BrainLog } from "../contract/events.js";
 import type { WorldChange, WorldView, YoloMissing } from "../contract/world.js";
 import type { DeviceState } from "../hub/types.js";
-import {
-  DETECTOR_MODELS, POSE_MODELS, WorkerDetector, modelPath, type Detection, type Detector, type DetectorModel, type DetectorSpec, type Pose, type PoseModel,
-} from "../brain/detector.js";
+import { DETECTOR_MODEL, MODELS_DIR, POSE_MODEL, WorkerDetector, type Detection, type Detector, type DetectorSpec, type Pose } from "../brain/detector.js";
 import { vlmTimeoutMs } from "../infer/endpoints.js";
 import { createInference } from "../infer/inference.js";
 import type { VlmClient } from "../infer/vlm.js";
@@ -279,30 +278,19 @@ export class ObservationPipeline {
 /** 시험용 주입. detector는 null이면 감지기 없이(VLM만). */
 export interface PipelineInject { detector?: Detector | null; vlm?: VlmClient; clock?: { now(): number } }
 
-/** 감지기 고르기: BRAIN_DETECTOR(yolo26n 기본·yolox_tiny·yolox_nano·off), BRAIN_POSE(yolo26n-pose 기본·off), BRAIN_YOLO_PATH·BRAIN_POSE_PATH(파일 직접),
- *  BRAIN_YOLO_THREADS(4). 모르는 이름이면 그 모델 없이(감지기는 VLM만, 관절은 감지만) 경고를 낸다. */
-export function chooseDetector(env: Env, runtimeDir: string): { spec: DetectorSpec | null; warn?: string } {
-  const want = env.BRAIN_DETECTOR?.trim() || "yolo26n";
-  if (want === "off") return { spec: null };
-  const model = (DETECTOR_MODELS as Record<string, (typeof DETECTOR_MODELS)[DetectorModel] | undefined>)[want];
-  if (!model) return { spec: null, warn: `[경고] BRAIN_DETECTOR=${want}: ${Object.keys(DETECTOR_MODELS).join("·")}·off 중 하나여야 합니다. VLM만 씁니다.` };
-  const poseWant = env.BRAIN_POSE?.trim() || "yolo26n-pose";
-  const pose = (POSE_MODELS as Record<string, (typeof POSE_MODELS)[PoseModel] | undefined>)[poseWant];
-  const warn = poseWant !== "off" && !pose ? `[경고] BRAIN_POSE=${poseWant}: ${Object.keys(POSE_MODELS).join("·")}·off 중 하나여야 합니다. 관절 없이 감지만 씁니다.` : undefined;
-  const spec: DetectorSpec = {
-    modelPath: env.BRAIN_YOLO_PATH?.trim() || modelPath(model, runtimeDir), kind: model.kind,
-    posePath: pose ? env.BRAIN_POSE_PATH?.trim() || modelPath(pose, runtimeDir) : null, threads: Number(env.BRAIN_YOLO_THREADS) || 4,
+/** 감지기 값: YOLO26n(저장소 models/, BRAIN_YOLO_PATH로 파일 직접)과 관절 YOLO26n-pose(BRAIN_POSE_PATH), 워커 스레드 수 BRAIN_YOLO_THREADS(4). */
+export function detectorSpec(env: Env): DetectorSpec {
+  return {
+    modelPath: env.BRAIN_YOLO_PATH?.trim() || join(MODELS_DIR, DETECTOR_MODEL.file), posePath: env.BRAIN_POSE_PATH?.trim() || join(MODELS_DIR, POSE_MODEL.file),
+    threads: Number(env.BRAIN_YOLO_THREADS) || 4,
   };
-  return warn ? { spec, warn } : { spec };
 }
 
 /** 감지기를 워커로 띄운다. 감지 모델 파일이 없으면 VLM만, 관절 모델 파일이 없으면 감지만(경고). */
-async function createDetector(env: Env, runtimeDir: string, log: (line: string) => void): Promise<Detector | null> {
-  const { spec, warn } = chooseDetector(env, runtimeDir);
-  if (warn) log(warn);
-  if (!spec) return null;
+async function createDetector(env: Env, log: (line: string) => void): Promise<Detector | null> {
+  const spec = detectorSpec(env);
   if (!existsSync(spec.modelPath)) {
-    log(`[경고] YOLO 모델 파일이 없습니다(${spec.modelPath}). VLM만 씁니다. 확인·받기: npx tsx scripts/brain-yolo-fetch.ts ${env.BRAIN_DETECTOR?.trim() ?? ""}`.trimEnd());
+    log(`[경고] YOLO 모델 파일이 없습니다(${spec.modelPath}). VLM만 씁니다. 확인: npx tsx scripts/brain-yolo-fetch.ts`);
     return null;
   }
   if (spec.posePath && !existsSync(spec.posePath)) {
@@ -319,11 +307,11 @@ async function createDetector(env: Env, runtimeDir: string, log: (line: string) 
 
 /** 환경 변수로 관찰 흐름을 만든다. VLM은 추론 모드가 고른 OpenAI 호환 주소(src/infer)다. */
 export async function createPipeline(o: {
-  env: Env; runtimeDir: string; world: WorldState; emit: (log: BrainLog) => void; broadcastWorld: (w: WorldView) => void;
+  env: Env; world: WorldState; emit: (log: BrainLog) => void; broadcastWorld: (w: WorldView) => void;
   onChanges?: (c: WorldChange[]) => void; onFrame?: () => void; log: (line: string) => void; inject?: PipelineInject; dataset?: (f: EngineFrame) => void;
 }): Promise<ObservationPipeline> {
   const config = loadObserveConfig(o.env);
-  const detector = o.inject && "detector" in o.inject ? o.inject.detector ?? null : await createDetector(o.env, o.runtimeDir, o.log);
+  const detector = o.inject && "detector" in o.inject ? o.inject.detector ?? null : await createDetector(o.env, o.log);
   const vlm = o.inject?.vlm ?? createInference(o.env).vlm;
   o.log(`관찰 흐름: 엔진 프레임 ${config.engineMs}ms · 감지 ${detector?.name ?? "없음(VLM만)"} · VLM ${vlm.model} 최근 ${config.vlmWindowFrames}장 동시 ${config.vlmMaxInflight}개 · 감지 대기열 ${config.detectQueueMax}`);
   if (o.dataset) o.log("[경고] 시험 자료 모으기가 켜져 있습니다. 엔진 프레임을 디스크에 씁니다.");

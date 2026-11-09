@@ -2,7 +2,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { DETECTOR_MODELS, MODELS_DIR, OnnxDetector, POSE_MODELS, decodeYolo26Pose, type Keypoint } from "../src/brain/detector.js";
+import { DETECTOR_MODEL, MODELS_DIR, OnnxDetector, POSE_MODEL, decodeYolo26Pose, type Keypoint } from "../src/brain/detector.js";
 import { describePose, heldBy, heldByAny, mainPerson } from "../src/world/pose.js";
 import { poseOf } from "./helpers/poses.js";
 
@@ -115,7 +115,7 @@ const frame = join("runtime", "vlm-events", "cup", "frames", "frame-000025.jpg")
 describe.skipIf(!existsSync(frame))("YOLO26n-pose 실제 모델(컵 영상이 있을 때만)", () => {
   it("사람이 보이는 프레임에서 관절을 돌려 오른 손목을 찾는다. 몸통이 안 보여 자세는 모름, 손목이 컵 상자에서 43px라 든 것으로 보지 않는다", async () => {
     const det = await OnnxDetector.create({
-      modelPath: join(MODELS_DIR, DETECTOR_MODELS.yolo26n.file), kind: "yolo26", posePath: join(MODELS_DIR, POSE_MODELS["yolo26n-pose"].file),
+      modelPath: join(MODELS_DIR, DETECTOR_MODEL.file), posePath: join(MODELS_DIR, POSE_MODEL.file),
     });
     try {
       expect(det.pose).toBe("yolo26n-pose");
