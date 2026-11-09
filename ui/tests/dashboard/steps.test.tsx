@@ -42,7 +42,8 @@ afterEach(() => { for (const r of restore.reverse()) r(); });
 
 const phoneOf = (c: HTMLElement) => c.querySelector<HTMLElement>('section[aria-label="폰 카메라"]')!;
 const twinOf = (c: HTMLElement) => c.querySelector<HTMLElement>('section[aria-label="트윈"]')!;
-const box = (el: HTMLElement) => [el.style.left, el.style.top, el.style.width, el.style.height, el.style.aspectRatio].join(" ");
+/** 칸 크기·자리를 정하는 것: class(트윈 칸은 class flex-1로 너비를 정한다)와 inline style 전부. */
+const box = (el: HTMLElement) => `${el.className} | ${el.style.cssText}`;
 
 /** from 순간으로 띄운 뒤 to 순간으로 넘긴다. */
 function step(from: ScreenProps, to: ScreenProps) {
@@ -51,7 +52,7 @@ function step(from: ScreenProps, to: ScreenProps) {
   const twin = twinOf(view.container);
   const was = {
     phone, twin, phoneImg: phone.querySelector("img"), canvas: twin.querySelector("canvas"),
-    boxes: { phone: box(phone), twin: box(twin), stage: box(phone.parentElement!) },
+    boxes: { phone: box(phone), twin: box(twin), stage: box(phone.parentElement!), map: box(twin.querySelector<HTMLElement>("[data-map]")!), canvas: box(twin.querySelector("canvas")!) },
   };
   calls = [];
   view.rerender(<DashboardScreen {...to} />);
@@ -96,6 +97,9 @@ describe("대시보드 단계 바뀜", () => {
     const { view, was } = step(screenAt(2), screenAt(3));
     expect(box(was.phone)).toBe(was.boxes.phone);
     expect(box(was.twin)).toBe(was.boxes.twin);
+    expect(box(was.phone.parentElement!)).toBe(was.boxes.stage);
+    expect(box(was.twin.querySelector<HTMLElement>("[data-map]")!)).toBe(was.boxes.map);
+    expect(box(was.canvas!)).toBe(was.boxes.canvas);
     for (const el of view.container.querySelectorAll<HTMLElement>("*")) {
       expect(el.style.transitionProperty, el.tagName).not.toMatch(/left|top|width|height|inset|all|border-radius/);
     }

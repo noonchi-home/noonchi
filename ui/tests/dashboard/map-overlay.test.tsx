@@ -210,6 +210,26 @@ describe("대시보드 구운 트윈 위 표시", () => {
     expect(engine.setView.mock.calls.at(-1)![0].scale).toBeCloseTo(cover, 6);
   });
 
+  it("단계가 바뀌면 엔진은 카메라만 옮기고(setView) 캔버스 크기(resize)는 다시 정하지 않는다", async () => {
+    const { container } = render(<Dashboard />);
+    await waitFor(() => expect(load).toHaveBeenCalled());
+    await waitFor(() => expect(FakeSocket.last).not.toBeNull());
+    await waitFor(() => expect(container.querySelector("[data-map-plate]")).not.toBeNull());
+    act(() => FakeSocket.last!.push({ type: "hello", devices: 0, provider: null, hub: "memory", home: "mokryeon_180b" }));
+    const resized = engine.resize.mock.calls.length;
+    for (const n of [1, 2, 3, 4]) {
+      const moved = engine.setView.mock.calls.length;
+      const { plan, eye } = moment(n);
+      act(() => {
+        FakeSocket.last!.push({ type: "plan", plan });
+        FakeSocket.last!.push({ type: "eye", eye });
+      });
+      await waitFor(() => expect(container.querySelector("main")).toHaveAttribute("data-step", String(n)));
+      await waitFor(() => expect(engine.setView.mock.calls.length, `단계 ${n}`).toBeGreaterThan(moved));
+    }
+    expect(engine.resize.mock.calls.length).toBe(resized);
+  });
+
   it("계획·맞춘 눈이 오면 트윈 위에 경로·목적지·클로이드·확인한 것을 그리고, 카메라가 그 단계로 옮긴다", async () => {
     const { container } = render(<Dashboard />);
     await waitFor(() => expect(load).toHaveBeenCalled());
