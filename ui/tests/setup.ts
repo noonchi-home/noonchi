@@ -22,3 +22,8 @@ MotionGlobalConfig.skipAnimations = true;
 if (typeof window !== "undefined" && typeof window.ResizeObserver !== "function") {
   window.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver;
 }
+
+// jsdom에는 IntersectionObserver가 없다. 21st.dev Scroll Reveal(motion useInView)이 쓴다. 알리지 않는 빈 것으로 둔다.
+if (typeof window !== "undefined" && typeof window.IntersectionObserver !== "function") {
+  window.IntersectionObserver = class { observe() {} unobserve() {} disconnect() {} takeRecords() { return []; } } as unknown as typeof IntersectionObserver;
+}

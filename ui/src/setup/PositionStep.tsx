@@ -273,9 +273,6 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
   const both = Boolean(points.A && points.B);
   return (
     <section aria-labelledby="h-position" className="flex min-h-0 flex-1 flex-col">
-      <CardHeader>
-        <CardTitle id="h-position">폰과 트윈의 위치를 맞춰요</CardTitle>
-      </CardHeader>
       <CardContent className="grid min-h-[420px] flex-1 gap-3 md:grid-cols-[minmax(0,1fr)_360px]">
         <TwinBox home={home} frame={frame} onReady={() => showMarkers(pointsRef.current, labelsRef.current)} />
         <div className="flex flex-col gap-3 overflow-auto">
