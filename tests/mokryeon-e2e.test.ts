@@ -1,5 +1,5 @@
 // 한양목련 처음부터 끝까지(가짜 서버, 시험 모드): 기준점을 맞춘 폰 엔진 프레임 → YOLOX(대본)·VLM(가짜 OpenAI 호환 서버, 컵 자리 대본)
-// → World State(컵은 거실·복도 식탁 위) → PAM(시험용 PAM 자리: 컵 치우기) → 처음 하는 일이라 실제 폰에 승인 질문 → 「앞으로도」
+// → World State(컵은 거실·복도 식탁 위) → PAM(시험용 PAM 자리: 컵 치우기) → 처음 하는 일이라 실제 폰에 승인 질문 → 「승인」
 // → 실제 폰 단계 명령 넷(「완료」 단추·VLM 컵 자리·말 「다 했어」로 한 단계씩) → 완료. 대시보드 말풍선 글·계획 단계·상자, 승인 기억 파일.
 // 맞춘 눈은 식탁·싱크대에서 멀리 두어 이동 단계는 「완료」나 말로 넘긴다.
 import { mkdtempSync, readFileSync } from "node:fs";
@@ -46,7 +46,7 @@ const CUP_BOX: [number, number, number, number] = [220, 160, 40, 20];
 const TABLE_ID = "dining_table_978b20c7";
 
 describe("한양목련 처음부터 끝까지", () => {
-  it("컵 치우기를 처음 하면 실제 폰에 묻고, 「앞으로도」 뒤 네 단계를 돌며, 대시보드는 판단·명령 글만 받고, 다음에는 묻지 않는다", async () => {
+  it("컵 치우기를 처음 하면 실제 폰에 승인·거절 두 단추로 묻고, 「승인」 뒤 네 단계를 돌며, 대시보드는 판단·명령 글만 받고, 다음에는 묻지 않는다", async () => {
     let cupPlace = "on_table";
     fake = await startFakeOpenAI({
       reply: (body) => {
@@ -94,14 +94,14 @@ describe("한양목련 처음부터 끝까지", () => {
     const spoken = () => phone.filter((m) => m.type === "command" && m.speak);
     const said = (text: string) => spoken().find((m) => m.text === text);
 
-    // 1 판단 → 처음 하는 일이라 실제 폰에 승인 질문(답 셋). 계획은 아직 planned
+    // 1 판단 → 처음 하는 일이라 실제 폰에 승인 질문(답 둘). 계획은 아직 planned
     const ask = APPROVAL_TEXT.ask("컵 치우기");
     await pump(() => !!said(ask));
     const asked = said(ask)!;
     const planId = asked.id as string;
     expect(asked).toEqual({
       type: "command", id: expect.stringMatching(/^plan:pam-\d+$/), step: `${planId}:approve`, text: "컵 치우기를 할까요?", vision: null,
-      choices: [{ id: "once", label: "이번만" }, { id: "always", label: "앞으로도" }, { id: "never", label: "하지 마" }], target: null, speak: true,
+      choices: [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }], target: null, speak: true,
     });
     const waiting = dash.filter((m) => m.type === "plan" && m.plan?.id === planId).at(-1)!.plan;
     expect(waiting.status).toBe("planned");
@@ -109,8 +109,8 @@ describe("한양목련 처음부터 끝까지", () => {
     const cup = dash.filter((m) => m.type === "world").at(-1)!.world.objects.find((o: Msg) => o.cls === "cup");
     expect(cup).toMatchObject({ surface: TABLE_ID, surface_label: "거실·복도 식탁" });
 
-    // 2 「앞으로도」 → 네 단계
-    ws.send(JSON.stringify({ type: "answer", id: planId, step: asked.step, choice: "always" }));
+    // 2 「승인」 → 네 단계
+    ws.send(JSON.stringify({ type: "answer", id: planId, step: asked.step, choice: "approve" }));
     await pump(() => !!said("식탁으로 가 주세요"));
     const first = said("식탁으로 가 주세요")!;
     expect(first).toMatchObject({ id: planId, step: `${planId}:1`, choices: [{ id: "done", label: "완료" }], target: { id: TABLE_ID } });
@@ -146,12 +146,11 @@ describe("한양목련 처음부터 끝까지", () => {
     ]);
     expect(dash.some((m) => m.type === "brain" && m.event.type === "observe" && m.event.boxes?.length > 0)).toBe(true);
     const shown = JSON.stringify(dash);
-    for (const word of [ask, "할까요", "이번만", "앞으로도", "하지 마", ":approve"]) expect(shown).not.toContain(word);
+    for (const word of [ask, "할까요", "승인", "거절", ":approve"]) expect(shown).not.toContain(word);
 
     // 4 답은 기억 파일에 남고, 다음 판단은 묻지 않고 바로 첫 명령
-    const memory = JSON.parse(readFileSync(join(runtimeDir, "homes", "mokryeon_180b", "approvals.json"), "utf8")) as { always: Record<string, string>; never: Record<string, string> };
-    expect(Object.keys(memory.always)).toEqual(["task:컵 치우기"]);
-    expect(memory.never).toEqual({});
+    const memory = JSON.parse(readFileSync(join(runtimeDir, "homes", "mokryeon_180b", "approvals.json"), "utf8")) as Record<string, unknown>;
+    expect(memory).toEqual({ always: { "task:컵 치우기": expect.any(String) } });
     cupPlace = "on_table";
     await pump(() => spoken().some((m) => m.id !== planId && m.text === "식탁으로 가 주세요"));
     const next = spoken().filter((m) => m.id !== planId);

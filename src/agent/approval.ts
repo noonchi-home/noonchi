@@ -1,19 +1,19 @@
-// 승인 규칙: 묻는 때는 셋뿐이다. (1) 허락 없이 하면 위험할 때(위험 목록, src/agent/policy.ts CONFIRM_RULES), (2) 처음 하는 일이라 전에 승인받은 적
-// 없을 때(PAM 계획), (3) 기억해 둔 「하지 마」와 반대일 때. 그 밖에는 묻지 않고 바로 한다. 말로 시킨 가전 명령은 그 말이 승인이다.
-// 답은 이번만(기억 안 함)·앞으로도(기억, 다음부터 묻지 않음, 「하지 마」 기억은 지움)·하지 마(기억, 「앞으로도」 기억은 지움).
-// 위험 목록은 「앞으로도」를 받아도 늘 묻는다. 기억은 runtime/homes/<집>/approvals.json(재시작에도 남음). 대시보드에는 승인을 보이지 않는다.
+// 승인 규칙: 묻는 때는 둘뿐이다. (1) 허락 없이 하면 위험할 때(위험 목록, src/agent/policy.ts CONFIRM_RULES), (2) 처음 하는 일이라 전에 승인받은 적
+// 없을 때(PAM 계획). 그 밖에는 묻지 않고 바로 한다. 말로 시킨 가전 명령은 그 말이 승인이다.
+// 답은 승인·거절 둘(src/act/prompts.ts APPROVE). 승인은 기억해 같은 일은 다음부터 묻지 않고, 거절은 이번만이라 기억하지 않아 다음에 또 묻는다.
+// 위험 목록은 늘 묻고 답 둘 다 이번만이다. 기억은 runtime/homes/<집>/approvals.json(재시작에도 남음). 예전 파일의 never(「하지 마」)는 읽지 않는다.
+// 대시보드에는 승인을 보이지 않는다.
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { APPROVE, type ActionChoice } from "../act/prompts.js";
-import type { ApprovalAnswer } from "../contract/phone.js";
 
 export type { ApprovalAnswer } from "../contract/phone.js";
-/** 왜 묻는가: 위험 목록, 처음 하는 일, 기억한 「하지 마」와 반대. */
-export type ApprovalWhy = "risky" | "first" | "preference";
+import type { ApprovalAnswer } from "../contract/phone.js";
+/** 왜 묻는가: 위험 목록, 처음 하는 일. */
+export type ApprovalWhy = "risky" | "first";
 /** device:<기기 id>:<정규화된 명령 type> 또는 task:<행동 이름>. */
 export type ApprovalKey = string;
-/** 열쇠마다 답한 때(ISO). */
-export interface ApprovalMemory { always: Record<ApprovalKey, string>; never: Record<ApprovalKey, string> }
+/** 승인을 받은 열쇠마다 답한 때(ISO). */
+export interface ApprovalMemory { always: Record<ApprovalKey, string> }
 /** 기억을 읽고 답을 남기는 곳(ApprovalStore, 또는 파일 없는 memoryApprovals). */
 export interface ApprovalBook { memory(): ApprovalMemory; answer(key: ApprovalKey, a: ApprovalAnswer): void }
 
@@ -23,29 +23,19 @@ export const taskKey = (task: string): ApprovalKey => `task:${task}`;
 /** 기억 파일 자리. */
 export const approvalsPath = (runtimeDir: string, homeId: string) => join(runtimeDir, "homes", homeId, "approvals.json");
 
-const empty = (): ApprovalMemory => ({ always: {}, never: {} });
+const empty = (): ApprovalMemory => ({ always: {} });
 
-/** 물을지(ask), 하지 않을지(skip). requested: 사용자가 말로 시킨 일(가전 명령). */
-export function approvalNeed(o: { key: ApprovalKey; risky: boolean; requested: boolean; memory: ApprovalMemory }): { ask: ApprovalWhy | null; skip: boolean } {
-  // 위험 목록은 「하지 마」를 기억해도 위험 목록으로 묻는다(답 둘). 「앞으로도」를 골라도 다음에 또 물으므로 그 답을 띄우지 않는다
-  if (Object.hasOwn(o.memory.never, o.key)) return o.requested ? { ask: o.risky ? "risky" : "preference", skip: false } : { ask: null, skip: true };
-  if (o.risky) return { ask: "risky", skip: false };
-  if (o.requested || Object.hasOwn(o.memory.always, o.key)) return { ask: null, skip: false };
-  return { ask: "first", skip: false };
+/** 물을지와 그 까닭. 묻지 않으면 null(바로 한다). requested: 사용자가 말로 시킨 일(가전 명령). */
+export function approvalNeed(o: { key: ApprovalKey; risky: boolean; requested: boolean; memory: ApprovalMemory }): ApprovalWhy | null {
+  if (o.risky) return "risky";
+  if (o.requested || Object.hasOwn(o.memory.always, o.key)) return null;
+  return "first";
 }
 
-/** 답을 기억에 넣은 새 기억. 이번만은 그대로. */
+/** 답을 기억에 넣은 새 기억. 거절은 그대로. */
 export function remember(m: ApprovalMemory, key: ApprovalKey, answer: ApprovalAnswer, at: string): ApprovalMemory {
-  if (answer === "once") return m;
-  const without = (r: Record<ApprovalKey, string>) => Object.fromEntries(Object.entries(r).filter(([k]) => k !== key));
-  return answer === "always"
-    ? { always: { ...m.always, [key]: at }, never: without(m.never) }
-    : { always: without(m.always), never: { ...m.never, [key]: at } };
-}
-
-/** 실제 폰에 띄우는 답: 위험 목록은 이번만·하지 마 둘, 그 밖에는 셋. */
-export function approvalChoices(why: ApprovalWhy): ActionChoice[] {
-  return why === "risky" ? APPROVE.filter((c) => c.id !== "always") : APPROVE;
+  if (answer !== "approve" || Object.hasOwn(m.always, key)) return m;
+  return { always: { ...m.always, [key]: at } };
 }
 
 const isStamps = (v: unknown): v is Record<string, string> =>
@@ -53,8 +43,8 @@ const isStamps = (v: unknown): v is Record<string, string> =>
 
 function read(path: string): ApprovalMemory {
   try {
-    const raw = JSON.parse(readFileSync(path, "utf8").replace(/^﻿/, "")) as Partial<ApprovalMemory> | null;
-    return raw && isStamps(raw.always) && isStamps(raw.never) ? { always: { ...raw.always }, never: { ...raw.never } } : empty();
+    const raw = JSON.parse(readFileSync(path, "utf8").replace(/^﻿/, "")) as { always?: unknown } | null;
+    return raw && isStamps(raw.always) ? { always: { ...raw.always } } : empty();
   } catch {
     return empty();
   }

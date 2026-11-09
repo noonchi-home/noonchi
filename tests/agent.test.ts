@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
 import { listenRetry } from "../src/server/net.js";
 import type { AddressInfo } from "node:net";
@@ -389,14 +389,14 @@ describe("Agent + OpenAI 공급자(가짜 서버): 한국어 요청", () => {
 });
 
 describe("Agent + 승인 규칙: 말로 시킨 가전 명령", () => {
-  const ONCE_NEVER = [{ id: "once", label: "이번만" }, { id: "never", label: "하지 마" }];
-  const ALL = [{ id: "once", label: "이번만" }, { id: "always", label: "앞으로도" }, { id: "never", label: "하지 마" }];
-  /** 승인 기억 파일을 쓰는 정책과 에이전트. never: 미리 「하지 마」를 받아 둔 열쇠. */
-  function approvalAgent(never: string[] = []) {
+  const BOTH = [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }];
+  /** 승인 기억 파일을 쓰는 정책과 에이전트. old: 미리 써 둔 예전 기억 파일 내용. */
+  function approvalAgent(old?: unknown) {
     llm.script["거실 불 켜 줘"] = [[["turn_on", { device_id: "light_living", reason: "거실 불을 켜 달라고 해서" }]], "거실 천장등을 켰어요."];
     llm.script["현관문 열어 줘"] = [[["unlock", { device_id: "door_main", reason: "현관문을 열어 달라고 해서" }]], "열까요?"];
-    const approvals = new ApprovalStore(join(mkdtempSync(join(tmpdir(), "agent-ap-")), "approvals.json"), () => "t");
-    for (const key of never) approvals.answer(key, "never");
+    const path = join(mkdtempSync(join(tmpdir(), "agent-ap-")), "approvals.json");
+    if (old !== undefined) writeFileSync(path, JSON.stringify(old));
+    const approvals = new ApprovalStore(path, () => "t");
     const { hub } = makeHome();
     const policy = new Policy({ approvals });
     const agent = new Agent({ hub, policy, rooms: ROOMS, provider: llm.provider() });
@@ -411,86 +411,77 @@ describe("Agent + 승인 규칙: 말로 시킨 가전 명령", () => {
     expect(twin(hub, "light_living").power).toBe("on");
   });
 
-  it("「현관문 열어 줘」 → 위험 목록이라 대기, 답은 이번만·하지 마 둘. 「앞으로도」를 받은 적이 있어도 또 묻는다", async () => {
-    const { hub, agent, approvals } = approvalAgent();
-    approvals.answer("device:door_main:unlock", "always");
+  it("「현관문 열어 줘」 → 위험 목록이라 대기, 답은 승인·거절 둘. 예전에 승인을 기억해 둔 적이 있어도 또 묻는다", async () => {
+    const { hub, agent } = approvalAgent({ always: { "device:door_main:unlock": "t0" }, never: {} });
     const r = await agent.chat("s", "현관문 열어 줘", { heard: true });
-    expect(r.pendingConfirmations).toEqual([expect.objectContaining({ deviceId: "door_main", choices: ONCE_NEVER })]);
+    expect(r.pendingConfirmations).toEqual([expect.objectContaining({ deviceId: "door_main", choices: BOTH })]);
     expect(twin(hub, "door_main").lock).toBe("locked");
   });
 
-  it("「하지 마」를 기억한 가전 명령 → 대기, 답은 셋. 까닭은 하지 말라고 한 일", async () => {
-    const { hub, agent } = approvalAgent(["device:light_living:on"]);
+  it("예전 파일에 「하지 마」로 남은 가전 명령도 말로 시키면 바로 한다(하지 마 기억은 버린다)", async () => {
+    const { hub, agent, approvals } = approvalAgent({ always: {}, never: { "device:light_living:on": "t0" } });
     const r = await agent.chat("s", "거실 불 켜 줘", { heard: true });
-    expect(r.pendingConfirmations).toEqual([expect.objectContaining({ deviceId: "light_living", choices: ALL, reason: "거실 천장등 켜기는 하지 말라고 한 일이에요." })]);
-    expect(twin(hub, "light_living").power).toBe("off");
+    expect(r.pendingConfirmations).toEqual([]);
+    expect(twin(hub, "light_living").power).toBe("on");
+    expect(approvals.memory()).toEqual({ always: {} });
   });
 
-  it("위험 목록 명령에 「하지 마」라고 답한 뒤 다시 시켜도 답은 이번만·하지 마 둘이다", async () => {
-    const { hub, agent } = approvalAgent(["device:door_main:unlock"]);
+  it("예전 파일에 「하지 마」로 남은 위험 목록 명령도 답 둘로 묻는다", async () => {
+    const { hub, agent } = approvalAgent({ always: {}, never: { "device:door_main:unlock": "t0" } });
     const r = await agent.chat("s", "현관문 열어 줘", { heard: true });
-    expect(r.pendingConfirmations).toEqual([expect.objectContaining({ deviceId: "door_main", choices: ONCE_NEVER })]);
+    expect(r.pendingConfirmations).toEqual([expect.objectContaining({ deviceId: "door_main", choices: BOTH })]);
     expect(twin(hub, "door_main").lock).toBe("locked");
   });
 
-  it("승인 답: 「앞으로도」는 실행하고 「하지 마」 기억을 지워 다음에는 바로 한다. 「하지 마」는 실행하지 않고 기억한다", async () => {
-    const { hub, agent, approvals } = approvalAgent(["device:light_living:on"]);
-    const r1 = await agent.chat("s", "거실 불 켜 줘", { heard: true });
-    const c = await agent.confirm(r1.pendingConfirmations[0]!.token, "always");
+  it("위험 목록의 답은 둘 다 이번만: 「승인」은 열고 기억하지 않아 다음에 또 묻고, 「거절」은 열지 않고 기억하지 않는다", async () => {
+    const { hub, agent, approvals } = approvalAgent();
+    const r1 = await agent.chat("s", "현관문 열어 줘", { heard: true });
+    const c = await agent.confirm(r1.pendingConfirmations[0]!.token, "approve");
     expect(c.ok).toBe(true);
-    expect(twin(hub, "light_living").power).toBe("on");
-    expect(approvals.memory()).toEqual({ always: { "device:light_living:on": "t" }, never: {} });
-    await hub.command("light_living", { type: "off" });
-    expect((await agent.chat("s", "거실 불 켜 줘", { heard: true })).pendingConfirmations).toEqual([]);
-    expect(twin(hub, "light_living").power).toBe("on");
+    expect(twin(hub, "door_main").lock).toBe("unlocked");
+    expect(approvals.memory()).toEqual({ always: {} });
+    await hub.command("door_main", { type: "lock" });
     const r2 = await agent.chat("s", "현관문 열어 줘", { heard: true });
-    const n = await agent.confirm(r2.pendingConfirmations[0]!.token, "never");
+    expect(r2.pendingConfirmations).toEqual([expect.objectContaining({ deviceId: "door_main", choices: BOTH })]);
+    const n = await agent.confirm(r2.pendingConfirmations[0]!.token, "reject");
     expect(n.ok).toBe(false);
     expect(n.reply).toBe("현관문 잠금 풀기는 하지 않을게요.");
     expect(twin(hub, "door_main").lock).toBe("locked");
-    expect(approvals.memory().never).toEqual({ "device:door_main:unlock": "t" });
+    expect(approvals.memory()).toEqual({ always: {} });
     expect(agent.pending("s")).toEqual([]);
+    const r3 = await agent.chat("s", "현관문 열어 줘", { heard: true });
+    expect(r3.pendingConfirmations).toEqual([expect.objectContaining({ deviceId: "door_main", choices: BOTH })]);
   });
 
-  it("위험 목록에 「앞으로도」로 답해도 이번만으로 본다(기억하지 않는다)", async () => {
-    const { hub, agent, approvals } = approvalAgent();
-    const r = await agent.chat("s", "현관문 열어 줘", { heard: true });
-    expect((await agent.confirm(r.pendingConfirmations[0]!.token, "always")).ok).toBe(true);
-    expect(twin(hub, "door_main").lock).toBe("unlocked");
-    expect(approvals.memory()).toEqual({ always: {}, never: {} });
+  it("승인 대기 중 실제 폰의 말로 답한다: 「거절」「아니요」「하지 마」는 실행하지 않고, 「승인」「좋아요」는 실행한다", async () => {
+    const { hub, policy, agent, approvals } = approvalAgent();
+    for (const no of ["거절", "아니요", "하지 마"]) {
+      await agent.chat("s", "현관문 열어 줘", { heard: true });
+      const r = await agent.chat("s", no, { heard: true });
+      expect(r.reply, no).toBe("현관문 잠금 풀기는 하지 않을게요.");
+      expect(policy.pending(), no).toEqual([]);
+      expect(twin(hub, "door_main").lock, no).toBe("locked");
+    }
+    for (const yes of ["승인", "좋아요"]) {
+      await agent.chat("s", "현관문 열어 줘", { heard: true });
+      const r = await agent.chat("s", yes, { heard: true });
+      expect(r.actions[0], yes).toMatchObject({ tool: "unlock", ok: true });
+      expect(twin(hub, "door_main").lock, yes).toBe("unlocked");
+      await hub.command("door_main", { type: "lock" });
+    }
+    expect(approvals.memory()).toEqual({ always: {} });
   });
 
-  it("승인 대기 중 실제 폰의 말로 답한다: 「하지 마」는 기억하고 실행하지 않는다, 「이번만」은 실행한다", async () => {
-    const { hub, policy, agent, approvals } = approvalAgent(["device:light_living:on"]);
-    await agent.chat("s", "거실 불 켜 줘", { heard: true });
-    const no = await agent.chat("s", "하지 마", { heard: true });
-    expect(no.reply).toBe("거실 천장등 켜기는 하지 않을게요.");
-    expect(policy.pending()).toEqual([]);
-    expect(twin(hub, "light_living").power).toBe("off");
-    expect(approvals.memory().never).toHaveProperty("device:light_living:on");
-    await agent.chat("s", "거실 불 켜 줘", { heard: true });
-    const yes = await agent.chat("s", "이번만", { heard: true });
-    expect(yes.actions[0]).toMatchObject({ tool: "turn_on", ok: true });
-    expect(twin(hub, "light_living").power).toBe("on");
-    expect(approvals.memory().never).toHaveProperty("device:light_living:on");
-  });
-
-  it("실제 폰이 들은 주변 말에 「이번에만」「앞으로」가 들어 있어도 승인 답으로 받지 않는다", async () => {
-    llm.script["이번에만 봐줄게"] = ["네."];
-    llm.script["앞으로 가 봐"] = ["네."];
-    const { hub, policy, agent, approvals } = approvalAgent(["device:light_living:on"]);
+  it("실제 폰이 들은 주변 말에 승인·거절 말이 들어 있어도 답으로 받지 않는다", async () => {
+    const ambient = ["승인 받았다고 했잖아", "그거 좋아 보여", "아니 그게 아니라", "하지 마라고 했잖아", "거절당했어", "응", "네"];
+    for (const said of ambient) llm.script[said] = ["네."];
+    const { hub, policy, agent } = approvalAgent();
     await agent.chat("s", "현관문 열어 줘", { heard: true });
-    await agent.chat("s", "이번에만 봐줄게", { heard: true });
-    expect(twin(hub, "door_main").lock).toBe("locked");
-    expect(policy.pending()).toHaveLength(1);
-    agent.cancel(policy.pending()[0]!.token);
-    await agent.chat("s", "거실 불 켜 줘", { heard: true });
-    await agent.chat("s", "앞으로 가 봐", { heard: true });
-    expect(twin(hub, "light_living").power).toBe("off");
-    expect(approvals.memory().always).toEqual({});
-    const yes = await agent.chat("s", "앞으로도 해 줘", { heard: true });
-    expect(yes.actions[0]).toMatchObject({ tool: "turn_on", ok: true });
-    expect(approvals.memory().always).toHaveProperty("device:light_living:on");
+    for (const said of ambient) {
+      await agent.chat("s", said, { heard: true });
+      expect(twin(hub, "door_main").lock, said).toBe("locked");
+      expect(policy.pending(), said).toHaveLength(1);
+    }
   });
 });
 

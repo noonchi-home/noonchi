@@ -40,14 +40,13 @@ export interface PhoneCommandClear { type: "command_clear"; id?: string }
 /** 실제 폰 → 서버: 답 단추를 눌렀다(「완료」·질문 답). id·step은 받은 명령 그대로. 지금 단계가 아니면 서버가 무시한다. */
 export interface PhoneAnswer { type: "answer"; id: string; step: string; choice: string }
 
-/** 승인 답: 이번만(이번만 함), 앞으로도(기억, 다음부터 묻지 않음), 하지 마(기억, 하지 않음). src/agent/approval.ts가 기억한다. */
-export type ApprovalAnswer = "once" | "always" | "never";
+/** 승인 답: 승인(기억, 같은 일은 다음부터 묻지 않음), 거절(이번만, 하지 않고 기억하지 않음). 위험 목록은 둘 다 이번만. src/agent/approval.ts가 기억한다. */
+export type ApprovalAnswer = "approve" | "reject";
 
-/** 승인을 기다리는 가전 명령(위험 목록이거나 「하지 마」를 기억한 일). 폰은 위에 「deviceLabel: reason」, 아래에 답(choices)마다 단추 하나를 두고
- *  confirm(choice)로 답한다. 위험 목록은 이번만·하지 마 둘, 「하지 마」를 기억한 일은 이번만·앞으로도·하지 마 셋. */
+/** 승인을 기다리는 가전 명령(위험 목록). 폰은 위에 「deviceLabel: reason」, 아래에 답(choices: 승인·거절)마다 단추 하나를 두고 confirm(choice)로 답한다. */
 export interface PhonePending { token: string; deviceLabel: string; reason: string; choices: PhoneChoice[] }
 
-/** 실제 폰 → 서버: 들은 말(say), 승인 답(confirm, choice가 없으면 once)·취소(cancel). 들은 말이 명령·질문의 답이면 서버가 그 답으로 받는다(「완료」「다 했어」, 「그만」은 계획을 그만둔다). */
+/** 실제 폰 → 서버: 들은 말(say), 승인 답(confirm, choice가 없으면 approve)·취소(cancel). 들은 말이 명령·질문의 답이면 서버가 그 답으로 받는다(「완료」「다 했어」, 「그만」은 계획을 그만둔다). */
 export type PhoneTalk = { type: "say"; text: string } | { type: "confirm"; token: string; choice?: ApprovalAnswer } | { type: "cancel"; token: string };
 
 /** 서버 → 실제 폰: 말·승인의 답. text가 빈 글이면 보이지도 읽지도 않는다(명령의 답을 말로 한 때: 다음 명령이 따로 온다).

@@ -328,12 +328,12 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
           plans.onEye([eye.position[0], eye.position[1]], eye.estimated === true);
           tracker?.onEye([eye.position[0], eye.position[1]], eye.estimated === true);
         },
-        // 실제 폰은 늘 듣는다: 주변의 응·네·어로 가전 승인을 확정하지 않게 분명한 말(「승인」)로만 확정한다
+        // 실제 폰은 늘 듣는다: 주변 말로 가전 승인을 확정하지 않게 말 전체가 승인·거절 답일 때만 받는다(src/act/prompts.ts APPROVE)
         onSay: async (text) => {
           const r = await agent.chat(PHONE_SESSION, text, { heard: true });
           return { reply: r.reply, pending: r.pendingConfirmations.map((p) => ({ token: p.token, deviceLabel: p.deviceLabel, reason: p.reason, choices: p.choices })) };
         },
-        // 승인 답(이번만·앞으로도·하지 마)은 정책이 승인 기억에 남긴다
+        // 승인 답(승인·거절): 위험 목록이라 둘 다 이번만이고 기억하지 않는다
         onConfirm: async (token, choice) => ({ reply: (await agent.confirm(token, choice)).reply }),
         onCancel: async (token) => ({ reply: agent.cancel(token).reply }),
         // 실제 폰 명령·질문의 답(「완료」·질문 답 단추, 말 「완료」「다 했어」「그만」). 답으로 맞은 것만 반성 피드백으로 남긴다(늘 듣기의 주변 말은 남기지 않는다)

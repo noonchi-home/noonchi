@@ -53,11 +53,11 @@ export const SHOTS: Record<ShotName, Shot> = {
     view: { ...live, command: { id: "plan:pam-2", step: "plan:pam-2:1", text: ASK_PROMPT.text, vision: null, choices: ASK_PROMPT.choices.map(({ id, label }) => ({ id, label })), target: null } },
     marks: [],
   },
-  // 위험 목록 가전 명령: 이번만·하지 마
-  approve: { view: { ...live, pending: [{ token: "t1", deviceLabel: "현관문", reason: "현관문 잠금 해제", choices: answers(["once", "never"]) }] }, marks: [] },
+  // 위험 목록 가전 명령: 승인·거절
+  approve: { view: { ...live, pending: [{ token: "t1", deviceLabel: "현관문", reason: "현관문 잠금 해제", choices: answers(["approve", "reject"]) }] }, marks: [] },
   // 처음 하는 계획: 첫 단계 전에 묻는다
   "approve-task": {
-    view: { ...live, command: { id: "plan:pam-3", step: "plan:pam-3:approve", text: APPROVAL_TEXT.ask("컵 치우기"), vision: null, choices: answers(["once", "always", "never"]), target: null } },
+    view: { ...live, command: { id: "plan:pam-3", step: "plan:pam-3:approve", text: APPROVAL_TEXT.ask("컵 치우기"), vision: null, choices: answers(["approve", "reject"]), target: null } },
     marks: [],
   },
 };

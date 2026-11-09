@@ -169,10 +169,10 @@ try {
 
   await shoot(watching);
   decide = true;
-  // 처음 하는 일: 실제 폰 승인 질문에 「앞으로도」
+  // 처음 하는 일: 실제 폰 승인 질문에 「승인」
   const asked = await command((m) => m.text === APPROVAL_TEXT.ask("컵 치우기"), "승인 질문");
   const planId = asked.id as string;
-  ws.send(JSON.stringify({ type: "answer", id: planId, step: asked.step, choice: "always" }));
+  ws.send(JSON.stringify({ type: "answer", id: planId, step: asked.step, choice: "approve" }));
   const first = await command((m) => m.id === planId && m.step === `${planId}:1`, "첫 명령");
   await shoot(stepMoment(1));
   ws.send(JSON.stringify({ type: "answer", id: planId, step: first.step, choice: "done" }));

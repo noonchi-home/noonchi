@@ -37,7 +37,7 @@ describe("말풍선 카드 글", () => {
     expect(say({ plan: plan("running"), command: cmd("plan:d1:4") })).toBe("컵을 싱크대에 넣으라고 했어요.");
   });
   it("승인 질문 중에는 정한 것만 말한다", () => {
-    expect(say({ plan: plan("planned"), command: cmd("plan:d1:approve", [{ id: "once", label: "이번만" }, { id: "always", label: "앞으로도" }, { id: "never", label: "하지 마" }]) })).toBe("컵을 치우기로 했어요.");
+    expect(say({ plan: plan("planned"), command: cmd("plan:d1:approve", [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }]) })).toBe("컵을 치우기로 했어요.");
   });
   it("질문 명령이면 물어봤다고 한다", () => {
     expect(say({ plan: plan("running", "사용자에게 물어보기"), command: cmd("plan:d1:1", [{ id: "a", label: "네" }, { id: "b", label: "아니요" }]) })).toBe("폰으로 물어봤어요.");

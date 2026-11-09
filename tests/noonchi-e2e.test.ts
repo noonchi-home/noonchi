@@ -47,7 +47,7 @@ describe("NOONCHI 처음부터 끝까지", () => {
     });
     // PAM은 끝난 뒤에도 컵 치우기를 고른다: 싱크대 안 컵으로는 새 명령을 보내지 않아야 한다
     pam = await startFakePam({ predict: () => ({ observation: "빈 컵이 식탁에 남음", reasoning: "자리를 비워 컵을 치운다", task_index: 0 }) });
-    // 컵 치우기는 전에 「앞으로도」를 받은 일: 승인을 묻지 않고 첫 명령부터(기본 집 apartment). 승인 답 흐름은 tests/act-track.test.ts가 본다
+    // 컵 치우기는 전에 승인을 받은 일: 승인을 묻지 않고 첫 명령부터(기본 집 apartment). 승인 답 흐름은 tests/act-track.test.ts가 본다
     const runtimeDir = mkdtempSync(join(tmpdir(), "rt-"));
     mkdirSync(join(runtimeDir, "homes", "apartment"), { recursive: true });
     writeFileSync(join(runtimeDir, "homes", "apartment", "approvals.json"), JSON.stringify({ always: { "task:컵 치우기": "2026-11-09T00:00:00.000Z" }, never: {} }));

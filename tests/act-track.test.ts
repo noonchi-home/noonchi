@@ -1,6 +1,6 @@
 // 실행 추적(src/act/track.ts): 실제 폰은 에이전트의 손이다. 계획 단계마다 사람에게 명령 하나를 보내고, 그 단계가 됐는지를
 // 폰 눈 위치(이동)와 World State(컵 자리)로 본 뒤 다음 명령을 보낸다. 「완료」(단추·말)는 지금 단계 하나를 넘기고 「그만」은 계획을 그만둔다.
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -49,13 +49,13 @@ function store(remembered: Record<string, ApprovalAnswer> = {}): ApprovalStore {
   return s;
 }
 
-/** approvals가 없으면 컵 치우기에 「앞으로도」를 받아 둔 기억으로 만든다(승인 질문 없이 첫 단계부터). */
+/** approvals가 없으면 컵 치우기에 승인을 받아 둔 기억으로 만든다(승인 질문 없이 첫 단계부터). */
 function setup(over: Partial<TrackerOptions> & { w?: () => WorldView; check?: () => CheckResult } = {}) {
   const logs: BrainLog[] = [];
   const phone: PlannedCommandMessage[] = [];
   const clock = { t: 10_000, now() { return this.t; } };
   const plans = new PlanHub(smallFloor(), () => {}, () => "t");
-  const approvals = over.approvals ?? store({ "task:컵 치우기": "always" });
+  const approvals = over.approvals ?? store({ "task:컵 치우기": "approve" });
   const t = new ExecutionTracker({
     plans, world: over.w ?? (() => world([cup("present")])), check: over.check ?? (() => ({ ok: true })), floor: () => plans.floor(),
     toPhone: (m) => phone.push(m), emit: (l) => logs.push(l), clock, locate: (id) => PLACES[id], ...over, approvals,
@@ -363,10 +363,10 @@ describe("실행 추적: 한 번에 한 계획, 실행 전 검사", () => {
   });
 });
 
-describe("실행 추적: 승인(처음 하는 PAM 계획, 「하지 마」를 기억한 계획)", () => {
-  const APPROVE = [{ id: "once", label: "이번만" }, { id: "always", label: "앞으로도" }, { id: "never", label: "하지 마" }];
+describe("실행 추적: 승인(처음 하는 PAM 계획)", () => {
+  const APPROVE = [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }];
 
-  it("처음 컵 치우기는 실제 폰에 「컵 치우기를 할까요?」를 묻고, 「앞으로도」면 기억하고 첫 명령을 보낸다", () => {
+  it("처음 컵 치우기는 실제 폰에 「컵 치우기를 할까요?」와 승인·거절 두 단추를 띄우고, 「승인」이면 기억하고 첫 명령을 보낸다", () => {
     const { t, phone, plans, approvals, spoken, exec } = setup({ approvals: store() });
     t.onDecision(decision);
     expect(phone).toEqual([{ type: "command", id: "plan:pam-1", step: "plan:pam-1:approve", text: "컵 치우기를 할까요?", vision: null, choices: APPROVE, target: null, speak: true }]);
@@ -374,68 +374,70 @@ describe("실행 추적: 승인(처음 하는 PAM 계획, 「하지 마」를 �
     expect(plans.current()).toMatchObject({ id: "plan:pam-1", status: "planned", steps: [{ status: "pending" }, { status: "pending" }, { status: "pending" }, { status: "pending" }] });
     expect(t.current()).toMatchObject({ state: "planned" });
     expect(t.openCommand()).toMatchObject({ planId: "plan:pam-1", stepId: "plan:pam-1:approve", kind: "ask", text: "컵 치우기를 할까요?" });
-    // 「완료」는 승인 답이 아니다
-    expect(t.onAnswer("plan:pam-1", "plan:pam-1:approve", "done")).toBe(false);
+    // 「완료」와 예전 답은 승인 답이 아니다
+    for (const old of ["done", "once", "always", "never"]) expect(t.onAnswer("plan:pam-1", "plan:pam-1:approve", old), old).toBe(false);
     expect(t.onHeard("완료")).toBeNull();
-    expect(t.onAnswer("plan:pam-1", "plan:pam-1:approve", "always")).toBe(true);
-    expect(approvals.memory()).toEqual({ always: { "task:컵 치우기": "t" }, never: {} });
+    expect(t.onAnswer("plan:pam-1", "plan:pam-1:approve", "approve")).toBe(true);
+    expect(approvals.memory()).toEqual({ always: { "task:컵 치우기": "t" } });
     expect(spoken()).toEqual(["컵 치우기를 할까요?", "식탁으로 가 주세요"]);
     expect(phone.at(-1)).toMatchObject({ step: "plan:pam-1:1", text: "식탁으로 가 주세요", choices: [{ id: "done", label: "완료" }] });
     expect(plans.current()).toMatchObject({ status: "running" });
     expect(exec().map((l) => l.state)).toEqual(["decided", "planned", "running"]);
   });
 
-  it("「이번만」(말)은 기억하지 않고 첫 명령으로 간다. 다음 컵 치우기는 또 묻는다", () => {
+  it("말 「승인」이면 기억하고 첫 명령으로 간다. 다음 컵 치우기는 묻지 않는다", () => {
     const { t, approvals, spoken } = setup({ approvals: store() });
     t.onDecision(decision);
-    expect(t.onHeard("이번만 해")).toMatchObject({ id: "once", reply: "" });
-    expect(approvals.memory()).toEqual({ always: {}, never: {} });
+    expect(t.onHeard("승인할게요")).toMatchObject({ id: "approve", reply: "" });
+    expect(approvals.memory()).toEqual({ always: { "task:컵 치우기": "t" } });
     expect(spoken()).toEqual(["컵 치우기를 할까요?", "식탁으로 가 주세요"]);
     for (let s = 1; s <= 4; s++) t.onAnswer("plan:pam-1", `plan:pam-1:${s}`, "done");
     t.onDecision({ ...decision, id: "pam-2", seq: 2 });
-    expect(spoken().at(-1)).toBe("컵 치우기를 할까요?");
+    expect(spoken().at(-1)).toBe("식탁으로 가 주세요");
+    expect(spoken().filter((s) => s === "컵 치우기를 할까요?")).toHaveLength(1);
   });
 
-  it("승인 질문 중 들은 주변 말(「앞으로 가 봐」「이번에만 봐줄게」)은 답으로 받지 않는다. 「앞으로도 해 줘」는 받는다", () => {
-    const { t, approvals, spoken } = setup({ approvals: store() });
-    t.onDecision(decision);
-    expect(t.onHeard("앞으로 가 봐")).toBeNull();
-    expect(t.onHeard("이번에만 봐줄게")).toBeNull();
-    expect(t.onHeard("계속 틀어 놔")).toBeNull();
-    expect(approvals.memory()).toEqual({ always: {}, never: {} });
-    expect(spoken()).toEqual(["컵 치우기를 할까요?"]);
-    expect(t.onHeard("앞으로도 해 줘")).toMatchObject({ id: "always" });
-    expect(approvals.memory()).toEqual({ always: { "task:컵 치우기": "t" }, never: {} });
-  });
-
-  it("기억에 「앞으로도」가 있으면 묻지 않고 첫 명령이 바로 「식탁으로 가 주세요」", () => {
-    const { t, spoken, phone } = setup({ approvals: store({ "task:컵 치우기": "always" }) });
+  it("기억에 승인이 있으면 묻지 않고 첫 명령이 바로 「식탁으로 가 주세요」", () => {
+    const { t, spoken, phone } = setup({ approvals: store({ "task:컵 치우기": "approve" }) });
     t.onDecision(decision);
     expect(spoken()).toEqual(["식탁으로 가 주세요"]);
     expect(phone.some((m) => m.type === "command" && m.step.endsWith(":approve"))).toBe(false);
   });
 
-  it("말 「하지 마」면 기억하고 계획을 취소한다. 실행 기록은 「사용자가 하지 말라고 한 일」, 다음 판단은 명령 없이 같은 기록만", () => {
-    const { t, phone, plans, approvals, exec, last } = setup({ approvals: store() });
+  it("「거절」이면 기억하지 않고 계획을 취소한다. 실행 기록은 「사용자가 거절한 일」, 다음 판단은 또 묻는다", () => {
+    const { t, plans, approvals, exec, last, spoken } = setup({ approvals: store() });
     t.onDecision(decision);
-    expect(t.onHeard("하지 마")).toMatchObject({ id: "never" });
-    expect(approvals.memory()).toEqual({ always: {}, never: { "task:컵 치우기": "t" } });
+    expect(t.onHeard("거절")).toMatchObject({ id: "reject" });
+    expect(approvals.memory()).toEqual({ always: {} });
     expect(last()).toEqual({ type: "command_clear", id: "plan:pam-1" });
     expect(plans.current()).toMatchObject({ id: "plan:pam-1", status: "cancelled" });
     expect(exec().at(-1)).toMatchObject({ plan_id: "plan:pam-1", state: "failed", text: APPROVAL_TEXT.refused });
-    expect(APPROVAL_TEXT.refused).toBe("사용자가 하지 말라고 한 일");
-    const sent = phone.length;
+    expect(APPROVAL_TEXT.refused).toBe("사용자가 거절한 일");
     t.onDecision({ ...decision, id: "pam-2", seq: 2 });
-    expect(phone).toHaveLength(sent);
-    expect(exec().filter((l) => l.plan_id === "plan:pam-2")).toEqual([expect.objectContaining({ state: "decided", text: APPROVAL_TEXT.refused })]);
-    expect(plans.current()).toMatchObject({ id: "plan:pam-1" });
+    expect(last()).toMatchObject({ type: "command", id: "plan:pam-2", step: "plan:pam-2:approve", text: "컵 치우기를 할까요?", choices: APPROVE });
+    expect(spoken()).toEqual(["컵 치우기를 할까요?", "컵 치우기를 할까요?"]);
+    expect(t.onAnswer("plan:pam-2", "plan:pam-2:approve", "reject")).toBe(true);
+    expect(approvals.memory()).toEqual({ always: {} });
   });
 
-  it("「하지 마」는 말 전체일 때만 맞춘다. 주변 말에 걸리지 않는다", () => {
-    const { t } = setup({ approvals: store() });
+  it("예전 파일의 「하지 마」 기억은 버린다: 그 계획도 판단이 오면 다시 묻는다", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "track-")), "approvals.json");
+    writeFileSync(path, JSON.stringify({ always: {}, never: { "task:컵 치우기": "t0" } }));
+    const { t, last } = setup({ approvals: new ApprovalStore(path, () => "t") });
     t.onDecision(decision);
-    expect(t.onHeard("그거 하지 마라고 했잖아")).toBeNull();
+    expect(last()).toMatchObject({ type: "command", step: "plan:pam-1:approve", text: "컵 치우기를 할까요?", choices: APPROVE });
+  });
+
+  it("승인 질문 중 들은 주변 말에 승인·거절 말이 들어 있어도 답으로 받지 않는다. 말 전체가 답일 때만 받는다", () => {
+    const { t, approvals, spoken } = setup({ approvals: store() });
+    t.onDecision(decision);
+    for (const said of ["승인 받았다고 했잖아", "그거 좋아 보여", "아니 그게 아니라", "그거 하지 마라고 했잖아", "거절당했어", "응", "네", "앞으로도 해 줘", "이번만"]) {
+      expect(t.onHeard(said), said).toBeNull();
+    }
+    expect(approvals.memory()).toEqual({ always: {} });
+    expect(spoken()).toEqual(["컵 치우기를 할까요?"]);
     expect(t.openCommand()).toMatchObject({ stepId: "plan:pam-1:approve" });
+    expect(t.onHeard("응 좋아")).toMatchObject({ id: "approve" });
   });
 
   it("승인 답을 2분 안에 받지 못하면 실패(답을 받지 못함)로 닫는다. 그 사이 30초마다 다시 읽는다", () => {

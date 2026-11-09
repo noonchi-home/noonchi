@@ -1,5 +1,5 @@
 // 폰 AR 페이지와 자세 WebSocket만 여는 작은 서버(SSOT 9.6). 같은 와이파이의 폰이 붙도록 0.0.0.0에 열 수 있다.
-// 기기 제어 REST는 여기 없다. 본 서버(127.0.0.1)는 그대로 두고 눈 자세는 onEye로, 폰의 말(say)과 승인 답(이번만·앞으로도·하지 마)은 onSay·onConfirm·onCancel로
+// 기기 제어 REST는 여기 없다. 본 서버(127.0.0.1)는 그대로 두고 눈 자세는 onEye로, 폰의 말(say)과 승인 답(승인·거절)은 onSay·onConfirm·onCancel로
 // 넘긴다(그 뒤는 에이전트·승인 정책이 맡는다). 실제 폰에 명령·질문이 떠 있으면 말을 먼저 그 답으로 맞춰 보고(onAnswer),
 // 답 단추(answer)는 onChoice로 넘긴다(src/contract/phone.ts). 명령 대상의 트윈 자리는 맞춘 기준점으로 AR 자리로 바꿔 보내고(맞추기 전 null),
 // 맞춤이 바뀌면 지금 명령을 다시 보낸다(speak false).
@@ -70,7 +70,7 @@ export interface PhoneReply {
 }
 
 const MAX_SAY = 500;
-const ANSWERS: readonly ApprovalAnswer[] = ["once", "always", "never"];
+const ANSWERS: readonly ApprovalAnswer[] = ["approve", "reject"];
 
 export interface PhoneServer {
   readonly server: Server;
@@ -203,7 +203,7 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
       }
       const token = typeof msg.token === "string" ? msg.token : "";
       if (msg.type === "confirm") {
-        const choice = msg.choice === undefined ? "once" : ANSWERS.find((a) => a === msg.choice);
+        const choice = msg.choice === undefined ? "approve" : ANSWERS.find((a) => a === msg.choice);
         if (!token || !choice || !opts.onConfirm) return say("승인할 작업을 찾지 못했어요.");
         return say((await opts.onConfirm(token, choice)).reply);
       }

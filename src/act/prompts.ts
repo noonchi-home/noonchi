@@ -20,12 +20,11 @@ export const ASK_PROMPT: ActionPrompt = {
 /** 단계 명령 아래 「완료」 단추: 비전이 못 알아볼 때 사람이 지금 단계를 넘긴다. 말로 해도 같다. 다음 명령을 읽으므로 읽어 줄 글이 없다. */
 export const STEP_DONE: ActionChoice = { id: "done", label: "완료", words: ["완료", "다 했어", "다 했습니다"], reply: "", whole: true };
 
-/** 승인 답(src/agent/approval.ts): 처음 하는 계획·「하지 마」를 기억한 가전 명령은 셋, 위험 목록 가전 명령은 이번만·하지 마 둘.
- *  이번만·앞으로도는 다음 명령을 읽으므로 읽어 줄 글이 없다. 셋 다 주변 말에 걸리지 않게 말 전체일 때만 맞춘다. */
+/** 승인 답(src/agent/approval.ts): 처음 하는 계획과 위험 목록 가전 명령 모두 승인·거절 둘. 승인은 다음 명령을 읽으므로 읽어 줄 글이 없다.
+ *  둘 다 주변 말에 걸리지 않게 말 전체일 때만 맞춘다. 응·네는 늘 듣는 폰에 맞장구로 자주 들려 승인 말에 넣지 않는다. */
 export const APPROVE: ActionChoice[] = [
-  { id: "once", label: "이번만", words: ["이번만", "이번에만"], reply: "", whole: true },
-  { id: "always", label: "앞으로도", words: ["앞으로도", "앞으로", "항상", "계속"], reply: "", whole: true },
-  { id: "never", label: "하지 마", words: ["하지 마", "하지마", "안 돼", "싫어"], reply: "알겠어요. 하지 않을게요", whole: true },
+  { id: "approve", label: "승인", words: ["승인", "좋아"], reply: "", whole: true },
+  { id: "reject", label: "거절", words: ["거절", "아니", "하지 마", "취소"], reply: "알겠어요. 하지 않을게요", whole: true },
 ];
 
 /** 말로 「그만」이면 지금 계획을 그만둔다. 단추는 없다. */

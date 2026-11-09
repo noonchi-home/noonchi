@@ -36,7 +36,7 @@ export interface PendingView {
   deviceLabel: string;
   command: Command;
   reason: string;
-  /** 실제 폰 답 단추(src/agent/approval.ts approvalChoices): 위험 목록은 이번만·하지 마, 「하지 마」를 기억한 명령은 셋. */
+  /** 실제 폰 답 단추(src/act/prompts.ts APPROVE): 승인·거절. */
   choices: PhoneChoice[];
   expiresAt: string;
 }

@@ -14,7 +14,7 @@ export type Support =
   | { kind: "failed"; message: string };
 export interface Anchor { id: string; label: string; recorded: boolean }
 export interface Choice { id: string; label: string }
-/** 승인 대기 가전 명령. choices: 답(이번만·앞으로도·하지 마)마다 단추 하나. */
+/** 승인 대기 가전 명령. choices: 답(승인·거절)마다 단추 하나. */
 export interface Pending { token: string; deviceLabel: string; reason: string; choices: Choice[] }
 /** 서버가 보낸 지금 명령·질문(src/contract/phone.ts PhoneCommand에서 speak를 빼고 대상은 id만). target: 고리를 그릴 명령 대상 id(없으면 null). */
 export interface Command { id: string; step: string; text: string; vision: string | null; choices: Choice[]; target: string | null }

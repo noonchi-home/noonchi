@@ -7,9 +7,9 @@
 // 물어보기는 같은 자리에 질문과 답 단추를 띄우고 답을 받으면 완료. PlanHub 단계 상태(active·done)가 지금 단계를 따라간다.
 // 명령마다 대상 하나(식탁·그 컵·싱크대, 트윈 자리)를 같이 보내 실제 폰이 그것에만 고리를 그린다.
 // 실행 전 검사는 통과할 때까지 tick마다 다시 보고, recheckMs가 지나도 안 되면 그 이유로 실패한다.
-// 승인(src/agent/approval.ts): 검사를 통과한 PAM 계획이 처음 하는 일이면(「앞으로도」를 받은 적 없음) 첫 단계 전에 실제 폰에 「…를 할까요?」와
-// 답 셋(이번만·앞으로도·하지 마)을 띄우고 답을 기다린다(그동안 계획은 planned). 이번만·앞으로도면 첫 단계로, 하지 마면 기억하고 취소로 닫는다.
-// 「하지 마」를 기억한 행동의 판단은 계획을 만들지 않고 기록만 한다. 질문 계획(사용자에게 물어보기)은 묻는 일 자체라 승인을 묻지 않는다.
+// 승인(src/agent/approval.ts): 검사를 통과한 PAM 계획이 처음 하는 일이면(승인을 받은 적 없음) 첫 단계 전에 실제 폰에 「…를 할까요?」와
+// 답 둘(승인·거절)을 띄우고 답을 기다린다(그동안 계획은 planned). 승인이면 기억하고 첫 단계로, 거절이면 기억하지 않고 취소로 닫는다(다음 판단은 또 묻는다).
+// 질문 계획(사용자에게 물어보기)은 묻는 일 자체라 승인을 묻지 않는다.
 // 로봇은 한 번에 한 계획만 실행한다: 진행 중인 계획과 행동·대상이 같은 판단은 기록만 하고, 지금 계획보다 먼저 보낸(seq가 작은) 판단은 버린다.
 // 대상 컵: 기준점을 맞춘 뒤 컵이 identityM 넘게 움직이면 World State가 새 id를 붙인다(src/world/state.ts). 그래서 계획을 만들 때 고른 컵과
 // 그 뒤에 새로 생긴 같은 종류 물건을 모두 그 컵으로 본다(계획 전부터 있던 다른 컵은 빼고). 대상이 그중 하나로 바뀌거나 안 보여도 같은 행동이다.
@@ -22,9 +22,9 @@ import type { PlanHub } from "../plan/hub.js";
 import { APPROVAL_TEXT, EXEC_TEXT, STEP_COMMAND, VISION_TEXT } from "../plan/labels.js";
 import { PLACE_UNKNOWN, STATE_TEXT, onSurface } from "../world/labels.js";
 import type { DecisionRecord } from "../world/decide.js";
-import { approvalChoices, approvalNeed, taskKey, type ApprovalAnswer, type ApprovalBook } from "../agent/approval.js";
+import { approvalNeed, taskKey, type ApprovalAnswer, type ApprovalBook } from "../agent/approval.js";
 import type { CheckResult } from "./check.js";
-import { STEP_DONE, STOP, type ActionChoice } from "./prompts.js";
+import { APPROVE, STEP_DONE, STOP, type ActionChoice } from "./prompts.js";
 import { cupStepOf, matchChoice, planFor, planIdOf, targetOf, taskOf, type CupStep, type TaskSpec } from "./tasks.js";
 
 export interface TrackerOptions {
@@ -104,7 +104,6 @@ export class ExecutionTracker {
     const targetId = spec ? targetOf(spec, world)?.id ?? null : null;
     const open = this.run && OPEN.has(this.run.state) ? this.run : null;
     if (open && spec && open.spec.name === spec.name && (targetId === null || isOurs(open, targetId))) return this.note(d, EXEC_TEXT.same);
-    if (spec && this.approval(spec).skip) return this.note(d, APPROVAL_TEXT.refused);
     this.lastSeq = d.seq;
     const now = this.clock.now();
     const plan = spec && planFor(this.o.floor(), d, world, new Date(now).toISOString());
@@ -192,9 +191,9 @@ export class ExecutionTracker {
     return !this.stopped && r && r.sent && (r.state === "running" || (r.state === "planned" && r.asking)) ? (r as Run & { sent: PlannedCommand }) : null;
   }
 
-  /** 이 행동에 승인을 물을지·하지 않을지. 질문 계획은 묻지 않는다. */
+  /** 이 행동에 승인을 물을지. 질문 계획은 묻지 않는다. */
   private approval(spec: TaskSpec): ReturnType<typeof approvalNeed> {
-    if (spec.kind === "ask") return { ask: null, skip: false };
+    if (spec.kind === "ask") return null;
     return approvalNeed({ key: taskKey(spec.name), risky: false, requested: false, memory: this.o.approvals.memory() });
   }
 
@@ -205,9 +204,7 @@ export class ExecutionTracker {
       if (last) this.finish("failed", c.text);
       return;
     }
-    const need = this.approval(r.spec);
-    if (need.skip) return this.finish("failed", APPROVAL_TEXT.refused, "cancelled");
-    if (need.ask) return this.ask(r);
+    if (this.approval(r.spec)) return this.ask(r);
     this.begin(r);
   }
 
@@ -217,7 +214,7 @@ export class ExecutionTracker {
     this.activate(r, 0);
   }
 
-  /** 첫 단계 전 승인 질문: 실제 폰 위에 「…를 할까요?」, 아래 답 셋. 계획은 planned 그대로. */
+  /** 첫 단계 전 승인 질문: 실제 폰 위에 「…를 할까요?」, 아래 승인·거절. 계획은 planned 그대로. */
   private ask(r: Run): void {
     const now = this.clock.now();
     Object.assign(r, { asking: true, stepAt: now, spokeAt: now });
@@ -228,11 +225,11 @@ export class ExecutionTracker {
     this.o.toPhone(r.sent);
   }
 
-  /** 승인 답: 기억하고, 하지 마면 취소로 닫고, 아니면 첫 단계로. */
+  /** 승인 답: 승인이면 기억하고 첫 단계로, 거절이면 기억하지 않고 취소로 닫는다. */
   private approved(r: Run, answer: ApprovalAnswer): void {
     this.o.approvals.answer(taskKey(r.spec.name), answer);
     r.asking = false;
-    if (answer === "never") return this.finish("failed", APPROVAL_TEXT.refused, "cancelled");
+    if (answer === "reject") return this.finish("failed", APPROVAL_TEXT.refused, "cancelled");
     this.begin(r);
   }
 
@@ -360,8 +357,8 @@ function cupsOf(r: Run, world: WorldView): WorldObject[] {
   return world.objects.filter((o) => o.cls === r.spec.target && o.status !== "gone" && isOurs(r, o.id)).sort((a, b) => b.last_seen_ms - a.last_seen_ms);
 }
 
-/** 승인 질문은 이번만·앞으로도·하지 마, 단계 명령은 「완료」 하나, 질문은 그 답들. */
-const choicesOf = (r: Run): ActionChoice[] => (r.asking ? approvalChoices("first") : r.spec.kind === "ask" ? r.spec.prompt.choices : [STEP_DONE]);
+/** 승인 질문은 승인·거절, 단계 명령은 「완료」 하나, 질문은 그 답들. */
+const choicesOf = (r: Run): ActionChoice[] => (r.asking ? APPROVE : r.spec.kind === "ask" ? r.spec.prompt.choices : [STEP_DONE]);
 
 /** World State 컵 자리 글: VLM이 본 자리, 없으면 놓인 면, 그것도 없으면 자리 모름. 사라졌거나 없으면 안 보임. */
 function cupPlace(cup: WorldObject | null): string {

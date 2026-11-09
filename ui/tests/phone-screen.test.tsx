@@ -43,9 +43,9 @@ describe("처음 화면", () => {
     const { act, container } = show({ ...SHOTS.intro.view, pending: SHOTS.approve.view.pending });
     const list = within(container.querySelector("main")!).getByText("현관문: 현관문 잠금 해제").closest("[data-slot=item]")!;
     const buttons = within(list as HTMLElement).getAllByRole("button");
-    expect(buttons.map((b) => b.textContent)).toEqual(["이번만", "하지 마"]);
+    expect(buttons.map((b) => b.textContent)).toEqual(["승인", "거절"]);
     await userEvent.click(buttons[1]!);
-    expect(act.confirm).toHaveBeenCalledWith("t1", "never");
+    expect(act.confirm).toHaveBeenCalledWith("t1", "reject");
   });
 
   it("누르고 말하기 단추는 없고 글 입력만. 보내면 say하고 칸을 비운다. 답 줄은 role=status", async () => {
@@ -131,38 +131,28 @@ describe("아래: 엄지 자리 카드(비전 상태 바로 아래 「완료」)
     expect(act.answer).toHaveBeenCalledWith("plan:pam-2", "plan:pam-2:1", "keep");
   });
 
-  it("승인 대기(가전): 위에 「기기: 까닭」, 아래 답마다 단추 하나. 누르면 그 토큰과 답으로 승인한다. 위험 목록은 이번만·하지 마 둘", async () => {
+  it("승인 대기(가전): 위에 「기기: 까닭」, 아래 답마다 단추 하나. 누르면 그 토큰과 답으로 답한다. 답은 승인·거절 둘", async () => {
     const { act, zone } = show(SHOTS.approve.view);
     expect(zone("top")!).toHaveTextContent("현관문: 현관문 잠금 해제");
     const thumb = zone("thumb")!;
     const buttons = within(thumb).getAllByRole("button");
-    expect(buttons.map((b) => b.textContent)).toEqual(["이번만", "하지 마"]);
+    expect(buttons.map((b) => b.textContent)).toEqual(["승인", "거절"]);
     expect(words(buttons[0]!)).toContain("bg-primary");
     expect(words(buttons[1]!)).toContain("border-input");
-    expect(within(thumb).queryByRole("button", { name: "승인" })).toBeNull();
-    expect(within(thumb).queryByRole("button", { name: "취소" })).toBeNull();
+    for (const gone of ["이번만", "앞으로도", "하지 마", "취소"]) expect(within(thumb).queryByRole("button", { name: gone })).toBeNull();
     for (const b of buttons) await userEvent.click(b);
-    expect(vi.mocked(act.confirm).mock.calls).toEqual([["t1", "once"], ["t1", "never"]]);
+    expect(vi.mocked(act.confirm).mock.calls).toEqual([["t1", "approve"], ["t1", "reject"]]);
   });
 
-  it("승인 대기(가전, 하지 마를 기억한 일): 답 셋", async () => {
-    const choices = [{ id: "once", label: "이번만" }, { id: "always", label: "앞으로도" }, { id: "never", label: "하지 마" }];
-    const { act, zone } = show({ ...SHOTS.approve.view, pending: [{ token: "t2", deviceLabel: "거실 천장등", reason: "거실 천장등 켜기는 하지 말라고 한 일이에요.", choices }] });
-    const buttons = within(zone("thumb")!).getAllByRole("button");
-    expect(buttons.map((b) => b.textContent)).toEqual(["이번만", "앞으로도", "하지 마"]);
-    await userEvent.click(buttons[1]!);
-    expect(act.confirm).toHaveBeenCalledWith("t2", "always");
-  });
-
-  it("처음 하는 계획의 승인: 위에 「컵 치우기를 할까요?」, 아래 이번만·앞으로도·하지 마(비전 상태 줄 없음). 누르면 그 명령의 id·step으로 답한다", async () => {
+  it("처음 하는 계획의 승인: 위에 「컵 치우기를 할까요?」, 아래 승인·거절 두 단추(비전 상태 줄 없음). 누르면 그 명령의 id·step으로 답한다", async () => {
     const { act, zone } = show(SHOTS["approve-task"].view);
     expect(zone("top")!).toHaveTextContent(/^컵 치우기를 할까요\?$/);
     const thumb = zone("thumb")!;
     expect(thumb.querySelector("[data-slot=status]")).toBeNull();
     const buttons = within(thumb).getAllByRole("button");
-    expect(buttons.map((b) => b.textContent)).toEqual(["이번만", "앞으로도", "하지 마"]);
-    await userEvent.click(buttons[2]!);
-    expect(act.answer).toHaveBeenCalledWith("plan:pam-3", "plan:pam-3:approve", "never");
+    expect(buttons.map((b) => b.textContent)).toEqual(["승인", "거절"]);
+    for (const b of buttons) await userEvent.click(b);
+    expect(vi.mocked(act.answer).mock.calls).toEqual([["plan:pam-3", "plan:pam-3:approve", "approve"], ["plan:pam-3", "plan:pam-3:approve", "reject"]]);
   });
 
   it("추적이 약하면 모달 없이 비전 상태 줄이 「추적이 약해요」(경고)", () => {

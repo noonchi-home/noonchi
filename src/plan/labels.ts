@@ -50,10 +50,10 @@ export const CHECK_TEXT = {
   device_mode: "시험 모드라 실제 가전은 부르지 않아요",
 } as const;
 
-/** 승인(src/act/track.ts): 처음 하는 계획을 실제 폰에 묻는 글, 「하지 마」를 받았거나 기억한 계획의 실행 기록. */
+/** 승인(src/act/track.ts): 처음 하는 계획을 실제 폰에 묻는 글, 「거절」을 받은 계획의 실행 기록. */
 export const APPROVAL_TEXT = {
   ask: (task: string) => `${josa(task, "을/를")} 할까요?`,
-  refused: "사용자가 하지 말라고 한 일",
+  refused: "사용자가 거절한 일",
 };
 
 /** 실행 추적 글(src/act/track.ts): 단계 이름과 끝난 까닭. */

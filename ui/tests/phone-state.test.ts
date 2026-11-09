@@ -36,7 +36,7 @@ describe("엄지 자리와 위 한 줄(handOf)", () => {
   });
 
   it("승인 대기(실제 모드 가전)는 명령 자리: 위에 「기기: 까닭」, 아래 답 단추. 명령보다 먼저", () => {
-    const choices = [{ id: "once", label: "이번만" }, { id: "never", label: "하지 마" }];
+    const choices = [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }];
     const pending = [{ token: "t1", deviceLabel: "현관문", reason: "현관문 잠금 해제", choices }, { token: "t2", deviceLabel: "창문", reason: "창문 열기", choices }];
     expect(handOf(ar({ command: cmd(), pending }))).toEqual({ top: "현관문: 현관문 잠금 해제", thumb: { kind: "pending", item: pending[0] }, vision: null });
   });
