@@ -1,10 +1,11 @@
 // @vitest-environment node
 // 트윈 위 표시 한 순간(twinFrame): 실제 한양목련 장면·컵 치우기 계획·맞춘 눈 → 경로·목적지·클로이드·확인한 것 자리·밝힐 방(구운 보기 그림 픽셀).
 import { describe, expect, it } from "vitest";
+import type { PlanView } from "../../../src/contract/plan.ts";
 import type { Check } from "../../src/checks/checks";
 import { litRooms, progressOn, roomSetsOf, twinFrame } from "../../src/dashboard/frame";
 import { planToPixel } from "../../src/twin3d/projection";
-import { anchorOf, CAM, HOME, moment, PLAN, PLAN_CHECKS, SINK, START, TABLE } from "./cup-run";
+import { anchorOf, CAM, CUP_PLAN, HOME, moment, PLAN, PLAN_CHECKS, SINK, START, TABLE } from "./cup-run";
 
 const frameAt = (n: number, checks: Check[] = PLAN_CHECKS, over: Partial<Parameters<typeof twinFrame>[0]> = {}) =>
   twinFrame({ ...moment(n), checks, anchor: anchorOf, home: HOME, cam: CAM, ...over });
@@ -15,6 +16,11 @@ const near = (a: [number, number] | undefined, b: [number, number], tol = 1) => 
 };
 
 describe("트윈 순간", () => {
+  it("가짜 단계 자료(fake-run.json)의 계획은 지금 장면으로 짠 컵 치우기 계획과 같다: 다르면 npx tsx scripts/twin3d/fake-run.ts로 다시 만든다", () => {
+    const shape = (p: PlanView) => ({ path: p.path, legs: p.legs.map((l) => l.end), steps: p.steps.map((s) => [s.kind, s.target]) });
+    expect(shape(PLAN)).toEqual(shape(CUP_PLAN));
+  });
+
   it("순간 0(지켜보기)은 계획·경로·목적지가 없고 밝힐 방이 없다(어둡게 하지 않음)", () => {
     const f = frameAt(0, []);
     expect([f.plan, f.index, f.step, f.target]).toEqual([null, 0, null, null]);
