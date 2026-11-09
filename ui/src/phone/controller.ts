@@ -1,7 +1,8 @@
 // 실제 폰 제어: 연결(core/link.js)·AR(core/ar.js)·늘 듣기와 소리(core/talk.js)를 묶고, 서버 메시지와 단추를 화면 상태(state.ts)로 바꾼다.
 // 듣기는 AR 중 늘 켜 두고(끝나면 다시 켬), 명령·답을 소리로 읽는 동안은 멈췄다가 다 읽으면(끝 알림, 오지 않으면 정해진 시간 뒤) 다시 켠다.
 // 들은 말은 그대로 서버로 간다(say: 명령의 답이면 서버가 그 답으로 받고, 아니면 에이전트로). 명령·질문(command, src/contract/phone.ts)이 speak로 오면 읽는다.
-// 답 단추는 받은 명령의 id·step으로 answer를 보낸다. 말의 답(reply)이 빈 글이면 보이지도 읽지도 않는다. 잠깐 알릴 말은 4초.
+// 답 단추는 받은 명령의 id·step으로 answer를, 승인 대기 답 단추는 그 토큰과 답(이번만·앞으로도·하지 마)으로 confirm을 보낸다.
+// 말의 답(reply)이 빈 글이면 보이지도 읽지도 않는다. 잠깐 알릴 말은 4초.
 // 카메라 화면을 못 보내면(core/ar.js 알림) 그 AR 동안 cameraOff로 두어 설정 모달에 「카메라 · 못 보냄」을 남긴다.
 // 명령 대상 고리: 명령에 실린 대상(target, AR 자리) 하나만, 위 줄·엄지 자리에 그 명령이 보일 때만(handOf) 그린다. 에이전트 초점(focus)은
 // 명령이 없을 때만 AR에 넘긴다(대시보드로 가는 화면 프레임에만 그려지고 실제 폰 화면에는 그리지 않는다). 조준점은 찍기·맞추기 때만(draw.aim).
@@ -202,13 +203,9 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
       set((v) => ({ ...v, reply: `🎙 "${t}" … 생각 중` }));
       if (!link.send({ type: "say", text: t })) set((v) => ({ ...v, reply: "서버와 연결이 끊겼어요. 잠시 뒤 다시 말해 주세요." }));
     },
-    confirm(token) {
+    confirm(token, choice) {
       set((v) => ({ ...v, pending: v.pending.filter((p) => p.token !== token) }));
-      link.send({ type: "confirm", token });
-    },
-    cancel(token) {
-      set((v) => ({ ...v, pending: v.pending.filter((p) => p.token !== token) }));
-      link.send({ type: "cancel", token });
+      link.send({ type: "confirm", token, choice });
     },
     answer(id, step, choice) {
       if (!link.send({ type: "answer", id, step, choice })) showNote("서버와 연결이 끊겨 답을 보내지 못했어요");

@@ -2,7 +2,7 @@
 // 실제 폰은 에이전트의 손이다: 서버가 계획 단계마다 명령 하나를 보내고(src/act/track.ts), 위에는 명령, 아래 엄지 자리에는 비전 상태 한 줄과
 // 그 바로 아래 답 단추를 둔다. 질문(사용자에게 물어보기)도 같은 자리에 질문과 답 단추를 둔다. 계획·할 일 이름·몇 번째 단계는 대시보드에만 있다.
 
-/** 아래 엄지 자리 답 단추 하나. 단계 명령이면 「완료」 하나(id "done"), 질문이면 답마다 하나. */
+/** 아래 엄지 자리 답 단추 하나. 단계 명령이면 「완료」 하나(id "done"), 질문·승인이면 답마다 하나. */
 export interface PhoneChoice { id: string; label: string }
 
 /** 명령 대상 하나(실제 폰은 이것에만 작은 고리를 그린다). ar: 실제 폰 AR 좌표(폰 서버가 맞춘 기준점으로 트윈 자리를 바꾼 것). */
@@ -40,11 +40,15 @@ export interface PhoneCommandClear { type: "command_clear"; id?: string }
 /** 실제 폰 → 서버: 답 단추를 눌렀다(「완료」·질문 답). id·step은 받은 명령 그대로. 지금 단계가 아니면 서버가 무시한다. */
 export interface PhoneAnswer { type: "answer"; id: string; step: string; choice: string }
 
-/** 승인을 기다리는 실제 가전 작업(실제 모드). 폰은 위에 「deviceLabel: reason」, 아래에 승인·취소 단추를 두고 confirm·cancel로 답한다. */
-export interface PhonePending { token: string; deviceLabel: string; reason: string }
+/** 승인 답: 이번만(이번만 함), 앞으로도(기억, 다음부터 묻지 않음), 하지 마(기억, 하지 않음). src/agent/approval.ts가 기억한다. */
+export type ApprovalAnswer = "once" | "always" | "never";
 
-/** 실제 폰 → 서버: 들은 말(say), 승인(confirm)·취소(cancel). 들은 말이 명령·질문의 답이면 서버가 그 답으로 받는다(「완료」「다 했어」, 「그만」은 계획을 그만둔다). */
-export type PhoneTalk = { type: "say"; text: string } | { type: "confirm" | "cancel"; token: string };
+/** 승인을 기다리는 가전 명령(위험 목록이거나 「하지 마」를 기억한 일). 폰은 위에 「deviceLabel: reason」, 아래에 답(choices)마다 단추 하나를 두고
+ *  confirm(choice)로 답한다. 위험 목록은 이번만·하지 마 둘, 「하지 마」를 기억한 일은 이번만·앞으로도·하지 마 셋. */
+export interface PhonePending { token: string; deviceLabel: string; reason: string; choices: PhoneChoice[] }
+
+/** 실제 폰 → 서버: 들은 말(say), 승인 답(confirm, choice가 없으면 once)·취소(cancel). 들은 말이 명령·질문의 답이면 서버가 그 답으로 받는다(「완료」「다 했어」, 「그만」은 계획을 그만둔다). */
+export type PhoneTalk = { type: "say"; text: string } | { type: "confirm"; token: string; choice?: ApprovalAnswer } | { type: "cancel"; token: string };
 
 /** 서버 → 실제 폰: 말·승인의 답. text가 빈 글이면 보이지도 읽지도 않는다(명령의 답을 말로 한 때: 다음 명령이 따로 온다).
  *  pending은 에이전트 답에만 싣는 지금 승인 대기 목록이다. 없으면(명령의 답·승인·취소·오류) 실제 폰은 목록을 그대로 둔다. */

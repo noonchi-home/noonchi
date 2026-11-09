@@ -10,7 +10,7 @@ const replied = (actions: AgentAction[] = [], pendingConfirmations: PendingView[
   ({ type: "agent", event: "reply", sessionId, message: "m", reply: "r", actions, pendingConfirmations });
 const brain = (event: BrainLog): ServerMessage => ({ type: "brain", event });
 const yolo = (text: string): ServerMessage => brain({ type: "observe", at_ms: 0, frame_id: "e1", captured_at_ms: 0, yolo: text, vlm: null });
-const pending: PendingView = { token: "k", deviceId: "lock", deviceLabel: "현관 도어록", command: { type: "unlock" }, reason: "문을 열어요", expiresAt: "t" };
+const pending: PendingView = { token: "k", deviceId: "lock", deviceLabel: "현관 도어록", command: { type: "unlock" }, reason: "문을 열어요", choices: [], expiresAt: "t" };
 
 /** 메시지를 차례로 넣는다. now는 메시지마다 1초씩 늘린다. */
 const run = (messages: ServerMessage[], start: ChecksState = EMPTY_CHECKS, from = 0) =>

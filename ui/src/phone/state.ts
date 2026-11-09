@@ -1,6 +1,7 @@
 // 실제 폰 화면 상태: 서버 메시지·AR·듣기가 바꾸는 값과, 화면 글을 만드는 순수 함수. 타이머·보내기는 controller.ts가 맡는다.
 // 실제 폰은 에이전트의 손이다: 위에는 지금 할 명령 한 줄(handOf top), 아래 엄지 자리에는 비전 상태 한 줄과 그 바로 아래 답 단추(thumb).
-// 엄지 자리 차례: 기준점 찍기·물건 자리 맞추기 > 승인 대기(실제 모드 가전) > 명령·질문. 일이 멈추는 문제는 모달(problemOf), 추적 약함·잠깐 알릴 말은 비전 상태 줄.
+// 엄지 자리 차례: 기준점 찍기·물건 자리 맞추기 > 승인 대기(가전) > 명령·질문. 일이 멈추는 문제는 모달(problemOf), 추적 약함·잠깐 알릴 말은 비전 상태 줄.
+import type { ApprovalAnswer } from "../../../src/contract/phone.ts";
 import type { ListenState } from "./core/talk.js";
 
 export type { ListenState };
@@ -12,8 +13,9 @@ export type Support =
   | { kind: "ready" }
   | { kind: "failed"; message: string };
 export interface Anchor { id: string; label: string; recorded: boolean }
-export interface Pending { token: string; deviceLabel: string; reason: string }
 export interface Choice { id: string; label: string }
+/** 승인 대기 가전 명령. choices: 답(이번만·앞으로도·하지 마)마다 단추 하나. */
+export interface Pending { token: string; deviceLabel: string; reason: string; choices: Choice[] }
 /** 서버가 보낸 지금 명령·질문(src/contract/phone.ts PhoneCommand에서 speak를 빼고 대상은 id만). target: 고리를 그릴 명령 대상 id(없으면 null). */
 export interface Command { id: string; step: string; text: string; vision: string | null; choices: Choice[]; target: string | null }
 /** 화면 위 초점 표시 하나(core/project.js focusMarks와 같은 모양). */
@@ -63,8 +65,8 @@ export interface PhoneActions {
   /** 마이크 켜기: 듣기를 다시 켠다(브라우저가 되면 권한을 다시 묻는다). */
   micOn(): void;
   say(text: string): void;
-  confirm(token: string): void;
-  cancel(token: string): void;
+  /** 승인 답 단추: 그 승인 대기의 토큰과 답. */
+  confirm(token: string, choice: ApprovalAnswer): void;
   /** 답 단추: 받은 명령의 id·step 그대로. */
   answer(id: string, step: string, choice: string): void;
 }

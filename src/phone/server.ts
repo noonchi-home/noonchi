@@ -1,5 +1,5 @@
 // 폰 AR 페이지와 자세 WebSocket만 여는 작은 서버(SSOT 9.6). 같은 와이파이의 폰이 붙도록 0.0.0.0에 열 수 있다.
-// 기기 제어 REST는 여기 없다. 본 서버(127.0.0.1)는 그대로 두고 눈 자세는 onEye로, 폰의 말(say)과 승인은 onSay·onConfirm·onCancel로
+// 기기 제어 REST는 여기 없다. 본 서버(127.0.0.1)는 그대로 두고 눈 자세는 onEye로, 폰의 말(say)과 승인 답(이번만·앞으로도·하지 마)은 onSay·onConfirm·onCancel로
 // 넘긴다(그 뒤는 에이전트·승인 정책이 맡는다). 실제 폰에 명령·질문이 떠 있으면 말을 먼저 그 답으로 맞춰 보고(onAnswer),
 // 답 단추(answer)는 onChoice로 넘긴다(src/contract/phone.ts). 명령 대상의 트윈 자리는 맞춘 기준점으로 AR 자리로 바꿔 보내고(맞추기 전 null),
 // 맞춤이 바뀌면 지금 명령을 다시 보낸다(speak false).
@@ -13,7 +13,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocket, WebSocketServer } from "ws";
 import type { FocusTarget } from "../contract/events.js";
-import type { PhoneCommand, PhoneTalkReply, PlannedCommand, PlannedCommandMessage } from "../contract/phone.js";
+import type { ApprovalAnswer, PhoneCommand, PhonePending, PhoneTalkReply, PlannedCommand, PlannedCommandMessage } from "../contract/phone.js";
 import { listenRetry } from "../server/net.js";
 import { serveFile } from "../server/static.js";
 import type { AnchorTarget } from "./anchors.js";
@@ -51,7 +51,8 @@ export interface PhoneServerOptions {
   log?: (msg: string) => void;
   /** 폰에서 말하거나 쓴 문장(음성 인식 결과). 에이전트 답과 승인 대기를 돌려준다. */
   onSay?: (text: string) => Promise<PhoneReply>;
-  onConfirm?: (token: string) => Promise<{ reply: string }>;
+  /** 승인 답(confirm). choice가 없으면 once. */
+  onConfirm?: (token: string, choice: ApprovalAnswer) => Promise<{ reply: string }>;
   onCancel?: (token: string) => Promise<{ reply: string }>;
   /** 관찰 흐름(BRAIN=1): 엔진 프레임을 그 순간의 눈 자세·카메라(맞추기 전 null)와 함께 넘긴다. */
   onEngine?: (jpeg: Buffer, header: FrameHeader, eye: EyeEvent | null, view: CameraView | null, receivedAtMs: number) => void;
@@ -65,10 +66,11 @@ export interface PhoneServerOptions {
 
 export interface PhoneReply {
   reply: string;
-  pending: { token: string; deviceLabel: string; reason: string }[];
+  pending: PhonePending[];
 }
 
 const MAX_SAY = 500;
+const ANSWERS: readonly ApprovalAnswer[] = ["once", "always", "never"];
 
 export interface PhoneServer {
   readonly server: Server;
@@ -200,10 +202,13 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
         return say(r.reply, r.pending);
       }
       const token = typeof msg.token === "string" ? msg.token : "";
-      const fn = msg.type === "confirm" ? opts.onConfirm : opts.onCancel;
-      if (!token || !fn) return say("승인할 작업을 찾지 못했어요.");
-      const r = await fn(token);
-      return say(r.reply);
+      if (msg.type === "confirm") {
+        const choice = msg.choice === undefined ? "once" : ANSWERS.find((a) => a === msg.choice);
+        if (!token || !choice || !opts.onConfirm) return say("승인할 작업을 찾지 못했어요.");
+        return say((await opts.onConfirm(token, choice)).reply);
+      }
+      if (!token || !opts.onCancel) return say("승인할 작업을 찾지 못했어요.");
+      return say((await opts.onCancel(token)).reply);
     } catch (e) {
       log(`[phone] 대화 처리 실패: ${(e as Error).message}`);
       return say(`처리하지 못했어요: ${(e as Error).message}`);

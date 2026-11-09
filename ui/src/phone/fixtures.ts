@@ -1,12 +1,13 @@
 // 실제 폰 화면 상태 예시: 화면 시험(ui/tests/phone-screen.test.tsx)과 화면 사진 페이지(shots.tsx)가 함께 쓴다.
-// 명령·비전 상태·질문 글은 서버 글(src/plan/labels.ts STEP_COMMAND·VISION_TEXT, src/act/prompts.ts) 그대로다. marks는 명령 대상(command.target) 고리 하나다.
+// 명령·비전 상태·질문·승인 글은 서버 글(src/plan/labels.ts STEP_COMMAND·VISION_TEXT·APPROVAL_TEXT, src/act/prompts.ts) 그대로다. marks는 명령 대상(command.target) 고리 하나다.
 // 모든 상태를 세로(390×844·412×915·360×780)로 찍고, 가로는 pick-cup(844×390)과 intro(844×390·780×360)를 찍어 본다.
-import { ASK_PROMPT, STEP_DONE } from "../../../src/act/prompts.ts";
-import { STEP_COMMAND, VISION_TEXT } from "../../../src/plan/labels.ts";
+import { APPROVE, ASK_PROMPT, STEP_DONE } from "../../../src/act/prompts.ts";
+import { APPROVAL_TEXT, STEP_COMMAND, VISION_TEXT } from "../../../src/plan/labels.ts";
 import { initialView, type Anchor, type Command, type FocusMark, type PhoneView } from "./state";
 
 export const SHOT_NAMES = [
   "intro", "go-table", "pick-cup", "low-cup", "go-sink", "put-cup", "idle", "weak", "align", "mic", "offline", "settings", "no-camera", "anchors", "place", "question", "approve",
+  "approve-task",
 ] as const;
 export type ShotName = (typeof SHOT_NAMES)[number];
 export interface Shot { view: PhoneView; marks: FocusMark[] }
@@ -25,6 +26,7 @@ const step = (k: number, text: string, vision: string, target: string): Command 
 const cup = `${VISION_TEXT.cup} · 손에 있음`;
 const pickCup = step(2, STEP_COMMAND.pickCup, `${VISION_TEXT.cup} · 식탁 위`, "cup");
 const ring = (id: string, label: string, u: number, v: number): FocusMark => ({ id, label, u, v, off: false, angle: 0 });
+const answers = (ids: string[]) => APPROVE.filter((c) => ids.includes(c.id)).map(({ id, label }) => ({ id, label }));
 
 export const SHOTS: Record<ShotName, Shot> = {
   intro: { view: intro, marks: [] },
@@ -51,5 +53,11 @@ export const SHOTS: Record<ShotName, Shot> = {
     view: { ...live, command: { id: "plan:pam-2", step: "plan:pam-2:1", text: ASK_PROMPT.text, vision: null, choices: ASK_PROMPT.choices.map(({ id, label }) => ({ id, label })), target: null } },
     marks: [],
   },
-  approve: { view: { ...live, pending: [{ token: "t1", deviceLabel: "현관문", reason: "현관문 잠금 해제" }] }, marks: [] },
+  // 위험 목록 가전 명령: 이번만·하지 마
+  approve: { view: { ...live, pending: [{ token: "t1", deviceLabel: "현관문", reason: "현관문 잠금 해제", choices: answers(["once", "never"]) }] }, marks: [] },
+  // 처음 하는 계획: 첫 단계 전에 묻는다
+  "approve-task": {
+    view: { ...live, command: { id: "plan:pam-3", step: "plan:pam-3:approve", text: APPROVAL_TEXT.ask("컵 치우기"), vision: null, choices: answers(["once", "always", "never"]), target: null } },
+    marks: [],
+  },
 };

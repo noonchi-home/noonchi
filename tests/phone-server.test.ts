@@ -18,6 +18,7 @@ const TARGETS: AnchorTarget[] = [
   { id: "dock", label: "도크", plan: [3.9, 5.51] },
   { id: "door_main", label: "현관문 문턱 가운데", plan: [2.4, 3.55] },
 ];
+const ONCE_NEVER = [{ id: "once", label: "이번만" }, { id: "never", label: "하지 마" }];
 const cleanups: (() => Promise<void> | void)[] = [];
 afterEach(async () => {
   while (cleanups.length) await cleanups.pop()!();
@@ -294,17 +295,17 @@ describe("phone server", () => {
 describe("폰 대화·승인·초점", () => {
   async function talkSetup() {
     const said: string[] = [];
-    const confirmed: string[] = [];
+    const confirmed: [string, string][] = [];
     const picked: string[][] = [];
     const phone = createPhoneServer({
       targets: TARGETS, onEye: () => {}, log: () => {},
       onChoice: (id, step, choice) => picked.push([id, step, choice]),
       onSay: async (text) => {
         said.push(text);
-        return { reply: "현관문 잠금 해제는 승인이 필요해요.", pending: [{ token: "tok1", deviceLabel: "현관문", reason: "현관문 잠금 해제" }] };
+        return { reply: "현관문 잠금 해제는 승인이 필요해요.", pending: [{ token: "tok1", deviceLabel: "현관문", reason: "현관문 잠금 해제", choices: ONCE_NEVER }] };
       },
-      onConfirm: async (token) => {
-        confirmed.push(token);
+      onConfirm: async (token, choice) => {
+        confirmed.push([token, choice]);
         return { reply: "현관문을 열었어요." };
       },
       onCancel: async (token) => ({ reply: `취소했어요(${token}).` }),
@@ -332,19 +333,34 @@ describe("폰 대화·승인·초점", () => {
     const ws = await alignedPhone(phoneBase);
     let got = next(ws, (m) => m.type === "reply");
     ws.send(JSON.stringify({ type: "say", text: "  현관문 열어줘 " }));
-    expect(await got).toEqual({ type: "reply", text: "현관문 잠금 해제는 승인이 필요해요.", pending: [{ token: "tok1", deviceLabel: "현관문", reason: "현관문 잠금 해제" }] });
+    expect(await got).toEqual({ type: "reply", text: "현관문 잠금 해제는 승인이 필요해요.", pending: [{ token: "tok1", deviceLabel: "현관문", reason: "현관문 잠금 해제", choices: ONCE_NEVER }] });
     expect(said).toEqual(["현관문 열어줘"]);
     got = next(ws, (m) => m.type === "reply");
     ws.send(JSON.stringify({ type: "confirm", token: "tok1" }));
     // 승인·취소의 답은 승인 대기 칸을 싣지 않는다(남은 승인 대기를 실제 폰이 지우지 않게)
     expect(await got).toEqual({ type: "reply", text: "현관문을 열었어요." });
-    expect(confirmed).toEqual(["tok1"]);
+    // 답(choice)이 없으면 이번만
+    expect(confirmed).toEqual([["tok1", "once"]]);
     got = next(ws, (m) => m.type === "reply");
     ws.send(JSON.stringify({ type: "cancel", token: "tok2" }));
     expect((await got).text).toBe("취소했어요(tok2).");
     got = next(ws, (m) => m.type === "reply");
     ws.send(JSON.stringify({ type: "say", text: "   " }));
     expect((await got).text).toMatch(/말이 비어/);
+  });
+
+  it("confirm의 답(이번만·앞으로도·하지 마)을 onConfirm에 그대로 넘기고, 모르는 답은 넘기지 않는다", async () => {
+    const { phoneBase, confirmed } = await talkSetup();
+    const ws = await alignedPhone(phoneBase);
+    for (const choice of ["always", "never", "once"]) {
+      const got = next(ws, (m) => m.type === "reply");
+      ws.send(JSON.stringify({ type: "confirm", token: `tok-${choice}`, choice }));
+      await got;
+    }
+    const got = next(ws, (m) => m.type === "reply");
+    ws.send(JSON.stringify({ type: "confirm", token: "tok-x", choice: "forever" }));
+    expect((await got).text).toBe("승인할 작업을 찾지 못했어요.");
+    expect(confirmed).toEqual([["tok-always", "always"], ["tok-never", "never"], ["tok-once", "once"]]);
   });
 
   /** 붙자마자 받는 메시지 n개. */
