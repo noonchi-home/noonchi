@@ -592,7 +592,7 @@ describe("설정 화면: 상반신 마스코트와 생각 말풍선", () => {
     open();
     await screen.findByRole("heading", { name: "어느 집을 쓸까요?" });
     const logoBottom = MASCOT.logo.center[1] + MASCOT.logo.r;
-    expect(UPPER_BODY.top).toBe(MASCOT.headTop[1]);
+    expect(UPPER_BODY.top).toBeLessThan(MASCOT.headTop[1]);
     expect(UPPER_BODY.cut - logoBottom).toBeGreaterThanOrEqual(8);
     expect(UPPER_BODY.cut - logoBottom).toBeLessThanOrEqual(40);
     const box = document.querySelector('img[src="/brand/mascot.png"]')!.parentElement!;

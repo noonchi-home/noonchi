@@ -34,9 +34,9 @@ const STEPS = [
 type StepId = (typeof STEPS)[number]["id"];
 type Notice = { text: string; error?: boolean } | null;
 
-// 마스코트 그림(1254×1254)에서 보이는 칸: 가로 x0~x1, 세로 머리 꼭대기~LG 표시 아래 20px(cut, 화면 밑선).
+// 마스코트 그림(1254×1254)에서 보이는 칸: 가로 x0~x1, 세로 머리 꼭대기 위 8px~LG 표시 아래 20px(cut, 화면 밑선).
 // 세로 칸이 화면 높이의 3/4가 되게 키우되 가로가 화면 너비의 34%를 넘지 않게 한다(좁은 화면은 세로 160px).
-export const UPPER_BODY = { top: MASCOT.headTop[1], cut: MASCOT.logo.center[1] + MASCOT.logo.r + 20 };
+export const UPPER_BODY = { top: MASCOT.headTop[1] - 8, cut: MASCOT.logo.center[1] + MASCOT.logo.r + 20 };
 const SHOWN = UPPER_BODY.cut - UPPER_BODY.top;
 const BOX_W = MASCOT.x1 - MASCOT.x0;
 const px = (n: number) => `calc(${n} * var(--s))`;
@@ -45,9 +45,9 @@ const BUBBLE_LEFT = `max(28%, calc(2.5% + ${BOX_W} * var(--s) + 7rem))`;
 const FOOT = { x: `(${BUBBLE_LEFT} - 20px)`, b: "(5dvh + 20%)" };
 const HEAD = { x: `(2.5% + ${MASCOT.snout[0] - MASCOT.x0} * var(--s) + 14px)`, b: `(${UPPER_BODY.cut - MASCOT.snout[1] + 20} * var(--s))` };
 const DOTS = [
-  { size: "lg", t: 0.15, px: 36, className: "size-5 lg:size-9", place: "left-[104px] top-0" },
-  { size: "md", t: 0.5, px: 22, className: "size-3.5 lg:size-[22px]", place: "left-[86px] top-[20px]" },
-  { size: "sm", t: 0.82, px: 12, className: "size-2 lg:size-3", place: "left-[72px] top-[38px]" },
+  { size: "lg", t: 0.15, px: 48, className: "size-6 lg:size-12", place: "left-[100px] top-0" },
+  { size: "md", t: 0.5, px: 30, className: "size-4 lg:size-[30px]", place: "left-[84px] top-[26px]" },
+  { size: "sm", t: 0.82, px: 18, className: "size-2.5 lg:size-[18px]", place: "left-[72px] top-[46px]" },
 ] as const;
 const along = (a: string, b: string, t: number, r: number) => `calc(${a} * ${1 - t} + ${b} * ${t} - ${r}px)`;
 // 처음 들어올 때 아래에서 올라온다(단계가 바뀌어도 다시 하지 않는다). 움직임 줄이기면 입구의 MotionConfig가 바로 끝낸다.
@@ -221,7 +221,7 @@ export function SetupApp({ navigate = (url: string) => location.assign(url) }: {
             )}
           </MessageBubble>
         </div>
-        <div aria-hidden="true" className="pointer-events-none relative h-12 shrink-0 lg:static lg:h-auto">
+        <div aria-hidden="true" className="pointer-events-none relative h-14 shrink-0 lg:static lg:h-auto">
           {DOTS.map((d) => (
             <div
               key={d.size}
