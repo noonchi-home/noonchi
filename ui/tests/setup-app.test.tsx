@@ -635,32 +635,44 @@ describe("설정 1단계: 집 이름", () => {
   });
 });
 
-describe("설정 1~3단계 큰 글(사용자 2026-11-09 「1,2,3 번은 글씨 키워도되겠다」)", () => {
+describe("설정 1~3단계 큰 글(사용자 2026-11-09 「1,2,3 글씨 더 키워도될거같고」)", () => {
   const cls = (el: Element | null) => (el?.className ?? "").toString().split(/\s+/);
   it.each([
     ["", "어느 집을 쓸까요?", "다음"],
     ["#devices", "어떤 가전의 상태를 읽을까요?", "다음"],
     ["#mode", "가전을 어떻게 다룰까요?", "다음"],
-  ])("주소 「%s」: 제목은 headline, 이전·다음 단추는 text-base", async (hash, question, next) => {
+  ])("주소 「%s」: 제목은 text-3xl, 이전·다음 단추는 text-lg", async (hash, question, next) => {
     open(hash);
     const title = await screen.findByRole("heading", { name: question });
-    expect(cls(title)).toContain("text-headline");
-    expect(cls(screen.getByRole("button", { name: next }))).toContain("text-base");
+    expect(cls(title)).toContain("text-3xl");
+    expect(cls(screen.getByRole("button", { name: next }))).toContain("text-lg");
   });
 
-  it("1단계 집 카드 이름은 body, 설명 칩은 text-sm", async () => {
+  it("1단계 집 카드 이름은 text-lg, 설명 칩은 text-base", async () => {
     open();
     await screen.findByRole("heading", { name: "어느 집을 쓸까요?" });
-    expect(cls(screen.getByText("원룸").closest("label"))).toContain("text-body");
-    expect(cls(screen.getByText("지금 띄운 집").closest("[data-slot=status]") ?? screen.getByText("지금 띄운 집"))).toContain("text-sm");
+    expect(cls(screen.getByText("원룸").closest("label"))).toContain("text-lg");
+    expect(cls(screen.getByText("지금 띄운 집").closest("[data-slot=status]") ?? screen.getByText("지금 띄운 집"))).toContain("text-base");
   });
 
-  it("알림 줄은 text-base", async () => {
+  it("알림 줄은 text-lg", async () => {
     const { user } = open();
     await user.click(await screen.findByRole("radio", { name: /마곡 아파트/ }));
     await user.click(screen.getByRole("button", { name: "다음" }));
     await screen.findByRole("heading", { name: "어떤 가전의 상태를 읽을까요?" });
-    expect(cls(screen.getByRole("status"))).toContain("text-base");
+    expect(cls(screen.getByRole("status"))).toContain("text-lg");
+  });
+
+  it("2단계 검색칸·검색 결과 줄·추가한 가전 배지는 text-base", async () => {
+    const { user } = open("#devices");
+    const box = await screen.findByRole("searchbox", { name: "가전 검색" });
+    expect(cls(box)).toContain("text-base");
+    await user.type(box, "거실");
+    const row = within(screen.getByRole("list", { name: "검색 결과" })).getAllByRole("button", { pressed: false })[0]!;
+    expect(row.closest("[data-slot=item]") ?? row).toHaveAttribute("data-size", "setup");
+    await user.click(row);
+    const badge = within(screen.getByRole("list", { name: "추가한 가전" })).getAllByRole("listitem")[0]!;
+    expect(cls(badge)).toContain("text-base");
   });
 
   it("4단계는 그대로: 제목 title, 단추에 text-base 없음", async () => {

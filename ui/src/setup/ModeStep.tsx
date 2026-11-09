@@ -63,29 +63,29 @@ function Pairs({ view, onView, onNotice }: { view: SetupView; onView: (v: SetupV
 
   const devices = view.devices.filter((d) => d.pairable);
   return (
-    <section aria-label="ThinQ 짝" className="max-w-xl">
+    <section aria-label="ThinQ 짝" className="max-w-2xl">
       <Card>
-        <CardHeader><CardTitle>ThinQ 기기와 짝짓기</CardTitle></CardHeader>
+        <CardHeader><CardTitle size="md">ThinQ 기기와 짝짓기</CardTitle></CardHeader>
         <CardContent className="flex flex-col gap-2">
-          {list.status === "loading" && <CardDescription>ThinQ 기기를 불러오는 중…</CardDescription>}
+          {list.status === "loading" && <CardDescription size="lg">ThinQ 기기를 불러오는 중…</CardDescription>}
           {list.status === "error" && (
-            <Alert variant="error">
+            <Alert variant="error" size="setup">
               <TriangleAlert aria-hidden="true" />
               <AlertTitle>{list.error}</AlertTitle>
-              <div className="col-start-2 mt-2"><Button variant="secondary" size="sm" onClick={() => void load()}>다시 불러오기</Button></div>
+              <div className="col-start-2 mt-2"><Button variant="secondary" size="setup-sm" onClick={() => void load()}>다시 불러오기</Button></div>
             </Alert>
           )}
-          {list.status === "ready" && devices.length === 0 && <CardDescription>이 집에는 짝지을 에어컨·냉장고가 없어요.</CardDescription>}
+          {list.status === "ready" && devices.length === 0 && <CardDescription size="lg">이 집에는 짝지을 에어컨·냉장고가 없어요.</CardDescription>}
           {list.status === "ready" && devices.map((d) => {
             const value = view.pairs[d.id] ?? "";
             const options = list.devices.filter((t) => t.kind === d.kind);
             const missing = value && !options.some((t) => t.id === value);
             return (
-              <Item key={d.id} size="sm" variant="outline" className="flex-nowrap">
+              <Item key={d.id} size="setup" variant="outline" className="flex-nowrap">
                 <ItemContent><ItemTitle>{d.label}</ItemTitle></ItemContent>
-                <ItemActions className="w-56">
+                <ItemActions className="w-64">
                   <div className="w-full">
-                    <SelectNative aria-label={`${d.label} ThinQ 기기`} value={value} onChange={(e) => void pair(d.id, e.target.value)}>
+                    <SelectNative textSize="lg" aria-label={`${d.label} ThinQ 기기`} value={value} onChange={(e) => void pair(d.id, e.target.value)}>
                       <option value="">짝 없음</option>
                       {missing && <option value={value}>{value}</option>}
                       {options.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
