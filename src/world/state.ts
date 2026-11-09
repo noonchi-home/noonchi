@@ -111,6 +111,8 @@ export class WorldState {
   private vlmMissing = 0;
   private yoloMissing = 0;
   private frameAt: number | null = null;
+  /** 관절로 마지막에 든 물건 id(확인 전 물건 포함). */
+  private heldIds: string[] = [];
   /** 관절이 붙인 사실(그 사실 객체). VLM이 같은 면을 다시 쓰면 새 객체라 빠진다. */
   private readonly byPose = new WeakSet<WorldFact>();
   private readonly identityM: number;
@@ -242,6 +244,7 @@ export class WorldState {
         if (e.kind === "gone") {
           this.person.facts = {};
           this.person.count = 0;
+          this.heldIds = [];
           for (const o of this.objects.values()) this.dropPoseFact(o.facts, "place", POSE_HOLD.object); // 사람이 없으면 손에 있을 수 없다
         }
         changes.push({ kind: e.kind === "appeared" ? "person_appeared" : "person_gone", at_ms: at, subject: PERSON, meaningful: true,
@@ -322,13 +325,13 @@ export class WorldState {
     if (!person) return;
     const people = poses.map(describePose);
     const wrists = people.some((p) => Object.keys(p.wrists).length > 0);
-    let holding = false;
+    const held: string[] = [];
     for (const { obj, box } of boxes) {
       if (!heldByAny(people, box)) {
         if (wrists) this.dropPoseFact(obj.facts, "place", POSE_HOLD.object);
         continue;
       }
-      holding = true;
+      held.push(obj.id);
       if (this.setPoseFact(obj.facts, "place", POSE_HOLD.object, at) && obj.confirmed && obj.status !== "gone") {
         changes.push({ kind: "state", at_ms: at, subject: obj.id, meaningful: true, text: CHANGE_TEXT.state(this.name(obj), POSE_HOLD.object) });
       }
@@ -338,8 +341,13 @@ export class WorldState {
         changes.push({ kind: "person_state", at_ms: at, subject: PERSON, meaningful: false, text: CHANGE_TEXT.state(OBJECT_NAME.person!, value) });
       }
     };
-    if (holding) personFact("holding", POSE_HOLD.person);
-    else if (wrists) this.dropPoseFact(this.person.facts, "holding", POSE_HOLD.person);
+    if (held.length) {
+      personFact("holding", POSE_HOLD.person);
+      this.heldIds = held; // 확인 전 물건도 든다: 무엇을 들었는지는 id 앞 종류로 본다
+    } else if (wrists) {
+      this.dropPoseFact(this.person.facts, "holding", POSE_HOLD.person);
+      this.heldIds = [];
+    }
     const posture = (POSE_POSTURE as Record<string, string | undefined>)[person.posture];
     if (posture && person.level !== "low") personFact("posture", posture);
   }
@@ -482,6 +490,7 @@ export class WorldState {
     d.status = status;
     d.state = deviceStateKeys(d.kind, s.twin);
     for (const k of Object.keys(d.since) as DeviceStateKey[]) if (!d.state.includes(k)) delete d.since[k];
+    for (const k of d.state) d.since[k] ??= atMs; // 신호가 돌아와 값이 같아도 그때부터 센다
     d.twin = { ...s.twin };
     d.known = true;
     this.remaining.update(s.id, s.twin, atMs);
@@ -528,7 +537,9 @@ export class WorldState {
     const person: WorldPerson = {
       visible: p.visible, since_ms: p.since_ms, last_seen_ms: p.last_seen_ms, count: p.visible ? p.count : 0,
       position: p.position, position_ms: p.positionAt, room: p.room?.id ?? null, room_label: p.room?.label ?? null, near,
-      holding: objects.filter((o) => o.status !== "gone" && o.facts.place?.value === POSE_HOLD.object).map((o) => o.id), facts: { ...p.facts }, answered_ms: p.answered,
+      holding: [...new Set([...(this.byPose.has(p.facts.holding!) ? this.heldIds : []),
+        ...objects.filter((o) => o.status !== "gone" && o.facts.place?.value === POSE_HOLD.object).map((o) => o.id)])],
+      facts: { ...p.facts }, answered_ms: p.answered,
     };
     return {
       at_ms: nowMs, objects, person, fixtures,

@@ -47,7 +47,7 @@ export interface WorldPerson {
   room_label: string | null;
   /** 그 자리에서 가까운(vocab NEAR_M 안) 가전 id. */
   near: string[];
-  /** 손에 있음인 물건 id. */
+  /** 든 물건 id: 관절로 든 물건(확인 전 물건 포함, 종류는 id 앞 cup_)과 손에 있음인 물건. */
   holding: string[];
   facts: Partial<Record<Facet, WorldFact>>;
   /** 사람이 든 마지막 VLM 답의 촬영 시각(없으면 null). */

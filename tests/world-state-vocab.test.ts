@@ -4,6 +4,7 @@ import type { Detection } from "../src/brain/detector.js";
 import { sha256, type EngineFrame } from "../src/observe/ring.js";
 import type { CameraView } from "../src/phone/session.js";
 import { WorldState } from "../src/world/state.js";
+import { holdsTarget } from "../src/act/tasks.js";
 import { standing } from "./helpers/poses.js";
 
 const frame = (i: number): EngineFrame => ({ id: `e${i}`, capturedAtMs: i * 1000, latestAtMs: i * 1000, jpeg: Buffer.from(`${i}`), sha256: sha256(Buffer.from(`${i}`)), width: 480, height: 360, eye: null, view: null });
@@ -174,5 +175,19 @@ describe("World State + 낱말 표", () => {
     w.applyDevice({ id: "fridge_1", online: true, twin: { door: "open" }, matter: {}, updatedAt: "" }, 110_000);
     w.applyDevice({ id: "fridge_1", online: false, twin: {}, matter: {}, updatedAt: "", signal: "none" }, 120_000);
     expect(w.tick(200_000)).toEqual([]);
+    // 신호가 같은 값(문 열림)으로 돌아오면 그때부터 다시 센다
+    w.applyDevice({ id: "fridge_1", online: true, twin: { door: "open" }, matter: {}, updatedAt: "" }, 210_000);
+    expect(w.tick(260_000)).toEqual([]);
+    expect(w.tick(270_000).map((c) => c.text)).toEqual(["주방 냉장고 문이 1분 넘게 열림"]);
+  });
+
+  it("관절로 든 물건은 확인 전이어도 사람 든 물건 id에 들어, 책을 들면 컵을 든 것이 아니다", () => {
+    const w = ws();
+    const bookBox = det("book", [220, 160, 40, 20]);
+    w.applyDetections(frame(1), [person, bookBox], [standing({ 10: [230, 170, 0.9] })]);
+    const v = w.applyDetections(frame(2), [person, bookBox], [standing({ 10: [230, 170, 0.9] })]) && w.view(2000);
+    expect(v.objects).toEqual([]); // 책은 아직 확인 전
+    expect(v.person).toMatchObject({ holding: ["book_1"], facts: { holding: expect.objectContaining({ value: "holding_object" }) } });
+    expect(holdsTarget(v, "cup")).toBe(false);
   });
 });
