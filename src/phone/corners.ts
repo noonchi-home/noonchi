@@ -171,6 +171,23 @@ function planFaces(plan: HomePlan): Face[] {
   return out;
 }
 
+/** 방 쪽 벽 면 한 조각(위치 맞추기 벽 모양 짝, src/sync/walls.ts): a → b, 법선 n은 방 안쪽(길이 1). */
+export interface RoomFace {
+  room: string;
+  a: Plan2;
+  b: Plan2;
+  n: Plan2;
+}
+
+/** 평면도의 모든 방 쪽 면을 그 방 다각형과 맞닿은 구간으로 자르고 고체(샤프트·기둥)에 가린 곳을 뺀 것. 구석 찾기와 같은 면이다. */
+export function roomFaces(plan: HomePlan): RoomFace[] {
+  const solids = planSolids(plan);
+  const polygonOf = new Map(plan.rooms.map((r) => [r.id, r.polygon]));
+  return planFaces(plan)
+    .flatMap((f) => clipToRoom(f, polygonOf.get(f.room), solids))
+    .map((f) => ({ room: f.room, a: [f.a[0], f.a[1]], b: along(f.a, f.t, f.len), n: [f.n[0], f.n[1]] }));
+}
+
 const distToFace = (p: V, f: Face) => dist(p, along(f.a, f.t, Math.min(f.len, Math.max(0, dot(sub(p, f.a), f.t)))));
 
 /** 점이 다각형 안이거나 변 위(ON_FACE_M 안)인지. 두 방 사이 경계 위 점은 두 방 모두에 든다. */

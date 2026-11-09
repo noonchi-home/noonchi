@@ -1,5 +1,6 @@
 // 물체 감지기와 사람 관절. 엔진 프레임마다 낱말 표(src/world/vocab.ts)의 사람·물건·가전 설비 종류·박스·신뢰도를 내고, 사람이 보이면 관절 17개를 더 낸다.
 // 놓인 자리·쓰는 중·안 내용은 VLM이 본다. 가구 자리는 트윈 배치에서 읽으므로 가구 종류(식탁·의자…)는 거른다.
+// 같은 출력에서 크고 바닥에 서는 가구·가전(냉장고·소파·식탁 등, src/sync/classes.ts) 상자는 World State와 따로 폰 위치 맞추기 기준점(landmarks)으로도 낸다.
 //
 // 모델은 YOLO26n(감지)과 YOLO26n-pose(관절)다. Ultralytics 가중치를 이 저장소에서 ONNX로 내보내 models/에 커밋했다(AGPL-3.0,
 // 출처·sha256·다시 내보내기는 THIRD_PARTY.md).
@@ -12,6 +13,7 @@
 
 import { fileURLToPath } from "node:url";
 import jpeg from "jpeg-js";
+import { LANDMARK_IDS } from "../sync/classes.js";
 import { CLASSES, type ClassKey, type DetLabel } from "../world/vocab.js";
 
 export type { DetLabel };
@@ -23,6 +25,15 @@ export interface Detection {
   box: [number, number, number, number];
   /** COCO 클래스 번호(0 person, 41 cup, 40 wine glass …). */
   cls: number;
+}
+
+/** 위치 맞추기 기준점 상자(냉장고·소파 등 크고 바닥에 서는 물건, src/sync/classes.ts). World State는 받지 않는다. */
+export interface LandmarkBox {
+  /** COCO 클래스 번호. */
+  cls: number;
+  score: number;
+  /** 원본 사진 픽셀 [x, y, w, h]. */
+  box: [number, number, number, number];
 }
 
 /** COCO 관절 하나: 원본 사진 픽셀 x, y와 신뢰도(0~1). */
@@ -46,6 +57,8 @@ export interface DetectResult {
   poses?: Pose[];
   /** 관절 시간(ms): 추론 + 풀기(레터박스는 감지와 같이 쓴다). */
   poseMs?: number;
+  /** 위치 맞추기 기준점 상자(같은 감지 출력에서 따로 고른 것). */
+  landmarks?: LandmarkBox[];
 }
 
 export interface Detector {
@@ -151,6 +164,13 @@ function checkShape(out: Float32Array, dims: readonly number[], channels: number
 
 /** YOLO26 감지 출력 [1, 84, N]을 풀어 보는 클래스만, minScore 이상, 원본 픽셀 상자로. 앵커마다 가장 높은 클래스 하나, 같은 종류끼리 NMS(IoU 0.5). */
 export function decodeYolo26(out: Float32Array, dims: readonly number[], lb: LetterboxPlace, image: { width: number; height: number }, opts: { minScore: number }): Detection[] {
+  return decodeYolo26All(out, dims, lb, image, opts).detections;
+}
+
+const LANDMARK_SET = new Set(LANDMARK_IDS);
+
+/** decodeYolo26과 같고, 위치 맞추기 기준점 종류(src/sync/classes.ts) 상자도 따로 낸다(같은 종류끼리 NMS, 점수 순). */
+export function decodeYolo26All(out: Float32Array, dims: readonly number[], lb: LetterboxPlace, image: { width: number; height: number }, opts: { minScore: number }): { detections: Detection[]; landmarks: LandmarkBox[] } {
   const n = checkShape(out, dims, 4 + COCO_CLASSES);
   // 클래스 줄을 차례로 읽어 앵커마다 가장 높은 클래스를 찾는다(같은 점수면 앞 번호)
   const best = new Float32Array(n).fill(-1);
@@ -164,13 +184,19 @@ export function decodeYolo26(out: Float32Array, dims: readonly number[], lb: Let
   }
   // NMS는 Ultralytics처럼 자르기 전 레터박스 상자로 한다
   const found: Detection[] = [];
+  const marks: LandmarkBox[] = [];
   for (let i = 0; i < n; i++) {
     const score = best[i]!, cls = bestCls[i]!;
+    if (score < opts.minScore) continue;
+    // 냉장고·싱크대처럼 World State 가전 설비이기도 한 종류는 두 곳 모두에 낸다
     const label = COCO_LABELS[cls];
-    if (!label || score < opts.minScore) continue;
-    found.push({ label, score, cls, box: lbBox(out, n, i) });
+    if (label) found.push({ label, score, cls, box: lbBox(out, n, i) });
+    if (LANDMARK_SET.has(cls)) marks.push({ cls, score, box: lbBox(out, n, i) });
   }
-  return nms(found, YOLO26_IOU).map((d) => ({ ...d, box: unbox(d.box, lb, image) }));
+  return {
+    detections: nms(found, YOLO26_IOU).map((d) => ({ ...d, box: unbox(d.box, lb, image) })),
+    landmarks: suppress(marks, YOLO26_IOU, (a, b) => a.cls === b.cls).map((d) => ({ ...d, box: unbox(d.box, lb, image) })),
+  };
 }
 
 /** YOLO26-pose 출력 [1, 56, N]을 풀어 minScore 이상인 사람의 상자·관절 17개(원본 픽셀)로. 사람끼리 NMS(IoU 0.5), 점수 순. */
@@ -282,9 +308,9 @@ export class OnnxDetector implements Detector {
     const image = { width: img.width, height: img.height };
     const lb = letterboxYolo26(img, INPUT_SIZE);
     const out = await this.run(this.session, lb.tensor);
-    const detections = decodeYolo26(out.data as Float32Array, out.dims, lb, image, { minScore: this.spec.minScore });
+    const { detections, landmarks } = decodeYolo26All(out.data as Float32Array, out.dims, lb, image, { minScore: this.spec.minScore });
     const t1 = performance.now();
-    const result: DetectResult = { detections, ms: t1 - t0, width: img.width, height: img.height };
+    const result: DetectResult = { detections, ms: t1 - t0, width: img.width, height: img.height, landmarks };
     if (!this.poseSession || !detections.some((d) => d.label === "person" && d.score >= this.spec.poseMinPerson)) return result;
     const poseOut = await this.run(this.poseSession, lb.tensor);
     result.poses = decodeYolo26Pose(poseOut.data as Float32Array, poseOut.dims, lb, image, { minScore: this.spec.minScore });

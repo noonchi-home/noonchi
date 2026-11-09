@@ -7,7 +7,7 @@ import { join } from "node:path";
 import jpeg from "jpeg-js";
 import { describe, expect, it } from "vitest";
 import {
-  DETECTOR_MODEL, MODELS_DIR, OnnxDetector, POSE_MODEL, WorkerDetector, YOLO26_IOU, decodeYolo26, letterboxYolo26, nms, type Detection,
+  DETECTOR_MODEL, MODELS_DIR, OnnxDetector, POSE_MODEL, WorkerDetector, YOLO26_IOU, decodeYolo26, decodeYolo26All, letterboxYolo26, nms, type Detection,
 } from "../src/brain/detector.js";
 import { detectorSpec } from "../src/observe/pipeline.js";
 import { ScriptedDetector } from "./helpers/detectors.js";
@@ -88,6 +88,19 @@ describe("decodeYolo26", () => {
     put(o, 4, [300, 300, 20, 20], { 41: 0.5 });
     put(o, 6, [400, 300, 20, 20], { 0: 0.4 });
     expect(decodeYolo26(o, [1, 84, N], lb, image, { minScore: 0.25 }).map((d) => [d.label, d.cls])).toEqual([["person", 0], ["cup", 41], ["bottle", 39], ["bowl", 45]]);
+  });
+
+  it("위치 맞추기 기준점 종류(냉장고·소파 등)는 World State 감지와 따로 landmarks로도 낸다. 가구(소파)는 landmarks에만, 가전 설비(냉장고)는 둘 다. 같은 종류끼리 NMS, 점수 순", () => {
+    const o = out();
+    put(o, 1, [100, 300, 60, 120], { 72: 0.8 }); // refrigerator
+    put(o, 2, [102, 300, 60, 120], { 72: 0.7 }); // 같은 냉장고의 겹친 상자
+    put(o, 3, [400, 300, 120, 60], { 57: 0.6 }); // couch
+    put(o, 4, [200, 300, 20, 20], { 41: 0.9 }); // cup
+    put(o, 5, [300, 300, 20, 20], { 2: 0.9 }); // car: 어느 쪽도 아니다
+    const all = decodeYolo26All(o, [1, 84, N], lb, image, { minScore: 0.25 });
+    expect(all.detections.map((d) => d.label)).toEqual(["cup", "refrigerator"]);
+    expect(all.landmarks.map((l) => [l.cls, +l.score.toFixed(2), l.box.map((v) => +v.toFixed(1))])).toEqual([[72, 0.8, [35, 50, 30, 60]], [57, 0.6, [170, 65, 60, 30]]]);
+    expect(decodeYolo26(o, [1, 84, N], lb, image, { minScore: 0.25 })).toEqual(all.detections);
   });
 
   it("그림 밖으로 나간 상자는 그림 끝에서 자른다", () => {
