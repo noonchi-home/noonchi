@@ -3,7 +3,7 @@ import type { SetupDeviceView, SetupView } from "../../../src/contract/setup.ts"
 import { Alert, AlertTitle } from "../components/ui/alert";
 import { RemovableBadge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "../components/ui/card";
+import { Card, CardContent, CardFooter } from "../components/ui/card";
 import { SearchInput } from "../components/ui/input";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemHeader, ItemTitle } from "../components/ui/item";
 import { Status } from "../components/ui/status";
@@ -18,7 +18,7 @@ export function sourcesFrom(view: SetupView): Map<string, SourceKind> {
 
 const deviceName = (d: SetupDeviceView) => (d.label.includes(d.kindLabel) ? d.label : `${d.label} · ${d.kindLabel}`);
 
-/** 2 가전 선택. */
+/** 2 가전 선택. 제목(h-devices)은 설정 화면 말풍선이 단다. */
 export function DeviceStep({ view, sources, onSources, onBack, onNext, busy }: {
   view: SetupView; sources: Map<string, SourceKind>; onSources: (next: Map<string, SourceKind>) => void;
   onBack: () => void; onNext: () => void; busy: boolean;
@@ -48,9 +48,6 @@ export function DeviceStep({ view, sources, onSources, onBack, onNext, busy }: {
 
   return (
     <section aria-labelledby="h-devices" className="flex min-h-0 flex-1 flex-col">
-      <CardHeader>
-        <CardTitle id="h-devices">어떤 가전의 상태를 읽을까요?</CardTitle>
-      </CardHeader>
       <CardContent className="flex min-h-0 flex-1 flex-col gap-3">
         <div className="grid max-w-2xl gap-2">
           <SearchInput

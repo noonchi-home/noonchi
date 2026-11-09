@@ -101,6 +101,7 @@ function Pairs({ view, onView, onNotice }: { view: SetupView; onView: (v: SetupV
   );
 }
 
+/** 3 운영 모드. 제목(h-mode)은 설정 화면 말풍선이 단다. */
 export function ModeStep({ view, onView, onNotice, onBack, onNext }: {
   view: SetupView; onView: (v: SetupView) => void; onNotice: (text: string | null, error?: boolean) => void; onBack: () => void; onNext: () => void;
 }) {
@@ -124,9 +125,6 @@ export function ModeStep({ view, onView, onNotice, onBack, onNext }: {
 
   return (
     <section aria-labelledby="h-mode" className="flex min-h-0 flex-1 flex-col">
-      <CardHeader>
-        <CardTitle id="h-mode">가전을 어떻게 다룰까요?</CardTitle>
-      </CardHeader>
       <CardContent className="flex min-h-0 flex-1 flex-col gap-3">
         <RadioGroup aria-labelledby="h-mode" value={view.mode} onValueChange={(v) => pick(v as ControlMode)} className="max-w-xl gap-2">
           {MODES.map((m) => (
