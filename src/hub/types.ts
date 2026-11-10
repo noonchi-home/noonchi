@@ -31,6 +31,8 @@ export interface DeviceState {
   signal?: "none";
   /** 실제 가전(ThinQ)에서 읽은 값이면 그 출처·ThinQ 기기 id·읽은 시각(src/thinq/link.ts). */
   readback?: Readback;
+  /** 카메라(World State)가 본 상태(src/hub/signals.ts observe). */
+  vision?: VisionSeen;
 }
 
 export interface Readback {
@@ -38,6 +40,19 @@ export interface Readback {
   deviceId: string;
   at: string;
 }
+
+/** 카메라로 본 가전 상태. */
+export interface VisionSeen {
+  /** 본 트윈 속성 값(door: "open"). */
+  twin: Record<string, unknown>;
+  /** 마지막으로 본 촬영 시각(ISO). */
+  at: string;
+  /** true: 실제 출처(ThinQ 읽기·명령 받은 가상 기기)가 없어 이 값이 기기 상태다. false: 실제 상태가 이겨 보임 기록만이다. */
+  applied: boolean;
+}
+
+/** 카메라로 본 상태를 넘긴 결과. applied 기기 상태가 됨, seen 실제 상태와 같거나 이미 알린 다름, mismatch 실제 상태와 처음 다름(real은 다른 속성의 실제 값), ignored 모르는 기기·속성·값. */
+export type VisionResult = { kind: "applied" } | { kind: "seen" } | { kind: "mismatch"; real: Record<string, unknown> } | { kind: "ignored" };
 
 export type Command =
   | { type: "on" }

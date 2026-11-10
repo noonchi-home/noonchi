@@ -10,7 +10,7 @@ import { KIND_ICON, Segments } from "./steps";
 import { WORDS } from "./words";
 
 /**
- * 할 일 진행도(LiquidGlass 알약 + Item sm, 부품 원래 글 크기 text-sm): 단계 아이콘, 할 일, 단계 번호·지금 계획 단계 이름, 단계 막대. 트윈 안에만 둔다.
+ * 할 일 진행도(LiquidGlass 알약 + Item sm, 부품 원래 글 크기 text-sm): 단계 아이콘, 할 일, 단계 번호·지금 계획 단계 이름(기다리기 단계는 「기다리는 중 · 이름」), 단계 막대. 트윈 안에만 둔다.
  * 계획이 있을 때만 그린다. 한 단계 안에서는 그대로다(늘어나는 진행 막대·반짝이는 칩 없음). 마우스를 받지 않는다.
  * copy면 미리 그려 보는 알약이라 진행도 표시(data-progress)와 읽어 주기(status)를 달지 않는다.
  */
@@ -31,7 +31,7 @@ function TaskProgress({ plan, step, copy = false }: { plan: PlanView; step: Plan
             <ItemDescription className="shrink-0">
               <span className="tabular-nums">{`${n}/${plan.steps.length}`}</span>
               <span> · </span>
-              <span>{step.label}</span>
+              <span>{step.kind === "wait" ? `${WORDS.waiting} · ${step.label}` : step.label}</span>
             </ItemDescription>
           </ItemContent>
           <ItemActions className="w-20 shrink-0">

@@ -11,7 +11,7 @@ let pam: FakePam | undefined;
 afterEach(async () => { await pam?.close(); pam = undefined; });
 const emptyWorld = () => new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] });
 const memory = () => ({ memory: CUP_FSM_MEMORY, kind: "fsm" as const, version: 0 });
-const event = () => new Trigger({ mode: "event", minGapMs: 0, periodMs: 1000, idleStopMs: 1e9, maxInflight: 1 }, 0);
+const event = () => new Trigger({ mode: "event", minGapMs: 0, periodMs: 1000, idleStopMs: 1e9, liveMs: 10_000, maxInflight: 1 }, 0);
 
 describe("판단 호출", () => {
   it("의미 있는 변화에 PAM을 부르고, 보낸 관찰 텍스트·World State 요약·결과를 기록한다", async () => {
@@ -57,21 +57,31 @@ describe("판단 호출", () => {
     expect(records[0]!.error).toMatch(/PAM 연결 실패/);
   }, 20_000);
 
-  it("주기 판단이 멈추고 다시 시작하면 한 번씩 기록한다", async () => {
+  it("주기 판단은 엔진 프레임이 와야 부르고, 멈춤(프레임 없음·사람 없음)과 다시 시작은 바뀔 때 한 번씩 기록한다", async () => {
     pam = await startFakePam();
     const logs: BrainLog[] = [];
     let now = 0;
     const d = new Decider({ pam: new PamClient({ url: pam.url }), world: emptyWorld(),
-      trigger: new Trigger({ mode: "periodic", minGapMs: 0, periodMs: 1000, idleStopMs: 5000, maxInflight: 4 }, 0),
+      trigger: new Trigger({ mode: "periodic", minGapMs: 0, periodMs: 1000, idleStopMs: 5000, liveMs: 3000, maxInflight: 1 }, 0),
       tasks: () => [...CUP_TASKS], memory, emit: (l) => logs.push(l), offsetMinutes: 540, clock: { now: () => now } });
+    d.tick(); d.tick();
+    expect(pam.bodies).toHaveLength(0);   // 폰 프레임이 없으면 부르지 않는다
+    now = 1000;
+    d.onFrame();
+    d.tick();
+    await d.idle();
+    expect(pam.bodies).toHaveLength(1);
     now = 6000;
+    d.onFrame();
     d.tick(); d.tick();
     d.onChanges([{ kind: "appeared", at_ms: 6500, subject: "cup_1", text: "컵 cup_1 보임", meaningful: true }]);
     now = 7000;
     d.tick();
     await d.idle();
-    expect(logs.filter((l) => l.type === "trigger").map((l) => l.type === "trigger" && [l.paused, l.text])).toEqual([[true, "사람이 없어 판단을 멈춤"], [false, "판단을 다시 시작함"]]);
-    expect(pam.bodies).toHaveLength(1);
+    expect(logs.filter((l) => l.type === "trigger").map((l) => l.type === "trigger" && [l.paused, l.text])).toEqual([
+      [true, "폰 사진이 오지 않아 판단을 멈춤"], [false, "판단을 다시 시작함"], [true, "사람이 없어 판단을 멈춤"], [false, "판단을 다시 시작함"],
+    ]);
+    expect(pam.bodies).toHaveLength(2);
   });
 
   it("멈추면 늦게 온 답을 기록하지 않는다", async () => {

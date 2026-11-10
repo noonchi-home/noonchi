@@ -15,6 +15,7 @@ import { ROOMS, makeHome } from "./helpers/home.js";
 import { CATALOG, scene } from "./helpers/layout.js";
 import { HOME_SCRIPT, startFakeLlm, type FakeLlm } from "./helpers/llm.js";
 import { openWebSocket } from "./helpers/ws.js";
+import { alignOnServer } from "./helpers/align.js";
 
 type Msg = Record<string, any>;
 // 에이전트는 실제 OpenAI 공급자, 모델 자리는 가짜 OpenAI 호환 서버
@@ -184,8 +185,7 @@ describe("startServer: 집의 계획 보관", () => {
     cleanups.push(() => phone.close());
     const phoneBox: Msg[] = [];
     phone.on("message", (d) => phoneBox.push(JSON.parse(String(d))));
-    phone.send(JSON.stringify({ type: "anchor", id: "dock", point: [1, 0, 3] }));
-    phone.send(JSON.stringify({ type: "anchor", id: "door_main", point: [3, 0, 5] }));
+    await alignOnServer(srv.url, (t) => phone.send(t), join(studio, "homes", "oneroom", "scene.json"), [2, 2]);
     const t0 = Date.now();
     while (!phoneBox.some((m) => m.type === "status" && m.aligned) && Date.now() - t0 < 4000) await new Promise((r) => setTimeout(r, 20));
     phone.send(JSON.stringify({ type: "pose", position: [3, 1.4, 2], orientation: [0, 0, 0, 1], hit: [3, 0, 3] }));

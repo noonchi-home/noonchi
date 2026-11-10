@@ -1,5 +1,5 @@
-// 한양목련 처음부터 끝까지(가짜 서버, 시험 모드): 기준점을 맞춘 폰 엔진 프레임 → YOLOX(대본)·VLM(가짜 OpenAI 호환 서버, 컵 자리 대본)
-// → World State(컵은 거실·복도 식탁 위) → PAM(시험용 PAM 자리: 컵 치우기) → 처음 하는 일이라 실제 폰에 승인 질문 → 「승인」
+// 한양목련 처음부터 끝까지(가짜 서버, 시험 모드): 기준점을 맞춘 폰 엔진 프레임 → YOLO(대본)·VLM(가짜 OpenAI 호환 서버, 컵 자리 대본)
+// → World State(컵은 거실·복도 식탁 위) → PAM(시험용 PAM 자리: 컵 치우기) → 에이전트 계획 모드(가짜 서버 도구 호출) → 처음 하는 일이라 실제 폰에 승인 질문 → 「승인」
 // → 실제 폰 단계 명령 넷(「완료」 단추·VLM 컵 자리·말 「다 했어」로 한 단계씩) → 완료. 대시보드 말풍선 글·계획 단계·상자, 승인 기억 파일.
 // 맞춘 눈은 식탁·싱크대에서 멀리 두어 이동 단계는 「완료」나 말로 넘긴다.
 import { mkdtempSync, readFileSync } from "node:fs";
@@ -13,7 +13,9 @@ import { APPROVAL_TEXT } from "../src/plan/labels.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { ScriptedDetector } from "./helpers/detectors.js";
 import { startFakePam, type FakePam } from "./helpers/pam.js";
+import { CUP_SCRIPTS, plannerRespond } from "./helpers/planner.js";
 import { openWebSocket } from "./helpers/ws.js";
+import { alignOnServer } from "./helpers/align.js";
 
 type Msg = Record<string, any>;
 let srv: RunningServer | undefined;
@@ -32,8 +34,7 @@ afterEach(async () => {
 
 const inbox = (list: Msg[]) => (ws: WebSocket) => ws.on("message", (d, bin) => { if (!bin) list.push(JSON.parse(String(d)) as Msg); });
 
-// 기준점 두 곳(twin/homes/mokryeon_180b/scene.json plan.ar_anchors)을 AR 점 = 평면 점으로 찍어 맞춤을 그대로 둔다(회전 0, 이동 0)
-const ANCHORS = [{ id: "alpha_corner", point: [0.1, 0, 6.065625] }, { id: "bed_ne_corner", point: [16.1, 0, 2.296875] }];
+// 위치 맞춤: 눈 자리에 시작 위치를 저장하고 「여기서 시작」 + 그 자리의 벽·바닥 점(AR 점 = 평면 점, 회전 0, 이동 0, tests/helpers/align.ts)
 // 폰 눈: 식탁 가운데([9.9612, 3.9242], 윗면 0.75 m)에서 1.5 m 떨어진 거실에서 높이 1.5 m로 +x를 보고 식탁 윗면 가운데를 향해 숙인다.
 // 식탁·싱크대에서 1.2 m 밖이라 이동 단계는 눈 자리로 넘어가지 않는다. 90° 시야 투영(열 우선, tests/act-track.test.ts와 같다)
 const PROJECTION = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1.0002, -1, 0, 0, -0.020002, 0];
@@ -56,12 +57,16 @@ describe("한양목련 처음부터 끝까지", () => {
         const dets = JSON.parse(/Detections: (\[.*\])/.exec(text)?.[1] ?? "[]") as { id: string }[];
         return JSON.stringify({ scene: "kitchen", observations: dets.map((d) => ({ object_id: d.id, state: cupPlace })), summary: "컵" });
       },
+      // 에이전트 계획 모드: 같은 가짜 서버가 컵 치우기 도구 호출(지금 서버와 같은 네 단계)을 낸다
+      respond: plannerRespond(CUP_SCRIPTS),
     });
-    pam = await startFakePam({ predict: () => ({ observation: "빈 컵이 식탁에 남음", reasoning: "자리를 비워 컵을 치운다", task_index: 0 }) });
+    // PAM은 기본 주기(5초)로 불린다. 관찰 텍스트에 컵이 있으면 컵 치우기, 없으면 대기
+    pam = await startFakePam({ predict: (b) => (/컵 cup_\d/.test(String(b.observation_text))
+      ? { observation: "빈 컵이 식탁에 남음", reasoning: "자리를 비워 컵을 치운다", task_index: 0 } : { observation: "컵 없음", reasoning: "할 일 없음", task_index: -1 }) });
     const runtimeDir = mkdtempSync(join(tmpdir(), "rt-"));
     srv = await startServer({
       env: { HUB: "memory", PORT: "0", HOME_ID: "mokryeon_180b", RUNTIME_DIR: runtimeDir, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
-        BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url, PAM_MIN_GAP_MS: "0" },
+        BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url, OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: `${fake.url}/v1` },
       brain: { detector: new ScriptedDetector(() => [{ label: "cup", score: 0.9, cls: 41, box: CUP_BOX }]) }, log: () => {},
     });
     const dash: Msg[] = [];
@@ -74,7 +79,7 @@ describe("한양목련 처음부터 끝까지", () => {
       for (const end = Date.now() + 5000; Date.now() < end; await new Promise((r) => setTimeout(r, 20))) if (ok()) return;
       throw new Error(`5초 안에 오지 않음: ${what}`);
     };
-    for (const a of ANCHORS) ws.send(JSON.stringify({ type: "anchor", ...a }));
+    await alignOnServer(srv.url, (t) => ws.send(t), join(srv.twin.dir, "homes", "mokryeon_180b", "scene.json"), [EYE[0], EYE[2]]);
     await until(() => phone.some((m) => m.type === "status" && m.aligned), "맞춤");
     // 맞춘 눈 = 클로이드 자리(계획 경로의 출발점)
     ws.send(JSON.stringify({ type: "pose", position: EYE, orientation: ORIENTATION, tracking: "ok" }));

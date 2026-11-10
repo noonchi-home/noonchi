@@ -24,10 +24,10 @@ noonchi-home | 26-2 소프트웨어공학
 
 | 단계 | 하는 일 | 보이는 곳 |
 |---|---|---|
-| **보기** | 실제 폰이 클로이드의 눈이다. 카메라 화면과 AR 위치가 들어오고, 사진마다 YOLO와 VLM이 따로 분석한다. | 대시보드 폰 칸(YOLO 상자) |
-| **알기** | World State가 YOLO·VLM 결과와 집 장면(가전·가구·도면 설비)을 합쳐 지금 상태와 관찰 글을 만든다. 가전은 Matter 가상 기기다. | 3D 트윈, FSM 카드 |
-| **판단** | PAM이 관찰 글만 받아 할 일을 고른다. 사진은 넘기지 않는다. 말로 시킨 가전 명령은 에이전트(LLM 도구)가 맡는다. | 말풍선 카드 |
-| **행동** | 고른 일을 단계로 나눠 실제 폰으로 사람에게 하나씩 지시하고, World State와 폰 위치로 그 단계가 된 것을 본 뒤 다음 단계를 지시한다. 가전 명령은 승인 규칙을 거쳐 Matter 속성을 바꾼다. | 실제 폰, 트윈 진행도 |
+| **보기** | 실제 폰이 클로이드의 눈이다. 카메라 화면과 AR 위치가 들어오고, 사진마다 YOLO26n(물체·사람)과 VLM이 따로 분석한다. VLM은 최근 5장(2초 간격)을 함께 보고 집기·마시기·내려놓기 같은 행동도 읽는다. 사람이 보이면 YOLO26n-pose가 자세와 손에 든 컵을 본다. | 대시보드 폰 칸(YOLO 상자) |
+| **알기** | World State가 YOLO·VLM 결과와 집 장면(가전·가구·도면 설비)을 합쳐 지금 상태와 관찰 글을 만든다. 볼 수 있는 것은 [낱말 표](docs/world-vocabulary.md)의 물건 30종·가전 설비 6종·사람 자세와 하는 일·가전 상태와 사건뿐이다. 가전은 Matter 가상 기기다. | 3D 트윈, FSM 카드 |
+| **판단** | 폰 사진이 오는 동안 5초마다 PAM이 그때 관찰 글만 받아 할 일을 고른다(FSM이 계기·행동을 정한다). 사진은 넘기지 않는다. 폰 사진이 10초 넘게 안 오면 부르지 않아 비용도 없다. 지금 행동 목록은 컵 치우기·사용자에게 물어보기·세탁물 건조기로 옮기기·에어컨 켜기다. 말로 시킨 가전 명령은 에이전트(LLM 도구)가 맡는다. | 말풍선 카드 |
+| **행동** | 에이전트(LLM 도구)가 고른 일을 계획으로 만든다: 경로, 사람에게 하는 단계 명령, 가전 조작, 행동 중 기다리기. 실제 폰으로 사람에게 하나씩 지시하고, World State와 폰 위치로 그 단계가 된 것을 본 뒤 다음 단계를 지시한다. 기다리기(예: 세탁 멈춤)는 폰에 보내지 않고 트윈 진행도에만 「기다리는 중」으로 보인다. 가전 명령은 승인 규칙을 거쳐 Matter 속성을 바꾼다. | 실제 폰, 트윈 진행도 |
 
 예: 식탁에 컵이 남아 있고 사람이 자리를 비우면 PAM이 컵 치우기를 고른다. 실제 폰에 「식탁으로 가 주세요」 → 「컵을 들어 주세요」 → 「싱크대로 가 주세요」 → 「컵을 싱크대에 넣어 주세요」가 차례로 뜬다. 폰이 식탁 1.2 m 안에 들어오면 다음, 컵이 손에 있으면 다음, 싱크대 안이면 끝이다.
 
@@ -50,11 +50,11 @@ noonchi-home | 26-2 소프트웨어공학
 
 #### 02. 실제 폰: 클로이드의 눈과 손
 
-- 안드로이드 크롬에서 폰 페이지를 연다. WebXR AR이 위치와 방향을 따고, 설정 화면에서 고른 두 기준점(A·B)으로 트윈에 맞춘다.
+- 안드로이드 크롬에서 폰 페이지를 연다. WebXR AR이 위치와 방향을 딴다. 집마다 정한 시작 자리에 서서 「여기서 시작」을 한 번 하면 바로 트윈에 어림으로 맞고, 방을 둘러보며 걸으면 서버가 벽 모양(hit-test 벽 점)과 큰 가구(YOLO26n 냉장고·소파·식탁 등)로 저절로 맞춘다([위치 맞추기](docs/reference.md#시작-위치물건벽-모양으로-맞추기위치-맞추기)).
 - 위: 미어캣 아이콘과 지금 할 명령 한 줄. 계획이나 판단 글은 대시보드에만 있다.
 - 아래: 비전 상태 줄(예: 「식탁까지 2.4m」, 「컵 · 손에 있음」)과 바로 밑 「완료」 단추. 비전이 못 알아볼 때 사람이 「완료」를 누르거나 말하면 다음 단계로 간다.
 - 늘 듣는다(크롬 음성 인식). 명령은 소리로 읽고, 읽는 동안은 듣지 않는다. 「그만」이라고 하면 계획을 그만둔다.
-- 일이 멈추는 문제(기준점 안 맞음, 마이크 꺼짐, 연결 끊김)는 고치는 단추가 있는 창으로, 잠깐 생기는 문제(추적 약함)는 비전 상태 줄로 알린다.
+- 일이 멈추는 문제(시작 위치 없음, 마이크 꺼짐, 연결 끊김)는 고치는 단추가 있는 창으로, 잠깐 생기는 문제(추적 약함)는 비전 상태 줄로 알린다. 위치를 맞추는 중에는 비전 상태 줄 앞에 「위치 맞추는 중」이 붙는다.
 - 카메라 프레임은 늘 서버로 간다. 폰 서버는 Wi-Fi에서 폰 페이지와 그 WebSocket만 내주고, 기기 제어 REST는 127.0.0.1에만 둔다.
 
 #### 03. 승인 규칙
@@ -69,12 +69,13 @@ noonchi-home | 26-2 소프트웨어공학
 <img src="docs/screenshot-setup.webp" alt="설정 화면: 왼쪽 아래 상반신 마스코트에서 생각 동그라미가 이어지고, 오른쪽 말풍선 안에 「어느 집을 쓸까요?」와 집 고르기 카드" />
 
 - 왼쪽 아래 마스코트가 묻고, 오른쪽 생각 말풍선 안에서 고른다. 집 고르기, 가전 선택, 운영 모드(시험·실제), 위치 동기화 네 단계다.
-- 위치 동기화는 말풍선 안을 트윈 하나가 채운다. 벽 하나를 누르면 A·B 기준점이 잡히고, 이름 고치기·다시 고르기·저장·폰 연결 QR·배치 보정은 모두 트윈 위에 떠 있다. A·B를 저장해야 「완료하고 대시보드로」가 눌린다.
+- 위치 동기화는 말풍선 안을 트윈 하나가 채운다. 트윈 바닥을 눌러 폰을 켤 시작 자리를 고르고, 볼 쪽을 누르거나 화살표 끝을 끌어 방향을 정한다. 이름 고치기·다시 고르기·저장·폰 연결 QR·배치 보정은 모두 트윈 위에 떠 있다. 시작 자리를 저장해야 「완료하고 대시보드로」가 눌린다.
 
 #### 05. 가상 Matter 가전
 
 - 집의 조명, TV, 에어컨, 인덕션, 도어락, 커튼 같은 가전을 matter.js 브리지 하나의 기기로 띄운다. 실제 Matter 프로토콜로 연결되고, 기기 상태의 원본은 Matter 속성이다.
 - 운영 모드가 실제면 짝지은 가전은 ThinQ로 실제 기기를 움직인다.
+- 카메라로 본 가전 상태(TV 화면 켜짐, 냉장고·전자레인지 문 열림, 전자레인지 돌아감, 싱크대 물)도 트윈에 맞춘다. 같은 모습이 2번(4초) 이어져야 바꾸고, ThinQ처럼 실제 값이 있는 가전은 실제 값이 이긴다. 말풍선과 관찰 글에 「카메라로 봄」이 붙는다.
 
 #### 06. 집 고르기와 배치 보정
 
@@ -92,13 +93,13 @@ noonchi-home | 26-2 소프트웨어공학
 ```text
 실제 폰 (ui/src/phone)        — 눈과 손: WebXR 위치 · 카메라 프레임 · 늘 듣기 · 지금 명령과 「완료」
         ↓  WebSocket (Wi-Fi)
-폰 서버 (src/phone)           — 기준점 맞춤 · 폰 눈 위치 · 말 전달 · 명령 보내기
+폰 서버 (src/phone · src/sync) — 위치 맞추기 · 폰 눈 위치 · 말 전달 · 명령 보내기
         ↓
 서버 (src/server)             — Node.js 22
-├── 관찰 (src/brain · src/observe · src/world) — YOLOX(onnxruntime) · VLM · World State → 관찰 글
+├── 관찰 (src/brain · src/observe · src/world) — YOLO26n 감지·YOLO26n-pose 관절(onnxruntime) · VLM · World State → 관찰 글
 ├── 판단 (services/pam)       — PAM(Python): 관찰 글만 받아 행동을 고른다
-├── 계획·실행 (src/plan · src/act) — 단계마다 폰 명령, World State와 폰 위치로 다음 단계
-├── 에이전트 (src/agent)      — 말로 시킨 가전 명령(OpenAI · Anthropic 도구) · 승인 규칙
+├── 계획·실행 (src/plan · src/act) — 어떤 계획이든 단계마다 폰 명령·가전·기다리기, World State 조건과 폰 위치로 다음 단계
+├── 에이전트 (src/agent)      — 말로 시킨 가전 명령, PAM 행동의 계획 모드(OpenAI · Anthropic 도구) · 승인 규칙
 ├── 장면 (src/model · src/layout) — scene.json + 도면 설비 · 배치 보정
 └── 기기 허브 (src/hub)       — MatterHub(matter.js) · MemoryHub(시험용)
         ↓  REST · WebSocket /events (127.0.0.1)
@@ -118,7 +119,7 @@ twin/                         — twin-studio에서 가져온 집 자산: 장면
 
 ### 4. 플랫폼
 
-- Node.js 서버와 웹 화면, 안드로이드 크롬 폰 페이지
+- Node.js 서버와 웹 화면, 안드로이드 크롬 폰 페이지(아이폰 사파리는 WebXR AR이 없어 폰 페이지가 돌지 않는다)
 - Windows 11, Docker Compose(서버 한 대·GPU 서버)
 
 ---
@@ -131,11 +132,15 @@ Node.js 22.15가 필요하다. 집 자산(뷰어, 집, 카탈로그, 구운 3D)�
 ```bash
 npm install
 npm --prefix ui install   # 대시보드·설정·폰 화면(React)
-cp .env.example .env      # 에이전트·VLM용 OPENAI_API_KEY, PAM LLM용 OPENROUTER_API_KEY
+cp .env.example .env      # OPENAI_API_KEY(에이전트·VLM, PAM_LLM_PROVIDER=openai면 PAM도). OpenRouter로 PAM을 돌리면 OPENROUTER_API_KEY
 npm start                 # 화면을 빌드하고 http://127.0.0.1:8200
 ```
 
-- 관찰·판단까지 돌리기: PAM 서비스(`services/pam`, [reference](docs/reference.md#pam-서비스-servicespam))를 띄우고 `BRAIN=1 PHONE_PORT=8210 npm start`. 폰은 설정 창의 QR로 연다.
+- 관찰·판단까지 돌리기: PAM 서비스(`services/pam`, [reference](docs/reference.md#pam-서비스-servicespam))를 띄우고 `BRAIN=1 PHONE_PORT=8210 npm start`. 폰은 설정 창의 QR로 연다. PAM은 셸 환경 변수만 읽으므로 `.env` 값을 넘겨서 띄운다.
+- 비용을 줄인 모델: `.env`에 `VLM_MODEL=gpt-5.4-nano`, `PAM_LLM_PROVIDER=openai`, `PAM_LLM_MODEL=gpt-5.4-nano`, `OPENAI_MODEL=gpt-5.4-mini`. VLM은 2초마다 최근 5장을 보내 1시간에 약 0.9달러가 든다(2026-11-10 실측).
+- 지난 기록이 있는 PAM 시험: `npx tsx scripts/seed-history.ts`가 한양목련 7일 합성 기록을 넣는다(모든 줄에 합성 표시). 지우기는 `--clear`.
+- 실제 집 사진 모으기: `.env`에 `DATASET_COLLECT=1`이면 분석한 사진이 폰 위치·방향과 함께 `runtime/dataset/<날짜>/`에 쌓인다(7일 보관).
+- 감지·관절 모델(YOLO26n·YOLO26n-pose ONNX, AGPL-3.0)은 저장소 `models/`에 있어 따로 받지 않는다. 출처·다시 내보내기는 [THIRD_PARTY](THIRD_PARTY.md#모델).
 - 키 없이 돌려 보기: `npx tsx scripts/fake-openai.ts --port 8500`을 띄우고 `VLM_BASE_URL`·`PAM_LLM_BASE_URL`·`OPENAI_BASE_URL`을 `http://127.0.0.1:8500/v1`로, `OPENAI_API_KEY`를 `fake-key`로 둔다.
 - 서버 한 대: `docker compose up -d --build`. GPU 서버는 `docker compose --profile gpu up -d --build`([deploy](docs/deploy.md)).
 - 대시보드 순간 보기: `?debug=steps&step=N`은 서버 자료 대신 `ui/src/dashboard/fake-run.json`의 순간(지켜보기, 1~4단계)을 보인다([twin3d](docs/twin3d.md)).
@@ -161,6 +166,7 @@ npm start                 # 화면을 빌드하고 http://127.0.0.1:8200
 - [계약](docs/plan.md): 형식과 연결. 코드보다 먼저 고친다.
 - [전체 참고](docs/reference.md): 환경 변수, REST·WebSocket API, 폰 AR, 관찰 흐름, PAM, 설정 흐름, 승인, 시험
 - [PAM 연결 형식](docs/pam-interface.md), [계획 계약](docs/plan-contract.md)
+- [World State 낱말 표](docs/world-vocabulary.md): FSM 계기와 계획 단계 조건에 쓸 키·글
 - [대시보드 3D 트윈](docs/twin3d.md): 구운 자산, 다시 굽기, 사진 찍기
 - [단계 바뀜 끊김 막기](docs/view-switch.md): 규칙과 잰 값
 - [배포](docs/deploy.md)

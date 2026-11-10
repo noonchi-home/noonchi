@@ -142,7 +142,7 @@ describe("REST 명령 + WS 이벤트", () => {
 
   it("WS에 붙으면 world 다음에 마지막 판단·상자 있는 observe를 다시 보냄 표시(replay)를 단 brain으로 한 번씩, 그다음 말풍선 글을 보낸다", async () => {
     const home = makeHome();
-    const world = { at_ms: 1, objects: [], person: { visible: false, since_ms: null, last_seen_ms: null, facts: {} }, devices: [], eye: null, vlm_missing: 0, yolo_missing: 0 };
+    const world = { at_ms: 1, objects: [], person: { visible: false, since_ms: null, last_seen_ms: null, count: 0, room: null, room_label: null, position: null, near: [], holding: [], position_ms: null, answered_ms: null, facts: {} }, fixtures: [], devices: [], eye: null, frame_ms: null, vlm_missing: 0, yolo_missing: 0 };
     const decision: BrainLog = {
       type: "decision", at_ms: 10, id: "pam-1", seq: 1, text_sent: "t", status: "valid", prediction: { observation: "o", reasoning: "r", task_index: 0 }, action: "컵 치우기", memory_version: 1,
       world: { objects: [], person_visible: false, vlm_missing: 0, yolo_missing: 0 },

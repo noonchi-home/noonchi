@@ -14,7 +14,7 @@ export const SUMMARY_TEXT = {
   execution: "클로이드 실행: ",
   feedback: "사용자: ",
   dropped: (n: number) => `앞선 기록 ${n}줄 생략`,
-  tally: (vlm: number, vlmMissing: number, yoloMissing: number) => `[하루] VLM 분석 ${vlm}장 · VLM 분석 없음 ${vlmMissing}장 · YOLOX 분석 없음 ${yoloMissing}장`,
+  tally: (vlm: number, vlmMissing: number, yoloMissing: number) => `[하루] VLM 분석 ${vlm}장 · VLM 분석 없음 ${vlmMissing}장 · YOLO 분석 없음 ${yoloMissing}장`,
 };
 
 /** 사진 찍기 기록 글. */
@@ -33,5 +33,5 @@ export const REFLECT_TEXT = {
 
 /** 폰 부탁·질문의 답과 그동안의 말(반성 피드백). */
 export const FEEDBACK_TEXT = {
-  answer: (said: string, kind: "pick_place" | "ask", asked: string) => `${said} · ${kind === "ask" ? "질문" : "부탁"}: ${asked}`,
+  answer: (said: string, kind: "command" | "ask", asked: string) => `${said} · ${kind === "ask" ? "질문" : "부탁"}: ${asked}`,
 };

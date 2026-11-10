@@ -7,7 +7,7 @@ jobs:
   node:
     runs-on: ubuntu-24.04
     env:
-      # YOLOX는 CPU로 돈다. onnxruntime-node의 CUDA 파일은 받지 않는다
+      # YOLO는 CPU로 돈다. onnxruntime-node의 CUDA 파일은 받지 않는다
       ONNXRUNTIME_NODE_INSTALL: skip
     steps:
       - uses: actions/checkout@v7

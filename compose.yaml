@@ -1,4 +1,4 @@
-# NOONCHI 한 서버: noonchi(CPU, 서버·YOLOX), pam(CPU, PAM 서비스). --profile gpu면 vLLM 두 개(VLM, PAM LLM)를 더한다.
+# NOONCHI 한 서버: noonchi(CPU, 서버·YOLO26n 감지·관절), pam(CPU, PAM 서비스). --profile gpu면 vLLM 두 개(VLM, PAM LLM)를 더한다.
 # --profile check는 키 없는 확인용 가짜 OpenAI 호환 서버(fake-openai)를 더한다. 포트는 호스트 127.0.0.1에만 연다.
 # 설정·키는 .env(다른 파일은 docker compose --env-file)에서 오고, 서비스마다 environment에 적은 이름만 받는다.
 # 값 없이 이름만 적은 칸은 .env(또는 셸)에 있을 때만 넘긴다. 키는 그 키를 쓰는 서비스에만 적는다(scripts/compose-keys.ts, 시험이 본다).
@@ -52,13 +52,12 @@ services:
       ANTHROPIC_FALLBACKS:
       # 관찰 흐름·폰
       BRAIN:
-      BRAIN_DETECTOR:
       BRAIN_YOLO_THREADS:
       ENGINE_FRAME_MS:
+      VLM_WINDOW_FRAMES:
       VLM_MAX_INFLIGHT:
       DETECT_QUEUE_MAX:
       PHONE_URL:
-      PHONE_MAX_MISMATCH_M:
       PHONE_EYE_HEIGHT_M:
       FOCUS:
       # 추론(VLM·PAM 호출)
@@ -73,6 +72,7 @@ services:
       PAM_TRIGGER:
       PAM_MIN_GAP_MS:
       PAM_PERIOD_MS:
+      PAM_LIVE_MS:
       PAM_IDLE_STOP_MS:
       PAM_MAX_INFLIGHT:
       STALE_MS:
@@ -125,12 +125,14 @@ services:
     # 비면 서비스 기본값(services/pam/noonchi_pam/settings.py)
     environment:
       INFERENCE_MODE:
+      PAM_LLM_PROVIDER:
       PAM_LLM_BASE_URL:
       PAM_LLM_MODEL:
       PAM_LLM_API_KEY:
       PAM_LLM_TIMEOUT_S:
       PAM_MAX_MODEL_LEN:
       OPENROUTER_API_KEY:
+      OPENAI_API_KEY:
       VLLM_API_KEY:
     ports: ["127.0.0.1:${PAM_HOST_PORT:-8300}:8300"]
     healthcheck:

@@ -1,9 +1,13 @@
-// PAM 호출 시점. 기본 event: World State에 의미 있는 변화가 있을 때(최소 간격 minGapMs, 동시 maxInflight).
-// periodic(출처: docs/provenance.md): 사람이 보이는 동안 periodMs마다. 사람 없음 + 등장·사라짐 없음이 idleStopMs 이어지면 멈추고, 등장·사라짐이 생기면 다시.
+// PAM 호출 시점. 기본 periodic: 관찰이 살아 있는 동안(엔진 프레임이 liveMs 안에 옴) periodMs(5초)마다 그때 World State로 부른다.
+// 계기와 행동은 PAM의 FSM이 정하므로 의미 있는 변화를 기다리지 않는다. 사람이 떠난 뒤(컵이 남은 때)에도 계속 부른다.
+// 프레임이 오지 않으면(폰 없음) 부르지 않는다. 사람 없음 + 등장·사라짐 없음이 idleStopMs(30분) 이어지면 멈추고, 등장·사라짐이 생기면 다시(출처: docs/provenance.md).
+// event: World State에 의미 있는 변화가 있을 때(최소 간격 minGapMs). 두 모드 모두 나가 있는 판단이 maxInflight(기본 1)면 부르지 않는다.
 import type { WorldChange } from "../contract/world.js";
 
 export type TriggerMode = "event" | "periodic";
-export interface TriggerConfig { mode: TriggerMode; minGapMs: number; periodMs: number; idleStopMs: number; maxInflight: number }
+/** 주기 판단이 멈춘 까닭: no_frames 엔진 프레임이 liveMs 넘게 오지 않음, idle 사람 없음·등장 사라짐 없음이 idleStopMs. */
+export type TriggerPause = "no_frames" | "idle";
+export interface TriggerConfig { mode: TriggerMode; minGapMs: number; periodMs: number; idleStopMs: number; liveMs: number; maxInflight: number }
 const ACTIVITY = new Set(["appeared", "gone", "person_appeared", "person_gone"]);
 const num = (env: Record<string, string | undefined>, key: string, d: number) => {
   const raw = env[key]?.trim();
@@ -13,16 +17,18 @@ const num = (env: Record<string, string | undefined>, key: string, d: number) =>
   return v;
 };
 
+/** PAM_TRIGGER(periodic 기본·event), PAM_PERIOD_MS(5000), PAM_LIVE_MS(10000), PAM_IDLE_STOP_MS(1800000), PAM_MIN_GAP_MS(3000), PAM_MAX_INFLIGHT(1). 틀린 값이면 던진다. */
 export function loadTriggerConfig(env: Record<string, string | undefined>): TriggerConfig {
-  const mode = env.PAM_TRIGGER?.trim() || "event";
+  const mode = env.PAM_TRIGGER?.trim() || "periodic";
   if (mode !== "event" && mode !== "periodic") throw new Error(`PAM_TRIGGER=${mode}: event 또는 periodic이어야 합니다`);
-  return { mode, minGapMs: num(env, "PAM_MIN_GAP_MS", 3000), periodMs: num(env, "PAM_PERIOD_MS", 1000), idleStopMs: num(env, "PAM_IDLE_STOP_MS", 1_800_000),
-    maxInflight: Math.max(1, Math.floor(num(env, "PAM_MAX_INFLIGHT", mode === "event" ? 1 : 4))) };
+  return { mode, minGapMs: num(env, "PAM_MIN_GAP_MS", 3000), periodMs: num(env, "PAM_PERIOD_MS", 5000), idleStopMs: num(env, "PAM_IDLE_STOP_MS", 1_800_000),
+    liveMs: num(env, "PAM_LIVE_MS", 10_000), maxInflight: Math.max(1, Math.floor(num(env, "PAM_MAX_INFLIGHT", 1))) };
 }
 
 export class Trigger {
   private pending = false;
   private lastCall = Number.NEGATIVE_INFINITY;
+  private lastFrame = Number.NEGATIVE_INFINITY;
   private lastActivity: number;
   constructor(private readonly cfg: TriggerConfig, startedAtMs: number) { this.lastActivity = startedAtMs; }
 
@@ -33,15 +39,22 @@ export class Trigger {
     }
   }
 
+  /** 엔진 프레임이 온 시각. */
+  onFrame(atMs: number): void { this.lastFrame = Math.max(this.lastFrame, atMs); }
+
   due(nowMs: number, personVisible: boolean, inflight: number): boolean {
     if (inflight >= this.cfg.maxInflight) return false;
     if (this.cfg.mode === "event") return this.pending && nowMs - this.lastCall >= this.cfg.minGapMs;
     if (nowMs - this.lastCall < this.cfg.periodMs) return false;
-    return !this.paused(nowMs, personVisible);
+    return this.pause(nowMs, personVisible) === null;
   }
 
-  paused(nowMs: number, personVisible: boolean): boolean {
-    return this.cfg.mode === "periodic" && !personVisible && !this.pending && nowMs - this.lastActivity >= this.cfg.idleStopMs;
+  /** 주기 판단이 멈춘 까닭(멈추지 않았으면 null). event는 멈추지 않는다. */
+  pause(nowMs: number, personVisible: boolean): TriggerPause | null {
+    if (this.cfg.mode !== "periodic") return null;
+    if (nowMs - this.lastFrame > this.cfg.liveMs) return "no_frames";
+    if (!personVisible && !this.pending && nowMs - this.lastActivity >= this.cfg.idleStopMs) return "idle";
+    return null;
   }
 
   called(nowMs: number): void { this.lastCall = nowMs; this.pending = false; }

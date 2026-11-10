@@ -1,59 +1,47 @@
-// 클로이드 계획 만들기: 컵 시나리오(brain) 행동과 에이전트 기기 행동 → PlanView. 행동은 모두 모의다(기기 명령·ThinQ 호출이 없다).
-// 경로는 평면도(scene.json plan)로 찾고, 로봇 자리를 모르거나 길이 없으면 경로 없이 단계만 낸다.
+// 클로이드 계획 모양 만들기: 에이전트가 정한 단계(src/agent/planner.ts) → PlanView(경로 잇기), 에이전트가 말 요청으로 기기를 바꾼 행동 → 한 단계 PlanView.
+// 경로는 평면도(scene.json plan)로 찾고, 로봇 자리를 모르거나 길이 없으면 경로 없이 단계만 낸다. 무슨 단계를 할지는 여기서 정하지 않는다.
 import type { AgentAction } from "../contract/events.js";
-import type { PlanStep, PlanView, XZ } from "../contract/plan.js";
+import type { PlanStep, PlanTarget, PlanView, StepKind, XZ } from "../contract/plan.js";
 import type { FloorPlan } from "./floor.js";
-import { DEVICE_VERB, GOAL, STEP_LABEL } from "./labels.js";
+import { DEVICE_VERB, STEP_LABEL } from "./labels.js";
 import { approach, route } from "./route.js";
 
 const STOP_M = 0.55; // 로봇 반지름 0.22m + 여유
-
-const byType = (fp: FloorPlan, type: string) => [...fp.objects.values()].find((o) => o.type === type);
 
 const base = (fp: FloorPlan, id: string, nowIso: string) => ({
   id, revision: 1, robot: { position: fp.robot.position, room: fp.robot.room }, updatedAt: nowIso,
 });
 
-/** 집을 물건(World State). 위치는 트윈 좌표 [x, 높이, y], 맞추기 전이면 null. */
-export interface PickTarget { id: string; position: [number, number, number] | null }
+/** 계획 한 단계(화면 단계 모양). move면 to가 길의 목적지 평면 자리다(목표 물건 자리, 다음 단계가 자리를 아는 물건 집기면 그 물건 자리). */
+export interface DraftStep { kind: StepKind; label: string; target?: PlanTarget; to?: XZ }
+
+/** 계획 머리: id·할 일·판단 이유·출처·모의. */
+export interface PlanHead { id: string; goal: string; judgment: string; source: PlanView["source"]; dryRun: boolean; nowIso: string }
 
 /**
- * 컵 치우기: 식탁으로 가서 컵을 집고 싱크대로 가서 내려놓는다. 식탁이 없으면 null, 싱크대가 없으면 식탁 두 단계만.
- * 집을 물건을 알면 집기 단계 대상이 그 물건이고, 위치까지 알면 첫 이동은 그 물건 앞까지 간다. 모르면 식탁을 가리킨다.
+ * 단계 목록 → PlanView. 단계 id는 <계획 id>:<번호>. 이동 단계마다 앞 이동 끝(처음은 로봇 자리)에서 목적지까지 길을 잇고 목적지 STOP_M 앞에서 멈춘다.
+ * 로봇 자리를 모르거나 하나라도 길이 없으면 경로처럼 그리지 않는다(path·legs 빈 목록). 단계를 정하는 것은 에이전트(src/agent/planner.ts)다.
  */
-export function cupPlan(fp: FloorPlan, id: string, nowIso: string, target: PickTarget | null = null): PlanView | null {
-  const table = byType(fp, "dining_table");
-  if (!table) return null;
-  const sink = byType(fp, "sink_counter");
-  const at: XZ | null = target?.position ? [target.position[0], target.position[2]] : null;
-  const steps: PlanStep[] = [
-    { id: `${id}:1`, kind: "move", label: STEP_LABEL.goTable, target: { objectId: table.id, ...(table.room ? { room: table.room } : {}) }, status: "pending" },
-    { id: `${id}:2`, kind: "act", label: STEP_LABEL.pickCup, target: target ? { objectId: target.id, ...(at ? { position: at } : {}) } : { objectId: table.id }, status: "pending" },
-  ];
-  if (sink) {
-    steps.push(
-      { id: `${id}:3`, kind: "move", label: STEP_LABEL.goSink, target: { objectId: sink.id, ...(sink.room ? { room: sink.room } : {}) }, status: "pending" },
-      { id: `${id}:4`, kind: "act", label: STEP_LABEL.placeCup, target: { objectId: sink.id }, status: "pending" },
-    );
-  }
-  // 이동마다 경로를 잇는다. 하나라도 길이 없으면 경로처럼 그리지 않는다
+export function assemblePlan(fp: FloorPlan, head: PlanHead, draft: DraftStep[]): PlanView {
+  const steps: PlanStep[] = draft.map((d, i) => ({ id: `${head.id}:${i + 1}`, kind: d.kind, label: d.label, ...(d.target ? { target: d.target } : {}), status: "pending" }));
   let path: XZ[] = [];
   let legs: PlanView["legs"] = [];
-  const leg1 = route(fp, fp.robot.position, at ?? table.position);
-  const toTable = leg1 && approach(leg1, STOP_M);
-  const leg2 = toTable && sink ? route(fp, toTable.at(-1)!, sink.position) : null;
-  if (toTable && (!sink || leg2)) {
-    path = [...toTable, ...(leg2 ? approach(leg2, STOP_M).slice(1) : [])];
-    legs = [{ stepId: steps[0]!.id, end: toTable.length - 1 }, ...(sink ? [{ stepId: steps[2]!.id, end: path.length - 1 }] : [])];
+  let at = fp.robot.position;
+  for (const [i, d] of draft.entries()) {
+    if (d.kind !== "move") continue;
+    const leg = d.to ? route(fp, at, d.to) : null;
+    if (!leg) {
+      path = [];
+      legs = [];
+      break;
+    }
+    const seg = approach(leg, STOP_M);
+    path = path.length ? [...path, ...seg.slice(1)] : seg;
+    legs.push({ stepId: steps[i]!.id, end: path.length - 1 });
+    at = seg.at(-1)!;
   }
-  return { ...base(fp, id, nowIso), source: "brain", goal: GOAL.clearCup, judgment: "", dryRun: true, path, legs, steps, status: "planned" };
-}
-
-/** 사용자에게 물어보기: 폰으로 묻는 한 단계, 이동 없음. */
-export function askPlan(fp: FloorPlan, id: string, nowIso: string): PlanView {
   return {
-    ...base(fp, id, nowIso), source: "brain", goal: GOAL.askUser, judgment: "", dryRun: true, path: [], legs: [],
-    steps: [{ id: `${id}:1`, kind: "ask", label: STEP_LABEL.askUser, status: "pending" }], status: "planned",
+    ...base(fp, head.id, head.nowIso), source: head.source, goal: head.goal, judgment: head.judgment, dryRun: head.dryRun, path, legs, steps, status: "planned",
   };
 }
 

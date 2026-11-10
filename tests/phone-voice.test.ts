@@ -13,10 +13,12 @@ import { startServer, type RunningServer } from "../src/server/start.js";
 import { ScriptedDetector } from "./helpers/detectors.js";
 import { HOME_SCRIPT, startFakeLlm, type FakeLlm } from "./helpers/llm.js";
 import { startFakePam, type FakePam } from "./helpers/pam.js";
+import { BOX_START, BOX_WALLS } from "./helpers/align.js";
 import { openWebSocket } from "./helpers/ws.js";
 
+
 type Msg = Record<string, any>;
-const TARGETS = [{ id: "dock", label: "도크", plan: [3.9, 5.51] as [number, number] }, { id: "door_main", label: "현관문", plan: [2.4, 3.55] as [number, number] }];
+const SYNC = { landmarks: [], walls: BOX_WALLS, start: BOX_START };
 let phone: PhoneServer | undefined;
 let ws: WebSocket | undefined;
 afterEach(async () => {
@@ -38,7 +40,7 @@ describe("폰 음성 질문", () => {
     const said: string[] = [];
     const answered: string[] = [];
     phone = createPhoneServer({
-      targets: TARGETS, onEye: () => {}, log: () => {},
+      sync: SYNC, onEye: () => {}, log: () => {},
       onSay: async (t) => { said.push(t); return { reply: "에이전트", pending: [] }; },
       onAnswer: (t) => { answered.push(t); return t.includes("완료") ? { handled: true, reply: "" } : { handled: false }; },
     });
@@ -104,7 +106,7 @@ describe("startServer(BRAIN=1): 클로이드 질문을 폰 말로 답한다", ()
     pam = await startFakePam({ predict: () => ({ observation: "컵이 식탁에 있음", reasoning: "치울지 묻는다", task_index: 1 }) });
     srv = await startServer({
       env: { HUB: "memory", PORT: "0", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
-        BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url, PAM_MIN_GAP_MS: "0", ...llm.env },
+        BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url, ...llm.env },
       brain: { detector: new ScriptedDetector(() => [{ label: "cup", score: 0.9, cls: 41, box: [1, 1, 2, 1] }]) }, log: () => {},
     });
     const phoneUrl = new URL(srv.phoneUrls[0]!);

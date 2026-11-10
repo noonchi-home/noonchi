@@ -1,8 +1,10 @@
 // 에이전트 시험의 LLM 자리: 가짜 OpenAI 호환 서버(scripts/fake-openai.ts)를 에이전트 주소(OPENAI_BASE_URL)에 붙인다.
 // 공급자는 서버와 같은 createProvider(OpenAI Responses API)다. 사용자 말마다 정한 차례(도구 호출 → 글)를 내고, 정하지 않은 말에는 「가짜 답」.
+// 계획 모드 요청(PAM 행동 → 계획)에는 tests/helpers/planner.ts 대본(기본: 지금 서버와 같은 컵 치우기·물어보기)을 낸다.
 import { startFakeOpenAI, type FakeResponse } from "../../scripts/fake-openai.js";
 import type { LlmProvider } from "../../src/agent/agent.js";
 import { createProvider } from "../../src/agent/providers/index.js";
+import { CUP_SCRIPTS, plannerRespond, type PlanScript } from "./planner.js";
 
 /** 한 차례: 글이면 답, [도구 이름, 인자] 목록이면 도구 호출. */
 export type LlmTurn = string | [name: string, args: Record<string, unknown>][];
@@ -40,9 +42,12 @@ export function toolOutputs(body: any): any[] {
   return (Array.isArray(body?.input) ? body.input : []).filter((x: any) => x?.type === "function_call_output").map((x: any) => JSON.parse(x.output));
 }
 
-export async function startFakeLlm(script: LlmScript = {}): Promise<FakeLlm> {
+export async function startFakeLlm(script: LlmScript = {}, plans: Record<string, PlanScript> = CUP_SCRIPTS): Promise<FakeLlm> {
+  const planning = plannerRespond(plans);
   const fake = await startFakeOpenAI({
     respond: (body): FakeResponse | null => {
+      const planned = planning(body);
+      if (planned) return planned;
       const t = turnOf(body);
       const turn = t ? out.script[t.said]?.[t.round] : undefined;
       if (turn === undefined) return null;

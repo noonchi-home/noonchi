@@ -1,5 +1,5 @@
 // 실제 폰 제어(controller.ts)를 가짜 소켓·가짜 음성 인식·가짜 XR로 돌린다.
-// 늘 듣기(AR 중 이어서 듣고, 끝나면 다시 켜고, 명령을 소리로 읽는 동안 멈춤), 명령·질문·승인, 연결·마이크·기준점 문제, 기준점 찍기·물건 자리 맞추기,
+// 늘 듣기(AR 중 이어서 듣고, 끝나면 다시 켜고, 명령을 소리로 읽는 동안 멈춤), 명령·질문·승인, 연결·마이크 문제, 시작 위치 맞추기·물건 자리 맞추기,
 // 명령 대상 고리(명령이 떠 있을 때 첫 대상 하나)와 조준점(찍기·맞추기 때만)을 본다.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPhoneController, type ControllerDeps, type ControllerDraw } from "../src/phone/controller";
@@ -65,6 +65,15 @@ const frame = (emulated = false) => ({
     views: [{ projectionMatrix: identity, transform: { inverse: { matrix: identity } } }],
   }),
 });
+/** hit-test 점이 없고 45° 아래를 보는 XR 프레임: 조준점은 폰 1.5m 아래 어림 바닥 (0, 0, -1.5). */
+const looseFloor = () => ({
+  getHitTestResults: () => [],
+  getViewerPose: () => ({
+    emulatedPosition: false,
+    transform: { position: { x: 0, y: 1.5, z: 0 }, orientation: { x: -Math.sin(Math.PI / 8), y: 0, z: 0, w: Math.cos(Math.PI / 8) } },
+    views: [{ projectionMatrix: identity, transform: { inverse: { matrix: identity } } }],
+  }),
+});
 const gl = { FRAMEBUFFER: 1, COLOR_BUFFER_BIT: 2, bindFramebuffer() {}, clearColor() {}, clear() {} };
 
 const made: { close(): void }[] = [];
@@ -97,8 +106,11 @@ function make(over: Partial<ControllerDeps> = {}) {
   };
   return { c, ws, spoken, dones, sent, session, drawn, marks, startAr };
 }
-const anchors = [{ id: "a", label: "거실 창가", recorded: true }, { id: "b", label: "현관", recorded: false }];
-const status = (over: Record<string, unknown> = {}) => ({ type: "status", mode: "floor", revision: 3, anchors, aligned: false, mismatch_m: null, ...over });
+const START = { label: "거실·복도 테이블 앞", facing: "거실·복도 TV수납장" };
+/** 서버 status.sync(src/phone/session.ts SyncStatus). */
+const sync = (over: Record<string, unknown> = {}) => ({ state: "none", source: null, start: START, started: false, anchors: 0, wall_points: 0, residual_m: null, ...over });
+/** 보통 상태: 시작 위치에서 이미 시작했다(시작 위치 맞추기가 저절로 열리지 않는다). */
+const status = (over: Record<string, unknown> = {}) => ({ type: "status", aligned: false, sync: sync({ state: "estimated", source: "start", started: true }), ...over });
 const done = [{ id: "done", label: "완료" }];
 const command = (over: Record<string, unknown> = {}) => ({ type: "command", id: "plan:pam-1", step: "plan:pam-1:2", text: "컵을 들어 주세요", vision: "컵 · 식탁 위", choices: done, target: null, speak: true, ...over });
 const CUP = { id: "cup_1", label: "컵", ar: [0, 0, -0.5] };
@@ -127,13 +139,13 @@ describe("연결·지원", () => {
     expect(c.view().connected).toBe(true);
   });
 
-  it("상태 메시지: 기준점·맞춤·거리 차이. 오류는 잠깐 알릴 말(4초)", () => {
+  it("상태 메시지: 맞춤·위치 맞춤 상태. 오류는 잠깐 알릴 말(4초)", () => {
     vi.useFakeTimers();
     const { c, ws } = make();
-    ws.push(status({ aligned: true, mismatch_m: 0.12 }));
-    expect([c.view().anchors, c.view().aligned, c.view().mismatchM]).toEqual([anchors, true, 0.12]);
-    ws.push(status({ error: "기준점이 너무 가까워요" }));
-    expect(c.view().note).toBe("기준점이 너무 가까워요");
+    ws.push(status({ aligned: true, sync: sync({ state: "aligned", source: "walls", started: true, wall_points: 60, residual_m: 0.04 }) }));
+    expect([c.view().aligned, c.view().sync?.state, c.view().sync?.wallPoints, c.view().sync?.residualM]).toEqual([true, "aligned", 60, 0.04]);
+    ws.push(status({ error: "시작 위치가 없어요. 설정 화면에서 시작 위치를 먼저 정해 주세요" }));
+    expect(c.view().note).toBe("시작 위치가 없어요. 설정 화면에서 시작 위치를 먼저 정해 주세요");
     vi.advanceTimersByTime(4000);
     expect(c.view().note).toBeNull();
   });
@@ -264,39 +276,7 @@ describe("명령·질문·승인", () => {
   });
 });
 
-describe("기준점 찍기·물건 자리 맞추기·설정", () => {
-  it("startAnchors: 같은 원점 이름으로 reset을 보내고 찍기를 연다(설정은 닫는다). 맞춘 상태가 오면 끝난다", () => {
-    const { c, ws, sent, drawn } = make();
-    c.actions.setSettings(true);
-    expect(c.view().settingsOpen).toBe(true);
-    c.actions.startAnchors();
-    expect(sent()).toEqual([{ type: "reset", epoch: null }]);
-    expect([c.view().setup, c.view().settingsOpen]).toEqual(["anchors", false]);
-    expect(drawn).toEqual(["aim true"]);
-    ws.push(status({ aligned: true, mismatch_m: 0.05 }));
-    expect(c.view().setup).toBeNull();
-    expect(drawn).toEqual(["aim true", "aim false"]);
-  });
-
-  it("기록: AR 전에는 먼저 시작하라고 하고 보내지 않는다", () => {
-    const { c, ws, sent } = make();
-    ws.push(status({ mode: "touch" }));
-    c.actions.recordAnchor("A");
-    expect(c.view().note).toBe("AR을 먼저 시작하세요");
-    expect(sent()).toEqual([]);
-  });
-
-  it("기록(바닥 기준점): 조준점이 바닥에 닿은 점을 그 기준점으로 보낸다", async () => {
-    const { c, ws, sent, session, startAr } = make();
-    await startAr();
-    ws.push(status());
-    c.actions.startAnchors();
-    session.step(100, frame());
-    expect(c.view().hit).toBe(true);
-    c.actions.recordAnchor("b");
-    expect(sent().at(-1)).toMatchObject({ type: "anchor", id: "b", point: [0, 0, -1], revision: 3 });
-  });
-
+describe("물건 자리 맞추기", () => {
   it("물건 자리 맞추기: 열면 조준점, endSetup이면 닫는다", () => {
     const { c, drawn } = make();
     c.actions.setSettings(true);
@@ -334,7 +314,7 @@ describe("AR 화면 그림", () => {
     expect(marks.at(-1)).toEqual([]);
   });
 
-  it("명령 대상 고리: 승인 대기가 위 줄·엄지 자리를 차지하거나 기준점 찍기 중에는 없다", async () => {
+  it("명령 대상 고리: 승인 대기가 위 줄·엄지 자리를 차지하거나 시작 위치 맞추기 중에는 없다", async () => {
     const { c, ws, session, marks, startAr } = make();
     await startAr();
     ws.push(status({ aligned: true }));
@@ -345,7 +325,7 @@ describe("AR 화면 그림", () => {
     session.step(250, frame());
     expect(marks.at(-1)).toEqual([]);
     ws.push({ type: "reply", text: "", pending: [] });
-    c.actions.startAnchors();
+    c.actions.startFromSpot();
     session.step(300, frame());
     expect(marks.at(-1)).toEqual([]);
   });
@@ -396,5 +376,63 @@ describe("AR 화면 그림", () => {
     c.actions.startAr();
     expect(requestSession).not.toHaveBeenCalled();
     expect(supportText(c.view().support)).toBe("AR을 시작하지 못했어요: 페이지를 새로 고쳐 주세요");
+  });
+});
+
+describe("위치 맞춤: 「여기서 시작」", () => {
+  it("시작 위치가 있으면 AR을 켤 때 시작 위치 맞추기가 열리고(조준점 없음), 「여기서 시작」은 지금 자세·원점으로 start를 보내고 닫는다", async () => {
+    const { c, ws, sent, session, drawn, startAr } = make();
+    ws.push(status({ sync: sync() }));
+    expect(c.view().setup).toBeNull();
+    await startAr();
+    ws.push(status({ sync: sync() }));
+    expect(c.view().setup).toBe("start");
+    session.step(100, frame());
+    c.actions.confirmStart();
+    const msg = sent().filter((m) => m.type === "start").at(-1)!;
+    expect(msg).toEqual({ type: "start", position: [0, 1.5, 0], orientation: [0, 0, 0, 1], epoch: expect.any(String) });
+    expect(msg.epoch).toBe(sent().find((m) => m.type === "reset")!.epoch);
+    expect(c.view().setup).toBeNull();
+    ws.push(status({ sync: sync({ state: "estimated", source: "start", started: true }) }));
+    expect(c.view().setup).toBeNull();
+    expect(drawn).not.toContain("aim true");
+  });
+
+  it("시작 위치 맞추기 중 말 「여기서 시작」은 start로 보내고 에이전트로 보내지 않는다. 다른 말은 그대로 say", async () => {
+    const { c, ws, sent, session, startAr } = make();
+    await startAr();
+    ws.push(status({ sync: sync() }));
+    session.step(100, frame());
+    rec().hear("여기서 시작할게");
+    expect(sent().filter((m) => m.type === "start")).toHaveLength(1);
+    expect(sent().filter((m) => m.type === "say")).toHaveLength(0);
+    rec().hear("TV 켜 줘");
+    expect(sent().filter((m) => m.type === "say").map((m) => m.text)).toEqual(["TV 켜 줘"]);
+  });
+
+  it("자세가 아직 없으면 보내지 않고 알린다. 설정의 「시작 위치에서 다시 맞추기」는 시작 위치 맞추기를 열고, 상태가 와도 그대로다", async () => {
+    const { c, ws, sent, startAr } = make();
+    await startAr();
+    ws.push(status({ sync: sync({ state: "aligned", source: "walls", started: true }), aligned: true }));
+    c.actions.setSettings(true);
+    c.actions.startFromSpot();
+    expect([c.view().setup, c.view().settingsOpen]).toEqual(["start", false]);
+    ws.push(status({ sync: sync({ state: "aligned", source: "walls", started: true }), aligned: true }));
+    expect(c.view().setup).toBe("start");
+    c.actions.confirmStart();
+    expect(sent().filter((m) => m.type === "start")).toHaveLength(0);
+    expect(c.view().note).toContain("폰 위치");
+  });
+
+  it("자세에 실제 hit 면 법선과 어림 바닥 높이를 싣는다(어림 조준점이면 법선 없음)", async () => {
+    const { ws, sent, session, startAr } = make();
+    void ws;
+    await startAr();
+    session.step(100, frame());
+    expect(sent().filter((m) => m.type === "pose").at(-1)).toMatchObject({ hit: [0, 0, -1], hit_normal: [0, 1, 0], floor_y: 0, hit_estimated: false });
+    session.step(250, looseFloor());
+    const loose = sent().filter((m) => m.type === "pose").at(-1)!;
+    expect(loose.hit_estimated).toBe(true);
+    expect(loose.hit_normal).toBeUndefined();
   });
 });

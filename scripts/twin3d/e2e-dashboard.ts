@@ -1,6 +1,6 @@
 // npm run heavy -- npx tsx scripts/twin3d/e2e-dashboard.ts --out <폴더> [--port 8202] [--size 1920x1080] [--gpu] [--timeout 60]
 // 한양목련 컵 치우기를 실제 대시보드로 처음부터 끝까지 돌린다(시험 모드, 실제 모델·ThinQ 없음). 같은 프로세스에서 가짜 서버(가짜 OpenAI 호환 VLM,
-// 시험용 PAM, 대본 YOLOX)와 본 서버(HUB=memory, 화면 ui/dist, 폰 서버 켬, 새 RUNTIME_DIR)를 띄우고, 크롬 하나로 대시보드를 연 채
+// 시험용 PAM, 대본 YOLO)와 본 서버(HUB=memory, 화면 ui/dist, 폰 서버 켬, 새 RUNTIME_DIR)를 띄우고, 크롬 하나로 대시보드를 연 채
 // 폰 메시지(기준점·눈·엔진 프레임·표시 프레임·답)로 흐름을 몬다. 엔진·표시 프레임은 docs/superpowers/specs/2026-11-06-twin3d-baseline/room_kitchen.jpg다.
 // 순간마다(0 지켜보기, 1~4 단계, 끝) main[data-step]과 그 순간 말풍선 글을 기다려 <out>/step-<n>.png를 찍고 본다:
 // 진행도 「n/4 · 단계 이름」(끝·지켜보기는 없음), 마스코트 보는 쪽(계획 중 twin, 아니면 video), YOLO 상자 하나 이상, 문서 글에 「승인」·승인 질문 없음, 페이지 오류 없음.
@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type WebSocket from "ws";
+import { alignOnServer } from "../../tests/helpers/align.js";
 import { ScriptedDetector } from "../../tests/helpers/detectors.js";
 import { startFakePam, type FakePam } from "../../tests/helpers/pam.js";
 import { openWebSocket } from "../../tests/helpers/ws.js";
@@ -32,13 +33,12 @@ const momentMs = Number(arg("timeout", "60")) * 1000;
 const HOME = "mokryeon_180b";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// 엔진·표시 프레임(가로 1280×800). YOLOX 상자 아래 가운데가 그림 한가운데
+// 엔진·표시 프레임(가로 1280×800). YOLO 상자 아래 가운데가 그림 한가운데
 const JPEG = readFileSync(join(ROOT, "docs/superpowers/specs/2026-11-06-twin3d-baseline/room_kitchen.jpg"));
 const FRAME = { width: 1280, height: 800 };
 const CUP_BOX: [number, number, number, number] = [FRAME.width / 2 - 20, FRAME.height / 2 - 20, 40, 20];
-// 기준점 두 곳(scene.json plan.ar_anchors)을 AR 점 = 평면 점으로 찍어 맞춤을 그대로 둔다. 눈은 tests/mokryeon-e2e.test.ts와 같다:
+// 눈 자리에 시작 위치를 저장하고 「여기서 시작」 + 그 자리의 벽·바닥 점으로 맞춘다(AR 점 = 평면 점). 눈은 tests/mokryeon-e2e.test.ts와 같다:
 // 거실·복도 식탁 가운데에서 1.5 m 떨어진 높이 1.5 m에서 +x를 보고 식탁 윗면 가운데를 향해 숙인다(식탁·싱크대에서 1.2 m 밖이라 이동 단계는 답으로 넘긴다)
-const ANCHORS = [{ id: "alpha_corner", point: [0.1, 0, 6.065625] }, { id: "bed_ne_corner", point: [16.1, 0, 2.296875] }];
 const PROJECTION = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1.0002, -1, 0, 0, -0.020002, 0];
 const mul = (a: number[], b: number[]) => [a[3]! * b[0]! + a[0]! * b[3]! + a[1]! * b[2]! - a[2]! * b[1]!, a[3]! * b[1]! - a[0]! * b[2]! + a[1]! * b[3]! + a[2]! * b[0]!, a[3]! * b[2]! + a[0]! * b[1]! - a[1]! * b[0]! + a[2]! * b[3]!, a[3]! * b[3]! - a[0]! * b[0]! - a[1]! * b[1]! - a[2]! * b[2]!];
 const PITCH = Math.atan2(1.5 - 0.75, 1.5);
@@ -108,7 +108,7 @@ try {
   const done = await fetchRetry(`${srv.url}/api/setup/done`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ home: HOME }) });
   if (!done.ok) throw new Error(`설정 끝내기 실패: HTTP ${done.status}`);
 
-  // 실제 폰 자리: 기준점 둘 → 맞춘 눈(자세)·엔진 프레임·표시 프레임
+  // 실제 폰 자리: 시작 위치·벽 점으로 맞춤 → 맞춘 눈(자세)·엔진 프레임·표시 프레임
   const fromPhone: Record<string, any>[] = [];
   const phoneUrl = new URL(srv.phoneUrls[0]!);
   phone = await openWebSocket(`ws://${phoneUrl.host}/phone/events`, {
@@ -119,7 +119,7 @@ try {
     for (const end = Date.now() + ms; Date.now() < end; await sleep(100)) { const v = get(); if (v) return v; }
     throw new Error(`${ms / 1000}초 안에 오지 않음: ${what}`);
   };
-  for (const a of ANCHORS) ws.send(JSON.stringify({ type: "anchor", ...a }));
+  await alignOnServer(srv.url, (t) => ws.send(t), join(srv.twin.dir, "homes", HOME, "scene.json"), [EYE[0], EYE[2]]);
   await waitFor("맞춤", () => fromPhone.some((m) => m.type === "status" && m.aligned));
   const pose = JSON.stringify({ type: "pose", position: EYE, orientation: ORIENTATION, tracking: "ok" });
   const header = { width: FRAME.width, height: FRAME.height, position: EYE, orientation: ORIENTATION, tracking: "ok" as const };

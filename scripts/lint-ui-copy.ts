@@ -1,10 +1,11 @@
-// 화면 글 검사: web/·ui/src·폰 입구(ui/phone) 아래 HTML·JS·TS·TSX, 서버가 화면에 그대로 내보내는 계획 글(src/plan/labels.ts)·World State 글(src/world/labels.ts)·기록 글(src/history/labels.ts)·폰 부탁 글(src/act/prompts.ts)에서
+// 화면 글 검사: web/·ui/src·폰 입구(ui/phone) 아래 HTML·JS·TS·TSX, 서버가 화면에 그대로 내보내는 계획 글(src/plan/labels.ts)·World State 글(src/world/labels.ts·낱말 표 src/world/vocab.ts)·기록 글(src/history/labels.ts)·폰 부탁 글(src/act/prompts.ts)에서
 // 사용자에게 보이는 한국어 글을 꺼내, 생각 과정·구현 설명이 들어갔는지 본다.
 // 사용: npm run lint (tests/lint-ui-copy.test.ts도 같은 검사를 돌린다)
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { COPY_RULES, copyRules as planCopyRules } from "../src/plan/copy.js";
 
 export type Copy = { text: string; line: number; start?: number };
 export type Problem = { file: string; line: number; text: string; rule: string };
@@ -224,16 +225,8 @@ export function tsxCopy(src: string): Copy[] {
   return codeCopy(src, true);
 }
 
-export const MAX_COPY = 60;
-
-// 화면 글은 사용자가 할 일과 지금 상태만. 아래는 생각 과정·구현 설명이 들어갔다는 표시다. 오류 글에 고치는 법을 적는다.
-const RULES: { name: string; hit: (text: string) => boolean; fix: string }[] = [
-  { name: "흐름 나열", hit: (t) => /→|⇒|->|=>/.test(t), fix: "화살표로 단계·흐름을 늘어놓지 마세요. 단계는 단계 표시(#steps) 하나로 보여요." },
-  // 「(으)로」 같은 조사 겹쳐 쓰기는 설명이 아니다
-  { name: "괄호 설명", hit: (t) => [...t.matchAll(/\(([^)]*)\)/g)].some((m) => /[가-힣a-z]/i.test(m[1]!) && !/^(으|이|은|는|을|를|과|와|가|아|야)$/.test(m[1]!)), fix: "괄호로 덧붙인 설명을 빼세요. 꼭 필요한 말이면 본문에 바로 쓰세요." },
-  { name: "긴 설명", hit: (t) => t.replace(/<[^>]+>/g, "").length > MAX_COPY, fix: `한 덩어리는 ${MAX_COPY}자까지예요. 할 일·지금 상태만 남기고 이유·동작 원리는 docs/로 옮기세요.` },
-  { name: "구현 이름", hit: (t) => /\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b|\b[\w-]+\.(json|ts|mjs|onnx)\b|twin-studio|SSOT|엔진/.test(t), fix: "환경변수·파일·저장소 이름, 엔진 같은 내부 말을 화면에 쓰지 마세요. 서버 로그나 README에 두세요." },
-];
+// 화면 글 규칙(생각 과정·구현 설명 표시)은 서버가 에이전트 계획 글을 검사할 때도 쓰므로 src/plan/copy.ts에 둔다.
+export { MAX_COPY } from "../src/plan/copy.js";
 
 /** 설명 칸: 제목·버튼·상태 말고 덧붙이는 설명 문단을 담는 자리. */
 const BLURB_CLASS = /\bclass(?:Name)?\s*[=:]\s*["'`][^"'`]*?(?<![\w-])(sub|note|help|hint|desc|touch-help)(?![\w-])/g;
@@ -241,11 +234,11 @@ const BLURB_FIX = "설명 칸(.sub·.note·.help 같은 덧붙임 문단)을 만
 
 /** 화면 글 한 덩어리 검사. 걸린 규칙 이름(없으면 빈 배열). */
 export function copyRules(text: string): string[] {
-  return RULES.filter((r) => r.hit(text)).map((r) => r.name);
+  return planCopyRules(text);
 }
 
 export function ruleFix(name: string): string {
-  return name === "설명 칸" ? BLURB_FIX : RULES.find((r) => r.name === name)?.fix ?? "";
+  return name === "설명 칸" ? BLURB_FIX : COPY_RULES.find((r) => r.name === name)?.fix ?? "";
 }
 
 /** 설명 칸 클래스를 쓰는 줄. 주석 속은 보지 않는다. */
@@ -282,6 +275,7 @@ export const COPY_TARGETS = [
   fileURLToPath(new URL("../ui/phone/", import.meta.url)),
   fileURLToPath(new URL("../src/plan/labels.ts", import.meta.url)),
   fileURLToPath(new URL("../src/world/labels.ts", import.meta.url)),
+  fileURLToPath(new URL("../src/world/vocab.ts", import.meta.url)),
   fileURLToPath(new URL("../src/history/labels.ts", import.meta.url)),
   fileURLToPath(new URL("../src/act/prompts.ts", import.meta.url)),
 ];

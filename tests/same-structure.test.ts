@@ -29,6 +29,13 @@ describe("같은 구조", () => {
     }
   });
 
+  it("src에 규칙으로 행동 계획을 만드는 코드가 없다: PAM 행동의 계획은 에이전트 계획 모드(src/agent/planner.ts)만 만든다", () => {
+    for (const p of walk(SRC).filter((x) => /\.tsx?$/.test(x))) {
+      // 예전 서버의 컵·질문 계획 규칙(cupPlan·askPlan·planFor)은 tests/helpers/cup-plan.ts에 모양으로만 남는다
+      expect(readFileSync(p, "utf8"), p).not.toMatch(/(cupPlan|askPlan|planFor)/);
+    }
+  });
+
   it("두 모드가 같은 가짜 주소 자리에 같은 순서로 요청한다", async () => {
     f = await startFakeOpenAI({ reply: () => '{"a":1}' });
     const paths: string[][] = [];

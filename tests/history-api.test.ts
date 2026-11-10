@@ -58,7 +58,7 @@ describe("기록 API", () => {
     const day = await get("/api/history/day/2026-11-07");
     expect(day.status).toBe(200);
     expect(day.json).toMatchObject({ ok: true, day: "2026-11-07", counts: { decision: 3, pam_text: 3, detection: 1, feedback: 1 }, dropped: { observation: 0, action: 0 } });
-    expect(day.json.observation_text).toBe("08:00:00 사람 보임\n[하루] VLM 분석 0장 · VLM 분석 없음 0장 · YOLOX 분석 없음 0장");
+    expect(day.json.observation_text).toBe("08:00:00 사람 보임\n[하루] VLM 분석 0장 · VLM 분석 없음 0장 · YOLO 분석 없음 0장");
     expect(day.json.action_summary).toBe("08:01:00 클로이드 판단: 대기\n08:02:00 클로이드 판단: 컵 치우기\n08:03:00 클로이드 판단: 판단 실패: PAM 연결 실패\n08:04:00 사용자: 다 마신 뒤에만 치워 줘");
     expect((await get("/api/history/day/2026-02-30")).status).toBe(400);
     expect((await get("/api/history/day/어제")).status).toBe(404);

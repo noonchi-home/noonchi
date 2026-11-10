@@ -1,6 +1,6 @@
 // 실제 폰 화면 뿌리: 제어(controller.ts)의 상태를 그리고, AR 덮개 뿌리와 canvas 그림(draw.ts)을 잇는다.
 // 조준점·고리는 XR 프레임마다 React 상태를 거치지 않고 canvas에 바로 그린다. 덮개를 열 때 한 번 지우고,
-// 그 뒤로는 조준점을 켜고 끌 때, 조준점이 켜진 동안 바닥 닿음이 바뀔 때, 고리가 있거나 막 사라질 때만 다시 그린다.
+// 그 뒤로는 조준점을 켜고 끌 때, 조준점이 켜진 동안 바닥 닿음(어림 바닥인지)이 바뀔 때, 고리가 있거나 막 사라질 때만 다시 그린다.
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import type { PhoneController } from "./controller";
 import { drawOverlay, fitCanvas, overlayEdges, type OverlayScene } from "./draw";
@@ -11,7 +11,7 @@ export function PhoneApp({ controller }: { controller: PhoneController }) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
-    const scene: OverlayScene = { aim: false, hit: false, marks: [] };
+    const scene: OverlayScene = { aim: false, hit: false, hitEstimated: false, marks: [] };
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
     const paint = () => {
       const canvas = canvasRef.current;
@@ -23,6 +23,7 @@ export function PhoneApp({ controller }: { controller: PhoneController }) {
     controller.attach(overlayRef.current, {
       start() {
         scene.hit = false;
+        scene.hitEstimated = false;
         scene.marks = [];
         paint();
       },
@@ -30,9 +31,10 @@ export function PhoneApp({ controller }: { controller: PhoneController }) {
         scene.aim = on;
         paint();
       },
-      hit(on) {
-        if (scene.hit === on) return;
+      hit(on, estimated) {
+        if (scene.hit === on && scene.hitEstimated === estimated) return;
         scene.hit = on;
+        scene.hitEstimated = estimated;
         if (scene.aim) paint();
       },
       marks(marks) {

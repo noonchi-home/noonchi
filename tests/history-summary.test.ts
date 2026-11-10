@@ -11,7 +11,7 @@ describe("하루 요약", () => {
     const db = HistoryDb.open(":memory:");
     db.add("detection", t(7, 58), "사람 보임");
     db.add("vlm", t(7, 59), "컵이 식탁 위");
-    db.add("yolo", t(7, 59, 1), "감지 오류로 YOLOX 분석 없음");
+    db.add("yolo", t(7, 59, 1), "감지 오류로 YOLO 분석 없음");
     db.add("world", t(8, 0), "VLM: 컵이 식탁 위");
     db.add("device", t(8, 5), "식기세척기 running true");
     db.add("decision", t(8, 10), "컵 치우기");
@@ -21,7 +21,7 @@ describe("하루 요약", () => {
     db.add("plan", t(8, 10), "컵 치우기 진행 중");
     db.add("detection", t(7, 0) - 86_400_000, "어제 사람 보임");
     const s = daySummary(db, "2026-11-07");
-    expect(s.observation_text).toBe("07:58:00 사람 보임\n08:00:00 VLM: 컵이 식탁 위\n08:05:00 식기세척기 running true\n[하루] VLM 분석 1장 · VLM 분석 없음 0장 · YOLOX 분석 없음 1장");
+    expect(s.observation_text).toBe("07:58:00 사람 보임\n08:00:00 VLM: 컵이 식탁 위\n08:05:00 식기세척기 running true\n[하루] VLM 분석 1장 · VLM 분석 없음 0장 · YOLO 분석 없음 1장");
     expect(s.action_summary).toBe("08:10:00 클로이드 판단: 컵 치우기\n08:11:00 클로이드 실행: 컵 치우기 완료\n08:12:00 사용자: 다 마신 뒤에만 치워 줘");
     expect(s.counts).toEqual({ detection: 1, vlm: 1, yolo: 1, world: 1, device: 1, decision: 1, execution: 1, feedback: 1, pam_text: 1, plan: 1 });
     expect(s.dropped).toEqual({ observation: 0, action: 0 });
@@ -31,11 +31,11 @@ describe("하루 요약", () => {
     const db = HistoryDb.open(":memory:");
     db.add("vlm", t(9, 0), "가짜 장면", { data: { missing: null } });
     db.add("vlm", t(9, 0, 1), "시간 초과로 VLM 분석 없음", { data: { missing: "timeout" } });
-    db.add("yolo", t(9, 0, 2), "요청이 몰려 YOLOX·VLM 분석 없음", { data: { yolo_missing: "cap", vlm_missing: "cap" } });
-    db.add("yolo", t(9, 0, 3), "감지 오류로 YOLOX 분석 없음", { data: { yolo_missing: "error", vlm_missing: null } });
+    db.add("yolo", t(9, 0, 2), "요청이 몰려 YOLO·VLM 분석 없음", { data: { yolo_missing: "cap", vlm_missing: "cap" } });
+    db.add("yolo", t(9, 0, 3), "감지 오류로 YOLO 분석 없음", { data: { yolo_missing: "error", vlm_missing: null } });
     for (const s of [10, 11, 12]) db.add("decision", t(9, 0, s), "대기");
     const s = daySummary(db, "2026-11-07");
-    expect(s.observation_text).toBe("[하루] VLM 분석 1장 · VLM 분석 없음 2장 · YOLOX 분석 없음 2장");
+    expect(s.observation_text).toBe("[하루] VLM 분석 1장 · VLM 분석 없음 2장 · YOLO 분석 없음 2장");
     expect(s.action_summary).toBe("09:00:10~09:00:12 클로이드 판단: 대기 3번");
   });
 
@@ -71,7 +71,7 @@ describe("하루 요약", () => {
     const s = daySummary(db, "2026-11-07", { maxBytes });
     expect(bytes(s.observation_text) + bytes(s.action_summary)).toBeLessThanOrEqual(maxBytes);
     expect(s.observation_text).not.toContain("사람이 식탁 앞에 앉아"); // 프레임마다 쓴 VLM 줄은 빠진다
-    expect(s.observation_text.split("\n").at(-1)).toBe(`[하루] VLM 분석 ${10800 - Math.ceil(10800 / 7)}장 · VLM 분석 없음 ${Math.ceil(10800 / 7)}장 · YOLOX 분석 없음 0장`);
+    expect(s.observation_text.split("\n").at(-1)).toBe(`[하루] VLM 분석 ${10800 - Math.ceil(10800 / 7)}장 · VLM 분석 없음 ${Math.ceil(10800 / 7)}장 · YOLO 분석 없음 0장`);
     expect(s.observation_text.split("\n")[0]).toMatch(/^앞선 기록 \d+줄 생략$/);
     expect(s.observation_text).toContain("09:59:40"); // 최근 줄은 남는다
     expect(s.counts.vlm).toBe(10800);

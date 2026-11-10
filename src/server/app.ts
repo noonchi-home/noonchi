@@ -22,7 +22,8 @@ import { HISTORY_KINDS, type HistoryDb } from "../history/db.js";
 import type { ReflectResult } from "../history/reflect.js";
 import { daySummary, isDay } from "../history/summary.js";
 import type { LayoutEditor } from "../layout/editor.js";
-import { TouchPointsError, type TouchPoint } from "../phone/touch.js";
+import type { SyncState } from "../sync/aligner.js";
+import { StartPoseError, type StartPose } from "../sync/start.js";
 import type { PlanHub } from "../plan/hub.js";
 import { twinChange } from "../model/mapping.js";
 import { listenRetry } from "./net.js";
@@ -59,12 +60,10 @@ export interface AppOptions {
   hubKind?: string;
   /** 폰 AR 클로이드의 눈 화면(src/phone/feed.ts). 있으면 GET /api/eye/*를 넘긴다. */
   eye?: { handle(req: IncomingMessage, res: ServerResponse, path: string): boolean };
-  /** 벽 대기 맞춤의 기준점 A·B(src/phone/touch.ts TouchStore). 있으면 /api/phone/touch-points*.
-   *  auto: 누른 벽 하나 → A·B 구석(src/phone/corners.ts, 저장 안 함). room: 누른 벽 점의 방 id(없으면 null). */
-  touch?: {
-    get(): TouchPoint[] | null; save(raw: unknown): TouchPoint[]; clear(): void; auto(raw: unknown): TouchPoint[]; room(raw: unknown): string | null;
-    eyeHeightM: number;
-  };
+  /** 폰 위치 맞추기 시작 위치(src/sync/start.ts StartStore). 있으면 /api/phone/start-pose*. */
+  start?: { get(): StartPose | null; save(raw: unknown): StartPose; preview(raw: unknown): StartPose; clear(): void };
+  /** 폰 위치 맞춤 모듈 상태(GET /api/phone/sync). 폰 서버가 없으면 null. */
+  phoneSync?: () => SyncState | null;
   /** 관찰 흐름(BRAIN=1, src/observe/pipeline.ts). 있으면 GET /api/brain에 상태를 보인다. */
   brain?: { status(): object };
   /** 지금 World State(BRAIN=1). 있으면 GET /api/world, /events 접속 때 {type:"world"}. */
@@ -380,62 +379,45 @@ export function createApp(opts: AppOptions): TwinHomeApp {
     return { ok: true, reverted: requireLayout().reset().length };
   });
 
-  // ── 폰 기준점(벽 대기 맞춤) ──
+  // ── 폰 위치 맞추기: 시작 위치(자리·방향)와 맞춤 상태 ──
 
-  const requireTouch = () => {
-    if (!opts.touch) throw new HttpError(404, "폰 기준점을 쓸 수 없습니다(집 scene.json이 없음).");
-    return opts.touch;
+  const requireStart = () => {
+    if (!opts.start) throw new HttpError(404, "시작 위치를 쓸 수 없습니다(집 scene.json이 없음).");
+    return opts.start;
   };
-  /** A–B 수평 거리(mm 반올림). 두 점이 아니면 null. */
-  const pairDistance = (points: TouchPoint[] | null) => {
-    const [a, b] = points ?? [];
-    return a && b ? Math.round(Math.hypot(b.position[0] - a.position[0], b.position[1] - a.position[1]) * 1000) / 1000 : null;
-  };
-  const touchView = (points: TouchPoint[] | null) => ({
-    ok: true, points, mode: points ? "touch" : "floor", eye_height_m: requireTouch().eyeHeightM, distance_m: pairDistance(points),
+  const startView = (s: StartPose | null) => ({
+    ok: true, start: s ? { position: s.position, yaw_deg: s.yawDeg, label: s.label, facing_label: s.facingLabel } : null,
   });
-  route("GET", /^\/api\/phone\/touch-points$/, async () => touchView(requireTouch().get()));
-  route("POST", /^\/api\/phone\/touch-points$/, async (req) => {
-    const store = requireTouch();
+  route("GET", /^\/api\/phone\/start-pose$/, async () => startView(requireStart().get()));
+  route("POST", /^\/api\/phone\/start-pose$/, async (req) => {
+    const store = requireStart();
     const body = await readJson(req);
     sameHome(body);
     try {
-      return touchView(store.save(body));
+      return startView(store.save(body));
     } catch (e) {
-      if (e instanceof TouchPointsError) throw new HttpError(400, e.message);
+      if (e instanceof StartPoseError) throw new HttpError(400, e.message);
       throw e;
     }
   });
-  // 벽 하나 → A·B 구석. 저장하지 않는다(설정 화면이 보이고 사람이 저장)
-  route("POST", /^\/api\/phone\/touch-points\/auto$/, async (req) => {
-    const store = requireTouch();
+  // 저장하지 않고 검사·이름 채우기만(설정 화면이 자리·방향을 바꿀 때)
+  route("POST", /^\/api\/phone\/start-pose\/preview$/, async (req) => {
+    const store = requireStart();
     const body = await readJson(req);
     sameHome(body);
     try {
-      const points = store.auto(body);
-      return { ok: true, points, distance_m: pairDistance(points) };
+      return startView(store.preview(body));
     } catch (e) {
-      if (e instanceof TouchPointsError) throw new HttpError(400, e.message);
+      if (e instanceof StartPoseError) throw new HttpError(400, e.message);
       throw e;
     }
   });
-  // 누른 벽 점의 방. 같은 쪽을 여러 방이 쓰는 벽에서 뷰어는 첫 방을 보내므로 손으로 고른 점 이름은 이 답을 쓴다
-  route("POST", /^\/api\/phone\/touch-points\/room$/, async (req) => {
-    const store = requireTouch();
-    const body = await readJson(req);
-    sameHome(body);
-    try {
-      return { ok: true, room: store.room(body) };
-    } catch (e) {
-      if (e instanceof TouchPointsError) throw new HttpError(400, e.message);
-      throw e;
-    }
-  });
-  route("POST", /^\/api\/phone\/touch-points\/clear$/, async (req) => {
+  route("POST", /^\/api\/phone\/start-pose\/clear$/, async (req) => {
     sameHome(await readJson(req));
-    requireTouch().clear();
-    return touchView(null);
+    requireStart().clear();
+    return startView(null);
   });
+  route("GET", /^\/api\/phone\/sync$/, async () => ({ ok: true, sync: opts.phoneSync?.() ?? null }));
 
   // ── 클로이드 계획 ──
 

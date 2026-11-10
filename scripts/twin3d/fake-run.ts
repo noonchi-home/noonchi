@@ -1,12 +1,12 @@
 // 대시보드 가짜 단계 자료(ui/src/dashboard/fake-run.json)를 만든다. 실행: npx tsx scripts/twin3d/fake-run.ts
-// 한양목련 실제 장면·평면도(loadScene·floorPlanFrom)로 컵 치우기 계획(cupPlan, 로봇 [10.6, 8.6])을 짜고, 다섯 순간(0 지켜보기, 1~4 계획 단계)마다
+// 한양목련 실제 장면·평면도(loadScene·floorPlanFrom)로 컵 치우기 계획(에이전트 컵 계획이 맞춰야 할 모양 tests/helpers/cup-plan.ts, 로봇 [10.6, 8.6])을 짜고, 다섯 순간(0 지켜보기, 1~4 계획 단계)마다
 // 서버가 대시보드 /events로 보내는 메시지 묶음(plan·eye·brain decision·brain observe·say)을 적는다. 말은 sayLine에 그 단계 명령을 넣은 글이다.
 // 대시보드 폰 칸 그림은 시안 눈 그림(ui/public/debug-eye/, 세로 405×720)이고, 컵 상자는 시안 가로 그림 상자를 잘라 낸 자리만큼 옮긴 것이다.
 // 시각을 고정해서 다시 만들어도 같은 파일이 나온다.
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { sayLine } from "../../src/act/say.js";
-import { cupStepOf, planIdOf } from "../../src/act/tasks.js";
+import { planIdOf } from "../../src/act/tasks.js";
 import type { BoxView, BrainLog, EyeEvent, ServerMessage } from "../../src/contract/events.js";
 import type { PlannedCommand } from "../../src/contract/phone.js";
 import type { PlanView, XZ } from "../../src/contract/plan.js";
@@ -14,8 +14,8 @@ import type { WorldObject, WorldView } from "../../src/contract/world.js";
 import { DEFAULT_TWIN_DIR } from "../../src/model/devices.js";
 import { resolveHome } from "../../src/model/homes.js";
 import { loadScene } from "../../src/model/scene.js";
-import { STEP_COMMAND } from "../../src/plan/labels.js";
-import { cupPlan } from "../../src/plan/planner.js";
+import { STEP_COMMAND, STEP_LABEL } from "../../src/plan/labels.js";
+import { cupPlan } from "../../tests/helpers/cup-plan.js";
 import { floorPlanFrom, roomAt } from "../../src/plan/route.js";
 
 export type EyeFrameId = "table-far" | "table-near" | "sink" | "sink-cup";
@@ -49,7 +49,7 @@ const round = (v: number, d = 3) => Math.round(v * 10 ** d) / 10 ** d;
 const iso = (ms: number) => new Date(ms).toISOString();
 const yawOf = (a: XZ, b: XZ) => round(((Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI + 360) % 360, 1) % 360;
 
-/** 가로 그림 컵 상자 → 세로 눈 그림 YOLOX 상자 [x, y, w, h](그림 끝에서 자름). */
+/** 가로 그림 컵 상자 → 세로 눈 그림 YOLO 상자 [x, y, w, h](그림 끝에서 자름). */
 function cupBox(eye: EyeFrameId, score: number): BoxView[] {
   const b = CUP_BOX[eye];
   if (!b) return [];
@@ -89,10 +89,10 @@ function build(): Moment[] {
 
   const cup: WorldObject = {
     id: "cup_1", cls: "cup", position: null, surface: table.id, surface_label: "식탁", room: table.room, error_m: null, status: "present",
-    first_seen_ms: T0, last_seen_ms: T0, last_in_view_ms: T0, facts: {}, devices: [],
+    first_seen_ms: T0, last_seen_ms: T0, last_in_view_ms: T0, facts: {}, answered_ms: null, devices: [],
   };
   const world: WorldView = {
-    at_ms: T0, objects: [cup], person: { visible: false, since_ms: T0, last_seen_ms: null, facts: {} }, devices: [], eye: null, vlm_missing: 0, yolo_missing: 0,
+    at_ms: T0, objects: [cup], person: { visible: false, since_ms: T0, last_seen_ms: null, count: 0, room: null, room_label: null, position: null, near: [], holding: [], position_ms: null, answered_ms: null, facts: {} }, fixtures: [], devices: [], eye: null, frame_ms: null, vlm_missing: 0, yolo_missing: 0,
   };
 
   return MOMENTS.map(({ eye, score }, n) => {
@@ -102,7 +102,7 @@ function build(): Moment[] {
       steps: plan.steps.map((s, i) => ({ ...s, status: i < n - 1 ? "done" : i === n - 1 ? "active" : "pending" })),
     };
     const step = open?.steps[n - 1];
-    const key = step ? cupStepOf(step) : null;
+    const key = step ? (Object.keys(STEP_COMMAND) as (keyof typeof STEP_COMMAND)[]).find((k) => STEP_LABEL[k] === step.label) ?? null : null;
     const command: PlannedCommand | null = open && step && key
       ? { type: "command", id: open.id, step: step.id, text: STEP_COMMAND[key], vision: null, choices: [{ id: "done", label: "완료" }], target: null, speak: true }
       : null;

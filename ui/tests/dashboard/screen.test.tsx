@@ -557,6 +557,17 @@ describe("대시보드 트윈", () => {
     expect(segs).toEqual(["active", "inactive", "inactive", "inactive"]);
   });
 
+  it("행동 중 기다리기 단계는 진행도에만 「기다리는 중 · 단계 이름」으로 보인다", () => {
+    const plan: PlanView = {
+      ...PLAN, goal: "세탁물 건조기로 옮기기",
+      steps: [{ id: "w:1", kind: "wait", label: "세탁 멈춤", status: "active" }, { id: "w:2", kind: "move", label: "세탁기로 가기", status: "pending" }],
+    };
+    draw(screenAt(1, { plan, step: plan.steps[0]! }));
+    const progress = twinPane().querySelector<HTMLElement>("[data-progress]")!;
+    expect(progress.querySelector("[data-slot=item-description]")).toHaveTextContent("1/2 · 기다리는 중 · 세탁 멈춤");
+    expect(phonePane()).not.toHaveTextContent("기다리는 중");
+  });
+
   it("지켜보기(계획 없음)에는 할 일 진행도가 없다", () => {
     draw(screenAt(0));
     expect(document.querySelector("[data-progress]")).toBeNull();

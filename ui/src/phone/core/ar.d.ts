@@ -6,15 +6,20 @@ export interface ArState {
   on: boolean;
   epoch: string | null;
   hitPoint: number[] | null;
-  lastFloor: number[] | null;
+  /** 조준점이 hit-test 점이 아니라 어림 바닥 점. */
+  hitEstimated: boolean;
   limited: boolean;
+  /** 마지막 폰 자세(AR). AR 전·끝난 뒤는 null. */
+  position: number[] | null;
+  orientation: number[] | null;
   size: string;
   encoder: string;
 }
 export interface ArHooks {
   onStart(): void;
   onEnd(): void;
-  onHit(hit: boolean): void;
+  /** hit: 조준점이 바닥에 닿음. estimated: 그 점이 어림 바닥(hit-test 점이 없음). */
+  onHit(hit: boolean, estimated: boolean): void;
   onMarks(marks: FocusMark[]): void;
   onPerf(): void;
   note(text: string): void;

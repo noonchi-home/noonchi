@@ -36,6 +36,10 @@ export interface StepOptions {
   system: string;
   tools: ToolDef[];
   allowTools: boolean; // false면 도구 없이 답해야 한다(라운드 한도)
+  /** 끊으면 공급자 요청을 취소한다(계획 모드의 시간 한도·새 판단). */
+  signal?: AbortSignal;
+  /** 응답 하나의 출력 토큰 상한(없으면 공급자 기본). */
+  maxOutputTokens?: number;
 }
 
 export interface StepResult {

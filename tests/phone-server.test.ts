@@ -4,20 +4,19 @@ import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import type { PlannedCommand } from "../src/contract/phone.js";
-import type { AnchorTarget } from "../src/phone/anchors.js";
 import { EyeFeed } from "../src/phone/feed.js";
 import { encodeFramePacket } from "../src/phone/packet.js";
 import { createPhoneServer, DEFAULT_UI_DIR, sameHost } from "../src/phone/server.js";
 import { createApp, type TwinHomeApp } from "../src/server/app.js";
 import { fetchRetry } from "../src/server/net.js";
+import { BOX_START, BOX_WALLS, alignMessages } from "./helpers/align.js";
 import { ROOMS, makeHome } from "./helpers/home.js";
 import { readVideo } from "./helpers/video.js";
 
 type Msg = Record<string, any>;
-const TARGETS: AnchorTarget[] = [
-  { id: "dock", label: "도크", plan: [3.9, 5.51] },
-  { id: "door_main", label: "현관문 문턱 가운데", plan: [2.4, 3.55] },
-];
+/** 6×5 네모 방과 그 가운데 시작 위치(tests/helpers/align.ts). 맞추면 AR = 평면 그대로다. */
+const SYNC = { landmarks: [], walls: BOX_WALLS, start: BOX_START };
+const sendAlign = (ws: WebSocket) => { for (const m of alignMessages(BOX_WALLS, BOX_START)) ws.send(JSON.stringify(m)); };
 const BOTH = [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }];
 const cleanups: (() => Promise<void> | void)[] = [];
 afterEach(async () => {
@@ -74,7 +73,7 @@ async function setup(opts: { log?: (m: string) => void } = {}) {
   const { url } = await app.listen(0, "127.0.0.1");
   const main = app;
   cleanups.push(() => main.close());
-  const phone = createPhoneServer({ targets: TARGETS, uiDir: fakeUiDist(), feed, onEye: (eye) => main.broadcast({ type: "eye", eye }), log: opts.log ?? (() => {}) });
+  const phone = createPhoneServer({ sync: SYNC, uiDir: fakeUiDist(), feed, onEye: (eye) => main.broadcast({ type: "eye", eye }), log: opts.log ?? (() => {}) });
   const { port } = await phone.listen(0, "127.0.0.1");
   cleanups.push(() => phone.close());
   return { url, phoneBase: `http://127.0.0.1:${port}` };
@@ -86,8 +85,7 @@ async function alignedPhone(phoneBase: string) {
   const phone = new WebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events`, { origin: phoneBase });
   await opened(phone);
   const done = next(phone, (m) => m.type === "status" && m.aligned);
-  phone.send(JSON.stringify({ type: "anchor", id: "dock", point: [3.9, 0, 5.51] }));
-  phone.send(JSON.stringify({ type: "anchor", id: "door_main", point: [2.4, 0, 3.55] }));
+  sendAlign(phone);
   await done;
   return phone;
 }
@@ -183,7 +181,7 @@ describe("엔진 프레임", () => {
     const feed = new EyeFeed({ photoDir, broadcast: () => {} });
     const got: { header: Msg; eye: Msg | null; view: Msg | null; at: number }[] = [];
     const phone = createPhoneServer({
-      targets: TARGETS, feed, onEye: () => {}, log: () => {}, engineMs: 1000,
+      sync: SYNC, feed, onEye: () => {}, log: () => {}, engineMs: 1000,
       onEngine: (_jpeg, header, eye, view, at) => got.push({ header, eye, view, at }),
     });
     const { port } = await phone.listen(0, "127.0.0.1");
@@ -226,7 +224,7 @@ describe("sameHost", () => {
 });
 
 describe("phone server", () => {
-  it("기준점 두 곳 뒤의 자세가 본 서버 /events에 eye로 나간다", async () => {
+  it("위치를 맞춘 뒤의 자세가 본 서버 /events에 eye로 나간다", async () => {
     const { url, phoneBase } = await setup();
     const dash = new WebSocket(`${url.replace(/^http/, "ws")}/events`);
     await opened(dash);
@@ -235,9 +233,8 @@ describe("phone server", () => {
     await opened(phone);
     expect((await first).aligned).toBe(false);
     const done = next(phone, (m) => m.type === "status" && m.aligned);
-    phone.send(JSON.stringify({ type: "anchor", id: "dock", point: [3.9, 0, 5.51] }));
-    phone.send(JSON.stringify({ type: "anchor", id: "door_main", point: [2.4, 0, 3.55] }));
-    expect((await done).mismatch_m).toBe(0);
+    sendAlign(phone);
+    expect((await done).sync).toMatchObject({ state: "aligned", source: "walls", started: true });
     const eye = next(dash, (m) => m.type === "eye");
     phone.send(JSON.stringify({ type: "pose", position: [3.9, 1.4, 5], orientation: [0, 0, 0, 1] }));
     expect((await eye).eye).toMatchObject({ position: [3.9, 5], height_m: 1.4, yaw_deg: 270, pitch_deg: 0, tracking: "ok" });
@@ -252,7 +249,7 @@ describe("phone server", () => {
   });
 
   it("ui/dist에서 폰 화면·빌드 파일·브랜드 그림·글꼴 라이선스·파비콘만 준다. 대시보드·설정 화면은 주지 않는다", async () => {
-    const phone = createPhoneServer({ targets: TARGETS, uiDir: fakeUiDist(), onEye: () => {}, log: () => {} });
+    const phone = createPhoneServer({ sync: SYNC, uiDir: fakeUiDist(), onEye: () => {}, log: () => {} });
     const { port } = await phone.listen(0, "127.0.0.1");
     cleanups.push(() => phone.close());
     const base = `http://127.0.0.1:${port}`;
@@ -275,7 +272,7 @@ describe("phone server", () => {
   it("빌드 전이면 /phone/은 503과 빌드 명령", async () => {
     const empty = mkdtempSync(join(tmpdir(), "phone-ui-empty-"));
     cleanups.push(() => rmSync(empty, { recursive: true, force: true }));
-    const phone = createPhoneServer({ targets: TARGETS, uiDir: empty, onEye: () => {}, log: () => {} });
+    const phone = createPhoneServer({ sync: SYNC, uiDir: empty, onEye: () => {}, log: () => {} });
     const { port } = await phone.listen(0, "127.0.0.1");
     cleanups.push(() => phone.close());
     const r = await fetchRetry(`http://127.0.0.1:${port}/phone/`);
@@ -298,7 +295,7 @@ describe("폰 대화·승인·초점", () => {
     const confirmed: [string, string][] = [];
     const picked: string[][] = [];
     const phone = createPhoneServer({
-      targets: TARGETS, onEye: () => {}, log: () => {},
+      sync: SYNC, onEye: () => {}, log: () => {},
       onChoice: (id, step, choice) => picked.push([id, step, choice]),
       onSay: async (text) => {
         said.push(text);
@@ -400,7 +397,7 @@ describe("폰 대화·승인·초점", () => {
     expect((await connect(phoneBase, 2)).box[1]).toEqual({ type: "command_clear" });
   });
 
-  it("명령 대상: 트윈 자리를 맞춘 기준점으로 AR 자리로 바꿔 보낸다. 맞추기 전에는 null이고, 맞추면 지금 명령을 대상과 함께 다시 보낸다", async () => {
+  it("명령 대상: 트윈 자리를 맞춘 변환으로 AR 자리로 바꿔 보낸다. 맞추기 전에는 null이고, 맞추면 지금 명령을 대상과 함께 다시 보낸다", async () => {
     const { phone, phoneBase } = await talkSetup();
     const first = await connect(phoneBase, 2);
     const cmd: PlannedCommand = {
@@ -411,8 +408,7 @@ describe("폰 대화·승인·초점", () => {
     phone.command(cmd);
     expect(await got).toEqual({ ...cmd, target: null });
     got = next(first.ws, (m) => m.type === "command" && m.target !== null);
-    first.ws.send(JSON.stringify({ type: "anchor", id: "dock", point: [3.9, 0, 5.51] }));
-    first.ws.send(JSON.stringify({ type: "anchor", id: "door_main", point: [2.4, 0, 3.55] }));
+    sendAlign(first.ws);
     expect(await got).toEqual({ ...cmd, target: { id: "cup_1", label: "컵", ar: [1, 0.9, 3.7] }, speak: false });
     const later = await connect(phoneBase, 2);
     expect(later.box[1]).toEqual({ ...cmd, target: { id: "cup_1", label: "컵", ar: [1, 0.9, 3.7] }, speak: false });

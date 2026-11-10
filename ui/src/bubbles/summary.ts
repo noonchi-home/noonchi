@@ -1,4 +1,5 @@
 import type { DeviceView } from "../../../src/contract/events.ts";
+import { SEEN_TEXT } from "../../../src/world/labels.ts";
 
 const ATTR_TEXT: Record<string, Record<string, string>> = {
   power: { on: "켜짐", off: "꺼짐" }, running: { true: "동작 중", false: "멈춤" },
@@ -14,7 +15,7 @@ const FANS: Record<string, string> = { low: "약", medium: "중", high: "강", a
 
 export type Tone = "on" | "off" | "alert" | "unknown";
 
-/** 말풍선 한 장: 이름, 상태 한 줄, 모양(켜짐·꺼짐·경고·모름). */
+/** 말풍선 한 장: 이름, 상태 한 줄, 모양(켜짐·꺼짐·경고·모름). 카메라로 본 값이 상태이면 줄 끝에 「카메라로 봄」. */
 export function deviceSummary(d: DeviceView): { title: string; line: string; tone: Tone } {
   const s = d.state;
   if (s?.signal === "none") return { title: d.label, line: "모름", tone: "unknown" };
@@ -40,5 +41,7 @@ export function deviceSummary(d: DeviceView): { title: string; line: string; ton
   }
   if (["purifier", "fan", "hood"].includes(d.kind) && typeof m.fanMode === "string" && m.fanMode !== "off") parts.push(`바람 ${FANS[m.fanMode] ?? m.fanMode}`);
   if (s?.online === false) parts.push("오프라인");
-  return { title: d.label, line: parts.join(" · ") || "꺼짐", tone: alert ? "alert" : on ? "on" : "off" };
+  if (!parts.length) parts.push("꺼짐");
+  if (s?.vision?.applied) parts.push(SEEN_TEXT);
+  return { title: d.label, line: parts.join(" · "), tone: alert ? "alert" : on ? "on" : "off" };
 }

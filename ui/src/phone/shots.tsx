@@ -16,7 +16,7 @@ import type { PhoneActions } from "./state";
 
 const noop = () => {};
 const act: PhoneActions = {
-  startAr: noop, recordAnchor: noop, startAnchors: noop, startPlace: noop, endSetup: noop, setSettings: noop, micOn: noop,
+  startAr: noop, startPlace: noop, startFromSpot: noop, confirmStart: noop, endSetup: noop, setSettings: noop, micOn: noop,
   say: noop, confirm: noop, answer: noop,
 };
 
@@ -85,7 +85,7 @@ function Shot({ name }: { name: ShotName }) {
       if (shot.view.ar && overlay.current) {
         const c = fitCanvas(overlay.current, w, h, dpr);
         const root = document.querySelector("[data-phone-overlay]");
-        const scene = { aim: shot.view.setup !== null, hit: shot.view.hit, marks: shot.marks };
+        const scene = { aim: shot.view.setup !== null, hit: shot.view.hit, hitEstimated: shot.view.hitEstimated, marks: shot.marks };
         if (c) drawn = drawOverlay(c, { width: w, height: h }, scene, 0, true, overlayEdges(root, h));
       }
       // 모달이 열리는 움직임(200ms)이 끝난 뒤 잰다

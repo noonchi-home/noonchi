@@ -1,7 +1,7 @@
 // 트윈 위 표시 시험 자료: 실제 한양목련 장면(loadScene, 도면 설비 포함)과 가짜 단계 자료(ui/src/dashboard/fake-run.json, ?debug=steps와 같은 것)의
 // 다섯 순간(0 지켜보기, 1~4 계획 단계)의 계획과 맞춘 눈. 단계 상태는 앞 done·지금 active·뒤 pending, 0이면 계획 없음.
 // 눈 자리는 0·1 시작 자리, 2 식탁 구간 끝, 3 싱크대 구간 가운데, 4 길 끝이고 yaw는 그 구간 방향이다.
-// CUP_PLAN은 지금 장면·평면도로 짠 컵 치우기 계획(cupPlan, 로봇 [10.6, 8.6])이다. 가짜 단계 자료가 지금 것인지 견준다.
+// CUP_PLAN은 지금 장면·평면도로 짠 컵 치우기 계획 모양(에이전트 컵 계획과 같은 tests/helpers/cup-plan.ts cupPlan, 로봇 [10.6, 8.6], 사람이 걷는 길)이다. 가짜 단계 자료가 지금 것인지 견준다.
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { EyeEvent, ServerMessage } from "../../../src/contract/events.ts";
@@ -9,7 +9,8 @@ import type { PlanView, XZ } from "../../../src/contract/plan.ts";
 import { resolveHome } from "../../../src/model/homes.ts";
 import { loadScene } from "../../../src/model/scene.ts";
 import { floorPlanFrom } from "../../../src/plan/floor.ts";
-import { cupPlan } from "../../../src/plan/planner.ts";
+import { STEP_LABEL } from "../../../src/plan/labels.ts";
+import { assemblePlan } from "../../../src/plan/planner.ts";
 import type { Check } from "../../src/checks/checks";
 import run from "../../src/dashboard/fake-run.json";
 import { homeIndexOf } from "../../src/dashboard/home";
@@ -26,7 +27,15 @@ export const HOME = homeIndexOf(SCENE, CAM);
 
 const fp = floorPlanFrom(SCENE);
 fp.robot = { ...fp.robot, position: START, room: "living" };
-export const CUP_PLAN = cupPlan(fp, "cup", "2026-11-09T00:00:00.000Z")!;
+const byType = (type: string) => [...fp.objects.values()].find((o) => o.type === type)!;
+const [table, sink] = [byType("dining_table"), byType("sink_counter")];
+export const CUP_PLAN: PlanView = assemblePlan({ ...fp, robot: { ...fp.robot, reachable: fp.rooms.map((r) => r.id) } },
+  { id: "cup", goal: "컵 치우기", judgment: "", source: "brain", dryRun: true, nowIso: "2026-11-09T00:00:00.000Z" }, [
+    { kind: "move", label: STEP_LABEL.goTable, target: { objectId: table.id, ...(table.room ? { room: table.room } : {}) }, to: table.position },
+    { kind: "act", label: STEP_LABEL.pickCup, target: { objectId: table.id } },
+    { kind: "move", label: STEP_LABEL.goSink, target: { objectId: sink.id, ...(sink.room ? { room: sink.room } : {}) }, to: sink.position },
+    { kind: "act", label: STEP_LABEL.placeCup, target: { objectId: sink.id } },
+  ]);
 
 const objects = SCENE.objects as { id: string; type: string }[];
 export const TABLE = objects.find((o) => o.type === "dining_table")!.id;

@@ -15,7 +15,7 @@ export interface DashData {
   eye: EyeEvent | null;
   /** 마지막 유효 판단. */
   decision: Decision | null;
-  /** 상자가 있는 마지막 YOLOX 기록과 받은 때(ms). */
+  /** 상자가 있는 마지막 YOLO 기록과 받은 때(ms). */
   boxes: { observe: Observe; at: number } | null;
   say: string | null;
 }

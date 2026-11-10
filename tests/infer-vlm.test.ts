@@ -95,9 +95,11 @@ describe("VLM 어댑터", () => {
 });
 
 describe("호출 비용 어림", () => {
-  it("gpt-5.4-mini 표로 세고 표에 없는 모델(같은 서버 vLLM)은 0", () => {
+  it("gpt-5.4-mini·gpt-5.4-nano 표로 세고 표에 없는 모델(같은 서버 vLLM)은 0", () => {
     expect(estimateCostUsd("gpt-5.4-mini", { prompt: 1_000_000, completion: 0, cached: 0 })).toBeCloseTo(0.75);
     expect(estimateCostUsd("gpt-5.4-mini-2026-03-17", { prompt: 1_000_000, completion: 1_000_000, cached: 1_000_000 })).toBeCloseTo(0.075 + 4.5);
+    expect(estimateCostUsd("gpt-5.4-nano", { prompt: 1_000_000, completion: 0, cached: 0 })).toBeCloseTo(0.2);
+    expect(estimateCostUsd("gpt-5.4-nano-2026-03-17", { prompt: 1_000_000, completion: 1_000_000, cached: 1_000_000 })).toBeCloseTo(0.02 + 1.25);
     expect(estimateCostUsd("vlm", { prompt: 1_000_000, completion: 1_000_000, cached: 0 })).toBe(0);
   });
 });

@@ -1,5 +1,6 @@
 // 서버가 만들어 화면에 그대로 나가는 글. npm run lint가 이 파일도 검사한다(60자 아래, 화살표·괄호 없음).
 import { josa } from "../agent/phrases.js";
+import { OBJECT_NAME } from "../world/labels.js";
 
 export const STEP_LABEL = {
   goTable: "식탁으로 가기", pickCup: "컵 집기", goSink: "싱크대로 가기", placeCup: "컵 내려놓기",
@@ -26,6 +27,11 @@ export const SAY_TEXT = {
   decided: (goal: string, surface: string | null = null) =>
     goal === GOAL.clearCup && surface ? `${surface} 컵을 치우기로 했어요.` : DECIDED[goal] ?? `${josa(goal, "을/를")} 하기로 했어요.`,
   told: { goTable: "식탁으로 가라고 했어요.", pickCup: "컵을 들라고 했어요.", goSink: "싱크대로 가라고 했어요.", placeCup: "컵을 싱크대에 넣으라고 했어요." },
+  /** 컵 명령이 아닌 사람 단계: 단계 이름. */
+  toldStep: (label: string) => `${josa(label, "을/를")} 부탁했어요.`,
+  said: "폰으로 알렸어요.",
+  waiting: (label: string) => `${josa(label, "을/를")} 기다리고 있어요.`,
+  device: (label: string) => `${josa(label, "을/를")} 하고 있어요.`,
   asked: "폰으로 물어봤어요.",
   done: (goal: string) => DONE[goal] ?? `${josa(goal, "을/를")} 마쳤어요.`,
   stopped: (goal: string) => `${josa(goal, "을/를")} 그만뒀어요.`,
@@ -56,10 +62,25 @@ export const APPROVAL_TEXT = {
   refused: "사용자가 거절한 일",
 };
 
+/** 시간 안에 끝나지 않은 단계를 실제 폰에 다시 묻는 글(src/act/track.ts, 답은 계속·그만). */
+export const AGAIN_TEXT = { ask: (label: string) => `${josa(label, "을/를")} 계속할까요?` };
+
+/** 비전 상태 줄에 쓰는 평면도 물건 짧은 이름(낱말 표에 없는 종류). 낱말 표 종류(식탁 등)는 그 글을 쓰고(placeShort), 둘 다 없으면 배치 이름을 쓴다. */
+export const PLACE_SHORT: Record<string, string> = {
+  sink_counter: "싱크대", utility_sink: "싱크대", induction_counter: "조리대", washer: "세탁기", dryer: "건조기",
+  fridge: "냉장고", kimchi_fridge: "김치냉장고", dishwasher: "식기세척기", sofa: "소파", desk: "책상", coffee_table: "탁자",
+  bed_queen: "침대", bed_single: "침대", stand_ac: "에어컨", wall_ac: "에어컨",
+};
+
+/** 평면도 물건 종류의 짧은 이름. 없으면 undefined. */
+export const placeShort = (type: string): string | undefined => PLACE_SHORT[type] ?? OBJECT_NAME[type];
+
 /** 실행 추적 글(src/act/track.ts): 단계 이름과 끝난 까닭. */
 export const EXEC_TEXT = {
   decided: "판단", planned: "계획", running: "실행 중", verifying: "결과 확인", done: "완료", failed: "실패",
   wait: "대기", decisionFailed: "판단 실패", superseded: "새 판단으로 바뀜", noPlan: "계획을 만들 수 없음", stopped: "사용자가 그만둠",
   timeout: "단계가 시간 안에 끝나지 않음", noAnswer: "답을 받지 못함", same: "같은 행동을 진행 중", late: "앞선 판단이라 쓰지 않음",
   answered: (label: string) => `완료: ${label}`,
+  badPlan: "계획이 맞지 않아 버림", held: "방금 계획한 일이라 잠시 뒤 다시 봄", deviceFailed: "가전 명령이 실패함",
+  deviceUnverified: "가전 명령 결과를 확인하지 못함", busy: "할 일 중 기다리는 동안이라 쓰지 않음",
 } as const;

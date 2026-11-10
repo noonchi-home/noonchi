@@ -4,14 +4,18 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { checkPlan, loadActConfig } from "../act/check.js";
+import { checkDecision, checkPlan, loadActConfig } from "../act/check.js";
 import { sayLine } from "../act/say.js";
+import { TASK_NAMES, taskOf } from "../act/tasks.js";
+import { deviceRunner } from "../act/devices.js";
 import { ExecutionTracker } from "../act/track.js";
 import { Agent } from "../agent/agent.js";
 import { ApprovalStore, approvalsPath } from "../agent/approval.js";
+import { Planner } from "../agent/planner.js";
+import type { PlaceInfo } from "../agent/planTools.js";
 import { Policy } from "../agent/policy.js";
 import { createProvider } from "../agent/providers/index.js";
-import { CUP_TASKS } from "../brain/decision.js";
+import { deviceViews } from "../agent/tools.js";
 import { PamClient } from "../brain/pam.js";
 import type { BrainLog, ReadyView } from "../contract/events.js";
 import type { PlannedCommand } from "../contract/phone.js";
@@ -32,14 +36,17 @@ import { loadLayout } from "../layout/load.js";
 import { loadTwin, type TwinData } from "../model/devices.js";
 import { listHomes } from "../model/homes.js";
 import { loadScene } from "../model/scene.js";
-import { loadAnchorTargets, type AnchorTarget } from "../phone/anchors.js";
-import { autoCorners, parseWallPick, pickedRoom, readScenePlan } from "../phone/corners.js";
 import { EyeFeed } from "../phone/feed.js";
 import { orderPhoneUrls } from "../phone/links.js";
 import { createPhoneServer, type PhoneServer } from "../phone/server.js";
 import { estimateViewpoint } from "../phone/session.js";
-import { TouchStore, eyeHeightOf, floorLookup, homeBounds, readTouchPoints, touchPointsPath, touchTargets, type TouchPoint } from "../phone/touch.js";
+import { eyeHeightOf, floorLookup, homeBounds, readScenePlan } from "../phone/home-plan.js";
+import type { FrameHeader } from "../phone/packet.js";
+import { twinLandmarks } from "../sync/landmarks.js";
+import { StartStore, describeStart, readStartPose, startPosePath, type StartPose } from "../sync/start.js";
+import { wallSegments } from "../sync/walls.js";
 import { PlanHub } from "../plan/hub.js";
+import { placeShort } from "../plan/labels.js";
 import { floorPlanFrom, roomNamedAt } from "../plan/route.js";
 import { surfacesFromLayout, type PlaneSurface } from "../world/place.js";
 import { Decider } from "../world/decide.js";
@@ -103,8 +110,8 @@ export interface HomeRuntime {
   policy: Policy;
   agent: Agent;
   layout?: LayoutEditor;
-  /** 기준점 A·B 저장소(집 scene.json이 있을 때). */
-  touch?: TouchStore;
+  /** 폰 위치 맞추기 시작 위치 저장소(집 scene.json이 있을 때). */
+  start?: StartStore;
   app: TwinHomeApp;
   twinDir: string;
   phoneUrls: string[];
@@ -141,10 +148,10 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
   const none = Object.keys(signals.sources()).length;
   if (none > 0) log(`신호 출처: 신호 없음 ${none}개(상태를 모름으로 보임)`);
   // 가전 변화 기록: 시작 상태는 기억만 하고, 그 뒤 바뀐 값을 적는다
-  const labelOf = new Map(twin.devices.map((d) => [d.id, d.label]));
+  const specOf = new Map(twin.devices.map((d) => [d.id, d]));
   const { history } = ctx;
-  for (const s of signals.states()) history.device(s, { initial: true, label: labelOf.get(s.id) });
-  const unsubHistory = signals.subscribe((s) => history.device(s, { label: labelOf.get(s.id) }));
+  for (const s of signals.states()) history.device(s, { initial: true, label: specOf.get(s.id)?.label, kind: specOf.get(s.id)?.kind });
+  const unsubHistory = signals.subscribe((s) => history.device(s, { label: specOf.get(s.id)?.label, kind: specOf.get(s.id)?.kind }));
   let pipeline: ObservationPipeline | null = null;
   let unsubWorld = () => {};
   let decider: Decider | null = null;
@@ -161,6 +168,8 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     const layout = loadLayout(home, { runtimeDir, log });
     if (!layout) log(`[경고] ${home.scenePath}이 없어 배치 보정을 끕니다(twin-studio에서 집을 먼저 빌드하세요).`);
     const agent = new Agent({ hub: signals, policy, rooms: twin.rooms, provider, layout });
+    // 에이전트 계획 모드(src/agent/planner.ts): PAM이 고른 행동 하나를 단계 계획으로. 말 요청 에이전트와 같은 공급자
+    const planner = new Planner({ provider, hub: signals, policy, rooms: twin.rooms });
     const twinDir = home.outDir;
     const hubKind = started.kind;
     const phoneOn = Boolean(env.PHONE_PORT?.trim());
@@ -176,29 +185,39 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         },
       })
       : undefined;
-    // 벽 대기 맞춤 기준점 A·B(설정 4단계에서 고름). 저장·지우면 실행 중인 폰 세션의 기준점이 바로 바뀐다
+    // 폰 위치 맞추기(src/sync): 시작 위치(설정 4단계에서 자리·방향) + 물건 기준점(엔진 프레임 YOLO) + 벽 모양(hit 벽 점)
     const eyeHeightM = eyeHeightOf(env.PHONE_EYE_HEIGHT_M);
-    const touchPath = touchPointsPath(runtimeDir, home.id);
-    let savedTouch: TouchPoint[] | null = null;
-    try {
-      savedTouch = readTouchPoints(touchPath);
-    } catch (e) {
-      log(`[경고] ${(e as Error).message}. 평면도 바닥 기준점으로 맞춥니다.`);
-    }
-    const phoneRef: { current?: PhoneServer; floor?: AnchorTarget[] } = {};
-    // 방·벽(기준점 범위 검사·방 바닥 높이·벽 하나로 구석 찾기). scene.json이 없거나 깨졌으면 빈 목록
+    const phoneRef: { current?: PhoneServer } = {};
+    // 방·벽(시작 위치 범위·방 검사, 방 바닥 높이, 벽 모양 짝). scene.json이 없거나 깨졌으면 빈 목록
     const plan = readScenePlan(home.scenePath);
     const bounds = homeBounds(plan.rooms);
-    const touchStore = existsSync(home.scenePath)
-      ? new TouchStore(touchPath, bounds, (points) => {
-        if (!phoneRef.current || !phoneRef.floor) return;
-        if (points) phoneRef.current.setTargets(touchTargets(points), "touch");
-        else phoneRef.current.setTargets(phoneRef.floor, "floor");
-      }, savedTouch)
+    const startPath = startPosePath(runtimeDir, home.id);
+    let savedStart: StartPose | null = null;
+    try {
+      savedStart = readStartPose(startPath);
+    } catch (e) {
+      log(`[경고] ${(e as Error).message}. 시작 위치 없이 시작합니다.`);
+    }
+    const twinObjects = () => layout?.editor.objects() ?? [];
+    const startStore = existsSync(home.scenePath)
+      ? new StartStore(startPath, bounds, (p, yaw) => describeStart(twinObjects(), plan.rooms, p, yaw), (s) => phoneRef.current?.setStart(s), savedStart, plan.rooms)
       : undefined;
+    const landmarksNow = () => (layout ? twinLandmarks(layout.editor.objects(), layout.catalog) : []);
+    // 「냉장고 여기로」처럼 배치를 고치면 기준점 자리도 바꾼다
+    layout?.editor.subscribe(() => phoneRef.current?.setLandmarks(landmarksNow()));
+    // 엔진 프레임 헤더(찍은 순간 AR 자세·투영): 감지가 끝나면 기준점 상자와 함께 폰 위치 맞추기로 넘긴다
+    const engineHeaders = new WeakMap<Buffer, FrameHeader>();
     // 클로이드 계획(src/plan/hub.ts): 에이전트 기기 행동·맞춘 눈 → 계획을 /events로. 경로는 서버 장면(scene.json + 도면 설비)으로 찾는다
     const scene = loadScene(home);
     const floorPlan = floorPlanFrom(scene ?? {});
+    // 계획 입력의 평면도 물건(벽·바닥·문·창은 뺀다): 배치 이름과 비전 상태 줄의 짧은 이름
+    const places = (): PlaceInfo[] => {
+      const names = new Map((layout?.editor.objects() ?? []).map((o) => [o.id, o.name]));
+      return [...floorPlan.objects.values()].filter((o) => !/^(walls|floors)$|door|win/.test(o.type)).map((o) => {
+        const name = names.get(o.id) ?? o.id;
+        return { id: o.id, type: o.type, room: o.room, position: o.position, name, short: placeShort(o.type) ?? name };
+      });
+    };
     // 대시보드 말풍선 카드(src/act/say.ts): 계획 방송·실제 폰 명령·World State 바뀜·판단 타이머 뒤에 다시 보고, 글이 바뀔 때만 보낸다
     let speak = () => {};
     const plans = new PlanHub(floorPlan, (m) => {
@@ -206,12 +225,20 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       if (m.type === "plan" && m.plan) history.plan(m.plan);
       speak();
     });
-    // 관찰 흐름(BRAIN=1): 폰 엔진 프레임마다 YOLOX·VLM이 분석하고 World State가 합친다(src/observe/pipeline.ts)
+    // 관찰 흐름(BRAIN=1): 폰 엔진 프레임마다 YOLO·VLM이 분석하고 World State가 합친다(src/observe/pipeline.ts)
     const brainWanted = /^(1|true|on)$/i.test(env.BRAIN?.trim() ?? "");
     if (brainWanted && !phoneOn) log("[경고] BRAIN=1은 PHONE_PORT가 있어야 합니다(폰 카메라가 입력). 관찰 흐름을 끕니다.");
+    // 카메라로 본 가전 상태는 허브로 넘긴다(src/hub/signals.ts observe): 실제 출처가 없으면 기기 상태가 되고, 실제 상태와 다르면 처음 한 번 로그에 남긴다
     const world = brainWanted && phoneOn
       ? new WorldState({
         surfaces: surfaceSource(layout?.editor), floorAt: floorLookup(plan.rooms), roomAt: roomNamedAt(floorPlan, twin.rooms), devices: () => signals.list(),
+        locate: (id) => { const c = layout?.editor.center(id); return c ? [c.position[0], c.position[2]] : null; },
+        place: (id) => layout?.editor.center(id)?.position ?? null,
+        see: (id, seen, at) => {
+          const r = signals.observe(id, seen, at);
+          if (r.kind === "mismatch") log(`카메라로 본 값이 기기 값과 달라 기기 값을 둡니다: ${specOf.get(id)?.label ?? id} 카메라 ${JSON.stringify(seen)} · 기기 ${JSON.stringify(r.real)}`);
+          return r;
+        },
       })
       : null;
     // 실행 설정(STALE_MS). 틀린 값이면 시작을 막는다
@@ -242,8 +269,10 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       const pamTimeout = Number(env.PAM_TIMEOUT_MS);
       const decide = new Decider({
         pam: new PamClient({ url: loadEndpoints(env).pamUrl, timeoutMs: Number.isFinite(pamTimeout) && pamTimeout > 0 ? pamTimeout : undefined }),
-        world, trigger: new Trigger(loadTriggerConfig(env), now()), tasks: () => [...CUP_TASKS],
+        world, trigger: new Trigger(loadTriggerConfig(env), now()), tasks: () => [...TASK_NAMES],
         memory: () => memoryForDay(history.db, history.db.dayOf(now())), emit, offsetMinutes: history.db.offsetMinutes, clock: ctx.brain?.clock,
+        // 행동 중 기다리기·기기 단계 동안은 PAM을 부르지 않는다(실행 추적이 조건을 본다)
+        hold: () => tracker?.waiting() ?? false,
         // 판단 → 계획 → 실행 전 검사 → 실행 추적(src/act/)
         onDecision: (d) => tracker?.onDecision(d),
       });
@@ -251,8 +280,19 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       // 실행 전 검사(src/act/check.ts): 시험 모드에서는 짝지은 실제 가전 단계를 막는다
       const deviceSteps = (p: PlanView) => p.steps.flatMap((s) => (s.target?.deviceId
         ? [{ deviceId: s.target.deviceId, paired: signals.sources()[s.target.deviceId]?.kind === "thinq" }] : []));
+      // 기기 단계(src/act/devices.ts): 말 요청과 같은 기기 도구·정책(위험 목록은 승인 토큰). 보내기 바로 앞에서 그 계획 단계가 아직인지 본다
+      const devices = deviceRunner(signals, policy, twin.rooms);
       tracker = new ExecutionTracker({
-        plans, floor: () => plans.floor(), world: () => world.view(now()), emit, clock: ctx.brain?.clock, approvals,
+        plans, floor: () => plans.floor(), world: () => world.view(now()), emit, clock: ctx.brain?.clock, approvals, devices, offsetMinutes: history.db.offsetMinutes,
+        // 계획 전 검사(LLM 없음) → 에이전트 계획 모드 한 번. 손 자리는 맞춘 눈(PlanHub 평면도의 로봇 자리)
+        precheck: (d) => checkDecision({ decision: d, tasks: [...TASK_NAMES], world: world.view(now()), nowMs: now() }),
+        planner: (d, signal) => {
+          const task = taskOf(d.action);
+          if (!task) return { ok: false, error: "행동 목록에 없는 행동" };
+          return planner.plan({
+            decision: d, task, world: world.view(now()), floor: plans.floor(), places: places(), rooms: twin.rooms, devices: deviceViews(signals), nowIso: new Date(now()).toISOString(),
+          }, signal);
+        },
         // 실제 폰 명령(src/contract/phone.ts). 폰 서버가 지금 명령을 기억해 새로 붙은 폰에도 보낸다. 명령 대상 자리는 배치(물건 가운데)에서
         toPhone: (m) => {
           if (m.type === "command") command = m;
@@ -262,12 +302,12 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         },
         locate: (id) => layout?.editor.center(id),
         check: (d, p) => checkPlan({
-          decision: d, tasks: [...CUP_TASKS], plan: p, world: world.view(now()), nowMs: now(), staleMs: act.staleMs, mode: ctx.mode?.() ?? "test", deviceSteps: deviceSteps(p),
+          decision: d, tasks: [...TASK_NAMES], plan: p, world: world.view(now()), nowMs: now(), staleMs: act.staleMs, mode: ctx.mode?.() ?? "test", deviceSteps: deviceSteps(p),
         }),
       });
       const tracking = tracker;
       pipeline = await createPipeline({
-        env, runtimeDir, log, world, inject: ctx.brain, emit,
+        env, log, world, inject: ctx.brain, emit,
         broadcastWorld: (w) => {
           appRef.current?.broadcast({ type: "world", world: w });
           speak();
@@ -276,10 +316,18 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
           tracking.onWorld();
           decide.onChanges(c);
         },
+        // 주기 판단(기본 5초)은 엔진 프레임이 오는 동안만 부른다
+        onFrame: () => decide.onFrame(),
         // 분석한 프레임은 디스크에 쓰지 않는다. DATASET_COLLECT=1일 때만 시험 자료로 RUNTIME_DIR/dataset에 쓴다
         dataset: env.DATASET_COLLECT?.trim() === "1" ? datasetWriter(join(runtimeDir, "dataset"), history.db) : undefined,
+        onDetected: (jpeg, r) => {
+          const h = engineHeaders.get(jpeg);
+          if (h && r.landmarks?.length) phoneRef.current?.landmarks(h, r.landmarks);
+        },
       });
+      const observed = pipeline;
       decideTimer = setInterval(() => {
+        observed.tick(); // 오래 이어진 가전 상태(냉장고 문 1분)
         decide.tick();
         tracking.tick();
         speak();
@@ -301,11 +349,8 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       hub: signals, policy, agent, rooms: twin.rooms, twinDir, viewerDir: home.viewerDir, libraryDir: home.libraryDir, hubKind, log, eye: feed,
       brain: observe ?? undefined, world: worldNow ?? undefined,
       home: { id: home.id, name: home.name }, homes: listHomes(twin.dir), layout: layout?.editor, phoneUrls: () => phoneUrls, mode: ctx.mode, webDir: ctx.webDir, allowOrigin: ctx.allowOrigin, planToken: ctx.planToken, ready: ctx.ready,
-      touch: touchStore && {
-        get: () => touchStore.get(), save: (raw) => touchStore.save(raw), clear: () => touchStore.clear(), eyeHeightM,
-        auto: (raw) => autoCorners(plan, parseWallPick(raw), bounds),
-        room: (raw) => pickedRoom(plan, parseWallPick(raw)),
-      },
+      start: startStore && { get: () => startStore.get(), save: (raw) => startStore.save(raw), preview: (raw) => startStore.preview(raw), clear: () => startStore.clear() },
+      phoneSync: () => phoneRef.current?.syncState() ?? null,
       plan: plans, history: history.db, reflect: history.reflect, scene: () => scene,
       brainLast: () => [lastDecision, lastBoxes].filter((e): e is BrainLog => e !== null), say: () => said,
     });
@@ -314,15 +359,11 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     speak();
     let phonePort: number | undefined;
     if (phoneOn) {
-      const floor = loadAnchorTargets(home.scenePath, join(home.dataDir, "floorplan.json"));
-      const touch = touchStore?.get() ?? null;
       // 맞추기 전에도 원뿔이 보이게: 창가 고정 위치 + 폰 방향(추정, 사진에는 쓰지 않음)
       const fallback = estimateViewpoint(JSON.parse(readFileSync(home.scenePath, "utf8").replace(/^﻿/, "")));
-      const maxMismatch = Number(env.PHONE_MAX_MISMATCH_M);
       phone = createPhoneServer({
-        targets: touch ? touchTargets(touch) : floor, mode: touch ? "touch" : "floor", eyeHeightM, feed, log, fallback,
-        floorAt: floorLookup(plan.rooms),
-        maxMismatchM: Number.isFinite(maxMismatch) && maxMismatch > 0 ? maxMismatch : undefined,
+        eyeHeightM, feed, log, fallback, floorAt: floorLookup(plan.rooms),
+        sync: { landmarks: landmarksNow(), walls: wallSegments(plan), start: startStore?.get() ?? null },
         onEye: (eye) => {
           appNow.broadcast({ type: "eye", eye });
           plans.onEye([eye.position[0], eye.position[1]], eye.estimated === true);
@@ -344,22 +385,24 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
             history.db.add("feedback", nowMs(), FEEDBACK_TEXT.answer(picked.label, open.kind, open.text), { subject: id, data: { choice, via: "button" } });
           }
         },
+        // 「그만」은 실제 폰 명령이 없는 단계(기다리기·기기)에도 진행 중인 계획을 그만둔다
         onAnswer: (text) => {
           const open = tracker?.openCommand();
-          if (!open) return { handled: false };
-          const picked = tracker!.onHeard(text);
+          const picked = tracker?.onHeard(text) ?? null;
           if (!picked) return { handled: false };
-          history.db.add("feedback", nowMs(), FEEDBACK_TEXT.answer(text, open.kind, open.text), { subject: open.planId, data: { choice: picked.id, via: "voice" } });
+          if (open) history.db.add("feedback", nowMs(), FEEDBACK_TEXT.answer(text, open.kind, open.text), { subject: open.planId, data: { choice: picked.id, via: "voice" } });
           return { handled: true, reply: picked.reply };
         },
         ...(observe ? {
           engineMs: observe.config.engineMs,
-          onEngine: (jpeg, h, eye, view, at) => observe.onEngine(jpeg, h, eye, view, at),
+          onEngine: (jpeg, h, eye, view, at) => {
+            engineHeaders.set(jpeg, h);
+            observe.onEngine(jpeg, h, eye, view, at);
+          },
         } : {}),
       });
       const phoneServer = phone;
       phoneRef.current = phone;
-      phoneRef.floor = floor;
       layout?.editor.setHere(() => phoneServer.here());
       const wantedPhone = ctx.phonePort ?? Number(env.PHONE_PORT);
       const listened = await phone.listen(Number.isInteger(wantedPhone) && wantedPhone >= 0 ? wantedPhone : 8210, env.PHONE_HOST?.trim() || "0.0.0.0");
@@ -389,7 +432,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     let link: ThinqLink | null = null;
     return {
       twin, hub: started.hub, signals, hubKind, transport: started.transport, warnings: started.warnings, policy, agent, layout: layout?.editor,
-      touch: touchStore, app: appNow, twinDir, phoneUrls, phonePort,
+      start: startStore, app: appNow, twinDir, phoneUrls, phonePort,
       setLink(next) {
         link?.stop();
         link = closed ? null : next;
@@ -401,7 +444,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         closed = true;
         // 한 단계가 실패해도 나머지(특히 폰 포트·허브)는 닫는다. 새 집이 같은 포트를 다시 잡아야 한다
         const steps: [string, () => unknown][] = [
-          ["초점", unsubFocus], ["관찰 흐름", () => { clearInterval(decideTimer); decider?.stop(); tracker?.stop(); unsubWorld(); return pipeline?.close(); }], ["눈 화면", () => feed?.close()],
+          ["초점", unsubFocus], ["관찰 흐름", () => { clearInterval(decideTimer); decider?.stop(); tracker?.stop(); planner.abort(); unsubWorld(); return pipeline?.close(); }], ["눈 화면", () => feed?.close()],
           ["폰 서버", () => phoneNow?.close()], ["앱", () => appNow.close()], ["배치", () => layout?.editor.close()], ["ThinQ", () => link?.stop()],
           ["기록", unsubHistory], ["허브", () => signals.stop()],
         ];

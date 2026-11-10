@@ -1,143 +1,96 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-import { loadAnchorTargets, type AnchorTarget } from "../src/phone/anchors.js";
+// 폰 세션(src/phone/session.ts): 위치 맞춤 모듈로 맞춘 뒤에만 진짜 눈 자세·사진 위치·카메라·「여기」·트윈 → AR을 준다.
+// AR 원점(epoch)이 바뀌면 맞춤을 버리고, 버린 원점의 늦은 메시지는 받지 않는다. 맞추기 전에는 창가 추정 눈.
+import { describe, expect, it } from "vitest";
 import { PhoneSession, estimateViewpoint } from "../src/phone/session.js";
+import type { Rigid } from "../src/sync/rigid.js";
+import { BOX_START, BOX_WALLS, alignMessages } from "./helpers/align.js";
 
-const TARGETS: AnchorTarget[] = [
-  { id: "dock", label: "도크", plan: [3.9, 5.51] },
-  { id: "door_main", label: "현관문 문턱 가운데", plan: [2.4, 3.55] },
-];
-const dirs: string[] = [];
-afterEach(() => {
-  while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true });
-});
-
-function sceneFile(objects: unknown[]): string {
-  const dir = mkdtempSync(join(tmpdir(), "phone-"));
-  dirs.push(dir);
-  const file = join(dir, "scene.json");
-  writeFileSync(file, JSON.stringify({ objects }));
-  return file;
+const sync = { landmarks: [], walls: BOX_WALLS, start: BOX_START };
+const session = (opts: { now?: () => Date; fallback?: { position: [number, number]; yawDeg: number; heightM: number } } = {}) => new PhoneSession({ ...opts, sync });
+/** 시작 위치 + 벽 점으로 맞춘다. */
+function align(s: PhoneSession, o: { epoch?: string; truth?: Rigid; floorY?: number } = {}) {
+  for (const m of alignMessages(BOX_WALLS, BOX_START, o)) s.handle(m);
+  return s;
 }
 
-const aligned = () => {
-  const s = new PhoneSession(TARGETS, { now: () => new Date("2026-10-24T10:00:00Z") });
-  s.handle({ type: "anchor", id: "dock", point: [3.9, 0, 5.51] });
-  s.handle({ type: "anchor", id: "door_main", point: [2.4, 0, 3.55] });
-  return s;
-};
-
-describe("loadAnchorTargets", () => {
-  it("scene.json 객체의 평면 위치를 읽는다", () => {
-    const file = sceneFile([{ id: "dock", plan: { position: [3.9, 5.51] } }, { id: "door_main", plan: { position: [2.4, 3.55] } }]);
-    expect(loadAnchorTargets(file)).toEqual([
-      { id: "dock", label: "도크", plan: [3.9, 5.51] },
-      { id: "door_main", label: "현관문 문턱 가운데", plan: [2.4, 3.55] },
-    ]);
+describe("PhoneSession", () => {
+  it("맞추기 전 자세는 진짜 눈으로 내보내지 않는다. 맞춘 뒤에는 자세를 눈 자세로 바꾼다", () => {
+    const s = session({ now: () => new Date("2026-10-24T10:00:00Z") });
+    expect(s.handle({ type: "pose", position: [3.9, 1.4, 5], orientation: [0, 0, 0, 1] })).toEqual({});
+    expect(s.status()).toMatchObject({ aligned: false, sync: { state: "none" } });
+    align(s);
+    expect(s.status()).toMatchObject({ aligned: true, sync: { state: "aligned", source: "walls", started: true } });
+    const eye = s.handle({ type: "pose", position: [3.9, 1.4, 4], orientation: [0, 0, 0, 1] }).eye!;
+    expect(eye.position).toEqual([3.9, 4]);
+    expect(eye.height_m).toBeCloseTo(1.4, 2);
+    expect(eye).not.toHaveProperty("estimated");
   });
 
-  it("기준점 객체가 없으면 알린다", () => {
-    expect(() => loadAnchorTargets(sceneFile([{ id: "dock", plan: { position: [3.9, 5.51] } }]))).toThrow("door_main");
+  it("잘못된 메시지는 이유를 돌려준다. 예전 기준점 기록(anchor)은 모르는 메시지다", () => {
+    const s = session();
+    expect(s.handle({ type: "nope" }).reply!.error).toBe("알 수 없는 메시지입니다");
+    expect(s.handle({ type: "anchor", id: "A", point: [0, 0, 0] }).reply!.error).toBe("알 수 없는 메시지입니다");
   });
 
-  const CORNERS = [
-    { id: "corner_nw", label: "방 왼쪽 위 모서리", position: [0.1, 0.1] },
-    { id: "corner_se", label: "방 오른쪽 아래 모서리", position: [3.9, 3.94] },
-  ];
-  const writeJson = (name: string, data: unknown) => {
-    const dir = mkdtempSync(join(tmpdir(), "phone-"));
-    dirs.push(dir);
-    const file = join(dir, name);
-    writeFileSync(file, JSON.stringify(data));
-    return file;
-  };
-  const legacy = [{ id: "dock", plan: { position: [3.9, 5.51] } }, { id: "door_main", plan: { position: [2.4, 3.55] } }];
-
-  it("scene.json plan.ar_anchors(방 모서리 두 곳)를 먼저 쓴다", () => {
-    const scene = writeJson("scene.json", { plan: { ar_anchors: CORNERS }, objects: legacy });
-    expect(loadAnchorTargets(scene)).toEqual([
-      { id: "corner_nw", label: "방 왼쪽 위 모서리", plan: [0.1, 0.1] },
-      { id: "corner_se", label: "방 오른쪽 아래 모서리", plan: [3.9, 3.94] },
-    ]);
-  });
-
-  it("scene에 없으면 floorplan.json의 ar_anchors, 그것도 없으면 도크·현관문", () => {
-    const scene = writeJson("scene.json", { plan: {}, objects: legacy });
-    const floorplan = writeJson("floorplan.json", { ar_anchors: CORNERS });
-    expect(loadAnchorTargets(scene, floorplan).map((t) => t.id)).toEqual(["corner_nw", "corner_se"]);
-    expect(loadAnchorTargets(scene, writeJson("floorplan.json", {})).map((t) => t.id)).toEqual(["dock", "door_main"]);
-    expect(loadAnchorTargets(scene, join(tmpdir(), "no-such-floorplan.json")).map((t) => t.id)).toEqual(["dock", "door_main"]);
-  });
-
-  it("ar_anchors가 두 곳이 아니거나 위치가 틀리면 알린다", () => {
-    expect(() => loadAnchorTargets(writeJson("scene.json", { plan: { ar_anchors: [CORNERS[0]] }, objects: legacy }))).toThrow(/ar_anchors.*두 곳/);
-    expect(() => loadAnchorTargets(writeJson("scene.json", { plan: { ar_anchors: [CORNERS[0], { id: "x", label: "x", position: ["a", 1] }] }, objects: legacy }))).toThrow(/ar_anchors.*x/);
+  it("reset은 맞춤을 지운다", () => {
+    const s = align(session());
+    s.handle({ type: "reset" });
+    expect(s.aligned).toBe(false);
+    expect(s.status().sync.state).toBe("none");
   });
 });
 
-describe("PhoneSession", () => {
-  it("맞추기 전 자세는 내보내지 않는다", () => {
-    const s = new PhoneSession(TARGETS);
-    expect(s.handle({ type: "pose", position: [0, 1, 0], orientation: [0, 0, 0, 1] })).toEqual({});
-    expect(s.status()).toMatchObject({ aligned: false, mismatch_m: null });
+describe("AR 원점(epoch)", () => {
+  const pose = (epoch: string) => ({ type: "pose", position: [2, 1.4, 2], orientation: [0, 0, 0, 1], tracking: "ok", epoch });
+
+  it("새 원점의 자세가 오면 reset을 못 받았어도 맞춤을 버리고 상태로 알린다", () => {
+    const s = align(session(), { epoch: "e1" });
+    const r = s.handle(pose("e2"));
+    expect(r.reply).toMatchObject({ aligned: false, error: expect.stringContaining("AR 원점이 바뀌어") });
   });
 
-  it("기준점 두 곳 뒤에는 자세를 눈 자세로 바꾼다", () => {
-    const s = aligned();
-    expect(s.status()).toMatchObject({ aligned: true, mismatch_m: 0, anchors: [{ recorded: true }, { recorded: true }] });
-    expect(s.handle({ type: "pose", position: [3.9, 1.4, 5], orientation: [0, 0, 0, 1], tracking: "limited" })).toEqual({
-      eye: { position: [3.9, 5], height_m: 1.4, yaw_deg: 270, pitch_deg: 0, tracking: "limited", at: "2026-10-24T10:00:00.000Z" },
-    });
+  it("이미 버린 원점의 늦은 자세·시작·면 점은 무시하고 지금 맞춤을 지킨다", () => {
+    const s = session();
+    align(s, { epoch: "e1" });
+    s.handle(pose("e2"));
+    align(s, { epoch: "e2" });
+    expect(s.aligned).toBe(true);
+    expect(s.handle(pose("e1"))).toEqual({});
+    expect(s.handle({ type: "start", position: [0, 1.4, 0], orientation: [0, 0, 0, 1], epoch: "e1" }).reply!.error).toContain("이전 AR");
+    expect(s.aligned).toBe(true);
+    expect(s.handle(pose("e2")).eye).toBeDefined();
   });
 
-  it("잘못된 메시지·모르는 기준점·가까운 기준점은 이유를 돌려준다", () => {
-    const s = new PhoneSession(TARGETS);
-    expect(s.handle({ type: "pose", position: [0, 1] }).reply?.error).toBe("알 수 없는 메시지입니다");
-    expect(s.handle({ type: "anchor", id: "sofa", point: [0, 0, 0] }).reply?.error).toContain("sofa");
-    s.handle({ type: "anchor", id: "dock", point: [0, 0, 0] });
-    const r = s.handle({ type: "anchor", id: "door_main", point: [0.1, 0, 0] });
-    expect(r.reply).toMatchObject({ aligned: false });
-    expect(r.reply?.error).toContain("가깝습니다");
+  it("같은 원점의 reset은 맞춤만 지우고, 그 원점으로 다시 맞출 수 있다", () => {
+    const s = align(session(), { epoch: "e1" });
+    s.handle({ type: "reset", epoch: "e1" });
+    expect(s.aligned).toBe(false);
+    align(s, { epoch: "e1" });
+    expect(s.handle(pose("e1")).eye?.estimated).toBeUndefined();
   });
 
-  // 트윈 거리 2.468m의 1.5배로 찍으면 실제 거리 3.702m, 차이 1.234m
-  const FAR: [number, number, number] = [3.9 + (2.4 - 3.9) * 1.5, 0, 5.51 + (3.55 - 5.51) * 1.5];
-
-  it("거리 차이가 허용값을 넘으면 맞추지 않고 다시 찍으라고 한다", () => {
-    const s = new PhoneSession(TARGETS);
-    s.handle({ type: "anchor", id: "dock", point: [3.9, 0, 5.51] });
-    const r = s.handle({ type: "anchor", id: "door_main", point: FAR });
-    expect(r.reply).toMatchObject({ aligned: false });
-    expect(r.reply?.error).toContain("123cm");
-    expect(s.handle({ type: "pose", position: [0, 1, 0], orientation: [0, 0, 0, 1] })).toEqual({});
+  it("버린 원점의 늦은 reset은 지금 맞춤을 지우지 않는다", () => {
+    const s = session();
+    s.handle({ type: "reset", epoch: "e1" });
+    align(s, { epoch: "e2" });
+    s.handle({ type: "reset", epoch: "e1" });
+    expect(s.aligned).toBe(true);
   });
 
-  it("허용값을 크게 주면 같은 기준점도 받아들인다", () => {
-    const s = new PhoneSession(TARGETS, { maxMismatchM: 2 });
-    s.handle({ type: "anchor", id: "dock", point: [3.9, 0, 5.51] });
-    expect(s.handle({ type: "anchor", id: "door_main", point: FAR }).reply).toMatchObject({ aligned: true, mismatch_m: 1.23 });
-  });
-
-  it("eyeFor: 맞춘 뒤에만 눈 자세를 준다", () => {
-    expect(new PhoneSession(TARGETS).eyeFor([0, 1, 0], [0, 0, 0, 1], "ok")).toBeNull();
-    expect(aligned().eyeFor([3.9, 1.4, 5], [0, 0, 0, 1], "ok")).toMatchObject({ position: [3.9, 5], height_m: 1.4, tracking: "ok" });
-  });
-
-  it("reset은 기록을 지운다", () => {
-    const s = aligned();
-    expect(s.handle({ type: "reset" }).reply).toMatchObject({ aligned: false, anchors: [{ recorded: false }, { recorded: false }] });
+  it("사진: 찍은 원점이 지금 맞춤과 다르면 위치를 붙이지 않는다(원점을 안 보내면 그대로)", () => {
+    const s = align(session(), { epoch: "e2" });
+    expect(s.eyeAt([2, 1.4, 2], [0, 0, 0, 1], "ok", "e1")).toBeNull();
+    expect(s.eyeAt([2, 1.4, 2], [0, 0, 0, 1], "ok", "e2")).not.toBeNull();
+    expect(s.eyeAt([2, 1.4, 2], [0, 0, 0, 1], "ok", undefined)).not.toBeNull();
   });
 });
 
 describe("여기(조준점)와 트윈 → AR", () => {
   it("맞춘 뒤 조준점이 바닥에 닿은 자세면 평면도 점과 폰 위치를 준다", () => {
     let t = Date.parse("2026-10-24T10:00:00Z");
-    const s = new PhoneSession(TARGETS, { now: () => new Date(t) });
+    const s = session({ now: () => new Date(t) });
     expect(s.here()).toEqual({ error: expect.stringMatching(/맞추기 전/) });
-    s.handle({ type: "anchor", id: "dock", point: [3.9, 0, 5.51] });
-    s.handle({ type: "anchor", id: "door_main", point: [2.4, 0, 3.55] });
+    align(s);
     expect(s.here()).toEqual({ error: expect.stringMatching(/폰 AR/) });
     s.handle({ type: "pose", position: [3, 1.4, 4], orientation: [0, 0, 0, 1], hit: [2, 0, 3] });
     expect(s.here()).toEqual({ position: [2, 3], from: [3, 4] });
@@ -150,37 +103,42 @@ describe("여기(조준점)와 트윈 → AR", () => {
     expect(s.here()).toEqual({ error: expect.stringMatching(/맞추기 전/) });
   });
 
+  it("시작 위치만이면(어림) 「맞추는 중」", () => {
+    const s = session();
+    s.handle(alignMessages(BOX_WALLS, BOX_START)[0]!);
+    expect(s.here()).toEqual({ error: expect.stringMatching(/맞추는 중/) });
+  });
+
   it("toAr는 트윈 점(x, 높이, y)을 AR 공간으로 되돌린다(돌아간 AR 공간)", () => {
-    const s = new PhoneSession(TARGETS);
+    const s = session();
     expect(s.toAr([1, 0.5, 2])).toBeNull();
-    // plan = R(90°)·ar + t → ar = (plan.y, -plan.x), AR 바닥 높이 0.1
-    s.handle({ type: "anchor", id: "dock", point: [5.51, 0.1, -3.9] });
-    s.handle({ type: "anchor", id: "door_main", point: [3.55, 0.1, -2.4] });
+    // 정답: plan = R(90°)·ar + (0, 0), AR 바닥 높이 0.1
+    align(s, { truth: { theta: Math.PI / 2, tx: 0, ty: 0 }, floorY: 0.1 });
     const ar = s.toAr([1, 0.5, 2])!;
-    [2, 0.6, -1].forEach((v, i) => expect(ar[i]).toBeCloseTo(v, 6));
-    s.handle({ type: "pose", position: [0, 1.4, 0], orientation: [0, 0, 0, 1], hit: ar });
+    [2, 0.6, -1].forEach((v, i) => expect(ar[i]).toBeCloseTo(v, 2));
+    s.handle({ type: "pose", position: [0, 1.5, 0], orientation: [0, 0, 0, 1], hit: ar });
     const here = s.here() as { position: [number, number] };
-    here.position.forEach((v, i) => expect(v).toBeCloseTo([1, 2][i]!, 3));
+    here.position.forEach((v, i) => expect(v).toBeCloseTo([1, 2][i]!, 2));
   });
 });
 
 describe("엔진 프레임 카메라(viewAt)", () => {
   const P = Array.from({ length: 16 }, (_, i) => (i % 5 === 0 ? 1 : 0));
   it("맞춘 뒤에만 트윈 원점 [x, 높이, y]·AR 회전·맞춤 회전·투영을 준다", () => {
-    const s = new PhoneSession(TARGETS);
-    expect(s.viewAt([3.9, 1.4, 5], [0, 0, 0, 1], P, undefined)).toBeNull();
-    s.handle({ type: "anchor", id: "dock", point: [3.9, 0, 5.51] });
-    s.handle({ type: "anchor", id: "door_main", point: [2.4, 0, 3.55] });
-    const v = s.viewAt([3.9, 1.4, 5], [0, 0, 0, 1], P, undefined)!;
-    expect(v).toMatchObject({ origin: [3.9, 1.4, 5], orientation: [0, 0, 0, 1], projection: P });
-    expect(v.theta).toBeCloseTo(0, 6);
+    const s = session();
+    expect(s.viewAt([3.9, 1.4, 4], [0, 0, 0, 1], P, undefined)).toBeNull();
+    align(s);
+    const v = s.viewAt([3.9, 1.4, 4], [0, 0, 0, 1], P, undefined)!;
+    expect(v).toMatchObject({ orientation: [0, 0, 0, 1], projection: P });
+    v.origin.forEach((x, i) => expect(x).toBeCloseTo([3.9, 1.4, 4][i]!, 2));
+    expect(v.theta).toBeCloseTo(0, 3);
   });
   it("투영이 없거나 16개가 아니거나 다른 AR 원점이면 null", () => {
-    const s = aligned();
-    expect(s.viewAt([3.9, 1.4, 5], [0, 0, 0, 1], undefined, undefined)).toBeNull();
-    expect(s.viewAt([3.9, 1.4, 5], [0, 0, 0, 1], [1, 2], undefined)).toBeNull();
+    const s = align(session());
+    expect(s.viewAt([3.9, 1.4, 4], [0, 0, 0, 1], undefined, undefined)).toBeNull();
+    expect(s.viewAt([3.9, 1.4, 4], [0, 0, 0, 1], [1, 2], undefined)).toBeNull();
     s.handle({ type: "reset", epoch: "a" });
-    expect(s.viewAt([3.9, 1.4, 5], [0, 0, 0, 1], P, "b")).toBeNull();
+    expect(s.viewAt([3.9, 1.4, 4], [0, 0, 0, 1], P, "b")).toBeNull();
   });
 });
 
@@ -189,14 +147,12 @@ describe("맞추기 전 추정 눈(창가 고정 위치 + 폰 방향)", () => {
   const s45 = Math.SQRT1_2;
 
   it("AR 시작 방향(-Z)을 창에서 방 안쪽으로 보고, 돌리면 yaw·기울이면 pitch가 바뀐다(위치는 고정)", () => {
-    const s = new PhoneSession(TARGETS, { now: () => new Date("2026-10-24T10:00:00Z"), fallback: FALLBACK });
+    const s = session({ now: () => new Date("2026-10-24T10:00:00Z"), fallback: FALLBACK });
     expect(s.handle({ type: "pose", position: [0, 1.4, 0], orientation: [0, 0, 0, 1] })).toEqual({
       eye: { position: [2, 0.8], height_m: 1.3, yaw_deg: 90, pitch_deg: 0, tracking: "ok", at: "2026-10-24T10:00:00.000Z", estimated: true },
     });
-    // +Y로 90° 돌림(위에서 보면 왼쪽으로): 남쪽(90) → 동쪽(0). 걸어도 위치는 그대로
     const left = s.handle({ type: "pose", position: [3, 1.2, -2], orientation: [0, s45, 0, s45] }).eye!;
     expect(left).toMatchObject({ position: [2, 0.8], height_m: 1.3, yaw_deg: 0, estimated: true });
-    // 아래로 30° 기울임
     const sin15 = Math.sin(-Math.PI / 12);
     const down = s.handle({ type: "pose", position: [0, 1.4, 0], orientation: [sin15, 0, 0, Math.cos(-Math.PI / 12)] }).eye!;
     expect(down.pitch_deg).toBeCloseTo(-30, 1);
@@ -204,18 +160,16 @@ describe("맞추기 전 추정 눈(창가 고정 위치 + 폰 방향)", () => {
   });
 
   it("사진(eyeFor)에는 추정 눈을 쓰지 않고, 맞춘 뒤에는 진짜 자세(estimated 없음)", () => {
-    const s = new PhoneSession(TARGETS, { now: () => new Date("2026-10-24T10:00:00Z"), fallback: FALLBACK });
+    const s = session({ fallback: FALLBACK });
     expect(s.eyeFor([0, 1.4, 0], [0, 0, 0, 1], "ok")).toBeNull();
-    s.handle({ type: "anchor", id: "dock", point: [3.9, 0, 5.51] });
-    s.handle({ type: "anchor", id: "door_main", point: [2.4, 0, 3.55] });
-    const eye = s.handle({ type: "pose", position: [3.9, 1.4, 5], orientation: [0, 0, 0, 1] }).eye!;
-    expect(eye.position).toEqual([3.9, 5]);
+    align(s);
+    const eye = s.handle({ type: "pose", position: [3.9, 1.4, 4], orientation: [0, 0, 0, 1] }).eye!;
+    expect(eye.position).toEqual([3.9, 4]);
     expect(eye).not.toHaveProperty("estimated");
   });
 
-  it("추정 기준이 없으면 맞추기 전에는 아무것도 보내지 않는다(예전 그대로)", () => {
-    const s = new PhoneSession(TARGETS);
-    expect(s.handle({ type: "pose", position: [0, 1.4, 0], orientation: [0, 0, 0, 1] })).toEqual({});
+  it("추정 기준이 없으면 맞추기 전에는 아무것도 보내지 않는다", () => {
+    expect(session().handle({ type: "pose", position: [0, 1.4, 0], orientation: [0, 0, 0, 1] })).toEqual({});
   });
 });
 

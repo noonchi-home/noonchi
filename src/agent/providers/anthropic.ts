@@ -70,7 +70,7 @@ export class AnthropicProvider implements LlmProvider {
     }));
     const res = await this.client.beta.messages.create({
       model: this.model,
-      max_tokens: this.#maxTokens,
+      max_tokens: opts.maxOutputTokens ?? this.#maxTokens,
       system: opts.system,
       messages: s.messages,
       tools,
@@ -78,7 +78,7 @@ export class AnthropicProvider implements LlmProvider {
       output_config: { effort: this.effort },
       cache_control: { type: "ephemeral" },
       ...(this.fallbacks ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),
-    });
+    }, opts.signal ? { signal: opts.signal } : undefined);
     s.messages.push({ role: "assistant", content: res.content });
     if (res.stop_reason === "refusal") return { text: "죄송해요, 이 요청은 처리할 수 없어요.", calls: [] };
     const calls = res.content.flatMap((b) => (b.type === "tool_use" ? [{ id: b.id, name: b.name, args: b.input }] : []));

@@ -22,7 +22,7 @@ export function setupView(over: Partial<SetupView> = {}): SetupView {
       device("light_room1", "안방 조명", "안방", "light", "조명"),
     ],
     devices_saved: false,
-    position: { touch: false, layout: false, phone_urls: [] },
+    position: { start: false, layout: false, phone_urls: [] },
     mode: "test", thinq: { ready: true }, pairs: {},
     ...over,
   };
@@ -46,7 +46,7 @@ export function fakeSetupApi(start: SetupView, routes: Record<string, (body: any
     },
     "POST /api/setup/done": () => [200, { ...view, done: true }],
     "HEAD /twin/viewer/": () => [404, null],
-    "GET /api/phone/touch-points": () => [404, { ok: false }],
+    "GET /api/phone/start-pose": () => [404, { ok: false }],
     "GET /api/layout": () => [404, { ok: false }],
   };
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {

@@ -41,15 +41,15 @@ describe("PAM 관찰 텍스트", () => {
       at_ms: T(21, 10, 0),
       objects: [
         { id: "cup_1", cls: "cup", position: [1, 0.75, 2], surface: "table_1", surface_label: "식탁", room: "kitchen", error_m: 0.1, status: "present",
-          first_seen_ms: T(21, 0, 0), last_seen_ms: T(21, 9, 58), last_in_view_ms: T(21, 9, 58), facts: { contents: { value: "empty", at_ms: T(21, 9, 58), certainty: "confirmed" } }, devices: ["dishwasher_1"] },
+          first_seen_ms: T(21, 0, 0), last_seen_ms: T(21, 9, 58), last_in_view_ms: T(21, 9, 58), facts: { contents: { value: "empty", at_ms: T(21, 9, 58), since_ms: T(21, 9, 58), certainty: "confirmed" } }, answered_ms: null, devices: ["dishwasher_1"] },
         { id: "bowl_1", cls: "bowl", position: null, surface: null, surface_label: null, room: null, error_m: null, status: "out_of_view",
-          first_seen_ms: T(21, 9, 30), last_seen_ms: T(21, 9, 40), last_in_view_ms: T(21, 9, 40), facts: { place: { value: "in_sink", at_ms: T(21, 9, 40), certainty: "inferred" } }, devices: [] },
+          first_seen_ms: T(21, 9, 30), last_seen_ms: T(21, 9, 40), last_in_view_ms: T(21, 9, 40), facts: { place: { value: "in_sink", at_ms: T(21, 9, 40), since_ms: T(21, 9, 40), certainty: "inferred" } }, answered_ms: null, devices: [] },
         { id: "cup_2", cls: "cup", position: null, surface: null, surface_label: null, room: null, error_m: null, status: "gone",
-          first_seen_ms: T(21, 0, 0), last_seen_ms: T(21, 1, 0), last_in_view_ms: T(21, 1, 0), facts: {}, devices: [] },
+          first_seen_ms: T(21, 0, 0), last_seen_ms: T(21, 1, 0), last_in_view_ms: T(21, 1, 0), facts: {}, answered_ms: null, devices: [] },
       ],
-      person: { visible: false, since_ms: T(21, 5, 0), last_seen_ms: T(21, 4, 58), facts: {} },
-      devices: [{ id: "dishwasher_1", kind: "dishwasher", label: "식기세척기", status: "작동 중", changed_ms: T(21, 0, 0), started_ms: T(21, 0, 0), remaining_min: 42, history: [] }],
-      eye: { position: [1, 2], height_m: 1.5, yaw_deg: 0, pitch_deg: -30, room: "kitchen", room_label: "주방", at_ms: T(21, 9, 59) }, vlm_missing: 3, yolo_missing: 0,
+      person: { visible: false, since_ms: T(21, 5, 0), last_seen_ms: T(21, 4, 58), count: 0, room: null, room_label: null, position: null, near: [], holding: [], position_ms: null, answered_ms: null, facts: {} },
+      fixtures: [], devices: [{ id: "dishwasher_1", kind: "dishwasher", label: "식기세척기", status: "작동 중", state: ["running"], active: true, changed_ms: T(21, 0, 0), event_ms: null, started_ms: T(21, 0, 0), remaining_min: 42, history: [] }],
+      eye: { position: [1, 2], height_m: 1.5, yaw_deg: 0, pitch_deg: -30, room: "kitchen", room_label: "주방", at_ms: T(21, 9, 59) }, frame_ms: null, vlm_missing: 3, yolo_missing: 0,
     };
     const c = (kind: WorldChange["kind"], at: number, text: string): WorldChange => ({ kind, at_ms: at, subject: "x", text, meaningful: false });
     const recent = [c("appeared", T(21, 0, 0), "컵 cup_1 보임 · 식탁 위"), c("vlm", T(21, 9, 10), "VLM: 컵이 식탁 위"),
@@ -60,7 +60,8 @@ describe("PAM 관찰 텍스트", () => {
       "[지속] 컵 cup_1 식탁 위 · 비어 있음: 21:00:00부터 10분째, 마지막 확인 21:09:58",
       "[지속] 그릇 bowl_1 싱크대 안: 21:09:30부터 30초째, 마지막 확인 21:09:40, 지금 시야 밖",
       "[지속] 사람 안 보임: 21:05:00부터 5분째",
-      "[지속] 식기세척기 dishwasher_1: 작동 중, 21:00:00에 바뀜, 남은 시간 42분",
+      "[지속] 식기세척기 dishwasher_1: 작동 중, 21:00:00부터 10분째, 남은 시간 42분",
+      "[때] 11월 7일 토요일 밤",
       "[눈] 클로이드 눈: 주방",
     ]);
   });
@@ -73,8 +74,57 @@ describe("PAM 관찰 텍스트", () => {
   });
 
   it("첫 프레임 전이면 사람 줄에 시각을 붙이지 않는다", () => {
-    const view: WorldView = { at_ms: 0, objects: [], person: { visible: false, since_ms: null, last_seen_ms: null, facts: {} }, devices: [], eye: null, vlm_missing: 0, yolo_missing: 0 };
-    expect(textFromWorld(view, [], { nowMs: 0, offsetMinutes: 540 })).toBe("[지속] 사람 안 보임");
+    const view: WorldView = { at_ms: 0, objects: [], person: { visible: false, since_ms: null, last_seen_ms: null, count: 0, room: null, room_label: null, position: null, near: [], holding: [], position_ms: null, answered_ms: null, facts: {} }, fixtures: [], devices: [], eye: null, frame_ms: null, vlm_missing: 0, yolo_missing: 0 };
+    expect(textFromWorld(view, [], { nowMs: 0, offsetMinutes: 540 })).toBe("[지속] 사람 안 보임\n[때] 1월 1일 목요일 오전");
+  });
+
+  it("새 상황 줄: TV 보는 중·약 먹는 중(VLM 하는 일), 세탁 멈춤(가전 사건), [지속] 사람 자세·하는 일, [때] 요일·하루 때", () => {
+    const w = new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방·식당" }), devices: () => [{ id: "washer_d559f0ae", kind: "washer", label: "후면 발코니 세탁기" }] });
+    const person: Detection = { label: "person", score: 0.9, cls: 0, box: [10, 10, 100, 300] };
+    const frame = (i: number): EngineFrame => ({ id: `e${i}`, capturedAtMs: T(21, 4, i * 2), latestAtMs: T(21, 4, i * 2), jpeg: Buffer.from(`${i}`), sha256: sha256(Buffer.from(`${i}`)), width: 480, height: 360, eye: null, view: null });
+    const changes: WorldChange[] = [];
+    w.applyDevice({ id: "washer_d559f0ae", online: true, twin: { running: true }, matter: {}, updatedAt: "" }, T(21, 0, 0));
+    let ids = new Map<string, string>();
+    for (let i = 1; i <= 6; i++) {
+      w.setEye({ position: [1, 2], height_m: 1.2, yaw_deg: 0, pitch_deg: -20 }, T(21, 4, i * 2));
+      const r = w.applyDetections(frame(i), [person]);
+      changes.push(...r.changes);
+      ids = r.ids;
+      if (i === 3) changes.push(...w.applyScene("e3", T(21, 4, 6), { scene: "living room", observations: [{ object_id: "d1", state: "sitting" }, { object_id: "d1", state: "on_sofa" }, { object_id: "d1", state: "watching_tv" }], summary: "사람이 소파에 앉아 TV를 본다" }, ids));
+      if (i === 6) changes.push(...w.applyScene("e6", T(21, 4, 12), { scene: "living room", observations: [{ object_id: "d1", state: "sitting" }, { object_id: "d1", state: "taking_medicine" }], summary: "사람이 약을 입에 넣는다" }, ids));
+    }
+    changes.push(...w.applyDevice({ id: "washer_d559f0ae", online: true, twin: { running: false }, matter: {}, updatedAt: "" }, T(21, 4, 14)));
+    const text = textFromWorld(w.view(T(21, 4, 20)), changes, { nowMs: T(21, 4, 20), offsetMinutes: 540 });
+    // docs/world-vocabulary.md 「관찰 텍스트에서 보이는 모양」은 이 글이다
+    expect(readFileSync(new URL("../docs/world-vocabulary.md", import.meta.url), "utf8").replace(/\r\n/g, "\n")).toContain(`\`\`\`\n${text}\n\`\`\``);
+    expect(text.split("\n")).toEqual([
+      "21:04:04 사람 보임",
+      "21:04:06 VLM: 사람이 소파에 앉아 TV를 본다",
+      "21:04:06 사람 앉아 있음",
+      "21:04:06 사람 소파 위",
+      "21:04:06 사람 TV 보는 중",
+      "21:04:12 VLM: 사람이 약을 입에 넣는다",
+      "21:04:12 사람 약 먹는 중",
+      "21:04:14 후면 발코니 세탁기 세탁 멈춤",
+      "[지속] 사람 보임: 21:04:04부터 16초째",
+      "[지속] 사람 앉아 있음: 21:04:06부터 14초째",
+      "[지속] 사람 약 먹는 중: 21:04:12부터 8초째",
+      "[지속] 후면 발코니 세탁기 washer_d559f0ae: 멈춤, 21:04:14부터 6초째",
+      "[때] 11월 7일 토요일 밤",
+      "[눈] 클로이드 눈: 주방·식당",
+    ]);
+  });
+
+  it("10초 넘은 지금만 맞는 사실(하는 일·쓰는 중)은 [지속]에 쓰지 않는다. 자세처럼 이어지는 사실은 쓴다", () => {
+    const f = (value: string, at: number) => ({ value, at_ms: at, since_ms: at, certainty: "confirmed" as const });
+    const view: WorldView = {
+      at_ms: T(21, 1, 0), objects: [], fixtures: [], devices: [], eye: null, frame_ms: T(21, 1, 0), vlm_missing: 0, yolo_missing: 0,
+      person: { visible: true, since_ms: T(21, 0, 0), last_seen_ms: T(21, 1, 0), count: 1, room: null, room_label: null, position: null, position_ms: null, near: [], holding: [],
+        facts: { posture: f("sitting", T(21, 0, 1)), activity: f("drinking", T(21, 0, 1)) }, answered_ms: T(21, 0, 1) },
+    };
+    const lines = textFromWorld(view, [], { nowMs: T(21, 1, 0), offsetMinutes: 540 }).split("\n");
+    expect(lines).toContain("[지속] 사람 앉아 있음: 21:00:01부터 59초째");
+    expect(lines.some((l) => l.includes("마시는 중"))).toBe(false);
   });
 
   it("docs/pam-interface.md 예시 관찰 텍스트는 World State가 실제로 만드는 글이다", () => {

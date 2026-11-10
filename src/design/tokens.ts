@@ -262,7 +262,9 @@ export const twin = {
     "aim": {
       "miss": "#e0442a",
       "hit": "#2e9e5f",
+      "estimated": "#e8a33a",
       "hitShape": "가운데 점 채움",
+      "estimatedShape": "가운데 점 채움",
       "missShape": "빈 고리"
     }
   },

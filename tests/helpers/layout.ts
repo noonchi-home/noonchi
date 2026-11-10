@@ -24,8 +24,9 @@ export function scene(): SceneJson {
         { id: "entrance", label: "현관", polygon: [[2, 4], [4, 4], [4, 5], [2, 5]], floor_z: -0.1 },
       ],
       walls: [
-        { id: "N", a: [0, 0], b: [4, 0], thickness: 0.2 },
-        { id: "E", a: [4, 0], b: [4, 5], thickness: 0.2 },
+        // 방 쪽 면(faces)은 폰 위치 맞추기 벽 모양 짝에 쓴다
+        { id: "N", a: [0, 0], b: [4, 0], thickness: 0.2, faces: [{ room: "room", normal: [0, 1] }] },
+        { id: "E", a: [4, 0], b: [4, 5], thickness: 0.2, faces: [{ room: "room", normal: [-1, 0] }, { room: "entrance", normal: [-1, 0] }] },
       ],
     },
     objects: [

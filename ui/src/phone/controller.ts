@@ -4,15 +4,17 @@
 // 답 단추는 받은 명령의 id·step으로 answer를, 승인 대기 답 단추는 그 토큰과 답(승인·거절)으로 confirm을 보낸다.
 // 말의 답(reply)이 빈 글이면 보이지도 읽지도 않는다. 잠깐 알릴 말은 4초.
 // 카메라 화면을 못 보내면(core/ar.js 알림) 그 AR 동안 cameraOff로 두어 설정 모달에 「카메라 · 못 보냄」을 남긴다.
+// 위치 맞춤: 시작 위치가 있으면 AR을 켤 때 「여기서 시작」(시작 위치 맞추기)을 띄운다(state.ts onStatus). 단추나 말 「여기서 시작」이면
+// 마지막 폰 자세와 원점으로 {type:"start"}를 보낸다. 그 뒤 서버가 걸으면서 물건·벽 모양으로 맞춘다(src/sync).
 // 명령 대상 고리: 명령에 실린 대상(target, AR 자리) 하나만, 위 줄·엄지 자리에 그 명령이 보일 때만(handOf) 그린다. 에이전트 초점(focus)은
-// 명령이 없을 때만 AR에 넘긴다(대시보드로 가는 화면 프레임에만 그려지고 실제 폰 화면에는 그리지 않는다). 조준점은 찍기·맞추기 때만(draw.aim).
+// 명령이 없을 때만 AR에 넘긴다(대시보드로 가는 화면 프레임에만 그려지고 실제 폰 화면에는 그리지 않는다). 조준점은 물건 자리 맞추기 때만(draw.aim).
 import type { PhoneCommand, PhoneCommandClear } from "../../../src/contract/phone.ts";
 import { createAr } from "./core/ar.js";
 import { createLink, phoneSocketUrl } from "./core/link.js";
 import { createListener, recognition, speak as speakAloud, type RecognitionCtor } from "./core/talk.js";
 import {
-  createStore, handOf, initialView, onStatus,
-  type Anchor, type AlignMode, type FocusMark, type Pending, type PhoneActions, type PhoneView,
+  createStore, handOf, initialView, isStartWord, onStatus,
+  type FocusMark, type Pending, type PhoneActions, type PhoneView, type SyncWire,
 } from "./state";
 
 const NOTE_MS = 4000;
@@ -37,8 +39,8 @@ export interface ControllerDeps {
   xr?: XrLike | null;
   arDeps?: Record<string, unknown>;
 }
-/** canvas 그림: start는 덮개를 열 때 한 번(지난 세션 그림을 지운다), aim은 조준점 켜고 끄기, hit·marks는 XR 프레임마다. */
-export interface ControllerDraw { start(): void; aim(on: boolean): void; hit(on: boolean): void; marks(marks: FocusMark[]): void }
+/** canvas 그림: start는 덮개를 열 때 한 번(지난 세션 그림을 지운다), aim은 조준점 켜고 끄기(물건 자리 맞추기), hit(닿음, 어림 바닥)·marks는 XR 프레임마다. */
+export interface ControllerDraw { start(): void; aim(on: boolean): void; hit(on: boolean, estimated: boolean): void; marks(marks: FocusMark[]): void }
 export interface PhoneController {
   view(): PhoneView;
   subscribe(fn: () => void): () => void;
@@ -56,8 +58,6 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
   const params = new URLSearchParams(deps.location.search);
   const store = createStore<PhoneView>(initialView());
   const set = (fn: (v: PhoneView) => PhoneView) => store.set(fn);
-  /** 기록에 붙일 서버 기준점 판. */
-  let revision: number | null = null;
   let overlay: HTMLElement | null = null;
   let draw: ControllerDraw = { start: () => {}, aim: () => {}, hit: () => {}, marks: () => {} };
   let noteTimer: ReturnType<typeof setTimeout> | undefined;
@@ -65,9 +65,9 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
   let talkTurn = 0;
   let aim = false;
 
-  // 조준점은 찍기·맞추기 때만: setup이 바뀌면 그림에 알린다
+  // 조준점은 물건 자리 맞추기 때만: setup이 바뀌면 그림에 알린다
   store.subscribe(() => {
-    const on = store.get().setup !== null;
+    const on = store.get().setup === "place";
     if (on === aim) return;
     aim = on;
     draw.aim(on);
@@ -82,11 +82,11 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
     ? createListener(Recognition, { onState: (s) => set((v) => ({ ...v, listening: s })), onHeard: (text) => actions.say(text) })
     : null;
 
-  /** XR 프레임마다: 바닥 닿음·추적 약함이 바뀔 때만 화면 상태를 바꾼다. */
-  function syncFrame(hit?: boolean) {
+  /** XR 프레임마다: 바닥 닿음(어림 바닥인지)·추적 약함이 바뀔 때만 화면 상태를 바꾼다. */
+  function syncFrame(hit?: boolean, hitEstimated?: boolean) {
     const v = store.get();
-    const next = { hit: hit ?? v.hit, limited: ar.state.limited };
-    if (next.hit !== v.hit || next.limited !== v.limited) set((w) => ({ ...w, ...next }));
+    const next = { hit: hit ?? v.hit, hitEstimated: hitEstimated ?? v.hitEstimated, limited: ar.state.limited };
+    if (next.hit !== v.hit || next.hitEstimated !== v.hitEstimated || next.limited !== v.limited) set((w) => ({ ...w, ...next }));
   }
   const ar = createAr({
     link, params, deps: deps.arDeps,
@@ -98,14 +98,14 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
       },
       onEnd: () => {
         listener?.stop();
-        set((v) => ({ ...v, ar: false, setup: null, settingsOpen: false, limited: false, hit: false }));
+        set((v) => ({ ...v, ar: false, setup: null, settingsOpen: false, limited: false, hit: false, hitEstimated: false }));
       },
-      onHit: (hit) => {
-        draw.hit(hit);
-        syncFrame(hit);
+      onHit: (hit, estimated) => {
+        draw.hit(hit, estimated);
+        syncFrame(hit, estimated);
       },
       onMarks: (marks) => {
-        // 위 줄·엄지 자리에 명령이 보일 때만(승인 대기·찍기·맞추기가 차지하면 그리지 않는다), 그 명령 대상 하나만
+        // 위 줄·엄지 자리에 명령이 보일 때만(승인 대기·시작 위치·물건 자리 맞추기가 차지하면 그리지 않는다), 그 명령 대상 하나만
         const t = handOf(store.get()).thumb;
         const target = t?.kind === "command" ? t.command.target : null;
         draw.marks(target ? marks.filter((m) => m.id === target).slice(0, 1) : []);
@@ -143,9 +143,8 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
 
   function onMessage(msg: Msg) {
     if (msg.type === "status") {
-      revision = msg.revision ?? null;
       ar.setEngineMs(msg.engine_ms);
-      set((v) => ({ ...onStatus(v, msg as { mode?: AlignMode; anchors: Anchor[]; aligned: boolean; mismatch_m?: number | null }), connected: true }));
+      set((v) => ({ ...onStatus(v, msg as { aligned: boolean; sync?: SyncWire }), connected: true }));
       if (msg.error) showNote(msg.error);
     } else if (msg.type === "reply") {
       // pending 칸이 없으면(명령의 답·승인·취소의 답) 승인 대기 목록을 그대로 둔다
@@ -168,13 +167,6 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
     }
   }
 
-  /** 벽 기준점 기록: 조준점이 닿은 바닥 점(벽 바로 아래)을 그 기준점으로 보낸다. 점 자체가 바닥이라 floor도 같은 점이다. */
-  function aimTouch(id: string) {
-    if (!ar.state.on) return showNote("AR을 먼저 시작하세요");
-    if (!ar.state.lastFloor) return showNote(`조준점이 바닥에 닿지 않았어요. ${id} 벽 바로 아래 바닥을 천천히 비춰 주세요`);
-    if (!link.send({ type: "anchor", id, point: ar.state.lastFloor, floor: ar.state.lastFloor, epoch: ar.state.epoch, revision })) showNote("서버와 연결이 끊겨 기록하지 못했어요");
-  }
-
   const actions: PhoneActions = {
     startAr() {
       // 사용자 동작 안에서 바로 requestSession까지 간다(await 없이)
@@ -182,24 +174,22 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
       if (!overlay) return failed("페이지를 새로 고쳐 주세요");
       ar.start(overlay).catch((error: Error) => failed(error.message));
     },
-    recordAnchor(id) {
-      if (store.get().mode === "touch") return aimTouch(id);
-      if (!ar.state.on) return showNote("AR을 먼저 시작하세요");
-      if (!ar.state.hitPoint) return showNote("조준점이 바닥에 닿지 않았어요. 바닥을 천천히 비춰 주세요");
-      if (!link.send({ type: "anchor", id, point: ar.state.hitPoint, epoch: ar.state.epoch, revision })) showNote("서버와 연결이 끊겨 기록하지 못했어요");
-    },
-    startAnchors() {
-      // 같은 AR 공간에서 다시 맞추기: 원점(epoch)은 그대로 두고 기록만 지운다
-      link.send({ type: "reset", epoch: ar.state.epoch });
-      set((v) => ({ ...v, setup: "anchors", settingsOpen: false }));
-    },
     startPlace: () => set((v) => ({ ...v, setup: "place", settingsOpen: false })),
+    startFromSpot: () => set((v) => ({ ...v, setup: "start", settingsOpen: false })),
+    confirmStart() {
+      if (!ar.state.on) return showNote("AR을 먼저 시작하세요");
+      if (!ar.state.position || !ar.state.orientation) return showNote("폰 위치를 아직 몰라요. 폰을 조금 움직인 뒤 다시 눌러 주세요");
+      if (!link.send({ type: "start", position: ar.state.position, orientation: ar.state.orientation, epoch: ar.state.epoch })) return showNote("서버와 연결이 끊겨 보내지 못했어요");
+      set((v) => ({ ...v, setup: v.setup === "start" ? null : v.setup }));
+    },
     endSetup: () => set((v) => ({ ...v, setup: null })),
     setSettings: (open) => set((v) => ({ ...v, settingsOpen: open })),
     micOn: () => listener?.start(),
     say(text) {
       const t = text.trim();
       if (!t) return;
+      // 시작 위치 맞추기 중 「여기서 시작」은 단추와 같다(에이전트로 보내지 않는다)
+      if (store.get().setup === "start" && isStartWord(t)) return actions.confirmStart();
       set((v) => ({ ...v, reply: `🎙 "${t}" … 생각 중` }));
       if (!link.send({ type: "say", text: t })) set((v) => ({ ...v, reply: "서버와 연결이 끊겼어요. 잠시 뒤 다시 말해 주세요." }));
     },

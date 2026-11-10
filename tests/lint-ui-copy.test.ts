@@ -114,16 +114,17 @@ describe("web/·ui/src·폰 입구 전체", () => {
 describe("서버가 화면에 그대로 내보내는 계획 글(src/plan/labels.ts)", () => {
   const labels = fileURLToPath(new URL("../src/plan/labels.ts", import.meta.url));
   const worldLabels = fileURLToPath(new URL("../src/world/labels.ts", import.meta.url));
+  const worldVocab = fileURLToPath(new URL("../src/world/vocab.ts", import.meta.url));
   const historyLabels = fileURLToPath(new URL("../src/history/labels.ts", import.meta.url));
   const prompts = fileURLToPath(new URL("../src/act/prompts.ts", import.meta.url));
   it("npm run lint가 web/·ui/src와 함께 본다", () => {
-    expect(COPY_TARGETS).toEqual([webDir, uiDir, uiPhoneDir, labels, worldLabels, historyLabels, prompts]);
+    expect(COPY_TARGETS).toEqual([webDir, uiDir, uiPhoneDir, labels, worldLabels, worldVocab, historyLabels, prompts]);
     expect(copyFiles([labels])).toEqual([labels]);
   });
-  it("World State 글(src/world/labels.ts)도 꺼내 검사한다. 괄호·화살표는 템플릿 글에도 없다", () => {
-    const texts = fileCopy(worldLabels, readFileSync(worldLabels, "utf8")).map((c) => c.text);
-    expect(texts).toEqual(expect.arrayContaining(["사람", "컵", "식탁 위", "… 보임…", "… 시야 밖", "요청이 몰려 VLM 분석 없음", "감지 오류로 YOLOX 분석 없음", "요청이 몰려 YOLOX·VLM 분석 없음"]));
-    expect(lintUiCopy([worldLabels])).toEqual([]);
+  it("World State 글(src/world/labels.ts, 낱말 표 src/world/vocab.ts)도 꺼내 검사한다. 괄호·화살표는 템플릿 글에도 없다", () => {
+    const texts = [worldLabels, worldVocab].flatMap((f) => fileCopy(f, readFileSync(f, "utf8")).map((c) => c.text));
+    expect(texts).toEqual(expect.arrayContaining(["사람", "컵", "식탁 위", "TV 보는 중", "세탁 멈춤", "… 보임…", "… 시야 밖", "요청이 몰려 VLM 분석 없음", "감지 오류로 YOLO 분석 없음", "요청이 몰려 YOLO·VLM 분석 없음"]));
+    expect(lintUiCopy([worldLabels, worldVocab])).toEqual([]);
     expect(texts.filter((t) => /[()→]/.test(t))).toEqual([]);
   });
   it("기록 글(src/history/labels.ts)도 꺼내 검사한다. 괄호·화살표는 템플릿 글에도 없다", () => {
