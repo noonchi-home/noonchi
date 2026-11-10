@@ -8,8 +8,12 @@
 // 마지막 폰 자세와 원점으로 {type:"start"}를 보낸다. 그 뒤 서버가 걸으면서 물건·벽 모양으로 맞춘다(src/sync).
 // 명령 대상 고리: 명령에 실린 대상(target, AR 자리) 하나만, 위 줄·엄지 자리에 그 명령이 보일 때만(handOf) 그린다. 에이전트 초점(focus)은
 // 명령이 없을 때만 AR에 넘긴다(대시보드로 가는 화면 프레임에만 그려지고 실제 폰 화면에는 그리지 않는다). 조준점은 물건 자리 맞추기 때만(draw.aim).
+// 영상 입력 모드(?clip=, core/video-ar.js): 카메라 대신 영상을 틀고 고정 자세로 바로 맞춘다(start fixed). 지원은 바로 되고(WebXR·https 없어도),
+// 소리 읽기·늘 듣기는 끈다(답은 화면 단추). 「여기서 시작」은 저절로 열지 않고, 서버 맞춤이 없으면 영상 AR이 시작 자세를 다시 보낸다(syncStatus).
+// 받은 명령은 그 영상 시각으로 기록한다(window.__noonchiVideo).
 import type { PhoneCommand, PhoneCommandClear } from "../../../src/contract/phone.ts";
-import { createAr } from "./core/ar.js";
+import { createAr, type ArHooks, type PhoneAr } from "./core/ar.js";
+import { createVideoAr, logVideoCommand, videoParams, type VideoArDeps } from "./core/video-ar.js";
 import { createLink, phoneSocketUrl } from "./core/link.js";
 import { createListener, recognition, speak as speakAloud, type RecognitionCtor } from "./core/talk.js";
 import {
@@ -53,9 +57,10 @@ export interface PhoneController {
 type Msg = Record<string, any>;
 
 export function createPhoneController(deps: ControllerDeps): PhoneController {
-  const speak = deps.speak ?? speakAloud;
-  const Recognition = deps.Recognition === undefined ? recognition() : deps.Recognition;
   const params = new URLSearchParams(deps.location.search);
+  const video = videoParams(params);
+  const speak = video ? (_text: string, done: () => void) => done() : deps.speak ?? speakAloud;
+  const Recognition = video ? null : deps.Recognition === undefined ? recognition() : deps.Recognition;
   const store = createStore<PhoneView>(initialView());
   const set = (fn: (v: PhoneView) => PhoneView) => store.set(fn);
   let overlay: HTMLElement | null = null;
@@ -88,37 +93,38 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
     const next = { hit: hit ?? v.hit, hitEstimated: hitEstimated ?? v.hitEstimated, limited: ar.state.limited };
     if (next.hit !== v.hit || next.hitEstimated !== v.hitEstimated || next.limited !== v.limited) set((w) => ({ ...w, ...next }));
   }
-  const ar = createAr({
-    link, params, deps: deps.arDeps,
-    hooks: {
-      onStart: () => {
-        draw.start();
-        set((v) => ({ ...v, ar: true, cameraOff: false }));
-        listener?.start();
-      },
-      onEnd: () => {
-        listener?.stop();
-        set((v) => ({ ...v, ar: false, setup: null, settingsOpen: false, limited: false, hit: false, hitEstimated: false }));
-      },
-      onHit: (hit, estimated) => {
-        draw.hit(hit, estimated);
-        syncFrame(hit, estimated);
-      },
-      onMarks: (marks) => {
-        // 위 줄·엄지 자리에 명령이 보일 때만(승인 대기·시작 위치·물건 자리 맞추기가 차지하면 그리지 않는다), 그 명령 대상 하나만
-        const t = handOf(store.get()).thumb;
-        const target = t?.kind === "command" ? t.command.target : null;
-        draw.marks(target ? marks.filter((m) => m.id === target).slice(0, 1) : []);
-        syncFrame();
-      },
-      onPerf: () => syncFrame(),
-      note: (text) => {
-        // 카메라를 못 보내면 설정 모달 줄로 남긴다(잠깐 알릴 말은 엄지 자리 카드가 있을 때만 보인다)
-        if (text.startsWith(CAMERA_NOTE)) set((v) => ({ ...v, cameraOff: true }));
-        showNote(text);
-      },
+  const hooks: ArHooks = {
+    onStart: () => {
+      draw.start();
+      set((v) => ({ ...v, ar: true, cameraOff: false }));
+      listener?.start();
     },
-  });
+    onEnd: () => {
+      listener?.stop();
+      set((v) => ({ ...v, ar: false, setup: null, settingsOpen: false, limited: false, hit: false, hitEstimated: false }));
+    },
+    onHit: (hit, estimated) => {
+      draw.hit(hit, estimated);
+      syncFrame(hit, estimated);
+    },
+    onMarks: (marks) => {
+      // 위 줄·엄지 자리에 명령이 보일 때만(승인 대기·시작 위치·물건 자리 맞추기가 차지하면 그리지 않는다), 그 명령 대상 하나만
+      const t = handOf(store.get()).thumb;
+      const target = t?.kind === "command" ? t.command.target : null;
+      draw.marks(target ? marks.filter((m) => m.id === target).slice(0, 1) : []);
+      syncFrame();
+    },
+    onPerf: () => syncFrame(),
+    note: (text) => {
+      // 카메라를 못 보내면 설정 모달 줄로 남긴다(잠깐 알릴 말은 엄지 자리 카드가 있을 때만 보인다)
+      if (text.startsWith(CAMERA_NOTE)) set((v) => ({ ...v, cameraOff: true }));
+      showNote(text);
+    },
+  };
+  // 영상 모드: 같은 형(PhoneAr)의 영상 AR. 표시 영상(H.264)은 없고 화면·엔진 JPEG만 보낸다
+  const ar: PhoneAr & { videoTime?(): number; syncStatus?(sync: SyncWire | undefined): void } = video
+    ? createVideoAr({ link, params, hooks, deps: { ...video, ...deps.arDeps } as VideoArDeps })
+    : createAr({ link, params, hooks, deps: deps.arDeps });
 
   function showNote(text: string) {
     set((v) => ({ ...v, note: text }));
@@ -144,7 +150,8 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
   function onMessage(msg: Msg) {
     if (msg.type === "status") {
       ar.setEngineMs(msg.engine_ms);
-      set((v) => ({ ...onStatus(v, msg as { aligned: boolean; sync?: SyncWire }), connected: true }));
+      set((v) => ({ ...onStatus(v, msg as { aligned: boolean; sync?: SyncWire }, { autoStart: !video }), connected: true }));
+      ar.syncStatus?.(msg.sync);
       if (msg.error) showNote(msg.error);
     } else if (msg.type === "reply") {
       // pending 칸이 없으면(명령의 답·승인·취소의 답) 승인 대기 목록을 그대로 둔다
@@ -158,6 +165,7 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
       const m = msg as PhoneCommand;
       set((v) => ({ ...v, command: { id: m.id, step: m.step, text: m.text, vision: m.vision, choices: m.choices, target: m.target?.id ?? null } }));
       ar.setFocus(m.target ? [m.target] : [], COMMAND_FOCUS_MS);
+      if (ar.videoTime) logVideoCommand(ar.videoTime(), m);
       if (m.speak) sayAloud(m.text);
     } else if (msg.type === "command_clear") {
       const m = msg as PhoneCommandClear;
@@ -179,7 +187,9 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
     confirmStart() {
       if (!ar.state.on) return showNote("AR을 먼저 시작하세요");
       if (!ar.state.position || !ar.state.orientation) return showNote("폰 위치를 아직 몰라요. 폰을 조금 움직인 뒤 다시 눌러 주세요");
-      if (!link.send({ type: "start", position: ar.state.position, orientation: ar.state.orientation, epoch: ar.state.epoch })) return showNote("서버와 연결이 끊겨 보내지 못했어요");
+      // 영상 모드는 고정 카메라라 다시 맞춰도 바로 맞춤(fixed)
+      const fixed = video ? { fixed: true } : {};
+      if (!link.send({ type: "start", position: ar.state.position, orientation: ar.state.orientation, epoch: ar.state.epoch, ...fixed })) return showNote("서버와 연결이 끊겨 보내지 못했어요");
       set((v) => ({ ...v, setup: v.setup === "start" ? null : v.setup }));
     },
     endSetup: () => set((v) => ({ ...v, setup: null })),
@@ -203,6 +213,8 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
   };
 
   async function checkSupport() {
+    // 영상 모드는 WebXR·보안 연결 없이 된다
+    if (video) return set((v) => ({ ...v, support: { kind: "ready" } }));
     if (!(deps.secure ?? window.isSecureContext)) return set((v) => ({ ...v, support: { kind: "insecure" } }));
     const xr = "xr" in deps ? deps.xr : (navigator as Navigator & { xr?: XrLike }).xr;
     const ok = xr ? await xr.isSessionSupported("immersive-ar").catch(() => false) : false;

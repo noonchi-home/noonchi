@@ -22,10 +22,10 @@ export interface Command { id: string; step: string; text: string; vision: strin
 export interface FocusMark { id: string; label: string; u: number; v: number; off: boolean; angle: number }
 /** 엄지 자리를 차지하는 일: 물건 자리 맞추기(「여기」 말하기), 시작 위치 맞추기(「여기서 시작」). */
 export type Setup = "place" | "start";
-/** 서버 위치 맞춤 상태(status.sync). state: none 변환 없음, estimated 어림, aligned 맞춤. */
+/** 서버 위치 맞춤 상태(status.sync). state: none 변환 없음, estimated 어림, aligned 맞춤. source video: 영상 입력 모드의 고정 카메라. */
 export interface SyncView {
   state: "none" | "estimated" | "aligned";
-  source: "start" | "objects" | "walls" | null;
+  source: "start" | "objects" | "walls" | "video" | null;
   /** 이 집 시작 위치 이름(없으면 null). */
   start: { label: string; facing: string } | null;
   started: boolean;
@@ -195,14 +195,15 @@ export interface SyncWire {
 }
 
 /** 서버 상태(status) → 맞춤·위치 맞춤. AR 중 시작 위치가 있고 이번 AR에서 아직 시작하지 않았으면(변환 없음) 시작 위치 맞추기를 연다.
- *  시작 위치가 지워지면 닫는다. 「여기서 시작」을 보내면 controller.ts가 닫는다(다시 맞추기를 연 동안 오는 상태로는 닫지 않는다). */
-export function onStatus(v: PhoneView, s: { aligned: boolean; sync?: SyncWire }): PhoneView {
+ *  시작 위치가 지워지면 닫는다. 「여기서 시작」을 보내면 controller.ts가 닫는다(다시 맞추기를 연 동안 오는 상태로는 닫지 않는다).
+ *  autoStart false(영상 입력 모드: 시작 자세를 스스로 보낸다)면 저절로 열지 않는다. */
+export function onStatus(v: PhoneView, s: { aligned: boolean; sync?: SyncWire }, opts: { autoStart?: boolean } = {}): PhoneView {
   const sync: SyncView | null = s.sync
     ? { state: s.sync.state, source: s.sync.source, start: s.sync.start, started: s.sync.started, anchors: s.sync.anchors, wallPoints: s.sync.wall_points, residualM: s.sync.residual_m }
     : null;
   let setup = v.setup;
   if (setup === "start" && !sync?.start) setup = null;
-  if (setup === null && v.ar && sync?.start && !sync.started && sync.state === "none") setup = "start";
+  if (setup === null && (opts.autoStart ?? true) && v.ar && sync?.start && !sync.started && sync.state === "none") setup = "start";
   return { ...v, aligned: s.aligned, sync, setup };
 }
 
