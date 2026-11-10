@@ -16,6 +16,7 @@
 // 변환은 고치지만 어림으로 둔다(물건 하나는 회전을 못 정해 쓰지 않는다). 기준을 못 넘으면 바꾸지 않고, 맞춘 뒤에는 맞춤 기준을 넘을 때만 바꾼다.
 // 한 번에 움직이는 양은 폰 자리에서 어림이면 1.0m·20°, 맞춘 뒤면 0.3m·5°까지다(넘으면 그만큼만 가고 다음에 마저 간다).
 // 다시 푸는 것은 0.5초에 한 번, 새 벽 점 10개나 새 물건 관찰이 있을 때만.
+// 영상 모드(fixStart): 고정 카메라라 시작 자리가 곧 카메라 자리다. 바로 맞춤(출처 video)으로 두고 물건·벽으로 변환을 움직이지 않는다.
 
 import type { Quat, Vec3 } from "../phone/align.js";
 import { landmarkClass, type LandmarkClass } from "./classes.js";
@@ -24,7 +25,7 @@ import { applyRigid, limitStep, ransacRigid, rigidGap, solveTerms, type P2, type
 import { startRigid, type StartPose } from "./start.js";
 import { SurfacePoints, classifyHit, normalRotation, wallQuality, wallTerms, type WallPoint, type WallSeg } from "./walls.js";
 
-export type SyncSource = "start" | "objects" | "walls";
+export type SyncSource = "start" | "objects" | "walls" | "video";
 
 export const SYNC_LIMITS = {
   startSigmaM: 0.3,
@@ -145,6 +146,8 @@ export class SyncAligner {
   private newWalls = 0;
   private newObs = 0;
   private dirty = false;
+  /** 영상 모드 고정 자세: 다시 풀지 않는다. */
+  private fixed = false;
   private updates = 0;
   private readonly now: () => number;
   private readonly eyeHeightM: number;
@@ -175,6 +178,7 @@ export class SyncAligner {
 
   /** 새 AR 원점·다시 맞추기: 변환·증거·시작을 모두 지운다. */
   reset(): void {
+    this.fixed = false;
     this.rigid = null;
     this.aligned = false;
     this.source = null;
@@ -191,6 +195,7 @@ export class SyncAligner {
 
   /** 시작 자리에 서서 그 방향을 본 순간의 자세. 변환을 그 자세로 바로 정하고 어림으로 둔다(모은 증거는 남겨 곧 다시 맞춘다). */
   confirmStart(pose: StartPose, position: Vec3, orientation: Quat): void {
+    this.fixed = false;
     const rigid = startRigid(pose, position, orientation);
     this.start = { pose, position: [...position], rigid, at: this.now() };
     this.rigid = rigid;
@@ -199,6 +204,15 @@ export class SyncAligner {
     this.lastCamera = [position[0], position[2]];
     this.lastPhoneY = position[1];
     this.dirty = true;
+  }
+
+  /** 영상 모드: 고정 카메라라 시작 자리가 곧 카메라 자리다. 바로 맞춤으로 두고 물건·벽으로 움직이지 않는다. */
+  fixStart(pose: StartPose, position: Vec3, orientation: Quat): void {
+    this.confirmStart(pose, position, orientation);
+    this.aligned = true;
+    this.source = "video";
+    this.fixed = true;
+    this.dirty = false;
   }
 
   /** 트윈 높이 0의 AR y: 실제 바닥 hit 중앙값 → 폰 어림 바닥 → 시작 높이 − 눈높이 → 마지막 폰 높이 − 눈높이. */
@@ -297,6 +311,7 @@ export class SyncAligner {
 
   /** 지금 증거로 다시 푼다. 기준을 넘으면 변환을 (한 걸음 묶어) 바꾼다. 바뀌었으면 true. */
   update(): boolean {
+    if (this.fixed) return false;
     this.lastUpdate = this.now();
     this.newWalls = 0;
     this.newObs = 0;

@@ -362,7 +362,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       // 맞추기 전에도 원뿔이 보이게: 창가 고정 위치 + 폰 방향(추정, 사진에는 쓰지 않음)
       const fallback = estimateViewpoint(JSON.parse(readFileSync(home.scenePath, "utf8").replace(/^﻿/, "")));
       phone = createPhoneServer({
-        eyeHeightM, feed, log, fallback, floorAt: floorLookup(plan.rooms),
+        eyeHeightM, feed, log, fallback, floorAt: floorLookup(plan.rooms), videoDir: join(runtimeDir, "videos"),
         sync: { landmarks: landmarksNow(), walls: wallSegments(plan), start: startStore?.get() ?? null },
         onEye: (eye) => {
           appNow.broadcast({ type: "eye", eye });

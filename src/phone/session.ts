@@ -39,8 +39,8 @@ const MessageSchema = z.discriminatedUnion("type", [
     floor_y: num.nullable().optional(),
     epoch: Epoch,
   }),
-  /** 「여기서 시작」: 시작 자리에 서서 그 방향을 본 순간의 자세. */
-  z.object({ type: z.literal("start"), position: Vec3Schema, orientation: QuatSchema, epoch: Epoch }),
+  /** 「여기서 시작」: 시작 자리에 서서 그 방향을 본 순간의 자세. fixed: 영상 모드 고정 카메라라 바로 맞춤(aligner.ts fixStart). */
+  z.object({ type: z.literal("start"), position: Vec3Schema, orientation: QuatSchema, fixed: z.boolean().optional(), epoch: Epoch }),
   /** 앱: 한꺼번에 보내는 면 점 [x, y, z, nx, ny, nz]와 그때 카메라 자리. */
   z.object({ type: z.literal("surface"), camera: Vec3Schema, points: z.array(z.tuple([num, num, num, num, num, num])).max(256), epoch: Epoch }),
   /** 앱: 자기 감지기로 찾은 기준점 상자(낱말 표 키 또는 COCO 번호)와 그 순간 카메라. */
@@ -371,7 +371,8 @@ export class PhoneSession {
       if (this.adoptEpoch(msg.epoch).stale) return { reply: this.status("이전 AR 세션의 기록이라 받지 않았어요. 다시 눌러 주세요") };
       this.last = null;
       this.lastPhone = [msg.position[0], msg.position[2]];
-      this.sync.confirmStart(this.startPose, msg.position, msg.orientation);
+      if (msg.fixed) this.sync.fixStart(this.startPose, msg.position, msg.orientation);
+      else this.sync.confirmStart(this.startPose, msg.position, msg.orientation);
       return { reply: this.status() };
     }
     if (msg.type === "surface" || msg.type === "landmarks") {

@@ -1,7 +1,8 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, type ReadStream } from "node:fs";
+import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
 import type { PlannedCommand } from "../src/contract/phone.js";
 import { EyeFeed } from "../src/phone/feed.js";
@@ -12,6 +13,20 @@ import { fetchRetry } from "../src/server/net.js";
 import { BOX_START, BOX_WALLS, alignMessages } from "./helpers/align.js";
 import { ROOMS, makeHome } from "./helpers/home.js";
 import { readVideo } from "./helpers/video.js";
+
+/** 서버가 연 파일 읽기 스트림(영상 받기를 끊은 뒤 닫혔는지 본다). 나머지 node:fs는 그대로다. */
+const readStreams = vi.hoisted(() => [] as ReadStream[]);
+vi.mock("node:fs", async (importOriginal) => {
+  const fs = await importOriginal<typeof import("node:fs")>();
+  return {
+    ...fs,
+    createReadStream: (...args: Parameters<typeof fs.createReadStream>) => {
+      const s = fs.createReadStream(...args);
+      readStreams.push(s);
+      return s;
+    },
+  };
+});
 
 type Msg = Record<string, any>;
 /** 6×5 네모 방과 그 가운데 시작 위치(tests/helpers/align.ts). 맞추면 AR = 평면 그대로다. */
@@ -263,6 +278,82 @@ describe("phone server", () => {
       expect((await fetchRetry(`${base}${p}`)).status, p).toBe(404);
     }
     expect((await fetchRetry(`${base}/`, { redirect: "manual" })).headers.get("location")).toBe("/phone/");
+  });
+
+  it("videoDir의 영상을 /phone/videos/<이름>으로 준다: 통째 200, Range 하나면 206, 범위 밖은 416. 이름·확장자가 틀리거나 없는 파일·폴더 밖은 404", async () => {
+    const root = mkdtempSync(join(tmpdir(), "phone-videos-"));
+    cleanups.push(() => rmSync(root, { recursive: true, force: true }));
+    const videoDir = join(root, "videos");
+    mkdirSync(videoDir);
+    writeFileSync(join(videoDir, "a.mp4"), "0123456789");
+    writeFileSync(join(videoDir, "b.webm"), "webm");
+    writeFileSync(join(videoDir, "a.exe"), "exe");
+    writeFileSync(join(root, "x.mp4"), "outside");
+    const phone = createPhoneServer({ sync: SYNC, uiDir: fakeUiDist(), videoDir, onEye: () => {}, log: () => {} });
+    const { port } = await phone.listen(0, "127.0.0.1");
+    cleanups.push(() => phone.close());
+    const url = `http://127.0.0.1:${port}/phone/videos/a.mp4`;
+
+    const whole = await fetchRetry(url);
+    expect(whole.status).toBe(200);
+    expect(whole.headers.get("content-type")).toBe("video/mp4");
+    expect(whole.headers.get("accept-ranges")).toBe("bytes");
+    expect(whole.headers.get("content-length")).toBe("10");
+    expect(await whole.text()).toBe("0123456789");
+    expect((await fetchRetry(`http://127.0.0.1:${port}/phone/videos/b.webm`)).headers.get("content-type")).toBe("video/webm");
+
+    const part = await fetchRetry(url, { headers: { range: "bytes=2-5" } });
+    expect(part.status).toBe(206);
+    expect(part.headers.get("content-range")).toBe("bytes 2-5/10");
+    expect(part.headers.get("content-length")).toBe("4");
+    expect(part.headers.get("content-type")).toBe("video/mp4");
+    expect(await part.text()).toBe("2345");
+    const tail = await fetchRetry(url, { headers: { range: "bytes=7-" } });
+    expect([tail.status, tail.headers.get("content-range"), await tail.text()]).toEqual([206, "bytes 7-9/10", "789"]);
+    const last = await fetchRetry(url, { headers: { range: "bytes=-3" } });
+    expect([last.status, last.headers.get("content-range"), await last.text()]).toEqual([206, "bytes 7-9/10", "789"]);
+    const over = await fetchRetry(url, { headers: { range: "bytes=8-99" } });
+    expect([over.status, over.headers.get("content-range"), await over.text()]).toEqual([206, "bytes 8-9/10", "89"]);
+    const head = await fetchRetry(url, { method: "HEAD", headers: { range: "bytes=2-5" } });
+    expect([head.status, head.headers.get("content-range"), head.headers.get("content-length"), await head.text()]).toEqual([206, "bytes 2-5/10", "4", ""]);
+
+    for (const range of ["bytes=20-", "bytes=10-12", "bytes=-0"]) {
+      const bad = await fetchRetry(url, { headers: { range } });
+      expect(bad.status, range).toBe(416);
+      expect(bad.headers.get("content-range"), range).toBe("bytes */10");
+    }
+
+    for (const p of ["/phone/videos/../x.mp4", "/phone/videos/..%2Fx.mp4", "/phone/videos/a.exe", "/phone/videos/none.mp4", "/phone/videos/", "/phone/videos/a.mp4/", "/phone/videos/a.b.mp4"]) {
+      expect((await fetchRetry(`http://127.0.0.1:${port}${p}`)).status, p).toBe(404);
+    }
+
+    const plain = createPhoneServer({ sync: SYNC, uiDir: fakeUiDist(), onEye: () => {}, log: () => {} });
+    const other = await plain.listen(0, "127.0.0.1");
+    cleanups.push(() => plain.close());
+    expect((await fetchRetry(`http://127.0.0.1:${other.port}/phone/videos/a.mp4`)).status).toBe(404);
+  });
+
+  it("영상 받기를 도중에 끊으면(다시 읽기·영상 바꾸기) 읽던 파일 스트림을 닫는다", async () => {
+    const videoDir = mkdtempSync(join(tmpdir(), "phone-videos-"));
+    cleanups.push(() => rmSync(videoDir, { recursive: true, force: true }));
+    // 소켓 버퍼에 다 들어가지 않을 만큼 큰 파일
+    writeFileSync(join(videoDir, "big.mp4"), Buffer.alloc(32 * 1024 * 1024));
+    const phone = createPhoneServer({ sync: SYNC, uiDir: fakeUiDist(), videoDir, onEye: () => {}, log: () => {} });
+    const { port } = await phone.listen(0, "127.0.0.1");
+    cleanups.push(() => phone.close());
+    const from = readStreams.length;
+    for (const headers of [{}, { range: "bytes=0-" }, { range: "bytes=1000-" }]) {
+      await new Promise<void>((done, fail) => {
+        const req = request({ host: "127.0.0.1", port, path: "/phone/videos/big.mp4", headers }, (res) => {
+          res.once("data", () => { req.destroy(); done(); });
+        });
+        req.on("error", (e) => { if (!req.destroyed) fail(e); });
+        req.end();
+      });
+    }
+    const mine = readStreams.slice(from).filter((s) => String(s.path).endsWith("big.mp4"));
+    expect(mine).toHaveLength(3);
+    await vi.waitFor(() => expect(mine.map((s) => s.closed)).toEqual([true, true, true]), { timeout: 3000, interval: 50 });
   });
 
   it("기본 화면 폴더는 ui/dist", () => {
