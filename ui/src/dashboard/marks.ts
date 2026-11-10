@@ -1,8 +1,9 @@
-// 트윈 위 표시(길·목적지·확인한 것 점·클로이드)를 21st.dev Line Draw SVG 여러 장으로 겹쳐 그릴 자리와 굵기(순수 함수).
+// 트윈 위 표시(길·목적지·확인한 것 점)를 21st.dev Line Draw SVG 여러 장으로 겹쳐 그릴 자리와 굵기(순수 함수). 클로이드는 엔진의 3D 인형·원뿔(twin3d/eye.ts)이다.
 // 한 장은 path 하나를 토큰 색 선으로 그린다. 칠한 원은 반지름 r/2 원을 굵기 r로 그려 만든다. 크기는 화면 px이고 k(그림 px당 화면 px의 역수)를 곱한다.
 import type { LineTone } from "../components/ui/line-draw-svg";
 import { paint, TWIN } from "../lib/tokens";
 import type { Px } from "./camera";
+import type { Box } from "./labels";
 
 export type Layer = { tone: LineTone; d: string; width: number };
 /** 확인한 것 점 가운데 색: 켜짐·꺼짐·경고·모름(말풍선 번호와 같다), 물건. */
@@ -32,6 +33,23 @@ export function lineLayers(kind: "route" | "routeAhead" | "routePassed", d: stri
   ];
 }
 
+/** 꺾은선 앞쪽에서 상자(b, 그림 px) 안에 든 부분을 뺀다: 상자를 처음 나가는 자리부터 그린다. 다 안이면 빈 배열. */
+export function leaveBox(pts: Px[], b: Box): Px[] {
+  const inside = ([u, v]: Px) => u > b.x0 && u < b.x1 && v > b.y0 && v < b.y1;
+  if (!pts.length || !inside(pts[0]!)) return pts;
+  for (let i = 1; i < pts.length; i++) {
+    if (inside(pts[i]!)) continue;
+    // 안(a)에서 밖(c)으로 가는 선분이 상자 테두리를 지나는 자리
+    const [a, c] = [pts[i - 1]!, pts[i]!];
+    const du = c[0] - a[0], dv = c[1] - a[1];
+    const tu = du > 0 ? (b.x1 - a[0]) / du : du < 0 ? (b.x0 - a[0]) / du : Infinity;
+    const tv = dv > 0 ? (b.y1 - a[1]) / dv : dv < 0 ? (b.y0 - a[1]) / dv : Infinity;
+    const t = Math.min(1, Math.max(0, Math.min(tu, tv)));
+    return [[a[0] + du * t, a[1] + dv * t], ...pts.slice(i)];
+  }
+  return [];
+}
+
 export function destinationLayers(at: Px, k: number): Layer[] {
   const D = TWIN.destination;
   const casing = paint(D.casing).width, edge = paint(D.edge).width;
@@ -50,22 +68,5 @@ export function checkDotLayers(at: Px, mark: MarkTone, k: number): Layer[] {
     disk("checkDotCore", at, 8 * k),
     ring("checkDotRing", at, 8 * k, paint(TWIN.checkDot.ring).width * k),
     disk(MARK[mark], at, 4.5 * k),
-  ];
-}
-
-/** 머리 방향 화살촉 테두리(오른쪽을 본다, 길이 단위 1). 굵은 선으로 그려 속이 찬다. */
-const HEADING = [[5.8, 0], [-2.8, -3.9], [-1, 0], [-2.8, 3.9]] as const;
-
-export function cloidLayers([x, y]: Px, angle: number, k: number): Layer[] {
-  const C = TWIN.cloid;
-  const casing = paint(C.casing).width, edge = paint(C.edge).width;
-  const a = (angle * Math.PI) / 180;
-  const head = HEADING.map(([u, v]) => `${x + (u * Math.cos(a) - v * Math.sin(a)) * k},${y + (u * Math.sin(a) + v * Math.cos(a)) * k}`);
-  return [
-    disk("cloidHalo", [x, y], 20 * k),
-    disk("cloidEdge", [x, y], (12 + casing + edge) * k),
-    disk("cloidCasing", [x, y], (12 + casing) * k),
-    disk("cloidFill", [x, y], 12 * k),
-    { tone: "cloidHeading", d: `M${head.join("L")}Z`, width: 3.2 * k },
   ];
 }

@@ -1,15 +1,19 @@
 // 3D 트윈 위 표시 판(MapOverlay): 어둡게 한 방 층은 계획이 오면 묶음마다 미리 만들고 지금 묶음만 보인다. 판 transform은 엔진 카메라가 그림마다 바꾼다.
-// 선·점·클로이드는 마우스를 받지 않고 점선이 없다. 확인한 기기·물건에만 말풍선이 있다.
+// 선·점은 마우스를 받지 않고 점선이 없다. 확인한 기기·물건에만 말풍선이 있다. 클로이드는 SVG가 아니라 엔진의 3D 인형·원뿔(setEye)이 맞춘 눈을 따른다.
+// 판이 캔버스 위라 길 선은 인형 자리에서 비운다.
 import { act, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
-import type { DeviceView, HealthView, ServerMessage } from "../../../src/contract/events.ts";
+import type { DeviceView, EyeEvent, HealthView, ServerMessage } from "../../../src/contract/events.ts";
 import type { Check } from "../../src/checks/checks";
 import { coverScale, focusOf, wideCamera } from "../../src/dashboard/camera";
 import { Dashboard } from "../../src/dashboard/Dashboard";
 import { roomSetsOf, twinFrame } from "../../src/dashboard/frame";
 import { MapOverlay } from "../../src/dashboard/MapOverlay";
+import { leaveBox } from "../../src/dashboard/marks";
 import { PreDrawing } from "../../src/dashboard/motion";
 import { TwinEngine } from "../../src/twin3d/engine";
+import { DOLL_HEIGHT, DOLL_REACH } from "../../src/twin3d/eye";
+import { planToPixel } from "../../src/twin3d/projection";
 import { plateTransform, type MapCamera } from "../../src/twin3d/view";
 import { anchorOf, CAM, HOME, IMAGE, moment, PLAN, PLAN_CHECKS, SCENE, SINK } from "./cup-run";
 
@@ -35,6 +39,16 @@ function fakeEngine(start: MapCamera) {
   };
 }
 
+/** 클로이드 3D 인형이 구운 보기 그림에서 차지하는 상자(그림 px): 발(그 방 바닥)·머리(바닥 + 키) 둘레에 DOLL_REACH. */
+function dollImageBox(robot: NonNullable<ReturnType<typeof twinFrame>["robot"]>) {
+  const floor = HOME.rooms.find((r) => r.id === robot.room)?.floor ?? 0;
+  const [feet, head] = [floor, floor + DOLL_HEIGHT].map((h) => planToPixel(CAM, robot.position, h));
+  const r = DOLL_REACH * (CAM.width / CAM.orthoScale);
+  return { x0: Math.min(feet![0], head![0]) - r, y0: Math.min(feet![1], head![1]) - r, x1: Math.max(feet![0], head![0]) + r, y1: Math.max(feet![1], head![1]) + r };
+}
+/** 판 안 한 층의 path 점들(그림 px). */
+const pointsOf = (el: Element) => [...(el.querySelector("path")?.getAttribute("d") ?? "").matchAll(/(-?[\d.]+),(-?[\d.]+)/g)].map((m) => [Number(m[1]), Number(m[2])] as const);
+
 function propsAt(n: number, checks: Check[] = n > 0 ? PLAN_CHECKS : []) {
   const frame = twinFrame({ ...moment(n), checks, anchor: anchorOf, home: HOME, cam: CAM });
   const cam = wideCamera(IMAGE, SIZE, focusOf(frame, HOME.shapes), PAD);
@@ -45,6 +59,17 @@ function overlay(n: number, engine: ReturnType<typeof fakeEngine> | null, roomSe
   const p = propsAt(n, checks);
   return <MapOverlay {...p} shapes={HOME.shapes} roomSets={roomSets} image={IMAGE} size={SIZE} engine={engine} devices={devices} objects={objects} moveMs={0} blocked={[]} />;
 }
+
+describe("길 선에서 인형 자리 빼기(leaveBox)", () => {
+  const B = { x0: 0, y0: 0, x1: 10, y1: 10 };
+  it("앞 점이 상자 안이면 상자를 처음 나가는 자리부터, 밖이면 그대로, 다 안이면 빈 배열", () => {
+    expect(leaveBox([[5, 5], [5, 30], [20, 30]], B)).toEqual([[5, 10], [5, 30], [20, 30]]);
+    expect(leaveBox([[5, 5], [6, 6], [-10, 6]], B)).toEqual([[0, 6], [-10, 6]]);
+    expect(leaveBox([[20, 20], [5, 5]], B)).toEqual([[20, 20], [5, 5]]);
+    expect(leaveBox([[5, 5], [6, 6]], B)).toEqual([]);
+    expect(leaveBox([], B)).toEqual([]);
+  });
+});
 
 describe("트윈 위 표시 판", () => {
   it("계획이 오면 밝힐 방 묶음마다 어둡게 한 층을 미리 만들고, 단계가 바뀌어도 새로 만들지 않으며 지금 묶음만 보인다", () => {
@@ -89,11 +114,11 @@ describe("트윈 위 표시 판", () => {
     expect(engine.listeners()).toBe(0);
   });
 
-  it("선·점·클로이드는 마우스를 받지 않는 층 안에 있고 점선이 없다", () => {
+  it("선·점은 마우스를 받지 않는 층 안에 있고 점선이 없다", () => {
     const { container } = render(overlay(3, null));
     const root = container.firstElementChild as HTMLElement;
     expect(root).toHaveClass("pointer-events-none");
-    for (const sel of ['[data-line="passed"]', '[data-line="ahead"]', '[data-line="leg-ahead"]', "[data-target]", `[data-mark="${SINK}"]`, "[data-robot]"]) {
+    for (const sel of ['[data-line="passed"]', '[data-line="ahead"]', '[data-line="leg-ahead"]', "[data-target]", `[data-mark="${SINK}"]`]) {
       const el = container.querySelector(sel);
       expect(el, sel).not.toBeNull();
       expect(el!.closest(".pointer-events-none")).not.toBeNull();
@@ -103,13 +128,31 @@ describe("트윈 위 표시 판", () => {
     expect(container.innerHTML).not.toMatch(/dasharray/);
   });
 
-  it("클로이드는 점과 머리 방향만 있고 시야 원뿔이 없다", () => {
+  it("클로이드는 SVG 판에 그리지 않는다(3D 인형·원뿔이 맞춘 눈을 따른다). 카메라 맞춤용 frame.robot은 그대로다", () => {
+    expect(propsAt(3).frame.robot).not.toBeNull();
     const { container } = render(overlay(3, null));
-    const robot = container.querySelector("[data-robot]")!;
-    // 둘레·테·점 네 겹과 머리 방향 하나
-    expect(robot.querySelectorAll("path")).toHaveLength(5);
+    expect(container.querySelector("[data-robot]")).toBeNull();
     expect(container.querySelector("linearGradient, radialGradient")).toBeNull();
     expect(container.querySelector('[fill^="url("]')).toBeNull();
+  });
+
+  it.each([1, 2, 3, 4])("순간 %i: 길 선(지나온 길·남은 길·지금 구간)은 3D 인형 자리에서 비우고 인형 둘레까지 온다(판이 캔버스 위라 인형을 덮지 않게)", (n) => {
+    const { frame } = propsAt(n);
+    expect(frame.robot).not.toBeNull();
+    const b = dollImageBox(frame.robot!);
+    const { container } = render(overlay(n, null));
+    const lines = [...container.querySelectorAll("[data-line]")];
+    expect(lines.length).toBeGreaterThan(0);
+    let near = Infinity;
+    for (const el of lines) {
+      const pts = pointsOf(el);
+      expect(pts.length, el.getAttribute("data-line")!).toBeGreaterThan(1);
+      for (const [u, v] of pts) {
+        expect(u > b.x0 + 0.5 && u < b.x1 - 0.5 && v > b.y0 + 0.5 && v < b.y1 - 0.5, `${el.getAttribute("data-line")} ${u},${v}`).toBe(false);
+        near = Math.min(near, Math.hypot(Math.max(b.x0 - u, 0, u - b.x1), Math.max(b.y0 - v, 0, v - b.y1)));
+      }
+    }
+    expect(near, "인형 둘레까지 온 길").toBeLessThan(1);
   });
 
   it("표시는 21st.dev Line Draw SVG를 겹친 것이고, 한 장은 받은 코드처럼 path 하나만 그린다", () => {
@@ -118,7 +161,6 @@ describe("트윈 위 표시 판", () => {
     const svgs = [...plate.querySelectorAll("svg")];
     expect(svgs.length).toBeGreaterThan(0);
     for (const svg of svgs) expect([...svg.children].map((c) => c.tagName.toLowerCase())).toEqual(["path"]);
-    expect(container.querySelector("[data-robot]")!.querySelectorAll("svg")).toHaveLength(5);
     expect(container.querySelector("[data-target]")!.querySelectorAll("svg")).toHaveLength(6);
     expect(container.querySelector(`[data-mark="${SINK}"]`)!.querySelectorAll("svg")).toHaveLength(3);
   });
@@ -189,6 +231,7 @@ function dashEngine() {
     states: { getState: vi.fn(() => ({})), getAttrs: vi.fn(() => null), setState: vi.fn() },
     layout: { move: vi.fn(() => true), add: vi.fn(async () => true), remove: vi.fn(() => true), restore: vi.fn(() => false), isRemoved: () => false, dispose: vi.fn() },
     requestRender: vi.fn(), resize: vi.fn(), dispose: vi.fn(),
+    setEye: vi.fn((_eye: EyeEvent | null) => {}),
     setView: vi.fn((c: MapCamera) => { cur = { ...c }; }),
     current: () => ({ ...cur }),
     anchor: vi.fn((id: string) => anchorOf(id)),
@@ -225,11 +268,11 @@ describe("대시보드 구운 트윈 위 표시", () => {
     Object.defineProperty(HTMLElement.prototype, "offsetHeight", height);
   });
 
-  it("?debug=steps면 트윈 위 표시도 그 순간 것이고 서버 계획은 쓰지 않는다: 순간 3은 경로·목적지·클로이드·주방 묶음, 순간 0은 목적지 없이 집 전체", async () => {
+  it("?debug=steps면 트윈 위 표시도 그 순간 것이고 서버 계획은 쓰지 않는다: 순간 3은 경로·목적지·클로이드 인형·주방 묶음, 순간 0은 목적지 없이 집 전체", async () => {
     history.replaceState(null, "", "/?debug=steps&step=3");
     const { container } = render(<Dashboard />);
     await waitFor(() => expect(load).toHaveBeenCalled());
-    await waitFor(() => expect(container.querySelector("[data-robot]")).not.toBeNull());
+    await waitFor(() => expect(engine.setEye.mock.calls.at(-1)?.[0]).toEqual(moment(3).eye));
     for (const sel of ['[data-line="leg-ahead"]', "[data-target]", `[data-mark="${SINK}"]`]) expect(container.querySelector(sel), sel).not.toBeNull();
     const lit = () => [...container.querySelectorAll<HTMLElement>("[data-map-dim]")].filter((d) => d.style.opacity === "1").map((d) => d.dataset.mapDim);
     expect(lit()).toEqual(["kitchen+living"]);
@@ -243,7 +286,8 @@ describe("대시보드 구운 트윈 위 표시", () => {
     expect(engine.setView.mock.calls.at(-1)).toBe(moved);
     act(() => window.__dash!.step(0));
     await waitFor(() => expect(container.querySelector("[data-target]")).toBeNull());
-    expect(container.querySelector("[data-robot]")).not.toBeNull();
+    expect(engine.setEye.mock.calls.at(-1)![0]).toEqual(moment(0).eye);
+    expect(container.querySelector("[data-robot]")).toBeNull();
     expect(lit()).toEqual([]);
     expect(engine.setView.mock.calls.at(-1)![0].scale).toBeCloseTo(cover, 6);
   });
@@ -268,12 +312,14 @@ describe("대시보드 구운 트윈 위 표시", () => {
     expect(engine.resize.mock.calls.length).toBe(resized);
   });
 
-  it("계획·맞춘 눈이 오면 트윈 위에 경로·목적지·클로이드·확인한 것을 그리고, 카메라가 그 단계로 옮긴다", async () => {
+  it("계획·맞춘 눈이 오면 트윈 위에 경로·목적지·확인한 것을 그리고, 3D 인형이 맞춘 눈을 따르며, 카메라가 그 단계로 옮긴다", async () => {
     const { container } = render(<Dashboard />);
     await waitFor(() => expect(load).toHaveBeenCalled());
     await waitFor(() => expect(FakeSocket.last).not.toBeNull());
     await waitFor(() => expect(container.querySelector("[data-map-plate]")).not.toBeNull());
-    expect(container.querySelector("[data-robot]")).toBeNull();
+    // 눈이 오기 전: 엔진에 눈 없음(인형 숨김)
+    expect(engine.setEye).toHaveBeenCalled();
+    expect(engine.setEye.mock.calls.every(([e]) => e === null)).toBe(true);
     const whole = engine.setView.mock.calls.at(-1)![0];
     expect(whole.scale).toBeCloseTo(coverScale(IMAGE, SIZE), 6);
     const { plan, eye } = moment(3);
@@ -282,15 +328,19 @@ describe("대시보드 구운 트윈 위 표시", () => {
       FakeSocket.last!.push({ type: "plan", plan });
       FakeSocket.last!.push({ type: "eye", eye });
     });
-    await waitFor(() => expect(container.querySelector("[data-robot]")).not.toBeNull());
+    await waitFor(() => expect(engine.setEye.mock.calls.at(-1)?.[0]).toEqual(eye));
     for (const sel of ['[data-line="leg-ahead"]', "[data-target]", `[data-mark="${SINK}"]`]) expect(container.querySelector(sel), sel).not.toBeNull();
+    expect(container.querySelector("[data-robot]")).toBeNull();
     const dims = [...container.querySelectorAll<HTMLElement>("[data-map-dim]")];
     expect(dims.filter((d) => d.style.opacity === "1").map((d) => d.dataset.mapDim)).toEqual(["kitchen+living"]);
     const moved = engine.setView.mock.calls.at(-1)!;
     expect(moved[0].scale).toBeGreaterThan(whole.scale);
-    // 추정 눈은 버린다
+    // 추정 눈은 버린다: 카메라도 인형도 그대로
+    const eyes = engine.setEye.mock.calls.length;
     act(() => FakeSocket.last!.push({ type: "eye", eye: { ...eye, position: [1, 1], estimated: true } }));
     expect(engine.setView.mock.calls.at(-1)).toBe(moved);
+    expect(engine.setEye.mock.calls.length).toBe(eyes);
+    expect(engine.setEye.mock.calls.some(([e]) => e?.estimated)).toBe(false);
     // 계획이 끝나면 목적지·어둡게 한 층이 없어진다
     act(() => FakeSocket.last!.push({ type: "plan", plan: { ...plan!, revision: plan!.revision + 1, status: "done" } }));
     await waitFor(() => expect(container.querySelector("[data-target]")).toBeNull());
