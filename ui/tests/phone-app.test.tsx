@@ -173,7 +173,8 @@ describe("실제 폰 화면 뿌리(PhoneApp)", () => {
     const { session, ws, overlay, start } = arApp();
     act(() => { ws.push(status); ws.push(command); });
     const top = overlay.querySelector<HTMLElement>("[data-phone-zone=top]")!;
-    vi.spyOn(top, "getBoundingClientRect").mockReturnValue({ top: 0, bottom: 72, height: 72, left: 16, right: 374, width: 358 } as DOMRect);
+    // 위 줄은 상태 표시줄 아래(위 여백 36px)부터 미어캣 48px까지
+    vi.spyOn(top, "getBoundingClientRect").mockReturnValue({ top: 0, bottom: 84, height: 84, left: 0, right: 390, width: 390 } as DOMRect);
     await start();
     // 머리 위(화면 밖 위쪽) 명령 대상
     act(() => {
@@ -181,7 +182,7 @@ describe("실제 폰 화면 뿌리(PhoneApp)", () => {
       session.step(100, frame());
     });
     const tip = ops.filter((o) => o.op === "move").at(-1)!;
-    expect(tip.y).toBeGreaterThanOrEqual(72 + 8);
+    expect(tip.y).toBeGreaterThanOrEqual(84 + 8);
   });
 
   it("덮개를 열 때 한 번 지운다. 조준점이 없을 때는 바닥 닿음이 바뀌어도 다시 그리지 않는다. 다시 열면 지난 그림 대신 새로 그린다", async () => {

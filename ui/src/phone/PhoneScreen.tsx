@@ -193,8 +193,8 @@ function Overlay({ view, act, root, attach, canvasRef }: { view: PhoneView; act:
   return (
     <div ref={attach} hidden={!view.ar} data-phone-overlay="" className="fixed inset-0">
       <canvas ref={canvasRef} aria-hidden="true" className="pointer-events-none fixed inset-0 size-full" />
-      {/* 위 줄: 왼쪽 위 미어캣(늘), 그 옆 지금 할 명령 한 줄(있을 때만) */}
-      <div data-phone-zone="top" className="fixed inset-x-0 top-0 flex items-start gap-2 px-4 pt-2">
+      {/* 위 줄: 왼쪽 위 미어캣(늘), 그 옆 지금 할 명령 한 줄(있을 때만). 상태 표시줄 아래에서 시작한다(안전 영역, 없으면 28px + 8px) */}
+      <div data-phone-zone="top" className="fixed inset-x-0 top-0 flex items-start gap-2 px-4 pt-[calc(max(env(safe-area-inset-top),28px)+8px)]">
         <Settings view={view} act={act} root={root} open={view.ar && view.settingsOpen && problem === null} />
         {hand.top !== null && (
           <LiquidGlass mode="opaque" radius={16} role="status" aria-live="polite" className="min-w-0 flex-1" contentClassName="px-3.5 py-3">
