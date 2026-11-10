@@ -310,6 +310,8 @@ session은 start 스키마에 `fixed: z.boolean().optional()`을 더하고(43줄
   - 모델: `.env` 그대로. VLM `gpt-5.4-nano`, PAM `gpt-5.4-nano`, 에이전트 `gpt-5.4-mini`
 - [ ] **Step 2: 시작 자리** — 설정 4단계(`/setup/`)나 `POST /api/phone/start-pose`로 식탁 옆, 식탁을 보는 자리를 저장한다.
 - [ ] **Step 3: 한 번 돌리기** — `npx tsx scripts/video-check.ts --clip cup-demo.mp4 --done-after 3`
+  - 판마다 서버를 새로 띄운다. 앞 판 계획과 World State가 서버에 남는다. 끝나지 않은 계획이 있거나 엔진 프레임을 이미 받은 서버면 video-check가 시작 전에 멈춘다. 시작 자리는 파일에 남아 다시 저장하지 않아도 된다.
+  - 시각표는 판마다 `runtime/videos/cup-demo.<시각>.timeline.md`에 따로 남는다. 비용 줄은 그 판 VLM 값이고 PAM·계획 비용은 빠진다.
   - 한 번 예상 비용
     - VLM 약 38장 × $0.0005 ≈ $0.02
     - PAM 약 16번
@@ -322,7 +324,7 @@ session은 start 스키마에 `fixed: z.boolean().optional()`을 더하고(43줄
   - 시각표와 비용을 기록한다. 안 맞으면 원인(감지·VLM·PAM 판단·계획)을 시각표로 짚는다. 고치는 일은 사용자에게 먼저 말한다.
 - [ ] **Step 5: 마무리**
   - lint, tsc, ui typecheck, 전체 시험(`npm run heavy -- npm test`), ui 빌드
-  - README·`docs/reference.md`: 영상 모드 쓰는 법, 시작 자리 필요, 소리·듣기 꺼짐, 실제 폰 페이지와 같이 열지 않기
+  - README·`docs/reference.md`: 영상 모드 쓰는 법, 시작 자리 필요, 소리·듣기 꺼짐, 실제 폰 페이지와 같이 열지 않기, video-check는 판마다 서버를 새로 띄우기
   - docs 저장소: 구현명세서 SSOT 1.16(9.6 영상 모드 고정 자세, 12 위 줄 여백·대시보드 인형), 변경이력, Daily 11-11
   - trail note: 판정에서 알게 된 것
 

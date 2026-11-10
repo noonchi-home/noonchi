@@ -46,9 +46,10 @@ export function videoRecord(target = globalThis) {
   return target.__noonchiVideo;
 }
 
+// 0.1초로 먼저 반올림해 59.96초가 01:00.0이 된다(scripts/video-check.ts clock과 같다)
 const clockText = (ms) => {
-  const s = Math.max(0, ms) / 1000;
-  return `${String(Math.floor(s / 60)).padStart(2, "0")}:${(s % 60).toFixed(1).padStart(4, "0")}`;
+  const t = Math.round(Math.max(0, ms) / 100);
+  return `${String(Math.floor(t / 600)).padStart(2, "0")}:${((t % 600) / 10).toFixed(1).padStart(4, "0")}`;
 };
 
 /** 받은 명령을 그 영상 시각으로 기록한다. 같은 단계·글(비전 상태만 바뀐 것)은 한 번만. */
