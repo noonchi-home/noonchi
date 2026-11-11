@@ -10,7 +10,7 @@
 // 명령이 없을 때만 AR에 넘긴다(대시보드로 가는 화면 프레임에만 그려지고 실제 폰 화면에는 그리지 않는다). 조준점은 물건 자리 맞추기 때만(draw.aim).
 // 영상 입력 모드(?clip=, core/video-ar.js): 카메라 대신 영상을 틀고 고정 자세로 바로 맞춘다(start fixed). 지원은 바로 되고(WebXR·https 없어도),
 // 소리 읽기·늘 듣기는 끈다(답은 화면 단추). 「여기서 시작」은 저절로 열지 않고, 서버 맞춤이 없으면 영상 AR이 시작 자세를 다시 보낸다(syncStatus).
-// 받은 명령은 그 영상 시각으로 기록한다(window.__noonchiVideo).
+// 받은 명령은 그 영상 시각으로 기록하고(window.__noonchiVideo), 영상 AR에 넘겨 맞는 단계 영상(?step=)으로 바꾸고 go 단계면 자세를 걷게 한다.
 import type { PhoneCommand, PhoneCommandClear } from "../../../src/contract/phone.ts";
 import { createAr, type ArHooks, type PhoneAr } from "./core/ar.js";
 import { createVideoAr, logVideoCommand, videoParams, type VideoArDeps } from "./core/video-ar.js";
@@ -122,7 +122,7 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
     },
   };
   // 영상 모드: 같은 형(PhoneAr)의 영상 AR. 표시 영상(H.264)은 없고 화면·엔진 JPEG만 보낸다
-  const ar: PhoneAr & { videoTime?(): number; syncStatus?(sync: SyncWire | undefined): void } = video
+  const ar: PhoneAr & { videoTime?(): number; syncStatus?(sync: SyncWire | undefined): void; command?(cmd: PhoneCommand): void } = video
     ? createVideoAr({ link, params, hooks, deps: { ...video, ...deps.arDeps } as VideoArDeps })
     : createAr({ link, params, hooks, deps: deps.arDeps });
 
@@ -166,6 +166,7 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
       set((v) => ({ ...v, command: { id: m.id, step: m.step, text: m.text, vision: m.vision, choices: m.choices, target: m.target?.id ?? null } }));
       ar.setFocus(m.target ? [m.target] : [], COMMAND_FOCUS_MS);
       if (ar.videoTime) logVideoCommand(ar.videoTime(), m);
+      ar.command?.(m);
       if (m.speak) sayAloud(m.text);
     } else if (msg.type === "command_clear") {
       const m = msg as PhoneCommandClear;

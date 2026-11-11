@@ -1,11 +1,11 @@
 // 영상 입력 모드(?clip=, core/video-ar.js): 실제 카메라 대신 영상을 틀고, 고정 자세·투영으로 실제 폰과 같은 길로 보낸다.
 // jsdom은 영상을 틀지 못하므로 영상·JPEG 인코딩·2D 그림판은 대역(arDeps)으로 넣는다.
 // 지원은 바로 됨(http·WebXR 없어도), 소리 읽기·늘 듣기 없음, reset → start fixed → pose, 화면·엔진 프레임 헤더, 명령 시각 기록,
-// 맞춤 상태면 「여기서 시작」·시작 위치 모달 없음, 영상이 끝나면 프레임을 멈춘다. video-math 표도 본다.
+// 맞춤 상태면 「여기서 시작」·시작 위치 모달 없음, 영상이 끝나면 프레임을 멈춘다. 단계 영상(step=)·go 단계 걷기. video-math 표도 본다.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPhoneController, type ControllerDeps, type ControllerDraw } from "../src/phone/controller";
-import { createVideoAr } from "../src/phone/core/video-ar.js";
-import { coverMap, pitchQuat, projectionFromFov, viewMatrix } from "../src/phone/core/video-math.js";
+import { createVideoAr, videoParams } from "../src/phone/core/video-ar.js";
+import { coverMap, pitchQuat, projectionFromFov, viewMatrix, walkGoal, yawPitchQuat } from "../src/phone/core/video-math.js";
 import { problemOf } from "../src/phone/state";
 import { focusMarks } from "../src/phone/core/project.js";
 
@@ -93,9 +93,11 @@ beforeEach(() => {
 });
 afterEach(() => { while (made.length) made.pop()!.close(); vi.useRealTimers(); vi.restoreAllMocks(); });
 
-function make(over: Partial<ControllerDeps> = {}, search = "?clip=cup-demo.mp4", { open = true } = {}) {
+/** later: 두 번째부터 만드는 영상(단계 영상)에 덮어쓸 칸(크기 등). */
+function make(over: Partial<ControllerDeps> = {}, search = "?clip=cup-demo.mp4", { open = true, later = {} as Partial<ReturnType<typeof fakeVideo>> } = {}) {
   const spoken: string[] = [];
   const video = fakeVideo();
+  const videos = [video];
   const encoder = fakeEncoder();
   const urls: string[] = [];
   const c = createPhoneController({
@@ -103,7 +105,13 @@ function make(over: Partial<ControllerDeps> = {}, search = "?clip=cup-demo.mp4",
     Socket: FakeSocket, Recognition: Rec as never, speak: (s, done) => { spoken.push(s); done(); },
     secure: false, xr: null,
     arDeps: {
-      createVideo: (url: string) => { urls.push(url); return video; },
+      createVideo: (url: string) => {
+        urls.push(url);
+        if (urls.length === 1) return video;
+        const v = Object.assign(fakeVideo(), later);
+        videos.push(v);
+        return v;
+      },
       createEncoder: () => encoder,
       createCanvas: fakeCanvas,
       screen: () => ({ width: 390, height: 844 }),
@@ -129,7 +137,7 @@ function make(over: Partial<ControllerDeps> = {}, search = "?clip=cup-demo.mp4",
     const ping = ws.sent.find((m) => m.type === "clock")!;
     ws.push({ type: "clock", t0: ping.t0, server: ping.t0 + 1000 });
   };
-  return { c, ws, sent, spoken, video, encoder, urls, marks, overlay, startAr, clock };
+  return { c, ws, sent, spoken, video, videos, encoder, urls, marks, overlay, startAr, clock };
 }
 
 const START = { label: "식탁 옆", facing: "식탁" };
@@ -483,7 +491,280 @@ describe("영상 입력 모드: 명령 시각 기록·화면", () => {
   });
 });
 
+describe("영상 입력 모드: 단계 영상·걷기", () => {
+  const STEPS = "?clip=cup-empty.mp4&step=go:table:go-table.mp4&step=pick:cup:pick-cup.mp4&step=go:sink:go-sink.mp4&step=place:sink:place-sink.mp4";
+  const TABLE = { id: "dining_table_1", label: "식탁", ar: [0, 0.75, -1.5] };
+  const CUP = { id: "cup_3", label: "컵", ar: [0.1, 0.8, -1.4] };
+  const SINK = { id: "sink_1", label: "싱크대", ar: [1.2, 0.9, -1.6] };
+  const goTable = (over: Record<string, unknown> = {}) => command({ kind: "go", target: TABLE, speak: false, ...over });
+  const pickCup = (over: Record<string, unknown> = {}) =>
+    command({ step: "plan:pam-1:2", text: "컵을 들어 주세요", vision: "컵 · 식탁 위", kind: "pick", target: CUP, speak: false, ...over });
+  // 반응 시간(setTimeout)과 자세 타이머(100ms setInterval)를 시험이 옮긴다
+  const fakeTimers = () => vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+  const after = (ms: number) => vi.advanceTimersByTimeAsync(ms);
+  const lastPose = (sent: () => Record<string, any>[]) => sent().filter((m) => m.type === "pose").at(-1)!;
+  const closeTo = (got: number[], want: number[]) => {
+    expect(got).toHaveLength(want.length);
+    got.forEach((x, i) => expect(x).toBeCloseTo(want[i]!, 6));
+  };
+
+  it("videoParams: step=<종류>:<낱말>:<영상>을 차례로 읽고 모양이 틀린 칸은 버린다. react는 초(0~10, 기본 1.5)를 ms로", () => {
+    const p = new URLSearchParams("clip=cup-empty.mp4");
+    for (const s of [
+      "go:table:go-table.mp4", "pick:cup:pick-cup.webm", "jump:table:a.mp4", "go:Table:a.mp4", "go:table:../x.mp4", "go:table:a.mov",
+      "go:table", "go:table:a.mp4:b", `place:sink:${"a".repeat(65)}.mp4`, "place:dining_table:place-sink.mp4", "go::a.mp4",
+    ]) p.append("step", s);
+    expect(videoParams(p)!.steps).toEqual([
+      { kind: "go", word: "table", clipUrl: "/phone/videos/go-table.mp4" },
+      { kind: "pick", word: "cup", clipUrl: "/phone/videos/pick-cup.webm" },
+      { kind: "place", word: "dining_table", clipUrl: "/phone/videos/place-sink.mp4" },
+    ]);
+    expect(videoParams(new URLSearchParams("clip=a.mp4"))).toMatchObject({ steps: [], reactMs: 1500 });
+    for (const [raw, ms] of [["0.4", 400], ["0", 0], ["-1", 0], ["99", 10000], ["x", 1500], ["", 1500]] as const) {
+      expect(videoParams(new URLSearchParams(`clip=a.mp4&react=${raw}`))!.reactMs).toBe(ms);
+    }
+  });
+
+  it("go 명령(대상 dining_table_1)이 오면 1.5초 뒤 go-table.mp4를 만들어 덮개 앞에 깔고 튼다. 그 전에는 바꾸지 않고, 바꾸면 앞 영상을 닫는다", async () => {
+    fakeTimers();
+    const { ws, urls, videos, overlay, startAr } = make({}, STEPS);
+    await startAr();
+    ws.push(ALIGNED);
+    ws.push(goTable());
+    await after(1400);
+    expect(urls).toEqual(["/phone/videos/cup-empty.mp4"]);
+    await after(100);
+    expect(urls).toEqual(["/phone/videos/cup-empty.mp4", "/phone/videos/go-table.mp4"]);
+    const next = videos[1]!;
+    expect(next.played).toBe(1);
+    expect(next.element.isConnected).toBe(true);
+    expect(next.element.compareDocumentPosition(overlay) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(videos[0]!.closed).toBe(1);
+    expect(videos[0]!.element.isConnected).toBe(false);
+  });
+
+  it("go 단계 영상으로 바꾸면 자세가 초당 0.8m로 대상 쪽으로 걸어 대상 0.6m 앞([0, 1.4, −0.9])에서 멈춘다. 높이·pitch는 그대로, 엔진·화면 프레임 머리도 새 자리", async () => {
+    fakeTimers();
+    const { ws, sent, videos, startAr } = make({}, STEPS);
+    await startAr();
+    ws.push({ ...ALIGNED, engine_ms: 500 });
+    ws.push(goTable());
+    await after(1500);
+    const n = sent().filter((m) => m.type === "pose").length;
+    await after(1000);
+    // 자세 10번(1초) 동안 한 번에 0.08m씩(초당 0.8m) 식탁 쪽(−z)으로, 높이는 1.4m 그대로
+    const walked = sent().filter((m) => m.type === "pose").slice(n);
+    expect(walked).toHaveLength(10);
+    walked.slice(1).forEach((p, i) => expect(walked[i]!.position[2] - p.position[2]).toBeCloseTo(0.08, 6));
+    for (const p of walked) {
+      expect(p.position[0]).toBeCloseTo(0, 6);
+      expect(p.position[1]).toBeCloseTo(1.4, 6);
+      closeTo(p.orientation, pitchQuat(-25));
+    }
+    await after(1000);
+    closeTo(lastPose(sent).position, [0, 1.4, -0.9]);
+    await after(1000);
+    closeTo(lastPose(sent).position, [0, 1.4, -0.9]);
+    closeTo(lastPose(sent).orientation, pitchQuat(-25));
+    // 시작 자세는 그대로(AR 원점은 움직이지 않는다)
+    expect(sent().filter((m) => m.type === "start").every((m) => m.position.join() === "0,1.4,0")).toBe(true);
+    videos[1]!.advance(0.5);
+    await after(0);
+    const headers = await Promise.all(ws.packets.map(headerOf));
+    const engine = headers.filter((h) => h.kind === "engine").at(-1)!;
+    const frame = headers.filter((h) => h.kind === "frame").at(-1)!;
+    closeTo(engine.position, [0, 1.4, -0.9]);
+    closeTo(frame.position, [0, 1.4, -0.9]);
+    closeTo(engine.orientation, pitchQuat(-25));
+  });
+
+  it("옆에 있는 대상으로 걸으면 대상 쪽으로 돌아 본다: 멈춘 뒤 대상 고리가 화면 가로 가운데, 숙인 각은 그대로", async () => {
+    fakeTimers();
+    const { ws, sent, videos, marks, startAr } = make({}, STEPS);
+    await startAr();
+    ws.push(ALIGNED);
+    ws.push(command({ step: "plan:pam-1:3", text: "싱크대로 가 주세요", vision: "싱크대까지 2.0m", kind: "go", target: SINK, speak: false }));
+    await after(1500 + 3000);
+    // 거리 2m에서 1.4m 걸어 [0.84, 1.4, −1.12]
+    closeTo(lastPose(sent).position, [0.84, 1.4, -1.12]);
+    closeTo(lastPose(sent).orientation, yawPitchQuat(Math.atan2(-1.2, 1.6), -25));
+    videos[1]!.advance(0.5);
+    const m = marks.at(-1)!;
+    expect(m.map((x) => x.id)).toEqual(["sink_1"]);
+    expect(m[0]!.u).toBeCloseTo(0.5, 5);
+    expect(m[0]!.off).toBe(false);
+  });
+
+  it("pick 명령은 1.5초 뒤 pick-cup.mp4로 바꾸기만 하고 자리·자세는 그대로", async () => {
+    fakeTimers();
+    const { ws, sent, urls, startAr } = make({}, STEPS);
+    await startAr();
+    ws.push(ALIGNED);
+    ws.push(pickCup());
+    await after(1500);
+    expect(urls.at(-1)).toBe("/phone/videos/pick-cup.mp4");
+    await after(2000);
+    expect(lastPose(sent).position).toEqual([0, 1.4, 0]);
+    expect(lastPose(sent).orientation).toEqual(pitchQuat(-25));
+  });
+
+  it("같은 id·step 명령이 비전 줄만 바뀌어 다시 와도 한 번만 바꾼다. 종류가 없거나 다르거나, 대상이 없거나 대상 id에 낱말이 없으면 바꾸지 않는다", async () => {
+    fakeTimers();
+    const { ws, urls, startAr } = make({}, STEPS);
+    await startAr();
+    ws.push(ALIGNED);
+    ws.push(command({ kind: "go", target: null, speak: false }));
+    ws.push(command({ target: TABLE, speak: false }));
+    ws.push(command({ kind: "place", target: TABLE, speak: false }));
+    ws.push(command({ kind: "go", target: { id: "sofa_1", label: "소파", ar: [1, 0.4, -2] }, speak: false }));
+    await after(3000);
+    expect(urls).toEqual(["/phone/videos/cup-empty.mp4"]);
+    // 대상이 붙어 같은 명령이 다시 오면(기준점을 맞춘 뒤) 그때 바꾼다
+    ws.push(goTable());
+    await after(200);
+    ws.push(goTable({ vision: "식탁까지 1.0m" }));
+    await after(3000);
+    ws.push(goTable({ vision: "식탁까지 0.8m" }));
+    await after(3000);
+    expect(urls).toEqual(["/phone/videos/cup-empty.mp4", "/phone/videos/go-table.mp4"]);
+  });
+
+  it("바꾼 뒤 영상 시각은 앞 영상 시각에서 이어 세고, record.clips에 바꾼 시각·이름을 남기고, 끝난 영상 뒤에도 ended를 풀고 프레임을 다시 보낸다", async () => {
+    fakeTimers();
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const { ws, video, videos, startAr } = make({}, STEPS);
+    await startAr();
+    expect(window.__noonchiVideo!.clips).toEqual([]);
+    video.advance(40);
+    video.end();
+    expect(window.__noonchiVideo!.ended).toBe(true);
+    ws.push(goTable());
+    await after(1500);
+    const next = videos[1]!;
+    expect(window.__noonchiVideo!.ended).toBe(false);
+    expect(window.__noonchiVideo!.clips).toEqual([{ video_ms: 40000, clip: "go-table.mp4" }]);
+    expect(info.mock.calls.some((a) => a[0] === "[video] 00:40.0 단계 영상 go-table.mp4")).toBe(true);
+    await after(0);
+    const before = ws.packets.length;
+    next.advance(2);
+    await after(0);
+    expect(ws.packets.length).toBeGreaterThan(before);
+    ws.push(pickCup());
+    expect(window.__noonchiVideo!.commands.at(-1)).toMatchObject({ video_ms: 42000, step: "plan:pam-1:2" });
+    await after(1500);
+    expect(window.__noonchiVideo!.clips.at(-1)).toEqual({ video_ms: 42000, clip: "pick-cup.mp4" });
+    expect(next.closed).toBe(1);
+    // 끝난 단계 영상도 이어 센 시각으로 남긴다
+    videos[2]!.advance(5);
+    videos[2]!.end();
+    expect(info.mock.calls.some((a) => a[0] === "[video] 00:47.0 영상 끝")).toBe(true);
+    expect(window.__noonchiVideo!.ended).toBe(true);
+  });
+
+  it("크기가 다른 단계 영상(가로 1280×720)이면 투영·프레임 크기를 다시 정한다", async () => {
+    fakeTimers();
+    const { ws, videos, startAr } = make({}, STEPS, { later: { videoWidth: 1280, videoHeight: 720 } });
+    await startAr();
+    ws.push({ ...ALIGNED, engine_ms: 500 });
+    ws.push(pickCup());
+    await after(1500);
+    await after(0);
+    const before = ws.packets.length;
+    videos[1]!.advance(0.5);
+    await after(0);
+    const headers = await Promise.all(ws.packets.slice(before).map(headerOf));
+    const engine = headers.find((h) => h.kind === "engine")!;
+    const frame = headers.find((h) => h.kind === "frame")!;
+    expect(engine.projection).toEqual(projectionFromFov(60, 1280 / 720));
+    expect(engine).toMatchObject({ width: 480, height: 270 });
+    expect(frame).toMatchObject({ width: 780, height: 439 });
+  });
+
+  it("AR을 끝내면 기다리던 단계 영상 바꾸기를 하지 않고, 다시 시작하면 시작 자세·처음 보는 명령으로 다시 센다", async () => {
+    fakeTimers();
+    const sent: Record<string, any>[] = [];
+    const link = {
+      send: (m: Record<string, any>) => { sent.push(m); return true; },
+      socket: () => ({ readyState: 1, bufferedAmount: 0, send() {} }),
+      stamp: () => ({}),
+      open: () => true,
+      close() {},
+    };
+    const urls: string[] = [];
+    const hooks = { onStart() {}, onEnd() {}, onHit() {}, onMarks() {}, onPerf() {}, note() {} };
+    const ar = createVideoAr({
+      link: link as never, params: new URLSearchParams(), hooks,
+      deps: {
+        ...videoParams(new URLSearchParams(STEPS))!,
+        createVideo: (url: string) => { urls.push(url); return fakeVideo(); },
+        createEncoder: fakeEncoder, createCanvas: fakeCanvas, screen: () => ({ width: 390, height: 844 }),
+      },
+    });
+    await ar.start({});
+    ar.command(goTable() as never);
+    await after(2000);
+    expect(urls).toEqual(["/phone/videos/cup-empty.mp4", "/phone/videos/go-table.mp4"]);
+    expect(ar.state.position![2]).toBeLessThan(-0.3);
+    ar.command(pickCup() as never);
+    ar.stop();
+    await after(3000);
+    expect(urls).toHaveLength(2);
+    await ar.start({});
+    expect(ar.state.position).toEqual([0, 1.4, 0]);
+    expect(sent.filter((m) => m.type === "pose").at(-1)!.position).toEqual([0, 1.4, 0]);
+    ar.command(goTable() as never);
+    await after(1500);
+    expect(urls).toEqual(["/phone/videos/cup-empty.mp4", "/phone/videos/go-table.mp4", "/phone/videos/cup-empty.mp4", "/phone/videos/go-table.mp4"]);
+  });
+});
+
 describe("video-math", () => {
+  /** q·v·q* (쿼터니언 [x, y, z, w]으로 벡터를 돌림). */
+  const rotate = ([x, y, z, w]: number[], [vx, vy, vz]: number[]) => {
+    const tx = 2 * (y! * vz! - z! * vy!);
+    const ty = 2 * (z! * vx! - x! * vz!);
+    const tz = 2 * (x! * vy! - y! * vx!);
+    return [vx! + w! * tx + (y! * tz - z! * ty), vy! + w! * ty + (z! * tx - x! * tz), vz! + w! * tz + (x! * ty - y! * tx)];
+  };
+
+  it("yawPitchQuat: yaw 0이면 pitchQuat와 같고, 시선(−z)은 yaw만큼 AR +y로 돌고 pitch만큼 숙인다. 오른쪽 축은 수평(옆으로 기울지 않음)", () => {
+    yawPitchQuat(0, -25).forEach((x, i) => expect(x).toBeCloseTo(pitchQuat(-25)[i]!, 10));
+    const p = (-25 * Math.PI) / 180;
+    for (const yaw of [0, Math.PI / 2, -Math.PI / 2, Math.PI, 0.6, -2.2]) {
+      const q = yawPitchQuat(yaw, -25);
+      const want = [-Math.sin(yaw) * Math.cos(p), Math.sin(p), -Math.cos(yaw) * Math.cos(p)];
+      rotate(q, [0, 0, -1]).forEach((x, i) => expect(x).toBeCloseTo(want[i]!, 10));
+      expect(rotate(q, [1, 0, 0])[1]).toBeCloseTo(0, 10);
+      expect(Math.hypot(...q)).toBeCloseTo(1, 10);
+    }
+  });
+
+  it("walkGoal: 바닥 평면(x, z)에서 대상 stopM 앞에서 멈추고 높이는 출발 높이, yaw는 대상 쪽. 이미 stopM 안이면 null", () => {
+    const rows: [number[], number[], number, number[] | null][] = [
+      [[0, 1.4, 0], [0, 0.75, -1.5], 0.6, [0, 1.4, -0.9]],
+      [[0, 1.4, 0], [2, 0.9, 0], 0.5, [1.5, 1.4, 0]],
+      [[1, 1.2, 1], [-2, 0, 5], 1, [-1.4, 1.2, 4.2]],
+      [[0, 1.4, 0], [0.3, 0, -0.4], 0.6, null],
+      [[0, 1.4, 0], [0.36, 3, -0.48], 0.6, null],
+    ];
+    for (const [from, target, stop, goal] of rows) {
+      const w = walkGoal(from as [number, number, number], target as [number, number, number], stop);
+      if (goal === null) {
+        expect(w).toBeNull();
+        continue;
+      }
+      w!.goal.forEach((x, i) => expect(x).toBeCloseTo(goal[i]!, 10));
+      expect(w!.yaw).toBeCloseTo(Math.atan2(-(target[0]! - from[0]!), -(target[2]! - from[2]!)), 10);
+      // 그 yaw의 시선은 바닥 평면에서 대상 쪽
+      const f = rotate(yawPitchQuat(w!.yaw, 0), [0, 0, -1]);
+      const dx = target[0]! - w!.goal[0]!;
+      const dz = target[2]! - w!.goal[2]!;
+      expect(Math.hypot(dx, dz)).toBeCloseTo(stop, 10);
+      expect(f[0]).toBeCloseTo(dx / stop, 10);
+      expect(f[2]).toBeCloseTo(dz / stop, 10);
+    }
+  });
+
   it("projectionFromFov(60, 9/16): [5]는 1/tan(30°), [0]은 그것을 비율로 나눈 값, 열 우선 원근", () => {
     const p = projectionFromFov(60, 9 / 16);
     expect(p).toHaveLength(16);

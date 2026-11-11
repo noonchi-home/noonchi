@@ -1,4 +1,5 @@
 // video-ar.js의 형.
+import type { PhoneCommand, PhoneStepKind } from "../../../../src/contract/phone.ts";
 import type { ArHooks, PhoneAr } from "./ar.js";
 import type { JpegEncoder } from "./capture.js";
 import type { PhoneLink } from "./link.js";
@@ -24,6 +25,8 @@ export interface VideoSource {
   onEnded(cb: () => void): void;
   close(): void;
 }
+/** 단계 영상 칸(?step=<종류>:<대상 낱말>:<영상>): 명령 종류가 같고 대상 id에 word가 들면 clipUrl로 바꿔 튼다. */
+export interface VideoStep { kind: PhoneStepKind; word: string; clipUrl: string }
 export interface VideoArDeps {
   /** /phone/videos/<이름>. */
   clipUrl: string;
@@ -33,6 +36,10 @@ export interface VideoArDeps {
   pitchDeg?: number;
   /** 카메라 높이(m, 기본 1.4). */
   heightM?: number;
+  /** 단계 영상 칸(기본 없음). */
+  steps?: VideoStep[];
+  /** 명령을 받고 단계 영상으로 바꾸기까지(ms, 기본 1500). */
+  reactMs?: number;
   createVideo?: (url: string) => VideoSource;
   createEncoder?: () => JpegEncoder;
   createCanvas?: () => VideoCanvas;
@@ -40,16 +47,20 @@ export interface VideoArDeps {
   screen?: () => { width: number; height: number };
 }
 export interface VideoAr extends PhoneAr {
-  /** 지금 영상 시각(ms). 재생 전·끝낸 뒤는 0. */
+  /** 지금 영상 시각(ms, 앞 단계 영상들 시각에 이어 센다). 재생 전·끝낸 뒤는 0. */
   videoTime(): number;
+  /** 받은 명령: 재생 중 맞는 step 칸이 있으면 그 id·step에 한 번, reactMs 뒤 단계 영상으로 바꾸고 go면 대상 0.6m 앞까지 걷는다. */
+  command(cmd: PhoneCommand): void;
   /** 서버 상태 sync마다: 재생 중 맞춤이 없고(none) 시작 자리가 있으면 start fixed를 다시 보낸다. */
   syncStatus(sync: { state: string; start: unknown } | null | undefined): void;
 }
 export interface VideoCommandEntry { video_ms: number; id: string; step: string; text: string }
+/** 단계 영상으로 바꾼 영상 시각과 영상 이름. */
+export interface VideoClipEntry { video_ms: number; clip: string }
 /** 판정 기록. t0: 재생 시작 순간의 서버 시계(ms, 시계를 맞추기 전에는 폰 시계). */
-export interface VideoRecord { t0: number | null; ended: boolean; commands: VideoCommandEntry[] }
+export interface VideoRecord { t0: number | null; ended: boolean; commands: VideoCommandEntry[]; clips: VideoClipEntry[] }
 
-export function videoParams(params: URLSearchParams): Required<Pick<VideoArDeps, "clipUrl" | "fovDeg" | "pitchDeg" | "heightM">> | null;
+export function videoParams(params: URLSearchParams): Required<Pick<VideoArDeps, "clipUrl" | "fovDeg" | "pitchDeg" | "heightM" | "steps" | "reactMs">> | null;
 export function videoRecord(target?: object): VideoRecord;
 export function logVideoCommand(videoMs: number, command: { id: string; step: string; text: string }): void;
 export function createVideoAr(opts: { link: PhoneLink; params: URLSearchParams; hooks: ArHooks; deps: VideoArDeps }): VideoAr;

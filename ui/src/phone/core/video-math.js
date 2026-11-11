@@ -1,4 +1,4 @@
-// 영상 입력 모드의 계산(DOM 없음): 고정 카메라의 투영·자세·view 행렬과 화면 덮기(object-fit cover) 자리 바꾸기.
+// 영상 입력 모드의 계산(DOM 없음): 카메라의 투영·자세·view 행렬, go 단계 걷기(멈출 자리·대상을 보는 yaw)와 화면 덮기(object-fit cover) 자리 바꾸기.
 // 행렬은 XRView와 같이 열 우선 4×4다. 카메라는 -Z를 보고 Y가 위다(WebXR과 같다).
 
 const NEAR = 0.1;
@@ -15,6 +15,33 @@ export function projectionFromFov(vfovDeg, aspect) {
 export function pitchQuat(pitchDeg) {
   const h = (pitchDeg * Math.PI) / 360;
   return [Math.sin(h), 0, 0, Math.cos(h)];
+}
+
+/** 쿼터니언 곱 a·b(b를 먼저 돌리고 a를 돌린다). [x, y, z, w]. */
+function mulQuat([ax, ay, az, aw], [bx, by, bz, bw]) {
+  return [
+    aw * bx + ax * bw + ay * bz - az * by,
+    aw * by - ax * bz + ay * bw + az * bx,
+    aw * bz + ax * by - ay * bx + az * bw,
+    aw * bw - ax * bx - ay * by - az * bz,
+  ];
+}
+
+/** 숙인 자세(pitch, 도)를 AR +y축으로 yaw(라디안)만큼 돌린 자세. yaw 0이면 pitchQuat처럼 −z를 본다. 옆으로 기울지 않는다. */
+export function yawPitchQuat(yawRad, pitchDeg) {
+  const h = yawRad / 2;
+  return mulQuat([0, Math.sin(h), 0, Math.cos(h)], pitchQuat(pitchDeg));
+}
+
+/** from에서 target 쪽으로 바닥 평면(x, z)을 걸어 target stopM 앞에서 멈출 자리(높이는 from 그대로)와 target을 보는 yaw.
+ *  이미 stopM 안이면 null. */
+export function walkGoal(from, target, stopM) {
+  const dx = target[0] - from[0];
+  const dz = target[2] - from[2];
+  const d = Math.hypot(dx, dz);
+  if (d <= stopM) return null;
+  const k = (d - stopM) / d;
+  return { goal: [from[0] + dx * k, from[1], from[2] + dz * k], yaw: Math.atan2(-dx, -dz) };
 }
 
 /** 카메라 자리·자세 → view 행렬(세계 → 카메라, XRView.transform.inverse.matrix와 같은 뜻). */
