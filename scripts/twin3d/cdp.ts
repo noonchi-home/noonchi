@@ -1,4 +1,4 @@
-// 크롬 하나 띄우기(빈 디버그 포트, 임시 프로필)와 CDP 조종(Runtime.evaluate, Page.captureScreenshot). capture.ts·e2e-dashboard.ts가 쓴다.
+// 크롬 하나 띄우기(빈 디버그 포트, 임시 프로필)와 CDP 조종(Runtime.evaluate, Page.captureScreenshot), 같은 크롬에 탭 더 열기. capture.ts·e2e-dashboard.ts·video-check.ts가 쓴다.
 // 페이지 오류(예외·console.error·로그 오류·HTTP 400 이상·받기 실패·evaluate 예외)는 onError로 알린다. 끌 때는 크롬 트리를 끝내고 프로필을 지운다.
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
@@ -58,7 +58,18 @@ export async function openPage(port: number, onError: (msg: string) => void): Pr
     if (!target) await sleep(200);
   }
   if (!target) throw new Error("CDP 페이지를 찾지 못했어요");
-  const ws = new WebSocket(target.webSocketDebuggerUrl);
+  return attach(target.webSocketDebuggerUrl, onError);
+}
+
+/** 같은 크롬에 빈 탭을 하나 더 열고(DevTools /json/new, PUT) openPage처럼 붙는다. */
+export async function openTab(port: number, onError: (msg: string) => void): Promise<Page> {
+  const r = await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: "PUT" });
+  if (!r.ok) throw new Error(`새 탭을 열지 못했어요: HTTP ${r.status} ${await r.text()}`);
+  return attach(((await r.json()) as { webSocketDebuggerUrl: string }).webSocketDebuggerUrl, onError);
+}
+
+async function attach(wsUrl: string, onError: (msg: string) => void): Promise<Page> {
+  const ws = new WebSocket(wsUrl);
   await new Promise((r) => ws.addEventListener("open", r));
   let id = 0;
   const pending = new Map<number, (m: Reply) => void>();
