@@ -16,7 +16,7 @@ export const PLANNER_PROMPT = `너는 이 집 스마트홈 에이전트의 계�
 단계
 - go: 그 자리로 가기. target은 평면도 id. until은 보통 {"phone_near": target}(쓰지 않으면 그것으로 본다).
 - pick: 집기. target은 보이는 World State 물건 id(없으면 평면도 id). 물건 id면 until은 {"any": [{"object": id, "follow": true, "facts": {"place": "in_hand"}}, {"person_holding": 종류}]}.
-- place: 내려놓기·넣기. target은 평면도 id, object는 든 물건 id(앞 pick 물건이면 생략). until은 그 물건 자리 사실(예: {"object": id, "follow": true, "facts": {"place": "in_sink"}}). 비전으로 못 보는 것(세탁물 등)은 until 없이 두면 사람이 「완료」로 넘긴다.
+- place: 내려놓기·넣기. target은 평면도 id, object는 든 물건 id(앞 pick 물건이면 생략). 물건 id면 until은 그 물건 자리 사실 또는 「놓을 면(target) 위이고 손에 없음」을 any로 묶고 모두 follow: true로 쓴다(예: {"any": [{"object": id, "follow": true, "facts": {"place": "in_sink"}}, {"all": [{"object": id, "follow": true, "surface": target}, {"not": {"object": id, "follow": true, "facts": {"place": "in_hand"}}}]}]}). VLM이 자리 사실을 놓쳐도 트윈 위치(놓을 면 위)로 넘어가고, 손에 든 채 면 위를 지나는 것은 넘기지 않는다. 비전으로 못 보는 것(세탁물 등)은 until 없이 두면 사람이 「완료」로 넘긴다.
 - device: 가전 조작. tool은 기기를 바꾸는 도구 이름(turn_on·turn_off·set_level·set_climate·set_covering·lock·unlock·start·stop·set_valve), target은 가전 id, args는 그 도구의 나머지 인자(device_id 없이). 실행할 때 승인 규칙을 거친다. until은 그 가전 상태(예: {"device": id, "state": "on"}).
 - wait: 행동 중에 기다리기(예: 세탁이 멈추기). until은 World State 조건(예: {"device": 세탁기 id, "state": "stopped"}, 이미 멈췄으면 바로 넘어간다) 또는 {"elapsed_s": 초}. 폰에는 아무것도 보내지 않는다. 행동을 시작하기 전 기다림은 PAM이 맡으니 넣지 않는다.
 - ask: 사람에게 묻기. question은 「?」로 끝나고 choices는 2~3개(id 영문 소문자, label 짧게). 답으로 갈라지지 않게 마지막 단계에만 둔다.
@@ -36,7 +36,7 @@ export const PLANNER_PROMPT = `너는 이 집 스마트홈 에이전트의 계�
 1. go table_1 「식탁으로 가 주세요」 until {"phone_near": "table_1"}
 2. pick cup_1 「컵을 들어 주세요」 until {"any": [{"object": "cup_1", "follow": true, "facts": {"place": "in_hand"}}, {"person_holding": "cup"}]}
 3. go sink_1 「싱크대로 가 주세요」 until {"phone_near": "sink_1"}
-4. place sink_1 object cup_1 「컵을 싱크대에 넣어 주세요」 until {"object": "cup_1", "follow": true, "facts": {"place": "in_sink"}}
+4. place sink_1 object cup_1 「컵을 싱크대에 넣어 주세요」 until {"any": [{"object": "cup_1", "follow": true, "facts": {"place": "in_sink"}}, {"all": [{"object": "cup_1", "follow": true, "surface": "sink_1"}, {"not": {"object": "cup_1", "follow": true, "facts": {"place": "in_hand"}}}]}]}
 
 예(세탁물 옮기기, 세탁기 washer_1, 건조기 dryer_1)
 1. wait until {"device": "washer_1", "state": "stopped"} timeout_s 7200 on_timeout ask

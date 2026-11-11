@@ -8,7 +8,7 @@
 // - became: 그 단계(seq면 그 칸)가 시작된 뒤 가전이 그 상태가 됨(가전 이력). seq: 앞 칸이 참이 된 뒤 다음 칸이 참이고, 칸마다 기준 시각이 그때로 바뀐다.
 // - for_s: 그 시간 넘게 이어서 참(거짓·모름이면 다시 센다).
 // 물건 이름은 id(cup_1) 또는 종류(cup: 그 종류 아무거나, 한 물건이 모든 칸을 함께 맞춰야 참). follow면 그 id와, 단계 시작 뒤 새로 생긴 같은 종류 물건(옮겨서 새 id가 붙은 그 물건).
-// 실행 추적은 계획 단위로 같은 물건을 안다(ConditionContext.follow): 그 물건과 계획 뒤 새로 생긴 같은 종류 물건(계획 전부터 있던 것은 빼고) 중 하나라도 맞으면 참.
+// 실행 추적은 계획 단위로 같은 물건을 안다(ConditionContext.follow): 지금 그 물건으로 보는 World State 물건(옮겨 새 id로 이었으면 그 id만, 잇지 못하면 원래 id)으로 판정한다.
 // 가전 이름은 id 또는 종류(washer).
 import { z } from "zod";
 import type { WorldFact, WorldView } from "../contract/world.js";
@@ -154,7 +154,7 @@ export interface ConditionContext {
   roomOf: (id: string) => string | null;
   /** 하루 때를 셀 시간대(분, 기본 540). */
   offsetMinutes?: number;
-  /** follow 물건 id → 같은 물건으로 볼 id들(실행 추적이 계획 동안 따라간 것). 주면 그중 하나라도 맞으면 참이고, 없으면 단계 기준 follow. */
+  /** follow 물건 id → 지금 그 물건으로 볼 id들(실행 추적이 계획 동안 따라간 것). 주면 그 id들로만(비면 원래 id로) 판정하고, 없으면 단계 기준 follow. */
   follow?: (id: string) => readonly string[];
 }
 
@@ -182,7 +182,9 @@ const factsAre = (facts: Partial<Record<Facet, WorldFact>>, want: FactMap | unde
 function candidates(name: string, follow: boolean, w: WorldView, x: ConditionContext): { own: WorldView["objects"]; moved: WorldView["objects"] } {
   const sinceMs = x.sinceMs;
   if (follow && x.follow) {
-    const ids = new Set([name, ...x.follow(name)]);
+    // 실행 추적이 옮겨 새 id로 이었으면 사라진 원래 id는 보지 않는다(그 옛 사실이 not을 모름으로 만든다)
+    const now = x.follow(name);
+    const ids = new Set(now.length ? now : [name]);
     return { own: w.objects.filter((o) => ids.has(o.id)), moved: [] };
   }
   const own = w.objects.filter((o) => o.id === name || o.cls === name);

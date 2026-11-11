@@ -10,7 +10,7 @@ import { TASKS } from "../src/act/tasks.js";
 import { ExecutionTracker, type TrackerOptions } from "../src/act/track.js";
 import { ApprovalStore, type ApprovalAnswer } from "../src/agent/approval.js";
 import { PLANNER_PROMPT } from "../src/agent/planInput.js";
-import { PlanDraft, type PlanContext, type TaskInfo } from "../src/agent/planTools.js";
+import { PlanDraft, SUBMIT_ARGS, type PlanContext, type TaskInfo } from "../src/agent/planTools.js";
 import { Policy } from "../src/agent/policy.js";
 import { deviceViews } from "../src/agent/tools.js";
 import { CUP_FSM_MEMORY, CUP_TASKS } from "../src/brain/decision.js";
@@ -145,11 +145,17 @@ describe("계획 모드: 컵 치우기", () => {
     expect(r.plan.steps.map((s) => [s.kind, s.command])).toEqual([
       ["go", STEP_COMMAND.goTable], ["pick", STEP_COMMAND.pickCup], ["go", STEP_COMMAND.goSink], ["place", STEP_COMMAND.placeCup],
     ]);
+    // 내려놓기는 싱크대 안 사실, 또는 싱크대 면(그 단계 target) 위이고 손에 없음
     expect(r.plan.steps.map((s) => s.until)).toEqual([
       { phone_near: "table_1" },
       { any: [{ object: "cup_1", follow: true, facts: { place: "in_hand" } }, { person_holding: "cup" }] },
       { phone_near: "sink_1" },
-      { object: "cup_1", follow: true, facts: { place: "in_sink" } },
+      {
+        any: [
+          { object: "cup_1", follow: true, facts: { place: "in_sink" } },
+          { all: [{ object: "cup_1", follow: true, surface: "sink_1" }, { not: { object: "cup_1", follow: true, facts: { place: "in_hand" } } }] },
+        ],
+      },
     ]);
     expect(r.plan.steps.every((s) => s.timeoutMs === 120_000 && s.onTimeout === "fail")).toBe(true);
     // 한 번 부르고 한 차례로 끝난다. 입력은 할 일·판단·World State·평면도·손·승인·조건 낱말, 도구는 계획 전체를 내는 submit_plan 하나(기기를 바꾸는 도구 없음)
@@ -164,6 +170,16 @@ describe("계획 모드: 컵 치우기", () => {
     // 모델이 바로 계획을 내게 그 함수를 지정하고, 응답 하나에 제출 하나만 받는다
     expect(bodies[0]).toMatchObject({ tool_choice: { type: "function", name: "submit_plan" }, parallel_tool_calls: false });
     expect(bodies[0].max_output_tokens).toBe(4000);
+  });
+
+  it("지시문은 놓기 until을 자리 사실 또는 「놓을 면 위이고 손에 없음」을 any로 묶어 쓰게 하고 그 까닭을 말한다. 예의 컵 놓기 조건은 시험 대본과 같다", () => {
+    const place = PLANNER_PROMPT.split("\n").find((l) => l.startsWith("- place:"))!;
+    expect(place).toContain(`{"any": [{"object": id, "follow": true, "facts": {"place": "in_sink"}}, {"all": [{"object": id, "follow": true, "surface": target}, {"not": {"object": id, "follow": true, "facts": {"place": "in_hand"}}}]}]}`);
+    expect(place).toContain("VLM이 자리 사실을 놓쳐도 트윈 위치(놓을 면 위)로 넘어가고, 손에 든 채 면 위를 지나는 것은 넘기지 않는다.");
+    const example = PLANNER_PROMPT.split("\n").find((l) => l.startsWith("4. place sink_1 object cup_1"))!;
+    expect(JSON.parse(example.slice(example.indexOf(" until ") + 7))).toEqual(cupSteps({ table: "table_1", sink: "sink_1", cup: "cup_1" })[3]!.until);
+    // 도구 설명(submit_plan 단계 until 칸)도 같은 모양을 말한다
+    expect(SUBMIT_ARGS.shape.steps.element.shape.until.description).toContain("place는 자리 사실 또는 놓을 면(target) 위이고 손에 없음(not in_hand)을 any로 묶는다");
   });
 });
 
@@ -332,6 +348,9 @@ describe("계획 모드: 계획 검사", () => {
     bad({ ...go, timeout_s: 5 }, /10~1800/);
     bad({ ...go, label: "식탁 → 싱크대" }, /화면 글/);
     bad({ ...cupSteps(cupIds)[1]!, target: "bottle_1" }, /World State 물건/);
+    // 놓기 조건의 면은 배치에 있는 자리다
+    const place = cupSteps(cupIds)[3]!;
+    bad({ ...place, until: JSON.parse(JSON.stringify(place.until).replace(`"surface":"sink_1"`, `"surface":"sink_9"`)) }, /until: 없는 자리: sink_9/);
   });
 
   it("그 할 일에 쓸 수 있는 단계만 받는다: 컵 치우기에 가전·기다리기를 붙이면 버리고, 가전 단계는 target 하나와 그 도구가 만드는 상태만 본다", () => {

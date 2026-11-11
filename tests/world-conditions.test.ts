@@ -167,6 +167,20 @@ describe("계획 단계 조건", () => {
     expect(watch.check(view(), ctx(70_000))).toBe(true);
   });
 
+  it("follow를 실행 추적이 주면 지금 그 물건으로 보는 것만 본다: 옮겨 새 id로 이었으면 사라진 원래 id는 보지 않아 not(손에 있음)도 새 물건으로 정한다", () => {
+    const moved = cup({ id: "cup_3", first_seen_ms: 700, surface: "sink_1", facts: { place: fact("on_table") } });
+    const w = view({ objects: [cup({ id: "cup_1", status: "gone", last_seen_ms: 300 }), moved] });
+    const followed = { ...ctx(1000, 500), follow: () => ["cup_3"] };
+    const notHeld = { not: { object: "cup_1", follow: true, facts: { place: "in_hand" } } };
+    expect(evaluate(notHeld, w, followed)).toBe(true);
+    expect(evaluate({ all: [{ object: "cup_1", follow: true, surface: "sink_1" }, notHeld] }, w, followed)).toBe(true);
+    const held = view({ objects: [w.objects[0]!, { ...moved, facts: { place: fact("in_hand") } }] });
+    expect(evaluate(notHeld, held, followed)).toBe(false);
+    // 실행 추적이 잇지 못하면(빈 목록) 그 id를 본다
+    expect(evaluate({ object: "cup_1", follow: true, status: "gone" }, w, { ...ctx(1000, 500), follow: () => [] })).toBe(true);
+    expect(evaluate(notHeld, w, { ...ctx(1000, 500), follow: () => [] })).toBeNull();
+  });
+
   it("follow: 원래 물건이 보이는 동안은 그것만, 옮겨 새로 생긴 물건이 여럿이면 모두 같은 답일 때만", () => {
     const here = view({ objects: [cup({ id: "cup_1", facts: { place: fact("on_table") } }), cup({ id: "cup_2", first_seen_ms: 900, facts: { place: fact("in_sink") } })] });
     expect(evaluate({ object: "cup_1", follow: true, facts: { place: "in_sink" } }, here, ctx(1000, 500))).toBe(false);

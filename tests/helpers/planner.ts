@@ -25,7 +25,7 @@ export type PlanScript = (input: string) => LlmTurn[];
 /** 단계 목록 → 한 차례(submit_plan 한 번에 계획 전체, 번호는 배열 순서). */
 export const planCalls = (steps: Record<string, unknown>[]): LlmTurn => [["submit_plan", { steps }]];
 
-/** 컵 치우기 네 단계(지금 서버와 같은 명령·조건). */
+/** 컵 치우기 네 단계(지금 서버와 같은 명령·조건). 내려놓기는 싱크대 안 사실, 또는 싱크대 면 위이고 손에 없음. */
 export function cupSteps(ids: { table: string; sink: string; cup: string }): Record<string, unknown>[] {
   const { table, sink, cup } = ids;
   return [
@@ -35,7 +35,16 @@ export function cupSteps(ids: { table: string; sink: string; cup: string }): Rec
       until: { any: [{ object: cup, follow: true, facts: { place: "in_hand" } }, { person_holding: "cup" }] }, timeout_s: 120,
     },
     { kind: "go", label: STEP_LABEL.goSink, target: sink, command: STEP_COMMAND.goSink, until: { phone_near: sink }, timeout_s: 120 },
-    { kind: "place", label: STEP_LABEL.placeCup, target: sink, object: cup, command: STEP_COMMAND.placeCup, until: { object: cup, follow: true, facts: { place: "in_sink" } }, timeout_s: 120 },
+    {
+      kind: "place", label: STEP_LABEL.placeCup, target: sink, object: cup, command: STEP_COMMAND.placeCup,
+      until: {
+        any: [
+          { object: cup, follow: true, facts: { place: "in_sink" } },
+          { all: [{ object: cup, follow: true, surface: sink }, { not: { object: cup, follow: true, facts: { place: "in_hand" } } }] },
+        ],
+      },
+      timeout_s: 120,
+    },
   ];
 }
 
