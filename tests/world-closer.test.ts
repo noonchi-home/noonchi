@@ -150,6 +150,28 @@ describe("가까이 보기 합치기(applyCloser)", () => {
     expect(obj(w, "cup_1", 6000)).toMatchObject({ status: "present", followed_by: null });
   });
 
+  it("옮김 표시가 붙고 더 새 전체 사진이 옛 컵 보임(시야 밖·사라짐)을 판단한 뒤에도, 같은 원본 사진을 잘라 옛 컵을 찾으면 표시를 지운다. 보임은 되살리지 않고, 표시보다 옛 촬영은 지우지 않는다", () => {
+    const marked = () => {
+      const w = ws();
+      w.applyCloser([1, 2, 3].map((i) => pass(`e${i}`, i * 1000, [cupIn])));
+      for (let i = 4; i <= 6; i++) full(w, `e${i}`, i * 1000, [cupOut]);
+      expect(obj(w, "cup_1", 6000)!.followed_by).toBe("cup_2");
+      return w;
+    };
+    const w = marked();
+    full(w, "e7", 7000, [], AWAY_VIEW);
+    expect(obj(w, "cup_1", 7000)).toMatchObject({ status: "out_of_view", followed_by: "cup_2" });
+    w.applyCloser([pass("e5", 5000, [cupIn])]);
+    expect(obj(w, "cup_1", 7000)!.followed_by).toBe("cup_2");
+    expect(w.applyCloser([pass("e6", 6000, [cupIn])]).changes).toEqual([]);
+    expect(obj(w, "cup_1", 7000)).toMatchObject({ status: "out_of_view", followed_by: null });
+    const v = marked();
+    for (let i = 7; i <= 9; i++) full(v, `e${i}`, i * 1000, [cupOut]);
+    expect(obj(v, "cup_1", 9000)).toMatchObject({ status: "gone", followed_by: "cup_2" });
+    expect(v.applyCloser([pass("e6", 6000, [cupIn])]).changes).toEqual([]);
+    expect(obj(v, "cup_1", 9000)).toMatchObject({ status: "gone", followed_by: null });
+  });
+
   it("지킴 중인 물건을 두고 한 촬영(전체 사진 한 장·가까이 보기 한 번)에 같은 종류 새 물건이 여럿 생기면 지킴만 풀고 어느 것에도 잇지 않는다(옮김 표시 없음)", () => {
     const cupFar = det("cup", [380, 300, 40, 20]);
     const w = ws();

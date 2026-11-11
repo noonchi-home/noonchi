@@ -19,7 +19,8 @@
 //   가까이 보기로 찾거나 고친 물건은 30초(CLOSER_HOLD_MS) 동안 전체 사진에서 못 봐도 사라짐으로 세지 않는다(지킴). 같은 종류 새 물건이 다른 자리에 생기면
 //   지킴을 풀고, 한 촬영(전체 사진 한 장·가까이 보기 한 번)에 그런 새 물건이 하나면 옛 물건에 그 id(followed_by)를 남긴다(실행 추적이 새 물건으로 바로 이어 간다.
 //   여럿이면 어느 것인지 몰라 남기지 않는다). 옛 물건을 마지막으로 본 촬영·보임 판단보다 옛(같은 촬영 포함)
-//   등장은 지킴·옮김 표시를 바꾸지 않는다. 표시를 붙인 촬영보다 새 촬영이나 같은 원본 프레임에서 옛 물건을 다시 보면 표시를 지운다.
+//   등장은 지킴·옮김 표시를 바꾸지 않는다. 표시를 붙인 촬영보다 새 촬영이나 같은 원본 프레임에서 옛 물건을 다시 보면 표시를 지운다
+//   (보임 판단보다 옛 가까이 보기여도: 보임은 되돌리지 않고 표시만 지운다).
 //   VLM 답은 원본 프레임·대상·면마다 한 번만 센다(같은 사진을 두 번 판정해 확신으로 오르지 않게). 같은 원본 프레임·대상·면이면 오는 순서와 상관없이
 //   잘라 본 사진의 답(applyCloserScene)이 전체 사진 답보다 앞선다. 잘라 본 답은 그 사진에서 잡은 물건 사실만 넣고 요약·다른 사실을 지우지 않는다.
 //   잘라 본 답이 면 값을 새로 넣거나 바꾸면 그 면의 가까이 보기 횟수(closer_rev)를 올린다. 지금 값의 출처와 따로 남아 전체 사진이 값을 바꿔도 줄지 않는다.
@@ -692,6 +693,7 @@ export class WorldState {
    *  - 장마다 상자 아래 가운데의 트윈 자리로, 같은 종류·같은 자리(종류 거리 안) 감지를 묶는다.
    *  - 묶음이 확인된 물건(사라진 것 포함)에 맞으면: 자리는 자리를 마지막으로 고친 촬영보다 새면(같은 촬영이면 잘라 본 자리가 앞선다),
    *    본 시각·상태(present)·지킴은 마지막 보임 판단(전체 사진의 보임·시야 밖·사라짐, 가까이 보기)보다 새 촬영이거나 같은 원본 프레임의 전체 사진 판단일 때만 고친다.
+   *    옮김 표시는 그와 따로, 표시를 붙인 촬영보다 새 촬영이거나 같은 원본 프레임이면 지운다(sawAgain).
    *  - 맞는 확인된 물건이 없으면: 서로 다른 원본 프레임 CLOSER_NEW_FRAMES장이 있어야 확인된 물건 하나를 만든다(세는 중인 같은 자리 물건이 있으면 그것을 확인).
    *  - 안 보인 물건은 그대로다. 찾거나 고친 물건은 지킴(closerAt)을 둔다.
    *  ids: idsFrom 원본 프레임(없으면 촬영 시각이 가장 새 원본 프레임) 감지 번호(d1…) → 물건 id. 그 사진의 VLM 답(applyCloserScene)이 쓴다. */
@@ -758,6 +760,8 @@ export class WorldState {
         changes.push({ kind: "appeared", at_ms: at, subject: obj.id, meaningful: true, text: CHANGE_TEXT.appeared(this.name(obj), obj.surfaceLabel ? onSurface(obj.surfaceLabel) : null) });
       }
       if (!obj) continue;
+      // 옮김 표시는 보임 판단과 따로 지운다: 보임을 바꾸지 못하는 옛 촬영이어도 표시를 붙인 촬영보다 새거나 같은 원본 프레임이면 두 물건이 함께 있었다
+      for (const s of g.seen) this.sawAgain(obj, s.pass.capturedAtMs, s.pass.frameId);
       used.add(obj.id);
       for (const s of g.seen) if (s.pass.frameId === from) ids.set(s.tmp, obj.id);
     }
@@ -785,13 +789,12 @@ export class WorldState {
     obj.posCloser = true;
   }
 
-  /** 가까이 본 촬영으로 보였다: 본 시각·보임 판단 시각·지킴을 두고, 보통 프레임의 등장·사라짐 셈은 있음으로 다시 둔다. */
+  /** 가까이 본 촬영으로 보였다: 본 시각·보임 판단 시각·지킴을 두고, 보통 프레임의 등장·사라짐 셈은 있음으로 다시 둔다. 옮김 표시는 applyCloser가 따로 지운다. */
   private seenCloser(obj: Obj, at: number, frameId: string): void {
     obj.lastSeen = Math.max(obj.lastSeen, at);
     obj.lastInView = Math.max(obj.lastInView, at);
     this.judge(obj, at, frameId, true);
     obj.closerAt = Math.max(obj.closerAt ?? at, at);
-    this.sawAgain(obj, at, frameId);
     this.confirmer.mark(obj.id);
   }
 
