@@ -757,6 +757,47 @@ describe("실행 추적: 판단 뒤 가까이 본 사실(B와 PAM)", () => {
     expect(a.exec().map((e) => [e.state, e.text])).toEqual([["decided", EXEC_TEXT.decided], ["failed", EXEC_TEXT.closerNewer]]);
     expect(a.phone).toEqual([]);
   });
+
+  it("승인 답을 기다리는 사이 가까이 보기가 컵 안을 바꾸면 「승인」 뒤에도 첫 명령을 보내지 않고 「가까이 본 뒤 다시 판단」으로 닫는다", async () => {
+    let w = withFacts(contents("empty"));
+    const a = setup({ w: () => w, approvals: store() });
+    await a.decide(seen({ contents: "empty" }));
+    expect(a.last()).toMatchObject({ step: "plan:pam-1:approve" });
+    w = withFacts(contents("has_contents", 9_500), { contents: 1 });
+    expect(a.t.onAnswer("plan:pam-1", "plan:pam-1:approve", "approve")).toBe(true);
+    expect(a.commands().map((c) => c.step)).toEqual(["plan:pam-1:approve"]);
+    expect(a.last()).toEqual({ type: "command_clear", id: "plan:pam-1" });
+    expect(a.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-1", state: "failed", text: EXEC_TEXT.closerNewer });
+    expect(a.plans.current()).toMatchObject({ id: "plan:pam-1", status: "cancelled" });
+    expect(a.t.current()).toMatchObject({ state: "failed" });
+  });
+
+  it("실행 전 검사를 다시 보는 사이 가까이 보기가 컵 안을 바꾸면 검사가 통과해도 시작하지 않는다", async () => {
+    let w = withFacts(contents("empty"));
+    let ready = false;
+    const a = setup({ w: () => w, check: () => (ready ? { ok: true } : { ok: false, reason: "stale", text: "아직 아님" } as CheckResult) });
+    await a.decide(seen({ contents: "empty" }));
+    expect(a.t.current()).toMatchObject({ state: "planned" });
+    w = withFacts(contents("has_contents", 9_500), { contents: 1 });
+    ready = true;
+    a.t.tick();
+    expect(a.commands()).toEqual([]);
+    expect(a.exec().at(-1)).toMatchObject({ state: "failed", text: EXEC_TEXT.closerNewer });
+    expect(a.plans.current()).toMatchObject({ status: "cancelled" });
+  });
+
+  it("첫 명령을 보낸 뒤에는 가까이 보기가 컵 안을 바꿔도 계획을 그대로 이어 간다(단계마다 끝나는 조건을 World State로 본다)", async () => {
+    let w = withFacts(contents("empty"));
+    const a = setup({ w: () => w });
+    await a.decide(seen({ contents: "empty" }));
+    expect(a.last()).toMatchObject({ step: "plan:pam-1:1" });
+    w = withFacts(contents("has_contents", 9_500), { contents: 1 });
+    a.clock.t += 600;
+    a.t.onWorld();
+    a.t.tick();
+    expect(a.t.current()).toMatchObject({ state: "running" });
+    expect(a.t.openCommand()).toMatchObject({ stepId: "plan:pam-1:1" });
+  });
 });
 
 describe("실행 추적: 승인(처음 하는 PAM 계획)", () => {

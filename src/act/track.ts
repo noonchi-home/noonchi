@@ -22,7 +22,9 @@
 // 사람 부탁(askCloser)은 지금 그 계획의 그 사람 단계일 때만 같은 계획·단계 id로 명령 글만 바꿔 다시 보낸다(소리로 읽음).
 // 판단 뒤 가까이 본 사실(관찰 모드 B는 PAM을 막지 않는다): 그 행동 대상 종류 물건의 볼 면(TaskSpec.look)을 판단 뒤에 가까이 보기가 바꿨고
 // (World State closer_rev가 판단 기록의 횟수와 다름) 지금 값이 판단 때 본 값과 다르면, 판단을 받을 때와 계획을 받을 때 실행하지 않고
-// 「가까이 본 뒤 다시 판단」만 남긴다. 다음 판단이 새 사실로 다시 고른다.
+// 「가까이 본 뒤 다시 판단」만 남긴다. 계획을 받은 뒤 첫 명령 전(승인 답·실행 전 검사를 기다리는 사이)이면 시작하지 않고 그 기록으로 계획을 취소로 닫는다.
+// 다음 판단이 새 사실로 다시 고른다. 첫 명령을 보낸 뒤에는 멈추지 않는다: 단계마다 끝나는 조건을 World State로 보고, 멈춘 단계의 가까이 보기(A)가
+// 그 면을 바꾸는 것도 이 계획의 관찰이다. 다른 행동이 맞으면 다음 판단이 새 계획으로 바꾼다.
 import type { BrainLog, ExecState } from "../contract/events.js";
 import type { PhoneStepKind, PlannedCommand, PlannedCommandMessage } from "../contract/phone.js";
 import type { PlanView, XZ } from "../contract/plan.js";
@@ -396,7 +398,10 @@ export class ExecutionTracker {
     return approvalNeed({ key: taskKey(r.plan.task), risky: false, requested: false, memory: this.o.approvals.memory() });
   }
 
+  /** 첫 단계를 시작해 본다(계획을 받을 때·검사를 다시 볼 때·승인 답 뒤). 첫 명령 전에 가까이 보기가 볼 면을 바꿨으면 시작하지 않고
+   *  「가까이 본 뒤 다시 판단」으로 닫는다(다음 판단이 새 사실로 다시 고른다). 첫 명령을 보낸 뒤에는 보지 않는다. */
   private tryStart(r: Run, last: boolean): void {
+    if (this.closerNewer(r.decision)) return this.finish(r, "failed", EXEC_TEXT.closerNewer, "cancelled");
     const c = this.o.check(r.decision, r.plan.view);
     if (!c.ok) {
       if (last) this.finish(r, "failed", c.text);
