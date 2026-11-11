@@ -152,6 +152,13 @@ describe("video-check", () => {
       .toBe("VLM 54장 · $0.0301 · 가까이 보기 0번 · 관찰 모드 2번 · 관찰 모드 비용 모름 · 엔진 프레임 54장 · PAM·계획 비용 빠짐");
   });
 
+  it("비용 줄: 약한 후보 다시 보기가 있으면 가까이 보기 뒤에 「다시 보기 n번 중 m번 받음」과 평균 시간, 한 번도 안 봤으면 0번 중 0번만", () => {
+    expect(costLine({ frames: 54, vlm: { sent: 54, costUsd: 0.0301 }, closer: { looks: 1 }, recheck: { tried: 12, found: 7, ms: 260 } }))
+      .toBe("VLM 54장 · $0.0301 · 가까이 보기 1번 · 다시 보기 12번 중 7번 받음 260ms · 엔진 프레임 54장 · PAM·계획 비용 빠짐");
+    expect(costLine({ frames: 54, vlm: { sent: 54, costUsd: 0.0301 }, recheck: { tried: 0, found: 0, ms: null } }))
+      .toBe("VLM 54장 · $0.0301 · 다시 보기 0번 중 0번 받음 · 엔진 프레임 54장 · PAM·계획 비용 빠짐");
+  });
+
   it("단계 판정 줄: 첫 명령의 계획 단계 중 끝난 수, 누른 단추 수, 마지막 트윈 눈 방과 컵 놓인 곳", () => {
     const steps = (done: number) => ["식탁으로 가기", "컵 집기", "싱크대로 가기", "컵 내려놓기"].map((label, i) => ({ id: `s${i + 1}`, label, status: i < done ? "done" : i === done ? "active" : "pending" }));
     const plan = (id: number, at_ms: number, subject: string, done: number, status = "running"): HistoryRow => ({ id, at_ms, day: "2026-11-11", kind: "plan", subject, text: "컵 치우기", data: { status, steps: steps(done) } });
