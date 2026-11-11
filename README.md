@@ -55,7 +55,7 @@ noonchi-home | 26-2 소프트웨어공학
 - 아래: 비전 상태 줄(예: 「식탁까지 2.4m」, 「컵 · 손에 있음」)과 바로 밑 「완료」 단추. 비전이 못 알아볼 때 사람이 「완료」를 누르거나 말하면 다음 단계로 간다.
 - 늘 듣는다(크롬 음성 인식). 명령은 소리로 읽고, 읽는 동안은 듣지 않는다. 「그만」이라고 하면 계획을 그만둔다.
 - 일이 멈추는 문제(시작 위치 없음, 마이크 꺼짐, 연결 끊김)는 고치는 단추가 있는 창으로, 잠깐 생기는 문제(추적 약함)는 비전 상태 줄로 알린다. 위치를 맞추는 중에는 비전 상태 줄 앞에 「위치 맞추는 중」이 붙는다.
-- 영상 모드: `/phone/?clip=<파일>`이면 카메라 대신 `runtime/videos/<파일>`을 틀고, 실제 폰과 같은 길로 서버에 보낸다. 카메라 자리는 설정 4단계에서 정한 시작 자리·방향이고 서버는 처음부터 맞춘 위치로 받는다. 명령은 그 영상 위에 뜨고, 소리로 읽기와 늘 듣기는 끈다. 답은 화면 단추로 한다([영상 모드](docs/reference.md#영상-모드-영상으로-시험하기)).
+- 영상 모드: `/phone/?clip=<파일>`이면 카메라 대신 `runtime/videos/<파일>`을 틀고, 실제 폰과 같은 길로 서버에 보낸다. 카메라 자리는 설정 4단계에서 정한 시작 자리·방향이고 서버는 처음부터 맞춘 위치로 받는다. 명령은 그 영상 위에 뜨고, 소리로 읽기와 늘 듣기는 끈다. 답은 화면 단추로 한다. `step=<종류>:<낱말>:<파일>`을 붙이면 명령마다 사람이 그 단계를 하는 영상으로 바꿔 틀고, 가기 단계는 카메라 자리를 대상 앞까지 옮긴다([영상 모드](docs/reference.md#영상-모드-영상으로-시험하기)).
 - 카메라 프레임은 늘 서버로 간다. 폰 서버는 Wi-Fi에서 폰 페이지와 그 WebSocket만 내주고, 기기 제어 REST는 127.0.0.1에만 둔다.
 
 #### 03. 승인 규칙
@@ -140,7 +140,7 @@ npm start                 # 화면을 빌드하고 http://127.0.0.1:8200
 - 관찰·판단까지 돌리기: PAM 서비스(`services/pam`, [reference](docs/reference.md#pam-서비스-servicespam))를 띄우고 `BRAIN=1 PHONE_PORT=8210 npm start`. 폰은 설정 창의 QR로 연다. PAM은 셸 환경 변수만 읽으므로 `.env` 값을 넘겨서 띄운다.
 - 비용을 줄인 모델: `.env`에 `VLM_MODEL=gpt-5.4-nano`, `PAM_LLM_PROVIDER=openai`, `PAM_LLM_MODEL=gpt-5.4-nano`, `OPENAI_MODEL=gpt-5.4-mini`. VLM은 2초마다 최근 5장을 보내 1시간에 약 0.9달러가 든다(2026-11-10 실측).
 - 지난 기록이 있는 PAM 시험: `npx tsx scripts/seed-history.ts`가 한양목련 7일 합성 기록을 넣는다(모든 줄에 합성 표시). 지우기는 `--clear`.
-- 영상으로 시험하기: 시작 자리를 저장하고(설정 4단계) 영상을 `runtime/videos/`에 둔 뒤 `npm run heavy -- npx tsx scripts/video-check.ts --clip <파일> --done-after 3`. 헤드리스 크롬이 폰 페이지 영상 모드로 끝까지 틀고, 영상 시각 기준 시각표(사람 등장·사라짐, PAM 판단, 계획, 명령, 끝)와 판정을 `runtime/videos/`에 남긴다. 판마다 서버를 새로 띄운다. 모델 없이 도구만 보려면 `--fake`.
+- 영상으로 시험하기: 시작 자리를 저장하고(설정 4단계) 영상을 `runtime/videos/`에 둔 뒤 `npm run heavy -- npx tsx scripts/video-check.ts --clip <파일> --done-after 3`. 헤드리스 크롬이 폰 페이지 영상 모드로 끝까지 틀고, 영상 시각 기준 시각표(사람 등장·사라짐, PAM 판단, 계획, 명령, 끝)와 판정을 `runtime/videos/`에 남긴다. 판마다 서버를 새로 띄운다. `--step go:table:go-table.mp4 …`을 주면 단추를 누르지 않고 단계 영상으로 단계가 넘어가는지, 트윈 눈·컵이 따라 바뀌는지 표와 대시보드 사진으로 남긴다. 모델 없이 도구만 보려면 `--fake`.
 - 실제 집 사진 모으기: `.env`에 `DATASET_COLLECT=1`이면 분석한 사진이 폰 위치·방향과 함께 `runtime/dataset/<날짜>/`에 쌓인다(7일 보관).
 - 감지·관절 모델(YOLO26n·YOLO26n-pose ONNX, AGPL-3.0)은 저장소 `models/`에 있어 따로 받지 않는다. 출처·다시 내보내기는 [THIRD_PARTY](THIRD_PARTY.md#모델).
 - 키 없이 돌려 보기: `npx tsx scripts/fake-openai.ts --port 8500`을 띄우고 `VLM_BASE_URL`·`PAM_LLM_BASE_URL`·`OPENAI_BASE_URL`을 `http://127.0.0.1:8500/v1`로, `OPENAI_API_KEY`를 `fake-key`로 둔다.
