@@ -7,9 +7,9 @@ import { join } from "node:path";
 import jpeg from "jpeg-js";
 import { describe, expect, it } from "vitest";
 import {
-  DETECTOR_MODEL, MODELS_DIR, OnnxDetector, POSE_MODEL, WorkerDetector, YOLO26_IOU, decodeYolo26, decodeYolo26All, letterboxYolo26, nms, type Detection,
+  DETECT_MIN_SCORE, DETECTOR_MODEL, MODELS_DIR, OnnxDetector, POSE_MODEL, WorkerDetector, YOLO26_IOU, decodeYolo26, decodeYolo26All, letterboxYolo26, nms, type Detection,
 } from "../src/brain/detector.js";
-import { detectorSpec } from "../src/observe/pipeline.js";
+import { detectorSpec, RECHECK_MIN } from "../src/observe/pipeline.js";
 import { ScriptedDetector } from "./helpers/detectors.js";
 
 function rgba(width: number, height: number, fill: (x: number, y: number) => [number, number, number]) {
@@ -103,6 +103,24 @@ describe("decodeYolo26", () => {
     expect(decodeYolo26(o, [1, 84, N], lb, image, { minScore: 0.25 })).toEqual(all.detections);
   });
 
+  it("weakMinScore를 주면 그 이상 minScore 미만 감지를 weak로 따로 낸다. detections·landmarks는 주지 않을 때와 같고, 센 상자와 겹친 같은 종류 약한 상자는 NMS로 버린다", () => {
+    const o = out();
+    put(o, 0, [100, 300, 20, 20], { 41: 0.9 }); // 컵
+    put(o, 1, [101, 300, 20, 20], { 41: 0.2 }); // 같은 컵의 겹친 약한 상자
+    put(o, 2, [200, 300, 20, 20], { 39: 0.13 }); // 약한 병
+    put(o, 3, [300, 300, 20, 20], { 41: 0.3 }); // 0.25 이상 컵(World State 기준 0.4 미만)은 detections
+    put(o, 4, [400, 300, 60, 120], { 72: 0.2 }); // 약한 냉장고: 기준점(landmarks)에는 넣지 않는다
+    put(o, 5, [500, 300, 20, 20], { 45: 0.05 }); // 0.1 미만 그릇
+    const base = decodeYolo26All(o, [1, 84, N], lb, image, { minScore: 0.25 });
+    const all = decodeYolo26All(o, [1, 84, N], lb, image, { minScore: 0.25, weakMinScore: 0.1 });
+    expect(base.weak).toEqual([]);
+    expect(all.detections).toEqual(base.detections);
+    expect(all.detections.map((d) => [d.label, +d.score.toFixed(2)])).toEqual([["cup", 0.9], ["cup", 0.3]]);
+    expect(all.landmarks).toEqual(base.landmarks);
+    expect(all.landmarks).toEqual([]);
+    expect(all.weak.map((d) => [d.label, +d.score.toFixed(2), d.box.map((v) => +v.toFixed(1))])).toEqual([["bottle", 0.13, [95, 75, 10, 10]], ["refrigerator", 0.2, [185, 50, 30, 60]]]);
+  });
+
   it("그림 밖으로 나간 상자는 그림 끝에서 자른다", () => {
     const o = out();
     put(o, 0, [10, 150, 40, 40], { 0: 0.9 }); // 레터박스 왼쪽 끝을 넘고, 위쪽 채움 줄에 걸침
@@ -131,9 +149,10 @@ describe("nms", () => {
 });
 
 describe("모델과 감지기 값", () => {
-  it("감지기는 저장소 models/의 yolo26n, 관절은 yolo26n-pose다. 파일은 BRAIN_YOLO_PATH·BRAIN_POSE_PATH로 직접 줄 수 있다", () => {
-    expect(detectorSpec({})).toEqual({ modelPath: join(MODELS_DIR, "yolo26n.onnx"), posePath: join(MODELS_DIR, "yolo26n-pose.onnx"), threads: 4 });
-    expect(detectorSpec({ BRAIN_YOLO_PATH: "a.onnx", BRAIN_POSE_PATH: "b.onnx", BRAIN_YOLO_THREADS: "2" })).toEqual({ modelPath: "a.onnx", posePath: "b.onnx", threads: 2 });
+  it("감지기는 저장소 models/의 yolo26n, 관절은 yolo26n-pose다. 파일은 BRAIN_YOLO_PATH·BRAIN_POSE_PATH로 직접 줄 수 있다. 약한 감지는 다시 보기 후보 하한(RECHECK_MIN)부터 따로 낸다", () => {
+    expect(DETECT_MIN_SCORE).toBe(0.25);
+    expect(detectorSpec({})).toEqual({ modelPath: join(MODELS_DIR, "yolo26n.onnx"), posePath: join(MODELS_DIR, "yolo26n-pose.onnx"), threads: 4, weakMinScore: RECHECK_MIN });
+    expect(detectorSpec({ BRAIN_YOLO_PATH: "a.onnx", BRAIN_POSE_PATH: "b.onnx", BRAIN_YOLO_THREADS: "2" })).toEqual({ modelPath: "a.onnx", posePath: "b.onnx", threads: 2, weakMinScore: RECHECK_MIN });
   });
 
   it("저장소 models/의 YOLO26 파일 sha256이 표와 같다", () => {
@@ -156,12 +175,13 @@ const y26 = join(MODELS_DIR, DETECTOR_MODEL.file);
 const gray = Buffer.from(jpeg.encode(rgba(360, 780, () => [128, 128, 128]), 80).data);
 
 describe("YOLO26n 실제 모델(저장소 models/)", () => {
-  it("회색 세로 그림 한 장: 출력 [1, 84, 8400]을 풀어 감지가 없고, 사람이 없으니 관절은 돌리지 않는다", async () => {
-    const det = await OnnxDetector.create({ modelPath: y26, posePath: join(MODELS_DIR, POSE_MODEL.file) });
+  it("회색 세로 그림 한 장: 출력 [1, 84, 8400]을 풀어 감지가 없고(약한 감지도 없음), 사람이 없으니 관절은 돌리지 않는다", async () => {
+    const det = await OnnxDetector.create({ modelPath: y26, posePath: join(MODELS_DIR, POSE_MODEL.file), weakMinScore: 0.1 });
     try {
       expect([det.name, det.pose]).toEqual(["yolo26n", "yolo26n-pose"]);
       const r = await det.detect(gray);
       expect(r.detections).toEqual([]);
+      expect(r.weak).toEqual([]);
       expect(r.poses).toBeUndefined();
       expect(r.poseMs).toBeUndefined();
       expect([r.width, r.height]).toEqual([360, 780]);
