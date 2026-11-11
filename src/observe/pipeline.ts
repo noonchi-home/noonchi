@@ -309,7 +309,8 @@ export class ObservationPipeline {
    *  모자라거나, 가장 새 프레임이 지금(clock)보다 closerSpanMs 넘게 앞서 찍혔으면(폰이 끊겨 새 프레임이 안 옴) 자르지 않고 no_fresh_frames.
    *  장마다 spot을 그 프레임 카메라로 찍은 자리를 절반 크기로 잘라 2배로 키워 같은 감지기로 보고, 상자를 엔진 프레임 픽셀로 옮겨 World State에 한 번에 합친다(변화 발행도 한 번).
    *  감지가 끝나면 쓴 가장 새 프레임이 아직 closerSpanMs 안인지 다시 보고, 낡았으면 합치지 않고 no_fresh_frames.
-   *  signal은 자르기 전(장마다)·합치기 바로 전·VLM 답을 넣기 바로 전에 보고, 끊겼으면 넣지 않고 aborted. VLM 답을 기다리는 중에 끊기면 그 HTTP 요청도 끊는다.
+   *  signal은 자르기 전(장마다)·합치기 바로 전에 보고, 끊겼으면 넣지 않고 aborted(ok 아님). 감지를 합친 뒤에 끊기면(합친 변화로 그 단계가 끝남 등)
+   *  VLM을 보내지 않거나 기다리던 HTTP 요청을 끊고 답을 넣지 않으며, 실행한 가까이 보기(ok, vlm aborted)로 돌려준다.
    *  가장 새 장만 VLM 가까이 보기 자리로 보내고 그 답(감지한 물건 사실만)을 넣은 뒤 끝난다. */
   async closer(spot: LookSpot, signal?: AbortSignal): Promise<CloserResult> {
     if (this.closed) return this.closerMiss("closed");
@@ -368,29 +369,35 @@ export class ObservationPipeline {
       type: "observe", at_ms: this.clock.now(), frame_id: id, captured_at_ms: last.frame.capturedAtMs, yolo: yoloText(last.dets), vlm: null,
       boxes: looks.at(-1)!.dets.map(({ label, score, box }) => ({ label, score, box })), frame: { width: last.frame.width, height: last.frame.height }, closer: last.crop,
     });
-    // VLM은 잘라 키운 사진 한 장이고 감지 상자는 그 사진 픽셀이다
-    const answer = this.pool.submitCloser(
-      { ...last.frame, id, jpeg: last.jpeg, sha256: sha256(last.jpeg), crop: last.crop },
-      last.dets.map((d, i) => ({ id: `d${i + 1}`, class: d.label, box: d.box, score: d.score })),
-      signal,
-    );
-    const r: VlmResult = answer ? await answer : { frameId: id, capturedAtMs: last.frame.capturedAtMs, scene: null, missing: "cap", costUsd: 0 };
-    this.closerCount.costUsd += r.costUsd;
+    // 감지는 합쳤다: 여기서부터 끊기면(합친 변화로 그 단계가 끝남 등) VLM 답만 넣지 않고 실행한 가까이 보기로 돌려준다
+    let r: VlmResult | null = null;
+    if (!signal?.aborted) {
+      // VLM은 잘라 키운 사진 한 장이고 감지 상자는 그 사진 픽셀이다
+      const answer = this.pool.submitCloser(
+        { ...last.frame, id, jpeg: last.jpeg, sha256: sha256(last.jpeg), crop: last.crop },
+        last.dets.map((d, i) => ({ id: `d${i + 1}`, class: d.label, box: d.box, score: d.score })),
+        signal,
+      );
+      r = answer ? await answer : { frameId: id, capturedAtMs: last.frame.capturedAtMs, scene: null, missing: "cap", costUsd: 0 };
+      this.closerCount.costUsd += r.costUsd;
+    }
     if (this.closed) return this.closerMiss("closed");
-    // VLM 답을 넣기 바로 전에 다시 본다(감지는 이미 합쳤다)
-    if (signal?.aborted) return this.closerMiss("aborted");
-    this.o.emit({
-      type: "observe", at_ms: this.clock.now(), frame_id: id, captured_at_ms: last.frame.capturedAtMs, yolo: null, vlm: r.scene?.summary ?? null,
-      ...(r.missing ? { vlm_missing: r.missing } : {}), closer: last.crop,
-    });
-    if (r.scene) this.publish(this.o.world.applyCloserScene(last.frame.id, last.frame.capturedAtMs, r.scene, ids));
+    // VLM 답을 넣기 바로 전에 다시 본다
+    if (signal?.aborted) r = null;
+    if (r) {
+      this.o.emit({
+        type: "observe", at_ms: this.clock.now(), frame_id: id, captured_at_ms: last.frame.capturedAtMs, yolo: null, vlm: r.scene?.summary ?? null,
+        ...(r.missing ? { vlm_missing: r.missing } : {}), closer: last.crop,
+      });
+      if (r.scene) this.publish(this.o.world.applyCloserScene(last.frame.id, last.frame.capturedAtMs, r.scene, ids));
+    }
     this.closerCount.looks++;
     const said = new Map<string, string[]>();
-    for (const ob of r.scene?.observations ?? []) said.set(ob.object_id, [...(said.get(ob.object_id) ?? []), ob.state]);
+    for (const ob of r?.scene?.observations ?? []) said.set(ob.object_id, [...(said.get(ob.object_id) ?? []), ob.state]);
     return {
       ok: true, frame_id: id, captured_at_ms: last.frame.capturedAtMs, crop: last.crop, frames: passes.length,
       found: last.dets.map((d, i) => ({ id: ids.get(`d${i + 1}`) ?? null, cls: d.label, score: Math.round(d.score * 100) / 100, facts: said.get(`d${i + 1}`) ?? [] })),
-      summary: r.scene?.summary ?? null, vlm: r.missing ?? "ok",
+      summary: r?.scene?.summary ?? null, vlm: r ? r.missing ?? "ok" : "aborted",
     };
   }
 

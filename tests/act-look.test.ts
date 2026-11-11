@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { LOOK_DEFAULTS, Looker, type LookerOptions } from "../src/act/look.js";
 import type { Stall } from "../src/act/track.js";
 import { Observer } from "../src/agent/observer.js";
-import type { BrainLog } from "../src/contract/events.js";
+import type { BrainLog, CloserResult } from "../src/contract/events.js";
 import type { WorldObject, WorldView } from "../src/contract/world.js";
 import type { LookSpot } from "../src/observe/crop.js";
 import type { LatestFrame } from "../src/observe/pipeline.js";
@@ -254,6 +254,26 @@ describe("보기 담당: 가까이 보기 실행", () => {
     expect(t2.looks()).toEqual([]);
     expect(b.settled).toEqual([]);
     expect(t2.looker.stalled(stall({ signal: AbortSignal.abort() }).s)).toBe(false);
+  });
+
+  it("감지를 합친 뒤 단계가 끝나 VLM 답을 넣지 않은 가까이 보기(vlm aborted)도 실행한 관찰로 기록하고 settle(true)", async () => {
+    const closer = testCloser();
+    closer.hold();
+    const t = await setup({ script: () => [["look_closer", { target: "sink_1", reason: "싱크대 안을 보려고" }]], closer });
+    const a = stall();
+    t.looker.stalled(a.s);
+    await vi.waitFor(() => expect(closer.calls).toHaveLength(1));
+    a.ac.abort();
+    const cut: CloserResult = {
+      ok: true, frame_id: "e3.c1", captured_at_ms: 6000, crop: [120, 90, 240, 180], frames: 3, found: [{ id: "cup_1", cls: "cup", score: 0.72, facts: [] }], summary: null, vlm: "aborted",
+    };
+    closer.release(cut);
+    await t.looker.idle();
+    const text = LOOK_TEXT.closer("싱크대", `컵 보임 · ${LOOK_TEXT.vlmAborted}`);
+    expect(text).toBe("싱크대 쪽을 가까이 봄 · 컵 보임 · 단계가 끝나 VLM 답은 넣지 않음");
+    expect(t.looks()).toEqual([expect.objectContaining({ trigger: "stalled", tool: "look_closer", target: "sink_1", text, result: cut })]);
+    expect(a.settled).toEqual([true]);
+    expect(t.looker.status()).toMatchObject({ looks: 1 });
   });
 
   it("관찰 모드 호출이 실패하면(가짜 서버 닫음) 기다리기 기록에 까닭을 남기고 settle(true)", async () => {

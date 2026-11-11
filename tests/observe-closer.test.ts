@@ -25,7 +25,7 @@ const cup: Detection = { label: "cup", score: 0.72, cls: 41, box: [220, 160, 40,
 const fakeVlm = (f: FakeServer) => new VlmClient({ baseUrl: `${f.url}/v1`, model: "m", apiKey: "", extraBody: {} });
 
 /** 관찰 흐름 하나: 엔진 사진은 전체 감지(기본 없음), 잘라 키운 사진은 컵. frame(at)은 2초 간격 엔진 프레임 하나를 넣고 시계를 받은 시각(at + 5ms)까지 옮긴다. */
-function setup(o: { vlm: VlmClient; detector?: (engine: Set<string>) => Detector | null; vlmMaxInflight?: number }) {
+function setup(o: { vlm: VlmClient; detector?: (engine: Set<string>) => Detector | null; vlmMaxInflight?: number; onChanges?: (c: WorldChange[]) => void }) {
   const engine = new Set<string>();
   const logs: BrainLog[] = [];
   const changes: WorldChange[][] = [];
@@ -34,7 +34,7 @@ function setup(o: { vlm: VlmClient; detector?: (engine: Set<string>) => Detector
   const p = new ObservationPipeline({
     config: { engineMs: 2000, vlmMaxInflight: o.vlmMaxInflight ?? 4, vlmTimeoutMs: 5000, detectQueueMax: 8, keepMs: 20_000 },
     detector: o.detector ? o.detector(engine) : cropAware(engine, { crop: [cup] }), vlm: o.vlm, world,
-    emit: (l) => logs.push(l), broadcastWorld: () => {}, onChanges: (c) => changes.push(c), clock,
+    emit: (l) => logs.push(l), broadcastWorld: () => {}, onChanges: (c) => { changes.push(c); o.onChanges?.(c); }, clock,
   });
   let n = 0;
   const frame = (atMs: number, view: CameraView | null = LOOK_VIEW) => {
@@ -180,6 +180,24 @@ describe("가까이 보기(관찰 흐름 closer)", () => {
     await s.p.close();
   });
 
+  it("감지를 합친 변화로 단계가 끝나 신호가 끊기면 VLM은 보내지 않고, 합친 결과는 실행한 가까이 보기로 돌려준다(VLM 답 없음 aborted)", async () => {
+    fake = await startFakeOpenAI({ reply: closerVlmReply() });
+    const ac = new AbortController();
+    const s = setup({ vlm: fakeVlm(fake), onChanges: (c) => { if (c.some((x) => x.kind === "appeared")) ac.abort(); } });
+    for (let i = 1; i <= 3; i++) s.frame(i * 2000);
+    await s.p.idle();
+    const sentBefore = fake.requests.length;
+    expect(await s.p.closer(SPOT, ac.signal)).toEqual({
+      ok: true, frame_id: "e3.c1", captured_at_ms: 6000, crop: [120, 90, 240, 180], frames: 3,
+      found: [{ id: "cup_1", cls: "cup", score: 0.72, facts: [] }], summary: null, vlm: "aborted",
+    });
+    expect(ac.signal.aborted).toBe(true);
+    expect(fake.requests.length).toBe(sentBefore);
+    expect(s.world.view(6000).objects).toEqual([expect.objectContaining({ id: "cup_1", status: "present", facts: {} })]);
+    expect(s.p.status().closer).toMatchObject({ looks: 1, failed: 0 });
+    await s.p.close();
+  });
+
   it("VLM 답을 기다리는 중에 끊기면 그 HTTP 요청을 끊고, 답이 와도 넣지 않는다", async () => {
     const signals: AbortSignal[] = [];
     const answers: (() => void)[] = [];
@@ -202,9 +220,13 @@ describe("가까이 보기(관찰 흐름 closer)", () => {
     ac.abort();
     expect(signals[0]!.aborted).toBe(true);
     answers[0]!();
-    expect(await pending).toEqual({ ok: false, why: "aborted" });
+    // 감지는 이미 합쳤으므로 실행한 가까이 보기다: VLM 답만 넣지 않았다(aborted)
+    expect(await pending).toEqual({
+      ok: true, frame_id: "e3.c1", captured_at_ms: 6000, crop: [120, 90, 240, 180], frames: 3,
+      found: [{ id: "cup_1", cls: "cup", score: 0.72, facts: [] }], summary: null, vlm: "aborted",
+    });
     expect(s.world.view(6000).objects).toEqual([expect.objectContaining({ id: "cup_1", facts: {} })]);
-    expect(s.p.status().closer).toMatchObject({ looks: 0, failed: 1 });
+    expect(s.p.status().closer).toMatchObject({ looks: 1, failed: 0 });
     await s.p.idle();
     expect(s.p.status().vlm.missing).toMatchObject({ timeout: 0, error: 0 });
     await s.p.close();

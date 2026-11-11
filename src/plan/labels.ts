@@ -98,6 +98,7 @@ export const LOOK_TEXT = {
     no_detector: "감지기가 없어 못 봄", aborted: "단계가 바뀌어 그만 봄", "closed": "멈춰서 못 봄", error: "감지 오류로 못 봄",
   } satisfies Record<CloserMiss, string>,
   vlmMissing: "VLM 답 없음",
+  vlmAborted: "단계가 끝나 VLM 답은 넣지 않음",
   asked: (text: string) => `가까이 비춰 달라고 부탁함 · ${text}`,
   notSent: "단계가 바뀌어 부탁하지 않음",
   waited: (place: string | null) => (place ? `${place} 쪽은 기다림` : "기다림"),
