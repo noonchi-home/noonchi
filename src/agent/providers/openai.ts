@@ -64,7 +64,8 @@ export class OpenAIProvider implements LlmProvider {
       instructions: opts.system,
       input: s.items,
       tools: opts.tools.map((t) => ({ type: "function" as const, name: t.name, description: t.description, parameters: toolJsonSchema(t), strict: false })),
-      tool_choice: opts.allowTools ? "auto" : "none",
+      tool_choice: !opts.allowTools ? "none" : opts.forceTool ? { type: "function" as const, name: opts.forceTool } : "auto",
+      ...(opts.allowTools && opts.forceTool ? { parallel_tool_calls: false } : {}),
       ...(opts.maxOutputTokens ? { max_output_tokens: opts.maxOutputTokens } : {}),
     }, opts.signal ? { signal: opts.signal } : undefined);
     s.items.push(...(res.output as unknown as Item[]));

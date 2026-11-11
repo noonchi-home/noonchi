@@ -1,5 +1,5 @@
 // 에이전트 계획 모드의 도구와 계획 검사(docs/superpowers/plans/2026-11-10-agent-plans.md).
-// 에이전트는 add_step으로 단계를 하나씩 더하고 finish_plan으로 끝낸다. 단계는 더할 때 바로 검사해 틀리면 이유를 돌려준다(모델이 고쳐 다시 부른다).
+// 에이전트는 submit_plan 한 번으로 계획 전체를 낸다. 낼 때마다 전체를 새로 검사해 틀리면 첫 틀린 단계와 이유를 돌려준다(모델이 고친 전체를 다시 낸다).
 // 경로는 모델이 아니라 assemblePlan(src/plan/planner.ts)이 이동 단계마다 잇는다. 기기를 바꾸는 도구는 계획 모드에 없다:
 // 기기 단계는 도구 이름·인자만 적어 두고, 실행 추적(src/act/track.ts)이 그 단계가 되면 정책(승인 규칙)을 거쳐 부른다.
 import { z } from "zod";
@@ -14,7 +14,6 @@ import type { WorldObject, WorldView } from "../contract/world.js";
 import type { RoomSpec } from "../hub/types.js";
 import type { FloorPlan } from "../plan/floor.js";
 import { DEVICE_VERB } from "../plan/labels.js";
-import { roomAt, route } from "../plan/route.js";
 import { ConditionSchema, checkCondition, type Condition, type ConditionHome } from "../world/conditions.js";
 import type { DecisionRecord } from "../world/decide.js";
 import { TOOLS, type ToolDef, type ToolResult } from "./tools.js";
@@ -96,7 +95,7 @@ const choiceSchema = z.object({
   ends_plan: z.boolean().optional().describe("true면 이 답을 받으면 계획을 끝낸다"),
 });
 
-/** add_step 인자. 종류마다 쓰는 칸은 PlanDraft.add가 본다. */
+/** 단계 하나의 인자(submit_plan steps의 한 칸 + 번호). 종류마다 쓰는 칸은 PlanDraft.add가 본다. */
 export const STEP_ARGS = z.object({
   step: z.number().int().min(1).describe("몇 번째 단계인지(1부터). 고칠 때는 같은 번호로 다시 보낸다"),
   kind: z.enum(["go", "pick", "place", "device", "ask", "say", "wait"]).describe("go 이동·pick 집기·place 내려놓기(사람이 함), device 가전 조작, ask 질문, say 알림, wait 기다리기"),
@@ -139,6 +138,8 @@ function copyProblem(what: string, text: string | undefined): string[] {
 interface Added { step: Omit<AgentStep, "id">; at: XZ | null }
 
 /** 계획 한 번의 초안. 도구(planTools)가 쓰고, OpenAI를 부르지 않는 합성 기록(scripts/seed-history.ts)도 같은 검사로 쓴다. */
+export const SUBMIT_PLAN = "submit_plan";
+
 export class PlanDraft {
   private readonly added: Added[] = [];
   private done: AgentPlan | null = null;
@@ -161,7 +162,7 @@ export class PlanDraft {
   /** 단계 하나를 검사하고 그 번호(step) 자리에 둔다. 이미 있는 번호면 그 단계와 뒤 단계를 지우고 다시 둔다(고쳐 다시 보낼 때).
    *  틀리면 그 번호부터 지우고 까닭을 돌려준다(모델에게 돌려줄 한국어). 그 뒤 번호는 앞 번호가 없어 받지 않는다. */
   add(raw: unknown): { ok: true; step: number } | { ok: false; error: string } {
-    if (this.done) return { ok: false, error: "이미 finish_plan으로 끝낸 계획입니다." };
+    if (this.done) return { ok: false, error: "이미 끝낸 계획입니다." };
     const parsed = STEP_ARGS.safeParse(raw);
     if (!parsed.success) return { ok: false, error: parsed.error.issues.map((i) => `${i.path.join(".") || "(전체)"}: ${i.message}`).join("; ") };
     const n = parsed.data.step;
@@ -171,43 +172,41 @@ export class PlanDraft {
     const r = this.check(parsed.data);
     if (typeof r === "string") {
       this.blocked = n;
-      return { ok: false, error: `${n}번 단계: ${r}. ${n}번을 고쳐 다시 보내고 그 뒤 단계도 다시 보내세요.` };
+      return { ok: false, error: `${n}번 단계: ${r}.` };
     }
     this.blocked = null;
     this.added.push(r);
     return { ok: true, step: n };
   }
 
-  /** 받지 않은 add_step: 그 번호(없으면 다음 번호)부터 지우고 고칠 때까지 끝내지 않는다. */
-  reject(raw: unknown): void {
-    if (this.done) return;
-    const step = (raw as { step?: unknown } | null)?.step;
-    const n = typeof step === "number" && Number.isInteger(step) && step >= 1 ? Math.min(step, this.added.length + 1) : this.added.length + 1;
-    if (n > PLAN_LIMITS.maxSteps) return;
-    this.added.length = Math.min(this.added.length, n - 1);
-    this.blocked = n;
-  }
 
-  /** 손이 계획상 있을 자리(앞 이동 단계 목적지, 없으면 폰 자리)에서 그 자리까지 길(사람이 걷는 길이라 모든 방). */
-  route(target: string): ToolResult {
-    const to = this.placeAt(target);
-    if (!to) return { ok: false, error: `평면도에 없는 자리입니다: ${target}` };
-    const from = [...this.added].reverse().find((a) => a.step.kind === "go")?.at ?? this.ctx.floor.robot.position;
-    if (!from) return { ok: true, data: { target, reachable: null, message: "손(폰) 자리를 몰라 길을 셀 수 없습니다. 이동 단계는 넣어도 됩니다." } };
-    const path = route(walkable(this.ctx.floor), from, to);
-    if (!path) return { ok: true, data: { target, reachable: false } };
-    const meters = path.slice(1).reduce((s, p, i) => s + Math.hypot(p[0] - path[i]![0], p[1] - path[i]![1]), 0);
-    const rooms = [...new Set(path.map((p) => roomAt(this.ctx.floor, p)).filter((x): x is string => !!x))];
-    return { ok: true, data: { target, reachable: true, distance_m: Math.round(meters * 10) / 10, rooms } };
+
+  /** submit_plan: 낼 때마다 계획 전체를 새로 검사한다(앞 제출은 남지 않는다). 단계 번호는 배열 순서다.
+   *  틀리면 첫 틀린 단계와 까닭에 「전체를 다시 보내라」를 붙여 돌려준다. 다 맞으면 끝낸다(finish). */
+  submit(raw: unknown): { ok: true; plan: AgentPlan } | { ok: false; error: string } {
+    if (this.done) return { ok: true, plan: this.done };
+    const again = (e: string) => ({ ok: false as const, error: `${e} 계획 전체를 고쳐 submit_plan으로 다시 보내세요.` });
+    const steps = (raw as { steps?: unknown } | null)?.steps;
+    if (!Array.isArray(steps) || steps.length === 0) return again("steps에 단계가 없습니다.");
+    if (steps.length > PLAN_LIMITS.maxSteps) return again(`단계는 ${PLAN_LIMITS.maxSteps}개까지입니다.`);
+    this.added.length = 0;
+    this.blocked = null;
+    for (const [i, step] of steps.entries()) {
+      const n = i + 1;
+      const r = this.add({ ...(step && typeof step === "object" ? step : {}), step: n });
+      if (!r.ok) return again(r.error.startsWith(`${n}번 단계`) ? r.error : `${n}번 단계: ${r.error}`);
+    }
+    const f = this.finish();
+    return f.ok ? f : again(f.error);
   }
 
   /** 계획 전체를 검사하고 끝낸다. */
   finish(): { ok: true; plan: AgentPlan } | { ok: false; error: string } {
     if (this.done) return { ok: true, plan: this.done };
-    if (this.added.length === 0) return { ok: false, error: "단계가 없습니다. add_step으로 단계를 먼저 더하세요." };
+    if (this.added.length === 0) return { ok: false, error: "단계가 없습니다." };
     if (this.blocked !== null) return { ok: false, error: `${this.blocked}번 단계가 틀린 채라 끝내지 않습니다. 그 단계부터 고쳐 다시 더하세요.` };
     const missing = this.ctx.task.allow.need.filter((k) => !this.added.some((a) => a.step.kind === k));
-    if (missing.length) return { ok: false, error: `이 할 일(${this.ctx.task.name})에는 ${missing.join(", ")} 단계가 있어야 합니다. 그 단계가 들어갈 번호(step)부터 다시 보내세요.` };
+    if (missing.length) return { ok: false, error: `이 할 일(${this.ctx.task.name})에는 ${missing.join(", ")} 단계가 있어야 합니다.` };
     if (this.added.slice(0, -1).some((a) => a.step.kind === "ask")) return { ok: false, error: "질문(ask)은 답으로 갈라지지 않게 마지막 단계에만 둡니다." };
     // 가전 단계는 그 가전 자리에서 사람이 하는 단계(가기·꺼내기·넣기) 뒤에 둔다(사람이 넣기 전에 건조기를 켜지 않게)
     for (const [i, a] of this.added.entries()) {
@@ -382,70 +381,25 @@ export class PlanDraft {
 }
 
 /** World State 요약(read_world, 입력 글과 같은 내용). */
-export function worldBrief(w: WorldView) {
-  const facts = (f: Record<string, { value: string } | undefined>) => Object.fromEntries(Object.entries(f).flatMap(([k, v]) => (v ? [[k, v.value]] : [])));
-  return {
-    objects: w.objects.map((o) => ({
-      id: o.id, cls: o.cls, status: o.status, surface: o.surface, room: o.room, position: o.position ? [o.position[0], o.position[2]] : null, facts: facts(o.facts),
-    })),
-    person: { visible: w.person.visible, count: w.person.count, room: w.person.room, holding: w.person.holding, facts: facts(w.person.facts) },
-    fixtures: w.fixtures.map((f) => ({ id: f.id, cls: f.cls, room: f.room, facts: facts(f.facts) })),
-    devices: w.devices.map((d) => ({ id: d.id, kind: d.kind, label: d.label, state: d.state })),
-  };
-}
 
-const READ_DEVICE_TOOLS = ["list_devices", "find_devices", "get_state"];
 
 /** 사람이 걷는 평면도: 로봇 이동 가능 방(단차 있는 발코니·욕실 제외) 대신 모든 방. */
 export const walkable = (fp: FloorPlan): FloorPlan => ({ ...fp, robot: { ...fp.robot, reachable: fp.rooms.map((r) => r.id) } });
 
-/** 계획 모드 도구: 읽기(World State·평면도·기기), 길, 단계 더하기, 끝내기. 기기를 바꾸는 도구는 없다. */
+/** submit_plan 인자: 계획 전체(단계 번호는 배열 순서). 모델에게 단계 칸 설명을 보이려고 STEP_ARGS 모양을 쓴다. */
+export const SUBMIT_ARGS = z.object({
+  steps: z.array(STEP_ARGS.omit({ step: true })).min(1).max(PLAN_LIMITS.maxSteps).describe("계획 전체. 1번 단계부터 순서대로"),
+});
+
+/** 계획 모드 도구: 계획 전체를 한 번에 내는 submit_plan 하나(입력에 집 상태가 다 있어 읽기·길 도구는 없다). 기기를 바꾸는 도구도 없다. */
 export function planTools(draft: PlanDraft): ToolDef[] {
-  const { ctx } = draft;
-  const plan: ToolDef[] = [
-    {
-      name: "read_world", title: "World State", readOnly: true,
-      description: "지금 World State(물건·사람·가전 설비·가전 상태, 사실 키)를 돌려줍니다.",
-      schema: z.object({}),
-      run: async () => ({ ok: true, data: worldBrief(ctx.world) }),
+  return [{
+    name: SUBMIT_PLAN, title: "계획 내기",
+    description: "계획 전체(단계 배열)를 한 번에 냅니다. 검사를 통과하면 그대로 끝나고, 틀리면 첫 틀린 단계와 까닭을 돌려주니 고친 계획 전체를 다시 내세요.",
+    schema: SUBMIT_ARGS,
+    run: async (_b, args) => {
+      const r = draft.submit(args);
+      return r.ok ? { ok: true, data: { steps: r.plan.steps.length } } : { ok: false, error: r.error };
     },
-    {
-      name: "read_floor_plan", title: "평면도", readOnly: true,
-      description: "방, 가구·가전·도면 설비의 id·이름·방·평면 자리, 갈 수 있는 방을 돌려줍니다.",
-      schema: z.object({}),
-      run: async () => ({
-        ok: true,
-        data: {
-          rooms: ctx.floor.rooms.map((r) => ({ id: r.id, label: ctx.rooms.find((x) => x.id === r.id)?.label ?? r.id })),
-          reachable: ctx.floor.robot.reachable, hand: { position: ctx.floor.robot.position, room: ctx.floor.robot.room },
-          places: ctx.places.map((p) => ({ id: p.id, name: p.name, type: p.type, room: p.room, position: p.position })),
-        },
-      }),
-    },
-    {
-      name: "route_to", title: "길 찾기", readOnly: true,
-      description: "손(사람이 든 폰)이 계획상 있을 자리(앞 이동 단계 목적지, 없으면 지금 폰 자리)에서 그 평면도 자리까지 길: 닿는가, 거리(m), 지나는 방.",
-      schema: z.object({ target: z.string().min(1).describe("평면도 id") }),
-      run: async (_b, args) => draft.route(String(args.target)),
-    },
-    {
-      name: "add_step", title: "단계 더하기",
-      description: "step번째 단계를 둡니다(1부터 차례로). 이미 있는 번호면 그 단계와 뒤 단계를 바꿉니다. 틀리면 까닭을 돌려주니 그 번호부터 고쳐 다시 보내세요.",
-      schema: STEP_ARGS,
-      run: async (_b, args) => {
-        const r = draft.add(args);
-        return r.ok ? { ok: true, data: { step: r.step } } : { ok: false, error: r.error };
-      },
-    },
-    {
-      name: "finish_plan", title: "계획 끝내기",
-      description: "계획 전체를 검사하고 끝냅니다. 모든 단계를 더한 뒤 마지막에 한 번 부르세요.",
-      schema: z.object({}),
-      run: async () => {
-        const r = draft.finish();
-        return r.ok ? { ok: true, data: { steps: r.plan.steps.length } } : { ok: false, error: r.error };
-      },
-    },
-  ];
-  return [...TOOLS.filter((t) => READ_DEVICE_TOOLS.includes(t.name)), ...plan];
+  }];
 }

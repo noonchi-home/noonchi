@@ -1,5 +1,5 @@
 // 에이전트 계획 모드 시험의 모델 자리: 가짜 OpenAI 호환 서버(scripts/fake-openai.ts)가 계획 모드 요청(시스템 프롬프트 PLANNER_PROMPT)에
-// 행동마다 정한 도구 호출(add_step … finish_plan)을 낸다. 공급자는 서버와 같은 createProvider(OpenAI Responses API, OPENAI_BASE_URL)다.
+// 행동마다 정한 도구 호출(계획 전체를 한 번에 내는 submit_plan)을 낸다. 공급자는 서버와 같은 createProvider(OpenAI Responses API, OPENAI_BASE_URL)다.
 // 대본은 입력 글(src/agent/planInput.ts)에서 id를 읽는다: 식탁·싱크대는 평면도 줄의 종류, 컵은 World State 물건 줄.
 import { startFakeOpenAI, type FakeResponse } from "../../scripts/fake-openai.js";
 import { ASK_PROMPT } from "../../src/act/prompts.js";
@@ -22,8 +22,8 @@ import type { LlmTurn } from "./llm.js";
 /** 입력 글 → 차례 목록(첫 요청, 도구 결과를 받은 뒤 요청, …). */
 export type PlanScript = (input: string) => LlmTurn[];
 
-/** add_step 인자 목록 → 한 차례(번호를 붙여 모든 단계와 finish_plan을 함께 부른다). */
-export const planCalls = (steps: Record<string, unknown>[]): LlmTurn => [...steps.map((s, i) => ["add_step", { step: i + 1, ...s }] as [string, Record<string, unknown>]), ["finish_plan", {}]];
+/** 단계 목록 → 한 차례(submit_plan 한 번에 계획 전체, 번호는 배열 순서). */
+export const planCalls = (steps: Record<string, unknown>[]): LlmTurn => [["submit_plan", { steps }]];
 
 /** 컵 치우기 네 단계(지금 서버와 같은 명령·조건). */
 export function cupSteps(ids: { table: string; sink: string; cup: string }): Record<string, unknown>[] {
@@ -117,6 +117,6 @@ export function planContext(o: { decision: DecisionRecord; world: WorldView; flo
 }
 
 /** 가짜 서버에 붙은 계획 모드 에이전트. */
-export function testPlanner(llm: FakePlanner, o: { hub?: DeviceHub; policy?: Policy; timeoutMs?: number; maxRounds?: number } = {}): Planner {
-  return new Planner({ provider: llm.provider(), hub: o.hub ?? new MemoryHub([]), policy: o.policy ?? new Policy(), timeoutMs: o.timeoutMs, maxRounds: o.maxRounds });
+export function testPlanner(llm: FakePlanner, o: { timeoutMs?: number; maxRounds?: number } = {}): Planner {
+  return new Planner({ provider: llm.provider(), timeoutMs: o.timeoutMs, maxRounds: o.maxRounds });
 }
