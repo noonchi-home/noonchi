@@ -694,15 +694,32 @@ describe("실행 추적: 판단 뒤 가까이 본 사실(B와 PAM)", () => {
   const contents = (value: string, closer?: number): WorldObject["facts"] => ({
     contents: { value, at_ms: 9_000, since_ms: 9_000, certainty: "inferred", ...(closer !== undefined ? { closer_ms: closer } : {}) },
   });
-  const withFacts = (facts: WorldObject["facts"]) => world([{ ...cup("present"), facts }]);
-  /** 판단 때 본 컵 사실(판단 기록의 World State 요약). */
-  const seen = (facts: Record<string, string>): DecisionRecord => ({
+  /** 컵 하나의 World State. rev: 가까이 보기가 면 값을 바꾼 횟수(closer_rev). */
+  const withFacts = (facts: WorldObject["facts"], rev?: WorldObject["closer_rev"]) => world([{ ...cup("present"), facts, ...(rev ? { closer_rev: rev } : {}) }]);
+  /** 판단 때 본 컵 사실(판단 기록의 World State 요약). rev: 그때 가까이 보기가 면 값을 바꾼 횟수(closer_rev). */
+  const seen = (facts: Record<string, string>, rev?: Record<string, number>): DecisionRecord => ({
     ...decision,
-    world: { ...decision.world, objects: [{ id: "cup_1", cls: "cup", status: "present", surface: "t", surface_label: "식탁", error_m: 0.1, facts: Object.fromEntries(Object.entries(facts).map(([k, v]) => [k, { value: v, certainty: "inferred" as const }])) }] },
+    world: { ...decision.world, objects: [{
+      id: "cup_1", cls: "cup", status: "present", surface: "t", surface_label: "식탁", error_m: 0.1,
+      facts: Object.fromEntries(Object.entries(facts).map(([k, v]) => [k, { value: v, certainty: "inferred" as const }])), ...(rev ? { closer_rev: rev } : {}),
+    }] },
+  });
+
+  it("판단 뒤 가까이 보기가 바꾼 값을 전체 사진이 다시 바꿔 closer_ms가 없어져도, 가까이 본 횟수(closer_rev)가 판단 때와 다르고 값도 다르면 다시 판단한다", async () => {
+    // 판단 때 비어 있음 → 가까이 보기가 내용물 있음(횟수 1) → 전체 사진이 안이 안 보임(closer_ms 없음)
+    const now = world([{ ...cup("present"), facts: contents("contents_unknown"), closer_rev: { contents: 1 } }]);
+    const a = setup({ w: () => now });
+    await a.decide(seen({ contents: "empty" }));
+    expect(a.exec().map((e) => e.text)).toEqual([EXEC_TEXT.closerNewer]);
+    expect(a.phone).toEqual([]);
+    // 판단 때 이미 같은 횟수였으면(가까이 보기가 판단 전에 바꿈) 그 뒤 전체 사진이 바꾼 값은 막지 않는다
+    const b = setup({ w: () => now });
+    await b.decide(seen({ contents: "empty" }, { contents: 1 }));
+    expect(b.commands()[0]).toMatchObject({ step: "plan:pam-1:1" });
   });
 
   it("판단 때 본 값과 다르게 가까이 보기가 행동 대상 종류 물건의 볼 면(컵 안)을 바꿨으면 계획하지 않고 「가까이 본 뒤 다시 판단」만 남긴다", async () => {
-    const changed = withFacts(contents("has_contents", 9_500));
+    const changed = withFacts(contents("has_contents", 9_500), { contents: 1 });
     const a = setup({ w: () => changed });
     await a.decide(seen({ contents: "contents_unknown" }));
     expect(a.exec().map((e) => [e.plan_id, e.state, e.text])).toEqual([["plan:pam-1", "decided", EXEC_TEXT.closerNewer]]);
@@ -713,7 +730,7 @@ describe("실행 추적: 판단 뒤 가까이 본 사실(B와 PAM)", () => {
     const b = setup({ w: () => changed });
     await b.decide(seen({ contents: "has_contents" }));
     expect(b.commands()[0]).toMatchObject({ step: "plan:pam-1:1" });
-    // 전체 사진이 바꾼 값(closer_ms 없음)은 막지 않는다
+    // 전체 사진이 바꾼 값(가까이 보기 횟수가 판단 때와 같음)은 막지 않는다
     const c = setup({ w: () => withFacts(contents("has_contents")) });
     await c.decide(seen({ contents: "contents_unknown" }));
     expect(c.commands()[0]).toMatchObject({ step: "plan:pam-1:1" });
@@ -734,7 +751,7 @@ describe("실행 추적: 판단 뒤 가까이 본 사실(B와 PAM)", () => {
       return p.plan(ctx, signal);
     } });
     a.t.onDecision(seen({}));
-    w = withFacts(contents("empty", 9_500));
+    w = withFacts(contents("empty", 9_500), { contents: 1 });
     release();
     await a.t.idle();
     expect(a.exec().map((e) => [e.state, e.text])).toEqual([["decided", EXEC_TEXT.decided], ["failed", EXEC_TEXT.closerNewer]]);

@@ -78,6 +78,8 @@ export interface DecisionWorld {
   objects: {
     id: string; cls: string; status: string; surface: string | null; surface_label: string | null; error_m: number | null;
     facts: Record<string, { value: string; certainty: "confirmed" | "inferred" }>;
+    /** 그때까지 가까이 보기가 면 값을 바꾼 횟수(World State closer_rev, 없으면 칸이 없다). */
+    closer_rev?: Record<string, number>;
   }[];
   person_visible: boolean;
   vlm_missing: number;

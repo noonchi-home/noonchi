@@ -20,8 +20,9 @@
 // 알림마다 그 단계 세대와 신호가 있고, 단계가 끝나면(다음 단계·완료·실패·그만·새 계획·멈춤) 신호를 끊는다. 지난 세대의 settle은 아무것도 하지 않는다.
 // 같은 물건 따라가기에서 가까이 봐서 지키는 중이거나 옮김 표시(World State followed_by)가 있는 물건은 「아직 있음」으로 세지 않는다.
 // 사람 부탁(askCloser)은 지금 그 계획의 그 사람 단계일 때만 같은 계획·단계 id로 명령 글만 바꿔 다시 보낸다(소리로 읽음).
-// 판단 뒤 가까이 본 사실(관찰 모드 B는 PAM을 막지 않는다): 그 행동 대상 종류 물건의 볼 면(TaskSpec.look) 값을 가까이 보기가 넣었고(World State closer_ms)
-// 판단 때 본 값(판단 기록의 World State 요약)과 다르면, 판단을 받을 때와 계획을 받을 때 실행하지 않고 「가까이 본 뒤 다시 판단」만 남긴다. 다음 판단이 새 사실로 다시 고른다.
+// 판단 뒤 가까이 본 사실(관찰 모드 B는 PAM을 막지 않는다): 그 행동 대상 종류 물건의 볼 면(TaskSpec.look)을 판단 뒤에 가까이 보기가 바꿨고
+// (World State closer_rev가 판단 기록의 횟수와 다름) 지금 값이 판단 때 본 값과 다르면, 판단을 받을 때와 계획을 받을 때 실행하지 않고
+// 「가까이 본 뒤 다시 판단」만 남긴다. 다음 판단이 새 사실로 다시 고른다.
 import type { BrainLog, ExecState } from "../contract/events.js";
 import type { PhoneStepKind, PlannedCommand, PlannedCommandMessage } from "../contract/phone.js";
 import type { PlanView, XZ } from "../contract/plan.js";
@@ -316,16 +317,17 @@ export class ExecutionTracker {
     return !this.stopped && (kind === "wait" || kind === "device");
   }
 
-  /** 판단 뒤에 가까이 보기가 그 행동 대상 종류 물건의 볼 면을 바꿨는가: 사라지지 않은 그 종류 물건의 볼 면 값을 가까이 보기가 넣었고(closer_ms)
-   *  판단 때 본 값(판단 기록 World State 요약, 그때 없던 물건이면 없음)과 다르다. */
+  /** 판단 뒤에 가까이 보기가 그 행동 대상 종류 물건의 볼 면을 바꿨는가: 사라지지 않은 그 종류 물건의 볼 면 가까이 보기 횟수(closer_rev)가
+   *  판단 때 횟수(판단 기록 World State 요약, 그때 없던 물건이면 0)와 다르고, 지금 값도 판단 때 본 값과 다르다.
+   *  횟수는 지금 값의 출처와 따로 남으므로 가까이 보기가 바꾼 값을 그 뒤 전체 사진이 다시 바꿔도 잡는다. */
   private closerNewer(d: DecisionRecord): boolean {
     const spec = taskOf(d.action);
     const facets = spec?.look ?? [];
     if (!spec?.target || !facets.length) return false;
-    const seen = new Map(d.world.objects.map((o) => [o.id, o.facts]));
+    const then = new Map(d.world.objects.map((o) => [o.id, o]));
     return this.o.world().objects.some((o) => o.cls === spec.target && o.status !== "gone" && facets.some((f) => {
-      const now = o.facts[f];
-      return now?.closer_ms !== undefined && seen.get(o.id)?.[f]?.value !== now.value;
+      const before = then.get(o.id);
+      return (o.closer_rev?.[f] ?? 0) !== (before?.closer_rev?.[f] ?? 0) && before?.facts[f]?.value !== o.facts[f]?.value;
     }));
   }
 

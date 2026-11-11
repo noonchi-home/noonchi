@@ -35,6 +35,7 @@ export function decisionWorld(w: WorldView): DecisionWorld {
     objects: w.objects.filter((o) => o.status !== "gone").map((o) => ({
       id: o.id, cls: o.cls, status: o.status, surface: o.surface, surface_label: o.surface_label, error_m: o.error_m,
       facts: Object.fromEntries(Object.entries(o.facts).flatMap(([k, f]) => (f ? [[k, { value: f.value, certainty: f.certainty }]] : []))),
+      ...(o.closer_rev ? { closer_rev: { ...o.closer_rev } as Record<string, number> } : {}),
     })),
     person_visible: w.person.visible, vlm_missing: w.vlm_missing, yolo_missing: w.yolo_missing,
   };

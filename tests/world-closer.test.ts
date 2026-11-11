@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Detection } from "../src/brain/detector.js";
 import type { SceneObservation, SceneState } from "../src/observe/scene.js";
+import { decisionWorld } from "../src/world/decide.js";
 import { CLOSER_HOLD_MS, WorldState, type CloserPass } from "../src/world/state.js";
 import type { DetLabel } from "../src/world/vocab.js";
 import { AWAY_VIEW, engineFrame, LOOK_SIZE, LOOK_VIEW } from "./helpers/camera.js";
@@ -310,6 +311,24 @@ describe("가까이 본 사진의 VLM 답(applyCloserScene)", () => {
     expect(contents(6000)).toEqual({ value: "empty", at_ms: 6000, since_ms: 5000, certainty: "confirmed" });
     w.applyCloserScene("e7", 7000, said("has_contents"), ids);
     expect(contents(7000)).toMatchObject({ value: "has_contents", closer_ms: 7000 });
+  });
+
+  it("가까이 본 답이 면 값을 새로 넣거나 바꾼 횟수(closer_rev)는 지금 값의 출처와 따로 남는다: 전체 사진이 값을 바꿔 closer_ms가 없어져도 줄지 않고, 판단 기록 요약에도 실린다", () => {
+    const w = seeded();
+    const ids = new Map([["d1", "cup_1"]]);
+    const said = (state: SceneState): SceneObservation => ({ scene: "k", observations: [{ object_id: "d1", state }], summary: "" });
+    const cup = (nowMs: number) => w.view(nowMs).objects[0]!;
+    expect(cup(3000).closer_rev).toBeUndefined();
+    w.applyCloserScene("e3", 3000, said("has_contents"), ids);
+    expect(cup(3000).closer_rev).toEqual({ contents: 1 });
+    w.applyScene("e5", 5000, said("contents_unknown"), full(w, "e5", 5000, [cupIn, person]).ids);
+    expect(cup(5000).facts.contents).toEqual({ value: "contents_unknown", at_ms: 5000, since_ms: 5000, certainty: "inferred" });
+    expect(cup(5000).closer_rev).toEqual({ contents: 1 });
+    w.applyCloserScene("e6", 6000, said("contents_unknown"), ids);   // 같은 값을 다시 본 것은 세지 않는다
+    expect(cup(6000).closer_rev).toEqual({ contents: 1 });
+    w.applyCloserScene("e7", 7000, said("empty"), ids);
+    expect(cup(7000).closer_rev).toEqual({ contents: 2 });
+    expect(decisionWorld(w.view(7000)).objects[0]!.closer_rev).toEqual({ contents: 2 });
   });
 
   it("같은 원본 프레임에서 나온 답은 한 번만 넣고, 같은 촬영의 같은 값으로 확신을 올리지 않는다", () => {

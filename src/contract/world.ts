@@ -8,7 +8,7 @@ export type { DeviceStateKey, Facet, FixtureClass, ObjClass };
 
 /** VLM·관절이 본 사실 하나. 같은 값이 연속 두 번이면 confirmed, 아니면 inferred. at_ms는 마지막으로 본 사진의 촬영 시각, since_ms는 그 값이 처음 보인 촬영 시각.
  *  closer_ms: 가까이 보기(src/observe/pipeline.ts closer)의 VLM 답이 이 값을 새로 넣거나 바꿨으면 그 원본 사진의 촬영 시각. 같은 값이 이어지는 동안 남고,
- *  다른 값이 들어오면 없어진다. 실행 추적이 판단 뒤에 가까이 보기가 바꾼 사실인지 본다(src/act/track.ts). */
+ *  다른 값이 들어오면 없어진다. 판단 뒤에 가까이 보기가 바꾼 면인지는 이것이 아니라 물건의 closer_rev로 본다(전체 사진이 값을 바꾸면 이것은 없어진다). */
 export interface WorldFact { value: string; at_ms: number; since_ms: number; certainty: "confirmed" | "inferred"; closer_ms?: number }
 
 export interface WorldObject {
@@ -40,6 +40,9 @@ export interface WorldObject {
    *  그 뒤 전체 사진·가까이 보기가 이 물건을 다시 보면 null.
    *  지킴(closer_hold)은 그때 풀려 이 물건도 사라짐을 센다. 실행 추적은 이 표시가 있는 물건을 「아직 있음」으로 세지 않고 새 물건으로 바로 이어 간다. */
   followed_by: string | null;
+  /** 면마다 가까이 보기 VLM 답이 그 면 값을 새로 넣거나 바꾼 횟수(한 번도 없으면 칸이 없다). 지금 값의 출처와 따로 남아 전체 사진이 값을 바꿔도 줄지 않는다.
+   *  실행 추적이 판단 기록의 횟수(DecisionWorld closer_rev)와 견줘 판단 뒤에 가까이 보기가 바꾼 면인지 본다(src/act/track.ts). */
+  closer_rev?: Partial<Record<Facet, number>>;
 }
 
 export interface WorldPerson {
