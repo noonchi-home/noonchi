@@ -4,8 +4,9 @@
 // 고리 범위(keepMs)보다 앞서 찍힌 늦은 프레임은 분석하지 않고 YOLO·VLM 분석 없음(stale). 늦은 프레임은 World State·눈 자세에 넣지 않는다.
 // 감지 번호(d1…)와 물체 id의 짝은 그 프레임의 VLM 답(또는 분석 없음)이 올 때까지 둔다.
 // 분석한 사진은 메모리 고리에만 있다. 디스크에 쓰지 않는다. DATASET_COLLECT=1이면 dataset(시험 자료 저장, src/history/retention.ts)이 고리에 넣은 프레임을 받는다.
-// 가까이 보기(closer): 고리의 새 프레임 3장마다 대상 자리를 그 프레임 카메라로 찍어 절반 크기로 잘라 2배로 키우고 같은 감지기로 본다.
-// 잘라 본 결과는 보통 프레임처럼 넣지 않고 World State applyCloser로 한 번에 합친다. 가장 새 장만 VLM 풀의 가까이 보기 자리로 혼자 보내고 그 답은 applyCloserScene으로 넣는다.
+// 가까이 보기(closer): 고리의 새 프레임 최대 5장마다 대상 자리를 그 프레임 카메라로 찍어 절반 크기로 잘라 2배로 키우고 같은 감지기로 본다.
+// 잘라 본 결과는 보통 프레임처럼 넣지 않고 World State applyCloser로 한 번에 합친다. 물건 감지가 있는 가장 새 장(없으면 가장 새 장) 하나만
+// VLM 풀의 가까이 보기 자리로 혼자 보내고 그 답은 applyCloserScene으로 넣는다.
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { BrainLog, CloserMiss, CloserResult } from "../contract/events.js";
@@ -19,7 +20,7 @@ import type { FrameHeader } from "../phone/packet.js";
 import type { CameraView, EyeEvent } from "../phone/session.js";
 import { OBJECT_NAME, YOLO_TEXT } from "../world/labels.js";
 import { inView, pixelOf } from "../world/place.js";
-import type { CloserPass, WorldState } from "../world/state.js";
+import { CLOSER_NEW_FRAMES, type CloserPass, type WorldState } from "../world/state.js";
 import { cropBox, cropJpeg, LOOK_MARGIN, onCropEdge, toFrameBox, type Box, type LookSpot } from "./crop.js";
 import { captureTime, FrameRing, sha256, type EngineFrame } from "./ring.js";
 import { analyzeScene, CLOSER_NOTE, type SceneDetection } from "./scene.js";
@@ -64,16 +65,21 @@ export function loadObserveConfig(env: Env): ObserveConfig {
   };
 }
 
-/** 가까이 보기에 쓰는 엔진 프레임 수: World State가 새 물건을 만드는 서로 다른 원본 프레임 수(CLOSER_NEW_FRAMES)와 같다. */
-export const CLOSER_FRAMES = 3;
-/** 가까이 보기는 가장 새 프레임에서 이만큼(ms) 안에 찍힌 프레임만 쓴다(새 사진만). */
+/** 가까이 보기로 잘라 볼 최대 장 수. 최소는 World State가 새 물건을 만드는 서로 다른 원본 프레임 수(CLOSER_NEW_FRAMES, 3장)다.
+ *  잘라 본 사진의 YOLO가 싱크대 안 유리컵을 장마다 절반쯤만 잡으므로 최근 5장 중 3장에서 보이면 새 물건이 된다. */
+export const CLOSER_FRAMES = 5;
+/** 가까이 보기 촬영 범위와 끊김 검사의 가장 짧은 값(ms). */
 export const CLOSER_FRESH_MS = 3000;
 /** VLM 풀에 따로 둔 가까이 보기 자리 수. */
 export const CLOSER_VLM_SLOTS = 1;
 
-/** 가까이 보기에 쓸 프레임의 촬영 시각 범위(가장 새 프레임 기준, ms): CLOSER_FRESH_MS. 엔진 프레임 간격이 길어 그 안에 CLOSER_FRAMES장이 들 수 없으면
- *  연달은 CLOSER_FRAMES장이 드는 만큼((장 수 − 1) × 간격 + 간격 절반)까지 늘린다(기본 2초 간격이면 5초). */
-export const closerSpanMs = (engineMs: number): number => Math.max(CLOSER_FRESH_MS, (CLOSER_FRAMES - 1) * engineMs + engineMs / 2);
+/** 연달은 n장이 드는 촬영 시각 폭: (장 수 − 1) × 간격 + 간격 절반, CLOSER_FRESH_MS보다 짧지 않게. */
+const spanOf = (frames: number, engineMs: number): number => Math.max(CLOSER_FRESH_MS, (frames - 1) * engineMs + engineMs / 2);
+/** 가까이 보기에 쓸 프레임의 촬영 시각 범위(가장 새 프레임 기준, ms): 연달은 CLOSER_FRAMES장이 드는 만큼(기본 2초 간격이면 9초). */
+export const closerSpanMs = (engineMs: number): number => spanOf(CLOSER_FRAMES, engineMs);
+/** 폰 끊김 검사(ms): 가장 새 프레임이 지금보다 이만큼 넘게 앞서 찍혔으면 새 프레임이 안 오는 것으로 본다. 연달은 CLOSER_NEW_FRAMES장 기준(기본 2초 간격이면 5초).
+ *  촬영 범위(closerSpanMs)와 따로 둔다: 범위처럼 9초로 늘리면 끊긴 지 9초 된 사진과 그보다 9초 앞선 사진까지 「새 사진」으로 쓴다. */
+export const closerStaleMs = (engineMs: number): number => spanOf(CLOSER_NEW_FRAMES, engineMs);
 
 /** 고리 가장 새 프레임의 카메라·촬영 시각·크기(관찰 모드가 대상이 사진 안인지 본다). */
 export interface LatestFrame { view: CameraView | null; capturedAtMs: number; width: number; height: number }
@@ -305,13 +311,15 @@ export class ObservationPipeline {
   }
 
   /** 가까이 보기 한 번. 한 번에 하나만 돈다(다른 가까이 보기가 돌거나 VLM 가까이 보기 자리가 차 있으면 vlm_busy).
-   *  고리에서 가장 새 프레임으로부터 closerSpanMs 안에 찍혀 카메라가 있고 spot이 사진 안(LOOK_MARGIN)인 프레임 CLOSER_FRAMES장을 쓴다.
-   *  모자라거나, 가장 새 프레임이 지금(clock)보다 closerSpanMs 넘게 앞서 찍혔으면(폰이 끊겨 새 프레임이 안 옴) 자르지 않고 no_fresh_frames.
+   *  고리에서 가장 새 프레임으로부터 closerSpanMs 안에 찍혀 카메라가 있고 spot이 사진 안(LOOK_MARGIN)인 프레임을 최근 것부터 CLOSER_FRAMES장까지 쓴다.
+   *  서로 다른 프레임이 CLOSER_NEW_FRAMES장보다 적거나, 가장 새 프레임이 지금(clock)보다 closerStaleMs 넘게 앞서 찍혔으면(폰이 끊겨 새 프레임이 안 옴)
+   *  자르지 않고 no_fresh_frames.
    *  장마다 spot을 그 프레임 카메라로 찍은 자리를 절반 크기로 잘라 2배로 키워 같은 감지기로 보고, 상자를 엔진 프레임 픽셀로 옮겨 World State에 한 번에 합친다(변화 발행도 한 번).
-   *  감지가 끝나면 쓴 가장 새 프레임이 아직 closerSpanMs 안인지 다시 보고, 낡았으면 합치지 않고 no_fresh_frames.
+   *  감지가 끝나면 쓴 가장 새 프레임이 아직 closerStaleMs 안인지 다시 보고, 낡았으면 합치지 않고 no_fresh_frames.
    *  signal은 자르기 전(장마다)·합치기 바로 전에 보고, 끊겼으면 넣지 않고 aborted(ok 아님). 감지를 합친 뒤에 끊기면(합친 변화로 그 단계가 끝남 등)
    *  VLM을 보내지 않거나 기다리던 HTTP 요청을 끊고 답을 넣지 않으며, 실행한 가까이 보기(ok, vlm aborted)로 돌려준다.
-   *  가장 새 장만 VLM 가까이 보기 자리로 보내고 그 답(감지한 물건 사실만)을 넣은 뒤 끝난다. */
+   *  물건 감지(World State closerObject)가 있는 가장 새 장(없으면 가장 새 장) 하나만 VLM 가까이 보기 자리로 보내고 그 답(그 장에서 잡은 물건 사실만)을 넣은 뒤 끝난다.
+   *  결과의 frame_id·captured_at_ms·crop·found는 그 장 기준이고 frames는 잘라 본 장 수다. */
   async closer(spot: LookSpot, signal?: AbortSignal): Promise<CloserResult> {
     if (this.closed) return this.closerMiss("closed");
     if (signal?.aborted) return this.closerMiss("aborted");
@@ -320,12 +328,12 @@ export class ObservationPipeline {
     if (this.closing || !this.pool.closerFree()) return this.closerMiss("vlm_busy");
     const ring = this.ring.frames();
     const newest = ring.at(-1);
-    const span = closerSpanMs(this.o.config.engineMs);
-    if (!newest || this.clock.now() - newest.capturedAtMs > span) return this.closerMiss("no_fresh_frames");
+    if (!newest || this.clock.now() - newest.capturedAtMs > closerStaleMs(this.o.config.engineMs)) return this.closerMiss("no_fresh_frames");
     if (!newest.view) return this.closerMiss("no_view");
     if (!inView(newest.view, spot.position, LOOK_MARGIN)) return this.closerMiss("out_of_view");
+    const span = closerSpanMs(this.o.config.engineMs);
     const picked = ring.filter((f) => f.view && newest.capturedAtMs - f.capturedAtMs <= span && inView(f.view, spot.position, LOOK_MARGIN)).slice(-CLOSER_FRAMES);
-    if (new Set(picked.map((f) => f.id)).size < CLOSER_FRAMES) return this.closerMiss("no_fresh_frames");
+    if (new Set(picked.map((f) => f.id)).size < CLOSER_NEW_FRAMES) return this.closerMiss("no_fresh_frames");
     this.closing = true;
     try {
       return await this.look(spot, picked, detector, signal);
@@ -352,7 +360,7 @@ export class ObservationPipeline {
     if (this.closed) return this.closerMiss("closed");
     if (signal?.aborted) return this.closerMiss("aborted");
     // 감지하는 사이 새 프레임이 끊겼으면(쓴 가장 새 프레임이 지금보다 너무 앞섬) 합치지 않는다
-    if (this.clock.now() - picked.at(-1)!.capturedAtMs > closerSpanMs(this.o.config.engineMs)) return this.closerMiss("no_fresh_frames");
+    if (this.clock.now() - picked.at(-1)!.capturedAtMs > closerStaleMs(this.o.config.engineMs)) return this.closerMiss("no_fresh_frames");
     const looks: CloserPass[] = passes.map((p) => ({
       frameId: p.frame.id, capturedAtMs: p.frame.capturedAtMs, view: p.view, width: p.frame.width, height: p.frame.height,
       dets: p.dets.map((d) => {
@@ -360,14 +368,17 @@ export class ObservationPipeline {
         return { ...d, box, edge: onCropEdge(box, p.crop) };
       }),
     }));
+    // VLM은 물건 감지가 있는 가장 새 장(없으면 가장 새 장)을 본다: 결과·기록·VLM 답의 감지 번호가 모두 그 장 기준이다
+    const objectAt = looks.findLastIndex((l) => l.dets.some((d) => this.o.world.closerObject(d)));
+    const sentAt = objectAt < 0 ? looks.length - 1 : objectAt;
+    const last = passes[sentAt]!;
     // 잘라 본 몇 장은 await 없이 한 번에 합치고 변화도 한 번만 낸다
-    const { changes, ids } = this.o.world.applyCloser(looks);
+    const { changes, ids } = this.o.world.applyCloser(looks, last.frame.id);
     this.publish(changes);
-    const last = passes.at(-1)!;
     const id = `${last.frame.id}.c${++this.closerSeq}`;
     this.o.emit({
       type: "observe", at_ms: this.clock.now(), frame_id: id, captured_at_ms: last.frame.capturedAtMs, yolo: yoloText(last.dets), vlm: null,
-      boxes: looks.at(-1)!.dets.map(({ label, score, box }) => ({ label, score, box })), frame: { width: last.frame.width, height: last.frame.height }, closer: last.crop,
+      boxes: looks[sentAt]!.dets.map(({ label, score, box }) => ({ label, score, box })), frame: { width: last.frame.width, height: last.frame.height }, closer: last.crop,
     });
     // 감지는 합쳤다: 여기서부터 끊기면(합친 변화로 그 단계가 끝남 등) VLM 답만 넣지 않고 실행한 가까이 보기로 돌려준다
     let r: VlmResult | null = null;

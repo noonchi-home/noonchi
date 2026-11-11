@@ -31,6 +31,18 @@ describe("가까이 보기 합치기(applyCloser)", () => {
     expect(cup.position![0]).toBeCloseTo(1.5, 2);
   });
 
+  it("ids는 고른 원본 프레임(없으면 가장 새 프레임)의 감지 번호다. 물건 감지는 사람·가전 설비·받지 않는 감지·경계에 닿은 상자가 아닌 것이다", () => {
+    const w = ws();
+    const looks = [pass("e1", 1000, [cupIn]), pass("e2", 2000, [person, cupIn]), pass("e3", 3000, [cupIn]), pass("e4", 4000, [person])];
+    expect(w.applyCloser(looks, "e2").ids).toEqual(new Map([["d2", "cup_1"]]));
+    expect(ws().applyCloser(looks).ids).toEqual(new Map());   // 가장 새 프레임 e4에는 컵이 없다
+    expect(w.closerObject({ ...cupIn, edge: false })).toBe(true);
+    expect(w.closerObject({ ...cupIn, edge: true })).toBe(false);
+    expect(w.closerObject({ ...person, edge: false })).toBe(false);
+    expect(w.closerObject({ ...det("sink", [130, 100, 200, 150], 0.9), edge: false })).toBe(false);
+    expect(w.closerObject({ ...det("cup", [230, 170, 20, 10], 0.3), edge: false })).toBe(false);
+  });
+
   it("사람 감지와 잘라 본 경계에 닿은 상자는 쓰지 않는다: 사람 보임·수·자리는 그대로다", () => {
     const w = ws();
     for (let i = 1; i <= 2; i++) full(w, `e${i}`, i * 1000, [person]);

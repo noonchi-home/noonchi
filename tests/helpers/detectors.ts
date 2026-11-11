@@ -7,6 +7,18 @@ export function cropAware(engine: ReadonlySet<string>, o: { full?: Detection[]; 
   return new ScriptedDetector((jpeg) => (engine.has(sha256(jpeg)) ? o.full ?? [] : o.crop));
 }
 
+/** 엔진 사진은 감지 없음, 그 밖의 사진(잘라 키운 사진)은 crops를 받은 차례대로 하나씩(다 쓰면 없음).
+ *  가까이 보기는 고른 장을 오래된 것부터 자르므로 한 번 가까이 보면 crops[k]가 k번째 장의 감지다. */
+export function cropTurns(engine: ReadonlySet<string>, crops: readonly Detection[][]): ScriptedDetector {
+  let k = 0;
+  return new ScriptedDetector((jpeg) => (engine.has(sha256(jpeg)) ? [] : crops[k++] ?? []));
+}
+
+/** 사진마다 정해 둔 감지(sha256 → 감지). 시험이 엔진 사진과 그 사진을 잘라 키운 사진을 만들 때 그 촬영 때의 감지를 넣는다. 모르는 사진은 감지 없음. */
+export function seenDetector(seen: ReadonlyMap<string, Detection[]>): ScriptedDetector {
+  return new ScriptedDetector((jpeg) => seen.get(sha256(jpeg)) ?? []);
+}
+
 export class ScriptedDetector implements Detector {
   readonly name = "scripted";
   readonly pose: string | null;

@@ -1,4 +1,4 @@
-// 흐름 시험: 놓기 단계에서 전체 사진은 싱크대 안 컵을 못 봐도, 멈춘 단계(A) → 관찰 모드가 고른 가까이 보기 → 세 장에서 컵을 찾고 VLM이 싱크대 안이라 답해
+// 흐름 시험: 놓기 단계에서 전체 사진은 싱크대 안 컵을 못 봐도, 멈춘 단계(A) → 관찰 모드가 고른 가까이 보기 → 최근 다섯 장에서 컵을 찾고 VLM이 싱크대 안이라 답해
 // 「완료」 없이 계획이 끝난다. 진짜 WorldState·ObservationPipeline·ExecutionTracker·Planner·Observer·Looker를 쓰고, 모델은 가짜 OpenAI 서버 하나다
 // (계획 모드 대본 CUP_SCRIPTS, 관찰 모드 대본 look_closer sink_1, 가까이 본 사진의 VLM 답 싱크대 안).
 import { afterEach, describe, expect, it } from "vitest";
@@ -14,6 +14,7 @@ import type { Detection } from "../src/brain/detector.js";
 import type { BrainLog } from "../src/contract/events.js";
 import type { PlannedCommandMessage } from "../src/contract/phone.js";
 import { VlmClient } from "../src/infer/vlm.js";
+import { cropJpeg } from "../src/observe/crop.js";
 import { ObservationPipeline } from "../src/observe/pipeline.js";
 import { sha256 } from "../src/observe/ring.js";
 import { PlanHub } from "../src/plan/hub.js";
@@ -22,8 +23,8 @@ import { WorldState } from "../src/world/state.js";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { frameJpeg, LOOK_VIEW } from "./helpers/camera.js";
-import { cropAware } from "./helpers/detectors.js";
+import { frameJpeg, LOOK_SIZE, LOOK_VIEW } from "./helpers/camera.js";
+import { seenDetector } from "./helpers/detectors.js";
 import { smallFloor } from "./helpers/floor.js";
 import { closerVlmReply } from "./helpers/look.js";
 import { observerRespond } from "./helpers/observer.js";
@@ -39,6 +40,8 @@ const PLACES: Record<string, { label: string; position: [number, number, number]
 };
 const cupFull: Detection = { label: "cup", score: 0.8, cls: 41, box: [60, 300, 40, 20] };
 const cupCrop: Detection = { label: "cup", score: 0.72, cls: 41, box: [220, 160, 40, 20] };
+/** 가까이 보기가 싱크대 윗면을 잘라 보는 자리(엔진 프레임 픽셀). */
+const CROP = [120, 90, 240, 180] as [number, number, number, number];
 
 async function setup(o: { stalled: boolean }) {
   fake = await startFakeOpenAI({
@@ -49,8 +52,9 @@ async function setup(o: { stalled: boolean }) {
   const clock = { t: 0, now() { return this.t; } };
   const logs: BrainLog[] = [];
   const phone: PlannedCommandMessage[] = [];
-  const engine = new Set<string>();
-  const dets = { full: [cupFull], crop: [cupCrop] };
+  // 사진마다 그 촬영 때의 감지: 컵은 바닥에 있다가(전체 사진) 놓기 단계에서 싱크대 안으로 옮겨진다(잘라 키운 사진만 본다)
+  const seen = new Map<string, Detection[]>();
+  const dets = { full: [cupFull], crop: [] as Detection[] };
   const world = new WorldState({ surfaces: () => [SINK_SURFACE], floorAt: () => 0, roomAt: () => null, devices: () => [] });
   const plans = new PlanHub(smallFloor(), () => {}, () => "t");
   const approvals = new ApprovalStore(join(mkdtempSync(join(tmpdir(), "look-flow-")), "homes", "h", "approvals.json"), () => "t");
@@ -65,7 +69,7 @@ async function setup(o: { stalled: boolean }) {
   });
   const pipeline = new ObservationPipeline({
     config: { engineMs: 2000, vlmMaxInflight: 4, vlmTimeoutMs: 5000, detectQueueMax: 8, keepMs: 20_000 },
-    detector: cropAware(engine, dets), vlm: new VlmClient({ baseUrl: `${fake.url}/v1`, model: "m", apiKey: "", extraBody: {} }), world,
+    detector: seenDetector(seen), vlm: new VlmClient({ baseUrl: `${fake.url}/v1`, model: "m", apiKey: "", extraBody: {} }), world,
     emit: (l) => logs.push(l), broadcastWorld: () => {}, onChanges: () => tracker.onWorld(), clock,
   });
   looker = new Looker({
@@ -77,7 +81,8 @@ async function setup(o: { stalled: boolean }) {
   /** 엔진 프레임 하나(받은 시각 at + 5ms까지 시계를 옮긴다)를 넣고 감지·VLM이 끝날 때까지 기다린다. */
   const frame = async (atMs: number) => {
     const jpeg = frameJpeg(++n, [[0, 0, 8, 8]]);
-    engine.add(sha256(jpeg));
+    seen.set(sha256(jpeg), dets.full);
+    seen.set(sha256(cropJpeg(jpeg, CROP, LOOK_SIZE)), dets.crop);
     clock.t = Math.max(clock.t, atMs + 5);
     pipeline.onEngine(jpeg, { kind: "engine", width: 480, height: 360, captured_at: atMs, time_err_ms: 0 }, null, LOOK_VIEW, atMs + 5);
     await pipeline.idle();
@@ -107,6 +112,7 @@ async function toPlaceStall(t: Awaited<ReturnType<typeof setup>>) {
   expect(place).toMatchObject({ stepId: "plan:pam-1:4", text: "컵을 싱크대에 넣어 주세요" });
   const stepAt = t.clock.now();
   t.dets.full = [];
+  t.dets.crop = [cupCrop];
   for (let at = 8000; at <= 14000; at += 2000) await t.frame(at);
   expect(t.world.view(t.clock.now()).objects.find((o) => o.id === "cup_1")?.status).toBe("gone");
   expect(t.clock.now() - stepAt).toBeGreaterThanOrEqual(8000);
@@ -117,7 +123,7 @@ async function toPlaceStall(t: Awaited<ReturnType<typeof setup>>) {
 }
 
 describe("가까이 보기 흐름(놓기 단계)", () => {
-  it("놓기 단계에서 전체 사진은 싱크대 안 컵을 못 봐도, 8초 뒤 관찰 모드가 고른 가까이 보기가 세 장에서 컵을 찾고 VLM이 싱크대 안이라 답해 「완료」 없이 계획이 끝난다", async () => {
+  it("놓기 단계에서 전체 사진은 싱크대 안 컵을 못 봐도, 8초 뒤 관찰 모드가 고른 가까이 보기가 최근 다섯 장에서 컵을 찾고 VLM이 싱크대 안이라 답해 「완료」 없이 계획이 끝난다", async () => {
     const t = await setup({ stalled: true });
     try {
       await toPlaceStall(t);
@@ -128,7 +134,7 @@ describe("가까이 보기 흐름(놓기 단계)", () => {
       expect(moved!.facts.place?.value).toBe("in_sink");
       expect(t.looks()).toEqual([expect.objectContaining({
         trigger: "stalled", tool: "look_closer", target: "sink_1", text: "싱크대 쪽을 가까이 봄 · 컵 보임", plan_id: "plan:pam-1", step_id: "plan:pam-1:4",
-        result: expect.objectContaining({ ok: true, frames: 3, found: [expect.objectContaining({ id: "cup_2", cls: "cup", facts: ["in_sink"] })] }),
+        result: expect.objectContaining({ ok: true, frames: 5, found: [expect.objectContaining({ id: "cup_2", cls: "cup", facts: ["in_sink"] })] }),
       })]);
       // 4단계 「완료」는 누르지 않았다: 실제 폰에 보낸 놓기 명령은 처음 한 번뿐이다
       expect(t.phone.filter((m) => m.type === "command" && m.step === "plan:pam-1:4" && m.speak)).toHaveLength(1);

@@ -694,19 +694,20 @@ export class WorldState {
    *    본 시각·상태(present)·지킴은 마지막 보임 판단(전체 사진의 보임·시야 밖·사라짐, 가까이 보기)보다 새 촬영이거나 같은 원본 프레임의 전체 사진 판단일 때만 고친다.
    *  - 맞는 확인된 물건이 없으면: 서로 다른 원본 프레임 CLOSER_NEW_FRAMES장이 있어야 확인된 물건 하나를 만든다(세는 중인 같은 자리 물건이 있으면 그것을 확인).
    *  - 안 보인 물건은 그대로다. 찾거나 고친 물건은 지킴(closerAt)을 둔다.
-   *  ids: 가장 새 원본 프레임(촬영 시각) 감지 번호(d1…) → 물건 id. 그 사진의 VLM 답(applyCloserScene)이 쓴다. */
-  applyCloser(looks: readonly CloserPass[]): { changes: WorldChange[]; ids: Map<string, string> } {
+   *  ids: idsFrom 원본 프레임(없으면 촬영 시각이 가장 새 원본 프레임) 감지 번호(d1…) → 물건 id. 그 사진의 VLM 답(applyCloserScene)이 쓴다. */
+  applyCloser(looks: readonly CloserPass[], idsFrom?: string): { changes: WorldChange[]; ids: Map<string, string> } {
     const changes: WorldChange[] = [];
     const ids = new Map<string, string>();
     const passes = [...looks].sort((a, b) => a.capturedAtMs - b.capturedAtMs);
     const newest = passes.at(-1);
     if (!newest) return { changes, ids };
+    const from = idsFrom ?? newest.frameId;
     const surfaces = this.o.surfaces();
     type Seen = { pass: CloserPass; tmp: string; position: V3; surface: string | null; errorM: number | null };
     const groups: { cls: ObjClass; seen: Seen[] }[] = [];
     for (const pass of passes) {
       pass.dets.forEach((d, i) => {
-        if (d.edge || !this.accepts(d) || !OBJ_CLASSES.has(d.label)) return;
+        if (!this.closerObject(d)) return;
         const placed = placeBox(pass.view, d.box, { width: pass.width, height: pass.height }, surfaces, this.o.floorAt);
         if (!placed.position) return;
         const cls = d.label as ObjClass;
@@ -758,11 +759,17 @@ export class WorldState {
       }
       if (!obj) continue;
       used.add(obj.id);
-      for (const s of g.seen) if (s.pass === newest) ids.set(s.tmp, obj.id);
+      for (const s of g.seen) if (s.pass.frameId === from) ids.set(s.tmp, obj.id);
     }
     // 새로 만든 물건이 다른 자리 같은 종류 물건의 지킴을 푼다(이번에 본 물건은 그대로)
     this.liftHolds(created, used);
     return { changes, ids };
+  }
+
+  /** 가까이 본 감지가 물건 감지인가: 사람·가전 설비·받지 않는 감지·잘라 본 경계에 닿은 상자가 아니다.
+   *  applyCloser는 이 감지만 쓰고, 관찰 흐름은 이 감지가 있는 가장 새 장을 VLM에 보낸다. */
+  closerObject(d: CloserDetection): boolean {
+    return !d.edge && this.accepts(d) && OBJ_CLASSES.has(d.label);
   }
 
   /** 가까이 본 촬영으로 자리·면·방을 고친다(자리를 마지막으로 고친 촬영보다 새면, 같은 촬영이면 잘라 본 자리가 앞선다). */
