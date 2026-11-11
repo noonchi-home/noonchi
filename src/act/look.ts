@@ -1,6 +1,7 @@
 // 보기 담당: 관찰 모드(src/agent/observer.ts)를 부르고 고른 도구를 실행한다. 한 번에 하나만 돈다.
 // A 멈춘 단계(실행 추적 stalled, src/act/track.ts Stall): 집기·놓기 단계가 안 끝남 → look_closer·ask_person·wait.
-//   관찰 모드 호출과 가까이 보기는 그 단계 신호(Stall.signal)로 끊긴다. 끊기면(단계가 끝남) 기록도 settle도 하지 않는다(지난 단계 세대의 settle은 아무것도 하지 않는다).
+//   관찰 모드 호출과 가까이 보기는 그 단계 신호(Stall.signal)로 끊긴다. 끊겨서 그쳤으면(관찰 모드 답 전, 가까이 보기 aborted) 기록도 settle도 하지 않는다.
+//   가까이 본 결과가 World State에 들어가 그 단계를 끝냈으면(그래서 신호가 끊김) 기록한다(지난 단계 세대의 settle은 아무것도 하지 않는다).
 //   가까이 보기가 자원 사정(CloserWait: 새 사진 모자람·VLM 자리 없음)으로 못 보면 Stall.settle(false)로 시도에서 빼고, 그 밖(wait·ask_person 포함)은 settle(true).
 // B 판단 전 보기(판단 타이머 tick): 행동 대상 종류 물건이 사진 안에 있는데 볼 면(TaskSpec.look)을 모름 → look_closer·wait. PAM 판단을 막지 않는다.
 //   물건마다 objectGapMs, B 전체로 gapMs에 한 번. 이미 싱크대 안·시야 밖 물건, frameFreshMs 넘게 낡은 프레임, 카메라 없는 프레임은 보지 않는다.
@@ -197,8 +198,8 @@ export class Looker {
       const at: LookSpot = { id: spot.id, label: spot.label, position: spot.position };
       this.o.onLook?.(at);
       const r = await this.o.closer(at, job.signal).catch((): CloserResult => ({ ok: false, why: "error" }));
-      // 단계가 끝나 끊겼으면 기록하지 않는다(그 단계의 셈은 이미 지났다)
-      if (job.signal.aborted || this.stopped) return;
+      // 끊겨서 넣지 않았으면(aborted) 기록하지 않는다. 가까이 본 결과가 그 단계를 끝내 신호가 끊긴 것은 기록한다
+      if (this.stopped || (!r.ok && r.why === "aborted")) return;
       result = r;
       this.count.looks++;
       counted = r.ok || !WAITS.has(r.why);

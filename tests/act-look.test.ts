@@ -218,7 +218,7 @@ describe("보기 담당: 가까이 보기 실행", () => {
     expect(LOOK_TEXT.closer("싱크대", LOOK_TEXT.miss.no_fresh_frames)).toBe("싱크대 쪽을 가까이 봄 · 새 사진이 모자라 못 봄");
   });
 
-  it("단계가 끝나 신호가 끊기면 관찰 모드·가까이 보기를 그만두고 기록·settle을 남기지 않는다", async () => {
+  it("단계가 끝나 신호가 끊기면 관찰 모드·가까이 보기를 그만두고 기록·settle을 남기지 않는다. 가까이 본 결과가 단계를 끝낸 것은 기록한다", async () => {
     const closer = testCloser();
     closer.hold();
     const t = await setup({ script: () => [["look_closer", { target: "sink_1", reason: "싱크대 안을 보려고" }]], closer });
@@ -231,6 +231,16 @@ describe("보기 담당: 가까이 보기 실행", () => {
     await t.looker.idle();
     expect(t.looks()).toEqual([]);
     expect(a.settled).toEqual([]);
+
+    // 가까이 본 결과가 World State에 들어가 그 단계를 끝냈으면(그래서 신호가 끊김) 기록한다
+    closer.hold();
+    const done = stall();
+    t.looker.stalled(done.s);
+    await vi.waitFor(() => expect(closer.calls).toHaveLength(2));
+    done.ac.abort();
+    closer.release(CLOSER_FOUND);
+    await t.looker.idle();
+    expect(t.looks()).toEqual([expect.objectContaining({ trigger: "stalled", tool: "look_closer", text: "싱크대 쪽을 가까이 봄 · 컵 보임", result: CLOSER_FOUND })]);
 
     let releaseA!: () => void;
     const heldA = new Promise<void>((ok) => { releaseA = ok; });
