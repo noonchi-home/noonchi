@@ -104,7 +104,13 @@ export type BrainLog =
   | { type: "execution"; at_ms: number; plan_id: string; state: ExecState; text: string }
   | { type: "link"; at_ms: number; target: "pam"; up: boolean; text: string }
   | { type: "trigger"; at_ms: number; paused: boolean; text: string }
-  | { type: "reflection"; at_ms: number; day: string; ok: boolean; version: number | null; applies_day: string | null; text: string };
+  | { type: "reflection"; at_ms: number; day: string; ok: boolean; version: number | null; applies_day: string | null; text: string }
+  /** 관찰 모드가 고른 것 하나(src/act/look.ts): 까닭(A 멈춘 단계·B 판단 전 보기), 대상 id, 고른 도구와 모델이 댄 까닭, 기록 글, 결과(가까이 보기 결과·부탁을 보냈는가, 기다리기는 null).
+   *  A면 그 계획·단계 id가 있다. */
+  | {
+    type: "look"; at_ms: number; trigger: LookTrigger; target: string | null; tool: LookTool; reason: string; text: string; result: LookResult | null;
+    plan_id?: string; step_id?: string;
+  };
 
 // 관찰 모드(src/agent/observer.ts)
 
@@ -127,6 +133,8 @@ export interface CloserFound { id: string | null; cls: DetLabel; score: number; 
 export type CloserResult =
   | { ok: true; frame_id: string; captured_at_ms: number; crop: [number, number, number, number]; frames: number; found: CloserFound[]; summary: string | null; vlm: "ok" | VlmMissing }
   | { ok: false; why: CloserMiss };
+/** 관찰 모드가 고른 도구의 결과: look_closer는 가까이 보기 결과, ask_person은 실제 폰에 부탁을 보냈는가. */
+export type LookResult = CloserResult | { sent: boolean };
 
 // 기기
 

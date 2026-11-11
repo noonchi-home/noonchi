@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { WorldObject, WorldView } from "../src/contract/world.js";
-import { holdsTarget, planTargetId, targetOf, TASK_NAMES, TASKS, taskOf } from "../src/act/tasks.js";
+import { holdsTarget, lookTargets, planTargetId, targetOf, TASK_NAMES, TASKS, taskOf } from "../src/act/tasks.js";
 import { smallFloor } from "./helpers/floor.js";
 import { cupPlan } from "./helpers/cup-plan.js";
 
@@ -23,7 +23,7 @@ describe("행동 목록", () => {
       expect(t.name).toBe(name);
       expect(t.description.length).toBeGreaterThan(5);
       expect(t.allow.kinds.length).toBeGreaterThan(0);
-      expect(Object.keys(t).sort()).toEqual(["allow", "description", "name", ...(t.target ? ["target"] : [])].sort());
+      expect(Object.keys(t).sort()).toEqual(["allow", "description", "name", ...(t.target ? ["target"] : []), ...(t.look ? ["look"] : [])].sort());
     }
     expect(TASKS["컵 치우기"]!.allow.kinds).toEqual(["go", "pick", "place"]);
     expect(TASKS["사용자에게 물어보기"]!.allow).toEqual({ kinds: ["ask", "say"], need: ["ask"] });
@@ -39,6 +39,11 @@ describe("행동 목록", () => {
       cupAt({ id: "bottle_1", cls: "bottle", last_seen_ms: 30 }), cupAt({ id: "cup_4", last_seen_ms: 40, facts: inSink })];
     expect(targetOf(TASKS["컵 치우기"]!, world(objects))?.id).toBe("cup_2");
     expect(targetOf(TASKS["사용자에게 물어보기"]!, world(objects))).toBeNull();
+  });
+
+  it("판단 전에 더 잘 볼 면: 컵 치우기는 컵의 contents. 대상 종류가 있는 행동만이다", () => {
+    expect(TASKS["컵 치우기"]!.look).toEqual(["contents"]);
+    expect(lookTargets()).toEqual([{ cls: "cup", facets: ["contents"] }]);
   });
 
   it("계획이 다루는 물건은 첫 act 단계의 대상", () => {

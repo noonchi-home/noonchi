@@ -1,5 +1,6 @@
 // 서버가 만들어 화면에 그대로 나가는 글. npm run lint가 이 파일도 검사한다(60자 아래, 화살표·괄호 없음).
 import { josa } from "../agent/phrases.js";
+import type { CloserMiss } from "../contract/events.js";
 import { OBJECT_NAME } from "../world/labels.js";
 
 export const STEP_LABEL = {
@@ -84,3 +85,19 @@ export const EXEC_TEXT = {
   badPlan: "계획이 맞지 않아 버림", held: "방금 계획한 일이라 잠시 뒤 다시 봄", deviceFailed: "가전 명령이 실패함",
   deviceUnverified: "가전 명령 결과를 확인하지 못함", busy: "할 일 중 기다리는 동안이라 쓰지 않음",
 } as const;
+
+/** 관찰 모드 기록 글(src/act/look.ts, 기록 종류 look). 가까이 본 결과, 못 본 까닭, 사람 부탁, 기다리기. capped·failed는 모델 대신 쓰는 까닭 글이다. */
+export const LOOK_TEXT = {
+  closer: (place: string, seen: string) => `${place} 쪽을 가까이 봄 · ${seen}`,
+  seen: (names: readonly string[]) => (names.length ? `${[...new Set(names)].join("·")} 보임` : "찾은 것 없음"),
+  miss: {
+    no_fresh_frames: "새 사진이 모자라 못 봄", vlm_busy: "VLM 자리가 없어 못 봄", no_view: "카메라를 맞추기 전이라 못 봄", out_of_view: "사진 밖이라 못 봄",
+    no_detector: "감지기가 없어 못 봄", aborted: "단계가 바뀌어 그만 봄", closed: "멈춰서 못 봄", error: "감지 오류로 못 봄",
+  } satisfies Record<CloserMiss, string>,
+  vlmMissing: "VLM 답 없음",
+  asked: (text: string) => `가까이 비춰 달라고 부탁함 · ${text}`,
+  notSent: "단계가 바뀌어 부탁하지 않음",
+  waited: (place: string | null) => (place ? `${place} 쪽은 기다림` : "기다림"),
+  capped: "한 시간 관찰 횟수를 다 써서 부르지 않음",
+  failed: (why: string) => `관찰 모드 호출 실패: ${why}`,
+};

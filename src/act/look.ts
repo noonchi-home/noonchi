@@ -1,0 +1,244 @@
+// 보기 담당: 관찰 모드(src/agent/observer.ts)를 부르고 고른 도구를 실행한다. 한 번에 하나만 돈다.
+// A 멈춘 단계(실행 추적 stalled, src/act/track.ts Stall): 집기·놓기 단계가 안 끝남 → look_closer·ask_person·wait.
+//   관찰 모드 호출과 가까이 보기는 그 단계 신호(Stall.signal)로 끊긴다. 끊기면(단계가 끝남) 기록도 settle도 하지 않는다(지난 단계 세대의 settle은 아무것도 하지 않는다).
+//   가까이 보기가 자원 사정(CloserWait: 새 사진 모자람·VLM 자리 없음)으로 못 보면 Stall.settle(false)로 시도에서 빼고, 그 밖(wait·ask_person 포함)은 settle(true).
+// B 판단 전 보기(판단 타이머 tick): 행동 대상 종류 물건이 사진 안에 있는데 볼 면(TaskSpec.look)을 모름 → look_closer·wait. PAM 판단을 막지 않는다.
+//   물건마다 objectGapMs, B 전체로 gapMs에 한 번. 이미 싱크대 안·시야 밖 물건, frameFreshMs 넘게 낡은 프레임, 카메라 없는 프레임은 보지 않는다.
+// A가 먼저다: B가 관찰 모드를 부르는 중이면 끊고(B 기록 없음) A를 돌린다. B가 잘라 보는 중이거나 다른 A가 도는 중이면 A를 받지 않는다(실행 추적이 다음 tick에 다시 부른다).
+// 관찰 모드는 한 시간(주입 시계)에 hourMax번(A·B 합)까지만 부른다. 넘으면 부르지 않고 기다리기 기록을 남긴다(A면 settle(true)).
+// 고를 때마다 look 기록 하나. look_closer 결과는 관찰 흐름이 World State에 넣는다(다음 PAM 판단과 단계 조건이 그것을 본다).
+import type { BrainLog, CloserMiss, CloserResult, CloserWait, LookResult, LookTool, LookTrigger } from "../contract/events.js";
+import type { Facet, ObjClass, WorldView } from "../contract/world.js";
+import { describeError } from "../agent/agent.js";
+import type { ObserveChoice, ObserveSituation, Observer, ObserverStatus } from "../agent/observer.js";
+import { LOOK_MARGIN, type LookSpot } from "../observe/crop.js";
+import type { LatestFrame } from "../observe/pipeline.js";
+import { LOOK_TEXT } from "../plan/labels.js";
+import { OBJECT_NAME } from "../world/labels.js";
+import { inView } from "../world/place.js";
+import { CLASSES, UNKNOWN_STATES, type ClassKey, type StateKey } from "../world/vocab.js";
+import { putAway } from "./tasks.js";
+import type { Stall } from "./track.js";
+
+/** 기본값: B 물건마다 30초·전체 10초에 한 번, 10초 넘게 낡은 프레임은 보지 않음, 앞서 한 일 5개, 관찰 모드 한 시간 60번. */
+export const LOOK_DEFAULTS = { objectGapMs: 30_000, gapMs: 10_000, frameFreshMs: 10_000, keep: 5, hourMax: 60, hourMs: 3_600_000 } as const;
+
+/** 시도로 세지 않는 가까이 보기 결과(src/contract/events.ts CloserWait). */
+const WAITS: ReadonlySet<CloserMiss> = new Set<CloserWait>(["no_fresh_frames", "vlm_busy"]);
+/** 앞서 한 일을 기억하는 열쇠(단계·물건) 수 상한. */
+const KEYS_MAX = 50;
+
+export interface LookerOptions {
+  observer: Pick<Observer, "decide" | "status">;
+  /** 가까이 보기(src/observe/pipeline.ts closer). signal이 끊기면 넣지 않고 aborted. */
+  closer: (spot: LookSpot, signal?: AbortSignal) => Promise<CloserResult>;
+  /** 고리 가장 새 프레임(src/observe/pipeline.ts latest). */
+  frame: () => LatestFrame | null;
+  world: () => WorldView;
+  /** 사람 부탁(src/act/track.ts askCloser). 보냈으면 true. */
+  askPerson: (planId: string, stepId: string, text: string) => boolean;
+  emit: (l: BrainLog) => void;
+  /** 판단 전에 더 잘 볼 종류와 면(src/act/tasks.ts lookTargets). */
+  targets: () => readonly { cls: ObjClass; facets: readonly Facet[] }[];
+  /** 가까이 볼 점: 자리(싱크대·식탁)는 윗면 가운데. 없으면 자리 그대로. */
+  aim?: (spot: LookSpot) => [number, number, number];
+  /** 가까이 보기를 시작할 때(대시보드 말풍선 카드). */
+  onLook?: (spot: LookSpot) => void;
+  clock?: { now(): number };
+  objectGapMs?: number;
+  gapMs?: number;
+  /** 관찰 모드를 한 시간에 부르는 상한(A·B 합). */
+  hourMax?: number;
+}
+
+/** 관찰 모드 호출 수·비용(모르면 null)과 고른 도구 수(가까이 보기·사람 부탁·기다리기, 상한으로 부르지 않은 기다리기 포함). */
+export interface LookerStatus { calls: number; costUsd: number | null; looks: number; asks: number; waits: number }
+
+interface Job {
+  trigger: LookTrigger; key: string; goal: string; stuckMs: number | null; spots: LookSpot[]; tools: LookTool[];
+  planId?: string; stepId?: string; settle?: (counted: boolean) => void;
+  abort: AbortController; signal: AbortSignal; phase: "observer" | "act";
+}
+type JobSpec = Omit<Job, "abort" | "signal" | "phase">;
+type Earlier = ObserveSituation["earlier"][number];
+
+export class Looker {
+  private job: Job | null = null;
+  private readonly running = new Set<Promise<void>>();
+  private readonly lookedAt = new Map<string, number>();
+  private readonly earlier = new Map<string, Earlier[]>();
+  private readonly count = { looks: 0, asks: 0, waits: 0 };
+  /** 관찰 모드를 부른 시각(지난 한 시간). */
+  private calledAt: number[] = [];
+  private lastB = Number.NEGATIVE_INFINITY;
+  private stopped = false;
+  private readonly clock: { now(): number };
+  private readonly cfg: { objectGapMs: number; gapMs: number; hourMax: number };
+
+  constructor(private readonly o: LookerOptions) {
+    this.clock = o.clock ?? { now: () => Date.now() };
+    this.cfg = { objectGapMs: o.objectGapMs ?? LOOK_DEFAULTS.objectGapMs, gapMs: o.gapMs ?? LOOK_DEFAULTS.gapMs, hourMax: o.hourMax ?? LOOK_DEFAULTS.hourMax };
+  }
+
+  /** 멈춘 단계(A). 받았으면 true: 끝날 때 s.settle을 부른다(끊기면 부르지 않는다). */
+  stalled(s: Stall): boolean {
+    if (this.stopped || s.signal.aborted) return false;
+    if (this.job) {
+      if (this.job.trigger === "stalled" || this.job.phase !== "observer") return false;
+      // B가 관찰 모드를 부르는 중이면 끊고 A를 돌린다(B 기록 없음)
+      this.job.abort.abort();
+      this.job = null;
+    }
+    this.start({
+      trigger: "stalled", key: `${s.planId}:${s.stepId}`, goal: `${s.label} 단계 · 지금 명령 「${s.command}」 · 끝난 조건 ${JSON.stringify(s.until)}`,
+      stuckMs: s.stuckMs, spots: s.spots, tools: ["look_closer", "ask_person", "wait"], planId: s.planId, stepId: s.stepId, settle: (c) => s.settle(c),
+    }, s.signal);
+    return true;
+  }
+
+  /** 판단 타이머(250ms)가 부른다: 판단 전 보기(B)를 부를 물건이 있으면 하나 부른다. */
+  tick(): void {
+    if (this.stopped || this.job) return;
+    const now = this.clock.now();
+    if (now - this.lastB < this.cfg.gapMs) return;
+    const latest = this.o.frame();
+    if (!latest?.view || now - latest.capturedAtMs > LOOK_DEFAULTS.frameFreshMs) return;
+    const wants = this.o.targets();
+    if (!wants.length) return;
+    for (const [id, at] of this.lookedAt) if (now - at >= this.cfg.objectGapMs) this.lookedAt.delete(id);
+    for (const o of this.o.world().objects) {
+      const want = wants.find((t) => t.cls === o.cls);
+      if (!want || o.status !== "present" || !o.position || putAway(o)) continue;
+      if (now - (this.lookedAt.get(o.id) ?? Number.NEGATIVE_INFINITY) < this.cfg.objectGapMs) continue;
+      const facet = want.facets.find((f) => unknown(o.facts[f]?.value));
+      if (!facet) continue;
+      const spot: LookSpot = { id: o.id, label: OBJECT_NAME[o.cls] ?? o.cls, position: o.position };
+      if (!inView(latest.view, this.aim(spot), LOOK_MARGIN)) continue;
+      this.lastB = now;
+      this.start({ trigger: "unknown_fact", key: o.id, goal: `${spot.label} ${o.id}의 ${facet}을 모름 · 판단 전에 더 잘 보기`, stuckMs: null, spots: [spot], tools: ["look_closer", "wait"] });
+      return;
+    }
+  }
+
+  status(): LookerStatus {
+    const s: ObserverStatus = this.o.observer.status();
+    return { calls: s.calls, costUsd: s.costUsd, ...this.count };
+  }
+
+  /** 멈추면 도는 것을 끊고 더 부르지 않는다. */
+  stop(): void {
+    this.stopped = true;
+    this.job?.abort.abort();
+  }
+
+  /** 도는 일이 끝날 때까지 기다린다(시험용). */
+  async idle(): Promise<void> {
+    while (this.running.size) await Promise.all([...this.running]);
+  }
+
+  private aim(spot: LookSpot): [number, number, number] {
+    return this.o.aim?.(spot) ?? spot.position;
+  }
+
+  /** 한 시간 상한 안이면 이번 호출을 세고 true. */
+  private allow(now: number): boolean {
+    this.calledAt = this.calledAt.filter((t) => now - t < LOOK_DEFAULTS.hourMs);
+    if (this.calledAt.length >= this.cfg.hourMax) return false;
+    this.calledAt.push(now);
+    return true;
+  }
+
+  private start(spec: JobSpec, external?: AbortSignal): void {
+    const abort = new AbortController();
+    const job: Job = { ...spec, abort, signal: external ? AbortSignal.any([abort.signal, external]) : abort.signal, phase: "observer" };
+    const now = this.clock.now();
+    for (const p of job.spots) this.lookedAt.set(p.id, now);
+    if (!this.allow(now)) {
+      this.count.waits++;
+      this.record(job, { tool: "wait", reason: LOOK_TEXT.capped }, job.spots[0] ?? null, LOOK_TEXT.waited(job.spots[0]?.label ?? null), null, "");
+      job.settle?.(true);
+      return;
+    }
+    this.job = job;
+    const p: Promise<void> = this.run(job).catch(() => {}).finally(() => {
+      if (this.job === job) this.job = null;
+      this.running.delete(p);
+    });
+    this.running.add(p);
+  }
+
+  private async run(job: Job): Promise<void> {
+    const latest = this.o.frame();
+    const spots = job.spots.map((p) => {
+      const position = this.aim(p);
+      return { id: p.id, label: p.label, position, inView: !!latest?.view && inView(latest.view, position, LOOK_MARGIN) };
+    });
+    const situation: ObserveSituation = {
+      trigger: job.trigger, goal: job.goal, stuckMs: job.stuckMs, spots, world: this.o.world(), earlier: this.earlier.get(job.key) ?? [], tools: job.tools, nowMs: this.clock.now(),
+    };
+    let choice: ObserveChoice;
+    try {
+      choice = await this.o.observer.decide(situation, job.signal);
+    } catch (e) {
+      if (job.signal.aborted || this.stopped) return;
+      choice = { tool: "wait", reason: LOOK_TEXT.failed(describeError(e)).slice(0, 200), invalid: "error" };
+    }
+    if (job.signal.aborted || this.stopped) return;
+    job.phase = "act";
+    const want = choice.tool === "look_closer" ? choice.target : null;
+    const picked = want === null ? undefined : spots.find((p) => p.id === want);
+    if (choice.tool === "look_closer" && !picked) choice = { tool: "wait", reason: choice.reason, invalid: "target" };
+    const spot = picked ?? spots[0] ?? null;
+    let text: string;
+    let detail = "";
+    let result: LookResult | null = null;
+    let counted = true;
+    if (choice.tool === "look_closer" && spot) {
+      const at: LookSpot = { id: spot.id, label: spot.label, position: spot.position };
+      this.o.onLook?.(at);
+      const r = await this.o.closer(at, job.signal).catch((): CloserResult => ({ ok: false, why: "error" }));
+      // 단계가 끝나 끊겼으면 기록하지 않는다(그 단계의 셈은 이미 지났다)
+      if (job.signal.aborted || this.stopped) return;
+      result = r;
+      this.count.looks++;
+      counted = r.ok || !WAITS.has(r.why);
+      text = LOOK_TEXT.closer(spot.label, closerText(r));
+      if (r.ok) detail = r.found.map((f) => `${f.id ?? f.cls} ${f.score} ${f.facts.join(" ")}`.trim()).join(", ");
+    } else if (choice.tool === "ask_person") {
+      const sent = !!job.planId && !!job.stepId && this.o.askPerson(job.planId, job.stepId, choice.text);
+      result = { sent };
+      this.count.asks++;
+      text = sent ? LOOK_TEXT.asked(choice.text) : LOOK_TEXT.notSent;
+    } else {
+      this.count.waits++;
+      text = LOOK_TEXT.waited(spot?.label ?? null);
+    }
+    this.record(job, choice, spot, text, result, detail);
+    job.settle?.(counted);
+  }
+
+  /** look 기록 하나를 내고 앞서 한 일에 넣는다. */
+  private record(job: Job, choice: Pick<ObserveChoice, "tool" | "reason">, spot: { id: string } | null, text: string, result: LookResult | null, detail: string): void {
+    if (this.stopped) return;
+    const at = this.clock.now();
+    const target = spot?.id ?? null;
+    const list = [...(this.earlier.get(job.key) ?? []), { atMs: at, tool: choice.tool, target, text: detail ? `${text} · ${detail}` : text }];
+    this.earlier.delete(job.key);
+    this.earlier.set(job.key, list.slice(-LOOK_DEFAULTS.keep));
+    if (this.earlier.size > KEYS_MAX) this.earlier.delete(this.earlier.keys().next().value!);
+    this.o.emit({
+      type: "look", at_ms: at, trigger: job.trigger, target, tool: choice.tool, reason: choice.reason, text, result,
+      ...(job.planId ? { plan_id: job.planId, step_id: job.stepId } : {}),
+    });
+  }
+}
+
+/** 볼 면을 모른다: 사실이 없거나 모름 값(안이 안 보임). */
+const unknown = (v: string | undefined) => !v || UNKNOWN_STATES.includes(v as StateKey);
+
+/** 가까이 본 결과 한 마디: 찾은 물건 이름(사람·가전 설비는 빼고), 못 봤으면 까닭, VLM 답이 없으면 덧붙인다. */
+function closerText(r: CloserResult): string {
+  if (!r.ok) return LOOK_TEXT.miss[r.why];
+  const seen = LOOK_TEXT.seen(r.found.filter((f) => CLASSES[f.cls as ClassKey]?.role === "object").map((f) => OBJECT_NAME[f.cls] ?? f.cls));
+  return r.vlm === "ok" ? seen : `${seen} · ${LOOK_TEXT.vlmMissing}`;
+}

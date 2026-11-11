@@ -2,7 +2,7 @@
 // 목록은 services/pam/scenarios/noonchi/tasks.json과 같다(tests/agent-planner.test.ts). 최종 목록은 FSM 담당(박석준·김준형)이 정한다.
 // 여기에는 계획 모양이 없다: 무엇을 어떤 순서로 할지는 에이전트가 정한다. target은 계획 전 검사(LLM을 부르기 전)에만 쓴다.
 import type { PlanView } from "../contract/plan.js";
-import type { ObjClass, WorldObject, WorldView } from "../contract/world.js";
+import type { Facet, ObjClass, WorldObject, WorldView } from "../contract/world.js";
 import type { DeviceKind } from "../hub/types.js";
 import type { ActionChoice } from "./prompts.js";
 
@@ -10,14 +10,15 @@ type Kind = "go" | "pick" | "place" | "device" | "ask" | "say" | "wait";
 /** 이 행동의 계획에 쓸 수 있는 단계: 단계 종류(src/agent/planTools.ts AgentStepKind), 꼭 있어야 하는 단계 종류(need), 기기 단계의 가전 종류·도구. 승인한 일의 범위다. */
 export interface TaskAllow { kinds: readonly Kind[]; need: readonly Kind[]; devices?: { kinds: readonly DeviceKind[]; tools: readonly string[] } }
 
-/** 행동 하나: 이름, 에이전트에게 주는 설명, 쓸 수 있는 단계, 계획 전 검사의 대상 종류(이 종류 중 치우지 않은 물건이 보여야 부른다). */
-export interface TaskSpec { name: string; description: string; allow: TaskAllow; target?: ObjClass }
+/** 행동 하나: 이름, 에이전트에게 주는 설명, 쓸 수 있는 단계, 계획 전 검사의 대상 종류(이 종류 중 치우지 않은 물건이 보여야 부른다),
+ *  판단 전에 더 잘 볼 대상 물건의 면(look: 모르면 관찰 모드 B가 가까이 볼지 고른다, src/act/look.ts). */
+export interface TaskSpec { name: string; description: string; allow: TaskAllow; target?: ObjClass; look?: readonly Facet[] }
 
 const HAND = ["go", "pick", "place"] as const;
 
 export const TASKS: Record<string, TaskSpec> = {
   "컵 치우기": {
-    name: "컵 치우기", description: "사람이 자리를 비운 뒤 식탁 등에 남은 컵을 사람이 싱크대에 넣게 한다.", target: "cup",
+    name: "컵 치우기", description: "사람이 자리를 비운 뒤 식탁 등에 남은 컵을 사람이 싱크대에 넣게 한다.", target: "cup", look: ["contents"],
     allow: { kinds: HAND, need: HAND },
   },
   "사용자에게 물어보기": { name: "사용자에게 물어보기", description: "컵 안을 확인할 수 없는 등 애매할 때 폰으로 사용자에게 어떻게 할지 묻는다.", allow: { kinds: ["ask", "say"], need: ["ask"] } },
@@ -37,6 +38,11 @@ export const TASK_NAMES: readonly string[] = Object.keys(TASKS);
 /** 행동 이름 → 행동. 목록 밖이면 null. */
 export function taskOf(action: string | null): TaskSpec | null {
   return action && Object.hasOwn(TASKS, action) ? TASKS[action]! : null;
+}
+
+/** 판단 전에 더 잘 볼 것: 대상 종류와 볼 면이 있는 행동마다 하나(관찰 모드 B, src/act/look.ts). */
+export function lookTargets(): { cls: ObjClass; facets: readonly Facet[] }[] {
+  return Object.values(TASKS).flatMap((t) => (t.target && t.look?.length ? [{ cls: t.target, facets: t.look }] : []));
 }
 
 /** 이미 치운 물건: World State 자리가 싱크대 안. */
