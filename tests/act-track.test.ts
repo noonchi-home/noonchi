@@ -798,6 +798,53 @@ describe("실행 추적: 판단 뒤 가까이 본 사실(B와 PAM)", () => {
     expect(a.plans.current()).toMatchObject({ status: "cancelled" });
   });
 
+  it("「가까이 본 뒤 다시 판단」으로 닫은 계획은 같은 행동 다시 계획 15초에 넣지 않아 5초 뒤 새 판단(같은 행동)이 계획을 세운다. 다른 까닭으로 닫은 계획은 15초를 기다린다", async () => {
+    const gap = { planGapMs: TRACK_DEFAULTS.planGapMs };
+    // 계획을 받을 때(planned) 가까이 보기가 컵 안을 바꿈
+    let w = withFacts({});
+    let release!: () => void;
+    const gate = new Promise<void>((ok) => { release = ok; });
+    const p = testPlanner(llm);
+    const a = setup({ ...gap, w: () => w, planner: async (d, signal) => {
+      const ctx = planContext({ decision: d, world: w, floor: smallFloor() });
+      await gate;
+      return p.plan(ctx, signal);
+    } });
+    a.t.onDecision(seen({}));
+    w = withFacts(contents("empty", 9_500), { contents: 1 });
+    release();
+    await a.t.idle();
+    expect(a.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-1", state: "failed", text: EXEC_TEXT.closerNewer });
+    a.clock.t += 5_000;
+    await a.decide({ ...seen({ contents: "empty" }, { contents: 1 }), id: "pam-2", seq: 2 });
+    expect(a.commands()[0]).toMatchObject({ id: "plan:pam-2", step: "plan:pam-2:1" });
+
+    // 첫 명령 전(실행 전 검사를 다시 보는 사이) 가까이 보기가 컵 안을 바꿈
+    let v = withFacts(contents("empty"));
+    let ready = false;
+    const b = setup({ ...gap, w: () => v, check: () => (ready ? { ok: true } : { ok: false, reason: "stale", text: "아직 아님" } as CheckResult) });
+    await b.decide(seen({ contents: "empty" }));
+    v = withFacts(contents("has_contents", 9_500), { contents: 1 });
+    ready = true;
+    b.t.tick();
+    expect(b.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-1", state: "failed", text: EXEC_TEXT.closerNewer });
+    b.clock.t += 5_000;
+    await b.decide({ ...seen({ contents: "has_contents" }, { contents: 1 }), id: "pam-2", seq: 2 });
+    expect(b.commands()[0]).toMatchObject({ id: "plan:pam-2", step: "plan:pam-2:1" });
+
+    // 「그만」으로 닫은 계획은 15초 안의 같은 행동 판단을 「잠시 뒤 다시 봄」으로 남기고, 15초 뒤에 다시 세운다
+    const c = setup(gap);
+    await c.decide(decision);
+    c.t.onHeard("그만");
+    expect(c.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-1", state: "failed", text: EXEC_TEXT.stopped });
+    c.clock.t += 5_000;
+    await c.decide({ ...decision, id: "pam-2", seq: 2 });
+    expect(c.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-2", state: "decided", text: EXEC_TEXT.held });
+    c.clock.t += 10_000;
+    await c.decide({ ...decision, id: "pam-3", seq: 3 });
+    expect(c.commands().at(-1)).toMatchObject({ id: "plan:pam-3", step: "plan:pam-3:1" });
+  });
+
   it("첫 명령을 보낸 뒤에는 가까이 보기가 컵 안을 바꿔도 계획을 그대로 이어 간다(단계마다 끝나는 조건을 World State로 본다)", async () => {
     let w = withFacts(contents("empty"));
     const a = setup({ w: () => w });

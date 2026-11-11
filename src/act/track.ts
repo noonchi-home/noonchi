@@ -1,6 +1,6 @@
 // 실행 추적: 판단 → 계획(에이전트 계획 모드) → 실행 중 → 완료 또는 실패. 단계마다 execution 기록을 낸다(plan_id는 plan:<판단 id>).
 // 판단 하나마다 한 번만 정한다: 늦은 답·판단 실패·대기·진행 중(또는 계획을 만드는 중)인 행동과 같은 행동은 기록만 하고, 계획 전 검사(LLM 없음)를
-// 통과하면 에이전트를 계획 모드로 한 번 부른다(planner). 같은 행동은 planGapMs 안에 다시 부르지 않는다. 주기 tick은 에이전트를 부르지 않는다.
+// 통과하면 에이전트를 계획 모드로 한 번 부른다(planner). 같은 행동은 planGapMs 안에 다시 부르지 않는다(「가까이 본 뒤 다시 판단」으로 닫은 계획은 세지 않는다). 주기 tick은 에이전트를 부르지 않는다.
 // 계획은 어떤 것이든 같은 방법으로 돌린다(src/agent/planTools.ts AgentStep):
 // - 사람 단계(go·pick·place): 실제 폰(에이전트의 손, src/contract/phone.ts)에 사람에게 하는 명령 하나와 「완료」를 보내고(소리로도 읽음),
 //   끝나는 조건(World State 낱말 조건, ConditionWatch)이 참이거나 「완료」면 다음 단계로. repeatMs마다 명령을 다시 읽는다.
@@ -125,9 +125,12 @@ interface Run {
   placeAt: (id: string | null) => XZ | null;
   deadline: number; again: boolean; device: "idle" | "running" | "done" | "sent"; gen: number;
   looks: number; lookAt: number; stepEnd: AbortController | null;
+  /** 같은 행동 다시 계획 간격을 세려고 적은 시각(Job.at). */
+  gapAt: number;
 }
 
-interface Job { decision: DecisionRecord; gen: number; abort: AbortController }
+/** at: 같은 행동 다시 계획 간격(planGapMs)을 세려고 적은 시각. */
+interface Job { decision: DecisionRecord; gen: number; abort: AbortController; at: number }
 
 const OPEN = new Set<ExecState>(["planned", "running", "verifying"]);
 const clsOf = (w: WorldView, id: string) => w.objects.find((o) => o.id === id)?.cls ?? id.replace(/_\d+$/, "");
@@ -193,7 +196,7 @@ export class ExecutionTracker {
     this.planAt.set(d.action, now);
     // 계획을 만드는 중이던 다른 행동은 끊고 버린다(답이 와도 쓰지 않는다)
     this.dropPlanning(EXEC_TEXT.superseded);
-    const job: Job = { decision: d, gen: ++this.gen, abort: new AbortController() };
+    const job: Job = { decision: d, gen: ++this.gen, abort: new AbortController(), at: now };
     this.planning = job;
     this.emit(planIdOf(d.id), "decided");
     let out: PlanResult | Promise<PlanResult>;
@@ -333,6 +336,12 @@ export class ExecutionTracker {
     }));
   }
 
+  /** 「가까이 본 뒤 다시 판단」으로 닫은 계획은 같은 행동 다시 계획 간격(planGapMs)에 넣지 않는다: 다음 판단이 새 사실로 바로 다시 고른다.
+   *  그 판단이 적은 시각일 때만 지운다. */
+  private ungap(d: DecisionRecord, at: number): void {
+    if (d.action && this.planAt.get(d.action) === at) this.planAt.delete(d.action);
+  }
+
   /** 만들던 계획을 끊고 그 판단 줄에 까닭을 남긴다. */
   private dropPlanning(text: string): void {
     const job = this.planning;
@@ -369,7 +378,10 @@ export class ExecutionTracker {
     if (!r.ok) return this.emit(planIdOf(d.id), "failed", EXEC_TEXT.badPlan);
     // 만드는 사이 진행 중 계획이 기다리기·기기 단계에 들어갔으면 바꾸지 않는다(그 판단은 그 단계 전 관찰이다)
     if (this.waiting() || d.atMs < this.quietFrom) return this.emit(planIdOf(d.id), "failed", EXEC_TEXT.busy);
-    if (this.closerNewer(d)) return this.emit(planIdOf(d.id), "failed", EXEC_TEXT.closerNewer);
+    if (this.closerNewer(d)) {
+      this.ungap(d, job.at);
+      return this.emit(planIdOf(d.id), "failed", EXEC_TEXT.closerNewer);
+    }
     const open = this.open();
     // 새 계획이 있으면 PlanHub.onDecision이 지금 계획을 취소로 닫고 supersedes를 단다
     if (open) this.finish(open, "failed", EXEC_TEXT.superseded, null);
@@ -384,7 +396,7 @@ export class ExecutionTracker {
     const run: Run = {
       plan: r.plan, decision: d, state: "decided", since: now, at: -1, stepAt: now, spokeAt: now, visionAt: now, sent: null,
       asking: null, askAt: now, watch: null, others, alias: new Map([...ids].map((id) => [id, id])), carried: new Set(), placeAt: (id) => (id ? this.o.floor().objects.get(id)?.position ?? null : null), deadline: now, again: false, device: "idle", gen: 0,
-      looks: 0, lookAt: Number.NEGATIVE_INFINITY, stepEnd: null,
+      looks: 0, lookAt: Number.NEGATIVE_INFINITY, stepEnd: null, gapAt: job.at,
     };
     this.run = run;
     this.o.plans.onDecision(r.plan.view);
@@ -401,7 +413,10 @@ export class ExecutionTracker {
   /** 첫 단계를 시작해 본다(계획을 받을 때·검사를 다시 볼 때·승인 답 뒤). 첫 명령 전에 가까이 보기가 볼 면을 바꿨으면 시작하지 않고
    *  「가까이 본 뒤 다시 판단」으로 닫는다(다음 판단이 새 사실로 다시 고른다). 첫 명령을 보낸 뒤에는 보지 않는다. */
   private tryStart(r: Run, last: boolean): void {
-    if (this.closerNewer(r.decision)) return this.finish(r, "failed", EXEC_TEXT.closerNewer, "cancelled");
+    if (this.closerNewer(r.decision)) {
+      this.ungap(r.decision, r.gapAt);
+      return this.finish(r, "failed", EXEC_TEXT.closerNewer, "cancelled");
+    }
     const c = this.o.check(r.decision, r.plan.view);
     if (!c.ok) {
       if (last) this.finish(r, "failed", c.text);
