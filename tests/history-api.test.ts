@@ -48,6 +48,7 @@ describe("기록 API", () => {
   it("GET /api/history: 모르는 종류·숫자가 아닌 시각·범위 밖 limit은 400", async () => {
     await start();
     expect((await get("/api/history?kinds=photo_bytes")).status).toBe(400);
+    expect((await get("/api/history?kinds=look")).status).toBe(200);
     expect((await get("/api/history?since=어제")).status).toBe(400);
     expect((await get("/api/history?limit=0")).status).toBe(400);
     expect((await get("/api/history?limit=5001")).status).toBe(400);

@@ -7,8 +7,9 @@ import type { BrainLog } from "../src/contract/events.js";
 import type { PlanView } from "../src/contract/plan.js";
 import type { ControlMode } from "../src/contract/setup.js";
 import type { DeviceState } from "../src/hub/types.js";
-import { HistoryDb, historyTzMinutes, type HistoryKind } from "../src/history/db.js";
+import { HISTORY_KINDS, HistoryDb, historyTzMinutes, type HistoryKind } from "../src/history/db.js";
 import { attachRecorder, type DeviceNote } from "../src/history/recorder.js";
+import { daySummary } from "../src/history/summary.js";
 
 describe("기록 DB", () => {
   it("폴더를 만들고 WAL·잠금 대기 5초로 연다", () => {
@@ -119,6 +120,25 @@ describe("기록기", () => {
     expect(db.list({ kinds: ["mode"] })[0]).toMatchObject({ at_ms: NOW, text: "실제 모드", data: { mode: "live" } });
     expect(db.list({ kinds: ["device"] })[0]).toMatchObject({ at_ms: Date.UTC(2026, 10, 7, 12), subject: "dishwasher_1", data: { attr: "running", from: null, to: true } });
     expect(JSON.stringify(db.list({}))).not.toMatch(/jpeg|base64/);
+  });
+
+  it("관찰 모드 기록은 look 줄로 대상·글과 까닭·도구·모델 까닭·결과·계획·단계 id를 적고, 하루 요약에는 넣지 않는다", () => {
+    const { db, subs } = wired();
+    const result = { ok: true as const, frame_id: "e3.c1", captured_at_ms: 6, crop: [120, 90, 240, 180] as [number, number, number, number], frames: 3, found: [], summary: null, vlm: "ok" as const };
+    subs.brain!({
+      type: "look", at_ms: NOW, trigger: "stalled", target: "sink_1", tool: "look_closer", reason: "싱크대 안을 보려고", text: "싱크대 쪽을 가까이 봄 · 컵 보임", result,
+      plan_id: "plan:pam-1", step_id: "plan:pam-1:4",
+    });
+    subs.brain!({ type: "look", at_ms: NOW + 1, trigger: "unknown_fact", target: null, tool: "wait", reason: "다음 사진을 보려고", text: "기다림", result: null });
+    const rows = db.list({ kinds: ["look"] });
+    expect(HISTORY_KINDS).toContain("look");
+    expect(rows[0]).toMatchObject({
+      kind: "look", subject: "sink_1", text: "싱크대 쪽을 가까이 봄 · 컵 보임",
+      data: { trigger: "stalled", target: "sink_1", tool: "look_closer", reason: "싱크대 안을 보려고", result: { ok: true, frames: 3 }, plan_id: "plan:pam-1", step_id: "plan:pam-1:4" },
+    });
+    expect(rows[1]).toMatchObject({ subject: null, text: "기다림", data: { trigger: "unknown_fact", target: null, tool: "wait", result: null, plan_id: null, step_id: null } });
+    const day = daySummary(db, rows[0]!.day);
+    expect(day.observation_text + day.action_summary).not.toContain("가까이");
   });
 
   it("VLM 분석 없음은 이유 글로, 감지 오류는 yolo 줄로 적는다", () => {
