@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { PlannedCommand } from "../src/contract/phone.js";
 import type { PlanView } from "../src/contract/plan.js";
 import type { WorldView } from "../src/contract/world.js";
-import { SAY_DONE_MS, sayLine } from "../src/act/say.js";
+import { SAY_DONE_MS, SAY_LOOK_MS, sayLine } from "../src/act/say.js";
 import { STEP_LABEL } from "../src/plan/labels.js";
 
 const T = Date.parse("2026-11-09T00:00:00Z");
@@ -46,5 +46,16 @@ describe("말풍선 카드 글", () => {
     expect(say({ plan: plan("done", "컵 치우기", T - 5000) })).toBe("컵을 다 치웠어요.");
     expect(say({ plan: plan("cancelled", "컵 치우기", T - 5000) })).toBe("컵 치우기를 그만뒀어요.");
     expect(say({ plan: plan("done", "컵 치우기", T - SAY_DONE_MS - 1) })).toBe("지켜보고 있어요.");
+  });
+  it("가까이 보는 중이면 6초 동안 계획이 있든 없든 「싱크대를 가까이 보고 있어요.」, 승인 질문 중에도 같다. 6초가 지나면 앞 글로 돌아간다", () => {
+    const look = { place: "싱크대", atMs: T };
+    expect(SAY_LOOK_MS).toBe(6000);
+    expect(say({ look })).toBe("싱크대를 가까이 보고 있어요.");
+    expect(say({ plan: plan("running"), command: cmd("plan:d1:4"), look, nowMs: T + SAY_LOOK_MS })).toBe("싱크대를 가까이 보고 있어요.");
+    expect(say({ plan: plan("planned"), command: cmd("plan:d1:approve", [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }]), look })).toBe("싱크대를 가까이 보고 있어요.");
+    expect(say({ look: { place: "컵", atMs: T } })).toBe("컵을 가까이 보고 있어요.");
+    expect(say({ plan: plan("running"), command: cmd("plan:d1:4"), look, nowMs: T + SAY_LOOK_MS + 1 })).toBe("컵을 싱크대에 넣으라고 했어요.");
+    expect(say({ world: world("식탁"), look, nowMs: T + SAY_LOOK_MS + 1 })).toBe("식탁을 보고 있어요.");
+    expect(say({ look: null })).toBe("지켜보고 있어요.");
   });
 });

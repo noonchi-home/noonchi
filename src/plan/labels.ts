@@ -25,6 +25,7 @@ export const GOAL = { clearCup: "컵 치우기", askUser: "사용자에게 물�
 export const SAY_TEXT = {
   watching: "지켜보고 있어요.",
   looking: (surface: string) => `${josa(surface, "을/를")} 보고 있어요.`,
+  closer: (place: string) => `${josa(place, "을/를")} 가까이 보고 있어요.`,
   decided: (goal: string, surface: string | null = null) =>
     goal === GOAL.clearCup && surface ? `${surface} 컵을 치우기로 했어요.` : DECIDED[goal] ?? `${josa(goal, "을/를")} 하기로 했어요.`,
   told: { goTable: "식탁으로 가라고 했어요.", pickCup: "컵을 들라고 했어요.", goSink: "싱크대로 가라고 했어요.", placeCup: "컵을 싱크대에 넣으라고 했어요." },
