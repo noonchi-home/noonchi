@@ -74,18 +74,24 @@ export class AnthropicProvider implements LlmProvider {
       system: opts.system,
       messages: s.messages,
       tools,
-      // 생각이 늘 켜진 모델은 도구 지정(tool)을 받지 않는다. forceTool이면 auto에 병렬 호출만 끄고, 부를 도구는 넘긴 목록으로 좁힌다
-      tool_choice: !opts.allowTools ? { type: "none" } : opts.forceTool ? { type: "auto", disable_parallel_tool_use: true } : { type: "auto" },
+      // 생각이 늘 켜진 모델은 도구 지정(tool·any)을 받지 않는다. forceTool·requireTool이면 auto에 병렬 호출만 끄고, 부를 도구는 넘긴 목록으로 좁힌다
+      tool_choice: !opts.allowTools ? { type: "none" } : opts.forceTool || opts.requireTool ? { type: "auto", disable_parallel_tool_use: true } : { type: "auto" },
       output_config: { effort: this.effort },
       cache_control: { type: "ephemeral" },
       ...(this.fallbacks ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),
     }, opts.signal ? { signal: opts.signal } : undefined);
     s.messages.push({ role: "assistant", content: res.content });
-    if (res.stop_reason === "refusal") return { text: "죄송해요, 이 요청은 처리할 수 없어요.", calls: [] };
+    // input_tokens는 캐시 밖 입력만이라 캐시에서 읽은 것·새로 쓴 것을 더한다
+    const cached = res.usage?.cache_read_input_tokens ?? 0;
+    const usage = res.usage
+      ? { model: res.model || this.model, input: res.usage.input_tokens + cached + (res.usage.cache_creation_input_tokens ?? 0), cached, output: res.usage.output_tokens }
+      : undefined;
+    const used = usage ? { usage } : {};
+    if (res.stop_reason === "refusal") return { text: "죄송해요, 이 요청은 처리할 수 없어요.", calls: [], ...used };
     const calls = res.content.flatMap((b) => (b.type === "tool_use" ? [{ id: b.id, name: b.name, args: b.input }] : []));
     const text = res.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("\n");
-    if (res.stop_reason === "max_tokens" && calls.length === 0) return { text: text || "답이 너무 길어 중간에 끊겼어요.", calls: [] };
-    return { text, calls };
+    if (res.stop_reason === "max_tokens" && calls.length === 0) return { text: text || "답이 너무 길어 중간에 끊겼어요.", calls: [], ...used };
+    return { text, calls, ...used };
   }
 
   addToolResults(state: unknown, results: ToolCallResult[]): void {

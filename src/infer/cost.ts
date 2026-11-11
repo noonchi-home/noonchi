@@ -6,6 +6,11 @@ const PRICES: Record<string, { input: number; cached: number; output: number }> 
   "gpt-5.4-nano-2026-03-17": { input: 0.2, cached: 0.02, output: 1.25 },
 };
 
+/** 가격표에 있는 모델인가. 없으면 estimateCostUsd는 0이지만 비용은 모름이다(관찰 모드 비용 null). */
+export function hasPrice(model: string): boolean {
+  return Object.hasOwn(PRICES, model);
+}
+
 export function estimateCostUsd(model: string, u: { prompt: number; completion: number; cached: number }): number {
   const p = PRICES[model];
   return p ? ((u.prompt - u.cached) * p.input + u.cached * p.cached + u.completion * p.output) / 1_000_000 : 0;

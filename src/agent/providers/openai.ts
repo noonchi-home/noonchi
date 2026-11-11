@@ -59,18 +59,24 @@ export class OpenAIProvider implements LlmProvider {
   async step(state: unknown, opts: StepOptions): Promise<StepResult> {
     const s = state as State;
     if (!this.#apiKey) throw new Error("OPENAI_API_KEY가 없습니다");
+    // 도구 하나만(forceTool 그 함수, requireTool 넘긴 것 중 하나): 응답 하나에 호출 하나
+    const one = opts.allowTools && (opts.forceTool !== undefined || opts.requireTool === true);
     const res = await this.client.responses.create({
       model: this.model,
       instructions: opts.system,
       input: s.items,
       tools: opts.tools.map((t) => ({ type: "function" as const, name: t.name, description: t.description, parameters: toolJsonSchema(t), strict: false })),
-      tool_choice: !opts.allowTools ? "none" : opts.forceTool ? { type: "function" as const, name: opts.forceTool } : "auto",
-      ...(opts.allowTools && opts.forceTool ? { parallel_tool_calls: false } : {}),
+      tool_choice: !opts.allowTools ? "none" : opts.forceTool ? { type: "function" as const, name: opts.forceTool } : opts.requireTool ? "required" : "auto",
+      ...(one ? { parallel_tool_calls: false } : {}),
       ...(opts.maxOutputTokens ? { max_output_tokens: opts.maxOutputTokens } : {}),
     }, opts.signal ? { signal: opts.signal } : undefined);
     s.items.push(...(res.output as unknown as Item[]));
     const calls = res.output.flatMap((o) => (o.type === "function_call" ? [{ id: o.call_id, name: o.name, args: parseArgs(o.arguments) }] : []));
-    return { text: res.output_text ?? "", calls };
+    const u = res.usage;
+    return {
+      text: res.output_text ?? "", calls,
+      ...(u ? { usage: { model: res.model || this.model, input: u.input_tokens, cached: u.input_tokens_details?.cached_tokens ?? 0, output: u.output_tokens } } : {}),
+    };
   }
 
   addToolResults(state: unknown, results: ToolCallResult[]): void {

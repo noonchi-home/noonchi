@@ -42,11 +42,24 @@ export interface StepOptions {
   maxOutputTokens?: number;
   /** 이 도구 하나를 바로 부르게 하고 응답 하나에 호출 하나만 받는다(계획 모드 submit_plan). allowTools가 false면 무시한다. */
   forceTool?: string;
+  /** 넘긴 도구 중 하나를 꼭 부르게 하고 응답 하나에 호출 하나만 받는다(관찰 모드). forceTool이 먼저이고, allowTools가 false면 무시한다.
+   *  Anthropic은 생각이 늘 켜져 강제하지 못해 병렬 호출만 끈다. */
+  requireTool?: boolean;
+}
+
+/** 응답 하나의 토큰 사용량. input은 캐시에서 읽은 것(cached)을 포함한 전체 입력이다. */
+export interface StepUsage {
+  model: string;
+  input: number;
+  cached: number;
+  output: number;
 }
 
 export interface StepResult {
   text: string;
   calls: ToolCall[];
+  /** 공급자 응답이 사용량을 알려 줄 때만 있다. */
+  usage?: StepUsage;
 }
 
 /** LLM 공급자: 대화 상태(state)는 공급자 형식으로 공급자가 관리한다. */

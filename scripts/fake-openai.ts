@@ -2,6 +2,7 @@
 //   npx tsx scripts/fake-openai.ts --port 8500 [--host 0.0.0.0]    (0이면 빈 포트, 첫 줄 "listening <포트>")
 // 답: 장면 스키마(scene_observation) → 감지 번호마다 contents_unknown, PAM 판단(task inference module) → 대기(-1),
 //     PAM 반성(procedural memory) → 받은 Current memory 그대로, 에이전트(POST /v1/responses) → respond가 정한 도구 호출·글, 없으면 글 답 「가짜 답」.
+//     respond는 Promise도 돌려줄 수 있다(시험에서 답을 붙잡아 두기).
 import { createServer } from "node:http";
 import { pathToFileURL } from "node:url";
 import { listenRetry } from "../src/server/net.js";
@@ -31,7 +32,7 @@ export function defaultReply(body: any): string {
   return JSON.stringify({ ok: true });
 }
 
-export async function startFakeOpenAI(o: { port?: number; host?: string; reply?: (body: any) => string | null; respond?: (body: any) => FakeResponse | null } = {}): Promise<FakeServer> {
+export async function startFakeOpenAI(o: { port?: number; host?: string; reply?: (body: any) => string | null; respond?: (body: any) => FakeResponse | null | Promise<FakeResponse | null> } = {}): Promise<FakeServer> {
   const requests: FakeRequest[] = [];
   const server = createServer(async (req, res) => {
     const send = (status: number, v: unknown) => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(v)); };
@@ -52,7 +53,7 @@ export async function startFakeOpenAI(o: { port?: number; host?: string; reply?:
     }
     if (req.method === "POST" && /\/responses$/.test(path)) {
       const n = requests.length;
-      const r = o.respond?.(body) ?? { text: "가짜 답" };
+      const r = (await o.respond?.(body)) ?? { text: "가짜 답" };
       const text = r.text ?? "";
       const output = [
         ...(r.calls ?? []).map((c, i) => ({ type: "function_call", id: `fc-${n}-${i}`, call_id: `call-${n}-${i}`, name: c.name, arguments: JSON.stringify(c.args), status: "completed" })),

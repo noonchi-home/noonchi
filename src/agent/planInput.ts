@@ -47,7 +47,8 @@ const xz = (p: readonly number[] | null | undefined) => (p ? `[${p.map((n) => Ma
 const factsOf = (f: Record<string, { value: string } | undefined>) =>
   Object.entries(f).flatMap(([k, v]) => (v ? [`${k}=${v.value}`] : [])).join(" ") || "사실 없음";
 
-function worldLines(w: WorldView): string[] {
+/** World State 줄(물건·사람·가전 설비). 계획 모드와 관찰 모드(src/agent/observer.ts)가 같은 글을 쓴다. */
+export function worldLines(w: WorldView): string[] {
   const out = w.objects.map((o) =>
     `- 물건 ${o.id} ${CLASSES[o.cls as ClassKey]?.label ?? o.cls} · ${o.status} · 면 ${o.surface ?? "없음"} · 방 ${o.room ?? "모름"} · 자리 ${xz(o.position && [o.position[0], o.position[2]])} · ${factsOf(o.facts)}`);
   const p = w.person;

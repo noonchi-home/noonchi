@@ -57,6 +57,17 @@ describe("가짜 OpenAI 호환 서버", () => {
     expect(second).toMatchObject({ output_text: "켰어요", output: [{ type: "message", content: [{ type: "output_text", text: "켰어요" }] }] });
   });
 
+  it("에이전트 답(respond)이 Promise여도 기다렸다가 답한다", async () => {
+    let release!: () => void;
+    const held = new Promise<void>((ok) => { release = ok; });
+    f = await startFakeOpenAI({ respond: async () => { await held; return { calls: [{ name: "wait", args: { reason: "다음 사진을 보려고" } }] }; } });
+    const pending = post("/v1/responses", { model: "m", input: [{ role: "user", content: "보기" }] });
+    await new Promise((ok) => setTimeout(ok, 30));
+    release();
+    const r = await pending;
+    expect(r.output).toEqual([expect.objectContaining({ type: "function_call", name: "wait", arguments: '{"reason":"다음 사진을 보려고"}' })]);
+  });
+
   it("명령으로 띄우면 첫 줄에 포트를 찍고 그 포트에서 답한다", async () => {
     const child = spawn(process.execPath, ["--import", "tsx", "scripts/fake-openai.ts", "--port", "0"], { cwd: ROOT, stdio: ["ignore", "pipe", "inherit"] });
     try {
