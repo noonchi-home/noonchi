@@ -1,16 +1,18 @@
-// 집 하나의 실행 묶음: twin 데이터 → 허브(신호 출처로 감쌈) → 정책·에이전트 → 배치·기준점 → 관찰 흐름·World State·판단·실행 추적·계획 → 앱 → 폰 서버.
+// 집 하나의 실행 묶음: twin 데이터 → 허브(신호 출처로 감쌈) → 정책·에이전트 → 배치·기준점 → 관찰 흐름·World State·판단·실행 추적·보기 담당(관찰 모드)·계획 → 앱 → 폰 서버.
 // 승인 기억(runtime/homes/<집>/approvals.json, src/agent/approval.ts)은 집마다 하나이고 정책(가전 명령)과 실행 추적(PAM 계획)이 같이 쓴다.
 // 집을 바꾸면 이 묶음을 통째로 닫고 새로 만든다(src/server/start.ts). 앱은 직접 듣지 않고, 껍데기 서버가 요청을 넘긴다(shell.ts).
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { checkDecision, checkPlan, loadActConfig } from "../act/check.js";
+import { Looker } from "../act/look.js";
 import { sayLine } from "../act/say.js";
-import { TASK_NAMES, taskOf } from "../act/tasks.js";
+import { TASK_NAMES, lookTargets, taskOf } from "../act/tasks.js";
 import { deviceRunner } from "../act/devices.js";
 import { ExecutionTracker } from "../act/track.js";
 import { Agent } from "../agent/agent.js";
 import { ApprovalStore, approvalsPath } from "../agent/approval.js";
+import { Observer } from "../agent/observer.js";
 import { Planner } from "../agent/planner.js";
 import type { PlaceInfo } from "../agent/planTools.js";
 import { Policy } from "../agent/policy.js";
@@ -156,6 +158,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
   let unsubWorld = () => {};
   let decider: Decider | null = null;
   let tracker: ExecutionTracker | null = null;
+  let looker: Looker | null = null;
   let decideTimer: NodeJS.Timeout | undefined;
   let app: TwinHomeApp | undefined;
   let phone: PhoneServer | undefined;
@@ -170,6 +173,8 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     const agent = new Agent({ hub: signals, policy, rooms: twin.rooms, provider, layout });
     // 에이전트 계획 모드(src/agent/planner.ts): PAM이 고른 행동 하나를 단계 계획으로. 말 요청 에이전트와 같은 공급자
     const planner = new Planner({ provider });
+    // 에이전트 관찰 모드(src/agent/observer.ts): 잘 못 볼 때 가까이 보기·사람 부탁·기다리기 중 하나를 고른다. 말 요청·계획 모드와 같은 공급자
+    const observer = new Observer({ provider });
     const twinDir = home.outDir;
     const hubKind = started.kind;
     const phoneOn = Boolean(env.PHONE_PORT?.trim());
@@ -227,11 +232,13 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     });
     // 관찰 흐름(BRAIN=1): 폰 엔진 프레임마다 YOLO·VLM이 분석하고 World State가 합친다(src/observe/pipeline.ts)
     const brainWanted = /^(1|true|on)$/i.test(env.BRAIN?.trim() ?? "");
+    // 트윈 윗면(식탁·싱크대): World State가 물건을 놓고, 가까이 보기가 자리의 윗면 가운데를 본다
+    const surfaces = surfaceSource(layout?.editor);
     if (brainWanted && !phoneOn) log("[경고] BRAIN=1은 PHONE_PORT가 있어야 합니다(폰 카메라가 입력). 관찰 흐름을 끕니다.");
     // 카메라로 본 가전 상태는 허브로 넘긴다(src/hub/signals.ts observe): 실제 출처가 없으면 기기 상태가 되고, 실제 상태와 다르면 처음 한 번 로그에 남긴다
     const world = brainWanted && phoneOn
       ? new WorldState({
-        surfaces: surfaceSource(layout?.editor), floorAt: floorLookup(plan.rooms), roomAt: roomNamedAt(floorPlan, twin.rooms), devices: () => signals.list(),
+        surfaces, floorAt: floorLookup(plan.rooms), roomAt: roomNamedAt(floorPlan, twin.rooms), devices: () => signals.list(),
         locate: (id) => { const c = layout?.editor.center(id); return c ? [c.position[0], c.position[2]] : null; },
         place: (id) => layout?.editor.center(id)?.position ?? null,
         see: (id, seen, at) => {
@@ -249,9 +256,11 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     let lastDecision: BrainLog | null = null;
     let lastBoxes: BrainLog | null = null;
     let said: string | null = null;
-    // 끝난 지 20초는 계획 updatedAt(PlanHub, Date.now)과 같은 시계로 잰다
+    // 마지막으로 가까이 보기를 시작한 자리와 시각(말풍선 카드 6초)
+    let lookSay: { place: string; atMs: number } | null = null;
+    // 끝난 지 20초·가까이 보기 6초는 계획 updatedAt(PlanHub, Date.now)과 같은 시계로 잰다
     speak = () => {
-      const text = sayLine({ plan: plans.current(), command, world: world?.view(nowMs()) ?? null, nowMs: Date.now() });
+      const text = sayLine({ plan: plans.current(), command, world: world?.view(nowMs()) ?? null, nowMs: Date.now(), look: lookSay });
       if (text === said) return;
       said = text;
       appRef.current?.broadcast({ type: "say", text });
@@ -304,6 +313,8 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         check: (d, p) => checkPlan({
           decision: d, tasks: [...TASK_NAMES], plan: p, world: world.view(now()), nowMs: now(), staleMs: act.staleMs, mode: ctx.mode?.() ?? "test", deviceSteps: deviceSteps(p),
         }),
+        // 멈춘 집기·놓기 단계는 보기 담당(관찰 모드 A)에 알린다
+        stalled: (s) => looker?.stalled(s) ?? false,
       });
       const tracking = tracker;
       pipeline = await createPipeline({
@@ -326,10 +337,26 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         },
       });
       const observed = pipeline;
+      // 보기 담당(src/act/look.ts): 멈춘 단계(A)와 판단 전 보기(B)에 관찰 모드를 한 번에 하나 부르고 고른 도구를 실행한다
+      looker = new Looker({
+        observer, closer: (spot, signal) => observed.closer(spot, signal), frame: () => observed.latest(), world: () => world.view(now()),
+        askPerson: (planId, stepId, text) => tracking.askCloser(planId, stepId, text), emit, targets: lookTargets, clock: ctx.brain?.clock,
+        // 자리(싱크대·식탁)는 윗면 가운데를 본다: 배치 가운데는 걸은 자세에서 사진 밖일 수 있다
+        aim: (spot) => {
+          const top = surfaces().find((x) => x.id === spot.id);
+          return top ? [top.center[0], top.top, top.center[1]] : spot.position;
+        },
+        onLook: (spot) => {
+          lookSay = { place: spot.label, atMs: Date.now() };
+          speak();
+        },
+      });
+      const looking = looker;
       decideTimer = setInterval(() => {
         observed.tick(); // 오래 이어진 가전 상태(냉장고 문 1분)
         decide.tick();
         tracking.tick();
+        looking.tick();
         speak();
       }, 250);
       decideTimer.unref?.();
@@ -347,7 +374,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     let phoneUrls: string[] = [];
     app = createApp({
       hub: signals, policy, agent, rooms: twin.rooms, twinDir, viewerDir: home.viewerDir, libraryDir: home.libraryDir, hubKind, log, eye: feed,
-      brain: observe ?? undefined, world: worldNow ?? undefined,
+      brain: observe ? { status: () => ({ ...observe.status(), look: looker?.status() ?? null }) } : undefined, world: worldNow ?? undefined,
       home: { id: home.id, name: home.name }, homes: listHomes(twin.dir), layout: layout?.editor, phoneUrls: () => phoneUrls, mode: ctx.mode, webDir: ctx.webDir, allowOrigin: ctx.allowOrigin, planToken: ctx.planToken, ready: ctx.ready,
       start: startStore && { get: () => startStore.get(), save: (raw) => startStore.save(raw), preview: (raw) => startStore.preview(raw), clear: () => startStore.clear() },
       phoneSync: () => phoneRef.current?.syncState() ?? null,
@@ -444,7 +471,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         closed = true;
         // 한 단계가 실패해도 나머지(특히 폰 포트·허브)는 닫는다. 새 집이 같은 포트를 다시 잡아야 한다
         const steps: [string, () => unknown][] = [
-          ["초점", unsubFocus], ["관찰 흐름", () => { clearInterval(decideTimer); decider?.stop(); tracker?.stop(); planner.abort(); unsubWorld(); return pipeline?.close(); }], ["눈 화면", () => feed?.close()],
+          ["초점", unsubFocus], ["관찰 흐름", () => { clearInterval(decideTimer); decider?.stop(); tracker?.stop(); looker?.stop(); planner.abort(); unsubWorld(); return pipeline?.close(); }], ["눈 화면", () => feed?.close()],
           ["폰 서버", () => phoneNow?.close()], ["앱", () => appNow.close()], ["배치", () => layout?.editor.close()], ["ThinQ", () => link?.stop()],
           ["기록", unsubHistory], ["허브", () => signals.stop()],
         ];
@@ -463,6 +490,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     clearInterval(decideTimer);
     decider?.stop();
     tracker?.stop();
+    looker?.stop();
     unsubWorld();
     await pipeline?.close().catch(() => {});
     unsubHistory();
