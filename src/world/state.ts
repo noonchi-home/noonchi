@@ -542,7 +542,7 @@ export class WorldState {
     if (prev && atMs < prev.at_ms) return false;
     if (prev && prev.value === value) {
       const since = now && atMs - prev.at_ms > FACT_FRESH_MS ? atMs : prev.since_ms;
-      facts[facet] = { value, at_ms: atMs, since_ms: since, certainty: "confirmed" };
+      facts[facet] = { value, at_ms: atMs, since_ms: since, certainty: "confirmed", ...(prev.closer_ms !== undefined ? { closer_ms: prev.closer_ms } : {}) };
       return false;
     }
     facts[facet] = { value, at_ms: atMs, since_ms: atMs, certainty: "inferred" };
@@ -552,8 +552,14 @@ export class WorldState {
   /** VLM 답 하나를 넣는다(전체 사진·잘라 본 사진이 같이 쓰는 규칙). 원본 프레임·대상·면마다 한 번만 센다:
    *  - 그 열쇠에 잘라 본 답이 이미 들어갔으면 무엇이든 버린다(잘라 본 답이 앞선다). 전체 사진 답이 들어갔으면 전체 사진 답은 버리고 잘라 본 답은 받는다.
    *  - 같은 원본 프레임의 다른 답(같은 답 안의 같은 면 포함)은 그 프레임 사실의 값만 바꾸고 확신(confirmed)으로 올리지 않는다.
-   *  turn: 이 답(한 번의 applyScene·applyCloserScene)에서 이미 넣은 열쇠. 값이 새로 생기거나 바뀌면 true. */
+   *  turn: 이 답(한 번의 applyScene·applyCloserScene)에서 이미 넣은 열쇠. 값이 새로 생기거나 바뀌면 true. 잘라 본 답이 값을 바꿨으면 closer_ms(촬영 시각)를 남긴다. */
   private answer(frameId: string, id: string, facts: Facts, facet: Facet, value: string, atMs: number, crop: boolean, now: boolean, turn: Set<string>): boolean {
+    const changed = this.putAnswer(frameId, id, facts, facet, value, atMs, crop, now, turn);
+    if (changed && crop) facts[facet] = { ...facts[facet]!, closer_ms: atMs };
+    return changed;
+  }
+
+  private putAnswer(frameId: string, id: string, facts: Facts, facet: Facet, value: string, atMs: number, crop: boolean, now: boolean, turn: Set<string>): boolean {
     const key = `${frameId}|${id}|${facet}`;
     const before = this.answers.get(key);
     const again = turn.has(key);

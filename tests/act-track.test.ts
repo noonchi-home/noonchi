@@ -671,6 +671,59 @@ describe("실행 추적: 멈춘 집기·놓기 단계(관찰 모드 A)와 사람
   });
 });
 
+describe("실행 추적: 판단 뒤 가까이 본 사실(B와 PAM)", () => {
+  /** 컵 안 사실. closer: 가까이 보기가 그 값을 넣은 촬영 시각(World State closer_ms). */
+  const contents = (value: string, closer?: number): WorldObject["facts"] => ({
+    contents: { value, at_ms: 9_000, since_ms: 9_000, certainty: "inferred", ...(closer !== undefined ? { closer_ms: closer } : {}) },
+  });
+  const withFacts = (facts: WorldObject["facts"]) => world([{ ...cup("present"), facts }]);
+  /** 판단 때 본 컵 사실(판단 기록의 World State 요약). */
+  const seen = (facts: Record<string, string>): DecisionRecord => ({
+    ...decision,
+    world: { ...decision.world, objects: [{ id: "cup_1", cls: "cup", status: "present", surface: "t", surface_label: "식탁", error_m: 0.1, facts: Object.fromEntries(Object.entries(facts).map(([k, v]) => [k, { value: v, certainty: "inferred" as const }])) }] },
+  });
+
+  it("판단 때 본 값과 다르게 가까이 보기가 행동 대상 종류 물건의 볼 면(컵 안)을 바꿨으면 계획하지 않고 「가까이 본 뒤 다시 판단」만 남긴다", async () => {
+    const changed = withFacts(contents("has_contents", 9_500));
+    const a = setup({ w: () => changed });
+    await a.decide(seen({ contents: "contents_unknown" }));
+    expect(a.exec().map((e) => [e.plan_id, e.state, e.text])).toEqual([["plan:pam-1", "decided", EXEC_TEXT.closerNewer]]);
+    expect(a.phone).toEqual([]);
+    expect(EXEC_TEXT.closerNewer).toBe("가까이 본 뒤 다시 판단");
+
+    // 판단 때 본 값과 같으면 그대로 계획한다
+    const b = setup({ w: () => changed });
+    await b.decide(seen({ contents: "has_contents" }));
+    expect(b.commands()[0]).toMatchObject({ step: "plan:pam-1:1" });
+    // 전체 사진이 바꾼 값(closer_ms 없음)은 막지 않는다
+    const c = setup({ w: () => withFacts(contents("has_contents")) });
+    await c.decide(seen({ contents: "contents_unknown" }));
+    expect(c.commands()[0]).toMatchObject({ step: "plan:pam-1:1" });
+    // 판단 때 없던 컵(가까이 보기로 새로 생김)도 다시 판단한다
+    const d = setup({ w: () => changed });
+    await d.decide(decision);
+    expect(d.exec().map((e) => e.text)).toEqual([EXEC_TEXT.closerNewer]);
+  });
+
+  it("계획을 만드는 사이 가까이 보기가 컵 안을 바꾸면 그 계획은 실행하지 않는다", async () => {
+    let w = withFacts({});
+    let release!: () => void;
+    const held = new Promise<void>((ok) => { release = ok; });
+    const p = testPlanner(llm);
+    const a = setup({ w: () => w, planner: async (d, signal) => {
+      const ctx = planContext({ decision: d, world: w, floor: smallFloor() });
+      await held;
+      return p.plan(ctx, signal);
+    } });
+    a.t.onDecision(seen({}));
+    w = withFacts(contents("empty", 9_500));
+    release();
+    await a.t.idle();
+    expect(a.exec().map((e) => [e.state, e.text])).toEqual([["decided", EXEC_TEXT.decided], ["failed", EXEC_TEXT.closerNewer]]);
+    expect(a.phone).toEqual([]);
+  });
+});
+
 describe("실행 추적: 승인(처음 하는 PAM 계획)", () => {
   const APPROVE = [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }];
 

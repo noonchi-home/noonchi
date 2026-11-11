@@ -233,6 +233,23 @@ describe("가까이 본 사진의 VLM 답(applyCloserScene)", () => {
     expect(w.applyScene("e4", 4000, { scene: "k", observations: [], summary: "s1" }, new Map()).filter((c) => c.kind === "vlm")).toEqual([]);
   });
 
+  it("가까이 본 답이 면 값을 새로 넣거나 바꾸면 그 원본 사진의 촬영 시각(closer_ms)을 남긴다. 같은 값이 이어지는 동안 남고 다른 값이 들어오면 없어진다. 같은 값을 다시 본 것은 남기지 않는다", () => {
+    const w = seeded();
+    const ids = new Map([["d1", "cup_1"]]);
+    const said = (state: SceneState): SceneObservation => ({ scene: "k", observations: [{ object_id: "d1", state }], summary: "" });
+    const contents = (nowMs: number) => w.view(nowMs).objects[0]!.facts.contents;
+    w.applyCloserScene("e3", 3000, said("has_contents"), ids);
+    expect(contents(3000)).toEqual({ value: "has_contents", at_ms: 3000, since_ms: 3000, certainty: "inferred", closer_ms: 3000 });
+    w.applyScene("e4", 4000, said("has_contents"), full(w, "e4", 4000, [cupIn, person]).ids);
+    expect(contents(4000)).toEqual({ value: "has_contents", at_ms: 4000, since_ms: 3000, certainty: "confirmed", closer_ms: 3000 });
+    w.applyScene("e5", 5000, said("empty"), full(w, "e5", 5000, [cupIn, person]).ids);
+    expect(contents(5000)).toEqual({ value: "empty", at_ms: 5000, since_ms: 5000, certainty: "inferred" });
+    w.applyCloserScene("e6", 6000, said("empty"), ids);
+    expect(contents(6000)).toEqual({ value: "empty", at_ms: 6000, since_ms: 5000, certainty: "confirmed" });
+    w.applyCloserScene("e7", 7000, said("has_contents"), ids);
+    expect(contents(7000)).toMatchObject({ value: "has_contents", closer_ms: 7000 });
+  });
+
   it("같은 원본 프레임에서 나온 답은 한 번만 넣고, 같은 촬영의 같은 값으로 확신을 올리지 않는다", () => {
     const w = seeded();
     const ids = new Map([["d1", "cup_1"]]);

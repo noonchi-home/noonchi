@@ -20,6 +20,8 @@
 // 알림마다 그 단계 세대와 신호가 있고, 단계가 끝나면(다음 단계·완료·실패·그만·새 계획·멈춤) 신호를 끊는다. 지난 세대의 settle은 아무것도 하지 않는다.
 // 같은 물건 따라가기에서 가까이 봐서 지키는 중이거나 옮김 표시(World State followed_by)가 있는 물건은 「아직 있음」으로 세지 않는다.
 // 사람 부탁(askCloser)은 지금 그 계획의 그 사람 단계일 때만 같은 계획·단계 id로 명령 글만 바꿔 다시 보낸다(소리로 읽음).
+// 판단 뒤 가까이 본 사실(관찰 모드 B는 PAM을 막지 않는다): 그 행동 대상 종류 물건의 볼 면(TaskSpec.look) 값을 가까이 보기가 넣었고(World State closer_ms)
+// 판단 때 본 값(판단 기록의 World State 요약)과 다르면, 판단을 받을 때와 계획을 받을 때 실행하지 않고 「가까이 본 뒤 다시 판단」만 남긴다. 다음 판단이 새 사실로 다시 고른다.
 import type { BrainLog, ExecState } from "../contract/events.js";
 import type { PhoneStepKind, PlannedCommand, PlannedCommandMessage } from "../contract/phone.js";
 import type { PlanView, XZ } from "../contract/plan.js";
@@ -38,7 +40,7 @@ import { HUMAN_KINDS, objectNames, type AgentPlan, type AgentStep, type PlanResu
 import type { ToolResult } from "../agent/tools.js";
 import type { CheckResult } from "./check.js";
 import { AGAIN, APPROVE, STEP_DONE, STOP, type ActionChoice } from "./prompts.js";
-import { matchChoice, planIdOf } from "./tasks.js";
+import { matchChoice, planIdOf, taskOf } from "./tasks.js";
 
 /** 기기 단계 실행(src/server/home.ts: 기기 도구 + 정책). run이 승인 토큰을 내면 실제 폰에 묻고 confirm·cancel로 답한다.
  *  결과의 unverified(ThinQ가 받았지만 다시 읽은 값이 다름)·state 「모름」(신호 없음)은 적용을 확인하지 못한 것이다. */
@@ -175,6 +177,7 @@ export class ExecutionTracker {
     if (open?.decision.action === d.action || this.planning?.decision.action === d.action) return this.note(d, EXEC_TEXT.same);
     // 행동 중 기다리기·기기 단계에는 다른 판단으로 바꾸지 않는다(그동안 판단도 멈춘다, waiting)
     if (open && this.waiting()) return this.note(d, EXEC_TEXT.busy);
+    if (this.closerNewer(d)) return this.note(d, EXEC_TEXT.closerNewer);
     const pre = this.o.precheck?.(d) ?? { ok: true };
     if (!pre.ok) {
       this.emit(planIdOf(d.id), "decided");
@@ -313,6 +316,19 @@ export class ExecutionTracker {
     return !this.stopped && (kind === "wait" || kind === "device");
   }
 
+  /** 판단 뒤에 가까이 보기가 그 행동 대상 종류 물건의 볼 면을 바꿨는가: 사라지지 않은 그 종류 물건의 볼 면 값을 가까이 보기가 넣었고(closer_ms)
+   *  판단 때 본 값(판단 기록 World State 요약, 그때 없던 물건이면 없음)과 다르다. */
+  private closerNewer(d: DecisionRecord): boolean {
+    const spec = taskOf(d.action);
+    const facets = spec?.look ?? [];
+    if (!spec?.target || !facets.length) return false;
+    const seen = new Map(d.world.objects.map((o) => [o.id, o.facts]));
+    return this.o.world().objects.some((o) => o.cls === spec.target && o.status !== "gone" && facets.some((f) => {
+      const now = o.facts[f];
+      return now?.closer_ms !== undefined && seen.get(o.id)?.[f]?.value !== now.value;
+    }));
+  }
+
   /** 만들던 계획을 끊고 그 판단 줄에 까닭을 남긴다. */
   private dropPlanning(text: string): void {
     const job = this.planning;
@@ -349,6 +365,7 @@ export class ExecutionTracker {
     if (!r.ok) return this.emit(planIdOf(d.id), "failed", EXEC_TEXT.badPlan);
     // 만드는 사이 진행 중 계획이 기다리기·기기 단계에 들어갔으면 바꾸지 않는다(그 판단은 그 단계 전 관찰이다)
     if (this.waiting() || d.atMs < this.quietFrom) return this.emit(planIdOf(d.id), "failed", EXEC_TEXT.busy);
+    if (this.closerNewer(d)) return this.emit(planIdOf(d.id), "failed", EXEC_TEXT.closerNewer);
     const open = this.open();
     // 새 계획이 있으면 PlanHub.onDecision이 지금 계획을 취소로 닫고 supersedes를 단다
     if (open) this.finish(open, "failed", EXEC_TEXT.superseded, null);

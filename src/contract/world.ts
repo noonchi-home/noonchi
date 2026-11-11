@@ -6,8 +6,10 @@ import type { DeviceStateKey, Facet, FixtureClass, ObjClass } from "../world/voc
 /** 낱말 표(src/world/vocab.ts)의 물건 종류·가전 설비 종류·사실 면·가전 상태 키. */
 export type { DeviceStateKey, Facet, FixtureClass, ObjClass };
 
-/** VLM·관절이 본 사실 하나. 같은 값이 연속 두 번이면 confirmed, 아니면 inferred. at_ms는 마지막으로 본 사진의 촬영 시각, since_ms는 그 값이 처음 보인 촬영 시각. */
-export interface WorldFact { value: string; at_ms: number; since_ms: number; certainty: "confirmed" | "inferred" }
+/** VLM·관절이 본 사실 하나. 같은 값이 연속 두 번이면 confirmed, 아니면 inferred. at_ms는 마지막으로 본 사진의 촬영 시각, since_ms는 그 값이 처음 보인 촬영 시각.
+ *  closer_ms: 가까이 보기(src/observe/pipeline.ts closer)의 VLM 답이 이 값을 새로 넣거나 바꿨으면 그 원본 사진의 촬영 시각. 같은 값이 이어지는 동안 남고,
+ *  다른 값이 들어오면 없어진다. 실행 추적이 판단 뒤에 가까이 보기가 바꾼 사실인지 본다(src/act/track.ts). */
+export interface WorldFact { value: string; at_ms: number; since_ms: number; certainty: "confirmed" | "inferred"; closer_ms?: number }
 
 export interface WorldObject {
   /** 종류_번호(cup_1). */
