@@ -42,8 +42,6 @@ export interface LookerOptions {
   emit: (l: BrainLog) => void;
   /** 판단 전에 더 잘 볼 종류와 면(src/act/tasks.ts lookTargets). */
   targets: () => readonly { cls: ObjClass; facets: readonly Facet[] }[];
-  /** 가까이 볼 점: 자리(싱크대·식탁)는 윗면 가운데. 없으면 자리 그대로. */
-  aim?: (spot: LookSpot) => [number, number, number];
   /** 가까이 보기를 시작할 때(대시보드 말풍선 카드). */
   onLook?: (spot: LookSpot) => void;
   clock?: { now(): number };
@@ -115,7 +113,7 @@ export class Looker {
       const facet = want.facets.find((f) => unknown(o.facts[f]?.value));
       if (!facet) continue;
       const spot: LookSpot = { id: o.id, label: OBJECT_NAME[o.cls] ?? o.cls, position: o.position };
-      if (!inView(latest.view, this.aim(spot), LOOK_MARGIN)) continue;
+      if (!inView(latest.view, spot.position, LOOK_MARGIN)) continue;
       this.lastB = now;
       this.start({ trigger: "unknown_fact", key: o.id, goal: `${spot.label} ${o.id}의 ${facet}을 모름 · 판단 전에 더 잘 보기`, stuckMs: null, spots: [spot], tools: ["look_closer", "wait"] });
       return;
@@ -136,10 +134,6 @@ export class Looker {
   /** 도는 일이 끝날 때까지 기다린다(시험용). */
   async idle(): Promise<void> {
     while (this.running.size) await Promise.all([...this.running]);
-  }
-
-  private aim(spot: LookSpot): [number, number, number] {
-    return this.o.aim?.(spot) ?? spot.position;
   }
 
   /** 한 시간 상한 안이면 이번 호출을 세고 true. */
@@ -171,10 +165,7 @@ export class Looker {
 
   private async run(job: Job): Promise<void> {
     const latest = this.o.frame();
-    const spots = job.spots.map((p) => {
-      const position = this.aim(p);
-      return { id: p.id, label: p.label, position, inView: !!latest?.view && inView(latest.view, position, LOOK_MARGIN) };
-    });
+    const spots = job.spots.map((p) => ({ id: p.id, label: p.label, position: p.position, inView: !!latest?.view && inView(latest.view, p.position, LOOK_MARGIN) }));
     const situation: ObserveSituation = {
       trigger: job.trigger, goal: job.goal, stuckMs: job.stuckMs, spots, world: this.o.world(), earlier: this.earlier.get(job.key) ?? [], tools: job.tools, nowMs: this.clock.now(),
     };

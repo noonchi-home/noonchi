@@ -2,7 +2,7 @@
 // 설정에서 저장한 시작 자리(식탁 1.5m 앞, 식탁을 봄)가 곧 카메라 자리라 reset → start fixed면 바로 맞춤(출처 video).
 // 그 뒤 250ms마다 같은 epoch·자세·투영으로 pose와 엔진 프레임 → YOLO(대본: 처음 6장 사람+컵, 그 뒤 컵만)·VLM(가짜 OpenAI 호환 서버, 컵은 식탁 위)
 // → World State → PAM(시험용 PAM 자리: 사람이 없고 컵이 남으면 컵 치우기) → 에이전트 계획 모드(가짜 서버 도구 호출) → 승인한 일이라 바로 첫 명령
-// → 「완료」 네 번으로 네 단계 → 실행 done. 카메라가 움직이지 않으므로 이동 단계도 「완료」로 넘긴다.
+// → 「완료」 네 번으로 네 단계 → 실행 done. 카메라가 움직이지 않으므로 이동 단계도 「완료」로 넘긴다. 면인 명령 대상(식탁·싱크대)은 윗면 가운데로 온다.
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -159,7 +159,18 @@ describe("영상 모드 처음부터 끝까지", () => {
     await until(() => dash.some((m) => m.type === "plan" && m.plan?.id === planId && m.plan.status === "done"), "계획 done");
     expect(spoken().filter((m) => m.id === planId).map((m) => m.text)).toEqual(STEPS);
 
-    // 4 대시보드 눈은 모두 맞춘 눈(estimated 없음), 시작 자리에서 시작 방향
+    // 4 면(식탁·싱크대)인 명령 대상은 배치 상자 가운데가 아니라 윗면 가운데다: 식탁 윗면 0.75m, 싱크대 윗면 0.9m(영상 폰 바닥은 AR y 0).
+    // 싱크대 가운데([5.853, 0.761])까지 수평 거리는 시작 자리(AR 원점)에서 잰 것과 같다
+    const targetOf = (text: string) => spoken().find((m) => m.id === planId && m.text === text)!.target;
+    expect(first.target.ar[1]).toBeCloseTo(0.75, 3);
+    for (const text of [STEPS[2]!, STEPS[3]!]) {
+      const t = targetOf(text);
+      expect(t.id).toBe("sink_counter_kitchen");
+      expect(t.ar[1]).toBeCloseTo(0.9, 3);
+      expect(Math.hypot(t.ar[0], t.ar[2])).toBeCloseTo(Math.hypot(START[0] - 5.853, START[1] - 0.761), 3);
+    }
+
+    // 5 대시보드 눈은 모두 맞춘 눈(estimated 없음), 시작 자리에서 시작 방향
     const eyes = dash.filter((m) => m.type === "eye").map((m) => m.eye);
     expect(eyes.length).toBeGreaterThan(0);
     for (const e of eyes) {

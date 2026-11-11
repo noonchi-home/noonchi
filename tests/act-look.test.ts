@@ -14,8 +14,9 @@ import { CLOSER_FOUND, testCloser, type TestCloser } from "./helpers/look.js";
 import { startFakeObserver, type FakeObserver, type ObserveScript } from "./helpers/observer.js";
 
 const ASK = "싱크대 안이 보이게 폰을 가까이 대 주세요";
+// 실행 추적이 주는 싱크대 자리는 윗면 가운데다(src/server/home.ts placeLocator)
 const SINK_TOP: [number, number, number] = [0.6, 0.9, 0];
-const SINK: LookSpot = { id: "sink_1", label: "싱크대", position: [0.6, 0.45, 0] };
+const SINK: LookSpot = { id: "sink_1", label: "싱크대", position: SINK_TOP };
 const CUP: LookSpot = { id: "cup_1", label: "컵", position: [1.5, 0, 0] };
 
 const cupAt = (over: Partial<WorldObject> = {}): WorldObject => ({
@@ -44,7 +45,7 @@ const isA = (input: string) => input.includes("단계가 시작된 지");
 let llm: FakeObserver | undefined;
 afterEach(async () => { await llm?.close(); llm = undefined; });
 
-/** 보기 담당 하나. 시계는 100초에서 시작하고, 가장 새 프레임은 지금 찍은 LOOK_VIEW 사진, 싱크대는 윗면 가운데를 본다. */
+/** 보기 담당 하나. 시계는 100초에서 시작하고, 가장 새 프레임은 지금 찍은 LOOK_VIEW 사진. */
 async function setup(o: { script: ObserveScript; gate?: (input: string) => Promise<void> | undefined; objects?: WorldObject[]; frame?: (now: number) => LatestFrame | null; closer?: TestCloser; options?: Partial<LookerOptions> }) {
   await llm?.close();
   llm = await startFakeObserver(o.script, { gate: async (body) => { await o.gate?.(body.input[0].content as string); } });
@@ -59,7 +60,7 @@ async function setup(o: { script: ObserveScript; gate?: (input: string) => Promi
     frame: () => (o.frame ? o.frame(clock.now()) : { view: LOOK_VIEW, capturedAtMs: clock.now(), width: 480, height: 360 }),
     world: () => worldOf(objects), askPerson: (planId, stepId, text) => { asked.push([planId, stepId, text]); return true; },
     emit: (l) => logs.push(l), targets: () => [{ cls: "cup", facets: ["contents"] }], clock,
-    aim: (spot) => (spot.id === "sink_1" ? SINK_TOP : spot.position), onLook: (spot) => looked.push(spot), ...o.options,
+    onLook: (spot) => looked.push(spot), ...o.options,
   });
   const looks = () => logs.filter((l): l is Extract<BrainLog, { type: "look" }> => l.type === "look");
   return { looker, clock, logs, looks, asked, looked, closer, llm, setObjects: (x: WorldObject[]) => { objects = x; } };
@@ -179,7 +180,7 @@ describe("보기 담당: 멈춘 단계(A)가 먼저", () => {
 });
 
 describe("보기 담당: 가까이 보기 실행", () => {
-  it("look_closer sink_1이면 윗면 자리로 단계 신호와 함께 가까이 보고 기록·settle(true)을 남긴다. 같은 단계의 다음 요청 [앞서 한 일]에 그 결과가 있다", async () => {
+  it("look_closer sink_1이면 받은 자리(싱크대 윗면)로 단계 신호와 함께 가까이 보고 기록·settle(true)을 남긴다. 같은 단계의 다음 요청 [앞서 한 일]에 그 결과가 있다", async () => {
     const t = await setup({
       script: (_input, round) => (round === 0 ? [["look_closer", { target: "sink_1", reason: "싱크대 안 컵을 더 잘 보려고" }]] : undefined),
     });

@@ -1,12 +1,14 @@
 // 영상 입력 모드(폰 페이지 ?clip=<이름>): 실제 카메라 대신 /phone/videos/<이름> 영상을 틀고, 고정 카메라로 실제 폰과 같은 길로 보낸다.
-// 자세: 높이 1.4m에서 아래 25°(?h=·?pitch=, 시야각 ?fov= 기본 60°). 바닥은 AR y 0이다. 시작하면 reset → start{fixed:true}를 보내 서버가
+// 시작 자세: 높이 1.4m에서 아래 25°(?h=·?pitch=, 시야각 ?fov= 기본 60°). 바닥은 AR y 0이다. 시작하면 reset → start{fixed:true}를 보내 서버가
 // 시작 자리를 카메라 자리로 바로 맞춘다(src/sync aligner fixStart). 서버 맞춤이 없어지면(못 보냄·다시 붙음·서버 다시 띄움) syncStatus가
 // start fixed를 다시 보낸다(늘 시작 자세: AR 원점은 걸어도 그대로다). 그 뒤 자세는 초당 10번, 화면 프레임은 초당 12장(긴 변 780, 품질 0.55),
 // 엔진 프레임은 서버 engine_ms마다(품질 0.8, 투영 행렬·서버 시계 촬영 시각). 표시 영상(H.264)은 만들지 않는다. 영상이 끝나면 프레임을 멈추고 다시 틀지 않는다.
 // 재생을 기다리는 동안 다시 시작하면 같은 시작을 기다리고(영상은 하나), 그 사이 끝내면 그 영상을 닫고 시작하지 않는다.
 // 단계 영상(?step=<종류>:<대상 낱말>:<영상>, 여러 개): 사람 단계 명령(command)의 종류가 같고 대상 id에 낱말이 든 첫 칸이면, 그 id·step에 한 번
 // ?react=초(기본 1.5) 뒤 그 영상으로 바꿔 튼다(새 영상을 깔고 튼 뒤 앞 영상을 닫는다). 영상 시각은 앞 영상들 시각에 이어 센다.
-// go 단계면 자세가 대상 쪽으로 돌아 초당 0.8m로 걸어(자세 타이머가 한 칸씩) 대상 0.6m 앞에서 멈춘다. 높이·숙인 각은 그대로다.
+// go 단계면 자세가 대상 쪽으로 돌아 시작 숙인 각(?pitch=)으로 초당 0.8m 걸어(자세 타이머가 한 칸씩) 대상 0.6m 앞에서 멈춘다.
+// 집기·놓기 단계면 걷기를 멈추고 그 자리에서 대상(cmd.target.ar, 면이면 서버가 윗면 가운데로 준다)을 바라본다: 사람이 폰을 대상에 겨누듯
+// 대상 쪽 yaw와 대상 높이까지 숙인 각(video-math lookAt)으로 돈다. 대상이 수평 1cm 안(바로 위·아래)이면 자세를 바꾸지 않는다. 높이는 늘 그대로다.
 // 영상에는 위치 추적이 없어 자세를 페이지가 옮긴다. 단계를 넘기는 판단은 서버가 한다.
 // 명령 대상 고리는 지금 view·투영으로 잡고(focusMarks), 화면에는 영상이 덮인 자리(coverMap)로 옮겨 그린다.
 // 판정 기록 window.__noonchiVideo(t0: 재생 시작 서버 시각, commands: 받은 명령의 영상 시각, clips: 바꾼 단계 영상)과 console [video] 줄은
@@ -19,7 +21,7 @@ import { createFramePipeline, createSendStats, frameWidth } from "./pipeline.js"
 import { focusMarks, toEdge } from "./project.js";
 import { floorRayPoint } from "./aim.js";
 import { newEpoch } from "./ar.js";
-import { coverMap, pitchQuat, projectionFromFov, viewMatrix, walkGoal, yawPitchQuat } from "./video-math.js";
+import { coverMap, lookAt, pitchQuat, projectionFromFov, viewMatrix, walkGoal, yawPitchQuat } from "./video-math.js";
 
 const SEND_MS = 100;
 const FRAME_LONG = 780;
@@ -141,7 +143,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
   // 시작 자세: 서버가 시작 자리로 맞추는 자세. 걸어도 start는 이 자세로 보낸다
   const startPosition = [0, d.heightM ?? 1.4, 0];
   const startOrientation = pitchQuat(pitchDeg);
-  // 지금 자세(go 단계 걷기가 옮긴다): pose·프레임 머리·고리 view가 모두 이것을 쓴다
+  // 지금 자세(go 단계 걷기·집기·놓기 바라보기가 바꾼다): pose·프레임 머리·고리 view가 모두 이것을 쓴다
   let position = startPosition;
   let orientation = startOrientation;
   let view = viewMatrix(position, orientation);
@@ -265,11 +267,17 @@ export function createVideoAr({ link, params, hooks, deps }) {
       }
       setPose([position[0] + (dx / left) * stride, position[1], position[2] + (dz / left) * stride], orientation);
     };
-    /** target 쪽으로 돌아 서고 0.6m 앞까지 걷기 시작한다. 이미 그 안이면 그대로. */
+    /** target 쪽으로 돌아 서고 0.6m 앞까지 걷기 시작한다. 숙인 각은 주소 칸 pitch. 이미 그 안이면 그대로. */
     const startWalk = (target) => {
       const w = walkGoal(position, target, WALK_STOP_M);
       walk = w && { goal: w.goal };
       if (w) setPose(position, yawPitchQuat(w.yaw, pitchDeg));
+    };
+    /** 걷기를 멈추고 그 자리에서 target을 바라본다(사람이 폰을 대상에 겨눈다). 바로 위·아래면 자세는 그대로. */
+    const face = (target) => {
+      walk = null;
+      const look = lookAt(position, target);
+      if (look) setPose(position, yawPitchQuat(look.yaw, look.pitchDeg));
     };
 
     const sendPose = () => {
@@ -403,7 +411,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
 
     const current = {
       videoTime: timeline,
-      /** 사람 단계 명령: 맞는 step 칸이 있으면 그 id·step에 한 번, reactMs 뒤 단계 영상으로 바꾸고 go면 걷는다. */
+      /** 사람 단계 명령: 맞는 step 칸이 있으면 그 id·step에 한 번, reactMs 뒤 단계 영상으로 바꾸고 go면 걷고 집기·놓기면 대상을 바라본다. */
       command(cmd) {
         const id = cmd.target?.id;
         const entry = typeof id === "string" ? steps.find((s) => s.kind === cmd.kind && id.includes(s.word)) : undefined;
@@ -411,12 +419,14 @@ export function createVideoAr({ link, params, hooks, deps }) {
         const key = `${cmd.id}:${cmd.step}`;
         if (handled.has(key)) return;
         handled.add(key);
-        const target = entry.kind === "go" && Array.isArray(cmd.target.ar) ? cmd.target.ar : null;
+        const target = Array.isArray(cmd.target.ar) ? cmd.target.ar : null;
         const timer = setTimeout(() => {
           reactTimers.delete(timer);
           if (run !== current) return;
           void swap(entry.clipUrl);
-          if (target) startWalk(target);
+          if (!target) return;
+          if (entry.kind === "go") startWalk(target);
+          else face(target);
         }, reactMs);
         reactTimers.add(timer);
       },
@@ -494,7 +504,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
     },
     /** 지금 영상 시각(ms, 앞 단계 영상들 시각에 이어 센다). 재생 전·끝낸 뒤는 0. */
     videoTime: () => run?.videoTime() ?? 0,
-    /** 받은 명령(controller): 재생 중이면 단계 영상 바꾸기·go 걷기. */
+    /** 받은 명령(controller): 재생 중이면 단계 영상 바꾸기·go 걷기·집기·놓기 바라보기. */
     command(cmd) {
       run?.command(cmd);
     },

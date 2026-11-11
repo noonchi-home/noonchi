@@ -138,6 +138,17 @@ function surfaceSource(editor: LayoutEditor | undefined): () => PlaneSurface[] {
   })));
 }
 
+/** 명령 대상·가까이 볼 자리(이름과 트윈 자리 [x, 높이, y]): 면(식탁·싱크대처럼 윗면이 있는 배치)이면 윗면 가운데, 그 밖은 배치 가운데.
+ *  배치 가운데는 싱크대면 높이 약 0.45m라, 대상을 겨눈 폰 사진에서 윗면(컵이 놓이는 곳)보다 한참 아래다. */
+function placeLocator(editor: LayoutEditor | undefined, surfaces: () => PlaneSurface[]) {
+  return (id: string): { label: string; position: [number, number, number] } | undefined => {
+    const c = editor?.center(id);
+    if (!c) return undefined;
+    const top = surfaces().find((s) => s.id === id);
+    return { label: c.label, position: top ? [top.center[0], top.top, top.center[1]] : c.position };
+  };
+}
+
 /** homeId가 없으면 기본 집. 실패하면 만든 것을 닫고 던진다. */
 export async function startHome(homeId: string | undefined, ctx: HomeContext): Promise<HomeRuntime> {
   const { env, log, runtimeDir } = ctx;
@@ -232,8 +243,9 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     });
     // 관찰 흐름(BRAIN=1): 폰 엔진 프레임마다 YOLO·VLM이 분석하고 World State가 합친다(src/observe/pipeline.ts)
     const brainWanted = /^(1|true|on)$/i.test(env.BRAIN?.trim() ?? "");
-    // 트윈 윗면(식탁·싱크대): World State가 물건을 놓고, 가까이 보기가 자리의 윗면 가운데를 본다
+    // 트윈 윗면(식탁·싱크대): World State가 물건을 놓고, 명령 대상·가까이 보기는 자리의 윗면 가운데를 본다
     const surfaces = surfaceSource(layout?.editor);
+    const placeAt = placeLocator(layout?.editor, surfaces);
     if (brainWanted && !phoneOn) log("[경고] BRAIN=1은 PHONE_PORT가 있어야 합니다(폰 카메라가 입력). 관찰 흐름을 끕니다.");
     // 카메라로 본 가전 상태는 허브로 넘긴다(src/hub/signals.ts observe): 실제 출처가 없으면 기기 상태가 되고, 실제 상태와 다르면 처음 한 번 로그에 남긴다
     const world = brainWanted && phoneOn
@@ -302,14 +314,14 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
             decision: d, task, world: world.view(now()), floor: plans.floor(), places: places(), rooms: twin.rooms, devices: deviceViews(signals), nowIso: new Date(now()).toISOString(),
           }, signal);
         },
-        // 실제 폰 명령(src/contract/phone.ts). 폰 서버가 지금 명령을 기억해 새로 붙은 폰에도 보낸다. 명령 대상 자리는 배치(물건 가운데)에서
+        // 실제 폰 명령(src/contract/phone.ts). 폰 서버가 지금 명령을 기억해 새로 붙은 폰에도 보낸다. 명령 대상 자리는 배치(면이면 윗면 가운데)에서
         toPhone: (m) => {
           if (m.type === "command") command = m;
           else if (!m.id || command?.id === m.id) command = null;
           phoneRef.current?.command(m);
           if (m.type === "command") speak();
         },
-        locate: (id) => layout?.editor.center(id),
+        locate: placeAt,
         check: (d, p) => checkPlan({
           decision: d, tasks: [...TASK_NAMES], plan: p, world: world.view(now()), nowMs: now(), staleMs: act.staleMs, mode: ctx.mode?.() ?? "test", deviceSteps: deviceSteps(p),
         }),
@@ -341,11 +353,6 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       looker = new Looker({
         observer, closer: (spot, signal) => observed.closer(spot, signal), frame: () => observed.latest(), world: () => world.view(now()),
         askPerson: (planId, stepId, text) => tracking.askCloser(planId, stepId, text), emit, targets: lookTargets, clock: ctx.brain?.clock,
-        // 자리(싱크대·식탁)는 윗면 가운데를 본다: 배치 가운데는 걸은 자세에서 사진 밖일 수 있다
-        aim: (spot) => {
-          const top = surfaces().find((x) => x.id === spot.id);
-          return top ? [top.center[0], top.top, top.center[1]] : spot.position;
-        },
         onLook: (spot) => {
           lookSay = { place: spot.label, atMs: Date.now() };
           speak();

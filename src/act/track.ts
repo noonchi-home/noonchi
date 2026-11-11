@@ -66,7 +66,7 @@ export interface TrackerOptions {
   floor: () => FloorPlan;
   /** 실제 폰으로 보낸다: 명령(command)·지우기(command_clear). 폰 서버가 명령 대상 자리를 AR 자리로 바꾼다. */
   toPhone: (msg: PlannedCommandMessage) => void;
-  /** 평면도 물건의 이름과 트윈 자리 [x, 높이, y](명령 대상 고리). 모르면 undefined. */
+  /** 평면도 물건의 이름과 트윈 자리 [x, 높이, y](명령 대상 고리·가까이 볼 자리, 면이면 윗면 가운데). 모르면 undefined. */
   locate?: (id: string) => { label: string; position: [number, number, number] } | undefined;
   emit: (l: BrainLog) => void;
   /** 승인 기억(task:<행동 이름>). 처음 하는 계획은 묻고, 답을 남긴다. */

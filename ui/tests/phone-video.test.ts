@@ -1,11 +1,11 @@
 // 영상 입력 모드(?clip=, core/video-ar.js): 실제 카메라 대신 영상을 틀고, 고정 자세·투영으로 실제 폰과 같은 길로 보낸다.
 // jsdom은 영상을 틀지 못하므로 영상·JPEG 인코딩·2D 그림판은 대역(arDeps)으로 넣는다.
 // 지원은 바로 됨(http·WebXR 없어도), 소리 읽기·늘 듣기 없음, reset → start fixed → pose, 화면·엔진 프레임 헤더, 명령 시각 기록,
-// 맞춤 상태면 「여기서 시작」·시작 위치 모달 없음, 영상이 끝나면 프레임을 멈춘다. 단계 영상(step=)·go 단계 걷기. video-math 표도 본다.
+// 맞춤 상태면 「여기서 시작」·시작 위치 모달 없음, 영상이 끝나면 프레임을 멈춘다. 단계 영상(step=)·go 단계 걷기·집기·놓기 대상 바라보기. video-math 표도 본다.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPhoneController, type ControllerDeps, type ControllerDraw } from "../src/phone/controller";
 import { createVideoAr, videoParams } from "../src/phone/core/video-ar.js";
-import { coverMap, pitchQuat, projectionFromFov, viewMatrix, walkGoal, yawPitchQuat } from "../src/phone/core/video-math.js";
+import { coverMap, lookAt, pitchQuat, projectionFromFov, viewMatrix, walkGoal, yawPitchQuat } from "../src/phone/core/video-math.js";
 import { problemOf } from "../src/phone/state";
 import { focusMarks } from "../src/phone/core/project.js";
 
@@ -595,15 +595,83 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
     expect(m[0]!.off).toBe(false);
   });
 
-  it("pick 명령은 1.5초 뒤 pick-cup.mp4로 바꾸기만 하고 자리·자세는 그대로", async () => {
+  it("pick 명령은 1.5초 뒤 pick-cup.mp4로 바꾸고, 그 자리에서 컵 쪽으로 돌고 숙여 컵 고리가 화면 가운데. 엔진 프레임 머리도 새 자세, 다시 보내는 start는 처음 자세", async () => {
     fakeTimers();
-    const { ws, sent, urls, startAr } = make({}, STEPS);
+    const { ws, sent, urls, videos, marks, startAr } = make({}, STEPS);
+    await startAr();
+    ws.push({ ...ALIGNED, engine_ms: 500 });
+    ws.push(pickCup());
+    await after(1400);
+    expect(lastPose(sent).orientation).toEqual(pitchQuat(-25));
+    await after(100);
+    expect(urls.at(-1)).toBe("/phone/videos/pick-cup.mp4");
+    await after(2000);
+    // 컵 [0.1, 0.8, −1.4]: 수평 √1.97m 앞, 0.6m 아래
+    const look = yawPitchQuat(Math.atan2(-0.1, 1.4), (Math.atan2(-0.6, Math.hypot(0.1, 1.4)) * 180) / Math.PI);
+    expect(lastPose(sent).position).toEqual([0, 1.4, 0]);
+    closeTo(lastPose(sent).orientation, look);
+    videos[1]!.advance(0.5);
+    await after(0);
+    const m = marks.at(-1)!;
+    expect(m.map((x) => x.id)).toEqual(["cup_3"]);
+    expect(m[0]!.u).toBeCloseTo(0.5, 5);
+    expect(m[0]!.v).toBeCloseTo(0.5, 5);
+    const engine = (await Promise.all(ws.packets.map(headerOf))).filter((h) => h.kind === "engine").at(-1)!;
+    closeTo(engine.orientation, look);
+    ws.push({ type: "status", aligned: false, sync: sync() });
+    expect(sent().filter((x) => x.type === "start").at(-1)).toMatchObject({ position: [0, 1.4, 0], orientation: pitchQuat(-25) });
+  });
+
+  it("집기 뒤 go는 숙인 각 −25°로 걷고, place 명령이면 멈춘 자리에서 싱크대 윗면 쪽으로 숙여 고리가 화면 가운데", async () => {
+    fakeTimers();
+    const { ws, sent, videos, marks, startAr } = make({}, STEPS);
     await startAr();
     ws.push(ALIGNED);
     ws.push(pickCup());
     await after(1500);
-    expect(urls.at(-1)).toBe("/phone/videos/pick-cup.mp4");
+    ws.push(command({ step: "plan:pam-1:3", text: "싱크대로 가 주세요", vision: "싱크대까지 2.0m", kind: "go", target: SINK, speak: false }));
+    await after(1500 + 3000);
+    const yaw = Math.atan2(-1.2, 1.6);
+    closeTo(lastPose(sent).position, [0.84, 1.4, -1.12]);
+    closeTo(lastPose(sent).orientation, yawPitchQuat(yaw, -25));
+    ws.push(command({ step: "plan:pam-1:4", text: "컵을 싱크대에 넣어 주세요", vision: "컵 · 손에 있음", kind: "place", target: SINK, speak: false }));
+    // 바꾼 자세는 다음 pose(100ms마다)에 실린다
+    await after(1500 + 200);
+    // 싱크대 [1.2, 0.9, −1.6]: 수평 0.6m 앞, 0.5m 아래
+    closeTo(lastPose(sent).position, [0.84, 1.4, -1.12]);
+    closeTo(lastPose(sent).orientation, yawPitchQuat(yaw, (Math.atan2(-0.5, 0.6) * 180) / Math.PI));
+    videos[3]!.advance(0.5);
+    const m = marks.at(-1)!;
+    expect(m.map((x) => x.id)).toEqual(["sink_1"]);
+    expect(m[0]!.u).toBeCloseTo(0.5, 5);
+    expect(m[0]!.v).toBeCloseTo(0.5, 5);
+  });
+
+  it("걷는 중에 pick 영상으로 바꾸면 걷기를 멈추고 그 자리에서 컵을 본다", async () => {
+    fakeTimers();
+    const { ws, sent, startAr } = make({}, `${STEPS}&react=0`);
+    await startAr();
+    ws.push(ALIGNED);
+    ws.push(goTable());
+    await after(500);
+    const at = lastPose(sent).position as number[];
+    expect(at[2]).toBeLessThan(-0.2);
+    expect(at[2]).toBeGreaterThan(-0.6);
+    ws.push(pickCup());
+    await after(1000);
+    closeTo(lastPose(sent).position, at);
+    const dz = -1.4 - at[2]!;
+    closeTo(lastPose(sent).orientation, yawPitchQuat(Math.atan2(-0.1, -dz), (Math.atan2(-0.6, Math.hypot(0.1, dz)) * 180) / Math.PI));
+  });
+
+  it("대상이 바로 아래(수평 1cm 안)면 단계 영상만 바꾸고 자세는 그대로", async () => {
+    fakeTimers();
+    const { ws, sent, urls, startAr } = make({}, STEPS);
+    await startAr();
+    ws.push(ALIGNED);
+    ws.push(pickCup({ target: { ...CUP, ar: [0.005, 0.8, -0.005] } }));
     await after(2000);
+    expect(urls.at(-1)).toBe("/phone/videos/pick-cup.mp4");
     expect(lastPose(sent).position).toEqual([0, 1.4, 0]);
     expect(lastPose(sent).orientation).toEqual(pitchQuat(-25));
   });
@@ -763,6 +831,35 @@ describe("video-math", () => {
       expect(f[0]).toBeCloseTo(dx / stop, 10);
       expect(f[2]).toBeCloseTo(dz / stop, 10);
     }
+  });
+
+  it("lookAt: target을 보는 yaw(walkGoal과 같은 규칙)와 숙인 각(도, 아래가 음수). 그 자세의 시선(−z)은 target 쪽", () => {
+    const rows: [number[], number[]][] = [
+      [[0, 1.4, 0], [0, 0.4, -1]],
+      [[0, 1.4, 0], [1, 1.4, 0]],
+      [[1, 1.2, 1], [-2, 0, 5]],
+      [[0.84, 1.4, -1.12], [1.2, 0.9, -1.6]],
+      [[0, 1, 0], [0, 2, 1]],
+    ];
+    for (const [from, target] of rows) {
+      const l = lookAt(from, target)!;
+      const d = [target[0]! - from[0]!, target[1]! - from[1]!, target[2]! - from[2]!];
+      expect(l.yaw).toBeCloseTo(Math.atan2(-d[0]!, -d[2]!), 10);
+      expect(l.pitchDeg).toBeCloseTo((Math.atan2(d[1]!, Math.hypot(d[0]!, d[2]!)) * 180) / Math.PI, 10);
+      const n = Math.hypot(...d);
+      rotate(yawPitchQuat(l.yaw, l.pitchDeg), [0, 0, -1]).forEach((x, i) => expect(x).toBeCloseTo(d[i]! / n, 10));
+    }
+    expect(lookAt([0, 1.4, 0], [0, 0.4, -1])!.pitchDeg).toBeCloseTo(-45, 10);
+    expect(lookAt([0, 1, 0], [0, 2, 1])!.pitchDeg).toBeCloseTo(45, 10);
+  });
+
+  it("lookAt: 수평 1cm 안(yaw를 못 정함)이거나 수가 아닌 값이면 null, 숙인 각은 ±89°까지", () => {
+    for (const target of [[0, 0.8, 0], [0.006, 0, -0.006], [0, 3, 0]]) expect(lookAt([0, 1.4, 0], target)).toBeNull();
+    for (const [from, target] of [[[0, 1.4, 0], [Number.NaN, 0, -1]], [[0, Infinity, 0], [0, 0, -1]], [[0, 1.4, 0], [0, 0]]] as const) {
+      expect(lookAt(from, target)).toBeNull();
+    }
+    expect(lookAt([0, 1.4, 0], [0.011, 0, 0])!.pitchDeg).toBe(-89);
+    expect(lookAt([0, 0, 0], [0.011, 2, 0])!.pitchDeg).toBe(89);
   });
 
   it("projectionFromFov(60, 9/16): [5]는 1/tan(30°), [0]은 그것을 비율로 나눈 값, 열 우선 원근", () => {

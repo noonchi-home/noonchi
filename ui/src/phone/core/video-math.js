@@ -1,4 +1,5 @@
-// 영상 입력 모드의 계산(DOM 없음): 카메라의 투영·자세·view 행렬, go 단계 걷기(멈출 자리·대상을 보는 yaw)와 화면 덮기(object-fit cover) 자리 바꾸기.
+// 영상 입력 모드의 계산(DOM 없음): 카메라의 투영·자세·view 행렬, go 단계 걷기(멈출 자리·대상을 보는 yaw), 집기·놓기 단계 바라보기(대상을 보는 yaw·숙인 각)와
+// 화면 덮기(object-fit cover) 자리 바꾸기.
 // 행렬은 XRView와 같이 열 우선 4×4다. 카메라는 -Z를 보고 Y가 위다(WebXR과 같다).
 
 const NEAR = 0.1;
@@ -42,6 +43,22 @@ export function walkGoal(from, target, stopM) {
   if (d <= stopM) return null;
   const k = (d - stopM) / d;
   return { goal: [from[0] + dx * k, from[1], from[2] + dz * k], yaw: Math.atan2(-dx, -dz) };
+}
+
+const LOOK_MIN_M = 0.01;
+const PITCH_MAX_DEG = 89;
+
+/** from에서 target을 보는 yaw(walkGoal과 같은 규칙)와 숙인 각(도, 아래가 음수, ±89°까지).
+ *  수평 거리가 1cm 안(바로 위·아래라 yaw를 못 정함)이거나 수가 아닌 값이면 null. */
+export function lookAt(from, target) {
+  const dx = target[0] - from[0];
+  const dy = target[1] - from[1];
+  const dz = target[2] - from[2];
+  if (!Number.isFinite(dx) || !Number.isFinite(dy) || !Number.isFinite(dz)) return null;
+  const flat = Math.hypot(dx, dz);
+  if (flat < LOOK_MIN_M) return null;
+  const pitchDeg = (Math.atan2(dy, flat) * 180) / Math.PI;
+  return { yaw: Math.atan2(-dx, -dz), pitchDeg: Math.min(PITCH_MAX_DEG, Math.max(-PITCH_MAX_DEG, pitchDeg)) };
 }
 
 /** 카메라 자리·자세 → view 행렬(세계 → 카메라, XRView.transform.inverse.matrix와 같은 뜻). */

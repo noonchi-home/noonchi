@@ -71,7 +71,7 @@ async function setup(o: { stalled: boolean }) {
   looker = new Looker({
     observer: new Observer({ provider: createProvider(env).provider }), closer: (spot, signal) => pipeline.closer(spot, signal), frame: () => pipeline.latest(),
     world: () => world.view(clock.now()), askPerson: (planId, stepId, text) => tracker.askCloser(planId, stepId, text), emit: (l) => logs.push(l),
-    targets: lookTargets, clock, aim: (spot) => (spot.id === "sink_1" ? [0.6, 0.9, 0] : spot.position),
+    targets: lookTargets, clock,
   });
   let n = 0;
   /** 엔진 프레임 하나(받은 시각 at + 5ms까지 시계를 옮긴다)를 넣고 감지·VLM이 끝날 때까지 기다린다. */
