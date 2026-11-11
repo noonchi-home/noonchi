@@ -15,16 +15,20 @@
 // 같은 물건 따라가기: 기준점을 맞춘 뒤 물건이 identityM 넘게 움직이면 World State가 새 id를 붙인다. 계획을 받을 때 그 종류의 다른 물건을 적어 두고,
 // 계획 물건과 그 뒤에 새로 생긴 같은 종류 물건을 모두 그 물건으로 본다(조건의 follow, 비전 상태 줄, 고리).
 // 폰 근처 조건은 실행 추적이 받은 맞춘 눈(받은 시각)과 World State 눈 중 새것으로 본다.
+// 멈춘 단계(관찰 모드 A): 끝나는 조건이 있는 집기·놓기 단계가 stallMs 넘게(단계 시작 뒤, 받은 부름 뒤) 안 끝나면 stalled를 부른다. 단계마다 stallMax번, 받은 것만 센다.
+// 알림마다 그 단계 세대와 신호가 있고, 단계가 끝나면(다음 단계·완료·실패·그만·새 계획·멈춤) 신호를 끊는다.
+// 사람 부탁(askCloser)은 지금 그 계획의 그 사람 단계일 때만 같은 계획·단계 id로 명령 글만 바꿔 다시 보낸다(소리로 읽음).
 import type { BrainLog, ExecState } from "../contract/events.js";
 import type { PhoneStepKind, PlannedCommand, PlannedCommandMessage } from "../contract/phone.js";
 import type { PlanView, XZ } from "../contract/plan.js";
 import type { WorldEye, WorldObject, WorldView } from "../contract/world.js";
+import type { LookSpot } from "../observe/crop.js";
 import type { FloorPlan } from "../plan/floor.js";
 import type { PlanHub } from "../plan/hub.js";
 import { AGAIN_TEXT, APPROVAL_TEXT, EXEC_TEXT, VISION_TEXT, placeShort } from "../plan/labels.js";
 import { roomAt } from "../plan/route.js";
 import { OBJECT_NAME, PLACE_UNKNOWN, STATE_TEXT, onSurface } from "../world/labels.js";
-import { ConditionWatch, type ConditionContext } from "../world/conditions.js";
+import { ConditionWatch, type Condition, type ConditionContext } from "../world/conditions.js";
 import { NEAR_M } from "../world/vocab.js";
 import type { DecisionRecord } from "../world/decide.js";
 import { approvalNeed, taskKey, type ApprovalAnswer, type ApprovalBook } from "../agent/approval.js";
@@ -75,10 +79,24 @@ export interface TrackerOptions {
   askMs?: number;
   /** 같은 행동의 계획을 다시 만들기 전 기다리는 시간(ms). */
   planGapMs?: number;
+  /** 멈춘 집기·놓기 단계 알림(관찰 모드 A, src/act/look.ts). 받았으면 true(그때만 센다). 없으면 부르지 않는다. */
+  stalled?: (s: Stall) => boolean;
+  /** 집기·놓기 단계가 이만큼(ms) 안 끝나면 stalled를 부른다(단계 시작 뒤, 받은 부름 뒤). */
+  stallMs?: number;
+  /** 단계마다 stalled를 받은 횟수 상한. */
+  stallMax?: number;
 }
 
-/** 기본값: 다시 읽기 30초, 비전 상태 0.5초에 한 번, 검사 3초, 승인 답 2분, 같은 행동 다시 계획 15초. 단계 시간 한도는 계획 단계마다 있다. */
-export const TRACK_DEFAULTS = { repeatMs: 30_000, visionMs: 500, recheckMs: 3000, askMs: 120_000, planGapMs: 15_000 } as const;
+/** 기본값: 다시 읽기 30초, 비전 상태 0.5초에 한 번, 검사 3초, 승인 답 2분, 같은 행동 다시 계획 15초, 멈춘 단계 8초·단계마다 3번. 단계 시간 한도는 계획 단계마다 있다. */
+export const TRACK_DEFAULTS = { repeatMs: 30_000, visionMs: 500, recheckMs: 3000, askMs: 120_000, planGapMs: 15_000, stallMs: 8000, stallMax: 3 } as const;
+
+/** 멈춘 집기·놓기 단계. command: 실제 폰에 띄운 지금 명령 글. stuckMs: 단계 시작 뒤 지난 시간. looks: 이 단계에서 받은 부름 수.
+ *  spots: 계획 물건(지금 따라가는 World State 물건, 자리를 알 때)과 단계 대상 자리(평면도, 물건과 다를 때).
+ *  gen: 단계 세대(단계가 바뀌거나 계획이 닫힐 때마다 오른다). signal: 이 단계가 끝나면(다음 단계·완료·실패·그만·새 계획·멈춤) 끊긴다. */
+export interface Stall {
+  planId: string; stepId: string; kind: "pick" | "place"; label: string; command: string; until: Condition;
+  stuckMs: number; looks: number; spots: LookSpot[]; gen: number; signal: AbortSignal;
+}
 
 /** 실제 폰에 띄운 질문: 첫 단계 전 승인, 위험 목록 가전 승인(토큰), 시간 초과로 다시 묻기. */
 type Asking = { why: "plan" } | { why: "device"; token: string } | { why: "again" };
@@ -86,7 +104,8 @@ type Asking = { why: "plan" } | { why: "device"; token: string } | { why: "again
 /** at: 지금 단계 번호(실행 전 -1). sent: 실제 폰에 띄운 지금 명령. others: 계획 물건 id → 계획을 받을 때 있던 같은 종류의 다른 물건.
  *  alias: 계획 물건 id → 지금 그 물건으로 보는 World State id(옮겨서 새 id가 붙으면 이어 간다). carried: 집기 단계를 마친(사람이 든) 계획 물건.
  *  device: 기기 단계 실행 상태(sent는 보냈지만 적용을 확인하지 못함). gen: 단계가 바뀔 때마다 올라 늦게 온 기기 결과를 버린다.
- *  deadline: 이 단계 시간 한도(계속이면 한 번 늘어난다). again: 이 단계에서 시간 초과로 한 번 다시 물었다. */
+ *  deadline: 이 단계 시간 한도(계속이면 한 번 늘어난다). again: 이 단계에서 시간 초과로 한 번 다시 물었다.
+ *  looks·lookAt: 이 단계에서 받은 멈춘 단계 부름 수와 마지막으로 받은 시각. stepEnd: 이 단계가 끝나면 끊는 신호(멈춘 단계 알림). */
 interface Run {
   plan: AgentPlan; decision: DecisionRecord; state: ExecState; since: number;
   at: number; stepAt: number; spokeAt: number; visionAt: number; sent: PlannedCommand | null;
@@ -94,6 +113,7 @@ interface Run {
   /** 평면도 물건의 평면 자리(따라가기 거리). */
   placeAt: (id: string | null) => XZ | null;
   deadline: number; again: boolean; device: "idle" | "running" | "done" | "sent"; gen: number;
+  looks: number; lookAt: number; stepEnd: AbortController | null;
 }
 
 interface Job { decision: DecisionRecord; gen: number; abort: AbortController }
@@ -113,13 +133,14 @@ export class ExecutionTracker {
   private stopped = false;
   private eye: { position: XZ; at: number } | null = null;
   private readonly clock: { now(): number };
-  private readonly cfg: { repeatMs: number; visionMs: number; recheckMs: number; askMs: number; planGapMs: number };
+  private readonly cfg: { repeatMs: number; visionMs: number; recheckMs: number; askMs: number; planGapMs: number; stallMs: number; stallMax: number };
 
   constructor(private readonly o: TrackerOptions) {
     this.clock = o.clock ?? { now: () => Date.now() };
     this.cfg = {
       repeatMs: o.repeatMs ?? TRACK_DEFAULTS.repeatMs, visionMs: o.visionMs ?? TRACK_DEFAULTS.visionMs, recheckMs: o.recheckMs ?? TRACK_DEFAULTS.recheckMs,
       askMs: o.askMs ?? TRACK_DEFAULTS.askMs, planGapMs: o.planGapMs ?? TRACK_DEFAULTS.planGapMs,
+      stallMs: o.stallMs ?? TRACK_DEFAULTS.stallMs, stallMax: o.stallMax ?? TRACK_DEFAULTS.stallMax,
     };
   }
 
@@ -235,7 +256,22 @@ export class ExecutionTracker {
     if (!this.stopped && r?.state === "running") this.look(r);
   }
 
-  /** 타이머(250ms)가 부른다: 검사 다시 보기, 지금 단계 보기, 다시 읽기, 시간 초과. 에이전트는 부르지 않는다. */
+  /** 관찰 모드의 사람 부탁(ask_person): 지금 그 계획의 그 사람 단계면 같은 계획·단계 id로 명령 글만 바꿔 다시 보낸다(소리로 읽음).
+   *  단계 종류·대상·답 단추·비전 상태는 그대로라 실제 폰은 새 단계로 보지 않는다. 그 뒤 다시 읽기·비전 상태도 이 글이다.
+   *  사람에게 하는 말(「주세요」로 끝남)만 보낸다. 보냈으면 true. */
+  askCloser(planId: string, stepId: string, text: string): boolean {
+    const r = this.run;
+    const step = r ? this.stepOf(r) : undefined;
+    const said = text.trim();
+    if (this.stopped || !r || r.state !== "running" || r.asking || !r.sent || !step || !HUMAN_KINDS.includes(step.kind)) return false;
+    if (r.plan.view.id !== planId || step.id !== stepId || r.sent.step !== stepId || !/주세요$/.test(said)) return false;
+    r.spokeAt = this.clock.now();
+    r.sent = { ...r.sent, text: said, speak: true };
+    this.o.toPhone(r.sent);
+    return true;
+  }
+
+  /** 타이머(250ms)가 부른다: 검사 다시 보기, 지금 단계 보기, 멈춘 단계 알림, 다시 읽기, 시간 초과. 에이전트는 부르지 않는다. */
   tick(): void {
     const r = this.run;
     if (this.stopped || !r || !OPEN.has(r.state)) return;
@@ -250,13 +286,15 @@ export class ExecutionTracker {
     const step = this.stepOf(r);
     if (!step) return;
     if (now > r.deadline) return this.timeout(r, step);
+    this.stall(r, step, now);
     if (HUMAN_KINDS.includes(step.kind) || step.kind === "ask") this.repeat(r, now);
   }
 
-  /** 멈추면 더 기록하지 않고 폰에도 보내지 않는다. 만들던 계획은 끊는다. */
+  /** 멈추면 더 기록하지 않고 폰에도 보내지 않는다. 만들던 계획과 멈춘 단계 알림은 끊는다. */
   stop(): void {
     this.planning?.abort.abort();
     this.planning = null;
+    this.run?.stepEnd?.abort();
     const a = this.run?.asking;
     if (a?.why === "device") this.o.devices?.cancel(a.token);
     this.stopped = true;
@@ -319,6 +357,7 @@ export class ExecutionTracker {
     const run: Run = {
       plan: r.plan, decision: d, state: "decided", since: now, at: -1, stepAt: now, spokeAt: now, visionAt: now, sent: null,
       asking: null, askAt: now, watch: null, others, alias: new Map([...ids].map((id) => [id, id])), carried: new Set(), placeAt: (id) => (id ? this.o.floor().objects.get(id)?.position ?? null : null), deadline: now, again: false, device: "idle", gen: 0,
+      looks: 0, lookAt: Number.NEGATIVE_INFINITY, stepEnd: null,
     };
     this.run = run;
     this.o.plans.onDecision(r.plan.view);
@@ -398,9 +437,10 @@ export class ExecutionTracker {
     const prev = r.plan.steps[r.at];
     const step = r.plan.steps[i]!;
     const now = this.clock.now();
+    r.stepEnd?.abort();
     Object.assign(r, {
       at: i, stepAt: now, spokeAt: now, visionAt: now, deadline: now + step.timeoutMs, asking: null, watch: step.until ? new ConditionWatch(step.until) : null,
-      again: false, device: "idle", gen: r.gen + 1,
+      again: false, device: "idle", gen: r.gen + 1, looks: 0, lookAt: Number.NEGATIVE_INFINITY, stepEnd: new AbortController(),
     });
     this.o.plans.setSteps(r.plan.view.id, { ...(prev ? { [prev.id]: "done" as const } : {}), [step.id]: "active" });
     if (step.kind === "wait" || step.kind === "device") this.quietFrom = now;
@@ -506,6 +546,30 @@ export class ExecutionTracker {
     this.finish(r, "failed", step.kind === "ask" ? EXEC_TEXT.noAnswer : EXEC_TEXT.timeout);
   }
 
+  /** 끝나는 조건이 있는 집기·놓기 단계가 stallMs 넘게(단계 시작 뒤, 받은 부름 뒤) 안 끝나면 관찰 모드를 부른다. 단계마다 stallMax번까지, 받은 것만 센다. */
+  private stall(r: Run, step: AgentStep, now: number): void {
+    if (!this.o.stalled || (step.kind !== "pick" && step.kind !== "place") || !step.until || !r.sent || r.asking || !r.stepEnd) return;
+    if (r.looks >= this.cfg.stallMax || now - r.stepAt < this.cfg.stallMs || now - r.lookAt < this.cfg.stallMs) return;
+    const s: Stall = {
+      planId: r.plan.view.id, stepId: step.id, kind: step.kind, label: step.label, command: r.sent.text, until: step.until,
+      stuckMs: now - r.stepAt, looks: r.looks, spots: this.spots(r, step, this.o.world()), gen: r.gen, signal: r.stepEnd.signal,
+    };
+    if (!this.o.stalled(s)) return;
+    r.looks++;
+    r.lookAt = now;
+  }
+
+  /** 가까이 볼 곳: 계획 물건(지금 따라가는 World State 물건, 자리를 알 때)과 단계 대상 자리(평면도, 물건과 다를 때). */
+  private spots(r: Run, step: AgentStep, world: WorldView): LookSpot[] {
+    const out: LookSpot[] = [];
+    const id = step.object ?? step.target;
+    const obj = id ? ours(r, id, world).find((o) => o.status !== "gone" && o.position) : undefined;
+    if (obj?.position) out.push({ id: obj.id, label: OBJECT_NAME[obj.cls] ?? obj.cls, position: obj.position });
+    const at = step.target ? this.o.locate?.(step.target) : undefined;
+    if (step.target && at && step.target !== id && step.target !== obj?.id) out.push({ id: step.target, label: this.placeName(step.target), position: at.position });
+    return out;
+  }
+
   /** repeatMs마다 지금 명령·질문을 다시 읽는다. */
   private repeat(r: Run, now: number): void {
     if (!r.sent || now - r.spokeAt < this.cfg.repeatMs) return;
@@ -592,6 +656,7 @@ export class ExecutionTracker {
     if (r.asking?.why === "device") this.o.devices?.cancel(r.asking.token);
     r.asking = null;
     r.gen++;
+    r.stepEnd?.abort();
     this.step(r, state, text);
     if (r.sent) {
       r.sent = null;
@@ -617,12 +682,16 @@ export class ExecutionTracker {
   }
 }
 
-/** 계획 물건으로 보는 지금 World State 물건(하나, 없으면 빈 목록). 지금 id가 사라졌거나(그 자리가 시야 안인데 없음) 사람이 들고 다니다 시야 밖이 됐을 때만
- *  그 뒤에 처음 보인 같은 종류 물건(계획 전부터 있던 것·앞서 이은 것은 뺀다)이 하나일 때 그것으로 이어 간다. 여럿이거나 들지 않은 물건이 시야 밖이면 잇지 않는다(「완료」로 넘긴다). */
+/** 가까이 봐서 찾은 물건을 전체 사진이 못 봐도 지키는 중인가(World State closer_hold). 그동안 보인 것이 아니라 「아직 있음」으로 세지 않는다. */
+const held = (o: WorldObject) => o.closer_hold === true;
+
+/** 계획 물건으로 보는 지금 World State 물건(하나, 없으면 빈 목록). 지금 id가 사라졌거나(그 자리가 시야 안인데 없음), 사람이 들고 다니다 시야 밖이 됐거나,
+ *  가까이 봐서 지키는 중일 때만 그 뒤에 처음 보인 같은 종류 물건(계획 전부터 있던 것·앞서 이은 것은 뺀다)이 하나일 때 그것으로 이어 간다.
+ *  여럿이거나 들지 않은 물건이 시야 밖이면 잇지 않는다(「완료」로 넘긴다). */
 function ours(r: Run, id: string, world: WorldView): WorldObject[] {
   const cur = r.alias.get(id) ?? id;
   const own = world.objects.find((o) => o.id === cur);
-  if (own && own.status !== "gone" && !(own.status === "out_of_view" && r.carried.has(id))) return [own];
+  if (own && own.status !== "gone" && !held(own) && !(own.status === "out_of_view" && r.carried.has(id))) return [own];
   const cls = clsOf(world, id);
   const others = r.others.get(id) ?? new Set<string>();
   const seen = new Set(r.alias.values());

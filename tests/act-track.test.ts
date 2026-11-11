@@ -6,14 +6,15 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { ExecutionTracker, TRACK_DEFAULTS, type TrackerOptions } from "../src/act/track.js";
+import { ExecutionTracker, TRACK_DEFAULTS, type Stall, type TrackerOptions } from "../src/act/track.js";
 import { ApprovalStore, type ApprovalAnswer } from "../src/agent/approval.js";
+import type { AgentStep } from "../src/agent/planTools.js";
 import type { CheckResult } from "../src/act/check.js";
 import type { BrainLog } from "../src/contract/events.js";
 import type { PlannedCommand, PlannedCommandMessage } from "../src/contract/phone.js";
 import type { WorldObject, WorldView } from "../src/contract/world.js";
 import { PlanHub } from "../src/plan/hub.js";
-import { APPROVAL_TEXT, EXEC_TEXT, STEP_COMMAND } from "../src/plan/labels.js";
+import { APPROVAL_TEXT, EXEC_TEXT, STEP_COMMAND, STEP_LABEL } from "../src/plan/labels.js";
 import type { DecisionRecord } from "../src/world/decide.js";
 import { WorldState } from "../src/world/state.js";
 import { sha256, type EngineFrame } from "../src/observe/ring.js";
@@ -30,9 +31,9 @@ afterAll(async () => { await llm.close(); });
 // smallFloor: 로봇 [1, 2], 식탁 table_1 [7, 3], 싱크대 sink_1 [5, 1]
 const cup = (status: WorldObject["status"], place?: string, seen = 9_000): WorldObject => ({
   id: "cup_1", cls: "cup", position: [2, 0.75, 1], surface: "t", surface_label: "식탁", room: "hall", error_m: 0.1, status,
-  first_seen_ms: 0, last_seen_ms: seen, last_in_view_ms: seen, facts: place ? { place: { value: place, at_ms: seen, since_ms: seen, certainty: "confirmed" } } : {}, answered_ms: null, devices: [],
+  first_seen_ms: 0, last_seen_ms: seen, last_in_view_ms: seen, facts: place ? { place: { value: place, at_ms: seen, since_ms: seen, certainty: "confirmed" } } : {}, answered_ms: null, devices: [], closer_hold: false,
 });
-const world = (objects: WorldObject[], personAction?: string, at = 0): WorldView => ({
+const world =(objects: WorldObject[], personAction?: string, at = 0): WorldView => ({
   at_ms: 0, objects, person: { visible: !!personAction, since_ms: 0, last_seen_ms: null, count: 0, room: null, room_label: null, position: null, near: [], holding: [], position_ms: null, answered_ms: null, facts: personAction ? { holding: { value: personAction, at_ms: at, since_ms: at, certainty: "confirmed" } } : {} },
   fixtures: [], devices: [], eye: null, frame_ms: null, vlm_missing: 0, yolo_missing: 0,
 });
@@ -230,7 +231,7 @@ describe("실행 추적: 단계마다 실제 폰 명령", () => {
   });
 
   it("한 단계가 오래 걸리면 30초마다 명령을 다시 읽고, 2분이 지나면 실패로 닫는다. 다음 단계로 가면 다시 잰다", async () => {
-    expect(TRACK_DEFAULTS).toEqual({ repeatMs: 30_000, visionMs: 500, recheckMs: 3000, askMs: 120_000, planGapMs: 15_000 });
+    expect(TRACK_DEFAULTS).toEqual({ repeatMs: 30_000, visionMs: 500, recheckMs: 3000, askMs: 120_000, planGapMs: 15_000, stallMs: 8000, stallMax: 3 });
     const { t, decide, clock, spoken, plans, exec, last } = setup();
     await decide(decision);
     clock.t += 29_999;
@@ -376,6 +377,264 @@ describe("실행 추적: 한 번에 한 계획, 실행 전 검사", () => {
     expect(t.onHeard("완료")).toBeNull();
     expect(logs).toHaveLength(n);
     expect(phone).toHaveLength(m);
+  });
+});
+
+describe("실행 추적: 멈춘 집기·놓기 단계(관찰 모드 A)와 사람 부탁 다시 보내기", () => {
+  const PICK_UNTIL = { any: [{ object: "cup_1", follow: true, facts: { place: "in_hand" } }, { person_holding: "cup" }] };
+  const CLOSER = "컵이 보이게 가까이 비춰 주세요";
+
+  /** stalled는 받은 알림을 모은다. accept(false)면 받지 않았다고 돌려준다. */
+  function stallSetup(over: Parameters<typeof setup>[0] = {}) {
+    const stalls: Stall[] = [];
+    let accept = true;
+    const s = setup({ ...over, stalled: (x) => { stalls.push(x); return accept; } });
+    return { ...s, stalls, accept: (v: boolean) => { accept = v; } };
+  }
+  /** 컵 계획 2단계(집기)를 바꾼 계획. */
+  function variant(change: (st: AgentStep) => AgentStep, over: Parameters<typeof setup>[0] = {}) {
+    const planner = testPlanner(llm);
+    return stallSetup({
+      ...over,
+      planner: async (d, signal) => {
+        const r = await planner.plan(planContext({ decision: d, world: world([cup("present")]), floor: smallFloor() }), signal);
+        if (r.ok) r.plan.steps[1] = change(r.plan.steps[1]!);
+        return r;
+      },
+    });
+  }
+  /** 식탁 가기를 「완료」로 넘겨 집기 단계(시작 10초)로. */
+  async function toPick(s: ReturnType<typeof stallSetup>) {
+    await s.decide(decision);
+    s.t.onAnswer("plan:pam-1", "plan:pam-1:1", "done");
+    expect(s.steps()).toEqual(["done", "active", "pending", "pending"]);
+  }
+
+  it("집기 단계가 8초 넘게 안 끝나면 관찰 모드를 부른다. 단계 시작 뒤·받은 부름 뒤 8초마다, 단계마다 3번까지", async () => {
+    expect(TRACK_DEFAULTS).toMatchObject({ stallMs: 8000, stallMax: 3 });
+    const s = stallSetup();
+    await toPick(s);
+    s.clock.t += 7_999;
+    s.t.tick();
+    expect(s.stalls).toEqual([]);
+    s.clock.t += 1;
+    s.t.tick();
+    expect(s.stalls).toHaveLength(1);
+    expect(s.stalls[0]).toMatchObject({
+      planId: "plan:pam-1", stepId: "plan:pam-1:2", kind: "pick", label: STEP_LABEL.pickCup, command: STEP_COMMAND.pickCup, until: PICK_UNTIL,
+      stuckMs: 8000, looks: 0, spots: [{ id: "cup_1", label: "컵", position: [2, 0.75, 1] }],
+    });
+    expect(s.stalls[0]!.gen).toEqual(expect.any(Number));
+    expect(s.stalls[0]!.signal.aborted).toBe(false);
+    s.clock.t += 250;
+    s.t.tick();
+    expect(s.stalls).toHaveLength(1);
+    for (const since of [16_000, 24_000, 32_000, 40_000]) {
+      s.clock.t = 10_000 + since;
+      s.t.tick();
+    }
+    expect(s.stalls.map((x) => [x.stepId, x.stuckMs, x.looks])).toEqual([["plan:pam-1:2", 8000, 0], ["plan:pam-1:2", 16_000, 1], ["plan:pam-1:2", 24_000, 2]]);
+    expect(s.t.current()).toMatchObject({ state: "running" });
+    expect(s.stalls.some((x) => x.signal.aborted)).toBe(false);
+  });
+
+  it("이동·물어보기·알림·기다리기·기기 단계와 끝난 조건 없는 사람 단계는 부르지 않는다", async () => {
+    const quiet = async (s: ReturnType<typeof stallSetup>, name: string) => {
+      for (let i = 0; i < 5; i++) {
+        s.clock.t += 4000;
+        s.t.tick();
+      }
+      expect(s.t.current(), name).toMatchObject({ state: "running" });
+      expect(s.stalls, name).toEqual([]);
+    };
+    const go = stallSetup();
+    await go.decide(decision);
+    await quiet(go, "이동");
+    const q = stallSetup();
+    await q.decide(ask("pam-1", 1));
+    await quiet(q, "물어보기");
+    const never = () => new Promise<never>(() => {});
+    const kinds: [string, (st: AgentStep) => AgentStep, Parameters<typeof setup>[0]?][] = [
+      ["조건 없는 집기", (st) => ({ ...st, until: null })],
+      ["알림", (st) => ({ ...st, kind: "say", command: null, text: "컵을 치우는 중이에요" })],
+      ["기다리기", (st) => ({ ...st, kind: "wait", command: null })],
+      ["기기", (st) => ({ ...st, kind: "device", command: null, device: { tool: "turn_on", deviceId: "ac_living", args: {} } }), { devices: { run: never, confirm: never, cancel: () => {} } }],
+    ];
+    for (const [name, change, over] of kinds) {
+      const s = variant(change, over);
+      await toPick(s);
+      await quiet(s, name);
+    }
+  });
+
+  it("관찰 모드가 받지 않으면(false) 세지 않고 다음 tick에 다시 부른다. 받은 부름부터 8초를 잰다", async () => {
+    const s = stallSetup();
+    s.accept(false);
+    await toPick(s);
+    s.clock.t += 8000;
+    s.t.tick();
+    s.clock.t += 250;
+    s.t.tick();
+    s.accept(true);
+    s.clock.t += 250;
+    s.t.tick();
+    s.clock.t += 250;
+    s.t.tick();
+    expect(s.stalls.map((x) => [x.stuckMs, x.looks])).toEqual([[8000, 0], [8250, 0], [8500, 0]]);
+    s.clock.t = 10_000 + 16_499;
+    s.t.tick();
+    expect(s.stalls).toHaveLength(3);
+    s.clock.t += 1;
+    s.t.tick();
+    expect(s.stalls.at(-1)).toMatchObject({ stuckMs: 16_500, looks: 1 });
+  });
+
+  it("다음 단계로 가면 셈과 기준 시각을 다시 잡는다. 놓기 단계는 컵과 싱크대를 보고, 끝난 단계 알림의 신호는 끊긴다", async () => {
+    const s = stallSetup();
+    await toPick(s);
+    for (let i = 0; i < 3; i++) {
+      s.clock.t += 8000;
+      s.t.tick();
+    }
+    expect(s.stalls).toHaveLength(3);
+    s.clock.t += 1000;
+    s.t.onAnswer("plan:pam-1", "plan:pam-1:2", "done");
+    expect(s.stalls.every((x) => x.signal.aborted)).toBe(true);
+    s.t.onAnswer("plan:pam-1", "plan:pam-1:3", "done");
+    expect(s.last()).toMatchObject({ step: "plan:pam-1:4" });
+    s.clock.t += 7_999;
+    s.t.tick();
+    expect(s.stalls).toHaveLength(3);
+    s.clock.t += 1;
+    s.t.tick();
+    expect(s.stalls).toHaveLength(4);
+    const place = s.stalls[3]!;
+    expect(place).toMatchObject({
+      planId: "plan:pam-1", stepId: "plan:pam-1:4", kind: "place", label: STEP_LABEL.placeCup, command: STEP_COMMAND.placeCup,
+      until: { object: "cup_1", follow: true, facts: { place: "in_sink" } }, stuckMs: 8000, looks: 0,
+      spots: [{ id: "cup_1", label: "컵", position: [2, 0.75, 1] }, SINK],
+    });
+    expect(place.gen).toBeGreaterThan(s.stalls[0]!.gen);
+    expect(place.signal.aborted).toBe(false);
+  });
+
+  it("단계가 끝나면(시간 초과 실패·「그만」·새 계획·멈춤·계획 완료) 그 알림의 신호를 끊는다", async () => {
+    const ends: [string, (s: ReturnType<typeof stallSetup>) => void | Promise<void>][] = [
+      ["시간 초과", (s) => { s.clock.t += 120_001; s.t.tick(); }],
+      ["그만", (s) => { s.t.onHeard("그만"); }],
+      ["새 계획", (s) => s.decide(ask("pam-2", 2))],
+      ["멈춤", (s) => { s.t.stop(); }],
+      ["계획 완료", (s) => { s.t.onAnswer("plan:pam-1", "plan:pam-1:2", "done"); s.t.onAnswer("plan:pam-1", "plan:pam-1:3", "done"); s.clock.t += 8000; s.t.tick(); s.t.onAnswer("plan:pam-1", "plan:pam-1:4", "done"); }],
+    ];
+    for (const [name, end] of ends) {
+      const s = stallSetup();
+      await toPick(s);
+      s.clock.t += 8000;
+      s.t.tick();
+      expect(s.stalls, name).toHaveLength(1);
+      await end(s);
+      expect(s.stalls.map((x) => x.signal.aborted), name).toEqual(s.stalls.map(() => true));
+    }
+  });
+
+  it("사람 부탁(askCloser)은 지금 명령을 같은 계획·단계 id로 글만 바꿔 다시 보낸다(소리로 읽음). 그 뒤 다시 읽기·비전 상태도 새 글이다", async () => {
+    let w = world([cup("present")]);
+    const s = stallSetup({ w: () => w });
+    await toPick(s);
+    s.clock.t += 8000;
+    s.t.tick();
+    const n = s.phone.length;
+    expect(s.t.askCloser("plan:pam-1", "plan:pam-1:2", CLOSER)).toBe(true);
+    expect(s.phone).toHaveLength(n + 1);
+    expect(s.last()).toEqual({
+      type: "command", id: "plan:pam-1", step: "plan:pam-1:2", text: CLOSER, vision: "컵 · 식탁 위", choices: DONE,
+      target: { id: "cup_1", label: "컵", position: [2, 0.75, 1] }, speak: true, kind: "pick",
+    });
+    expect(s.t.openCommand()).toEqual({ planId: "plan:pam-1", stepId: "plan:pam-1:2", kind: "command", text: CLOSER, choices: [expect.objectContaining({ id: "done", label: "완료" })] });
+    // 30초 뒤 다시 읽을 때도 새 글
+    s.clock.t += 29_999;
+    s.t.tick();
+    expect(s.phone).toHaveLength(n + 1);
+    s.clock.t += 1;
+    s.t.tick();
+    expect(s.phone).toHaveLength(n + 2);
+    expect(s.last()).toMatchObject({ step: "plan:pam-1:2", text: CLOSER, speak: true, kind: "pick" });
+    // 비전 상태만 바뀐 명령도 새 글
+    w = world([cup("present", "in_sink", s.clock.t)]);
+    s.clock.t += 500;
+    s.t.onWorld();
+    expect(s.last()).toMatchObject({ step: "plan:pam-1:2", text: CLOSER, vision: "컵 · 싱크대 안", speak: false, kind: "pick" });
+    // 「완료」는 그대로 받고 다음 단계는 그 단계 명령이다
+    expect(s.t.onAnswer("plan:pam-1", "plan:pam-1:2", "done")).toBe(true);
+    expect(s.last()).toMatchObject({ step: "plan:pam-1:3", text: STEP_COMMAND.goSink, speak: true });
+    expect(s.spoken()).toEqual([STEP_COMMAND.goTable, STEP_COMMAND.pickCup, CLOSER, CLOSER, STEP_COMMAND.goSink]);
+  });
+
+  it("사람 부탁은 지금 그 계획의 그 사람 단계이고 글이 「주세요」로 끝날 때만 보낸다. 다른 단계·계획, 승인·다시 묻기·물어보기 중, 끝난 계획·멈춘 뒤면 false이고 아무것도 보내지 않는다", async () => {
+    const s = stallSetup();
+    await toPick(s);
+    const n = s.phone.length;
+    expect(s.t.askCloser("plan:pam-1", "plan:pam-1:1", CLOSER)).toBe(false);
+    expect(s.t.askCloser("plan:pam-1", "plan:pam-1:3", CLOSER)).toBe(false);
+    expect(s.t.askCloser("plan:pam-9", "plan:pam-1:2", CLOSER)).toBe(false);
+    // 사람에게 하는 말(「주세요」로 끝남)만 보낸다
+    expect(s.t.askCloser("plan:pam-1", "plan:pam-1:2", "컵을 가까이 볼게요")).toBe(false);
+    expect(s.t.askCloser("plan:pam-1", "plan:pam-1:2", "")).toBe(false);
+    expect(s.phone).toHaveLength(n);
+    s.t.onHeard("그만");
+    const m = s.phone.length;
+    expect(s.t.askCloser("plan:pam-1", "plan:pam-1:2", CLOSER)).toBe(false);
+    expect(s.phone).toHaveLength(m);
+
+    const a = stallSetup({ approvals: store() });
+    await a.decide(decision);
+    expect(a.t.askCloser("plan:pam-1", "plan:pam-1:approve", CLOSER)).toBe(false);
+    expect(a.t.askCloser("plan:pam-1", "plan:pam-1:1", CLOSER)).toBe(false);
+    expect(a.phone).toHaveLength(1);
+
+    const q = stallSetup();
+    await q.decide(ask("pam-1", 1));
+    expect(q.t.askCloser("plan:pam-1", "plan:pam-1:1", CLOSER)).toBe(false);
+    expect(q.phone).toHaveLength(1);
+
+    // 시간 초과로 계속할지 묻는 중: 부탁도, 관찰 모드 부름도 없다
+    const g = variant((st) => ({ ...st, onTimeout: "ask" }));
+    await toPick(g);
+    g.clock.t += 120_001;
+    g.t.tick();
+    expect(g.last()).toMatchObject({ step: "plan:pam-1:2:again" });
+    const k = g.phone.length;
+    expect(g.t.askCloser("plan:pam-1", "plan:pam-1:2", CLOSER)).toBe(false);
+    g.clock.t += 8000;
+    g.t.tick();
+    expect(g.phone).toHaveLength(k);
+    expect(g.stalls).toEqual([]);
+
+    const z = stallSetup();
+    await toPick(z);
+    z.t.stop();
+    expect(z.t.askCloser("plan:pam-1", "plan:pam-1:2", CLOSER)).toBe(false);
+  });
+
+  it("가까이 봐서 지키는 중인 옛 물건(closer_hold)은 「아직 있음」으로 세지 않는다: 그 뒤 새로 보인 같은 종류 물건으로 이어 가 놓기가 비전으로 넘어간다", async () => {
+    for (const hold of [false, true]) {
+      let w = world([cup("present")]);
+      const s = setup({ w: () => w });
+      await s.decide(decision);
+      for (const step of ["plan:pam-1:1", "plan:pam-1:2", "plan:pam-1:3"]) s.t.onAnswer("plan:pam-1", step, "done");
+      expect(s.last()).toMatchObject({ step: "plan:pam-1:4" });
+      s.clock.t += 600;
+      const old: WorldObject = { ...cup("present", "in_hand", 9_000), closer_hold: hold };
+      w = world([old, { ...cup("present", "in_sink", s.clock.t), id: "cup_2", position: [5, 0.9, 1], first_seen_ms: s.clock.t - 200 }]);
+      s.t.onWorld();
+      if (hold) {
+        expect(s.last(), "지킴").toEqual({ type: "command_clear", id: "plan:pam-1" });
+        expect(s.t.current(), "지킴").toMatchObject({ state: "done" });
+      } else {
+        expect(s.last(), "지킴 없음").toMatchObject({ step: "plan:pam-1:4", vision: "컵 · 손에 있음" });
+        expect(s.t.current(), "지킴 없음").toMatchObject({ state: "running" });
+      }
+    }
   });
 });
 
