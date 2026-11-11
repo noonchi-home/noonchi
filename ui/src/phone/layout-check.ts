@@ -1,6 +1,7 @@
 // 실제 폰 덮개 배치 검사: 화면 사진 페이지(shots.tsx)가 크롬에서 잰 자리(CSS px)로 부른다. 문제가 있으면 console.error로 내서 npm run capture가 실패한다.
 // 단추는 화면 안에 있거나, 화면 안에 있는 스크롤 칸 안에 있어야 누를 수 있다. 세로 화면에서 엄지 자리 단추(완료·답·기록)는 엄지가 닿는 아래 1/3 안에 있다.
 // 위 줄(미어캣·명령)·엄지 자리 칸은 가운데 조준점(28px)과 그 칸 밖 단추를 가리지 않는다. 모달 안 단추는 칸 위에 뜨므로 보지 않는다.
+// 위 줄 첫 내용(미어캣 단추)은 상태 표시줄 아래, 화면 위에서 36px부터 시작한다.
 // 명령·비전 상태 글(data-phone-text)은 …나 줄 자름으로 잘리지 않는다. 화면 밖 세모는 칸·단추와 겹치지 않고, 화면 안 고리는 칸 밑에 깔리지 않는다(canvas가 맨 아래다).
 // 처음 화면은 「AR 시작」 단추가 스크롤하지 않은 첫 화면 안에 있어야 한다(세로·가로 모두).
 
@@ -9,6 +10,9 @@ export interface Box { left: number; top: number; right: number; bottom: number 
 export interface Target { name: string; box: Box; scroller: Box | null; zone?: string }
 
 const RETICLE_HALF = 14;
+/** 위 줄 첫 내용은 이보다 아래에서 시작한다(상태 표시줄 28px + 8px). */
+export const TOP_MIN = 36;
+export const TOP_ZONE = "위 줄";
 export const THUMB_ZONE = "엄지 자리";
 export const MODAL_ZONE = "모달";
 const inside = (b: Box, w: number, h: number) => b.left >= 0 && b.top >= 0 && b.right <= w && b.bottom <= h;
@@ -24,6 +28,10 @@ export function layoutIssues(
     const reach = t.scroller ?? t.box;
     if (!inside(reach, view.width, view.height)) issues.push(`「${t.name}」 단추가 화면 밖이에요(${where(reach)} / ${size})`);
   }
+  // 위 줄 첫 내용(미어캣)이 상태 표시줄(배터리 줄)에 걸리면 안 된다
+  const tops = targets.filter((t) => t.zone === TOP_ZONE);
+  const first = tops.reduce<Target | null>((a, t) => (!a || t.box.top < a.box.top ? t : a), null);
+  if (first && first.box.top < TOP_MIN) issues.push(`위 줄이 상태 표시줄과 겹쳐요(${where(first.box)} / ${size})`);
   if (view.height > view.width) {
     for (const t of targets) {
       if (t.zone === THUMB_ZONE && t.box.top < (view.height * 2) / 3) issues.push(`「${t.name}」 단추가 엄지가 닿는 아래 1/3 밖이에요(${where(t.box)} / ${size})`);

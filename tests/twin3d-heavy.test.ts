@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } fr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { acquire, alive, cmdLine, killTree, withHeavy } from "../scripts/twin3d/heavy.js";
+import { acquire, alive, cmdLine, HEAVY_PID_ENV, heldLock, killTree, withHeavy } from "../scripts/twin3d/heavy.js";
 import { runHeavy } from "../scripts/twin3d/run-heavy.js";
 
 const dir = () => mkdtempSync(join(tmpdir(), "heavy-"));
@@ -39,6 +39,23 @@ describe("무거운 일 잠금", () => {
     expect(existsSync(path)).toBe(false);
     expect(await withHeavy("ok", async (lock) => { lock.note({ chromePid: 42 }); return JSON.parse(readFileSync(path, "utf8")).chromePid; }, path)).toBe(42);
     expect(existsSync(path)).toBe(false);
+  });
+  it("npm run heavy 안의 명령은 넘겨받은 주인 pid로 그 잠금을 쓴다: 다시 잡지 않고, note는 주인이 적은 것에 더하고, 풀기는 주인이 한다", () => {
+    const path = join(dir(), "lock");
+    const lock = acquire("npm run heavy", path);
+    lock.note({ childPid: 5678 });
+    const inner = heldLock(path, { [HEAVY_PID_ENV]: String(process.pid) });
+    expect(inner).not.toBeNull();
+    inner!.note({ chromePid: 1234 });
+    inner!.release();
+    const held = JSON.parse(readFileSync(path, "utf8"));
+    expect(held).toMatchObject({ name: "npm run heavy", pid: process.pid, childPid: 5678, chromePid: 1234 });
+    expect(Math.abs(Date.parse(held.chromePidAt) - Date.now()) < 5000).toBe(true);
+    // 넘겨받은 pid가 없거나 지금 잠금 주인이 아니면 그 잠금이 아니다
+    expect(heldLock(path, {})).toBeNull();
+    expect(heldLock(path, { [HEAVY_PID_ENV]: "99999999" })).toBeNull();
+    lock.release();
+    expect(heldLock(path, { [HEAVY_PID_ENV]: String(process.pid) })).toBeNull();
   });
   it.runIf(win)("끝난 프로세스가 남긴 잠금은 치우고, 그때 띄운 자식 트리를 끝낸다", async () => {
     const path = join(dir(), "lock");
@@ -76,11 +93,11 @@ describe("npm run heavy", () => {
     expect(cmdLine(["uv", "run", "pytest", "-m", "not blender", "-q"])).toBe('uv run pytest -m "not blender" -q');
     expect(cmdLine(["x", "a&b"])).toBe('x "a&b"');
   });
-  it.runIf(win)("기본으로 부른 폴더(INIT_CWD)에서 돌고, 인자가 그대로 가고, 자식 pid를 잠금에 적고, 끝나면 잠금을 푼다", async () => {
+  it.runIf(win)("기본으로 부른 폴더(INIT_CWD)에서 돌고, 인자가 그대로 가고, 자식 pid를 잠금에 적고, 잠금 주인 pid를 명령에 넘기고, 끝나면 잠금을 푼다", async () => {
     const d = dir();
     const out = join(d, "out.json");
     const lockPath = join(d, "lock");
-    const script = "const fs = require('fs'); fs.writeFileSync(process.argv[1], JSON.stringify({ cwd: process.cwd(), ppid: process.ppid, lock: JSON.parse(fs.readFileSync(process.argv[2], 'utf8')), args: process.argv.slice(3) }))";
+    const script = `const fs = require('fs'); fs.writeFileSync(process.argv[1], JSON.stringify({ cwd: process.cwd(), ppid: process.ppid, owner: process.env.${HEAVY_PID_ENV}, lock: JSON.parse(fs.readFileSync(process.argv[2], 'utf8')), args: process.argv.slice(3) }))`;
     const saved = process.env.INIT_CWD;
     process.env.INIT_CWD = d;
     let code: number;
@@ -91,6 +108,7 @@ describe("npm run heavy", () => {
     const got = JSON.parse(readFileSync(out, "utf8"));
     expect([realpathSync(got.cwd), got.args]).toEqual([realpathSync(d), ["not blender", "a&b"]]);
     expect(got.lock.childPid).toBe(got.ppid);
+    expect(got.owner).toBe(String(got.lock.pid));
     expect(existsSync(lockPath)).toBe(false);
   }, 20_000);
   it.runIf(win)("명령의 끝 코드를 돌려주고, 실패해도 잠금을 푼다", async () => {

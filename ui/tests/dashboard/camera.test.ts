@@ -11,14 +11,22 @@ import { pageLayout, type Rect } from "../../src/dashboard/layout";
 import { MASCOT } from "../../src/dashboard/mascot-image";
 import { LABEL_BOX, mapScene, type Box } from "../../src/dashboard/scene";
 import type { ScreenPoint } from "../../src/twin/use-anchors";
+import { DOLL_HEIGHT, DOLL_REACH } from "../../src/twin3d/eye";
+import { planToPixel } from "../../src/twin3d/projection";
 import { anchorOf, CAM, HOME, IMAGE, moment, PLAN_CHECKS } from "./cup-run";
 
 const hit = (a: Box, b: Box) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
 const around = (p: { x: number; y: number }, r: number): Box => ({ x0: p.x - r, y0: p.y - r, x1: p.x + r, y1: p.y + r });
 const inside = (p: { x: number; y: number }, b: Box) => p.x >= b.x0 && p.x <= b.x1 && p.y >= b.y0 && p.y <= b.y1;
-/** 클로이드(둘레 20 + 테)·목적지(둘레 24) 표시 반지름(px). */
-const ROBOT_R = 24;
+/** 목적지(둘레 24) 표시 반지름(px). */
 const TARGET_R = 26;
+/** 클로이드 3D 인형이 화면에서 차지하는 상자: 발(그 방 바닥)과 머리(바닥 + 인형 키) 둘레에 발 둘레 반지름(DOLL_REACH, 꼬리 끝까지). */
+function dollBox(robot: NonNullable<ReturnType<typeof twinFrame>["robot"]>, cam: { cx: number; cy: number; scale: number }, box: { width: number; height: number }): Box {
+  const floor = HOME.rooms.find((r) => r.id === robot.room)?.floor ?? 0;
+  const [feet, head] = [floor, floor + DOLL_HEIGHT].map((h) => toScreen(cam, box, planToPixel(CAM, robot.position, h)));
+  const r = DOLL_REACH * (CAM.width / CAM.orthoScale) * cam.scale;
+  return { x0: Math.min(feet!.x, head!.x) - r, y0: Math.min(feet!.y, head!.y) - r, x1: Math.max(feet!.x, head!.x) + r, y1: Math.max(feet!.y, head!.y) + r };
+}
 /** 길 선 반 굵기(px). */
 const LINE_R = 6;
 
@@ -53,17 +61,19 @@ describe.each([[1920, 1080], [1440, 900]])("%i×%i", (width, height) => {
     expect(cam).toEqual({ cx: IMAGE.width / 2, cy: IMAGE.height / 2, scale: coverScale(IMAGE, box) });
   });
 
-  it.each([1, 2, 3, 4])("순간 %i: 목적지·클로이드·그 단계 대상(확인한 것)이 지도 카메라 칸 안이고, 보이는 확인한 것은 말풍선 카드·마스코트 밑에 없다", (n) => {
+  it.each([1, 2, 3, 4])("순간 %i: 목적지·클로이드 인형·그 단계 대상(확인한 것)이 지도 카메라 칸 안이고, 보이는 확인한 것은 말풍선 카드·마스코트 밑에 없다", (n) => {
     const { frame, cam } = view(n);
     const goal = frame.step?.target?.objectId ?? frame.step?.target?.deviceId;
     const mark = frame.marks.find((m) => m.id === goal);
     expect(mark, "그 단계 대상 표시").toBeDefined();
-    const parts: [string, { x: number; y: number }, number][] = [["그 단계 대상", toScreen(cam, box, mark!.px), 9]];
-    if (frame.target) parts.push(["목적지", toScreen(cam, box, frame.target), TARGET_R]);
-    if (frame.robot) parts.push(["클로이드", toScreen(cam, box, frame.robot.px), ROBOT_R]);
-    for (const [name, p, r] of parts) {
+    const parts: [string, { x: number; y: number }, Box][] = [];
+    const at = (name: string, p: { x: number; y: number }, r: number) => parts.push([name, p, around(p, r)]);
+    at("그 단계 대상", toScreen(cam, box, mark!.px), 9);
+    if (frame.target) at("목적지", toScreen(cam, box, frame.target), TARGET_R);
+    if (frame.robot) parts.push(["클로이드 인형", toScreen(cam, box, frame.robot.px), dollBox(frame.robot, cam, box)]);
+    for (const [name, p, b0] of parts) {
       expect(inside(p, focus), `${name}이 지도 카메라 칸 밖`).toBe(true);
-      for (const b of blocked) expect(hit(around(p, r), b), `${name}이 말풍선 카드·마스코트 밑`).toBe(false);
+      for (const b of blocked) expect(hit(b0, b), `${name}이 말풍선 카드·마스코트 밑`).toBe(false);
     }
     // 다른 단계의 확인한 것은 카메라가 맞추지 않는다(상자 밖이면 안 보인다). 보이면 가린 자리 밑이 아니다
     for (const m of frame.marks) {
@@ -78,7 +88,7 @@ describe.each([[1920, 1080], [1440, 900]])("%i×%i", (width, height) => {
     const scene = mapScene(frame, checksAt(n), HOME.shapes, box, cam, blocked);
     const card: Box = { x0: 0, y0: 0, x1: box.width, y1: box.height };
     const parts: [string, Box][] = [];
-    if (frame.robot) parts.push(["클로이드", around(toScreen(cam, box, frame.robot.px), ROBOT_R)]);
+    if (frame.robot) parts.push(["클로이드 인형", dollBox(frame.robot, cam, box)]);
     const leg = legOf(frame);
     for (const p of leg ? frame.route.points.slice(leg.from, leg.to + 1) : []) parts.push(["길", around(toScreen(cam, box, p), LINE_R)]);
     for (const c of scene.checks) {
@@ -102,13 +112,12 @@ describe.each([[1920, 1080], [1440, 900]])("%i×%i", (width, height) => {
     expect(kept.labels.map((l) => l.id).sort()).toEqual([...frame.rooms].sort());
   });
 
-  it.each([1, 2, 3, 4])("순간 %i: 말풍선이 덮지 않을 자리(keep)에 클로이드·목적지 표시 둘레가 다 들어 있다", (n) => {
+  it.each([1, 2, 3, 4])("순간 %i: 말풍선이 덮지 않을 자리(keep)에 클로이드 인형 전체(발~머리·꼬리)와 목적지 표시 둘레가 다 들어 있다", (n) => {
     const { frame, cam } = view(n);
     const scene = mapScene(frame, checksAt(n), HOME.shapes, box, cam, blocked);
-    const covers = (p: { x: number; y: number }, r: number) =>
-      scene.keep.some((k) => k.left <= p.x - r + 0.5 && k.top <= p.y - r + 0.5 && k.right >= p.x + r - 0.5 && k.bottom >= p.y + r - 0.5);
-    if (frame.robot) expect(covers(toScreen(cam, box, frame.robot.px), 20), "클로이드").toBe(true);
-    if (frame.target) expect(covers(toScreen(cam, box, frame.target), 24), "목적지").toBe(true);
+    const covers = (b: Box) => scene.keep.some((k) => k.left <= b.x0 + 0.5 && k.top <= b.y0 + 0.5 && k.right >= b.x1 - 0.5 && k.bottom >= b.y1 - 0.5);
+    if (frame.robot) expect(covers(dollBox(frame.robot, cam, box)), "클로이드 인형").toBe(true);
+    if (frame.target) expect(covers(around(toScreen(cam, box, frame.target), 24)), "목적지").toBe(true);
     expect(scene.keep.length).toBe(Number(!!frame.robot) + Number(!!frame.target));
   });
 });

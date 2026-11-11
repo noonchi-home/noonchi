@@ -290,14 +290,15 @@ describe("문제 모달", () => {
 });
 
 describe("배치·글 크기", () => {
-  it("세로가 기본: class에 portrait:가 없다. 위 줄과 엄지 자리는 옆 여백 16px, 엄지 자리는 맨 아래, 가로면 오른쪽 아래", () => {
+  it("세로가 기본: class에 portrait:가 없다. 위 줄과 엄지 자리는 옆 여백 16px, 위 줄은 상태 표시줄 아래, 엄지 자리는 맨 아래, 가로면 오른쪽 아래", () => {
     for (const name of AR_SHOTS) {
       const { overlay, unmount } = show(SHOTS[name].view);
       expect([...overlay.querySelectorAll("[class]")].flatMap(words).filter((w) => w.startsWith("portrait:")), name).toEqual([]);
       unmount();
     }
     const { zone } = show(SHOTS["pick-cup"].view);
-    expect(words(zone("top")!)).toEqual(expect.arrayContaining(["fixed", "top-0", "px-4"]));
+    expect(words(zone("top")!)).toEqual(expect.arrayContaining(["fixed", "top-0", "px-4", "pt-[calc(max(env(safe-area-inset-top),28px)+8px)]"]));
+    expect(words(zone("top")!)).not.toContain("pt-2");
     expect(words(zone("thumb")!)).toEqual(expect.arrayContaining(["fixed", "left-4", "right-4", "bottom-[calc(env(safe-area-inset-bottom)+16px)]", "landscape:left-auto"]));
   });
 

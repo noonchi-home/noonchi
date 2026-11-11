@@ -13,7 +13,7 @@ import type { BoxSize } from "./fit";
 import type { TwinFrame } from "./frame";
 import { otherRooms, roomsPath, type RoomShape } from "./home";
 import { PreDrawing, useFadeIn } from "./motion";
-import { checkDotLayers, cloidLayers, destinationLayers, dimLayer, lineLayers, roomEdgeLayer, type Layer, type MarkTone } from "./marks";
+import { checkDotLayers, destinationLayers, dimLayer, leaveBox, lineLayers, roomEdgeLayer, type Layer, type MarkTone } from "./marks";
 import { legAheadOf, mapScene, type Box } from "./scene";
 
 /** 밝힌 방 묶음 이름(순서와 상관없음). */
@@ -23,7 +23,9 @@ const lineOf = (pts: Px[]) => (pts.length ? `M${pts.map(([u, v]) => `${u.toFixed
 
 /**
  * 3D 트윈 위 표시 판. 구운 보기 그림 픽셀(image) 크기의 판(data-map-plate) 하나에 같은 그림 픽셀 그림(LineDrawSvg)으로
- * 밝히지 않는 방 어둡게 칠한 층, 밝힌 방 테두리, 지나온 길·남은 길·지금 구간, 목적지, 확인한 것 점, 클로이드(점·머리 방향)를 겹쳐 놓는다.
+ * 밝히지 않는 방 어둡게 칠한 층, 밝힌 방 테두리, 지나온 길·남은 길·지금 구간, 목적지, 확인한 것 점을 겹쳐 놓는다.
+ * 클로이드(맞춘 눈)는 판에 그리지 않고 엔진 장면의 3D 인형·원뿔이 따른다. frame.robot은 카메라 맞춤·말풍선 비킬 자리·길 선 비울 자리에만 쓴다.
+ * 판이 캔버스 위라 길 선은 인형 자리(frame.robot.body)에서 비운다: 인형에서 나가는 남은 길·지금 구간은 앞쪽, 인형까지 온 지나온 길은 끝쪽.
  * 판 transform은 엔진이 그림을 그릴 때마다 그 지도 카메라로 바꾼다(React 상태를 거치지 않아 3D 그림과 같은 그림에 움직인다).
  * 어둡게 한 층은 계획의 밝힌 방 묶음(roomSets)마다 미리 만들고 지금 묶음만 opacity 1이다: 밝힌 방이 바뀌어도 새 모양을 그리지 않는다.
  * 선 굵기는 카메라가 다 옮긴 뒤 한 번 새 배율에 맞춘다. 방 이름표·확인한 기기 말풍선은 판 밖 상자 px에 두고(scene.ts가 고른다),
@@ -106,6 +108,11 @@ export function MapOverlay({ frame, checks, shapes, roomSets, image, size, cam, 
   const litPath = useMemo(() => roomsPath(frame.rooms, shapes), [frame.rooms, shapes]);
   const { robot, route, target } = frame;
   const legAhead = useMemo(() => legAheadOf(frame), [frame]);
+  // 길 선에서 인형 자리를 뺀 것(지나온 길은 끝쪽이라 뒤집어서 뺀다)
+  const lines = useMemo((): [string, Px[], "route" | "routeAhead" | "routePassed"][] => {
+    const clear = (pts: Px[], fromEnd = false) => (!robot ? pts : fromEnd ? leaveBox([...pts].reverse(), robot.body).reverse() : leaveBox(pts, robot.body));
+    return [["passed", clear(route.done, true), "routePassed"], ["ahead", clear(route.ahead), "routeAhead"], ["leg-ahead", clear(legAhead), "route"]];
+  }, [robot, route, legAhead]);
   const { points, checks: shownChecks, labels, keep } = mapScene(frame, checks, shapes, size, cam, blocked, legAhead);
   const markTone = (id: string): MarkTone => {
     const d = devices.get(id);
@@ -116,7 +123,6 @@ export function MapOverlay({ frame, checks, shapes, roomSets, image, size, cam, 
   const draw = (layers: Layer[]) => layers.map((l, i) => (
     <LineDrawSvg key={i} tone={l.tone} path={l.d} strokeWidth={l.width} width={image.width} height={image.height} className="absolute inset-0 h-full w-full" />
   ));
-  const lines: [string, Px[], "route" | "routeAhead" | "routePassed"][] = [["passed", route.done, "routePassed"], ["ahead", route.ahead, "routeAhead"], ["leg-ahead", legAhead, "route"]];
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden">
       <div ref={plate} data-map-plate className="absolute left-0 top-0 origin-top-left will-change-transform" style={{ width: image.width, height: image.height }}>
@@ -137,7 +143,6 @@ export function MapOverlay({ frame, checks, shapes, roomSets, image, size, cam, 
             </div>
           );
         })}
-        {robot && <div data-robot className="absolute inset-0">{draw(cloidLayers(robot.px, robot.angle, k))}</div>}
       </div>
       <div ref={marks} data-map-marks className="absolute inset-0">
         {labels.map((l) => (

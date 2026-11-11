@@ -4,7 +4,7 @@
 // 답 단추(answer)는 onChoice로 넘긴다(src/contract/phone.ts). 명령 대상의 트윈 자리는 맞춘 변환으로 AR 자리로 바꿔 보내고(맞추기 전 null),
 // 맞춤이 바뀌면 지금 명령을 다시 보낸다(speak false). 위치 맞춤 모듈(src/sync)의 상태가 바뀌면 붙은 폰 모두에 상태를 보낸다.
 // 내부 테스트용이라 같은 와이파이의 누구나 말을 보낼 수 있다.
-// 폰 화면은 React 빌드 ui/dist/phone/이고 빌드 파일은 /assets/다(대시보드와 같은 빌드).
+// 폰 화면은 React 빌드 ui/dist/phone/이고 빌드 파일은 /assets/다(대시보드와 같은 빌드). 영상 모드 영상은 /phone/videos/다(videoDir, Range).
 
 import { existsSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server } from "node:http";
@@ -15,7 +15,7 @@ import { WebSocket, WebSocketServer } from "ws";
 import type { FocusTarget } from "../contract/events.js";
 import type { ApprovalAnswer, PhoneCommand, PhonePending, PhoneTalkReply, PlannedCommand, PlannedCommandMessage } from "../contract/phone.js";
 import { listenRetry } from "../server/net.js";
-import { serveFile } from "../server/static.js";
+import { serveFile, serveRange } from "../server/static.js";
 import type { EyeFeed } from "./feed.js";
 import { MAX_PACKET_BYTES, parsePacket, type FrameHeader } from "./packet.js";
 import type { Plan2 } from "./align.js";
@@ -32,6 +32,8 @@ export const DEFAULT_UI_DIR = fileURLToPath(new URL("../../ui/dist/", import.met
 export const PHONE_NOT_BUILT = "폰 화면이 아직 빌드되지 않았어요. npm run ui:build";
 /** /phone/ 밖에서 내주는 ui/dist 파일: 빌드 파일·브랜드 그림·글꼴 라이선스 폴더와 파비콘. 대시보드·설정 화면은 내주지 않는다. */
 const PHONE_FILES = /^\/(assets|brand|fonts)\/(.+)$|^\/(favicon\.ico|favicon-32\.png|apple-touch-icon\.png|icon-192\.png|icon-512\.png)$/;
+/** 영상 모드가 트는 영상(videoDir 바로 아래 파일 하나). */
+const VIDEO_PATH = /^\/phone\/videos\/([A-Za-z0-9_-]{1,64}\.(?:mp4|webm))$/;
 
 export interface PhoneServerOptions {
   onEye: (eye: EyeEvent) => void;
@@ -47,6 +49,8 @@ export interface PhoneServerOptions {
   sync: PhoneSessionOptions["sync"];
   /** 화면 빌드 폴더(기본 ui/dist). 폰 화면은 그 안 phone/index.html. */
   uiDir?: string;
+  /** 영상 모드 영상 폴더(runtime/videos). 있으면 GET /phone/videos/<이름>.mp4·.webm을 Range로 나눠 준다. */
+  videoDir?: string;
   log?: (msg: string) => void;
   /** 폰에서 말하거나 쓴 문장(음성 인식 결과). 에이전트 답과 승인 대기를 돌려준다. */
   onSay?: (text: string) => Promise<PhoneReply>;
@@ -113,6 +117,7 @@ export function lanUrls(port: number, host: string): string[] {
 
 export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
   const uiDir = resolve(opts.uiDir ?? DEFAULT_UI_DIR);
+  const videoDir = opts.videoDir ? resolve(opts.videoDir) : null;
   const log = opts.log ?? ((m: string) => console.log(m));
   const session = new PhoneSession({ fallback: opts.fallback, eyeHeightM: opts.eyeHeightM, floorAt: opts.floorAt, sync: opts.sync });
 
@@ -131,7 +136,11 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
     const head = req.method === "HEAD";
     // 폴더마다 그 폴더를 뿌리로 내준다(..%2F로 ui/dist의 대시보드·설정 화면에 닿지 않게)
     const file = PHONE_FILES.exec(path);
-    if (path.startsWith("/phone/")) {
+    // 영상은 같은 출처로 준다(폰 페이지가 영상을 canvas에 그려 보낸다). 이름이 틀리거나 없으면 404
+    if (path.startsWith("/phone/videos/")) {
+      const video = VIDEO_PATH.exec(path);
+      if (videoDir && video && serveRange(req, res, videoDir, video[1]!, head)) return;
+    } else if (path.startsWith("/phone/")) {
       if (serveFile(res, join(uiDir, "phone"), path.slice("/phone/".length), head)) return;
       if (!existsSync(join(uiDir, "phone", "index.html"))) {
         res.writeHead(503, { "content-type": "text/plain; charset=utf-8" });

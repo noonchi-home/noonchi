@@ -50,7 +50,10 @@ export const color = {
   "scene-rail": "#e4eaec",
   "scene-light": "#ffffff",
   "scene-shade": "#000000",
-  "scene-placeholder": "#bdbdbd"
+  "scene-placeholder": "#bdbdbd",
+  "doll-fur": "#d6a771",
+  "doll-belly": "#f6e4d4",
+  "doll-dark": "#434140"
 } as const;
 
 export const rgba = {
@@ -185,7 +188,13 @@ export const twin = {
     },
     "cone": "#b92a51",
     "coneOpacityFrom": 0.38,
-    "coneOpacityTo": 0
+    "coneOpacityTo": 0,
+    "doll": {
+      "fur": "#d6a771",
+      "belly": "#f6e4d4",
+      "dark": "#434140",
+      "note": "대시보드 3D 트윈의 맞춘 눈 인형(three.js 기본 도형 미어캣, 키 0.55 m). 가슴 점은 brand, 시야 원뿔은 viz.cone"
+    }
   },
   "checkedDevice": {
     "bubbleRing": "#a1143e",
@@ -282,7 +291,8 @@ export const viz = {
     "limited": "#a39994",
     "estimated": "#a39994",
     "faceOpacity": 0.22,
-    "outline": "원뿔 가장자리 선·바닥 원판 둘레는 세 겹(심 0.03 m)",
+    "outline": "원뿔 가장자리 선·바닥 원판 둘레는 세 겹, 심 굵기는 lineCore(m)",
+    "lineCore": 0.03,
     "arrowHalfDeg": 5,
     "length": 1.2
   },
