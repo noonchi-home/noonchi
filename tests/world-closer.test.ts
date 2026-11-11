@@ -127,6 +127,17 @@ describe("가까이 보기 합치기(applyCloser)", () => {
     expect(u.view(6000).objects.map((o) => [o.id, o.followed_by])).toEqual([["cup_1", null], ["cup_2", null]]);
   });
 
+  it("전체 사진의 새 컵 등장으로 옮김 표시가 붙은 뒤 같은 원본 사진을 잘라 옛 컵을 찾으면 표시를 지운다(두 컵이 함께 있었다). 표시보다 옛 촬영을 잘라 찾으면 지우지 않는다", () => {
+    const w = ws();
+    w.applyCloser([1, 2, 3].map((i) => pass(`e${i}`, i * 1000, [cupIn])));
+    for (let i = 4; i <= 6; i++) full(w, `e${i}`, i * 1000, [cupOut]);
+    expect(obj(w, "cup_1", 6000)!.followed_by).toBe("cup_2");
+    w.applyCloser([pass("e5", 5000, [cupIn])]);
+    expect(obj(w, "cup_1", 6000)!.followed_by).toBe("cup_2");
+    expect(w.applyCloser([pass("e6", 6000, [cupIn])]).ids.get("d1")).toBe("cup_1");
+    expect(obj(w, "cup_1", 6000)).toMatchObject({ status: "present", followed_by: null });
+  });
+
   it("지킴 중인 물건을 두고 한 촬영(전체 사진 한 장·가까이 보기 한 번)에 같은 종류 새 물건이 여럿 생기면 지킴만 풀고 어느 것에도 잇지 않는다(옮김 표시 없음)", () => {
     const cupFar = det("cup", [380, 300, 40, 20]);
     const w = ws();
@@ -197,6 +208,24 @@ describe("보임 판단보다 옛 촬영과 같은 원본 촬영", () => {
     full(w, "e24", 24_000, [cupIn]);
     full(w, "l17", 17_000, []);
     expect(full(w, "e26", 26_000, [cupIn]).changes).toEqual([expect.objectContaining({ kind: "appeared", subject: "cup_1" })]);
+  });
+
+  it("이미 넣은 가장 새 전체 사진보다 옛 전체 사진은 넣지 않는다: 20초에 보고 30·31초에 못 본 뒤 늦게 온 25초 양성 사진이 사라짐 셈을 끊지 않아 32초에 사라짐이 된다", () => {
+    const w = ws();
+    for (const s of [6, 8, 10, 20]) full(w, `e${s}`, s * 1000, [cupIn]);
+    full(w, "e30", 30_000, []);
+    full(w, "e31", 31_000, []);
+    const late = full(w, "l25", 25_000, [cupIn]);
+    expect(full(w, "e32", 32_000, []).changes).toEqual([expect.objectContaining({ kind: "gone", subject: "cup_1" })]);
+    expect(obj(w, "cup_1", 32_000)).toMatchObject({ status: "gone", last_seen_ms: 20_000 });
+    expect(late).toEqual({ changes: [], ids: new Map() });
+  });
+
+  it("늦게 온 옛 전체 사진 세 장은 다른 자리 새 컵의 등장 셈도 하지 않는다", () => {
+    const w = ws();
+    for (const s of [6, 8, 10, 20]) full(w, `e${s}`, s * 1000, [cupIn]);
+    for (const s of [12, 14, 16]) expect(full(w, `l${s}`, s * 1000, [cupIn, cupOut]).changes, `${s}초`).toEqual([]);
+    expect(w.view(20_000).objects.map((o) => o.id)).toEqual(["cup_1"]);
   });
 
   it("마지막 전체 사진에서 사라짐이 된 뒤 같은 원본 사진을 잘라 컵을 찾으면 잘라 본 양성이 앞서 다시 있음이 된다. 같은 원본 전체 사진이 늦게 와도 뒤집지 않는다", () => {
