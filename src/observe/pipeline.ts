@@ -7,15 +7,12 @@
 // 가까이 보기(closer): 고리의 새 프레임 최대 5장마다 대상 자리를 그 프레임 카메라로 찍어 절반 크기로 잘라 2배로 키우고 같은 감지기로 본다.
 // 잘라 본 결과는 보통 프레임처럼 넣지 않고 World State applyCloser로 한 번에 합친다. 물건 감지가 있는 가장 새 장(없으면 가장 새 장) 하나만
 // VLM 풀의 가까이 보기 자리로 혼자 보내고 그 답은 applyCloserScene으로 넣는다. 3장이 안 된 새 물건 후보는 그 답이 사실을 답할 때만 만든다.
-// 약한 후보 다시 보기(recheck): 감지 대기열에서 프레임마다 전체 사진 감지 뒤, 확신이 모자란 물건 후보를 같은 자르기(2배)로 다시 보고 받은 감지를 그 프레임 감지에 넣는다.
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { BrainLog, CloserMiss, CloserResult } from "../contract/events.js";
 import type { WorldChange, WorldView, YoloMissing } from "../contract/world.js";
 import type { DeviceState } from "../hub/types.js";
-import {
-  DETECTOR_MODEL, iou, MODELS_DIR, POSE_MODEL, WorkerDetector, YOLO26_IOU, type DetectResult, type Detection, type Detector, type DetectorSpec, type Pose,
-} from "../brain/detector.js";
+import { DETECTOR_MODEL, MODELS_DIR, POSE_MODEL, WorkerDetector, type DetectResult, type Detection, type Detector, type DetectorSpec, type Pose } from "../brain/detector.js";
 import { vlmTimeoutMs } from "../infer/endpoints.js";
 import { createInference } from "../infer/inference.js";
 import type { VlmClient } from "../infer/vlm.js";
@@ -24,7 +21,6 @@ import type { CameraView, EyeEvent } from "../phone/session.js";
 import { OBJECT_NAME, YOLO_TEXT } from "../world/labels.js";
 import { inView, pixelOf } from "../world/place.js";
 import { CLOSER_NEW_FRAMES, type CloserPass, type WorldState } from "../world/state.js";
-import { CLASSES } from "../world/vocab.js";
 import { cropBox, cropJpeg, LOOK_MARGIN, onCropEdge, toFrameBox, type Box, type LookSpot } from "./crop.js";
 import { captureTime, FrameRing, sha256, type EngineFrame } from "./ring.js";
 import { analyzeScene, CLOSER_NOTE, type SceneDetection } from "./scene.js";
@@ -86,13 +82,6 @@ export const closerSpanMs = (engineMs: number): number => spanOf(CLOSER_FRAMES, 
  *  촬영 범위(closerSpanMs)와 따로 둔다: 범위처럼 9초로 늘리면 끊긴 지 9초 된 사진과 그보다 9초 앞선 사진까지 「새 사진」으로 쓴다. */
 export const closerStaleMs = (engineMs: number): number => spanOf(CLOSER_NEW_FRAMES, engineMs);
 
-/** 다시 볼 약한 후보 하한: 전체 사진에서 이 점수 이상, 그 종류 World State 기준(낱말 표 minScore) 미만인 물건 감지. 감지기도 이 점수부터 약한 감지를 따로 낸다(detectorSpec). */
-export const RECHECK_MIN = 0.1;
-/** 프레임마다 다시 볼 후보 수(점수 높은 차례). */
-export const RECHECK_MAX = 3;
-/** 잘라 본 감지를 받는 후보 상자와의 IoU(엔진 프레임 픽셀) 하한. */
-export const RECHECK_IOU = 0.3;
-
 /** 고리 가장 새 프레임의 카메라·촬영 시각·크기(관찰 모드가 대상이 사진 안인지 본다). */
 export interface LatestFrame { view: CameraView | null; capturedAtMs: number; width: number; height: number }
 
@@ -143,8 +132,6 @@ export interface PipelineStatus {
   dataset: { saved: number; failed: number } | null;
   /** 가까이 보기: 해낸 수, 못 한 수(까닭 무엇이든), 그 VLM 비용(달러, vlm.costUsd에도 들어 있다). */
   closer: { looks: number; failed: number; costUsd: number };
-  /** 약한 후보 다시 보기: 다시 본 후보 수(오류 포함), 받아 그 프레임 감지에 넣은 수, 다시 본 프레임의 다시 보기 시간 평균(ms, 자르기 포함, 없으면 null). */
-  recheck: { tried: number; found: number; ms: number | null };
 }
 
 export class ObservationPipeline {
@@ -169,8 +156,6 @@ export class ObservationPipeline {
   private closing = false;
   private closerSeq = 0;
   private readonly closerCount = { looks: 0, failed: 0, costUsd: 0 };
-  private readonly recheckCount = { tried: 0, found: 0 };
-  private recheckMs: number[] = [];
 
   constructor(private readonly o: PipelineOptions) {
     this.clock = o.clock ?? { now: () => Date.now() };
@@ -279,7 +264,6 @@ export class ObservationPipeline {
       const frame = this.queue.shift()!;
       let dets: Detection[] | null;
       let poses: Pose[] | undefined;
-      let weak: Detection[] = [];
       try {
         const r = await this.o.detector!.detect(frame.jpeg);
         this.detected++;
@@ -290,7 +274,6 @@ export class ObservationPipeline {
         }
         dets = r.detections;
         poses = r.poses;
-        weak = r.weak ?? [];
         try {
           this.o.onDetected?.(frame.jpeg, r);
         } catch {
@@ -299,63 +282,7 @@ export class ObservationPipeline {
       } catch {
         dets = null;
       }
-      // 다시 보기는 그 프레임을 넣기 전에 끝낸다
-      if (dets && !this.closed) dets = await this.recheck(frame, dets, weak);
       if (!this.closed) this.analyze(frame, dets, poses);
-    }
-  }
-
-  /** 약한 후보 다시 보기. 후보: 물건 종류이고 RECHECK_MIN 이상 그 종류 World State 기준 미만인 감지(감지기 weak 포함), 점수 높은 차례로 RECHECK_MAX개.
-   *  후보마다 가까이 보기와 같이 상자 가운데로 프레임 절반 크기를 잘라 2배로 키워 같은 감지기로 보고, 엔진 프레임 픽셀로 옮긴 감지 가운데
-   *  물건 감지(World State closerObject: 잘라 본 경계에 닿지 않음)이고 후보 상자와 IoU RECHECK_IOU 이상인 것 중 점수 높은 하나를 받는다(종류는 다시 본 감지 것).
-   *  받은 감지는 점수 높은 차례로, 그 프레임에서 받는 감지·먼저 받은 감지와 같은 종류로 YOLO26_IOU 넘게 겹치면 넣지 않고(한 물건이 두 번 들지 않게),
-   *  아니면 후보 자리에 넣는다. 못 받은 후보와 약한 감지는 넘기지 않는다. 자르기·감지 오류는 그 후보만 버린다. */
-  private async recheck(frame: EngineFrame, dets: Detection[], weak: Detection[]): Promise<Detection[]> {
-    const all = [...dets, ...weak];
-    const picks = all
-      .filter((d) => CLASSES[d.label].role === "object" && d.score >= RECHECK_MIN && !this.o.world.accepts(d))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, RECHECK_MAX);
-    if (!picks.length) return dets;
-    const t0 = performance.now();
-    const hits: { from: Detection; hit: Detection }[] = [];
-    for (const from of picks) {
-      if (this.closed) break;
-      this.recheckCount.tried++;
-      const hit = await this.recheckOne(frame, from);
-      if (hit) hits.push({ from, hit });
-    }
-    const kept = dets.filter((d) => this.o.world.accepts(d));
-    const got = new Map<Detection, Detection>();
-    for (const { from, hit } of hits.sort((a, b) => b.hit.score - a.hit.score)) {
-      if (kept.some((k) => k.label === hit.label && iou(k.box, hit.box) > YOLO26_IOU)) continue;
-      kept.push(hit);
-      got.set(from, hit);
-    }
-    this.recheckCount.found += got.size;
-    this.recheckMs = [...this.recheckMs.slice(-49), performance.now() - t0];
-    const isWeak = new Set(weak);
-    return all.flatMap((d) => {
-      const hit = got.get(d);
-      return hit ? [hit] : isWeak.has(d) ? [] : [d];
-    });
-  }
-
-  /** 후보 하나를 잘라 다시 본다. 받는 감지(엔진 프레임 픽셀 상자)나 null(못 받음·오류). */
-  private async recheckOne(frame: EngineFrame, from: Detection): Promise<Detection | null> {
-    const [x, y, w, h] = from.box;
-    try {
-      const crop = cropBox([x + w / 2, y + h / 2], frame);
-      const r = await this.o.detector!.detect(cropJpeg(frame.jpeg, crop, frame));
-      let best: Detection | null = null;
-      for (const d of r.detections) {
-        const box = toFrameBox(d.box, crop, frame);
-        if (!this.o.world.closerObject({ ...d, box, edge: onCropEdge(box, crop) }) || iou(box, from.box) < RECHECK_IOU) continue;
-        if (!best || d.score > best.score) best = { ...d, box };
-      }
-      return best;
-    } catch {
-      return null;
     }
   }
 
@@ -375,7 +302,6 @@ export class ObservationPipeline {
       queued: this.queue.length, yolo_missing: { ...this.yoloMissing }, vlm: this.pool.stats(), time_source: this.timeSource, time_err_ms: this.timeErr,
       dataset: this.o.dataset ? { ...this.datasetCount } : null,
       closer: { ...this.closerCount, costUsd: Math.round(this.closerCount.costUsd * 1e5) / 1e5 },
-      recheck: { ...this.recheckCount, ms: mean(this.recheckMs) },
     };
   }
 
@@ -515,12 +441,11 @@ export class ObservationPipeline {
 /** 시험용 주입. detector는 null이면 감지기 없이(VLM만). */
 export interface PipelineInject { detector?: Detector | null; vlm?: VlmClient; clock?: { now(): number } }
 
-/** 감지기 값: YOLO26n(저장소 models/, BRAIN_YOLO_PATH로 파일 직접)과 관절 YOLO26n-pose(BRAIN_POSE_PATH), 워커 스레드 수 BRAIN_YOLO_THREADS(4).
- *  약한 감지는 다시 보기 후보 하한(RECHECK_MIN)부터 따로 받는다. */
+/** 감지기 값: YOLO26n(저장소 models/, BRAIN_YOLO_PATH로 파일 직접)과 관절 YOLO26n-pose(BRAIN_POSE_PATH), 워커 스레드 수 BRAIN_YOLO_THREADS(4). */
 export function detectorSpec(env: Env): DetectorSpec {
   return {
     modelPath: env.BRAIN_YOLO_PATH?.trim() || join(MODELS_DIR, DETECTOR_MODEL.file), posePath: env.BRAIN_POSE_PATH?.trim() || join(MODELS_DIR, POSE_MODEL.file),
-    threads: Number(env.BRAIN_YOLO_THREADS) || 4, weakMinScore: RECHECK_MIN,
+    threads: Number(env.BRAIN_YOLO_THREADS) || 4,
   };
 }
 

@@ -814,7 +814,7 @@ export class WorldState {
   }
 
   /** 가까이 본 감지가 물건 감지인가: 사람·가전 설비·받지 않는 감지·잘라 본 경계에 닿은 상자가 아니다.
-   *  applyCloser는 이 감지만 쓰고, 관찰 흐름은 이 감지가 있는 가장 새 장을 VLM에 보낸다. 약한 후보 다시 보기도 잘라 본 감지 가운데 이 감지만 받는다. */
+   *  applyCloser는 이 감지만 쓰고, 관찰 흐름은 이 감지가 있는 가장 새 장을 VLM에 보낸다. */
   closerObject(d: CloserDetection): boolean {
     return !d.edge && this.accepts(d) && OBJ_CLASSES.has(d.label);
   }
