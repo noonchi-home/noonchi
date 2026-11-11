@@ -11,7 +11,7 @@
 // 끝나면 서버 기록(GET /api/history: 사람·물건 등장·사라짐, PAM 판단, 계획·단계, 실행, 관찰 모드가 고른 것(가까이 보기)), 폰 명령, 바꾼 단계 영상(영상 줄), 트윈 줄(눈 방이 바뀌거나
 // 마지막 눈 줄에서 0.5m 넘게 옮김, 컵 상태·놓인 곳·면·방이 바뀜)을 영상 시각(at_ms − t0)순 표 하나로 합쳐 찍고 --out에 markdown으로 쓴다.
 // 같은 출처의 같은 글이 이어지면 한 줄로 묶고 번 수를 붙인다. 표 밑에 판정 줄(첫 명령 시각, --expect-after초 전 명령, 첫 명령의 계획이 끝났는지),
-// --step이 있으면 단계 판정 줄(첫 명령 계획의 끝난 단계 수, 누른 단추 수, 마지막 트윈 눈 방·컵 놓인 곳), 이번 판 비용 줄(GET /api/brain: VLM, 가까이 보기 횟수,
+// --step이 있으면 단계 판정 줄(첫 명령 계획의 끝난 단계 수, 누른 단추 수, 마지막 트윈 눈 방·컵 놓인 곳), 이번 판 비용 줄(GET /api/brain: VLM, 가까이 보기 횟수·모델,
 // 관찰 모드 호출과 비용(가격표에 없는 모델이면 비용 모름), PAM·계획 비용 빠짐).
 // 끝까지 돌지 않았으면(시간 넘김·중단) 판정 줄 위에 적고 끝 코드 1.
 // 끝에 같은 크롬 새 탭(1280×800)으로 대시보드 <api>/를 열어 8초 뒤 사진을 runtime/videos/<영상>.<시각 또는 fake>.twin.png에 남기고 markdown에 넣는다.
@@ -199,7 +199,9 @@ export function markdown(o: { clip: string; mode: string; ranAt: string; rows: R
 // 서버 상태
 
 type PlanNow = { status?: string; goal?: string } | null;
-type BrainNow = { frames?: number; vlm?: { sent?: number; costUsd?: number }; closer?: { looks?: number }; look?: { calls?: number; costUsd?: number | null } | null } | null;
+type BrainNow = {
+  frames?: number; vlm?: { sent?: number; costUsd?: number }; closer?: { looks?: number; model?: string }; look?: { calls?: number; costUsd?: number | null } | null;
+} | null;
 const PLAN_OPEN = new Set(["planned", "running"]);
 
 /** 앞 판이 남긴 서버인지: 끝나지 않은 계획, 이미 받은 엔진 프레임(World State가 남음). 그렇면 까닭, 새 서버면 null. */
@@ -210,11 +212,11 @@ export function usedServer(plan: PlanNow, brain: BrainNow): string | null {
   return null;
 }
 
-/** 이번 판 비용 줄: VLM 장 수·비용, 가까이 보기 횟수, 관찰 모드 호출 수·비용(모르면 비용 모름), 엔진 프레임 수. PAM·계획 비용은 세지 않는다. */
+/** 이번 판 비용 줄: VLM 장 수·비용, 가까이 보기 횟수와 그 VLM 모델(있을 때), 관찰 모드 호출 수·비용(모르면 비용 모름), 엔진 프레임 수. PAM·계획 비용은 세지 않는다. */
 export function costLine(brain: BrainNow): string {
   if (!brain?.vlm) return "VLM 비용 모름(/api/brain 없음)";
   const usd = (v: number) => "$" + v.toFixed(4);
-  const closer = brain.closer ? ` · 가까이 보기 ${brain.closer.looks ?? 0}번` : "";
+  const closer = brain.closer ? ` · 가까이 보기 ${brain.closer.looks ?? 0}번${brain.closer.model ? ` ${brain.closer.model}` : ""}` : "";
   const lookCost = typeof brain.look?.costUsd === "number" ? ` ${usd(brain.look.costUsd)}` : " · 관찰 모드 비용 모름";
   const look = brain.look ? ` · 관찰 모드 ${brain.look.calls ?? 0}번${lookCost}` : "";
   return `VLM ${brain.vlm.sent ?? 0}장 · ${usd(brain.vlm.costUsd ?? 0)}${closer}${look} · 엔진 프레임 ${brain.frames ?? 0}장 · PAM·계획 비용 빠짐`;

@@ -7,12 +7,14 @@
 // 가까이 보기(closer): 고리의 새 프레임 최대 5장마다 대상 자리를 그 프레임 카메라로 찍어 절반 크기로 잘라 2배로 키우고 같은 감지기로 본다.
 // 잘라 본 결과는 보통 프레임처럼 넣지 않고 World State applyCloser로 한 번에 합친다. 물건 감지가 있는 가장 새 장(없으면 가장 새 장) 하나만
 // VLM 풀의 가까이 보기 자리로 혼자 보내고 그 답은 applyCloserScene으로 넣는다. 3장이 안 된 새 물건 후보는 그 답이 사실을 답할 때만 만든다.
+// 가까이 보기 VLM은 closerVlm(VLM_CLOSER_MODEL, 같은 주소에 모델 이름만 다름, 없으면 보통 프레임과 같은 VLM)이다.
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { BrainLog, CloserMiss, CloserResult } from "../contract/events.js";
 import type { WorldChange, WorldView, YoloMissing } from "../contract/world.js";
 import type { DeviceState } from "../hub/types.js";
 import { DETECTOR_MODEL, MODELS_DIR, POSE_MODEL, WorkerDetector, type DetectResult, type Detection, type Detector, type DetectorSpec, type Pose } from "../brain/detector.js";
+import { hasPrice } from "../infer/cost.js";
 import { vlmTimeoutMs } from "../infer/endpoints.js";
 import { createInference } from "../infer/inference.js";
 import type { VlmClient } from "../infer/vlm.js";
@@ -97,6 +99,8 @@ export interface PipelineOptions {
   /** null이면 감지기 없이 VLM만(모델 파일이 없을 때). */
   detector: Detector | null;
   vlm: VlmClient;
+  /** 가까이 보기 VLM(없으면 vlm). 같은 주소에 모델 이름만 다르다(VLM_CLOSER_MODEL, src/infer/inference.ts). */
+  closerVlm?: VlmClient;
   world: WorldState;
   emit: (log: BrainLog) => void;
   broadcastWorld: (w: WorldView) => void;
@@ -130,8 +134,8 @@ export interface PipelineStatus {
   time_err_ms: number | null;
   /** 시험 자료로 쓴 프레임 수와 쓰지 못한 수(DATASET_COLLECT=1이 아니면 null). */
   dataset: { saved: number; failed: number } | null;
-  /** 가까이 보기: 해낸 수, 못 한 수(까닭 무엇이든), 그 VLM 비용(달러, vlm.costUsd에도 들어 있다). */
-  closer: { looks: number; failed: number; costUsd: number };
+  /** 가까이 보기: 해낸 수, 못 한 수(까닭 무엇이든), 그 VLM 비용(달러, vlm.costUsd에도 들어 있다. 가격표에 없는 모델이 답했으면 모름 null), 그 VLM 모델 이름. */
+  closer: { looks: number; failed: number; costUsd: number | null; model: string };
 }
 
 export class ObservationPipeline {
@@ -156,16 +160,20 @@ export class ObservationPipeline {
   private closing = false;
   private closerSeq = 0;
   private readonly closerCount = { looks: 0, failed: 0, costUsd: 0 };
+  /** 가까이 보기 VLM 답을 가격표에 없는 모델이 냈다(그 비용은 모름). */
+  private closerUnpriced = false;
+  private readonly closerVlm: VlmClient;
 
   constructor(private readonly o: PipelineOptions) {
     this.clock = o.clock ?? { now: () => Date.now() };
     this.ring = new FrameRing(o.config.keepMs);
+    this.closerVlm = o.closerVlm ?? o.vlm;
     const windowFrames = o.config.vlmWindowFrames ?? VLM_WINDOW_DEFAULT;
     this.pool = new VlmPool({
       maxInflight: o.config.vlmMaxInflight, timeoutMs: o.config.vlmTimeoutMs, closerSlots: CLOSER_VLM_SLOTS,
-      // 잘라 키운 사진은 혼자, 그 사진이 장면 일부라는 한 줄과 보낸다
+      // 잘라 키운 사진은 가까이 보기 VLM에 혼자, 그 사진이 장면 일부라는 한 줄과 보낸다
       analyze: (f, d, signal) => f.crop
-        ? analyzeScene(o.vlm, [f], d, signal, CLOSER_NOTE)
+        ? this.analyzeCloser(f, d, signal)
         : analyzeScene(o.vlm, this.ring.window(f, windowFrames, windowFrames * o.config.engineMs), d, signal),
       onResult: (r) => {
         if (this.closed) return;
@@ -180,6 +188,12 @@ export class ObservationPipeline {
 
   get config(): ObserveConfig {
     return this.o.config;
+  }
+
+  private async analyzeCloser(f: EngineFrame, d: SceneDetection[], signal: AbortSignal) {
+    const r = await analyzeScene(this.closerVlm, [f], d, signal, CLOSER_NOTE);
+    if (!hasPrice(r.model)) this.closerUnpriced = true;
+    return r;
   }
 
   private publish(changes: WorldChange[]): void {
@@ -301,7 +315,7 @@ export class ObservationPipeline {
       detected: this.detected, detect_ms: mean(this.detectMs), posed: this.posed, pose_ms: mean(this.poseMs),
       queued: this.queue.length, yolo_missing: { ...this.yoloMissing }, vlm: this.pool.stats(), time_source: this.timeSource, time_err_ms: this.timeErr,
       dataset: this.o.dataset ? { ...this.datasetCount } : null,
-      closer: { ...this.closerCount, costUsd: Math.round(this.closerCount.costUsd * 1e5) / 1e5 },
+      closer: { ...this.closerCount, costUsd: this.closerUnpriced ? null : Math.round(this.closerCount.costUsd * 1e5) / 1e5, model: this.closerVlm.model },
     };
   }
 
@@ -468,7 +482,7 @@ async function createDetector(env: Env, log: (line: string) => void): Promise<De
   }
 }
 
-/** 환경 변수로 관찰 흐름을 만든다. VLM은 추론 모드가 고른 OpenAI 호환 주소(src/infer)다. */
+/** 환경 변수로 관찰 흐름을 만든다. VLM은 추론 모드가 고른 OpenAI 호환 주소(src/infer)이고, 가까이 보기는 같은 주소에 VLM_CLOSER_MODEL 모델로 보낸다. */
 export async function createPipeline(o: {
   env: Env; world: WorldState; emit: (log: BrainLog) => void; broadcastWorld: (w: WorldView) => void;
   onChanges?: (c: WorldChange[]) => void; onFrame?: () => void; log: (line: string) => void; inject?: PipelineInject; dataset?: (f: EngineFrame) => void;
@@ -476,10 +490,13 @@ export async function createPipeline(o: {
 }): Promise<ObservationPipeline> {
   const config = loadObserveConfig(o.env);
   const detector = o.inject && "detector" in o.inject ? o.inject.detector ?? null : await createDetector(o.env, o.log);
-  const vlm = o.inject?.vlm ?? createInference(o.env).vlm;
-  o.log(`관찰 흐름: 엔진 프레임 ${config.engineMs}ms · 감지 ${detector?.name ?? "없음(VLM만)"} · VLM ${vlm.model} 최근 ${config.vlmWindowFrames}장 동시 ${config.vlmMaxInflight}개 · 감지 대기열 ${config.detectQueueMax}`);
+  const made = o.inject?.vlm ? null : createInference(o.env);
+  const vlm = o.inject?.vlm ?? made!.vlm;
+  const closerVlm = made?.closerVlm ?? vlm;
+  const closerNote = closerVlm.model !== vlm.model ? ` · 가까이 보기 VLM ${closerVlm.model}` : "";
+  o.log(`관찰 흐름: 엔진 프레임 ${config.engineMs}ms · 감지 ${detector?.name ?? "없음(VLM만)"} · VLM ${vlm.model} 최근 ${config.vlmWindowFrames}장 동시 ${config.vlmMaxInflight}개${closerNote} · 감지 대기열 ${config.detectQueueMax}`);
   if (o.dataset) o.log("[경고] 시험 자료 모으기가 켜져 있습니다. 엔진 프레임을 디스크에 씁니다.");
   return new ObservationPipeline({
-    config, detector, vlm, world: o.world, emit: o.emit, broadcastWorld: o.broadcastWorld, onChanges: o.onChanges, onFrame: o.onFrame, dataset: o.dataset, onDetected: o.onDetected, clock: o.inject?.clock,
+    config, detector, vlm, closerVlm, world: o.world, emit: o.emit, broadcastWorld: o.broadcastWorld, onChanges: o.onChanges, onFrame: o.onFrame, dataset: o.dataset, onDetected: o.onDetected, clock: o.inject?.clock,
   });
 }

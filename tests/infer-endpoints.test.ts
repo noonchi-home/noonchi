@@ -1,6 +1,7 @@
 // 추론 모드(src/infer/endpoints.ts): mock·live는 VLM 주소·모델 이름만 고른다. 코드 경로는 같다.
 import { describe, expect, it } from "vitest";
 import { loadEndpoints, VLM_PRESETS, vlmTimeoutMs } from "../src/infer/endpoints.js";
+import { createInference } from "../src/infer/inference.js";
 import { ReachCache, reachable } from "../src/infer/reach.js";
 
 describe("추론 모드", () => {
@@ -23,6 +24,16 @@ describe("추론 모드", () => {
     expect(e.vlm.baseUrl).toBe("http://127.0.0.1:8500/v1");
     expect(e.vlm.model).toBe("m");
     expect(e.pamUrl).toBe("http://pam:8300");
+  });
+  it("VLM_CLOSER_MODEL은 가까이 보기 VLM 모델 이름만 바꾼다. 비우면 VLM 모델과 같고, 주소·키·요청 칸은 같다", () => {
+    expect(loadEndpoints({}).vlm.closerModel).toBe(VLM_PRESETS.mock.model);
+    expect(loadEndpoints({ INFERENCE_MODE: "live" }).vlm.closerModel).toBe("vlm");
+    expect(loadEndpoints({ VLM_MODEL: "gpt-5.4-nano", VLM_CLOSER_MODEL: " " }).vlm.closerModel).toBe("gpt-5.4-nano");
+    expect(loadEndpoints({ VLM_MODEL: "gpt-5.4-nano", VLM_CLOSER_MODEL: "gpt-5.4-mini" }).vlm).toMatchObject({ model: "gpt-5.4-nano", closerModel: "gpt-5.4-mini" });
+    const { vlm, closerVlm } = createInference({ VLM_MODEL: "gpt-5.4-nano", VLM_CLOSER_MODEL: "gpt-5.4-mini" });
+    expect([vlm.model, closerVlm.model]).toEqual(["gpt-5.4-nano", "gpt-5.4-mini"]);
+    const same = createInference({ VLM_MODEL: "gpt-5.4-nano" });
+    expect(same.closerVlm.model).toBe("gpt-5.4-nano");
   });
   it("PAM_URL이 없으면 이 PC의 PAM 서비스 주소", () => {
     expect(loadEndpoints({}).pamUrl).toBe("http://127.0.0.1:8300");

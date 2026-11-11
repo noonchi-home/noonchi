@@ -54,8 +54,11 @@ export function frameCaptions(frames: readonly EngineFrame[]): string[] {
 /** 가까이 본 사진(src/observe/pipeline.ts closer) 앞에 두는 한 줄: 그 사진은 장면 일부를 잘라 키운 것이다. */
 export const CLOSER_NOTE = "This photo is one spot of the latest phone photo, cut out and enlarged 2x. Report only what is visible in it.";
 
-/** frames: 오래된 것부터, 마지막이 분석하는 프레임(dets는 그 프레임의 감지). note가 있으면 감지 목록 앞에 둔다(가까이 본 사진은 CLOSER_NOTE). 호출 한 번의 비용을 돌려준다. */
-export async function analyzeScene(vlm: VlmClient, frames: readonly EngineFrame[], dets: SceneDetection[], signal?: AbortSignal, note?: string): Promise<{ scene: SceneObservation | null; costUsd: number; error?: string }> {
+/** frames: 오래된 것부터, 마지막이 분석하는 프레임(dets는 그 프레임의 감지). note가 있으면 감지 목록 앞에 둔다(가까이 본 사진은 CLOSER_NOTE).
+ *  호출 한 번의 비용과 그 비용을 센 모델(답이 온 모델, 답이 없으면 부른 모델)을 돌려준다. */
+export async function analyzeScene(
+  vlm: VlmClient, frames: readonly EngineFrame[], dets: SceneDetection[], signal?: AbortSignal, note?: string,
+): Promise<{ scene: SceneObservation | null; costUsd: number; model: string; error?: string }> {
   if (!frames.length) throw new Error("분석할 프레임이 없습니다");
   const ids = new Set(dets.map((d) => d.id));
   const r = await vlm.json({
@@ -64,5 +67,5 @@ export async function analyzeScene(vlm: VlmClient, frames: readonly EngineFrame[
     images: frames.map((f) => f.jpeg), captions: frameCaptions(frames),
     schema: { name: "scene_observation", schema: SCENE_JSON_SCHEMA }, parse: (t) => parseScene(t, ids), signal,
   });
-  return { scene: r.value, costUsd: r.costUsd, ...(r.error ? { error: r.error } : {}) };
+  return { scene: r.value, costUsd: r.costUsd, model: r.model, ...(r.error ? { error: r.error } : {}) };
 }

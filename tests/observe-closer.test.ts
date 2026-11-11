@@ -5,7 +5,7 @@ import type { BrainLog } from "../src/contract/events.js";
 import type { WorldChange } from "../src/contract/world.js";
 import { VlmClient } from "../src/infer/vlm.js";
 import { cropJpeg } from "../src/observe/crop.js";
-import { closerSpanMs, closerStaleMs, ObservationPipeline } from "../src/observe/pipeline.js";
+import { closerSpanMs, closerStaleMs, createPipeline, ObservationPipeline } from "../src/observe/pipeline.js";
 import { sha256 } from "../src/observe/ring.js";
 import { CLOSER_NOTE } from "../src/observe/scene.js";
 import type { CameraView } from "../src/phone/session.js";
@@ -98,7 +98,8 @@ describe("가까이 보기(관찰 흐름 closer)", () => {
     // 합친 변화는 한 번에 내고, 잘라 본 사진의 요약은 장면 요약을 바꾸지 않는다
     expect(s.changes.filter((c) => c.some((x) => x.kind === "appeared"))).toHaveLength(1);
     expect(s.changes.flat().filter((c) => c.kind === "vlm" && c.text.includes(CLOSER_SUMMARY))).toEqual([]);
-    expect(s.p.status().closer).toEqual({ looks: 1, failed: 0, costUsd: expect.any(Number) });
+    // 가격표에 없는 모델(m)이면 가까이 보기 비용은 모름
+    expect(s.p.status().closer).toEqual({ looks: 1, failed: 0, costUsd: null, model: "m" });
     await s.p.close();
   });
 
@@ -424,5 +425,65 @@ describe("가까이 보기(관찰 흐름 closer)", () => {
     await s.p.close();
     expect(await hanging).toEqual({ ok: false, why: "closed" });
     expect(s.p.status().closer).toMatchObject({ looks: 1, failed: 2 });
+  });
+});
+
+describe("가까이 보기 VLM 모델(VLM_CLOSER_MODEL)", () => {
+  /** 환경 변수로 만든 관찰 흐름(createPipeline): VLM은 가짜 서버 주소, 엔진 사진은 감지 없음, 잘라 키운 사진은 컵. */
+  async function envSetup(env: Record<string, string>) {
+    const engine = new Set<string>();
+    const clock = { t: 0, now() { return this.t; } };
+    const world = new WorldState({ surfaces: () => [SINK], floorAt: () => 0, roomAt: () => null, devices: () => [] });
+    const lines: string[] = [];
+    const p = await createPipeline({ env, world, emit: () => {}, broadcastWorld: () => {}, log: (l) => lines.push(l), inject: { detector: cropAware(engine, { crop: [cup] }), clock } });
+    let n = 0;
+    const frame = (atMs: number) => {
+      const jpeg = frameJpeg(++n, [[0, 0, 8, 8]]);
+      engine.add(sha256(jpeg));
+      clock.t = Math.max(clock.t, atMs + 5);
+      p.onEngine(jpeg, { kind: "engine", width: 480, height: 360, captured_at: atMs, time_err_ms: 0 }, null, LOOK_VIEW, atMs + 5);
+    };
+    return { p, frame, lines };
+  }
+
+  /** 엔진 프레임 3장 뒤 가까이 보기 한 번: 보통 프레임·가까이 보기 VLM 요청의 주소와 본문 model, 가까이 보기 상태. */
+  async function run(f: FakeServer, env: Record<string, string>) {
+    const s = await envSetup({ VLM_BASE_URL: `${f.url}/v1`, VLM_MODEL: "gpt-5.4-nano", ...env });
+    const before = f.requests.length;
+    for (let i = 1; i <= 3; i++) s.frame(i * 2000);
+    await s.p.idle();
+    const frames = chats(f, before);
+    const mid = f.requests.length;
+    expect(await s.p.closer(SPOT)).toMatchObject({ ok: true, vlm: "ok" });
+    const closer = chats(f, mid);
+    const status = s.p.status();
+    await s.p.close();
+    return {
+      frameModels: [...new Set(frames.map((q) => q.body.model))], closerModels: closer.map((q) => q.body.model),
+      paths: [...new Set([...frames, ...closer].map((q) => `${q.method} ${q.path}`))], closer: status.closer, vlmModel: status.vlm_model, lines: s.lines,
+    };
+  }
+
+  it("주면 가까이 보기 요청 본문의 model만 그 모델이고 같은 주소로 간다. 보통 프레임은 VLM_MODEL 그대로, 가까이 보기 비용은 그 모델 가격으로 센다", async () => {
+    fake = await startFakeOpenAI({ reply: closerVlmReply() });
+    const r = await run(fake, { VLM_CLOSER_MODEL: "gpt-5.4-mini" });
+    expect(r.frameModels).toEqual(["gpt-5.4-nano"]);
+    expect(r.closerModels).toEqual(["gpt-5.4-mini"]);
+    expect(r.paths).toEqual(["POST /v1/chat/completions"]);
+    // 가짜 서버 사용량 입력 10·출력 5토큰: gpt-5.4-mini (10 × 0.75 + 5 × 4.5) / 백만 = 0.00003달러
+    expect(r.closer).toEqual({ looks: 1, failed: 0, costUsd: 0.00003, model: "gpt-5.4-mini" });
+    expect(r.vlmModel).toBe("gpt-5.4-nano");
+    expect(r.lines.join("\n")).toContain("가까이 보기 VLM gpt-5.4-mini");
+  });
+
+  it("안 주면 보통 프레임과 가까이 보기가 같은 VLM_MODEL이다", async () => {
+    fake = await startFakeOpenAI({ reply: closerVlmReply() });
+    const r = await run(fake, {});
+    expect(r.frameModels).toEqual(["gpt-5.4-nano"]);
+    expect(r.closerModels).toEqual(["gpt-5.4-nano"]);
+    expect(r.paths).toEqual(["POST /v1/chat/completions"]);
+    // gpt-5.4-nano (10 × 0.2 + 5 × 1.25) / 백만 = 0.00000825달러, 0.00001로 반올림
+    expect(r.closer).toEqual({ looks: 1, failed: 0, costUsd: 0.00001, model: "gpt-5.4-nano" });
+    expect(r.lines.join("\n")).not.toContain("가까이 보기 VLM");
   });
 });

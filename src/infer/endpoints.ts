@@ -1,9 +1,12 @@
 // 추론 모드(INFERENCE_MODE=mock|live)는 미리 정한 VLM 주소·모델 이름만 고른다. 코드 경로는 두 모드가 같다.
 // VLM_BASE_URL·VLM_MODEL·VLM_API_KEY·VLM_EXTRA_BODY·PAM_URL을 따로 주면 그 값을 쓴다(시험의 가짜 서버도 이 자리에 붙는다).
+// VLM_CLOSER_MODEL은 가까이 보기 VLM 모델 이름만 바꾼다(같은 주소·키·요청 칸, 비우면 VLM 모델과 같음).
 // PAM LLM 주소는 PAM 서비스(services/pam/noonchi_pam/settings.py)가 같은 INFERENCE_MODE로 고른다.
 export type InferenceMode = "mock" | "live";
 export interface ModelEndpoint { baseUrl: string; model: string; apiKey: string; extraBody: Record<string, unknown> }
-export interface Endpoints { mode: InferenceMode; vlm: ModelEndpoint; pamUrl: string }
+/** VLM 주소. closerModel은 가까이 보기 VLM 모델 이름이고 주소·키·요청 칸은 같다. */
+export interface VlmEndpoint extends ModelEndpoint { closerModel: string }
+export interface Endpoints { mode: InferenceMode; vlm: VlmEndpoint; pamUrl: string }
 type Env = Record<string, string | undefined>;
 
 // live 모델 이름 vlm은 compose vllm-vlm의 --served-model-name이다(Hugging Face 모델은 compose VLM_LIVE_MODEL).
@@ -38,11 +41,13 @@ export function loadEndpoints(env: Env): Endpoints {
   const p = VLM_PRESETS[raw];
   const v = (k: string) => env[k]?.trim() || undefined;
   const extra = v("VLM_EXTRA_BODY");
+  const model = v("VLM_MODEL") ?? p.model;
   return {
     mode: raw,
     vlm: {
-      baseUrl: (v("VLM_BASE_URL") ?? p.baseUrl).replace(/\/+$/, ""), model: v("VLM_MODEL") ?? p.model,
+      baseUrl: (v("VLM_BASE_URL") ?? p.baseUrl).replace(/\/+$/, ""), model,
       apiKey: v("VLM_API_KEY") ?? v(p.keyEnv) ?? "", extraBody: extra ? extraBodyOf(extra) : { ...p.extraBody },
+      closerModel: v("VLM_CLOSER_MODEL") ?? model,
     },
     pamUrl: (v("PAM_URL") ?? DEFAULT_PAM_URL).replace(/\/+$/, ""),
   };
