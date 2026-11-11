@@ -10,9 +10,13 @@
 // - 사람 자리·방: 맞춘 뒤 가장 큰 사람 상자의 발(상자 아래가 프레임 끝에 닿지 않음)이 보이면 그 바닥 자리와 방. 눈의 방으로 대신하지 않는다. 바뀌면 변화 하나.
 // - 분석 없음(applyMissing): 셈과 변화 하나만 남기고 등장·사라짐 셈에는 넣지 않는다.
 // - 가까이 보기(applyCloser, src/observe/pipeline.ts closer): 잘라 본 몇 장을 보통 프레임처럼 넣지 않고 한 번에 합친다. 물건 감지만 쓰고(사람·가전 설비·잘린 경계 상자는 버림),
-//   맞는 물건은 새 촬영일 때만 고치고, 맞는 물건이 없으면 서로 다른 원본 프레임 3장에서 같은 자리로 보여야 새 물건을 만든다. 안 보인 물건은 그대로 둔다.
-//   가까이 보기로 찾거나 고친 물건은 30초(CLOSER_HOLD_MS) 동안 전체 사진에서 못 봐도 사라짐으로 세지 않는다(지킴). 같은 종류 새 물건이 다른 자리에 생기면 지킴을 푼다.
-//   잘라 본 사진의 VLM 답(applyCloserScene)은 그 사진에서 잡은 물건 사실만 넣고 요약·다른 사실을 지우지 않으며, 같은 원본 프레임의 답은 한 번만 넣는다.
+//   맞는 물건이 없으면 서로 다른 원본 프레임 3장에서 같은 자리로 보여야 새 물건을 만든다. 안 보인 물건은 그대로 둔다.
+//   물건마다 자리를 마지막으로 고친 촬영 시각과 보임(있음·시야 밖·사라짐)을 마지막으로 판단한 촬영 시각을 둔다. 전체 사진이든 가까이 보기든 그보다 옛 촬영은
+//   자리·보임을 되돌리지 않는다(같은 원본 프레임이면 잘라 본 자리가 앞선다).
+//   가까이 보기로 찾거나 고친 물건은 30초(CLOSER_HOLD_MS) 동안 전체 사진에서 못 봐도 사라짐으로 세지 않는다(지킴). 같은 종류 새 물건이 다른 자리에 생기면
+//   지킴을 풀고 옛 물건에 그 새 물건 id(followed_by)를 남긴다(실행 추적이 새 물건으로 바로 이어 간다). 옛 물건을 다시 보면 지운다.
+//   VLM 답은 원본 프레임·대상·면마다 한 번만 센다(같은 사진을 두 번 판정해 확신으로 오르지 않게). 같은 원본 프레임·대상·면이면 오는 순서와 상관없이
+//   잘라 본 사진의 답(applyCloserScene)이 전체 사진 답보다 앞선다. 잘라 본 답은 그 사진에서 잡은 물건 사실만 넣고 요약·다른 사실을 지우지 않는다.
 // - 가전: 모든 가전의 상태 키(vocab DEVICE_STATES), 바뀐 속성의 이력, 사건 줄(세탁 끝남), 남은 시간, 오래 이어진 상태(tick: 냉장고 문 1분).
 // - 카메라로 가전 상태 맞추기(src/world/sight.ts): 가전 설비 상자마다 그 사진의 방·시야·상자 방향으로 트윈 가전 하나를 고르고(못 고르면 설비 link에 까닭),
 //   그 프레임 VLM 답의 값이 연속으로 이어지면 see(허브 observe)로 넘긴다. 카메라로 본 값이 상태가 된 가전 줄은 「카메라로 봄」을 붙이고, 실제 상태와 다르면 다름 줄 하나.
@@ -54,8 +58,8 @@ const LINK_KEEP_MS = 60_000;
 export const CLOSER_HOLD_MS = 30_000;
 /** 가까이 보기로 새 물건을 만들려면 같은 자리로 보인 서로 다른 원본 프레임이 이만큼 있어야 한다(물건 등장 확인 장수와 같다). */
 export const CLOSER_NEW_FRAMES = 3;
-/** 같은 원본 프레임의 가까이 본 VLM 답을 한 번만 넣으려고 기억하는 원본 프레임 수. */
-const CLOSER_SCENES_KEEP = 200;
+/** VLM 답을 원본 프레임·대상·면마다 한 번만 세려고 기억하는 수(넣은 순서, 최근 것). */
+const ANSWERS_KEEP = 4000;
 
 /** 가까이 본 한 장의 감지: 상자는 엔진 프레임 픽셀, edge는 잘라 본 상자 경계에 닿음(src/observe/crop.ts onCropEdge). */
 export interface CloserDetection extends Detection { edge: boolean }
@@ -81,6 +85,15 @@ interface Obj {
   answered: number | null;
   /** 가까이 보기로 마지막에 찾거나 고친 촬영 시각(지킴의 시작). 지킴이 풀리면 null. */
   closerAt: number | null;
+  /** 자리를 마지막으로 고친 촬영 시각과 그것이 가까이 보기였는가(같은 촬영이면 잘라 본 자리가 앞선다). */
+  posAt: number;
+  posCloser: boolean;
+  /** 보임(있음·시야 밖·사라짐)을 마지막으로 판단한 촬영 시각: 전체 사진이 보거나, 시야 밖이거나, 사라짐·등장을 확인한 촬영과 가까이 보기로 본 촬영.
+   *  이보다 옛 촬영은 보임을 바꾸지 않는다. 시야 안인데 못 본 프레임(사라짐 셈 중)은 판단이 아니다: 전체 사진의 감지기는 싱크대 안 컵을 못 보므로
+   *  그것을 판단으로 치면 가까이 보기가 지킴을 둘 수 없다. */
+  judgedAt: number;
+  /** 지킴 중에 같은 종류 새 물건이 다른 자리에 생겼다: 그 물건 id와 촬영 시각. 그보다 새 촬영에서 이 물건을 다시 보면 null. */
+  followed: { id: string; at: number } | null;
 }
 
 interface Fix {
@@ -155,8 +168,8 @@ export class WorldState {
   private readonly readings = new SightReadings();
   /** 가전마다 카메라로 마지막으로 본 촬영 시각. */
   private readonly sighted = new Map<string, number>();
-  /** 가까이 본 VLM 답을 넣은 원본 프레임 id(넣은 순서, 최근 CLOSER_SCENES_KEEP개). */
-  private readonly closerScenes = new Set<string>();
+  /** 원본 프레임·대상·면(「e3|cup_1|place」)마다 넣은 VLM 답이 전체 사진(full)인지 잘라 본 사진(crop)인지(넣은 순서, 최근 ANSWERS_KEEP개). */
+  private readonly answers = new Map<string, "full" | "crop">();
 
   constructor(private readonly o: WorldStateOptions) {
     this.identityM = o.identityM ?? 0.25;
@@ -179,6 +192,7 @@ export class WorldState {
     const obj: Obj = {
       id: `${cls}_${n}`, cls, position: null, surface: null, surfaceLabel: null, room: null, errorM: null, confirmed: false, status: "present",
       firstSeen: atMs, lastSeen: atMs, lastInView: atMs, goneAt: null, facts: {}, answered: null, closerAt: null,
+      posAt: Number.NEGATIVE_INFINITY, posCloser: false, judgedAt: atMs, followed: null,
     };
     this.objects.set(obj.id, obj);
     return obj;
@@ -189,13 +203,26 @@ export class WorldState {
     return obj.closerAt !== null && atMs - obj.closerAt < CLOSER_HOLD_MS;
   }
 
-  /** 같은 종류 새 물건이 다른 자리에 생겼다(옮김): 같은 종류 다른 물건의 지킴을 푼다. */
-  private liftHolds(fresh: Obj): void {
+  /** 같은 종류 새 물건이 다른 자리에 생겼다(옮김, atMs 촬영): 같은 종류 다른 물건의 지킴을 풀고, 지킴 중이던 물건에는 새 물건 id를 남긴다.
+   *  saw: 같은 촬영에서 본 물건(옮긴 것이 아니라 그대로 둔다). */
+  private liftHolds(fresh: Obj, atMs: number, saw: ReadonlySet<string>): void {
     const near = (CLASSES[fresh.cls] as { identityM?: number }).identityM ?? this.identityM;
     for (const o of this.objects.values()) {
-      if (o === fresh || o.cls !== fresh.cls || o.closerAt === null) continue;
-      if (!o.position || !fresh.position || dist(o.position, fresh.position) > near) o.closerAt = null;
+      if (o === fresh || o.cls !== fresh.cls || o.closerAt === null || saw.has(o.id)) continue;
+      if (o.position && fresh.position && dist(o.position, fresh.position) <= near) continue;
+      if (o.status !== "gone" && this.held(o, atMs)) o.followed = { id: fresh.id, at: atMs };
+      o.closerAt = null;
     }
+  }
+
+  /** 이 촬영에서 물건을 다시 봤다: 그보다 앞선 옮김 표시를 지운다. */
+  private sawAgain(obj: Obj, atMs: number): void {
+    if (obj.followed && atMs > obj.followed.at) obj.followed = null;
+  }
+
+  /** 자리를 고칠 촬영인가: 자리를 마지막으로 고친 촬영보다 새면. 같은 촬영이면 잘라 본 자리가 전체 사진 자리보다 앞선다. */
+  private newerPlace(obj: Obj, atMs: number, closer: boolean): boolean {
+    return atMs > obj.posAt || (atMs === obj.posAt && closer && !obj.posCloser);
   }
 
   /** 트윈 자리로 맞추기만(가까이 보기): 같은 종류 중 그 종류 거리 안의 가장 가까운 것(사라진 것·세는 중인 것도). */
@@ -334,12 +361,17 @@ export class WorldState {
       boxes.push({ obj, box: d.box });
       obj.lastSeen = Math.max(obj.lastSeen, at);
       obj.lastInView = Math.max(obj.lastInView, at);
-      if (placed?.position) {
+      obj.judgedAt = Math.max(obj.judgedAt, at);
+      this.sawAgain(obj, at);
+      // 감지 대기열에 있던 옛 프레임은 더 새 촬영(가까이 보기 포함)이 고친 자리를 되돌리지 않는다
+      if (placed?.position && this.newerPlace(obj, at, false)) {
         obj.position = placed.position;
         obj.surface = placed.surface;
         obj.surfaceLabel = placed.surface ? surfaces.find((s) => s.id === placed.surface)?.label ?? null : null;
         obj.errorM = placed.errorM;
         obj.room = this.o.roomAt([placed.position[0], placed.position[2]])?.id ?? null;
+        obj.posAt = at;
+        obj.posCloser = false;
       }
     });
     if (seen.has(PERSON)) {
@@ -372,11 +404,12 @@ export class WorldState {
         continue;
       }
       const obj = this.objects.get(e.key)!;
+      obj.judgedAt = Math.max(obj.judgedAt, at);
       if (e.kind === "appeared") {
         obj.confirmed = true;
         obj.status = "present";
         obj.goneAt = null;
-        this.liftHolds(obj);
+        this.liftHolds(obj, at, seen);
         changes.push({ kind: "appeared", at_ms: at, subject: obj.id, meaningful: true, text: CHANGE_TEXT.appeared(this.name(obj), obj.surfaceLabel ? onSurface(obj.surfaceLabel) : null) });
       } else {
         obj.status = "gone";
@@ -395,15 +428,21 @@ export class WorldState {
         continue;
       }
       const vis = seen.has(obj.id) ? true : this.visible(obj, view);
+      // 보임 판단보다 옛 프레임(감지 대기열에 있던 것)은 있음·시야 밖을 바꾸지 않는다
+      if (at < obj.judgedAt) continue;
       if (vis === true) {
         obj.lastInView = Math.max(obj.lastInView, at);
         if (obj.status === "out_of_view") {
           obj.status = "present";
+          obj.judgedAt = at;
           changes.push({ kind: "back_in_view", at_ms: at, subject: obj.id, meaningful: false, text: CHANGE_TEXT.backInView(this.name(obj)) });
         }
-      } else if (vis === false && obj.status === "present") {
-        obj.status = "out_of_view";
-        changes.push({ kind: "out_of_view", at_ms: at, subject: obj.id, meaningful: false, text: CHANGE_TEXT.outOfView(this.name(obj)) });
+      } else if (vis === false) {
+        obj.judgedAt = at;
+        if (obj.status === "present") {
+          obj.status = "out_of_view";
+          changes.push({ kind: "out_of_view", at_ms: at, subject: obj.id, meaningful: false, text: CHANGE_TEXT.outOfView(this.name(obj)) });
+        }
       }
     }
     // 사람 방: 보이는 동안 바뀌거나 사람이 막 보이면 변화 하나
@@ -510,6 +549,28 @@ export class WorldState {
     return true;
   }
 
+  /** VLM 답 하나를 넣는다(전체 사진·잘라 본 사진이 같이 쓰는 규칙). 원본 프레임·대상·면마다 한 번만 센다:
+   *  - 그 열쇠에 잘라 본 답이 이미 들어갔으면 무엇이든 버린다(잘라 본 답이 앞선다). 전체 사진 답이 들어갔으면 전체 사진 답은 버리고 잘라 본 답은 받는다.
+   *  - 같은 원본 프레임의 다른 답(같은 답 안의 같은 면 포함)은 그 프레임 사실의 값만 바꾸고 확신(confirmed)으로 올리지 않는다.
+   *  turn: 이 답(한 번의 applyScene·applyCloserScene)에서 이미 넣은 열쇠. 값이 새로 생기거나 바뀌면 true. */
+  private answer(frameId: string, id: string, facts: Facts, facet: Facet, value: string, atMs: number, crop: boolean, now: boolean, turn: Set<string>): boolean {
+    const key = `${frameId}|${id}|${facet}`;
+    const before = this.answers.get(key);
+    const again = turn.has(key);
+    if (!again && (before === "crop" || (before === "full" && !crop))) return false;
+    turn.add(key);
+    this.answers.delete(key);
+    this.answers.set(key, crop ? "crop" : "full");
+    if (this.answers.size > ANSWERS_KEEP) this.answers.delete(this.answers.keys().next().value!);
+    const prev = facts[facet];
+    if ((again || before) && prev && prev.at_ms === atMs) {
+      if (prev.value === value) return false;
+      facts[facet] = { value, at_ms: atMs, since_ms: atMs, certainty: "inferred" };
+      return true;
+    }
+    return this.setFact(facts, facet, value, atMs, now);
+  }
+
   /** VLM 대상: 사람·물건·가전 설비와 그 사실, 종류. */
   private targetOf(id: string): { kind: Target; facts: Facts; cls: ClassKey } | null {
     if (id === PERSON) return { kind: "person", facts: this.person.facts, cls: "person" };
@@ -531,6 +592,7 @@ export class WorldState {
       }
     }
     const said = new Set<string>();
+    const turn = new Set<string>();
     const hidden = new Set(scene.observations.filter((o) => (VLM_ONLY as readonly string[]).includes(o.state)).map((o) => ids.get(o.object_id)).filter((x): x is string => !!x));
     for (const ob of scene.observations) {
       const id = ids.get(ob.object_id);
@@ -541,7 +603,7 @@ export class WorldState {
       const facet = STATES[value].facet;
       said.add(`${id}|${facet}`);
       if (this.poseHolds(target.facts[facet], capturedAtMs)) continue;
-      if (!this.setFact(target.facts, facet, value, capturedAtMs, NOW_FACETS[target.kind].includes(facet))) continue;
+      if (!this.answer(frameId, id, target.facts, facet, value, capturedAtMs, false, NOW_FACETS[target.kind].includes(facet), turn)) continue;
       if (target.kind === "person") {
         if (this.person.visible) changes.push({ kind: "person_state", at_ms: capturedAtMs, subject: PERSON, meaningful: false, text: CHANGE_TEXT.state(OBJECT_NAME.person!, value) });
       } else if (target.kind === "fixture") {
@@ -552,7 +614,7 @@ export class WorldState {
         if (obj.confirmed && obj.status !== "gone") changes.push({ kind: "state", at_ms: capturedAtMs, subject: id, meaningful: true, text: CHANGE_TEXT.state(this.name(obj), value) });
       }
     }
-    // 이 프레임에서 본 대상의 지금만 맞는 사실: 이 답에 없으면 지운다(더 새 답의 사실은 그대로)
+    // 이 프레임에서 본 대상의 지금만 맞는 사실: 이 답에 없으면 지운다(더 새 답의 사실, 같은 원본 프레임을 잘라 본 답의 사실은 그대로)
     for (const id of new Set(ids.values())) {
       const target = this.targetOf(id);
       if (!target || hidden.has(id)) continue;
@@ -560,7 +622,9 @@ export class WorldState {
       owner.answered = Math.max(owner.answered ?? capturedAtMs, capturedAtMs);
       for (const f of NOW_FACETS[target.kind]) {
         const prev = target.facts[f];
-        if (prev && prev.at_ms <= capturedAtMs && !said.has(`${id}|${f}`) && !this.poseHolds(prev, capturedAtMs)) delete target.facts[f];
+        if (!prev || prev.at_ms > capturedAtMs || said.has(`${id}|${f}`) || this.poseHolds(prev, capturedAtMs)) continue;
+        if (this.answers.get(`${frameId}|${id}|${f}`) === "crop") continue;
+        delete target.facts[f];
       }
     }
     changes.push(...this.seeDevices(frameId, capturedAtMs, scene));
@@ -570,7 +634,8 @@ export class WorldState {
   /** 가까이 보기 합치기: 잘라 본 몇 장(원본 프레임마다 그 프레임 카메라)을 한 번에 넣는다. 보통 프레임의 등장·사라짐 셈은 건드리지 않는다.
    *  - 물건 감지만 쓴다. 사람·가전 설비·받지 않는 감지·잘라 본 경계에 닿은 상자는 버린다.
    *  - 장마다 상자 아래 가운데의 트윈 자리로, 같은 종류·같은 자리(종류 거리 안) 감지를 묶는다.
-   *  - 묶음이 확인된 물건(사라진 것 포함)에 맞으면: 그 물건의 마지막 촬영보다 새 촬영일 때만 자리·본 시각·상태(present)를 고친다.
+   *  - 묶음이 확인된 물건(사라진 것 포함)에 맞으면: 자리는 자리를 마지막으로 고친 촬영보다 새면(같은 촬영이면 잘라 본 자리가 앞선다),
+   *    본 시각·상태(present)·지킴은 마지막 보임 판단(전체 사진의 보임·시야 밖·사라짐, 가까이 보기)보다 새 촬영일 때만 고친다.
    *  - 맞는 확인된 물건이 없으면: 서로 다른 원본 프레임 CLOSER_NEW_FRAMES장이 있어야 확인된 물건 하나를 만든다(세는 중인 같은 자리 물건이 있으면 그것을 확인).
    *  - 안 보인 물건은 그대로다. 찾거나 고친 물건은 지킴(closerAt)을 둔다.
    *  ids: 가장 새 원본 프레임(촬영 시각) 감지 번호(d1…) → 물건 id. 그 사진의 VLM 답(applyCloserScene)이 쓴다. */
@@ -602,6 +667,7 @@ export class WorldState {
       });
     }
     const used = new Set<string>();
+    const created: { obj: Obj; at: number }[] = [];
     for (const g of groups) {
       const last = g.seen.at(-1)!;
       const at = last.pass.capturedAtMs;
@@ -609,8 +675,10 @@ export class WorldState {
       let obj: Obj | null = null;
       if (match?.confirmed) {
         obj = match;
-        if (at > obj.lastSeen) {
-          this.placeCloser(obj, last, surfaces);
+        this.placeCloser(obj, last, surfaces);
+        // 보임은 마지막 보임 판단보다 새 촬영일 때만 고친다(전체 사진이 더 새 촬영으로 본 사라짐·시야 밖을 되돌리지 않는다)
+        if (at > obj.judgedAt) {
+          this.seenCloser(obj, at);
           if (obj.status === "gone") {
             obj.status = "present";
             obj.goneAt = null;
@@ -627,39 +695,47 @@ export class WorldState {
         obj.status = "present";
         obj.goneAt = null;
         this.placeCloser(obj, last, surfaces);
-        this.liftHolds(obj);
+        this.seenCloser(obj, at);
+        created.push({ obj, at });
         changes.push({ kind: "appeared", at_ms: at, subject: obj.id, meaningful: true, text: CHANGE_TEXT.appeared(this.name(obj), obj.surfaceLabel ? onSurface(obj.surfaceLabel) : null) });
       }
       if (!obj) continue;
       used.add(obj.id);
       for (const s of g.seen) if (s.pass === newest) ids.set(s.tmp, obj.id);
     }
+    // 새로 만든 물건이 다른 자리 같은 종류 물건의 지킴을 푼다(이번에 본 물건은 그대로)
+    for (const { obj, at } of created) this.liftHolds(obj, at, used);
     return { changes, ids };
   }
 
-  /** 가까이 본 촬영으로 물건을 고친다: 자리·면·방(그 물건을 마지막으로 본 촬영보다 새면), 본 시각, 지킴. 보통 프레임의 등장·사라짐 셈은 있음으로 다시 둔다. */
+  /** 가까이 본 촬영으로 자리·면·방을 고친다(자리를 마지막으로 고친 촬영보다 새면, 같은 촬영이면 잘라 본 자리가 앞선다). */
   private placeCloser(obj: Obj, s: { pass: CloserPass; position: V3; surface: string | null; errorM: number | null }, surfaces: PlaneSurface[]): void {
     const at = s.pass.capturedAtMs;
-    if (at >= obj.lastSeen) {
-      obj.position = s.position;
-      obj.surface = s.surface;
-      obj.surfaceLabel = s.surface ? surfaces.find((x) => x.id === s.surface)?.label ?? null : null;
-      obj.errorM = s.errorM;
-      obj.room = this.o.roomAt([s.position[0], s.position[2]])?.id ?? null;
-    }
+    if (!this.newerPlace(obj, at, true)) return;
+    obj.position = s.position;
+    obj.surface = s.surface;
+    obj.surfaceLabel = s.surface ? surfaces.find((x) => x.id === s.surface)?.label ?? null : null;
+    obj.errorM = s.errorM;
+    obj.room = this.o.roomAt([s.position[0], s.position[2]])?.id ?? null;
+    obj.posAt = at;
+    obj.posCloser = true;
+  }
+
+  /** 가까이 본 촬영으로 보였다: 본 시각·보임 판단 시각·지킴을 두고, 보통 프레임의 등장·사라짐 셈은 있음으로 다시 둔다. */
+  private seenCloser(obj: Obj, at: number): void {
     obj.lastSeen = Math.max(obj.lastSeen, at);
     obj.lastInView = Math.max(obj.lastInView, at);
+    obj.judgedAt = Math.max(obj.judgedAt, at);
     obj.closerAt = Math.max(obj.closerAt ?? at, at);
+    this.sawAgain(obj, at);
     this.confirmer.mark(obj.id);
   }
 
   /** 가까이 본 사진의 VLM 답: ids(그 사진에서 잡은 물건)의 사실만 넣는다. 장면 요약·답에 없는 면·지금만 맞는 사실·사람·가전 설비는 건드리지 않는다.
-   *  같은 원본 프레임(sourceFrameId)의 답은 한 번만 넣고, 같은 촬영 시각에 이미 본 같은 값은 확신(confirmed)으로 올리지 않는다. */
+   *  원본 프레임(sourceFrameId)·물건·면마다 한 번만 넣고, 같은 원본 프레임의 전체 사진 답보다 앞선다(answer). */
   applyCloserScene(sourceFrameId: string, capturedAtMs: number, scene: SceneObservation, ids: Map<string, string>): WorldChange[] {
-    if (this.closerScenes.has(sourceFrameId)) return [];
-    this.closerScenes.add(sourceFrameId);
-    if (this.closerScenes.size > CLOSER_SCENES_KEEP) this.closerScenes.delete(this.closerScenes.values().next().value!);
     const changes: WorldChange[] = [];
+    const turn = new Set<string>();
     for (const ob of scene.observations) {
       const id = ids.get(ob.object_id);
       const obj = id ? this.objects.get(id) : undefined;
@@ -667,9 +743,8 @@ export class WorldState {
       const value = ob.state as StateKey;
       if (!fits(value, obj.cls, "object")) continue;
       const facet = STATES[value].facet;
-      const prev = obj.facts[facet];
-      if (this.poseHolds(prev, capturedAtMs) || (prev && prev.at_ms === capturedAtMs && prev.value === value)) continue;
-      if (!this.setFact(obj.facts, facet, value, capturedAtMs, NOW_FACETS.object.includes(facet))) continue;
+      if (this.poseHolds(obj.facts[facet], capturedAtMs)) continue;
+      if (!this.answer(sourceFrameId, obj.id, obj.facts, facet, value, capturedAtMs, true, NOW_FACETS.object.includes(facet), turn)) continue;
       if (obj.confirmed && obj.status !== "gone") changes.push({ kind: "state", at_ms: capturedAtMs, subject: obj.id, meaningful: true, text: CHANGE_TEXT.state(this.name(obj), value) });
     }
     return changes;
@@ -765,7 +840,7 @@ export class WorldState {
     const objects: WorldObject[] = [...this.objects.values()].filter((x) => x.confirmed).map((x) => ({
       id: x.id, cls: x.cls, position: x.position, surface: x.surface, surface_label: x.surfaceLabel, room: x.room, error_m: x.errorM, status: x.status,
       first_seen_ms: x.firstSeen, last_seen_ms: x.lastSeen, last_in_view_ms: x.lastInView, facts: { ...x.facts }, answered_ms: x.answered, devices: relatedDeviceIds(x.cls, devices),
-      closer_hold: this.held(x, nowMs),
+      closer_hold: this.held(x, nowMs), followed_by: x.followed?.id ?? null,
     }));
     const fixtures: WorldFixture[] = [...this.fixtures.values()].map((f) => ({
       id: f.id, cls: f.cls, room: f.room, room_label: f.roomLabel, first_seen_ms: f.firstSeen, last_seen_ms: f.lastSeen, facts: { ...f.facts }, answered_ms: f.answered,

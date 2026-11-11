@@ -305,9 +305,12 @@ export class ObservationPipeline {
   }
 
   /** 가까이 보기 한 번. 한 번에 하나만 돈다(다른 가까이 보기가 돌거나 VLM 가까이 보기 자리가 차 있으면 vlm_busy).
-   *  고리에서 가장 새 프레임으로부터 closerSpanMs 안에 찍혀 카메라가 있고 spot이 사진 안(LOOK_MARGIN)인 프레임 CLOSER_FRAMES장을 쓴다. 모자라면 자르지 않고 no_fresh_frames.
+   *  고리에서 가장 새 프레임으로부터 closerSpanMs 안에 찍혀 카메라가 있고 spot이 사진 안(LOOK_MARGIN)인 프레임 CLOSER_FRAMES장을 쓴다.
+   *  모자라거나, 가장 새 프레임이 지금(clock)보다 closerSpanMs 넘게 앞서 찍혔으면(폰이 끊겨 새 프레임이 안 옴) 자르지 않고 no_fresh_frames.
    *  장마다 spot을 그 프레임 카메라로 찍은 자리를 절반 크기로 잘라 2배로 키워 같은 감지기로 보고, 상자를 엔진 프레임 픽셀로 옮겨 World State에 한 번에 합친다(변화 발행도 한 번).
-   *  signal은 자르기 전(장마다)과 합치기 바로 전에 보고, 끊겼으면 합치지 않고 aborted. 가장 새 장만 VLM 가까이 보기 자리로 보내고 그 답(감지한 물건 사실만)을 넣은 뒤 끝난다. */
+   *  감지가 끝나면 쓴 가장 새 프레임이 아직 closerSpanMs 안인지 다시 보고, 낡았으면 합치지 않고 no_fresh_frames.
+   *  signal은 자르기 전(장마다)·합치기 바로 전·VLM 답을 넣기 바로 전에 보고, 끊겼으면 넣지 않고 aborted. VLM 답을 기다리는 중에 끊기면 그 HTTP 요청도 끊는다.
+   *  가장 새 장만 VLM 가까이 보기 자리로 보내고 그 답(감지한 물건 사실만)을 넣은 뒤 끝난다. */
   async closer(spot: LookSpot, signal?: AbortSignal): Promise<CloserResult> {
     if (this.closed) return this.closerMiss("closed");
     if (signal?.aborted) return this.closerMiss("aborted");
@@ -316,10 +319,10 @@ export class ObservationPipeline {
     if (this.closing || !this.pool.closerFree()) return this.closerMiss("vlm_busy");
     const ring = this.ring.frames();
     const newest = ring.at(-1);
-    if (!newest) return this.closerMiss("no_fresh_frames");
+    const span = closerSpanMs(this.o.config.engineMs);
+    if (!newest || this.clock.now() - newest.capturedAtMs > span) return this.closerMiss("no_fresh_frames");
     if (!newest.view) return this.closerMiss("no_view");
     if (!inView(newest.view, spot.position, LOOK_MARGIN)) return this.closerMiss("out_of_view");
-    const span = closerSpanMs(this.o.config.engineMs);
     const picked = ring.filter((f) => f.view && newest.capturedAtMs - f.capturedAtMs <= span && inView(f.view, spot.position, LOOK_MARGIN)).slice(-CLOSER_FRAMES);
     if (new Set(picked.map((f) => f.id)).size < CLOSER_FRAMES) return this.closerMiss("no_fresh_frames");
     this.closing = true;
@@ -347,6 +350,8 @@ export class ObservationPipeline {
     }
     if (this.closed) return this.closerMiss("closed");
     if (signal?.aborted) return this.closerMiss("aborted");
+    // 감지하는 사이 새 프레임이 끊겼으면(쓴 가장 새 프레임이 지금보다 너무 앞섬) 합치지 않는다
+    if (this.clock.now() - picked.at(-1)!.capturedAtMs > closerSpanMs(this.o.config.engineMs)) return this.closerMiss("no_fresh_frames");
     const looks: CloserPass[] = passes.map((p) => ({
       frameId: p.frame.id, capturedAtMs: p.frame.capturedAtMs, view: p.view, width: p.frame.width, height: p.frame.height,
       dets: p.dets.map((d) => {
@@ -367,10 +372,13 @@ export class ObservationPipeline {
     const answer = this.pool.submitCloser(
       { ...last.frame, id, jpeg: last.jpeg, sha256: sha256(last.jpeg), crop: last.crop },
       last.dets.map((d, i) => ({ id: `d${i + 1}`, class: d.label, box: d.box, score: d.score })),
+      signal,
     );
     const r: VlmResult = answer ? await answer : { frameId: id, capturedAtMs: last.frame.capturedAtMs, scene: null, missing: "cap", costUsd: 0 };
     this.closerCount.costUsd += r.costUsd;
     if (this.closed) return this.closerMiss("closed");
+    // VLM 답을 넣기 바로 전에 다시 본다(감지는 이미 합쳤다)
+    if (signal?.aborted) return this.closerMiss("aborted");
     this.o.emit({
       type: "observe", at_ms: this.clock.now(), frame_id: id, captured_at_ms: last.frame.capturedAtMs, yolo: null, vlm: r.scene?.summary ?? null,
       ...(r.missing ? { vlm_missing: r.missing } : {}), closer: last.crop,

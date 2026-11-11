@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Detection } from "../src/brain/detector.js";
+import type { SceneObservation, SceneState } from "../src/observe/scene.js";
 import { CLOSER_HOLD_MS, WorldState, type CloserPass } from "../src/world/state.js";
 import type { DetLabel } from "../src/world/vocab.js";
 import { AWAY_VIEW, engineFrame, LOOK_SIZE, LOOK_VIEW } from "./helpers/camera.js";
@@ -98,10 +99,116 @@ describe("가까이 보기 합치기(applyCloser)", () => {
     full(w, "e5", 5000, [cupOut]);
     expect(obj(w, "cup_1", 5000)!.closer_hold).toBe(true);
     expect(full(w, "e6", 6000, [cupOut]).changes).toEqual([expect.objectContaining({ kind: "appeared", subject: "cup_2" })]);
-    expect(obj(w, "cup_1", 6000)).toMatchObject({ status: "present", closer_hold: false });
+    expect(obj(w, "cup_1", 6000)).toMatchObject({ status: "present", closer_hold: false, followed_by: "cup_2" });
+    expect(obj(w, "cup_2", 6000)!.followed_by).toBeNull();
     full(w, "e7", 7000, [cupOut]);
     full(w, "e8", 8000, [cupOut]);
     expect(full(w, "e9", 9000, [cupOut]).changes).toEqual([expect.objectContaining({ kind: "gone", subject: "cup_1" })]);
+  });
+
+  it("옮김 표시(followed_by)는 지킴 중이던 물건에만 붙고, 그 뒤 전체 사진이 옛 물건을 다시 보면 지운다. 같은 프레임에서 본 물건에는 붙지 않는다", () => {
+    const w = ws();
+    w.applyCloser([1, 2, 3].map((i) => pass(`e${i}`, i * 1000, [cupIn])));
+    for (let i = 4; i <= 6; i++) full(w, `e${i}`, i * 1000, [cupOut]);
+    expect(obj(w, "cup_1", 6000)!.followed_by).toBe("cup_2");
+    full(w, "e5", 5000, [cupIn, cupOut]);   // 표시보다 옛 촬영은 지우지 않는다
+    expect(obj(w, "cup_1", 6000)!.followed_by).toBe("cup_2");
+    full(w, "e7", 7000, [cupIn, cupOut]);
+    expect(obj(w, "cup_1", 7000)!.followed_by).toBeNull();
+    // 지킴이 없던 물건, 같은 프레임에서 보인 물건에는 붙지 않는다
+    const v = ws();
+    for (let i = 1; i <= 3; i++) full(v, `e${i}`, i * 1000, [cupIn]);
+    for (let i = 4; i <= 6; i++) full(v, `e${i}`, i * 1000, [cupIn, cupOut]);
+    expect(v.view(6000).objects.map((o) => [o.id, o.followed_by])).toEqual([["cup_1", null], ["cup_2", null]]);
+    const u = ws();
+    u.applyCloser([1, 2, 3].map((i) => pass(`e${i}`, i * 1000, [cupIn])));
+    for (let i = 4; i <= 6; i++) full(u, `e${i}`, i * 1000, [cupIn, cupOut]);
+    expect(u.view(6000).objects.map((o) => [o.id, o.followed_by])).toEqual([["cup_1", null], ["cup_2", null]]);
+  });
+
+  it("전체 사진이 더 새 촬영으로 사라짐·시야 밖을 판단했으면 그보다 옛 촬영의 가까이 보기는 되살리지 않는다(10초에 마지막으로 보고 20초에 사라짐, 15초 촬영)", () => {
+    const w = ws();
+    for (const s of [6, 8, 10]) full(w, `e${s}`, s * 1000, [cupIn]);
+    for (const s of [16, 18, 20]) full(w, `e${s}`, s * 1000, []);
+    expect(obj(w, "cup_1", 20_000)).toMatchObject({ status: "gone", last_seen_ms: 10_000 });
+    expect(w.applyCloser([pass("e15", 15_000, [cupIn])]).changes).toEqual([]);
+    expect(obj(w, "cup_1", 20_000)).toMatchObject({ status: "gone", closer_hold: false });
+    expect(full(w, "e22", 22_000, []).changes).toEqual([]);
+    // 판단보다 새 촬영이면 되살린다
+    expect(w.applyCloser([pass("e23", 23_000, [cupIn])]).changes).toEqual([expect.objectContaining({ kind: "appeared", subject: "cup_1" })]);
+    const v = ws();
+    for (const s of [6, 8, 10]) full(v, `e${s}`, s * 1000, [cupIn]);
+    full(v, "e20", 20_000, [], AWAY_VIEW);
+    expect(obj(v, "cup_1", 20_000)!.status).toBe("out_of_view");
+    expect(v.applyCloser([pass("e15", 15_000, [cupIn])]).changes).toEqual([]);
+    expect(obj(v, "cup_1", 20_000)).toMatchObject({ status: "out_of_view", closer_hold: false });
+  });
+
+  it("가까이 보기가 새 자리를 넣은 뒤 감지 대기열에 있던 옛 전체 사진이 와도 자리를 되돌리지 않는다. 같은 원본 프레임이면 잘라 본 자리가 앞선다", () => {
+    const w = ws();
+    for (let i = 1; i <= 3; i++) full(w, `e${i}`, i * 1000, [cupIn]);
+    const at = (nowMs: number) => obj(w, "cup_1", nowMs)!.position!;
+    w.applyCloser([pass("e6", 6000, [det("cup", [236, 172, 20, 10])])]);
+    const moved = at(6000);
+    expect(moved[2]).not.toBeCloseTo(0, 3);
+    full(w, "e5", 5000, [cupIn]);   // 대기열에 있던 옛 프레임
+    expect(at(6000)).toEqual(moved);
+    full(w, "e6", 6000, [cupIn]);   // 같은 원본 프레임의 전체 사진
+    expect(at(6000)).toEqual(moved);
+    full(w, "e7", 7000, [cupIn]);   // 더 새 전체 사진은 자리를 고친다
+    expect(at(7000)[2]).toBeCloseTo(0, 3);
+  });
+});
+
+describe("같은 원본 프레임의 VLM 답: 전체 사진과 잘라 본 사진이 원본 프레임·물건·면 하나의 규칙을 쓴다", () => {
+  const three = (dets: Detection[] = [cupIn]) => {
+    const w = ws();
+    let ids = new Map<string, string>();
+    for (let i = 1; i <= 3; i++) ids = full(w, `e${i}`, i * 1000, dets).ids;
+    return { w, ids };
+  };
+  const scene = (...states: SceneState[]): SceneObservation => ({ scene: "k", observations: states.map((state) => ({ object_id: "d1", state })), summary: "" });
+  const crop = new Map([["d1", "cup_1"]]);
+  const facts = (w: WorldState, nowMs = 3000) => w.view(nowMs).objects[0]!.facts;
+
+  it("잘라 본 답이 먼저 오고 같은 원본 프레임의 전체 사진 답이 늦게 오면: 같은 값도 확신으로 올리지 않고, 다른 값은 잘라 본 답을 덮지 않는다", () => {
+    const a = three();
+    a.w.applyCloserScene("e3", 3000, scene("in_sink"), crop);
+    expect(a.w.applyScene("e3", 3000, scene("in_sink"), a.ids)).toEqual([]);
+    expect(facts(a.w).place).toMatchObject({ value: "in_sink", certainty: "inferred" });
+    const b = three();
+    b.w.applyCloserScene("e3", 3000, scene("in_sink"), crop);
+    expect(b.w.applyScene("e3", 3000, scene("on_table"), b.ids)).toEqual([]);
+    expect(facts(b.w).place).toMatchObject({ value: "in_sink", certainty: "inferred" });
+    // 다른 원본 프레임의 같은 값은 확신으로 센다
+    const { ids } = full(b.w, "e4", 4000, [cupIn]);
+    b.w.applyScene("e4", 4000, scene("in_sink"), ids);
+    expect(facts(b.w, 4000).place).toMatchObject({ value: "in_sink", certainty: "confirmed" });
+  });
+
+  it("전체 사진 답이 먼저 오고 같은 원본 프레임의 잘라 본 답이 오면: 잘라 본 답이 앞서되 같은 값은 확신으로 올리지 않는다", () => {
+    const a = three();
+    a.w.applyScene("e3", 3000, scene("on_table"), a.ids);
+    expect(a.w.applyCloserScene("e3", 3000, scene("in_sink"), crop).map((c) => c.text)).toEqual(["컵 cup_1 싱크대 안"]);
+    expect(facts(a.w).place).toMatchObject({ value: "in_sink", certainty: "inferred" });
+    const b = three();
+    b.w.applyScene("e3", 3000, scene("in_sink"), b.ids);
+    expect(b.w.applyCloserScene("e3", 3000, scene("in_sink"), crop)).toEqual([]);
+    expect(facts(b.w).place).toMatchObject({ value: "in_sink", certainty: "inferred" });
+  });
+
+  it("잘라 본 답이 넣은 지금만 맞는 사실(쓰는 중)은 같은 원본 프레임의 전체 사진 답에 없어도 지우지 않는다", () => {
+    const a = three();
+    a.w.applyCloserScene("e3", 3000, scene("in_use"), crop);
+    a.w.applyScene("e3", 3000, scene("on_table"), a.ids);
+    expect(facts(a.w).use).toMatchObject({ value: "in_use" });
+  });
+
+  it("같은 원본 프레임을 다른 물건 둘레로 다시 잘라 보면 그 물건 사실은 넣는다(막는 것은 원본 프레임·물건·면이 같을 때만)", () => {
+    const { w } = three([cupIn, cupOut]);
+    w.applyCloserScene("e3", 3000, scene("in_sink"), new Map([["d1", "cup_1"]]));
+    expect(w.applyCloserScene("e3", 3000, scene("in_sink"), new Map([["d1", "cup_2"]])).map((c) => c.subject)).toEqual(["cup_2"]);
+    expect(w.view(3000).objects.map((o) => [o.id, o.facts.place?.value])).toEqual([["cup_1", "in_sink"], ["cup_2", "in_sink"]]);
   });
 });
 

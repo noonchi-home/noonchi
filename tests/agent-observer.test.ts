@@ -9,7 +9,7 @@ import { startFakeObserver, type FakeObserver, type ObserveScript } from "./help
 
 const cup: WorldObject = {
   id: "cup_1", cls: "cup", position: [0.6, 0.9, 0], surface: "sink_1", surface_label: "싱크대", room: "kitchen", error_m: 0.1, status: "present",
-  first_seen_ms: 0, last_seen_ms: 9_000, last_in_view_ms: 9_000, facts: {}, answered_ms: null, devices: [], closer_hold: false,
+  first_seen_ms: 0, last_seen_ms: 9_000, last_in_view_ms: 9_000, facts: {}, answered_ms: null, devices: [], closer_hold: false, followed_by: null,
 };
 const WORLD: WorldView = {
   at_ms: 13_000, objects: [cup], fixtures: [], devices: [], eye: null, frame_ms: 12_000, vlm_missing: 0, yolo_missing: 0,

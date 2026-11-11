@@ -16,7 +16,7 @@ import type { WorldObject, WorldView } from "../src/contract/world.js";
 import { PlanHub } from "../src/plan/hub.js";
 import { APPROVAL_TEXT, EXEC_TEXT, STEP_COMMAND, STEP_LABEL } from "../src/plan/labels.js";
 import type { DecisionRecord } from "../src/world/decide.js";
-import { WorldState } from "../src/world/state.js";
+import { WorldState, type CloserPass } from "../src/world/state.js";
 import { sha256, type EngineFrame } from "../src/observe/ring.js";
 import type { Detection } from "../src/brain/detector.js";
 import type { CameraView } from "../src/phone/session.js";
@@ -31,7 +31,7 @@ afterAll(async () => { await llm.close(); });
 // smallFloor: 로봇 [1, 2], 식탁 table_1 [7, 3], 싱크대 sink_1 [5, 1]
 const cup = (status: WorldObject["status"], place?: string, seen = 9_000): WorldObject => ({
   id: "cup_1", cls: "cup", position: [2, 0.75, 1], surface: "t", surface_label: "식탁", room: "hall", error_m: 0.1, status,
-  first_seen_ms: 0, last_seen_ms: seen, last_in_view_ms: seen, facts: place ? { place: { value: place, at_ms: seen, since_ms: seen, certainty: "confirmed" } } : {}, answered_ms: null, devices: [], closer_hold: false,
+  first_seen_ms: 0, last_seen_ms: seen, last_in_view_ms: seen, facts: place ? { place: { value: place, at_ms: seen, since_ms: seen, certainty: "confirmed" } } : {}, answered_ms: null, devices: [], closer_hold: false, followed_by: null,
 });
 const world =(objects: WorldObject[], personAction?: string, at = 0): WorldView => ({
   at_ms: 0, objects, person: { visible: !!personAction, since_ms: 0, last_seen_ms: null, count: 0, room: null, room_label: null, position: null, near: [], holding: [], position_ms: null, answered_ms: null, facts: personAction ? { holding: { value: personAction, at_ms: at, since_ms: at, certainty: "confirmed" } } : {} },
@@ -489,6 +489,39 @@ describe("실행 추적: 멈춘 집기·놓기 단계(관찰 모드 A)와 사람
     expect(s.stalls.at(-1)).toMatchObject({ stuckMs: 16_500, looks: 1 });
   });
 
+  it("받은 부름은 끝날 때 settle로 셈을 정한다: settle(false)(새 사진 모자람·VLM 자리 없음)는 돌려받아 3번 상한에 넣지 않고, 두 번째 settle과 옛 단계의 settle은 아무것도 하지 않는다", async () => {
+    const s = stallSetup();
+    await toPick(s);
+    for (let i = 0; i < 4; i++) {
+      s.clock.t += 8000;
+      s.t.tick();
+      s.stalls.at(-1)!.settle(false);
+      s.stalls.at(-1)!.settle(false);
+    }
+    expect(s.stalls.map((x) => [x.stuckMs, x.looks])).toEqual([[8000, 0], [16_000, 0], [24_000, 0], [32_000, 0]]);
+    // 돌려받아도 다음 부름은 받은 부름에서 8초 뒤다
+    s.clock.t += 7_999;
+    s.t.tick();
+    expect(s.stalls).toHaveLength(4);
+    s.clock.t += 1;
+    s.t.tick();
+    s.stalls.at(-1)!.settle(true);
+    s.stalls.at(-1)!.settle(false);
+    s.clock.t += 8000;
+    s.t.tick();
+    expect(s.stalls.at(-1)).toMatchObject({ stepId: "plan:pam-1:2", looks: 1 });
+    const old = s.stalls.at(-1)!;   // 정하지 않은 부름은 센다
+    s.t.onAnswer("plan:pam-1", "plan:pam-1:2", "done");
+    s.t.onAnswer("plan:pam-1", "plan:pam-1:3", "done");
+    s.clock.t += 8000;
+    s.t.tick();
+    expect(s.stalls.at(-1)).toMatchObject({ stepId: "plan:pam-1:4", looks: 0 });
+    old.settle(false);
+    s.clock.t += 8000;
+    s.t.tick();
+    expect(s.stalls.at(-1)).toMatchObject({ stepId: "plan:pam-1:4", looks: 1 });
+  });
+
   it("다음 단계로 가면 셈과 기준 시각을 다시 잡는다. 놓기 단계는 컵과 싱크대를 보고, 끝난 단계 알림의 신호는 끊긴다", async () => {
     const s = stallSetup();
     await toPick(s);
@@ -769,6 +802,37 @@ describe("실행 추적 + 실제 World State(기준점을 맞춘 카메라)", ()
     see(7, moved, "in_sink");
     t.onWorld();
     expect(last()).toEqual({ type: "command_clear", id: "plan:pam-1" });
+  });
+
+  it("가까이 봐서 찾은 식탁 위 컵을 들어 옮겨 새 id가 붙으면, 지킴이 풀리는 그 프레임에 바로 새 컵으로 이어 집기가 비전으로 넘어간다", async () => {
+    const ws = new WorldState({
+      surfaces: () => [{ id: "table_1", label: "식탁", center: [2, 0], top: 0.75, radius: 0.6 }, { id: "sink_1", label: "싱크대", center: [1.2, 0.8], top: 0.9, radius: 0.5 }],
+      floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices: () => [],
+    });
+    const pass = (i: number, d: Detection): CloserPass => ({ frameId: `e${i}`, capturedAtMs: i * 1000, view: look, width: 480, height: 360, dets: [{ ...d, edge: false }] });
+    const { ids: closerIds } = ws.applyCloser([1, 2, 3].map((i) => pass(i, onTable)));
+    ws.applyCloserScene("e3", 3000, { scene: "k", observations: [{ object_id: "d1", state: "on_table" }], summary: "s" }, closerIds);
+    expect(ws.view(3000).objects).toEqual([expect.objectContaining({ id: "cup_1", status: "present", closer_hold: true })]);
+    const see = (i: number, d: Detection, state: "on_table" | "in_hand" | "in_sink") => {
+      const { ids } = ws.applyDetections(frame(i), [d]);
+      ws.applyScene(`e${i}`, i * 1000, { scene: "k", observations: [{ object_id: "d1", state }], summary: "s" }, ids);
+    };
+    const { t, decide, last, clock } = setup({ w: () => ws.view(clock.t) });
+    clock.t = 3_500;
+    await decide({ ...decision, atMs: 0 });
+    t.onAnswer("plan:pam-1", "plan:pam-1:1", "done");
+    expect(last()).toMatchObject({ step: "plan:pam-1:2", vision: "컵 · 식탁 위" });
+    for (let i = 4; i <= 5; i++) {
+      clock.t = i * 1000;
+      see(i, moved, "in_hand");
+      t.onWorld();
+      expect(last()).toMatchObject({ step: "plan:pam-1:2" });
+    }
+    clock.t = 6000;
+    see(6, moved, "in_hand");
+    expect(ws.view(6000).objects.map((o) => [o.id, o.status, o.closer_hold, o.followed_by])).toEqual([["cup_1", "present", false, "cup_2"], ["cup_2", "present", false, null]]);
+    t.onWorld();
+    expect(last()).toMatchObject({ step: "plan:pam-1:3", vision: "컵 · 손에 있음 · 싱크대까지 거리 모름" });
   });
 
   it("관절: 손목이 컵 상자 안이면 같은 프레임 VLM 답이 「식탁 위」여도 「컵을 들어 주세요」 단계가 비전으로 넘어간다. 손목이 멀면 넘기지 않는다", async () => {

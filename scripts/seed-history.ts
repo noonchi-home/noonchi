@@ -227,7 +227,7 @@ class Week {
     const id = `${cls}_${n}`;
     this.objects.set(id, {
       id, cls, position: [on.xz[0], on.top, on.xz[1]], surface: on.id, surface_label: on.label, room: on.room, error_m: 0.12, status: "present",
-      first_seen_ms: this.t, last_seen_ms: this.t, last_in_view_ms: this.t, facts: {}, answered_ms: null, devices: [], closer_hold: false,
+      first_seen_ms: this.t, last_seen_ms: this.t, last_in_view_ms: this.t, facts: {}, answered_ms: null, devices: [], closer_hold: false, followed_by: null,
     });
     this.change("appeared", id, CHANGE_TEXT.appeared(objectName(cls, id), onSurface(on.label)), true);
     return id;

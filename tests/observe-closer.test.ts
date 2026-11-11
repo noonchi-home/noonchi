@@ -4,7 +4,7 @@ import type { Detection, Detector } from "../src/brain/detector.js";
 import type { BrainLog } from "../src/contract/events.js";
 import type { WorldChange } from "../src/contract/world.js";
 import { VlmClient } from "../src/infer/vlm.js";
-import { ObservationPipeline } from "../src/observe/pipeline.js";
+import { closerSpanMs, ObservationPipeline } from "../src/observe/pipeline.js";
 import { sha256 } from "../src/observe/ring.js";
 import { CLOSER_NOTE } from "../src/observe/scene.js";
 import type { CameraView } from "../src/phone/session.js";
@@ -24,25 +24,37 @@ const SPOT = { id: "sink_1", label: "싱크대", position: [0.6, 0.9, 0] as [num
 const cup: Detection = { label: "cup", score: 0.72, cls: 41, box: [220, 160, 40, 20] };
 const fakeVlm = (f: FakeServer) => new VlmClient({ baseUrl: `${f.url}/v1`, model: "m", apiKey: "", extraBody: {} });
 
-/** 관찰 흐름 하나: 엔진 사진은 전체 감지(기본 없음), 잘라 키운 사진은 컵. frame(at)은 2초 간격 엔진 프레임 하나를 넣는다. */
+/** 관찰 흐름 하나: 엔진 사진은 전체 감지(기본 없음), 잘라 키운 사진은 컵. frame(at)은 2초 간격 엔진 프레임 하나를 넣고 시계를 받은 시각(at + 5ms)까지 옮긴다. */
 function setup(o: { vlm: VlmClient; detector?: (engine: Set<string>) => Detector | null; vlmMaxInflight?: number }) {
   const engine = new Set<string>();
   const logs: BrainLog[] = [];
   const changes: WorldChange[][] = [];
+  const clock = { t: 0, now() { return this.t; } };
   const world = new WorldState({ surfaces: () => [SINK], floorAt: () => 0, roomAt: () => null, devices: () => [] });
   const p = new ObservationPipeline({
     config: { engineMs: 2000, vlmMaxInflight: o.vlmMaxInflight ?? 4, vlmTimeoutMs: 5000, detectQueueMax: 8, keepMs: 20_000 },
     detector: o.detector ? o.detector(engine) : cropAware(engine, { crop: [cup] }), vlm: o.vlm, world,
-    emit: (l) => logs.push(l), broadcastWorld: () => {}, onChanges: (c) => changes.push(c),
+    emit: (l) => logs.push(l), broadcastWorld: () => {}, onChanges: (c) => changes.push(c), clock,
   });
   let n = 0;
   const frame = (atMs: number, view: CameraView | null = LOOK_VIEW) => {
     const jpeg = frameJpeg(++n, [[0, 0, 8, 8]]);   // 잘라 보는 자리 밖 표시: 고른 회색만이면 잘라 키운 사진이 엔진 사진과 같은 JPEG이 된다
     engine.add(sha256(jpeg));
+    clock.t = Math.max(clock.t, atMs + 5);
     p.onEngine(jpeg, { kind: "engine", width: 480, height: 360, captured_at: atMs, time_err_ms: 0 }, null, view, atMs + 5);
   };
-  return { p, world, logs, changes, frame };
+  return { p, world, logs, changes, frame, clock };
 }
+
+/** 엔진 사진은 감지 없음, 잘라 키운 사진은 컵. hold()가 참이면 잘라 키운 사진 감지를 gates에 붙잡아 둔다(풀면 답한다). */
+const heldDetector = (gates: (() => void)[], hold: () => boolean = () => true) => (engine: Set<string>): Detector => ({
+  name: "held",
+  detect: async (jpeg: Buffer) => {
+    if (engine.has(sha256(jpeg))) return { detections: [], ms: 0, width: 480, height: 360 };
+    if (hold()) await new Promise<void>((ok) => gates.push(ok));
+    return { detections: [cup], ms: 0, width: 480, height: 360 };
+  },
+});
 
 describe("가까이 보기(관찰 흐름 closer)", () => {
   it("최근 엔진 프레임 3장마다 싱크대 윗면 둘레를 2배로 잘라 같은 감지기로 보고 한 번에 합쳐 컵 하나를 만든다. 마지막 장만 VLM에 혼자 보내고 그 답은 컵 사실만 넣는다", async () => {
@@ -165,6 +177,63 @@ describe("가까이 보기(관찰 흐름 closer)", () => {
     expect(await third).toEqual({ ok: false, why: "aborted" });
     expect(s.world.view(6000).objects).toEqual([]);
     expect(fake.requests.length).toBe(sentBefore);
+    await s.p.close();
+  });
+
+  it("VLM 답을 기다리는 중에 끊기면 그 HTTP 요청을 끊고, 답이 와도 넣지 않는다", async () => {
+    const signals: AbortSignal[] = [];
+    const answers: (() => void)[] = [];
+    const vlm = {
+      model: "held",
+      json: (req: { texts: string[]; signal?: AbortSignal }) => new Promise((ok) => {
+        const value = { scene: "k", observations: [{ object_id: "d1", state: "in_sink" }], summary: "s" };
+        if (!req.texts.includes(CLOSER_NOTE)) return ok({ value: { ...value, observations: [] }, costUsd: 0, model: "held", attempts: 1 });
+        signals.push(req.signal!);
+        answers.push(() => ok({ value, costUsd: 0, model: "held", attempts: 1 }));
+      }),
+    } as unknown as VlmClient;
+    const s = setup({ vlm });
+    for (let i = 1; i <= 3; i++) s.frame(i * 2000);
+    await s.p.idle();
+    const ac = new AbortController();
+    const pending = s.p.closer(SPOT, ac.signal);
+    await until(() => signals.length === 1);
+    expect(signals[0]!.aborted).toBe(false);
+    ac.abort();
+    expect(signals[0]!.aborted).toBe(true);
+    answers[0]!();
+    expect(await pending).toEqual({ ok: false, why: "aborted" });
+    expect(s.world.view(6000).objects).toEqual([expect.objectContaining({ id: "cup_1", facts: {} })]);
+    expect(s.p.status().closer).toMatchObject({ looks: 0, failed: 1 });
+    await s.p.idle();
+    expect(s.p.status().vlm.missing).toMatchObject({ timeout: 0, error: 0 });
+    await s.p.close();
+  });
+
+  it("가장 새 프레임이 지금보다 새 사진 범위(closerSpanMs) 넘게 앞서 찍혔으면(폰 끊김) 자르지 않고, 감지가 끝난 뒤 다시 봐서 낡았으면 합치지 않는다", async () => {
+    fake = await startFakeOpenAI({ reply: closerVlmReply() });
+    const gates: (() => void)[] = [];
+    let hold = false;
+    const s = setup({ vlm: fakeVlm(fake), detector: heldDetector(gates, () => hold) });
+    for (let i = 1; i <= 3; i++) s.frame(i * 2000);
+    await s.p.idle();
+    const sentBefore = fake.requests.length;
+    const span = closerSpanMs(2000);
+    s.clock.t = 6000 + span + 1;
+    expect(await s.p.closer(SPOT)).toEqual({ ok: false, why: "no_fresh_frames" });
+    expect(s.world.view(6000).objects).toEqual([]);
+    hold = true;
+    s.clock.t = 6000 + span;
+    const pending = s.p.closer(SPOT);
+    for (let i = 0; i < 3; i++) {
+      await until(() => gates.length === i + 1);
+      if (i === 2) s.clock.t = 6000 + span + 1;
+      gates[i]!();
+    }
+    expect(await pending).toEqual({ ok: false, why: "no_fresh_frames" });
+    expect(s.world.view(6000).objects).toEqual([]);
+    expect(fake.requests.length).toBe(sentBefore);
+    expect(s.p.status().closer).toMatchObject({ looks: 0, failed: 2 });
     await s.p.close();
   });
 

@@ -15,8 +15,10 @@
 // 같은 물건 따라가기: 기준점을 맞춘 뒤 물건이 identityM 넘게 움직이면 World State가 새 id를 붙인다. 계획을 받을 때 그 종류의 다른 물건을 적어 두고,
 // 계획 물건과 그 뒤에 새로 생긴 같은 종류 물건을 모두 그 물건으로 본다(조건의 follow, 비전 상태 줄, 고리).
 // 폰 근처 조건은 실행 추적이 받은 맞춘 눈(받은 시각)과 World State 눈 중 새것으로 본다.
-// 멈춘 단계(관찰 모드 A): 끝나는 조건이 있는 집기·놓기 단계가 stallMs 넘게(단계 시작 뒤, 받은 부름 뒤) 안 끝나면 stalled를 부른다. 단계마다 stallMax번, 받은 것만 센다.
-// 알림마다 그 단계 세대와 신호가 있고, 단계가 끝나면(다음 단계·완료·실패·그만·새 계획·멈춤) 신호를 끊는다.
+// 멈춘 단계(관찰 모드 A): 끝나는 조건이 있는 집기·놓기 단계가 stallMs 넘게(단계 시작 뒤, 받은 부름 뒤) 안 끝나면 stalled를 부른다. 단계마다 stallMax번,
+// 받은 것만 센다. 받은 부름은 끝날 때 Stall.settle(counted)로 셈을 정하고, 자원 사정(새 사진 모자람·VLM 자리 없음)은 settle(false)로 돌려받는다.
+// 알림마다 그 단계 세대와 신호가 있고, 단계가 끝나면(다음 단계·완료·실패·그만·새 계획·멈춤) 신호를 끊는다. 지난 세대의 settle은 아무것도 하지 않는다.
+// 같은 물건 따라가기에서 가까이 봐서 지키는 중이거나 옮김 표시(World State followed_by)가 있는 물건은 「아직 있음」으로 세지 않는다.
 // 사람 부탁(askCloser)은 지금 그 계획의 그 사람 단계일 때만 같은 계획·단계 id로 명령 글만 바꿔 다시 보낸다(소리로 읽음).
 import type { BrainLog, ExecState } from "../contract/events.js";
 import type { PhoneStepKind, PlannedCommand, PlannedCommandMessage } from "../contract/phone.js";
@@ -79,23 +81,27 @@ export interface TrackerOptions {
   askMs?: number;
   /** 같은 행동의 계획을 다시 만들기 전 기다리는 시간(ms). */
   planGapMs?: number;
-  /** 멈춘 집기·놓기 단계 알림(관찰 모드 A, src/act/look.ts). 받았으면 true(그때만 센다). 없으면 부르지 않는다. */
+  /** 멈춘 집기·놓기 단계 알림(관찰 모드 A, src/act/look.ts). 받았으면 true(그때만 센다). 받은 부름은 끝날 때 s.settle(counted)를 부른다. 없으면 부르지 않는다. */
   stalled?: (s: Stall) => boolean;
   /** 집기·놓기 단계가 이만큼(ms) 안 끝나면 stalled를 부른다(단계 시작 뒤, 받은 부름 뒤). */
   stallMs?: number;
-  /** 단계마다 stalled를 받은 횟수 상한. */
+  /** 단계마다 stalled를 받아 센 횟수 상한(settle(false)로 돌려받은 부름은 넣지 않는다). */
   stallMax?: number;
 }
 
 /** 기본값: 다시 읽기 30초, 비전 상태 0.5초에 한 번, 검사 3초, 승인 답 2분, 같은 행동 다시 계획 15초, 멈춘 단계 8초·단계마다 3번. 단계 시간 한도는 계획 단계마다 있다. */
 export const TRACK_DEFAULTS = { repeatMs: 30_000, visionMs: 500, recheckMs: 3000, askMs: 120_000, planGapMs: 15_000, stallMs: 8000, stallMax: 3 } as const;
 
-/** 멈춘 집기·놓기 단계. command: 실제 폰에 띄운 지금 명령 글. stuckMs: 단계 시작 뒤 지난 시간. looks: 이 단계에서 받은 부름 수.
+/** 멈춘 집기·놓기 단계. command: 실제 폰에 띄운 지금 명령 글. stuckMs: 단계 시작 뒤 지난 시간. looks: 이 단계에서 센 부름 수(시도).
  *  spots: 계획 물건(지금 따라가는 World State 물건, 자리를 알 때)과 단계 대상 자리(평면도, 물건과 다를 때).
- *  gen: 단계 세대(단계가 바뀌거나 계획이 닫힐 때마다 오른다). signal: 이 단계가 끝나면(다음 단계·완료·실패·그만·새 계획·멈춤) 끊긴다. */
+ *  gen: 단계 세대(단계가 바뀌거나 계획이 닫힐 때마다 오른다). signal: 이 단계가 끝나면(다음 단계·완료·실패·그만·새 계획·멈춤) 끊긴다.
+ *  settle(counted): 받은 부름(stalled가 true)이 끝나면 부른다. 받을 때 시도로 먼저 세고, settle(false)면(자원 사정: 가까이 보기 no_fresh_frames·vlm_busy) 돌려받아
+ *  stallMax에 넣지 않는다. settle(true)는 그대로 센다. 처음 한 번만 듣고, 그 단계 세대가 지났으면(다른 단계·닫힌 계획) 아무것도 하지 않는다.
+ *  다음 부름은 셈과 상관없이 받은 부름에서 stallMs 뒤다. */
 export interface Stall {
   planId: string; stepId: string; kind: "pick" | "place"; label: string; command: string; until: Condition;
   stuckMs: number; looks: number; spots: LookSpot[]; gen: number; signal: AbortSignal;
+  settle(counted: boolean): void;
 }
 
 /** 실제 폰에 띄운 질문: 첫 단계 전 승인, 위험 목록 가전 승인(토큰), 시간 초과로 다시 묻기. */
@@ -105,7 +111,7 @@ type Asking = { why: "plan" } | { why: "device"; token: string } | { why: "again
  *  alias: 계획 물건 id → 지금 그 물건으로 보는 World State id(옮겨서 새 id가 붙으면 이어 간다). carried: 집기 단계를 마친(사람이 든) 계획 물건.
  *  device: 기기 단계 실행 상태(sent는 보냈지만 적용을 확인하지 못함). gen: 단계가 바뀔 때마다 올라 늦게 온 기기 결과를 버린다.
  *  deadline: 이 단계 시간 한도(계속이면 한 번 늘어난다). again: 이 단계에서 시간 초과로 한 번 다시 물었다.
- *  looks·lookAt: 이 단계에서 받은 멈춘 단계 부름 수와 마지막으로 받은 시각. stepEnd: 이 단계가 끝나면 끊는 신호(멈춘 단계 알림). */
+ *  looks·lookAt: 이 단계에서 받아 센 멈춘 단계 부름 수(돌려받은 것은 뺌)와 마지막으로 받은 시각. stepEnd: 이 단계가 끝나면 끊는 신호(멈춘 단계 알림). */
 interface Run {
   plan: AgentPlan; decision: DecisionRecord; state: ExecState; since: number;
   at: number; stepAt: number; spokeAt: number; visionAt: number; sent: PlannedCommand | null;
@@ -546,16 +552,32 @@ export class ExecutionTracker {
     this.finish(r, "failed", step.kind === "ask" ? EXEC_TEXT.noAnswer : EXEC_TEXT.timeout);
   }
 
-  /** 끝나는 조건이 있는 집기·놓기 단계가 stallMs 넘게(단계 시작 뒤, 받은 부름 뒤) 안 끝나면 관찰 모드를 부른다. 단계마다 stallMax번까지, 받은 것만 센다. */
+  /** 끝나는 조건이 있는 집기·놓기 단계가 stallMs 넘게(단계 시작 뒤, 받은 부름 뒤) 안 끝나면 관찰 모드를 부른다. 단계마다 stallMax번까지.
+   *  받은 것만 먼저 세고, 그 부름의 settle(false)는 셈을 돌려준다(같은 계획·단계 세대일 때만, 한 번). */
   private stall(r: Run, step: AgentStep, now: number): void {
     if (!this.o.stalled || (step.kind !== "pick" && step.kind !== "place") || !step.until || !r.sent || r.asking || !r.stepEnd) return;
     if (r.looks >= this.cfg.stallMax || now - r.stepAt < this.cfg.stallMs || now - r.lookAt < this.cfg.stallMs) return;
+    const gen = r.gen;
+    // asking: stalled를 부르는 중(그 안에서 정하면 받은 뒤 셈에 바로 반영), open: 받았고 아직 안 정함, done: 정함(또는 받지 않음)
+    let state: "asking" | "open" | "done" = "asking";
+    let counted = true;
     const s: Stall = {
       planId: r.plan.view.id, stepId: step.id, kind: step.kind, label: step.label, command: r.sent.text, until: step.until,
-      stuckMs: now - r.stepAt, looks: r.looks, spots: this.spots(r, step, this.o.world()), gen: r.gen, signal: r.stepEnd.signal,
+      stuckMs: now - r.stepAt, looks: r.looks, spots: this.spots(r, step, this.o.world()), gen, signal: r.stepEnd.signal,
+      settle: (c) => {
+        if (state === "done") return;
+        const open = state === "open";
+        state = "done";
+        counted = c;
+        if (open && !c && this.run === r && r.gen === gen && r.looks > 0) r.looks--;
+      },
     };
-    if (!this.o.stalled(s)) return;
-    r.looks++;
+    if (!this.o.stalled(s)) {
+      state = "done";
+      return;
+    }
+    if (state === "asking") state = "open";
+    if (counted) r.looks++;
     r.lookAt = now;
   }
 
@@ -682,11 +704,13 @@ export class ExecutionTracker {
   }
 }
 
-/** 가까이 봐서 찾은 물건을 전체 사진이 못 봐도 지키는 중인가(World State closer_hold). 그동안 보인 것이 아니라 「아직 있음」으로 세지 않는다. */
-const held = (o: WorldObject) => o.closer_hold === true;
+/** 가까이 봐서 찾은 물건을 전체 사진이 못 봐도 지키는 중이거나(World State closer_hold), 지키던 중 같은 종류 새 물건이 다른 자리에 생겼는가(followed_by).
+ *  그동안 보인 것이 아니라 「아직 있음」으로 세지 않는다. */
+const held = (o: WorldObject) => o.closer_hold === true || !!o.followed_by;
 
 /** 계획 물건으로 보는 지금 World State 물건(하나, 없으면 빈 목록). 지금 id가 사라졌거나(그 자리가 시야 안인데 없음), 사람이 들고 다니다 시야 밖이 됐거나,
- *  가까이 봐서 지키는 중일 때만 그 뒤에 처음 보인 같은 종류 물건(계획 전부터 있던 것·앞서 이은 것은 뺀다)이 하나일 때 그것으로 이어 간다.
+ *  가까이 봐서 지키는 중이거나 옮김 표시(followed_by)가 있을 때만 그 뒤에 처음 보인 같은 종류 물건(계획 전부터 있던 것·앞서 이은 것은 뺀다)이 하나일 때 그것으로 이어 간다.
+ *  옮김 표시가 가리키는 물건은 처음 보인 시각과 상관없이 후보이고, 후보가 여럿이면 그것을 고른다.
  *  여럿이거나 들지 않은 물건이 시야 밖이면 잇지 않는다(「완료」로 넘긴다). */
 function ours(r: Run, id: string, world: WorldView): WorldObject[] {
   const cur = r.alias.get(id) ?? id;
@@ -696,14 +720,17 @@ function ours(r: Run, id: string, world: WorldView): WorldObject[] {
   const others = r.others.get(id) ?? new Set<string>();
   const seen = new Set(r.alias.values());
   const after = own?.last_seen_ms ?? -Infinity;
+  const marked = own?.followed_by ?? null;
   // 들고 다니다 시야 밖이 된 물건은 내려놓기 목표 자리 가까이(NEAR_M 안)에서 새로 보인 것만 잇는다(그 자리를 모르면 거리는 보지 않는다)
   const step = r.plan.steps[r.at];
   const near = own?.status === "out_of_view" && step?.kind === "place" ? r.placeAt(step.target) : null;
-  const next = world.objects.filter((o) => o.cls === cls && o.id !== cur && o.id !== id && !others.has(o.id) && !seen.has(o.id) && o.status !== "gone" && o.first_seen_ms > after
+  const next = world.objects.filter((o) => o.cls === cls && o.id !== cur && o.id !== id && !others.has(o.id) && !seen.has(o.id) && o.status !== "gone"
+    && (o.first_seen_ms > after || o.id === marked)
     && (!near || !o.position || Math.hypot(o.position[0] - near[0], o.position[2] - near[1]) <= NEAR_M));
-  if (next.length === 1) {
-    r.alias.set(id, next[0]!.id);
-    return [next[0]!];
+  const pick = next.length === 1 ? next[0] : next.find((o) => o.id === marked);
+  if (pick) {
+    r.alias.set(id, pick.id);
+    return [pick];
   }
   return own ? [own] : [];
 }

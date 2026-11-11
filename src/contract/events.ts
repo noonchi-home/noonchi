@@ -115,11 +115,11 @@ export type LookTrigger = "stalled" | "unknown_fact";
 
 // 가까이 보기(src/observe/pipeline.ts closer)
 
-/** 자원 사정이라 못 본 것(시도로 세지 않고 다음에 다시 부른다): no_fresh_frames 새 사진(가장 새 프레임 가까이 찍힌 서로 다른 프레임 3장)이 모자람,
- *  vlm_busy 다른 가까이 보기가 돌거나 VLM 가까이 보기 자리가 참. */
+/** 자원 사정이라 못 본 것(시도로 세지 않고 다음에 다시 부른다, 실행 추적 Stall.settle(false)): no_fresh_frames 새 사진(가장 새 프레임 가까이 찍힌 서로 다른 프레임 3장)이
+ *  모자라거나 가장 새 프레임이 지금보다 너무 앞서 찍힘(폰 끊김, 감지가 끝난 뒤에도 다시 봄), vlm_busy 다른 가까이 보기가 돌거나 VLM 가까이 보기 자리가 참. */
 export type CloserWait = "no_fresh_frames" | "vlm_busy";
 /** 가까이 보기를 못 한 까닭: CloserWait, no_view 카메라를 맞추기 전, out_of_view 대상이 가장 새 사진 밖, no_detector 감지기 없음,
- *  aborted 요청이 끊김(자르기 전·합치기 바로 전에 보고 합치지 않음), closed 관찰 흐름이 닫힘, error 자르기·감지 오류. */
+ *  aborted 요청이 끊김(자르기 전·합치기 바로 전·VLM 답을 넣기 바로 전에 보고 넣지 않음, VLM 요청도 끊음), closed 관찰 흐름이 닫힘, error 자르기·감지 오류. */
 export type CloserMiss = CloserWait | "no_view" | "out_of_view" | "no_detector" | "aborted" | "closed" | "error";
 /** 가까이 본 가장 새 사진의 감지 하나: 맞춘 World State 물건 id(없으면 null), 종류, 신뢰도(소수 둘째 자리), 그 감지에 대한 VLM 답 값. */
 export interface CloserFound { id: string | null; cls: DetLabel; score: number; facts: string[] }
