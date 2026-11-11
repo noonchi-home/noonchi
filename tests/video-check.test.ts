@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 import type { HistoryRow } from "../src/contract/history.js";
 import type { WorldEye, WorldObject, WorldView } from "../src/contract/world.js";
-import { clock, markdown, parseArgs, phoneUrl, stepVerdict, timeline, twinRows, usedServer, watchAfterEnd, type Row } from "../scripts/video-check.js";
+import { clock, costLine, markdown, parseArgs, phoneUrl, stepVerdict, timeline, twinRows, usedServer, watchAfterEnd, type Row } from "../scripts/video-check.js";
 
 const eye = (room: string | null, room_label: string | null, x: number, y: number): WorldEye => ({ position: [x, y], height_m: 1.4, yaw_deg: 0, pitch_deg: -20, room, room_label, at_ms: 0 });
 const cup = (id: string, place: string | null, o: Partial<WorldObject> = {}): WorldObject => ({
@@ -132,6 +132,24 @@ describe("video-check", () => {
     ]);
     // 영상·트윈이 없으면 앞과 같다
     expect(timeline(0, [], commands, null)).toEqual([{ ms: 34_500, kind: "명령", text: "식탁으로 가 주세요", n: 1 }]);
+  });
+
+  it("시각표는 관찰 모드 기록(look)을 「가까이 보기」 줄로 넣고 같은 글이 이어지면 묶는다", () => {
+    const row = (id: number, at_ms: number, text: string): HistoryRow => ({ id, at_ms, day: "2026-11-11", kind: "look", subject: "sink_1", text, data: { trigger: "stalled", tool: "look_closer" } });
+    const rows = timeline(0, [row(1, 40_000, "싱크대 쪽은 기다림"), row(2, 45_000, "싱크대 쪽은 기다림"), row(3, 52_000, "싱크대 쪽을 가까이 봄 · 컵 보임")], []);
+    expect(rows.map((r) => [clock(r.ms), r.kind, r.text, r.n])).toEqual([
+      ["00:40.0", "가까이 보기", "싱크대 쪽은 기다림", 2],
+      ["00:52.0", "가까이 보기", "싱크대 쪽을 가까이 봄 · 컵 보임", 1],
+    ]);
+  });
+
+  it("비용 줄: /api/brain이 없으면 모름, 가까이 보기·관찰 모드가 없으면 앞 글 그대로, 있으면 횟수와 비용(모르면 비용 모름)", () => {
+    expect(costLine(null)).toBe("VLM 비용 모름(/api/brain 없음)");
+    expect(costLine({ frames: 54, vlm: { sent: 54, costUsd: 0.0301 } })).toBe("VLM 54장 · $0.0301 · 엔진 프레임 54장 · PAM·계획 비용 빠짐");
+    expect(costLine({ frames: 54, vlm: { sent: 54, costUsd: 0.0301 }, closer: { looks: 1 }, look: { calls: 2, costUsd: 0.0016 } }))
+      .toBe("VLM 54장 · $0.0301 · 가까이 보기 1번 · 관찰 모드 2번 $0.0016 · 엔진 프레임 54장 · PAM·계획 비용 빠짐");
+    expect(costLine({ frames: 54, vlm: { sent: 54, costUsd: 0.0301 }, closer: { looks: 0 }, look: { calls: 2, costUsd: null } }))
+      .toBe("VLM 54장 · $0.0301 · 가까이 보기 0번 · 관찰 모드 2번 · 관찰 모드 비용 모름 · 엔진 프레임 54장 · PAM·계획 비용 빠짐");
   });
 
   it("단계 판정 줄: 첫 명령의 계획 단계 중 끝난 수, 누른 단추 수, 마지막 트윈 눈 방과 컵 놓인 곳", () => {

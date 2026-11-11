@@ -8,10 +8,11 @@
 // 새 명령이 오면 --done-after초 뒤 엄지 자리 첫 답 단추(승인·완료)를 누른다(0이면 안 누름).
 // 영상이 끝나도 계획이 열려 있으면 최대 30초 더 보고, 남은 답과 그 뒤 온 명령을 누른다. 단계 영상이 새로 시작되면 끝 시각을 지우고 다시 끝날 때까지 본다.
 // t0는 폰 페이지가 서버 시계로 고친 마지막 값을 쓴다.
-// 끝나면 서버 기록(GET /api/history: 사람·물건 등장·사라짐, PAM 판단, 계획·단계, 실행), 폰 명령, 바꾼 단계 영상(영상 줄), 트윈 줄(눈 방이 바뀌거나
+// 끝나면 서버 기록(GET /api/history: 사람·물건 등장·사라짐, PAM 판단, 계획·단계, 실행, 관찰 모드가 고른 것(가까이 보기)), 폰 명령, 바꾼 단계 영상(영상 줄), 트윈 줄(눈 방이 바뀌거나
 // 마지막 눈 줄에서 0.5m 넘게 옮김, 컵 상태·놓인 곳·면·방이 바뀜)을 영상 시각(at_ms − t0)순 표 하나로 합쳐 찍고 --out에 markdown으로 쓴다.
 // 같은 출처의 같은 글이 이어지면 한 줄로 묶고 번 수를 붙인다. 표 밑에 판정 줄(첫 명령 시각, --expect-after초 전 명령, 첫 명령의 계획이 끝났는지),
-// --step이 있으면 단계 판정 줄(첫 명령 계획의 끝난 단계 수, 누른 단추 수, 마지막 트윈 눈 방·컵 놓인 곳), 이번 판 VLM 비용(GET /api/brain, PAM·계획 비용 빠짐).
+// --step이 있으면 단계 판정 줄(첫 명령 계획의 끝난 단계 수, 누른 단추 수, 마지막 트윈 눈 방·컵 놓인 곳), 이번 판 비용 줄(GET /api/brain: VLM, 가까이 보기 횟수,
+// 관찰 모드 호출과 비용(가격표에 없는 모델이면 비용 모름), PAM·계획 비용 빠짐).
 // 끝까지 돌지 않았으면(시간 넘김·중단) 판정 줄 위에 적고 끝 코드 1.
 // 끝에 같은 크롬 새 탭(1280×800)으로 대시보드 <api>/를 열어 8초 뒤 사진을 runtime/videos/<영상>.<시각 또는 fake>.twin.png에 남기고 markdown에 넣는다.
 // 사진을 못 남기면 판정 줄 위에 적기만 한다.
@@ -44,14 +45,14 @@ const DASH_SIZE: [number, number] = [1280, 800];
 const DASH_WAIT_MS = 8_000;
 /** 마지막 눈 줄에서 이만큼(m) 옮기면 눈 줄을 다시 쓴다 */
 const EYE_MOVE_M = 0.5;
-const HISTORY_KINDS = "detection,decision,plan,execution";
+const HISTORY_KINDS = "detection,decision,plan,execution,look";
 /** 영상이 끝난 뒤 남은 답 누르기·계획 끝을 더 기다리는 시간 */
 const TAIL_MS = 30_000;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // 표
 
-export type Kind = "사람 등장" | "사람 사라짐" | "물건 등장" | "물건 사라짐" | "PAM 판단" | "계획" | "단계" | "명령" | "영상" | "트윈" | "끝";
+export type Kind = "사람 등장" | "사람 사라짐" | "물건 등장" | "물건 사라짐" | "PAM 판단" | "계획" | "단계" | "명령" | "영상" | "트윈" | "가까이 보기" | "끝";
 /** 표 한 줄. ms는 영상 시각, n은 묶은 줄 수. */
 export interface Row { ms: number; kind: Kind; text: string; n: number }
 /** 폰 페이지가 남긴 명령(window.__noonchiVideo.commands). */
@@ -79,6 +80,8 @@ export function timeline(t0: number, history: HistoryRow[], commands: VideoComma
       if (kind) raw.push({ ms, kind, text: h.text, n: 1, from: "detection" });
     } else if (h.kind === "decision") {
       raw.push({ ms, kind: "PAM 판단", text: h.text, n: 1, from: "decision" });
+    } else if (h.kind === "look") {
+      raw.push({ ms, kind: "가까이 보기", text: h.text, n: 1, from: "look" });
     } else if (h.kind === "execution") {
       const state = (h.data as { state?: string } | null)?.state ?? "";
       if (!EXEC_PLAIN.has(h.text)) raw.push({ ms, kind: EXEC_END.has(state) ? "끝" : "계획", text: h.text, n: 1, from: "execution" });
@@ -196,7 +199,7 @@ export function markdown(o: { clip: string; mode: string; ranAt: string; rows: R
 // 서버 상태
 
 type PlanNow = { status?: string; goal?: string } | null;
-type BrainNow = { frames?: number; vlm?: { sent?: number; costUsd?: number } } | null;
+type BrainNow = { frames?: number; vlm?: { sent?: number; costUsd?: number }; closer?: { looks?: number }; look?: { calls?: number; costUsd?: number | null } | null } | null;
 const PLAN_OPEN = new Set(["planned", "running"]);
 
 /** 앞 판이 남긴 서버인지: 끝나지 않은 계획, 이미 받은 엔진 프레임(World State가 남음). 그렇면 까닭, 새 서버면 null. */
@@ -205,6 +208,16 @@ export function usedServer(plan: PlanNow, brain: BrainNow): string | null {
   const frames = brain?.frames ?? 0;
   if (frames > 0) return `엔진 프레임 ${frames}장을 이미 받은 서버예요(앞 판 World State가 남음). 서버를 다시 띄우세요`;
   return null;
+}
+
+/** 이번 판 비용 줄: VLM 장 수·비용, 가까이 보기 횟수, 관찰 모드 호출 수·비용(모르면 비용 모름), 엔진 프레임 수. PAM·계획 비용은 세지 않는다. */
+export function costLine(brain: BrainNow): string {
+  if (!brain?.vlm) return "VLM 비용 모름(/api/brain 없음)";
+  const usd = (v: number) => "$" + v.toFixed(4);
+  const closer = brain.closer ? ` · 가까이 보기 ${brain.closer.looks ?? 0}번` : "";
+  const lookCost = typeof brain.look?.costUsd === "number" ? ` ${usd(brain.look.costUsd)}` : " · 관찰 모드 비용 모름";
+  const look = brain.look ? ` · 관찰 모드 ${brain.look.calls ?? 0}번${lookCost}` : "";
+  return `VLM ${brain.vlm.sent ?? 0}장 · ${usd(brain.vlm.costUsd ?? 0)}${closer}${look} · 엔진 프레임 ${brain.frames ?? 0}장 · PAM·계획 비용 빠짐`;
 }
 
 /** 영상이 끝난 뒤 더 볼지: 끝난 지 TAIL_MS 안이고, 누를 답이 남았거나 계획이 열려 있으면(단추를 누르지 않는 판도 같다). */
@@ -502,7 +515,7 @@ async function main(): Promise<number> {
       if (!hist.ok) throw new Error(`기록을 받지 못함: HTTP ${hist.status}`);
       const history = ((await hist.json()) as { rows: HistoryRow[] }).rows;
       const brain = await getJson<BrainNow>(`${api}/api/brain`);
-      const cost = brain?.vlm ? `VLM ${brain.vlm.sent ?? 0}장 · $${(brain.vlm.costUsd ?? 0).toFixed(4)} · 엔진 프레임 ${brain.frames ?? 0}장 · PAM·계획 비용 빠짐` : "VLM 비용 모름(/api/brain 없음)";
+      const cost = costLine(brain);
 
       const rows = timeline(t0, history, commands, endMs, { clips, twin: twin.rows.map((r) => ({ ...r, ms: r.ms - t0 })) });
       const v = verdict(rows, commands, history, expectMs);
