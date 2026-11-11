@@ -160,6 +160,54 @@ describe("가까이 보기 합치기(applyCloser)", () => {
   });
 });
 
+describe("보임 판단보다 옛 촬영과 같은 원본 촬영", () => {
+  it("보임 판단보다 옛 전체 사진은 등장·사라짐 셈에 넣지 않는다: 20초에 사라짐을 본 뒤 늦게 온 15·16·17초 사진 세 장이 되살리지 않고, 20초에 본 컵을 15·16·17초 빈 사진이 지우지 않는다", () => {
+    const w = ws();
+    for (const s of [6, 8, 10]) full(w, `e${s}`, s * 1000, [cupIn]);
+    for (const s of [16, 18, 20]) full(w, `e${s}`, s * 1000, []);
+    expect(obj(w, "cup_1", 20_000)!.status).toBe("gone");
+    for (const s of [15, 16, 17]) expect(full(w, `l${s}`, s * 1000, [cupIn]).changes, `${s}초`).toEqual([]);
+    expect(obj(w, "cup_1", 20_000)!.status).toBe("gone");
+    const v = ws();
+    for (const s of [6, 8, 10, 20]) full(v, `e${s}`, s * 1000, [cupIn]);
+    for (const s of [15, 16, 17]) expect(full(v, `l${s}`, s * 1000, []).changes, `${s}초`).toEqual([]);
+    expect(obj(v, "cup_1", 20_000)!.status).toBe("present");
+  });
+
+  it("옛 전체 사진은 새 사진의 등장 셈을 끊지 않는다: 20초 사라짐 뒤 22·24초에 보고 늦게 온 17초 빈 사진이 와도 26초에 다시 있음이 된다", () => {
+    const w = ws();
+    for (const s of [6, 8, 10]) full(w, `e${s}`, s * 1000, [cupIn]);
+    for (const s of [16, 18, 20]) full(w, `e${s}`, s * 1000, []);
+    full(w, "e22", 22_000, [cupIn]);
+    full(w, "e24", 24_000, [cupIn]);
+    full(w, "l17", 17_000, []);
+    expect(full(w, "e26", 26_000, [cupIn]).changes).toEqual([expect.objectContaining({ kind: "appeared", subject: "cup_1" })]);
+  });
+
+  it("마지막 전체 사진에서 사라짐이 된 뒤 같은 원본 사진을 잘라 컵을 찾으면 잘라 본 양성이 앞서 다시 있음이 된다. 같은 원본 전체 사진이 늦게 와도 뒤집지 않는다", () => {
+    const w = ws();
+    for (const s of [6, 8, 10]) full(w, `e${s}`, s * 1000, [cupIn]);
+    for (const s of [16, 18, 20]) full(w, `e${s}`, s * 1000, []);
+    expect(obj(w, "cup_1", 20_000)!.status).toBe("gone");
+    const r = w.applyCloser([16, 18, 20].map((s) => pass(`e${s}`, s * 1000, [cupIn])));
+    expect(r.changes).toEqual([expect.objectContaining({ kind: "appeared", subject: "cup_1", at_ms: 20_000 })]);
+    expect(obj(w, "cup_1", 20_000)).toMatchObject({ status: "present", last_seen_ms: 20_000, closer_hold: true });
+    expect(full(w, "e20", 20_000, [], AWAY_VIEW).changes).toEqual([]);
+    expect(obj(w, "cup_1", 20_000)!.status).toBe("present");
+  });
+
+  it("가까이 보기로 10초에 확인한 컵은 그보다 옛(4~6초) 전체 사진의 다른 자리 컵 등장으로 지킴이 풀리거나 옮김 표시가 붙지 않는다. 같은 촬영(10초)의 등장도 옮김이 아니다", () => {
+    const w = ws();
+    w.applyCloser([8, 9, 10].map((s) => pass(`e${s}`, s * 1000, [cupIn])));
+    for (const s of [4, 5, 6]) full(w, `e${s}`, s * 1000, [cupOut]);
+    expect(w.view(10_000).objects.map((o) => [o.id, o.status, o.closer_hold, o.followed_by])).toEqual([["cup_1", "present", true, null], ["cup_2", "present", false, null]]);
+    const v = ws();
+    v.applyCloser([8, 9, 10].map((s) => pass(`e${s}`, s * 1000, [cupIn])));
+    for (const s of [8, 9, 10]) full(v, `f${s}`, s * 1000, [cupOut]);
+    expect(v.view(10_000).objects.map((o) => [o.id, o.closer_hold, o.followed_by])).toEqual([["cup_1", true, null], ["cup_2", false, null]]);
+  });
+});
+
 describe("같은 원본 프레임의 VLM 답: 전체 사진과 잘라 본 사진이 원본 프레임·물건·면 하나의 규칙을 쓴다", () => {
   const three = (dets: Detection[] = [cupIn]) => {
     const w = ws();

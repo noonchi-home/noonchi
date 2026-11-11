@@ -1,6 +1,6 @@
 // 등장·사라짐 확인: 같은 쪽이 need(key)장 연속일 때만 인정한다(사람 2장, 물건 3장. 출처는 docs/provenance.md).
 // 사라짐은 그 자리가 시야 안인 프레임만 센다. 시야 밖 프레임은 셈을 멈춘다(늘리지도 지우지도 않음).
-// 셈하던 키는 candidates에 없어도 매 장 다시 본다: 한 장이라도 끊기면 셈을 지운다.
+// 셈하던 키는 candidates에 없어도 매 장 다시 본다: 한 장이라도 끊기면 셈을 지운다. 그 키의 보임 판단보다 옛 프레임(skip)은 그 키에 넣지 않는다.
 export interface ConfirmEvent { key: string; kind: "appeared" | "gone"; atMs: number }
 
 export class Confirmer {
@@ -29,10 +29,12 @@ export class Confirmer {
     this.streak.delete(key);
   }
 
-  /** seen: 이 프레임에서 본 것. candidates: 셈할 다른 것(있다고 인정한 것). inView: 그 자리가 시야 안인가. */
-  observe(atMs: number, seen: ReadonlySet<string>, candidates: Iterable<string>, inView: (key: string) => boolean): ConfirmEvent[] {
+  /** seen: 이 프레임에서 본 것. candidates: 셈할 다른 것(있다고 인정한 것). inView: 그 자리가 시야 안인가.
+   *  skip: 이 프레임을 넣지 않을 키(그 키의 보임 판단보다 옛 촬영). 그 키는 셈을 늘리지도 지우지도 않는다. */
+  observe(atMs: number, seen: ReadonlySet<string>, candidates: Iterable<string>, inView: (key: string) => boolean, skip?: (key: string) => boolean): ConfirmEvent[] {
     const out: ConfirmEvent[] = [];
     for (const key of new Set([...candidates, ...seen, ...this.streak.keys()])) {
+      if (skip?.(key)) continue;
       const now = seen.has(key);
       if (now === this.on.has(key)) {
         this.streak.delete(key);
