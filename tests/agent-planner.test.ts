@@ -31,7 +31,7 @@ import { DEVICE_STATES } from "../src/world/vocab.js";
 import { cupPlan } from "./helpers/cup-plan.js";
 import { smallFloor } from "./helpers/floor.js";
 import { startFakePam } from "./helpers/pam.js";
-import { CUP_SCRIPTS, cupSteps, planCalls, planContext, startFakePlanner, testPlanner, type FakePlanner, type PlanScript } from "./helpers/planner.js";
+import { CUP_SCRIPTS, cupSteps, idsFrom, planCalls, planContext, startFakePlanner, testPlanner, type FakePlanner, type PlanScript } from "./helpers/planner.js";
 
 // 작은 집: 복도(hall)·주방(kitchen)·후면 발코니(balcony, 바닥 −0.1m라 로봇 이동 가능 방이 아님). 세탁기·건조기는 발코니
 const SCENE = {
@@ -117,7 +117,7 @@ function rig(o: { objects?: () => WorldObject[]; history?: () => Record<string, 
   const plans = new PlanHub(floor(), () => {}, () => "t");
   const hub = new MemoryHub(DEVICES, o.initial ?? { washer_1: { running: true } });
   const policy = new Policy();
-  const planner = testPlanner(llm, { hub, policy });
+  const planner = testPlanner(llm);
   const w = () => view(o.objects?.() ?? [], devicesOf(hub, o.history?.()));
   const ctx = (d: DecisionRecord): PlanContext => planContext({ decision: d, world: w(), floor: plans.floor(), hub, task: o.task });
   const planned: DecisionRecord[] = [];
@@ -152,7 +152,7 @@ describe("계획 모드: 컵 치우기", () => {
       { object: "cup_1", follow: true, facts: { place: "in_sink" } },
     ]);
     expect(r.plan.steps.every((s) => s.timeoutMs === 120_000 && s.onTimeout === "fail")).toBe(true);
-    // 한 번 부르고 한 차례로 끝난다. 입력은 할 일·판단·World State·평면도·손·승인·조건 낱말, 도구는 읽기·길·단계·끝내기(기기를 바꾸는 도구 없음)
+    // 한 번 부르고 한 차례로 끝난다. 입력은 할 일·판단·World State·평면도·손·승인·조건 낱말, 도구는 계획 전체를 내는 submit_plan 하나(기기를 바꾸는 도구 없음)
     const bodies = llm.bodies().slice(before);
     expect(bodies).toHaveLength(1);
     expect(bodies[0].instructions).toBe(PLANNER_PROMPT);
@@ -160,7 +160,9 @@ describe("계획 모드: 컵 치우기", () => {
     for (const part of ["[할 일] 컵 치우기:", "[PAM 판단] 관찰: 관찰 / 이유: 이유", "- 물건 cup_1 컵 · present", "- table_1 식탁 [dining_table]", "[손] 폰 자리 [1, 2] · 방 hall", "[승인]", "person_holding"]) {
       expect(input, part).toContain(part);
     }
-    expect(bodies[0].tools.map((x: { name: string }) => x.name).sort()).toEqual(["add_step", "find_devices", "finish_plan", "get_state", "list_devices", "read_floor_plan", "read_world", "route_to"]);
+    expect(bodies[0].tools.map((x: { name: string }) => x.name)).toEqual(["submit_plan"]);
+    // 모델이 바로 계획을 내게 그 함수를 지정하고, 응답 하나에 제출 하나만 받는다
+    expect(bodies[0]).toMatchObject({ tool_choice: { type: "function", name: "submit_plan" }, parallel_tool_calls: false });
     expect(bodies[0].max_output_tokens).toBe(4000);
   });
 });
@@ -381,7 +383,7 @@ describe("계획 모드: 계획 검사", () => {
   });
 
   it("틀린 계획만 내는 모델이면 차례 한도 안에 끝내지 못해 버리고, 실행 추적은 실제 폰에 아무것도 보내지 않는다", async () => {
-    llm.scripts["에어컨 켜기"] = () => Array.from({ length: 6 }, () => [["add_step", { kind: "device", label: "켜기", target: "ac_9", tool: "turn_on", timeout_s: 60 }], ["finish_plan", {}]] as [string, Record<string, unknown>][]);
+    llm.scripts["에어컨 켜기"] = () => Array.from({ length: 6 }, () => [["submit_plan", { steps: [{ kind: "device", label: "켜기", target: "ac_9", tool: "turn_on", timeout_s: 60 }] }]] as [string, Record<string, unknown>][]);
     try {
       const r = rig({ approvals: store({ "task:에어컨 켜기": "approve" }) });
       await r.decide(decision("에어컨 켜기"));
@@ -526,13 +528,35 @@ describe("계획 모드: 코드 리뷰 2회차 고침", () => {
   const cupIds = { table: "table_1", sink: "sink_1", cup: "cup_1" };
   const ctx = (): PlanContext => planContext({ decision: decision("컵 치우기"), world: view([cup()]), floor: floor() });
 
-  it("모양이 틀려 받지 않은 add_step이 있으면 같은 응답의 finish_plan으로 고치기 전 계획을 끝내지 않는다", () => {
+  it("submit_plan은 낼 때마다 계획 전체를 새로 검사한다: 모양이 틀린 단계가 하나라도 있으면 그 번호와 까닭을 돌려주고 끝내지 않으며, 고친 전체를 다시 내면 끝난다", () => {
     const d = new PlanDraft(ctx());
-    cupSteps(cupIds).forEach((s, i) => expect(d.add({ step: i + 1, ...s })).toMatchObject({ ok: true }));
-    d.reject({ step: 2, kind: "pick", label: 3 });
-    expect(d.finish()).toMatchObject({ ok: false, error: expect.stringMatching(/2번 단계가 틀린 채/) });
-    cupSteps(cupIds).slice(1).forEach((s, i) => expect(d.add({ step: i + 2, ...s })).toMatchObject({ ok: true }));
-    expect(d.finish()).toMatchObject({ ok: true });
+    const good = cupSteps(cupIds);
+    const bad = [good[0]!, { kind: "pick", label: 3 }, good[2]!, good[3]!];
+    expect(d.submit({ steps: bad })).toMatchObject({ ok: false, error: expect.stringMatching(/^2번 단계: .*계획 전체를 고쳐 submit_plan으로 다시 보내세요/s) });
+    expect(d.finished).toBeNull();
+    // 앞 제출의 단계가 남지 않는다(1번만 낸 계획은 필요한 단계가 없어 버린다)
+    expect(d.submit({ steps: [good[0]!] })).toMatchObject({ ok: false, error: expect.stringMatching(/pick, place 단계가 있어야/) });
+    expect(d.submit({ steps: good })).toMatchObject({ ok: true, plan: { steps: [{ kind: "go" }, { kind: "pick" }, { kind: "go" }, { kind: "place" }] } });
+    // 끝낸 계획은 그대로다(다음 제출이 바꾸지 않는다). 빈 계획은 받지 않는다
+    expect(d.submit({ steps: [good[0]!] })).toMatchObject({ ok: true, plan: { steps: [{}, {}, {}, {}] } });
+    expect(new PlanDraft(ctx()).submit({ steps: [] })).toMatchObject({ ok: false, error: expect.stringMatching(/단계가 없습니다/) });
+  });
+
+  it("틀린 계획을 내면 까닭을 돌려받아 고친 전체를 한 번 더 내고, 그 두 번째로 끝난다", async () => {
+    const before = llm.bodies().length;
+    llm.scripts["컵 치우기"] = (input) => {
+      const steps = cupSteps(idsFrom(input));
+      return [planCalls([steps[0]!, { ...steps[1]!, command: "컵을 들게요" }, steps[2]!, steps[3]!]), planCalls(steps)];
+    };
+    try {
+      const r = await testPlanner(llm).plan(planContext({ decision: decision("컵 치우기"), world: view([cup()]), floor: smallFloor(), nowIso: "t" }));
+      expect(r).toMatchObject({ ok: true, plan: { steps: [{ kind: "go" }, { kind: "pick" }, { kind: "go" }, { kind: "place" }] } });
+      const bodies = llm.bodies().slice(before);
+      expect(bodies).toHaveLength(2);
+      expect(bodies[1].input).toContainEqual(expect.objectContaining({ type: "function_call_output", output: expect.stringMatching(/2번 단계: .*주세요/) }));
+    } finally {
+      llm.scripts["컵 치우기"] = CUP_SCRIPTS["컵 치우기"]!;
+    }
   });
 
   it("가전 단계는 같은 가전 자리에서 사람이 하는 단계 뒤에 둔다(넣기 전에 건조기를 켜지 않는다)", () => {

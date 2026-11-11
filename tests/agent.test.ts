@@ -632,4 +632,29 @@ describe("공급자 배선(가짜 API)", () => {
       await api.close();
     }
   });
+
+  it("한 도구만 부르게 하면(forceTool) openai는 그 함수를 지정하고 병렬 호출을 끈다. anthropic은 생각이 늘 켜져 지정을 못 해 auto에 병렬 호출만 끈다. 도구를 막으면(allowTools false) 그것이 먼저다", async () => {
+    const resp = (output: unknown[]) => ({ id: "resp_1", object: "response", created_at: 0, model: "gpt-5.5", status: "completed", output, parallel_tool_calls: false, tool_choice: "auto", tools: [] });
+    const call = resp([{ type: "function_call", id: "fc_1", call_id: "call_1", name: "turn_on", arguments: "{}", status: "completed" }]);
+    const msg = (content: unknown[], stop: string) => ({ id: "msg_1", type: "message", role: "assistant", model: "claude-opus-5-5", content, stop_reason: stop, stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 } });
+    const use = msg([{ type: "tool_use", id: "toolu_1", name: "turn_on", input: {} }], "tool_use");
+    const tool = TOOLS.find((t) => t.name === "turn_on")!;
+    const oapi = await fakeApi([call, call]);
+    const aapi = await fakeApi([use, use]);
+    try {
+      const openai = new OpenAIProvider({ apiKey: "test-key", baseURL: oapi.url + "/v1" });
+      expect((await openai.step(openai.createState(), { system: "s", tools: [tool], allowTools: true, forceTool: "turn_on" })).calls).toHaveLength(1);
+      await openai.step(openai.createState(), { system: "s", tools: [tool], allowTools: false, forceTool: "turn_on" });
+      expect(oapi.seen[0]!.body).toMatchObject({ tool_choice: { type: "function", name: "turn_on" }, parallel_tool_calls: false });
+      expect(oapi.seen[1]!.body).toMatchObject({ tool_choice: "none" });
+      const anthropic = new AnthropicProvider({ apiKey: "test-key", baseURL: aapi.url });
+      expect((await anthropic.step(anthropic.createState(), { system: "s", tools: [tool], allowTools: true, forceTool: "turn_on" })).calls).toHaveLength(1);
+      await anthropic.step(anthropic.createState(), { system: "s", tools: [tool], allowTools: false, forceTool: "turn_on" });
+      expect(aapi.seen[0]!.body).toMatchObject({ tool_choice: { type: "auto", disable_parallel_tool_use: true } });
+      expect(aapi.seen[1]!.body).toMatchObject({ tool_choice: { type: "none" } });
+    } finally {
+      await oapi.close();
+      await aapi.close();
+    }
+  });
 });

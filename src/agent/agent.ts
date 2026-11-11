@@ -40,6 +40,8 @@ export interface StepOptions {
   signal?: AbortSignal;
   /** 응답 하나의 출력 토큰 상한(없으면 공급자 기본). */
   maxOutputTokens?: number;
+  /** 이 도구 하나를 바로 부르게 하고 응답 하나에 호출 하나만 받는다(계획 모드 submit_plan). allowTools가 false면 무시한다. */
+  forceTool?: string;
 }
 
 export interface StepResult {

@@ -169,7 +169,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     if (!layout) log(`[경고] ${home.scenePath}이 없어 배치 보정을 끕니다(twin-studio에서 집을 먼저 빌드하세요).`);
     const agent = new Agent({ hub: signals, policy, rooms: twin.rooms, provider, layout });
     // 에이전트 계획 모드(src/agent/planner.ts): PAM이 고른 행동 하나를 단계 계획으로. 말 요청 에이전트와 같은 공급자
-    const planner = new Planner({ provider, hub: signals, policy, rooms: twin.rooms });
+    const planner = new Planner({ provider });
     const twinDir = home.outDir;
     const hubKind = started.kind;
     const phoneOn = Boolean(env.PHONE_PORT?.trim());

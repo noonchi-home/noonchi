@@ -29,8 +29,8 @@ export const PLANNER_PROMPT = `너는 이 집 스마트홈 에이전트의 계�
 - label은 화면 단계 이름(예: 「식탁으로 가기」, 「컵 집기」, 「싱크대로 가기」, 「컵 내려놓기」). 30자 아래, 화살표·괄호 없이 쓴다.
 - 순서: 사람은 먼저 물건이 있는 자리로 가고(go), 집고(pick), 둘 자리로 가서(go) 내려놓는다(place). 이미 그 자리에 있으면 go를 뺀다.
 - 비전으로 볼 수 있는 일(컵 같은 World State 물건)은 pick·place에 until을 꼭 쓴다.
-- 필요하면 read_world·read_floor_plan·list_devices·find_devices·get_state·route_to로 확인한다. 그다음 add_step을 step 1부터 차례로 모두 부르고 마지막에 finish_plan을 부른다. 한 번에 함께 불러도 된다. 단계는 8개까지.
-- 도구 결과가 오류면 그 번호(step)부터 고쳐 다시 보내고 그 뒤 단계도 다시 보낸다(틀린 단계 뒤 단계는 받지 않는다). 답 글은 쓰지 않는다.
+- 집 상태·평면도·가전은 아래 입력에 다 있다. 바로 submit_plan 한 번으로 계획 전체(steps 배열, 1번부터 순서대로)를 낸다. 단계는 8개까지. 길(경로)은 코드가 잇는다.
+- 결과가 오류면 첫 틀린 단계와 까닭이 온다. 그 단계를 고친 계획 전체를 submit_plan으로 다시 낸다. 답 글은 쓰지 않는다.
 
 예(컵 치우기, 식탁 table_1 위 컵 cup_1, 싱크대 sink_1)
 1. go table_1 「식탁으로 가 주세요」 until {"phone_near": "table_1"}
