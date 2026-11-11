@@ -30,7 +30,7 @@ describe("한양목련 컵 치우기", () => {
       const world: WorldView = {
         at_ms: 0, frame_ms: null, vlm_missing: 0, yolo_missing: 0, eye: null, fixtures: [], devices: [],
         person: { visible: false, since_ms: 0, last_seen_ms: null, count: 0, room: null, room_label: null, position: null, near: [], holding: [], position_ms: null, answered_ms: null, facts: {} },
-        objects: [{ ...cup, cls: "cup", surface: "dining_table_978b20c7", surface_label: "거실·복도 식탁", room: "living", error_m: 0.1, status: "present", first_seen_ms: 0, last_seen_ms: 0, last_in_view_ms: 0, facts: {}, answered_ms: null, devices: [] }],
+        objects: [{ ...cup, cls: "cup", surface: "dining_table_978b20c7", surface_label: "거실·복도 식탁", room: "living", error_m: 0.1, status: "present", first_seen_ms: 0, last_seen_ms: 0, last_in_view_ms: 0, facts: {}, answered_ms: null, devices: [], closer_hold: false }],
       };
       const decision: DecisionRecord = {
         id: "t1", seq: 1, atMs: 0, textSent: "t", finalTime: "x", status: "valid", prediction: { observation: "o", reasoning: "", task_index: 0 }, action: "컵 치우기", memoryVersion: 1,

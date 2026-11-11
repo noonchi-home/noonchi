@@ -75,6 +75,12 @@ export function ndc(view: CameraView, point: V3): [number, number] | null {
   return [c[0] / c[3], c[1] / c[3]];
 }
 
+/** 트윈 점의 엔진 프레임 픽셀 [x, y](placeBox와 같은 NDC 방향). 카메라 뒤면 null. 그림 밖이어도 낸다. */
+export function pixelOf(view: CameraView, point: V3, size: { width: number; height: number }): [number, number] | null {
+  const n = ndc(view, point);
+  return n ? [((n[0] + 1) / 2) * size.width, ((1 - n[1]) / 2) * size.height] : null;
+}
+
 /** 트윈 점이 카메라 시야(NDC 안, 카메라 앞)에 드는가. margin만큼 화면 밖도 시야로 본다. */
 export function inView(view: CameraView, point: V3, margin = 0): boolean {
   const n = ndc(view, point);

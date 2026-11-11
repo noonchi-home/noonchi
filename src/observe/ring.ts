@@ -18,6 +18,8 @@ export interface EngineFrame {
   eye: EyePose | null;
   /** 그 순간 카메라(맞추기 전·투영 없음이면 null). */
   view: CameraView | null;
+  /** 가까이 보기로 잘라 키운 사진이면 잘라 낸 자리(원래 엔진 프레임 픽셀 [x, y, w, h]). 고리에는 넣지 않고 VLM 풀에만 간다. */
+  crop?: [number, number, number, number];
 }
 
 export const sha256 = (b: Buffer): string => createHash("sha256").update(b).digest("hex");

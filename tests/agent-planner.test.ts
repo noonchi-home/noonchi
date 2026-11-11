@@ -68,7 +68,7 @@ const DEVICES = [
 const PERSON: WorldView["person"] = { visible: false, since_ms: 0, last_seen_ms: null, count: 0, room: null, room_label: null, position: null, near: [], holding: [], position_ms: null, answered_ms: null, facts: {} };
 const cup = (over: Partial<WorldObject> = {}): WorldObject => ({
   id: "cup_1", cls: "cup", position: [7, 0.75, 3], surface: "table_1", surface_label: "식탁", room: "kitchen", error_m: 0.1, status: "present",
-  first_seen_ms: 0, last_seen_ms: 9_000, last_in_view_ms: 9_000, facts: {}, answered_ms: null, devices: [], ...over,
+  first_seen_ms: 0, last_seen_ms: 9_000, last_in_view_ms: 9_000, facts: {}, answered_ms: null, devices: [], closer_hold: false, ...over,
 });
 /** 허브 상태로 만든 World State 가전(지금 상태 키, 이력은 따로 준다). */
 function devicesOf(hub: MemoryHub, history: Record<string, WorldDevice["history"]> = {}): WorldDevice[] {

@@ -31,6 +31,9 @@ export interface WorldObject {
   answered_ms: number | null;
   /** 관계표로 붙인 관련 가전 id. */
   devices: string[];
+  /** 가까이 보기 지킴 중: 가까이 보기(src/observe/pipeline.ts closer)로 찾거나 고친 지 30초가 안 됐고, 같은 종류 새 물건이 다른 자리에 생겨 풀리지 않았다.
+   *  그동안 전체 사진이 그 자리를 보면서 못 봐도 사라짐으로 세지 않는다. 그래서 지킴 중인 물건이 있다는 것은 전체 사진으로 본 근거가 아니다. */
+  closer_hold: boolean;
 }
 
 export interface WorldPerson {

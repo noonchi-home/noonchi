@@ -5,7 +5,7 @@ import type { WorldObject } from "../src/contract/world.js";
 
 const obj = (over: Partial<WorldObject> = {}): WorldObject => ({
   id: "cup_1", cls: "cup", position: [2, 0.75, 0], surface: "t", surface_label: "식탁", room: "kitchen", error_m: 0.1, status: "present",
-  first_seen_ms: 0, last_seen_ms: 9_000, last_in_view_ms: 9_000, facts: {}, answered_ms: null, devices: [], ...over,
+  first_seen_ms: 0, last_seen_ms: 9_000, last_in_view_ms: 9_000, facts: {}, answered_ms: null, devices: [], closer_hold: false, ...over,
 });
 const base = (over: Partial<CheckInput> = {}): CheckInput => ({
   decision: {

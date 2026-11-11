@@ -4,9 +4,11 @@
 // 고리 범위(keepMs)보다 앞서 찍힌 늦은 프레임은 분석하지 않고 YOLO·VLM 분석 없음(stale). 늦은 프레임은 World State·눈 자세에 넣지 않는다.
 // 감지 번호(d1…)와 물체 id의 짝은 그 프레임의 VLM 답(또는 분석 없음)이 올 때까지 둔다.
 // 분석한 사진은 메모리 고리에만 있다. 디스크에 쓰지 않는다. DATASET_COLLECT=1이면 dataset(시험 자료 저장, src/history/retention.ts)이 고리에 넣은 프레임을 받는다.
+// 가까이 보기(closer): 고리의 새 프레임 3장마다 대상 자리를 그 프레임 카메라로 찍어 절반 크기로 잘라 2배로 키우고 같은 감지기로 본다.
+// 잘라 본 결과는 보통 프레임처럼 넣지 않고 World State applyCloser로 한 번에 합친다. 가장 새 장만 VLM 풀의 가까이 보기 자리로 혼자 보내고 그 답은 applyCloserScene으로 넣는다.
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { BrainLog } from "../contract/events.js";
+import type { BrainLog, CloserMiss, CloserResult } from "../contract/events.js";
 import type { WorldChange, WorldView, YoloMissing } from "../contract/world.js";
 import type { DeviceState } from "../hub/types.js";
 import { DETECTOR_MODEL, MODELS_DIR, POSE_MODEL, WorkerDetector, type DetectResult, type Detection, type Detector, type DetectorSpec, type Pose } from "../brain/detector.js";
@@ -16,10 +18,12 @@ import type { VlmClient } from "../infer/vlm.js";
 import type { FrameHeader } from "../phone/packet.js";
 import type { CameraView, EyeEvent } from "../phone/session.js";
 import { OBJECT_NAME, YOLO_TEXT } from "../world/labels.js";
-import type { WorldState } from "../world/state.js";
+import { inView, pixelOf } from "../world/place.js";
+import type { CloserPass, WorldState } from "../world/state.js";
+import { cropBox, cropJpeg, LOOK_MARGIN, onCropEdge, toFrameBox, type Box, type LookSpot } from "./crop.js";
 import { captureTime, FrameRing, sha256, type EngineFrame } from "./ring.js";
-import { analyzeScene, type SceneDetection } from "./scene.js";
-import { VlmPool } from "./vlm-pool.js";
+import { analyzeScene, CLOSER_NOTE, type SceneDetection } from "./scene.js";
+import { VlmPool, type VlmResult } from "./vlm-pool.js";
 
 type Env = Record<string, string | undefined>;
 
@@ -59,6 +63,20 @@ export function loadObserveConfig(env: Env): ObserveConfig {
     detectQueueMax: int(env, "DETECT_QUEUE_MAX", 8, 1), keepMs: Math.max(20_000, vlmWindowFrames * engineMs), vlmWindowFrames,
   };
 }
+
+/** 가까이 보기에 쓰는 엔진 프레임 수: World State가 새 물건을 만드는 서로 다른 원본 프레임 수(CLOSER_NEW_FRAMES)와 같다. */
+export const CLOSER_FRAMES = 3;
+/** 가까이 보기는 가장 새 프레임에서 이만큼(ms) 안에 찍힌 프레임만 쓴다(새 사진만). */
+export const CLOSER_FRESH_MS = 3000;
+/** VLM 풀에 따로 둔 가까이 보기 자리 수. */
+export const CLOSER_VLM_SLOTS = 1;
+
+/** 가까이 보기에 쓸 프레임의 촬영 시각 범위(가장 새 프레임 기준, ms): CLOSER_FRESH_MS. 엔진 프레임 간격이 길어 그 안에 CLOSER_FRAMES장이 들 수 없으면
+ *  연달은 CLOSER_FRAMES장이 드는 만큼((장 수 − 1) × 간격 + 간격 절반)까지 늘린다(기본 2초 간격이면 5초). */
+export const closerSpanMs = (engineMs: number): number => Math.max(CLOSER_FRESH_MS, (CLOSER_FRAMES - 1) * engineMs + engineMs / 2);
+
+/** 고리 가장 새 프레임의 카메라·촬영 시각·크기(관찰 모드가 대상이 사진 안인지 본다). */
+export interface LatestFrame { view: CameraView | null; capturedAtMs: number; width: number; height: number }
 
 /** 프레임마다 생기는 분석 없음은 observe 기록으로 남기므로 world_change로 다시 보내지 않는다. */
 const PER_FRAME = new Set(["vlm_missing", "yolo_missing"]);
@@ -105,6 +123,8 @@ export interface PipelineStatus {
   time_err_ms: number | null;
   /** 시험 자료로 쓴 프레임 수와 쓰지 못한 수(DATASET_COLLECT=1이 아니면 null). */
   dataset: { saved: number; failed: number } | null;
+  /** 가까이 보기: 해낸 수, 못 한 수(까닭 무엇이든), 그 VLM 비용(달러, vlm.costUsd에도 들어 있다). */
+  closer: { looks: number; failed: number; costUsd: number };
 }
 
 export class ObservationPipeline {
@@ -125,14 +145,21 @@ export class ObservationPipeline {
   private timeErr: number | null = null;
   private readonly datasetCount = { saved: 0, failed: 0 };
   private closed = false;
+  /** 가까이 보기가 도는 중(한 번에 하나: 자르기부터 VLM 답까지). */
+  private closing = false;
+  private closerSeq = 0;
+  private readonly closerCount = { looks: 0, failed: 0, costUsd: 0 };
 
   constructor(private readonly o: PipelineOptions) {
     this.clock = o.clock ?? { now: () => Date.now() };
     this.ring = new FrameRing(o.config.keepMs);
     const windowFrames = o.config.vlmWindowFrames ?? VLM_WINDOW_DEFAULT;
     this.pool = new VlmPool({
-      maxInflight: o.config.vlmMaxInflight, timeoutMs: o.config.vlmTimeoutMs,
-      analyze: (f, d, signal) => analyzeScene(o.vlm, this.ring.window(f, windowFrames, windowFrames * o.config.engineMs), d, signal),
+      maxInflight: o.config.vlmMaxInflight, timeoutMs: o.config.vlmTimeoutMs, closerSlots: CLOSER_VLM_SLOTS,
+      // 잘라 키운 사진은 혼자, 그 사진이 장면 일부라는 한 줄과 보낸다
+      analyze: (f, d, signal) => f.crop
+        ? analyzeScene(o.vlm, [f], d, signal, CLOSER_NOTE)
+        : analyzeScene(o.vlm, this.ring.window(f, windowFrames, windowFrames * o.config.engineMs), d, signal),
       onResult: (r) => {
         if (this.closed) return;
         const ids = this.idsOf.get(r.frameId) ?? new Map<string, string>();
@@ -267,7 +294,101 @@ export class ObservationPipeline {
       detected: this.detected, detect_ms: mean(this.detectMs), posed: this.posed, pose_ms: mean(this.poseMs),
       queued: this.queue.length, yolo_missing: { ...this.yoloMissing }, vlm: this.pool.stats(), time_source: this.timeSource, time_err_ms: this.timeErr,
       dataset: this.o.dataset ? { ...this.datasetCount } : null,
+      closer: { ...this.closerCount, costUsd: Math.round(this.closerCount.costUsd * 1e5) / 1e5 },
     };
+  }
+
+  /** 고리 가장 새 프레임(없으면 null). */
+  latest(): LatestFrame | null {
+    const f = this.ring.frames().at(-1);
+    return f ? { view: f.view, capturedAtMs: f.capturedAtMs, width: f.width, height: f.height } : null;
+  }
+
+  /** 가까이 보기 한 번. 한 번에 하나만 돈다(다른 가까이 보기가 돌거나 VLM 가까이 보기 자리가 차 있으면 vlm_busy).
+   *  고리에서 가장 새 프레임으로부터 closerSpanMs 안에 찍혀 카메라가 있고 spot이 사진 안(LOOK_MARGIN)인 프레임 CLOSER_FRAMES장을 쓴다. 모자라면 자르지 않고 no_fresh_frames.
+   *  장마다 spot을 그 프레임 카메라로 찍은 자리를 절반 크기로 잘라 2배로 키워 같은 감지기로 보고, 상자를 엔진 프레임 픽셀로 옮겨 World State에 한 번에 합친다(변화 발행도 한 번).
+   *  signal은 자르기 전(장마다)과 합치기 바로 전에 보고, 끊겼으면 합치지 않고 aborted. 가장 새 장만 VLM 가까이 보기 자리로 보내고 그 답(감지한 물건 사실만)을 넣은 뒤 끝난다. */
+  async closer(spot: LookSpot, signal?: AbortSignal): Promise<CloserResult> {
+    if (this.closed) return this.closerMiss("closed");
+    if (signal?.aborted) return this.closerMiss("aborted");
+    const detector = this.o.detector;
+    if (!detector) return this.closerMiss("no_detector");
+    if (this.closing || !this.pool.closerFree()) return this.closerMiss("vlm_busy");
+    const ring = this.ring.frames();
+    const newest = ring.at(-1);
+    if (!newest) return this.closerMiss("no_fresh_frames");
+    if (!newest.view) return this.closerMiss("no_view");
+    if (!inView(newest.view, spot.position, LOOK_MARGIN)) return this.closerMiss("out_of_view");
+    const span = closerSpanMs(this.o.config.engineMs);
+    const picked = ring.filter((f) => f.view && newest.capturedAtMs - f.capturedAtMs <= span && inView(f.view, spot.position, LOOK_MARGIN)).slice(-CLOSER_FRAMES);
+    if (new Set(picked.map((f) => f.id)).size < CLOSER_FRAMES) return this.closerMiss("no_fresh_frames");
+    this.closing = true;
+    try {
+      return await this.look(spot, picked, detector, signal);
+    } finally {
+      this.closing = false;
+    }
+  }
+
+  private async look(spot: LookSpot, picked: readonly EngineFrame[], detector: Detector, signal: AbortSignal | undefined): Promise<CloserResult> {
+    const passes: { frame: EngineFrame; view: CameraView; crop: Box; jpeg: Buffer; dets: Detection[] }[] = [];
+    try {
+      for (const frame of picked) {
+        if (signal?.aborted) return this.closerMiss("aborted");
+        if (this.closed) return this.closerMiss("closed");
+        const view = frame.view!;
+        const crop = cropBox(pixelOf(view, spot.position, frame)!, frame);
+        const jpeg = cropJpeg(frame.jpeg, crop, frame);
+        const r = await detector.detect(jpeg);
+        passes.push({ frame, view, crop, jpeg, dets: r.detections.filter((d) => this.o.world.accepts(d)) });
+      }
+    } catch {
+      return this.closerMiss(this.closed ? "closed" : "error");
+    }
+    if (this.closed) return this.closerMiss("closed");
+    if (signal?.aborted) return this.closerMiss("aborted");
+    const looks: CloserPass[] = passes.map((p) => ({
+      frameId: p.frame.id, capturedAtMs: p.frame.capturedAtMs, view: p.view, width: p.frame.width, height: p.frame.height,
+      dets: p.dets.map((d) => {
+        const box = toFrameBox(d.box, p.crop, p.frame);
+        return { ...d, box, edge: onCropEdge(box, p.crop) };
+      }),
+    }));
+    // 잘라 본 몇 장은 await 없이 한 번에 합치고 변화도 한 번만 낸다
+    const { changes, ids } = this.o.world.applyCloser(looks);
+    this.publish(changes);
+    const last = passes.at(-1)!;
+    const id = `${last.frame.id}.c${++this.closerSeq}`;
+    this.o.emit({
+      type: "observe", at_ms: this.clock.now(), frame_id: id, captured_at_ms: last.frame.capturedAtMs, yolo: yoloText(last.dets), vlm: null,
+      boxes: looks.at(-1)!.dets.map(({ label, score, box }) => ({ label, score, box })), frame: { width: last.frame.width, height: last.frame.height }, closer: last.crop,
+    });
+    // VLM은 잘라 키운 사진 한 장이고 감지 상자는 그 사진 픽셀이다
+    const answer = this.pool.submitCloser(
+      { ...last.frame, id, jpeg: last.jpeg, sha256: sha256(last.jpeg), crop: last.crop },
+      last.dets.map((d, i) => ({ id: `d${i + 1}`, class: d.label, box: d.box, score: d.score })),
+    );
+    const r: VlmResult = answer ? await answer : { frameId: id, capturedAtMs: last.frame.capturedAtMs, scene: null, missing: "cap", costUsd: 0 };
+    this.closerCount.costUsd += r.costUsd;
+    if (this.closed) return this.closerMiss("closed");
+    this.o.emit({
+      type: "observe", at_ms: this.clock.now(), frame_id: id, captured_at_ms: last.frame.capturedAtMs, yolo: null, vlm: r.scene?.summary ?? null,
+      ...(r.missing ? { vlm_missing: r.missing } : {}), closer: last.crop,
+    });
+    if (r.scene) this.publish(this.o.world.applyCloserScene(last.frame.id, last.frame.capturedAtMs, r.scene, ids));
+    this.closerCount.looks++;
+    const said = new Map<string, string[]>();
+    for (const ob of r.scene?.observations ?? []) said.set(ob.object_id, [...(said.get(ob.object_id) ?? []), ob.state]);
+    return {
+      ok: true, frame_id: id, captured_at_ms: last.frame.capturedAtMs, crop: last.crop, frames: passes.length,
+      found: last.dets.map((d, i) => ({ id: ids.get(`d${i + 1}`) ?? null, cls: d.label, score: Math.round(d.score * 100) / 100, facts: said.get(`d${i + 1}`) ?? [] })),
+      summary: r.scene?.summary ?? null, vlm: r.missing ?? "ok",
+    };
+  }
+
+  private closerMiss(why: CloserMiss): CloserResult {
+    this.closerCount.failed++;
+    return { ok: false, why };
   }
 
   /** 진행 중인 감지·VLM 요청이 끝날 때까지 기다린다(시험용). */

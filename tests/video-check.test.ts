@@ -10,7 +10,7 @@ const cup = (id: string, place: string | null, o: Partial<WorldObject> = {}): Wo
   id, cls: "cup", position: [9.96, 0.75, 3.92], surface: "dining_table_1", surface_label: "식탁", room: "living", error_m: 0.1, status: "present",
   first_seen_ms: 0, last_seen_ms: 0, last_in_view_ms: 0,
   facts: place ? { place: { value: place, at_ms: 0, since_ms: 0, certainty: "confirmed" } } : {},
-  answered_ms: null, devices: [], ...o,
+  answered_ms: null, devices: [], closer_hold: false, ...o,
 });
 const world = (at_ms: number, e: WorldEye | null, objects: WorldObject[]): WorldView => ({
   at_ms, objects, eye: e, fixtures: [], devices: [], frame_ms: null, vlm_missing: 0, yolo_missing: 0,

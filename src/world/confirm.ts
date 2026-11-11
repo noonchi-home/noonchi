@@ -23,6 +23,12 @@ export class Confirmer {
     this.streak.delete(key);
   }
 
+  /** 셈 없이 있다고 인정하고 그 키의 셈을 지운다(가까이 보기가 새 촬영으로 본 물건, src/world/state.ts applyCloser). */
+  mark(key: string): void {
+    this.on.add(key);
+    this.streak.delete(key);
+  }
+
   /** seen: 이 프레임에서 본 것. candidates: 셈할 다른 것(있다고 인정한 것). inView: 그 자리가 시야 안인가. */
   observe(atMs: number, seen: ReadonlySet<string>, candidates: Iterable<string>, inView: (key: string) => boolean): ConfirmEvent[] {
     const out: ConfirmEvent[] = [];

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { startFakeOpenAI, type FakeServer } from "../scripts/fake-openai.js";
 import { VlmClient } from "../src/infer/vlm.js";
-import { analyzeScene, parseScene, SCENE_JSON_SCHEMA } from "../src/observe/scene.js";
+import { analyzeScene, CLOSER_NOTE, parseScene, SCENE_JSON_SCHEMA } from "../src/observe/scene.js";
 import { sha256, type EngineFrame } from "../src/observe/ring.js";
 
 let fake: FakeServer | undefined;
@@ -43,6 +43,18 @@ describe("VLM 장면 분석", () => {
     expect(text).toContain("Detections: [{\"id\":\"d1\"");
     expect(text).toContain("found in the latest photo");
     expect(text).toContain("across the photos");
+  });
+
+  it("잘라 키운 사진은 앞에 CLOSER_NOTE 한 줄을 두고 그다음 감지 목록을 보낸다", async () => {
+    fake = await startFakeOpenAI();
+    const vlm = new VlmClient({ baseUrl: `${fake.url}/v1`, model: "m", apiKey: "", extraBody: {} });
+    await analyzeScene(vlm, [frameAt("e3.c1", 5000, Buffer.from([0xff, 0xd8, 0]))], [{ id: "d1", class: "cup", box: [220.4, 160, 40, 20], score: 0.7 }], undefined, CLOSER_NOTE);
+    const content = (fake.requests.at(-1)!.body.messages as { content: Part[] }[])[0]!.content;
+    const texts = content.filter((p) => p.type === "text").map((p) => p.text!);
+    const at = texts.indexOf(CLOSER_NOTE);
+    expect(at).toBeGreaterThan(0);
+    expect(texts[at + 1]).toBe(`Detections: [{"id":"d1","class":"cup","box":[220,160,40,20]}]`);
+    expect(CLOSER_NOTE).toContain("enlarged 2x");
   });
 
   it("프레임이 한 장이면 그 한 장만 가장 새 프레임으로 보낸다", async () => {

@@ -89,7 +89,7 @@ describe("startServer(BRAIN=1) + 관찰 흐름", () => {
       expect(srv.history.list({ kinds: ["vlm"] })[0]).toMatchObject({ text: "가짜 장면" });
       expect(srv.history.list({ kinds: ["pam_text"] }).map((r) => r.text)).toContain(decision.event.text_sent);
       const status = (await (await fetchRetry(`${srv.url}/api/brain`)).json()) as Msg;
-      expect(status).toMatchObject({ ok: true, frames: 3, detected: 3, time_source: "phone" });
+      expect(status).toMatchObject({ ok: true, frames: 3, detected: 3, time_source: "phone", closer: { looks: 0, failed: 0, costUsd: 0 } });
       expect(((await (await fetchRetry(`${srv.url}/api/world`)).json()) as Msg).world.objects).toHaveLength(1);
       expect(fake.requests.filter((r) => r.path.endsWith("/chat/completions")).every((r) => r.body.model === "fake-vlm")).toBe(true);
       const late = await openWebSocket(`${srv.url.replace(/^http/, "ws")}/events`, { setup: (ws) => { dashBox = inbox(ws); } });

@@ -44,6 +44,36 @@ describe("VLM 동시 요청", () => {
     await pool.idle();
     expect(peak).toBe(1);
   });
+  it("가까이 보기 자리는 따로 있다: 보통 프레임이 상한을 다 써도 가까이 보기는 가고, 그 자리가 차 있으면 null이다. 답은 onResult가 아니라 돌려준 약속으로 온다", async () => {
+    const out: VlmResult[] = [];
+    const gates = new Map<string, () => void>();
+    const pool = new VlmPool({ maxInflight: 1, closerSlots: 1, onResult: (r) => out.push(r),
+      analyze: (fr) => new Promise((ok) => gates.set(fr.id, () => ok({ scene, costUsd: 0.001 }))) });
+    expect(pool.submit(f("a", 1), [])).toBe("sent");
+    expect(pool.submit(f("b", 2), [])).toBe("skipped");
+    expect(pool.closerFree()).toBe(true);
+    const answer = pool.submitCloser(f("c", 3), []);
+    expect(answer).not.toBeNull();
+    expect(pool.closerFree()).toBe(false);
+    expect(pool.submitCloser(f("d", 4), [])).toBeNull();
+    expect(pool.submit(f("e", 5), [])).toBe("skipped");   // 가까이 보기 자리는 보통 프레임이 쓰지 않는다
+    gates.get("c")!();
+    expect(await answer).toEqual({ frameId: "c", capturedAtMs: 3, scene, costUsd: 0.001 });
+    expect(pool.closerFree()).toBe(true);
+    gates.get("a")!();
+    await pool.idle();
+    expect(out.map((r) => [r.frameId, r.missing])).toEqual([["b", "cap"], ["e", "cap"], ["a", undefined]]);
+    expect(pool.stats()).toMatchObject({ sent: 2, costUsd: 0.002, inflight: 0 });
+  });
+  it("가까이 보기 자리를 두지 않으면 가까이 보기를 보내지 않는다. 멈추면 나가 있는 가까이 보기는 답을 기다리지 않고 분석 없음(error)으로 끝난다", async () => {
+    expect(new VlmPool({ maxInflight: 1, onResult: () => {}, analyze: async () => ({ scene, costUsd: 0 }) }).submitCloser(f("x", 1), [])).toBeNull();
+    const pool = new VlmPool({ maxInflight: 1, closerSlots: 1, timeoutMs: 60_000, onResult: () => {}, analyze: () => new Promise(() => {}) });
+    const answer = pool.submitCloser(f("c", 3), [])!;
+    pool.stop();
+    expect(await answer).toEqual({ frameId: "c", capturedAtMs: 3, scene: null, missing: "error", costUsd: 0 });
+    expect(pool.closerFree()).toBe(false);
+    expect(pool.submitCloser(f("d", 4), [])).toBeNull();
+  });
   it("멈추면 나가 있는 요청을 끊고 결과를 내지 않는다", async () => {
     const out: VlmResult[] = [];
     let aborted = false;

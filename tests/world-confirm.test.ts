@@ -29,6 +29,19 @@ describe("등장·사라짐 확인", () => {
     expect(c.observe(4, new Set(["cup_1"]), [], () => true)).toEqual([]);
     expect(c.observe(5, new Set(["cup_1"]), [], () => true)).toEqual([{ key: "cup_1", kind: "appeared", atMs: 5 }]);
   });
+  it("mark는 있다고 인정하고 그 키의 셈을 지운다(가까이 보기가 새 촬영으로 본 물건)", () => {
+    const c = new Confirmer(need);
+    for (let i = 1; i <= 3; i++) c.observe(i, new Set(["cup_1"]), ["cup_1"], () => true);
+    c.observe(4, new Set(), ["cup_1"], () => true);
+    c.observe(5, new Set(), ["cup_1"], () => true);
+    c.mark("cup_1");
+    expect(c.observe(6, new Set(), ["cup_1"], () => true)).toEqual([]);
+    expect(c.observe(7, new Set(), ["cup_1"], () => true)).toEqual([]);
+    expect(c.observe(8, new Set(), ["cup_1"], () => true)).toEqual([{ key: "cup_1", kind: "gone", atMs: 8 }]);
+    c.mark("bowl_1");
+    expect(c.present("bowl_1")).toBe(true);
+    expect(c.observe(9, new Set(["bowl_1"]), [], () => true)).toEqual([]);
+  });
   it("한 장만 보인 키와 잊은 키의 셈은 남지 않는다", () => {
     const c = new Confirmer(need);
     for (let i = 0; i < 100; i++) {

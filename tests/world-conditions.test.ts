@@ -9,7 +9,7 @@ const person = (over: Partial<WorldPerson> = {}): WorldPerson => ({
 });
 const cup = (over: Partial<WorldObject> = {}): WorldObject => ({
   id: "cup_1", cls: "cup", position: null, surface: null, surface_label: null, room: null, error_m: null, status: "present",
-  first_seen_ms: 0, last_seen_ms: 1000, last_in_view_ms: 1000, facts: {}, answered_ms: 1000, devices: [], ...over,
+  first_seen_ms: 0, last_seen_ms: 1000, last_in_view_ms: 1000, facts: {}, answered_ms: 1000, devices: [], closer_hold: false, ...over,
 });
 const microwave = (over: Partial<WorldFixture> = {}): WorldFixture => ({
   id: "microwave_kitchen", cls: "microwave", room: "kitchen", room_label: "주방", device: null, first_seen_ms: 0, last_seen_ms: 1000, facts: {}, answered_ms: 1000, ...over,
