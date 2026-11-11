@@ -129,12 +129,14 @@ export type CloserWait = "no_fresh_frames" | "vlm_busy";
 /** 가까이 보기를 못 한 까닭: CloserWait, no_view 카메라를 맞추기 전, out_of_view 대상이 가장 새 사진 밖, no_detector 감지기 없음,
  *  aborted 감지를 합치기 전에 요청이 끊김(자르기 전·합치기 바로 전에 보고 넣지 않음), closed 관찰 흐름이 닫힘, error 자르기·감지 오류. */
 export type CloserMiss = CloserWait | "no_view" | "out_of_view" | "no_detector" | "aborted" | "closed" | "error";
-/** VLM에 보낸 가까이 본 사진의 감지 하나: 맞춘 World State 물건 id(없으면 null), 종류, 신뢰도(소수 둘째 자리), 그 감지에 대한 VLM 답 값. */
+/** VLM에 보낸 가까이 본 사진의 감지 하나: 맞추거나 만든 World State 물건 id(없으면 null), 종류, 신뢰도(소수 둘째 자리), 그 감지에 대한 VLM 답 값.
+ *  맞는 물건이 없는 물건 감지는 서로 다른 원본 프레임 3장에서 같은 자리로 보였거나, 1장 이상 보이고 이 VLM 답이 그 감지에 사실을 하나 이상 답했을 때
+ *  새 물건이 되고 그 id가 실린다. 그 밖에는 null이다. */
 export interface CloserFound { id: string | null; cls: DetLabel; score: number; facts: string[] }
 /** 가까이 보기 결과. ok면 감지를 World State에 합친 것. VLM에 보낸 장은 물건 감지(사람·가전 설비·잘라 본 경계에 닿은 상자 아님)가 있는 가장 새 장이고,
  *  없으면 가장 새 장이다. frame_id는 그 장의 기록 id, captured_at_ms는 그 장 촬영 시각, crop은 그 장에서 잘라 본 자리, found는 그 장의 감지, frames는 잘라 본 장 수.
  *  vlm은 VLM 답을 넣었으면 ok, 없으면 그 까닭이다. aborted는 감지를 합친 뒤 요청이 끊김(합친 변화로 그 단계가 끝남 등)이라 VLM을 보내지 않거나
- *  그 요청을 끊고 답을 넣지 않은 것이다(found의 facts는 빈다). */
+ *  그 요청을 끊고 답을 넣지 않은 것이다(found의 facts는 빈다). VLM 답이 없거나 끊기면 3장이 안 된 새 물건은 만들지 않는다. */
 export type CloserResult =
   | { ok: true; frame_id: string; captured_at_ms: number; crop: [number, number, number, number]; frames: number; found: CloserFound[]; summary: string | null; vlm: "ok" | VlmMissing | "aborted" }
   | { ok: false; why: CloserMiss };

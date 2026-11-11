@@ -160,6 +160,45 @@ describe("가까이 보기(관찰 흐름 closer)", () => {
     await s.p.close();
   });
 
+  it("5장 중 1장에만 컵이 보여도 VLM이 그 상자에 사실(싱크대 안)을 답하면 확인된 컵을 만들고 그 사실을 넣는다. found의 id는 그 컵이고 등장과 사실은 한 번에 낸다", async () => {
+    fake = await startFakeOpenAI({ reply: closerVlmReply() });
+    const s = setup({ vlm: fakeVlm(fake), detector: (engine) => cropTurns(engine, [[], [], [], [], [cup]]) });
+    for (let i = 1; i <= 5; i++) s.frame(i * 2000);
+    await s.p.idle();
+    expect(await s.p.closer(SPOT)).toEqual({
+      ok: true, frame_id: "e5.c1", captured_at_ms: 10_000, crop: CROP, frames: 5,
+      found: [{ id: "cup_1", cls: "cup", score: 0.72, facts: ["in_sink"] }], summary: CLOSER_SUMMARY, vlm: "ok",
+    });
+    expect(s.world.view(10_000).objects).toEqual([expect.objectContaining({
+      id: "cup_1", status: "present", surface: "sink_1", first_seen_ms: 10_000, last_seen_ms: 10_000, closer_hold: true, closer_rev: { place: 1 },
+    })]);
+    expect(s.world.view(10_000).objects[0]!.facts.place).toMatchObject({ value: "in_sink", certainty: "inferred", closer_ms: 10_000 });
+    expect(s.changes.filter((c) => c.some((x) => x.subject === "cup_1"))).toEqual([[
+      expect.objectContaining({ kind: "appeared", subject: "cup_1" }), expect.objectContaining({ kind: "state", subject: "cup_1" }),
+    ]]);
+    await s.p.close();
+  });
+
+  it("1장에만 보인 컵은 VLM이 그 상자에 사실을 답하지 않거나(답 없음·가림) VLM 답이 없으면(형식 오류) 만들지 않는다", async () => {
+    const one = async (reply: (body: any) => string | null) => {
+      fake = await startFakeOpenAI({ reply });
+      const s = setup({ vlm: fakeVlm(fake), detector: (engine) => cropTurns(engine, [[], [], [], [], [cup]]) });
+      for (let i = 1; i <= 5; i++) s.frame(i * 2000);
+      await s.p.idle();
+      const r = await s.p.closer(SPOT);
+      expect(s.world.view(10_000).objects).toEqual([]);
+      await s.p.close();
+      await fake.close();
+      fake = undefined;
+      return r;
+    };
+    const silent = (body: any) => (closerVlmReply()(body) === null ? null : JSON.stringify({ scene: "kitchen", observations: [], summary: CLOSER_SUMMARY }));
+    expect(await one(silent)).toMatchObject({ ok: true, found: [{ id: null, cls: "cup", facts: [] }], vlm: "ok" });
+    expect(await one(closerVlmReply("not_visible"))).toMatchObject({ ok: true, found: [{ id: null, cls: "cup", facts: ["not_visible"] }], vlm: "ok" });
+    const broken = (body: any) => (closerVlmReply()(body) === null ? null : "{not json");
+    expect(await one(broken)).toMatchObject({ ok: true, found: [{ id: null, cls: "cup", facts: [] }], summary: null, vlm: "format" });
+  });
+
   it("사람·가전 설비·잘라 본 경계에 닿은 상자만 있는 장은 건너뛰고, 물건 감지가 있는 장이 하나도 없으면 가장 새 장을 보낸다", async () => {
     fake = await startFakeOpenAI({ reply: closerVlmReply() });
     const s = setup({ vlm: fakeVlm(fake), detector: (engine) => cropTurns(engine, [[cup], [cup], [cup], [edgeCup, person], [sink]]) });
@@ -301,6 +340,32 @@ describe("가까이 보기(관찰 흐름 closer)", () => {
     expect(s.p.status().closer).toMatchObject({ looks: 1, failed: 0 });
     await s.p.idle();
     expect(s.p.status().vlm.missing).toMatchObject({ timeout: 0, error: 0 });
+    await s.p.close();
+  });
+
+  it("3장이 안 된 컵은 VLM 답을 넣기 전에 끊기면 만들지 않는다", async () => {
+    const answers: (() => void)[] = [];
+    const vlm = {
+      model: "held",
+      json: (req: { texts: string[] }) => new Promise((ok) => {
+        const value = { scene: "k", observations: [{ object_id: "d1", state: "in_sink" }], summary: "s" };
+        if (!req.texts.includes(CLOSER_NOTE)) return ok({ value: { ...value, observations: [] }, costUsd: 0, model: "held", attempts: 1 });
+        answers.push(() => ok({ value, costUsd: 0, model: "held", attempts: 1 }));
+      }),
+    } as unknown as VlmClient;
+    const s = setup({ vlm, detector: (engine) => cropTurns(engine, [[], [], [cup]]) });
+    for (let i = 1; i <= 3; i++) s.frame(i * 2000);
+    await s.p.idle();
+    const ac = new AbortController();
+    const pending = s.p.closer(SPOT, ac.signal);
+    await until(() => answers.length === 1);
+    ac.abort();
+    answers[0]!();
+    expect(await pending).toEqual({
+      ok: true, frame_id: "e3.c1", captured_at_ms: 6000, crop: CROP, frames: 3,
+      found: [{ id: null, cls: "cup", score: 0.72, facts: [] }], summary: null, vlm: "aborted",
+    });
+    expect(s.world.view(6000).objects).toEqual([]);
     await s.p.close();
   });
 

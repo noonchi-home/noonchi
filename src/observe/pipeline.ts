@@ -6,7 +6,7 @@
 // 분석한 사진은 메모리 고리에만 있다. 디스크에 쓰지 않는다. DATASET_COLLECT=1이면 dataset(시험 자료 저장, src/history/retention.ts)이 고리에 넣은 프레임을 받는다.
 // 가까이 보기(closer): 고리의 새 프레임 최대 5장마다 대상 자리를 그 프레임 카메라로 찍어 절반 크기로 잘라 2배로 키우고 같은 감지기로 본다.
 // 잘라 본 결과는 보통 프레임처럼 넣지 않고 World State applyCloser로 한 번에 합친다. 물건 감지가 있는 가장 새 장(없으면 가장 새 장) 하나만
-// VLM 풀의 가까이 보기 자리로 혼자 보내고 그 답은 applyCloserScene으로 넣는다.
+// VLM 풀의 가까이 보기 자리로 혼자 보내고 그 답은 applyCloserScene으로 넣는다. 3장이 안 된 새 물건 후보는 그 답이 사실을 답할 때만 만든다.
 // 약한 후보 다시 보기(recheck): 감지 대기열에서 프레임마다 전체 사진 감지 뒤, 확신이 모자란 물건 후보를 같은 자르기(2배)로 다시 보고 받은 감지를 그 프레임 감지에 넣는다.
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -69,8 +69,9 @@ export function loadObserveConfig(env: Env): ObserveConfig {
   };
 }
 
-/** 가까이 보기로 잘라 볼 최대 장 수. 최소는 World State가 새 물건을 만드는 서로 다른 원본 프레임 수(CLOSER_NEW_FRAMES, 3장)다.
- *  잘라 본 사진의 YOLO가 싱크대 안 유리컵을 장마다 절반쯤만 잡으므로 최근 5장 중 3장에서 보이면 새 물건이 된다. */
+/** 가까이 보기로 잘라 볼 최대 장 수. 최소는 World State가 VLM 확인 없이 새 물건을 만드는 서로 다른 원본 프레임 수(CLOSER_NEW_FRAMES, 3장)다.
+ *  잘라 본 사진의 YOLO가 싱크대 안 유리컵을 장마다 절반쯤만 잡으므로 최근 5장 중 3장에서 보이면 새 물건이 된다.
+ *  그보다 적게 보여도 VLM에 보낸 장의 그 감지에 VLM이 사실을 답하면 새 물건이 된다(World State CloserPending). */
 export const CLOSER_FRAMES = 5;
 /** 가까이 보기 촬영 범위와 끊김 검사의 가장 짧은 값(ms). */
 export const CLOSER_FRESH_MS = 3000;
@@ -393,6 +394,7 @@ export class ObservationPipeline {
    *  signal은 자르기 전(장마다)·합치기 바로 전에 보고, 끊겼으면 넣지 않고 aborted(ok 아님). 감지를 합친 뒤에 끊기면(합친 변화로 그 단계가 끝남 등)
    *  VLM을 보내지 않거나 기다리던 HTTP 요청을 끊고 답을 넣지 않으며, 실행한 가까이 보기(ok, vlm aborted)로 돌려준다.
    *  물건 감지(World State closerObject)가 있는 가장 새 장(없으면 가장 새 장) 하나만 VLM 가까이 보기 자리로 보내고 그 답(그 장에서 잡은 물건 사실만)을 넣은 뒤 끝난다.
+   *  3장이 안 된 새 물건 후보는 그 답이 그 감지에 사실을 하나 이상 답할 때 만들고 그 사실을 넣는다. VLM 답이 없거나 끊기면 만들지 않는다.
    *  결과의 frame_id·captured_at_ms·crop·found는 그 장 기준이고 frames는 잘라 본 장 수다. */
   async closer(spot: LookSpot, signal?: AbortSignal): Promise<CloserResult> {
     if (this.closed) return this.closerMiss("closed");
@@ -447,7 +449,7 @@ export class ObservationPipeline {
     const sentAt = objectAt < 0 ? looks.length - 1 : objectAt;
     const last = passes[sentAt]!;
     // 잘라 본 몇 장은 await 없이 한 번에 합치고 변화도 한 번만 낸다
-    const { changes, ids } = this.o.world.applyCloser(looks, last.frame.id);
+    const { changes, ids, pending } = this.o.world.applyCloser(looks, last.frame.id);
     this.publish(changes);
     const id = `${last.frame.id}.c${++this.closerSeq}`;
     this.o.emit({
@@ -474,8 +476,10 @@ export class ObservationPipeline {
         type: "observe", at_ms: this.clock.now(), frame_id: id, captured_at_ms: last.frame.capturedAtMs, yolo: null, vlm: r.scene?.summary ?? null,
         ...(r.missing ? { vlm_missing: r.missing } : {}), closer: last.crop,
       });
-      if (r.scene) this.publish(this.o.world.applyCloserScene(last.frame.id, last.frame.capturedAtMs, r.scene, ids));
     }
+    // 3장이 안 된 새 물건 후보는 이 답이 그 감지에 사실을 답할 때만 만든다(답이 없거나 끊기면 버린다)
+    if (r?.scene) this.publish(this.o.world.applyCloserScene(last.frame.id, last.frame.capturedAtMs, r.scene, ids, pending));
+    else if (pending) this.o.world.endCloser(pending);
     this.closerCount.looks++;
     const said = new Map<string, string[]>();
     for (const ob of r?.scene?.observations ?? []) said.set(ob.object_id, [...(said.get(ob.object_id) ?? []), ob.state]);

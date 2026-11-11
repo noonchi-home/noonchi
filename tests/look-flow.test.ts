@@ -98,8 +98,9 @@ const decisionAt = (world: WorldState, atMs: number): DecisionRecord => ({
   action: "컵 치우기", memoryVersion: 1, world: decisionWorld(world.view(atMs)),
 });
 
-/** 컵이 보인 뒤 계획을 받아 1~3단계를 「완료」로 넘기고, 놓기 단계에서 컵 없는 전체 사진을 2초마다 8초 넣은 뒤 실행 추적 tick. */
-async function toPlaceStall(t: Awaited<ReturnType<typeof setup>>) {
+/** 컵이 보인 뒤 계획을 받아 1~3단계를 「완료」로 넘기고, 놓기 단계에서 컵 없는 전체 사진을 2초마다 8초 넣은 뒤 실행 추적 tick.
+ *  놓기 단계 사진을 잘라 키우면 cropFrom(촬영 시각) 뒤 장에서만 컵이 보인다. */
+async function toPlaceStall(t: Awaited<ReturnType<typeof setup>>, cropFrom = 8000) {
   for (let i = 1; i <= 3; i++) await t.frame(i * 2000);
   expect(t.world.view(t.clock.now()).objects.map((o) => [o.id, o.status])).toEqual([["cup_1", "present"]]);
   t.tracker.onDecision(decisionAt(t.world, t.clock.now()));
@@ -112,8 +113,10 @@ async function toPlaceStall(t: Awaited<ReturnType<typeof setup>>) {
   expect(place).toMatchObject({ stepId: "plan:pam-1:4", text: "컵을 싱크대에 넣어 주세요" });
   const stepAt = t.clock.now();
   t.dets.full = [];
-  t.dets.crop = [cupCrop];
-  for (let at = 8000; at <= 14000; at += 2000) await t.frame(at);
+  for (let at = 8000; at <= 14000; at += 2000) {
+    t.dets.crop = at >= cropFrom ? [cupCrop] : [];
+    await t.frame(at);
+  }
   expect(t.world.view(t.clock.now()).objects.find((o) => o.id === "cup_1")?.status).toBe("gone");
   expect(t.clock.now() - stepAt).toBeGreaterThanOrEqual(8000);
   t.tracker.tick();
@@ -137,6 +140,25 @@ describe("가까이 보기 흐름(놓기 단계)", () => {
         result: expect.objectContaining({ ok: true, frames: 5, found: [expect.objectContaining({ id: "cup_2", cls: "cup", facts: ["in_sink"] })] }),
       })]);
       // 4단계 「완료」는 누르지 않았다: 실제 폰에 보낸 놓기 명령은 처음 한 번뿐이다
+      expect(t.phone.filter((m) => m.type === "command" && m.step === "plan:pam-1:4" && m.speak)).toHaveLength(1);
+    } finally {
+      await t.close();
+    }
+  });
+
+  it("가까이 보기 한 번이 다섯 장 중 가장 새 장에서만 컵을 찾아도 VLM이 그 상자에 싱크대 안이라 답하면 그 컵이 생겨 「완료」 없이 계획이 끝난다", async () => {
+    const t = await setup({ stalled: true });
+    try {
+      await toPlaceStall(t, 14_000);
+      expect(t.phone.at(-1)).toEqual({ type: "command_clear", id: "plan:pam-1" });
+      expect(t.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-1", state: "done" });
+      const moved = t.world.view(t.clock.now()).objects.find((o) => o.id === "cup_2");
+      expect(moved).toMatchObject({ status: "present", surface: "sink_1", first_seen_ms: 14_000, closer_hold: true });
+      expect(moved!.facts.place?.value).toBe("in_sink");
+      expect(t.looks()).toEqual([expect.objectContaining({
+        trigger: "stalled", tool: "look_closer", target: "sink_1", plan_id: "plan:pam-1", step_id: "plan:pam-1:4",
+        result: expect.objectContaining({ ok: true, frames: 5, captured_at_ms: 14_000, found: [expect.objectContaining({ id: "cup_2", cls: "cup", facts: ["in_sink"] })] }),
+      })]);
       expect(t.phone.filter((m) => m.type === "command" && m.step === "plan:pam-1:4" && m.speak)).toHaveLength(1);
     } finally {
       await t.close();

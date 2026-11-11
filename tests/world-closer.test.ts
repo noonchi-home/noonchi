@@ -18,9 +18,11 @@ const full = (w: WorldState, id: string, atMs: number, dets: Detection[], view =
 const obj = (w: WorldState, id: string, nowMs: number) => w.view(nowMs).objects.find((o) => o.id === id);
 
 describe("가까이 보기 합치기(applyCloser)", () => {
-  it("서로 다른 원본 프레임 세 장에서 같은 자리로 보인 컵만 확인된 컵 하나로 만든다. 두 장이나 같은 프레임 세 번이면 만들지 않는다", () => {
+  it("서로 다른 원본 프레임 세 장에서 같은 자리로 보인 컵만 VLM 답 없이 확인된 컵 하나로 만든다. 두 장이나 같은 프레임 세 번이면 만들지 않는다", () => {
     const w = ws();
-    expect(w.applyCloser([pass("e1", 1000, [cupIn]), pass("e2", 2000, [cupIn])])).toEqual({ changes: [], ids: new Map() });
+    const two = w.applyCloser([pass("e1", 1000, [cupIn]), pass("e2", 2000, [cupIn])]);
+    expect([two.changes, two.ids]).toEqual([[], new Map()]);
+    w.endCloser(two.pending!);
     expect(w.applyCloser([pass("e2", 2000, [cupIn]), pass("e2", 2000, [cupIn]), pass("e2", 2000, [cupIn])]).changes).toEqual([]);
     expect(w.view(3000).objects).toEqual([]);
     const r = w.applyCloser([pass("e3", 3000, [cupIn]), pass("e1", 1000, [cupIn]), pass("e2", 2000, [cupIn])]);
@@ -403,5 +405,87 @@ describe("가까이 본 사진의 VLM 답(applyCloserScene)", () => {
     expect(w.view(3000).objects[0]!.facts).toMatchObject({ contents: { value: "empty", certainty: "inferred" }, place: { value: "in_sink", certainty: "inferred" } });
     w.applyCloserScene("e5", 5000, { scene: "k", observations: [{ object_id: "d1", state: "in_sink" }], summary: "x" }, ids);
     expect(w.view(5000).objects[0]!.facts.place).toMatchObject({ value: "in_sink", certainty: "confirmed" });
+  });
+});
+
+describe("가까이 보기 새 물건 두 모델 확인(3장 안 된 후보 + VLM 사실)", () => {
+  const said = (...obs: [string, SceneState][]): SceneObservation => ({ scene: "k", observations: obs.map(([object_id, state]) => ({ object_id, state })), summary: "s" });
+  const holds = (w: WorldState, nowMs: number) => w.view(nowMs).objects.map((o) => [o.id, o.closer_hold, o.followed_by]);
+  const cupFar = det("cup", [130, 100, 20, 10]);
+
+  it("맞는 물건이 없고 3장이 안 된 감지는 VLM 답까지 들고 있다가, VLM에 보낸 장의 그 상자 번호에 사실을 하나 이상 답하면 확인된 물건 하나를 만들고 그 사실을 넣는다", () => {
+    const w = ws();
+    const r = w.applyCloser([pass("e1", 1000, [cupIn]), pass("e2", 2000, [person, cupIn])]);
+    expect(r.changes).toEqual([]);
+    expect(r.ids).toEqual(new Map());
+    expect(w.view(2000).objects).toEqual([]);
+    const changes = w.applyCloserScene("e2", 2000, said(["d2", "in_sink"]), r.ids, r.pending);
+    expect(changes.map((c) => [c.kind, c.subject, c.at_ms])).toEqual([["appeared", "cup_1", 2000], ["state", "cup_1", 2000]]);
+    expect(r.ids).toEqual(new Map([["d2", "cup_1"]]));
+    expect(obj(w, "cup_1", 2000)).toMatchObject({
+      status: "present", first_seen_ms: 1000, last_seen_ms: 2000, closer_hold: true, closer_rev: { place: 1 },
+      facts: { place: { value: "in_sink", certainty: "inferred", closer_ms: 2000 } },
+    });
+    expect(obj(w, "cup_1", 2000)!.position![0]).toBeCloseTo(1.5, 2);
+    // 새로 만든 물건은 가까이 보기로 만든 물건과 같다: 30초 지킴 동안 전체 사진이 못 봐도 사라지지 않는다
+    for (let i = 3; i <= 5; i++) expect(full(w, `e${i}`, i * 1000, []).changes).toEqual([]);
+    expect(obj(w, "cup_1", 5000)).toMatchObject({ status: "present", closer_hold: true });
+  });
+
+  it("VLM이 그 상자에 사실을 답하지 않으면(답 없음·다른 상자·가림·그 종류에 없는 면) 만들지 않는다. VLM 답이 없으면(endCloser) 후보를 버린다", () => {
+    for (const scene of [said(), said(["d2", "in_sink"]), said(["d1", "not_visible"]), said(["d1", "standing"])]) {
+      const w = ws();
+      const r = w.applyCloser([pass("e1", 1000, [cupIn, person])]);
+      expect(w.applyCloserScene("e1", 1000, scene, r.ids, r.pending)).toEqual([]);
+      expect(r.ids).toEqual(new Map());
+      expect(w.view(1000).objects).toEqual([]);
+    }
+    const w = ws();
+    const r = w.applyCloser([pass("e1", 1000, [cupIn])]);
+    w.endCloser(r.pending!);
+    expect(w.applyCloserScene("e1", 1000, said(["d1", "in_sink"]), r.ids, r.pending)).toEqual([]);   // 이미 끝낸 후보는 다시 쓰지 않는다
+    expect(w.view(1000).objects).toEqual([]);
+  });
+
+  it("후보는 VLM에 보낸 장(idsFrom)에 보인 물건 감지뿐이다: 다른 장에만 보인 감지, 사람·가전 설비·경계에 닿은 상자·종류 최소 신뢰도 미만은 VLM이 답해도 만들지 않는다", () => {
+    const w = ws();
+    const r = w.applyCloser([pass("e1", 1000, [cupIn]), pass("e2", 2000, [person])], "e2");
+    w.applyCloserScene("e2", 2000, said(["d1", "in_sink"]), r.ids, r.pending);
+    expect(w.view(2000).objects).toEqual([]);
+    const v = ws();
+    const s = v.applyCloser([pass("e1", 1000, [person, { ...cupIn, edge: true }, det("cup", [230, 170, 20, 10], 0.3), det("sink", [130, 100, 200, 150], 0.9)])]);
+    v.applyCloserScene("e1", 1000, said(["d1", "standing"], ["d2", "in_sink"], ["d3", "in_sink"], ["d4", "water_running"]), s.ids, s.pending);
+    expect(v.view(1000).objects).toEqual([]);
+  });
+
+  it("지킴 중인 물건을 두고 VLM으로 만든 새 물건도 지킴을 풀고 옮김 표시를 남긴다. 3장으로 만든 물건과 함께 생기면 둘이라 표시를 남기지 않고, VLM 답이 없으면 3장으로 만든 물건 하나로 표시한다", () => {
+    const w = ws();
+    w.applyCloser([1, 2, 3].map((i) => pass(`e${i}`, i * 1000, [cupOut])));
+    const r = w.applyCloser([pass("e4", 4000, []), pass("e5", 5000, [cupIn])]);
+    expect(holds(w, 5000)).toEqual([["cup_1", true, null]]);   // 후보만으로는 지킴을 풀지 않는다
+    w.applyCloserScene("e5", 5000, said(["d1", "in_sink"]), r.ids, r.pending);
+    expect(holds(w, 5000)).toEqual([["cup_1", false, "cup_2"], ["cup_2", true, null]]);
+    const both = () => {
+      const v = ws();
+      v.applyCloser([1, 2, 3].map((i) => pass(`e${i}`, i * 1000, [cupOut])));
+      const s = v.applyCloser([pass("e4", 4000, [cupIn]), pass("e5", 5000, [cupIn]), pass("e6", 6000, [cupIn, cupFar])]);
+      expect(holds(v, 6000)).toEqual([["cup_1", true, null], ["cup_2", true, null]]);   // 3장 컵은 바로 생기고 옮김 처리는 VLM 답까지 미룬다
+      return { v, s };
+    };
+    const a = both();
+    a.v.applyCloserScene("e6", 6000, said(["d1", "in_sink"], ["d2", "in_sink"]), a.s.ids, a.s.pending);
+    expect(holds(a.v, 6000)).toEqual([["cup_1", false, null], ["cup_2", true, null], ["cup_3", true, null]]);
+    const b = both();
+    b.v.endCloser(b.s.pending!);
+    expect(holds(b.v, 6000)).toEqual([["cup_1", false, "cup_2"], ["cup_2", true, null]]);
+  });
+
+  it("VLM 답을 기다리는 사이 전체 사진이 같은 자리 물건을 확인했으면 새로 만들지 않고 그 물건에 사실을 넣는다", () => {
+    const w = ws();
+    const r = w.applyCloser([pass("e1", 1000, [cupIn])]);
+    for (let i = 2; i <= 4; i++) full(w, `e${i}`, i * 1000, [cupIn]);
+    w.applyCloserScene("e1", 1000, said(["d1", "in_sink"]), r.ids, r.pending);
+    expect(r.ids).toEqual(new Map([["d1", "cup_1"]]));
+    expect(w.view(4000).objects.map((o) => [o.id, o.facts.place?.value])).toEqual([["cup_1", "in_sink"]]);
   });
 });
