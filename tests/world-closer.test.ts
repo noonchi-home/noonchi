@@ -126,6 +126,20 @@ describe("가까이 보기 합치기(applyCloser)", () => {
     expect(u.view(6000).objects.map((o) => [o.id, o.followed_by])).toEqual([["cup_1", null], ["cup_2", null]]);
   });
 
+  it("지킴 중인 물건을 두고 한 촬영(전체 사진 한 장·가까이 보기 한 번)에 같은 종류 새 물건이 여럿 생기면 지킴만 풀고 어느 것에도 잇지 않는다(옮김 표시 없음)", () => {
+    const cupFar = det("cup", [380, 300, 40, 20]);
+    const w = ws();
+    w.applyCloser([1, 2, 3].map((i) => pass(`e${i}`, i * 1000, [cupIn])));
+    for (let i = 4; i <= 6; i++) full(w, `e${i}`, i * 1000, [cupOut, cupFar]);
+    expect(w.view(6000).objects.map((o) => [o.id, o.status, o.closer_hold, o.followed_by])).toEqual([
+      ["cup_1", "present", false, null], ["cup_2", "present", false, null], ["cup_3", "present", false, null],
+    ]);
+    const v = ws();
+    v.applyCloser([1, 2, 3].map((i) => pass(`e${i}`, i * 1000, [cupOut])));
+    v.applyCloser([4, 5, 6].map((i) => pass(`e${i}`, i * 1000, [cupIn, det("cup", [130, 100, 20, 10])])));
+    expect(v.view(6000).objects.map((o) => [o.id, o.closer_hold, o.followed_by])).toEqual([["cup_1", false, null], ["cup_2", true, null], ["cup_3", true, null]]);
+  });
+
   it("전체 사진이 더 새 촬영으로 사라짐·시야 밖을 판단했으면 그보다 옛 촬영의 가까이 보기는 되살리지 않는다(10초에 마지막으로 보고 20초에 사라짐, 15초 촬영)", () => {
     const w = ws();
     for (const s of [6, 8, 10]) full(w, `e${s}`, s * 1000, [cupIn]);

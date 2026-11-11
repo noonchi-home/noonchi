@@ -669,6 +669,24 @@ describe("실행 추적: 멈춘 집기·놓기 단계(관찰 모드 A)와 사람
       }
     }
   });
+
+  it("옮김 표시(followed_by)가 있어도 그 뒤 새로 보인 같은 종류 물건이 여럿이면 어느 것으로도 잇지 않는다(놓기는 「완료」로 넘긴다). 하나면 잇는다", async () => {
+    for (const many of [true, false]) {
+      let w = world([cup("present")]);
+      const s = setup({ w: () => w });
+      await s.decide(decision);
+      for (const step of ["plan:pam-1:1", "plan:pam-1:2", "plan:pam-1:3"]) s.t.onAnswer("plan:pam-1", step, "done");
+      s.clock.t += 600;
+      const old: WorldObject = { ...cup("present", "in_hand", 9_000), followed_by: "cup_2" };
+      const fresh = (id: string, x: number): WorldObject => ({ ...cup("present", "in_sink", s.clock.t), id, position: [x, 0.9, 1], first_seen_ms: s.clock.t - 200 });
+      w = world(many ? [old, fresh("cup_2", 5), fresh("cup_3", 4.4)] : [old, fresh("cup_2", 5)]);
+      s.t.onWorld();
+      if (many) {
+        expect(s.t.current(), "여럿").toMatchObject({ state: "running" });
+        expect(s.last(), "여럿").toMatchObject({ step: "plan:pam-1:4" });
+      } else expect(s.t.current(), "하나").toMatchObject({ state: "done" });
+    }
+  });
 });
 
 describe("실행 추적: 판단 뒤 가까이 본 사실(B와 PAM)", () => {

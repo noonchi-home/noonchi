@@ -207,15 +207,19 @@ export class WorldState {
     return obj.closerAt !== null && atMs - obj.closerAt < CLOSER_HOLD_MS;
   }
 
-  /** 같은 종류 새 물건이 다른 자리에 생겼다(옮김, atMs 촬영): 같은 종류 다른 물건의 지킴을 풀고, 지킴 중이던 물건에는 새 물건 id를 남긴다.
-   *  saw: 같은 촬영에서 본 물건(옮긴 것이 아니라 그대로 둔다). 그 물건을 마지막으로 본 촬영·보임 판단보다 옛(같은 촬영 포함) 등장은 지킴·옮김 표시를 바꾸지 않는다. */
-  private liftHolds(fresh: Obj, atMs: number, saw: ReadonlySet<string>): void {
-    const near = (CLASSES[fresh.cls] as { identityM?: number }).identityM ?? this.identityM;
+  /** 같은 종류 새 물건이 다른 자리에 생겼다(옮김): 한 묶음(전체 사진 한 장·가까이 보기 한 번)에서 등장을 확인한 새 물건(그 촬영 시각)으로
+   *  같은 종류 다른 물건의 지킴을 푼다. 지킴 중이던 물건에는 그 묶음에서 다른 자리에 생긴 같은 종류 새 물건이 하나일 때만 그 id를 남긴다(여럿이면 어느 것인지 모른다).
+   *  saw: 같은 묶음에서 본 물건(옮긴 것이 아니라 그대로 둔다). 그 물건을 마지막으로 본 촬영·보임 판단보다 옛(같은 촬영 포함) 등장은 지킴·옮김 표시를 바꾸지 않는다. */
+  private liftHolds(fresh: readonly { obj: Obj; at: number }[], saw: ReadonlySet<string>): void {
+    if (!fresh.length) return;
     for (const o of this.objects.values()) {
-      if (o === fresh || o.cls !== fresh.cls || o.closerAt === null || saw.has(o.id)) continue;
-      if (atMs <= o.lastSeen || atMs < o.judgedAt) continue;
-      if (o.position && fresh.position && dist(o.position, fresh.position) <= near) continue;
-      if (o.status !== "gone" && this.held(o, atMs)) o.followed = { id: fresh.id, at: atMs };
+      if (o.closerAt === null || saw.has(o.id)) continue;
+      const near = (CLASSES[o.cls] as { identityM?: number }).identityM ?? this.identityM;
+      const moved = fresh.filter(({ obj, at }) => obj !== o && obj.cls === o.cls && at > o.lastSeen && at >= o.judgedAt
+        && !(o.position && obj.position && dist(o.position, obj.position) <= near));
+      if (!moved.length) continue;
+      const at = Math.max(...moved.map((m) => m.at));
+      if (moved.length === 1 && o.status !== "gone" && this.held(o, at)) o.followed = { id: moved[0]!.obj.id, at };
       o.closerAt = null;
     }
   }
@@ -420,6 +424,7 @@ export class WorldState {
       return !this.held(obj, at) && this.visible(obj, view) === true;
     }, stale);
     const changes: WorldChange[] = [];
+    const fresh: { obj: Obj; at: number }[] = [];
     for (const e of events) {
       if (e.key === PERSON) {
         this.person.visible = e.kind === "appeared";
@@ -440,7 +445,7 @@ export class WorldState {
         obj.confirmed = true;
         obj.status = "present";
         obj.goneAt = null;
-        this.liftHolds(obj, at, seen);
+        fresh.push({ obj, at });
         changes.push({ kind: "appeared", at_ms: at, subject: obj.id, meaningful: true, text: CHANGE_TEXT.appeared(this.name(obj), obj.surfaceLabel ? onSurface(obj.surfaceLabel) : null) });
       } else {
         obj.status = "gone";
@@ -449,6 +454,8 @@ export class WorldState {
         changes.push({ kind: "gone", at_ms: at, subject: obj.id, meaningful: true, text: CHANGE_TEXT.gone(this.name(obj)) });
       }
     }
+    // 이 프레임에서 등장한 새 물건이 다른 자리 같은 종류 물건의 지킴을 푼다(이 프레임에서 본 물건은 그대로)
+    this.liftHolds(fresh, seen);
     for (const obj of this.objects.values()) {
       if (!obj.confirmed) {
         if (!seen.has(obj.id) && !stale(obj.id)) this.forget(obj.id);   // 세는 중에 끊기면 잊는다(옛 촬영은 끊지 않는다)
@@ -742,7 +749,7 @@ export class WorldState {
       for (const s of g.seen) if (s.pass === newest) ids.set(s.tmp, obj.id);
     }
     // 새로 만든 물건이 다른 자리 같은 종류 물건의 지킴을 푼다(이번에 본 물건은 그대로)
-    for (const { obj, at } of created) this.liftHolds(obj, at, used);
+    this.liftHolds(created, used);
     return { changes, ids };
   }
 

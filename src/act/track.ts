@@ -727,7 +727,7 @@ const held = (o: WorldObject) => o.closer_hold === true || !!o.followed_by;
 
 /** 계획 물건으로 보는 지금 World State 물건(하나, 없으면 빈 목록). 지금 id가 사라졌거나(그 자리가 시야 안인데 없음), 사람이 들고 다니다 시야 밖이 됐거나,
  *  가까이 봐서 지키는 중이거나 옮김 표시(followed_by)가 있을 때만 그 뒤에 처음 보인 같은 종류 물건(계획 전부터 있던 것·앞서 이은 것은 뺀다)이 하나일 때 그것으로 이어 간다.
- *  옮김 표시가 가리키는 물건은 처음 보인 시각과 상관없이 후보이고, 후보가 여럿이면 그것을 고른다.
+ *  옮김 표시가 가리키는 물건은 처음 보인 시각과 상관없이 후보다. 후보가 여럿이면(옮김 표시가 가리키는 것이 끼어 있어도) 어느 것인지 모르므로 잇지 않는다.
  *  여럿이거나 들지 않은 물건이 시야 밖이면 잇지 않는다(「완료」로 넘긴다). */
 function ours(r: Run, id: string, world: WorldView): WorldObject[] {
   const cur = r.alias.get(id) ?? id;
@@ -744,7 +744,7 @@ function ours(r: Run, id: string, world: WorldView): WorldObject[] {
   const next = world.objects.filter((o) => o.cls === cls && o.id !== cur && o.id !== id && !others.has(o.id) && !seen.has(o.id) && o.status !== "gone"
     && (o.first_seen_ms > after || o.id === marked)
     && (!near || !o.position || Math.hypot(o.position[0] - near[0], o.position[2] - near[1]) <= NEAR_M));
-  const pick = next.length === 1 ? next[0] : next.find((o) => o.id === marked);
+  const pick = next.length === 1 ? next[0] : undefined;
   if (pick) {
     r.alias.set(id, pick.id);
     return [pick];
