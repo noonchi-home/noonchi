@@ -8,6 +8,9 @@ export interface PhoneChoice { id: string; label: string }
 /** 명령 대상 하나(실제 폰은 이것에만 작은 고리를 그린다). ar: 실제 폰 AR 좌표(폰 서버가 맞춘 기준점으로 트윈 자리를 바꾼 것). */
 export interface PhoneTarget { id: string; label: string; ar: [number, number, number] }
 
+/** 사람 단계 종류: 가기·집기·놓기. */
+export type PhoneStepKind = "go" | "pick" | "place";
+
 /**
  * 서버 → 실제 폰: 지금 할 명령. 바뀔 때마다 통째로 보낸다. 같은 id·step이면 같은 명령이고 비전 상태만 바뀐 것이다.
  * 새로 붙은 폰은 상태(status) 다음에 지금 명령을 speak false로 받는다.
@@ -27,6 +30,8 @@ export interface PhoneCommand {
   target: PhoneTarget | null;
   /** true면 text를 소리로 읽는다: 새 명령, 한 단계가 오래 걸려 다시 읽을 때. 비전 상태·대상만 바뀌면 false. */
   speak: boolean;
+  /** 사람 단계 명령의 단계 종류. 질문·승인·알림에는 없다. 영상 모드가 단계 영상을 고를 때 쓴다. */
+  kind?: PhoneStepKind;
 }
 
 /** 서버 안(실행 추적 → 폰 서버)의 명령: 대상 자리가 트윈 좌표 [x, 높이, y]다. 폰 서버가 AR 좌표로 바꿔 PhoneCommand로 보낸다. */

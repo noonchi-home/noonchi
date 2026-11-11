@@ -16,7 +16,7 @@
 // 계획 물건과 그 뒤에 새로 생긴 같은 종류 물건을 모두 그 물건으로 본다(조건의 follow, 비전 상태 줄, 고리).
 // 폰 근처 조건은 실행 추적이 받은 맞춘 눈(받은 시각)과 World State 눈 중 새것으로 본다.
 import type { BrainLog, ExecState } from "../contract/events.js";
-import type { PlannedCommand, PlannedCommandMessage } from "../contract/phone.js";
+import type { PhoneStepKind, PlannedCommand, PlannedCommandMessage } from "../contract/phone.js";
 import type { PlanView, XZ } from "../contract/plan.js";
 import type { WorldEye, WorldObject, WorldView } from "../contract/world.js";
 import type { FloorPlan } from "../plan/floor.js";
@@ -420,6 +420,7 @@ export class ExecutionTracker {
       type: "command", id: r.plan.view.id, step: step.id, text: (human ? step.command : step.kind === "ask" ? step.prompt?.text : step.text) ?? step.label,
       vision: human ? this.vision(r, step, world) : null, choices: choicesOf(r, step).map(({ id, label }) => ({ id, label })),
       target: human ? this.target(r, step, world) : null, speak: true,
+      ...(human ? { kind: step.kind as PhoneStepKind } : {}),
     };
     this.o.toPhone(r.sent);
   }

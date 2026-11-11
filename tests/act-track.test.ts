@@ -92,7 +92,7 @@ describe("실행 추적: 단계마다 실제 폰 명령", () => {
     await decide(decision);
     // 1 이동: 폰 눈을 아직 모르면 거리 모름
     // 명령 대상(실제 폰 고리)은 식탁 → 컵 → 싱크대 → 싱크대
-    expect(phone).toEqual([{ type: "command", id: "plan:pam-1", step: "plan:pam-1:1", text: "식탁으로 가 주세요", vision: "식탁까지 거리 모름", choices: DONE, target: TABLE, speak: true }]);
+    expect(phone).toEqual([{ type: "command", id: "plan:pam-1", step: "plan:pam-1:1", text: "식탁으로 가 주세요", vision: "식탁까지 거리 모름", choices: DONE, target: TABLE, speak: true, kind: "go" }]);
     expect(plans.current()).toMatchObject({ id: "plan:pam-1", status: "running" });
     expect(steps()).toEqual(["active", "pending", "pending", "pending"]);
     clock.t += 600;
@@ -105,14 +105,14 @@ describe("실행 추적: 단계마다 실제 폰 명령", () => {
     // 2 집기: 식탁 가까이(1.2m 안)라 다음 명령, 컵 자리는 World State
     expect(last()).toEqual({
       type: "command", id: "plan:pam-1", step: "plan:pam-1:2", text: "컵을 들어 주세요", vision: "컵 · 식탁 위", choices: DONE,
-      target: { id: "cup_1", label: "컵", position: [2, 0.75, 1] }, speak: true,
+      target: { id: "cup_1", label: "컵", position: [2, 0.75, 1] }, speak: true, kind: "pick",
     });
     expect(steps()).toEqual(["done", "active", "pending", "pending"]);
     clock.t += 600;
     w = world([cup("present", "in_hand", clock.t)]);
     t.onWorld();
     // 3 이동: 컵이 손에 있음
-    expect(last()).toMatchObject({ step: "plan:pam-1:3", text: "싱크대로 가 주세요", vision: "컵 · 손에 있음 · 싱크대까지 2.3m", target: SINK, speak: true });
+    expect(last()).toMatchObject({ step: "plan:pam-1:3", text: "싱크대로 가 주세요", vision: "컵 · 손에 있음 · 싱크대까지 2.3m", target: SINK, speak: true, kind: "go" });
     expect(steps()).toEqual(["done", "done", "active", "pending"]);
     // 싱크대에서 1.3m면 아직 안 넘긴다(비전 상태만 바뀐다)
     clock.t += 600;
@@ -124,7 +124,7 @@ describe("실행 추적: 단계마다 실제 폰 명령", () => {
     t.onEye([5.3, 1.5]);
     t.tick();
     // 4 내려놓기
-    expect(last()).toMatchObject({ step: "plan:pam-1:4", text: "컵을 싱크대에 넣어 주세요", vision: "컵 · 손에 있음", target: SINK, speak: true });
+    expect(last()).toMatchObject({ step: "plan:pam-1:4", text: "컵을 싱크대에 넣어 주세요", vision: "컵 · 손에 있음", target: SINK, speak: true, kind: "place" });
     expect(steps()).toEqual(["done", "done", "done", "active"]);
     // 컵이 아직 손에 있으면 안 넘긴다
     clock.t += 600;
