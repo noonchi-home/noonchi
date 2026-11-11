@@ -92,9 +92,10 @@ export const EXEC_TEXT = {
 export const LOOK_TEXT = {
   closer: (place: string, seen: string) => `${place} 쪽을 가까이 봄 · ${seen}`,
   seen: (names: readonly string[]) => (names.length ? `${[...new Set(names)].join("·")} 보임` : "찾은 것 없음"),
+  // 열쇠는 가까이 보기 결과(CloserMiss)다. "closed"는 관찰 흐름이 닫힘이라 낱말 표 값(닫힘)과 다르고, 낱말 목록 검사(tests/world-vocab.test.ts)와 헷갈리지 않게 따옴표로 쓴다
   miss: {
     no_fresh_frames: "새 사진이 모자라 못 봄", vlm_busy: "VLM 자리가 없어 못 봄", no_view: "카메라를 맞추기 전이라 못 봄", out_of_view: "사진 밖이라 못 봄",
-    no_detector: "감지기가 없어 못 봄", aborted: "단계가 바뀌어 그만 봄", closed: "멈춰서 못 봄", error: "감지 오류로 못 봄",
+    no_detector: "감지기가 없어 못 봄", aborted: "단계가 바뀌어 그만 봄", "closed": "멈춰서 못 봄", error: "감지 오류로 못 봄",
   } satisfies Record<CloserMiss, string>,
   vlmMissing: "VLM 답 없음",
   asked: (text: string) => `가까이 비춰 달라고 부탁함 · ${text}`,
