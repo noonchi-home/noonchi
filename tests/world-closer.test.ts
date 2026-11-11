@@ -447,6 +447,16 @@ describe("가까이 보기 새 물건 두 모델 확인(3장 안 된 후보 + VL
     expect(w.view(1000).objects).toEqual([]);
   });
 
+  it("VLM이 그 상자에 가림(not_visible)과 사실을 함께 답하면 답 순서와 상관없이 만들지 않는다", () => {
+    for (const scene of [said(["d1", "not_visible"], ["d1", "in_sink"]), said(["d1", "in_sink"], ["d1", "not_visible"])]) {
+      const w = ws();
+      const r = w.applyCloser([pass("e1", 1000, [cupIn])]);
+      expect(w.applyCloserScene("e1", 1000, scene, r.ids, r.pending)).toEqual([]);
+      expect(r.ids).toEqual(new Map());
+      expect(w.view(1000).objects).toEqual([]);
+    }
+  });
+
   it("후보는 VLM에 보낸 장(idsFrom)에 보인 물건 감지뿐이다: 다른 장에만 보인 감지, 사람·가전 설비·경계에 닿은 상자·종류 최소 신뢰도 미만은 VLM이 답해도 만들지 않는다", () => {
     const w = ws();
     const r = w.applyCloser([pass("e1", 1000, [cupIn]), pass("e2", 2000, [person])], "e2");

@@ -6,11 +6,11 @@
 // 분석한 사진은 메모리 고리에만 있다. 디스크에 쓰지 않는다. DATASET_COLLECT=1이면 dataset(시험 자료 저장, src/history/retention.ts)이 고리에 넣은 프레임을 받는다.
 // 가까이 보기(closer): 고리의 새 프레임 최대 5장마다 대상 자리를 그 프레임 카메라로 찍어 절반 크기로 잘라 2배로 키우고 같은 감지기로 본다.
 // 잘라 본 결과는 보통 프레임처럼 넣지 않고 World State applyCloser로 한 번에 합친다. 물건 감지가 있는 가장 새 장(없으면 가장 새 장) 하나만
-// VLM 풀의 가까이 보기 자리로 혼자 보내고 그 답은 applyCloserScene으로 넣는다. 3장이 안 된 새 물건 후보는 그 답이 사실을 답할 때만 만든다.
+// VLM 풀의 가까이 보기 자리로 혼자 보내고 그 답은 applyCloserScene으로 넣는다(그때도 사진이 끊김 범위 안일 때만). 3장이 안 된 새 물건 후보는 그 답이 사실을 답할 때만 만든다.
 // 가까이 보기 VLM은 closerVlm(VLM_CLOSER_MODEL, 같은 주소에 모델 이름만 다름, 없으면 보통 프레임과 같은 VLM)이다.
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { BrainLog, CloserMiss, CloserResult } from "../contract/events.js";
+import type { BrainLog, CloserMiss, CloserResult, CloserVlm } from "../contract/events.js";
 import type { WorldChange, WorldView, YoloMissing } from "../contract/world.js";
 import type { DeviceState } from "../hub/types.js";
 import { DETECTOR_MODEL, MODELS_DIR, POSE_MODEL, WorkerDetector, type DetectResult, type Detection, type Detector, type DetectorSpec, type Pose } from "../brain/detector.js";
@@ -334,7 +334,8 @@ export class ObservationPipeline {
    *  signal은 자르기 전(장마다)·합치기 바로 전에 보고, 끊겼으면 넣지 않고 aborted(ok 아님). 감지를 합친 뒤에 끊기면(합친 변화로 그 단계가 끝남 등)
    *  VLM을 보내지 않거나 기다리던 HTTP 요청을 끊고 답을 넣지 않으며, 실행한 가까이 보기(ok, vlm aborted)로 돌려준다.
    *  물건 감지(World State closerObject)가 있는 가장 새 장(없으면 가장 새 장) 하나만 VLM 가까이 보기 자리로 보내고 그 답(그 장에서 잡은 물건 사실만)을 넣은 뒤 끝난다.
-   *  3장이 안 된 새 물건 후보는 그 답이 그 감지에 사실을 하나 이상 답할 때 만들고 그 사실을 넣는다. VLM 답이 없거나 끊기면 만들지 않는다.
+   *  VLM 답이 왔을 때 쓴 가장 새 프레임이 지금보다 closerStaleMs 넘게 앞서 찍혔으면(VLM을 기다리는 사이 폰 끊김) 답을 넣지 않고 ok, vlm no_fresh_frames로 돌려준다.
+   *  3장이 안 된 새 물건 후보는 그 답이 그 감지에 사실을 하나 이상 답하고 가림은 답하지 않을 때 만들고 그 사실을 넣는다. VLM 답이 없거나 넣지 않으면 만들지 않는다.
    *  결과의 frame_id·captured_at_ms·crop·found는 그 장 기준이고 frames는 잘라 본 장 수다. */
   async closer(spot: LookSpot, signal?: AbortSignal): Promise<CloserResult> {
     if (this.closed) return this.closerMiss("closed");
@@ -409,15 +410,17 @@ export class ObservationPipeline {
       this.closerCount.costUsd += r.costUsd;
     }
     if (this.closed) return this.closerMiss("closed");
-    // VLM 답을 넣기 바로 전에 다시 본다
-    if (signal?.aborted) r = null;
+    // VLM 답을 넣기 바로 전에 다시 본다: 끊겼으면 aborted, 그사이 새 프레임이 끊겼으면(쓴 가장 새 프레임이 지금보다 너무 앞섬, 폰 끊김) no_fresh_frames로 넣지 않는다
+    const stale = this.clock.now() - picked.at(-1)!.capturedAtMs > closerStaleMs(this.o.config.engineMs);
+    const vlm: CloserVlm = !r || signal?.aborted ? "aborted" : r.scene && stale ? "no_fresh_frames" : r.missing ?? "ok";
+    if (vlm === "aborted" || vlm === "no_fresh_frames") r = null;
     if (r) {
       this.o.emit({
         type: "observe", at_ms: this.clock.now(), frame_id: id, captured_at_ms: last.frame.capturedAtMs, yolo: null, vlm: r.scene?.summary ?? null,
         ...(r.missing ? { vlm_missing: r.missing } : {}), closer: last.crop,
       });
     }
-    // 3장이 안 된 새 물건 후보는 이 답이 그 감지에 사실을 답할 때만 만든다(답이 없거나 끊기면 버린다)
+    // 3장이 안 된 새 물건 후보는 이 답이 그 감지에 사실을 답할 때만 만든다(답이 없거나 넣지 않으면 버린다)
     if (r?.scene) this.publish(this.o.world.applyCloserScene(last.frame.id, last.frame.capturedAtMs, r.scene, ids, pending));
     else if (pending) this.o.world.endCloser(pending);
     this.closerCount.looks++;
@@ -426,7 +429,7 @@ export class ObservationPipeline {
     return {
       ok: true, frame_id: id, captured_at_ms: last.frame.capturedAtMs, crop: last.crop, frames: passes.length,
       found: last.dets.map((d, i) => ({ id: ids.get(`d${i + 1}`) ?? null, cls: d.label, score: Math.round(d.score * 100) / 100, facts: said.get(`d${i + 1}`) ?? [] })),
-      summary: r?.scene?.summary ?? null, vlm: r ? r.missing ?? "ok" : "aborted",
+      summary: r?.scene?.summary ?? null, vlm,
     };
   }
 

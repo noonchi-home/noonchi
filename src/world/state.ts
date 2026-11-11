@@ -12,7 +12,7 @@
 // - 늦게 온 전체 사진: 이미 넣은 가장 새 전체 사진보다 옛 촬영(감지 대기열에서 늦게 나온 프레임)은 통째로 넣지 않는다. 등장·사라짐 셈·자리·보임·사람·가전 설비·관절이
 //   그대로이고 감지 번호도 잇지 않는다(그 프레임 VLM 답은 대상 사실을 넣지 않는다). 전체 사진끼리는 촬영 순서로만 들어간다.
 // - 가까이 보기(applyCloser, src/observe/pipeline.ts closer): 잘라 본 몇 장을 보통 프레임처럼 넣지 않고 한 번에 합친다. 물건 감지만 쓰고(사람·가전 설비·잘린 경계 상자는 버림),
-//   맞는 물건이 없으면 서로 다른 원본 프레임 3장에서 같은 자리로 보이거나, 1장 이상 보이고 같은 가까이 보기의 VLM이 그 감지에 사실을 하나 이상 답해야
+//   맞는 물건이 없으면 서로 다른 원본 프레임 3장에서 같은 자리로 보이거나, 1장 이상 보이고 같은 가까이 보기의 VLM이 그 감지에 사실을 하나 이상 답하고 가림은 답하지 않아야
 //   (두 모델 확인) 새 물건을 만든다. 3장이 안 된 후보는 VLM 답(applyCloserScene)까지 들고 있다가 답이 없거나 끊기면(endCloser) 버린다. 안 보인 물건은 그대로 둔다.
 //   가까이 보기와 전체 사진은 서로 촬영 순서가 섞여 들어오므로 물건마다 자리를 마지막으로 고친 촬영 시각과 보임(있음·시야 밖·사라짐)을 마지막으로 판단한
 //   촬영 시각·원본 프레임·출처를 둔다. 그보다 옛 촬영은 자리·보임을 되돌리지 않고, 가까이 보기가 더 새 촬영으로 본 물건은 옛 전체 사진의 등장·사라짐 셈에도
@@ -81,8 +81,8 @@ interface CloserGroup { cls: ObjClass; seen: CloserSeen[] }
 /** 한 묶음(전체 사진 한 장·가까이 보기 한 번)에서 등장을 확인한 새 물건과 그 촬영(옮김 처리 liftHolds). */
 interface Fresh { obj: Obj; at: number; frame: string }
 /** 가까이 보기 한 번의 새 물건 후보(applyCloser): 맞는 물건이 없고 같은 자리로 보인 서로 다른 원본 프레임이 CLOSER_NEW_FRAMES장보다 적은 묶음 중
- *  VLM에 보낸 장(idsFrom)에 보인 것. 그 장의 VLM 답(applyCloserScene)이 그 감지 번호에 사실을 하나 이상 답한 후보만 확인된 물건이 되고,
- *  VLM 답 없이 끝나면(endCloser) 버린다. 이번 가까이 보기의 옮김 처리(지킴 풀기·옮김 표시)는 후보와 함께 하려고 그때까지 미룬다. 한 번만 쓴다. */
+ *  VLM에 보낸 장(idsFrom)에 보인 것. 그 장의 VLM 답(applyCloserScene)이 그 감지 번호에 사실을 하나 이상 답하고 가림(not_visible)은 답하지 않은 후보만
+ *  확인된 물건이 되고, VLM 답 없이 끝나면(endCloser) 버린다. 이번 가까이 보기의 옮김 처리(지킴 풀기·옮김 표시)는 후보와 함께 하려고 그때까지 미룬다. 한 번만 쓴다. */
 export interface CloserPending {
   /** VLM에 보낸 장의 감지 번호 → 후보 묶음. */
   readonly candidates: ReadonlyMap<string, CloserGroup>;
@@ -843,8 +843,8 @@ export class WorldState {
 
   /** 가까이 본 사진의 VLM 답: ids(그 사진에서 잡은 물건)의 사실만 넣는다. 장면 요약·답에 없는 면·지금만 맞는 사실·사람·가전 설비는 건드리지 않는다.
    *  원본 프레임(sourceFrameId)·물건·면마다 한 번만 넣고, 같은 원본 프레임의 전체 사진 답보다 앞선다(answer).
-   *  pending(같은 가까이 보기 applyCloser의 후보)이 있으면 먼저 이 답이 사실(그 종류에 붙는 값, 가림 아님)을 하나 이상 답한 후보 감지마다 확인된 물건을 만들어
-   *  (그사이 같은 자리 물건이 확인됐으면 그것에 맞춘다) ids에 더하고 미뤄 둔 옮김 처리를 한다. 사실을 답하지 않은 후보는 버린다. */
+   *  pending(같은 가까이 보기 applyCloser의 후보)이 있으면 먼저 이 답이 사실(그 종류에 붙는 값)을 하나 이상 답하고 가림(not_visible)은 답하지 않은 후보 감지마다
+   *  확인된 물건을 만들어(그사이 같은 자리 물건이 확인됐으면 그것에 맞춘다) ids에 더하고 미뤄 둔 옮김 처리를 한다. 사실을 답하지 않거나 가림을 답한 후보는 버린다. */
   applyCloserScene(sourceFrameId: string, capturedAtMs: number, scene: SceneObservation, ids: Map<string, string>, pending?: CloserPending): WorldChange[] {
     const changes: WorldChange[] = [];
     if (pending && !this.closerDone.has(pending)) {
@@ -855,8 +855,10 @@ export class WorldState {
       const tmps = new Map<CloserGroup, string[]>();
       for (const [tmp, g] of pending.candidates) tmps.set(g, [...(tmps.get(g) ?? []), tmp]);
       for (const [g, list] of tmps) {
-        const answered = scene.observations.some((ob) => list.includes(ob.object_id) && ob.state in STATES && fits(ob.state as StateKey, g.cls, "object"));
-        if (!answered) continue;
+        const said = scene.observations.filter((ob) => list.includes(ob.object_id)).map((ob) => ob.state as string);
+        // 가렸다고 답한 상자는 함께 답한 사실이 있어도 VLM이 확인한 것이 아니다
+        if (said.some((s) => (VLM_ONLY as readonly string[]).includes(s))) continue;
+        if (!said.some((s) => s in STATES && fits(s as StateKey, g.cls, "object"))) continue;
         const obj = this.closeGroup(g, true, used, surfaces, changes, created)!;
         for (const tmp of list) ids.set(tmp, obj.id);
       }

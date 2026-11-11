@@ -277,6 +277,22 @@ describe("보기 담당: 가까이 보기 실행", () => {
     expect(t.looker.status()).toMatchObject({ looks: 1 });
   });
 
+  it("감지는 합쳤지만 VLM 답이 왔을 때 사진이 끊겨 넣지 않은 가까이 보기(vlm no_fresh_frames)는 기록하고 자원 사정이라 settle(false)", async () => {
+    const t = await setup({ script: () => [["look_closer", { target: "sink_1", reason: "싱크대 안을 보려고" }]] });
+    const cut: CloserResult = {
+      ok: true, frame_id: "e3.c1", captured_at_ms: 6000, crop: [120, 90, 240, 180], frames: 3, found: [{ id: null, cls: "cup", score: 0.72, facts: [] }], summary: null, vlm: "no_fresh_frames",
+    };
+    t.closer.result = cut;
+    const a = stall();
+    t.looker.stalled(a.s);
+    await t.looker.idle();
+    const text = LOOK_TEXT.closer("싱크대", `컵 보임 · ${LOOK_TEXT.vlmStale}`);
+    expect(text).toBe("싱크대 쪽을 가까이 봄 · 컵 보임 · 새 사진이 끊겨 VLM 답은 넣지 않음");
+    expect(t.looks()).toEqual([expect.objectContaining({ trigger: "stalled", tool: "look_closer", target: "sink_1", text, result: cut })]);
+    expect(a.settled).toEqual([false]);
+    expect(t.looker.status()).toMatchObject({ looks: 1 });
+  });
+
   it("관찰 모드 호출이 실패하면(가짜 서버 닫음) 기다리기 기록에 까닭을 남기고 settle(true)", async () => {
     const t = await setup({ script: () => [["look_closer", { target: "sink_1", reason: "싱크대 안을 보려고" }]] });
     await t.llm.close();

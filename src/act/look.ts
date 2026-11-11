@@ -3,13 +3,14 @@
 //   관찰 모드 호출과 가까이 보기는 그 단계 신호(Stall.signal)로 끊긴다. 끊겨서 그쳤으면(관찰 모드 답 전, 감지를 합치기 전에 끊긴 가까이 보기 aborted)
 //   기록도 settle도 하지 않는다. 가까이 본 결과가 World State에 들어가 그 단계를 끝냈으면(그래서 신호가 끊김, 감지만 합치고 VLM 답은 넣지 않은
 //   vlm aborted 포함) 실행한 관찰로 기록한다(지난 단계 세대의 settle은 아무것도 하지 않는다).
-//   가까이 보기가 자원 사정(CloserWait: 새 사진 모자람·VLM 자리 없음)으로 못 보면 Stall.settle(false)로 시도에서 빼고, 그 밖(wait·ask_person 포함)은 settle(true).
+//   가까이 보기가 자원 사정(CloserWait: 새 사진 모자람·VLM 자리 없음)으로 못 보거나, 감지는 합쳤지만 VLM 답이 왔을 때 사진이 끊겨 넣지 않았으면(vlm no_fresh_frames)
+//   Stall.settle(false)로 시도에서 빼고, 그 밖(wait·ask_person 포함)은 settle(true).
 // B 판단 전 보기(판단 타이머 tick): 행동 대상 종류 물건이 사진 안에 있는데 볼 면(TaskSpec.look)을 모름 → look_closer·wait. PAM 판단을 막지 않는다.
 //   물건마다 objectGapMs, B 전체로 gapMs에 한 번. 이미 싱크대 안·시야 밖 물건, frameFreshMs 넘게 낡은 프레임, 카메라 없는 프레임은 보지 않는다.
 // A가 먼저다: B가 관찰 모드를 부르는 중이면 끊고(B 기록 없음) A를 돌린다. B가 잘라 보는 중이거나 다른 A가 도는 중이면 A를 받지 않는다(실행 추적이 다음 tick에 다시 부른다).
 // 관찰 모드는 한 시간(주입 시계)에 hourMax번(A·B 합)까지만 부른다. 넘으면 부르지 않고 기다리기 기록을 남긴다(A면 settle(true)).
 // 고를 때마다 look 기록 하나. look_closer 결과는 관찰 흐름이 World State에 넣는다(다음 PAM 판단과 단계 조건이 그것을 본다).
-import type { BrainLog, CloserMiss, CloserResult, CloserWait, LookResult, LookTool, LookTrigger } from "../contract/events.js";
+import type { BrainLog, CloserMiss, CloserResult, CloserVlm, CloserWait, LookResult, LookTool, LookTrigger } from "../contract/events.js";
 import type { Facet, ObjClass, WorldView } from "../contract/world.js";
 import { describeError } from "../agent/agent.js";
 import type { ObserveChoice, ObserveSituation, Observer, ObserverStatus } from "../agent/observer.js";
@@ -25,14 +26,15 @@ import type { Stall } from "./track.js";
 /** 기본값: B 물건마다 30초·전체 10초에 한 번, 10초 넘게 낡은 프레임은 보지 않음, 앞서 한 일 5개, 관찰 모드 한 시간 60번. */
 export const LOOK_DEFAULTS = { objectGapMs: 30_000, gapMs: 10_000, frameFreshMs: 10_000, keep: 5, hourMax: 60, hourMs: 3_600_000 } as const;
 
-/** 시도로 세지 않는 가까이 보기 결과(src/contract/events.ts CloserWait). */
-const WAITS: ReadonlySet<CloserMiss> = new Set<CloserWait>(["no_fresh_frames", "vlm_busy"]);
+/** 시도로 세지 않는 가까이 보기 결과: 못 본 까닭(why)과 감지를 합친 뒤 VLM 답을 넣지 않은 까닭(vlm)의 CloserWait(src/contract/events.ts). */
+const WAITS: ReadonlySet<CloserMiss | CloserVlm> = new Set<CloserWait>(["no_fresh_frames", "vlm_busy"]);
 /** 앞서 한 일을 기억하는 열쇠(단계·물건) 수 상한. */
 const KEYS_MAX = 50;
 
 export interface LookerOptions {
   observer: Pick<Observer, "decide" | "status">;
-  /** 가까이 보기(src/observe/pipeline.ts closer). 감지를 합치기 전에 signal이 끊기면 넣지 않고 aborted, 합친 뒤에 끊기면 ok(vlm aborted). */
+  /** 가까이 보기(src/observe/pipeline.ts closer). 감지를 합치기 전에 signal이 끊기면 넣지 않고 aborted, 합친 뒤에 끊기면 ok(vlm aborted),
+   *  VLM 답이 왔을 때 사진이 끊겼으면 ok(vlm no_fresh_frames). */
   closer: (spot: LookSpot, signal?: AbortSignal) => Promise<CloserResult>;
   /** 고리 가장 새 프레임(src/observe/pipeline.ts latest). */
   frame: () => LatestFrame | null;
@@ -194,7 +196,7 @@ export class Looker {
       if (this.stopped || (!r.ok && r.why === "aborted")) return;
       result = r;
       this.count.looks++;
-      counted = r.ok || !WAITS.has(r.why);
+      counted = !WAITS.has(r.ok ? r.vlm : r.why);
       text = LOOK_TEXT.closer(spot.label, closerText(r));
       if (r.ok) detail = r.found.map((f) => `${f.id ?? f.cls} ${f.score} ${f.facts.join(" ")}`.trim()).join(", ");
     } else if (choice.tool === "ask_person") {
@@ -234,5 +236,5 @@ function closerText(r: CloserResult): string {
   if (!r.ok) return LOOK_TEXT.miss[r.why];
   const seen = LOOK_TEXT.seen(r.found.filter((f) => CLASSES[f.cls as ClassKey]?.role === "object").map((f) => OBJECT_NAME[f.cls] ?? f.cls));
   if (r.vlm === "ok") return seen;
-  return `${seen} · ${r.vlm === "aborted" ? LOOK_TEXT.vlmAborted : LOOK_TEXT.vlmMissing}`;
+  return `${seen} · ${r.vlm === "aborted" ? LOOK_TEXT.vlmAborted : r.vlm === "no_fresh_frames" ? LOOK_TEXT.vlmStale : LOOK_TEXT.vlmMissing}`;
 }

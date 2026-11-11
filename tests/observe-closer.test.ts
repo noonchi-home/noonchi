@@ -399,6 +399,50 @@ describe("가까이 보기(관찰 흐름 closer)", () => {
     await s.p.close();
   });
 
+  it("VLM 답이 왔을 때 쓴 가장 새 장이 지금보다 closerStaleMs 넘게 앞서 찍혔으면(폰 끊김) VLM 사실을 넣지 않고 3장이 안 된 후보도 만들지 않는다(vlm no_fresh_frames). 감지로 만든 물건은 그대로다", async () => {
+    const answers: (() => void)[] = [];
+    const vlm = {
+      model: "held",
+      json: (req: { texts: string[] }) => new Promise((ok) => {
+        const value = { scene: "k", observations: [{ object_id: "d1", state: "in_sink" }], summary: "s" };
+        if (!req.texts.includes(CLOSER_NOTE)) return ok({ value: { ...value, observations: [] }, costUsd: 0, model: "held", attempts: 1 });
+        answers.push(() => ok({ value, costUsd: 0, model: "held", attempts: 1 }));
+      }),
+    } as unknown as VlmClient;
+    /** 엔진 프레임 3장(마지막 6초) 뒤 가까이 보기 한 번: VLM 답은 시계를 answerAt으로 옮긴 뒤 온다. */
+    const one = async (crops: Detection[][], answerAt: number) => {
+      const s = setup({ vlm, detector: (engine) => cropTurns(engine, crops) });
+      for (let i = 1; i <= 3; i++) s.frame(i * 2000);
+      await s.p.idle();
+      const n = answers.length;
+      const pending = s.p.closer(SPOT);
+      await until(() => answers.length === n + 1);
+      s.clock.t = answerAt;
+      answers.at(-1)!();
+      const r = await pending;
+      const objects = s.world.view(answerAt).objects;
+      const logs = s.logs.filter((l) => l.type === "observe" && l.closer);
+      const status = s.p.status().closer;
+      await s.p.close();
+      return { r, objects, logs, status };
+    };
+    const stale = 6000 + closerStaleMs(2000) + 1;
+    // 1장에만 보인 컵: 끊김 범위 끝까지는 답을 넣어 만들고, 넘으면 만들지 않는다
+    expect((await one([[], [], [cup]], 6000 + closerStaleMs(2000))).r).toMatchObject({ ok: true, found: [{ id: "cup_1", facts: ["in_sink"] }], vlm: "ok" });
+    const late = await one([[], [], [cup]], stale);
+    expect(late.r).toEqual({
+      ok: true, frame_id: "e3.c1", captured_at_ms: 6000, crop: CROP, frames: 3,
+      found: [{ id: null, cls: "cup", score: 0.72, facts: [] }], summary: null, vlm: "no_fresh_frames",
+    });
+    expect(late.objects).toEqual([]);
+    expect(late.logs).toEqual([expect.objectContaining({ frame_id: "e3.c1", boxes: [{ label: "cup", score: 0.72, box: [230, 170, 20, 10] }] })]);
+    expect(late.status).toMatchObject({ looks: 1, failed: 0 });
+    // 3장에 보인 컵: 감지로 만든 컵은 남고 VLM 사실만 넣지 않는다
+    const three = await one([[cup], [cup], [cup]], 6005 + 6000);
+    expect(three.r).toMatchObject({ ok: true, found: [{ id: "cup_1", cls: "cup", facts: [] }], summary: null, vlm: "no_fresh_frames" });
+    expect(three.objects).toEqual([expect.objectContaining({ id: "cup_1", status: "present", facts: {} })]);
+  });
+
   it("보통 프레임이 VLM 자리를 다 써도 가까이 보기는 따로 둔 자리로 간다. 가까이 보기가 이미 돌고 있으면 「VLM 자리 없음」이고 합치지 않는다. 닫으면 답을 기다리던 가까이 보기는 닫힘으로 끝난다", async () => {
     const normal: (() => void)[] = [];
     const closer: (() => void)[] = [];
