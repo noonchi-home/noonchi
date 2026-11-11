@@ -6,6 +6,7 @@
 // 재생을 기다리는 동안 다시 시작하면 같은 시작을 기다리고(영상은 하나), 그 사이 끝내면 그 영상을 닫고 시작하지 않는다.
 // 단계 영상(?step=<종류>:<대상 낱말>:<영상>, 여러 개): 사람 단계 명령(command)의 종류가 같고 대상 id에 낱말이 든 첫 칸이면, 그 id·step에 한 번
 // ?react=초(기본 1.5) 뒤 그 영상으로 바꿔 튼다(새 영상을 깔고 튼 뒤 앞 영상을 닫는다). 영상 시각은 앞 영상들 시각에 이어 센다.
+// 자세는 새 영상이 틀어질 때 함께 바꾼다(열지 못하거나 더 새 바꾸기가 있으면 그대로).
 // go 단계면 자세가 대상 쪽으로 돌아 시작 숙인 각(?pitch=)으로 초당 0.8m 걸어(자세 타이머가 한 칸씩) 대상 0.6m 앞에서 멈춘다.
 // 집기·놓기 단계면 걷기를 멈추고 그 자리에서 대상(cmd.target.ar, 면이면 서버가 윗면 가운데로 준다)을 바라본다: 사람이 폰을 대상에 겨누듯
 // 대상 쪽 yaw와 대상 높이까지 숙인 각(video-math lookAt)으로 돈다. 대상이 수평 1cm 안(바로 위·아래)이면 자세를 바꾸지 않는다. 높이는 늘 그대로다.
@@ -374,8 +375,9 @@ export function createVideoAr({ link, params, hooks, deps }) {
       console.info(`[video] ${clockText(timeline())} 영상 끝`);
     });
 
-    /** 단계 영상으로 바꾼다: 새 영상을 앞 영상 밑에 깔고 튼 뒤 앞 영상을 닫는다. 마지막에 건 바꾸기만 쓴다. */
-    async function swap(url) {
+    /** 단계 영상으로 바꾼다: 새 영상을 앞 영상 밑에 깔고 튼 뒤 앞 영상을 닫는다. 마지막에 건 바꾸기만 쓴다.
+     *  pose: 새 영상으로 바꿀 때 함께 바꿀 자세(go 걷기·집기·놓기 바라보기). 열지 못하거나 더 새 바꾸기가 있으면 부르지 않는다. */
+    async function swap(url, pose) {
       const turn = ++swapTurn;
       const next = d.createVideo(url);
       if (next.element) doc.body.prepend(next.element);
@@ -399,6 +401,8 @@ export function createVideoAr({ link, params, hooks, deps }) {
         portrait = fh > fw;
         projection = projectionFromFov(d.fovDeg ?? 60, fw / fh);
       }
+      // 앞 영상 프레임 고리는 멈췄다: 새 영상 첫 프레임부터 새 자세가 실린다
+      pose?.();
       ended = false;
       record.ended = false;
       const ms = timeline();
@@ -411,7 +415,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
 
     const current = {
       videoTime: timeline,
-      /** 사람 단계 명령: 맞는 step 칸이 있으면 그 id·step에 한 번, reactMs 뒤 단계 영상으로 바꾸고 go면 걷고 집기·놓기면 대상을 바라본다. */
+      /** 사람 단계 명령: 맞는 step 칸이 있으면 그 id·step에 한 번, reactMs 뒤 단계 영상으로 바꾸고, 바뀌면 go는 걷고 집기·놓기는 대상을 바라본다. */
       command(cmd) {
         const id = cmd.target?.id;
         const entry = typeof id === "string" ? steps.find((s) => s.kind === cmd.kind && id.includes(s.word)) : undefined;
@@ -423,10 +427,8 @@ export function createVideoAr({ link, params, hooks, deps }) {
         const timer = setTimeout(() => {
           reactTimers.delete(timer);
           if (run !== current) return;
-          void swap(entry.clipUrl);
-          if (!target) return;
-          if (entry.kind === "go") startWalk(target);
-          else face(target);
+          const pose = target && (entry.kind === "go" ? () => startWalk(target) : () => face(target));
+          void swap(entry.clipUrl, pose);
         }, reactMs);
         reactTimers.add(timer);
       },

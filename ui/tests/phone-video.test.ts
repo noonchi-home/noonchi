@@ -664,6 +664,96 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
     closeTo(lastPose(sent).orientation, yawPitchQuat(Math.atan2(-0.1, -dz), (Math.atan2(-0.6, Math.hypot(0.1, dz)) * 180) / Math.PI));
   });
 
+  /** 단계 영상 play를 부른 차례대로 따로 풀거나(release) 실패시킨다(fail). */
+  const plays = () => {
+    const list: { release: () => void; fail: () => void }[] = [];
+    const play = () => new Promise<void>((resolve, reject) => { list.push({ release: resolve, fail: () => reject(new Error("열지 못함")) }); });
+    return { play, list };
+  };
+
+  it("pick 단계 영상이 틀어지기 전에는 자세를 바꾸지 않아 앞 영상 프레임은 앞 자세로 간다. 틀어지면 영상과 자세를 함께 바꾼다", async () => {
+    fakeTimers();
+    const p = plays();
+    const { ws, sent, video, videos, startAr } = make({}, STEPS, { later: { play: p.play } });
+    await startAr();
+    ws.push({ ...ALIGNED, engine_ms: 500 });
+    ws.push(pickCup());
+    await after(1500 + 500);
+    expect(p.list).toHaveLength(1);
+    closeTo(lastPose(sent).orientation, pitchQuat(-25));
+    const before = ws.packets.length;
+    video.advance(0.6);
+    await after(0);
+    const old = (await Promise.all(ws.packets.slice(before).map(headerOf))).find((h) => h.kind === "engine")!;
+    closeTo(old.orientation, pitchQuat(-25));
+    p.list[0]!.release();
+    await after(200);
+    const look = yawPitchQuat(Math.atan2(-0.1, 1.4), (Math.atan2(-0.6, Math.hypot(0.1, 1.4)) * 180) / Math.PI);
+    closeTo(lastPose(sent).orientation, look);
+    const n = ws.packets.length;
+    videos[1]!.advance(0.6);
+    await after(0);
+    const fresh = (await Promise.all(ws.packets.slice(n).map(headerOf))).find((h) => h.kind === "engine")!;
+    closeTo(fresh.orientation, look);
+  });
+
+  it("go 단계 영상이 틀어지기 전에는 걷지 않고, 틀어지면 걷기 시작한다", async () => {
+    fakeTimers();
+    const p = plays();
+    const { ws, sent, startAr } = make({}, STEPS, { later: { play: p.play } });
+    await startAr();
+    ws.push(ALIGNED);
+    ws.push(goTable());
+    await after(1500 + 1000);
+    expect(lastPose(sent).position).toEqual([0, 1.4, 0]);
+    expect(lastPose(sent).orientation).toEqual(pitchQuat(-25));
+    p.list[0]!.release();
+    await after(1000);
+    expect(lastPose(sent).position[2]).toBeLessThan(-0.6);
+  });
+
+  it("단계 영상을 열지 못하면 영상도 자세도 그대로다(걷지도 돌지도 않는다)", async () => {
+    fakeTimers();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const p = plays();
+    const { ws, sent, video, startAr } = make({}, STEPS, { later: { play: p.play } });
+    await startAr();
+    ws.push(ALIGNED);
+    ws.push(goTable());
+    await after(1500);
+    p.list[0]!.fail();
+    ws.push(pickCup());
+    await after(1500);
+    p.list[1]!.fail();
+    await after(1000);
+    expect(warn.mock.calls.filter((a) => String(a[0]).startsWith("[video] 단계 영상을 열지 못했어요"))).toHaveLength(2);
+    expect(video.closed).toBe(0);
+    expect(lastPose(sent).position).toEqual([0, 1.4, 0]);
+    expect(lastPose(sent).orientation).toEqual(pitchQuat(-25));
+  });
+
+  it("앞서 건 단계 영상이 더 새 바꾸기보다 늦게 틀어지면 그 영상도 그 자세(걷기)도 쓰지 않는다", async () => {
+    fakeTimers();
+    const p = plays();
+    const { ws, sent, videos, startAr } = make({}, STEPS, { later: { play: p.play } });
+    await startAr();
+    ws.push(ALIGNED);
+    ws.push(goTable());
+    await after(1500);
+    ws.push(pickCup());
+    await after(1500);
+    expect(p.list).toHaveLength(2);
+    p.list[1]!.release();
+    await after(200);
+    const look = yawPitchQuat(Math.atan2(-0.1, 1.4), (Math.atan2(-0.6, Math.hypot(0.1, 1.4)) * 180) / Math.PI);
+    p.list[0]!.release();
+    await after(1000);
+    expect(videos[1]!.closed).toBe(1);
+    expect(videos[2]!.closed).toBe(0);
+    expect(lastPose(sent).position).toEqual([0, 1.4, 0]);
+    closeTo(lastPose(sent).orientation, look);
+  });
+
   it("대상이 바로 아래(수평 1cm 안)면 단계 영상만 바꾸고 자세는 그대로", async () => {
     fakeTimers();
     const { ws, sent, urls, startAr } = make({}, STEPS);
