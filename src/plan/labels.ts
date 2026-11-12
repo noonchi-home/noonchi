@@ -35,6 +35,8 @@ export const SAY_TEXT = {
   waiting: (label: string) => `${josa(label, "을/를")} 기다리고 있어요.`,
   device: (label: string) => `${josa(label, "을/를")} 하고 있어요.`,
   asked: "폰으로 물어봤어요.",
+  /** 계획 없는 행동(컵 그대로 두기)을 고른 뒤. */
+  left: "컵을 그대로 두기로 했어요.",
   done: (goal: string) => DONE[goal] ?? `${josa(goal, "을/를")} 마쳤어요.`,
   stopped: (goal: string) => `${josa(goal, "을/를")} 그만뒀어요.`,
 };
@@ -85,7 +87,7 @@ export const EXEC_TEXT = {
   answered: (label: string) => `완료: ${label}`,
   badPlan: "계획이 맞지 않아 버림", held: "방금 계획한 일이라 잠시 뒤 다시 봄", deviceFailed: "가전 명령이 실패함",
   deviceUnverified: "가전 명령 결과를 확인하지 못함", busy: "할 일 중 기다리는 동안이라 쓰지 않음",
-  closerNewer: "가까이 본 뒤 다시 판단",
+  closerNewer: "가까이 본 뒤 다시 판단", left: "그대로 둠",
 } as const;
 
 /** 관찰 모드 기록 글(src/act/look.ts, 기록 종류 look). 가까이 본 결과, 못 본 까닭, 사람 부탁, 기다리기. capped·failed는 모델 대신 쓰는 까닭 글이다. */

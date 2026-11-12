@@ -1,6 +1,8 @@
 // 실행 추적: 판단 → 계획(에이전트 계획 모드) → 실행 중 → 완료 또는 실패. 단계마다 execution 기록을 낸다(plan_id는 plan:<판단 id>).
 // 판단 하나마다 한 번만 정한다: 늦은 답·판단 실패·대기·진행 중(또는 계획을 만드는 중)인 행동과 같은 행동은 기록만 하고, 계획 전 검사(LLM 없음)를
 // 통과하면 에이전트를 계획 모드로 한 번 부른다(planner). 같은 행동은 planGapMs 안에 다시 부르지 않는다(「가까이 본 뒤 다시 판단」으로 닫은 계획은 세지 않는다). 주기 tick은 에이전트를 부르지 않는다.
+// 계획을 만들지 않는 행동(TaskSpec.plan false, 컵 그대로 두기): 계획 전 검사를 통과하면 에이전트를 부르지 않고 실제 폰에도 보내지 않으며
+// 그 판단 줄에 「그대로 둠」만 남긴다(leftGapMs에 한 번). 진행 중인 다른 계획은 바꾸지 않는다. 대시보드 말풍선 카드는 leftAt()으로 그 시각을 본다.
 // 계획은 어떤 것이든 같은 방법으로 돌린다(src/agent/planTools.ts AgentStep):
 // - 사람 단계(go·pick·place·do): 실제 폰(에이전트의 손, src/contract/phone.ts)에 사람에게 하는 명령 하나와 「완료」를 보내고(소리로도 읽음),
 //   끝나는 조건(World State 낱말 조건, ConditionWatch)이 참이거나 「완료」면 다음 단계로. repeatMs마다 명령을 다시 읽는다.
@@ -89,6 +91,8 @@ export interface TrackerOptions {
   askMs?: number;
   /** 같은 행동의 계획을 다시 만들기 전 기다리는 시간(ms). */
   planGapMs?: number;
+  /** 계획 없는 행동(그대로 두기)의 기록을 다시 남기기 전 기다리는 시간(ms). */
+  leftGapMs?: number;
   /** 멈춘 집기·놓기 단계 알림(관찰 모드 A, src/act/look.ts). 받았으면 true(그때만 센다). 받은 부름은 끝날 때 s.settle(counted)를 부른다. 없으면 부르지 않는다. */
   stalled?: (s: Stall) => boolean;
   /** 집기·놓기 단계가 이만큼(ms) 안 끝나면 stalled를 부른다(단계 시작 뒤, 받은 부름 뒤). */
@@ -97,8 +101,8 @@ export interface TrackerOptions {
   stallMax?: number;
 }
 
-/** 기본값: 다시 읽기 30초, 비전 상태 0.5초에 한 번, 검사 3초, 승인 답 2분, 같은 행동 다시 계획 15초, 멈춘 단계 8초·단계마다 3번. 단계 시간 한도는 계획 단계마다 있다. */
-export const TRACK_DEFAULTS = { repeatMs: 30_000, visionMs: 500, recheckMs: 3000, askMs: 120_000, planGapMs: 15_000, stallMs: 8000, stallMax: 3 } as const;
+/** 기본값: 다시 읽기 30초, 비전 상태 0.5초에 한 번, 검사 3초, 승인 답 2분, 같은 행동 다시 계획 15초, 그대로 두기 기록 60초에 한 번, 멈춘 단계 8초·단계마다 3번. 단계 시간 한도는 계획 단계마다 있다. */
+export const TRACK_DEFAULTS = { repeatMs: 30_000, visionMs: 500, recheckMs: 3000, askMs: 120_000, planGapMs: 15_000, leftGapMs: 60_000, stallMs: 8000, stallMax: 3 } as const;
 
 /** 멈춘 집기·놓기 단계. command: 실제 폰에 띄운 지금 명령 글. stuckMs: 단계 시작 뒤 지난 시간. looks: 이 단계에서 센 부름 수(시도).
  *  spots: 계획 물건(지금 따라가는 World State 물건, 자리를 알 때)과 단계 대상 자리(평면도, 물건과 다를 때).
@@ -151,20 +155,28 @@ export class ExecutionTracker {
   private quietFrom = -Infinity;
   private stopped = false;
   private eye: { position: XZ; at: number } | null = null;
+  /** 마지막으로 「그대로 둠」을 기록한 시각: 간격을 세는 실행 추적 시계(leftNoteAt)와 말풍선 카드가 보는 Date.now 시계(leftWallAt). */
+  private leftNoteAt = Number.NEGATIVE_INFINITY;
+  private leftWallAt: number | null = null;
   private readonly clock: { now(): number };
-  private readonly cfg: { repeatMs: number; visionMs: number; recheckMs: number; askMs: number; planGapMs: number; stallMs: number; stallMax: number };
+  private readonly cfg: { repeatMs: number; visionMs: number; recheckMs: number; askMs: number; planGapMs: number; leftGapMs: number; stallMs: number; stallMax: number };
 
   constructor(private readonly o: TrackerOptions) {
     this.clock = o.clock ?? { now: () => Date.now() };
     this.cfg = {
       repeatMs: o.repeatMs ?? TRACK_DEFAULTS.repeatMs, visionMs: o.visionMs ?? TRACK_DEFAULTS.visionMs, recheckMs: o.recheckMs ?? TRACK_DEFAULTS.recheckMs,
-      askMs: o.askMs ?? TRACK_DEFAULTS.askMs, planGapMs: o.planGapMs ?? TRACK_DEFAULTS.planGapMs,
+      askMs: o.askMs ?? TRACK_DEFAULTS.askMs, planGapMs: o.planGapMs ?? TRACK_DEFAULTS.planGapMs, leftGapMs: o.leftGapMs ?? TRACK_DEFAULTS.leftGapMs,
       stallMs: o.stallMs ?? TRACK_DEFAULTS.stallMs, stallMax: o.stallMax ?? TRACK_DEFAULTS.stallMax,
     };
   }
 
   current(): { planId: string; state: ExecState } | null {
     return this.run && { planId: this.run.plan.view.id, state: this.run.state };
+  }
+
+  /** 마지막으로 「그대로 둠」을 기록한 시각(Date.now 시계, 계획 updatedAt과 같은 시계). 없으면 null. */
+  leftAt(): number | null {
+    return this.leftWallAt;
   }
 
   /** 실제 폰에 띄운 지금 명령·질문(답을 기다리는 중). 승인·다시 묻기·질문 단계는 질문(ask), 그 밖은 부탁(command). 없으면 null. */
@@ -196,6 +208,14 @@ export class ExecutionTracker {
       return;
     }
     const now = this.clock.now();
+    // 계획을 만들지 않는 행동(컵 그대로 두기): 에이전트를 부르지 않고 그 판단 줄에 기록만 한다. 열린 계획·만들던 계획은 건드리지 않는다
+    if (taskOf(d.action)?.plan === false) {
+      if (now - this.leftNoteAt < this.cfg.leftGapMs) return;
+      this.leftNoteAt = now;
+      this.leftWallAt = Date.now();
+      this.emit(planIdOf(d.id), "decided");
+      return this.emit(planIdOf(d.id), "done", EXEC_TEXT.left);
+    }
     const last = this.planAt.get(d.action);
     if (last !== undefined && now - last < this.cfg.planGapMs) return this.note(d, EXEC_TEXT.held);
     this.planAt.set(d.action, now);

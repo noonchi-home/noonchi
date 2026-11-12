@@ -266,7 +266,7 @@ describe("실행 추적: 단계마다 실제 폰 명령", () => {
   });
 
   it("한 단계가 오래 걸리면 30초마다 명령을 다시 읽고, 2분이 지나면 실패로 닫는다. 다음 단계로 가면 다시 잰다", async () => {
-    expect(TRACK_DEFAULTS).toEqual({ repeatMs: 30_000, visionMs: 500, recheckMs: 3000, askMs: 120_000, planGapMs: 15_000, stallMs: 8000, stallMax: 3 });
+    expect(TRACK_DEFAULTS).toEqual({ repeatMs: 30_000, visionMs: 500, recheckMs: 3000, askMs: 120_000, planGapMs: 15_000, leftGapMs: 60_000, stallMs: 8000, stallMax: 3 });
     const { t, decide, clock, spoken, plans, exec, last } = setup();
     await decide(decision);
     clock.t += 29_999;
@@ -468,6 +468,83 @@ describe("실행 추적: 그 자리에서 하는 일(do, 채워 주기)", () => 
     s.t.onEye([6.5, 3]);
     for (const n of [1, 2, 3]) s.t.onAnswer("plan:pam-1", `plan:pam-1:${n}`, "done");
     expect(s.last()).toMatchObject({ step: "plan:pam-1:4", vision: "식탁까지 0.5m", target: TABLE, kind: "do" });
+  });
+});
+
+describe("실행 추적: 계획 없는 행동(컵 그대로 두기)", () => {
+  const leave = (id: string, seq: number, atMs = 8_000): DecisionRecord => ({ ...decision, id, seq, atMs, action: "컵 그대로 두기", prediction: { ...pred, task_index: 4 } });
+  /** 계획 모드를 부른 횟수를 센다. */
+  function leaveSetup(over: Parameters<typeof setup>[0] = {}) {
+    let planned = 0;
+    const planner = testPlanner(llm);
+    const w = over.w ?? (() => world([cup("present")]));
+    const s = setup({
+      w, planner: (d, signal) => { planned++; return planner.plan(planContext({ decision: d, world: w(), floor: smallFloor() }), signal); }, ...over,
+    });
+    return { ...s, planned: () => planned };
+  }
+
+  it("그대로 두기 판단이 오면 계획 모드를 부르지 않고 실제 폰에 아무것도 보내지 않으며 execution 기록 「그대로 둠」을 한 번 남긴다. 같은 판단이 5초마다 와도 60초 안에는 다시 남기지 않는다", async () => {
+    expect(TRACK_DEFAULTS.leftGapMs).toBe(60_000);
+    expect(EXEC_TEXT.left).toBe("그대로 둠");
+    const s = leaveSetup({ approvals: store() });
+    expect(s.t.leftAt()).toBeNull();
+    const before = Date.now();
+    await s.decide(leave("pam-1", 1));
+    expect(s.planned()).toBe(0);
+    expect(s.phone).toEqual([]);
+    expect(s.plans.current()).toBeNull();
+    expect(s.t.current()).toBeNull();
+    expect(s.exec().map((l) => [l.plan_id, l.state, l.text])).toEqual([["plan:pam-1", "decided", EXEC_TEXT.decided], ["plan:pam-1", "done", "그대로 둠"]]);
+    expect(s.t.leftAt()).toBeGreaterThanOrEqual(before);
+    for (let i = 2; i <= 12; i++) {
+      s.clock.t += 5_000;
+      await s.decide(leave(`pam-${i}`, i, s.clock.t));
+    }
+    expect(s.exec()).toHaveLength(2);
+    s.clock.t += 5_000;
+    await s.decide(leave("pam-13", 13, s.clock.t));
+    expect(s.exec().map((l) => [l.plan_id, l.state, l.text]).slice(2)).toEqual([["plan:pam-13", "decided", EXEC_TEXT.decided], ["plan:pam-13", "done", "그대로 둠"]]);
+    expect(s.planned()).toBe(0);
+    expect(s.phone).toEqual([]);
+    // 승인을 묻지 않는다(기억도 남기지 않는다)
+    expect(s.approvals.memory()).toEqual({ always: {} });
+  });
+
+  it("컵 치우기를 진행 중일 때 그대로 두기 판단이 오면 진행 중 계획을 바꾸지 않는다", async () => {
+    const s = leaveSetup();
+    await s.decide(decision);
+    expect(s.last()).toMatchObject({ step: "plan:pam-1:1", text: "식탁으로 가 주세요" });
+    const sent = s.phone.length;
+    await s.decide(leave("pam-2", 2));
+    expect(s.planned()).toBe(1);
+    expect(s.phone).toHaveLength(sent);
+    expect(s.plans.current()).toMatchObject({ id: "plan:pam-1", status: "running" });
+    expect(s.t.current()).toEqual({ planId: "plan:pam-1", state: "running" });
+    expect(s.exec().slice(-2).map((l) => [l.plan_id, l.state, l.text])).toEqual([["plan:pam-2", "decided", EXEC_TEXT.decided], ["plan:pam-2", "done", "그대로 둠"]]);
+    // 진행 중 계획은 그대로 끝까지 간다
+    expect(s.t.onAnswer("plan:pam-1", "plan:pam-1:1", "done")).toBe(true);
+    expect(s.last()).toMatchObject({ step: "plan:pam-1:2" });
+  });
+
+  it("그대로 둔 뒤 빈 컵이 되어 컵 치우기 판단이 오면 바로 계획을 세운다(더 보다가 치움)", async () => {
+    const s = leaveSetup();
+    await s.decide(leave("pam-1", 1));
+    s.clock.t += 5_000;
+    await s.decide({ ...decision, id: "pam-2", seq: 2, atMs: s.clock.t });
+    expect(s.planned()).toBe(1);
+    expect(s.spoken()).toEqual(["식탁으로 가 주세요"]);
+  });
+
+  it("계획 전 검사는 그대로 두기에도 돈다: 컵이 안 보이면 no_target이고 「그대로 둠」을 남기지 않는다", async () => {
+    let w = world([]);
+    const s = leaveSetup({ w: () => w, precheck: (d) => checkDecision({ decision: d, tasks: Object.keys(TASKS), world: w }) });
+    await s.decide(leave("pam-1", 1));
+    expect(s.exec().map((l) => [l.state, l.text])).toEqual([["decided", EXEC_TEXT.decided], ["failed", CHECK_TEXT.no_target]]);
+    expect(s.t.leftAt()).toBeNull();
+    w = world([cup("present")]);
+    await s.decide(leave("pam-2", 2));
+    expect(s.exec().slice(2).map((l) => [l.state, l.text])).toEqual([["decided", EXEC_TEXT.decided], ["done", "그대로 둠"]]);
   });
 });
 

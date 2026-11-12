@@ -277,7 +277,8 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     let lookSay: { place: string; atMs: number } | null = null;
     // 끝난 지 20초·가까이 보기 6초는 계획 updatedAt(PlanHub, Date.now)과 같은 시계로 잰다
     speak = () => {
-      const text = sayLine({ plan: plans.current(), command, world: world?.view(nowMs()) ?? null, nowMs: Date.now(), look: lookSay });
+      const leftAt = tracker?.leftAt() ?? null;
+      const text = sayLine({ plan: plans.current(), command, world: world?.view(nowMs()) ?? null, nowMs: Date.now(), look: lookSay, left: leftAt === null ? null : { atMs: leftAt } });
       if (text === said) return;
       said = text;
       appRef.current?.broadcast({ type: "say", text });
