@@ -82,14 +82,14 @@ describe("paintMasks", () => {
     expect(calls.at(-1)).toEqual(["restore"]);
   });
 
-  it("무리마다 색이 다르고, 칸이 없는 모양(마스크를 못 만든 감지)은 그리지 않는다", () => {
+  it("무리마다 색이 다르고, 가전 설비(싱크대)와 칸이 없는 모양(마스크를 못 만든 감지)은 칠하지 않는다", () => {
     const { ctx, calls } = fakeCtx();
     const empty = { at: [0, 0, 10, 10] as [number, number, number, number], cols: 0, rows: 0, bits: "" };
     paintMasks(ctx, shapesOf(seen([{ label: "person", score: 0.9, mask: CUP }, { label: "sink", score: 0.9, mask: CUP }, { label: "book", score: 0.9, mask: CUP }, { label: "cup", score: 0.9, mask: empty }])),
       { width: 640, height: 640 }, { width: 640, height: 640 }, 0, COLORS, (t) => t);
     const tiles = calls.filter((c) => c[0] === "drawImage").map((c) => c[1] as Tile);
     const colorOf = (t: Tile) => { const i = [...maskCells(CUP)].indexOf(1) * 4; return [...t.rgba.subarray(i, i + 3)]; };
-    expect(tiles.map(colorOf)).toEqual([[1, 2, 3], [70, 80, 90], [40, 50, 60]]);
+    expect(tiles.map(colorOf)).toEqual([[1, 2, 3], [40, 50, 60]]);
   });
 
   it("모양이 없거나 칸 크기를 모르면 지우기만 한다", () => {

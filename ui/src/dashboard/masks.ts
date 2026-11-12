@@ -115,7 +115,8 @@ export function paintMasks<S>(ctx: MaskCtx<S>, shapes: readonly Shape[], image: 
   ctx.globalAlpha = colors.opacity;
   ctx.imageSmoothingEnabled = true;
   for (const s of shapes) {
-    if (!s.mask.cols || !s.mask.rows) continue;
+    // 가전 설비(싱크대·냉장고·TV)는 칠하지 않는다: 가까이 보면 화면을 다 덮어 그 안의 물건을 가린다. 이름표는 그대로 붙는다
+    if (!s.mask.cols || !s.mask.rows || maskGroup(s.kind) === "fixture") continue;
     const [x, y, w, h] = s.mask.at;
     const at = toBox(fit, [x, y]);
     ctx.drawImage(toSource(maskTile(s.mask, rgbOf(colors[maskGroup(s.kind)]))), at.x, at.y, w * fit.scale, h * fit.scale);
