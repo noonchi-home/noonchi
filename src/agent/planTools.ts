@@ -16,6 +16,7 @@ import type { FloorPlan } from "../plan/floor.js";
 import { DEVICE_VERB } from "../plan/labels.js";
 import { ConditionSchema, checkCondition, type Condition, type ConditionHome } from "../world/conditions.js";
 import type { DecisionRecord } from "../world/decide.js";
+import { CONFIRM_RULES } from "./policy.js";
 import { TOOLS, type ToolDef, type ToolResult } from "./tools.js";
 
 /** 에이전트 단계 종류. go·pick·place·do는 사람이 하는 일(실제 폰 명령, do는 그 자리에서 하는 일: 따르기·붓기), ask 질문, say 알림, device 가전 조작, wait 기다리기. */
@@ -27,9 +28,10 @@ export const VIEW_KIND: Record<AgentStepKind, StepKind> = { go: "move", pick: "a
 /** 알림 단계에 끝나는 조건이 없으면 이만큼(초) 뒤에 넘긴다. */
 export const SAY_HOLD_S = 4;
 
-/** 계획 한도: 단계 수, 단계 종류마다 시간 한도(초), 답 단추 수. */
+/** 계획 한도: 단계 수(기본 maxSteps, 행동이 따로 정하면 TaskSpec.maxSteps, 가장 길어도 hardMaxSteps), 단계 종류마다 시간 한도(초), 답 단추 수. */
 export const PLAN_LIMITS = {
   maxSteps: 8,
+  hardMaxSteps: 14,
   timeoutS: { go: [10, 1800], pick: [10, 1800], place: [10, 1800], do: [10, 1800], ask: [10, 1800], say: [SAY_HOLD_S + 1, 600], device: [10, 600], wait: [10, 14_400] } as Record<AgentStepKind, [number, number]>,
   choices: [2, 3] as [number, number],
 };
@@ -59,6 +61,10 @@ export interface AgentStep {
   /** say: 알릴 글. */
   text: string | null;
   device: { tool: string; deviceId: string; args: Record<string, unknown> } | null;
+  /** do: 사람이 손으로 켜거나 끄는 가전(없으면 null). 위험 목록 가전을 켜는 단계는 실행 추적이 명령 전에 묻는다(riskyHand). */
+  hand: { deviceId: string; to: "on" | "off" } | null;
+  /** do: 위험한 단계 앞에 폰이 읽을 안전 한 줄(없으면 null). */
+  caution: string | null;
   /** 끝나는 조건(World State 낱말 조건). 사람 단계는 없으면 「완료」로만 넘긴다. */
   until: Condition | null;
   timeoutMs: number;
@@ -110,11 +116,20 @@ export const STEP_ARGS = z.object({
   text: z.string().min(1).max(60).optional().describe("say: 폰이 읽을 알림 한 줄"),
   tool: z.enum(DEVICE_TOOLS).optional().describe("device: 기기를 바꾸는 도구 이름"),
   args: z.record(z.string(), z.unknown()).optional().describe("device: 그 도구 인자(device_id 빼고)"),
+  hand_device: z.object({ id: z.string().min(1), to: z.enum(["on", "off"]) }).optional().describe("do: 사람이 손으로 켜거나 끄는 가전(id는 [가전]의 id)"),
+  caution: z.string().min(1).max(30).optional().describe("do: 위험한 단계 앞에 폰이 읽을 안전 한 줄(예: 냄비가 뜨거워져요.)"),
   until: z.record(z.string(), z.unknown()).optional().describe("끝나는 조건: World State 조건 JSON(조건 낱말의 키만). wait에는 꼭. place는 자리 사실 또는 트윈 자리(손에 없음, not in_hand)를 any로 묶고, 그 any와 사람이 들고 있지 않음(not person_holding)을 all로 묶는다. 트윈 자리는 위에 놓기면 놓을 면(target) 위, 안에 넣기(싱크대)면 그 면의 싱크볼 안(part basin). 물건 조건은 모두 follow: true"),
   timeout_s: z.number().int().describe("이 단계 시간 한도(초)"),
   on_timeout: z.enum(["ask", "fail"]).optional().describe("시간이 지나면 ask 계속할지 묻기, fail 실패(기본)"),
 });
 export type StepArgs = z.infer<typeof STEP_ARGS>;
+
+/** 손으로 켜는 가전이 위험 목록(src/agent/policy.ts CONFIRM_RULES: 그 종류를 켜거나 시작하는 명령)인가. 끄는 단계·위험 목록이 아닌 가전은 아니다. */
+export function riskyHand(step: Pick<AgentStep, "hand">, devices: readonly Pick<DeviceView, "id" | "kind">[]): boolean {
+  if (step.hand?.to !== "on") return false;
+  const kind = devices.find((d) => d.id === step.hand!.deviceId)?.kind;
+  return CONFIRM_RULES.some((r) => r.kind === kind && (r.command === "on" || r.command === "start"));
+}
 
 const isId = (name: string) => /_\d+$/.test(name);
 const worldObject = (w: WorldView, id: string): WorldObject | undefined => w.objects.find((o) => o.id === id);
@@ -162,6 +177,11 @@ export class PlanDraft {
     return this.done;
   }
 
+  /** 이 행동 계획의 단계 수 상한. */
+  get maxSteps(): number {
+    return Math.min(this.ctx.task.maxSteps ?? PLAN_LIMITS.maxSteps, PLAN_LIMITS.hardMaxSteps);
+  }
+
   /** 단계 하나를 검사하고 그 번호(step) 자리에 둔다. 이미 있는 번호면 그 단계와 뒤 단계를 지우고 다시 둔다(고쳐 다시 보낼 때).
    *  틀리면 그 번호부터 지우고 까닭을 돌려준다(모델에게 돌려줄 한국어). 그 뒤 번호는 앞 번호가 없어 받지 않는다. */
   add(raw: unknown): { ok: true; step: number } | { ok: false; error: string } {
@@ -169,7 +189,7 @@ export class PlanDraft {
     const parsed = STEP_ARGS.safeParse(raw);
     if (!parsed.success) return { ok: false, error: parsed.error.issues.map((i) => `${i.path.join(".") || "(전체)"}: ${i.message}`).join("; ") };
     const n = parsed.data.step;
-    if (n > PLAN_LIMITS.maxSteps) return { ok: false, error: `단계는 ${PLAN_LIMITS.maxSteps}개까지입니다.` };
+    if (n > this.maxSteps) return { ok: false, error: `단계는 ${this.maxSteps}개까지입니다.` };
     if (n > this.added.length + 1) return { ok: false, error: `${n}번 앞에 ${this.added.length + 1}번 단계가 없습니다. ${this.added.length + 1}번부터 번호 순서대로 보내세요.` };
     this.added.length = n - 1;
     const r = this.check(parsed.data);
@@ -191,7 +211,7 @@ export class PlanDraft {
     const again = (e: string) => ({ ok: false as const, error: `${e} 계획 전체를 고쳐 submit_plan으로 다시 보내세요.` });
     const steps = (raw as { steps?: unknown } | null)?.steps;
     if (!Array.isArray(steps) || steps.length === 0) return again("steps에 단계가 없습니다.");
-    if (steps.length > PLAN_LIMITS.maxSteps) return again(`단계는 ${PLAN_LIMITS.maxSteps}개까지입니다.`);
+    if (steps.length > this.maxSteps) return again(`단계는 ${this.maxSteps}개까지입니다.`);
     this.added.length = 0;
     this.blocked = null;
     for (const [i, step] of steps.entries()) {
@@ -216,6 +236,14 @@ export class PlanDraft {
       const dev = a.step.device?.deviceId;
       const later = dev ? this.added.slice(i + 1).findIndex((b) => HUMAN_KINDS.includes(b.step.kind) && b.step.target === dev) : -1;
       if (later >= 0) return { ok: false, error: `${i + 1}번 가전 단계는 같은 가전 자리에서 사람이 하는 ${i + 2 + later}번 단계 뒤에 둡니다.` };
+    }
+    // 손으로 켠 위험 목록 가전은 그 뒤에 같은 가전을 끄는 단계가 있어야 한다(켠 채 끝나는 계획을 받지 않는다)
+    for (const [i, a] of this.added.entries()) {
+      if (!riskyHand(a.step, this.ctx.devices)) continue;
+      const dev = a.step.hand!.deviceId;
+      if (!this.added.slice(i + 1).some((b) => b.step.hand?.deviceId === dev && b.step.hand.to === "off")) {
+        return { ok: false, error: `켠 가전은 계획 안에서 끕니다: ${i + 1}번 단계 뒤에 ${dev}를 끄는 do(hand_device to off)를 두세요.` };
+      }
     }
     const { decision, task, floor, nowIso } = this.ctx;
     const id = planIdOf(decision.id);
@@ -286,6 +314,7 @@ export class PlanDraft {
     if (a.kind !== "say") none("text");
     if (a.kind !== "device") { none("tool"); none("args"); }
     if (a.kind !== "pick" && a.kind !== "place") none("object");
+    if (a.kind !== "do") { none("hand_device"); none("caution"); }
     let target: string | null = a.target ?? null;
     let object: string | null = a.object ?? null;
     const live = (id: string) => { const o = worldObject(world, id); return o && o.status !== "gone" ? o : undefined; };
@@ -322,6 +351,13 @@ export class PlanDraft {
         if (target && !live(target) && !floor.objects.has(target)) errors.push(`do target은 보이는 World State 물건 id나 평면도 id여야 합니다: ${target}`);
         if (target && live(target) && this.ctx.task.target && live(target)!.cls !== this.ctx.task.target) errors.push(`이 할 일은 ${this.ctx.task.target} 물건에 합니다`);
         putAway(target);
+        if (a.hand_device && !devices.some((x) => x.id === a.hand_device!.id)) errors.push(`이 집에 없는 가전입니다: ${a.hand_device.id}`);
+        // 불·열이 나는 가전(위험 목록)을 손으로 켜는 단계에는 안전 한 줄이 꼭 있다
+        if (a.hand_device && a.caution === undefined && riskyHand({ hand: { deviceId: a.hand_device.id, to: a.hand_device.to } }, devices)) {
+          errors.push("위험 목록 가전을 켜는 do에는 caution(안전 한 줄)이 있어야 합니다(예: 냄비가 뜨거워져요.)");
+        }
+        // 안전 한 줄은 지금 상태를 알리는 말이다(부탁·다짐이 아니다)
+        if (a.caution !== undefined && /(게요|주세요)[.!]?$/.test(a.caution.trim())) errors.push("caution은 지금 상태를 알리는 말입니다(예: 냄비가 뜨거워져요.). 「…게요」·「…주세요」로 끝내지 않습니다");
         break;
       case "device": {
         need("target", !!target);
@@ -380,11 +416,18 @@ export class PlanDraft {
           errors.push(`device until은 {"device": target, "state": ${states.join("|")}} 하나입니다`);
         }
       }
+      // 손으로 켜고 끄는 가전의 확인도 그 가전 상태 하나다
+      if (until && a.kind === "do" && a.hand_device) {
+        const states = TOOL_STATES[a.hand_device.to === "on" ? "turn_on" : "turn_off"]!;
+        if (!("device" in until && "state" in until && until.device === a.hand_device.id && states.includes(until.state))) {
+          errors.push(`hand_device until은 {"device": "${a.hand_device.id}", "state": ${states.join("|")}} 하나입니다`);
+        }
+      }
     } else if (a.kind === "go" && target && floor.objects.has(target)) until = { phone_near: target };
     else if (a.kind === "say") until = { elapsed_s: SAY_HOLD_S };
     const [lo, hi] = PLAN_LIMITS.timeoutS[a.kind];
     if (a.timeout_s < lo || a.timeout_s > hi) errors.push(`${a.kind} timeout_s는 ${lo}~${hi}초입니다`);
-    errors.push(...copyProblem("label", a.label), ...copyProblem("command", a.command), ...copyProblem("question", a.question), ...copyProblem("text", a.text));
+    errors.push(...copyProblem("label", a.label), ...copyProblem("command", a.command), ...copyProblem("question", a.question), ...copyProblem("text", a.text), ...copyProblem("caution", a.caution));
     if (errors.length) return errors.join("; ");
     const choices: ActionChoice[] = (a.choices ?? []).map((c) => ({ id: c.id, label: c.label, words: c.words ?? [], reply: c.reply ?? "" }));
     const step: Omit<AgentStep, "id"> = {
@@ -392,6 +435,7 @@ export class PlanDraft {
       prompt: a.kind === "ask" ? { text: a.question!.trim(), choices, ends: (a.choices ?? []).filter((c) => c.ends_plan).map((c) => c.id) } : null,
       text: a.text?.trim() ?? null,
       device: a.kind === "device" ? { tool: a.tool!, deviceId: target!, args: a.args ?? {} } : null,
+      hand: a.hand_device ? { deviceId: a.hand_device.id, to: a.hand_device.to } : null, caution: a.caution?.trim() ?? null,
       until, timeoutMs: a.timeout_s * 1000, onTimeout: a.on_timeout ?? "fail",
     };
     return { step, at: a.kind === "go" && target ? this.placeAt(target) : null };
@@ -406,7 +450,7 @@ export const walkable = (fp: FloorPlan): FloorPlan => ({ ...fp, robot: { ...fp.r
 
 /** submit_plan 인자: 계획 전체(단계 번호는 배열 순서). 모델에게 단계 칸 설명을 보이려고 STEP_ARGS 모양을 쓴다. */
 export const SUBMIT_ARGS = z.object({
-  steps: z.array(STEP_ARGS.omit({ step: true })).min(1).max(PLAN_LIMITS.maxSteps).describe("계획 전체. 1번 단계부터 순서대로"),
+  steps: z.array(STEP_ARGS.omit({ step: true })).min(1).max(PLAN_LIMITS.hardMaxSteps).describe("계획 전체. 1번 단계부터 순서대로. 단계 수 한도는 할 일마다 다르다"),
 });
 
 /** 계획 모드 도구: 계획 전체를 한 번에 내는 submit_plan 하나(입력에 집 상태가 다 있어 읽기·길 도구는 없다). 기기를 바꾸는 도구도 없다. */

@@ -18,7 +18,7 @@ export interface PlannerOptions {
 }
 
 /** 기본값: 모델 차례 3번, 계획 하나 45초, 응답 하나 출력 4000토큰. */
-export const PLANNER_DEFAULTS = { maxRounds: 3, timeoutMs: 45_000, maxOutputTokens: 4000 } as const;
+export const PLANNER_DEFAULTS = { maxRounds: 3, timeoutMs: 45_000, maxOutputTokens: 6000 } as const;
 
 const NUDGE = "답 글 대신 submit_plan으로 계획 전체를 내세요.";
 

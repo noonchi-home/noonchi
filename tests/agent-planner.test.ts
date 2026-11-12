@@ -10,7 +10,7 @@ import { TASKS } from "../src/act/tasks.js";
 import { ExecutionTracker, type TrackerOptions } from "../src/act/track.js";
 import { ApprovalStore, type ApprovalAnswer } from "../src/agent/approval.js";
 import { PLANNER_PROMPT, planInput } from "../src/agent/planInput.js";
-import { PlanDraft, SUBMIT_ARGS, type PlanContext, type TaskInfo } from "../src/agent/planTools.js";
+import { PLAN_LIMITS, PlanDraft, SUBMIT_ARGS, riskyHand, type PlanContext, type TaskInfo } from "../src/agent/planTools.js";
 import { Policy } from "../src/agent/policy.js";
 import { deviceViews } from "../src/agent/tools.js";
 import { CUP_FSM_MEMORY, CUP_TASKS } from "../src/brain/decision.js";
@@ -180,7 +180,7 @@ describe("계획 모드: 컵 치우기", () => {
     expect(bodies[0].tools.map((x: { name: string }) => x.name)).toEqual(["submit_plan"]);
     // 모델이 바로 계획을 내게 그 함수를 지정하고, 응답 하나에 제출 하나만 받는다
     expect(bodies[0]).toMatchObject({ tool_choice: { type: "function", name: "submit_plan" }, parallel_tool_calls: false });
-    expect(bodies[0].max_output_tokens).toBe(4000);
+    expect(bodies[0].max_output_tokens).toBe(6000);
   });
 
   it("지시문은 놓기 until을 자리 사실 또는 트윈 자리(놓을 자리에 있고 손에 없음)의 any와 사람이 들고 있지 않음을 all로 묶게 하고, 위에 놓기는 면 위, 안에 넣기는 싱크볼 안으로 나눈다. 예의 컵 놓기 조건은 시험 대본과 같다", () => {
@@ -577,6 +577,85 @@ describe("계획 모드: 계획 검사", () => {
       expect(d.finish()).toMatchObject({ ok: false, error: expect.stringMatching(/do 단계가 있어야/) });
       ok(d, 4, pour);
       expect(d.finish()).toMatchObject({ ok: true });
+    });
+  });
+
+  describe("코치 계획: 14단계, 손으로 켜고 끄는 가전, 안전 문구", () => {
+    const RAMEN = "라면 끓이기 알려 주기";
+    const go = { kind: "go", label: "싱크대로 가기", target: "sink_1", command: "싱크대로 가 주세요", timeout_s: 120 };
+    const on = { kind: "do", label: "인덕션 켜기", target: "induction_1", command: "인덕션을 켜 주세요", hand_device: { id: "induction_1", to: "on" }, caution: "냄비가 뜨거워져요.", timeout_s: 120 };
+    const off = { kind: "do", label: "인덕션 끄기", target: "induction_1", command: "인덕션을 꺼 주세요", hand_device: { id: "induction_1", to: "off" }, timeout_s: 120 };
+    // 인덕션이 평면도에도 있는 집
+    const cfloor = () => floorPlanFrom({ ...structuredClone(SCENE), objects: [...structuredClone(SCENE.objects), { id: "induction_1", type: "induction_counter", room: "kitchen", plan: { position: [6, 0.5] } }] });
+    const cctx = (action = RAMEN): PlanContext => planContext({ decision: decision(action), world: view([]), floor: cfloor(), hub: new MemoryHub(DEVICES) });
+    const cbad = (s: Record<string, unknown>, why: RegExp, action = RAMEN) => {
+      const r = new PlanDraft(cctx(action)).add({ step: 1, ...s });
+      expect(r.ok, JSON.stringify(s)).toBe(false);
+      expect(r.ok ? "" : r.error).toMatch(why);
+    };
+
+    it("코치 행동은 14단계까지 받고 15단계는 버린다. 컵 치우기는 지금처럼 9단계를 버린다", () => {
+      expect([PLAN_LIMITS.maxSteps, PLAN_LIMITS.hardMaxSteps]).toEqual([8, 14]);
+      const many = (n: number, action: string) => new PlanDraft(cctx(action)).submit({ steps: [...Array.from({ length: n - 1 }, () => go), action === RAMEN ? { kind: "do", label: "물 받기", target: "sink_1", command: "물을 받아 주세요", timeout_s: 120 } : go] });
+      expect(many(14, RAMEN)).toMatchObject({ ok: true });
+      expect(many(15, RAMEN)).toMatchObject({ ok: false, error: expect.stringMatching(/단계는 14개까지/) });
+      expect(many(9, "컵 치우기")).toMatchObject({ ok: false, error: expect.stringMatching(/단계는 8개까지/) });
+      const d = new PlanDraft(cctx("컵 치우기"));
+      for (let i = 1; i <= 8; i++) ok(d, i, go);
+      expect(d.add({ step: 9, ...go })).toMatchObject({ ok: false, error: expect.stringMatching(/8개까지/) });
+      // 도구 인자 한도는 가장 긴 계획(14)이고, 행동마다 한도는 제출 검사가 본다
+      expect(SUBMIT_ARGS.safeParse({ steps: Array.from({ length: 14 }, () => go) }).success).toBe(true);
+      expect(SUBMIT_ARGS.safeParse({ steps: Array.from({ length: 15 }, () => go) }).success).toBe(false);
+    });
+
+    it("인덕션을 켜는 do에 caution이 없으면 버리고, caution이 부탁·다짐 말이면 버린다", () => {
+      cbad({ ...on, caution: undefined }, /caution\(안전 한 줄\)이 있어야 합니다/);
+      cbad({ ...on, caution: "조심해 주세요" }, /caution은 지금 상태를 알리는 말/);
+      cbad({ ...on, caution: "불을 켤게요" }, /caution은 지금 상태를 알리는 말/);
+      cbad({ ...on, caution: "뜨거워요 → 조심" }, /화면 글 규칙/);
+      expect(new PlanDraft(cctx()).add({ step: 1, ...on })).toMatchObject({ ok: true });
+    });
+
+    it("켜기만 있고 끄기가 없으면 끝내지 않는다. 끄는 do가 뒤에 있으면 끝내고, 실행 단계에 손으로 다루는 가전과 안전 문구가 남는다", () => {
+      const d = new PlanDraft(cctx());
+      ok(d, 1, on);
+      expect(d.finish()).toMatchObject({ ok: false, error: expect.stringMatching(/켠 가전은 계획 안에서 끕니다/) });
+      // 끄기가 켜기보다 앞에 있는 것은 끈 것이 아니다
+      const wrong = new PlanDraft(cctx());
+      ok(wrong, 1, off);
+      ok(wrong, 2, on);
+      expect(wrong.finish()).toMatchObject({ ok: false, error: expect.stringMatching(/켠 가전은 계획 안에서 끕니다/) });
+      ok(d, 2, off);
+      const r = d.finish();
+      expect(r).toMatchObject({ ok: true });
+      if (!r.ok) return;
+      expect(r.plan.steps.map((s) => [s.kind, s.hand, s.caution])).toEqual([
+        ["do", { deviceId: "induction_1", to: "on" }, "냄비가 뜨거워져요."], ["do", { deviceId: "induction_1", to: "off" }, null],
+      ]);
+      const devices = cctx().devices;
+      expect(r.plan.steps.map((s) => riskyHand(s, devices))).toEqual([true, false]);
+      // 화면 계획은 사람 단계(act)다: 가전 단계(device)가 아니라 실제 가전을 부르지 않는다
+      expect(r.plan.view.steps.map((s) => s.kind)).toEqual(["act", "act"]);
+      expect(r.plan.view.dryRun).toBe(true);
+    });
+
+    it("hand_device·caution은 do에만 쓰고, hand_device는 이 집 가전이어야 하며 until은 없거나 그 가전 상태 하나다", () => {
+      cbad({ ...go, hand_device: { id: "induction_1", to: "on" } }, /go에는 hand_device를 쓰지 않습니다/);
+      cbad({ ...go, caution: "뜨거워요." }, /go에는 caution를 쓰지 않습니다/);
+      cbad({ ...on, hand_device: { id: "induction_9", to: "on" } }, /이 집에 없는 가전입니다: induction_9/);
+      cbad({ ...on, hand_device: { id: "induction_1", to: "toggle" } }, /hand_device/);
+      cbad({ ...on, until: { elapsed_s: 3 } }, /hand_device until은 \{"device": "induction_1", "state": on\|/);
+      cbad({ ...on, until: { device: "induction_1", state: "off" } }, /hand_device until/);
+      expect(new PlanDraft(cctx()).add({ step: 1, ...on, until: { device: "induction_1", state: "on" } })).toMatchObject({ ok: true });
+      expect(new PlanDraft(cctx()).add({ step: 1, ...off, until: { device: "induction_1", state: "off" } })).toMatchObject({ ok: true });
+    });
+
+    it("위험 목록이 아닌 가전(에어컨)을 손으로 켜는 do는 caution 없이 통과하고 끄기가 없어도 끝낸다", () => {
+      const d = new PlanDraft(cctx());
+      ok(d, 1, { kind: "do", label: "에어컨 켜기", target: "table_1", command: "에어컨을 켜 주세요", hand_device: { id: "ac_living", to: "on" }, timeout_s: 120 });
+      const r = d.finish();
+      expect(r).toMatchObject({ ok: true });
+      if (r.ok) expect(riskyHand(r.plan.steps[0]!, cctx().devices)).toBe(false);
     });
   });
 
