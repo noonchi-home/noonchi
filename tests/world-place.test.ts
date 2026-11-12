@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BASIN_SIZE, inView, placeBox, rayDir, surfacesFromLayout } from "../src/world/place.js";
+import { BASIN_SIZE, inView, placeBox, placePoint, rayDir, surfacesFromLayout } from "../src/world/place.js";
 import type { CameraView } from "../src/phone/session.js";
 
 // 90° 시야 정사각형 투영(열 우선), 카메라는 트윈 (0, 1.5, 0)에서 +x를 보고 45° 아래로 숙임
@@ -28,6 +28,15 @@ describe("트윈 위치", () => {
     expect(r.position![1]).toBeCloseTo(0.75, 2);
     expect(r.position![0]).toBeCloseTo(0.75, 1);
     expect(r.errorM).toBeGreaterThan(0);
+  });
+  it("placePoint는 그 픽셀의 광선으로 자리를 낸다. placeBox는 상자 아랫변 가운데 픽셀의 placePoint다", () => {
+    const table = { id: "table_1", label: "식탁", center: [0.75, 0] as [number, number], top: 0.75, radius: 0.6 };
+    const size = { width: 480, height: 360 };
+    expect(placePoint(view, [240, 180], size, [table], () => 0)).toEqual(placeBox(view, [220, 160, 40, 20], size, [table], () => 0));
+    // 20px 아래 픽셀은 식탁을 벗어나 다른 자리(0.1m 넘게 다름)
+    const lower = placePoint(view, [240, 200], size, [table], () => 0);
+    const upper = placePoint(view, [240, 180], size, [table], () => 0);
+    expect(Math.hypot(lower.position![0] - upper.position![0], lower.position![2] - upper.position![2])).toBeGreaterThan(0.1);
   });
   it("닿는 면이 없으면 바닥, 시야 뒤 점은 시야 밖", () => {
     const floor = placeBox(view, [220, 160, 40, 20], { width: 480, height: 360 }, [], () => 0);

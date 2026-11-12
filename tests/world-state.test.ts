@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { WorldState } from "../src/world/state.js";
+import { placeBox, placePoint } from "../src/world/place.js";
 import { sha256, type EngineFrame } from "../src/observe/ring.js";
 import type { Detection } from "../src/brain/detector.js";
 import type { CameraView } from "../src/phone/session.js";
@@ -227,6 +228,39 @@ describe("World State: 프레임 간격과 상관없는 시간 규칙(기본 2�
       expect(v.objects[0]!.facts.place, String(step) + "ms").toMatchObject({ value: "in_hand", certainty: "confirmed", since_ms: 4000 });
       expect(v.person.facts.holding, String(step) + "ms").toMatchObject({ certainty: "confirmed", since_ms: 4000 });
     }
+  });
+});
+
+describe("World State: 트윈 자리는 마스크 바닥 점(foot)의 광선", () => {
+  const table = () => [{ id: "table_1", label: "식탁", center: [0.75, 0] as [number, number], top: 0.75, radius: 0.6 }];
+  const real = () => new WorldState({ surfaces: table, floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices });
+  const size = { width: 480, height: 360 };
+  // 손이 컵 아래를 가려 상자 아랫변이 20px 아래로 늘어난 감지. 마스크 바닥 점은 컵 바닥 그대로다
+  const covered: Detection = { ...det("cup", 0.9, [220, 160, 40, 40]), foot: [240, 180] };
+  const byFoot = placePoint(look, [240, 180], size, table(), () => 0).position!;
+  const byBox = placeBox(look, covered.box, size, table(), () => 0).position!;
+
+  it("고정 값: 바닥 점 자리는 식탁 위 (0.75, 0.75, 0)이고 상자 아래 가운데 자리와 0.1m 넘게 다르다", () => {
+    expect(byFoot[0]).toBeCloseTo(0.75, 2);
+    expect(byFoot[1]).toBeCloseTo(0.75, 2);
+    expect(Math.hypot(byFoot[0] - byBox[0], byFoot[2] - byBox[2])).toBeGreaterThan(0.1);
+  });
+
+  it("전체 사진(applyDetections): 물건 자리는 foot 광선의 자리다", () => {
+    const w = real();
+    for (const t of [0, 2000, 4000]) w.applyDetections({ ...frame(0), id: `t${t}`, capturedAtMs: t, latestAtMs: t, view: look }, [covered]);
+    const o = w.view(4000).objects[0]!;
+    expect(o.position).toEqual(byFoot);
+    expect(o.surface).toBe("table_1");
+  });
+
+  it("가까이 보기(applyCloser): 물건 자리는 foot 광선의 자리다", () => {
+    const w = real();
+    const passes = [0, 2000, 4000].map((t) => ({ frameId: `t${t}`, capturedAtMs: t, view: look, ...size, dets: [{ ...covered, edge: false }] }));
+    w.applyCloser(passes);
+    const o = w.view(4000).objects[0]!;
+    expect(o.position).toEqual(byFoot);
+    expect(o.surface).toBe("table_1");
   });
 });
 

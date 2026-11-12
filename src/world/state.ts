@@ -41,7 +41,7 @@ import type { CameraView } from "../phone/session.js";
 import type { SceneObservation } from "../observe/scene.js";
 import { Confirmer, EVIDENCE_GAP_MS, EVIDENCE_STEP_MS } from "./confirm.js";
 import { CHANGE_TEXT, OBJECT_NAME, fixtureName, objectName, onSurface } from "./labels.js";
-import { inView, placeBox, type PlaneSurface } from "./place.js";
+import { inView, placeBox, placePoint, type PlaneSurface } from "./place.js";
 import { describePose, heldByAny, mainPerson } from "./pose.js";
 import { RemainingTracker, becameKey, deviceStateKeys, deviceStatus, deviceText, relatedDeviceIds } from "./relations.js";
 import { SightReadings, linkDevice, sightValues, type SightLink } from "./sight.js";
@@ -426,7 +426,7 @@ export class WorldState {
       }
       if (!OBJ_CLASSES.has(d.label)) return;
       const cls = d.label as ObjClass;
-      const placed = view ? placeBox(view, d.box, { width: frame.width, height: frame.height }, surfaces, this.o.floorAt) : null;
+      const placed = view ? placePoint(view, d.foot, { width: frame.width, height: frame.height }, surfaces, this.o.floorAt) : null;
       const obj = this.match(cls, placed?.position ?? null, used) ?? this.create(cls, at, frame.id);
       used.add(obj.id);
       ids.set(tmp, obj.id);
@@ -745,7 +745,7 @@ export class WorldState {
     for (const pass of passes) {
       pass.dets.forEach((d, i) => {
         if (!this.closerObject(d)) return;
-        const placed = placeBox(pass.view, d.box, { width: pass.width, height: pass.height }, surfaces, this.o.floorAt);
+        const placed = placePoint(pass.view, d.foot, { width: pass.width, height: pass.height }, surfaces, this.o.floorAt);
         if (!placed.position) return;
         const cls = d.label as ObjClass;
         const near = (CLASSES[cls] as { identityM?: number }).identityM ?? this.identityM;

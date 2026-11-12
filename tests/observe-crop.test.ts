@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import jpeg from "jpeg-js";
-import { cropBox, cropJpeg, onCropEdge, toFrameBox } from "../src/observe/crop.js";
+import { cropBox, cropJpeg, onCropEdge, toFrameBox, toFrameDetection, toFramePoint } from "../src/observe/crop.js";
+import { maskCells } from "../src/brain/seg.js";
+import { det } from "./helpers/detectors.js";
 import { pixelOf, placeBox } from "../src/world/place.js";
 import { frameJpeg, LOOK_SIZE, LOOK_VIEW } from "./helpers/camera.js";
 
@@ -29,6 +31,27 @@ describe("가까이 보기 자르기 셈", () => {
     expect(placed.position![0]).toBeCloseTo(1.5, 2);
     expect(placed.position![1]).toBe(0);
     expect(placed.position![2]).toBeCloseTo(0, 2);
+  });
+
+  it("잘라 키운 사진의 점(바닥 점)도 상자와 같은 식으로 엔진 프레임 픽셀로 돌아온다", () => {
+    const crop: [number, number, number, number] = [120, 90, 240, 180];
+    expect(toFramePoint([240, 180], crop, LOOK_SIZE)).toEqual([240, 180]);
+    expect(toFramePoint([0, 0], crop, LOOK_SIZE)).toEqual([120, 90]);
+    const box = toFrameBox([220, 160, 40, 20], crop, LOOK_SIZE);
+    expect(toFramePoint([240, 180], crop, LOOK_SIZE)).toEqual([box[0] + box[2] / 2, box[1] + box[3]]);
+  });
+
+  it("잘라 키운 사진의 감지를 엔진 프레임 픽셀로 옮긴다: 상자·바닥 점·마스크 자리(at)를 같이 옮기고 마스크 칸은 그대로다", () => {
+    const crop: [number, number, number, number] = [120, 90, 240, 180];
+    // 손이 컵 아래를 가려 상자 아랫변이 20px 아래로 늘어난 감지: 바닥 점은 컵 바닥(상자 아랫변보다 20px 위)
+    const seen = { ...det("cup", 0.72, [220, 160, 40, 40]), foot: [236, 180] as [number, number] };
+    const moved = toFrameDetection(seen, crop, LOOK_SIZE);
+    expect(moved.box).toEqual([230, 170, 20, 20]);
+    expect(moved.foot).toEqual([238, 180]);
+    expect(moved.mask.at).toEqual([230, 170, 20, 20]);
+    expect([moved.mask.cols, moved.mask.rows, [...maskCells(moved.mask)]]).toEqual([1, 1, [1]]);
+    expect([moved.label, moved.score, moved.cls]).toEqual(["cup", 0.72, 41]);
+    expect(seen.foot).toEqual([236, 180]); // 받은 감지는 바꾸지 않는다
   });
 
   it("잘라 낸 자리를 프레임 크기로 2배 키운 JPEG을 만든다", () => {

@@ -25,6 +25,16 @@ export function toFrameBox(box: Box, crop: Box, out: Size): Box {
   return [crop[0] + box[0] * sx, crop[1] + box[1] * sy, box[2] * sx, box[3] * sy];
 }
 
+/** 잘라 키운 사진(out 크기)의 점 → 엔진 프레임 픽셀. */
+export function toFramePoint(point: [number, number], crop: Box, out: Size): [number, number] {
+  return [crop[0] + point[0] * (crop[2] / out.width), crop[1] + point[1] * (crop[3] / out.height)];
+}
+
+/** 잘라 키운 사진의 감지 → 엔진 프레임 픽셀: 상자·바닥 점·마스크 자리(at)를 같이 옮긴다(마스크 칸은 그대로). */
+export function toFrameDetection<T extends { box: Box; foot: [number, number]; mask: { at: Box } }>(d: T, crop: Box, out: Size): T {
+  return { ...d, box: toFrameBox(d.box, crop, out), foot: toFramePoint(d.foot, crop, out), mask: { ...d.mask, at: toFrameBox(d.mask.at, crop, out) } };
+}
+
 /** 엔진 프레임 픽셀 상자가 잘라 본 상자 경계 CROP_EDGE_PX 안에 닿는가. */
 export function onCropEdge(box: Box, crop: Box, px = CROP_EDGE_PX): boolean {
   return box[0] <= crop[0] + px || box[1] <= crop[1] + px || box[0] + box[2] >= crop[0] + crop[2] - px || box[1] + box[3] >= crop[1] + crop[3] - px;

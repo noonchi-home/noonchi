@@ -62,7 +62,12 @@ export function rayDir(view: CameraView, [nx, ny]: [number, number]): V3 {
 /** 박스 [x, y, w, h](픽셀)의 트윈 위치. 광선이 위를 향하면 위치를 모른다. 오차는 거리에 따라 늘린다(5cm + 거리의 3%).
  *  part: 광선이 그 면 윗면 높이에서 싱크볼 사각형 안을 지나면 basin. 싱크볼 바닥에 놓인 물건의 아래 가장자리는 윗면 높이에서 싱크볼 구멍을 지나야 보인다. */
 export function placeBox(view: CameraView, box: [number, number, number, number], size: { width: number; height: number }, surfaces: PlaneSurface[], floorAt: (p: [number, number]) => number): { position: V3 | null; surface: string | null; part: "basin" | null; errorM: number | null } {
-  const u = box[0] + box[2] / 2, v = box[1] + box[3];
+  return placePoint(view, [box[0] + box[2] / 2, box[1] + box[3]], size, surfaces, floorAt);
+}
+
+/** 픽셀 [u, v]의 트윈 위치(placeBox와 같은 규칙). 물건은 마스크 바닥 점(Detection.foot)을 준다: 손이 아래를 가려 상자가 늘어나도 바닥은 그대로다. */
+export function placePoint(view: CameraView, point: [number, number], size: { width: number; height: number }, surfaces: PlaneSurface[], floorAt: (p: [number, number]) => number): { position: V3 | null; surface: string | null; part: "basin" | null; errorM: number | null } {
+  const [u, v] = point;
   const d = rayDir(view, [(u / size.width) * 2 - 1, 1 - (v / size.height) * 2]);
   if (d[1] >= -1e-6) return { position: null, surface: null, part: null, errorM: null };
   const o = view.origin;

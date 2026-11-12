@@ -23,7 +23,7 @@ import type { CameraView, EyeEvent } from "../phone/session.js";
 import { OBJECT_NAME, YOLO_TEXT } from "../world/labels.js";
 import { inView, pixelOf } from "../world/place.js";
 import { CLOSER_NEW_FRAMES, type CloserPass, type WorldState } from "../world/state.js";
-import { cropBox, cropJpeg, LOOK_MARGIN, onCropEdge, toFrameBox, type Box, type LookSpot } from "./crop.js";
+import { cropBox, cropJpeg, LOOK_MARGIN, onCropEdge, toFrameDetection, type Box, type LookSpot } from "./crop.js";
 import { captureTime, FrameRing, sha256, type EngineFrame } from "./ring.js";
 import { analyzeScene, CLOSER_NOTE, type SceneDetection } from "./scene.js";
 import { VlmPool, type VlmResult } from "./vlm-pool.js";
@@ -435,8 +435,8 @@ export class ObservationPipeline {
     const looks: CloserPass[] = passes.map((p) => ({
       frameId: p.frame.id, capturedAtMs: p.frame.capturedAtMs, view: p.view, width: p.frame.width, height: p.frame.height,
       dets: p.dets.map((d) => {
-        const box = toFrameBox(d.box, p.crop, p.frame);
-        return { ...d, box, edge: onCropEdge(box, p.crop) };
+        const moved = toFrameDetection(d, p.crop, p.frame);
+        return { ...moved, edge: onCropEdge(moved.box, p.crop) };
       }),
     }));
     // VLM은 물건 감지가 있는 가장 새 장(없으면 가장 새 장)을 본다: 결과·기록·VLM 답의 감지 번호가 모두 그 장 기준이다

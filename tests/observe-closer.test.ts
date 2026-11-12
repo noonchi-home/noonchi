@@ -24,7 +24,7 @@ const SINK = { id: "sink_1", label: "싱크대", center: [0.6, 0] as [number, nu
 const SPOT = { id: "sink_1", label: "싱크대", position: [0.6, 0.9, 0] as [number, number, number] };
 const cup: Detection = det("cup", 0.72, [220, 160, 40, 20], 41);
 // 잘라 키운 사진 왼쪽 끝 컵(엔진 프레임 [120, 170, 20, 10], 잘라 본 경계에 닿음)·사람·싱크대(가전 설비): 물건 감지가 아니다
-const edgeCup: Detection = { ...cup, box: [0, 160, 40, 20] };
+const edgeCup: Detection = det("cup", 0.72, [0, 160, 40, 20], 41);
 const person: Detection = det("person", 0.9, [100, 40, 60, 200], 0);
 const sink: Detection = det("sink", 0.9, [60, 100, 300, 200], 71);
 const CROP = [120, 90, 240, 180] as [number, number, number, number];
