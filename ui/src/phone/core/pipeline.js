@@ -25,7 +25,8 @@ export function createFramePipeline({ maxInFlight = 2 } = {}) {
   };
 }
 
-const REASONS = ["encoding", "buffer", "stale"];
+// engine: 엔진 프레임 차례를 건너뜀(앞 엔진 프레임 인코딩 중·보낼 것이 쌓임)
+const REASONS = ["encoding", "buffer", "stale", "engine"];
 
 /** 최근 windowMs 동안 보낸 장 수(fps), 장당 readPixels·인코딩 시간, 크기, 건너뛴 이유별 횟수. */
 export function createSendStats({ windowMs = 2000, now = () => performance.now() } = {}) {

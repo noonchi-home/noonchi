@@ -66,6 +66,7 @@ function setup({ camera = false, localFloor = false } = {}) {
     onPerf: () => log.push("perf"), note: (text: string) => log.push(`note ${text}`),
   };
   const toJpeg = vi.fn(async (..._args: unknown[]) => new Blob([new Uint8Array([0xff, 0xd8, 0xff])]));
+  const grab = vi.fn((_t: unknown, w: number, h: number) => new Uint8Array(w * h * 4));
   const deps = {
     xr: () => ({ requestSession: async (mode: string, opts: unknown) => { session.requested.push([mode, opts]); return session; } }),
     gl: () => ({
@@ -75,14 +76,14 @@ function setup({ camera = false, localFloor = false } = {}) {
     layer: () => ({}),
     binding: () => (camera ? { getCameraImage: () => "texture" } : null),
     createGrabber: () => ({
-      encoderMode: "worker×2", grab: (_t: unknown, w: number, h: number) => new Uint8Array(w * h * 4), toJpeg,
+      encoderMode: "worker×2", grab, toJpeg,
       close: () => { released.grabber += 1; },
     }),
     createDisplayEncoder: () => ({ frame() {}, close() {}, describe: () => "표시 영상 시험" }),
   };
   const ar = createAr({ link, params: new URLSearchParams(""), hooks, deps });
   stops.push(() => ar.stop());
-  return { ar, session, sent, socket, log, marks, toJpeg, released };
+  return { ar, session, sent, socket, log, marks, toJpeg, grab, released };
 }
 
 const overlay = {};
@@ -223,6 +224,60 @@ describe("폰 AR(ar.js)", () => {
     expect(t.toJpeg.mock.calls[2]!.slice(3, 5)).toEqual([0.8, []]);
   });
 
+  it("엔진 프레임 간격 100ms: 그림 틀이 16.7ms마다 1초 동안 오면 엔진 프레임이 9~10장 나간다", async () => {
+    const t = setup({ camera: true });
+    await t.ar.start(overlay);
+    t.ar.setEngineMs(100);
+    for (let k = 0; k < 60; k++) {
+      t.session.step(1000 + (k * 1000) / 60, frame({ camera: true }));
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    const engine = t.toJpeg.mock.calls.filter((c) => c[3] === 0.8);
+    expect(engine.length).toBeGreaterThanOrEqual(9);
+    expect(engine.length).toBeLessThanOrEqual(10);
+    const kinds = await Promise.all(t.socket.binary.map(async (b) => (await header(b)).kind));
+    expect(kinds.filter((k) => k === "engine")).toHaveLength(engine.length);
+  });
+
+  it("앞 엔진 프레임 인코딩이 안 끝났으면 그 차례는 건너뛰고 쌓지 않는다. 표시 프레임은 그대로 나가고, 측정 줄에 건너뛴 수가 보인다", async () => {
+    const t = setup({ camera: true });
+    await t.ar.start(overlay);
+    const held: (() => void)[] = [];
+    t.toJpeg.mockImplementation(((..._a: unknown[]) => (
+      _a[3] === 0.8 ? new Promise<Blob>((ok) => held.push(() => ok(new Blob([new Uint8Array([0xff, 0xd8, 0xff])])))) : Promise.resolve(new Blob([new Uint8Array([0xff, 0xd8, 0xff])]))
+    )) as never);
+    t.ar.setEngineMs(100);
+    for (let k = 0; k < 60; k++) {
+      t.session.step(1000 + (k * 1000) / 60, frame({ camera: true }));
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    expect(t.toJpeg.mock.calls.filter((c) => c[3] === 0.8)).toHaveLength(1);
+    expect(t.toJpeg.mock.calls.filter((c) => c[3] === 0.55).length).toBeGreaterThan(8);
+    expect(t.ar.perf().detail).toMatch(/분석용 사진 9$/m);
+    // 풀리면 다음 차례에 한 장만 다시 보낸다
+    held.shift()!();
+    await new Promise((r) => setTimeout(r, 0));
+    t.session.step(2000, frame({ camera: true }));
+    t.session.step(2017, frame({ camera: true }));
+    expect(t.toJpeg.mock.calls.filter((c) => c[3] === 0.8)).toHaveLength(2);
+  });
+
+  it("같은 그림 틀에서 표시 프레임과 엔진 프레임이 둘 다 때가 되면 카메라 그림은 한 번만 읽는다(크기가 같을 때). 사진은 크기가 달라 따로 읽는다", async () => {
+    const t = setup({ camera: true });
+    await t.ar.start(overlay);
+    t.ar.setEngineMs(1000);
+    t.session.step(100, frame({ camera: true }));
+    await vi.waitFor(() => expect(t.socket.binary.length).toBe(2));
+    expect(t.grab.mock.calls.length).toBe(1);
+    expect(t.toJpeg.mock.calls.map((c) => c.slice(1, 4))).toEqual([[480, 360, 0.8], [480, 360, 0.55]]);
+    expect(t.toJpeg.mock.calls[0]![0] === t.toJpeg.mock.calls[1]![0]).toBe(false); // 픽셀 버퍼는 따로(워커로 넘어간다)
+    expect((await Promise.all(t.socket.binary.map(async (b) => (await header(b)).kind))).sort()).toEqual(["engine", "frame"]);
+    t.ar.requestPhoto();
+    t.session.step(1100, frame({ camera: true })); // 엔진 프레임(480×360)과 사진(640×480)
+    await vi.waitFor(() => expect(t.socket.binary.length).toBe(4));
+    expect(t.grab.mock.calls.length).toBe(3);
+  });
+
   it("측정: 보낸 장 수와 자세한 줄(목표 fps·인코더·크기·표시 영상)", async () => {
     const t = setup({ camera: true });
     await t.ar.start(overlay);
@@ -234,7 +289,7 @@ describe("폰 AR(ar.js)", () => {
       "보낸 화면 0.5 / 목표 12 fps · 장당 0.0KB",
       expect.stringMatching(/^readPixels [\d.]+ms · 인코딩 [\d.]+ms \(worker×2\)$/),
       "와이파이 대기 0KB · 크기 480×360",
-      "2초간 건너뜀: 인코딩 중 0 · 버퍼 가득 0 · 순서 뒤바뀜 0",
+      "2초간 건너뜀: 인코딩 중 0 · 버퍼 가득 0 · 순서 뒤바뀜 0 · 분석용 사진 0",
       "표시 영상 시험",
     ]);
   });

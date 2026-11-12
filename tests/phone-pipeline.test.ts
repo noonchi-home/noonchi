@@ -36,7 +36,8 @@ describe("보낸 장 수·시간 측정(최근 2초)", () => {
     expect(snap.readMs).toBeCloseTo(4);
     expect(snap.encodeMs).toBeCloseTo(30);
     expect(snap.kbPerFrame).toBeCloseTo(19.5, 1);
-    expect(snap.skipped).toEqual({ encoding: 2, buffer: 1, stale: 1 });
+    s.skipped("engine");
+    expect(s.snapshot().skipped).toEqual({ encoding: 2, buffer: 1, stale: 1, engine: 1 });
     t += 5000;
     expect(s.snapshot()).toMatchObject({ fps: 0, skipped: { encoding: 0, buffer: 0, stale: 0 } });
   });

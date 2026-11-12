@@ -273,6 +273,48 @@ describe("영상 입력 모드: 보내기", () => {
     expect(video.drawTo).toHaveBeenCalled();
   });
 
+  it("engine_ms 100이면 영상 1초(50ms씩 20번) 동안 엔진 프레임이 9~10장 나간다", async () => {
+    const { ws, video, startAr, clock } = make();
+    clock();
+    await startAr();
+    ws.push({ type: "status", aligned: true, engine_ms: 100, sync: sync({ state: "aligned", source: "video", started: true }) });
+    for (let i = 0; i < 20; i++) {
+      video.advance(0.05);
+      await flush();
+    }
+    const engine = (await Promise.all(ws.packets.map(headerOf))).filter((h) => h.kind === "engine");
+    expect(engine.length).toBeGreaterThanOrEqual(9);
+    expect(engine.length).toBeLessThanOrEqual(10);
+  });
+
+  it("앞 엔진 프레임 인코딩이 안 끝났으면 그 차례의 엔진 프레임은 건너뛰고 쌓지 않는다. 끝나면 다음 차례부터 다시 보낸다", async () => {
+    const { ws, video, encoder, startAr, clock } = make();
+    clock();
+    await startAr();
+    // 엔진 프레임(품질 0.8) 인코딩만 붙잡아 둔다
+    const held: (() => void)[] = [];
+    encoder.encode.mockImplementation(((_p: unknown, _w: number, _h: number, quality: number) => (
+      quality === 0.8 ? new Promise<Blob>((ok) => held.push(() => ok(jpeg()))) : Promise.resolve(jpeg())
+    )) as never);
+    const engineJobs = () => encoder.encode.mock.calls.filter((c) => (c as unknown[])[3] === 0.8).length;
+    ws.push({ type: "status", aligned: true, engine_ms: 100, sync: sync({ state: "aligned", source: "video", started: true }) });
+    for (let i = 0; i < 20; i++) {
+      video.advance(0.05);
+      await flush();
+    }
+    expect(engineJobs()).toBe(1); // 1초 동안 열 번의 차례 가운데 첫 장만 인코딩에 들어갔다
+    const frames = (await Promise.all(ws.packets.map(headerOf))).filter((h) => h.kind === "frame");
+    expect(frames.length).toBeGreaterThan(5); // 표시 프레임은 그대로 나간다
+    held.shift()!();
+    await flush();
+    for (let i = 0; i < 4; i++) {
+      video.advance(0.05);
+      await flush();
+    }
+    expect(engineJobs()).toBe(2); // 풀린 뒤 다음 차례 한 장(밀린 차례를 몰아 보내지 않는다)
+    expect((await Promise.all(ws.packets.map(headerOf))).filter((h) => h.kind === "engine")).toHaveLength(1);
+  });
+
   it("영상이 끝나면 프레임을 더 보내지 않는다(반복 없음)", async () => {
     const { ws, video, startAr } = make();
     await startAr();

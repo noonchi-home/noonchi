@@ -17,7 +17,7 @@
 // PhoneAr(ar.d.ts)와 같은 형이라 controller·화면은 그대로 쓴다. 시험은 deps로 영상·인코딩·그림판을 바꾼다(jsdom은 영상을 틀지 못한다).
 
 import { createEncoder, framePacket } from "./capture.js";
-import { engineDue } from "./engine.js";
+import { engineStep } from "./engine.js";
 import { createFramePipeline, createSendStats, frameWidth } from "./pipeline.js";
 import { focusMarks, toEdge } from "./project.js";
 import { floorRayPoint } from "./aim.js";
@@ -149,6 +149,8 @@ export function createVideoAr({ link, params, hooks, deps }) {
   let orientation = startOrientation;
   let view = viewMatrix(position, orientation);
   const pipeline = createFramePipeline({ maxInFlight: 2 });
+  // 엔진 프레임은 따로 센다(한 번에 한 장, ar.js와 같다)
+  const enginePipeline = createFramePipeline({ maxInFlight: 1 });
   const stats = createSendStats({ windowMs: 2000 });
   const state = { on: false, epoch: null, hitPoint: null, hitEstimated: false, limited: false, position: null, orientation: null, size: "-", encoder: "-" };
   let run = null; // 지금 재생: { videoTime, command, close }
@@ -303,13 +305,13 @@ export function createVideoAr({ link, params, hooks, deps }) {
     };
 
     // always: 엔진 프레임은 늘 보내고 표시 통계에 넣지 않는다
-    const sendFrame = (pixels, header, quality, marks, readMs, always) => {
-      const id = pipeline.start();
+    const sendFrame = (pixels, header, quality, marks, readMs, always, pipe = pipeline) => {
+      const id = pipe.start();
       const t0 = performance.now();
       encoder.encode(pixels, header.width, header.height, quality, marks)
         .then((jpeg) => {
           const encodeMs = performance.now() - t0;
-          if (!pipeline.finish(id) && !always) {
+          if (!pipe.finish(id) && !always) {
             stats.skipped("stale");
             return;
           }
@@ -318,7 +320,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
           if (!always) stats.sent({ bytes: jpeg.size, readMs, encodeMs });
         })
         .catch((error) => {
-          pipeline.fail(id);
+          pipe.fail(id);
           if (run === current) hooks.note(`화면을 보내지 못했어요: ${error.message}`);
         });
     };
@@ -338,14 +340,17 @@ export function createVideoAr({ link, params, hooks, deps }) {
         const marks = frameMarks();
         showMarks(marks);
         if (ws()?.readyState !== OPEN) return;
-        if (engineMs && engineDue(lastEngine, t, engineMs)) {
-          lastEngine = t;
+        // 엔진 프레임 차례: 앞 엔진 프레임이 인코딩 중이거나 보낼 것이 쌓였으면 건너뛴다(쌓지 않는다)
+        const step = engineStep({ last: lastEngine, now: t, intervalMs: engineMs, canStart: enginePipeline.canStart(), buffered: ws().bufferedAmount, maxBuffered: MAX_BUFFERED });
+        lastEngine = step.last;
+        if (step.action !== "wait" && step.action !== "send") stats.skipped("engine");
+        if (step.action === "send") {
           const ew = Math.min(frameWidth(params.get("w"), portrait), fw);
           const eh = Math.round((ew * fh) / fw);
           const e0 = performance.now();
           const pixels = grab(ew, eh);
           const header = { kind: "engine", width: ew, height: eh, position, orientation, tracking: "ok", epoch: state.epoch, projection, ...stamp };
-          sendFrame(pixels, header, ENGINE_QUALITY, [], performance.now() - e0, true);
+          sendFrame(pixels, header, ENGINE_QUALITY, [], performance.now() - e0, true, enginePipeline);
         }
         if (t < due) return;
         if (!pipeline.canStart()) {

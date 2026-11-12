@@ -10,7 +10,7 @@
 
 import { createGrabber, framePacket } from "./capture.js";
 import { createDisplayEncoder } from "./display-encoder.js";
-import { engineDue } from "./engine.js";
+import { engineStep, grabOnce } from "./engine.js";
 import { createFramePipeline, createSendStats, frameWidth } from "./pipeline.js";
 import { focusMarks } from "./project.js";
 import { aimPoint, floorPlaneY, planeNormal } from "./aim.js";
@@ -43,6 +43,8 @@ export function createAr({ link, params, hooks, deps = {} }) {
   const FRAME_MS = 1000 / clamp(params.get("fps"), 1, 30, 12);
   const FLIP = params.get("flip") !== "0";
   const pipeline = createFramePipeline({ maxInFlight: 2 });
+  // 엔진 프레임은 따로 센다(한 번에 한 장): 표시 프레임과 번호를 섞으면 늦게 끝난 표시 프레임이 「순서 뒤바뀜」으로 버려진다
+  const enginePipeline = createFramePipeline({ maxInFlight: 1 });
   const stats = createSendStats({ windowMs: 2000 });
   /** on(AR 중), epoch(원점 이름), hitPoint(조준점 바닥 점), hitEstimated(조준점이 어림 바닥), limited(추적 약함),
    *  position·orientation(마지막 폰 자세, 「여기서 시작」에 쓴다), size·encoder(측정 글). */
@@ -108,15 +110,15 @@ export function createAr({ link, params, hooks, deps = {} }) {
       hooks.onEnd();
     });
 
-    // always: 사진·엔진 프레임은 늘 보내고 표시 통계에 넣지 않는다
-    const sendFrame = (pixels, header, quality, marks, readMs, always) => {
-      const id = pipeline.start();
+    // always: 사진·엔진 프레임은 늘 보내고 표시 통계에 넣지 않는다. pipe: 인코딩 중인 장 수를 세는 곳(엔진 프레임은 enginePipeline)
+    const sendFrame = (pixels, header, quality, marks, readMs, always, pipe = pipeline) => {
+      const id = pipe.start();
       const t0 = performance.now();
       grabber.toJpeg(pixels, header.width, header.height, quality, marks)
         .then((jpeg) => {
           const encodeMs = performance.now() - t0;
           // 사진·엔진 프레임은 늘 보낸다. 화면 프레임은 더 새 프레임이 먼저 나갔으면 버린다(순서 뒤바뀜)
-          if (!pipeline.finish(id) && !always) {
+          if (!pipe.finish(id) && !always) {
             stats.skipped("stale");
             return;
           }
@@ -125,7 +127,7 @@ export function createAr({ link, params, hooks, deps = {} }) {
           if (!always) stats.sent({ bytes: jpeg.size, readMs, encodeMs });
         })
         .catch((error) => {
-          pipeline.fail(id);
+          pipe.fail(id);
           // 끝내면서 거절된 인코딩은 알리지 않는다
           if (session === xrSession) hooks.note(`화면을 보내지 못했어요: ${error.message}`);
         });
@@ -182,43 +184,44 @@ export function createAr({ link, params, hooks, deps = {} }) {
       if (!grabber || !camera) return;
       cameraSeen = true;
       display?.frame(binding.getCameraImage(camera), camera, time);
-      if (engineMs && engineDue(lastEngine, time, engineMs) && ws()?.readyState === OPEN) {
-        lastEngine = time;
-        const ew = Math.min(frameWidth(params.get("w"), camera.height > camera.width), camera.width);
-        const eh = Math.round((ew * camera.height) / camera.width);
-        const e0 = performance.now();
-        const enginePixels = grabber.grab(binding.getCameraImage(camera), ew, eh);
-        const engineRead = performance.now() - e0;
-        gl.bindFramebuffer(gl.FRAMEBUFFER, xrSession.renderState.baseLayer.framebuffer);
-        const engineHeader = {
-          kind: "engine", width: ew, height: eh, position, orientation, tracking, epoch: state.epoch,
-          projection: Array.from(xrView.projectionMatrix), ...link.stamp(performance.timeOrigin + time),
-        };
-        sendFrame(enginePixels, engineHeader, ENGINE_QUALITY, [], engineRead, true);
-      }
-      const photo = wantPhoto;
-      if (!photo && time - lastFrame < FRAME_MS) return;
       if (ws()?.readyState !== OPEN) return;
-      if (!photo && !pipeline.canStart()) {
-        stats.skipped("encoding");
-        return;
-      }
-      if (!photo && ws().bufferedAmount > MAX_BUFFERED) {
-        stats.skipped("buffer");
-        return;
-      }
-      wantPhoto = false;
-      lastFrame = time;
       const portrait = camera.height > camera.width;
-      const width = photo ? camera.width : Math.min(frameWidth(params.get("w"), portrait), camera.width);
-      const height = Math.round((width * camera.height) / camera.width);
-      if (!photo) state.size = `${width}×${height}`;
-      const t0 = performance.now();
-      const pixels = grabber.grab(binding.getCameraImage(camera), width, height);
-      const readMs = performance.now() - t0;
+      // 엔진 프레임 차례: 앞 엔진 프레임이 인코딩 중이거나 보낼 것이 쌓였으면 건너뛴다(쌓지 않는다)
+      let engineSize = null;
+      const step = engineStep({ last: lastEngine, now: time, intervalMs: engineMs, canStart: enginePipeline.canStart(), buffered: ws().bufferedAmount, maxBuffered: MAX_BUFFERED });
+      lastEngine = step.last;
+      if (step.action === "send") {
+        const ew = Math.min(frameWidth(params.get("w"), portrait), camera.width);
+        engineSize = { width: ew, height: Math.round((ew * camera.height) / camera.width) };
+      } else if (step.action !== "wait") stats.skipped("engine");
+      // 표시 프레임·사진 차례
+      const photo = wantPhoto;
+      let frameSize = null;
+      if (photo || time - lastFrame >= FRAME_MS) {
+        if (!photo && !pipeline.canStart()) stats.skipped("encoding");
+        else if (!photo && ws().bufferedAmount > MAX_BUFFERED) stats.skipped("buffer");
+        else {
+          wantPhoto = false;
+          lastFrame = time;
+          const width = photo ? camera.width : Math.min(frameWidth(params.get("w"), portrait), camera.width);
+          frameSize = { width, height: Math.round((width * camera.height) / camera.width) };
+          if (!photo) state.size = `${frameSize.width}×${frameSize.height}`;
+        }
+      }
+      if (!engineSize && !frameSize) return;
+      // 둘 다 때가 됐고 크기가 같으면 카메라 그림은 한 번만 읽는다
+      const image = binding.getCameraImage(camera);
+      const [engineShot, frameShot] = grabOnce((w, h) => grabber.grab(image, w, h), [engineSize, frameSize]);
       gl.bindFramebuffer(gl.FRAMEBUFFER, xrSession.renderState.baseLayer.framebuffer);
-      const header = { kind: photo ? "photo" : "frame", width, height, position, orientation, tracking, epoch: state.epoch, ...link.stamp(performance.timeOrigin + time) };
-      sendFrame(pixels, header, photo ? 0.9 : FRAME_QUALITY, photo ? [] : marks, readMs, photo);
+      const stamp = link.stamp(performance.timeOrigin + time);
+      if (engineShot) {
+        const engineHeader = { kind: "engine", ...engineSize, position, orientation, tracking, epoch: state.epoch, projection: Array.from(xrView.projectionMatrix), ...stamp };
+        sendFrame(engineShot.pixels, engineHeader, ENGINE_QUALITY, [], engineShot.readMs, true, enginePipeline);
+      }
+      if (frameShot) {
+        const header = { kind: photo ? "photo" : "frame", ...frameSize, position, orientation, tracking, epoch: state.epoch, ...stamp };
+        sendFrame(frameShot.pixels, header, photo ? 0.9 : FRAME_QUALITY, photo ? [] : marks, frameShot.readMs, photo);
+      }
     };
     xrSession.requestAnimationFrame(onFrame);
   }
@@ -233,7 +236,7 @@ export function createAr({ link, params, hooks, deps = {} }) {
         `보낸 화면 ${s.fps.toFixed(1)} / 목표 ${(1000 / FRAME_MS).toFixed(0)} fps · 장당 ${s.kbPerFrame === null ? "-" : `${s.kbPerFrame.toFixed(1)}KB`}`,
         `readPixels ${ms(s.readMs)} · 인코딩 ${ms(s.encodeMs)} (${state.encoder})`,
         `와이파이 대기 ${Math.round((ws()?.bufferedAmount ?? 0) / 1024)}KB · 크기 ${state.size}`,
-        `2초간 건너뜀: 인코딩 중 ${s.skipped.encoding} · 버퍼 가득 ${s.skipped.buffer} · 순서 뒤바뀜 ${s.skipped.stale}`,
+        `2초간 건너뜀: 인코딩 중 ${s.skipped.encoding} · 버퍼 가득 ${s.skipped.buffer} · 순서 뒤바뀜 ${s.skipped.stale} · 분석용 사진 ${s.skipped.engine}`,
         display?.describe() ?? "표시 영상 꺼짐",
       ].join("\n"),
     };
