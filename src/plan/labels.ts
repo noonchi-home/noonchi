@@ -37,6 +37,10 @@ export const SAY_TEXT = {
   waiting: (label: string) => `${josa(label, "을/를")} 기다리고 있어요.`,
   device: (label: string) => `${josa(label, "을/를")} 하고 있어요.`,
   asked: "폰으로 물어봤어요.",
+  /** 코치 계획: 다시 알린 뒤, 조용한 단계(소리로 읽지 않고 지켜봄), 켠 채 닫힌 계획의 끄기 안내가 떠 있는 동안. */
+  retold: "다시 알려 줬어요.",
+  quiet: (label: string) => `${josa(label, "을/를")} 지켜보고 있어요.`,
+  offAsked: "불을 꺼 달라고 했어요.",
   /** 계획 없는 행동(컵 그대로 두기)을 고른 뒤. */
   left: "컵을 그대로 두기로 했어요.",
   done: (goal: string) => DONE[goal] ?? `${josa(goal, "을/를")} 마쳤어요.`,

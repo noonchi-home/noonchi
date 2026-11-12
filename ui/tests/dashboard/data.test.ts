@@ -4,7 +4,7 @@ import type { ServerMessage } from "../../../src/contract/events.ts";
 import { EMPTY_DASH, facingOf, reduceDash, stepIndex, thoughtOf } from "../../src/dashboard/data";
 import run from "../../src/dashboard/fake-run.json";
 import { CUP_FSM_MEMORY, fsmRuleOf } from "../../../src/brain/decision.ts";
-import { BRANCHES, LEFT_SAY, branchDecision, type Branch } from "./fixtures";
+import { BRANCHES, COACH, LEFT_SAY, branchDecision, type Branch } from "./fixtures";
 
 const feed = (ms: ServerMessage[], now = 0) => ms.reduce((s, m) => reduceDash(s, m, now), EMPTY_DASH);
 const at = (i: number) => feed(run.moments[i]!.messages as ServerMessage[]);
@@ -40,6 +40,10 @@ describe("대시보드 자료", () => {
       const waited = feed([decided(BRANCHES.leave, 1), decided(null, 2)]);
       expect(thoughtOf(waited)).toBeNull();
       expect(thoughtOf(reduceDash(waited, decided(BRANCHES.clear, 3), 0))).toMatchObject({ state: "컵을 두고 자리를 뜸", action: "컵 치우기" });
+    });
+    it("코치 판단이면 「상태 · 요리를 시작함」, 「판단 · 라면 끓이기 알려 주기」다. 그 규칙은 서버 FSM 기억의 cooking 상태에 있다", () => {
+      expect(thoughtOf(feed([decided(COACH, 1)]))).toEqual({ reasoning: COACH.reasoning, state: "요리를 시작함", action: "라면 끓이기 알려 주기" });
+      expect(fsmRuleOf(CUP_FSM_MEMORY, "fsm", COACH.action)).toEqual({ state: COACH.state, trigger: COACH.trigger });
     });
     it("갈래 판단의 상태 id는 모두 서버 FSM 기억(CUP_FSM_MEMORY)에서 그 행동의 규칙이 있는 상태다", () => {
       for (const b of Object.values(BRANCHES)) expect(fsmRuleOf(CUP_FSM_MEMORY, "fsm", b.action), b.action).toEqual({ state: b.state, trigger: b.trigger });

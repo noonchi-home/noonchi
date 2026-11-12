@@ -282,7 +282,9 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     // 끝난 지 20초·가까이 보기 6초는 계획 updatedAt(PlanHub, Date.now)과 같은 시계로 잰다
     speak = () => {
       const leftAt = tracker?.leftAt() ?? null;
-      const text = sayLine({ plan: plans.current(), command, world: world?.view(nowMs()) ?? null, nowMs: Date.now(), look: lookSay, left: leftAt === null ? null : { atMs: leftAt } });
+      const toldAt = tracker?.toldAt() ?? null;
+      const text = sayLine({ plan: plans.current(), command, world: world?.view(nowMs()) ?? null, nowMs: Date.now(), look: lookSay, left: leftAt === null ? null : { atMs: leftAt },
+        told: toldAt === null ? null : { atMs: toldAt }, quiet: tracker?.quietStep() ?? null });
       if (text === said) return;
       said = text;
       appRef.current?.broadcast({ type: "say", text });

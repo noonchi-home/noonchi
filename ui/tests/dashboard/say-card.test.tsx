@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { pageLayout } from "../../src/dashboard/layout";
 import { MASCOT } from "../../src/dashboard/mascot-image";
 import { SayCard } from "../../src/dashboard/SayCard";
-import { LEFT_SAY } from "./fixtures";
+import { COACH_SAY, LEFT_SAY } from "./fixtures";
 
 const L = pageLayout({ width: 1920, height: 1080 }, MASCOT);
 const SHORT = "식탁을 보고 있어요.";
@@ -67,6 +67,14 @@ describe("말풍선 카드", () => {
     rerender(<SayCard say={LEFT_SAY} box={L.bubble} animate={false} />);
     expect(LEFT_SAY).toBe("컵을 그대로 두기로 했어요.");
     expect(lines().filter((l) => l.getAttribute("aria-hidden") !== "true").map((l) => l.textContent)).toEqual([LEFT_SAY]);
+  });
+
+  it("코치 계획의 말(다시 알려 줬어요·지켜보고 있어요·불을 꺼 달라고 했어요)도 한 줄씩 바뀌어 보인다", () => {
+    const { rerender } = render(<SayCard say="냄비 꺼내기를 부탁했어요." box={L.bubble} animate={false} />);
+    for (const text of [COACH_SAY.retold, COACH_SAY.quiet, COACH_SAY.offAsked]) {
+      rerender(<SayCard say={text} box={L.bubble} animate={false} />);
+      expect(lines().filter((l) => l.getAttribute("aria-hidden") !== "true").map((l) => l.textContent)).toEqual([text]);
+    }
   });
 
   it("같은 말이 다시 오면 아무것도 바뀌지 않는다", () => {

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { PlannedCommand } from "../src/contract/phone.js";
 import type { PlanView } from "../src/contract/plan.js";
 import type { WorldView } from "../src/contract/world.js";
-import { SAY_DONE_MS, SAY_LOOK_MS, sayLine } from "../src/act/say.js";
+import { SAY_DONE_MS, SAY_LOOK_MS, SAY_TOLD_MS, sayLine } from "../src/act/say.js";
 import { STEP_LABEL } from "../src/plan/labels.js";
 
 const T = Date.parse("2026-11-09T00:00:00Z");
@@ -46,6 +46,42 @@ describe("말풍선 카드 글", () => {
     expect(say({ plan: plan("done", "컵 치우기", T - 5000) })).toBe("컵을 다 치웠어요.");
     expect(say({ plan: plan("cancelled", "컵 치우기", T - 5000) })).toBe("컵 치우기를 그만뒀어요.");
     expect(say({ plan: plan("done", "컵 치우기", T - SAY_DONE_MS - 1) })).toBe("지켜보고 있어요.");
+  });
+  describe("코치 계획", () => {
+    const coach = (status: PlanView["status"] = "running"): PlanView => ({
+      ...plan(status, "라면 끓이기 알려 주기"),
+      steps: [
+        { id: "plan:d1:1", kind: "act", label: "냄비 꺼내기", status: "active" }, { id: "plan:d1:2", kind: "act", label: "인덕션 켜기", status: "pending" },
+      ],
+    });
+    const YESNO = [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }];
+    it("사람 단계는 단계 이름을 부탁했다고 한다", () => {
+      expect(say({ plan: coach(), command: cmd("plan:d1:1") })).toBe("냄비 꺼내기를 부탁했어요.");
+    });
+    it("바로잡은 뒤 8초는 「다시 알려 줬어요.」, 그 뒤에는 앞 글로 돌아간다. 계획이 닫혔으면 보이지 않는다", () => {
+      expect(SAY_TOLD_MS).toBe(8000);
+      expect(say({ plan: coach(), command: cmd("plan:d1:1"), told: { atMs: T - 3000 } })).toBe("다시 알려 줬어요.");
+      expect(say({ plan: coach(), command: cmd("plan:d1:1"), told: { atMs: T - SAY_TOLD_MS } })).toBe("다시 알려 줬어요.");
+      expect(say({ plan: coach(), command: cmd("plan:d1:1"), told: { atMs: T - SAY_TOLD_MS - 1 } })).toBe("냄비 꺼내기를 부탁했어요.");
+      expect(say({ plan: coach("done"), told: { atMs: T - 1000 } })).not.toBe("다시 알려 줬어요.");
+      expect(say({ told: { atMs: T - 1000 } })).toBe("지켜보고 있어요.");
+    });
+    it("조용한 단계는 「…를 지켜보고 있어요.」", () => {
+      expect(say({ plan: coach(), command: { ...cmd("plan:d1:1"), speak: false }, quiet: "냄비 꺼내기" })).toBe("냄비 꺼내기를 지켜보고 있어요.");
+      expect(say({ plan: coach(), command: cmd("plan:d1:1"), quiet: null })).toBe("냄비 꺼내기를 부탁했어요.");
+      expect(say({ quiet: "냄비 꺼내기" })).toBe("지켜보고 있어요.");
+    });
+    it("켜기 전 질문 명령(단계 id :hand)은 승인이라 말풍선 카드에 보이지 않는다: 정한 것만 말한다", () => {
+      const asking = cmd("plan:d1:2:hand", YESNO);
+      expect(say({ plan: coach(), command: { ...asking, text: "냄비가 뜨거워져요. 인덕션을 켤까요?" } })).toBe("라면 끓이기 알려 주기를 하기로 했어요.");
+      expect(say({ plan: coach(), command: asking })).not.toBe("폰으로 물어봤어요.");
+    });
+    it("끄기 안내가 떠 있는 동안은 「불을 꺼 달라고 했어요.」(계획이 닫힌 뒤에도)", () => {
+      const off = { ...cmd("plan:d1:off"), text: "인덕션을 꺼 주세요" };
+      expect(say({ plan: coach("cancelled"), command: off })).toBe("불을 꺼 달라고 했어요.");
+      expect(say({ plan: null, command: off })).toBe("불을 꺼 달라고 했어요.");
+      expect(say({ plan: coach("cancelled"), command: null })).toBe("라면 끓이기 알려 주기를 그만뒀어요.");
+    });
   });
   it("그대로 둔 지 20초 안이면 「컵을 그대로 두기로 했어요.」, 그 뒤에는 지켜보는 글. 열린 계획이나 그 뒤에 끝난 계획이 있으면 그 글이 먼저다", () => {
     const left = { atMs: T - 5000 };

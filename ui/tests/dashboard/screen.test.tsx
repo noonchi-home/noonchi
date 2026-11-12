@@ -10,7 +10,7 @@ import { pageLayout, THOUGHT as THOUGHT_SIZE, type Rect } from "../../src/dashbo
 import { MASCOT } from "../../src/dashboard/mascot-image";
 import { WORDS } from "../../src/dashboard/words";
 import { EMPTY_DASH, reduceDash, thoughtOf } from "../../src/dashboard/data";
-import { BRANCHES, LEFT_SAY, branchDecision, type Branch } from "./fixtures";
+import { BRANCHES, COACH, COACH_SAY, LEFT_SAY, branchDecision, coachPlanAt, type Branch } from "./fixtures";
 import { CLEAR_CUP, EYE_FRAMES, HUB, imageSlot, LEFT_CUP_STATE, PHONE_URL, PLAN, REASON, SAY, screenAt, seenEvent, seenOf, THOUGHT } from "./fixtures";
 import { createSeenStore } from "../../src/dashboard/masks";
 import { act } from "@testing-library/react";
@@ -306,6 +306,11 @@ describe("대시보드 생각 말풍선(마스코트 위)", () => {
     expect(chips().map((c) => c.textContent)).toEqual(["상태 · 먹거나 마시는 중", "판단 · 컵에 물 채워 주기"]);
     rerender(<DashboardScreen {...screenAt(1, { thought: of(BRANCHES.cola) })} />);
     expect(chips().map((c) => c.textContent)).toEqual(["상태 · TV 보는 중", "판단 · 컵에 콜라 따라 주기"]);
+    // 코치 판단: 진행 중에는 PAM을 쉬므로 이 말풍선이 계획 끝까지 남는다
+    const plan = coachPlanAt(2);
+    rerender(<DashboardScreen {...screenAt(2, { plan, step: plan.steps[1]!, thought: of(COACH), say: COACH_SAY.quiet })} />);
+    expect(now()).toHaveTextContent(COACH.reasoning);
+    expect(chips().map((c) => c.textContent)).toEqual(["상태 · 요리를 시작함", "판단 · 라면 끓이기 알려 주기"]);
   });
 
   it("PAM이 대기(행동 없음)면 말풍선을 숨긴다: 칸은 그대로 두고 opacity 0이며 읽어 주지 않는다", () => {
@@ -682,6 +687,27 @@ describe("대시보드 트윈", () => {
     expect(document.querySelectorAll("[data-progress]")).toHaveLength(1);
     expect(mascot()).not.toHaveTextContent(`2/${PLAN.steps.length}`);
     expect(say()).not.toHaveTextContent(`2/${PLAN.steps.length}`);
+  });
+
+  it("코치 13단계 계획의 단계 막대는 13칸이고, 칸과 막대의 class·style은 4단계 때와 같다(칸 크기를 바꾸지 않는다). 글은 「4/13 · 물 받기」", () => {
+    const look = (el: Element) => [el.getAttribute("class"), el.getAttribute("style")];
+    const four = draw(screenAt(2));
+    const p4 = twinPane().querySelector<HTMLElement>("[data-progress]")!;
+    const seg4 = look(p4.querySelector("[data-segment]")!);
+    const bar4 = look(p4.querySelector("[data-segment]")!.parentElement!);
+    const box4 = look(p4);
+    four.unmount();
+    const plan = coachPlanAt(4);
+    draw(screenAt(4, { plan, step: plan.steps[3]! }));
+    const p13 = twinPane().querySelector<HTMLElement>("[data-progress]")!;
+    const segs = [...p13.querySelectorAll("[data-segment]")];
+    expect(segs).toHaveLength(13);
+    for (const s of segs) expect(look(s)).toEqual(seg4);
+    expect(look(segs[0]!.parentElement!)).toEqual(bar4);
+    expect(look(p13)).toEqual(box4);
+    expect(segs.map((e) => e.getAttribute("data-state"))).toEqual(["completed", "completed", "completed", "active", ...Array.from({ length: 9 }, () => "inactive")]);
+    expect(p13.querySelector("[data-slot=item-description]")).toHaveTextContent("4/13 · 물 받기");
+    expect(p13).toHaveTextContent("라면 끓이기 알려 주기");
   });
 
   it("단계 막대 칸: 끝난 칸 completed, 지금 칸 active, 남은 칸 inactive", () => {

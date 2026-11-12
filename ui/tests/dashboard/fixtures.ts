@@ -104,9 +104,28 @@ export const BRANCHES = {
   water: { action: "컵에 물 채워 주기", state: "drinking", trigger: "사용자가 식탁에서 먹는 중이고 식탁 위 컵이 비어 있으며 컵을 들거나 만지지 않는다.", reasoning: "식사 중인데 컵이 비어 있어요." },
   cola: { action: "컵에 콜라 따라 주기", state: "watching_tv", trigger: "사용자가 TV를 보는 중이고 곁의 컵이 비어 있으며 컵을 들거나 만지지 않는다.", reasoning: "TV를 보는 중인데 컵이 비어 있어요." },
 } as const satisfies Record<string, Branch>;
+/** 코치 판단 고정 자료(라면 끓이기 알려 주기, FSM 상태 cooking)와 13단계 계획(사람 단계·알림·기다리기). */
+export const COACH: Branch = {
+  action: "라면 끓이기 알려 주기", state: "cooking", trigger: "사용자가 라면 끓이는 법을 알려 달라고 말했거나, 주방에서 라면을 끓이려다 무엇을 해야 할지 모르겠다고 말한다.",
+  reasoning: "라면 끓이는 법을 물어봤어요.",
+};
+const COACH_STEPS: [PlanStep["kind"], string][] = [
+  ["move", "수납장으로 가기"], ["act", "냄비 꺼내기"], ["move", "싱크대로 가기"], ["act", "물 받기"], ["move", "인덕션으로 가기"], ["act", "냄비 올리기"], ["act", "인덕션 켜기"],
+  ["ask", "물 끓기 알림"], ["wait", "물 끓기 기다리기"], ["act", "면과 스프 넣기"], ["wait", "익기 기다리기"], ["act", "인덕션 끄기"], ["ask", "끝 알림"],
+];
+/** 코치 13단계 계획: n번째 단계가 지금. */
+export function coachPlanAt(n: number): PlanView {
+  return {
+    ...planAt(1), id: "coach", revision: n, goal: COACH.action, judgment: COACH.reasoning, dryRun: true,
+    steps: COACH_STEPS.map(([kind, label], i) => ({ id: `coach:${i + 1}`, kind, label, status: i + 1 < n ? "done" : i + 1 === n ? "active" : "pending" })),
+  };
+}
+/** 코치 계획의 말풍선 카드 말(src/plan/labels.ts SAY_TEXT): 다시 알린 뒤, 조용한 단계, 끄기 안내. */
+export const COACH_SAY = { retold: "다시 알려 줬어요.", quiet: "냄비 꺼내기를 지켜보고 있어요.", offAsked: "불을 꺼 달라고 했어요." };
+
 /** 「그대로 두기」를 고른 뒤 말풍선 카드 말(src/plan/labels.ts SAY_TEXT.left). */
 export const LEFT_SAY = "컵을 그대로 두기로 했어요.";
-const BRANCH_TASKS = ["컵 치우기", "사용자에게 물어보기", "세탁물 건조기로 옮기기", "에어컨 켜기", "컵 그대로 두기", "컵에 물 채워 주기", "컵에 콜라 따라 주기"];
+const BRANCH_TASKS = ["컵 치우기", "사용자에게 물어보기", "세탁물 건조기로 옮기기", "에어컨 켜기", "컵 그대로 두기", "컵에 물 채워 주기", "컵에 콜라 따라 주기", "라면 끓이기 알려 주기"];
 
 /** 판단 방송 한 줄. b가 null이면 대기(-1). */
 export function branchDecision(b: Branch | null, seq: number): ServerMessage {
