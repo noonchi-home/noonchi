@@ -1,6 +1,6 @@
 // 화면 사진 페이지(PHONE_SHOTS=1 빌드에만 들어간다): 주소 #이름의 상태 예시(fixtures.ts)를 실제 폰 화면 그대로 그린다.
 // AR 상태는 카메라 자리에 ink-4 바탕을 깔고 명령 대상 고리·조준점(찍기·맞추기 때만)을 그 위에 그린다. 다 그리면 html에 data-shot을 단다(npm run capture --ready).
-// AR 상태는 그린 뒤 배치를 잰다(layout-check.ts): 화면 밖 단추, 세로 화면에서 아래 1/3 밖의 엄지 자리 단추, 조준점이나 그 칸 밖 단추를 가리는 칸(위 줄·엄지 자리),
+// AR 상태는 그린 뒤 배치를 잰다(layout-check.ts): 화면 밖 단추, 세로 화면에서 아래 1/3 밖·가로 화면에서 오른쪽 아래 밖의 엄지 자리 단추, 옆으로 넘친 모달 내용, 조준점이나 그 칸 밖 단추를 가리는 칸(위 줄·엄지 자리),
 // 잘린 명령·비전 상태 글, 칸·단추와 겹친 화면 밖 세모, 칸 밑에 깔린 고리가 있으면 console.error로 내서 capture가 실패한다. 모달 안 단추는 칸 위에 뜨므로 가림 검사에서 뺀다.
 // 처음 화면은 「AR 시작」 단추가 첫 화면 밖이면 같은 방법으로 실패한다.
 import { useEffect, useRef } from "react";
@@ -10,7 +10,7 @@ import "../styles.css";
 import { color } from "../../../src/design/tokens.ts";
 import { drawOverlay, fitCanvas, overlayEdges, type Drawn } from "./draw";
 import { SHOTS, SHOT_NAMES, type ShotName } from "./fixtures";
-import { clipIssues, introIssues, layoutIssues, MODAL_ZONE, type Box } from "./layout-check";
+import { clipIssues, introIssues, layoutIssues, modalIssues, MODAL_ZONE, type Box } from "./layout-check";
 import { PhoneScreen } from "./PhoneScreen";
 import type { PhoneActions } from "./state";
 
@@ -48,7 +48,9 @@ function measureOverlay(drawn: Drawn): string[] {
     .map((el) => ({ name: ZONE_NAMES[el.getAttribute("data-phone-zone")!] ?? "", box: rect(el) }));
   const texts = [...root.querySelectorAll<HTMLElement>("[data-phone-text]")].filter((el) => el.getClientRects().length > 0)
     .map((el) => ({ name: el.dataset.phoneText!, line: lineHeight(el), scroll: { width: el.scrollWidth, height: el.scrollHeight }, client: { width: el.clientWidth, height: el.clientHeight } }));
-  return [...layoutIssues({ width: innerWidth, height: innerHeight }, targets, panels, drawn.arrows, drawn.rings), ...clipIssues(texts)];
+  const modals = [...root.querySelectorAll<HTMLElement>("[role=alertdialog]")].filter((el) => el.getClientRects().length > 0)
+    .map((el) => ({ name: el.querySelector("h2")?.textContent ?? "", scroll: { width: el.scrollWidth, height: el.scrollHeight }, client: { width: el.clientWidth, height: el.clientHeight } }));
+  return [...layoutIssues({ width: innerWidth, height: innerHeight }, targets, panels, drawn.arrows, drawn.rings), ...clipIssues(texts), ...modalIssues(modals)];
 }
 
 /** 처음 화면이 보이면 「AR 시작」 단추가 첫 화면 안에 있는지 잰다. */

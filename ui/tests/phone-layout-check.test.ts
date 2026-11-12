@@ -3,7 +3,7 @@
 // 위 줄·엄지 자리는 가운데 조준점(28px)과 그 칸 밖 단추를 가리면 안 된다(모달 안 단추는 그 위에 뜨므로 보지 않는다). 위 줄은 상태 표시줄 아래(36px부터).
 // 화면 밖 화살표는 칸과 단추에 겹치지 않아야 한다. 명령·비전 상태 글은 잘리지 않아야 한다. 처음 화면은 AR 시작 단추가 첫 화면 안.
 import { describe, expect, it } from "vitest";
-import { clipIssues, introIssues, layoutIssues } from "../src/phone/layout-check";
+import { clipIssues, introIssues, layoutIssues, modalIssues } from "../src/phone/layout-check";
 
 const box = (left: number, top: number, right: number, bottom: number) => ({ left, top, right, bottom });
 const PORTRAIT = { width: 390, height: 844 };
@@ -30,9 +30,22 @@ describe("실제 폰 덮개 배치 검사", () => {
     expect(layoutIssues(PORTRAIT, [{ name: "닫기", box: box(16, 830, 374, 878), scroller: box(0, 300, 390, 800) }], [])).toEqual([]);
   });
 
-  it("세로 화면의 엄지 자리 단추는 아래 1/3 안. 위로 올라가면 문제, 가로 화면은 보지 않는다", () => {
+  it("가로 화면의 엄지 자리 단추는 오른손 엄지가 닿는 오른쪽 절반·아래 절반 안. 왼쪽이나 위로 가면 문제", () => {
+    const right = { ...done, box: box(478, 322, 818, 370) };
+    expect(layoutIssues(LANDSCAPE, [right], [])).toEqual([]);
+    expect(layoutIssues(LANDSCAPE, [{ ...done, box: box(26, 322, 364, 370) }], [])).toEqual(["「완료」 단추가 가로 화면 오른쪽 아래 엄지 자리 밖이에요(26,322–364,370 / 844×390)"]);
+    expect(layoutIssues(LANDSCAPE, [{ ...done, box: box(478, 100, 818, 148) }], [])).toEqual(["「완료」 단추가 가로 화면 오른쪽 아래 엄지 자리 밖이에요(478,100–818,148 / 844×390)"]);
+    // 위 줄 미어캣·모달 단추는 이 검사에 넣지 않는다
+    expect(layoutIssues(LANDSCAPE, [meerkat, { name: "닫기", box: box(300, 100, 500, 148), scroller: null, zone: "모달" }], [])).toEqual([]);
+  });
+
+  it("모달 내용이 옆으로 넘치면 문제(가로 화면에서 단추 줄이 모달보다 넓어 상태 칩이 잘렸다). 위아래로 넘치는 것은 스크롤이라 괜찮다", () => {
+    expect(modalIssues([{ name: "설정", scroll: { width: 400, height: 520 }, client: { width: 400, height: 296 } }])).toEqual([]);
+    expect(modalIssues([{ name: "설정", scroll: { width: 512, height: 520 }, client: { width: 400, height: 296 } }])).toEqual(["「설정」 모달 내용이 옆으로 넘쳐요(512 / 400)"]);
+  });
+
+  it("세로 화면의 엄지 자리 단추는 아래 1/3 안. 위로 올라가면 문제", () => {
     expect(layoutIssues(PORTRAIT, [{ ...done, box: box(26, 500, 364, 548) }], [])).toEqual(["「완료」 단추가 엄지가 닿는 아래 1/3 밖이에요(26,500–364,548 / 390×844)"]);
-    expect(layoutIssues(LANDSCAPE, [{ ...done, box: box(470, 200, 830, 248) }], [])).toEqual([]);
     // 위 줄 미어캣·모달 단추는 이 검사에 넣지 않는다
     expect(layoutIssues(PORTRAIT, [meerkat, { name: "닫기", box: box(16, 400, 374, 448), scroller: null, zone: "모달" }], [])).toEqual([]);
   });

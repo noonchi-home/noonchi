@@ -112,8 +112,8 @@ describe("처음 화면 글", () => {
     expect(supportText({ kind: "checking" })).toBe("AR 지원을 확인하는 중…");
     expect(supportText({ kind: "insecure" })).toBe("보안 연결이 아니라 AR을 켤 수 없어요. https 주소로 여세요.");
     expect(supportText({ kind: "no-ar" })).toBe("이 브라우저는 AR을 지원하지 않아요. 안드로이드 크롬으로 여세요.");
-    expect(supportText({ kind: "ready" }, true)).toBe("준비됐어요. 폰을 세로로 들고 시작 위치에서 AR을 시작하세요.");
-    expect(supportText({ kind: "ready" })).toBe("준비됐어요. 폰을 세로로 들고 AR을 시작하세요.");
+    expect(supportText({ kind: "ready" }, true)).toBe("준비됐어요. 시작 위치에서 AR을 시작하세요.");
+    expect(supportText({ kind: "ready" })).toBe("준비됐어요. AR을 시작하세요.");
     expect(supportText({ kind: "failed", message: "거부됨" })).toBe("AR을 시작하지 못했어요: 거부됨");
   });
 

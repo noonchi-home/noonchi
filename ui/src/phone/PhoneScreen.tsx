@@ -1,7 +1,7 @@
 // 실제 폰 화면(에이전트의 손). 처음 화면: 마스코트(세로에서만)·제목·AR 지원 줄·시작 위치 안내·AR 시작, 답 줄·승인 대기(답마다 단추 하나)·글 입력.
 // AR 덮개(DOM 오버레이 뿌리): 맨 아래 canvas(명령 대상 고리·화면 밖 세모, 물건 자리 맞추기 때만 조준점), 위 줄(왼쪽 위 미어캣 = 설정 단추, 그 옆 지금 명령 한 줄),
 // 엄지 자리(명령·질문·승인·시작 위치 맞추기·물건 자리 맞추기가 있을 때만 카드 하나: 비전 상태 한 줄, 그 바로 아래 답 단추). 설정과 문제 모달(연결 끊김·마이크 꺼짐·시작 위치 없음)은
-// Alert Dialog를 덮개 뿌리 안에 띄운다(AR 중에는 그 안만 보인다). 세로가 기본 배치이고, 가로면 엄지 자리만 오른쪽 아래로 옮긴다(landscape:).
+// Alert Dialog를 덮개 뿌리 안에 띄운다(AR 중에는 그 안만 보인다). 세로가 기본 배치이고, 가로면 엄지 자리를 오른쪽 아래로 옮기고(landscape:) 설정 모달 단추 줄은 모달 폭 안에서 줄을 바꾼다(sm:flex-wrap). 폰은 세로·가로 어느 쪽으로 들어도 된다.
 // 부품은 ui/src/components/ui의 21st.dev 부품만 쓰고 여기서는 배치만 한다. 글 크기는 부품 원래 크기, 누르는 것은 48px(h-12·size-12).
 import { MessageSquare } from "lucide-react";
 import { useCallback, useState, type FormEvent, type Ref } from "react";
@@ -157,8 +157,9 @@ function Settings({ view, act, root, open }: { view: PhoneView; act: PhoneAction
             </Item>
           ))}
         </ItemGroup>
-        {/* 좁은 화면에서는 아래부터 쌓인다(뒤 단추가 위): 시작 위치에서 다시 맞추기, 물건 자리 맞추기, 닫기 차례로 보인다. 간격은 footer gap 하나(닫기의 mt-2를 뺀다) */}
-        <AlertDialogFooter className="gap-2 sm:gap-0">
+        {/* 좁은 화면에서는 아래부터 쌓인다(뒤 단추가 위): 시작 위치에서 다시 맞추기, 물건 자리 맞추기, 닫기 차례로 보인다. 간격은 footer gap 하나(닫기의 mt-2를 뺀다).
+            넓은 화면(가로로 든 폰)에서는 한 줄로 놓되 모달 폭을 넘으면 줄을 바꾼다: 옆으로 넘치면 상태 칩이 잘린다 */}
+        <AlertDialogFooter className="gap-2 sm:flex-wrap sm:space-x-0">
           <AlertDialogCancel className="mt-0 h-12">닫기</AlertDialogCancel>
           <AlertDialogAction variant="outline" className="h-12" onClick={act.startPlace}>물건 자리 맞추기</AlertDialogAction>
           {view.sync?.start && <AlertDialogAction className="h-12" onClick={act.startFromSpot}>{RESTART_FROM_SPOT}</AlertDialogAction>}

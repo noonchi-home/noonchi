@@ -31,7 +31,7 @@ describe("처음 화면", () => {
     const mascot = container.querySelector('img[src="/brand/mascot@1x.webp"]')!;
     expect(words(mascot)).toContain("landscape:hidden");
     expect(screen.getByRole("heading", { name: "클로이드의 눈" })).toBeInTheDocument();
-    expect(screen.getByText("준비됐어요. 폰을 세로로 들고 시작 위치에서 AR을 시작하세요.")).toHaveAttribute("data-support", "ready");
+    expect(screen.getByText("준비됐어요. 시작 위치에서 AR을 시작하세요.")).toHaveAttribute("data-support", "ready");
     expect(screen.getAllByRole("listitem").map((li) => li.textContent)).toEqual(["거실·복도 테이블 앞에 서서 거실·복도 TV수납장 쪽을 보고 여기서 시작을 눌러요"]);
     await userEvent.click(screen.getByRole("button", { name: "AR 시작" }));
     expect(act.startAr).toHaveBeenCalledOnce();
@@ -39,7 +39,7 @@ describe("처음 화면", () => {
 
   it("시작 위치를 아직 정하지 않은 집이면 설정 화면에서 정하라고 안내한다", () => {
     show(SHOTS["intro-nostart"].view);
-    expect(screen.getByText("준비됐어요. 폰을 세로로 들고 AR을 시작하세요.")).toHaveAttribute("data-support", "ready");
+    expect(screen.getByText("준비됐어요. AR을 시작하세요.")).toHaveAttribute("data-support", "ready");
     expect(screen.getAllByRole("listitem").map((li) => li.textContent)).toEqual(["먼저 설정 화면에서 시작 위치를 정해 주세요"]);
   });
 
@@ -226,6 +226,14 @@ describe("미어캣: 설정", () => {
     show(SHOTS.settings.view);
     const dialog = within(screen.getByRole("alertdialog", { name: "설정" }));
     for (const name of ["닫기", "물건 자리 맞추기", "시작 위치에서 다시 맞추기"]) expect(dialog.getByRole("button", { name }).className.split(/\s+/), name).not.toContain("mt-2");
+  });
+
+  it("가로로 든 폰(넓은 화면)에서 설정 모달 단추 줄은 모달 폭 안에서 줄을 바꾼다: 옆으로 넘치지 않는다", () => {
+    show(SHOTS.settings.view);
+    const footer = within(screen.getByRole("alertdialog", { name: "설정" })).getByRole("button", { name: "닫기" }).parentElement!;
+    expect(words(footer)).toEqual(expect.arrayContaining(["gap-2", "sm:flex-wrap", "sm:space-x-0"]));
+    expect(words(footer)).not.toContain("sm:gap-0");
+    expect(words(footer)).not.toContain("sm:space-x-3");
   });
 
   it("「시작 위치에서 다시 맞추기」가 주 단추, 「물건 자리 맞추기」는 보조. 시작 위치가 없는 집이면 다시 맞추기가 없다", () => {
