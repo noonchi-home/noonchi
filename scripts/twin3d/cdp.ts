@@ -1,4 +1,4 @@
-// 크롬 하나 띄우기(빈 디버그 포트, 임시 프로필)와 CDP 조종(Runtime.evaluate, Page.captureScreenshot), 같은 크롬에 탭 더 열기. capture.ts·e2e-dashboard.ts·video-check.ts가 쓴다.
+// 크롬 하나 띄우기(빈 디버그 포트, 임시 프로필)와 CDP 조종(Runtime.evaluate, Page.captureScreenshot, 알림 받기), 같은 크롬에 탭·창 더 열기. capture.ts·e2e-dashboard.ts·video-check.ts가 쓴다.
 // 페이지 오류(예외·console.error·로그 오류·HTTP 400 이상·받기 실패·evaluate 예외)는 onError로 알린다. 끌 때는 크롬 트리를 끝내고 프로필을 지운다.
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
@@ -15,6 +15,8 @@ export interface Page {
   evaluate(expression: string, ms: number): Promise<unknown>;
   /** 화면 사진(Page.captureScreenshot). */
   screenshot(params: { format: "png" | "jpeg"; quality?: number }, ms: number): Promise<Buffer>;
+  /** CDP 알림(method)의 params를 받는다. 받기를 끄는 함수를 돌려준다. */
+  on(method: string, fn: (params: Record<string, unknown>) => void): () => void;
   close(): void;
 }
 
@@ -68,15 +70,36 @@ export async function openTab(port: number, onError: (msg: string) => void): Pro
   return attach(((await r.json()) as { webSocketDebuggerUrl: string }).webSocketDebuggerUrl, onError);
 }
 
+/** 같은 크롬에 새 창(size)을 열고(브라우저 대상에 Target.createTarget newWindow) openPage처럼 붙는다.
+ *  새 탭은 앞 탭을 가려 그 탭의 그리기(requestAnimationFrame)가 멈추지만, 새 창은 앞 탭과 함께 그려진다. */
+export async function openWindow(port: number, size: [number, number], onError: (msg: string) => void): Promise<Page> {
+  const version = (await (await fetch(`http://127.0.0.1:${port}/json/version`)).json()) as { webSocketDebuggerUrl: string };
+  const ws = new WebSocket(version.webSocketDebuggerUrl);
+  try {
+    await new Promise((r, j) => { ws.addEventListener("open", r); ws.addEventListener("error", () => j(new Error("브라우저 대상에 붙지 못했어요"))); });
+    const reply = await withTimeout(new Promise<{ result?: { targetId?: string }; error?: { message?: string } }>((r) => {
+      ws.addEventListener("message", (ev) => { const m = JSON.parse(String(ev.data)); if (m.id === 1) r(m); });
+      ws.send(JSON.stringify({ id: 1, method: "Target.createTarget", params: { url: "about:blank", newWindow: true, width: size[0], height: size[1] } }));
+    }), 10_000, "새 창");
+    const targetId = reply.result?.targetId;
+    if (!targetId) throw new Error(`새 창을 열지 못했어요: ${reply.error?.message ?? "targetId 없음"}`);
+    return await attach(`ws://127.0.0.1:${port}/devtools/page/${targetId}`, onError);
+  } finally {
+    try { ws.close(); } catch { /* 이미 닫힘 */ }
+  }
+}
+
 async function attach(wsUrl: string, onError: (msg: string) => void): Promise<Page> {
   const ws = new WebSocket(wsUrl);
   await new Promise((r) => ws.addEventListener("open", r));
   let id = 0;
   const pending = new Map<number, (m: Reply) => void>();
+  const listeners = new Map<string, Set<(params: Record<string, unknown>) => void>>();
   ws.addEventListener("message", (ev) => {
     const m = JSON.parse(String(ev.data));
     if (m.id && pending.has(m.id)) { pending.get(m.id)!(m); pending.delete(m.id); return; }
     const p = m.params;
+    for (const fn of listeners.get(m.method) ?? []) fn(p ?? {});
     if (m.method === "Runtime.exceptionThrown") onError(`예외: ${p.exceptionDetails.exception?.description ?? p.exceptionDetails.text}`);
     if (m.method === "Runtime.consoleAPICalled" && (p.type === "error" || p.type === "assert")) onError(`console.${p.type}: ${p.args.map((a: { value?: unknown; description?: string }) => a.value ?? a.description).join(" ")}`);
     if (m.method === "Log.entryAdded" && p.entry.level === "error") onError(`log: ${p.entry.text} ${p.entry.url ?? ""}`);
@@ -94,6 +117,11 @@ async function attach(wsUrl: string, onError: (msg: string) => void): Promise<Pa
     },
     async screenshot(params, ms) {
       return Buffer.from((await withTimeout(send("Page.captureScreenshot", params), ms, "사진")).result!.data!, "base64");
+    },
+    on(method, fn) {
+      const set = listeners.get(method) ?? new Set();
+      listeners.set(method, set.add(fn));
+      return () => { set.delete(fn); };
     },
     close() {
       try { ws.close(); } catch { /* 이미 닫힘 */ }

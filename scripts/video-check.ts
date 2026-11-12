@@ -1,5 +1,5 @@
 // npx tsx scripts/video-check.ts --clip cup-demo.mp4 [--step <종류>:<낱말>:<영상.mp4> ...] [--phone http://127.0.0.1:8210] [--api http://127.0.0.1:8200]
-//   [--done-after 3] [--out runtime/videos/cup-demo.<시각>.timeline.md] [--expect-after 36.3] [--fake]
+//   [--done-after 3] [--out runtime/videos/cup-demo.<시각>.timeline.md] [--expect-after 36.3] [--record <폴더>] [--fake]
 // 영상 모드 판정: 헤드리스 크롬 하나(390×844)로 폰 페이지 <phone>/phone/?clip=<clip>을 열고 「AR 시작」을 눌러 영상을 끝까지 튼다.
 // --step(여러 번, 종류 go·pick·place, 낱말 a-z·_)은 폰 주소에 step=으로 하나씩 붙는다. 폰 페이지는 종류가 같고 대상 id에 낱말이 든 명령이 오면
 // 그 단계 영상으로 바꿔 튼다(영상 시각은 이어 셈). --step이 있으면 --done-after 기본은 0이다(단추를 누르지 않고 비전·폰 위치로 단계가 넘어가는지 본다).
@@ -16,6 +16,10 @@
 // 끝까지 돌지 않았으면(시간 넘김·중단) 판정 줄 위에 적고 끝 코드 1.
 // 끝에 같은 크롬 새 탭(1280×800)으로 대시보드 <api>/를 열어 8초 뒤 사진을 runtime/videos/<영상>.<시각 또는 fake>.twin.png에 남기고 markdown에 넣는다.
 // 사진을 못 남기면 판정 줄 위에 적기만 한다.
+// --record <폴더>: 폰 페이지를 연 뒤 같은 크롬 새 창(1280×800)으로 대시보드를 판정 내내 띄우고, 두 화면을 CDP screencast로 초당 약 10장 받아
+// 끝(30초 더 보기 포함)까지 녹화한다(scripts/video-record.ts). 끝 사진은 그 창으로 바로 찍는다. 크롬을 끈 뒤 ffmpeg로 왼쪽 폰·오른쪽 대시보드를
+// 높이 800에 맞춰 나란히 붙인 mp4 하나(H.264, yuv420p, 10fps, 실제 시간 길이)를 <폴더>/<시각표 이름 줄기>.demo.mp4로 만든다.
+// ffmpeg가 없거나 실패하면 <폴더>/<줄기>.frames 프레임 폴더를 남기고 판정 줄 위에 적는다.
 // 영상은 소리 없이 「AR 시작」 누름에서 튼다. launchChrome은 자동 재생 플래그를 받지 않지만 소리 없는 재생은 크롬 기본값으로 된다.
 // --fake: 실제 모델 없이 같은 프로세스에서 스스로 시험한다. 본 서버(HUB=memory, 한양목련, 새 RUNTIME_DIR에 영상·단계 영상 복사, BRAIN=1, PAM 1초마다)와
 // 가짜 OpenAI(VLM: 컵 식탁 위, 계획: 컵 치우기 네 단계), 가짜 PAM(컵이 있고 사람이 안 보이면 컵 치우기), 대본 YOLO(첫 프레임부터 30초 사람+컵, 그 뒤 컵만)를 띄운다.
@@ -32,8 +36,9 @@ import type { WorldObject, WorldView } from "../src/contract/world.js";
 import { EXEC_TEXT } from "../src/plan/labels.js";
 import { STATES } from "../src/world/vocab.js";
 import { withTimeout } from "./twin3d/capture-lib.js";
-import { chromePath, closeChrome, devtoolsPort, launchChrome, openPage, openTab, type Chrome, type Page } from "./twin3d/cdp.js";
+import { chromePath, closeChrome, devtoolsPort, launchChrome, openPage, openTab, openWindow, type Chrome, type Page } from "./twin3d/cdp.js";
 import { heldLock, withHeavy, type Lock } from "./twin3d/heavy.js";
+import { demoFile, encodeDemo, RECORD_FPS, startRecording, type Recorded, type Recording } from "./video-record.js";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CLIP_NAME = /^[A-Za-z0-9_-]{1,64}\.(?:mp4|webm)$/;
@@ -341,11 +346,11 @@ async function startFake(clip: string, steps: string[]): Promise<Fake> {
 
 // 돌리기
 
-const USAGE = "쓰는 법: npx tsx scripts/video-check.ts --clip <이름.mp4> [--step <종류>:<낱말>:<영상.mp4> ...] [--phone http://127.0.0.1:8210] [--api http://127.0.0.1:8200] [--done-after 3] [--out <파일.md>] [--expect-after 36.3] [--fake]";
+const USAGE = "쓰는 법: npx tsx scripts/video-check.ts --clip <이름.mp4> [--step <종류>:<낱말>:<영상.mp4> ...] [--phone http://127.0.0.1:8210] [--api http://127.0.0.1:8200] [--done-after 3] [--out <파일.md>] [--expect-after 36.3] [--record <폴더>] [--fake]";
 
-export interface Args { clip: string; fake: boolean; steps: string[]; doneAfterMs: number; expectMs: number; phone: string; api: string; out: string | undefined }
+export interface Args { clip: string; fake: boolean; steps: string[]; doneAfterMs: number; expectMs: number; phone: string; api: string; out: string | undefined; record: string | undefined }
 
-/** 인자(process.argv.slice(2)) → 판 설정, 틀리면 까닭 글. --step은 여러 번 받고, 있으면 --done-after 기본이 0이다. */
+/** 인자(process.argv.slice(2)) → 판 설정, 틀리면 까닭 글. --step은 여러 번 받고, 있으면 --done-after 기본이 0이다. --record는 시연 영상 폴더. */
 export function parseArgs(argv: string[]): Args | string {
   const arg = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
   const clip = arg("clip") ?? "";
@@ -353,11 +358,13 @@ export function parseArgs(argv: string[]): Args | string {
   const steps = argv.flatMap((a, i) => (a === "--step" ? [argv[i + 1] ?? ""] : []));
   const bad = steps.find((s) => !STEP_ARG.test(s));
   if (bad !== undefined) return `--step은 <go|pick|place>:<낱말 a-z·_>:<영상.mp4|webm>예요: 「${bad}」`;
+  const record = arg("record");
+  if (argv.includes("--record") && (!record || record.startsWith("--"))) return "--record 뒤에 시연 영상을 남길 폴더를 주세요: --record <폴더>";
   const fake = argv.includes("--fake");
   const doneAfterMs = Number(arg("done-after") ?? (steps.length ? "0" : "3")) * 1000;
   const expectMs = Number(arg("expect-after") ?? (fake ? String(FAKE_PERSON_MS / 1000) : "36.3")) * 1000;
   if (!Number.isFinite(doneAfterMs) || doneAfterMs < 0 || !Number.isFinite(expectMs)) return "--done-after·--expect-after는 0 이상 숫자(초)예요";
-  return { clip, fake, steps, doneAfterMs, expectMs, phone: arg("phone") ?? "http://127.0.0.1:8210", api: arg("api") ?? "http://127.0.0.1:8200", out: arg("out") };
+  return { clip, fake, steps, doneAfterMs, expectMs, phone: arg("phone") ?? "http://127.0.0.1:8210", api: arg("api") ?? "http://127.0.0.1:8200", out: arg("out"), record };
 }
 
 /** 폰 영상 모드 주소: clip 하나와 step을 하나씩. */
@@ -365,20 +372,28 @@ export function phoneUrl(phone: string, clip: string, steps: string[]): string {
   return `${phone.replace(/\/+$/, "")}/phone/?clip=${encodeURIComponent(clip)}${steps.map((s) => `&step=${encodeURIComponent(s)}`).join("")}`;
 }
 
-/** 같은 크롬 새 탭(DASH_SIZE, 모바일 아님)으로 대시보드를 열고 DASH_WAIT_MS 뒤 사진을 file에 쓴다. 탭 오류 글을 돌려준다(판정에 넣지 않음). */
-async function dashboardShot(port: number, api: string, file: string): Promise<string[]> {
+/** 탭 크기를 DASH_SIZE(모바일 아님)로 두고 대시보드 <api>/를 연다. */
+async function openDashboard(tab: Page, api: string): Promise<void> {
+  await withTimeout(tab.send("Emulation.setDeviceMetricsOverride", { width: DASH_SIZE[0], height: DASH_SIZE[1], deviceScaleFactor: 1, mobile: false }), 10_000, "대시보드 탭 크기");
+  await withTimeout(tab.send("Page.navigate", { url: `${api}/` }), 30_000, "대시보드 열기");
+}
+
+/** 대시보드 사진을 file에 쓴다. open(--record로 판정 내내 띄운 대시보드 창)이 있으면 그 창을 바로 찍고,
+ *  없으면 같은 크롬 새 탭으로 열어 DASH_WAIT_MS 뒤 찍는다. 새 탭 오류 글을 돌려준다(판정에 넣지 않음). */
+async function dashboardShot(port: number, api: string, file: string, open?: Page): Promise<string[]> {
   const errors: string[] = [];
-  const tab = await openTab(port, (msg) => errors.push(msg));
+  const tab = open ?? (await openTab(port, (msg) => errors.push(msg)));
   try {
-    await withTimeout(tab.send("Emulation.setDeviceMetricsOverride", { width: DASH_SIZE[0], height: DASH_SIZE[1], deviceScaleFactor: 1, mobile: false }), 10_000, "대시보드 탭 크기");
-    await withTimeout(tab.send("Page.navigate", { url: `${api}/` }), 30_000, "대시보드 열기");
-    await sleep(DASH_WAIT_MS);
+    if (!open) {
+      await openDashboard(tab, api);
+      await sleep(DASH_WAIT_MS);
+    }
     const png = await tab.screenshot({ format: "png" }, 30_000);
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, png);
     return errors;
   } finally {
-    tab.close();
+    if (!open) tab.close();
   }
 }
 
@@ -392,6 +407,9 @@ async function main(): Promise<number> {
   const stamp = new Date().toLocaleString("sv-SE").replace(/[-:]/g, "").replace(" ", "-");
   const out = resolve(ROOT, args.out ?? `runtime/videos/${base}.${fakeMode ? "fake" : stamp}.timeline.md`);
   const shotFile = resolve(ROOT, `runtime/videos/${base}.${fakeMode ? "fake" : stamp}.twin.png`);
+  // --record: 시연 영상 <폴더>/<시각표 이름 줄기>.demo.mp4, 프레임은 옆 .frames 폴더(영상을 만들면 지움)
+  const demo = args.record ? demoFile(resolve(ROOT, args.record), out) : null;
+  const framesDir = demo ? demo.replace(/\.demo\.mp4$/, ".frames") : null;
   if (fakeMode && !existsSync(join(ROOT, "ui", "dist", "phone", "index.html"))) { console.error("ui/dist가 없어요: npm run heavy -- npm --prefix ui run build"); return 2; }
   const chromeExe = chromePath();
 
@@ -407,6 +425,13 @@ async function main(): Promise<number> {
     let fake: Fake | undefined;
     let chrome: Chrome | undefined;
     let page: Page | undefined;
+    // --record: 판정 내내 띄운 대시보드 창, 녹화, 대시보드 창 오류(판정에 넣지 않음), 녹화 쪽 적을 것
+    let dash: Page | undefined;
+    let rec: Recording | undefined;
+    let recorded: Recorded | undefined;
+    let encoded = false;
+    const dashErrors: string[] = [];
+    const recordNotes: string[] = [];
     try {
       fake = fakeMode ? await startFake(clip, steps) : undefined;
       const api = (fake?.api ?? args.api).replace(/\/+$/, "");
@@ -428,6 +453,17 @@ async function main(): Promise<number> {
       await cdp.send("Page.navigate", { url });
       console.log(`[video-check] ${url}`);
       const read = async () => (await cdp.evaluate(READ, 10_000)) as Seen;
+
+      // 시연 녹화: 같은 크롬 새 창(탭은 폰 탭을 가린다)으로 대시보드를 판정 내내 띄우고, 두 화면의 프레임을 받는다
+      if (framesDir) {
+        dash = await openWindow(port, DASH_SIZE, (msg) => dashErrors.push(msg));
+        await openDashboard(dash, api);
+        rmSync(framesDir, { recursive: true, force: true });
+        rec = await startRecording(framesDir, [{ name: "phone", page: cdp, size: SIZE }, { name: "dash", page: dash, size: DASH_SIZE }]);
+        const shown = await cdp.evaluate("document.visibilityState", 10_000).catch(() => "모름");
+        if (shown !== "visible") recordNotes.push(`녹화: 폰 탭이 가려짐(visibilityState ${String(shown)})`);
+        console.log(`[video-check] 녹화 시작 · ${RECORD_FPS}fps · 폰 탭 ${String(shown)} · ${framesDir}`);
+      }
 
       // 「AR 시작」을 누르고 재생이 시작될 때까지(t0)
       for (const end = Date.now() + 60_000; !(await cdp.evaluate(CLICK_START, 10_000).catch(() => false)); await sleep(250)) {
@@ -508,6 +544,7 @@ async function main(): Promise<number> {
         await sleep(1000);
       }
       await pollWorld();
+      recorded = await rec?.stop();
       const endMs = endedAt !== null ? clipStart() + (duration ?? seen.time ?? 0) * 1000 : null;
       const t0 = seen.record?.t0 ?? firstT0;
       if (t0 !== firstT0) console.log(`[video-check] 서버 시계 t0=${t0} (처음 ${firstT0})`);
@@ -526,17 +563,33 @@ async function main(): Promise<number> {
       const notes = [
         unfinished.length ? `끝까지 돌지 않음: ${unfinished.join(", ")}` : "",
         pageErrors.length ? `페이지 오류 ${pageErrors.length}개` : "",
+        ...recordNotes,
       ].filter(Boolean);
 
-      // 대시보드 사진: 같은 크롬 새 탭. 못 남기면 적기만 한다
+      // 대시보드 사진: 같은 크롬 새 탭(--record면 판정 내내 띄운 창). 못 남기면 적기만 한다
       let image: string | undefined;
       try {
-        const tabErrors = await withTimeout(dashboardShot(port, api, shotFile), 90_000, "대시보드 사진");
+        const tabErrors = [...(await withTimeout(dashboardShot(port, api, shotFile, dash), 90_000, "대시보드 사진")), ...dashErrors];
         image = relative(dirname(out), shotFile).replace(/\\/g, "/");
         console.log(`[video-check] 대시보드 사진 ${shotFile}`);
         if (tabErrors.length) console.log(`[video-check] 대시보드 탭 오류 ${tabErrors.length}개\n${tabErrors.slice(0, 5).join("\n")}`);
       } catch (e) {
         notes.push(`대시보드 사진 못 남김: ${(e as Error).message}`);
+      }
+
+      // 시연 영상: 크롬을 먼저 끄고(3D 그리기를 멈춤) 프레임을 mp4 하나로 합친다. 못 만들면 프레임 폴더를 남기고 적는다
+      if (recorded && framesDir && demo) {
+        page?.close();
+        dash?.close();
+        page = dash = undefined;
+        if (chrome) { await closeChrome(chrome); chrome = undefined; }
+        const n = (name: string) => recorded!.frames[name]?.length ?? 0;
+        const fps = (name: string) => (n(name) / Math.max(recorded!.endMs / 1000, 0.001)).toFixed(1);
+        console.log(`[video-check] 녹화 ${(recorded.endMs / 1000).toFixed(1)}초 · 폰 ${n("phone")}장(${fps("phone")}fps) · 대시보드 ${n("dash")}장(${fps("dash")}fps)${recorded.lost ? ` · 못 쓴 프레임 ${recorded.lost}장` : ""}`);
+        const made = await encodeDemo(framesDir, recorded, demo, { phoneSize: SIZE, dashSize: DASH_SIZE });
+        encoded = true;
+        if (made.ok) console.log(`[video-check] 시연 영상 ${demo}`);
+        else { console.log(`[video-check] ${made.why}`); notes.push(`시연 영상 못 만듦: ${made.why}`); }
       }
 
       console.log("");
@@ -580,7 +633,13 @@ async function main(): Promise<number> {
       if (fake) console.error(fake.logs.slice(-40).join("\n"));
       return 1;
     } finally {
+      // 영상을 만들기 전에 멈춘 판은 프레임 폴더만 남긴다
+      if (rec && !encoded) {
+        await rec.stop().catch(() => {});
+        console.error(`[video-check] 녹화 프레임을 남겼어요: ${framesDir}`);
+      }
       page?.close();
+      dash?.close();
       if (chrome) await closeChrome(chrome);
       await fake?.close();
     }

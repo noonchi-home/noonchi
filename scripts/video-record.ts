@@ -1,0 +1,157 @@
+// 시연 녹화(scripts/video-check.ts --record): 같은 크롬의 폰 탭과 대시보드 창을 CDP Page.startScreencast로 받아 폴더에 JPEG로 쓰고,
+// 끝나면 ffmpeg로 왼쪽 폰·오른쪽 대시보드를 높이 맞춰 나란히 붙인 mp4 하나(H.264, yuv420p, RECORD_FPS)로 합친다.
+// 프레임은 받은 시각을 붙여 두고, concat 목록의 프레임마다 다음 프레임까지 보이게 해 영상 길이가 녹화한 실제 시간과 같다.
+// ack는 앞 ack에서 RECORD_MS 뒤에 보낸다(크롬은 ack를 받아야 다음 프레임을 보내므로 화면마다 초당 약 10장).
+import { spawn } from "node:child_process";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { basename, join } from "node:path";
+import type { Page } from "./twin3d/cdp.js";
+
+export const RECORD_FPS = 10;
+/** 프레임 사이 간격(ms). 판정이 느려지면 늘린다. */
+export const RECORD_MS = 1000 / RECORD_FPS;
+/** mp4 높이: 두 화면을 이 높이에 맞춘다. */
+export const RECORD_HEIGHT = 800;
+const JPEG_QUALITY = 80;
+/** ffmpeg가 이보다 오래 걸리면 끝낸다. */
+const ENCODE_TIMEOUT_MS = 10 * 60_000;
+
+/** 프레임 하나: 녹화 폴더 기준 경로(/ 구분), 녹화 시작에서 받은 시각(ms). */
+export interface Frame { file: string; ms: number }
+/** 녹화 결과: 녹화 길이, 화면 이름마다 프레임, 쓰지 못한 프레임 수. */
+export interface Recorded { endMs: number; frames: Record<string, Frame[]>; lost: number }
+export type ScreencastPage = Pick<Page, "send" | "on">;
+export interface Recording { stop(): Promise<Recorded> }
+
+/** 녹화 폴더 안의 시연 영상 파일: 시각표 파일 이름 줄기(.timeline.md·.md 뺌) + .demo.mp4. */
+export function demoFile(recordDir: string, timelineFile: string): string {
+  return join(recordDir, `${basename(timelineFile).replace(/(?:\.timeline)?\.md$/, "")}.demo.mp4`);
+}
+
+/** ffmpeg concat 목록. 프레임마다 다음 프레임(마지막은 endMs)까지 보이고 첫 프레임은 0부터다. 같은 시각이면 뒤 프레임만,
+ *  endMs 이후 프레임은 뺀다. concat은 마지막 파일의 duration을 쓰지 않아 마지막 파일을 한 번 더 적는다. 남는 프레임이 없으면 null. */
+export function concatList(frames: Frame[], endMs: number): string | null {
+  const sorted = frames.map((f, i) => ({ ...f, i })).sort((a, b) => a.ms - b.ms || a.i - b.i).filter((f) => f.ms < endMs);
+  const kept = sorted.filter((f, k) => sorted[k + 1]?.ms !== f.ms);
+  if (!kept.length) return null;
+  const lines = ["ffconcat version 1.0"];
+  kept.forEach((f, k) => {
+    const from = k === 0 ? 0 : f.ms;
+    const to = kept[k + 1]?.ms ?? endMs;
+    lines.push(`file '${f.file}'`, `duration ${((to - from) / 1000).toFixed(3)}`);
+  });
+  lines.push(`file '${kept.at(-1)!.file}'`, "");
+  return lines.join("\n");
+}
+
+/** 높이 height에 맞춘 화면 너비(짝수). */
+const panelWidth = (size: [number, number], height: number) => 2 * Math.round((size[0] * height) / size[1] / 2);
+
+/** ffmpeg 인자: 두 concat 목록(폰, 대시보드)을 fps로 고르게 하고 높이를 맞춰(비율 그대로, 남는 곳은 채움) 나란히 붙여 H.264 yuv420p로, seconds 길이.
+ *  JPEG는 전체 범위(yuvj420p)라 보통 범위(tv)로 바꾼다. 그대로 두면 mp4가 yuvj420p가 된다. */
+export function ffmpegArgs(o: { phone: string; dash: string; out: string; seconds: number; phoneSize: [number, number]; dashSize: [number, number]; fps?: number; height?: number }): string[] {
+  const fps = o.fps ?? RECORD_FPS;
+  const h = o.height ?? RECORD_HEIGHT;
+  const fit = (input: number, size: [number, number], label: string) => {
+    const w = panelWidth(size, h);
+    return `[${input}:v]fps=${fps},scale=${w}:${h}:force_original_aspect_ratio=decrease:force_divisible_by=2:out_range=tv,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1[${label}]`;
+  };
+  return [
+    "-y", "-hide_banner", "-loglevel", "error",
+    "-f", "concat", "-safe", "0", "-i", o.phone,
+    "-f", "concat", "-safe", "0", "-i", o.dash,
+    "-filter_complex", `${fit(0, o.phoneSize, "p")};${fit(1, o.dashSize, "d")};[p][d]hstack=inputs=2,format=yuv420p[v]`,
+    "-map", "[v]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p", "-r", String(fps),
+    "-t", o.seconds.toFixed(3), "-movflags", "+faststart", o.out,
+  ];
+}
+
+/** 다음 ack 시각: 처음이면 지금, 아니면 앞 ack에서 intervalMs 뒤(이미 지났으면 지금). */
+export function ackAt(now: number, lastAck: number | null, intervalMs: number): number {
+  return lastAck === null ? now : Math.max(now, lastAck + intervalMs);
+}
+
+/** 화면마다 screencast를 켜고 프레임을 dir/<이름>/000001.jpg…에 쓴다. ms는 now()로 잰 녹화 시작부터의 시각. */
+export async function startRecording(
+  dir: string,
+  screens: { name: string; page: ScreencastPage; size: [number, number] }[],
+  o: { intervalMs?: number; now?: () => number } = {},
+): Promise<Recording> {
+  const now = o.now ?? Date.now;
+  const interval = o.intervalMs ?? RECORD_MS;
+  const start = now();
+  const frames: Record<string, Frame[]> = {};
+  const timers = new Set<ReturnType<typeof setTimeout>>();
+  const offs: (() => void)[] = [];
+  let stopped = false;
+  let lost = 0;
+  for (const s of screens) {
+    mkdirSync(join(dir, s.name), { recursive: true });
+    const list: Frame[] = (frames[s.name] = []);
+    let lastAck: number | null = null;
+    offs.push(s.page.on("Page.screencastFrame", (p) => {
+      if (stopped) return;
+      const at = now();
+      const file = `${s.name}/${String(list.length + 1).padStart(6, "0")}.jpg`;
+      try {
+        writeFileSync(join(dir, file), Buffer.from(String(p.data), "base64"));
+        list.push({ file, ms: at - start });
+      } catch {
+        lost += 1;
+      }
+      const ackTime = ackAt(at, lastAck, interval);
+      lastAck = ackTime;
+      const t = setTimeout(() => {
+        timers.delete(t);
+        if (!stopped) s.page.send("Page.screencastFrameAck", { sessionId: p.sessionId }).catch(() => {});
+      }, ackTime - at);
+      timers.add(t);
+    }));
+    await s.page.send("Page.startScreencast", { format: "jpeg", quality: JPEG_QUALITY, maxWidth: s.size[0], maxHeight: s.size[1], everyNthFrame: 1 });
+  }
+  return {
+    async stop() {
+      if (!stopped) {
+        stopped = true;
+        for (const t of timers) clearTimeout(t);
+        for (const off of offs) off();
+        // 끊긴 탭은 답하지 않으니 5초까지만 기다린다
+        let wait: ReturnType<typeof setTimeout> | undefined;
+        await Promise.race([
+          Promise.all(screens.map((s) => s.page.send("Page.stopScreencast").catch(() => {}))),
+          new Promise((r) => { wait = setTimeout(r, 5_000); }),
+        ]);
+        clearTimeout(wait);
+      }
+      return { endMs: now() - start, frames, lost };
+    },
+  };
+}
+
+/** 녹화를 mp4 하나로: dir에 concat 목록(phone.txt·dash.txt)을 쓰고 dir에서 ffmpeg를 돌린다. 되면 프레임 폴더를 지운다.
+ *  ffmpeg가 없거나 실패하면 프레임 폴더를 남기고 까닭과 폴더를 돌려준다. */
+export async function encodeDemo(
+  dir: string,
+  rec: Recorded,
+  out: string,
+  o: { phoneSize: [number, number]; dashSize: [number, number]; ffmpeg?: string },
+): Promise<{ ok: true } | { ok: false; why: string }> {
+  const phone = concatList(rec.frames.phone ?? [], rec.endMs);
+  const dash = concatList(rec.frames.dash ?? [], rec.endMs);
+  if (!phone || !dash) return { ok: false, why: `${phone ? "대시보드" : "폰"} 프레임이 없어요. 프레임 폴더: ${dir}` };
+  writeFileSync(join(dir, "phone.txt"), phone);
+  writeFileSync(join(dir, "dash.txt"), dash);
+  const args = ffmpegArgs({ phone: "phone.txt", dash: "dash.txt", out, seconds: rec.endMs / 1000, phoneSize: o.phoneSize, dashSize: o.dashSize });
+  const result = await new Promise<{ code: number | null; missing: boolean; err: string }>((done) => {
+    let err = "";
+    const proc = spawn(o.ffmpeg ?? "ffmpeg", args, { cwd: dir, stdio: ["ignore", "ignore", "pipe"] });
+    const timer = setTimeout(() => { err += "\n시간 넘김"; proc.kill(); }, ENCODE_TIMEOUT_MS);
+    proc.stderr?.on("data", (b: Buffer) => { err = (err + b.toString()).slice(-2000); });
+    proc.on("error", (e: NodeJS.ErrnoException) => { clearTimeout(timer); done({ code: null, missing: e.code === "ENOENT", err: e.message }); });
+    proc.on("close", (code) => { clearTimeout(timer); done({ code, missing: false, err }); });
+  });
+  if (result.missing) return { ok: false, why: `ffmpeg가 없어요. 프레임 폴더만 남겼어요: ${dir}` };
+  if (result.code !== 0) return { ok: false, why: `ffmpeg 실패(끝 코드 ${result.code}): ${result.err.trim().split(/\r?\n/).slice(-3).join(" / ")}. 프레임 폴더: ${dir}` };
+  for (let i = 0; i < 5; i++) { try { rmSync(dir, { recursive: true, force: true }); break; } catch { await new Promise((r) => setTimeout(r, 300)); } }
+  return { ok: true };
+}

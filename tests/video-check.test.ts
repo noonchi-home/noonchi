@@ -1,9 +1,14 @@
 // scripts/video-check.ts의 순수 함수: 영상 시각 글, 앞 판이 남긴 서버 알아보기, 끝까지 돌지 않은 판의 markdown,
-// 인자(--step), 트윈 줄, 영상 줄, 단계 판정 줄, 영상 끝 뒤 더 보기.
+// 인자(--step·--record), 트윈 줄, 영상 줄, 단계 판정 줄, 영상 끝 뒤 더 보기.
+// scripts/video-record.ts: 시연 영상 이름, ffmpeg concat 목록·명령, ack 간격, 가짜 페이지로 프레임 받기, ffmpeg가 없을 때.
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { HistoryRow } from "../src/contract/history.js";
 import type { WorldEye, WorldObject, WorldView } from "../src/contract/world.js";
 import { clock, costLine, markdown, parseArgs, phoneUrl, stepVerdict, timeline, twinRows, usedServer, watchAfterEnd, type Row } from "../scripts/video-check.js";
+import { ackAt, concatList, demoFile, encodeDemo, ffmpegArgs, startRecording, type ScreencastPage } from "../scripts/video-record.js";
 
 const eye = (room: string | null, room_label: string | null, x: number, y: number): WorldEye => ({ position: [x, y], height_m: 1.4, yaw_deg: 0, pitch_deg: -20, room, room_label, at_ms: 0 });
 const cup = (id: string, place: string | null, o: Partial<WorldObject> = {}): WorldObject => ({
@@ -186,5 +191,125 @@ describe("video-check", () => {
     expect(watchAfterEnd(5_000, 0, "done")).toBe(false);
     expect(watchAfterEnd(5_000, 0, undefined)).toBe(false);
     expect(watchAfterEnd(30_001, 1, "running")).toBe(false);
+  });
+
+  it("--record는 녹화 폴더를 받고, 없으면 녹화하지 않고, 폴더가 빠지면 --record <폴더>를 알려 준다", () => {
+    const a = parseArgs(["--clip", "cup-demo.mp4", "--record", "runtime/demo", "--fake"]);
+    if (typeof a === "string") throw new Error(a);
+    expect([a.record, a.fake]).toEqual(["runtime/demo", true]);
+    const plain = parseArgs(["--clip", "cup-demo.mp4"]);
+    if (typeof plain === "string") throw new Error(plain);
+    expect(plain.record).toBeUndefined();
+    expect(parseArgs(["--clip", "cup-demo.mp4", "--record"])).toMatch(/--record <폴더>/);
+    expect(parseArgs(["--clip", "cup-demo.mp4", "--record", "--fake"])).toMatch(/--record <폴더>/);
+    expect(parseArgs(["--clip", "../cup.mp4"])).toMatch(/쓰는 법.*--record <폴더>/);
+  });
+
+  it("시연 영상은 녹화 폴더에 시각표 파일 이름 줄기 + .demo.mp4", () => {
+    expect(demoFile("D:/rec", "C:/w/runtime/videos/cup-demo.20261112-101500.timeline.md")).toBe(join("D:/rec", "cup-demo.20261112-101500.demo.mp4"));
+    expect(demoFile("rec", "out/check.md")).toBe(join("rec", "check.demo.mp4"));
+  });
+
+  it("concat 목록: 프레임마다 다음 프레임(마지막은 녹화 끝)까지, 첫 프레임은 0부터, 같은 시각은 뒤 프레임만, 끝 뒤 프레임은 빼고, 마지막 파일을 한 번 더", () => {
+    const frames = [
+      { file: "phone/000004.jpg", ms: 500 },
+      { file: "phone/000001.jpg", ms: 120 },
+      { file: "phone/000002.jpg", ms: 220 },
+      { file: "phone/000003.jpg", ms: 220 },
+      { file: "phone/000005.jpg", ms: 1000 },
+    ];
+    expect(concatList(frames, 1000)).toBe([
+      "ffconcat version 1.0",
+      "file 'phone/000001.jpg'", "duration 0.220",
+      "file 'phone/000003.jpg'", "duration 0.280",
+      "file 'phone/000004.jpg'", "duration 0.500",
+      "file 'phone/000004.jpg'", "",
+    ].join("\n"));
+    expect(concatList([], 1000)).toBeNull();
+    expect(concatList([{ file: "dash/000001.jpg", ms: 1200 }], 1000)).toBeNull();
+  });
+
+  it("ffmpeg 명령: 왼쪽 폰·오른쪽 대시보드를 높이 800에 맞춰 나란히, 10fps, H.264 yuv420p(JPEG 전체 범위를 보통 범위로), 녹화 길이만큼", () => {
+    expect(ffmpegArgs({ phone: "phone.txt", dash: "dash.txt", out: "D:/rec/cup-demo.fake.demo.mp4", seconds: 95.4321, phoneSize: [390, 844], dashSize: [1280, 800] })).toEqual([
+      "-y", "-hide_banner", "-loglevel", "error",
+      "-f", "concat", "-safe", "0", "-i", "phone.txt",
+      "-f", "concat", "-safe", "0", "-i", "dash.txt",
+      "-filter_complex",
+      "[0:v]fps=10,scale=370:800:force_original_aspect_ratio=decrease:force_divisible_by=2:out_range=tv,pad=370:800:(ow-iw)/2:(oh-ih)/2,setsar=1[p];"
+        + "[1:v]fps=10,scale=1280:800:force_original_aspect_ratio=decrease:force_divisible_by=2:out_range=tv,pad=1280:800:(ow-iw)/2:(oh-ih)/2,setsar=1[d];"
+        + "[p][d]hstack=inputs=2,format=yuv420p[v]",
+      "-map", "[v]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p", "-r", "10",
+      "-t", "95.432", "-movflags", "+faststart", "D:/rec/cup-demo.fake.demo.mp4",
+    ]);
+    // 높이가 다른 대시보드도 같은 높이로: 1280×720 → 1422×800
+    expect(ffmpegArgs({ phone: "p.txt", dash: "d.txt", out: "o.mp4", seconds: 1, phoneSize: [390, 844], dashSize: [1280, 720] })[17]).toMatch(/\[1:v\]fps=10,scale=1422:800:.*pad=1422:800:/);
+  });
+
+  it("ack 시각: 처음은 바로, 그 뒤는 앞 ack에서 간격 뒤(이미 지났으면 바로)", () => {
+    expect(ackAt(1000, null, 100)).toBe(1000);
+    expect(ackAt(1010, 1000, 100)).toBe(1100);
+    expect(ackAt(1300, 1100, 100)).toBe(1300);
+  });
+
+  it("녹화: 두 화면의 screencast 프레임을 받은 시각과 함께 폴더에 쓰고, 프레임마다 ack, 멈추면 stopScreencast와 끝 시각, 그 뒤 프레임은 버린다", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "video-record-"));
+    try {
+      let now = 1000;
+      const fakePage = () => {
+        const sent: [string, object][] = [];
+        const handlers = new Map<string, (p: Record<string, unknown>) => void>();
+        const page: ScreencastPage & { sent: typeof sent; frame(text: string, sessionId: number): void } = {
+          sent,
+          async send(method, params = {}) { sent.push([method, params]); return {}; },
+          on(method, fn) { handlers.set(method, fn); return () => handlers.delete(method); },
+          frame(text, sessionId) { handlers.get("Page.screencastFrame")?.({ data: Buffer.from(text).toString("base64"), sessionId, metadata: {} }); },
+        };
+        return page;
+      };
+      const phone = fakePage();
+      const dash = fakePage();
+      const rec = await startRecording(dir, [{ name: "phone", page: phone, size: [390, 844] }, { name: "dash", page: dash, size: [1280, 800] }], { intervalMs: 0, now: () => now });
+      expect(phone.sent[0]).toEqual(["Page.startScreencast", { format: "jpeg", quality: 80, maxWidth: 390, maxHeight: 844, everyNthFrame: 1 }]);
+      expect(dash.sent[0]).toEqual(["Page.startScreencast", { format: "jpeg", quality: 80, maxWidth: 1280, maxHeight: 800, everyNthFrame: 1 }]);
+      now = 1150; phone.frame("p1", 7);
+      now = 1200; dash.frame("d1", 3);
+      now = 1260; phone.frame("p2", 8);
+      await new Promise((r) => setTimeout(r, 20));
+      now = 2000;
+      const r = await rec.stop();
+      now = 2100; phone.frame("p3", 9);
+      await new Promise((r) => setTimeout(r, 20));
+      expect(r).toEqual({
+        endMs: 1000,
+        frames: { phone: [{ file: "phone/000001.jpg", ms: 150 }, { file: "phone/000002.jpg", ms: 260 }], dash: [{ file: "dash/000001.jpg", ms: 200 }] },
+        lost: 0,
+      });
+      expect(readFileSync(join(dir, "phone", "000002.jpg"), "utf8")).toBe("p2");
+      expect(readFileSync(join(dir, "dash", "000001.jpg"), "utf8")).toBe("d1");
+      expect(existsSync(join(dir, "phone", "000003.jpg"))).toBe(false);
+      expect(phone.sent.filter(([m]) => m === "Page.screencastFrameAck").map(([, p]) => p)).toEqual([{ sessionId: 7 }, { sessionId: 8 }]);
+      expect(phone.sent.at(-1)?.[0]).toBe("Page.stopScreencast");
+      expect(dash.sent.at(-1)?.[0]).toBe("Page.stopScreencast");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("ffmpeg가 없으면 프레임 폴더를 남기고 그 사실과 폴더를 알려 준다", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "video-record-"));
+    try {
+      mkdirSync(join(dir, "phone"));
+      mkdirSync(join(dir, "dash"));
+      writeFileSync(join(dir, "phone", "000001.jpg"), "p");
+      writeFileSync(join(dir, "dash", "000001.jpg"), "d");
+      const frames = { phone: [{ file: "phone/000001.jpg", ms: 0 }], dash: [{ file: "dash/000001.jpg", ms: 10 }] };
+      const r = await encodeDemo(dir, { endMs: 1000, frames, lost: 0 }, join(dir, "x.demo.mp4"), { phoneSize: [390, 844], dashSize: [1280, 800], ffmpeg: "ffmpeg-not-installed-video-check" });
+      expect(r.ok).toBe(false);
+      expect(r.ok ? "" : r.why).toMatch(/ffmpeg가 없어요/);
+      expect(r.ok ? "" : r.why).toContain(dir);
+      expect(existsSync(join(dir, "phone", "000001.jpg"))).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
