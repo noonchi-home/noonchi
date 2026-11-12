@@ -127,7 +127,7 @@ function fakeEngine() {
   return {
     states: { getState: vi.fn(() => ({ door: "closed" })), getAttrs: vi.fn((id: string) => (id === FRIDGE ? { door: ["closed", "open"] } : null)), setState: vi.fn() },
     layout: { move: vi.fn((_id: string, _patch: unknown) => true), add: vi.fn(async () => true), remove: vi.fn(() => true), restore: vi.fn(() => false), isRemoved: () => false, dispose: vi.fn() },
-    requestRender: vi.fn(), resize: vi.fn(), setView: vi.fn(), setEye: vi.fn(), dispose: vi.fn(),
+    requestRender: vi.fn(), resize: vi.fn(), setView: vi.fn(), setEye: vi.fn(), stand: vi.fn((p: [number, number]) => p), dispose: vi.fn(),
     onView: vi.fn((cb: (c: unknown) => void) => { views.add(cb); return () => { views.delete(cb); }; }),
     draw() { for (const cb of [...views]) cb({ cx: 0, cy: 0, scale: 1 }); },
   };

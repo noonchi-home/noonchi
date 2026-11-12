@@ -1,28 +1,36 @@
-// 대시보드 트윈의 맞춘 눈 표시: 마스코트(미어캣) 인형 + 열린 시야 원뿔. three.js 기본 도형만 쓰고 그림 파일은 쓰지 않는다.
+// 대시보드 트윈의 맞춘 눈 표시: 클로이드 인형(마스코트 미어캣, Blender로 만든 GLB) + 보는 방향 원뿔.
+// 인형 모델은 scripts/twin3d/cloid-doll.py가 만든 ui/public/models/cloid-doll.glb다(앞 +x, 발 y 0, 키 DOLL_HEIGHT). 재질 이름마다 토큰 색을 입힌다.
 // 평면 (x, y)·바닥 높이 f → three (x, f, y). 인형 발은 그 방 바닥, 원뿔 꼭짓점은 height_m(서버 카메라 원점 [x, height_m, y]처럼 트윈 높이 0 기준),
 // 원뿔 축은 yaw(0 = +x, 90 = +y)·pitch(아래가 음수) 방향이다. 맞춘 눈만 보이고 null·추정 눈이면 숨긴다.
-// 거의 같은 눈(2 cm·1° 안)이면 그대로 둬서 집을 다시 그리지 않는다.
-// 색은 토큰만: 인형 twin.cloid.doll·brand, 원뿔 viz.cone(ok·limited, 면 불투명도, 길이, 둘레 심 굵기), 원뿔 둘레·꼭짓점은 세 겹(overlayLine).
+// 원뿔은 예전 뷰어(twin/apartment/viewer/main.mjs cloid_eye)의 것이다: 열린 원뿔(반지름 0.32·길이 0.9 m)과 꼭짓점 공(0.11 m), 한 재질.
+// 눈 층은 집 깊이를 지운 뒤 그려서 원뿔이 벽에 가려지지 않는다(예전 뷰어의 깊이 검사 끄기와 같은 뜻). 층 안에서는 깊이를 견줘 인형 머리 뒤쪽 원뿔이 얼굴을 덮지 않는다.
+// 그리는 자리만 보정한다(guide, walk.ts): 눈 자리를 방 안·벽에서 떨어진 자리로 옮기고, 새 자리까지는 문·트인 경계를 지나는 길로 걸어간다(tick).
+// 눈 자세 값(World State·판정이 쓰는 것)은 바꾸지 않는다. 거의 같은 눈(2 cm·1° 안)이면 그대로 둬서 집을 다시 그리지 않는다.
+// 색은 토큰만: 인형 twin.cloid.doll·brand, 원뿔 viz.cone(ok·limited).
 import * as THREE from "three";
 import type { EyeEvent, Plan2 } from "../../../src/contract/events.ts";
-import { color, overlayLine, twin, viz } from "../../../src/design/tokens.ts";
+import { color, twin, viz } from "../../../src/design/tokens.ts";
 import { planToPixel, type OrthoCamera } from "./projection";
+import type { WalkGuide } from "./walk";
 
-/** 인형 키(m). */
-export const DOLL_HEIGHT = 0.55;
+/** 인형 모델 주소(ui/public). */
+export const DOLL_URL = "/models/cloid-doll.glb";
+/** 인형 키(m). LG 클로이드 로봇이 몸을 다 폈을 때 키에 맞춘다. scripts/twin3d/cloid-doll.py HEIGHT_M과 같다. */
+export const DOLL_HEIGHT = 1.43;
 /** 인형이 발 자리에서 옆으로 차지하는 반지름(m, 꼬리 끝까지). */
-export const DOLL_REACH = 0.32;
-/** 원뿔 반각(도). */
-const CONE_HALF_DEG = 20;
+export const DOLL_REACH = 0.56;
+/** 원뿔(예전 뷰어 값): 넓은 쪽 반지름·길이·꼭짓점 공 반지름(m), 불투명도, 그리는 차례. */
+export const CONE = { radius: 0.32, length: 0.9, apex: 0.11, opacity: 0.8, order: 10 } as const;
 /** 이만큼보다 덜 움직이면 그대로 둔다(m, 도). */
 const STILL_M = 0.02;
 const STILL_DEG = 1;
-/** 원뿔 그리는 차례(인형 다음). */
-const ORDER = 10;
-/** 세 겹 선의 심 굵기(m)와 흰 테·숯색이 더하는 굵기. */
-const LINE = { core: viz.cone.lineCore, casingAdd: overlayLine.m3d.casingAdd, edgeAdd: overlayLine.m3d.edgeAdd };
-/** 원뿔 꼭짓점 점 반지름(m). */
-const APEX_R = 0.035;
+/** 그릴 자리로 걸어가는 빠르기(m/s)와, 멀면 이 시간(s) 안에 닿게 더 빨리 간다. */
+const WALK_MPS = 1.5;
+const CATCH_UP_S = 0.5;
+/** 길이 이보다 길면(다시 맞춤·다시 붙음) 걷지 않고 바로 옮긴다(m). */
+const JUMP_M = 12;
+/** 한 그림에 걷는 시간 위(s). 화면이 멈췄다 돌아와도 한 번에 건너뛰지 않는다. */
+const STEP_MAX_S = 0.1;
 
 /** 방 바닥 높이를 찾는 데 쓰는 서버 장면(/api/scene) 방. */
 export interface FloorRoom { polygon?: Plan2[]; floor_z?: number }
@@ -55,138 +63,142 @@ export function dollPixelBox(cam: OrthoCamera, position: Plan2, floor: number): 
 export interface EyeDoll {
   /** 인형(eye_doll)과 원뿔(eye_cone). 처음에는 숨어 있다. */
   readonly group: THREE.Group;
-  /** 맞춘 눈이면 그 자리에 보이고, null·추정 눈이면 숨긴다. 보이는 모양이 바뀌었으면 true. */
+  /** 맞춘 눈이면 보이고, null·추정 눈이면 숨긴다. 보이는 모양이 바뀌었거나 걸어갈 길이 생겼으면 true. */
   setEye(eye: EyeEvent | null): boolean;
+  /** 그릴 자리로 걷는 한 칸(now: ms). 아직 걷는 중이면 true. */
+  tick(now: number): boolean;
+  /** 지금 그린 발 자리(평면). 숨었으면 null. */
+  at(): Plan2 | null;
 }
 
-interface Pose { x: number; y: number; floor: number; h: number; yaw: number; pitch: number; limited: boolean }
+interface Pose { x: number; y: number; h: number; yaw: number; pitch: number; limited: boolean }
 
 /** 두 방향(도)의 차이, 360° 둘레로. */
 const turn = (a: number, b: number) => Math.abs((((a - b) % 360) + 540) % 360 - 180);
 const still = (a: Pose, b: Pose) =>
   a.limited === b.limited && Math.hypot(a.x - b.x, a.y - b.y) < STILL_M && Math.abs(a.h - b.h) < STILL_M
-  && Math.abs(a.floor - b.floor) < STILL_M && turn(a.yaw, b.yaw) < STILL_DEG && Math.abs(a.pitch - b.pitch) < STILL_DEG;
+  && turn(a.yaw, b.yaw) < STILL_DEG && Math.abs(a.pitch - b.pitch) < STILL_DEG;
 
 const rad = (deg: number) => (deg * Math.PI) / 180;
-const DOWN = new THREE.Vector3(0, -1, 0);
+const X_AXIS = new THREE.Vector3(1, 0, 0);
+const DOLL_COLORS: Record<string, string> = {
+  doll_fur: twin.cloid.doll.fur, doll_belly: twin.cloid.doll.belly, doll_dark: twin.cloid.doll.dark, doll_brand: color.brand,
+};
 
-/** 미어캣 인형(앞 +x, 발 y 0). */
-function meerkat(): THREE.Group {
+/** 받은 GLB 장면을 인형(eye_doll)으로: 재질 이름마다 토큰 색 재질로 바꾼다(모르는 이름은 털색). 모델이 없으면 빈 묶음. */
+export function dollFrom(model: THREE.Object3D | null): THREE.Group {
   const doll = new THREE.Group();
   doll.name = "eye_doll";
-  const lambert = (name: string, c: string) => new THREE.MeshLambertMaterial({ name, color: c });
-  const fur = lambert("doll_fur", twin.cloid.doll.fur);
-  const belly = lambert("doll_belly", twin.cloid.doll.belly);
-  const dark = lambert("doll_dark", twin.cloid.doll.dark);
-  const chest = lambert("doll_chest", color.brand);
-  const add = (name: string, geo: THREE.BufferGeometry, mat: THREE.Material, [x, y, z]: [number, number, number], scale?: [number, number, number]) => {
-    const m = new THREE.Mesh(geo, mat);
-    m.name = name;
-    m.position.set(x, y, z);
-    if (scale) m.scale.set(...scale);
-    doll.add(m);
-    return m;
-  };
-  const ball = (r: number) => new THREE.SphereGeometry(r, 16, 12);
-  for (const s of [1, -1]) {
-    const side = s > 0 ? "l" : "r";
-    add(`eye_doll_foot_${side}`, ball(0.035), dark, [0.02, 0.0175, 0.045 * s], [1.3, 0.5, 1]);
-    add(`eye_doll_eye_${side}`, ball(0.012), dark, [0.075, 0.48, 0.035 * s]);
-    add(`eye_doll_ear_${side}`, ball(0.026), dark, [-0.005, 0.51, 0.058 * s], [0.5, 1, 1]);
-  }
-  // 꼬리: 몸 뒤 아래에서 뒤로 늘어진다
-  const root = new THREE.Vector3(-0.07, 0.08, 0), tip = new THREE.Vector3(-0.3, 0.015, 0);
-  const along = tip.clone().sub(root);
-  const tail = add("eye_doll_tail", new THREE.CylinderGeometry(0.01, 0.028, along.length(), 10), fur, [(root.x + tip.x) / 2, (root.y + tip.y) / 2, 0]);
-  tail.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), along.normalize());
-  add("eye_doll_tail_tip", ball(0.012), dark, [tip.x, tip.y, tip.z]);
-  add("eye_doll_body", new THREE.CapsuleGeometry(0.085, 0.2, 6, 16), fur, [0, 0.215, 0]);
-  add("eye_doll_belly", ball(1), belly, [0.045, 0.2, 0], [0.05, 0.13, 0.068]);
-  add("eye_doll_chest", ball(0.018), chest, [0.083, 0.3, 0]);
-  add("eye_doll_head", new THREE.SphereGeometry(0.075, 20, 14), fur, [0.015, 0.455, 0]);
-  add("eye_doll_snout", new THREE.ConeGeometry(0.036, 0.09, 14).rotateZ(-Math.PI / 2), belly, [0.105, 0.44, 0]);
-  add("eye_doll_nose", ball(0.014), dark, [0.148, 0.44, 0]);
+  if (!model) return doll;
+  const made = new Map<string, THREE.MeshLambertMaterial>();
+  model.traverse((n) => {
+    if (!(n instanceof THREE.Mesh)) return;
+    const olds = [n.material].flat() as THREE.Material[];
+    const name = olds[0]?.name && DOLL_COLORS[olds[0].name] ? olds[0].name : "doll_fur";
+    if (!made.has(name)) made.set(name, new THREE.MeshLambertMaterial({ name, color: DOLL_COLORS[name]! }));
+    for (const m of olds) m.dispose();
+    n.material = made.get(name)!;
+  });
+  doll.add(model);
   return doll;
 }
 
-/** 깊이 검사 없이 차례대로 그리는 원뿔 재질. */
-const flat = (name: string, c: string, opacity = 1, side: THREE.Side = THREE.FrontSide) =>
-  new THREE.MeshBasicMaterial({ name, color: c, transparent: true, opacity, side, depthTest: false, depthWrite: false, toneMapped: false });
-
-/** 세 겹(숯색·흰 테·심) 메시 묶음. make(add)는 심보다 add(m)만큼 굵은 모양이다. */
-function layered(name: string, make: (add: number) => THREE.BufferGeometry, core: THREE.Material, order: number): THREE.Group {
-  const g = new THREE.Group();
-  g.name = name;
-  const edge = flat(`${name}_edge`, overlayLine.edge);
-  const casing = flat(`${name}_casing`, overlayLine.casing.color, overlayLine.casing.opacity);
-  ([["edge", LINE.edgeAdd, edge], ["casing", LINE.casingAdd, casing], ["core", 0, core]] as const).forEach(([k, add, mat], i) => {
-    const m = new THREE.Mesh(make(add), mat);
-    m.name = `${name}_${k}`;
-    m.renderOrder = order + i;
-    g.add(m);
-  });
-  return g;
-}
-
-/** 열린 시야 원뿔: 꼭짓점이 원점, 축은 아래(−y), 길이 viz.cone.length. 둘레와 꼭짓점은 세 겹. */
-function viewCone(): { cone: THREE.Group; face: THREE.MeshBasicMaterial; core: THREE.MeshBasicMaterial } {
-  const L = viz.cone.length;
-  const R = L * Math.tan(rad(CONE_HALF_DEG));
+/** 보는 방향 원뿔(예전 뷰어 cloid_eye): 꼭짓점이 원점이고 넓은 쪽이 +x인 열린 원뿔과 꼭짓점 공. 깊이는 인형과만 견준다(쓰지는 않는다). */
+function viewCone(): { cone: THREE.Group; mat: THREE.MeshBasicMaterial } {
+  const mat = new THREE.MeshBasicMaterial({ name: "cone", color: viz.cone.ok, transparent: true, opacity: CONE.opacity, depthTest: true, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
   const cone = new THREE.Group();
   cone.name = "eye_cone";
-  const face = flat("cone_face", viz.cone.ok, viz.cone.faceOpacity, THREE.DoubleSide);
-  const core = flat("cone_core", viz.cone.ok);
-  const mesh = new THREE.Mesh(new THREE.ConeGeometry(R, L, 48, 1, true).translate(0, -L / 2, 0), face);
-  mesh.name = "eye_cone_face";
-  mesh.renderOrder = ORDER;
-  const rim = layered("eye_cone_rim", (add) => new THREE.TorusGeometry(R, (LINE.core + add) / 2, 8, 64).rotateX(Math.PI / 2), core, ORDER + 1);
-  rim.position.y = -L;
-  const apex = layered("eye_cone_apex", (add) => new THREE.SphereGeometry(APEX_R + add / 2, 16, 12), core, ORDER + 4);
-  cone.add(mesh, rim, apex);
-  return { cone, face, core };
+  const face = new THREE.Mesh(new THREE.ConeGeometry(CONE.radius, CONE.length, 24, 1, true).rotateZ(Math.PI / 2).translate(CONE.length / 2, 0, 0), mat);
+  face.name = "eye_cone_face";
+  const apex = new THREE.Mesh(new THREE.SphereGeometry(CONE.apex, 16, 12), mat);
+  apex.name = "eye_cone_apex";
+  for (const m of [face, apex]) m.renderOrder = CONE.order;
+  cone.add(face, apex);
+  return { cone, mat };
 }
 
-/** 맞춘 눈 표시를 만든다. floorAt: 평면 점의 방 바닥 높이(없으면 0). */
-export function createEyeDoll(o: { floorAt?: (p: Plan2) => number } = {}): EyeDoll {
+const gap = (a: Plan2, b: Plan2) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+
+/** 맞춘 눈 표시를 만든다. floorAt: 평면 점의 방 바닥 높이(없으면 0). model: 인형 GLB 장면. guide: 그릴 자리 보정(없으면 눈 자리 그대로, 바로 옮긴다). */
+export function createEyeDoll(o: { floorAt?: (p: Plan2) => number; model?: THREE.Object3D | null; guide?: WalkGuide } = {}): EyeDoll {
   const floorAt = o.floorAt ?? (() => 0);
   const group = new THREE.Group();
   group.name = "cloid_eye";
   group.visible = false;
-  const doll = meerkat();
-  const { cone, face, core } = viewCone();
+  const doll = dollFrom(o.model ?? null);
+  const { cone, mat } = viewCone();
   group.add(doll, cone);
+  /** 마지막으로 받은 눈. */
   let shown: Pose | null = null;
+  /** 지금 그린 발 자리와 앞으로 걸을 길. */
+  let feet: Plan2 | null = null;
+  let trail: Plan2[] = [];
+  let tickAt: number | null = null;
 
   const poseOf = (eye: EyeEvent | null): Pose | null => {
     if (!eye || eye.estimated || !Array.isArray(eye.position)) return null;
     const [x, y] = eye.position;
     const { height_m: h, yaw_deg: yaw, pitch_deg: pitch } = eye;
     if (![x, y, h, yaw, pitch].every((v) => typeof v === "number" && Number.isFinite(v))) return null;
-    return { x, y, floor: floorAt([x, y]), h, yaw, pitch, limited: eye.tracking === "limited" };
+    return { x, y, h, yaw, pitch, limited: eye.tracking === "limited" };
+  };
+  const place = (p: Plan2) => {
+    feet = p;
+    doll.position.set(p[0], floorAt(p), p[1]);
+    if (shown) cone.position.set(p[0], shown.h, p[1]);
   };
 
   return {
     group,
+    at: () => (feet ? [feet[0], feet[1]] : null),
     setEye(eye) {
       const p = poseOf(eye);
       if (!p) {
         if (!group.visible) return false;
         group.visible = false;
         shown = null;
+        feet = null;
+        trail = [];
+        tickAt = null;
         return true;
       }
       if (shown && still(shown, p)) return false;
-      const a = rad(p.yaw), b = rad(p.pitch);
-      doll.position.set(p.x, p.floor, p.y);
-      doll.rotation.set(0, -a, 0);
-      cone.position.set(p.x, p.h, p.y);
-      cone.quaternion.setFromUnitVectors(DOWN, new THREE.Vector3(Math.cos(a) * Math.cos(b), Math.sin(b), Math.sin(a) * Math.cos(b)));
-      const c = p.limited ? viz.cone.limited : viz.cone.ok;
-      face.color.set(c);
-      core.color.set(c);
-      group.visible = true;
       shown = p;
+      const a = rad(p.yaw), b = rad(p.pitch);
+      doll.rotation.set(0, -a, 0);
+      cone.quaternion.setFromUnitVectors(X_AXIS, new THREE.Vector3(Math.cos(a) * Math.cos(b), Math.sin(b), Math.sin(a) * Math.cos(b)));
+      mat.color.set(p.limited ? viz.cone.limited : viz.cone.ok);
+      const goal: Plan2 = o.guide ? o.guide.stand([p.x, p.y]) : [p.x, p.y];
+      const way = feet && o.guide ? o.guide.path(feet, goal) : null;
+      const far = way ? way.slice(1).reduce((sum, q, i) => sum + gap(way[i]!, q), 0) : Infinity;
+      if (!feet || !way || far > JUMP_M) {
+        trail = [];
+        tickAt = null;
+        place(goal);
+      } else {
+        trail = way.slice(1);
+        place(feet);
+      }
+      group.visible = true;
       return true;
+    },
+    tick(now) {
+      if (!feet || !trail.length) { tickAt = null; return false; }
+      const dt = tickAt === null ? 0 : Math.min(STEP_MAX_S, Math.max(0, (now - tickAt) / 1000));
+      tickAt = now;
+      let at: Plan2 = feet;
+      const left = trail.reduce((sum, q, i) => sum + gap(i ? trail[i - 1]! : at, q), 0);
+      let go = Math.max(WALK_MPS, left / CATCH_UP_S) * dt;
+      while (trail.length && go > 0) {
+        const next = trail[0]!;
+        const d = gap(at, next);
+        if (d <= go) { at = next; go -= d; trail.shift(); continue; }
+        at = [at[0] + ((next[0] - at[0]) / d) * go, at[1] + ((next[1] - at[1]) / d) * go];
+        go = 0;
+      }
+      place(at);
+      if (!trail.length) tickAt = null;
+      return trail.length > 0;
     },
   };
 }

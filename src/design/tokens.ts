@@ -193,7 +193,7 @@ export const twin = {
       "fur": "#d6a771",
       "belly": "#f6e4d4",
       "dark": "#434140",
-      "note": "대시보드 3D 트윈의 맞춘 눈 인형(three.js 기본 도형 미어캣, 키 0.55 m). 가슴 점은 brand, 시야 원뿔은 viz.cone"
+      "note": "대시보드 3D 트윈의 클로이드 인형(Blender로 만든 미어캣 GLB, 키 1.43 m). 눈가리개·목줄·가슴 점은 brand, 보는 방향 원뿔은 viz.cone ok·limited"
     }
   },
   "checkedDevice": {
