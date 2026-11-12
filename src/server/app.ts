@@ -111,6 +111,13 @@ export interface TwinHomeApp {
 export const DEFAULT_WEB_DIR = fileURLToPath(new URL("../../ui/dist/", import.meta.url));
 /** 화면 폴더에 index.html이 없을 때(빌드 전) 화면 요청에 주는 오류. */
 export const NOT_BUILT = "화면이 아직 빌드되지 않았어요. npm run ui:build";
+
+/** /events 연결 하나에 보낼 것이 이만큼(바이트) 넘게 쌓여 있으면 물체 모양(seen)은 그 연결에 보내지 않는다. */
+export const EVENTS_SEEN_MAX_BUFFERED = 256 * 1024;
+/** 느린 연결에 초당 10번 오는 seen이 쌓이지 않게: seen은 다음 것이 앞 것을 대신하므로 밀린 연결에는 건너뛴다. 다른 메시지는 건너뛰지 않는다. */
+export function skipsWhenBehind(msg: unknown, bufferedAmount: number): boolean {
+  return bufferedAmount > EVENTS_SEEN_MAX_BUFFERED && typeof msg === "object" && msg !== null && (msg as { type?: unknown }).type === "seen";
+}
 const LOCAL_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
 /** 준비 상태를 모를 때(앱만 따로 띄운 시험). */
 const NOT_READY: ReadyView = {
@@ -655,7 +662,7 @@ export function createApp(opts: AppOptions): TwinHomeApp {
 
   function broadcast(msg: unknown): void {
     const text = JSON.stringify(msg);
-    for (const ws of wss.clients) if (ws.readyState === WebSocket.OPEN) ws.send(text);
+    for (const ws of wss.clients) if (ws.readyState === WebSocket.OPEN && !skipsWhenBehind(msg, ws.bufferedAmount)) ws.send(text);
   }
 
   wss.on("connection", (ws) => {
