@@ -82,11 +82,12 @@ export type Placed = ReadonlyMap<string, { target: string; part?: "basin"; atMs:
 export const putAway = (o: WorldObject, placed?: Placed) => o.facts.place?.value === "in_sink" || !!placed?.has(o.id);
 
 /** 사람이 물건을 들고 있고, 든 것을 모르거나 그 종류 물건이다(관절로 든 것이 책·리모컨 같은 다른 종류뿐이면 아니다).
- *  든 물건 id는 확인 전 물건도 들어 있어 종류를 id 앞(book_3 → book)으로 본다. */
-export function holdsTarget(world: WorldView, cls: string | undefined): boolean {
+ *  든 물건 id는 확인 전 물건도 들어 있어 종류를 id 앞(book_3 → book)으로 본다.
+ *  known이면 든 것을 모를 때는 아니다(사람이 그 자리에서 다른 것을 들고 있는 일: 식사 중 숟가락). */
+export function holdsTarget(world: WorldView, cls: string | undefined, known = false): boolean {
   if (world.person.facts.holding?.value !== "holding_object") return false;
   const held = world.person.holding.map((id) => id.replace(/_\d+$/, ""));
-  return held.length === 0 || (cls !== undefined && held.includes(cls));
+  return (held.length === 0 && !known) || (cls !== undefined && held.includes(cls));
 }
 
 /** 대상 종류 중 사라지지 않았고 이미 치우지 않은(싱크대 안·실행 추적이 놓은 것이 아닌) 물건 가운데 가장 최근에 본 것. 대상이 없는 행동이거나 못 찾으면 null. */
@@ -98,6 +99,15 @@ export function targetOf(spec: Pick<TaskSpec, "target">, world: WorldView, place
 /** 계획이 다루는 물건: 첫 act 단계의 대상 물건 id. 없으면 null. */
 export function planTargetId(plan: PlanView): string | null {
   return plan.steps.find((s) => s.kind === "act" && s.target?.objectId)?.target?.objectId ?? null;
+}
+
+/** 계획 단계 대상(objectId) 가운데 World State에서 그 종류인 첫 물건 id. 없으면 null. */
+export function planObjectOf(plan: PlanView, world: WorldView, cls: ObjClass): string | null {
+  for (const s of plan.steps) {
+    const id = s.target?.objectId;
+    if (id && world.objects.some((o) => o.id === id && o.cls === cls)) return id;
+  }
+  return null;
 }
 
 export const planIdOf = (decisionId: string) => `plan:${decisionId}`;

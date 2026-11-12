@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { checkDecision, checkPlan, loadActConfig, type CheckInput } from "../src/act/check.js";
 import { CHECK_TEXT } from "../src/plan/labels.js";
 import type { WorldObject } from "../src/contract/world.js";
+import { planObjectOf } from "../src/act/tasks.js";
 
 const obj = (over: Partial<WorldObject> = {}): WorldObject => ({
   id: "cup_1", cls: "cup", position: [2, 0.75, 0], surface: "t", surface_label: "식탁", room: "kitchen", error_m: 0.1, status: "present",
@@ -58,6 +59,50 @@ describe("실행 전 검사", () => {
     }
     const holding = { ...base().world, person: { visible: true, since_ms: 0, last_seen_ms: 9_000, count: 0, room: null, room_label: null, position: null, near: [], holding: [], position_ms: null, answered_ms: null, facts: { holding: fact("holding_object") } } };
     expect(checkPlan(base({ world: holding }))).toMatchObject({ reason: "in_hand" });
+  });
+  describe("채워 주기: 대상은 계획 단계 대상 가운데 그 행동의 대상 종류(컵)", () => {
+    const person = (holding: string[]) => ({ ...base().world.person, visible: true, last_seen_ms: 9_000, holding, facts: { holding: fact("holding_object") } });
+    const bottle = obj({ id: "bottle_1", cls: "bottle" });
+    const fill = (over: Partial<CheckInput> = {}): CheckInput => base({
+      decision: { ...base().decision, action: "컵에 물 채워 주기", prediction: { observation: "o", reasoning: "r", task_index: 5 } },
+      tasks: ["컵 치우기", "사용자에게 물어보기", "세탁물 건조기로 옮기기", "에어컨 켜기", "컵 그대로 두기", "컵에 물 채워 주기", "컵에 콜라 따라 주기"],
+      plan: {
+        ...base().plan!, legs: [{ stepId: "s1", end: 1 }, { stepId: "s3", end: 1 }],
+        steps: [
+          { id: "s1", kind: "move", label: "l", target: { objectId: "fridge_1" }, status: "pending" }, { id: "s2", kind: "act", label: "l", target: { objectId: "fridge_1" }, status: "pending" },
+          { id: "s3", kind: "move", label: "l", target: { objectId: "table_1" }, status: "pending" }, { id: "s4", kind: "act", label: "l", target: { objectId: "cup_1" }, status: "pending" },
+        ],
+      },
+      ...over,
+    });
+    it("첫 act 단계가 냉장고에서 집기여도 넷째 단계 대상 컵을 판단 뒤에 다시 봤으면 통과한다", () => {
+      expect(checkPlan(fill())).toEqual({ ok: true });
+      expect(planObjectOf(fill().plan!, fill().world, "cup")).toBe("cup_1");
+      expect(planObjectOf(fill().plan!, fill().world, "bottle")).toBeNull();
+      expect(checkPlan(fill({ world: { ...base().world, objects: [obj({ last_seen_ms: 8_000 })] } }))).toMatchObject({ reason: "stale" });
+    });
+    it("병을 집는 단계의 대상이 보이는 병이어도 검사 대상은 컵이다", () => {
+      const seen = fill();
+      seen.plan!.steps[1] = { ...seen.plan!.steps[1]!, target: { objectId: "bottle_1" } };
+      const w = { ...base().world, objects: [bottle, obj()] };
+      expect(planObjectOf(seen.plan!, w, "cup")).toBe("cup_1");
+      expect(checkPlan({ ...seen, world: w })).toEqual({ ok: true });
+    });
+    it("컵을 사람이 들고 있거나 쓰는 중이면 in_hand로 막는다", () => {
+      for (const facts of [{ place: fact("in_hand") }, { use: fact("in_use") }]) {
+        expect(checkPlan(fill({ world: { ...base().world, objects: [obj({ facts })] } }))).toMatchObject({ reason: "in_hand" });
+      }
+      expect(checkPlan(fill({ world: { ...base().world, person: person(["cup_1"]) } }))).toMatchObject({ reason: "in_hand" });
+    });
+    it("사람이 있는 자리에서 하는 일이라 든 것을 모르거나 숟가락을 든 것만으로는 막지 않는다(컵 치우기는 든 것을 모르면 막는다)", () => {
+      expect(checkPlan(fill({ world: { ...base().world, person: person([]) } }))).toEqual({ ok: true });
+      expect(checkPlan(fill({ world: { ...base().world, person: person(["spoon_1"]) } }))).toEqual({ ok: true });
+      expect(checkPlan(base({ world: { ...base().world, person: person([]) } }))).toMatchObject({ reason: "in_hand" });
+    });
+    it("컵이 사라졌으면 no_target", () => {
+      expect(checkPlan(fill({ world: { ...base().world, objects: [obj({ status: "gone" })] } }))).toMatchObject({ reason: "no_target" });
+      expect(checkPlan(fill({ world: { ...base().world, objects: [bottle] } }))).toMatchObject({ reason: "no_target" });
+    });
   });
   it("물어보기는 대상 물건을 보지 않는다", () => {
     const ask = base({
