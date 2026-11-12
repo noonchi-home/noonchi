@@ -33,7 +33,7 @@ const OPEN = 1; // WebSocket.OPEN
 const REACT_S = 1.5;
 const WALK_MPS = 0.8;
 const WALK_STOP_M = 0.6;
-const STEP_KINDS = new Set(["go", "pick", "place"]);
+const STEP_KINDS = new Set(["go", "pick", "place", "do"]);
 const STEP_WORD = /^[a-z_]+$/;
 const CLIP_NAME = /^[A-Za-z0-9_-]{1,64}\.(?:mp4|webm)$/;
 const clamp = (raw, lo, hi, fallback) => {
@@ -420,7 +420,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
 
     const current = {
       videoTime: timeline,
-      /** 사람 단계 명령: 맞는 step 칸이 있으면 그 id·step에 한 번, reactMs 뒤 단계 영상으로 바꾸고, 바뀌면 go는 걷고 집기·놓기는 대상을 바라본다. */
+      /** 사람 단계 명령: 맞는 step 칸이 있으면 그 id·step에 한 번, reactMs 뒤 단계 영상으로 바꾸고, 바뀌면 go는 걷고 집기·놓기·그 자리에서 하는 일(do)은 대상을 바라본다. */
       command(cmd) {
         const id = cmd.target?.id;
         const entry = typeof id === "string" ? steps.find((s) => s.kind === cmd.kind && id.includes(s.word)) : undefined;

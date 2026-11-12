@@ -554,12 +554,13 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
     const p = new URLSearchParams("clip=cup-empty.mp4");
     for (const s of [
       "go:table:go-table.mp4", "pick:cup:pick-cup.webm", "jump:table:a.mp4", "go:Table:a.mp4", "go:table:../x.mp4", "go:table:a.mov",
-      "go:table", "go:table:a.mp4:b", `place:sink:${"a".repeat(65)}.mp4`, "place:dining_table:place-sink.mp4", "go::a.mp4",
+      "go:table", "go:table:a.mp4:b", `place:sink:${"a".repeat(65)}.mp4`, "place:dining_table:place-sink.mp4", "go::a.mp4", "do:cup:pour-water.mp4",
     ]) p.append("step", s);
     expect(videoParams(p)!.steps).toEqual([
       { kind: "go", word: "table", clipUrl: "/phone/videos/go-table.mp4" },
       { kind: "pick", word: "cup", clipUrl: "/phone/videos/pick-cup.webm" },
       { kind: "place", word: "dining_table", clipUrl: "/phone/videos/place-sink.mp4" },
+      { kind: "do", word: "cup", clipUrl: "/phone/videos/pour-water.mp4" },
     ]);
     expect(videoParams(new URLSearchParams("clip=a.mp4"))).toMatchObject({ steps: [], reactMs: 1500 });
     for (const [raw, ms] of [["0.4", 400], ["0", 0], ["-1", 0], ["99", 10000], ["x", 1500], ["", 1500]] as const) {
@@ -662,6 +663,40 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
     closeTo(engine.orientation, look);
     ws.push({ type: "status", aligned: false, sync: sync() });
     expect(sent().filter((x) => x.type === "start").at(-1)).toMatchObject({ position: [0, 1.4, 0], orientation: pitchQuat(-25) });
+  });
+
+  it("do 명령(대상 id에 cup)이 오면 1.5초 뒤 pour-water.mp4로 바꿔 틀고, 걷지 않고 그 자리에서 대상을 본다. 같은 낱말의 pick 칸으로는 바꾸지 않는다", async () => {
+    fakeTimers();
+    const { ws, sent, urls, videos, marks, startAr } = make({}, `${STEPS}&step=do:cup:pour-water.mp4`);
+    await startAr();
+    ws.push({ ...ALIGNED, engine_ms: 500 });
+    ws.push(command({ step: "plan:pam-1:4", text: "컵에 물을 따라 주세요", vision: "컵 · 비어 있음", kind: "do", target: CUP, speak: false }));
+    await after(1400);
+    expect(urls).toEqual(["/phone/videos/cup-empty.mp4"]);
+    await after(100);
+    expect(urls).toEqual(["/phone/videos/cup-empty.mp4", "/phone/videos/pour-water.mp4"]);
+    expect(videos[1]!.played).toBe(1);
+    expect(videos[0]!.closed).toBe(1);
+    await after(2000);
+    const look = yawPitchQuat(Math.atan2(-0.1, 1.4), (Math.atan2(-0.6, Math.hypot(0.1, 1.4)) * 180) / Math.PI);
+    // 걷지 않는다: 자리는 그대로, 방향만 컵 쪽
+    for (const p of sent().filter((m) => m.type === "pose")) expect(p.position).toEqual([0, 1.4, 0]);
+    closeTo(lastPose(sent).orientation, look);
+    videos[1]!.advance(0.5);
+    await after(0);
+    const m = marks.at(-1)!;
+    expect(m.map((x) => x.id)).toEqual(["cup_3"]);
+    expect(m[0]!.u).toBeCloseTo(0.5, 5);
+  });
+
+  it("do 칸이 없으면 do 명령에는 영상을 바꾸지 않는다", async () => {
+    fakeTimers();
+    const { ws, urls, startAr } = make({}, STEPS);
+    await startAr();
+    ws.push(ALIGNED);
+    ws.push(command({ step: "plan:pam-1:4", text: "컵에 물을 따라 주세요", vision: "컵 · 비어 있음", kind: "do", target: CUP, speak: false }));
+    await after(3000);
+    expect(urls).toEqual(["/phone/videos/cup-empty.mp4"]);
   });
 
   it("집기 뒤 go는 숙인 각 −25°로 걷고, place 명령이면 멈춘 자리에서 싱크대 윗면 쪽으로 숙여 고리가 화면 가운데", async () => {

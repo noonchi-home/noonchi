@@ -57,6 +57,15 @@ describe("video-check", () => {
     if (typeof pressed === "string") throw new Error(pressed);
     expect([pressed.doneAfterMs, pressed.fake]).toEqual([2000, true]);
   });
+  it("그 자리에서 하는 일 단계 영상 --step do:cup:pour-water.mp4를 받는다(채워 주기 네 단계)", () => {
+    const steps = ["go:fridge:go-fridge.mp4", "pick:fridge:pick-water.mp4", "go:table:go-table.mp4", "do:cup:pour-water.mp4"];
+    const a = parseArgs(["--clip", "meal-empty-cup.mp4", ...steps.flatMap((s) => ["--step", s])]);
+    if (typeof a === "string") throw new Error(a);
+    expect(a.steps).toEqual(steps);
+    expect(a.doneAfterMs).toBe(0);
+    expect(phoneUrl("http://127.0.0.1:8210", "meal-empty-cup.mp4", a.steps)).toContain("&step=do%3Acup%3Apour-water.mp4");
+    expect(parseArgs(["--clip", "a.mp4", "--step", "pour:cup:pour-water.mp4"])).toMatch(/--step은 <go\|pick\|place\|do>/);
+  });
   it("모양이 틀린 --step·--clip이면 쓰는 법을 돌려준다", () => {
     for (const bad of ["jump:table:go-table.mp4", "go:Table:go-table.mp4", "go:table:../go-table.mp4", "go:table:go-table.mov", "go:table", "go::go-table.mp4"]) {
       expect(parseArgs(["--clip", "cup-empty.mp4", "--step", bad]), bad).toMatch(/--step/);

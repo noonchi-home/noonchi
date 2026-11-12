@@ -1,7 +1,7 @@
 // npx tsx scripts/video-check.ts --clip cup-demo.mp4 [--step <종류>:<낱말>:<영상.mp4> ...] [--phone http://127.0.0.1:8210] [--api http://127.0.0.1:8200]
 //   [--done-after 3] [--out runtime/videos/cup-demo.<시각>.timeline.md] [--expect-after 36.3] [--record <폴더>] [--fake]
 // 영상 모드 판정: 헤드리스 크롬 하나(390×844)로 폰 페이지 <phone>/phone/?clip=<clip>을 열고 「AR 시작」을 눌러 영상을 끝까지 튼다.
-// --step(여러 번, 종류 go·pick·place, 낱말 a-z·_)은 폰 주소에 step=으로 하나씩 붙는다. 폰 페이지는 종류가 같고 대상 id에 낱말이 든 명령이 오면
+// --step(여러 번, 종류 go·pick·place·do, 낱말 a-z·_)은 폰 주소에 step=으로 하나씩 붙는다. 폰 페이지는 종류가 같고 대상 id에 낱말이 든 명령이 오면
 // 그 단계 영상으로 바꿔 튼다(영상 시각은 이어 셈). --step이 있으면 --done-after 기본은 0이다(단추를 누르지 않고 비전·폰 위치로 단계가 넘어가는지 본다).
 // 판마다 서버를 새로 띄운다. 앞 판 계획이 끝나지 않았거나 엔진 프레임을 이미 받은 서버(World State가 남음)면 크롬을 띄우기 전에 멈춘다.
 // 1초마다 window.__noonchiVideo(t0·받은 명령·바꾼 단계 영상의 영상 시각·끝)와 GET /api/world(눈 자리·컵)를 읽는다(World State를 못 받으면 넘어감).
@@ -44,7 +44,7 @@ import { det } from "../tests/helpers/detectors.js";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CLIP_NAME = /^[A-Za-z0-9_-]{1,64}\.(?:mp4|webm)$/;
 /** --step 값: 종류:대상 낱말:단계 영상 */
-const STEP_ARG = /^(?:go|pick|place):[a-z_]+:[A-Za-z0-9_-]{1,64}\.(?:mp4|webm)$/;
+const STEP_ARG = /^(?:go|pick|place|do):[a-z_]+:[A-Za-z0-9_-]{1,64}\.(?:mp4|webm)$/;
 const SIZE: [number, number] = [390, 844];
 /** 대시보드 사진 탭 크기와 열고 기다리는 시간 */
 const DASH_SIZE: [number, number] = [1280, 800];
@@ -358,7 +358,7 @@ export function parseArgs(argv: string[]): Args | string {
   if (!CLIP_NAME.test(clip)) return USAGE;
   const steps = argv.flatMap((a, i) => (a === "--step" ? [argv[i + 1] ?? ""] : []));
   const bad = steps.find((s) => !STEP_ARG.test(s));
-  if (bad !== undefined) return `--step은 <go|pick|place>:<낱말 a-z·_>:<영상.mp4|webm>예요: 「${bad}」`;
+  if (bad !== undefined) return `--step은 <go|pick|place|do>:<낱말 a-z·_>:<영상.mp4|webm>예요: 「${bad}」`;
   const record = arg("record");
   if (argv.includes("--record") && (!record || record.startsWith("--"))) return "--record 뒤에 시연 영상을 남길 폴더를 주세요: --record <폴더>";
   const fake = argv.includes("--fake");
