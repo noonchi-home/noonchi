@@ -214,13 +214,13 @@ export const CUP_FSM_MEMORY: FsmMemory = {
       id: "drinking",
       description: "사용자가 식탁에 앉아 먹거나 마시는 중이다. 들고 있는 컵은 사용 중이라 건드리지 않는다.",
       rules: [{ trigger: "사용자가 식탁에서 먹는 중이고 식탁 위 컵이 비어 있으며 컵을 들거나 만지지 않는다.", action: "컵에 물 채워 주기" }],
-      next: [{ to: "watching_tv", on: "사용자가 TV를 보기 시작한다." }, { to: "left_cup", on: "사용자가 컵을 두고 자리를 떠나 보이지 않는다." }],
+      next: [{ to: "watching_tv", on: "사용자가 TV를 보기 시작한다." }, { to: "left_cup", on: "사용자가 컵을 두고 자리를 떠나 보이지 않는다." }, { to: "cooking", on: "사용자가 주방으로 가서 요리를 시작하려 한다." }],
     },
     {
       id: "watching_tv",
       description: "사용자가 TV를 보며 컵으로 음료를 마신다.",
       rules: [{ trigger: "사용자가 TV를 보는 중이고 곁의 컵이 비어 있으며 컵을 들거나 만지지 않는다.", action: "컵에 콜라 따라 주기" }],
-      next: [{ to: "drinking", on: "사용자가 식탁에 앉아 먹기 시작한다." }, { to: "left_cup", on: "사용자가 컵을 두고 자리를 떠나 보이지 않는다." }],
+      next: [{ to: "drinking", on: "사용자가 식탁에 앉아 먹기 시작한다." }, { to: "left_cup", on: "사용자가 컵을 두고 자리를 떠나 보이지 않는다." }, { to: "cooking", on: "사용자가 주방으로 가서 요리를 시작하려 한다." }],
     },
     {
       id: "left_cup",
@@ -230,7 +230,14 @@ export const CUP_FSM_MEMORY: FsmMemory = {
         { trigger: "사용자가 자리를 비웠지만 컵에 음료가 남아 있다.", action: "컵 그대로 두기" },
         { trigger: "사용자가 자리를 비웠고 컵 안을 확인할 수 없다.", action: "사용자에게 물어보기" },
       ],
-      next: [{ to: "drinking", on: "사용자가 돌아와 컵을 다시 든다." }],
+      next: [{ to: "drinking", on: "사용자가 돌아와 컵을 다시 든다." }, { to: "cooking", on: "사용자가 주방으로 가서 요리를 시작하려 한다." }],
+    },
+    // 코치(2026-11-13): 코치 모드에서만 이 규칙의 행동이 행동 목록에 있다(src/act/tasks.ts tasksFor). 눈치 모드에서는 PAM이 고를 수 없다
+    {
+      id: "cooking",
+      description: "사용자가 주방에서 음식을 만들려 한다. 방법을 묻거나 무엇을 할지 몰라 멈춰 있으면 단계마다 알려 준다.",
+      rules: [{ trigger: "사용자가 라면 끓이는 법을 알려 달라고 말했거나, 주방에서 라면을 끓이려다 무엇을 해야 할지 모르겠다고 말한다.", action: "라면 끓이기 알려 주기" }],
+      next: [{ to: "drinking", on: "사용자가 음식을 들고 식탁에 앉는다." }],
     },
   ],
 };

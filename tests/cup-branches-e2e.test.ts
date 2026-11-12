@@ -184,7 +184,7 @@ describe("컵 장면 갈래", () => {
       expect(b.tasks).toEqual(tasksFor("noonchi"));
     }
     expect(pam!.bodies.some((b) => /\[지속\] 사람 먹는 중/.test(String(b.observation_text)) && /컵 cup_1 .*비어 있음/.test(String(b.observation_text)))).toBe(true);
-    // 기억은 새 seed(상태 셋)다
-    expect((pam!.bodies[0]!.memory as { states: { id: string }[] }).states.map((x) => x.id)).toEqual(["drinking", "watching_tv", "left_cup"]);
+    // 기억은 새 seed(상태 넷)다
+    expect((pam!.bodies[0]!.memory as { states: { id: string }[] }).states.map((x) => x.id)).toEqual(["drinking", "watching_tv", "left_cup", "cooking"]);
   }, 90_000);
 });

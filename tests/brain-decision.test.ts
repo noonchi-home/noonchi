@@ -92,11 +92,23 @@ describe("고른 행동의 FSM 상태(대시보드 생각 말풍선 「상태」
     expect(fsmRuleOf(CUP_FSM_MEMORY, "fsm", "사용자에게 물어보기")).toEqual({ state: "left_cup", trigger: left.rules.find((r) => r.action === "사용자에게 물어보기")!.trigger });
   });
 
-  it("컵 FSM 기억은 상태 셋(먹는 중·TV 보는 중·자리를 뜸)이고 모양이 맞으며, 규칙의 행동은 모두 행동 목록에 있다", () => {
+  it("컵 FSM 기억은 상태 넷(먹는 중·TV 보는 중·자리를 뜸·요리)이고 모양이 맞으며, 규칙의 행동은 모두 행동 목록에 있다", () => {
     expect(validateMemory(CUP_FSM_MEMORY, "fsm")).toBe(CUP_FSM_MEMORY);
     expect(CUP_FSM_MEMORY.initial_state).toBe("drinking");
-    expect(CUP_FSM_MEMORY.states.map((s) => s.id)).toEqual(["drinking", "watching_tv", "left_cup"]);
+    expect(CUP_FSM_MEMORY.states.map((s) => s.id)).toEqual(["drinking", "watching_tv", "left_cup", "cooking"]);
     for (const s of CUP_FSM_MEMORY.states) for (const r of s.rules) expect(TASK_NAMES, `${s.id}: ${r.action}`).toContain(r.action);
+  });
+
+  it("요리 상태(cooking)의 규칙이 코치 행동 「라면 끓이기 알려 주기」를 고르고, 다른 상태마다 요리로 가는 길이 있다", () => {
+    expect(fsmRuleOf(CUP_FSM_MEMORY, "fsm", "라면 끓이기 알려 주기")).toEqual({
+      state: "cooking", trigger: "사용자가 라면 끓이는 법을 알려 달라고 말했거나, 주방에서 라면을 끓이려다 무엇을 해야 할지 모르겠다고 말한다.",
+    });
+    const cooking = CUP_FSM_MEMORY.states.find((s) => s.id === "cooking")!;
+    expect(cooking.next).toEqual([{ to: "drinking", on: "사용자가 음식을 들고 식탁에 앉는다." }]);
+    for (const s of CUP_FSM_MEMORY.states.filter((x) => x.id !== "cooking")) {
+      expect(s.next, s.id).toContainEqual({ to: "cooking", on: "사용자가 주방으로 가서 요리를 시작하려 한다." });
+    }
+    expect(FSM_STATE_TEXT.cooking).toBe("요리를 시작함");
   });
 
   it("컵 갈래 다섯 행동은 저마다 상태 하나의 규칙이다: 치우기·그대로 두기·물어보기는 자리를 뜸, 물은 먹는 중, 콜라는 TV 보는 중", () => {
@@ -139,6 +151,6 @@ describe("고른 행동의 FSM 상태(대시보드 생각 말풍선 「상태」
       // 영어 id가 아니다(「TV」는 한국어 화면 글에 쓰는 낱말이라 뺀다)
       expect(label!.replace(/TV/g, ""), s.id).not.toMatch(/[A-Za-z_()（）]/);
     }
-    expect(FSM_STATE_TEXT).toMatchObject({ drinking: "먹거나 마시는 중", watching_tv: "TV 보는 중", left_cup: "컵을 두고 자리를 뜸" });
+    expect(FSM_STATE_TEXT).toMatchObject({ cooking: "요리를 시작함", drinking: "먹거나 마시는 중", watching_tv: "TV 보는 중", left_cup: "컵을 두고 자리를 뜸" });
   });
 });
