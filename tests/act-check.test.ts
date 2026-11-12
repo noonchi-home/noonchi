@@ -41,6 +41,12 @@ describe("실행 전 검사", () => {
     expect(checkPlan(base({ plan: noTarget, world: { ...base().world, objects: [obj({ facts: inSink })] } }))).toMatchObject({ reason: "in_sink" });
     expect(checkPlan(base({ plan: noTarget, world: { ...base().world, objects: [obj({ facts: inSink, status: "gone" })] } }))).toMatchObject({ reason: "no_target" });
   });
+  it("실행 추적이 놓기 단계를 끝낸 물건(placed)은 이미 치운 것이라 계획 전 검사·실행 전 검사가 막는다", () => {
+    const placed = new Map([["cup_1", { target: "sink_1", atMs: 9_000 }]]);
+    expect(checkPlan(base({ placed }))).toEqual({ ok: false, reason: "in_sink", text: CHECK_TEXT.in_sink });
+    expect(checkDecision({ decision: base().decision, tasks: base().tasks, world: base().world, placed })).toMatchObject({ reason: "in_sink" });
+    expect(checkDecision({ decision: base().decision, tasks: base().tasks, world: base().world })).toEqual({ ok: true });
+  });
   it("판단 뒤에 다시 보지 않았거나 STALE_MS가 넘은 근거", () => {
     expect(checkPlan(base({ world: { ...base().world, objects: [obj({ last_seen_ms: 8_000 })] } }))).toMatchObject({ reason: "stale" });
     expect(checkPlan(base({ nowMs: 12_001 }))).toMatchObject({ reason: "stale" });

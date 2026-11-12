@@ -310,9 +310,9 @@ PAM이 고른 행동(기다리기 포함)을 계획으로 바꿀 때 단계마�
 | `{"person_in_room": 방 id}` | 사람이 보이고 발 자리가 그 방 |
 | `{"person_near": 가구·가전·설비 id, "within_m": 1.5}` | 사람이 보이고 발 자리가 그 거리 안(기본 1.5m) |
 | `{"person_fact": 면, "value": 키}` | 사람이 보이고 그 사실(자세·자리·들고 있음·하는 일·순간 동작) |
-| `{"person_holding": 종류 또는 id}` | 사람이 보이고 물건을 들고 있으며, 든 것을 모르거나 그 종류·id다(관절로 든 확인 전 물건도 본다). 책만 들었으면 컵은 거짓 |
+| `{"person_holding": 종류 또는 id}` | 사람이 보이고 물건을 들고 있으며, 든 것을 모르거나 그 종류·id다(관절로 든 확인 전 물건도 본다). 책만 들었으면 컵은 거짓. 10초 안에 분석한 프레임에 사람이 안 보이면 거짓(프레임이 없으면 모름)이라 `not`은 들고 있다는 근거가 있을 때만 거짓 |
 | `{"people_at_least": 2}` | 보인 사람 수가 그 이상. 10초 안에 분석한 프레임이 없으면 모름 |
-| `{"object": id 또는 종류, "facts": {면: 키, …}, "surface": 면 id, "status": 상태, "follow": true}` | 한 물건이 적은 칸을 모두 맞춤(종류면 그중 아무 물건). facts·surface·status 중 하나 이상, facts는 비우지 않는다. status는 present·out_of_view·gone. status gone만 적으면 그 종류(id)가 모두 사라짐, facts와 함께면 그 사실로 사라진 물건이 하나 있음. follow는 id에만: 원래 물건이 사라졌을 때(그 자리가 보이는데 없음, 시야 밖은 아님) 단계 시작 뒤 새로 생긴 같은 종류 물건이 하나면 그것도 본다. 여럿이면 모름. 실행 추적은 계획 단위로 따라간다: 지금 그 물건으로 보는 id가 사라졌거나(그 자리가 시야 안인데 없음) 사람이 집은 뒤 시야 밖이 됐을 때만, 그 뒤에 처음 보인 같은 종류 물건(계획 전부터 있던 것·앞서 이은 것은 뺀다)이 하나면 그것으로 이어 간다 |
+| `{"object": id 또는 종류, "facts": {면: 키, …}, "surface": 면 id, "part": "basin", "status": 상태, "follow": true}` | 한 물건이 적은 칸을 모두 맞춤(종류면 그중 아무 물건). facts·surface·status 중 하나 이상, facts는 비우지 않는다. part basin은 surface와 함께 쓰고 그 면의 싱크볼 안(World State `surface_part`)일 때만 맞다(싱크볼이 있는 자리만). status는 present·out_of_view·gone. status gone만 적으면 그 종류(id)가 모두 사라짐, facts와 함께면 그 사실로 사라진 물건이 하나 있음. follow는 id에만: 원래 물건이 사라졌을 때(그 자리가 보이는데 없음, 시야 밖은 아님) 단계 시작 뒤 새로 생긴 같은 종류 물건이 하나면 그것도 본다. 여럿이면 모름. 실행 추적은 계획 단위로 따라간다: 지금 그 물건으로 보는 id가 사라졌거나(그 자리가 시야 안인데 없음) 사람이 집은 뒤 시야 밖이 됐을 때만, 그 뒤에 처음 보인 같은 종류 물건(계획 전부터 있던 것·앞서 이은 것은 뺀다)이 하나면 그것으로 이어 간다 |
 | `{"fixture": 종류, "room": 방 id, "facts": {면: 키}}` | 그 방(없으면 아무 방) 가전 설비가 그 사실 |
 | `{"device": id 또는 종류, "state": 상태 키}` | 가전이 지금 그 상태. 신호가 없으면 모름 |
 | `{"device": id 또는 종류, "became": 상태 키}` | 단계 시작 뒤 가전이 그 상태가 됨(이번 회차, 가전 이력). 처음 받은 상태는 사건이 아니다 |
@@ -343,6 +343,7 @@ PAM이 고른 행동(기다리기 포함)을 계획으로 바꿀 때 단계마�
 | 그 컵이 비고 싱크대 안 | `{"object": "cup_1", "follow": true, "facts": {"contents": "empty", "place": "in_sink"}}` |
 | 그릇이 냉장고 안 | `{"object": "bowl", "facts": {"place": "in_fridge"}}` |
 | 컵이 그 식탁 위 | `{"object": "cup", "surface": "dining_table_978b20c7"}` |
+| 그 컵을 싱크대에 넣음(놓기 단계) | `{"any": [{"object": "cup_1", "follow": true, "facts": {"place": "in_sink"}}, {"all": [{"object": "cup_1", "follow": true, "surface": "sink_counter_kitchen", "part": "basin"}, {"not": {"object": "cup_1", "follow": true, "facts": {"place": "in_hand"}}}, {"not": {"person_holding": "cup_1"}}]}]}` |
 | 폰(손)이 싱크대 근처 | `{"phone_near": "sink_counter_kitchen"}` |
 | 5분 기다림 | `{"elapsed_s": 300}` |
 

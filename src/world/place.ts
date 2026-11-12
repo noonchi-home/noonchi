@@ -4,8 +4,24 @@ import { rotate2, rotate3, type Quat } from "../phone/align.js";
 import type { CameraView } from "../phone/session.js";
 
 type V3 = [number, number, number];
-/** 물건이 놓일 수 있는 윗면. center는 평면도 [x, y], top은 바닥에서 윗면 높이(m), radius는 윗면을 덮는 원. */
-export interface PlaneSurface { id: string; label: string; center: [number, number]; top: number; radius: number }
+/** 면 안의 싱크볼 사각형: 가운데 평면도 [x, y], 크기 [폭, 깊이](m), 깊이는 facing_deg 방향(배치 facing, 0 = +x, 90 = +y). */
+export interface Basin { center: [number, number]; size: [number, number]; facing_deg: number }
+/** 물건이 놓일 수 있는 윗면. center는 평면도 [x, y], top은 바닥에서 윗면 높이(m), radius는 윗면을 덮는 원. basin은 그 면의 싱크볼(있을 때). */
+export interface PlaneSurface { id: string; label: string; center: [number, number]; top: number; radius: number; basin?: Basin }
+
+/** 싱크볼 크기 [폭, 깊이](m). 도면 설비 자료(drawn_fixtures.json)는 싱크볼 가운데 점(sink)만 있다.
+ *  근거: 구운 트윈(twin/homes/mokryeon_180b/bake) sink_counter_kitchen_basin 노드 상자가 폭 0.74 × 깊이 0.44(가운데는 sink 점과 1.3cm 차이),
+ *  흔한 주방 사각 싱크볼 0.75~0.9 × 0.45~0.5. 영상 판정(2026-11-12 home-place.mp4)의 싱크볼 속 컵 상자를 그 판 폰 자리에서 다시 놓으면
+ *  폰이 싱크볼 점을 볼 때 그 점에서 0.08m다(조리대 가운데를 볼 때는 0.57m). */
+export const BASIN_SIZE: [number, number] = [0.74, 0.44];
+
+/** 평면 점이 싱크볼 사각형 안인가. */
+export function inBasin(b: Basin, p: [number, number]): boolean {
+  const a = (b.facing_deg * Math.PI) / 180;
+  const dx = p[0] - b.center[0], dy = p[1] - b.center[1];
+  const depth = dx * Math.cos(a) + dy * Math.sin(a), width = -dx * Math.sin(a) + dy * Math.cos(a);
+  return Math.abs(depth) <= b.size[1] / 2 && Math.abs(width) <= b.size[0] / 2;
+}
 
 function invert4(m: number[]): number[] {
   const inv = new Array<number>(16);
@@ -43,26 +59,31 @@ export function rayDir(view: CameraView, [nx, ny]: [number, number]): V3 {
   return norm([px, ar[1], py]);
 }
 
-/** 박스 [x, y, w, h](픽셀)의 트윈 위치. 광선이 위를 향하면 위치를 모른다. 오차는 거리에 따라 늘린다(5cm + 거리의 3%). */
-export function placeBox(view: CameraView, box: [number, number, number, number], size: { width: number; height: number }, surfaces: PlaneSurface[], floorAt: (p: [number, number]) => number): { position: V3 | null; surface: string | null; errorM: number | null } {
+/** 박스 [x, y, w, h](픽셀)의 트윈 위치. 광선이 위를 향하면 위치를 모른다. 오차는 거리에 따라 늘린다(5cm + 거리의 3%).
+ *  part: 광선이 그 면 윗면 높이에서 싱크볼 사각형 안을 지나면 basin. 싱크볼 바닥에 놓인 물건의 아래 가장자리는 윗면 높이에서 싱크볼 구멍을 지나야 보인다. */
+export function placeBox(view: CameraView, box: [number, number, number, number], size: { width: number; height: number }, surfaces: PlaneSurface[], floorAt: (p: [number, number]) => number): { position: V3 | null; surface: string | null; part: "basin" | null; errorM: number | null } {
   const u = box[0] + box[2] / 2, v = box[1] + box[3];
   const d = rayDir(view, [(u / size.width) * 2 - 1, 1 - (v / size.height) * 2]);
-  if (d[1] >= -1e-6) return { position: null, surface: null, errorM: null };
+  if (d[1] >= -1e-6) return { position: null, surface: null, part: null, errorM: null };
   const o = view.origin;
-  let best: { t: number; id: string | null; top: number } | null = null;
+  let best: { t: number; surface: PlaneSurface | null; top: number } | null = null;
   for (const s of surfaces) {
     const t = (s.top - o[1]) / d[1];
     if (t <= 0) continue;
     const x = o[0] + d[0] * t, y = o[2] + d[2] * t;
-    if (Math.hypot(x - s.center[0], y - s.center[1]) <= s.radius && (!best || t < best.t)) best = { t, id: s.id, top: s.top };
+    if (Math.hypot(x - s.center[0], y - s.center[1]) <= s.radius && (!best || t < best.t)) best = { t, surface: s, top: s.top };
   }
   if (!best) {
     const t0 = (0 - o[1]) / d[1];
     const floor = floorAt([o[0] + d[0] * t0, o[2] + d[2] * t0]);
-    best = { t: (floor - o[1]) / d[1], id: null, top: floor };
+    best = { t: (floor - o[1]) / d[1], surface: null, top: floor };
   }
   const p: V3 = [o[0] + d[0] * best.t, best.top, o[2] + d[2] * best.t];
-  return { position: p.map((x) => Math.round(x * 1000) / 1000) as V3, surface: best.id, errorM: Math.round((0.05 + 0.03 * best.t) * 100) / 100 };
+  const basin = best.surface?.basin;
+  return {
+    position: p.map((x) => Math.round(x * 1000) / 1000) as V3, surface: best.surface?.id ?? null, part: basin && inBasin(basin, [p[0], p[2]]) ? "basin" : null,
+    errorM: Math.round((0.05 + 0.03 * best.t) * 100) / 100,
+  };
 }
 
 /** 트윈 점의 화면 자리(NDC [x, y], 화면 안이면 -1..1). 카메라 뒤면 null. */
@@ -91,9 +112,11 @@ const SURFACE_TYPE = /table|desk|counter|sink/;
 /** 이름에 면 낱말이 들어도 면이 아닌 것(책상 조명). */
 const NOT_SURFACE = /lamp/;
 
-/** 배치 물건 중 식탁·책상·조리대·싱크대 윗면. top은 물건 바닥 + 높이, radius는 윗면을 덮는 원(footprint 대각선의 절반, 없으면 0.4m). */
-export function surfacesFromLayout(objects: readonly { id: string; name: string; type: string; plan: [number, number]; base: number; height: number; footprint?: [number, number] }[]): PlaneSurface[] {
+/** 배치 물건 중 식탁·책상·조리대·싱크대 윗면. top은 물건 바닥 + 높이, radius는 윗면을 덮는 원(footprint 대각선의 절반, 없으면 0.4m).
+ *  싱크볼 점(배치 anchors.basin, 평면도 점)이 있으면 그 점을 가운데로 BASIN_SIZE·배치 facing의 싱크볼을 붙인다. */
+export function surfacesFromLayout(objects: readonly { id: string; name: string; type: string; plan: [number, number]; base: number; height: number; footprint?: [number, number]; facing_deg?: number; basin?: [number, number] }[]): PlaneSurface[] {
   return objects.filter((o) => SURFACE_TYPE.test(o.type) && !NOT_SURFACE.test(o.type)).map((o) => ({
     id: o.id, label: o.name, center: [o.plan[0], o.plan[1]], top: o.base + o.height, radius: o.footprint ? Math.hypot(o.footprint[0], o.footprint[1]) / 2 : 0.4,
+    ...(o.basin ? { basin: { center: [o.basin[0], o.basin[1]] as [number, number], size: BASIN_SIZE, facing_deg: o.facing_deg ?? 0 } } : {}),
   }));
 }

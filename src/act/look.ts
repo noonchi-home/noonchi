@@ -20,7 +20,7 @@ import { LOOK_TEXT } from "../plan/labels.js";
 import { OBJECT_NAME } from "../world/labels.js";
 import { inView } from "../world/place.js";
 import { CLASSES, UNKNOWN_STATES, type ClassKey, type StateKey } from "../world/vocab.js";
-import { putAway } from "./tasks.js";
+import { putAway, type Placed } from "./tasks.js";
 import type { Stall } from "./track.js";
 
 /** 기본값: B 물건마다 30초·전체 10초에 한 번, 10초 넘게 낡은 프레임은 보지 않음, 앞서 한 일 5개, 관찰 모드 한 시간 60번. */
@@ -44,6 +44,8 @@ export interface LookerOptions {
   emit: (l: BrainLog) => void;
   /** 판단 전에 더 잘 볼 종류와 면(src/act/tasks.ts lookTargets). */
   targets: () => readonly { cls: ObjClass; facets: readonly Facet[] }[];
+  /** 실행 추적이 놓기 단계를 끝낸 물건(이미 치운 것, src/act/track.ts placed). 판단 전 보기(B)에서 뺀다. */
+  placed?: () => Placed;
   /** 가까이 보기를 시작할 때(대시보드 말풍선 카드). */
   onLook?: (spot: LookSpot) => void;
   clock?: { now(): number };
@@ -108,9 +110,10 @@ export class Looker {
     const wants = this.o.targets();
     if (!wants.length) return;
     for (const [id, at] of this.lookedAt) if (now - at >= this.cfg.objectGapMs) this.lookedAt.delete(id);
+    const placed = this.o.placed?.();
     for (const o of this.o.world().objects) {
       const want = wants.find((t) => t.cls === o.cls);
-      if (!want || o.status !== "present" || !o.position || putAway(o)) continue;
+      if (!want || o.status !== "present" || !o.position || putAway(o, placed)) continue;
       if (now - (this.lookedAt.get(o.id) ?? Number.NEGATIVE_INFINITY) < this.cfg.objectGapMs) continue;
       const facet = want.facets.find((f) => unknown(o.facts[f]?.value));
       if (!facet) continue;

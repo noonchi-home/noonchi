@@ -25,9 +25,11 @@ export type PlanScript = (input: string) => LlmTurn[];
 /** 단계 목록 → 한 차례(submit_plan 한 번에 계획 전체, 번호는 배열 순서). */
 export const planCalls = (steps: Record<string, unknown>[]): LlmTurn => [["submit_plan", { steps }]];
 
-/** 컵 치우기 네 단계(지금 서버와 같은 명령·조건). 내려놓기는 싱크대 안 사실, 또는 싱크대 면 위이고 손에 없음. */
-export function cupSteps(ids: { table: string; sink: string; cup: string }): Record<string, unknown>[] {
-  const { table, sink, cup } = ids;
+/** 컵 치우기 네 단계(지금 서버와 같은 명령·조건). 내려놓기(안에 넣기)는 싱크대 안 사실, 또는 싱크대 면의 싱크볼 안이고 손에 없고 사람이 그 컵을 들고 있지 않음.
+ *  싱크볼이 없는 싱크대(basin false)면 싱크대 안 사실만. */
+export function cupSteps(ids: { table: string; sink: string; cup: string; basin?: boolean }): Record<string, unknown>[] {
+  const { table, sink, cup, basin = true } = ids;
+  const inSink = { object: cup, follow: true, facts: { place: "in_sink" } };
   return [
     { kind: "go", label: STEP_LABEL.goTable, target: table, command: STEP_COMMAND.goTable, until: { phone_near: table }, timeout_s: 120 },
     {
@@ -37,12 +39,14 @@ export function cupSteps(ids: { table: string; sink: string; cup: string }): Rec
     { kind: "go", label: STEP_LABEL.goSink, target: sink, command: STEP_COMMAND.goSink, until: { phone_near: sink }, timeout_s: 120 },
     {
       kind: "place", label: STEP_LABEL.placeCup, target: sink, object: cup, command: STEP_COMMAND.placeCup,
-      until: {
-        any: [
-          { object: cup, follow: true, facts: { place: "in_sink" } },
-          { all: [{ object: cup, follow: true, surface: sink }, { not: { object: cup, follow: true, facts: { place: "in_hand" } } }] },
-        ],
-      },
+      until: basin
+        ? {
+          any: [
+            inSink,
+            { all: [{ object: cup, follow: true, surface: sink, part: "basin" }, { not: { object: cup, follow: true, facts: { place: "in_hand" } } }, { not: { person_holding: cup } }] },
+          ],
+        }
+        : inSink,
       timeout_s: 120,
     },
   ];
@@ -53,10 +57,14 @@ export function askSteps(): Record<string, unknown>[] {
   return [{ kind: "ask", label: STEP_LABEL.askUser, question: ASK_PROMPT.text, choices: ASK_PROMPT.choices.map(({ id, label, words, reply }) => ({ id, label, words, reply })), timeout_s: 120 }];
 }
 
-/** 입력 글에서 식탁·싱크대(평면도 종류)와 보이는 컵(World State) id. */
-export function idsFrom(input: string): { table: string; sink: string; cup: string } {
-  const place = (type: string) => new RegExp(`^- (\\S+) .*\\[${type}\\]`, "m").exec(input)?.[1] ?? "";
-  return { table: place("dining_table"), sink: place("sink_counter"), cup: /^- 물건 (cup_\d+) 컵 · (present|out_of_view)/m.exec(input)?.[1] ?? "" };
+/** 입력 글에서 식탁·싱크대(평면도 종류)와 보이는 컵(World State) id, 싱크대 줄에 싱크볼이 있는가. */
+export function idsFrom(input: string): { table: string; sink: string; cup: string; basin: boolean } {
+  const line = (type: string) => new RegExp(`^- (\\S+) .*\\[${type}\\].*$`, "m").exec(input);
+  const sink = line("sink_counter");
+  return {
+    table: line("dining_table")?.[1] ?? "", sink: sink?.[1] ?? "", basin: / · 싱크볼 \[/.test(sink?.[0] ?? ""),
+    cup: /^- 물건 (cup_\d+) 컵 · (present|out_of_view)/m.exec(input)?.[1] ?? "",
+  };
 }
 
 /** 컵 치우기·물어보기 대본(지금 서버와 같은 계획). */
@@ -121,7 +129,9 @@ export function planContext(o: { decision: DecisionRecord; world: WorldView; flo
   if (!task) throw new Error(`행동 목록에 없는 행동: ${o.decision.action}`);
   return {
     decision: o.decision, task, world: o.world, floor: o.floor, rooms: o.rooms ?? [], devices: o.hub ? deviceViews(o.hub) : [], nowIso: o.nowIso ?? "2026-11-10T00:00:00.000Z",
-    places: [...o.floor.objects.values()].map((p) => ({ id: p.id, type: p.type, room: p.room, position: p.position, name: placeShort(p.type) ?? p.id, short: placeShort(p.type) ?? p.id })),
+    places: [...o.floor.objects.values()].map((p) => ({
+      id: p.id, type: p.type, room: p.room, position: p.position, name: placeShort(p.type) ?? p.id, short: placeShort(p.type) ?? p.id, ...(p.basin ? { basin: p.basin } : {}),
+    })),
   };
 }
 

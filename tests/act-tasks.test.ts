@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { WorldObject, WorldView } from "../src/contract/world.js";
-import { holdsTarget, lookTargets, planTargetId, targetOf, TASK_NAMES, TASKS, taskOf } from "../src/act/tasks.js";
+import { holdsTarget, lookTargets, planTargetId, putAway, targetOf, TASK_NAMES, TASKS, taskOf } from "../src/act/tasks.js";
 import { smallFloor } from "./helpers/floor.js";
 import { cupPlan } from "./helpers/cup-plan.js";
 
@@ -39,6 +39,16 @@ describe("행동 목록", () => {
       cupAt({ id: "bottle_1", cls: "bottle", last_seen_ms: 30 }), cupAt({ id: "cup_4", last_seen_ms: 40, facts: inSink })];
     expect(targetOf(TASKS["컵 치우기"]!, world(objects))?.id).toBe("cup_2");
     expect(targetOf(TASKS["사용자에게 물어보기"]!, world(objects))).toBeNull();
+  });
+
+  it("실행 추적이 놓기 단계를 끝낸 물건(placed)도 이미 치운 것이라 대상에서 빠진다", () => {
+    const objects = [cupAt({ id: "cup_1", last_seen_ms: 5 }), cupAt({ id: "cup_2", last_seen_ms: 9, surface: "sink_1", facts: { place: { value: "on_table", at_ms: 9, since_ms: 9, certainty: "confirmed" } } })];
+    const placed = new Map([["cup_2", { target: "sink_1", atMs: 8 }]]);
+    expect(targetOf(TASKS["컵 치우기"]!, world(objects))?.id).toBe("cup_2");
+    expect(targetOf(TASKS["컵 치우기"]!, world(objects), placed)?.id).toBe("cup_1");
+    expect(putAway(objects[1]!, placed)).toBe(true);
+    expect(putAway(objects[0]!, placed)).toBe(false);
+    expect(putAway(objects[1]!)).toBe(false);
   });
 
   it("판단 전에 더 잘 볼 면: 컵 치우기는 컵의 contents. 대상 종류가 있는 행동만이다", () => {

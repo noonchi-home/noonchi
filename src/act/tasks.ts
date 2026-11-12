@@ -45,8 +45,12 @@ export function lookTargets(): { cls: ObjClass; facets: readonly Facet[] }[] {
   return Object.values(TASKS).flatMap((t) => (t.target && t.look?.length ? [{ cls: t.target, facets: t.look }] : []));
 }
 
-/** 이미 치운 물건: World State 자리가 싱크대 안. */
-export const putAway = (o: WorldObject) => o.facts.place?.value === "in_sink";
+/** 실행 추적이 놓기 단계를 끝낸 물건(src/act/track.ts placed): World State id → 그 계획의 넣은 곳(평면도 id)과 끝낸 시각.
+ *  계획을 만들지 않는다. 이미 치운 것을 아는 근거로만 쓴다. */
+export type Placed = ReadonlyMap<string, { target: string; atMs: number }>;
+
+/** 이미 치운 물건: World State 자리가 싱크대 안이거나, 실행 추적이 놓기 단계를 끝낸 물건(placed). */
+export const putAway = (o: WorldObject, placed?: Placed) => o.facts.place?.value === "in_sink" || !!placed?.has(o.id);
 
 /** 사람이 물건을 들고 있고, 든 것을 모르거나 그 종류 물건이다(관절로 든 것이 책·리모컨 같은 다른 종류뿐이면 아니다).
  *  든 물건 id는 확인 전 물건도 들어 있어 종류를 id 앞(book_3 → book)으로 본다. */
@@ -56,10 +60,10 @@ export function holdsTarget(world: WorldView, cls: string | undefined): boolean 
   return held.length === 0 || (cls !== undefined && held.includes(cls));
 }
 
-/** 대상 종류 중 사라지지 않았고 이미 치우지 않은(싱크대 안이 아닌) 물건 가운데 가장 최근에 본 것. 대상이 없는 행동이거나 못 찾으면 null. */
-export function targetOf(spec: Pick<TaskSpec, "target">, world: WorldView): WorldObject | null {
+/** 대상 종류 중 사라지지 않았고 이미 치우지 않은(싱크대 안·실행 추적이 놓은 것이 아닌) 물건 가운데 가장 최근에 본 것. 대상이 없는 행동이거나 못 찾으면 null. */
+export function targetOf(spec: Pick<TaskSpec, "target">, world: WorldView, placed?: Placed): WorldObject | null {
   if (!spec.target) return null;
-  return world.objects.filter((o) => o.cls === spec.target && o.status !== "gone" && !putAway(o)).sort((a, b) => b.last_seen_ms - a.last_seen_ms)[0] ?? null;
+  return world.objects.filter((o) => o.cls === spec.target && o.status !== "gone" && !putAway(o, placed)).sort((a, b) => b.last_seen_ms - a.last_seen_ms)[0] ?? null;
 }
 
 /** 계획이 다루는 물건: 첫 act 단계의 대상 물건 id. 없으면 null. */

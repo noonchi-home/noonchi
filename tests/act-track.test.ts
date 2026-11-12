@@ -9,12 +9,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ExecutionTracker, TRACK_DEFAULTS, type Stall, type TrackerOptions } from "../src/act/track.js";
 import { ApprovalStore, type ApprovalAnswer } from "../src/agent/approval.js";
 import type { AgentStep } from "../src/agent/planTools.js";
-import type { CheckResult } from "../src/act/check.js";
+import { checkDecision, type CheckResult } from "../src/act/check.js";
+import { TASKS, targetOf } from "../src/act/tasks.js";
 import type { BrainLog } from "../src/contract/events.js";
 import type { PlannedCommand, PlannedCommandMessage } from "../src/contract/phone.js";
 import type { WorldObject, WorldView } from "../src/contract/world.js";
 import { PlanHub } from "../src/plan/hub.js";
-import { APPROVAL_TEXT, EXEC_TEXT, STEP_COMMAND, STEP_LABEL } from "../src/plan/labels.js";
+import { APPROVAL_TEXT, CHECK_TEXT, EXEC_TEXT, STEP_COMMAND, STEP_LABEL } from "../src/plan/labels.js";
 import type { DecisionRecord } from "../src/world/decide.js";
 import { WorldState, type CloserPass } from "../src/world/state.js";
 import { sha256, type EngineFrame } from "../src/observe/ring.js";
@@ -163,6 +164,31 @@ describe("실행 추적: 단계마다 실제 폰 명령", () => {
     w = world([cup("present")], "holding_object", 10_000);
     t.onWorld();
     expect(last()).toMatchObject({ step: "plan:pam-1:3", text: "싱크대로 가 주세요" });
+  });
+
+  it("놓기: 컵이 싱크볼 안이고 손에 없어도 사람이 그 컵을 들고 있다는 근거(person_holding)가 있으면 넘기지 않는다. 분석한 프레임에 사람이 안 보이면 넘긴다", async () => {
+    let w = world([cup("present")]);
+    const { t, decide, clock, last, plans } = setup({ w: () => w });
+    await decide(decision);
+    for (const n of [1, 2, 3]) t.onAnswer("plan:pam-1", `plan:pam-1:${n}`, "done");
+    expect(last()).toMatchObject({ step: "plan:pam-1:4" });
+    clock.t += 600;
+    const onSink: WorldObject = { ...cup("present", "on_table", clock.t), surface: "sink_1", surface_label: "싱크대", surface_part: "basin" };
+    const held = world([onSink], "holding_object", clock.t);
+    w = { ...held, frame_ms: clock.t, person: { ...held.person, holding: ["cup_1"] } };
+    t.onWorld();
+    t.tick();
+    expect(last()).toMatchObject({ step: "plan:pam-1:4" });
+    // 든 것을 모를 때(관절로 이은 물건 없음)도 그 컵일 수 있어 넘기지 않는다
+    w = { ...held, frame_ms: clock.t };
+    t.onWorld();
+    expect(last()).toMatchObject({ step: "plan:pam-1:4" });
+    expect(plans.current()).toMatchObject({ status: "running" });
+    clock.t += 600;
+    w = { ...world([{ ...onSink, last_seen_ms: clock.t }]), frame_ms: clock.t };
+    t.onWorld();
+    expect(last()).toEqual({ type: "command_clear", id: "plan:pam-1" });
+    expect(plans.current()).toMatchObject({ status: "done" });
   });
 
   it("컵이 움직여 World State가 새 id를 붙여도(맞춘 카메라, 0.25m 넘게) 같은 컵으로 보고, 그 사이 판단은 같은 행동으로 이어 간다", async () => {
@@ -391,7 +417,7 @@ describe("실행 추적: 멈춘 집기·놓기 단계(관찰 모드 A)와 사람
   const PLACE_UNTIL = {
     any: [
       { object: "cup_1", follow: true, facts: { place: "in_sink" } },
-      { all: [{ object: "cup_1", follow: true, surface: "sink_1" }, { not: { object: "cup_1", follow: true, facts: { place: "in_hand" } } }] },
+      { all: [{ object: "cup_1", follow: true, surface: "sink_1", part: "basin" }, { not: { object: "cup_1", follow: true, facts: { place: "in_hand" } } }, { not: { person_holding: "cup_1" } }] },
     ],
   };
   const CLOSER = "컵이 보이게 가까이 비춰 주세요";
@@ -956,6 +982,61 @@ describe("실행 추적: 승인(처음 하는 PAM 계획)", () => {
   });
 });
 
+describe("실행 추적: 놓기 단계를 끝낸 물건(이미 치운 것)", () => {
+  const TASK_LIST = ["컵 치우기", "사용자에게 물어보기"];
+
+  it("놓기를 끝낸 컵은 그 계획의 넣은 곳과 남아 같은 행동의 계획 전 검사·대상 고르기에서 빠진다. 같은 면에서 다시 보이거나 손에 있음 한 번(추정)으로는 남고, 손에 있음이 확인되면 풀린다", async () => {
+    let w = world([cup("present")]);
+    let tracker: ExecutionTracker | null = null;
+    const { t, decide, clock, exec, plans } = setup({ w: () => w, precheck: (d) => checkDecision({ decision: d, tasks: TASK_LIST, world: w, placed: tracker!.placed() }) });
+    tracker = t;
+    await decide(decision);
+    for (const n of [1, 2, 3]) t.onAnswer("plan:pam-1", `plan:pam-1:${n}`, "done");
+    clock.t += 600;
+    const done = clock.t;
+    const inBasin: WorldObject = { ...cup("present", "on_table", clock.t), surface: "sink_1", surface_label: "싱크대", surface_part: "basin" };
+    w = { ...world([inBasin]), frame_ms: clock.t };
+    t.onWorld();
+    expect(plans.current()).toMatchObject({ id: "plan:pam-1", status: "done" });
+    expect([...t.placed()]).toEqual([["cup_1", { target: "sink_1", atMs: done }]]);
+    // VLM 자리 사실은 「식탁 위」지만 실행 추적이 싱크대에 넣은 컵이라 같은 행동을 다시 계획하지 않는다
+    expect(targetOf(TASKS["컵 치우기"]!, w, t.placed())).toBeNull();
+    await decide({ ...decision, id: "pam-2", seq: 2, atMs: clock.t });
+    expect(exec().at(-1)).toMatchObject({ plan_id: "plan:pam-2", state: "failed", text: CHECK_TEXT.in_sink });
+    clock.t += 600;
+    w = { ...world([{ ...inBasin, last_seen_ms: clock.t }]), frame_ms: clock.t };
+    expect(t.placed().has("cup_1")).toBe(true);
+    clock.t += 600;
+    const once: WorldObject = { ...inBasin, last_seen_ms: clock.t, facts: { place: { value: "in_hand", at_ms: clock.t, since_ms: clock.t, certainty: "inferred" } } };
+    w = { ...world([once]), frame_ms: clock.t };
+    expect(t.placed().has("cup_1")).toBe(true);
+    // 다시 집음(손에 있음 확인됨): 풀리고, 싱크대에 다시 보여도 실행 추적이 넣은 것이 아니라 다음 판단은 계획을 세운다
+    clock.t += 600;
+    w = { ...world([{ ...inBasin, last_seen_ms: clock.t, facts: { place: { value: "in_hand", at_ms: clock.t, since_ms: clock.t - 600, certainty: "confirmed" } } }]), frame_ms: clock.t };
+    expect(t.placed().size).toBe(0);
+    clock.t += 600;
+    w = { ...world([{ ...inBasin, last_seen_ms: clock.t }]), frame_ms: clock.t };
+    expect(t.placed().size).toBe(0);
+    await decide({ ...decision, id: "pam-3", seq: 3, atMs: clock.t });
+    expect(plans.current()).toMatchObject({ id: "plan:pam-3", status: "running" });
+  });
+
+  it("「완료」로 끝낸 놓기도 남는다. 놓기 전에 본 자리·트윈 자리를 모르는 채 본 것은 근거가 아니고, 그 뒤 다른 면(식탁)에서 보이면 풀린다", async () => {
+    let w = world([cup("present")]);
+    const { t, decide, clock } = setup({ w: () => w });
+    await decide(decision);
+    for (const n of [1, 2, 3, 4]) t.onAnswer("plan:pam-1", `plan:pam-1:${n}`, "done");
+    expect([...t.placed()]).toEqual([["cup_1", { target: "sink_1", atMs: clock.t }]]);
+    // 트윈 자리를 모르는 채(맞추기 전) 다시 보인 것은 옮긴 근거가 아니다
+    clock.t += 600;
+    w = { ...world([{ ...cup("present", undefined, clock.t), position: null, surface: null, surface_label: null }]), frame_ms: clock.t };
+    expect(t.placed().has("cup_1")).toBe(true);
+    clock.t += 600;
+    w = { ...world([cup("present", undefined, clock.t)]), frame_ms: clock.t }; // 식탁 면(t)에서 다시 보임
+    expect(t.placed().size).toBe(0);
+  });
+});
+
 describe("실행 추적 + 실제 World State(기준점을 맞춘 카메라)", () => {
   // 카메라: 트윈 (0, 1.5, 0)에서 45° 아래로 숙이고 +x를 본다(tests/world-state.test.ts와 같다). 90° 시야 투영(열 우선)
   const P = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1.0002, -1, 0, 0, -0.020002, 0];
@@ -992,12 +1073,15 @@ describe("실행 추적 + 실제 World State(기준점을 맞춘 카메라)", ()
     expect(last()).toEqual({ type: "command_clear", id: "plan:pam-1" });
   });
 
-  it("놓기 단계에서 옮긴 컵(새 id)이 싱크대 면 위에 생기면 VLM 자리 사실이 「식탁 위」여도 손에 없으니 「완료」 없이 끝난다. 「손에 있음」인 동안은 면 위여도 안 끝난다", async () => {
+  it("놓기 단계에서 옮긴 컵(새 id)이 싱크볼 안에 생기면 VLM 자리 사실이 「식탁 위」여도 손에 없으니 「완료」 없이 끝난다. 싱크볼 옆 조리대(같은 싱크대 면)나 「손에 있음」인 동안은 안 끝난다", async () => {
+    // 싱크대 면 sink_1의 싱크볼: 깊이(x) 1.05~1.35, 폭(y) 0.45~0.95
+    const sink = { id: "sink_1", label: "싱크대", center: [1.2, 0.8] as [number, number], top: 0.9, radius: 0.5, basin: { center: [1.2, 0.7] as [number, number], size: [0.5, 0.3] as [number, number], facing_deg: 0 } };
     const ws = new WorldState({
-      surfaces: () => [{ id: "table_1", label: "식탁", center: [2, 0], top: 0.75, radius: 0.6 }, { id: "sink_1", label: "싱크대", center: [1.2, 0.8], top: 0.9, radius: 0.5 }],
+      surfaces: () => [{ id: "table_1", label: "식탁", center: [2, 0], top: 0.75, radius: 0.6 }, sink],
       floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices: () => [],
     });
-    const inSink = box([340, 100, 40, 20]); // 싱크대 면 sink_1 위
+    const beside = box([427, 100, 40, 20]); // 싱크대 면 윗면 (1.2, 1.1): 싱크볼 밖
+    const inSink = box([340, 100, 40, 20]); // 싱크대 면 윗면 (1.2, 0.64): 싱크볼 안
     const see = (i: number, d: Detection, state: "on_table" | "in_hand") => {
       clock.t = i * 1000;
       const { ids } = ws.applyDetections(frame(i), [d]);
@@ -1013,19 +1097,27 @@ describe("실행 추적 + 실제 World State(기준점을 맞춘 카메라)", ()
     expect(last()).toMatchObject({ step: "plan:pam-1:3" });
     t.onAnswer("plan:pam-1", "plan:pam-1:3", "done");
     expect(steps()).toEqual(["done", "done", "done", "active"]);
-    // 싱크대 면 위에 새 컵(cup_3)이 생겼지만 VLM은 아직 손에 있다고 본다: 넘기지 않는다
-    for (let i = 7; i <= 9; i++) see(i, inSink, "in_hand");
-    expect(ws.view(9000).objects.map((o) => [o.id, o.status, o.surface, o.facts.place?.value])).toEqual([
-      ["cup_1", "gone", null, undefined], ["cup_2", "gone", null, "in_hand"], ["cup_3", "present", "sink_1", "in_hand"],
+    // 싱크볼 옆 조리대에 새 컵(cup_3): 같은 싱크대 면이고 손에 없지만 싱크볼 안이 아니라 넘기지 않는다
+    for (let i = 7; i <= 9; i++) see(i, beside, "on_table");
+    expect(ws.view(9000).objects.map((o) => [o.id, o.status, o.surface, o.surface_part, o.facts.place?.value])).toEqual([
+      ["cup_1", "gone", null, undefined, undefined], ["cup_2", "gone", null, undefined, "in_hand"], ["cup_3", "present", "sink_1", undefined, "on_table"],
+    ]);
+    expect(steps()).toEqual(["done", "done", "done", "active"]);
+    // 싱크볼 안에 새 컵(cup_4)이 생겼지만 VLM은 아직 손에 있다고 본다: 넘기지 않는다
+    for (let i = 10; i <= 12; i++) see(i, inSink, "in_hand");
+    expect(ws.view(12_000).objects.filter((o) => o.status === "present").map((o) => [o.id, o.surface, o.surface_part, o.facts.place?.value])).toEqual([
+      ["cup_4", "sink_1", "basin", "in_hand"],
     ]);
     expect(steps()).toEqual(["done", "done", "done", "active"]);
     expect(plans.current()).toMatchObject({ status: "running" });
-    // VLM이 싱크대 안 대신 「식탁 위」라 답해도 컵이 싱크대 면 위이고 손에 없으니 끝난다(「완료」를 누르지 않음)
-    see(10, inSink, "on_table");
-    expect(ws.view(10_000).objects.at(-1)).toMatchObject({ id: "cup_3", surface: "sink_1", facts: { place: { value: "on_table" } } });
+    // VLM이 싱크대 안 대신 「식탁 위」라 답해도 컵이 싱크볼 안이고 손에 없으니 끝난다(「완료」를 누르지 않음)
+    see(13, inSink, "on_table");
+    expect(ws.view(13_000).objects.at(-1)).toMatchObject({ id: "cup_4", surface: "sink_1", surface_part: "basin", facts: { place: { value: "on_table" } } });
     expect(last()).toEqual({ type: "command_clear", id: "plan:pam-1" });
     expect(plans.current()).toMatchObject({ id: "plan:pam-1", status: "done" });
     expect(exec().at(-1)).toMatchObject({ plan_id: "plan:pam-1", state: "done" });
+    // 놓기를 끝낸 컵은 지금 따라가는 World State id로 남는다(이미 치운 것)
+    expect([...t.placed()]).toEqual([["cup_4", { target: "sink_1", atMs: 13_000 }]]);
   });
 
   it("가까이 봐서 찾은 식탁 위 컵을 들어 옮겨 새 id가 붙으면, 지킴이 풀리는 그 프레임에 바로 새 컵으로 이어 집기가 비전으로 넘어간다", async () => {

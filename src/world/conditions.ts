@@ -4,9 +4,11 @@
 // - 단계가 시작된 뒤(sinceMs) 본 사실만 쓴다: 그 전 사실은 모름. 「모름」 값(안이 안 보임·하는 일 모름)은 다른 값과 견주면 모름.
 // - 지금만 맞는 면(하는 일·순간 동작·쓰는 중 등)은 FACT_FRESH_MS 안의 VLM 답만 쓴다. 값이 없으면 그 안에 그 대상 답이 있었을 때만 거짓.
 // - person_holding: 사람이 물건을 들고 있고(지금만 맞는 면), 든 것을 모르거나 그 종류(종류 이름)·그 id(id, 따라간 같은 물건 포함). 관절로 든 확인 전 물건도 본다.
+//   FACT_FRESH_MS 안에 분석한 프레임에 사람이 안 보이면 거짓(프레임이 끊기면 모름).
 // - 사람 방·가까이는 발이 보인 바닥 자리로만 본다(FRESH_MS 안). 폰 근처는 폰 자리(FRESH_MS 안)와 그 자리가 같은 방이고 평면 거리 안. 방을 모르면 모름.
 // - became: 그 단계(seq면 그 칸)가 시작된 뒤 가전이 그 상태가 됨(가전 이력). seq: 앞 칸이 참이 된 뒤 다음 칸이 참이고, 칸마다 기준 시각이 그때로 바뀐다.
 // - for_s: 그 시간 넘게 이어서 참(거짓·모름이면 다시 센다).
+// - 물건 surface: 단계 시작 뒤 본 자리가 그 면 위. part basin이면 그 면의 싱크볼 안(World State surface_part)이어야 한다(part는 surface와 함께).
 // 물건 이름은 id(cup_1) 또는 종류(cup: 그 종류 아무거나, 한 물건이 모든 칸을 함께 맞춰야 참). follow면 그 id와, 단계 시작 뒤 새로 생긴 같은 종류 물건(옮겨서 새 id가 붙은 그 물건).
 // 실행 추적은 계획 단위로 같은 물건을 안다(ConditionContext.follow): 지금 그 물건으로 보는 World State 물건(옮겨 새 id로 이었으면 그 id만, 잇지 못하면 원래 id)으로 판정한다.
 // 가전 이름은 id 또는 종류(washer).
@@ -39,7 +41,7 @@ export type Condition =
   | { person_fact: (typeof PERSON_FACETS)[number]; value: StateKey }
   | { person_holding: string }
   | { people_at_least: number }
-  | { object: string; facts?: FactMap; surface?: string; status?: "present" | "out_of_view" | "gone"; follow?: boolean }
+  | { object: string; facts?: FactMap; surface?: string; part?: "basin"; status?: "present" | "out_of_view" | "gone"; follow?: boolean }
   | { fixture: string; room?: string; facts: FactMap }
   | { device: string; state: DeviceStateKey }
   | { device: string; became: DeviceStateKey }
@@ -65,9 +67,11 @@ export const ConditionSchema: z.ZodType<Condition> = z.lazy(() => z.union([
   z.object({ person_holding: z.string().min(1) }).strict(),
   z.object({ people_at_least: z.number().int().min(1).max(5) }).strict(),
   z.object({
-    object: z.string().min(1), facts: FactMap.optional(), surface: z.string().min(1).optional(), status: z.enum(["present", "out_of_view", "gone"]).optional(), follow: z.boolean().optional(),
+    object: z.string().min(1), facts: FactMap.optional(), surface: z.string().min(1).optional(), part: z.enum(["basin"]).optional(),
+    status: z.enum(["present", "out_of_view", "gone"]).optional(), follow: z.boolean().optional(),
   }).strict()
     .refine((c) => c.facts !== undefined || c.surface !== undefined || c.status !== undefined, { message: "facts·surface·status 중 하나는 있어야 합니다" })
+    .refine((c) => c.part === undefined || c.surface !== undefined, { message: "part는 surface와 함께 씁니다" })
     .refine((c) => factsFit(c.facts, "object"), { message: "물건의 그 면 값이 아닙니다" }),
   z.object({ fixture: z.enum(FIXTURES), room: z.string().min(1).optional(), facts: FactMap }).strict()
     .refine((c) => factsFit(c.facts, "fixture"), { message: "가전 설비의 그 면 값이 아닙니다" }),
@@ -101,6 +105,8 @@ export interface ConditionHome {
   rooms: readonly string[];
   /** 가구·가전·도면 설비 id가 트윈에 있는가. */
   hasPlace: (id: string) => boolean;
+  /** 그 자리에 싱크볼(part basin)이 있는가. */
+  hasBasin: (id: string) => boolean;
 }
 
 const classOf = (name: string): ClassKey | null => {
@@ -128,6 +134,7 @@ export function checkCondition(c: Condition, home: ConditionHome): string[] {
       else for (const f of Object.keys(x.facts ?? {})) if (!(CLASSES[cls].facets as readonly string[]).includes(f)) out.push(`${cls}에 없는 면: ${f}`);
       if (x.follow && cls === x.object) out.push(`follow는 물건 id에만: ${x.object}`);
       if (x.surface && !home.hasPlace(x.surface)) out.push(`없는 자리: ${x.surface}`);
+      else if (x.surface && x.part === "basin" && !home.hasBasin(x.surface)) out.push(`싱크볼이 없는 자리: ${x.surface}`);
     }
     if ("fixture" in x) {
       for (const f of Object.keys(x.facts)) if (!(CLASSES[x.fixture as ClassKey].facets as readonly string[]).includes(f)) out.push(`${x.fixture}에 없는 면: ${f}`);
@@ -242,8 +249,9 @@ function check(c: Condition, w: WorldView, x: ConditionContext, m: Memo, path: s
   }
   if ("person_fact" in c) return p.visible ? factIs(p.facts[c.person_fact], c.value, "person", p.answered_ms, x) : null;
   if ("person_holding" in c) {
-    // 든 물건 id에는 확인 전 물건도 들어 있어 종류를 id 앞(book_3 → book)으로 본다. 든 것을 모르면(빈 목록) 그 물건일 수 있다
-    const holds = p.visible ? factIs(p.facts.holding, "holding_object", "person", p.answered_ms, x) : null;
+    // 든 물건 id에는 확인 전 물건도 들어 있어 종류를 id 앞(book_3 → book)으로 본다. 든 것을 모르면(빈 목록) 그 물건일 수 있다.
+    // 분석한 프레임에 사람이 안 보이면 들고 있는 사람이 없다(거짓). 그래서 not person_holding은 들고 있다는 근거가 있을 때만 거짓이다
+    const holds = p.visible ? factIs(p.facts.holding, "holding_object", "person", p.answered_ms, x) : live ? false : null;
     if (holds !== true) return holds;
     if (p.holding.length === 0) return true;
     const name = c.person_holding;
@@ -260,7 +268,7 @@ function check(c: Condition, w: WorldView, x: ConditionContext, m: Memo, path: s
     if (c.status === "gone" && c.facts === undefined && c.surface === undefined) return [...own, ...moved].every((o) => o.status === "gone");
     const one = (o: WorldView["objects"][number]): Tri => and([
       c.status === undefined ? true : o.status === c.status,
-      c.surface === undefined ? true : o.last_seen_ms >= x.sinceMs ? o.surface === c.surface : null,
+      c.surface === undefined ? true : o.last_seen_ms >= x.sinceMs ? o.surface === c.surface && (c.part === undefined || o.surface_part === c.part) : null,
       factsAre(o.facts, c.facts, "object", o.answered_ms, x),
     ]);
     return or([...own.map(one), ...(moved.length ? [agree(moved.map(one))] : [])]);

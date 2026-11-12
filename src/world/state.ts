@@ -75,7 +75,7 @@ export interface CloserDetection extends Detection { edge: boolean }
 /** 가까이 본 한 장: 원본 엔진 프레임 id·촬영 시각·카메라·크기와 그 잘라 본 사진의 감지. */
 export interface CloserPass { frameId: string; capturedAtMs: number; view: CameraView; width: number; height: number; dets: CloserDetection[] }
 /** 가까이 본 한 장의 물건 감지 하나: 그 장, 감지 번호(d1…), 트윈 자리. */
-interface CloserSeen { pass: CloserPass; tmp: string; position: V3; surface: string | null; errorM: number | null }
+interface CloserSeen { pass: CloserPass; tmp: string; position: V3; surface: string | null; part: "basin" | null; errorM: number | null }
 /** 가까이 보기 한 번에서 같은 종류·같은 자리로 묶인 감지(장마다 하나, 촬영 순서). */
 interface CloserGroup { cls: ObjClass; seen: CloserSeen[] }
 /** 한 묶음(전체 사진 한 장·가까이 보기 한 번)에서 등장을 확인한 새 물건과 그 촬영(옮김 처리 liftHolds). */
@@ -98,6 +98,8 @@ interface Obj {
   position: V3 | null;
   surface: string | null;
   surfaceLabel: string | null;
+  /** 그 면 안의 자리(싱크볼 안이면 basin). */
+  part: "basin" | null;
   room: string | null;
   errorM: number | null;
   /** 등장을 확인했는가(아니면 세는 중). */
@@ -223,7 +225,7 @@ export class WorldState {
     const n = (this.counters.get(cls) ?? 0) + 1;
     this.counters.set(cls, n);
     const obj: Obj = {
-      id: `${cls}_${n}`, cls, position: null, surface: null, surfaceLabel: null, room: null, errorM: null, confirmed: false, status: "present",
+      id: `${cls}_${n}`, cls, position: null, surface: null, surfaceLabel: null, part: null, room: null, errorM: null, confirmed: false, status: "present",
       firstSeen: atMs, lastSeen: atMs, lastInView: atMs, goneAt: null, facts: {}, answered: null, closerAt: null,
       posAt: Number.NEGATIVE_INFINITY, posCloser: false, judgedAt: atMs, judgedFrame: frameId, judgedCloser: false, followed: null, closerRev: {},
     };
@@ -432,6 +434,7 @@ export class WorldState {
         obj.position = placed.position;
         obj.surface = placed.surface;
         obj.surfaceLabel = placed.surface ? surfaces.find((s) => s.id === placed.surface)?.label ?? null : null;
+        obj.part = placed.part;
         obj.errorM = placed.errorM;
         obj.room = this.o.roomAt([placed.position[0], placed.position[2]])?.id ?? null;
         obj.posAt = at;
@@ -742,7 +745,7 @@ export class WorldState {
           const gap = dist(g.seen.at(-1)!.position, placed.position);
           if (gap <= near && (!best || gap < best.d)) best = { g, d: gap };
         }
-        const seen: CloserSeen = { pass, tmp: `d${i + 1}`, position: placed.position, surface: placed.surface, errorM: placed.errorM };
+        const seen: CloserSeen = { pass, tmp: `d${i + 1}`, position: placed.position, surface: placed.surface, part: placed.part, errorM: placed.errorM };
         if (best) best.g.seen.push(seen);
         else groups.push({ cls, seen: [seen] });
       });
@@ -820,12 +823,13 @@ export class WorldState {
   }
 
   /** 가까이 본 촬영으로 자리·면·방을 고친다(자리를 마지막으로 고친 촬영보다 새면, 같은 촬영이면 잘라 본 자리가 앞선다). */
-  private placeCloser(obj: Obj, s: { pass: CloserPass; position: V3; surface: string | null; errorM: number | null }, surfaces: PlaneSurface[]): void {
+  private placeCloser(obj: Obj, s: { pass: CloserPass; position: V3; surface: string | null; part: "basin" | null; errorM: number | null }, surfaces: PlaneSurface[]): void {
     const at = s.pass.capturedAtMs;
     if (!this.newerPlace(obj, at, true)) return;
     obj.position = s.position;
     obj.surface = s.surface;
     obj.surfaceLabel = s.surface ? surfaces.find((x) => x.id === s.surface)?.label ?? null : null;
+    obj.part = s.part;
     obj.errorM = s.errorM;
     obj.room = this.o.roomAt([s.position[0], s.position[2]])?.id ?? null;
     obj.posAt = at;
@@ -968,7 +972,7 @@ export class WorldState {
   view(nowMs: number): WorldView {
     const devices = this.o.devices();
     const objects: WorldObject[] = [...this.objects.values()].filter((x) => x.confirmed).map((x) => ({
-      id: x.id, cls: x.cls, position: x.position, surface: x.surface, surface_label: x.surfaceLabel, room: x.room, error_m: x.errorM, status: x.status,
+      id: x.id, cls: x.cls, position: x.position, surface: x.surface, surface_label: x.surfaceLabel, ...(x.part ? { surface_part: x.part } : {}), room: x.room, error_m: x.errorM, status: x.status,
       first_seen_ms: x.firstSeen, last_seen_ms: x.lastSeen, last_in_view_ms: x.lastInView, facts: { ...x.facts }, answered_ms: x.answered, devices: relatedDeviceIds(x.cls, devices),
       closer_hold: this.held(x, nowMs), followed_by: x.followed?.id ?? null, ...(Object.keys(x.closerRev).length ? { closer_rev: { ...x.closerRev } } : {}),
     }));

@@ -20,6 +20,8 @@ export interface WorldObject {
   /** 놓인 면(식탁·책상·조리대·싱크대) id와 이름. 바닥이거나 모르면 null. */
   surface: string | null;
   surface_label: string | null;
+  /** 그 면 안의 자리: basin 싱크볼 안(src/world/place.ts placeBox). 아니면 칸이 없다. */
+  surface_part?: "basin";
   room: string | null;
   /** 위치 오차(m). 위치를 모르면 null. */
   error_m: number | null;

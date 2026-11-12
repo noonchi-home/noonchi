@@ -1,4 +1,4 @@
-// 계획 시험이 함께 쓰는 작은 평면도: 복도(hall)와 주방(kitchen)이 트여 있고, 로봇은 복도 [1, 2], 식탁 [7, 3], 싱크대 [5, 1].
+// 계획 시험이 함께 쓰는 작은 평면도: 복도(hall)와 주방(kitchen)이 트여 있고, 로봇은 복도 [1, 2], 식탁 [7, 3], 싱크대 [5, 1](싱크볼 [5, 1.2]).
 import type { FloorPlan } from "../../src/plan/floor.js";
 import { floorPlanFrom } from "../../src/plan/route.js";
 
@@ -13,7 +13,7 @@ export const SMALL_SCENE = {
   objects: [
     { id: "robot", type: "robot", room: "hall", plan: { position: [1, 2] } },
     { id: "table_1", type: "dining_table", room: "kitchen", plan: { position: [7, 3] } },
-    { id: "sink_1", type: "sink_counter", room: "kitchen", plan: { position: [5, 1] } },
+    { id: "sink_1", type: "sink_counter", room: "kitchen", plan: { position: [5, 1] }, anchors: { basin: [5, 1.2] } },
   ],
 };
 

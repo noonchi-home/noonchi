@@ -72,8 +72,8 @@ export interface AgentPlan { view: PlanView; steps: AgentStep[]; task: string }
 export type PlanResult = { ok: true; plan: AgentPlan } | { ok: false; error: string };
 
 export type TaskInfo = TaskSpec;
-/** 평면도 물건 하나(가구·가전·도면 설비): id·종류·방·자리와 이름(name 배치 이름, short 비전 상태 줄의 짧은 이름). */
-export interface PlaceInfo { id: string; type: string; room: string | null; position: XZ; name: string; short: string }
+/** 평면도 물건 하나(가구·가전·도면 설비): id·종류·방·자리와 이름(name 배치 이름, short 비전 상태 줄의 짧은 이름), 싱크볼 가운데(있을 때). */
+export interface PlaceInfo { id: string; type: string; room: string | null; position: XZ; name: string; short: string; basin?: XZ }
 
 /** 계획 입력. floor.robot은 손(맞춘 폰 눈) 자리다. */
 export interface PlanContext {
@@ -108,7 +108,7 @@ export const STEP_ARGS = z.object({
   text: z.string().min(1).max(60).optional().describe("say: 폰이 읽을 알림 한 줄"),
   tool: z.enum(DEVICE_TOOLS).optional().describe("device: 기기를 바꾸는 도구 이름"),
   args: z.record(z.string(), z.unknown()).optional().describe("device: 그 도구 인자(device_id 빼고)"),
-  until: z.record(z.string(), z.unknown()).optional().describe("끝나는 조건: World State 조건 JSON(조건 낱말의 키만). wait에는 꼭. place는 자리 사실 또는 놓을 면(target) 위이고 손에 없음(not in_hand)을 any로 묶는다(모두 follow: true)"),
+  until: z.record(z.string(), z.unknown()).optional().describe("끝나는 조건: World State 조건 JSON(조건 낱말의 키만). wait에는 꼭. place는 자리 사실 또는 트윈 자리를 any로 묶는다: 위에 놓기는 놓을 면(target) 위, 안에 넣기(싱크대)는 그 면의 싱크볼 안(part basin)이고, 둘 다 손에 없고(not in_hand) 사람이 들고 있지 않음(not person_holding). 물건 조건은 모두 follow: true"),
   timeout_s: z.number().int().describe("이 단계 시간 한도(초)"),
   on_timeout: z.enum(["ask", "fail"]).optional().describe("시간이 지나면 ask 계속할지 묻기, fail 실패(기본)"),
 });
@@ -152,6 +152,7 @@ export class PlanDraft {
       devices: ctx.devices.map((d) => ({ id: d.id, kind: d.kind, twinAttrs: d.twinAttrs })),
       rooms: ctx.floor.rooms.map((r) => r.id),
       hasPlace: (id) => ctx.floor.objects.has(id),
+      hasBasin: (id) => !!ctx.floor.objects.get(id)?.basin,
     };
   }
 

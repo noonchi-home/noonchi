@@ -25,6 +25,8 @@
 // 「가까이 본 뒤 다시 판단」만 남긴다. 계획을 받은 뒤 첫 명령 전(승인 답·실행 전 검사를 기다리는 사이)이면 시작하지 않고 그 기록으로 계획을 취소로 닫는다.
 // 다음 판단이 새 사실로 다시 고른다. 첫 명령을 보낸 뒤에는 멈추지 않는다: 단계마다 끝나는 조건을 World State로 보고, 멈춘 단계의 가까이 보기(A)가
 // 그 면을 바꾸는 것도 이 계획의 관찰이다. 다른 행동이 맞으면 다음 판단이 새 계획으로 바꾼다.
+// 치운 물건(placed): 놓기 단계를 끝낸 물건과 그 계획의 넣은 곳을 남긴다. VLM 자리 사실이 싱크대 안이 아니어도 계획 전·실행 전 검사와 대상 고르기가
+// 이미 치운 것으로 본다. 다시 집거나(손에 있음 확인됨) 다른 면에서 보이면 지운다.
 import type { BrainLog, ExecState } from "../contract/events.js";
 import type { PhoneStepKind, PlannedCommand, PlannedCommandMessage } from "../contract/phone.js";
 import type { PlanView, XZ } from "../contract/plan.js";
@@ -43,7 +45,7 @@ import { HUMAN_KINDS, objectNames, type AgentPlan, type AgentStep, type PlanResu
 import type { ToolResult } from "../agent/tools.js";
 import type { CheckResult } from "./check.js";
 import { AGAIN, APPROVE, STEP_DONE, STOP, type ActionChoice } from "./prompts.js";
-import { matchChoice, planIdOf, taskOf } from "./tasks.js";
+import { matchChoice, planIdOf, taskOf, type Placed } from "./tasks.js";
 
 /** 기기 단계 실행(src/server/home.ts: 기기 도구 + 정책). run이 승인 토큰을 내면 실제 폰에 묻고 confirm·cancel로 답한다.
  *  결과의 unverified(ThinQ가 받았지만 다시 읽은 값이 다름)·state 「모름」(신호 없음)은 적용을 확인하지 못한 것이다. */
@@ -138,6 +140,8 @@ const clsOf = (w: WorldView, id: string) => w.objects.find((o) => o.id === id)?.
 export class ExecutionTracker {
   private run: Run | null = null;
   private planning: Job | null = null;
+  /** 놓기 단계를 끝낸 물건(placed). */
+  private readonly put = new Map<string, { target: string; atMs: number }>();
   private readonly jobs = new Set<Promise<void>>();
   private readonly planAt = new Map<string, number>();
   private gen = 0;
@@ -265,10 +269,34 @@ export class ExecutionTracker {
     return picked;
   }
 
-  /** World State가 바뀌었다: 지금 단계가 됐는지 바로 본다. */
+  /** World State가 바뀌었다: 치운 물건을 다시 보고, 지금 단계가 됐는지 바로 본다. */
   onWorld(): void {
+    this.placed();
     const r = this.run;
     if (!this.stopped && r?.state === "running") this.look(r);
+  }
+
+  /** 놓기 단계를 끝낸 물건(이미 치운 것): World State id → 그 계획의 넣은 곳과 끝낸 시각. 그 뒤 손에 있음이 확인되거나(다시 집음,
+   *  VLM 한 번의 손에 있음은 싱크대 속 컵에도 나와 확인됨만 본다) 트윈 자리가 다른 면·면 없음이거나(옮김) 사라지면 지운다.
+   *  계획을 만들지 않는다. 계획 전·실행 전 검사와 대상 고르기가 이미 치운 것을 아는 근거로만 쓴다. */
+  placed(): Placed {
+    const objects = this.o.world().objects;
+    for (const [id, p] of this.put) {
+      const o = objects.find((x) => x.id === id);
+      const hand = o?.facts.place;
+      const picked = hand?.value === "in_hand" && hand.certainty === "confirmed" && hand.at_ms > p.atMs;
+      // 트윈 자리를 모르는 채(맞추기 전) 본 것은 옮긴 근거가 아니다
+      const moved = !!o && o.last_seen_ms > p.atMs && o.position !== null && o.surface !== p.target;
+      if (!o || o.status === "gone" || picked || moved) this.put.delete(id);
+    }
+    return this.put;
+  }
+
+  /** 놓기 단계를 끝낸 물건을 적는다: 지금 그 물건으로 보는 World State id(따라가지 못하면 계획 물건 id)와 그 계획의 넣은 곳. */
+  private remember(r: Run, object: string, target: string): void {
+    const now = this.clock.now();
+    const ids = ours(r, object, this.o.world()).filter((o) => o.status !== "gone").map((o) => o.id);
+    for (const id of ids.length ? ids : [r.alias.get(object) ?? object]) this.put.set(id, { target, atMs: now });
   }
 
   /** 관찰 모드의 사람 부탁(ask_person): 지금 그 계획의 그 사람 단계면 같은 계획·단계 id로 명령 글만 바꿔 다시 보낸다(소리로 읽음).
@@ -468,11 +496,14 @@ export class ExecutionTracker {
     this.o.devices!.confirm(token, () => this.live(r, gen)).then((res) => this.deviceResult(r, gen, res), () => this.deviceResult(r, gen, { ok: false }));
   }
 
-  /** 지금 단계를 끝내고 다음 단계로. 마지막이었으면 계획 완료. 집기를 마치면 그 물건은 사람이 들고 다닌다. */
+  /** 지금 단계를 끝내고 다음 단계로. 마지막이었으면 계획 완료. 집기를 마치면 그 물건은 사람이 들고 다니고, 놓기를 마치면 그 물건은 넣은 곳에 치운 것이다. */
   private advance(r: Run): void {
     const done = this.stepOf(r);
     if (done?.kind === "pick" && done.object) r.carried.add(done.object);
-    if (done?.kind === "place" && done.object) r.carried.delete(done.object);
+    if (done?.kind === "place" && done.object) {
+      r.carried.delete(done.object);
+      if (done.target) this.remember(r, done.object, done.target);
+    }
     if (r.at + 1 >= r.plan.steps.length) return this.finish(r, "done");
     this.activate(r, r.at + 1);
   }

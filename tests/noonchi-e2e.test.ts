@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type WebSocket from "ws";
 import { startFakeOpenAI, type FakeServer } from "../scripts/fake-openai.js";
 import type { HistoryRow } from "../src/contract/history.js";
+import type { WorldView } from "../src/contract/world.js";
 import { encodeFramePacket } from "../src/phone/packet.js";
 import { CHECK_TEXT } from "../src/plan/labels.js";
 import { fetchRetry } from "../src/server/net.js";
@@ -102,6 +103,12 @@ describe("NOONCHI 처음부터 끝까지", () => {
     await pump(async () => (await history("execution")).rows.some((r) => r.subject === planId && r.text === "완료"));
     // 다음 판단(컵 치우기)은 싱크대 안 컵을 대상으로 삼지 않고 실행 전 검사에서 멈춘다
     await pump(async () => (await history("execution")).rows.some((r) => r.subject !== planId && r.text === CHECK_TEXT.in_sink));
+    // 그 뒤 VLM이 같은 컵을 「식탁 위」로 봐도(실제 판정에서 싱크대 속 컵에 나온 답) 실행 추적이 넣은 컵이라 다음 판단도 계획 전 검사에서 멈춘다
+    cupPlace = "on_table";
+    const cupNow = async () => ((await (await fetchRetry(`${srv!.url}/api/world`)).json()) as { world: WorldView }).world.objects.find((o) => o.cls === "cup");
+    await pump(async () => (await cupNow())?.facts.place?.value === "on_table");
+    const seen = Math.max(...(await history("execution")).rows.map((r) => r.id));
+    await pump(async () => (await history("execution")).rows.some((r) => r.id > seen && r.subject !== planId && r.text === CHECK_TEXT.in_sink));
 
     expect(phone.filter((m) => m.type === "command" && m.speak).map((m) => m.text)).toEqual(["식탁으로 가 주세요", "컵을 들어 주세요", "싱크대로 가 주세요", "컵을 싱크대에 넣어 주세요"]);
     const all = await history("vlm,detection,pam_text,decision,plan,execution,feedback");

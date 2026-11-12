@@ -5,7 +5,8 @@ export interface Portal { id: string; rooms: [string, string]; point: XZ }
 export interface FloorPlan {
   rooms: { id: string; polygon: XZ[] }[];
   portals: Portal[];
-  objects: Map<string, { id: string; type: string; room: string | null; position: XZ }>;
+  /** basin: 싱크볼 가운데(장면 물건 anchors.basin, 평면도 점). 싱크볼이 있는 싱크대만. */
+  objects: Map<string, { id: string; type: string; room: string | null; position: XZ; basin?: XZ }>;
   /** 로봇·충전대 물건이 없으면 position은 null(자리를 지어내지 않는다). */
   robot: { position: XZ | null; room: string | null; reachable: string[] };
 }
@@ -13,7 +14,7 @@ export interface FloorPlan {
 type Room = { id: string; polygon: XZ[]; floor_z?: number };
 type Scene = {
   plan?: { rooms?: Room[]; doors?: { id: string; position: XZ; connects: string[] }[]; open_edges?: [string, string][]; robot?: { dock?: string; reachable_rooms?: string[] } };
-  objects?: { id: string; type: string; room?: string | null; plan?: { position?: XZ } }[];
+  objects?: { id: string; type: string; room?: string | null; plan?: { position?: XZ }; anchors?: { basin?: unknown } }[];
 };
 
 const EPS = 0.06;
@@ -62,8 +63,13 @@ export function floorPlanFrom(scene: unknown): FloorPlan {
     const mid = byId.has(a) && byId.has(b) ? sharedEdgeMidpoint(byId.get(a)!.polygon, byId.get(b)!.polygon) : null;
     if (mid) portals.push({ id: `open:${a}:${b}`, rooms: [a, b], point: mid });
   }
-  const objects = new Map<string, { id: string; type: string; room: string | null; position: XZ }>();
-  for (const o of s.objects ?? []) if (o.plan?.position) objects.set(o.id, { id: o.id, type: o.type, room: o.room ?? null, position: o.plan.position });
+  const objects: FloorPlan["objects"] = new Map();
+  const xz = (v: unknown): v is XZ => Array.isArray(v) && v.length === 2 && v.every((n) => typeof n === "number" && Number.isFinite(n));
+  for (const o of s.objects ?? []) {
+    if (!o.plan?.position) continue;
+    const basin = o.anchors?.basin;
+    objects.set(o.id, { id: o.id, type: o.type, room: o.room ?? null, position: o.plan.position, ...(xz(basin) ? { basin: [basin[0], basin[1]] as XZ } : {}) });
+  }
   const dockId = s.plan?.robot?.dock;
   const start = [...objects.values()].find((o) => o.type === "robot") ?? (dockId ? objects.get(dockId) : undefined);
   return {

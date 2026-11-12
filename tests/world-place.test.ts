@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { inView, placeBox, rayDir, surfacesFromLayout } from "../src/world/place.js";
+import { BASIN_SIZE, inView, placeBox, rayDir, surfacesFromLayout } from "../src/world/place.js";
 import type { CameraView } from "../src/phone/session.js";
 
 // 90° 시야 정사각형 투영(열 우선), 카메라는 트윈 (0, 1.5, 0)에서 +x를 보고 45° 아래로 숙임
@@ -37,6 +37,30 @@ describe("트윈 위치", () => {
     expect(inView(view, [-2, 0, 0])).toBe(false);
     expect(inView(view, [1.5, 0, 0])).toBe(true);
   });
+  it("싱크볼이 있는 면: 광선이 윗면 높이에서 싱크볼 사각형(깊이는 facing 방향) 안이면 part basin, 그 밖 조리대면 part 없음", () => {
+    const sink = (size: [number, number], facing_deg: number) => ({
+      id: "sink_1", label: "싱크대", center: [0.6, 0.5] as [number, number], top: 0.9, radius: 1.2, basin: { center: [0.6, 0] as [number, number], size, facing_deg },
+    });
+    const at = (box: [number, number, number, number], s: ReturnType<typeof sink>) => placeBox(view, box, { width: 480, height: 360 }, [s], () => 0);
+    const middle: [number, number, number, number] = [220, 160, 40, 20]; // 윗면 (0.6, 0)
+    const side: [number, number, number, number] = [400, 160, 40, 20]; // 윗면 (0.6, ±0.64)
+    expect(at(middle, sink([0.6, 0.4], 0))).toMatchObject({ surface: "sink_1", part: "basin" });
+    const beside = at(side, sink([0.6, 0.4], 0));
+    expect(beside).toMatchObject({ surface: "sink_1", part: null });
+    expect(Math.abs(beside.position![2])).toBeCloseTo(0.64, 1);
+    // 폭 0.4·깊이 1.4: facing 0이면 깊이가 x라 옆 점은 밖, facing 90이면 깊이가 y라 안
+    expect(at(side, sink([0.4, 1.4], 0)).part).toBeNull();
+    expect(at(side, sink([0.4, 1.4], 90)).part).toBe("basin");
+    expect(at(middle, { ...sink([0.6, 0.4], 0), basin: undefined } as never).part).toBeNull();
+  });
+
+  it("싱크볼 기준점(anchors.basin, 평면도 점)이 있는 싱크대 면은 싱크볼 사각형을 가진다: 가운데는 그 점, 크기는 BASIN_SIZE, 방향은 배치 facing", () => {
+    const [k] = surfacesFromLayout([{ id: "k", name: "싱크대", type: "sink_counter", plan: [5.853, 0.761], base: 0, height: 0.9, footprint: [2.278, 0.65], facing_deg: 0, basin: [5.86, 1.38] }]);
+    expect(k!.basin).toEqual({ center: [5.86, 1.38], size: BASIN_SIZE, facing_deg: 0 });
+    expect(BASIN_SIZE).toEqual([0.74, 0.44]);
+    expect(surfacesFromLayout([{ id: "t", name: "식탁", type: "dining_table", plan: [1, 2], base: 0, height: 0.75 }])[0]!.basin).toBeUndefined();
+  });
+
   it("배치의 식탁·책상·조리대·싱크대만 면으로 쓴다(조명은 빼고)", () => {
     const s = surfacesFromLayout([
       { id: "t", name: "식탁", type: "dining_table", plan: [1, 2], base: 0, height: 0.75, footprint: [1.2, 0.8] },

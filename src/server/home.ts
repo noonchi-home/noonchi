@@ -124,28 +124,33 @@ export interface HomeRuntime {
   close(): Promise<void>;
 }
 
-/** 트윈의 식탁·책상·조리대·싱크대 윗면(물건의 트윈 위치). 배치가 바뀌면 다시 만든다. */
+/** 트윈의 식탁·책상·조리대·싱크대 윗면(물건의 트윈 위치). 싱크볼 점(도면 설비 anchors.basin)이 있으면 그 싱크볼도. 배치가 바뀌면 다시 만든다. */
 function surfaceSource(editor: LayoutEditor | undefined): () => PlaneSurface[] {
   if (!editor) return () => [];
   let cache: PlaneSurface[] | null = null;
   editor.subscribe(() => { cache = null; });
+  const pair = (v: unknown): v is [number, number] => Array.isArray(v) && v.length === 2 && v.every((n) => typeof n === "number" && Number.isFinite(n));
   return () => (cache ??= surfacesFromLayout(editor.objects().map((o) => {
     const c = editor.center(o.id);
+    const basin = (o.anchors as { basin?: unknown } | undefined)?.basin;
     return {
       id: o.id, name: o.name, type: o.type, plan: o.plan.position, base: o.position[1],
       height: c ? Math.max(0, 2 * (c.position[1] - o.position[1])) : o.height ?? 0, footprint: o.footprint,
+      facing_deg: o.plan.facing_deg, ...(pair(basin) ? { basin } : {}),
     };
   })));
 }
 
-/** 명령 대상·가까이 볼 자리(이름과 트윈 자리 [x, 높이, y]): 면(식탁·싱크대처럼 윗면이 있는 배치)이면 윗면 가운데, 그 밖은 배치 가운데.
- *  배치 가운데는 싱크대면 높이 약 0.45m라, 대상을 겨눈 폰 사진에서 윗면(컵이 놓이는 곳)보다 한참 아래다. */
+/** 명령 대상·가까이 볼 자리(이름과 트윈 자리 [x, 높이, y]): 면(식탁·싱크대처럼 윗면이 있는 배치)이면 윗면 가운데(싱크볼이 있으면 윗면 높이의 싱크볼 가운데),
+ *  그 밖은 배치 가운데. 배치 가운데는 싱크대면 높이 약 0.45m라, 대상을 겨눈 폰 사진에서 윗면(컵이 놓이는 곳)보다 한참 아래다.
+ *  컵은 싱크볼에 넣으므로 폰 고리·가까이 보기·영상 모드 폰이 보는 곳은 조리대 가운데가 아니라 싱크볼이다. */
 function placeLocator(editor: LayoutEditor | undefined, surfaces: () => PlaneSurface[]) {
   return (id: string): { label: string; position: [number, number, number] } | undefined => {
     const c = editor?.center(id);
     if (!c) return undefined;
     const top = surfaces().find((s) => s.id === id);
-    return { label: c.label, position: top ? [top.center[0], top.top, top.center[1]] : c.position };
+    const at = top?.basin?.center ?? top?.center;
+    return { label: c.label, position: top && at ? [at[0], top.top, at[1]] : c.position };
   };
 }
 
@@ -231,7 +236,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       const names = new Map((layout?.editor.objects() ?? []).map((o) => [o.id, o.name]));
       return [...floorPlan.objects.values()].filter((o) => !/^(walls|floors)$|door|win/.test(o.type)).map((o) => {
         const name = names.get(o.id) ?? o.id;
-        return { id: o.id, type: o.type, room: o.room, position: o.position, name, short: placeShort(o.type) ?? name };
+        return { id: o.id, type: o.type, room: o.room, position: o.position, name, short: placeShort(o.type) ?? name, ...(o.basin ? { basin: o.basin } : {}) };
       });
     };
     // 대시보드 말풍선 카드(src/act/say.ts): 계획 방송·실제 폰 명령·World State 바뀜·판단 타이머 뒤에 다시 보고, 글이 바뀔 때만 보낸다
@@ -306,7 +311,8 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       tracker = new ExecutionTracker({
         plans, floor: () => plans.floor(), world: () => world.view(now()), emit, clock: ctx.brain?.clock, approvals, devices, offsetMinutes: history.db.offsetMinutes,
         // 계획 전 검사(LLM 없음) → 에이전트 계획 모드 한 번. 손 자리는 맞춘 눈(PlanHub 평면도의 로봇 자리)
-        precheck: (d) => checkDecision({ decision: d, tasks: [...TASK_NAMES], world: world.view(now()), nowMs: now() }),
+        // 실행 추적이 놓기 단계를 끝낸 물건(placed)도 이미 치운 것으로 본다
+        precheck: (d) => checkDecision({ decision: d, tasks: [...TASK_NAMES], world: world.view(now()), nowMs: now(), placed: tracker?.placed() }),
         planner: (d, signal) => {
           const task = taskOf(d.action);
           if (!task) return { ok: false, error: "행동 목록에 없는 행동" };
@@ -324,6 +330,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         locate: placeAt,
         check: (d, p) => checkPlan({
           decision: d, tasks: [...TASK_NAMES], plan: p, world: world.view(now()), nowMs: now(), staleMs: act.staleMs, mode: ctx.mode?.() ?? "test", deviceSteps: deviceSteps(p),
+          placed: tracker?.placed(),
         }),
         // 멈춘 집기·놓기 단계는 보기 담당(관찰 모드 A)에 알린다
         stalled: (s) => looker?.stalled(s) ?? false,
@@ -352,7 +359,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       // 보기 담당(src/act/look.ts): 멈춘 단계(A)와 판단 전 보기(B)에 관찰 모드를 한 번에 하나 부르고 고른 도구를 실행한다
       looker = new Looker({
         observer, closer: (spot, signal) => observed.closer(spot, signal), frame: () => observed.latest(), world: () => world.view(now()),
-        askPerson: (planId, stepId, text) => tracking.askCloser(planId, stepId, text), emit, targets: lookTargets, clock: ctx.brain?.clock,
+        askPerson: (planId, stepId, text) => tracking.askCloser(planId, stepId, text), emit, targets: lookTargets, placed: () => tracking.placed(), clock: ctx.brain?.clock,
         onLook: (spot) => {
           lookSay = { place: spot.label, atMs: Date.now() };
           speak();

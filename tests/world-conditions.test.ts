@@ -40,6 +40,33 @@ describe("계획 단계 조건", () => {
     expect(evaluate({ not: { person_fact: "activity", value: "drinking" } }, gone, ctx(1000))).toBeNull();
   });
 
+  it("person_holding: 분석한 프레임에 사람이 안 보이면 거짓이고 프레임이 끊기면 모름. 그래서 not person_holding은 들고 있다는 양성 근거가 있을 때만 막는다", () => {
+    const holding = (ids: string[]) => view({ person: person({ holding: ids, facts: { holding: fact("holding_object") } }) });
+    const notHeld = { not: { person_holding: "cup_1" } };
+    expect(evaluate(notHeld, holding(["cup_1"]), ctx(1000))).toBe(false);
+    expect(evaluate(notHeld, holding([]), ctx(1000))).toBe(false); // 든 것을 모르면 그 컵일 수 있다
+    expect(evaluate(notHeld, holding(["book_1"]), ctx(1000))).toBe(true);
+    expect(evaluate(notHeld, view(), ctx(1000))).toBe(true); // 보이는 사람의 VLM 답에 들고 있음이 없다
+    const away = view({ person: person({ visible: false, facts: {} }) });
+    expect(evaluate({ person_holding: "cup_1" }, away, ctx(1000))).toBe(false);
+    expect(evaluate(notHeld, away, ctx(1000))).toBe(true);
+    // 분석한 프레임이 FACT_FRESH_MS 넘게 없으면 모름
+    expect(evaluate(notHeld, away, ctx(12_000))).toBeNull();
+    expect(evaluate(notHeld, { ...away, frame_ms: null }, ctx(1000))).toBeNull();
+  });
+
+  it("part basin: 물건이 그 면의 싱크볼 안(World State surface_part)일 때만 참이고, 단계 시작 뒤 본 자리만 쓴다. 면만 보면 싱크볼 안도 그 면이다", () => {
+    const at = (over: Partial<WorldObject>) => view({ objects: [cup({ surface: "sink_1", ...over })] });
+    const inBasin = { object: "cup_1", surface: "sink_1", part: "basin" };
+    expect(evaluate(inBasin, at({ surface_part: "basin" }), ctx(1000))).toBe(true);
+    expect(evaluate(inBasin, at({}), ctx(1000))).toBe(false); // 싱크볼 옆 조리대
+    expect(evaluate(inBasin, at({ surface: "table_1" }), ctx(1000))).toBe(false);
+    expect(evaluate(inBasin, at({ surface_part: "basin" }), ctx(1500, 1200))).toBeNull(); // 단계 전에 본 자리
+    expect(evaluate({ object: "cup_1", surface: "sink_1" }, at({ surface_part: "basin" }), ctx(1000))).toBe(true);
+    expect(() => parseCondition({ object: "cup_1", part: "basin" })).toThrow(); // part는 면과 함께
+    expect(() => parseCondition({ object: "cup_1", surface: "sink_1", part: "drawer" })).toThrow();
+  });
+
   it("단계 시작 뒤 본 사실만 쓴다: 그 전 사실은 모름, 하는 일이 없으면 단계 시작 뒤 답이 있었을 때만 거짓", () => {
     const w = view({ person: person({ facts: { activity: fact("drinking", 500) }, answered_ms: 500 }) });
     expect(evaluate({ person_fact: "activity", value: "drinking" }, w, ctx(1000, 800))).toBeNull();
@@ -212,8 +239,10 @@ describe("계획 단계 조건", () => {
   it("checkCondition: 이 집에 없는 가전·방·자리, 그 가전에 없는 상태, 그 종류에 없는 면을 말한다", () => {
     const home: ConditionHome = {
       devices: [{ id: "washer_1", kind: "washer", twinAttrs: { running: [false, true], door: ["closed", "open"] } }, { id: "cooktop_1", kind: "cooktop", twinAttrs: { power: ["off", "on"] } }],
-      rooms: ["kitchen", "living"], hasPlace: (id: string) => id in places,
+      rooms: ["kitchen", "living"], hasPlace: (id: string) => id in places, hasBasin: (id: string) => id === "sink_1",
     };
+    expect(checkCondition(parseCondition({ object: "cup_3", surface: "sink_1", part: "basin" }), home)).toEqual([]);
+    expect(checkCondition(parseCondition({ object: "cup_3", surface: "table_1", part: "basin" }), home)).toEqual(["싱크볼이 없는 자리: table_1"]);
     expect(checkCondition(parseCondition({ all: [{ device: "washer", became: "stopped" }, { device: "cooktop", state: "off" }, { phone_near: "sink_1" }] }), home)).toEqual([]);
     expect(checkCondition(parseCondition({ device: "microwave", state: "on" }), home)).toEqual(["이 집에 없는 가전: microwave"]);
     expect(checkCondition(parseCondition({ device: "cooktop", state: "running" }), home)).toEqual(["cooktop에 없는 상태: running"]);

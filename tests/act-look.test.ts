@@ -100,19 +100,21 @@ describe("보기 담당: 판단 전 보기(B)", () => {
     expect(t.looker.status()).toEqual({ calls: 3, costUsd: expect.any(Number), looks: 0, asks: 0, waits: 3 });
   });
 
-  it("볼 면이 안이 안 보임이면 부르고, 비어 있음·시야 밖·싱크대 안·대상 종류 아님·10초 넘게 낡은 프레임·카메라 없음이면 부르지 않는다", async () => {
-    const cases: { objects?: WorldObject[]; frame?: (now: number) => LatestFrame | null; calls: number }[] = [
+  it("볼 면이 안이 안 보임이면 부르고, 비어 있음·시야 밖·싱크대 안·실행 추적이 치운 것·대상 종류 아님·10초 넘게 낡은 프레임·카메라 없음이면 부르지 않는다", async () => {
+    const cases: { objects?: WorldObject[]; frame?: (now: number) => LatestFrame | null; options?: Partial<LookerOptions>; calls: number }[] = [
       { objects: [cupAt({ facts: { contents: fact("contents_unknown") } })], calls: 1 },
       { objects: [cupAt({ facts: { contents: fact("empty") } })], calls: 0 },
       { objects: [cupAt({ status: "out_of_view" })], calls: 0 },
       { objects: [cupAt({ facts: { place: fact("in_sink") } })], calls: 0 },
+      // 실행 추적이 놓기 단계를 끝낸 컵(이미 치운 것)
+      { objects: [cupAt({ facts: { contents: fact("contents_unknown") } })], options: { placed: () => new Map([["cup_1", { target: "sink_1", atMs: 0 }]]) }, calls: 0 },
       { objects: [cupAt({ id: "book_1", cls: "book" })], calls: 0 },
       { frame: (now) => ({ view: LOOK_VIEW, capturedAtMs: now - LOOK_DEFAULTS.frameFreshMs - 1, width: 480, height: 360 }), calls: 0 },
       { frame: (now) => ({ view: null, capturedAtMs: now, width: 480, height: 360 }), calls: 0 },
       { frame: () => null, calls: 0 },
     ];
     for (const c of cases) {
-      const t = await setup({ script: () => [["wait", { reason: "다음 사진을 보려고" }]], objects: c.objects, frame: c.frame });
+      const t = await setup({ script: () => [["wait", { reason: "다음 사진을 보려고" }]], objects: c.objects, frame: c.frame, options: c.options });
       t.looker.tick();
       await t.looker.idle();
       expect(t.llm.bodies()).toHaveLength(c.calls);
