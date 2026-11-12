@@ -15,7 +15,7 @@ import { askApproval, doneSentence, toolForCommand } from "./phrases.js";
 import { buildSystemPrompt } from "./prompts.js";
 import { LAYOUT_TOOLS, type LayoutTools } from "./layoutTools.js";
 import { observe } from "./observe.js";
-import { AGENT_TOOLS, localBackend, runTool, unverifiedSentence, type ToolBackend, type ToolDef, type ToolResult } from "./tools.js";
+import { AGENT_TOOLS, LEAVE_IT, localBackend, runTool, unverifiedSentence, type ToolBackend, type ToolDef, type ToolResult } from "./tools.js";
 
 export type { AgentAction, AgentEvent, ChatResult, ConfirmResult, PendingView } from "../contract/events.js";
 
@@ -227,10 +227,12 @@ export class Agent {
     const system = this.systemPrompt();
     try {
       this.provider.addUserMessage(s.state, message);
+      // 이번 차례에 부른 도구가 넘기기(leave_it)뿐이면 답하지 않는다: 가전 요청이 아닌 말은 판단 모델이 듣고 돕는다(실제 폰은 빈 글을 보이지도 읽지도 않는다)
+      const called = new Set<string>();
       for (let round = 0; ; round++) {
         const allowTools = round < this.maxRounds;
         const r = await this.provider.step(s.state, { system, tools: this.modelTools, allowTools });
-        if (r.calls.length === 0) return r.text.trim() || "(답이 비어 있어요)";
+        if (r.calls.length === 0) return called.size === 1 && called.has(LEAVE_IT) ? "" : r.text.trim() || "(답이 비어 있어요)";
         if (!allowTools) {
           // 한도를 넘긴 호출은 실행하지 않고 결과만 채워 대화 형식을 맞춘다
           this.provider.addToolResults(s.state, r.calls.map((call) => {
@@ -240,7 +242,10 @@ export class Agent {
           return r.text.trim() || `도구 호출 한도(${this.maxRounds}라운드)를 넘어 멈췄어요. 요청을 나눠서 다시 말씀해 주세요.`;
         }
         const results: ToolCallResult[] = [];
-        for (const call of r.calls) results.push(await this.execute(s, call, backend, actions));
+        for (const call of r.calls) {
+          called.add(call.name);
+          results.push(await this.execute(s, call, backend, actions));
+        }
         this.provider.addToolResults(s.state, results);
       }
     } catch (e) {

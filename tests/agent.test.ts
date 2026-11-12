@@ -13,7 +13,7 @@ import { AnthropicProvider } from "../src/agent/providers/anthropic.js";
 import { agentEndpoint, createProvider, resolveProviderName } from "../src/agent/providers/index.js";
 import { OpenAIProvider } from "../src/agent/providers/openai.js";
 import { findDevices } from "../src/agent/search.js";
-import { AGENT_TOOLS, MCP_TOOLS, TOOLS, localBackend, runTool, toolJsonSchema } from "../src/agent/tools.js";
+import { AGENT_TOOLS, LEAVE_IT, MCP_TOOLS, TOOLS, localBackend, runTool, toolJsonSchema } from "../src/agent/tools.js";
 import { MemoryHub } from "../src/hub/memory.js";
 import { loadTwin, resolveTwinStudioDir } from "../src/model/devices.js";
 import { ROOMS, homeDevices, makeHome, twin } from "./helpers/home.js";
@@ -72,6 +72,11 @@ describe("tools: 에이전트·MCP 공용 도구", () => {
     // 승인 확정 도구는 MCP에만(서버 안 LLM이 스스로 승인하지 못하게)
     expect(AGENT_TOOLS.map((t) => t.name)).not.toContain("confirm_action");
     expect(MCP_TOOLS.map((t) => t.name)).toContain("confirm_action");
+    // 넘기기 도구는 서버 안 에이전트 전용이다(MCP 목록에 내지 않는다)
+    expect(LEAVE_IT).toBe("leave_it");
+    expect(AGENT_TOOLS.map((t) => t.name)).toContain("leave_it");
+    expect(MCP_TOOLS.map((t) => t.name)).not.toContain("leave_it");
+    expect(TOOLS.find((t) => t.name === "leave_it")).toMatchObject({ title: "넘기기", readOnly: true });
   });
 
   it("turn_on은 상태를 바꾸고 결과에 상태를 담는다", async () => {
@@ -363,6 +368,27 @@ describe("Agent + OpenAI 공급자(가짜 서버): 한국어 요청", () => {
     expect(toolOutputs(bodies()[1])[0].error).toContain("센서");
   });
 
+  it("가전 요청이 아닌 말에 모델이 leave_it만 부르면 답은 빈 글이다(실제 폰은 보이지도 읽지도 않는다). 가전은 바뀌지 않는다", async () => {
+    llm.script["라면 끓이는 법 알려 줘"] = [[["leave_it", { reason: "가전 요청이 아니라서" }]], "라면은 물을 끓이고 면을 넣어요."];
+    const events: AgentEvent[] = [];
+    const { hub, agent } = llmAgent(events);
+    const before = JSON.stringify(hub.list().map((d) => hub.get(d.id)!.twin));
+    const r = await agent.chat("phone", "라면 끓이는 법 알려 줘", { heard: true });
+    expect(r.reply).toBe("");
+    expect(r.actions.map((a) => [a.tool, a.ok])).toEqual([["leave_it", true]]);
+    expect(r.pendingConfirmations).toEqual([]);
+    expect(JSON.stringify(hub.list().map((d) => hub.get(d.id)!.twin))).toBe(before);
+    expect(events.find((e) => e.event === "reply")).toMatchObject({ reply: "" });
+  });
+
+  it("leave_it과 가전 도구를 같이 부르면 가전 결과를 말한다", async () => {
+    llm.script["아 덥다 거실 TV 켜줘"] = [[["leave_it", {}], ["turn_on", { device_id: "tv_living", reason: "TV를 켜 달라고 해서" }]], "거실 TV를 켰어요."];
+    const { hub, agent } = llmAgent();
+    const r = await agent.chat("phone", "아 덥다 거실 TV 켜줘", { heard: true });
+    expect(r.reply).toBe("거실 TV를 켰어요.");
+    expect(hub.get("tv_living")!.twin.power).toBe("on");
+  });
+
   it("도구 호출 없는 답은 그대로 낸다", async () => {
     const { agent } = llmAgent();
     const r = await agent.chat("s", "안녕");
@@ -516,6 +542,7 @@ describe("시스템 프롬프트·공급자 선택", () => {
     expect(p).toContain("tv_living");
     expect(p).toContain("승인");
     expect(p).toMatch(/짧게/);
+    expect(p.split("\n")).toContain("- 가전 제어·배치 요청이 아닌 말(혼잣말, 하는 법을 묻는 말, 주변 대화)에는 leave_it만 부르고 답 글을 쓰지 않는다.");
   });
 
   it("AGENT_PROVIDER > ANTHROPIC_API_KEY > openai, 공급자는 openai·anthropic뿐이다", () => {

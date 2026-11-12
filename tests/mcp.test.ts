@@ -53,6 +53,7 @@ describe("MCP stdio 서버(SDK 클라이언트로 실제 실행)", () => {
     for (const n of ["list_rooms", "list_devices", "find_devices", "get_state", "turn_on", "turn_off", "set_level", "set_climate", "set_covering", "lock", "unlock", "start", "stop", "set_valve", "confirm_action"]) {
       expect(names).toContain(n);
     }
+    expect(names).not.toContain("leave_it");
     const turnOn = tools.find((t) => t.name === "turn_on")!;
     expect(turnOn.description).toMatch(/[가-힣]/);
     expect(turnOn.inputSchema.properties).toHaveProperty("device_id");

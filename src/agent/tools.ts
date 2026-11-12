@@ -52,6 +52,8 @@ export interface ToolDef {
   readOnly?: boolean;
   /** MCP에만 노출(서버 안 LLM이 스스로 승인하지 못하게). */
   mcpOnly?: boolean;
+  /** 서버 안 에이전트에만 노출(MCP 목록에 내지 않는다). */
+  agentOnly?: boolean;
   run(backend: ToolBackend, args: Record<string, unknown>): Promise<ToolResult>;
 }
 
@@ -152,6 +154,9 @@ function commandTool(
   };
 }
 
+/** 넘기기: 가전 요청이 아닌 말에 말 요청 에이전트가 답하지 않게 하는 도구. */
+export const LEAVE_IT = "leave_it";
+
 export const TOOLS: ToolDef[] = [
   {
     name: "list_rooms", title: "방 목록", readOnly: true,
@@ -234,6 +239,14 @@ export const TOOLS: ToolDef[] = [
   commandTool("set_valve", "수전", "수전·샤워 물을 틀거나(open=true) 잠급니다(open=false).",
     { open: z.boolean().describe("true = 물 틀기, false = 잠그기") }, (a) => ({ type: "valve", open: Boolean(a.open) })),
   {
+    name: LEAVE_IT, title: "넘기기", readOnly: true, agentOnly: true,
+    description: "가전 제어·배치 요청이 아닌 말(혼잣말, 하는 법을 묻는 말, 주변 대화)이면 이 도구 하나만 부릅니다. 그런 말은 판단 모델이 듣고 돕습니다. 답 글은 쓰지 않습니다.",
+    schema: z.object({}),
+    async run() {
+      return { ok: true, message: "넘겼습니다. 답 글을 쓰지 마세요." };
+    },
+  },
+  {
     name: "confirm_action", title: "승인 확정", mcpOnly: true,
     description: "승인이 필요한 명령(현관문 잠금 해제, 인덕션 켜기, 전자레인지 시작)을 사용자가 분명히 승인했을 때만, 그 명령이 돌려준 token으로 실행합니다. 사용자에게 먼저 묻지 않고 부르지 마세요.",
     schema: z.object({ token: z.string().min(1).describe("명령 결과의 needsConfirmation.token") }),
@@ -257,7 +270,7 @@ export const TOOLS: ToolDef[] = [
 ];
 
 export const AGENT_TOOLS: ToolDef[] = TOOLS.filter((t) => !t.mcpOnly);
-export const MCP_TOOLS: ToolDef[] = TOOLS;
+export const MCP_TOOLS: ToolDef[] = TOOLS.filter((t) => !t.agentOnly);
 
 /** LLM API용 JSON 스키마($schema 키 없음). */
 export function toolJsonSchema(tool: ToolDef): Record<string, unknown> & { type: "object" } {
