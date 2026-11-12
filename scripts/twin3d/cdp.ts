@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { withTimeout } from "./capture-lib.js";
 import { killTree } from "./heavy.js";
 
-export type Reply = { result?: { result?: { value?: unknown }; exceptionDetails?: { text: string; exception?: { description?: string } }; data?: string } };
+export type Reply = { result?: { result?: { value?: unknown }; exceptionDetails?: { text: string; exception?: { description?: string } }; data?: string }; error?: { message?: string } };
 export interface Chrome { proc: ChildProcess; profile: string }
 export interface Page {
   send(method: string, params?: object): Promise<Reply>;

@@ -333,20 +333,23 @@ describe("video-check", () => {
     }
   });
 
-  it("녹화 시작: startScreencast가 오류로 끝나도 같은 정리를 하고 그 오류를 낸다", async () => {
+  it.each([
+    ["CDP 오류 답({error})", () => Promise.resolve({ error: { message: "Screencast is not supported" } }), /녹화 시작.*dash.*Screencast is not supported/],
+    ["연결 끊김(Promise 거절)", () => Promise.reject(new Error("CDP 연결이 닫힘")), /CDP 연결이 닫힘/],
+  ])("녹화 시작: startScreencast가 %s로 끝나도 같은 정리를 하고 그 오류를 낸다", async (_name, fail, msg) => {
     const dir = mkdtempSync(join(tmpdir(), "video-record-"));
     try {
       const sent: string[] = [];
       const handlers = new Set<string>();
-      const page = (fail: boolean): ScreencastPage => ({
+      const page = (failing: boolean): ScreencastPage => ({
         send(method) {
           sent.push(method);
-          return fail && method === "Page.startScreencast" ? Promise.reject(new Error("CDP 연결이 닫힘")) : Promise.resolve({});
+          return failing && method === "Page.startScreencast" ? fail() : Promise.resolve({});
         },
         on(method) { handlers.add(method); return () => handlers.delete(method); },
       });
       await expect(startRecording(dir, [{ name: "phone", page: page(false), size: [390, 844] }, { name: "dash", page: page(true), size: [1280, 800] }], { startTimeoutMs: 1000 }))
-        .rejects.toThrow(/CDP 연결이 닫힘/);
+        .rejects.toThrow(msg);
       expect(handlers.size).toBe(0);
       expect(sent).toEqual(["Page.startScreencast", "Page.startScreencast", "Page.stopScreencast", "Page.stopScreencast"]);
     } finally {

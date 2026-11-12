@@ -130,10 +130,12 @@ export async function startRecording(
       timers.add(t);
     }));
     asked.push(s.page);
-    await withTimeout(
+    const reply = await withTimeout(
       s.page.send("Page.startScreencast", { format: "jpeg", quality: JPEG_QUALITY, maxWidth: s.size[0], maxHeight: s.size[1], everyNthFrame: 1 }),
       o.startTimeoutMs ?? START_TIMEOUT_MS, `녹화 시작 응답(${s.name})`,
     );
+    // Page.send는 CDP 오류 답({error})도 거절하지 않고 돌려준다.
+    if (reply?.error) throw new Error(`녹화 시작 응답(${s.name}) 오류: ${reply.error.message ?? "알 수 없음"}`);
   };
   try {
     for (const s of screens) await listen(s);
