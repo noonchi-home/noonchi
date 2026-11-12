@@ -25,8 +25,8 @@
 // 「가까이 본 뒤 다시 판단」만 남긴다. 계획을 받은 뒤 첫 명령 전(승인 답·실행 전 검사를 기다리는 사이)이면 시작하지 않고 그 기록으로 계획을 취소로 닫는다.
 // 다음 판단이 새 사실로 다시 고른다. 첫 명령을 보낸 뒤에는 멈추지 않는다: 단계마다 끝나는 조건을 World State로 보고, 멈춘 단계의 가까이 보기(A)가
 // 그 면을 바꾸는 것도 이 계획의 관찰이다. 다른 행동이 맞으면 다음 판단이 새 계획으로 바꾼다.
-// 치운 물건(placed): 놓기 단계를 끝낸 물건과 그 계획의 넣은 곳을 남긴다. VLM 자리 사실이 싱크대 안이 아니어도 계획 전·실행 전 검사와 대상 고르기가
-// 이미 치운 것으로 본다. 다시 집거나(손에 있음 확인됨) 다른 면에서 보이면 지운다.
+// 치운 물건(placed): 놓기 단계를 끝낸 물건과 그 계획의 넣은 곳(끝낸 때 싱크볼 안이면 그 싱크볼)을 남긴다. VLM 자리 사실이 싱크대 안이 아니어도
+// 계획 전·실행 전 검사·계획 입력·제출 검사와 대상 고르기가 이미 치운 것으로 본다. 다시 집거나(손에 있음 확인됨) 그 영역 밖(다른 면, 싱크볼이면 싱크볼 밖)에서 보이면 지운다.
 import type { BrainLog, ExecState } from "../contract/events.js";
 import type { PhoneStepKind, PlannedCommand, PlannedCommandMessage } from "../contract/phone.js";
 import type { PlanView, XZ } from "../contract/plan.js";
@@ -141,7 +141,7 @@ export class ExecutionTracker {
   private run: Run | null = null;
   private planning: Job | null = null;
   /** 놓기 단계를 끝낸 물건(placed). */
-  private readonly put = new Map<string, { target: string; atMs: number }>();
+  private readonly put = new Map<string, { target: string; part?: "basin"; atMs: number }>();
   private readonly jobs = new Set<Promise<void>>();
   private readonly planAt = new Map<string, number>();
   private gen = 0;
@@ -276,8 +276,9 @@ export class ExecutionTracker {
     if (!this.stopped && r?.state === "running") this.look(r);
   }
 
-  /** 놓기 단계를 끝낸 물건(이미 치운 것): World State id → 그 계획의 넣은 곳과 끝낸 시각. 그 뒤 손에 있음이 확인되거나(다시 집음,
-   *  VLM 한 번의 손에 있음은 싱크대 속 컵에도 나와 확인됨만 본다) 트윈 자리가 다른 면·면 없음이거나(옮김) 사라지면 지운다.
+  /** 놓기 단계를 끝낸 물건(이미 치운 것): World State id → 그 계획의 넣은 곳, 끝낸 때 싱크볼 안이었으면 part basin, 끝낸 시각.
+   *  그 뒤 손에 있음이 확인되거나(다시 집음, VLM 한 번의 손에 있음은 싱크대 속 컵에도 나와 확인됨만 본다) 트윈 자리가 그 영역을 벗어나거나
+   *  (다른 면·면 없음, part basin이면 같은 면이어도 싱크볼 밖: 옮김) 사라지면 지운다.
    *  계획을 만들지 않는다. 계획 전·실행 전 검사와 대상 고르기가 이미 치운 것을 아는 근거로만 쓴다. */
   placed(): Placed {
     const objects = this.o.world().objects;
@@ -286,17 +287,20 @@ export class ExecutionTracker {
       const hand = o?.facts.place;
       const picked = hand?.value === "in_hand" && hand.certainty === "confirmed" && hand.at_ms > p.atMs;
       // 트윈 자리를 모르는 채(맞추기 전) 본 것은 옮긴 근거가 아니다
-      const moved = !!o && o.last_seen_ms > p.atMs && o.position !== null && o.surface !== p.target;
+      const out = !!o && (o.surface !== p.target || (p.part !== undefined && o.surface_part !== p.part));
+      const moved = !!o && o.last_seen_ms > p.atMs && o.position !== null && out;
       if (!o || o.status === "gone" || picked || moved) this.put.delete(id);
     }
     return this.put;
   }
 
-  /** 놓기 단계를 끝낸 물건을 적는다: 지금 그 물건으로 보는 World State id(따라가지 못하면 계획 물건 id)와 그 계획의 넣은 곳. */
+  /** 놓기 단계를 끝낸 물건을 적는다: 지금 그 물건으로 보는 World State id(따라가지 못하면 계획 물건 id)와 그 계획의 넣은 곳.
+   *  그때 트윈 자리가 넣은 곳 면의 싱크볼 안이면 part basin도 적는다(그 뒤 싱크볼 밖이면 옮긴 것). */
   private remember(r: Run, object: string, target: string): void {
     const now = this.clock.now();
-    const ids = ours(r, object, this.o.world()).filter((o) => o.status !== "gone").map((o) => o.id);
-    for (const id of ids.length ? ids : [r.alias.get(object) ?? object]) this.put.set(id, { target, atMs: now });
+    const objs = ours(r, object, this.o.world()).filter((o) => o.status !== "gone");
+    const at = objs.length ? objs.map((o) => ({ id: o.id, basin: o.position !== null && o.surface === target && o.surface_part === "basin" })) : [{ id: r.alias.get(object) ?? object, basin: false }];
+    for (const { id, basin } of at) this.put.set(id, { target, ...(basin ? { part: "basin" as const } : {}), atMs: now });
   }
 
   /** 관찰 모드의 사람 부탁(ask_person): 지금 그 계획의 그 사람 단계면 같은 계획·단계 id로 명령 글만 바꿔 다시 보낸다(소리로 읽음).

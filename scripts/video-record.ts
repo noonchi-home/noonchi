@@ -2,9 +2,11 @@
 // 끝나면 ffmpeg로 왼쪽 폰·오른쪽 대시보드를 높이 맞춰 나란히 붙인 mp4 하나(H.264, yuv420p, RECORD_FPS)로 합친다.
 // 프레임은 받은 시각을 붙여 두고, concat 목록의 프레임마다 다음 프레임까지 보이게 해 영상 길이가 녹화한 실제 시간과 같다.
 // ack는 앞 ack에서 RECORD_MS 뒤에 보낸다(크롬은 ack를 받아야 다음 프레임을 보내므로 화면마다 초당 약 10장).
+// 녹화 시작 답이 화면마다 START_TIMEOUT_MS 안에 오지 않거나 오류면 리스너·타이머·녹화를 정리하고 오류를 낸다.
 import { spawn } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
+import { withTimeout } from "./twin3d/capture-lib.js";
 import type { Page } from "./twin3d/cdp.js";
 
 export const RECORD_FPS = 10;
@@ -15,6 +17,8 @@ export const RECORD_HEIGHT = 800;
 const JPEG_QUALITY = 80;
 /** ffmpeg가 이보다 오래 걸리면 끝낸다. */
 const ENCODE_TIMEOUT_MS = 10 * 60_000;
+/** 화면마다 녹화 시작(Page.startScreencast) 답을 이만큼까지 기다린다. */
+export const START_TIMEOUT_MS = 10_000;
 
 /** 프레임 하나: 녹화 폴더 기준 경로(/ 구분), 녹화 시작에서 받은 시각(ms). */
 export interface Frame { file: string; ms: number }
@@ -71,11 +75,13 @@ export function ackAt(now: number, lastAck: number | null, intervalMs: number): 
   return lastAck === null ? now : Math.max(now, lastAck + intervalMs);
 }
 
-/** 화면마다 screencast를 켜고 프레임을 dir/<이름>/000001.jpg…에 쓴다. ms는 now()로 잰 녹화 시작부터의 시각. */
+/** 화면마다 screencast를 켜고 프레임을 dir/<이름>/000001.jpg…에 쓴다. ms는 now()로 잰 녹화 시작부터의 시각.
+ *  시작 답(Page.startScreencast)이 화면마다 startTimeoutMs 안에 오지 않거나 오류면(요청 직후 CDP 끊김) 리스너·ack 타이머를 풀고
+ *  시작을 보낸 화면마다 stopScreencast를 보낸 뒤(5초까지) 그 오류를 낸다. */
 export async function startRecording(
   dir: string,
   screens: { name: string; page: ScreencastPage; size: [number, number] }[],
-  o: { intervalMs?: number; now?: () => number } = {},
+  o: { intervalMs?: number; now?: () => number; startTimeoutMs?: number } = {},
 ): Promise<Recording> {
   const now = o.now ?? Date.now;
   const interval = o.intervalMs ?? RECORD_MS;
@@ -83,9 +89,25 @@ export async function startRecording(
   const frames: Record<string, Frame[]> = {};
   const timers = new Set<ReturnType<typeof setTimeout>>();
   const offs: (() => void)[] = [];
+  /** 시작을 보낸 화면. */
+  const asked: ScreencastPage[] = [];
   let stopped = false;
   let lost = 0;
-  for (const s of screens) {
+  /** 프레임 받기를 멈추고 시작을 보낸 화면의 screencast를 끈다. 끊긴 탭은 답하지 않으니 5초까지만 기다린다. */
+  const halt = async () => {
+    stopped = true;
+    for (const t of timers) clearTimeout(t);
+    timers.clear();
+    for (const off of offs) off();
+    let wait: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      Promise.all(asked.map((p) => p.send("Page.stopScreencast").catch(() => {}))),
+      new Promise((r) => { wait = setTimeout(r, 5_000); }),
+    ]);
+    clearTimeout(wait);
+  };
+  /** 한 화면: 프레임 리스너를 달고 screencast를 켠다(시작 답은 startTimeoutMs까지). */
+  const listen = async (s: (typeof screens)[number]): Promise<void> => {
     mkdirSync(join(dir, s.name), { recursive: true });
     const list: Frame[] = (frames[s.name] = []);
     let lastAck: number | null = null;
@@ -107,22 +129,21 @@ export async function startRecording(
       }, ackTime - at);
       timers.add(t);
     }));
-    await s.page.send("Page.startScreencast", { format: "jpeg", quality: JPEG_QUALITY, maxWidth: s.size[0], maxHeight: s.size[1], everyNthFrame: 1 });
+    asked.push(s.page);
+    await withTimeout(
+      s.page.send("Page.startScreencast", { format: "jpeg", quality: JPEG_QUALITY, maxWidth: s.size[0], maxHeight: s.size[1], everyNthFrame: 1 }),
+      o.startTimeoutMs ?? START_TIMEOUT_MS, `녹화 시작 응답(${s.name})`,
+    );
+  };
+  try {
+    for (const s of screens) await listen(s);
+  } catch (e) {
+    await halt();
+    throw e;
   }
   return {
     async stop() {
-      if (!stopped) {
-        stopped = true;
-        for (const t of timers) clearTimeout(t);
-        for (const off of offs) off();
-        // 끊긴 탭은 답하지 않으니 5초까지만 기다린다
-        let wait: ReturnType<typeof setTimeout> | undefined;
-        await Promise.race([
-          Promise.all(screens.map((s) => s.page.send("Page.stopScreencast").catch(() => {}))),
-          new Promise((r) => { wait = setTimeout(r, 5_000); }),
-        ]);
-        clearTimeout(wait);
-      }
+      if (!stopped) await halt();
       return { endMs: now() - start, frames, lost };
     },
   };

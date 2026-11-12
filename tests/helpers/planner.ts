@@ -3,7 +3,7 @@
 // 대본은 입력 글(src/agent/planInput.ts)에서 id를 읽는다: 식탁·싱크대는 평면도 줄의 종류, 컵은 World State 물건 줄.
 import { startFakeOpenAI, type FakeResponse } from "../../scripts/fake-openai.js";
 import { ASK_PROMPT } from "../../src/act/prompts.js";
-import { taskOf } from "../../src/act/tasks.js";
+import { taskOf, type Placed } from "../../src/act/tasks.js";
 import type { LlmProvider } from "../../src/agent/agent.js";
 import { PLANNER_PROMPT } from "../../src/agent/planInput.js";
 import { Planner } from "../../src/agent/planner.js";
@@ -25,11 +25,12 @@ export type PlanScript = (input: string) => LlmTurn[];
 /** 단계 목록 → 한 차례(submit_plan 한 번에 계획 전체, 번호는 배열 순서). */
 export const planCalls = (steps: Record<string, unknown>[]): LlmTurn => [["submit_plan", { steps }]];
 
-/** 컵 치우기 네 단계(지금 서버와 같은 명령·조건). 내려놓기(안에 넣기)는 싱크대 안 사실, 또는 싱크대 면의 싱크볼 안이고 손에 없고 사람이 그 컵을 들고 있지 않음.
- *  싱크볼이 없는 싱크대(basin false)면 싱크대 안 사실만. */
+/** 컵 치우기 네 단계(지금 서버와 같은 명령·조건). 내려놓기(안에 넣기)는 「싱크대 안 사실 또는 싱크대 면의 싱크볼 안이고 손에 없음」이고 사람이 그 컵을 들고 있지 않음.
+ *  싱크볼이 없는 싱크대(basin false)면 싱크대 안 사실이고 사람이 그 컵을 들고 있지 않음. */
 export function cupSteps(ids: { table: string; sink: string; cup: string; basin?: boolean }): Record<string, unknown>[] {
   const { table, sink, cup, basin = true } = ids;
   const inSink = { object: cup, follow: true, facts: { place: "in_sink" } };
+  const notHeld = { not: { person_holding: cup } };
   return [
     { kind: "go", label: STEP_LABEL.goTable, target: table, command: STEP_COMMAND.goTable, until: { phone_near: table }, timeout_s: 120 },
     {
@@ -41,12 +42,12 @@ export function cupSteps(ids: { table: string; sink: string; cup: string; basin?
       kind: "place", label: STEP_LABEL.placeCup, target: sink, object: cup, command: STEP_COMMAND.placeCup,
       until: basin
         ? {
-          any: [
-            inSink,
-            { all: [{ object: cup, follow: true, surface: sink, part: "basin" }, { not: { object: cup, follow: true, facts: { place: "in_hand" } } }, { not: { person_holding: cup } }] },
+          all: [
+            { any: [inSink, { all: [{ object: cup, follow: true, surface: sink, part: "basin" }, { not: { object: cup, follow: true, facts: { place: "in_hand" } } }] }] },
+            notHeld,
           ],
         }
-        : inSink,
+        : { all: [inSink, notHeld] },
       timeout_s: 120,
     },
   ];
@@ -57,13 +58,13 @@ export function askSteps(): Record<string, unknown>[] {
   return [{ kind: "ask", label: STEP_LABEL.askUser, question: ASK_PROMPT.text, choices: ASK_PROMPT.choices.map(({ id, label, words, reply }) => ({ id, label, words, reply })), timeout_s: 120 }];
 }
 
-/** 입력 글에서 식탁·싱크대(평면도 종류)와 보이는 컵(World State) id, 싱크대 줄에 싱크볼이 있는가. */
+/** 입력 글에서 식탁·싱크대(평면도 종류)와 보이는 컵(World State, 「이미 치움」이 아닌 첫 컵) id, 싱크대 줄에 싱크볼이 있는가. */
 export function idsFrom(input: string): { table: string; sink: string; cup: string; basin: boolean } {
   const line = (type: string) => new RegExp(`^- (\\S+) .*\\[${type}\\].*$`, "m").exec(input);
   const sink = line("sink_counter");
   return {
     table: line("dining_table")?.[1] ?? "", sink: sink?.[1] ?? "", basin: / · 싱크볼 \[/.test(sink?.[0] ?? ""),
-    cup: /^- 물건 (cup_\d+) 컵 · (present|out_of_view)/m.exec(input)?.[1] ?? "",
+    cup: /^- 물건 (cup_\d+) 컵 · (present|out_of_view)(?! · 이미 치움)/m.exec(input)?.[1] ?? "",
   };
 }
 
@@ -123,8 +124,8 @@ export async function startFakePlanner(scripts: Record<string, PlanScript> = { .
   });
 }
 
-/** 시험 계획 입력: 행동 설명·평면도 물건 이름(종류 짧은 이름)·가전 목록. */
-export function planContext(o: { decision: DecisionRecord; world: WorldView; floor: FloorPlan; hub?: DeviceHub; rooms?: RoomSpec[]; nowIso?: string; task?: TaskInfo }): PlanContext {
+/** 시험 계획 입력: 행동 설명·평면도 물건 이름(종류 짧은 이름)·가전 목록, 실행 추적이 이미 치운 물건(placed). */
+export function planContext(o: { decision: DecisionRecord; world: WorldView; floor: FloorPlan; hub?: DeviceHub; rooms?: RoomSpec[]; nowIso?: string; task?: TaskInfo; placed?: Placed }): PlanContext {
   const task = o.task ?? taskOf(o.decision.action);
   if (!task) throw new Error(`행동 목록에 없는 행동: ${o.decision.action}`);
   return {
@@ -132,6 +133,7 @@ export function planContext(o: { decision: DecisionRecord; world: WorldView; flo
     places: [...o.floor.objects.values()].map((p) => ({
       id: p.id, type: p.type, room: p.room, position: p.position, name: placeShort(p.type) ?? p.id, short: placeShort(p.type) ?? p.id, ...(p.basin ? { basin: p.basin } : {}),
     })),
+    ...(o.placed ? { placed: o.placed } : {}),
   };
 }
 

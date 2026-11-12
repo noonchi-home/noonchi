@@ -313,11 +313,13 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         // 계획 전 검사(LLM 없음) → 에이전트 계획 모드 한 번. 손 자리는 맞춘 눈(PlanHub 평면도의 로봇 자리)
         // 실행 추적이 놓기 단계를 끝낸 물건(placed)도 이미 치운 것으로 본다
         precheck: (d) => checkDecision({ decision: d, tasks: [...TASK_NAMES], world: world.view(now()), nowMs: now(), placed: tracker?.placed() }),
+        // 계획 입력·제출 검사도 이미 치운 물건(placed, 이 계획을 만들 때 것)을 안다: 입력 줄에 「이미 치움」, 그 물건을 대상으로 한 계획은 버린다
         planner: (d, signal) => {
           const task = taskOf(d.action);
           if (!task) return { ok: false, error: "행동 목록에 없는 행동" };
           return planner.plan({
             decision: d, task, world: world.view(now()), floor: plans.floor(), places: places(), rooms: twin.rooms, devices: deviceViews(signals), nowIso: new Date(now()).toISOString(),
+            placed: new Map(tracker?.placed() ?? []),
           }, signal);
         },
         // 실제 폰 명령(src/contract/phone.ts). 폰 서버가 지금 명령을 기억해 새로 붙은 폰에도 보낸다. 명령 대상 자리는 배치(면이면 윗면 가운데)에서

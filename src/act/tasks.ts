@@ -45,9 +45,9 @@ export function lookTargets(): { cls: ObjClass; facets: readonly Facet[] }[] {
   return Object.values(TASKS).flatMap((t) => (t.target && t.look?.length ? [{ cls: t.target, facets: t.look }] : []));
 }
 
-/** 실행 추적이 놓기 단계를 끝낸 물건(src/act/track.ts placed): World State id → 그 계획의 넣은 곳(평면도 id)과 끝낸 시각.
+/** 실행 추적이 놓기 단계를 끝낸 물건(src/act/track.ts placed): World State id → 그 계획의 넣은 곳(평면도 id), 끝낸 때 그 면의 싱크볼 안이었으면 part basin, 끝낸 시각.
  *  계획을 만들지 않는다. 이미 치운 것을 아는 근거로만 쓴다. */
-export type Placed = ReadonlyMap<string, { target: string; atMs: number }>;
+export type Placed = ReadonlyMap<string, { target: string; part?: "basin"; atMs: number }>;
 
 /** 이미 치운 물건: World State 자리가 싱크대 안이거나, 실행 추적이 놓기 단계를 끝낸 물건(placed). */
 export const putAway = (o: WorldObject, placed?: Placed) => o.facts.place?.value === "in_sink" || !!placed?.has(o.id);

@@ -396,6 +396,17 @@ describe("가까이 본 사진의 VLM 답(applyCloserScene)", () => {
     expect(decisionWorld(w.view(7000)).objects[0]!.closer_rev).toEqual({ contents: 2 });
   });
 
+  it("이미 있는 물건도 그 상자에 가림(not_visible)과 사실을 함께 답하면 답 순서와 상관없이 그 상자의 사실을 넣지 않는다", () => {
+    const hidden = (first: SceneState, second: SceneState): SceneObservation => ({ scene: "k", observations: [{ object_id: "d1", state: first }, { object_id: "d1", state: second }], summary: "" });
+    for (const scene of [hidden("not_visible", "in_sink"), hidden("in_sink", "not_visible")]) {
+      const w = seeded();
+      expect(w.applyCloserScene("e3", 3000, scene, new Map([["d1", "cup_1"]]))).toEqual([]);
+      const cup = w.view(3000).objects[0]!;
+      expect(cup.facts.place).toBeUndefined();
+      expect(cup.closer_rev).toBeUndefined();
+    }
+  });
+
   it("같은 원본 프레임에서 나온 답은 한 번만 넣고, 같은 촬영의 같은 값으로 확신을 올리지 않는다", () => {
     const w = seeded();
     const ids = new Map([["d1", "cup_1"]]);

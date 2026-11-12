@@ -14,6 +14,7 @@
 // - 가까이 보기(applyCloser, src/observe/pipeline.ts closer): 잘라 본 몇 장을 보통 프레임처럼 넣지 않고 한 번에 합친다. 물건 감지만 쓰고(사람·가전 설비·잘린 경계 상자는 버림),
 //   맞는 물건이 없으면 서로 다른 원본 프레임 3장에서 같은 자리로 보이거나, 1장 이상 보이고 같은 가까이 보기의 VLM이 그 감지에 사실을 하나 이상 답하고 가림은 답하지 않아야
 //   (두 모델 확인) 새 물건을 만든다. 3장이 안 된 후보는 VLM 답(applyCloserScene)까지 들고 있다가 답이 없거나 끊기면(endCloser) 버린다. 안 보인 물건은 그대로 둔다.
+//   이미 있는 물건도 가림을 답한 상자의 사실은 넣지 않는다.
 //   가까이 보기와 전체 사진은 서로 촬영 순서가 섞여 들어오므로 물건마다 자리를 마지막으로 고친 촬영 시각과 보임(있음·시야 밖·사라짐)을 마지막으로 판단한
 //   촬영 시각·원본 프레임·출처를 둔다. 그보다 옛 촬영은 자리·보임을 되돌리지 않고, 가까이 보기가 더 새 촬영으로 본 물건은 옛 전체 사진의 등장·사라짐 셈에도
 //   넣지 않는다. 같은 원본 프레임이면 잘라 본 자리·양성이 앞선다.
@@ -846,6 +847,7 @@ export class WorldState {
   }
 
   /** 가까이 본 사진의 VLM 답: ids(그 사진에서 잡은 물건)의 사실만 넣는다. 장면 요약·답에 없는 면·지금만 맞는 사실·사람·가전 설비는 건드리지 않는다.
+   *  가림(not_visible)을 답한 상자는 이미 있는 물건이어도 그 상자의 사실을 넣지 않는다.
    *  원본 프레임(sourceFrameId)·물건·면마다 한 번만 넣고, 같은 원본 프레임의 전체 사진 답보다 앞선다(answer).
    *  pending(같은 가까이 보기 applyCloser의 후보)이 있으면 먼저 이 답이 사실(그 종류에 붙는 값)을 하나 이상 답하고 가림(not_visible)은 답하지 않은 후보 감지마다
    *  확인된 물건을 만들어(그사이 같은 자리 물건이 확인됐으면 그것에 맞춘다) ids에 더하고 미뤄 둔 옮김 처리를 한다. 사실을 답하지 않거나 가림을 답한 후보는 버린다. */
@@ -869,7 +871,10 @@ export class WorldState {
       this.liftHolds(created, used);
     }
     const turn = new Set<string>();
+    // 이미 있는 물건도 가렸다고 답한 상자는 함께 답한 사실을 넣지 않는다(답 순서와 상관없이, 상자마다)
+    const hidden = new Set(scene.observations.filter((ob) => (VLM_ONLY as readonly string[]).includes(ob.state)).map((ob) => ob.object_id));
     for (const ob of scene.observations) {
+      if (hidden.has(ob.object_id)) continue;
       const id = ids.get(ob.object_id);
       const obj = id ? this.objects.get(id) : undefined;
       if (!obj || !(ob.state in STATES)) continue;

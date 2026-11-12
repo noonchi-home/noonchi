@@ -343,7 +343,7 @@ PAM이 고른 행동(기다리기 포함)을 계획으로 바꿀 때 단계마�
 | 그 컵이 비고 싱크대 안 | `{"object": "cup_1", "follow": true, "facts": {"contents": "empty", "place": "in_sink"}}` |
 | 그릇이 냉장고 안 | `{"object": "bowl", "facts": {"place": "in_fridge"}}` |
 | 컵이 그 식탁 위 | `{"object": "cup", "surface": "dining_table_978b20c7"}` |
-| 그 컵을 싱크대에 넣음(놓기 단계) | `{"any": [{"object": "cup_1", "follow": true, "facts": {"place": "in_sink"}}, {"all": [{"object": "cup_1", "follow": true, "surface": "sink_counter_kitchen", "part": "basin"}, {"not": {"object": "cup_1", "follow": true, "facts": {"place": "in_hand"}}}, {"not": {"person_holding": "cup_1"}}]}]}` |
+| 그 컵을 싱크대에 넣음(놓기 단계) | `{"all": [{"any": [{"object": "cup_1", "follow": true, "facts": {"place": "in_sink"}}, {"all": [{"object": "cup_1", "follow": true, "surface": "sink_counter_kitchen", "part": "basin"}, {"not": {"object": "cup_1", "follow": true, "facts": {"place": "in_hand"}}}]}]}, {"not": {"person_holding": "cup_1"}}]}` |
 | 폰(손)이 싱크대 근처 | `{"phone_near": "sink_counter_kitchen"}` |
 | 5분 기다림 | `{"elapsed_s": 300}` |
 

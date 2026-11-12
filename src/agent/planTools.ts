@@ -5,7 +5,7 @@
 import { z } from "zod";
 import { copyRules } from "../plan/copy.js";
 import type { ActionChoice, ActionPrompt } from "../act/prompts.js";
-import { planIdOf, type TaskSpec } from "../act/tasks.js";
+import { planIdOf, type Placed, type TaskSpec } from "../act/tasks.js";
 import type { DeviceView } from "../contract/events.js";
 import type { DraftStep, PlanHead } from "../plan/planner.js";
 import { assemblePlan } from "../plan/planner.js";
@@ -75,7 +75,8 @@ export type TaskInfo = TaskSpec;
 /** 평면도 물건 하나(가구·가전·도면 설비): id·종류·방·자리와 이름(name 배치 이름, short 비전 상태 줄의 짧은 이름), 싱크볼 가운데(있을 때). */
 export interface PlaceInfo { id: string; type: string; room: string | null; position: XZ; name: string; short: string; basin?: XZ }
 
-/** 계획 입력. floor.robot은 손(맞춘 폰 눈) 자리다. */
+/** 계획 입력. floor.robot은 손(맞춘 폰 눈) 자리다. placed는 실행 추적이 놓기를 끝낸 물건(이미 치운 것, src/act/track.ts placed):
+ *  입력 물건 줄에 「이미 치움」을 붙이고, 그 물건을 집거나 놓는 단계는 버린다. */
 export interface PlanContext {
   decision: DecisionRecord;
   task: TaskInfo;
@@ -85,6 +86,7 @@ export interface PlanContext {
   rooms: RoomSpec[];
   devices: DeviceView[];
   nowIso: string;
+  placed?: Placed;
 }
 
 const choiceSchema = z.object({
@@ -108,7 +110,7 @@ export const STEP_ARGS = z.object({
   text: z.string().min(1).max(60).optional().describe("say: 폰이 읽을 알림 한 줄"),
   tool: z.enum(DEVICE_TOOLS).optional().describe("device: 기기를 바꾸는 도구 이름"),
   args: z.record(z.string(), z.unknown()).optional().describe("device: 그 도구 인자(device_id 빼고)"),
-  until: z.record(z.string(), z.unknown()).optional().describe("끝나는 조건: World State 조건 JSON(조건 낱말의 키만). wait에는 꼭. place는 자리 사실 또는 트윈 자리를 any로 묶는다: 위에 놓기는 놓을 면(target) 위, 안에 넣기(싱크대)는 그 면의 싱크볼 안(part basin)이고, 둘 다 손에 없고(not in_hand) 사람이 들고 있지 않음(not person_holding). 물건 조건은 모두 follow: true"),
+  until: z.record(z.string(), z.unknown()).optional().describe("끝나는 조건: World State 조건 JSON(조건 낱말의 키만). wait에는 꼭. place는 자리 사실 또는 트윈 자리(손에 없음, not in_hand)를 any로 묶고, 그 any와 사람이 들고 있지 않음(not person_holding)을 all로 묶는다. 트윈 자리는 위에 놓기면 놓을 면(target) 위, 안에 넣기(싱크대)면 그 면의 싱크볼 안(part basin). 물건 조건은 모두 follow: true"),
   timeout_s: z.number().int().describe("이 단계 시간 한도(초)"),
   on_timeout: z.enum(["ask", "fail"]).optional().describe("시간이 지나면 ask 계속할지 묻기, fail 실패(기본)"),
 });
@@ -285,6 +287,8 @@ export class PlanDraft {
     let target: string | null = a.target ?? null;
     let object: string | null = a.object ?? null;
     const live = (id: string) => { const o = worldObject(world, id); return o && o.status !== "gone" ? o : undefined; };
+    // 실행 추적이 놓기를 끝낸 물건(입력 줄 「이미 치움」)은 다시 집거나 놓지 않는다(실행 전 검사가 막아 계획이 끝나 버린다)
+    const putAway = (id: string | null) => { if (id && this.ctx.placed?.has(id)) errors.push(`이미 치운 물건입니다(앞 계획이 놓기를 끝냄): ${id}. 「이미 치움」이 없는 물건을 쓰세요`); };
     switch (a.kind) {
       case "go":
         need("target", !!target);
@@ -299,12 +303,14 @@ export class PlanDraft {
         else if (target && !floor.objects.has(target)) errors.push(`pick target은 보이는 World State 물건 id나 평면도 id여야 합니다: ${target}`);
         if (object && !live(object)) errors.push(`보이는 World State 물건이 아닙니다: ${object}`);
         if (this.ctx.task.target && worldObject(world, object ?? "")?.cls !== this.ctx.task.target) errors.push(`이 할 일은 ${this.ctx.task.target} 물건을 집습니다`);
+        putAway(object);
         break;
       case "place":
         need("target", !!target);
         if (target && !floor.objects.has(target)) errors.push(`place target은 평면도 id여야 합니다: ${target}`);
         if (object && !worldObject(world, object)) errors.push(`World State 물건이 아닙니다: ${object}`);
         if (object && this.ctx.task.target && worldObject(world, object)?.cls !== this.ctx.task.target) errors.push(`이 할 일은 ${this.ctx.task.target} 물건을 내려놓습니다`);
+        putAway(object);
         break;
       case "device": {
         need("target", !!target);

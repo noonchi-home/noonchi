@@ -78,8 +78,9 @@ function devicesOf(hub: MemoryHub, history: Record<string, WorldDevice["history"
     return { id: d.id, kind: d.kind, label: d.label, status: state.join(" "), state, active: false, changed_ms: 0, event_ms: null, started_ms: null, remaining_min: null, history: history[d.id] ?? [] };
   });
 }
+/** 분석한 마지막 프레임(frame_ms)은 실제 World State처럼 물건을 마지막으로 본 프레임이다(본 물건이 없으면 null). */
 const view = (objects: WorldObject[], devices: WorldDevice[] = []): WorldView => ({
-  at_ms: 0, objects, person: PERSON, fixtures: [], devices, eye: null, frame_ms: null, vlm_missing: 0, yolo_missing: 0,
+  at_ms: 0, objects, person: PERSON, fixtures: [], devices, eye: null, frame_ms: objects.length ? Math.max(...objects.map((o) => o.last_seen_ms)) : null, vlm_missing: 0, yolo_missing: 0,
 });
 const decision = (action: string, id = "pam-1", seq = 1): DecisionRecord => ({
   id, seq, atMs: 8_000, textSent: "t", finalTime: "x", status: "valid", prediction: { observation: "관찰", reasoning: "이유", task_index: 0 }, action, memoryVersion: 1,
@@ -145,20 +146,20 @@ describe("계획 모드: 컵 치우기", () => {
     expect(r.plan.steps.map((s) => [s.kind, s.command])).toEqual([
       ["go", STEP_COMMAND.goTable], ["pick", STEP_COMMAND.pickCup], ["go", STEP_COMMAND.goSink], ["place", STEP_COMMAND.placeCup],
     ]);
-    // 내려놓기(안에 넣기)는 싱크대 안 사실, 또는 싱크대 면(그 단계 target)의 싱크볼 안이고 손에 없고 사람이 그 컵을 들고 있지 않음
+    // 내려놓기(안에 넣기)는 「싱크대 안 사실 또는 싱크대 면(그 단계 target)의 싱크볼 안이고 손에 없음」이고, 자리 사실이 와도 사람이 그 컵을 들고 있지 않음
     expect(r.plan.steps.map((s) => s.until)).toEqual([
       { phone_near: "table_1" },
       { any: [{ object: "cup_1", follow: true, facts: { place: "in_hand" } }, { person_holding: "cup" }] },
       { phone_near: "sink_1" },
       {
-        any: [
-          { object: "cup_1", follow: true, facts: { place: "in_sink" } },
+        all: [
           {
-            all: [
-              { object: "cup_1", follow: true, surface: "sink_1", part: "basin" }, { not: { object: "cup_1", follow: true, facts: { place: "in_hand" } } },
-              { not: { person_holding: "cup_1" } },
+            any: [
+              { object: "cup_1", follow: true, facts: { place: "in_sink" } },
+              { all: [{ object: "cup_1", follow: true, surface: "sink_1", part: "basin" }, { not: { object: "cup_1", follow: true, facts: { place: "in_hand" } } }] },
             ],
           },
+          { not: { person_holding: "cup_1" } },
         ],
       },
     ]);
@@ -180,23 +181,23 @@ describe("계획 모드: 컵 치우기", () => {
     expect(bodies[0].max_output_tokens).toBe(4000);
   });
 
-  it("지시문은 놓기 until을 자리 사실 또는 트윈 자리(놓을 자리에 있고 손에 없고 사람이 들고 있지 않음)를 any로 묶게 하고, 위에 놓기는 면 위, 안에 넣기는 싱크볼 안으로 나눈다. 예의 컵 놓기 조건은 시험 대본과 같다", () => {
+  it("지시문은 놓기 until을 자리 사실 또는 트윈 자리(놓을 자리에 있고 손에 없음)의 any와 사람이 들고 있지 않음을 all로 묶게 하고, 위에 놓기는 면 위, 안에 넣기는 싱크볼 안으로 나눈다. 예의 컵 놓기 조건은 시험 대본과 같다", () => {
     const lines = PLANNER_PROMPT.split("\n");
     const place = lines.find((l) => l.startsWith("- place:"))!;
-    expect(place).toContain("트윈 자리 조건은 「놓을 자리에 있고 손에 없고 사람이 그 물건을 들고 있지 않음」이다.");
-    expect(place).toContain("VLM이 자리 사실을 놓쳐도 트윈 자리로 넘어가고, 손에 든 채 지나가거나 사람이 그 물건을 들고 있다고 보이면(person_holding) 넘기지 않는다.");
+    expect(place).toContain("「그 물건 자리 사실 또는 트윈 자리 조건(놓을 자리에 있고 손에 없음)」을 any로 묶고, 그 any와 「사람이 그 물건을 들고 있지 않음」(not person_holding)을 all로 묶는다.");
+    expect(place).toContain("사람이 그 물건을 들고 있다고 보이면(person_holding) 자리 사실이 와도 넘기지 않는다.");
     const onTop = lines.find((l) => l.startsWith("  - 위에 놓기"))!;
-    expect(onTop).toContain(`{"any": [{"object": id, "follow": true, "facts": {"place": "on_table"}}, {"all": [{"object": id, "follow": true, "surface": target}, {"not": {"object": id, "follow": true, "facts": {"place": "in_hand"}}}, {"not": {"person_holding": id}}]}]}`);
+    expect(onTop).toContain(`{"all": [{"any": [{"object": id, "follow": true, "facts": {"place": "on_table"}}, {"all": [{"object": id, "follow": true, "surface": target}, {"not": {"object": id, "follow": true, "facts": {"place": "in_hand"}}}]}]}, {"not": {"person_holding": id}}]}`);
     const inside = lines.find((l) => l.startsWith("  - 안에 넣기"))!;
     expect(inside).toContain("면 위만으로는 넘기지 않는다(싱크볼 옆 조리대도 같은 면이다).");
-    expect(inside).toContain(`{"any": [{"object": id, "follow": true, "facts": {"place": "in_sink"}}, {"all": [{"object": id, "follow": true, "surface": target, "part": "basin"}, {"not": {"object": id, "follow": true, "facts": {"place": "in_hand"}}}, {"not": {"person_holding": id}}]}]}`);
-    expect(inside).toContain("싱크볼이 없으면 자리 사실만 쓴다.");
+    expect(inside).toContain(`{"all": [{"any": [{"object": id, "follow": true, "facts": {"place": "in_sink"}}, {"all": [{"object": id, "follow": true, "surface": target, "part": "basin"}, {"not": {"object": id, "follow": true, "facts": {"place": "in_hand"}}}]}]}, {"not": {"person_holding": id}}]}`);
+    expect(inside).toContain("싱크볼이 없으면 트윈 자리 조건 없이 자리 사실과 not person_holding을 all로 묶는다.");
     expect(lines).toContain("예(컵 치우기, 식탁 table_1 위 컵 cup_1, 싱크볼이 있는 싱크대 sink_1)");
     const example = lines.find((l) => l.startsWith("4. place sink_1 object cup_1"))!;
     expect(JSON.parse(example.slice(example.indexOf(" until ") + 7))).toEqual(cupSteps({ table: "table_1", sink: "sink_1", cup: "cup_1" })[3]!.until);
     // 도구 설명(submit_plan 단계 until 칸)도 같은 모양을 말한다
     expect(SUBMIT_ARGS.shape.steps.element.shape.until.description).toContain(
-      "place는 자리 사실 또는 트윈 자리를 any로 묶는다: 위에 놓기는 놓을 면(target) 위, 안에 넣기(싱크대)는 그 면의 싱크볼 안(part basin)이고, 둘 다 손에 없고(not in_hand) 사람이 들고 있지 않음(not person_holding)",
+      "place는 자리 사실 또는 트윈 자리(손에 없음, not in_hand)를 any로 묶고, 그 any와 사람이 들고 있지 않음(not person_holding)을 all로 묶는다. 트윈 자리는 위에 놓기면 놓을 면(target) 위, 안에 넣기(싱크대)면 그 면의 싱크볼 안(part basin)",
     );
   });
 
@@ -205,6 +206,25 @@ describe("계획 모드: 컵 치우기", () => {
     const input = planInput(planContext({ decision: decision("컵 치우기"), world: view([inBasin]), floor: smallFloor(), nowIso: "t" }));
     expect(input).toContain("- 물건 cup_1 컵 · present · 면 sink_1 싱크볼 안 · ");
     expect(input).toContain("- table_1 식탁 [dining_table] · 방 kitchen · 자리 [7, 3]\n");
+  });
+
+  it("실행 추적이 이미 치운 물건(placed)은 계획 입력 물건 줄에 「이미 치움」을 붙이고, 그 물건을 집거나 놓는 계획은 제출 검사가 버린다", () => {
+    const two = view([{ ...cup(), surface: "sink_1", surface_part: "basin" }, cup({ id: "cup_2", last_seen_ms: 8_000 })]);
+    const placed = new Map([["cup_1", { target: "sink_1", part: "basin" as const, atMs: 9_000 }]]);
+    const c = planContext({ decision: decision("컵 치우기"), world: two, floor: floor(), placed });
+    const input = planInput(c);
+    expect(input).toContain("- 물건 cup_1 컵 · present · 이미 치움 · 면 sink_1 싱크볼 안 · ");
+    expect(input).toContain("- 물건 cup_2 컵 · present · 면 table_1 · ");
+    expect(PLANNER_PROMPT.split("\n")).toContain("- World State 물건 줄에 「이미 치움」이 붙은 물건은 앞 계획이 이미 놓기를 끝낸 것이다. pick·place 물건으로 쓰지 않는다.");
+    // 치운 컵을 대상으로 삼은 계획은 집기 단계에서 버리고, 치우지 않은 컵은 받는다
+    const ids = { table: "table_1", sink: "sink_1" };
+    expect(new PlanDraft(c).submit({ steps: cupSteps({ ...ids, cup: "cup_1" }) })).toMatchObject({ ok: false, error: expect.stringMatching(/^2번 단계: .*이미 치운 물건입니다.*cup_1/) });
+    expect(new PlanDraft(c).submit({ steps: cupSteps({ ...ids, cup: "cup_2" }) })).toMatchObject({ ok: true });
+    const d = new PlanDraft(c);
+    expect(d.add({ step: 1, ...cupSteps({ ...ids, cup: "cup_1" })[3]! })).toMatchObject({ ok: false, error: expect.stringMatching(/이미 치운 물건입니다.*cup_1/) });
+    // 치운 것이 없으면 표시도 검사도 없다
+    expect(planInput(planContext({ decision: decision("컵 치우기"), world: two, floor: floor() }))).not.toContain("이미 치움");
+    expect(new PlanDraft(planContext({ decision: decision("컵 치우기"), world: two, floor: floor() })).submit({ steps: cupSteps({ ...ids, cup: "cup_1" }) })).toMatchObject({ ok: true });
   });
 });
 

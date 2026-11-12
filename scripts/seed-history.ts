@@ -112,6 +112,8 @@ class Week {
   private recent: WorldChange[] = [];
   private summary = "";
   private vlmMissing = 0;
+  /** 마지막으로 분석한 엔진 프레임 시각(World State frame_ms). */
+  private frameAt: number | null = null;
   private plans!: PlanHub;
   private tracker!: ExecutionTracker;
   readonly reflections: { version: number; appliesDay: string }[] = [];
@@ -201,7 +203,7 @@ class Week {
   view(): WorldView {
     return {
       at_ms: this.t, objects: [...this.objects.values()].map((o) => ({ ...o, facts: { ...o.facts } })), person: { ...this.person, facts: { ...this.person.facts } },
-      fixtures: [], devices: [], eye: this.eyeView, frame_ms: null, vlm_missing: this.vlmMissing, yolo_missing: 0,
+      fixtures: [], devices: [], eye: this.eyeView, frame_ms: this.frameAt, vlm_missing: this.vlmMissing, yolo_missing: 0,
     };
   }
 
@@ -257,6 +259,7 @@ class Week {
   see(summary: string, facts: Record<string, string[]> = {}, n = 3): void {
     for (let i = 0; i < n; i++) {
       this.wait(2);
+      this.frameAt = this.t;
       this.brain.emit({ type: "observe", at_ms: this.t, frame_id: `e${++this.frame}`, captured_at_ms: this.t - 1200, yolo: null, vlm: summary });
       for (const o of this.objects.values()) if (o.status === "present") Object.assign(o, { last_seen_ms: this.t, last_in_view_ms: this.t });
       if (this.person.visible) this.person.last_seen_ms = this.t;
@@ -283,6 +286,7 @@ class Week {
   /** VLM 답을 못 받은 프레임(vlm 줄만, World State 변화 없음). */
   missing(reason: "timeout" | "cap"): void {
     this.wait(2);
+    this.frameAt = this.t;
     this.vlmMissing++;
     this.brain.emit({ type: "observe", at_ms: this.t, frame_id: `e${++this.frame}`, captured_at_ms: this.t - 1200, yolo: null, vlm: null, vlm_missing: reason });
   }

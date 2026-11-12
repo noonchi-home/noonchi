@@ -295,6 +295,65 @@ describe("video-check", () => {
     }
   });
 
+  it("녹화 시작: 한 화면의 startScreencast 답이 제한 시간 안에 안 오면(CDP 끊김) 오류로 끝내고, 앞서 단 리스너·ack 타이머를 풀고 시작을 보낸 화면마다 stopScreencast를 보낸다", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "video-record-"));
+    try {
+      const fakePage = (hang: boolean) => {
+        const sent: [string, object][] = [];
+        const handlers = new Map<string, (p: Record<string, unknown>) => void>();
+        const page: ScreencastPage & { sent: typeof sent; handlers: typeof handlers; frame(text: string, sessionId: number): void } = {
+          sent, handlers,
+          send(method, params = {}) {
+            sent.push([method, params]);
+            return hang && method === "Page.startScreencast" ? new Promise<never>(() => {}) : Promise.resolve({});
+          },
+          on(method, fn) { handlers.set(method, fn); return () => handlers.delete(method); },
+          frame(text, sessionId) { handlers.get("Page.screencastFrame")?.({ data: Buffer.from(text).toString("base64"), sessionId, metadata: {} }); },
+        };
+        return page;
+      };
+      const phone = fakePage(false);
+      const dash = fakePage(true);
+      let now = 1000;
+      const started = startRecording(dir, [{ name: "phone", page: phone, size: [390, 844] }, { name: "dash", page: dash, size: [1280, 800] }], { intervalMs: 60_000, now: () => now, startTimeoutMs: 80 });
+      // 대시보드 시작을 기다리는 사이 폰 프레임 둘: 첫 ack는 바로, 둘째 ack는 60초 뒤로 잡힌다
+      await new Promise((r) => setTimeout(r, 10));
+      now = 1100; phone.frame("p1", 7);
+      now = 1200; phone.frame("p2", 8);
+      await expect(started).rejects.toThrow(/녹화 시작.*dash/);
+      expect(phone.handlers.size).toBe(0);
+      expect(dash.handlers.size).toBe(0);
+      expect(phone.sent.map(([m]) => m)).toEqual(["Page.startScreencast", "Page.screencastFrameAck", "Page.stopScreencast"]);
+      expect(dash.sent.map(([m]) => m)).toEqual(["Page.startScreencast", "Page.stopScreencast"]);
+      // 그 뒤 프레임은 쓰지 않는다
+      now = 1300; phone.frame("p3", 9);
+      expect(existsSync(join(dir, "phone", "000003.jpg"))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("녹화 시작: startScreencast가 오류로 끝나도 같은 정리를 하고 그 오류를 낸다", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "video-record-"));
+    try {
+      const sent: string[] = [];
+      const handlers = new Set<string>();
+      const page = (fail: boolean): ScreencastPage => ({
+        send(method) {
+          sent.push(method);
+          return fail && method === "Page.startScreencast" ? Promise.reject(new Error("CDP 연결이 닫힘")) : Promise.resolve({});
+        },
+        on(method) { handlers.add(method); return () => handlers.delete(method); },
+      });
+      await expect(startRecording(dir, [{ name: "phone", page: page(false), size: [390, 844] }, { name: "dash", page: page(true), size: [1280, 800] }], { startTimeoutMs: 1000 }))
+        .rejects.toThrow(/CDP 연결이 닫힘/);
+      expect(handlers.size).toBe(0);
+      expect(sent).toEqual(["Page.startScreencast", "Page.startScreencast", "Page.stopScreencast", "Page.stopScreencast"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("ffmpeg가 없으면 프레임 폴더를 남기고 그 사실과 폴더를 알려 준다", async () => {
     const dir = mkdtempSync(join(tmpdir(), "video-record-"));
     try {

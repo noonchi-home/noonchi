@@ -1,5 +1,6 @@
 // 계획 모드 입력: 고정 시스템 프롬프트(바뀌는 값 없음, 프롬프트 캐시가 깨지지 않게)와 계획마다 쓰는 사용자 말 한 개.
-// 사용자 말에는 PAM 행동·판단, World State, 평면도, 가전, 손(폰) 자리, 승인 규칙, 조건 낱말 키를 글로 넣는다.
+// 사용자 말에는 PAM 행동·판단, World State(실행 추적이 이미 치운 물건 표시 포함), 평면도, 가전, 손(폰) 자리, 승인 규칙, 조건 낱말 키를 글로 넣는다.
+import type { Placed } from "../act/tasks.js";
 import type { WorldView } from "../contract/world.js";
 import { CONDITION_KINDS } from "../world/conditions.js";
 import { CLASSES, DEVICE_STATES, STATES, type ClassKey, type Facet, type Target } from "../world/vocab.js";
@@ -16,9 +17,9 @@ export const PLANNER_PROMPT = `너는 이 집 스마트홈 에이전트의 계�
 단계
 - go: 그 자리로 가기. target은 평면도 id. until은 보통 {"phone_near": target}(쓰지 않으면 그것으로 본다).
 - pick: 집기. target은 보이는 World State 물건 id(없으면 평면도 id). 물건 id면 until은 {"any": [{"object": id, "follow": true, "facts": {"place": "in_hand"}}, {"person_holding": 종류}]}.
-- place: 내려놓기·넣기. target은 평면도 id, object는 든 물건 id(앞 pick 물건이면 생략). 물건 id면 until은 그 물건 자리 사실 또는 트윈 자리 조건을 any로 묶고 물건 조건은 모두 follow: true로 쓴다. 트윈 자리 조건은 「놓을 자리에 있고 손에 없고 사람이 그 물건을 들고 있지 않음」이다. VLM이 자리 사실을 놓쳐도 트윈 자리로 넘어가고, 손에 든 채 지나가거나 사람이 그 물건을 들고 있다고 보이면(person_holding) 넘기지 않는다. 비전으로 못 보는 것(세탁물 등)은 until 없이 두면 사람이 「완료」로 넘긴다.
-  - 위에 놓기(식탁·조리대 위 등): 놓을 자리는 면(target) 위, 자리 사실은 그 면 값(식탁 on_table, 조리대 on_counter). 예: {"any": [{"object": id, "follow": true, "facts": {"place": "on_table"}}, {"all": [{"object": id, "follow": true, "surface": target}, {"not": {"object": id, "follow": true, "facts": {"place": "in_hand"}}}, {"not": {"person_holding": id}}]}]}
-  - 안에 넣기(싱크대 안): 면 위만으로는 넘기지 않는다(싱크볼 옆 조리대도 같은 면이다). 평면도 줄에 싱크볼이 있으면 놓을 자리는 그 면의 싱크볼 안(part basin)이다. 예: {"any": [{"object": id, "follow": true, "facts": {"place": "in_sink"}}, {"all": [{"object": id, "follow": true, "surface": target, "part": "basin"}, {"not": {"object": id, "follow": true, "facts": {"place": "in_hand"}}}, {"not": {"person_holding": id}}]}]}. 싱크볼이 없으면 자리 사실만 쓴다.
+- place: 내려놓기·넣기. target은 평면도 id, object는 든 물건 id(앞 pick 물건이면 생략). 물건 id면 until은 「그 물건 자리 사실 또는 트윈 자리 조건(놓을 자리에 있고 손에 없음)」을 any로 묶고, 그 any와 「사람이 그 물건을 들고 있지 않음」(not person_holding)을 all로 묶는다. 물건 조건은 모두 follow: true로 쓴다. VLM이 자리 사실을 놓쳐도 트윈 자리로 넘어가고, 손에 든 채 지나가면 넘기지 않는다. 사람이 그 물건을 들고 있다고 보이면(person_holding) 자리 사실이 와도 넘기지 않는다. 비전으로 못 보는 것(세탁물 등)은 until 없이 두면 사람이 「완료」로 넘긴다.
+  - 위에 놓기(식탁·조리대 위 등): 놓을 자리는 면(target) 위, 자리 사실은 그 면 값(식탁 on_table, 조리대 on_counter). 예: {"all": [{"any": [{"object": id, "follow": true, "facts": {"place": "on_table"}}, {"all": [{"object": id, "follow": true, "surface": target}, {"not": {"object": id, "follow": true, "facts": {"place": "in_hand"}}}]}]}, {"not": {"person_holding": id}}]}
+  - 안에 넣기(싱크대 안): 면 위만으로는 넘기지 않는다(싱크볼 옆 조리대도 같은 면이다). 평면도 줄에 싱크볼이 있으면 놓을 자리는 그 면의 싱크볼 안(part basin)이다. 예: {"all": [{"any": [{"object": id, "follow": true, "facts": {"place": "in_sink"}}, {"all": [{"object": id, "follow": true, "surface": target, "part": "basin"}, {"not": {"object": id, "follow": true, "facts": {"place": "in_hand"}}}]}]}, {"not": {"person_holding": id}}]}. 싱크볼이 없으면 트윈 자리 조건 없이 자리 사실과 not person_holding을 all로 묶는다.
 - device: 가전 조작. tool은 기기를 바꾸는 도구 이름(turn_on·turn_off·set_level·set_climate·set_covering·lock·unlock·start·stop·set_valve), target은 가전 id, args는 그 도구의 나머지 인자(device_id 없이). 실행할 때 승인 규칙을 거친다. until은 그 가전 상태(예: {"device": id, "state": "on"}).
 - wait: 행동 중에 기다리기(예: 세탁이 멈추기). until은 World State 조건(예: {"device": 세탁기 id, "state": "stopped"}, 이미 멈췄으면 바로 넘어간다) 또는 {"elapsed_s": 초}. 폰에는 아무것도 보내지 않는다. 행동을 시작하기 전 기다림은 PAM이 맡으니 넣지 않는다.
 - ask: 사람에게 묻기. question은 「?」로 끝나고 choices는 2~3개(id 영문 소문자, label 짧게). 답으로 갈라지지 않게 마지막 단계에만 둔다.
@@ -27,6 +28,7 @@ export const PLANNER_PROMPT = `너는 이 집 스마트홈 에이전트의 계�
 규칙
 - 쓸 수 있는 단계 종류·가전은 [할 일]의 「쓸 수 있는 단계」 안이다.
 - id는 입력에 있는 것만 쓴다. 조건(until)은 [조건 낱말]의 키만 쓴다.
+- World State 물건 줄에 「이미 치움」이 붙은 물건은 앞 계획이 이미 놓기를 끝낸 것이다. pick·place 물건으로 쓰지 않는다.
 - 모든 단계에 timeout_s를 준다: 사람 단계·질문 보통 120, 가전 60, 기다리기는 그 일에 맞게(예: 세탁 7200). 오래 걸리는 단계는 on_timeout을 ask(계속할지 묻기)로, 그 밖에는 fail.
 - label은 화면 단계 이름(예: 「식탁으로 가기」, 「컵 집기」, 「싱크대로 가기」, 「컵 내려놓기」). 30자 아래, 화살표·괄호 없이 쓴다.
 - 순서: 사람은 먼저 물건이 있는 자리로 가고(go), 집고(pick), 둘 자리로 가서(go) 내려놓는다(place). 이미 그 자리에 있으면 go를 뺀다.
@@ -38,7 +40,7 @@ export const PLANNER_PROMPT = `너는 이 집 스마트홈 에이전트의 계�
 1. go table_1 「식탁으로 가 주세요」 until {"phone_near": "table_1"}
 2. pick cup_1 「컵을 들어 주세요」 until {"any": [{"object": "cup_1", "follow": true, "facts": {"place": "in_hand"}}, {"person_holding": "cup"}]}
 3. go sink_1 「싱크대로 가 주세요」 until {"phone_near": "sink_1"}
-4. place sink_1 object cup_1 「컵을 싱크대에 넣어 주세요」 until {"any": [{"object": "cup_1", "follow": true, "facts": {"place": "in_sink"}}, {"all": [{"object": "cup_1", "follow": true, "surface": "sink_1", "part": "basin"}, {"not": {"object": "cup_1", "follow": true, "facts": {"place": "in_hand"}}}, {"not": {"person_holding": "cup_1"}}]}]}
+4. place sink_1 object cup_1 「컵을 싱크대에 넣어 주세요」 until {"all": [{"any": [{"object": "cup_1", "follow": true, "facts": {"place": "in_sink"}}, {"all": [{"object": "cup_1", "follow": true, "surface": "sink_1", "part": "basin"}, {"not": {"object": "cup_1", "follow": true, "facts": {"place": "in_hand"}}}]}]}, {"not": {"person_holding": "cup_1"}}]}
 
 예(세탁물 옮기기, 세탁기 washer_1, 건조기 dryer_1)
 1. wait until {"device": "washer_1", "state": "stopped"} timeout_s 7200 on_timeout ask
@@ -49,10 +51,11 @@ const xz = (p: readonly number[] | null | undefined) => (p ? `[${p.map((n) => Ma
 const factsOf = (f: Record<string, { value: string } | undefined>) =>
   Object.entries(f).flatMap(([k, v]) => (v ? [`${k}=${v.value}`] : [])).join(" ") || "사실 없음";
 
-/** World State 줄(물건·사람·가전 설비). 계획 모드와 관찰 모드(src/agent/observer.ts)가 같은 글을 쓴다. */
-export function worldLines(w: WorldView): string[] {
+/** World State 줄(물건·사람·가전 설비). 계획 모드와 관찰 모드(src/agent/observer.ts)가 같은 글을 쓴다.
+ *  placed(실행 추적이 놓기를 끝낸 물건)를 주면 그 물건 줄의 상태 뒤에 「이미 치움」을 붙인다(계획 모드). */
+export function worldLines(w: WorldView, placed?: Placed): string[] {
   const out = w.objects.map((o) =>
-    `- 물건 ${o.id} ${CLASSES[o.cls as ClassKey]?.label ?? o.cls} · ${o.status} · 면 ${o.surface ?? "없음"}${o.surface_part === "basin" ? " 싱크볼 안" : ""} · 방 ${o.room ?? "모름"} · 자리 ${xz(o.position && [o.position[0], o.position[2]])} · ${factsOf(o.facts)}`);
+    `- 물건 ${o.id} ${CLASSES[o.cls as ClassKey]?.label ?? o.cls} · ${o.status}${placed?.has(o.id) ? " · 이미 치움" : ""} · 면 ${o.surface ?? "없음"}${o.surface_part === "basin" ? " 싱크볼 안" : ""} · 방 ${o.room ?? "모름"} · 자리 ${xz(o.position && [o.position[0], o.position[2]])} · ${factsOf(o.facts)}`);
   const p = w.person;
   out.push(p.visible
     ? `- 사람 보임 ${p.count}명 · 방 ${p.room ?? "모름"} · 든 물건 ${p.holding.join(", ") || "없음"} · ${factsOf(p.facts)}`
@@ -81,7 +84,7 @@ export function planInput(ctx: PlanContext): string {
     `- 쓸 수 있는 단계: ${allow}`,
     `[PAM 판단] 관찰: ${d.prediction?.observation ?? "없음"} / 이유: ${d.prediction?.reasoning ?? "없음"}`,
     `[World State] ${ctx.nowIso}`,
-    ...worldLines(world),
+    ...worldLines(world, ctx.placed),
     `[평면도] 방: ${floor.rooms.map((r) => `${r.id} ${roomName(r.id)}`).join(", ")}`,
     ...places.map((p) => `- ${p.id} ${p.name} [${p.type}] · 방 ${p.room ?? "모름"} · 자리 ${xz(p.position)}${p.basin ? ` · 싱크볼 ${xz(p.basin)}` : ""}`),
     "[가전]",
