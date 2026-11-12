@@ -64,17 +64,19 @@ function PreDrawProgress({ plan }: { plan: PlanView | null }) {
 }
 
 /**
- * 트윈 칸(왼쪽에서 남은 너비와 화면 높이를 다 쓴다, 판은 대시보드 폰 칸과 함께 쓰는 한 판): 칸을 꽉 채운 지도 자리(map)와
- * 그 위 왼쪽 위 할 일 진행도(계획이 있을 때만, 계획 전 지켜보기에는 없다), 오른쪽 위 칩(클로이드 위치를 모를 때, 연결이 끊겼을 때만).
- * 마스코트 말풍선·마스코트도 지도 위에 얹힌다. 칸은 늘 같은 자리·크기다. 화면이 뜰 때 미리 그려 보는 동안(PreDrawing)만 PreDrawProgress를 둔다.
+ * 트윈 칸(화면 전체, 여백 안): 칸을 꽉 채운 지도 자리(map)와
+ * 그 위 왼쪽 위 할 일 진행도(계획이 있을 때만, 계획 전 지켜보기에는 없다), 위쪽 미니맵 왼쪽 칩(클로이드 위치를 모를 때, 연결이 끊겼을 때만. 오른쪽 끝에서 chipsRight만큼 띄운다).
+ * 비전 미니맵·생각 말풍선·말풍선 카드·마스코트도 지도 위에 얹힌다. 칸은 늘 같은 자리·크기다. 화면이 뜰 때 미리 그려 보는 동안(PreDrawing)만 PreDrawProgress를 둔다.
  */
-export function TwinPane({ plan, step, robotKnown, connected, map }: {
+export function TwinPane({ plan, step, robotKnown, connected, map, chipsRight }: {
   plan: PlanView | null;
   step: PlanStep | null;
   robotKnown: boolean;
   /** 서버와 실시간 연결: 끊김 false, 모름 null. */
   connected: boolean | null;
   map: ReactNode;
+  /** 칩을 트윈 오른쪽 끝에서 띄우는 만큼(px): 미니맵 왼쪽. */
+  chipsRight: number;
 }) {
   const offline = connected === false;
   const predraw = useContext(PreDrawing);
@@ -84,7 +86,7 @@ export function TwinPane({ plan, step, robotKnown, connected, map }: {
       {plan && step && <TaskProgress plan={plan} step={step} />}
       {predraw && <PreDrawProgress plan={plan} />}
       {(!robotKnown || offline) && (
-        <div data-chips className="pointer-events-none absolute right-4 top-4 flex flex-col items-end gap-2">
+        <div data-chips className="pointer-events-none absolute top-4 flex flex-col items-end gap-2" style={{ right: chipsRight }}>
           {!robotKnown && (
             <Status>
               <MapPin className="size-3.5" aria-hidden="true" />

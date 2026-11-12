@@ -14,8 +14,8 @@ import type { TwinEngine } from "../twin3d/engine";
 import { LiveQueue, attachLive } from "../twin3d/live";
 import { BAKE_VIEWS } from "../twin3d/projection";
 import { Twin3D, useLayoutBox } from "../twin3d/Twin3D";
-import { focusOf, still, wideCamera, type Camera } from "./camera";
-import { currentStep, facingOf, fsmOf, isOpen, stepIndex } from "./data";
+import { focusOf, still, wholeOf, wideCamera, type Camera } from "./camera";
+import { currentStep, facingOf, isOpen, stepIndex, thoughtOf } from "./data";
 import { DashboardScreen } from "./DashboardScreen";
 import { debugPhone, debugQuery, useDebugSteps, type Moment } from "./debug";
 import { roomSetsOf, twinFrame } from "./frame";
@@ -32,7 +32,7 @@ declare global {
 }
 
 /** 트윈 위에 얹힌 것: 말풍선이 덮지 않을 자리. */
-const AVOID = "[data-say-card], [data-mascot], [data-progress], [data-chips]";
+const AVOID = "[data-say-card], [data-mascot], [data-progress], [data-chips], [data-phone], [data-thought]";
 
 /** 확인 목록만 말풍선으로(승인 대기 줄은 뺀다). 두뇌 줄은 장면의 식탁(dining_table)에 붙는다. 자리는 확인한 것만 센다. 말풍선은 트윈 위에 얹힌 것(AVOID)을 비킨다. */
 function Overlay({ devices, checks, focusId }: { devices: ReturnType<typeof useDevices>["devices"]; checks: ChecksState; focusId: string | null }) {
@@ -92,7 +92,7 @@ function useHomeData(home: string | null): HomeData | null {
 /**
  * 구운 3D 트윈(TwinStage와 같은 틀): 캔버스와 그 위 표시 판(MapOverlay: 경로·목적지·확인한 것·어둡게 한 방·말풍선).
  * 계획·맞춘 눈은 대시보드 자료(data.ts)의 것이다. 클로이드(맞춘 눈)는 엔진 장면의 마스코트 인형 + 시야 원뿔이다(engine.setEye).
- * 지도 카메라는 그 단계에 중요한 것(focusOf)을 지도 카메라 칸(layout.camPad 안쪽)에 맞추고, 작은 눈 움직임(still)에는 그대로 둔다.
+ * 지도 카메라는 그 단계에 중요한 것(focusOf, 지켜보기는 집 전체)을 지도 카메라 칸(layout.camPad 안쪽: 미니맵·말풍선·마스코트 밖)에 맞추고, 작은 눈 움직임(still)에는 그대로 둔다.
  * 바뀌면 CAMERA_MS 동안 옮긴다(움직임 줄이기면 바로). 종류를 정하기 전(home null)에는 캔버스 없이 틀만.
  * 엔진이 뜨고 버려질 때 onEngine, 첫 그림을 그리면 onReady.
  */
@@ -117,12 +117,14 @@ function BakedStage({ home, layout, plan, eye, checks, devices, onEngine: toLive
     [v, homeData, plan, eye, list, engine],
   );
   const roomSets = useMemo(() => (frame?.plan && homeData ? roomSetsOf(frame.plan, homeData.index) : []), [frame?.plan, homeData]);
-  const want = v && size.width > 0 && size.height > 0 ? wideCamera(v, size, frame && homeData ? focusOf(frame, homeData.index.shapes) : null, layout.camPad) : null;
+  // 집 전체(모든 방): 지켜보기에 맞출 곳이고 가장 먼 보기다
+  const whole = useMemo(() => (homeData ? wholeOf(homeData.index.shapes) : null), [homeData]);
+  const want = v && size.width > 0 && size.height > 0 ? wideCamera(v, size, frame && homeData ? focusOf(frame, homeData.index.shapes) : null, layout.camPad, whole) : null;
   const last = useRef<Camera | null>(null);
   const cam = want && last.current && still(last.current, want) ? last.current : want;
   useLayoutEffect(() => { last.current = cam; });
   const moveMs = useReducedMotionNow() ? 0 : CAMERA_MS;
-  // 말풍선 카드·마스코트 자리(트윈 칸 px)
+  // 얹은 것(말풍선 카드·마스코트·미니맵·생각 말풍선) 자리(트윈 칸 px)
   const blocked = useMemo(() => layout.blocked.map((r) => ({
     x0: r.left - layout.twin.left, y0: r.top - layout.twin.top, x1: r.left + r.width - layout.twin.left, y1: r.top + r.height - layout.twin.top,
   })), [layout]);
@@ -153,7 +155,7 @@ function BakedStage({ home, layout, plan, eye, checks, devices, onEngine: toLive
 
 /**
  * 대시보드: 서버에서 받은 것(health·/events·기기·확인 목록·대시보드 자료)을 화면 틀(DashboardScreen)에 넘긴다.
- * 대시보드 자료(data.ts): 열린 계획의 단계 번호·진행도, 마스코트 방향(열린 계획이면 트윈), 말풍선 카드 말, FSM 카드(마지막 유효 판단), YOLO 상자(받은 뒤 3초), 클로이드 자리를 아는가.
+ * 대시보드 자료(data.ts): 열린 계획의 단계 번호·진행도, 마스코트 방향(열린 계획이면 트윈), 말풍선 카드 말, 생각 말풍선(마지막 유효 판단이 고른 행동과 그 생각·FSM 상태, 대기면 없음), 클로이드 자리를 아는가.
  * 트윈 칸 지도 자리: 한양목련처럼 구운 3D가 있는 집은 three.js 캔버스(클로이드 인형·원뿔 포함)와 그 위 계획 경로·확인한 것·어둡게 한 방(BakedStage),
  * 다른 집은 iframe 뷰어(TwinStage)와 그 위 확인 목록 말풍선.
  * 구운 트윈의 가전 상태·배치는 같은 소켓 메시지로 바꾸고, 엔진이 뜨기 전에 온 메시지는 모아 두었다가 엔진이 뜨면 넣는다.
@@ -227,11 +229,11 @@ export function Dashboard() {
       <BakedStage home={kind === "three" ? homeId : null} layout={layout} plan={dash.plan} eye={dash.eye} checks={checks} devices={devices} onEngine={onEngine} onReady={onBakedReady} />
     );
   const plan = isOpen(dash.plan) ? dash.plan : null;
-  const { observation, action } = fsmOf(dash);
+  const thought = useMemo(() => thoughtOf(dash), [dash.decision]);
   return (
     <DashboardScreen
       index={stepIndex(plan)} plan={plan} step={currentStep(plan)} robotKnown={dash.eye !== null} connected={online} map={map} mapReady={mapReady}
-      phone={phone} seen={seen} observation={observation} action={action} say={dash.say ?? ""}
+      phone={phone} seen={seen} thought={thought} say={dash.say ?? ""}
       facing={facingOf(plan)} hub={hub} settingsOpen={debug?.settings} onReady={onScreenReady}
     />
   );

@@ -1,9 +1,9 @@
 // @vitest-environment node
-// 트윈 지도 카메라: 구운 보기 그림(1920×1536)이 트윈 칸을 빈 곳 없이 덮고, 그 단계에 중요한 것(목적지·클로이드·확인한 것·지금 길·말풍선·방 이름표)을
-// 지도 카메라 칸(focus) 안, 말풍선 카드·마스코트 밑이 아닌 곳에 맞춘다. 가장자리 표시 흐리기, 길을 가리는 말풍선 빼기, 방 이름표 자리.
+// 트윈 지도 카메라: 트윈이 화면 전체라 구운 보기 그림(1920×1536)보다 옆으로 넓다. 지켜보기는 집 전체(모든 방)를, 계획 단계는 그 단계에 중요한 것(목적지·클로이드·확인한 것·지금 길·말풍선·방 이름표)을
+// 지도 카메라 칸(focus) 안, 얹은 것(말풍선 카드·마스코트·미니맵·생각 말풍선) 밑이 아닌 곳에 맞춘다. 그림 밖은 3D 장면 바탕이라 비워 둬도 된다. 가장자리 표시 흐리기, 길을 가리는 말풍선 빼기, 방 이름표 자리.
 import { describe, expect, it } from "vitest";
 import type { Check } from "../../src/checks/checks";
-import { coverScale, focusOf, legOf, still, toScreen, wideCamera } from "../../src/dashboard/camera";
+import { coverScale, focusOf, legOf, still, toScreen, wholeOf, wideCamera } from "../../src/dashboard/camera";
 import { BUBBLE_BOX, clearOfRoute, edgeFade } from "../../src/dashboard/checks";
 import { twinFrame } from "../../src/dashboard/frame";
 import { avoidBoxes, placeLabel } from "../../src/dashboard/labels";
@@ -41,24 +41,36 @@ describe.each([[1920, 1080], [1440, 900]])("%i×%i", (width, height) => {
   const focus = toTwin(L.focus);
   const view = (n: number) => {
     const frame = frameAt(n);
-    return { frame, cam: wideCamera(IMAGE, box, focusOf(frame, HOME.shapes), L.camPad) };
+    return { frame, cam: wideCamera(IMAGE, box, focusOf(frame, HOME.shapes), L.camPad, WHOLE) };
   };
+  const WHOLE = wholeOf(HOME.shapes)!;
 
-  it.each([0, 1, 2, 3, 4])("순간 %i: 카메라 배율은 덮는 배율 이상이고 그림이 트윈 칸을 빈 곳 없이 덮는다", (n) => {
-    const { cam } = view(n);
-    expect(cam.scale).toBeGreaterThanOrEqual(coverScale(IMAGE, box) - 1e-9);
-    const left = box.width / 2 - cam.cx * cam.scale;
-    const top = box.height / 2 - cam.cy * cam.scale;
-    expect(left).toBeLessThanOrEqual(1e-6);
-    expect(top).toBeLessThanOrEqual(1e-6);
-    expect(left + IMAGE.width * cam.scale).toBeGreaterThanOrEqual(box.width - 1e-6);
-    expect(top + IMAGE.height * cam.scale).toBeGreaterThanOrEqual(box.height - 1e-6);
+  it("집 전체는 모든 방(바닥·벽 위)을 담는 그림 픽셀 상자다", () => {
+    for (const r of HOME.shapes) for (const [u, v] of [...r.floor, ...r.top]) {
+      expect(u >= WHOLE.x0 && u <= WHOLE.x1 && v >= WHOLE.y0 && v <= WHOLE.y1, r.id).toBe(true);
+    }
   });
 
-  it("순간 0(지켜보기, 계획 없음)은 집 전체를 보인다: 그림 가운데, 덮는 배율", () => {
+  it("순간 0(지켜보기, 계획 없음)은 집 전체를 지도 카메라 칸에 맞춘다: 모든 방이 칸 안이라 미니맵·생각 말풍선·말풍선 카드·마스코트 밑에 깔리지 않는다", () => {
     const { cam } = view(0);
     expect(focusOf(frameAt(0), HOME.shapes)).toBeNull();
-    expect(cam).toEqual({ cx: IMAGE.width / 2, cy: IMAGE.height / 2, scale: coverScale(IMAGE, box) });
+    const [a, b] = [toScreen(cam, box, [WHOLE.x0, WHOLE.y0]), toScreen(cam, box, [WHOLE.x1, WHOLE.y1])];
+    const house: Box = { x0: a.x, y0: a.y, x1: b.x, y1: b.y };
+    expect(house.x0).toBeGreaterThanOrEqual(focus.x0 - 1e-6);
+    expect(house.y0).toBeGreaterThanOrEqual(focus.y0 - 1e-6);
+    expect(house.x1).toBeLessThanOrEqual(focus.x1 + 1e-6);
+    expect(house.y1).toBeLessThanOrEqual(focus.y1 + 1e-6);
+    for (const k of blocked) expect(hit(house, k)).toBe(false);
+    // 칸에 꽉 차게: 가로나 세로 한쪽은 칸 끝에 닿는다
+    expect(Math.min(focus.x1 - focus.x0 - (house.x1 - house.x0), focus.y1 - focus.y0 - (house.y1 - house.y0))).toBeLessThan(1e-6);
+  });
+
+  it.each([0, 1, 2, 3, 4])("순간 %i: 카메라 배율은 집 전체를 보이는 배율 이상이다(집 전체보다 멀어지지 않는다)", (n) => {
+    expect(view(n).cam.scale).toBeGreaterThanOrEqual(view(0).cam.scale - 1e-9);
+  });
+
+  it("집 전체를 모르면(whole 없음) 예전처럼 그림이 상자를 빈 곳 없이 덮는다: 그림 가운데, 덮는 배율", () => {
+    expect(wideCamera(IMAGE, box, null, L.camPad)).toEqual({ cx: IMAGE.width / 2, cy: IMAGE.height / 2, scale: coverScale(IMAGE, box) });
   });
 
   it.each([1, 2, 3, 4])("순간 %i: 목적지·클로이드 인형·그 단계 대상(확인한 것)이 지도 카메라 칸 안이고, 보이는 확인한 것은 말풍선 카드·마스코트 밑에 없다", (n) => {

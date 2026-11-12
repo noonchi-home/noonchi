@@ -1,16 +1,15 @@
-// 대시보드 화면 틀(DashboardScreen): 머리줄 막대·맨 아래 줄 없이, 왼쪽에 트윈(지도 자리는 칸을 꽉 채우고, 할 일 진행도는 여기에만), 오른쪽에 대시보드 폰 칸
-// 「폰 카메라」(세로 9:16 영상에 YOLO 상자, 영상 안 위쪽에 떠 있는 FSM·행동 반투명 카드, 영상이 없으면 연결 QR)가 화면 높이를 다 쓴다.
-// 두 칸은 틈 없이 한 판(LiquidGlass)으로 붙고 사이에 나눔선 하나만 있다. 마스코트는 판 없이 가운데 축을 나눔선에 두고 아래 끝을 화면 밑 선에 대며(누르면 설정 창),
-// 말풍선은 트윈 아래쪽 카드 하나다. 자리는 화면 크기로만 정해진다(layout.ts). 자료는 fixtures.ts.
+// 대시보드 화면 틀(DashboardScreen): 머리줄 막대·맨 아래 줄·오른쪽 칸 없이 트윈(지도 자리는 칸을 꽉 채우고, 할 일 진행도는 여기에만)이 화면 전체를 쓴다.
+// 그 위에 얹는 것: 오른쪽 위 비전 미니맵 「폰 카메라」(가로 16:9 영상에 마스크·이름표, 영상이 없으면 연결 QR), 오른쪽 아래 마스코트(판 없이 아래 끝을 화면 밑 선에 댄다, 누르면 설정 창),
+// 마스코트 위 생각 말풍선(PAM의 생각 한 문장과 상태·판단 칩, 대기면 숨김), 트윈 아래쪽 말풍선 카드 하나. 자리는 화면 크기로만 정해진다(layout.ts). 자료는 fixtures.ts.
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import tokens from "../../../src/design/tokens.json";
 import { DashboardScreen, type ScreenProps } from "../../src/dashboard/DashboardScreen";
 import { TAG_H, tagWidth } from "../../src/dashboard/detections";
-import { pageLayout, type Rect } from "../../src/dashboard/layout";
+import { pageLayout, THOUGHT as THOUGHT_SIZE, type Rect } from "../../src/dashboard/layout";
 import { MASCOT } from "../../src/dashboard/mascot-image";
 import { WORDS } from "../../src/dashboard/words";
-import { CLEAR_CUP, EYE_FRAMES, HUB, imageSlot, LEFT_CUP, PHONE_URL, PLAN, SAY, screenAt, seenEvent, seenOf, WATCHING } from "./fixtures";
+import { CLEAR_CUP, EYE_FRAMES, HUB, imageSlot, LEFT_CUP_STATE, PHONE_URL, PLAN, REASON, SAY, screenAt, seenEvent, seenOf, THOUGHT } from "./fixtures";
 import { createSeenStore } from "../../src/dashboard/masks";
 import { act } from "@testing-library/react";
 import type { PlanView } from "../../../src/contract/plan.ts";
@@ -29,6 +28,7 @@ const phonePane = () => screen.getByRole("region", { name: "폰 카메라" });
 const twinPane = () => screen.getByRole("region", { name: "트윈" });
 const mascot = () => screen.getByRole("region", { name: "마스코트" });
 const say = () => document.querySelector<HTMLElement>("[data-say-card]")!;
+const thought = () => document.querySelector<HTMLElement>("[data-thought]")!;
 /** class 하나가 있는지(변형 접두·대괄호 값 포함 그대로). */
 const cls = (el: Element, name: string) => el.className.split(/\s+/).includes(name);
 const before = (a: Element, b: Element) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
@@ -74,63 +74,57 @@ describe("대시보드 배치", () => {
     expect(button.closest("[data-glass]")).toBeNull();
   });
 
-  it.each([[1920, 1080], [1440, 900]])("%i×%i: 트윈·폰 카메라·FSM 카드·마스코트·말풍선은 화면 크기로 정한 자리(layout.ts)에 놓이고 지도 자리는 트윈 칸을 꽉 채운다", (width, height) => {
+  it.each([[1920, 1080], [1440, 900]])("%i×%i: 트윈·폰 카메라(미니맵)·생각 말풍선·마스코트·말풍선 카드는 화면 크기로 정한 자리(layout.ts)에 놓이고 지도 자리는 트윈 칸을 꽉 채운다", (width, height) => {
     const rect = atScreen(width, height);
     try {
       draw(screenAt(2));
       const L = pageLayout({ width, height }, MASCOT);
       expect(close(boxOf(mascot()), L.mascot)).toBe(true);
       expect(close(boxOf(say()), L.bubble)).toBe(true);
-      const stage = phonePane().parentElement!;
-      expect(close(boxOf(stage), { left: L.twin.left, top: L.twin.top, width: L.video.left + L.video.width - L.twin.left, height: L.twin.height })).toBe(true);
-      expect(px(phonePane().style.width)).toBeCloseTo(L.video.width, 5);
-      expect(stage.style.columnGap).toBe("");
-      expect(stage.style.gap).toBe("");
+      const stage = twinPane().parentElement!;
+      expect(close(boxOf(stage), L.twin)).toBe(true);
+      expect(close(boxOf(phonePane()), L.video)).toBe(true);
+      const t = boxOf(thought());
+      expect([t.left, t.top, t.width]).toEqual([L.thought.left, L.thought.top, L.thought.width]);
+      expect(t.top + t.height).toBeLessThanOrEqual(L.mascot.top);
       const map = twinPane().querySelector<HTMLElement>("[data-map]")!;
       for (const c of ["absolute", "inset-0", "overflow-hidden"]) expect(cls(map, c), c).toBe(true);
       expect(map.getAttribute("style") ?? "").toBe("");
       expect(map.querySelector("canvas[data-fixture-map]")).not.toBeNull();
-      const card = phonePane().querySelector<HTMLElement>("[data-fsm-card]")!;
-      expect(close(boxOf(card), { left: L.card.left - L.video.left, top: L.card.top - L.video.top, width: L.card.width, height: L.card.height })).toBe(true);
     } finally { rect.mockRestore(); }
   });
 
-  it("트윈이 왼쪽, 폰 카메라가 오른쪽으로 좌우로 있다: 트윈이 남은 너비를 채운다", () => {
-    draw(screenAt(2));
-    const [phone, twin] = [phonePane(), twinPane()];
-    const stage = phone.parentElement!;
-    expect(twin.parentElement).toBe(stage);
-    expect(before(twin, phone)).toBe(true);
-    expect(cls(stage, "flex")).toBe(true);
-    expect(cls(stage, "flex-col")).toBe(false);
-    expect(cls(phone, "shrink-0")).toBe(true);
-    expect(cls(twin, "flex-1")).toBe(true);
-    expect(stage.contains(mascot())).toBe(false);
-  });
-
-  it("트윈과 폰 카메라는 틈 없이 한 판으로 붙는다: 판(LiquidGlass)은 하나이고 바깥 모서리만 둥글며, 두 칸 사이에는 세로 나눔선(Separator) 하나만 있다", () => {
-    draw(screenAt(2));
-    const [phone, twin] = [phonePane(), twinPane()];
-    const stage = phone.parentElement!;
+  it("트윈이 판 하나를 다 쓴다: 오른쪽 칸·나눔선이 없고, 폰 카메라·생각 말풍선·말풍선 카드·마스코트는 그 판 밖(main 바로 아래)에서 트윈 위로 얹힌다", () => {
+    const { container } = draw(screenAt(2));
+    const main = container.querySelector("main")!;
+    const twin = twinPane();
+    const stage = twin.parentElement!;
+    expect(stage.parentElement).toBe(main);
     expect(stage).toHaveAttribute("data-glass", "opaque");
     expect(stage.style.borderRadius).toBe("16px");
     expect(cls(stage, "overflow-hidden")).toBe(true);
-    for (const pane of [twin, phone]) {
-      const glass = [...pane.querySelectorAll<HTMLElement>("[data-glass]")].filter((g) => cls(g, "size-full") && !g.closest("[data-fsm-card]"));
-      expect(glass, pane.getAttribute("aria-label")!).toEqual([]);
-      expect(pane.style.borderRadius).toBe("");
+    expect([...stage.children].filter((c) => c.tagName === "SECTION")).toEqual([twin]);
+    expect(cls(twin, "flex-1")).toBe(true);
+    expect(container.querySelector("[data-divider], [data-slot=separator], [data-fsm-card], [data-decision]")).toBeNull();
+    for (const el of [phonePane(), thought(), say(), mascot()]) {
+      expect(el.parentElement, el.tagName).toBe(main);
+      expect(stage.contains(el)).toBe(false);
+      expect(before(stage, el)).toBe(true);
     }
-    const dividers = stage.querySelectorAll<HTMLElement>("[data-divider]");
-    expect(dividers).toHaveLength(1);
-    const divider = dividers[0]!;
-    expect(divider.parentElement).toBe(stage);
-    expect(divider.previousElementSibling).toBe(twin);
-    expect(divider.nextElementSibling).toBe(phone);
-    expect(divider).toHaveAttribute("data-orientation", "vertical");
-    expect(cls(divider, "bg-border")).toBe(true);
-    expect(cls(divider, "w-[1px]")).toBe(true);
-    expect(cls(divider, "h-full")).toBe(true);
-    for (const el of [stage, twin, phone]) expect(el.className, el.tagName).not.toMatch(/(^|\s)(gap|gap-x|space-x|m[lrx]?|p[lrx]?)-(?!0(\s|$))\S+/);
+    for (const el of [phonePane(), thought(), say()]) {
+      expect(cls(el, "pointer-events-none")).toBe(true);
+      expect(cls(el, "z-50")).toBe(true);
+    }
+  });
+
+  it("미니맵은 제 둥근 불투명 판(LiquidGlass) 하나다", () => {
+    draw(screenAt(2));
+    const glass = [...phonePane().querySelectorAll<HTMLElement>("[data-glass]")];
+    expect(glass).toHaveLength(1);
+    expect(glass[0]!.parentElement).toBe(phonePane());
+    expect(glass[0]).toHaveAttribute("data-glass", "opaque");
+    expect(glass[0]!.style.borderRadius).toBe("16px");
+    expect(cls(glass[0]!, "size-full")).toBe(true);
   });
 
   it.each([[1920, 1080], [1440, 900]])("%i×%i: 마스코트 아래 끝은 화면 밑 선이다(빈틈 없음)", (width, height) => {
@@ -147,8 +141,8 @@ describe("대시보드 배치", () => {
     try {
       const boxes = (p: ScreenProps) => {
         const { unmount } = draw(p);
-        const stage = phonePane().parentElement!;
-        const out = [mascot(), say(), stage, phonePane(), twinPane(), twinPane().querySelector<HTMLElement>("[data-map]")!].map((el) =>
+        const stage = twinPane().parentElement!;
+        const out = [mascot(), say(), thought(), stage, phonePane(), twinPane(), twinPane().querySelector<HTMLElement>("[data-map]")!].map((el) =>
           [el.style.left, el.style.top, el.style.width, el.style.height, el.className].join(" "));
         unmount();
         return out;
@@ -158,6 +152,7 @@ describe("대시보드 배치", () => {
         ["0", screenAt(0)], ["2", screenAt(2)], ["3", screenAt(3)], ["4", screenAt(4)],
         ["qr", screenAt(3, { phone: { kind: "qr", url: PHONE_URL } })], ["live", screenAt(2, { phone: { kind: "live", url: PHONE_URL } })],
         ["로봇 모름", screenAt(2, { robotKnown: false })], ["연결 끊김", screenAt(2, { connected: false })], ["모양 없음", screenAt(0, { seen: seenOf(null) })],
+        ["긴 생각", screenAt(2, { thought: { ...THOUGHT, reasoning: REASON.repeat(6) } })], ["상태 모름", screenAt(2, { thought: { ...THOUGHT, state: null } })],
       ];
       for (const [name, p] of variants) expect(boxes(p), name).toEqual(first);
     } finally { rect.mockRestore(); }
@@ -225,6 +220,96 @@ describe("대시보드 말풍선(트윈 아래쪽 카드 하나)", () => {
     expect(cls(say(), "pointer-events-none")).toBe(true);
     expect(cls(say(), "z-50")).toBe(true);
     expect(say().parentElement).toBe(document.querySelector("main"));
+  });
+});
+
+describe("대시보드 생각 말풍선(마스코트 위)", () => {
+  const bubble = () => thought().querySelector<HTMLElement>('[data-slot="thought-bubble"][data-shape="bubble"]')!;
+  const now = () => [...thought().querySelectorAll<HTMLElement>("[data-thought-line]")].at(-1)!;
+  const chips = () => [...now().parentElement!.querySelectorAll<HTMLElement>("[data-slot=status]")];
+
+  it.each([1, 2, 3, 4])("%i: PAM의 생각 한 문장과 그 아래 칩 둘 「상태 · …」「판단 · 행동 이름」을 보인다", (n) => {
+    draw(screenAt(n));
+    expect(thought()).toHaveAttribute("data-thought", "shown");
+    expect(thought().style.opacity).toBe("1");
+    expect(thought()).toHaveAttribute("aria-hidden", "false");
+    expect(now()).toHaveTextContent(REASON);
+    expect(chips().map((c) => c.textContent)).toEqual([`상태 · ${LEFT_CUP_STATE}`, `판단 · ${CLEAR_CUP}`]);
+    expect(bubble().contains(now())).toBe(true);
+  });
+
+  it("PAM이 대기(행동 없음)면 말풍선을 숨긴다: 칸은 그대로 두고 opacity 0이며 읽어 주지 않는다", () => {
+    const rect = atScreen(1920, 1080);
+    try {
+      const { rerender } = draw(screenAt(1));
+      const el = thought();
+      const boxWas = boxOf(el);
+      rerender(<DashboardScreen {...screenAt(0)} />);
+      expect(thought()).toBe(el);
+      expect(el).toHaveAttribute("data-thought", "hidden");
+      expect(el.style.opacity).toBe("0");
+      expect(el).toHaveAttribute("aria-hidden", "true");
+      expect(boxOf(el)).toEqual(boxWas);
+    } finally { rect.mockRestore(); }
+  });
+
+  it("처음부터 대기면 숨긴 채 비어 있다", () => {
+    draw(screenAt(0));
+    expect(thought().style.opacity).toBe("0");
+    expect(thought().textContent).toBe("");
+  });
+
+  it("상태를 모르면(서버가 못 찾았거나 이름표가 없는 상태) 「상태」 칩을 숨기고 「판단」 칩만 보인다", () => {
+    draw(screenAt(2, { thought: { ...THOUGHT, state: null } }));
+    expect(chips().map((c) => c.textContent)).toEqual([`판단 · ${CLEAR_CUP}`]);
+  });
+
+  it("21st.dev 부품으로 그린다: 말풍선과 꼬리 점 둘은 ThoughtBubble, 칩은 Status다. 말풍선 카드(유리 판 + Item)와 모양이 다르다", () => {
+    draw(screenAt(2));
+    const t = thought();
+    expect(t.querySelectorAll('[data-slot="thought-bubble"][data-shape="bubble"]')).toHaveLength(1);
+    expect(t.querySelectorAll('[data-slot="thought-bubble"][data-shape="dot"]')).toHaveLength(2);
+    expect(t.querySelector("[data-glass], [data-slot=item]")).toBeNull();
+    expect(say().querySelector('[data-slot="thought-bubble"]')).toBeNull();
+    expect(chips().map((c) => c.dataset.variant)).toEqual(["default", "brand"]);
+    // 점선 테두리를 쓰지 않는다
+    for (const el of [t, ...t.querySelectorAll<HTMLElement>("*")]) expect(el.className).not.toMatch(/border-(dashed|dotted)/);
+  });
+
+  it.each([[1920, 1080], [1440, 900]])("%i×%i: 말풍선 크기는 정해져 있다(360×104): 글은 받은 크기(text-sm) 두 줄 높이에서 두 줄까지 자르고, 칩 줄은 한 줄 높이라 긴 문장·긴 이름이 크기를 바꾸지 않는다", (width, height) => {
+    const rect = atScreen(width, height);
+    try {
+      const L = pageLayout({ width, height }, MASCOT);
+      const long = { reasoning: REASON.repeat(6), state: LEFT_CUP_STATE.repeat(5), action: CLEAR_CUP.repeat(8) };
+      const seen = new Set<string>();
+      for (const p of [screenAt(1), screenAt(4), screenAt(2, { thought: long }), screenAt(2, { thought: { ...THOUGHT, state: null } }), screenAt(0)]) {
+        const { unmount } = draw(p);
+        const t = thought();
+        seen.add([t.style.left, t.style.top, t.style.width, t.style.height, bubble().style.height, bubble().className].join(" "));
+        expect([px(t.style.width), px(bubble().style.height)]).toEqual([THOUGHT_SIZE.width, THOUGHT_SIZE.height]);
+        expect(close({ ...boxOf(t), height: THOUGHT_SIZE.height }, L.thought)).toBe(true);
+        for (const c of ["w-full", "max-w-full", "text-sm"]) expect(cls(bubble(), c), c).toBe(true);
+        for (const line of t.querySelectorAll("[data-thought-line]")) for (const c of ["line-clamp-2", "h-[2lh]"]) expect(cls(line, c), c).toBe(true);
+        for (const row of t.querySelectorAll("[data-thought-chips]")) for (const c of ["h-[26px]", "overflow-hidden"]) expect(cls(row, c), c).toBe(true);
+        for (const chip of t.querySelectorAll("[data-thought-chips] [data-slot=status]")) expect(cls(chip.firstElementChild!, "truncate")).toBe(true);
+        unmount();
+      }
+      expect(seen.size).toBe(1);
+    } finally { rect.mockRestore(); }
+  });
+
+  it("꼬리 점 둘은 정한 자리(layout.ts tail)에 놓인다", () => {
+    const rect = atScreen(1920, 1080);
+    try {
+      draw(screenAt(2));
+      const L = pageLayout({ width: 1920, height: 1080 }, MASCOT);
+      const dots = [...thought().querySelectorAll<HTMLElement>("[data-thought-dot]")];
+      expect(dots).toHaveLength(2);
+      dots.forEach((d, i) => {
+        const b = boxOf(d);
+        expect(close({ left: b.left + L.thought.left, top: b.top + L.thought.top, width: b.width, height: b.height }, L.tail[i]!)).toBe(true);
+      });
+    } finally { rect.mockRestore(); }
   });
 });
 
@@ -321,15 +406,15 @@ describe("대시보드 마스코트", () => {
 });
 
 describe("대시보드 폰 카메라(대시보드 폰 칸)", () => {
-  // 1920×1080 화면의 영상 칸 크기(layout.ts, 9:16). jsdom은 0을 준다.
-  const SLOT = { width: 590, height: 1048 };
+  // 1920×1080 화면의 미니맵 영상 칸 크기(layout.ts, 16:9). jsdom은 0을 준다.
+  const SLOT = { width: 600, height: 337.5 };
   let rect: ReturnType<typeof vi.spyOn>;
   beforeEach(() => { rect = atScreen(SLOT.width, SLOT.height); });
   afterEach(() => rect.mockRestore());
   const slotOf = (phone: HTMLElement) => phone.querySelector<HTMLElement>("[data-video]")!;
   const qrOf = () => within(slotOf(phonePane())).queryByRole("img", { name: "폰 연결 QR" });
 
-  it("영상 칸은 폰 카메라 칸(9:16)을 다 채우고, 영상은 잘리지 않게 다 보인다(contain)", () => {
+  it("영상 칸은 폰 카메라 칸(가로 16:9)을 다 채우고, 영상은 잘리지 않게 다 보인다(contain: 세로 영상이면 양옆을 비운다)", () => {
     draw(screenAt(3));
     const slot = slotOf(phonePane());
     expect(cls(slot, "size-full")).toBe(true);
@@ -340,64 +425,17 @@ describe("대시보드 폰 카메라(대시보드 폰 칸)", () => {
     expect(img.className).not.toMatch(/object-cover/);
   });
 
-  it("FSM·행동은 영상 안에 떠 있는 둥근 유리 카드(LiquidGlass)다: 영상 끝에서 띄우고, glass-soft(0.6)라 0.9보다 투명해 영상이 비친다", () => {
-    draw(screenAt(1));
-    const slot = slotOf(phonePane());
-    const L = pageLayout(SLOT, MASCOT);
-    const card = slot.querySelector<HTMLElement>("[data-fsm-card]")!;
-    expect(card).not.toBeNull();
-    expect(cls(card, "absolute")).toBe(true);
-    expect(close(boxOf(card), { left: L.card.left - L.video.left, top: L.card.top - L.video.top, width: L.card.width, height: L.card.height })).toBe(true);
-    expect(px(card.style.left)).toBeGreaterThan(0);
-    expect(px(card.style.top)).toBeGreaterThan(0);
-    const glass = card.querySelector<HTMLElement>("[data-glass]")!;
-    expect(glass.dataset.glass).not.toBe("opaque");
-    const tint = Number(glass.dataset.tint);
-    expect(tint).toBe(tokens.colorRgba["glass-soft"].alpha);
-    expect(tint).toBeLessThan(0.9);
-    expect(glass.style.borderRadius).toBe("16px");
-    expect(glass.contains(card.querySelector("[data-decision]"))).toBe(true);
-    // 카드는 YOLO 상자·이름표 위에 그린다(뒤에 놓인 것)
-    expect(before(slot.querySelector("canvas[data-masks]")!, card)).toBe(true);
+  it.each([0, 1, 4])("%i: FSM·행동 카드가 없다(생각 말풍선으로 옮겼다): 영상 칸에는 영상·마스크·이름표뿐이다", (n) => {
+    draw(screenAt(n));
+    const phone = phonePane();
+    expect(phone.querySelector("[data-fsm-card], [data-decision], [data-fsm], [data-action], [data-slot=item]")).toBeNull();
+    expect(phone).not.toHaveTextContent(/FSM|행동|판단|상태/);
   });
 
-  it("FSM 카드 글은 「FSM」 칩 + 관찰 한 문장, 「행동」 칩 + 행동이다", () => {
-    draw(screenAt(1));
-    const card = slotOf(phonePane()).querySelector<HTMLElement>("[data-fsm-card]")!;
-    const chips = [...card.querySelectorAll<HTMLElement>("[data-slot=status]")].map((e) => e.textContent);
-    expect(chips).toEqual([WORDS.fsm, WORDS.action]);
-    expect(card.querySelector("[data-fsm] [data-slot=item-title]")).toHaveTextContent(LEFT_CUP);
-    expect(card.querySelector("[data-action] [data-slot=item-title]")).toHaveTextContent(CLEAR_CUP);
-  });
-
-  it("지켜보기는 관찰 글과 행동 대기를 보이고, 판단이 아직 없으면 「아직 판단 없음」이다", () => {
-    const { unmount } = draw(screenAt(0));
-    expect(phonePane().querySelector("[data-fsm]")).toHaveTextContent(WATCHING);
-    expect(phonePane().querySelector("[data-action]")).toHaveTextContent(WORDS.wait);
-    unmount();
-    draw(screenAt(0, { observation: null }));
-    expect(phonePane().querySelector("[data-fsm]")).toHaveTextContent(WORDS.noObservation);
-  });
-
-  it("FSM 카드 글은 어느 장면에서도 읽힌다: 유리 위 글은 ink 값뿐이고 이름(FSM·행동)은 불투명 칩이다. 검정·흰 영상 위에서 4.5:1을 넘는다", () => {
-    draw(screenAt(1));
-    const card = slotOf(phonePane()).querySelector<HTMLElement>("[data-fsm-card]")!;
-    const leaves = [...card.querySelectorAll<HTMLElement>("*")].filter((e) => e.children.length === 0 && e.textContent?.trim());
-    expect(leaves.length).toBeGreaterThan(0);
-    for (const e of leaves) expect(e.closest("[data-slot=item-title], [data-slot=status]"), e.textContent!).not.toBeNull();
-    expect(card.querySelectorAll("[data-slot=item-description]")).toHaveLength(0);
-    for (const chip of card.querySelectorAll<HTMLElement>("[data-slot=status]")) expect(chip.dataset.variant).toBe("default");
-    const { color, colorRgba } = tokens;
-    const alpha = colorRgba["glass-soft"].alpha;
-    const surface = color[colorRgba["glass-soft"].ref as keyof typeof color].value;
-    for (const back of ["#000000", "#ffffff"]) expect(contrast(color.ink.value, over(surface, alpha, back))).toBeGreaterThanOrEqual(4.5);
-  });
-
-  it.each(EYE_FRAMES.map((f) => [f.id, f] as const))("%s: 네모 상자 없이 마스크 canvas 한 장과 이름표만 있고, 이름표는 영상 칸 안, FSM 카드 아래에 다 들어와 이름·신뢰도를 보인다", (_, f) => {
+  it.each(EYE_FRAMES.map((f) => [f.id, f] as const))("%s: 네모 상자 없이 마스크 canvas 한 장과 이름표만 있고, 이름표는 영상 칸 안에 다 들어와 이름·신뢰도를 보인다", (_, f) => {
     draw(screenAt(2, { phone: imageSlot(f.id), seen: seenOf(f.boxes, { width: f.width, height: f.height }) }));
     const slot = slotOf(phonePane());
-    const L = pageLayout(SLOT, MASCOT);
-    const roof = L.card.top + L.card.height - L.video.top;
+    const roof = 0;
     expect(slot.querySelectorAll('[data-detection], [data-slot="bounding-box"]')).toHaveLength(0);
     expect(slot.querySelectorAll("canvas[data-masks]")).toHaveLength(1);
     const tags = [...slot.querySelectorAll<HTMLElement>("[data-detection-label]")];
@@ -430,7 +468,7 @@ describe("대시보드 폰 카메라(대시보드 폰 칸)", () => {
     const canvas = slot.querySelector<HTMLCanvasElement>("canvas[data-masks]")!;
     expect(canvas.className).toBe("absolute inset-0 size-full");
     expect(canvas.getAttribute("style")).toBeNull();
-    const lined = [...slot.querySelectorAll<HTMLElement>("*")].filter((e) => !e.closest("[data-fsm-card]") && (e.style.borderStyle === "solid" || /solid/.test(e.style.border)));
+    const lined = [...slot.querySelectorAll<HTMLElement>("*")].filter((e) => e.style.borderStyle === "solid" || /solid/.test(e.style.border));
     expect(lined).toEqual([]);
   });
 
@@ -489,25 +527,17 @@ describe("대시보드 폰 카메라(대시보드 폰 칸)", () => {
     }
   });
 
-  it("FSM과 행동은 Item 원래 크기(sm, text-sm) 한 줄이고 넘치면 자른다", () => {
-    draw(screenAt(1));
-    const phone = phonePane();
-    expect(phone.querySelector("[data-fsm]")).toHaveAttribute("data-size", "sm");
-    expect(phone.querySelector("[data-action]")).toHaveAttribute("data-size", "sm");
-    const titles = [...phone.querySelectorAll("[data-decision] [data-slot=item-title]")];
-    expect(titles).toHaveLength(2);
-    for (const title of titles) expect(cls(title, "truncate")).toBe(true);
-  });
-
-  it("영상이 없으면(qr) 영상·YOLO·FSM 카드 대신 영상 칸 자리에 영상 칸에 맞춘 연결 QR을 보인다", () => {
+  it("영상이 없으면(qr) 영상·마스크 대신 영상 칸 자리에 영상 칸에 맞춘 연결 QR을 보인다: 가로 칸이라 QR과 할 일·주소를 옆으로 나란히 둔다", () => {
     draw(screenAt(3, { phone: { kind: "qr", url: PHONE_URL } }));
     const phone = phonePane();
     expect(phone.querySelector("img")).toBeNull();
-    expect(phone.querySelector("[data-detection-label]")).toBeNull();
-    expect(phone.querySelector("[data-fsm-card]")).toBeNull();
+    expect(phone.querySelector("[data-detection-label], canvas[data-masks]")).toBeNull();
     const slot = slotOf(phone);
     const qr = within(slot).getByRole("img", { name: "폰 연결 QR" });
-    expect(Number(qr.getAttribute("width"))).toBe(Math.min(SLOT.width, SLOT.height) - 48);
+    expect(Number(qr.getAttribute("width"))).toBe(Math.floor(Math.min(SLOT.width, SLOT.height) - 48));
+    const row = qr.parentElement!;
+    expect(cls(row, "flex")).toBe(true);
+    expect(cls(row, "flex-col")).toBe(false);
     expect(slot).toHaveTextContent("폰 카메라로 찍으세요");
     expect(slot).toHaveTextContent(PHONE_URL);
   });
@@ -515,7 +545,6 @@ describe("대시보드 폰 카메라(대시보드 폰 칸)", () => {
   it("폰 서버가 꺼져 있고(qr) 폰 주소가 없으면 QR 대신 영상 칸에 「폰 서버가 꺼져 있어요.」 한 줄(Item sm)만 보인다", () => {
     draw(screenAt(3, { phone: { kind: "qr", url: "" } }));
     expect(qrOf()).toBeNull();
-    expect(phonePane().querySelector("[data-fsm-card]")).toBeNull();
     const slot = slotOf(phonePane());
     expect(slot.textContent).toBe("폰 서버가 꺼져 있어요.");
     expect(within(slot).getByText("폰 서버가 꺼져 있어요.").closest("[data-slot=item]")).toHaveAttribute("data-size", "sm");
@@ -530,7 +559,7 @@ describe("대시보드 폰 카메라(대시보드 폰 칸)", () => {
     expect(slot).not.toHaveTextContent("폰 서버가 꺼져 있어요.");
     fireEvent.load(slot.querySelector<HTMLImageElement>("img")!);
     expect(slot).not.toHaveTextContent("폰에서 AR을 시작하세요.");
-    expect(slot.querySelector("[data-fsm-card]")).not.toBeNull();
+    expect(slot.querySelector("canvas[data-masks]")).not.toBeNull();
   });
 
   it("health 전(none)에는 영상 칸이 비어 있다", () => {
@@ -541,7 +570,7 @@ describe("대시보드 폰 카메라(대시보드 폰 칸)", () => {
     expect(qrOf()).toBeNull();
   });
 
-  it("폰 서버가 켜져 있으면(live) 첫 장 전에는 연결 QR만 있고 FSM 카드·상자가 없다. 영상 그림에 첫 장이 오면 QR이 없어지고 FSM 카드·상자가 보인다", () => {
+  it("폰 서버가 켜져 있으면(live) 첫 장 전에는 연결 QR만 있고 마스크·이름표가 없다. 영상 그림에 첫 장이 오면 QR이 없어지고 마스크·이름표가 보인다", () => {
     draw(screenAt(1, { phone: { kind: "live", url: PHONE_URL } }));
     const slot = slotOf(phonePane());
     const img = slot.querySelector<HTMLImageElement>("img")!;
@@ -549,12 +578,10 @@ describe("대시보드 폰 카메라(대시보드 폰 칸)", () => {
     expect(cls(img, "object-contain")).toBe(true);
     expect(cls(img, "size-full")).toBe(true);
     expect(qrOf()).not.toBeNull();
-    expect(slot.querySelector("[data-fsm-card]")).toBeNull();
     expect(slot.querySelector("canvas[data-masks], [data-detection-label]")).toBeNull();
     fireEvent.load(img);
     expect(slot.querySelector("img")).toBe(img);
     expect(qrOf()).toBeNull();
-    expect(slot.querySelector("[data-fsm-card]")).not.toBeNull();
     expect(slot.querySelectorAll("canvas[data-masks]")).toHaveLength(1);
     expect(slot.querySelectorAll("[data-detection-label]")).toHaveLength(1);
   });
@@ -627,18 +654,25 @@ describe("대시보드 트윈", () => {
     expect(progress.querySelectorAll("[data-segment]")).toHaveLength(PLAN.steps.length);
   });
 
-  it("지도는 트윈 칸 전체(data-map)에 그리고, 할 일 진행도는 트윈 왼쪽 위, 칩은 트윈 오른쪽 위에 지도 위로 쌓는다", () => {
-    draw(screenAt(2, { robotKnown: false, connected: false }));
-    const twin = twinPane();
-    const map = twin.querySelector<HTMLElement>("[data-map]")!;
-    for (const c of ["absolute", "inset-0", "overflow-hidden"]) expect(cls(map, c), c).toBe(true);
-    const progress = twin.querySelector<HTMLElement>("[data-progress]")!;
-    expect(map.contains(progress)).toBe(false);
-    for (const c of ["absolute", "left-4", "top-4"]) expect(cls(progress, c), c).toBe(true);
-    const chips = twin.querySelector<HTMLElement>("[data-chips]")!;
-    expect(map.contains(chips)).toBe(false);
-    for (const c of ["pointer-events-none", "absolute", "right-4", "top-4", "flex", "flex-col", "items-end", "gap-2"]) expect(cls(chips, c), c).toBe(true);
-    expect([...chips.querySelectorAll("[data-slot=status]")].map((e) => e.textContent)).toEqual([WORDS.noRobot, WORDS.offline]);
+  it("지도는 트윈 칸 전체(data-map)에 그리고, 할 일 진행도는 트윈 왼쪽 위, 칩은 트윈 위쪽 미니맵 왼쪽에 지도 위로 쌓는다(미니맵에 가리지 않는다)", () => {
+    const rect = atScreen(1920, 1080);
+    try {
+      draw(screenAt(2, { robotKnown: false, connected: false }));
+      const L = pageLayout({ width: 1920, height: 1080 }, MASCOT);
+      const twin = twinPane();
+      const map = twin.querySelector<HTMLElement>("[data-map]")!;
+      for (const c of ["absolute", "inset-0", "overflow-hidden"]) expect(cls(map, c), c).toBe(true);
+      const progress = twin.querySelector<HTMLElement>("[data-progress]")!;
+      expect(map.contains(progress)).toBe(false);
+      for (const c of ["absolute", "left-4", "top-4"]) expect(cls(progress, c), c).toBe(true);
+      const chips = twin.querySelector<HTMLElement>("[data-chips]")!;
+      expect(map.contains(chips)).toBe(false);
+      for (const c of ["pointer-events-none", "absolute", "top-4", "flex", "flex-col", "items-end", "gap-2"]) expect(cls(chips, c), c).toBe(true);
+      expect(cls(chips, "right-4")).toBe(false);
+      expect(px(chips.style.right)).toBeCloseTo(L.chipsRight, 5);
+      expect(L.twin.left + L.twin.width - L.chipsRight).toBeLessThan(L.video.left);
+      expect([...chips.querySelectorAll("[data-slot=status]")].map((e) => e.textContent)).toEqual([WORDS.noRobot, WORDS.offline]);
+    } finally { rect.mockRestore(); }
   });
 
   it("로봇 자리를 모르면 트윈에 「클로이드 위치 모름」을 보인다", () => {

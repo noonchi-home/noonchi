@@ -5,7 +5,7 @@ import { act, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import type { DeviceView, EyeEvent, HealthView, ServerMessage } from "../../../src/contract/events.ts";
 import type { Check } from "../../src/checks/checks";
-import { coverScale, focusOf, wideCamera } from "../../src/dashboard/camera";
+import { coverScale, focusOf, toScreen, wholeOf, wideCamera } from "../../src/dashboard/camera";
 import { Dashboard } from "../../src/dashboard/Dashboard";
 import { roomSetsOf, twinFrame } from "../../src/dashboard/frame";
 import { MapOverlay } from "../../src/dashboard/MapOverlay";
@@ -27,6 +27,14 @@ const fridge: DeviceView = {
 const devices = new Map([[FRIDGE, fridge]]);
 const objects = new Map([...HOME.objects].map(([id, o]) => [id, o.name]));
 const key = (rooms: string[]) => [...rooms].sort().join("+");
+/** 그 카메라로 집 전체(모든 방)가 트윈 칸 안에 다 보이는가. */
+function showsWholeHome(c: MapCamera) {
+  const w = wholeOf(HOME.shapes)!;
+  return ([[w.x0, w.y0], [w.x1, w.y1]] as [number, number][]).every((q) => {
+    const p = toScreen(c, SIZE, q);
+    return p.x >= -1e-6 && p.x <= SIZE.width + 1e-6 && p.y >= -1e-6 && p.y <= SIZE.height + 1e-6;
+  });
+}
 
 /** 엔진 대신: 그릴 때마다 카메라를 알린다. */
 function fakeEngine(start: MapCamera) {
@@ -289,7 +297,9 @@ describe("대시보드 구운 트윈 위 표시", () => {
     expect(engine.setEye.mock.calls.at(-1)![0]).toEqual(moment(0).eye);
     expect(container.querySelector("[data-robot]")).toBeNull();
     expect(lit()).toEqual([]);
-    expect(engine.setView.mock.calls.at(-1)![0].scale).toBeCloseTo(cover, 6);
+    const watching = engine.setView.mock.calls.at(-1)![0];
+    expect(watching.scale).toBeLessThan(moved[0].scale);
+    expect(showsWholeHome(watching)).toBe(true);
   });
 
   it("단계가 바뀌면 엔진은 카메라만 옮기고(setView) 캔버스 크기(resize)는 다시 정하지 않는다", async () => {
@@ -321,7 +331,7 @@ describe("대시보드 구운 트윈 위 표시", () => {
     expect(engine.setEye).toHaveBeenCalled();
     expect(engine.setEye.mock.calls.every(([e]) => e === null)).toBe(true);
     const whole = engine.setView.mock.calls.at(-1)![0];
-    expect(whole.scale).toBeCloseTo(coverScale(IMAGE, SIZE), 6);
+    expect(showsWholeHome(whole)).toBe(true);
     const { plan, eye } = moment(3);
     act(() => {
       FakeSocket.last!.push({ type: "hello", devices: 0, provider: null, hub: "memory", home: "mokryeon_180b" });

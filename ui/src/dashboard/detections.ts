@@ -1,5 +1,5 @@
 // 대시보드 폰 칸 YOLO 상자 자리(순수 함수). 폰 영상은 영상 칸에 다 보이게(contain) 깔고, 상자도 같은 배율·자리로 옮긴다.
-// 칸 가장자리에 닿은 쪽은 칸 가장자리 안쪽에서 자른다. 칸 위쪽에 떠 있는 FSM·행동 카드 밑에는 상자도 이름표도 그리지 않는다.
+// 칸 가장자리에 닿은 쪽은 칸 가장자리 안쪽에서 자른다. 칸 위쪽에 카드를 얹을 때는 그 밑(ceiling)에 상자도 이름표도 그리지 않는다(지금 미니맵에는 카드가 없어 0이다).
 // 이름표는 상자 위, 아래, 오른쪽 옆, 왼쪽 옆 차례로 칸 안에 들고 다른 이름표·다른 상자와 겹치지 않는 첫 자리에 둔다.
 // 제 상자가 든 큰 상자(식탁 위 컵)는 피하지 않는다. 작은 상자부터 고른다: 큰 상자 곁·안의 작은 상자는 고를 자리가 적다.
 // 오른쪽 끝에 걸리면 칸 안으로 당긴다.
@@ -29,7 +29,7 @@ const hit = (a: Rect, b: Rect) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b
 const within = (a: Rect, b: Rect) => a.x0 >= b.x0 && a.y0 >= b.y0 && a.x1 <= b.x1 && a.y1 <= b.y1;
 const area = (r: Rect) => (r.x1 - r.x0) * (r.y1 - r.y0);
 
-/** YOLO 상자(그림 픽셀)를 영상 칸(size) 안 자리로. ceiling은 칸 위 끝에서 FSM 카드 아래 끝까지(px): 그 아래에만 그린다. 칸 크기를 모르거나 상자가 칸 안에 남지 않으면 뺀다. */
+/** YOLO 상자(그림 픽셀)를 영상 칸(size) 안 자리로. ceiling은 칸 위 끝에서 위쪽에 얹은 카드 아래 끝까지(px, 없으면 0): 그 아래에만 그린다. 칸 크기를 모르거나 상자가 칸 안에 남지 않으면 뺀다. */
 export function placeDetections(dets: Detection[], image: BoxSize, size: BoxSize, ceiling = 0): PlacedDetection[] {
   const fit = fitBox(image, size, "contain");
   if (fit.scale <= 0) return [];

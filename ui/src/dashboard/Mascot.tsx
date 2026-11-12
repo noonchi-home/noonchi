@@ -5,13 +5,13 @@ import type { Rect } from "./layout";
 import type { MascotImage } from "./mascot-image";
 import { SettingsDialog } from "./SettingsDialog";
 
-/** 마스코트가 보는 쪽: 대기면 오른쪽 대시보드 폰 칸 영상(video), 행동하기로 정하면 왼쪽 트윈(twin). */
+/** 마스코트가 보는 쪽: 대기면 그림 그대로 오른쪽(video), 행동하기로 정하면 좌우를 뒤집어 왼쪽 트윈(twin). */
 export type Facing = "video" | "twin";
 
 /**
- * 마스코트. 칸·판 없이 가운데 축을 트윈·영상 나눔선 위에 두고 눈치 마스코트를 세운다(box, layout.ts): 단추 아래 끝은 화면 밑 선이고
+ * 마스코트. 칸·판 없이 트윈 오른쪽 아래에 눈치 마스코트를 세운다(box, layout.ts): 단추 아래 끝은 화면 밑 선이고
  * 몸은 밑 선 아래로 이어져 밑 선에서 올라온 모습이다. 그림은 image 자리(단추 기준 px)에 둔다. 머리와 귀는 화면 안에 다 보인다.
- * 보는 쪽(facing): 그림은 주둥이가 오른쪽(영상 쪽)이다. 대기 때는 그대로 영상을 보고, 행동하기로 정하면 단추 가운데 축(나눔선)을 중심으로
+ * 보는 쪽(facing): 그림은 주둥이가 오른쪽이다. 대기 때는 그대로 두고, 행동하기로 정하면 단추 가운데 축을 중심으로
  * 좌우를 뒤집어(transform scaleX(-1), 자리·크기는 그대로) 트윈을 본다. 뒤집을 때는 transform으로 돌아선다(움직임 줄이기면 바로).
  * 가슴 LG 표시는 늘 바로 읽힌다: 표시 원(logo 자리)에 같은 그림을 한 번 더 얹고 그 원을 같은 transform으로 제 가운데를 중심으로 다시 뒤집는다.
  * 마스코트는 설정 창(SettingsDialog)을 여는 단추(Button ghost)다: 마우스를 올리면 바탕이 바뀌고, 키보드 초점 고리가 보이며, Enter·스페이스로도 열린다.

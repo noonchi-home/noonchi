@@ -1,9 +1,9 @@
-// 대시보드 자료(순수 리듀서): /events 메시지 → 지금 계획·맞춘 눈·마지막 유효 판단·말풍선 카드 말. 물체 모양(seen)은 초당 10번 와서 여기 넣지 않는다(masks.ts 저장소). 화면 값(단계 번호·마스코트 방향·FSM 카드)도 여기서 고른다.
+// 대시보드 자료(순수 리듀서): /events 메시지 → 지금 계획·맞춘 눈·마지막 유효 판단·말풍선 카드 말. 물체 모양(seen)은 초당 10번 와서 여기 넣지 않는다(masks.ts 저장소). 화면 값(단계 번호·마스코트 방향·생각 말풍선)도 여기서 고른다.
 // hello는 처음으로 돌린다(접속 스냅숏이 뒤따른다). 같은 계획의 옛 번호, 맞추기 전 추정 눈, 실패한 판단은 버린다.
 import type { BrainLog, EyeEvent, ServerMessage } from "../../../src/contract/events.ts";
 import type { PlanStep, PlanView } from "../../../src/contract/plan.ts";
+import { FSM_STATE_TEXT } from "../../../src/world/labels.ts";
 import type { Facing } from "./Mascot";
-import { WORDS } from "./words";
 
 type Decision = Extract<BrainLog, { type: "decision" }>;
 
@@ -58,10 +58,18 @@ export function currentStep(p: PlanView | null): PlanStep | null {
   return n > 0 ? p!.steps[n - 1]! : null;
 }
 
-/** 마스코트가 보는 쪽: 열린 계획이 있으면 트윈, 아니면 대시보드 폰 칸 영상. */
+/** 마스코트가 보는 쪽: 열린 계획이 있으면 트윈(왼쪽), 아니면 그림 그대로(오른쪽). */
 export const facingOf = (p: PlanView | null): Facing => (isOpen(p) ? "twin" : "video");
 
-/** FSM 카드: 마지막 유효 판단의 관찰 한 문장(없으면 null)과 도출한 행동(없으면 대기). */
-export function fsmOf(s: DashData): { observation: string | null; action: string } {
-  return { observation: s.decision?.prediction?.observation ?? null, action: s.decision?.action ?? WORDS.wait };
+/** 생각 말풍선에 보이는 것: PAM의 생각 한 문장, FSM 상태 이름표(모르면 null: 칩을 숨긴다), 판단(고른 행동 이름). */
+export interface Thought { reasoning: string; state: string | null; action: string }
+
+/**
+ * 생각 말풍선: 마지막 유효 판단이 행동을 골랐으면 그 생각(reasoning)·상태·행동, 대기(행동 없음)거나 판단이 아직 없으면 null(말풍선을 숨긴다).
+ * 상태는 서버가 붙인 FSM 상태 id(decision.fsm.state)의 화면 이름표(src/world/labels.ts FSM_STATE_TEXT)이고, 서버가 못 찾았거나 이름표가 없는 상태면 null이다.
+ */
+export function thoughtOf(s: DashData): Thought | null {
+  const d = s.decision;
+  if (!d?.action || !d.prediction) return null;
+  return { reasoning: d.prediction.reasoning, state: d.fsm ? FSM_STATE_TEXT[d.fsm.state] ?? null : null, action: d.action };
 }

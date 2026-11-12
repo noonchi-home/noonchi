@@ -8,7 +8,8 @@ import type { Detection } from "../../src/dashboard/detections";
 import { hubOf } from "../../src/dashboard/hub";
 import { createSeenStore, type SeenStore } from "../../src/dashboard/masks";
 import type { PhoneSlot } from "../../src/dashboard/PhonePane";
-import { BOX_NAME, WORDS } from "../../src/dashboard/words";
+import type { Thought } from "../../src/dashboard/data";
+import { BOX_NAME } from "../../src/dashboard/words";
 import type { SeenEvent } from "../../../src/contract/events.ts";
 
 export const PHONE_URL = "http://192.168.0.7:8210/phone/";
@@ -89,9 +90,11 @@ export const PLAN = planAt(1);
 
 /** 단계마다 말풍선 카드 말(0 지켜보기, 1~4 실제 폰 명령). */
 export const SAY = ["식탁을 보고 있어요.", "식탁으로 가 주세요.", "컵을 들어 주세요.", "싱크대로 가 주세요.", "컵을 싱크대에 넣어 주세요."];
-export const WATCHING = "사람이 식탁에서 컵으로 마시고 있어요.";
-export const LEFT_CUP = "식탁 위에 컵이 있고 사람이 자리를 비웠어요.";
 export const CLEAR_CUP = "컵 치우기";
+export const REASON = "사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.";
+export const LEFT_CUP_STATE = "컵을 두고 자리를 뜸";
+/** 계획 단계의 생각 말풍선(PAM의 생각 한 문장·FSM 상태 이름표·판단). 지켜보기는 대기라 없다. */
+export const THOUGHT: Thought = { reasoning: REASON, state: LEFT_CUP_STATE, action: CLEAR_CUP };
 
 /** 트윈 칸 지도 자리에 넣는 그림(캔버스). */
 export const MAP = createElement("canvas", { "data-fixture-map": "" });
@@ -102,7 +105,7 @@ export function screenAt(n: number, over: Partial<ScreenProps> = {}): ScreenProp
   return {
     index: n, plan, step: plan ? plan.steps[n - 1]! : null, robotKnown: true, connected: true, map: MAP, mapReady: true,
     phone: imageSlot(), seen: seenOf([BOX]),
-    observation: n > 0 ? LEFT_CUP : WATCHING, action: n > 0 ? CLEAR_CUP : WORDS.wait, say: SAY[n]!, facing: n > 0 ? "twin" : "video", hub: HUB,
+    thought: n > 0 ? THOUGHT : null, say: SAY[n]!, facing: n > 0 ? "twin" : "video", hub: HUB,
     ...over,
   };
 }

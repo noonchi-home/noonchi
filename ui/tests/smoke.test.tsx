@@ -32,7 +32,9 @@ describe("대시보드 뼈대", () => {
     expect(twin).not.toBeNull();
     expect(phone).not.toBeNull();
     expect(main.contains(twin) && main.contains(phone)).toBe(true);
-    expect(twin.parentElement).toBe(phone.parentElement);
+    // 폰 카메라(미니맵)는 트윈 판 밖에서 트윈 위에 얹힌다
+    expect(phone.parentElement).toBe(main);
+    expect(twin.contains(phone)).toBe(false);
     expect(main).toHaveAttribute("data-step", "0");
     const mascot = screen.getByRole("region", { name: "마스코트" });
     expect(within(mascot).getByRole("button", { name: "설정 열기" })).toBeInTheDocument();

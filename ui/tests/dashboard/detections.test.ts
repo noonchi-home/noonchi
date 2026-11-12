@@ -127,27 +127,16 @@ describe("화면 자리 위 YOLO 상자", () => {
 
   describe.each([[1920, 1080], [1440, 900], [1522, 722]])("%i×%i", (width, height) => {
     const L = pageLayout({ width, height }, MASCOT);
-    it.each(EYE_FRAMES.map((f) => [f.id, f] as const))("%s: 상자와 이름표는 영상 안, FSM 카드 아래에 있고 말풍선과 겹치지 않는다. 마스코트는 이름표를 가리지 않고, 상자는 가까운 식탁의 왼쪽 아래 모서리만 가린다", (id, f) => {
-      const placed = placeDetections(f.boxes, f, L.video, bottom(L.card) - L.video.top);
+    it.each(EYE_FRAMES.map((f) => [f.id, f] as const))("%s: 상자와 이름표는 미니맵 영상 안에 있고 마스코트·말풍선 카드·생각 말풍선과 겹치지 않는다", (_, f) => {
+      const placed = placeDetections(f.boxes, f, L.video, 0);
       expect(placed).toHaveLength(f.boxes.length);
       for (const d of placed) {
         const box: Rect = { left: L.video.left + d.left, top: L.video.top + d.top, width: d.width, height: d.height };
         const tag: Rect = { left: L.video.left + d.tag.left, top: L.video.top + d.tag.top, width: tagWidth(d.label), height: TAG_H };
-        expect(hit(tag, L.mascot), `${d.label} 이름표 마스코트`).toBe(false);
-        // 가까운 식탁 상자는 영상 왼쪽·아래 끝까지 이어진다(식탁이 그림 밖으로 이어진다): 그 왼쪽 아래 모서리만 마스코트 밑이다
-        const cut = id === "table-near" && d.label === "식탁";
-        expect(hit(box, L.mascot), `${d.label} 상자 마스코트`).toBe(cut);
-        if (cut) {
-          expect(near(box.left, L.video.left + EDGE)).toBe(true);
-          expect(near(bottom(box), bottom(L.video) - EDGE)).toBe(true);
-          expect(box.top).toBeLessThan(L.mascot.top);
-          expect(right(box)).toBeGreaterThan(right(L.mascot));
-        }
         for (const r of [box, tag]) {
-          expect(hit(r, L.card), `${d.label} FSM 카드`).toBe(false);
-          expect(r.top).toBeGreaterThanOrEqual(bottom(L.card));
-          expect(hit(r, L.bubble), `${d.label} 말풍선`).toBe(false);
+          for (const [name, k] of [["마스코트", L.mascot], ["말풍선 카드", L.bubble], ["생각 말풍선", L.thought]] as const) expect(hit(r, k), `${d.label} ${name}`).toBe(false);
           expect(r.left).toBeGreaterThanOrEqual(L.video.left);
+          expect(r.top).toBeGreaterThanOrEqual(L.video.top);
           expect(right(r)).toBeLessThanOrEqual(right(L.video) + 1e-6);
           expect(bottom(r)).toBeLessThanOrEqual(bottom(L.video) + 1e-6);
         }
@@ -155,17 +144,11 @@ describe("화면 자리 위 YOLO 상자", () => {
     });
   });
 
-  it.each([[1920, 1080], [1440, 900]])("%i×%i: 먼 식탁 위 컵 상자가 16px 이상이다", (width, height) => {
+  it.each([[1920, 1080], [1440, 900]])("%i×%i: 세로 눈 그림(405×720)은 미니맵 높이에 맞춰 다 보이고(contain) 양옆이 빈다", (width, height) => {
     const L = pageLayout({ width, height }, MASCOT);
-    const far = EYE_FRAMES.find((f) => f.id === "table-far")!;
-    const cup = far.boxes.find((d) => d.label === "컵")!.box;
-    const k = L.video.width / far.width;
-    expect((cup[2] - cup[0]) * k).toBeGreaterThanOrEqual(16);
-    expect((cup[3] - cup[1]) * k).toBeGreaterThanOrEqual(16);
-  });
-
-  it("1920×1080: 세로 눈 그림(405×720)을 제 크기보다 크게 보인다", () => {
-    const L = pageLayout({ width: 1920, height: 1080 }, MASCOT);
-    expect(L.video.height / EYE_FRAMES[0]!.height).toBeGreaterThanOrEqual(1);
+    const f = EYE_FRAMES[0]!;
+    const k = Math.min(L.video.width / f.width, L.video.height / f.height);
+    expect(near(f.height * k, L.video.height)).toBe(true);
+    expect(f.width * k).toBeLessThan(L.video.width);
   });
 });

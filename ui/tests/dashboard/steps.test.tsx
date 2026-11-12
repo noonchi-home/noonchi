@@ -1,9 +1,9 @@
-// 대시보드 단계가 바뀔 때 끊기지 않게: 대시보드 폰 칸·트윈 칸은 다시 만들지 않고 크기·자리(레이아웃)도 바꾸지 않으며, 움직이는 것(말풍선 말)은
+// 대시보드 단계가 바뀔 때 끊기지 않게: 대시보드 폰 칸(미니맵)·트윈 칸·생각 말풍선 칸은 다시 만들지 않고 크기·자리(레이아웃)도 바꾸지 않으며, 움직이는 것(말풍선 말, 생각 말풍선)은
 // transform·opacity만 움직인다. 실제 크롬에서 재는 것은 ui/scripts/measure-switch.mjs.
 import { act, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DashboardScreen, type ScreenProps } from "../../src/dashboard/DashboardScreen";
-import { EYE_FRAMES, imageSlot, PHONE_URL, SAY, screenAt, seenOf } from "./fixtures";
+import { EYE_FRAMES, imageSlot, PHONE_URL, REASON, SAY, screenAt, seenOf, THOUGHT } from "./fixtures";
 
 const STAGE = { width: 1504, height: 896 };
 const ALLOWED = new Set(["transform", "opacity", "offset", "easing", "composite"]);
@@ -42,17 +42,24 @@ afterEach(() => { for (const r of restore.reverse()) r(); });
 
 const phoneOf = (c: HTMLElement) => c.querySelector<HTMLElement>('section[aria-label="폰 카메라"]')!;
 const twinOf = (c: HTMLElement) => c.querySelector<HTMLElement>('section[aria-label="트윈"]')!;
+const thoughtOf = (c: HTMLElement) => c.querySelector<HTMLElement>("[data-thought]")!;
 /** 칸 크기·자리를 정하는 것: class(트윈 칸은 class flex-1로 너비를 정한다)와 inline style 전부. */
 const box = (el: HTMLElement) => `${el.className} | ${el.style.cssText}`;
+/** 생각 말풍선 칸은 숨길 때 opacity·transform만 바뀐다: 그 둘을 뺀 class와 inline style. */
+const still = (el: HTMLElement) => `${el.className} | ${el.style.cssText.replace(/(opacity|transform): [^;]+; ?/g, "")}`;
 
 /** from 순간으로 띄운 뒤 to 순간으로 넘긴다. */
 function step(from: ScreenProps, to: ScreenProps) {
   const view = render(<DashboardScreen {...from} />);
   const phone = phoneOf(view.container);
   const twin = twinOf(view.container);
+  const thought = thoughtOf(view.container);
   const was = {
-    phone, twin, phoneImg: phone.querySelector("img"), canvas: twin.querySelector("canvas"),
-    boxes: { phone: box(phone), twin: box(twin), stage: box(phone.parentElement!), map: box(twin.querySelector<HTMLElement>("[data-map]")!), canvas: box(twin.querySelector("canvas")!) },
+    phone, twin, thought, phoneImg: phone.querySelector("img"), canvas: twin.querySelector("canvas"),
+    boxes: {
+      phone: box(phone), twin: box(twin), stage: box(twin.parentElement!), map: box(twin.querySelector<HTMLElement>("[data-map]")!), canvas: box(twin.querySelector("canvas")!),
+      thought: still(thought), bubble: box(thought.querySelector<HTMLElement>("[data-slot=thought-bubble]")!),
+    },
   };
   calls = [];
   view.rerender(<DashboardScreen {...to} />);
@@ -86,18 +93,63 @@ describe("대시보드 단계 바뀜", () => {
     expect(was.twin.querySelector("canvas")).toBe(was.canvas);
     expect(box(was.phone)).toBe(was.boxes.phone);
     expect(box(was.twin)).toBe(was.boxes.twin);
-    expect(box(was.phone.parentElement!)).toBe(was.boxes.stage);
+    expect(box(was.twin.parentElement!)).toBe(was.boxes.stage);
     expect(calls.length).toBeGreaterThan(0);
     for (const c of calls) {
       for (const k of c.keyframes) for (const p of Object.keys(k)) expect(ALLOWED.has(p), p).toBe(true);
     }
   });
 
+  it("지켜보기에서 1단계로 넘어가 생각 말풍선이 나타나도 같은 칸이고, 바뀌는 것은 opacity·transform뿐이다(크기·자리 그대로). 대기로 돌아가 숨을 때도 같다", () => {
+    motionOn();
+    const { view, was } = step(screenAt(0), screenAt(1));
+    const t = thoughtOf(view.container);
+    expect(t).toBe(was.thought);
+    expect(t.style.opacity).toBe("1");
+    expect(still(t)).toBe(was.boxes.thought);
+    expect(box(t.querySelector<HTMLElement>("[data-slot=thought-bubble]")!)).toBe(was.boxes.bubble);
+    for (const c of ["transition-[opacity,transform]", "motion-reduce:transition-none"]) expect(t.className.split(/\s+/)).toContain(c);
+    view.rerender(<DashboardScreen {...screenAt(0)} />);
+    expect(thoughtOf(view.container)).toBe(t);
+    expect(t.style.opacity).toBe("0");
+    expect(still(t)).toBe(was.boxes.thought);
+    // 숨는 동안 마지막 생각 글을 그대로 둔다(글을 비우면 사라지는 동안 빈 말풍선이 보인다)
+    expect(t).toHaveTextContent(REASON);
+    for (const c of calls) for (const k of c.keyframes) for (const p of Object.keys(k)) expect(ALLOWED.has(p), p).toBe(true);
+  });
+
+  it("생각이 바뀌면 앞 생각은 opacity로 사라지고 새 생각은 opacity·transform으로 떠오른다. 말풍선 칸 크기는 그대로다", () => {
+    motionOn();
+    const next = { ...THOUGHT, reasoning: "컵이 비어 있어요." };
+    const { view, was } = step(screenAt(1), screenAt(1, { thought: next }));
+    const t = thoughtOf(view.container);
+    expect(still(t)).toBe(was.boxes.thought);
+    expect(box(t.querySelector<HTMLElement>("[data-slot=thought-bubble]")!)).toBe(was.boxes.bubble);
+    const lines = [...t.querySelectorAll<HTMLElement>("[data-thought-line]")];
+    expect(lines.map((l) => l.textContent)).toEqual([REASON, next.reasoning]);
+    const [old, now] = lines.map((l) => l.parentElement!);
+    const out = calls.filter((c) => c.el === old);
+    const into = calls.filter((c) => c.el === now);
+    expect(out).toHaveLength(1);
+    expect(into).toHaveLength(1);
+    expect(out[0]!.keyframes.map((k) => k.opacity)).toEqual([1, 0]);
+    expect(into[0]!.keyframes.map((k) => k.opacity)).toEqual([0, 1]);
+    expect(into[0]!.keyframes.some((k) => "transform" in k)).toBe(true);
+  });
+
+  it("계획 단계끼리는 생각이 같아 생각 말풍선을 다시 띄우지 않는다", () => {
+    motionOn();
+    const { view } = step(screenAt(1), screenAt(2));
+    const t = thoughtOf(view.container);
+    expect(t.querySelectorAll("[data-thought-line]")).toHaveLength(1);
+    expect(calls.filter((c) => t.contains(c.el))).toEqual([]);
+  });
+
   it("두 판의 크기·자리는 그대로이고, 레이아웃 값을 움직이지 않는다", () => {
     const { view, was } = step(screenAt(2), screenAt(3));
     expect(box(was.phone)).toBe(was.boxes.phone);
     expect(box(was.twin)).toBe(was.boxes.twin);
-    expect(box(was.phone.parentElement!)).toBe(was.boxes.stage);
+    expect(box(was.twin.parentElement!)).toBe(was.boxes.stage);
     expect(box(was.twin.querySelector<HTMLElement>("[data-map]")!)).toBe(was.boxes.map);
     expect(box(was.canvas!)).toBe(was.boxes.canvas);
     for (const el of view.container.querySelectorAll<HTMLElement>("*")) {

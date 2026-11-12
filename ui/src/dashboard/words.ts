@@ -2,11 +2,9 @@
 import { CLASSES } from "../../../src/world/vocab.ts";
 
 export const WORDS = {
-  wait: "대기",
   waiting: "기다리는 중",
-  fsm: "FSM",
-  action: "행동",
-  noObservation: "아직 판단 없음",
+  state: "상태",
+  judge: "판단",
   offline: "연결 끊김 · 다시 연결 중",
   noRobot: "클로이드 위치 모름",
   phoneOff: "폰 서버가 꺼져 있어요.",

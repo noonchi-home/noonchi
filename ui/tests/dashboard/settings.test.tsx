@@ -98,7 +98,6 @@ describe("대시보드 설정 창", () => {
     expect(left).toBeGreaterThanOrEqual(ring);
     expect(top! - ring).toBeGreaterThanOrEqual(0);
     expect(L.bubble.left + L.bubble.width).toBeLessThanOrEqual(left! - ring + 1e-6);
-    expect(left! + w! / 2).toBeCloseTo(L.divider.left + L.divider.width / 2, 5);
     expect(left! + w! + ring).toBeLessThanOrEqual(width);
     expect(top! + h!).toBeCloseTo(height, 5);
   });

@@ -95,20 +95,28 @@ export function clampCamera(c: Camera, image: BoxSize, box: BoxSize): Camera {
   return { scale: c.scale, cx: keep(image.width, box.width, c.cx), cy: keep(image.height, box.height, c.cy) };
 }
 
+/** 집 전체: 모든 방(바닥·벽 위)을 담는 그림 픽셀 상자. 방이 없으면 null. */
+export const wholeOf = (shapes: RoomShape[]): Bounds | null => boundsOf(shapes.flatMap((s) => [...s.floor, ...s.top]));
+
 /**
- * 지도: focus가 pad 안쪽에 다 보이게. 배율은 그림이 상자를 빈 곳 없이 덮는 배율(cover)에서 maxZoom배 사이, 그림 MAX_SCALE배까지.
- * 그림 가장자리가 상자 안으로 들어오지 않게 가운데를 당긴다(clampCamera): 지도는 상자를 늘 꽉 채운다.
+ * 지도: focus가 pad 안쪽에 다 보이게, focus 가운데를 pad 안쪽 가운데에 둔다.
+ * whole(집 전체)이 있으면 가장 먼 보기는 집 전체가 pad 안쪽에 다 보이는 배율이고, focus가 없으면(지켜보기) 그 보기다. 그 배율의 maxZoom배, 그림 MAX_SCALE배까지 당긴다.
+ *   트윈 칸이 그림보다 옆으로 넓어 그림 밖(3D 장면 바탕)이 보여도 된다: 얹은 것(미니맵·말풍선) 밑에 집이 깔리지 않는 것이 먼저다.
+ * whole이 없으면 그림이 상자를 빈 곳 없이 덮는 배율(cover)부터이고, 그림 가장자리가 상자 안으로 들어오지 않게 가운데를 당긴다(clampCamera).
  */
-export function wideCamera(image: BoxSize, box: BoxSize, focus: Bounds | null, pad: Pad, maxZoom = 2.4): Camera {
+export function wideCamera(image: BoxSize, box: BoxSize, focus: Bounds | null, pad: Pad, whole: Bounds | null = null, maxZoom = 2.4): Camera {
   const c0 = coverScale(image, box);
-  if (!focus || c0 <= 0) return { cx: image.width / 2, cy: image.height / 2, scale: c0 };
   const aw = Math.max(1, box.width - pad.left - pad.right);
   const ah = Math.max(1, box.height - pad.top - pad.bottom);
-  const scale = clamp(Math.min(aw / Math.max(1, focus.x1 - focus.x0), ah / Math.max(1, focus.y1 - focus.y0)), c0, Math.max(c0, Math.min(c0 * maxZoom, MAX_SCALE)));
-  // focus 가운데를 pad 안쪽 가운데에 둔다
-  const cx = (focus.x0 + focus.x1) / 2 + (box.width / 2 - (pad.left + aw / 2)) / scale;
-  const cy = (focus.y0 + focus.y1) / 2 + (box.height / 2 - (pad.top + ah / 2)) / scale;
-  return clampCamera({ cx, cy, scale }, image, box);
+  const fit = (b: Bounds) => Math.min(aw / Math.max(1, b.x1 - b.x0), ah / Math.max(1, b.y1 - b.y0));
+  const target = focus ?? whole;
+  if (!target || c0 <= 0) return { cx: image.width / 2, cy: image.height / 2, scale: c0 };
+  const base = whole ? fit(whole) : c0;
+  const scale = clamp(fit(target), base, Math.max(base, Math.min(base * maxZoom, MAX_SCALE)));
+  // target 가운데를 pad 안쪽 가운데에 둔다
+  const cx = (target.x0 + target.x1) / 2 + (box.width / 2 - (pad.left + aw / 2)) / scale;
+  const cy = (target.y0 + target.y1) / 2 + (box.height / 2 - (pad.top + ah / 2)) / scale;
+  return whole ? { cx, cy, scale } : clampCamera({ cx, cy, scale }, image, box);
 }
 
 /** 카메라를 그대로 두는 차이: 가운데가 화면에서 px 안, 배율이 ratio 몫 안. 클로이드가 조금 움직일 때마다 지도를 다시 맞추지 않는다. */

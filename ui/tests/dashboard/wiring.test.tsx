@@ -61,6 +61,7 @@ const pending: ServerMessage = {
 
 const called = (path: string) => vi.mocked(fetch).mock.calls.some((c) => c[0] === path);
 const phonePane = () => screen.getByRole("region", { name: "폰 카메라" });
+const thought = () => document.querySelector<HTMLElement>("[data-thought]")!;
 const sayLine = () => [...document.querySelectorAll<HTMLElement>("[data-say-line]")].find((p) => !p.hasAttribute("aria-hidden"))!;
 
 /** 대시보드를 그리고 health·소켓이 붙을 때까지 기다린 뒤 연결을 연다. */
@@ -110,30 +111,30 @@ describe("대시보드 자료 연결", () => {
     expect(sayLine()).toHaveTextContent("식탁을 보고 있어요.");
   });
 
-  it("폰 서버가 꺼져 있으면(health.eye false) 대시보드 폰 칸은 연결 QR이고 FSM 카드가 없다", async () => {
+  it("서버 판단이 행동을 고르면 생각 말풍선에 생각 한 문장과 상태·판단 칩을 보이고, 대기 판단이 오면 숨긴다", async () => {
+    await mount(false);
+    send(moment(2));
+    expect(thought()).toHaveAttribute("data-thought", "shown");
+    expect(thought().querySelector("[data-thought-line]")).toHaveTextContent("사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.");
+    expect([...thought().querySelectorAll("[data-slot=status]")].map((c) => c.textContent)).toEqual(["상태 · 컵을 두고 자리를 뜸", "판단 · 컵 치우기"]);
+    send(moment(0));
+    expect(thought()).toHaveAttribute("data-thought", "hidden");
+  });
+
+  it("폰 서버가 꺼져 있으면(health.eye false) 대시보드 폰 칸은 연결 QR이다", async () => {
     await mount(false);
     send(moment(2));
     await waitFor(() => expect(screen.getByRole("img", { name: "폰 연결 QR" })).toBeInTheDocument());
-    expect(phonePane().querySelector("[data-fsm-card]")).toBeNull();
     expect(phonePane().querySelector("canvas[data-masks], [data-detection-label]")).toBeNull();
   });
 
-  it("폰 서버가 켜져 있어도 첫 장 전에는 QR이고 FSM 카드·상자가 없다. 영상에 첫 장이 오면 QR이 없어지고 FSM 카드와 컵 상자가 보인다", async () => {
+  it("폰 서버가 켜져 있어도 첫 장 전에는 QR이고 마스크가 없다. 영상에 첫 장이 오면 QR이 없어지고 컵 마스크와 이름표가 보인다", async () => {
     await mount(true);
     send(moment(2));
     await waitFor(() => expect(screen.getByRole("img", { name: "폰 연결 QR" })).toBeInTheDocument());
-    expect(phonePane().querySelector("[data-fsm-card]")).toBeNull();
     expect(phonePane().querySelector("canvas[data-masks], [data-detection-label]")).toBeNull();
     fireEvent.load(phonePane().querySelector<HTMLImageElement>("[data-eye-video] img")!);
     await waitFor(() => expect(screen.queryByRole("img", { name: "폰 연결 QR" })).toBeNull());
-    const card = phonePane().querySelector<HTMLElement>("[data-fsm-card]")!;
-    expect(card).not.toBeNull();
-    const fsm = card.querySelector<HTMLElement>("[data-fsm]")!;
-    expect(fsm).toHaveTextContent("FSM");
-    expect(fsm).toHaveTextContent("식탁 위에 컵이 있고 사람이 자리를 비웠어요.");
-    const action = card.querySelector<HTMLElement>("[data-action]")!;
-    expect(action).toHaveTextContent("행동");
-    expect(action).toHaveTextContent("컵 치우기");
     // 물체 모양(seen)은 600ms 넘게 안 오면 지운다: 새 seen이 오면 마스크 canvas와 컵 이름표가 보인다. 네모 상자는 없다
     send(moment(2));
     expect(phonePane().querySelector("canvas[data-masks]")).not.toBeNull();
@@ -186,13 +187,14 @@ describe("가짜 단계(?debug=steps)", () => {
     return render(<Dashboard />);
   };
 
-  it("&step=2면 서버 자료 없이 그 순간이다: 진행도·말·대시보드 폰 칸 눈 그림·FSM 카드·컵 상자", async () => {
+  it("&step=2면 서버 자료 없이 그 순간이다: 진행도·말·대시보드 폰 칸 눈 그림·생각 말풍선·컵 이름표", async () => {
     open("&step=2");
     expect(document.querySelector("[data-progress]")).toHaveTextContent("2/4 · 컵 집기");
     expect(sayLine()).toHaveTextContent("컵을 들라고 했어요.");
     const img = phonePane().querySelector<HTMLImageElement>('img[alt="폰 카메라 영상"]')!;
     expect(img.getAttribute("src")).toBe("/debug-eye/eye-table-near.webp");
-    expect(phonePane().querySelector("[data-fsm-card] [data-action]")).toHaveTextContent("컵 치우기");
+    expect(thought().querySelector("[data-thought-action]")).toHaveTextContent("판단 · 컵 치우기");
+    expect(thought().querySelector("[data-thought-state]")).toHaveTextContent("상태 · 컵을 두고 자리를 뜸");
     expect([...phonePane().querySelectorAll("[data-detection-label]")].map((t) => t.textContent?.split(" ")[0])).toEqual(["컵"]);
     expect(phonePane().querySelector("canvas[data-masks]")).not.toBeNull();
   });
