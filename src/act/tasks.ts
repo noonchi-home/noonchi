@@ -6,15 +6,25 @@ import type { Facet, ObjClass, WorldObject, WorldView } from "../contract/world.
 import type { DeviceKind } from "../hub/types.js";
 import type { ActionChoice } from "./prompts.js";
 
-type Kind = "go" | "pick" | "place" | "device" | "ask" | "say" | "wait";
+type Kind = "go" | "pick" | "place" | "do" | "device" | "ask" | "say" | "wait";
 /** 이 행동의 계획에 쓸 수 있는 단계: 단계 종류(src/agent/planTools.ts AgentStepKind), 꼭 있어야 하는 단계 종류(need), 기기 단계의 가전 종류·도구. 승인한 일의 범위다. */
 export interface TaskAllow { kinds: readonly Kind[]; need: readonly Kind[]; devices?: { kinds: readonly DeviceKind[]; tools: readonly string[] } }
 
 /** 행동 하나: 이름, 에이전트에게 주는 설명, 쓸 수 있는 단계, 계획 전 검사의 대상 종류(이 종류 중 치우지 않은 물건이 보여야 부른다),
  *  판단 전에 더 잘 볼 대상 물건의 면(look: 모르면 관찰 모드 B가 가까이 볼지 고른다, src/act/look.ts). */
-export interface TaskSpec { name: string; description: string; allow: TaskAllow; target?: ObjClass; look?: readonly Facet[] }
+export interface TaskSpec {
+  name: string; description: string; allow: TaskAllow; target?: ObjClass; look?: readonly Facet[];
+  /** false면 계획을 만들지 않는 행동이다. 판단 기록과 생각 말풍선에만 보인다. */
+  plan?: false;
+  /** 집는 물건 종류. 없으면 target이다. */
+  carry?: ObjClass;
+  /** true면 집는 물건이 안 보여도(냉장고 안) 평면도 자리에서 집는 단계를 받는다. */
+  carryUnseen?: true;
+}
 
 const HAND = ["go", "pick", "place"] as const;
+/** 채워 주기: 병을 꺼내 와 그 자리에서 따른다(do). 병을 도로 넣는 place는 써도 되고 안 써도 된다. */
+const FILL: TaskAllow = { kinds: ["go", "pick", "do", "place"], need: ["go", "pick", "do"] };
 
 export const TASKS: Record<string, TaskSpec> = {
   "컵 치우기": {
@@ -30,6 +40,19 @@ export const TASKS: Record<string, TaskSpec> = {
     name: "에어컨 켜기", description: "더울 때 사람이 있는 방의 에어컨을 켠다.",
     allow: { kinds: ["device", "say"], need: ["device"], devices: { kinds: ["aircon"], tools: ["turn_on"] } },
   },
+  // 컵 갈래(2026-11-13): 끝에 더해 앞 넷의 task_index를 지킨다. 물·콜라를 가르는 사실(먹는 중·TV 보는 중)은 FSM 기억(src/brain/decision.ts CUP_FSM_MEMORY)에 있다
+  "컵 그대로 두기": {
+    name: "컵 그대로 두기", description: "사람이 자리를 비웠지만 컵에 음료가 남아 있어 치우지 않고 그대로 둔다.", target: "cup", look: ["contents"], plan: false,
+    allow: { kinds: [], need: [] },
+  },
+  "컵에 물 채워 주기": {
+    name: "컵에 물 채워 주기", description: "사람이 식사 중인데 컵이 비어 있으면 사람이 냉장고에서 물병을 꺼내 와 컵에 물을 따르게 한다.", target: "cup", look: ["contents"],
+    carry: "bottle", carryUnseen: true, allow: FILL,
+  },
+  "컵에 콜라 따라 주기": {
+    name: "컵에 콜라 따라 주기", description: "사람이 TV를 보는 중인데 컵이 비어 있으면 사람이 냉장고에서 콜라를 꺼내 와 컵에 따르게 한다.", target: "cup", look: ["contents"],
+    carry: "bottle", carryUnseen: true, allow: FILL,
+  },
 };
 
 /** PAM에 보내는 행동 목록(순서가 task_index다). */
@@ -40,9 +63,15 @@ export function taskOf(action: string | null): TaskSpec | null {
   return action && Object.hasOwn(TASKS, action) ? TASKS[action]! : null;
 }
 
-/** 판단 전에 더 잘 볼 것: 대상 종류와 볼 면이 있는 행동마다 하나(관찰 모드 B, src/act/look.ts). */
+/** 판단 전에 더 잘 볼 것: 대상 종류마다 하나, 그 종류를 대상으로 둔 행동들의 볼 면을 모은 것(관찰 모드 B, src/act/look.ts). */
 export function lookTargets(): { cls: ObjClass; facets: readonly Facet[] }[] {
-  return Object.values(TASKS).flatMap((t) => (t.target && t.look?.length ? [{ cls: t.target, facets: t.look }] : []));
+  const by = new Map<ObjClass, Facet[]>();
+  for (const t of Object.values(TASKS)) {
+    if (!t.target || !t.look?.length) continue;
+    const have = by.get(t.target) ?? [];
+    by.set(t.target, [...have, ...t.look.filter((f) => !have.includes(f))]);
+  }
+  return [...by].map(([cls, facets]) => ({ cls, facets }));
 }
 
 /** 실행 추적이 놓기 단계를 끝낸 물건(src/act/track.ts placed): World State id → 그 계획의 넣은 곳(평면도 id), 끝낸 때 그 면의 싱크볼 안이었으면 part basin, 끝낸 시각.

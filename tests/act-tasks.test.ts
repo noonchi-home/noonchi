@@ -22,8 +22,9 @@ describe("행동 목록", () => {
       const t = TASKS[name]!;
       expect(t.name).toBe(name);
       expect(t.description.length).toBeGreaterThan(5);
-      expect(t.allow.kinds.length).toBeGreaterThan(0);
-      expect(Object.keys(t).sort()).toEqual(["allow", "description", "name", ...(t.target ? ["target"] : []), ...(t.look ? ["look"] : [])].sort());
+      const more = [...(t.target ? ["target"] : []), ...(t.look ? ["look"] : []), ...(t.plan === false ? ["plan"] : []), ...(t.carry ? ["carry"] : []), ...(t.carryUnseen ? ["carryUnseen"] : [])];
+      expect(Object.keys(t).sort()).toEqual(["allow", "description", "name", ...more].sort());
+      if (t.plan !== false) expect(t.allow.kinds.length).toBeGreaterThan(0);
     }
     expect(TASKS["컵 치우기"]!.allow.kinds).toEqual(["go", "pick", "place"]);
     expect(TASKS["사용자에게 물어보기"]!.allow).toEqual({ kinds: ["ask", "say"], need: ["ask"] });
@@ -31,6 +32,29 @@ describe("행동 목록", () => {
     expect(TASKS["에어컨 켜기"]!.allow.devices).toEqual({ kinds: ["aircon"], tools: ["turn_on"] });
     expect(taskOf("춤추기")).toBeNull();
     expect(taskOf(null)).toBeNull();
+  });
+
+  it("행동 목록은 일곱이고 앞 넷의 순서는 그대로다(task_index를 지킨다)", () => {
+    expect(TASK_NAMES).toEqual(["컵 치우기", "사용자에게 물어보기", "세탁물 건조기로 옮기기", "에어컨 켜기", "컵 그대로 두기", "컵에 물 채워 주기", "컵에 콜라 따라 주기"]);
+  });
+
+  it("컵 그대로 두기는 계획을 만들지 않는 행동이다", () => {
+    const t = TASKS["컵 그대로 두기"]!;
+    expect(t.plan).toBe(false);
+    expect(t.target).toBe("cup");
+    expect(t.allow).toEqual({ kinds: [], need: [] });
+    expect(TASK_NAMES.filter((n) => TASKS[n]!.plan === false)).toEqual(["컵 그대로 두기"]);
+  });
+
+  it("채워 주기 둘은 대상이 컵이고 집는 것은 병이며(안 보여도 됨) do 단계가 꼭 있어야 한다", () => {
+    for (const name of ["컵에 물 채워 주기", "컵에 콜라 따라 주기"]) {
+      const t = TASKS[name]!;
+      expect([t.target, t.carry, t.carryUnseen, t.plan]).toEqual(["cup", "bottle", true, undefined]);
+      expect(t.allow).toEqual({ kinds: ["go", "pick", "do", "place"], need: ["go", "pick", "do"] });
+    }
+    expect(TASKS["컵에 물 채워 주기"]!.description).toContain("물병");
+    expect(TASKS["컵에 콜라 따라 주기"]!.description).toContain("콜라");
+    expect(TASKS["컵 치우기"]!.carry).toBeUndefined();
   });
 
   it("계획 전 검사 대상: 사라지지 않았고 싱크대 안이 아닌 같은 종류 중 가장 최근에 본 것. 대상 종류가 없는 행동은 null", () => {
