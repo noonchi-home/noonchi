@@ -285,6 +285,14 @@ describe("계획 모드: 컵 치우기", () => {
       expect(planInput(planContext({ decision: decision("컵 치우기"), world: view([cup()]), floor: floor() })).split("\n")[2]).toBe("- 단계 한도: 8개");
     });
 
+    it("계획 입력에 [지난 수업] 줄이 있다(코치 행동이고 기록이 있을 때): 몇 번 했는지와 단계마다 혼자 해낸 횟수", () => {
+      const lesson = { task: RAMEN, runs: 2, updatedAt: "t", steps: [{ label: "냄비 꺼내기", alone: 2 }, { label: "물 받기", alone: 0 }] };
+      const input = planInput({ ...rctx(), lesson });
+      expect(input).toContain("[지난 수업] 2번 함\n- 냄비 꺼내기 · 혼자 2번\n- 물 받기 · 혼자 0번\n[손]");
+      expect(planInput(rctx())).not.toContain("[지난 수업]");
+      expect(planInput({ ...rctx(), lesson: null })).not.toContain("[지난 수업]");
+    });
+
     it("가짜 모델의 도구 호출로 만든 라면 계획은 13단계이고 사람 명령이 모두 「주세요」로 끝나며 화면 단계 종류가 맞다. 불 켜기에는 안전 문구가, 끝에는 불 끄기가 있다", async () => {
       llm.scripts = { ...llm.scripts, ...ramenScripts() };
       const r = await testPlanner(llm).plan(rctx());

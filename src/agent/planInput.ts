@@ -106,6 +106,7 @@ export function planInput(ctx: PlanContext): string {
     ...places.map((p) => `- ${p.id} ${p.name} [${p.type}] · 방 ${p.room ?? "모름"} · 자리 ${xz(p.position)}${p.basin ? ` · 싱크볼 ${xz(p.basin)}` : ""}`),
     "[가전]",
     ...devices.map((x) => `- ${x.id} ${x.label} [${x.kind} ${KIND_LABELS[x.kind]}] · 방 ${x.room} · 지금 ${state.get(x.id) ?? "모름"}`),
+    ...(ctx.lesson ? [`[지난 수업] ${ctx.lesson.runs}번 함`, ...ctx.lesson.steps.map((s) => `- ${s.label} · 혼자 ${s.alone}번`)] : []),
     `[손] 폰 자리 ${xz(floor.robot.position)} · 방 ${roomName(floor.robot.room)}`,
     `[승인] 처음 하는 할 일은 첫 단계 전에 폰으로 묻는다. 위험 목록(${CONFIRM_RULES.map((r) => `${r.kind} ${r.command}`).join(", ")})은 그 단계에서 늘 묻는다. 너는 승인하지 못한다.`,
     "[조건 낱말]",

@@ -26,6 +26,7 @@ import { SMALL_SCENE, smallFloor } from "./helpers/floor.js";
 import { standing } from "./helpers/poses.js";
 import { fillSteps, planCalls, planContext, ramenScripts, startFakePlanner, testPlanner, type FakePlanner } from "./helpers/planner.js";
 import { makeHome } from "./helpers/home.js";
+import { memoryLessons, quietLabels } from "../src/act/lessons.js";
 import { det } from "./helpers/detectors.js";
 
 // 코치 계획(라면 끓이기 알려 주기) 시험 틀: 수납장·인덕션이 있는 주방, 인덕션은 가전 induction_1(cooktop)
@@ -892,6 +893,101 @@ describe("실행 추적: 코치 계획의 다른 행동 알림(strayed)과 다�
     const cupRun = setup();
     await cupRun.decide(decision);
     expect(cupRun.t.coachStep()).toBeNull();
+  });
+});
+
+describe("실행 추적: 잘한 단계는 말을 줄인다(수업 기록)", () => {
+  const P = "plan:pam-1";
+  /** 계획을 끝까지 넘긴다. 켜기 전 질문은 승인. hook(n)은 n번 사람 단계가 떠 있을 때 부른다. */
+  async function finishRun(s: ReturnType<typeof setup>, hook: (n: number) => void = () => {}) {
+    await s.decide(ramenDecision());
+    for (const n of [1, 2, 3, 4, 5, 6]) { hook(n); expect(s.t.onAnswer(P, `${P}:${n}`, "done"), String(n)).toBe(true); }
+    expect(s.t.onAnswer(P, `${P}:7:hand`, "approve")).toBe(true);
+    hook(7); s.t.onAnswer(P, `${P}:7`, "done");
+    s.clock.t += 4_001; s.t.tick();
+    s.clock.t += 240_001; s.t.tick();
+    hook(10); s.t.onAnswer(P, `${P}:10`, "done");
+    s.clock.t += 240_001; s.t.tick();
+    hook(12); s.t.onAnswer(P, `${P}:12`, "done");
+    s.clock.t += 4_001; s.t.tick();
+    expect(s.plans.current()).toMatchObject({ status: "done" });
+  }
+  const HUMAN = ["수납장으로 가기", "냄비 꺼내기", "싱크대로 가기", "물 받기", "인덕션으로 가기", "냄비 올리기", "인덕션 켜기", "면과 스프 넣기", "인덕션 끄기"];
+
+  it("끝낸 계획의 사람 단계마다 혼자 해냈는지 기록한다. 다시 알리기(tell)·다시 읽기·가까이 비춰 달라는 부탁을 받은 단계는 혼자 해낸 것이 아니다. 알림·기다리기 단계는 기록하지 않는다", async () => {
+    const lessons = memoryLessons();
+    const s = coachSetup({ lessons });
+    await finishRun(s, (n) => {
+      if (n === 4) expect(s.t.tell(P, `${P}:4`, "먼저 냄비에 물을 받아 주세요")).toBe(true);
+      if (n === 6) { s.clock.t += 30_000; s.t.tick(); }
+      if (n === 2) expect(s.t.askCloser(P, `${P}:2`, "냄비가 보이게 비춰 주세요")).toBe(true);
+    });
+    const got = lessons.get(RAMEN)!;
+    expect(got.runs).toBe(1);
+    expect(got.steps.map((x) => x.label)).toEqual(HUMAN);
+    expect(got.steps.filter((x) => x.alone === 0).map((x) => x.label)).toEqual(["냄비 꺼내기", "물 받기", "냄비 올리기"]);
+    expect(got.updatedAt).toBe(new Date(s.clock.t).toISOString());
+  });
+
+  it("취소한 판과 코치가 아닌 계획은 기록하지 않는다", async () => {
+    const lessons = memoryLessons();
+    const s = coachSetup({ lessons });
+    await toOn(s);
+    s.t.onHeard("그만");
+    expect(lessons.get(RAMEN)).toBeNull();
+    const cupRun = setup({ lessons });
+    await cupRun.decide(decision);
+    for (const n of [1, 2, 3, 4]) cupRun.t.onAnswer(P, `${P}:${n}`, "done");
+    expect(cupRun.plans.current()).toMatchObject({ status: "done" });
+    expect(lessons.get("컵 치우기")).toBeNull();
+  });
+
+  it("이어서 두 판 혼자 해낸 단계는 셋째 판에 조용하다: 명령은 speak false로 뜨고(글은 그대로), 20초 안에 안 끝나면 한 번 읽으며 그 단계는 혼자 해낸 것으로 세지 않는다", async () => {
+    const lessons = memoryLessons();
+    for (let k = 0; k < 2; k++) await finishRun(coachSetup({ lessons }));
+    expect([...quietLabels(lessons.get(RAMEN))].sort()).toEqual([...HUMAN].sort());
+    const s = coachSetup({ lessons });
+    await s.decide(ramenDecision());
+    expect(s.last()).toMatchObject({ step: `${P}:1`, text: "수납장으로 가 주세요", speak: false, choices: DONE, kind: "go" });
+    expect(s.t.quietStep()).toBe("수납장으로 가기");
+    s.clock.t += 19_999;
+    s.t.tick();
+    expect(s.spoken()).toEqual([]);
+    s.clock.t += 1;
+    s.t.tick();
+    expect(s.spoken()).toEqual(["수납장으로 가 주세요"]);
+    expect(s.t.quietStep()).toBeNull();
+    s.clock.t += 5_000;
+    s.t.tick();
+    expect(s.spoken()).toEqual(["수납장으로 가 주세요"]);
+    s.t.onAnswer(P, `${P}:1`, "done");
+    expect(s.last()).toMatchObject({ step: `${P}:2`, text: "냄비를 꺼내 주세요", speak: false });
+    for (const n of [2, 3, 4, 5, 6]) s.t.onAnswer(P, `${P}:${n}`, "done");
+    // 인덕션 켜기는 조용한 단계여도 묻고(소리로), 승인 뒤 켜라는 명령도 읽는다
+    expect(s.last()).toMatchObject({ step: `${P}:7:hand`, text: "냄비가 뜨거워져요. 인덕션을 켤까요?", speak: true });
+    s.t.onAnswer(P, `${P}:7:hand`, "approve");
+    expect(s.last()).toMatchObject({ step: `${P}:7`, text: "인덕션을 켜 주세요", speak: true });
+    expect(s.t.quietStep()).toBeNull();
+    s.t.onAnswer(P, `${P}:7`, "done");
+    s.clock.t += 4_001; s.t.tick();
+    s.clock.t += 240_001; s.t.tick();
+    s.t.onAnswer(P, `${P}:10`, "done");
+    s.clock.t += 240_001; s.t.tick();
+    s.t.onAnswer(P, `${P}:12`, "done");
+    s.clock.t += 4_001; s.t.tick();
+    // 힌트를 받은 1번은 0으로, 나머지는 3으로
+    const steps = lessons.get(RAMEN)!.steps;
+    expect(steps[0]).toEqual({ label: "수납장으로 가기", alone: 0 });
+    expect(steps.slice(1).every((x) => x.alone === 3)).toBe(true);
+    // 알림(say) 단계는 조용한 단계가 아니다: 늘 읽는다
+    expect(s.spoken()).toEqual(["수납장으로 가 주세요", "냄비가 뜨거워져요. 인덕션을 켤까요?", "인덕션을 켜 주세요", "물이 끓을 때까지 기다려요.", "라면이 다 됐어요."]);
+  });
+
+  it("수업 기록이 없으면(lessons 없음) 지금처럼 모든 명령을 읽는다", async () => {
+    const s = coachSetup();
+    await s.decide(ramenDecision());
+    expect(s.last()).toMatchObject({ speak: true });
+    expect(s.t.quietStep()).toBeNull();
   });
 });
 

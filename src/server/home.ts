@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { checkDecision, checkPlan, loadActConfig } from "../act/check.js";
 import { Looker } from "../act/look.js";
 import { sayLine } from "../act/say.js";
+import { LessonStore, lessonsPath } from "../act/lessons.js";
 import { lookTargets, taskOf, tasksFor } from "../act/tasks.js";
 import { deviceRunner } from "../act/devices.js";
 import { ExecutionTracker } from "../act/track.js";
@@ -286,6 +287,8 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       said = text;
       appRef.current?.broadcast({ type: "say", text });
     };
+    // 수업 기록(코치 계획의 잘한 단계 말 줄이기, runtime/homes/<집>/lessons.json)
+    const lessons = new LessonStore(lessonsPath(runtimeDir, home.id));
     // 돕는 방식(눈치·코치): 판단 호출이 그때그때 읽는다(집을 다시 띄우지 않고 바뀐다)
     const assist = () => ctx.assist?.() ?? "noonchi";
     if (world) {
@@ -325,7 +328,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
           if (!task) return { ok: false, error: "행동 목록에 없는 행동" };
           return planner.plan({
             decision: d, task, world: world.view(now()), floor: plans.floor(), places: places(), rooms: twin.rooms, devices: deviceViews(signals), nowIso: new Date(now()).toISOString(),
-            placed: new Map(tracker?.placed() ?? []),
+            placed: new Map(tracker?.placed() ?? []), ...(task.coach ? { lesson: lessons.get(task.name) } : {}),
           }, signal);
         },
         // 실제 폰 명령(src/contract/phone.ts). 폰 서버가 지금 명령을 기억해 새로 붙은 폰에도 보낸다. 명령 대상 자리는 배치(면이면 윗면 가운데)에서
@@ -340,6 +343,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
           decision: d, tasks: d.tasks ?? tasksFor(assist()), plan: p, world: world.view(now()), nowMs: now(), staleMs: act.staleMs, mode: ctx.mode?.() ?? "test", deviceSteps: deviceSteps(p),
           placed: tracker?.placed(),
         }),
+        lessons,
         // 손으로 켜는 단계가 위험 목록 가전인지(켜기 전에 묻는다)와 묻는 글의 가전 이름
         handDevices: () => deviceViews(signals),
         // 멈춘 집기·놓기 단계는 보기 담당(관찰 모드 A)에 알린다

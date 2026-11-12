@@ -5,6 +5,7 @@
 import { z } from "zod";
 import { copyRules } from "../plan/copy.js";
 import type { ActionChoice, ActionPrompt } from "../act/prompts.js";
+import type { Lesson } from "../act/lessons.js";
 import { planIdOf, type Placed, type TaskSpec } from "../act/tasks.js";
 import type { DeviceView } from "../contract/events.js";
 import type { DraftStep, PlanHead } from "../plan/planner.js";
@@ -93,6 +94,8 @@ export interface PlanContext {
   devices: DeviceView[];
   nowIso: string;
   placed?: Placed;
+  /** 지난 수업(코치 행동의 수업 기록, src/act/lessons.ts). 있으면 입력에 [지난 수업]으로 넣는다(단계 이름·순서를 그대로 쓰게). */
+  lesson?: Lesson | null;
 }
 
 const choiceSchema = z.object({

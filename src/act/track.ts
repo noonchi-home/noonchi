@@ -11,6 +11,9 @@
 // 다른 행동 알림(코치 계획, 관찰 모드 계기 off_track): 사람 단계가 진행 중인데 의미 있는 변화(사람 방·가전 상태·가전 설비 상태)가 왔고 그 단계가 넘어가지 않았거나,
 // 이동이 아닌 단계에서 폰이 그 단계 자리를 떠나 다른 평면도 자리 가까이로 갔으면 strayed를 부른다(결정론). 단계마다 strayMax번(받은 것만), strayGapMs에 한 번.
 // 무엇이 틀렸는지와 할 말은 관찰 모드(LLM)가 정한다. tell: 지금 명령 글을 그 한 줄로 바꿔 읽고 tellHoldMs 뒤 원래 명령으로 되돌린다(읽지 않음).
+// 수업 기록(코치 계획, src/act/lessons.ts): 사람 단계가 끝날 때마다 도움(다시 읽기·다시 알리기·가까이 비춰 달라는 부탁·조용한 단계 힌트·시간 초과 질문) 없이
+// 끝냈는지 모으고, 계획이 완료로 끝날 때만 기록한다. 지난 기록에서 이어서 QUIET_AFTER번 혼자 해낸 단계는 명령을 소리로 읽지 않고 글만 띄운다(조용한 단계).
+// QUIET_HINT_MS 안에 안 끝나면 한 번 읽고 그 단계는 혼자 해낸 것으로 세지 않는다. 손으로 켜는 위험 가전 단계는 늘 묻고 읽는다.
 // 계획은 어떤 것이든 같은 방법으로 돌린다(src/agent/planTools.ts AgentStep):
 // - 사람 단계(go·pick·place·do): 실제 폰(에이전트의 손, src/contract/phone.ts)에 사람에게 하는 명령 하나와 「완료」를 보내고(소리로도 읽음),
 //   끝나는 조건(World State 낱말 조건, ConditionWatch)이 참이거나 「완료」면 다음 단계로. repeatMs마다 명령을 다시 읽는다.
@@ -55,6 +58,7 @@ import { approvalNeed, taskKey, type ApprovalAnswer, type ApprovalBook } from ".
 import { HUMAN_KINDS, objectNames, riskyHand, type AgentPlan, type AgentStep, type PlanResult } from "../agent/planTools.js";
 import type { ToolResult } from "../agent/tools.js";
 import type { CheckResult } from "./check.js";
+import { QUIET_HINT_MS, quietLabels, type LessonBook, type StepOutcome } from "./lessons.js";
 import { AGAIN, APPROVE, STEP_DONE, STOP, type ActionChoice } from "./prompts.js";
 import { matchChoice, planIdOf, taskOf, type Placed } from "./tasks.js";
 
@@ -101,6 +105,8 @@ export interface TrackerOptions {
   planGapMs?: number;
   /** 계획 없는 행동(그대로 두기)의 기록을 다시 남기기 전 기다리는 시간(ms). */
   leftGapMs?: number;
+  /** 수업 기록(코치 계획의 잘한 단계 말 줄이기). 없으면 기록하지 않고 모든 명령을 읽는다. */
+  lessons?: LessonBook;
   /** 코치 계획 중 다른 행동을 본 것 같을 때(관찰 모드 계기 off_track, src/act/look.ts). 받았으면 true(그때만 센다). 없으면 부르지 않는다. */
   strayed?: (s: Stray) => boolean;
   /** 다른 행동 알림을 이보다 자주(ms) 부르지 않는다. */
@@ -176,6 +182,10 @@ interface Run {
   told: { text: string; until: number } | null;
   /** 이 단계에서 도움을 받았다(다시 읽기·다시 알리기·가까이 비춰 달라는 부탁·조용한 단계 힌트·시간 초과 질문): 혼자 해낸 단계로 세지 않는다. */
   helped: boolean;
+  /** 조용히 띄울 단계 이름(지난 수업에서 이어서 혼자 해낸 단계). quietOn: 지금 단계를 조용히 띄웠고 아직 힌트를 읽지 않았다. */
+  quiet: Set<string>; quietOn: boolean;
+  /** 끝낸 사람 단계의 결과(수업 기록에 남길 것). */
+  outcomes: StepOutcome[];
 }
 
 /** at: 같은 행동 다시 계획 간격(planGapMs)을 세려고 적은 시각. */
@@ -421,6 +431,7 @@ export class ExecutionTracker {
     r.told = { text: r.told?.text ?? r.sent.text, until: now + this.cfg.tellHoldMs };
     r.spokeAt = now;
     r.helped = true;
+    r.quietOn = false;
     r.sent = { ...r.sent, text: said, speak: true };
     this.toldWallAt = Date.now();
     this.o.toPhone(r.sent);
@@ -469,9 +480,17 @@ export class ExecutionTracker {
     if (this.stopped || !r || r.state !== "running" || r.asking || !r.sent || !step || !HUMAN_KINDS.includes(step.kind)) return false;
     if (r.plan.view.id !== planId || step.id !== stepId || r.sent.step !== stepId || !/주세요$/.test(said)) return false;
     r.spokeAt = this.clock.now();
+    r.helped = true;
+    r.quietOn = false;
     r.sent = { ...r.sent, text: said, speak: true };
     this.o.toPhone(r.sent);
     return true;
+  }
+
+  /** 지금 조용히 띄운 단계 이름(소리로 읽지 않고 지켜보는 중, 대시보드 말풍선 카드). 아니면 null. */
+  quietStep(): string | null {
+    const r = this.run;
+    return !this.stopped && r?.state === "running" && r.quietOn && !r.asking ? this.stepOf(r)?.label ?? null : null;
   }
 
   /** 타이머(250ms)가 부른다: 검사 다시 보기, 지금 단계 보기, 멈춘 단계 알림, 다시 읽기, 시간 초과. 에이전트는 부르지 않는다. */
@@ -497,6 +516,13 @@ export class ExecutionTracker {
       this.o.toPhone(r.sent);
     }
     this.strayNear(r, step);
+    // 조용한 단계가 QUIET_HINT_MS 안에 안 끝나면 한 번 읽는다(그 단계는 혼자 해낸 것으로 세지 않는다)
+    if (r.quietOn && r.sent && now - r.stepAt >= QUIET_HINT_MS) {
+      r.quietOn = false;
+      r.helped = true;
+      r.spokeAt = now;
+      this.o.toPhone({ ...r.sent, speak: true });
+    }
     this.stall(r, step, now);
     if (HUMAN_KINDS.includes(step.kind) || step.kind === "ask") this.repeat(r, now);
   }
@@ -643,6 +669,7 @@ export class ExecutionTracker {
       asking: null, askAt: now, watch: null, others, alias: new Map([...ids].map((id) => [id, id])), carried: new Set(), placeAt: (id) => (id ? this.o.floor().objects.get(id)?.position ?? null : null), deadline: now, again: false, device: "idle", gen: 0,
       looks: 0, lookAt: Number.NEGATIVE_INFINITY, stepEnd: null, gapAt: job.at, hot: new Set(),
       strays: 0, strayAt: Number.NEGATIVE_INFINITY, strayNear: null, told: null, helped: false,
+      quiet: taskOf(r.plan.task)?.coach ? quietLabels(this.o.lessons?.get(r.plan.task) ?? null) : new Set(), quietOn: false, outcomes: [],
     };
     this.run = run;
     // 새 계획의 명령이 실제 폰 자리를 쓴다: 앞 계획의 끄기 안내는 내린다
@@ -719,6 +746,7 @@ export class ExecutionTracker {
   /** 지금 단계를 끝내고 다음 단계로. 마지막이었으면 계획 완료. 집기를 마치면 그 물건은 사람이 들고 다니고, 놓기를 마치면 그 물건은 넣은 곳에 치운 것이다. */
   private advance(r: Run): void {
     const done = this.stepOf(r);
+    if (done && HUMAN_KINDS.includes(done.kind)) r.outcomes.push({ label: done.label, alone: !r.helped });
     if (done?.kind === "pick" && done.object) r.carried.add(done.object);
     if (done?.kind === "do" && done.hand?.to === "off") r.hot.delete(done.hand.deviceId);
     if (done?.kind === "place" && done.object) {
@@ -738,7 +766,7 @@ export class ExecutionTracker {
     Object.assign(r, {
       at: i, stepAt: now, spokeAt: now, visionAt: now, deadline: now + step.timeoutMs, asking: null, watch: step.until ? new ConditionWatch(step.until) : null,
       again: false, device: "idle", gen: r.gen + 1, looks: 0, lookAt: Number.NEGATIVE_INFINITY, stepEnd: new AbortController(),
-      strays: 0, strayAt: Number.NEGATIVE_INFINITY, strayNear: null, told: null, helped: false,
+      strays: 0, strayAt: Number.NEGATIVE_INFINITY, strayNear: null, told: null, helped: false, quietOn: false,
     });
     this.o.plans.setSteps(r.plan.view.id, { ...(prev ? { [prev.id]: "done" as const } : {}), [step.id]: "active" });
     if (step.kind === "wait" || step.kind === "device") this.quietFrom = now;
@@ -759,10 +787,12 @@ export class ExecutionTracker {
   private show(r: Run, step: AgentStep): void {
     const world = this.o.world();
     const human = HUMAN_KINDS.includes(step.kind);
+    // 조용한 단계: 지난 수업에서 이어서 혼자 해낸 사람 단계는 글만 띄운다. 손으로 켜는 위험 가전 단계는 늘 읽는다
+    r.quietOn = human && r.quiet.has(step.label) && !this.risky(step) && !r.helped;
     r.sent = {
       type: "command", id: r.plan.view.id, step: step.id, text: (human ? step.command : step.kind === "ask" ? step.prompt?.text : step.text) ?? step.label,
       vision: human ? this.vision(r, step, world) : null, choices: choicesOf(r, step).map(({ id, label }) => ({ id, label })),
-      target: human ? this.target(r, step, world) : null, speak: true,
+      target: human ? this.target(r, step, world) : null, speak: !r.quietOn,
       ...(human ? { kind: step.kind as PhoneStepKind } : {}),
     };
     this.o.toPhone(r.sent);
@@ -844,6 +874,7 @@ export class ExecutionTracker {
   private timeout(r: Run, step: AgentStep): void {
     if (step.onTimeout === "ask" && !r.again) {
       r.again = true;
+      r.helped = true;
       return this.ask(r, { why: "again" }, AGAIN_TEXT.ask(step.label), `${step.id}:again`);
     }
     this.finish(r, "failed", step.kind === "ask" ? EXEC_TEXT.noAnswer : EXEC_TEXT.timeout);
@@ -893,6 +924,7 @@ export class ExecutionTracker {
   private repeat(r: Run, now: number): void {
     if (!r.sent || now - r.spokeAt < this.cfg.repeatMs) return;
     r.spokeAt = now;
+    r.helped = true;
     this.o.toPhone({ ...r.sent, speak: true });
   }
 
@@ -988,6 +1020,8 @@ export class ExecutionTracker {
     r.gen++;
     r.stepEnd?.abort();
     this.step(r, state, text);
+    // 수업 기록: 코치 계획을 끝까지 마친 판만 남긴다
+    if (state === "done" && taskOf(r.plan.task)?.coach && r.outcomes.length) this.o.lessons?.record(r.plan.task, r.outcomes, new Date(this.clock.now()).toISOString());
     if (r.sent) {
       r.sent = null;
       this.o.toPhone({ type: "command_clear", id: r.plan.view.id });
