@@ -1,12 +1,13 @@
 // 대시보드 가짜 단계 자료(ui/src/dashboard/fake-run.json)를 만든다. 실행: npx tsx scripts/twin3d/fake-run.ts
 // 한양목련 실제 장면·평면도(loadScene·floorPlanFrom)로 컵 치우기 계획(에이전트 컵 계획이 맞춰야 할 모양 tests/helpers/cup-plan.ts, 로봇 [10.6, 8.6])을 짜고, 다섯 순간(0 지켜보기, 1~4 계획 단계)마다
-// 서버가 대시보드 /events로 보내는 메시지 묶음(plan·eye·brain decision·brain observe·seen·say)을 적는다. 말은 sayLine에 그 단계 명령을 넣은 글이다.
+// 서버가 대시보드 /events로 보내는 메시지 묶음(plan·eye·brain decision·brain observe·seen·say)을 적는다. 판단(decision)은 생각 한 문장(reasoning)과 고른 행동의 FSM 상태(fsm, 지켜보기는 null)를 싣는다. 말은 sayLine에 그 단계 명령을 넣은 글이다.
 // 대시보드 폰 칸 그림은 시안 눈 그림(ui/public/debug-eye/, 세로 405×720)이고, 컵 모양(seen 마스크)은 시안 가로 그림 상자를 잘라 낸 자리만큼 옮긴 상자 안에 컵꼴로 채운 것이다.
 // 시각을 고정해서 다시 만들어도 같은 파일이 나온다.
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { sayLine } from "../../src/act/say.js";
 import { planIdOf } from "../../src/act/tasks.js";
+import { CUP_FSM_MEMORY, fsmRuleOf } from "../../src/brain/decision.js";
 import type { Mask } from "../../src/brain/seg.js";
 import type { BrainLog, EyeEvent, SeenEvent, ServerMessage } from "../../src/contract/events.js";
 import type { PlannedCommand } from "../../src/contract/phone.js";
@@ -128,7 +129,7 @@ function build(): Moment[] {
       type: "decision", at_ms: n === 0 ? T0 : T0 + STEP_MS, id: n === 0 ? "pam-0" : decisionId, seq: n === 0 ? 1 : 2,
       text_sent: "컵 1개가 식탁 위에 있어요. 사람이 안 보여요.", status: "valid",
       prediction: { observation: OBSERVATION, reasoning: n === 0 ? "자리를 비운 지 얼마 안 됐어요." : "사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.", task_index: n === 0 ? -1 : 0 },
-      action: n === 0 ? null : ACTION, memory_version: 1,
+      action: n === 0 ? null : ACTION, fsm: fsmRuleOf(CUP_FSM_MEMORY, "fsm", n === 0 ? null : ACTION), memory_version: 1,
       world: { objects: [{ id: cup.id, cls: cup.cls, status: cup.status, surface: cup.surface, surface_label: cup.surface_label, error_m: null, facts: {} }], person_visible: false, vlm_missing: 0, yolo_missing: 0 },
     };
     const shapes = cupShapes(eye, score);

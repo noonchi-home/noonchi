@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  CUP_MEMORY, CUP_TASKS, checkInput, findDuplicateKey, isoWithOffset, parsePrediction,
-  validateMemory, validatePrediction, validateTasks, type DecisionInput,
+  CUP_FSM_MEMORY, CUP_MEMORY, CUP_TASKS, checkInput, findDuplicateKey, fsmRuleOf, isoWithOffset, parsePrediction,
+  validateMemory, validatePrediction, validateTasks, type DecisionInput, type FsmMemory,
 } from "../src/brain/decision.js";
+import { FSM_STATE_TEXT } from "../src/world/labels.js";
 
 const input = (over: Partial<DecisionInput> = {}): DecisionInput => ({
   text: "12:00:00 사람 보임", finalTime: "2026-11-04T12:00:08.000+09:00", memory: CUP_MEMORY, memoryKind: "list", tasks: [...CUP_TASKS],
@@ -79,5 +80,42 @@ describe("판단 입력(텍스트)", () => {
   it("시각은 그 시간대의 ISO", () => {
     expect(isoWithOffset(Date.parse("2026-11-04T03:00:01Z"), 540)).toBe("2026-11-04T12:00:01.000+09:00");
     expect(isoWithOffset(Date.parse("2026-11-04T03:00:01Z"), -90)).toBe("2026-11-04T01:30:01.000-01:30");
+  });
+});
+
+describe("고른 행동의 FSM 상태(대시보드 생각 말풍선 「상태」 칩)", () => {
+  it("고른 행동을 FSM 기억 규칙에서 찾아 그 규칙의 상태와 트리거를 준다", () => {
+    const rule = CUP_FSM_MEMORY.states[1]!.rules[0]!;
+    expect(fsmRuleOf(CUP_FSM_MEMORY, "fsm", "컵 치우기")).toEqual({ state: "left_cup", trigger: rule.trigger });
+    expect(fsmRuleOf(CUP_FSM_MEMORY, "fsm", "사용자에게 물어보기")).toEqual({ state: "left_cup", trigger: CUP_FSM_MEMORY.states[1]!.rules[1]!.trigger });
+  });
+
+  it("대기·기억에 없는 행동·list 기억이면 null이다", () => {
+    expect(fsmRuleOf(CUP_FSM_MEMORY, "fsm", null)).toBeNull();
+    expect(fsmRuleOf(CUP_FSM_MEMORY, "fsm", "창문 닫기")).toBeNull();
+    expect(fsmRuleOf(CUP_MEMORY, "list", "컵 치우기")).toBeNull();
+  });
+
+  it("같은 행동이 여러 상태에 있으면 null이다(어느 상태인지 모른다). 한 상태 안에 여러 번 있어도 null이다", () => {
+    const two: FsmMemory = {
+      initial_state: "a",
+      states: [
+        { id: "a", description: "가", rules: [{ trigger: "ㄱ", action: "컵 치우기" }], next: [] },
+        { id: "b", description: "나", rules: [{ trigger: "ㄴ", action: "컵 치우기" }], next: [] },
+      ],
+    };
+    expect(fsmRuleOf(two, "fsm", "컵 치우기")).toBeNull();
+    const twice: FsmMemory = { initial_state: "a", states: [{ id: "a", description: "가", rules: [{ trigger: "ㄱ", action: "컵 치우기" }, { trigger: "ㄴ", action: "컵 치우기" }], next: [] }] };
+    expect(fsmRuleOf(twice, "fsm", "컵 치우기")).toBeNull();
+  });
+
+  it("컵 FSM 기억의 상태마다 화면용 짧은 한국어 이름표가 있다(12자 아래, 영어 id가 아니다)", () => {
+    for (const s of CUP_FSM_MEMORY.states) {
+      const label = FSM_STATE_TEXT[s.id];
+      expect(label, s.id).toBeTruthy();
+      expect(label!.length, s.id).toBeLessThanOrEqual(12);
+      expect(label, s.id).toMatch(/[가-힣]/);
+      expect(label, s.id).not.toMatch(/[A-Za-z_()（）]/);
+    }
   });
 });

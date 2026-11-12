@@ -37,6 +37,7 @@
               "task_index": -1
             },
             "action": null,
+            "fsm": null,
             "memory_version": 1,
             "world": {
               "objects": [
@@ -221,6 +222,10 @@
               "task_index": 0
             },
             "action": "컵 치우기",
+            "fsm": {
+              "state": "left_cup",
+              "trigger": "사용자가 자리를 비웠고 식탁 위 컵이 비어 있으며 아무도 컵을 들거나 만지지 않는다."
+            },
             "memory_version": 1,
             "world": {
               "objects": [
@@ -405,6 +410,10 @@
               "task_index": 0
             },
             "action": "컵 치우기",
+            "fsm": {
+              "state": "left_cup",
+              "trigger": "사용자가 자리를 비웠고 식탁 위 컵이 비어 있으며 아무도 컵을 들거나 만지지 않는다."
+            },
             "memory_version": 1,
             "world": {
               "objects": [
@@ -589,6 +598,10 @@
               "task_index": 0
             },
             "action": "컵 치우기",
+            "fsm": {
+              "state": "left_cup",
+              "trigger": "사용자가 자리를 비웠고 식탁 위 컵이 비어 있으며 아무도 컵을 들거나 만지지 않는다."
+            },
             "memory_version": 1,
             "world": {
               "objects": [
@@ -757,6 +770,10 @@
               "task_index": 0
             },
             "action": "컵 치우기",
+            "fsm": {
+              "state": "left_cup",
+              "trigger": "사용자가 자리를 비웠고 식탁 위 컵이 비어 있으며 아무도 컵을 들거나 만지지 않는다."
+            },
             "memory_version": 1,
             "world": {
               "objects": [

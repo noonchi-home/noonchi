@@ -3,7 +3,7 @@
 // PAM 연결 끊김·연결됨(link)과 주기 판단 멈춤(폰 사진 없음·사람 없음)·다시 시작(trigger)은 바뀔 때 한 번씩 기록한다.
 import type { BrainLog, DecisionWorld } from "../contract/events.js";
 import type { WorldChange, WorldView } from "../contract/world.js";
-import { checkInput, isoWithOffset, type PamMemory, type Prediction } from "../brain/decision.js";
+import { checkInput, fsmRuleOf, isoWithOffset, type FsmRuleAt, type PamMemory, type Prediction } from "../brain/decision.js";
 import { PamLinkError, type PamClient } from "../brain/pam.js";
 import { LINK_TEXT, TRIGGER_TEXT } from "./labels.js";
 import type { WorldState } from "./state.js";
@@ -24,6 +24,8 @@ export interface DecisionRecord {
   prediction: Prediction | null;
   /** 고른 행동(대기·실패면 null). */
   action: string | null;
+  /** 고른 행동의 FSM 규칙 자리(그때 보낸 기억에서 찾는다). 대기·실패·못 찾으면 null. */
+  fsm?: FsmRuleAt | null;
   error?: string;
   memoryVersion: number;
   world: DecisionWorld;
@@ -107,11 +109,12 @@ export class Decider {
       .then(
         (p) => {
           this.setLink(true);
-          this.finish({ ...base, status: "valid", prediction: p, action: p.task_index === -1 ? null : tasks[p.task_index] ?? null });
+          const action = p.task_index === -1 ? null : tasks[p.task_index] ?? null;
+          this.finish({ ...base, status: "valid", prediction: p, action, fsm: fsmRuleOf(mem.memory, mem.kind, action) });
         },
         (e: unknown) => {
           if (e instanceof PamLinkError) this.setLink(false);
-          this.finish({ ...base, status: "failed", prediction: null, action: null, error: (e as Error).message });
+          this.finish({ ...base, status: "failed", prediction: null, action: null, fsm: null, error: (e as Error).message });
         },
       )
       .finally(() => { this.running.delete(job); });
@@ -130,7 +133,7 @@ export class Decider {
   private finish(r: DecisionRecord): void {
     if (this.stopped) return;
     this.o.emit({
-      type: "decision", at_ms: this.clock.now(), id: r.id, seq: r.seq, text_sent: r.textSent, status: r.status, prediction: r.prediction, action: r.action,
+      type: "decision", at_ms: this.clock.now(), id: r.id, seq: r.seq, text_sent: r.textSent, status: r.status, prediction: r.prediction, action: r.action, fsm: r.fsm ?? null,
       ...(r.error ? { error: r.error } : {}), memory_version: r.memoryVersion, world: r.world,
     });
     this.o.onDecision?.(r);

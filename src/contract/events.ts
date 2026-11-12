@@ -107,7 +107,10 @@ export type BrainLog =
   | { type: "world_change"; at_ms: number; kind: WorldChangeKind; text: string }
   | {
     type: "decision"; at_ms: number; id: string; seq: number; text_sent: string; status: "valid" | "failed";
-    prediction: { observation: string; reasoning: string; task_index: number } | null; action: string | null; error?: string; memory_version: number; world: DecisionWorld;
+    prediction: { observation: string; reasoning: string; task_index: number } | null; action: string | null;
+    /** 고른 행동을 FSM 기억 규칙에서 찾은 자리: 상태 id와 트리거. 대기·실패, 같은 행동이 여러 규칙에 있거나 못 찾으면 null. 예전 기록에는 없다. */
+    fsm?: { state: string; trigger: string } | null;
+    error?: string; memory_version: number; world: DecisionWorld;
   }
   | { type: "execution"; at_ms: number; plan_id: string; state: ExecState; text: string }
   | { type: "link"; at_ms: number; target: "pam"; up: boolean; text: string }

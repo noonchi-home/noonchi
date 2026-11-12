@@ -226,6 +226,19 @@ export const CUP_FSM_MEMORY: FsmMemory = {
   ],
 };
 
+/** 고른 행동의 FSM 규칙 자리(대시보드 생각 말풍선 「상태」 칩). */
+export interface FsmRuleAt { state: string; trigger: string }
+
+/**
+ * 고른 행동을 FSM 기억의 states[].rules에서 찾아 그 규칙의 상태 id와 트리거를 준다. PAM 답에는 상태가 없어 기억에서 거꾸로 찾는다.
+ * 대기(null), list 기억, 기억에 없는 행동, 같은 행동이 규칙 여러 개에 있으면(어느 상태인지 모름) null이다.
+ */
+export function fsmRuleOf(memory: PamMemory, kind: "list" | "fsm", action: string | null): FsmRuleAt | null {
+  if (action === null || kind !== "fsm" || !("states" in memory)) return null;
+  const hits = memory.states.flatMap((s) => s.rules.filter((r) => r.action === action).map((r) => ({ state: s.id, trigger: r.trigger })));
+  return hits.length === 1 ? hits[0]! : null;
+}
+
 /** PAM 판단 관찰 텍스트 상한(글자 수). PAM 서비스 pam-predict/2와 같다. */
 export const MAX_OBSERVATION_TEXT = 20_000;
 

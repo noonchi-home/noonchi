@@ -39,6 +39,23 @@ describe("판단 호출", () => {
     expect(pam.bodies).toHaveLength(1);   // 이미 부른 변화로 다시 부르지 않는다
   });
 
+  it("판단 기록에 고른 행동의 FSM 상태와 트리거를 붙인다. 대기·실패면 null이다", async () => {
+    let index = 0;
+    pam = await startFakePam({ predict: () => ({ observation: "o", reasoning: "r", task_index: index }) });
+    const logs: BrainLog[] = [];
+    const records: DecisionRecord[] = [];
+    let now = 10_000;
+    const d = new Decider({ pam: new PamClient({ url: pam.url }), world: emptyWorld(), trigger: event(),
+      tasks: () => [...CUP_TASKS], memory, emit: (l) => logs.push(l), onDecision: (r) => records.push(r), offsetMinutes: 540, clock: { now: () => now } });
+    const poke = async () => { d.onChanges([{ kind: "appeared", at_ms: now, subject: "cup_1", text: "컵 cup_1 보임", meaningful: true }]); d.tick(); await d.idle(); now += 1000; };
+    await poke();
+    index = -1;
+    await poke();
+    const fsm = { state: "left_cup", trigger: CUP_FSM_MEMORY.states[1]!.rules[0]!.trigger };
+    expect(logs.filter((l) => l.type === "decision").map((l) => l.type === "decision" && [l.action, l.fsm])).toEqual([["컵 치우기", fsm], [null, null]]);
+    expect(records.map((r) => r.fsm)).toEqual([fsm, null]);
+  });
+
   it("PAM에 닿지 않다가 닿으면 연결 끊김·연결됨을 한 번씩 기록한다. 닿지 않은 판단은 실패로 남긴다", async () => {
     const logs: BrainLog[] = [];
     const records: DecisionRecord[] = [];

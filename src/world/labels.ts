@@ -5,6 +5,9 @@ import { CLASSES, DAY_PARTS, STATES, WEEKDAYS } from "./vocab.js";
 /** 종류 → 글(컵). */
 export const OBJECT_NAME: Record<string, string> = Object.fromEntries(Object.entries(CLASSES).map(([k, c]) => [k, c.label]));
 
+/** PAM FSM 기억의 상태 id → 대시보드 생각 말풍선 「상태」 칩 글. 여기 없는 상태는 칩을 보이지 않는다. */
+export const FSM_STATE_TEXT: Record<string, string> = { drinking: "컵으로 마시는 중", left_cup: "컵을 두고 자리를 뜸" };
+
 /** YOLO 기록 글: 이 프레임에 찾은 것이 없음, 감지기가 없어 VLM만 돎. */
 export const YOLO_TEXT = { none: "감지 없음", noDetector: "감지기 없음" };
 
