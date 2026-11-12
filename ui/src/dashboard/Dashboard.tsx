@@ -14,7 +14,7 @@ import type { TwinEngine } from "../twin3d/engine";
 import { LiveQueue, attachLive } from "../twin3d/live";
 import { BAKE_VIEWS } from "../twin3d/projection";
 import { Twin3D, useLayoutBox } from "../twin3d/Twin3D";
-import { focusOf, still, wholeOf, wideCamera, type Camera } from "./camera";
+import { focusOf, homeCamera, livedOf, still, wholeOf, wideCamera, type Camera } from "./camera";
 import { currentStep, facingOf, isOpen, stepIndex, thoughtOf } from "./data";
 import { DashboardScreen } from "./DashboardScreen";
 import { debugPhone, debugQuery, useDebugSteps, type Moment } from "./debug";
@@ -92,7 +92,7 @@ function useHomeData(home: string | null): HomeData | null {
 /**
  * 구운 3D 트윈(TwinStage와 같은 틀): 캔버스와 그 위 표시 판(MapOverlay: 경로·목적지·확인한 것·어둡게 한 방·말풍선).
  * 계획·맞춘 눈은 대시보드 자료(data.ts)의 것이다. 클로이드(맞춘 눈)는 엔진 장면의 마스코트 인형 + 시야 원뿔이다(engine.setEye).
- * 지도 카메라는 그 단계에 중요한 것(focusOf, 지켜보기는 집 전체)을 지도 카메라 칸(layout.camPad 안쪽: 미니맵·말풍선·마스코트 밖)에 맞추고, 작은 눈 움직임(still)에는 그대로 둔다.
+ * 지도 카메라는 그 단계에 중요한 것(focusOf)을, 지켜보기는 집 전체보다 당긴 기본 보기(homeCamera: 사람이 있는 방을)를 지도 카메라 칸(layout.camPad 안쪽: 미니맵·말풍선·마스코트 밖)에 맞추고, 작은 눈 움직임(still)에는 그대로 둔다.
  * 바뀌면 CAMERA_MS 동안 옮긴다(움직임 줄이기면 바로). 종류를 정하기 전(home null)에는 캔버스 없이 틀만.
  * 엔진이 뜨고 버려질 때 onEngine, 첫 그림을 그리면 onReady.
  */
@@ -117,9 +117,13 @@ function BakedStage({ home, layout, plan, eye, checks, devices, onEngine: toLive
     [v, homeData, plan, eye, list, engine],
   );
   const roomSets = useMemo(() => (frame?.plan && homeData ? roomSetsOf(frame.plan, homeData.index) : []), [frame?.plan, homeData]);
-  // 집 전체(모든 방): 지켜보기에 맞출 곳이고 가장 먼 보기다
+  // 집 전체(모든 방)는 가장 먼 보기, 사람이 있는 방(거실·주방·식당)은 지켜보기 기본 보기가 얹은 것 밖에 두는 곳이다
   const whole = useMemo(() => (homeData ? wholeOf(homeData.index.shapes) : null), [homeData]);
-  const want = v && size.width > 0 && size.height > 0 ? wideCamera(v, size, frame && homeData ? focusOf(frame, homeData.index.shapes) : null, layout.camPad, whole) : null;
+  const lived = useMemo(() => (homeData ? livedOf(homeData.index.shapes) : null), [homeData]);
+  const focus = frame && homeData ? focusOf(frame, homeData.index.shapes) : null;
+  // 계획 단계는 그 단계에 중요한 것, 지켜보기는 기본 보기(집 전체보다 HOME_ZOOM배 당김)
+  const want = !v || size.width <= 0 || size.height <= 0 ? null
+    : !focus && whole && lived ? homeCamera(size, whole, lived, layout.camPad) : wideCamera(v, size, focus, layout.camPad, whole);
   const last = useRef<Camera | null>(null);
   const cam = want && last.current && still(last.current, want) ? last.current : want;
   useLayoutEffect(() => { last.current = cam; });
