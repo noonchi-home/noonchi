@@ -91,6 +91,21 @@ describe("설정 흐름 서버", () => {
     expect(r.json.devices_saved).toBe(false);
   });
 
+  it("POST /api/setup/assist가 돕는 방식을 바꾸고 GET /api/setup에 보인다. 틀린 값은 400이고, 운영 모드를 바꿔도 그대로다", async () => {
+    srv = await startServer({ env: env(runtime()), log: () => {} });
+    expect((await get("/api/setup")).json).toMatchObject({ assist: "noonchi", mode: "test" });
+    expect(srv.assist).toBe("noonchi");
+    const r = await post("/api/setup/assist", { assist: "coach" });
+    expect(r.status).toBe(200);
+    expect(r.json).toMatchObject({ ok: true, assist: "coach", mode: "test" });
+    expect((await get("/api/setup")).json.assist).toBe("coach");
+    expect(srv.assist).toBe("coach");
+    for (const bad of [{ assist: "teacher" }, { assist: null }, {}]) expect((await post("/api/setup/assist", bad)).status).toBe(400);
+    expect((await get("/api/setup")).json.assist).toBe("coach");
+    expect((await post("/api/setup/mode", { mode: "test" })).json).toMatchObject({ mode: "test", assist: "coach" });
+    expect((await post("/api/setup/assist", { assist: "noonchi" })).json.assist).toBe("noonchi");
+  });
+
   it("집을 바꾸면 허브·에이전트·트윈이 새 집으로, 다시 붙은 WS hello도 새 집", async () => {
     srv = await startServer({ env: env(runtime(), { PHONE_PORT: "0", PHONE_HOST: "127.0.0.1" }), log: () => {} });
     const phoneUrls = srv.phoneUrls;

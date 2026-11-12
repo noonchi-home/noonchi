@@ -9,7 +9,7 @@ import type { Policy } from "../agent/policy.js";
 import { agentEndpoint } from "../agent/providers/index.js";
 import type { BrainLog } from "../contract/events.js";
 import type { PlanView } from "../contract/plan.js";
-import type { ControlMode, SetupView, ThinqDeviceView } from "../contract/setup.js";
+import type { AssistMode, ControlMode, SetupView, ThinqDeviceView } from "../contract/setup.js";
 import type { SignalHub } from "../hub/signals.js";
 import { HistoryDb, historyTzMinutes } from "../history/db.js";
 import { REFLECT_TEXT } from "../history/labels.js";
@@ -102,6 +102,8 @@ export interface RunningServer {
   readonly setup: SetupStore;
   /** 지금 운영 모드. */
   readonly mode: ControlMode;
+  /** 지금 돕는 방식(눈치·코치). */
+  readonly assist: AssistMode;
   /** 기록 DB(RUNTIME_DIR/noonchi.db). 집을 바꿔도 같다. */
   readonly history: HistoryDb;
   /** 다른 집으로 바꾼다(POST /api/setup/home과 같음). */
@@ -147,7 +149,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   };
   const ctx: HomeContext = {
     env, log, runtimeDir, importer: opts.importer, matter: opts.matter, brain: opts.brain, servedPhoneUrls: opts.servedPhoneUrls, webDir: opts.webDir,
-    sources: (homeId, ids) => store.sources(homeId, ids), mode: () => mode, allowOrigin, planToken: env.PLAN_TOKEN?.trim() || undefined, ready: makeReady({ endpoints, agent: agentEndpoint(env), db }),
+    sources: (homeId, ids) => store.sources(homeId, ids), mode: () => mode, assist: () => store.assist(), allowOrigin, planToken: env.PLAN_TOKEN?.trim() || undefined, ready: makeReady({ endpoints, agent: agentEndpoint(env), db }),
     history: { db, device: feed.device.emit, brain: feed.brain.emit, plan: feed.plan.emit, reflect },
   };
   const studioDir = resolveTwinStudioDir(env.TWIN_STUDIO_DIR);
@@ -281,7 +283,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       home: h ? { id: h.twin.home.id, name: h.twin.home.name } : null, homes: homes(),
       rooms: h?.twin.rooms ?? [], devices: h ? deviceViews(h) : [], devices_saved: h ? store.hasSources(h.twin.home.id) : false,
       position: { start: !!h?.start, layout: !!h?.layout, phone_urls: h?.phoneUrls ?? [] },
-      mode, thinq: { ready: thinqConfig(env).ok }, pairs: h ? store.pairs(h.twin.home.id, deviceIds(h), { quiet: true }) : {},
+      mode, assist: store.assist(), thinq: { ready: thinqConfig(env).ok }, pairs: h ? store.pairs(h.twin.home.id, deviceIds(h), { quiet: true }) : {},
     };
   };
 
@@ -328,6 +330,13 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
         if (changed) feed.mode.emit(want);
         if (current) applyControl(current);
         log(`운영 모드: ${want === "live" ? "실제(짝지은 가전은 ThinQ)" : "시험"}`);
+        return view();
+      },
+      setAssist(body) {
+        const want = body.assist;
+        if (want !== "noonchi" && want !== "coach") throw new HttpError(400, "assist는 noonchi(눈치) 또는 coach(코치)여야 합니다.");
+        store.setAssist(want);
+        log(`돕는 방식: ${want === "coach" ? "코치" : "눈치"}`);
         return view();
       },
       async thinqDevices() {
@@ -417,6 +426,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     get phoneUrls() { return live().phoneUrls; },
     setup: store,
     get mode() { return mode; },
+    get assist() { return store.assist(); },
     history: db,
     switchHome: async (id) => {
       await switchHome(id);

@@ -189,3 +189,35 @@ describe("effectiveSources", () => {
     });
   });
 });
+
+describe("돕는 방식(눈치·코치)", () => {
+  it("메모리 방식: 기본은 눈치 모드, 바꾸면 그대로, 파일은 만들지 않는다", () => {
+    const dir = tmp();
+    const s = new SetupStore({ runtimeDir: dir, persist: false });
+    expect(s.assist()).toBe("noonchi");
+    s.setAssist("coach");
+    expect(s.assist()).toBe("coach");
+    expect(existsSync(join(dir, "setup.json"))).toBe(false);
+  });
+
+  it("assist가 없거나 틀린 옛 setup.json은 noonchi로 읽는다", () => {
+    const dir = tmp();
+    writeFileSync(join(dir, "setup.json"), JSON.stringify({ version: 1, home: "oneroom", done: true, mode: "live" }));
+    expect(new SetupStore({ runtimeDir: dir, persist: true }).assist()).toBe("noonchi");
+    writeFileSync(join(dir, "setup.json"), JSON.stringify({ version: 1, home: "oneroom", done: true, assist: "teacher" }));
+    expect(new SetupStore({ runtimeDir: dir, persist: true }).assist()).toBe("noonchi");
+  });
+
+  it("setAssist(coach) 뒤 파일에 assist: coach가 있고 mode는 그대로다. 운영 모드를 바꿔도 돕는 방식은 그대로다", () => {
+    const dir = tmp();
+    const a = new SetupStore({ runtimeDir: dir, persist: true });
+    a.setHome("oneroom");
+    a.setMode("live");
+    a.setAssist("coach");
+    expect(JSON.parse(readFileSync(join(dir, "setup.json"), "utf8"))).toMatchObject({ version: 1, home: "oneroom", mode: "live", assist: "coach" });
+    a.setMode("test");
+    expect(JSON.parse(readFileSync(join(dir, "setup.json"), "utf8"))).toMatchObject({ mode: "test", assist: "coach" });
+    const b = new SetupStore({ runtimeDir: dir, persist: true });
+    expect([b.mode(), b.assist()]).toEqual(["test", "coach"]);
+  });
+});

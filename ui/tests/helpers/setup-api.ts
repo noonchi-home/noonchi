@@ -23,7 +23,7 @@ export function setupView(over: Partial<SetupView> = {}): SetupView {
     ],
     devices_saved: false,
     position: { start: false, layout: false, phone_urls: [] },
-    mode: "test", thinq: { ready: true }, pairs: {},
+    mode: "test", assist: "noonchi", thinq: { ready: true }, pairs: {},
     ...over,
   };
 }
