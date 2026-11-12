@@ -21,9 +21,10 @@ import { WorldState, type CloserPass } from "../src/world/state.js";
 import { sha256, type EngineFrame } from "../src/observe/ring.js";
 import type { Detection } from "../src/brain/detector.js";
 import type { CameraView } from "../src/phone/session.js";
-import { smallFloor } from "./helpers/floor.js";
+import { floorPlanFrom } from "../src/plan/route.js";
+import { SMALL_SCENE, smallFloor } from "./helpers/floor.js";
 import { standing } from "./helpers/poses.js";
-import { planContext, startFakePlanner, testPlanner, type FakePlanner } from "./helpers/planner.js";
+import { fillSteps, planCalls, planContext, startFakePlanner, testPlanner, type FakePlanner } from "./helpers/planner.js";
 import { det } from "./helpers/detectors.js";
 
 let llm: FakePlanner;
@@ -67,7 +68,7 @@ function setup(over: Partial<TrackerOptions> & { w?: () => WorldView; check?: ()
   const logs: BrainLog[] = [];
   const phone: PlannedCommandMessage[] = [];
   const clock = { t: 10_000, now() { return this.t; } };
-  const plans = new PlanHub(smallFloor(), () => {}, () => "t");
+  const plans = over.plans ?? new PlanHub(smallFloor(), () => {}, () => "t");
   const approvals = over.approvals ?? store({ "task:컵 치우기": "approve" });
   const w = over.w ?? (() => world([cup("present")]));
   const planner = testPlanner(llm);
@@ -347,6 +348,126 @@ describe("실행 추적: 단계마다 실제 폰 명령", () => {
     expect(exec().find((l) => l.plan_id === "plan:pam-1" && l.state === "failed")).toMatchObject({ text: EXEC_TEXT.superseded });
     expect(phone.map((m) => [m.type, m.id])).toEqual([["command", "plan:pam-1"], ["command_clear", "plan:pam-1"], ["command", "plan:pam-2"]]);
     expect(plans.current()).toMatchObject({ id: "plan:pam-2", supersedes: "plan:pam-1", status: "running" });
+  });
+});
+
+describe("실행 추적: 그 자리에서 하는 일(do, 채워 주기)", () => {
+  const WATER = "컵에 물 채워 주기";
+  const water: DecisionRecord = { ...decision, action: WATER, prediction: { ...pred, task_index: 5 } };
+  const FRIDGE = { id: "fridge_1", label: "냉장고", position: [7.5, 0.9, 0.5] as [number, number, number] };
+  const fridgeFloor = () => floorPlanFrom({ ...structuredClone(SMALL_SCENE), objects: [...structuredClone(SMALL_SCENE.objects), { id: "fridge_1", type: "fridge", room: "kitchen", plan: { position: [7.5, 0.5] } }] });
+  const fact = (value: string, at: number) => ({ value, at_ms: at, since_ms: at, certainty: "confirmed" as const });
+  /** 식탁 위 컵. contents: 컵 안 사실과 그 시각. */
+  const tableCup = (contents?: [string, number], seen = 9_000): WorldObject => ({ ...cup("present", undefined, seen), ...(contents ? { facts: { contents: fact(contents[0], contents[1]) } } : {}) });
+  const bottle = (place: string, at: number): WorldObject => ({ ...cup("present", place, at), id: "bottle_1", cls: "bottle", surface: null, surface_label: null, first_seen_ms: at });
+  function fillSetup(over: Parameters<typeof setup>[0] = {}) {
+    const plans = new PlanHub(fridgeFloor(), () => {}, () => "t");
+    llm.scripts[WATER] = () => [planCalls(fillSteps({ fridge: "fridge_1", table: "table_1", cup: "cup_1", drink: "물" }))];
+    return setup({ plans, locate: (id) => ({ ...PLACES, fridge_1: FRIDGE })[id], approvals: store({ [`task:${WATER}`]: "approve" }), ...over });
+  }
+
+  it("물 채워 주기는 네 명령을 차례로 보내고 kind는 go·pick·go·do다. 병 집기는 병이 손에 있음일 때, 따르기는 컵이 내용물 있음일 때만 넘어간다. 답 단추는 「완료」 하나다", async () => {
+    let w = world([tableCup(["empty", 9_000])]);
+    const { t, decide, clock, plans, exec, commands, spoken, last, steps } = fillSetup({ w: () => w });
+    await decide(water);
+    expect(last()).toEqual({ type: "command", id: "plan:pam-1", step: "plan:pam-1:1", text: "냉장고로 가 주세요", vision: "냉장고까지 거리 모름", choices: DONE, target: FRIDGE, speak: true, kind: "go" });
+    expect(plans.current()).toMatchObject({ goal: WATER, status: "running" });
+    clock.t += 600;
+    t.onEye([7.2, 1]);
+    t.tick();
+    // 2 병 집기: 병은 냉장고 안이라 안 보인다. 대상(고리)은 냉장고, 비전 상태 줄은 없다
+    expect(last()).toEqual({ type: "command", id: "plan:pam-1", step: "plan:pam-1:2", text: "물병을 꺼내 주세요", vision: null, choices: DONE, target: FRIDGE, speak: true, kind: "pick" });
+    // 사람이 무엇인가 들고 있어도(든 것을 모름) 병이 손에 있다고 보이지 않으면 넘기지 않는다
+    clock.t += 600;
+    w = world([tableCup(["empty", 9_000])], "holding_object", clock.t);
+    t.onWorld();
+    t.tick();
+    expect(last()).toMatchObject({ step: "plan:pam-1:2" });
+    // 병이 보여도 냉장고 안이면 넘기지 않는다
+    clock.t += 600;
+    w = world([tableCup(["empty", 9_000]), bottle("in_fridge", clock.t)]);
+    t.onWorld();
+    expect(last()).toMatchObject({ step: "plan:pam-1:2" });
+    clock.t += 600;
+    w = world([tableCup(["empty", 9_000]), bottle("in_hand", clock.t)], "holding_object", clock.t);
+    t.onWorld();
+    expect(last()).toMatchObject({ step: "plan:pam-1:3", text: "식탁으로 가 주세요", vision: "식탁까지 2.0m", target: TABLE, speak: true, kind: "go" });
+    expect(steps()).toEqual(["done", "done", "active", "pending"]);
+    clock.t += 600;
+    t.onEye([6.5, 3]);
+    t.tick();
+    // 4 따르기: 대상은 그 컵, 비전 상태 줄은 컵 안의 지금 값
+    expect(last()).toEqual({
+      type: "command", id: "plan:pam-1", step: "plan:pam-1:4", text: "컵에 물을 따라 주세요", vision: "컵 · 비어 있음", choices: DONE,
+      target: { id: "cup_1", label: "컵", position: [2, 0.75, 1] }, speak: true, kind: "do",
+    });
+    clock.t += 600;
+    t.onWorld();
+    t.tick();
+    expect(last()).toMatchObject({ step: "plan:pam-1:4" });
+    expect(steps()).toEqual(["done", "done", "done", "active"]);
+    // 따른 뒤: 컵이 내용물 있음이면 「완료」 없이 끝난다
+    clock.t += 600;
+    w = world([tableCup(["has_contents", clock.t], clock.t), bottle("on_table", clock.t)]);
+    t.onWorld();
+    expect(last()).toEqual({ type: "command_clear", id: "plan:pam-1" });
+    expect(plans.current()).toMatchObject({ status: "done" });
+    expect(exec().map((l) => l.state)).toEqual(["decided", "planned", "running", "done"]);
+    expect(spoken()).toEqual(["냉장고로 가 주세요", "물병을 꺼내 주세요", "식탁으로 가 주세요", "컵에 물을 따라 주세요"]);
+    expect(commands().filter((m) => m.speak).map((m) => m.kind)).toEqual(["go", "pick", "go", "do"]);
+    expect(commands().every((m) => JSON.stringify(m.choices) === JSON.stringify(DONE))).toBe(true);
+    // 따르기는 놓기가 아니다: 그 컵은 치운 것으로 남지 않는다
+    expect([...t.placed().keys()]).toEqual([]);
+  });
+
+  it("단계 시작 전에 본 내용물 있음으로는 따르기를 넘기지 않는다. 비전 상태 줄은 값이 바뀌면 다시 보낸다. 「완료」로도 넘어간다", async () => {
+    let w = world([tableCup(["has_contents", 9_000])]);
+    const { t, decide, clock, plans, last } = fillSetup({ w: () => w });
+    await decide(water);
+    for (const n of [1, 2, 3]) t.onAnswer("plan:pam-1", `plan:pam-1:${n}`, "done");
+    expect(last()).toMatchObject({ step: "plan:pam-1:4", vision: "컵 · 내용물 있음", kind: "do" });
+    clock.t += 600;
+    t.onWorld();
+    t.tick();
+    expect(last()).toMatchObject({ step: "plan:pam-1:4" });
+    clock.t += 600;
+    w = world([tableCup(["empty", clock.t], clock.t)]);
+    t.onWorld();
+    expect(last()).toMatchObject({ step: "plan:pam-1:4", vision: "컵 · 비어 있음", speak: false });
+    // 컵 안을 모르면 그 컵 자리를 쓴다
+    clock.t += 600;
+    w = world([tableCup(undefined, clock.t)]);
+    t.onWorld();
+    expect(last()).toMatchObject({ step: "plan:pam-1:4", vision: "컵 · 식탁 위", speak: false });
+    expect(t.onAnswer("plan:pam-1", "plan:pam-1:4", "done")).toBe(true);
+    expect(plans.current()).toMatchObject({ status: "done" });
+  });
+
+  it("do 단계가 8초 넘게 안 끝나면 stalled를 kind do로 부른다(그 컵을 가까이 본다)", async () => {
+    const stalls: Stall[] = [];
+    const { t, decide, clock } = fillSetup({ w: () => world([tableCup(["empty", 9_000])]), stalled: (s) => { stalls.push(s); return true; } });
+    await decide(water);
+    for (const n of [1, 2, 3]) t.onAnswer("plan:pam-1", `plan:pam-1:${n}`, "done");
+    clock.t += 7_999;
+    t.tick();
+    expect(stalls).toEqual([]);
+    clock.t += 1;
+    t.tick();
+    expect(stalls).toHaveLength(1);
+    expect(stalls[0]).toMatchObject({
+      planId: "plan:pam-1", stepId: "plan:pam-1:4", kind: "do", command: "컵에 물을 따라 주세요", until: { object: "cup_1", follow: true, facts: { contents: "has_contents" } },
+      stuckMs: 8000, looks: 0, spots: [{ id: "cup_1", label: "컵", position: [2, 0.75, 1] }],
+    });
+  });
+
+  it("평면도 자리에서 하는 do는 비전 상태 줄이 그 자리까지 거리다", async () => {
+    const plans = new PlanHub(fridgeFloor(), () => {}, () => "t");
+    const s = fillSetup({ plans, w: () => world([tableCup(["empty", 9_000])]) });
+    llm.scripts[WATER] = () => [planCalls(fillSteps({ fridge: "fridge_1", table: "table_1", cup: "cup_1", drink: "물" }).map((st, i) => (i === 3 ? { ...st, target: "table_1", until: undefined } : st)))];
+    await s.decide(water);
+    s.t.onEye([6.5, 3]);
+    for (const n of [1, 2, 3]) s.t.onAnswer("plan:pam-1", `plan:pam-1:${n}`, "done");
+    expect(s.last()).toMatchObject({ step: "plan:pam-1:4", vision: "식탁까지 0.5m", target: TABLE, kind: "do" });
   });
 });
 

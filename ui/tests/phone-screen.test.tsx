@@ -105,6 +105,18 @@ describe("위: 미어캣과 지금 명령만", () => {
     });
     expect(texts).toEqual(["식탁으로 가 주세요", "컵을 들어 주세요", "싱크대로 가 주세요", "컵을 싱크대에 넣어 주세요"]);
   });
+
+  it("그 자리에서 하는 일(do 단계) 명령도 지금 명령 자리에 그대로 뜨고, 비전 상태 줄 아래 「완료」 하나다", async () => {
+    const base = SHOTS["pick-cup"].view;
+    const { act, zone } = show({ ...base, command: { ...base.command!, step: "plan:pam-1:4", text: "컵에 물을 따라 주세요", vision: "컵 · 비어 있음" } });
+    expect(zone("top")!.querySelector("[data-phone-text=명령]")).toHaveTextContent(/^컵에 물을 따라 주세요$/);
+    const thumb = zone("thumb")!;
+    expect(within(thumb).getByText("컵 · 비어 있음")).toBeInTheDocument();
+    const buttons = within(thumb).getAllByRole("button");
+    expect(buttons.map((b) => b.textContent)).toEqual(["완료"]);
+    await userEvent.click(buttons[0]!);
+    expect(act.answer).toHaveBeenCalledWith("plan:pam-1", "plan:pam-1:4", "done");
+  });
 });
 
 describe("아래: 엄지 자리 카드(비전 상태 바로 아래 「완료」)", () => {

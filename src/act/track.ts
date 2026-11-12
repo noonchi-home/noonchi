@@ -2,7 +2,7 @@
 // 판단 하나마다 한 번만 정한다: 늦은 답·판단 실패·대기·진행 중(또는 계획을 만드는 중)인 행동과 같은 행동은 기록만 하고, 계획 전 검사(LLM 없음)를
 // 통과하면 에이전트를 계획 모드로 한 번 부른다(planner). 같은 행동은 planGapMs 안에 다시 부르지 않는다(「가까이 본 뒤 다시 판단」으로 닫은 계획은 세지 않는다). 주기 tick은 에이전트를 부르지 않는다.
 // 계획은 어떤 것이든 같은 방법으로 돌린다(src/agent/planTools.ts AgentStep):
-// - 사람 단계(go·pick·place): 실제 폰(에이전트의 손, src/contract/phone.ts)에 사람에게 하는 명령 하나와 「완료」를 보내고(소리로도 읽음),
+// - 사람 단계(go·pick·place·do): 실제 폰(에이전트의 손, src/contract/phone.ts)에 사람에게 하는 명령 하나와 「완료」를 보내고(소리로도 읽음),
 //   끝나는 조건(World State 낱말 조건, ConditionWatch)이 참이거나 「완료」면 다음 단계로. repeatMs마다 명령을 다시 읽는다.
 //   명령마다 대상 하나(목표 자리·그 물건, 트윈 자리)를 같이 보내 실제 폰이 그것에만 고리를 그린다. 비전 상태는 바뀔 때만, visionMs에 한 번까지.
 // - 질문(ask): 같은 자리에 질문과 답 단추. 답을 받으면 다음 단계(마지막이거나 끝내는 답이면 완료). 알림(say): 한 줄을 읽고 조건(기본 몇 초)이 되면 다음.
@@ -15,7 +15,8 @@
 // 같은 물건 따라가기: 기준점을 맞춘 뒤 물건이 identityM 넘게 움직이면 World State가 새 id를 붙인다. 계획을 받을 때 그 종류의 다른 물건을 적어 두고,
 // 계획 물건과 그 뒤에 새로 생긴 같은 종류 물건을 모두 그 물건으로 본다(조건의 follow, 비전 상태 줄, 고리).
 // 폰 근처 조건은 실행 추적이 받은 맞춘 눈(받은 시각)과 World State 눈 중 새것으로 본다.
-// 멈춘 단계(관찰 모드 A): 끝나는 조건이 있는 집기·놓기 단계가 stallMs 넘게(단계 시작 뒤, 받은 부름 뒤) 안 끝나면 stalled를 부른다. 단계마다 stallMax번,
+// 그 자리에서 하는 일(do: 따르기): 대상은 그 일을 받는 World State 물건(없으면 평면도 자리)이다. 집기·놓기가 아니라 든 물건(carried)·치운 물건(placed)을 바꾸지 않는다.
+// 멈춘 단계(관찰 모드 A): 끝나는 조건이 있는 집기·놓기·do 단계가 stallMs 넘게(단계 시작 뒤, 받은 부름 뒤) 안 끝나면 stalled를 부른다. 단계마다 stallMax번,
 // 받은 것만 센다. 받은 부름은 끝날 때 Stall.settle(counted)로 셈을 정하고, 자원 사정(새 사진 모자람·VLM 자리 없음)은 settle(false)로 돌려받는다.
 // 알림마다 그 단계 세대와 신호가 있고, 단계가 끝나면(다음 단계·완료·실패·그만·새 계획·멈춤) 신호를 끊는다. 지난 세대의 settle은 아무것도 하지 않는다.
 // 같은 물건 따라가기에서 가까이 봐서 지키는 중이거나 옮김 표시(World State followed_by)가 있는 물건은 「아직 있음」으로 세지 않는다.
@@ -30,7 +31,7 @@
 import type { BrainLog, ExecState } from "../contract/events.js";
 import type { PhoneStepKind, PlannedCommand, PlannedCommandMessage } from "../contract/phone.js";
 import type { PlanView, XZ } from "../contract/plan.js";
-import type { WorldEye, WorldObject, WorldView } from "../contract/world.js";
+import type { Facet, WorldEye, WorldObject, WorldView } from "../contract/world.js";
 import type { LookSpot } from "../observe/crop.js";
 import type { FloorPlan } from "../plan/floor.js";
 import type { PlanHub } from "../plan/hub.js";
@@ -106,7 +107,7 @@ export const TRACK_DEFAULTS = { repeatMs: 30_000, visionMs: 500, recheckMs: 3000
  *  stallMax에 넣지 않는다. settle(true)는 그대로 센다. 처음 한 번만 듣고, 그 단계 세대가 지났으면(다른 단계·닫힌 계획) 아무것도 하지 않는다.
  *  다음 부름은 셈과 상관없이 받은 부름에서 stallMs 뒤다. */
 export interface Stall {
-  planId: string; stepId: string; kind: "pick" | "place"; label: string; command: string; until: Condition;
+  planId: string; stepId: string; kind: "pick" | "place" | "do"; label: string; command: string; until: Condition;
   stuckMs: number; looks: number; spots: LookSpot[]; gen: number; signal: AbortSignal;
   settle(counted: boolean): void;
 }
@@ -422,6 +423,8 @@ export class ExecutionTracker {
     const ids = new Set<string>();
     for (const s of r.plan.steps) {
       if (s.object) ids.add(s.object);
+      // 그 자리에서 하는 일의 대상 물건도 계획 물건이다(옮겨 새 id가 붙으면 이어 간다)
+      if (s.kind === "do" && s.target && world.objects.some((o) => o.id === s.target)) ids.add(s.target);
       if (s.until) for (const n of objectNames(s.until)) if (world.objects.some((o) => o.id === n)) ids.add(n);
     }
     const others = new Map([...ids].map((id) => [id, new Set(world.objects.filter((o) => o.cls === clsOf(world, id) && o.id !== id).map((o) => o.id))]));
@@ -629,7 +632,7 @@ export class ExecutionTracker {
   /** 끝나는 조건이 있는 집기·놓기 단계가 stallMs 넘게(단계 시작 뒤, 받은 부름 뒤) 안 끝나면 관찰 모드를 부른다. 단계마다 stallMax번까지.
    *  받은 것만 먼저 세고, 그 부름의 settle(false)는 셈을 돌려준다(같은 계획·단계 세대일 때만, 한 번). */
   private stall(r: Run, step: AgentStep, now: number): void {
-    if (!this.o.stalled || (step.kind !== "pick" && step.kind !== "place") || !step.until || !r.sent || r.asking || !r.stepEnd) return;
+    if (!this.o.stalled || (step.kind !== "pick" && step.kind !== "place" && step.kind !== "do") || !step.until || !r.sent || r.asking || !r.stepEnd) return;
     if (r.looks >= this.cfg.stallMax || now - r.stepAt < this.cfg.stallMs || now - r.lookAt < this.cfg.stallMs) return;
     const gen = r.gen;
     // asking: stalled를 부르는 중(그 안에서 정하면 받은 뒤 셈에 바로 반영), open: 받았고 아직 안 정함, done: 정함(또는 받지 않음)
@@ -704,8 +707,18 @@ export class ExecutionTracker {
     };
   }
 
-  /** 비전 상태 한 줄: go는 든 물건 자리와 목표까지 거리, pick·place는 그 물건 자리. 비전으로 못 보는 단계면 null. */
+  /** 비전 상태 한 줄: go는 든 물건 자리와 목표까지 거리, pick·place는 그 물건 자리. 비전으로 못 보는 단계면 null.
+   *  do는 대상이 World State 물건이면 그 이름과 끝나는 조건이 보는 면의 지금 값(없으면 그 물건 자리), 평면도 자리면 거기까지 거리. */
   private vision(r: Run, step: AgentStep, world: WorldView): string | null {
+    if (step.kind === "do") {
+      const id = step.target;
+      if (!id) return null;
+      if (this.o.floor().objects.has(id)) return VISION_TEXT.distance(this.placeName(id), this.distance(id, world));
+      const o = ours(r, id, world).find((x) => x.status !== "gone") ?? null;
+      const value = step.until ? factFacets(step.until).map((f) => o?.facts[f]?.value).find((v) => v !== undefined) : undefined;
+      const cls = clsOf(world, id);
+      return `${OBJECT_NAME[cls] ?? cls} · ${value ? STATE_TEXT[value] ?? value : place(o)}`;
+    }
     if (step.kind === "go") {
       const carried = this.carried(r);
       const place = this.placeName(step.target);
@@ -731,9 +744,10 @@ export class ExecutionTracker {
     return (type && placeShort(type)) || this.o.locate?.(id)?.label || id;
   }
 
-  /** 명령 대상(실제 폰 고리 하나): 집기는 그 물건(World State 자리), 그 밖은 목표 자리(평면도). 자리를 모르면 null. */
+  /** 명령 대상(실제 폰 고리 하나): 집기는 그 물건, do는 그 일을 받는 물건(World State 자리), 그 밖은 목표 자리(평면도). 자리를 모르면 null. */
   private target(r: Run, step: AgentStep, world: WorldView): PlannedCommand["target"] {
-    const obj = step.kind === "pick" && step.object ? ours(r, step.object, world).find((o) => o.status !== "gone") : undefined;
+    const thing = step.kind === "pick" ? step.object : step.kind === "do" ? step.target : null;
+    const obj = thing ? ours(r, thing, world).find((o) => o.status !== "gone") : undefined;
     if (obj?.position) return { id: obj.id, label: OBJECT_NAME[obj.cls] ?? obj.cls, position: obj.position };
     const id = step.target;
     const at = id ? this.o.locate?.(id) : undefined;
@@ -813,6 +827,17 @@ function ours(r: Run, id: string, world: WorldView): WorldObject[] {
 function objectLine(r: Run, id: string, world: WorldView): string {
   const cls = clsOf(world, id);
   return `${OBJECT_NAME[cls] ?? cls} · ${place(ours(r, id, world).find((o) => o.status !== "gone") ?? null)}`;
+}
+
+/** 조건이 보는 물건 사실의 면(쓴 순서, 겹치지 않게). */
+function factFacets(c: Condition, out: Facet[] = []): Facet[] {
+  if ("all" in c) c.all.forEach((x) => factFacets(x, out));
+  else if ("any" in c) c.any.forEach((x) => factFacets(x, out));
+  else if ("seq" in c) c.seq.forEach((x) => factFacets(x, out));
+  else if ("not" in c) factFacets(c.not, out);
+  else if ("for_s" in c) factFacets(c.cond, out);
+  else if ("object" in c) for (const f of Object.keys(c.facts ?? {}) as Facet[]) if (!out.includes(f)) out.push(f);
+  return out;
 }
 
 /** 승인 질문은 승인·거절, 다시 묻기는 계속·그만, 사람 단계는 「완료」 하나, 질문은 그 답들, 알림·기다리기·기기는 없음. */

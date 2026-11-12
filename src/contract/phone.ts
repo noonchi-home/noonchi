@@ -8,8 +8,8 @@ export interface PhoneChoice { id: string; label: string }
 /** 명령 대상 하나(실제 폰은 이것에만 작은 고리를 그린다). ar: 실제 폰 AR 좌표(폰 서버가 맞춘 기준점으로 트윈 자리를 바꾼 것). */
 export interface PhoneTarget { id: string; label: string; ar: [number, number, number] }
 
-/** 사람 단계 종류: 가기·집기·놓기. */
-export type PhoneStepKind = "go" | "pick" | "place";
+/** 사람 단계 종류: 가기·집기·놓기·그 자리에서 하는 일(따르기). */
+export type PhoneStepKind = "go" | "pick" | "place" | "do";
 
 /**
  * 서버 → 실제 폰: 지금 할 명령. 바뀔 때마다 통째로 보낸다. 같은 id·step이면 같은 명령이고 비전 상태만 바뀐 것이다.
