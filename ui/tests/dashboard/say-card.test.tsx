@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { pageLayout } from "../../src/dashboard/layout";
 import { MASCOT } from "../../src/dashboard/mascot-image";
 import { SayCard } from "../../src/dashboard/SayCard";
+import { LEFT_SAY } from "./fixtures";
 
 const L = pageLayout({ width: 1920, height: 1080 }, MASCOT);
 const SHORT = "식탁을 보고 있어요.";
@@ -59,6 +60,13 @@ describe("말풍선 카드", () => {
       ["식탁 컵을 치우기로 했어요.", "true"],
       ["컵을 들라고 했어요.", null],
     ]);
+  });
+
+  it("「컵을 그대로 두기로 했어요.」를 받으면 그 한 줄만 보인다", () => {
+    const { rerender } = render(<SayCard say={SHORT} box={L.bubble} animate={false} />);
+    rerender(<SayCard say={LEFT_SAY} box={L.bubble} animate={false} />);
+    expect(LEFT_SAY).toBe("컵을 그대로 두기로 했어요.");
+    expect(lines().filter((l) => l.getAttribute("aria-hidden") !== "true").map((l) => l.textContent)).toEqual([LEFT_SAY]);
   });
 
   it("같은 말이 다시 오면 아무것도 바뀌지 않는다", () => {

@@ -9,6 +9,8 @@ import { TAG_H, tagWidth } from "../../src/dashboard/detections";
 import { pageLayout, THOUGHT as THOUGHT_SIZE, type Rect } from "../../src/dashboard/layout";
 import { MASCOT } from "../../src/dashboard/mascot-image";
 import { WORDS } from "../../src/dashboard/words";
+import { EMPTY_DASH, reduceDash, thoughtOf } from "../../src/dashboard/data";
+import { BRANCHES, LEFT_SAY, branchDecision, type Branch } from "./fixtures";
 import { CLEAR_CUP, EYE_FRAMES, HUB, imageSlot, LEFT_CUP_STATE, PHONE_URL, PLAN, REASON, SAY, screenAt, seenEvent, seenOf, THOUGHT } from "./fixtures";
 import { createSeenStore } from "../../src/dashboard/masks";
 import { act } from "@testing-library/react";
@@ -292,6 +294,18 @@ describe("대시보드 생각 말풍선(마스코트 위)", () => {
     expect(now()).toHaveTextContent(REASON);
     expect(chips().map((c) => c.textContent)).toEqual([`상태 · ${LEFT_CUP_STATE}`, `판단 · ${CLEAR_CUP}`]);
     expect(bubble().contains(now())).toBe(true);
+  });
+
+  it("컵 갈래: 계획이 없는 그대로 두기도 생각 한 문장과 칩 둘 「상태 · 컵을 두고 자리를 뜸」「판단 · 컵 그대로 두기」를 보이고, 물 채워 주기는 「상태 · 먹거나 마시는 중」「판단 · 컵에 물 채워 주기」다", () => {
+    const of = (b: Branch) => thoughtOf(reduceDash(EMPTY_DASH, branchDecision(b, 1), 0))!;
+    const { rerender } = draw(screenAt(0, { thought: of(BRANCHES.leave), say: LEFT_SAY }));
+    expect(thought()).toHaveAttribute("data-thought", "shown");
+    expect(now()).toHaveTextContent(BRANCHES.leave.reasoning);
+    expect(chips().map((c) => c.textContent)).toEqual(["상태 · 컵을 두고 자리를 뜸", "판단 · 컵 그대로 두기"]);
+    rerender(<DashboardScreen {...screenAt(1, { thought: of(BRANCHES.water) })} />);
+    expect(chips().map((c) => c.textContent)).toEqual(["상태 · 먹거나 마시는 중", "판단 · 컵에 물 채워 주기"]);
+    rerender(<DashboardScreen {...screenAt(1, { thought: of(BRANCHES.cola) })} />);
+    expect(chips().map((c) => c.textContent)).toEqual(["상태 · TV 보는 중", "판단 · 컵에 콜라 따라 주기"]);
   });
 
   it("PAM이 대기(행동 없음)면 말풍선을 숨긴다: 칸은 그대로 두고 opacity 0이며 읽어 주지 않는다", () => {

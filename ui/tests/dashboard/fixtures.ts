@@ -1,7 +1,7 @@
 // 대시보드 화면 시험 자료: 지켜보기(0)와 컵 치우기 4단계 계획(1~4, 계획 계약 PlanView), 세로 그림 칸(가짜 단계용 image), 물체 모양 하나(seenOf),
 // 눈 그림 넷(405×720)과 그림마다 YOLO 상자(EYE_FRAMES). 상자는 시안 scenario.ts BOX를 EYE_CROP_X0만큼 옮겨 그림 끝에서 자른 값이다.
 import { createElement } from "react";
-import type { HealthView } from "../../../src/contract/events.ts";
+import type { HealthView, ServerMessage } from "../../../src/contract/events.ts";
 import type { PlanStep, PlanView } from "../../../src/contract/plan.ts";
 import type { ScreenProps } from "../../src/dashboard/DashboardScreen";
 import type { Detection } from "../../src/dashboard/detections";
@@ -95,6 +95,31 @@ export const REASON = "사람이 자리를 비운 뒤에도 컵이 식탁에 남
 export const LEFT_CUP_STATE = "컵을 두고 자리를 뜸";
 /** 계획 단계의 생각 말풍선(PAM의 생각 한 문장·FSM 상태 이름표·판단). 지켜보기는 대기라 없다. */
 export const THOUGHT: Thought = { reasoning: REASON, state: LEFT_CUP_STATE, action: CLEAR_CUP };
+
+/** 컵 갈래 판단 고정 자료: 행동, 그 규칙이 있는 FSM 상태 id·트리거(src/brain/decision.ts CUP_FSM_MEMORY와 같다, data.test.ts가 견준다), PAM의 생각 한 문장. */
+export interface Branch { action: string; state: string; trigger: string; reasoning: string }
+export const BRANCHES = {
+  clear: { action: CLEAR_CUP, state: "left_cup", trigger: "사용자가 자리를 비웠고 컵이 비어 있으며 아무도 컵을 들거나 만지지 않는다.", reasoning: REASON },
+  leave: { action: "컵 그대로 두기", state: "left_cup", trigger: "사용자가 자리를 비웠지만 컵에 음료가 남아 있다.", reasoning: "컵에 음료가 남아 있어 돌아와서 마실 수 있어요." },
+  water: { action: "컵에 물 채워 주기", state: "drinking", trigger: "사용자가 식탁에서 먹는 중이고 식탁 위 컵이 비어 있으며 컵을 들거나 만지지 않는다.", reasoning: "식사 중인데 컵이 비어 있어요." },
+  cola: { action: "컵에 콜라 따라 주기", state: "watching_tv", trigger: "사용자가 TV를 보는 중이고 곁의 컵이 비어 있으며 컵을 들거나 만지지 않는다.", reasoning: "TV를 보는 중인데 컵이 비어 있어요." },
+} as const satisfies Record<string, Branch>;
+/** 「그대로 두기」를 고른 뒤 말풍선 카드 말(src/plan/labels.ts SAY_TEXT.left). */
+export const LEFT_SAY = "컵을 그대로 두기로 했어요.";
+const BRANCH_TASKS = ["컵 치우기", "사용자에게 물어보기", "세탁물 건조기로 옮기기", "에어컨 켜기", "컵 그대로 두기", "컵에 물 채워 주기", "컵에 콜라 따라 주기"];
+
+/** 판단 방송 한 줄. b가 null이면 대기(-1). */
+export function branchDecision(b: Branch | null, seq: number): ServerMessage {
+  return {
+    type: "brain",
+    event: {
+      type: "decision", at_ms: 1_794_214_804_000 + seq * 5000, id: `pam-${seq}`, seq, text_sent: "관찰", status: "valid",
+      prediction: { observation: "관찰", reasoning: b?.reasoning ?? "할 일이 없어요.", task_index: b ? BRANCH_TASKS.indexOf(b.action) : -1 },
+      action: b?.action ?? null, fsm: b ? { state: b.state, trigger: b.trigger } : null, memory_version: 1,
+      world: { objects: [], person_visible: false, vlm_missing: 0, yolo_missing: 0 },
+    },
+  };
+}
 
 /** 트윈 칸 지도 자리에 넣는 그림(캔버스). */
 export const MAP = createElement("canvas", { "data-fixture-map": "" });
