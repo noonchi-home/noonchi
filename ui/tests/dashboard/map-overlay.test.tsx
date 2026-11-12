@@ -240,6 +240,7 @@ function dashEngine() {
     layout: { move: vi.fn(() => true), add: vi.fn(async () => true), remove: vi.fn(() => true), restore: vi.fn(() => false), isRemoved: () => false, dispose: vi.fn() },
     requestRender: vi.fn(), resize: vi.fn(), dispose: vi.fn(),
     setEye: vi.fn((_eye: EyeEvent | null) => {}),
+    stand: vi.fn((p: [number, number]): [number, number] => [p[0], p[1]]),
     setView: vi.fn((c: MapCamera) => { cur = { ...c }; }),
     current: () => ({ ...cur }),
     anchor: vi.fn((id: string) => anchorOf(id)),
@@ -281,6 +282,8 @@ describe("대시보드 구운 트윈 위 표시", () => {
     const { container } = render(<Dashboard />);
     await waitFor(() => expect(load).toHaveBeenCalled());
     await waitFor(() => expect(engine.setEye.mock.calls.at(-1)?.[0]).toEqual(moment(3).eye));
+    // 표시 판의 클로이드 자리는 엔진이 인형을 그리는 자리(stand)로 묻고, 엔진에는 받은 눈을 그대로 넣는다
+    expect(engine.stand.mock.calls.at(-1)?.[0]).toEqual(moment(3).eye!.position);
     for (const sel of ['[data-line="leg-ahead"]', "[data-target]", `[data-mark="${SINK}"]`]) expect(container.querySelector(sel), sel).not.toBeNull();
     const lit = () => [...container.querySelectorAll<HTMLElement>("[data-map-dim]")].filter((d) => d.style.opacity === "1").map((d) => d.dataset.mapDim);
     expect(lit()).toEqual(["kitchen+living"]);
