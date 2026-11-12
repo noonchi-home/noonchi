@@ -148,6 +148,17 @@ export function objectNames(c: Condition, out: string[] = []): string[] {
   return out;
 }
 
+/** 조건 안의 「사람이 들고 있음」(person_holding) 물건 이름(id·종류). */
+export function heldNames(c: Condition, out: string[] = []): string[] {
+  if ("all" in c) c.all.forEach((x) => heldNames(x, out));
+  else if ("any" in c) c.any.forEach((x) => heldNames(x, out));
+  else if ("seq" in c) c.seq.forEach((x) => heldNames(x, out));
+  else if ("not" in c) heldNames(c.not, out);
+  else if ("for_s" in c) heldNames(c.cond, out);
+  else if ("person_holding" in c) out.push(c.person_holding);
+  return out;
+}
+
 /** 화면에 그대로 나가는 글: 60자 아래, 화살표·괄호·구현 이름 없음(npm run lint와 같은 규칙). */
 function copyProblem(what: string, text: string | undefined): string[] {
   if (text === undefined) return [];
@@ -255,6 +266,19 @@ export class PlanDraft {
     for (const [i, s] of steps.entries()) {
       if (s.kind === "pick" && s.object && s.until && objectNames(s.until).some((n) => n !== s.object && n !== this.clsOf(s.object!))) {
         return { ok: false, error: `${i + 1}번 집기 until은 집는 물건(${s.object})만 봅니다` };
+      }
+      // 안 보이는 물건 집기(object 없음): 조건이 보는 물건·든 물건은 이 할 일이 집는 종류여야 한다(병 집기를 컵의 손에 있음으로 끝내지 않게).
+      // 집는 종류가 없는 할 일(코치·세탁물)은 보지 않는다
+      const carry = task.carry ?? task.target;
+      if (s.kind === "pick" && !s.object && s.until && carry && [...objectNames(s.until), ...heldNames(s.until)].some((n) => this.clsOf(n) !== carry)) {
+        return { ok: false, error: `${i + 1}번 집기 until은 집는 물건 종류(${carry})만 봅니다` };
+      }
+      // 그 자리에서 하는 일: 대상이 World State 물건이면 조건은 그 물건 id만, 평면도 자리면 이 할 일의 대상 종류만 본다(다른 컵을 보고 끝내지 않게)
+      if (s.kind === "do" && s.until) {
+        const names = objectNames(s.until);
+        const thing = s.target && worldObject(this.ctx.world, s.target) ? s.target : null;
+        if (thing && names.some((n) => n !== thing)) return { ok: false, error: `${i + 1}번 do until은 그 일을 받는 물건(${thing})만 봅니다` };
+        if (!thing && task.target && names.some((n) => this.clsOf(n) !== task.target)) return { ok: false, error: `${i + 1}번 do until은 이 할 일의 대상 종류(${task.target})만 봅니다` };
       }
       if (s.kind !== "place") continue;
       const picked = steps.slice(0, i).reverse().find((p) => p.kind === "pick")?.object ?? null;

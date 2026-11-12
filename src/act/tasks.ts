@@ -115,6 +115,11 @@ export function targetOf(spec: Pick<TaskSpec, "target">, world: WorldView, place
   return world.objects.filter((o) => o.cls === spec.target && o.status !== "gone" && !putAway(o, placed)).sort((a, b) => b.last_seen_ms - a.last_seen_ms)[0] ?? null;
 }
 
+/** 놓기를 끝낸 물건이 「치운 물건」(placed)인가: 그 행동의 대상 종류이고 집어 옮긴 것이 바로 그 대상일 때만(컵 치우기의 컵).
+ *  다시 쓰는 물건(채워 주기에서 따르고 내려놓은 병: 집는 종류가 대상과 다름)과 대상 종류가 없는 행동의 물건은 아니다. 기준은 여기 하나다. */
+export const clearsAway = (spec: Pick<TaskSpec, "target" | "carry"> | null, cls: string): boolean =>
+  !!spec?.target && cls === spec.target && (spec.carry ?? spec.target) === spec.target;
+
 /** 계획이 다루는 물건: 첫 act 단계의 대상 물건 id. 없으면 null. */
 export function planTargetId(plan: PlanView): string | null {
   return plan.steps.find((s) => s.kind === "act" && s.target?.objectId)?.target?.objectId ?? null;

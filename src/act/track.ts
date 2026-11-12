@@ -60,7 +60,7 @@ import type { ToolResult } from "../agent/tools.js";
 import type { CheckResult } from "./check.js";
 import { QUIET_HINT_MS, quietLabels, type LessonBook, type StepOutcome } from "./lessons.js";
 import { AGAIN, APPROVE, STEP_DONE, STOP, type ActionChoice } from "./prompts.js";
-import { matchChoice, planIdOf, taskOf, type Placed } from "./tasks.js";
+import { clearsAway, matchChoice, planIdOf, taskOf, type Placed } from "./tasks.js";
 
 /** 기기 단계 실행(src/server/home.ts: 기기 도구 + 정책). run이 승인 토큰을 내면 실제 폰에 묻고 confirm·cancel로 답한다.
  *  결과의 unverified(ThinQ가 받았지만 다시 읽은 값이 다름)·state 「모름」(신호 없음)은 적용을 확인하지 못한 것이다. */
@@ -752,7 +752,8 @@ export class ExecutionTracker {
     if (done?.kind === "do" && done.hand?.to === "off") r.hot.delete(done.hand.deviceId);
     if (done?.kind === "place" && done.object) {
       r.carried.delete(done.object);
-      if (done.target) this.remember(r, done.object, done.target);
+      // 치운 물건으로 남기는 것은 그 행동의 치우는 대상뿐이다(src/act/tasks.ts clearsAway): 따르고 내려놓은 병처럼 다시 쓰는 물건은 남기지 않는다
+      if (done.target && clearsAway(taskOf(r.plan.task), clsOf(this.o.world(), done.object))) this.remember(r, done.object, done.target);
     }
     if (r.at + 1 >= r.plan.steps.length) return this.finish(r, "done");
     this.activate(r, r.at + 1);

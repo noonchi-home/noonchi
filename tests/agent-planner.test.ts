@@ -634,6 +634,42 @@ describe("계획 모드: 계획 검사", () => {
       fbad(pour, /do 단계를 쓰지 않습니다/, c);
     });
 
+    it("끝 조건의 물건은 그 단계의 대상·집는 물건이어야 한다: 다른 컵의 내용물을 보는 따르기, 컵의 손에 있음으로 끝내는 병 집기는 버린다", () => {
+      const cup2 = cup({ id: "cup_2", last_seen_ms: 8_000 });
+      const two = () => fctx(WATER, [cup(), cup2, bottle]);
+      const done = (steps: Record<string, unknown>[], c: PlanContext = two()) => new PlanDraft(c).submit({ steps });
+      // 따르기: cup_1에 따르면서 cup_2를 본다
+      expect(done([goFridge, pick, goTable, { ...pour, until: { object: "cup_2", follow: true, facts: { contents: "has_contents" } } }]))
+        .toMatchObject({ ok: false, error: expect.stringMatching(/4번 do until은 그 일을 받는 물건\(cup_1\)만 봅니다/) });
+      // 종류 이름(아무 컵)도 받지 않는다: 그 컵이어야 한다
+      expect(done([goFridge, pick, goTable, { ...pour, until: { object: "cup", facts: { contents: "has_contents" } } }]))
+        .toMatchObject({ ok: false, error: expect.stringMatching(/4번 do until은 그 일을 받는 물건\(cup_1\)만 봅니다/) });
+      // 병 집기(안 보이는 병, 평면도 자리): 컵의 손에 있음으로 끝내지 못한다
+      for (const until of [{ object: "cup", facts: { place: "in_hand" } }, { object: "cup_1", follow: true, facts: { place: "in_hand" } }, { person_holding: "cup" }, { any: [{ object: "bottle", facts: { place: "in_hand" } }, { person_holding: "cup_1" }] }]) {
+        expect(done([goFridge, { ...pick, until }, goTable, pour]), JSON.stringify(until))
+          .toMatchObject({ ok: false, error: expect.stringMatching(/2번 집기 until은 집는 물건 종류\(bottle\)만 봅니다/) });
+      }
+      // 맞는 것은 통과: 병 종류·보이는 병 id, 그 컵 id
+      expect(done([goFridge, pick, goTable, pour])).toMatchObject({ ok: true });
+      expect(done([goFridge, { ...pick, until: { any: [{ object: "bottle_1", follow: true, facts: { place: "in_hand" } }, { person_holding: "bottle" }] } }, goTable, pour])).toMatchObject({ ok: true });
+      // 평면도 자리에서 하는 do는 그 할 일의 대상 종류(컵)만 본다
+      const atTable = { ...pour, target: "table_1" };
+      expect(done([goFridge, pick, goTable, { ...atTable, until: { object: "cup_2", follow: true, facts: { contents: "has_contents" } } }])).toMatchObject({ ok: true });
+      expect(done([goFridge, pick, goTable, { ...atTable, until: { object: "bottle_1", follow: true, facts: { contents: "has_contents" } } }]))
+        .toMatchObject({ ok: false, error: expect.stringMatching(/4번 do until은 이 할 일의 대상 종류\(cup\)만 봅니다/) });
+    });
+
+    it("집는 물건 종류가 없는 할 일(코치·세탁물)의 집기·do는 이 검사에 걸리지 않는다: 무언가 들고 있음(person_fact)으로 끝내는 집기가 통과한다", () => {
+      const RAMEN = "라면 끓이기 알려 주기";
+      const c = fctx(RAMEN, [cup()]);
+      const r = new PlanDraft(c).submit({ steps: [
+        { kind: "pick", label: "냄비 꺼내기", target: "fridge_1", command: "냄비를 꺼내 주세요", until: { person_fact: "holding", value: "holding_object" }, timeout_s: 120 },
+        { kind: "do", label: "물 받기", target: "sink_1", command: "냄비에 물을 받아 주세요", until: { fixture: "sink", facts: { use: "water_running" } }, timeout_s: 120 },
+        { kind: "do", label: "컵 보기", target: "table_1", command: "컵을 봐 주세요", until: { object: "cup_1", follow: true, facts: { contents: "has_contents" } }, timeout_s: 120 },
+      ] });
+      expect(r).toMatchObject({ ok: true });
+    });
+
     it("채워 주기에 do가 빠지면 끝내지 않는다", () => {
       const d = new PlanDraft(fctx());
       [goFridge, pick, goTable].forEach((s, i) => ok(d, i + 1, s));

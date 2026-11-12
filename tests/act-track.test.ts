@@ -10,7 +10,8 @@ import { ExecutionTracker, TRACK_DEFAULTS, type Stall, type Stray, type TrackerO
 import { ApprovalStore, type ApprovalAnswer } from "../src/agent/approval.js";
 import type { AgentStep } from "../src/agent/planTools.js";
 import { checkDecision, type CheckResult } from "../src/act/check.js";
-import { TASKS, targetOf } from "../src/act/tasks.js";
+import { TASKS, clearsAway, targetOf } from "../src/act/tasks.js";
+import { PlanDraft } from "../src/agent/planTools.js";
 import type { BrainLog } from "../src/contract/events.js";
 import type { PlannedCommand, PlannedCommandMessage } from "../src/contract/phone.js";
 import type { WorldChange, WorldObject, WorldView } from "../src/contract/world.js";
@@ -483,6 +484,28 @@ describe("실행 추적: 그 자리에서 하는 일(do, 채워 주기)", () => 
       planId: "plan:pam-1", stepId: "plan:pam-1:4", kind: "do", command: "컵에 물을 따라 주세요", until: { object: "cup_1", follow: true, facts: { contents: "has_contents" } },
       stuckMs: 8000, looks: 0, spots: [{ id: "cup_1", label: "컵", position: [2, 0.75, 1] }],
     });
+  });
+
+  it("따르고 내려놓은 병은 치운 물건(placed)에 넣지 않는다: 다음 채워 주기가 같은 병을 다시 집는 계획을 낼 수 있다. 컵 치우기의 컵은 지금처럼 남는다", async () => {
+    expect([clearsAway(TASKS[WATER]!, "bottle"), clearsAway(TASKS[WATER]!, "cup"), clearsAway(TASKS["컵 치우기"]!, "cup"), clearsAway(TASKS["컵 치우기"]!, "bottle"), clearsAway(TASKS["라면 끓이기 알려 주기"]!, "cup"), clearsAway(null, "cup")])
+      .toEqual([false, false, true, false, false, false]);
+    const seen = (t: number) => world([tableCup(["empty", t], t), bottle("on_table", t)]);
+    let w = seen(9_000);
+    const plans = new PlanHub(fridgeFloor(), () => {}, () => "t");
+    const s = fillSetup({ plans, w: () => w });
+    // 병이 보이는 집: 그 병을 집고, 따른 뒤 식탁에 내려놓는 다섯 단계
+    const steps = fillSteps({ fridge: "fridge_1", table: "table_1", cup: "cup_1", drink: "물" });
+    llm.scripts[WATER] = () => [planCalls([steps[0]!, { ...steps[1]!, target: "bottle_1", until: { object: "bottle_1", follow: true, facts: { place: "in_hand" } } }, steps[2]!, steps[3]!,
+      { kind: "place", label: "물병 내려놓기", target: "table_1", object: "bottle_1", command: "물병을 식탁에 놓아 주세요", timeout_s: 120 }])];
+    await s.decide(water);
+    for (const n of [1, 2, 3, 4, 5]) expect(s.t.onAnswer("plan:pam-1", `plan:pam-1:${n}`, "done"), String(n)).toBe(true);
+    expect(s.plans.current()).toMatchObject({ status: "done" });
+    expect([...s.t.placed().keys()]).toEqual([]);
+    // 다음 채워 주기: 같은 병을 집는 계획이 「이미 치운 물건」으로 버려지지 않는다
+    s.clock.t += 20_000;
+    w = seen(s.clock.t);
+    const draft = new PlanDraft(planContext({ decision: { ...water, id: "pam-2", seq: 2 }, world: w, floor: plans.floor(), placed: new Map(s.t.placed()) }));
+    expect(draft.add({ step: 1, ...steps[1]!, target: "bottle_1", until: { object: "bottle_1", follow: true, facts: { place: "in_hand" } } })).toMatchObject({ ok: true });
   });
 
   it("평면도 자리에서 하는 do는 비전 상태 줄이 그 자리까지 거리다", async () => {
