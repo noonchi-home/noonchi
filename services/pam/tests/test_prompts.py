@@ -30,3 +30,20 @@ def test_paper_config_is_unchanged():
     assert config["predictor"]["temperature"] == 0.3
     assert config["predictor"]["enable_thinking"] is False
     assert config["reflector"]["enable_thinking"] is True
+
+
+def test_noonchi_predict_prompt_says_where_drinks_are_kept():
+    """집 설명의 보관 자리 줄: 쓴 컵은 싱크대, 물·콜라는 냉장고(채워 주기 판단의 근거)."""
+    from noonchi_pam.contracts import PredictRequest
+    from noonchi_pam.prompt import build_predict_messages
+
+    memory = {"initial_state": "s", "states": [{"id": "s", "description": "d", "rules": [], "next": []}]}
+    built = build_predict_messages(PredictRequest(
+        contract="pam-predict/2", final_time="2026-11-13T12:00:00+09:00", observation_text="12:00:00 사람 보임",
+        memory_kind="fsm", memory=memory, tasks=["컵 치우기", "컵에 물 채워 주기"],
+    ))
+    system = built["messages"][0]["content"]
+    line = ("- The designated storage area: the kitchen sink, where used cups, bottles and bowls are put. "
+            "Drinks such as water and cola are kept in the fridge.")
+    assert line in system
+    assert "corner of the desk" not in system

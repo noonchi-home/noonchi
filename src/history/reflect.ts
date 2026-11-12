@@ -31,10 +31,22 @@ const DAY_KINDS = ["detection", "world", "device", "vlm", "yolo", "decision", "e
 export interface DayMemory { memory: PamMemory; kind: "list" | "fsm"; version: number }
 export type ReflectResult = { ok: true; version: number; appliesDay: string } | { ok: false; error: string; empty?: true };
 
-/** 그날 고정한 판본. 없으면 그날 쓸 수 있는 가장 새 판본을 고정하고, 판본이 하나도 없으면 컵 FSM 기억을 seed로 저장한다. */
+/** 그날 고정한 판본. 없으면 그날 쓸 수 있는 가장 새 판본을 고정하고, 판본이 하나도 없으면 컵 FSM 기억을 seed로 저장한다.
+ *  seed 판본 올리기: 그날 쓸 판본이 seed인데 내용이 지금 코드의 seed(CUP_FSM_MEMORY)와 다르고(JSON 글 비교) DB에서 가장 새 판본도 seed면,
+ *  지금 seed 판본(가장 새 판본이 이미 그것이면 그 판본, 아니면 새로 저장)을 그날에 다시 고정한다.
+ *  가장 새 판본이 반성 판본(또는 합성 기록)이면 건드리지 않는다: seed는 seed 뒤에만 올리므로 새 seed가 반성 판본을 덮지 않는다. */
 export function memoryForDay(db: HistoryDb, day: string): DayMemory {
   const pinned = db.pinnedMemory(day);
   const m = pinned !== null ? db.memoryVersion(pinned) : db.memoryFor(day);
+  const seed = JSON.stringify(CUP_FSM_MEMORY);
+  if (m && m.source === "seed" && JSON.stringify(m.memory) !== seed) {
+    const latest = db.memoryVersion(db.latestMemoryVersion() ?? m.version);
+    if (latest?.source === "seed") {
+      const version = JSON.stringify(latest.memory) === seed ? latest.version : db.saveMemory({ kind: "fsm", memory: CUP_FSM_MEMORY, day: null, appliesDay: null, source: "seed" });
+      db.pinMemory(day, version, true);
+      return { memory: CUP_FSM_MEMORY, kind: "fsm", version };
+    }
+  }
   if (m) {
     if (pinned === null) db.pinMemory(day, m.version);
     return { memory: validateMemory(m.memory, m.kind), kind: m.kind, version: m.version };

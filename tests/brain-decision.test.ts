@@ -4,6 +4,8 @@ import {
   validateMemory, validatePrediction, validateTasks, type DecisionInput, type FsmMemory,
 } from "../src/brain/decision.js";
 import { FSM_STATE_TEXT } from "../src/world/labels.js";
+import { TASK_NAMES } from "../src/act/tasks.js";
+import { STATES } from "../src/world/vocab.js";
 
 const input = (over: Partial<DecisionInput> = {}): DecisionInput => ({
   text: "12:00:00 사람 보임", finalTime: "2026-11-04T12:00:08.000+09:00", memory: CUP_MEMORY, memoryKind: "list", tasks: [...CUP_TASKS],
@@ -85,9 +87,28 @@ describe("판단 입력(텍스트)", () => {
 
 describe("고른 행동의 FSM 상태(대시보드 생각 말풍선 「상태」 칩)", () => {
   it("고른 행동을 FSM 기억 규칙에서 찾아 그 규칙의 상태와 트리거를 준다", () => {
-    const rule = CUP_FSM_MEMORY.states[1]!.rules[0]!;
-    expect(fsmRuleOf(CUP_FSM_MEMORY, "fsm", "컵 치우기")).toEqual({ state: "left_cup", trigger: rule.trigger });
-    expect(fsmRuleOf(CUP_FSM_MEMORY, "fsm", "사용자에게 물어보기")).toEqual({ state: "left_cup", trigger: CUP_FSM_MEMORY.states[1]!.rules[1]!.trigger });
+    const left = CUP_FSM_MEMORY.states.find((s) => s.id === "left_cup")!;
+    expect(fsmRuleOf(CUP_FSM_MEMORY, "fsm", "컵 치우기")).toEqual({ state: "left_cup", trigger: left.rules[0]!.trigger });
+    expect(fsmRuleOf(CUP_FSM_MEMORY, "fsm", "사용자에게 물어보기")).toEqual({ state: "left_cup", trigger: left.rules.find((r) => r.action === "사용자에게 물어보기")!.trigger });
+  });
+
+  it("컵 FSM 기억은 상태 셋(먹는 중·TV 보는 중·자리를 뜸)이고 모양이 맞으며, 규칙의 행동은 모두 행동 목록에 있다", () => {
+    expect(validateMemory(CUP_FSM_MEMORY, "fsm")).toBe(CUP_FSM_MEMORY);
+    expect(CUP_FSM_MEMORY.initial_state).toBe("drinking");
+    expect(CUP_FSM_MEMORY.states.map((s) => s.id)).toEqual(["drinking", "watching_tv", "left_cup"]);
+    for (const s of CUP_FSM_MEMORY.states) for (const r of s.rules) expect(TASK_NAMES, `${s.id}: ${r.action}`).toContain(r.action);
+  });
+
+  it("컵 갈래 다섯 행동은 저마다 상태 하나의 규칙이다: 치우기·그대로 두기·물어보기는 자리를 뜸, 물은 먹는 중, 콜라는 TV 보는 중", () => {
+    const at = (action: string) => fsmRuleOf(CUP_FSM_MEMORY, "fsm", action);
+    expect(at("컵 치우기")?.state).toBe("left_cup");
+    expect(at("컵 그대로 두기")).toEqual({ state: "left_cup", trigger: "사용자가 자리를 비웠지만 컵에 음료가 남아 있다." });
+    expect(at("사용자에게 물어보기")?.state).toBe("left_cup");
+    expect(at("컵에 물 채워 주기")).toEqual({ state: "drinking", trigger: "사용자가 식탁에서 먹는 중이고 식탁 위 컵이 비어 있으며 컵을 들거나 만지지 않는다." });
+    expect(at("컵에 콜라 따라 주기")).toEqual({ state: "watching_tv", trigger: "사용자가 TV를 보는 중이고 곁의 컵이 비어 있으며 컵을 들거나 만지지 않는다." });
+    // 물·콜라를 가르는 사실은 관찰 텍스트 낱말(먹는 중·TV 보는 중)이다
+    expect(STATES.eating.label).toBe("먹는 중");
+    expect(STATES.watching_tv.label).toBe("TV 보는 중");
   });
 
   it("대기·기억에 없는 행동·list 기억이면 null이다", () => {
@@ -115,7 +136,9 @@ describe("고른 행동의 FSM 상태(대시보드 생각 말풍선 「상태」
       expect(label, s.id).toBeTruthy();
       expect(label!.length, s.id).toBeLessThanOrEqual(12);
       expect(label, s.id).toMatch(/[가-힣]/);
-      expect(label, s.id).not.toMatch(/[A-Za-z_()（）]/);
+      // 영어 id가 아니다(「TV」는 한국어 화면 글에 쓰는 낱말이라 뺀다)
+      expect(label!.replace(/TV/g, ""), s.id).not.toMatch(/[A-Za-z_()（）]/);
     }
+    expect(FSM_STATE_TEXT).toMatchObject({ drinking: "먹거나 마시는 중", watching_tv: "TV 보는 중", left_cup: "컵을 두고 자리를 뜸" });
   });
 });

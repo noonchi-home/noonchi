@@ -203,22 +203,31 @@ export const CUP_MEMORY: ListMemory = {
   ],
 };
 
-/** 컵 시나리오의 FSM 기억(임시). PAM fsm 기억 모양(services/pam/pam/contracts.py validate_memory)을 따른다.
- *  실제 기억은 PAM 반성기(reflector)가 만든다. 작업 이름은 CUP_TASKS와 같게 둔다. */
+/** 컵 시나리오의 FSM 기억(임시, seed). PAM fsm 기억 모양(services/pam/pam/contracts.py validate_memory)을 따른다.
+ *  실제 기억은 PAM 반성기(reflector)가 만든다. 규칙의 행동 이름은 행동 목록(src/act/tasks.ts TASK_NAMES)에 있는 것이다.
+ *  컵 갈래(2026-11-13)는 여기 글로 정한다: 물은 「먹는 중」, 콜라는 「TV 보는 중」, 자리를 비운 뒤에는 컵 안(비어 있음·내용물 있음·안이 안 보임)으로 가른다.
+ *  이 글을 바꾸면 기록 DB의 seed 판본이 새로 올라간다(src/history/reflect.ts memoryForDay). 상태 id를 더하면 화면 이름표(src/world/labels.ts FSM_STATE_TEXT)도 더한다. */
 export const CUP_FSM_MEMORY: FsmMemory = {
   initial_state: "drinking",
   states: [
     {
       id: "drinking",
-      description: "사용자가 식탁에서 컵으로 음료를 마시는 중이라 컵은 사용 중이다.",
-      rules: [],
-      next: [{ to: "left_cup", on: "사용자가 컵을 식탁에 내려놓고 자리를 떠나 보이지 않는다." }],
+      description: "사용자가 식탁에 앉아 먹거나 마시는 중이다. 들고 있는 컵은 사용 중이라 건드리지 않는다.",
+      rules: [{ trigger: "사용자가 식탁에서 먹는 중이고 식탁 위 컵이 비어 있으며 컵을 들거나 만지지 않는다.", action: "컵에 물 채워 주기" }],
+      next: [{ to: "watching_tv", on: "사용자가 TV를 보기 시작한다." }, { to: "left_cup", on: "사용자가 컵을 두고 자리를 떠나 보이지 않는다." }],
+    },
+    {
+      id: "watching_tv",
+      description: "사용자가 TV를 보며 컵으로 음료를 마신다.",
+      rules: [{ trigger: "사용자가 TV를 보는 중이고 곁의 컵이 비어 있으며 컵을 들거나 만지지 않는다.", action: "컵에 콜라 따라 주기" }],
+      next: [{ to: "drinking", on: "사용자가 식탁에 앉아 먹기 시작한다." }, { to: "left_cup", on: "사용자가 컵을 두고 자리를 떠나 보이지 않는다." }],
     },
     {
       id: "left_cup",
-      description: "사용자가 컵을 식탁에 두고 자리를 비웠다. 화면에 안 보이는 것만으로 떠났다고 보지 않는다.",
+      description: "사용자가 컵을 두고 자리를 비웠다. 화면에 안 보이는 것만으로 떠났다고 보지 않는다.",
       rules: [
-        { trigger: "사용자가 자리를 비웠고 식탁 위 컵이 비어 있으며 아무도 컵을 들거나 만지지 않는다.", action: "컵 치우기" },
+        { trigger: "사용자가 자리를 비웠고 컵이 비어 있으며 아무도 컵을 들거나 만지지 않는다.", action: "컵 치우기" },
+        { trigger: "사용자가 자리를 비웠지만 컵에 음료가 남아 있다.", action: "컵 그대로 두기" },
         { trigger: "사용자가 자리를 비웠고 컵 안을 확인할 수 없다.", action: "사용자에게 물어보기" },
       ],
       next: [{ to: "drinking", on: "사용자가 돌아와 컵을 다시 든다." }],

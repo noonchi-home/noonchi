@@ -59,6 +59,63 @@ describe("기억 판본", () => {
   });
 });
 
+describe("seed 판본 올리기", () => {
+  // 예전 코드가 저장한 seed(상태 둘, 채워 주기·그대로 두기 규칙 없음)
+  const OLD_SEED = {
+    initial_state: "drinking",
+    states: [
+      { id: "drinking", description: "사용자가 식탁에서 컵으로 음료를 마시는 중이라 컵은 사용 중이다.", rules: [], next: [{ to: "left_cup", on: "사용자가 컵을 식탁에 내려놓고 자리를 떠나 보이지 않는다." }] },
+      { id: "left_cup", description: "사용자가 컵을 식탁에 두고 자리를 비웠다.", rules: [{ trigger: "빈 컵", action: "컵 치우기" }], next: [{ to: "drinking", on: "사용자가 돌아와 컵을 다시 든다." }] },
+    ],
+  };
+
+  it("판본 조회는 출처(source)를 돌려준다", () => {
+    const db = HistoryDb.open(":memory:");
+    db.saveMemory({ kind: "fsm", memory: OLD_SEED, day: null, appliesDay: null, source: "seed" });
+    db.saveMemory({ kind: "fsm", memory: OLD_SEED, day: "2026-11-07", appliesDay: "2026-11-08", source: "reflection" });
+    expect(db.memoryVersion(1)?.source).toBe("seed");
+    expect(db.memoryFor("2026-11-07")?.source).toBe("seed");
+    expect(db.memoryFor("2026-11-08")?.source).toBe("reflection");
+  });
+
+  it("옛 seed만 있는 DB는 새 seed 판본을 받는다. 이미 옛 seed로 고정한 날도 새 판본으로 다시 고정하고, 그 뒤에는 더 올리지 않는다", () => {
+    const db = HistoryDb.open(":memory:");
+    expect(db.saveMemory({ kind: "fsm", memory: OLD_SEED, day: null, appliesDay: null, source: "seed" })).toBe(1);
+    db.pinMemory("2026-11-12", 1);
+    // 아직 고정하지 않은 날
+    expect(memoryForDay(db, "2026-11-13")).toEqual({ memory: CUP_FSM_MEMORY, kind: "fsm", version: 2 });
+    expect(db.memoryVersion(2)).toMatchObject({ source: "seed", appliesDay: null, memory: CUP_FSM_MEMORY });
+    expect(db.pinnedMemory("2026-11-13")).toBe(2);
+    // 옛 seed로 고정했던 날
+    expect(memoryForDay(db, "2026-11-12")).toEqual({ memory: CUP_FSM_MEMORY, kind: "fsm", version: 2 });
+    expect(db.pinnedMemory("2026-11-12")).toBe(2);
+    expect(memoryForDay(db, "2026-11-13").version).toBe(2);
+    expect(memoryForDay(db, "2026-11-14").version).toBe(2);
+    expect(db.memoryVersion(3)).toBeNull();
+  });
+
+  it("반성 판본이 있는 DB는 그대로다: 가장 새 판본이 반성 판본이면 seed를 올리지 않고, 옛 seed로 고정한 날도 바꾸지 않는다", () => {
+    const db = HistoryDb.open(":memory:");
+    db.saveMemory({ kind: "fsm", memory: OLD_SEED, day: null, appliesDay: null, source: "seed" });
+    db.pinMemory("2026-11-12", 1);
+    const learned = { ...OLD_SEED, initial_state: "left_cup" };
+    db.saveMemory({ kind: "fsm", memory: learned, day: "2026-11-12", appliesDay: "2026-11-13", source: "reflection" });
+    expect(memoryForDay(db, "2026-11-13")).toEqual({ memory: learned, kind: "fsm", version: 2 });
+    // 그날 쓰는 것은 옛 seed여도 그 뒤 반성 판본이 있으면 올리지 않는다(올리면 다음 날 반성 판본을 덮는다)
+    expect(memoryForDay(db, "2026-11-12")).toEqual({ memory: OLD_SEED, kind: "fsm", version: 1 });
+    expect(db.memoryVersion(3)).toBeNull();
+    expect(db.memoryFor("2026-11-14")).toMatchObject({ version: 2, source: "reflection" });
+  });
+
+  it("지금 seed와 같은 seed는 올리지 않는다", () => {
+    const db = HistoryDb.open(":memory:");
+    expect(memoryForDay(db, "2026-11-13").version).toBe(1);
+    expect(memoryForDay(db, "2026-11-13").version).toBe(1);
+    expect(memoryForDay(db, "2026-11-14").version).toBe(1);
+    expect(db.memoryVersion(2)).toBeNull();
+  });
+});
+
 describe("반성", () => {
   it("하루 관찰 텍스트·행동 요약·피드백을 pam-reflect/2로 보내고, 새 기억은 다음 날부터 쓴다", async () => {
     const db = HistoryDb.open(":memory:");

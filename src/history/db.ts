@@ -37,9 +37,10 @@ export interface HistoryQuery { since?: number; until?: number; kinds?: HistoryK
 export interface StoredPhoto { id: string; atMs: number; path: string; origin: "photo" | "dataset" }
 
 /** 기억 판본 하나. appliesDay는 쓰기 시작하는 날(seed는 null). */
-export interface MemoryVersion { version: number; kind: "list" | "fsm"; memory: unknown; appliesDay: string | null }
-type RawMemory = { version: number; kind: "list" | "fsm"; memory: string; applies_day: string | null };
-const memoryRow = (r: RawMemory): MemoryVersion => ({ version: r.version, kind: r.kind, memory: JSON.parse(r.memory) as unknown, appliesDay: r.applies_day });
+export type MemorySource = "seed" | "reflection" | "synthetic";
+export interface MemoryVersion { version: number; kind: "list" | "fsm"; memory: unknown; appliesDay: string | null; source: MemorySource }
+type RawMemory = { version: number; kind: "list" | "fsm"; memory: string; applies_day: string | null; source: MemorySource };
+const memoryRow = (r: RawMemory): MemoryVersion => ({ version: r.version, kind: r.kind, memory: JSON.parse(r.memory) as unknown, appliesDay: r.applies_day, source: r.source });
 
 type RawRow = Omit<HistoryRow, "data"> & { data: string | null };
 const parseRow = (r: RawRow): HistoryRow => ({ ...r, data: r.data === null ? null : JSON.parse(r.data) as unknown });
@@ -83,7 +84,7 @@ export class HistoryDb {
   }
 
   /** 기억 판본을 저장하고 새 번호를 돌려준다(1부터). appliesDay가 없으면(seed) 어느 날에나 쓸 수 있다. synthetic은 합성 기록(scripts/seed-history.ts)이다. */
-  saveMemory(m: { kind: "list" | "fsm"; memory: unknown; day: string | null; appliesDay: string | null; source: "seed" | "reflection" | "synthetic" }): number {
+  saveMemory(m: { kind: "list" | "fsm"; memory: unknown; day: string | null; appliesDay: string | null; source: MemorySource }): number {
     const next = (this.db.prepare("SELECT COALESCE(MAX(version), 0) + 1 AS v FROM memories").get() as { v: number }).v;
     this.db.prepare("INSERT INTO memories(version, created_ms, day, applies_day, kind, memory, source) VALUES (?, ?, ?, ?, ?, ?, ?)")
       .run(next, Date.now(), m.day, m.appliesDay, m.kind, JSON.stringify(m.memory), m.source);
@@ -92,12 +93,17 @@ export class HistoryDb {
 
   /** 그날 쓸 수 있는 판본(applies_day가 없거나 그날 이전) 중 가장 새 것. */
   memoryFor(day: string): MemoryVersion | null {
-    const r = this.db.prepare("SELECT version, kind, memory, applies_day FROM memories WHERE applies_day IS NULL OR applies_day <= ? ORDER BY version DESC LIMIT 1").get(day);
+    const r = this.db.prepare("SELECT version, kind, memory, applies_day, source FROM memories WHERE applies_day IS NULL OR applies_day <= ? ORDER BY version DESC LIMIT 1").get(day);
     return r ? memoryRow(r as RawMemory) : null;
   }
 
+  /** 가장 새 판본 번호(언제부터 쓰는지와 상관없이). 없으면 null. */
+  latestMemoryVersion(): number | null {
+    return (this.db.prepare("SELECT MAX(version) AS v FROM memories").get() as { v: number | null }).v;
+  }
+
   memoryVersion(version: number): MemoryVersion | null {
-    const r = this.db.prepare("SELECT version, kind, memory, applies_day FROM memories WHERE version = ?").get(version);
+    const r = this.db.prepare("SELECT version, kind, memory, applies_day, source FROM memories WHERE version = ?").get(version);
     return r ? memoryRow(r as RawMemory) : null;
   }
 
@@ -107,9 +113,9 @@ export class HistoryDb {
     return r ? Number(r.value) : null;
   }
 
-  /** 그날 판본을 고정한다. 이미 고정한 날은 바꾸지 않는다. */
-  pinMemory(day: string, version: number): void {
-    this.db.prepare("INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING").run(`memory_day:${day}`, String(version));
+  /** 그날 판본을 고정한다. 이미 고정한 날은 바꾸지 않는다. replace면 바꾼다(코드의 seed가 바뀌어 seed 판본을 올릴 때만, src/history/reflect.ts). */
+  pinMemory(day: string, version: number, replace = false): void {
+    this.db.prepare(`INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO ${replace ? "UPDATE SET value = excluded.value" : "NOTHING"}`).run(`memory_day:${day}`, String(version));
   }
 
   /** 디스크에 둔 사진 하나(photo 사진 찍기, dataset 시험 자료). 보관 기간이 지나면 retention.sweep이 지운다. */

@@ -51,7 +51,7 @@ describe("판단 호출", () => {
     await poke();
     index = -1;
     await poke();
-    const fsm = { state: "left_cup", trigger: CUP_FSM_MEMORY.states[1]!.rules[0]!.trigger };
+    const fsm = { state: "left_cup", trigger: CUP_FSM_MEMORY.states.find((x) => x.id === "left_cup")!.rules[0]!.trigger };
     expect(logs.filter((l) => l.type === "decision").map((l) => l.type === "decision" && [l.action, l.fsm])).toEqual([["컵 치우기", fsm], [null, null]]);
     expect(records.map((r) => r.fsm)).toEqual([fsm, null]);
   });
