@@ -3,6 +3,7 @@
 //   &step=N      그 순간(없으면 0, play면 2)
 //   &play=MS     화면이 다 뜬 뒤(트윈 첫 그림·미리 그려 보기 뒤 data-ready) MS마다 다음 순간: 2→3→4→0→1→2…
 //   &eye=0       대시보드 폰 칸 영상 없음(연결 QR)
+//   &wide=1      실제 폰을 가로로 든 것처럼: 눈 그림과 컵 모양이 가로 프레임(세로 눈 그림에서 잘라 낸 405×228)
 //   &offline=1   서버 연결 끊김
 //   &settings=1  설정 창을 연 채
 // window.__dash.step(n)으로 바로 그 순간으로 간다. 대시보드 폰 칸은 그 순간 눈 그림(세로 405×720)이다.
@@ -20,6 +21,21 @@ export interface Moment { index: number; eye: EyeFrameId; messages: ServerMessag
 export const MOMENTS = run.moments as unknown as Moment[];
 
 const EYE_FRAME = { width: 405, height: 720 };
+/** 가로 눈 그림(ui/public/debug-eye/eye-<이름>-wide.webp): 세로 눈 그림의 위에서 WIDE_TOP만큼 내려온 곳부터 405×228을 잘라 낸 것. */
+export const WIDE_FRAME = { width: 405, height: 228 };
+export const WIDE_TOP: Record<EyeFrameId, number> = { "table-far": 230, "table-near": 178, sink: 180, "sink-cup": 186 };
+
+/** 그 순간을 가로 프레임으로: seen의 프레임 크기를 가로로 바꾸고 마스크 자리를 잘라 낸 만큼 올린다. 다른 메시지는 그대로다. */
+export function wideMoment(m: Moment): Moment {
+  const top = WIDE_TOP[m.eye];
+  return {
+    ...m,
+    messages: m.messages.map((x) => (x.type !== "seen" ? x : {
+      ...x, frame: WIDE_FRAME,
+      shapes: x.shapes.map((s) => ({ ...s, mask: { ...s.mask, at: [s.mask.at[0], s.mask.at[1] - top, s.mask.at[2], s.mask.at[3]] as [number, number, number, number] } })),
+    })),
+  };
+}
 const wrap = (n: number) => ((n % MOMENTS.length) + MOMENTS.length) % MOMENTS.length;
 /** 다음 순간: 2→3→4→0→1→2… */
 export const nextMoment = (n: number) => wrap(n + 1);
@@ -31,6 +47,8 @@ export interface DebugQuery {
   play: number | null;
   /** 대시보드 폰 칸에 눈 그림을 보이는가(false면 연결 QR). */
   eye: boolean;
+  /** 가로 눈 그림·가로 프레임으로 보이는가. */
+  wide: boolean;
   offline: boolean;
   settings: boolean;
 }
@@ -46,6 +64,7 @@ export function debugQuery(search: string): DebugQuery | null {
     step: q.has("step") && Number.isInteger(step) ? wrap(step) : playing ? 2 : 0,
     play: playing ? play : null,
     eye: q.get("eye") !== "0",
+    wide: q.get("wide") === "1",
     offline: q.get("offline") === "1",
     settings: q.get("settings") === "1",
   };
@@ -53,7 +72,10 @@ export function debugQuery(search: string): DebugQuery | null {
 
 /** 그 순간 대시보드 폰 칸: 눈 그림, 영상 없음(eye=0)이면 연결 QR. */
 export function debugPhone(q: DebugQuery, m: Moment, url: string): PhoneSlot {
-  return q.eye ? { kind: "image", src: `${import.meta.env.BASE_URL}debug-eye/eye-${m.eye}.webp`, ...EYE_FRAME } : { kind: "qr", url };
+  if (!q.eye) return { kind: "qr", url };
+  return q.wide
+    ? { kind: "image", src: `${import.meta.env.BASE_URL}debug-eye/eye-${m.eye}-wide.webp`, ...WIDE_FRAME }
+    : { kind: "image", src: `${import.meta.env.BASE_URL}debug-eye/eye-${m.eye}.webp`, ...EYE_FRAME };
 }
 
 /**
@@ -64,7 +86,8 @@ export function useDebugSteps(q: DebugQuery | null, onMoment: (m: Moment) => voi
   const [index, setIndex] = useState(q?.step ?? 0);
   const report = useRef(onMoment);
   report.current = onMoment;
-  useEffect(() => { if (q) report.current(MOMENTS[index]!); }, [q, index]);
+  const at = (i: number) => (q?.wide ? wideMoment(MOMENTS[i]!) : MOMENTS[i]!);
+  useEffect(() => { if (q) report.current(at(index)); }, [q, index]);
   useEffect(() => {
     if (!q) return;
     window.__dash = { step: (n: number) => setIndex(wrap(n)) };
@@ -75,5 +98,5 @@ export function useDebugSteps(q: DebugQuery | null, onMoment: (m: Moment) => voi
     const timer = setTimeout(() => setIndex(nextMoment), q.play);
     return () => clearTimeout(timer);
   }, [q, index, ready]);
-  return q ? MOMENTS[index]! : null;
+  return q ? at(index) : null;
 }

@@ -199,6 +199,13 @@ describe("가짜 단계(?debug=steps)", () => {
     expect(phonePane().querySelector("canvas[data-masks]")).not.toBeNull();
   });
 
+  it("&wide=1이면 대시보드 폰 칸은 가로 눈 그림(405×228)이고, 컵 모양(seen)도 그 가로 프레임 자리로 온다", async () => {
+    open("&step=2&wide=1");
+    const img = phonePane().querySelector<HTMLImageElement>('img[alt="폰 카메라 영상"]')!;
+    expect(img.getAttribute("src")).toBe("/debug-eye/eye-table-near-wide.webp");
+    expect([...phonePane().querySelectorAll("[data-detection-label]")].map((t) => t.textContent?.split(" ")[0])).toEqual(["컵"]);
+  });
+
   it("서버에서 온 계획·말은 쓰지 않는다", async () => {
     open("&step=2");
     await waitFor(() => expect(FakeSocket.last).not.toBeNull());
