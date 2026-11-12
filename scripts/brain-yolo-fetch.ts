@@ -1,6 +1,6 @@
 // 두뇌(BRAIN=1)의 YOLO 모델 확인·넣기. 모델 이름과 sha256은 src/brain/detector.ts(DETECTOR_MODEL·POSE_MODEL) 하나다.
 //
-//   npx tsx scripts/brain-yolo-fetch.ts                 # 저장소 models/의 yolo26n.onnx·yolo26n-pose.onnx sha256 확인(받지 않음)
+//   npx tsx scripts/brain-yolo-fetch.ts                 # 저장소 models/의 yolo26n-seg.onnx·yolo26n-pose.onnx sha256 확인(받지 않음)
 //   npx tsx scripts/brain-yolo-fetch.ts --from <폴더>   # 다시 내보낸 두 파일을 sha256이 표와 같을 때만 models/에 넣는다
 //
 // 다시 내보내는 법은 THIRD_PARTY.md 「모델」에 있다. 내보낸 파일의 sha256이 표와 다르면 넣지 않고 새 값을 알린다.

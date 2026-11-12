@@ -1,6 +1,6 @@
 // 키 없는 컨테이너 확인: compose 프로젝트 noonchi-check로 noonchi(호스트 허브·폰 포트), pam(호스트 pam 포트), 가짜 OpenAI 호환 서버(check 프로필)를 띄우고
 // ready.ok가 true인지(VLM·PAM 서비스·PAM LLM이 모두 가짜 서버로 답함), /api/health 폰 주소가 확인용 PHONE_URL 하나뿐인지, 에이전트가 가짜 서버의 답을 돌려주는지, PAM 서비스가 관찰 텍스트로 판단하는지, 폰 화면(HTML·script·link 파일·인코딩 워커)이 열리는지,
-// 이미지 안 YOLO26n·관절 모델이 떴고(GET /api/brain detector yolo26n, pose yolo26n-pose) 관찰 흐름(BRAIN=1)이 엔진 프레임 한 장을 YOLO·가짜 VLM으로 분석해 기록 DB에 vlm 줄을 남기는지(GET /api/history·/api/brain detected),
+// 이미지 안 YOLO26n·관절 모델이 떴고(GET /api/brain detector yolo26n-seg, pose yolo26n-pose) 관찰 흐름(BRAIN=1)이 엔진 프레임 한 장을 YOLO·가짜 VLM으로 분석해 기록 DB에 vlm 줄을 남기는지(GET /api/history·/api/brain detected),
 // 호스트에서 보낸 계획(POST /api/plan)이 토큰 없이는 403, PLAN_TOKEN을 붙이면 200인지,
 // docker stop(SIGTERM)에 종료 코드 0으로 끝나는지, 멈춘 컨테이너에 onnxruntime 원격 측정 파일(~/.cache/Microsoft/DeveloperTools/.onnxruntime)이 없는지(docker diff) 본 뒤 내린다(볼륨까지 지운다).
 // 키가 그 키를 쓰는 서비스에만 가는지(docker compose config, scripts/compose-keys.ts)도 본다.
@@ -182,7 +182,7 @@ try {
   if (h.brain !== true) fails.push("관찰 흐름(BRAIN=1)이 켜지지 않았어요");
   const brain0 = await waitJson(`${HUB_URL}/api/brain`, 10_000);
   console.log(`감지기: ${brain0?.detector ?? null}, 관절: ${brain0?.pose ?? null}`);
-  if (brain0?.detector !== "yolo26n") fails.push(`이미지 안 YOLO26n이 뜨지 않았어요(${brain0?.detector ?? null})`);
+  if (brain0?.detector !== "yolo26n-seg") fails.push(`이미지 안 YOLO26n-seg가 뜨지 않았어요(${brain0?.detector ?? null})`);
   if (brain0?.pose !== "yolo26n-pose") fails.push(`이미지 안 관절 모델이 뜨지 않았어요(${brain0?.pose ?? null})`);
   // 계획: 호스트에서 보내면 컨테이너에는 Docker 브리지 주소로 보인다. 토큰 없이는 403, PLAN_TOKEN을 붙이면 200
   const postPlan = (headers: Record<string, string>) => fetchRetry(`${HUB_URL}/api/plan`, {

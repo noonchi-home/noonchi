@@ -2,7 +2,7 @@
 // 놓인 자리·쓰는 중·안 내용은 VLM이 본다. 가구 자리는 트윈 배치에서 읽으므로 가구 종류(식탁·의자…)는 거른다.
 // 같은 출력에서 크고 바닥에 서는 가구·가전(냉장고·소파·식탁 등, src/sync/classes.ts) 상자는 World State와 따로 폰 위치 맞추기 기준점(landmarks)으로도 낸다.
 //
-// 모델은 YOLO26n(감지)과 YOLO26n-pose(관절)다. Ultralytics 가중치를 이 저장소에서 ONNX로 내보내 models/에 커밋했다(AGPL-3.0,
+// 모델은 YOLO26n-seg(감지 + 물체 모양)와 YOLO26n-pose(관절)다. Ultralytics 가중치를 이 저장소에서 ONNX로 내보내 models/에 커밋했다(AGPL-3.0,
 // 출처·sha256·다시 내보내기는 THIRD_PARTY.md).
 //
 // YOLO26 ONNX 입출력(ultralytics 8.4, opset 17, imgsz 640): 입력 images [1,3,640,640] float32, RGB, 0~1, 가운데 레터박스(114 채움).
@@ -82,7 +82,7 @@ const KEYPOINTS = 17;
 const INPUT_SIZE = 640;
 
 /** 감지·관절 모델(저장소 models/에 커밋). sha256은 Dockerfile 확인 줄과 같다(scripts/brain-yolo-fetch.ts가 확인). */
-export const DETECTOR_MODEL = { file: "yolo26n.onnx", sha256: "b164246692cd533f5d2ea16426c1e81da686ad64d07740f35ab762715faaf4c3" } as const;
+export const DETECTOR_MODEL = { file: "yolo26n-seg.onnx", sha256: "2e8fc38ffb5df4eca1fb56784121db03222c32bbfc09beb3a310339e9129e170" } as const;
 export const POSE_MODEL = { file: "yolo26n-pose.onnx", sha256: "dd0e47a03ea0f2b9e766b038559de14fb1dd5e51d8dfb331051740998628d91e" } as const;
 
 /** 저장소에 커밋한 모델 폴더(models/). Docker 이미지에서는 /app/models/. */

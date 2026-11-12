@@ -245,7 +245,7 @@ describe("배포 파일", () => {
   it("키 없는 컨테이너 확인: 이미지 안 YOLO26n·관절 모델이 떠서 분석했는지, 호스트에서 보낸 계획이 토큰으로만 들어가는지 본다", () => {
     const s = read("scripts/container-smoke.ts");
     expect(s).toContain("/api/brain");
-    expect(s).toContain('detector !== "yolo26n"');
+    expect(s).toContain('detector !== "yolo26n-seg"');
     expect(s).toContain('pose !== "yolo26n-pose"');
     expect(s).toContain("detected");
     expect(s).toContain("/api/plan");

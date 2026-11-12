@@ -1,4 +1,4 @@
-# noonchi 서버 이미지: 화면 빌드 → 운영 의존성 → 실행(저장소 models/의 YOLO26n·YOLO26n-pose, sha256 검사).
+# noonchi 서버 이미지: 화면 빌드 → 운영 의존성 → 실행(저장소 models/의 YOLO26n-seg·YOLO26n-pose, sha256 검사).
 # 키·.env는 이미지에 넣지 않는다(.dockerignore). 설정은 compose가 이 서비스에 적은 이름만 실행 때 준다.
 ARG NODE_IMAGE=node:22.15.0-bookworm-slim
 
@@ -32,7 +32,7 @@ COPY --from=deps /app/node_modules node_modules
 # sha256은 src/brain/detector.ts 모델 표와 같다(tests/deploy-files.test.ts)
 COPY models models
 RUN printf '%s\n' \
-      "b164246692cd533f5d2ea16426c1e81da686ad64d07740f35ab762715faaf4c3  models/yolo26n.onnx" \
+      "2e8fc38ffb5df4eca1fb56784121db03222c32bbfc09beb3a310339e9129e170  models/yolo26n-seg.onnx" \
       "dd0e47a03ea0f2b9e766b038559de14fb1dd5e51d8dfb331051740998628d91e  models/yolo26n-pose.onnx" \
     | sha256sum -c -
 COPY package.json tsconfig.json ./

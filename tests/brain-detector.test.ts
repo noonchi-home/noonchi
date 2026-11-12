@@ -131,12 +131,13 @@ describe("nms", () => {
 });
 
 describe("모델과 감지기 값", () => {
-  it("감지기는 저장소 models/의 yolo26n, 관절은 yolo26n-pose다. 파일은 BRAIN_YOLO_PATH·BRAIN_POSE_PATH로 직접 줄 수 있다", () => {
-    expect(detectorSpec({})).toEqual({ modelPath: join(MODELS_DIR, "yolo26n.onnx"), posePath: join(MODELS_DIR, "yolo26n-pose.onnx"), threads: 4 });
+  it("감지기는 저장소 models/의 yolo26n-seg, 관절은 yolo26n-pose다. 파일은 BRAIN_YOLO_PATH·BRAIN_POSE_PATH로 직접 줄 수 있다", () => {
+    expect(detectorSpec({})).toEqual({ modelPath: join(MODELS_DIR, "yolo26n-seg.onnx"), posePath: join(MODELS_DIR, "yolo26n-pose.onnx"), threads: 4 });
     expect(detectorSpec({ BRAIN_YOLO_PATH: "a.onnx", BRAIN_POSE_PATH: "b.onnx", BRAIN_YOLO_THREADS: "2" })).toEqual({ modelPath: "a.onnx", posePath: "b.onnx", threads: 2 });
   });
 
-  it("저장소 models/의 YOLO26 파일 sha256이 표와 같다", () => {
+  it("감지 모델은 yolo26n-seg이고 파일 sha256이 표와 같다", () => {
+    expect(DETECTOR_MODEL.file).toBe("yolo26n-seg.onnx");
     const sha = (p: string) => createHash("sha256").update(readFileSync(p)).digest("hex");
     expect(sha(join(MODELS_DIR, DETECTOR_MODEL.file))).toBe(DETECTOR_MODEL.sha256);
     expect(sha(join(MODELS_DIR, POSE_MODEL.file))).toBe(POSE_MODEL.sha256);
