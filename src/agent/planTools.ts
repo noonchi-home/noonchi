@@ -125,7 +125,7 @@ export const STEP_ARGS = z.object({
 export type StepArgs = z.infer<typeof STEP_ARGS>;
 
 /** 손으로 켜는 가전이 위험 목록(src/agent/policy.ts CONFIRM_RULES: 그 종류를 켜거나 시작하는 명령)인가. 끄는 단계·위험 목록이 아닌 가전은 아니다. */
-export function riskyHand(step: Pick<AgentStep, "hand">, devices: readonly Pick<DeviceView, "id" | "kind">[]): boolean {
+export function riskyHand(step: Pick<AgentStep, "hand">, devices: readonly { id: string; kind: string }[]): boolean {
   if (step.hand?.to !== "on") return false;
   const kind = devices.find((d) => d.id === step.hand!.deviceId)?.kind;
   return CONFIRM_RULES.some((r) => r.kind === kind && (r.command === "on" || r.command === "start"));

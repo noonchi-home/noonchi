@@ -3,6 +3,11 @@
 // 통과하면 에이전트를 계획 모드로 한 번 부른다(planner). 같은 행동은 planGapMs 안에 다시 부르지 않는다(「가까이 본 뒤 다시 판단」으로 닫은 계획은 세지 않는다). 주기 tick은 에이전트를 부르지 않는다.
 // 계획을 만들지 않는 행동(TaskSpec.plan false, 컵 그대로 두기): 계획 전 검사를 통과하면 에이전트를 부르지 않고 실제 폰에도 보내지 않으며
 // 그 판단 줄에 「그대로 둠」만 남긴다(leftGapMs에 한 번). 진행 중인 다른 계획은 바꾸지 않는다. 대시보드 말풍선 카드는 leftAt()으로 그 시각을 본다.
+// 손으로 켜는 위험 가전(코치 계획의 do 단계, AgentStep.hand가 위험 목록 가전을 켬): 그 단계가 되면 명령보다 먼저 안전 문구와 함께 묻는다(승인·거절, 단계 id :hand).
+// 승인 뒤에만 켜라는 명령을 보내고, 거절이면 취소로 닫는다. 답은 기억하지 않는다(다음 판에도 또 묻는다). 묻는 동안은 「완료」·말·비전으로 넘어가지 않는다.
+// 켜라는 명령을 보낸 가전은 끄는 단계가 끝날 때까지 「켠 것」(hot)으로 본다. 켠 채 계획이 닫히면(그만·시간 초과·실패·새 계획) 닫은 뒤 실제 폰에
+// 끄라는 안내(단계 id :off, 「완료」 하나)를 한 번 보낸다. 「완료」·말 답, 그 가전 꺼짐, offHoldMs 중 먼저 오는 것으로 지운다.
+// 코치 행동(TaskSpec.coach) 계획이 열려 있거나 만드는 중이면 coaching()이 참이다: 그동안 판단 호출(PAM)을 쉰다.
 // 계획은 어떤 것이든 같은 방법으로 돌린다(src/agent/planTools.ts AgentStep):
 // - 사람 단계(go·pick·place·do): 실제 폰(에이전트의 손, src/contract/phone.ts)에 사람에게 하는 명령 하나와 「완료」를 보내고(소리로도 읽음),
 //   끝나는 조건(World State 낱말 조건, ConditionWatch)이 참이거나 「완료」면 다음 단계로. repeatMs마다 명령을 다시 읽는다.
@@ -37,14 +42,14 @@ import type { Facet, WorldEye, WorldObject, WorldView } from "../contract/world.
 import type { LookSpot } from "../observe/crop.js";
 import type { FloorPlan } from "../plan/floor.js";
 import type { PlanHub } from "../plan/hub.js";
-import { AGAIN_TEXT, APPROVAL_TEXT, EXEC_TEXT, VISION_TEXT, placeShort } from "../plan/labels.js";
+import { AGAIN_TEXT, APPROVAL_TEXT, CAUTION_TEXT, EXEC_TEXT, VISION_TEXT, placeShort } from "../plan/labels.js";
 import { roomAt } from "../plan/route.js";
 import { OBJECT_NAME, PLACE_UNKNOWN, STATE_TEXT, onSurface } from "../world/labels.js";
 import { ConditionWatch, type Condition, type ConditionContext } from "../world/conditions.js";
 import { NEAR_M } from "../world/vocab.js";
 import type { DecisionRecord } from "../world/decide.js";
 import { approvalNeed, taskKey, type ApprovalAnswer, type ApprovalBook } from "../agent/approval.js";
-import { HUMAN_KINDS, objectNames, type AgentPlan, type AgentStep, type PlanResult } from "../agent/planTools.js";
+import { HUMAN_KINDS, objectNames, riskyHand, type AgentPlan, type AgentStep, type PlanResult } from "../agent/planTools.js";
 import type { ToolResult } from "../agent/tools.js";
 import type { CheckResult } from "./check.js";
 import { AGAIN, APPROVE, STEP_DONE, STOP, type ActionChoice } from "./prompts.js";
@@ -93,6 +98,10 @@ export interface TrackerOptions {
   planGapMs?: number;
   /** 계획 없는 행동(그대로 두기)의 기록을 다시 남기기 전 기다리는 시간(ms). */
   leftGapMs?: number;
+  /** 이 집 가전(id·종류·이름): 손으로 켜는 단계가 위험 목록인지와 묻는 글의 이름. 없으면 손으로 켜는 단계는 모두 묻는다. */
+  handDevices?: () => readonly { id: string; kind: string; label: string }[];
+  /** 켠 채 닫힌 계획의 끄기 안내를 이만큼(ms) 뒤 지운다. */
+  offHoldMs?: number;
   /** 멈춘 집기·놓기 단계 알림(관찰 모드 A, src/act/look.ts). 받았으면 true(그때만 센다). 받은 부름은 끝날 때 s.settle(counted)를 부른다. 없으면 부르지 않는다. */
   stalled?: (s: Stall) => boolean;
   /** 집기·놓기 단계가 이만큼(ms) 안 끝나면 stalled를 부른다(단계 시작 뒤, 받은 부름 뒤). */
@@ -102,7 +111,7 @@ export interface TrackerOptions {
 }
 
 /** 기본값: 다시 읽기 30초, 비전 상태 0.5초에 한 번, 검사 3초, 승인 답 2분, 같은 행동 다시 계획 15초, 그대로 두기 기록 60초에 한 번, 멈춘 단계 8초·단계마다 3번. 단계 시간 한도는 계획 단계마다 있다. */
-export const TRACK_DEFAULTS = { repeatMs: 30_000, visionMs: 500, recheckMs: 3000, askMs: 120_000, planGapMs: 15_000, leftGapMs: 60_000, stallMs: 8000, stallMax: 3 } as const;
+export const TRACK_DEFAULTS = { repeatMs: 30_000, visionMs: 500, recheckMs: 3000, askMs: 120_000, planGapMs: 15_000, leftGapMs: 60_000, stallMs: 8000, stallMax: 3, offHoldMs: 120_000 } as const;
 
 /** 멈춘 집기·놓기 단계. command: 실제 폰에 띄운 지금 명령 글. stuckMs: 단계 시작 뒤 지난 시간. looks: 이 단계에서 센 부름 수(시도).
  *  spots: 계획 물건(지금 따라가는 World State 물건, 자리를 알 때)과 단계 대상 자리(평면도, 물건과 다를 때).
@@ -117,7 +126,7 @@ export interface Stall {
 }
 
 /** 실제 폰에 띄운 질문: 첫 단계 전 승인, 위험 목록 가전 승인(토큰), 시간 초과로 다시 묻기. */
-type Asking = { why: "plan" } | { why: "device"; token: string } | { why: "again" };
+type Asking = { why: "plan" } | { why: "device"; token: string } | { why: "again" } | { why: "hand" };
 
 /** at: 지금 단계 번호(실행 전 -1). sent: 실제 폰에 띄운 지금 명령. others: 계획 물건 id → 계획을 받을 때 있던 같은 종류의 다른 물건.
  *  alias: 계획 물건 id → 지금 그 물건으로 보는 World State id(옮겨서 새 id가 붙으면 이어 간다). carried: 집기 단계를 마친(사람이 든) 계획 물건.
@@ -134,6 +143,8 @@ interface Run {
   looks: number; lookAt: number; stepEnd: AbortController | null;
   /** 같은 행동 다시 계획 간격을 세려고 적은 시각(Job.at). */
   gapAt: number;
+  /** 손으로 켜라는 명령을 보낸 위험 가전 id(끄는 단계가 끝나면 뺀다). */
+  hot: Set<string>;
 }
 
 /** at: 같은 행동 다시 계획 간격(planGapMs)을 세려고 적은 시각. */
@@ -159,14 +170,16 @@ export class ExecutionTracker {
   private leftNoteAt = Number.NEGATIVE_INFINITY;
   private leftWallAt: number | null = null;
   private readonly clock: { now(): number };
-  private readonly cfg: { repeatMs: number; visionMs: number; recheckMs: number; askMs: number; planGapMs: number; leftGapMs: number; stallMs: number; stallMax: number };
+  /** 켠 채 닫힌 계획의 끄기 안내(실제 폰에 떠 있는 동안). */
+  private reminder: { sent: PlannedCommand; at: number; devices: string[] } | null = null;
+  private readonly cfg: { repeatMs: number; visionMs: number; recheckMs: number; askMs: number; planGapMs: number; leftGapMs: number; stallMs: number; stallMax: number; offHoldMs: number };
 
   constructor(private readonly o: TrackerOptions) {
     this.clock = o.clock ?? { now: () => Date.now() };
     this.cfg = {
       repeatMs: o.repeatMs ?? TRACK_DEFAULTS.repeatMs, visionMs: o.visionMs ?? TRACK_DEFAULTS.visionMs, recheckMs: o.recheckMs ?? TRACK_DEFAULTS.recheckMs,
       askMs: o.askMs ?? TRACK_DEFAULTS.askMs, planGapMs: o.planGapMs ?? TRACK_DEFAULTS.planGapMs, leftGapMs: o.leftGapMs ?? TRACK_DEFAULTS.leftGapMs,
-      stallMs: o.stallMs ?? TRACK_DEFAULTS.stallMs, stallMax: o.stallMax ?? TRACK_DEFAULTS.stallMax,
+      stallMs: o.stallMs ?? TRACK_DEFAULTS.stallMs, stallMax: o.stallMax ?? TRACK_DEFAULTS.stallMax, offHoldMs: o.offHoldMs ?? TRACK_DEFAULTS.offHoldMs,
     };
   }
 
@@ -182,6 +195,7 @@ export class ExecutionTracker {
   /** 실제 폰에 띄운 지금 명령·질문(답을 기다리는 중). 승인·다시 묻기·질문 단계는 질문(ask), 그 밖은 부탁(command). 없으면 null. */
   openCommand(): { planId: string; stepId: string; kind: "command" | "ask"; text: string; choices: ActionChoice[] } | null {
     const r = this.shown();
+    if (!r && this.reminder && !this.stopped) return { planId: this.reminder.sent.id, stepId: this.reminder.sent.step, kind: "command", text: this.reminder.sent.text, choices: [STEP_DONE] };
     if (!r) return null;
     const ask = r.asking !== null || this.stepOf(r)?.kind === "ask";
     return { planId: r.plan.view.id, stepId: r.sent.step, kind: ask ? "ask" : "command", text: r.sent.text, choices: choicesOf(r, this.stepOf(r)) };
@@ -244,6 +258,12 @@ export class ExecutionTracker {
 
   /** 답 단추(「완료」·질문 답·승인 답·계속·그만). 지금 명령의 계획·단계·답이 아니면 무시한다. 받았으면 true. */
   onAnswer(planId: string, stepId: string, choice: string): boolean {
+    const off = this.reminder;
+    if (!this.stopped && off && off.sent.id === planId && off.sent.step === stepId) {
+      if (choice !== STEP_DONE.id) return false;
+      this.clearReminder();
+      return true;
+    }
     const r = this.shown();
     if (!r || r.plan.view.id !== planId || r.sent.step !== stepId) return false;
     const step = this.stepOf(r);
@@ -262,6 +282,7 @@ export class ExecutionTracker {
     }
     if (a?.why === "plan") this.approvedPlan(r, picked.id as ApprovalAnswer);
     else if (a?.why === "device") this.approvedDevice(r, a.token, picked.id as ApprovalAnswer);
+    else if (a?.why === "hand") this.approvedHand(r, picked.id as ApprovalAnswer);
     else if (a?.why === "again") {
       if (picked.id === "continue") this.resume(r);
       else this.finish(r, "failed", EXEC_TEXT.stopped, "cancelled");
@@ -282,7 +303,12 @@ export class ExecutionTracker {
       if (open) this.finish(open, "failed", EXEC_TEXT.stopped, "cancelled");
       return STOP;
     }
-    if (!open) return null;
+    if (!open) {
+      // 끄기 안내가 떠 있으면 「완료」·「다 했어」로 지운다
+      const done = this.reminder ? matchChoice(text, [STEP_DONE]) : null;
+      if (done) this.clearReminder();
+      return done;
+    }
     const r = this.shown();
     if (!r) return null;
     const picked = matchChoice(text, choicesOf(r, this.stepOf(r)));
@@ -293,6 +319,7 @@ export class ExecutionTracker {
   /** World State가 바뀌었다: 치운 물건을 다시 보고, 지금 단계가 됐는지 바로 본다. */
   onWorld(): void {
     this.placed();
+    this.reminderTick();
     const r = this.run;
     if (!this.stopped && r?.state === "running") this.look(r);
   }
@@ -342,6 +369,7 @@ export class ExecutionTracker {
   /** 타이머(250ms)가 부른다: 검사 다시 보기, 지금 단계 보기, 멈춘 단계 알림, 다시 읽기, 시간 초과. 에이전트는 부르지 않는다. */
   tick(): void {
     const r = this.run;
+    if (!this.stopped) this.reminderTick();
     if (this.stopped || !r || !OPEN.has(r.state)) return;
     const now = this.clock.now();
     if (r.state === "planned" && !r.asking) return this.tryStart(r, now - r.since >= this.cfg.recheckMs);
@@ -373,6 +401,53 @@ export class ExecutionTracker {
     const r = this.run;
     const kind = r && r.state === "running" ? this.stepOf(r)?.kind : undefined;
     return !this.stopped && (kind === "wait" || kind === "device");
+  }
+
+  /** 코치 행동(TaskSpec.coach) 계획이 열려 있거나 만드는 중인가: 그동안 판단 호출(PAM)을 쉰다(src/server/home.ts hold). */
+  coaching(): boolean {
+    if (this.stopped) return false;
+    const open = this.open();
+    return taskOf(open?.plan.task ?? null)?.coach === true || taskOf(this.planning?.decision.action ?? null)?.coach === true;
+  }
+
+  /** 손으로 켜는 위험 가전 단계인가. 이 집 가전 목록을 모르면 손으로 켜는 단계는 모두 위험한 것으로 본다(묻는다). */
+  private risky(step: AgentStep | undefined): boolean {
+    if (!step || step.kind !== "do" || step.hand?.to !== "on") return false;
+    const devices = this.o.handDevices?.();
+    return devices ? riskyHand(step, devices) : true;
+  }
+
+  /** 손으로 다루는 가전 이름(묻는 글·끄기 안내): 이 집 가전 이름, 없으면 단계 대상 자리 이름. */
+  private handLabel(deviceId: string, target: string | null = null): string {
+    return this.o.handDevices?.().find((d) => d.id === deviceId)?.label ?? this.placeName(target ?? deviceId);
+  }
+
+  /** 켜기 전 질문의 답(기억하지 않는다): 승인이면 그때 켜라는 명령을 보내고(그 가전은 끄는 단계가 끝날 때까지 켠 것으로 본다), 거절이면 취소로 닫는다.
+   *  기다린 시간은 단계 시간 한도·끝나는 조건 기준 시각에 넣지 않는다. */
+  private approvedHand(r: Run, answer: ApprovalAnswer): void {
+    const step = this.stepOf(r);
+    if (answer === "reject" || !step?.hand) return this.finish(r, "failed", APPROVAL_TEXT.refused, "cancelled");
+    const now = this.clock.now();
+    Object.assign(r, { asking: null, stepAt: now, spokeAt: now, visionAt: now, deadline: now + step.timeoutMs, watch: step.until ? new ConditionWatch(step.until) : null });
+    r.hot.add(step.hand.deviceId);
+    this.show(r, step);
+  }
+
+  /** 끄기 안내를 지운다. */
+  private clearReminder(): void {
+    const off = this.reminder;
+    if (!off) return;
+    this.reminder = null;
+    this.o.toPhone({ type: "command_clear", id: off.sent.id });
+  }
+
+  /** 끄기 안내: 그 가전이 모두 꺼졌거나 offHoldMs가 지나면 지운다. */
+  private reminderTick(): void {
+    const off = this.reminder;
+    if (!off) return;
+    const devices = this.o.world().devices;
+    const allOff = off.devices.every((id) => devices.find((d) => d.id === id)?.state.includes("off"));
+    if (allOff || this.clock.now() - off.at > this.cfg.offHoldMs) this.clearReminder();
   }
 
   /** 판단 뒤에 가까이 보기가 그 행동 대상 종류 물건의 볼 면을 바꿨는가: 사라지지 않은 그 종류 물건의 볼 면 가까이 보기 횟수(closer_rev)가
@@ -451,9 +526,11 @@ export class ExecutionTracker {
     const run: Run = {
       plan: r.plan, decision: d, state: "decided", since: now, at: -1, stepAt: now, spokeAt: now, visionAt: now, sent: null,
       asking: null, askAt: now, watch: null, others, alias: new Map([...ids].map((id) => [id, id])), carried: new Set(), placeAt: (id) => (id ? this.o.floor().objects.get(id)?.position ?? null : null), deadline: now, again: false, device: "idle", gen: 0,
-      looks: 0, lookAt: Number.NEGATIVE_INFINITY, stepEnd: null, gapAt: job.at,
+      looks: 0, lookAt: Number.NEGATIVE_INFINITY, stepEnd: null, gapAt: job.at, hot: new Set(),
     };
     this.run = run;
+    // 새 계획의 명령이 실제 폰 자리를 쓴다: 앞 계획의 끄기 안내는 내린다
+    if (this.reminder) this.reminder = null;
     this.o.plans.onDecision(r.plan.view);
     this.step(run, "planned");
     this.tryStart(run, false);
@@ -527,6 +604,7 @@ export class ExecutionTracker {
   private advance(r: Run): void {
     const done = this.stepOf(r);
     if (done?.kind === "pick" && done.object) r.carried.add(done.object);
+    if (done?.kind === "do" && done.hand?.to === "off") r.hot.delete(done.hand.deviceId);
     if (done?.kind === "place" && done.object) {
       r.carried.delete(done.object);
       if (done.target) this.remember(r, done.object, done.target);
@@ -551,6 +629,11 @@ export class ExecutionTracker {
     if (step.kind === "device") {
       this.clear(r);
       return this.runDevice(r, step);
+    }
+    // 손으로 켜는 위험 가전: 명령보다 먼저 안전 문구와 함께 묻는다(승인 뒤에만 켜라는 명령, approvedHand)
+    if (this.risky(step)) {
+      r.watch = null;
+      return this.ask(r, { why: "hand" }, CAUTION_TEXT.ask(step.caution ?? "", this.handLabel(step.hand!.deviceId, step.target)), `${step.id}:hand`);
     }
     this.show(r, step);
   }
@@ -793,6 +876,17 @@ export class ExecutionTracker {
       this.o.toPhone({ type: "command_clear", id: r.plan.view.id });
     }
     if (close) this.o.plans.close(r.plan.view.id, close);
+    // 손으로 켠 위험 가전이 켜진 채 닫혔다: 끄라고 한 번 알린다(「완료」·말·그 가전 꺼짐·offHoldMs로 지운다)
+    if (r.hot.size && !this.stopped) {
+      const devices = [...r.hot];
+      r.hot.clear();
+      const sent: PlannedCommand = {
+        type: "command", id: r.plan.view.id, step: `${r.plan.view.id}:off`, text: CAUTION_TEXT.off(this.handLabel(devices[0]!)), vision: null,
+        choices: [{ id: STEP_DONE.id, label: STEP_DONE.label }], target: null, speak: true,
+      };
+      this.reminder = { sent, at: this.clock.now(), devices };
+      this.o.toPhone(sent);
+    }
   }
 
   private step(r: Run, state: ExecState, text?: string): void {

@@ -15,7 +15,7 @@ import type { BrainLog } from "../src/contract/events.js";
 import type { PlannedCommand, PlannedCommandMessage } from "../src/contract/phone.js";
 import type { WorldObject, WorldView } from "../src/contract/world.js";
 import { PlanHub } from "../src/plan/hub.js";
-import { APPROVAL_TEXT, CHECK_TEXT, EXEC_TEXT, STEP_COMMAND, STEP_LABEL } from "../src/plan/labels.js";
+import { APPROVAL_TEXT, CAUTION_TEXT, CHECK_TEXT, EXEC_TEXT, STEP_COMMAND, STEP_LABEL } from "../src/plan/labels.js";
 import type { DecisionRecord } from "../src/world/decide.js";
 import { WorldState, type CloserPass } from "../src/world/state.js";
 import { sha256, type EngineFrame } from "../src/observe/ring.js";
@@ -24,8 +24,32 @@ import type { CameraView } from "../src/phone/session.js";
 import { floorPlanFrom } from "../src/plan/route.js";
 import { SMALL_SCENE, smallFloor } from "./helpers/floor.js";
 import { standing } from "./helpers/poses.js";
-import { fillSteps, planCalls, planContext, startFakePlanner, testPlanner, type FakePlanner } from "./helpers/planner.js";
+import { fillSteps, planCalls, planContext, ramenScripts, startFakePlanner, testPlanner, type FakePlanner } from "./helpers/planner.js";
+import { makeHome } from "./helpers/home.js";
 import { det } from "./helpers/detectors.js";
+
+// 코치 계획(라면 끓이기 알려 주기) 시험 틀: 수납장·인덕션이 있는 주방, 인덕션은 가전 induction_1(cooktop)
+const RAMEN = "라면 끓이기 알려 주기";
+const ramenDecision = (id = "pam-1", seq = 1): DecisionRecord => ({ ...decision, id, seq, action: RAMEN, prediction: { ...pred, task_index: 1 } });
+const kitchenFloor = () => floorPlanFrom({ ...structuredClone(SMALL_SCENE), objects: [...structuredClone(SMALL_SCENE.objects),
+  { id: "cabinet_1", type: "kitchen_cabinet", room: "kitchen", plan: { position: [4.5, 3.5] } }, { id: "induction_1", type: "induction_counter", room: "kitchen", plan: { position: [6, 0.5] } }] });
+const cooktop = (state: string[]): WorldView["devices"][number] => ({ id: "induction_1", kind: "cooktop", label: "인덕션", status: state.join(" "), state: state as WorldView["devices"][number]["state"], active: false, changed_ms: 0, event_ms: null, started_ms: null, remaining_min: null, history: [] });
+function coachSetup(over: Parameters<typeof setup>[0] = {}) {
+  const plans = new PlanHub(kitchenFloor(), () => {}, () => "t");
+  const hub = makeHome().hub;
+  llm.scripts = { ...llm.scripts, ...ramenScripts() };
+  const planner = testPlanner(llm);
+  const w = over.w ?? (() => world([]));
+  return setup({
+    plans, w, approvals: store({ [`task:${RAMEN}`]: "approve" }), handDevices: () => [{ id: "induction_1", kind: "cooktop", label: "인덕션" }],
+    planner: (d, signal) => planner.plan(planContext({ decision: d, world: w(), floor: plans.floor(), hub }), signal), ...over,
+  });
+}
+/** 인덕션 켜기(7번) 앞까지 「완료」로 넘긴다. */
+async function toOn(s: ReturnType<typeof setup>, d: DecisionRecord = ramenDecision()) {
+  await s.decide(d);
+  for (let n = 1; n <= 6; n++) expect(s.t.onAnswer(`plan:${d.id}`, `plan:${d.id}:${n}`, "done"), String(n)).toBe(true);
+}
 
 let llm: FakePlanner;
 beforeAll(async () => { llm = await startFakePlanner(); });
@@ -266,7 +290,7 @@ describe("실행 추적: 단계마다 실제 폰 명령", () => {
   });
 
   it("한 단계가 오래 걸리면 30초마다 명령을 다시 읽고, 2분이 지나면 실패로 닫는다. 다음 단계로 가면 다시 잰다", async () => {
-    expect(TRACK_DEFAULTS).toEqual({ repeatMs: 30_000, visionMs: 500, recheckMs: 3000, askMs: 120_000, planGapMs: 15_000, leftGapMs: 60_000, stallMs: 8000, stallMax: 3 });
+    expect(TRACK_DEFAULTS).toMatchObject({ repeatMs: 30_000, visionMs: 500, recheckMs: 3000, askMs: 120_000, planGapMs: 15_000, leftGapMs: 60_000, stallMs: 8000, stallMax: 3, offHoldMs: 120_000 });
     const { t, decide, clock, spoken, plans, exec, last } = setup();
     await decide(decision);
     clock.t += 29_999;
@@ -545,6 +569,161 @@ describe("실행 추적: 계획 없는 행동(컵 그대로 두기)", () => {
     w = world([cup("present")]);
     await s.decide(leave("pam-2", 2));
     expect(s.exec().slice(2).map((l) => [l.state, l.text])).toEqual([["decided", EXEC_TEXT.decided], ["done", "그대로 둠"]]);
+  });
+});
+
+describe("실행 추적: 코치 계획(손으로 켜는 위험 가전)", () => {
+  const P = "plan:pam-1";
+  const ASK = "냄비가 뜨거워져요. 인덕션을 켤까요?";
+  const YESNO = [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }];
+  const OFF = { type: "command", id: P, step: `${P}:off`, text: "인덕션을 꺼 주세요", vision: null, choices: DONE, target: null, speak: true };
+
+  it("인덕션 켜기 단계는 먼저 안전 문구와 함께 묻고(승인·거절), 승인 뒤에만 「인덕션을 켜 주세요」를 보낸다. 「완료」·말·비전으로는 승인 없이 넘어가지 않고, 답은 기억하지 않아 다음 판에도 또 묻는다", async () => {
+    expect(CAUTION_TEXT.ask("냄비가 뜨거워져요.", "인덕션")).toBe(ASK);
+    const approvals = store({ [`task:${RAMEN}`]: "approve" });
+    let w = world([]);
+    const s = coachSetup({ approvals, w: () => w });
+    await toOn(s);
+    expect(s.last()).toEqual({ type: "command", id: P, step: `${P}:7:hand`, text: ASK, vision: null, choices: YESNO, target: null, speak: true });
+    expect(s.spoken()).not.toContain("인덕션을 켜 주세요");
+    expect(s.steps()[6]).toBe("active");
+    // 승인 없이 넘기는 길이 없다: 단계 「완료」, 질문에 「완료」, 말 「완료」·「다 했어」, 가전이 켜졌다는 관찰, 시간
+    expect(s.t.onAnswer(P, `${P}:7`, "done")).toBe(false);
+    expect(s.t.onAnswer(P, `${P}:7:hand`, "done")).toBe(false);
+    expect(s.t.onHeard("완료")).toBeNull();
+    expect(s.t.onHeard("다 했어")).toBeNull();
+    w = { ...world([]), devices: [cooktop(["on"])] };
+    s.t.onWorld();
+    s.clock.t += 5_000;
+    s.t.tick();
+    expect(s.last()).toMatchObject({ step: `${P}:7:hand`, text: ASK });
+    expect(s.steps()[6]).toBe("active");
+    expect(s.spoken()).not.toContain("인덕션을 켜 주세요");
+    // 승인: 그때 켜라는 명령
+    expect(s.t.onAnswer(P, `${P}:7:hand`, "approve")).toBe(true);
+    expect(s.last()).toMatchObject({ type: "command", step: `${P}:7`, text: "인덕션을 켜 주세요", choices: DONE, speak: true, kind: "do" });
+    expect(Object.keys(approvals.memory().always ?? {})).toEqual([`task:${RAMEN}`]);
+    // 다음 판: 같은 승인 기억으로도 또 묻는다
+    const again = coachSetup({ approvals });
+    await toOn(again);
+    expect(again.last()).toMatchObject({ step: `${P}:7:hand`, text: ASK, choices: YESNO });
+    // 말 「승인」도 받는다
+    expect(again.t.onHeard("승인")).toMatchObject({ id: "approve" });
+    expect(again.last()).toMatchObject({ step: `${P}:7`, text: "인덕션을 켜 주세요" });
+  });
+
+  it("가전 종류를 알 수 없어도(가전 목록 없음) 손으로 켜는 단계는 묻는다", async () => {
+    const s = coachSetup({ handDevices: undefined });
+    await toOn(s);
+    expect(s.last()).toMatchObject({ step: `${P}:7:hand`, choices: YESNO });
+    expect(s.last().text).toMatch(/^냄비가 뜨거워져요\. .+ 켤까요\?$/);
+  });
+
+  it("거절이면 켜라는 명령 없이 취소로 닫는다. 끄기 안내도 없다", async () => {
+    const s = coachSetup();
+    await toOn(s);
+    expect(s.t.onAnswer(P, `${P}:7:hand`, "reject")).toBe(true);
+    expect(s.last()).toEqual({ type: "command_clear", id: P });
+    expect(s.spoken()).not.toContain("인덕션을 켜 주세요");
+    expect(s.spoken()).not.toContain("인덕션을 꺼 주세요");
+    expect(s.exec().at(-1)).toMatchObject({ state: "failed", text: APPROVAL_TEXT.refused });
+    expect(s.plans.current()).toMatchObject({ status: "cancelled" });
+  });
+
+  it("켜기 전 질문에 2분 안에 답이 없으면 켜라는 명령 없이 닫는다", async () => {
+    const s = coachSetup();
+    await toOn(s);
+    s.clock.t += 120_001;
+    s.t.tick();
+    expect(s.exec().at(-1)).toMatchObject({ state: "failed", text: EXEC_TEXT.noAnswer });
+    expect(s.spoken()).not.toContain("인덕션을 켜 주세요");
+    expect(s.spoken()).not.toContain("인덕션을 꺼 주세요");
+  });
+
+  it("켠 뒤 「그만」이면 계획을 닫고 「인덕션을 꺼 주세요」와 「완료」를 보낸다. 「완료」면 지운다", async () => {
+    const s = coachSetup();
+    await toOn(s);
+    s.t.onAnswer(P, `${P}:7:hand`, "approve");
+    expect(s.t.onHeard("그만")).toMatchObject({ id: "stop" });
+    expect(s.phone.slice(-2)).toEqual([{ type: "command_clear", id: P }, OFF]);
+    expect(s.plans.current()).toMatchObject({ status: "cancelled" });
+    expect(s.t.openCommand()).toMatchObject({ planId: P, stepId: `${P}:off`, kind: "command", text: "인덕션을 꺼 주세요", choices: [{ id: "done" }] });
+    expect(s.t.onAnswer(P, `${P}:off`, "approve")).toBe(false);
+    expect(s.t.onAnswer(P, `${P}:off`, "done")).toBe(true);
+    expect(s.last()).toEqual({ type: "command_clear", id: P });
+    expect(s.t.openCommand()).toBeNull();
+    expect(s.t.onAnswer(P, `${P}:off`, "done")).toBe(false);
+  });
+
+  it("끄기 안내는 말 「다 했어」, 그 가전이 꺼짐, 120초 중 먼저 오는 것으로 지운다. 시간 초과로 닫힌 계획에도 보낸다", async () => {
+    const said = coachSetup();
+    await toOn(said);
+    said.t.onAnswer(P, `${P}:7:hand`, "approve");
+    said.t.onHeard("그만");
+    expect(said.t.onHeard("다 했어")).toMatchObject({ id: "done" });
+    expect(said.last()).toEqual({ type: "command_clear", id: P });
+
+    let w = { ...world([]), devices: [cooktop(["on"])] };
+    const seen = coachSetup({ w: () => w });
+    await toOn(seen);
+    seen.t.onAnswer(P, `${P}:7:hand`, "approve");
+    // 켜기 단계가 시간 안에 끝나지 않아 닫힌다(그 사이 사람이 켰을 수 있다)
+    seen.clock.t += 120_001;
+    seen.t.tick();
+    expect(seen.exec().at(-1)).toMatchObject({ state: "failed", text: EXEC_TEXT.timeout });
+    expect(seen.last()).toEqual(OFF);
+    seen.clock.t += 1_000;
+    seen.t.tick();
+    expect(seen.last()).toEqual(OFF);
+    w = { ...world([]), devices: [cooktop(["off"])] };
+    seen.t.onWorld();
+    expect(seen.last()).toEqual({ type: "command_clear", id: P });
+
+    const late = coachSetup();
+    await toOn(late);
+    late.t.onAnswer(P, `${P}:7:hand`, "approve");
+    late.t.onHeard("그만");
+    late.clock.t += 119_000;
+    late.t.tick();
+    expect(late.last()).toEqual(OFF);
+    late.clock.t += 1_001;
+    late.t.tick();
+    expect(late.last()).toEqual({ type: "command_clear", id: P });
+  });
+
+  it("끄는 단계까지 끝낸 계획은 끄기 안내를 보내지 않는다. 코치 계획이 열려 있는 동안 coaching()이 참이다(판단 호출을 쉬게 한다)", async () => {
+    const s = coachSetup();
+    expect(s.t.coaching()).toBe(false);
+    await toOn(s);
+    expect(s.t.coaching()).toBe(true);
+    s.t.onAnswer(P, `${P}:7:hand`, "approve");
+    s.t.onAnswer(P, `${P}:7`, "done");
+    // 8 알림(4초) · 9 기다리기(240초) · 10 면 넣기 · 11 기다리기 · 12 끄기 · 13 알림
+    s.clock.t += 4_001; s.t.tick();
+    expect(s.steps()[8]).toBe("active");
+    expect(s.t.coaching()).toBe(true);
+    s.clock.t += 240_001; s.t.tick();
+    expect(s.last()).toMatchObject({ step: `${P}:10`, text: "면과 스프를 넣어 주세요" });
+    s.t.onAnswer(P, `${P}:10`, "done");
+    s.clock.t += 240_001; s.t.tick();
+    expect(s.last()).toMatchObject({ step: `${P}:12`, text: "인덕션을 꺼 주세요", choices: DONE, kind: "do" });
+    s.t.onAnswer(P, `${P}:12`, "done");
+    s.clock.t += 4_001; s.t.tick();
+    expect(s.plans.current()).toMatchObject({ status: "done" });
+    expect(s.last()).toEqual({ type: "command_clear", id: P });
+    expect(s.phone.filter((m) => m.type === "command" && m.step === `${P}:off`)).toEqual([]);
+    expect(s.t.coaching()).toBe(false);
+    expect(s.spoken()).toEqual([
+      "수납장으로 가 주세요", "냄비를 꺼내 주세요", "싱크대로 가 주세요", "냄비에 물을 받아 주세요", "인덕션으로 가 주세요", "냄비를 인덕션에 올려 주세요",
+      ASK, "인덕션을 켜 주세요", "물이 끓을 때까지 기다려요.", "면과 스프를 넣어 주세요", "인덕션을 꺼 주세요", "라면이 다 됐어요.",
+    ]);
+  });
+
+  it("컵 치우기(코치 아님) 계획에는 coaching()이 거짓이다", async () => {
+    const s = setup();
+    await s.decide(decision);
+    expect(s.t.current()).toMatchObject({ state: "running" });
+    expect(s.t.coaching()).toBe(false);
   });
 });
 

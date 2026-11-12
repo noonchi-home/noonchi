@@ -303,7 +303,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         world, trigger: new Trigger(loadTriggerConfig(env), now()), tasks: () => tasksFor(assist()),
         memory: () => memoryForDay(history.db, history.db.dayOf(now())), emit, offsetMinutes: history.db.offsetMinutes, clock: ctx.brain?.clock,
         // 행동 중 기다리기·기기 단계 동안은 PAM을 부르지 않는다(실행 추적이 조건을 본다)
-        hold: () => tracker?.waiting() ?? false,
+        hold: () => (tracker?.waiting() ?? false) || (tracker?.coaching() ?? false),
         keepHeard: () => keepHeard,
         // 판단 → 계획 → 실행 전 검사 → 실행 추적(src/act/)
         onDecision: (d) => tracker?.onDecision(d),
@@ -340,6 +340,8 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
           decision: d, tasks: d.tasks ?? tasksFor(assist()), plan: p, world: world.view(now()), nowMs: now(), staleMs: act.staleMs, mode: ctx.mode?.() ?? "test", deviceSteps: deviceSteps(p),
           placed: tracker?.placed(),
         }),
+        // 손으로 켜는 단계가 위험 목록 가전인지(켜기 전에 묻는다)와 묻는 글의 가전 이름
+        handDevices: () => deviceViews(signals),
         // 멈춘 집기·놓기 단계는 보기 담당(관찰 모드 A)에 알린다
         stalled: (s) => looker?.stalled(s) ?? false,
       });

@@ -66,6 +66,12 @@ export const APPROVAL_TEXT = {
   refused: "사용자가 거절한 일",
 };
 
+/** 손으로 켜는 위험 가전(src/act/track.ts): 켜기 전에 안전 문구와 함께 묻는 글, 켠 채 계획이 닫혔을 때 끄라고 알리는 명령. */
+export const CAUTION_TEXT = {
+  ask: (caution: string, label: string) => `${caution} ${josa(label, "을/를")} 켤까요?`.trim(),
+  off: (label: string) => `${josa(label, "을/를")} 꺼 주세요`,
+};
+
 /** 시간 안에 끝나지 않은 단계를 실제 폰에 다시 묻는 글(src/act/track.ts, 답은 계속·그만). */
 export const AGAIN_TEXT = { ask: (label: string) => `${josa(label, "을/를")} 계속할까요?` };
 
