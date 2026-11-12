@@ -421,7 +421,7 @@ export class WorldState {
       if (FIXTURE_CLASSES.has(d.label)) {
         const fix = this.fixture(d.label as FixtureClass, at, eyeRoom);
         ids.set(tmp, fix.id);
-        this.sight(frame, tmp, fix, d.box, eyeRoom);
+        if (frame.vlm !== false) this.sight(frame, tmp, fix, d.box, eyeRoom); // 카메라로 가전 맞추기는 그 프레임 VLM 답이 쓴다: 빠른 프레임은 답이 없다
         return;
       }
       if (!OBJ_CLASSES.has(d.label)) return;

@@ -47,7 +47,7 @@ async function sendFrames(env: Record<string, string>) {
   try {
     await until(() => box.some((m) => m.type === "status"));
     for (let i = 1; i <= 3; i++) {
-      phone.send(encodeFramePacket({ kind: "engine", width: 2, height: 2, captured_at: Date.now(), time_err_ms: 0 }, Buffer.from([0xff, 0xd8, i])));
+      phone.send(encodeFramePacket({ kind: "engine", width: 2, height: 2, captured_at: Date.now() - (3 - i) * 2000, time_err_ms: 0 }, Buffer.from([0xff, 0xd8, i]))); // 촬영 시각 2초 간격: 세 장 모두 VLM 프레임
       await new Promise((r) => setTimeout(r, 30));
     }
     phone.send(encodeFramePacket({ kind: "photo", width: 2, height: 2 }, Buffer.from([0xff, 0xd8, 0x77])));

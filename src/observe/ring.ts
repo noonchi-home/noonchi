@@ -1,4 +1,4 @@
-// 엔진 프레임 메모리 고리(기본 20초). 디스크에 쓰지 않는다. 직전 프레임과 SHA-256이 같으면 새 프레임으로 넣지 않는다.
+// 엔진 프레임 메모리 고리(기본 20초, 100ms 간격이면 약 200장). 디스크에 쓰지 않는다. 직전 프레임과 SHA-256이 같으면 새 프레임으로 넣지 않는다.
 // 가장 새 프레임보다 keepMs 넘게 앞서 찍힌 프레임(늦게 온 프레임)도 넣지 않는다.
 import { createHash } from "node:crypto";
 import type { EyePose } from "../contract/events.js";
@@ -20,6 +20,8 @@ export interface EngineFrame {
   view: CameraView | null;
   /** 가까이 보기로 잘라 키운 사진이면 잘라 낸 자리(원래 엔진 프레임 픽셀 [x, y, w, h]). 고리에는 넣지 않고 VLM 풀에만 간다. */
   crop?: [number, number, number, number];
+  /** 이 프레임을 VLM·기록·가까이 보기에 쓰는가. false면 YOLO만 돌리는 빠른 프레임이다. 없으면 VLM 프레임. */
+  vlm?: boolean;
 }
 
 export const sha256 = (b: Buffer): string => createHash("sha256").update(b).digest("hex");
@@ -71,9 +73,9 @@ export class FrameRing {
     return this.list;
   }
 
-  /** VLM 창: frame과 그보다 앞서 찍힌 프레임 가운데 가장 새 count장(frame 포함), 오래된 것부터. frame보다 spanMs 이상 앞선 프레임은 뺀다. */
+  /** VLM 창: frame과 그보다 앞서 찍힌 VLM 프레임 가운데 가장 새 count장(frame 포함), 오래된 것부터. frame보다 spanMs 이상 앞선 프레임과 빠른 프레임은 뺀다. */
   window(frame: EngineFrame, count: number, spanMs: number): EngineFrame[] {
-    const before = this.list.filter((f) => f !== frame && f.capturedAtMs <= frame.capturedAtMs && frame.capturedAtMs - f.capturedAtMs < spanMs);
+    const before = this.list.filter((f) => f !== frame && f.vlm !== false && f.capturedAtMs <= frame.capturedAtMs && frame.capturedAtMs - f.capturedAtMs < spanMs);
     return [...before.slice(Math.max(0, before.length - (Math.max(1, count) - 1))), frame];
   }
 }

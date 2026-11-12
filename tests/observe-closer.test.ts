@@ -37,14 +37,14 @@ const cropUrl = (n: number) => `data:image/jpeg;base64,${cropJpeg(frameJpeg(n, [
 const fakeVlm = (f: FakeServer) => new VlmClient({ baseUrl: `${f.url}/v1`, model: "m", apiKey: "", extraBody: {} });
 
 /** 관찰 흐름 하나: 엔진 사진은 전체 감지(기본 없음), 잘라 키운 사진은 컵. frame(at)은 2초 간격 엔진 프레임 하나를 넣고 시계를 받은 시각(at + 5ms)까지 옮긴다. */
-function setup(o: { vlm: VlmClient; detector?: (engine: Set<string>) => Detector | null; vlmMaxInflight?: number; onChanges?: (c: WorldChange[]) => void }) {
+function setup(o: { vlm: VlmClient; detector?: (engine: Set<string>) => Detector | null; vlmMaxInflight?: number; onChanges?: (c: WorldChange[]) => void; engineMs?: number; vlmMs?: number }) {
   const engine = new Set<string>();
   const logs: BrainLog[] = [];
   const changes: WorldChange[][] = [];
   const clock = { t: 0, now() { return this.t; } };
   const world = new WorldState({ surfaces: () => [SINK], floorAt: () => 0, roomAt: () => null, devices: () => [] });
   const p = new ObservationPipeline({
-    config: { engineMs: 2000, vlmMaxInflight: o.vlmMaxInflight ?? 4, vlmTimeoutMs: 5000, detectQueueMax: 8, keepMs: 20_000 },
+    config: { engineMs: o.engineMs ?? 2000, vlmMs: o.vlmMs, vlmMaxInflight: o.vlmMaxInflight ?? 4, vlmTimeoutMs: 5000, detectQueueMax: 8, keepMs: 20_000 },
     detector: o.detector ? o.detector(engine) : cropAware(engine, { crop: [cup] }), vlm: o.vlm, world,
     emit: (l) => logs.push(l), broadcastWorld: () => {}, onChanges: (c) => { changes.push(c); o.onChanges?.(c); }, clock,
   });
@@ -92,9 +92,9 @@ describe("가까이 보기(관찰 흐름 closer)", () => {
     const text = content.filter((x) => x.type === "text").map((x) => x.text).join("\n");
     expect(text).toContain(CLOSER_NOTE);
     expect(text).toContain(`"box":[220,160,40,20]`);
-    expect(s.logs.find((l) => l.type === "observe" && l.frame_id === "e3.c1" && l.boxes)).toMatchObject({
-      captured_at_ms: 6000, boxes: [{ label: "cup", score: 0.72, box: [230, 170, 20, 10] }], frame: { width: 480, height: 360 }, closer: [120, 90, 240, 180],
-    });
+    const looked = s.logs.find((l) => l.type === "observe" && l.frame_id === "e3.c1" && l.yolo !== null)!;
+    expect(looked).toMatchObject({ captured_at_ms: 6000, yolo: "컵 0.72", closer: [120, 90, 240, 180] });
+    expect(looked).not.toHaveProperty("boxes");
     // 합친 변화는 한 번에 내고, 잘라 본 사진의 요약은 장면 요약을 바꾸지 않는다
     expect(s.changes.filter((c) => c.some((x) => x.kind === "appeared"))).toHaveLength(1);
     expect(s.changes.flat().filter((c) => c.kind === "vlm" && c.text.includes(CLOSER_SUMMARY))).toEqual([]);
@@ -102,6 +102,27 @@ describe("가까이 보기(관찰 흐름 closer)", () => {
     expect(s.p.status().closer).toEqual({ looks: 1, failed: 0, costUsd: null, model: "m" });
     await s.p.close();
   });
+
+  it("엔진 프레임이 100ms마다 와도 VLM 프레임 간격(2초)으로 고른 최대 5장을 자른다: 9초 폭에서 5장이고, 가장 새 VLM 프레임 뒤의 빠른 프레임은 쓰지 않는다", async () => {
+    fake = await startFakeOpenAI({ reply: closerVlmReply() });
+    const cropped: string[] = [];
+    const s = setup({ vlm: fakeVlm(fake), engineMs: 100, vlmMs: 2000, detector: (engine) => ({
+      name: "crops", provider: "test",
+      detect: async (jpeg: Buffer) => {
+        if (engine.has(sha256(jpeg))) return { detections: [], ms: 0, width: 480, height: 360 };
+        cropped.push(sha256(jpeg));
+        return { detections: [cup], ms: 0, width: 480, height: 360 };
+      },
+    }) });
+    // 0~10.9초, 100ms 간격 110장. VLM 프레임은 0·2·…·10초(1·21·…·101번째 장)
+    for (let i = 0; i < 110; i++) s.frame(i * 100);
+    await s.p.idle();
+    const r = await s.p.closer(SPOT);
+    expect(r).toMatchObject({ ok: true, frame_id: "e101.c1", captured_at_ms: 10_000, frames: 5, found: [{ id: "cup_1", cls: "cup" }] });
+    const want = [21, 41, 61, 81, 101].map((n) => sha256(cropJpeg(frameJpeg(n, [[0, 0, 8, 8]]), CROP, LOOK_SIZE)));
+    expect(cropped).toEqual(want);
+    await s.p.close();
+  }, 30_000);
 
   it("새 프레임 없이 다시 보면 같은 원본 프레임의 답이라 확신이 오르지 않고, 새 프레임으로 다시 보면 같은 cup_1을 고친다. 그사이 전체 사진이 못 봐도 지킴 중이라 사라지지 않는다", async () => {
     fake = await startFakeOpenAI({ reply: closerVlmReply() });
@@ -153,7 +174,7 @@ describe("가까이 보기(관찰 흐름 closer)", () => {
     expect(imagesOf(sent[0]!)).toEqual([cropUrl(4)]);
     expect((sent[0]!.body.messages[0].content as Part[]).map((x) => x.text ?? "").join("\n")).toContain(`"box":[220,160,40,20]`);
     expect(s.logs.filter((l) => l.type === "observe" && l.closer)).toEqual([
-      expect.objectContaining({ frame_id: "e4.c1", captured_at_ms: 8000, boxes: [{ label: "cup", score: 0.72, box: [230, 170, 20, 10] }], closer: CROP }),
+      expect.objectContaining({ frame_id: "e4.c1", captured_at_ms: 8000, yolo: "컵 0.72", closer: CROP }),
       expect.objectContaining({ frame_id: "e4.c1", captured_at_ms: 8000, vlm: CLOSER_SUMMARY, closer: CROP }),
     ]);
     expect(s.world.view(10_000).objects).toEqual([expect.objectContaining({ id: "cup_1", status: "present", first_seen_ms: 4000, last_seen_ms: 8000 })]);
@@ -435,7 +456,7 @@ describe("가까이 보기(관찰 흐름 closer)", () => {
       found: [{ id: null, cls: "cup", score: 0.72, facts: [] }], summary: null, vlm: "no_fresh_frames",
     });
     expect(late.objects).toEqual([]);
-    expect(late.logs).toEqual([expect.objectContaining({ frame_id: "e3.c1", boxes: [{ label: "cup", score: 0.72, box: [230, 170, 20, 10] }] })]);
+    expect(late.logs).toEqual([expect.objectContaining({ frame_id: "e3.c1", yolo: "컵 0.72" })]);
     expect(late.status).toMatchObject({ looks: 1, failed: 0 });
     // 3장에 보인 컵: 감지로 만든 컵은 남고 VLM 사실만 넣지 않는다
     const three = await one([[cup], [cup], [cup]], 6005 + 6000);

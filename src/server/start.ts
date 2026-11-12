@@ -58,7 +58,7 @@ export interface StartServerOptions {
    *  PHONE_EYE_HEIGHT_M(바닥 hit이 없을 때 폰 높이에서 빼는 눈높이, 기본 1.5), PHONE_URL(폰 주소 맨 앞), PHONE_LAN_URLS(0이면 폰 주소에 이 기계 네트워크 주소를 넣지 않음, compose),
    *  FOCUS(1이면 초점 표시를 보낸다, 기본 끔), PHONE_PHOTO_DIR(사진 폴더, 기본 runtime/photos), RUNTIME_DIR(배치 수정본·설정의 바탕, 기본 runtime),
    *  BRAIN(1이면 폰 엔진 프레임으로 관찰 흐름을 돌린다. PHONE_PORT 필요, VLM은 추론 모드가 고른 주소),
-   *  ENGINE_FRAME_MS·VLM_WINDOW_FRAMES·VLM_MAX_INFLIGHT·DETECT_QUEUE_MAX·BRAIN_YOLO_PATH·BRAIN_POSE_PATH·BRAIN_YOLO_THREADS·BRAIN_YOLO_PROVIDER·BRAIN_POSE_EVERY(src/observe/pipeline.ts),
+   *  ENGINE_FRAME_MS·VLM_FRAME_MS·VLM_WINDOW_FRAMES·VLM_MAX_INFLIGHT·DETECT_QUEUE_MAX·BRAIN_YOLO_PATH·BRAIN_POSE_PATH·BRAIN_YOLO_THREADS·BRAIN_YOLO_PROVIDER·BRAIN_POSE_EVERY(src/observe/pipeline.ts),
    *  THINQ_TOKEN(실제 모드), THINQ_REGION·THINQ_COUNTRY·THINQ_CLIENT_ID·THINQ_API_KEY·THINQ_BASE_URL·THINQ_TIMEOUT_MS(src/thinq/client.ts),
    *  THINQ_POLL_MS(짝지은 기기 읽기 간격, 기본 15000, 0이면 처음 한 번), THINQ_READBACK_MS(명령 뒤 다시 읽기 전 기다림, 기본 1000,2000,4000)을 읽는다. */
   env?: Env;

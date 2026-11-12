@@ -124,7 +124,7 @@ curl -s http://127.0.0.1:8300/health          # PAM 서비스: llm.reachable, li
 
 ## 5. 호출량
 
-엔진 프레임 간격은 `ENGINE_FRAME_MS`(기본 2000)다. 사진 한 장마다 VLM을 한 번 부르므로 2초 간격이면 한 시간에 약 1,800번이다. mock에서는 이만큼 OpenAI를 부른다.
+엔진 프레임은 `ENGINE_FRAME_MS`(기본 100)마다 오고 YOLO는 모든 프레임에 돈다(이 서버 안, 호출 비용 없음). VLM은 `VLM_FRAME_MS`(기본 2000)마다 한 장만 부르므로 한 시간에 약 1,800번이다. mock에서는 이만큼 OpenAI를 부른다.
 
 ## 6. 멈추기·고치기
 

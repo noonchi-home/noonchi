@@ -11,7 +11,7 @@ import { z } from "zod";
 import type { Agent } from "../agent/agent.js";
 import { newSessionId } from "../agent/agent.js";
 import { Policy } from "../agent/policy.js";
-import type { BrainLog, HealthView, ReadyView } from "../contract/events.js";
+import type { BrainLog, HealthView, ReadyView, SeenEvent } from "../contract/events.js";
 import type { HistoryKind } from "../contract/history.js";
 import type { WorldView } from "../contract/world.js";
 import type { PlanView } from "../contract/plan.js";
@@ -68,8 +68,10 @@ export interface AppOptions {
   brain?: { status(): object };
   /** 지금 World State(BRAIN=1). 있으면 GET /api/world, /events 접속 때 {type:"world"}. */
   world?: () => WorldView;
-  /** 마지막 판단과 상자 있는 마지막 observe(BRAIN=1). /events 접속 때 world 다음에 하나씩 {type:"brain", replay:true}로 보낸다. */
+  /** 마지막 판단(BRAIN=1). /events 접속 때 world 다음에 {type:"brain", replay:true}로 보낸다. */
   brainLast?: () => BrainLog[];
+  /** 마지막 물체 모양(BRAIN=1). /events 접속 때 그대로 replay:true를 붙여 보낸다. */
+  seenLast?: () => SeenEvent | null;
   /** 지금 대시보드 말풍선 카드 글(src/act/say.ts). /events 접속 때 {type:"say"}. 없으면 null. */
   say?: () => string | null;
   /** 지금 운영 모드(/api/health). 없으면 시험 모드. */
@@ -663,6 +665,8 @@ export function createApp(opts: AppOptions): TwinHomeApp {
     send(ws, { type: "plan", plan: opts.plan?.current() ?? null });
     if (opts.world) send(ws, { type: "world", world: opts.world() });
     for (const event of opts.brainLast?.() ?? []) send(ws, { type: "brain", event, replay: true });
+    const seen = opts.seenLast?.();
+    if (seen) send(ws, { ...seen, replay: true });
     send(ws, { type: "say", text: opts.say?.() ?? null });
     ws.on("error", () => {});
   });

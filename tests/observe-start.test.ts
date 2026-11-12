@@ -74,6 +74,9 @@ describe("startServer(BRAIN=1) + 관찰 흐름", () => {
         await new Promise((r) => setTimeout(r, 30));
       }
       await until(dashBox, (m) => m.type === "brain" && m.event.type === "observe" && m.event.yolo === "컵 0.90");
+      // 물체 모양은 seen으로 가고 observe에는 상자가 없다. 기록 DB에는 넣지 않는다
+      expect(await until(dashBox, (m) => m.type === "seen")).toMatchObject({ frame: { width: 4, height: 3 }, shapes: [{ label: "cup", score: 0.9, mask: { at: [1, 1, 2, 1], cols: 1, rows: 1 } }] });
+      expect(dashBox.some((m) => m.type === "brain" && m.event.type === "observe" && "boxes" in m.event)).toBe(false);
       await until(dashBox, (m) => m.type === "brain" && m.event.type === "observe" && m.event.vlm === "가짜 장면");
       const world = await until(dashBox, (m) => m.type === "world" && m.world.objects.length === 1);
       expect(world.world.objects[0]).toMatchObject({ id: "cup_1", cls: "cup", status: "present" });
@@ -96,6 +99,8 @@ describe("startServer(BRAIN=1) + 관찰 흐름", () => {
       expect(fake.requests.filter((r) => r.path.endsWith("/chat/completions")).every((r) => r.body.model === "fake-vlm")).toBe(true);
       const late = await openWebSocket(`${srv.url.replace(/^http/, "ws")}/events`, { setup: (ws) => { dashBox = inbox(ws); } });
       expect(await until(dashBox, (m) => m.type === "world")).toMatchObject({ world: { objects: [{ id: "cup_1" }] } });
+      expect(await until(dashBox, (m) => m.type === "seen")).toMatchObject({ replay: true, shapes: [{ label: "cup" }] });
+      expect(JSON.stringify(srv.history.list({}))).not.toContain('"seen"');
       late.close();
     } finally {
       dash.close();

@@ -6,7 +6,7 @@ import { WorldState } from "../src/world/state.js";
 import type { Detection, Detector } from "../src/brain/detector.js";
 import { ScriptedDetector, det as mkDet } from "./helpers/detectors.js";
 import { standing } from "./helpers/poses.js";
-import type { BrainLog } from "../src/contract/events.js";
+import type { BrainLog, SeenEvent } from "../src/contract/events.js";
 import type { WorldView } from "../src/contract/world.js";
 
 let fake: FakeServer | undefined;
@@ -134,8 +134,9 @@ describe("관찰 흐름", () => {
     await p.close();
   });
 
-  it("World State가 받지 않는 낮은 신뢰도 감지(사람 0.5·물건 0.4 아래)는 상자·YOLO 글·VLM 감지 목록에 넣지 않는다", async () => {
+  it("World State가 받지 않는 낮은 신뢰도 감지(사람 0.5·물건 0.4 아래)는 모양(seen)·YOLO 글·VLM 감지 목록에 넣지 않는다", async () => {
     const logs: BrainLog[] = [];
+    const seen: SeenEvent[] = [];
     const sent: string[] = [];
     const vlm = { model: "cap", json: async (req: { texts: string[] }) => {
       sent.push(req.texts.join("\n"));
@@ -154,13 +155,14 @@ describe("관찰 흐름", () => {
     let n = 0;
     const p = new ObservationPipeline({ config: { engineMs: 1000, vlmMaxInflight: 4, vlmTimeoutMs: 5000, detectQueueMax: 8, keepMs: 20_000 },
       detector: new ScriptedDetector(() => frames[n++]!), vlm,
-      world: new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }), emit: (l) => logs.push(l), broadcastWorld: () => {} });
+      world: new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }), emit: (l) => logs.push(l), broadcastWorld: () => {}, onSeen: (e) => seen.push(e) });
     for (let i = 1; i <= 2; i++) p.onEngine(jpeg(i), { kind: "engine", width: 360, height: 780, captured_at: i * 1000, time_err_ms: 0 }, null, null, i * 1000 + 5);
     await p.idle();
-    const yolo = (id: string) => logs.find((l): l is Extract<BrainLog, { type: "observe" }> => l.type === "observe" && l.frame_id === id && l.boxes !== undefined)!;
-    expect(yolo("e1")).toMatchObject({ yolo: "사람 0.62 · 컵 0.83", boxes: [{ label: "person", score: 0.62 }, { label: "cup", score: 0.83 }] });
-    expect(yolo("e1").boxes).toHaveLength(2);
-    expect(yolo("e2")).toMatchObject({ yolo: "감지 없음", boxes: [] });
+    const yolo = (id: string) => logs.find((l): l is Extract<BrainLog, { type: "observe" }> => l.type === "observe" && l.frame_id === id && l.yolo !== null)!;
+    expect(yolo("e1")).toMatchObject({ yolo: "사람 0.62 · 컵 0.83" });
+    expect(seen.find((e) => e.frame_id === "e1")!.shapes.map((x) => [x.label, x.score])).toEqual([["person", 0.62], ["cup", 0.83]]);
+    expect(yolo("e2")).toMatchObject({ yolo: "감지 없음" });
+    expect(seen.find((e) => e.frame_id === "e2")!.shapes).toEqual([]);
     expect(sent).toHaveLength(2);
     expect(sent[0]).toContain(`{"id":"d1","class":"person"`);
     expect(sent[0]).toContain(`{"id":"d2","class":"cup"`);
@@ -219,9 +221,10 @@ describe("관찰 흐름", () => {
     await p.close();
   });
 
-  it("YOLO observe에 상자와 엔진 프레임 크기를 싣는다(감지 없음은 빈 목록, 실패·VLM 답에는 없음)", async () => {
+  it("감지가 된 프레임마다 물체 모양과 엔진 프레임 크기를 seen으로 낸다(감지 없음은 빈 목록, 감지 실패는 내지 않음). observe 기록에는 상자가 없다", async () => {
     fake = await startFakeOpenAI();
     const logs: BrainLog[] = [];
+    const seen: SeenEvent[] = [];
     const script: (() => Detection[] | null)[] = [
       () => [mkDet("cup", 0.83, [100, 50, 40, 60], 41)],
       () => [],
@@ -235,14 +238,18 @@ describe("관찰 흐름", () => {
     }, close: async () => {} } as unknown as Detector;
     const p = new ObservationPipeline({ config: { engineMs: 1000, vlmMaxInflight: 4, vlmTimeoutMs: 5000, detectQueueMax: 8, keepMs: 20_000 }, detector: det,
       vlm: new VlmClient({ baseUrl: `${fake.url}/v1`, model: "m", apiKey: "", extraBody: {} }),
-      world: new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }), emit: (l) => logs.push(l), broadcastWorld: () => {} });
+      world: new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }), emit: (l) => logs.push(l), broadcastWorld: () => {}, onSeen: (e) => seen.push(e) });
     for (let i = 1; i <= 3; i++) p.onEngine(jpeg(i), { kind: "engine", width: 360, height: 640, captured_at: i * 1000, time_err_ms: 0 }, null, null, i * 1000 + 5);
     await p.idle();
     const observed = logs.filter((l): l is Extract<BrainLog, { type: "observe" }> => l.type === "observe");
     const yolo = (id: string) => observed.find((l) => l.frame_id === id && l.vlm === null && l.vlm_missing === undefined)!;
-    expect(yolo("e1")).toMatchObject({ yolo: expect.any(String), boxes: [{ label: "cup", score: 0.83, box: [100, 50, 40, 60] }], frame: { width: 360, height: 640 } });
-    expect(Object.keys(yolo("e1").boxes![0]!).sort()).toEqual(["box", "label", "score"]);
-    expect(yolo("e2")).toMatchObject({ boxes: [], frame: { width: 360, height: 640 } });
+    expect(yolo("e1")).toMatchObject({ yolo: "컵 0.83" });
+    expect(yolo("e1")).not.toHaveProperty("boxes");
+    expect(yolo("e1")).not.toHaveProperty("frame");
+    expect(seen.map((e) => e.frame_id)).toEqual(["e1", "e2"]);
+    expect(seen[0]).toMatchObject({ type: "seen", captured_at_ms: 1000, frame: { width: 360, height: 640 }, shapes: [{ label: "cup", score: 0.83, mask: { at: [100, 50, 40, 60], cols: 1, rows: 1 } }] });
+    expect(Object.keys(seen[0]!.shapes[0]!).sort()).toEqual(["label", "mask", "score"]);
+    expect(seen[1]).toMatchObject({ shapes: [], frame: { width: 360, height: 640 } });
     expect(yolo("e3")).toMatchObject({ yolo: null, yolo_missing: "error" });
     expect(yolo("e3")).not.toHaveProperty("boxes");
     expect(yolo("e3")).not.toHaveProperty("frame");
@@ -290,17 +297,11 @@ describe("관찰 흐름", () => {
 });
 
 describe("관찰 흐름 설정", () => {
-  it("엔진 프레임 간격 기본은 2초(mock은 VLM을 시간당 약 1,800번 부른다), 200ms 아래는 시작을 막는다", () => {
-    expect(loadObserveConfig({})).toMatchObject({ engineMs: 2000, vlmMaxInflight: 4, detectQueueMax: 8, keepMs: 20_000 });
-    expect(3_600_000 / loadObserveConfig({}).engineMs).toBe(1800);
-    expect(loadObserveConfig({ ENGINE_FRAME_MS: "500" }).engineMs).toBe(500);
-    expect(() => loadObserveConfig({ ENGINE_FRAME_MS: "100" })).toThrow(/ENGINE_FRAME_MS=100/);
-  });
   it("VLM 창 크기(VLM_WINDOW_FRAMES) 기본은 5장, 1~10장이고 고리는 창보다 짧지 않다", () => {
     expect(loadObserveConfig({}).vlmWindowFrames).toBe(5);
     expect(loadObserveConfig({ VLM_WINDOW_FRAMES: "1" }).vlmWindowFrames).toBe(1);
     expect(() => loadObserveConfig({ VLM_WINDOW_FRAMES: "0" })).toThrow(/VLM_WINDOW_FRAMES=0/);
     expect(() => loadObserveConfig({ VLM_WINDOW_FRAMES: "11" })).toThrow(/VLM_WINDOW_FRAMES=11/);
-    expect(loadObserveConfig({ VLM_WINDOW_FRAMES: "8", ENGINE_FRAME_MS: "5000" }).keepMs).toBe(40_000);
+    expect(loadObserveConfig({ VLM_WINDOW_FRAMES: "8", ENGINE_FRAME_MS: "5000" }).keepMs).toBe(40_000); // 엔진 간격만 길게 주면 VLM도 그 간격
   });
 });

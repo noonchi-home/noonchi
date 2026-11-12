@@ -149,7 +149,8 @@ describe("한양목련 처음부터 끝까지", () => {
       "pending,pending,pending,pending", "active,pending,pending,pending", "done,active,pending,pending",
       "done,done,active,pending", "done,done,done,active", "done,done,done,done",
     ]);
-    expect(dash.some((m) => m.type === "brain" && m.event.type === "observe" && m.event.boxes?.length > 0)).toBe(true);
+    expect(dash.some((m) => m.type === "seen" && m.shapes.length > 0)).toBe(true);
+    expect(dash.some((m) => m.type === "brain" && m.event.type === "observe" && "boxes" in m.event)).toBe(false);
     const shown = JSON.stringify(dash);
     for (const word of [ask, "할까요", "승인", "거절", ":approve"]) expect(shown).not.toContain(word);
 

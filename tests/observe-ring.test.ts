@@ -9,6 +9,15 @@ describe("프레임 고리", () => {
     r.push(frame("a", 0)); r.push(frame("c", 21_000)); r.push(frame("b", 10_000));
     expect(r.frames().map((f) => f.id)).toEqual(["b", "c"]);
   });
+  it("VLM 창은 빠른 프레임(vlm: false)을 빼고 VLM 프레임만 고른다", () => {
+    const r = new FrameRing();
+    for (let i = 0; i <= 100; i++) r.push({ ...frame(`f${i}`, i * 100), vlm: i % 20 === 0 });
+    const last = r.frames().at(-1)!;
+    expect(r.window(last, 5, 10_000).map((f) => f.id)).toEqual(["f20", "f40", "f60", "f80", "f100"]);
+    // 지금 프레임이 빠른 프레임이어도 그 프레임은 넣는다(앞 장은 VLM 프레임만)
+    r.push({ ...frame("f101", 10_100), vlm: false });
+    expect(r.window(r.frames().at(-1)!, 3, 10_000).map((f) => f.id)).toEqual(["f80", "f100", "f101"]);
+  });
   it("직전 프레임과 같은 사진이면 버리고 센다", () => {
     const r = new FrameRing();
     expect(r.push(frame("a", 0, "same"))).toBe("added");

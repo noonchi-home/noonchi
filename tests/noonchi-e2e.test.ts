@@ -139,14 +139,14 @@ describe("NOONCHI 처음부터 끝까지", () => {
     const told = says.indexOf("식탁으로 가라고 했어요.");
     expect(says[told - 1]).toMatch(/컵을 치우기로 했어요\.$/);
     expect(says.slice(told, told + 5)).toEqual(["식탁으로 가라고 했어요.", "컵을 들라고 했어요.", "싱크대로 가라고 했어요.", "컵을 싱크대에 넣으라고 했어요.", "컵을 다 치웠어요."]);
-    // 새로 붙은 대시보드: world 다음에 마지막 판단과 상자 있는 마지막 observe, 그다음 지금 말풍선 글
+    // 새로 붙은 대시보드: world 다음에 마지막 판단과 마지막 물체 모양(seen), 그다음 지금 말풍선 글
     const late: Msg[] = [];
     sockets.push(await openWebSocket(`${srv.url.replace(/^http/, "ws")}/events`, { setup: inbox(late) }));
     for (const end = Date.now() + 3000; !late.some((m) => m.type === "say") && Date.now() < end; ) await new Promise((r) => setTimeout(r, 20));
     const from = late.findIndex((m) => m.type === "world");
-    expect(late.slice(from, late.findIndex((m) => m.type === "say") + 1).map((m) => (m.type === "brain" ? `brain:${m.event.type}` : m.type))).toEqual(["world", "brain:decision", "brain:observe", "say"]);
-    expect(late.find((m) => m.type === "brain" && m.event.type === "observe")!.event).toMatchObject({
-      boxes: [{ label: "cup", score: 0.9, box: [220, 160, 40, 20] }], frame: { width: 480, height: 360 },
+    expect(late.slice(from, late.findIndex((m) => m.type === "say") + 1).map((m) => (m.type === "brain" ? `brain:${m.event.type}` : m.type))).toEqual(["world", "brain:decision", "seen", "say"]);
+    expect(late.find((m) => m.type === "seen")).toMatchObject({
+      replay: true, shapes: [{ label: "cup", score: 0.9, mask: { at: [220, 160, 40, 20] } }], frame: { width: 480, height: 360 },
     });
     expect(typeof late.find((m) => m.type === "say")!.text).toBe("string");
   }, 60_000);

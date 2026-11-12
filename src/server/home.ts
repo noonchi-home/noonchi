@@ -19,7 +19,7 @@ import { Policy } from "../agent/policy.js";
 import { createProvider } from "../agent/providers/index.js";
 import { deviceViews } from "../agent/tools.js";
 import { PamClient } from "../brain/pam.js";
-import type { BrainLog, ReadyView } from "../contract/events.js";
+import type { BrainLog, ReadyView, SeenEvent } from "../contract/events.js";
 import type { PlannedCommand } from "../contract/phone.js";
 import type { PlanView } from "../contract/plan.js";
 import type { ControlMode } from "../contract/setup.js";
@@ -268,10 +268,10 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     // 실행 설정(STALE_MS). 틀린 값이면 시작을 막는다
     const act = loadActConfig(env);
     const nowMs = () => ctx.brain?.clock?.now() ?? Date.now();
-    // 실제 폰에 낸 지금 명령(실행 추적이 보낸 것), 마지막 판단, 상자 있는 마지막 observe: 새로 붙은 대시보드에도 보낸다
+    // 실제 폰에 낸 지금 명령(실행 추적이 보낸 것), 마지막 판단, 마지막 물체 모양(seen): 새로 붙은 대시보드에도 보낸다
     let command: PlannedCommand | null = null;
     let lastDecision: BrainLog | null = null;
-    let lastBoxes: BrainLog | null = null;
+    let lastSeen: SeenEvent | null = null;
     let said: string | null = null;
     // 마지막으로 가까이 보기를 시작한 자리와 시각(말풍선 카드 6초)
     let lookSay: { place: string; atMs: number } | null = null;
@@ -286,7 +286,6 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       const now = () => ctx.brain?.clock?.now() ?? Date.now();
       const emit = (event: BrainLog) => {
         if (event.type === "decision") lastDecision = event;
-        else if (event.type === "observe" && event.boxes) lastBoxes = event;
         appRef.current?.broadcast({ type: "brain", event });
         history.brain(event);
       };
@@ -340,6 +339,11 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       const tracking = tracker;
       pipeline = await createPipeline({
         env, log, world, inject: ctx.brain, emit,
+        // 물체 모양은 대시보드로만 보낸다(초당 10번이라 기록 DB·실행 기록에 넣지 않는다)
+        onSeen: (e) => {
+          lastSeen = e;
+          appRef.current?.broadcast(e);
+        },
         broadcastWorld: (w) => {
           appRef.current?.broadcast({ type: "world", world: w });
           speak();
@@ -395,7 +399,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       start: startStore && { get: () => startStore.get(), save: (raw) => startStore.save(raw), preview: (raw) => startStore.preview(raw), clear: () => startStore.clear() },
       phoneSync: () => phoneRef.current?.syncState() ?? null,
       plan: plans, history: history.db, reflect: history.reflect, scene: () => scene,
-      brainLast: () => [lastDecision, lastBoxes].filter((e): e is BrainLog => e !== null), say: () => said,
+      brainLast: () => (lastDecision ? [lastDecision] : []), seenLast: () => lastSeen, say: () => said,
     });
     const appNow = app;
     appRef.current = app;
