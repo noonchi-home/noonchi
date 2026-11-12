@@ -122,6 +122,42 @@ describe("설정: 운영 모드", () => {
     expect(await screen.findByRole("combobox", { name: "거실 에어컨 ThinQ 기기" })).toBeInTheDocument();
   });
 
+  it("돕는 방식 두 칸이 보이고 지금 값이 골라져 있다", async () => {
+    open(setupView({ assist: "coach" }));
+    const group = await screen.findByRole("radiogroup", { name: "돕는 방식" });
+    const radios = within(group).getAllByRole("radio");
+    expect(radios).toHaveLength(2);
+    expect(within(group).getByRole("radio", { name: /눈치 모드/ })).not.toBeChecked();
+    expect(within(group).getByRole("radio", { name: /코치 모드/ })).toBeChecked();
+    expect(within(group).getByText("먼저 알아채 도와요")).toBeInTheDocument();
+    expect(within(group).getByText("하는 법을 단계마다 알려 줘요")).toBeInTheDocument();
+    // 운영 모드 묶음은 그대로 두 칸이다
+    expect(within(screen.getByRole("radiogroup", { name: "가전을 어떻게 다룰까요?" })).getAllByRole("radio")).toHaveLength(2);
+  });
+
+  it("코치 모드를 고르면 확인 창 없이 바로 /api/setup/assist에 coach를 보내고 골라진다. 운영 모드는 그대로다", async () => {
+    const { api, user } = open(setupView(), {
+      "POST /api/setup/assist": (b) => { api.setView({ ...api.view(), assist: b.assist }); return [200, api.view()]; },
+    });
+    await user.click(await screen.findByRole("radio", { name: /코치 모드/ }));
+    await waitFor(() => expect(api.posts("/api/setup/assist")).toHaveLength(1));
+    expect(api.posts("/api/setup/assist")[0]!.body).toEqual({ assist: "coach" });
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    await waitFor(() => expect(screen.getByRole("radio", { name: /코치 모드/ })).toBeChecked());
+    expect(screen.getByRole("radio", { name: /시험 모드/ })).toBeChecked();
+    expect(api.posts("/api/setup/mode")).toHaveLength(0);
+    // 같은 값을 다시 눌러도 보내지 않는다
+    await user.click(screen.getByRole("radio", { name: /코치 모드/ }));
+    expect(api.posts("/api/setup/assist")).toHaveLength(1);
+  });
+
+  it("돕는 방식 저장에 실패하면 알림 글이 뜨고 눈치 모드 그대로다", async () => {
+    const { user } = open(setupView(), { "POST /api/setup/assist": () => [500, {}] });
+    await user.click(await screen.findByRole("radio", { name: /코치 모드/ }));
+    expect(await screen.findByText("돕는 방식을 저장하지 못했어요.")).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /눈치 모드/ })).toBeChecked();
+  });
+
   it("이전·다음으로 가전 선택·위치 동기화로 간다", async () => {
     const { user } = open();
     await user.click(await screen.findByRole("button", { name: "다음" }));
