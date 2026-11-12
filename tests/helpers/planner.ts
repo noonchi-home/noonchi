@@ -15,6 +15,7 @@ import type { WorldView } from "../../src/contract/world.js";
 import { MemoryHub } from "../../src/hub/memory.js";
 import type { DeviceHub, RoomSpec } from "../../src/hub/types.js";
 import type { FloorPlan } from "../../src/plan/floor.js";
+import { josa } from "../../src/agent/phrases.js";
 import { STEP_COMMAND, STEP_LABEL, placeShort } from "../../src/plan/labels.js";
 import type { DecisionRecord } from "../../src/world/decide.js";
 import type { LlmTurn } from "./llm.js";
@@ -57,7 +58,7 @@ export function cupSteps(ids: { table: string; sink: string; cup: string; basin?
 export const FILL_TEXT = {
   goFridge: { label: "냉장고로 가기", command: "냉장고로 가 주세요" },
   pick: { 물: { label: "물병 꺼내기", command: "물병을 꺼내 주세요" }, 콜라: { label: "콜라 꺼내기", command: "콜라를 꺼내 주세요" } },
-  goBack: (place: string) => ({ label: `${place}${place === "식탁" ? "으로" : "로"} 가기`, command: `${place}${place === "식탁" ? "으로" : "로"} 가 주세요` }),
+  goBack: (place: string) => ({ label: `${josa(place, "으로/로")} 가기`, command: `${josa(place, "으로/로")} 가 주세요` }),
   pour: { 물: { label: "컵에 물 따르기", command: "컵에 물을 따라 주세요" }, 콜라: { label: "컵에 콜라 따르기", command: "컵에 콜라를 따라 주세요" } },
 } as const;
 
@@ -88,6 +89,23 @@ export function idsFrom(input: string): { table: string; sink: string; cup: stri
     cup: /^- 물건 (cup_\d+) 컵 · (present|out_of_view)(?! · 이미 치움)/m.exec(input)?.[1] ?? "",
   };
 }
+
+/** 입력 글에서 냉장고(평면도 종류)와 보이는 컵(「이미 치움」이 아닌 첫 컵), 그 컵이 놓인 면(평면도 id, 없으면 식탁)과 그 면의 짧은 이름. */
+export function fillIdsFrom(input: string): { fridge: string; table: string; cup: string; place: string } {
+  const line = (type: string) => new RegExp(`^- (\\S+) .*\\[${type}\\].*$`, "m").exec(input);
+  const cup = /^- 물건 (cup_\d+) 컵 · (?:present|out_of_view)(?! · 이미 치움) · 면 (\S+)/m.exec(input);
+  const at = cup && cup[2] !== "없음" ? new RegExp(`^- ${cup[2]} .*\\[(\\w+)\\]`, "m").exec(input) : null;
+  return {
+    fridge: line("fridge")?.[1] ?? "", cup: cup?.[1] ?? "",
+    table: at ? cup![2]! : line("dining_table")?.[1] ?? "", place: (at && placeShort(at[1]!)) || "식탁",
+  };
+}
+
+/** 채워 주기 대본: 입력 글의 [할 일] 줄(행동 이름)로 물·콜라를 고른다. */
+export const FILL_SCRIPTS: Record<string, PlanScript> = {
+  "컵에 물 채워 주기": (input) => [planCalls(fillSteps({ ...fillIdsFrom(input), drink: "물" }))],
+  "컵에 콜라 따라 주기": (input) => [planCalls(fillSteps({ ...fillIdsFrom(input), drink: "콜라" }))],
+};
 
 /** 컵 치우기·물어보기 대본(지금 서버와 같은 계획). */
 export const CUP_SCRIPTS: Record<string, PlanScript> = {

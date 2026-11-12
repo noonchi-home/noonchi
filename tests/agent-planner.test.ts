@@ -31,7 +31,7 @@ import { DEVICE_STATES } from "../src/world/vocab.js";
 import { cupPlan } from "./helpers/cup-plan.js";
 import { smallFloor } from "./helpers/floor.js";
 import { startFakePam } from "./helpers/pam.js";
-import { CUP_SCRIPTS, cupSteps, fillSteps, idsFrom, planCalls, planContext, startFakePlanner, testPlanner, type FakePlanner, type PlanScript } from "./helpers/planner.js";
+import { CUP_SCRIPTS, FILL_SCRIPTS, cupSteps, fillSteps, idsFrom, planCalls, planContext, startFakePlanner, testPlanner, type FakePlanner, type PlanScript } from "./helpers/planner.js";
 
 // 작은 집: 복도(hall)·주방(kitchen)·후면 발코니(balcony, 바닥 −0.1m라 로봇 이동 가능 방이 아님). 세탁기·건조기는 발코니
 const SCENE = {
@@ -201,6 +201,57 @@ describe("계획 모드: 컵 치우기", () => {
     expect(SUBMIT_ARGS.shape.steps.element.shape.until.description).toContain(
       "place는 자리 사실 또는 트윈 자리(손에 없음, not in_hand)를 any로 묶고, 그 any와 사람이 들고 있지 않음(not person_holding)을 all로 묶는다. 트윈 자리는 위에 놓기면 놓을 면(target) 위, 안에 넣기(싱크대)면 그 면의 싱크볼 안(part basin)",
     );
+  });
+
+  it("지시문에 do 줄과 안 보이는 물건 집기 줄, 채워 주기 예가 있다. 예의 조건은 시험 대본과 같다", () => {
+    const lines = PLANNER_PROMPT.split("\n");
+    expect(lines.find((l) => l.startsWith("- 로봇이 없다."))).toContain("사람이 할 일은 go·pick·place·do 단계로 만들고");
+    const act = lines.find((l) => l.startsWith("- do:"))!;
+    expect(act).toContain("그 자리에서 사람이 하는 일(따르기·붓기). target은 그 일을 받는 World State 물건 id(없으면 평면도 id). command는 「주세요」로 끝난다.");
+    expect(act).toContain(`비전으로 볼 수 있으면 until을 쓴다(컵에 따르기: {"object": id, "follow": true, "facts": {"contents": "has_contents"}}).`);
+    expect(act).toContain("못 보면 until 없이 두면 사람이 「완료」로 넘긴다.");
+    const unseen = lines.find((l) => l.startsWith("- 안 보이는 물건 집기"))!;
+    expect(unseen).toContain(`pick target은 그 자리(평면도 id), until은 그 종류 물건이 손에 있음({"object": 종류, "facts": {"place": "in_hand"}}).`);
+    // 든 것을 모를 때도 참인 조건(person_holding 종류)은 병 집기에 쓰지 않게 한다
+    expect(unseen).toContain(`{"person_holding": 종류}는 든 것을 모를 때도 참이라 다른 물건을 들어도 넘어가니 쓰지 않는다.`);
+    expect(lines).toContain("예(컵에 물 채워 주기, 냉장고 fridge_1, 식탁 table_1 위 빈 컵 cup_1)");
+    const want = fillSteps({ fridge: "fridge_1", table: "table_1", cup: "cup_1", drink: "물" });
+    const example = ["1. go fridge_1", "2. pick fridge_1", "3. go table_1", "4. do cup_1"].map((head) => lines.find((l) => l.startsWith(head))!);
+    example.forEach((line, i) => {
+      expect(line, String(i)).toContain(`「${want[i]!.command as string}」`);
+      expect(JSON.parse(line.slice(line.indexOf(" until ") + 7)), String(i)).toEqual(want[i]!.until);
+    });
+  });
+
+  it("가짜 모델의 도구 호출로 만든 물 채워 주기 계획은 네 명령·조건 그대로다", async () => {
+    llm.scripts = { ...llm.scripts, ...FILL_SCRIPTS };
+    const r = await testPlanner(llm).plan(planContext({ decision: decision("컵에 물 채워 주기"), world: view([cup()]), floor: fridgeFloor(), nowIso: "t" }));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.plan.task).toBe("컵에 물 채워 주기");
+    expect(r.plan.steps.map((s) => [s.kind, s.target, s.command, s.until])).toEqual([
+      ["go", "fridge_1", "냉장고로 가 주세요", { phone_near: "fridge_1" }],
+      ["pick", "fridge_1", "물병을 꺼내 주세요", { object: "bottle", facts: { place: "in_hand" } }],
+      ["go", "table_1", "식탁으로 가 주세요", { phone_near: "table_1" }],
+      ["do", "cup_1", "컵에 물을 따라 주세요", { object: "cup_1", follow: true, facts: { contents: "has_contents" } }],
+    ]);
+    expect(r.plan.view.steps.map((s) => [s.kind, s.label])).toEqual([["move", "냉장고로 가기"], ["act", "물병 꺼내기"], ["move", "식탁으로 가기"], ["act", "컵에 물 따르기"]]);
+    expect(r.plan.view.path.length).toBeGreaterThan(1);
+    // 입력 글의 할 일 줄에 쓸 수 있는 단계가 있다
+    expect(llm.bodies().at(-1).input[0].content).toContain("[할 일] 컵에 물 채워 주기: 사람이 식사 중인데 컵이 비어 있으면 사람이 냉장고에서 물병을 꺼내 와 컵에 물을 따르게 한다.\n- 쓸 수 있는 단계: go, pick, do, place");
+  });
+
+  it("콜라 따라 주기 계획의 둘째·넷째 명령은 「콜라를 꺼내 주세요」·「컵에 콜라를 따라 주세요」다. 컵이 탁자 위면 셋째는 그 탁자로 가기다", async () => {
+    llm.scripts = { ...llm.scripts, ...FILL_SCRIPTS };
+    const cola = decision("컵에 콜라 따라 주기");
+    const r = await testPlanner(llm).plan(planContext({ decision: cola, world: view([cup()]), floor: fridgeFloor(), nowIso: "t" }));
+    expect(r.ok && r.plan.steps.map((s) => s.command)).toEqual(["냉장고로 가 주세요", "콜라를 꺼내 주세요", "식탁으로 가 주세요", "컵에 콜라를 따라 주세요"]);
+    const withSofa = floorPlanFrom({ ...structuredClone(SCENE), objects: [...structuredClone(SCENE.objects), { id: "fridge_1", type: "fridge", room: "kitchen", plan: { position: [7.5, 0.5] } }, { id: "tea_1", type: "coffee_table", room: "hall", plan: { position: [2, 3] } }] });
+    const onTea = cup({ position: [2, 0.4, 3], surface: "tea_1", surface_label: "탁자", room: "hall" });
+    const t = await testPlanner(llm).plan(planContext({ decision: cola, world: view([onTea]), floor: withSofa, nowIso: "t" }));
+    expect(t.ok && t.plan.steps.map((s) => [s.kind, s.target, s.command])).toEqual([
+      ["go", "fridge_1", "냉장고로 가 주세요"], ["pick", "fridge_1", "콜라를 꺼내 주세요"], ["go", "tea_1", "탁자로 가 주세요"], ["do", "cup_1", "컵에 콜라를 따라 주세요"],
+    ]);
   });
 
   it("계획 입력: 싱크볼이 있는 평면도 자리는 싱크볼 점을, 싱크볼 안 물건은 면 뒤에 「싱크볼 안」을 쓴다", () => {
