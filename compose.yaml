@@ -80,6 +80,7 @@ services:
       PAM_IDLE_STOP_MS:
       PAM_MAX_INFLIGHT:
       STALE_MS:
+      KEEP_HEARD_TEXT:
       # 데이터·서버
       HOME_ID:
       HISTORY_TZ_MINUTES:
