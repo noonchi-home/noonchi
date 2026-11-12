@@ -31,7 +31,7 @@ import { DEVICE_STATES } from "../src/world/vocab.js";
 import { cupPlan } from "./helpers/cup-plan.js";
 import { smallFloor } from "./helpers/floor.js";
 import { startFakePam } from "./helpers/pam.js";
-import { CUP_SCRIPTS, cupSteps, idsFrom, planCalls, planContext, startFakePlanner, testPlanner, type FakePlanner, type PlanScript } from "./helpers/planner.js";
+import { CUP_SCRIPTS, cupSteps, fillSteps, idsFrom, planCalls, planContext, startFakePlanner, testPlanner, type FakePlanner, type PlanScript } from "./helpers/planner.js";
 
 // 작은 집: 복도(hall)·주방(kitchen)·후면 발코니(balcony, 바닥 −0.1m라 로봇 이동 가능 방이 아님). 세탁기·건조기는 발코니
 const SCENE = {
@@ -52,6 +52,8 @@ const SCENE = {
   ],
 };
 const floor = () => floorPlanFrom(structuredClone(SCENE));
+/** 냉장고가 있는 같은 집(채워 주기). */
+const fridgeFloor = () => floorPlanFrom({ ...structuredClone(SCENE), objects: [...structuredClone(SCENE.objects), { id: "fridge_1", type: "fridge", room: "kitchen", plan: { position: [7.5, 0.5] } }] });
 
 function spec(id: string, label: string, room: string, twinType: string, twinAttrs: Record<string, unknown[]>): DeviceSpec {
   const d = describeDevice(twinType, twinAttrs);
@@ -446,6 +448,75 @@ describe("계획 모드: 계획 검사", () => {
     cupSteps(cupIds).slice(0, 3).forEach((s, i) => ok(swap, i + 1, s));
     ok(swap, 4, { ...cupSteps(cupIds)[3]!, object: "cup_2", until: { object: "cup_2", follow: true, facts: { place: "in_sink" } } });
     expect(swap.finish()).toMatchObject({ ok: false, error: expect.stringMatching(/앞에서 집은 물건/) });
+  });
+
+  describe("do 단계와 집는 물건 종류(채워 주기)", () => {
+    const WATER = "컵에 물 채워 주기";
+    const fillIds = { fridge: "fridge_1", table: "table_1", cup: "cup_1", drink: "물" as const };
+    const bottle = cup({ id: "bottle_1", cls: "bottle", position: [7.5, 1, 0.6], surface: null, surface_label: null });
+    const fctx = (action = WATER, objects: WorldObject[] = [cup()]): PlanContext => planContext({ decision: decision(action), world: view(objects), floor: fridgeFloor(), hub: new MemoryHub(DEVICES) });
+    const fbad = (s: Record<string, unknown>, why: RegExp, c: PlanContext = fctx()) => {
+      const r = new PlanDraft(c).add({ step: 1, ...s });
+      expect(r.ok, JSON.stringify(s)).toBe(false);
+      expect(r.ok ? "" : r.error).toMatch(why);
+    };
+    const [goFridge, pick, goTable, pour] = fillSteps(fillIds) as [Record<string, unknown>, Record<string, unknown>, Record<string, unknown>, Record<string, unknown>];
+
+    it("물 채워 주기 계획(go 냉장고 · pick 냉장고 · go 식탁 · do 컵)은 통과하고 화면 단계 종류는 move·act·move·act다", () => {
+      const r = new PlanDraft(fctx()).submit({ steps: fillSteps(fillIds) });
+      expect(r).toMatchObject({ ok: true });
+      if (!r.ok) return;
+      expect(r.plan.steps.map((s) => [s.kind, s.target, s.object, s.command])).toEqual([
+        ["go", "fridge_1", null, "냉장고로 가 주세요"], ["pick", "fridge_1", null, "물병을 꺼내 주세요"], ["go", "table_1", null, "식탁으로 가 주세요"], ["do", "cup_1", null, "컵에 물을 따라 주세요"],
+      ]);
+      expect(r.plan.steps[3]!.until).toEqual({ object: "cup_1", follow: true, facts: { contents: "has_contents" } });
+      expect(r.plan.view.steps.map((s) => s.kind)).toEqual(["move", "act", "move", "act"]);
+      expect(r.plan.view.steps.map((s) => s.target?.objectId)).toEqual(["fridge_1", "fridge_1", "table_1", "cup_1"]);
+      expect(r.plan.view.steps[3]!.target).toEqual({ objectId: "cup_1", position: [7, 3] });
+      expect(r.plan.view.goal).toBe(WATER);
+    });
+
+    it("do에는 target과 command가 있어야 하고 object를 쓰면 버린다. until은 없어도 된다", () => {
+      fbad({ ...pour, target: undefined }, /do에는 target가 있어야/);
+      fbad({ ...pour, command: undefined }, /do에는 command가 있어야/);
+      fbad({ ...pour, command: "컵에 물을 따를게요" }, /주세요/);
+      fbad({ ...pour, object: "cup_1" }, /do에는 object를 쓰지 않습니다/);
+      fbad({ ...pour, timeout_s: 5 }, /do timeout_s는 10~1800초/);
+      fbad({ ...pour, target: "cup_9" }, /do target은 보이는 World State 물건 id나 평면도 id여야 합니다: cup_9/);
+      expect(new PlanDraft(fctx()).add({ step: 1, ...pour, until: undefined })).toMatchObject({ ok: true });
+      // 평면도 자리에서 하는 일도 받는다(컵이 안 보일 때)
+      expect(new PlanDraft(fctx()).add({ step: 1, ...pour, target: "table_1", until: undefined })).toMatchObject({ ok: true });
+    });
+
+    it("do target이 World State 물건이면 그 행동의 대상 종류(컵)여야 하고, 이미 치운 물건이면 버린다", () => {
+      fbad({ ...pour, target: "bottle_1", until: undefined }, /이 할 일은 cup 물건에 합니다/, fctx(WATER, [cup(), bottle]));
+      const placed = new Map([["cup_1", { target: "sink_1", atMs: 9_000 }]]);
+      fbad(pour, /이미 치운 물건/, { ...fctx(), placed });
+    });
+
+    it("채워 주기의 pick은 병이 안 보이면 평면도 id(냉장고)만으로 통과하고, 병이 보이면 그 병 id를 받으며, 컵을 집으면 버린다", () => {
+      expect(new PlanDraft(fctx()).add({ step: 1, ...pick })).toMatchObject({ ok: true });
+      const seen = new PlanDraft(fctx(WATER, [cup(), bottle]));
+      expect(seen.add({ step: 1, ...pick, target: "bottle_1", until: { object: "bottle_1", follow: true, facts: { place: "in_hand" } } })).toMatchObject({ ok: true });
+      fbad({ ...pick, target: "cup_1", until: undefined }, /이 할 일은 bottle 물건을 집습니다/);
+      fbad({ kind: "place", label: "컵 넣기", target: "fridge_1", object: "cup_1", command: "컵을 넣어 주세요", timeout_s: 120 }, /이 할 일은 bottle 물건을 내려놓습니다/);
+    });
+
+    it("컵 치우기의 pick은 지금처럼 컵만 받는다(컵이 안 보이는 평면도 id 집기는 버린다). 컵 치우기에는 do를 쓰지 않는다", () => {
+      const c = fctx("컵 치우기", [cup(), bottle]);
+      fbad({ ...cupSteps(cupIds)[1]!, target: "table_1", until: undefined }, /이 할 일은 cup 물건을 집습니다/, c);
+      fbad({ ...cupSteps(cupIds)[1]!, target: "bottle_1", until: undefined }, /이 할 일은 cup 물건을 집습니다/, c);
+      expect(new PlanDraft(c).add({ step: 1, ...cupSteps(cupIds)[1]! })).toMatchObject({ ok: true });
+      fbad(pour, /do 단계를 쓰지 않습니다/, c);
+    });
+
+    it("채워 주기에 do가 빠지면 끝내지 않는다", () => {
+      const d = new PlanDraft(fctx());
+      [goFridge, pick, goTable].forEach((s, i) => ok(d, i + 1, s));
+      expect(d.finish()).toMatchObject({ ok: false, error: expect.stringMatching(/do 단계가 있어야/) });
+      ok(d, 4, pour);
+      expect(d.finish()).toMatchObject({ ok: true });
+    });
   });
 
   it("틀린 계획만 내는 모델이면 차례 한도 안에 끝내지 못해 버리고, 실행 추적은 실제 폰에 아무것도 보내지 않는다", async () => {

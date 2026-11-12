@@ -53,6 +53,27 @@ export function cupSteps(ids: { table: string; sink: string; cup: string; basin?
   ];
 }
 
+/** 채워 주기 글(시험 대본이 쓰는 명령·단계 이름). 음료마다 꺼낼 것 이름이 다르다. */
+export const FILL_TEXT = {
+  goFridge: { label: "냉장고로 가기", command: "냉장고로 가 주세요" },
+  pick: { 물: { label: "물병 꺼내기", command: "물병을 꺼내 주세요" }, 콜라: { label: "콜라 꺼내기", command: "콜라를 꺼내 주세요" } },
+  goBack: (place: string) => ({ label: `${place}${place === "식탁" ? "으로" : "로"} 가기`, command: `${place}${place === "식탁" ? "으로" : "로"} 가 주세요` }),
+  pour: { 물: { label: "컵에 물 따르기", command: "컵에 물을 따라 주세요" }, 콜라: { label: "컵에 콜라 따르기", command: "컵에 콜라를 따라 주세요" } },
+} as const;
+
+/** 채워 주기 네 단계: 냉장고로 가기 → 병 꺼내기(병은 냉장고 안이라 안 보여 자리로 집는다) → 컵 자리로 가기 → 따르기(do).
+ *  병 집기는 그 종류(bottle) 물건이 손에 있음으로 보일 때, 따르기는 그 컵이 내용물 있음일 때 넘어간다. place는 컵 자리 이름(기본 식탁). */
+export function fillSteps(ids: { fridge: string; table: string; cup: string; drink: "물" | "콜라"; place?: string }): Record<string, unknown>[] {
+  const { fridge, table, cup, drink } = ids;
+  const back = FILL_TEXT.goBack(ids.place ?? "식탁");
+  return [
+    { kind: "go", ...FILL_TEXT.goFridge, target: fridge, until: { phone_near: fridge }, timeout_s: 120 },
+    { kind: "pick", ...FILL_TEXT.pick[drink], target: fridge, until: { object: "bottle", facts: { place: "in_hand" } }, timeout_s: 120 },
+    { kind: "go", ...back, target: table, until: { phone_near: table }, timeout_s: 120 },
+    { kind: "do", ...FILL_TEXT.pour[drink], target: cup, until: { object: cup, follow: true, facts: { contents: "has_contents" } }, timeout_s: 120 },
+  ];
+}
+
 /** 사용자에게 물어보기: 컵을 치울지 묻는 한 단계. */
 export function askSteps(): Record<string, unknown>[] {
   return [{ kind: "ask", label: STEP_LABEL.askUser, question: ASK_PROMPT.text, choices: ASK_PROMPT.choices.map(({ id, label, words, reply }) => ({ id, label, words, reply })), timeout_s: 120 }];

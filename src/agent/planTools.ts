@@ -18,11 +18,11 @@ import { ConditionSchema, checkCondition, type Condition, type ConditionHome } f
 import type { DecisionRecord } from "../world/decide.js";
 import { TOOLS, type ToolDef, type ToolResult } from "./tools.js";
 
-/** 에이전트 단계 종류. go·pick·place는 사람이 하는 일(실제 폰 명령), ask 질문, say 알림, device 가전 조작, wait 기다리기. */
-export type AgentStepKind = "go" | "pick" | "place" | "device" | "ask" | "say" | "wait";
-export const HUMAN_KINDS: readonly AgentStepKind[] = ["go", "pick", "place"];
+/** 에이전트 단계 종류. go·pick·place·do는 사람이 하는 일(실제 폰 명령, do는 그 자리에서 하는 일: 따르기·붓기), ask 질문, say 알림, device 가전 조작, wait 기다리기. */
+export type AgentStepKind = "go" | "pick" | "place" | "do" | "device" | "ask" | "say" | "wait";
+export const HUMAN_KINDS: readonly AgentStepKind[] = ["go", "pick", "place", "do"];
 /** 에이전트 단계 → 화면 단계 종류(src/contract/plan.ts). */
-export const VIEW_KIND: Record<AgentStepKind, StepKind> = { go: "move", pick: "act", place: "act", ask: "ask", say: "ask", device: "device", wait: "wait" };
+export const VIEW_KIND: Record<AgentStepKind, StepKind> = { go: "move", pick: "act", place: "act", do: "act", ask: "ask", say: "ask", device: "device", wait: "wait" };
 
 /** 알림 단계에 끝나는 조건이 없으면 이만큼(초) 뒤에 넘긴다. */
 export const SAY_HOLD_S = 4;
@@ -30,7 +30,7 @@ export const SAY_HOLD_S = 4;
 /** 계획 한도: 단계 수, 단계 종류마다 시간 한도(초), 답 단추 수. */
 export const PLAN_LIMITS = {
   maxSteps: 8,
-  timeoutS: { go: [10, 1800], pick: [10, 1800], place: [10, 1800], ask: [10, 1800], say: [SAY_HOLD_S + 1, 600], device: [10, 600], wait: [10, 14_400] } as Record<AgentStepKind, [number, number]>,
+  timeoutS: { go: [10, 1800], pick: [10, 1800], place: [10, 1800], do: [10, 1800], ask: [10, 1800], say: [SAY_HOLD_S + 1, 600], device: [10, 600], wait: [10, 14_400] } as Record<AgentStepKind, [number, number]>,
   choices: [2, 3] as [number, number],
 };
 
@@ -48,7 +48,7 @@ export interface AgentStep {
   id: string;
   kind: AgentStepKind;
   label: string;
-  /** go·place: 평면도 id, pick: World State 물건 id 또는 평면도 id, device: 가전 id. */
+  /** go·place: 평면도 id, pick·do: World State 물건 id 또는 평면도 id, device: 가전 id. */
   target: string | null;
   /** pick·place: 든 World State 물건 id(없으면 null). */
   object: string | null;
@@ -100,11 +100,11 @@ const choiceSchema = z.object({
 /** 단계 하나의 인자(submit_plan steps의 한 칸 + 번호). 종류마다 쓰는 칸은 PlanDraft.add가 본다. */
 export const STEP_ARGS = z.object({
   step: z.number().int().min(1).describe("몇 번째 단계인지(1부터). 고칠 때는 같은 번호로 다시 보낸다"),
-  kind: z.enum(["go", "pick", "place", "device", "ask", "say", "wait"]).describe("go 이동·pick 집기·place 내려놓기(사람이 함), device 가전 조작, ask 질문, say 알림, wait 기다리기"),
+  kind: z.enum(["go", "pick", "place", "do", "device", "ask", "say", "wait"]).describe("go 이동·pick 집기·place 내려놓기·do 그 자리에서 하는 일(사람이 함), device 가전 조작, ask 질문, say 알림, wait 기다리기"),
   label: z.string().min(1).max(30).describe("화면 단계 이름(예: 식탁으로 가기)"),
-  target: z.string().min(1).optional().describe("go·place: 평면도 id, pick: World State 물건 id 또는 평면도 id, device: 가전 id"),
+  target: z.string().min(1).optional().describe("go·place: 평면도 id, pick·do: World State 물건 id 또는 평면도 id, device: 가전 id"),
   object: z.string().min(1).optional().describe("pick·place: 든 World State 물건 id"),
-  command: z.string().min(1).max(60).optional().describe("go·pick·place: 사람에게 하는 말, 「주세요」로 끝남"),
+  command: z.string().min(1).max(60).optional().describe("go·pick·place·do: 사람에게 하는 말, 「주세요」로 끝남"),
   question: z.string().min(1).max(60).optional().describe("ask: 질문, 「?」로 끝남"),
   choices: z.array(choiceSchema).optional().describe("ask: 답 2~3개"),
   text: z.string().min(1).max(60).optional().describe("say: 폰이 읽을 알림 한 줄"),
@@ -251,18 +251,20 @@ export class PlanDraft {
     return o?.position ? [o.position[0], o.position[2]] : null;
   }
 
-  /** 화면 단계 대상과 이동 목적지. 다음 단계가 자리를 아는 물건 집기면 그 물건 앞까지 간다. */
+  /** 화면 단계 대상과 이동 목적지. 다음 단계가 자리를 아는 물건 집기(또는 그 물건에 하는 일)면 그 물건 앞까지 간다. */
   private viewTarget(s: Omit<AgentStep, "id">, next: Omit<AgentStep, "id"> | undefined): { target?: PlanTarget; to?: XZ } {
     const fp = s.target ? this.ctx.floor.objects.get(s.target) : undefined;
     if (s.kind === "go" && fp) {
-      const o = next?.kind === "pick" && next.object ? worldObject(this.ctx.world, next.object) : undefined;
+      const at = next?.kind === "pick" ? next.object : next?.kind === "do" ? next.target : null;
+      const o = at ? worldObject(this.ctx.world, at) : undefined;
       return { target: { objectId: fp.id, ...(fp.room ? { room: fp.room } : {}) }, to: o?.position ? [o.position[0], o.position[2]] : fp.position };
     }
-    if (s.kind === "pick" && s.object) {
-      const o = worldObject(this.ctx.world, s.object);
-      return { target: { objectId: s.object, ...(o?.position ? { position: [o.position[0], o.position[2]] as XZ } : {}) } };
+    const thing = s.kind === "pick" ? s.object : s.kind === "do" ? s.target : null;
+    const seen = thing ? worldObject(this.ctx.world, thing) : undefined;
+    if (thing && (s.kind === "pick" || seen)) {
+      return { target: { objectId: thing, ...(seen?.position ? { position: [seen.position[0], seen.position[2]] as XZ } : {}) } };
     }
-    if ((s.kind === "pick" || s.kind === "place") && s.target) return { target: { objectId: s.target } };
+    if ((s.kind === "pick" || s.kind === "place" || s.kind === "do") && s.target) return { target: { objectId: s.target } };
     if (s.kind === "device" && s.device) return { target: { deviceId: s.device.deviceId } };
     return {};
   }
@@ -289,6 +291,8 @@ export class PlanDraft {
     const live = (id: string) => { const o = worldObject(world, id); return o && o.status !== "gone" ? o : undefined; };
     // 실행 추적이 놓기를 끝낸 물건(입력 줄 「이미 치움」)은 다시 집거나 놓지 않는다(실행 전 검사가 막아 계획이 끝나 버린다)
     const putAway = (id: string | null) => { if (id && this.ctx.placed?.has(id)) errors.push(`이미 치운 물건입니다(앞 계획이 놓기를 끝냄): ${id}. 「이미 치움」이 없는 물건을 쓰세요`); };
+    // 집는 물건 종류: 따로 정한 것(carry, 채워 주기의 병)이 없으면 그 할 일의 대상 종류다
+    const carry = this.ctx.task.carry ?? this.ctx.task.target;
     switch (a.kind) {
       case "go":
         need("target", !!target);
@@ -302,15 +306,22 @@ export class PlanDraft {
         if (target && live(target)) object ??= target;
         else if (target && !floor.objects.has(target)) errors.push(`pick target은 보이는 World State 물건 id나 평면도 id여야 합니다: ${target}`);
         if (object && !live(object)) errors.push(`보이는 World State 물건이 아닙니다: ${object}`);
-        if (this.ctx.task.target && worldObject(world, object ?? "")?.cls !== this.ctx.task.target) errors.push(`이 할 일은 ${this.ctx.task.target} 물건을 집습니다`);
+        // 안 보이는 물건(냉장고 안 병)은 그 할 일이 받을 때만(carryUnseen) 평면도 자리로 집는다
+        if (carry && (object ? worldObject(world, object)?.cls !== carry : !this.ctx.task.carryUnseen)) errors.push(`이 할 일은 ${carry} 물건을 집습니다`);
         putAway(object);
         break;
       case "place":
         need("target", !!target);
         if (target && !floor.objects.has(target)) errors.push(`place target은 평면도 id여야 합니다: ${target}`);
         if (object && !worldObject(world, object)) errors.push(`World State 물건이 아닙니다: ${object}`);
-        if (object && this.ctx.task.target && worldObject(world, object)?.cls !== this.ctx.task.target) errors.push(`이 할 일은 ${this.ctx.task.target} 물건을 내려놓습니다`);
+        if (object && carry && worldObject(world, object)?.cls !== carry) errors.push(`이 할 일은 ${carry} 물건을 내려놓습니다`);
         putAway(object);
+        break;
+      case "do":
+        need("target", !!target);
+        if (target && !live(target) && !floor.objects.has(target)) errors.push(`do target은 보이는 World State 물건 id나 평면도 id여야 합니다: ${target}`);
+        if (target && live(target) && this.ctx.task.target && live(target)!.cls !== this.ctx.task.target) errors.push(`이 할 일은 ${this.ctx.task.target} 물건에 합니다`);
+        putAway(target);
         break;
       case "device": {
         need("target", !!target);
