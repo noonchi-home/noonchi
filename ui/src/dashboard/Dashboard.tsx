@@ -166,7 +166,7 @@ export function Dashboard() {
   const { devices, apply } = useDevices();
   const health = useHealth();
   const { checks, onMessage: toChecks } = useChecks();
-  const { dash, boxes, onMessage: toDash, load } = useDash({ hold: debug !== null });
+  const { dash, seen, onMessage: toDash, load } = useDash({ hold: debug !== null });
   const [connected, setConnected] = useState<boolean | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
   const [viewerReady, setViewerReady] = useState(false);
@@ -231,7 +231,7 @@ export function Dashboard() {
   return (
     <DashboardScreen
       index={stepIndex(plan)} plan={plan} step={currentStep(plan)} robotKnown={dash.eye !== null} connected={online} map={map} mapReady={mapReady}
-      phone={phone} boxes={boxes} frame={dash.boxes?.observe.frame ?? null} observation={observation} action={action} say={dash.say ?? ""}
+      phone={phone} seen={seen} observation={observation} action={action} say={dash.say ?? ""}
       facing={facingOf(plan)} hub={hub} settingsOpen={debug?.settings} onReady={onScreenReady}
     />
   );

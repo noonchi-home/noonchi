@@ -10,7 +10,9 @@ import { TAG_H, tagWidth } from "../../src/dashboard/detections";
 import { pageLayout, type Rect } from "../../src/dashboard/layout";
 import { MASCOT } from "../../src/dashboard/mascot-image";
 import { WORDS } from "../../src/dashboard/words";
-import { CLEAR_CUP, EYE_FRAMES, HUB, imageSlot, LEFT_CUP, PHONE_URL, PLAN, SAY, screenAt, WATCHING } from "./fixtures";
+import { CLEAR_CUP, EYE_FRAMES, HUB, imageSlot, LEFT_CUP, PHONE_URL, PLAN, SAY, screenAt, seenEvent, seenOf, WATCHING } from "./fixtures";
+import { createSeenStore } from "../../src/dashboard/masks";
+import { act } from "@testing-library/react";
 import type { PlanView } from "../../../src/contract/plan.ts";
 
 /** WCAG 대비(hex 두 개). */
@@ -155,7 +157,7 @@ describe("대시보드 배치", () => {
       const variants: [string, ScreenProps][] = [
         ["0", screenAt(0)], ["2", screenAt(2)], ["3", screenAt(3)], ["4", screenAt(4)],
         ["qr", screenAt(3, { phone: { kind: "qr", url: PHONE_URL } })], ["live", screenAt(2, { phone: { kind: "live", url: PHONE_URL } })],
-        ["로봇 모름", screenAt(2, { robotKnown: false })], ["연결 끊김", screenAt(2, { connected: false })], ["상자 없음", screenAt(0, { boxes: [], frame: null })],
+        ["로봇 모름", screenAt(2, { robotKnown: false })], ["연결 끊김", screenAt(2, { connected: false })], ["모양 없음", screenAt(0, { seen: seenOf(null) })],
       ];
       for (const [name, p] of variants) expect(boxes(p), name).toEqual(first);
     } finally { rect.mockRestore(); }
@@ -356,7 +358,7 @@ describe("대시보드 폰 카메라(대시보드 폰 칸)", () => {
     expect(glass.style.borderRadius).toBe("16px");
     expect(glass.contains(card.querySelector("[data-decision]"))).toBe(true);
     // 카드는 YOLO 상자·이름표 위에 그린다(뒤에 놓인 것)
-    expect(before(slot.querySelector("[data-detection]")!, card)).toBe(true);
+    expect(before(slot.querySelector("canvas[data-masks]")!, card)).toBe(true);
   });
 
   it("FSM 카드 글은 「FSM」 칩 + 관찰 한 문장, 「행동」 칩 + 행동이다", () => {
@@ -391,20 +393,13 @@ describe("대시보드 폰 카메라(대시보드 폰 칸)", () => {
     for (const back of ["#000000", "#ffffff"]) expect(contrast(color.ink.value, over(surface, alpha, back))).toBeGreaterThanOrEqual(4.5);
   });
 
-  it.each(EYE_FRAMES.map((f) => [f.id, f] as const))("%s: YOLO 상자와 이름표가 영상 칸 안, FSM 카드 아래에 다 들어오고 이름·신뢰도를 보인다", (_, f) => {
-    draw(screenAt(2, { phone: imageSlot(f.id), boxes: f.boxes, frame: { width: f.width, height: f.height } }));
+  it.each(EYE_FRAMES.map((f) => [f.id, f] as const))("%s: 네모 상자 없이 마스크 canvas 한 장과 이름표만 있고, 이름표는 영상 칸 안, FSM 카드 아래에 다 들어와 이름·신뢰도를 보인다", (_, f) => {
+    draw(screenAt(2, { phone: imageSlot(f.id), seen: seenOf(f.boxes, { width: f.width, height: f.height }) }));
     const slot = slotOf(phonePane());
     const L = pageLayout(SLOT, MASCOT);
     const roof = L.card.top + L.card.height - L.video.top;
-    const boxes = [...slot.querySelectorAll<HTMLElement>("[data-detection]")];
-    expect(boxes).toHaveLength(f.boxes.length);
-    for (const b of boxes) {
-      const box = b.querySelector<HTMLElement>('[data-slot="bounding-box"]')!;
-      expect(px(b.style.left)).toBeGreaterThanOrEqual(0);
-      expect(px(b.style.top)).toBeGreaterThanOrEqual(roof);
-      expect(px(b.style.left) + px(box.style.width)).toBeLessThanOrEqual(SLOT.width);
-      expect(px(b.style.top) + px(box.style.height)).toBeLessThanOrEqual(SLOT.height);
-    }
+    expect(slot.querySelectorAll('[data-detection], [data-slot="bounding-box"]')).toHaveLength(0);
+    expect(slot.querySelectorAll("canvas[data-masks]")).toHaveLength(1);
     const tags = [...slot.querySelectorAll<HTMLElement>("[data-detection-label]")];
     expect(tags.map((t) => t.textContent)).toEqual(f.boxes.map((d) => `${d.label} ${d.score.toFixed(2)}`));
     for (const t of tags) {
@@ -415,24 +410,73 @@ describe("대시보드 폰 카메라(대시보드 폰 칸)", () => {
     }
   });
 
-  it("그림 크기(frame)를 모르면 영상 칸 그림 크기로 상자를 둔다", () => {
-    draw(screenAt(2, { frame: null }));
-    expect(slotOf(phonePane()).querySelectorAll("[data-detection]")).toHaveLength(1);
+  it("모양(seen)이 아직 없으면 마스크 canvas만 있고 이름표가 없다. 영상이 안 보이면(live 첫 장 전·QR) canvas도 없다", () => {
+    draw(screenAt(2, { seen: seenOf(null) })).unmount();
+    const empty = draw(screenAt(2, { seen: seenOf(null) }));
+    expect(slotOf(phonePane()).querySelectorAll("canvas[data-masks]")).toHaveLength(1);
+    expect(slotOf(phonePane()).querySelectorAll("[data-detection-label]")).toHaveLength(0);
+    empty.unmount();
+    for (const phone of [{ kind: "live", url: PHONE_URL }, { kind: "qr", url: PHONE_URL }] as const) {
+      const view = draw(screenAt(2, { phone }));
+      expect(phonePane().querySelectorAll("canvas[data-masks], [data-detection-label]")).toHaveLength(0);
+      view.unmount();
+    }
   });
 
-  it("YOLO 상자는 테두리 한 겹만 그린다: 보기만 하는 화면이라 크기 바꿈 손잡이가 없어 작은 컵 상자 안이 가려지지 않는다", () => {
-    draw(screenAt(1, { boxes: EYE_FRAMES[0]!.boxes }));
-    const boxes = [...phonePane().querySelectorAll<HTMLElement>('[data-detection] [data-slot="bounding-box"]')];
-    expect(boxes.map((b) => b.closest<HTMLElement>("[data-detection]")!.dataset.detection)).toEqual(["식탁", "컵"]);
-    for (const b of boxes) {
-      const lined = [...b.querySelectorAll<HTMLElement>("*")].filter((e) => e.style.borderStyle === "solid" || /solid/.test(e.style.border));
-      expect(lined).toHaveLength(1);
-      expect(lined[0]!.children).toHaveLength(0);
+  it("네모 테두리를 그리지 않는다: 마스크는 꾸밈 없는 canvas 한 장에 칠하고, 이름표 말고는 영상 위에 테두리 선이 없다", () => {
+    draw(screenAt(1, { seen: seenOf(EYE_FRAMES[0]!.boxes) }));
+    const slot = slotOf(phonePane());
+    expect(slot.querySelectorAll('[data-detection], [data-slot="bounding-box"]')).toHaveLength(0);
+    const canvas = slot.querySelector<HTMLCanvasElement>("canvas[data-masks]")!;
+    expect(canvas.className).toBe("absolute inset-0 size-full");
+    expect(canvas.getAttribute("style")).toBeNull();
+    const lined = [...slot.querySelectorAll<HTMLElement>("*")].filter((e) => !e.closest("[data-fsm-card]") && (e.style.borderStyle === "solid" || /solid/.test(e.style.border)));
+    expect(lined).toEqual([]);
+  });
+
+  it("마스크는 영상과 같은 자리에 칠한다: 모양마다 한 번 그리고, 새 seen이 오면 다시 그리며, 600ms 넘게 안 오면 마스크와 이름표를 지운다", () => {
+    vi.useFakeTimers();
+    const drawn: number[][] = [];
+    const cleared: number[] = [];
+    const ctx = {
+      globalAlpha: 1, imageSmoothingEnabled: false,
+      setTransform() {}, save() {}, restore() {}, beginPath() {}, rect() {}, clip() {}, putImageData() {},
+      clearRect() { cleared.push(drawn.length); },
+      createImageData: (w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h }),
+      drawImage: (_s: unknown, ...a: number[]) => { drawn.push(a); },
+    };
+    const getContext = vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation((() => ctx) as never);
+    try {
+      const store = createSeenStore();
+      const f = EYE_FRAMES[0]!;
+      act(() => store.set(seenEvent(f.boxes)));
+      draw(screenAt(2, { seen: store }));
+      const slot = slotOf(phonePane());
+      expect(drawn).toHaveLength(2);
+      // 컵 [168, 332, 192, 357]: 영상 칸에 contain으로 놓인 그림과 같은 배율·자리
+      const scale = Math.min(SLOT.width / f.width, SLOT.height / f.height);
+      const left = (SLOT.width - f.width * scale) / 2, top = (SLOT.height - f.height * scale) / 2;
+      const cup = drawn[1]!;
+      expect(cup[0]).toBeCloseTo(left + 168 * scale, 3);
+      expect(cup[1]).toBeCloseTo(top + 332 * scale, 3);
+      expect(cup[2]).toBeCloseTo(24 * scale, 3);
+      expect(cup[3]).toBeCloseTo(25 * scale, 3);
+      expect(slot.querySelectorAll("[data-detection-label]")).toHaveLength(2);
+      act(() => { vi.advanceTimersByTime(500); store.set(seenEvent([f.boxes[1]!])); });
+      expect(drawn).toHaveLength(3);
+      expect(slot.querySelectorAll("[data-detection-label]")).toHaveLength(1);
+      act(() => { vi.advanceTimersByTime(601); });
+      expect(slot.querySelectorAll("[data-detection-label]")).toHaveLength(0);
+      expect(drawn).toHaveLength(3);
+      expect(cleared.at(-1)).toBe(3); // 마지막에 한 번 더 지웠다
+    } finally {
+      getContext.mockRestore();
+      vi.useRealTimers();
     }
   });
 
   it("YOLO 이름표는 폰 영상 이름표 토큰(twin.phoneFocus labelBg·labelText) 색이고 Status 원래 크기(text-xs)다", () => {
-    draw(screenAt(1, { boxes: EYE_FRAMES[0]!.boxes }));
+    draw(screenAt(1, { seen: seenOf(EYE_FRAMES[0]!.boxes) }));
     const { labelBg, labelText } = tokens.twin.phoneFocus;
     const tags = [...phonePane().querySelectorAll<HTMLElement>("[data-detection-label]")];
     expect(tags).toHaveLength(2);
@@ -506,12 +550,13 @@ describe("대시보드 폰 카메라(대시보드 폰 칸)", () => {
     expect(cls(img, "size-full")).toBe(true);
     expect(qrOf()).not.toBeNull();
     expect(slot.querySelector("[data-fsm-card]")).toBeNull();
-    expect(slot.querySelector("[data-detection]")).toBeNull();
+    expect(slot.querySelector("canvas[data-masks], [data-detection-label]")).toBeNull();
     fireEvent.load(img);
     expect(slot.querySelector("img")).toBe(img);
     expect(qrOf()).toBeNull();
     expect(slot.querySelector("[data-fsm-card]")).not.toBeNull();
-    expect(slot.querySelectorAll("[data-detection]")).toHaveLength(1);
+    expect(slot.querySelectorAll("canvas[data-masks]")).toHaveLength(1);
+    expect(slot.querySelectorAll("[data-detection-label]")).toHaveLength(1);
   });
 
   it("live 칸의 영상 상자는 칸을 덮고(absolute inset-0) 크기를 정하지 않는다", () => {

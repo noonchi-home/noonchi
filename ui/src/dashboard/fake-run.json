@@ -64,24 +64,35 @@
             "frame_id": "fake-0",
             "captured_at_ms": 1794214800000,
             "yolo": "컵 0.82",
-            "vlm": null,
-            "boxes": [
-              {
-                "label": "cup",
-                "score": 0.82,
-                "box": [
+            "vlm": null
+          }
+        },
+        {
+          "type": "seen",
+          "at_ms": 1794214800000,
+          "frame_id": "fake-0",
+          "captured_at_ms": 1794214800000,
+          "frame": {
+            "width": 405,
+            "height": 720
+          },
+          "shapes": [
+            {
+              "label": "cup",
+              "score": 0.82,
+              "mask": {
+                "at": [
                   168,
                   332,
                   24,
                   25
-                ]
+                ],
+                "cols": 6,
+                "rows": 6,
+                "bits": "/////eA="
               }
-            ],
-            "frame": {
-              "width": 405,
-              "height": 720
             }
-          }
+          ]
         },
         {
           "type": "say",
@@ -237,24 +248,35 @@
             "frame_id": "fake-1",
             "captured_at_ms": 1794214804000,
             "yolo": "컵 0.86",
-            "vlm": null,
-            "boxes": [
-              {
-                "label": "cup",
-                "score": 0.86,
-                "box": [
+            "vlm": null
+          }
+        },
+        {
+          "type": "seen",
+          "at_ms": 1794214804000,
+          "frame_id": "fake-1",
+          "captured_at_ms": 1794214804000,
+          "frame": {
+            "width": 405,
+            "height": 720
+          },
+          "shapes": [
+            {
+              "label": "cup",
+              "score": 0.86,
+              "mask": {
+                "at": [
                   168,
                   332,
                   24,
                   25
-                ]
+                ],
+                "cols": 6,
+                "rows": 6,
+                "bits": "/////eA="
               }
-            ],
-            "frame": {
-              "width": 405,
-              "height": 720
             }
-          }
+          ]
         },
         {
           "type": "say",
@@ -410,24 +432,35 @@
             "frame_id": "fake-2",
             "captured_at_ms": 1794214808000,
             "yolo": "컵 0.95",
-            "vlm": null,
-            "boxes": [
-              {
-                "label": "cup",
-                "score": 0.95,
-                "box": [
+            "vlm": null
+          }
+        },
+        {
+          "type": "seen",
+          "at_ms": 1794214808000,
+          "frame_id": "fake-2",
+          "captured_at_ms": 1794214808000,
+          "frame": {
+            "width": 405,
+            "height": 720
+          },
+          "shapes": [
+            {
+              "label": "cup",
+              "score": 0.95,
+              "mask": {
+                "at": [
                   160,
                   238,
                   85,
                   108
-                ]
+                ],
+                "cols": 21,
+                "rows": 27,
+                "bits": "/////////////////////////////////////////////////////////////////////////////f//z//+P//g//4B/8A="
               }
-            ],
-            "frame": {
-              "width": 405,
-              "height": 720
             }
-          }
+          ]
         },
         {
           "type": "say",
@@ -583,13 +616,19 @@
             "frame_id": "fake-3",
             "captured_at_ms": 1794214812000,
             "yolo": "감지 없음",
-            "vlm": null,
-            "boxes": [],
-            "frame": {
-              "width": 405,
-              "height": 720
-            }
+            "vlm": null
           }
+        },
+        {
+          "type": "seen",
+          "at_ms": 1794214812000,
+          "frame_id": "fake-3",
+          "captured_at_ms": 1794214812000,
+          "frame": {
+            "width": 405,
+            "height": 720
+          },
+          "shapes": []
         },
         {
           "type": "say",
@@ -745,24 +784,35 @@
             "frame_id": "fake-4",
             "captured_at_ms": 1794214816000,
             "yolo": "컵 0.92",
-            "vlm": null,
-            "boxes": [
-              {
-                "label": "cup",
-                "score": 0.92,
-                "box": [
+            "vlm": null
+          }
+        },
+        {
+          "type": "seen",
+          "at_ms": 1794214816000,
+          "frame_id": "fake-4",
+          "captured_at_ms": 1794214816000,
+          "frame": {
+            "width": 405,
+            "height": 720
+          },
+          "shapes": [
+            {
+              "label": "cup",
+              "score": 0.92,
+              "mask": {
+                "at": [
                   155,
                   243,
                   95,
                   115
-                ]
+                ],
+                "cols": 24,
+                "rows": 29,
+                "bits": "////////////////////////////////////////////////////////////////////////////////////////////f//+f//+P//8P//8D//wA//A"
               }
-            ],
-            "frame": {
-              "width": 405,
-              "height": 720
             }
-          }
+          ]
         },
         {
           "type": "say",

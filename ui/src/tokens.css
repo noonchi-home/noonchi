@@ -67,6 +67,10 @@
   --color-qr-ink: var(--qr-ink);
   --color-qr-bg: var(--qr-bg);
   --color-on-scrim: var(--on-scrim);
+  --color-mask-person: var(--mask-person);
+  --color-mask-vessel: var(--mask-vessel);
+  --color-mask-object: var(--mask-object);
+  --color-mask-fixture: var(--mask-fixture);
   --color-twin-casing: var(--twin-casing);
   --color-marker-a: var(--marker-a);
   --color-marker-b: var(--marker-b);
@@ -185,6 +189,10 @@
   --qr-ink: #2a2627;
   --qr-bg: #ffffff;
   --on-scrim: #ffffff;
+  --mask-person: #d55e00;
+  --mask-vessel: #56b4e9;
+  --mask-object: #f0e442;
+  --mask-fixture: #7b2ff7;
   --twin-casing: #ffffff;
   --marker-a: #e8590c;
   --marker-b: #1c7ed6;

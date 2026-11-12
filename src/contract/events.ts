@@ -87,9 +87,6 @@ export interface DecisionWorld {
   yolo_missing: number;
 }
 
-/** YOLO 상자 하나. 서버는 더 보내지 않는다(물체 모양은 SeenEvent). 대시보드 화면 코드가 마스크로 바뀔 때 같이 지운다. */
-export interface BoxView { label: DetLabel; score: number; box: [number, number, number, number] }
-
 /** 감지가 끝난 엔진 프레임 하나의 물체 모양(/events {type:"seen", …}). 빠른 프레임마다(기본 100ms) 대시보드로만 가는 가벼운 사건이고
  *  기록 DB·실행 기록에 넣지 않는다. mask는 엔진 프레임 픽셀 자리의 0/1 그림(src/brain/seg.ts), frame은 엔진 프레임 크기. 감지 없음이면 shapes가 빈 목록이다. */
 export interface SeenEvent {
@@ -100,12 +97,12 @@ export interface SeenEvent {
 
 /** 관찰 흐름·판단이 대시보드로 보내는 기록(/events {type:"brain", event}). VLM 프레임(VLM_FRAME_MS마다 한 장) 하나는 observe 기록으로 반드시 남는다:
  *  YOLO 결과(yolo) 또는 yolo_missing, VLM 답(vlm) 또는 vlm_missing. 그 사이 빠른 프레임은 observe 기록 없이 SeenEvent만 낸다.
- *  상자(boxes)·프레임 크기(frame)는 서버가 더 싣지 않는다(화면 코드가 마스크로 바뀔 때 타입에서 지운다).
+ *  상자는 싣지 않는다: 물체 모양은 SeenEvent의 마스크로만 간다.
  *  가까이 보기(frame_id 「e3.c1」)의 기록은 잘라 본 자리(closer, 원본 엔진 프레임 픽셀)를 싣는다. */
 export type BrainLog =
   | {
     type: "observe"; at_ms: number; frame_id: string; captured_at_ms: number; yolo: string | null; yolo_missing?: YoloMissing; vlm: string | null; vlm_missing?: VlmMissing;
-    boxes?: BoxView[]; frame?: { width: number; height: number }; closer?: [number, number, number, number];
+    closer?: [number, number, number, number];
   }
   | { type: "world_change"; at_ms: number; kind: WorldChangeKind; text: string }
   | {

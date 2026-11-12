@@ -115,7 +115,7 @@ describe("대시보드 자료 연결", () => {
     send(moment(2));
     await waitFor(() => expect(screen.getByRole("img", { name: "폰 연결 QR" })).toBeInTheDocument());
     expect(phonePane().querySelector("[data-fsm-card]")).toBeNull();
-    expect(phonePane().querySelector("[data-detection]")).toBeNull();
+    expect(phonePane().querySelector("canvas[data-masks], [data-detection-label]")).toBeNull();
   });
 
   it("폰 서버가 켜져 있어도 첫 장 전에는 QR이고 FSM 카드·상자가 없다. 영상에 첫 장이 오면 QR이 없어지고 FSM 카드와 컵 상자가 보인다", async () => {
@@ -123,7 +123,7 @@ describe("대시보드 자료 연결", () => {
     send(moment(2));
     await waitFor(() => expect(screen.getByRole("img", { name: "폰 연결 QR" })).toBeInTheDocument());
     expect(phonePane().querySelector("[data-fsm-card]")).toBeNull();
-    expect(phonePane().querySelector("[data-detection]")).toBeNull();
+    expect(phonePane().querySelector("canvas[data-masks], [data-detection-label]")).toBeNull();
     fireEvent.load(phonePane().querySelector<HTMLImageElement>("[data-eye-video] img")!);
     await waitFor(() => expect(screen.queryByRole("img", { name: "폰 연결 QR" })).toBeNull());
     const card = phonePane().querySelector<HTMLElement>("[data-fsm-card]")!;
@@ -134,7 +134,11 @@ describe("대시보드 자료 연결", () => {
     const action = card.querySelector<HTMLElement>("[data-action]")!;
     expect(action).toHaveTextContent("행동");
     expect(action).toHaveTextContent("컵 치우기");
-    expect(phonePane().querySelector('[data-detection="컵"]')).not.toBeNull();
+    // 물체 모양(seen)은 600ms 넘게 안 오면 지운다: 새 seen이 오면 마스크 canvas와 컵 이름표가 보인다. 네모 상자는 없다
+    send(moment(2));
+    expect(phonePane().querySelector("canvas[data-masks]")).not.toBeNull();
+    expect([...phonePane().querySelectorAll("[data-detection-label]")].map((t) => t.textContent)).toEqual(["컵 0.95"]);
+    expect(phonePane().querySelector('[data-detection], [data-slot="bounding-box"]')).toBeNull();
   });
 
   it("소켓이 닫히면 「연결 끊김 · 다시 연결 중」 칩이 생기고 다시 열리면 없어진다", async () => {
@@ -189,7 +193,8 @@ describe("가짜 단계(?debug=steps)", () => {
     const img = phonePane().querySelector<HTMLImageElement>('img[alt="폰 카메라 영상"]')!;
     expect(img.getAttribute("src")).toBe("/debug-eye/eye-table-near.webp");
     expect(phonePane().querySelector("[data-fsm-card] [data-action]")).toHaveTextContent("컵 치우기");
-    expect(phonePane().querySelector('[data-detection="컵"]')).not.toBeNull();
+    expect([...phonePane().querySelectorAll("[data-detection-label]")].map((t) => t.textContent?.split(" ")[0])).toEqual(["컵"]);
+    expect(phonePane().querySelector("canvas[data-masks]")).not.toBeNull();
   });
 
   it("서버에서 온 계획·말은 쓰지 않는다", async () => {

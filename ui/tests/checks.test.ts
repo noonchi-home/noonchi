@@ -111,7 +111,7 @@ describe("checksReducer · 관찰 흐름", () => {
       type: "decision", at_ms: 10, id: "pam-1", seq: 1, text_sent: "t", status: "valid", prediction: { observation: "o", reasoning: "r", task_index: 0 }, action: "컵 치우기", memory_version: 1,
       world: { objects: [], person_visible: false, vlm_missing: 0, yolo_missing: 0 },
     };
-    const observe: BrainLog = { type: "observe", at_ms: 11, frame_id: "e7", captured_at_ms: 9, yolo: "컵 0.83", vlm: null, boxes: [{ label: "cup", score: 0.83, box: [100, 50, 40, 60] }] };
+    const observe: BrainLog = { type: "observe", at_ms: 11, frame_id: "e7", captured_at_ms: 9, yolo: "컵 0.83", vlm: null };
     const replayed: ServerMessage[] = [{ type: "brain", event: decision, replay: true }, { type: "brain", event: observe, replay: true }];
     const s = run(replayed);
     expect(s).toBe(EMPTY_CHECKS);

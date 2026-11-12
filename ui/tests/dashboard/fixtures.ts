@@ -1,4 +1,4 @@
-// 대시보드 화면 시험 자료: 지켜보기(0)와 컵 치우기 4단계 계획(1~4, 계획 계약 PlanView), 세로 그림 칸(가짜 단계용 image), YOLO 상자 하나,
+// 대시보드 화면 시험 자료: 지켜보기(0)와 컵 치우기 4단계 계획(1~4, 계획 계약 PlanView), 세로 그림 칸(가짜 단계용 image), 물체 모양 하나(seenOf),
 // 눈 그림 넷(405×720)과 그림마다 YOLO 상자(EYE_FRAMES). 상자는 시안 scenario.ts BOX를 EYE_CROP_X0만큼 옮겨 그림 끝에서 자른 값이다.
 import { createElement } from "react";
 import type { HealthView } from "../../../src/contract/events.ts";
@@ -6,8 +6,10 @@ import type { PlanStep, PlanView } from "../../../src/contract/plan.ts";
 import type { ScreenProps } from "../../src/dashboard/DashboardScreen";
 import type { Detection } from "../../src/dashboard/detections";
 import { hubOf } from "../../src/dashboard/hub";
+import { createSeenStore, type SeenStore } from "../../src/dashboard/masks";
 import type { PhoneSlot } from "../../src/dashboard/PhonePane";
-import { WORDS } from "../../src/dashboard/words";
+import { BOX_NAME, WORDS } from "../../src/dashboard/words";
+import type { SeenEvent } from "../../../src/contract/events.ts";
 
 export const PHONE_URL = "http://192.168.0.7:8210/phone/";
 
@@ -49,6 +51,24 @@ export const imageSlot = (id: EyeFrameId = "table-far"): PhoneSlot => ({ kind: "
 /** YOLO 상자 하나(먼 식탁 위 컵). */
 export const BOX: Detection = { label: "컵", score: 0.84, box: [168, 332, 192, 357] };
 
+const KIND = Object.fromEntries(Object.entries(BOX_NAME).map(([kind, name]) => [name, kind]));
+/** 상자들(화면 이름·[왼쪽, 위, 오른쪽, 아래])을 상자를 꽉 채운 모양으로 담은 seen 사건. */
+export function seenEvent(boxes: Detection[], frame = FRAME): SeenEvent {
+  return {
+    type: "seen", at_ms: 1, frame_id: "e1", captured_at_ms: 1, frame,
+    shapes: boxes.map((d) => ({
+      label: (KIND[d.label] ?? d.label) as SeenEvent["shapes"][number]["label"], score: d.score,
+      mask: { at: [d.box[0], d.box[1], d.box[2] - d.box[0], d.box[3] - d.box[1]], cols: 1, rows: 1, bits: "gA==" },
+    })),
+  };
+}
+/** 그 seen을 든 저장소(지우지 않음). null이면 빈 저장소. */
+export function seenOf(boxes: Detection[] | null, frame = FRAME): SeenStore {
+  const store = createSeenStore({ hold: true });
+  if (boxes) store.set(seenEvent(boxes, frame));
+  return store;
+}
+
 const STEPS: PlanStep[] = [
   { id: "cup:1", kind: "move", label: "식탁으로 가기", target: { objectId: "dining_table", room: "living" }, status: "pending" },
   { id: "cup:2", kind: "act", label: "컵 집기", target: { objectId: "cup" }, status: "pending" },
@@ -81,7 +101,7 @@ export function screenAt(n: number, over: Partial<ScreenProps> = {}): ScreenProp
   const plan = n > 0 ? planAt(n) : null;
   return {
     index: n, plan, step: plan ? plan.steps[n - 1]! : null, robotKnown: true, connected: true, map: MAP, mapReady: true,
-    phone: imageSlot(), boxes: [BOX], frame: FRAME,
+    phone: imageSlot(), seen: seenOf([BOX]),
     observation: n > 0 ? LEFT_CUP : WATCHING, action: n > 0 ? CLEAR_CUP : WORDS.wait, say: SAY[n]!, facing: n > 0 ? "twin" : "video", hub: HUB,
     ...over,
   };

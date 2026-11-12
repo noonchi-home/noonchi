@@ -39,6 +39,10 @@ export const color = {
   "qr-ink": "#2a2627",
   "qr-bg": "#ffffff",
   "on-scrim": "#ffffff",
+  "mask-person": "#d55e00",
+  "mask-vessel": "#56b4e9",
+  "mask-object": "#f0e442",
+  "mask-fixture": "#7b2ff7",
   "twin-casing": "#ffffff",
   "marker-a": "#e8590c",
   "marker-b": "#1c7ed6",
@@ -344,6 +348,14 @@ export const viz = {
     "roomEdge": "#8f847f",
     "cloid": "#a1143e",
     "cloidEstimated": "#a39994"
+  },
+  "mask": {
+    "person": "#d55e00",
+    "vessel": "#56b4e9",
+    "object": "#f0e442",
+    "fixture": "#7b2ff7",
+    "opacity": 0.45,
+    "groups": "person 사람 · vessel 컵·병·그릇 · fixture 가전 설비 · object 그 밖의 물건. 테두리 선은 그리지 않는다"
   },
   "touchPins": {
     "a": "#e8590c",

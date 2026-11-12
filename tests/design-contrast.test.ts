@@ -172,6 +172,36 @@ describe("색약 모의(Machado 2009)와 색 차이(CIEDE2000)", () => {
     expect(bad).toEqual([]);
   });
 
+  it("마스크 색 네 무리(사람·마시는 그릇·그 밖의 물건·가전 설비): 색약 모의에서도 서로 CIEDE2000 10 이상이고, 영상 위에 불투명도대로 겹쳐도 서로·바탕과 10 이상이다. 표와 같다", () => {
+    const M = tokens as unknown as {
+      viz: { mask: Record<"person" | "vessel" | "object" | "fixture", { ref: string }> & { opacity: number } };
+      contrast: { cvd: { mask: { a: string; b: string; normal: number; protan: number; deutan: number; mixed: number }[]; maskOnVideo: { color: string; min: number }[]; maskBackgrounds: string[] } };
+    };
+    const groups = ["person", "vessel", "object", "fixture"] as const;
+    const color = (g: string) => hex(M.viz.mask[g as (typeof groups)[number]].ref);
+    const alpha = M.viz.mask.opacity;
+    expect(alpha).toBeGreaterThanOrEqual(0.3);
+    const bgs = M.contrast.cvd.maskBackgrounds.map(hex);
+    expect(bgs.length).toBeGreaterThanOrEqual(4);
+    const worst = (a: Parameters<typeof deltaE2000>[0], b: Parameters<typeof deltaE2000>[0]) => Math.min(...triple(a as string, b as string));
+    const pairs = groups.flatMap((a, i) => groups.slice(i + 1).map((b) => [a, b] as const));
+    expect(M.contrast.cvd.mask.map((r) => `${r.a}/${r.b}`)).toEqual(pairs.map(([a, b]) => `${a}/${b}`));
+    const bad: string[] = [];
+    for (const r of M.contrast.cvd.mask) {
+      const [n, p, d] = triple(color(r.a), color(r.b));
+      const mixed = Math.min(...bgs.map((bg) => worst(over(color(r.a), alpha, bg), over(color(r.b), alpha, bg))));
+      if (!near(n, r.normal, 0.1) || !near(p, r.protan, 0.1) || !near(d, r.deutan, 0.1) || !near(mixed, r.mixed, 0.1)) bad.push(`${r.a}/${r.b} 표와 다름 ${n.toFixed(1)} ${p.toFixed(1)} ${d.toFixed(1)} ${mixed.toFixed(1)}`);
+      if (Math.min(p, d, mixed) < 10) bad.push(`${r.a}/${r.b} ${Math.min(p, d, mixed).toFixed(1)} < 10`);
+    }
+    expect(M.contrast.cvd.maskOnVideo.map((r) => r.color)).toEqual([...groups]);
+    for (const r of M.contrast.cvd.maskOnVideo) {
+      const min = Math.min(...bgs.map((bg) => worst(over(color(r.color), alpha, bg), bg)));
+      if (!near(min, r.min, 0.1)) bad.push(`${r.color} 바탕과의 차이 표와 다름 ${min.toFixed(1)}`);
+      if (min < 10) bad.push(`${r.color} 바탕과 ${min.toFixed(1)} < 10`);
+    }
+    expect(bad).toEqual([]);
+  });
+
   it("오류 빨강과 브랜드 진홍은 한눈에 다르다(CIEDE2000 10 이상), 표와 같다", () => {
     const pairs: Record<string, [string, string]> = {
       "brand-vs-error": ["brand", "error"], "brand-vs-error-vivid": ["brand", "error-vivid"], "error-vs-warn": ["error", "warn"], "brand-vs-warn": ["brand", "warn"],

@@ -1,13 +1,14 @@
 // 대시보드 가짜 단계 자료(ui/src/dashboard/fake-run.json)를 만든다. 실행: npx tsx scripts/twin3d/fake-run.ts
 // 한양목련 실제 장면·평면도(loadScene·floorPlanFrom)로 컵 치우기 계획(에이전트 컵 계획이 맞춰야 할 모양 tests/helpers/cup-plan.ts, 로봇 [10.6, 8.6])을 짜고, 다섯 순간(0 지켜보기, 1~4 계획 단계)마다
-// 서버가 대시보드 /events로 보내는 메시지 묶음(plan·eye·brain decision·brain observe·say)을 적는다. 말은 sayLine에 그 단계 명령을 넣은 글이다.
-// 대시보드 폰 칸 그림은 시안 눈 그림(ui/public/debug-eye/, 세로 405×720)이고, 컵 상자는 시안 가로 그림 상자를 잘라 낸 자리만큼 옮긴 것이다.
+// 서버가 대시보드 /events로 보내는 메시지 묶음(plan·eye·brain decision·brain observe·seen·say)을 적는다. 말은 sayLine에 그 단계 명령을 넣은 글이다.
+// 대시보드 폰 칸 그림은 시안 눈 그림(ui/public/debug-eye/, 세로 405×720)이고, 컵 모양(seen 마스크)은 시안 가로 그림 상자를 잘라 낸 자리만큼 옮긴 상자 안에 컵꼴로 채운 것이다.
 // 시각을 고정해서 다시 만들어도 같은 파일이 나온다.
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { sayLine } from "../../src/act/say.js";
 import { planIdOf } from "../../src/act/tasks.js";
-import type { BoxView, BrainLog, EyeEvent, ServerMessage } from "../../src/contract/events.js";
+import type { Mask } from "../../src/brain/seg.js";
+import type { BrainLog, EyeEvent, SeenEvent, ServerMessage } from "../../src/contract/events.js";
 import type { PlannedCommand } from "../../src/contract/phone.js";
 import type { PlanView, XZ } from "../../src/contract/plan.js";
 import type { WorldObject, WorldView } from "../../src/contract/world.js";
@@ -49,14 +50,29 @@ const round = (v: number, d = 3) => Math.round(v * 10 ** d) / 10 ** d;
 const iso = (ms: number) => new Date(ms).toISOString();
 const yawOf = (a: XZ, b: XZ) => round(((Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI + 360) % 360, 1) % 360;
 
-/** 가로 그림 컵 상자 → 세로 눈 그림 YOLO 상자 [x, y, w, h](그림 끝에서 자름). */
-function cupBox(eye: EyeFrameId, score: number): BoxView[] {
+/** 상자 [x, y, w, h]를 4px 칸으로 나눠 컵꼴(위는 곧고 아래 모서리가 둥근 통)로 채운 마스크. 비트는 줄 순서, 바이트 안에서는 높은 비트부터(src/brain/seg.ts). */
+function cupMask(at: [number, number, number, number]): Mask {
+  const cols = Math.max(2, Math.round(at[2] / 4)), rows = Math.max(2, Math.round(at[3] / 4));
+  const bytes = Buffer.alloc(Math.ceil((cols * rows) / 8));
+  const round = Math.min(cols, rows) * 0.35;
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    // 아래 두 모서리만 둥글게 깎는다
+    const dx = Math.max(0, round - (c + 0.5), c + 0.5 - (cols - round)), dy = Math.max(0, r + 0.5 - (rows - round));
+    if (dx > 0 && dy > 0 && Math.hypot(dx, dy) > round) continue;
+    const i = r * cols + c;
+    bytes[i >> 3]! |= 0x80 >> (i & 7);
+  }
+  return { at, cols, rows, bits: bytes.toString("base64") };
+}
+
+/** 가로 그림 컵 상자 → 세로 눈 그림의 컵 모양(그림 끝에서 자른 상자 안). */
+function cupShapes(eye: EyeFrameId, score: number): SeenEvent["shapes"] {
   const b = CUP_BOX[eye];
   if (!b) return [];
   const dx = EYE_CROP_X0[eye];
   const x0 = Math.max(0, b[0] - dx);
   const x1 = Math.min(FRAME.width, b[2] - dx);
-  return [{ label: "cup", score, box: [x0, b[1], x1 - x0, b[3] - b[1]] }];
+  return [{ label: "cup", score, mask: cupMask([x0, b[1], x1 - x0, b[3] - b[1]]) }];
 }
 
 /** 꺾은선 위에서 길이 몫 t(0~1) 자리와 그 구간 방향. */
@@ -115,16 +131,18 @@ function build(): Moment[] {
       action: n === 0 ? null : ACTION, memory_version: 1,
       world: { objects: [{ id: cup.id, cls: cup.cls, status: cup.status, surface: cup.surface, surface_label: cup.surface_label, error_m: null, facts: {} }], person_visible: false, vlm_missing: 0, yolo_missing: 0 },
     };
-    const boxes = cupBox(eye, score);
+    const shapes = cupShapes(eye, score);
     const observe: BrainLog = {
       type: "observe", at_ms: now, frame_id: `fake-${n}`, captured_at_ms: now,
-      yolo: boxes.length ? boxes.map((b) => `컵 ${b.score.toFixed(2)}`).join(" · ") : "감지 없음", vlm: null, boxes, frame: FRAME,
+      yolo: shapes.length ? shapes.map((b) => `컵 ${b.score.toFixed(2)}`).join(" · ") : "감지 없음", vlm: null,
     };
+    const seen: SeenEvent = { type: "seen", at_ms: now, frame_id: `fake-${n}`, captured_at_ms: now, frame: FRAME, shapes };
     const messages: ServerMessage[] = [
       { type: "plan", plan: open },
       { type: "eye", eye: eyeEvent },
       { type: "brain", event: decision },
       { type: "brain", event: observe },
+      seen,
       { type: "say", text: sayLine({ plan: open, command, world, nowMs: now }) },
     ];
     return { index: n, eye, messages };

@@ -1,7 +1,7 @@
 // 대시보드 자료 리듀서(data.ts): 서버 메시지 → 단계 번호·마스코트 방향·말·FSM·YOLO 상자. 자료는 가짜 단계(fake-run.json, scripts/twin3d/fake-run.ts).
 import { describe, expect, it } from "vitest";
 import type { ServerMessage } from "../../../src/contract/events.ts";
-import { BOX_TTL_MS, EMPTY_DASH, facingOf, fsmOf, liveBoxes, reduceDash, stepIndex } from "../../src/dashboard/data";
+import { EMPTY_DASH, facingOf, fsmOf, reduceDash, stepIndex } from "../../src/dashboard/data";
 import run from "../../src/dashboard/fake-run.json";
 
 const feed = (ms: ServerMessage[], now = 0) => ms.reduce((s, m) => reduceDash(s, m, now), EMPTY_DASH);
@@ -26,12 +26,12 @@ describe("대시보드 자료", () => {
     const old = reduceDash(s, { type: "plan", plan: { ...s.plan!, revision: s.plan!.revision - 1 } }, 0);
     expect(old.plan).toBe(s.plan);
   });
-  it("YOLO 상자는 3초 동안만, 이름은 한국어, 상자는 [왼쪽, 위, 오른쪽, 아래]", () => {
-    const s = feed(run.moments[1]!.messages as ServerMessage[], 1000);
-    const [cup] = liveBoxes(s, 1000);
-    expect(cup!.label).toBe("컵");
-    expect(cup!.box[2]).toBeGreaterThan(cup!.box[0]);
-    expect(liveBoxes(s, 1000 + BOX_TTL_MS + 1)).toEqual([]);
+  it("물체 모양(seen)은 대시보드 자료에 넣지 않는다(초당 10번 와도 화면 전체를 다시 그리지 않게, masks.ts 저장소가 든다). 가짜 단계에는 컵 모양 seen이 있다", () => {
+    const s = at(1);
+    const seen = (run.moments[1]!.messages as ServerMessage[]).find((m) => m.type === "seen")!;
+    expect(seen).toMatchObject({ type: "seen", frame: { width: 405, height: 720 }, shapes: [{ label: "cup" }] });
+    expect(reduceDash(s, seen, 5)).toBe(s);
+    expect(Object.keys(s).sort()).toEqual(["decision", "eye", "plan", "say"]);
   });
   it("hello면 처음으로 돌린다(접속 스냅숏이 뒤따름)", () => {
     expect(reduceDash(at(3), { type: "hello", devices: 1, provider: null, hub: "memory", home: "mokryeon_180b" }, 0)).toEqual(EMPTY_DASH);

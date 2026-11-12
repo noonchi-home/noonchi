@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { Agent } from "../src/agent/agent.js";
-import type { BrainLog } from "../src/contract/events.js";
+import type { BrainLog, SeenEvent } from "../src/contract/events.js";
 import { MemoryHub } from "../src/hub/memory.js";
 import type { DeviceHub } from "../src/hub/types.js";
 import { createApp, type TwinHomeApp } from "../src/server/app.js";
@@ -147,17 +147,17 @@ describe("REST 명령 + WS 이벤트", () => {
       type: "decision", at_ms: 10, id: "pam-1", seq: 1, text_sent: "t", status: "valid", prediction: { observation: "o", reasoning: "r", task_index: 0 }, action: "컵 치우기", memory_version: 1,
       world: { objects: [], person_visible: false, vlm_missing: 0, yolo_missing: 0 },
     };
-    const observe: BrainLog = {
-      type: "observe", at_ms: 11, frame_id: "e7", captured_at_ms: 9, yolo: "컵 0.83", vlm: null,
-      boxes: [{ label: "cup", score: 0.83, box: [100, 50, 40, 60] }], frame: { width: 360, height: 640 },
+    const seen: SeenEvent = {
+      type: "seen", at_ms: 11, frame_id: "e7", captured_at_ms: 9, frame: { width: 360, height: 640 },
+      shapes: [{ label: "cup", score: 0.83, mask: { at: [100, 50, 40, 60], cols: 1, rows: 1, bits: "gA==" } }],
     };
-    const app = createApp({ hub: home.hub, policy: home.policy, rooms: ROOMS, log: () => {}, world: () => world, brainLast: () => [decision, observe], say: () => "컵을 들라고 했어요." });
+    const app = createApp({ hub: home.hub, policy: home.policy, rooms: ROOMS, log: () => {}, world: () => world, brainLast: () => [decision], seenLast: () => seen, say: () => "컵을 들라고 했어요." });
     const { url } = await app.listen(0, "127.0.0.1");
     cleanups.push(() => app.close());
     const { waitFor, messages } = await listen(url);
     await waitFor((m) => m.type === "say");
     const tail = messages.slice(messages.findIndex((m) => m.type === "world"));
-    expect(tail).toEqual([{ type: "world", world }, { type: "brain", event: decision, replay: true }, { type: "brain", event: observe, replay: true }, { type: "say", text: "컵을 들라고 했어요." }]);
+    expect(tail).toEqual([{ type: "world", world }, { type: "brain", event: decision, replay: true }, { ...seen, replay: true }, { type: "say", text: "컵을 들라고 했어요." }]);
   });
 
   it("마지막 판단·말풍선 글이 없으면 brain 없이 say null", async () => {

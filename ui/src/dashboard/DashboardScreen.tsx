@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import type { PlanStep, PlanView } from "../../../src/contract/plan.ts";
 import { LiquidGlass } from "../components/ui/liquid-glass";
 import { Separator } from "../components/ui/separator";
-import type { Detection } from "./detections";
+import type { SeenStore } from "./masks";
 import { useBoxSize } from "./fit";
 import type { HubState } from "./hub";
 import { pageLayout, type PageLayout } from "./layout";
@@ -29,9 +29,8 @@ export interface ScreenProps {
   /** 지도가 첫 그림을 다 그렸는가. */
   mapReady: boolean;
   phone: PhoneSlot;
-  /** YOLO 상자(그림 픽셀)와 그 그림 크기. */
-  boxes: Detection[];
-  frame: { width: number; height: number } | null;
+  /** 마지막 물체 모양(seen) 저장소. 대시보드 폰 칸의 마스크 층만 듣는다. */
+  seen: SeenStore;
   /** PAM이 본 관찰 한 문장(없으면 아직 판단 없음)과 도출한 행동(없으면 대기). */
   observation: string | null;
   action: string;
@@ -54,7 +53,7 @@ export interface ScreenProps {
  * 자리·크기는 화면 크기로만 정해지고 단계가 바뀌어도 그대로다. 말풍선 말은 opacity·transform으로 바뀐다(SayCard).
  * 글꼴 조각·마스코트 그림 풀기·지도 첫 그림이 다 되면 한 번 미리 그려 보고(usePreDraw, 단계가 바뀔 때는 하지 않는다) 그 뒤 main에 data-ready를 달고 onReady를 부른다.
  */
-export function DashboardScreen({ index, plan, step, robotKnown, connected, map, mapReady, phone, boxes, frame, observation, action, say, facing, hub, settingsOpen, onReady }: ScreenProps) {
+export function DashboardScreen({ index, plan, step, robotKnown, connected, map, mapReady, phone, seen, observation, action, say, facing, hub, settingsOpen, onReady }: ScreenProps) {
   const main = useRef<HTMLElement>(null);
   const view = useBoxSize(main);
   const L = useMemo(() => pageLayout(view, MASCOT), [view]);
@@ -78,7 +77,7 @@ export function DashboardScreen({ index, plan, step, robotKnown, connected, map,
           <TwinPane plan={plan} step={step} robotKnown={robotKnown} connected={connected} map={typeof map === "function" ? map(L) : map} />
         </PreDrawing.Provider>
         <Separator orientation="vertical" data-divider />
-        <PhonePane slot={phone} boxes={boxes} frame={frame} observation={observation} action={action} width={L.video.width} card={card} connected={connected} />
+        <PhonePane slot={phone} seen={seen} observation={observation} action={action} width={L.video.width} card={card} connected={connected} />
       </LiquidGlass>
       <SayCard say={say} box={L.bubble} animate={!reduced} />
       <Mascot image={MASCOT} hub={hub} box={L.mascot} imageBox={L.image} logoBox={L.logo} facing={facing} settingsOpen={settingsOpen} />

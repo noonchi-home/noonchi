@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { DetLabel } from "../src/brain/detector.js";
-import type { BoxView, BrainLog, ServerMessage } from "../src/contract/events.js";
+import type { BrainLog, SeenEvent, ServerMessage } from "../src/contract/events.js";
 import type { PlanView } from "../src/contract/plan.js";
 
 const CONTRACT_DIR = new URL("../src/contract/", import.meta.url);
@@ -20,20 +20,21 @@ describe("메시지 계약", () => {
   });
 });
 
-// 대시보드가 받는 상자·말풍선 글. 계약에서 빠지거나 모양이 바뀌면 typecheck가 여기서 실패한다.
-// 상자 이름은 YOLO 감지 이름(DetLabel, 낱말 표)과 같다: 다르면 typecheck가 여기서 실패한다.
+// 대시보드가 받는 물체 모양(seen)·말풍선 글. 계약에서 빠지거나 모양이 바뀌면 typecheck가 여기서 실패한다.
+// 모양 이름은 YOLO 감지 이름(DetLabel, 낱말 표)과 같다: 다르면 typecheck가 여기서 실패한다. observe 기록에는 상자 칸이 없다.
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
-const BOX_IS_DET: Same<BoxView["label"], DetLabel> = true;
-const OBSERVE_WITH_BOXES: Extract<BrainLog, { type: "observe" }> = {
-  type: "observe", at_ms: 1, frame_id: "e1", captured_at_ms: 1, yolo: "컵 0.83", vlm: null,
-  boxes: [{ label: "cup", score: 0.83, box: [100, 50, 40, 60] }], frame: { width: 360, height: 640 },
+const SHAPE_IS_DET: Same<SeenEvent["shapes"][number]["label"], DetLabel> = true;
+const NO_BOXES: "boxes" extends keyof Extract<BrainLog, { type: "observe" }> ? false : true = true;
+const SEEN: Extract<ServerMessage, { type: "seen" }> = {
+  type: "seen", at_ms: 1, frame_id: "e1", captured_at_ms: 1, frame: { width: 360, height: 640 },
+  shapes: [{ label: "cup", score: 0.83, mask: { at: [100, 50, 40, 60], cols: 1, rows: 1, bits: "gA==" } }],
 };
 const SAYS: Extract<ServerMessage, { type: "say" }>[] = [{ type: "say", text: "지켜보고 있어요." }, { type: "say", text: null }];
 
 describe("대시보드 메시지 계약", () => {
-  it("observe는 엔진 프레임 픽셀 상자 [x, y, w, h]와 프레임 크기를 싣고, say는 글 하나 또는 null", () => {
-    expect(BOX_IS_DET).toBe(true);
-    expect(OBSERVE_WITH_BOXES.boxes?.[0]?.box).toHaveLength(4);
+  it("seen은 엔진 프레임 픽셀 자리의 마스크와 프레임 크기를 싣고, observe에는 상자가 없고, say는 글 하나 또는 null", () => {
+    expect([SHAPE_IS_DET, NO_BOXES]).toEqual([true, true]);
+    expect(SEEN.shapes[0]!.mask.at).toHaveLength(4);
     expect(SAYS.map((m) => m.text)).toEqual(["지켜보고 있어요.", null]);
   });
 });

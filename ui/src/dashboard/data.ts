@@ -1,13 +1,11 @@
-// 대시보드 자료(순수 리듀서): /events 메시지 → 지금 계획·맞춘 눈·마지막 유효 판단·YOLO 상자·말풍선 카드 말. 화면 값(단계 번호·마스코트 방향·FSM 카드)도 여기서 고른다.
-// hello는 처음으로 돌린다(접속 스냅숏이 뒤따른다). 같은 계획의 옛 번호, 맞추기 전 추정 눈, 실패한 판단은 버린다. YOLO 상자는 받은 뒤 BOX_TTL_MS 동안만 보인다.
+// 대시보드 자료(순수 리듀서): /events 메시지 → 지금 계획·맞춘 눈·마지막 유효 판단·말풍선 카드 말. 물체 모양(seen)은 초당 10번 와서 여기 넣지 않는다(masks.ts 저장소). 화면 값(단계 번호·마스코트 방향·FSM 카드)도 여기서 고른다.
+// hello는 처음으로 돌린다(접속 스냅숏이 뒤따른다). 같은 계획의 옛 번호, 맞추기 전 추정 눈, 실패한 판단은 버린다.
 import type { BrainLog, EyeEvent, ServerMessage } from "../../../src/contract/events.ts";
 import type { PlanStep, PlanView } from "../../../src/contract/plan.ts";
-import type { Detection } from "./detections";
 import type { Facing } from "./Mascot";
-import { BOX_NAME, WORDS } from "./words";
+import { WORDS } from "./words";
 
 type Decision = Extract<BrainLog, { type: "decision" }>;
-type Observe = Extract<BrainLog, { type: "observe" }>;
 
 export interface DashData {
   plan: PlanView | null;
@@ -15,13 +13,10 @@ export interface DashData {
   eye: EyeEvent | null;
   /** 마지막 유효 판단. */
   decision: Decision | null;
-  /** 상자가 있는 마지막 YOLO 기록과 받은 때(ms). */
-  boxes: { observe: Observe; at: number } | null;
   say: string | null;
 }
 
-export const EMPTY_DASH: DashData = { plan: null, eye: null, decision: null, boxes: null, say: null };
-export const BOX_TTL_MS = 3000;
+export const EMPTY_DASH: DashData = { plan: null, eye: null, decision: null, say: null };
 
 export function reduceDash(s: DashData, m: ServerMessage, now: number): DashData {
   switch (m.type) {
@@ -40,7 +35,6 @@ export function reduceDash(s: DashData, m: ServerMessage, now: number): DashData
     case "brain": {
       const e = m.event;
       if (e.type === "decision") return e.status === "valid" ? { ...s, decision: e } : s;
-      if (e.type === "observe" && e.boxes) return { ...s, boxes: { observe: e, at: now } };
       return s;
     }
     default:
@@ -66,12 +60,6 @@ export function currentStep(p: PlanView | null): PlanStep | null {
 
 /** 마스코트가 보는 쪽: 열린 계획이 있으면 트윈, 아니면 대시보드 폰 칸 영상. */
 export const facingOf = (p: PlanView | null): Facing => (isOpen(p) ? "twin" : "video");
-
-/** 지금 보일 YOLO 상자: 받은 지 BOX_TTL_MS 안. 이름은 화면 이름, 상자는 [왼쪽, 위, 오른쪽, 아래]. */
-export function liveBoxes(s: DashData, now: number): Detection[] {
-  if (!s.boxes || now - s.boxes.at > BOX_TTL_MS) return [];
-  return (s.boxes.observe.boxes ?? []).map(({ label, score, box: [x, y, w, h] }) => ({ label: BOX_NAME[label] ?? label, score, box: [x, y, x + w, y + h] }));
-}
 
 /** FSM 카드: 마지막 유효 판단의 관찰 한 문장(없으면 null)과 도출한 행동(없으면 대기). */
 export function fsmOf(s: DashData): { observation: string | null; action: string } {

@@ -3,7 +3,7 @@
 import { act, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DashboardScreen, type ScreenProps } from "../../src/dashboard/DashboardScreen";
-import { EYE_FRAMES, imageSlot, PHONE_URL, SAY, screenAt } from "./fixtures";
+import { EYE_FRAMES, imageSlot, PHONE_URL, SAY, screenAt, seenOf } from "./fixtures";
 
 const STAGE = { width: 1504, height: 896 };
 const ALLOWED = new Set(["transform", "opacity", "offset", "easing", "composite"]);
@@ -61,7 +61,7 @@ function step(from: ScreenProps, to: ScreenProps) {
 
 describe("대시보드 단계 바뀜", () => {
   it("단계가 바뀌어도 대시보드 폰 칸·트윈 칸과 그 안 지도 캔버스·영상 그림을 다시 만들지 않는다", () => {
-    const { view, was } = step(screenAt(2), screenAt(3, { phone: imageSlot("sink"), boxes: EYE_FRAMES[2]!.boxes }));
+    const { view, was } = step(screenAt(2), screenAt(3, { phone: imageSlot("sink"), seen: seenOf(EYE_FRAMES[2]!.boxes) }));
     expect(phoneOf(view.container)).toBe(was.phone);
     expect(twinOf(view.container)).toBe(was.twin);
     expect(was.phone.querySelector("img")).toBe(was.phoneImg);
