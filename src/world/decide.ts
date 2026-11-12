@@ -114,6 +114,8 @@ export class Decider {
         (p) => {
           this.setLink(true);
           const action = p.task_index === -1 ? null : tasks[p.task_index] ?? null;
+          // 행동을 고른 판단이 쓴 들은 말은 다음 관찰 텍스트에 다시 넣지 않는다(그 일을 그만둔 뒤 같은 말로 다시 시작하지 않게)
+          if (action !== null) this.recent = this.recent.filter((c) => c.kind !== "heard" || c.at_ms > now);
           // PAM의 생각 글은 계획 이유·판단 기록·대시보드에 남는다: 들은 말을 그대로 옮겼으면 뺀다
           const said = this.o.keepHeard?.() ? [] : saidIn(textSent);
           const prediction = said.length ? { ...p, observation: redactSaid(p.observation, said), reasoning: redactSaid(p.reasoning, said) } : p;

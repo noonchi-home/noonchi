@@ -558,9 +558,10 @@ export class ExecutionTracker {
     return devices ? riskyHand(step, devices) : true;
   }
 
-  /** 손으로 다루는 가전 이름(묻는 글·끄기 안내): 이 집 가전 이름, 없으면 단계 대상 자리 이름. */
+  /** 손으로 다루는 가전 이름(묻는 글·끄기 안내): 그 가전이 평면도에 있으면 종류의 짧은 이름(인덕션), 아니면 이 집 가전 이름, 그것도 없으면 단계 대상 자리 이름. */
   private handLabel(deviceId: string, target: string | null = null): string {
-    return this.o.handDevices?.().find((d) => d.id === deviceId)?.label ?? this.placeName(target ?? deviceId);
+    const type = this.o.floor().objects.get(deviceId)?.type;
+    return (type && placeShort(type)) || this.o.handDevices?.().find((d) => d.id === deviceId)?.label || this.placeName(target ?? deviceId);
   }
 
   /** 켜기 전 질문의 답(기억하지 않는다): 승인이면 그때 켜라는 명령을 보내고(그 가전은 끄는 단계가 끝날 때까지 켠 것으로 본다), 거절이면 취소로 닫는다.

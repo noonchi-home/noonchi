@@ -94,6 +94,31 @@ describe("판단 호출", () => {
       expect(JSON.stringify(s.records[0]!.prediction)).not.toContain("라면");
     });
 
+    it("행동을 고른 판단이 쓴 들은 말은 다음 판단의 관찰 텍스트에 다시 넣지 않는다(「그만」 뒤 같은 말로 그 일을 다시 시작하지 않게). 대기 판단이면 60초 동안 남는다", async () => {
+      let index = -1;
+      const s = await setup({ predict: { predict: () => ({ observation: "o", reasoning: "r", task_index: index }) } });
+      s.d.onChanges(s.world.heard(SAID, s.clock.t));
+      s.d.tick();
+      await s.d.idle();
+      expect(s.sent()).toContain(SAID);
+      // 대기였으니 다음 판단에도 남아 있다
+      index = 0;
+      s.clock.t += 5_000;
+      s.d.onChanges([{ kind: "appeared", at_ms: s.clock.t, subject: "cup_1", text: "컵 cup_1 보임", meaningful: true }]);
+      s.d.tick();
+      await s.d.idle();
+      expect(s.sent()).toContain(SAID);
+      expect(s.records.at(-1)!.action).toBe("컵 치우기");
+      // 행동을 골랐으니 그 말은 썼다: 그 뒤에 들은 말만 남는다
+      s.clock.t += 5_000;
+      s.d.onChanges(s.world.heard("고마워", s.clock.t));
+      s.d.tick();
+      await s.d.idle();
+      expect(pam!.bodies).toHaveLength(3);
+      expect(s.sent()).not.toContain(SAID);
+      expect(s.sent()).toContain("사람이 말함: 「고마워」");
+    });
+
     it("들은 말 남기기 설정을 켜면(기본 꺼짐) 기록에 남는 판단 줄에도 그 말이 그대로 있다", async () => {
       const s = await setup({ keepHeard: true });
       s.d.onChanges(s.world.heard(SAID, s.clock.t));

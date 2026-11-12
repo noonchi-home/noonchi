@@ -35,6 +35,16 @@ export function cupBranchPredict(body: Record<string, unknown>): Pred {
   return wait;
 }
 
+/** 코치 흐름 시험의 PAM 답(시험 대역): 관찰 텍스트에 「사람이 말함: 「…라면…」」 줄이 있으면 요청 tasks에서 「라면 끓이기 알려 주기」 번호(목록에 없으면 대기 -1), 아니면 대기.
+ *  답 글에는 들은 말을 옮기지 않는다. */
+export function coachPredict(body: Record<string, unknown>): Pred {
+  const tasks = body.tasks as string[];
+  const asked = /사람이 말함: 「[^」]*라면[^」]*」/.test(String(body.observation_text));
+  const index = asked ? tasks.indexOf("라면 끓이기 알려 주기") : -1;
+  return index >= 0 ? { observation: "사용자가 요리 방법을 물음", reasoning: "방법을 물어서 단계마다 알려 준다", task_index: index }
+    : { observation: "할 일이 보이지 않음", reasoning: "맞는 규칙이 없어 기다린다", task_index: -1 };
+}
+
 export async function startFakePam(o: FakePamOptions = {}): Promise<FakePam> {
   const bodies: Record<string, unknown>[] = [];
   const paths: string[] = [];
