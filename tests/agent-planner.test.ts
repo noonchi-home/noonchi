@@ -31,7 +31,7 @@ import { DEVICE_STATES } from "../src/world/vocab.js";
 import { cupPlan } from "./helpers/cup-plan.js";
 import { smallFloor } from "./helpers/floor.js";
 import { startFakePam } from "./helpers/pam.js";
-import { CUP_SCRIPTS, FILL_SCRIPTS, cupSteps, fillSteps, idsFrom, planCalls, planContext, startFakePlanner, testPlanner, type FakePlanner, type PlanScript } from "./helpers/planner.js";
+import { CUP_SCRIPTS, FILL_SCRIPTS, ramenScripts, ramenSteps, cupSteps, fillSteps, idsFrom, planCalls, planContext, startFakePlanner, testPlanner, type FakePlanner, type PlanScript } from "./helpers/planner.js";
 
 // 작은 집: 복도(hall)·주방(kitchen)·후면 발코니(balcony, 바닥 −0.1m라 로봇 이동 가능 방이 아님). 세탁기·건조기는 발코니
 const SCENE = {
@@ -252,6 +252,61 @@ describe("계획 모드: 컵 치우기", () => {
     expect(t.ok && t.plan.steps.map((s) => [s.kind, s.target, s.command])).toEqual([
       ["go", "fridge_1", "냉장고로 가 주세요"], ["pick", "fridge_1", "콜라를 꺼내 주세요"], ["go", "tea_1", "탁자로 가 주세요"], ["do", "cup_1", "컵에 콜라를 따라 주세요"],
     ]);
+  });
+
+  describe("코치 지시문과 시험 대본의 긴 계획", () => {
+    const RAMEN = "라면 끓이기 알려 주기";
+    // 수납장·인덕션이 있는 주방(인덕션은 가전 induction_1과 같은 id)
+    const kitchen = () => floorPlanFrom({ ...structuredClone(SCENE), objects: [...structuredClone(SCENE.objects),
+      { id: "cabinet_1", type: "kitchen_cabinet", room: "kitchen", plan: { position: [4.5, 3.5] } }, { id: "induction_1", type: "induction_counter", room: "kitchen", plan: { position: [6, 0.5] } }] });
+    const rctx = () => planContext({ decision: decision(RAMEN), world: view([]), floor: kitchen(), hub: new MemoryHub(DEVICES), nowIso: "t" });
+
+    it("지시문에 코치 절이 있고, 그 요리의 단계나 낱말(라면·냄비)은 지시문에 없다", () => {
+      const lines = PLANNER_PROMPT.split("\n");
+      const at = lines.indexOf("코치(쓸 수 있는 단계에 device가 없는 할 일)");
+      expect(at).toBeGreaterThan(0);
+      expect(lines.slice(at + 1, at + 7)).toEqual([
+        "- 사람이 스스로 하는 일을 처음부터 끝까지 단계마다 알려 준다. 한 단계에 할 일 하나. 클로이드는 가전을 조작하지 않는다.",
+        "- 자리를 옮겨야 하면 go를 먼저 둔다. 물건을 꺼내면 pick, 올려놓으면 place, 그 자리에서 하는 일(받기·넣기·켜기·끄기)은 do.",
+        `- 비전이 볼 수 있는 것만 until로 쓴다: 폰 위치(phone_near), 무언가 들고 있음({"person_fact": "holding", "value": "holding_object"}), 싱크대 물 흐름({"fixture": "sink", "facts": {"use": "water_running"}}), 가전 상태(device). 볼 수 없는 일은 until 없이 둔다(사람이 「완료」나 말로 넘긴다).`,
+        "- 손으로 가전을 켜거나 끄는 do에는 hand_device를 쓴다. 불·열이 나는 가전을 켜는 do에는 caution(안전 한 줄)을 쓰고, 계획 안에서 그 가전을 끄는 do를 꼭 둔다.",
+        `- 시간이 걸리는 일(물 끓기, 익기)은 say로 한 줄 알린 뒤 wait {"elapsed_s": 초}.`,
+        "- [지난 수업]이 있으면 그 단계 이름(label)과 순서를 그대로 쓴다.",
+      ]);
+      expect(PLANNER_PROMPT).not.toMatch(/라면|냄비/);
+      expect(PLANNER_PROMPT).toContain("단계 수는 [할 일]의 「단계 한도」까지다.");
+    });
+
+    it("계획 입력의 [할 일] 줄에 쓸 수 있는 단계가 go, pick, place, do, wait, say로 나오고 단계 한도가 14개다. 컵 치우기는 8개다", () => {
+      const input = planInput(rctx());
+      expect(input).toContain(`[할 일] ${RAMEN}: 사람이 라면을 끓이려 하거나 방법을 물으면`);
+      expect(input.split("\n").slice(1, 3)).toEqual(["- 쓸 수 있는 단계: go, pick, place, do, wait, say", "- 단계 한도: 14개"]);
+      expect(input).toContain("- induction_1 인덕션 [cooktop 인덕션]");
+      expect(planInput(planContext({ decision: decision("컵 치우기"), world: view([cup()]), floor: floor() })).split("\n")[2]).toBe("- 단계 한도: 8개");
+    });
+
+    it("가짜 모델의 도구 호출로 만든 라면 계획은 13단계이고 사람 명령이 모두 「주세요」로 끝나며 화면 단계 종류가 맞다. 불 켜기에는 안전 문구가, 끝에는 불 끄기가 있다", async () => {
+      llm.scripts = { ...llm.scripts, ...ramenScripts() };
+      const r = await testPlanner(llm).plan(rctx());
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(r.plan.steps.map((s) => [s.kind, s.target, s.command ?? s.text])).toEqual([
+        ["go", "cabinet_1", "수납장으로 가 주세요"], ["pick", "cabinet_1", "냄비를 꺼내 주세요"], ["go", "sink_1", "싱크대로 가 주세요"], ["do", "sink_1", "냄비에 물을 받아 주세요"],
+        ["go", "induction_1", "인덕션으로 가 주세요"], ["place", "induction_1", "냄비를 인덕션에 올려 주세요"], ["do", "induction_1", "인덕션을 켜 주세요"],
+        ["say", null, "물이 끓을 때까지 기다려요."], ["wait", null, null], ["do", "induction_1", "면과 스프를 넣어 주세요"], ["wait", null, null],
+        ["do", "induction_1", "인덕션을 꺼 주세요"], ["say", null, "라면이 다 됐어요."],
+      ]);
+      for (const s of r.plan.steps.filter((x) => ["go", "pick", "place", "do"].includes(x.kind))) expect(s.command, s.label).toMatch(/주세요$/);
+      expect(r.plan.view.steps.map((s) => s.kind)).toEqual(["move", "act", "move", "act", "move", "act", "act", "ask", "wait", "act", "wait", "act", "ask"]);
+      expect(r.plan.steps[6]).toMatchObject({ hand: { deviceId: "induction_1", to: "on" }, caution: "냄비가 뜨거워져요." });
+      expect(r.plan.steps[11]).toMatchObject({ hand: { deviceId: "induction_1", to: "off" }, caution: null });
+      expect(r.plan.steps[1]!.until).toEqual({ person_fact: "holding", value: "holding_object" });
+      expect(r.plan.steps[8]!.until).toEqual({ elapsed_s: 240 });
+      // 가전 단계가 없다: 클로이드는 가전을 조작하지 않는다
+      expect(r.plan.steps.some((s) => s.kind === "device" || s.device)).toBe(false);
+      // 기다리기를 줄인 판(흐름 시험용)
+      expect(ramenSteps({ cabinet: "cabinet_1", sink: "sink_1", cooktop: "induction_1", cooktopDevice: "induction_1", waitS: 2 }).filter((s) => s.kind === "wait").map((s) => s.until)).toEqual([{ elapsed_s: 2 }, { elapsed_s: 2 }]);
+    });
   });
 
   it("계획 입력: 싱크볼이 있는 평면도 자리는 싱크볼 점을, 싱크볼 안 물건은 면 뒤에 「싱크볼 안」을 쓴다", () => {

@@ -107,6 +107,42 @@ export const FILL_SCRIPTS: Record<string, PlanScript> = {
   "컵에 콜라 따라 주기": (input) => [planCalls(fillSteps({ ...fillIdsFrom(input), drink: "콜라" }))],
 };
 
+/** 라면 끓이기 알려 주기 시험 대본 13단계(라면 단계 글은 여기에만 있다. src에는 없다):
+ *  수납장으로 가기 · 냄비 꺼내기 · 싱크대로 가기 · 물 받기 · 인덕션으로 가기 · 냄비 올리기 · 인덕션 켜기(손으로, 안전 문구) · 알림 · 기다리기 ·
+ *  면과 스프 넣기 · 기다리기 · 인덕션 끄기(손으로) · 알림. 비전으로 볼 수 있는 것(폰 위치·무언가 들고 있음)만 until이고 나머지는 「완료」·말로 넘긴다.
+ *  waitS: 기다리는 초(기본 240, 흐름 시험은 줄인다). */
+export function ramenSteps(ids: { cabinet: string; sink: string; cooktop: string; cooktopDevice: string; waitS?: number }): Record<string, unknown>[] {
+  const { cabinet, sink, cooktop, cooktopDevice, waitS = 240 } = ids;
+  const go = (target: string, place: string) => ({ kind: "go", label: `${josa(place, "으로/로")} 가기`, target, command: `${josa(place, "으로/로")} 가 주세요`, until: { phone_near: target }, timeout_s: 120 });
+  const wait = (label: string) => ({ kind: "wait", label, until: { elapsed_s: waitS }, timeout_s: Math.max(10, waitS + 60) });
+  return [
+    go(cabinet, "수납장"),
+    { kind: "pick", label: "냄비 꺼내기", target: cabinet, command: "냄비를 꺼내 주세요", until: { person_fact: "holding", value: "holding_object" }, timeout_s: 120 },
+    go(sink, "싱크대"),
+    { kind: "do", label: "물 받기", target: sink, command: "냄비에 물을 받아 주세요", timeout_s: 180 },
+    go(cooktop, "인덕션"),
+    { kind: "place", label: "냄비 올리기", target: cooktop, command: "냄비를 인덕션에 올려 주세요", timeout_s: 120 },
+    { kind: "do", label: "인덕션 켜기", target: cooktop, command: "인덕션을 켜 주세요", hand_device: { id: cooktopDevice, to: "on" }, caution: "냄비가 뜨거워져요.", timeout_s: 120 },
+    { kind: "say", label: "물 끓기 알림", text: "물이 끓을 때까지 기다려요.", timeout_s: 10 },
+    wait("물 끓기 기다리기"),
+    { kind: "do", label: "면과 스프 넣기", target: cooktop, command: "면과 스프를 넣어 주세요", timeout_s: 180 },
+    wait("익기 기다리기"),
+    { kind: "do", label: "인덕션 끄기", target: cooktop, command: "인덕션을 꺼 주세요", hand_device: { id: cooktopDevice, to: "off" }, timeout_s: 120 },
+    { kind: "say", label: "끝 알림", text: "라면이 다 됐어요.", timeout_s: 10 },
+  ];
+}
+
+/** 입력 글에서 수납장·싱크대·인덕션(평면도 종류)과 인덕션 가전([가전] 줄의 cooktop) id. */
+export function ramenIdsFrom(input: string): { cabinet: string; sink: string; cooktop: string; cooktopDevice: string } {
+  const line = (type: string) => new RegExp(`^- (\\S+) .*\\[${type}\\]`, "m").exec(input)?.[1] ?? "";
+  return { cabinet: line("kitchen_cabinet"), sink: line("sink_counter"), cooktop: line("induction_counter"), cooktopDevice: /^- (\S+) .*\[cooktop /m.exec(input)?.[1] ?? "" };
+}
+
+/** 라면 끓이기 알려 주기 대본. waitS: 기다리는 초(기본 240). */
+export const ramenScripts = (waitS?: number): Record<string, PlanScript> => ({
+  "라면 끓이기 알려 주기": (input) => [planCalls(ramenSteps({ ...ramenIdsFrom(input), ...(waitS === undefined ? {} : { waitS }) }))],
+});
+
 /** 컵 치우기·물어보기 대본(지금 서버와 같은 계획). */
 export const CUP_SCRIPTS: Record<string, PlanScript> = {
   "컵 치우기": (input) => [planCalls(cupSteps(idsFrom(input)))],

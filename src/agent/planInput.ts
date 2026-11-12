@@ -4,7 +4,7 @@ import type { Placed } from "../act/tasks.js";
 import type { WorldView } from "../contract/world.js";
 import { CONDITION_KINDS } from "../world/conditions.js";
 import { CLASSES, DEVICE_STATES, STATES, type ClassKey, type Facet, type Target } from "../world/vocab.js";
-import type { PlanContext } from "./planTools.js";
+import { PLAN_LIMITS, type PlanContext } from "./planTools.js";
 import { CONFIRM_RULES } from "./policy.js";
 import { KIND_LABELS } from "../model/mapping.js";
 
@@ -35,8 +35,16 @@ export const PLANNER_PROMPT = `너는 이 집 스마트홈 에이전트의 계�
 - label은 화면 단계 이름(예: 「식탁으로 가기」, 「컵 집기」, 「싱크대로 가기」, 「컵 내려놓기」). 30자 아래, 화살표·괄호 없이 쓴다.
 - 순서: 사람은 먼저 물건이 있는 자리로 가고(go), 집고(pick), 둘 자리로 가서(go) 내려놓는다(place). 이미 그 자리에 있으면 go를 뺀다.
 - 비전으로 볼 수 있는 일(컵 같은 World State 물건)은 pick·place에 until을 꼭 쓴다.
-- 집 상태·평면도·가전은 아래 입력에 다 있다. 바로 submit_plan 한 번으로 계획 전체(steps 배열, 1번부터 순서대로)를 낸다. 단계는 8개까지. 길(경로)은 코드가 잇는다.
+- 집 상태·평면도·가전은 아래 입력에 다 있다. 바로 submit_plan 한 번으로 계획 전체(steps 배열, 1번부터 순서대로)를 낸다. 단계 수는 [할 일]의 「단계 한도」까지다. 길(경로)은 코드가 잇는다.
 - 결과가 오류면 첫 틀린 단계와 까닭이 온다. 그 단계를 고친 계획 전체를 submit_plan으로 다시 낸다. 답 글은 쓰지 않는다.
+
+코치(쓸 수 있는 단계에 device가 없는 할 일)
+- 사람이 스스로 하는 일을 처음부터 끝까지 단계마다 알려 준다. 한 단계에 할 일 하나. 클로이드는 가전을 조작하지 않는다.
+- 자리를 옮겨야 하면 go를 먼저 둔다. 물건을 꺼내면 pick, 올려놓으면 place, 그 자리에서 하는 일(받기·넣기·켜기·끄기)은 do.
+- 비전이 볼 수 있는 것만 until로 쓴다: 폰 위치(phone_near), 무언가 들고 있음({"person_fact": "holding", "value": "holding_object"}), 싱크대 물 흐름({"fixture": "sink", "facts": {"use": "water_running"}}), 가전 상태(device). 볼 수 없는 일은 until 없이 둔다(사람이 「완료」나 말로 넘긴다).
+- 손으로 가전을 켜거나 끄는 do에는 hand_device를 쓴다. 불·열이 나는 가전을 켜는 do에는 caution(안전 한 줄)을 쓰고, 계획 안에서 그 가전을 끄는 do를 꼭 둔다.
+- 시간이 걸리는 일(물 끓기, 익기)은 say로 한 줄 알린 뒤 wait {"elapsed_s": 초}.
+- [지난 수업]이 있으면 그 단계 이름(label)과 순서를 그대로 쓴다.
 
 예(컵 치우기, 식탁 table_1 위 컵 cup_1, 싱크볼이 있는 싱크대 sink_1)
 1. go table_1 「식탁으로 가 주세요」 until {"phone_near": "table_1"}
@@ -90,6 +98,7 @@ export function planInput(ctx: PlanContext): string {
   return [
     `[할 일] ${task.name}: ${task.description}`,
     `- 쓸 수 있는 단계: ${allow}`,
+    `- 단계 한도: ${Math.min(task.maxSteps ?? PLAN_LIMITS.maxSteps, PLAN_LIMITS.hardMaxSteps)}개`,
     `[PAM 판단] 관찰: ${d.prediction?.observation ?? "없음"} / 이유: ${d.prediction?.reasoning ?? "없음"}`,
     `[World State] ${ctx.nowIso}`,
     ...worldLines(world, ctx.placed),
