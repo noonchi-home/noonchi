@@ -23,6 +23,7 @@ import { ThinqLink } from "../src/thinq/link.js";
 import { WorldState } from "../src/world/state.js";
 import { textFromWorld } from "../src/world/text.js";
 import { FAKE_FRIDGE, startFakeThinq, type FakeThinq } from "./helpers/thinq.js";
+import { det as mkDet } from "./helpers/detectors.js";
 
 type V3 = [number, number, number];
 type Quat = [number, number, number, number];
@@ -40,7 +41,7 @@ function aim(eye: V3, target: V3): CameraView {
 const W = 480, H = 360;
 /** 화면 좌표(nx·ny, -1..1) 자리가 가운데인 상자. */
 const boxAt = (nx = 0, ny = 0, w = 120, h = 120): Box => [((nx + 1) / 2) * W - w / 2, ((1 - ny) / 2) * H - h / 2, w, h];
-const det = (label: Detection["label"], box: Box = boxAt()): Detection => ({ label, score: 0.9, cls: 0, box });
+const det = (label: Detection["label"], box: Box = boxAt()): Detection => mkDet(label, 0.9, box, 0);
 const eyeOf = (p: V3) => ({ position: [p[0], p[2]] as [number, number], height_m: p[1], yaw_deg: 0, pitch_deg: 0 });
 /** 엔진 프레임 i: 2초 간격 촬영 시각. */
 const frame = (i: number, view: CameraView | null, eye: V3 | null): EngineFrame => ({

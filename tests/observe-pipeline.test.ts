@@ -4,7 +4,7 @@ import { VlmClient } from "../src/infer/vlm.js";
 import { ObservationPipeline, loadObserveConfig } from "../src/observe/pipeline.js";
 import { WorldState } from "../src/world/state.js";
 import type { Detection, Detector } from "../src/brain/detector.js";
-import { ScriptedDetector } from "./helpers/detectors.js";
+import { ScriptedDetector, det as mkDet } from "./helpers/detectors.js";
 import { standing } from "./helpers/poses.js";
 import type { BrainLog } from "../src/contract/events.js";
 import type { WorldView } from "../src/contract/world.js";
@@ -12,7 +12,7 @@ import type { WorldView } from "../src/contract/world.js";
 let fake: FakeServer | undefined;
 afterEach(async () => { await fake?.close(); fake = undefined; });
 const jpeg = (i: number) => Buffer.from([0xff, 0xd8, i]);
-const cupDet = () => new ScriptedDetector(() => [{ label: "cup", score: 0.9, cls: 41, box: [10, 10, 10, 10] }]);
+const cupDet = () => new ScriptedDetector(() => [mkDet("cup", 0.9, [10, 10, 10, 10], 41)]);
 const until = async (ok: () => boolean) => { for (let i = 0; i < 200 && !ok(); i++) await new Promise((r) => setTimeout(r, 5)); };
 /** 답을 시험이 풀 때까지 붙잡아 두는 VLM. 풀면 d1을 싱크대 안으로 답한다. */
 function gatedVlm() {
@@ -31,7 +31,7 @@ describe("관찰 흐름", () => {
     const worlds: WorldView[] = [];
     const p = new ObservationPipeline({
       config: { engineMs: 1000, vlmMaxInflight: 4, vlmTimeoutMs: 5000, detectQueueMax: 8, keepMs: 20_000 },
-      detector: new ScriptedDetector(() => [{ label: "cup", score: 0.9, cls: 41, box: [220, 160, 40, 20] }]),
+      detector: new ScriptedDetector(() => [mkDet("cup", 0.9, [220, 160, 40, 20], 41)]),
       vlm: new VlmClient({ baseUrl: `${fake.url}/v1`, model: "m", apiKey: "", extraBody: {} }),
       world: new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }),
       emit: (l) => logs.push(l), broadcastWorld: (w) => worlds.push(w),
@@ -144,12 +144,12 @@ describe("관찰 흐름", () => {
     // 실제 폰 프레임에서 본 모양: 흐린 프레임의 사람 0.31·병 0.27 같은 낮은 점수 감지가 진짜 감지와 함께 나온다
     const frames: Detection[][] = [
       [
-        { label: "person", score: 0.62, cls: 0, box: [0, 0, 100, 300] },
-        { label: "person", score: 0.31, cls: 0, box: [200, 400, 80, 200] },
-        { label: "cup", score: 0.83, cls: 41, box: [50, 500, 40, 50] },
-        { label: "bottle", score: 0.27, cls: 39, box: [300, 600, 20, 60] },
+        mkDet("person", 0.62, [0, 0, 100, 300], 0),
+        mkDet("person", 0.31, [200, 400, 80, 200], 0),
+        mkDet("cup", 0.83, [50, 500, 40, 50], 41),
+        mkDet("bottle", 0.27, [300, 600, 20, 60], 39),
       ],
-      [{ label: "person", score: 0.49, cls: 0, box: [0, 0, 360, 780] }, { label: "bowl", score: 0.39, cls: 45, box: [10, 10, 50, 30] }],
+      [mkDet("person", 0.49, [0, 0, 360, 780], 0), mkDet("bowl", 0.39, [10, 10, 50, 30], 45)],
     ];
     let n = 0;
     const p = new ObservationPipeline({ config: { engineMs: 1000, vlmMaxInflight: 4, vlmTimeoutMs: 5000, detectQueueMax: 8, keepMs: 20_000 },
@@ -173,7 +173,7 @@ describe("관찰 흐름", () => {
   it("감지기가 낸 관절을 World State에 넣는다: 손목이 컵 상자 안이면 컵 손에 있음. 상태에 관절 모델 이름과 관절을 돌린 프레임 수", async () => {
     const worlds: WorldView[] = [];
     const vlm = { model: "v", json: async () => ({ value: { scene: "k", observations: [], summary: "s" }, costUsd: 0, model: "v", attempts: 1 }) } as unknown as VlmClient;
-    const dets: Detection[] = [{ label: "person", score: 0.9, cls: 0, box: [150, 40, 160, 300] }, { label: "cup", score: 0.9, cls: 41, box: [220, 160, 40, 20] }];
+    const dets: Detection[] = [mkDet("person", 0.9, [150, 40, 160, 300], 0), mkDet("cup", 0.9, [220, 160, 40, 20], 41)];
     let n = 0;
     const p = new ObservationPipeline({ config: { engineMs: 1000, vlmMaxInflight: 4, vlmTimeoutMs: 5000, detectQueueMax: 8, keepMs: 20_000 },
       detector: new ScriptedDetector(() => dets, () => (++n === 4 ? undefined : [standing({ 10: [235, 170, 0.9] })])), vlm,
@@ -190,7 +190,7 @@ describe("관찰 흐름", () => {
     fake = await startFakeOpenAI();
     const logs: BrainLog[] = [];
     let fail = false;
-    const det = { detect: async () => { if (fail) throw new Error("onnx"); return { detections: [{ label: "cup", score: 0.9, cls: 41, box: [220, 160, 40, 20] }], ms: 1 }; }, close: async () => {} } as unknown as Detector;
+    const det = { detect: async () => { if (fail) throw new Error("onnx"); return { detections: [mkDet("cup", 0.9, [220, 160, 40, 20], 41)], ms: 1 }; }, close: async () => {} } as unknown as Detector;
     const world = new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] });
     const p = new ObservationPipeline({ config: { engineMs: 1000, vlmMaxInflight: 4, vlmTimeoutMs: 5000, detectQueueMax: 8, keepMs: 20_000 }, detector: det,
       vlm: new VlmClient({ baseUrl: `${fake.url}/v1`, model: "m", apiKey: "", extraBody: {} }), world, emit: (l) => logs.push(l), broadcastWorld: () => {} });
@@ -223,7 +223,7 @@ describe("관찰 흐름", () => {
     fake = await startFakeOpenAI();
     const logs: BrainLog[] = [];
     const script: (() => Detection[] | null)[] = [
-      () => [{ label: "cup", score: 0.83, cls: 41, box: [100, 50, 40, 60] }],
+      () => [mkDet("cup", 0.83, [100, 50, 40, 60], 41)],
       () => [],
       () => null,
     ];
@@ -273,7 +273,7 @@ describe("관찰 흐름", () => {
     const { vlm, gates } = gatedVlm();
     const logs: BrainLog[] = [];
     let detected = 0;
-    const det = new ScriptedDetector(() => { detected++; return [{ label: "cup", score: 0.9, cls: 41, box: [10, 10, 10, 10] }]; });
+    const det = new ScriptedDetector(() => { detected++; return [mkDet("cup", 0.9, [10, 10, 10, 10], 41)]; });
     const world = new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] });
     const p = new ObservationPipeline({ config: { engineMs: 1000, vlmMaxInflight: 50, vlmTimeoutMs: 600_000, detectQueueMax: 50, keepMs: 20_000 }, detector: det, vlm, world,
       emit: (l) => logs.push(l), broadcastWorld: () => {} });

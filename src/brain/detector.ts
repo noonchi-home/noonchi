@@ -6,7 +6,8 @@
 // 출처·sha256·다시 내보내기는 THIRD_PARTY.md).
 //
 // YOLO26 ONNX 입출력(ultralytics 8.4, opset 17, imgsz 640): 입력 images [1,3,640,640] float32, RGB, 0~1, 가운데 레터박스(114 채움).
-// 감지 출력 output0 [1,84,8400] 채널 우선 = (cx, cy, w, h, 클래스 80개 점수). 물체 점수는 없고 클래스 점수는 시그모이드를 거쳤다.
+// 감지 출력 output0 [1,116,8400] 채널 우선 = (cx, cy, w, h, 클래스 80개 점수, 마스크 계수 32개). 물체 점수는 없고 클래스 점수는 시그모이드를 거쳤다.
+// 프로토 출력 output1 [1,32,160,160]: 계수와 곱해 더한 값이 0보다 크면 그 칸은 물체다(src/brain/seg.ts).
 // 관절 출력 output0 [1,56,8400] = (cx, cy, w, h, 사람 점수, 관절 17개 × (x, y, 신뢰도)). 좌표는 640 레터박스 픽셀이다.
 // 이 내보내기는 한 물체에 겹친 상자를 여럿 낸다(컵 영상: 같은 컵 상위 상자끼리 IoU 0.99). 그래서 Ultralytics predict처럼
 // 앵커마다 가장 높은 클래스 하나를 보고 IoU 0.5로 NMS 한다(ultralytics 8.4 predict 기본값 PREDICT_IOU).
@@ -15,16 +16,21 @@ import { fileURLToPath } from "node:url";
 import jpeg from "jpeg-js";
 import { LANDMARK_IDS } from "../sync/classes.js";
 import { CLASSES, type ClassKey, type DetLabel } from "../world/vocab.js";
+import { COEFFS, PROTO, boxFoot, emptyMask, maskOf, type Box, type LetterboxPlace, type Mask } from "./seg.js";
 
-export type { DetLabel };
+export type { DetLabel, LetterboxPlace, Mask };
 
 export interface Detection {
   label: DetLabel;
   score: number;
-  /** 원본 사진 픽셀 [x, y, w, h]. */
+  /** 마스크 바깥 테두리(원본 사진 픽셀 [x, y, w, h]). 마스크가 비면 모델 상자. */
   box: [number, number, number, number];
   /** COCO 클래스 번호(0 person, 41 cup, 40 wine glass …). */
   cls: number;
+  /** 물체 모양. 못 만들었으면 칸 수 0. */
+  mask: Mask;
+  /** 마스크 가장 아래 줄의 가운데(원본 픽셀 [x, y]). 마스크가 비면 상자 아랫변 가운데. */
+  foot: [number, number];
 }
 
 /** 위치 맞추기 기준점 상자(냉장고·소파 등 크고 바닥에 서는 물건, src/sync/classes.ts). World State는 받지 않는다. */
@@ -49,7 +55,7 @@ export interface Pose {
 
 export interface DetectResult {
   detections: Detection[];
-  /** 감지 시간(ms): JPEG 풀기 + 레터박스 + 추론 + 풀기. */
+  /** 감지 시간(ms): JPEG 풀기 + 레터박스 + 추론 + 풀기(마스크 포함). */
   ms: number;
   width: number;
   height: number;
@@ -90,9 +96,6 @@ export const MODELS_DIR = fileURLToPath(new URL("../../models/", import.meta.url
 
 const PAD = 114;
 type Rgba = { data: Uint8Array; width: number; height: number };
-
-/** 레터박스 자리: 원본 픽셀 = (레터박스 픽셀 − pad) / ratio. */
-export interface LetterboxPlace { ratio: number; padX: number; padY: number }
 
 /** 쌍선형 표본(OpenCV INTER_LINEAR처럼 픽셀 가운데 기준, 끝은 붙임): 출력 칸마다 원본 두 칸과 섞는 몫. */
 function linearTaps(dst: number, src: number): { i0: Int32Array; i1: Int32Array; w: Float32Array } {
@@ -140,8 +143,6 @@ export function letterboxYolo26(img: Rgba, size: number): LetterboxPlace & { ten
   return { tensor, ratio, padX, padY };
 }
 
-type Box = [number, number, number, number];
-
 /** 출력 칸 cx·cy·w·h → 레터박스 픽셀 [x, y, w, h]. */
 const lbBox = (out: Float32Array, n: number, i: number): Box => {
   const w = out[2 * n + i]!, h = out[3 * n + i]!;
@@ -162,16 +163,23 @@ function checkShape(out: Float32Array, dims: readonly number[], channels: number
   return n;
 }
 
-/** YOLO26 감지 출력 [1, 84, N]을 풀어 보는 클래스만, minScore 이상, 원본 픽셀 상자로. 앵커마다 가장 높은 클래스 하나, 같은 종류끼리 NMS(IoU 0.5). */
-export function decodeYolo26(out: Float32Array, dims: readonly number[], lb: LetterboxPlace, image: { width: number; height: number }, opts: { minScore: number }): Detection[] {
-  return decodeYolo26All(out, dims, lb, image, opts).detections;
+/** 프로토 출력 [1, 32, 160, 160]. */
+export interface Protos { data: Float32Array; dims: readonly number[] }
+
+/** YOLO26-seg 감지 출력 [1, 116, N]을 풀어 보는 클래스만, minScore 이상, 원본 픽셀 상자·마스크로. 앵커마다 가장 높은 클래스 하나, 같은 종류끼리 NMS(IoU 0.5). */
+export function decodeYolo26(out: Float32Array, dims: readonly number[], lb: LetterboxPlace, image: { width: number; height: number }, opts: { minScore: number }, protos?: Protos): Detection[] {
+  return decodeYolo26All(out, dims, lb, image, opts, protos).detections;
 }
 
 const LANDMARK_SET = new Set(LANDMARK_IDS);
 
-/** decodeYolo26과 같고, 위치 맞추기 기준점 종류(src/sync/classes.ts) 상자도 따로 낸다(같은 종류끼리 NMS, 점수 순). */
-export function decodeYolo26All(out: Float32Array, dims: readonly number[], lb: LetterboxPlace, image: { width: number; height: number }, opts: { minScore: number }): { detections: Detection[]; landmarks: LandmarkBox[] } {
-  const n = checkShape(out, dims, 4 + COCO_CLASSES);
+/** decodeYolo26과 같고, 위치 맞추기 기준점 종류(src/sync/classes.ts) 상자도 따로 낸다(같은 종류끼리 NMS, 점수 순, 마스크 없음).
+ *  마스크는 NMS 뒤 남은 감지에만 만든다. protos가 없거나 1인 칸이 4칸 미만이면 모델 상자와 빈 마스크다. */
+export function decodeYolo26All(out: Float32Array, dims: readonly number[], lb: LetterboxPlace, image: { width: number; height: number }, opts: { minScore: number }, protos?: Protos): { detections: Detection[]; landmarks: LandmarkBox[] } {
+  const n = checkShape(out, dims, 4 + COCO_CLASSES + COEFFS);
+  if (protos && (protos.dims.length !== 4 || protos.dims[1] !== COEFFS || protos.dims[2] !== PROTO || protos.dims[3] !== PROTO || protos.data.length !== COEFFS * PROTO * PROTO)) {
+    throw new Error(`YOLO26 프로토 모양이 맞지 않습니다([${protos.dims.join(", ")}], 기대 [1, ${COEFFS}, ${PROTO}, ${PROTO}])`);
+  }
   // 클래스 줄을 차례로 읽어 앵커마다 가장 높은 클래스를 찾는다(같은 점수면 앞 번호)
   const best = new Float32Array(n).fill(-1);
   const bestCls = new Int16Array(n);
@@ -183,18 +191,28 @@ export function decodeYolo26All(out: Float32Array, dims: readonly number[], lb: 
     }
   }
   // NMS는 Ultralytics처럼 자르기 전 레터박스 상자로 한다
-  const found: Detection[] = [];
+  const found: (Pick<Detection, "label" | "score" | "cls" | "box"> & { i: number })[] = [];
   const marks: LandmarkBox[] = [];
   for (let i = 0; i < n; i++) {
     const score = best[i]!, cls = bestCls[i]!;
     if (score < opts.minScore) continue;
     // 냉장고·싱크대처럼 World State 가전 설비이기도 한 종류는 두 곳 모두에 낸다
     const label = COCO_LABELS[cls];
-    if (label) found.push({ label, score, cls, box: lbBox(out, n, i) });
+    if (label) found.push({ label, score, cls, box: lbBox(out, n, i), i });
     if (LANDMARK_SET.has(cls)) marks.push({ cls, score, box: lbBox(out, n, i) });
   }
   return {
-    detections: nms(found, YOLO26_IOU).map((d) => ({ ...d, box: unbox(d.box, lb, image) })),
+    detections: nms(found, YOLO26_IOU).map(({ i, ...d }) => {
+      let shape: ReturnType<typeof maskOf> = null;
+      if (protos) {
+        const coeffs = new Float32Array(COEFFS);
+        for (let k = 0; k < COEFFS; k++) coeffs[k] = out[(4 + COCO_CLASSES + k) * n + i]!;
+        shape = maskOf(coeffs, protos.data, d.box, lb, image);
+      }
+      if (shape) return { ...d, ...shape };
+      const box = unbox(d.box, lb, image);
+      return { ...d, box, mask: emptyMask(box), foot: boxFoot(box) };
+    }),
     landmarks: suppress(marks, YOLO26_IOU, (a, b) => a.cls === b.cls).map((d) => ({ ...d, box: unbox(d.box, lb, image) })),
   };
 }
@@ -236,7 +254,7 @@ function suppress<T extends { score: number; box: Detection["box"] }>(items: T[]
 }
 
 /** 같은 종류(label)끼리 점수 순으로, iouMax보다 겹치는 뒤쪽 상자를 버린다. 결과는 낱말 표 종류 순(사람·컵·병·그릇…), 종류 안은 점수 순. */
-export function nms(dets: Detection[], iouMax: number): Detection[] {
+export function nms<T extends Pick<Detection, "label" | "score" | "box">>(dets: T[], iouMax: number): T[] {
   return suppress(dets, iouMax, (a, b) => a.label === b.label)
     .sort((a, b) => (a.label === b.label ? b.score - a.score : LABEL_ORDER.indexOf(a.label) - LABEL_ORDER.indexOf(b.label)));
 }
@@ -252,7 +270,7 @@ type TensorCtor = new (type: "float32", data: Float32Array, dims: number[]) => u
 
 /** 감지기 만들기 값(워커에도 그대로 넘긴다). */
 export interface DetectorSpec {
-  /** YOLO26 감지 파일. */
+  /** YOLO26-seg 감지 파일. */
   modelPath: string;
   /** YOLO26-pose 파일. 없으면 관절을 보지 않는다. */
   posePath?: string | null;
@@ -296,10 +314,11 @@ export class OnnxDetector implements Detector {
     );
   }
 
-  private async run(session: OrtSession, tensor: Float32Array): Promise<OrtTensor> {
+  /** 출력을 이름 순서대로(감지: output0·프로토 output1, 관절: output0). */
+  private async run(session: OrtSession, tensor: Float32Array): Promise<OrtTensor[]> {
     const input = new this.Tensor("float32", tensor, [1, 3, INPUT_SIZE, INPUT_SIZE]);
     const result = await session.run({ [session.inputNames[0]!]: input });
-    return result[session.outputNames[0]!]!;
+    return session.outputNames.map((name) => result[name]!);
   }
 
   async detect(jpegBytes: Buffer): Promise<DetectResult> {
@@ -307,12 +326,14 @@ export class OnnxDetector implements Detector {
     const img = jpeg.decode(jpegBytes, { useTArray: true, formatAsRGBA: true });
     const image = { width: img.width, height: img.height };
     const lb = letterboxYolo26(img, INPUT_SIZE);
-    const out = await this.run(this.session, lb.tensor);
-    const { detections, landmarks } = decodeYolo26All(out.data as Float32Array, out.dims, lb, image, { minScore: this.spec.minScore });
+    const [out, protos] = await this.run(this.session, lb.tensor);
+    if (!out || !protos) throw new Error("YOLO26-seg 출력이 둘(감지·프로토)이 아닙니다");
+    const { detections, landmarks } = decodeYolo26All(out.data as Float32Array, out.dims, lb, image, { minScore: this.spec.minScore }, { data: protos.data as Float32Array, dims: protos.dims });
     const t1 = performance.now();
     const result: DetectResult = { detections, ms: t1 - t0, width: img.width, height: img.height, landmarks };
     if (!this.poseSession || !detections.some((d) => d.label === "person" && d.score >= this.spec.poseMinPerson)) return result;
-    const poseOut = await this.run(this.poseSession, lb.tensor);
+    const [poseOut] = await this.run(this.poseSession, lb.tensor);
+    if (!poseOut) throw new Error("YOLO26-pose 출력이 없습니다");
     result.poses = decodeYolo26Pose(poseOut.data as Float32Array, poseOut.dims, lb, image, { minScore: this.spec.minScore });
     result.poseMs = performance.now() - t1;
     return result;

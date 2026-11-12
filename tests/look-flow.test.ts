@@ -24,7 +24,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { frameJpeg, LOOK_SIZE, LOOK_VIEW } from "./helpers/camera.js";
-import { seenDetector } from "./helpers/detectors.js";
+import { seenDetector, det } from "./helpers/detectors.js";
 import { smallFloor } from "./helpers/floor.js";
 import { closerVlmReply } from "./helpers/look.js";
 import { observerRespond } from "./helpers/observer.js";
@@ -38,8 +38,8 @@ const SINK_SURFACE = { id: "sink_1", label: "싱크대", center: [0.6, 0] as [nu
 const PLACES: Record<string, { label: string; position: [number, number, number] }> = {
   sink_1: { label: "싱크대", position: [0.6, 0.9, 0] }, table_1: { label: "식탁", position: [7, 0.75, 3] },
 };
-const cupFull: Detection = { label: "cup", score: 0.8, cls: 41, box: [60, 300, 40, 20] };
-const cupCrop: Detection = { label: "cup", score: 0.72, cls: 41, box: [220, 160, 40, 20] };
+const cupFull: Detection = det("cup", 0.8, [60, 300, 40, 20], 41);
+const cupCrop: Detection = det("cup", 0.72, [220, 160, 40, 20], 41);
 /** 가까이 보기가 싱크대 윗면을 잘라 보는 자리(엔진 프레임 픽셀). */
 const CROP = [120, 90, 240, 180] as [number, number, number, number];
 

@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import type { Detection } from "../src/brain/detector.js";
 import { sha256, type EngineFrame } from "../src/observe/ring.js";
 import { WorldState } from "../src/world/state.js";
+import { det } from "./helpers/detectors.js";
 
 const T = (h: number, m: number, s: number) => Date.UTC(2026, 10, 7, h - 9, m, s);
 describe("PAM 관찰 텍스트", () => {
@@ -80,7 +81,7 @@ describe("PAM 관찰 텍스트", () => {
 
   it("새 상황 줄: TV 보는 중·약 먹는 중(VLM 하는 일), 세탁 멈춤(가전 사건), [지속] 사람 자세·하는 일, [때] 요일·하루 때", () => {
     const w = new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방·식당" }), devices: () => [{ id: "washer_d559f0ae", kind: "washer", label: "후면 발코니 세탁기" }] });
-    const person: Detection = { label: "person", score: 0.9, cls: 0, box: [10, 10, 100, 300] };
+    const person: Detection = det("person", 0.9, [10, 10, 100, 300], 0);
     const frame = (i: number): EngineFrame => ({ id: `e${i}`, capturedAtMs: T(21, 4, i * 2), latestAtMs: T(21, 4, i * 2), jpeg: Buffer.from(`${i}`), sha256: sha256(Buffer.from(`${i}`)), width: 480, height: 360, eye: null, view: null });
     const changes: WorldChange[] = [];
     w.applyDevice({ id: "washer_d559f0ae", online: true, twin: { running: true }, matter: {}, updatedAt: "" }, T(21, 0, 0));
@@ -135,8 +136,8 @@ describe("PAM 관찰 텍스트", () => {
 /** 사람이 식탁 앞에서 컵을 두고 떠나는 5장(21:00:00~21:00:04, 맞추기 전, 클로이드 눈은 주방)과 VLM 답 두 개. 21:00:08의 관찰 텍스트. */
 function exampleScenario(): string {
   const w = new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices: () => [] });
-  const person: Detection = { label: "person", score: 0.9, cls: 0, box: [10, 10, 100, 300] };
-  const cup: Detection = { label: "cup", score: 0.9, cls: 41, box: [220, 160, 40, 20] };
+  const person: Detection = det("person", 0.9, [10, 10, 100, 300], 0);
+  const cup: Detection = det("cup", 0.9, [220, 160, 40, 20], 41);
   const frame = (i: number): EngineFrame => ({ id: `e${i}`, capturedAtMs: T(21, 0, i - 1), latestAtMs: T(21, 0, i - 1), jpeg: Buffer.from(`${i}`), sha256: sha256(Buffer.from(`${i}`)), width: 480, height: 360, eye: null, view: null });
   const changes: WorldChange[] = [];
   let ids = new Map<string, string>();

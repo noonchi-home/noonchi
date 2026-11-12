@@ -5,13 +5,14 @@ import type { Detection } from "../src/brain/detector.js";
 import type { CameraView } from "../src/phone/session.js";
 import { checkPlan } from "../src/act/check.js";
 import { poseOf, standing } from "./helpers/poses.js";
+import { det } from "./helpers/detectors.js";
 
 const surfaces = () => [{ id: "table_1", label: "식탁", center: [2, 0] as [number, number], top: 0.75, radius: 0.6 }];
 const devices = () => [{ id: "dishwasher_1", kind: "dishwasher", label: "식기세척기" }];
 const ws = () => new WorldState({ surfaces, floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices });
 const frame = (i: number): EngineFrame => ({ id: `e${i}`, capturedAtMs: i * 1000, latestAtMs: i * 1000, jpeg: Buffer.from(`${i}`), sha256: sha256(Buffer.from(`${i}`)), width: 480, height: 360, eye: null, view: null });
-const cup: Detection = { label: "cup", score: 0.9, cls: 41, box: [220, 160, 40, 20] };
-const person: Detection = { label: "person", score: 0.9, cls: 0, box: [10, 10, 100, 300] };
+const cup: Detection = det("cup", 0.9, [220, 160, 40, 20], 41);
+const person: Detection = det("person", 0.9, [10, 10, 100, 300], 0);
 
 // 카메라: 트윈 (0, 1.5, 0)에서 45° 아래로 숙이고 +x(look) 또는 −x(away)를 본다. 90° 시야 투영(열 우선)
 const P = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1.0002, -1, 0, 0, -0.020002, 0];

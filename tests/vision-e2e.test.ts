@@ -9,7 +9,7 @@ import { startFakeOpenAI, type FakeServer } from "../scripts/fake-openai.js";
 import { encodeFramePacket } from "../src/phone/packet.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { alignOnServer } from "./helpers/align.js";
-import { ScriptedDetector } from "./helpers/detectors.js";
+import { ScriptedDetector, det } from "./helpers/detectors.js";
 import { startFakePam, type FakePam } from "./helpers/pam.js";
 import { openWebSocket } from "./helpers/ws.js";
 
@@ -55,7 +55,7 @@ describe("카메라로 가전 상태 맞추기, 한양목련 끝까지", () => {
     srv = await startServer({
       env: { HUB: "memory", PORT: "0", HOME_ID: "mokryeon_180b", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
         BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url, PAM_PERIOD_MS: "1000" },
-      brain: { detector: new ScriptedDetector(() => [{ label: "refrigerator", score: 0.9, cls: 72, box: [180, 120, 120, 120] }]) }, log: () => {},
+      brain: { detector: new ScriptedDetector(() => [det("refrigerator", 0.9, [180, 120, 120, 120], 72)]) }, log: () => {},
     });
     const dash: Msg[] = [];
     sockets.push(await openWebSocket(`${srv.url.replace(/^http/, "ws")}/events`, { setup: inbox(dash) }));

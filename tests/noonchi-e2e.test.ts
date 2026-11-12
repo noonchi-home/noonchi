@@ -13,7 +13,7 @@ import { encodeFramePacket } from "../src/phone/packet.js";
 import { CHECK_TEXT } from "../src/plan/labels.js";
 import { fetchRetry } from "../src/server/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
-import { ScriptedDetector } from "./helpers/detectors.js";
+import { ScriptedDetector, det } from "./helpers/detectors.js";
 import { startFakePam, type FakePam } from "./helpers/pam.js";
 import { CUP_SCRIPTS, plannerRespond } from "./helpers/planner.js";
 import { openWebSocket } from "./helpers/ws.js";
@@ -59,7 +59,7 @@ describe("NOONCHI 처음부터 끝까지", () => {
     srv = await startServer({
       env: { HUB: "memory", PORT: "0", RUNTIME_DIR: runtimeDir, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
         BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url, OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: `${fake.url}/v1` },
-      brain: { detector: new ScriptedDetector(() => [{ label: "cup", score: 0.9, cls: 41, box: [220, 160, 40, 20] }]) }, log: () => {},
+      brain: { detector: new ScriptedDetector(() => [det("cup", 0.9, [220, 160, 40, 20], 41)]) }, log: () => {},
     });
     const dash: Msg[] = [];
     sockets.push(await openWebSocket(`${srv.url.replace(/^http/, "ws")}/events`, { setup: inbox(dash) }));
@@ -171,7 +171,7 @@ describe("NOONCHI 처음부터 끝까지", () => {
     srv = await startServer({
       env: { HUB: "memory", PORT: "0", RUNTIME_DIR: runtimeDir, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
         BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url, OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: `${fake.url}/v1` },
-      brain: { detector: new ScriptedDetector(() => [{ label: "cup", score: 0.9, cls: 41, box: [220, 160, 40, 20] }, { label: "cup", score: 0.9, cls: 41, box: [300, 160, 40, 20] }]) }, log: () => {},
+      brain: { detector: new ScriptedDetector(() => [det("cup", 0.9, [220, 160, 40, 20], 41), det("cup", 0.9, [300, 160, 40, 20], 41)]) }, log: () => {},
     });
     const dash: Msg[] = [];
     sockets.push(await openWebSocket(`${srv.url.replace(/^http/, "ws")}/events`, { setup: inbox(dash) }));

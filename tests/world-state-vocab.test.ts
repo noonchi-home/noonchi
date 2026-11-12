@@ -6,9 +6,10 @@ import type { CameraView } from "../src/phone/session.js";
 import { WorldState } from "../src/world/state.js";
 import { holdsTarget } from "../src/act/tasks.js";
 import { standing } from "./helpers/poses.js";
+import { det as mkDet } from "./helpers/detectors.js";
 
 const frame = (i: number): EngineFrame => ({ id: `e${i}`, capturedAtMs: i * 1000, latestAtMs: i * 1000, jpeg: Buffer.from(`${i}`), sha256: sha256(Buffer.from(`${i}`)), width: 480, height: 360, eye: null, view: null });
-const det = (label: Detection["label"], box: Detection["box"], score = 0.9): Detection => ({ label, score, cls: 0, box });
+const det = (label: Detection["label"], box: Detection["box"], score = 0.9): Detection => mkDet(label, score, box, 0);
 const person = det("person", [10, 10, 100, 300]);
 const laptop = det("laptop", [200, 200, 120, 80]);
 const book = det("book", [340, 220, 40, 30]);

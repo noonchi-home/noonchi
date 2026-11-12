@@ -10,7 +10,7 @@ import { ASK_PROMPT, STEP_DONE, STOP } from "../src/act/prompts.js";
 import { encodeFramePacket } from "../src/phone/packet.js";
 import { createPhoneServer, type PhoneServer } from "../src/phone/server.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
-import { ScriptedDetector } from "./helpers/detectors.js";
+import { ScriptedDetector, det } from "./helpers/detectors.js";
 import { HOME_SCRIPT, startFakeLlm, type FakeLlm } from "./helpers/llm.js";
 import { startFakePam, type FakePam } from "./helpers/pam.js";
 import { BOX_START, BOX_WALLS } from "./helpers/align.js";
@@ -107,7 +107,7 @@ describe("startServer(BRAIN=1): 클로이드 질문을 폰 말로 답한다", ()
     srv = await startServer({
       env: { HUB: "memory", PORT: "0", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
         BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url, ...llm.env },
-      brain: { detector: new ScriptedDetector(() => [{ label: "cup", score: 0.9, cls: 41, box: [1, 1, 2, 1] }]) }, log: () => {},
+      brain: { detector: new ScriptedDetector(() => [det("cup", 0.9, [1, 1, 2, 1], 41)]) }, log: () => {},
     });
     const phoneUrl = new URL(srv.phoneUrls[0]!);
     const box: Msg[] = [];

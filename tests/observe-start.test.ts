@@ -10,7 +10,7 @@ import type { Detection } from "../src/brain/detector.js";
 import { encodeFramePacket } from "../src/phone/packet.js";
 import { fetchRetry } from "../src/server/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
-import { ScriptedDetector } from "./helpers/detectors.js";
+import { ScriptedDetector, det } from "./helpers/detectors.js";
 import { startFakePam, type FakePam } from "./helpers/pam.js";
 import { openWebSocket } from "./helpers/ws.js";
 
@@ -42,7 +42,7 @@ async function until(list: Msg[], pred: (m: Msg) => boolean, ms = 5000): Promise
     await new Promise((r) => setTimeout(r, 20));
   }
 }
-const cup: Detection = { label: "cup", score: 0.9, cls: 41, box: [1, 1, 2, 1] };
+const cup: Detection = det("cup", 0.9, [1, 1, 2, 1], 41);
 
 describe("startServer(BRAIN=1) + 관찰 흐름", () => {
   it("BRAIN=1인데 PHONE_PORT가 없으면 관찰 흐름을 끄고 알린다", async () => {

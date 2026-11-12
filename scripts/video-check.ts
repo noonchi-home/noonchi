@@ -39,6 +39,7 @@ import { withTimeout } from "./twin3d/capture-lib.js";
 import { chromePath, closeChrome, devtoolsPort, launchChrome, openPage, openTab, openWindow, type Chrome, type Page } from "./twin3d/cdp.js";
 import { heldLock, withHeavy, type Lock } from "./twin3d/heavy.js";
 import { demoFile, encodeDemo, RECORD_FPS, startRecording, type Recorded, type Recording } from "./video-record.js";
+import { det } from "../tests/helpers/detectors.js";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CLIP_NAME = /^[A-Za-z0-9_-]{1,64}\.(?:mp4|webm)$/;
@@ -275,8 +276,8 @@ const HOME = "mokryeon_180b";
 // tests/video-mode-e2e.test.ts와 같은 시작 자리: 식탁 가운데([9.9612, 3.9242])에서 1.5m 떨어진 거실, 시작 방향 0°(+x)로 식탁을 본다
 const START: [number, number] = [9.9612 - 1.5, 3.9242];
 // 세로 영상의 엔진 프레임 360×640(core/pipeline.js frameWidth). 컵 상자 아래 가운데가 그림 한가운데(카메라 축, 식탁 윗면)
-const CUP: Detection = { label: "cup", score: 0.9, cls: 41, box: [160, 300, 40, 20] };
-const PERSON: Detection = { label: "person", score: 0.9, cls: 0, box: [100, 60, 160, 420] };
+const CUP: Detection = det("cup", 0.9, [160, 300, 40, 20], 41);
+const PERSON: Detection = det("person", 0.9, [100, 60, 160, 420], 0);
 
 interface Fake { api: string; phone: string; logs: string[]; close(): Promise<void> }
 

@@ -24,6 +24,7 @@ import type { CameraView } from "../src/phone/session.js";
 import { smallFloor } from "./helpers/floor.js";
 import { standing } from "./helpers/poses.js";
 import { planContext, startFakePlanner, testPlanner, type FakePlanner } from "./helpers/planner.js";
+import { det } from "./helpers/detectors.js";
 
 let llm: FakePlanner;
 beforeAll(async () => { llm = await startFakePlanner(); });
@@ -1076,7 +1077,7 @@ describe("실행 추적 + 실제 World State(기준점을 맞춘 카메라)", ()
   const tilt = [Math.sin(-Math.PI / 8), 0, 0, Math.cos(-Math.PI / 8)];
   const look: CameraView = { origin: [0, 1.5, 0], orientation: mul([0, Math.sin(-Math.PI / 4), 0, Math.cos(-Math.PI / 4)], tilt) as [number, number, number, number], theta: 0, projection: P };
   const frame = (i: number): EngineFrame => ({ id: `e${i}`, capturedAtMs: i * 1000, latestAtMs: i * 1000, jpeg: Buffer.from(`${i}`), sha256: sha256(Buffer.from(`${i}`)), width: 480, height: 360, eye: null, view: look });
-  const box = (b: [number, number, number, number]): Detection => ({ label: "cup", score: 0.9, cls: 41, box: b });
+  const box = (b: [number, number, number, number]): Detection => (det("cup", 0.9, b, 41));
   const onTable = box([220, 160, 40, 20]);
   const moved = box([60, 300, 40, 20]);
 
@@ -1157,7 +1158,7 @@ describe("실행 추적 + 실제 World State(기준점을 맞춘 카메라)", ()
       surfaces: () => [{ id: "table_1", label: "식탁", center: [2, 0], top: 0.75, radius: 0.6 }, { id: "sink_1", label: "싱크대", center: [1.2, 0.8], top: 0.9, radius: 0.5 }],
       floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices: () => [],
     });
-    const person: Detection = { label: "person", score: 0.9, cls: 0, box: [150, 40, 160, 300] };
+    const person: Detection = det("person", 0.9, [150, 40, 160, 300], 0);
     for (let i = 1; i <= 3; i++) ws.applyDetections(frame(i), [onTable]);
     const { t, decide, last, clock, plans } = setup({ w: () => ws.view(clock.t) });
     clock.t = 3_500;
@@ -1225,7 +1226,7 @@ describe("실행 추적 + 실제 World State(기준점을 맞춘 카메라)", ()
       surfaces: () => [{ id: "table_1", label: "식탁", center: [2, 0], top: 0.75, radius: 0.6 }],
       floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices: () => [],
     });
-    const person: Detection = { label: "person", score: 0.9, cls: 0, box: [150, 40, 160, 300] };
+    const person: Detection = det("person", 0.9, [150, 40, 160, 300], 0);
     for (let i = 1; i <= 3; i++) {
       const { ids } = ws.applyDetections(frame(i), [onTable]);
       ws.applyScene(`e${i}`, i * 1000, { scene: "k", observations: [{ object_id: "d1", state: "on_table" }], summary: "s" }, ids);

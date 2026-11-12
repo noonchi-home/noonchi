@@ -11,7 +11,7 @@ import { CLOSER_NOTE } from "../src/observe/scene.js";
 import type { CameraView } from "../src/phone/session.js";
 import { WorldState } from "../src/world/state.js";
 import { AWAY_VIEW, frameJpeg, LOOK_SIZE, LOOK_VIEW } from "./helpers/camera.js";
-import { cropAware, cropTurns } from "./helpers/detectors.js";
+import { cropAware, cropTurns, det } from "./helpers/detectors.js";
 import { CLOSER_SUMMARY, closerVlmReply } from "./helpers/look.js";
 
 let fake: FakeServer | undefined;
@@ -22,11 +22,11 @@ const until = async (ok: () => boolean) => { for (let i = 0; i < 400 && !ok(); i
 // 싱크대 윗면(높이 0.9)은 LOOK_VIEW 그림 가운데다. 잘라 키운 사진의 컵 [220, 160, 40, 20]은 엔진 프레임 [230, 170, 20, 10], 싱크대 위다.
 const SINK = { id: "sink_1", label: "싱크대", center: [0.6, 0] as [number, number], top: 0.9, radius: 0.5 };
 const SPOT = { id: "sink_1", label: "싱크대", position: [0.6, 0.9, 0] as [number, number, number] };
-const cup: Detection = { label: "cup", score: 0.72, cls: 41, box: [220, 160, 40, 20] };
+const cup: Detection = det("cup", 0.72, [220, 160, 40, 20], 41);
 // 잘라 키운 사진 왼쪽 끝 컵(엔진 프레임 [120, 170, 20, 10], 잘라 본 경계에 닿음)·사람·싱크대(가전 설비): 물건 감지가 아니다
 const edgeCup: Detection = { ...cup, box: [0, 160, 40, 20] };
-const person: Detection = { label: "person", score: 0.9, cls: 0, box: [100, 40, 60, 200] };
-const sink: Detection = { label: "sink", score: 0.9, cls: 71, box: [60, 100, 300, 200] };
+const person: Detection = det("person", 0.9, [100, 40, 60, 200], 0);
+const sink: Detection = det("sink", 0.9, [60, 100, 300, 200], 71);
 const CROP = [120, 90, 240, 180] as [number, number, number, number];
 /** 가짜 서버가 받은 VLM 요청 중 before 뒤의 것. */
 const chats = (f: FakeServer, before: number) => f.requests.slice(before).filter((q) => q.path.endsWith("/chat/completions"));

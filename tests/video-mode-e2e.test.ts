@@ -13,7 +13,7 @@ import type { Detection } from "../src/brain/detector.js";
 import type { Quat, Vec3 } from "../src/phone/align.js";
 import { encodeFramePacket } from "../src/phone/packet.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
-import { ScriptedDetector } from "./helpers/detectors.js";
+import { ScriptedDetector, det } from "./helpers/detectors.js";
 import { startFakePam, type FakePam } from "./helpers/pam.js";
 import { CUP_SCRIPTS, plannerRespond } from "./helpers/planner.js";
 import { openWebSocket } from "./helpers/ws.js";
@@ -40,8 +40,8 @@ afterEach(async () => {
 const PROJECTION = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1.0002, -1, 0, 0, -0.020002, 0];
 const TABLE: [number, number] = [9.9612, 3.9242];
 const START: [number, number] = [TABLE[0] - 1.5, TABLE[1]];
-const CUP: Detection = { label: "cup", score: 0.9, cls: 41, box: [220, 160, 40, 20] };
-const PERSON: Detection = { label: "person", score: 0.9, cls: 0, box: [300, 40, 120, 300] };
+const CUP: Detection = det("cup", 0.9, [220, 160, 40, 20], 41);
+const PERSON: Detection = det("person", 0.9, [300, 40, 120, 300], 0);
 const TABLE_ID = "dining_table_978b20c7";
 // 영상 폰 자세: AR 원점 1.5m 높이, 방향은 그대로(서버가 시작 방향으로 맞춘다), 식탁 윗면 쪽으로 숙임만
 const PITCH = Math.atan2(1.5 - 0.75, 1.5);

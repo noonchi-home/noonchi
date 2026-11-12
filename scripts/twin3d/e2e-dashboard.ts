@@ -12,7 +12,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type WebSocket from "ws";
 import { alignOnServer } from "../../tests/helpers/align.js";
-import { ScriptedDetector } from "../../tests/helpers/detectors.js";
+import { ScriptedDetector, det } from "../../tests/helpers/detectors.js";
 import { startFakePam, type FakePam } from "../../tests/helpers/pam.js";
 import { openWebSocket } from "../../tests/helpers/ws.js";
 import { encodeFramePacket } from "../../src/phone/packet.js";
@@ -102,7 +102,7 @@ try {
       BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, OPENAI_BASE_URL: `${fake.url}/v1`, OPENAI_API_KEY: "fake-key", PAM_URL: pam.url,
       PAM_TRIGGER: "periodic", PAM_PERIOD_MS: "1000", PAM_MIN_GAP_MS: "0",
     },
-    brain: { detector: new ScriptedDetector(() => [{ label: "cup", score: 0.9, cls: 41, box: CUP_BOX }]) },
+    brain: { detector: new ScriptedDetector(() => [det("cup", 0.9, CUP_BOX, 41)]) },
     log: (line) => appendFileSync(logPath, `${line}\n`),
   });
   const done = await fetchRetry(`${srv.url}/api/setup/done`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ home: HOME }) });
