@@ -157,6 +157,20 @@ describe("대시보드 단계 바뀜", () => {
     }
   });
 
+  it("단계가 바뀌어도 미니맵 칸 크기는 그대로다: 칸은 영상 비율이 바뀔 때만 높이가 바뀐다(가로 영상에서 단계만 바뀜 → 그대로, 세로 영상으로 바뀜 → 높이만)", () => {
+    const wide = { kind: "image", src: "/debug-eye/eye-table-near-wide.webp", width: 405, height: 228 } as const;
+    const { view, was } = step(screenAt(2, { phone: wide }), screenAt(3, { phone: { ...wide, src: "/debug-eye/eye-sink-wide.webp" } }));
+    expect(box(phoneOf(view.container))).toBe(was.boxes.phone);
+    view.rerender(<DashboardScreen {...screenAt(3, { phone: imageSlot("sink") })} />);
+    const now = phoneOf(view.container);
+    expect(now).toBe(was.phone);
+    expect(box(now)).not.toBe(was.boxes.phone);
+    const strip = (v: string) => v.replace(/height: [^;]+;/, "");
+    expect(strip(box(now))).toBe(strip(was.boxes.phone));
+    expect(box(was.twin)).toBe(was.boxes.twin);
+    expect(box(was.twin.parentElement!)).toBe(was.boxes.stage);
+  });
+
   it("말풍선 말이 바뀌면 앞 말은 opacity로 사라지고 새 말은 opacity·transform으로 떠오른다", () => {
     motionOn();
     const { view } = step(screenAt(1), screenAt(2));

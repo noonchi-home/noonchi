@@ -7,7 +7,7 @@
 // 지도 카메라는 그 단계에 중요한 것(길·목적지·클로이드·확인한 기기 말풍선·방 이름표)을 진행도 아래·말풍선 카드 위·미니맵과 생각 말풍선 왼쪽 칸(focus)에 맞춰,
 //   얹은 것(가린 자리 blocked) 밑에 깔리지 않게 한다.
 // 여백은 디자인 토큰(layout, 1680px부터 hub1920 값)이다. 글 줄 높이는 부품 글 크기(text-sm 줄 20px, 말풍선 카드 Item say text-base 줄 24px)라 화면 너비와 상관없다.
-// 자리는 화면 크기로만 정해지고 단계와 상관없다.
+// 자리는 화면 크기와 미니맵 영상 비율로만 정해지고 단계와 상관없다. 영상 비율이 바뀌면(폰을 돌림·영상 종류가 바뀜) 미니맵 높이만 바뀐다.
 import tokens from "../../../src/design/tokens.json";
 import { mascotImageBox, mascotLogoBox, mascotScale } from "./bust";
 import type { BoxSize } from "./fit";
@@ -31,7 +31,7 @@ export interface PageLayout {
   camPad: Pad;
   /** 지도 위에 얹어 지도를 가리는 자리: [말풍선 카드, 마스코트 단추(초점 고리 포함), 미니맵, 생각 말풍선과 꼬리]. */
   blocked: Rect[];
-  /** 비전 미니맵(대시보드 폰 칸): 트윈 오른쪽 위 가로 16:9. */
+  /** 비전 미니맵(대시보드 폰 칸): 트윈 오른쪽 위. 너비는 화면 너비 몫이고 높이는 영상 비율을 따른다(영상이 없으면 16:9, 세로 영상은 높이 상한까지). */
   video: Rect;
   /** 트윈 오른쪽 위 칩(위치 모름·연결 끊김)의 트윈 오른쪽 끝 기준 띄움(px): 미니맵 왼쪽. */
   chipsRight: number;
@@ -50,8 +50,21 @@ export interface PageLayout {
 
 /** 이 너비부터 hub1920 토큰(여백·글 크기). tokens.css의 @media (min-width: 1680px)와 같다. */
 export const WIDE = 1680;
-/** 비전 미니맵 너비: 화면 너비에 곱하는 몫(1280에서 400). 높이는 16:9. */
+/** 비전 미니맵 너비: 화면 너비에 곱하는 몫(1280에서 400). 높이는 너비 ÷ 영상 비율. */
 export const MINIMAP_SHARE = 400 / 1280;
+/** 영상이 없을 때(연결 QR·빈 칸) 미니맵 비율(가로/세로). */
+export const MINIMAP_ASPECT = 16 / 9;
+/** 미니맵 높이 상한: 트윈 칸 높이에 곱하는 몫. 세로 영상이 와도 칸이 이보다 길어지지 않고, 그때만 영상을 contain으로 넣어 양옆이 빈다. 생각 말풍선 위 사이(gap)도 넘지 않는다. */
+export const MINIMAP_MAX_SHARE = 0.5;
+/** 영상 비율이 지금 비율과 이 몫 넘게 다를 때만 미니맵 비율을 바꾼다(프레임 크기가 1px씩 흔들려도 칸이 떨리지 않게). */
+export const ASPECT_STEP = 0.02;
+
+/** 미니맵이 쓸 영상 비율(가로/세로): 영상 크기를 모르면 16:9, 지금 비율과 ASPECT_STEP 안이면 지금 비율 그대로, 넘으면 새 비율. */
+export function nextAspect(now: number, video: BoxSize | null): number {
+  if (!video || video.width <= 0 || video.height <= 0) return MINIMAP_ASPECT;
+  const next = video.width / video.height;
+  return now > 0 && Math.abs(next / now - 1) <= ASPECT_STEP ? now : next;
+}
 /** 생각 말풍선 크기(px): 높이는 ThoughtBubble 위아래 여백(py-2.5) 20 + 테두리 2 + 글(text-sm leading-6) 두 줄 48 + 사이 8 + 칩 한 줄 26. 화면 크기·글 길이와 상관없다. */
 export const THOUGHT = { width: 360, height: 104 };
 /** 생각 말풍선 아래 끝에서 마스코트 단추 위 끝까지(px): 꼬리 점 둘(16·10)이 놓인다. */
@@ -81,8 +94,8 @@ const ZERO: Rect = { left: 0, top: 0, width: 0, height: 0 };
 const right = (r: Rect) => r.left + r.width;
 const bottom = (r: Rect) => r.top + r.height;
 
-/** 화면 크기에 맞는 대시보드 자리. 크기를 모르면(0) 모두 0 크기다. */
-export function pageLayout(view: BoxSize, mascot: Pick<MascotImage, "width" | "height" | "x0" | "x1" | "headTop" | "cut" | "logo">): PageLayout {
+/** 화면 크기와 미니맵 영상 비율(videoAspect, 가로/세로)에 맞는 대시보드 자리. 크기를 모르면(0) 모두 0 크기다. */
+export function pageLayout(view: BoxSize, mascot: Pick<MascotImage, "width" | "height" | "x0" | "x1" | "headTop" | "cut" | "logo">, videoAspect = MINIMAP_ASPECT): PageLayout {
   const wide = view.width >= WIDE;
   const space = wide ? tokens.layout.hub1920 : tokens.layout.hub1440;
   const pad = space.gutter;
@@ -93,10 +106,6 @@ export function pageLayout(view: BoxSize, mascot: Pick<MascotImage, "width" | "h
   // 트윈: 여백 안 화면 전체
   const twin: Rect = { left: pad, top: pad, width: Math.max(0, view.width - 2 * pad), height: Math.max(0, view.height - 2 * pad) };
   const inset = space.panelPadding;
-  // 비전 미니맵: 트윈 오른쪽 위, 가로 16:9
-  const videoW = view.width * MINIMAP_SHARE;
-  const video: Rect = { left: right(twin) - inset - videoW, top: twin.top + inset, width: videoW, height: (videoW * 9) / 16 };
-
   // 마스코트: 트윈 오른쪽 아래, 아래 끝은 화면 밑 선
   const shown = view.height * MASCOT_SHARE;
   const scale = mascotScale(mascot, shown, HEAD_ROOM);
@@ -107,6 +116,12 @@ export function pageLayout(view: BoxSize, mascot: Pick<MascotImage, "width" | "h
   const thought: Rect = { left: right(m) - THOUGHT.width, top: m.top - TAIL_ROOM - THOUGHT.height, ...THOUGHT };
   const axis = m.left + mw / 2;
   const tail: Rect[] = TAIL.map((t) => ({ left: axis + t.dx - t.size / 2, top: bottom(thought) + t.top, width: t.size, height: t.size }));
+
+  // 비전 미니맵: 트윈 오른쪽 위. 높이는 너비 ÷ 영상 비율이고 상한(트윈 높이 몫, 생각 말풍선 위 사이)을 넘지 않는다
+  const videoW = view.width * MINIMAP_SHARE;
+  const videoTop = twin.top + inset;
+  const videoMax = Math.max(0, Math.min(twin.height * MINIMAP_MAX_SHARE, thought.top - gap - videoTop));
+  const video: Rect = { left: right(twin) - inset - videoW, top: videoTop, width: videoW, height: Math.min(videoW / (videoAspect > 0 ? videoAspect : MINIMAP_ASPECT), videoMax) };
 
   // 말풍선 카드: 트윈 아래쪽 안, 마스코트 왼쪽(초점 고리 밖)에서 사이만큼 띄운다
   const bubbleH = 2 * SAY_LINE + BUBBLE_PAD;

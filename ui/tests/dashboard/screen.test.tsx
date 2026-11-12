@@ -83,7 +83,8 @@ describe("대시보드 배치", () => {
       expect(close(boxOf(say()), L.bubble)).toBe(true);
       const stage = twinPane().parentElement!;
       expect(close(boxOf(stage), L.twin)).toBe(true);
-      expect(close(boxOf(phonePane()), L.video)).toBe(true);
+      // 미니맵은 보이는 영상(세로 눈 그림 405×720) 비율을 따른다
+      expect(close(boxOf(phonePane()), pageLayout({ width, height }, MASCOT, 405 / 720).video)).toBe(true);
       const t = boxOf(thought());
       expect([t.left, t.top, t.width]).toEqual([L.thought.left, L.thought.top, L.thought.width]);
       expect(t.top + t.height).toBeLessThanOrEqual(L.mascot.top);
@@ -136,7 +137,63 @@ describe("대시보드 배치", () => {
     } finally { rect.mockRestore(); }
   });
 
-  it("단계·영상·연결·로봇 자리와 상관없이 모든 자리(말풍선 자리 높이 포함)가 같다", () => {
+  it.each([[1920, 1080], [1440, 900]])("%i×%i: 미니맵 높이는 들어오는 영상 비율을 따른다: 가로 480×222는 너비 ÷ 비율(빈 띠 없음), 영상이 없으면(QR·빈 칸) 16:9, 세로 영상은 높이 상한까지. 너비·왼쪽·위와 다른 자리는 그대로다", (width, height) => {
+    const rect = atScreen(width, height);
+    try {
+      const boxes = (p: ScreenProps) => {
+        const { unmount } = draw(p);
+        const out = { phone: boxOf(phonePane()), rest: [mascot(), say(), thought(), twinPane().parentElement!].map((el) => el.style.cssText.replace(/(opacity|transform): [^;]+; ?/g, "")) };
+        unmount();
+        return out;
+      };
+      const at = (aspect?: number) => pageLayout({ width, height }, MASCOT, aspect).video;
+      const wide = boxes(screenAt(2, { phone: { kind: "image", src: "/w.webp", width: 480, height: 222 } }));
+      expect(close(wide.phone, at(480 / 222))).toBe(true);
+      expect(wide.phone.height).toBeCloseTo(wide.phone.width / (480 / 222), 5);
+      const tall = boxes(screenAt(2));
+      expect(close(tall.phone, at(405 / 720))).toBe(true);
+      expect(tall.phone.height).toBeLessThan(tall.phone.width / (405 / 720));
+      for (const phone of [{ kind: "qr", url: PHONE_URL }, { kind: "none" }, { kind: "live", url: PHONE_URL }] as const) {
+        const none = boxes(screenAt(2, { phone }));
+        expect(close(none.phone, at()), phone.kind).toBe(true);
+        expect(none.rest).toEqual(wide.rest);
+      }
+      expect(tall.rest).toEqual(wide.rest);
+      for (const b of [tall, wide]) expect([b.phone.left, b.phone.top, b.phone.width]).toEqual([at().left, at().top, at().width]);
+    } finally { rect.mockRestore(); }
+  });
+
+  it("영상 비율이 2% 안에서 흔들리면 미니맵 칸이 그대로이고, 비율이 다른 영상이 오면 높이만 바뀐다", () => {
+    const rect = atScreen(1920, 1080);
+    try {
+      const img = (w: number, h: number) => ({ kind: "image", src: "/w.webp", width: w, height: h }) as const;
+      const { rerender } = draw(screenAt(2, { phone: img(480, 222) }));
+      const el = phonePane();
+      const was = boxOf(el);
+      rerender(<DashboardScreen {...screenAt(2, { phone: img(480, 223) })} />);
+      expect(phonePane()).toBe(el);
+      expect(boxOf(el)).toEqual(was);
+      rerender(<DashboardScreen {...screenAt(3, { phone: img(640, 360) })} />);
+      expect(phonePane()).toBe(el);
+      const now = boxOf(el);
+      expect([now.left, now.top, now.width]).toEqual([was.left, was.top, was.width]);
+      expect(now.height).toBeCloseTo(now.width / (640 / 360), 5);
+      expect(now.height).toBeGreaterThan(was.height);
+    } finally { rect.mockRestore(); }
+  });
+
+  it("실시간 영상(live)은 첫 장이 오면 마지막 seen의 프레임 크기 비율을 따른다(영상 크기를 알기 전)", () => {
+    const rect = atScreen(1920, 1080);
+    try {
+      draw(screenAt(2, { phone: { kind: "live", url: PHONE_URL }, seen: seenOf(EYE_FRAMES[0]!.boxes, { width: 480, height: 222 }) }));
+      const L = (aspect?: number) => pageLayout({ width: 1920, height: 1080 }, MASCOT, aspect).video;
+      expect(close(boxOf(phonePane()), L())).toBe(true);
+      fireEvent.load(phonePane().querySelector<HTMLImageElement>("img")!);
+      expect(close(boxOf(phonePane()), L(480 / 222))).toBe(true);
+    } finally { rect.mockRestore(); }
+  });
+
+  it("단계·연결·로봇 자리와 상관없이 모든 자리(말풍선 자리 높이 포함)가 같다. 미니맵은 영상이 같으면 같다", () => {
     const rect = atScreen(1920, 1080);
     try {
       const boxes = (p: ScreenProps) => {
@@ -150,7 +207,6 @@ describe("대시보드 배치", () => {
       const first = boxes(screenAt(1));
       const variants: [string, ScreenProps][] = [
         ["0", screenAt(0)], ["2", screenAt(2)], ["3", screenAt(3)], ["4", screenAt(4)],
-        ["qr", screenAt(3, { phone: { kind: "qr", url: PHONE_URL } })], ["live", screenAt(2, { phone: { kind: "live", url: PHONE_URL } })],
         ["로봇 모름", screenAt(2, { robotKnown: false })], ["연결 끊김", screenAt(2, { connected: false })], ["모양 없음", screenAt(0, { seen: seenOf(null) })],
         ["긴 생각", screenAt(2, { thought: { ...THOUGHT, reasoning: REASON.repeat(6) } })], ["상태 모름", screenAt(2, { thought: { ...THOUGHT, state: null } })],
       ];

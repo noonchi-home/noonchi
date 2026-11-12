@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import tokens from "../../../src/design/tokens.json";
 import { mascotLogoBox } from "../../src/dashboard/bust";
-import { LIFT, MASCOT_SHARE, mascotPoint, MINIMAP_SHARE, pageLayout, RING, SAY_LINE, THOUGHT, type Rect } from "../../src/dashboard/layout";
+import { ASPECT_STEP, LIFT, MASCOT_SHARE, mascotPoint, MINIMAP_ASPECT, MINIMAP_MAX_SHARE, MINIMAP_SHARE, nextAspect, pageLayout, RING, SAY_LINE, THOUGHT, type Rect } from "../../src/dashboard/layout";
 import { MASCOT } from "../../src/dashboard/mascot-image";
 
 const M = MASCOT;
@@ -158,6 +158,58 @@ describe.each([[1920, 1080], [1440, 900], [1522, 722]])("%i×%i", (width, height
       expect(right(r)).toBeLessThanOrEqual(width + 1e-6);
       expect(bottom(r)).toBeLessThanOrEqual(height + 1e-6);
     }
+  });
+});
+
+describe.each([[1920, 1080], [1440, 900], [1522, 722]])("%i×%i 미니맵은 영상 비율을 따른다", (width, height) => {
+  const at = (aspect?: number) => pageLayout({ width, height }, M, aspect);
+  const base = at();
+
+  it("영상이 없으면(비율 모름) 16:9다", () => {
+    expect(MINIMAP_ASPECT).toBe(16 / 9);
+    expect(at(MINIMAP_ASPECT)).toEqual(base);
+  });
+
+  it.each([[480, 222], [640, 360]])("가로 영상 %i×%i: 너비·왼쪽·위는 그대로이고 높이만 너비 ÷ 영상 비율이라 위아래 빈 띠가 없다", (w, h) => {
+    const L = at(w / h);
+    expect([L.video.left, L.video.top, L.video.width]).toEqual([base.video.left, base.video.top, base.video.width]);
+    expect(near(L.video.height, L.video.width / (w / h))).toBe(true);
+  });
+
+  it("세로 영상(360×640)은 칸이 너무 길어지지 않게 높이 상한에 걸린다: 트윈 높이의 절반, 생각 말풍선 위 사이(gap)까지 중 작은 쪽", () => {
+    expect(MINIMAP_MAX_SHARE).toBe(0.5);
+    const L = at(360 / 640);
+    const cap = Math.min(L.twin.height * MINIMAP_MAX_SHARE, L.thought.top - L.gap - L.video.top);
+    expect(near(L.video.height, cap)).toBe(true);
+    expect(L.video.height).toBeLessThan(L.video.width / (360 / 640));
+    expect(L.video.width).toBe(base.video.width);
+  });
+
+  it.each([480 / 222, 16 / 9, 4 / 3, 1, 360 / 640])("비율 %f: 미니맵 높이가 바뀌어도 생각 말풍선·마스코트·말풍선 카드와 겹치지 않고, 지도 카메라 칸은 미니맵 밖이며, 다른 자리는 그대로다", (aspect) => {
+    const L = at(aspect);
+    for (const r of [L.thought, L.mascot, L.bubble, L.focus, ...L.tail]) expect(hit(L.video, r)).toBe(false);
+    expect(bottom(L.video)).toBeLessThanOrEqual(L.thought.top - L.gap + 1e-6);
+    expect(bottom(L.video)).toBeLessThanOrEqual(height);
+    expect(L.blocked[2]).toEqual(L.video);
+    const { video: _v, blocked: _b, ...rest } = L;
+    const { video: _v0, blocked: _b0, ...rest0 } = base;
+    expect(rest).toEqual(rest0);
+  });
+});
+
+describe("영상 비율 고르기(떨림 방지)", () => {
+  it("영상 크기를 모르면 16:9", () => {
+    expect(nextAspect(480 / 222, null)).toBe(MINIMAP_ASPECT);
+    expect(nextAspect(1, { width: 0, height: 0 })).toBe(MINIMAP_ASPECT);
+  });
+
+  it("비율 차이가 2% 안이면 지금 비율을 그대로 둔다(프레임마다 1px 흔들려도 칸이 떨리지 않는다). 넘으면 새 비율이다", () => {
+    expect(ASPECT_STEP).toBe(0.02);
+    const now = 480 / 222;
+    expect(nextAspect(now, { width: 480, height: 223 })).toBe(now);
+    expect(nextAspect(now, { width: 481, height: 222 })).toBe(now);
+    expect(nextAspect(now, { width: 640, height: 360 })).toBe(640 / 360);
+    expect(nextAspect(now, { width: 222, height: 480 })).toBe(222 / 480);
   });
 });
 

@@ -233,13 +233,20 @@ export interface EyeVideo {
 /** 대시보드: canvas에 영상을 그린다. onMode로 영상/JPEG 중 보일 것을 알린다(처음은 JPEG).
  *  디코드·그리기는 일꾼(OffscreenCanvas)에서 한다. 같은 출처 3D 트윈 iframe이 메인 스레드를 몇 초씩 막아도 영상이 끊기지 않게.
  *  일꾼을 못 쓰면 메인 스레드에서 그린다. canvas는 한 번만 넘길 수 있으니 부를 때마다 새 canvas를 준다. */
-export function attachEyeVideo({ canvas, onMode, url = "/api/eye/video" }: { canvas: HTMLCanvasElement; onMode: (mode: EyeMode) => void; url?: string }): EyeVideo {
+export function attachEyeVideo({ canvas, onMode, onSize, url = "/api/eye/video" }: {
+  canvas: HTMLCanvasElement; onMode: (mode: EyeMode) => void;
+  /** 그리는 영상 크기가 생기거나 바뀌면(폰을 돌림) 알린다. */
+  onSize?: (size: { width: number; height: number }) => void; url?: string;
+}): EyeVideo {
   let mode: EyeMode = "jpeg";
   let last: EyeVideoStats = { drawn: 0, queue: 0, codec: null, width: 0, height: 0 };
   // 측정용(콘솔·헤드리스 확인): 그린 장 수·디코더 대기·크기
   (canvas as HTMLCanvasElement & { eyeVideoStats?: () => unknown }).eyeVideoStats = () => ({ ...last, mode });
   const setMode = (m: EyeMode) => { mode = m; onMode(m); };
-  const onStats = (s: EyeVideoStats) => { last = s; };
+  const onStats = (s: EyeVideoStats) => {
+    if (s.width > 0 && s.height > 0 && (s.width !== last.width || s.height !== last.height)) onSize?.({ width: s.width, height: s.height });
+    last = s;
+  };
   const absolute = new URL(url, location.href).href;
   if (typeof Worker === "function" && typeof canvas.transferControlToOffscreen === "function") {
     const worker = new Worker(new URL("./eye-video-worker.ts", import.meta.url), { type: "module" });

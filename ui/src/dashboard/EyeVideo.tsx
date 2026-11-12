@@ -6,9 +6,12 @@ const streamUrl = () => `/api/eye/stream?t=${Date.now()}`;
 /**
  * 대시보드 폰 칸의 폰 서버 실시간 영상. H.264 표시 영상이 오면 canvas(일꾼이 그림), 아니면 MJPEG <img>. 둘 다 칸을 다 채우고 잘리지 않게(contain) 보인다.
  * 감싸는 상자는 칸을 덮고(absolute inset-0) 크기를 정하지 않는다. 첫 장이 오기 전에는 숨기고, 첫 장이 오면(<img> load·그림 크기 생김·H.264 영상 모드) onShown(true).
+ * 보이는 영상 크기(H.264 표시 영상 크기, MJPEG면 그림 크기)가 생기거나 바뀌면 onSize로 알린다(미니맵이 그 비율을 따른다).
  * 서버가 다시 떴으면(연결이 끊겼다 붙음) 끊긴 MJPEG 스트림도 다시 붙이고, 스트림이 끊기면 2초 뒤 다시 붙인다.
  */
-export function EyeVideo({ connected, onShown }: { connected: boolean | null; onShown: (shown: boolean) => void }) {
+export function EyeVideo({ connected, onShown, onSize }: {
+  connected: boolean | null; onShown: (shown: boolean) => void; onSize?: (size: { width: number; height: number } | null) => void;
+}) {
   const [src, setSrc] = useState(streamUrl);
   const [shown, setShown] = useState(false);
   const [mode, setMode] = useState<EyeMode>("jpeg");
@@ -18,7 +21,21 @@ export function EyeVideo({ connected, onShown }: { connected: boolean | null; on
   const wasConnected = useRef(connected);
   const report = useRef(onShown);
   report.current = onShown;
-  const show = () => setShown(true);
+  const reportSize = useRef(onSize);
+  reportSize.current = onSize;
+  // 두 길(H.264 canvas, MJPEG 그림)의 크기. 지금 보이는 쪽 것을 알린다
+  const sizes = useRef<{ video: { width: number; height: number } | null; jpeg: { width: number; height: number } | null }>({ video: null, jpeg: null });
+  const modeRef = useRef<EyeMode>("jpeg");
+  const tell = () => reportSize.current?.(modeRef.current === "video" ? sizes.current.video ?? sizes.current.jpeg : sizes.current.jpeg);
+  const readImg = () => {
+    const el = img.current;
+    if (!el || el.naturalWidth <= 0 || el.naturalHeight <= 0) return;
+    const was = sizes.current.jpeg;
+    if (was?.width === el.naturalWidth && was.height === el.naturalHeight) return;
+    sizes.current.jpeg = { width: el.naturalWidth, height: el.naturalHeight };
+    tell();
+  };
+  const show = () => { readImg(); setShown(true); };
 
   useEffect(() => { if (shown) report.current(true); }, [shown]);
 
@@ -38,16 +55,19 @@ export function EyeVideo({ connected, onShown }: { connected: boolean | null; on
     const video = attachEyeVideo({
       canvas,
       onMode: (m) => {
+        modeRef.current = m;
         setMode(m);
         if (m === "video") setShown(true);
+        tell();
       },
+      onSize: (size) => { sizes.current.video = size; tell(); },
     });
     return () => { video.close(); canvas.remove(); };
   }, []);
 
   // 스트림은 첫 장이 와야 크기가 생긴다(브라우저마다 load가 늦을 수 있어 크기로도 본다)
   useEffect(() => {
-    const sized = setInterval(() => { if ((img.current?.naturalWidth ?? 0) > 0) setShown(true); }, 1000);
+    const sized = setInterval(() => { if ((img.current?.naturalWidth ?? 0) > 0) { readImg(); setShown(true); } }, 1000);
     return () => { clearInterval(sized); clearTimeout(retry.current); };
   }, []);
 

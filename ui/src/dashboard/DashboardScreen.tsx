@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { PlanStep, PlanView } from "../../../src/contract/plan.ts";
 import { LiquidGlass } from "../components/ui/liquid-glass";
 import type { SeenStore } from "./masks";
-import { useBoxSize } from "./fit";
+import { useBoxSize, type BoxSize } from "./fit";
 import type { HubState } from "./hub";
-import { pageLayout, type PageLayout } from "./layout";
+import { MINIMAP_ASPECT, nextAspect, pageLayout, type PageLayout } from "./layout";
 import { Mascot, type Facing } from "./Mascot";
 import { MASCOT } from "./mascot-image";
 import { PreDrawing, useFontsLoaded, usePredecode, usePreDraw, useReducedMotionNow } from "./motion";
@@ -49,13 +49,16 @@ export interface ScreenProps {
  * 트윈(칸을 꽉 채운 지도와 그 위 할 일 진행도)은 둥근 판(LiquidGlass) 하나다. 오른쪽 위에 비전 미니맵 「폰 카메라」(가로 16:9, 영상 위 마스크·이름표, 영상이 없으면 연결 QR),
  * 오른쪽 아래에 마스코트(판 없이 아래 끝을 화면 밑 선에 댄다, 누르면 설정 창), 마스코트 위에 생각 말풍선(PAM의 생각 한 문장과 상태·판단 칩, PAM이 대기면 숨김),
  * 트윈 아래쪽에 말풍선 카드(그 순간 말, 꼬리 없는 카드 하나, 마스코트 왼쪽까지)다. 마스코트가 보는 쪽은 facing 그대로다(transform).
- * 자리·크기는 화면 크기로만 정해지고 단계가 바뀌어도 그대로다. 말풍선 말·생각은 opacity·transform으로 바뀐다(SayCard·ThoughtCard).
+ * 자리·크기는 화면 크기와 미니맵 영상 비율로만 정해지고 단계가 바뀌어도 그대로다. 미니맵 높이는 들어오는 영상 비율을 따르고(폰을 돌리거나 영상 종류가 바뀔 때만 바뀐다,
+ * 비율 차이가 ASPECT_STEP 안이면 그대로), 처음 그림부터 가짜 단계 그림 비율을 쓴다. 말풍선 말·생각은 opacity·transform으로 바뀐다(SayCard·ThoughtCard).
  * 글꼴 조각·마스코트 그림 풀기·지도 첫 그림이 다 되면 한 번 미리 그려 보고(usePreDraw, 단계가 바뀔 때는 하지 않는다) 그 뒤 main에 data-ready를 달고 onReady를 부른다.
  */
 export function DashboardScreen({ index, plan, step, robotKnown, connected, map, mapReady, phone, seen, thought, say, facing, hub, settingsOpen, onReady }: ScreenProps) {
   const main = useRef<HTMLElement>(null);
   const view = useBoxSize(main);
-  const L = useMemo(() => pageLayout(view, MASCOT), [view]);
+  const [aspect, setAspect] = useState(() => nextAspect(MINIMAP_ASPECT, phone.kind === "image" ? phone : null));
+  const onVideoSize = useCallback((size: BoxSize | null) => setAspect((now) => nextAspect(now, size)), []);
+  const L = useMemo(() => pageLayout(view, MASCOT, aspect), [view, aspect]);
   const reduced = useReducedMotionNow();
   const decoded = usePredecode([MASCOT.src]);
   // 지금 화면 글이 쓰는 글꼴 조각을 받는다(처음 나오는 글자가 새 조각을 받으면 글을 다시 그린다)
@@ -74,7 +77,7 @@ export function DashboardScreen({ index, plan, step, robotKnown, connected, map,
           <TwinPane plan={plan} step={step} robotKnown={robotKnown} connected={connected} map={typeof map === "function" ? map(L) : map} chipsRight={L.chipsRight} />
         </PreDrawing.Provider>
       </LiquidGlass>
-      <PhonePane slot={phone} seen={seen} box={L.video} connected={connected} />
+      <PhonePane slot={phone} seen={seen} box={L.video} connected={connected} onVideoSize={onVideoSize} />
       <ThoughtCard thought={thought} box={L.thought} tail={L.tail} animate={!reduced} />
       <SayCard say={say} box={L.bubble} animate={!reduced} />
       <Mascot image={MASCOT} hub={hub} box={L.mascot} imageBox={L.image} logoBox={L.logo} facing={facing} settingsOpen={settingsOpen} />
