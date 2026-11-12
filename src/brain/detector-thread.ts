@@ -25,7 +25,7 @@ try {
       }
     });
   });
-  port.postMessage({ ready: det.name, pose: det.pose });
+  port.postMessage({ ready: det.name, pose: det.pose, provider: det.provider, decoder: det.decoder });
 } catch (e) {
   port.postMessage({ failed: (e as Error).message });
 }

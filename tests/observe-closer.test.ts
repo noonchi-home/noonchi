@@ -60,7 +60,7 @@ function setup(o: { vlm: VlmClient; detector?: (engine: Set<string>) => Detector
 
 /** 엔진 사진은 감지 없음, 잘라 키운 사진은 컵. hold()가 참이면 잘라 키운 사진 감지를 gates에 붙잡아 둔다(풀면 답한다). */
 const heldDetector = (gates: (() => void)[], hold: () => boolean = () => true) => (engine: Set<string>): Detector => ({
-  name: "held",
+  name: "held", provider: "test",
   detect: async (jpeg: Buffer) => {
     if (engine.has(sha256(jpeg))) return { detections: [], ms: 0, width: 480, height: 360 };
     if (hold()) await new Promise<void>((ok) => gates.push(ok));
@@ -254,7 +254,7 @@ describe("가까이 보기(관찰 흐름 closer)", () => {
     const s = setup({
       vlm: fakeVlm(fake),
       detector: (engine) => ({
-        name: "held",
+        name: "held", provider: "test",
         detect: async (jpeg: Buffer) => {
           if (engine.has(sha256(jpeg))) return { detections: [], ms: 0, width: 480, height: 360 };
           await new Promise<void>((ok) => gates.push(ok));

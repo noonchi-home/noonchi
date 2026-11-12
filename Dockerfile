@@ -14,7 +14,8 @@ RUN npm --prefix ui run build
 
 FROM ${NODE_IMAGE} AS deps
 WORKDIR /app
-# YOLO는 CPU로 돈다. onnxruntime-node가 linux/x64에서 따로 받는 CUDA 파일은 받지 않는다
+# YOLO는 CPU로 돈다(DirectML은 Windows에만 있다). onnxruntime-node가 linux/x64에서 따로 받는 CUDA 파일은 받지 않는다.
+# JPEG을 푸는 sharp는 npm ci가 리눅스용 바이너리(@img/sharp-linux-x64)를 같이 받는다
 ENV ONNXRUNTIME_NODE_INSTALL=skip
 COPY package.json package-lock.json ./
 # 리눅스에서 쓰지 않는 onnxruntime 바이너리(darwin·win32, 약 220MB)는 지운다

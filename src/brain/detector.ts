@@ -57,9 +57,11 @@ export interface DetectResult {
   detections: Detection[];
   /** 감지 시간(ms): JPEG 풀기 + 레터박스 + 추론 + 풀기(마스크 포함). */
   ms: number;
+  /** ms를 나눈 값(ms): JPEG 풀기 · 레터박스 · 추론 · 출력 풀기(NMS·마스크). 속도 재기(scripts/brain-yolo-bench.ts)가 쓴다. */
+  steps?: { decode: number; letterbox: number; infer: number; masks: number };
   width: number;
   height: number;
-  /** 관절. 관절 모델이 없거나 이 프레임에 사람이 없어 돌리지 않았으면 없다. */
+  /** 관절. 관절 모델이 없거나, 이 프레임에 사람이 없거나, 관절을 건너뛰는 장(poseEvery)이라 돌리지 않았으면 없다. */
   poses?: Pose[];
   /** 관절 시간(ms): 추론 + 풀기(레터박스는 감지와 같이 쓴다). */
   poseMs?: number;
@@ -71,6 +73,10 @@ export interface Detector {
   readonly name: string;
   /** 관절 모델 이름(없으면 null·없음). */
   readonly pose?: string | null;
+  /** 실제로 붙은 실행 장치(dml·cpu). */
+  readonly provider: string;
+  /** JPEG을 푸는 것(sharp·jpeg-js). */
+  readonly decoder?: string;
   detect(jpegBytes: Buffer): Promise<DetectResult>;
   close?(): Promise<void>;
 }
@@ -95,7 +101,33 @@ export const POSE_MODEL = { file: "yolo26n-pose.onnx", sha256: "dd0e47a03ea0f2b9
 export const MODELS_DIR = fileURLToPath(new URL("../../models/", import.meta.url));
 
 const PAD = 114;
-type Rgba = { data: Uint8Array; width: number; height: number };
+export type Rgba = { data: Uint8Array; width: number; height: number };
+
+/** JPEG 풀기: sharp(libjpeg-turbo)로 풀고, sharp를 못 불러오면 jpeg-js로 푼다. 결과는 RGBA. */
+export interface JpegDecoder { name: "sharp" | "jpeg-js"; decode(bytes: Buffer): Promise<Rgba> }
+type SharpFn = (input: Buffer) => { ensureAlpha(): { raw(): { toBuffer(o: { resolveWithObject: true }): Promise<{ data: Buffer; info: { width: number; height: number; channels: number } }> } } };
+
+export async function jpegDecoder(load: () => Promise<unknown> = () => import("sharp")): Promise<JpegDecoder> {
+  let sharp: SharpFn;
+  try {
+    const mod = (await load()) as { default?: SharpFn };
+    if (typeof mod.default !== "function") throw new Error("sharp 없음");
+    sharp = mod.default;
+  } catch {
+    return { name: "jpeg-js", decode: async (bytes) => jpeg.decode(bytes, { useTArray: true, formatAsRGBA: true }) };
+  }
+  return {
+    name: "sharp",
+    async decode(bytes) {
+      const { data, info } = await sharp(bytes).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+      if (info.channels !== 4) throw new Error(`JPEG을 RGBA로 풀지 못했습니다(채널 ${info.channels})`);
+      return { data: new Uint8Array(data.buffer, data.byteOffset, data.byteLength), width: info.width, height: info.height };
+    },
+  };
+}
+
+/** 바이트 0~255 → 0~1. */
+const BYTE_TO_UNIT = Float32Array.from({ length: 256 }, (_, v) => v / 255);
 
 /** 쌍선형 표본(OpenCV INTER_LINEAR처럼 픽셀 가운데 기준, 끝은 붙임): 출력 칸마다 원본 두 칸과 섞는 몫. */
 function linearTaps(dst: number, src: number): { i0: Int32Array; i1: Int32Array; w: Float32Array } {
@@ -123,21 +155,43 @@ export function letterboxYolo26(img: Rgba, size: number): LetterboxPlace & { ten
   const padY = Math.max(0, Math.round((size - nh) / 2 - 0.1));
   const plane = size * size;
   const tensor = new Float32Array(3 * plane).fill(PAD / 255);
-  const xs = linearTaps(nw, img.width);
-  const ys = linearTaps(nh, img.height);
   const src = img.data;
   const rowLen = img.width * 4;
+  const R = tensor.subarray(0, plane), G = tensor.subarray(plane, 2 * plane), B = tensor.subarray(2 * plane);
+  if (nw === img.width && nh === img.height) {
+    // 크기가 그대로면(폰 엔진 프레임 360×640) 섞지 않고 옮기기만 한다
+    for (let y = 0; y < nh; y++) {
+      let s = y * rowLen;
+      let o = (y + padY) * size + padX;
+      for (let x = 0; x < nw; x++, s += 4, o++) {
+        R[o] = BYTE_TO_UNIT[src[s]!]!;
+        G[o] = BYTE_TO_UNIT[src[s + 1]!]!;
+        B[o] = BYTE_TO_UNIT[src[s + 2]!]!;
+      }
+    }
+    return { tensor, ratio, padX, padY };
+  }
+  const xs = linearTaps(nw, img.width);
+  const ys = linearTaps(nh, img.height);
+  // 열마다 원본 두 칸의 바이트 자리를 미리 구해 둔다
+  const x0 = new Int32Array(nw), x1 = new Int32Array(nw);
+  for (let x = 0; x < nw; x++) { x0[x] = xs.i0[x]! * 4; x1[x] = xs.i1[x]! * 4; }
+  const wxs = xs.w;
   for (let y = 0; y < nh; y++) {
     const r0 = ys.i0[y]! * rowLen, r1 = ys.i1[y]! * rowLen, wy = ys.w[y]!;
-    const o = (y + padY) * size + padX;
-    for (let x = 0; x < nw; x++) {
-      const c0 = xs.i0[x]! * 4, c1 = xs.i1[x]! * 4, wx = xs.w[x]!;
-      const a = r0 + c0, b = r0 + c1, c = r1 + c0, d = r1 + c1;
-      for (let ch = 0; ch < 3; ch++) {
-        const top = src[a + ch]! + (src[b + ch]! - src[a + ch]!) * wx;
-        const bottom = src[c + ch]! + (src[d + ch]! - src[c + ch]!) * wx;
-        tensor[ch * plane + o + x] = (top + (bottom - top) * wy) / 255;
-      }
+    let o = (y + padY) * size + padX;
+    for (let x = 0; x < nw; x++, o++) {
+      const wx = wxs[x]!;
+      const a = r0 + x0[x]!, b = r0 + x1[x]!, c = r1 + x0[x]!, d = r1 + x1[x]!;
+      let top = src[a]! + (src[b]! - src[a]!) * wx;
+      let bottom = src[c]! + (src[d]! - src[c]!) * wx;
+      R[o] = (top + (bottom - top) * wy) / 255;
+      top = src[a + 1]! + (src[b + 1]! - src[a + 1]!) * wx;
+      bottom = src[c + 1]! + (src[d + 1]! - src[c + 1]!) * wx;
+      G[o] = (top + (bottom - top) * wy) / 255;
+      top = src[a + 2]! + (src[b + 2]! - src[a + 2]!) * wx;
+      bottom = src[c + 2]! + (src[d + 2]! - src[c + 2]!) * wx;
+      B[o] = (top + (bottom - top) * wy) / 255;
     }
   }
   return { tensor, ratio, padX, padY };
@@ -181,13 +235,15 @@ export function decodeYolo26All(out: Float32Array, dims: readonly number[], lb: 
     throw new Error(`YOLO26 프로토 모양이 맞지 않습니다([${protos.dims.join(", ")}], 기대 [1, ${COEFFS}, ${PROTO}, ${PROTO}])`);
   }
   // 클래스 줄을 차례로 읽어 앵커마다 가장 높은 클래스를 찾는다(같은 점수면 앞 번호)
+  // minScore 아래 점수는 어차피 버리므로 견주지 않는다
   const best = new Float32Array(n).fill(-1);
   const bestCls = new Int16Array(n);
+  const min = opts.minScore;
   for (let c = 0; c < COCO_CLASSES; c++) {
-    const row = (4 + c) * n;
+    const row = out.subarray((4 + c) * n, (5 + c) * n);
     for (let i = 0; i < n; i++) {
-      const s = out[row + i]!;
-      if (s > best[i]!) { best[i] = s; bestCls[i] = c; }
+      const s = row[i]!;
+      if (s >= min && s > best[i]!) { best[i] = s; bestCls[i] = c; }
     }
   }
   // NMS는 Ultralytics처럼 자르기 전 레터박스 상자로 한다
@@ -267,6 +323,19 @@ interface OrtSession {
   release?(): Promise<void>;
 }
 type TensorCtor = new (type: "float32", data: Float32Array, dims: number[]) => unknown;
+/** onnxruntime-node에서 쓰는 부분(시험은 가짜를 넣는다). */
+export interface OrtModule {
+  InferenceSession: { create(path: string, options: Record<string, unknown>): Promise<unknown> };
+  Tensor: unknown;
+}
+export type Provider = "auto" | "dml" | "cpu";
+export const PROVIDERS: readonly Provider[] = ["auto", "dml", "cpu"];
+
+/** 세션을 만들어 볼 장치 차례: auto는 Windows에서 DirectML 먼저, 그 밖에는 CPU만. */
+export function providerOrder(provider: Provider, platform: NodeJS.Platform): ("dml" | "cpu")[] {
+  if (provider !== "auto") return [provider];
+  return platform === "win32" ? ["dml", "cpu"] : ["cpu"];
+}
 
 /** 감지기 만들기 값(워커에도 그대로 넘긴다). */
 export interface DetectorSpec {
@@ -274,7 +343,12 @@ export interface DetectorSpec {
   modelPath: string;
   /** YOLO26-pose 파일. 없으면 관절을 보지 않는다. */
   posePath?: string | null;
+  /** CPU 추론 스레드 수(기본 8). */
   threads?: number;
+  /** 실행 장치(기본 auto: Windows는 DirectML, 안 되면 CPU). dml·cpu로 정하면 그 장치만 쓰고 못 만들면 오류다. */
+  provider?: Provider;
+  /** 사람이 이어서 보이는 동안 관절을 몇 장에 한 번 돌릴지(기본 3). 사람이 다시 보인 첫 장은 늘 돌린다. */
+  poseEvery?: number;
   /** 감지·관절 최소 점수(기본 0.25). */
   minScore?: number;
   /** 이 점수 이상인 사람 감지가 있을 때만 관절을 돌린다(기본 minScore). World State 사람 기준(0.5)보다 낮게 둔다:
@@ -287,30 +361,56 @@ const fileName = (p: string) => p.replace(/^.*[\\/]/, "").replace(/\.onnx$/, "")
 /** onnxruntime-node로 감지기(와 관절 모델)를 돌린다. onnxruntime는 감지기를 만들 때만 불러온다(BRAIN을 안 쓰면 읽지 않게).
  *  YOLO26 감지와 관절은 같은 640 레터박스 한 장을 쓴다. */
 export class OnnxDetector implements Detector {
+  /** 사람이 이어서 보인 장 수(안 보이면 0으로). */
+  private personRun = 0;
+
   private constructor(
     readonly name: string,
     readonly pose: string | null,
-    private readonly spec: Required<Omit<DetectorSpec, "posePath" | "threads">>,
+    readonly provider: string,
+    private readonly jpeg: JpegDecoder,
+    private readonly spec: Required<Pick<DetectorSpec, "minScore" | "poseMinPerson" | "poseEvery">>,
     private readonly session: OrtSession,
     private readonly poseSession: OrtSession | null,
     private readonly Tensor: TensorCtor,
   ) {}
 
-  static async create(spec: DetectorSpec): Promise<OnnxDetector> {
-    const ort = await import("onnxruntime-node");
-    const opts = { intraOpNumThreads: spec.threads ?? 4 };
-    const session = (await ort.InferenceSession.create(spec.modelPath, opts)) as unknown as OrtSession;
-    let poseSession: OrtSession | null = null;
-    try {
-      poseSession = spec.posePath ? ((await ort.InferenceSession.create(spec.posePath, opts)) as unknown as OrtSession) : null;
-    } catch (e) {
-      await session.release?.();
-      throw e;
+  get decoder(): string { return this.jpeg.name; }
+
+  /** 장치 차례대로 감지·관절 세션을 만들고 한 번 돌려 본다. 그 장치에서 하나라도 실패하면 다음 장치로 간다(마지막 장치의 오류는 그대로 낸다). */
+  static async create(spec: DetectorSpec, deps: { ort?: OrtModule; platform?: NodeJS.Platform; jpeg?: JpegDecoder } = {}): Promise<OnnxDetector> {
+    const ort = deps.ort ?? ((await import("onnxruntime-node")) as unknown as OrtModule);
+    const Tensor = ort.Tensor as TensorCtor;
+    const order = providerOrder(spec.provider ?? "auto", deps.platform ?? process.platform);
+    const blank = new Float32Array(3 * INPUT_SIZE * INPUT_SIZE).fill(PAD / 255);
+    let made: { provider: string; session: OrtSession; poseSession: OrtSession | null } | null = null;
+    let lastError: unknown;
+    for (const provider of order) {
+      // DirectML은 메모리 패턴 없이 차례대로만 돈다(onnxruntime DirectML 문서)
+      const opts = provider === "dml"
+        ? { executionProviders: [provider], enableMemPattern: false, executionMode: "sequential" }
+        : { executionProviders: [provider], intraOpNumThreads: spec.threads ?? 8 };
+      const open: OrtSession[] = [];
+      try {
+        for (const path of [spec.modelPath, spec.posePath]) {
+          if (!path) continue;
+          const s = (await ort.InferenceSession.create(path, opts)) as OrtSession;
+          open.push(s);
+          await s.run({ [s.inputNames[0]!]: new Tensor("float32", blank, [1, 3, INPUT_SIZE, INPUT_SIZE]) });
+        }
+        made = { provider, session: open[0]!, poseSession: open[1] ?? null };
+        break;
+      } catch (e) {
+        lastError = e;
+        for (const s of open) await s.release?.();
+      }
     }
+    if (!made) throw lastError;
+    const minScore = spec.minScore ?? 0.25;
     return new OnnxDetector(
-      fileName(spec.modelPath), spec.posePath ? fileName(spec.posePath) : null,
-      { modelPath: spec.modelPath, minScore: spec.minScore ?? 0.25, poseMinPerson: spec.poseMinPerson ?? spec.minScore ?? 0.25 },
-      session, poseSession, ort.Tensor as unknown as TensorCtor,
+      fileName(spec.modelPath), spec.posePath ? fileName(spec.posePath) : null, made.provider, deps.jpeg ?? await jpegDecoder(),
+      { minScore, poseMinPerson: spec.poseMinPerson ?? minScore, poseEvery: spec.poseEvery ?? 3 },
+      made.session, made.poseSession, Tensor,
     );
   }
 
@@ -323,15 +423,26 @@ export class OnnxDetector implements Detector {
 
   async detect(jpegBytes: Buffer): Promise<DetectResult> {
     const t0 = performance.now();
-    const img = jpeg.decode(jpegBytes, { useTArray: true, formatAsRGBA: true });
+    const img = await this.jpeg.decode(jpegBytes);
     const image = { width: img.width, height: img.height };
+    const tDecode = performance.now();
     const lb = letterboxYolo26(img, INPUT_SIZE);
+    const tLetterbox = performance.now();
     const [out, protos] = await this.run(this.session, lb.tensor);
     if (!out || !protos) throw new Error("YOLO26-seg 출력이 둘(감지·프로토)이 아닙니다");
+    const tInfer = performance.now();
     const { detections, landmarks } = decodeYolo26All(out.data as Float32Array, out.dims, lb, image, { minScore: this.spec.minScore }, { data: protos.data as Float32Array, dims: protos.dims });
     const t1 = performance.now();
-    const result: DetectResult = { detections, ms: t1 - t0, width: img.width, height: img.height, landmarks };
-    if (!this.poseSession || !detections.some((d) => d.label === "person" && d.score >= this.spec.poseMinPerson)) return result;
+    const result: DetectResult = {
+      detections, ms: t1 - t0, width: img.width, height: img.height, landmarks,
+      steps: { decode: tDecode - t0, letterbox: tLetterbox - tDecode, infer: tInfer - tLetterbox, masks: t1 - tInfer },
+    };
+    // 관절은 사람이 이어서 보이는 동안 poseEvery장에 한 번(다시 보인 첫 장 포함)만 돌린다
+    if (!detections.some((d) => d.label === "person" && d.score >= this.spec.poseMinPerson)) {
+      this.personRun = 0;
+      return result;
+    }
+    if (!this.poseSession || this.personRun++ % this.spec.poseEvery !== 0) return result;
     const [poseOut] = await this.run(this.poseSession, lb.tensor);
     if (!poseOut) throw new Error("YOLO26-pose 출력이 없습니다");
     result.poses = decodeYolo26Pose(poseOut.data as Float32Array, poseOut.dims, lb, image, { minScore: this.spec.minScore });
@@ -354,7 +465,10 @@ export class WorkerDetector implements Detector {
 
   private readonly exited: Promise<void>;
 
-  private constructor(readonly name: string, readonly pose: string | null, private readonly worker: import("node:worker_threads").Worker) {
+  private constructor(
+    readonly name: string, readonly pose: string | null, readonly provider: string, readonly decoder: string,
+    private readonly worker: import("node:worker_threads").Worker,
+  ) {
     this.exited = new Promise((resolve) => worker.once("exit", () => resolve()));
     worker.on("message", (m: { id?: number; result?: DetectResult; error?: string }) => {
       const w = m.id === undefined ? undefined : this.waiting.get(m.id);
@@ -375,20 +489,22 @@ export class WorkerDetector implements Detector {
 
   static async create(spec: DetectorSpec): Promise<WorkerDetector> {
     const { Worker } = await import("node:worker_threads");
+    // sharp는 워커보다 먼저 이 스레드에서 불러 둔다(sharp 문서: 공유 라이브러리가 워커가 끝날 때까지 남아 있게)
+    await import("sharp").catch(() => null);
     const worker = new Worker(new URL("./detector-worker.mjs", import.meta.url), {
       workerData: { entry: new URL("./detector-thread.ts", import.meta.url).href, spec },
     });
     try {
-      const ready = await new Promise<{ name: string; pose: string | null }>((resolve, reject) => {
-        const onMsg = (m: { ready?: string; pose?: string | null; failed?: string }) => {
-          if (m.ready) resolve({ name: m.ready, pose: m.pose ?? null });
+      const ready = await new Promise<{ name: string; pose: string | null; provider: string; decoder: string }>((resolve, reject) => {
+        const onMsg = (m: { ready?: string; pose?: string | null; provider?: string; decoder?: string; failed?: string }) => {
+          if (m.ready) resolve({ name: m.ready, pose: m.pose ?? null, provider: m.provider ?? "cpu", decoder: m.decoder ?? "jpeg-js" });
           else if (m.failed) reject(new Error(m.failed));
         };
         worker.on("message", onMsg);
         worker.once("error", reject);
         worker.once("exit", (code) => reject(new Error(`YOLO 워커가 시작 중에 끝났습니다(${code})`)));
       });
-      return new WorkerDetector(ready.name, ready.pose, worker);
+      return new WorkerDetector(ready.name, ready.pose, ready.provider, ready.decoder, worker);
     } catch (e) {
       await worker.terminate();
       throw e;

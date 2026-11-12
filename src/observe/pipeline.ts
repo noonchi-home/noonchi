@@ -13,7 +13,7 @@ import { join } from "node:path";
 import type { BrainLog, CloserMiss, CloserResult, CloserVlm } from "../contract/events.js";
 import type { WorldChange, WorldView, YoloMissing } from "../contract/world.js";
 import type { DeviceState } from "../hub/types.js";
-import { DETECTOR_MODEL, MODELS_DIR, POSE_MODEL, WorkerDetector, type DetectResult, type Detection, type Detector, type DetectorSpec, type Pose } from "../brain/detector.js";
+import { DETECTOR_MODEL, MODELS_DIR, POSE_MODEL, PROVIDERS, WorkerDetector, type DetectResult, type Detection, type Detector, type DetectorSpec, type Pose, type Provider } from "../brain/detector.js";
 import { hasPrice } from "../infer/cost.js";
 import { vlmTimeoutMs } from "../infer/endpoints.js";
 import { createInference } from "../infer/inference.js";
@@ -121,6 +121,8 @@ export interface PipelineStatus {
   detector: string | null;
   /** 관절 모델 이름(없으면 null). */
   pose: string | null;
+  /** 감지기가 실제로 붙은 실행 장치(dml·cpu, 감지기 없으면 null). */
+  provider: string | null;
   vlm_model: string;
   detected: number;
   detect_ms: number | null;
@@ -311,7 +313,7 @@ export class ObservationPipeline {
 
   status(): PipelineStatus {
     return {
-      frames: this.frames, duplicates: this.ring.dropped, detector: this.o.detector?.name ?? null, pose: this.o.detector?.pose ?? null, vlm_model: this.o.vlm.model,
+      frames: this.frames, duplicates: this.ring.dropped, detector: this.o.detector?.name ?? null, pose: this.o.detector?.pose ?? null, provider: this.o.detector?.provider ?? null, vlm_model: this.o.vlm.model,
       detected: this.detected, detect_ms: mean(this.detectMs), posed: this.posed, pose_ms: mean(this.poseMs),
       queued: this.queue.length, yolo_missing: { ...this.yoloMissing }, vlm: this.pool.stats(), time_source: this.timeSource, time_err_ms: this.timeErr,
       dataset: this.o.dataset ? { ...this.datasetCount } : null,
@@ -458,11 +460,17 @@ export class ObservationPipeline {
 /** 시험용 주입. detector는 null이면 감지기 없이(VLM만). */
 export interface PipelineInject { detector?: Detector | null; vlm?: VlmClient; clock?: { now(): number } }
 
-/** 감지기 값: YOLO26n(저장소 models/, BRAIN_YOLO_PATH로 파일 직접)과 관절 YOLO26n-pose(BRAIN_POSE_PATH), 워커 스레드 수 BRAIN_YOLO_THREADS(4). */
+/** 감지기 값: YOLO26n-seg(저장소 models/, BRAIN_YOLO_PATH로 파일 직접)와 관절 YOLO26n-pose(BRAIN_POSE_PATH), CPU 추론 스레드 수 BRAIN_YOLO_THREADS(8),
+ *  실행 장치 BRAIN_YOLO_PROVIDER(auto·dml·cpu, 기본 auto), 관절 간격 BRAIN_POSE_EVERY(1 이상 정수, 기본 3). 틀린 장치·간격이면 오류. */
 export function detectorSpec(env: Env): DetectorSpec {
+  const provider = (env.BRAIN_YOLO_PROVIDER?.trim().toLowerCase() || "auto") as Provider;
+  if (!PROVIDERS.includes(provider)) throw new Error(`BRAIN_YOLO_PROVIDER는 auto·dml·cpu 중 하나여야 합니다(${env.BRAIN_YOLO_PROVIDER})`);
+  const every = env.BRAIN_POSE_EVERY?.trim();
+  const poseEvery = every ? Number(every) : 3;
+  if (!Number.isInteger(poseEvery) || poseEvery < 1) throw new Error(`BRAIN_POSE_EVERY는 1 이상 정수여야 합니다(${env.BRAIN_POSE_EVERY})`);
   return {
     modelPath: env.BRAIN_YOLO_PATH?.trim() || join(MODELS_DIR, DETECTOR_MODEL.file), posePath: env.BRAIN_POSE_PATH?.trim() || join(MODELS_DIR, POSE_MODEL.file),
-    threads: Number(env.BRAIN_YOLO_THREADS) || 4,
+    threads: Number(env.BRAIN_YOLO_THREADS) || 8, provider, poseEvery,
   };
 }
 
@@ -497,7 +505,8 @@ export async function createPipeline(o: {
   const vlm = o.inject?.vlm ?? made!.vlm;
   const closerVlm = made?.closerVlm ?? vlm;
   const closerNote = closerVlm.model !== vlm.model ? ` · 가까이 보기 VLM ${closerVlm.model}` : "";
-  o.log(`관찰 흐름: 엔진 프레임 ${config.engineMs}ms · 감지 ${detector?.name ?? "없음(VLM만)"} · VLM ${vlm.model} 최근 ${config.vlmWindowFrames}장 동시 ${config.vlmMaxInflight}개${closerNote} · 감지 대기열 ${config.detectQueueMax}`);
+  o.log(`관찰 흐름: 엔진 프레임 ${config.engineMs}ms · 감지 ${detector ? `${detector.name}(${detector.provider})` : "없음(VLM만)"} · VLM ${vlm.model} 최근 ${config.vlmWindowFrames}장 동시 ${config.vlmMaxInflight}개${closerNote} · 감지 대기열 ${config.detectQueueMax}`);
+  if (detector?.decoder === "jpeg-js") o.log("[경고] sharp를 불러오지 못했습니다. JPEG을 jpeg-js로 풉니다(한 장에 약 30ms 더 걸립니다).");
   if (o.dataset) o.log("[경고] 시험 자료 모으기가 켜져 있습니다. 엔진 프레임을 디스크에 씁니다.");
   return new ObservationPipeline({
     config, detector, vlm, closerVlm, world: o.world, emit: o.emit, broadcastWorld: o.broadcastWorld, onChanges: o.onChanges, onFrame: o.onFrame, dataset: o.dataset, onDetected: o.onDetected, clock: o.inject?.clock,

@@ -54,10 +54,18 @@ export function maskOf(coeffs: Float32Array, protos: Float32Array, lbBox: Box, l
   if (cols <= 0 || rows <= 0) return null;
   // 칸 → 원본 픽셀
   const px = (c: number) => (c * STRIDE - lb.padX) / lb.ratio, py = (r: number) => (r * STRIDE - lb.padY) / lb.ratio;
-  // 0이 아닌 계수만 곱한다
-  const used: number[] = [];
-  for (let k = 0; k < COEFFS; k++) if (coeffs[k] !== 0) used.push(k);
+  // 칸마다 계수 × 프로토를 더한다. 프로토 한 장씩 차례로 읽는다(0인 계수는 건너뜀)
   const plane = PROTO * PROTO;
+  const sum = new Float32Array(cols * rows);
+  for (let k = 0; k < COEFFS; k++) {
+    const w = coeffs[k]!;
+    if (w === 0) continue;
+    for (let r = 0; r < rows; r++) {
+      const row = protos.subarray(k * plane + (r + r0) * PROTO + c0, k * plane + (r + r0) * PROTO + c1);
+      const o = r * cols;
+      for (let c = 0; c < cols; c++) sum[o + c]! += w * row[c]!;
+    }
+  }
   const cells = new Uint8Array(cols * rows);
   let n = 0, minC = cols, maxC = -1, minR = rows, maxR = -1;
   for (let r = 0; r < rows; r++) {
@@ -65,12 +73,9 @@ export function maskOf(coeffs: Float32Array, protos: Float32Array, lbBox: Box, l
     const y = py(r + r0 + 0.5);
     if (y < 0 || y >= image.height) continue;
     for (let c = 0; c < cols; c++) {
+      if (!(sum[r * cols + c]! > 0)) continue; // sigmoid(v) > 0.5
       const x = px(c + c0 + 0.5);
       if (x < 0 || x >= image.width) continue;
-      const p = (r + r0) * PROTO + (c + c0);
-      let v = 0;
-      for (const k of used) v += coeffs[k]! * protos[k * plane + p]!;
-      if (v <= 0) continue; // sigmoid(v) > 0.5
       cells[r * cols + c] = 1;
       n++;
       if (c < minC) minC = c;

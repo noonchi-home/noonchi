@@ -111,7 +111,7 @@ describe("시작 위치 REST와 폰", () => {
     pam = await startFakePam();
     // 소파(COCO 57) 상자 하나를 내는 감지기
     const sofa: Detector = {
-      name: "landmark-only", pose: null,
+      name: "landmark-only", pose: null, provider: "test",
       detect: async (): Promise<DetectResult> => ({ detections: [], ms: 0, width: 360, height: 640, landmarks: [{ cls: 57, score: 0.9, box: [130, 300, 100, 160] }] }),
     };
     srv = await startServer({

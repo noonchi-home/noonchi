@@ -7,11 +7,12 @@ import { join } from "node:path";
 import jpeg from "jpeg-js";
 import { describe, expect, it } from "vitest";
 import {
-  DETECTOR_MODEL, MODELS_DIR, OnnxDetector, POSE_MODEL, WorkerDetector, YOLO26_IOU, decodeYolo26, decodeYolo26All, letterboxYolo26, nms,
+  DETECTOR_MODEL, MODELS_DIR, OnnxDetector, POSE_MODEL, WorkerDetector, YOLO26_IOU, decodeYolo26, decodeYolo26All, jpegDecoder, letterboxYolo26, nms,
 } from "../src/brain/detector.js";
 import { detectorSpec } from "../src/observe/pipeline.js";
 import { maskCells } from "../src/brain/seg.js";
 import { ScriptedDetector, det as d } from "./helpers/detectors.js";
+import { fixtureJpeg } from "./helpers/jpeg.js";
 
 function rgba(width: number, height: number, fill: (x: number, y: number) => [number, number, number]) {
   const data = new Uint8Array(width * height * 4);
@@ -33,6 +34,17 @@ describe("letterboxYolo26", () => {
     expect(at(0, 0, 139)).toBeCloseTo(114 / 255, 6);
     expect([at(0, 0, 140), at(1, 0, 140), at(2, 639, 499)].map((v) => +v.toFixed(4))).toEqual([1, 0, 0.2]);
     expect(at(2, 639, 500)).toBeCloseTo(114 / 255, 6);
+  });
+
+  it("360×640(폰 엔진 프레임)은 크기 그대로 가운데에 옮긴다(왼쪽 140열 채움). 값은 화소 / 255", () => {
+    const img = rgba(360, 640, (x, y) => [(x * 7 + y) % 256, (x + y * 3) % 256, (x * y) % 256]);
+    const lb = letterboxYolo26(img, Y);
+    expect([lb.ratio, lb.padX, lb.padY]).toEqual([1, 140, 0]);
+    for (const [x, y] of [[0, 0], [359, 639], [123, 456], [1, 638]] as const) {
+      for (let c = 0; c < 3; c++) expect(lb.tensor[c * Y * Y + y * Y + x + 140]).toBe(Math.fround(img.data[(y * 360 + x) * 4 + c]! / 255));
+    }
+    expect(lb.tensor[139]).toBeCloseTo(114 / 255, 6);
+    expect(lb.tensor[500]).toBeCloseTo(114 / 255, 6);
   });
 
   it("세로 360×780은 295×640으로 줄여 가운데에 둔다(왼쪽 172열 채움). 줄일 때는 쌍선형으로 섞는다", () => {
@@ -156,8 +168,15 @@ describe("nms", () => {
 
 describe("모델과 감지기 값", () => {
   it("감지기는 저장소 models/의 yolo26n-seg, 관절은 yolo26n-pose다. 파일은 BRAIN_YOLO_PATH·BRAIN_POSE_PATH로 직접 줄 수 있다", () => {
-    expect(detectorSpec({})).toEqual({ modelPath: join(MODELS_DIR, "yolo26n-seg.onnx"), posePath: join(MODELS_DIR, "yolo26n-pose.onnx"), threads: 4 });
-    expect(detectorSpec({ BRAIN_YOLO_PATH: "a.onnx", BRAIN_POSE_PATH: "b.onnx", BRAIN_YOLO_THREADS: "2" })).toEqual({ modelPath: "a.onnx", posePath: "b.onnx", threads: 2 });
+    expect(detectorSpec({})).toEqual({ modelPath: join(MODELS_DIR, "yolo26n-seg.onnx"), posePath: join(MODELS_DIR, "yolo26n-pose.onnx"), threads: 8, provider: "auto", poseEvery: 3 });
+    expect(detectorSpec({ BRAIN_YOLO_PATH: "a.onnx", BRAIN_POSE_PATH: "b.onnx", BRAIN_YOLO_THREADS: "2", BRAIN_YOLO_PROVIDER: "cpu", BRAIN_POSE_EVERY: "1" }))
+      .toEqual({ modelPath: "a.onnx", posePath: "b.onnx", threads: 2, provider: "cpu", poseEvery: 1 });
+  });
+
+  it("BRAIN_YOLO_PROVIDER는 auto·dml·cpu, BRAIN_POSE_EVERY는 1 이상 정수만 받는다", () => {
+    expect(detectorSpec({ BRAIN_YOLO_PROVIDER: " DML " }).provider).toBe("dml");
+    expect(() => detectorSpec({ BRAIN_YOLO_PROVIDER: "cuda" })).toThrow(/BRAIN_YOLO_PROVIDER/);
+    for (const bad of ["0", "1.5", "x"]) expect(() => detectorSpec({ BRAIN_POSE_EVERY: bad })).toThrow(/BRAIN_POSE_EVERY/);
   });
 
   it("감지 모델은 yolo26n-seg이고 파일 sha256이 표와 같다", () => {
@@ -165,6 +184,124 @@ describe("모델과 감지기 값", () => {
     const sha = (p: string) => createHash("sha256").update(readFileSync(p)).digest("hex");
     expect(sha(join(MODELS_DIR, DETECTOR_MODEL.file))).toBe(DETECTOR_MODEL.sha256);
     expect(sha(join(MODELS_DIR, POSE_MODEL.file))).toBe(POSE_MODEL.sha256);
+  });
+});
+
+/** 가짜 onnxruntime: 세션을 만든 차례(파일·장치·스레드)와 돌린 횟수를 적는다. fail 장치는 세션 만들기가 실패한다. 감지 세션은 person이 참일 때만 사람 하나를 낸다. */
+function fakeOrt(o: { fail?: string[] } = {}) {
+  const N = 4;
+  const state = { person: false, made: [] as { file: string; providers: string[]; threads: number | undefined }[], runs: { det: 0, pose: 0 }, released: 0 };
+  const ort = {
+    Tensor: class { constructor(readonly type: string, readonly data: Float32Array, readonly dims: number[]) {} },
+    InferenceSession: {
+      async create(path: string, opts: { executionProviders?: string[]; intraOpNumThreads?: number }) {
+        const providers = opts.executionProviders ?? [];
+        const pose = path.includes("pose");
+        state.made.push({ file: pose ? "pose" : "det", providers: [...providers], threads: opts.intraOpNumThreads });
+        if (providers.some((p) => o.fail?.includes(p))) throw new Error(`${providers.join()} 장치를 못 씁니다`);
+        return {
+          inputNames: ["images"], outputNames: pose ? ["output0"] : ["output0", "output1"],
+          async run() {
+            if (pose) {
+              state.runs.pose++;
+              return { output0: { data: new Float32Array(56 * N), dims: [1, 56, N] } };
+            }
+            state.runs.det++;
+            const out = new Float32Array(116 * N);
+            if (state.person) [320, 320, 100, 200, 0.9].forEach((v, c) => { out[c * N] = v; });
+            return { output0: { data: out, dims: [1, 116, N] }, output1: { data: new Float32Array(32 * 160 * 160), dims: [1, 32, 160, 160] } };
+          },
+          async release() { state.released++; },
+        };
+      },
+    },
+  };
+  return { ort, state };
+}
+
+describe("실행 장치(BRAIN_YOLO_PROVIDER)", () => {
+  const spec = { modelPath: "det.onnx", posePath: "pose.onnx" };
+  const tried = (s: ReturnType<typeof fakeOrt>["state"]) => s.made.map((m) => `${m.file}:${m.providers.join()}`);
+
+  it("auto는 win32에서 dml을 먼저 만들고, 되면 그대로 쓴다. 감지·관절 세션 모두 같은 장치다", async () => {
+    const { ort, state } = fakeOrt();
+    const det = await OnnxDetector.create({ ...spec, provider: "auto" }, { ort, platform: "win32" });
+    expect(tried(state)).toEqual(["det:dml", "pose:dml"]);
+    expect(det.provider).toBe("dml");
+  });
+
+  it("auto는 dml이 오류면 cpu로 만든다. cpu 세션 스레드는 기본 8", async () => {
+    const { ort, state } = fakeOrt({ fail: ["dml"] });
+    const det = await OnnxDetector.create(spec, { ort, platform: "win32" }); // provider 기본 auto
+    expect(tried(state)).toEqual(["det:dml", "det:cpu", "pose:cpu"]);
+    expect(det.provider).toBe("cpu");
+    expect(state.made.at(-1)!.threads).toBe(8);
+    const two = fakeOrt();
+    await OnnxDetector.create({ ...spec, provider: "cpu", threads: 2 }, { ort: two.ort, platform: "win32" });
+    expect(two.state.made.map((m) => m.threads)).toEqual([2, 2]);
+  });
+
+  it("auto는 win32가 아니면 cpu만 만든다", async () => {
+    const { ort, state } = fakeOrt();
+    const det = await OnnxDetector.create(spec, { ort, platform: "linux" });
+    expect(tried(state)).toEqual(["det:cpu", "pose:cpu"]);
+    expect(det.provider).toBe("cpu");
+  });
+
+  it("dml로 정했는데 못 만들면 오류를 그대로 낸다(cpu로 바꾸지 않는다)", async () => {
+    const { ort, state } = fakeOrt({ fail: ["dml"] });
+    await expect(OnnxDetector.create({ ...spec, provider: "dml" }, { ort, platform: "win32" })).rejects.toThrow(/dml 장치를 못 씁니다/);
+    expect(tried(state)).toEqual(["det:dml"]);
+  });
+});
+
+describe("관절 간격(BRAIN_POSE_EVERY)", () => {
+  const small = Buffer.from(jpeg.encode(rgba(36, 64, () => [128, 128, 128]), 80).data);
+  it("poseEvery 3: 사람이 이어서 보이는 6장 중 1·4번째에만 관절을 돌린다. 사람이 안 보이다 다시 보이면 그 첫 장에 돌린다", async () => {
+    const { ort, state } = fakeOrt();
+    const det = await OnnxDetector.create({ modelPath: "det.onnx", posePath: "pose.onnx", poseEvery: 3, provider: "cpu" }, { ort, platform: "win32" });
+    state.runs.pose = 0; // 만들 때 돌려 본 것은 빼고 센다
+    const posed: boolean[] = [];
+    for (const person of [true, true, true, true, true, true, false, true, true]) {
+      state.person = person;
+      const r = await det.detect(small);
+      expect(r.detections.some((x) => x.label === "person")).toBe(person);
+      posed.push(r.poses !== undefined);
+      expect(r.poseMs === undefined).toBe(r.poses === undefined);
+    }
+    expect(posed).toEqual([true, false, false, true, false, false, false, true, false]);
+    expect(state.runs.pose).toBe(3);
+  });
+
+  it("poseEvery 1이면 사람이 보이는 장마다 돌린다", async () => {
+    const { ort, state } = fakeOrt();
+    const det = await OnnxDetector.create({ modelPath: "det.onnx", posePath: "pose.onnx", poseEvery: 1, provider: "cpu" }, { ort, platform: "win32" });
+    state.runs.pose = 0;
+    state.person = true;
+    for (let i = 0; i < 3; i++) expect((await det.detect(small)).poses).toBeDefined();
+    expect(state.runs.pose).toBe(3);
+  });
+});
+
+describe("JPEG 풀기", () => {
+  const photo = fixtureJpeg();
+  const viaJs = jpeg.decode(photo, { useTArray: true, formatAsRGBA: true });
+
+  it("sharp로 풀고, 결과는 jpeg-js와 크기가 같고 화소 차 평균이 2 이하다", async () => {
+    const dec = await jpegDecoder();
+    expect(dec.name).toBe("sharp");
+    const img = await dec.decode(photo);
+    expect([img.width, img.height, img.data.length]).toEqual([360, 640, 360 * 640 * 4]);
+    let sum = 0;
+    for (let i = 0; i < img.data.length; i++) sum += Math.abs(img.data[i]! - viaJs.data[i]!);
+    expect(sum / img.data.length).toBeLessThanOrEqual(2);
+  });
+
+  it("sharp를 못 불러오면 jpeg-js로 푼다", async () => {
+    const dec = await jpegDecoder(() => Promise.reject(new Error("sharp 없음")));
+    expect(dec.name).toBe("jpeg-js");
+    const img = await dec.decode(photo);
+    expect(Buffer.from(img.data).equals(Buffer.from(viaJs.data))).toBe(true);
   });
 });
 
@@ -182,9 +319,9 @@ const gray = Buffer.from(jpeg.encode(rgba(360, 780, () => [128, 128, 128]), 80).
 
 describe("YOLO26n-seg 실제 모델(저장소 models/)", () => {
   it("회색 세로 그림 한 장: 출력 [1, 116, 8400]과 프로토를 풀어 감지가 없고, 사람이 없으니 관절은 돌리지 않는다", async () => {
-    const det = await OnnxDetector.create({ modelPath: y26, posePath: join(MODELS_DIR, POSE_MODEL.file) });
+    const det = await OnnxDetector.create({ modelPath: y26, posePath: join(MODELS_DIR, POSE_MODEL.file), provider: "cpu" });
     try {
-      expect([det.name, det.pose]).toEqual(["yolo26n-seg", "yolo26n-pose"]);
+      expect([det.name, det.pose, det.provider, det.decoder]).toEqual(["yolo26n-seg", "yolo26n-pose", "cpu", "sharp"]);
       const r = await det.detect(gray);
       expect(r.detections).toEqual([]);
       expect(r.poses).toBeUndefined();
@@ -195,10 +332,12 @@ describe("YOLO26n-seg 실제 모델(저장소 models/)", () => {
     }
   }, 30_000);
 
-  it("워커 스레드에서도 돌고, 닫으면 기다리던 감지는 실패로 끝난다", async () => {
+  it("워커 스레드에서도 돌고(장치 auto: 이 PC에서 되는 장치), 닫으면 기다리던 감지는 실패로 끝난다", async () => {
     const det = await WorkerDetector.create({ modelPath: y26 });
     try {
       expect(det.name).toBe("yolo26n-seg");
+      expect(["dml", "cpu"]).toContain(det.provider);
+      expect(det.decoder).toBe("sharp");
       expect((await det.detect(gray)).detections).toEqual([]);
       // 거절 검사를 닫기 전에 걸어 둔다(닫는 순간 거절되면 처리되지 않은 거절이 된다)
       const late = expect(det.detect(gray)).rejects.toThrow();
@@ -221,7 +360,7 @@ describe("YOLO26n-seg 실제 모델(저장소 models/)", () => {
 const frame = join("runtime", "vlm-events", "cup", "frames", "frame-000025.jpg");
 describe.skipIf(!existsSync(frame))("YOLO26n-seg 컵 영상 한 장(파일이 있을 때만)", () => {
   it("사람·컵·그릇을 World State 기준(사람 0.5·물건 0.4) 넘게 찾고, Ultralytics 기준과 점수 0.03·상자 3px 안이다", async () => {
-    const det = await OnnxDetector.create({ modelPath: y26 });
+    const det = await OnnxDetector.create({ modelPath: y26, provider: "cpu" });
     try {
       const r = await det.detect(readFileSync(frame));
       const best = (label: string) => r.detections.filter((d) => d.label === label).sort((a, b) => b.score - a.score)[0];
@@ -239,7 +378,7 @@ describe.skipIf(!existsSync(frame))("YOLO26n-seg 컵 영상 한 장(파일이 �
   }, 30_000);
 
   it("컵 감지에 마스크가 있고 foot이 box 아랫변 위에 있다. 사람·그릇도 마스크가 있다", async () => {
-    const det = await OnnxDetector.create({ modelPath: y26 });
+    const det = await OnnxDetector.create({ modelPath: y26, provider: "cpu" });
     try {
       const r = await det.detect(readFileSync(frame));
       const cup = r.detections.find((d) => d.label === "cup")!;

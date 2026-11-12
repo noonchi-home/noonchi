@@ -182,7 +182,7 @@ describe("관찰 흐름", () => {
     await p.idle();
     expect(worlds.at(-1)!.objects[0]!.facts.place).toMatchObject({ value: "in_hand", certainty: "confirmed" });
     expect(worlds.at(-1)!.person.facts).toMatchObject({ posture: { value: "standing" } });
-    expect(p.status()).toMatchObject({ detector: "scripted", pose: "scripted-pose", detected: 4, posed: 3, pose_ms: 0 });
+    expect(p.status()).toMatchObject({ detector: "scripted", pose: "scripted-pose", provider: "scripted", detected: 4, posed: 3, pose_ms: 0 });
     await p.close();
   });
 

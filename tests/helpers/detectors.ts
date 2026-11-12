@@ -29,6 +29,7 @@ export function seenDetector(seen: ReadonlyMap<string, Detection[]>): ScriptedDe
 
 export class ScriptedDetector implements Detector {
   readonly name = "scripted";
+  readonly provider = "scripted";
   readonly pose: string | null;
   /** poses: 관절 대본. 없으면 관절을 내지 않고, undefined를 돌려주면 그 프레임은 관절을 돌리지 않은 것. */
   constructor(private readonly script: (jpegBytes: Buffer) => Detection[], private readonly poses?: (jpegBytes: Buffer) => Pose[] | undefined) {

@@ -53,6 +53,8 @@ services:
       # 관찰 흐름·폰
       BRAIN:
       BRAIN_YOLO_THREADS:
+      BRAIN_YOLO_PROVIDER:
+      BRAIN_POSE_EVERY:
       ENGINE_FRAME_MS:
       VLM_WINDOW_FRAMES:
       VLM_MAX_INFLIGHT:
