@@ -70,7 +70,7 @@ describe("startServer(BRAIN=1) + 관찰 흐름", () => {
       phone.send(encodeFramePacket({ kind: "frame", width: 4, height: 3 }, Buffer.from([0xff, 0xd8, 0x00])));
       for (let i = 1; i <= 3; i++) {
         const t = Date.now();
-        phone.send(encodeFramePacket({ kind: "engine", width: 4, height: 3, captured_at: t - 10, time_err_ms: 2 }, Buffer.from([0xff, 0xd8, i])));
+        phone.send(encodeFramePacket({ kind: "engine", width: 4, height: 3, captured_at: t - 10 - (3 - i) * 2000, time_err_ms: 2 }, Buffer.from([0xff, 0xd8, i]))); // 촬영 시각 2초 간격: 컵 등장은 처음 본 뒤 4초
         await new Promise((r) => setTimeout(r, 30));
       }
       await until(dashBox, (m) => m.type === "brain" && m.event.type === "observe" && m.event.yolo === "컵 0.90");

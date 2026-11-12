@@ -77,7 +77,7 @@ describe("영상 모드 처음부터 끝까지", () => {
       env: { HUB: "memory", PORT: "0", HOME_ID: "mokryeon_180b", RUNTIME_DIR: runtimeDir, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
         BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url, OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: `${fake.url}/v1`,
         PAM_PERIOD_MS: "500", PAM_MIN_GAP_MS: "0" },
-      brain: { detector: new ScriptedDetector((): Detection[] => (++calls <= 6 ? [CUP, PERSON] : [CUP])) },
+      brain: { detector: new ScriptedDetector((): Detection[] => (++calls <= 12 ? [CUP, PERSON] : [CUP])) }, // 250ms 간격 12장(약 3초): 사람 등장은 처음 본 뒤 2초
       log: () => {},
     });
     // 설정 4단계에서 저장한 시작 자리: 식탁 1.5m 앞에서 식탁을 본다

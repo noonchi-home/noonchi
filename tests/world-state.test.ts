@@ -9,7 +9,7 @@ import { det } from "./helpers/detectors.js";
 
 const surfaces = () => [{ id: "table_1", label: "식탁", center: [2, 0] as [number, number], top: 0.75, radius: 0.6 }];
 const devices = () => [{ id: "dishwasher_1", kind: "dishwasher", label: "식기세척기" }];
-const ws = () => new WorldState({ surfaces, floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices });
+const ws = () => new WorldState({ evidenceStepMs: 1000, surfaces, floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices });
 const frame = (i: number): EngineFrame => ({ id: `e${i}`, capturedAtMs: i * 1000, latestAtMs: i * 1000, jpeg: Buffer.from(`${i}`), sha256: sha256(Buffer.from(`${i}`)), width: 480, height: 360, eye: null, view: null });
 const cup: Detection = det("cup", 0.9, [220, 160, 40, 20], 41);
 const person: Detection = det("person", 0.9, [10, 10, 100, 300], 0);
@@ -87,7 +87,7 @@ describe("World State", () => {
     expect(w.view(6000).objects[0]!.status).toBe("gone");
   });
   it("맞춘 뒤: 트윈 위치를 붙이고, 같은 자리 같은 종류는 같은 물체, 시야 밖이면 사라짐을 세지 않는다", () => {
-    const w = new WorldState({ surfaces: () => [{ id: "table_1", label: "식탁", center: [0.75, 0], top: 0.75, radius: 0.6 }], floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices });
+    const w = new WorldState({ evidenceStepMs: 1000, surfaces: () => [{ id: "table_1", label: "식탁", center: [0.75, 0], top: 0.75, radius: 0.6 }], floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices });
     const at = (i: number, view: CameraView) => ({ ...frame(i), view });
     let last;
     for (let i = 1; i <= 3; i++) last = w.applyDetections(at(i, look), [cup]);
@@ -138,7 +138,7 @@ describe("World State", () => {
     expect(w.view(31_000).person.visible).toBe(false);
   });
   it("사라진 물건을 띄엄띄엄 다시 봐도 등장으로 치지 않는다", () => {
-    const w = new WorldState({ surfaces: () => [{ id: "table_1", label: "식탁", center: [0.75, 0], top: 0.75, radius: 0.6 }], floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices });
+    const w = new WorldState({ evidenceStepMs: 1000, surfaces: () => [{ id: "table_1", label: "식탁", center: [0.75, 0], top: 0.75, radius: 0.6 }], floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices });
     const out: string[] = [];
     let n = 0;
     const step = (dets: Detection[]) => { n++; out.push(...w.applyDetections({ ...frame(n), view: look }, dets).changes.map((c) => `${n}:${c.kind}`)); };
@@ -174,6 +174,62 @@ describe("World State", () => {
 
 // 관절(YOLO26-pose)로 본 사실: 손목이 컵 상자 안·가까이면 컵 「손에 있음」과 사람 「물건을 들고 있음」, 관절로 서 있음·앉아 있음·누워 있음.
 // 같은 프레임에서는 관절 사실이 VLM 답보다 앞선다. 손목이 떨어지면 관절이 붙인 「손에 있음」만 지운다.
+describe("World State: 프레임 간격과 상관없는 시간 규칙(기본 2초 한 장)", () => {
+  const table = () => [{ id: "table_1", label: "식탁", center: [0.75, 0] as [number, number], top: 0.75, radius: 0.6 }];
+  const real = () => new WorldState({ surfaces: table, floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices });
+  const at = (t: number, view: CameraView | null = null): EngineFrame => ({ ...frame(0), id: `t${t}`, capturedAtMs: t, latestAtMs: t, view });
+  /** 장면(촬영 시각 → 카메라·감지)을 stepMs 간격으로 넣고 난 변화를 [종류, 대상, 시각]으로 모은다. */
+  const run = (stepMs: number, endMs: number, scene: (t: number) => { view?: CameraView; dets: Detection[]; poses?: ReturnType<typeof standing>[] }) => {
+    const w = real();
+    const out: [string, string | undefined, number][] = [];
+    for (let t = 0; t <= endMs; t += stepMs) {
+      const s = scene(t);
+      out.push(...w.applyDetections(at(t, s.view ?? null), s.dets, s.poses).changes.map((c): [string, string | undefined, number] => [c.kind, c.subject, c.at_ms]));
+    }
+    return { w, out };
+  };
+
+  it("같은 장면을 2000ms 간격과 100ms 간격으로 넣으면 같은 촬영 시각에 같은 사건이 난다(등장·사라짐·시야 밖·다시 보임·사람)", () => {
+    // 컵: 0~8초 보임, 10초부터 16초 전까지 카메라가 반대쪽, 16~20초 다시 보임, 그 뒤 안 보임. 사람: 2~6초 보임
+    const scene = (t: number) => {
+      const turned = t >= 10_000 && t < 16_000;
+      const cupSeen = t <= 8000 || (t >= 16_000 && t <= 20_000);
+      return { view: turned ? away : look, dets: [...(cupSeen ? [cup] : []), ...(t >= 2000 && t <= 6000 ? [person] : [])] };
+    };
+    const want = [
+      ["appeared", "cup_1", 4000], ["person_appeared", "person", 4000], ["person_gone", "person", 10_000], ["out_of_view", "cup_1", 10_000],
+      ["back_in_view", "cup_1", 16_000], ["gone", "cup_1", 26_000],
+    ];
+    const kinds = (r: ReturnType<typeof run>) => r.out.filter(([k]) => k !== "person_room");
+    expect(kinds(run(2000, 30_000, scene))).toEqual(want);
+    expect(kinds(run(100, 30_000, scene))).toEqual(want);
+  });
+
+  it("100ms 간격: 세는 중인 물건을 한두 장 놓쳐도 잊지 않고, 500ms 넘게 못 보면 잊는다", () => {
+    const kept = run(100, 4000, (t) => ({ dets: t === 1000 || t === 1100 ? [] : [cup] }));
+    expect(kept.w.view(4000).objects.map((o) => [o.id, o.first_seen_ms])).toEqual([["cup_1", 0]]);
+    const lost = run(100, 6000, (t) => ({ dets: t >= 1000 && t <= 1500 ? [] : [cup] }));
+    expect(lost.out).toEqual([["appeared", "cup_2", 5600]]);
+    expect(lost.w.view(6000).objects.map((o) => [o.id, o.first_seen_ms])).toEqual([["cup_2", 1600]]);
+  });
+
+  it("관절이 붙인 사실은 같은 값이 2초 이어져야 confirmed다(100ms 두 장으로 오르지 않는다)", () => {
+    const grip = standing({ 10: [230, 170, 0.9] }), apart = standing({ 10: [120, 230, 0.9] });
+    // 4초부터 손목이 컵 상자 안
+    const scene = (t: number) => ({ dets: [person, cup], poses: [t >= 4000 ? grip : apart] });
+    for (const [step, ends] of [[2000, [4000]], [100, [4000, 4100, 5900]]] as const) {
+      for (const end of ends) {
+        const v = run(step, end, scene).w.view(end);
+        expect(v.objects[0]!.facts.place, String(step) + "ms " + end).toMatchObject({ value: "in_hand", certainty: "inferred", since_ms: 4000 });
+        expect(v.person.facts.holding, String(step) + "ms " + end).toMatchObject({ value: "holding_object", certainty: "inferred" });
+      }
+      const v = run(step, 6000, scene).w.view(6000);
+      expect(v.objects[0]!.facts.place, String(step) + "ms").toMatchObject({ value: "in_hand", certainty: "confirmed", since_ms: 4000 });
+      expect(v.person.facts.holding, String(step) + "ms").toMatchObject({ certainty: "confirmed", since_ms: 4000 });
+    }
+  });
+});
+
 describe("World State + 관절", () => {
   const grip = standing({ 10: [230, 170, 0.9] }); // 오른 손목이 컵 상자 [220, 160, 40, 20] 안
   const apart = standing({ 10: [120, 230, 0.9] }); // 손목이 컵에서 멀다

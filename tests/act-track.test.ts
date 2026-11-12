@@ -1082,7 +1082,7 @@ describe("실행 추적 + 실제 World State(기준점을 맞춘 카메라)", ()
   const moved = box([60, 300, 40, 20]);
 
   it("식탁 위 컵을 들어 옮기면 새 id(cup_2)가 붙어도 집기·내려놓기가 비전으로 넘어가고 비전 상태 줄이 그 컵을 따라간다", async () => {
-    const ws = new WorldState({
+    const ws = new WorldState({ evidenceStepMs: 1000,
       surfaces: () => [{ id: "table_1", label: "식탁", center: [2, 0], top: 0.75, radius: 0.6 }, { id: "sink_1", label: "싱크대", center: [1.2, 0.8], top: 0.9, radius: 0.5 }],
       floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices: () => [],
     });
@@ -1109,7 +1109,7 @@ describe("실행 추적 + 실제 World State(기준점을 맞춘 카메라)", ()
   it("놓기 단계에서 옮긴 컵(새 id)이 싱크볼 안에 생기면 VLM 자리 사실이 「식탁 위」여도 손에 없으니 「완료」 없이 끝난다. 싱크볼 옆 조리대(같은 싱크대 면)나 「손에 있음」인 동안은 안 끝난다", async () => {
     // 싱크대 면 sink_1의 싱크볼: 깊이(x) 1.05~1.35, 폭(y) 0.45~0.95
     const sink = { id: "sink_1", label: "싱크대", center: [1.2, 0.8] as [number, number], top: 0.9, radius: 0.5, basin: { center: [1.2, 0.7] as [number, number], size: [0.5, 0.3] as [number, number], facing_deg: 0 } };
-    const ws = new WorldState({
+    const ws = new WorldState({ evidenceStepMs: 1000,
       surfaces: () => [{ id: "table_1", label: "식탁", center: [2, 0], top: 0.75, radius: 0.6 }, sink],
       floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices: () => [],
     });
@@ -1154,7 +1154,7 @@ describe("실행 추적 + 실제 World State(기준점을 맞춘 카메라)", ()
   });
 
   it("놓기: VLM이 「싱크대 안」이라 답해도 사람이 그 컵을 들고 있다고 보이면 안 끝난다. 사람이 안 보이는 프레임(10초 안)이 오면 끝난다", async () => {
-    const ws = new WorldState({
+    const ws = new WorldState({ evidenceStepMs: 1000,
       surfaces: () => [{ id: "table_1", label: "식탁", center: [2, 0], top: 0.75, radius: 0.6 }, { id: "sink_1", label: "싱크대", center: [1.2, 0.8], top: 0.9, radius: 0.5 }],
       floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices: () => [],
     });
@@ -1191,7 +1191,7 @@ describe("실행 추적 + 실제 World State(기준점을 맞춘 카메라)", ()
   });
 
   it("가까이 봐서 찾은 식탁 위 컵을 들어 옮겨 새 id가 붙으면, 지킴이 풀리는 그 프레임에 바로 새 컵으로 이어 집기가 비전으로 넘어간다", async () => {
-    const ws = new WorldState({
+    const ws = new WorldState({ evidenceStepMs: 1000,
       surfaces: () => [{ id: "table_1", label: "식탁", center: [2, 0], top: 0.75, radius: 0.6 }, { id: "sink_1", label: "싱크대", center: [1.2, 0.8], top: 0.9, radius: 0.5 }],
       floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices: () => [],
     });
@@ -1222,7 +1222,7 @@ describe("실행 추적 + 실제 World State(기준점을 맞춘 카메라)", ()
   });
 
   it("관절: 손목이 컵 상자 안이면 같은 프레임 VLM 답이 「식탁 위」여도 「컵을 들어 주세요」 단계가 비전으로 넘어간다. 손목이 멀면 넘기지 않는다", async () => {
-    const ws = new WorldState({
+    const ws = new WorldState({ evidenceStepMs: 1000,
       surfaces: () => [{ id: "table_1", label: "식탁", center: [2, 0], top: 0.75, radius: 0.6 }],
       floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices: () => [],
     });

@@ -1,7 +1,8 @@
 // World State: 엔진 프레임마다 YOLO 감지와 VLM 관찰을 물체별로 합치고, 시간에 따른 변화(등장·사라짐·시야 밖·상태·가전)를 낸다.
 // 종류·사실 값·면·신뢰도는 낱말 표(src/world/vocab.ts)를 따른다.
 // - 같은 물체: 트윈 위치 + 종류(종류의 identityM, 없으면 기본 0.25m 안). 맞추기 전(카메라 없음)에는 같은 종류의 물체에 차례로 붙인다.
-// - 등장·사라짐: Confirmer(사람 2장, 물건 3장). 사라짐은 그 자리가 시야 안인 프레임만 센다. 등장 확인 전 물체는 view()에 내지 않는다.
+// - 등장·사라짐: Confirmer(시간 기준. 등장은 처음 본 뒤 사람 2초·물건 4초 이어 보임, 사라짐은 마지막으로 본 뒤 시야 안에서 사람 4초·물건 6초 못 봄.
+//   2초 간격이면 사람 2장·물건 3장). 사라짐은 그 자리가 시야 안인 프레임만 센다. 등장 확인 전 물체는 view()에 내지 않고, 500ms 넘게 못 보면 잊는다.
 // - 가전 설비(TV·냉장고·전자레인지·오븐·토스터·싱크대): 보임·사라짐 없이 방(클로이드 눈의 방)마다 종류 하나. VLM 사실만 쌓고 같은 방 트윈 가전 id를 붙인다.
 // - VLM 사실: 면(facet)마다 하나. 그 종류에 없는 면·그 대상에 붙지 않는 값은 버린다. 촬영 시각이 더 오래된 답은 버리고, 같은 값이 연속 두 번이면 confirmed.
 //   지금만 맞는 면(vocab NOW_FACETS: 쓰는 중, 사람 들고 있음·하는 일·자리)은 그 대상을 본 프레임의 VLM 답에 없으면 지운다. 사람이 안 보이면 사람 사실을 지운다.
@@ -38,7 +39,7 @@ import type { DeviceState, VisionResult, VisionSeen } from "../hub/types.js";
 import type { EngineFrame } from "../observe/ring.js";
 import type { CameraView } from "../phone/session.js";
 import type { SceneObservation } from "../observe/scene.js";
-import { Confirmer } from "./confirm.js";
+import { Confirmer, EVIDENCE_GAP_MS, EVIDENCE_STEP_MS } from "./confirm.js";
 import { CHANGE_TEXT, OBJECT_NAME, fixtureName, objectName, onSurface } from "./labels.js";
 import { inView, placeBox, type PlaneSurface } from "./place.js";
 import { describePose, heldByAny, mainPerson } from "./pose.js";
@@ -162,6 +163,8 @@ export interface WorldStateOptions {
   see?: (id: string, twin: Record<string, unknown>, atMs: number) => VisionResult;
   /** 같은 물체로 볼 기본 거리(m, 기본 0.25). 종류에 identityM이 있으면 그 값. */
   identityM?: number;
+  /** 등장·사라짐·관절 사실 확인에서 한 장으로 치는 시간(ms, 기본 EVIDENCE_STEP_MS 2000). 장면을 다른 간격(1초)으로 적은 시험이 그 간격을 준다. */
+  evidenceStepMs?: number;
 }
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
@@ -178,7 +181,8 @@ export class WorldState {
   private readonly objects = new Map<string, Obj>();
   private readonly fixtures = new Map<string, Fix>();
   private readonly counters = new Map<string, number>();
-  private readonly confirmer = new Confirmer((key) => (key === PERSON ? 2 : 3));
+  private readonly confirmer: Confirmer;
+  private readonly stepMs: number;
   private readonly person: {
     visible: boolean; since_ms: number | null; last_seen_ms: number | null; count: number; room: { id: string; label: string } | null; position: Plan2 | null; positionAt: number | null;
     facts: Facts; answered: number | null;
@@ -209,6 +213,8 @@ export class WorldState {
 
   constructor(private readonly o: WorldStateOptions) {
     this.identityM = o.identityM ?? 0.25;
+    this.stepMs = o.evidenceStepMs ?? EVIDENCE_STEP_MS;
+    this.confirmer = new Confirmer((key) => (key === PERSON ? 2 : 3), this.stepMs);
   }
 
   /** 이 감지를 받는가: 낱말 표의 사람·물건·가전 설비 종류이고 그 종류의 최소 신뢰도 이상. 관찰 흐름은 받는 감지만 상자·YOLO 글·VLM 감지 목록에 싣는다. */
@@ -496,7 +502,7 @@ export class WorldState {
     this.liftHolds(fresh, seen);
     for (const obj of this.objects.values()) {
       if (!obj.confirmed) {
-        if (!seen.has(obj.id)) this.forget(obj.id);   // 세는 중에 끊기면 잊는다
+        if (!seen.has(obj.id) && at - obj.lastSeen >= EVIDENCE_GAP_MS) this.forget(obj.id);   // 세는 중에 500ms 넘게 못 보면 잊는다(한두 장 놓친 것은 둔다)
         continue;
       }
       if (obj.status === "gone") {
@@ -589,7 +595,8 @@ export class WorldState {
   }
 
   private setPoseFact(facts: Facts, facet: Facet, value: string, atMs: number): boolean {
-    const changed = this.setFact(facts, facet, value, atMs, facet === "holding");
+    // 관절은 프레임마다 오므로 장 수가 아니라 시간으로 확신한다: 같은 값이 한 장어치(2초) 이어져야 confirmed
+    const changed = this.setFact(facts, facet, value, atMs, facet === "holding", this.stepMs);
     const f = facts[facet];
     if (f && f.value === value && f.at_ms === atMs) this.byPose.add(f);
     return changed;
@@ -612,13 +619,15 @@ export class WorldState {
   }
 
   /** 같은 면의 사실보다 오래된 답은 버린다. 값이 새로 생기거나 바뀌면 true.
-   *  지금만 맞는 면(now)은 같은 값이어도 앞 답과 FACT_FRESH_MS 넘게 떨어지면 그 사이를 모르므로 처음 보인 시각을 새로 둔다. */
-  private setFact(facts: Facts, facet: Facet, value: string, atMs: number, now = false): boolean {
+   *  지금만 맞는 면(now)은 같은 값이어도 앞 답과 FACT_FRESH_MS 넘게 떨어지면 그 사이를 모르므로 처음 보인 시각을 새로 둔다.
+   *  spanMs: 같은 값이 다시 와도 처음 보인 뒤 이만큼 지나야 confirmed로 올린다(기본 0: VLM 답은 두 번째에 바로). */
+  private setFact(facts: Facts, facet: Facet, value: string, atMs: number, now = false, spanMs = 0): boolean {
     const prev = facts[facet];
     if (prev && atMs < prev.at_ms) return false;
     if (prev && prev.value === value) {
       const since = now && atMs - prev.at_ms > FACT_FRESH_MS ? atMs : prev.since_ms;
-      facts[facet] = { value, at_ms: atMs, since_ms: since, certainty: "confirmed", ...(prev.closer_ms !== undefined ? { closer_ms: prev.closer_ms } : {}) };
+      const certainty = prev.certainty === "confirmed" || atMs - prev.since_ms >= spanMs ? "confirmed" : prev.certainty;
+      facts[facet] = { value, at_ms: atMs, since_ms: since, certainty, ...(prev.closer_ms !== undefined ? { closer_ms: prev.closer_ms } : {}) };
       return false;
     }
     facts[facet] = { value, at_ms: atMs, since_ms: atMs, certainty: "inferred" };

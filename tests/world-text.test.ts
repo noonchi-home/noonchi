@@ -68,7 +68,7 @@ describe("PAM 관찰 텍스트", () => {
   });
 
   it("눈 줄은 눈이 있는 방의 id가 아니라 방 이름을 쓴다", () => {
-    const w = new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => ({ id: "living", label: "거실" }), devices: () => [] });
+    const w = new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => ({ id: "living", label: "거실" }), devices: () => [] });
     w.setEye({ position: [1, 2], height_m: 1.4, yaw_deg: 90, pitch_deg: -10 }, T(21, 0, 0));
     expect(w.view(T(21, 0, 1)).eye).toMatchObject({ room: "living", room_label: "거실" });
     expect(textFromWorld(w.view(T(21, 0, 1)), [], { nowMs: T(21, 0, 1), offsetMinutes: 540 }).split("\n").at(-1)).toBe("[눈] 클로이드 눈: 거실");
@@ -80,7 +80,7 @@ describe("PAM 관찰 텍스트", () => {
   });
 
   it("새 상황 줄: TV 보는 중·약 먹는 중(VLM 하는 일), 세탁 멈춤(가전 사건), [지속] 사람 자세·하는 일, [때] 요일·하루 때", () => {
-    const w = new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방·식당" }), devices: () => [{ id: "washer_d559f0ae", kind: "washer", label: "후면 발코니 세탁기" }] });
+    const w = new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방·식당" }), devices: () => [{ id: "washer_d559f0ae", kind: "washer", label: "후면 발코니 세탁기" }] });
     const person: Detection = det("person", 0.9, [10, 10, 100, 300], 0);
     const frame = (i: number): EngineFrame => ({ id: `e${i}`, capturedAtMs: T(21, 4, i * 2), latestAtMs: T(21, 4, i * 2), jpeg: Buffer.from(`${i}`), sha256: sha256(Buffer.from(`${i}`)), width: 480, height: 360, eye: null, view: null });
     const changes: WorldChange[] = [];
@@ -135,7 +135,7 @@ describe("PAM 관찰 텍스트", () => {
 
 /** 사람이 식탁 앞에서 컵을 두고 떠나는 5장(21:00:00~21:00:04, 맞추기 전, 클로이드 눈은 주방)과 VLM 답 두 개. 21:00:08의 관찰 텍스트. */
 function exampleScenario(): string {
-  const w = new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices: () => [] });
+  const w = new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices: () => [] });
   const person: Detection = det("person", 0.9, [10, 10, 100, 300], 0);
   const cup: Detection = det("cup", 0.9, [220, 160, 40, 20], 41);
   const frame = (i: number): EngineFrame => ({ id: `e${i}`, capturedAtMs: T(21, 0, i - 1), latestAtMs: T(21, 0, i - 1), jpeg: Buffer.from(`${i}`), sha256: sha256(Buffer.from(`${i}`)), width: 480, height: 360, eye: null, view: null });

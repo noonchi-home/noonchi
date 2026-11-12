@@ -33,7 +33,7 @@ describe("관찰 흐름", () => {
       config: { engineMs: 1000, vlmMaxInflight: 4, vlmTimeoutMs: 5000, detectQueueMax: 8, keepMs: 20_000 },
       detector: new ScriptedDetector(() => [mkDet("cup", 0.9, [220, 160, 40, 20], 41)]),
       vlm: new VlmClient({ baseUrl: `${fake.url}/v1`, model: "m", apiKey: "", extraBody: {} }),
-      world: new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }),
+      world: new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }),
       emit: (l) => logs.push(l), broadcastWorld: (w) => worlds.push(w),
     });
     for (let i = 1; i <= 3; i++) p.onEngine(jpeg(i), { kind: "engine", width: 480, height: 360, captured_at: i * 1000, time_err_ms: 0 }, null, null, i * 1000 + 5);
@@ -54,7 +54,7 @@ describe("관찰 흐름", () => {
       return { value: { scene: "k", observations: [], summary: "s" }, costUsd: 0.001, model: "w", attempts: 1 };
     } } as unknown as VlmClient;
     const p = new ObservationPipeline({ config: { engineMs: 2000, vlmMaxInflight: 1, vlmTimeoutMs: 5000, detectQueueMax: 8, keepMs: 20_000 }, detector: cupDet(), vlm,
-      world: new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }), emit: () => {}, broadcastWorld: () => {} });
+      world: new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }), emit: () => {}, broadcastWorld: () => {} });
     for (let i = 1; i <= 7; i++) {
       p.onEngine(jpeg(i), head(i * 2000), null, null, i * 2000 + 5);
       await p.idle();
@@ -74,7 +74,7 @@ describe("관찰 흐름", () => {
     let frames = 0;
     const vlm = { model: "w", json: async () => ({ value: { scene: "k", observations: [], summary: "s" }, costUsd: 0, model: "w", attempts: 1 }) } as unknown as VlmClient;
     const p = new ObservationPipeline({ config: { engineMs: 2000, vlmMaxInflight: 4, vlmTimeoutMs: 5000, detectQueueMax: 8, keepMs: 20_000 }, detector: cupDet(), vlm,
-      world: new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }), emit: () => {}, broadcastWorld: () => {}, onFrame: () => frames++ });
+      world: new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }), emit: () => {}, broadcastWorld: () => {}, onFrame: () => frames++ });
     p.onEngine(jpeg(1), head(40_000), null, null, 40_005);
     p.onEngine(jpeg(1), head(42_000), null, null, 42_005);
     p.onEngine(jpeg(2), head(10_000), null, null, 42_100);
@@ -92,7 +92,7 @@ describe("관찰 흐름", () => {
       return { value: { scene: "k", observations: [], summary: "s" }, costUsd: 0, model: "w", attempts: 1 };
     } } as unknown as VlmClient;
     const p = new ObservationPipeline({ config: { engineMs: 2000, vlmMaxInflight: 1, vlmTimeoutMs: 5000, detectQueueMax: 8, keepMs: 20_000, vlmWindowFrames: 1 }, detector: cupDet(), vlm,
-      world: new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }), emit: () => {}, broadcastWorld: () => {} });
+      world: new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }), emit: () => {}, broadcastWorld: () => {} });
     for (let i = 1; i <= 3; i++) {
       p.onEngine(jpeg(i), head(i * 2000), null, null, i * 2000 + 5);
       await p.idle();
@@ -105,7 +105,7 @@ describe("관찰 흐름", () => {
     const logs: BrainLog[] = [];
     const hang = { json: () => new Promise(() => {}) } as unknown as VlmClient;
     const p = new ObservationPipeline({ config: { engineMs: 1000, vlmMaxInflight: 1, vlmTimeoutMs: 60_000, detectQueueMax: 8, keepMs: 20_000 }, detector: null, vlm: hang,
-      world: new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }), emit: (l) => logs.push(l), broadcastWorld: () => {} });
+      world: new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }), emit: (l) => logs.push(l), broadcastWorld: () => {} });
     p.onEngine(jpeg(1), { kind: "engine", width: 1, height: 1 }, null, null, 1000);
     p.onEngine(jpeg(2), { kind: "engine", width: 1, height: 1 }, null, null, 2000);
     expect(logs.filter((l) => l.type === "observe" && l.vlm_missing === "cap")).toHaveLength(1);
@@ -119,7 +119,7 @@ describe("관찰 흐름", () => {
     const slow = { detect: () => new Promise<{ detections: []; ms: number }>((ok) => setTimeout(() => ok({ detections: [], ms: 30 }), 30)), close: async () => {} } as unknown as Detector;
     const p = new ObservationPipeline({ config: { engineMs: 200, vlmMaxInflight: 4, vlmTimeoutMs: 5000, detectQueueMax: 3, keepMs: 20_000 }, detector: slow,
       vlm: new VlmClient({ baseUrl: `${fake.url}/v1`, model: "m", apiKey: "", extraBody: {} }),
-      world: new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }), emit: (l) => logs.push(l), broadcastWorld: () => {} });
+      world: new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }), emit: (l) => logs.push(l), broadcastWorld: () => {} });
     for (let i = 1; i <= 10; i++) p.onEngine(jpeg(i), { kind: "engine", width: 1, height: 1, captured_at: i * 10, time_err_ms: 0 }, null, null, i * 10 + 1);
     await p.idle();
     const observed = logs.filter((l): l is Extract<BrainLog, { type: "observe" }> => l.type === "observe");
@@ -154,7 +154,7 @@ describe("관찰 흐름", () => {
     let n = 0;
     const p = new ObservationPipeline({ config: { engineMs: 1000, vlmMaxInflight: 4, vlmTimeoutMs: 5000, detectQueueMax: 8, keepMs: 20_000 },
       detector: new ScriptedDetector(() => frames[n++]!), vlm,
-      world: new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }), emit: (l) => logs.push(l), broadcastWorld: () => {} });
+      world: new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }), emit: (l) => logs.push(l), broadcastWorld: () => {} });
     for (let i = 1; i <= 2; i++) p.onEngine(jpeg(i), { kind: "engine", width: 360, height: 780, captured_at: i * 1000, time_err_ms: 0 }, null, null, i * 1000 + 5);
     await p.idle();
     const yolo = (id: string) => logs.find((l): l is Extract<BrainLog, { type: "observe" }> => l.type === "observe" && l.frame_id === id && l.boxes !== undefined)!;
@@ -177,7 +177,7 @@ describe("관찰 흐름", () => {
     let n = 0;
     const p = new ObservationPipeline({ config: { engineMs: 1000, vlmMaxInflight: 4, vlmTimeoutMs: 5000, detectQueueMax: 8, keepMs: 20_000 },
       detector: new ScriptedDetector(() => dets, () => (++n === 4 ? undefined : [standing({ 10: [235, 170, 0.9] })])), vlm,
-      world: new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }), emit: () => {}, broadcastWorld: (w) => worlds.push(w) });
+      world: new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }), emit: () => {}, broadcastWorld: (w) => worlds.push(w) });
     for (let i = 1; i <= 4; i++) p.onEngine(jpeg(i), { kind: "engine", width: 360, height: 780, captured_at: i * 1000, time_err_ms: 0 }, null, null, i * 1000 + 5);
     await p.idle();
     expect(worlds.at(-1)!.objects[0]!.facts.place).toMatchObject({ value: "in_hand", certainty: "confirmed" });
@@ -191,7 +191,7 @@ describe("관찰 흐름", () => {
     const logs: BrainLog[] = [];
     let fail = false;
     const det = { detect: async () => { if (fail) throw new Error("onnx"); return { detections: [mkDet("cup", 0.9, [220, 160, 40, 20], 41)], ms: 1 }; }, close: async () => {} } as unknown as Detector;
-    const world = new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] });
+    const world = new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] });
     const p = new ObservationPipeline({ config: { engineMs: 1000, vlmMaxInflight: 4, vlmTimeoutMs: 5000, detectQueueMax: 8, keepMs: 20_000 }, detector: det,
       vlm: new VlmClient({ baseUrl: `${fake.url}/v1`, model: "m", apiKey: "", extraBody: {} }), world, emit: (l) => logs.push(l), broadcastWorld: () => {} });
     for (let i = 1; i <= 3; i++) p.onEngine(jpeg(i), { kind: "engine", width: 1, height: 1, captured_at: i * 1000, time_err_ms: 0 }, null, null, i * 1000);
@@ -207,7 +207,7 @@ describe("관찰 흐름", () => {
 
   it("VLM 답이 그 프레임이 고리에서 빠진 뒤에 와도 물체별 사실을 넣는다", async () => {
     const { vlm, gates } = gatedVlm();
-    const world = new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] });
+    const world = new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] });
     const p = new ObservationPipeline({ config: { engineMs: 1000, vlmMaxInflight: 50, vlmTimeoutMs: 600_000, detectQueueMax: 50, keepMs: 20_000 }, detector: cupDet(), vlm, world,
       emit: () => {}, broadcastWorld: () => {} });
     for (let i = 1; i <= 3; i++) { p.onEngine(jpeg(i), head(i * 1000), null, null, i * 1000 + 5); await until(() => gates.length >= i); }
@@ -235,7 +235,7 @@ describe("관찰 흐름", () => {
     }, close: async () => {} } as unknown as Detector;
     const p = new ObservationPipeline({ config: { engineMs: 1000, vlmMaxInflight: 4, vlmTimeoutMs: 5000, detectQueueMax: 8, keepMs: 20_000 }, detector: det,
       vlm: new VlmClient({ baseUrl: `${fake.url}/v1`, model: "m", apiKey: "", extraBody: {} }),
-      world: new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }), emit: (l) => logs.push(l), broadcastWorld: () => {} });
+      world: new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }), emit: (l) => logs.push(l), broadcastWorld: () => {} });
     for (let i = 1; i <= 3; i++) p.onEngine(jpeg(i), { kind: "engine", width: 360, height: 640, captured_at: i * 1000, time_err_ms: 0 }, null, null, i * 1000 + 5);
     await p.idle();
     const observed = logs.filter((l): l is Extract<BrainLog, { type: "observe" }> => l.type === "observe");
@@ -259,7 +259,7 @@ describe("관찰 흐름", () => {
     const { vlm, gates } = gatedVlm();
     const logs: BrainLog[] = [];
     const p = new ObservationPipeline({ config: { engineMs: 1000, vlmMaxInflight: 50, vlmTimeoutMs: 600_000, detectQueueMax: 50, keepMs: 20_000 }, detector: cupDet(), vlm,
-      world: new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }), emit: (l) => logs.push(l), broadcastWorld: () => {} });
+      world: new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }), emit: (l) => logs.push(l), broadcastWorld: () => {} });
     p.onEngine(jpeg(1), head(40_000), null, null, 40_005);
     await until(() => gates.length >= 1);
     p.onEngine(jpeg(2), head(13_000), null, null, 40_100);
@@ -274,7 +274,7 @@ describe("관찰 흐름", () => {
     const logs: BrainLog[] = [];
     let detected = 0;
     const det = new ScriptedDetector(() => { detected++; return [mkDet("cup", 0.9, [10, 10, 10, 10], 41)]; });
-    const world = new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] });
+    const world = new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] });
     const p = new ObservationPipeline({ config: { engineMs: 1000, vlmMaxInflight: 50, vlmTimeoutMs: 600_000, detectQueueMax: 50, keepMs: 20_000 }, detector: det, vlm, world,
       emit: (l) => logs.push(l), broadcastWorld: () => {} });
     for (let i = 1; i <= 3; i++) { p.onEngine(jpeg(i), head(40_000 + i * 1000), null, null, 40_005 + i * 1000); await until(() => gates.length >= i); }

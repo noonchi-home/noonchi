@@ -20,7 +20,7 @@ const devices = () => [
   { id: "fridge_1", kind: "fridge", label: "주방 냉장고" },
   { id: "tv_dev", kind: "tv", label: "거실 TV", room: "living" },
 ];
-const ws = () => new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => ({ id: "living", label: "거실" }), devices });
+const ws = () => new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => ({ id: "living", label: "거실" }), devices });
 // 카메라: 트윈 (0, 1.5, 0)에서 45° 아래로 숙이고 +x를 본다. 90° 시야 투영(열 우선). tests/world-state.test.ts와 같다
 const P = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1.0002, -1, 0, 0, -0.020002, 0];
 const mul = (a: number[], b: number[]) => [a[3]! * b[0]! + a[0]! * b[3]! + a[1]! * b[2]! - a[2]! * b[1]!, a[3]! * b[1]! - a[0]! * b[2]! + a[1]! * b[3]! + a[2]! * b[0]!, a[3]! * b[2]! + a[0]! * b[1]! - a[1]! * b[0]! + a[2]! * b[3]!, a[3]! * b[3]! - a[0]! * b[0]! - a[1]! * b[1]! - a[2]! * b[2]!];
@@ -97,7 +97,7 @@ describe("World State + 낱말 표", () => {
   });
 
   it("가전 설비 방은 그 사진을 찍은 눈의 방이다(분석이 끝난 때의 눈이 아니다)", () => {
-    const w = new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: (p) => (p[0] < 5 ? { id: "living", label: "거실" } : { id: "kitchen", label: "주방" }), devices });
+    const w = new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: (p) => (p[0] < 5 ? { id: "living", label: "거실" } : { id: "kitchen", label: "주방" }), devices });
     const eye = { position: [1, 2] as [number, number], height_m: 1.2, yaw_deg: 0, pitch_deg: -10 };
     w.setEye({ ...eye, position: [8, 2] }, 0); // 폰은 이미 주방으로 옮겼다
     const r = w.applyDetections({ ...frame(1), eye }, [tv]);
@@ -139,7 +139,7 @@ describe("World State + 낱말 표", () => {
   });
 
   it("맞춘 뒤 발이 보이면 바닥 자리와 그 방, 가까운 가전. 상자 아래가 프레임 끝이면 발이 잘려 자리를 바꾸지 않는다", () => {
-    const w = new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => ({ id: "living", label: "거실" }), devices, locate: (id) => (id === "fridge_1" ? [1.5, 0.5] : null) });
+    const w = new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => ({ id: "living", label: "거실" }), devices, locate: (id) => (id === "fridge_1" ? [1.5, 0.5] : null) });
     const at = (i: number, box: Detection["box"]) => w.applyDetections({ ...frame(i), view: look }, [det("person", box)]);
     at(1, [200, 0, 80, 180]);
     const r = at(2, [200, 0, 80, 180]);
@@ -150,7 +150,7 @@ describe("World State + 낱말 표", () => {
     at(3, [200, 100, 80, 260]); // 아래가 프레임 끝(360)
     expect(w.view(3000).person.position_ms).toBe(2000);
     expect(w.view(9000).person.near).toEqual([]); // 발 자리가 오래됨
-    const outside = new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: (p) => (p[0] < 1 ? { id: "living", label: "거실" } : null), devices });
+    const outside = new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: (p) => (p[0] < 1 ? { id: "living", label: "거실" } : null), devices });
     outside.applyDetections({ ...frame(1), view: look }, [det("person", [200, 0, 80, 300])]); // 발 자리 x≈0.6
     outside.applyDetections({ ...frame(2), view: look }, [det("person", [200, 0, 80, 300])]);
     expect(outside.view(2000).person.room).toBe("living");
