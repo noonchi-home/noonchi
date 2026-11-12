@@ -5,7 +5,7 @@ import type { BrainLog, DecisionWorld } from "../contract/events.js";
 import type { WorldChange, WorldView } from "../contract/world.js";
 import { checkInput, fsmRuleOf, isoWithOffset, type FsmRuleAt, type PamMemory, type Prediction } from "../brain/decision.js";
 import { PamLinkError, type PamClient } from "../brain/pam.js";
-import { LINK_TEXT, TRIGGER_TEXT } from "./labels.js";
+import { LINK_TEXT, TRIGGER_TEXT, redactHeard, redactSaid, saidIn } from "./labels.js";
 import type { WorldState } from "./state.js";
 import { textFromWorld } from "./text.js";
 import type { Trigger, TriggerPause } from "./trigger.js";
@@ -17,7 +17,7 @@ export interface DecisionRecord {
   id: string;
   seq: number;
   atMs: number;
-  /** PAM에 보낸 관찰 텍스트. */
+  /** PAM에 보낸 관찰 텍스트. 들은 말 줄이 그대로 들어 있다: 그 순간 판단·계획에만 쓰고 기록하지 않는다(기록에는 판단 방송의 text_sent). */
   textSent: string;
   finalTime: string;
   status: "valid" | "failed";
@@ -58,6 +58,8 @@ export interface DeciderOptions {
   clock?: { now(): number };
   /** 참이면 부르지 않는다: 실행 추적이 행동 중 기다리기·기기 단계를 보는 동안(src/act/track.ts waiting). */
   hold?: () => boolean;
+  /** 참이면 기록에 남는 판단 줄에도 들은 말을 그대로 둔다(KEEP_HEARD_TEXT, 기본 꺼짐). 없거나 거짓이면 「들은 말 있음」만 남긴다. */
+  keepHeard?: () => boolean;
 }
 
 export class Decider {
@@ -112,7 +114,10 @@ export class Decider {
         (p) => {
           this.setLink(true);
           const action = p.task_index === -1 ? null : tasks[p.task_index] ?? null;
-          this.finish({ ...base, status: "valid", prediction: p, action, fsm: fsmRuleOf(mem.memory, mem.kind, action) });
+          // PAM의 생각 글은 계획 이유·판단 기록·대시보드에 남는다: 들은 말을 그대로 옮겼으면 뺀다
+          const said = this.o.keepHeard?.() ? [] : saidIn(textSent);
+          const prediction = said.length ? { ...p, observation: redactSaid(p.observation, said), reasoning: redactSaid(p.reasoning, said) } : p;
+          this.finish({ ...base, status: "valid", prediction, action, fsm: fsmRuleOf(mem.memory, mem.kind, action) });
         },
         (e: unknown) => {
           if (e instanceof PamLinkError) this.setLink(false);
@@ -135,7 +140,7 @@ export class Decider {
   private finish(r: DecisionRecord): void {
     if (this.stopped) return;
     this.o.emit({
-      type: "decision", at_ms: this.clock.now(), id: r.id, seq: r.seq, text_sent: r.textSent, status: r.status, prediction: r.prediction, action: r.action, fsm: r.fsm ?? null,
+      type: "decision", at_ms: this.clock.now(), id: r.id, seq: r.seq, text_sent: this.o.keepHeard?.() ? r.textSent : redactHeard(r.textSent), status: r.status, prediction: r.prediction, action: r.action, fsm: r.fsm ?? null,
       ...(r.error ? { error: r.error } : {}), memory_version: r.memoryVersion, world: r.world,
     });
     this.o.onDecision?.(r);

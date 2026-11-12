@@ -49,6 +49,7 @@ import { StartStore, describeStart, readStartPose, startPosePath, type StartPose
 import { wallSegments } from "../sync/walls.js";
 import { PlanHub } from "../plan/hub.js";
 import { placeShort } from "../plan/labels.js";
+import { HEARD_MARK } from "../world/labels.js";
 import { floorPlanFrom, roomNamedAt } from "../plan/route.js";
 import { surfacesFromLayout, type PlaneSurface } from "../world/place.js";
 import { Decider } from "../world/decide.js";
@@ -303,6 +304,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         memory: () => memoryForDay(history.db, history.db.dayOf(now())), emit, offsetMinutes: history.db.offsetMinutes, clock: ctx.brain?.clock,
         // 행동 중 기다리기·기기 단계 동안은 PAM을 부르지 않는다(실행 추적이 조건을 본다)
         hold: () => tracker?.waiting() ?? false,
+        keepHeard: () => keepHeard,
         // 판단 → 계획 → 실행 전 검사 → 실행 추적(src/act/)
         onDecision: (d) => tracker?.onDecision(d),
       });
@@ -389,6 +391,18 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       const observing = pipeline;
       unsubWorld = signals.subscribe((s) => observing.onDevice(s));
     }
+    // 실제 폰이 들은 말 가운데 지금 명령의 답이 아닌 말: 관찰 텍스트 한 줄로 판단 호출에 넘긴다(눈치 모드에서도).
+    // 그 말 자체는 기록하지 않는다: 기록·대시보드에는 내용 없는 표시(HEARD_MARK)만 남긴다. KEEP_HEARD_TEXT=1이면 그대로 남긴다(기본 꺼짐)
+    const keepHeard = /^(1|true|on)$/i.test(env.KEEP_HEARD_TEXT?.trim() ?? "");
+    const heardSpeech = (text: string) => {
+      if (!world || !decider) return;
+      const changes = world.heard(text, nowMs());
+      if (!changes.length) return;
+      decider.onChanges(changes);
+      const event: BrainLog = { type: "world_change", at_ms: nowMs(), kind: "heard", text: keepHeard ? changes[0]!.text : HEARD_MARK };
+      appRef.current?.broadcast({ type: "brain", event });
+      history.brain(event);
+    };
     if (!decideTimer) {
       // 관찰 흐름이 꺼져 판단 타이머가 없으면 말풍선 글만 본다(끝난 지 20초가 지나면 지켜보기로)
       decideTimer = setInterval(speak, 1000);
@@ -441,7 +455,10 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         onAnswer: (text) => {
           const open = tracker?.openCommand();
           const picked = tracker?.onHeard(text) ?? null;
-          if (!picked) return { handled: false };
+          if (!picked) {
+            heardSpeech(text);
+            return { handled: false };
+          }
           if (open) history.db.add("feedback", nowMs(), FEEDBACK_TEXT.answer(text, open.kind, open.text), { subject: open.planId, data: { choice: picked.id, via: "voice" } });
           return { handled: true, reply: picked.reply };
         },

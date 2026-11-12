@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { WorldState } from "../src/world/state.js";
+import { CHANGE_TEXT, redactHeard, redactSaid, saidIn } from "../src/world/labels.js";
 import { placeBox, placePoint } from "../src/world/place.js";
 import { sha256, type EngineFrame } from "../src/observe/ring.js";
 import type { Detection } from "../src/brain/detector.js";
@@ -22,6 +23,26 @@ const tilt = [Math.sin(-Math.PI / 8), 0, 0, Math.cos(-Math.PI / 8)];
 const camera = (yaw: number): CameraView => ({ origin: [0, 1.5, 0], orientation: mul([0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)], tilt) as [number, number, number, number], theta: 0, projection: P });
 const look = camera(-Math.PI / 2);
 const away = camera(Math.PI / 2);
+
+describe("들은 말(실제 폰이 들은 한 마디)", () => {
+  it("변화 줄 하나로 남긴다: 판단 계기이고 글은 「사람이 말함: 「…」」", () => {
+    expect(ws().heard("  라면 끓이는 법 알려 줘 ", 5000)).toEqual([{ kind: "heard", at_ms: 5000, subject: "person", text: "사람이 말함: 「라면 끓이는 법 알려 줘」", meaningful: true }]);
+    expect(CHANGE_TEXT.heard("뭐 해야 되지")).toBe("사람이 말함: 「뭐 해야 되지」");
+  });
+  it("200자에서 자르고 줄바꿈·「」를 뺀다. 빈 말은 남기지 않는다", () => {
+    const [long] = ws().heard("가".repeat(300), 0);
+    expect(long!.text).toBe(`사람이 말함: 「${"가".repeat(200)}」`);
+    expect(ws().heard("첫 줄\n둘째 「줄」\r\n끝", 0)[0]!.text).toBe("사람이 말함: 「첫 줄 둘째 줄 끝」");
+    expect(ws().heard("  \n ", 0)).toEqual([]);
+  });
+  it("기록에 남길 글에서는 들은 말 줄을 내용 없는 표시로 바꾸고, 그 말이 그대로 든 다른 글에서도 뺀다", () => {
+    const text = "12:00:00 사람 보임\n12:00:03 사람이 말함: 「라면 끓이는 법 알려 줘」\n[지속] 사람 보임";
+    expect(redactHeard(text)).toBe("12:00:00 사람 보임\n12:00:03 들은 말 있음\n[지속] 사람 보임");
+    expect(saidIn(text)).toEqual(["라면 끓이는 법 알려 줘"]);
+    expect(redactSaid("사용자가 라면 끓이는 법 알려 줘 라고 말함", saidIn(text))).toBe("사용자가 들은 말 라고 말함");
+    expect(redactHeard("12:00:00 사람 보임")).toBe("12:00:00 사람 보임");
+  });
+});
 
 describe("World State", () => {
   it("3장 연속 컵이면 등장, 관계표로 식기세척기를 붙인다(맞추기 전 위치는 모름)", () => {

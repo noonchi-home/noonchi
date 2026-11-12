@@ -39,9 +39,25 @@ export const CHANGE_TEXT = {
   deviceAttr: (label: string, attr: string, to: unknown) => `${label} ${attr} ${String(to)}`,
   remaining: (min: number) => `남은 시간 ${min}분`,
   vlm: (summary: string) => `VLM: ${summary}`,
+  /** 실제 폰이 들은 말 한 마디(그 순간 판단에만 쓴다. 기록에는 HEARD_MARK만 남긴다). */
+  heard: (said: string) => `사람이 말함: 「${said}」`,
   vlmMissing: { cap: "요청이 몰려 VLM 분석 없음", timeout: "시간 초과로 VLM 분석 없음", format: "형식 오류로 VLM 분석 없음", error: "호출 오류로 VLM 분석 없음", stale: "늦게 온 사진이라 VLM 분석 없음" },
   yoloMissing: { cap: "요청이 몰려 YOLO·VLM 분석 없음", error: "감지 오류로 YOLO 분석 없음", stale: "늦게 온 사진이라 YOLO·VLM 분석 없음" },
 };
+
+/** 들은 말은 이 길이에서 자른다. */
+export const HEARD_MAX = 200;
+/** 기록(기록 DB·대시보드·반성 입력)에 남기는 들은 말 표시: 내용은 남기지 않는다. KEEP_HEARD_TEXT=1이면 그대로 남긴다(기본 꺼짐). */
+export const HEARD_MARK = "들은 말 있음";
+/** 다른 글(PAM의 생각 글) 안에 그대로 옮겨진 들은 말을 바꾸는 글. */
+export const HEARD_WORD = "들은 말";
+const HEARD_LINE = /사람이 말함: 「([^」]*)」/g;
+/** 관찰 텍스트 안의 들은 말들. */
+export const saidIn = (text: string): string[] => [...text.matchAll(HEARD_LINE)].map((m) => m[1]!).filter(Boolean);
+/** 기록에 남길 관찰 텍스트: 들은 말 줄을 내용 없는 표시로 바꾼다. */
+export const redactHeard = (text: string): string => text.replace(HEARD_LINE, HEARD_MARK);
+/** 기록에 남길 다른 글: 들은 말이 그대로 들어 있으면 뺀다. */
+export const redactSaid = (text: string, said: readonly string[]): string => said.reduce((t, s) => t.split(s).join(HEARD_WORD), text);
 
 /** 물건 이름: 종류 글 + id(컵 cup_1). */
 export const objectName = (cls: string, id: string) => `${OBJECT_NAME[cls] ?? cls} ${id}`;

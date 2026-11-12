@@ -136,7 +136,7 @@ export type YoloMissing = "cap" | "error" | "stale";
 
 export type WorldChangeKind =
   | "appeared" | "gone" | "out_of_view" | "back_in_view" | "state" | "person_appeared" | "person_gone" | "person_state" | "person_room"
-  | "fixture" | "device" | "vlm" | "vlm_missing" | "yolo_missing";
+  | "fixture" | "device" | "vlm" | "vlm_missing" | "yolo_missing" | "heard";
 
 /** World State 변화 하나. meaningful이면 PAM 판단 계기가 된다(등장·사라짐, 물건·가전 설비 상태, 사람 방, 가전 사건). */
 export interface WorldChange { kind: WorldChangeKind; at_ms: number; subject: string; text: string; meaningful: boolean }

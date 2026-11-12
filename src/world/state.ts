@@ -40,7 +40,7 @@ import type { EngineFrame } from "../observe/ring.js";
 import type { CameraView } from "../phone/session.js";
 import type { SceneObservation } from "../observe/scene.js";
 import { Confirmer, EVIDENCE_GAP_MS, EVIDENCE_STEP_MS } from "./confirm.js";
-import { CHANGE_TEXT, OBJECT_NAME, fixtureName, objectName, onSurface } from "./labels.js";
+import { CHANGE_TEXT, HEARD_MAX, OBJECT_NAME, fixtureName, objectName, onSurface } from "./labels.js";
 import { inView, placeBox, placePoint, type PlaneSurface } from "./place.js";
 import { describePose, heldByAny, mainPerson } from "./pose.js";
 import { RemainingTracker, becameKey, deviceStateKeys, deviceStatus, deviceText, relatedDeviceIds } from "./relations.js";
@@ -909,6 +909,13 @@ export class WorldState {
     if (m.yolo) return [{ kind: "yolo_missing", at_ms: capturedAtMs, subject: frameId, meaningful: false, text: CHANGE_TEXT.yoloMissing[m.yolo] }];
     if (m.vlm) return [{ kind: "vlm_missing", at_ms: capturedAtMs, subject: frameId, meaningful: false, text: CHANGE_TEXT.vlmMissing[m.vlm] }];
     return [];
+  }
+
+  /** 실제 폰이 들은 말 한 마디를 변화 줄로 남긴다(판단 계기). HEARD_MAX자에서 자르고 줄바꿈·「」를 뺀다. 빈 말은 남기지 않는다.
+   *  World State에는 쌓지 않는다: 판단 호출(src/world/decide.ts)이 최근 변화 줄로 60초 동안만 관찰 텍스트에 넣는다. */
+  heard(text: string, atMs: number): WorldChange[] {
+    const said = text.replace(/[「」]/g, "").replace(/\s+/g, " ").trim().slice(0, HEARD_MAX);
+    return said ? [{ kind: "heard", at_ms: atMs, subject: "person", text: CHANGE_TEXT.heard(said), meaningful: true }] : [];
   }
 
   /** 가전 상태. 처음 받은 상태는 상태 이름 변화 하나, 그 뒤로는 바뀐 속성마다 이력과 사건 줄(아는 상태가 아니면 속성 줄, 판단 계기 아님).
