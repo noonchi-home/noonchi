@@ -125,10 +125,12 @@ export type BrainLog =
 
 // 관찰 모드(src/agent/observer.ts)
 
-/** 관찰 모드가 고르는 도구: look_closer 마지막 사진을 잘라 다시 보기, ask_person 사람에게 가까이 비춰 달라고 부탁, wait 기다리기. */
-export type LookTool = "look_closer" | "ask_person" | "wait";
-/** 관찰 모드를 부른 까닭: stalled 집기·놓기 단계가 안 끝남(A), unknown_fact 판단 전 볼 면을 모름(B). */
-export type LookTrigger = "stalled" | "unknown_fact";
+/** 관찰 모드가 고르는 도구: look_closer 마지막 사진을 잘라 다시 보기, ask_person 사람에게 가까이 비춰 달라고 부탁, wait 기다리기,
+ *  tell_person 지금 할 일을 한 줄로 다시 알리기(코치 계획), pass_on 들은 말을 말 요청 에이전트로 넘기기(코치 계획 중 들은 말). */
+export type LookTool = "look_closer" | "ask_person" | "wait" | "tell_person" | "pass_on";
+/** 관찰 모드를 부른 까닭: stalled 집기·놓기 단계가 안 끝남(A), unknown_fact 판단 전 볼 면을 모름(B),
+ *  off_track 코치 계획 중 다른 행동을 봄, heard 코치 계획 중 명령의 답이 아닌 말을 들음. */
+export type LookTrigger = "stalled" | "unknown_fact" | "off_track" | "heard";
 
 // 가까이 보기(src/observe/pipeline.ts closer)
 

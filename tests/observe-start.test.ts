@@ -94,7 +94,7 @@ describe("startServer(BRAIN=1) + 관찰 흐름", () => {
       const status = (await (await fetchRetry(`${srv.url}/api/brain`)).json()) as Msg;
       expect(status).toMatchObject({ ok: true, frames: 3, detected: 3, time_source: "phone", closer: { looks: 0, failed: 0, costUsd: 0 } });
       // 관찰 모드(보기 담당): 카메라를 맞추기 전 사진이라 판단 전 보기(B)를 부르지 않았다
-      expect(status.look).toEqual({ calls: 0, costUsd: 0, looks: 0, asks: 0, waits: 0 });
+      expect(status.look).toEqual({ calls: 0, costUsd: 0, looks: 0, asks: 0, waits: 0, tells: 0 });
       expect(((await (await fetchRetry(`${srv.url}/api/world`)).json()) as Msg).world.objects).toHaveLength(1);
       expect(fake.requests.filter((r) => r.path.endsWith("/chat/completions")).every((r) => r.body.model === "fake-vlm")).toBe(true);
       const late = await openWebSocket(`${srv.url.replace(/^http/, "ws")}/events`, { setup: (ws) => { dashBox = inbox(ws); } });

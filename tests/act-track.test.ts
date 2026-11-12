@@ -6,14 +6,14 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { ExecutionTracker, TRACK_DEFAULTS, type Stall, type TrackerOptions } from "../src/act/track.js";
+import { ExecutionTracker, TRACK_DEFAULTS, type Stall, type Stray, type TrackerOptions } from "../src/act/track.js";
 import { ApprovalStore, type ApprovalAnswer } from "../src/agent/approval.js";
 import type { AgentStep } from "../src/agent/planTools.js";
 import { checkDecision, type CheckResult } from "../src/act/check.js";
 import { TASKS, targetOf } from "../src/act/tasks.js";
 import type { BrainLog } from "../src/contract/events.js";
 import type { PlannedCommand, PlannedCommandMessage } from "../src/contract/phone.js";
-import type { WorldObject, WorldView } from "../src/contract/world.js";
+import type { WorldChange, WorldObject, WorldView } from "../src/contract/world.js";
 import { PlanHub } from "../src/plan/hub.js";
 import { APPROVAL_TEXT, CAUTION_TEXT, CHECK_TEXT, EXEC_TEXT, STEP_COMMAND, STEP_LABEL } from "../src/plan/labels.js";
 import type { DecisionRecord } from "../src/world/decide.js";
@@ -724,6 +724,174 @@ describe("실행 추적: 코치 계획(손으로 켜는 위험 가전)", () => {
     await s.decide(decision);
     expect(s.t.current()).toMatchObject({ state: "running" });
     expect(s.t.coaching()).toBe(false);
+  });
+});
+
+describe("실행 추적: 코치 계획의 다른 행동 알림(strayed)과 다시 알리기(tell)", () => {
+  const P = "plan:pam-1";
+  const room = (at: number, label = "거실"): WorldChange => ({ kind: "person_room", at_ms: at, subject: "person", text: `사람 ${label}에 있음`, meaningful: true });
+  function straySetup(over: Parameters<typeof setup>[0] = {}) {
+    const strays: Stray[] = [];
+    let accept = true;
+    const s = coachSetup({ strayed: (x) => { strays.push(x); return accept; }, ...over });
+    return { ...s, strays, accept: (v: boolean) => { accept = v; } };
+  }
+  /** 물 받기(4번, 끝 조건 없음)까지 「완료」로 넘긴다. */
+  async function toFill(s: ReturnType<typeof setup>) {
+    await s.decide(ramenDecision());
+    for (let n = 1; n <= 3; n++) s.t.onAnswer(P, `${P}:${n}`, "done");
+    expect(s.last()).toMatchObject({ step: `${P}:4`, text: "냄비에 물을 받아 주세요" });
+  }
+
+  it("물 받기 단계에 사람 방이 거실로 바뀌면 strayed를 한 번 부르고 6초 안에는 다시 부르지 않으며 단계마다 2번까지다. 알림에는 계획 단계·지금 단계·방금 본 변화가 있다", async () => {
+    expect(TRACK_DEFAULTS).toMatchObject({ strayGapMs: 6000, strayMax: 2, tellHoldMs: 8000 });
+    const s = straySetup();
+    await toFill(s);
+    s.clock.t += 1_000;
+    s.t.onWorld([room(s.clock.t)]);
+    expect(s.strays).toHaveLength(1);
+    expect(s.strays[0]).toMatchObject({ planId: P, stepId: `${P}:4`, label: "물 받기", command: "냄비에 물을 받아 주세요", at: 4, changes: ["사람 거실에 있음"] });
+    expect(s.strays[0]!.steps.slice(0, 5)).toEqual([
+      { label: "수납장으로 가기", status: "done" }, { label: "냄비 꺼내기", status: "done" }, { label: "싱크대로 가기", status: "done" }, { label: "물 받기", status: "active" }, { label: "인덕션으로 가기", status: "pending" },
+    ]);
+    expect(s.strays[0]!.signal.aborted).toBe(false);
+    s.clock.t += 5_999;
+    s.t.onWorld([room(s.clock.t, "주방")]);
+    expect(s.strays).toHaveLength(1);
+    s.clock.t += 1;
+    s.t.onWorld([room(s.clock.t)]);
+    expect(s.strays).toHaveLength(2);
+    expect(s.strays[1]!.changes).toEqual(["사람 거실에 있음", "사람 주방에 있음", "사람 거실에 있음"]);
+    s.clock.t += 10_000;
+    s.t.onWorld([room(s.clock.t)]);
+    expect(s.strays).toHaveLength(2);
+    // 다음 단계로 가면 앞 알림의 신호가 끊기고 다시 센다
+    s.t.onAnswer(P, `${P}:4`, "done");
+    expect(s.strays[0]!.signal.aborted).toBe(true);
+    s.t.onAnswer(P, `${P}:5`, "done");
+    s.clock.t += 1_000;
+    s.t.onWorld([room(s.clock.t)]);
+    expect(s.strays).toHaveLength(3);
+    expect(s.strays[2]).toMatchObject({ stepId: `${P}:6`, label: "냄비 올리기", at: 6 });
+  });
+
+  it("가전 상태·가전 설비 상태 변화도 계기다. 의미 없는 변화·들은 말·물건 변화에는 부르지 않는다. 받지 않은 알림(false)은 세지 않는다", async () => {
+    const s = straySetup();
+    await toFill(s);
+    s.clock.t += 1_000;
+    s.t.onWorld([{ kind: "vlm", at_ms: s.clock.t, subject: "e1", text: "VLM: 주방", meaningful: false }, { kind: "heard", at_ms: s.clock.t, subject: "person", text: "사람이 말함: 「음」", meaningful: true },
+      { kind: "appeared", at_ms: s.clock.t, subject: "cup_1", text: "컵 cup_1 보임", meaningful: true }]);
+    expect(s.strays).toEqual([]);
+    s.accept(false);
+    s.t.onWorld([{ kind: "device", at_ms: s.clock.t, subject: "induction_1", text: "인덕션 켜짐", meaningful: true }]);
+    expect(s.strays).toHaveLength(1);
+    expect(s.strays[0]!.changes).toEqual(["컵 cup_1 보임", "인덕션 켜짐"]);
+    s.accept(true);
+    s.clock.t += 100;
+    s.t.onWorld([{ kind: "fixture", at_ms: s.clock.t, subject: "tv_living", text: "거실 TV 화면 켜짐", meaningful: true }]);
+    expect(s.strays).toHaveLength(2);
+  });
+
+  it("지금 단계의 끝 조건을 참으로 만든 변화에는 부르지 않는다(다음 단계로 넘어간다). 켜기 전 질문 중에도 부르지 않는다", async () => {
+    let w = world([]);
+    const s = straySetup({ w: () => w });
+    await s.decide(ramenDecision());
+    s.t.onAnswer(P, `${P}:1`, "done");
+    expect(s.last()).toMatchObject({ step: `${P}:2`, text: "냄비를 꺼내 주세요" });
+    s.clock.t += 1_000;
+    w = world([], "holding_object", s.clock.t);
+    s.t.onWorld([{ kind: "person_state", at_ms: s.clock.t, subject: "person", text: "사람 물건을 들고 있음", meaningful: true }, room(s.clock.t, "주방")]);
+    expect(s.last()).toMatchObject({ step: `${P}:3` });
+    expect(s.strays).toEqual([]);
+    for (let n = 3; n <= 6; n++) s.t.onAnswer(P, `${P}:${n}`, "done");
+    expect(s.last()).toMatchObject({ step: `${P}:7:hand` });
+    s.clock.t += 10_000;
+    s.t.onWorld([room(s.clock.t)]);
+    expect(s.strays).toEqual([]);
+  });
+
+  it("폰이 지금 단계 자리를 떠나 다른 자리 가까이로 가면 부른다(그 자리마다 한 번). 이동 단계에는 부르지 않는다", async () => {
+    const s = straySetup();
+    await s.decide(ramenDecision());
+    // 1 수납장으로 가기(이동 단계): 식탁 옆을 지나가도 부르지 않는다
+    s.t.onEye([7, 2.6]);
+    s.t.tick();
+    expect(s.strays).toEqual([]);
+    for (let n = 1; n <= 3; n++) s.t.onAnswer(P, `${P}:${n}`, "done");
+    // 4 물 받기(싱크대 [5, 1]): 싱크대 앞이면 부르지 않는다
+    s.clock.t += 1_000;
+    s.t.onEye([5.2, 1.6]);
+    s.t.tick();
+    expect(s.strays).toEqual([]);
+    // 식탁([7, 3]) 가까이로 감
+    s.clock.t += 1_000;
+    s.t.onEye([6.8, 2.6]);
+    s.t.tick();
+    expect(s.strays).toHaveLength(1);
+    expect(s.strays[0]!.changes).toEqual(["폰이 식탁 가까이로 감"]);
+    s.clock.t += 7_000;
+    s.t.tick();
+    expect(s.strays).toHaveLength(1);
+  });
+
+  it("컵 치우기(코치 아님)에는 부르지 않는다", async () => {
+    const strays: Stray[] = [];
+    const s = setup({ strayed: (x) => { strays.push(x); return true; } });
+    await s.decide(decision);
+    s.t.onAnswer(P, `${P}:1`, "done");
+    s.clock.t += 1_000;
+    s.t.onWorld([room(s.clock.t)]);
+    s.t.onEye([5, 1]);
+    s.t.tick();
+    expect(strays).toEqual([]);
+  });
+
+  it("tell은 같은 계획·단계 id로 글만 바꿔 읽고 8초 뒤 원래 명령을 speak false로 다시 보낸다. 단계가 넘어가면 되돌리지 않는다", async () => {
+    const TELL = "먼저 냄비에 물을 받아 주세요";
+    const s = straySetup();
+    await toFill(s);
+    const before = s.last();
+    expect(s.t.tell(P, `${P}:3`, TELL)).toBe(false);
+    expect(s.t.tell("plan:pam-9", `${P}:4`, TELL)).toBe(false);
+    expect(s.t.tell(P, `${P}:4`, "지금 그거 하면 안 돼요")).toBe(false);
+    expect(s.t.toldAt()).toBeNull();
+    expect(s.t.tell(P, `${P}:4`, TELL)).toBe(true);
+    expect(s.last()).toEqual({ ...before, text: TELL, speak: true });
+    expect(s.t.toldAt()).not.toBeNull();
+    s.clock.t += 7_999;
+    s.t.tick();
+    expect(s.last()).toMatchObject({ text: TELL });
+    s.clock.t += 1;
+    s.t.tick();
+    expect(s.last()).toEqual({ ...before, speak: false });
+    expect(s.spoken()).toEqual(["수납장으로 가 주세요", "냄비를 꺼내 주세요", "싱크대로 가 주세요", "냄비에 물을 받아 주세요", TELL]);
+    // 단계가 넘어가면 되돌리지 않는다
+    expect(s.t.tell(P, `${P}:4`, TELL)).toBe(true);
+    s.t.onAnswer(P, `${P}:4`, "done");
+    const sent = s.phone.length;
+    s.clock.t += 9_000;
+    s.t.tick();
+    expect(s.phone.slice(sent).filter((m) => m.type === "command" && m.text === "냄비에 물을 받아 주세요")).toEqual([]);
+    expect(s.last()).toMatchObject({ step: `${P}:5`, text: "인덕션으로 가 주세요" });
+    // 켜기 전 질문 중에는 알리지 않는다
+    s.t.onAnswer(P, `${P}:5`, "done");
+    s.t.onAnswer(P, `${P}:6`, "done");
+    expect(s.t.tell(P, `${P}:7`, "인덕션을 켜 주세요")).toBe(false);
+    expect(s.t.tell(P, `${P}:7:hand`, "인덕션을 켜 주세요")).toBe(false);
+  });
+
+  it("코치 계획의 지금 사람 단계를 알려 준다(들은 말 돕기). 질문 중·코치가 아닌 계획·끝난 계획이면 null", async () => {
+    const s = straySetup();
+    expect(s.t.coachStep()).toBeNull();
+    await toFill(s);
+    expect(s.t.coachStep()).toMatchObject({ planId: P, stepId: `${P}:4`, label: "물 받기", command: "냄비에 물을 받아 주세요", at: 4 });
+    for (let n = 4; n <= 6; n++) s.t.onAnswer(P, `${P}:${n}`, "done");
+    expect(s.t.coachStep()).toBeNull();
+    s.t.onHeard("그만");
+    expect(s.t.coachStep()).toBeNull();
+    const cupRun = setup();
+    await cupRun.decide(decision);
+    expect(cupRun.t.coachStep()).toBeNull();
   });
 });
 

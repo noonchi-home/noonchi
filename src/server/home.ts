@@ -344,6 +344,8 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         handDevices: () => deviceViews(signals),
         // 멈춘 집기·놓기 단계는 보기 담당(관찰 모드 A)에 알린다
         stalled: (s) => looker?.stalled(s) ?? false,
+        // 코치 계획 중 다른 행동을 본 것 같으면 보기 담당(관찰 모드 계기 off_track)에 알린다
+        strayed: (s) => looker?.strayed(s) ?? false,
       });
       const tracking = tracker;
       pipeline = await createPipeline({
@@ -358,7 +360,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
           speak();
         },
         onChanges: (c) => {
-          tracking.onWorld();
+          tracking.onWorld(c);
           decide.onChanges(c);
         },
         // 주기 판단(기본 5초)은 엔진 프레임이 오는 동안만 부른다
@@ -374,7 +376,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       // 보기 담당(src/act/look.ts): 멈춘 단계(A)와 판단 전 보기(B)에 관찰 모드를 한 번에 하나 부르고 고른 도구를 실행한다
       looker = new Looker({
         observer, closer: (spot, signal) => observed.closer(spot, signal), frame: () => observed.latest(), world: () => world.view(now()),
-        askPerson: (planId, stepId, text) => tracking.askCloser(planId, stepId, text), emit, targets: lookTargets, placed: () => tracking.placed(), clock: ctx.brain?.clock,
+        askPerson: (planId, stepId, text) => tracking.askCloser(planId, stepId, text), tell: (planId, stepId, text) => tracking.tell(planId, stepId, text), emit, targets: lookTargets, placed: () => tracking.placed(), clock: ctx.brain?.clock,
         onLook: (spot) => {
           lookSay = { place: spot.label, atMs: Date.now() };
           speak();
@@ -439,6 +441,10 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         },
         // 실제 폰은 늘 듣는다: 주변 말로 가전 승인을 확정하지 않게 말 전체가 승인·거절 답일 때만 받는다(src/act/prompts.ts APPROVE)
         onSay: async (text) => {
+          // 코치 계획의 사람 단계 중 들은 말(명령의 답이 아님): 관찰 모드가 지금 할 일을 다시 알리거나(told) 답하지 않으면(waited) 말 요청 에이전트를 부르지 않는다.
+          // 이 일과 상관없는 말(passed)이거나 관찰 모드가 바쁘면 지금처럼 말 요청 에이전트로 넘긴다
+          const at = tracker?.coachStep() ?? null;
+          if (at && looker && (await looker.heard(at.planId, at.stepId, text, at)) !== "passed") return { reply: "", pending: [] };
           const r = await agent.chat(PHONE_SESSION, text, { heard: true });
           return { reply: r.reply, pending: r.pendingConfirmations.map((p) => ({ token: p.token, deviceLabel: p.deviceLabel, reason: p.reason, choices: p.choices })) };
         },

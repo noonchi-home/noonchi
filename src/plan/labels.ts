@@ -17,6 +17,8 @@ export const STEP_COMMAND = {
 export const VISION_TEXT = {
   table: "식탁", sink: "싱크대", cup: "컵", unseen: "안 보임",
   distance: (place: string, m: number | null) => (m === null ? `${place}까지 거리 모름` : `${place}까지 ${m.toFixed(1)}m`),
+  /** 관찰 모드에 주는 변화 줄: 폰이 지금 단계 자리를 떠나 다른 자리 가까이로 감. */
+  movedNear: (place: string) => `폰이 ${place} 가까이로 감`,
 };
 
 export const GOAL = { clearCup: "컵 치우기", askUser: "사용자에게 물어보기" };
@@ -110,6 +112,9 @@ export const LOOK_TEXT = {
   vlmStale: "새 사진이 끊겨 VLM 답은 넣지 않음",
   asked: (text: string) => `가까이 비춰 달라고 부탁함 · ${text}`,
   notSent: "단계가 바뀌어 부탁하지 않음",
+  /** 코치 계획: 지금 할 일을 다시 알림, 들은 말을 말 요청 에이전트로 넘김. */
+  told: (text: string) => `다시 알림 · ${text}`,
+  passed: "말 요청으로 넘김",
   waited: (place: string | null) => (place ? `${place} 쪽은 기다림` : "기다림"),
   capped: "한 시간 관찰 횟수를 다 써서 부르지 않음",
   failed: (why: string) => `관찰 모드 호출 실패: ${why}`,

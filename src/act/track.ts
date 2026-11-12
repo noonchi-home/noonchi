@@ -8,6 +8,9 @@
 // 켜라는 명령을 보낸 가전은 끄는 단계가 끝날 때까지 「켠 것」(hot)으로 본다. 켠 채 계획이 닫히면(그만·시간 초과·실패·새 계획) 닫은 뒤 실제 폰에
 // 끄라는 안내(단계 id :off, 「완료」 하나)를 한 번 보낸다. 「완료」·말 답, 그 가전 꺼짐, offHoldMs 중 먼저 오는 것으로 지운다.
 // 코치 행동(TaskSpec.coach) 계획이 열려 있거나 만드는 중이면 coaching()이 참이다: 그동안 판단 호출(PAM)을 쉰다.
+// 다른 행동 알림(코치 계획, 관찰 모드 계기 off_track): 사람 단계가 진행 중인데 의미 있는 변화(사람 방·가전 상태·가전 설비 상태)가 왔고 그 단계가 넘어가지 않았거나,
+// 이동이 아닌 단계에서 폰이 그 단계 자리를 떠나 다른 평면도 자리 가까이로 갔으면 strayed를 부른다(결정론). 단계마다 strayMax번(받은 것만), strayGapMs에 한 번.
+// 무엇이 틀렸는지와 할 말은 관찰 모드(LLM)가 정한다. tell: 지금 명령 글을 그 한 줄로 바꿔 읽고 tellHoldMs 뒤 원래 명령으로 되돌린다(읽지 않음).
 // 계획은 어떤 것이든 같은 방법으로 돌린다(src/agent/planTools.ts AgentStep):
 // - 사람 단계(go·pick·place·do): 실제 폰(에이전트의 손, src/contract/phone.ts)에 사람에게 하는 명령 하나와 「완료」를 보내고(소리로도 읽음),
 //   끝나는 조건(World State 낱말 조건, ConditionWatch)이 참이거나 「완료」면 다음 단계로. repeatMs마다 명령을 다시 읽는다.
@@ -37,8 +40,8 @@
 // 계획 전·실행 전 검사·계획 입력·제출 검사와 대상 고르기가 이미 치운 것으로 본다. 다시 집거나(손에 있음 확인됨) 그 영역 밖(다른 면, 싱크볼이면 싱크볼 밖)에서 보이면 지운다.
 import type { BrainLog, ExecState } from "../contract/events.js";
 import type { PhoneStepKind, PlannedCommand, PlannedCommandMessage } from "../contract/phone.js";
-import type { PlanView, XZ } from "../contract/plan.js";
-import type { Facet, WorldEye, WorldObject, WorldView } from "../contract/world.js";
+import type { PlanView, StepStatus, XZ } from "../contract/plan.js";
+import type { Facet, WorldChange, WorldChangeKind, WorldEye, WorldObject, WorldView } from "../contract/world.js";
 import type { LookSpot } from "../observe/crop.js";
 import type { FloorPlan } from "../plan/floor.js";
 import type { PlanHub } from "../plan/hub.js";
@@ -46,7 +49,7 @@ import { AGAIN_TEXT, APPROVAL_TEXT, CAUTION_TEXT, EXEC_TEXT, VISION_TEXT, placeS
 import { roomAt } from "../plan/route.js";
 import { OBJECT_NAME, PLACE_UNKNOWN, STATE_TEXT, onSurface } from "../world/labels.js";
 import { ConditionWatch, type Condition, type ConditionContext } from "../world/conditions.js";
-import { NEAR_M } from "../world/vocab.js";
+import { NEAR_M, PHONE_NEAR_M } from "../world/vocab.js";
 import type { DecisionRecord } from "../world/decide.js";
 import { approvalNeed, taskKey, type ApprovalAnswer, type ApprovalBook } from "../agent/approval.js";
 import { HUMAN_KINDS, objectNames, riskyHand, type AgentPlan, type AgentStep, type PlanResult } from "../agent/planTools.js";
@@ -98,6 +101,14 @@ export interface TrackerOptions {
   planGapMs?: number;
   /** 계획 없는 행동(그대로 두기)의 기록을 다시 남기기 전 기다리는 시간(ms). */
   leftGapMs?: number;
+  /** 코치 계획 중 다른 행동을 본 것 같을 때(관찰 모드 계기 off_track, src/act/look.ts). 받았으면 true(그때만 센다). 없으면 부르지 않는다. */
+  strayed?: (s: Stray) => boolean;
+  /** 다른 행동 알림을 이보다 자주(ms) 부르지 않는다. */
+  strayGapMs?: number;
+  /** 단계마다 다른 행동 알림 상한(받은 것만). */
+  strayMax?: number;
+  /** tell로 바꾼 명령 글을 이만큼(ms) 뒤 원래 명령으로 되돌린다. */
+  tellHoldMs?: number;
   /** 이 집 가전(id·종류·이름): 손으로 켜는 단계가 위험 목록인지와 묻는 글의 이름. 없으면 손으로 켜는 단계는 모두 묻는다. */
   handDevices?: () => readonly { id: string; kind: string; label: string }[];
   /** 켠 채 닫힌 계획의 끄기 안내를 이만큼(ms) 뒤 지운다. */
@@ -111,7 +122,21 @@ export interface TrackerOptions {
 }
 
 /** 기본값: 다시 읽기 30초, 비전 상태 0.5초에 한 번, 검사 3초, 승인 답 2분, 같은 행동 다시 계획 15초, 그대로 두기 기록 60초에 한 번, 멈춘 단계 8초·단계마다 3번. 단계 시간 한도는 계획 단계마다 있다. */
-export const TRACK_DEFAULTS = { repeatMs: 30_000, visionMs: 500, recheckMs: 3000, askMs: 120_000, planGapMs: 15_000, leftGapMs: 60_000, stallMs: 8000, stallMax: 3, offHoldMs: 120_000 } as const;
+export const TRACK_DEFAULTS = { repeatMs: 30_000, visionMs: 500, recheckMs: 3000, askMs: 120_000, planGapMs: 15_000, leftGapMs: 60_000, stallMs: 8000, stallMax: 3, offHoldMs: 120_000, strayGapMs: 6000, strayMax: 2, tellHoldMs: 8000 } as const;
+
+/** 코치 계획 중 다른 행동을 본 것 같다: 지금 단계(이름·명령·번호 1부터)와 계획 단계 목록, 방금 본 변화 줄(최근 30초, 오래된 것부터, 들은 말은 넣지 않는다).
+ *  signal은 이 단계가 끝나면 끊긴다. */
+export interface Stray {
+  planId: string; stepId: string; label: string; command: string; steps: { label: string; status: StepStatus }[]; at: number;
+  changes: string[]; signal: AbortSignal;
+}
+
+/** 다른 행동의 계기가 되는 변화: 사람 방, 가전 상태, 가전 설비 상태. */
+const STRAY_KINDS: ReadonlySet<WorldChangeKind> = new Set<WorldChangeKind>(["person_room", "device", "fixture"]);
+/** 방금 본 변화 줄에 넣지 않는 것: 프레임마다 오는 줄과 들은 말. */
+const QUIET_KINDS: ReadonlySet<WorldChangeKind> = new Set<WorldChangeKind>(["vlm", "vlm_missing", "yolo_missing", "heard"]);
+/** 방금 본 변화 줄을 두는 시간(ms). */
+const STRAY_KEEP_MS = 30_000;
 
 /** 멈춘 집기·놓기 단계. command: 실제 폰에 띄운 지금 명령 글. stuckMs: 단계 시작 뒤 지난 시간. looks: 이 단계에서 센 부름 수(시도).
  *  spots: 계획 물건(지금 따라가는 World State 물건, 자리를 알 때)과 단계 대상 자리(평면도, 물건과 다를 때).
@@ -145,6 +170,12 @@ interface Run {
   gapAt: number;
   /** 손으로 켜라는 명령을 보낸 위험 가전 id(끄는 단계가 끝나면 뺀다). */
   hot: Set<string>;
+  /** 이 단계에서 받은 다른 행동 알림 수와 마지막으로 부른 시각, 폰이 가까이 간 다른 자리(그 자리마다 한 번). */
+  strays: number; strayAt: number; strayNear: string | null;
+  /** tell로 바꿔 띄운 글: 되돌릴 원래 명령 글과 되돌릴 시각. */
+  told: { text: string; until: number } | null;
+  /** 이 단계에서 도움을 받았다(다시 읽기·다시 알리기·가까이 비춰 달라는 부탁·조용한 단계 힌트·시간 초과 질문): 혼자 해낸 단계로 세지 않는다. */
+  helped: boolean;
 }
 
 /** at: 같은 행동 다시 계획 간격(planGapMs)을 세려고 적은 시각. */
@@ -172,7 +203,11 @@ export class ExecutionTracker {
   private readonly clock: { now(): number };
   /** 켠 채 닫힌 계획의 끄기 안내(실제 폰에 떠 있는 동안). */
   private reminder: { sent: PlannedCommand; at: number; devices: string[] } | null = null;
-  private readonly cfg: { repeatMs: number; visionMs: number; recheckMs: number; askMs: number; planGapMs: number; leftGapMs: number; stallMs: number; stallMax: number; offHoldMs: number };
+  /** 방금 본 변화 줄(다른 행동 알림에 넣는다). */
+  private seen: { at: number; text: string }[] = [];
+  /** 마지막으로 tell을 보낸 시각(Date.now 시계, 대시보드 말풍선 카드). */
+  private toldWallAt: number | null = null;
+  private readonly cfg: { repeatMs: number; visionMs: number; recheckMs: number; askMs: number; planGapMs: number; leftGapMs: number; stallMs: number; stallMax: number; offHoldMs: number; strayGapMs: number; strayMax: number; tellHoldMs: number };
 
   constructor(private readonly o: TrackerOptions) {
     this.clock = o.clock ?? { now: () => Date.now() };
@@ -180,6 +215,7 @@ export class ExecutionTracker {
       repeatMs: o.repeatMs ?? TRACK_DEFAULTS.repeatMs, visionMs: o.visionMs ?? TRACK_DEFAULTS.visionMs, recheckMs: o.recheckMs ?? TRACK_DEFAULTS.recheckMs,
       askMs: o.askMs ?? TRACK_DEFAULTS.askMs, planGapMs: o.planGapMs ?? TRACK_DEFAULTS.planGapMs, leftGapMs: o.leftGapMs ?? TRACK_DEFAULTS.leftGapMs,
       stallMs: o.stallMs ?? TRACK_DEFAULTS.stallMs, stallMax: o.stallMax ?? TRACK_DEFAULTS.stallMax, offHoldMs: o.offHoldMs ?? TRACK_DEFAULTS.offHoldMs,
+      strayGapMs: o.strayGapMs ?? TRACK_DEFAULTS.strayGapMs, strayMax: o.strayMax ?? TRACK_DEFAULTS.strayMax, tellHoldMs: o.tellHoldMs ?? TRACK_DEFAULTS.tellHoldMs,
     };
   }
 
@@ -316,12 +352,84 @@ export class ExecutionTracker {
     return picked;
   }
 
-  /** World State가 바뀌었다: 치운 물건을 다시 보고, 지금 단계가 됐는지 바로 본다. */
-  onWorld(): void {
+  /** World State가 바뀌었다: 치운 물건을 다시 보고, 지금 단계가 됐는지 바로 본다. changes(그 변화 줄)를 주면 코치 계획의 다른 행동 계기도 본다:
+   *  사람 방·가전·가전 설비 변화가 왔는데 지금 단계가 넘어가지 않았으면 strayed를 부른다. */
+  onWorld(changes: readonly WorldChange[] = []): void {
     this.placed();
     this.reminderTick();
+    const now = this.clock.now();
+    this.seen = [...this.seen, ...changes.filter((c) => !QUIET_KINDS.has(c.kind)).map((c) => ({ at: now, text: c.text }))].filter((c) => now - c.at <= STRAY_KEEP_MS);
     const r = this.run;
-    if (!this.stopped && r?.state === "running") this.look(r);
+    if (this.stopped || r?.state !== "running") return;
+    const gen = r.gen;
+    if (this.look(r) || r.gen !== gen) return;
+    if (changes.some((c) => c.meaningful && STRAY_KINDS.has(c.kind))) this.stray(r);
+  }
+
+  /** 코치 계획의 지금 사람 단계(들은 말 돕기, src/act/look.ts heard). 질문 중·사람 단계가 아님·코치가 아닌 계획·닫힌 계획이면 null. */
+  coachStep(): Omit<Stray, "changes"> | null {
+    const r = this.run;
+    const step = r ? this.stepOf(r) : undefined;
+    if (this.stopped || !r || r.state !== "running" || r.asking || !r.sent || !r.stepEnd || !step || !HUMAN_KINDS.includes(step.kind)) return null;
+    if (taskOf(r.plan.task)?.coach !== true) return null;
+    return {
+      planId: r.plan.view.id, stepId: step.id, label: step.label, command: step.command ?? r.sent.text, at: r.at + 1,
+      steps: (this.o.plans.current()?.id === r.plan.view.id ? this.o.plans.current()!.steps : r.plan.view.steps).map((s) => ({ label: s.label, status: s.status })),
+      signal: r.stepEnd.signal,
+    };
+  }
+
+  /** 다른 행동 알림: 코치 계획의 사람 단계이고 단계마다 strayMax번·strayGapMs에 한 번 안이면 strayed를 부른다. 받은 것만 센다. more는 덧붙일 변화 줄. */
+  private stray(r: Run, more: string[] = []): void {
+    if (!this.o.strayed || r.strays >= this.cfg.strayMax) return;
+    const now = this.clock.now();
+    if (now - r.strayAt < this.cfg.strayGapMs) return;
+    const at = this.coachStep();
+    if (!at) return;
+    if (!this.o.strayed({ ...at, changes: [...this.seen.map((c) => c.text), ...more] })) return;
+    r.strayAt = now;
+    r.strays++;
+  }
+
+  /** 폰이 지금 단계 자리를 떠나 다른 평면도 자리 가까이로 갔는가(이동 단계는 보지 않는다). 그 자리마다 한 번 다른 행동 알림을 부른다. */
+  private strayNear(r: Run, step: AgentStep): void {
+    if (!this.o.strayed || step.kind === "go" || !HUMAN_KINDS.includes(step.kind) || r.asking) return;
+    const e = this.eye;
+    const fp = this.o.floor();
+    const here = step.target ? fp.objects.get(step.target)?.position ?? null : null;
+    if (!e || !here || this.clock.now() - e.at > STRAY_KEEP_MS) return;
+    const far = (p: XZ) => Math.hypot(e.position[0] - p[0], e.position[1] - p[1]);
+    if (far(here) <= PHONE_NEAR_M) {
+      r.strayNear = null;
+      return;
+    }
+    const near = [...fp.objects.values()].filter((o) => o.id !== step.target && placeShort(o.type) && far(o.position) <= PHONE_NEAR_M).sort((a, b) => far(a.position) - far(b.position))[0];
+    if (!near || near.id === r.strayNear) return;
+    r.strayNear = near.id;
+    this.stray(r, [VISION_TEXT.movedNear(this.placeName(near.id))]);
+  }
+
+  /** 관찰 모드의 다시 알리기(tell_person): 지금 그 계획의 그 사람 단계면 명령 글을 그 한 줄로 바꿔 소리로 읽고, tellHoldMs 뒤 원래 명령으로 되돌린다(되돌릴 때는 읽지 않는다).
+   *  단계가 넘어가면 되돌리지 않는다(새 명령이 이미 떴다). 사람에게 하는 말(「주세요」로 끝남)만 보낸다. 켜기 전 질문 중에는 보내지 않는다. 보냈으면 true. */
+  tell(planId: string, stepId: string, text: string): boolean {
+    const r = this.run;
+    const step = r ? this.stepOf(r) : undefined;
+    const said = text.trim();
+    if (this.stopped || !r || r.state !== "running" || r.asking || !r.sent || !step || !HUMAN_KINDS.includes(step.kind)) return false;
+    if (r.plan.view.id !== planId || step.id !== stepId || r.sent.step !== stepId || !/주세요$/.test(said)) return false;
+    const now = this.clock.now();
+    r.told = { text: r.told?.text ?? r.sent.text, until: now + this.cfg.tellHoldMs };
+    r.spokeAt = now;
+    r.helped = true;
+    r.sent = { ...r.sent, text: said, speak: true };
+    this.toldWallAt = Date.now();
+    this.o.toPhone(r.sent);
+    return true;
+  }
+
+  /** 마지막으로 다시 알린(tell) 시각(Date.now 시계). 없으면 null. */
+  toldAt(): number | null {
+    return this.toldWallAt;
   }
 
   /** 놓기 단계를 끝낸 물건(이미 치운 것): World State id → 그 계획의 넣은 곳, 끝낸 때 싱크볼 안이었으면 part basin, 끝낸 시각.
@@ -382,6 +490,13 @@ export class ExecutionTracker {
     const step = this.stepOf(r);
     if (!step) return;
     if (now > r.deadline) return this.timeout(r, step);
+    // tell로 바꾼 글은 tellHoldMs 뒤 원래 명령으로 되돌린다(읽지 않는다)
+    if (r.told && now >= r.told.until && r.sent) {
+      r.sent = { ...r.sent, text: r.told.text, speak: false };
+      r.told = null;
+      this.o.toPhone(r.sent);
+    }
+    this.strayNear(r, step);
     this.stall(r, step, now);
     if (HUMAN_KINDS.includes(step.kind) || step.kind === "ask") this.repeat(r, now);
   }
@@ -527,6 +642,7 @@ export class ExecutionTracker {
       plan: r.plan, decision: d, state: "decided", since: now, at: -1, stepAt: now, spokeAt: now, visionAt: now, sent: null,
       asking: null, askAt: now, watch: null, others, alias: new Map([...ids].map((id) => [id, id])), carried: new Set(), placeAt: (id) => (id ? this.o.floor().objects.get(id)?.position ?? null : null), deadline: now, again: false, device: "idle", gen: 0,
       looks: 0, lookAt: Number.NEGATIVE_INFINITY, stepEnd: null, gapAt: job.at, hot: new Set(),
+      strays: 0, strayAt: Number.NEGATIVE_INFINITY, strayNear: null, told: null, helped: false,
     };
     this.run = run;
     // 새 계획의 명령이 실제 폰 자리를 쓴다: 앞 계획의 끄기 안내는 내린다
@@ -622,6 +738,7 @@ export class ExecutionTracker {
     Object.assign(r, {
       at: i, stepAt: now, spokeAt: now, visionAt: now, deadline: now + step.timeoutMs, asking: null, watch: step.until ? new ConditionWatch(step.until) : null,
       again: false, device: "idle", gen: r.gen + 1, looks: 0, lookAt: Number.NEGATIVE_INFINITY, stepEnd: new AbortController(),
+      strays: 0, strayAt: Number.NEGATIVE_INFINITY, strayNear: null, told: null, helped: false,
     });
     this.o.plans.setSteps(r.plan.view.id, { ...(prev ? { [prev.id]: "done" as const } : {}), [step.id]: "active" });
     if (step.kind === "wait" || step.kind === "device") this.quietFrom = now;

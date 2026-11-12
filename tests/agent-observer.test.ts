@@ -103,6 +103,67 @@ describe("관찰 모드: 요청과 고른 도구", () => {
   });
 });
 
+describe("관찰 모드: 코치 계획의 다른 행동·들은 말", () => {
+  const PLAN = { at: 4, steps: [
+    { label: "수납장으로 가기", status: "done" as const }, { label: "냄비 꺼내기", status: "done" as const }, { label: "싱크대로 가기", status: "done" as const },
+    { label: "물 받기", status: "active" as const }, { label: "인덕션으로 가기", status: "pending" as const },
+  ] };
+  const TELL = "먼저 냄비에 물을 받아 주세요";
+  const off = (over: Partial<ObserveSituation> = {}): ObserveSituation => ({
+    trigger: "off_track", goal: "물 받기 단계 · 지금 명령 「냄비에 물을 받아 주세요」", stuckMs: 9_000, spots: [], world: WORLD, earlier: [],
+    tools: ["tell_person", "wait"], nowMs: 13_000, plan: PLAN, changes: ["사람 거실에 있음", "폰이 냉장고 가까이로 감"], ...over,
+  });
+  const heard = (over: Partial<ObserveSituation> = {}): ObserveSituation => off({ trigger: "heard", tools: ["tell_person", "pass_on", "wait"], changes: undefined, said: "어 뭐 해야 되지", ...over });
+
+  it("off_track 요청의 입력 글에 [계획] 단계 목록·지금 단계·[방금 본 변화]가 있고 도구는 tell_person·wait뿐이다. tell_person을 고르면 그 글을 돌려준다", async () => {
+    await start(() => [["tell_person", { text: TELL, reason: "물을 받기 전에 다른 곳으로 가서" }]]);
+    expect(await new Observer({ provider: llm!.provider() }).decide(off())).toEqual({ tool: "tell_person", text: TELL, reason: "물을 받기 전에 다른 곳으로 가서" });
+    const [body] = llm!.bodies();
+    expect(body.tools.map((t: any) => t.name)).toEqual(["tell_person", "wait"]);
+    const input = body.input[0].content as string;
+    expect(input).toBe(observerInput(off()));
+    expect(input.split("\n").slice(0, 2)).toEqual(["[확인할 것] 물 받기 단계 · 지금 명령 「냄비에 물을 받아 주세요」", "- 사람이 지금 단계와 다른 일을 하는 것 같다"]);
+    expect(input).toContain("[계획] 지금 4번째 단계\n- 1 수납장으로 가기 · 끝남\n- 2 냄비 꺼내기 · 끝남\n- 3 싱크대로 가기 · 끝남\n- 4 물 받기 · 지금\n- 5 인덕션으로 가기 · 아직");
+    expect(input).toContain("[방금 본 변화]\n- 사람 거실에 있음\n- 폰이 냉장고 가까이로 감");
+    expect(input).not.toContain("[들은 말]");
+    expect(input).toContain("[쓸 수 있는 도구] tell_person, wait");
+  });
+
+  it("heard 요청에는 [들은 말]이 있고 도구는 tell_person·pass_on·wait다. pass_on을 고르면 그대로 돌려준다", async () => {
+    await start(() => [["pass_on", { reason: "이 일과 상관없는 말이라" }]]);
+    expect(await new Observer({ provider: llm!.provider() }).decide(heard({ said: "거실 불 켜 줘" }))).toEqual({ tool: "pass_on", reason: "이 일과 상관없는 말이라" });
+    const [body] = llm!.bodies();
+    expect(body.tools.map((t: any) => t.name)).toEqual(["tell_person", "pass_on", "wait"]);
+    const input = body.input[0].content as string;
+    expect(input.split("\n")[1]).toBe("- 사람이 한 말을 들었다");
+    expect(input).toContain("[들은 말] 거실 불 켜 줘");
+    expect(input).toContain("[계획] 지금 4번째 단계");
+    expect(input).not.toContain("[방금 본 변화]");
+  });
+
+  it("tell_person 글이 「주세요」로 안 끝나거나 화면 글 규칙에 걸리면 까닭을 주고 다시 받는다", async () => {
+    await start((_input, round) => [round === 0 ? ["tell_person", { text: "지금 그거 하면 안 돼요", reason: "순서가 달라서" }] : ["tell_person", { text: TELL, reason: "순서가 달라서" }]]);
+    expect(await new Observer({ provider: llm!.provider() }).decide(off())).toEqual({ tool: "tell_person", text: TELL, reason: "순서가 달라서" });
+    expect(toolOutputs(llm!.bodies()[1])[0].error).toContain("「주세요」로 끝나야");
+    llm!.script = () => [["tell_person", { text: "냄비에(먼저) 물을 받아 주세요", reason: "순서가 달라서" }]];
+    expect(await new Observer({ provider: llm!.provider() }).decide(off())).toMatchObject({ tool: "wait", invalid: expect.stringContaining("괄호 설명") });
+  });
+
+  it("off_track에서 pass_on·ask_person·look_closer를 부르면 거절한다", async () => {
+    await start((_input, round) => [round === 0 ? ["pass_on", { reason: "상관없어서" }] : ["wait", { reason: "지금 단계를 하는 중이라" }]]);
+    expect(await new Observer({ provider: llm!.provider() }).decide(off())).toEqual({ tool: "wait", reason: "지금 단계를 하는 중이라" });
+    expect(toolOutputs(llm!.bodies()[1])).toEqual([{ ok: false, error: "이번에는 tell_person·wait만 부릅니다" }]);
+  });
+
+  it("관찰 프롬프트에 계획과 들은 말을 다루는 법, 새 도구 둘의 설명이 있다", () => {
+    const lines = OBSERVER_PROMPT.split("\n");
+    expect(lines).toContain("- [계획]이 있으면 사람이 지금 단계와 다른 일을 하는지 본다. 다른 자리로 갔거나 순서를 건너뛰었거나 위험하면(물을 받기 전에 불을 켬) tell_person으로 지금 할 일을 한 줄로 알린다. 지금 단계를 하는 중으로 보이면 wait.");
+    expect(lines).toContain("- [들은 말]이 있으면: 무엇을 할지 모르겠다는 말이면 tell_person으로 지금 할 일을 알리고, 이 일과 상관없는 말이면 pass_on, 답이 필요 없는 말이면 wait.");
+    expect(lines.some((l) => l.startsWith("- tell_person: 사람에게 지금 할 일을 한 줄로 다시 알린다."))).toBe(true);
+    expect(lines.some((l) => l.startsWith("- pass_on: 들은 말이 지금 하는 일과 상관없다."))).toBe(true);
+  });
+});
+
 describe("관찰 모드: 비용", () => {
   it("응답 사용량(input 10·output 5)을 가격표(gpt-5.4-mini)로 센다", async () => {
     await start(() => [["wait", { reason: "다음 사진을 보려고" }]]);

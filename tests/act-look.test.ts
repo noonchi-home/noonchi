@@ -2,7 +2,7 @@
 // 관찰 모드는 진짜 Observer를 가짜 OpenAI 서버에 붙인다(tests/helpers/observer.ts). 가까이 보기 자리는 testCloser(tests/helpers/look.ts)다.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { LOOK_DEFAULTS, Looker, type LookerOptions } from "../src/act/look.js";
-import type { Stall } from "../src/act/track.js";
+import type { Stall, Stray } from "../src/act/track.js";
 import { Observer } from "../src/agent/observer.js";
 import type { BrainLog, CloserResult } from "../src/contract/events.js";
 import type { WorldObject, WorldView } from "../src/contract/world.js";
@@ -97,7 +97,7 @@ describe("보기 담당: 판단 전 보기(B)", () => {
     await t.looker.idle();
     expect(t.llm.bodies()).toHaveLength(3);
     expect(t.llm.bodies()[2].input[0].content).toContain("- cup_2 컵 · 지금 사진 안");
-    expect(t.looker.status()).toEqual({ calls: 3, costUsd: expect.any(Number), looks: 0, asks: 0, waits: 3 });
+    expect(t.looker.status()).toEqual({ calls: 3, costUsd: expect.any(Number), looks: 0, asks: 0, waits: 3, tells: 0 });
   });
 
   it("볼 면이 안이 안 보임이면 부르고, 비어 있음·시야 밖·싱크대 안·실행 추적이 치운 것·대상 종류 아님·10초 넘게 낡은 프레임·카메라 없음이면 부르지 않는다", async () => {
@@ -306,6 +306,99 @@ describe("보기 담당: 가까이 보기 실행", () => {
   }, 15_000);
 });
 
+describe("보기 담당: 코치 계획의 다른 행동(off_track)과 들은 말(heard)", () => {
+  const TELL = "먼저 냄비에 물을 받아 주세요";
+  const stray = (over: Partial<Stray> = {}) => {
+    const ac = new AbortController();
+    const s: Stray = {
+      planId: "plan:pam-1", stepId: "plan:pam-1:4", label: "물 받기", command: "냄비에 물을 받아 주세요", at: 4,
+      steps: [{ label: "싱크대로 가기", status: "done" }, { label: "물 받기", status: "active" }], changes: ["사람 거실에 있음"], signal: ac.signal, ...over,
+    };
+    return { s, ac };
+  };
+
+  it("tell_person을 고르면 실행 추적의 tell을 부르고 look 기록(계기 off_track, 글 「다시 알림 · …」)을 남긴다. 관찰 모드 입력에 계획과 방금 본 변화가 있다", async () => {
+    const told: [string, string, string][] = [];
+    const t = await setup({ script: () => [["tell_person", { text: TELL, reason: "다른 곳으로 가서" }]], options: { tell: (p, st, text) => { told.push([p, st, text]); return true; } } });
+    expect(t.looker.strayed(stray().s)).toBe(true);
+    await t.looker.idle();
+    expect(told).toEqual([["plan:pam-1", "plan:pam-1:4", TELL]]);
+    expect(t.looks()).toEqual([{
+      type: "look", at_ms: 100_000, trigger: "off_track", target: null, tool: "tell_person", reason: "다른 곳으로 가서", text: `다시 알림 · ${TELL}`, result: { sent: true },
+      plan_id: "plan:pam-1", step_id: "plan:pam-1:4",
+    }]);
+    const input = t.llm.bodies()[0].input[0].content as string;
+    expect(input).toContain("[계획] 지금 4번째 단계");
+    expect(input).toContain("[방금 본 변화]\n- 사람 거실에 있음");
+    expect(t.llm.bodies()[0].tools.map((x: any) => x.name)).toEqual(["tell_person", "wait"]);
+    expect(t.looker.status()).toMatchObject({ calls: 1, tells: 1 });
+  });
+
+  it("다른 일(A·B·다른 off_track)이 도는 중이면 strayed를 받지 않는다. 단계가 끝나 신호가 끊기면 기록도 tell도 없다", async () => {
+    let release!: () => void;
+    const held = new Promise<void>((ok) => { release = ok; });
+    const told: string[] = [];
+    const t = await setup({ script: () => [["tell_person", { text: TELL, reason: "다른 곳으로 가서" }]], gate: () => held, options: { tell: (_p, _s, text) => { told.push(text); return true; } } });
+    try {
+      const a = stray();
+      expect(t.looker.strayed(a.s)).toBe(true);
+      expect(t.looker.strayed(stray().s)).toBe(false);
+      await vi.waitFor(() => expect(t.llm.bodies()).toHaveLength(1));
+      a.ac.abort();
+      release();
+      await t.looker.idle();
+      expect(told).toEqual([]);
+      expect(t.looks()).toEqual([]);
+      expect(t.looker.strayed(stray({ signal: a.ac.signal }).s)).toBe(false);
+    } finally { release(); }
+  });
+
+  it("heard: tell_person이면 told, pass_on이면 passed, wait면 waited. 들은 말은 관찰 모드 입력에만 가고 look 기록(글·까닭)에는 남지 않는다", async () => {
+    const SAID = "어 뭐 해야 되지";
+    const told: string[] = [];
+    const { s } = stray();
+    const base = { planId: s.planId, stepId: s.stepId, label: s.label, command: s.command, at: s.at, steps: s.steps, signal: s.signal };
+    const t = await setup({
+      script: (input) => (input.includes("[들은 말] 거실 불 켜 줘") ? [["pass_on", { reason: "「거실 불 켜 줘」는 이 일과 상관없어서" }]]
+        : input.includes("[들은 말] 음 그렇구나") ? [["wait", { reason: "답이 필요 없는 말이라" }]] : [["tell_person", { text: "냄비에 물을 받아 주세요", reason: `「${SAID}」라고 해서` }]]),
+      options: { tell: (_p, _s, text) => { told.push(text); return true; } },
+    });
+    expect(await t.looker.heard(s.planId, s.stepId, SAID, base)).toBe("told");
+    expect(told).toEqual(["냄비에 물을 받아 주세요"]);
+    expect(t.llm.bodies()[0].input[0].content).toContain(`[들은 말] ${SAID}`);
+    expect(t.llm.bodies()[0].tools.map((x: any) => x.name)).toEqual(["tell_person", "pass_on", "wait"]);
+    expect(await t.looker.heard(s.planId, s.stepId, "거실 불 켜 줘", base)).toBe("passed");
+    expect(await t.looker.heard(s.planId, s.stepId, "음 그렇구나", base)).toBe("waited");
+    expect(t.looks().map((l) => [l.trigger, l.tool, l.text, l.reason])).toEqual([
+      ["heard", "tell_person", "다시 알림 · 냄비에 물을 받아 주세요", "「들은 말」라고 해서"],
+      ["heard", "pass_on", "말 요청으로 넘김", "「들은 말」는 이 일과 상관없어서"],
+      ["heard", "wait", "기다림", "답이 필요 없는 말이라"],
+    ]);
+    expect(JSON.stringify(t.logs)).not.toMatch(/뭐 해야|거실 불|그렇구나/);
+  });
+
+  it("heard: 보기 담당이 바쁘거나, 한 시간 상한을 넘었거나, 관찰 모드가 실패하면 passed(말 요청 에이전트로 넘긴다)", async () => {
+    const { s } = stray();
+    const base = { planId: s.planId, stepId: s.stepId, label: s.label, command: s.command, at: s.at, steps: s.steps, signal: s.signal };
+    let release!: () => void;
+    const held = new Promise<void>((ok) => { release = ok; });
+    const busy = await setup({ script: () => [["wait", { reason: "기다리려고" }]], gate: () => held, options: { tell: () => true } });
+    try {
+      expect(busy.looker.strayed(stray().s)).toBe(true);
+      expect(await busy.looker.heard(s.planId, s.stepId, "뭐 해야 되지", base)).toBe("passed");
+    } finally { release(); }
+    await busy.looker.idle();
+
+    const capped = await setup({ script: () => [["tell_person", { text: TELL, reason: "몰라서" }]], options: { hourMax: 1, tell: () => true } });
+    expect(await capped.looker.heard(s.planId, s.stepId, "뭐 해야 되지", base)).toBe("told");
+    expect(await capped.looker.heard(s.planId, s.stepId, "뭐 해야 되지", base)).toBe("passed");
+    expect(capped.llm.bodies()).toHaveLength(1);
+
+    const failed = await setup({ script: () => [["wait", { reason: "x" }]], options: { tell: () => true, observer: { decide: async () => { throw new Error("닿지 않음"); }, status: () => ({ calls: 0, requests: 0, costUsd: 0 }) } } });
+    expect(await failed.looker.heard(s.planId, s.stepId, "뭐 해야 되지", base)).toBe("passed");
+  });
+});
+
 describe("보기 담당: 한 시간 상한", () => {
   it("관찰 모드는 한 시간(주입 시계)에 A·B 합쳐 60번까지만 부른다. 넘으면 부르지 않고 기다리기 기록을 남기고(A면 settle(true)) 한 시간이 지나면 다시 부른다", async () => {
     expect(LOOK_DEFAULTS.hourMax).toBe(60);
@@ -339,6 +432,6 @@ describe("보기 담당: 한 시간 상한", () => {
     const t = await setup({ script: () => [["wait", { reason: "다음 사진을 보려고" }]], options: { observer: { decide: async () => ({ tool: "wait", reason: "기다리려고" }), status: () => ({ calls: 1, requests: 1, costUsd: null }) } } });
     t.looker.tick();
     await t.looker.idle();
-    expect(t.looker.status()).toEqual({ calls: 1, costUsd: null, looks: 0, asks: 0, waits: 1 });
+    expect(t.looker.status()).toEqual({ calls: 1, costUsd: null, looks: 0, asks: 0, waits: 1, tells: 0 });
   });
 });
