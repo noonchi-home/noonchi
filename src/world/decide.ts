@@ -28,6 +28,8 @@ export interface DecisionRecord {
   fsm?: FsmRuleAt | null;
   error?: string;
   memoryVersion: number;
+  /** 이 판단에 보낸 행동 목록(돕는 방식마다 다르다). 계획 전·실행 전 검사가 이 목록으로 본다. */
+  tasks?: string[];
   world: DecisionWorld;
 }
 
@@ -100,7 +102,7 @@ export class Decider {
     const finalTime = isoWithOffset(now, this.o.offsetMinutes);
     const tasks = this.o.tasks();
     const mem = this.o.memory();
-    const base = { id: `pam-${seq}`, seq, atMs: now, textSent, finalTime, memoryVersion: mem.version, world: decisionWorld(view) };
+    const base = { id: `pam-${seq}`, seq, atMs: now, textSent, finalTime, memoryVersion: mem.version, world: decisionWorld(view), tasks };
     const job: Promise<void> = Promise.resolve()
       .then(() => {
         checkInput({ text: textSent, finalTime, memory: mem.memory, memoryKind: mem.kind, tasks });

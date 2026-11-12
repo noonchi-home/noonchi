@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { checkDecision, checkPlan, loadActConfig } from "../act/check.js";
 import { Looker } from "../act/look.js";
 import { sayLine } from "../act/say.js";
-import { TASK_NAMES, lookTargets, taskOf } from "../act/tasks.js";
+import { lookTargets, taskOf, tasksFor } from "../act/tasks.js";
 import { deviceRunner } from "../act/devices.js";
 import { ExecutionTracker } from "../act/track.js";
 import { Agent } from "../agent/agent.js";
@@ -285,6 +285,8 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       said = text;
       appRef.current?.broadcast({ type: "say", text });
     };
+    // 돕는 방식(눈치·코치): 판단 호출이 그때그때 읽는다(집을 다시 띄우지 않고 바뀐다)
+    const assist = () => ctx.assist?.() ?? "noonchi";
     if (world) {
       const now = () => ctx.brain?.clock?.now() ?? Date.now();
       const emit = (event: BrainLog) => {
@@ -297,7 +299,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       const pamTimeout = Number(env.PAM_TIMEOUT_MS);
       const decide = new Decider({
         pam: new PamClient({ url: loadEndpoints(env).pamUrl, timeoutMs: Number.isFinite(pamTimeout) && pamTimeout > 0 ? pamTimeout : undefined }),
-        world, trigger: new Trigger(loadTriggerConfig(env), now()), tasks: () => [...TASK_NAMES],
+        world, trigger: new Trigger(loadTriggerConfig(env), now()), tasks: () => tasksFor(assist()),
         memory: () => memoryForDay(history.db, history.db.dayOf(now())), emit, offsetMinutes: history.db.offsetMinutes, clock: ctx.brain?.clock,
         // 행동 중 기다리기·기기 단계 동안은 PAM을 부르지 않는다(실행 추적이 조건을 본다)
         hold: () => tracker?.waiting() ?? false,
@@ -314,7 +316,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         plans, floor: () => plans.floor(), world: () => world.view(now()), emit, clock: ctx.brain?.clock, approvals, devices, offsetMinutes: history.db.offsetMinutes,
         // 계획 전 검사(LLM 없음) → 에이전트 계획 모드 한 번. 손 자리는 맞춘 눈(PlanHub 평면도의 로봇 자리)
         // 실행 추적이 놓기 단계를 끝낸 물건(placed)도 이미 치운 것으로 본다
-        precheck: (d) => checkDecision({ decision: d, tasks: [...TASK_NAMES], world: world.view(now()), nowMs: now(), placed: tracker?.placed() }),
+        precheck: (d) => checkDecision({ decision: d, tasks: d.tasks ?? tasksFor(assist()), world: world.view(now()), nowMs: now(), placed: tracker?.placed() }),
         // 계획 입력·제출 검사도 이미 치운 물건(placed, 이 계획을 만들 때 것)을 안다: 입력 줄에 「이미 치움」, 그 물건을 대상으로 한 계획은 버린다
         planner: (d, signal) => {
           const task = taskOf(d.action);
@@ -333,7 +335,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         },
         locate: placeAt,
         check: (d, p) => checkPlan({
-          decision: d, tasks: [...TASK_NAMES], plan: p, world: world.view(now()), nowMs: now(), staleMs: act.staleMs, mode: ctx.mode?.() ?? "test", deviceSteps: deviceSteps(p),
+          decision: d, tasks: d.tasks ?? tasksFor(assist()), plan: p, world: world.view(now()), nowMs: now(), staleMs: act.staleMs, mode: ctx.mode?.() ?? "test", deviceSteps: deviceSteps(p),
           placed: tracker?.placed(),
         }),
         // 멈춘 집기·놓기 단계는 보기 담당(관찰 모드 A)에 알린다

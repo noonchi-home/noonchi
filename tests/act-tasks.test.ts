@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { WorldObject, WorldView } from "../src/contract/world.js";
-import { holdsTarget, lookTargets, planTargetId, putAway, targetOf, TASK_NAMES, TASKS, taskOf } from "../src/act/tasks.js";
+import { holdsTarget, lookTargets, planTargetId, putAway, targetOf, TASK_NAMES, TASKS, taskOf, tasksFor } from "../src/act/tasks.js";
 import { smallFloor } from "./helpers/floor.js";
 import { cupPlan } from "./helpers/cup-plan.js";
 
@@ -22,7 +22,7 @@ describe("행동 목록", () => {
       const t = TASKS[name]!;
       expect(t.name).toBe(name);
       expect(t.description.length).toBeGreaterThan(5);
-      const more = [...(t.target ? ["target"] : []), ...(t.look ? ["look"] : []), ...(t.plan === false ? ["plan"] : []), ...(t.carry ? ["carry"] : []), ...(t.carryUnseen ? ["carryUnseen"] : [])];
+      const more = [...(t.coach ? ["coach"] : []), ...(t.maxSteps ? ["maxSteps"] : []), ...(t.target ? ["target"] : []), ...(t.look ? ["look"] : []), ...(t.plan === false ? ["plan"] : []), ...(t.carry ? ["carry"] : []), ...(t.carryUnseen ? ["carryUnseen"] : [])];
       expect(Object.keys(t).sort()).toEqual(["allow", "description", "name", ...more].sort());
       if (t.plan !== false) expect(t.allow.kinds.length).toBeGreaterThan(0);
     }
@@ -34,8 +34,27 @@ describe("행동 목록", () => {
     expect(taskOf(null)).toBeNull();
   });
 
-  it("행동 목록은 일곱이고 앞 넷의 순서는 그대로다(task_index를 지킨다)", () => {
-    expect(TASK_NAMES).toEqual(["컵 치우기", "사용자에게 물어보기", "세탁물 건조기로 옮기기", "에어컨 켜기", "컵 그대로 두기", "컵에 물 채워 주기", "컵에 콜라 따라 주기"]);
+  it("눈치 모드 행동 목록은 일곱이고 앞 넷의 순서는 그대로다(task_index를 지킨다). 코치 행동은 없다", () => {
+    expect(tasksFor("noonchi")).toEqual(["컵 치우기", "사용자에게 물어보기", "세탁물 건조기로 옮기기", "에어컨 켜기", "컵 그대로 두기", "컵에 물 채워 주기", "컵에 콜라 따라 주기"]);
+    expect(TASK_NAMES).toEqual([...tasksFor("noonchi"), "라면 끓이기 알려 주기"]);
+  });
+
+  it("코치 모드에서는 PAM에 코치 행동과 「사용자에게 물어보기」만 보낸다", () => {
+    expect(tasksFor("coach")).toEqual(["사용자에게 물어보기", "라면 끓이기 알려 주기"]);
+    expect(TASK_NAMES.filter((n) => TASKS[n]!.coach)).toEqual(["라면 끓이기 알려 주기"]);
+  });
+
+  it("코치 행동은 가전을 조작하지 않는다: device 단계를 쓸 수 없고 do가 꼭 있어야 하며 14단계까지다", () => {
+    for (const name of TASK_NAMES.filter((n) => TASKS[n]!.coach)) {
+      const t = TASKS[name]!;
+      expect(t.allow.kinds, name).not.toContain("device");
+      expect(t.allow.devices, name).toBeUndefined();
+      expect(t.allow.need, name).toContain("do");
+    }
+    const ramen = TASKS["라면 끓이기 알려 주기"]!;
+    expect(ramen.allow).toEqual({ kinds: ["go", "pick", "place", "do", "wait", "say"], need: ["do"] });
+    expect([ramen.maxSteps, ramen.target, ramen.plan]).toEqual([14, undefined, undefined]);
+    expect(TASKS["컵 치우기"]!.maxSteps).toBeUndefined();
   });
 
   it("컵 그대로 두기는 계획을 만들지 않는 행동이다", () => {

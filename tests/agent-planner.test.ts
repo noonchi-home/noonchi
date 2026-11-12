@@ -465,6 +465,16 @@ describe("계획 모드: 계획 검사", () => {
     bad({ kind: "wait", label: "세탁 멈춤", until: { elapsed_s: 60 }, timeout_s: 20_000 }, /10~14400/, "세탁물 건조기로 옮기기");
   });
 
+  it("코치 행동(라면 끓이기 알려 주기)에는 device 단계를 쓸 수 없고 do가 꼭 있어야 한다", () => {
+    const RAMEN = "라면 끓이기 알려 주기";
+    bad({ kind: "device", label: "인덕션 켜기", target: "induction_1", tool: "turn_on", timeout_s: 60 }, /device 단계를 쓰지 않습니다. 쓸 수 있는 단계: go, pick, place, do, wait, say/, RAMEN);
+    const d = new PlanDraft(ctx(RAMEN));
+    ok(d, 1, { kind: "go", label: "싱크대로 가기", target: "sink_1", command: "싱크대로 가 주세요", timeout_s: 120 });
+    expect(d.finish()).toMatchObject({ ok: false, error: expect.stringMatching(/do 단계가 있어야/) });
+    ok(d, 2, { kind: "do", label: "물 받기", target: "sink_1", command: "물을 받아 주세요", timeout_s: 120 });
+    expect(d.finish()).toMatchObject({ ok: true });
+  });
+
   it("단계는 번호 순서대로 두고, 틀리면 그 번호부터 지워 같은 번호로 고쳐 보내게 하며, 빠진 단계가 있으면 끝내지 않는다", () => {
     const d = new PlanDraft(ctx());
     const steps = cupSteps(cupIds);

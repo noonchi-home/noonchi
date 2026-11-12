@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type WebSocket from "ws";
 import { startFakeOpenAI, type FakeServer } from "../scripts/fake-openai.js";
-import { TASK_NAMES } from "../src/act/tasks.js";
+import { tasksFor } from "../src/act/tasks.js";
 import type { Detection } from "../src/brain/detector.js";
 import type { HistoryRow } from "../src/contract/history.js";
 import { encodeFramePacket } from "../src/phone/packet.js";
@@ -101,7 +101,7 @@ describe("컵 장면 갈래", () => {
     await s.pump(() => s.spoken().length > 0);
     expect(s.spoken()[0]).toMatchObject({ text: "식탁으로 가 주세요", kind: "go" });
     expect((await s.history("decision")).map((r) => r.text)).toContain("컵 치우기");
-    expect(pam!.bodies.at(-1)!.tasks).toEqual([...TASK_NAMES]);
+    expect(pam!.bodies.at(-1)!.tasks).toEqual(tasksFor("noonchi"));
   }, 60_000);
 
   it("내용물 있는 컵 + 사람 없음 → 컵 그대로 두기: 실제 폰 명령 없이 판단과 「그대로 둠」만 남고 말풍선 카드가 알린다. 컵이 비면 그때 치우기 명령이 온다(더 보다가 치움)", async () => {
@@ -181,7 +181,7 @@ describe("컵 장면 갈래", () => {
       expect(Object.keys(b).sort()).toEqual(["contract", "final_time", "memory", "memory_kind", "observation_text", "tasks"]);
       expect(b.contract).toBe("pam-predict/2");
       expect(JSON.stringify(b)).not.toMatch(/data:image|base64|"frames"|"image"/);
-      expect(b.tasks).toEqual([...TASK_NAMES]);
+      expect(b.tasks).toEqual(tasksFor("noonchi"));
     }
     expect(pam!.bodies.some((b) => /\[지속\] 사람 먹는 중/.test(String(b.observation_text)) && /컵 cup_1 .*비어 있음/.test(String(b.observation_text)))).toBe(true);
     // 기억은 새 seed(상태 셋)다

@@ -2,6 +2,7 @@
 // 목록은 services/pam/scenarios/noonchi/tasks.json과 같다(tests/agent-planner.test.ts). 최종 목록은 FSM 담당(박석준·김준형)이 정한다.
 // 여기에는 계획 모양이 없다: 무엇을 어떤 순서로 할지는 에이전트가 정한다. target은 계획 전 검사(LLM을 부르기 전)에만 쓴다.
 import type { PlanView } from "../contract/plan.js";
+import type { AssistMode } from "../contract/setup.js";
 import type { Facet, ObjClass, WorldObject, WorldView } from "../contract/world.js";
 import type { DeviceKind } from "../hub/types.js";
 import type { ActionChoice } from "./prompts.js";
@@ -20,6 +21,10 @@ export interface TaskSpec {
   carry?: ObjClass;
   /** true면 집는 물건이 안 보여도(냉장고 안) 평면도 자리에서 집는 단계를 받는다. */
   carryUnseen?: true;
+  /** 코치 모드에서만 PAM에 보내는 행동(사람이 하는 일을 단계마다 알려 준다. 가전을 조작하지 않는다). */
+  coach?: true;
+  /** 이 행동 계획의 단계 수 상한(없으면 8, src/agent/planTools.ts PLAN_LIMITS). */
+  maxSteps?: number;
 }
 
 const HAND = ["go", "pick", "place"] as const;
@@ -53,10 +58,24 @@ export const TASKS: Record<string, TaskSpec> = {
     name: "컵에 콜라 따라 주기", description: "사람이 TV를 보는 중인데 컵이 비어 있으면 사람이 냉장고에서 콜라를 꺼내 와 컵에 따르게 한다.", target: "cup", look: ["contents"],
     carry: "bottle", carryUnseen: true, allow: FILL,
   },
+  // 코치 행동(2026-11-13): 단계 목록은 에이전트 계획 모드가 만든다. 여기에는 설명과 쓸 수 있는 단계만 둔다(device 없음)
+  "라면 끓이기 알려 주기": {
+    name: "라면 끓이기 알려 주기", coach: true, maxSteps: 14,
+    description: "사람이 라면을 끓이려 하거나 방법을 물으면 냄비 꺼내기부터 불 끄기까지 사람이 할 일을 단계마다 알려 준다. 클로이드는 가전을 조작하지 않는다.",
+    allow: { kinds: ["go", "pick", "place", "do", "wait", "say"], need: ["do"] },
+  },
 };
 
-/** PAM에 보내는 행동 목록(순서가 task_index다). */
+/** 모든 행동 이름(검사·tasks.json 견주기). PAM에 보내는 목록은 돕는 방식마다 다르다(tasksFor). */
 export const TASK_NAMES: readonly string[] = Object.keys(TASKS);
+
+/** 코치 모드에서도 PAM에 보내는 눈치 행동. */
+const COACH_ALSO: readonly string[] = ["사용자에게 물어보기"];
+
+/** PAM에 보내는 행동 목록(순서가 task_index). noonchi: 코치가 아닌 행동, coach: 코치 행동과 「사용자에게 물어보기」. */
+export function tasksFor(assist: AssistMode): string[] {
+  return TASK_NAMES.filter((n) => (assist === "coach" ? TASKS[n]!.coach || COACH_ALSO.includes(n) : !TASKS[n]!.coach));
+}
 
 /** 행동 이름 → 행동. 목록 밖이면 null. */
 export function taskOf(action: string | null): TaskSpec | null {
