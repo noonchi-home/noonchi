@@ -12,6 +12,29 @@ export interface FakePamOptions {
   limits?: Record<string, number> | null;
 }
 
+/** 컵 갈래 시험의 PAM 답(시험 대역): 관찰 텍스트의 [지속] 사실로 고르고, 요청의 tasks에서 이름으로 번호를 찾는다(목록에 없으면 대기 -1).
+ *  사람 안 보임 + 컵 비어 있음 → 컵 치우기, + 내용물 있음 → 컵 그대로 두기, + 안이 안 보임 → 사용자에게 물어보기,
+ *  사람 먹는 중 + 비어 있음 → 컵에 물 채워 주기, 사람 TV 보는 중 + 비어 있음 → 컵에 콜라 따라 주기, 그 밖 → 대기. */
+export function cupBranchPredict(body: Record<string, unknown>): Pred {
+  const tasks = body.tasks as string[];
+  const facts = String(body.observation_text).split("\n").filter((l) => l.startsWith("[지속] ")).map((l) => l.slice(5));
+  const cup = facts.find((l) => /^컵 cup_\d+ /.test(l) && !l.includes("싱크대 안")) ?? "";
+  const has = (head: string) => facts.some((l) => l.startsWith(head));
+  const pick = (action: string, observation: string, reasoning: string): Pred => ({ observation, reasoning, task_index: tasks.indexOf(action) });
+  const wait: Pred = { observation: "할 일이 보이지 않음", reasoning: "맞는 규칙이 없어 기다린다", task_index: -1 };
+  if (!cup) return wait;
+  const empty = cup.includes("비어 있음");
+  if (has("사람 안 보임")) {
+    if (empty) return pick("컵 치우기", "사람이 자리를 비웠고 컵이 비어 있음", "자리를 비워 빈 컵을 치운다");
+    if (cup.includes("내용물 있음")) return pick("컵 그대로 두기", "사람이 자리를 비웠고 컵에 음료가 남음", "음료가 남아 그대로 둔다");
+    if (cup.includes("안이 안 보임")) return pick("사용자에게 물어보기", "사람이 자리를 비웠고 컵 안이 안 보임", "컵 안을 몰라 묻는다");
+    return wait;
+  }
+  if (empty && has("사람 먹는 중")) return pick("컵에 물 채워 주기", "사람이 먹는 중이고 컵이 비어 있음", "식사 중 빈 컵이라 물을 채워 준다");
+  if (empty && has("사람 TV 보는 중")) return pick("컵에 콜라 따라 주기", "사람이 TV를 보는 중이고 컵이 비어 있음", "TV를 보는 중 빈 컵이라 콜라를 따라 준다");
+  return wait;
+}
+
 export async function startFakePam(o: FakePamOptions = {}): Promise<FakePam> {
   const bodies: Record<string, unknown>[] = [];
   const paths: string[] = [];
