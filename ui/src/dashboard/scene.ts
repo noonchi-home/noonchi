@@ -1,7 +1,7 @@
 // 트윈 위 표시 고르기(순수 함수, 시안 A 그대로). 카메라와 상자 크기 → 확인한 것의 화면 자리, 지금 이동 구간의 남은 길,
 // 띄울 기기 말풍선(최근 것만, 지금 갈 길을 가리지 않고, 겹치면 최신 것만), 밝힌 방 이름표 자리.
 // 가린 자리(blocked: 지도 위에 얹은 마스코트 말풍선·마스코트)에 걸리는 말풍선은 빼고, 이름표는 비켜 둔다.
-// 클로이드 3D 인형 자리·목적지 표시 둘레(keep)는 말풍선이 덮지 않게 BubbleLayer가 판을 옆·아래로 옮긴다.
+// 클로이드 3D 원뿔 자리·목적지 표시 둘레(keep)는 말풍선이 덮지 않게 BubbleLayer가 판을 옆·아래로 옮긴다.
 import type { Check } from "../checks/checks";
 import type { ScreenPoint } from "../twin/use-anchors";
 import type { BoxSize } from "./fit";
@@ -33,7 +33,7 @@ export interface MapScene {
   checks: Check[];
   /** 밝힌 방 이름표(상자 안 가운데 자리). */
   labels: { id: string; label: string; at: { x: number; y: number } }[];
-  /** 말풍선이 덮지 않을 클로이드 3D 인형 자리(발~머리·꼬리)·목적지 표시 둘레(상자 px). */
+  /** 말풍선이 덮지 않을 클로이드 3D 원뿔 자리(꼭짓점 공 ~ 넓은 끝)·목적지 표시 둘레(상자 px). */
   keep: Rect[];
 }
 
@@ -92,14 +92,14 @@ export function mapScene(frame: TwinFrame, checks: Check[], shapes: RoomShape[],
   const legScreen = legAhead.map((q): Px => { const s = toScreen(cam, size, q); return [s.x, s.y]; });
   const shown = spread(clearOfRoute(recentChecks(checks), points, legScreen), points, SPREAD.dx, SPREAD.dy)
     .filter((c) => { const p = points.get(thingId(c)); return !p || !blocked.some((b) => hit(bubbleBox(p), b)); });
-  // 클로이드 3D 인형이 상자에서 차지하는 자리(발~머리·꼬리)
-  const doll = frame.robot && cam.scale > 0 ? screenBox(cam, size, frame.robot.body) : null;
-  // 방 이름표: 밝힌 방만, 말풍선·목적지·클로이드 인형·가린 자리를 피해서
+  // 클로이드 3D 원뿔이 상자에서 차지하는 자리(꼭짓점 공 ~ 넓은 끝)
+  const cone = frame.robot && cam.scale > 0 ? screenBox(cam, size, frame.robot.body) : null;
+  // 방 이름표: 밝힌 방만, 말풍선·목적지·클로이드 원뿔·가린 자리를 피해서
   const labels: MapScene["labels"] = [];
   if (cam.scale > 0) {
     const bubbleAt = shown.flatMap((c) => { const p = points.get(thingId(c)); return p ? [p] : []; });
     const dots = frame.target ? [toScreen(cam, size, frame.target)] : [];
-    const avoid = [...avoidBoxes(bubbleAt, dots), ...(doll ? [doll] : []), ...blocked];
+    const avoid = [...avoidBoxes(bubbleAt, dots), ...(cone ? [cone] : []), ...blocked];
     for (const r of shapes) {
       if (!frame.rooms.includes(r.id)) continue;
       let at: { x: number; y: number } | null = null;
@@ -108,7 +108,7 @@ export function mapScene(frame: TwinFrame, checks: Check[], shapes: RoomShape[],
     }
   }
   const keep: Rect[] = [];
-  if (doll) keep.push({ left: doll.x0, top: doll.y0, right: doll.x1, bottom: doll.y1 });
+  if (cone) keep.push({ left: cone.x0, top: cone.y0, right: cone.x1, bottom: cone.y1 });
   if (frame.target && cam.scale > 0) {
     const p = toScreen(cam, size, frame.target);
     keep.push({ left: p.x - TARGET_R, top: p.y - TARGET_R, right: p.x + TARGET_R, bottom: p.y + TARGET_R });

@@ -4,14 +4,14 @@
 import type { EyeEvent } from "../../../src/contract/events.ts";
 import type { PlanStep, PlanView, XZ } from "../../../src/contract/plan.ts";
 import { dashboardChecks, type Check } from "../checks/checks";
-import { dollPixelBox } from "../twin3d/eye";
+import { conePixelBox } from "../twin3d/eye";
 import { planDirToScreen, planToPixel, screenAngle, type OrthoCamera } from "../twin3d/projection";
 import type { Px } from "./camera";
 import { isOpen, stepIndex } from "./data";
 import type { HomeIndex } from "./home";
 import type { Box } from "./labels";
 
-/** 지도 위 로봇: 평면 자리, 그림 픽셀 자리, 머리 방향(그림 위 각도, 오른쪽 0 시계 +), 지금 방, 3D 인형이 그림에서 차지하는 상자(그림 픽셀). */
+/** 지도 위 로봇: 평면 자리, 그림 픽셀 자리, 머리 방향(그림 위 각도, 오른쪽 0 시계 +), 지금 방, 3D 원뿔이 그림에서 차지하는 상자(그림 픽셀, 꼭짓점 공 ~ 넓은 끝). */
 export interface RobotPose { position: XZ; px: Px; angle: number; room: string | null; body: Box }
 
 /** 지도 위 경로: 그림 픽셀 점들, 이동 단계마다 [시작, 끝] 점 번호, 지나온 길(로봇 자리까지)과 남은 길. */
@@ -157,7 +157,7 @@ export function twinFrame(o: {
       px: planToPixel(cam, eye.position),
       angle: screenAngle(planDirToScreen(cam, [Math.cos((eye.yaw_deg * Math.PI) / 180), Math.sin((eye.yaw_deg * Math.PI) / 180)])),
       room,
-      body: dollPixelBox(cam, eye.position, home.rooms.find((r) => r.id === room)?.floor ?? 0),
+      body: conePixelBox(cam, eye),
     }
     : null;
 

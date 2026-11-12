@@ -1,4 +1,4 @@
-// 트윈 위 표시(길·목적지·확인한 것 점)를 21st.dev Line Draw SVG 여러 장으로 겹쳐 그릴 자리와 굵기(순수 함수). 클로이드는 엔진의 3D 인형·원뿔(twin3d/eye.ts)이다.
+// 트윈 위 표시(길·목적지·확인한 것 점)를 21st.dev Line Draw SVG 여러 장으로 겹쳐 그릴 자리와 굵기(순수 함수). 클로이드는 엔진의 3D 원뿔(twin3d/eye.ts)이다.
 // 한 장은 path 하나를 토큰 색 선으로 그린다. 칠한 원은 반지름 r/2 원을 굵기 r로 그려 만든다. 크기는 화면 px이고 k(그림 px당 화면 px의 역수)를 곱한다.
 import type { LineTone } from "../components/ui/line-draw-svg";
 import { paint, TWIN } from "../lib/tokens";
@@ -33,21 +33,35 @@ export function lineLayers(kind: "route" | "routeAhead" | "routePassed", d: stri
   ];
 }
 
-/** 꺾은선 앞쪽에서 상자(b, 그림 px) 안에 든 부분을 뺀다: 상자를 처음 나가는 자리부터 그린다. 다 안이면 빈 배열. */
-export function leaveBox(pts: Px[], b: Box): Px[] {
-  const inside = ([u, v]: Px) => u > b.x0 && u < b.x1 && v > b.y0 && v < b.y1;
-  if (!pts.length || !inside(pts[0]!)) return pts;
-  for (let i = 1; i < pts.length; i++) {
-    if (inside(pts[i]!)) continue;
-    // 안(a)에서 밖(c)으로 가는 선분이 상자 테두리를 지나는 자리
-    const [a, c] = [pts[i - 1]!, pts[i]!];
-    const du = c[0] - a[0], dv = c[1] - a[1];
-    const tu = du > 0 ? (b.x1 - a[0]) / du : du < 0 ? (b.x0 - a[0]) / du : Infinity;
-    const tv = dv > 0 ? (b.y1 - a[1]) / dv : dv < 0 ? (b.y0 - a[1]) / dv : Infinity;
-    const t = Math.min(1, Math.max(0, Math.min(tu, tv)));
-    return [[a[0] + du * t, a[1] + dv * t], ...pts.slice(i)];
+/** 선분 a→c가 상자(b) 안을 지나는 구간 [t0, t1](0~1). 안을 지나지 않으면(테두리만 스쳐도) null. */
+function spanIn(a: Px, c: Px, b: Box): [number, number] | null {
+  let t0 = 0, t1 = 1;
+  for (const [p, d, lo, hi] of [[a[0], c[0] - a[0], b.x0, b.x1], [a[1], c[1] - a[1], b.y0, b.y1]] as const) {
+    if (d === 0) { if (p <= lo || p >= hi) return null; continue; }
+    const [u, v] = [(lo - p) / d, (hi - p) / d];
+    t0 = Math.max(t0, Math.min(u, v));
+    t1 = Math.min(t1, Math.max(u, v));
   }
-  return [];
+  return t1 - t0 > 1e-9 ? [t0, t1] : null;
+}
+
+/** 꺾은선에서 상자(b, 그림 px) 안에 든 부분을 뺀 조각들: 상자에 들어가는 자리에서 끊고 나가는 자리부터 다시 잇는다. 다 안이면 빈 배열. */
+export function outsideBox(pts: Px[], b: Box): Px[][] {
+  const out: Px[][] = [];
+  let cur: Px[] = [];
+  const add = (p: Px) => { const l = cur.at(-1); if (!l || l[0] !== p[0] || l[1] !== p[1]) cur.push(p); };
+  const end = () => { if (cur.length > 1) out.push(cur); cur = []; };
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const [a, c] = [pts[i]!, pts[i + 1]!];
+    const span = spanIn(a, c, b);
+    if (!span) { add(a); add(c); continue; }
+    const at = (t: number): Px => [a[0] + (c[0] - a[0]) * t, a[1] + (c[1] - a[1]) * t];
+    if (span[0] > 0) { add(a); add(at(span[0])); }
+    end();
+    if (span[1] < 1) { add(at(span[1])); add(c); }
+  }
+  end();
+  return out;
 }
 
 export function destinationLayers(at: Px, k: number): Layer[] {

@@ -1,6 +1,6 @@
 // 3D 트윈 위 표시 판(MapOverlay): 어둡게 한 방 층은 계획이 오면 묶음마다 미리 만들고 지금 묶음만 보인다. 판 transform은 엔진 카메라가 그림마다 바꾼다.
-// 선·점은 마우스를 받지 않고 점선이 없다. 확인한 기기·물건에만 말풍선이 있다. 클로이드는 SVG가 아니라 엔진의 3D 인형·원뿔(setEye)이 맞춘 눈을 따른다.
-// 판이 캔버스 위라 길 선은 인형 자리에서 비운다.
+// 선·점은 마우스를 받지 않고 점선이 없다. 확인한 기기·물건에만 말풍선이 있다. 클로이드는 SVG가 아니라 엔진의 3D 원뿔(setEye)이 맞춘 눈을 따른다.
+// 판이 캔버스 위라 길 선은 원뿔이 차지하는 상자에서 비운다.
 import { act, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import type { DeviceView, EyeEvent, HealthView, ServerMessage } from "../../../src/contract/events.ts";
@@ -9,11 +9,10 @@ import { coverScale, focusOf, livedOf, toScreen, wideCamera } from "../../src/da
 import { Dashboard } from "../../src/dashboard/Dashboard";
 import { roomSetsOf, twinFrame } from "../../src/dashboard/frame";
 import { MapOverlay } from "../../src/dashboard/MapOverlay";
-import { leaveBox } from "../../src/dashboard/marks";
+import { outsideBox } from "../../src/dashboard/marks";
 import { PreDrawing } from "../../src/dashboard/motion";
 import { TwinEngine } from "../../src/twin3d/engine";
-import { DOLL_HEIGHT, DOLL_REACH } from "../../src/twin3d/eye";
-import { planToPixel } from "../../src/twin3d/projection";
+import { conePixelBox } from "../../src/twin3d/eye";
 import { plateTransform, type MapCamera } from "../../src/twin3d/view";
 import { anchorOf, CAM, HOME, IMAGE, moment, PLAN, PLAN_CHECKS, SCENE, SINK } from "./cup-run";
 
@@ -47,13 +46,9 @@ function fakeEngine(start: MapCamera) {
   };
 }
 
-/** 클로이드 3D 인형이 구운 보기 그림에서 차지하는 상자(그림 px): 발(그 방 바닥)·머리(바닥 + 키) 둘레에 DOLL_REACH. */
-function dollImageBox(robot: NonNullable<ReturnType<typeof twinFrame>["robot"]>) {
-  const floor = HOME.rooms.find((r) => r.id === robot.room)?.floor ?? 0;
-  const [feet, head] = [floor, floor + DOLL_HEIGHT].map((h) => planToPixel(CAM, robot.position, h));
-  const r = DOLL_REACH * (CAM.width / CAM.orthoScale);
-  return { x0: Math.min(feet![0], head![0]) - r, y0: Math.min(feet![1], head![1]) - r, x1: Math.max(feet![0], head![0]) + r, y1: Math.max(feet![1], head![1]) + r };
-}
+/** 판 안 한 층의 path 조각들(M마다 한 조각, 그림 px). */
+const piecesOf = (el: Element) => (el.querySelector("path")?.getAttribute("d") ?? "").split("M").filter(Boolean)
+  .map((d) => [...d.matchAll(/(-?[\d.]+),(-?[\d.]+)/g)].map((m) => [Number(m[1]), Number(m[2])] as const));
 /** 판 안 한 층의 path 점들(그림 px). */
 const pointsOf = (el: Element) => [...(el.querySelector("path")?.getAttribute("d") ?? "").matchAll(/(-?[\d.]+),(-?[\d.]+)/g)].map((m) => [Number(m[1]), Number(m[2])] as const);
 
@@ -68,14 +63,19 @@ function overlay(n: number, engine: ReturnType<typeof fakeEngine> | null, roomSe
   return <MapOverlay {...p} shapes={HOME.shapes} roomSets={roomSets} image={IMAGE} size={SIZE} engine={engine} devices={devices} objects={objects} moveMs={0} blocked={[]} />;
 }
 
-describe("길 선에서 인형 자리 빼기(leaveBox)", () => {
+describe("길 선에서 원뿔 상자 빼기(outsideBox)", () => {
   const B = { x0: 0, y0: 0, x1: 10, y1: 10 };
-  it("앞 점이 상자 안이면 상자를 처음 나가는 자리부터, 밖이면 그대로, 다 안이면 빈 배열", () => {
-    expect(leaveBox([[5, 5], [5, 30], [20, 30]], B)).toEqual([[5, 10], [5, 30], [20, 30]]);
-    expect(leaveBox([[5, 5], [6, 6], [-10, 6]], B)).toEqual([[0, 6], [-10, 6]]);
-    expect(leaveBox([[20, 20], [5, 5]], B)).toEqual([[20, 20], [5, 5]]);
-    expect(leaveBox([[5, 5], [6, 6]], B)).toEqual([]);
-    expect(leaveBox([], B)).toEqual([]);
+  it("상자 안에 든 부분만 빼고 조각으로 나눈다: 앞이 안이면 나가는 자리부터, 지나가면 두 조각, 끝이 안이면 들어가는 자리까지, 다 안이면 없음, 안 닿으면 그대로", () => {
+    expect(outsideBox([[5, 5], [5, 30], [20, 30]], B)).toEqual([[[5, 10], [5, 30], [20, 30]]]);
+    expect(outsideBox([[5, 5], [6, 6], [-10, 6]], B)).toEqual([[[0, 6], [-10, 6]]]);
+    expect(outsideBox([[20, 20], [5, 5]], B)).toEqual([[[20, 20], [10, 10]]]);
+    expect(outsideBox([[-5, 5], [15, 5], [15, 20]], B)).toEqual([[[-5, 5], [0, 5]], [[10, 5], [15, 5], [15, 20]]]);
+    expect(outsideBox([[5, 5], [6, 6]], B)).toEqual([]);
+    expect(outsideBox([[20, 0], [20, 30], [40, 30]], B)).toEqual([[[20, 0], [20, 30], [40, 30]]]);
+    // 테두리를 따라가거나 모서리만 스치면 그대로
+    expect(outsideBox([[-5, 0], [15, 0]], B)).toEqual([[[-5, 0], [15, 0]]]);
+    expect(outsideBox([[-5, 5], [5, -5]], B)).toEqual([[[-5, 5], [5, -5]]]);
+    expect(outsideBox([], B)).toEqual([]);
   });
 });
 
@@ -136,7 +136,7 @@ describe("트윈 위 표시 판", () => {
     expect(container.innerHTML).not.toMatch(/dasharray/);
   });
 
-  it("클로이드는 SVG 판에 그리지 않는다(3D 인형·원뿔이 맞춘 눈을 따른다). 카메라 맞춤용 frame.robot은 그대로다", () => {
+  it("클로이드는 SVG 판에 그리지 않는다(3D 원뿔이 맞춘 눈을 따른다). 카메라 맞춤용 frame.robot은 그대로다", () => {
     expect(propsAt(3).frame.robot).not.toBeNull();
     const { container } = render(overlay(3, null));
     expect(container.querySelector("[data-robot]")).toBeNull();
@@ -144,23 +144,48 @@ describe("트윈 위 표시 판", () => {
     expect(container.querySelector('[fill^="url("]')).toBeNull();
   });
 
-  it.each([1, 2, 3, 4])("순간 %i: 길 선(지나온 길·남은 길·지금 구간)은 3D 인형 자리에서 비우고 인형 둘레까지 온다(판이 캔버스 위라 인형을 덮지 않게)", (n) => {
+  it.each([1, 2, 3, 4])("순간 %i: 길 선(지나온 길·남은 길·지금 구간)은 3D 원뿔이 차지하는 상자를 지나지 않는다(판이 캔버스 위라 원뿔을 덮지 않게). 상자 밖 길은 그대로 있다", (n) => {
     const { frame } = propsAt(n);
     expect(frame.robot).not.toBeNull();
-    const b = dollImageBox(frame.robot!);
+    const b = conePixelBox(CAM, moment(n).eye);
+    expect(frame.robot!.body).toEqual(b);
     const { container } = render(overlay(n, null));
     const lines = [...container.querySelectorAll("[data-line]")];
     expect(lines.length).toBeGreaterThan(0);
-    let near = Infinity;
+    const inBox = (u: number, v: number) => u > b.x0 + 0.5 && u < b.x1 - 0.5 && v > b.y0 + 0.5 && v < b.y1 - 0.5;
     for (const el of lines) {
-      const pts = pointsOf(el);
-      expect(pts.length, el.getAttribute("data-line")!).toBeGreaterThan(1);
-      for (const [u, v] of pts) {
-        expect(u > b.x0 + 0.5 && u < b.x1 - 0.5 && v > b.y0 + 0.5 && v < b.y1 - 0.5, `${el.getAttribute("data-line")} ${u},${v}`).toBe(false);
-        near = Math.min(near, Math.hypot(Math.max(b.x0 - u, 0, u - b.x1), Math.max(b.y0 - v, 0, v - b.y1)));
+      const name = el.getAttribute("data-line")!;
+      const pieces = piecesOf(el);
+      expect(pieces.length, name).toBeGreaterThan(0);
+      for (const pts of pieces) {
+        expect(pts.length, name).toBeGreaterThan(1);
+        // 조각의 선분을 2 px마다 짚어 본다
+        for (let i = 0; i + 1 < pts.length; i++) {
+          const [p, q] = [pts[i]!, pts[i + 1]!];
+          const steps = Math.max(1, Math.ceil(Math.hypot(q[0] - p[0], q[1] - p[1]) / 2));
+          for (let j = 0; j <= steps; j++) {
+            const [u, v] = [p[0] + ((q[0] - p[0]) * j) / steps, p[1] + ((q[1] - p[1]) * j) / steps];
+            expect(inBox(u, v), `${name} ${u},${v}`).toBe(false);
+          }
+        }
       }
     }
-    expect(near, "인형 둘레까지 온 길").toBeLessThan(1);
+    // 원뿔 상자 밖인 길 끝(목적지 쪽)은 그대로 그린다
+    const end = frame.route.points.at(-1)!;
+    expect(inBox(end[0], end[1])).toBe(false);
+    const ahead = piecesOf(container.querySelector('[data-line="ahead"]') ?? container.querySelector('[data-line="passed"]')!).flat();
+    expect(ahead.length).toBeGreaterThan(1);
+  });
+
+  it("길이 원뿔 상자를 가로지르면 그 자리만 비우고 두 조각으로 그린다", () => {
+    const eye = { ...moment(3).eye, pitch_deg: -80 };
+    const frame = twinFrame({ ...moment(3), eye, checks: PLAN_CHECKS, anchor: anchorOf, home: HOME, cam: CAM });
+    const b = frame.robot!.body;
+    expect(b).toEqual(conePixelBox(CAM, eye));
+    // 원뿔 상자 가운데를 가로로 지나는 길
+    const mid = (b.y0 + b.y1) / 2;
+    const cut = outsideBox([[b.x0 - 50, mid], [b.x1 + 50, mid]], b);
+    expect(cut).toEqual([[[b.x0 - 50, mid], [b.x0, mid]], [[b.x1, mid], [b.x1 + 50, mid]]]);
   });
 
   it("표시는 21st.dev Line Draw SVG를 겹친 것이고, 한 장은 받은 코드처럼 path 하나만 그린다", () => {
@@ -277,12 +302,12 @@ describe("대시보드 구운 트윈 위 표시", () => {
     Object.defineProperty(HTMLElement.prototype, "offsetHeight", height);
   });
 
-  it("?debug=steps면 트윈 위 표시도 그 순간 것이고 서버 계획은 쓰지 않는다: 순간 3은 경로·목적지·클로이드 인형·주방 묶음, 순간 0은 목적지 없이 집 전체", async () => {
+  it("?debug=steps면 트윈 위 표시도 그 순간 것이고 서버 계획은 쓰지 않는다: 순간 3은 경로·목적지·클로이드 원뿔·주방 묶음, 순간 0은 목적지 없이 집 전체", async () => {
     history.replaceState(null, "", "/?debug=steps&step=3");
     const { container } = render(<Dashboard />);
     await waitFor(() => expect(load).toHaveBeenCalled());
     await waitFor(() => expect(engine.setEye.mock.calls.at(-1)?.[0]).toEqual(moment(3).eye));
-    // 표시 판의 클로이드 자리는 엔진이 인형을 그리는 자리(stand)로 묻고, 엔진에는 받은 눈을 그대로 넣는다
+    // 표시 판의 클로이드 자리는 엔진이 원뿔을 그리는 자리(stand)로 묻고, 엔진에는 받은 눈을 그대로 넣는다
     expect(engine.stand.mock.calls.at(-1)?.[0]).toEqual(moment(3).eye!.position);
     for (const sel of ['[data-line="leg-ahead"]', "[data-target]", `[data-mark="${SINK}"]`]) expect(container.querySelector(sel), sel).not.toBeNull();
     const lit = () => [...container.querySelectorAll<HTMLElement>("[data-map-dim]")].filter((d) => d.style.opacity === "1").map((d) => d.dataset.mapDim);
@@ -325,12 +350,12 @@ describe("대시보드 구운 트윈 위 표시", () => {
     expect(engine.resize.mock.calls.length).toBe(resized);
   });
 
-  it("계획·맞춘 눈이 오면 트윈 위에 경로·목적지·확인한 것을 그리고, 3D 인형이 맞춘 눈을 따르며, 카메라가 그 단계로 옮긴다", async () => {
+  it("계획·맞춘 눈이 오면 트윈 위에 경로·목적지·확인한 것을 그리고, 3D 원뿔이 맞춘 눈을 따르며, 카메라가 그 단계로 옮긴다", async () => {
     const { container } = render(<Dashboard />);
     await waitFor(() => expect(load).toHaveBeenCalled());
     await waitFor(() => expect(FakeSocket.last).not.toBeNull());
     await waitFor(() => expect(container.querySelector("[data-map-plate]")).not.toBeNull());
-    // 눈이 오기 전: 엔진에 눈 없음(인형 숨김)
+    // 눈이 오기 전: 엔진에 눈 없음(원뿔 숨김)
     expect(engine.setEye).toHaveBeenCalled();
     expect(engine.setEye.mock.calls.every(([e]) => e === null)).toBe(true);
     const whole = engine.setView.mock.calls.at(-1)![0];
@@ -348,7 +373,7 @@ describe("대시보드 구운 트윈 위 표시", () => {
     expect(dims.filter((d) => d.style.opacity === "1").map((d) => d.dataset.mapDim)).toEqual(["kitchen+living"]);
     const moved = engine.setView.mock.calls.at(-1)!;
     expect(moved[0].scale).toBeGreaterThan(whole.scale);
-    // 추정 눈은 버린다: 카메라도 인형도 그대로
+    // 추정 눈은 버린다: 카메라도 원뿔도 그대로
     const eyes = engine.setEye.mock.calls.length;
     act(() => FakeSocket.last!.push({ type: "eye", eye: { ...eye, position: [1, 1], estimated: true } }));
     expect(engine.setView.mock.calls.at(-1)).toBe(moved);

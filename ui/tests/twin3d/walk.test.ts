@@ -1,21 +1,22 @@
 // @vitest-environment node
-// 인형 그릴 자리 보정: 방 밖·벽 속 점은 방 안으로, 벽 가까운 점은 벽 반 두께 + 몸 반지름 밖으로 옮긴다. 방 한가운데 점은 그대로다.
+// 원뿔 그릴 자리 보정: 방 밖·벽 속 점은 방 안으로, 벽 가까운 점은 벽 반 두께 + 표시 반지름(원뿔 꼭짓점 공 0.11 m) 밖으로 옮긴다. 방 한가운데 점은 그대로다.
 // 두 자리 사이 길은 문·트인 경계를 지나고 길 위 모든 점이 방 안이다(벽을 지나는 직선이 아니다). 로봇이 못 가는 방(욕실)도 사람은 간다.
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { Plan2 } from "../../../src/contract/events.ts";
 import { floorPlanFrom, roomAt } from "../../../src/plan/route.ts";
+import { CONE } from "../../src/twin3d/eye";
 import { walkGuide } from "../../src/twin3d/walk";
 
 const SCENE = JSON.parse(readFileSync(fileURLToPath(new URL("../../../twin/apartment/scene.json", import.meta.url)), "utf8")) as {
-  plan: { walls: { a: Plan2 | null; b: Plan2 | null; thickness: number | null }[]; robot: { radius: number } };
+  plan: { walls: { a: Plan2 | null; b: Plan2 | null; thickness: number | null }[] };
 };
 /** 선분 벽(기둥 같은 덩어리 solid는 a·b가 없다). */
 const WALLS = SCENE.plan.walls.filter((w): w is { a: Plan2; b: Plan2; thickness: number } => !!w.a && !!w.b);
 const FP = floorPlanFrom(SCENE);
-const guide = walkGuide(SCENE);
-const KEEP = (w: { thickness: number }) => w.thickness / 2 + SCENE.plan.robot.radius;
+const guide = walkGuide(SCENE, CONE.apex);
+const KEEP = (w: { thickness: number }) => w.thickness / 2 + CONE.apex;
 const toWall = (p: Plan2, w: { a: Plan2; b: Plan2 }) => {
   const dx = w.b[0] - w.a[0], dy = w.b[1] - w.a[1];
   const t = Math.min(1, Math.max(0, ((p[0] - w.a[0]) * dx + (p[1] - w.a[1]) * dy) / (dx * dx + dy * dy)));
@@ -29,7 +30,7 @@ const samples = (pts: Plan2[]) => pts.slice(1).flatMap((b, i) => {
   return Array.from({ length: n - 1 }, (_, k): Plan2 => [a[0] + ((b[0] - a[0]) * (k + 1)) / n, a[1] + ((b[1] - a[1]) * (k + 1)) / n]);
 });
 
-describe("인형 그릴 자리 보정", () => {
+describe("원뿔 그릴 자리 보정", () => {
   it("방 한가운데 점은 그대로다", () => {
     expect(guide.stand([5, 9])).toEqual([5, 9]);
     expect(guide.stand([7, 2.5])).toEqual([7, 2.5]);
@@ -45,10 +46,11 @@ describe("인형 그릴 자리 보정", () => {
     }
   });
 
-  it("벽에 붙은 점은 벽 반 두께 + 몸 반지름만큼 떨어뜨리고 같은 방에 둔다", () => {
+  it("벽에 붙은 점은 벽 반 두께 + 꼭짓점 공 반지름(0.11 m)만큼 떨어뜨리고 같은 방에 둔다", () => {
     const q = guide.stand([7.15, 9]);
     expect(roomAt(FP, q)).toBe("living_room");
-    expect(q[0]).toBeCloseTo(7.2 - 0.06 - SCENE.plan.robot.radius, 6);
+    expect(CONE.apex).toBe(0.11);
+    expect(q[0]).toBeCloseTo(7.2 - 0.06 - 0.11, 6);
     expect(q[1]).toBeCloseTo(9, 6);
   });
 
@@ -81,7 +83,7 @@ describe("인형 그릴 자리 보정", () => {
   });
 
   it("방이 없는 장면이면 자리를 바꾸지 않고 길도 없다", () => {
-    const g = walkGuide({ plan: {}, objects: [] });
+    const g = walkGuide({ plan: {}, objects: [] }, CONE.apex);
     expect(g.stand([3, 4])).toEqual([3, 4]);
     expect(g.path([0, 0], [1, 1])).toBeNull();
   });

@@ -83,9 +83,6 @@
   --color-scene-light: var(--scene-light);
   --color-scene-shade: var(--scene-shade);
   --color-scene-placeholder: var(--scene-placeholder);
-  --color-doll-fur: var(--doll-fur);
-  --color-doll-belly: var(--doll-belly);
-  --color-doll-dark: var(--doll-dark);
   --color-glass: var(--glass);
   --color-glass-soft: var(--glass-soft);
   --color-glass-edge: var(--glass-edge);
@@ -205,9 +202,6 @@
   --scene-light: #ffffff;
   --scene-shade: #000000;
   --scene-placeholder: #bdbdbd;
-  --doll-fur: #d6a771;
-  --doll-belly: #f6e4d4;
-  --doll-dark: #434140;
   --glass: rgb(255 252 248 / 0.9);
   --glass-soft: rgb(255 252 248 / 0.6);
   --glass-edge: rgb(66 64 63 / 0.12);

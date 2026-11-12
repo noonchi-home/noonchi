@@ -1,15 +1,15 @@
 // 대시보드 트윈 엔진 한 덩어리: 구운 GLB(r2b)를 고정 정사영 카메라(구운 보기)로 그린다. 카메라는 확대·이동만 하고, 바뀔 때만 그린다.
 // 불러오기 차례: 톤 → 렌더러 → 장면·자산 받기 → 구운 재질 → 빛 → 기본 보기 벽 → 땅 그림자 → 상태 → 정적 합치기 → 첫 그림.
 // 가전 상태(states)·배치 보정(layout)은 live.ts attachLive가 /events 메시지로 바꾼다.
-// 맞춘 눈(클로이드 인형 GLB + 보는 방향 원뿔, eye.ts)은 집을 그린 뒤 깊이를 지우고 따로 그린다: 벽·가구에 가리지 않는다. 대시보드가 setEye로 넣는다.
-// 인형은 방 안·벽에서 떨어진 자리에 서고 새 자리까지 문을 지나 걸어간다(walk.ts, 그리는 자리만). 걷는 동안 그림마다 다시 그린다.
+// 맞춘 눈(보는 방향 원뿔, eye.ts)은 집을 그린 뒤 깊이를 보지 않고 따로 그린다: 벽·가구에 가리지 않는다. 대시보드가 setEye로 넣는다.
+// 원뿔은 방 안·벽에서 떨어진 자리에 서고 새 자리까지 문을 지나 걸어간다(walk.ts, 그리는 자리만). 걷는 동안 그림마다 다시 그린다.
 // 색은 토큰(scene3d)만 쓴다.
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import type { EyeEvent, Plan2 } from "../../../src/contract/events.ts";
 import { scene3d } from "../../../src/design/tokens.ts";
 import { applyDefaultView, viewHeading, type SceneData } from "./cutaway";
-import { DOLL_URL, createEyeDoll, floorOf, type EyeDoll, type FloorRoom } from "./eye";
+import { CONE, createEyeCone, type EyeCone } from "./eye";
 import { bakedGround } from "./ground";
 import { HOME_LIGHTS, addLights } from "./light";
 import { LayoutOps } from "./live";
@@ -35,7 +35,7 @@ async function getJson<T>(url: string): Promise<T> {
 /** 집 전체가 상자를 꽉 채우는 지도 카메라(그림 가운데, cover 배율). */
 export const wholeCamera = (v: OrthoCamera, box: Box): MapCamera => ({ cx: v.width / 2, cy: v.height / 2, scale: Math.max(box.width / v.width, box.height / v.height) });
 
-interface Loaded { data: SceneData; manifest: Manifest; gltf: { scene: THREE.Group }; doll: THREE.Group | null; ground: THREE.Texture | null; maps: Lightmaps }
+interface Loaded { data: SceneData; manifest: Manifest; gltf: { scene: THREE.Group }; ground: THREE.Texture | null; maps: Lightmaps }
 
 export class TwinEngine {
   readonly scene = new THREE.Scene();
@@ -46,9 +46,9 @@ export class TwinEngine {
   /** 배치 보정(옮기기·더하기·빼기). */
   readonly layout: LayoutOps;
   readonly info: { raised: string[]; actions: Record<string, number>; materials: Record<string, number>; merged: { before: number; after: number } };
-  /** 맞춘 눈 층(인형 + 원뿔과 그 빛). 집 그림 위에 깊이를 지우고 그린다. */
+  /** 맞춘 눈 층(원뿔). 집 그림 위에 그린다. */
   private readonly eyeLayer = new THREE.Scene();
-  private readonly eye: EyeDoll;
+  private readonly eye: EyeCone;
   private readonly guide: WalkGuide;
   private readonly loop: RenderLoop;
   private readonly views = new Set<(c: MapCamera) => void>();
@@ -78,17 +78,15 @@ export class TwinEngine {
       renderer.info.autoReset = false;
       const [{ scene: data }, manifest] = await Promise.all([getJson<{ scene: SceneData }>("/api/scene"), getJson<Manifest>(`${BAKE}manifest.json`)]);
       const tex = new THREE.TextureLoader();
-      const [gltf, doll, ground, ...lms] = await Promise.all([
+      const [gltf, ground, ...lms] = await Promise.all([
         new GLTFLoader().loadAsync(BAKE + manifest.glb),
-        // 인형 모델을 못 받아도 집과 원뿔은 그린다
-        new GLTFLoader().loadAsync(DOLL_URL).then((g) => g.scene, () => null),
         manifest.ground ? tex.loadAsync(BAKE + manifest.ground.file) : Promise.resolve(null),
         ...manifest.lightmaps.map((lm) => tex.loadAsync(BAKE + lm.webp)),
       ]);
       const maps: Lightmaps = Object.fromEntries(manifest.lightmaps.map((lm, i) => [lm.name, { tex: asLightmap(lms[i]!, manifest.channel, lm.name), intensity: lm.intensity }]));
-      const engine = new TwinEngine(renderer, view, light, o.box, { data, manifest, gltf, doll, ground, maps });
+      const engine = new TwinEngine(renderer, view, light, o.box, { data, manifest, gltf, ground, maps });
       await renderer.compileAsync(engine.scene, engine.camera);
-      // 눈이 처음 올 때 셰이더를 만들며 끊기지 않게 숨은 인형·원뿔 재질도 미리 만든다
+      // 눈이 처음 올 때 셰이더를 만들며 끊기지 않게 숨은 원뿔 재질도 미리 만든다
       await renderer.compileAsync(engine.eyeLayer, engine.camera);
       engine.draw(performance.now());
       return engine;
@@ -103,7 +101,7 @@ export class TwinEngine {
     readonly view: OrthoCamera,
     light: (typeof HOME_LIGHTS)[string],
     box: Box,
-    { data, manifest, gltf, doll, ground, maps }: Loaded,
+    { data, manifest, gltf, ground, maps }: Loaded,
   ) {
     this.box = { width: box.width, height: box.height };
     this.cur = wholeCamera(view, this.box);
@@ -143,11 +141,9 @@ export class TwinEngine {
     this.root.traverse((n) => { if (n instanceof THREE.Mesh && n.userData.baked && !movable.has(n) && shownInTree(n)) statics.push(n); });
     this.merge = new StaticMerge(this.scene, statics, (m) => owner.get(m) ?? null);
     const merged = this.merge.build();
-    // 맞춘 눈: 합치기 뒤 따로 둔 층이라 합쳐지지 않는다. 인형 발은 그 방 바닥(floor_z)에 선다
-    const rooms = (data.plan as SceneData["plan"] & { rooms?: FloorRoom[] }).rooms ?? [];
-    this.guide = walkGuide(data);
-    this.eye = createEyeDoll({ floorAt: floorOf(rooms), model: doll, guide: this.guide });
-    addLights(this.eyeLayer, { light, sun: manifest.light.sun, target });
+    // 맞춘 눈: 합치기 뒤 따로 둔 층이라 합쳐지지 않는다. 벽에서는 꼭짓점 공 반지름만큼 띄운다
+    this.guide = walkGuide(data, CONE.apex);
+    this.eye = createEyeCone({ guide: this.guide });
     this.eyeLayer.add(this.eye.group);
     this.info = { raised: shown.raised, actions: shown.actions, materials: { ...materials }, merged };
     const entries = new Map(data.objects.map((e) => [e.id, e]));
@@ -211,12 +207,12 @@ export class TwinEngine {
     if (!this.disposed) this.loop.request();
   }
 
-  /** 맞춘 눈을 인형·원뿔로 보인다(null·추정 눈이면 숨김). 보이는 모양이 바뀔 때만 다시 그린다. */
+  /** 맞춘 눈을 원뿔로 보인다(null·추정 눈이면 숨김). 보이는 모양이 바뀔 때만 다시 그린다. */
   setEye(eye: EyeEvent | null): void {
     if (!this.disposed && this.eye.setEye(eye)) this.requestRender();
   }
 
-  /** 인형을 그리는 자리: 눈 자리를 방 안·벽에서 떨어진 자리로 옮긴 것. 화면 표시(길 선·말풍선 비킬 자리)에만 쓴다. */
+  /** 원뿔을 그리는 자리: 눈 자리를 방 안·벽에서 떨어진 자리로 옮긴 것. 화면 표시(길 선·말풍선 비킬 자리)에만 쓴다. */
   stand(p: Plan2): Plan2 {
     return this.guide.stand(p);
   }
@@ -268,9 +264,8 @@ export class TwinEngine {
     this.renderer.info.reset();
     this.renderer.render(this.scene, this.camera);
     if (this.eye.group.visible) {
-      // 맞춘 눈은 집 위에: 깊이만 지우고 같은 카메라로 그린다
+      // 맞춘 눈은 집 위에: 그림을 지우지 않고 같은 카메라로 그린다
       this.renderer.autoClear = false;
-      this.renderer.clearDepth();
       this.renderer.render(this.eyeLayer, this.camera);
       this.renderer.autoClear = true;
     }

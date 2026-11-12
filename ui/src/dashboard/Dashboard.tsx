@@ -91,7 +91,7 @@ function useHomeData(home: string | null): HomeData | null {
 
 /**
  * 구운 3D 트윈(TwinStage와 같은 틀): 캔버스와 그 위 표시 판(MapOverlay: 경로·목적지·확인한 것·어둡게 한 방·말풍선).
- * 계획·맞춘 눈은 대시보드 자료(data.ts)의 것이다. 클로이드(맞춘 눈)는 엔진 장면의 클로이드 인형 + 보는 방향 원뿔이다(engine.setEye).
+ * 계획·맞춘 눈은 대시보드 자료(data.ts)의 것이다. 클로이드(맞춘 눈)는 엔진 장면의 보는 방향 원뿔이다(engine.setEye).
  * 지도 카메라는 그 단계에 중요한 것(focusOf)을, 지켜보기는 집 전체보다 당긴 기본 보기(homeCamera: 사람이 있는 방을)를 지도 카메라 칸(layout.camPad 안쪽: 미니맵·말풍선·마스코트 밖)에 맞추고, 작은 눈 움직임(still)에는 그대로 둔다.
  * 바뀌면 CAMERA_MS 동안 옮긴다(움직임 줄이기면 바로). 종류를 정하기 전(home null)에는 캔버스 없이 틀만.
  * 엔진이 뜨고 버려질 때 onEngine, 첫 그림을 그리면 onReady.
@@ -112,7 +112,7 @@ function BakedStage({ home, layout, plan, eye, checks, devices, onEngine: toLive
   const [engine, setEngine] = useState<TwinEngine | null>(null);
   const homeData = useHomeData(home);
   const list = useMemo(() => dashboardChecks(checkList(checks, homeData?.tableId ?? null)), [checks, homeData]);
-  // 길 선·말풍선이 비킬 클로이드 자리는 인형을 그리는 자리(방 안·벽에서 떨어진 자리)다. 엔진에는 받은 눈을 그대로 넣는다
+  // 길 선·말풍선이 비킬 클로이드 자리는 원뿔을 그리는 자리(방 안·벽에서 떨어진 자리)다. 엔진에는 받은 눈을 그대로 넣는다
   const drawn = useMemo(() => (eye && engine && !eye.estimated ? { ...eye, position: engine.stand(eye.position) } : eye), [eye, engine]);
   const frame = useMemo(
     () => (v && homeData ? twinFrame({ plan, eye: drawn, checks: list, anchor: (id) => engine?.anchor(id) ?? null, home: homeData.index, cam: v }) : null),
@@ -135,7 +135,7 @@ function BakedStage({ home, layout, plan, eye, checks, devices, onEngine: toLive
     x0: r.left - layout.twin.left, y0: r.top - layout.twin.top, x1: r.left + r.width - layout.twin.left, y1: r.top + r.height - layout.twin.top,
   })), [layout]);
   const debug = useMemo(() => new URLSearchParams(location.search).has("debug"), []);
-  // 맞춘 눈은 3D 인형·원뿔로(엔진이 뜬 뒤에도 마지막 눈을 넣는다)
+  // 맞춘 눈은 3D 원뿔로(엔진이 뜬 뒤에도 마지막 눈을 넣는다)
   useEffect(() => { engine?.setEye(eye); }, [engine, eye]);
   const onEngine = useCallback((e: TwinEngine | null) => {
     setEngine(e);
@@ -162,7 +162,7 @@ function BakedStage({ home, layout, plan, eye, checks, devices, onEngine: toLive
 /**
  * 대시보드: 서버에서 받은 것(health·/events·기기·확인 목록·대시보드 자료)을 화면 틀(DashboardScreen)에 넘긴다.
  * 대시보드 자료(data.ts): 열린 계획의 단계 번호·진행도, 마스코트 방향(열린 계획이면 트윈), 말풍선 카드 말, 생각 말풍선(마지막 유효 판단이 고른 행동과 그 생각·FSM 상태, 대기면 없음), 클로이드 자리를 아는가.
- * 트윈 칸 지도 자리: 한양목련처럼 구운 3D가 있는 집은 three.js 캔버스(클로이드 인형·원뿔 포함)와 그 위 계획 경로·확인한 것·어둡게 한 방(BakedStage),
+ * 트윈 칸 지도 자리: 한양목련처럼 구운 3D가 있는 집은 three.js 캔버스(클로이드 원뿔 포함)와 그 위 계획 경로·확인한 것·어둡게 한 방(BakedStage),
  * 다른 집은 iframe 뷰어(TwinStage)와 그 위 확인 목록 말풍선.
  * 구운 트윈의 가전 상태·배치는 같은 소켓 메시지로 바꾸고, 엔진이 뜨기 전에 온 메시지는 모아 두었다가 엔진이 뜨면 넣는다.
  * 대시보드 폰 칸은 폰 서버가 켜져 있으면 실시간 영상, 아니면 연결 QR이다. health 전에는 빈 칸이다.

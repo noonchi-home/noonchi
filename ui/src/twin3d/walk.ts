@@ -1,25 +1,23 @@
-// 인형을 그릴 자리 보정(그리는 자리만, 눈 자세 값은 그대로): 평면 점을 방 안·벽에서 떨어진 자리로 옮기고(stand),
+// 맞춘 눈 표시(원뿔)를 그릴 자리 보정(그리는 자리만, 눈 자세 값은 그대로): 평면 점을 방 안·벽에서 떨어진 자리로 옮기고(stand),
 // 두 자리 사이는 서버 경로 찾기(src/plan/route.ts)와 같은 방 다각형·문·트인 경계로 잇는다(path). 사람이 든 폰이라 모든 방을 지날 수 있다.
 import type { Plan2 } from "../../../src/contract/events.ts";
 import { floorPlanFrom, roomAt, route } from "../../../src/plan/route.ts";
 
 export interface WalkGuide {
-  /** 그릴 자리: 방 안이고 벽에서 벽 반 두께 + 몸 반지름만큼 떨어진 가장 가까운 자리. 방이 없는 장면이면 그대로. */
+  /** 그릴 자리: 방 안이고 벽에서 벽 반 두께 + 표시 반지름만큼 떨어진 가장 가까운 자리. 방이 없는 장면이면 그대로. */
   stand(p: Plan2): Plan2;
   /** from에서 to까지 바닥 길(문·트인 경계를 지난다). 못 찾으면 null. */
   path(from: Plan2, to: Plan2): Plan2[] | null;
 }
 
 interface Wall { a?: Plan2; b?: Plan2; thickness?: number }
-interface WalkScene { plan?: { walls?: Wall[]; robot?: { radius?: number } } }
+interface WalkScene { plan?: { walls?: Wall[] } }
 
-/** 몸 반지름 기본값(m, 장면 plan.robot.radius가 없을 때). */
-const BODY_R = 0.22;
 /** 벽 선 위 점을 방 안으로 들이는 거리(m). */
 const NUDGE = 0.01;
 /** 이만큼 안이면 벽 선 위로 본다(m). */
 const ON_LINE = 1e-6;
-/** 문·트인 경계를 건널 때 테두리에서 몸 반지름에 더 떨어지는 거리(m, 안벽 반 두께). */
+/** 문·트인 경계를 건널 때 테두리에서 표시 반지름에 더 떨어지는 거리(m, 안벽 반 두께). */
 const GATE_KEEP = 0.06;
 
 /** 선분 ab에서 p와 가장 가까운 점. */
@@ -39,11 +37,11 @@ function sides(c: Plan2, a: Plan2, b: Plan2, m: number): Plan2[] {
 }
 const dist = (a: Plan2, b: Plan2) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 
-export function walkGuide(scene: unknown): WalkGuide {
+/** reach: 그리는 표시가 벽에서 떨어질 반지름(m). 원뿔은 꼭짓점 공 반지름(eye.ts CONE.apex)을 준다. */
+export function walkGuide(scene: unknown, reach: number): WalkGuide {
   const fp = floorPlanFrom(scene);
   const plan = (scene as WalkScene).plan ?? {};
-  const body = plan.robot?.radius ?? BODY_R;
-  const walls = (plan.walls ?? []).flatMap((w) => (w.a && w.b ? [{ a: w.a, b: w.b, keep: (w.thickness ?? 0) / 2 + body }] : []));
+  const walls = (plan.walls ?? []).flatMap((w) => (w.a && w.b ? [{ a: w.a, b: w.b, keep: (w.thickness ?? 0) / 2 + reach }] : []));
   const open = { ...fp, robot: { ...fp.robot, reachable: fp.rooms.map((r) => r.id) } };
   const inRoom = (p: Plan2) => roomAt(fp, p) !== null;
 
@@ -108,7 +106,7 @@ export function walkGuide(scene: unknown): WalkGuide {
         const edge = edgeAt(gate);
         if (!edge) { out.push(gate); continue; }
         const from2 = roomAt(fp, out[out.length - 1]!);
-        const [near, far] = sides(gate, edge[0], edge[1], GATE_KEEP + body);
+        const [near, far] = sides(gate, edge[0], edge[1], GATE_KEEP + reach);
         const first = roomAt(fp, near!) === from2 ? [near!, far!] : [far!, near!];
         out.push(first[0]!, gate, first[1]!);
       }

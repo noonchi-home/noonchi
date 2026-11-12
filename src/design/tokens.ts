@@ -54,10 +54,7 @@ export const color = {
   "scene-rail": "#e4eaec",
   "scene-light": "#ffffff",
   "scene-shade": "#000000",
-  "scene-placeholder": "#bdbdbd",
-  "doll-fur": "#d6a771",
-  "doll-belly": "#f6e4d4",
-  "doll-dark": "#434140"
+  "scene-placeholder": "#bdbdbd"
 } as const;
 
 export const rgba = {
@@ -192,13 +189,7 @@ export const twin = {
     },
     "cone": "#b92a51",
     "coneOpacityFrom": 0.38,
-    "coneOpacityTo": 0,
-    "doll": {
-      "fur": "#d6a771",
-      "belly": "#f6e4d4",
-      "dark": "#434140",
-      "note": "대시보드 3D 트윈의 클로이드 인형(Blender로 만든 미어캣 GLB, 키 1.43 m). 눈가리개·목줄·가슴 점은 brand, 보는 방향 원뿔은 viz.cone ok·limited"
-    }
+    "coneOpacityTo": 0
   },
   "checkedDevice": {
     "bubbleRing": "#a1143e",
