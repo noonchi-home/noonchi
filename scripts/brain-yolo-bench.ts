@@ -65,7 +65,7 @@ async function main(): Promise<void> {
   const first = jpeg.decode(files[0]!, { useTArray: true });
   const what = `${first.width}×${first.height} ${files.length}장`;
 
-  const jsMs = await time((i) => jpeg.decode(files[i % files.length]!, { useTArray: true, formatAsRGBA: true }));
+  const jsMs = await time((i) => jpeg.decode(files[i % files.length]!, { useTArray: true, formatAsRGBA: false }));
   console.log(`JPEG 풀기 jpeg-js (${what}): ${jsMs.toFixed(1)}ms`);
   const dec = await jpegDecoder();
   if (dec.name === "sharp") console.log(`JPEG 풀기 sharp (${what}): ${(await time((i) => dec.decode(files[i % files.length]!))).toFixed(1)}ms`);

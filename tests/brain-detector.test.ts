@@ -285,13 +285,13 @@ describe("관절 간격(BRAIN_POSE_EVERY)", () => {
 
 describe("JPEG 풀기", () => {
   const photo = fixtureJpeg();
-  const viaJs = jpeg.decode(photo, { useTArray: true, formatAsRGBA: true });
+  const viaJs = jpeg.decode(photo, { useTArray: true, formatAsRGBA: false });
 
-  it("sharp로 풀고, 결과는 jpeg-js와 크기가 같고 화소 차 평균이 2 이하다", async () => {
+  it("sharp로 RGB(3채널)로 풀고, 결과는 jpeg-js와 크기가 같고 화소 차 평균이 2 이하다", async () => {
     const dec = await jpegDecoder();
     expect(dec.name).toBe("sharp");
     const img = await dec.decode(photo);
-    expect([img.width, img.height, img.data.length]).toEqual([360, 640, 360 * 640 * 4]);
+    expect([img.width, img.height, img.channels, img.data.length]).toEqual([360, 640, 3, 360 * 640 * 3]);
     let sum = 0;
     for (let i = 0; i < img.data.length; i++) sum += Math.abs(img.data[i]! - viaJs.data[i]!);
     expect(sum / img.data.length).toBeLessThanOrEqual(2);
@@ -301,7 +301,28 @@ describe("JPEG 풀기", () => {
     const dec = await jpegDecoder(() => Promise.reject(new Error("sharp 없음")));
     expect(dec.name).toBe("jpeg-js");
     const img = await dec.decode(photo);
+    expect([img.channels, img.data.length]).toEqual([3, 360 * 640 * 3]);
     expect(Buffer.from(img.data).equals(Buffer.from(viaJs.data))).toBe(true);
+  });
+
+  it("회색(1채널) JPEG도 RGB 3채널로 푼다", async () => {
+    const sharp = (await import("sharp")).default;
+    const gray1 = await sharp({ create: { width: 16, height: 8, channels: 3, background: { r: 90, g: 90, b: 90 } } }).greyscale().jpeg().toBuffer();
+    const img = await (await jpegDecoder()).decode(gray1);
+    expect([img.width, img.height, img.channels, img.data.length]).toEqual([16, 8, 3, 16 * 8 * 3]);
+    expect(Math.abs(img.data[0]! - 90)).toBeLessThanOrEqual(2);
+    expect([img.data[1], img.data[2]]).toEqual([img.data[0], img.data[0]]);
+  });
+
+  it("레터박스는 RGB(3채널) 입력을 받고 RGBA 입력과 같은 값을 낸다(그대로 옮기는 길·줄이는 길 모두)", () => {
+    for (const [w, h] of [[360, 640], [360, 780], [480, 270]] as const) {
+      const four = rgba(w, h, (x, y) => [(x * 7 + y) % 256, (x + y * 3) % 256, (x * y) % 256]);
+      const three = new Uint8Array(w * h * 3);
+      for (let i = 0; i < w * h; i++) three.set(four.data.subarray(i * 4, i * 4 + 3), i * 3);
+      const a = letterboxYolo26(four, 640), b = letterboxYolo26({ data: three, width: w, height: h, channels: 3 }, 640);
+      expect([b.ratio, b.padX, b.padY]).toEqual([a.ratio, a.padX, a.padY]);
+      expect(Buffer.from(b.tensor.buffer).equals(Buffer.from(a.tensor.buffer)), w + "×" + h).toBe(true);
+    }
   });
 });
 

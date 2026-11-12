@@ -101,11 +101,17 @@ export const POSE_MODEL = { file: "yolo26n-pose.onnx", sha256: "dd0e47a03ea0f2b9
 export const MODELS_DIR = fileURLToPath(new URL("../../models/", import.meta.url));
 
 const PAD = 114;
-export type Rgba = { data: Uint8Array; width: number; height: number };
+/** 푼 사진: 화소마다 channels 바이트(RGB 3 또는 RGBA 4, 없으면 4). 레터박스는 앞 세 바이트만 읽는다. */
+export type Pixels = { data: Uint8Array; width: number; height: number; channels?: 3 | 4 };
 
-/** JPEG 풀기: sharp(libjpeg-turbo)로 풀고, sharp를 못 불러오면 jpeg-js로 푼다. 결과는 RGBA. */
-export interface JpegDecoder { name: "sharp" | "jpeg-js"; decode(bytes: Buffer): Promise<Rgba> }
-type SharpFn = (input: Buffer) => { ensureAlpha(): { raw(): { toBuffer(o: { resolveWithObject: true }): Promise<{ data: Buffer; info: { width: number; height: number; channels: number } }> } } };
+/** JPEG 풀기: sharp(libjpeg-turbo)로 풀고, sharp를 못 불러오면 jpeg-js로 푼다. 결과는 RGB 3채널. */
+export interface JpegDecoder { name: "sharp" | "jpeg-js"; decode(bytes: Buffer): Promise<Pixels & { channels: 3 }> }
+interface SharpPipe {
+  raw(): { toBuffer(o: { resolveWithObject: true }): Promise<{ data: Buffer; info: { width: number; height: number; channels: number } }> };
+  toColourspace(space: string): SharpPipe;
+  removeAlpha(): SharpPipe;
+}
+type SharpFn = ((input: Buffer) => SharpPipe) & { concurrency(n: number): number };
 
 export async function jpegDecoder(load: () => Promise<unknown> = () => import("sharp")): Promise<JpegDecoder> {
   let sharp: SharpFn;
@@ -114,14 +120,24 @@ export async function jpegDecoder(load: () => Promise<unknown> = () => import("s
     if (typeof mod.default !== "function") throw new Error("sharp 없음");
     sharp = mod.default;
   } catch {
-    return { name: "jpeg-js", decode: async (bytes) => jpeg.decode(bytes, { useTArray: true, formatAsRGBA: true }) };
+    return {
+      name: "jpeg-js",
+      decode: async (bytes) => {
+        const img = jpeg.decode(bytes, { useTArray: true, formatAsRGBA: false });
+        return { data: img.data, width: img.width, height: img.height, channels: 3 };
+      },
+    };
   }
+  // 작은 사진 한 장은 libvips 스레드 하나가 더 빠르다(이 PC 360×640: 16스레드 5.7ms, 1스레드 4.2ms). 이 프로세스의 sharp 전체에 걸린다
+  sharp.concurrency(1);
   return {
     name: "sharp",
     async decode(bytes) {
-      const { data, info } = await sharp(bytes).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-      if (info.channels !== 4) throw new Error(`JPEG을 RGBA로 풀지 못했습니다(채널 ${info.channels})`);
-      return { data: new Uint8Array(data.buffer, data.byteOffset, data.byteLength), width: info.width, height: info.height };
+      let { data, info } = await sharp(bytes).raw().toBuffer({ resolveWithObject: true });
+      // 회색·CMYK·알파가 있는 사진은 sRGB 3채널로 바꿔 다시 푼다
+      if (info.channels !== 3) ({ data, info } = await sharp(bytes).toColourspace("srgb").removeAlpha().raw().toBuffer({ resolveWithObject: true }));
+      if (info.channels !== 3) throw new Error(`JPEG을 RGB로 풀지 못했습니다(채널 ${info.channels})`);
+      return { data: new Uint8Array(data.buffer, data.byteOffset, data.byteLength), width: info.width, height: info.height, channels: 3 };
     },
   };
 }
@@ -146,8 +162,8 @@ function linearTaps(dst: number, src: number): { i0: Int32Array; i1: Int32Array;
   return { i0, i1, w };
 }
 
-/** YOLO26 입력(Ultralytics LetterBox): RGBA → [3, size, size] RGB(0~1). 긴 변을 size에 맞추고(쌍선형) 가운데에 두고 나머지를 114/255로 채운다. */
-export function letterboxYolo26(img: Rgba, size: number): LetterboxPlace & { tensor: Float32Array } {
+/** YOLO26 입력(Ultralytics LetterBox): RGB·RGBA → [3, size, size] RGB(0~1). 긴 변을 size에 맞추고(쌍선형) 가운데에 두고 나머지를 114/255로 채운다. */
+export function letterboxYolo26(img: Pixels, size: number): LetterboxPlace & { tensor: Float32Array } {
   const ratio = Math.min(size / img.width, size / img.height);
   const nw = Math.min(size, Math.round(img.width * ratio));
   const nh = Math.min(size, Math.round(img.height * ratio));
@@ -156,14 +172,15 @@ export function letterboxYolo26(img: Rgba, size: number): LetterboxPlace & { ten
   const plane = size * size;
   const tensor = new Float32Array(3 * plane).fill(PAD / 255);
   const src = img.data;
-  const rowLen = img.width * 4;
+  const ch = img.channels ?? 4;
+  const rowLen = img.width * ch;
   const R = tensor.subarray(0, plane), G = tensor.subarray(plane, 2 * plane), B = tensor.subarray(2 * plane);
   if (nw === img.width && nh === img.height) {
     // 크기가 그대로면(폰 엔진 프레임 360×640) 섞지 않고 옮기기만 한다
     for (let y = 0; y < nh; y++) {
       let s = y * rowLen;
       let o = (y + padY) * size + padX;
-      for (let x = 0; x < nw; x++, s += 4, o++) {
+      for (let x = 0; x < nw; x++, s += ch, o++) {
         R[o] = BYTE_TO_UNIT[src[s]!]!;
         G[o] = BYTE_TO_UNIT[src[s + 1]!]!;
         B[o] = BYTE_TO_UNIT[src[s + 2]!]!;
@@ -175,7 +192,7 @@ export function letterboxYolo26(img: Rgba, size: number): LetterboxPlace & { ten
   const ys = linearTaps(nh, img.height);
   // 열마다 원본 두 칸의 바이트 자리를 미리 구해 둔다
   const x0 = new Int32Array(nw), x1 = new Int32Array(nw);
-  for (let x = 0; x < nw; x++) { x0[x] = xs.i0[x]! * 4; x1[x] = xs.i1[x]! * 4; }
+  for (let x = 0; x < nw; x++) { x0[x] = xs.i0[x]! * ch; x1[x] = xs.i1[x]! * ch; }
   const wxs = xs.w;
   for (let y = 0; y < nh; y++) {
     const r0 = ys.i0[y]! * rowLen, r1 = ys.i1[y]! * rowLen, wy = ys.w[y]!;
