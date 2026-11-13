@@ -205,11 +205,14 @@ export function planContext(o: {
   names?: ReadonlyMap<string, string>; typeLabel?: (type: string) => string | undefined;
 }): PlanContext {
   const task = o.task ?? taskOf(o.decision.action);
+  // 평면도 줄의 배치 이름: 주지 않으면 종류 짧은 이름을 배치 이름으로 보인다(이름 찾기에는 쓰지 않는다)
+  const layout: ReadonlyMap<string, string> = o.names ?? new Map([...o.floor.objects.values()].flatMap((p) => { const s = placeShort(p.type); return s ? [[p.id, s] as [string, string]] : []; }));
   if (!task) throw new Error(`행동 목록에 없는 행동: ${o.decision.action}`);
   return {
     decision: o.decision, task, world: o.world, floor: o.floor, rooms: o.rooms ?? [], devices: o.hub ? deviceViews(o.hub) : [], nowIso: o.nowIso ?? "2026-11-10T00:00:00.000Z",
     // 서버와 같은 평면도 줄(src/agent/planTools.ts placesOf). 배치 이름이 없으면 종류 짧은 이름을 배치 이름으로 쓴다
-    places: placesOf(o.floor, { names: o.names ?? new Map([...o.floor.objects.values()].flatMap((p) => { const s = placeShort(p.type); return s ? [[p.id, s] as [string, string]] : []; })), typeLabel: o.typeLabel }),
+    places: placesOf(o.floor, { layoutName: (id) => layout.get(id), typeLabel: o.typeLabel }),
+    names: { layoutName: (id) => o.names?.get(id), typeLabel: o.typeLabel },
     ...(o.placed ? { placed: o.placed } : {}),
   };
 }

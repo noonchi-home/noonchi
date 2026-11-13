@@ -16,10 +16,14 @@ export const STEP_COMMAND = {
 /** 실제 폰 「완료」 바로 위 비전 상태 한 줄: 이동은 남은 거리, 집기·내려놓기는 World State의 컵 자리. */
 export const VISION_TEXT = {
   table: "식탁", sink: "싱크대", cup: "컵", unseen: "안 보임",
-  distance: (place: string, m: number | null) => (m === null ? `${place}까지 거리 모름` : `${place}까지 ${m.toFixed(1)}m`),
+  /** 부를 이름을 모르면(null) 거리만 쓴다(id는 화면에 내지 않는다). */
+  distance: (place: string | null, m: number | null) => (place === null ? (m === null ? "거리 모름" : `${m.toFixed(1)}m 남음`) : m === null ? `${place}까지 거리 모름` : `${place}까지 ${m.toFixed(1)}m`),
   /** 관찰 모드에 주는 변화 줄: 폰이 지금 단계 자리를 떠나 다른 자리 가까이로 감. */
   movedNear: (place: string) => `폰이 ${place} 가까이로 감`,
 };
+
+/** 가전 이름을 하나도 못 찾았을 때 묻는 글·끄기 안내에 쓰는 말(src/act/track.ts handLabel). */
+export const DEVICE_UNKNOWN = "가전";
 
 export const GOAL = { clearCup: "컵 치우기", askUser: "사용자에게 물어보기" };
 

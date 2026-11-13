@@ -16,6 +16,7 @@ import { ApprovalStore, approvalsPath } from "../agent/approval.js";
 import { Observer } from "../agent/observer.js";
 import { Planner } from "../agent/planner.js";
 import { placesOf, type PlaceInfo } from "../agent/planTools.js";
+import type { PlaceNames } from "../plan/names.js";
 import { Policy } from "../agent/policy.js";
 import { createProvider } from "../agent/providers/index.js";
 import { deviceViews } from "../agent/tools.js";
@@ -237,9 +238,9 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     const scene = loadScene(home);
     const floorPlan = floorPlanFrom(scene ?? {});
     // 계획 입력의 평면도 물건(벽·바닥·문·창은 뺀다): 배치 이름과 부를 짧은 이름(종류 짧은 이름 → 카탈로그 종류 이름 → 배치 이름)
-    const places = (): PlaceInfo[] => placesOf(floorPlan, {
-      names: new Map((layout?.editor.objects() ?? []).map((o) => [o.id, o.name])), typeLabel: (t) => layout?.editor.typeLabel(t),
-    });
+    // 부르는 이름 자료(src/plan/names.ts): 카탈로그 종류 이름과 배치 이름. 계획 단계·실행 추적·비전 상태 줄이 같은 것을 쓴다
+    const placeNames: PlaceNames = { typeLabel: (t) => layout?.editor.typeLabel(t), layoutName: (id) => layout?.editor.center(id)?.label };
+    const places = (): PlaceInfo[] => placesOf(floorPlan, placeNames);
     // 대시보드 말풍선 카드(src/act/say.ts): 계획 방송·실제 폰 명령·World State 바뀜·판단 타이머 뒤에 다시 보고, 글이 바뀔 때만 보낸다
     let speak = () => {};
     const plans = new PlanHub(floorPlan, (m) => {
@@ -326,7 +327,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
           const task = taskOf(d.action);
           if (!task) return { ok: false, error: "행동 목록에 없는 행동" };
           return planner.plan({
-            decision: d, task, world: world.view(now()), floor: plans.floor(), places: places(), rooms: twin.rooms, devices: deviceViews(signals), nowIso: new Date(now()).toISOString(),
+            decision: d, task, world: world.view(now()), floor: plans.floor(), places: places(), names: placeNames, rooms: twin.rooms, devices: deviceViews(signals), nowIso: new Date(now()).toISOString(),
             placed: new Map(tracker?.placed() ?? []), ...(task.coach ? { lesson: lessons.get(task.name) } : {}),
           }, signal);
         },
@@ -337,7 +338,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
           phoneRef.current?.command(m);
           if (m.type === "command") speak();
         },
-        locate: placeAt,
+        locate: placeAt, names: placeNames,
         check: (d, p) => checkPlan({
           decision: d, tasks: d.tasks ?? tasksFor(assist()), plan: p, world: world.view(now()), nowMs: now(), staleMs: act.staleMs, mode: ctx.mode?.() ?? "test", deviceSteps: deviceSteps(p),
           placed: tracker?.placed(),

@@ -50,7 +50,8 @@ import type { Facet, WorldChange, WorldChangeKind, WorldEye, WorldObject, WorldV
 import type { LookSpot } from "../observe/crop.js";
 import type { FloorPlan } from "../plan/floor.js";
 import type { PlanHub } from "../plan/hub.js";
-import { AGAIN_TEXT, APPROVAL_TEXT, CAUTION_TEXT, CLOSER_TEXT, EXEC_TEXT, TELL_TEXT, VISION_TEXT, placeShort, type TellMode } from "../plan/labels.js";
+import { AGAIN_TEXT, APPROVAL_TEXT, CAUTION_TEXT, CLOSER_TEXT, DEVICE_UNKNOWN, EXEC_TEXT, TELL_TEXT, VISION_TEXT, type TellMode } from "../plan/labels.js";
+import { placeName, type PlaceNames } from "../plan/names.js";
 import { roomAt } from "../plan/route.js";
 import { OBJECT_NAME, PLACE_UNKNOWN, STATE_TEXT, onSurface } from "../world/labels.js";
 import { ConditionWatch, type Condition, type ConditionContext } from "../world/conditions.js";
@@ -88,6 +89,8 @@ export interface TrackerOptions {
   toPhone: (msg: PlannedCommandMessage) => void;
   /** 평면도 물건의 이름과 트윈 자리 [x, 높이, y](명령 대상 고리·가까이 볼 자리, 면이면 윗면 가운데). 모르면 undefined. */
   locate?: (id: string) => { label: string; position: [number, number, number] } | undefined;
+  /** 부르는 이름 자료(src/plan/names.ts, 계획 단계와 같은 것). 배치 이름이 없으면 locate 이름을 배치 이름으로 본다. */
+  names?: PlaceNames;
   emit: (l: BrainLog) => void;
   /** 승인 기억(task:<행동 이름>). 처음 하는 계획은 묻고, 답을 남긴다. */
   approvals: ApprovalBook;
@@ -427,10 +430,10 @@ export class ExecutionTracker {
       r.strayNear = null;
       return;
     }
-    const near = [...fp.objects.values()].filter((o) => o.id !== step.target && placeShort(o.type) && far(o.position) <= PHONE_NEAR_M).sort((a, b) => far(a.position) - far(b.position))[0];
+    const near = [...fp.objects.values()].filter((o) => o.id !== step.target && this.nameOf(o.id) && far(o.position) <= PHONE_NEAR_M).sort((a, b) => far(a.position) - far(b.position))[0];
     if (!near || near.id === r.strayNear) return;
     r.strayNear = near.id;
-    this.stray(r, [VISION_TEXT.movedNear(this.placeName(near.id))]);
+    this.stray(r, [VISION_TEXT.movedNear(this.nameOf(near.id)!)]);
   }
 
   /** 관찰 모드의 다시 알리기(tell_person): 지금 그 계획의 그 사람 단계면 명령 글을 서버 글 한 줄(지금 명령 그대로, 또는 「먼저」를 붙인 것)로 바꿔 소리로 읽고,
@@ -493,7 +496,9 @@ export class ExecutionTracker {
     const step = r ? this.stepOf(r) : undefined;
     if (this.stopped || !r || r.state !== "running" || r.asking || !r.sent || !step || !HUMAN_KINDS.includes(step.kind)) return null;
     if (r.plan.view.id !== planId || step.id !== stepId || r.sent.step !== stepId || this.handStep(step)) return null;
-    const name = this.spots(r, step, this.o.world()).find((p) => p.id === spot)?.label ?? (spot === step.target && this.o.floor().objects.has(spot) ? this.placeName(spot) : null);
+    // 평면도 자리는 같은 이름 찾기(src/plan/names.ts)로, 물건은 그 종류 이름으로 부른다. 부를 이름이 없으면 보내지 않는다(id를 폰 글에 쓰지 않는다)
+    const listed = this.spots(r, step, this.o.world()).find((p) => p.id === spot);
+    const name = this.o.floor().objects.has(spot) ? (listed || spot === step.target ? this.nameOf(spot) : null) : listed?.label ?? null;
     if (!name) return null;
     const said = CLOSER_TEXT(name);
     r.spokeAt = this.clock.now();
@@ -580,10 +585,9 @@ export class ExecutionTracker {
     return step.hand !== null;
   }
 
-  /** 손으로 다루는 가전 이름(묻는 글·끄기 안내): 그 가전이 평면도에 있으면 종류의 짧은 이름(인덕션), 아니면 이 집 가전 이름, 그것도 없으면 단계 대상 자리 이름. */
+  /** 손으로 다루는 가전 이름(묻는 글·끄기 안내): 같은 이름 찾기(src/plan/names.ts)로 그 가전, 없으면 단계 대상 자리. 둘 다 없으면 「가전」. */
   private handLabel(deviceId: string, target: string | null = null): string {
-    const type = this.o.floor().objects.get(deviceId)?.type;
-    return (type && placeShort(type)) || this.o.handDevices?.().find((d) => d.id === deviceId)?.label || this.placeName(target ?? deviceId);
+    return this.nameOf(deviceId) ?? (target ? this.nameOf(target) : null) ?? DEVICE_UNKNOWN;
   }
 
   /** 켜기 전 질문의 답(기억하지 않는다): 승인이면 그때 켜라는 명령을 보내고(그 가전은 끄는 단계가 끝날 때까지 켠 것으로 본다), 거절이면 취소로 닫는다.
@@ -962,7 +966,7 @@ export class ExecutionTracker {
     const obj = id ? ours(r, id, world).find((o) => o.status !== "gone" && o.position) : undefined;
     if (obj?.position) out.push({ id: obj.id, label: OBJECT_NAME[obj.cls] ?? obj.cls, position: obj.position });
     const at = step.target ? this.o.locate?.(step.target) : undefined;
-    if (step.target && at && step.target !== id && step.target !== obj?.id) out.push({ id: step.target, label: this.placeName(step.target), position: at.position });
+    if (step.target && at && step.target !== id && step.target !== obj?.id) out.push({ id: step.target, label: this.nameOf(step.target) ?? PLACE_UNKNOWN, position: at.position });
     return out;
   }
 
@@ -1011,7 +1015,7 @@ export class ExecutionTracker {
     if (step.kind === "do") {
       const id = step.target;
       if (!id) return null;
-      if (this.o.floor().objects.has(id)) return VISION_TEXT.distance(this.placeName(id), this.distance(id, world));
+      if (this.o.floor().objects.has(id)) return VISION_TEXT.distance(this.nameOf(id), this.distance(id, world));
       const o = ours(r, id, world).find((x) => x.status !== "gone") ?? null;
       const value = step.until ? factFacets(step.until).map((f) => o?.facts[f]?.value).find((v) => v !== undefined) : undefined;
       const cls = clsOf(world, id);
@@ -1019,7 +1023,7 @@ export class ExecutionTracker {
     }
     if (step.kind === "go") {
       const carried = this.carried(r);
-      const place = this.placeName(step.target);
+      const place = step.target ? this.nameOf(step.target) : null;
       const far = VISION_TEXT.distance(place, this.distance(step.target, world));
       return carried ? `${objectLine(r, carried, world)} · ${far}` : far;
     }
@@ -1036,10 +1040,12 @@ export class ExecutionTracker {
     return null;
   }
 
-  private placeName(id: string | null): string {
-    if (!id) return PLACE_UNKNOWN;
-    const type = this.o.floor().objects.get(id)?.type;
-    return (type && placeShort(type)) || this.o.locate?.(id)?.label || id;
+  /** 평면도 물건·가전을 부르는 이름(src/plan/names.ts placeName, 계획 단계 글과 같은 차례). 없으면 null(id를 사람 글에 쓰지 않는다). */
+  private nameOf(id: string): string | null {
+    const names = this.o.names ?? {};
+    return placeName(id, this.o.floor().objects.get(id)?.type, {
+      ...names, layoutName: names.layoutName ?? ((x) => this.o.locate?.(x)?.label), deviceKind: names.deviceKind ?? ((x) => this.o.handDevices?.().find((d) => d.id === x)?.kind),
+    });
   }
 
   /** 명령 대상(실제 폰 고리 하나): 집기는 그 물건, do는 그 일을 받는 물건(World State 자리), 그 밖은 목표 자리(평면도). 자리를 모르면 null. */

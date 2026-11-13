@@ -14,8 +14,9 @@ import type { PlanTarget, PlanView, StepKind, XZ } from "../contract/plan.js";
 import type { WorldObject, WorldView } from "../contract/world.js";
 import type { RoomSpec } from "../hub/types.js";
 import type { FloorPlan } from "../plan/floor.js";
-import { ALL_ACTS, CAUTION_LINE, DEVICE_VERB, EXTRA_ITEMS, ITEM_CLASS, NOTICES, NOTICE_KEYS, STEP_ACTS, STEP_LABEL, STEP_TEXT, noticeLabel, placeShort, type StepAct } from "../plan/labels.js";
+import { ALL_ACTS, CAUTION_LINE, DEVICE_VERB, EXTRA_ITEMS, ITEM_CLASS, NOTICES, NOTICE_KEYS, STEP_ACTS, STEP_LABEL, STEP_TEXT, noticeLabel, type StepAct } from "../plan/labels.js";
 import { KIND_LABELS, findTypeRule } from "../model/mapping.js";
+import { placeName, type PlaceNames } from "../plan/names.js";
 import { OBJECT_NAME } from "../world/labels.js";
 import { CLASSES, DEVICE_STATES, type DeviceStateKey } from "../world/vocab.js";
 import { ConditionSchema, checkCondition, type Condition, type ConditionHome } from "../world/conditions.js";
@@ -98,11 +99,11 @@ export type TaskInfo = TaskSpec;
 export interface PlaceInfo { id: string; type: string; room: string | null; position: XZ; name: string; short: string; basin?: XZ }
 
 /** 계획 입력의 평면도 물건(벽·바닥·문·창은 뺀다). 서버(src/server/home.ts)와 시험이 같이 쓴다.
- *  name은 배치 이름(없으면 id), short는 부를 짧은 이름: 종류 짧은 이름(placeShort) → 카탈로그 종류 이름(typeLabel) → 배치 이름. */
-export function placesOf(floor: FloorPlan, o: { names?: ReadonlyMap<string, string>; typeLabel?: (type: string) => string | undefined } = {}): PlaceInfo[] {
+ *  name은 배치 이름(없으면 id), short는 부르는 이름(src/plan/names.ts placeName, 없으면 배치 이름). */
+export function placesOf(floor: FloorPlan, names: PlaceNames = {}): PlaceInfo[] {
   return [...floor.objects.values()].filter((p) => !/^(walls|floors)$|door|win/.test(p.type)).map((p) => {
-    const name = o.names?.get(p.id) ?? p.id;
-    return { id: p.id, type: p.type, room: p.room, position: p.position, name, short: placeShort(p.type) ?? o.typeLabel?.(p.type) ?? name, ...(p.basin ? { basin: p.basin } : {}) };
+    const name = names.layoutName?.(p.id) ?? p.id;
+    return { id: p.id, type: p.type, room: p.room, position: p.position, name, short: placeName(p.id, p.type, names) ?? name, ...(p.basin ? { basin: p.basin } : {}) };
   });
 }
 
@@ -120,6 +121,8 @@ export interface PlanContext {
   placed?: Placed;
   /** 지난 수업(코치 행동의 수업 기록, src/act/lessons.ts). 있으면 입력에 [지난 수업]으로 넣는다(단계 이름·순서를 그대로 쓰게). */
   lesson?: Lesson | null;
+  /** 부르는 이름 자료(카탈로그 종류 이름·배치 이름, src/plan/names.ts). [가전] 종류는 devices에서 본다. */
+  names?: PlaceNames;
 }
 
 
@@ -314,19 +317,16 @@ export class PlanDraft {
     return { ok: true, plan: this.done };
   }
 
-  /** 단계 대상의 부를 이름. 평면도 물건은 종류 짧은 이름 → 입력 평면도 줄의 짧은 이름(카탈로그 종류 이름·배치 이름) → 그 가전 종류 이름 차례로 본다.
-   *  World State 물건은 그 종류 이름, [가전]만 있는 가전은 그 종류 이름. 부를 이름이 없으면 null(id를 폰 글에 쓰지 않는다). */
+  /** 단계 대상의 부를 이름. 평면도 물건·[가전]은 src/plan/names.ts placeName(종류 짧은 이름 → 카탈로그 종류 이름 → 배치 이름 → 가전 종류 이름),
+   *  World State 물건은 그 종류 이름. 부를 이름이 없으면 null(id를 폰 글에 쓰지 않는다). */
   private nameOf(id: string | null): string | null {
     if (!id) return null;
     const fp = this.ctx.floor.objects.get(id);
-    if (fp) {
-      const short = placeShort(fp.type) ?? this.ctx.places.find((p) => p.id === id)?.short;
-      if (short && short !== id) return short;
-    }
+    const names: PlaceNames = { ...this.ctx.names, deviceKind: (x) => this.ctx.devices.find((d) => d.id === x)?.kind };
+    if (fp) return placeName(id, fp.type, names);
     const o = worldObject(this.ctx.world, id);
     if (o) return OBJECT_NAME[o.cls] ?? null;
-    const kind = this.ctx.devices.find((x) => x.id === id)?.kind ?? (fp ? findTypeRule(fp.type)?.kind : undefined);
-    return kind ? KIND_LABELS[kind as keyof typeof KIND_LABELS] ?? null : null;
+    return this.ctx.devices.some((d) => d.id === id) ? placeName(id, null, names) : null;
   }
 
   /** 손 조작 동작의 가전 종류: [가전]에 있으면 그 종류. [가전]에 없는 평면도 가전은 열기·닫기만 그 배치 종류의 가전 종류로 본다
