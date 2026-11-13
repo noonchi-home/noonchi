@@ -71,7 +71,8 @@ export async function runReflection(db: HistoryDb, pam: PamClient, day: string, 
     const cur = memoryForDay(db, day);
     const feedback = latestWithin(db.list({ day, kinds: ["feedback"] }).map((r) => r.text), MAX_REFLECT_TEXT.feedback).join("\n") || null;
     const limits = await pam.limits();
-    const maxBytes = limits.reflect_input_bytes - bytes(JSON.stringify(cur.memory, null, 2)) - bytes(feedback ?? "");
+    // 요약이 비면 대신 보내는 글(관찰 없음·행동 없음)도 한도 안에 들게 미리 뺀다
+    const maxBytes = limits.reflect_input_bytes - bytes(JSON.stringify(cur.memory, null, 2)) - bytes(feedback ?? "") - bytes(REFLECT_TEXT.noObservation) - bytes(REFLECT_TEXT.noAction);
     if (maxBytes <= 0) throw new Error(REFLECT_TEXT.tooBig);
     const summary = daySummary(db, day, { maxBytes, caps: MAX_REFLECT_TEXT });
     const memory = await pam.reflect({

@@ -109,6 +109,11 @@ describe("고른 행동의 FSM 상태(대시보드 생각 말풍선 「상태」
     expect(fsmRuleOf(withRules({ watching_tv: [HOT] }, [evening]), "fsm", "에어컨 켜기")).toEqual({ state: null, trigger: null, learned: true });
   });
 
+  it("의도 파악 seed 규칙: TV 보는 중에 덥다고 말하거나 부채질하면 에어컨 켜기다(seed 규칙이라 배운 규칙이 아니다)", () => {
+    expect(fsmRuleOf(CUP_FSM_MEMORY, "fsm", "에어컨 켜기")).toMatchObject({ state: "watching_tv", learned: false });
+    expect(CUP_FSM_MEMORY.states.find((s) => s.id === "watching_tv")!.rules).toContainEqual({ trigger: "사용자가 덥다고 말하거나 더워서 부채질을 한다.", action: "에어컨 켜기" });
+  });
+
   it("컵 FSM 기억은 상태 넷(먹는 중·TV 보는 중·자리를 뜸·요리)이고 모양이 맞으며, 규칙의 행동은 모두 행동 목록에 있다", () => {
     expect(validateMemory(CUP_FSM_MEMORY, "fsm")).toBe(CUP_FSM_MEMORY);
     expect(CUP_FSM_MEMORY.initial_state).toBe("drinking");

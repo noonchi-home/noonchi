@@ -219,7 +219,11 @@ export const CUP_FSM_MEMORY: FsmMemory = {
     {
       id: "watching_tv",
       description: "사용자가 TV를 보며 컵으로 음료를 마신다.",
-      rules: [{ trigger: "사용자가 TV를 보는 중이고 곁의 컵이 비어 있으며 컵을 들거나 만지지 않는다.", action: "컵에 콜라 따라 주기" }],
+      rules: [
+        { trigger: "사용자가 TV를 보는 중이고 곁의 컵이 비어 있으며 컵을 들거나 만지지 않는다.", action: "컵에 콜라 따라 주기" },
+        // 의도 파악(2026-11-13): 바라는 것을 돌려 말한 혼잣말(「아 덥다」)이나 부채질
+        { trigger: "사용자가 덥다고 말하거나 더워서 부채질을 한다.", action: "에어컨 켜기" },
+      ],
       next: [{ to: "drinking", on: "사용자가 식탁에 앉아 먹기 시작한다." }, { to: "left_cup", on: "사용자가 컵을 두고 자리를 떠나 보이지 않는다." }, { to: "cooking", on: "사용자가 주방으로 가서 요리를 시작하려 한다." }],
     },
     {

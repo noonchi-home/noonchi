@@ -17,6 +17,12 @@ import { AGENT_TOOLS, LEAVE_IT, MCP_TOOLS, TOOLS, localBackend, runTool, toolJso
 import { MemoryHub } from "../src/hub/memory.js";
 import { loadTwin, resolveTwinStudioDir } from "../src/model/devices.js";
 import { ROOMS, homeDevices, makeHome, twin } from "./helpers/home.js";
+import { startFakePam } from "./helpers/pam.js";
+import { CUP_FSM_MEMORY, CUP_TASKS } from "../src/brain/decision.js";
+import { PamClient } from "../src/brain/pam.js";
+import { Decider } from "../src/world/decide.js";
+import { WorldState } from "../src/world/state.js";
+import { Trigger } from "../src/world/trigger.js";
 import { HOME_SCRIPT, startFakeLlm, toolOutputs, type FakeLlm } from "./helpers/llm.js";
 
 const ids = (r: { devices: { id: string }[] }) => r.devices.map((d) => d.id).sort();
@@ -366,6 +372,38 @@ describe("Agent + OpenAI 공급자(가짜 서버): 한국어 요청", () => {
     expect(twin(hub, "door_bed2").door).toBe("closed");
     expect(r.actions[0]).toMatchObject({ ok: false, error: expect.stringContaining("센서") });
     expect(toolOutputs(bodies()[1])[0].error).toContain("센서");
+  });
+
+  it("시스템 프롬프트는 바라는 것을 돌려 말한 혼잣말을 가전 요청으로 보지 않게 한다", () => {
+    expect(buildSystemPrompt(homeDevices(), ROOMS).split("\n")).toContain(
+      "- 「아 덥다」처럼 바라는 것을 직접 시키지 않은 혼잣말은 가전 요청이 아니다. leave_it만 부른다. 「에어컨 켜 줘」처럼 시킨 말만 가전 도구를 부른다.",
+    );
+  });
+
+  it("「아 덥다」에 모델이 leave_it만 부르면 폰 답은 빈 글이고 가전은 그대로다. 그 말은 관찰 텍스트 줄(사람이 말함)로 판단 호출에 간다", async () => {
+    llm.script["아 덥다"] = [[["leave_it", { reason: "시킨 말이 아니라서" }]], "에어컨을 켤까요?"];
+    const { hub, agent } = llmAgent();
+    const before = JSON.stringify(hub.list().map((d) => hub.get(d.id)!.twin));
+    const r = await agent.chat("phone", "아 덥다", { heard: true });
+    expect(r.reply).toBe("");
+    expect(r.actions.map((a) => a.tool)).toEqual(["leave_it"]);
+    expect(JSON.stringify(hub.list().map((d) => hub.get(d.id)!.twin))).toBe(before);
+    // 서버(src/server/home.ts)는 같은 말을 World State 들은 말로 넣고 판단 호출이 관찰 텍스트에 싣는다
+    const pam = await startFakePam();
+    try {
+      const world = new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] });
+      const clock = { t: Date.parse("2026-11-13T03:00:00Z"), now() { return this.t; } };
+      const d = new Decider({
+        pam: new PamClient({ url: pam.url }), world, trigger: new Trigger({ mode: "event", minGapMs: 0, periodMs: 1000, idleStopMs: 1e9, liveMs: 10_000, maxInflight: 1 }, 0),
+        tasks: () => [...CUP_TASKS], memory: () => ({ memory: CUP_FSM_MEMORY, kind: "fsm" as const, version: 0 }), emit: () => {}, offsetMinutes: 540, clock,
+      });
+      d.onChanges(world.heard("아 덥다", clock.t));
+      d.tick();
+      await d.idle();
+      expect(String((pam.bodies.at(-1) as { observation_text: string }).observation_text)).toContain("사람이 말함: 「아 덥다」");
+    } finally {
+      await pam.close();
+    }
   });
 
   it("가전 요청이 아닌 말에 모델이 leave_it만 부르면 답은 빈 글이다(실제 폰은 보이지도 읽지도 않는다). 가전은 바뀌지 않는다", async () => {
