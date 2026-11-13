@@ -47,3 +47,58 @@ def test_noonchi_predict_prompt_says_where_drinks_are_kept():
             "Drinks such as water and cola are kept in the fridge.")
     assert line in system
     assert "corner of the desk" not in system
+
+
+def _reflect_system():
+    from noonchi_pam.contracts import ReflectRequest
+    from noonchi_pam.prompt import build_reflect_messages
+
+    memory = {"initial_state": "s", "states": [{"id": "s", "description": "d", "rules": [], "next": []}]}
+    built = build_reflect_messages(ReflectRequest(
+        contract="pam-reflect/2", day="2026-11-13", memory_kind="fsm", memory=memory,
+        observation_text="12:00:00 사람 보임", action_summary="행동 없음",
+    ))
+    return built["messages"][0]["content"], built["adaptation"]
+
+
+def test_noonchi_reflect_prompt_learns_appliance_habits_and_writes_task_names():
+    """반성 지시문: 집기·놓기 형식 대신 우리 행동 이름을 쓰고, 손으로 다룬 가전도 다시 적어 규칙을 만든다."""
+    system, _ = _reflect_system()
+    assert "Pick up <object>" not in system
+    assert "RE-STATE the pick-and-place actions" not in system
+    assert "appliance operations" in system
+    assert "- action: exactly one of these task names, copied character for character: " in system
+    assert "Never add, move, rewrite or remove rules for them." in system
+
+
+def test_noonchi_predict_prompt_has_appliance_goal():
+    """판단 지시문의 목표 줄에 손으로 다루던 가전을 켜 주는 일이 있다."""
+    from noonchi_pam.contracts import PredictRequest
+    from noonchi_pam.prompt import build_predict_messages
+
+    memory = {"initial_state": "s", "states": [{"id": "s", "description": "d", "rules": [], "next": []}]}
+    built = build_predict_messages(PredictRequest(
+        contract="pam-predict/2", final_time="2026-11-13T12:00:00+09:00", observation_text="12:00:00 사람 보임",
+        memory_kind="fsm", memory=memory, tasks=["컵 치우기", "에어컨 켜기"],
+    ))
+    system = built["messages"][0]["content"]
+    assert ("- operating home appliances the person habitually operates by hand, such as turning on the living-room "
+            "air conditioner when they sit down to watch TV.") in system
+    assert "- etc. –- any helpful action that is grounded in observed behavior." in system
+
+
+def test_noonchi_reflect_new_replacements_match_once_and_old_ones_still_match():
+    """새 다섯은 목록 맨 앞이고 반성 지시문에서 한 번씩 맞는다. 옛 바꾸기는 지금처럼 맞는다."""
+    from pam.messages import load_prompt
+    from pam.scenarios import adapt_prompt
+    from noonchi_pam.prompt import SCENARIO
+
+    _, adaptation = _reflect_system()
+    new = SCENARIO["prompt_replacements"][:5]
+    applied = {c["old"]: c["occurrences"] for c in adaptation["applied_changes"]}
+    for change in new:
+        assert applied.get(change["old"]) == 1, change["reason"]
+    template, _ = load_prompt("reflector_fsm_update")
+    _, before = adapt_prompt(template, {**SCENARIO, "prompt_replacements": SCENARIO["prompt_replacements"][5:]})
+    for change in before["applied_changes"]:
+        assert change["old"] in applied, change["reason"]
