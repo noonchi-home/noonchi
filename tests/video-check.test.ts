@@ -7,7 +7,10 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { HistoryRow } from "../src/contract/history.js";
 import type { WorldEye, WorldObject, WorldView } from "../src/contract/world.js";
-import { clock, costLine, markdown, parseArgs, phoneUrl, stepVerdict, timeline, twinRows, usedServer, watchAfterEnd, type Row } from "../scripts/video-check.js";
+import { clickChoice, clock, costLine, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, stepVerdict, timeline, twinRows, usedServer, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
+import { createServer, type Server } from "node:http";
+import { listenRetry } from "../src/server/net.js";
+import type { SceneJson } from "../src/contract/layout.js";
 import { ackAt, concatList, demoFile, encodeDemo, ffmpegArgs, startRecording, type ScreencastPage } from "../scripts/video-record.js";
 
 const eye = (room: string | null, room_label: string | null, x: number, y: number): WorldEye => ({ position: [x, y], height_m: 1.4, yaw_deg: 0, pitch_deg: -20, room, room_label, at_ms: 0 });
@@ -193,13 +196,146 @@ describe("video-check", () => {
     expect(at("![트윈 대시보드](cup-empty.fake.twin.png)")).toBeGreaterThan(at("VLM 0장"));
   });
 
-  it("영상이 끝난 뒤에는 단추를 누르지 않는 판도 계획이 열려 있으면 30초까지 더 본다", () => {
-    expect(watchAfterEnd(5_000, 0, "running")).toBe(true);
-    expect(watchAfterEnd(5_000, 0, "planned")).toBe(true);
-    expect(watchAfterEnd(5_000, 1, undefined)).toBe(true);
-    expect(watchAfterEnd(5_000, 0, "done")).toBe(false);
-    expect(watchAfterEnd(5_000, 0, undefined)).toBe(false);
-    expect(watchAfterEnd(30_001, 1, "running")).toBe(false);
+  it("영상이 멈춘 뒤에는 단추를 누르지 않는 판도 계획이 열려 있으면 tail(기본 30초)까지 더 본다", () => {
+    const at = (stillForMs: number, due: number, planStatus: string | undefined) => judgeState({ stillForMs, clipPlayedMs: 0, clipDurationMs: 10_000, due, planStatus, tailMs: 30_000, totalMs: 60_000, maxMs: 1_800_000 });
+    expect(at(5_000, 0, "running")).toBe("watch");
+    expect(at(5_000, 0, "planned")).toBe("watch");
+    expect(at(5_000, 1, undefined)).toBe("watch");
+    expect(at(5_000, 0, "done")).toBe("done");
+    expect(at(5_000, 0, undefined)).toBe("done");
+    expect(at(30_001, 1, "running")).toBe("tail_over");
+  });
+
+  describe("끝내기(judgeState)", () => {
+    const base = { stillForMs: null as number | null, clipPlayedMs: 10_000, clipDurationMs: 30_000 as number | null, due: 0, planStatus: "running" as string | undefined, tailMs: 300_000, totalMs: 100_000, maxMs: 1_800_000 };
+    it("붙잡는 중 + 계획 열림 + 멈춘 지 100초, tail 300 → watch. 301초 → tail_over", () => {
+      expect(judgeState({ ...base, stillForMs: 100_000 })).toBe("watch");
+      expect(judgeState({ ...base, stillForMs: 301_000 })).toBe("tail_over");
+    });
+    it("영상 도는 중 + 계획 done + 답 없음 → done. 누를 답이 남았으면 더 본다", () => {
+      expect(judgeState({ ...base, planStatus: "done" })).toBe("done");
+      expect(judgeState({ ...base, planStatus: "done", due: 1 })).toBe("watch");
+    });
+    it("단계 영상이 20초짜리면 80초 넘게 돌 때 clip_over다(첫 영상 길이와 상관없다)", () => {
+      expect(judgeState({ ...base, clipDurationMs: 20_000, clipPlayedMs: 80_000 })).toBe("watch");
+      expect(judgeState({ ...base, clipDurationMs: 20_000, clipPlayedMs: 80_001 })).toBe("clip_over");
+    });
+    it("전체 1801초 → max_over", () => {
+      expect(judgeState({ ...base, totalMs: 1_801_000 })).toBe("max_over");
+    });
+  });
+
+  describe("말 넣기·시작 위치·끝내기 인자", () => {
+    it("--say 5:아 덥다를 { atMs: 5000, text: 아 덥다 }로 받고, --tail·--max·--start-at·--home 기본값이 있다", () => {
+      const a = parseArgs(["--clip", "tv-hot-say.mp4", "--say", "5:아 덥다", "--say", "12.5:이거 어떻게 하지"]);
+      if (typeof a === "string") throw new Error(a);
+      expect(a.says).toEqual([{ atMs: 5000, text: "아 덥다" }, { atMs: 12_500, text: "이거 어떻게 하지" }]);
+      expect([a.tailMs, a.maxMs, a.startAt, a.home, a.approveAfterMs, a.doneOn]).toEqual([30_000, 1_800_000, null, "mokryeon_180b", 0, []]);
+      const b = parseArgs(["--clip", "a.mp4", "--start-at", "microwave", "--tail", "120", "--max", "600", "--approve", "2", "--done-on", "8:그릇을 전자레인지에 넣어 주세요"]);
+      if (typeof b === "string") throw new Error(b);
+      expect([b.startAt, b.tailMs, b.maxMs, b.approveAfterMs, b.doneOn]).toEqual(["microwave", 120_000, 600_000, 2000, [{ afterMs: 8000, text: "그릇을 전자레인지에 넣어 주세요" }]]);
+    });
+    it("틀린 --say·--tail 5·--max 0·--start-at·--done-on 8:(빈 글)·--approve -1은 쓰는 법 글이다", () => {
+      for (const bad of [["--say", "다섯:아 덥다"], ["--say", "5:"], ["--say", `5:${"가".repeat(61)}`], ["--tail", "5"], ["--max", "0"], ["--start-at", "garage"], ["--done-on", "8:"], ["--approve", "-1"]]) {
+        expect(parseArgs(["--clip", "a.mp4", ...bad]), bad.join(" ")).toMatch(/쓰는 법/);
+      }
+    });
+    it("시각표에 말 줄과 누름 줄이 그 시각에 있다", () => {
+      const rows = timeline(0, [], [], null, { says: [{ atMs: 5000, text: "아 덥다" }], clicks: [{ ms: 9000, label: "승인", text: "인덕션을 켤까요?" }] });
+      expect(rows.map((r) => [r.ms, r.kind, r.text])).toEqual([[5000, "말", "아 덥다"], [9000, "누름", "승인 · 인덕션을 켤까요?"]]);
+    });
+  });
+
+  describe("장면 시작 위치(--start-at)", () => {
+    let srv: Server | undefined;
+    const fake = async (current: string) => {
+      const got: unknown[] = [];
+      srv = createServer(async (req, res) => {
+        let raw = "";
+        for await (const c of req) raw += c;
+        res.writeHead(200, { "content-type": "application/json" });
+        if (req.url === "/api/homes") return res.end(JSON.stringify({ current, homes: [] }));
+        got.push(JSON.parse(raw));
+        res.end(JSON.stringify({ ok: true, start: { label: "전자레인지 앞" } }));
+      });
+      const { port } = await listenRetry(srv, 0, "127.0.0.1");
+      return { url: `http://127.0.0.1:${port}`, got };
+    };
+    // 전자레인지가 있는 작은 장면(한양목련 장면에는 Task 11에서 들어간다)
+    const scene: SceneJson = { plan: { rooms: [{ id: "kitchen", polygon: [[0, 0], [6, 0], [6, 4], [0, 4]] } as never] }, objects: [{ id: "microwave_kitchen", room: "kitchen", plan: { position: [1, 1] } }] };
+    it("--start-at microwave면 페이지를 열기 전에 시작 위치를 보내고, 지금 집이 다르면 보내지 않고 까닭을 돌려준다", async () => {
+      try {
+        const ok = await fake("mokryeon_180b");
+        expect(await sendStartPose(ok.url, "microwave", "mokryeon_180b", () => scene)).toBeNull();
+        expect(ok.got).toEqual([expect.objectContaining({ home: "mokryeon_180b", position: expect.any(Array), yaw_deg: expect.any(Number) })]);
+        srv!.close();
+        const other = await fake("oneroom");
+        expect(await sendStartPose(other.url, "microwave", "mokryeon_180b", () => scene)).toMatch(/oneroom/);
+        expect(other.got).toEqual([]);
+      } finally { srv?.close(); }
+    });
+  });
+
+  describe("골라서 답하기(plannedClicks·clickChoice)", () => {
+    const rule = (o: Partial<ClickRule> = {}): ClickRule => ({ approveAfterMs: 0, doneOn: [], doneAfterMs: 0, ...o });
+    const cmd = (step: string, text: string, id = "plan:pam-3"): VideoCommand => ({ video_ms: 0, id, step, text });
+    it("--approve 2면 :hand·:approve 질문에만 2초 뒤 「승인」, 전자레인지 문 명령에는 없음", () => {
+      expect(plannedClicks(cmd("plan:pam-3:5:hand", "그릇이 뜨거워져요. 전자레인지를 켤까요?"), rule({ approveAfterMs: 2000 }), 100))
+        .toEqual([{ at: 2100, label: "승인", id: "plan:pam-3", step: "plan:pam-3:5:hand", text: "그릇이 뜨거워져요. 전자레인지를 켤까요?" }]);
+      expect(plannedClicks(cmd("plan:pam-3:approve", "라면 끓이기 알려 주기를 할까요?"), rule({ approveAfterMs: 2000 }), 0)).toHaveLength(1);
+      expect(plannedClicks(cmd("plan:pam-3:2", "전자레인지 문을 열어 주세요"), rule({ approveAfterMs: 2000 }), 0)).toEqual([]);
+    });
+    it("--done-on 8:그릇을 전자레인지에 넣어 주세요면 그 글 명령에만 8초 뒤 「완료」. --step이 있고 --done-after가 없으면 그 밖 명령에는 없다", () => {
+      const r = rule({ doneOn: [{ afterMs: 8000, text: "그릇을 전자레인지에 넣어 주세요" }] });
+      expect(plannedClicks(cmd("plan:pam-3:3", "그릇을 전자레인지에 넣어 주세요"), r, 0)).toEqual([{ at: 8000, label: "완료", id: "plan:pam-3", step: "plan:pam-3:3", text: "그릇을 전자레인지에 넣어 주세요" }]);
+      expect(plannedClicks(cmd("plan:pam-3:9", "그릇을 꺼내 주세요"), r, 0)).toEqual([]);
+      expect(plannedClicks(cmd("plan:pam-3:9", "그릇을 꺼내 주세요"), rule({ doneAfterMs: 3000 }), 0)).toEqual([{ at: 3000, label: null, id: "plan:pam-3", step: "plan:pam-3:9", text: "그릇을 꺼내 주세요" }]);
+    });
+
+    /** 가짜 페이지: 지금 명령 기록과 위 줄·단추. clickChoice 식을 그 페이지에서 돌린다. */
+    function page(o: { last: { id: string; step: string; text: string } | null; top: string | null; buttons: string[] }) {
+      const clicked: string[] = [];
+      const buttons = o.buttons.map((t) => ({ textContent: t, click: () => clicked.push(t) }));
+      const g = globalThis as Record<string, unknown>;
+      const run = (expr: string) => {
+        const keep = { window: g.window, document: g.document };
+        g.window = { __noonchiVideo: { commands: o.last ? [{ video_ms: 0, ...o.last }] : [] } };
+        g.document = {
+          querySelector: (sel: string) => (sel.includes("[data-phone-text]") ? (o.top === null ? null : { textContent: o.top }) : buttons[0] ?? null),
+          querySelectorAll: () => buttons,
+        };
+        try { return (0, eval)(expr) as string | null; } finally { g.window = keep.window; g.document = keep.document; }
+      };
+      return { run, clicked };
+    }
+    const planned = { id: "plan:pam-3", step: "plan:pam-3:3", text: "그릇을 전자레인지에 넣어 주세요", label: "완료" };
+
+    it("지금 명령의 계획 id·단계 id·위 줄이 모두 같을 때만 그 글의 단추를 누른다", () => {
+      const p = page({ last: planned, top: planned.text, buttons: ["완료"] });
+      expect(p.run(clickChoice(planned))).toBe("완료");
+      expect(p.clicked).toEqual(["완료"]);
+    });
+    it("누를 때 위 줄이 다른 명령으로 바뀌었으면 누르지 않는다", () => {
+      const p = page({ last: planned, top: "그릇을 꺼내 주세요", buttons: ["완료"] });
+      expect(p.run(clickChoice(planned))).toBeNull();
+      expect(p.clicked).toEqual([]);
+    });
+    it("예약한 단계가 취소되고 같은 글의 새 단계(다른 계획 id)가 떠 있으면 누르지 않는다", () => {
+      const p = page({ last: { ...planned, id: "plan:pam-4", step: "plan:pam-4:3" }, top: planned.text, buttons: ["완료"] });
+      expect(p.run(clickChoice(planned))).toBeNull();
+    });
+    it("같은 계획에서 같은 글이 다른 단계 id로 다시 나오면 앞 예약은 누르지 않고 새 명령의 예약만 누른다", () => {
+      const again = { ...planned, step: "plan:pam-3:5" };
+      const p = page({ last: again, top: planned.text, buttons: ["완료"] });
+      expect(p.run(clickChoice(planned))).toBeNull();
+      expect(p.run(clickChoice(again))).toBe("완료");
+    });
+    it("취소 뒤 새 승인 질문(다른 계획 id, 같은 글)은 앞 「승인」 예약이 누르지 않는다", () => {
+      const ask = { id: "plan:pam-3", step: "plan:pam-3:approve", text: "전자레인지로 데우기 알려 주기를 할까요?", label: "승인" };
+      const p = page({ last: { ...ask, id: "plan:pam-5", step: "plan:pam-5:approve" }, top: ask.text, buttons: ["승인", "거절"] });
+      expect(p.run(clickChoice(ask))).toBeNull();
+      expect(p.clicked).toEqual([]);
+    });
   });
 
   it("--record는 녹화 폴더를 받고, 없으면 녹화하지 않고, 폴더가 빠지면 --record <폴더>를 알려 준다", () => {

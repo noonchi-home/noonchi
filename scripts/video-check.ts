@@ -1,5 +1,11 @@
 // npx tsx scripts/video-check.ts --clip cup-demo.mp4 [--step <종류>:<낱말>:<영상.mp4> ...] [--phone http://127.0.0.1:8210] [--api http://127.0.0.1:8200]
 //   [--done-after 3] [--out runtime/videos/cup-demo.<시각>.timeline.md] [--expect-after 36.3] [--record <폴더>] [--fake]
+//   [--say <초>:<글> ...] [--start-at <cup|tv|microwave|kitchen>] [--home mokryeon_180b] [--tail 30] [--max 1800] [--approve <초>] [--done-on <초>:<명령 글> ...]
+// --say: 재생 시작부터 그 초가 되면 폰 페이지 안의 폰 소켓(/phone/events)으로 {type: "say", text}를 보낸다(CDP로 그 소켓을 찾아 보냄). 시각표에 「말」 줄.
+// --start-at: 폰 페이지를 열기 전에 그 장면 시작 위치(scripts/demo-start.ts)를 서버에 넣는다. 서버의 지금 집이 --home이 아니면 판정을 시작하지 않는다.
+// --approve: 단계 id가 :approve·:hand로 끝나는 질문에만 그 초 뒤 「승인」, --done-on: 위 줄이 그 글과 같은 명령에만 그 초 뒤 「완료」를 누른다.
+//   누를 때 지금 명령의 계획 id·단계 id·위 줄이 예약한 것과 모두 같을 때만 누른다. 누른 것은 시각표에 「누름」 줄.
+// 끝내기(judgeState): 계획이 닫혔고 누를 답이 없으면 끝, 영상이 멈춘(첫 영상 끝·단계 영상 마지막 장면 붙잡기) 뒤 --tail초, 지금 영상 길이 + 60초, 판 전체 --max초.
 // 영상 모드 판정: 헤드리스 크롬 하나(390×844)로 폰 페이지 <phone>/phone/?clip=<clip>을 열고 「AR 시작」을 눌러 영상을 끝까지 튼다.
 // --step(여러 번, 종류 go·pick·place·do, 낱말 a-z·_)은 폰 주소에 step=으로 하나씩 붙는다. 폰 페이지는 종류가 같고 대상 id에 낱말이 든 명령이 오면
 // 그 단계 영상으로 바꿔 튼다(영상 시각은 이어 셈). --step이 있으면 --done-after 기본은 0이다(단추를 누르지 않고 비전·폰 위치로 단계가 넘어가는지 본다).
@@ -40,6 +46,11 @@ import { chromePath, closeChrome, devtoolsPort, launchChrome, openPage, openTab,
 import { heldLock, withHeavy, type Lock } from "./twin3d/heavy.js";
 import { demoFile, encodeDemo, RECORD_FPS, startRecording, type Recorded, type Recording } from "./video-record.js";
 import { det } from "../tests/helpers/detectors.js";
+import type { SceneJson } from "../src/contract/layout.js";
+import { resolveTwinStudioDir } from "../src/model/devices.js";
+import { resolveHome } from "../src/model/homes.js";
+import { loadScene } from "../src/model/scene.js";
+import { DEMO_STARTS, startFor, type DemoScene } from "./demo-start.js";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CLIP_NAME = /^[A-Za-z0-9_-]{1,64}\.(?:mp4|webm)$/;
@@ -53,18 +64,17 @@ const DASH_WAIT_MS = 8_000;
 const EYE_MOVE_M = 0.5;
 const HISTORY_KINDS = "detection,decision,plan,execution,look";
 /** 영상이 끝난 뒤 남은 답 누르기·계획 끝을 더 기다리는 시간 */
-const TAIL_MS = 30_000;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // 표
 
-export type Kind = "사람 등장" | "사람 사라짐" | "물건 등장" | "물건 사라짐" | "PAM 판단" | "계획" | "단계" | "명령" | "영상" | "트윈" | "가까이 보기" | "끝";
+export type Kind = "사람 등장" | "사람 사라짐" | "물건 등장" | "물건 사라짐" | "PAM 판단" | "계획" | "단계" | "명령" | "영상" | "트윈" | "가까이 보기" | "말" | "누름" | "끝";
 /** 표 한 줄. ms는 영상 시각, n은 묶은 줄 수. */
 export interface Row { ms: number; kind: Kind; text: string; n: number }
 /** 폰 페이지가 남긴 명령(window.__noonchiVideo.commands). */
 export interface VideoCommand { video_ms: number; id: string; step: string; text: string }
-/** 폰 페이지가 바꿔 튼 단계 영상(window.__noonchiVideo.clips): 바꾼 영상 시각과 이름. */
-export interface VideoClip { video_ms: number; clip: string }
+/** 폰 페이지가 바꿔 튼 단계 영상(window.__noonchiVideo.clips): 바꾼 영상 시각과 이름, 그 영상 길이(있으면). */
+export interface VideoClip { video_ms: number; clip: string; duration_ms?: number }
 
 const DETECTION_KIND: Record<string, Kind> = { person_appeared: "사람 등장", person_gone: "사람 사라짐", appeared: "물건 등장", gone: "물건 사라짐" };
 const STEP_TEXT: Record<string, string> = { active: "시작", done: "끝남", failed: "실패", skipped: "건너뜀" };
@@ -76,7 +86,8 @@ type PlanData = { status?: string; steps?: { id: string; label: string; status: 
 
 /** 서버 기록·폰 명령·바꾼 단계 영상·트윈 줄(영상 시각으로 고친 것) → 영상 시각순 표. 같은 출처(기록 종류·명령·트윈)의 같은 글이 이어지면 한 줄로 묶는다.
  *  endMs가 있으면 「영상 끝」. */
-export function timeline(t0: number, history: HistoryRow[], commands: VideoCommand[], endMs: number | null = null, more: { clips?: VideoClip[]; twin?: Row[] } = {}): Row[] {
+export function timeline(t0: number, history: HistoryRow[], commands: VideoCommand[], endMs: number | null = null,
+  more: { clips?: VideoClip[]; twin?: Row[]; says?: { atMs: number; text: string }[]; clicks?: { ms: number; label: string; text: string }[] } = {}): Row[] {
   const raw: (Row & { from: string })[] = [];
   const plans = new Map<string, { status: string; steps: Map<string, string> }>();
   for (const h of [...history].sort((a, b) => a.at_ms - b.at_ms || a.id - b.id)) {
@@ -111,6 +122,8 @@ export function timeline(t0: number, history: HistoryRow[], commands: VideoComma
   for (const c of commands) raw.push({ ms: c.video_ms, kind: "명령", text: c.text, n: 1, from: "command" });
   for (const c of more.clips ?? []) raw.push({ ms: c.video_ms, kind: "영상", text: `단계 영상 ${c.clip.split("/").pop()}`, n: 1, from: "clip" });
   for (const r of more.twin ?? []) raw.push({ ms: r.ms, kind: r.kind, text: r.text, n: 1, from: "twin" });
+  for (const x of more.says ?? []) raw.push({ ms: x.atMs, kind: "말", text: x.text, n: 1, from: "say" });
+  for (const x of more.clicks ?? []) raw.push({ ms: x.ms, kind: "누름", text: `${x.label} · ${x.text}`, n: 1, from: "click" });
   if (endMs !== null) raw.push({ ms: endMs, kind: "끝", text: "영상 끝", n: 1, from: "video" });
   raw.sort((a, b) => a.ms - b.ms);
   const rows: Row[] = [];
@@ -228,9 +241,69 @@ export function costLine(brain: BrainNow): string {
   return `VLM ${brain.vlm.sent ?? 0}장 · ${usd(brain.vlm.costUsd ?? 0)}${closer}${look} · 엔진 프레임 ${brain.frames ?? 0}장 · PAM·계획 비용 빠짐`;
 }
 
-/** 영상이 끝난 뒤 더 볼지: 끝난 지 TAIL_MS 안이고, 누를 답이 남았거나 계획이 열려 있으면(단추를 누르지 않는 판도 같다). */
-export function watchAfterEnd(endedForMs: number, due: number, planStatus: string | undefined): boolean {
-  return endedForMs <= TAIL_MS && (due > 0 || PLAN_OPEN.has(planStatus ?? ""));
+/** 끝내기: watch 더 본다, done 계획이 닫혔고(또는 영상이 멈췄는데 열린 계획이 없고) 누를 답이 없음, tail_over 영상이 멈춘 뒤 tailMs가 지남,
+ *  clip_over 지금 영상이 그 길이 + 60초를 넘게 도는 중, max_over 판 전체가 maxMs를 넘음. */
+export function judgeState(o: {
+  /** 영상이 멈춘 지(첫 영상 끝 __noonchiVideo.ended, 또는 붙잡는 중 __noonchiVideo.hold) ms. 도는 중이면 null. */
+  stillForMs: number | null;
+  /** 지금 도는 영상(첫 영상이나 바꾼 단계 영상)이 시작된 뒤 ms와 그 영상 길이 ms. */
+  clipPlayedMs: number; clipDurationMs: number | null;
+  due: number; planStatus: string | undefined; tailMs: number; totalMs: number; maxMs: number;
+}): "watch" | "done" | "tail_over" | "clip_over" | "max_over" {
+  if (o.totalMs > o.maxMs) return "max_over";
+  if (o.due === 0 && PLAN_END.has(o.planStatus ?? "")) return "done";
+  if (o.stillForMs !== null) {
+    if (o.due === 0 && !PLAN_OPEN.has(o.planStatus ?? "")) return "done";
+    return o.stillForMs > o.tailMs ? "tail_over" : "watch";
+  }
+  if (o.clipDurationMs !== null && o.clipPlayedMs > o.clipDurationMs + 60_000) return "clip_over";
+  return "watch";
+}
+
+/** 누르기 규칙: --approve(승인 질문), --done-on(그 글 명령), --done-after(모든 새 명령의 첫 단추). 0이면 안 누름. */
+export interface ClickRule { approveAfterMs: number; doneOn: { afterMs: number; text: string }[]; doneAfterMs: number }
+/** 새 명령 하나에 예약할 누르기(없으면 빈 목록). 단추 글로 고른다: 승인 질문이면 「승인」, done-on 글이면 「완료」, done-after면 첫 단추(지금 동작). */
+export interface PlannedClick { at: number; label: string | null; id: string; step: string; text: string }
+export function plannedClicks(cmd: VideoCommand, rule: ClickRule, now: number): PlannedClick[] {
+  const at = (ms: number, label: string | null): PlannedClick => ({ at: now + ms, label, id: cmd.id, step: cmd.step, text: cmd.text });
+  const out: PlannedClick[] = [];
+  if (rule.approveAfterMs > 0 && /:(approve|hand)$/.test(cmd.step)) out.push(at(rule.approveAfterMs, "승인"));
+  for (const d of rule.doneOn) if (d.text === cmd.text) out.push(at(d.afterMs, "완료"));
+  if (!out.length && rule.doneAfterMs > 0) out.push(at(rule.doneAfterMs, null));
+  return out;
+}
+
+/** 장면 시작 위치를 서버에 넣는다(폰 페이지를 열기 전). 지금 집이 home이 아니거나 넣지 못하면 까닭 글, 넣었으면 null. */
+export async function sendStartPose(api: string, scene: DemoScene, home: string,
+  sceneOf: () => SceneJson | null = () => loadScene(resolveHome(resolveTwinStudioDir(process.env.TWIN_STUDIO_DIR), home))): Promise<string | null> {
+  const homes = await fetch(`${api}/api/homes`).then((r) => (r.ok ? (r.json() as Promise<{ current: string | null }>) : null)).catch(() => null);
+  if (!homes) return `서버에 닿지 못함: ${api}/api/homes`;
+  if (homes.current !== home) return `서버의 지금 집이 ${homes.current ?? "없음"}이에요(--home ${home})`;
+  const s = sceneOf();
+  if (!s) return `${home} 장면이 없어요`;
+  let pose: { position: [number, number]; yaw_deg: number };
+  try {
+    pose = startFor(s, DEMO_STARTS[scene].target, DEMO_STARTS[scene].distanceM);
+  } catch (e) {
+    return (e as Error).message;
+  }
+  const r = await fetch(`${api}/api/phone/start-pose`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ home, ...pose }) }).catch(() => null);
+  return r?.ok ? null : `시작 위치를 넣지 못함: HTTP ${r?.status ?? "연결 실패"}`;
+}
+
+/** 폰 페이지 안의 폰 소켓(/phone/events, 열린 것 중 마지막)으로 {type: "say", text}를 보낸다. 보냈으면 true. */
+async function sendSay(page: Page, text: string): Promise<boolean> {
+  const proto = await page.send("Runtime.evaluate", { expression: "WebSocket.prototype" });
+  const protoId = (proto.result?.result as { objectId?: string } | undefined)?.objectId;
+  if (!protoId) return false;
+  const found = await page.send("Runtime.queryObjects", { prototypeObjectId: protoId });
+  const listId = ((found.result as { objects?: { objectId?: string } } | undefined)?.objects)?.objectId;
+  if (!listId) return false;
+  const sent = await page.send("Runtime.callFunctionOn", {
+    objectId: listId, returnByValue: true, arguments: [{ value: text }],
+    functionDeclaration: "function (text) { const ws = this.filter((w) => w.readyState === 1 && /\\/phone\\/events$/.test(w.url)).at(-1); if (!ws) return false; ws.send(JSON.stringify({ type: \"say\", text })); return true; }",
+  });
+  return sent.result?.result?.value === true;
 }
 
 const getJson = async <T>(url: string): Promise<T | null> => fetch(url).then((r) => (r.ok ? (r.json() as Promise<T>) : null)).catch(() => null);
@@ -249,7 +322,7 @@ const READ = `(() => {
   const r = window.__noonchiVideo ?? null;
   const v = document.querySelector("video[data-phone-video]");
   return {
-    record: r && { t0: r.t0, ended: r.ended, commands: r.commands, clips: r.clips ?? [] },
+    record: r && { t0: r.t0, ended: r.ended, hold: r.hold ?? null, commands: r.commands, clips: r.clips ?? [] },
     time: v ? v.currentTime : null, duration: v && Number.isFinite(v.duration) ? v.duration : null, ended: v ? v.ended : false,
     top: document.querySelector("[data-phone-zone=top] [data-phone-text]")?.textContent ?? null,
     buttons: [...document.querySelectorAll("[data-phone-zone=thumb] button")].map((b) => b.textContent.trim()),
@@ -257,14 +330,18 @@ const READ = `(() => {
   };
 })()`;
 type Seen = {
-  record: { t0: number | null; ended: boolean; commands: VideoCommand[]; clips: VideoClip[] } | null;
+  record: { t0: number | null; ended: boolean; hold: { clip: string; since: number } | null; commands: VideoCommand[]; clips: VideoClip[] } | null;
   time: number | null; duration: number | null; ended: boolean; top: string | null; buttons: string[]; support: string | null;
 };
-/** 위 줄이 그 명령일 때만 엄지 자리 첫 답 단추를 누르고 그 글을 돌려준다. */
-const clickAnswer = (text: string) => `(() => {
+/** 페이지의 지금 명령(__noonchiVideo.commands 마지막)의 계획 id·단계 id와 위 줄 글이 모두 c와 같을 때만 label 글의 엄지 자리 단추(null이면 첫 단추)를 누르고 그 글을 돌려준다. */
+export const clickChoice = (c: Pick<PlannedClick, "id" | "step" | "text" | "label">) => `(() => {
+  const last = window.__noonchiVideo?.commands?.at(-1) ?? null;
   const top = document.querySelector("[data-phone-zone=top] [data-phone-text]")?.textContent ?? null;
-  const b = document.querySelector("[data-phone-zone=thumb] button");
-  if (top !== ${JSON.stringify(text)} || !b) return null;
+  if (!last || last.id !== ${JSON.stringify(c.id)} || last.step !== ${JSON.stringify(c.step)} || top !== ${JSON.stringify(c.text)}) return null;
+  const all = [...document.querySelectorAll("[data-phone-zone=thumb] button")];
+  const label = ${JSON.stringify(c.label)};
+  const b = label === null ? all[0] : all.find((x) => x.textContent.trim() === label);
+  if (!b) return null;
   b.click();
   return b.textContent.trim();
 })()`;
@@ -347,9 +424,13 @@ async function startFake(clip: string, steps: string[]): Promise<Fake> {
 
 // 돌리기
 
-const USAGE = "쓰는 법: npx tsx scripts/video-check.ts --clip <이름.mp4> [--step <종류>:<낱말>:<영상.mp4> ...] [--phone http://127.0.0.1:8210] [--api http://127.0.0.1:8200] [--done-after 3] [--out <파일.md>] [--expect-after 36.3] [--record <폴더>] [--fake]";
+const USAGE = "쓰는 법: npx tsx scripts/video-check.ts --clip <이름.mp4> [--step <종류>:<낱말>:<영상.mp4> ...] [--phone http://127.0.0.1:8210] [--api http://127.0.0.1:8200] [--done-after 3] [--out <파일.md>] [--expect-after 36.3] [--record <폴더>] [--fake]"
+  + " [--say <초>:<글> ...] [--start-at <cup|tv|microwave|kitchen>] [--home mokryeon_180b] [--tail 30] [--max 1800] [--approve <초>] [--done-on <초>:<명령 글> ...]";
 
-export interface Args { clip: string; fake: boolean; steps: string[]; doneAfterMs: number; expectMs: number; phone: string; api: string; out: string | undefined; record: string | undefined }
+export interface Args {
+  clip: string; fake: boolean; steps: string[]; doneAfterMs: number; expectMs: number; phone: string; api: string; out: string | undefined; record: string | undefined;
+  says: { atMs: number; text: string }[]; startAt: DemoScene | null; home: string; tailMs: number; maxMs: number; approveAfterMs: number; doneOn: { afterMs: number; text: string }[];
+}
 
 /** 인자(process.argv.slice(2)) → 판 설정, 틀리면 까닭 글. --step은 여러 번 받고, 있으면 --done-after 기본이 0이다. --record는 시연 영상 폴더. */
 export function parseArgs(argv: string[]): Args | string {
@@ -365,7 +446,31 @@ export function parseArgs(argv: string[]): Args | string {
   const doneAfterMs = Number(arg("done-after") ?? (steps.length ? "0" : "3")) * 1000;
   const expectMs = Number(arg("expect-after") ?? (fake ? String(FAKE_PERSON_MS / 1000) : "36.3")) * 1000;
   if (!Number.isFinite(doneAfterMs) || doneAfterMs < 0 || !Number.isFinite(expectMs)) return "--done-after·--expect-after는 0 이상 숫자(초)예요";
-  return { clip, fake, steps, doneAfterMs, expectMs, phone: arg("phone") ?? "http://127.0.0.1:8210", api: arg("api") ?? "http://127.0.0.1:8200", out: arg("out"), record };
+  // <초>:<글>: 초는 0 이상 숫자, 글은 비지 않고 60자까지
+  const timed = (flag: string, max: number) => argv.flatMap((a, i) => (a === flag ? [argv[i + 1] ?? ""] : [])).map((v) => {
+    const m = /^(\d+(?:\.\d+)?):(.*)$/s.exec(v);
+    const text = m?.[2]?.trim() ?? "";
+    return m && text && text.length <= max ? { ms: Number(m[1]) * 1000, text } : null;
+  });
+  const says = timed("--say", 60);
+  if (says.includes(null)) return `--say는 <초>:<글(60자까지)>예요. ${USAGE}`;
+  const doneOn = timed("--done-on", 200);
+  if (doneOn.includes(null)) return `--done-on은 <초>:<명령 글>이에요. ${USAGE}`;
+  const startAt = arg("start-at") ?? null;
+  if (startAt !== null && !Object.hasOwn(DEMO_STARTS, startAt)) return `--start-at은 ${Object.keys(DEMO_STARTS).join("·")} 가운데 하나예요. ${USAGE}`;
+  const sec = (k: string, fallback: number, lo: number, hi: number) => {
+    const v = Number(arg(k) ?? fallback);
+    return Number.isFinite(v) && v >= lo && v <= hi ? v * 1000 : null;
+  };
+  const tailMs = sec("tail", 30, 10, 900);
+  const maxMs = sec("max", 1800, 60, 3600);
+  const approveAfterMs = sec("approve", 0, 0, 3600);
+  if (tailMs === null || maxMs === null || approveAfterMs === null) return `--tail은 10~900초, --max는 60~3600초, --approve는 0 이상 초예요. ${USAGE}`;
+  return {
+    clip, fake, steps, doneAfterMs, expectMs, phone: arg("phone") ?? "http://127.0.0.1:8210", api: arg("api") ?? "http://127.0.0.1:8200", out: arg("out"), record,
+    says: says.map((x) => ({ atMs: x!.ms, text: x!.text })), startAt: startAt as DemoScene | null, home: arg("home") ?? HOME, tailMs, maxMs, approveAfterMs,
+    doneOn: doneOn.map((x) => ({ afterMs: x!.ms, text: x!.text })),
+  };
 }
 
 /** 폰 영상 모드 주소: clip 하나와 step을 하나씩. */
@@ -444,6 +549,12 @@ async function main(): Promise<number> {
       if (!before) throw new Error(`서버에 닿지 못함: ${api}/api/plan`);
       const used = usedServer(before.plan, await getJson<BrainNow>(`${api}/api/brain`));
       if (used) throw new Error(used);
+      // --start-at: 폰 페이지를 열기 전에 그 장면 시작 위치를 넣는다(지금 집이 다르면 시작하지 않는다)
+      if (args.startAt) {
+        const why = await sendStartPose(api, args.startAt, args.home);
+        if (why) throw new Error(why);
+        console.log(`[video-check] 시작 위치 ${args.startAt}`);
+      }
 
       chrome = launchChrome({ path: chromeExe, size: SIZE });
       note(chrome.proc.pid!);
@@ -492,11 +603,17 @@ async function main(): Promise<number> {
         } catch { /* 모양이 다른 답은 넘어간다 */ }
       };
 
-      // 끝날 때까지 1초마다 읽고, 새 명령은 --done-after초 뒤 첫 답 단추를 누른다
+      // 끝날 때까지 1초마다 읽고, 새 명령에 고른 누르기를 예약하고(--approve·--done-on·--done-after), 말(--say)을 그 시각에 보낸다. 끝내기는 judgeState가 정한다
       // 영상 시각은 단계 영상을 바꿔도 이어 센다: 지금 영상의 시작 = 마지막으로 바꾼 영상 시각
       let endedAt: number | null = null;
+      let stillSince: number | null = null;
       let clipAt = Date.now();
-      let due: { at: number; cmd: VideoCommand }[] = [];
+      const runStart = Date.now();
+      let due: PlannedClick[] = [];
+      const rule: ClickRule = { approveAfterMs: args.approveAfterMs, doneOn: args.doneOn, doneAfterMs };
+      const saysLeft = [...args.says].sort((a, b) => a.atMs - b.atMs);
+      const said: { atMs: number; text: string }[] = [];
+      const pressed: { ms: number; label: string; text: string }[] = [];
       let known = 0;
       let knownClips = 0;
       let clicks = 0;
@@ -516,17 +633,28 @@ async function main(): Promise<number> {
         knownClips = clips.length;
         for (const c of commands.slice(known)) {
           console.log(`[video-check] ${clock(c.video_ms)} 명령 ${c.text}`);
-          if (doneAfterMs > 0) due.push({ at: Date.now() + doneAfterMs, cmd: c });
+          due.push(...plannedClicks(c, rule, Date.now()));
         }
         known = commands.length;
         const now = Date.now();
+        // 말: 재생 시작부터 그 초가 되면 폰 소켓으로 보낸다
+        while (saysLeft.length && now - runStart >= saysLeft[0]!.atMs) {
+          const x = saysLeft.shift()!;
+          const ok = await sendSay(cdp, x.text).catch(() => false);
+          if (ok) {
+            said.push({ atMs: now - runStart, text: x.text });
+            console.log(`[video-check] ${clock(now - runStart)} 말 · ${x.text}`);
+          } else errors.push(`말을 보내지 못함: ${x.text}`);
+        }
         const ready = due.filter((d) => d.at <= now);
         due = due.filter((d) => d.at > now);
         for (const d of ready) {
-          const label = (await cdp.evaluate(clickAnswer(d.cmd.text), 10_000)) as string | null;
+          const label = (await cdp.evaluate(clickChoice(d), 10_000)) as string | null;
           if (!label) continue;
           clicks += 1;
-          console.log(`[video-check] ${clock(clipStart() + (seen.time ?? 0) * 1000)} 「${label}」 누름 · ${d.cmd.text}`);
+          const ms = clipStart() + (seen.time ?? 0) * 1000;
+          pressed.push({ ms, label, text: d.text });
+          console.log(`[video-check] ${clock(ms)} 누름 · ${label} · ${d.text}`);
         }
         await pollWorld();
         if (seen.record ? seen.record.ended : seen.ended) {
@@ -534,13 +662,17 @@ async function main(): Promise<number> {
             endedAt = Date.now();
             console.log(`[video-check] ${clock(clipStart() + (duration ?? seen.time ?? 0) * 1000)} 영상 끝`);
           }
-          // 끝난 뒤에도 계획이 열려 있으면 TAIL_MS 더 본다: 남은 답과 그 뒤 온 명령을 누르고, 단계 영상이 새로 시작되면 다시 끝날 때까지
-          if (!watchAfterEnd(Date.now() - endedAt, due.length, due.length ? undefined : (await planNow())?.plan?.status)) break;
-        } else {
-          if (endedAt !== null) endedAt = null;
-          const limitMs = ((duration ?? 600) + 60) * 1000;
-          if (Date.now() - clipAt > limitMs) { unfinished.push(`${Math.round(limitMs / 1000)}초 안에 영상이 끝나지 않음`); break; }
-        }
+        } else endedAt = null;
+        const still = seen.record ? seen.record.ended || seen.record.hold !== null : seen.ended;
+        stillSince = still ? stillSince ?? Date.now() : null;
+        const clipDurationMs = clips.at(-1)?.duration_ms ?? (seen.duration !== null ? seen.duration * 1000 : null);
+        const state = judgeState({
+          stillForMs: stillSince === null ? null : Date.now() - stillSince, clipPlayedMs: Date.now() - clipAt, clipDurationMs,
+          due: due.length, planStatus: (await planNow())?.plan?.status, tailMs: args.tailMs, totalMs: Date.now() - runStart, maxMs: args.maxMs,
+        });
+        if (state === "clip_over") { unfinished.push(`${Math.round((clipDurationMs! + 60_000) / 1000)}초 안에 영상이 끝나지 않음`); break; }
+        if (state === "max_over") { unfinished.push(`판 전체 ${Math.round(args.maxMs / 1000)}초를 넘음`); break; }
+        if (state !== "watch") break;
         if (stop) { unfinished.push("중단"); break; }
         await sleep(1000);
       }
@@ -557,7 +689,7 @@ async function main(): Promise<number> {
       const brain = await getJson<BrainNow>(`${api}/api/brain`);
       const cost = costLine(brain);
 
-      const rows = timeline(t0, history, commands, endMs, { clips, twin: twin.rows.map((r) => ({ ...r, ms: r.ms - t0 })) });
+      const rows = timeline(t0, history, commands, endMs, { clips, twin: twin.rows.map((r) => ({ ...r, ms: r.ms - t0 })), says: said, clicks: pressed });
       const v = verdict(rows, commands, history, expectMs);
       const stepLine = steps.length ? stepVerdict(history, commands, clicks, twin.last) : null;
       const pageErrors = errors.filter((e) => !/favicon/.test(e));
