@@ -106,6 +106,16 @@ describe("설정 흐름 서버", () => {
     expect((await post("/api/setup/assist", { assist: "noonchi" })).json.assist).toBe("noonchi");
   });
 
+  it("POST /api/setup/assist {assist: auto}가 받히고 robot은 400이다", async () => {
+    srv = await startServer({ env: env(runtime()), log: () => {} });
+    const r = await post("/api/setup/assist", { assist: "auto" });
+    expect(r.status).toBe(200);
+    expect(r.json).toMatchObject({ ok: true, assist: "auto" });
+    expect(srv.assist).toBe("auto");
+    expect((await post("/api/setup/assist", { assist: "robot" })).status).toBe(400);
+    expect((await get("/api/setup")).json.assist).toBe("auto");
+  });
+
   it("집을 바꾸면 허브·에이전트·트윈이 새 집으로, 다시 붙은 WS hello도 새 집", async () => {
     srv = await startServer({ env: env(runtime(), { PHONE_PORT: "0", PHONE_HOST: "127.0.0.1" }), log: () => {} });
     const phoneUrls = srv.phoneUrls;

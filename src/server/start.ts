@@ -334,9 +334,9 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       },
       setAssist(body) {
         const want = body.assist;
-        if (want !== "noonchi" && want !== "coach") throw new HttpError(400, "assist는 noonchi(눈치) 또는 coach(코치)여야 합니다.");
+        if (want !== "auto" && want !== "noonchi" && want !== "coach") throw new HttpError(400, "assist는 auto(자동)·noonchi(눈치)·coach(코치) 가운데 하나여야 합니다.");
         store.setAssist(want);
-        log(`돕는 방식: ${want === "coach" ? "코치" : "눈치"}`);
+        log(`돕는 방식: ${want === "auto" ? "자동" : want === "coach" ? "코치" : "눈치"}`);
         return view();
       },
       async thinqDevices() {

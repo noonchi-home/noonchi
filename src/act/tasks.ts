@@ -72,8 +72,9 @@ export const TASK_NAMES: readonly string[] = Object.keys(TASKS);
 /** 코치 모드에서도 PAM에 보내는 눈치 행동. */
 const COACH_ALSO: readonly string[] = ["사용자에게 물어보기"];
 
-/** PAM에 보내는 행동 목록(순서가 task_index). noonchi: 코치가 아닌 행동, coach: 코치 행동과 「사용자에게 물어보기」. */
+/** PAM에 보내는 행동 목록(순서가 task_index). auto: 모든 행동(순서 그대로), noonchi: 코치가 아닌 행동, coach: 코치 행동과 「사용자에게 물어보기」. */
 export function tasksFor(assist: AssistMode): string[] {
+  if (assist === "auto") return [...TASK_NAMES];
   return TASK_NAMES.filter((n) => (assist === "coach" ? TASKS[n]!.coach || COACH_ALSO.includes(n) : !TASKS[n]!.coach));
 }
 

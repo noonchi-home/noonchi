@@ -208,6 +208,17 @@ describe("돕는 방식(눈치·코치)", () => {
     expect(new SetupStore({ runtimeDir: dir, persist: true }).assist()).toBe("noonchi");
   });
 
+  it("setup.json이 없을 때 새로 만드는 설정은 자동이고, 새로 쓴 파일에 assist: auto가 있다. setAssist(auto)도 그대로 남는다", () => {
+    const dir = tmp();
+    const a = new SetupStore({ runtimeDir: dir, persist: true });
+    expect(a.assist()).toBe("auto");
+    a.setHome("oneroom");
+    expect(JSON.parse(readFileSync(join(dir, "setup.json"), "utf8"))).toMatchObject({ version: 1, home: "oneroom", assist: "auto" });
+    a.setAssist("noonchi");
+    a.setAssist("auto");
+    expect(new SetupStore({ runtimeDir: dir, persist: true }).assist()).toBe("auto");
+  });
+
   it("setAssist(coach) 뒤 파일에 assist: coach가 있고 mode는 그대로다. 운영 모드를 바꿔도 돕는 방식은 그대로다", () => {
     const dir = tmp();
     const a = new SetupStore({ runtimeDir: dir, persist: true });

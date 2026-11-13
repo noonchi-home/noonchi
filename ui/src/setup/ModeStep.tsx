@@ -27,6 +27,7 @@ const MODES: { id: ControlMode; name: string; line: string }[] = [
 ];
 
 const ASSISTS: { id: AssistMode; name: string; line: string }[] = [
+  { id: "auto", name: "자동", line: "상황마다 알아서 골라요" },
   { id: "noonchi", name: "눈치 모드", line: "먼저 알아채 도와요" },
   { id: "coach", name: "코치 모드", line: "하는 법을 단계마다 알려 줘요" },
 ];

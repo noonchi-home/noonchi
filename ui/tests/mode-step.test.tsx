@@ -122,11 +122,13 @@ describe("설정: 운영 모드", () => {
     expect(await screen.findByRole("combobox", { name: "거실 에어컨 ThinQ 기기" })).toBeInTheDocument();
   });
 
-  it("돕는 방식 두 칸이 보이고 지금 값이 골라져 있다", async () => {
+  it("돕는 방식 세 칸이 보이고 지금 값이 골라져 있다", async () => {
     open(setupView({ assist: "coach" }));
     const group = await screen.findByRole("radiogroup", { name: "돕는 방식" });
     const radios = within(group).getAllByRole("radio");
-    expect(radios).toHaveLength(2);
+    expect(radios).toHaveLength(3);
+    expect(within(group).getByRole("radio", { name: /자동/ })).not.toBeChecked();
+    expect(within(group).getByText("상황마다 알아서 골라요")).toBeInTheDocument();
     expect(within(group).getByRole("radio", { name: /눈치 모드/ })).not.toBeChecked();
     expect(within(group).getByRole("radio", { name: /코치 모드/ })).toBeChecked();
     expect(within(group).getByText("먼저 알아채 도와요")).toBeInTheDocument();
@@ -149,6 +151,16 @@ describe("설정: 운영 모드", () => {
     // 같은 값을 다시 눌러도 보내지 않는다
     await user.click(screen.getByRole("radio", { name: /코치 모드/ }));
     expect(api.posts("/api/setup/assist")).toHaveLength(1);
+  });
+
+  it("자동을 고르면 /api/setup/assist에 auto를 보내고 골라진다", async () => {
+    const { api, user } = open(setupView(), {
+      "POST /api/setup/assist": (b) => { api.setView({ ...api.view(), assist: b.assist }); return [200, api.view()]; },
+    });
+    await user.click(await screen.findByRole("radio", { name: /자동/ }));
+    await waitFor(() => expect(api.posts("/api/setup/assist")).toHaveLength(1));
+    expect(api.posts("/api/setup/assist")[0]!.body).toEqual({ assist: "auto" });
+    await waitFor(() => expect(screen.getByRole("radio", { name: /자동/ })).toBeChecked());
   });
 
   it("돕는 방식 저장에 실패하면 알림 글이 뜨고 눈치 모드 그대로다", async () => {
