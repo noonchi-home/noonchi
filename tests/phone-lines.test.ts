@@ -14,7 +14,7 @@ import { PHONE_LINE_SITES, RISKY_REPLY, riskyNames } from "../src/agent/policy.j
 import type { PlannedCommandMessage } from "../src/contract/phone.js";
 import type { WorldView } from "../src/contract/world.js";
 import { PlanHub } from "../src/plan/hub.js";
-import { CAUTION_LINE } from "../src/plan/labels.js";
+import { CAUTION_LINE, type TellMode } from "../src/plan/labels.js";
 import { floorPlanFrom } from "../src/plan/route.js";
 import type { DecisionRecord } from "../src/world/decide.js";
 import { SMALL_SCENE } from "./helpers/floor.js";
@@ -73,9 +73,9 @@ function tracker(at = 1) {
   return { t, phone, step: `plan:pam-1:${at}` };
 }
 /** 실행 추적 자리: 보냈으면 실제 폰에 뜬 글, 아니면 null. */
-const tracked = (send: (t: ExecutionTracker, step: string, text: string) => boolean, at: number) => (text: string) => {
+const tracked = (send: (t: ExecutionTracker, step: string, text: string) => string | null, at: number) => (text: string) => {
   const { t, phone, step } = tracker(at);
-  if (!send(t, step, text)) return null;
+  if (send(t, step, text) === null) return null;
   const last = phone.at(-1);
   return last?.type === "command" ? last.text : null;
 };
@@ -98,16 +98,17 @@ const agentReply = async (turns: StepResult[], said = "라면 어떻게 끓여")
 };
 
 let obs: FakeObserver;
-let observed = "";
-beforeAll(async () => { obs = await startFakeObserver(() => [[observed.startsWith("ask:") ? "ask_person" : "tell_person", { text: observed.replace(/^ask:/, ""), reason: "알리려고" }]]); });
+/** 관찰 모드 모델이 낼 도구 호출(인자 그대로). */
+let call: [string, Record<string, unknown>] = ["wait", { reason: "기다리려고" }];
+beforeAll(async () => { obs = await startFakeObserver(() => [call]); });
 afterAll(async () => { await obs.close(); });
 const situation = (tools: ObserveSituation["tools"]): ObserveSituation => ({
-  trigger: tools.includes("ask_person") ? "stalled" : "off_track", goal: "물 받기 단계", stuckMs: 9_000, spots: [], world: WORLD, earlier: [], tools, nowMs: 10_000,
+  trigger: tools.includes("ask_person") ? "stalled" : "off_track", goal: "물 받기 단계", stuckMs: 9_000,
+  spots: [{ id: "sink_1", label: "싱크대", inView: false }], world: WORLD, earlier: [], tools, nowMs: 10_000,
 });
-const observed2 = async (tool: "tell_person" | "ask_person", text: string) => {
-  observed = tool === "ask_person" ? `ask:${text}` : text;
-  const c = await new Observer({ provider: obs.provider() }).decide(situation(tool === "ask_person" ? ["look_closer", "ask_person", "wait"] : ["tell_person", "wait"]));
-  return c.tool === "tell_person" || c.tool === "ask_person" ? c.text : null;
+const observe = async (c: [string, Record<string, unknown>]) => {
+  call = c;
+  return new Observer({ provider: obs.provider() }).decide(situation(c[0] === "ask_person" ? ["look_closer", "ask_person", "wait"] : ["tell_person", "wait"]));
 };
 
 /** 모델이 쓴 위험 가전 글(이름 있음)과 이름 없이 대상만 위험 가전인 글. 서버 글 틀에는 「전원」·「버튼」이 없다. */
@@ -120,14 +121,11 @@ describe("모델이 쓴 위험 가전 글은 어느 자리에서도 폰으로 �
   /** 자리 → 모델 글 하나를 넣었을 때 폰으로 나가는 글(안 나가면 null). onRisky: 대상이 위험 가전인 자리로 넣는다. */
   const SITES: Record<(typeof PHONE_LINE_SITES)[number], (text: string, onRisky: boolean) => Promise<string | null> | string | null> = {
     "ask.question": (text) => planStep(ask({ question: `${text.replace(/ 주세요$/, "")} 볼까요?` }), ASK_TASK)?.prompt?.text ?? null,
-    "observer.tell_person": (text) => observed2("tell_person", text),
-    "observer.ask_person": (text) => observed2("ask_person", text),
-    "track.tell": (text, onRisky) => tracked((t, step, x) => t.tell("plan:pam-1", step, x), onRisky ? 2 : 1)(text),
-    "track.askCloser": (text, onRisky) => tracked((t, step, x) => t.askCloser("plan:pam-1", step, x), onRisky ? 2 : 1)(text),
     "agent.reply": async (text) => agentReply([{ text, calls: [] }]),
   };
 
-  const TARGETED = new Set<string>(["track.tell", "track.askCloser"]);
+  // 대상이 있는 자리는 없다(사람 단계·실행 추적 글은 모두 서버 글이다). 남은 자리는 이름으로만 본다
+  const TARGETED = new Set<string>([]);
 
   it("자리 목록은 이 시험이 보는 자리와 같다", () => {
     expect(Object.keys(SITES).sort()).toEqual([...PHONE_LINE_SITES].sort());
@@ -161,6 +159,12 @@ describe("서버 글 틀", () => {
     expect([open?.label, open?.command]).toEqual(["전자레인지 문 열기", "전자레인지 문을 열어 주세요"]);
     const close = planStep({ kind: "do", act: "닫기", target: "microwave_1", hand_device: { id: "microwave_1", to: "close" }, timeout_s: 120 });
     expect([close?.label, close?.command]).toEqual(["전자레인지 문 닫기", "전자레인지 문을 닫아 주세요"]);
+    // 문 상태가 없는 가전의 열기·닫기 끝 조건은 서버가 그 가전 설비(카메라)의 열림·닫힘 사실로 만든다(모델 until은 쓰지 않는다)
+    expect([open?.until, close?.until]).toEqual([
+      { fixture: "microwave", room: "kitchen_dining", facts: { open: "open" } }, { fixture: "microwave", room: "kitchen_dining", facts: { open: "closed" } },
+    ]);
+    expect(planStep({ kind: "do", act: "열기", target: "microwave_1", hand_device: { id: "microwave_1", to: "open" }, until: { elapsed_s: 1 }, timeout_s: 120 })?.until)
+      .toEqual({ fixture: "microwave", room: "kitchen_dining", facts: { open: "open" } });
     // 가전 위에서 하는 그 밖의 일도 동작 틀로만 나간다
     const put = planStep({ kind: "do", act: "넣기", item: "면과 스프", target: "induction_1", command: NAMED, timeout_s: 120 });
     expect([put?.label, put?.command, put?.hand]).toEqual(["면과 스프 넣기", "면과 스프를 넣어 주세요", null]);
@@ -180,6 +184,22 @@ describe("서버 글 틀", () => {
     expect(planStep(ask({ choices: [{ id: "yes", label: BARE.slice(0, 20) }, { id: "no", label: "아니요" }] }), ASK_TASK)).toBeNull();
     // 질문에는 부탁(「주세요」)을 섞지 않는다
     expect(planStep(ask({ question: "냄비를 올려 주세요?" }), ASK_TASK)).toBeNull();
+  });
+
+  it("관찰 모드의 다시 알리기·사람 부탁은 모델 글을 받지 않는다: 방식·가까이 볼 곳만 고르고 실행 추적이 서버 글로 보낸다(위험 가전이 대상인 단계도)", async () => {
+    // 관찰 모드: 모델이 함께 낸 글(이름 있음)은 버리고 방식·곳만 돌려준다. 글만 내면 받지 않는다
+    expect(await observe(["tell_person", { mode: "earlier", text: NAMED, reason: "알리려고" }])).toEqual({ tool: "tell_person", mode: "earlier", reason: "알리려고" });
+    expect(await observe(["ask_person", { target: "sink_1", text: BARE, reason: "보려고" }])).toEqual({ tool: "ask_person", target: "sink_1", reason: "보려고" });
+    expect(await observe(["tell_person", { text: NAMED, reason: "알리려고" }])).toMatchObject({ tool: "wait", invalid: expect.stringContaining("mode") });
+    // 실행 추적: 물 받기(싱크대)와 냄비 올리기(인덕션이 대상) 모두 그 단계 서버 명령으로만 나간다
+    expect(tracked((t, step) => t.tell("plan:pam-1", step, "repeat"), 1)("")).toBe("냄비에 물을 받아 주세요");
+    expect(tracked((t, step) => t.tell("plan:pam-1", step, "earlier"), 2)("")).toBe("먼저 냄비를 인덕션에 올려 주세요");
+    expect(tracked((t, step) => t.askCloser("plan:pam-1", step, "induction_1"), 2)("")).toBe("인덕션이 보이게 폰을 가까이 대 주세요");
+    // 모델 글은 그 자리에 넣을 수 없다
+    for (const at of [1, 2]) {
+      expect(tracked((t, step, x) => t.tell("plan:pam-1", step, x as TellMode), at)(NAMED), String(at)).toBeNull();
+      expect(tracked((t, step, x) => t.askCloser("plan:pam-1", step, x), at)(BARE), String(at)).toBeNull();
+    }
   });
 
   it("손 조작 동작은 대상 가전과 hand_device가 같은 가전, 같은 동작이어야 한다(질문·끄기 안내가 다른 가전을 가리키지 않게)", () => {

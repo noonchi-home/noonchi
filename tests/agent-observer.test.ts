@@ -68,19 +68,19 @@ describe("관찰 모드: 요청과 고른 도구", () => {
     expect(toolOutputs(llm!.bodies()[3])).toEqual([{ ok: false, error: expect.stringContaining("없는 id입니다: sink_9") }]);
   });
 
-  it("ask_person 글은 「주세요」로 끝나고 화면 글 규칙에 맞아야 한다. 틀리면 까닭을 주고 다시 받는다", async () => {
-    await start((_input, round) => [round === 0 ? ["ask_person", { text: "폰을 싱크대 가까이 대 줘", reason: "사진 밖이라" }] : ["ask_person", { text: ASK, reason: "사진 밖이라" }]]);
-    expect(await new Observer({ provider: llm!.provider() }).decide(stalled())).toEqual({ tool: "ask_person", text: ASK, reason: "사진 밖이라" });
-    expect(toolOutputs(llm!.bodies()[1])[0].error).toContain("「주세요」로 끝나야");
+  it("ask_person은 글 대신 [가까이 볼 곳] id(사진 밖이어도 된다)를 고른다. 없는 id나 글만 내면 까닭을 주고 다시 받는다. 모델이 함께 낸 글은 쓰지 않는다", async () => {
+    await start((_input, round) => [round === 0 ? ["ask_person", { text: ASK, reason: "사진 밖이라" }] : ["ask_person", { target: "table_1", text: "폰을 싱크대 가까이 대 줘", reason: "사진 밖이라" }]]);
+    expect(await new Observer({ provider: llm!.provider() }).decide(stalled())).toEqual({ tool: "ask_person", target: "table_1", reason: "사진 밖이라" });
+    expect(toolOutputs(llm!.bodies()[1])[0].error).toContain("ask_person 인자가 맞지 않습니다: target");
 
-    llm!.script = (_input, round) => [round === 0 ? ["ask_person", { text: "싱크대 안이 보이게(가까이) 폰을 대 주세요", reason: "사진 밖이라" }] : ["ask_person", { text: "폰을 → 싱크대로 대 주세요", reason: "사진 밖이라" }]];
+    llm!.script = () => [["ask_person", { target: "sink_9", reason: "사진 밖이라" }]];
     const bad = await new Observer({ provider: llm!.provider() }).decide(stalled());
-    expect(toolOutputs(llm!.bodies()[3])[0].error).toContain("괄호 설명");
-    expect(bad).toEqual({ tool: "wait", reason: expect.stringContaining("흐름 나열"), invalid: expect.stringContaining("흐름 나열") });
+    expect(toolOutputs(llm!.bodies()[3])[0].error).toContain("없는 id입니다: sink_9");
+    expect(bad).toEqual({ tool: "wait", reason: expect.stringContaining("없는 id입니다: sink_9"), invalid: expect.stringContaining("없는 id입니다: sink_9") });
   });
 
   it("판단 전 보기(B, ask_person 없음)에서 ask_person을 부르면 거절하고 다시 받는다", async () => {
-    await start((_input, round) => [round === 0 ? ["ask_person", { text: ASK, reason: "더 잘 보려고" }] : ["look_closer", { target: "sink_1", reason: "더 잘 보려고" }]]);
+    await start((_input, round) => [round === 0 ? ["ask_person", { target: "sink_1", reason: "더 잘 보려고" }] : ["look_closer", { target: "sink_1", reason: "더 잘 보려고" }]]);
     const s = stalled({ trigger: "unknown_fact", stuckMs: null, tools: ["look_closer", "wait"] });
     expect(await new Observer({ provider: llm!.provider() }).decide(s)).toEqual({ tool: "look_closer", target: "sink_1", reason: "더 잘 보려고" });
     expect(toolOutputs(llm!.bodies()[1])).toEqual([{ ok: false, error: "이번에는 look_closer·wait만 부릅니다" }]);
@@ -115,9 +115,9 @@ describe("관찰 모드: 코치 계획의 다른 행동·들은 말", () => {
   });
   const heard = (over: Partial<ObserveSituation> = {}): ObserveSituation => off({ trigger: "heard", tools: ["tell_person", "pass_on", "wait"], changes: undefined, said: "어 뭐 해야 되지", ...over });
 
-  it("off_track 요청의 입력 글에 [계획] 단계 목록·지금 단계·[방금 본 변화]가 있고 도구는 tell_person·wait뿐이다. tell_person을 고르면 그 글을 돌려준다", async () => {
-    await start(() => [["tell_person", { text: TELL, reason: "물을 받기 전에 다른 곳으로 가서" }]]);
-    expect(await new Observer({ provider: llm!.provider() }).decide(off())).toEqual({ tool: "tell_person", text: TELL, reason: "물을 받기 전에 다른 곳으로 가서" });
+  it("off_track 요청의 입력 글에 [계획] 단계 목록·지금 단계·[방금 본 변화]가 있고 도구는 tell_person·wait뿐이다. tell_person을 고르면 그 방식을 돌려준다", async () => {
+    await start(() => [["tell_person", { mode: "earlier", reason: "물을 받기 전에 다른 곳으로 가서" }]]);
+    expect(await new Observer({ provider: llm!.provider() }).decide(off())).toEqual({ tool: "tell_person", mode: "earlier", reason: "물을 받기 전에 다른 곳으로 가서" });
     const [body] = llm!.bodies();
     expect(body.tools.map((t: any) => t.name)).toEqual(["tell_person", "wait"]);
     const input = body.input[0].content as string;
@@ -141,22 +141,23 @@ describe("관찰 모드: 코치 계획의 다른 행동·들은 말", () => {
     expect(input).not.toContain("[방금 본 변화]");
   });
 
-  it("tell_person 글이 「주세요」로 안 끝나거나 화면 글 규칙에 걸리면 까닭을 주고 다시 받는다", async () => {
-    await start((_input, round) => [round === 0 ? ["tell_person", { text: "지금 그거 하면 안 돼요", reason: "순서가 달라서" }] : ["tell_person", { text: TELL, reason: "순서가 달라서" }]]);
-    expect(await new Observer({ provider: llm!.provider() }).decide(off())).toEqual({ tool: "tell_person", text: TELL, reason: "순서가 달라서" });
-    expect(toolOutputs(llm!.bodies()[1])[0].error).toContain("「주세요」로 끝나야");
-    llm!.script = () => [["tell_person", { text: "냄비에(먼저) 물을 받아 주세요", reason: "순서가 달라서" }]];
-    expect(await new Observer({ provider: llm!.provider() }).decide(off())).toMatchObject({ tool: "wait", invalid: expect.stringContaining("괄호 설명") });
+  it("tell_person은 글 대신 방식(repeat·earlier)을 고른다. 글만 내거나 없는 방식이면 까닭을 주고 다시 받는다", async () => {
+    await start((_input, round) => [round === 0 ? ["tell_person", { text: "지금 그거 하면 안 돼요", reason: "순서가 달라서" }] : ["tell_person", { mode: "earlier", text: TELL, reason: "순서가 달라서" }]]);
+    expect(await new Observer({ provider: llm!.provider() }).decide(off())).toEqual({ tool: "tell_person", mode: "earlier", reason: "순서가 달라서" });
+    expect(toolOutputs(llm!.bodies()[1])[0].error).toContain("tell_person 인자가 맞지 않습니다: mode");
+    llm!.script = () => [["tell_person", { mode: "louder", reason: "순서가 달라서" }]];
+    expect(await new Observer({ provider: llm!.provider() }).decide(off())).toMatchObject({ tool: "wait", invalid: expect.stringContaining("mode") });
   });
 
-  it("위험 가전을 켜라는 tell_person·ask_person 글은 받지 않는다(켜기 전 묻기를 건너뛰지 않게). 두 차례 다 그러면 기다리기", async () => {
-    await start((_input, round) => [round === 0 ? ["tell_person", { text: "먼저 인덕션을 켜 주세요", reason: "순서가 달라서" }] : ["tell_person", { text: TELL, reason: "순서가 달라서" }]]);
-    expect(await new Observer({ provider: llm!.provider() }).decide(off())).toEqual({ tool: "tell_person", text: TELL, reason: "순서가 달라서" });
-    expect(toolOutputs(llm!.bodies()[1])[0].error).toContain("위험 가전 이름");
+  it("위험 가전을 켜라는 글은 tell_person·ask_person 어디로도 나가지 않는다(켜기 전 묻기를 건너뛰지 않게): 모델 글은 받지 않고 방식·곳만 돌려준다. 글만 두 차례 내면 기다리기", async () => {
+    await start((_input, round) => [round === 0 ? ["tell_person", { text: "먼저 인덕션을 켜 주세요", reason: "순서가 달라서" }] : ["tell_person", { mode: "earlier", text: "먼저 인덕션을 켜 주세요", reason: "순서가 달라서" }]]);
+    const c = await new Observer({ provider: llm!.provider() }).decide(off());
+    expect(c).toEqual({ tool: "tell_person", mode: "earlier", reason: "순서가 달라서" });
+    expect(JSON.stringify(c)).not.toContain("인덕션");
     llm!.script = () => [["tell_person", { text: "인덕션을 켜 주세요", reason: "다음 단계라서" }]];
-    expect(await new Observer({ provider: llm!.provider() }).decide(heard())).toMatchObject({ tool: "wait", invalid: expect.stringContaining("위험 가전 이름") });
+    expect(await new Observer({ provider: llm!.provider() }).decide(heard())).toMatchObject({ tool: "wait", invalid: expect.stringContaining("mode") });
     llm!.script = () => [["ask_person", { text: "전자레인지를 돌려 주세요", reason: "보려고" }]];
-    expect(await new Observer({ provider: llm!.provider() }).decide(stalled())).toMatchObject({ tool: "wait", invalid: expect.stringContaining("위험 가전 이름") });
+    expect(await new Observer({ provider: llm!.provider() }).decide(stalled())).toMatchObject({ tool: "wait", invalid: expect.stringContaining("target") });
   });
 
   it("off_track에서 pass_on·ask_person·look_closer를 부르면 거절한다", async () => {
@@ -167,8 +168,8 @@ describe("관찰 모드: 코치 계획의 다른 행동·들은 말", () => {
 
   it("관찰 프롬프트에 계획과 들은 말을 다루는 법, 새 도구 둘의 설명이 있다", () => {
     const lines = OBSERVER_PROMPT.split("\n");
-    expect(lines).toContain("- [계획]이 있으면 사람이 지금 단계와 다른 일을 하는지 본다. 다른 자리로 갔거나 순서를 건너뛰었거나 위험하면(물을 받기 전에 불을 켬) tell_person으로 지금 할 일을 한 줄로 알린다. 지금 단계를 하는 중으로 보이면 wait.");
-    expect(lines).toContain("- [들은 말]이 있으면: 무엇을 할지 모르겠다는 말이면 tell_person으로 지금 할 일을 알리고, 이 일과 상관없는 말이면 pass_on, 답이 필요 없는 말이면 wait.");
+    expect(lines).toContain("- [계획]이 있으면 사람이 지금 단계와 다른 일을 하는지 본다. 다른 자리로 갔거나 순서를 건너뛰었거나 위험하면(물을 받기 전에 불을 켬) tell_person mode earlier로 지금 할 일부터 하라고 알린다. 지금 단계를 하는 중으로 보이면 wait.");
+    expect(lines).toContain("- [들은 말]이 있으면: 무엇을 할지 모르겠다는 말이면 tell_person mode repeat으로 지금 할 일을 다시 알리고, 이 일과 상관없는 말이면 pass_on, 답이 필요 없는 말이면 wait.");
     expect(lines.some((l) => l.startsWith("- tell_person: 사람에게 지금 할 일을 한 줄로 다시 알린다."))).toBe(true);
     expect(lines.some((l) => l.startsWith("- pass_on: 들은 말이 지금 하는 일과 상관없다."))).toBe(true);
   });

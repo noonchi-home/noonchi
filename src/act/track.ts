@@ -50,14 +50,14 @@ import type { Facet, WorldChange, WorldChangeKind, WorldEye, WorldObject, WorldV
 import type { LookSpot } from "../observe/crop.js";
 import type { FloorPlan } from "../plan/floor.js";
 import type { PlanHub } from "../plan/hub.js";
-import { AGAIN_TEXT, APPROVAL_TEXT, CAUTION_TEXT, EXEC_TEXT, VISION_TEXT, placeShort } from "../plan/labels.js";
+import { AGAIN_TEXT, APPROVAL_TEXT, CAUTION_TEXT, CLOSER_TEXT, EXEC_TEXT, TELL_TEXT, VISION_TEXT, placeShort, type TellMode } from "../plan/labels.js";
 import { roomAt } from "../plan/route.js";
 import { OBJECT_NAME, PLACE_UNKNOWN, STATE_TEXT, onSurface } from "../world/labels.js";
 import { ConditionWatch, type Condition, type ConditionContext } from "../world/conditions.js";
 import { DEVICE_STATES, NEAR_M, PHONE_NEAR_M } from "../world/vocab.js";
 import type { DecisionRecord } from "../world/decide.js";
 import { approvalNeed, taskKey, type ApprovalAnswer, type ApprovalBook } from "../agent/approval.js";
-import { isRiskyKind, riskyNames } from "../agent/policy.js";
+
 import { HUMAN_KINDS, objectNames, riskyHand, type AgentPlan, type AgentStep, type PlanResult } from "../agent/planTools.js";
 import type { ToolResult } from "../agent/tools.js";
 import type { CheckResult } from "./check.js";
@@ -433,15 +433,15 @@ export class ExecutionTracker {
     this.stray(r, [VISION_TEXT.movedNear(this.placeName(near.id))]);
   }
 
-  /** 관찰 모드의 다시 알리기(tell_person): 지금 그 계획의 그 사람 단계면 명령 글을 그 한 줄로 바꿔 소리로 읽고, tellHoldMs 뒤 원래 명령으로 되돌린다(되돌릴 때는 읽지 않는다).
-   *  단계가 넘어가면 되돌리지 않는다(새 명령이 이미 떴다). 사람에게 하는 말(「주세요」로 끝남)만 보낸다. 켜기 전 질문 중에는 보내지 않는다. 보냈으면 true. */
-  tell(planId: string, stepId: string, text: string): boolean {
+  /** 관찰 모드의 다시 알리기(tell_person): 지금 그 계획의 그 사람 단계면 명령 글을 서버 글 한 줄(지금 명령 그대로, 또는 「먼저」를 붙인 것)로 바꿔 소리로 읽고,
+   *  tellHoldMs 뒤 원래 명령으로 되돌린다(되돌릴 때는 읽지 않는다). 단계가 넘어가면 되돌리지 않는다(새 명령이 이미 떴다).
+   *  켜기 전 질문 중과 손 조작 단계에는 보내지 않는다. 보낸 글, 못 보냈으면 null. */
+  tell(planId: string, stepId: string, mode: TellMode): string | null {
     const r = this.run;
     const step = r ? this.stepOf(r) : undefined;
-    const said = text.trim();
-    if (this.stopped || !r || r.state !== "running" || r.asking || !r.sent || !step || !HUMAN_KINDS.includes(step.kind)) return false;
-    if (r.plan.view.id !== planId || step.id !== stepId || r.sent.step !== stepId || !/주세요$/.test(said)) return false;
-    if (this.riskyOn(said, step)) return false;
+    if (this.stopped || !r || r.state !== "running" || r.asking || !r.sent || !step || !HUMAN_KINDS.includes(step.kind)) return null;
+    if (r.plan.view.id !== planId || step.id !== stepId || r.sent.step !== stepId || !step.command || this.handStep(step) || !Object.hasOwn(TELL_TEXT, mode)) return null;
+    const said = TELL_TEXT[mode](step.command);
     const now = this.clock.now();
     r.told = { text: r.told?.text ?? r.sent.text, until: now + this.cfg.tellHoldMs };
     r.spokeAt = now;
@@ -450,7 +450,7 @@ export class ExecutionTracker {
     r.sent = { ...r.sent, text: said, speak: true };
     this.toldWallAt = Date.now();
     this.o.toPhone(r.sent);
-    return true;
+    return said;
   }
 
   /** 마지막으로 다시 알린(tell) 시각(Date.now 시계). 없으면 null. */
@@ -485,22 +485,23 @@ export class ExecutionTracker {
     for (const { id, basin } of at) this.put.set(id, { target, ...(basin ? { part: "basin" as const } : {}), atMs: now });
   }
 
-  /** 관찰 모드의 사람 부탁(ask_person): 지금 그 계획의 그 사람 단계면 같은 계획·단계 id로 명령 글만 바꿔 다시 보낸다(소리로 읽음).
-   *  단계 종류·대상·답 단추·비전 상태는 그대로라 실제 폰은 새 단계로 보지 않는다. 그 뒤 다시 읽기·비전 상태도 이 글이다.
-   *  사람에게 하는 말(「주세요」로 끝남)만 보낸다. 보냈으면 true. */
-  askCloser(planId: string, stepId: string, text: string): boolean {
+  /** 관찰 모드의 사람 부탁(ask_person): 지금 그 계획의 그 사람 단계면 같은 계획·단계 id로 명령 글만 서버 글(그 곳이 보이게 가까이 대 달라는 부탁)로 바꿔 다시 보낸다(소리로 읽음).
+   *  spot은 가까이 볼 곳 id(그 단계의 계획 물건·대상 자리)이고 그 이름으로 글을 만든다. 모르는 곳이면 보내지 않는다.
+   *  단계 종류·대상·답 단추·비전 상태는 그대로라 실제 폰은 새 단계로 보지 않는다. 그 뒤 다시 읽기·비전 상태도 이 글이다. 보낸 글, 못 보냈으면 null. */
+  askCloser(planId: string, stepId: string, spot: string): string | null {
     const r = this.run;
     const step = r ? this.stepOf(r) : undefined;
-    const said = text.trim();
-    if (this.stopped || !r || r.state !== "running" || r.asking || !r.sent || !step || !HUMAN_KINDS.includes(step.kind)) return false;
-    if (r.plan.view.id !== planId || step.id !== stepId || r.sent.step !== stepId || !/주세요$/.test(said)) return false;
-    if (this.riskyOn(said, step)) return false;
+    if (this.stopped || !r || r.state !== "running" || r.asking || !r.sent || !step || !HUMAN_KINDS.includes(step.kind)) return null;
+    if (r.plan.view.id !== planId || step.id !== stepId || r.sent.step !== stepId || this.handStep(step)) return null;
+    const name = this.spots(r, step, this.o.world()).find((p) => p.id === spot)?.label ?? (spot === step.target && this.o.floor().objects.has(spot) ? this.placeName(spot) : null);
+    if (!name) return null;
+    const said = CLOSER_TEXT(name);
     r.spokeAt = this.clock.now();
     r.helped = true;
     r.quietOn = false;
     r.sent = { ...r.sent, text: said, speak: true };
     this.o.toPhone(r.sent);
-    return true;
+    return said;
   }
 
   /** 지금 조용히 띄운 단계 이름(소리로 읽지 않고 지켜보는 중, 대시보드 말풍선 카드). 아니면 null. */
@@ -574,13 +575,9 @@ export class ExecutionTracker {
     return devices ? riskyHand(step, devices) : true;
   }
 
-  /** 모델이 쓴 글을 지금 단계 대신 띄우면 안 되는가: 글에 위험 가전 이름이 나오거나, 지금 단계가 위험 가전 단계다.
-   *  위험 가전이 대상이어도 손 조작이 아닌 단계는 그 단계의 서버 명령 그대로(다시 읽기)면 띄운다. */
-  private riskyOn(text: string, step: AgentStep): boolean {
-    if (step.hand !== null) return true;
-    const kind = step.target ? this.o.handDevices?.().find((d) => d.id === step.target)?.kind : undefined;
-    if (isRiskyKind(kind)) return text !== step.command;
-    return riskyNames(text).length > 0;
+  /** 손 조작 단계(켜기·끄기·열기·닫기)인가: 그 명령 자리는 켜기 전 질문·승인 뒤 명령만 쓴다(다시 알리기·사람 부탁으로 바꾸지 않는다). */
+  private handStep(step: AgentStep): boolean {
+    return step.hand !== null;
   }
 
   /** 손으로 다루는 가전 이름(묻는 글·끄기 안내): 그 가전이 평면도에 있으면 종류의 짧은 이름(인덕션), 아니면 이 집 가전 이름, 그것도 없으면 단계 대상 자리 이름. */

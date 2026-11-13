@@ -384,7 +384,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       // 보기 담당(src/act/look.ts): 멈춘 단계(A)와 판단 전 보기(B)에 관찰 모드를 한 번에 하나 부르고 고른 도구를 실행한다
       looker = new Looker({
         observer, closer: (spot, signal) => observed.closer(spot, signal), frame: () => observed.latest(), world: () => world.view(now()),
-        askPerson: (planId, stepId, text) => tracking.askCloser(planId, stepId, text), tell: (planId, stepId, text) => tracking.tell(planId, stepId, text), emit, targets: lookTargets, placed: () => tracking.placed(), clock: ctx.brain?.clock,
+        askPerson: (planId, stepId, spot) => tracking.askCloser(planId, stepId, spot), tell: (planId, stepId, mode) => tracking.tell(planId, stepId, mode), emit, targets: lookTargets, placed: () => tracking.placed(), clock: ctx.brain?.clock,
         onLook: (spot) => {
           lookSay = { place: spot.label, atMs: Date.now() };
           speak();

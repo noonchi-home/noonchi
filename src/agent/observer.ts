@@ -1,6 +1,7 @@
 // 에이전트 관찰 모드: 비전이 판단할 만큼 못 볼 때 도구 하나(look_closer·ask_person·wait)를 고른다. 계획 모드(src/agent/planner.ts)와 같은 공급자(createProvider).
 // 호출마다 새 대화. OpenAI는 도구를 꼭 부르게(required) 하고, Anthropic은 강제가 안 돼 글만 내면 한 번 더 묻는다(최대 maxRounds).
-// 틀린 도구·인자(없는 id, 사진 밖 id, 「주세요」로 안 끝나거나 화면 글 규칙에 걸린 부탁)는 까닭을 도구 결과로 돌려주고 다시 받는다. 그래도 틀리면 기다리기(invalid).
+// 틀린 도구·인자(없는 id, 사진 밖 id, 없는 알리기 방식)는 까닭을 도구 결과로 돌려주고 다시 받는다. 그래도 틀리면 기다리기(invalid).
+// 사람에게 보내는 글(부탁·다시 알리기)은 모델이 쓰지 않는다: 가까이 볼 곳·알리는 방식만 고르고 글은 실행 추적이 서버 글 틀로 만든다.
 // 도구를 실행하지 않는다: 고른 것만 돌려주고 실행은 src/act/look.ts가 한다. 넘긴 신호가 끊기면(단계 끝·그만·새 계획) 공급자 요청도 끊는다.
 // 비용은 공급자 응답 사용량(StepResult.usage)을 가격표(src/infer/cost.ts)로 센다. 가격표에 없는 모델이나 사용량이 없는 응답이 있으면 비용은 모름(null)이다.
 // 시험은 같은 OpenAI 공급자를 가짜 서버에 붙인다(tests/helpers/observer.ts).
@@ -9,8 +10,7 @@ import type { LookTool, LookTrigger } from "../contract/events.js";
 import type { StepStatus } from "../contract/plan.js";
 import type { WorldView } from "../contract/world.js";
 import { estimateCostUsd, hasPrice } from "../infer/cost.js";
-import { copyRules } from "../plan/copy.js";
-import { RISKY_NAME_PROBLEM, riskyNames } from "./policy.js";
+import type { TellMode } from "../plan/labels.js";
 import type { LlmProvider, StepUsage, ToolCall } from "./agent.js";
 import { worldLines } from "./planInput.js";
 import type { ToolDef } from "./tools.js";
@@ -19,17 +19,17 @@ export const OBSERVER_PROMPT = `너는 이 집 스마트홈 에이전트의 관�
 
 도구
 - look_closer: 폰이 보낸 마지막 사진들에서 target 자리 둘레를 2배로 잘라 같은 감지기·VLM으로 다시 본다. 결과는 World State에 들어간다. target은 [가까이 볼 곳]에서 「지금 사진 안」인 id만 쓴다.
-- ask_person: 사람에게 폰으로 가까이 비춰 달라고 부탁한다. 지금 명령 대신 폰에 뜨고 소리로 읽는다. text는 「주세요」로 끝나는 짧은 부탁이다(예: 싱크대 안이 보이게 폰을 가까이 대 주세요). 괄호·화살표 없이 60자 아래로 쓰고, 클로이드가 스스로 하는 말로 쓰지 않는다.
+- ask_person: 사람에게 폰으로 가까이 비춰 달라고 부탁한다. target은 [가까이 볼 곳]의 id 하나(사진 밖이어도 된다)이고, 서버가 그 곳 이름으로 부탁 글(예: 싱크대가 보이게 폰을 가까이 대 주세요)을 만들어 지금 명령 대신 폰에 띄우고 소리로 읽는다.
 - wait: 아무것도 하지 않고 다음 사진을 기다린다.
-- tell_person: 사람에게 지금 할 일을 한 줄로 다시 알린다. 지금 명령 대신 폰에 잠깐 뜨고 소리로 읽는다. text는 「주세요」로 끝나는 짧은 부탁이다(예: 먼저 물을 받아 주세요). 괄호·화살표 없이 60자 아래로 쓴다.
+- tell_person: 사람에게 지금 할 일을 한 줄로 다시 알린다. mode는 repeat(지금 명령을 그대로 다시 읽기) 또는 earlier(「먼저」를 붙여 지금 할 일부터 하라고 알리기, 예: 먼저 냄비에 물을 받아 주세요)다. 글은 서버가 지금 명령으로 만들어 지금 명령 대신 폰에 잠깐 띄우고 소리로 읽는다.
 - pass_on: 들은 말이 지금 하는 일과 상관없다. 그 말을 말 요청 에이전트로 넘긴다.
 
 고르는 법
 - [가까이 볼 곳] 중 「지금 사진 안」인 곳이 하나라도 있고 그곳을 아직 가까이 보지 않았으면 그곳을 target으로 look_closer. 다른 곳(예: 손에 든 물건의 옛 자리)이 사진 밖이어도 그렇다.
 - 모든 곳이 사진 밖이거나, 사진 안인 곳을 가까이 봐도 못 찾았으면 ask_person(쓸 수 있을 때).
 - 사람이 아직 하는 중으로 보이거나 방금 부탁했으면 wait.
-- [계획]이 있으면 사람이 지금 단계와 다른 일을 하는지 본다. 다른 자리로 갔거나 순서를 건너뛰었거나 위험하면(물을 받기 전에 불을 켬) tell_person으로 지금 할 일을 한 줄로 알린다. 지금 단계를 하는 중으로 보이면 wait.
-- [들은 말]이 있으면: 무엇을 할지 모르겠다는 말이면 tell_person으로 지금 할 일을 알리고, 이 일과 상관없는 말이면 pass_on, 답이 필요 없는 말이면 wait.
+- [계획]이 있으면 사람이 지금 단계와 다른 일을 하는지 본다. 다른 자리로 갔거나 순서를 건너뛰었거나 위험하면(물을 받기 전에 불을 켬) tell_person mode earlier로 지금 할 일부터 하라고 알린다. 지금 단계를 하는 중으로 보이면 wait.
+- [들은 말]이 있으면: 무엇을 할지 모르겠다는 말이면 tell_person mode repeat으로 지금 할 일을 다시 알리고, 이 일과 상관없는 말이면 pass_on, 답이 필요 없는 말이면 wait.
 - [앞서 한 일]과 같은 일을 같은 결과로 되풀이하지 않는다.
 - 쓸 수 있는 도구는 [쓸 수 있는 도구] 안이다.
 - reason은 왜 그 도구인지 한국어 한 문장. 도구는 하나만 부르고 답 글은 쓰지 않는다.
@@ -70,8 +70,8 @@ export interface ObserveSituation {
 /** 고른 도구 하나. invalid는 맞는 도구를 받지 못해 기다리기로 둔 까닭이다. */
 export type ObserveChoice =
   | { tool: "look_closer"; target: string; reason: string }
-  | { tool: "ask_person"; text: string; reason: string }
-  | { tool: "tell_person"; text: string; reason: string }
+  | { tool: "ask_person"; target: string; reason: string }
+  | { tool: "tell_person"; mode: TellMode; reason: string }
   | { tool: "pass_on"; reason: string }
   | { tool: "wait"; reason: string; invalid?: string };
 
@@ -95,16 +95,16 @@ export interface ObserverOptions {
 const REASON = z.string().min(1).max(200).describe("왜 이 도구를 고르는지 한국어 한 문장");
 const ARGS = {
   look_closer: z.object({ target: z.string().min(1).describe("[가까이 볼 곳]의 id 하나, 지금 사진 안"), reason: REASON }),
-  ask_person: z.object({ text: z.string().min(1).max(60).describe("사람에게 하는 짧은 부탁, 「주세요」로 끝남"), reason: REASON }),
+  ask_person: z.object({ target: z.string().min(1).describe("[가까이 볼 곳]의 id 하나(사진 밖이어도 된다)"), reason: REASON }),
   wait: z.object({ reason: REASON }),
-  tell_person: z.object({ text: z.string().min(1).max(60).describe("사람에게 지금 할 일을 알리는 한 줄, 「주세요」로 끝남"), reason: REASON }),
+  tell_person: z.object({ mode: z.enum(["repeat", "earlier"]).describe("repeat 지금 명령을 다시 읽기, earlier 「먼저」를 붙여 지금 할 일부터 하라고 알리기"), reason: REASON }),
   pass_on: z.object({ reason: REASON }),
 } satisfies Record<LookTool, z.ZodObject<z.ZodRawShape>>;
 const ABOUT: Record<LookTool, { title: string; description: string }> = {
   look_closer: { title: "가까이 보기", description: "마지막 사진들에서 target 자리를 2배로 잘라 같은 감지기·VLM으로 다시 봅니다. 결과는 World State에 들어갑니다." },
-  ask_person: { title: "사람에게 부탁", description: "실제 폰의 지금 명령 자리에 부탁 글을 띄우고 소리로 읽습니다. text는 「주세요」로 끝납니다." },
+  ask_person: { title: "사람에게 부탁", description: "target 곳이 보이게 폰을 가까이 대 달라는 서버 부탁 글을 실제 폰의 지금 명령 자리에 띄우고 소리로 읽습니다." },
   wait: { title: "기다리기", description: "아무것도 하지 않고 다음 사진을 기다립니다." },
-  tell_person: { title: "다시 알리기", description: "실제 폰의 지금 명령 자리에 지금 할 일 한 줄을 잠깐 띄우고 소리로 읽습니다. text는 「주세요」로 끝납니다." },
+  tell_person: { title: "다시 알리기", description: "지금 명령(earlier면 「먼저」를 붙인 것)을 실제 폰의 지금 명령 자리에 잠깐 띄우고 소리로 읽습니다." },
   pass_on: { title: "넘기기", description: "들은 말이 지금 하는 일과 상관없을 때 말 요청 에이전트로 넘깁니다." },
 };
 
@@ -142,7 +142,7 @@ function checkChoice(call: ToolCall, s: ObserveSituation): ObserveChoice | strin
   if (!s.tools.includes(name)) return `이번에는 ${s.tools.join("·")}만 부릅니다`;
   const a = ARGS[name].safeParse(call.args);
   if (!a.success) return `${name} 인자가 맞지 않습니다: ${a.error.issues.slice(0, 2).map((i) => `${i.path.join(".") || "(전체)"} ${i.message}`).join("; ")}`;
-  const args = a.data as { reason: string; target?: string; text?: string };
+  const args = a.data as { reason: string; target?: string; mode?: TellMode };
   const reason = args.reason.trim();
   if (name === "look_closer") {
     const target = String(args.target).trim();
@@ -152,15 +152,14 @@ function checkChoice(call: ToolCall, s: ObserveSituation): ObserveChoice | strin
     return { tool: name, target: spot.id, reason };
   }
   if (name === "pass_on") return { tool: name, reason };
-  if (name === "ask_person" || name === "tell_person") {
-    const text = String(args.text).trim();
-    if (!/주세요$/.test(text)) return `text는 사람에게 하는 부탁이라 「주세요」로 끝나야 합니다. 예: ${name === "ask_person" ? "싱크대 안이 보이게 폰을 가까이 대 주세요" : "먼저 물을 받아 주세요"}`;
-    const hit = copyRules(text);
-    if (hit.length) return `text가 화면 글 규칙(${hit.join(", ")})에 맞지 않습니다`;
-    // 위험 가전 이름이 나오는 글은 보내지 않는다(기본 거부, src/agent/policy.ts): 그 가전에 대한 폰 글은 서버 글 틀로만 나간다
-    if (riskyNames(text).length) return `${RISKY_NAME_PROBLEM}. 그 가전 이름 없이 지금 할 일을 알리거나 wait`;
-    return { tool: name, text, reason };
+  // 사람에게 보내는 글은 서버가 만든다(src/plan/labels.ts TELL_TEXT): 모델은 가까이 볼 곳과 알리는 방식만 고른다
+  if (name === "ask_person") {
+    const target = String(args.target).trim();
+    const spot = s.spots.find((p) => p.id === target);
+    if (!spot) return `[가까이 볼 곳]에 없는 id입니다: ${target}`;
+    return { tool: name, target: spot.id, reason };
   }
+  if (name === "tell_person") return { tool: name, mode: args.mode!, reason };
   return { tool: "wait", reason };
 }
 

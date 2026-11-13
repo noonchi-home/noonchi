@@ -8,12 +8,12 @@ import type { BrainLog, CloserResult } from "../src/contract/events.js";
 import type { WorldObject, WorldView } from "../src/contract/world.js";
 import type { LookSpot } from "../src/observe/crop.js";
 import type { LatestFrame } from "../src/observe/pipeline.js";
-import { LOOK_TEXT } from "../src/plan/labels.js";
+import { CLOSER_TEXT, LOOK_TEXT, TELL_TEXT } from "../src/plan/labels.js";
 import { LOOK_VIEW } from "./helpers/camera.js";
 import { CLOSER_FOUND, testCloser, type TestCloser } from "./helpers/look.js";
 import { startFakeObserver, type FakeObserver, type ObserveScript } from "./helpers/observer.js";
 
-const ASK = "싱크대 안이 보이게 폰을 가까이 대 주세요";
+const ASK = CLOSER_TEXT("싱크대");
 // 실행 추적이 주는 싱크대 자리는 윗면 가운데다(src/server/home.ts placeLocator)
 const SINK_TOP: [number, number, number] = [0.6, 0.9, 0];
 const SINK: LookSpot = { id: "sink_1", label: "싱크대", position: SINK_TOP };
@@ -58,7 +58,8 @@ async function setup(o: { script: ObserveScript; gate?: (input: string) => Promi
   const looker = new Looker({
     observer: new Observer({ provider: llm.provider() }), closer: (spot, signal) => closer.closer(spot, signal),
     frame: () => (o.frame ? o.frame(clock.now()) : { view: LOOK_VIEW, capturedAtMs: clock.now(), width: 480, height: 360 }),
-    world: () => worldOf(objects), askPerson: (planId, stepId, text) => { asked.push([planId, stepId, text]); return true; },
+    // 실행 추적 자리: 가까이 볼 곳 id로 서버 부탁 글을 만든다
+    world: () => worldOf(objects), askPerson: (planId, stepId, spot) => { asked.push([planId, stepId, spot]); return CLOSER_TEXT([SINK, CUP].find((p) => p.id === spot)?.label ?? spot); },
     emit: (l) => logs.push(l), targets: () => [{ cls: "cup", facets: ["contents"] }], clock,
     onLook: (spot) => looked.push(spot), ...o.options,
   });
@@ -128,7 +129,7 @@ describe("보기 담당: 멈춘 단계(A)가 먼저", () => {
     let releaseB!: () => void;
     const heldB = new Promise<void>((ok) => { releaseB = ok; });
     const t = await setup({
-      script: (input) => (isA(input) ? [["ask_person", { text: ASK, reason: "싱크대 안이 사진에서 작아서" }]] : [["wait", { reason: "다음 사진을 보려고" }]]),
+      script: (input) => (isA(input) ? [["ask_person", { target: "sink_1", reason: "싱크대 안이 사진에서 작아서" }]] : [["wait", { reason: "다음 사진을 보려고" }]]),
       gate: (input) => (isA(input) ? undefined : heldB),
     });
     try {
@@ -137,9 +138,9 @@ describe("보기 담당: 멈춘 단계(A)가 먼저", () => {
       const { s, settled } = stall();
       expect(t.looker.stalled(s)).toBe(true);
       await t.looker.idle();
-      expect(t.asked).toEqual([["plan:pam-1", "plan:pam-1:4", ASK]]);
+      expect(t.asked).toEqual([["plan:pam-1", "plan:pam-1:4", "sink_1"]]);
       expect(t.looks()).toEqual([{
-        type: "look", at_ms: 100_000, trigger: "stalled", target: "cup_1", tool: "ask_person", reason: "싱크대 안이 사진에서 작아서",
+        type: "look", at_ms: 100_000, trigger: "stalled", target: "sink_1", tool: "ask_person", reason: "싱크대 안이 사진에서 작아서",
         text: `가까이 비춰 달라고 부탁함 · ${ASK}`, result: { sent: true }, plan_id: "plan:pam-1", step_id: "plan:pam-1:4",
       }]);
       expect(settled).toEqual([true]);
@@ -317,12 +318,12 @@ describe("보기 담당: 코치 계획의 다른 행동(off_track)과 들은 말
     return { s, ac };
   };
 
-  it("tell_person을 고르면 실행 추적의 tell을 부르고 look 기록(계기 off_track, 글 「다시 알림 · …」)을 남긴다. 관찰 모드 입력에 계획과 방금 본 변화가 있다", async () => {
+  it("tell_person을 고르면 실행 추적의 tell을 방식(earlier)으로 부르고 보낸 서버 글로 look 기록(계기 off_track, 글 「다시 알림 · …」)을 남긴다. 관찰 모드 입력에 계획과 방금 본 변화가 있다", async () => {
     const told: [string, string, string][] = [];
-    const t = await setup({ script: () => [["tell_person", { text: TELL, reason: "다른 곳으로 가서" }]], options: { tell: (p, st, text) => { told.push([p, st, text]); return true; } } });
+    const t = await setup({ script: () => [["tell_person", { mode: "earlier", reason: "다른 곳으로 가서" }]], options: { tell: (p, st, mode) => { told.push([p, st, mode]); return TELL_TEXT[mode]("냄비에 물을 받아 주세요"); } } });
     expect(t.looker.strayed(stray().s)).toBe(true);
     await t.looker.idle();
-    expect(told).toEqual([["plan:pam-1", "plan:pam-1:4", TELL]]);
+    expect(told).toEqual([["plan:pam-1", "plan:pam-1:4", "earlier"]]);
     expect(t.looks()).toEqual([{
       type: "look", at_ms: 100_000, trigger: "off_track", target: null, tool: "tell_person", reason: "다른 곳으로 가서", text: `다시 알림 · ${TELL}`, result: { sent: true },
       plan_id: "plan:pam-1", step_id: "plan:pam-1:4",
@@ -338,7 +339,7 @@ describe("보기 담당: 코치 계획의 다른 행동(off_track)과 들은 말
     let release!: () => void;
     const held = new Promise<void>((ok) => { release = ok; });
     const told: string[] = [];
-    const t = await setup({ script: () => [["tell_person", { text: TELL, reason: "다른 곳으로 가서" }]], gate: () => held, options: { tell: (_p, _s, text) => { told.push(text); return true; } } });
+    const t = await setup({ script: () => [["tell_person", { mode: "earlier", reason: "다른 곳으로 가서" }]], gate: () => held, options: { tell: (_p, _s, mode) => { told.push(mode); return TELL; } } });
     try {
       const a = stray();
       expect(t.looker.strayed(a.s)).toBe(true);
@@ -360,11 +361,11 @@ describe("보기 담당: 코치 계획의 다른 행동(off_track)과 들은 말
     const base = { planId: s.planId, stepId: s.stepId, label: s.label, command: s.command, at: s.at, steps: s.steps, signal: s.signal };
     const t = await setup({
       script: (input) => (input.includes("[들은 말] 거실 불 켜 줘") ? [["pass_on", { reason: "「거실 불 켜 줘」는 이 일과 상관없어서" }]]
-        : input.includes("[들은 말] 음 그렇구나") ? [["wait", { reason: "답이 필요 없는 말이라" }]] : [["tell_person", { text: "냄비에 물을 받아 주세요", reason: `「${SAID}」라고 해서` }]]),
-      options: { tell: (_p, _s, text) => { told.push(text); return true; } },
+        : input.includes("[들은 말] 음 그렇구나") ? [["wait", { reason: "답이 필요 없는 말이라" }]] : [["tell_person", { mode: "repeat", reason: `「${SAID}」라고 해서` }]]),
+      options: { tell: (_p, _s, mode) => { told.push(mode); return TELL_TEXT[mode]("냄비에 물을 받아 주세요"); } },
     });
     expect(await t.looker.heard(s.planId, s.stepId, SAID, base)).toBe("told");
-    expect(told).toEqual(["냄비에 물을 받아 주세요"]);
+    expect(told).toEqual(["repeat"]);
     expect(t.llm.bodies()[0].input[0].content).toContain(`[들은 말] ${SAID}`);
     expect(t.llm.bodies()[0].tools.map((x: any) => x.name)).toEqual(["tell_person", "pass_on", "wait"]);
     expect(await t.looker.heard(s.planId, s.stepId, "거실 불 켜 줘", base)).toBe("passed");
@@ -377,16 +378,16 @@ describe("보기 담당: 코치 계획의 다른 행동(off_track)과 들은 말
     expect(JSON.stringify(t.logs)).not.toMatch(/뭐 해야|거실 불|그렇구나/);
   });
 
-  it("heard: tell_person 글이 들은 말을 그대로 옮겨도 실제 폰에 읽는 글(tell)은 그대로이고, 기록·방송하는 look 글에서는 그 말을 뺀다", async () => {
+  it("heard: 다시 알리는 글은 서버 글(지금 명령)이라 모델이 들은 말을 옮길 자리가 없다. 실행 추적이 보낸 글에 그 말이 들어 있어도 기록·방송하는 look 글·까닭에서는 그 말을 뺀다", async () => {
     const SAID = "냄비 어디 있지";
-    const TOLD = `${SAID} 하셨는데 수납장에서 꺼내 주세요`;
+    const SENT = `${SAID} 하셨는데 수납장에서 꺼내 주세요`;
     const told: string[] = [];
     const { s } = stray();
     const base = { planId: s.planId, stepId: s.stepId, label: s.label, command: s.command, at: s.at, steps: s.steps, signal: s.signal };
-    const t = await setup({ script: () => [["tell_person", { text: TOLD, reason: "냄비를 찾아서" }]], options: { tell: (_p, _s, text) => { told.push(text); return true; } } });
+    const t = await setup({ script: () => [["tell_person", { mode: "repeat", text: SENT, reason: `${SAID} 해서` }]], options: { tell: (_p, _s, mode) => { told.push(mode); return SENT; } } });
     expect(await t.looker.heard(s.planId, s.stepId, SAID, base)).toBe("told");
-    expect(told).toEqual([TOLD]);
-    expect(t.looks().map((l) => l.text)).toEqual(["다시 알림 · 들은 말 하셨는데 수납장에서 꺼내 주세요"]);
+    expect(told).toEqual(["repeat"]);
+    expect(t.looks().map((l) => [l.text, l.reason])).toEqual([["다시 알림 · 들은 말 하셨는데 수납장에서 꺼내 주세요", "들은 말 해서"]]);
     expect(JSON.stringify(t.logs)).not.toContain(SAID);
   });
 
@@ -395,19 +396,19 @@ describe("보기 담당: 코치 계획의 다른 행동(off_track)과 들은 말
     const base = { planId: s.planId, stepId: s.stepId, label: s.label, command: s.command, at: s.at, steps: s.steps, signal: s.signal };
     let release!: () => void;
     const held = new Promise<void>((ok) => { release = ok; });
-    const busy = await setup({ script: () => [["wait", { reason: "기다리려고" }]], gate: () => held, options: { tell: () => true } });
+    const busy = await setup({ script: () => [["wait", { reason: "기다리려고" }]], gate: () => held, options: { tell: () => TELL } });
     try {
       expect(busy.looker.strayed(stray().s)).toBe(true);
       expect(await busy.looker.heard(s.planId, s.stepId, "뭐 해야 되지", base)).toBe("passed");
     } finally { release(); }
     await busy.looker.idle();
 
-    const capped = await setup({ script: () => [["tell_person", { text: TELL, reason: "몰라서" }]], options: { hourMax: 1, tell: () => true } });
+    const capped = await setup({ script: () => [["tell_person", { mode: "repeat", reason: "몰라서" }]], options: { hourMax: 1, tell: () => TELL } });
     expect(await capped.looker.heard(s.planId, s.stepId, "뭐 해야 되지", base)).toBe("told");
     expect(await capped.looker.heard(s.planId, s.stepId, "뭐 해야 되지", base)).toBe("passed");
     expect(capped.llm.bodies()).toHaveLength(1);
 
-    const failed = await setup({ script: () => [["wait", { reason: "x" }]], options: { tell: () => true, observer: { decide: async () => { throw new Error("닿지 않음"); }, status: () => ({ calls: 0, requests: 0, costUsd: 0 }) } } });
+    const failed = await setup({ script: () => [["wait", { reason: "x" }]], options: { tell: () => TELL, observer: { decide: async () => { throw new Error("닿지 않음"); }, status: () => ({ calls: 0, requests: 0, costUsd: 0 }) } } });
     expect(await failed.looker.heard(s.planId, s.stepId, "뭐 해야 되지", base)).toBe("passed");
   });
 });

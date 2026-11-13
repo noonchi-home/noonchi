@@ -54,8 +54,8 @@ async function start(o: { assist: "coach" | "noonchi"; scene?: Scene } = { assis
   // 관찰 모드 대본: 들은 말이면 그 말에 따라(상관없는 말은 넘김), 다른 행동이면 지금 할 일을 다시 알린다
   const observing = observerRespond((input) => {
     if (input.includes("[들은 말] 에어컨 켜 줘")) return [["pass_on", { reason: "이 일과 상관없는 말이라" }]];
-    if (input.includes("[들은 말]")) return [["tell_person", { text: "면과 스프를 넣어 주세요", reason: "무엇을 할지 모르겠다고 해서" }]];
-    return [["tell_person", { text: TELL_WATER, reason: "물을 받기 전에 불을 켜서" }]];
+    if (input.includes("[들은 말]")) return [["tell_person", { mode: "repeat", reason: "무엇을 할지 모르겠다고 해서" }]];
+    return [["tell_person", { mode: "earlier", reason: "물을 받기 전에 불을 켜서" }]];
   });
   fake = await startFakeOpenAI({
     reply: (body) => {

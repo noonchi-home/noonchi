@@ -20,7 +20,7 @@ import { describeError } from "../agent/agent.js";
 import type { ObserveChoice, ObserveSituation, Observer, ObserverStatus } from "../agent/observer.js";
 import { LOOK_MARGIN, type LookSpot } from "../observe/crop.js";
 import type { LatestFrame } from "../observe/pipeline.js";
-import { LOOK_TEXT } from "../plan/labels.js";
+import { LOOK_TEXT, type TellMode } from "../plan/labels.js";
 import { OBJECT_NAME, redactSaid } from "../world/labels.js";
 import { inView } from "../world/place.js";
 import { CLASSES, UNKNOWN_STATES, type ClassKey, type StateKey } from "../world/vocab.js";
@@ -46,10 +46,10 @@ export interface LookerOptions {
   /** 고리 가장 새 프레임(src/observe/pipeline.ts latest). */
   frame: () => LatestFrame | null;
   world: () => WorldView;
-  /** 사람 부탁(src/act/track.ts askCloser). 보냈으면 true. */
-  askPerson: (planId: string, stepId: string, text: string) => boolean;
-  /** 지금 할 일 다시 알리기(src/act/track.ts tell). 보냈으면 true. 없으면 보내지 못한 것으로 본다. */
-  tell?: (planId: string, stepId: string, text: string) => boolean;
+  /** 사람 부탁(src/act/track.ts askCloser): 가까이 볼 곳 id로 서버가 부탁 글을 만든다. 보낸 글, 못 보냈으면 null. */
+  askPerson: (planId: string, stepId: string, spot: string) => string | null;
+  /** 지금 할 일 다시 알리기(src/act/track.ts tell): 방식으로 서버가 글을 만든다. 보낸 글, 못 보냈으면 null. 없으면 보내지 못한 것으로 본다. */
+  tell?: (planId: string, stepId: string, mode: TellMode) => string | null;
   emit: (l: BrainLog) => void;
   /** 판단 전에 더 잘 볼 종류와 면(src/act/tasks.ts lookTargets). */
   targets: () => readonly { cls: ObjClass; facets: readonly Facet[] }[];
@@ -222,7 +222,7 @@ export class Looker {
     }
     if (job.signal.aborted || this.stopped) return;
     job.phase = "act";
-    const want = choice.tool === "look_closer" ? choice.target : null;
+    const want = choice.tool === "look_closer" || choice.tool === "ask_person" ? choice.target : null;
     const picked = want === null ? undefined : spots.find((p) => p.id === want);
     if (choice.tool === "look_closer" && !picked) choice = { tool: "wait", reason: choice.reason, invalid: "target" };
     const spot = picked ?? spots[0] ?? null;
@@ -242,16 +242,16 @@ export class Looker {
       text = LOOK_TEXT.closer(spot.label, closerText(r));
       if (r.ok) detail = r.found.map((f) => `${f.id ?? f.cls} ${f.score} ${f.facts.join(" ")}`.trim()).join(", ");
     } else if (choice.tool === "ask_person") {
-      const sent = !!job.planId && !!job.stepId && this.o.askPerson(job.planId, job.stepId, choice.text);
-      result = { sent };
+      const sent = job.planId && job.stepId ? this.o.askPerson(job.planId, job.stepId, choice.target) : null;
+      result = { sent: sent !== null };
       this.count.asks++;
-      text = sent ? LOOK_TEXT.asked(choice.text) : LOOK_TEXT.notSent;
+      text = sent !== null ? LOOK_TEXT.asked(sent) : LOOK_TEXT.notSent;
     } else if (choice.tool === "tell_person") {
-      const sent = !!job.planId && !!job.stepId && (this.o.tell?.(job.planId, job.stepId, choice.text) ?? false);
-      result = { sent };
+      const sent = job.planId && job.stepId ? this.o.tell?.(job.planId, job.stepId, choice.mode) ?? null : null;
+      result = { sent: sent !== null };
       this.count.tells++;
-      text = sent ? LOOK_TEXT.told(choice.text) : LOOK_TEXT.notSent;
-      job.outcome?.(sent ? "told" : "waited");
+      text = sent !== null ? LOOK_TEXT.told(sent) : LOOK_TEXT.notSent;
+      job.outcome?.(sent !== null ? "told" : "waited");
     } else if (choice.tool === "pass_on") {
       text = LOOK_TEXT.passed;
       job.outcome?.("passed");

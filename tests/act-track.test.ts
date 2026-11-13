@@ -16,7 +16,7 @@ import type { BrainLog } from "../src/contract/events.js";
 import type { PlannedCommand, PlannedCommandMessage } from "../src/contract/phone.js";
 import type { WorldChange, WorldObject, WorldView } from "../src/contract/world.js";
 import { PlanHub } from "../src/plan/hub.js";
-import { APPROVAL_TEXT, CAUTION_TEXT, CHECK_TEXT, EXEC_TEXT, CAUTION_LINE, STEP_COMMAND, STEP_LABEL } from "../src/plan/labels.js";
+import { APPROVAL_TEXT, CAUTION_TEXT, CHECK_TEXT, EXEC_TEXT, CAUTION_LINE, STEP_COMMAND, STEP_LABEL, type TellMode } from "../src/plan/labels.js";
 /** 인덕션 켜기 전 질문(서버 글). */
 const ASK_ON = "냄비와 상판이 뜨거워져요. 인덕션을 켤까요?";
 import type { DecisionRecord } from "../src/world/decide.js";
@@ -812,21 +812,23 @@ describe("실행 추적: 코치 계획(손으로 켜는 위험 가전)", () => {
     expect(s.t.openCommand()).toBeNull();
   });
 
-  it("위험 가전을 켜라는 글로는 다시 알리기(tell)·사람 부탁(askCloser)을 보내지 않는다(그 판은 원래 명령 그대로)", async () => {
+  it("다시 알리기(tell)·사람 부탁(askCloser)은 서버 글만 보낸다: 지금 명령(그대로·「먼저」), 그 단계의 곳이 보이게 대 달라는 부탁. 모르는 곳·모델 글은 보내지 않는다(그 판은 원래 명령 그대로)", async () => {
     const s = coachSetup();
     await s.decide(ramenDecision());
     for (const n of [1, 2, 3]) s.t.onAnswer(P, `${P}:${n}`, "done");
     const before = s.last();
-    expect(s.t.tell(P, `${P}:4`, "먼저 인덕션을 켜 주세요")).toBe(false);
-    expect(s.t.askCloser(P, `${P}:4`, "인덕션을 켜 주세요")).toBe(false);
+    expect(s.t.tell(P, `${P}:4`, "먼저 인덕션을 켜 주세요" as TellMode)).toBeNull();
+    expect(s.t.askCloser(P, `${P}:4`, "인덕션을 켜 주세요")).toBeNull();
+    expect(s.t.askCloser(P, `${P}:4`, "induction_1")).toBeNull();
     expect(s.last()).toEqual(before);
     expect(s.t.toldAt()).toBeNull();
+    expect(s.t.tell(P, `${P}:4`, "earlier")).toBe("먼저 냄비에 물을 받아 주세요");
+    expect(s.t.askCloser(P, `${P}:4`, "sink_1")).toBe("싱크대가 보이게 폰을 가까이 대 주세요");
     for (const n of [4, 5]) s.t.onAnswer(P, `${P}:${n}`, "done");
-    // 대상이 인덕션인 단계에서는 이름 없이 「켜 주세요」도 막는다
-    expect(s.t.tell(P, `${P}:6`, "불을 켜 주세요")).toBe(false);
-    // 위험 가전이 대상인 단계는 서버 글로만 나간다: 켜라는 말이 아니어도 모델 글로 바꾸지 않는다(기본 거부)
-    expect(s.t.tell(P, `${P}:6`, "냄비를 올려 주세요")).toBe(false);
-    expect(s.last()).toMatchObject({ step: `${P}:6`, text: "냄비를 인덕션에 올려 주세요" });
+    // 위험 가전이 대상인 단계도 그 단계 서버 명령으로만 나간다
+    expect(s.t.tell(P, `${P}:6`, "repeat")).toBe("냄비를 인덕션에 올려 주세요");
+    expect(s.t.tell(P, `${P}:6`, "earlier")).toBe("먼저 냄비를 인덕션에 올려 주세요");
+    expect(s.last()).toMatchObject({ step: `${P}:6`, text: "먼저 냄비를 인덕션에 올려 주세요" });
   });
 
   it("손으로 끄는 단계의 끝 조건(became off)은 그 단계 뒤에 새로 본 꺼짐으로만 넘어간다: 남아 있던 꺼짐 값으로는 넘기지 않아 켠 가전 표시와 끄기 안내가 남는다", async () => {
@@ -1001,11 +1003,12 @@ describe("실행 추적: 코치 계획의 다른 행동 알림(strayed)과 다�
     const s = straySetup();
     await toFill(s);
     const before = s.last();
-    expect(s.t.tell(P, `${P}:3`, TELL)).toBe(false);
-    expect(s.t.tell("plan:pam-9", `${P}:4`, TELL)).toBe(false);
-    expect(s.t.tell(P, `${P}:4`, "지금 그거 하면 안 돼요")).toBe(false);
+    expect(s.t.tell(P, `${P}:3`, "earlier")).toBeNull();
+    expect(s.t.tell("plan:pam-9", `${P}:4`, "earlier")).toBeNull();
+    // 모델 글은 받지 않는다(방식만)
+    expect(s.t.tell(P, `${P}:4`, "지금 그거 하면 안 돼요" as TellMode)).toBeNull();
     expect(s.t.toldAt()).toBeNull();
-    expect(s.t.tell(P, `${P}:4`, TELL)).toBe(true);
+    expect(s.t.tell(P, `${P}:4`, "earlier")).toBe(TELL);
     expect(s.last()).toEqual({ ...before, text: TELL, speak: true });
     expect(s.t.toldAt()).not.toBeNull();
     s.clock.t += 7_999;
@@ -1016,7 +1019,7 @@ describe("실행 추적: 코치 계획의 다른 행동 알림(strayed)과 다�
     expect(s.last()).toEqual({ ...before, speak: false });
     expect(s.spoken()).toEqual(["수납장으로 가 주세요", "냄비를 꺼내 주세요", "싱크대로 가 주세요", "냄비에 물을 받아 주세요", TELL]);
     // 단계가 넘어가면 되돌리지 않는다
-    expect(s.t.tell(P, `${P}:4`, TELL)).toBe(true);
+    expect(s.t.tell(P, `${P}:4`, "earlier")).toBe(TELL);
     s.t.onAnswer(P, `${P}:4`, "done");
     const sent = s.phone.length;
     s.clock.t += 9_000;
@@ -1026,8 +1029,8 @@ describe("실행 추적: 코치 계획의 다른 행동 알림(strayed)과 다�
     // 켜기 전 질문 중에는 알리지 않는다
     s.t.onAnswer(P, `${P}:5`, "done");
     s.t.onAnswer(P, `${P}:6`, "done");
-    expect(s.t.tell(P, `${P}:7`, "인덕션을 켜 주세요")).toBe(false);
-    expect(s.t.tell(P, `${P}:7:hand`, "인덕션을 켜 주세요")).toBe(false);
+    expect(s.t.tell(P, `${P}:7`, "repeat")).toBeNull();
+    expect(s.t.tell(P, `${P}:7:hand`, "repeat")).toBeNull();
   });
 
   it("코치 계획의 지금 사람 단계를 알려 준다(들은 말 돕기). 질문 중·코치가 아닌 계획·끝난 계획이면 null", async () => {
@@ -1067,9 +1070,9 @@ describe("실행 추적: 잘한 단계는 말을 줄인다(수업 기록)", () =
     const lessons = memoryLessons();
     const s = coachSetup({ lessons });
     await finishRun(s, (n) => {
-      if (n === 4) expect(s.t.tell(P, `${P}:4`, "먼저 냄비에 물을 받아 주세요")).toBe(true);
+      if (n === 4) expect(s.t.tell(P, `${P}:4`, "earlier")).toBe("먼저 냄비에 물을 받아 주세요");
       if (n === 6) { s.clock.t += 30_000; s.t.tick(); }
-      if (n === 2) expect(s.t.askCloser(P, `${P}:2`, "냄비가 보이게 비춰 주세요")).toBe(true);
+      if (n === 2) expect(s.t.askCloser(P, `${P}:2`, "cabinet_1")).toBe("수납장이 보이게 폰을 가까이 대 주세요");
     });
     const got = lessons.get(RAMEN)!;
     expect(got.runs).toBe(1);
@@ -1217,7 +1220,7 @@ describe("실행 추적: 멈춘 집기·놓기 단계(관찰 모드 A)와 사람
       { not: { person_holding: "cup_1" } },
     ],
   };
-  const CLOSER = "컵이 보이게 가까이 비춰 주세요";
+  const CLOSER = "컵이 보이게 폰을 가까이 대 주세요";
 
   /** stalled는 받은 알림을 모은다. accept(false)면 받지 않았다고 돌려준다. */
   function stallSetup(over: Parameters<typeof setup>[0] = {}) {
@@ -1412,7 +1415,7 @@ describe("실행 추적: 멈춘 집기·놓기 단계(관찰 모드 A)와 사람
     s.clock.t += 8000;
     s.t.tick();
     const n = s.phone.length;
-    expect(s.t.askCloser("plan:pam-1", "plan:pam-1:2", CLOSER)).toBe(true);
+    expect(s.t.askCloser("plan:pam-1", "plan:pam-1:2", "cup_1")).toBe(CLOSER);
     expect(s.phone).toHaveLength(n + 1);
     expect(s.last()).toEqual({
       type: "command", id: "plan:pam-1", step: "plan:pam-1:2", text: CLOSER, vision: "컵 · 식탁 위", choices: DONE,
@@ -1438,31 +1441,32 @@ describe("실행 추적: 멈춘 집기·놓기 단계(관찰 모드 A)와 사람
     expect(s.spoken()).toEqual([STEP_COMMAND.goTable, STEP_COMMAND.pickCup, CLOSER, CLOSER, STEP_COMMAND.goSink]);
   });
 
-  it("사람 부탁은 지금 그 계획의 그 사람 단계이고 글이 「주세요」로 끝날 때만 보낸다. 다른 단계·계획, 승인·다시 묻기·물어보기 중, 끝난 계획·멈춘 뒤면 false이고 아무것도 보내지 않는다", async () => {
+  it("사람 부탁은 지금 그 계획의 그 사람 단계이고 가까이 볼 곳이 그 단계의 곳일 때만 보낸다. 다른 단계·계획, 승인·다시 묻기·물어보기 중, 끝난 계획·멈춘 뒤면 false이고 아무것도 보내지 않는다", async () => {
     const s = stallSetup();
     await toPick(s);
     const n = s.phone.length;
-    expect(s.t.askCloser("plan:pam-1", "plan:pam-1:1", CLOSER)).toBe(false);
-    expect(s.t.askCloser("plan:pam-1", "plan:pam-1:3", CLOSER)).toBe(false);
-    expect(s.t.askCloser("plan:pam-9", "plan:pam-1:2", CLOSER)).toBe(false);
-    // 사람에게 하는 말(「주세요」로 끝남)만 보낸다
-    expect(s.t.askCloser("plan:pam-1", "plan:pam-1:2", "컵을 가까이 볼게요")).toBe(false);
-    expect(s.t.askCloser("plan:pam-1", "plan:pam-1:2", "")).toBe(false);
+    expect(s.t.askCloser("plan:pam-1", "plan:pam-1:1", "cup_1")).toBeNull();
+    expect(s.t.askCloser("plan:pam-1", "plan:pam-1:3", "cup_1")).toBeNull();
+    expect(s.t.askCloser("plan:pam-9", "plan:pam-1:2", "cup_1")).toBeNull();
+    // 그 단계의 곳(계획 물건·대상 자리)만 받는다: 모르는 곳·모델 글이면 보내지 않는다
+    expect(s.t.askCloser("plan:pam-1", "plan:pam-1:2", "컵을 가까이 볼게요")).toBeNull();
+    expect(s.t.askCloser("plan:pam-1", "plan:pam-1:2", "")).toBeNull();
+    expect(s.t.askCloser("plan:pam-1", "plan:pam-1:2", "sink_1")).toBeNull();
     expect(s.phone).toHaveLength(n);
     s.t.onHeard("그만");
     const m = s.phone.length;
-    expect(s.t.askCloser("plan:pam-1", "plan:pam-1:2", CLOSER)).toBe(false);
+    expect(s.t.askCloser("plan:pam-1", "plan:pam-1:2", "cup_1")).toBeNull();
     expect(s.phone).toHaveLength(m);
 
     const a = stallSetup({ approvals: store() });
     await a.decide(decision);
-    expect(a.t.askCloser("plan:pam-1", "plan:pam-1:approve", CLOSER)).toBe(false);
-    expect(a.t.askCloser("plan:pam-1", "plan:pam-1:1", CLOSER)).toBe(false);
+    expect(a.t.askCloser("plan:pam-1", "plan:pam-1:approve", "cup_1")).toBeNull();
+    expect(a.t.askCloser("plan:pam-1", "plan:pam-1:1", "cup_1")).toBeNull();
     expect(a.phone).toHaveLength(1);
 
     const q = stallSetup();
     await q.decide(ask("pam-1", 1));
-    expect(q.t.askCloser("plan:pam-1", "plan:pam-1:1", CLOSER)).toBe(false);
+    expect(q.t.askCloser("plan:pam-1", "plan:pam-1:1", "cup_1")).toBeNull();
     expect(q.phone).toHaveLength(1);
 
     // 시간 초과로 계속할지 묻는 중: 부탁도, 관찰 모드 부름도 없다
@@ -1472,7 +1476,7 @@ describe("실행 추적: 멈춘 집기·놓기 단계(관찰 모드 A)와 사람
     g.t.tick();
     expect(g.last()).toMatchObject({ step: "plan:pam-1:2:again" });
     const k = g.phone.length;
-    expect(g.t.askCloser("plan:pam-1", "plan:pam-1:2", CLOSER)).toBe(false);
+    expect(g.t.askCloser("plan:pam-1", "plan:pam-1:2", "cup_1")).toBeNull();
     g.clock.t += 8000;
     g.t.tick();
     expect(g.phone).toHaveLength(k);
@@ -1481,7 +1485,7 @@ describe("실행 추적: 멈춘 집기·놓기 단계(관찰 모드 A)와 사람
     const z = stallSetup();
     await toPick(z);
     z.t.stop();
-    expect(z.t.askCloser("plan:pam-1", "plan:pam-1:2", CLOSER)).toBe(false);
+    expect(z.t.askCloser("plan:pam-1", "plan:pam-1:2", "cup_1")).toBeNull();
   });
 
   it("가까이 봐서 지키는 중인 옛 물건(closer_hold)은 「아직 있음」으로 세지 않는다: 그 뒤 새로 보인 같은 종류 물건으로 이어 가 놓기가 비전으로 넘어간다", async () => {

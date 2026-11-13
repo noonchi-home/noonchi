@@ -119,6 +119,15 @@ export const NOTICE_KEYS = Object.keys(NOTICES) as [string, ...string[]];
 /** 알림 단계 이름. */
 export const noticeLabel = (key: string) => `${key} 알림`;
 
+/** 관찰 모드의 다시 알리기 글(src/act/track.ts tell). 모델은 방식만 고르고 글은 지금 명령으로 만든다: repeat 그대로, earlier 「먼저」를 붙여 지금 할 일부터 하라는 말. */
+export const TELL_TEXT = {
+  repeat: (command: string) => command,
+  earlier: (command: string) => `먼저 ${command}`,
+};
+export type TellMode = keyof typeof TELL_TEXT;
+/** 관찰 모드의 사람 부탁 글(src/act/track.ts askCloser): 가까이 볼 곳 이름으로 그 곳이 보이게 폰을 가까이 대 달라고 한다. */
+export const CLOSER_TEXT = (place: string) => `${josa(place, "이/가")} 보이게 폰을 가까이 대 주세요`;
+
 /** 위험 가전을 켜는 단계에서 켜기 전 질문 앞에 읽는 안전 한 줄(가전 종류마다, 서버 글). 열쇠는 가전 종류다. 낱말 표 종류(microwave)와 이름이 같아도
  *  다른 것이라 낱말 목록 검사와 헷갈리지 않게 따옴표로 쓴다. */
 export const CAUTION_LINE: Record<string, string> = { "cooktop": "냄비와 상판이 뜨거워져요.", "microwave": "그릇이 뜨거워져요." };
