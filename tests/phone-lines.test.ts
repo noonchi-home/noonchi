@@ -51,7 +51,7 @@ const planStep = (step: Record<string, unknown>, action = RAMEN): Omit<AgentStep
   return r.ok ? (d as unknown as { added: { step: Omit<AgentStep, "id"> }[] }).added[0]!.step : null;
 };
 const ask = (over: Record<string, unknown> = {}) => ({
-  kind: "ask", label: "물어보기", question: "물을 받았나요?", choices: [{ id: "yes", label: "네", reply: "다음으로 가요" }, { id: "no", label: "아니요" }], timeout_s: 120, ...over,
+  kind: "ask", question: "물을 받았나요?", choices: "yes_no", timeout_s: 120, ...over,
 });
 
 /** 실행 추적: 물 받기(sink_1)·냄비 올리기(induction_1) 두 사람 단계 계획. at: 몇 번째 단계에서 볼지. */
@@ -119,11 +119,7 @@ const leaked = (out: string | null) => out !== null && /전원|버튼/.test(out)
 describe("모델이 쓴 위험 가전 글은 어느 자리에서도 폰으로 안 나간다", () => {
   /** 자리 → 모델 글 하나를 넣었을 때 폰으로 나가는 글(안 나가면 null). onRisky: 대상이 위험 가전인 자리로 넣는다. */
   const SITES: Record<(typeof PHONE_LINE_SITES)[number], (text: string, onRisky: boolean) => Promise<string | null> | string | null> = {
-    "step.label": (text) => planStep({ kind: "wait", label: text.slice(0, 30), until: { elapsed_s: 5 }, timeout_s: 60 })?.label ?? null,
-    "say.text": (text) => planStep({ kind: "say", label: "알림", text: text.replace(/ 주세요$/, "요."), timeout_s: 10 })?.text ?? null,
     "ask.question": (text) => planStep(ask({ question: `${text.replace(/ 주세요$/, "")} 볼까요?` }), ASK_TASK)?.prompt?.text ?? null,
-    "ask.choices.label": (text) => planStep(ask({ choices: [{ id: "yes", label: text.slice(0, 20) }, { id: "no", label: "아니요" }] }), ASK_TASK)?.prompt?.choices[0]?.label ?? null,
-    "ask.choices.reply": (text) => planStep(ask({ choices: [{ id: "yes", label: "네", reply: text }, { id: "no", label: "아니요" }] }), ASK_TASK)?.prompt?.choices[0]?.reply ?? null,
     "observer.tell_person": (text) => observed2("tell_person", text),
     "observer.ask_person": (text) => observed2("ask_person", text),
     "track.tell": (text, onRisky) => tracked((t, step, x) => t.tell("plan:pam-1", step, x), onRisky ? 2 : 1)(text),
@@ -168,6 +164,22 @@ describe("서버 글 틀", () => {
     // 가전 위에서 하는 그 밖의 일도 동작 틀로만 나간다
     const put = planStep({ kind: "do", act: "넣기", item: "면과 스프", target: "induction_1", command: NAMED, timeout_s: 120 });
     expect([put?.label, put?.command, put?.hand]).toEqual(["면과 스프 넣기", "면과 스프를 넣어 주세요", null]);
+  });
+
+  it("알림·기다리기 이름·질문 답은 서버 글이다: 모델이 함께 보낸 이름·알림 글·답 단추·답 말은 쓰지 않는다", () => {
+    const say = planStep({ kind: "say", notice: "물 끓기", label: NAMED.slice(0, 30), text: NAMED, timeout_s: 10 });
+    expect([say?.label, say?.text]).toEqual(["물 끓기 알림", "물이 끓을 때까지 기다려요."]);
+    const end = planStep({ kind: "say", notice: "끝", item: "라면", timeout_s: 10 });
+    expect(end?.text).toBe("라면이 다 됐어요.");
+    const wait = planStep({ kind: "wait", notice: "익기", label: NAMED.slice(0, 30), until: { elapsed_s: 5 }, timeout_s: 60 });
+    expect(wait?.label).toBe("익기 기다리기");
+    const q = planStep({ ...ask(), label: NAMED.slice(0, 30), choices: "clear_keep" }, ASK_TASK);
+    expect(q?.label).toBe("폰으로 물어보기");
+    expect(q?.prompt?.choices.map((c) => [c.label, c.reply])).toEqual([["치워 주세요", "알겠어요. 치울게요"], ["그대로 둬요", "알겠어요. 그대로 둘게요"]]);
+    // 예전 모양(답 단추 글을 모델이 쓰는 배열)은 받지 않는다
+    expect(planStep(ask({ choices: [{ id: "yes", label: BARE.slice(0, 20) }, { id: "no", label: "아니요" }] }), ASK_TASK)).toBeNull();
+    // 질문에는 부탁(「주세요」)을 섞지 않는다
+    expect(planStep(ask({ question: "냄비를 올려 주세요?" }), ASK_TASK)).toBeNull();
   });
 
   it("손 조작 동작은 대상 가전과 hand_device가 같은 가전, 같은 동작이어야 한다(질문·끄기 안내가 다른 가전을 가리키지 않게)", () => {

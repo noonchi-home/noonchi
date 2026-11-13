@@ -16,7 +16,7 @@ import { MemoryHub } from "../../src/hub/memory.js";
 import type { DeviceHub, RoomSpec } from "../../src/hub/types.js";
 import type { FloorPlan } from "../../src/plan/floor.js";
 import { josa } from "../../src/agent/phrases.js";
-import { STEP_LABEL, placeShort } from "../../src/plan/labels.js";
+import { placeShort } from "../../src/plan/labels.js";
 import type { DecisionRecord } from "../../src/world/decide.js";
 import type { LlmTurn } from "./llm.js";
 
@@ -76,7 +76,7 @@ export function fillSteps(ids: { fridge: string; table: string; cup: string; dri
 
 /** 사용자에게 물어보기: 컵을 치울지 묻는 한 단계. */
 export function askSteps(): Record<string, unknown>[] {
-  return [{ kind: "ask", label: STEP_LABEL.askUser, question: ASK_PROMPT.text, choices: ASK_PROMPT.choices.map(({ id, label, words, reply }) => ({ id, label, words, reply })), timeout_s: 120 }];
+  return [{ kind: "ask", question: ASK_PROMPT.text, choices: "clear_keep", timeout_s: 120 }];
 }
 
 /** 입력 글에서 식탁·싱크대(평면도 종류)와 보이는 컵(World State, 「이미 치움」이 아닌 첫 컵) id, 싱크대 줄에 싱크볼이 있는가. */
@@ -113,7 +113,7 @@ export const FILL_SCRIPTS: Record<string, PlanScript> = {
 export function ramenSteps(ids: { cabinet: string; sink: string; cooktop: string; cooktopDevice: string; waitS?: number }): Record<string, unknown>[] {
   const { cabinet, sink, cooktop, cooktopDevice, waitS = 240 } = ids;
   const go = (target: string) => ({ kind: "go", act: "가기", target, until: { phone_near: target }, timeout_s: 120 });
-  const wait = (label: string) => ({ kind: "wait", label, until: { elapsed_s: waitS }, timeout_s: Math.max(10, waitS + 60) });
+  const wait = (notice: string) => ({ kind: "wait", notice, until: { elapsed_s: waitS }, timeout_s: Math.max(10, waitS + 60) });
   return [
     go(cabinet),
     { kind: "pick", act: "꺼내기", item: "냄비", target: cabinet, until: { person_fact: "holding", value: "holding_object" }, timeout_s: 120 },
@@ -122,12 +122,12 @@ export function ramenSteps(ids: { cabinet: string; sink: string; cooktop: string
     go(cooktop),
     { kind: "place", act: "올리기", item: "냄비", target: cooktop, timeout_s: 120 },
     { kind: "do", act: "켜기", target: cooktopDevice, hand_device: { id: cooktopDevice, to: "on" }, timeout_s: 120 },
-    { kind: "say", label: "물 끓기 알림", text: "물이 끓을 때까지 기다려요.", timeout_s: 10 },
-    wait("물 끓기 기다리기"),
+    { kind: "say", notice: "물 끓기", timeout_s: 10 },
+    wait("물 끓기"),
     { kind: "do", act: "넣기", item: "면과 스프", target: cooktop, timeout_s: 180 },
-    wait("익기 기다리기"),
+    wait("익기"),
     { kind: "do", act: "끄기", target: cooktopDevice, hand_device: { id: cooktopDevice, to: "off" }, timeout_s: 120 },
-    { kind: "say", label: "끝 알림", text: "라면이 다 됐어요.", timeout_s: 10 },
+    { kind: "say", notice: "끝", item: "라면", timeout_s: 10 },
   ];
 }
 

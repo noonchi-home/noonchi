@@ -23,7 +23,8 @@ export const CONFIRM_RULES: ConfirmRule[] = [
 
 // ── 폰으로 나가는 사람용 글: 위험 가전은 기본 거부 ─────────────────────
 // 사람 단계(go·pick·place·do)의 이름·명령·안전 문구는 모델이 고른 동작·대상·물건으로 서버가 만든다(src/plan/labels.ts STEP_TEXT). 모델 문장은 받지 않는다.
-// 그 밖에 모델이 쓴 글(단계 이름·say·ask·답 단추·답 말·tell_person·ask_person·말 요청 에이전트의 답)에 위험 가전(인덕션·전자레인지) 이름이 나오거나
+// 알림(say)·기다리기 이름은 열쇠(notice), 질문의 답 단추·답 말은 답 묶음으로 서버가 정한다.
+// 그 밖에 모델이 쓴 글(질문·tell_person·ask_person·말 요청 에이전트의 답)에 위험 가전(인덕션·전자레인지) 이름이 나오거나
 // 그 단계 대상이 위험 가전이면 그 글은 폰으로 보내지 않는다(서버 글로 바꾸거나 버린다). 켜는 말인지 끄는 말인지 낱말로 가르지 않는다.
 // 자리 목록은 PHONE_LINE_SITES이고, tests/phone-lines.test.ts가 자리마다 본다.
 
@@ -43,7 +44,7 @@ export function riskyNames(text: string): DeviceKind[] {
 
 /** 폰으로 나가는 사람용 글이 생기는 자리. 모델이 쓴 위험 가전 글은 어느 자리에서도 나가지 않는다(tests/phone-lines.test.ts가 자리마다 본다). */
 export const PHONE_LINE_SITES = [
-  "step.label", "say.text", "ask.question", "ask.choices.label", "ask.choices.reply",
+  "ask.question",
   "observer.tell_person", "observer.ask_person", "track.tell", "track.askCloser", "agent.reply",
 ] as const;
 

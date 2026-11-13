@@ -85,7 +85,7 @@ export type StepAct = (typeof STEP_ACTS)[keyof typeof STEP_ACTS][number];
 export const ALL_ACTS = [...new Set(Object.values(STEP_ACTS).flat())] as [StepAct, ...StepAct[]];
 
 /** 시나리오에 쓰는 물건 이름(낱말 표 물건 이름 밖). 모델이 item으로 고를 수 있는 이름은 낱말 표 물건 이름과 이것이다. */
-export const EXTRA_ITEMS = ["냄비", "면과 스프", "물", "물병", "콜라", "세탁물"] as const;
+export const EXTRA_ITEMS = ["냄비", "면과 스프", "물", "물병", "콜라", "라면", "세탁물"] as const;
 
 /** 사람 단계 글 틀(단계 종류:동작). place는 자리·대상 이름, item은 물건 이름(없으면 null). 물건이 꼭 있어야 하는 틀은 item이 없으면 null을 낸다. */
 export const STEP_TEXT: Record<string, (o: { place: string; item: string | null }) => { label: string; command: string } | null> = {
@@ -105,6 +105,19 @@ export const STEP_TEXT: Record<string, (o: { place: string; item: string | null 
   "do:켜기": ({ place }) => ({ label: `${place} 켜기`, command: `${josa(place, "을/를")} 켜 주세요` }),
   "do:끄기": ({ place }) => ({ label: `${place} 끄기`, command: `${josa(place, "을/를")} 꺼 주세요` }),
 };
+
+/** 알림(say)·기다리기(wait) 닫힌 목록(notice): 모델은 열쇠만 고르고 글은 서버가 정한다. say는 폰이 읽을 한 줄, wait는 화면 단계 이름(시간 초과 질문에도 쓴다).
+ *  끝 알림은 item(물건 이름)이 있으면 그 이름을 넣는다. 기다리기가 없는 열쇠(끝)는 wait에 쓰지 않는다. */
+export const NOTICES: Record<string, { say: (item: string | null) => string; wait: string | null }> = {
+  "물 끓기": { say: () => "물이 끓을 때까지 기다려요.", wait: "물 끓기 기다리기" },
+  "익기": { say: () => "익을 때까지 기다려요.", wait: "익기 기다리기" },
+  "다 되기": { say: () => "다 될 때까지 기다려요.", wait: "다 되기 기다리기" },
+  "세탁": { say: () => "세탁이 끝났어요.", wait: "세탁 멈춤" },
+  "끝": { say: (item) => (item ? `${josa(item, "이/가")} 다 됐어요.` : "다 됐어요."), wait: null },
+};
+export const NOTICE_KEYS = Object.keys(NOTICES) as [string, ...string[]];
+/** 알림 단계 이름. */
+export const noticeLabel = (key: string) => `${key} 알림`;
 
 /** 위험 가전을 켜는 단계에서 켜기 전 질문 앞에 읽는 안전 한 줄(가전 종류마다, 서버 글). 열쇠는 가전 종류다. 낱말 표 종류(microwave)와 이름이 같아도
  *  다른 것이라 낱말 목록 검사와 헷갈리지 않게 따옴표로 쓴다. */

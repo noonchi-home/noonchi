@@ -4,7 +4,7 @@
 // 기기 단계는 도구 이름·인자만 적어 두고, 실행 추적(src/act/track.ts)이 그 단계가 되면 정책(승인 규칙)을 거쳐 부른다.
 import { z } from "zod";
 import { copyRules } from "../plan/copy.js";
-import type { ActionChoice, ActionPrompt } from "../act/prompts.js";
+import { ASK_CHOICES, type ActionPrompt } from "../act/prompts.js";
 import type { Lesson } from "../act/lessons.js";
 import { planIdOf, type Placed, type TaskSpec } from "../act/tasks.js";
 import type { DeviceView } from "../contract/events.js";
@@ -14,7 +14,7 @@ import type { PlanTarget, PlanView, StepKind, XZ } from "../contract/plan.js";
 import type { WorldObject, WorldView } from "../contract/world.js";
 import type { RoomSpec } from "../hub/types.js";
 import type { FloorPlan } from "../plan/floor.js";
-import { ALL_ACTS, CAUTION_LINE, DEVICE_VERB, EXTRA_ITEMS, STEP_ACTS, STEP_TEXT, placeShort, type StepAct } from "../plan/labels.js";
+import { ALL_ACTS, CAUTION_LINE, DEVICE_VERB, EXTRA_ITEMS, NOTICES, NOTICE_KEYS, STEP_ACTS, STEP_LABEL, STEP_TEXT, noticeLabel, placeShort, type StepAct } from "../plan/labels.js";
 import { KIND_LABELS } from "../model/mapping.js";
 import { OBJECT_NAME } from "../world/labels.js";
 import { CLASSES, DEVICE_STATES, type DeviceStateKey } from "../world/vocab.js";
@@ -113,26 +113,19 @@ export interface PlanContext {
   lesson?: Lesson | null;
 }
 
-const choiceSchema = z.object({
-  id: z.string().regex(/^[a-z][a-z0-9_]{0,19}$/).describe("답 id(영문 소문자·숫자·_)"),
-  label: z.string().min(1).max(20).describe("답 단추 글"),
-  words: z.array(z.string().min(1).max(20)).max(5).optional().describe("말로 답할 때 이 답으로 볼 말"),
-  reply: z.string().max(60).optional().describe("말로 답하면 폰이 읽어 줄 짧은 글"),
-  ends_plan: z.boolean().optional().describe("true면 이 답을 받으면 계획을 끝낸다"),
-});
 
 /** 단계 하나의 인자(submit_plan steps의 한 칸 + 번호). 종류마다 쓰는 칸은 PlanDraft.add가 본다. */
 export const STEP_ARGS = z.object({
   step: z.number().int().min(1).describe("몇 번째 단계인지(1부터). 고칠 때는 같은 번호로 다시 보낸다"),
   kind: z.enum(["go", "pick", "place", "do", "device", "ask", "say", "wait"]).describe("go 이동·pick 집기·place 내려놓기·do 그 자리에서 하는 일(사람이 함), device 가전 조작, ask 질문, say 알림, wait 기다리기"),
-  label: z.string().min(1).max(30).optional().describe("device·ask·say·wait: 화면 단계 이름(예: 건조기 시작). 사람 단계(go·pick·place·do)는 서버가 정해 쓰지 않는다"),
+  label: z.string().min(1).max(30).optional().describe("device: 화면 단계 이름(예: 건조기 시작). 그 밖의 단계 이름은 서버가 정한다"),
   target: z.string().min(1).optional().describe("go·place: 평면도 id, pick·do: World State 물건 id 또는 평면도 id, device: 가전 id"),
   object: z.string().min(1).optional().describe("pick·place: 든 World State 물건 id"),
   act: z.enum(ALL_ACTS).optional().describe(`사람 단계 동작: ${Object.entries(STEP_ACTS).map(([k, v]) => `${k} ${v.join("·")}`).join(", ")}. 사람에게 하는 말은 서버가 동작·대상·물건으로 만든다`),
-  item: z.enum(STEP_ITEMS).optional().describe("사람 단계 물건 이름(목록 안). 없으면 object·target 물건의 종류 이름"),
-  question: z.string().min(1).max(60).optional().describe("ask: 질문, 「?」로 끝남"),
-  choices: z.array(choiceSchema).optional().describe("ask: 답 2~3개"),
-  text: z.string().min(1).max(60).optional().describe("say: 폰이 읽을 알림 한 줄"),
+  item: z.enum(STEP_ITEMS).optional().describe("사람 단계·끝 알림의 물건 이름(목록 안). 사람 단계에서 없으면 object·target 물건의 종류 이름"),
+  notice: z.enum(NOTICE_KEYS).optional().describe(`say·wait: 알림·기다리기 열쇠(${NOTICE_KEYS.join("·")}). 폰 글과 화면 이름은 서버가 만든다. 끝은 wait에 쓰지 않는다`),
+  question: z.string().min(1).max(60).optional().describe("ask: 짧은 질문, 「?」로 끝남(「주세요」 없이)"),
+  choices: z.enum(["clear_keep", "yes_no"]).optional().describe("ask: 답 묶음. clear_keep 치워 주세요·그대로 둬요, yes_no 네·아니요"),
   tool: z.enum(DEVICE_TOOLS).optional().describe("device: 기기를 바꾸는 도구 이름"),
   args: z.record(z.string(), z.unknown()).optional().describe("device: 그 도구 인자(device_id 빼고)"),
   hand_device: z.object({ id: z.string().min(1), to: z.enum(["on", "off", "open", "close"]) }).optional()
@@ -329,11 +322,17 @@ export class PlanDraft {
     return o ? OBJECT_NAME[o.cls] ?? null : null;
   }
 
-  /** 손 조작 동작의 끝 조건: 그 가전이 이 단계 뒤에 그 상태가 됨. 그 가전에 그 상태가 없으면 null(사람이 「완료」로 넘긴다). */
+  /** 손 조작 동작의 끝 조건: 그 가전이 이 단계 뒤에 그 상태가 됨. 문 상태가 없는 가전의 열기·닫기는 그 가전 설비(카메라)의 열림·닫힘 사실(지금 값, 그 가전 방).
+   *  둘 다 없으면 null(사람이 「완료」로 넘긴다). */
   private handUntil(id: string, to: "on" | "off" | "open" | "close"): Condition | null {
     const d = this.ctx.devices.find((x) => x.id === id);
     const key = d ? HAND_STATES[to].find((k) => (d.twinAttrs[DEVICE_STATES[k].attr] ?? []).includes(DEVICE_STATES[k].value)) : undefined;
-    return key ? { device: id, became: key } : null;
+    if (key) return { device: id, became: key };
+    if (!d || (to !== "open" && to !== "close")) return null;
+    const fixture = (Object.keys(CLASSES) as (keyof typeof CLASSES)[]).find((k) => CLASSES[k].role === "fixture" && (CLASSES[k] as { deviceKind?: string }).deviceKind === d.kind && (CLASSES[k].facets as readonly string[]).includes("open"));
+    if (!fixture) return null;
+    const room = this.ctx.floor.objects.get(id)?.room ?? d.room;
+    return { fixture, ...(room ? { room } : {}), facts: { open: to === "open" ? "open" : "closed" } };
   }
 
   private clsOf(id: string): string {
@@ -383,19 +382,14 @@ export class PlanDraft {
       }
     } else {
       none("act");
-      none("item");
-      need("label", !!a.label);
+      if (a.kind !== "say") none("item");
     }
-    // 모델이 쓴 그 밖의 글(알림·질문·답 단추·답 말·단계 이름)에 위험 가전 이름이 나오면 버린다. 가전 단계(device) 이름은 정책 승인 길이라 거르지 않는다
-    {
-      const texts: [string, string | undefined][] = [
-        ...(!human && a.kind !== "device" ? [["label", a.label] as [string, string]] : []), ["text", a.text], ["question", a.question],
-        ...(a.choices ?? []).flatMap((c) => [[`답 ${c.id}`, c.label], [`답 ${c.id} reply`, c.reply]] as [string, string | undefined][]),
-      ];
-      for (const [field, text] of texts) if (text !== undefined && riskyNames(text).length) errors.push(`${field}: ${RISKY_NAME_PROBLEM}`);
-    }
+    // 단계 이름은 가전 단계(device)만 모델이 쓴다(정책 승인 길이라 위험 가전 이름도 받는다). 알림·기다리기는 열쇠(notice), 질문의 답은 묶음 이름으로 고른다
+    if (a.kind === "device") need("label", !!a.label);
+    if (a.kind !== "say" && a.kind !== "wait") none("notice");
+    // 모델이 쓰는 글은 질문 하나다: 위험 가전 이름이 나오면 버린다
+    if (a.question !== undefined && riskyNames(a.question).length) errors.push(`question: ${RISKY_NAME_PROBLEM}`);
     if (a.kind !== "ask") { none("question"); none("choices"); }
-    if (a.kind !== "say") none("text");
     if (a.kind !== "device") { none("tool"); none("args"); }
     if (a.kind !== "pick" && a.kind !== "place") none("object");
     // 손으로 다루는 가전은 그 동작(켜기·끄기·열기·닫기)에만: 같은 대상, 같은 동작이어야 한다
@@ -465,22 +459,20 @@ export class PlanDraft {
       case "ask": {
         none("target");
         need("question", !!a.question);
+        need("choices", !!a.choices);
         if (a.question && !/\?$/.test(a.question.trim())) errors.push("question은 「?」로 끝나야 합니다");
-        const choices = a.choices ?? [];
-        const [lo, hi] = PLAN_LIMITS.choices;
-        if (choices.length < lo || choices.length > hi) errors.push(`choices는 ${lo}~${hi}개입니다`);
-        if (new Set(choices.map((c) => c.id)).size !== choices.length) errors.push("choices id가 겹칩니다");
-        for (const c of choices) errors.push(...copyProblem(`답 ${c.id}`, c.label), ...copyProblem(`답 ${c.id} reply`, c.reply || undefined));
+        // 질문은 묻는 말이다: 사람에게 하는 부탁(「주세요」)을 섞지 않는다
+        if (a.question && /주세요/.test(a.question)) errors.push("question에는 「주세요」를 쓰지 않습니다(묻는 말만)");
         break;
       }
       case "say":
         none("target");
-        need("text", !!a.text);
-        // 알림은 지금 상태를 알리는 말이다. 클로이드가 스스로 하겠다는 말(「옮길게요」)이나 부탁(「주세요」)은 받지 않는다
-        if (a.text && /(게요|주세요)[.!]?$/.test(a.text.trim())) errors.push("say text는 지금 상태를 알리는 말입니다(예: 세탁이 끝났어요). 「…게요」·「…주세요」로 끝내지 않습니다");
+        need("notice", !!a.notice);
         break;
       case "wait":
         need("until", a.until !== undefined);
+        need("notice", !!a.notice);
+        if (a.notice && !NOTICES[a.notice]?.wait) errors.push(`wait에 쓰지 않는 notice입니다: ${a.notice}. 쓸 수 있는 것: ${NOTICE_KEYS.filter((k) => NOTICES[k]!.wait).join(", ")}`);
         break;
     }
     let until: Condition | null = null;
@@ -507,7 +499,7 @@ export class PlanDraft {
     else if (a.kind === "say") until = { elapsed_s: SAY_HOLD_S };
     const [lo, hi] = PLAN_LIMITS.timeoutS[a.kind];
     if (a.timeout_s < lo || a.timeout_s > hi) errors.push(`${a.kind} timeout_s는 ${lo}~${hi}초입니다`);
-    errors.push(...(human ? [] : copyProblem("label", a.label)), ...copyProblem("question", a.question), ...copyProblem("text", a.text));
+    errors.push(...(a.kind === "device" ? copyProblem("label", a.label) : []), ...copyProblem("question", a.question));
     // 사람 단계 글은 서버가 만든다: 동작 틀에 대상·물건 이름을 넣는다
     let server: { label: string; command: string; caution: string | null } | null = null;
     if (human && a.act && !errors.length) {
@@ -526,11 +518,13 @@ export class PlanDraft {
       }
     }
     if (errors.length) return errors.join("; ");
-    const choices: ActionChoice[] = (a.choices ?? []).map((c) => ({ id: c.id, label: c.label, words: c.words ?? [], reply: c.reply ?? "" }));
+    // 단계 이름: 사람 단계는 동작 틀, 알림·기다리기는 열쇠, 질문은 고정 이름, 가전 단계만 모델 이름
+    const notice = a.notice ? NOTICES[a.notice]! : null;
+    const label = server?.label ?? (a.kind === "say" ? noticeLabel(a.notice!) : a.kind === "wait" ? notice!.wait! : a.kind === "ask" ? STEP_LABEL.askUser : a.label ?? "");
     const step: Omit<AgentStep, "id"> = {
-      kind: a.kind, label: server?.label ?? a.label ?? "", target, object, command: server?.command ?? null,
-      prompt: a.kind === "ask" ? { text: a.question!.trim(), choices, ends: (a.choices ?? []).filter((c) => c.ends_plan).map((c) => c.id) } : null,
-      text: a.text?.trim() ?? null,
+      kind: a.kind, label, target, object, command: server?.command ?? null,
+      prompt: a.kind === "ask" ? { text: a.question!.trim(), choices: ASK_CHOICES[a.choices!], ends: [] } : null,
+      text: a.kind === "say" ? notice!.say(a.item ?? null) : null,
       device: a.kind === "device" ? { tool: a.tool!, deviceId: target!, args: a.args ?? {} } : null,
       hand: a.kind === "do" && handTo && a.hand_device ? { deviceId: a.hand_device.id, to: a.hand_device.to } : null, caution: server?.caution ?? null,
       until, timeoutMs: a.timeout_s * 1000, onTimeout: a.on_timeout ?? "fail",

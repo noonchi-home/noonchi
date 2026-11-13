@@ -15,6 +15,15 @@ export const ASK_PROMPT: ActionPrompt = {
   ],
 };
 
+/** 질문 단계(ask)의 답 묶음: 모델은 묶음 이름만 고르고 답 단추·답 말은 이 글이다. clear_keep은 컵 치우기 질문(ASK_PROMPT)의 답이다. */
+export const ASK_CHOICES: Record<"clear_keep" | "yes_no", ActionChoice[]> = {
+  clear_keep: ASK_PROMPT.choices,
+  yes_no: [
+    { id: "yes", label: "네", words: ["네", "응"], reply: "알겠어요", whole: true },
+    { id: "no", label: "아니요", words: ["아니요", "아니"], reply: "알겠어요", whole: true },
+  ],
+};
+
 /** 단계 명령 아래 「완료」 단추: 비전이 못 알아볼 때 사람이 지금 단계를 넘긴다. 말로 해도 같다. 다음 명령을 읽으므로 읽어 줄 글이 없다. */
 export const STEP_DONE: ActionChoice = { id: "done", label: "완료", words: ["완료", "다 했어", "다 했습니다"], reply: "", whole: true };
 
