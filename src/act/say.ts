@@ -22,10 +22,11 @@ const cupKey = (label: string | undefined, text: string) =>
   (Object.keys(STEP_COMMAND) as (keyof typeof STEP_COMMAND)[]).find((k) => STEP_LABEL[k] === label || STEP_COMMAND[k] === text) ?? null;
 
 /** look: 마지막으로 가까이 보기를 시작한 자리 이름과 그 시각. left: 마지막으로 「그대로 둠」을 기록한 시각.
- *  told: 마지막으로 다시 알린(tell) 시각. quiet: 지금 조용히 띄운 단계 이름(src/act/track.ts quietStep). */
-export function sayLine({ plan, command, world, nowMs, look = null, left = null, told = null, quiet = null }: {
+ *  told: 마지막으로 다시 알린(tell) 시각. quiet: 지금 조용히 띄운 단계 이름(src/act/track.ts quietStep).
+ *  reflected: 마지막 반성 시각과 새로 배운 규칙 수·쓰고 있는 습관 수(20초 동안 말한다). */
+export function sayLine({ plan, command, world, nowMs, look = null, left = null, told = null, quiet = null, reflected = null }: {
   plan: PlanView | null; command: PlannedCommandMessage | null; world: WorldView | null; nowMs: number; look?: { place: string; atMs: number } | null; left?: { atMs: number } | null;
-  told?: { atMs: number } | null; quiet?: string | null;
+  told?: { atMs: number } | null; quiet?: string | null; reflected?: { atMs: number; learned: number; active: number } | null;
 }): string {
   if (look && nowMs - look.atMs <= SAY_LOOK_MS) return SAY_TEXT.closer(look.place);
   // 끄기 안내(켠 채 닫힌 계획 뒤)가 떠 있는 동안
@@ -45,6 +46,10 @@ export function sayLine({ plan, command, world, nowMs, look = null, left = null,
     const cupId = planTargetId(plan);
     const surface = cupId ? world?.objects.find((o) => o.id === cupId)?.surface_label ?? null : null;
     return SAY_TEXT.decided(plan.goal, surface);
+  }
+  if (reflected && nowMs - reflected.atMs <= SAY_DONE_MS) {
+    if (reflected.learned > 0) return SAY_TEXT.learned(reflected.learned);
+    if (reflected.active > 0) return SAY_TEXT.using(reflected.active);
   }
   if (left && nowMs - left.atMs <= SAY_DONE_MS && !(plan && Date.parse(plan.updatedAt) > left.atMs)) return SAY_TEXT.left;
   if (plan && nowMs - Date.parse(plan.updatedAt) <= SAY_DONE_MS) return plan.status === "done" ? SAY_TEXT.done(plan.goal) : SAY_TEXT.stopped(plan.goal);

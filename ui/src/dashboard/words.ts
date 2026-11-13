@@ -8,6 +8,7 @@ export const WORDS = {
   coach: "코치",
   habit: "습관",
   learnedRule: "배운 규칙",
+  learnedNow: "새로 배움",
   offline: "연결 끊김 · 다시 연결 중",
   noRobot: "클로이드 위치 모름",
   phoneOff: "폰 서버가 꺼져 있어요.",

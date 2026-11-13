@@ -4,8 +4,10 @@ import type { BrainLog, EyeEvent, ServerMessage } from "../../../src/contract/ev
 import type { PlanStep, PlanView } from "../../../src/contract/plan.ts";
 import { FSM_STATE_TEXT } from "../../../src/world/labels.ts";
 import type { Facing } from "./Mascot";
+import { WORDS } from "./words";
 
 type Decision = Extract<BrainLog, { type: "decision" }>;
+type Reflection = Extract<BrainLog, { type: "reflection" }>;
 
 export interface DashData {
   plan: PlanView | null;
@@ -13,10 +15,12 @@ export interface DashData {
   eye: EyeEvent | null;
   /** 마지막 유효 판단. */
   decision: Decision | null;
+  /** 마지막 성공한 반성(접속 때 다시 받은 오늘 것 포함). */
+  reflection: Reflection | null;
   say: string | null;
 }
 
-export const EMPTY_DASH: DashData = { plan: null, eye: null, decision: null, say: null };
+export const EMPTY_DASH: DashData = { plan: null, eye: null, decision: null, reflection: null, say: null };
 
 export function reduceDash(s: DashData, m: ServerMessage, now: number): DashData {
   switch (m.type) {
@@ -35,6 +39,7 @@ export function reduceDash(s: DashData, m: ServerMessage, now: number): DashData
     case "brain": {
       const e = m.event;
       if (e.type === "decision") return e.status === "valid" ? { ...s, decision: e } : s;
+      if (e.type === "reflection") return e.ok ? { ...s, reflection: e } : s;
       return s;
     }
     default:
@@ -71,6 +76,14 @@ export interface Thought { reasoning: string; state: string | null; habit: boole
  */
 export function thoughtOf(s: DashData): Thought | null {
   const d = s.decision;
+  // 마지막 유효 판단보다 새 반성이면 그 반성의 첫 규칙: 새로 배운 규칙이 있으면 「습관 · 새로 배움」, 없고 쓰는 습관이 있으면 「습관 · 배운 규칙」. 둘 다 비면 판단 그대로
+  const r = s.reflection;
+  if (r && (!d || r.at_ms > d.at_ms)) {
+    const learned = r.learned?.[0];
+    const active = r.active?.[0];
+    if (learned) return { reasoning: learned.trigger, state: WORDS.learnedNow, habit: true, assist: "noonchi", action: learned.action };
+    if (active) return { reasoning: active.trigger, state: null, habit: true, assist: "noonchi", action: active.action };
+  }
   if (!d?.action || !d.prediction) return null;
   const fsm = d.fsm;
   const state = fsm?.state ? FSM_STATE_TEXT[fsm.state] ?? fsm.trigger ?? null : null;

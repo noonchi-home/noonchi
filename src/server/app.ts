@@ -355,6 +355,14 @@ export function createApp(opts: AppOptions): TwinHomeApp {
     if (!r.ok) throw new HttpError(r.empty ? 409 : 502, r.error);
     return { ok: true, day, version: r.version, appliesDay: r.appliesDay };
   });
+  // 그날 기억 고정 상태(읽기만, 고정하지 않는다): 그날 판단이 고정한 판본, 지금 판단이 부르면 쓸 판본(고정 판본, 없으면 그날 쓸 수 있는 가장 새 판본), 가장 새 판본
+  route("GET", /^\/api\/memory\/day\/(\d{4}-\d{2}-\d{2})$/, async (_req, _url, [day]) => {
+    const db = requireHistory();
+    if (!isDay(day!)) throw new HttpError(400, `없는 날짜입니다: ${day}`);
+    const pinned = db.pinnedMemory(day!);
+    const v = pinned !== null ? db.memoryVersion(pinned) : db.memoryFor(day!);
+    return { ok: true, day, pinned, uses: v ? { version: v.version, source: v.source, appliesDay: v.appliesDay, day: v.day } : null, latest: db.latestMemoryVersion() };
+  });
   route("GET", /^\/api\/decisions$/, async (_req, url) => ({ ok: true, decisions: requireHistory().decisions(limitParam(url, 20, 500)) }));
 
   // ── 집 장면·배치 보정 ──

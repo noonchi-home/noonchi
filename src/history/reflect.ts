@@ -32,8 +32,8 @@ function latestWithin(lines: string[], max: number): string[] {
 const DAY_KINDS = ["detection", "world", "device", "vlm", "yolo", "decision", "execution", "feedback"] as const;
 
 export interface DayMemory { memory: PamMemory; kind: "list" | "fsm"; version: number }
-/** ok면 learned(이번에 새로 더한 규칙, 코치 행동 빼고)·dropped(반성 뒤 검사가 뺀 규칙)를 함께 준다. */
-export type ReflectResult = { ok: true; version: number; appliesDay: string; learned: RuleLine[]; dropped: HabitRuleNote[] } | { ok: false; error: string; empty?: true };
+/** ok면 learned(이번에 새로 더한 규칙)·active(새 판본의 규칙 가운데 seed에 없는 것)·dropped(반성 뒤 검사가 뺀 규칙)를 함께 준다. learned·active는 코치 행동을 뺀다. */
+export type ReflectResult = { ok: true; version: number; appliesDay: string; learned: RuleLine[]; active: RuleLine[]; dropped: HabitRuleNote[] } | { ok: false; error: string; empty?: true };
 
 /** 습관 거르기에 넘기는 기록 종류. */
 const HABIT_KINDS = ["world", "device", "decision", "execution", "feedback"] as const;
@@ -66,7 +66,7 @@ export function memoryForDay(db: HistoryDb, day: string): DayMemory {
 /** filter: 습관 거르기(기본 keepAll). windowDays: 거르기에 넘기는 지난 기록 날 수(기본 30, 반성한 날 포함). */
 export async function runReflection(db: HistoryDb, pam: PamClient, day: string, o: { now?: () => number; emit?: (l: BrainLog) => void; filter?: HabitFilter; windowDays?: number } = {}): Promise<ReflectResult> {
   const now = o.now ?? (() => Date.now());
-  const done = (ok: boolean, text: string, version: number | null, appliesDay: string | null, found?: { learned: RuleLine[]; dropped: HabitRuleNote[] }) => {
+  const done = (ok: boolean, text: string, version: number | null, appliesDay: string | null, found?: { learned: RuleLine[]; active: RuleLine[]; dropped: HabitRuleNote[] }) => {
     const at = now();
     db.add("reflection", at, text, { data: { day, ok, version, applies_day: appliesDay, ...found } });
     o.emit?.({ type: "reflection", at_ms: at, day, ok, version, applies_day: appliesDay, text, ...found });
@@ -88,6 +88,7 @@ export async function runReflection(db: HistoryDb, pam: PamClient, day: string, 
       action_summary: summary.action_summary || REFLECT_TEXT.noAction, feedback,
     }, cur.kind);
     let learned: RuleLine[] = [];
+    let active: RuleLine[] = [];
     let dropped: HabitRuleNote[] = [];
     if (cur.kind === "fsm") {
       // 반성 뒤 검사: 코치 규칙은 seed 그대로, 습관 거르기, 거르기가 코치 규칙을 바꾸지 못하게 한 번 더, 그 뒤 모양 검사
@@ -101,13 +102,14 @@ export async function runReflection(db: HistoryDb, pam: PamClient, day: string, 
       memory = validateMemory(second.memory, "fsm");
       dropped = [...first.notes, ...filtered.notes, ...second.notes].filter((n) => !n.kept);
       learned = learnedRules(previous, memory as FsmMemory).filter((r) => !TASKS[r.action]?.coach);
+      active = learnedRules(CUP_FSM_MEMORY, memory as FsmMemory).filter((r) => !TASKS[r.action]?.coach);
     }
     let appliesDay = nextDay(day);
     while (db.pinnedMemory(appliesDay) !== null) appliesDay = nextDay(appliesDay);
     const version = db.saveMemory({ kind: cur.kind, memory, day, appliesDay, source: "reflection" });
     const text = REFLECT_TEXT.done(version, appliesDay) + (learned.length ? ` · ${REFLECT_TEXT.learned(learned.length)}` : "");
-    done(true, text, version, appliesDay, { learned, dropped });
-    return { ok: true, version, appliesDay, learned, dropped };
+    done(true, text, version, appliesDay, { learned, active, dropped });
+    return { ok: true, version, appliesDay, learned, active, dropped };
   } catch (e) {
     const error = (e as Error).message;
     done(false, REFLECT_TEXT.failed(error), null, null);

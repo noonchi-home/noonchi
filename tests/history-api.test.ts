@@ -3,6 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { memoryForDay } from "../src/history/reflect.js";
 import { fetchRetry } from "../src/server/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 
@@ -75,5 +76,24 @@ describe("기록 API", () => {
     ]);
     expect((await get("/api/decisions")).json.decisions).toHaveLength(3);
     expect((await get("/api/decisions?limit=501")).status).toBe(400);
+  });
+});
+
+describe("기억 상태 API(GET /api/memory/day/:day)", () => {
+  it("판단 전에는 pinned null, 첫 판단(그날 기억 고정) 뒤에는 그 판본이다. 이 API를 불러도 고정되지 않는다", async () => {
+    srv = await startServer({ env: { HUB: "memory", PORT: "0", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")) }, log: () => {} });
+    const db = srv.history;
+    const today = db.dayOf(Date.now());
+    expect((await get(`/api/memory/day/${today}`)).json).toEqual({ ok: true, day: today, pinned: null, uses: null, latest: null });
+    expect(db.pinnedMemory(today)).toBeNull();
+    memoryForDay(db, today); // 그날 첫 판단이 부르는 것
+    expect((await get(`/api/memory/day/${today}`)).json).toEqual({ ok: true, day: today, pinned: 1, uses: { version: 1, source: "seed", appliesDay: null, day: null }, latest: 1 });
+    // 다음 날부터 쓰는 반성 판본: 내일은 아직 고정 전이지만 쓸 판본은 그것이다(부르기만 해서는 고정하지 않는다)
+    const tomorrow = new Date(Date.parse(`${today}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+    const v2 = db.saveMemory({ kind: "fsm", memory: { initial_state: "s", states: [{ id: "s", description: "d", rules: [], next: [] }] }, day: today, appliesDay: tomorrow, source: "reflection" });
+    expect((await get(`/api/memory/day/${tomorrow}`)).json).toEqual({ ok: true, day: tomorrow, pinned: null, uses: { version: v2, source: "reflection", appliesDay: tomorrow, day: today }, latest: v2 });
+    expect(db.pinnedMemory(tomorrow)).toBeNull();
+    expect((await get(`/api/memory/day/${today}`)).json).toMatchObject({ pinned: 1, uses: { version: 1 }, latest: v2 });
+    expect((await get("/api/memory/day/2026-13-40")).status).toBe(400);
   });
 });

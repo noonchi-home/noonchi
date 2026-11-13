@@ -30,6 +30,9 @@ export const GOAL = { clearCup: "컵 치우기", askUser: "사용자에게 물�
 /** 대시보드 말풍선 카드 한 문장(src/act/say.ts). 클로이드가 정한 것과 실제 폰에 낸 명령이다. 클로이드가 몸으로 하는 말로 쓰지 않는다. */
 export const SAY_TEXT = {
   watching: "지켜보고 있어요.",
+  /** 반성 뒤: 새로 배운 습관 수, 새로 배운 것이 없으면 쓰고 있는 습관 수. */
+  learned: (n: number) => `어제 기록으로 새 습관 ${n}개를 배웠어요.`,
+  using: (n: number) => `배운 습관 ${n}개를 쓰고 있어요.`,
   looking: (surface: string) => `${josa(surface, "을/를")} 보고 있어요.`,
   closer: (place: string) => `${josa(place, "을/를")} 가까이 보고 있어요.`,
   decided: (goal: string, surface: string | null = null) =>

@@ -20,6 +20,15 @@ const world = (surface: string | null) => ({ objects: surface ? [{ id: "cup-1", 
 const withCup = (p: PlanView): PlanView => ({ ...p, steps: p.steps.map((s, i) => (i === 1 ? { ...s, target: { objectId: "cup-1" } } : s)) });
 const say = (o: Partial<Parameters<typeof sayLine>[0]>) => sayLine({ plan: null, command: null, world: null, nowMs: T, ...o });
 
+describe("말풍선 카드 글: 반성 뒤", () => {
+  it("반성 뒤 20초 동안 새로 배운 습관이 있으면 그 수를, 없고 쓰는 습관이 있으면 그 수를 말한다. 둘 다 없거나 20초가 지나면 지켜보기다", () => {
+    expect(say({ reflected: { atMs: T - 1000, learned: 2, active: 3 } })).toBe("어제 기록으로 새 습관 2개를 배웠어요.");
+    expect(say({ reflected: { atMs: T - 1000, learned: 0, active: 1 } })).toBe("배운 습관 1개를 쓰고 있어요.");
+    expect(say({ reflected: { atMs: T - 1000, learned: 0, active: 0 } })).toBe("지켜보고 있어요.");
+    expect(say({ reflected: { atMs: T - SAY_DONE_MS - 1, learned: 1, active: 1 } })).toBe("지켜보고 있어요.");
+  });
+});
+
 describe("말풍선 카드 글", () => {
   it("계획이 없으면 지켜보거나 본 면을 말한다", () => {
     expect(say({})).toBe("지켜보고 있어요.");

@@ -142,7 +142,13 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     if (reflecting) throw new HttpError(409, REFLECT_TEXT.running);
     reflecting = true;
     try {
-      return await runReflection(db, pam, day, { emit: (event) => current?.app.broadcast({ type: "brain", event }) });
+      // 반성 사건은 지금 집의 대시보드로 보내고 집 묶음에도 넘긴다(말풍선 카드가 배운 습관을 말한다)
+      return await runReflection(db, pam, day, {
+        emit: (event) => {
+          current?.app.broadcast({ type: "brain", event });
+          if (event.type === "reflection") current?.onReflection(event);
+        },
+      });
     } finally {
       reflecting = false;
     }

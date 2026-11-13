@@ -6,7 +6,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { checkDecision, checkPlan, loadActConfig } from "../act/check.js";
 import { Looker } from "../act/look.js";
-import { sayLine } from "../act/say.js";
+import { SAY_DONE_MS, sayLine } from "../act/say.js";
 import { LessonStore, lessonsPath } from "../act/lessons.js";
 import { lookTargets, taskOf, tasksFor } from "../act/tasks.js";
 import { deviceRunner } from "../act/devices.js";
@@ -125,6 +125,8 @@ export interface HomeRuntime {
   phonePort?: number;
   /** ThinQ 연결을 바꾼다(실제 모드). 이전 연결은 멈추고, 새 연결은 붙인 뒤 읽기를 시작한다. null이면 뗀다. */
   setLink(link: ThinqLink | null): void;
+  /** 반성 사건(src/server/start.ts가 넘긴다): 말풍선 카드가 20초 동안 배운 습관을 말한다. */
+  onReflection(event: Extract<BrainLog, { type: "reflection" }>): void;
   close(): Promise<void>;
 }
 
@@ -277,12 +279,25 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     let said: string | null = null;
     // 마지막으로 가까이 보기를 시작한 자리와 시각(말풍선 카드 6초)
     let lookSay: { place: string; atMs: number } | null = null;
+    // 마지막 반성 시각과 새로 배운 규칙 수·쓰고 있는 습관 수(말풍선 카드 20초)
+    let reflected: { atMs: number; learned: number; active: number } | null = null;
+    // 새로 붙은 대시보드에 다시 보낼 오늘(기록 시간대) 마지막 반성 사건: 기록 DB reflection 줄에서 읽는다(합성 판본도 같다)
+    const todayReflection = (): BrainLog[] => {
+      const db = history.db;
+      const row = db.list({ day: db.dayOf(Date.now()), kinds: ["reflection"], latest: true, limit: 1 })[0];
+      if (!row) return [];
+      const data = (row.data ?? {}) as Partial<Extract<BrainLog, { type: "reflection" }>>;
+      return [{
+        type: "reflection", at_ms: row.at_ms, day: data.day ?? row.day, ok: data.ok === true, version: data.version ?? null, applies_day: data.applies_day ?? null, text: row.text,
+        ...(data.learned ? { learned: data.learned } : {}), ...(data.active ? { active: data.active } : {}), ...(data.dropped ? { dropped: data.dropped } : {}),
+      }];
+    };
     // 끝난 지 20초·가까이 보기 6초는 계획 updatedAt(PlanHub, Date.now)과 같은 시계로 잰다
     speak = () => {
       const leftAt = tracker?.leftAt() ?? null;
       const toldAt = tracker?.toldAt() ?? null;
       const text = sayLine({ plan: plans.current(), command, world: world?.view(nowMs()) ?? null, nowMs: Date.now(), look: lookSay, left: leftAt === null ? null : { atMs: leftAt },
-        told: toldAt === null ? null : { atMs: toldAt }, quiet: tracker?.quietStep() ?? null });
+        told: toldAt === null ? null : { atMs: toldAt }, quiet: tracker?.quietStep() ?? null, reflected });
       if (text === said) return;
       said = text;
       appRef.current?.broadcast({ type: "say", text });
@@ -425,7 +440,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       start: startStore && { get: () => startStore.get(), save: (raw) => startStore.save(raw), preview: (raw) => startStore.preview(raw), clear: () => startStore.clear() },
       phoneSync: () => phoneRef.current?.syncState() ?? null,
       plan: plans, history: history.db, reflect: history.reflect, scene: () => scene,
-      brainLast: () => (lastDecision ? [lastDecision] : []), seenLast: () => lastSeen, say: () => said,
+      brainLast: () => [...todayReflection(), ...(lastDecision ? [lastDecision] : [])], seenLast: () => lastSeen, say: () => said,
     });
     const appNow = app;
     appRef.current = app;
@@ -513,6 +528,12 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     return {
       twin, hub: started.hub, signals, hubKind, transport: started.transport, warnings: started.warnings, policy, agent, layout: layout?.editor,
       start: startStore, app: appNow, twinDir, phoneUrls, phonePort,
+      onReflection(event) {
+        if (!event.ok) return;
+        reflected = { atMs: event.at_ms, learned: event.learned?.length ?? 0, active: event.active?.length ?? 0 };
+        speak();
+        setTimeout(() => speak(), SAY_DONE_MS + 50).unref?.();
+      },
       setLink(next) {
         link?.stop();
         link = closed ? null : next;

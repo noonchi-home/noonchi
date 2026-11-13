@@ -120,8 +120,9 @@ export type BrainLog =
   | { type: "trigger"; at_ms: number; paused: boolean; text: string }
   | {
     type: "reflection"; at_ms: number; day: string; ok: boolean; version: number | null; applies_day: string | null; text: string;
-    /** 이번 반성이 새로 더한 규칙(코치 행동 빼고)과 반성 뒤 검사가 뺀 규칙(src/history/habits.ts). 성공한 fsm 반성에만 있다. */
+    /** 이번 반성이 새로 더한 규칙, 새 판본에서 지금 적용 중인 seed에 없는 규칙(둘 다 코치 행동 빼고), 반성 뒤 검사가 뺀 규칙(src/history/habits.ts). 성공한 fsm 반성에만 있다. */
     learned?: { state: string; trigger: string; action: string }[];
+    active?: { state: string; trigger: string; action: string }[];
     dropped?: { state: string; trigger: string; action: string; kept: boolean; reason: "habit" | "chance" | "too_few" | "coach" | "unchanged"; seen?: number; fired?: number; p?: number; conditions?: string[] }[];
   }
   /** 관찰 모드가 고른 것 하나(src/act/look.ts): 까닭(A 멈춘 단계·B 판단 전 보기), 대상 id, 고른 도구와 모델이 댄 까닭, 기록 글, 결과(가까이 보기 결과·부탁을 보냈는가, 기다리기는 null).

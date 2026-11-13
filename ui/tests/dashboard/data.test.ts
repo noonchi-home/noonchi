@@ -79,8 +79,38 @@ describe("대시보드 자료", () => {
     const seen = (run.moments[1]!.messages as ServerMessage[]).find((m) => m.type === "seen")!;
     expect(seen).toMatchObject({ type: "seen", frame: { width: 405, height: 720 }, shapes: [{ label: "cup" }] });
     expect(reduceDash(s, seen, 5)).toBe(s);
-    expect(Object.keys(s).sort()).toEqual(["decision", "eye", "plan", "say"]);
+    expect(Object.keys(s).sort()).toEqual(["decision", "eye", "plan", "reflection", "say"]);
   });
+  describe("반성 뒤 생각 말풍선", () => {
+    const AIRCON = { state: "watching_tv", trigger: "사용자가 TV를 보러 소파에 앉는다.", action: "에어컨 켜기" };
+    const NIGHT = { state: "left_cup", trigger: "밤에 사용자가 식탁을 떠난다.", action: "컵 치우기" };
+    const reflected = (at: number, learned: typeof AIRCON[], active: typeof AIRCON[], replay = false): ServerMessage => ({
+      type: "brain", ...(replay ? { replay: true as const } : {}),
+      event: { type: "reflection", at_ms: at, day: "2026-11-08", ok: true, version: 3, applies_day: "2026-11-09", text: "반성 완료", learned, active, dropped: [] },
+    });
+    const decidedAt = (at: number): ServerMessage => {
+      const m = branchDecision(BRANCHES.clear, 1) as Extract<ServerMessage, { type: "brain" }>;
+      return { ...m, event: { ...m.event, at_ms: at } } as ServerMessage;
+    };
+
+    it("마지막 유효 판단보다 새 반성에 새로 배운 규칙이 있으면 첫 규칙: 생각은 그 트리거, 「습관 · 새로 배움」, 「눈치 · 행동」", () => {
+      expect(thoughtOf(feed([decidedAt(1000), reflected(2000, [NIGHT], [AIRCON, NIGHT])]))).toEqual({
+        reasoning: NIGHT.trigger, state: "새로 배움", habit: true, assist: "noonchi", action: NIGHT.action,
+      });
+    });
+
+    it("새로 배운 규칙이 없고 쓰는 습관이 있으면 첫 규칙: 「습관 · 배운 규칙」(상태 null). 다시 받은 반성(replay)도 같다", () => {
+      expect(thoughtOf(feed([reflected(2000, [], [AIRCON], true)]))).toEqual({ reasoning: AIRCON.trigger, state: null, habit: true, assist: "noonchi", action: AIRCON.action });
+    });
+
+    it("다음 판단이 오면 그 판단으로 바뀌고, 둘 다 비면 그대로다", () => {
+      const s = feed([reflected(2000, [NIGHT], [NIGHT]), decidedAt(3000)]);
+      expect(thoughtOf(s)).toMatchObject({ action: "컵 치우기", state: "컵을 두고 자리를 뜸", habit: false });
+      expect(thoughtOf(feed([decidedAt(1000), reflected(2000, [], [])]))).toEqual(thoughtOf(feed([decidedAt(1000)])));
+      expect(thoughtOf(feed([reflected(2000, [], [])]))).toBeNull();
+    });
+  });
+
   it("hello면 처음으로 돌린다(접속 스냅숏이 뒤따름)", () => {
     expect(reduceDash(at(3), { type: "hello", devices: 1, provider: null, hub: "memory", home: "mokryeon_180b" }, 0)).toEqual(EMPTY_DASH);
   });

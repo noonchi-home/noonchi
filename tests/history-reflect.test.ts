@@ -127,16 +127,16 @@ describe("반성", () => {
     const next = { ...CUP_FSM_MEMORY, initial_state: "left_cup" };
     const logs: BrainLog[] = [];
     const r = await runReflection(db, new PamClient({ url: await startPam(next) }), "2026-11-07", { emit: (l) => logs.push(l), now: () => t + 3_600_000 });
-    expect(r).toEqual({ ok: true, version: 2, appliesDay: "2026-11-08", learned: [], dropped: [] });
+    expect(r).toEqual({ ok: true, version: 2, appliesDay: "2026-11-08", learned: [], active: [], dropped: [] });
     expect(got.at(-1)).toMatchObject({ contract: "pam-reflect/2", day: "2026-11-07", memory_kind: "fsm", memory: CUP_FSM_MEMORY, feedback: "다 마신 뒤에만 치워 줘" });
     expect(got.at(-1)!.observation_text).toContain("08:00:00 사람 보임");
     expect(got.at(-1)!.action_summary).toBe("08:01:00 클로이드 판단: 컵 치우기\n08:02:00 사용자: 다 마신 뒤에만 치워 줘");
     expect(memoryForDay(db, "2026-11-07").version).toBe(1); // 그날은 그대로
     expect(memoryForDay(db, "2026-11-08")).toMatchObject({ version: 2, memory: { initial_state: "left_cup" } });
     expect(db.list({ kinds: ["reflection"] })).toEqual([expect.objectContaining({
-      at_ms: t + 3_600_000, text: "반성 완료: 기억 2판, 2026-11-08부터", data: { day: "2026-11-07", ok: true, version: 2, applies_day: "2026-11-08", learned: [], dropped: [] },
+      at_ms: t + 3_600_000, text: "반성 완료: 기억 2판, 2026-11-08부터", data: { day: "2026-11-07", ok: true, version: 2, applies_day: "2026-11-08", learned: [], active: [], dropped: [] },
     })]);
-    expect(logs).toEqual([{ type: "reflection", at_ms: t + 3_600_000, day: "2026-11-07", ok: true, version: 2, applies_day: "2026-11-08", text: "반성 완료: 기억 2판, 2026-11-08부터", learned: [], dropped: [] }]);
+    expect(logs).toEqual([{ type: "reflection", at_ms: t + 3_600_000, day: "2026-11-07", ok: true, version: 2, applies_day: "2026-11-08", text: "반성 완료: 기억 2판, 2026-11-08부터", learned: [], active: [], dropped: [] }]);
   });
 
   describe("반성 뒤 검사(코치 규칙 지키기·습관 거르기)", () => {
@@ -192,6 +192,19 @@ describe("반성", () => {
       expect(db.memoryVersion(2)!.memory).toEqual(CUP_FSM_MEMORY);
     });
 
+    it("반성 사건·기록 줄에 learned(이번에 새로 더함)와 active(새 판본에서 seed에 없는 눈치 규칙)가 있다. 앞 판본에 이미 있던 에어컨 습관은 active에만 있다", async () => {
+      const db = HistoryDb.open(":memory:");
+      const before = withRules({ watching_tv: [AIRCON] });
+      db.saveMemory({ kind: "fsm", memory: before, day: "2026-11-06", appliesDay: "2026-11-07", source: "reflection" });
+      db.add("detection", t, "사람 보임");
+      const NIGHT = { trigger: "밤에 사용자가 식탁을 떠난다.", action: "컵 치우기" };
+      const logs: BrainLog[] = [];
+      const after = { ...before, states: before.states.map((s) => (s.id === "left_cup" ? { ...s, rules: [...s.rules, NIGHT] } : s)) };
+      await runReflection(db, new PamClient({ url: await startPam(after) }), "2026-11-07", { emit: (l) => logs.push(l), now: () => t + 3_600_000 });
+      expect(logs.at(-1)).toMatchObject({ type: "reflection", ok: true, learned: [{ state: "left_cup", ...NIGHT }], active: [{ state: "watching_tv", ...AIRCON }, { state: "left_cup", ...NIGHT }] });
+      expect(db.list({ kinds: ["reflection"] }).at(-1)!.data).toMatchObject({ learned: [{ state: "left_cup", ...NIGHT }], active: [{ state: "watching_tv", ...AIRCON }, { state: "left_cup", ...NIGHT }] });
+    });
+
     it("거르기 결과가 기억 모양 검사에 걸리면 반성은 실패로 남고 판본은 늘지 않는다", async () => {
       const db = HistoryDb.open(":memory:");
       db.add("detection", t, "사람 보임");
@@ -208,7 +221,7 @@ describe("반성", () => {
     const db = HistoryDb.open(":memory:");
     expect(memoryForDay(db, "2026-11-08").version).toBe(1); // 11-08 판단이 먼저 시작함
     db.add("detection", Date.UTC(2026, 10, 7, 1), "사람 보임");
-    expect(await runReflection(db, new PamClient({ url: await startPam({ ...CUP_FSM_MEMORY, initial_state: "left_cup" }) }), "2026-11-07")).toEqual({ ok: true, version: 2, appliesDay: "2026-11-09", learned: [], dropped: [] });
+    expect(await runReflection(db, new PamClient({ url: await startPam({ ...CUP_FSM_MEMORY, initial_state: "left_cup" }) }), "2026-11-07")).toEqual({ ok: true, version: 2, appliesDay: "2026-11-09", learned: [], active: [], dropped: [] });
     expect(memoryForDay(db, "2026-11-08").version).toBe(1);
     expect(memoryForDay(db, "2026-11-09").version).toBe(2);
   });
@@ -310,6 +323,16 @@ describe("반성 API", () => {
       expect(box.find((m) => m.type === "brain" && m.event.type === "reflection")!.event).toMatchObject({ ok: true, version: 2, applies_day: "2026-11-08" });
     } finally {
       dash.close();
+    }
+    // 반성 뒤 붙은 대시보드도 오늘(기록 시간대) 마지막 반성 사건을 다시 받는다(기록 DB reflection 줄에서)
+    const late: Record<string, any>[] = [];
+    const again = await openWebSocket(`${s.url.replace(/^http/, "ws")}/events`, { setup: (ws) => ws.on("message", (d) => late.push(JSON.parse(String(d)))) });
+    try {
+      const end = Date.now() + 3000;
+      while (!late.some((m) => m.type === "brain" && m.event.type === "reflection") && Date.now() < end) await new Promise((ok) => setTimeout(ok, 20));
+      expect(late.find((m) => m.type === "brain" && m.event.type === "reflection")).toMatchObject({ replay: true, event: { type: "reflection", ok: true, version: 2, applies_day: "2026-11-08", learned: [], active: [] } });
+    } finally {
+      again.close();
     }
   });
 
