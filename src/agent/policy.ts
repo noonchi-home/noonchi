@@ -21,6 +21,26 @@ export const CONFIRM_RULES: ConfirmRule[] = [
   { kind: "microwave", command: "start", reason: (l) => `${l} 시작은 사용자 승인이 필요합니다.` },
 ];
 
+/** 위험 가전을 켜라는 글을 알아보는 낱말 표(이 표 하나만 쓴다): 가전 종류 → 부르는 이름. 종류는 CONFIRM_RULES의 켜기·시작 대상과 같다(tests/policy.test.ts).
+ *  계획 검사(사람 단계 명령·알림 글, src/agent/planTools.ts)·관찰 모드 다시 알리기·부탁(src/agent/observer.ts)·실행 추적 tell·askCloser(src/act/track.ts)가 쓴다:
+ *  위험 가전을 켜라는 지시가 켜기 전 묻기(hand_device)를 거치지 않고 나가지 않게 한다. */
+export const RISKY_ON_NAMES: Partial<Record<DeviceKind, readonly string[]>> = {
+  cooktop: ["인덕션", "전기레인지", "가스레인지", "하이라이트", "가스불", "화구", "버너", "쿡탑"],
+  microwave: ["전자레인지"],
+};
+/** 켜는 말. 올려놓는 말(「인덕션에 올려」)과 끄는 말은 아니다. */
+const ON_WORDS = /켜|켤|켭|틀어|점화|가열해|가열하|돌려|돌리|시작해|시작하|작동시|작동해/;
+/** 켜지 말라는 말은 켜라는 말이 아니다(그 부분을 빼고 본다). */
+const NOT_ON = /(켜|켤|틀|돌리|시작하|작동시키)지\s*(마|말|않)|(켜|틀|돌리)면\s*안/g;
+
+/** 글이 위험 가전을 켜라는 말이면 그 가전 종류, 아니면 null. 이름이 없어도 대상(targetKind)이 위험 가전이고 켜는 말이 있으면 그 종류다. */
+export function riskyOnText(text: string, targetKind?: string | null): DeviceKind | null {
+  const t = text.replace(NOT_ON, "");
+  if (!ON_WORDS.test(t)) return null;
+  for (const [kind, names] of Object.entries(RISKY_ON_NAMES) as [DeviceKind, readonly string[]][]) if (names.some((n) => t.includes(n))) return kind;
+  return targetKind && Object.hasOwn(RISKY_ON_NAMES, targetKind) ? (targetKind as DeviceKind) : null;
+}
+
 /** 승인 대기에 「거절」로 답했을 때의 답. what: 「현관문 잠금 풀기」. */
 export const REFUSED_REPLY = (what: string) => `${josa(what, "은/는")} 하지 않을게요.`;
 

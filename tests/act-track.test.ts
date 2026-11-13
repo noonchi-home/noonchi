@@ -25,7 +25,7 @@ import type { CameraView } from "../src/phone/session.js";
 import { floorPlanFrom } from "../src/plan/route.js";
 import { SMALL_SCENE, smallFloor } from "./helpers/floor.js";
 import { standing } from "./helpers/poses.js";
-import { fillSteps, planCalls, planContext, ramenScripts, startFakePlanner, testPlanner, type FakePlanner } from "./helpers/planner.js";
+import { fillSteps, planCalls, planContext, ramenScripts, ramenSteps, startFakePlanner, testPlanner, type FakePlanner } from "./helpers/planner.js";
 import { makeHome } from "./helpers/home.js";
 import { memoryLessons, quietLabels } from "../src/act/lessons.js";
 import { det } from "./helpers/detectors.js";
@@ -35,7 +35,7 @@ const RAMEN = "라면 끓이기 알려 주기";
 const ramenDecision = (id = "pam-1", seq = 1): DecisionRecord => ({ ...decision, id, seq, action: RAMEN, prediction: { ...pred, task_index: 1 } });
 const kitchenFloor = () => floorPlanFrom({ ...structuredClone(SMALL_SCENE), objects: [...structuredClone(SMALL_SCENE.objects),
   { id: "cabinet_1", type: "kitchen_cabinet", room: "kitchen", plan: { position: [4.5, 3.5] } }, { id: "induction_1", type: "induction_counter", room: "kitchen", plan: { position: [6, 0.5] } }] });
-const cooktop = (state: string[]): WorldView["devices"][number] => ({ id: "induction_1", kind: "cooktop", label: "인덕션", status: state.join(" "), state: state as WorldView["devices"][number]["state"], active: false, changed_ms: 0, event_ms: null, started_ms: null, remaining_min: null, history: [] });
+const cooktop = (state: string[], history: WorldView["devices"][number]["history"] = []): WorldView["devices"][number] => ({ id: "induction_1", kind: "cooktop", label: "인덕션", status: state.join(" "), state: state as WorldView["devices"][number]["state"], active: false, changed_ms: 0, event_ms: null, started_ms: null, remaining_min: null, history });
 function coachSetup(over: Parameters<typeof setup>[0] = {}) {
   const plans = new PlanHub(kitchenFloor(), () => {}, () => "t");
   const hub = makeHome().hub;
@@ -699,7 +699,7 @@ describe("실행 추적: 코치 계획(손으로 켜는 위험 가전)", () => {
     seen.clock.t += 1_000;
     seen.t.tick();
     expect(seen.last()).toEqual(OFF);
-    w = { ...world([]), devices: [cooktop(["off"])] };
+    w = { ...world([]), devices: [cooktop(["off"], [{ attr: "power", from: "on", to: "off", at_ms: seen.clock.t }])] };
     seen.t.onWorld();
     expect(seen.last()).toEqual({ type: "command_clear", id: P });
 
@@ -741,6 +741,87 @@ describe("실행 추적: 코치 계획(손으로 켜는 위험 가전)", () => {
       "수납장으로 가 주세요", "냄비를 꺼내 주세요", "싱크대로 가 주세요", "냄비에 물을 받아 주세요", "인덕션으로 가 주세요", "냄비를 인덕션에 올려 주세요",
       ASK, "인덕션을 켜 주세요", "물이 끓을 때까지 기다려요.", "면과 스프를 넣어 주세요", "인덕션을 꺼 주세요", "라면이 다 됐어요.",
     ]);
+  });
+
+  it("끄기 안내는 켜라고 한 뒤에 새로 본 꺼짐으로만 지운다: 처음부터 남아 있던 꺼짐 값으로는 지우지 않는다", async () => {
+    let w = { ...world([]), devices: [cooktop(["off"])] };
+    const s = coachSetup({ w: () => w });
+    await toOn(s);
+    s.t.onAnswer(P, `${P}:7:hand`, "approve");
+    const onAt = s.clock.t;
+    s.t.onHeard("그만");
+    expect(s.last()).toEqual(OFF);
+    s.t.onWorld();
+    s.clock.t += 1_000;
+    s.t.tick();
+    expect(s.last()).toEqual(OFF);
+    // 켜라고 하기 전의 꺼짐 기록도 아니다
+    w = { ...world([]), devices: [cooktop(["off"], [{ attr: "power", from: "on", to: "off", at_ms: onAt - 1 }])] };
+    s.t.onWorld();
+    s.t.tick();
+    expect(s.last()).toEqual(OFF);
+    // 켜라고 한 뒤 켰다가 끈 것을 보면 지운다
+    s.clock.t += 1_000;
+    w = { ...world([]), devices: [cooktop(["off"], [{ attr: "power", from: "off", to: "on", at_ms: onAt + 500 }, { attr: "power", from: "on", to: "off", at_ms: s.clock.t }])] };
+    s.t.onWorld();
+    expect(s.last()).toEqual({ type: "command_clear", id: P });
+  });
+
+  it("끄기 안내가 떠 있는 동안 새 계획이 와도 안내를 지우지 않는다: 새 계획은 첫 명령(승인 질문 포함)을 미루고, 안내가 끝나면 그때 시작한다", async () => {
+    const s = coachSetup();
+    await toOn(s);
+    s.t.onAnswer(P, `${P}:7:hand`, "approve");
+    s.t.onHeard("그만");
+    expect(s.last()).toEqual(OFF);
+    s.clock.t += 1_000;
+    await s.decide(ramenDecision("pam-2", 2));
+    expect(s.t.current()).toEqual({ planId: "plan:pam-2", state: "planned" });
+    for (let i = 0; i < 20; i++) { s.clock.t += 1_000; s.t.tick(); }
+    expect(s.last()).toEqual(OFF);
+    expect(s.phone.some((m) => m.type === "command" && m.id === "plan:pam-2")).toBe(false);
+    expect(s.t.openCommand()).toMatchObject({ stepId: `${P}:off` });
+    // 안내의 답(말 「다 했어」)을 받으면 지우고 새 계획의 첫 명령을 보낸다
+    expect(s.t.onHeard("다 했어")).toMatchObject({ id: "done" });
+    expect(s.phone.slice(-2)).toEqual([{ type: "command_clear", id: P }, expect.objectContaining({ id: "plan:pam-2", step: "plan:pam-2:1", text: "수납장으로 가 주세요", speak: true })]);
+    expect(s.t.current()).toEqual({ planId: "plan:pam-2", state: "running" });
+  });
+
+  it("켠 위험 가전이 여럿이면 가전마다 끄기 안내를 차례로 보내고, 하나의 「완료」는 그 가전 안내만 지운다", async () => {
+    const MW = { kind: "do", label: "전자레인지 켜기", target: "sink_1", command: "전자레인지를 켜 주세요", hand_device: { id: "microwave_1", to: "on" }, caution: "음식이 뜨거워져요.", timeout_s: 120 };
+    const s = coachSetup({ handDevices: () => [{ id: "induction_1", kind: "cooktop", label: "인덕션" }, { id: "microwave_1", kind: "microwave", label: "전자레인지" }] });
+    const steps = ramenSteps({ cabinet: "cabinet_1", sink: "sink_1", cooktop: "induction_1", cooktopDevice: "induction_1" });
+    llm.scripts[RAMEN] = () => [planCalls([steps[6]!, MW, steps[11]!, { ...MW, label: "전자레인지 끄기", command: "전자레인지를 꺼 주세요", hand_device: { id: "microwave_1", to: "off" }, caution: undefined }])];
+    await s.decide(ramenDecision());
+    s.t.onAnswer(P, `${P}:1:hand`, "approve");
+    s.t.onAnswer(P, `${P}:1`, "done");
+    expect(s.last()).toMatchObject({ step: `${P}:2:hand`, text: "음식이 뜨거워져요. 전자레인지를 켤까요?" });
+    s.t.onAnswer(P, `${P}:2:hand`, "approve");
+    s.t.onAnswer(P, `${P}:2`, "done");
+    expect(s.last()).toMatchObject({ step: `${P}:3`, text: "인덕션을 꺼 주세요" });
+    s.t.onHeard("그만");
+    expect(s.last()).toEqual(OFF);
+    expect(s.t.onAnswer(P, `${P}:off`, "done")).toBe(true);
+    expect(s.phone.slice(-2)).toEqual([{ type: "command_clear", id: P }, { ...OFF, step: `${P}:off:2`, text: "전자레인지를 꺼 주세요" }]);
+    expect(s.t.openCommand()).toMatchObject({ stepId: `${P}:off:2`, text: "전자레인지를 꺼 주세요" });
+    expect(s.t.onAnswer(P, `${P}:off`, "done")).toBe(false);
+    expect(s.t.onAnswer(P, `${P}:off:2`, "done")).toBe(true);
+    expect(s.last()).toEqual({ type: "command_clear", id: P });
+    expect(s.t.openCommand()).toBeNull();
+  });
+
+  it("위험 가전을 켜라는 글로는 다시 알리기(tell)·사람 부탁(askCloser)을 보내지 않는다(그 판은 원래 명령 그대로)", async () => {
+    const s = coachSetup();
+    await s.decide(ramenDecision());
+    for (const n of [1, 2, 3]) s.t.onAnswer(P, `${P}:${n}`, "done");
+    const before = s.last();
+    expect(s.t.tell(P, `${P}:4`, "먼저 인덕션을 켜 주세요")).toBe(false);
+    expect(s.t.askCloser(P, `${P}:4`, "인덕션을 켜 주세요")).toBe(false);
+    expect(s.last()).toEqual(before);
+    expect(s.t.toldAt()).toBeNull();
+    for (const n of [4, 5]) s.t.onAnswer(P, `${P}:${n}`, "done");
+    // 대상이 인덕션인 단계에서는 이름 없이 「켜 주세요」도 막는다
+    expect(s.t.tell(P, `${P}:6`, "불을 켜 주세요")).toBe(false);
+    expect(s.t.tell(P, `${P}:6`, "냄비를 인덕션에 올려 주세요")).toBe(true);
   });
 
   it("컵 치우기(코치 아님) 계획에는 coaching()이 거짓이다", async () => {

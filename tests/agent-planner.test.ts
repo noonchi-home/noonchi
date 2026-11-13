@@ -749,6 +749,24 @@ describe("계획 모드: 계획 검사", () => {
       expect(new PlanDraft(cctx()).add({ step: 1, ...off, until: { device: "induction_1", state: "off" } })).toMatchObject({ ok: true });
     });
 
+    it("위험 가전을 켜라는 말은 hand_device(위험 가전, to on)가 있는 do로만 받는다: 표시가 빠진 do·다른 가전 표시·다른 단계 종류·알림 글은 버린다", () => {
+      const why = /위험 가전을 켜라는 말은 그 가전의 hand_device\(to on\)가 있는 do 단계로만 씁니다/;
+      cbad({ ...on, hand_device: undefined, caution: undefined }, why);
+      cbad({ ...on, hand_device: undefined, caution: undefined, command: "불을 켜 주세요" }, why);
+      cbad({ ...on, hand_device: { id: "ac_living", to: "on" }, caution: undefined }, why);
+      cbad({ ...on, hand_device: { id: "induction_1", to: "off" }, caution: undefined }, why);
+      cbad({ ...on, hand_device: undefined, caution: undefined, target: "sink_1", command: "전자레인지를 돌려 주세요" }, why);
+      cbad({ kind: "place", label: "냄비 올리기", target: "induction_1", command: "냄비를 올리고 인덕션을 켜 주세요", timeout_s: 120 }, why);
+      cbad({ kind: "go", label: "인덕션으로 가기", target: "induction_1", command: "인덕션으로 가서 켜 주세요", timeout_s: 120 }, why);
+      cbad({ kind: "say", label: "알림", text: "이제 인덕션을 켜요.", timeout_s: 10 }, /say로 위험 가전을 켜라고 하지 않습니다/);
+      // 켜라는 말이 아닌 것은 그대로 받는다
+      for (const s of [
+        { kind: "place", label: "냄비 올리기", target: "induction_1", command: "냄비를 인덕션에 올려 주세요", timeout_s: 120 },
+        { kind: "do", label: "기다리기", target: "induction_1", command: "인덕션은 아직 켜지 말아 주세요", timeout_s: 120 },
+        off, on,
+      ]) expect(new PlanDraft(cctx()).add({ step: 1, ...s }), JSON.stringify(s)).toMatchObject({ ok: true });
+    });
+
     it("위험 목록이 아닌 가전(에어컨)을 손으로 켜는 do는 caution 없이 통과하고 끄기가 없어도 끝낸다", () => {
       const d = new PlanDraft(cctx());
       ok(d, 1, { kind: "do", label: "에어컨 켜기", target: "table_1", command: "에어컨을 켜 주세요", hand_device: { id: "ac_living", to: "on" }, timeout_s: 120 });

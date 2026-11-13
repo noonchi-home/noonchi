@@ -17,7 +17,7 @@ import type { FloorPlan } from "../plan/floor.js";
 import { DEVICE_VERB } from "../plan/labels.js";
 import { ConditionSchema, checkCondition, type Condition, type ConditionHome } from "../world/conditions.js";
 import type { DecisionRecord } from "../world/decide.js";
-import { CONFIRM_RULES } from "./policy.js";
+import { CONFIRM_RULES, riskyOnText } from "./policy.js";
 import { TOOLS, type ToolDef, type ToolResult } from "./tools.js";
 
 /** 에이전트 단계 종류. go·pick·place·do는 사람이 하는 일(실제 폰 명령, do는 그 자리에서 하는 일: 따르기·붓기), ask 질문, say 알림, device 가전 조작, wait 기다리기. */
@@ -336,7 +336,12 @@ export class PlanDraft {
     if (human) {
       need("command", a.command !== undefined);
       if (a.command !== undefined && !/주세요$/.test(a.command.trim())) errors.push("command는 사람에게 하는 부탁이라 「주세요」로 끝나야 합니다(예: 컵을 들어 주세요)");
+      // 위험 가전을 켜라는 말은 그 가전을 손으로 켜는 do(hand_device to on)로만: 실행 추적이 켜기 전에 묻고 끄기 단계를 검사한다
+      const onKind = a.command !== undefined ? riskyOnText(a.command, devices.find((d) => d.id === a.target)?.kind) : null;
+      const handOn = a.kind === "do" && a.hand_device?.to === "on" && riskyHand({ hand: { deviceId: a.hand_device.id, to: "on" } }, devices);
+      if (onKind && !handOn) errors.push("위험 가전을 켜라는 말은 그 가전의 hand_device(to on)가 있는 do 단계로만 씁니다");
     } else none("command");
+    if (a.kind === "say" && a.text !== undefined && riskyOnText(a.text)) errors.push("say로 위험 가전을 켜라고 하지 않습니다. 켜는 일은 hand_device가 있는 do 단계로 씁니다");
     if (a.kind !== "ask") { none("question"); none("choices"); }
     if (a.kind !== "say") none("text");
     if (a.kind !== "device") { none("tool"); none("args"); }

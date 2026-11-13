@@ -149,6 +149,16 @@ describe("관찰 모드: 코치 계획의 다른 행동·들은 말", () => {
     expect(await new Observer({ provider: llm!.provider() }).decide(off())).toMatchObject({ tool: "wait", invalid: expect.stringContaining("괄호 설명") });
   });
 
+  it("위험 가전을 켜라는 tell_person·ask_person 글은 받지 않는다(켜기 전 묻기를 건너뛰지 않게). 두 차례 다 그러면 기다리기", async () => {
+    await start((_input, round) => [round === 0 ? ["tell_person", { text: "먼저 인덕션을 켜 주세요", reason: "순서가 달라서" }] : ["tell_person", { text: TELL, reason: "순서가 달라서" }]]);
+    expect(await new Observer({ provider: llm!.provider() }).decide(off())).toEqual({ tool: "tell_person", text: TELL, reason: "순서가 달라서" });
+    expect(toolOutputs(llm!.bodies()[1])[0].error).toContain("위험 가전을 켜라는 말");
+    llm!.script = () => [["tell_person", { text: "인덕션을 켜 주세요", reason: "다음 단계라서" }]];
+    expect(await new Observer({ provider: llm!.provider() }).decide(heard())).toMatchObject({ tool: "wait", invalid: expect.stringContaining("위험 가전을 켜라는 말") });
+    llm!.script = () => [["ask_person", { text: "전자레인지를 돌려 주세요", reason: "보려고" }]];
+    expect(await new Observer({ provider: llm!.provider() }).decide(stalled())).toMatchObject({ tool: "wait", invalid: expect.stringContaining("위험 가전을 켜라는 말") });
+  });
+
   it("off_track에서 pass_on·ask_person·look_closer를 부르면 거절한다", async () => {
     await start((_input, round) => [round === 0 ? ["pass_on", { reason: "상관없어서" }] : ["wait", { reason: "지금 단계를 하는 중이라" }]]);
     expect(await new Observer({ provider: llm!.provider() }).decide(off())).toEqual({ tool: "wait", reason: "지금 단계를 하는 중이라" });

@@ -29,7 +29,7 @@ export function sayLine({ plan, command, world, nowMs, look = null, left = null,
 }): string {
   if (look && nowMs - look.atMs <= SAY_LOOK_MS) return SAY_TEXT.closer(look.place);
   // 끄기 안내(켠 채 닫힌 계획 뒤)가 떠 있는 동안
-  if (command?.type === "command" && command.step.endsWith(":off")) return SAY_TEXT.offAsked;
+  if (command?.type === "command" && /:off(:\d+)?$/.test(command.step)) return SAY_TEXT.offAsked;
   if (plan && OPEN.has(plan.status)) {
     if (told && nowMs - told.atMs <= SAY_TOLD_MS) return SAY_TEXT.retold;
     if (quiet) return SAY_TEXT.quiet(quiet);

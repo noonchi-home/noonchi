@@ -5,8 +5,10 @@
 // 그 판단 줄에 「그대로 둠」만 남긴다(leftGapMs에 한 번). 진행 중인 다른 계획은 바꾸지 않는다. 대시보드 말풍선 카드는 leftAt()으로 그 시각을 본다.
 // 손으로 켜는 위험 가전(코치 계획의 do 단계, AgentStep.hand가 위험 목록 가전을 켬): 그 단계가 되면 명령보다 먼저 안전 문구와 함께 묻는다(승인·거절, 단계 id :hand).
 // 승인 뒤에만 켜라는 명령을 보내고, 거절이면 취소로 닫는다. 답은 기억하지 않는다(다음 판에도 또 묻는다). 묻는 동안은 「완료」·말·비전으로 넘어가지 않는다.
-// 켜라는 명령을 보낸 가전은 끄는 단계가 끝날 때까지 「켠 것」(hot)으로 본다. 켠 채 계획이 닫히면(그만·시간 초과·실패·새 계획) 닫은 뒤 실제 폰에
-// 끄라는 안내(단계 id :off, 「완료」 하나)를 한 번 보낸다. 「완료」·말 답, 그 가전 꺼짐, offHoldMs 중 먼저 오는 것으로 지운다.
+// 켜라는 명령을 보낸 가전은 끄는 단계가 끝날 때까지 「켠 것」(hot, 켜라고 한 시각)으로 본다. 켠 채 계획이 닫히면(그만·시간 초과·실패·새 계획) 닫은 뒤 실제 폰에
+// 가전마다 끄라는 안내(단계 id :off, 둘째부터 :off:2…, 「완료」 하나)를 차례로 보낸다. 안내 하나는 「완료」·말 답, 켜라고 한 뒤에 새로 본 그 가전 꺼짐(가전 이력),
+// offHoldMs 중 먼저 오는 것으로 지우고 다음 가전 안내를 띄운다. 안내가 남아 있는 동안 새 계획은 첫 명령(승인 질문 포함)을 미루고, 안내가 다 끝나면 시작한다.
+// 위험 가전을 켜라는 글(src/agent/policy.ts riskyOnText)로는 다시 알리기(tell)·사람 부탁(askCloser)을 보내지 않는다.
 // 코치 행동(TaskSpec.coach) 계획이 열려 있거나 만드는 중이면 coaching()이 참이다: 그동안 판단 호출(PAM)을 쉰다.
 // 다른 행동 알림(코치 계획, 관찰 모드 계기 off_track): 사람 단계가 진행 중인데 의미 있는 변화(사람 방·가전 상태·가전 설비 상태)가 왔고 그 단계가 넘어가지 않았거나,
 // 이동이 아닌 단계에서 폰이 그 단계 자리를 떠나 다른 평면도 자리 가까이로 갔으면 strayed를 부른다(결정론). 단계마다 strayMax번(받은 것만), strayGapMs에 한 번.
@@ -52,9 +54,10 @@ import { AGAIN_TEXT, APPROVAL_TEXT, CAUTION_TEXT, EXEC_TEXT, VISION_TEXT, placeS
 import { roomAt } from "../plan/route.js";
 import { OBJECT_NAME, PLACE_UNKNOWN, STATE_TEXT, onSurface } from "../world/labels.js";
 import { ConditionWatch, type Condition, type ConditionContext } from "../world/conditions.js";
-import { NEAR_M, PHONE_NEAR_M } from "../world/vocab.js";
+import { DEVICE_STATES, NEAR_M, PHONE_NEAR_M } from "../world/vocab.js";
 import type { DecisionRecord } from "../world/decide.js";
 import { approvalNeed, taskKey, type ApprovalAnswer, type ApprovalBook } from "../agent/approval.js";
+import { riskyOnText } from "../agent/policy.js";
 import { HUMAN_KINDS, objectNames, riskyHand, type AgentPlan, type AgentStep, type PlanResult } from "../agent/planTools.js";
 import type { ToolResult } from "../agent/tools.js";
 import type { CheckResult } from "./check.js";
@@ -137,6 +140,15 @@ export interface Stray {
   changes: string[]; signal: AbortSignal;
 }
 
+/** 끄기 안내 하나: 그 가전과 켜라고 한 시각, 실제 폰 명령의 계획·단계 id와 글. */
+interface OffNote { planId: string; step: string; deviceId: string; onAt: number; text: string }
+
+/** 그 가전이 켜라고 한 시각 뒤에 꺼졌다고 새로 보였는가(지금 꺼짐이고, 그 뒤 가전 이력에 꺼짐으로 바뀐 줄이 있다). 처음부터 남아 있던 꺼짐 값은 아니다. */
+function offSince(d: WorldView["devices"][number] | undefined, onAt: number): boolean {
+  const off = DEVICE_STATES.off;
+  return !!d && d.state.includes("off") && d.history.some((h) => h.at_ms > onAt && h.attr === off.attr && h.to === off.value && h.from !== off.value);
+}
+
 /** 다른 행동의 계기가 되는 변화: 사람 방, 가전 상태, 가전 설비 상태. */
 const STRAY_KINDS: ReadonlySet<WorldChangeKind> = new Set<WorldChangeKind>(["person_room", "device", "fixture"]);
 /** 방금 본 변화 줄에 넣지 않는 것: 프레임마다 오는 줄과 들은 말. */
@@ -174,8 +186,8 @@ interface Run {
   looks: number; lookAt: number; stepEnd: AbortController | null;
   /** 같은 행동 다시 계획 간격을 세려고 적은 시각(Job.at). */
   gapAt: number;
-  /** 손으로 켜라는 명령을 보낸 위험 가전 id(끄는 단계가 끝나면 뺀다). */
-  hot: Set<string>;
+  /** 손으로 켜라는 명령을 보낸 위험 가전 id → 켜라고 한 시각(끄는 단계가 끝나면 뺀다). */
+  hot: Map<string, number>;
   /** 이 단계에서 받은 다른 행동 알림 수와 마지막으로 부른 시각, 폰이 가까이 간 다른 자리(그 자리마다 한 번). */
   strays: number; strayAt: number; strayNear: string | null;
   /** tell로 바꿔 띄운 글: 되돌릴 원래 명령 글과 되돌릴 시각. */
@@ -211,8 +223,9 @@ export class ExecutionTracker {
   private leftNoteAt = Number.NEGATIVE_INFINITY;
   private leftWallAt: number | null = null;
   private readonly clock: { now(): number };
-  /** 켠 채 닫힌 계획의 끄기 안내(실제 폰에 떠 있는 동안). */
-  private reminder: { sent: PlannedCommand; at: number; devices: string[] } | null = null;
+  /** 켠 채 닫힌 계획의 끄기 안내: 실제 폰에 떠 있는 것(reminder, 띄운 시각)과 그 뒤에 띄울 것(offQueue). 가전마다 하나. */
+  private reminder: { sent: PlannedCommand; at: number; note: OffNote } | null = null;
+  private offQueue: OffNote[] = [];
   /** 방금 본 변화 줄(다른 행동 알림에 넣는다). */
   private seen: { at: number; text: string }[] = [];
   /** 마지막으로 tell을 보낸 시각(Date.now 시계, 대시보드 말풍선 카드). */
@@ -349,12 +362,13 @@ export class ExecutionTracker {
       if (open) this.finish(open, "failed", EXEC_TEXT.stopped, "cancelled");
       return STOP;
     }
-    if (!open) {
-      // 끄기 안내가 떠 있으면 「완료」·「다 했어」로 지운다
-      const done = this.reminder ? matchChoice(text, [STEP_DONE]) : null;
+    // 끄기 안내가 떠 있으면(새 계획은 시작을 미루는 중) 「완료」·「다 했어」로 지운다
+    if (this.reminder && !this.shown()) {
+      const done = matchChoice(text, [STEP_DONE]);
       if (done) this.clearReminder();
       return done;
     }
+    if (!open) return null;
     const r = this.shown();
     if (!r) return null;
     const picked = matchChoice(text, choicesOf(r, this.stepOf(r)));
@@ -427,6 +441,7 @@ export class ExecutionTracker {
     const said = text.trim();
     if (this.stopped || !r || r.state !== "running" || r.asking || !r.sent || !step || !HUMAN_KINDS.includes(step.kind)) return false;
     if (r.plan.view.id !== planId || step.id !== stepId || r.sent.step !== stepId || !/주세요$/.test(said)) return false;
+    if (this.riskyOn(said, step)) return false;
     const now = this.clock.now();
     r.told = { text: r.told?.text ?? r.sent.text, until: now + this.cfg.tellHoldMs };
     r.spokeAt = now;
@@ -479,6 +494,7 @@ export class ExecutionTracker {
     const said = text.trim();
     if (this.stopped || !r || r.state !== "running" || r.asking || !r.sent || !step || !HUMAN_KINDS.includes(step.kind)) return false;
     if (r.plan.view.id !== planId || step.id !== stepId || r.sent.step !== stepId || !/주세요$/.test(said)) return false;
+    if (this.riskyOn(said, step)) return false;
     r.spokeAt = this.clock.now();
     r.helped = true;
     r.quietOn = false;
@@ -558,6 +574,12 @@ export class ExecutionTracker {
     return devices ? riskyHand(step, devices) : true;
   }
 
+  /** 위험 가전을 켜라는 글인가(그 단계 대상이 위험 가전이면 이름 없이 「켜 주세요」도). 그런 글은 켜기 전 묻기를 거치지 않고 보내지 않는다. */
+  private riskyOn(text: string, step: AgentStep): boolean {
+    const kind = step.target ? this.o.handDevices?.().find((d) => d.id === step.target)?.kind : undefined;
+    return riskyOnText(text, kind) !== null;
+  }
+
   /** 손으로 다루는 가전 이름(묻는 글·끄기 안내): 그 가전이 평면도에 있으면 종류의 짧은 이름(인덕션), 아니면 이 집 가전 이름, 그것도 없으면 단계 대상 자리 이름. */
   private handLabel(deviceId: string, target: string | null = null): string {
     const type = this.o.floor().objects.get(deviceId)?.type;
@@ -571,25 +593,47 @@ export class ExecutionTracker {
     if (answer === "reject" || !step?.hand) return this.finish(r, "failed", APPROVAL_TEXT.refused, "cancelled");
     const now = this.clock.now();
     Object.assign(r, { asking: null, stepAt: now, spokeAt: now, visionAt: now, deadline: now + step.timeoutMs, watch: step.until ? new ConditionWatch(step.until) : null });
-    r.hot.add(step.hand.deviceId);
+    r.hot.set(step.hand.deviceId, now);
     this.show(r, step);
   }
 
-  /** 끄기 안내를 지운다. */
+  /** 떠 있는 끄기 안내를 지우고 다음 가전 안내를 띄운다. 안내가 다 끝났으면 미뤄 둔 새 계획을 시작해 본다. */
   private clearReminder(): void {
     const off = this.reminder;
     if (!off) return;
     this.reminder = null;
     this.o.toPhone({ type: "command_clear", id: off.sent.id });
+    this.nextReminder();
   }
 
-  /** 끄기 안내: 그 가전이 모두 꺼졌거나 offHoldMs가 지나면 지운다. */
+  /** 다음 끄기 안내를 띄운다(이미 켜라고 한 뒤 꺼진 것이 보인 가전은 건너뛴다). 남은 것이 없으면 미뤄 둔 새 계획을 시작해 본다. */
+  private nextReminder(): void {
+    if (this.stopped || this.reminder) return;
+    const devices = this.o.world().devices;
+    let note: OffNote | undefined;
+    while ((note = this.offQueue.shift()) && offSince(devices.find((d) => d.id === note!.deviceId), note.onAt));
+    if (note) {
+      const sent: PlannedCommand = {
+        type: "command", id: note.planId, step: note.step, text: note.text, vision: null,
+        choices: [{ id: STEP_DONE.id, label: STEP_DONE.label }], target: null, speak: true,
+      };
+      this.reminder = { sent, at: this.clock.now(), note };
+      this.o.toPhone(sent);
+      return;
+    }
+    const r = this.run;
+    if (r?.state === "planned" && !r.asking) {
+      r.since = this.clock.now();
+      this.tryStart(r, false);
+    }
+  }
+
+  /** 끄기 안내: 켜라고 한 뒤에 그 가전이 꺼진 것이 새로 보였거나 offHoldMs가 지나면 지운다(다음 가전 안내로). */
   private reminderTick(): void {
     const off = this.reminder;
     if (!off) return;
-    const devices = this.o.world().devices;
-    const allOff = off.devices.every((id) => devices.find((d) => d.id === id)?.state.includes("off"));
-    if (allOff || this.clock.now() - off.at > this.cfg.offHoldMs) this.clearReminder();
+    const d = this.o.world().devices.find((x) => x.id === off.note.deviceId);
+    if (offSince(d, off.note.onAt) || this.clock.now() - off.at > this.cfg.offHoldMs) this.clearReminder();
   }
 
   /** 판단 뒤에 가까이 보기가 그 행동 대상 종류 물건의 볼 면을 바꿨는가: 사라지지 않은 그 종류 물건의 볼 면 가까이 보기 횟수(closer_rev)가
@@ -668,13 +712,11 @@ export class ExecutionTracker {
     const run: Run = {
       plan: r.plan, decision: d, state: "decided", since: now, at: -1, stepAt: now, spokeAt: now, visionAt: now, sent: null,
       asking: null, askAt: now, watch: null, others, alias: new Map([...ids].map((id) => [id, id])), carried: new Set(), placeAt: (id) => (id ? this.o.floor().objects.get(id)?.position ?? null : null), deadline: now, again: false, device: "idle", gen: 0,
-      looks: 0, lookAt: Number.NEGATIVE_INFINITY, stepEnd: null, gapAt: job.at, hot: new Set(),
+      looks: 0, lookAt: Number.NEGATIVE_INFINITY, stepEnd: null, gapAt: job.at, hot: new Map(),
       strays: 0, strayAt: Number.NEGATIVE_INFINITY, strayNear: null, told: null, helped: false,
       quiet: taskOf(r.plan.task)?.coach ? quietLabels(this.o.lessons?.get(r.plan.task) ?? null) : new Set(), quietOn: false, outcomes: [],
     };
     this.run = run;
-    // 새 계획의 명령이 실제 폰 자리를 쓴다: 앞 계획의 끄기 안내는 내린다
-    if (this.reminder) this.reminder = null;
     this.o.plans.onDecision(r.plan.view);
     this.step(run, "planned");
     this.tryStart(run, false);
@@ -693,6 +735,8 @@ export class ExecutionTracker {
       this.ungap(r.decision, r.gapAt);
       return this.finish(r, "failed", EXEC_TEXT.closerNewer, "cancelled");
     }
+    // 끄기 안내가 남아 있으면 첫 명령(승인 질문 포함)을 미룬다: 안내가 다 끝나면 nextReminder가 다시 부른다
+    if (this.reminder || this.offQueue.length) return;
     const c = this.o.check(r.decision, r.plan.view);
     if (!c.ok) {
       if (last) this.finish(r, "failed", c.text);
@@ -1029,16 +1073,15 @@ export class ExecutionTracker {
       this.o.toPhone({ type: "command_clear", id: r.plan.view.id });
     }
     if (close) this.o.plans.close(r.plan.view.id, close);
-    // 손으로 켠 위험 가전이 켜진 채 닫혔다: 끄라고 한 번 알린다(「완료」·말·그 가전 꺼짐·offHoldMs로 지운다)
+    // 손으로 켠 위험 가전이 켜진 채 닫혔다: 가전마다 끄라고 차례로 알린다(「완료」·말·켜라고 한 뒤 새로 본 꺼짐·offHoldMs로 하나씩 지운다)
     if (r.hot.size && !this.stopped) {
-      const devices = [...r.hot];
+      const id = r.plan.view.id;
+      const seq = this.offQueue.filter((n) => n.planId === id).length + (this.reminder?.note.planId === id ? 1 : 0);
+      [...r.hot].forEach(([deviceId, onAt], i) => this.offQueue.push({
+        planId: id, step: seq + i === 0 ? `${id}:off` : `${id}:off:${seq + i + 1}`, deviceId, onAt, text: CAUTION_TEXT.off(this.handLabel(deviceId)),
+      }));
       r.hot.clear();
-      const sent: PlannedCommand = {
-        type: "command", id: r.plan.view.id, step: `${r.plan.view.id}:off`, text: CAUTION_TEXT.off(this.handLabel(devices[0]!)), vision: null,
-        choices: [{ id: STEP_DONE.id, label: STEP_DONE.label }], target: null, speak: true,
-      };
-      this.reminder = { sent, at: this.clock.now(), devices };
-      this.o.toPhone(sent);
+      this.nextReminder();
     }
   }
 

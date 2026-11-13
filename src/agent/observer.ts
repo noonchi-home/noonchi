@@ -10,6 +10,7 @@ import type { StepStatus } from "../contract/plan.js";
 import type { WorldView } from "../contract/world.js";
 import { estimateCostUsd, hasPrice } from "../infer/cost.js";
 import { copyRules } from "../plan/copy.js";
+import { riskyOnText } from "./policy.js";
 import type { LlmProvider, StepUsage, ToolCall } from "./agent.js";
 import { worldLines } from "./planInput.js";
 import type { ToolDef } from "./tools.js";
@@ -156,6 +157,8 @@ function checkChoice(call: ToolCall, s: ObserveSituation): ObserveChoice | strin
     if (!/주세요$/.test(text)) return `text는 사람에게 하는 부탁이라 「주세요」로 끝나야 합니다. 예: ${name === "ask_person" ? "싱크대 안이 보이게 폰을 가까이 대 주세요" : "먼저 물을 받아 주세요"}`;
     const hit = copyRules(text);
     if (hit.length) return `text가 화면 글 규칙(${hit.join(", ")})에 맞지 않습니다`;
+    // 위험 가전을 켜라는 말은 실행 추적이 켜기 전에 묻는 단계에서만 나간다
+    if (riskyOnText(text)) return "위험 가전을 켜라는 말은 보내지 않습니다. 지금 할 일 가운데 켜는 것이 아닌 일을 알리거나 wait";
     return { tool: name, text, reason };
   }
   return { tool: "wait", reason };
