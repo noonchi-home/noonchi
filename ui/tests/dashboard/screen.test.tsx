@@ -286,31 +286,41 @@ describe("대시보드 생각 말풍선(마스코트 위)", () => {
   const now = () => [...thought().querySelectorAll<HTMLElement>("[data-thought-line]")].at(-1)!;
   const chips = () => [...now().parentElement!.querySelectorAll<HTMLElement>("[data-slot=status]")];
 
-  it.each([1, 2, 3, 4])("%i: PAM의 생각 한 문장과 그 아래 칩 둘 「상태 · …」「판단 · 행동 이름」을 보인다", (n) => {
+  it.each([1, 2, 3, 4])("%i: PAM의 생각 한 문장과 그 아래 칩 둘 「상태 · …」「눈치 · 행동 이름」을 보인다", (n) => {
     draw(screenAt(n));
     expect(thought()).toHaveAttribute("data-thought", "shown");
     expect(thought().style.opacity).toBe("1");
     expect(thought()).toHaveAttribute("aria-hidden", "false");
     expect(now()).toHaveTextContent(REASON);
-    expect(chips().map((c) => c.textContent)).toEqual([`상태 · ${LEFT_CUP_STATE}`, `판단 · ${CLEAR_CUP}`]);
+    expect(chips().map((c) => c.textContent)).toEqual([`상태 · ${LEFT_CUP_STATE}`, `눈치 · ${CLEAR_CUP}`]);
     expect(bubble().contains(now())).toBe(true);
   });
 
-  it("컵 갈래: 계획이 없는 그대로 두기도 생각 한 문장과 칩 둘 「상태 · 컵을 두고 자리를 뜸」「판단 · 컵 그대로 두기」를 보이고, 물 채워 주기는 「상태 · 먹거나 마시는 중」「판단 · 컵에 물 채워 주기」다", () => {
+  it("컵 갈래: 계획이 없는 그대로 두기도 생각 한 문장과 칩 둘 「상태 · 컵을 두고 자리를 뜸」「눈치 · 컵 그대로 두기」를 보이고, 물 채워 주기는 「상태 · 먹거나 마시는 중」「눈치 · 컵에 물 채워 주기」다", () => {
     const of = (b: Branch) => thoughtOf(reduceDash(EMPTY_DASH, branchDecision(b, 1), 0))!;
     const { rerender } = draw(screenAt(0, { thought: of(BRANCHES.leave), say: LEFT_SAY }));
     expect(thought()).toHaveAttribute("data-thought", "shown");
     expect(now()).toHaveTextContent(BRANCHES.leave.reasoning);
-    expect(chips().map((c) => c.textContent)).toEqual(["상태 · 컵을 두고 자리를 뜸", "판단 · 컵 그대로 두기"]);
+    expect(chips().map((c) => c.textContent)).toEqual(["상태 · 컵을 두고 자리를 뜸", "눈치 · 컵 그대로 두기"]);
     rerender(<DashboardScreen {...screenAt(1, { thought: of(BRANCHES.water) })} />);
-    expect(chips().map((c) => c.textContent)).toEqual(["상태 · 먹거나 마시는 중", "판단 · 컵에 물 채워 주기"]);
+    expect(chips().map((c) => c.textContent)).toEqual(["상태 · 먹거나 마시는 중", "눈치 · 컵에 물 채워 주기"]);
     rerender(<DashboardScreen {...screenAt(1, { thought: of(BRANCHES.cola) })} />);
-    expect(chips().map((c) => c.textContent)).toEqual(["상태 · TV 보는 중", "판단 · 컵에 콜라 따라 주기"]);
+    expect(chips().map((c) => c.textContent)).toEqual(["상태 · TV 보는 중", "눈치 · 컵에 콜라 따라 주기"]);
     // 코치 판단: 진행 중에는 PAM을 쉬므로 이 말풍선이 계획 끝까지 남는다
     const plan = coachPlanAt(2);
     rerender(<DashboardScreen {...screenAt(2, { plan, step: plan.steps[1]!, thought: of(COACH), say: COACH_SAY.quiet })} />);
     expect(now()).toHaveTextContent(COACH.reasoning);
-    expect(chips().map((c) => c.textContent)).toEqual(["상태 · 요리를 시작함", "판단 · 라면 끓이기 알려 주기"]);
+    expect(chips().map((c) => c.textContent)).toEqual(["상태 · 요리를 시작함", "코치 · 라면 끓이기 알려 주기"]);
+  });
+
+  it("배운 규칙이 있는 행동이면 앞 칩이 「습관 · 상태」(상태를 모르면 「습관 · 배운 규칙」)이고 뒤 칩은 「눈치 · 행동」이다. 칩 두 개와 줄 높이는 그대로다", () => {
+    const aircon = { ...THOUGHT, action: "에어컨 켜기", habit: true };
+    const { rerender } = draw(screenAt(0, { thought: { ...aircon, state: "TV 보는 중" } }));
+    expect(chips().map((c) => c.textContent)).toEqual(["습관 · TV 보는 중", "눈치 · 에어컨 켜기"]);
+    rerender(<DashboardScreen {...screenAt(0, { thought: { ...aircon, state: null } })} />);
+    expect(chips().map((c) => c.textContent)).toEqual(["습관 · 배운 규칙", "눈치 · 에어컨 켜기"]);
+    const row = now().parentElement!.querySelector<HTMLElement>("[data-thought-chips]")!;
+    for (const c of ["h-[26px]", "overflow-hidden"]) expect(row.className.split(/\s+/), c).toContain(c);
   });
 
   it("PAM이 대기(행동 없음)면 말풍선을 숨긴다: 칸은 그대로 두고 opacity 0이며 읽어 주지 않는다", () => {
@@ -334,9 +344,9 @@ describe("대시보드 생각 말풍선(마스코트 위)", () => {
     expect(thought().textContent).toBe("");
   });
 
-  it("상태를 모르면(서버가 못 찾았거나 이름표가 없는 상태) 「상태」 칩을 숨기고 「판단」 칩만 보인다", () => {
+  it("상태를 모르면(서버가 못 찾았거나 이름표·트리거가 없는 상태) 「상태」 칩을 숨기고 「눈치·코치」 칩만 보인다", () => {
     draw(screenAt(2, { thought: { ...THOUGHT, state: null } }));
-    expect(chips().map((c) => c.textContent)).toEqual([`판단 · ${CLEAR_CUP}`]);
+    expect(chips().map((c) => c.textContent)).toEqual([`눈치 · ${CLEAR_CUP}`]);
   });
 
   it("21st.dev 부품으로 그린다: 말풍선과 꼬리 점 둘은 ThoughtBubble, 칩은 Status다. 말풍선 카드(유리 판 + Item)와 모양이 다르다", () => {
@@ -355,7 +365,7 @@ describe("대시보드 생각 말풍선(마스코트 위)", () => {
     const rect = atScreen(width, height);
     try {
       const L = pageLayout({ width, height }, MASCOT);
-      const long = { reasoning: REASON.repeat(6), state: LEFT_CUP_STATE.repeat(5), action: CLEAR_CUP.repeat(8) };
+      const long = { ...THOUGHT, reasoning: REASON.repeat(6), state: LEFT_CUP_STATE.repeat(5), action: CLEAR_CUP.repeat(8) };
       const seen = new Set<string>();
       for (const p of [screenAt(1), screenAt(4), screenAt(2, { thought: long }), screenAt(2, { thought: { ...THOUGHT, state: null } }), screenAt(0)]) {
         const { unmount } = draw(p);

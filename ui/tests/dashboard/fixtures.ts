@@ -9,6 +9,7 @@ import { hubOf } from "../../src/dashboard/hub";
 import { createSeenStore, type SeenStore } from "../../src/dashboard/masks";
 import type { PhoneSlot } from "../../src/dashboard/PhonePane";
 import type { Thought } from "../../src/dashboard/data";
+import { taskOf } from "../../../src/act/tasks.ts";
 import { BOX_NAME } from "../../src/dashboard/words";
 import type { SeenEvent } from "../../../src/contract/events.ts";
 
@@ -93,8 +94,8 @@ export const SAY = ["식탁을 보고 있어요.", "식탁으로 가 주세요."
 export const CLEAR_CUP = "컵 치우기";
 export const REASON = "사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.";
 export const LEFT_CUP_STATE = "컵을 두고 자리를 뜸";
-/** 계획 단계의 생각 말풍선(PAM의 생각 한 문장·FSM 상태 이름표·판단). 지켜보기는 대기라 없다. */
-export const THOUGHT: Thought = { reasoning: REASON, state: LEFT_CUP_STATE, action: CLEAR_CUP };
+/** 계획 단계의 생각 말풍선(PAM의 생각 한 문장·FSM 상태 이름표·습관 아님·눈치·판단). 지켜보기는 대기라 없다. */
+export const THOUGHT: Thought = { reasoning: REASON, state: LEFT_CUP_STATE, habit: false, assist: "noonchi", action: CLEAR_CUP };
 
 /** 컵 갈래 판단 고정 자료: 행동, 그 규칙이 있는 FSM 상태 id·트리거(src/brain/decision.ts CUP_FSM_MEMORY와 같다, data.test.ts가 견준다), PAM의 생각 한 문장. */
 export interface Branch { action: string; state: string; trigger: string; reasoning: string }
@@ -134,7 +135,8 @@ export function branchDecision(b: Branch | null, seq: number): ServerMessage {
     event: {
       type: "decision", at_ms: 1_794_214_804_000 + seq * 5000, id: `pam-${seq}`, seq, text_sent: "관찰", status: "valid",
       prediction: { observation: "관찰", reasoning: b?.reasoning ?? "할 일이 없어요.", task_index: b ? BRANCH_TASKS.indexOf(b.action) : -1 },
-      action: b?.action ?? null, fsm: b ? { state: b.state, trigger: b.trigger } : null, memory_version: 1,
+      action: b?.action ?? null, fsm: b ? { state: b.state, trigger: b.trigger, learned: false } : null,
+      assist: b ? (taskOf(b.action)?.coach ? "coach" : "noonchi") : null, memory_version: 1,
       world: { objects: [], person_visible: false, vlm_missing: 0, yolo_missing: 0 },
     },
   };

@@ -16,37 +16,48 @@ describe("대시보드 자료", () => {
     expect(thoughtOf(EMPTY_DASH)).toBeNull();
   });
   it("생각 말풍선: 행동을 고른 판단의 생각 한 문장, FSM 상태 이름표(영어 id가 아닌 화면 글), 행동 이름", () => {
-    expect(thoughtOf(at(1))).toEqual({ reasoning: "사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.", state: "컵을 두고 자리를 뜸", action: "컵 치우기" });
+    expect(thoughtOf(at(1))).toEqual({ reasoning: "사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.", state: "컵을 두고 자리를 뜸", habit: false, assist: "noonchi", action: "컵 치우기" });
   });
-  it("서버가 상태를 못 찾았거나(fsm null·없음) 이름표가 없는 상태면 상태는 null이다(칩을 숨긴다)", () => {
+  it("서버가 상태를 못 찾았거나(fsm null·없음, fsm.state null) 상태는 null이다(칩을 숨긴다). 이름표가 없는 상태면 그 트리거를 보인다", () => {
     const s = at(1);
     const d = s.decision!;
     expect(thoughtOf({ ...s, decision: { ...d, fsm: null } })?.state).toBeNull();
     expect(thoughtOf({ ...s, decision: { ...d, fsm: undefined } })?.state).toBeNull();
-    expect(thoughtOf({ ...s, decision: { ...d, fsm: { state: "made_by_reflector", trigger: "t" } } })).toMatchObject({ state: null, action: "컵 치우기" });
+    expect(thoughtOf({ ...s, decision: { ...d, fsm: { state: null, trigger: "t", learned: false } } })?.state).toBeNull();
+    expect(thoughtOf({ ...s, decision: { ...d, fsm: { state: "made_by_reflector", trigger: "t", learned: false } } })).toMatchObject({ state: "t", action: "컵 치우기" });
+    expect(thoughtOf({ ...s, decision: { ...d, fsm: { state: "made_by_reflector", trigger: null, learned: false } } })?.state).toBeNull();
+  });
+  it("고른 행동에 배운 규칙이 있으면 습관이고, 서버가 붙인 행동 종류(눈치·코치)를 그대로 보인다", () => {
+    const s = at(1);
+    const d = s.decision!;
+    expect(thoughtOf({ ...s, decision: { ...d, action: "에어컨 켜기", fsm: { state: "watching_tv", trigger: null, learned: true }, assist: "noonchi" } }))
+      .toMatchObject({ state: "TV 보는 중", habit: true, assist: "noonchi", action: "에어컨 켜기" });
+    expect(thoughtOf({ ...s, decision: { ...d, action: "에어컨 켜기", fsm: { state: null, trigger: null, learned: true }, assist: "noonchi" } }))
+      .toMatchObject({ state: null, habit: true });
+    expect(thoughtOf({ ...s, decision: { ...d, action: "라면 끓이기 알려 주기", fsm: null, assist: "coach" } })).toMatchObject({ habit: false, assist: "coach" });
   });
   describe("컵 갈래(그대로 두기·채워 주기)", () => {
     const decided = (b: Branch | null, seq: number): ServerMessage => branchDecision(b, seq);
-    it("그대로 두기 판단이면 생각 말풍선은 생각 한 문장, 「상태 · 컵을 두고 자리를 뜸」, 「판단 · 컵 그대로 두기」다. 계획이 없어 마스코트는 그림 그대로다", () => {
+    it("그대로 두기 판단이면 생각 말풍선은 생각 한 문장, 「상태 · 컵을 두고 자리를 뜸」, 「눈치 · 컵 그대로 두기」다. 계획이 없어 마스코트는 그림 그대로다", () => {
       const s = feed([decided(BRANCHES.leave, 1), { type: "say", text: LEFT_SAY }]);
-      expect(thoughtOf(s)).toEqual({ reasoning: BRANCHES.leave.reasoning, state: "컵을 두고 자리를 뜸", action: "컵 그대로 두기" });
+      expect(thoughtOf(s)).toEqual({ reasoning: BRANCHES.leave.reasoning, state: "컵을 두고 자리를 뜸", habit: false, assist: "noonchi", action: "컵 그대로 두기" });
       expect([stepIndex(s.plan), facingOf(s.plan), s.say]).toEqual([0, "video", "컵을 그대로 두기로 했어요."]);
     });
-    it("물 채워 주기 판단이면 「상태 · 먹거나 마시는 중」, 「판단 · 컵에 물 채워 주기」, 콜라면 「상태 · TV 보는 중」, 「판단 · 컵에 콜라 따라 주기」다", () => {
-      expect(thoughtOf(feed([decided(BRANCHES.water, 1)]))).toEqual({ reasoning: BRANCHES.water.reasoning, state: "먹거나 마시는 중", action: "컵에 물 채워 주기" });
-      expect(thoughtOf(feed([decided(BRANCHES.cola, 1)]))).toEqual({ reasoning: BRANCHES.cola.reasoning, state: "TV 보는 중", action: "컵에 콜라 따라 주기" });
+    it("물 채워 주기 판단이면 「상태 · 먹거나 마시는 중」, 「눈치 · 컵에 물 채워 주기」, 콜라면 「상태 · TV 보는 중」, 「눈치 · 컵에 콜라 따라 주기」다", () => {
+      expect(thoughtOf(feed([decided(BRANCHES.water, 1)]))).toEqual({ reasoning: BRANCHES.water.reasoning, state: "먹거나 마시는 중", habit: false, assist: "noonchi", action: "컵에 물 채워 주기" });
+      expect(thoughtOf(feed([decided(BRANCHES.cola, 1)]))).toEqual({ reasoning: BRANCHES.cola.reasoning, state: "TV 보는 중", habit: false, assist: "noonchi", action: "컵에 콜라 따라 주기" });
     });
     it("그 뒤 대기 판단이 오면 말풍선을 숨기고, 다시 치우기 판단이 오면 그 판단을 보인다(더 보다가 치움)", () => {
       const waited = feed([decided(BRANCHES.leave, 1), decided(null, 2)]);
       expect(thoughtOf(waited)).toBeNull();
       expect(thoughtOf(reduceDash(waited, decided(BRANCHES.clear, 3), 0))).toMatchObject({ state: "컵을 두고 자리를 뜸", action: "컵 치우기" });
     });
-    it("코치 판단이면 「상태 · 요리를 시작함」, 「판단 · 라면 끓이기 알려 주기」다. 그 규칙은 서버 FSM 기억의 cooking 상태에 있다", () => {
-      expect(thoughtOf(feed([decided(COACH, 1)]))).toEqual({ reasoning: COACH.reasoning, state: "요리를 시작함", action: "라면 끓이기 알려 주기" });
-      expect(fsmRuleOf(CUP_FSM_MEMORY, "fsm", COACH.action)).toEqual({ state: COACH.state, trigger: COACH.trigger });
+    it("코치 판단이면 「상태 · 요리를 시작함」, 「코치 · 라면 끓이기 알려 주기」다. 그 규칙은 서버 FSM 기억의 cooking 상태에 있다", () => {
+      expect(thoughtOf(feed([decided(COACH, 1)]))).toEqual({ reasoning: COACH.reasoning, state: "요리를 시작함", habit: false, assist: "coach", action: "라면 끓이기 알려 주기" });
+      expect(fsmRuleOf(CUP_FSM_MEMORY, "fsm", COACH.action)).toEqual({ state: COACH.state, trigger: COACH.trigger, learned: false });
     });
     it("갈래 판단의 상태 id는 모두 서버 FSM 기억(CUP_FSM_MEMORY)에서 그 행동의 규칙이 있는 상태다", () => {
-      for (const b of Object.values(BRANCHES)) expect(fsmRuleOf(CUP_FSM_MEMORY, "fsm", b.action), b.action).toEqual({ state: b.state, trigger: b.trigger });
+      for (const b of Object.values(BRANCHES)) expect(fsmRuleOf(CUP_FSM_MEMORY, "fsm", b.action), b.action).toEqual({ state: b.state, trigger: b.trigger, learned: false });
     });
   });
   it("계획 단계마다 번호·마스코트·말이 따라간다", () => {

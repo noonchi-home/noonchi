@@ -11,21 +11,21 @@ const OUT_MS = 200;
 const IN_DELAY = 100;
 const IN_MS = 300;
 
-const keyOf = (t: Thought) => JSON.stringify([t.reasoning, t.state, t.action]);
+const keyOf = (t: Thought) => JSON.stringify([t.reasoning, t.state, t.habit, t.assist, t.action]);
 
-/** 생각 한 문장(두 줄까지, 넘으면 말줄임)과 그 아래 칩: 「상태 · …」(아는 상태일 때만), 「판단 · 행동 이름」. 줄 높이는 정해져 있다. */
+/** 생각 한 문장(두 줄까지, 넘으면 말줄임)과 그 아래 칩: 앞 칩은 배운 규칙이 있으면 「습관 · 상태」(상태를 모르면 「습관 · 배운 규칙」), 아니면 아는 상태일 때만 「상태 · …」. 뒤 칩은 「눈치·코치 · 행동 이름」. 줄 높이는 정해져 있다. */
 function Lines({ thought }: { thought: Thought }) {
   return (
     <>
       <p data-thought-line className="line-clamp-2 h-[2lh] break-keep">{thought.reasoning}</p>
       <div data-thought-chips className="mt-2 flex h-[26px] min-w-0 items-center gap-1.5 overflow-hidden">
-        {thought.state !== null && (
+        {(thought.habit || thought.state !== null) && (
           <Status data-thought-state className="min-w-0 shrink">
-            <span className="truncate">{`${WORDS.state} · ${thought.state}`}</span>
+            <span className="truncate">{thought.habit ? `${WORDS.habit} · ${thought.state ?? WORDS.learnedRule}` : `${WORDS.state} · ${thought.state}`}</span>
           </Status>
         )}
         <Status variant="brand" data-thought-action className="min-w-0 shrink">
-          <span className="truncate">{`${WORDS.judge} · ${thought.action}`}</span>
+          <span className="truncate">{`${WORDS[thought.assist]} · ${thought.action}`}</span>
         </Status>
       </div>
     </>

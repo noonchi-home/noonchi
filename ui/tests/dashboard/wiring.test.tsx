@@ -116,7 +116,7 @@ describe("대시보드 자료 연결", () => {
     send(moment(2));
     expect(thought()).toHaveAttribute("data-thought", "shown");
     expect(thought().querySelector("[data-thought-line]")).toHaveTextContent("사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.");
-    expect([...thought().querySelectorAll("[data-slot=status]")].map((c) => c.textContent)).toEqual(["상태 · 컵을 두고 자리를 뜸", "판단 · 컵 치우기"]);
+    expect([...thought().querySelectorAll("[data-slot=status]")].map((c) => c.textContent)).toEqual(["상태 · 컵을 두고 자리를 뜸", "눈치 · 컵 치우기"]);
     send(moment(0));
     expect(thought()).toHaveAttribute("data-thought", "hidden");
   });
@@ -193,7 +193,7 @@ describe("가짜 단계(?debug=steps)", () => {
     expect(sayLine()).toHaveTextContent("컵을 들라고 했어요.");
     const img = phonePane().querySelector<HTMLImageElement>('img[alt="폰 카메라 영상"]')!;
     expect(img.getAttribute("src")).toBe("/debug-eye/eye-table-near.webp");
-    expect(thought().querySelector("[data-thought-action]")).toHaveTextContent("판단 · 컵 치우기");
+    expect(thought().querySelector("[data-thought-action]")).toHaveTextContent("눈치 · 컵 치우기");
     expect(thought().querySelector("[data-thought-state]")).toHaveTextContent("상태 · 컵을 두고 자리를 뜸");
     expect([...phonePane().querySelectorAll("[data-detection-label]")].map((t) => t.textContent?.split(" ")[0])).toEqual(["컵"]);
     expect(phonePane().querySelector("canvas[data-masks]")).not.toBeNull();

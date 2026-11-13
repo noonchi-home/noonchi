@@ -108,8 +108,11 @@ export type BrainLog =
   | {
     type: "decision"; at_ms: number; id: string; seq: number; text_sent: string; status: "valid" | "failed";
     prediction: { observation: string; reasoning: string; task_index: number } | null; action: string | null;
-    /** 고른 행동을 FSM 기억 규칙에서 찾은 자리: 상태 id와 트리거. 대기·실패, 같은 행동이 여러 규칙에 있거나 못 찾으면 null. 예전 기록에는 없다. */
-    fsm?: { state: string; trigger: string } | null;
+    /** 고른 행동의 FSM 자리(행동 단위, src/brain/decision.ts FsmRuleAt): 그 행동의 규칙이 한 상태에만 있으면 상태 id, 규칙이 하나면 트리거,
+     *  seed에 없는 규칙이 있으면 learned. 대기·실패·못 찾으면 null. 예전 기록에는 없다. */
+    fsm?: { state: string | null; trigger: string | null; learned: boolean } | null;
+    /** 고른 행동의 종류(표시용, TaskSpec.coach): 코치 행동이면 coach, 아니면 noonchi. 대기·실패는 null. 예전 기록에는 없다. */
+    assist?: "noonchi" | "coach" | null;
     error?: string; memory_version: number; world: DecisionWorld;
   }
   | { type: "execution"; at_ms: number; plan_id: string; state: ExecState; text: string }

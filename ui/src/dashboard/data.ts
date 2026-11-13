@@ -61,15 +61,18 @@ export function currentStep(p: PlanView | null): PlanStep | null {
 /** 마스코트가 보는 쪽: 열린 계획이 있으면 트윈(왼쪽), 아니면 그림 그대로(오른쪽). */
 export const facingOf = (p: PlanView | null): Facing => (isOpen(p) ? "twin" : "video");
 
-/** 생각 말풍선에 보이는 것: PAM의 생각 한 문장, FSM 상태 이름표(모르면 null: 칩을 숨긴다), 판단(고른 행동 이름). */
-export interface Thought { reasoning: string; state: string | null; action: string }
+/** 생각 말풍선에 보이는 것: PAM의 생각 한 문장, FSM 상태 이름표(모르면 null), 배운 규칙이 있는 행동인가(습관), 고른 행동의 종류(눈치·코치), 고른 행동 이름. */
+export interface Thought { reasoning: string; state: string | null; habit: boolean; assist: "noonchi" | "coach"; action: string }
 
 /**
- * 생각 말풍선: 마지막 유효 판단이 행동을 골랐으면 그 생각(reasoning)·상태·행동, 대기(행동 없음)거나 판단이 아직 없으면 null(말풍선을 숨긴다).
- * 상태는 서버가 붙인 FSM 상태 id(decision.fsm.state)의 화면 이름표(src/world/labels.ts FSM_STATE_TEXT)이고, 서버가 못 찾았거나 이름표가 없는 상태면 null이다.
+ * 생각 말풍선: 마지막 유효 판단이 행동을 골랐으면 그 생각(reasoning)·상태·습관·종류·행동, 대기(행동 없음)거나 판단이 아직 없으면 null(말풍선을 숨긴다).
+ * 상태는 서버가 붙인 FSM 상태 id(decision.fsm.state)의 화면 이름표(src/world/labels.ts FSM_STATE_TEXT), 이름표가 없으면 그 트리거이고, fsm.state가 없으면 null이다.
+ * 습관은 서버가 붙인 learned, 종류는 서버가 붙인 assist(예전 기록에 없으면 눈치)를 그대로 보인다.
  */
 export function thoughtOf(s: DashData): Thought | null {
   const d = s.decision;
   if (!d?.action || !d.prediction) return null;
-  return { reasoning: d.prediction.reasoning, state: d.fsm ? FSM_STATE_TEXT[d.fsm.state] ?? null : null, action: d.action };
+  const fsm = d.fsm;
+  const state = fsm?.state ? FSM_STATE_TEXT[fsm.state] ?? fsm.trigger ?? null : null;
+  return { reasoning: d.prediction.reasoning, state, habit: fsm?.learned ?? false, assist: d.assist ?? "noonchi", action: d.action };
 }

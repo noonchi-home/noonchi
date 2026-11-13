@@ -3,6 +3,7 @@
 // PAM 연결 끊김·연결됨(link)과 주기 판단 멈춤(폰 사진 없음·사람 없음)·다시 시작(trigger)은 바뀔 때 한 번씩 기록한다.
 import type { BrainLog, DecisionWorld } from "../contract/events.js";
 import type { WorldChange, WorldView } from "../contract/world.js";
+import { taskOf } from "../act/tasks.js";
 import { checkInput, fsmRuleOf, isoWithOffset, type FsmRuleAt, type PamMemory, type Prediction } from "../brain/decision.js";
 import { PamLinkError, type PamClient } from "../brain/pam.js";
 import { LINK_TEXT, TRIGGER_TEXT, redactHeard, redactSaid, saidIn } from "./labels.js";
@@ -143,6 +144,8 @@ export class Decider {
     if (this.stopped) return;
     this.o.emit({
       type: "decision", at_ms: this.clock.now(), id: r.id, seq: r.seq, text_sent: this.o.keepHeard?.() ? r.textSent : redactHeard(r.textSent), status: r.status, prediction: r.prediction, action: r.action, fsm: r.fsm ?? null,
+      // 고른 행동의 종류(표시용): 그 행동이 코치 행동인가
+      assist: r.action ? (taskOf(r.action)?.coach ? "coach" : "noonchi") : null,
       ...(r.error ? { error: r.error } : {}), memory_version: r.memoryVersion, world: r.world,
     });
     this.o.onDecision?.(r);

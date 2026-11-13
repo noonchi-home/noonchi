@@ -4,7 +4,10 @@ import { CLASSES } from "../../../src/world/vocab.ts";
 export const WORDS = {
   waiting: "기다리는 중",
   state: "상태",
-  judge: "판단",
+  noonchi: "눈치",
+  coach: "코치",
+  habit: "습관",
+  learnedRule: "배운 규칙",
   offline: "연결 끊김 · 다시 연결 중",
   noRobot: "클로이드 위치 모름",
   phoneOff: "폰 서버가 꺼져 있어요.",

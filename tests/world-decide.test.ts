@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { TASK_NAMES } from "../src/act/tasks.js";
 import { CUP_FSM_MEMORY, CUP_TASKS } from "../src/brain/decision.js";
 import { PamClient } from "../src/brain/pam.js";
 import type { BrainLog } from "../src/contract/events.js";
@@ -140,9 +141,28 @@ describe("판단 호출", () => {
     await poke();
     index = -1;
     await poke();
-    const fsm = { state: "left_cup", trigger: CUP_FSM_MEMORY.states.find((x) => x.id === "left_cup")!.rules[0]!.trigger };
+    const fsm = { state: "left_cup", trigger: CUP_FSM_MEMORY.states.find((x) => x.id === "left_cup")!.rules[0]!.trigger, learned: false };
     expect(logs.filter((l) => l.type === "decision").map((l) => l.type === "decision" && [l.action, l.fsm])).toEqual([["컵 치우기", fsm], [null, null]]);
     expect(records.map((r) => r.fsm)).toEqual([fsm, null]);
+  });
+
+  it("판단 사건에 고른 행동의 종류를 붙인다: 라면 끓이기 알려 주기는 coach, 에어컨 켜기는 noonchi, 대기·실패는 null", async () => {
+    const tasks = [...TASK_NAMES];
+    let index = tasks.indexOf("라면 끓이기 알려 주기");
+    pam = await startFakePam({ predict: () => ({ observation: "o", reasoning: "r", task_index: index }) });
+    const logs: BrainLog[] = [];
+    let now = 10_000;
+    const d = new Decider({ pam: new PamClient({ url: pam.url }), world: emptyWorld(), trigger: event(),
+      tasks: () => tasks, memory, emit: (l) => logs.push(l), offsetMinutes: 540, clock: { now: () => now } });
+    const poke = async () => { d.onChanges([{ kind: "appeared", at_ms: now, subject: "cup_1", text: "컵 cup_1 보임", meaningful: true }]); d.tick(); await d.idle(); now += 1000; };
+    await poke();
+    index = tasks.indexOf("에어컨 켜기");
+    await poke();
+    index = -1;
+    await poke();
+    expect(logs.filter((l) => l.type === "decision").map((l) => l.type === "decision" && [l.action, l.assist])).toEqual([
+      ["라면 끓이기 알려 주기", "coach"], ["에어컨 켜기", "noonchi"], [null, null],
+    ]);
   });
 
   it("PAM에 닿지 않다가 닿으면 연결 끊김·연결됨을 한 번씩 기록한다. 닿지 않은 판단은 실패로 남긴다", async () => {

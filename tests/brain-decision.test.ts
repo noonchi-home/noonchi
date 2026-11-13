@@ -86,10 +86,27 @@ describe("판단 입력(텍스트)", () => {
 });
 
 describe("고른 행동의 FSM 상태(대시보드 생각 말풍선 「상태」 칩)", () => {
-  it("고른 행동을 FSM 기억 규칙에서 찾아 그 규칙의 상태와 트리거를 준다", () => {
+  it("seed만 있는 기억에서 고른 행동의 규칙이 하나면 그 상태와 트리거를 주고, 배운 규칙이 없다(learned false)", () => {
     const left = CUP_FSM_MEMORY.states.find((s) => s.id === "left_cup")!;
-    expect(fsmRuleOf(CUP_FSM_MEMORY, "fsm", "컵 치우기")).toEqual({ state: "left_cup", trigger: left.rules[0]!.trigger });
-    expect(fsmRuleOf(CUP_FSM_MEMORY, "fsm", "사용자에게 물어보기")).toEqual({ state: "left_cup", trigger: left.rules.find((r) => r.action === "사용자에게 물어보기")!.trigger });
+    expect(fsmRuleOf(CUP_FSM_MEMORY, "fsm", "컵 치우기")).toEqual({ state: "left_cup", trigger: left.rules[0]!.trigger, learned: false });
+    expect(fsmRuleOf(CUP_FSM_MEMORY, "fsm", "사용자에게 물어보기")).toEqual({ state: "left_cup", trigger: left.rules.find((r) => r.action === "사용자에게 물어보기")!.trigger, learned: false });
+  });
+
+  // 반성이 배운 규칙: seed에 없는 트리거·행동 쌍
+  const HOT = { trigger: "사용자가 덥다고 말하거나 더워서 부채질을 한다.", action: "에어컨 켜기" };
+  const TV = { trigger: "사용자가 TV를 보러 소파에 앉는다.", action: "에어컨 켜기" };
+  const withRules = (add: Record<string, { trigger: string; action: string }[]>, extra: FsmMemory["states"] = []): FsmMemory => ({
+    ...CUP_FSM_MEMORY,
+    states: [...CUP_FSM_MEMORY.states.map((s) => ({ ...s, rules: [...s.rules, ...(add[s.id] ?? [])] })), ...extra],
+  });
+
+  it("seed 덥다 규칙과 배운 TV 규칙이 둘 다 watching_tv에 있으면 에어컨 켜기는 그 상태이고 트리거는 모르며 배운 규칙이 있다", () => {
+    expect(fsmRuleOf(withRules({ watching_tv: [HOT, TV] }), "fsm", "에어컨 켜기")).toEqual({ state: "watching_tv", trigger: null, learned: true });
+  });
+
+  it("배운 규칙이 다른 상태(evening_tv)에 있으면 상태도 트리거도 모르고 배운 규칙이 있다", () => {
+    const evening: FsmMemory["states"][number] = { id: "evening_tv", description: "저녁에 TV를 본다", rules: [TV], next: [] };
+    expect(fsmRuleOf(withRules({ watching_tv: [HOT] }, [evening]), "fsm", "에어컨 켜기")).toEqual({ state: null, trigger: null, learned: true });
   });
 
   it("컵 FSM 기억은 상태 넷(먹는 중·TV 보는 중·자리를 뜸·요리)이고 모양이 맞으며, 규칙의 행동은 모두 행동 목록에 있다", () => {
@@ -101,7 +118,7 @@ describe("고른 행동의 FSM 상태(대시보드 생각 말풍선 「상태」
 
   it("요리 상태(cooking)의 규칙이 코치 행동 「라면 끓이기 알려 주기」를 고르고, 다른 상태마다 요리로 가는 길이 있다", () => {
     expect(fsmRuleOf(CUP_FSM_MEMORY, "fsm", "라면 끓이기 알려 주기")).toEqual({
-      state: "cooking", trigger: "사용자가 라면 끓이는 법을 알려 달라고 말했거나, 주방에서 라면을 끓이려다 무엇을 해야 할지 모르겠다고 말한다.",
+      state: "cooking", trigger: "사용자가 라면 끓이는 법을 알려 달라고 말했거나, 주방에서 라면을 끓이려다 무엇을 해야 할지 모르겠다고 말한다.", learned: false,
     });
     const cooking = CUP_FSM_MEMORY.states.find((s) => s.id === "cooking")!;
     expect(cooking.next).toEqual([{ to: "drinking", on: "사용자가 음식을 들고 식탁에 앉는다." }]);
@@ -114,10 +131,10 @@ describe("고른 행동의 FSM 상태(대시보드 생각 말풍선 「상태」
   it("컵 갈래 다섯 행동은 저마다 상태 하나의 규칙이다: 치우기·그대로 두기·물어보기는 자리를 뜸, 물은 먹는 중, 콜라는 TV 보는 중", () => {
     const at = (action: string) => fsmRuleOf(CUP_FSM_MEMORY, "fsm", action);
     expect(at("컵 치우기")?.state).toBe("left_cup");
-    expect(at("컵 그대로 두기")).toEqual({ state: "left_cup", trigger: "사용자가 자리를 비웠지만 컵에 음료가 남아 있다." });
+    expect(at("컵 그대로 두기")).toEqual({ state: "left_cup", trigger: "사용자가 자리를 비웠지만 컵에 음료가 남아 있다.", learned: false });
     expect(at("사용자에게 물어보기")?.state).toBe("left_cup");
-    expect(at("컵에 물 채워 주기")).toEqual({ state: "drinking", trigger: "사용자가 식탁에서 먹는 중이고 식탁 위 컵이 비어 있으며 컵을 들거나 만지지 않는다." });
-    expect(at("컵에 콜라 따라 주기")).toEqual({ state: "watching_tv", trigger: "사용자가 TV를 보는 중이고 곁의 컵이 비어 있으며 컵을 들거나 만지지 않는다." });
+    expect(at("컵에 물 채워 주기")).toEqual({ state: "drinking", trigger: "사용자가 식탁에서 먹는 중이고 식탁 위 컵이 비어 있으며 컵을 들거나 만지지 않는다.", learned: false });
+    expect(at("컵에 콜라 따라 주기")).toEqual({ state: "watching_tv", trigger: "사용자가 TV를 보는 중이고 곁의 컵이 비어 있으며 컵을 들거나 만지지 않는다.", learned: false });
     // 물·콜라를 가르는 사실은 관찰 텍스트 낱말(먹는 중·TV 보는 중)이다
     expect(STATES.eating.label).toBe("먹는 중");
     expect(STATES.watching_tv.label).toBe("TV 보는 중");
@@ -129,7 +146,7 @@ describe("고른 행동의 FSM 상태(대시보드 생각 말풍선 「상태」
     expect(fsmRuleOf(CUP_MEMORY, "list", "컵 치우기")).toBeNull();
   });
 
-  it("같은 행동이 여러 상태에 있으면 null이다(어느 상태인지 모른다). 한 상태 안에 여러 번 있어도 null이다", () => {
+  it("같은 행동이 여러 상태에 있으면 상태·트리거를 모르고, 한 상태 안에 여러 번 있으면 상태만 안다. seed에 없는 규칙이면 배운 규칙이다", () => {
     const two: FsmMemory = {
       initial_state: "a",
       states: [
@@ -137,9 +154,9 @@ describe("고른 행동의 FSM 상태(대시보드 생각 말풍선 「상태」
         { id: "b", description: "나", rules: [{ trigger: "ㄴ", action: "컵 치우기" }], next: [] },
       ],
     };
-    expect(fsmRuleOf(two, "fsm", "컵 치우기")).toBeNull();
+    expect(fsmRuleOf(two, "fsm", "컵 치우기")).toEqual({ state: null, trigger: null, learned: true });
     const twice: FsmMemory = { initial_state: "a", states: [{ id: "a", description: "가", rules: [{ trigger: "ㄱ", action: "컵 치우기" }, { trigger: "ㄴ", action: "컵 치우기" }], next: [] }] };
-    expect(fsmRuleOf(twice, "fsm", "컵 치우기")).toBeNull();
+    expect(fsmRuleOf(twice, "fsm", "컵 치우기")).toEqual({ state: "a", trigger: null, learned: true });
   });
 
   it("컵 FSM 기억의 상태마다 화면용 짧은 한국어 이름표가 있다(12자 아래, 영어 id가 아니다)", () => {
