@@ -752,12 +752,17 @@ answerToken(token: string, answer: ApprovalAnswer): Promise<{ ok: boolean; reply
 // 이미 열린 옛 탭에는 이 검사가 없다. 그래서 서버가 막는다(src/phone/server.ts):
 export interface PhoneHello { type: "hello"; protocol: number }
 //   연결마다 판본을 기다린다. 열린 뒤 2초 안에 hello가 없거나 protocol이 PHONE_PROTOCOL과 다르면 그 연결은 옛 탭으로 둔다.
-//   옛 탭으로 둔 뒤라도(2초가 지나도) 판본이 맞는 hello가 오면 그 연결을 정상으로 바꾼다: 새로 고침 안내를 지우고(command_clear id "refresh") 지금 명령(실행 추적 openCommand)·지금 안전 안내 목록·승인 대기 목록을 다시 보내며, 그 뒤 답을 받는다.
+//   옛 탭으로 둔 뒤라도(2초가 지나도) 판본이 맞는 hello가 오면 그 연결을 정상으로 바꾼다: 새로 고침 안내를 지우고(command_clear id "refresh") 지금 안전 안내 목록·승인 대기 목록과 지금 명령을 다시 보내며, 그 뒤 답을 받는다.
+//   지금 명령은 openCommand()(id·step·글·답만, src/act/track.ts 258행)가 아니라 폰 서버가 기억한 처음 보낸 명령 전체(PlannedCommand: kind·target·vision·choices 포함, 실행 추적 r.sent와 같음)를
+//   지금 맞춘 AR 좌표로 바꿔(wire) speak: false로 보낸다. 그래야 영상 폰의 단계 영상 바꾸기·걷기가 돈다. 폰 서버는 이미 지금 명령을 기억해 새로 붙은 폰에 보낸다(src/phone/server.ts current)는 길을 그대로 쓴다.
 //   옛 탭에는 옛 탭도 그리는 기존 메시지로 새로 고침 안내를 보낸다: PhoneCommand { id: "refresh", step: "refresh", text: REFRESH_TEXT, choices: [], vision: null, target: null, speak: true }
 //   (REFRESH_TEXT = "화면을 새로 고쳐 주세요", src/plan/labels.ts). 옛 탭에는 계획 명령·안전 안내를 보내지 않고, 그 탭의 answer·confirm·cancel·say 답은 받지 않는다(관찰 사진은 받는다).
 //   판본이 맞는 폰이 하나도 없으면 실행 추적은 **폰이 필요한 계획만** 시작하지 않는다(실행 기록 EXEC_TEXT.phoneOld = "폰 화면 새로 고침 전이라 새 일을 미룸"). 도는 중이던 계획은 그 단계 명령을 맞는 폰이 붙을 때 다시 보낸다.
-//   폰이 필요한 계획(needsPhone): 사람 단계(go·pick·place·do)나 ask가 있거나, 처음 하는 일이라 승인 질문이 필요하거나(approvalNeed), 위험 목록 가전 단계(승인 질문)가 있는 계획.
-//   가전 단계·기다리기·say만 있고 이미 승인된 계획(에어컨 켜기 등)은 폰 없이 시작한다(say 글은 붙은 맞는 폰이 없으면 보내지 않는다).
+//   폰이 필요한 계획(needsPhone): 사람 단계(go·pick·place·do)나 ask가 있거나, 처음 하는 일이라 승인 질문이 필요하거나(approvalNeed), 위험 목록 가전 단계(승인 질문)가 있거나,
+//   어떤 단계든 on_timeout이 "ask"(시간 초과 때 계속·그만을 폰에 묻는다, device·wait 포함)인 계획.
+//   가전 단계·기다리기·say만 있고 이미 승인되고 on_timeout이 모두 "fail"인 계획(에어컨 켜기 등)은 폰 없이 시작한다(say 글은 붙은 맞는 폰이 없으면 보내지 않는다).
+//   계획 도중 맞는 폰이 모두 끊겨 폰에 물어야 할 때(시간 초과의 계속·그만 질문, 승인 질문)가 오면 askMs(120초)를 기다리지 않고 그 계획을 바로 실패로 닫는다(실행 기록 EXEC_TEXT.phoneGone = "폰이 없어 물을 수 없어 그만둠").
+//   그래서 행동 중 기다리기·기기 단계로 멈춰 있던 PAM 판단(src/act/track.ts waiting, 925행 근처)이 곧 풀린다. 켠 위험 가전 추적(hot)은 그대로 handOver로 끄기 안내 줄에 넘긴다(Task 11c).
 /** 폰 답·폰 안내가 꼭 필요한 계획인가. */
 export function needsPhone(plan: AgentPlan, approval: ApprovalWhy | null, devices: readonly { id: string; kind: string }[]): boolean;
 //   hello가 판본이 맞게 오기 전(2초 안)에는 그 연결에 계획 명령을 보내지 않는다.
@@ -770,7 +775,7 @@ export function needsPhone(plan: AgentPlan, approval: ApprovalWhy | null, device
 - [ ] **Step 1: 실패하는 시험.**
   - 안전 안내 자리: 「`safety` 메시지가 오면 명령 줄과 따로 안내마다 Item 하나와 「완료」 단추가 보이고, 누르면 `safety_answer`(그 안내 id)를 보낸다」, 「명령 줄의 명령·단추는 그대로다」, 「안전 안내 자리 단추에 날 button이 없다(부품 lint)」, 「말 「완료」는 `safety_answer`를 보내지 않는다」.
   - 음성 id: **「A 명령이 떠 있을 때 말하기 시작해 B 명령으로 바뀐 뒤 「완료」가 도착하면(at = A) B 단계가 넘어가지 않고 에이전트 대화로도 가지 않는다」**, **「at이 다른 「승인」(B의 승인 질문이 떠 있음)은 B 승인도 안 되고 에이전트로도 가지 않으며, 에이전트의 다른 승인 대기도 그대로다」**, **「at 칸이 없는 「완료」(옛 탭)는 넘어가지 않고 에이전트로도 가지 않는다」**, 「at이 none인데 명령이 떠 있으면 「완료」는 버린다」, 「at이 지금 명령과 같으면 넘어간다」, 「「그만」은 at과 상관없이(칸이 없어도) 받는다」, **「A 승인 대기에 대한 「승인」이 늦게 도착(at.pending = [A])했는데 그사이 A는 끝나고 B가 대기 중이면 B는 확정되지 않고 에이전트로도 가지 않는다」**(시험 이름 「들은 승인은 말할 때 보인 대기 token 하나만 답한다」), 「at.pending = [A]이고 A가 아직 대기면 A만 확정되고 같이 대기 중인 B는 그대로다」, 「at.pending이 둘 이상이거나 비었으면 버린다」, 「들은 말로는 answerAll이 불리지 않는다」, 「버린 말은 기록에 들은 말로 남는다」.
-  - 옛 탭: **「hello를 보내지 않는 탭(판본 없음)이 붙으면 「화면을 새로 고쳐 주세요」 명령이 가고, 그 탭의 「완료」 answer·confirm은 받지 않으며, 그 탭만 붙어 있으면 컵 치우기(사람 단계) 계획이 시작되지 않고 실행 기록에 「폰 화면 새로 고침 전이라 새 일을 미룸」」**(시험 이름 「판본 없는 폰 탭은 실행을 막고 새로 고침을 안내한다」), **「같은 때 이미 승인된 에어컨 켜기(가전 단계만) 계획은 폰 없이 시작해 트윈 에어컨이 켜진다」**(시험 이름 「가전만 쓰는 계획은 맞는 폰 없이도 시작한다」), 「처음 하는 일(승인 질문이 필요한) 가전 계획은 미룬다」, **「hello가 2초 뒤에 오면 처음엔 새로 고침 안내가 가고, hello를 받은 뒤 새로 고침 안내가 지워지며 지금 명령·안전 안내가 다시 오고 그 뒤 「완료」 답을 받는다」**(시험 이름 「늦은 hello는 연결을 정상으로 되돌린다」), 「protocol이 다른 hello도 같다」, 「옛 탭에는 safety·계획 명령을 보내지 않는다」, 「맞는 판본 탭이 붙으면 미뤘던 계획이 시작되고 명령이 그 탭에 간다」.
+  - 옛 탭: **「hello를 보내지 않는 탭(판본 없음)이 붙으면 「화면을 새로 고쳐 주세요」 명령이 가고, 그 탭의 「완료」 answer·confirm은 받지 않으며, 그 탭만 붙어 있으면 컵 치우기(사람 단계) 계획이 시작되지 않고 실행 기록에 「폰 화면 새로 고침 전이라 새 일을 미룸」」**(시험 이름 「판본 없는 폰 탭은 실행을 막고 새로 고침을 안내한다」), **「같은 때 이미 승인된 에어컨 켜기(가전 단계만) 계획은 폰 없이 시작해 트윈 에어컨이 켜진다」**(시험 이름 「가전만 쓰는 계획은 맞는 폰 없이도 시작한다」), 「처음 하는 일(승인 질문이 필요한) 가전 계획은 미룬다」, **「wait나 device 단계에 on_timeout "ask"가 있는 가전 계획은 미룬다」**(시험 이름 「시간 초과 질문이 있는 계획은 폰이 필요하다」), **「맞는 폰이 붙어 시작한 계획이 기다리기 중 폰이 끊긴 뒤 시간 초과에 닿으면 질문을 보내지 않고 바로 실패로 닫히며 PAM 판단이 다시 돈다. 그 계획이 켠 위험 가전은 끄기 안내 줄에 남는다」**(시험 이름 「폰이 끊긴 뒤 물을 일이 생기면 바로 그만둔다」), **「hello가 2초 뒤에 오면 처음엔 새로 고침 안내가 가고, hello를 받은 뒤 새로 고침 안내가 지워지며 지금 명령·안전 안내가 다시 오고 그 뒤 「완료」 답을 받는다」**(시험 이름 「늦은 hello는 연결을 정상으로 되돌린다」), **「hello가 늦은 영상 폰이 다시 받은 명령에 kind·target(AR 좌표)·vision이 있고, 그 명령으로 단계 영상이 바뀐다」**(시험 이름 「다시 보낸 명령은 처음 명령 전체다」, `tests/phone-server.test.ts`·`ui/tests/phone-video.test.ts`), 「protocol이 다른 hello도 같다」, 「옛 탭에는 safety·계획 명령을 보내지 않는다」, 「맞는 판본 탭이 붙으면 미뤘던 계획이 시작되고 명령이 그 탭에 간다」.
   - 판본: 「폰 상태의 protocol이 폰 빌드와 다르면 다시 붙을 때 페이지를 다시 읽는다」, 「새 폰은 열리자마자 hello를 보낸다」, 「같으면 다시 읽지 않는다」, 「60초 안에 두 번 다시 읽지 않는다」, 「안전 안내 자리 요소가 `[data-phone-zone=thumb]` 밖에 있다」.
   - 단추 key: **「A 명령 「완료」를 누르는 중(pointerdown 뒤) B 명령으로 바뀌면 손을 떼도 아무 답도 보내지 않는다」**, **「명령이 바뀌면 단추 묶음이 새로 그려진다(key = 계획 id:단계 id)」**.
   - 폰 서버: 「`safety_answer`를 받아 실행 추적에 넘기고, 모르는 id는 무시한다」, 「새로 붙은 폰은 지금 안전 안내 목록을 받는다」.
@@ -979,6 +984,7 @@ export function microwaveSteps(ids: { microwave: string; waitS?: number /* wait 
 - PAM 계약 그대로: 「PAM 계약」 절, Task 13 시험 7.
 - Codex 1차 지적 9개: 1 Task 4 바꾸기 2·4, 2 「일주일을 시연 안에서 보이는 길」·Task 7·8, 3 Task 5 범위, 4 Task 2 행동 단위, 5 Task 6 API·Task 8 확인, 6 Task 8 `start`·Task 9 `--start-at`, 7 Task 11 `unbaked`, 8 Task 10 차례 쓰기, 9 Task 10 붙잡기·Task 9 `--tail`.
 - 서버 글 구조(T1~T4)에 맞춤: 「조사한 사실」 사람 단계 글 절, Task 12 표(글·끝 조건을 코드가 내는 값으로), 「라면 대본」 절, Task 13 시험 5·6.
+- Codex 16차 지적 2개: P2 Task 11d 늦은 hello 뒤에는 처음 보낸 명령 전체(kind·target·vision)를 지금 AR 좌표로 다시 보냄, P2 on_timeout "ask"가 있는 계획은 needsPhone, 계획 도중 물을 폰이 없으면 바로 실패로 닫아 PAM을 풀고 위험 가전 추적은 남김.
 - Codex 15차 지적 2개: P2 Task 11d 2초 뒤라도 맞는 hello가 오면 연결을 정상으로 되돌리고 지금 명령·안전 안내를 다시 보냄, P2 맞는 폰이 없을 때 폰이 필요한 계획만 미루고(`needsPhone`) 가전만 쓰는 승인된 계획은 시작, 기존 시험의 폰 연결은 hello를 보내는 `openPhone`으로.
 - Codex 14차 지적 2개: P1 Task 11d 들은 승인은 말할 때 보인 승인 대기 token 하나만 답하고(`answerToken`) 없거나 다르면 버림, 들은 말로 `answerAll` 안 함, P2 폰이 연결 때 판본(hello)을 알리고 판본 없거나 다른 옛 탭은 서버가 새로 고침 명령만 보내고 실행·답을 막음.
 - Codex 13차 지적 2개: P1 Task 11d `onHeard` 결과에 「버림」(stale)을 두고 에이전트로 넘기지 않음, P2 명령 답 말에는 `at`이 꼭 있어야 하고(옛 탭은 버림, 「그만」만 늘 받음) 계약 판본(`PHONE_PROTOCOL`)이 다르면 폰이 다시 읽음, 안전 안내 자리는 엄지 영역 밖.
