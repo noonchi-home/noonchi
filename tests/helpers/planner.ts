@@ -7,7 +7,7 @@ import { taskOf, type Placed } from "../../src/act/tasks.js";
 import type { LlmProvider } from "../../src/agent/agent.js";
 import { PLANNER_PROMPT } from "../../src/agent/planInput.js";
 import { Planner } from "../../src/agent/planner.js";
-import type { PlanContext, TaskInfo } from "../../src/agent/planTools.js";
+import { placesOf, type PlanContext, type TaskInfo } from "../../src/agent/planTools.js";
 import { Policy } from "../../src/agent/policy.js";
 import { createProvider } from "../../src/agent/providers/index.js";
 import { deviceViews } from "../../src/agent/tools.js";
@@ -199,14 +199,17 @@ export async function startFakePlanner(scripts: Record<string, PlanScript> = { .
 }
 
 /** 시험 계획 입력: 행동 설명·평면도 물건 이름(종류 짧은 이름)·가전 목록, 실행 추적이 이미 치운 물건(placed). */
-export function planContext(o: { decision: DecisionRecord; world: WorldView; floor: FloorPlan; hub?: DeviceHub; rooms?: RoomSpec[]; nowIso?: string; task?: TaskInfo; placed?: Placed }): PlanContext {
+export function planContext(o: {
+  decision: DecisionRecord; world: WorldView; floor: FloorPlan; hub?: DeviceHub; rooms?: RoomSpec[]; nowIso?: string; task?: TaskInfo; placed?: Placed;
+  /** 배치 이름(서버는 배치 편집기 이름)·카탈로그 종류 이름. 없으면 종류 짧은 이름만. */
+  names?: ReadonlyMap<string, string>; typeLabel?: (type: string) => string | undefined;
+}): PlanContext {
   const task = o.task ?? taskOf(o.decision.action);
   if (!task) throw new Error(`행동 목록에 없는 행동: ${o.decision.action}`);
   return {
     decision: o.decision, task, world: o.world, floor: o.floor, rooms: o.rooms ?? [], devices: o.hub ? deviceViews(o.hub) : [], nowIso: o.nowIso ?? "2026-11-10T00:00:00.000Z",
-    places: [...o.floor.objects.values()].map((p) => ({
-      id: p.id, type: p.type, room: p.room, position: p.position, name: placeShort(p.type) ?? p.id, short: placeShort(p.type) ?? p.id, ...(p.basin ? { basin: p.basin } : {}),
-    })),
+    // 서버와 같은 평면도 줄(src/agent/planTools.ts placesOf). 배치 이름이 없으면 종류 짧은 이름을 배치 이름으로 쓴다
+    places: placesOf(o.floor, { names: o.names ?? new Map([...o.floor.objects.values()].flatMap((p) => { const s = placeShort(p.type); return s ? [[p.id, s] as [string, string]] : []; })), typeLabel: o.typeLabel }),
     ...(o.placed ? { placed: o.placed } : {}),
   };
 }

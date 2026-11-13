@@ -20,7 +20,9 @@ import type { PlannedCommandMessage } from "../src/contract/phone.js";
 import type { WorldDevice, WorldObject, WorldView } from "../src/contract/world.js";
 import { MemoryHub } from "../src/hub/memory.js";
 import type { DeviceSpec } from "../src/hub/types.js";
+import { loadCatalog } from "../src/layout/catalog.js";
 import { describeDevice } from "../src/model/mapping.js";
+import { loadScene } from "../src/model/scene.js";
 import { PlanHub } from "../src/plan/hub.js";
 import { AGAIN_TEXT, APPROVAL_TEXT, EXEC_TEXT, STEP_COMMAND } from "../src/plan/labels.js";
 import { floorPlanFrom } from "../src/plan/route.js";
@@ -592,6 +594,21 @@ describe("계획 모드: 계획 검사", () => {
     expect(swap.finish()).toMatchObject({ ok: false, error: expect.stringMatching(/앞에서 집은 물건/) });
   });
 
+  it("내려놓기 물건은 앞 집기 물건을 이어받아 안내 글 물건과 추적 물건이 늘 같다. item이 그 물건과 다른 것을 가리키면 버린다", () => {
+    const [go1, pick, go2, place] = cupSteps(cupIds) as Record<string, unknown>[];
+    // object를 빼도 앞에서 집은 컵을 이어받아 글과 추적이 같은 컵이다
+    const r = new PlanDraft(ctx()).submit({ steps: [go1, pick, go2, { ...place, object: undefined }] });
+    expect(r).toMatchObject({ ok: true });
+    if (r.ok) expect(r.plan.steps[3]).toMatchObject({ object: "cup_1", label: "컵 내려놓기", command: "컵을 싱크대에 넣어 주세요" });
+    // 다른 물건 이름(병)을 쓰면 글은 병·추적은 컵이 되므로 버린다(object를 쓰든 이어받든)
+    for (const bad of [{ ...place, object: undefined, item: "병" }, { ...place, item: "병" }]) {
+      expect(new PlanDraft(ctx()).submit({ steps: [go1, pick, go2, bad] }), JSON.stringify(bad)).toMatchObject({ ok: false, error: expect.stringMatching(/^4번 단계: .*item\(병\)이 물건 cup_1\(컵\)과 다릅니다/) });
+    }
+    // 집기도 같다: 보이는 컵을 다른 이름으로 부르지 않는다
+    expect(new PlanDraft(ctx()).add({ step: 1, ...pick, item: "병" })).toMatchObject({ ok: false, error: expect.stringMatching(/item\(병\)이 물건 cup_1\(컵\)과 다릅니다/) });
+    expect(new PlanDraft(ctx()).add({ step: 1, ...pick, item: "컵" })).toMatchObject({ ok: true });
+  });
+
   describe("do 단계와 집는 물건 종류(채워 주기)", () => {
     const WATER = "컵에 물 채워 주기";
     const fillIds = { fridge: "fridge_1", table: "table_1", cup: "cup_1", drink: "물" as const };
@@ -1073,5 +1090,45 @@ describe("계획 모드: 코드 리뷰 2회차 고침", () => {
     objects = [...objects, cup({ id: "cup_3", position: [5, 0.9, 1], first_seen_ms: r.clock.t, last_seen_ms: r.clock.t, facts: sink(r.clock.t) })];
     r.t.onWorld();
     expect(r.plans.current()).toMatchObject({ status: "done" });
+  });
+});
+
+describe("계획 모드: 실제 목련 집(twin/homes/mokryeon_180b)의 평면도 이름", () => {
+  const RAMEN = "라면 끓이기 알려 주기";
+  const scene = loadScene({ scenePath: "twin/homes/mokryeon_180b/scene.json", dataDir: "twin/data/homes/mokryeon_180b" })!;
+  const floor = floorPlanFrom(scene);
+  const catalog = loadCatalog("twin/data/homes/mokryeon_180b/catalog");
+  // 서버와 같은 입력: 배치 이름(장면 이름)과 카탈로그 종류 이름
+  const names = new Map(((scene.objects ?? []) as { id: string; name?: string }[]).map((o) => [o.id, o.name ?? o.id]));
+  const served = () => planContext({ decision: decision(RAMEN), world: view([]), floor, names, typeLabel: (t: string) => catalog.get(t)?.label });
+  const bare = () => planContext({ decision: decision(RAMEN), world: view([]), floor });
+  const added = (d: PlanDraft) => (d as unknown as { added: { step: { label: string; command: string | null; until: unknown; hand: unknown } }[] }).added.map((x) => x.step);
+  const one = (c: PlanContext, s: Record<string, unknown>) => {
+    const d = new PlanDraft(c);
+    const r = d.add({ step: 1, ...s });
+    return r.ok ? added(d)[0]! : r.error;
+  };
+  const go = (target: string) => ({ kind: "go", act: "가기", target, timeout_s: 120 });
+  const open = { kind: "do", act: "열기", target: "freezer_0c022ae2", hand_device: { id: "freezer_0c022ae2", to: "open" }, timeout_s: 120 };
+
+  it("짧은 이름이 없는 평면도 물건은 카탈로그 종류 이름으로 부른다: 냉동고 열기, 책장·옷장으로 가기", () => {
+    expect(one(served(), open)).toMatchObject({
+      label: "냉동고 문 열기", command: "냉동고 문을 열어 주세요", hand: { deviceId: "freezer_0c022ae2", to: "open" },
+      until: { fixture: "refrigerator", room: "balcony_north", facts: { open: "open" } },
+    });
+    expect(one(served(), go("bookcase_6b627971"))).toMatchObject({ label: "책장으로 가기", command: "책장으로 가 주세요" });
+    for (const id of ["wardrobe_0358a8fe", "wardrobe_dba14d56"]) expect(one(served(), go(id)), id).toMatchObject({ label: "옷장으로 가기", command: "옷장으로 가 주세요" });
+  });
+
+  it("카탈로그·배치 이름이 없으면 그 종류의 가전 이름으로 넘어간다. 부를 이름이 하나도 없으면 버린다(id를 폰 글에 쓰지 않는다)", () => {
+    expect(one(bare(), open)).toMatchObject({ label: "냉장고 문 열기", command: "냉장고 문을 열어 주세요" });
+    expect(one(bare(), go("bookcase_6b627971"))).toMatch(/부를 이름이 없어/);
+  });
+
+  it("[가전]에 없는 평면도 가전은 열기·닫기만 받는다: 켜기·끄기는 승인 질문이 그 가전을 알아야 하므로 [가전]에 있어야 한다", () => {
+    const induction = [...floor.objects.values()].find((o) => o.type === "induction_counter")!.id;
+    expect(one(bare(), { kind: "do", act: "켜기", target: induction, hand_device: { id: induction, to: "on" }, timeout_s: 120 })).toMatch(/가전 대상에만 씁니다/);
+    expect(one(bare(), { kind: "do", act: "닫기", target: "freezer_0c022ae2", hand_device: { id: "freezer_0c022ae2", to: "close" }, timeout_s: 120 }))
+      .toMatchObject({ label: "냉장고 문 닫기", until: { fixture: "refrigerator", room: "balcony_north", facts: { open: "closed" } } });
   });
 });

@@ -14,8 +14,8 @@ import type { PlanTarget, PlanView, StepKind, XZ } from "../contract/plan.js";
 import type { WorldObject, WorldView } from "../contract/world.js";
 import type { RoomSpec } from "../hub/types.js";
 import type { FloorPlan } from "../plan/floor.js";
-import { ALL_ACTS, CAUTION_LINE, DEVICE_VERB, EXTRA_ITEMS, NOTICES, NOTICE_KEYS, STEP_ACTS, STEP_LABEL, STEP_TEXT, noticeLabel, placeShort, type StepAct } from "../plan/labels.js";
-import { KIND_LABELS } from "../model/mapping.js";
+import { ALL_ACTS, CAUTION_LINE, DEVICE_VERB, EXTRA_ITEMS, ITEM_CLASS, NOTICES, NOTICE_KEYS, STEP_ACTS, STEP_LABEL, STEP_TEXT, noticeLabel, placeShort, type StepAct } from "../plan/labels.js";
+import { KIND_LABELS, findTypeRule } from "../model/mapping.js";
 import { OBJECT_NAME } from "../world/labels.js";
 import { CLASSES, DEVICE_STATES, type DeviceStateKey } from "../world/vocab.js";
 import { ConditionSchema, checkCondition, type Condition, type ConditionHome } from "../world/conditions.js";
@@ -94,8 +94,17 @@ export interface AgentPlan { view: PlanView; steps: AgentStep[]; task: string }
 export type PlanResult = { ok: true; plan: AgentPlan } | { ok: false; error: string };
 
 export type TaskInfo = TaskSpec;
-/** 평면도 물건 하나(가구·가전·도면 설비): id·종류·방·자리와 이름(name 배치 이름, short 비전 상태 줄의 짧은 이름), 싱크볼 가운데(있을 때). */
+/** 평면도 물건 하나(가구·가전·도면 설비): id·종류·방·자리와 이름(name 배치 이름, short 부를 짧은 이름), 싱크볼 가운데(있을 때). */
 export interface PlaceInfo { id: string; type: string; room: string | null; position: XZ; name: string; short: string; basin?: XZ }
+
+/** 계획 입력의 평면도 물건(벽·바닥·문·창은 뺀다). 서버(src/server/home.ts)와 시험이 같이 쓴다.
+ *  name은 배치 이름(없으면 id), short는 부를 짧은 이름: 종류 짧은 이름(placeShort) → 카탈로그 종류 이름(typeLabel) → 배치 이름. */
+export function placesOf(floor: FloorPlan, o: { names?: ReadonlyMap<string, string>; typeLabel?: (type: string) => string | undefined } = {}): PlaceInfo[] {
+  return [...floor.objects.values()].filter((p) => !/^(walls|floors)$|door|win/.test(p.type)).map((p) => {
+    const name = o.names?.get(p.id) ?? p.id;
+    return { id: p.id, type: p.type, room: p.room, position: p.position, name, short: placeShort(p.type) ?? o.typeLabel?.(p.type) ?? name, ...(p.basin ? { basin: p.basin } : {}) };
+  });
+}
 
 /** 계획 입력. floor.robot은 손(맞춘 폰 눈) 자리다. placed는 실행 추적이 놓기를 끝낸 물건(이미 치운 것, src/act/track.ts placed):
  *  입력 물건 줄에 「이미 치움」을 붙이고, 그 물건을 집거나 놓는 단계는 버린다. */
@@ -305,15 +314,29 @@ export class PlanDraft {
     return { ok: true, plan: this.done };
   }
 
-  /** 단계 대상의 부를 이름: 평면도 물건이면 그 종류의 짧은 이름, World State 물건이면 그 종류 이름. 없으면 null. */
+  /** 단계 대상의 부를 이름. 평면도 물건은 종류 짧은 이름 → 입력 평면도 줄의 짧은 이름(카탈로그 종류 이름·배치 이름) → 그 가전 종류 이름 차례로 본다.
+   *  World State 물건은 그 종류 이름, [가전]만 있는 가전은 그 종류 이름. 부를 이름이 없으면 null(id를 폰 글에 쓰지 않는다). */
   private nameOf(id: string | null): string | null {
     if (!id) return null;
     const fp = this.ctx.floor.objects.get(id);
-    if (fp) return placeShort(fp.type) ?? null;
+    if (fp) {
+      const short = placeShort(fp.type) ?? this.ctx.places.find((p) => p.id === id)?.short;
+      if (short && short !== id) return short;
+    }
     const o = worldObject(this.ctx.world, id);
     if (o) return OBJECT_NAME[o.cls] ?? null;
-    const d = this.ctx.devices.find((x) => x.id === id);
-    return d ? KIND_LABELS[d.kind as keyof typeof KIND_LABELS] ?? null : null;
+    const kind = this.ctx.devices.find((x) => x.id === id)?.kind ?? (fp ? findTypeRule(fp.type)?.kind : undefined);
+    return kind ? KIND_LABELS[kind as keyof typeof KIND_LABELS] ?? null : null;
+  }
+
+  /** 손 조작 동작의 가전 종류: [가전]에 있으면 그 종류. [가전]에 없는 평면도 가전은 열기·닫기만 그 배치 종류의 가전 종류로 본다
+   *  (켜기·끄기는 켜기 전 질문·끄기 안내가 그 가전을 알아야 해서 [가전]에 있어야 한다). 없으면 undefined. */
+  private handKindOf(id: string | null, to: "on" | "off" | "open" | "close"): string | undefined {
+    if (!id) return undefined;
+    const kind = this.ctx.devices.find((x) => x.id === id)?.kind;
+    if (kind) return kind;
+    const fp = this.ctx.floor.objects.get(id);
+    return fp && (to === "open" || to === "close") ? findTypeRule(fp.type)?.kind : undefined;
   }
 
   /** World State 물건의 종류 이름(item 기본값). */
@@ -324,14 +347,14 @@ export class PlanDraft {
 
   /** 손 조작 동작의 끝 조건: 그 가전이 이 단계 뒤에 그 상태가 됨. 문 상태가 없는 가전의 열기·닫기는 그 가전 설비(카메라)의 열림·닫힘 사실(지금 값, 그 가전 방).
    *  둘 다 없으면 null(사람이 「완료」로 넘긴다). */
-  private handUntil(id: string, to: "on" | "off" | "open" | "close"): Condition | null {
+  private handUntil(id: string, to: "on" | "off" | "open" | "close", kind: string): Condition | null {
     const d = this.ctx.devices.find((x) => x.id === id);
     const key = d ? HAND_STATES[to].find((k) => (d.twinAttrs[DEVICE_STATES[k].attr] ?? []).includes(DEVICE_STATES[k].value)) : undefined;
     if (key) return { device: id, became: key };
-    if (!d || (to !== "open" && to !== "close")) return null;
-    const fixture = (Object.keys(CLASSES) as (keyof typeof CLASSES)[]).find((k) => CLASSES[k].role === "fixture" && (CLASSES[k] as { deviceKind?: string }).deviceKind === d.kind && (CLASSES[k].facets as readonly string[]).includes("open"));
+    if (to !== "open" && to !== "close") return null;
+    const fixture = (Object.keys(CLASSES) as (keyof typeof CLASSES)[]).find((k) => CLASSES[k].role === "fixture" && (CLASSES[k] as { deviceKind?: string }).deviceKind === kind && (CLASSES[k].facets as readonly string[]).includes("open"));
     if (!fixture) return null;
-    const room = this.ctx.floor.objects.get(id)?.room ?? d.room;
+    const room = this.ctx.floor.objects.get(id)?.room ?? d?.room;
     return { fixture, ...(room ? { room } : {}), facts: { open: to === "open" ? "open" : "closed" } };
   }
 
@@ -394,14 +417,17 @@ export class PlanDraft {
     if (a.kind !== "pick" && a.kind !== "place") none("object");
     // 손으로 다루는 가전은 그 동작(켜기·끄기·열기·닫기)에만: 같은 대상, 같은 동작이어야 한다
     const handTo = a.act ? HAND_ACT[a.act] : undefined;
+    const handKind = a.kind === "do" && handTo ? this.handKindOf(a.target ?? null, handTo) : undefined;
     if (a.kind === "do" && handTo) {
-      const kind = devices.find((d) => d.id === a.target)?.kind;
+      const kind = handKind;
       if (!kind) errors.push(`손 조작 동작(${a.act})은 가전 대상에만 씁니다: ${a.target ?? "대상 없음"}`);
       else if (!DEVICE_ACTS[kind]?.includes(a.act!)) errors.push(`${KIND_LABELS[kind as keyof typeof KIND_LABELS] ?? kind}에는 ${a.act}를 하지 않습니다. 쓸 수 있는 동작: ${DEVICE_ACTS[kind]?.join(", ") || "없음"}`);
       if (!a.hand_device || a.hand_device.id !== a.target || a.hand_device.to !== handTo) errors.push(`${a.act}에는 hand_device {"id": target, "to": "${handTo}"}가 있어야 합니다(같은 대상, 같은 동작)`);
     } else none("hand_device");
     let target: string | null = a.target ?? null;
     let object: string | null = a.object ?? null;
+    // 내려놓기 물건을 쓰지 않으면 같은 계획에서 앞에 집은 물건을 이어받는다(안내 글 물건과 추적 물건이 같은 물건이 되게)
+    if (a.kind === "place" && !object) object = [...this.added].reverse().find((x) => x.step.kind === "pick")?.step.object ?? null;
     const live = (id: string) => { const o = worldObject(world, id); return o && o.status !== "gone" ? o : undefined; };
     // 실행 추적이 놓기를 끝낸 물건(입력 줄 「이미 치움」)은 다시 집거나 놓지 않는다(실행 전 검사가 막아 계획이 끝나 버린다)
     const putAway = (id: string | null) => { if (id && this.ctx.placed?.has(id)) errors.push(`이미 치운 물건입니다(앞 계획이 놓기를 끝냄): ${id}. 「이미 치움」이 없는 물건을 쓰세요`); };
@@ -434,7 +460,7 @@ export class PlanDraft {
       case "do":
         need("target", !!target);
         // 손 조작 동작(켜기·끄기·열기·닫기)은 [가전] id도 대상으로 받는다(평면도에 없는 가전)
-        if (target && !live(target) && !floor.objects.has(target) && !(handTo && devices.some((x) => x.id === target))) errors.push(`do target은 보이는 World State 물건 id나 평면도 id여야 합니다: ${target}`);
+        if (target && !live(target) && !floor.objects.has(target) && !(handKind && devices.some((x) => x.id === target))) errors.push(`do target은 보이는 World State 물건 id나 평면도 id여야 합니다: ${target}`);
         if (target && live(target) && this.ctx.task.target && live(target)!.cls !== this.ctx.task.target) errors.push(`이 할 일은 ${this.ctx.task.target} 물건에 합니다`);
         putAway(target);
 
@@ -504,17 +530,19 @@ export class PlanDraft {
     let server: { label: string; command: string; caution: string | null } | null = null;
     if (human && a.act && !errors.length) {
       const name = this.nameOf(target);
-      // 집고 놓는 물건이 World State 물건이면 item 대신 그 종류 이름을 쓴다(보이는 물건을 다른 이름으로 부르지 않는다)
+      // 집고 놓는 물건이 World State 물건이면 그 물건 이름으로 부른다. item이 그 물건과 다른 것을 가리키면 버린다(글은 병, 추적은 컵이 되지 않게)
       const own = a.kind === "pick" || a.kind === "place" ? this.itemOf(object) : null;
-      const item = own ?? a.item ?? null;
+      if (own && a.item && a.item !== own && ITEM_CLASS[a.item] !== this.clsOf(object!)) {
+        errors.push(`item(${a.item})이 물건 ${object}(${own})과 다릅니다. 그 물건 이름을 쓰거나 item을 빼세요`);
+      }
+      const item = own ? a.item ?? own : a.item ?? null;
       const made = name ? STEP_TEXT[`${a.kind}:${a.act}`]?.({ place: name, item }) ?? null : null;
       if (!name) errors.push(`대상 ${target ?? "없음"}에는 부를 이름이 없어 고를 수 없습니다`);
       else if (!made) errors.push(`${a.kind} ${a.act}에는 item(물건 이름)이 있어야 합니다`);
       else if (!errors.length) {
-        const kind = devices.find((d) => d.id === target)?.kind;
-        server = { ...made, caution: handTo === "on" && kind ? CAUTION_LINE[kind] ?? null : null };
+        server = { ...made, caution: handTo === "on" && handKind ? CAUTION_LINE[handKind] ?? null : null };
         // 손 조작 동작(켜기·끄기·열기·닫기)의 끝 조건은 서버가 그 가전의 바뀐 상태로 만든다(모델 until은 쓰지 않는다): 전부터 남아 있던 값으로 넘어가지 않는다
-        if (handTo && kind) until = this.handUntil(target!, handTo);
+        if (handTo && handKind) until = this.handUntil(target!, handTo, handKind);
       }
     }
     if (errors.length) return errors.join("; ");

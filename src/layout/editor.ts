@@ -172,6 +172,11 @@ export class LayoutEditor {
   }
 
   /** 초점 표시용 물건 가운데(바닥 h + 키/2, 천장 물건은 h - 키/2). */
+  /** 카탈로그 종류 이름(예: bookcase → 책장). 카탈로그에 없으면 undefined. */
+  typeLabel(type: string): string | undefined {
+    return this.catalog.get(type)?.label;
+  }
+
   center(id: string): { id: string; label: string; position: Vec3 } | undefined {
     const o = this.current.get(id);
     if (!o) return undefined;
