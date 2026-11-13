@@ -10,7 +10,7 @@
 
 **Spec:** 허정오 시연 시나리오(2026-11-13): 「[눈치 모드] 1. 첫 일주일: 상황 파악 후 작업 처리, 의도 파악 후 작업 처리 2. 일주일 후: 사용자의 습관과 학습한 선제적 행동 [코치모드] 3. 탈시설 장애인을 위한 가이드 모드 4. 가정 내 노인분들 위한 뭔가?」, 「눈치모드로 동작할지 코치모드로 동작할지 알아서 판단하는 것도 의미가 있을듯」, 「일주일 뒤에도 습관 기반 행동하는 것도 눈치 모드야」, 「3번 4번 순서를 바꿔줘」(코치 모드는 3. 노인, 4. 탈시설 장애인 순서). 아래 「정한 것」은 사용자가 모두 추천안으로 정했다(2026-11-13). 회의록 2026-11-12(눈치코치, PAM 매일 반성 후 다음 날 적용, p값 후보정, 기본 동작, ThinQ 사용설명서), 2026-11-09(가이드 모드). 구현 뒤 `docs` 저장소 `01_Product/구현명세서 SSOT.md`(돕는 방식·반성·시연)와 `변경이력.md`를 고친다.
 
-**먼저 된 것:** 같은 브랜치의 `2026-11-13-cup-branches.md` Task 1~10, `2026-11-13-coach-mode.md` Task 1~13과 Codex 고침(`c224568`·`fec2e7d`·`cc3cc17`·`f267e6c`·`f83b0b0`·`b723636`). 코치 계획 Task 14 Step 1(영상 판정에 말 넣기 `--say`)은 아직 없어 이 계획 Task 9로 옮겼다.
+**먼저 된 것:** 같은 브랜치의 `2026-11-13-cup-branches.md` Task 1~10, `2026-11-13-coach-mode.md` Task 1~13과 Codex 고침(`c224568`·`fec2e7d`·`cc3cc17`·`f267e6c`·`f83b0b0`·`b723636`)과 서버 글 구조 T1~T4(`c22ca2b`·`f7814fa`·`c6740e6`·`79ff269`). 코치 계획 Task 14 Step 1(영상 판정에 말 넣기 `--say`)은 아직 없어 이 계획 Task 9로 옮겼다.
 
 ## 정한 것 (사용자, 2026-11-13)
 
@@ -25,7 +25,7 @@
 9. 「습관」 칩은 그 행동에 seed에 없는 규칙이 하나라도 있으면 붙는다(Task 2: 행동 이름만으로는 어느 규칙인지 못 가려 행동 단위로 본다).
 10. 시연 폴더에 첫 승인을 미리 넣는다.
 
-## 조사한 사실 (2026-11-13, `feat/coach-cup` b723636)
+## 조사한 사실 (2026-11-13, `feat/coach-cup` 79ff269)
 
 **돕는 방식**
 - `AssistMode = "noonchi" | "coach"`, 설정 3단계 「돕는 방식」에서 고른다(`ui/src/setup/ModeStep.tsx`). PAM에 보내는 목록은 `tasksFor(assist)`(`src/act/tasks.ts`).
@@ -39,11 +39,15 @@
 - 반성 사건은 `start.ts`가 바로 방송하고, 새로 붙은 대시보드에는 다시 보내지 않는다. 대시보드에 반성 결과를 보이는 자리가 없다.
 - 생각 말풍선 칩 「상태 · …」는 `decision.fsm`(`fsmRuleOf`)에서 온다. **같은 행동이 규칙 여러 개에 있으면 `fsmRuleOf`가 null을 돌려준다**(`src/brain/decision.ts`). seed 「덥다 → 에어컨」과 배운 「TV 보러 앉음 → 에어컨」이 함께 있으면 상태 칩이 사라진다. PAM 답에는 어느 규칙인지가 없다.
 
-**위험 가전 폰 글(b723636, 기본 거부)**
-- 모델이 쓴 글(단계 이름·명령·안전 문구·say·ask·답·다시 알리기·사람 부탁·에이전트 답)에 위험 가전(인덕션·전자레인지) 이름이 나오면 폰으로 나가지 않는다(계획 검사가 버린다).
-- 위험 가전 단계로 받는 것은 그 가전이 대상인 go·pick·place와 그 가전의 `hand_device`(on·off·open·close)가 붙은 do뿐이다. 그 단계의 이름·명령·안전 문구는 서버 글 틀 `RISKY_STEP_TEXT`(`src/plan/labels.ts`)로 바뀐다. 대상이 위험 가전인 자유 do는 버린다. 위험 가전 단계의 대상은 기기 id여야 한다(기기 목록에서 종류를 찾는다).
-- 서버 글(전자레인지): go 「전자레인지로 가 주세요」, place 「전자레인지 안에 넣어 주세요」, pick 「전자레인지에서 꺼내 주세요」, on 「전자레인지를 켜 주세요」(안전 문구 「그릇이 뜨거워져요.」), off 「전자레인지를 꺼 주세요」, open·close 「전자레인지 문을 열어·닫아 주세요」. 넣고 꺼내는 물건 이름은 글에 없다.
-- 승인 질문과 켠 가전 추적은 `on`에서만이다. 켠 위험 가전 뒤에는 같은 가전 `hand_device off` do가 꼭 있어야 계획을 받는다. hand_device on·off do의 끝 조건은 `{"device": id, "became": …}`만, open·close는 따로 정한 것이 없다.
+**사람 단계 글은 서버가 만든다(T1~T4: c22ca2b·f7814fa·c6740e6·79ff269)**
+- 사람 단계(go·pick·place·do)는 모델이 `{kind, target, act, item?}`만 고른다. 단계 이름·폰 명령은 서버 글 틀 `STEP_TEXT`(`src/plan/labels.ts`)가 `${kind}:${act}`와 대상 이름(평면도 종류 짧은 이름, 없으면 낱말 표 이름·가전 종류 이름)·물건 이름(item)으로 만든다. 모델이 쓴 문장은 폰으로 나가지 않는다.
+- 동작(`STEP_ACTS`): go 가기 / pick 들기·꺼내기·내리기 / place 넣기·올리기·놓기 / do 따르기·물 받기·넣기·젓기·열기·닫기·켜기·끄기. item은 낱말 표 물건 이름과 `EXTRA_ITEMS`(냄비·면과 스프·물·물병·콜라·라면·세탁물). 집고 놓는 물건이 보이는 World State 물건이면 item 대신 그 종류 이름을 쓴다.
+- 손 조작 동작(켜기·끄기·열기·닫기)은 가전 대상에만, 같은 id·같은 동작의 `hand_device`와 함께만 받는다. 가전마다 허용 동작(`DEVICE_ACTS`): 인덕션 켜기·끄기, 전자레인지 열기·닫기·켜기·끄기, 냉장고 열기·닫기. 그 밖(에어컨을 손으로 켜기 등)은 버린다.
+- 손 조작 동작의 끝 조건은 서버가 만든다(모델 until은 보지 않는다): 켜기·끄기는 `{"device": id, "became": "on" | "off"}`, 문 상태가 있는 가전(냉장고)의 열기·닫기는 `became: door_open | door_closed`, 문 상태가 없는 가전(전자레인지)은 그 가전 설비의 열림 사실 지금 값 `{"fixture": "microwave", "room": <그 가전 방>, "facts": {"open": "open" | "closed"}}`.
+- 켜기에는 서버 안전 문구(`CAUTION_LINE`: 인덕션 「냄비와 상판이 뜨거워져요.」, 전자레인지 「그릇이 뜨거워져요.」)가 붙고 실행 추적이 명령 전에 묻는다. 켠 위험 가전 뒤에는 같은 가전 끄기(hand_device off) do가 꼭 있어야 계획을 받는다.
+- say·wait는 닫힌 목록(`NOTICES`)의 열쇠만 고른다: 물 끓기·익기·다 되기·세탁·끝(끝은 say만). say 글·wait 이름은 서버가 정한다(예: 다 되기 → say 「다 될 때까지 기다려요.」, wait 이름 「다 되기 기다리기」, say 이름 「다 되기 알림」). ask 답은 묶음 `clear_keep | yes_no`, 질문 글에 위험 가전 이름이 나오면 버린다.
+- 관찰 모드: `tell_person {mode: repeat | earlier, reason}`(글은 지금 명령, earlier는 「먼저 …」), `ask_person {target, reason}`(글은 「<곳>이 보이게 폰을 가까이 대 주세요」).
+- 위험 가전 이름 표는 별칭·오타·영어 이름까지 잡는다(79ff269). 이름 없이 위험 가전을 가리키는 답은 못 잡는다(문서에 적힌 한계).
 
 **의도·노인·트윈·영상**
 - 들은 말은 관찰 텍스트에 `사람이 말함: 「…」` 줄로 들어간다. 「에어컨 켜기」는 이미 행동 목록에 있다.
@@ -141,7 +145,7 @@ export const keepAll: HabitFilter;   // proposed 그대로, 새 규칙마다 { k
   - PAM에 사진을 넘기지 않는다.
   - 대시보드에 입력창·단추를 더하지 않는다. 반성은 명령줄(`scripts/demo-setup.ts`)이 API로 부른다.
   - 새 화면 칸을 만들지 않는다(생각 말풍선을 그대로 쓴다). 새 칸이 필요해지면 구조만 그린 HTML 스케치를 먼저 보여 주고 확인을 받는다. 부품은 21st.dev 부품, 색은 토큰, 글은 상태만(60자 아래, 화살표·괄호 없음), 글 크기는 부품 원래 크기.
-  - 위험 가전 폰 글은 기본 거부다(b723636). 계획 대본·지시문·say·wait 글에 위험 가전 이름을 쓰지 않고, 위험 가전 단계는 go·pick·place·hand_device do로만 만들어 서버 글 틀이 나가게 한다.
+  - 사람 단계·say·wait·관찰 모드 글은 서버가 만든다(T1~T4). 대본과 지시문은 `{kind, target, act, item}`·`notice`·`mode`만 고르고 문장을 쓰지 않는다. 손 조작은 `DEVICE_ACTS` 안에서만, 같은 `hand_device`와 함께.
   - 승인 규칙 그대로. 위험 목록(인덕션 켜기·전자레인지 시작)은 늘 묻는다.
 - 시험·빌드·크롬은 `npm run heavy -- <cmd>`로만, 한 번에 하나. 크롬·dev3d는 PC에 하나만.
 - 이 PC 메모리는 13.8GB다. 녹화(`--record`)할 때는 `BRAIN_YOLO_PROVIDER=cpu`로 띄우고, PAM 서비스·서버·크롬 하나 밖의 무거운 프로그램은 끈다.
@@ -150,7 +154,7 @@ export const keepAll: HabitFilter;   // proposed 그대로, 새 규칙마다 { k
   - 반성 한 번 $0.01~0.05(첫 판에 OpenRouter 사용 기록으로 잰다), 일곱 번 $0.07~0.35, 한 번에 1~4분.
   - 전자레인지 한 판 $0.06~0.10(기다리기는 `start-microwave.mp4` 안에서 꺼짐까지 보여 짧다).
   - 라면 한 판 $0.20~0.32(기다리기 두 번, 계획 모델이 고른 시간만큼 VLM이 더 돈다. 4분씩이면 약 $0.19 더).
-  - 한 바퀴(장면 일곱 + 대조 + 반성 일곱) 약 $0.50~0.90. 지시문을 고쳐 일주일을 새로 반성하면 한 번에 $0.07~0.35 더. 이 계획 한도 $2.20(두 바퀴 + 다시 돌리기). 넘기 전에 멈추고 보고한다.
+  - 한 바퀴(장면 일곱 + 대조 + 반성 일곱) 약 $0.50~0.90. 지시문을 고쳐 일주일을 새로 반성하면 한 번에 $0.07~0.35 더. 이 계획 한도 $2.20(사용자 승인, 두 바퀴 + 다시 돌리기). 넘기 전에 멈추고 보고한다.
 - 시연 집 폴더는 `runtime/demo/day1`·`runtime/demo/week`다(`runtime/`은 이미 `.gitignore`에 있다). 그 안의 기록 DB·`setup.json`·`approvals.json`·`lessons.json`·`phone-start.json`과 영상(`runtime/videos/`)은 커밋하지 않는다.
 - 커밋 메시지는 영어, attribution 줄 없음. `.gitignore`·`.ignore`·`ui/public/fonts/OFL-noto-sans-kr.txt`·`.trail/`은 커밋하지 않는다. 푸시는 사용자가 말할 때만.
 
@@ -507,11 +511,11 @@ export function judgeState(o: {
 - Modify: `src/act/tasks.ts`, `services/pam/scenarios/noonchi/tasks.json`, `services/pam/scenarios/noonchi/scenario.json`(Task 4 행동 이름 줄·코치 행동 줄에 새 이름), `src/brain/decision.ts`(`cooking` 상태), `src/world/labels.ts`(`FSM_STATE_TEXT.cooking` → `"주방에서 할 일을 찾음"`), `src/agent/policy.ts`(`SELF_STOP`), `src/agent/planTools.ts`(끄기 검사), `src/agent/planInput.ts`(지시문 한 줄), `src/act/track.ts`(켠 가전 추적), `tests/helpers/planner.ts`(`microwaveSteps`, 대본 표)
 - Test: `tests/act-tasks.test.ts`, `tests/agent-planner.test.ts`, `tests/act-track.test.ts`, `tests/phone-lines.test.ts`, `tests/brain-decision.test.ts`, `tests/pam-scenario.test.ts`
 
-**먼저:** Task 11. 전자레인지가 기기이자 평면도 물건이어야 위험 가전 단계의 target이 된다(기기 id와 평면도 id가 같은 `microwave_kitchen`).
+**먼저:** Task 11. 전자레인지가 기기이자 평면도 물건이어야 대상이 되고 이름이 붙는다(기기 id와 평면도 id가 같은 `microwave_kitchen`, 방 `kitchen`, 평면도 종류 `microwave` → 이름 「전자레인지」).
 
-**위험 가전 글(b723636):** 전자레인지가 대상인 go·pick·place와 전자레인지 `hand_device`(on·off·open·close)가 붙은 do만 받고, 그 단계의 이름·명령·안전 문구는 서버 글 틀(`RISKY_STEP_TEXT`)로 바뀐다. 모델이 쓴 글은 폰으로 나가지 않는다. 그 밖의 단계(say·wait·다른 대상 단계)의 글에 「전자레인지」가 나오면 계획 검사가 버린다. 대상이 전자레인지인 자유 do도 버린다. 승인 질문과 켠 가전 추적(hot)은 `on`에서만이다.
+**글과 끝 조건은 서버가 만든다(T1~T4):** 대본은 `{kind, target, act, item, hand_device, notice}`만 고른다. 폰 글은 `STEP_TEXT`·`NOTICES`가 내고, 손 조작 동작의 끝 조건은 `handUntil`이 낸다.
 
-**저절로 꺼지는 가전:** 전자레인지는 다 되면 스스로 멈춘다. 지금 검사는 켠 위험 가전 뒤에 `hand_device off` do를 꼭 두게 해, 이미 꺼진 뒤에 「전자레인지를 꺼 주세요」를 보내게 된다. 또 기다리는 동안 꺼지면 그 do의 `became: off`는 단계 시작 전 사건이라 끝나지 않는다. 그래서 저절로 꺼지는 가전(`SELF_STOP`)만 「꺼짐을 기다리는 wait」(지금 값 `state: off`)도 끄는 단계로 인정하고, 그릇 꺼내기는 따로 pick으로 둔다.
+**저절로 꺼지는 가전:** 전자레인지는 다 되면 스스로 멈춘다. 지금 검사는 켠 위험 가전 뒤에 끄기 do(hand_device off)를 꼭 두게 해, 이미 꺼진 뒤에 「전자레인지를 꺼 주세요」를 보내게 된다. 또 기다리는 동안 꺼지면 끄기 do의 `became: off`는 단계 시작 전 사건이라 끝나지 않는다. 그래서 저절로 꺼지는 가전(`SELF_STOP`)만 「꺼짐을 기다리는 wait」를 끄는 단계로 인정한다. 이 wait는 notice 「다 되기」(이름 「다 되기 기다리기」, 폰 글 없음)와 모델이 쓰는 until `{"device": id, "state": "off"}`(wait until은 모델 것을 그대로 받는다)로 만든다. 그릇 꺼내기는 따로 pick으로 둔다.
 
 **Interfaces:**
 
@@ -528,35 +532,37 @@ export function judgeState(o: {
 export const SELF_STOP: Partial<Record<DeviceKind, true>> = { microwave: true };
 // src/agent/planTools.ts finish(): 켠 위험 가전(riskyHand) 뒤에 (a) 같은 가전 hand_device off do 또는
 //   (b) 그 가전 종류가 SELF_STOP이고 until이 정확히 {"device": 그 가전, "state": "off"}인 wait 가 있어야 끝낸다.
-// src/act/track.ts advance(): (b) 모양 wait가 끝나면 hot에서 그 가전을 지운다. 그 전에 계획이 닫히면 지금처럼 끄기 안내를 보낸다.
-// 지시문(planInput) 한 줄: "- 다 되면 스스로 멈추는 가전(전자레인지)은 켠 뒤 끄는 do 대신 그 가전 상태 off를 기다리는 wait({\"device\": id, \"state\": \"off\"})를 둔다. 꺼낼 때는 pick(target 그 가전)을 따로 둔다."
+// src/act/track.ts advance(): (b) 모양 wait가 끝나면 hot에서 그 가전을 지운다. 그 전에 계획이 닫히면 지금처럼 끄기 안내(「전자레인지를 꺼 주세요」)를 보낸다.
+// 지시문(planInput) 한 줄: "- 다 되면 스스로 멈추는 가전(전자레인지)은 켠 뒤 끄기 do 대신 notice 다 되기, until {\"device\": id, \"state\": \"off\"}인 wait를 둔다. 꺼낼 때는 pick(act 꺼내기, target 그 가전)을 따로 둔다."
 export function microwaveSteps(ids: { microwave: string; waitS?: number /* wait timeout_s, 기본 300 */ }): Record<string, unknown>[];
 ```
 
-- 시험 대본 9단계. 「폰 글」은 서버 글 틀이 내는 글이고, 대본의 label·command가 무엇이어도 이 글로 바뀐다(시험이 그것을 본다):
+- 시험 대본 9단계. 「폰 글」은 `STEP_TEXT`·`NOTICES`가 실제로 내는 글이고, 「끝 조건」의 2·4·5·8번은 `handUntil`이 만든 값이다(대본에 until을 써도 쓰이지 않는다):
 
-| # | kind | target | hand_device | 폰 글(이름 / 명령) | 끝 조건 | 넘김 |
-|---|---|---|---|---|---|---|
-| 1 | go | 전자레인지 | | 전자레인지로 가기 / 전자레인지로 가 주세요 | `{"phone_near": 전자레인지}` | 폰 위치 |
-| 2 | do | 전자레인지 | open | 전자레인지 문 열기 / 전자레인지 문을 열어 주세요 | `{"fixture": "microwave", "facts": {"open": "open"}}` | 비전 |
-| 3 | place | 전자레인지 | | 전자레인지에 넣기 / 전자레인지 안에 넣어 주세요 | 없음 | 「완료」·「다 했어」 |
-| 4 | do | 전자레인지 | close | 전자레인지 문 닫기 / 전자레인지 문을 닫아 주세요 | `{"fixture": "microwave", "facts": {"open": "closed"}}` | 비전 |
-| 5 | do | 전자레인지 | on | 전자레인지 켜기 / 전자레인지를 켜 주세요 (안전 문구 「그릇이 뜨거워져요.」, 명령 전에 승인 질문) | `{"device": 전자레인지, "became": "on"}` | 비전(쓰는 중 → 켜짐) |
-| 6 | say | 없음 | | 다 될 때까지 기다려요. | 4초 | 시간 |
-| 7 | wait | 없음 | | 폰 글 없음(이름 「다 될 때까지 기다리기」) | `{"device": 전자레인지, "state": "off"}`, timeout 300, on_timeout ask | 비전(쓰는 중이 아님 → 꺼짐). 6번 동안 이미 꺼졌으면 바로 넘어감 |
-| 8 | do | 전자레인지 | open | 전자레인지 문 열기 / 전자레인지 문을 열어 주세요 | `{"fixture": "microwave", "facts": {"open": "open"}}` | 비전 |
-| 9 | pick | 전자레인지 | | 전자레인지에서 꺼내기 / 전자레인지에서 꺼내 주세요 | 없음 | 「완료」·「다 했어」 |
+| # | 대본 | 폰 글(이름 / 명령) | 끝 조건 | 넘김 |
+|---|---|---|---|---|
+| 1 | `{kind: "go", act: "가기", target: mw}` | 전자레인지로 가기 / 전자레인지로 가 주세요 | `{"phone_near": mw}` | 폰 위치 |
+| 2 | `{kind: "do", act: "열기", target: mw, hand_device: {id: mw, to: "open"}}` | 전자레인지 문 열기 / 전자레인지 문을 열어 주세요 | `{"fixture": "microwave", "room": "kitchen", "facts": {"open": "open"}}` | 비전 |
+| 3 | `{kind: "place", act: "넣기", target: mw, item: "그릇"}` | 그릇 내려놓기 / 그릇을 전자레인지에 넣어 주세요 | 없음 | 「완료」·「다 했어」 |
+| 4 | `{kind: "do", act: "닫기", target: mw, hand_device: {id: mw, to: "close"}}` | 전자레인지 문 닫기 / 전자레인지 문을 닫아 주세요 | `{"fixture": "microwave", "room": "kitchen", "facts": {"open": "closed"}}` | 비전 |
+| 5 | `{kind: "do", act: "켜기", target: mw, hand_device: {id: mw, to: "on"}}` | 전자레인지 켜기 / 전자레인지를 켜 주세요 (안전 문구 「그릇이 뜨거워져요.」, 명령 전에 승인 질문 「그릇이 뜨거워져요. 전자레인지를 켤까요?」) | `{"device": mw, "became": "on"}` | 비전(쓰는 중 → 켜짐) |
+| 6 | `{kind: "say", notice: "다 되기"}` | 다 되기 알림 / 다 될 때까지 기다려요. | 4초 | 시간 |
+| 7 | `{kind: "wait", notice: "다 되기", until: {"device": mw, "state": "off"}, timeout_s: 300, on_timeout: "ask"}` | 다 되기 기다리기 / 폰 글 없음 | `{"device": mw, "state": "off"}` | 비전(쓰는 중이 아님 → 꺼짐). 6번 동안 이미 꺼졌으면 바로 넘어감 |
+| 8 | 2번과 같음 | 전자레인지 문 열기 / 전자레인지 문을 열어 주세요 | 2번과 같음 | 비전 |
+| 9 | `{kind: "pick", act: "꺼내기", target: mw, item: "그릇"}` | 그릇 꺼내기 / 그릇을 꺼내 주세요 | 없음 | 「완료」·「다 했어」 |
 
-- 3·9번은 1인칭 영상에서 사람이 보이지 않아 「들고 있음」을 볼 수 없어 「완료」로 넘긴다. 6번 say와 7번 wait 글에는 「전자레인지」를 쓰지 않는다.
-- 2·4·8번 끝 조건은 단계가 시작된 뒤 본 VLM 사실의 지금 값이다(이미 열려 있으면 바로 넘어간다, 「정해야 할 것」 2).
-- 서버 글에는 넣는 물건 이름(그릇)이 없다(「정해야 할 것」 3).
+- 3·9번은 1인칭 영상에서 사람이 보이지 않아 「들고 있음」을 볼 수 없어 「완료」로 넘긴다. 그릇이 World State 물건으로 보이고 대본이 그 id를 `object`로 주면 item 대신 그 종류 이름(「그릇」)이 들어간다.
+- 2·4·8번 끝 조건은 단계가 시작된 뒤 본 VLM 사실의 지금 값이다(이미 열려 있으면 바로 넘어간다, 남은 결정 2 「가」). 방이 `kitchen`이라 World State 눈이 주방이 아니면 모름이 되어 「완료」로 넘어간다.
+- 5번 승인 질문은 `CAUTION_TEXT.ask(안전 문구, handLabel)`이라 가전 이름이 들어간다: 「그릇이 뜨거워져요. 전자레인지를 켤까요?」. 켠 채 닫히면 끄기 안내 「전자레인지를 꺼 주세요」.
 
 - [ ] **Step 1: 실패하는 시험.**
   - 「행동 목록 아홉, 앞 여덟 순서 그대로, 새 행동은 `coach`」, 「`tasksFor("noonchi")`에 없고 `coach`·`auto`에 있다」, 「`tasks.json`·`scenario.json` 이름 줄이 맞다」, 「`fsmRuleOf`가 `cooking`」.
-  - 「가짜 모델의 전자레인지 계획이 계획 검사를 지나고, 단계마다 이름·명령이 위 표의 서버 글이며 5번만 안전 문구가 있다」.
-  - 「6번 say에 「전자레인지」를 넣으면 버린다」, 「대상이 전자레인지인 hand_device 없는 do는 버린다」, 「5번 until을 `state`로 쓰면 버린다」.
-  - 「7번 wait를 빼면 `켠 가전은 계획 안에서 끕니다`로 버린다. 7번 until이 `{"device": 전자레인지, "state": "off"}`면 받는다. 같은 wait를 인덕션 켜기 뒤에 두면 버린다(SELF_STOP 아님)」.
-  - 실행 추적: 「5번 명령 전에 승인 질문, 승인 뒤 VLM 쓰는 중이면 넘어감」, 「6번 동안 전자레인지가 꺼지면 7번이 바로 끝나고 hot에서 빠져 계획이 끝나도 끄기 안내가 없다」, 「7번 전에 그만두면 끄기 안내(`전자레인지를 꺼 주세요`)가 간다」.
+  - 「가짜 모델의 전자레인지 계획이 계획 검사를 지나고, 단계마다 이름·명령·끝 조건이 위 표와 같으며 5번만 안전 문구가 있다」.
+  - 「대본 6번 say에 모델 글(text)을 넣어도 쓰이지 않고 서버 글 「다 될 때까지 기다려요.」만 나간다」.
+  - 「5번 대본에 until `{"device": mw, "state": "on"}`을 써도 버리지 않고 서버가 `{"device": mw, "became": "on"}`으로 바꾼다」.
+  - 「2번에 hand_device가 없거나 `to`가 다르면 버린다」, 「냉장고에 켜기, 에어컨에 켜기(손 조작)는 버린다」.
+  - 「7번 wait를 빼면 `켠 가전은 계획 안에서 끕니다`로 버린다. 7번 until이 `{"device": mw, "state": "off"}`면 받는다. 같은 wait를 인덕션 켜기 뒤에 두면 버린다(SELF_STOP 아님). notice가 「끝」이면 wait로 받지 않는다(지금 검사)」.
+  - 실행 추적: 「5번 명령 전에 승인 질문, 승인 뒤 VLM 쓰는 중이면 넘어감」, 「6번 동안 전자레인지가 꺼지면 7번이 바로 끝나고 hot에서 빠져 계획이 끝나도 끄기 안내가 없다」, 「7번 전에 그만두면 끄기 안내(「전자레인지를 꺼 주세요」)가 간다」.
 - [ ] **Step 2:** `npm run heavy -- npx vitest run tests/act-tasks.test.ts tests/agent-planner.test.ts tests/act-track.test.ts tests/phone-lines.test.ts tests/brain-decision.test.ts tests/pam-scenario.test.ts` → 실패 확인.
 - [ ] **Step 3:** 구현.
 - [ ] **Step 4:** 통과 확인.
@@ -577,8 +583,8 @@ export function microwaveSteps(ids: { microwave: string; waitS?: number /* wait 
   2. TV 보는 사람 + `say` 「아 덥다」 → 폰 답 빈 글, 말 요청 에이전트 도구 호출 없음, 거실 에어컨 켜짐.
   3. 같은 장면에서 말이 없으면 에어컨을 켜지 않는다(대조).
   4. 관찰만 넣은 합성 7일(`memories: "none"`)에서 1~7일을 차례로 `POST /api/reflection/run` → 날마다 `appliesDay`가 다음 날, 7일 판본은 오늘부터, `/api/memory/day/<오늘>`의 uses가 그 판본, 저장된 판본에 라면 습관 없음·요리 규칙은 seed 글, dropped에 라면 습관(coach) → 말없는 TV 장면 → 에어컨 켜짐, 판단 사건 `assist: "noonchi"`, `fsm.learned: true`.
-  5. 전자레인지 감지 + `say` 「이거 어떻게 하지」 → 첫 명령 `전자레인지로 가 주세요`(서버 글), 판단 사건 `assist: "coach"`, 5번 단계에서 승인 질문이 먼저 오고 승인 뒤 VLM이 전자레인지 쓰는 중을 내면 넘어가며, 6번 동안 쓰는 중이 사라지면 7번 기다리기가 바로 끝나고 8·9번 뒤 done, 끄기 안내 없음. 폰으로 나간 모든 글이 서버 글 틀이거나 위험 가전 이름이 없다.
-  6. `say` 「라면 끓이는 법 알려 줘」 → 첫 명령 `수납장으로 가 주세요`, 판단 사건 `assist: "coach"`.
+  5. 전자레인지 감지 + `say` 「이거 어떻게 하지」 → 명령이 Task 12 표의 서버 글 차례대로(첫 명령 `전자레인지로 가 주세요`), 판단 사건 `assist: "coach"`, 5번 단계에서 승인 질문이 먼저 오고 승인 뒤 VLM이 전자레인지 쓰는 중을 내면 넘어가며, 6번 동안 쓰는 중이 사라지면 7번 기다리기가 바로 끝나고 8·9번 뒤 done, 끄기 안내 없음. 폰으로 나간 모든 글이 서버 글 틀이거나 위험 가전 이름이 없다.
+  6. `say` 「라면 끓이는 법 알려 줘」 → 첫 명령 `수납장으로 가 주세요`, 판단 사건 `assist: "coach"`, 6번 명령 `냄비를 인덕션에 올려 주세요`, 7번 전에 승인 질문.
   7. 모든 PAM 요청에 사진 칸이 없고 `contract`가 `pam-predict/2`·`pam-reflect/2`.
 - [ ] **Step 2:** `npm run heavy -- npx vitest run tests/demo-e2e.test.ts` → 실패 확인.
 - [ ] **Step 3:** 빠진 연결을 고친다.
@@ -601,6 +607,28 @@ export function microwaveSteps(ids: { microwave: string; waitS?: number /* wait 
 - [ ] **Step 5: 녹화.** 장면마다 `--record`(`BRAIN_YOLO_PROVIDER=cpu`). 프레임 4장씩 뽑아 칩·말풍선 카드·트윈 에어컨·전자레인지를 본다. 기다리기·반성 대기는 편집에서 줄인다.
 - [ ] **Step 6: 문서.** `docs` 저장소 `01_Product/구현명세서 SSOT.md`(돕는 방식 자동, 판단 칩, 반성 지시문 바꾸기, 반성 뒤 검사·거르기 자리, 기억 상태 API, 마지막 반성 다시 보내기, 시연 준비 명령, 더한 가전 파일, 전자레인지 코치, 영상 판정 인자), `변경이력.md`.
 - [ ] **Step 7:** Codex reviewer(herdr `w2:p5`)에게 브랜치 전체를 리뷰받고 지적을 고친다. `trail note`로 반성 지시문을 바꾼 까닭과 이어 반성을 고른 까닭을 남긴다.
+
+## 라면 대본 (시나리오 4, 코치 계획 그대로)
+
+`tests/helpers/planner.ts` `ramenSteps`(c22ca2b 뒤)와 서버 글 틀이 내는 글이다. Task 13 시험 6과 Task 14 실제 판정이 이 글을 기준으로 본다. 수납장·싱크대·인덕션은 평면도 id, 인덕션 켜기·끄기는 인덕션 가전 id다.
+
+| # | 대본 | 폰 글(이름 / 명령) | 끝 조건 |
+|---|---|---|---|
+| 1 | `{go, 가기, 수납장}` | 수납장으로 가기 / 수납장으로 가 주세요 | phone_near |
+| 2 | `{pick, 꺼내기, 수납장, item 냄비}` | 냄비 꺼내기 / 냄비를 꺼내 주세요 | 사람이 물건을 들고 있음 |
+| 3 | `{go, 가기, 싱크대}` | 싱크대로 가기 / 싱크대로 가 주세요 | phone_near |
+| 4 | `{do, 물 받기, 싱크대, item 냄비}` | 물 받기 / 냄비에 물을 받아 주세요 | 없음(「완료」) |
+| 5 | `{go, 가기, 인덕션}` | 인덕션으로 가기 / 인덕션으로 가 주세요 | phone_near |
+| 6 | `{place, 올리기, 인덕션, item 냄비}` | 냄비 올리기 / 냄비를 인덕션에 올려 주세요 | 없음(「완료」) |
+| 7 | `{do, 켜기, 인덕션 가전, hand_device on}` | 인덕션 켜기 / 인덕션을 켜 주세요 (안전 문구 「냄비와 상판이 뜨거워져요.」, 먼저 승인 질문) | became on |
+| 8 | `{say, notice 물 끓기}` | 물 끓기 알림 / 물이 끓을 때까지 기다려요. | 4초 |
+| 9 | `{wait, notice 물 끓기, elapsed_s}` | 물 끓기 기다리기 / 폰 글 없음 | 시간 |
+| 10 | `{do, 넣기, 인덕션, item 면과 스프}` | 면과 스프 넣기 / 면과 스프를 넣어 주세요 | 없음(「완료」) |
+| 11 | `{wait, notice 익기, elapsed_s}` | 익기 기다리기 / 폰 글 없음 | 시간 |
+| 12 | `{do, 끄기, 인덕션 가전, hand_device off}` | 인덕션 끄기 / 인덕션을 꺼 주세요 | became off |
+| 13 | `{say, notice 끝, item 라면}` | 끝 알림 / 라면이 다 됐어요. | 4초 |
+
+- 10번 대상은 인덕션(평면도 id)이다. 동작 넣기의 글 틀에는 자리 이름이 없어 「면과 스프를 넣어 주세요」로 나간다.
 
 ## 시연 순서 (발표 영상, 약 7분)
 
@@ -648,24 +676,25 @@ export function microwaveSteps(ids: { microwave: string; waitS?: number /* wait 
 - 기다리기 동안 같은 장면이면 VLM을 쉬어 비용 줄이기.
 - 반성 결과를 하루하루 비교해 보이는 화면.
 
-## 새로 정해야 할 것 (사용자)
+## 남은 결정 (기본 「가」로 진행)
 
-1. **비용 한도.** 이어 반성 일곱 번과 기다리기 동안 붙잡은 장면 때문에 한 바퀴가 약 $0.45 → $0.50~0.90으로 늘었다. 한도를 $1.20 → $2.20으로 올릴지(추천: 올린다. 안 올리면 라면 장면 실제 판정을 한 판만 하고 이어 반성은 한 번만 돌린다).
-2. **문 열기·닫기 끝 조건.** 가: 단계가 시작된 뒤 본 지금 값(이미 열려 있으면 바로 넘어감, 추천. 사람이 먼저 해 둔 일은 된 것으로 본다). 나: 「바뀐 것만」(`{"seq": [닫힘, 열림]}`처럼 단계 뒤 닫힘을 본 다음 열림. 이미 열려 있으면 다시 닫았다 열 때까지 기다리고, 그동안 시간 초과 질문이 뜬다).
-3. **서버 글에 물건 이름이 없음.** 「전자레인지 안에 넣어 주세요」, 「인덕션 위에 올려 주세요」처럼 무엇을 넣고 올리는지가 빠진다. 가: 시연은 그대로(추천. 바로 앞 단계와 화면 고리로 알 수 있고, 위험 가전 글은 서버가 정한다는 안전 규칙을 지킨다). 나: 서버 글 틀에 물건 종류 이름 칸을 더한다(낱말 표에 있는 종류만, 예: 「그릇을 전자레인지 안에 넣어 주세요」. 냄비는 낱말 표에 없어 빠진다).
-4. **저절로 꺼지는 가전의 끄기 단계.** 가: 전자레인지만 「꺼짐을 기다리는 wait」를 끄는 단계로 인정(추천. 다 된 뒤 「전자레인지를 꺼 주세요」를 보내지 않는다). 나: 지금 규칙 그대로 끄기 do를 두고 「완료」로 넘긴다(다 꺼진 뒤 끄라는 말이 한 번 나간다).
+1. **비용 한도: 정함.** $2.20(사용자 승인).
+2. **문 열기·닫기 끝 조건: 가로 진행.** 서버가 만드는 값이 그대로 「가」다: 문 상태가 없는 전자레인지는 단계가 시작된 뒤 본 설비 열림 사실의 지금 값(이미 열려 있으면 바로 넘어감). 「나」(바뀐 것만, `seq`)는 쓰지 않는다.
+3. **서버 글의 물건 이름: 가로 진행.** 새 글 틀(c22ca2b)이 item을 넣어 「그릇을 전자레인지에 넣어 주세요」, 「냄비를 인덕션에 올려 주세요」처럼 나온다. 따로 할 일은 없다. 이름이 빠지는 곳은 do 넣기(「면과 스프를 넣어 주세요」, 자리 이름 없음)와 pick 꺼내기(「그릇을 꺼내 주세요」, 자리 이름 없음)다.
+4. **전자레인지 끄기는 기다리기로 인정: 가로 진행.** Task 12의 `SELF_STOP`.
 
 ## Self-Review
 
 - 시나리오 1(상황·의도): 시연 순서 1~3, Task 3·8·9·13.
 - 시나리오 2(일주일 뒤 습관, 눈치): Task 4~8·13, 「일주일을 시연 안에서 보이는 길」. 반성 규칙(그날 고정·다음 날 적용)은 바꾸지 않는다. 7일 근거는 날마다 이어 반성으로 넘기고, 고정 상태를 API로 확인한다(Task 6·8).
 - p값 후보정 자리: 「습관 거르기 자리」, Task 5.
-- 시나리오 3(노인): Task 10·11·12, 시연 순서 6. 위험 가전 단계는 go·pick·place·hand_device do만, 폰 글은 서버 글 틀(b723636), on 끝 조건은 `became`, 다 된 것은 기다리기의 `state: off`, 꺼내기는 따로 pick.
+- 시나리오 3(노인): Task 10·11·12, 시연 순서 6. 대본은 `{kind, target, act, item, hand_device, notice}`만, 폰 글은 `STEP_TEXT`·`NOTICES`, 손 조작 끝 조건은 서버(`became on`, 문은 설비 열림 사실 + room), 다 된 것은 기다리기의 `state: off`, 꺼내기는 따로 pick.
 - 시나리오 4(탈시설 장애인): 코치 계획 그대로 + 수업 기록 씨앗(Task 8) + 말 넣기(Task 9) + 붙잡기·`--tail`(Task 9·10).
 - 자동 판단: 설계 표, Task 1·2. 습관이 코치로 가는 길 셋을 막음: Task 2, Task 4(5번 바꾸기), Task 5(`coachGuard` 앞뒤 두 번), Task 13 시험 4.
 - 규칙 코드로 행동 안 정함: 칩·검사만, 판단은 PAM. `demoPredict`·`demoReflect`는 `tests/helpers/` 대역.
 - PAM 계약 그대로: 「PAM 계약」 절, Task 13 시험 7.
 - Codex 1차 지적 9개: 1 Task 4 바꾸기 2·4, 2 「일주일을 시연 안에서 보이는 길」·Task 7·8, 3 Task 5 범위, 4 Task 2 행동 단위, 5 Task 6 API·Task 8 확인, 6 Task 8 `start`·Task 9 `--start-at`, 7 Task 11 `unbaked`, 8 Task 10 차례 쓰기, 9 Task 10 붙잡기·Task 9 `--tail`.
+- 서버 글 구조(T1~T4)에 맞춤: 「조사한 사실」 사람 단계 글 절, Task 12 표(글·끝 조건을 코드가 내는 값으로), 「라면 대본」 절, Task 13 시험 5·6.
 - Codex 2차 지적 5개: 1 Task 10 `hold`·Task 9 `judgeState`(계획 닫힘·멈춘 장면 tail·영상마다 길이·`--max`), 2 Task 12 서버 글 틀 대본, 3 Task 12 7번 기다리기 `state: off`·`SELF_STOP`·9번 pick, 4 Task 6 `learned`·`active`, 5 Task 8 `--fresh`·이어 실행 건너뛰기·막힘 멈춤.
 - 위험: 실제 PAM 반성이 바꾼 지시문을 따라 에어컨 습관을 낼지, 16k 토큰 상한 안에 들지 모른다(Task 14 Step 3, 안 되면 대본).
 - 위험: 이어 반성은 하루만 보고 규칙을 더하는 논문 성질 그대로라 1일차에 바로 생길 수 있다. 「일주일 반복」을 따지는 것은 박석준 거르기가 붙은 뒤다. 영상에서는 날마다 판본 변화를 그대로 보인다.
@@ -674,5 +703,5 @@ export function microwaveSteps(ids: { microwave: string; waitS?: number /* wait 
 - 위험: 영상 모드는 실제 시각을 쓴다. 배운 규칙에 「저녁」이 붙으면 낮에 찍은 장면 5에서 안 나올 수 있다. 그러면 19~22시에 찍는다.
 - 위험: VLM이 전자레인지 문 열림·쓰는 중을 실제 영상에서 얼마나 맞히는지, 영상 모드 자세로 트윈 전자레인지와 맞춰지는지(`SIGHT_MATCH`) 재지 않았다. 못 맞히면 그 단계는 「완료」로 넘어가고, 시작·꺼내기 단계는 시간 초과가 날 수 있다.
 - 위험: 계획 모델이 전자레인지 do를 대본과 다른 수·순서로 내면 단계 영상 차례가 어긋난다(그 판은 다시 돌린다).
-- 위험: 전자레인지 카탈로그에는 문 속성이 없어 문 열림·닫힘은 트윈에 보이지 않고 VLM 사실로만 넘어간다. `hand_device` open·close가 문 속성 없는 가전에도 계획 검사를 지나는지는 b723636 코드에서 확인하지 않았다(Task 12 Step 1 시험이 본다).
+- 위험: 전자레인지 카탈로그에는 문 속성이 없어 문 열림·닫힘은 트윈에 보이지 않고 VLM 설비 사실로만 넘어간다(서버 끝 조건이 그 모양을 낸다). 그 사실은 방마다 하나라 World State 눈이 주방일 때만 참이 된다.
 - 위험: 같은 이름의 단계(「전자레인지 문 열기」 두 번)는 수업 기록(`lessons.json`, 단계 이름 열쇠)에서 한 칸으로 합쳐진다.
