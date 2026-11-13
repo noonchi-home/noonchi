@@ -170,6 +170,7 @@ export const keepAll: HabitFilter;   // proposed 그대로, 새 규칙마다 { k
 | `src/server/app.ts`, `src/server/home.ts`, `src/server/start.ts`, `src/history/db.ts` | 기억 상태 API, 마지막 반성 다시 보내기 |
 | `scripts/seed-history.ts`, `scripts/demo-setup.ts`(새로), `scripts/demo-start.ts`(새로) | 합성 관찰, 시연 준비, 장면 시작 위치 |
 | `scripts/video-check.ts`, `ui/src/phone/core/video-ar.js` | `--say`·`--start-at`·`--tail`, 단계 영상 차례·붙잡기 |
+| `src/world/{sight.ts,state.ts,vocab.ts}`, `src/observe/pipeline.ts`, `src/hub/{types.ts,signals.ts}`, `src/act/track.ts` | 가전 이력 촬영 시각(Task 11a), 인덕션 전원 카메라로 보기(Task 11b) |
 | `twin/data/homes/mokryeon_180b/added_devices.json`(새로), `src/model/scene.ts`, `src/model/devices.ts`, `src/layout/{editor.ts,load.ts}` | 트윈에 전자레인지, 뷰어 add |
 | `src/act/tasks.ts`, `src/brain/decision.ts`, `tests/helpers/planner.ts` | 「전자레인지로 데우기 알려 주기」 |
 | `tests/demo-e2e.test.ts`(새로) | 네 장면 가짜 서버 흐름 |
@@ -449,16 +450,18 @@ npx tsx scripts/demo-setup.ts reflect --scripted [--dir runtime/demo/week]
 - `--tail <초>`(기본 30, 10~900): 영상이 「멈춘」 뒤(첫 영상이 끝났거나 단계 영상 마지막 장면을 붙잡는 중) 계획이 열려 있으면 더 보는 시간.
 - `--max <초>`(기본 1800, 60~3600): 판 전체 한도. 넘으면 `unfinished`에 남기고 끝낸다.
 - 골라서 답하기. 지금 `--done-after`는 새 명령마다 첫 답 단추를 누르고 `--step`이 있으면 기본 0(안 누름)이다. 이것은 그대로 두고, 고른 명령에만 누르는 길 둘을 더한다:
-  - `--approve <초>`(기본 0 = 안 누름): 단계 id가 `:approve`(처음 하는 계획)나 `:hand`(손으로 켜는 위험 가전)로 끝나는 질문 명령에만, 그 초 뒤 위 줄이 아직 그 질문이면 「승인」 단추를 누른다.
-  - `--done-on <초>:<명령 글>`(여러 번): 위 줄이 그 글과 똑같은 명령에만(서버 글이라 정해져 있다), 그 초 뒤 위 줄이 아직 그 글이면 「완료」 단추를 누른다.
+  - `--approve <초>`(기본 0 = 안 누름): 단계 id가 `:approve`(처음 하는 계획)나 `:hand`(손으로 켜는 위험 가전)로 끝나는 질문 명령에만, 그 초 뒤 「승인」 단추를 누른다.
+  - `--done-on <초>:<명령 글>`(여러 번): 위 줄이 그 글과 똑같은 명령에만(서버 글이라 정해져 있다), 그 초 뒤 「완료」 단추를 누른다.
+  - 예약할 때 그 명령의 계획 id(`cmd.id`)·단계 id(`cmd.step`)·글을 함께 잡고, 누를 때 페이지에 떠 있는 지금 명령(`__noonchiVideo.commands`의 마지막)의 셋이 모두 같을 때만 누른다. 취소된 뒤 같은 글로 나온 새 단계·새 승인 질문(계획 id나 단계 id가 다름)은 앞 예약이 누르지 않는다.
   - 그 밖의 명령(가기·열기·닫기·켜기 등)은 누르지 않는다(`--done-after`를 따로 주지 않으면). 누른 것은 시각표에 `누름 · <단추> · <명령 글>`로 남는다.
 
 ```ts
 export interface ClickRule { approveAfterMs: number; doneOn: { afterMs: number; text: string }[]; doneAfterMs: number }
 /** 새 명령 하나에 예약할 누르기(없으면 빈 목록). 단추 글로 고른다: 승인 질문이면 「승인」, done-on 글이면 「완료」, done-after면 첫 단추(지금 동작). */
-export function plannedClicks(cmd: VideoCommand, rule: ClickRule, now: number): { at: number; label: string | null; cmd: VideoCommand }[];
-/** 위 줄이 text일 때만 label 글의 엄지 자리 단추(label이 null이면 첫 단추)를 누르고 그 글을 돌려준다. */
-const clickChoice = (text: string, label: string | null) => string; // 크롬에서 돌리는 식(지금 clickAnswer를 넓힘)
+export interface PlannedClick { at: number; label: string | null; id: string; step: string; text: string }
+export function plannedClicks(cmd: VideoCommand, rule: ClickRule, now: number): PlannedClick[];
+/** 페이지의 지금 명령(__noonchiVideo.commands 마지막)의 계획 id·단계 id와 위 줄 글이 모두 c와 같을 때만 label 글의 엄지 자리 단추(null이면 첫 단추)를 누르고 그 글을 돌려준다. */
+const clickChoice = (c: Pick<PlannedClick, "id" | "step" | "text" | "label">) => string; // 크롬에서 돌리는 식(지금 clickAnswer를 넓힘)
 ```
 - 끝내기는 한 함수가 정한다:
 
@@ -476,7 +479,7 @@ export function judgeState(o: {
   - 영상이 도는 중이면 「지금 영상 길이 + 60초」를 넘을 때만 `clip_over`. 단계 영상이 바뀌면 그 영상 길이(`clips[].duration_ms`, Task 10)로 다시 잰다.
   - 판 전체가 `maxMs`를 넘으면 `max_over`.
 
-- [ ] **Step 1: 실패하는 시험.** 「`--say 5:아 덥다`를 `{ atMs: 5000, text: "아 덥다" }`로 받는다」, 「틀린 `--say`·`--tail 5`·`--max 0`은 쓰는 법 글」, 「시각표에 말 줄이 그 시각에 있다」, 「`--start-at microwave`면 페이지를 열기 전에 시작 위치를 보내고, 지금 집이 다르면 판정을 시작하지 않는다」, `plannedClicks` 표: 「`--approve 2`면 단계 id `plan:pam-3:5:hand` 질문에 2초 뒤 「승인」 하나, `plan:pam-3:2` 명령(전자레인지 문을 열어 주세요)에는 없음」, 「`--done-on 8:그릇을 전자레인지에 넣어 주세요`면 그 글 명령에만 8초 뒤 「완료」, 「그릇을 꺼내 주세요」에는 없음」, 「`--step`이 있고 `--done-after`가 없으면 승인·done-on 밖 명령에는 아무것도 예약하지 않는다」, 「`--done-on 8:` (빈 글)·`--approve -1`은 쓰는 법 글」, 「누를 때 위 줄이 다른 명령으로 바뀌었으면 누르지 않는다(가짜 페이지)」, `judgeState` 표: 「붙잡는 중 + 계획 열림 + 멈춘 지 100초, tail 300 → watch」, 「붙잡는 중 + 멈춘 지 301초 → tail_over」, 「영상 도는 중 + 계획 done + 답 없음 → done」, 「단계 영상이 20초짜리면 80초 넘게 돌 때 clip_over, 첫 영상 길이와 상관없음」, 「전체 1801초 → max_over」.
+- [ ] **Step 1: 실패하는 시험.** 「`--say 5:아 덥다`를 `{ atMs: 5000, text: "아 덥다" }`로 받는다」, 「틀린 `--say`·`--tail 5`·`--max 0`은 쓰는 법 글」, 「시각표에 말 줄이 그 시각에 있다」, 「`--start-at microwave`면 페이지를 열기 전에 시작 위치를 보내고, 지금 집이 다르면 판정을 시작하지 않는다」, `plannedClicks` 표: 「`--approve 2`면 단계 id `plan:pam-3:5:hand` 질문에 2초 뒤 「승인」 하나, `plan:pam-3:2` 명령(전자레인지 문을 열어 주세요)에는 없음」, 「`--done-on 8:그릇을 전자레인지에 넣어 주세요`면 그 글 명령에만 8초 뒤 「완료」, 「그릇을 꺼내 주세요」에는 없음」, 「`--step`이 있고 `--done-after`가 없으면 승인·done-on 밖 명령에는 아무것도 예약하지 않는다」, 「`--done-on 8:` (빈 글)·`--approve -1`은 쓰는 법 글」, 「누를 때 위 줄이 다른 명령으로 바뀌었으면 누르지 않는다(가짜 페이지)」, 「예약한 단계가 취소되고 같은 글의 새 단계(다른 계획 id)가 떠 있으면 누르지 않는다」, 「같은 계획에서 같은 글이 다른 단계 id로 다시 나오면 앞 예약은 누르지 않고 새 명령의 예약만 누른다」, 「취소 뒤 새 승인 질문(다른 계획 id, 같은 글)은 앞 「승인」 예약이 누르지 않는다」, `judgeState` 표: 「붙잡는 중 + 계획 열림 + 멈춘 지 100초, tail 300 → watch」, 「붙잡는 중 + 멈춘 지 301초 → tail_over」, 「영상 도는 중 + 계획 done + 답 없음 → done」, 「단계 영상이 20초짜리면 80초 넘게 돌 때 clip_over, 첫 영상 길이와 상관없음」, 「전체 1801초 → max_over」.
 - [ ] **Step 2:** `npm run heavy -- npx vitest run tests/video-check.test.ts` → 실패 확인.
 - [ ] **Step 3:** 구현.
 - [ ] **Step 4:** 통과 확인. `--fake`로 `cup-empty-leave.mp4`에 말을 넣어 한 번 돌려 본다(비용 0).
@@ -517,13 +520,67 @@ export function judgeState(o: {
 - [ ] **Step 4:** 통과 확인, `tests/drawn-fixtures.test.ts`·`tests/mokryeon-cup.test.ts`·`ui/tests/twin3d/`도.
 - [ ] **Step 5:** 커밋 `feat(twin): add a kitchen microwave to the Mokryeon home and draw it in the live twin`. CLAUDE.md 규칙 표에 한 줄: 「시연용으로 더하는 가전은 `twin/data/homes/<집>/added_devices.json`에 두고 장면을 읽을 때 더하며, 뷰어에는 연결 때 add로 보낸다 | `tests/added-devices.test.ts`」.
 
+### Task 11a: 가전 이력에 근거의 촬영 시각 남기기
+
+카메라로 맞춘 가전 상태(SIGHT)는 VLM 답이 도착한 시각으로 이력에 쌓인다(`src/observe/pipeline.ts` `onDevice` → `world.applyDevice(s, this.clock.now())`). 켜라고 하기 전에 찍은 「꺼짐」 사진의 답이 늦게 오면 켠 뒤의 꺼짐으로 보여, 끄기 안내를 지우는 지금 기준(`offSince`, fec2e7d)과 Task 12의 꺼짐 기다리기가 같이 뚫린다. 이 Task는 근거 사진의 촬영 시각을 남기고 두 곳이 그것을 보게 한다. Task 12보다 먼저 한다.
+
+**Files:**
+- Modify: `src/world/sight.ts`(안정 셈의 첫 프레임 촬영 시각), `src/observe/pipeline.ts`(카메라로 바꾼 가전 상태에 촬영 시각을 실어 보냄), `src/hub/types.ts`·`src/hub/signals.ts`(가전 상태 알림에 `seenAt` 칸), `src/contract/world.ts`(이력 칸), `src/world/state.ts`(`applyDevice`), `src/act/track.ts`(`offSince`)
+- Test: `tests/vision-devices.test.ts`, `tests/world-state.test.ts`, `tests/act-track.test.ts`
+
+**Interfaces:**
+
+```ts
+// src/contract/world.ts WorldDevice.history 한 줄
+{ attr: string; from: unknown; to: unknown; at_ms: number; /** 카메라로 본 바뀜이면 그 근거 사진의 촬영 시각(안정 셈을 채운 연속 프레임 가운데 가장 이른 것). 허브·실제 가전 신호면 없음. */ seen_ms?: number }
+// src/world/state.ts
+applyDevice(s: DeviceState, atMs: number, seenMs?: number): WorldChange[];
+// src/act/track.ts
+/** 켜라고 한 시각 뒤에 꺼졌다고 새로 보였는가. 근거 시각은 seen_ms(카메라), 없으면 at_ms(허브 신호 도착). 근거 시각이 onAt보다 뒤여야 한다. */
+function offSince(d: WorldView["devices"][number] | undefined, onAt: number): boolean; // h.from !== off && h.to === off && (h.seen_ms ?? h.at_ms) > onAt
+```
+- 끄기 안내 지우기와 Task 12의 꺼짐 기다리기가 이 `offSince` 하나를 쓴다. 다른 곳의 이력 읽기(`became` 조건 등)는 이 Task에서 바꾸지 않는다.
+
+- [ ] **Step 1: 실패하는 시험.** 「SIGHT로 꺼짐이 된 이력 줄에 근거 사진들 가운데 가장 이른 촬영 시각이 `seen_ms`로 남는다」, 「허브로 바뀐 이력 줄에는 `seen_ms`가 없다」, 「켜라고 한 뒤(onAt) 도착했지만 onAt 전에 찍은 꺼짐 사진 답이면 `offSince`가 거짓: 끄기 안내가 그대로 떠 있고 hot도 그대로」, 「onAt 뒤에 찍은 꺼짐 사진이면 참」.
+- [ ] **Step 2:** `npm run heavy -- npx vitest run tests/vision-devices.test.ts tests/world-state.test.ts tests/act-track.test.ts` → 실패 확인.
+- [ ] **Step 3:** 구현.
+- [ ] **Step 4:** 통과 확인.
+- [ ] **Step 5:** 커밋 `fix(world): keep the capture time of camera evidence in device history and use it for switch-off checks`.
+
+### Task 11b: 인덕션 전원을 카메라로 보기
+
+인덕션 전원은 카메라로 맞추는 표(`SIGHT`)에 없고, 손으로 켜라는 명령은 허브 상태를 바꾸지 않는다. 그래서 라면 7번 켜기(`became on`)와 12번 끄기(`became off`)가 영상으로는 끝나지 않는다. 안전 규칙은 그대로 두고 카메라로 켜짐·꺼짐을 보게 한다.
+
+**Files:**
+- Modify: `src/world/vocab.ts`(`CLASSES.oven`, `SIGHT.oven`), `docs/world-vocabulary.md`(낱말 표 생성 글), `tests/fixtures/`(인덕션 사진 고정 자료)
+- Test: `tests/vision-devices.test.ts`, `tests/world-vocab.test.ts`, `tests/brain-detector.test.ts`
+
+**Interfaces:**
+
+```ts
+// COCO oven(69)은 가스레인지·전기레인지 상판도 잡는다. 이 종류를 같은 방의 트윈 인덕션(cooktop)에 맞춘다.
+oven: { label: "오븐", role: "fixture", coco: { 69: "oven" }, minScore: 0.5, facets: ["open", "use"], deviceKind: "cooktop" },
+// SIGHT
+oven: [{ facet: "use", attr: "power", values: { in_use: "on" }, absent: "off" }],
+```
+- 고르기는 지금 `linkDevice` 그대로다(같은 방, 시야 안, 각도). 안정 셈(`SIGHT_STABLE`)도 그대로.
+
+- [ ] **Step 0: 재기(비용 0).** 코치 계획의 `turn-on.mp4`·`turn-off.mp4`(아래 「찍을 영상」에서 바꾼 것)에서 프레임 8장을 뽑아 이 저장소 감지기로 인덕션 상판이 `oven` 0.5 이상으로 잡히는지 본다. 4장 아래면 이 Task를 멈추고 아래 「비전으로 못 볼 때」로 가고 사용자에게 보고한다(감지 기준을 낮추지 않는다).
+- [ ] **Step 1: 실패하는 시험.** 「주방 눈에서 인덕션 쪽 oven 감지 + VLM 쓰는 중이 두 프레임 이어지면 트윈 인덕션 power on」, 「쓰는 중을 말하지 않는 답이 두 프레임 이어지면 off」, 「다른 방의 oven은 맞추지 않는다」, 「`turn-on.mp4` 고정 사진에서 감지기가 oven을 낸다」, 낱말 표 문서가 새 표와 같다.
+- [ ] **Step 2:** `npm run heavy -- npx vitest run tests/vision-devices.test.ts tests/world-vocab.test.ts tests/brain-detector.test.ts` → 실패 확인.
+- [ ] **Step 3:** 구현. 낱말 표 문서를 다시 만든다.
+- [ ] **Step 4:** 통과 확인.
+- [ ] **Step 5:** 커밋 `feat(world): read induction power from the camera through oven detections`.
+
+**비전으로 못 볼 때(Step 0에서 안 잡힐 때):** 켜기 단계(7번)는 「완료」로 넘길 수 있다(`--done-on <초>:인덕션을 켜 주세요`). 끄기는 「완료」로 인정하는 길을 넣지 않는다: 12번 끄기 단계는 `became off`(카메라·허브)로만 넘기고, 끄기 안내·hot도 새로 본 꺼짐으로만 지운다. 그러면 12번이 시간 초과로 실패해 **라면 시연이 끝까지 가지 못한다**(끄기 안내가 남는다). 이때는 사용자 결정이 필요하다(「남은 결정」 5).
+
 ### Task 12: 코치 행동 「전자레인지로 데우기 알려 주기」
 
 **Files:**
 - Modify: `src/act/tasks.ts`, `services/pam/scenarios/noonchi/tasks.json`, `services/pam/scenarios/noonchi/scenario.json`(Task 4 행동 이름 줄·코치 행동 줄에 새 이름), `src/brain/decision.ts`(`cooking` 상태), `src/world/labels.ts`(`FSM_STATE_TEXT.cooking` → `"주방에서 할 일을 찾음"`), `src/agent/policy.ts`(`SELF_STOP`), `src/agent/planTools.ts`(끄기 검사), `src/agent/planInput.ts`(지시문 한 줄), `src/act/track.ts`(켠 가전 추적), `tests/helpers/planner.ts`(`microwaveSteps`, 대본 표)
 - Test: `tests/act-tasks.test.ts`, `tests/agent-planner.test.ts`, `tests/act-track.test.ts`, `tests/phone-lines.test.ts`, `tests/brain-decision.test.ts`, `tests/pam-scenario.test.ts`
 
-**먼저:** Task 11. 전자레인지가 기기이자 평면도 물건이어야 대상이 되고 이름이 붙는다(기기 id와 평면도 id가 같은 `microwave_kitchen`, 방 `kitchen`, 평면도 종류 `microwave` → 이름 「전자레인지」).
+**먼저:** Task 11·11a. 전자레인지가 기기이자 평면도 물건이어야 대상이 되고 이름이 붙는다(기기 id와 평면도 id가 같은 `microwave_kitchen`, 방 `kitchen`, 평면도 종류 `microwave` → 이름 「전자레인지」).
 
 **글과 끝 조건은 서버가 만든다(T1~T4):** 대본은 `{kind, target, act, item, hand_device, notice}`만 고른다. 폰 글은 `STEP_TEXT`·`NOTICES`가 내고, 손 조작 동작의 끝 조건은 `handUntil`이 낸다.
 
@@ -544,7 +601,7 @@ export function judgeState(o: {
 export const SELF_STOP: Partial<Record<DeviceKind, true>> = { microwave: true };
 // src/agent/planTools.ts finish(): 켠 위험 가전(riskyHand) 뒤에 (a) 같은 가전 hand_device off do 또는
 //   (b) 그 가전 종류가 SELF_STOP이고 until이 정확히 {"device": 그 가전, "state": "off"}인 wait 가 있어야 끝낸다.
-// src/act/track.ts: (b) 모양 wait는 ConditionWatch 결과를 쓰지 않는다. look()에서 그 단계는 offSince(그 가전, r.hot.get(그 가전)) 가 참일 때만 넘긴다
+// src/act/track.ts: (b) 모양 wait는 ConditionWatch 결과를 쓰지 않는다. look()에서 그 단계는 offSince(그 가전, r.hot.get(그 가전))(Task 11a: 근거 촬영 시각 기준) 가 참일 때만 넘긴다
 //   (지금 상태 꺼짐만으로는 넘기지 않음, hot에 그 가전이 없으면 넘기지 않음). 넘기면(advance) hot에서 그 가전을 지운다.
 //   그 전에 계획이 닫히면 지금처럼 끄기 안내(「전자레인지를 꺼 주세요」)를 보내고, 안내는 지금처럼 새로 본 꺼짐·「완료」·offHoldMs로만 지운다.
 /** 저절로 꺼지는 가전의 꺼짐 기다리기(SELF_STOP 가전, until이 정확히 {device, state: "off"}인 wait)인가. */
@@ -578,7 +635,7 @@ export function microwaveSteps(ids: { microwave: string; waitS?: number /* wait 
   - 「5번 대본에 until `{"device": mw, "state": "on"}`을 써도 버리지 않고 서버가 `{"device": mw, "became": "on"}`으로 바꾼다」.
   - 「2번에 hand_device가 없거나 `to`가 다르면 버린다」, 「냉장고에 켜기, 에어컨에 켜기(손 조작)는 버린다」.
   - 「7번 wait를 빼면 `켠 가전은 계획 안에서 끕니다`로 버린다. 7번 until이 `{"device": mw, "state": "off"}`면 받는다. 같은 wait를 인덕션 켜기 뒤에 두면 버린다(SELF_STOP 아님). notice가 「끝」이면 wait로 받지 않는다(지금 검사)」.
-  - 실행 추적: 「5번 명령 전에 승인 질문, 승인 뒤 VLM 쓰는 중이면 넘어감」, 「켜라고 한 뒤 켜짐을 보고 6번 동안 꺼짐을 보면 7번이 바로 끝나고 hot에서 빠져 계획이 끝나도 끄기 안내가 없다」, 「7번 전에 그만두면 끄기 안내(「전자레인지를 꺼 주세요」)가 간다」, **「5번을 「완료」로 넘겼고 전자레인지가 옛 꺼짐 그대로면(켜짐 이력 없음) 7번이 끝나지 않고 hot이 남으며, 시간 초과 질문에 「그만」이면 끄기 안내가 간다」**, 「켜라고 하기 전에 있던 켜짐 → 꺼짐 이력으로는 7번이 끝나지 않는다」, 「`selfStopWait`는 인덕션 wait·until이 다른 wait에는 null」.
+  - 실행 추적: 「5번 명령 전에 승인 질문, 승인 뒤 VLM 쓰는 중이면 넘어감」, 「켜라고 한 뒤 켜짐을 보고 6번 동안 꺼짐을 보면 7번이 바로 끝나고 hot에서 빠져 계획이 끝나도 끄기 안내가 없다」, 「7번 전에 그만두면 끄기 안내(「전자레인지를 꺼 주세요」)가 간다」, **「5번을 「완료」로 넘겼고 전자레인지가 옛 꺼짐 그대로면(켜짐 이력 없음) 7번이 끝나지 않고 hot이 남으며, 시간 초과 질문에 「그만」이면 끄기 안내가 간다」**, 「켜라고 하기 전에 있던 켜짐 → 꺼짐 이력으로는 7번이 끝나지 않는다」, **「켜라고 하기 전에 찍은 꺼짐 사진의 답이 켜라고 한 뒤 늦게 도착해도 7번이 끝나지 않고 hot·끄기 안내가 그대로다」**, 「`selfStopWait`는 인덕션 wait·until이 다른 wait에는 null」.
 - [ ] **Step 2:** `npm run heavy -- npx vitest run tests/act-tasks.test.ts tests/agent-planner.test.ts tests/act-track.test.ts tests/phone-lines.test.ts tests/brain-decision.test.ts tests/pam-scenario.test.ts` → 실패 확인.
 - [ ] **Step 3:** 구현.
 - [ ] **Step 4:** 통과 확인.
@@ -618,7 +675,7 @@ export function microwaveSteps(ids: { microwave: string; waitS?: number /* wait 
   - 장면 4: 7일 반성이 `appliesDay` 오늘, 말없이 에어컨을 켜는 규칙이 active에 있다(행동 이름 그대로, 한국어 트리거). learned면 `습관 · 새로 배움`, 앞서 배웠으면 `습관 · 배운 규칙`.
   - 장면 5: 말없이 에어컨 켜기·칩 `습관 · …`.
   - 장면 6(노인): 말 뒤 30초 안에 첫 명령, 폰 글이 Task 12 표의 서버 글, 문 열기·닫기·켜짐·꺼짐은 비전으로 넘어감, 시작 전 질문 1번, 누른 단추는 「승인」 1번과 3·9번 「완료」뿐, 끄기 안내 없음, 끝까지 done(`--tail 120`).
-  - 장면 7(장애인): 코치 계획 기준(첫 명령 30초 안, 인덕션 질문 1번, done, `--tail 600`). 누른 단추는 「승인」 1번과 라면 대본 4·6·10번 「완료」뿐.
+  - 장면 7(장애인): 코치 계획 기준(첫 명령 30초 안, 인덕션 질문 1번, done, `--tail 600`). 누른 단추는 「승인」 1번과 라면 대본 4·6·10번 「완료」뿐. 7번 켜기·12번 끄기는 카메라(Task 11b)로 넘어간다. 못 넘어가면 「남은 결정」 5.
   - 반성이 규칙을 못 내면 `raw_response`를 보고 Task 4 지시문을 한 번 고친 뒤, 서버를 끄고 `week --fresh` → 서버 → `reflect --chain` → `reflect`로 새로 돈다(옛 폴더는 `.old-<시각>`으로 남는다). 그래도 안 되면 `reflect --scripted`로 찍고 자막.
 - [ ] **Step 5: 녹화.** 장면마다 `--record`(`BRAIN_YOLO_PROVIDER=cpu`). 프레임 4장씩 뽑아 칩·말풍선 카드·트윈 에어컨·전자레인지를 본다. 기다리기·반성 대기는 편집에서 줄인다.
 - [ ] **Step 6: 문서.** `docs` 저장소 `01_Product/구현명세서 SSOT.md`(돕는 방식 자동, 판단 칩, 반성 지시문 바꾸기, 반성 뒤 검사·거르기 자리, 기억 상태 API, 마지막 반성 다시 보내기, 시연 준비 명령, 더한 가전 파일, 전자레인지 코치, 영상 판정 인자), `변경이력.md`.
@@ -670,6 +727,8 @@ export function microwaveSteps(ids: { microwave: string; waitS?: number /* wait 
 |---|---|---|---|
 | 3 | `tv-hot-say.mp4` | 40초 | 소파와 켜진 TV 화면이 함께 보임. 0~8초 사람이 들어와 앉음, 10~40초 TV를 보며 손으로 부채질. 소리는 필요 없다 |
 | 5 | `tv-sit.mp4` | 40초 | 같은 자리. 0~10초 들어와 리모컨으로 TV를 켜고 앉음, 10~40초 TV만 봄. 부채질·말 없음 |
+| 7 | 단계 `turn-on.mp4`(코치 계획 표를 바꿈) | 15초 | 0~3초 손이 인덕션 단추를 누름, 3~15초 상판의 켜짐 표시(화력 숫자·불빛)와 냄비가 화면 가운데에 보임 |
+| 7 | 단계 `turn-off.mp4`(코치 계획 표를 바꿈) | 10초 | 0~3초 손이 끔, 3~10초 켜짐 표시가 꺼진 상판이 화면 가운데에 보임 |
 | 6 | `microwave-start.mp4` | 20초 | 전자레인지 앞에 선 사람(어르신 역)이 그릇을 들고 전자레인지를 봄. 문과 단추가 화면 가운데 |
 | 6 | 단계 `go-microwave.mp4` | 10초 | 1인칭으로 전자레인지 앞까지 |
 | 6 | 단계 `open-microwave.mp4` | 10초 | 문을 열고 안이 5초 보임 |
@@ -698,6 +757,7 @@ export function microwaveSteps(ids: { microwave: string; waitS?: number /* wait 
 2. **문 열기·닫기 끝 조건: 가로 진행.** 서버가 만드는 값이 그대로 「가」다: 문 상태가 없는 전자레인지는 단계가 시작된 뒤 본 설비 열림 사실의 지금 값(이미 열려 있으면 바로 넘어감). 「나」(바뀐 것만, `seq`)는 쓰지 않는다.
 3. **서버 글의 물건 이름: 가로 진행.** 새 글 틀(c22ca2b)이 item을 넣어 「그릇을 전자레인지에 넣어 주세요」, 「냄비를 인덕션에 올려 주세요」처럼 나온다. 따로 할 일은 없다. 이름이 빠지는 곳은 do 넣기(「면과 스프를 넣어 주세요」, 자리 이름 없음)와 pick 꺼내기(「그릇을 꺼내 주세요」, 자리 이름 없음)다.
 4. **전자레인지 끄기는 기다리기로 인정: 가로 진행.** Task 12의 `SELF_STOP`.
+5. **(Task 11b Step 0에서 인덕션이 카메라로 안 잡힐 때만) 라면 시연의 끄기.** 「완료」로 끄기를 인정하지 않으면 12번이 시간 초과로 실패하고 끄기 안내가 남는다. 가: 인덕션 켜짐 표시가 크게 보이게 `turn-on.mp4`·`turn-off.mp4`를 다시 찍고 Step 0을 다시 잰다(추천). 나: 라면 장면을 11번(익기 기다리기)까지만 쓰고 끄기는 영상에서 뺀다. 다: 12번만 「완료」로 넘기게 허용한다(안전 규칙을 느슨하게 하는 것이라 이 계획은 하지 않는다. 고르면 따로 정한다).
 
 ## Self-Review
 
@@ -711,6 +771,7 @@ export function microwaveSteps(ids: { microwave: string; waitS?: number /* wait 
 - PAM 계약 그대로: 「PAM 계약」 절, Task 13 시험 7.
 - Codex 1차 지적 9개: 1 Task 4 바꾸기 2·4, 2 「일주일을 시연 안에서 보이는 길」·Task 7·8, 3 Task 5 범위, 4 Task 2 행동 단위, 5 Task 6 API·Task 8 확인, 6 Task 8 `start`·Task 9 `--start-at`, 7 Task 11 `unbaked`, 8 Task 10 차례 쓰기, 9 Task 10 붙잡기·Task 9 `--tail`.
 - 서버 글 구조(T1~T4)에 맞춤: 「조사한 사실」 사람 단계 글 절, Task 12 표(글·끝 조건을 코드가 내는 값으로), 「라면 대본」 절, Task 13 시험 5·6.
+- Codex 6차 지적 3개: P1 Task 11a 근거 촬영 시각(`seen_ms`)으로 `offSince`(끄기 안내·꺼짐 기다리기 같이), P2 Task 11b 인덕션 전원 카메라 보기와 못 볼 때 대안·남은 결정 5, P2 Task 9 예약을 계획 id·단계 id·글 셋으로.
 - Codex 3차 지적 2개: P1 Task 12 꺼짐 기다리기는 켜라고 한 뒤 새로 본 꺼짐(`offSince`)으로만 끝남과 그 시험, P2 Task 9 `--approve`·`--done-on`(`plannedClicks`)과 시연 순서 6·7 명령.
 - Codex 2차 지적 5개: 1 Task 10 `hold`·Task 9 `judgeState`(계획 닫힘·멈춘 장면 tail·영상마다 길이·`--max`), 2 Task 12 서버 글 틀 대본, 3 Task 12 7번 기다리기 `state: off`·`SELF_STOP`·9번 pick, 4 Task 6 `learned`·`active`, 5 Task 8 `--fresh`·이어 실행 건너뛰기·막힘 멈춤.
 - 위험: 실제 PAM 반성이 바꾼 지시문을 따라 에어컨 습관을 낼지, 16k 토큰 상한 안에 들지 모른다(Task 14 Step 3, 안 되면 대본).
