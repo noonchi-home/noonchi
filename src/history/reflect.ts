@@ -3,10 +3,13 @@
 // 다음 날 판단이 이미 판본을 정했으면 그다음 날부터 쓴다. 보내기 전에 PAM /health의 입력 한도(reflect_input_bytes)에서
 // 기억 JSON·피드백 크기를 빼고 그 안으로 하루 요약을 줄인다. 칸마다 pam-reflect/2 상한도 넘지 않게 하고, 피드백은 최근 것부터 담는다.
 // 결과는 기록 DB(reflection)와 판단 기록(brain)에 남긴다.
-import { CUP_FSM_MEMORY, MAX_REFLECT_TEXT, validateMemory, type PamMemory } from "../brain/decision.js";
+// fsm 기억은 저장 전에 반성 뒤 검사를 거친다(src/history/habits.ts): 코치 규칙 지키기 → 습관 거르기(기본 모두 남기기) → 코치 규칙 지키기 → 모양 검사.
+import { TASKS } from "../act/tasks.js";
+import { CUP_FSM_MEMORY, MAX_REFLECT_TEXT, validateMemory, type FsmMemory, type PamMemory } from "../brain/decision.js";
 import type { PamClient } from "../brain/pam.js";
 import type { BrainLog } from "../contract/events.js";
 import type { HistoryDb } from "./db.js";
+import { coachGuard, keepAll, learnedRules, type HabitFilter, type HabitRuleNote, type RuleLine } from "./habits.js";
 import { REFLECT_TEXT } from "./labels.js";
 import { daySummary } from "./summary.js";
 
@@ -29,7 +32,11 @@ function latestWithin(lines: string[], max: number): string[] {
 const DAY_KINDS = ["detection", "world", "device", "vlm", "yolo", "decision", "execution", "feedback"] as const;
 
 export interface DayMemory { memory: PamMemory; kind: "list" | "fsm"; version: number }
-export type ReflectResult = { ok: true; version: number; appliesDay: string } | { ok: false; error: string; empty?: true };
+/** ok면 learned(이번에 새로 더한 규칙, 코치 행동 빼고)·dropped(반성 뒤 검사가 뺀 규칙)를 함께 준다. */
+export type ReflectResult = { ok: true; version: number; appliesDay: string; learned: RuleLine[]; dropped: HabitRuleNote[] } | { ok: false; error: string; empty?: true };
+
+/** 습관 거르기에 넘기는 기록 종류. */
+const HABIT_KINDS = ["world", "device", "decision", "execution", "feedback"] as const;
 
 /** 그날 고정한 판본. 없으면 그날 쓸 수 있는 가장 새 판본을 고정하고, 판본이 하나도 없으면 컵 FSM 기억을 seed로 저장한다.
  *  seed 판본 올리기: 그날 쓸 판본이 seed인데 내용이 지금 코드의 seed(CUP_FSM_MEMORY)와 다르고(JSON 글 비교) DB에서 가장 새 판본도 seed면,
@@ -56,12 +63,13 @@ export function memoryForDay(db: HistoryDb, day: string): DayMemory {
   return { memory: CUP_FSM_MEMORY, kind: "fsm", version };
 }
 
-export async function runReflection(db: HistoryDb, pam: PamClient, day: string, o: { now?: () => number; emit?: (l: BrainLog) => void } = {}): Promise<ReflectResult> {
+/** filter: 습관 거르기(기본 keepAll). windowDays: 거르기에 넘기는 지난 기록 날 수(기본 30, 반성한 날 포함). */
+export async function runReflection(db: HistoryDb, pam: PamClient, day: string, o: { now?: () => number; emit?: (l: BrainLog) => void; filter?: HabitFilter; windowDays?: number } = {}): Promise<ReflectResult> {
   const now = o.now ?? (() => Date.now());
-  const done = (ok: boolean, text: string, version: number | null, appliesDay: string | null) => {
+  const done = (ok: boolean, text: string, version: number | null, appliesDay: string | null, found?: { learned: RuleLine[]; dropped: HabitRuleNote[] }) => {
     const at = now();
-    db.add("reflection", at, text, { data: { day, ok, version, applies_day: appliesDay } });
-    o.emit?.({ type: "reflection", at_ms: at, day, ok, version, applies_day: appliesDay, text });
+    db.add("reflection", at, text, { data: { day, ok, version, applies_day: appliesDay, ...found } });
+    o.emit?.({ type: "reflection", at_ms: at, day, ok, version, applies_day: appliesDay, text, ...found });
   };
   if (!db.list({ day, kinds: [...DAY_KINDS], limit: 1 }).length) {
     done(false, REFLECT_TEXT.failed(REFLECT_TEXT.empty), null, null);
@@ -75,15 +83,31 @@ export async function runReflection(db: HistoryDb, pam: PamClient, day: string, 
     const maxBytes = limits.reflect_input_bytes - bytes(JSON.stringify(cur.memory, null, 2)) - bytes(feedback ?? "") - bytes(REFLECT_TEXT.noObservation) - bytes(REFLECT_TEXT.noAction);
     if (maxBytes <= 0) throw new Error(REFLECT_TEXT.tooBig);
     const summary = daySummary(db, day, { maxBytes, caps: MAX_REFLECT_TEXT });
-    const memory = await pam.reflect({
+    let memory = await pam.reflect({
       day, memory_kind: cur.kind, memory: cur.memory, observation_text: summary.observation_text || REFLECT_TEXT.noObservation,
       action_summary: summary.action_summary || REFLECT_TEXT.noAction, feedback,
     }, cur.kind);
+    let learned: RuleLine[] = [];
+    let dropped: HabitRuleNote[] = [];
+    if (cur.kind === "fsm") {
+      // 반성 뒤 검사: 코치 규칙은 seed 그대로, 습관 거르기, 거르기가 코치 규칙을 바꾸지 못하게 한 번 더, 그 뒤 모양 검사
+      const previous = cur.memory as FsmMemory;
+      const first = coachGuard(CUP_FSM_MEMORY, validateMemory(memory, "fsm") as FsmMemory);
+      const windowDays = o.windowDays ?? 30;
+      const dayStart = Date.parse(`${day}T00:00:00Z`) - db.offsetMinutes * 60_000;
+      const rows = db.list({ since: dayStart - (windowDays - 1) * 86_400_000, until: dayStart + 86_400_000 - 1, kinds: [...HABIT_KINDS], limit: Number.MAX_SAFE_INTEGER });
+      const filtered = await (o.filter ?? keepAll)({ day, windowDays, offsetMinutes: db.offsetMinutes, previous, proposed: first.memory, rows });
+      const second = coachGuard(CUP_FSM_MEMORY, filtered.memory);
+      memory = validateMemory(second.memory, "fsm");
+      dropped = [...first.notes, ...filtered.notes, ...second.notes].filter((n) => !n.kept);
+      learned = learnedRules(previous, memory as FsmMemory).filter((r) => !TASKS[r.action]?.coach);
+    }
     let appliesDay = nextDay(day);
     while (db.pinnedMemory(appliesDay) !== null) appliesDay = nextDay(appliesDay);
     const version = db.saveMemory({ kind: cur.kind, memory, day, appliesDay, source: "reflection" });
-    done(true, REFLECT_TEXT.done(version, appliesDay), version, appliesDay);
-    return { ok: true, version, appliesDay };
+    const text = REFLECT_TEXT.done(version, appliesDay) + (learned.length ? ` · ${REFLECT_TEXT.learned(learned.length)}` : "");
+    done(true, text, version, appliesDay, { learned, dropped });
+    return { ok: true, version, appliesDay, learned, dropped };
   } catch (e) {
     const error = (e as Error).message;
     done(false, REFLECT_TEXT.failed(error), null, null);

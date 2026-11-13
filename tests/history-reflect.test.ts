@@ -4,7 +4,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CUP_FSM_MEMORY } from "../src/brain/decision.js";
+import { CUP_FSM_MEMORY, type FsmMemory } from "../src/brain/decision.js";
 import { PamClient } from "../src/brain/pam.js";
 import type { BrainLog } from "../src/contract/events.js";
 import { HistoryDb } from "../src/history/db.js";
@@ -127,23 +127,88 @@ describe("반성", () => {
     const next = { ...CUP_FSM_MEMORY, initial_state: "left_cup" };
     const logs: BrainLog[] = [];
     const r = await runReflection(db, new PamClient({ url: await startPam(next) }), "2026-11-07", { emit: (l) => logs.push(l), now: () => t + 3_600_000 });
-    expect(r).toEqual({ ok: true, version: 2, appliesDay: "2026-11-08" });
+    expect(r).toEqual({ ok: true, version: 2, appliesDay: "2026-11-08", learned: [], dropped: [] });
     expect(got.at(-1)).toMatchObject({ contract: "pam-reflect/2", day: "2026-11-07", memory_kind: "fsm", memory: CUP_FSM_MEMORY, feedback: "다 마신 뒤에만 치워 줘" });
     expect(got.at(-1)!.observation_text).toContain("08:00:00 사람 보임");
     expect(got.at(-1)!.action_summary).toBe("08:01:00 클로이드 판단: 컵 치우기\n08:02:00 사용자: 다 마신 뒤에만 치워 줘");
     expect(memoryForDay(db, "2026-11-07").version).toBe(1); // 그날은 그대로
     expect(memoryForDay(db, "2026-11-08")).toMatchObject({ version: 2, memory: { initial_state: "left_cup" } });
     expect(db.list({ kinds: ["reflection"] })).toEqual([expect.objectContaining({
-      at_ms: t + 3_600_000, text: "반성 완료: 기억 2판, 2026-11-08부터", data: { day: "2026-11-07", ok: true, version: 2, applies_day: "2026-11-08" },
+      at_ms: t + 3_600_000, text: "반성 완료: 기억 2판, 2026-11-08부터", data: { day: "2026-11-07", ok: true, version: 2, applies_day: "2026-11-08", learned: [], dropped: [] },
     })]);
-    expect(logs).toEqual([{ type: "reflection", at_ms: t + 3_600_000, day: "2026-11-07", ok: true, version: 2, applies_day: "2026-11-08", text: "반성 완료: 기억 2판, 2026-11-08부터" }]);
+    expect(logs).toEqual([{ type: "reflection", at_ms: t + 3_600_000, day: "2026-11-07", ok: true, version: 2, applies_day: "2026-11-08", text: "반성 완료: 기억 2판, 2026-11-08부터", learned: [], dropped: [] }]);
+  });
+
+  describe("반성 뒤 검사(코치 규칙 지키기·습관 거르기)", () => {
+    const RAMEN = "라면 끓이기 알려 주기";
+    const AIRCON = { trigger: "사용자가 TV를 보러 소파에 앉는다.", action: "에어컨 켜기" };
+    const HABIT = { trigger: "저녁 19시마다 사용자가 식탁에 앉는다.", action: RAMEN };
+    const withRules = (add: Record<string, { trigger: string; action: string }[]>): FsmMemory => ({
+      ...CUP_FSM_MEMORY, states: CUP_FSM_MEMORY.states.map((s) => ({ ...s, rules: [...s.rules, ...(add[s.id] ?? [])] })),
+    });
+    const t = Date.UTC(2026, 10, 6, 23);
+
+    it("반성이 낸 코치 습관 규칙은 빠지고 dropped에 reason coach로, 에어컨 습관 규칙은 남고 learned에 있다. 기록 줄·사건에도 있다", async () => {
+      const db = HistoryDb.open(":memory:");
+      db.add("detection", t, "사람 보임");
+      const logs: BrainLog[] = [];
+      const r = await runReflection(db, new PamClient({ url: await startPam(withRules({ drinking: [HABIT], watching_tv: [AIRCON] })) }), "2026-11-07", { emit: (l) => logs.push(l), now: () => t + 3_600_000 });
+      expect(r).toMatchObject({ ok: true, version: 2, learned: [{ state: "watching_tv", ...AIRCON }], dropped: [{ state: "drinking", ...HABIT, kept: false, reason: "coach" }] });
+      const saved = db.memoryVersion(2)!.memory as FsmMemory;
+      expect(saved.states.find((s) => s.id === "drinking")!.rules).toEqual(CUP_FSM_MEMORY.states.find((s) => s.id === "drinking")!.rules);
+      expect(saved.states.find((s) => s.id === "watching_tv")!.rules).toContainEqual(AIRCON);
+      const row = db.list({ kinds: ["reflection"] }).at(-1)!;
+      expect(row.text).toBe("반성 완료: 기억 2판, 2026-11-08부터 · 새 규칙 1개를 배웠어요");
+      expect(row.data).toMatchObject({ learned: [{ state: "watching_tv", ...AIRCON }], dropped: [{ state: "drinking", ...HABIT, reason: "coach" }] });
+      expect(logs.at(-1)).toMatchObject({ type: "reflection", learned: [{ state: "watching_tv", ...AIRCON }], dropped: [{ reason: "coach" }] });
+    });
+
+    it("filter는 지난 30일 world·device·decision·execution·feedback 줄을 시각 순으로 받고, 그 함수가 뺀 규칙은 저장되지 않는다. 그 함수가 코치 규칙을 더해도 저장된 판본에는 seed 코치 규칙만 있다", async () => {
+      const db = HistoryDb.open(":memory:");
+      const day = (d: number, h = 1) => Date.UTC(2026, 9, d, h); // 서울 시간대 10월 d일 10시
+      db.add("world", Date.UTC(2026, 9, 8, 1), "31일 전 world"); // 10-08: 30일 밖
+      db.add("world", day(9), "30일 안 world");
+      db.add("device", day(20), "거실 에어컨 켜짐");
+      db.add("detection", day(21), "사람 보임"); // 종류 밖
+      db.add("decision", Date.UTC(2026, 10, 7, 0), "컵 치우기");
+      db.add("execution", Date.UTC(2026, 10, 7, 0, 1), "완료");
+      db.add("feedback", Date.UTC(2026, 10, 7, 0, 2), "고마워");
+      db.add("world", Date.UTC(2026, 10, 7, 15, 1), "다음 날 world"); // 서울 11-08 00:01
+      const seen: { rows: string[]; windowDays: number; offsetMinutes: number; day: string }[] = [];
+      const r = await runReflection(db, new PamClient({ url: await startPam(withRules({ watching_tv: [AIRCON] })) }), "2026-11-07", {
+        filter: (i) => {
+          seen.push({ rows: i.rows.map((x) => `${x.kind}:${x.text}`), windowDays: i.windowDays, offsetMinutes: i.offsetMinutes, day: i.day });
+          const memory = structuredClone(i.proposed);
+          memory.states.find((s) => s.id === "watching_tv")!.rules = memory.states.find((s) => s.id === "watching_tv")!.rules.filter((x) => x.trigger !== AIRCON.trigger);
+          memory.states.find((s) => s.id === "drinking")!.rules.push(HABIT);
+          return { memory, notes: [{ state: "watching_tv", ...AIRCON, kept: false, reason: "too_few", seen: 1, fired: 1 }] };
+        },
+      });
+      expect(seen).toEqual([{
+        day: "2026-11-07", windowDays: 30, offsetMinutes: 540,
+        rows: ["world:30일 안 world", "device:거실 에어컨 켜짐", "decision:컵 치우기", "execution:완료", "feedback:고마워"],
+      }]);
+      expect(r).toMatchObject({ ok: true, learned: [], dropped: [{ state: "watching_tv", ...AIRCON, reason: "too_few" }, { state: "drinking", ...HABIT, reason: "coach" }] });
+      expect(db.memoryVersion(2)!.memory).toEqual(CUP_FSM_MEMORY);
+    });
+
+    it("거르기 결과가 기억 모양 검사에 걸리면 반성은 실패로 남고 판본은 늘지 않는다", async () => {
+      const db = HistoryDb.open(":memory:");
+      db.add("detection", t, "사람 보임");
+      const r = await runReflection(db, new PamClient({ url: await startPam(CUP_FSM_MEMORY) }), "2026-11-07", {
+        filter: (i) => ({ memory: { ...i.proposed, initial_state: "nowhere" }, notes: [] }),
+      });
+      expect(r.ok).toBe(false);
+      expect(db.latestMemoryVersion()).toBe(1);
+      expect(db.list({ kinds: ["reflection"] }).at(-1)!.text).toMatch(/^반성 실패: /);
+    });
   });
 
   it("다음 날 판단이 이미 판본을 정했으면 그날은 바꾸지 않고 그다음 날부터 쓴다", async () => {
     const db = HistoryDb.open(":memory:");
     expect(memoryForDay(db, "2026-11-08").version).toBe(1); // 11-08 판단이 먼저 시작함
     db.add("detection", Date.UTC(2026, 10, 7, 1), "사람 보임");
-    expect(await runReflection(db, new PamClient({ url: await startPam({ ...CUP_FSM_MEMORY, initial_state: "left_cup" }) }), "2026-11-07")).toEqual({ ok: true, version: 2, appliesDay: "2026-11-09" });
+    expect(await runReflection(db, new PamClient({ url: await startPam({ ...CUP_FSM_MEMORY, initial_state: "left_cup" }) }), "2026-11-07")).toEqual({ ok: true, version: 2, appliesDay: "2026-11-09", learned: [], dropped: [] });
     expect(memoryForDay(db, "2026-11-08").version).toBe(1);
     expect(memoryForDay(db, "2026-11-09").version).toBe(2);
   });

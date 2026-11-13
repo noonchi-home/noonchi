@@ -29,6 +29,7 @@ export const REFLECT_TEXT = {
   running: "이미 반성하는 중이에요",
   noObservation: "관찰 없음",
   noAction: "행동 없음",
+  learned: (n: number) => `새 규칙 ${n}개를 배웠어요`,
 };
 
 /** 폰 부탁·질문의 답과 그동안의 말(반성 피드백). */
