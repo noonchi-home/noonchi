@@ -1,5 +1,5 @@
 // 위험 가전(인덕션·전자레인지)에 대한 폰 글은 기본 거부다(src/agent/policy.ts): 모델이 쓴 글에 위험 가전 이름이 나오거나 그 단계 대상이 위험 가전이면
-// 그 글은 폰으로 보내지 않는다. 켜는 말인지 끄는 말인지 낱말로 가르지 않는다. 위험 가전에 대한 사람 단계 글은 서버가 정해 둔 글 틀(src/plan/labels.ts RISKY_STEP_TEXT)로만 나간다.
+// 그 글은 폰으로 보내지 않는다. 켜는 말인지 끄는 말인지 낱말로 가르지 않는다. 사람 단계 글은 모델이 고른 동작·대상·물건으로 서버가 만든다(src/plan/labels.ts STEP_TEXT).
 // 글이 생기는 자리마다 자리 목록(PHONE_LINE_SITES)과 함께 「모델이 쓴 위험 가전 글은 어느 자리에서도 폰으로 안 나간다」를 본다.
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,7 +14,7 @@ import { PHONE_LINE_SITES, RISKY_REPLY, riskyNames } from "../src/agent/policy.j
 import type { PlannedCommandMessage } from "../src/contract/phone.js";
 import type { WorldView } from "../src/contract/world.js";
 import { PlanHub } from "../src/plan/hub.js";
-import { RISKY_STEP_TEXT } from "../src/plan/labels.js";
+import { CAUTION_LINE } from "../src/plan/labels.js";
 import { floorPlanFrom } from "../src/plan/route.js";
 import type { DecisionRecord } from "../src/world/decide.js";
 import { SMALL_SCENE } from "./helpers/floor.js";
@@ -64,8 +64,8 @@ function tracker(at = 1) {
     plans, world: () => WORLD, check: () => ({ ok: true }), floor: () => plans.floor(), approvals, toPhone: (m) => phone.push(m), emit: () => {},
     handDevices: () => [{ id: "induction_1", kind: "cooktop", label: "인덕션" }],
     planner: () => new PlanDraft(ctx()).submit({ steps: [
-      { kind: "do", label: "물 받기", target: "sink_1", command: "냄비에 물을 받아 주세요", timeout_s: 120 },
-      { kind: "place", label: "냄비 올리기", target: "induction_1", command: "냄비를 올려 주세요", timeout_s: 120 },
+      { kind: "do", act: "물 받기", item: "냄비", target: "sink_1", timeout_s: 120 },
+      { kind: "place", act: "올리기", item: "냄비", target: "induction_1", timeout_s: 120 },
     ] }),
   });
   t.onDecision(decision);
@@ -119,11 +119,7 @@ const leaked = (out: string | null) => out !== null && /전원|버튼/.test(out)
 describe("모델이 쓴 위험 가전 글은 어느 자리에서도 폰으로 안 나간다", () => {
   /** 자리 → 모델 글 하나를 넣었을 때 폰으로 나가는 글(안 나가면 null). onRisky: 대상이 위험 가전인 자리로 넣는다. */
   const SITES: Record<(typeof PHONE_LINE_SITES)[number], (text: string, onRisky: boolean) => Promise<string | null> | string | null> = {
-    "step.label": (text, onRisky) => planStep({ kind: "go", label: text.slice(0, 30), target: onRisky ? "induction_1" : "sink_1", command: "가 주세요", timeout_s: 120 })?.label ?? null,
-    "step.command": (text, onRisky) => planStep({ kind: "go", label: "가기", target: onRisky ? "induction_1" : "sink_1", command: text, timeout_s: 120 })?.command ?? null,
-    "step.caution": (text, onRisky) => planStep(onRisky
-      ? { kind: "do", label: "켜기", target: "induction_1", command: "켜 주세요", hand_device: { id: "induction_1", to: "on" }, caution: text.replace(/ 주세요$/, "요.").slice(0, 30), timeout_s: 120 }
-      : { kind: "do", label: "물 받기", target: "sink_1", command: "물을 받아 주세요", caution: text.replace(/ 주세요$/, "요.").slice(0, 30), timeout_s: 120 })?.caution ?? null,
+    "step.label": (text) => planStep({ kind: "wait", label: text.slice(0, 30), until: { elapsed_s: 5 }, timeout_s: 60 })?.label ?? null,
     "say.text": (text) => planStep({ kind: "say", label: "알림", text: text.replace(/ 주세요$/, "요."), timeout_s: 10 })?.text ?? null,
     "ask.question": (text) => planStep(ask({ question: `${text.replace(/ 주세요$/, "")} 볼까요?` }), ASK_TASK)?.prompt?.text ?? null,
     "ask.choices.label": (text) => planStep(ask({ choices: [{ id: "yes", label: text.slice(0, 20) }, { id: "no", label: "아니요" }] }), ASK_TASK)?.prompt?.choices[0]?.label ?? null,
@@ -135,7 +131,7 @@ describe("모델이 쓴 위험 가전 글은 어느 자리에서도 폰으로 �
     "agent.reply": async (text) => agentReply([{ text, calls: [] }]),
   };
 
-  const TARGETED = new Set<string>(["step.label", "step.command", "step.caution", "track.tell", "track.askCloser"]);
+  const TARGETED = new Set<string>(["track.tell", "track.askCloser"]);
 
   it("자리 목록은 이 시험이 보는 자리와 같다", () => {
     expect(Object.keys(SITES).sort()).toEqual([...PHONE_LINE_SITES].sort());
@@ -153,38 +149,43 @@ describe("모델이 쓴 위험 가전 글은 어느 자리에서도 폰으로 �
 });
 
 describe("서버 글 틀", () => {
-  it("위험 가전이 대상인 go·pick·place와 hand_device가 붙은 do는 모델 글 대신 서버 글(이름·명령·안전 문구)로 나간다", () => {
-    const go = planStep({ kind: "go", label: "버튼 누르러 가기", target: "induction_1", command: BARE, timeout_s: 120 });
-    expect([go?.label, go?.command]).toEqual([RISKY_STEP_TEXT.go("인덕션").label, "인덕션으로 가 주세요"]);
-    const place = planStep({ kind: "place", label: "냄비 올리기", target: "induction_1", command: "냄비를 올리고 전원 버튼을 눌러 주세요", timeout_s: 120 });
-    expect([place?.label, place?.command]).toEqual(["인덕션에 올리기", "인덕션 위에 올려 주세요"]);
-    const pick = planStep({ kind: "pick", label: "냄비 내리기", target: "induction_1", command: BARE, timeout_s: 120 });
-    expect([pick?.label, pick?.command]).toEqual(["인덕션에서 내리기", "인덕션에서 내려 주세요"]);
-    const on = planStep({ kind: "do", label: "시작 버튼", target: "induction_1", command: BARE, hand_device: { id: "induction_1", to: "on" }, caution: "인덕션 전원 버튼을 누르세요.", timeout_s: 120 });
-    expect([on?.label, on?.command, on?.caution]).toEqual(["인덕션 켜기", "인덕션을 켜 주세요", RISKY_STEP_TEXT.caution.cooktop]);
-    const off = planStep({ kind: "do", label: "끄기", target: "induction_1", command: NAMED, hand_device: { id: "induction_1", to: "off" }, timeout_s: 120 });
+  it("사람 단계 글은 동작·대상·물건으로 서버가 만든다. 모델이 함께 보낸 이름·명령·안전 문구는 쓰지 않는다", () => {
+    const go = planStep({ kind: "go", act: "가기", label: "버튼 누르러 가기", target: "induction_1", command: BARE, timeout_s: 120 });
+    expect([go?.label, go?.command]).toEqual(["인덕션으로 가기", "인덕션으로 가 주세요"]);
+    const place = planStep({ kind: "place", act: "올리기", item: "냄비", label: "냄비 올리기", target: "induction_1", command: "냄비를 올리고 전원 버튼을 눌러 주세요", timeout_s: 120 });
+    expect([place?.label, place?.command]).toEqual(["냄비 올리기", "냄비를 인덕션에 올려 주세요"]);
+    const pick = planStep({ kind: "pick", act: "내리기", item: "냄비", target: "induction_1", command: BARE, timeout_s: 120 });
+    expect([pick?.label, pick?.command]).toEqual(["냄비 내리기", "냄비를 인덕션에서 내려 주세요"]);
+    const on = planStep({ kind: "do", act: "켜기", label: "시작 버튼", target: "induction_1", command: BARE, hand_device: { id: "induction_1", to: "on" }, caution: "인덕션 전원 버튼을 누르세요.", timeout_s: 120 });
+    expect([on?.label, on?.command, on?.caution]).toEqual(["인덕션 켜기", "인덕션을 켜 주세요", CAUTION_LINE.cooktop]);
+    const off = planStep({ kind: "do", act: "끄기", label: "끄기", target: "induction_1", command: NAMED, hand_device: { id: "induction_1", to: "off" }, timeout_s: 120 });
     expect([off?.label, off?.command, off?.caution]).toEqual(["인덕션 끄기", "인덕션을 꺼 주세요", null]);
-    const open = planStep({ kind: "do", label: "문 열기", target: "microwave_1", command: BARE, hand_device: { id: "microwave_1", to: "open" }, timeout_s: 120 });
-    expect(open).toBeNull(); // 전자레인지가 평면도에 없는 집: target이 평면도 id가 아니다
-    const open2 = planStep({ kind: "do", label: "문 열기", target: "sink_1", command: BARE, hand_device: { id: "microwave_1", to: "open" }, timeout_s: 120 });
-    expect([open2?.label, open2?.command]).toEqual(["전자레인지 문 열기", "전자레인지 문을 열어 주세요"]);
-    const close = planStep({ kind: "do", label: "문 닫기", target: "sink_1", command: BARE, hand_device: { id: "microwave_1", to: "close" }, timeout_s: 120 });
+    // 평면도에 없는 가전도 [가전] id로 손 조작 동작의 대상이 된다
+    const open = planStep({ kind: "do", act: "열기", target: "microwave_1", command: BARE, hand_device: { id: "microwave_1", to: "open" }, timeout_s: 120 });
+    expect([open?.label, open?.command]).toEqual(["전자레인지 문 열기", "전자레인지 문을 열어 주세요"]);
+    const close = planStep({ kind: "do", act: "닫기", target: "microwave_1", hand_device: { id: "microwave_1", to: "close" }, timeout_s: 120 });
     expect([close?.label, close?.command]).toEqual(["전자레인지 문 닫기", "전자레인지 문을 닫아 주세요"]);
+    // 가전 위에서 하는 그 밖의 일도 동작 틀로만 나간다
+    const put = planStep({ kind: "do", act: "넣기", item: "면과 스프", target: "induction_1", command: NAMED, timeout_s: 120 });
+    expect([put?.label, put?.command, put?.hand]).toEqual(["면과 스프 넣기", "면과 스프를 넣어 주세요", null]);
   });
 
-  it("대상 위험 가전과 hand_device 위험 가전이 다르면 버린다(질문·끄기 안내가 다른 가전을 가리키지 않게)", () => {
-    expect(planStep({ kind: "do", label: "켜기", target: "induction_1", command: "켜 주세요", hand_device: { id: "microwave_1", to: "on" }, timeout_s: 120 })).toBeNull();
+  it("손 조작 동작은 대상 가전과 hand_device가 같은 가전, 같은 동작이어야 한다(질문·끄기 안내가 다른 가전을 가리키지 않게)", () => {
+    expect(planStep({ kind: "do", act: "켜기", target: "induction_1", hand_device: { id: "microwave_1", to: "on" }, timeout_s: 120 })).toBeNull();
+    expect(planStep({ kind: "do", act: "켜기", target: "induction_1", hand_device: { id: "induction_1", to: "off" }, timeout_s: 120 })).toBeNull();
     const d = new PlanDraft(ctx());
-    const r = d.add({ step: 1, kind: "do", label: "켜기", target: "induction_1", command: "켜 주세요", hand_device: { id: "microwave_1", to: "on" }, timeout_s: 120 });
-    expect(r).toMatchObject({ ok: false, error: expect.stringMatching(/hand_device 가전\(microwave_1\)이 다릅니다/) });
+    const r = d.add({ step: 1, kind: "do", act: "켜기", target: "induction_1", hand_device: { id: "microwave_1", to: "on" }, timeout_s: 120 });
+    expect(r).toMatchObject({ ok: false, error: expect.stringMatching(/같은 대상, 같은 동작/) });
   });
 
-  it("틀이 없는 단계 종류(자유 do)가 위험 가전을 대상으로 하면 hand_device가 있어야 한다. 상태 말(꺼져 있어요)이 붙어도 그대로다", () => {
-    expect(planStep({ kind: "do", label: "버튼 누르기", target: "induction_1", command: NAMED, timeout_s: 120 })).toBeNull();
-    expect(planStep({ kind: "do", label: "버튼 누르기", target: "induction_1", command: BARE, timeout_s: 120 })).toBeNull();
-    expect(planStep({ kind: "do", label: "넣기", target: "induction_1", command: "면과 스프를 넣어 주세요", timeout_s: 120 })).toBeNull();
-    // 위험 가전 이름이 나오는 그 밖 단계 글도 버린다
-    expect(planStep({ kind: "do", label: "물 받기", target: "sink_1", command: "인덕션 옆에서 물을 받아 주세요", timeout_s: 120 })).toBeNull();
+  it("가전마다 할 수 있는 동작 밖이거나 hand_device가 없으면 버린다", () => {
+    expect(planStep({ kind: "do", act: "켜기", target: "induction_1", timeout_s: 120 })).toBeNull();
+    expect(planStep({ kind: "do", act: "열기", target: "induction_1", hand_device: { id: "induction_1", to: "open" }, timeout_s: 120 })).toBeNull();
+    expect(planStep({ kind: "do", act: "켜기", target: "sink_1", hand_device: { id: "sink_1", to: "on" }, timeout_s: 120 })).toBeNull();
+    // 손 조작이 아닌 동작에는 hand_device를 쓰지 않는다
+    expect(planStep({ kind: "do", act: "넣기", item: "면과 스프", target: "induction_1", hand_device: { id: "induction_1", to: "on" }, timeout_s: 120 })).toBeNull();
+    // 단계 종류에 없는 동작
+    expect(planStep({ kind: "go", act: "켜기", target: "induction_1", timeout_s: 120 })).toBeNull();
   });
 
   it("말 요청 에이전트의 답에 위험 가전 이름이 나오면 도구를 썼어도 고정 글이다. 승인 대기면 정책 승인 안내 글이다", async () => {

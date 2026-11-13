@@ -574,10 +574,13 @@ export class ExecutionTracker {
     return devices ? riskyHand(step, devices) : true;
   }
 
-  /** 모델이 쓴 글을 지금 단계 대신 띄우면 안 되는가: 글에 위험 가전 이름이 나오거나, 지금 단계가 위험 가전 단계(서버 글 틀로 나가는 단계)다. */
+  /** 모델이 쓴 글을 지금 단계 대신 띄우면 안 되는가: 글에 위험 가전 이름이 나오거나, 지금 단계가 위험 가전 단계다.
+   *  위험 가전이 대상이어도 손 조작이 아닌 단계는 그 단계의 서버 명령 그대로(다시 읽기)면 띄운다. */
   private riskyOn(text: string, step: AgentStep): boolean {
+    if (step.hand !== null) return true;
     const kind = step.target ? this.o.handDevices?.().find((d) => d.id === step.target)?.kind : undefined;
-    return riskyNames(text).length > 0 || step.hand !== null || isRiskyKind(kind);
+    if (isRiskyKind(kind)) return text !== step.command;
+    return riskyNames(text).length > 0;
   }
 
   /** 손으로 다루는 가전 이름(묻는 글·끄기 안내): 그 가전이 평면도에 있으면 종류의 짧은 이름(인덕션), 아니면 이 집 가전 이름, 그것도 없으면 단계 대상 자리 이름. */

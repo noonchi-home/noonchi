@@ -72,25 +72,43 @@ export const APPROVAL_TEXT = {
   refused: "사용자가 거절한 일",
 };
 
-/** 위험 가전(인덕션·전자레인지)에 대한 사람 단계 글 틀(src/agent/planTools.ts): 그 가전이 대상인 go·pick·place와 hand_device가 붙은 do는
- *  모델이 쓴 이름·명령·안전 문구 대신 이 글로 폰에 나간다. name은 가전 종류 이름(인덕션). place·pick은 가전 종류마다 다르다. */
-export const RISKY_STEP_TEXT = {
-  go: (name: string) => ({ label: `${josa(name, "으로/로")} 가기`, command: `${josa(name, "으로/로")} 가 주세요` }),
-  place: {
-    cooktop: (name: string) => ({ label: `${name}에 올리기`, command: `${name} 위에 올려 주세요` }),
-    microwave: (name: string) => ({ label: `${name}에 넣기`, command: `${name} 안에 넣어 주세요` }),
-  } as Record<string, (name: string) => { label: string; command: string }>,
-  pick: {
-    cooktop: (name: string) => ({ label: `${name}에서 내리기`, command: `${name}에서 내려 주세요` }),
-    microwave: (name: string) => ({ label: `${name}에서 꺼내기`, command: `${name}에서 꺼내 주세요` }),
-  } as Record<string, (name: string) => { label: string; command: string }>,
-  on: (name: string) => ({ label: `${name} 켜기`, command: `${josa(name, "을/를")} 켜 주세요` }),
-  off: (name: string) => ({ label: `${name} 끄기`, command: `${josa(name, "을/를")} 꺼 주세요` }),
-  open: (name: string) => ({ label: `${name} 문 열기`, command: `${name} 문을 열어 주세요` }),
-  close: (name: string) => ({ label: `${name} 문 닫기`, command: `${name} 문을 닫아 주세요` }),
-  /** 켜기 전 질문 앞에 읽는 안전 한 줄(가전 종류마다). 열쇠는 가전 종류다. 낱말 표 종류(microwave)와 이름이 같아도 다른 것이라 낱말 목록 검사와 헷갈리지 않게 따옴표로 쓴다. */
-  caution: { "cooktop": "냄비와 상판이 뜨거워져요.", "microwave": "그릇이 뜨거워져요." } as Record<string, string>,
+/** 사람 단계 동작(act): 단계 종류마다 고를 수 있는 것. 모델은 동작·대상·물건(item)만 고르고, 단계 이름과 폰 명령은 아래 글 틀로 서버가 만든다
+ *  (src/agent/planTools.ts). 모델이 쓴 문장은 폰으로 나가지 않는다. */
+export const STEP_ACTS = {
+  go: ["가기"],
+  pick: ["들기", "꺼내기", "내리기"],
+  place: ["넣기", "올리기", "놓기"],
+  do: ["따르기", "물 받기", "넣기", "젓기", "열기", "닫기", "켜기", "끄기"],
+} as const;
+export type StepAct = (typeof STEP_ACTS)[keyof typeof STEP_ACTS][number];
+/** 모든 동작(중복 없이, 도구 칸 enum). */
+export const ALL_ACTS = [...new Set(Object.values(STEP_ACTS).flat())] as [StepAct, ...StepAct[]];
+
+/** 시나리오에 쓰는 물건 이름(낱말 표 물건 이름 밖). 모델이 item으로 고를 수 있는 이름은 낱말 표 물건 이름과 이것이다. */
+export const EXTRA_ITEMS = ["냄비", "면과 스프", "물", "물병", "콜라", "세탁물"] as const;
+
+/** 사람 단계 글 틀(단계 종류:동작). place는 자리·대상 이름, item은 물건 이름(없으면 null). 물건이 꼭 있어야 하는 틀은 item이 없으면 null을 낸다. */
+export const STEP_TEXT: Record<string, (o: { place: string; item: string | null }) => { label: string; command: string } | null> = {
+  "go:가기": ({ place }) => ({ label: `${josa(place, "으로/로")} 가기`, command: `${josa(place, "으로/로")} 가 주세요` }),
+  "pick:들기": ({ item }) => (item ? { label: `${item} 집기`, command: `${josa(item, "을/를")} 들어 주세요` } : null),
+  "pick:꺼내기": ({ item }) => (item ? { label: `${item} 꺼내기`, command: `${josa(item, "을/를")} 꺼내 주세요` } : null),
+  "pick:내리기": ({ place, item }) => (item ? { label: `${item} 내리기`, command: `${josa(item, "을/를")} ${place}에서 내려 주세요` } : null),
+  "place:넣기": ({ place, item }) => (item ? { label: `${item} 내려놓기`, command: `${josa(item, "을/를")} ${place}에 넣어 주세요` } : null),
+  "place:올리기": ({ place, item }) => (item ? { label: `${item} 올리기`, command: `${josa(item, "을/를")} ${place}에 올려 주세요` } : null),
+  "place:놓기": ({ place, item }) => (item ? { label: `${item} 내려놓기`, command: `${josa(item, "을/를")} ${place}에 놓아 주세요` } : null),
+  "do:따르기": ({ place, item }) => (item ? { label: `${place}에 ${item} 따르기`, command: `${place}에 ${josa(item, "을/를")} 따라 주세요` } : null),
+  "do:물 받기": ({ item }) => ({ label: "물 받기", command: item ? `${item}에 물을 받아 주세요` : "물을 받아 주세요" }),
+  "do:넣기": ({ item }) => (item ? { label: `${item} 넣기`, command: `${josa(item, "을/를")} 넣어 주세요` } : null),
+  "do:젓기": ({ item }) => (item ? { label: `${item} 젓기`, command: `${josa(item, "을/를")} 저어 주세요` } : null),
+  "do:열기": ({ place }) => ({ label: `${place} 문 열기`, command: `${place} 문을 열어 주세요` }),
+  "do:닫기": ({ place }) => ({ label: `${place} 문 닫기`, command: `${place} 문을 닫아 주세요` }),
+  "do:켜기": ({ place }) => ({ label: `${place} 켜기`, command: `${josa(place, "을/를")} 켜 주세요` }),
+  "do:끄기": ({ place }) => ({ label: `${place} 끄기`, command: `${josa(place, "을/를")} 꺼 주세요` }),
 };
+
+/** 위험 가전을 켜는 단계에서 켜기 전 질문 앞에 읽는 안전 한 줄(가전 종류마다, 서버 글). 열쇠는 가전 종류다. 낱말 표 종류(microwave)와 이름이 같아도
+ *  다른 것이라 낱말 목록 검사와 헷갈리지 않게 따옴표로 쓴다. */
+export const CAUTION_LINE: Record<string, string> = { "cooktop": "냄비와 상판이 뜨거워져요.", "microwave": "그릇이 뜨거워져요." };
 
 /** 손으로 켜는 위험 가전(src/act/track.ts): 켜기 전에 안전 문구와 함께 묻는 글, 켠 채 계획이 닫혔을 때 끄라고 알리는 명령. */
 export const CAUTION_TEXT = {
@@ -103,7 +121,7 @@ export const AGAIN_TEXT = { ask: (label: string) => `${josa(label, "을/를")} �
 
 /** 비전 상태 줄에 쓰는 평면도 물건 짧은 이름(낱말 표에 없는 종류). 낱말 표 종류(식탁 등)는 그 글을 쓰고(placeShort), 둘 다 없으면 배치 이름을 쓴다. */
 export const PLACE_SHORT: Record<string, string> = {
-  sink_counter: "싱크대", utility_sink: "싱크대", induction_counter: "인덕션", kitchen_cabinet: "수납장", washer: "세탁기", dryer: "건조기",
+  sink_counter: "싱크대", utility_sink: "싱크대", induction_counter: "인덕션", kitchen_cabinet: "수납장", counter: "조리대", washer: "세탁기", dryer: "건조기",
   fridge: "냉장고", kimchi_fridge: "김치냉장고", dishwasher: "식기세척기", sofa: "소파", desk: "책상", coffee_table: "탁자",
   bed_queen: "침대", bed_single: "침대", stand_ac: "에어컨", wall_ac: "에어컨",
 };

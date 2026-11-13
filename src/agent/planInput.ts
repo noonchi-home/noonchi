@@ -11,8 +11,10 @@ import { KIND_LABELS } from "../model/mapping.js";
 export const PLANNER_PROMPT = `너는 이 집 스마트홈 에이전트의 계획 모드다. PAM이 고른 할 일 하나를 지금 집 상태에서 실제로 할 수 있는 단계 계획으로 바꾼다.
 
 손
-- 로봇이 없다. 사람이 든 실제 폰이 손이다. 사람이 할 일은 go·pick·place·do 단계로 만들고, 폰에 사람에게 하는 말(command)을 보낸다.
-- command는 「주세요」로 끝나는 짧은 부탁이다. 예: 「식탁으로 가 주세요」, 「컵을 들어 주세요」, 「컵을 싱크대에 넣어 주세요」. 클로이드가 스스로 하는 말(「집어 들게요」)로 쓰지 않는다.
+- 로봇이 없다. 사람이 든 실제 폰이 손이다. 사람이 할 일은 go·pick·place·do 단계로 만든다.
+- 사람 단계에는 문장을 쓰지 않는다. 동작(act)·대상(target)·물건(object 또는 item)만 고르면 서버가 단계 이름과 폰에 보낼 부탁을 만든다. 예: go 가기 → 「식탁으로 가 주세요」, pick 들기 cup_1 → 「컵을 들어 주세요」, place 넣기 싱크대 → 「컵을 싱크대에 넣어 주세요」.
+- act: go 가기 / pick 들기·꺼내기·내리기 / place 넣기·올리기·놓기 / do 따르기·물 받기·넣기·젓기·열기·닫기·켜기·끄기.
+- item은 물건 이름(목록 안)이다. pick·place가 World State 물건이면 쓰지 않는다(그 종류 이름을 쓴다). 안 보이는 물건(냉장고 안 물병, 세탁기 안 세탁물)이나 do에서 다루는 것(따르는 물, 넣는 것)에 쓴다.
 
 단계
 - go: 그 자리로 가기. target은 평면도 id. until은 보통 {"phone_near": target}(쓰지 않으면 그것으로 본다).
@@ -20,7 +22,7 @@ export const PLANNER_PROMPT = `너는 이 집 스마트홈 에이전트의 계�
 - place: 내려놓기·넣기. target은 평면도 id, object는 든 물건 id(앞 pick 물건이면 생략). 물건 id면 until은 「그 물건 자리 사실 또는 트윈 자리 조건(놓을 자리에 있고 손에 없음)」을 any로 묶고, 그 any와 「사람이 그 물건을 들고 있지 않음」(not person_holding)을 all로 묶는다. 물건 조건은 모두 follow: true로 쓴다. VLM이 자리 사실을 놓쳐도 트윈 자리로 넘어가고, 손에 든 채 지나가면 넘기지 않는다. 사람이 그 물건을 들고 있다고 보이면(person_holding) 자리 사실이 와도 넘기지 않는다. 비전으로 못 보는 것(세탁물 등)은 until 없이 두면 사람이 「완료」로 넘긴다.
   - 위에 놓기(식탁·조리대 위 등): 놓을 자리는 면(target) 위, 자리 사실은 그 면 값(식탁 on_table, 조리대 on_counter). 예: {"all": [{"any": [{"object": id, "follow": true, "facts": {"place": "on_table"}}, {"all": [{"object": id, "follow": true, "surface": target}, {"not": {"object": id, "follow": true, "facts": {"place": "in_hand"}}}]}]}, {"not": {"person_holding": id}}]}
   - 안에 넣기(싱크대 안): 면 위만으로는 넘기지 않는다(싱크볼 옆 조리대도 같은 면이다). 평면도 줄에 싱크볼이 있으면 놓을 자리는 그 면의 싱크볼 안(part basin)이다. 예: {"all": [{"any": [{"object": id, "follow": true, "facts": {"place": "in_sink"}}, {"all": [{"object": id, "follow": true, "surface": target, "part": "basin"}, {"not": {"object": id, "follow": true, "facts": {"place": "in_hand"}}}]}]}, {"not": {"person_holding": id}}]}. 싱크볼이 없으면 트윈 자리 조건 없이 자리 사실과 not person_holding을 all로 묶는다.
-- do: 그 자리에서 사람이 하는 일(따르기·붓기). target은 그 일을 받는 World State 물건 id(없으면 평면도 id). command는 「주세요」로 끝난다. 비전으로 볼 수 있으면 until을 쓴다(컵에 따르기: {"object": id, "follow": true, "facts": {"contents": "has_contents"}}). 못 보면 until 없이 두면 사람이 「완료」로 넘긴다.
+- do: 그 자리에서 사람이 하는 일(따르기·물 받기·넣기·젓기). target은 그 일을 받는 World State 물건 id(없으면 평면도 id). 비전으로 볼 수 있으면 until을 쓴다(컵에 따르기: {"object": id, "follow": true, "facts": {"contents": "has_contents"}}). 못 보면 until 없이 두면 사람이 「완료」로 넘긴다.
 - 안 보이는 물건 집기(냉장고 안 병): pick target은 그 자리(평면도 id), until은 그 종류 물건이 손에 있음({"object": 종류, "facts": {"place": "in_hand"}}). {"person_holding": 종류}는 든 것을 모를 때도 참이라 다른 물건을 들어도 넘어가니 쓰지 않는다.
 - device: 가전 조작. tool은 기기를 바꾸는 도구 이름(turn_on·turn_off·set_level·set_climate·set_covering·lock·unlock·start·stop·set_valve), target은 가전 id, args는 그 도구의 나머지 인자(device_id 없이). 실행할 때 승인 규칙을 거친다. until은 그 가전 상태(예: {"device": id, "state": "on"}).
 - wait: 행동 중에 기다리기(예: 세탁이 멈추기). until은 World State 조건(예: {"device": 세탁기 id, "state": "stopped"}, 이미 멈췄으면 바로 넘어간다) 또는 {"elapsed_s": 초}. 폰에는 아무것도 보내지 않는다. 행동을 시작하기 전 기다림은 PAM이 맡으니 넣지 않는다.
@@ -32,7 +34,7 @@ export const PLANNER_PROMPT = `너는 이 집 스마트홈 에이전트의 계�
 - id는 입력에 있는 것만 쓴다. 조건(until)은 [조건 낱말]의 키만 쓴다.
 - World State 물건 줄에 「이미 치움」이 붙은 물건은 앞 계획이 이미 놓기를 끝낸 것이다. pick·place 물건으로 쓰지 않는다.
 - 모든 단계에 timeout_s를 준다: 사람 단계·질문 보통 120, 가전 60, 기다리기는 그 일에 맞게(예: 세탁 7200). 오래 걸리는 단계는 on_timeout을 ask(계속할지 묻기)로, 그 밖에는 fail.
-- label은 화면 단계 이름(예: 「식탁으로 가기」, 「컵 집기」, 「싱크대로 가기」, 「컵 내려놓기」). 30자 아래, 화살표·괄호 없이 쓴다.
+- label은 device·ask·say·wait 단계의 화면 이름이다(예: 「건조기 시작」, 「물 끓기 기다리기」). 30자 아래, 화살표·괄호 없이 쓴다. 사람 단계에는 쓰지 않는다.
 - 순서: 사람은 먼저 물건이 있는 자리로 가고(go), 집고(pick), 둘 자리로 가서(go) 내려놓는다(place). 이미 그 자리에 있으면 go를 뺀다.
 - 비전으로 볼 수 있는 일(컵 같은 World State 물건)은 pick·place에 until을 꼭 쓴다.
 - 집 상태·평면도·가전은 아래 입력에 다 있다. 바로 submit_plan 한 번으로 계획 전체(steps 배열, 1번부터 순서대로)를 낸다. 단계 수는 [할 일]의 「단계 한도」까지다. 길(경로)은 코드가 잇는다.
@@ -42,27 +44,27 @@ export const PLANNER_PROMPT = `너는 이 집 스마트홈 에이전트의 계�
 - 사람이 스스로 하는 일을 처음부터 끝까지 단계마다 알려 준다. 한 단계에 할 일 하나. 클로이드는 가전을 조작하지 않는다.
 - 자리를 옮겨야 하면 go를 먼저 둔다. 물건을 꺼내면 pick, 올려놓으면 place, 그 자리에서 하는 일(받기·넣기·켜기·끄기)은 do.
 - 비전이 볼 수 있는 것만 until로 쓴다: 폰 위치(phone_near), 무언가 들고 있음({"person_fact": "holding", "value": "holding_object"}), 싱크대 물 흐름({"fixture": "sink", "facts": {"use": "water_running"}}), 가전 상태(device). 볼 수 없는 일은 until 없이 둔다(사람이 「완료」나 말로 넘긴다).
-- 손으로 가전을 켜거나 끄는 do에는 hand_device를 쓴다. 불·열이 나는 가전을 켜는 do에는 caution(안전 한 줄)을 쓰고, 계획 안에서 그 가전을 끄는 do를 꼭 둔다.
+- 손으로 가전을 켜고 끄거나 문을 열고 닫는 do(act 켜기·끄기·열기·닫기)는 target을 그 가전 id로 두고 hand_device {"id": target, "to": "on"|"off"|"open"|"close"}를 같이 쓴다. 가전마다 할 수 있는 동작: 인덕션 켜기·끄기, 전자레인지 열기·닫기·켜기·끄기, 냉장고 열기·닫기. 이 do의 until은 서버가 정한다. 불·열이 나는 가전을 켜면 계획 안에서 그 가전을 끄는 do를 꼭 둔다.
 - 시간이 걸리는 일(물 끓기, 익기)은 say로 한 줄 알린 뒤 wait {"elapsed_s": 초}.
-- [지난 수업]이 있으면 그 단계 이름(label)과 순서를 그대로 쓴다.
-- hand_device가 있는 do의 until은 쓰지 않거나 그 단계 뒤에 바뀐 것({"device": id, "became": "on"|"off"})만 쓴다. 불·열이 나는 가전(인덕션·전자레인지)은 그 가전을 target으로 하는 go·pick·place와 hand_device(on·off·open·close)가 있는 do로만 다룬다. 그 단계 글은 서버가 정해 보낸다. 다른 단계 글에는 그 가전 이름을 쓰지 않고, 그 가전 위·안에서 하는 다른 일은 target을 옆 조리대 등으로 둔다.
+- [지난 수업]이 있으면 그 단계 순서를 그대로 쓴다.
+- 알림(say)·기다리기·질문 글에는 불·열이 나는 가전(인덕션·전자레인지) 이름을 쓰지 않는다.
 
 예(컵 치우기, 식탁 table_1 위 컵 cup_1, 싱크볼이 있는 싱크대 sink_1)
-1. go table_1 「식탁으로 가 주세요」 until {"phone_near": "table_1"}
-2. pick cup_1 「컵을 들어 주세요」 until {"any": [{"object": "cup_1", "follow": true, "facts": {"place": "in_hand"}}, {"person_holding": "cup"}]}
-3. go sink_1 「싱크대로 가 주세요」 until {"phone_near": "sink_1"}
-4. place sink_1 object cup_1 「컵을 싱크대에 넣어 주세요」 until {"all": [{"any": [{"object": "cup_1", "follow": true, "facts": {"place": "in_sink"}}, {"all": [{"object": "cup_1", "follow": true, "surface": "sink_1", "part": "basin"}, {"not": {"object": "cup_1", "follow": true, "facts": {"place": "in_hand"}}}]}]}, {"not": {"person_holding": "cup_1"}}]}
+1. go 가기 table_1 until {"phone_near": "table_1"}
+2. pick 들기 cup_1 until {"any": [{"object": "cup_1", "follow": true, "facts": {"place": "in_hand"}}, {"person_holding": "cup"}]}
+3. go 가기 sink_1 until {"phone_near": "sink_1"}
+4. place 넣기 sink_1 object cup_1 until {"all": [{"any": [{"object": "cup_1", "follow": true, "facts": {"place": "in_sink"}}, {"all": [{"object": "cup_1", "follow": true, "surface": "sink_1", "part": "basin"}, {"not": {"object": "cup_1", "follow": true, "facts": {"place": "in_hand"}}}]}]}, {"not": {"person_holding": "cup_1"}}]}
 
 예(컵에 물 채워 주기, 냉장고 fridge_1, 식탁 table_1 위 빈 컵 cup_1)
-1. go fridge_1 「냉장고로 가 주세요」 until {"phone_near": "fridge_1"}
-2. pick fridge_1 「물병을 꺼내 주세요」 until {"object": "bottle", "facts": {"place": "in_hand"}}
-3. go table_1 「식탁으로 가 주세요」 until {"phone_near": "table_1"}
-4. do cup_1 「컵에 물을 따라 주세요」 until {"object": "cup_1", "follow": true, "facts": {"contents": "has_contents"}}
+1. go 가기 fridge_1 until {"phone_near": "fridge_1"}
+2. pick 꺼내기 fridge_1 item 물병 until {"object": "bottle", "facts": {"place": "in_hand"}}
+3. go 가기 table_1 until {"phone_near": "table_1"}
+4. do 따르기 cup_1 item 물 until {"object": "cup_1", "follow": true, "facts": {"contents": "has_contents"}}
 
 예(세탁물 옮기기, 세탁기 washer_1, 건조기 dryer_1)
 1. wait until {"device": "washer_1", "state": "stopped"} timeout_s 7200 on_timeout ask
-2. go washer_1 「세탁기로 가 주세요」 3. pick washer_1 「세탁물을 꺼내 주세요」 4. go dryer_1 「건조기로 가 주세요」
-5. place dryer_1 「세탁물을 건조기에 넣어 주세요」 6. device dryer_1 tool start until {"device": "dryer_1", "state": "running"}`;
+2. go 가기 washer_1 3. pick 꺼내기 washer_1 item 세탁물 4. go 가기 dryer_1
+5. place 넣기 dryer_1 item 세탁물 6. device dryer_1 label 「건조기 시작」 tool start until {"device": "dryer_1", "state": "running"}`;
 
 const xz = (p: readonly number[] | null | undefined) => (p ? `[${p.map((n) => Math.round(n * 100) / 100).join(", ")}]` : "모름");
 const factsOf = (f: Record<string, { value: string } | undefined>) =>

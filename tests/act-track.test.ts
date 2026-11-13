@@ -16,7 +16,7 @@ import type { BrainLog } from "../src/contract/events.js";
 import type { PlannedCommand, PlannedCommandMessage } from "../src/contract/phone.js";
 import type { WorldChange, WorldObject, WorldView } from "../src/contract/world.js";
 import { PlanHub } from "../src/plan/hub.js";
-import { APPROVAL_TEXT, CAUTION_TEXT, CHECK_TEXT, EXEC_TEXT, RISKY_STEP_TEXT, STEP_COMMAND, STEP_LABEL } from "../src/plan/labels.js";
+import { APPROVAL_TEXT, CAUTION_TEXT, CHECK_TEXT, EXEC_TEXT, CAUTION_LINE, STEP_COMMAND, STEP_LABEL } from "../src/plan/labels.js";
 /** 인덕션 켜기 전 질문(서버 글). */
 const ASK_ON = "냄비와 상판이 뜨거워져요. 인덕션을 켤까요?";
 import type { DecisionRecord } from "../src/world/decide.js";
@@ -498,7 +498,7 @@ describe("실행 추적: 그 자리에서 하는 일(do, 채워 주기)", () => 
     // 병이 보이는 집: 그 병을 집고, 따른 뒤 식탁에 내려놓는 다섯 단계
     const steps = fillSteps({ fridge: "fridge_1", table: "table_1", cup: "cup_1", drink: "물" });
     llm.scripts[WATER] = () => [planCalls([steps[0]!, { ...steps[1]!, target: "bottle_1", until: { object: "bottle_1", follow: true, facts: { place: "in_hand" } } }, steps[2]!, steps[3]!,
-      { kind: "place", label: "물병 내려놓기", target: "table_1", object: "bottle_1", command: "물병을 식탁에 놓아 주세요", timeout_s: 120 }])];
+      { kind: "place", act: "놓기", target: "table_1", object: "bottle_1", timeout_s: 120 }])];
     await s.decide(water);
     for (const n of [1, 2, 3, 4, 5]) expect(s.t.onAnswer("plan:pam-1", `plan:pam-1:${n}`, "done"), String(n)).toBe(true);
     expect(s.plans.current()).toMatchObject({ status: "done" });
@@ -600,13 +600,13 @@ describe("실행 추적: 계획 없는 행동(컵 그대로 두기)", () => {
 
 describe("실행 추적: 코치 계획(손으로 켜는 위험 가전)", () => {
   const P = "plan:pam-1";
-  // 켜기 전 질문의 안전 문구는 서버 글(RISKY_STEP_TEXT.caution)이다
+  // 켜기 전 질문의 안전 문구는 서버 글(CAUTION_LINE)이다
   const ASK = "냄비와 상판이 뜨거워져요. 인덕션을 켤까요?";
   const YESNO = [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }];
   const OFF = { type: "command", id: P, step: `${P}:off`, text: "인덕션을 꺼 주세요", vision: null, choices: DONE, target: null, speak: true };
 
   it("인덕션 켜기 단계는 먼저 안전 문구와 함께 묻고(승인·거절), 승인 뒤에만 「인덕션을 켜 주세요」를 보낸다. 「완료」·말·비전으로는 승인 없이 넘어가지 않고, 답은 기억하지 않아 다음 판에도 또 묻는다", async () => {
-    expect(CAUTION_TEXT.ask(RISKY_STEP_TEXT.caution.cooktop!, "인덕션")).toBe(ASK);
+    expect(CAUTION_TEXT.ask(CAUTION_LINE.cooktop!, "인덕션")).toBe(ASK);
     const approvals = store({ [`task:${RAMEN}`]: "approve" });
     let w = world([]);
     const s = coachSetup({ approvals, w: () => w });
@@ -741,7 +741,7 @@ describe("실행 추적: 코치 계획(손으로 켜는 위험 가전)", () => {
     expect(s.phone.filter((m) => m.type === "command" && m.step === `${P}:off`)).toEqual([]);
     expect(s.t.coaching()).toBe(false);
     expect(s.spoken()).toEqual([
-      "수납장으로 가 주세요", "냄비를 꺼내 주세요", "싱크대로 가 주세요", "냄비에 물을 받아 주세요", "인덕션으로 가 주세요", "인덕션 위에 올려 주세요",
+      "수납장으로 가 주세요", "냄비를 꺼내 주세요", "싱크대로 가 주세요", "냄비에 물을 받아 주세요", "인덕션으로 가 주세요", "냄비를 인덕션에 올려 주세요",
       ASK, "인덕션을 켜 주세요", "물이 끓을 때까지 기다려요.", "면과 스프를 넣어 주세요", "인덕션을 꺼 주세요", "라면이 다 됐어요.",
     ]);
   });
@@ -790,10 +790,10 @@ describe("실행 추적: 코치 계획(손으로 켜는 위험 가전)", () => {
   });
 
   it("켠 위험 가전이 여럿이면 가전마다 끄기 안내를 차례로 보내고, 하나의 「완료」는 그 가전 안내만 지운다", async () => {
-    const MW = { kind: "do", label: "전자레인지 켜기", target: "sink_1", command: "전자레인지를 켜 주세요", hand_device: { id: "microwave_1", to: "on" }, caution: "음식이 뜨거워져요.", timeout_s: 120 };
+    const MW = { kind: "do", act: "켜기", target: "microwave_1", hand_device: { id: "microwave_1", to: "on" }, timeout_s: 120 };
     const s = coachSetup({ handDevices: () => [{ id: "induction_1", kind: "cooktop", label: "인덕션" }, { id: "microwave_1", kind: "microwave", label: "전자레인지" }] });
     const steps = ramenSteps({ cabinet: "cabinet_1", sink: "sink_1", cooktop: "induction_1", cooktopDevice: "induction_1" });
-    llm.scripts[RAMEN] = () => [planCalls([steps[6]!, MW, steps[11]!, { ...MW, label: "전자레인지 끄기", command: "전자레인지를 꺼 주세요", hand_device: { id: "microwave_1", to: "off" }, caution: undefined }])];
+    llm.scripts[RAMEN] = () => [planCalls([steps[6]!, MW, steps[11]!, { ...MW, act: "끄기", hand_device: { id: "microwave_1", to: "off" } }])];
     await s.decide(ramenDecision());
     s.t.onAnswer(P, `${P}:1:hand`, "approve");
     s.t.onAnswer(P, `${P}:1`, "done");
@@ -826,7 +826,7 @@ describe("실행 추적: 코치 계획(손으로 켜는 위험 가전)", () => {
     expect(s.t.tell(P, `${P}:6`, "불을 켜 주세요")).toBe(false);
     // 위험 가전이 대상인 단계는 서버 글로만 나간다: 켜라는 말이 아니어도 모델 글로 바꾸지 않는다(기본 거부)
     expect(s.t.tell(P, `${P}:6`, "냄비를 올려 주세요")).toBe(false);
-    expect(s.last()).toMatchObject({ step: `${P}:6`, text: "인덕션 위에 올려 주세요" });
+    expect(s.last()).toMatchObject({ step: `${P}:6`, text: "냄비를 인덕션에 올려 주세요" });
   });
 
   it("손으로 끄는 단계의 끝 조건(became off)은 그 단계 뒤에 새로 본 꺼짐으로만 넘어간다: 남아 있던 꺼짐 값으로는 넘기지 않아 켠 가전 표시와 끄기 안내가 남는다", async () => {
@@ -922,7 +922,7 @@ describe("실행 추적: 코치 계획의 다른 행동 알림(strayed)과 다�
     s.clock.t += 1_000;
     s.t.onWorld([room(s.clock.t)]);
     expect(s.strays).toHaveLength(3);
-    expect(s.strays[2]).toMatchObject({ stepId: `${P}:6`, label: "인덕션에 올리기", at: 6 });
+    expect(s.strays[2]).toMatchObject({ stepId: `${P}:6`, label: "냄비 올리기", at: 6 });
   });
 
   it("가전 상태·가전 설비 상태 변화도 계기다. 의미 없는 변화·들은 말·물건 변화에는 부르지 않는다. 받지 않은 알림(false)은 세지 않는다", async () => {
@@ -1061,7 +1061,7 @@ describe("실행 추적: 잘한 단계는 말을 줄인다(수업 기록)", () =
     s.clock.t += 4_001; s.t.tick();
     expect(s.plans.current()).toMatchObject({ status: "done" });
   }
-  const HUMAN = ["수납장으로 가기", "냄비 꺼내기", "싱크대로 가기", "물 받기", "인덕션으로 가기", "인덕션에 올리기", "인덕션 켜기", "면과 스프 넣기", "인덕션 끄기"];
+  const HUMAN = ["수납장으로 가기", "냄비 꺼내기", "싱크대로 가기", "물 받기", "인덕션으로 가기", "냄비 올리기", "인덕션 켜기", "면과 스프 넣기", "인덕션 끄기"];
 
   it("끝낸 계획의 사람 단계마다 혼자 해냈는지 기록한다. 다시 알리기(tell)·다시 읽기·가까이 비춰 달라는 부탁을 받은 단계는 혼자 해낸 것이 아니다. 알림·기다리기 단계는 기록하지 않는다", async () => {
     const lessons = memoryLessons();
@@ -1074,7 +1074,7 @@ describe("실행 추적: 잘한 단계는 말을 줄인다(수업 기록)", () =
     const got = lessons.get(RAMEN)!;
     expect(got.runs).toBe(1);
     expect(got.steps.map((x) => x.label)).toEqual(HUMAN);
-    expect(got.steps.filter((x) => x.alone === 0).map((x) => x.label)).toEqual(["냄비 꺼내기", "물 받기", "인덕션에 올리기"]);
+    expect(got.steps.filter((x) => x.alone === 0).map((x) => x.label)).toEqual(["냄비 꺼내기", "물 받기", "냄비 올리기"]);
     expect(got.updatedAt).toBe(new Date(s.clock.t).toISOString());
   });
 

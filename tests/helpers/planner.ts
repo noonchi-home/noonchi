@@ -16,7 +16,7 @@ import { MemoryHub } from "../../src/hub/memory.js";
 import type { DeviceHub, RoomSpec } from "../../src/hub/types.js";
 import type { FloorPlan } from "../../src/plan/floor.js";
 import { josa } from "../../src/agent/phrases.js";
-import { STEP_COMMAND, STEP_LABEL, placeShort } from "../../src/plan/labels.js";
+import { STEP_LABEL, placeShort } from "../../src/plan/labels.js";
 import type { DecisionRecord } from "../../src/world/decide.js";
 import type { LlmTurn } from "./llm.js";
 
@@ -33,14 +33,14 @@ export function cupSteps(ids: { table: string; sink: string; cup: string; basin?
   const inSink = { object: cup, follow: true, facts: { place: "in_sink" } };
   const notHeld = { not: { person_holding: cup } };
   return [
-    { kind: "go", label: STEP_LABEL.goTable, target: table, command: STEP_COMMAND.goTable, until: { phone_near: table }, timeout_s: 120 },
+    { kind: "go", act: "가기", target: table, until: { phone_near: table }, timeout_s: 120 },
     {
-      kind: "pick", label: STEP_LABEL.pickCup, target: cup, command: STEP_COMMAND.pickCup,
+      kind: "pick", act: "들기", target: cup,
       until: { any: [{ object: cup, follow: true, facts: { place: "in_hand" } }, { person_holding: "cup" }] }, timeout_s: 120,
     },
-    { kind: "go", label: STEP_LABEL.goSink, target: sink, command: STEP_COMMAND.goSink, until: { phone_near: sink }, timeout_s: 120 },
+    { kind: "go", act: "가기", target: sink, until: { phone_near: sink }, timeout_s: 120 },
     {
-      kind: "place", label: STEP_LABEL.placeCup, target: sink, object: cup, command: STEP_COMMAND.placeCup,
+      kind: "place", act: "넣기", target: sink, object: cup,
       until: basin
         ? {
           all: [
@@ -66,12 +66,11 @@ export const FILL_TEXT = {
  *  병 집기는 그 종류(bottle) 물건이 손에 있음으로 보일 때, 따르기는 그 컵이 내용물 있음일 때 넘어간다. place는 컵 자리 이름(기본 식탁). */
 export function fillSteps(ids: { fridge: string; table: string; cup: string; drink: "물" | "콜라"; place?: string }): Record<string, unknown>[] {
   const { fridge, table, cup, drink } = ids;
-  const back = FILL_TEXT.goBack(ids.place ?? "식탁");
   return [
-    { kind: "go", ...FILL_TEXT.goFridge, target: fridge, until: { phone_near: fridge }, timeout_s: 120 },
-    { kind: "pick", ...FILL_TEXT.pick[drink], target: fridge, until: { object: "bottle", facts: { place: "in_hand" } }, timeout_s: 120 },
-    { kind: "go", ...back, target: table, until: { phone_near: table }, timeout_s: 120 },
-    { kind: "do", ...FILL_TEXT.pour[drink], target: cup, until: { object: cup, follow: true, facts: { contents: "has_contents" } }, timeout_s: 120 },
+    { kind: "go", act: "가기", target: fridge, until: { phone_near: fridge }, timeout_s: 120 },
+    { kind: "pick", act: "꺼내기", item: drink === "물" ? "물병" : "콜라", target: fridge, until: { object: "bottle", facts: { place: "in_hand" } }, timeout_s: 120 },
+    { kind: "go", act: "가기", target: table, until: { phone_near: table }, timeout_s: 120 },
+    { kind: "do", act: "따르기", item: drink, target: cup, until: { object: cup, follow: true, facts: { contents: "has_contents" } }, timeout_s: 120 },
   ];
 }
 
@@ -111,33 +110,31 @@ export const FILL_SCRIPTS: Record<string, PlanScript> = {
  *  수납장으로 가기 · 냄비 꺼내기 · 싱크대로 가기 · 물 받기 · 인덕션으로 가기 · 냄비 올리기 · 인덕션 켜기(손으로, 안전 문구) · 알림 · 기다리기 ·
  *  면과 스프 넣기 · 기다리기 · 인덕션 끄기(손으로) · 알림. 비전으로 볼 수 있는 것(폰 위치·무언가 들고 있음)만 until이고 나머지는 「완료」·말로 넘긴다.
  *  waitS: 기다리는 초(기본 240, 흐름 시험은 줄인다). */
-export function ramenSteps(ids: { cabinet: string; sink: string; cooktop: string; cooktopDevice: string; counter?: string; waitS?: number }): Record<string, unknown>[] {
+export function ramenSteps(ids: { cabinet: string; sink: string; cooktop: string; cooktopDevice: string; waitS?: number }): Record<string, unknown>[] {
   const { cabinet, sink, cooktop, cooktopDevice, waitS = 240 } = ids;
-  // 면 넣기는 인덕션(위험 가전)이 아니라 옆 조리대(없으면 싱크대)를 대상으로 둔다: 위험 가전이 대상인 단계는 서버 글 틀이 있는 것만 받는다
-  const beside = ids.counter || sink;
-  const go = (target: string, place: string) => ({ kind: "go", label: `${josa(place, "으로/로")} 가기`, target, command: `${josa(place, "으로/로")} 가 주세요`, until: { phone_near: target }, timeout_s: 120 });
+  const go = (target: string) => ({ kind: "go", act: "가기", target, until: { phone_near: target }, timeout_s: 120 });
   const wait = (label: string) => ({ kind: "wait", label, until: { elapsed_s: waitS }, timeout_s: Math.max(10, waitS + 60) });
   return [
-    go(cabinet, "수납장"),
-    { kind: "pick", label: "냄비 꺼내기", target: cabinet, command: "냄비를 꺼내 주세요", until: { person_fact: "holding", value: "holding_object" }, timeout_s: 120 },
-    go(sink, "싱크대"),
-    { kind: "do", label: "물 받기", target: sink, command: "냄비에 물을 받아 주세요", timeout_s: 180 },
-    go(cooktop, "인덕션"),
-    { kind: "place", label: "냄비 올리기", target: cooktop, command: "냄비를 인덕션에 올려 주세요", timeout_s: 120 },
-    { kind: "do", label: "인덕션 켜기", target: cooktop, command: "인덕션을 켜 주세요", hand_device: { id: cooktopDevice, to: "on" }, caution: "냄비가 뜨거워져요.", timeout_s: 120 },
+    go(cabinet),
+    { kind: "pick", act: "꺼내기", item: "냄비", target: cabinet, until: { person_fact: "holding", value: "holding_object" }, timeout_s: 120 },
+    go(sink),
+    { kind: "do", act: "물 받기", item: "냄비", target: sink, timeout_s: 180 },
+    go(cooktop),
+    { kind: "place", act: "올리기", item: "냄비", target: cooktop, timeout_s: 120 },
+    { kind: "do", act: "켜기", target: cooktopDevice, hand_device: { id: cooktopDevice, to: "on" }, timeout_s: 120 },
     { kind: "say", label: "물 끓기 알림", text: "물이 끓을 때까지 기다려요.", timeout_s: 10 },
     wait("물 끓기 기다리기"),
-    { kind: "do", label: "면과 스프 넣기", target: beside, command: "면과 스프를 넣어 주세요", timeout_s: 180 },
+    { kind: "do", act: "넣기", item: "면과 스프", target: cooktop, timeout_s: 180 },
     wait("익기 기다리기"),
-    { kind: "do", label: "인덕션 끄기", target: cooktop, command: "인덕션을 꺼 주세요", hand_device: { id: cooktopDevice, to: "off" }, timeout_s: 120 },
+    { kind: "do", act: "끄기", target: cooktopDevice, hand_device: { id: cooktopDevice, to: "off" }, timeout_s: 120 },
     { kind: "say", label: "끝 알림", text: "라면이 다 됐어요.", timeout_s: 10 },
   ];
 }
 
 /** 입력 글에서 수납장·싱크대·인덕션(평면도 종류)과 인덕션 가전([가전] 줄의 cooktop) id. */
-export function ramenIdsFrom(input: string): { cabinet: string; sink: string; cooktop: string; cooktopDevice: string; counter: string } {
+export function ramenIdsFrom(input: string): { cabinet: string; sink: string; cooktop: string; cooktopDevice: string } {
   const line = (type: string) => new RegExp(`^- (\\S+) .*\\[${type}\\]`, "m").exec(input)?.[1] ?? "";
-  return { cabinet: line("kitchen_cabinet"), sink: line("sink_counter"), cooktop: line("induction_counter"), cooktopDevice: /^- (\S+) .*\[cooktop /m.exec(input)?.[1] ?? "", counter: line("counter") };
+  return { cabinet: line("kitchen_cabinet"), sink: line("sink_counter"), cooktop: line("induction_counter"), cooktopDevice: /^- (\S+) .*\[cooktop /m.exec(input)?.[1] ?? "" };
 }
 
 /** 라면 끓이기 알려 주기 대본. waitS: 기다리는 초(기본 240). */
