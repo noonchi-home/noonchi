@@ -264,7 +264,8 @@ export class PlanDraft {
     const steps: AgentStep[] = this.added.map((a, i) => ({ ...a.step, id: `${id}:${i + 1}` }));
     // 내려놓기 물건은 앞 집기의 World State 물건이다(없으면 그것으로 채움). 집기·내려놓기 조건의 물건도 그 물건이다
     for (const [i, s] of steps.entries()) {
-      if (s.kind === "pick" && s.object && s.until && objectNames(s.until).some((n) => n !== s.object && n !== this.clsOf(s.object!))) {
+      // 보이는 물건 집기: 조건이 보는 물건과 들고 있음(person_holding) 물건은 그 물건 id나 그 종류만
+      if (s.kind === "pick" && s.object && s.until && [...objectNames(s.until), ...heldNames(s.until)].some((n) => n !== s.object && n !== this.clsOf(s.object!))) {
         return { ok: false, error: `${i + 1}번 집기 until은 집는 물건(${s.object})만 봅니다` };
       }
       // 안 보이는 물건 집기(object 없음): 조건이 보는 물건·든 물건은 이 할 일이 집는 종류여야 한다(병 집기를 컵의 손에 있음으로 끝내지 않게).
@@ -274,8 +275,9 @@ export class PlanDraft {
         return { ok: false, error: `${i + 1}번 집기 until은 집는 물건 종류(${carry})만 봅니다` };
       }
       // 그 자리에서 하는 일: 대상이 World State 물건이면 조건은 그 물건 id만, 평면도 자리면 이 할 일의 대상 종류만 본다(다른 컵을 보고 끝내지 않게)
+      // 들고 있음(person_holding) 물건도 같은 기준이다(그 컵에 따르면서 다른 컵을 든 것으로 끝내지 않게)
       if (s.kind === "do" && s.until) {
-        const names = objectNames(s.until);
+        const names = [...objectNames(s.until), ...heldNames(s.until)];
         const thing = s.target && worldObject(this.ctx.world, s.target) ? s.target : null;
         if (thing && names.some((n) => n !== thing)) return { ok: false, error: `${i + 1}번 do until은 그 일을 받는 물건(${thing})만 봅니다` };
         if (!thing && task.target && names.some((n) => this.clsOf(n) !== task.target)) return { ok: false, error: `${i + 1}번 do until은 이 할 일의 대상 종류(${task.target})만 봅니다` };

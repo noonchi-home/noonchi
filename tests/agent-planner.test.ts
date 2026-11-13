@@ -659,6 +659,29 @@ describe("계획 모드: 계획 검사", () => {
         .toMatchObject({ ok: false, error: expect.stringMatching(/4번 do until은 이 할 일의 대상 종류\(cup\)만 봅니다/) });
     });
 
+    it("들고 있음(person_holding) 조건도 그 단계의 물건이어야 한다: 보이는 병 집기와 그 컵에 하는 do에 다른 물건을 든 조건은 버린다", () => {
+      const cup2 = cup({ id: "cup_2", last_seen_ms: 8_000 });
+      const done = (steps: Record<string, unknown>[]) => new PlanDraft(fctx(WATER, [cup(), cup2, bottle])).submit({ steps });
+      const seenPick = (until: unknown) => ({ ...pick, target: "bottle_1", until });
+      // do cup_1을 cup_2를 든 것으로 끝내지 못한다(종류 이름도 그 컵이 아니다)
+      for (const until of [{ person_holding: "cup_2" }, { person_holding: "cup" }, { any: [{ object: "cup_1", follow: true, facts: { contents: "has_contents" } }, { not: { person_holding: "cup_2" } }] }]) {
+        expect(done([goFridge, pick, goTable, { ...pour, until }]), JSON.stringify(until)).toMatchObject({ ok: false, error: expect.stringMatching(/4번 do until은 그 일을 받는 물건\(cup_1\)만 봅니다/) });
+      }
+      expect(done([goFridge, pick, goTable, { ...pour, until: { all: [{ object: "cup_1", follow: true, facts: { contents: "has_contents" } }, { not: { person_holding: "cup_1" } }] } }])).toMatchObject({ ok: true });
+      // 평면도 자리 do는 대상 종류(컵)만
+      expect(done([goFridge, pick, goTable, { ...pour, target: "table_1", until: { person_holding: "bottle" } }])).toMatchObject({ ok: false, error: expect.stringMatching(/4번 do until은 이 할 일의 대상 종류\(cup\)만 봅니다/) });
+      // 보이는 병 집기: 컵을 든 것으로 끝내지 못한다. 그 병 id·종류는 된다
+      for (const until of [{ person_holding: "cup" }, { person_holding: "cup_1" }, { any: [{ object: "bottle_1", follow: true, facts: { place: "in_hand" } }, { person_holding: "cup_2" }] }]) {
+        expect(done([goFridge, seenPick(until), goTable, pour]), JSON.stringify(until)).toMatchObject({ ok: false, error: expect.stringMatching(/2번 집기 until은 집는 물건\(bottle_1\)만 봅니다/) });
+      }
+      for (const until of [{ person_holding: "bottle" }, { person_holding: "bottle_1" }]) expect(done([goFridge, seenPick(until), goTable, pour]), JSON.stringify(until)).toMatchObject({ ok: true });
+      // 코치(대상·집는 종류 없음)의 do는 평면도 자리에서 무언가 든 조건을 그대로 받는다
+      const coach = new PlanDraft(fctx("라면 끓이기 알려 주기", [cup()])).submit({ steps: [
+        { kind: "do", label: "냄비 들기", target: "sink_1", command: "냄비를 들어 주세요", until: { any: [{ person_fact: "holding", value: "holding_object" }, { person_holding: "bowl" }] }, timeout_s: 120 },
+      ] });
+      expect(coach).toMatchObject({ ok: true });
+    });
+
     it("집는 물건 종류가 없는 할 일(코치·세탁물)의 집기·do는 이 검사에 걸리지 않는다: 무언가 들고 있음(person_fact)으로 끝내는 집기가 통과한다", () => {
       const RAMEN = "라면 끓이기 알려 주기";
       const c = fctx(RAMEN, [cup()]);
