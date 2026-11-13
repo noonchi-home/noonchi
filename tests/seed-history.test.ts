@@ -4,7 +4,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { validateMemory } from "../src/brain/decision.js";
+import { CUP_FSM_MEMORY, validateMemory, type FsmMemory } from "../src/brain/decision.js";
 import { HistoryDb, type HistoryRow } from "../src/history/db.js";
 import { memoryForDay } from "../src/history/reflect.js";
 import { daySummary } from "../src/history/summary.js";
@@ -58,7 +58,7 @@ describe("합성 기록 넣기", () => {
     expect(texts("plan")).toEqual(expect.arrayContaining(["컵 치우기 끝남", "컵 치우기 취소됨"]));
     // 판단은 행동 목록 안에서 고르고, 보낸 관찰 텍스트는 World State 모양(시각 줄 + [지속] + [눈])
     const decisions = db.decisions(500);
-    expect(new Set(decisions.map((d) => d.text))).toEqual(new Set(["대기", "컵 치우기", "사용자에게 물어보기"]));
+    expect(new Set(decisions.map((d) => d.text))).toEqual(new Set(["대기", "컵 치우기", "사용자에게 물어보기", "에어컨 켜기"]));
     const cleared = decisions.find((d) => d.text === "컵 치우기")!;
     expect(cleared.text_sent).toMatch(/^\d\d:\d\d:\d\d 사람 안 보임$/m);
     expect(cleared.text_sent).toMatch(/^\[지속\] 컵 cup_\d+ 거실·복도 식탁 위 · 비어 있음: /m);
@@ -88,6 +88,59 @@ describe("합성 기록 넣기", () => {
     // 첫날 밤 질문 뒤로는 22시 넘어 묻지 않는다
     const asked = db.decisions(500).filter((d) => d.text === "사용자에게 물어보기" && hourOf({ at_ms: d.at_ms } as HistoryRow) >= 22);
     expect(asked.map((d) => d.day)).toEqual(["2026-11-02"]);
+  });
+
+  // 말없이 에어컨을 켜는 규칙: seed 덥다 규칙이 아닌 에어컨 켜기 규칙
+  const HOT = CUP_FSM_MEMORY.states.flatMap((s) => s.rules).find((r) => r.action === "에어컨 켜기")!.trigger;
+  const silentAircon = (m: FsmMemory) => m.states.flatMap((s) => s.rules.map((r) => ({ state: s.id, ...r }))).filter((r) => r.action === "에어컨 켜기" && r.trigger !== HOT);
+  const versions = (db: HistoryDb) => (db.db.prepare("SELECT version FROM memories ORDER BY version").all() as { version: number }[]).map((r) => db.memoryVersion(r.version)!);
+
+  it("scripted 판본마다 지금 FSM의 seed 규칙(컵 갈래·묻기·덥다·요리)이 상태 자리 그대로 남아 있다", () => {
+    const db = HistoryDb.open(":memory:", 540);
+    seedHistory(db, { home: "mokryeon_180b", end: END });
+    const all = versions(db);
+    expect(all).toHaveLength(8);
+    for (const v of all) {
+      const m = validateMemory(v.memory, "fsm") as FsmMemory;
+      for (const s of CUP_FSM_MEMORY.states) for (const r of s.rules) expect(m.states.find((x) => x.id === s.id)?.rules, `${v.version}판 ${s.id}`).toContainEqual(r);
+    }
+  });
+
+  it("habit 없이는 어느 판본에도 말없는 에어컨 규칙이 없고, habit: true면 마지막 판본의 watching_tv에만 있다", () => {
+    const plain = HistoryDb.open(":memory:", 540);
+    seedHistory(plain, { home: "mokryeon_180b", end: END });
+    expect(versions(plain).flatMap((v) => silentAircon(v.memory as FsmMemory))).toEqual([]);
+    const db = HistoryDb.open(":memory:", 540);
+    seedHistory(db, { home: "mokryeon_180b", end: END, habit: true });
+    const all = versions(db);
+    expect(all.slice(0, -1).flatMap((v) => silentAircon(v.memory as FsmMemory))).toEqual([]);
+    expect(silentAircon(all.at(-1)!.memory as FsmMemory)).toEqual([{ state: "watching_tv", trigger: "사용자가 소파에 앉아 TV를 보기 시작한다.", action: "에어컨 켜기" }]);
+  });
+
+  it("7일 중 6일 이상 TV 장면 뒤 1분 안에 거실 에어컨이 켜진다. 1일차에는 「사람이 말함」 줄과 에어컨 켜기 판단이 있다", () => {
+    const db = HistoryDb.open(":memory:", 540);
+    seedHistory(db, { home: "mokryeon_180b", end: END });
+    const rows = db.list({ limit: 1_000_000 });
+    const onSoon = DAYS.filter((day) => {
+      const scenes = rows.filter((r) => r.day === day && r.kind === "world" && r.text.includes("watching TV"));
+      return scenes.some((s) => rows.some((r) => r.kind === "device" && r.text === "거실·복도 에어컨 켜짐" && r.at_ms > s.at_ms && r.at_ms - s.at_ms <= 60_000));
+    });
+    expect(onSoon.length).toBeGreaterThanOrEqual(6);
+    const first = rows.filter((r) => r.day === DAYS[0]);
+    expect(first.some((r) => r.kind === "world" && r.text.includes("사람이 말함: 「아 덥다」"))).toBe(true);
+    expect(db.decisions(500).filter((d) => d.text === "에어컨 켜기").map((d) => [d.day, (d.text_sent ?? "").includes("사람이 말함: 「아 덥다」")])).toEqual([[DAYS[0], true]]);
+  });
+
+  it("memories none이면 판본은 seed 하나, 반성 줄 0, 2~7일 날 고정이 없고, 합성 판단 기록의 memory_version은 seed 판본이다", () => {
+    const db = HistoryDb.open(":memory:", 540);
+    const r = seedHistory(db, { home: "mokryeon_180b", end: END, memories: "none" });
+    expect(versions(db).map((v) => [v.version, v.source])).toEqual([[1, "synthetic"]]);
+    expect(versions(db)[0]!.memory).toEqual(CUP_FSM_MEMORY);
+    expect(db.list({ kinds: ["reflection"] })).toEqual([]);
+    for (const day of DAYS.slice(1)) expect(pins(db)[day], day).toBeUndefined();
+    expect(new Set(db.list({ kinds: ["decision"], limit: 100_000 }).map((x) => (x.data as { memory_version: number }).memory_version))).toEqual(new Set([1]));
+    expect(r.versions).toEqual([1]);
+    expect(r.latest).toBeNull();
   });
 
   it("--clear는 합성 줄·판본·그 판본 고정만 지우고 실제 기록·판본·고정은 그대로 둔다. 다시 넣으면 앞 합성 기록을 바꾼다", () => {
