@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CONFIRM_RULES, Policy, RISKY_ON_NAMES, riskyUse } from "../src/agent/policy.js";
+import { CONFIRM_RULES, Policy, RISKY_ON_NAMES, isRiskyKind, riskyNames } from "../src/agent/policy.js";
 import { MemoryHub } from "../src/hub/memory.js";
 import type { DeviceSpec } from "../src/hub/types.js";
 import { describeDevice } from "../src/model/mapping.js";
@@ -42,17 +42,16 @@ describe("requiresConfirmation", () => {
   });
 });
 
-describe("위험 가전 낱말 표", () => {
-  it("낱말 표의 가전 종류는 CONFIRM_RULES의 켜기·시작 대상과 같다", () => {
+describe("위험 가전 이름 표", () => {
+  it("이름 표의 가전 종류는 CONFIRM_RULES의 켜기·시작 대상과 같다", () => {
     expect(Object.keys(RISKY_ON_NAMES).sort()).toEqual(CONFIRM_RULES.filter((r) => r.command === "on" || r.command === "start").map((r) => r.kind).sort());
+    expect(["cooktop", "microwave"].every(isRiskyKind)).toBe(true);
+    expect(isRiskyKind("aircon")).toBe(false);
   });
-  it("켜는 말은 켜기, 끄는 말·올려놓는 말·켜지 말라는 말은 아니다(자세한 표는 tests/phone-lines.test.ts)", () => {
-    for (const t of ["인덕션을 켜 주세요", "먼저 인덕션 불을 켜 주세요", "가스레인지를 켜요.", "인덕션을 켤까요", "인덕션으로 가열해 주세요", "전자레인지를 돌려 주세요"]) expect(riskyUse(t)?.use, t).toBe("on");
-    for (const t of ["인덕션을 꺼 주세요"]) expect(riskyUse(t)?.use, t).toBe("off");
-    for (const t of ["냄비를 인덕션에 올려 주세요", "인덕션은 아직 켜지 마세요", "인덕션은 켜지 말아 주세요"]) expect(riskyUse(t)?.use, t).toBe("safe");
-    for (const t of ["에어컨을 켜 주세요", "거실 불 켜 줘", "물이 끓을 때까지 기다려요."]) expect(riskyUse(t), t).toBeNull();
-    expect(riskyUse("불을 켜 주세요", "cooktop")?.use).toBe("on");
-    expect(riskyUse("불을 켜 주세요", "aircon")).toBeNull();
+  it("글에 나오는 위험 가전 종류만 본다(켜는 말·끄는 말을 가르지 않는다. 자리마다는 tests/phone-lines.test.ts)", () => {
+    expect(riskyNames("인덕션을 꺼 주세요")).toEqual(["cooktop"]);
+    expect(riskyNames("가스레인지와 전자레인지")).toEqual(["cooktop", "microwave"]);
+    expect(riskyNames("거실 불 켜 줘")).toEqual([]);
   });
 });
 

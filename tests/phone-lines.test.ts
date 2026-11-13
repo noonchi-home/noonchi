@@ -1,6 +1,6 @@
-// 폰으로 나가는 사람용 글(src/agent/policy.ts phoneLineProblem): 위험 가전(인덕션·전자레인지)을 켜거나 조작하라는 글은 그 가전의 hand_device가 붙은 do 단계에서만 나간다.
-// 위험 가전 이름이 나오거나 대상이 위험 가전인 글은 켜기가 아님이 분명한 말(가·올려·내려·닦아·넣어·꺼내·꺼 등, 허용 목록)만 다른 자리에서 통과한다.
-// 글이 생기는 자리마다 같은 함수로 거르는지 자리 목록(PHONE_LINE_SITES)과 함께 본다.
+// 위험 가전(인덕션·전자레인지)에 대한 폰 글은 기본 거부다(src/agent/policy.ts): 모델이 쓴 글에 위험 가전 이름이 나오거나 그 단계 대상이 위험 가전이면
+// 그 글은 폰으로 보내지 않는다. 켜는 말인지 끄는 말인지 낱말로 가르지 않는다. 위험 가전에 대한 사람 단계 글은 서버가 정해 둔 글 틀(src/plan/labels.ts RISKY_STEP_TEXT)로만 나간다.
+// 글이 생기는 자리마다 자리 목록(PHONE_LINE_SITES)과 함께 「모델이 쓴 위험 가전 글은 어느 자리에서도 폰으로 안 나간다」를 본다.
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,11 +9,12 @@ import { ExecutionTracker } from "../src/act/track.js";
 import { Agent, type LlmProvider, type StepOptions, type StepResult } from "../src/agent/agent.js";
 import { ApprovalStore } from "../src/agent/approval.js";
 import { Observer, type ObserveSituation } from "../src/agent/observer.js";
-import { PlanDraft } from "../src/agent/planTools.js";
-import { PHONE_LINE_SITES, RISKY_REPLY, phoneLineProblem, riskyUse } from "../src/agent/policy.js";
+import { PlanDraft, type AgentStep } from "../src/agent/planTools.js";
+import { PHONE_LINE_SITES, RISKY_REPLY, riskyNames } from "../src/agent/policy.js";
 import type { PlannedCommandMessage } from "../src/contract/phone.js";
 import type { WorldView } from "../src/contract/world.js";
 import { PlanHub } from "../src/plan/hub.js";
+import { RISKY_STEP_TEXT } from "../src/plan/labels.js";
 import { floorPlanFrom } from "../src/plan/route.js";
 import type { DecisionRecord } from "../src/world/decide.js";
 import { SMALL_SCENE } from "./helpers/floor.js";
@@ -21,53 +22,17 @@ import { ROOMS, makeHome } from "./helpers/home.js";
 import { startFakeObserver, type FakeObserver } from "./helpers/observer.js";
 import { planContext } from "./helpers/planner.js";
 
-const RISKY = "인덕션 전원 버튼을 눌러 주세요";
-
-describe("위험 가전 글의 쓰임(riskyUse)", () => {
-  it("이름이나 대상이 위험 가전이 아니면 null이다", () => {
-    expect(riskyUse("에어컨 전원 버튼을 눌러 주세요")).toBeNull();
-    expect(riskyUse("버튼을 눌러 주세요", "aircon")).toBeNull();
-    expect(riskyUse("냄비에 물을 받아 주세요")).toBeNull();
-  });
-  it("켜는 말·조작하는 말(전원·버튼·누르기·작동·화력)은 켜기(on), 끄는 말은 끄기(off)", () => {
-    for (const t of ["인덕션을 켜 주세요", RISKY, "인덕션을 작동시켜 주세요", "인덕션 화력을 높여 주세요", "인덕션 불을 올려 주세요", "전자레인지를 돌려 주세요", "전자레인지 시작 버튼을 눌러 주세요"]) {
-      expect(riskyUse(t)?.use, t).toBe("on");
-    }
-    expect(riskyUse("버튼을 눌러 주세요", "cooktop")).toEqual({ kinds: ["cooktop"], use: "on" });
-    expect(riskyUse("인덕션을 꺼 주세요")).toEqual({ kinds: ["cooktop"], use: "off" });
-    expect(riskyUse("전원 버튼을 눌러 꺼 주세요", "cooktop")?.use).toBe("off");
-  });
-  it("허용 목록: 켜기가 아님이 분명한 말(가·올려·내려·닦아·넣어·꺼내·열어·기다려·켜지 마)만 safe, 모르는 말은 켜기로 본다", () => {
-    for (const t of ["인덕션으로 가 주세요", "냄비를 인덕션에 올려 주세요", "냄비를 인덕션에서 내려 주세요", "인덕션을 닦아 주세요", "전자레인지에 넣어 주세요", "전자레인지에서 꺼내 주세요", "인덕션은 아직 켜지 마세요", "인덕션 버튼은 누르지 마세요", "인덕션으로 가기", "인덕션이 뜨거워요."]) {
-      expect(riskyUse(t)?.use, t).toBe("safe");
-    }
-    expect(riskyUse("면과 스프를 넣어 주세요", "cooktop")?.use).toBe("safe");
-    for (const t of ["인덕션을 써 주세요", "인덕션을 만져 주세요", "인덕션 켜기"]) expect(riskyUse(t)?.use, t).toBe("on");
-    // 켜지 말라는 말 뒤에 켜라는 말이 있으면 켜기다
-    expect(riskyUse("지금은 켜지 말고 물을 받은 뒤 인덕션을 켜 주세요")?.use).toBe("on");
+describe("위험 가전 이름(riskyNames)", () => {
+  it("이름 표의 종류만 낸다. 켜는 말·끄는 말·상태 말을 가르지 않는다", () => {
+    expect(riskyNames("인덕션이 꺼져 있어요. 전원 버튼을 눌러 주세요")).toEqual(["cooktop"]);
+    expect(riskyNames("냄비를 인덕션에 올려 주세요")).toEqual(["cooktop"]);
+    expect(riskyNames("전자레인지 문을 열어 주세요")).toEqual(["microwave"]);
+    expect(riskyNames("전원 버튼을 눌러 주세요")).toEqual([]);
+    expect(riskyNames("에어컨을 켜 주세요")).toEqual([]);
   });
 });
 
-describe("폰으로 나가는 글 거르기(phoneLineProblem)", () => {
-  const hand = (id: string, kind: string, to: "on" | "off" = "on") => ({ id, kind, to });
-  it("켜기·조작은 그 가전의 hand_device(to on)가 있을 때만", () => {
-    expect(phoneLineProblem(RISKY)).toMatch(/위험 가전을 켜라는 말/);
-    expect(phoneLineProblem(RISKY, { hand: hand("induction_1", "cooktop") })).toBeNull();
-    expect(phoneLineProblem(RISKY, { hand: hand("induction_1", "cooktop", "off") })).toMatch(/위험 가전을 켜라는 말/);
-    expect(phoneLineProblem("인덕션을 꺼 주세요")).toBeNull();
-    expect(phoneLineProblem("냄비를 인덕션에 올려 주세요")).toBeNull();
-  });
-  it("지시한 가전과 hand_device 가전이 같아야 한다: 글의 이름(종류)과 대상 id 둘 다", () => {
-    expect(phoneLineProblem("인덕션을 켜 주세요", { hand: hand("microwave_1", "microwave") })).toMatch(/hand_device 가전이 다릅니다/);
-    expect(phoneLineProblem("켜 주세요", { targetId: "induction_1", targetKind: "cooktop", hand: hand("microwave_1", "microwave") })).toMatch(/hand_device 가전이 다릅니다/);
-    expect(phoneLineProblem("켜 주세요", { targetId: "induction_2", targetKind: "cooktop", hand: hand("induction_1", "cooktop") })).toMatch(/hand_device 가전이 다릅니다/);
-    expect(phoneLineProblem("인덕션과 전자레인지를 켜 주세요", { hand: hand("induction_1", "cooktop") })).toMatch(/hand_device 가전이 다릅니다/);
-    expect(phoneLineProblem("인덕션을 꺼 주세요", { hand: hand("microwave_1", "microwave", "off") })).toMatch(/hand_device 가전이 다릅니다/);
-    expect(phoneLineProblem("켜 주세요", { targetId: "induction_1", targetKind: "cooktop", hand: hand("induction_1", "cooktop") })).toBeNull();
-  });
-});
-
-// 자리마다 위험 가전을 켜라는 글을 넣어 거르는지 본다
+// 자리마다 모델이 쓴 위험 가전 글을 넣어 폰으로 나가는 글을 본다
 const SCENE = { ...structuredClone(SMALL_SCENE), objects: [...structuredClone(SMALL_SCENE.objects), { id: "induction_1", type: "induction_counter", room: "kitchen", plan: { position: [6, 0.5] } }] };
 const floor = () => floorPlanFrom(structuredClone(SCENE));
 const PERSON: WorldView["person"] = { visible: false, since_ms: 0, last_seen_ms: null, count: 0, room: null, room_label: null, position: null, near: [], holding: [], position_ms: null, answered_ms: null, facts: {} };
@@ -79,18 +44,18 @@ const decision: DecisionRecord = {
   world: { objects: [], person_visible: false, vlm_missing: 0, yolo_missing: 0 },
 };
 const ctx = (action = RAMEN) => planContext({ decision: { ...decision, action }, world: WORLD, floor: floor(), hub: makeHome().hub });
-/** 계획 단계 하나를 검사한 까닭(통과면 null). */
-const planProblem = (step: Record<string, unknown>, action = RAMEN) => {
-  const r = new PlanDraft(ctx(action)).add({ step: 1, ...step });
-  return r.ok ? null : r.error;
+/** 계획 단계 하나를 검사하고 통과한 단계(실행 추적이 폰에 쓰는 글)를 돌려준다. 버리면 null. */
+const planStep = (step: Record<string, unknown>, action = RAMEN): Omit<AgentStep, "id"> | null => {
+  const d = new PlanDraft(ctx(action));
+  const r = d.add({ step: 1, ...step });
+  return r.ok ? (d as unknown as { added: { step: Omit<AgentStep, "id"> }[] }).added[0]!.step : null;
 };
-const go = { kind: "go", label: "싱크대로 가기", target: "sink_1", command: "싱크대로 가 주세요", timeout_s: 120 };
 const ask = (over: Record<string, unknown> = {}) => ({
   kind: "ask", label: "물어보기", question: "물을 받았나요?", choices: [{ id: "yes", label: "네", reply: "다음으로 가요" }, { id: "no", label: "아니요" }], timeout_s: 120, ...over,
 });
 
-/** 실행 추적: 물 받기(sink_1)·냄비 올리기(induction_1) 두 사람 단계 계획을 돌린다. */
-function tracker() {
+/** 실행 추적: 물 받기(sink_1)·냄비 올리기(induction_1) 두 사람 단계 계획. at: 몇 번째 단계에서 볼지. */
+function tracker(at = 1) {
   const phone: PlannedCommandMessage[] = [];
   const plans = new PlanHub(floor(), () => {}, () => "t");
   const approvals = new ApprovalStore(join(mkdtempSync(join(tmpdir(), "lines-")), "approvals.json"), () => "t");
@@ -100,12 +65,20 @@ function tracker() {
     handDevices: () => [{ id: "induction_1", kind: "cooktop", label: "인덕션" }],
     planner: () => new PlanDraft(ctx()).submit({ steps: [
       { kind: "do", label: "물 받기", target: "sink_1", command: "냄비에 물을 받아 주세요", timeout_s: 120 },
-      { kind: "place", label: "냄비 올리기", target: "induction_1", command: "냄비를 인덕션에 올려 주세요", timeout_s: 120 },
+      { kind: "place", label: "냄비 올리기", target: "induction_1", command: "냄비를 올려 주세요", timeout_s: 120 },
     ] }),
   });
   t.onDecision(decision);
-  return { t, phone };
+  if (at === 2) t.onAnswer("plan:pam-1", "plan:pam-1:1", "done");
+  return { t, phone, step: `plan:pam-1:${at}` };
 }
+/** 실행 추적 자리: 보냈으면 실제 폰에 뜬 글, 아니면 null. */
+const tracked = (send: (t: ExecutionTracker, step: string, text: string) => boolean, at: number) => (text: string) => {
+  const { t, phone, step } = tracker(at);
+  if (!send(t, step, text)) return null;
+  const last = phone.at(-1);
+  return last?.type === "command" ? last.text : null;
+};
 
 /** 말 요청 에이전트: 모델이 정한 글(과 도구 호출)을 낸다. */
 class LineProvider implements LlmProvider {
@@ -131,46 +104,101 @@ afterAll(async () => { await obs.close(); });
 const situation = (tools: ObserveSituation["tools"]): ObserveSituation => ({
   trigger: tools.includes("ask_person") ? "stalled" : "off_track", goal: "물 받기 단계", stuckMs: 9_000, spots: [], world: WORLD, earlier: [], tools, nowMs: 10_000,
 });
-const observerProblem = async (tool: "tell_person" | "ask_person", text: string) => {
+const observed2 = async (tool: "tell_person" | "ask_person", text: string) => {
   observed = tool === "ask_person" ? `ask:${text}` : text;
   const c = await new Observer({ provider: obs.provider() }).decide(situation(tool === "ask_person" ? ["look_closer", "ask_person", "wait"] : ["tell_person", "wait"]));
-  return c.tool === "wait" ? c.invalid ?? c.reason : null;
+  return c.tool === "tell_person" || c.tool === "ask_person" ? c.text : null;
 };
 
-describe("폰으로 나가는 사람용 글이 생기는 자리는 모두 같은 함수로 거른다", () => {
-  /** 자리 → 그 자리에 글 하나를 넣어 본 결과(거르면 까닭, 통과면 null). */
-  const SITES: Record<(typeof PHONE_LINE_SITES)[number], (text: string) => Promise<string | null> | string | null> = {
-    "step.label": (text) => planProblem({ ...go, label: text.slice(0, 30) }),
-    "step.command": (text) => planProblem({ ...go, command: text }),
-    "step.caution": (text) => planProblem({ kind: "do", label: "물 받기", target: "sink_1", command: "물을 받아 주세요", caution: text.replace(/ 주세요$/, "요.").slice(0, 30), timeout_s: 120 }),
-    "say.text": (text) => planProblem({ kind: "say", label: "알림", text: text.replace(/ 주세요$/, "요."), timeout_s: 10 }),
-    "ask.question": (text) => planProblem(ask({ question: `${text.replace(/ 주세요$/, "")} 볼까요?` }), ASK_TASK),
-    "ask.choices.label": (text) => planProblem(ask({ choices: [{ id: "yes", label: text.slice(0, 20) }, { id: "no", label: "아니요" }] }), ASK_TASK),
-    "ask.choices.reply": (text) => planProblem(ask({ choices: [{ id: "yes", label: "네", reply: text }, { id: "no", label: "아니요" }] }), ASK_TASK),
-    "observer.tell_person": (text) => observerProblem("tell_person", text),
-    "observer.ask_person": (text) => observerProblem("ask_person", text),
-    "track.tell": (text) => { const { t } = tracker(); return t.tell("plan:pam-1", "plan:pam-1:1", text) ? null : "보내지 않음"; },
-    "track.askCloser": (text) => { const { t } = tracker(); return t.askCloser("plan:pam-1", "plan:pam-1:1", text) ? null : "보내지 않음"; },
-    "agent.reply": async (text) => { const reply = await agentReply([{ text, calls: [] }]); return reply === text ? null : reply; },
+/** 모델이 쓴 위험 가전 글(이름 있음)과 이름 없이 대상만 위험 가전인 글. 서버 글 틀에는 「전원」·「버튼」이 없다. */
+const NAMED = "인덕션이 꺼져 있어요. 전원 버튼을 눌러 주세요";
+const BARE = "전원 버튼을 눌러 주세요";
+const SAFE = "냄비에 물을 받아 주세요";
+const leaked = (out: string | null) => out !== null && /전원|버튼/.test(out);
+
+describe("모델이 쓴 위험 가전 글은 어느 자리에서도 폰으로 안 나간다", () => {
+  /** 자리 → 모델 글 하나를 넣었을 때 폰으로 나가는 글(안 나가면 null). onRisky: 대상이 위험 가전인 자리로 넣는다. */
+  const SITES: Record<(typeof PHONE_LINE_SITES)[number], (text: string, onRisky: boolean) => Promise<string | null> | string | null> = {
+    "step.label": (text, onRisky) => planStep({ kind: "go", label: text.slice(0, 30), target: onRisky ? "induction_1" : "sink_1", command: "가 주세요", timeout_s: 120 })?.label ?? null,
+    "step.command": (text, onRisky) => planStep({ kind: "go", label: "가기", target: onRisky ? "induction_1" : "sink_1", command: text, timeout_s: 120 })?.command ?? null,
+    "step.caution": (text, onRisky) => planStep(onRisky
+      ? { kind: "do", label: "켜기", target: "induction_1", command: "켜 주세요", hand_device: { id: "induction_1", to: "on" }, caution: text.replace(/ 주세요$/, "요.").slice(0, 30), timeout_s: 120 }
+      : { kind: "do", label: "물 받기", target: "sink_1", command: "물을 받아 주세요", caution: text.replace(/ 주세요$/, "요.").slice(0, 30), timeout_s: 120 })?.caution ?? null,
+    "say.text": (text) => planStep({ kind: "say", label: "알림", text: text.replace(/ 주세요$/, "요."), timeout_s: 10 })?.text ?? null,
+    "ask.question": (text) => planStep(ask({ question: `${text.replace(/ 주세요$/, "")} 볼까요?` }), ASK_TASK)?.prompt?.text ?? null,
+    "ask.choices.label": (text) => planStep(ask({ choices: [{ id: "yes", label: text.slice(0, 20) }, { id: "no", label: "아니요" }] }), ASK_TASK)?.prompt?.choices[0]?.label ?? null,
+    "ask.choices.reply": (text) => planStep(ask({ choices: [{ id: "yes", label: "네", reply: text }, { id: "no", label: "아니요" }] }), ASK_TASK)?.prompt?.choices[0]?.reply ?? null,
+    "observer.tell_person": (text) => observed2("tell_person", text),
+    "observer.ask_person": (text) => observed2("ask_person", text),
+    "track.tell": (text, onRisky) => tracked((t, step, x) => t.tell("plan:pam-1", step, x), onRisky ? 2 : 1)(text),
+    "track.askCloser": (text, onRisky) => tracked((t, step, x) => t.askCloser("plan:pam-1", step, x), onRisky ? 2 : 1)(text),
+    "agent.reply": async (text) => agentReply([{ text, calls: [] }]),
   };
+
+  const TARGETED = new Set<string>(["step.label", "step.command", "step.caution", "track.tell", "track.askCloser"]);
 
   it("자리 목록은 이 시험이 보는 자리와 같다", () => {
     expect(Object.keys(SITES).sort()).toEqual([...PHONE_LINE_SITES].sort());
   });
 
-  it.each([...PHONE_LINE_SITES])("%s: 위험 가전을 켜거나 조작하라는 글은 거르고, 켜기가 아닌 글은 통과한다", async (site) => {
+  it.each([...PHONE_LINE_SITES])("%s: 이름이 나오거나 대상이 위험 가전인 모델 글은 나가지 않고(서버 글로 바뀌거나 거름), 그렇지 않은 글은 그대로 나간다", async (site) => {
     const run = SITES[site];
-    expect(await run(RISKY), "거름").not.toBeNull();
-    expect(await run("인덕션 켜기를 눌러 주세요"), "거름").not.toBeNull();
-    expect(await run("냄비를 인덕션에 올려 주세요"), "통과").toBeNull();
+    expect(leaked(await run(NAMED, false)), "이름").toBe(false);
+    // 대상이 있는 자리(계획 단계·실행 추적)는 이름 없이 대상만 위험 가전인 글도 나가지 않는다. 대상이 없는 자리(알림·질문·관찰 모드·에이전트 답)는 이름으로만 본다
+    if (TARGETED.has(site)) expect(leaked(await run(BARE, true)), "대상").toBe(false);
+    const safe = await run(SAFE, false);
+    expect(safe, "그 밖").not.toBeNull();
+    expect(riskyNames(safe!)).toEqual([]);
+  });
+});
+
+describe("서버 글 틀", () => {
+  it("위험 가전이 대상인 go·pick·place와 hand_device가 붙은 do는 모델 글 대신 서버 글(이름·명령·안전 문구)로 나간다", () => {
+    const go = planStep({ kind: "go", label: "버튼 누르러 가기", target: "induction_1", command: BARE, timeout_s: 120 });
+    expect([go?.label, go?.command]).toEqual([RISKY_STEP_TEXT.go("인덕션").label, "인덕션으로 가 주세요"]);
+    const place = planStep({ kind: "place", label: "냄비 올리기", target: "induction_1", command: "냄비를 올리고 전원 버튼을 눌러 주세요", timeout_s: 120 });
+    expect([place?.label, place?.command]).toEqual(["인덕션에 올리기", "인덕션 위에 올려 주세요"]);
+    const pick = planStep({ kind: "pick", label: "냄비 내리기", target: "induction_1", command: BARE, timeout_s: 120 });
+    expect([pick?.label, pick?.command]).toEqual(["인덕션에서 내리기", "인덕션에서 내려 주세요"]);
+    const on = planStep({ kind: "do", label: "시작 버튼", target: "induction_1", command: BARE, hand_device: { id: "induction_1", to: "on" }, caution: "인덕션 전원 버튼을 누르세요.", timeout_s: 120 });
+    expect([on?.label, on?.command, on?.caution]).toEqual(["인덕션 켜기", "인덕션을 켜 주세요", RISKY_STEP_TEXT.caution.cooktop]);
+    const off = planStep({ kind: "do", label: "끄기", target: "induction_1", command: NAMED, hand_device: { id: "induction_1", to: "off" }, timeout_s: 120 });
+    expect([off?.label, off?.command, off?.caution]).toEqual(["인덕션 끄기", "인덕션을 꺼 주세요", null]);
+    const open = planStep({ kind: "do", label: "문 열기", target: "microwave_1", command: BARE, hand_device: { id: "microwave_1", to: "open" }, timeout_s: 120 });
+    expect(open).toBeNull(); // 전자레인지가 평면도에 없는 집: target이 평면도 id가 아니다
+    const open2 = planStep({ kind: "do", label: "문 열기", target: "sink_1", command: BARE, hand_device: { id: "microwave_1", to: "open" }, timeout_s: 120 });
+    expect([open2?.label, open2?.command]).toEqual(["전자레인지 문 열기", "전자레인지 문을 열어 주세요"]);
+    const close = planStep({ kind: "do", label: "문 닫기", target: "sink_1", command: BARE, hand_device: { id: "microwave_1", to: "close" }, timeout_s: 120 });
+    expect([close?.label, close?.command]).toEqual(["전자레인지 문 닫기", "전자레인지 문을 닫아 주세요"]);
   });
 
-  it("말 요청 에이전트의 답: 거른 답은 정한 한 줄로 바꾼다. 이번 차례에 그 가전을 승인 길(도구)로 다룬 답은 그대로다", async () => {
-    expect(await agentReply([{ text: "전원 버튼을 눌러 인덕션을 켜 보세요.", calls: [] }])).toBe(RISKY_REPLY);
-    const viaTool = await agentReply([
+  it("대상 위험 가전과 hand_device 위험 가전이 다르면 버린다(질문·끄기 안내가 다른 가전을 가리키지 않게)", () => {
+    expect(planStep({ kind: "do", label: "켜기", target: "induction_1", command: "켜 주세요", hand_device: { id: "microwave_1", to: "on" }, timeout_s: 120 })).toBeNull();
+    const d = new PlanDraft(ctx());
+    const r = d.add({ step: 1, kind: "do", label: "켜기", target: "induction_1", command: "켜 주세요", hand_device: { id: "microwave_1", to: "on" }, timeout_s: 120 });
+    expect(r).toMatchObject({ ok: false, error: expect.stringMatching(/hand_device 가전\(microwave_1\)이 다릅니다/) });
+  });
+
+  it("틀이 없는 단계 종류(자유 do)가 위험 가전을 대상으로 하면 hand_device가 있어야 한다. 상태 말(꺼져 있어요)이 붙어도 그대로다", () => {
+    expect(planStep({ kind: "do", label: "버튼 누르기", target: "induction_1", command: NAMED, timeout_s: 120 })).toBeNull();
+    expect(planStep({ kind: "do", label: "버튼 누르기", target: "induction_1", command: BARE, timeout_s: 120 })).toBeNull();
+    expect(planStep({ kind: "do", label: "넣기", target: "induction_1", command: "면과 스프를 넣어 주세요", timeout_s: 120 })).toBeNull();
+    // 위험 가전 이름이 나오는 그 밖 단계 글도 버린다
+    expect(planStep({ kind: "do", label: "물 받기", target: "sink_1", command: "인덕션 옆에서 물을 받아 주세요", timeout_s: 120 })).toBeNull();
+  });
+
+  it("말 요청 에이전트의 답에 위험 가전 이름이 나오면 도구를 썼어도 고정 글이다. 승인 대기면 정책 승인 안내 글이다", async () => {
+    expect(await agentReply([{ text: "인덕션이 꺼져 있어요. 전원 버튼을 눌러 주세요.", calls: [] }])).toBe(RISKY_REPLY);
+    // 상태 조회를 한 뒤의 답도 그대로 두지 않는다
+    expect(await agentReply([
+      { text: "", calls: [{ id: "c1", name: "get_state", args: { device_id: "induction_1", reason: "상태를 보려고" } }] },
+      { text: "인덕션이 꺼져 있어요. 인덕션을 켜 주세요.", calls: [] },
+    ], "인덕션 켜져 있어?")).toBe(RISKY_REPLY);
+    const pending = await agentReply([
       { text: "", calls: [{ id: "c1", name: "turn_on", args: { device_id: "induction_1", reason: "켜 달라고 해서" } }] },
-      { text: "인덕션 켜기는 승인이 필요해요. 켤까요?", calls: [] },
+      { text: "인덕션 켜려면 전원 버튼을 눌러 주세요.", calls: [] },
     ], "인덕션 켜 줘");
-    expect(viaTool).toBe("인덕션 켜기는 승인이 필요해요. 켤까요?");
+    expect(pending).toMatch(/^인덕션 켜기는 화재 위험이 있어 사용자 승인이 필요합니다\. 진행할까요\?/);
+    expect(pending).not.toMatch(/전원|버튼을 눌러/);
   });
 });

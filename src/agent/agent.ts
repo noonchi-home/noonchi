@@ -10,7 +10,7 @@ import type { DeviceHub, RoomSpec } from "../hub/types.js";
 import { matchChoice } from "../act/tasks.js";
 import { APPROVE } from "../act/prompts.js";
 import type { ApprovalAnswer } from "./approval.js";
-import { REFUSED_REPLY, RISKY_REPLY, commandName, phoneLineProblem, riskyUse, type PendingConfirmation, type Policy } from "./policy.js";
+import { REFUSED_REPLY, RISKY_REPLY, commandName, isRiskyKind, riskyNames, type PendingConfirmation, type Policy } from "./policy.js";
 import { askApproval, doneSentence, toolForCommand } from "./phrases.js";
 import { buildSystemPrompt } from "./prompts.js";
 import { LAYOUT_TOOLS, type LayoutTools } from "./layoutTools.js";
@@ -111,6 +111,9 @@ const AFFIRMATIVE = /^(응|어|엉|네|넹|예|그래|좋아|확인|승인|ㅇ�
 const NEGATIVE = /^(아니|아냐|ㄴㄴ|싫어|취소|하지\s*마|안\s*돼|no\b|nope|그만|됐어)/i;
 const TOKEN_MISSING = "승인 토큰이 없거나 만료되었습니다.";
 
+/** 기록·방송하는 까닭 글 상한. */
+const REASON_MAX = 200;
+
 /** 값 안의 모든 글에서 들은 말을 뺀 사본(이벤트로 내보낼 때). */
 function hideIn<T>(value: T, said: string): T {
   if (typeof value === "string") return redactSaid(value, [said]) as T;
@@ -149,6 +152,8 @@ export class Agent {
   private readonly maxRounds: number;
   private readonly maxSessions: number;
   private readonly keepHeard: boolean;
+  /** 자르기 전 까닭(들은 말을 먼저 가린 뒤 자르려고). */
+  private readonly rawReason = new WeakMap<AgentAction, string>();
   private readonly layout?: LayoutTools;
   private readonly tools: ToolDef[];
   /** 모델에게 보이는 도구(reason 필수). 실행은 tools로 한다. */
@@ -236,20 +241,28 @@ export class Agent {
     else if (waiting && !opts.heard && isNegative(message)) reply = this.cancelAll(s, message);
     else {
       reply = await this.runModel(s, message, actions);
-      // 모델이 쓴 답도 폰으로 나가는 사람용 글이다(src/agent/policy.ts phoneLineProblem): 이번 차례에 그 위험 가전을 승인 길(도구·정책)로 다루지 않았는데
-      // 그 가전을 켜거나 조작하라는 답이면 정한 한 줄로 바꾼다
-      const used = new Set(actions.flatMap((a) => (a.deviceId ? [a.deviceId] : [])));
-      const usedKinds = new Set<string>(this.hub.list().filter((d) => used.has(d.id)).map((d) => d.kind));
-      const u = riskyUse(reply);
-      if (u && phoneLineProblem(reply) && !u.kinds.every((k) => usedKinds.has(k))) reply = RISKY_REPLY;
+      // 모델이 쓴 답도 폰으로 나가는 사람용 글이다(기본 거부, src/agent/policy.ts): 위험 가전 이름이 나오면 도구를 썼든 아니든 서버 글로 바꾼다.
+      // 그 가전 승인을 기다리는 중이면 정책 승인 안내 글, 아니면 정한 한 줄
+      if (riskyNames(reply).length) {
+        const kinds = new Map(this.hub.list().map((d) => [d.id, d.kind]));
+        const waiting = this.pending(s.id).find((p) => isRiskyKind(kinds.get(p.deviceId)));
+        reply = waiting ? askApproval(waiting.reason) : RISKY_REPLY;
+      }
     }
     const pendingConfirmations = this.pending(s.id);
     s.hide = null;
     this.emit({
       event: "reply", sessionId: s.id, message: said ? HEARD_MARK : message, reply: said ? redactSaid(reply, [said]) : reply,
-      actions: said ? actions.map((a) => hideIn(a, said)) : actions, pendingConfirmations,
+      actions: said ? actions.map((a) => this.shown(a, said)) : actions, pendingConfirmations,
     });
     return { sessionId: s.id, reply, actions, pendingConfirmations, provider: this.provider.name };
+  }
+
+  /** 이벤트로 내보내는 action: 들은 말을 통째로 가린 사본. 까닭은 자르기 전 글을 가린 뒤 자른다(인용 중간이 잘려 원문 일부가 남지 않게). */
+  private shown(a: AgentAction, said: string): AgentAction {
+    const raw = this.rawReason.get(a);
+    const hidden = hideIn({ ...a, ...(raw !== undefined ? { reason: raw } : {}) }, said);
+    return hidden.reason === undefined ? hidden : { ...hidden, reason: hidden.reason.slice(0, REASON_MAX) };
   }
 
   private async runModel(s: Session, message: string, actions: AgentAction[]): Promise<string> {
@@ -292,13 +305,14 @@ export class Agent {
     const action: AgentAction = {
       tool: call.name, args, ok: result.ok, message: result.message, error: result.error,
       deviceId: result.device?.id, deviceLabel: result.device?.label, needsConfirmation: result.needsConfirmation ? true : undefined,
-      reason: typeof reason === "string" && reason.trim() ? reason.trim().slice(0, 200) : undefined,
+      reason: typeof reason === "string" && reason.trim() ? reason.trim().slice(0, REASON_MAX) : undefined,
       observation: observe(call.name, result),
       at: new Date().toISOString(),
     };
+    if (typeof reason === "string" && reason.trim()) this.rawReason.set(action, reason.trim());
     actions.push(action);
     // 들은 말 차례면 내보내는 action은 통째로 가린다(인자·결과 글·관찰·까닭). 실행한 인자와 돌려주는 action은 그대로
-    this.emit({ event: "action", sessionId: s.id, action: s.hide ? hideIn(action, s.hide) : action });
+    this.emit({ event: "action", sessionId: s.id, action: s.hide ? this.shown(action, s.hide) : action });
     let shown: ToolResult = result;
     if (result.needsConfirmation) {
       s.pending.add(result.needsConfirmation.token);

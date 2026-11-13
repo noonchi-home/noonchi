@@ -111,8 +111,10 @@ export const FILL_SCRIPTS: Record<string, PlanScript> = {
  *  수납장으로 가기 · 냄비 꺼내기 · 싱크대로 가기 · 물 받기 · 인덕션으로 가기 · 냄비 올리기 · 인덕션 켜기(손으로, 안전 문구) · 알림 · 기다리기 ·
  *  면과 스프 넣기 · 기다리기 · 인덕션 끄기(손으로) · 알림. 비전으로 볼 수 있는 것(폰 위치·무언가 들고 있음)만 until이고 나머지는 「완료」·말로 넘긴다.
  *  waitS: 기다리는 초(기본 240, 흐름 시험은 줄인다). */
-export function ramenSteps(ids: { cabinet: string; sink: string; cooktop: string; cooktopDevice: string; waitS?: number }): Record<string, unknown>[] {
+export function ramenSteps(ids: { cabinet: string; sink: string; cooktop: string; cooktopDevice: string; counter?: string; waitS?: number }): Record<string, unknown>[] {
   const { cabinet, sink, cooktop, cooktopDevice, waitS = 240 } = ids;
+  // 면 넣기는 인덕션(위험 가전)이 아니라 옆 조리대(없으면 싱크대)를 대상으로 둔다: 위험 가전이 대상인 단계는 서버 글 틀이 있는 것만 받는다
+  const beside = ids.counter || sink;
   const go = (target: string, place: string) => ({ kind: "go", label: `${josa(place, "으로/로")} 가기`, target, command: `${josa(place, "으로/로")} 가 주세요`, until: { phone_near: target }, timeout_s: 120 });
   const wait = (label: string) => ({ kind: "wait", label, until: { elapsed_s: waitS }, timeout_s: Math.max(10, waitS + 60) });
   return [
@@ -125,7 +127,7 @@ export function ramenSteps(ids: { cabinet: string; sink: string; cooktop: string
     { kind: "do", label: "인덕션 켜기", target: cooktop, command: "인덕션을 켜 주세요", hand_device: { id: cooktopDevice, to: "on" }, caution: "냄비가 뜨거워져요.", timeout_s: 120 },
     { kind: "say", label: "물 끓기 알림", text: "물이 끓을 때까지 기다려요.", timeout_s: 10 },
     wait("물 끓기 기다리기"),
-    { kind: "do", label: "면과 스프 넣기", target: cooktop, command: "면과 스프를 넣어 주세요", timeout_s: 180 },
+    { kind: "do", label: "면과 스프 넣기", target: beside, command: "면과 스프를 넣어 주세요", timeout_s: 180 },
     wait("익기 기다리기"),
     { kind: "do", label: "인덕션 끄기", target: cooktop, command: "인덕션을 꺼 주세요", hand_device: { id: cooktopDevice, to: "off" }, timeout_s: 120 },
     { kind: "say", label: "끝 알림", text: "라면이 다 됐어요.", timeout_s: 10 },
@@ -133,9 +135,9 @@ export function ramenSteps(ids: { cabinet: string; sink: string; cooktop: string
 }
 
 /** 입력 글에서 수납장·싱크대·인덕션(평면도 종류)과 인덕션 가전([가전] 줄의 cooktop) id. */
-export function ramenIdsFrom(input: string): { cabinet: string; sink: string; cooktop: string; cooktopDevice: string } {
+export function ramenIdsFrom(input: string): { cabinet: string; sink: string; cooktop: string; cooktopDevice: string; counter: string } {
   const line = (type: string) => new RegExp(`^- (\\S+) .*\\[${type}\\]`, "m").exec(input)?.[1] ?? "";
-  return { cabinet: line("kitchen_cabinet"), sink: line("sink_counter"), cooktop: line("induction_counter"), cooktopDevice: /^- (\S+) .*\[cooktop /m.exec(input)?.[1] ?? "" };
+  return { cabinet: line("kitchen_cabinet"), sink: line("sink_counter"), cooktop: line("induction_counter"), cooktopDevice: /^- (\S+) .*\[cooktop /m.exec(input)?.[1] ?? "", counter: line("counter") };
 }
 
 /** 라면 끓이기 알려 주기 대본. waitS: 기다리는 초(기본 240). */

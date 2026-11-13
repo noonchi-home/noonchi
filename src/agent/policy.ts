@@ -21,66 +21,34 @@ export const CONFIRM_RULES: ConfirmRule[] = [
   { kind: "microwave", command: "start", reason: (l) => `${l} 시작은 사용자 승인이 필요합니다.` },
 ];
 
-// ── 폰으로 나가는 사람용 글 거르기 ─────────────────────────────
-// 위험 가전(CONFIRM_RULES의 켜기·시작 대상) 조작은 「그 가전의 hand_device가 붙은 do 단계」에서만 나간다. 실행 추적은 그 단계에서만 켜기 전에 묻고,
-// 켠 가전을 기억해 끄기 단계·끄기 안내를 챙긴다. 그래서 그 밖의 자리(PHONE_LINE_SITES)에서는 위험 가전을 켜거나 조작하라는 글이 나가지 않게 한 함수(phoneLineProblem)로 거른다.
-// 위험 가전 이름이 나오거나 대상이 위험 가전인 글은 켜기가 아님이 분명한 말(허용 목록 SAFE_WORDS: 가·올려·내려·닦아·넣어·꺼내·열어·기다려·켜지 마…)이나 끄는 말만
-// 통과하고, 켜는 말·조작하는 말(전원·버튼·누르기·작동·화력…)이나 모르는 말은 켜기로 본다. 낱말은 아래 표에만 둔다.
+// ── 폰으로 나가는 사람용 글: 위험 가전은 기본 거부 ─────────────────────
+// 위험 가전(CONFIRM_RULES의 켜기·시작 대상: 인덕션·전자레인지)에 대한 폰 글은 서버가 정해 둔 글 틀(src/plan/labels.ts RISKY_STEP_TEXT)로만 나간다.
+// 모델이 쓴 글(계획 단계 이름·명령·안전 문구·say·ask·답 단추·답 말·tell_person·ask_person·말 요청 에이전트의 답)에 위험 가전 이름이 나오거나
+// 그 단계 대상이 위험 가전이면 그 글은 폰으로 보내지 않는다(서버 글로 바꾸거나 버린다). 켜는 말인지 끄는 말인지 낱말로 가르지 않는다.
+// 자리 목록은 PHONE_LINE_SITES이고, tests/phone-lines.test.ts가 자리마다 본다.
 
-/** 위험 가전 낱말 표: 가전 종류 → 부르는 이름. 종류는 CONFIRM_RULES의 켜기·시작 대상과 같다(tests/policy.test.ts). */
+/** 위험 가전 이름 표: 가전 종류 → 부르는 이름. 종류는 CONFIRM_RULES의 켜기·시작 대상과 같다(tests/policy.test.ts). */
 export const RISKY_ON_NAMES: Partial<Record<DeviceKind, readonly string[]>> = {
   cooktop: ["인덕션", "전기레인지", "가스레인지", "하이라이트", "가스불", "화구", "버너", "쿡탑"],
   microwave: ["전자레인지"],
 };
-/** 켜는 말. */
-const ON_WORDS = /켜|켤|켭|틀어|점화|가열해|가열하|돌려|돌리|시작해\s*(주|줘|요)|시작\s*버튼/;
-/** 조작하는 말: 켜는 것일 수 있다(끄는 말과 함께면 끄기). */
-const OP_VERBS = /누르|눌러|눌|세게|불\s*(을|를)?\s*(올|높|세)|설정|조절|맞춰|맞추|높여|높이|작동|만져|만지|써\s*주|사용해/;
-/** 조작하는 곳: 켜지 말라는 말과 함께가 아니면 켜기로 본다. */
-const OP_NOUNS = /전원|버튼|스위치|다이얼|화력|세기|온도|타이머/;
-/** 끄는 말. 「꺼내」는 아니다. */
-const OFF_WORDS = /꺼\s*(주|줘|요|두|놓|$)|꺼지|꺼져|끄|끈|끌|끕/;
-/** 켜기가 아님이 분명한 말(허용 목록). */
-const SAFE_WORDS = /가\s*주세요|가\s*줘|(으로|로)\s*가|가기|와\s*주세요|올려|올리|내려|내리|닦|치워|치우|넣어|넣고|넣기|꺼내|열어|열고|닫아|닫고|확인|기다려|기다리|지켜|살펴|놓아|놓고|놓기|두어|둬|뜨거워|뜨겁|식혀|식으|조심/;
-/** 켜지(누르지) 말라는 말: 그 부분은 빼고 보고, 남은 말에 켜는 말이 없으면 켜기가 아니다. */
-const NOT_ON = /(켜|켤|틀|돌리|시작하|작동시키|누르|눌|만지)지\s*(마|말|않)|(켜|틀|돌리|누르)면\s*안/g;
 
-/** 위험 가전에 닿는 글의 쓰임: 닿는 가전 종류(글의 이름, 없으면 대상)와 켜기(on, 조작·모르는 말 포함)·끄기(off)·켜기가 아님(safe). 닿지 않으면 null. */
-export function riskyUse(text: string, targetKind?: string | null): { kinds: DeviceKind[]; use: "on" | "off" | "safe" } | null {
-  const named = (Object.entries(RISKY_ON_NAMES) as [DeviceKind, readonly string[]][]).filter(([, names]) => names.some((n) => text.includes(n))).map(([k]) => k);
-  const kinds = named.length ? named : targetKind && Object.hasOwn(RISKY_ON_NAMES, targetKind) ? [targetKind as DeviceKind] : [];
-  if (!kinds.length) return null;
-  const t = text.replace(NOT_ON, " ");
-  const negated = t !== text;
-  if (ON_WORDS.test(t)) return { kinds, use: "on" };
-  if (OP_VERBS.test(t)) return { kinds, use: OFF_WORDS.test(t) ? "off" : "on" };
-  if (OFF_WORDS.test(t)) return { kinds, use: "off" };
-  if (OP_NOUNS.test(t) && !negated) return { kinds, use: "on" };
-  return { kinds, use: SAFE_WORDS.test(t) || negated ? "safe" : "on" };
+/** 위험 가전 종류인가. */
+export const isRiskyKind = (kind: string | null | undefined): kind is DeviceKind => !!kind && Object.hasOwn(RISKY_ON_NAMES, kind);
+
+/** 글에 나오는 위험 가전 종류(이름 표로만 본다). */
+export function riskyNames(text: string): DeviceKind[] {
+  return (Object.entries(RISKY_ON_NAMES) as [DeviceKind, readonly string[]][]).filter(([, names]) => names.some((n) => text.includes(n))).map(([k]) => k);
 }
 
-/** 폰으로 나가는 사람용 글이 생기는 자리. 모두 phoneLineProblem 하나로 거른다(tests/phone-lines.test.ts가 자리마다 본다). */
+/** 폰으로 나가는 사람용 글이 생기는 자리. 모델이 쓴 위험 가전 글은 어느 자리에서도 나가지 않는다(tests/phone-lines.test.ts가 자리마다 본다). */
 export const PHONE_LINE_SITES = [
   "step.label", "step.command", "step.caution", "say.text", "ask.question", "ask.choices.label", "ask.choices.reply",
   "observer.tell_person", "observer.ask_person", "track.tell", "track.askCloser", "agent.reply",
 ] as const;
 
-/** 글이 놓이는 자리: 단계 대상(평면도·가전 id와 그 가전 종류), 그 단계의 손으로 다루는 가전(hand_device, 이 집 가전 종류). */
-export interface LineContext { targetId?: string | null; targetKind?: string | null; hand?: { id: string; kind: string | null; to: "on" | "off" } | null }
-
-/** 폰으로 나가는 사람용 글을 거른다: 위험 가전을 켜거나 조작하라는 글이 그 가전의 hand_device(to on)가 붙은 단계 밖에서 나가거나,
- *  글·대상이 가리키는 위험 가전과 hand_device 가전이 다르면 까닭, 아니면 null. */
-export function phoneLineProblem(text: string, o: LineContext = {}): string | null {
-  const u = riskyUse(text, o.targetKind);
-  if (!u) return null;
-  const hand = o.hand;
-  const targetRisky = !!o.targetKind && Object.hasOwn(RISKY_ON_NAMES, o.targetKind);
-  if (hand && (u.kinds.some((k) => k !== hand.kind) || (targetRisky && o.targetId && o.targetId !== hand.id))) {
-    return "글·대상이 가리키는 위험 가전과 hand_device 가전이 다릅니다";
-  }
-  if (u.use === "on" && hand?.to !== "on") return "위험 가전을 켜라는 말(전원·버튼 같은 조작 포함)은 그 가전의 hand_device(to on)가 있는 do 단계에서만 씁니다";
-  return null;
-}
+/** 모델이 쓴 글에 위험 가전 이름이 나와 버릴 때의 까닭(계획 검사·관찰 모드가 모델에게 돌려준다). */
+export const RISKY_NAME_PROBLEM = "인덕션·전자레인지 같은 위험 가전 이름은 쓰지 않습니다. 그 가전을 target으로 하는 go·pick·place와 hand_device가 있는 do는 서버가 글을 정합니다";
 
 /** 말 요청 에이전트의 답이 걸렸을 때 대신 읽는 한 줄. */
 export const RISKY_REPLY = "불이나 열이 나는 가전은 폰에서 승인한 뒤에만 켜요.";

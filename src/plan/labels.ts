@@ -72,6 +72,26 @@ export const APPROVAL_TEXT = {
   refused: "사용자가 거절한 일",
 };
 
+/** 위험 가전(인덕션·전자레인지)에 대한 사람 단계 글 틀(src/agent/planTools.ts): 그 가전이 대상인 go·pick·place와 hand_device가 붙은 do는
+ *  모델이 쓴 이름·명령·안전 문구 대신 이 글로 폰에 나간다. name은 가전 종류 이름(인덕션). place·pick은 가전 종류마다 다르다. */
+export const RISKY_STEP_TEXT = {
+  go: (name: string) => ({ label: `${josa(name, "으로/로")} 가기`, command: `${josa(name, "으로/로")} 가 주세요` }),
+  place: {
+    cooktop: (name: string) => ({ label: `${name}에 올리기`, command: `${name} 위에 올려 주세요` }),
+    microwave: (name: string) => ({ label: `${name}에 넣기`, command: `${name} 안에 넣어 주세요` }),
+  } as Record<string, (name: string) => { label: string; command: string }>,
+  pick: {
+    cooktop: (name: string) => ({ label: `${name}에서 내리기`, command: `${name}에서 내려 주세요` }),
+    microwave: (name: string) => ({ label: `${name}에서 꺼내기`, command: `${name}에서 꺼내 주세요` }),
+  } as Record<string, (name: string) => { label: string; command: string }>,
+  on: (name: string) => ({ label: `${name} 켜기`, command: `${josa(name, "을/를")} 켜 주세요` }),
+  off: (name: string) => ({ label: `${name} 끄기`, command: `${josa(name, "을/를")} 꺼 주세요` }),
+  open: (name: string) => ({ label: `${name} 문 열기`, command: `${name} 문을 열어 주세요` }),
+  close: (name: string) => ({ label: `${name} 문 닫기`, command: `${name} 문을 닫아 주세요` }),
+  /** 켜기 전 질문 앞에 읽는 안전 한 줄(가전 종류마다). 열쇠는 가전 종류다. 낱말 표 종류(microwave)와 이름이 같아도 다른 것이라 낱말 목록 검사와 헷갈리지 않게 따옴표로 쓴다. */
+  caution: { "cooktop": "냄비와 상판이 뜨거워져요.", "microwave": "그릇이 뜨거워져요." } as Record<string, string>,
+};
+
 /** 손으로 켜는 위험 가전(src/act/track.ts): 켜기 전에 안전 문구와 함께 묻는 글, 켠 채 계획이 닫혔을 때 끄라고 알리는 명령. */
 export const CAUTION_TEXT = {
   ask: (caution: string, label: string) => `${caution} ${josa(label, "을/를")} 켤까요?`.trim(),

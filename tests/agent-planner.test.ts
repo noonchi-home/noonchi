@@ -273,7 +273,7 @@ describe("계획 모드: 컵 치우기", () => {
         `- 시간이 걸리는 일(물 끓기, 익기)은 say로 한 줄 알린 뒤 wait {"elapsed_s": 초}.`,
         "- [지난 수업]이 있으면 그 단계 이름(label)과 순서를 그대로 쓴다.",
       ]);
-      expect(lines[at + 7]).toBe(`- hand_device가 있는 do의 until은 쓰지 않거나 그 단계 뒤에 바뀐 것({"device": id, "became": "on"|"off"})만 쓴다. 불·열이 나는 가전 이름이나 그 가전을 대상으로 한 다른 단계 글에는 켜거나 누르는 말을 쓰지 않는다(가기·올리기·넣기·끄기는 된다).`);
+      expect(lines[at + 7]).toBe(`- hand_device가 있는 do의 until은 쓰지 않거나 그 단계 뒤에 바뀐 것({"device": id, "became": "on"|"off"})만 쓴다. 불·열이 나는 가전(인덕션·전자레인지)은 그 가전을 target으로 하는 go·pick·place와 hand_device(on·off·open·close)가 있는 do로만 다룬다. 그 단계 글은 서버가 정해 보낸다. 다른 단계 글에는 그 가전 이름을 쓰지 않고, 그 가전 위·안에서 하는 다른 일은 target을 옆 조리대 등으로 둔다.`);
       expect(PLANNER_PROMPT).not.toMatch(/라면|냄비/);
       expect(PLANNER_PROMPT).toContain("단계 수는 [할 일]의 「단계 한도」까지다.");
     });
@@ -301,13 +301,15 @@ describe("계획 모드: 컵 치우기", () => {
       if (!r.ok) return;
       expect(r.plan.steps.map((s) => [s.kind, s.target, s.command ?? s.text])).toEqual([
         ["go", "cabinet_1", "수납장으로 가 주세요"], ["pick", "cabinet_1", "냄비를 꺼내 주세요"], ["go", "sink_1", "싱크대로 가 주세요"], ["do", "sink_1", "냄비에 물을 받아 주세요"],
-        ["go", "induction_1", "인덕션으로 가 주세요"], ["place", "induction_1", "냄비를 인덕션에 올려 주세요"], ["do", "induction_1", "인덕션을 켜 주세요"],
-        ["say", null, "물이 끓을 때까지 기다려요."], ["wait", null, null], ["do", "induction_1", "면과 스프를 넣어 주세요"], ["wait", null, null],
+        ["go", "induction_1", "인덕션으로 가 주세요"], ["place", "induction_1", "인덕션 위에 올려 주세요"], ["do", "induction_1", "인덕션을 켜 주세요"],
+        ["say", null, "물이 끓을 때까지 기다려요."], ["wait", null, null], ["do", "sink_1", "면과 스프를 넣어 주세요"], ["wait", null, null],
         ["do", "induction_1", "인덕션을 꺼 주세요"], ["say", null, "라면이 다 됐어요."],
       ]);
       for (const s of r.plan.steps.filter((x) => ["go", "pick", "place", "do"].includes(x.kind))) expect(s.command, s.label).toMatch(/주세요$/);
       expect(r.plan.view.steps.map((s) => s.kind)).toEqual(["move", "act", "move", "act", "move", "act", "act", "ask", "wait", "act", "wait", "act", "ask"]);
-      expect(r.plan.steps[6]).toMatchObject({ hand: { deviceId: "induction_1", to: "on" }, caution: "냄비가 뜨거워져요." });
+      // 위험 가전 단계(올리기·켜기·끄기)의 이름·명령·안전 문구는 서버 글 틀이다
+      expect(r.plan.steps[5]).toMatchObject({ label: "인덕션에 올리기", command: "인덕션 위에 올려 주세요" });
+      expect(r.plan.steps[6]).toMatchObject({ hand: { deviceId: "induction_1", to: "on" }, caution: "냄비와 상판이 뜨거워져요." });
       expect(r.plan.steps[11]).toMatchObject({ hand: { deviceId: "induction_1", to: "off" }, caution: null });
       expect(r.plan.steps[1]!.until).toEqual({ person_fact: "holding", value: "holding_object" });
       expect(r.plan.steps[8]!.until).toEqual({ elapsed_s: 240 });
@@ -731,12 +733,17 @@ describe("계획 모드: 계획 검사", () => {
       expect(SUBMIT_ARGS.safeParse({ steps: Array.from({ length: 15 }, () => go) }).success).toBe(false);
     });
 
-    it("인덕션을 켜는 do에 caution이 없으면 버리고, caution이 부탁·다짐 말이면 버린다", () => {
-      cbad({ ...on, caution: undefined }, /caution\(안전 한 줄\)이 있어야 합니다/);
-      cbad({ ...on, caution: "조심해 주세요" }, /caution은 지금 상태를 알리는 말/);
-      cbad({ ...on, caution: "불을 켤게요" }, /caution은 지금 상태를 알리는 말/);
-      cbad({ ...on, caution: "뜨거워요 → 조심" }, /화면 글 규칙/);
-      expect(new PlanDraft(cctx()).add({ step: 1, ...on })).toMatchObject({ ok: true });
+    it("위험 가전 켜기 단계의 안전 문구는 서버 글이다: 모델 caution이 없거나 무엇이든 서버 문구로 바뀐다. 그 밖의 do caution은 지금처럼 상태 말만 받는다", () => {
+      for (const caution of [undefined, "조심해 주세요", "인덕션 전원 버튼을 누르세요."]) {
+        const d = new PlanDraft(cctx());
+        ok(d, 1, { ...on, caution });
+        ok(d, 2, off);
+        expect(d.finish(), String(caution)).toMatchObject({ ok: true, plan: { steps: [{ caution: "냄비와 상판이 뜨거워져요." }, { caution: null }] } });
+      }
+      const plain = { kind: "do", label: "물 받기", target: "sink_1", command: "물을 받아 주세요", timeout_s: 120 };
+      cbad({ ...plain, caution: "조심해 주세요" }, /caution은 지금 상태를 알리는 말/);
+      cbad({ ...plain, caution: "불을 켤게요" }, /caution은 지금 상태를 알리는 말/);
+      cbad({ ...plain, caution: "뜨거워요 → 조심" }, /화면 글 규칙/);
     });
 
     it("켜기만 있고 끄기가 없으면 끝내지 않는다. 끄는 do가 뒤에 있으면 끝내고, 실행 단계에 손으로 다루는 가전과 안전 문구가 남는다", () => {
@@ -753,7 +760,7 @@ describe("계획 모드: 계획 검사", () => {
       expect(r).toMatchObject({ ok: true });
       if (!r.ok) return;
       expect(r.plan.steps.map((s) => [s.kind, s.hand, s.caution])).toEqual([
-        ["do", { deviceId: "induction_1", to: "on" }, "냄비가 뜨거워져요."], ["do", { deviceId: "induction_1", to: "off" }, null],
+        ["do", { deviceId: "induction_1", to: "on" }, "냄비와 상판이 뜨거워져요."], ["do", { deviceId: "induction_1", to: "off" }, null],
       ]);
       const devices = cctx().devices;
       expect(r.plan.steps.map((s) => riskyHand(s, devices))).toEqual([true, false]);
@@ -776,28 +783,36 @@ describe("계획 모드: 계획 검사", () => {
       expect(new PlanDraft(cctx()).add({ step: 1, ...off, until: { device: "induction_1", became: "off" } })).toMatchObject({ ok: true });
     });
 
-    it("위험 가전을 켜라는 말은 hand_device(위험 가전, to on)가 있는 do로만 받는다: 표시가 빠진 do·다른 가전 표시·다른 단계 종류·알림 글은 버린다", () => {
-      const why = /위험 가전을 켜라는 말|hand_device 가전이 다릅니다/;
-      cbad({ ...on, hand_device: undefined, caution: undefined }, why);
-      cbad({ ...on, hand_device: undefined, caution: undefined, command: "불을 켜 주세요" }, why);
-      cbad({ ...on, hand_device: { id: "ac_living", to: "on" }, caution: undefined }, why);
-      cbad({ ...on, hand_device: { id: "induction_1", to: "off" }, caution: undefined }, why);
-      cbad({ ...on, hand_device: undefined, caution: undefined, target: "sink_1", command: "전자레인지를 돌려 주세요" }, why);
-      cbad({ kind: "place", label: "냄비 올리기", target: "induction_1", command: "냄비를 올리고 인덕션을 켜 주세요", timeout_s: 120 }, why);
-      cbad({ kind: "go", label: "인덕션으로 가기", target: "induction_1", command: "인덕션으로 가서 켜 주세요", timeout_s: 120 }, why);
-      cbad({ kind: "say", label: "알림", text: "이제 인덕션을 켜요.", timeout_s: 10 }, /text: 위험 가전을 켜라는 말/);
-      // 조작하는 말(전원·버튼·누르기)도 켜기로 본다
-      cbad({ ...on, hand_device: undefined, caution: undefined, command: "인덕션 전원 버튼을 눌러 주세요" }, why);
-      cbad({ ...on, hand_device: undefined, caution: undefined, command: "버튼을 눌러 주세요" }, why);
-      // 지시한 가전과 hand_device 가전이 다르면 버린다(질문·끄기 안내가 다른 가전을 가리키지 않게)
-      cbad({ ...on, hand_device: { id: "microwave_1", to: "on" } }, /hand_device 가전이 다릅니다/);
-      cbad({ ...on, command: "켜 주세요", hand_device: { id: "microwave_1", to: "on" } }, /hand_device 가전이 다릅니다/);
-      // 켜라는 말이 아닌 것은 그대로 받는다
-      for (const s of [
-        { kind: "place", label: "냄비 올리기", target: "induction_1", command: "냄비를 인덕션에 올려 주세요", timeout_s: 120 },
-        { kind: "do", label: "기다리기", target: "induction_1", command: "인덕션은 아직 켜지 말아 주세요", timeout_s: 120 },
-        off, on,
-      ]) expect(new PlanDraft(cctx()).add({ step: 1, ...s }), JSON.stringify(s)).toMatchObject({ ok: true });
+    it("위험 가전은 기본 거부다: 그 가전이 대상인 go·pick·place와 그 가전의 hand_device가 붙은 do만 받고 글은 서버 글로 바뀐다. 그 밖의 단계 글에 그 가전 이름이 나오면 버린다", () => {
+      const needHand = /hand_device가 있어야/;
+      const named = /위험 가전 이름은 쓰지 않습니다/;
+      const step = (s: Record<string, unknown>) => {
+        const d = new PlanDraft(cctx());
+        const r = d.add({ step: 1, ...s });
+        expect(r, JSON.stringify(s)).toMatchObject({ ok: true });
+        return (d as unknown as { added: { step: { label: string; command: string | null } }[] }).added[0]!.step;
+      };
+      // 대상이 위험 가전인 자유 do는 글과 상관없이 hand_device가 있어야 한다
+      for (const command of ["인덕션을 켜 주세요", "불을 켜 주세요", "버튼을 눌러 주세요", "인덕션은 아직 켜지 말아 주세요"]) cbad({ ...on, hand_device: undefined, caution: undefined, command }, needHand);
+      cbad({ ...on, hand_device: { id: "ac_living", to: "on" }, caution: undefined }, needHand);
+      // 대상과 hand_device 위험 가전이 다른 경우는 tests/phone-lines.test.ts(전자레인지가 있는 집)가 본다
+      // 위험 가전 대상이 아닌 단계·알림 글에 그 이름이 나오면 버린다
+      cbad({ ...on, hand_device: undefined, caution: undefined, target: "sink_1", command: "전자레인지를 돌려 주세요" }, named);
+      cbad({ kind: "say", label: "알림", text: "이제 인덕션을 켜요.", timeout_s: 10 }, /text: .*위험 가전 이름은 쓰지 않습니다/);
+      // 서버 글 틀이 있는 단계는 모델 글과 상관없이 서버 글이 나간다
+      expect(step({ kind: "place", label: "냄비 올리기", target: "induction_1", command: "냄비를 올리고 인덕션을 켜 주세요", timeout_s: 120 })).toMatchObject({ label: "인덕션에 올리기", command: "인덕션 위에 올려 주세요" });
+      expect(step({ kind: "go", label: "인덕션으로 가기", target: "induction_1", command: "인덕션으로 가서 켜 주세요", timeout_s: 120 })).toMatchObject({ command: "인덕션으로 가 주세요" });
+      expect(step({ ...off, command: "인덕션을 켜 주세요" })).toMatchObject({ label: "인덕션 끄기", command: "인덕션을 꺼 주세요" });
+      expect(step(on)).toMatchObject({ label: "인덕션 켜기", command: "인덕션을 켜 주세요" });
+    });
+
+    it("위험 가전이 대상인 자유 do는 상태 말(꺼져 있어요)이 붙어도 버린다", () => {
+      const r = new PlanDraft(cctx()).add({ step: 1, kind: "do", label: "버튼 누르기", target: "induction_1", command: "인덕션이 꺼져 있어요. 전원 버튼을 눌러 주세요", timeout_s: 120 });
+      expect(r, JSON.stringify(r)).toMatchObject({ ok: false, error: expect.stringMatching(/hand_device/) });
+      // 끄는 손 조작 단계에 상태 말과 버튼 누르기를 써도 폰으로 나가는 글은 서버 글(끄기)이다
+      const off = new PlanDraft(cctx());
+      expect(off.add({ step: 1, kind: "do", label: "끄기", target: "induction_1", command: "인덕션이 꺼져 있어요. 전원 버튼을 눌러 주세요", hand_device: { id: "induction_1", to: "off" }, timeout_s: 120 })).toMatchObject({ ok: true });
+      expect(off.finish()).toMatchObject({ ok: true, plan: { steps: [{ command: "인덕션을 꺼 주세요" }] } });
     });
 
     it("위험 목록이 아닌 가전(에어컨)을 손으로 켜는 do는 caution 없이 통과하고 끄기가 없어도 끝낸다", () => {

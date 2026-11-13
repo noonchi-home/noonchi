@@ -180,7 +180,8 @@ describe("코치 모드: 라면 끓이기 알려 주기", () => {
     await s.pump(() => s.commands().some((m) => m.step === `${planId}:7:hand`), "켜기 전 질문");
     const ask = s.commands().find((m) => m.step === `${planId}:7:hand`)!;
     expect(ask).toMatchObject({ vision: null, choices: YESNO, speak: true });
-    expect(ask.text).toMatch(/^냄비가 뜨거워져요\. .*인덕션.* 켤까요\?$/);
+    // 켜기 전 질문의 안전 문구는 서버 글이다
+    expect(ask.text).toMatch(/^냄비와 상판이 뜨거워져요\. .*인덕션.* 켤까요\?$/);
     expect(s.said("인덕션을 켜 주세요")).toBeUndefined();
     s.answer({ id: planId, step: `${planId}:7` });
     s.say("다 했어");
@@ -221,7 +222,7 @@ describe("코치 모드: 라면 끓이기 알려 주기", () => {
     // 수업 기록: 사람 단계 아홉(알림·기다리기는 없음). 도움을 받은 단계는 0
     const lessons = JSON.parse(readFileSync(join(s.runtimeDir, "homes", "mokryeon_180b", "lessons.json"), "utf8")) as { lessons: Record<string, { runs: number; steps: { label: string; alone: number }[] }> };
     expect(lessons.lessons[RAMEN]!.runs).toBe(1);
-    expect(lessons.lessons[RAMEN]!.steps.map((x) => x.label)).toEqual(["수납장으로 가기", "냄비 꺼내기", "싱크대로 가기", "물 받기", "인덕션으로 가기", "냄비 올리기", "인덕션 켜기", "면과 스프 넣기", "인덕션 끄기"]);
+    expect(lessons.lessons[RAMEN]!.steps.map((x) => x.label)).toEqual(["수납장으로 가기", "냄비 꺼내기", "싱크대로 가기", "물 받기", "인덕션으로 가기", "인덕션에 올리기", "인덕션 켜기", "면과 스프 넣기", "인덕션 끄기"]);
     expect(lessons.lessons[RAMEN]!.steps.filter((x) => x.alone === 0).map((x) => x.label)).toEqual(["물 받기", "면과 스프 넣기"]);
 
     // 대시보드: 계획 13단계, 생각 말풍선 자료(상태 cooking), 켜기 전 질문은 말풍선 카드에 없다

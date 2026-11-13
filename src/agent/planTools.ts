@@ -14,10 +14,11 @@ import type { PlanTarget, PlanView, StepKind, XZ } from "../contract/plan.js";
 import type { WorldObject, WorldView } from "../contract/world.js";
 import type { RoomSpec } from "../hub/types.js";
 import type { FloorPlan } from "../plan/floor.js";
-import { DEVICE_VERB } from "../plan/labels.js";
+import { DEVICE_VERB, RISKY_STEP_TEXT } from "../plan/labels.js";
+import { KIND_LABELS } from "../model/mapping.js";
 import { ConditionSchema, checkCondition, type Condition, type ConditionHome } from "../world/conditions.js";
 import type { DecisionRecord } from "../world/decide.js";
-import { CONFIRM_RULES, phoneLineProblem, type LineContext } from "./policy.js";
+import { CONFIRM_RULES, RISKY_NAME_PROBLEM, isRiskyKind, riskyNames } from "./policy.js";
 import { TOOLS, type ToolDef, type ToolResult } from "./tools.js";
 
 /** 에이전트 단계 종류. go·pick·place·do는 사람이 하는 일(실제 폰 명령, do는 그 자리에서 하는 일: 따르기·붓기), ask 질문, say 알림, device 가전 조작, wait 기다리기. */
@@ -63,7 +64,7 @@ export interface AgentStep {
   text: string | null;
   device: { tool: string; deviceId: string; args: Record<string, unknown> } | null;
   /** do: 사람이 손으로 켜거나 끄는 가전(없으면 null). 위험 목록 가전을 켜는 단계는 실행 추적이 명령 전에 묻는다(riskyHand). */
-  hand: { deviceId: string; to: "on" | "off" } | null;
+  hand: { deviceId: string; to: "on" | "off" | "open" | "close" } | null;
   /** do: 위험한 단계 앞에 폰이 읽을 안전 한 줄(없으면 null). */
   caution: string | null;
   /** 끝나는 조건(World State 낱말 조건). 사람 단계는 없으면 「완료」로만 넘긴다. */
@@ -119,7 +120,8 @@ export const STEP_ARGS = z.object({
   text: z.string().min(1).max(60).optional().describe("say: 폰이 읽을 알림 한 줄"),
   tool: z.enum(DEVICE_TOOLS).optional().describe("device: 기기를 바꾸는 도구 이름"),
   args: z.record(z.string(), z.unknown()).optional().describe("device: 그 도구 인자(device_id 빼고)"),
-  hand_device: z.object({ id: z.string().min(1), to: z.enum(["on", "off"]) }).optional().describe("do: 사람이 손으로 켜거나 끄는 가전(id는 [가전]의 id)"),
+  hand_device: z.object({ id: z.string().min(1), to: z.enum(["on", "off", "open", "close"]) }).optional()
+    .describe("do: 사람이 손으로 켜거나 끄거나 문을 열고 닫는 가전(id는 [가전]의 id). 위험 가전이면 그 단계 글은 서버가 정한다"),
   caution: z.string().min(1).max(30).optional().describe("do: 위험한 단계 앞에 폰이 읽을 안전 한 줄(예: 냄비가 뜨거워져요.)"),
   until: z.record(z.string(), z.unknown()).optional().describe("끝나는 조건: World State 조건 JSON(조건 낱말의 키만). wait에는 꼭. place는 자리 사실 또는 트윈 자리(손에 없음, not in_hand)를 any로 묶고, 그 any와 사람이 들고 있지 않음(not person_holding)을 all로 묶는다. 트윈 자리는 위에 놓기면 놓을 면(target) 위, 안에 넣기(싱크대)면 그 면의 싱크볼 안(part basin). 물건 조건은 모두 follow: true"),
   timeout_s: z.number().int().describe("이 단계 시간 한도(초)"),
@@ -339,23 +341,29 @@ export class PlanDraft {
       need("command", a.command !== undefined);
       if (a.command !== undefined && !/주세요$/.test(a.command.trim())) errors.push("command는 사람에게 하는 부탁이라 「주세요」로 끝나야 합니다(예: 컵을 들어 주세요)");
     } else none("command");
-    // 폰으로 나가는 사람용 글(단계 이름·명령·안전 문구·알림·질문·답 단추·답 말)은 모두 같은 함수로 거른다(src/agent/policy.ts phoneLineProblem):
-    // 위험 가전을 켜거나 조작하라는 글은 그 가전의 hand_device(to on)가 붙은 do 단계에서만, 글·대상이 가리키는 가전과 hand_device 가전이 같아야 한다
-    {
-      const targetKind = devices.find((d) => d.id === a.target)?.kind ?? null;
-      const hand = a.kind === "do" && a.hand_device ? { id: a.hand_device.id, kind: devices.find((d) => d.id === a.hand_device!.id)?.kind ?? null, to: a.hand_device.to } : null;
-      const line = (field: string, text: string | undefined, here: LineContext) => {
-        const p = text === undefined ? null : phoneLineProblem(text, here);
-        if (p) errors.push(`${field}: ${p}`);
-      };
-      const step: LineContext = { targetId: a.target ?? null, targetKind, hand };
-      // 가전 단계(device)는 클로이드가 정책(위험 목록 승인)을 거쳐 조작하는 길이라 그 이름(「인덕션 켜기」, 승인 질문에 쓰인다)은 거르지 않는다
-      if (a.kind !== "device") line("label", a.label, step);
-      line("command", a.command, step);
-      line("caution", a.caution, step);
-      line("text", a.text, {});
-      line("question", a.question, {});
-      for (const c of a.choices ?? []) { line(`답 ${c.id}`, c.label, {}); line(`답 ${c.id} reply`, c.reply, {}); }
+    // 위험 가전은 기본 거부(src/agent/policy.ts): 그 가전이 대상인 go·pick·place와 그 가전의 hand_device가 붙은 do만 받고, 그 단계 글은 서버 글 틀(RISKY_STEP_TEXT)로 바꾼다.
+    // 그 밖의 단계 글(이름·명령·안전 문구·알림·질문·답 단추·답 말)에 위험 가전 이름이 나오면 버린다. 켜는 말인지 끄는 말인지 낱말로 가르지 않는다
+    const kindOf = (id: string | null | undefined) => (id ? devices.find((d) => d.id === id)?.kind ?? null : null);
+    const targetKind = kindOf(a.target);
+    const handKind = a.kind === "do" && a.hand_device ? kindOf(a.hand_device.id) : null;
+    let server: { label: string; command: string; caution: string | null } | null = null;
+    if (human && a.kind === "do" && isRiskyKind(handKind)) {
+      if (isRiskyKind(targetKind) && a.target !== a.hand_device!.id) errors.push(`대상(${a.target})과 hand_device 가전(${a.hand_device!.id})이 다릅니다. 위험 가전 단계는 그 가전 하나만 다룹니다`);
+      const t = RISKY_STEP_TEXT[a.hand_device!.to](KIND_LABELS[handKind]);
+      server = { ...t, caution: a.hand_device!.to === "on" ? RISKY_STEP_TEXT.caution[handKind] ?? null : null };
+    } else if (human && isRiskyKind(targetKind)) {
+      const name = KIND_LABELS[targetKind];
+      const t = a.kind === "go" ? RISKY_STEP_TEXT.go(name) : a.kind === "place" ? RISKY_STEP_TEXT.place[targetKind]?.(name) : a.kind === "pick" ? RISKY_STEP_TEXT.pick[targetKind]?.(name) : undefined;
+      if (t) server = { ...t, caution: null };
+      else errors.push(`위험 가전(${a.target})이 대상인 ${a.kind} 단계는 그 가전의 hand_device가 있어야 합니다. 그 가전 위·안에서 하는 다른 일은 target을 그 가전으로 두지 않습니다`);
+    }
+    if (!server) {
+      // 가전 단계(device)는 클로이드가 정책(위험 목록 승인)을 거쳐 조작하는 길이라 그 이름(승인 질문에 쓰인다)은 거르지 않는다
+      const texts: [string, string | undefined][] = [
+        ...(a.kind !== "device" ? [["label", a.label] as [string, string]] : []), ["command", a.command], ["caution", a.caution], ["text", a.text], ["question", a.question],
+        ...(a.choices ?? []).flatMap((c) => [[`답 ${c.id}`, c.label], [`답 ${c.id} reply`, c.reply]] as [string, string | undefined][]),
+      ];
+      for (const [field, text] of texts) if (text !== undefined && riskyNames(text).length) errors.push(`${field}: ${RISKY_NAME_PROBLEM}`);
     }
     if (a.kind !== "ask") { none("question"); none("choices"); }
     if (a.kind !== "say") none("text");
@@ -399,12 +407,8 @@ export class PlanDraft {
         if (target && live(target) && this.ctx.task.target && live(target)!.cls !== this.ctx.task.target) errors.push(`이 할 일은 ${this.ctx.task.target} 물건에 합니다`);
         putAway(target);
         if (a.hand_device && !devices.some((x) => x.id === a.hand_device!.id)) errors.push(`이 집에 없는 가전입니다: ${a.hand_device.id}`);
-        // 불·열이 나는 가전(위험 목록)을 손으로 켜는 단계에는 안전 한 줄이 꼭 있다
-        if (a.hand_device && a.caution === undefined && riskyHand({ hand: { deviceId: a.hand_device.id, to: a.hand_device.to } }, devices)) {
-          errors.push("위험 목록 가전을 켜는 do에는 caution(안전 한 줄)이 있어야 합니다(예: 냄비가 뜨거워져요.)");
-        }
-        // 안전 한 줄은 지금 상태를 알리는 말이다(부탁·다짐이 아니다)
-        if (a.caution !== undefined && /(게요|주세요)[.!]?$/.test(a.caution.trim())) errors.push("caution은 지금 상태를 알리는 말입니다(예: 냄비가 뜨거워져요.). 「…게요」·「…주세요」로 끝내지 않습니다");
+        // 안전 한 줄은 지금 상태를 알리는 말이다(부탁·다짐이 아니다). 위험 가전 단계의 안전 문구는 서버 글이라 모델 글은 보지 않는다
+        if (!server && a.caution !== undefined && /(게요|주세요)[.!]?$/.test(a.caution.trim())) errors.push("caution은 지금 상태를 알리는 말입니다(예: 냄비가 뜨거워져요.). 「…게요」·「…주세요」로 끝내지 않습니다");
         break;
       case "device": {
         need("target", !!target);
@@ -464,7 +468,7 @@ export class PlanDraft {
         }
       }
       // 손으로 켜고 끄는 가전의 확인은 그 가전이 이 단계가 시작된 뒤에 그 상태가 된 것(became) 하나다: 전부터 남아 있던 값으로 바로 넘어가지 않는다
-      if (until && a.kind === "do" && a.hand_device) {
+      if (until && a.kind === "do" && a.hand_device && (a.hand_device.to === "on" || a.hand_device.to === "off")) {
         const states = TOOL_STATES[a.hand_device.to === "on" ? "turn_on" : "turn_off"]!;
         if (!("device" in until && "became" in until && until.device === a.hand_device.id && states.includes(until.became))) {
           errors.push(`hand_device until은 {"device": "${a.hand_device.id}", "became": ${states.join("|")}} 하나입니다(그 단계가 시작된 뒤에 바뀐 것만 봅니다)`);
@@ -474,15 +478,15 @@ export class PlanDraft {
     else if (a.kind === "say") until = { elapsed_s: SAY_HOLD_S };
     const [lo, hi] = PLAN_LIMITS.timeoutS[a.kind];
     if (a.timeout_s < lo || a.timeout_s > hi) errors.push(`${a.kind} timeout_s는 ${lo}~${hi}초입니다`);
-    errors.push(...copyProblem("label", a.label), ...copyProblem("command", a.command), ...copyProblem("question", a.question), ...copyProblem("text", a.text), ...copyProblem("caution", a.caution));
+    errors.push(...copyProblem("label", a.label), ...copyProblem("command", a.command), ...copyProblem("question", a.question), ...copyProblem("text", a.text), ...(server ? [] : copyProblem("caution", a.caution)));
     if (errors.length) return errors.join("; ");
     const choices: ActionChoice[] = (a.choices ?? []).map((c) => ({ id: c.id, label: c.label, words: c.words ?? [], reply: c.reply ?? "" }));
     const step: Omit<AgentStep, "id"> = {
-      kind: a.kind, label: a.label, target, object, command: a.command?.trim() ?? null,
+      kind: a.kind, label: server?.label ?? a.label, target, object, command: server?.command ?? a.command?.trim() ?? null,
       prompt: a.kind === "ask" ? { text: a.question!.trim(), choices, ends: (a.choices ?? []).filter((c) => c.ends_plan).map((c) => c.id) } : null,
       text: a.text?.trim() ?? null,
       device: a.kind === "device" ? { tool: a.tool!, deviceId: target!, args: a.args ?? {} } : null,
-      hand: a.hand_device ? { deviceId: a.hand_device.id, to: a.hand_device.to } : null, caution: a.caution?.trim() ?? null,
+      hand: a.hand_device ? { deviceId: a.hand_device.id, to: a.hand_device.to } : null, caution: server ? server.caution : a.caution?.trim() ?? null,
       until, timeoutMs: a.timeout_s * 1000, onTimeout: a.on_timeout ?? "fail",
     };
     return { step, at: a.kind === "go" && target ? this.placeAt(target) : null };

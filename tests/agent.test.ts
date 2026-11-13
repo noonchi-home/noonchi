@@ -413,6 +413,23 @@ describe("Agent + OpenAI 공급자(가짜 서버): 한국어 요청", () => {
     expect(JSON.stringify(events)).not.toContain(SAID);
   });
 
+  it("상태를 조회한 뒤의 답이라도 위험 가전을 켜라는 글은 폰으로 나가지 않는다", async () => {
+    llm.script["인덕션 켜져 있어?"] = [[["get_state", { device_id: "induction_1", reason: "상태를 보려고" }]], "인덕션이 꺼져 있어요. 인덕션을 켜 주세요."];
+    const { agent } = llmAgent();
+    expect((await agent.chat("phone", "인덕션 켜져 있어?", { heard: true })).reply).not.toContain("켜 주세요");
+  });
+
+  it("까닭이 길어도 들은 말은 가린 뒤에 자른다(인용 중간이 잘려 원문 일부가 남지 않는다)", async () => {
+    const SAID = "거실 텔레비전 좀 켜 줄래 지금 바로";
+    llm.script[SAID] = [[["turn_on", { device_id: "tv_living", reason: `${"가".repeat(185)}「${SAID}」` }]], "거실 TV를 켰어요."];
+    const events: AgentEvent[] = [];
+    const { agent } = llmAgent(events);
+    await agent.chat("phone", SAID, { heard: true });
+    const shown = JSON.stringify(events);
+    expect(shown).not.toContain("거실 텔레비");
+    expect(events.find((e) => e.event === "action")).toMatchObject({ action: { reason: `${"가".repeat(185)}「들은 말」` } });
+  });
+
   it("leave_it과 가전 도구를 같이 부르면 가전 결과를 말한다", async () => {
     llm.script["아 덥다 거실 TV 켜줘"] = [[["leave_it", {}], ["turn_on", { device_id: "tv_living", reason: "TV를 켜 달라고 해서" }]], "거실 TV를 켰어요."];
     const { hub, agent } = llmAgent();
