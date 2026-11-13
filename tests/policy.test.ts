@@ -53,6 +53,12 @@ describe("위험 가전 이름 표", () => {
     expect(riskyNames("가스레인지와 전자레인지")).toEqual(["cooktop", "microwave"]);
     expect(riskyNames("거실 불 켜 줘")).toEqual([]);
   });
+  it("별명·흔한 오타·영어·띄어 쓴 이름도 찾는다. 긴 이름부터 맞춰 가스레인지는 인덕션 종류로만 보고, 위험 가전이 아닌 이름(레인지후드)과 다른 낱말(오렌지)은 아니다", () => {
+    for (const t of ["인덕선 켜 드릴까요", "가스렌지 불", "전기렌지", "쿡톱", "하이라이트", "인덕 션을 켜요", "Induction 켜기", "가스 레인지"]) expect(riskyNames(t), t).toEqual(["cooktop"]);
+    for (const t of ["전자렌지 돌려 주세요", "레인지에 데워 주세요", "전자 레인지", "Microwave 켜기"]) expect(riskyNames(t), t).toEqual(["microwave"]);
+    for (const t of ["레인지후드를 켰어요", "오렌지 주스", "대화 구조", "버 너무 많아요"]) expect(riskyNames(t), t).toEqual([]);
+    expect(riskyNames("가스레인지 옆 레인지")).toEqual(["cooktop", "microwave"]);
+  });
 });
 
 describe("승인 토큰", () => {

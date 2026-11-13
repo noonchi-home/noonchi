@@ -28,19 +28,40 @@ export const CONFIRM_RULES: ConfirmRule[] = [
 // 모델이 쓰는 글은 질문과 말 요청 에이전트의 답뿐이고, 거기에 위험 가전(인덕션·전자레인지) 이름이 나오면 폰으로 보내지 않는다(버리거나 고정 글로 바꾼다).
 // 켜는 말인지 끄는 말인지 낱말로 가르지 않는다.
 // 자리 목록은 PHONE_LINE_SITES이고, tests/phone-lines.test.ts가 자리마다 본다.
+// 한계: 이름 표(별명·흔한 오타 포함)로만 본다. 이름 없이 조작만 말하는 글(예: 「전원 버튼을 눌러 주세요」)은 질문·에이전트 답에서 막지 못한다.
 
-/** 위험 가전 이름 표: 가전 종류 → 부르는 이름. 종류는 CONFIRM_RULES의 켜기·시작 대상과 같다(tests/policy.test.ts). */
+/** 위험 가전 이름 표: 가전 종류 → 부르는 이름(별명·흔한 오타·영어 포함). 종류는 CONFIRM_RULES의 켜기·시작 대상과 같다(tests/policy.test.ts).
+ *  세 글자 이상인 이름은 띄어 써도 찾는다. 「레인지」만 쓰면 전자레인지로 본다(가스레인지·전기레인지는 긴 이름이 먼저 맞는다). */
 export const RISKY_ON_NAMES: Partial<Record<DeviceKind, readonly string[]>> = {
-  cooktop: ["인덕션", "전기레인지", "가스레인지", "하이라이트", "가스불", "화구", "버너", "쿡탑"],
-  microwave: ["전자레인지"],
+  cooktop: ["인덕션", "인덕선", "인덕숀", "전기레인지", "전기렌지", "가스레인지", "가스렌지", "하이라이트", "가스불", "화구", "버너", "쿡탑", "쿡톱", "induction", "cooktop"],
+  microwave: ["전자레인지", "전자렌지", "레인지", "microwave"],
 };
+/** 위험 가전이 아닌데 위험 가전 이름을 품은 이름(먼저 지운다). */
+const NOT_RISKY = ["레인지후드"];
 
 /** 위험 가전 종류인가. */
 export const isRiskyKind = (kind: string | null | undefined): kind is DeviceKind => !!kind && Object.hasOwn(RISKY_ON_NAMES, kind);
 
-/** 글에 나오는 위험 가전 종류(이름 표로만 본다). */
+/** 이름 → 종류(위험 가전이 아닌 이름은 null), 긴 이름부터. */
+const NAME_ORDER: [string, DeviceKind | null][] = [
+  ...(Object.entries(RISKY_ON_NAMES) as [DeviceKind, readonly string[]][]).flatMap(([k, names]) => names.map((n): [string, DeviceKind | null] => [n.toLowerCase(), k])),
+  ...NOT_RISKY.map((n): [string, DeviceKind | null] => [n, null]),
+].sort((a, b) => b[0].length - a[0].length);
+
+/** 글에 나오는 위험 가전 종류(이름 표로만 본다). 긴 이름부터 맞추고 맞춘 자리는 지워 짧은 이름이 그 안에서 다시 맞지 않게 한다. */
 export function riskyNames(text: string): DeviceKind[] {
-  return (Object.entries(RISKY_ON_NAMES) as [DeviceKind, readonly string[]][]).filter(([, names]) => names.some((n) => text.includes(n))).map(([k]) => k);
+  const raw = text.toLowerCase();
+  let flat = raw.replace(/\s+/g, "");
+  const kinds = new Set<DeviceKind>();
+  for (const [name, kind] of NAME_ORDER) {
+    // 세 글자 이상은 띄어 쓴 것도 찾게 빈칸을 뺀 글에서, 두 글자(화구·버너)는 띄어 쓴 낱말 사이에서 잘못 맞지 않게 원래 글에서 찾는다
+    if (name.length >= 3) {
+      if (!flat.includes(name)) continue;
+      flat = flat.split(name).join("\u0000");
+    } else if (!raw.includes(name)) continue;
+    if (kind) kinds.add(kind);
+  }
+  return (Object.keys(RISKY_ON_NAMES) as DeviceKind[]).filter((k) => kinds.has(k));
 }
 
 /** 폰으로 나가는 사람용 글이 생기는 자리. 모델이 쓴 위험 가전 글은 어느 자리에서도 나가지 않는다(tests/phone-lines.test.ts가 자리마다 본다). */

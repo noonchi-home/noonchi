@@ -222,6 +222,10 @@ describe("서버 글 틀", () => {
 
   it("말 요청 에이전트의 답에 위험 가전 이름이 나오면 도구를 썼어도 고정 글이다. 승인 대기면 정책 승인 안내 글이다", async () => {
     expect(await agentReply([{ text: "인덕션이 꺼져 있어요. 전원 버튼을 눌러 주세요.", calls: [] }])).toBe(RISKY_REPLY);
+    // 별명·오타·띄어 쓴 이름도 같다
+    for (const text of ["전자렌지 문을 열고 시작을 눌러 주세요.", "레인지를 돌려 주세요.", "인덕선 전원을 눌러 주세요.", "가스 렌지 불을 켜 주세요."]) {
+      expect(await agentReply([{ text, calls: [] }]), text).toBe(RISKY_REPLY);
+    }
     // 상태 조회를 한 뒤의 답도 그대로 두지 않는다
     expect(await agentReply([
       { text: "", calls: [{ id: "c1", name: "get_state", args: { device_id: "induction_1", reason: "상태를 보려고" } }] },
