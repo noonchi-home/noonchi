@@ -205,6 +205,17 @@ describe("반성", () => {
       expect(db.list({ kinds: ["reflection"] }).at(-1)!.data).toMatchObject({ learned: [{ state: "left_cup", ...NIGHT }], active: [{ state: "watching_tv", ...AIRCON }, { state: "left_cup", ...NIGHT }] });
     });
 
+    it("기본 거르기(keepAll)로 반성하면 지난 30일 기록 줄을 읽지 않는다(기록 DB가 커도 서버를 멈추지 않게)", async () => {
+      const db = HistoryDb.open(":memory:");
+      db.add("detection", t, "사람 보임");
+      const list = vi.spyOn(db, "list");
+      const r = await runReflection(db, new PamClient({ url: await startPam(withRules({ watching_tv: [AIRCON] })) }), "2026-11-07");
+      expect(r).toMatchObject({ ok: true, learned: [{ state: "watching_tv", ...AIRCON }] });
+      const kinds = list.mock.calls.map((c) => c[0].kinds ?? []);
+      expect(kinds.some((k) => k.includes("execution") && k.includes("device") && !k.includes("detection"))).toBe(false);
+      expect(list.mock.calls.some((c) => c[0].since !== undefined)).toBe(false);
+    });
+
     it("거르기 결과가 기억 모양 검사에 걸리면 반성은 실패로 남고 판본은 늘지 않는다", async () => {
       const db = HistoryDb.open(":memory:");
       db.add("detection", t, "사람 보임");

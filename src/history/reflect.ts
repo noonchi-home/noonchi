@@ -63,7 +63,7 @@ export function memoryForDay(db: HistoryDb, day: string): DayMemory {
   return { memory: CUP_FSM_MEMORY, kind: "fsm", version };
 }
 
-/** filter: 습관 거르기(기본 keepAll). windowDays: 거르기에 넘기는 지난 기록 날 수(기본 30, 반성한 날 포함). */
+/** filter: 습관 거르기(기본 keepAll, 기록 줄을 읽지 않고 rows는 빈 목록). windowDays: 따로 넘긴 거르기에 주는 지난 기록 날 수(기본 30, 반성한 날 포함). */
 export async function runReflection(db: HistoryDb, pam: PamClient, day: string, o: { now?: () => number; emit?: (l: BrainLog) => void; filter?: HabitFilter; windowDays?: number } = {}): Promise<ReflectResult> {
   const now = o.now ?? (() => Date.now());
   const done = (ok: boolean, text: string, version: number | null, appliesDay: string | null, found?: { learned: RuleLine[]; active: RuleLine[]; dropped: HabitRuleNote[] }) => {
@@ -96,7 +96,8 @@ export async function runReflection(db: HistoryDb, pam: PamClient, day: string, 
       const first = coachGuard(CUP_FSM_MEMORY, validateMemory(memory, "fsm") as FsmMemory);
       const windowDays = o.windowDays ?? 30;
       const dayStart = Date.parse(`${day}T00:00:00Z`) - db.offsetMinutes * 60_000;
-      const rows = db.list({ since: dayStart - (windowDays - 1) * 86_400_000, until: dayStart + 86_400_000 - 1, kinds: [...HABIT_KINDS], limit: Number.MAX_SAFE_INTEGER });
+      // 기록 줄은 따로 넘긴 거르기만 읽는다: 기본(keepAll)은 쓰지 않으니 30일 기록을 올리지 않는다(기록 DB가 커도 서버를 멈추지 않게)
+      const rows = o.filter ? db.list({ since: dayStart - (windowDays - 1) * 86_400_000, until: dayStart + 86_400_000 - 1, kinds: [...HABIT_KINDS], limit: Number.MAX_SAFE_INTEGER }) : [];
       const filtered = await (o.filter ?? keepAll)({ day, windowDays, offsetMinutes: db.offsetMinutes, previous, proposed: first.memory, rows });
       const second = coachGuard(CUP_FSM_MEMORY, filtered.memory);
       memory = validateMemory(second.memory, "fsm");

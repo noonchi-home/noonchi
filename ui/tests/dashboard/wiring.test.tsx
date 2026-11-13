@@ -111,6 +111,15 @@ describe("대시보드 자료 연결", () => {
     expect(sayLine()).toHaveTextContent("식탁을 보고 있어요.");
   });
 
+  it("판단 없이 반성 사건만 와도 생각 말풍선이 바뀐다: 새로 배운 규칙이면 「습관 · 새로 배움」", async () => {
+    await mount(false);
+    expect(thought()).toHaveAttribute("data-thought", "hidden");
+    const rule = { state: "watching_tv", trigger: "사용자가 소파에 앉아 TV를 보기 시작한다.", action: "에어컨 켜기" };
+    send([{ type: "brain", replay: true, event: { type: "reflection", at_ms: 5, day: "2026-11-13", ok: true, version: 3, applies_day: "2026-11-14", text: "반성 완료", learned: [rule], active: [rule], dropped: [] } }]);
+    expect(thought()).toHaveAttribute("data-thought", "shown");
+    expect([...thought().querySelectorAll("[data-slot=status]")].map((c) => c.textContent)).toEqual(["습관 · 새로 배움", "눈치 · 에어컨 켜기"]);
+  });
+
   it("서버 판단이 행동을 고르면 생각 말풍선에 생각 한 문장과 상태·판단 칩을 보이고, 대기 판단이 오면 숨긴다", async () => {
     await mount(false);
     send(moment(2));
