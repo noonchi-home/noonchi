@@ -17,7 +17,7 @@ import type { FloorPlan } from "../plan/floor.js";
 import { DEVICE_VERB } from "../plan/labels.js";
 import { ConditionSchema, checkCondition, type Condition, type ConditionHome } from "../world/conditions.js";
 import type { DecisionRecord } from "../world/decide.js";
-import { CONFIRM_RULES, riskyOnText } from "./policy.js";
+import { CONFIRM_RULES, phoneLineProblem, type LineContext } from "./policy.js";
 import { TOOLS, type ToolDef, type ToolResult } from "./tools.js";
 
 /** 에이전트 단계 종류. go·pick·place·do는 사람이 하는 일(실제 폰 명령, do는 그 자리에서 하는 일: 따르기·붓기), ask 질문, say 알림, device 가전 조작, wait 기다리기. */
@@ -338,12 +338,25 @@ export class PlanDraft {
     if (human) {
       need("command", a.command !== undefined);
       if (a.command !== undefined && !/주세요$/.test(a.command.trim())) errors.push("command는 사람에게 하는 부탁이라 「주세요」로 끝나야 합니다(예: 컵을 들어 주세요)");
-      // 위험 가전을 켜라는 말은 그 가전을 손으로 켜는 do(hand_device to on)로만: 실행 추적이 켜기 전에 묻고 끄기 단계를 검사한다
-      const onKind = a.command !== undefined ? riskyOnText(a.command, devices.find((d) => d.id === a.target)?.kind) : null;
-      const handOn = a.kind === "do" && a.hand_device?.to === "on" && riskyHand({ hand: { deviceId: a.hand_device.id, to: "on" } }, devices);
-      if (onKind && !handOn) errors.push("위험 가전을 켜라는 말은 그 가전의 hand_device(to on)가 있는 do 단계로만 씁니다");
     } else none("command");
-    if (a.kind === "say" && a.text !== undefined && riskyOnText(a.text)) errors.push("say로 위험 가전을 켜라고 하지 않습니다. 켜는 일은 hand_device가 있는 do 단계로 씁니다");
+    // 폰으로 나가는 사람용 글(단계 이름·명령·안전 문구·알림·질문·답 단추·답 말)은 모두 같은 함수로 거른다(src/agent/policy.ts phoneLineProblem):
+    // 위험 가전을 켜거나 조작하라는 글은 그 가전의 hand_device(to on)가 붙은 do 단계에서만, 글·대상이 가리키는 가전과 hand_device 가전이 같아야 한다
+    {
+      const targetKind = devices.find((d) => d.id === a.target)?.kind ?? null;
+      const hand = a.kind === "do" && a.hand_device ? { id: a.hand_device.id, kind: devices.find((d) => d.id === a.hand_device!.id)?.kind ?? null, to: a.hand_device.to } : null;
+      const line = (field: string, text: string | undefined, here: LineContext) => {
+        const p = text === undefined ? null : phoneLineProblem(text, here);
+        if (p) errors.push(`${field}: ${p}`);
+      };
+      const step: LineContext = { targetId: a.target ?? null, targetKind, hand };
+      // 가전 단계(device)는 클로이드가 정책(위험 목록 승인)을 거쳐 조작하는 길이라 그 이름(「인덕션 켜기」, 승인 질문에 쓰인다)은 거르지 않는다
+      if (a.kind !== "device") line("label", a.label, step);
+      line("command", a.command, step);
+      line("caution", a.caution, step);
+      line("text", a.text, {});
+      line("question", a.question, {});
+      for (const c of a.choices ?? []) { line(`답 ${c.id}`, c.label, {}); line(`답 ${c.id} reply`, c.reply, {}); }
+    }
     if (a.kind !== "ask") { none("question"); none("choices"); }
     if (a.kind !== "say") none("text");
     if (a.kind !== "device") { none("tool"); none("args"); }
@@ -450,11 +463,11 @@ export class PlanDraft {
           errors.push(`device until은 {"device": target, "state": ${states.join("|")}} 하나입니다`);
         }
       }
-      // 손으로 켜고 끄는 가전의 확인도 그 가전 상태 하나다
+      // 손으로 켜고 끄는 가전의 확인은 그 가전이 이 단계가 시작된 뒤에 그 상태가 된 것(became) 하나다: 전부터 남아 있던 값으로 바로 넘어가지 않는다
       if (until && a.kind === "do" && a.hand_device) {
         const states = TOOL_STATES[a.hand_device.to === "on" ? "turn_on" : "turn_off"]!;
-        if (!("device" in until && "state" in until && until.device === a.hand_device.id && states.includes(until.state))) {
-          errors.push(`hand_device until은 {"device": "${a.hand_device.id}", "state": ${states.join("|")}} 하나입니다`);
+        if (!("device" in until && "became" in until && until.device === a.hand_device.id && states.includes(until.became))) {
+          errors.push(`hand_device until은 {"device": "${a.hand_device.id}", "became": ${states.join("|")}} 하나입니다(그 단계가 시작된 뒤에 바뀐 것만 봅니다)`);
         }
       }
     } else if (a.kind === "go" && target && floor.objects.has(target)) until = { phone_near: target };

@@ -401,6 +401,18 @@ describe("Agent + OpenAI 공급자(가짜 서버): 한국어 요청", () => {
     expect(kept.find((e) => e.event === "reply")).toMatchObject({ message: SAID });
   });
 
+  it("들은 말 차례에 내보내는 action 이벤트는 통째로 가린다(인자·결과 글·관찰·까닭). 실행 인자와 돌려주는 action은 그대로다", async () => {
+    const SAID = "거실 TV 어디 있지";
+    llm.script[SAID] = [[["find_devices", { query: SAID, reason: "찾으려고" }]], "거실에 TV가 있어요."];
+    const events: AgentEvent[] = [];
+    const { agent } = llmAgent(events);
+    const r = await agent.chat("phone", SAID, { heard: true });
+    expect(r.actions[0]).toMatchObject({ tool: "find_devices", args: { query: SAID }, ok: true });
+    const action = events.find((e) => e.event === "action");
+    expect(action).toMatchObject({ action: { tool: "find_devices", args: { query: "들은 말" } } });
+    expect(JSON.stringify(events)).not.toContain(SAID);
+  });
+
   it("leave_it과 가전 도구를 같이 부르면 가전 결과를 말한다", async () => {
     llm.script["아 덥다 거실 TV 켜줘"] = [[["leave_it", {}], ["turn_on", { device_id: "tv_living", reason: "TV를 켜 달라고 해서" }]], "거실 TV를 켰어요."];
     const { hub, agent } = llmAgent();

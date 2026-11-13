@@ -8,7 +8,7 @@
 // 켜라는 명령을 보낸 가전은 끄는 단계가 끝날 때까지 「켠 것」(hot, 켜라고 한 시각)으로 본다. 켠 채 계획이 닫히면(그만·시간 초과·실패·새 계획) 닫은 뒤 실제 폰에
 // 가전마다 끄라는 안내(단계 id :off, 둘째부터 :off:2…, 「완료」 하나)를 차례로 보낸다. 안내 하나는 「완료」·말 답, 켜라고 한 뒤에 새로 본 그 가전 꺼짐(가전 이력),
 // offHoldMs 중 먼저 오는 것으로 지우고 다음 가전 안내를 띄운다. 안내가 남아 있는 동안 새 계획은 첫 명령(승인 질문 포함)을 미루고, 안내가 다 끝나면 시작한다.
-// 위험 가전을 켜라는 글(src/agent/policy.ts riskyOnText)로는 다시 알리기(tell)·사람 부탁(askCloser)을 보내지 않는다.
+// 위험 가전을 켜거나 조작하라는 글(src/agent/policy.ts phoneLineProblem)로는 다시 알리기(tell)·사람 부탁(askCloser)을 보내지 않는다.
 // 코치 행동(TaskSpec.coach) 계획이 열려 있거나 만드는 중이면 coaching()이 참이다: 그동안 판단 호출(PAM)을 쉰다.
 // 다른 행동 알림(코치 계획, 관찰 모드 계기 off_track): 사람 단계가 진행 중인데 의미 있는 변화(사람 방·가전 상태·가전 설비 상태)가 왔고 그 단계가 넘어가지 않았거나,
 // 이동이 아닌 단계에서 폰이 그 단계 자리를 떠나 다른 평면도 자리 가까이로 갔으면 strayed를 부른다(결정론). 단계마다 strayMax번(받은 것만), strayGapMs에 한 번.
@@ -57,7 +57,7 @@ import { ConditionWatch, type Condition, type ConditionContext } from "../world/
 import { DEVICE_STATES, NEAR_M, PHONE_NEAR_M } from "../world/vocab.js";
 import type { DecisionRecord } from "../world/decide.js";
 import { approvalNeed, taskKey, type ApprovalAnswer, type ApprovalBook } from "../agent/approval.js";
-import { riskyOnText } from "../agent/policy.js";
+import { phoneLineProblem } from "../agent/policy.js";
 import { HUMAN_KINDS, objectNames, riskyHand, type AgentPlan, type AgentStep, type PlanResult } from "../agent/planTools.js";
 import type { ToolResult } from "../agent/tools.js";
 import type { CheckResult } from "./check.js";
@@ -574,10 +574,10 @@ export class ExecutionTracker {
     return devices ? riskyHand(step, devices) : true;
   }
 
-  /** 위험 가전을 켜라는 글인가(그 단계 대상이 위험 가전이면 이름 없이 「켜 주세요」도). 그런 글은 켜기 전 묻기를 거치지 않고 보내지 않는다. */
+  /** 위험 가전을 켜거나 조작하라는 글인가(그 단계 대상이 위험 가전이면 이름 없이 「켜 주세요」도). 그런 글은 켜기 전 묻기를 거치지 않고 보내지 않는다. */
   private riskyOn(text: string, step: AgentStep): boolean {
     const kind = step.target ? this.o.handDevices?.().find((d) => d.id === step.target)?.kind : undefined;
-    return riskyOnText(text, kind) !== null;
+    return phoneLineProblem(text, { targetId: step.target, targetKind: kind ?? null }) !== null;
   }
 
   /** 손으로 다루는 가전 이름(묻는 글·끄기 안내): 그 가전이 평면도에 있으면 종류의 짧은 이름(인덕션), 아니면 이 집 가전 이름, 그것도 없으면 단계 대상 자리 이름. */

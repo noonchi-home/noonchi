@@ -273,6 +273,7 @@ describe("계획 모드: 컵 치우기", () => {
         `- 시간이 걸리는 일(물 끓기, 익기)은 say로 한 줄 알린 뒤 wait {"elapsed_s": 초}.`,
         "- [지난 수업]이 있으면 그 단계 이름(label)과 순서를 그대로 쓴다.",
       ]);
+      expect(lines[at + 7]).toBe(`- hand_device가 있는 do의 until은 쓰지 않거나 그 단계 뒤에 바뀐 것({"device": id, "became": "on"|"off"})만 쓴다. 불·열이 나는 가전 이름이나 그 가전을 대상으로 한 다른 단계 글에는 켜거나 누르는 말을 쓰지 않는다(가기·올리기·넣기·끄기는 된다).`);
       expect(PLANNER_PROMPT).not.toMatch(/라면|냄비/);
       expect(PLANNER_PROMPT).toContain("단계 수는 [할 일]의 「단계 한도」까지다.");
     });
@@ -766,14 +767,17 @@ describe("계획 모드: 계획 검사", () => {
       cbad({ ...go, caution: "뜨거워요." }, /go에는 caution를 쓰지 않습니다/);
       cbad({ ...on, hand_device: { id: "induction_9", to: "on" } }, /이 집에 없는 가전입니다: induction_9/);
       cbad({ ...on, hand_device: { id: "induction_1", to: "toggle" } }, /hand_device/);
-      cbad({ ...on, until: { elapsed_s: 3 } }, /hand_device until은 \{"device": "induction_1", "state": on\|/);
-      cbad({ ...on, until: { device: "induction_1", state: "off" } }, /hand_device until/);
-      expect(new PlanDraft(cctx()).add({ step: 1, ...on, until: { device: "induction_1", state: "on" } })).toMatchObject({ ok: true });
-      expect(new PlanDraft(cctx()).add({ step: 1, ...off, until: { device: "induction_1", state: "off" } })).toMatchObject({ ok: true });
+      cbad({ ...on, until: { elapsed_s: 3 } }, /hand_device until은 \{"device": "induction_1", "became": on\|/);
+      cbad({ ...on, until: { device: "induction_1", became: "off" } }, /hand_device until/);
+      // 지금 상태(state)는 받지 않는다: 그 단계 전부터 남아 있던 값으로 바로 넘어가지 않게 그 단계 뒤에 바뀐 것(became)만
+      cbad({ ...on, until: { device: "induction_1", state: "on" } }, /hand_device until/);
+      cbad({ ...off, until: { device: "induction_1", state: "off" } }, /hand_device until/);
+      expect(new PlanDraft(cctx()).add({ step: 1, ...on, until: { device: "induction_1", became: "on" } })).toMatchObject({ ok: true });
+      expect(new PlanDraft(cctx()).add({ step: 1, ...off, until: { device: "induction_1", became: "off" } })).toMatchObject({ ok: true });
     });
 
     it("위험 가전을 켜라는 말은 hand_device(위험 가전, to on)가 있는 do로만 받는다: 표시가 빠진 do·다른 가전 표시·다른 단계 종류·알림 글은 버린다", () => {
-      const why = /위험 가전을 켜라는 말은 그 가전의 hand_device\(to on\)가 있는 do 단계로만 씁니다/;
+      const why = /위험 가전을 켜라는 말|hand_device 가전이 다릅니다/;
       cbad({ ...on, hand_device: undefined, caution: undefined }, why);
       cbad({ ...on, hand_device: undefined, caution: undefined, command: "불을 켜 주세요" }, why);
       cbad({ ...on, hand_device: { id: "ac_living", to: "on" }, caution: undefined }, why);
@@ -781,7 +785,13 @@ describe("계획 모드: 계획 검사", () => {
       cbad({ ...on, hand_device: undefined, caution: undefined, target: "sink_1", command: "전자레인지를 돌려 주세요" }, why);
       cbad({ kind: "place", label: "냄비 올리기", target: "induction_1", command: "냄비를 올리고 인덕션을 켜 주세요", timeout_s: 120 }, why);
       cbad({ kind: "go", label: "인덕션으로 가기", target: "induction_1", command: "인덕션으로 가서 켜 주세요", timeout_s: 120 }, why);
-      cbad({ kind: "say", label: "알림", text: "이제 인덕션을 켜요.", timeout_s: 10 }, /say로 위험 가전을 켜라고 하지 않습니다/);
+      cbad({ kind: "say", label: "알림", text: "이제 인덕션을 켜요.", timeout_s: 10 }, /text: 위험 가전을 켜라는 말/);
+      // 조작하는 말(전원·버튼·누르기)도 켜기로 본다
+      cbad({ ...on, hand_device: undefined, caution: undefined, command: "인덕션 전원 버튼을 눌러 주세요" }, why);
+      cbad({ ...on, hand_device: undefined, caution: undefined, command: "버튼을 눌러 주세요" }, why);
+      // 지시한 가전과 hand_device 가전이 다르면 버린다(질문·끄기 안내가 다른 가전을 가리키지 않게)
+      cbad({ ...on, hand_device: { id: "microwave_1", to: "on" } }, /hand_device 가전이 다릅니다/);
+      cbad({ ...on, command: "켜 주세요", hand_device: { id: "microwave_1", to: "on" } }, /hand_device 가전이 다릅니다/);
       // 켜라는 말이 아닌 것은 그대로 받는다
       for (const s of [
         { kind: "place", label: "냄비 올리기", target: "induction_1", command: "냄비를 인덕션에 올려 주세요", timeout_s: 120 },

@@ -45,6 +45,7 @@ export const PLANNER_PROMPT = `너는 이 집 스마트홈 에이전트의 계�
 - 손으로 가전을 켜거나 끄는 do에는 hand_device를 쓴다. 불·열이 나는 가전을 켜는 do에는 caution(안전 한 줄)을 쓰고, 계획 안에서 그 가전을 끄는 do를 꼭 둔다.
 - 시간이 걸리는 일(물 끓기, 익기)은 say로 한 줄 알린 뒤 wait {"elapsed_s": 초}.
 - [지난 수업]이 있으면 그 단계 이름(label)과 순서를 그대로 쓴다.
+- hand_device가 있는 do의 until은 쓰지 않거나 그 단계 뒤에 바뀐 것({"device": id, "became": "on"|"off"})만 쓴다. 불·열이 나는 가전 이름이나 그 가전을 대상으로 한 다른 단계 글에는 켜거나 누르는 말을 쓰지 않는다(가기·올리기·넣기·끄기는 된다).
 
 예(컵 치우기, 식탁 table_1 위 컵 cup_1, 싱크볼이 있는 싱크대 sink_1)
 1. go table_1 「식탁으로 가 주세요」 until {"phone_near": "table_1"}

@@ -10,7 +10,7 @@ import type { DeviceHub, RoomSpec } from "../hub/types.js";
 import { matchChoice } from "../act/tasks.js";
 import { APPROVE } from "../act/prompts.js";
 import type { ApprovalAnswer } from "./approval.js";
-import { REFUSED_REPLY, commandName, type PendingConfirmation, type Policy } from "./policy.js";
+import { REFUSED_REPLY, RISKY_REPLY, commandName, phoneLineProblem, riskyUse, type PendingConfirmation, type Policy } from "./policy.js";
 import { askApproval, doneSentence, toolForCommand } from "./phrases.js";
 import { buildSystemPrompt } from "./prompts.js";
 import { LAYOUT_TOOLS, type LayoutTools } from "./layoutTools.js";
@@ -110,6 +110,14 @@ interface Session {
 const AFFIRMATIVE = /^(응|어|엉|네|넹|예|그래|좋아|확인|승인|ㅇㅇ|ㅇㅋ|오케이|ok|okay|yes|진행)(요|해|해요|해줘|해주세요|할게|합니다|이요)?[\s.!~,]*(열어\s*줘|해\s*줘|진행해\s*줘|부탁해)?[\s.!~]*$/i;
 const NEGATIVE = /^(아니|아냐|ㄴㄴ|싫어|취소|하지\s*마|안\s*돼|no\b|nope|그만|됐어)/i;
 const TOKEN_MISSING = "승인 토큰이 없거나 만료되었습니다.";
+
+/** 값 안의 모든 글에서 들은 말을 뺀 사본(이벤트로 내보낼 때). */
+function hideIn<T>(value: T, said: string): T {
+  if (typeof value === "string") return redactSaid(value, [said]) as T;
+  if (Array.isArray(value)) return value.map((v) => hideIn(v, said)) as T;
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, hideIn(v, said)])) as T;
+  return value;
+}
 
 export function isAffirmative(text: string): boolean {
   return AFFIRMATIVE.test(text.trim());
@@ -226,10 +234,21 @@ export class Agent {
     if (answer) reply = await this.answerAll(s, message, answer, actions);
     else if (waiting && !opts.heard && isAffirmative(message)) reply = await this.answerAll(s, message, "approve", actions);
     else if (waiting && !opts.heard && isNegative(message)) reply = this.cancelAll(s, message);
-    else reply = await this.runModel(s, message, actions);
+    else {
+      reply = await this.runModel(s, message, actions);
+      // 모델이 쓴 답도 폰으로 나가는 사람용 글이다(src/agent/policy.ts phoneLineProblem): 이번 차례에 그 위험 가전을 승인 길(도구·정책)로 다루지 않았는데
+      // 그 가전을 켜거나 조작하라는 답이면 정한 한 줄로 바꾼다
+      const used = new Set(actions.flatMap((a) => (a.deviceId ? [a.deviceId] : [])));
+      const usedKinds = new Set<string>(this.hub.list().filter((d) => used.has(d.id)).map((d) => d.kind));
+      const u = riskyUse(reply);
+      if (u && phoneLineProblem(reply) && !u.kinds.every((k) => usedKinds.has(k))) reply = RISKY_REPLY;
+    }
     const pendingConfirmations = this.pending(s.id);
     s.hide = null;
-    this.emit({ event: "reply", sessionId: s.id, message: said ? HEARD_MARK : message, reply: said ? redactSaid(reply, [said]) : reply, actions, pendingConfirmations });
+    this.emit({
+      event: "reply", sessionId: s.id, message: said ? HEARD_MARK : message, reply: said ? redactSaid(reply, [said]) : reply,
+      actions: said ? actions.map((a) => hideIn(a, said)) : actions, pendingConfirmations,
+    });
     return { sessionId: s.id, reply, actions, pendingConfirmations, provider: this.provider.name };
   }
 
@@ -273,12 +292,13 @@ export class Agent {
     const action: AgentAction = {
       tool: call.name, args, ok: result.ok, message: result.message, error: result.error,
       deviceId: result.device?.id, deviceLabel: result.device?.label, needsConfirmation: result.needsConfirmation ? true : undefined,
-      reason: typeof reason === "string" && reason.trim() ? redactSaid(reason.trim(), s.hide ? [s.hide] : []).slice(0, 200) : undefined,
+      reason: typeof reason === "string" && reason.trim() ? reason.trim().slice(0, 200) : undefined,
       observation: observe(call.name, result),
       at: new Date().toISOString(),
     };
     actions.push(action);
-    this.emit({ event: "action", sessionId: s.id, action });
+    // 들은 말 차례면 내보내는 action은 통째로 가린다(인자·결과 글·관찰·까닭). 실행한 인자와 돌려주는 action은 그대로
+    this.emit({ event: "action", sessionId: s.id, action: s.hide ? hideIn(action, s.hide) : action });
     let shown: ToolResult = result;
     if (result.needsConfirmation) {
       s.pending.add(result.needsConfirmation.token);

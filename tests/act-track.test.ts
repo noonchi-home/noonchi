@@ -824,6 +824,37 @@ describe("실행 추적: 코치 계획(손으로 켜는 위험 가전)", () => {
     expect(s.t.tell(P, `${P}:6`, "냄비를 인덕션에 올려 주세요")).toBe(true);
   });
 
+  it("손으로 끄는 단계의 끝 조건(became off)은 그 단계 뒤에 새로 본 꺼짐으로만 넘어간다: 남아 있던 꺼짐 값으로는 넘기지 않아 켠 가전 표시와 끄기 안내가 남는다", async () => {
+    let w = { ...world([]), devices: [cooktop(["off"])] };
+    const s = coachSetup({ w: () => w });
+    const steps = ramenSteps({ cabinet: "cabinet_1", sink: "sink_1", cooktop: "induction_1", cooktopDevice: "induction_1" });
+    llm.scripts[RAMEN] = () => [planCalls([steps[6]!, { ...steps[11]!, until: { device: "induction_1", became: "off" } }])];
+    await s.decide(ramenDecision());
+    s.t.onAnswer(P, `${P}:1:hand`, "approve");
+    s.t.onAnswer(P, `${P}:1`, "done");
+    expect(s.last()).toMatchObject({ step: `${P}:2`, text: "인덕션을 꺼 주세요" });
+    const offAt = s.clock.t;
+    s.clock.t += 1_000;
+    s.t.onWorld();
+    s.t.tick();
+    expect(s.last()).toMatchObject({ step: `${P}:2` });
+    expect(s.t.current()).toMatchObject({ state: "running" });
+    // 그만두면 켠 가전이 남아 있어 끄기 안내가 뜬다
+    s.t.onHeard("그만");
+    expect(s.last()).toEqual({ ...OFF, step: `${P}:off` });
+    // 다른 판: 그 단계 뒤에 꺼진 것을 보면 넘어가 계획이 끝나고 안내가 없다
+    const t2 = coachSetup({ w: () => w });
+    llm.scripts[RAMEN] = () => [planCalls([steps[6]!, { ...steps[11]!, until: { device: "induction_1", became: "off" } }])];
+    await t2.decide(ramenDecision("pam-2", 2));
+    t2.t.onAnswer("plan:pam-2", "plan:pam-2:1:hand", "approve");
+    t2.t.onAnswer("plan:pam-2", "plan:pam-2:1", "done");
+    t2.clock.t += 2_000;
+    w = { ...world([]), devices: [cooktop(["off"], [{ attr: "power", from: "off", to: "on", at_ms: offAt }, { attr: "power", from: "on", to: "off", at_ms: t2.clock.t }])] };
+    t2.t.onWorld();
+    expect(t2.plans.current()).toMatchObject({ status: "done" });
+    expect(t2.phone.some((m) => m.type === "command" && m.step.endsWith(":off"))).toBe(false);
+  });
+
   it("컵 치우기(코치 아님) 계획에는 coaching()이 거짓이다", async () => {
     const s = setup();
     await s.decide(decision);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CONFIRM_RULES, Policy, RISKY_ON_NAMES, riskyOnText } from "../src/agent/policy.js";
+import { CONFIRM_RULES, Policy, RISKY_ON_NAMES, riskyUse } from "../src/agent/policy.js";
 import { MemoryHub } from "../src/hub/memory.js";
 import type { DeviceSpec } from "../src/hub/types.js";
 import { describeDevice } from "../src/model/mapping.js";
@@ -42,23 +42,17 @@ describe("requiresConfirmation", () => {
   });
 });
 
-describe("위험 가전을 켜라는 글(riskyOnText)", () => {
+describe("위험 가전 낱말 표", () => {
   it("낱말 표의 가전 종류는 CONFIRM_RULES의 켜기·시작 대상과 같다", () => {
     expect(Object.keys(RISKY_ON_NAMES).sort()).toEqual(CONFIRM_RULES.filter((r) => r.command === "on" || r.command === "start").map((r) => r.kind).sort());
   });
-  it("위험 가전 이름과 켜는 말이 함께 있으면 그 종류, 대상이 위험 가전이면 이름 없이도 그 종류다", () => {
-    for (const t of ["인덕션을 켜 주세요", "먼저 인덕션 불을 켜 주세요", "가스레인지를 켜요.", "인덕션을 켤까요", "인덕션으로 가열해 주세요"]) expect(riskyOnText(t), t).toBe("cooktop");
-    expect(riskyOnText("전자레인지를 돌려 주세요")).toBe("microwave");
-    expect(riskyOnText("전자레인지를 시작해 주세요")).toBe("microwave");
-    expect(riskyOnText("불을 켜 주세요", "cooktop")).toBe("cooktop");
-    expect(riskyOnText("켜 주세요", "microwave")).toBe("microwave");
-  });
-  it("끄는 말·올려놓는 말·켜지 말라는 말·다른 가전·위험하지 않은 대상은 아니다", () => {
-    for (const t of ["인덕션을 꺼 주세요", "냄비를 인덕션에 올려 주세요", "인덕션은 아직 켜지 마세요", "인덕션은 켜지 말아 주세요", "에어컨을 켜 주세요", "거실 불 켜 줘", "물이 끓을 때까지 기다려요."]) {
-      expect(riskyOnText(t), t).toBeNull();
-    }
-    expect(riskyOnText("불을 켜 주세요", "aircon")).toBeNull();
-    expect(riskyOnText("불을 켜 주세요")).toBeNull();
+  it("켜는 말은 켜기, 끄는 말·올려놓는 말·켜지 말라는 말은 아니다(자세한 표는 tests/phone-lines.test.ts)", () => {
+    for (const t of ["인덕션을 켜 주세요", "먼저 인덕션 불을 켜 주세요", "가스레인지를 켜요.", "인덕션을 켤까요", "인덕션으로 가열해 주세요", "전자레인지를 돌려 주세요"]) expect(riskyUse(t)?.use, t).toBe("on");
+    for (const t of ["인덕션을 꺼 주세요"]) expect(riskyUse(t)?.use, t).toBe("off");
+    for (const t of ["냄비를 인덕션에 올려 주세요", "인덕션은 아직 켜지 마세요", "인덕션은 켜지 말아 주세요"]) expect(riskyUse(t)?.use, t).toBe("safe");
+    for (const t of ["에어컨을 켜 주세요", "거실 불 켜 줘", "물이 끓을 때까지 기다려요."]) expect(riskyUse(t), t).toBeNull();
+    expect(riskyUse("불을 켜 주세요", "cooktop")?.use).toBe("on");
+    expect(riskyUse("불을 켜 주세요", "aircon")).toBeNull();
   });
 });
 
