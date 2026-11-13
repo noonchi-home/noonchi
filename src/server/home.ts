@@ -190,7 +190,9 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     if (warning) log(`[경고] ${warning}`);
     const layout = loadLayout(home, { runtimeDir, log });
     if (!layout) log(`[경고] ${home.scenePath}이 없어 배치 보정을 끕니다(twin-studio에서 집을 먼저 빌드하세요).`);
-    const agent = new Agent({ hub: signals, policy, rooms: twin.rooms, provider, layout });
+    // 들은 말(실제 폰이 들은 말 가운데 명령의 답이 아닌 말)을 기록·방송에 그대로 남길지(KEEP_HEARD_TEXT=1, 기본 꺼짐: 「들은 말 있음」만)
+    const keepHeard = /^(1|true|on)$/i.test(env.KEEP_HEARD_TEXT?.trim() ?? "");
+    const agent = new Agent({ hub: signals, policy, rooms: twin.rooms, provider, layout, keepHeard });
     // 에이전트 계획 모드(src/agent/planner.ts): PAM이 고른 행동 하나를 단계 계획으로. 말 요청 에이전트와 같은 공급자
     const planner = new Planner({ provider });
     // 에이전트 관찰 모드(src/agent/observer.ts): 잘 못 볼 때 가까이 보기·사람 부탁·기다리기 중 하나를 고른다. 말 요청·계획 모드와 같은 공급자
@@ -403,7 +405,6 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     }
     // 실제 폰이 들은 말 가운데 지금 명령의 답이 아닌 말: 관찰 텍스트 한 줄로 판단 호출에 넘긴다(눈치 모드에서도).
     // 그 말 자체는 기록하지 않는다: 기록·대시보드에는 내용 없는 표시(HEARD_MARK)만 남긴다. KEEP_HEARD_TEXT=1이면 그대로 남긴다(기본 꺼짐)
-    const keepHeard = /^(1|true|on)$/i.test(env.KEEP_HEARD_TEXT?.trim() ?? "");
     const heardSpeech = (text: string) => {
       if (!world || !decider) return;
       const changes = world.heard(text, nowMs());

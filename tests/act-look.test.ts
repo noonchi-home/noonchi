@@ -377,6 +377,19 @@ describe("보기 담당: 코치 계획의 다른 행동(off_track)과 들은 말
     expect(JSON.stringify(t.logs)).not.toMatch(/뭐 해야|거실 불|그렇구나/);
   });
 
+  it("heard: tell_person 글이 들은 말을 그대로 옮겨도 실제 폰에 읽는 글(tell)은 그대로이고, 기록·방송하는 look 글에서는 그 말을 뺀다", async () => {
+    const SAID = "냄비 어디 있지";
+    const TOLD = `${SAID} 하셨는데 수납장에서 꺼내 주세요`;
+    const told: string[] = [];
+    const { s } = stray();
+    const base = { planId: s.planId, stepId: s.stepId, label: s.label, command: s.command, at: s.at, steps: s.steps, signal: s.signal };
+    const t = await setup({ script: () => [["tell_person", { text: TOLD, reason: "냄비를 찾아서" }]], options: { tell: (_p, _s, text) => { told.push(text); return true; } } });
+    expect(await t.looker.heard(s.planId, s.stepId, SAID, base)).toBe("told");
+    expect(told).toEqual([TOLD]);
+    expect(t.looks().map((l) => l.text)).toEqual(["다시 알림 · 들은 말 하셨는데 수납장에서 꺼내 주세요"]);
+    expect(JSON.stringify(t.logs)).not.toContain(SAID);
+  });
+
   it("heard: 보기 담당이 바쁘거나, 한 시간 상한을 넘었거나, 관찰 모드가 실패하면 passed(말 요청 에이전트로 넘긴다)", async () => {
     const { s } = stray();
     const base = { planId: s.planId, stepId: s.stepId, label: s.label, command: s.command, at: s.at, steps: s.steps, signal: s.signal };

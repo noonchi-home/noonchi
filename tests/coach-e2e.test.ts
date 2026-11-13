@@ -239,8 +239,9 @@ describe("코치 모드: 라면 끓이기 알려 주기", () => {
     for (const words of ["끓이는 법 알려 줘", "뭐 해야 되지", "에어컨 켜 줘"]) expect(stored).not.toContain(words);
     expect(rows.filter((r) => r.kind === "world").map((r) => r.text)).toContain("들은 말 있음");
     expect(rows.filter((r) => r.kind === "pam_text").some((r) => r.text.includes("들은 말 있음"))).toBe(true);
-    const shown = JSON.stringify(s.dash.filter((m) => m.type === "brain" || m.type === "say" || m.type === "plan"));
-    for (const words of ["끓이는 법 알려 줘", "뭐 해야 되지"]) expect(shown).not.toContain(words);
+    const shown = JSON.stringify(s.dash.filter((m) => m.type === "brain" || m.type === "say" || m.type === "plan" || m.type === "agent"));
+    for (const words of ["끓이는 법 알려 줘", "뭐 해야 되지", "에어컨 켜 줘"]) expect(shown).not.toContain(words);
+    expect(s.dash.filter((m) => m.type === "agent" && m.event === "reply").map((m) => m.message)).toContain("들은 말 있음");
     expect(readFileSync(join(s.runtimeDir, "homes", "mokryeon_180b", "lessons.json"), "utf8")).not.toMatch(/알려 줘|뭐 해야/);
   }, 120_000);
 

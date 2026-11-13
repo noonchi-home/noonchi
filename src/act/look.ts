@@ -260,8 +260,11 @@ export class Looker {
       text = LOOK_TEXT.waited(spot?.label ?? null);
       job.outcome?.("waited");
     }
-    // 들은 말은 기록하지 않는다: 관찰 모드가 까닭에 그 말을 그대로 옮겼으면 뺀다
-    if (job.said) choice = { ...choice, reason: redactSaid(choice.reason, [job.said]) };
+    // 들은 말은 기록하지 않는다: 관찰 모드가 까닭이나 다시 알리는 글에 그 말을 그대로 옮겼으면 기록·방송하는 글에서 뺀다(실제 폰에 읽는 글은 그대로 보냈다)
+    if (job.said) {
+      choice = { ...choice, reason: redactSaid(choice.reason, [job.said]) };
+      text = redactSaid(text, [job.said]);
+    }
     this.record(job, choice, spot, text, result, detail);
     job.settle?.(counted);
   }

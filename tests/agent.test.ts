@@ -381,6 +381,26 @@ describe("Agent + OpenAI 공급자(가짜 서버): 한국어 요청", () => {
     expect(events.find((e) => e.event === "reply")).toMatchObject({ reply: "" });
   });
 
+  it("들은 말(heard) 차례의 에이전트 방송에는 그 말을 싣지 않는다: reply 이벤트 message는 「들은 말 있음」, 답 글·도구 까닭에 옮긴 그 말도 뺀다. 돌려주는 답(폰이 읽는 글)은 그대로", async () => {
+    const SAID = "아 덥다 거실 TV 켜줘";
+    llm.script[SAID] = [[["turn_on", { device_id: "tv_living", reason: `「${SAID}」라고 해서` }]], `「${SAID}」 하셔서 거실 TV를 켰어요.`];
+    const events: AgentEvent[] = [];
+    const { agent } = llmAgent(events);
+    const r = await agent.chat("phone", SAID, { heard: true });
+    expect(r.reply).toBe(`「${SAID}」 하셔서 거실 TV를 켰어요.`);
+    expect(events.find((e) => e.event === "reply")).toMatchObject({ message: "들은 말 있음", reply: "「들은 말」 하셔서 거실 TV를 켰어요." });
+    expect(JSON.stringify(events)).not.toContain(SAID);
+    // 들은 말이 아닌 요청(대시보드·MCP)은 그대로 싣는다
+    const typed: AgentEvent[] = [];
+    await llmAgent(typed).agent.chat("s", SAID);
+    expect(typed.find((e) => e.event === "reply")).toMatchObject({ message: SAID });
+    // 남기기 설정(KEEP_HEARD_TEXT)을 켜면 들은 말도 그대로 싣는다
+    const kept: AgentEvent[] = [];
+    const home = makeHome();
+    await new Agent({ hub: home.hub, policy: home.policy, rooms: ROOMS, provider: llm.provider(), onEvent: (e) => kept.push(e), keepHeard: true }).chat("phone", SAID, { heard: true });
+    expect(kept.find((e) => e.event === "reply")).toMatchObject({ message: SAID });
+  });
+
   it("leave_it과 가전 도구를 같이 부르면 가전 결과를 말한다", async () => {
     llm.script["아 덥다 거실 TV 켜줘"] = [[["leave_it", {}], ["turn_on", { device_id: "tv_living", reason: "TV를 켜 달라고 해서" }]], "거실 TV를 켰어요."];
     const { hub, agent } = llmAgent();

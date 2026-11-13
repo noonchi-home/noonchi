@@ -15,6 +15,7 @@ import { askApproval, doneSentence, toolForCommand } from "./phrases.js";
 import { buildSystemPrompt } from "./prompts.js";
 import { LAYOUT_TOOLS, type LayoutTools } from "./layoutTools.js";
 import { observe } from "./observe.js";
+import { HEARD_MARK, redactSaid } from "../world/labels.js";
 import { AGENT_TOOLS, LEAVE_IT, localBackend, runTool, unverifiedSentence, type ToolBackend, type ToolDef, type ToolResult } from "./tools.js";
 
 export type { AgentAction, AgentEvent, ChatResult, ConfirmResult, PendingView } from "../contract/events.js";
@@ -92,6 +93,8 @@ export interface AgentOptions {
   onEvent?: (e: AgentEvent) => void;
   /** 배치 보정 도구(find_objects·move_object…)를 켠다. */
   layout?: LayoutTools;
+  /** 참이면 들은 말(heard) 차례의 이벤트에도 그 말을 그대로 싣는다(KEEP_HEARD_TEXT). 기본은 「들은 말 있음」으로 가리고, 답 글·도구 까닭에 옮긴 그 말도 뺀다. */
+  keepHeard?: boolean;
 }
 
 interface Session {
@@ -100,6 +103,8 @@ interface Session {
   pending: Set<string>;
   lastUsed: number;
   queue: Promise<unknown>;
+  /** 지금 차례가 들은 말이고 가려야 하면 그 말(이벤트에 싣지 않는다). */
+  hide: string | null;
 }
 
 const AFFIRMATIVE = /^(응|어|엉|네|넹|예|그래|좋아|확인|승인|ㅇㅇ|ㅇㅋ|오케이|ok|okay|yes|진행)(요|해|해요|해줘|해주세요|할게|합니다|이요)?[\s.!~,]*(열어\s*줘|해\s*줘|진행해\s*줘|부탁해)?[\s.!~]*$/i;
@@ -135,6 +140,7 @@ export class Agent {
   private readonly rooms?: RoomSpec[];
   private readonly maxRounds: number;
   private readonly maxSessions: number;
+  private readonly keepHeard: boolean;
   private readonly layout?: LayoutTools;
   private readonly tools: ToolDef[];
   /** 모델에게 보이는 도구(reason 필수). 실행은 tools로 한다. */
@@ -150,6 +156,7 @@ export class Agent {
     this.rooms = opts.rooms;
     this.maxRounds = opts.maxToolRounds ?? 6;
     this.maxSessions = opts.maxSessions ?? 200;
+    this.keepHeard = opts.keepHeard === true;
     this.layout = opts.layout;
     this.tools = opts.layout ? [...AGENT_TOOLS, ...LAYOUT_TOOLS] : AGENT_TOOLS;
     this.modelTools = this.tools.map(withReason);
@@ -210,6 +217,9 @@ export class Agent {
   private async handle(s: Session, message: string, opts: ChatOptions): Promise<ChatResult> {
     const actions: AgentAction[] = [];
     this.prune(s);
+    // 늘 듣는 실제 폰이 들은 말은 이벤트(/events 방송)에 싣지 않는다: 돌려주는 답(폰이 읽는 글)은 그대로
+    const said = opts.heard && !this.keepHeard && message.trim() ? message.trim() : null;
+    s.hide = said;
     let reply: string;
     const waiting = s.pending.size > 0;
     const answer = waiting ? this.spokenAnswer(message) : null;
@@ -218,7 +228,8 @@ export class Agent {
     else if (waiting && !opts.heard && isNegative(message)) reply = this.cancelAll(s, message);
     else reply = await this.runModel(s, message, actions);
     const pendingConfirmations = this.pending(s.id);
-    this.emit({ event: "reply", sessionId: s.id, message, reply, actions, pendingConfirmations });
+    s.hide = null;
+    this.emit({ event: "reply", sessionId: s.id, message: said ? HEARD_MARK : message, reply: said ? redactSaid(reply, [said]) : reply, actions, pendingConfirmations });
     return { sessionId: s.id, reply, actions, pendingConfirmations, provider: this.provider.name };
   }
 
@@ -262,7 +273,7 @@ export class Agent {
     const action: AgentAction = {
       tool: call.name, args, ok: result.ok, message: result.message, error: result.error,
       deviceId: result.device?.id, deviceLabel: result.device?.label, needsConfirmation: result.needsConfirmation ? true : undefined,
-      reason: typeof reason === "string" && reason.trim() ? reason.trim().slice(0, 200) : undefined,
+      reason: typeof reason === "string" && reason.trim() ? redactSaid(reason.trim(), s.hide ? [s.hide] : []).slice(0, 200) : undefined,
       observation: observe(call.name, result),
       at: new Date().toISOString(),
     };
@@ -373,7 +384,7 @@ export class Agent {
         const oldest = [...this.sessions.values()].sort((a, b) => a.lastUsed - b.lastUsed)[0];
         if (oldest) this.sessions.delete(oldest.id);
       }
-      s = { id: key, state: this.provider.createState(), pending: new Set(), lastUsed: Date.now(), queue: Promise.resolve() };
+      s = { id: key, state: this.provider.createState(), pending: new Set(), lastUsed: Date.now(), queue: Promise.resolve(), hide: null };
       this.sessions.set(key, s);
     }
     s.lastUsed = Date.now();
