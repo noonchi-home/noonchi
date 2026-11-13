@@ -710,8 +710,8 @@ private askToShow(deviceId: string): void;
 
 **Files:**
 - Create: `src/contract/phone-version.ts`(`PHONE_PROTOCOL`)
-- Modify: `src/contract/phone.ts`(`PhoneSafety`, `PhoneSafetyAnswer`, `PhoneTalk` say의 `at`, `PhoneStatus.protocol`), `src/phone/server.ts`(안전 안내 보내기·받기, say `at` 넘기기, 상태에 판본), `src/server/home.ts`(`onAnswer` 연결: 버린 답은 에이전트로 보내지 않음), `src/act/track.ts`(`onHeard(text, at)` → `HeardResult`), `ui/src/phone/core/link.js`(다시 붙을 때 판본 확인), `ui/src/phone/core/talk.js`·`talk.d.ts`(말 시작 알림), `ui/src/phone/controller.ts`(`say`, `safetyAnswer`), `ui/src/phone/state.ts`, `ui/src/phone/PhoneScreen.tsx`(안전 안내 자리, 명령 단추 key)
-- Test: `tests/phone-server.test.ts`, `tests/act-track.test.ts`, `tests/agent.test.ts`, `ui/tests/phone-screen.test.tsx`, `ui/tests/phone-controller.test.ts`, `tests/phone-link.test.ts`(link.js 시험이 있는 곳)
+- Modify: `src/contract/phone.ts`(`PhoneSafety`, `PhoneSafetyAnswer`, `PhoneTalk` say의 `at`, `PhoneStatus.protocol`), `src/phone/server.ts`(안전 안내 보내기·받기, say `at` 넘기기, 상태에 판본), `src/server/home.ts`(`onAnswer`·`onSay` 연결: 버린 답은 에이전트로 보내지 않음, 판본이 맞는 폰이 없으면 새 계획을 미룸), `src/act/track.ts`(`onHeard(text, at)` → `HeardResult`), `src/agent/agent.ts`(들은 말의 승인은 `answerToken` 하나만, 들은 말로 `answerAll` 하지 않음), `ui/src/phone/core/link.js`(연결 때 판본 알리기, 다시 붙을 때 판본 확인), `ui/src/phone/core/talk.js`·`talk.d.ts`(말 시작 알림), `ui/src/phone/controller.ts`(`say`, `safetyAnswer`), `ui/src/phone/state.ts`, `ui/src/phone/PhoneScreen.tsx`(안전 안내 자리, 명령 단추 key)
+- Test: `tests/phone-server.test.ts`, `tests/act-track.test.ts`, `tests/agent.test.ts`, `tests/phone-talk.test.ts`, `ui/tests/phone-screen.test.tsx`, `ui/tests/phone-controller.test.ts`, `tests/phone-link.test.ts`(link.js 시험이 있는 곳)
 
 **Interfaces:**
 
@@ -721,8 +721,8 @@ private askToShow(deviceId: string): void;
 export interface PhoneSafety { type: "safety"; items: { id: string; text: string; choices: PhoneChoice[]; speak: boolean }[] }
 /** 실제 폰 → 서버: 안전 안내 자리 단추 답(그 자리 단추로만, 말 답은 없다). */
 export interface PhoneSafetyAnswer { type: "safety_answer"; id: string; choice: string }
-/** 말하기 시작할 때 명령 줄에 떠 있던 것: 명령(계획 id·단계 id) 또는 아무것도 없음. 새 폰은 늘 싣는다. 칸이 없으면 옛 탭이다. */
-export type HeardAt = { kind: "command"; id: string; step: string } | { kind: "none" };
+/** 말하기 시작할 때 폰에 떠 있던 것: 명령 줄(명령의 계획 id·단계 id, 없으면 none)과 승인 대기 목록에 보인 token들. 새 폰은 늘 싣는다. 칸이 없으면 옛 탭이다. */
+export type HeardAt = ({ kind: "command"; id: string; step: string } | { kind: "none" }) & { pending: string[] };
 export type PhoneTalk = { type: "say"; text: string; at?: HeardAt } | /* confirm·cancel 그대로 */;
 /** 서버 → 실제 폰 상태(첫 메시지): protocol은 서버가 쓰는 폰 계약 판본. */
 export interface PhoneStatus { /* … */ protocol: number }
@@ -737,10 +737,25 @@ onHeard(text: string, at?: HeardAt): HeardResult;
 //   at이 command이고 지금 명령의 계획 id·단계 id와 같으면 answer.
 //   at이 command인데 다르거나, at 칸이 없으면(옛 탭) stale.
 //   at이 none인데 지금 명령이 떠 있으면(말하는 사이 새 명령이 뜸) stale.
-// 지금 명령이 없고 at이 none이면 null(지금처럼 들은 말·말 요청 에이전트로 간다: 에이전트의 위험 가전 승인 대기를 말로 답하는 길은 그대로).
-// src/server/home.ts onAnswer: stale이면 들은 말로 기록만 하고(heardSpeech, 기록 줄에 「늦은 답이라 쓰지 않음」) { handled: true, reply: "" }를 돌려 에이전트 대화로 넘기지 않는다.
-// ui/src/phone/core/talk.js createListener hooks에 onSpeechStart() 더함(인식 speechstart). controller가 그때 명령 줄의 지금 명령(없으면 none)을 잡아 두고 그 말을 보낼 때 at으로 싣는다.
-// ui/src/phone/core/link.js: 연결·다시 붙음마다 상태의 protocol이 폰 빌드의 PHONE_PROTOCOL과 다르면 페이지를 다시 읽는다(location.reload). 같은 탭에서 60초 안에 두 번 다시 읽지 않는다(sessionStorage, 막히면 다시 읽지 않고 화면에 「새로 고침이 필요해요」 상태 한 줄).
+// 지금 명령이 없고 at이 none이면 null(들은 말로 남기고 아래 승인 대기 규칙으로 간다).
+// 에이전트 승인 대기(위험 가전, 폰의 승인 대기 목록)를 말로 답하기: 말 전체가 승인·거절 답일 때만(지금 규칙) 그리고
+//   at.pending이 정확히 token 하나이고 그 token이 지금도 대기 중이면 그 token 하나만 답한다(agent.answerToken(token, 답)). 지금 대기가 여럿이어도 다른 token은 건드리지 않는다.
+//   at.pending이 비었거나 둘 이상이거나 그 token이 이미 없으면 stale(에이전트로 넘기지 않음, 폰 답 글 없음, 기록에 「늦은 답이라 쓰지 않음」). 둘 이상이면 승인 대기 목록 단추로만 답한다.
+//   들은 말(heard)로는 answerAll(src/agent/agent.ts 332행)을 부르지 않는다. 글로 한 요청(heard 아님)은 지금처럼.
+// src/server/home.ts onAnswer·onSay: stale이면 들은 말로 기록만 하고(heardSpeech) { handled: true, reply: "" }를 돌려 에이전트 대화로 넘기지 않는다.
+// src/agent/agent.ts
+/** 승인 대기 token 하나만 답한다(지금 대기가 아니면 false). 다른 대기는 그대로. */
+answerToken(token: string, answer: ApprovalAnswer): Promise<{ ok: boolean; reply: string }>;
+// ui/src/phone/core/talk.js createListener hooks에 onSpeechStart() 더함(인식 speechstart). controller가 그때 명령 줄의 지금 명령(없으면 none)과 승인 대기 목록에 보인 token들을 잡아 두고 그 말을 보낼 때 at으로 싣는다.
+// ui/src/phone/core/link.js: 소켓이 열리면 바로 { type: "hello", protocol: PHONE_PROTOCOL }를 보낸다. 연결·다시 붙음마다 상태의 protocol이 폰 빌드의 PHONE_PROTOCOL과 다르면 페이지를 다시 읽는다(location.reload).
+//   같은 탭에서 60초 안에 두 번 다시 읽지 않는다(sessionStorage, 막히면 다시 읽지 않고 화면에 「새로 고침이 필요해요」 상태 한 줄).
+// 이미 열린 옛 탭에는 이 검사가 없다. 그래서 서버가 막는다(src/phone/server.ts):
+export interface PhoneHello { type: "hello"; protocol: number }
+//   연결마다 판본을 기다린다. 열린 뒤 2초 안에 hello가 없거나 protocol이 PHONE_PROTOCOL과 다르면 그 연결은 옛 탭이다.
+//   옛 탭에는 옛 탭도 그리는 기존 메시지로 새로 고침 안내를 보낸다: PhoneCommand { id: "refresh", step: "refresh", text: REFRESH_TEXT, choices: [], vision: null, target: null, speak: true }
+//   (REFRESH_TEXT = "화면을 새로 고쳐 주세요", src/plan/labels.ts). 옛 탭에는 계획 명령·안전 안내를 보내지 않고, 그 탭의 answer·confirm·cancel·say 답은 받지 않는다(관찰 사진은 받는다).
+//   판본이 맞는 폰이 하나도 없으면 실행 추적은 새 계획을 시작하지 않는다(실행 기록 EXEC_TEXT.phoneOld = "폰 화면 새로 고침 전이라 새 일을 미룸"). 도는 중이던 계획은 그 단계 명령을 맞는 폰이 붙을 때 다시 보낸다.
+//   hello가 판본이 맞게 오기 전(2초 안)에는 그 연결에 계획 명령을 보내지 않는다.
 ```
 - 명령 단추: `ChoiceButtons`를 감싼 명령 줄 묶음의 `key`를 `${id}:${step}`로 둔다(명령이 바뀌면 새로 그린다). 단추는 누르기 시작(pointerdown) 때의 계획 id·단계 id를 잡고, 손을 뗄 때 지금 명령과 다르면 보내지 않는다(누르는 중 명령이 바뀌면 그 누르기는 취소).
 - 안전 안내 자리 화면은 저장소 `ui/src/components/ui` 안의 21st.dev 부품만 쓴다(지금 승인 대기 목록 `PendingList`와 같은 `Card`·`Item`·`ItemContent`·`ItemTitle`·`ItemActions`·`Button`). 새 부품·손으로 만든 꾸밈은 쓰지 않는다. 글은 서버 글(`CAUTION_TEXT.off`, `CLOSER_TEXT`)만.
@@ -749,8 +764,9 @@ onHeard(text: string, at?: HeardAt): HeardResult;
 - [ ] **Step 0: 배치 스케치(사용자 확인).** 안전 안내 자리가 들어간 실제 폰 화면(세로·가로)의 구조만 보이는 HTML 스케치를 만들어 사용자에게 보이고, 자리(명령 줄 위·아래, 승인 대기 목록과의 관계)를 확인받은 뒤 Step 1로 간다. 확인 전에는 화면 코드를 쓰지 않는다.
 - [ ] **Step 1: 실패하는 시험.**
   - 안전 안내 자리: 「`safety` 메시지가 오면 명령 줄과 따로 안내마다 Item 하나와 「완료」 단추가 보이고, 누르면 `safety_answer`(그 안내 id)를 보낸다」, 「명령 줄의 명령·단추는 그대로다」, 「안전 안내 자리 단추에 날 button이 없다(부품 lint)」, 「말 「완료」는 `safety_answer`를 보내지 않는다」.
-  - 음성 id: **「A 명령이 떠 있을 때 말하기 시작해 B 명령으로 바뀐 뒤 「완료」가 도착하면(at = A) B 단계가 넘어가지 않고 에이전트 대화로도 가지 않는다」**, **「at이 다른 「승인」(B의 승인 질문이 떠 있음)은 B 승인도 안 되고 에이전트로도 가지 않으며, 에이전트의 다른 승인 대기도 그대로다」**, **「at 칸이 없는 「완료」(옛 탭)는 넘어가지 않고 에이전트로도 가지 않는다」**, 「at이 none인데 명령이 떠 있으면 「완료」는 버린다」, 「at이 지금 명령과 같으면 넘어간다」, 「「그만」은 at과 상관없이(칸이 없어도) 받는다」, 「명령이 없고 at이 none인 「승인」은 지금처럼 에이전트의 위험 가전 승인 대기에 간다」, 「버린 말은 기록에 들은 말로 남는다」.
-  - 판본: 「폰 상태의 protocol이 폰 빌드와 다르면 다시 붙을 때 페이지를 다시 읽는다」, 「같으면 다시 읽지 않는다」, 「60초 안에 두 번 다시 읽지 않는다」, 「안전 안내 자리 요소가 `[data-phone-zone=thumb]` 밖에 있다」.
+  - 음성 id: **「A 명령이 떠 있을 때 말하기 시작해 B 명령으로 바뀐 뒤 「완료」가 도착하면(at = A) B 단계가 넘어가지 않고 에이전트 대화로도 가지 않는다」**, **「at이 다른 「승인」(B의 승인 질문이 떠 있음)은 B 승인도 안 되고 에이전트로도 가지 않으며, 에이전트의 다른 승인 대기도 그대로다」**, **「at 칸이 없는 「완료」(옛 탭)는 넘어가지 않고 에이전트로도 가지 않는다」**, 「at이 none인데 명령이 떠 있으면 「완료」는 버린다」, 「at이 지금 명령과 같으면 넘어간다」, 「「그만」은 at과 상관없이(칸이 없어도) 받는다」, **「A 승인 대기에 대한 「승인」이 늦게 도착(at.pending = [A])했는데 그사이 A는 끝나고 B가 대기 중이면 B는 확정되지 않고 에이전트로도 가지 않는다」**(시험 이름 「들은 승인은 말할 때 보인 대기 token 하나만 답한다」), 「at.pending = [A]이고 A가 아직 대기면 A만 확정되고 같이 대기 중인 B는 그대로다」, 「at.pending이 둘 이상이거나 비었으면 버린다」, 「들은 말로는 answerAll이 불리지 않는다」, 「버린 말은 기록에 들은 말로 남는다」.
+  - 옛 탭: **「hello를 보내지 않는 탭(판본 없음)이 붙으면 「화면을 새로 고쳐 주세요」 명령이 가고, 그 탭의 「완료」 answer·confirm은 받지 않으며, 그 탭만 붙어 있으면 새 계획이 시작되지 않고 실행 기록에 「폰 화면 새로 고침 전이라 새 일을 미룸」」**(시험 이름 「판본 없는 폰 탭은 실행을 막고 새로 고침을 안내한다」), 「protocol이 다른 hello도 같다」, 「옛 탭에는 safety·계획 명령을 보내지 않는다」, 「맞는 판본 탭이 붙으면 미뤘던 계획이 시작되고 명령이 그 탭에 간다」.
+  - 판본: 「폰 상태의 protocol이 폰 빌드와 다르면 다시 붙을 때 페이지를 다시 읽는다」, 「새 폰은 열리자마자 hello를 보낸다」, 「같으면 다시 읽지 않는다」, 「60초 안에 두 번 다시 읽지 않는다」, 「안전 안내 자리 요소가 `[data-phone-zone=thumb]` 밖에 있다」.
   - 단추 key: **「A 명령 「완료」를 누르는 중(pointerdown 뒤) B 명령으로 바뀌면 손을 떼도 아무 답도 보내지 않는다」**, **「명령이 바뀌면 단추 묶음이 새로 그려진다(key = 계획 id:단계 id)」**.
   - 폰 서버: 「`safety_answer`를 받아 실행 추적에 넘기고, 모르는 id는 무시한다」, 「새로 붙은 폰은 지금 안전 안내 목록을 받는다」.
 - [ ] **Step 2:** `npm run heavy -- npx vitest run tests/phone-server.test.ts tests/act-track.test.ts`, `npm run heavy -- npm test --prefix ui -- phone-screen phone-controller` → 실패 확인.
@@ -958,6 +974,7 @@ export function microwaveSteps(ids: { microwave: string; waitS?: number /* wait 
 - PAM 계약 그대로: 「PAM 계약」 절, Task 13 시험 7.
 - Codex 1차 지적 9개: 1 Task 4 바꾸기 2·4, 2 「일주일을 시연 안에서 보이는 길」·Task 7·8, 3 Task 5 범위, 4 Task 2 행동 단위, 5 Task 6 API·Task 8 확인, 6 Task 8 `start`·Task 9 `--start-at`, 7 Task 11 `unbaked`, 8 Task 10 차례 쓰기, 9 Task 10 붙잡기·Task 9 `--tail`.
 - 서버 글 구조(T1~T4)에 맞춤: 「조사한 사실」 사람 단계 글 절, Task 12 표(글·끝 조건을 코드가 내는 값으로), 「라면 대본」 절, Task 13 시험 5·6.
+- Codex 14차 지적 2개: P1 Task 11d 들은 승인은 말할 때 보인 승인 대기 token 하나만 답하고(`answerToken`) 없거나 다르면 버림, 들은 말로 `answerAll` 안 함, P2 폰이 연결 때 판본(hello)을 알리고 판본 없거나 다른 옛 탭은 서버가 새로 고침 명령만 보내고 실행·답을 막음.
 - Codex 13차 지적 2개: P1 Task 11d `onHeard` 결과에 「버림」(stale)을 두고 에이전트로 넘기지 않음, P2 명령 답 말에는 `at`이 꼭 있어야 하고(옛 탭은 버림, 「그만」만 늘 받음) 계약 판본(`PHONE_PROTOCOL`)이 다르면 폰이 다시 읽음, 안전 안내 자리는 엄지 영역 밖.
 - Codex 12차 지적 4개: 1·2·3 멈춤·번갈아 보이기를 빼고 닫힌 계획의 안내는 폰 안전 안내 자리(Task 11d, 자기 id·단추 답만, 스케치 확인 먼저)로, 음성 답은 말 시작 때 명령 id를 실어 다르면 버림, 명령 단추 key·누르는 중 바뀌면 취소, 4 Task 11a 같은 값이라도 근거 종류가 바뀌면 이력 줄.
 - Codex 11차 지적 3개: P1 Task 11a 명시 꺼짐(`not_in_use`)·추정 꺼짐을 나누고 안전 해제는 명시만, P1 Task 11c B의 켜진 가전 관련 단계는 멈추지 않고 A 안내와 10초마다 번갈아 보임, P1 Task 11c 켜기 회차(cycle)로 옛 부탁·근거 버림과 지금 켜짐 신호면 풀지 않음.
