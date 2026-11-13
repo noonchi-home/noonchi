@@ -10,7 +10,7 @@
 
 **Spec:** 허정오 시연 시나리오(2026-11-13): 「[눈치 모드] 1. 첫 일주일: 상황 파악 후 작업 처리, 의도 파악 후 작업 처리 2. 일주일 후: 사용자의 습관과 학습한 선제적 행동 [코치모드] 3. 탈시설 장애인을 위한 가이드 모드 4. 가정 내 노인분들 위한 뭔가?」, 「눈치모드로 동작할지 코치모드로 동작할지 알아서 판단하는 것도 의미가 있을듯」, 「일주일 뒤에도 습관 기반 행동하는 것도 눈치 모드야」, 「3번 4번 순서를 바꿔줘」(코치 모드는 3. 노인, 4. 탈시설 장애인 순서). 아래 「정한 것」은 사용자가 모두 추천안으로 정했다(2026-11-13). 회의록 2026-11-12(눈치코치, PAM 매일 반성 후 다음 날 적용, p값 후보정, 기본 동작, ThinQ 사용설명서), 2026-11-09(가이드 모드). 구현 뒤 `docs` 저장소 `01_Product/구현명세서 SSOT.md`(돕는 방식·반성·시연)와 `변경이력.md`를 고친다.
 
-**먼저 된 것:** 같은 브랜치의 `2026-11-13-cup-branches.md` Task 1~10, `2026-11-13-coach-mode.md` Task 1~13과 Codex 고침(`c224568`·`fec2e7d`·`cc3cc17`·`f267e6c`·`f83b0b0`). 코치 계획 Task 14 Step 1(영상 판정에 말 넣기 `--say`)은 아직 없어 이 계획 Task 9로 옮겼다.
+**먼저 된 것:** 같은 브랜치의 `2026-11-13-cup-branches.md` Task 1~10, `2026-11-13-coach-mode.md` Task 1~13과 Codex 고침(`c224568`·`fec2e7d`·`cc3cc17`·`f267e6c`·`f83b0b0`·`b723636`). 코치 계획 Task 14 Step 1(영상 판정에 말 넣기 `--say`)은 아직 없어 이 계획 Task 9로 옮겼다.
 
 ## 정한 것 (사용자, 2026-11-13)
 
@@ -25,7 +25,7 @@
 9. 「습관」 칩은 그 행동에 seed에 없는 규칙이 하나라도 있으면 붙는다(Task 2: 행동 이름만으로는 어느 규칙인지 못 가려 행동 단위로 본다).
 10. 시연 폴더에 첫 승인을 미리 넣는다.
 
-## 조사한 사실 (2026-11-13, `feat/coach-cup` f83b0b0)
+## 조사한 사실 (2026-11-13, `feat/coach-cup` b723636)
 
 **돕는 방식**
 - `AssistMode = "noonchi" | "coach"`, 설정 3단계 「돕는 방식」에서 고른다(`ui/src/setup/ModeStep.tsx`). PAM에 보내는 목록은 `tasksFor(assist)`(`src/act/tasks.ts`).
@@ -39,9 +39,11 @@
 - 반성 사건은 `start.ts`가 바로 방송하고, 새로 붙은 대시보드에는 다시 보내지 않는다. 대시보드에 반성 결과를 보이는 자리가 없다.
 - 생각 말풍선 칩 「상태 · …」는 `decision.fsm`(`fsmRuleOf`)에서 온다. **같은 행동이 규칙 여러 개에 있으면 `fsmRuleOf`가 null을 돌려준다**(`src/brain/decision.ts`). seed 「덥다 → 에어컨」과 배운 「TV 보러 앉음 → 에어컨」이 함께 있으면 상태 칩이 사라진다. PAM 답에는 어느 규칙인지가 없다.
 
-**폰 글 거르기(f83b0b0)**
-- 폰으로 나가는 모든 사람용 글(단계 이름·명령·안전 문구·알림·질문·답·다시 알리기·사람 부탁·에이전트 답)은 `phoneLineProblem`(`src/agent/policy.ts`)이 거른다. 위험 가전(인덕션·전자레인지) 이름이 나오거나 대상이 위험 가전인 글은 허용 낱말(가 주세요·열어·닫아·넣어·꺼내·기다려·조심·뜨거워 …)이나 끄는 말만 통과하고, 켜는 말·조작하는 말(누르·눌러·버튼·작동·돌려·돌리·시작해 주 …)이나 모르는 말은 그 가전의 hand_device(to on) do 단계에서만 쓸 수 있다.
-- hand_device가 있는 do의 끝 조건은 그 단계가 시작된 뒤에 바뀐 것 `{"device": id, "became": "on" | "off"}` 하나다.
+**위험 가전 폰 글(b723636, 기본 거부)**
+- 모델이 쓴 글(단계 이름·명령·안전 문구·say·ask·답·다시 알리기·사람 부탁·에이전트 답)에 위험 가전(인덕션·전자레인지) 이름이 나오면 폰으로 나가지 않는다(계획 검사가 버린다).
+- 위험 가전 단계로 받는 것은 그 가전이 대상인 go·pick·place와 그 가전의 `hand_device`(on·off·open·close)가 붙은 do뿐이다. 그 단계의 이름·명령·안전 문구는 서버 글 틀 `RISKY_STEP_TEXT`(`src/plan/labels.ts`)로 바뀐다. 대상이 위험 가전인 자유 do는 버린다. 위험 가전 단계의 대상은 기기 id여야 한다(기기 목록에서 종류를 찾는다).
+- 서버 글(전자레인지): go 「전자레인지로 가 주세요」, place 「전자레인지 안에 넣어 주세요」, pick 「전자레인지에서 꺼내 주세요」, on 「전자레인지를 켜 주세요」(안전 문구 「그릇이 뜨거워져요.」), off 「전자레인지를 꺼 주세요」, open·close 「전자레인지 문을 열어·닫아 주세요」. 넣고 꺼내는 물건 이름은 글에 없다.
+- 승인 질문과 켠 가전 추적은 `on`에서만이다. 켠 위험 가전 뒤에는 같은 가전 `hand_device off` do가 꼭 있어야 계획을 받는다. hand_device on·off do의 끝 조건은 `{"device": id, "became": …}`만, open·close는 따로 정한 것이 없다.
 
 **의도·노인·트윈·영상**
 - 들은 말은 관찰 텍스트에 `사람이 말함: 「…」` 줄로 들어간다. 「에어컨 켜기」는 이미 행동 목록에 있다.
@@ -99,6 +101,8 @@
 4. 녹화 중: `npx tsx scripts/demo-setup.ts reflect`: 7일(어제)을 반성한다. 전후로 오늘 고정 상태(`GET /api/memory/day/<오늘>`)를 보고, 돌려받은 `appliesDay`가 오늘이 아니거나 오늘이 다른 판본으로 고정됐으면 멈춘다. 대시보드 생각 말풍선에 배운 규칙이 뜬다.
 5. 폰 영상 `tv-sit.mp4` → PAM이 말없이 에어컨 켜기, 칩 「습관 · …」, 「눈치 · 에어컨 켜기」.
 6. 7일 판본에 말없이 에어컨을 켜는 규칙이 없으면 `reflect --scripted`(서버를 끈 채 대본 판본을 오늘부터로 넣음)로 찍고 자막에 「합성 기록으로 만든 습관」.
+7. 에어컨 습관을 1~6일에 이미 배웠으면 4번 화면은 「배운 습관을 쓰고 있어요」 쪽이다(Task 6 `active`).
+8. 지시문을 고쳐 다시 반성할 때는 한 폴더 안에서 판본·고정을 지우지 않고, 서버를 끄고 `week --fresh`로 새 폴더부터 다시 한다(Task 8).
 
 ## 습관 거르기 자리(박석준, 구현은 하지 않음)
 
@@ -137,16 +141,16 @@ export const keepAll: HabitFilter;   // proposed 그대로, 새 규칙마다 { k
   - PAM에 사진을 넘기지 않는다.
   - 대시보드에 입력창·단추를 더하지 않는다. 반성은 명령줄(`scripts/demo-setup.ts`)이 API로 부른다.
   - 새 화면 칸을 만들지 않는다(생각 말풍선을 그대로 쓴다). 새 칸이 필요해지면 구조만 그린 HTML 스케치를 먼저 보여 주고 확인을 받는다. 부품은 21st.dev 부품, 색은 토큰, 글은 상태만(60자 아래, 화살표·괄호 없음), 글 크기는 부품 원래 크기.
-  - 폰으로 나가는 사람용 글은 `phoneLineProblem`을 지난다. 위험 가전 단계 글은 허용 낱말로 쓰고, 켜는·누르는 말은 hand_device(to on) do 단계에만 둔다.
+  - 위험 가전 폰 글은 기본 거부다(b723636). 계획 대본·지시문·say·wait 글에 위험 가전 이름을 쓰지 않고, 위험 가전 단계는 go·pick·place·hand_device do로만 만들어 서버 글 틀이 나가게 한다.
   - 승인 규칙 그대로. 위험 목록(인덕션 켜기·전자레인지 시작)은 늘 묻는다.
 - 시험·빌드·크롬은 `npm run heavy -- <cmd>`로만, 한 번에 하나. 크롬·dev3d는 PC에 하나만.
 - 이 PC 메모리는 13.8GB다. 녹화(`--record`)할 때는 `BRAIN_YOLO_PROVIDER=cpu`로 띄우고, PAM 서비스·서버·크롬 하나 밖의 무거운 프로그램은 끈다.
 - 실제 모델 비용(추정, VLM 한 장 약 $0.0008·판정 한 번 약 $0.03~0.05에서 셈):
   - 컵·TV 장면 한 판 $0.03~0.05, 대조 한 판 $0.03.
   - 반성 한 번 $0.01~0.05(첫 판에 OpenRouter 사용 기록으로 잰다), 일곱 번 $0.07~0.35, 한 번에 1~4분.
-  - 전자레인지 한 판 $0.08~0.13(기다리기 동안 붙잡은 장면도 VLM이 2초마다 본다).
+  - 전자레인지 한 판 $0.06~0.10(기다리기는 `start-microwave.mp4` 안에서 꺼짐까지 보여 짧다).
   - 라면 한 판 $0.20~0.32(기다리기 두 번, 계획 모델이 고른 시간만큼 VLM이 더 돈다. 4분씩이면 약 $0.19 더).
-  - 한 바퀴(장면 일곱 + 대조 + 반성 일곱) 약 $0.50~0.95. 이 계획 한도 $2.20(두 바퀴 + 다시 돌리기). 넘기 전에 멈추고 보고한다.
+  - 한 바퀴(장면 일곱 + 대조 + 반성 일곱) 약 $0.50~0.90. 지시문을 고쳐 일주일을 새로 반성하면 한 번에 $0.07~0.35 더. 이 계획 한도 $2.20(두 바퀴 + 다시 돌리기). 넘기 전에 멈추고 보고한다.
 - 시연 집 폴더는 `runtime/demo/day1`·`runtime/demo/week`다(`runtime/`은 이미 `.gitignore`에 있다). 그 안의 기록 DB·`setup.json`·`approvals.json`·`lessons.json`·`phone-start.json`과 영상(`runtime/videos/`)은 커밋하지 않는다.
 - 커밋 메시지는 영어, attribution 줄 없음. `.gitignore`·`.ignore`·`ui/public/fonts/OFL-noto-sans-kr.txt`·`.trail/`은 커밋하지 않는다. 푸시는 사용자가 말할 때만.
 
@@ -324,8 +328,10 @@ export const keepAll: HabitFilter;
 ### Task 6: 기억 상태 API와 배운 규칙 보이기
 
 **Files:**
-- Modify: `src/server/app.ts`(`GET /api/memory/day/:day`), `src/history/db.ts`(필요하면 판본 조회 칸), `src/server/start.ts`(반성 사건을 집 묶음에도 넘김), `src/server/home.ts`(`brainLast`에 오늘 마지막 반성), `ui/src/dashboard/data.ts`(`thoughtOf`), `ui/src/dashboard/use-dash.ts`, `src/act/say.ts`, `src/plan/labels.ts`
+- Modify: `src/server/app.ts`(`GET /api/memory/day/:day`), `src/history/db.ts`(필요하면 판본 조회 칸), `src/history/reflect.ts`(`active`), `src/contract/events.ts`, `src/server/start.ts`(반성 사건을 집 묶음에도 넘김), `src/server/home.ts`(`brainLast`에 오늘 마지막 반성), `ui/src/dashboard/data.ts`(`thoughtOf`), `ui/src/dashboard/use-dash.ts`, `src/act/say.ts`, `src/plan/labels.ts`
 - Test: `tests/history-api.test.ts`, `tests/server-events-backlog.test.ts`, `ui/tests/dashboard/data.test.ts`, `tests/act-say.test.ts`
+
+이어 반성에서 에어컨 습관을 1~6일에 이미 배웠으면 7일 반성의 「이번에 새로 더한 규칙」은 빈다. 그래서 둘을 나눠 보낸다: `learned`(이번 반성이 새로 더한 규칙), `active`(새 판본에서 지금 적용 중인, seed에 없는 눈치 규칙).
 
 **Interfaces:**
 
@@ -336,20 +342,28 @@ interface MemoryDayView {
   /** 그날 판단이 이미 고정한 판본(없으면 null). */
   pinned: number | null;
   /** 지금 판단이 부르면 쓸 판본(pinned, 없으면 memoryFor(day)). */
-  uses: { version: number; source: "seed" | "reflection" | "synthetic"; appliesDay: string | null } | null;
+  uses: { version: number; source: "seed" | "reflection" | "synthetic"; appliesDay: string | null; day: string | null } | null;
   latest: number | null;
 }
-// SAY_TEXT.learned = (n: number) => `어제 기록으로 새 습관 ${n}개를 배웠어요.` (sayLine의 reflected?: { atMs: number; n: number }, 20초)
-// WORDS.learnedNow = "새로 배움"
+// reflection 사건·기록 줄 data: learned(이번에 새로 더한 규칙, 코치 행동 빼고), active(새 판본의 규칙 가운데 seed에 없는 것, 코치 행동 빼고), dropped
+type RuleLine = { state: string; trigger: string; action: string };
+// SAY_TEXT.learned = (n) => `어제 기록으로 새 습관 ${n}개를 배웠어요.`
+// SAY_TEXT.using = (n) => `배운 습관 ${n}개를 쓰고 있어요.`
+// sayLine의 reflected?: { atMs: number; learned: number; active: number } (20초)
+// WORDS.learnedNow = "새로 배움", WORDS.learnedRule = "배운 규칙"
 ```
 - 새로 붙은 대시보드는 마지막 판단과 함께 오늘(기록 시간대) 마지막 반성 사건을 `replay: true`로 받는다(기록 DB `reflection` 줄에서 읽는다. 합성 판본도 같다).
-- `thoughtOf`: 반성 사건이 마지막 유효 판단보다 새롭고 `learned`가 있으면 첫 배운 규칙을 보인다: `reasoning` = 트리거 글, 앞 칩 `습관 · 새로 배움`, 뒤 칩 `눈치 · 행동`. 다음 유효 판단이 오면 그 판단으로 바뀐다.
+- `thoughtOf`: 반성 사건이 마지막 유효 판단보다 새로우면
+  - `learned`가 있으면 첫 규칙: `reasoning` = 트리거, 앞 칩 `습관 · 새로 배움`, 뒤 칩 `눈치 · 행동`.
+  - `learned`가 비고 `active`가 있으면 첫 규칙: 앞 칩 `습관 · 배운 규칙`, 뒤 칩 `눈치 · 행동`.
+  - 둘 다 비면 바꾸지 않는다. 다음 유효 판단이 오면 그 판단으로 바뀐다.
+- 말풍선 카드: `learned`가 있으면 `SAY_TEXT.learned`, 없고 `active`가 있으면 `SAY_TEXT.using`.
 
-- [ ] **Step 1: 실패하는 시험.** 「`/api/memory/day/<오늘>`이 판단 전에는 `pinned: null`, 첫 판단 뒤에는 그 판본」, 「이 API를 불러도 고정되지 않는다」, 「반성 뒤 붙은 대시보드가 반성 사건을 다시 받는다」, 「배운 규칙이 생각 말풍선에 뜨고 칩이 `습관 · 새로 배움`, `눈치 · 에어컨 켜기`」, 「다음 판단이 오면 바뀐다」, 「learned가 비면 그대로」, 말풍선 카드 글.
+- [ ] **Step 1: 실패하는 시험.** 「`/api/memory/day/<오늘>`이 판단 전에는 `pinned: null`, 첫 판단 뒤에는 그 판본」, 「이 API를 불러도 고정되지 않는다」, 「반성 사건에 learned·active가 있고, 앞 판본에 이미 있던 에어컨 습관은 learned가 아니라 active에만 있다」, 「반성 뒤 붙은 대시보드가 반성 사건을 다시 받는다」, 「learned가 있으면 `습관 · 새로 배움`, learned가 비고 active가 있으면 `습관 · 배운 규칙`과 「배운 습관 1개를 쓰고 있어요.」」, 「다음 판단이 오면 바뀐다」, 「둘 다 비면 그대로」.
 - [ ] **Step 2:** 시험 실행 → 실패 확인.
 - [ ] **Step 3:** 구현(새 칸 없음, 칸 크기 그대로).
 - [ ] **Step 4:** 통과 확인, `npm run lint`.
-- [ ] **Step 5:** 커밋 `feat(server): expose the day's memory pin and show what reflection learned`.
+- [ ] **Step 5:** 커밋 `feat(server): expose the day's memory pin and show learned and active habits after reflection`.
 
 ### Task 7: 합성 일주일을 지금 FSM과 실제 반성에 맞추기
 
@@ -377,7 +391,7 @@ export interface SeedOptions { /* … */
 - [ ] **Step 4:** 통과 확인.
 - [ ] **Step 5:** 커밋 `feat(seed): build the synthetic week on the current FSM and allow observation-only weeks`.
 
-### Task 8: 시연 준비 명령 (폴더·시작 위치·이어 반성)
+### Task 8: 시연 준비 명령 (폴더·시작 위치·이어 반성·다시 시작)
 
 **Files:**
 - Create: `scripts/demo-setup.ts`, `scripts/demo-start.ts`, `tests/demo-setup.test.ts`
@@ -385,66 +399,89 @@ export interface SeedOptions { /* … */
 **Interfaces:**
 
 ```
-npx tsx scripts/demo-setup.ts day1  [--dir runtime/demo/day1]
+npx tsx scripts/demo-setup.ts day1  [--dir runtime/demo/day1] [--fresh]
   빈 기록 DB, setup.json { version: 1, home: "mokryeon_180b", done: true, mode: "test", assist: "auto" },
   homes/mokryeon_180b/approvals.json(컵 치우기·컵에 물 채워 주기·에어컨 켜기·라면 끓이기 알려 주기·전자레인지로 데우기 알려 주기),
   homes/mokryeon_180b/lessons.json(라면 끓이기 알려 주기 두 판: 이동 넷·냄비 꺼내기 alone 2),
   homes/mokryeon_180b/phone-start.json(첫 장면 cup의 시작 위치)
-npx tsx scripts/demo-setup.ts week  [--dir runtime/demo/week] [--end YYYY-MM-DD(기본 어제)]
+npx tsx scripts/demo-setup.ts week  [--dir runtime/demo/week] [--end YYYY-MM-DD(기본 어제)] [--fresh]
   day1과 같은 파일(phone-start는 tv) + seedHistory({ memories: "none" })
+  폴더에 기록 DB가 이미 있으면 멈추고 「--fresh로 새로 시작하세요」.
+  --fresh는 그 폴더를 <dir>.old-<시각>으로 옮기고 새로 만든다. 서버가 켜져 있으면(GET /api/health 응답) 「서버를 먼저 끄세요」로 멈춘다.
 npx tsx scripts/demo-setup.ts start <cup|tv|microwave|kitchen> [--api http://127.0.0.1:8200]
   서버의 지금 집이 mokryeon_180b인지 GET /api/homes로 보고 아니면 멈춘다. 그 장면 시작 위치를 POST /api/phone/start-pose.
 npx tsx scripts/demo-setup.ts reflect --chain [--api …] [--from 1일차] [--to 6일차]
-  날마다 차례로: GET /api/memory/day/<그날+1>로 pinned가 null인지 → POST /api/reflection/run {day} → appliesDay가 그날+1인지 →
-  GET /api/memory/day/<그날+1>의 uses.version이 새 판본인지. 하나라도 아니면 그 날짜와 까닭을 찍고 멈춘다. 날마다 배운 규칙을 찍는다.
+  날마다 차례로(그날 d, 다음 날 d+1):
+   - 이미 됨: 반성 판본 가운데 day = d이고 appliesDay = d+1이며 GET /api/memory/day/<d+1>의 uses가 그 판본이면 건너뛴다(다시 실행).
+   - 막힘: d+1이 다른 판본으로 고정돼 있으면 멈추고 「앞 판의 고정이 남아 있어요. 서버를 끄고 week --fresh로 다시 시작하세요」.
+   - 할 일: POST /api/reflection/run {day: d} → appliesDay가 d+1인지 → uses.version이 새 판본인지. 아니면 그 날짜와 까닭을 찍고 멈춘다.
+  날마다 learned·active를 찍는다.
 npx tsx scripts/demo-setup.ts reflect [--api …] [--day 어제]
   전: GET /api/memory/day/<오늘> pinned가 null이 아니면 「폰을 켜기 전에 반성하세요」로 멈춘다.
   POST /api/reflection/run → appliesDay가 오늘이 아니면 멈춘다.
-  후: GET /api/memory/day/<오늘>의 pinned가 null 또는 새 판본, uses.version이 새 판본이어야 한다. 아니면 「반성 중에 판단이 오늘 기억을 고정했어요」로 멈춘다.
-  끝에 배운 규칙과 「말없이 에어컨을 켜는 규칙」이 있는지 찍는다(없으면 reflect --scripted를 권한다).
+  후: pinned가 null 또는 새 판본, uses.version이 새 판본이어야 한다. 아니면 「반성 중에 판단이 오늘 기억을 고정했어요」로 멈춘다.
+  끝에 learned·active와 「말없이 에어컨을 켜는 규칙」이 active에 있는지 찍는다(없으면 reflect --scripted를 권한다).
 npx tsx scripts/demo-setup.ts reflect --scripted [--dir runtime/demo/week]
   서버를 끈 채: 합성 판본(seedHistory scripted + habit)을 오늘부터로 넣고, 반성 줄 data.synthetic = true.
 ```
+- 다시 반성하는 절차(지시문을 고친 뒤 등)는 하나뿐이다: 서버를 끈다 → `week --fresh` → 서버를 띄운다 → `reflect --chain` → `reflect`. 한 폴더 안에서 판본·날 고정을 지우거나 덮지 않는다. 같은 판을 이어서 다시 돌릴 때(중간에 멈춘 뒤)는 `reflect --chain`을 그대로 다시 부르면 된 날은 건너뛴다.
 - `scripts/demo-start.ts`: `export const DEMO_STARTS: Record<"cup" | "tv" | "microwave" | "kitchen", { target: string; distanceM: number }>` (cup: `dining_table_978b20c7` 1.5m, tv: 거실 소파 1.8m, microwave: `microwave_kitchen` 1.2m, kitchen: `induction_counter_5641ccf0` 1.5m)와 `export function startFor(scene: SceneJson, target: string, distanceM: number): { position: [number, number]; yaw_deg: number }`(대상 가운데에서 그 방 다각형 가운데 쪽으로 distanceM, 대상을 보는 방향). 소파 id는 Step 3에서 `twin/homes/mokryeon_180b/scene.json`에서 읽어 넣는다.
 
-- [ ] **Step 1: 실패하는 시험.** 「day1이 다섯 파일을 쓰고 기록 DB가 비어 있다」, 「`startFor`가 식탁 앞 1.5m·식탁을 보는 방향을 내고 그 자리가 방 안이다」, 「start가 지금 집이 원룸이면 시작 위치를 보내지 않고 멈춘다」, 「reflect --chain이 가짜 서버로 1~6일을 차례로 부르고, 3일차 appliesDay가 어긋나면 3일차에서 멈춘다」, 「reflect가 오늘 pinned가 있으면 부르지 않는다」, 「반성 뒤 오늘이 다른 판본으로 고정돼 있으면 멈춘다」, 「`--scripted`는 서버 없이 오늘부터 쓰는 판본에 에어컨 습관이 있고 반성 줄에 합성 표시」.
+- [ ] **Step 1: 실패하는 시험.** 「day1이 다섯 파일을 쓰고 기록 DB가 비어 있다」, 「기록 DB가 있는 폴더에 week를 다시 하면 멈추고, `--fresh`는 옛 폴더를 옮기고 새로 만든다」, 「`startFor`가 식탁 앞 1.5m·식탁을 보는 방향을 내고 그 자리가 방 안이다」, 「start가 지금 집이 원룸이면 시작 위치를 보내지 않고 멈춘다」, 「reflect --chain이 가짜 서버로 1~6일을 차례로 부르고, 3일차 appliesDay가 어긋나면 3일차에서 멈춘다」, 「1~3일이 이미 된 폴더에서 다시 돌리면 1~3일은 건너뛰고 4일부터 부른다」, 「4일차 다음 날이 다른 판본으로 고정돼 있으면 부르지 않고 멈춘다」, 「reflect가 오늘 pinned가 있으면 부르지 않는다」, 「반성 뒤 오늘이 다른 판본으로 고정돼 있으면 멈춘다」, 「`--scripted`는 서버 없이 오늘부터 쓰는 판본에 에어컨 습관이 있고 반성 줄에 합성 표시」.
 - [ ] **Step 2:** `npm run heavy -- npx vitest run tests/demo-setup.test.ts` → 실패 확인.
 - [ ] **Step 3:** 구현. 기록 DB·합성 대본은 `scripts/seed-history.ts`의 함수, 시작 위치 모양은 `src/sync/start.ts`의 검사를 쓴다.
 - [ ] **Step 4:** 통과 확인.
-- [ ] **Step 5:** 커밋 `feat(scripts): add demo-setup for folders, scene start poses and chained reflection`.
+- [ ] **Step 5:** 커밋 `feat(scripts): add demo-setup for folders, scene start poses and resumable chained reflection`.
 
-### Task 9: 영상 판정 — 말 넣기, 시작 위치, 끝난 뒤 기다림
+### Task 9: 영상 판정 — 말 넣기, 시작 위치, 붙잡기를 아는 끝내기
 
 **Files:**
-- Modify: `scripts/video-check.ts`(`Args`, 인자 읽기, 실제 판정의 시작 위치, `TAIL_MS` → 인자)
+- Modify: `scripts/video-check.ts`(`Args`, 인자 읽기, 실제 판정의 시작 위치, 끝내기 조건 `watchAfterEnd` → `judgeState`, 영상 시간 한도)
 - Test: `tests/video-check.test.ts`
 
 **Interfaces:**
 - `--say <초>:<글>` 여러 번: 그 영상 시각에 폰 페이지 안에서 폰 소켓으로 `{ type: "say", text }`를 보낸다(CDP `Runtime.evaluate`). 시각표에 `말 · <글>`. 틀린 값(초가 숫자가 아님, 글이 빔, 60자 넘음)은 쓰는 법 글.
 - `--start-at <cup|tv|microwave|kitchen>`: 폰 페이지를 열기 전에 `demo-start.ts`로 그 장면 시작 위치를 보낸다(지금 집이 `--home`, 기본 mokryeon_180b가 아니면 멈춤). 없으면 지금처럼 저장된 시작 위치를 쓴다.
-- `--tail <초>`(기본 30, 10~900): 영상이 끝난 뒤 계획이 열려 있으면 더 보는 시간. `Args.tailMs`.
+- `--tail <초>`(기본 30, 10~900): 영상이 「멈춘」 뒤(첫 영상이 끝났거나 단계 영상 마지막 장면을 붙잡는 중) 계획이 열려 있으면 더 보는 시간.
+- `--max <초>`(기본 1800, 60~3600): 판 전체 한도. 넘으면 `unfinished`에 남기고 끝낸다.
+- 끝내기는 한 함수가 정한다:
 
-- [ ] **Step 1: 실패하는 시험.** 「`--say 5:아 덥다`를 `{ atMs: 5000, text: "아 덥다" }`로 받는다」, 「틀린 `--say`·`--tail 5`는 쓰는 법 글」, 「시각표에 말 줄이 그 시각에 있다」, 「`--start-at microwave`면 페이지를 열기 전에 시작 위치를 보내고, 지금 집이 다르면 판정을 시작하지 않는다」, 「`--tail 300`이면 끝난 뒤 300초까지 본다」.
+```ts
+export function judgeState(o: {
+  /** 영상이 멈춘 지(첫 영상 끝 __noonchiVideo.ended, 또는 붙잡는 중 __noonchiVideo.hold) ms. 도는 중이면 null. */
+  stillForMs: number | null;
+  /** 지금 도는 영상(첫 영상이나 바꾼 단계 영상)이 시작된 뒤 ms와 그 영상 길이 ms. */
+  clipPlayedMs: number; clipDurationMs: number | null;
+  due: number; planStatus: string | undefined; tailMs: number; totalMs: number; maxMs: number;
+}): "watch" | "done" | "tail_over" | "clip_over" | "max_over";
+```
+  - 계획이 닫혔고(done·failed·cancelled) 누를 답이 없으면 `done`(영상이 돌고 있어도 끝낸다).
+  - 영상이 멈춘 지 `tailMs`가 지났으면 `tail_over`.
+  - 영상이 도는 중이면 「지금 영상 길이 + 60초」를 넘을 때만 `clip_over`. 단계 영상이 바뀌면 그 영상 길이(`clips[].duration_ms`, Task 10)로 다시 잰다.
+  - 판 전체가 `maxMs`를 넘으면 `max_over`.
+
+- [ ] **Step 1: 실패하는 시험.** 「`--say 5:아 덥다`를 `{ atMs: 5000, text: "아 덥다" }`로 받는다」, 「틀린 `--say`·`--tail 5`·`--max 0`은 쓰는 법 글」, 「시각표에 말 줄이 그 시각에 있다」, 「`--start-at microwave`면 페이지를 열기 전에 시작 위치를 보내고, 지금 집이 다르면 판정을 시작하지 않는다」, `judgeState` 표: 「붙잡는 중 + 계획 열림 + 멈춘 지 100초, tail 300 → watch」, 「붙잡는 중 + 멈춘 지 301초 → tail_over」, 「영상 도는 중 + 계획 done + 답 없음 → done」, 「단계 영상이 20초짜리면 80초 넘게 돌 때 clip_over, 첫 영상 길이와 상관없음」, 「전체 1801초 → max_over」.
 - [ ] **Step 2:** `npm run heavy -- npx vitest run tests/video-check.test.ts` → 실패 확인.
 - [ ] **Step 3:** 구현.
 - [ ] **Step 4:** 통과 확인. `--fake`로 `cup-empty-leave.mp4`에 말을 넣어 한 번 돌려 본다(비용 0).
-- [ ] **Step 5:** 커밋 `feat(video): inject spoken lines, set scene start poses and extend the tail wait`.
+- [ ] **Step 5:** 커밋 `feat(video): inject spoken lines, set scene start poses and end runs on plan close or still-frame tail`.
 
 ### Task 10: 영상 페이지 — 같은 대상 단계 영상을 차례로, 마지막 장면 붙잡기
 
 **Files:**
-- Modify: `ui/src/phone/core/video-ar.js`(`current.command`, 단계 영상 끝 처리), `ui/src/phone/core/video-ar.d.ts`
+- Modify: `ui/src/phone/core/video-ar.js`(`current.command`, 단계 영상 끝 처리, `record`), `ui/src/phone/core/video-ar.d.ts`
 - Test: `ui/tests/phone-video.test.ts`
 
 **Interfaces:**
-- `--step` 형식은 그대로(`<종류>:<낱말>:<영상>`). **같은 종류·낱말 칸이 여럿이면 적은 차례대로 쓴다**: 그 종류·낱말에 맞는 새 명령(계획 id·단계 id가 처음인 것)이 올 때마다 다음 칸. 칸이 다 떨어지면 마지막 칸을 다시 쓰지 않고 지금 영상을 둔다. 칸이 하나인 지금 쓰임은 그대로다.
-- 단계 영상이 끝나면 마지막 장면을 붙잡는다: 다음 단계 영상이 오거나 판정이 끝날 때까지 그 장면으로 엔진 프레임을 계속 보낸다(표시도 그 장면). 붙잡은 동안 `__noonchiVideo.ended`는 거짓이다. 첫 영상(`clip`)이 끝났을 때는 지금처럼 끝으로 본다.
+- `--step` 형식은 그대로(`<종류>:<낱말>:<영상>`). **같은 종류·낱말 칸이 여럿이면 적은 차례대로 쓴다**: 그 종류·낱말에 맞는 새 명령(계획 id·단계 id가 처음인 것)이 올 때마다 다음 칸. 칸이 다 떨어지면 지금 영상을 둔다. 칸이 하나인 지금 쓰임은 그대로다.
+- 단계 영상이 끝나면 마지막 장면을 붙잡는다: 다음 단계 영상이 오거나 페이지가 닫힐 때까지 그 장면으로 엔진 프레임을 계속 보낸다(표시도 그 장면).
+- 판정기에 알리는 칸: `__noonchiVideo.hold: { clip: string; since: number /* 영상 시각 ms */ } | null`. 붙잡는 동안 값이 있고, 다음 단계 영상이 시작되면 null. `ended`는 첫 영상이 끝났을 때만 참이다(지금과 같다). 단계 영상마다 `clips[]`에 `{ video_ms, clip, duration_ms }`를 남긴다.
 
-- [ ] **Step 1: 실패하는 시험.** 「`do:microwave:a.mp4`·`do:microwave:b.mp4`·`do:microwave:c.mp4`가 있으면 전자레인지 대상 do 명령 셋에 a·b·c를 차례로 튼다」, 「같은 명령이 다시 와도(비전 상태만 바뀜) 다음 칸으로 넘기지 않는다」, 「칸이 하나면 지금처럼」, 「단계 영상이 끝난 뒤 5초 동안 엔진 프레임이 계속 나가고 그 화소가 마지막 장면과 같다」, 「다음 단계 영상이 오면 붙잡기를 푼다」.
+- [ ] **Step 1: 실패하는 시험.** 「`do:microwave:a.mp4`·`do:microwave:b.mp4`·`do:microwave:c.mp4`가 있으면 전자레인지 대상 do 명령 셋에 a·b·c를 차례로 튼다」, 「같은 명령이 다시 와도(비전 상태만 바뀜) 다음 칸으로 넘기지 않는다」, 「칸이 하나면 지금처럼」, 「단계 영상이 끝나면 `hold`가 그 영상·시각이 되고 5초 동안 엔진 프레임이 계속 나가며 화소가 마지막 장면과 같다」, 「다음 단계 영상이 오면 `hold`가 null」, 「`clips`에 `duration_ms`가 있다」.
 - [ ] **Step 2:** `npm run heavy -- npm test --prefix ui -- phone-video` → 실패 확인.
 - [ ] **Step 3:** 구현.
 - [ ] **Step 4:** 통과 확인.
-- [ ] **Step 5:** 커밋 `feat(video): use repeated step clips in order and hold the last frame of a step clip`.
+- [ ] **Step 5:** 커밋 `feat(video): use repeated step clips in order and report a held last frame`.
 
 ### Task 11: 한양목련 트윈에 전자레인지(기기와 3D)
 
@@ -467,8 +504,14 @@ npx tsx scripts/demo-setup.ts reflect --scripted [--dir runtime/demo/week]
 ### Task 12: 코치 행동 「전자레인지로 데우기 알려 주기」
 
 **Files:**
-- Modify: `src/act/tasks.ts`, `services/pam/scenarios/noonchi/tasks.json`, `services/pam/scenarios/noonchi/scenario.json`(Task 4 행동 이름 줄·코치 행동 줄에 새 이름), `src/brain/decision.ts`(`cooking` 상태), `src/world/labels.ts`(`FSM_STATE_TEXT.cooking` → `"주방에서 할 일을 찾음"`), `tests/helpers/planner.ts`(`microwaveSteps`, 대본 표)
-- Test: `tests/act-tasks.test.ts`, `tests/agent-planner.test.ts`, `tests/phone-lines.test.ts`, `tests/brain-decision.test.ts`, `tests/pam-scenario.test.ts`
+- Modify: `src/act/tasks.ts`, `services/pam/scenarios/noonchi/tasks.json`, `services/pam/scenarios/noonchi/scenario.json`(Task 4 행동 이름 줄·코치 행동 줄에 새 이름), `src/brain/decision.ts`(`cooking` 상태), `src/world/labels.ts`(`FSM_STATE_TEXT.cooking` → `"주방에서 할 일을 찾음"`), `src/agent/policy.ts`(`SELF_STOP`), `src/agent/planTools.ts`(끄기 검사), `src/agent/planInput.ts`(지시문 한 줄), `src/act/track.ts`(켠 가전 추적), `tests/helpers/planner.ts`(`microwaveSteps`, 대본 표)
+- Test: `tests/act-tasks.test.ts`, `tests/agent-planner.test.ts`, `tests/act-track.test.ts`, `tests/phone-lines.test.ts`, `tests/brain-decision.test.ts`, `tests/pam-scenario.test.ts`
+
+**먼저:** Task 11. 전자레인지가 기기이자 평면도 물건이어야 위험 가전 단계의 target이 된다(기기 id와 평면도 id가 같은 `microwave_kitchen`).
+
+**위험 가전 글(b723636):** 전자레인지가 대상인 go·pick·place와 전자레인지 `hand_device`(on·off·open·close)가 붙은 do만 받고, 그 단계의 이름·명령·안전 문구는 서버 글 틀(`RISKY_STEP_TEXT`)로 바뀐다. 모델이 쓴 글은 폰으로 나가지 않는다. 그 밖의 단계(say·wait·다른 대상 단계)의 글에 「전자레인지」가 나오면 계획 검사가 버린다. 대상이 전자레인지인 자유 do도 버린다. 승인 질문과 켠 가전 추적(hot)은 `on`에서만이다.
+
+**저절로 꺼지는 가전:** 전자레인지는 다 되면 스스로 멈춘다. 지금 검사는 켠 위험 가전 뒤에 `hand_device off` do를 꼭 두게 해, 이미 꺼진 뒤에 「전자레인지를 꺼 주세요」를 보내게 된다. 또 기다리는 동안 꺼지면 그 do의 `became: off`는 단계 시작 전 사건이라 끝나지 않는다. 그래서 저절로 꺼지는 가전(`SELF_STOP`)만 「꺼짐을 기다리는 wait」(지금 값 `state: off`)도 끄는 단계로 인정하고, 그릇 꺼내기는 따로 pick으로 둔다.
 
 **Interfaces:**
 
@@ -476,32 +519,48 @@ npx tsx scripts/demo-setup.ts reflect --scripted [--dir runtime/demo/week]
 "전자레인지로 데우기 알려 주기": {
   name: "전자레인지로 데우기 알려 주기", coach: true, maxSteps: 12,
   description: "사람이 전자레인지 앞에서 쓰는 법을 묻거나 막히면 문 열기부터 꺼내기까지 사람이 할 일을 단계마다 천천히 알려 준다. 클로이드는 가전을 조작하지 않는다.",
-  allow: { kinds: ["go", "pick", "place", "do", "wait", "say"], need: ["do"] },
+  allow: { kinds: ["go", "pick", "place", "do", "wait", "say"], need: ["do", "wait"] },
 },
 // cooking 상태 description: "사용자가 주방에서 음식을 만들거나 데우려 한다. 방법을 묻거나 무엇을 할지 몰라 멈춰 있으면 단계마다 알려 준다."
 // cooking rules에 더함: { trigger: "사용자가 전자레인지 앞에서 쓰는 법을 묻거나 이거 어떻게 하냐고 말한다.", action: "전자레인지로 데우기 알려 주기" }
-export function microwaveSteps(ids: { microwave: string; waitS?: number }): Record<string, unknown>[];
+// src/agent/policy.ts
+/** 다 되면 스스로 멈추는 위험 가전. 켠 뒤 그 가전이 꺼짐을 기다리는 wait를 끄는 단계로 인정한다. */
+export const SELF_STOP: Partial<Record<DeviceKind, true>> = { microwave: true };
+// src/agent/planTools.ts finish(): 켠 위험 가전(riskyHand) 뒤에 (a) 같은 가전 hand_device off do 또는
+//   (b) 그 가전 종류가 SELF_STOP이고 until이 정확히 {"device": 그 가전, "state": "off"}인 wait 가 있어야 끝낸다.
+// src/act/track.ts advance(): (b) 모양 wait가 끝나면 hot에서 그 가전을 지운다. 그 전에 계획이 닫히면 지금처럼 끄기 안내를 보낸다.
+// 지시문(planInput) 한 줄: "- 다 되면 스스로 멈추는 가전(전자레인지)은 켠 뒤 끄는 do 대신 그 가전 상태 off를 기다리는 wait({\"device\": id, \"state\": \"off\"})를 둔다. 꺼낼 때는 pick(target 그 가전)을 따로 둔다."
+export function microwaveSteps(ids: { microwave: string; waitS?: number /* wait timeout_s, 기본 300 */ }): Record<string, unknown>[];
 ```
-- 시험 대본 8단계(글은 모두 `phoneLineProblem` 허용 낱말로 쓴다. 켜는 말은 시작 단계에만):
 
-| # | kind | label | command / text | 그 밖 | until |
-|---|---|---|---|---|---|
-| 1 | go | 전자레인지로 가기 | 전자레인지 앞으로 가 주세요 | target 전자레인지 | phone_near |
-| 2 | do | 문 열기 | 전자레인지 문을 열어 주세요 | target 전자레인지 | `{"fixture": "microwave", "facts": {"open": "open"}}` |
-| 3 | place | 그릇 넣기 | 그릇을 안에 넣어 주세요 | target 전자레인지 | 없음(「완료」) |
-| 4 | do | 문 닫기 | 문을 닫아 주세요 | target 전자레인지 | `{"fixture": "microwave", "facts": {"open": "closed"}}` |
-| 5 | do | 시작 단추 누르기 | 시작 단추를 눌러 주세요 | hand_device on, caution `그릇이 뜨거워져요.` | `{"device": 전자레인지, "became": "on"}` |
-| 6 | say | 데워지는 중 | 다 될 때까지 기다려요. | | elapsed 4초 |
-| 7 | wait | 다 될 때까지 기다리기 | | | `{"elapsed_s": waitS(기본 60)}` |
-| 8 | do | 꺼내기 | 다 되면 문을 열고 그릇을 꺼내 주세요 | hand_device off | `{"device": 전자레인지, "became": "off"}` |
+- 시험 대본 9단계. 「폰 글」은 서버 글 틀이 내는 글이고, 대본의 label·command가 무엇이어도 이 글로 바뀐다(시험이 그것을 본다):
 
-- 전자레인지 시작은 위험 목록이라 실행 추적이 5번 명령 전에 묻는다(코치 계획 Task 9). 끄기 단계(8번)는 hand_device off라 「켠 가전은 계획 안에서 끈다」 검사를 지난다. 「돌아가는」·「돌려」처럼 켜는 말로 걸리는 낱말은 쓰지 않는다.
+| # | kind | target | hand_device | 폰 글(이름 / 명령) | 끝 조건 | 넘김 |
+|---|---|---|---|---|---|---|
+| 1 | go | 전자레인지 | | 전자레인지로 가기 / 전자레인지로 가 주세요 | `{"phone_near": 전자레인지}` | 폰 위치 |
+| 2 | do | 전자레인지 | open | 전자레인지 문 열기 / 전자레인지 문을 열어 주세요 | `{"fixture": "microwave", "facts": {"open": "open"}}` | 비전 |
+| 3 | place | 전자레인지 | | 전자레인지에 넣기 / 전자레인지 안에 넣어 주세요 | 없음 | 「완료」·「다 했어」 |
+| 4 | do | 전자레인지 | close | 전자레인지 문 닫기 / 전자레인지 문을 닫아 주세요 | `{"fixture": "microwave", "facts": {"open": "closed"}}` | 비전 |
+| 5 | do | 전자레인지 | on | 전자레인지 켜기 / 전자레인지를 켜 주세요 (안전 문구 「그릇이 뜨거워져요.」, 명령 전에 승인 질문) | `{"device": 전자레인지, "became": "on"}` | 비전(쓰는 중 → 켜짐) |
+| 6 | say | 없음 | | 다 될 때까지 기다려요. | 4초 | 시간 |
+| 7 | wait | 없음 | | 폰 글 없음(이름 「다 될 때까지 기다리기」) | `{"device": 전자레인지, "state": "off"}`, timeout 300, on_timeout ask | 비전(쓰는 중이 아님 → 꺼짐). 6번 동안 이미 꺼졌으면 바로 넘어감 |
+| 8 | do | 전자레인지 | open | 전자레인지 문 열기 / 전자레인지 문을 열어 주세요 | `{"fixture": "microwave", "facts": {"open": "open"}}` | 비전 |
+| 9 | pick | 전자레인지 | | 전자레인지에서 꺼내기 / 전자레인지에서 꺼내 주세요 | 없음 | 「완료」·「다 했어」 |
 
-- [ ] **Step 1: 실패하는 시험.** 「행동 목록 아홉, 앞 여덟 순서 그대로, 새 행동은 `coach`」, 「`tasksFor("noonchi")`에 없고 `coach`·`auto`에 있다」, 「`tasks.json`·`scenario.json` 이름 줄이 맞다」, 「가짜 모델의 전자레인지 계획이 계획 검사를 지나고 5번이 `riskyHand`」, 「대본의 모든 label·command·caution·text가 그 단계 자리에서 `phoneLineProblem` null」, 「5번 command를 2번(hand 없음)에 두면 계획 검사가 버린다」, 「5번 until을 `state`로 쓰면 버린다」, 「`fsmRuleOf`가 `cooking`」.
-- [ ] **Step 2:** `npm run heavy -- npx vitest run tests/act-tasks.test.ts tests/agent-planner.test.ts tests/phone-lines.test.ts tests/brain-decision.test.ts tests/pam-scenario.test.ts` → 실패 확인.
+- 3·9번은 1인칭 영상에서 사람이 보이지 않아 「들고 있음」을 볼 수 없어 「완료」로 넘긴다. 6번 say와 7번 wait 글에는 「전자레인지」를 쓰지 않는다.
+- 2·4·8번 끝 조건은 단계가 시작된 뒤 본 VLM 사실의 지금 값이다(이미 열려 있으면 바로 넘어간다, 「정해야 할 것」 2).
+- 서버 글에는 넣는 물건 이름(그릇)이 없다(「정해야 할 것」 3).
+
+- [ ] **Step 1: 실패하는 시험.**
+  - 「행동 목록 아홉, 앞 여덟 순서 그대로, 새 행동은 `coach`」, 「`tasksFor("noonchi")`에 없고 `coach`·`auto`에 있다」, 「`tasks.json`·`scenario.json` 이름 줄이 맞다」, 「`fsmRuleOf`가 `cooking`」.
+  - 「가짜 모델의 전자레인지 계획이 계획 검사를 지나고, 단계마다 이름·명령이 위 표의 서버 글이며 5번만 안전 문구가 있다」.
+  - 「6번 say에 「전자레인지」를 넣으면 버린다」, 「대상이 전자레인지인 hand_device 없는 do는 버린다」, 「5번 until을 `state`로 쓰면 버린다」.
+  - 「7번 wait를 빼면 `켠 가전은 계획 안에서 끕니다`로 버린다. 7번 until이 `{"device": 전자레인지, "state": "off"}`면 받는다. 같은 wait를 인덕션 켜기 뒤에 두면 버린다(SELF_STOP 아님)」.
+  - 실행 추적: 「5번 명령 전에 승인 질문, 승인 뒤 VLM 쓰는 중이면 넘어감」, 「6번 동안 전자레인지가 꺼지면 7번이 바로 끝나고 hot에서 빠져 계획이 끝나도 끄기 안내가 없다」, 「7번 전에 그만두면 끄기 안내(`전자레인지를 꺼 주세요`)가 간다」.
+- [ ] **Step 2:** `npm run heavy -- npx vitest run tests/act-tasks.test.ts tests/agent-planner.test.ts tests/act-track.test.ts tests/phone-lines.test.ts tests/brain-decision.test.ts tests/pam-scenario.test.ts` → 실패 확인.
 - [ ] **Step 3:** 구현.
 - [ ] **Step 4:** 통과 확인.
-- [ ] **Step 5:** 커밋 `feat(act): add microwave coaching for older people`.
+- [ ] **Step 5:** 커밋 `feat(act): add microwave coaching for older people and accept waiting for a self-stopping appliance`.
 
 ### Task 13: 네 장면 가짜 서버 흐름 시험
 
@@ -518,7 +577,7 @@ export function microwaveSteps(ids: { microwave: string; waitS?: number }): Reco
   2. TV 보는 사람 + `say` 「아 덥다」 → 폰 답 빈 글, 말 요청 에이전트 도구 호출 없음, 거실 에어컨 켜짐.
   3. 같은 장면에서 말이 없으면 에어컨을 켜지 않는다(대조).
   4. 관찰만 넣은 합성 7일(`memories: "none"`)에서 1~7일을 차례로 `POST /api/reflection/run` → 날마다 `appliesDay`가 다음 날, 7일 판본은 오늘부터, `/api/memory/day/<오늘>`의 uses가 그 판본, 저장된 판본에 라면 습관 없음·요리 규칙은 seed 글, dropped에 라면 습관(coach) → 말없는 TV 장면 → 에어컨 켜짐, 판단 사건 `assist: "noonchi"`, `fsm.learned: true`.
-  5. 전자레인지 감지 + `say` 「이거 어떻게 하지」 → 첫 명령, 판단 사건 `assist: "coach"`, 5번 단계에서 승인 질문이 먼저 오고 승인 뒤 VLM이 전자레인지 쓰는 중을 내면 넘어간다.
+  5. 전자레인지 감지 + `say` 「이거 어떻게 하지」 → 첫 명령 `전자레인지로 가 주세요`(서버 글), 판단 사건 `assist: "coach"`, 5번 단계에서 승인 질문이 먼저 오고 승인 뒤 VLM이 전자레인지 쓰는 중을 내면 넘어가며, 6번 동안 쓰는 중이 사라지면 7번 기다리기가 바로 끝나고 8·9번 뒤 done, 끄기 안내 없음. 폰으로 나간 모든 글이 서버 글 틀이거나 위험 가전 이름이 없다.
   6. `say` 「라면 끓이는 법 알려 줘」 → 첫 명령 `수납장으로 가 주세요`, 판단 사건 `assist: "coach"`.
   7. 모든 PAM 요청에 사진 칸이 없고 `contract`가 `pam-predict/2`·`pam-reflect/2`.
 - [ ] **Step 2:** `npm run heavy -- npx vitest run tests/demo-e2e.test.ts` → 실패 확인.
@@ -530,15 +589,15 @@ export function microwaveSteps(ids: { microwave: string; waitS?: number }): Reco
 
 - [ ] **Step 1:** `npx tsc --noEmit -p .`, `npm run lint`, `npm run heavy -- npx vitest run`, ui 시험, `services/pam`의 `python -m pytest`, `npm run heavy -- npm run build --prefix ui`.
 - [ ] **Step 2: 가짜 판정.** 아래 「시연 순서」의 장면마다 `--fake`로 시각표가 나오는지 본다(비용 0).
-- [ ] **Step 3: 이어 반성(녹화 전, $0.06~0.30).** `demo-setup week` → 서버 → `demo-setup reflect --chain`. 날마다 배운 규칙을 적는다(언제 에어컨 규칙이 처음 생겼는지, 코치 규칙이 빠진 날).
+- [ ] **Step 3: 이어 반성(녹화 전, $0.06~0.30).** `demo-setup week --fresh` → 서버 → `demo-setup reflect --chain`. 날마다 learned·active를 적는다(언제 에어컨 규칙이 처음 생겼는지, 코치 규칙이 빠진 날). 중간에 멈추면 원인을 고치고 `reflect --chain`을 다시 부른다(된 날은 건너뛴다).
 - [ ] **Step 4: 실제 판정(한 바퀴 약 $0.50~0.95).** 장면마다 한 판. **기준:**
   - 장면 1·2: 컵 갈래 계획 기준.
   - 장면 3: 말 뒤 15초 안에 에어컨 켜기·칩 `눈치 · 에어컨 켜기`. 대조(day1 폴더에서 `tv-sit.mp4`)는 에어컨을 켜지 않음.
-  - 장면 4: 7일 반성이 `appliesDay` 오늘, 말없이 에어컨을 켜는 규칙(행동 이름 그대로, 한국어 트리거).
+  - 장면 4: 7일 반성이 `appliesDay` 오늘, 말없이 에어컨을 켜는 규칙이 active에 있다(행동 이름 그대로, 한국어 트리거). learned면 `습관 · 새로 배움`, 앞서 배웠으면 `습관 · 배운 규칙`.
   - 장면 5: 말없이 에어컨 켜기·칩 `습관 · …`.
-  - 장면 6(노인): 말 뒤 30초 안에 첫 명령, 문 열기·닫기는 비전으로 넘어감, 시작 전 질문 1번, 끝까지 done(`--tail 180`).
+  - 장면 6(노인): 말 뒤 30초 안에 첫 명령, 폰 글이 Task 12 표의 서버 글, 문 열기·닫기·켜짐·꺼짐은 비전으로 넘어감, 시작 전 질문 1번, 끄기 안내 없음, 끝까지 done(`--tail 120`).
   - 장면 7(장애인): 코치 계획 기준(첫 명령 30초 안, 인덕션 질문 1번, done, `--tail 600`).
-  - 반성이 규칙을 못 내면 `raw_response`를 보고 Task 4 지시문을 한 번 고쳐 1~7일을 다시 이어 돈다. 그래도 안 되면 `reflect --scripted`로 찍고 자막.
+  - 반성이 규칙을 못 내면 `raw_response`를 보고 Task 4 지시문을 한 번 고친 뒤, 서버를 끄고 `week --fresh` → 서버 → `reflect --chain` → `reflect`로 새로 돈다(옛 폴더는 `.old-<시각>`으로 남는다). 그래도 안 되면 `reflect --scripted`로 찍고 자막.
 - [ ] **Step 5: 녹화.** 장면마다 `--record`(`BRAIN_YOLO_PROVIDER=cpu`). 프레임 4장씩 뽑아 칩·말풍선 카드·트윈 에어컨·전자레인지를 본다. 기다리기·반성 대기는 편집에서 줄인다.
 - [ ] **Step 6: 문서.** `docs` 저장소 `01_Product/구현명세서 SSOT.md`(돕는 방식 자동, 판단 칩, 반성 지시문 바꾸기, 반성 뒤 검사·거르기 자리, 기억 상태 API, 마지막 반성 다시 보내기, 시연 준비 명령, 더한 가전 파일, 전자레인지 코치, 영상 판정 인자), `변경이력.md`.
 - [ ] **Step 7:** Codex reviewer(herdr `w2:p5`)에게 브랜치 전체를 리뷰받고 지적을 고친다. `trail note`로 반성 지시문을 바꾼 까닭과 이어 반성을 고른 까닭을 남긴다.
@@ -551,12 +610,12 @@ export function microwaveSteps(ids: { microwave: string; waitS?: number }): Reco
 | 1 | 눈치 · 1일차 상황 | day1 | `video-check --start-at cup --clip cup-empty-leave.mp4` + 치우기 단계 영상 | `상태 · 컵을 두고 자리를 뜸`·`눈치 · 컵 치우기`, 네 명령 |
 | 2 | 눈치 · 1일차 상황 | day1 | `--start-at cup --clip cup-full-leave.mp4` | `눈치 · 컵 그대로 두기`, 「컵을 그대로 두기로 했어요.」 |
 | 3 | 눈치 · 1일차 의도 | day1 | `--start-at tv --clip tv-hot-say.mp4 --say 15:아 덥다` | `눈치 · 에어컨 켜기`, 트윈 거실 에어컨 켜짐 |
-| 4 | 눈치 · 일주일 | week | (녹화 전 `reflect --chain`) `demo-setup reflect` | `습관 · 새로 배움`, 「어제 기록으로 새 습관 1개를 배웠어요.」 |
+| 4 | 눈치 · 일주일 | week | (녹화 전 `reflect --chain`) `demo-setup reflect` | 이번에 배웠으면 `습관 · 새로 배움`·「어제 기록으로 새 습관 1개를 배웠어요.」, 앞서 배웠으면 `습관 · 배운 규칙`·「배운 습관 1개를 쓰고 있어요.」 |
 | 5 | 눈치 · 8일차 선제 | week | `--start-at tv --clip tv-sit.mp4` | 말없이 `습관 · …`·`눈치 · 에어컨 켜기` |
-| 6 | 코치 · 노인 | day1 | `--start-at microwave --clip microwave-start.mp4 --say 4:이거 어떻게 하지 --tail 180` + `go:microwave:go-microwave.mp4`, `do:microwave:open-microwave.mp4`, `place:microwave:put-bowl.mp4`, `do:microwave:close-microwave.mp4`, `do:microwave:start-microwave.mp4`, `do:microwave:microwave-done.mp4` | `코치 · 전자레인지로 데우기 알려 주기`, 문 열림·닫힘을 비전으로 넘김, 시작 전 질문, 트윈 전자레인지 켜짐·꺼짐 |
+| 6 | 코치 · 노인 | day1 | `--start-at microwave --clip microwave-start.mp4 --say 4:이거 어떻게 하지 --tail 120` + `go:microwave:go-microwave.mp4`, `do:microwave:open-microwave.mp4`, `place:microwave:put-bowl.mp4`, `do:microwave:close-microwave.mp4`, `do:microwave:start-microwave.mp4`, `do:microwave:open-microwave.mp4`, `pick:microwave:take-bowl.mp4` | `코치 · 전자레인지로 데우기 알려 주기`, 서버 글 명령, 문 열림·닫힘을 비전으로 넘김, 시작 전 질문, 트윈 전자레인지 켜짐·꺼짐, 기다리기가 꺼짐으로 끝남 |
 | 7 | 코치 · 탈시설 장애인 | day1 | `--start-at kitchen --clip kitchen-start.mp4 --say 5:라면 끓이는 법 알려 줘 --tail 600` + 라면 단계 영상, 물 받기에 `wrong-fridge.mp4`, 면 넣기 때 `--say <초>:어 뭐 해야 되지` | `코치 · 라면 끓이기 알려 주기`, 인덕션 켜기 전 질문, 바로잡기, 조용한 단계(수업 기록 씨앗) |
 
-- 장면 6의 do 칸 넷은 적은 차례(열기·닫기·시작·꺼내기)대로 쓰인다(Task 10). 계획 모델이 다른 순서로 do를 내면 그 판은 다시 돌린다.
+- 장면 6의 do 칸 넷은 적은 차례(열기·닫기·켜기·다시 열기)대로 쓰인다(Task 10). 기다리기(7번) 동안은 `start-microwave.mp4` 마지막 장면(불 꺼짐)을 붙잡는다. 계획 모델이 다른 순서로 do를 내면 그 판은 다시 돌린다.
 - 장면 6·7은 1일차 폴더를 그대로 쓴다(코치 행동은 습관과 상관없다). 폴더를 바꿀 때는 서버를 다시 띄운다(PAM 서비스는 그대로). 장면마다 `--start-at`이 시작 위치를 다시 넣는다.
 
 ## 찍을 영상 (사용자, 가로 1280×720, 폰을 가로로 고정)
@@ -572,8 +631,10 @@ export function microwaveSteps(ids: { microwave: string; waitS?: number }): Reco
 | 6 | 단계 `open-microwave.mp4` | 10초 | 문을 열고 안이 5초 보임 |
 | 6 | 단계 `put-bowl.mp4` | 10초 | 그릇을 넣고 손을 뺌 |
 | 6 | 단계 `close-microwave.mp4` | 10초 | 문을 닫고 닫힌 문이 5초 보임 |
-| 6 | 단계 `start-microwave.mp4` | 15초 | 단추를 누르고 안의 불이 켜져 접시가 도는 것이 10초 보임(끝 장면을 기다리기 동안 붙잡는다) |
-| 6 | 단계 `microwave-done.mp4` | 15초 | 불이 꺼진 것이 3초 보이고 문을 열어 그릇을 꺼냄 |
+| 6 | 단계 `start-microwave.mp4` | 30초 | 0~3초 단추를 누름, 3~20초 안의 불이 켜져 접시가 돎, 20~30초 불이 꺼지고 문은 닫힌 채(이 마지막 장면을 기다리기 동안 붙잡는다) |
+| 6 | 단계 `take-bowl.mp4` | 10초 | 열린 전자레인지에서 그릇을 꺼내 손에 든 채 3초 |
+
+- 다시 열기(8번)는 `open-microwave.mp4`를 한 번 더 쓴다. `microwave-done.mp4`는 찍지 않는다.
 
 김준형 집 촬영(11-13 금 수업 뒤 ~ 11-14 토 낮)에 같이 찍는다. 전자레인지가 없으면 다른 집에서 찍는다.
 
@@ -589,19 +650,23 @@ export function microwaveSteps(ids: { microwave: string; waitS?: number }): Reco
 
 ## 새로 정해야 할 것 (사용자)
 
-1. **비용 한도.** 이어 반성 일곱 번과 기다리기 동안 붙잡은 장면 때문에 한 바퀴가 약 $0.45 → $0.50~0.95로 늘었다. 한도를 $1.20 → $2.20으로 올릴지(추천: 올린다. 안 올리면 라면 장면 실제 판정을 한 판만 하고 이어 반성은 한 번만 돌린다).
+1. **비용 한도.** 이어 반성 일곱 번과 기다리기 동안 붙잡은 장면 때문에 한 바퀴가 약 $0.45 → $0.50~0.90으로 늘었다. 한도를 $1.20 → $2.20으로 올릴지(추천: 올린다. 안 올리면 라면 장면 실제 판정을 한 판만 하고 이어 반성은 한 번만 돌린다).
+2. **문 열기·닫기 끝 조건.** 가: 단계가 시작된 뒤 본 지금 값(이미 열려 있으면 바로 넘어감, 추천. 사람이 먼저 해 둔 일은 된 것으로 본다). 나: 「바뀐 것만」(`{"seq": [닫힘, 열림]}`처럼 단계 뒤 닫힘을 본 다음 열림. 이미 열려 있으면 다시 닫았다 열 때까지 기다리고, 그동안 시간 초과 질문이 뜬다).
+3. **서버 글에 물건 이름이 없음.** 「전자레인지 안에 넣어 주세요」, 「인덕션 위에 올려 주세요」처럼 무엇을 넣고 올리는지가 빠진다. 가: 시연은 그대로(추천. 바로 앞 단계와 화면 고리로 알 수 있고, 위험 가전 글은 서버가 정한다는 안전 규칙을 지킨다). 나: 서버 글 틀에 물건 종류 이름 칸을 더한다(낱말 표에 있는 종류만, 예: 「그릇을 전자레인지 안에 넣어 주세요」. 냄비는 낱말 표에 없어 빠진다).
+4. **저절로 꺼지는 가전의 끄기 단계.** 가: 전자레인지만 「꺼짐을 기다리는 wait」를 끄는 단계로 인정(추천. 다 된 뒤 「전자레인지를 꺼 주세요」를 보내지 않는다). 나: 지금 규칙 그대로 끄기 do를 두고 「완료」로 넘긴다(다 꺼진 뒤 끄라는 말이 한 번 나간다).
 
 ## Self-Review
 
 - 시나리오 1(상황·의도): 시연 순서 1~3, Task 3·8·9·13.
 - 시나리오 2(일주일 뒤 습관, 눈치): Task 4~8·13, 「일주일을 시연 안에서 보이는 길」. 반성 규칙(그날 고정·다음 날 적용)은 바꾸지 않는다. 7일 근거는 날마다 이어 반성으로 넘기고, 고정 상태를 API로 확인한다(Task 6·8).
 - p값 후보정 자리: 「습관 거르기 자리」, Task 5.
-- 시나리오 3(노인): Task 10·11·12, 시연 순서 6. 단계 글은 `phoneLineProblem` 허용 낱말, hand_device 끝 조건은 `became`.
+- 시나리오 3(노인): Task 10·11·12, 시연 순서 6. 위험 가전 단계는 go·pick·place·hand_device do만, 폰 글은 서버 글 틀(b723636), on 끝 조건은 `became`, 다 된 것은 기다리기의 `state: off`, 꺼내기는 따로 pick.
 - 시나리오 4(탈시설 장애인): 코치 계획 그대로 + 수업 기록 씨앗(Task 8) + 말 넣기(Task 9) + 붙잡기·`--tail`(Task 9·10).
 - 자동 판단: 설계 표, Task 1·2. 습관이 코치로 가는 길 셋을 막음: Task 2, Task 4(5번 바꾸기), Task 5(`coachGuard` 앞뒤 두 번), Task 13 시험 4.
 - 규칙 코드로 행동 안 정함: 칩·검사만, 판단은 PAM. `demoPredict`·`demoReflect`는 `tests/helpers/` 대역.
 - PAM 계약 그대로: 「PAM 계약」 절, Task 13 시험 7.
-- Codex 지적 9개: 1 Task 4 바꾸기 2·4, 2 「일주일을 시연 안에서 보이는 길」·Task 7·8, 3 Task 5 범위, 4 Task 2 행동 단위, 5 Task 6 API·Task 8 확인, 6 Task 8 `start`·Task 9 `--start-at`, 7 Task 11 `unbaked`, 8 Task 10 차례 쓰기, 9 Task 10 붙잡기·Task 9 `--tail`.
+- Codex 1차 지적 9개: 1 Task 4 바꾸기 2·4, 2 「일주일을 시연 안에서 보이는 길」·Task 7·8, 3 Task 5 범위, 4 Task 2 행동 단위, 5 Task 6 API·Task 8 확인, 6 Task 8 `start`·Task 9 `--start-at`, 7 Task 11 `unbaked`, 8 Task 10 차례 쓰기, 9 Task 10 붙잡기·Task 9 `--tail`.
+- Codex 2차 지적 5개: 1 Task 10 `hold`·Task 9 `judgeState`(계획 닫힘·멈춘 장면 tail·영상마다 길이·`--max`), 2 Task 12 서버 글 틀 대본, 3 Task 12 7번 기다리기 `state: off`·`SELF_STOP`·9번 pick, 4 Task 6 `learned`·`active`, 5 Task 8 `--fresh`·이어 실행 건너뛰기·막힘 멈춤.
 - 위험: 실제 PAM 반성이 바꾼 지시문을 따라 에어컨 습관을 낼지, 16k 토큰 상한 안에 들지 모른다(Task 14 Step 3, 안 되면 대본).
 - 위험: 이어 반성은 하루만 보고 규칙을 더하는 논문 성질 그대로라 1일차에 바로 생길 수 있다. 「일주일 반복」을 따지는 것은 박석준 거르기가 붙은 뒤다. 영상에서는 날마다 판본 변화를 그대로 보인다.
 - 위험: 1일차 대조 판에서 PAM이 말 없는 TV 장면에도 에어컨을 켤 수 있다. Task 14에서 대조 판을 꼭 돌린다.
@@ -609,3 +674,5 @@ export function microwaveSteps(ids: { microwave: string; waitS?: number }): Reco
 - 위험: 영상 모드는 실제 시각을 쓴다. 배운 규칙에 「저녁」이 붙으면 낮에 찍은 장면 5에서 안 나올 수 있다. 그러면 19~22시에 찍는다.
 - 위험: VLM이 전자레인지 문 열림·쓰는 중을 실제 영상에서 얼마나 맞히는지, 영상 모드 자세로 트윈 전자레인지와 맞춰지는지(`SIGHT_MATCH`) 재지 않았다. 못 맞히면 그 단계는 「완료」로 넘어가고, 시작·꺼내기 단계는 시간 초과가 날 수 있다.
 - 위험: 계획 모델이 전자레인지 do를 대본과 다른 수·순서로 내면 단계 영상 차례가 어긋난다(그 판은 다시 돌린다).
+- 위험: 전자레인지 카탈로그에는 문 속성이 없어 문 열림·닫힘은 트윈에 보이지 않고 VLM 사실로만 넘어간다. `hand_device` open·close가 문 속성 없는 가전에도 계획 검사를 지나는지는 b723636 코드에서 확인하지 않았다(Task 12 Step 1 시험이 본다).
+- 위험: 같은 이름의 단계(「전자레인지 문 열기」 두 번)는 수업 기록(`lessons.json`, 단계 이름 열쇠)에서 한 칸으로 합쳐진다.
