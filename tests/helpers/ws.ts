@@ -7,8 +7,10 @@ import type { HeardAt } from "../../src/contract/phone.js";
 import { PHONE_PROTOCOL } from "../../src/phone/protocol.js";
 
 export interface OpenOptions {
-  /** 시도마다 소켓을 만들자마자 부른다(open 전에 오는 메시지를 놓치지 않게 여기서 리스너를 단다). */
-  setup?: (ws: WebSocket) => void;
+  /** 시도마다 소켓을 만들자마자 부른다(open 전에 오는 메시지를 놓치지 않게 여기서 리스너를 단다).
+   *  함수를 돌려주면 그 시도가 실패했을 때 부른다(정리): 그 시도에서 건 대기·타이머를 치워 처리되지 않은 거절이 남지 않게 한다.
+   *  함수가 아닌 값(ws.on(...)이 돌려주는 소켓 등)은 정리로 보지 않는다. */
+  setup?: (ws: WebSocket) => unknown;
   options?: WebSocket.ClientOptions;
   attempts?: number;
 }
@@ -17,7 +19,7 @@ export async function openWebSocket(url: string, opts: OpenOptions = {}): Promis
   const attempts = opts.attempts ?? RETRY_ATTEMPTS;
   for (let attempt = 1; ; attempt++) {
     const ws = new WebSocket(url, opts.options);
-    opts.setup?.(ws);
+    const cleanup = opts.setup?.(ws);
     try {
       await new Promise<void>((resolve, reject) => {
         ws.once("open", () => resolve());
@@ -25,6 +27,9 @@ export async function openWebSocket(url: string, opts: OpenOptions = {}): Promis
       });
       return ws;
     } catch (e) {
+      if (typeof cleanup === "function") cleanup();
+      // 실패한 소켓을 닫을 때 나는 뒤 오류(연결 전에 닫힘)는 버린다
+      ws.on("error", () => {});
       ws.terminate();
       if ((e as { code?: string }).code !== "EFAULT" || attempt >= attempts) throw e;
       await new Promise((r) => setTimeout(r, 50 * Math.min(attempt, 6)));

@@ -67,17 +67,22 @@ const opened = (ws: WebSocket) =>
     ws.once("error", rej);
   });
 
-function next(ws: WebSocket, pred: (m: Msg) => boolean): Promise<Msg> {
-  return new Promise((res, rej) => {
-    const timer = setTimeout(() => rej(new Error("메시지가 오지 않았습니다")), 3000);
-    ws.on("message", (d) => {
+/** 조건에 맞는 메시지를 기다린다(3초). cancel은 기다림을 치운다(타이머·리스너): 소켓 다시 열기에서 실패한 시도의 대기를 치울 때 쓴다. */
+function next(ws: WebSocket, pred: (m: Msg) => boolean): Promise<Msg> & { cancel(): void } {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let onMessage: ((d: WebSocket.RawData) => void) | undefined;
+  const wait = new Promise<Msg>((res, rej) => {
+    timer = setTimeout(() => rej(new Error("메시지가 오지 않았습니다")), 3000);
+    onMessage = (d) => {
       const m = JSON.parse(String(d)) as Msg;
       if (pred(m)) {
         clearTimeout(timer);
         res(m);
       }
-    });
+    };
+    ws.on("message", onMessage);
   });
+  return Object.assign(wait, { cancel: () => { clearTimeout(timer); if (onMessage) ws.off("message", onMessage); } });
 }
 
 async function setup(opts: { log?: (m: string) => void } = {}) {
@@ -203,8 +208,8 @@ describe("엔진 프레임", () => {
 
   it("engineMs를 주면 연결 직후 상태에 engine_ms를 싣는다", async () => {
     const { phoneBase } = await engineSetup();
-    let status!: Promise<Msg>;
-    const ws = await openWebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events`, { options: { origin: phoneBase }, setup: (s) => { status = next(s, (m) => m.type === "status"); } });
+    let status!: ReturnType<typeof next>;
+    const ws = await openWebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events`, { options: { origin: phoneBase }, setup: (s) => { status = next(s, (m) => m.type === "status"); return status.cancel; } });
     expect(await status).toMatchObject({ engine_ms: 1000 });
     ws.close();
   });
@@ -257,8 +262,8 @@ describe("phone server", () => {
   it("위치를 맞춘 뒤의 자세가 본 서버 /events에 eye로 나간다", async () => {
     const { url, phoneBase } = await setup();
     const dash = await openWebSocket(`${url.replace(/^http/, "ws")}/events`);
-    let first!: Promise<Msg>;
-    const phone = await openWebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events`, { options: { origin: phoneBase }, setup: (s) => { first = next(s, (m) => m.type === "status"); } });
+    let first!: ReturnType<typeof next>;
+    const phone = await openWebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events`, { options: { origin: phoneBase }, setup: (s) => { first = next(s, (m) => m.type === "status"); return first.cancel; } });
     expect((await first).aligned).toBe(false);
     const done = next(phone, (m) => m.type === "status" && m.aligned);
     sendAlign(phone);
