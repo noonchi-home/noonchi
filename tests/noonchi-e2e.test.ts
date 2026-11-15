@@ -95,8 +95,9 @@ describe("NOONCHI 처음부터 끝까지", () => {
     // 3 이동: 말로 「다 했어」(답 글은 비어 있고 다음 명령이 따로 온다)
     ws.send(JSON.stringify({ type: "say", text: "다 했어", at: heardAtOf(phone) }));
     await pump(() => !!said("컵을 싱크대에 넣어 주세요"));
-    await pump(() => phone.some((m) => m.type === "reply"));
-    expect(phone.find((m) => m.type === "reply")).toEqual({ type: "reply", text: "" });
+    // 첫 reply는 판본 hello 뒤의 지금 승인 대기 목록(빈 목록), 그다음이 말 답
+    await pump(() => phone.filter((m) => m.type === "reply").length >= 2);
+    expect(phone.filter((m) => m.type === "reply")).toEqual([{ type: "reply", text: "", pending: [] }, { type: "reply", text: "" }]);
     // 4 내려놓기: VLM이 컵을 싱크대 안으로 본다 → 명령을 지우고 완료
     cupPlace = "in_sink";
     await pump(() => phone.some((m) => m.type === "command_clear" && m.id === planId));

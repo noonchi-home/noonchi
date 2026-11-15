@@ -497,6 +497,16 @@ describe("폰 판본(hello)과 옛 탭", () => {
     await more;
   });
 
+  it("판본이 맞는 첫 hello마다 지금 명령과 지금 승인 대기 목록을 보낸다(새로 연 폰도 대기 중인 질문을 본다)", async () => {
+    const { phone, base } = await protoSetup();
+    phone.command(CMD);
+    const box: Msg[] = [];
+    const ws = await openPhone(`${base.replace(/^http/, "ws")}/phone/events`, { options: { origin: base }, setup: (s) => s.on("message", (d, bin) => { if (!bin) box.push(JSON.parse(String(d)) as Msg); }) });
+    cleanups.push(() => ws.close());
+    for (const end = Date.now() + 2000; box.length < 3 && Date.now() < end; ) await wait(20);
+    expect(box).toEqual([expect.objectContaining({ type: "status" }), { ...CMD, target: null, speak: false }, { type: "reply", text: "", pending: PENDING }]);
+  });
+
   it("reply(text)는 판본이 맞는 붙은 폰 모두에 pending 없는 reply를 보내고 옛 탭에는 보내지 않는다", async () => {
     const { phone, base } = await protoSetup();
     const url = `${base.replace(/^http/, "ws")}/phone/events`;
@@ -506,8 +516,9 @@ describe("폰 판본(hello)과 옛 탭", () => {
     const old = await tab(base);
     for (const end = Date.now() + 2000; !phone.ready() && Date.now() < end; ) await wait(20);
     phone.reply("인덕션이 다시 켜졌어요. 꺼 주세요");
-    for (const end = Date.now() + 2000; boxes.some((b) => !b.some((m) => m.type === "reply")) && Date.now() < end; ) await wait(20);
-    for (const box of boxes) expect(box.filter((m) => m.type === "reply")).toEqual([{ type: "reply", text: "인덕션이 다시 켜졌어요. 꺼 주세요" }]);
+    const said = (box: Msg[]) => box.filter((m) => m.type === "reply" && m.text !== "");
+    for (const end = Date.now() + 2000; boxes.some((b) => !said(b).length) && Date.now() < end; ) await wait(20);
+    for (const box of boxes) expect(said(box)).toEqual([{ type: "reply", text: "인덕션이 다시 켜졌어요. 꺼 주세요" }]);
     await wait(100);
     expect(old.box.filter((m) => m.type === "reply")).toEqual([]);
   });

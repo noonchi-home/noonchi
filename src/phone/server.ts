@@ -318,7 +318,7 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
     };
     const helloTimer = setTimeout(() => { if (phase.get(ws) === "wait") old(); }, HELLO_MS);
     helloTimer.unref?.();
-    // 판본이 맞는 hello: 정상으로 바꾸고 지금 명령 전체(대상은 지금 맞춘 AR 자리, 읽지 않음)를 보낸다
+    // 판본이 맞는 hello: 정상으로 바꾸고 지금 명령 전체(대상은 지금 맞춘 AR 자리, 읽지 않음)와 지금 승인 대기 목록을 보낸다
     const hello = (protocol: unknown) => {
       const was = phase.get(ws);
       if (protocol !== PHONE_PROTOCOL) {
@@ -329,8 +329,8 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
       phase.set(ws, "ok");
       if (was === "old") reply(ws, { type: "command_clear", id: REFRESH_COMMAND.id });
       reply(ws, current ? wire(current, false) : { type: "command_clear" });
-      // 옛 탭이던 연결은 승인 대기 목록도 다시 받는다(그동안 받은 것이 없다)
-      if (was === "old" && opts.pending) reply(ws, { type: "reply", text: "", pending: opts.pending() } satisfies PhoneTalkReply);
+      // 지금 승인 대기 목록도 보낸다(새로 연 폰도 이미 대기 중인 질문을 보고 답한다)
+      if (opts.pending) reply(ws, { type: "reply", text: "", pending: opts.pending() } satisfies PhoneTalkReply);
     };
     ws.on("close", () => clearTimeout(helloTimer));
     ws.on("message", (data, isBinary) => {

@@ -110,7 +110,7 @@ describe("HOME_ID로 고른 집: 폰 말 → 배치 보정 → 초점", () => {
     await dash.waitFor((m) => m.type === "eye");
 
     phone.ws.send(JSON.stringify({ type: "say", text: "냉장고 위치 여기로 맞춰줘" }));
-    const reply = await phone.waitFor((m) => m.type === "reply");
+    const reply = await phone.waitFor((m) => m.type === "reply" && m.text !== "");
     expect(reply.text).toMatch(/냉장고.*옮겼어요/);
     expect(await dash.waitFor((m) => m.type === "layout" && m.op === "move")).toMatchObject({ id: "fridge_1", plan: { position: [3, 3] } });
     const agentReply = await dash.waitFor((m) => m.type === "agent" && m.event === "reply");

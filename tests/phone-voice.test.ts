@@ -29,6 +29,13 @@ afterEach(async () => {
   phone = undefined;
 });
 
+/** 판본 hello 뒤 서버가 보내는 지금 승인 대기 목록(첫 reply)을 기다렸다가 목록에서 뺀다(말의 답 수를 세는 시험용). */
+async function dropHello(list: Msg[]): Promise<void> {
+  for (const end = Date.now() + 2000; !list.some((m) => m.type === "reply") && Date.now() < end; ) await new Promise((r) => setTimeout(r, 10));
+  const i = list.findIndex((m) => m.type === "reply");
+  if (i >= 0) list.splice(i, 1);
+}
+
 async function until(list: Msg[], n: number, ms = 3000): Promise<void> {
   for (const end = Date.now() + ms; list.length < n; ) {
     if (Date.now() > end) throw new Error("답이 오지 않았습니다");
@@ -113,6 +120,7 @@ describe("startServer(BRAIN=1): 클로이드 질문을 폰 말로 답한다", ()
     const phoneUrl = new URL(srv.phoneUrls[0]!);
     const box: Msg[] = [];
     ws = await openPhone(`ws://${phoneUrl.host}/phone/events`, { options: { origin: phoneUrl.origin }, setup: (s) => s.on("message", (d, bin) => { if (!bin) box.push(JSON.parse(String(d)) as Msg); }) });
+    await dropHello(box);
     let n = 0;
     const asked = async () => {
       for (const end = Date.now() + 10_000; Date.now() < end; ) {
@@ -211,6 +219,7 @@ describe("startServer(BRAIN=1): 말 답은 말할 때 떠 있던 명령에만", 
     const phoneUrl = new URL(srv.phoneUrls[0]!);
     const box: Msg[] = [];
     ws = await openPhone(`ws://${phoneUrl.host}/phone/events`, { options: { origin: phoneUrl.origin }, setup: (s) => s.on("message", (d, bin) => { if (!bin) box.push(JSON.parse(String(d)) as Msg); }) });
+    await dropHello(box);
     let n = 0;
     let ask: Msg | undefined;
     for (const end = Date.now() + 10_000; !ask && Date.now() < end; ) {
@@ -266,6 +275,7 @@ describe("startServer(BRAIN=1): 말로 하는 승인은 at의 승인 token에만
     const phoneUrl = new URL(srv.phoneUrls[0]!);
     const box: Msg[] = [];
     ws = await openPhone(`ws://${phoneUrl.host}/phone/events`, { options: { origin: phoneUrl.origin }, setup: (s) => s.on("message", (d, bin) => { if (!bin) box.push(JSON.parse(String(d)) as Msg); }) });
+    await dropHello(box);
     let n = 0;
     let ask: Msg | undefined;
     for (const end = Date.now() + 10_000; !ask && Date.now() < end; ) {
@@ -311,12 +321,22 @@ describe("startServer: 실제 폰의 말로 하는 승인", () => {
       const m = bin ? null : (JSON.parse(String(d)) as Msg);
       if (m?.type === "reply") replies.push(m);
     }) });
+    await dropHello(replies);
     const lock = async () => srv!.hub.get("door_main")?.twin.lock;
     const say = (text: string, pending?: string[]) => ws!.send(JSON.stringify({ type: "say", text, ...(pending ? { at: { kind: "none", pending } } : {}) }));
     say("현관문 열어줘", []);
     await until(replies, 1, 5000);
     expect(replies[0]!.pending).toHaveLength(1);
     const door = replies[0]!.pending[0].token as string;
+    // 승인 대기 중에 새로 연 폰도 그 질문을 받는다
+    const later: Msg[] = [];
+    const second = await openPhone(`ws://${phoneUrl.host}/phone/events`, { options: { origin: phoneUrl.origin }, setup: (s) => s.on("message", (d, bin) => { if (!bin) later.push(JSON.parse(String(d)) as Msg); }) });
+    try {
+      for (const end = Date.now() + 3000; !later.some((m) => m.type === "reply") && Date.now() < end; ) await new Promise((r) => setTimeout(r, 20));
+      expect(later.find((m) => m.type === "reply")).toMatchObject({ text: "", pending: [expect.objectContaining({ token: door, deviceLabel: expect.any(String) })] });
+    } finally {
+      second.close();
+    }
     for (const [i, said] of ["네", "어"].entries()) {
       say(said, [door]);
       await until(replies, i + 2, 5000);
@@ -350,6 +370,7 @@ describe("startServer: 실제 폰의 말로 하는 승인", () => {
       const m = bin ? null : (JSON.parse(String(d)) as Msg);
       if (m?.type === "reply") replies.push(m);
     }) });
+    await dropHello(replies);
     const say = (text: string, pending: string[]) => ws!.send(JSON.stringify({ type: "say", text, at: { kind: "none", pending } }));
     const power = () => srv!.hub.get(risky.id)?.twin.power;
     say("현관문 열어줘", []);
