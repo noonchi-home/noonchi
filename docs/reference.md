@@ -101,7 +101,7 @@ HUB=memory npm run demo
 | `PHONE_URL` | (없음) | 폰에서 열 주소. 대시보드 QR에 맨 앞 주소가 나온다. 없으면 `tailscale serve`가 폰 포트로 잇는 https 주소, 그다음 와이파이 주소 |
 | `PHONE_LAN_URLS` | `1` | `0`이면 폰 주소에 이 기계의 네트워크 주소(와이파이)를 넣지 않는다. compose는 `0`으로 둔다(컨테이너 안 주소는 밖에서 열 수 없다). 그때 폰 주소는 `PHONE_URL`뿐이다 |
 | `PHONE_PHOTO_DIR` | `RUNTIME_DIR/photos` | 사진 폴더 |
-| `PHONE_VIDEO_DIR` | 저장소 `runtime/videos` | 영상 모드 영상 폴더. `RUNTIME_DIR`(시연 폴더 포함)와 상관없이 이 폴더 하나에서 읽는다 |
+| `PHONE_VIDEO_DIR` | 저장소 `runtime/videos`(컨테이너는 `/data/videos`) | 영상 모드 영상 폴더. `RUNTIME_DIR`(시연 폴더 포함)와 상관없이 이 폴더 하나에서 읽는다 |
 | `BRAIN` | (끔) | `1`이면 폰 엔진 프레임으로 관찰 흐름(아래 "관찰 흐름")을 돌린다. `PHONE_PORT`가 있어야 한다. VLM은 `INFERENCE_MODE`가 고른 주소로 부른다(mock은 `OPENAI_API_KEY`) |
 | `ENGINE_FRAME_MS` | `100` | 엔진 프레임 간격(50 이상). 폰 서버가 상태 메시지로 폰에 알린다. 모든 엔진 프레임에 YOLO를 돌린다 |
 | `VLM_FRAME_MS` | `2000` | VLM 프레임 간격(`ENGINE_FRAME_MS` 이상). 앞 VLM 프레임보다 이만큼 뒤에 찍힌 엔진 프레임 한 장만 VLM·기록·가까이 보기에 쓴다(2초면 VLM 시간당 약 1,800번). 안 주고 `ENGINE_FRAME_MS`만 2초보다 길게 주면 그 값을 따른다. `ENGINE_FRAME_MS=2000 VLM_FRAME_MS=2000`이면 프레임마다 VLM을 부르던 옛 동작이다 |

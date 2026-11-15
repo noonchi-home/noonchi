@@ -25,7 +25,7 @@ FROM ${NODE_IMAGE} AS run
 # ORT_DISABLE_TELEMETRY=1: onnxruntime 원격 측정(기기 id·측정 DB를 ~/.cache/Microsoft/DeveloperTools/.onnxruntime에 쓰고 HTTPS로 보냄)을 끈다.
 # onnxruntime v1.31.1 docs/Privacy.md "Disabling Telemetry": onnxruntime이 뜨기 전에 준다
 ENV NODE_ENV=production HOST=0.0.0.0 PHONE_HOST=0.0.0.0 PORT=8200 PHONE_PORT=8210 RUNTIME_DIR=/data \
-    MATTER_STORAGE_DIR=/data/matter HUB=matter MATTER_TRANSPORT=local TZ=Asia/Seoul \
+    MATTER_STORAGE_DIR=/data/matter PHONE_VIDEO_DIR=/data/videos HUB=matter MATTER_TRANSPORT=local TZ=Asia/Seoul \
     ORT_DISABLE_TELEMETRY=1
 WORKDIR /app
 COPY --from=deps /app/node_modules node_modules
