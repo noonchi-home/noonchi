@@ -16,7 +16,7 @@ import { startServer, type RunningServer } from "../src/server/start.js";
 import { ScriptedDetector, det } from "./helpers/detectors.js";
 import { startFakePam, type FakePam } from "./helpers/pam.js";
 import { CUP_SCRIPTS, plannerRespond } from "./helpers/planner.js";
-import { openWebSocket } from "./helpers/ws.js";
+import { openPhone, openWebSocket } from "./helpers/ws.js";
 
 type Msg = Record<string, any>;
 let srv: RunningServer | undefined;
@@ -95,7 +95,7 @@ describe("영상 모드 처음부터 끝까지", () => {
     }) }));
     const phoneUrl = new URL(srv.phoneUrls[0]!);
     const phone: Msg[] = [];
-    const ws = await openWebSocket(`ws://${phoneUrl.host}/phone/events`, { options: { origin: phoneUrl.origin }, setup: (w) => w.on("message", (d, bin) => {
+    const ws = await openPhone(`ws://${phoneUrl.host}/phone/events`, { options: { origin: phoneUrl.origin }, setup: (w) => w.on("message", (d, bin) => {
       if (bin) return;
       const m = JSON.parse(String(d)) as Msg;
       phone.push(m);

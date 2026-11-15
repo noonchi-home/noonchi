@@ -1,7 +1,8 @@
 // 에이전트: LLM 공급자 + 도구 호출 루프(최대 6라운드) + 세션별 대화 기억 + 승인 대기 관리.
 // 승인 토큰은 LLM에게 보여 주지 않는다. 사용자가 실제 폰 답 단추(confirm, 승인·거절)나 다음 말로만 확정한다.
 // 승인 대기는 위험 목록뿐이라(src/agent/policy.ts) 답은 둘 다 이번만이다: 승인이면 실행하고, 거절이면 실행하지 않는다. 둘 다 기억하지 않아 다음에 또 묻는다.
-// 늘 듣는 실제 폰의 말(heard)은 말 전체가 답일 때만 받는다(src/act/prompts.ts APPROVE). 글로 한 말은 「응」「아니」로도 답한다.
+// 늘 듣는 실제 폰의 말(heard)로는 승인 대기에 답하지 않는다(answerAll 없음): 실제 폰 서버(src/server/home.ts)가 말 전체가 승인·거절 답이고
+// 말할 때 보인 대기 token이 하나일 때만 answerToken으로 그 대기 하나에 답한다. 글로 한 말은 「승인」「응」「아니」로 대기 전부에 답한다.
 
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -202,6 +203,24 @@ export class Agent {
     return s ? this.serialize(s, run) : run();
   }
 
+  /** 승인 대기 token 하나만 답한다(들은 말의 승인·거절, src/server/home.ts). 다른 대기는 그대로. 지금 대기가 아니면 ok false.
+   *  승인이면 실행하고, 거절이면 실행하지 않는다(둘 다 그 대기에 답한 것이라 ok true). */
+  answerToken(token: string, answer: ApprovalAnswer): Promise<{ ok: boolean; reply: string }> {
+    const s = this.owner(token);
+    const run = async () => {
+      if (!this.policy.pending().some((p) => p.token === token)) {
+        s?.pending.delete(token);
+        return { ok: false, reply: "승인할 작업이 없거나 시간이 지나 만료되었어요. 다시 요청해 주세요." };
+      }
+      if (answer === "reject") return { ok: true, reply: (await this.refuseToken(token, s)).reply };
+      const r = await this.confirmToken(token, s);
+      if (s) this.provider.addExchange?.(s.state, "(승인이라고 답했다)", r.reply);
+      this.emit({ event: "confirmed", sessionId: s?.id, token, ok: r.ok, reply: r.reply, deviceId: r.deviceId });
+      return { ok: true, reply: r.reply };
+    };
+    return s ? this.serialize(s, run) : run();
+  }
+
   /** 승인 대기를 취소한다. */
   cancel(token: string): { ok: boolean; reply: string } {
     const s = this.owner(token);
@@ -235,7 +254,8 @@ export class Agent {
     s.hide = said;
     let reply: string;
     const waiting = s.pending.size > 0;
-    const answer = waiting ? this.spokenAnswer(message) : null;
+    // 들은 말로는 대기 전부에 답하지 않는다(실제 폰 서버가 말할 때 보인 token 하나에만 answerToken으로 답한다)
+    const answer = waiting && !opts.heard ? this.spokenAnswer(message) : null;
     if (answer) reply = await this.answerAll(s, message, answer, actions);
     else if (waiting && !opts.heard && isAffirmative(message)) reply = await this.answerAll(s, message, "approve", actions);
     else if (waiting && !opts.heard && isNegative(message)) reply = this.cancelAll(s, message);

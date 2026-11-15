@@ -60,11 +60,16 @@ export interface VideoCommandEntry { video_ms: number; id: string; step: string;
 export interface VideoClipEntry { video_ms: number; clip: string; duration_ms?: number }
 /** 판정 기록. t0: 재생 시작 순간의 서버 시계(ms, 시계를 맞추기 전에는 폰 시계). ended: 첫 영상이 끝남.
  *  hold: 단계 영상이 끝나 마지막 장면을 붙잡는 중이면 그 영상과 붙잡기 시작한 영상 시각, 아니면 null. */
-export interface VideoRecord { t0: number | null; ended: boolean; hold: { clip: string; since: number } | null; commands: VideoCommandEntry[]; clips: VideoClipEntry[] }
+export interface VideoRecord {
+  t0: number | null; ended: boolean; hold: { clip: string; since: number } | null; commands: VideoCommandEntry[]; clips: VideoClipEntry[];
+  /** 승인 대기 목록에 보인 token들(영상 판정 --say의 at). 기록 전이면 없음. */
+  pending?: string[];
+}
 
 export function videoParams(params: URLSearchParams): Required<Pick<VideoArDeps, "clipUrl" | "fovDeg" | "pitchDeg" | "heightM" | "steps" | "reactMs">> | null;
 export function videoRecord(target?: object): VideoRecord;
 export function logVideoCommand(videoMs: number, command: { id: string; step: string; text: string }): void;
+export function logVideoPending(tokens: readonly string[]): void;
 export function createVideoAr(opts: { link: PhoneLink; params: URLSearchParams; hooks: ArHooks; deps: VideoArDeps }): VideoAr;
 
 declare global {

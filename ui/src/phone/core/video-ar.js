@@ -82,6 +82,11 @@ const clockText = (ms) => {
   return `${String(Math.floor(t / 600)).padStart(2, "0")}:${((t % 600) / 10).toFixed(1).padStart(4, "0")}`;
 };
 
+/** 승인 대기 목록에 보인 token들을 기록한다(영상 판정 --say가 말의 at으로 싣는다). */
+export function logVideoPending(tokens) {
+  videoRecord().pending = [...tokens];
+}
+
 /** 받은 명령을 그 영상 시각으로 기록한다. 같은 단계·글(비전 상태만 바뀐 것)은 한 번만. */
 export function logVideoCommand(videoMs, { id, step, text }) {
   const record = videoRecord();

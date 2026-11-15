@@ -3,7 +3,7 @@
 // 엄지 자리 차례: 시작 위치 맞추기·물건 자리 맞추기 > 승인 대기(가전) > 명령·질문. 일이 멈추는 문제는 모달(problemOf), 추적 약함·잠깐 알릴 말은 비전 상태 줄.
 // 위치 맞춤(서버 status.sync, src/sync): 시작 위치가 있으면 AR을 켤 때 「여기서 시작」을 띄우고, 어림인 동안 명령의 비전 상태 줄 앞에 「위치 맞추는 중」.
 // 집에 시작 위치가 없으면 AR 중 「설정 화면에서 시작 위치를 정해 주세요」 모달이 뜬다.
-import type { ApprovalAnswer } from "../../../src/contract/phone.ts";
+import type { ApprovalAnswer, HeardAt } from "../../../src/contract/phone.ts";
 import type { ListenState } from "./core/talk.js";
 
 export type { ListenState };
@@ -140,6 +140,19 @@ export function handOf(v: PhoneView): Hand {
     : null;
   const vision = v.note ? { text: v.note, tone: "warn" as const } : v.limited ? { text: WEAK_TEXT, tone: "warn" as const } : base;
   return { top, thumb, vision };
+}
+
+/** 지금 화면에 보인 승인 대기 token들: AR 중이면 엄지 자리에 뜬 맨 앞 대기 하나(다른 것이 엄지 자리를 차지하면 없음), 처음 화면이면 목록 전부. */
+export function shownPending(v: PhoneView): string[] {
+  if (!v.ar) return v.pending.map((p) => p.token);
+  const t = handOf(v).thumb;
+  return t?.kind === "pending" ? [t.item.token] : [];
+}
+
+/** 말의 at(src/contract/phone.ts HeardAt): 지금 명령 줄의 명령(계획 id·단계 id, 없으면 none)과 보인 승인 대기 token들. */
+export function heardAtOf(v: PhoneView): HeardAt {
+  const c = v.command;
+  return { ...(c ? { kind: "command" as const, id: c.id, step: c.step } : { kind: "none" as const }), pending: shownPending(v) };
 }
 
 /** 일이 멈추는 문제(AR 중에만, 하나): 연결 끊김 → 마이크 꺼짐 → 시작 위치 없음(집에 시작 위치가 없고 아직 아무 변환도 없을 때). */

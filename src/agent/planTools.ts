@@ -23,7 +23,8 @@ import { CLASSES, DEVICE_STATES, type DeviceStateKey } from "../world/vocab.js";
 import { ConditionSchema, checkCondition, type Condition, type ConditionHome } from "../world/conditions.js";
 import type { DecisionRecord } from "../world/decide.js";
 import { RISKY_NAME_PROBLEM, needsConfirm, riskyNames } from "./policy.js";
-import { TOOLS, type ToolDef, type ToolResult } from "./tools.js";
+import { TOOLS, toolCommand, type ToolDef, type ToolResult } from "./tools.js";
+import type { ApprovalWhy } from "./approval.js";
 
 /** 에이전트 단계 종류. go·pick·place·do는 사람이 하는 일(실제 폰 명령, do는 그 자리에서 하는 일: 따르기·붓기), ask 질문, say 알림, device 가전 조작, wait 기다리기. */
 export type AgentStepKind = "go" | "pick" | "place" | "do" | "device" | "ask" | "say" | "wait";
@@ -154,6 +155,20 @@ export function riskyHand(step: Pick<AgentStep, "hand">, devices: readonly { id:
   if (step.hand?.to !== "on") return false;
   const d = devices.find((x) => x.id === step.hand!.deviceId);
   return !!d && needsConfirm(d, { type: "on" });
+}
+
+/** 폰 답·폰 안내가 꼭 필요한 계획인가: 사람 단계(go·pick·place·do)나 질문이 있거나, 처음 하는 일이라 승인 질문이 필요하거나(approval),
+ *  승인 판정상 묻는 가전 단계(위험 목록, src/agent/policy.ts needsConfirm. 가전을 모르면 묻는 것으로 본다)가 있거나, 어떤 단계든 시간 초과 때 폰에 묻는(on_timeout ask) 계획.
+ *  가전 단계·기다리기·알림만 있고 이미 승인됐고 시간 초과가 모두 실패인 계획(에어컨 켜기 등)은 폰 없이 돈다. */
+export function needsPhone(plan: Pick<AgentPlan, "steps">, approval: ApprovalWhy | null, devices: readonly { id: string; kind: string; capabilities?: readonly Capability[] }[]): boolean {
+  if (approval) return true;
+  return plan.steps.some((s) => {
+    if (HUMAN_KINDS.includes(s.kind) || s.kind === "ask" || s.onTimeout === "ask") return true;
+    if (s.kind !== "device" || !s.device) return false;
+    const cmd = toolCommand(s.device.tool, s.device.args);
+    const d = devices.find((x) => x.id === s.device!.deviceId);
+    return !!cmd && (!d || needsConfirm(d, cmd));
+  });
 }
 
 const isId = (name: string) => /_\d+$/.test(name);

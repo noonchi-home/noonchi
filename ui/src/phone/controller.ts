@@ -1,6 +1,8 @@
 // 실제 폰 제어: 연결(core/link.js)·AR(core/ar.js)·늘 듣기와 소리(core/talk.js)를 묶고, 서버 메시지와 단추를 화면 상태(state.ts)로 바꾼다.
 // 듣기는 AR 중 늘 켜 두고(끝나면 다시 켬), 명령·답을 소리로 읽는 동안은 멈췄다가 다 읽으면(끝 알림, 오지 않으면 정해진 시간 뒤) 다시 켠다.
 // 들은 말은 그대로 서버로 간다(say: 명령의 답이면 서버가 그 답으로 받고, 아니면 에이전트로). 명령·질문(command, src/contract/phone.ts)이 speak로 오면 읽는다.
+// 말에는 at(말하기 시작할 때 떠 있던 명령·보인 승인 대기 token)을 싣는다: 인식이 말 시작(speechstart)을 알리면 그때 잡아 두고, 알림 없이 온 말·글 입력은 보낼 때 것.
+// 서버는 그 명령·token에만 답으로 받는다(말하는 사이 명령이 바뀌면 버린다). 서버 판본이 다르면 core/link.js가 다시 읽고, 못 읽으면 「새로 고침이 필요해요」.
 // 답 단추는 받은 명령의 id·step으로 answer를, 승인 대기 답 단추는 그 토큰과 답(승인·거절)으로 confirm을 보낸다.
 // 말의 답(reply)이 빈 글이면 보이지도 읽지도 않는다. 잠깐 알릴 말은 4초.
 // 카메라 화면을 못 보내면(core/ar.js 알림) 그 AR 동안 cameraOff로 두어 설정 모달에 「카메라 · 못 보냄」을 남긴다.
@@ -11,17 +13,19 @@
 // 영상 입력 모드(?clip=, core/video-ar.js): 카메라 대신 영상을 틀고 고정 자세로 바로 맞춘다(start fixed). 지원은 바로 되고(WebXR·https 없어도),
 // 소리 읽기·늘 듣기는 끈다(답은 화면 단추). 「여기서 시작」은 저절로 열지 않고, 서버 맞춤이 없으면 영상 AR이 시작 자세를 다시 보낸다(syncStatus).
 // 받은 명령은 그 영상 시각으로 기록하고(window.__noonchiVideo), 영상 AR에 넘겨 맞는 단계 영상(?step=)으로 바꾸고 go 단계면 자세를 걷게 한다.
-import type { PhoneCommand, PhoneCommandClear } from "../../../src/contract/phone.ts";
+import type { HeardAt, PhoneCommand, PhoneCommandClear } from "../../../src/contract/phone.ts";
 import { createAr, type ArHooks, type PhoneAr } from "./core/ar.js";
-import { createVideoAr, logVideoCommand, videoParams, type VideoArDeps } from "./core/video-ar.js";
+import { createVideoAr, logVideoCommand, logVideoPending, videoParams, type VideoArDeps } from "./core/video-ar.js";
 import { createLink, phoneSocketUrl } from "./core/link.js";
 import { createListener, recognition, speak as speakAloud, type RecognitionCtor } from "./core/talk.js";
 import {
-  createStore, handOf, initialView, isStartWord, onStatus,
+  createStore, handOf, heardAtOf, initialView, isStartWord, onStatus, shownPending,
   type FocusMark, type Pending, type PhoneActions, type PhoneView, type SyncWire,
 } from "./state";
 
 const NOTE_MS = 4000;
+/** 서버 판본이 달라 다시 읽지 못했을 때(같은 탭에서 60초 안) 처음 화면 답 줄과 잠깐 알릴 말. */
+const STALE_TEXT = "새로 고침이 필요해요";
 /** core/ar.js가 AR을 켜고 3초 안에 카메라 화면이 없을 때 내는 말의 앞부분. */
 const CAMERA_NOTE = "카메라 화면을 보낼 수 없어요";
 /** 명령 대상 초점은 명령이 지워질 때까지(command_clear) 둔다. */
@@ -69,6 +73,8 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
   let talkTimer: ReturnType<typeof setTimeout> | undefined;
   let talkTurn = 0;
   let aim = false;
+  /** 말 시작 때 잡아 둔 at(그 말을 보내면 비운다). */
+  let heardAt: HeardAt | null = null;
 
   // 조준점은 물건 자리 맞추기 때만: setup이 바뀌면 그림에 알린다
   store.subscribe(() => {
@@ -82,9 +88,21 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
     url: phoneSocketUrl(deps.location, video ? params.get("clip") : null), onMessage, Socket: deps.Socket, now: undefined,
     onOpen: () => set((v) => ({ ...v, connected: true })),
     onClose: () => set((v) => ({ ...v, connected: false })),
+    onStale: () => {
+      set((v) => ({ ...v, reply: STALE_TEXT }));
+      showNote(STALE_TEXT);
+    },
   });
   const listener = Recognition
-    ? createListener(Recognition, { onState: (s) => set((v) => ({ ...v, listening: s })), onHeard: (text) => actions.say(text) })
+    ? createListener(Recognition, {
+      onState: (s) => set((v) => ({ ...v, listening: s })),
+      onSpeechStart: () => { heardAt = heardAtOf(store.get()); },
+      onHeard: (text) => {
+        const at = heardAt ?? heardAtOf(store.get());
+        heardAt = null;
+        say(text, at);
+      },
+    })
     : null;
 
   /** XR 프레임마다: 바닥 닿음(어림 바닥인지)·추적 약함이 바뀔 때만 화면 상태를 바꾼다. */
@@ -158,6 +176,7 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
       const pending: Pending[] | undefined = msg.pending;
       const text = String(msg.text ?? "");
       set((v) => ({ ...v, reply: text || null, pending: pending ?? v.pending }));
+      if (video) logVideoPending(shownPending(store.get()));
       if (text) sayAloud(text);
     } else if (msg.type === "focus") {
       if (!store.get().command) ar.setFocus(msg.targets, msg.ttl_ms);
@@ -174,6 +193,16 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
       set((v) => ({ ...v, command: null }));
       ar.setFocus([], 0);
     }
+  }
+
+  /** 들은 말·글 입력을 보낸다. at: 말할 때 떠 있던 명령·보인 승인 대기(src/contract/phone.ts HeardAt). */
+  function say(text: string, at: HeardAt) {
+    const t = text.trim();
+    if (!t) return;
+    // 시작 위치 맞추기 중 「여기서 시작」은 단추와 같다(에이전트로 보내지 않는다)
+    if (store.get().setup === "start" && isStartWord(t)) return actions.confirmStart();
+    set((v) => ({ ...v, reply: `🎙 "${t}" … 생각 중` }));
+    if (!link.send({ type: "say", text: t, at })) set((v) => ({ ...v, reply: "서버와 연결이 끊겼어요. 잠시 뒤 다시 말해 주세요." }));
   }
 
   const actions: PhoneActions = {
@@ -196,16 +225,10 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
     endSetup: () => set((v) => ({ ...v, setup: null })),
     setSettings: (open) => set((v) => ({ ...v, settingsOpen: open })),
     micOn: () => listener?.start(),
-    say(text) {
-      const t = text.trim();
-      if (!t) return;
-      // 시작 위치 맞추기 중 「여기서 시작」은 단추와 같다(에이전트로 보내지 않는다)
-      if (store.get().setup === "start" && isStartWord(t)) return actions.confirmStart();
-      set((v) => ({ ...v, reply: `🎙 "${t}" … 생각 중` }));
-      if (!link.send({ type: "say", text: t })) set((v) => ({ ...v, reply: "서버와 연결이 끊겼어요. 잠시 뒤 다시 말해 주세요." }));
-    },
+    say: (text) => say(text, heardAtOf(store.get())),
     confirm(token, choice) {
       set((v) => ({ ...v, pending: v.pending.filter((p) => p.token !== token) }));
+      if (video) logVideoPending(shownPending(store.get()));
       link.send({ type: "confirm", token, choice });
     },
     answer(id, step, choice) {

@@ -1,6 +1,7 @@
 // 폰 ↔ 폰 서버 연결(link.js): https면 wss로 /phone/events, 붙으면 시계 핑(바로·2초마다), clock 답으로 촬영 시각·오차를 맞추고, 끊기면 1초 뒤 다시 붙는다.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createLink, phoneSocketUrl } from "../ui/src/phone/core/link.js";
+import { PHONE_PROTOCOL } from "../ui/src/phone/protocol.js";
 
 class FakeSocket {
   static OPEN = 1;
@@ -28,12 +29,12 @@ describe("폰 연결(link.js)", () => {
     expect(phoneSocketUrl({ protocol: "http:", host: "192.168.0.7:8210" })).toBe("ws://192.168.0.7:8210/phone/events");
   });
 
-  it("열리기 전에는 보내지 않고 false. 열리면 바로·2초마다 clock 핑", () => {
+  it("열리기 전에는 보내지 않고 false. 새 폰은 열리자마자 판본 hello를 보내고, 바로·2초마다 clock 핑", () => {
     const link = make();
     const ws = FakeSocket.all[0]!;
     expect(link.send({ type: "pose" })).toBe(false);
     ws.open();
-    expect(ws.sent.map((s) => JSON.parse(s))).toEqual([{ type: "clock", t0: 0 }]);
+    expect(ws.sent.map((s) => JSON.parse(s))).toEqual([{ type: "hello", protocol: PHONE_PROTOCOL }, { type: "clock", t0: 0 }]);
     vi.advanceTimersByTime(4000);
     expect(ws.sent.filter((s) => JSON.parse(s).type === "clock")).toHaveLength(3);
     expect(link.send({ type: "pose" })).toBe(true);
@@ -87,5 +88,63 @@ describe("폰 연결(link.js)", () => {
     vi.advanceTimersByTime(5000);
     expect(FakeSocket.all).toHaveLength(1);
     expect(FakeSocket.all[0]!.sent.filter((s) => JSON.parse(s).type === "clock")).toHaveLength(1);
+  });
+});
+
+describe("폰 판본(link.js)", () => {
+  const status = (protocol?: number) => ({ type: "status", aligned: false, ...(protocol === undefined ? {} : { protocol }) });
+  function versioned(storage: { getItem(k: string): string | null; setItem(k: string, v: string): void } = memory()) {
+    const reloads: number[] = [];
+    const stale: number[] = [];
+    const got: unknown[] = [];
+    const link = createLink({ url: "ws://pc/phone/events", onMessage: (m: unknown) => got.push(m), Socket: FakeSocket as never, now: () => t, reload: () => reloads.push(t), storage, onStale: () => stale.push(t) });
+    return { link, reloads, stale, got };
+  }
+  function memory() {
+    const m = new Map<string, string>();
+    return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => { m.set(k, v); } };
+  }
+
+  it("폰 상태의 protocol이 폰 빌드와 다르면 페이지를 다시 읽는다. 같으면 다시 읽지 않는다. 다시 붙을 때의 상태도 본다", () => {
+    const { link, reloads, got } = versioned();
+    const ws = FakeSocket.all[0]!;
+    ws.open();
+    ws.push(status(PHONE_PROTOCOL));
+    expect(reloads).toEqual([]);
+    expect(got).toHaveLength(1);
+    ws.close();
+    vi.advanceTimersByTime(1000);
+    t = 5000;
+    FakeSocket.all[1]!.open();
+    FakeSocket.all[1]!.push(status(PHONE_PROTOCOL + 1));
+    expect(reloads).toEqual([5000]);
+    link.close();
+  });
+
+  it("같은 탭에서 60초 안에 두 번 다시 읽지 않고 「새로 고침이 필요해요」를 알린다(onStale). 저장소가 막혀도 다시 읽지 않고 알린다", () => {
+    const store = memory();
+    const a = versioned(store);
+    FakeSocket.all[0]!.open();
+    FakeSocket.all[0]!.push(status(PHONE_PROTOCOL + 1));
+    expect(a.reloads).toEqual([0]);
+    a.link.close();
+    // 다시 읽은 뒤 같은 탭(같은 저장소)의 새 페이지
+    t = 30_000;
+    const b = versioned(store);
+    FakeSocket.all.at(-1)!.open();
+    FakeSocket.all.at(-1)!.push(status(PHONE_PROTOCOL + 1));
+    expect([b.reloads, b.stale]).toEqual([[], [30_000]]);
+    b.link.close();
+    t = 61_000;
+    const c = versioned(store);
+    FakeSocket.all.at(-1)!.open();
+    FakeSocket.all.at(-1)!.push(status(PHONE_PROTOCOL + 1));
+    expect(c.reloads).toEqual([61_000]);
+    c.link.close();
+    const blocked = versioned({ getItem: () => { throw new Error("막힘"); }, setItem: () => { throw new Error("막힘"); } });
+    FakeSocket.all.at(-1)!.open();
+    FakeSocket.all.at(-1)!.push(status(PHONE_PROTOCOL + 1));
+    expect([blocked.reloads, blocked.stale]).toEqual([[], [61_000]]);
+    blocked.link.close();
   });
 });

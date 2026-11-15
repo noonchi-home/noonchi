@@ -14,6 +14,7 @@ class FakeRec {
   onresult: ((e: { resultIndex: number; results: Result[] }) => void) | null = null;
   onerror: ((e: { error: string }) => void) | null = null;
   onend: (() => void) | null = null;
+  onspeechstart: (() => void) | null = null;
   started = 0;
   aborted = 0;
   results: Result[] = [];
@@ -33,7 +34,7 @@ const last = () => FakeRec.all.at(-1)!;
 function make() {
   const log: string[] = [];
   const heard: string[] = [];
-  const l = createListener(FakeRec as never, { onState: (s) => log.push(s), onHeard: (t) => heard.push(t) }, { restartMs: 300 });
+  const l = createListener(FakeRec as never, { onState: (s) => log.push(s), onHeard: (t) => heard.push(t), onSpeechStart: () => heard.push("(말 시작)") }, { restartMs: 300 });
   return { l, log, heard };
 }
 
@@ -51,6 +52,14 @@ describe("늘 듣기(createListener)", () => {
     rec.hear("TV 켜줘");
     expect(heard).toEqual(["다 했어", "TV 켜줘"]);
     expect(log).toEqual(["on"]);
+  });
+
+  it("말이 시작되면(인식 speechstart) onSpeechStart를 부른다: 그 말이 끝나 보내지기 전에", () => {
+    const { l, heard } = make();
+    l.start();
+    last().onspeechstart?.();
+    last().hear("완료");
+    expect(heard).toEqual(["(말 시작)", "완료"]);
   });
 
   it("인식이 끝나면 300ms 뒤 새로 켠다. stop() 뒤에는 다시 켜지 않는다", () => {

@@ -11,7 +11,7 @@ import { MemoryHub } from "../src/hub/memory.js";
 import { fetchRetry } from "../src/server/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { HOME_SCRIPT, startFakeLlm, type FakeLlm } from "./helpers/llm.js";
-import { openWebSocket } from "./helpers/ws.js";
+import { openPhone, openWebSocket } from "./helpers/ws.js";
 import { readVideo } from "./helpers/video.js";
 import { encodeFramePacket } from "../src/phone/packet.js";
 
@@ -143,7 +143,7 @@ describe("설정 흐름 서버", () => {
     srv = await startServer({ env: env(runtime(), { PHONE_PORT: "0", PHONE_HOST: "127.0.0.1" }), log: () => {} });
     const phoneBase = srv.phoneUrls[0]!.replace(/\/phone\/$/, "");
     const sendVideo = async () => {
-      const phone = await openWebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events`, { options: { origin: phoneBase } });
+      const phone = await openPhone(`${phoneBase.replace(/^http/, "ws")}/phone/events`, { options: { origin: phoneBase } });
       sockets.push(phone);
       phone.send(encodeFramePacket({ kind: "video_config", codec: "avc1.42E01F", width: 592, height: 1280 }, Buffer.from([1, 0x42])));
       phone.send(encodeFramePacket({ kind: "video", key: true, ts: 0, width: 592, height: 1280 }, Buffer.alloc(500, 0x65)));

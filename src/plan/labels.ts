@@ -144,6 +144,9 @@ export const CLOSER_TEXT = (place: string) => `${josa(place, "이/가")} 보이�
 export const CAUTION_LINE: Record<string, string> = Object.fromEntries(KIND_ORDER.flatMap((k) => { const r = KINDS[k].riskyOn; return r ? [[k, r.caution]] : []; }));
 
 /** 손으로 켜는 위험 가전(src/act/track.ts): 켜기 전에 안전 문구와 함께 묻는 글, 켠 채 계획이 닫혔을 때 끄라고 알리는 명령. */
+/** 판본이 다른(옛) 폰 탭에 보내는 명령 줄 글(src/phone/server.ts). 옛 탭도 그리는 보통 명령으로 간다. */
+export const REFRESH_TEXT = "화면을 새로 고쳐 주세요";
+
 export const CAUTION_TEXT = {
   ask: (caution: string, label: string) => `${caution} ${josa(label, "을/를")} 켤까요?`.trim(),
   off: (label: string) => `${josa(label, "을/를")} 꺼 주세요`,
@@ -173,6 +176,10 @@ export const EXEC_TEXT = {
   closerNewer: "가까이 본 뒤 다시 판단", left: "그대로 둠",
   /** 켠 위험 가전 끄기 안내가 남아 새 계획 시작을 미룸(그 가전 이름). */
   deferred: (device: string) => `${device} 꺼짐 확인 전이라 새 일을 미룸`,
+  /** 판본이 맞는 실제 폰이 없어 폰이 필요한 계획 시작을 미룸. 계획 도중 폰이 없어 물을 수 없어 닫음. 말할 때와 다른 명령에 온 말 답을 버림. */
+  phoneOld: "폰 화면 새로 고침 전이라 새 일을 미룸",
+  phoneGone: "폰이 없어 물을 수 없어 그만둠",
+  staleAnswer: "늦은 답이라 쓰지 않음",
 } as const;
 
 /** 관찰 모드 기록 글(src/act/look.ts, 기록 종류 look). 가까이 본 결과, 못 본 까닭, 사람 부탁, 기다리기. capped·failed는 모델 대신 쓰는 까닭 글이다. */

@@ -14,7 +14,7 @@ import { startServer, type RunningServer } from "../src/server/start.js";
 import { ScriptedDetector, det } from "./helpers/detectors.js";
 import { startFakePam, type FakePam } from "./helpers/pam.js";
 import { CUP_SCRIPTS, plannerRespond } from "./helpers/planner.js";
-import { openWebSocket } from "./helpers/ws.js";
+import { heardAtOf, openPhone, openWebSocket } from "./helpers/ws.js";
 import { alignOnServer } from "./helpers/align.js";
 
 type Msg = Record<string, any>;
@@ -73,7 +73,7 @@ describe("한양목련 처음부터 끝까지", () => {
     sockets.push(await openWebSocket(`${srv.url.replace(/^http/, "ws")}/events`, { setup: inbox(dash) }));
     const phoneUrl = new URL(srv.phoneUrls[0]!);
     const phone: Msg[] = [];
-    const ws = await openWebSocket(`ws://${phoneUrl.host}/phone/events`, { options: { origin: phoneUrl.origin }, setup: inbox(phone) });
+    const ws = await openPhone(`ws://${phoneUrl.host}/phone/events`, { options: { origin: phoneUrl.origin }, setup: inbox(phone) });
     sockets.push(ws);
     const until = async (ok: () => boolean, what: string) => {
       for (const end = Date.now() + 5000; Date.now() < end; await new Promise((r) => setTimeout(r, 20))) if (ok()) return;
@@ -125,7 +125,7 @@ describe("한양목련 처음부터 끝까지", () => {
     cupPlace = "in_hand";
     await pump(() => !!said("싱크대로 가 주세요"));
     expect(said("싱크대로 가 주세요")).toMatchObject({ id: planId, step: `${planId}:3`, target: { id: "sink_counter_kitchen" } });
-    ws.send(JSON.stringify({ type: "say", text: "다 했어" }));
+    ws.send(JSON.stringify({ type: "say", text: "다 했어", at: heardAtOf(phone) }));
     await pump(() => !!said("컵을 싱크대에 넣어 주세요"));
     expect(said("컵을 싱크대에 넣어 주세요")).toMatchObject({ id: planId, step: `${planId}:4` });
     cupPlace = "in_sink";

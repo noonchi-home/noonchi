@@ -54,6 +54,8 @@ export interface ToolDef {
   mcpOnly?: boolean;
   /** 서버 안 에이전트에만 노출(MCP 목록에 내지 않는다). */
   agentOnly?: boolean;
+  /** 기기 명령 도구면 인자 → 가전 명령(승인 판정·폰이 필요한 계획 판정이 쓴다). */
+  command?: (args: Record<string, unknown>) => Command;
   run(backend: ToolBackend, args: Record<string, unknown>): Promise<ToolResult>;
 }
 
@@ -128,7 +130,7 @@ function commandTool(
   toCommand: (a: Record<string, unknown>) => Command,
 ): ToolDef {
   return {
-    name, title, description,
+    name, title, description, command: toCommand,
     schema: z.object({ device_id: deviceId, ...extra }),
     async run(backend, args) {
       const id = String(args.device_id);
@@ -270,6 +272,11 @@ export const TOOLS: ToolDef[] = [
 ];
 
 export const AGENT_TOOLS: ToolDef[] = TOOLS.filter((t) => !t.mcpOnly);
+
+/** 기기 도구 이름과 인자 → 가전 명령. 기기 명령 도구가 아니면 null. */
+export function toolCommand(tool: string, args: Record<string, unknown>): Command | null {
+  return TOOLS.find((t) => t.name === tool)?.command?.(args) ?? null;
+}
 export const MCP_TOOLS: ToolDef[] = TOOLS.filter((t) => !t.agentOnly);
 
 /** LLM API용 JSON 스키마($schema 키 없음). */

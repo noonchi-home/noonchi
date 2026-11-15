@@ -14,7 +14,7 @@ import { smallFloor } from "./helpers/floor.js";
 import { ROOMS, makeHome } from "./helpers/home.js";
 import { CATALOG, scene } from "./helpers/layout.js";
 import { HOME_SCRIPT, startFakeLlm, type FakeLlm } from "./helpers/llm.js";
-import { openWebSocket } from "./helpers/ws.js";
+import { openPhone, openWebSocket } from "./helpers/ws.js";
 import { alignOnServer } from "./helpers/align.js";
 
 type Msg = Record<string, any>;
@@ -181,7 +181,7 @@ describe("startServer: 집의 계획 보관", () => {
     const dash = await listen(srv.url);
     expect(await dash.waitFor((m) => m.type === "plan")).toEqual({ type: "plan", plan: null });
     const phoneUrl = new URL(srv.phoneUrls[0]!);
-    const phone = await openWebSocket(`ws://${phoneUrl.host}/phone/events`);
+    const phone = await openPhone(`ws://${phoneUrl.host}/phone/events`);
     cleanups.push(() => phone.close());
     const phoneBox: Msg[] = [];
     phone.on("message", (d) => phoneBox.push(JSON.parse(String(d))));

@@ -14,7 +14,7 @@ import { ScriptedDetector, det } from "./helpers/detectors.js";
 import { HOME_SCRIPT, startFakeLlm, type FakeLlm } from "./helpers/llm.js";
 import { startFakePam, type FakePam } from "./helpers/pam.js";
 import { BOX_START, BOX_WALLS } from "./helpers/align.js";
-import { openWebSocket } from "./helpers/ws.js";
+import { heardAtOf, openPhone, openWebSocket } from "./helpers/ws.js";
 
 
 type Msg = Record<string, any>;
@@ -46,7 +46,7 @@ describe("폰 음성 질문", () => {
     });
     const { port } = await phone.listen(0, "127.0.0.1");
     const replies: Msg[] = [];
-    ws = await openWebSocket(`ws://127.0.0.1:${port}/phone/events`, { setup: (s) => s.on("message", (d) => {
+    ws = await openPhone(`ws://127.0.0.1:${port}/phone/events`, { setup: (s) => s.on("message", (d) => {
       const m = JSON.parse(String(d)) as Msg;
       if (m.type === "reply") replies.push(m);
     }) });
@@ -111,7 +111,7 @@ describe("startServer(BRAIN=1): 클로이드 질문을 폰 말로 답한다", ()
     });
     const phoneUrl = new URL(srv.phoneUrls[0]!);
     const box: Msg[] = [];
-    ws = await openWebSocket(`ws://${phoneUrl.host}/phone/events`, { options: { origin: phoneUrl.origin }, setup: (s) => s.on("message", (d, bin) => { if (!bin) box.push(JSON.parse(String(d)) as Msg); }) });
+    ws = await openPhone(`ws://${phoneUrl.host}/phone/events`, { options: { origin: phoneUrl.origin }, setup: (s) => s.on("message", (d, bin) => { if (!bin) box.push(JSON.parse(String(d)) as Msg); }) });
     let n = 0;
     const asked = async () => {
       for (const end = Date.now() + 10_000; Date.now() < end; ) {
@@ -135,12 +135,103 @@ describe("startServer(BRAIN=1): 클로이드 질문을 폰 말로 답한다", ()
     // 질문이 떠 있는 동안 들은 답이 아닌 말: 에이전트로 가고 피드백으로 남지 않는다
     ws.send(JSON.stringify({ type: "say", text: "TV 소리 좀 줄여 봐" }));
     expect((await replies(1))[0]).toMatchObject({ text: "알겠어요" });
-    ws.send(JSON.stringify({ type: "say", text: "그냥 그대로 둬" }));
+    ws.send(JSON.stringify({ type: "say", text: "그냥 그대로 둬", at: heardAtOf(box) }));
     expect((await replies(2))[1]).toMatchObject({ text: "알겠어요. 그대로 둘게요" });
     const rows = srv.history.list({ kinds: ["feedback", "execution"] });
     expect(rows.filter((r) => r.kind === "feedback").map((r) => r.text)).toEqual(["그냥 그대로 둬 · 질문: 컵을 치울까요?"]);
     expect(rows.some((r) => r.kind === "execution" && r.subject === ask.id && r.text === "완료: 그대로 둬요")).toBe(true);
     expect(box.some((m) => m.type === "command_clear" && m.id === ask.id)).toBe(true);
+  }, 30_000);
+});
+
+describe("startServer(BRAIN=1): 말 답은 말할 때 떠 있던 명령에만", () => {
+  let srv: RunningServer | undefined;
+  let fake: FakeServer | undefined;
+  let pam: FakePam | undefined;
+  let llm: FakeLlm | undefined;
+  afterEach(async () => {
+    await srv?.close();
+    srv = undefined;
+    await fake?.close();
+    fake = undefined;
+    await pam?.close();
+    pam = undefined;
+    await llm?.close();
+    llm = undefined;
+  });
+
+  it("판본 없는 폰 탭은 실행을 막고 새로 고침을 안내한다: 그 탭에는 「화면을 새로 고쳐 주세요」가 가고 계획 명령은 가지 않으며 그 탭의 「완료」·confirm은 받지 않는다. 그 탭만 붙어 있으면 폰이 필요한 계획은 시작하지 않고 실행 기록에 남는다. 맞는 판본 탭이 붙으면 시작해 명령이 그 탭에 간다", async () => {
+    fake = await startFakeOpenAI();
+    llm = await startFakeLlm({});
+    pam = await startFakePam({ predict: () => ({ observation: "컵이 식탁에 있음", reasoning: "치울지 묻는다", task_index: 1 }) });
+    srv = await startServer({
+      env: { HUB: "memory", PORT: "0", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
+        BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url, ...llm.env },
+      brain: { detector: new ScriptedDetector(() => [det("cup", 0.9, [1, 1, 2, 1], 41)]) }, log: () => {},
+    });
+    const phoneUrl = new URL(srv.phoneUrls[0]!);
+    const old: Msg[] = [];
+    const tab = await openWebSocket(`ws://${phoneUrl.host}/phone/events`, { options: { origin: phoneUrl.origin }, setup: (s) => s.on("message", (d, bin) => { if (!bin) old.push(JSON.parse(String(d)) as Msg); }) });
+    try {
+      const rows = () => srv!.history.list({ kinds: ["execution"] });
+      let n = 0;
+      for (const end = Date.now() + 15_000; !rows().some((r) => r.text === "폰 화면 새로 고침 전이라 새 일을 미룸") && Date.now() < end; ) {
+        tab.send(encodeFramePacket({ kind: "engine", width: 4, height: 3, captured_at: Date.now(), time_err_ms: 0 }, Buffer.from([0xff, 0xd8, n++ % 256, n >> 8])));
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      for (const end = Date.now() + 3000; !old.some((m) => m.type === "command") && Date.now() < end; ) await new Promise((r) => setTimeout(r, 50));
+      expect(old.filter((m) => m.type === "command")).toEqual([{ type: "command", id: "refresh", step: "refresh", text: "화면을 새로 고쳐 주세요", choices: [], vision: null, target: null, speak: true }]);
+      const plan = rows().find((r) => r.text === "폰 화면 새로 고침 전이라 새 일을 미룸")!.subject!;
+      tab.send(JSON.stringify({ type: "answer", id: plan, step: `${plan}:1`, choice: "keep" }));
+      tab.send(JSON.stringify({ type: "confirm", token: "x", choice: "approve" }));
+      await new Promise((r) => setTimeout(r, 300));
+      expect(old.filter((m) => m.type === "reply")).toEqual([]);
+      expect(rows().some((r) => r.subject === plan && r.text === "실행 중")).toBe(false);
+      // 맞는 판본 탭이 붙으면 미뤘던 계획이 시작되고 명령이 그 탭에 간다(옛 탭에는 가지 않는다)
+      const box: Msg[] = [];
+      ws = await openPhone(`ws://${phoneUrl.host}/phone/events`, { options: { origin: phoneUrl.origin }, setup: (s) => s.on("message", (d, bin) => { if (!bin) box.push(JSON.parse(String(d)) as Msg); }) });
+      for (const end = Date.now() + 5000; !box.some((m) => m.type === "command" && m.id === plan) && Date.now() < end; ) await new Promise((r) => setTimeout(r, 50));
+      expect(box.find((m) => m.type === "command" && m.id === plan)).toMatchObject({ text: "컵을 치울까요?" });
+      expect(old.filter((m) => m.type === "command" && m.id !== "refresh")).toEqual([]);
+    } finally {
+      tab.close();
+    }
+  }, 40_000);
+
+  it("말하는 사이 명령이 바뀌어 at이 다른 답 말은 버린다: 질문이 넘어가지 않고 에이전트로도 가지 않으며 들은 말로 남고 실행 기록에 「늦은 답이라 쓰지 않음」. at이 그 질문이면 받는다", async () => {
+    fake = await startFakeOpenAI();
+    llm = await startFakeLlm({});
+    pam = await startFakePam({ predict: () => ({ observation: "컵이 식탁에 있음", reasoning: "치울지 묻는다", task_index: 1 }) });
+    srv = await startServer({
+      env: { HUB: "memory", PORT: "0", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
+        BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url, ...llm.env },
+      brain: { detector: new ScriptedDetector(() => [det("cup", 0.9, [1, 1, 2, 1], 41)]) }, log: () => {},
+    });
+    const phoneUrl = new URL(srv.phoneUrls[0]!);
+    const box: Msg[] = [];
+    ws = await openPhone(`ws://${phoneUrl.host}/phone/events`, { options: { origin: phoneUrl.origin }, setup: (s) => s.on("message", (d, bin) => { if (!bin) box.push(JSON.parse(String(d)) as Msg); }) });
+    let n = 0;
+    let ask: Msg | undefined;
+    for (const end = Date.now() + 10_000; !ask && Date.now() < end; ) {
+      ask = box.find((x) => x.type === "command");
+      ws.send(encodeFramePacket({ kind: "engine", width: 4, height: 3, captured_at: Date.now(), time_err_ms: 0 }, Buffer.from([0xff, 0xd8, n++ % 256, n >> 8])));
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    expect(ask).toMatchObject({ text: "컵을 치울까요?" });
+    const replies = () => box.filter((m) => m.type === "reply");
+    const agentCalls = llm.bodies().length;
+    ws.send(JSON.stringify({ type: "say", text: "그냥 그대로 둬", at: { kind: "command", id: ask!.id, step: `${ask!.id}:0`, pending: [] } }));
+    for (const end = Date.now() + 5000; replies().length < 1 && Date.now() < end; ) await new Promise((r) => setTimeout(r, 20));
+    expect(replies()[0]).toEqual({ type: "reply", text: "" });
+    expect(llm.bodies()).toHaveLength(agentCalls);
+    const rows = () => srv!.history.list({ kinds: ["execution", "world"] });
+    expect(rows().some((r) => r.kind === "execution" && r.subject === ask!.id && r.text === "완료: 그대로 둬요")).toBe(false);
+    expect(rows().some((r) => r.kind === "execution" && r.text === "늦은 답이라 쓰지 않음")).toBe(true);
+    expect(rows().some((r) => r.kind === "world" && r.text === "들은 말 있음")).toBe(true);
+    ws.send(JSON.stringify({ type: "say", text: "그냥 그대로 둬", at: heardAtOf(box) }));
+    for (const end = Date.now() + 5000; replies().length < 2 && Date.now() < end; ) await new Promise((r) => setTimeout(r, 20));
+    expect(replies()[1]).toMatchObject({ text: "알겠어요. 그대로 둘게요" });
+    expect(rows().some((r) => r.kind === "execution" && r.subject === ask!.id && r.text === "완료: 그대로 둬요")).toBe(true);
   }, 30_000);
 });
 
@@ -156,28 +247,81 @@ describe("startServer: 실제 폰의 말로 하는 승인", () => {
     llm = undefined;
   });
 
-  it("실제 폰은 늘 들으므로 주변의 '네'·'어'로는 가전 승인을 확정하지 않고, '승인'이라고 말해야 확정한다", async () => {
+  it("실제 폰은 늘 들으므로 주변의 '네'·'어'로는 가전 승인을 확정하지 않는다. '승인'은 말할 때 보인 대기 token이 하나일 때만 그 token을 확정하고, 그 밖에는 버린다(에이전트로도 가지 않음)", async () => {
     llm = await startFakeLlm({ ...HOME_SCRIPT });
     srv = await startServer({
       env: { HUB: "memory", PORT: "0", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", ...llm.env }, log: () => {},
     });
     const phoneUrl = new URL(srv.phoneUrls[0]!);
     const replies: Msg[] = [];
-    ws = await openWebSocket(`ws://${phoneUrl.host}/phone/events`, { options: { origin: phoneUrl.origin }, setup: (s) => s.on("message", (d, bin) => {
+    ws = await openPhone(`ws://${phoneUrl.host}/phone/events`, { options: { origin: phoneUrl.origin }, setup: (s) => s.on("message", (d, bin) => {
       const m = bin ? null : (JSON.parse(String(d)) as Msg);
       if (m?.type === "reply") replies.push(m);
     }) });
     const lock = async () => srv!.hub.get("door_main")?.twin.lock;
-    ws.send(JSON.stringify({ type: "say", text: "현관문 열어줘" }));
+    const say = (text: string, pending?: string[]) => ws!.send(JSON.stringify({ type: "say", text, ...(pending ? { at: { kind: "none", pending } } : {}) }));
+    say("현관문 열어줘", []);
     await until(replies, 1, 5000);
     expect(replies[0]!.pending).toHaveLength(1);
+    const door = replies[0]!.pending[0].token as string;
     for (const [i, said] of ["네", "어"].entries()) {
-      ws.send(JSON.stringify({ type: "say", text: said }));
+      say(said, [door]);
       await until(replies, i + 2, 5000);
       expect(await lock()).toBe("locked");
     }
-    ws.send(JSON.stringify({ type: "say", text: "승인" }));
-    await until(replies, 4, 5000);
+    // 승인 대기 token을 싣지 않은 말(옛 탭)·보인 대기가 없는 말: 버린다
+    const asked = llm.bodies().length;
+    say("승인");
+    say("승인", []);
+    await until(replies, 5, 5000);
+    expect(replies.slice(3).map((m) => m.text)).toEqual(["", ""]);
+    expect(await lock()).toBe("locked");
+    expect(llm.bodies()).toHaveLength(asked);
+    say("승인", [door]);
+    await until(replies, 6, 5000);
     expect(await lock()).toBe("unlocked");
+  }, 30_000);
+
+  it("들은 승인은 말할 때 보인 대기 token 하나만 답한다: 그사이 그 대기가 끝나고 다른 대기가 생겼으면 확정하지 않고, 둘 이상 보였으면 버린다. 보인 token이 아직 대기면 그것만 확정한다", async () => {
+    llm = await startFakeLlm({ ...HOME_SCRIPT });
+    srv = await startServer({
+      env: { HUB: "memory", PORT: "0", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", ...llm.env }, log: () => {},
+    });
+    const risky = srv.hub.list().find((d) => d.kind === "cooktop" || d.kind === "microwave")!;
+    llm.script["그것도 켜 줘"] = [[["turn_on", { device_id: risky.id, reason: "켜 달라고 해서" }]], "켤까요?"];
+    const phoneUrl = new URL(srv.phoneUrls[0]!);
+    const replies: Msg[] = [];
+    ws = await openPhone(`ws://${phoneUrl.host}/phone/events`, { options: { origin: phoneUrl.origin }, setup: (s) => s.on("message", (d, bin) => {
+      const m = bin ? null : (JSON.parse(String(d)) as Msg);
+      if (m?.type === "reply") replies.push(m);
+    }) });
+    const say = (text: string, pending: string[]) => ws!.send(JSON.stringify({ type: "say", text, at: { kind: "none", pending } }));
+    const power = () => srv!.hub.get(risky.id)?.twin.power;
+    say("현관문 열어줘", []);
+    await until(replies, 1, 5000);
+    const a = replies[0]!.pending[0].token as string;
+    // A는 단추로 거절해 끝나고, 그 뒤 B가 대기
+    ws.send(JSON.stringify({ type: "confirm", token: a, choice: "reject" }));
+    await until(replies, 2, 5000);
+    say("그것도 켜 줘", []);
+    await until(replies, 3, 5000);
+    const b = (replies[2]!.pending as { token: string }[]).map((p) => p.token);
+    expect(b).toHaveLength(1);
+    const asked = llm.bodies().length;
+    // A가 보일 때 말한 늦은 「승인」: B는 확정되지 않고 에이전트로도 가지 않는다
+    say("승인", [a]);
+    await until(replies, 4, 5000);
+    expect(replies[3]).toEqual({ type: "reply", text: "" });
+    expect(power()).not.toBe("on");
+    // 둘 이상 보였으면 버린다
+    say("승인", [a, b[0]!]);
+    await until(replies, 5, 5000);
+    expect(power()).not.toBe("on");
+    expect(llm.bodies()).toHaveLength(asked);
+    // 보인 token이 아직 대기면 그것만 확정한다
+    say("승인", [b[0]!]);
+    await until(replies, 6, 5000);
+    expect(power()).toBe("on");
+    expect(srv.hub.get("door_main")?.twin.lock).toBe("locked");
   }, 30_000);
 });

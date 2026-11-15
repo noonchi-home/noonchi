@@ -3,8 +3,9 @@
 // 엄지 자리(명령·질문·승인·시작 위치 맞추기·물건 자리 맞추기가 있을 때만 카드 하나: 비전 상태 한 줄, 그 바로 아래 답 단추). 설정과 문제 모달(연결 끊김·마이크 꺼짐·시작 위치 없음)은
 // Alert Dialog를 덮개 뿌리 안에 띄운다(AR 중에는 그 안만 보인다). 세로가 기본 배치이고, 가로면 엄지 자리를 오른쪽 아래로 옮기고(landscape:) 설정 모달 단추 줄은 모달 폭 안에서 줄을 바꾼다(sm:flex-wrap). 폰은 세로·가로 어느 쪽으로 들어도 된다.
 // 부품은 ui/src/components/ui의 21st.dev 부품만 쓰고 여기서는 배치만 한다. 글 크기는 부품 원래 크기, 누르는 것은 48px(h-12·size-12).
+// 명령 답 단추 묶음은 명령(계획 id:단계 id)마다 새로 그린다. 단추는 누르기 시작할 때의 명령을 잡고, 손을 뗄 때 지금 명령과 다르면 보내지 않는다.
 import { MessageSquare } from "lucide-react";
-import { useCallback, useState, type FormEvent, type Ref } from "react";
+import { useCallback, useRef, useState, type FormEvent, type Ref } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
@@ -68,16 +69,29 @@ function TalkForm({ act }: { act: PhoneActions }) {
   );
 }
 
-/** 답마다 단추 하나: 첫 답이 주 단추(default), 나머지는 outline. variant를 식으로 고르면 부품 lint가 "outline"을 class로 본다. */
-function ChoiceButtons({ choices, pick, grow }: { choices: Choice[]; pick: (id: string) => void; grow?: boolean }) {
+/** 답마다 단추 하나: 첫 답이 주 단추(default), 나머지는 outline. variant를 식으로 고르면 부품 lint가 "outline"을 class로 본다. press: 누르기 시작(pointerdown). */
+function ChoiceButtons({ choices, pick, grow, press }: { choices: Choice[]; pick: (id: string) => void; grow?: boolean; press?: () => void }) {
   const size = grow ? "h-12 flex-1" : "h-12";
   return (
     <>
       {choices.map((c, i) => (i === 0
-        ? <Button key={c.id} className={size} onClick={() => pick(c.id)}>{c.label}</Button>
-        : <Button key={c.id} variant="outline" className={size} onClick={() => pick(c.id)}>{c.label}</Button>))}
+        ? <Button key={c.id} className={size} onPointerDown={press} onClick={() => pick(c.id)}>{c.label}</Button>
+        : <Button key={c.id} variant="outline" className={size} onPointerDown={press} onClick={() => pick(c.id)}>{c.label}</Button>))}
     </>
   );
+}
+
+/** 명령·질문의 답 단추: 누르기 시작할 때의 명령(계획 id:단계 id)을 잡고, 손을 뗄 때(click) 지금 명령과 다르면 보내지 않는다. 묶음은 명령마다 새로 그린다(key). */
+function CommandChoices({ id, step, choices, act, now }: { id: string; step: string; choices: Choice[]; act: PhoneActions; now: () => string }) {
+  const pressed = useRef<string | null>(null);
+  const key = `${id}:${step}`;
+  const pick = (c: string) => {
+    const at = pressed.current ?? key;
+    pressed.current = null;
+    if (at !== key || now() !== key) return;
+    act.answer(id, step, c);
+  };
+  return <ChoiceButtons grow choices={choices} press={() => { pressed.current = key; }} pick={pick} />;
 }
 
 function PendingList({ items, act }: { items: Pending[]; act: PhoneActions }) {
@@ -127,14 +141,17 @@ function Intro({ view, act }: { view: PhoneView; act: PhoneActions }) {
   );
 }
 
-/** 엄지 자리 답 단추: 승인 대기는 그 토큰과 답으로 승인, 명령·질문은 그 명령의 id·step으로 답한다. */
+/** 엄지 자리 답 단추: 승인 대기는 그 토큰과 답으로 승인, 명령·질문은 그 명령의 id·step으로 답한다(누르는 중 명령이 바뀌면 보내지 않는다). */
 function Answers({ hand, act }: { hand: Hand; act: PhoneActions }) {
   const t = hand.thumb!;
+  // 손을 뗄 때 볼 지금 명령(그린 뒤 바뀐 명령까지)
+  const shown = useRef("");
+  shown.current = t.kind === "command" ? `${t.command.id}:${t.command.step}` : "";
   if (t.kind === "start") return <Button className="h-12 flex-1" onClick={act.confirmStart}>{START_BUTTON}</Button>;
   if (t.kind === "place") return <Button className="h-12 flex-1" onClick={act.endSetup}>완료</Button>;
   if (t.kind === "pending") return <ChoiceButtons grow choices={t.item.choices} pick={(c) => act.confirm(t.item.token, c as ApprovalAnswer)} />;
   const { id, step, choices } = t.command;
-  return <ChoiceButtons grow choices={choices} pick={(c) => act.answer(id, step, c)} />;
+  return <CommandChoices key={`${id}:${step}`} id={id} step={step} choices={choices} act={act} now={() => shown.current} />;
 }
 
 /** 미어캣(설정 단추)과 설정 모달: 연결·듣기·위치(·기준) 상태, 물건 자리 맞추기, 닫기, 시작 위치가 있으면 「시작 위치에서 다시 맞추기」(주 단추).

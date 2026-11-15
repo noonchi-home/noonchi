@@ -79,6 +79,8 @@ export interface PhoneStatus {
   error?: string;
   /** 엔진 프레임 간격(ms). 관찰 흐름이 켜졌을 때 폰 서버가 싣는다(server.ts). */
   engine_ms?: number;
+  /** 서버가 쓰는 폰 계약 판본(src/phone/protocol.ts). 폰 서버가 싣는다(server.ts). 폰 빌드와 다르면 폰 페이지가 다시 읽는다. */
+  protocol?: number;
 }
 
 /** 맞추기 전 눈을 둘 자리: 평면도 위치, 'AR 시작 방향'으로 볼 방위(도), 눈 높이. */

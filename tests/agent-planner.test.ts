@@ -34,6 +34,7 @@ import { cupPlan } from "./helpers/cup-plan.js";
 import { smallFloor } from "./helpers/floor.js";
 import { startFakePam } from "./helpers/pam.js";
 import { CUP_SCRIPTS, FILL_SCRIPTS, ramenScripts, ramenSteps, cupSteps, fillSteps, idsFrom, planCalls, planContext, startFakePlanner, testPlanner, type FakePlanner, type PlanScript } from "./helpers/planner.js";
+import { heardAtOf } from "./helpers/ws.js";
 
 // 작은 집: 복도(hall)·주방(kitchen)·후면 발코니(balcony, 바닥 −0.1m라 로봇 이동 가능 방이 아님). 세탁기·건조기는 발코니
 const SCENE = {
@@ -352,6 +353,48 @@ describe("계획 모드: 컵 치우기", () => {
   });
 });
 
+describe("계획 모드: 폰이 필요한 계획만 맞는 폰을 기다린다(needsPhone)", () => {
+  it("가전만 쓰는 계획은 맞는 폰 없이도 시작한다: 이미 승인된 에어컨 켜기는 폰 명령 없이 트윈 에어컨을 켜고 끝난다", async () => {
+    const { t, decide, settle, phone, hub, plans } = rig({ approvals: store({ "task:에어컨 켜기": "approve" }), over: { phoneReady: () => false, handDevices: () => DEVICES } });
+    await decide(decision("에어컨 켜기"));
+    await settle();
+    expect(hub.get("ac_living")!.twin.power).toBe("on");
+    t.tick();
+    expect(plans.current()).toMatchObject({ status: "done" });
+    expect(phone.filter((m) => m.type === "command")).toEqual([]);
+  });
+
+  it("처음 하는 일(승인 질문이 필요한) 가전 계획은 맞는 폰이 없으면 미룬다", async () => {
+    const { decide, settle, phone, hub, plans, exec } = rig({ approvals: store(), over: { phoneReady: () => false, handDevices: () => DEVICES } });
+    await decide(decision("에어컨 켜기"));
+    await settle();
+    expect(hub.get("ac_living")!.twin.power).toBe("off");
+    expect(plans.current()).toMatchObject({ status: "planned" });
+    expect(phone).toEqual([]);
+    expect(exec().at(-1)).toMatchObject({ state: "planned", text: EXEC_TEXT.phoneOld });
+  });
+
+  it("시간 초과 질문이 있는 계획은 폰이 필요하다: 승인된 가전 계획이어도 device 단계에 on_timeout ask가 있거나 위험 목록 가전 단계면 미룬다", async () => {
+    const AC_ASK: PlanScript = () => [planCalls([{ kind: "device", label: "거실 에어컨 켜기", target: "ac_living", tool: "turn_on", until: { device: "ac_living", state: "on" }, timeout_s: 60, on_timeout: "ask" }])];
+    llm.scripts["에어컨 켜기"] = AC_ASK;
+    try {
+      const a = rig({ approvals: store({ "task:에어컨 켜기": "approve" }), over: { phoneReady: () => false, handDevices: () => DEVICES } });
+      await a.decide(decision("에어컨 켜기"));
+      await a.settle();
+      expect(a.hub.get("ac_living")!.twin.power).toBe("off");
+      expect(a.exec().at(-1)).toMatchObject({ state: "planned", text: EXEC_TEXT.phoneOld });
+    } finally {
+      llm.scripts["에어컨 켜기"] = AC;
+    }
+    const b = rig({ approvals: store({ "task:인덕션 켜기": "approve" }), task: COOKTOP_TASK, over: { phoneReady: () => false, handDevices: () => DEVICES } });
+    await b.decide(decision("인덕션 켜기"));
+    await b.settle();
+    expect(b.hub.get("induction_1")!.twin.power).toBe("off");
+    expect(b.phone).toEqual([]);
+    expect(b.exec().at(-1)).toMatchObject({ state: "planned", text: EXEC_TEXT.phoneOld });
+  });
+});
+
 describe("계획 모드: 기기 단계와 승인", () => {
   it("에어컨 켜기는 처음이면 첫 단계 전에 묻고, 승인 뒤 기기 단계가 정책을 거쳐 켜고 상태가 켜짐이면 완료. 기기 단계는 실제 폰 명령이 없다", async () => {
     const approvals = store();
@@ -385,7 +428,7 @@ describe("계획 모드: 기기 단계와 승인", () => {
     const b = rig({ approvals, task: COOKTOP_TASK });
     await b.decide(decision("인덕션 켜기"));
     await b.settle();
-    expect(b.t.onHeard("거절")).toMatchObject({ id: "reject" });
+    expect(b.t.onHeard("거절", heardAtOf(b.phone))).toMatchObject({ kind: "answer", choice: { id: "reject" } });
     expect(b.hub.get("induction_1")!.twin.power).toBe("off");
     expect(b.plans.current()).toMatchObject({ status: "cancelled" });
     expect(b.exec().at(-1)).toMatchObject({ state: "failed", text: APPROVAL_TEXT.refused });
@@ -453,7 +496,7 @@ describe("계획 모드: 행동 중 기다리기", () => {
       await b.decide(decision("세탁물 건조기로 옮기기"));
       b.clock.t += 60_001;
       b.t.tick();
-      expect(b.t.onHeard("그만")).toMatchObject({ id: "stop" });
+      expect(b.t.onHeard("그만", heardAtOf(b.phone))).toMatchObject({ kind: "answer", choice: { id: "stop" } });
       expect(b.plans.current()).toMatchObject({ status: "cancelled" });
     } finally {
       llm.scripts["세탁물 건조기로 옮기기"] = laundry();
@@ -464,7 +507,7 @@ describe("계획 모드: 행동 중 기다리기", () => {
     const r = rig({ approvals: store({ "task:세탁물 건조기로 옮기기": "approve" }) });
     await r.decide(decision("세탁물 건조기로 옮기기"));
     expect(r.t.openCommand()).toBeNull();
-    expect(r.t.onHeard("그만해")).toMatchObject({ id: "stop" });
+    expect(r.t.onHeard("그만해")).toMatchObject({ kind: "answer", choice: { id: "stop" } });
     expect(r.plans.current()).toMatchObject({ status: "cancelled" });
     expect(r.t.waiting()).toBe(false);
   });
@@ -917,7 +960,7 @@ describe("계획 모드: 판단마다 한 번", () => {
     t.onDecision(decision("컵 치우기"));
     t.onDecision(decision("사용자에게 물어보기", "pam-2", 2));
     expect(signals.map((s) => s.aborted)).toEqual([true, false]);
-    expect(t.onHeard("그만해")).toMatchObject({ id: "stop" });
+    expect(t.onHeard("그만해")).toMatchObject({ kind: "answer", choice: { id: "stop" } });
     expect(signals[1]!.aborted).toBe(true);
     expect(logs.filter((l) => l.type === "execution" && l.state === "failed").map((l) => l.type === "execution" && [l.plan_id, l.text])).toEqual([
       ["plan:pam-1", EXEC_TEXT.superseded], ["plan:pam-2", EXEC_TEXT.stopped],

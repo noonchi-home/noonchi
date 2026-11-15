@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { HistoryRow } from "../src/contract/history.js";
 import type { WorldEye, WorldObject, WorldView } from "../src/contract/world.js";
-import { clickChoice, clock, costLine, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, stepVerdict, timeline, twinRows, usedServer, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
+import { SEND_SAY, clickChoice, clock, costLine, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, stepVerdict, timeline, twinRows, usedServer, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
 import { createServer, type Server } from "node:http";
 import { listenRetry } from "../src/server/net.js";
 import type { SceneJson } from "../src/contract/layout.js";
@@ -332,6 +332,25 @@ describe("video-check", () => {
       return { run, clicked };
     }
     const planned = { id: "plan:pam-3", step: "plan:pam-3:3", text: "그릇을 전자레인지에 넣어 주세요", label: "완료" };
+
+    it("--say 완료는 떠 있는 명령에 받힌다: 보낸 say의 at이 페이지 기록의 마지막 명령(계획 id·단계 id)과 보인 승인 대기 token이다. 명령이 없으면 none", () => {
+      const sent: string[] = [];
+      const sockets = [{ readyState: 1, url: "ws://pc/phone/events?video=a.mp4", send: (d: string) => sent.push(d) }, { readyState: 1, url: "ws://pc/api/events", send: () => {} }];
+      const g = globalThis as Record<string, unknown>;
+      const keep = g.window;
+      try {
+        const send = (0, eval)(`(${SEND_SAY})`) as (this: unknown[], text: string) => boolean;
+        g.window = { __noonchiVideo: { commands: [{ video_ms: 0, id: "plan:pam-1", step: "plan:pam-1:1", text: "a" }, { video_ms: 1, id: "plan:pam-1", step: "plan:pam-1:2", text: "b" }], pending: ["t1"] } };
+        expect(send.call(sockets, "완료")).toBe(true);
+        g.window = {};
+        expect(send.call(sockets, "불 꺼 줘")).toBe(true);
+        expect(send.call([], "완료")).toBe(false);
+      } finally { g.window = keep; }
+      expect(sent.map((s) => JSON.parse(s))).toEqual([
+        { type: "say", text: "완료", at: { kind: "command", id: "plan:pam-1", step: "plan:pam-1:2", pending: ["t1"] } },
+        { type: "say", text: "불 꺼 줘", at: { kind: "none", pending: [] } },
+      ]);
+    });
 
     it("지금 명령의 계획 id·단계 id·위 줄이 모두 같을 때만 그 글의 단추를 누른다", () => {
       const p = page({ last: planned, top: planned.text, buttons: ["완료"] });

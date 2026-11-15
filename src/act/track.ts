@@ -14,6 +14,9 @@
 // 안내가 남아 있는 동안 새 계획은 첫 명령(승인 질문 포함)을 미루고(실행 기록 EXEC_TEXT.deferred), 안내가 다 풀리면 시작한다. 다른 계획이 도는 동안 생긴 안내는 그 계획이 끝난 뒤 띄운다.
 // 다시 알리기(tell)·사람 부탁(askCloser)은 모델이 쓴 글이라, 위험 가전 이름이 나오거나 지금 단계가 위험 가전 단계(대상이 위험 가전이거나 hand_device가 붙음)면 보내지 않는다(기본 거부).
 // 코치 행동(TaskSpec.coach) 계획이 열려 있거나 만드는 중이면 coaching()이 참이다: 그동안 판단 호출(PAM)을 쉰다.
+// 폰 판본(phoneReady, src/phone/server.ts): 판본이 맞는 실제 폰이 없으면 폰이 필요한 계획(needsPhone)만 시작을 미루고(실행 기록 EXEC_TEXT.phoneOld, 한 번),
+// 맞는 폰이 붙으면 시작한다. 계획 도중 폰에 물어야 할 때(승인·시간 초과 질문) 맞는 폰이 없으면 기다리지 않고 실패로 닫는다(EXEC_TEXT.phoneGone).
+// 들은 말(onHeard)은 말할 때 폰에 떠 있던 명령(at)의 답일 때만 받는다: 다른 명령·옛 탭(at 없음)이면 버린다(stale). 「그만」은 at과 상관없다.
 // 다른 행동 알림(코치 계획, 관찰 모드 계기 off_track): 사람 단계가 진행 중인데 의미 있는 변화(사람 방·가전 상태·가전 설비 상태)가 왔고 그 단계가 넘어가지 않았거나,
 // 이동이 아닌 단계에서 폰이 그 단계 자리를 떠나 다른 평면도 자리 가까이로 갔으면 strayed를 부른다(결정론). 단계마다 strayMax번(받은 것만), strayGapMs에 한 번.
 // 무엇이 틀렸는지와 할 말은 관찰 모드(LLM)가 정한다. tell: 지금 명령 글을 그 한 줄로 바꿔 읽고 tellHoldMs 뒤 원래 명령으로 되돌린다(읽지 않음).
@@ -48,7 +51,7 @@
 // 치운 물건(placed): 놓기 단계를 끝낸 물건과 그 계획의 넣은 곳(끝낸 때 싱크볼 안이면 그 싱크볼)을 남긴다. VLM 자리 사실이 싱크대 안이 아니어도
 // 계획 전·실행 전 검사·계획 입력·제출 검사와 대상 고르기가 이미 치운 것으로 본다. 다시 집거나(손에 있음 확인됨) 그 영역 밖(다른 면, 싱크볼이면 싱크볼 밖)에서 보이면 지운다.
 import type { BrainLog, ExecState } from "../contract/events.js";
-import type { PhoneStepKind, PlannedCommand, PlannedCommandMessage } from "../contract/phone.js";
+import type { HeardAt, PhoneStepKind, PlannedCommand, PlannedCommandMessage } from "../contract/phone.js";
 import type { PlanView, StepStatus, XZ } from "../contract/plan.js";
 import type { Facet, WorldChange, WorldChangeKind, WorldEye, WorldObject, WorldView } from "../contract/world.js";
 import type { LookSpot } from "../observe/crop.js";
@@ -63,7 +66,7 @@ import { DEVICE_STATES, NEAR_M, PHONE_NEAR_M } from "../world/vocab.js";
 import type { DecisionRecord } from "../world/decide.js";
 import { approvalNeed, taskKey, type ApprovalAnswer, type ApprovalBook } from "../agent/approval.js";
 
-import { HUMAN_KINDS, objectNames, riskyHand, type AgentPlan, type AgentStep, type PlanResult } from "../agent/planTools.js";
+import { HUMAN_KINDS, needsPhone, objectNames, riskyHand, type AgentPlan, type AgentStep, type PlanResult } from "../agent/planTools.js";
 import type { ToolResult } from "../agent/tools.js";
 import type { CheckResult } from "./check.js";
 import { QUIET_HINT_MS, quietLabels, type LessonBook, type StepOutcome } from "./lessons.js";
@@ -133,6 +136,8 @@ export interface TrackerOptions {
   rearmMs?: number;
   /** 끄기 do 단계가 이만큼(ms) 넘게 안 끝나고 그 가전 상태가 이미 꺼짐이면 보이게 해 달라는 부탁을 한 번 보낸다. */
   showAskMs?: number;
+  /** 판본이 맞는 실제 폰이 붙어 있는가(src/phone/server.ts ready). 없으면 늘 붙어 있다고 본다. */
+  phoneReady?: () => boolean;
   /** 멈춘 집기·놓기 단계 알림(관찰 모드 A, src/act/look.ts). 받았으면 true(그때만 센다). 받은 부름은 끝날 때 s.settle(counted)를 부른다. 없으면 부르지 않는다. */
   stalled?: (s: Stall) => boolean;
   /** 집기·놓기 단계가 이만큼(ms) 안 끝나면 stalled를 부른다(단계 시작 뒤, 받은 부름 뒤). */
@@ -208,6 +213,9 @@ export interface Stall {
   settle(counted: boolean): void;
 }
 
+/** 들은 말의 결과: 답으로 받음, 말할 때와 다른 명령에 온 답이라 버림(stale), 답이 아님(null). */
+export type HeardResult = { kind: "answer"; choice: ActionChoice } | { kind: "stale" } | null;
+
 /** 실제 폰에 띄운 질문: 첫 단계 전 승인, 위험 목록 가전 승인(토큰), 시간 초과로 다시 묻기. */
 type Asking = { why: "plan" } | { why: "device"; token: string } | { why: "again" } | { why: "hand" };
 
@@ -235,6 +243,8 @@ interface Run {
   ends: Map<string, { cycle: number; seenAt: number; how: CycleEnd["via"]; at: number }>;
   /** 끄기 do 단계의 보이게 해 달라는 부탁을 보낸 단계 세대(단계마다 한 번). deferred: 끄기 안내 때문에 시작을 미룬다고 기록했다. */
   offAsked: number; deferred: boolean;
+  /** 판본이 맞는 폰이 없어 시작을 미룬다고 기록했다. */
+  phoneWait: boolean;
   /** 이 단계에서 받은 다른 행동 알림 수와 마지막으로 부른 시각, 폰이 가까이 간 다른 자리(그 자리마다 한 번). */
   strays: number; strayAt: number; strayNear: string | null;
   /** tell로 바꿔 띄운 글: 되돌릴 원래 명령 글과 되돌릴 시각. */
@@ -411,23 +421,29 @@ export class ExecutionTracker {
     return true;
   }
 
-  /** 폰에서 들은 말. 「그만」이면 계획을 그만두고, 지금 명령의 답(「완료」「다 했어」, 질문 답)이면 그 답으로 받는다. 받은 답, 아니면 null. */
-  onHeard(text: string): ActionChoice | null {
+  /** 폰에서 들은 말. at: 말할 때 폰에 떠 있던 명령(새 폰은 늘 싣는다. 칸이 없으면 옛 탭).
+   *  「그만」은 at과 상관없이(칸이 없어도) 계획을 그만두는 답으로 받는다(명령이 없는 기다리기·기기 단계·만드는 중인 계획도).
+   *  지금 명령(질문·승인 질문 포함)의 답 말이면 at이 그 명령(계획 id·단계 id)일 때만 그 답으로 받고, at이 다른 명령·none이거나 칸이 없으면 버린다(stale).
+   *  떠 있는 끄기 안내의 「완료」·「다 했어」는 버린다(확인된 꺼짐으로만 푼다). 지금 명령이 없는데 at이 명령인 「완료」·「다 했어」도 버린다. 그 밖은 답이 아니다(null). */
+  onHeard(text: string, at?: HeardAt): HeardResult {
     if (this.stopped) return null;
     const open = this.open();
     // 명령이 없는 단계(기다리기·기기)와 만드는 중인 계획에도 「그만」은 받는다
     if ((open || this.planning) && matchChoice(text, [STOP])) {
       this.dropPlanning(EXEC_TEXT.stopped);
       if (open) this.finish(open, "failed", EXEC_TEXT.stopped, "cancelled");
-      return STOP;
+      return { kind: "answer", choice: STOP };
     }
-    // 끄기 안내는 말(「완료」·「다 했어」)로 풀지도 바꾸지도 않는다(확인된 꺼짐으로만 푼다)
-    if (!open) return null;
     const r = this.shown();
-    if (!r) return null;
-    const picked = matchChoice(text, choicesOf(r, this.stepOf(r)));
-    if (picked) this.onAnswer(r.plan.view.id, r.sent.step, picked.id);
-    return picked;
+    if (r) {
+      const picked = matchChoice(text, choicesOf(r, this.stepOf(r)));
+      if (!picked) return null;
+      if (at?.kind !== "command" || at.id !== r.plan.view.id || at.step !== r.sent.step) return { kind: "stale" };
+      this.onAnswer(r.plan.view.id, r.sent.step, picked.id);
+      return { kind: "answer", choice: picked };
+    }
+    if (matchChoice(text, [STEP_DONE]) && (this.reminder || at?.kind === "command")) return { kind: "stale" };
+    return null;
   }
 
   /** World State가 바뀌었다: 치운 물건을 다시 보고, 지금 단계가 됐는지 바로 본다. changes(그 변화 줄)를 주면 코치 계획의 다른 행동 계기도 본다:
@@ -990,7 +1006,7 @@ export class ExecutionTracker {
     const run: Run = {
       plan: r.plan, decision: d, state: "decided", since: now, at: -1, stepAt: now, spokeAt: now, visionAt: now, sent: null,
       asking: null, askAt: now, watch: null, others, alias: new Map([...ids].map((id) => [id, id])), carried: new Set(), placeAt: (id) => (id ? this.o.floor().objects.get(id)?.position ?? null : null), deadline: now, again: false, device: "idle", gen: 0,
-      looks: 0, lookAt: Number.NEGATIVE_INFINITY, stepEnd: null, gapAt: job.at, onAt: new Map(), hot: new Set(), ends: new Map(), offAsked: -1, deferred: false,
+      looks: 0, lookAt: Number.NEGATIVE_INFINITY, stepEnd: null, gapAt: job.at, onAt: new Map(), hot: new Set(), ends: new Map(), offAsked: -1, deferred: false, phoneWait: false,
       strays: 0, strayAt: Number.NEGATIVE_INFINITY, strayNear: null, told: null, helped: false,
       quiet: taskOf(r.plan.task)?.coach ? quietLabels(this.o.lessons?.get(r.plan.task) ?? null) : new Set(), quietOn: false, outcomes: [],
     };
@@ -1028,7 +1044,16 @@ export class ExecutionTracker {
       if (last) this.finish(r, "failed", c.text);
       return;
     }
-    if (this.approval(r)) return this.ask(r, { why: "plan" }, APPROVAL_TEXT.ask(r.plan.task), `${r.plan.view.id}:approve`);
+    const why = this.approval(r);
+    // 폰이 필요한 계획은 판본이 맞는 실제 폰이 붙어 있을 때만 시작한다(한 번 기록, 붙으면 tick이 다시 부른다)
+    if (!this.phoneOk() && needsPhone(r.plan, why, this.o.handDevices?.() ?? [])) {
+      if (!r.phoneWait) {
+        r.phoneWait = true;
+        this.emit(r.plan.view.id, "planned", EXEC_TEXT.phoneOld);
+      }
+      return;
+    }
+    if (why) return this.ask(r, { why: "plan" }, APPROVAL_TEXT.ask(r.plan.task), `${r.plan.view.id}:approve`);
     this.begin(r);
   }
 
@@ -1038,8 +1063,17 @@ export class ExecutionTracker {
     this.activate(r, 0);
   }
 
-  /** 실제 폰에 질문(승인·다시 묻기): 위에 질문, 아래 답 단추. */
+  /** 판본이 맞는 실제 폰이 붙어 있는가(모르면 붙어 있다고 본다). */
+  private phoneOk(): boolean {
+    return this.o.phoneReady?.() ?? true;
+  }
+
+  /** 실제 폰에 질문(승인·다시 묻기): 위에 질문, 아래 답 단추. 물을 폰(판본이 맞는 폰)이 없으면 기다리지 않고 실패로 닫는다. */
   private ask(r: Run, asking: Asking, text: string, stepId: string): void {
+    if (!this.phoneOk()) {
+      if (asking.why === "device") this.o.devices?.cancel(asking.token);
+      return this.finish(r, "failed", EXEC_TEXT.phoneGone);
+    }
     const now = this.clock.now();
     Object.assign(r, { asking, askAt: now, spokeAt: now });
     r.sent = {
@@ -1126,6 +1160,8 @@ export class ExecutionTracker {
       target: human ? this.target(r, step, world) : null, speak: !r.quietOn,
       ...(human ? { kind: step.kind as PhoneStepKind } : {}),
     };
+    // 알림 글은 판본이 맞는 폰이 없으면 보내지 않는다(폰 없이 도는 가전 계획)
+    if (step.kind === "say" && !this.phoneOk()) return;
     this.o.toPhone(r.sent);
   }
 

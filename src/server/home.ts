@@ -8,7 +8,9 @@ import { checkDecision, checkPlan, loadActConfig } from "../act/check.js";
 import { Looker } from "../act/look.js";
 import { SAY_DONE_MS, sayLine } from "../act/say.js";
 import { LessonStore, lessonsPath } from "../act/lessons.js";
-import { lookTargets, taskOf, tasksFor } from "../act/tasks.js";
+import { lookTargets, matchChoice, taskOf, tasksFor } from "../act/tasks.js";
+import { APPROVE } from "../act/prompts.js";
+import { EXEC_TEXT } from "../plan/labels.js";
 import { deviceRunner } from "../act/devices.js";
 import { ExecutionTracker } from "../act/track.js";
 import { Agent } from "../agent/agent.js";
@@ -22,7 +24,7 @@ import { createProvider } from "../agent/providers/index.js";
 import { deviceViews } from "../agent/tools.js";
 import { PamClient } from "../brain/pam.js";
 import type { BrainLog, ReadyView, SeenEvent } from "../contract/events.js";
-import type { PlannedCommand } from "../contract/phone.js";
+import type { ApprovalAnswer, PlannedCommand } from "../contract/phone.js";
 import type { PlanView } from "../contract/plan.js";
 import type { AssistMode, ControlMode } from "../contract/setup.js";
 import type { HistoryDb } from "../history/db.js";
@@ -361,6 +363,8 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         lessons,
         // 손으로 켜는 단계가 위험 목록 가전인지(켜기 전에 묻는다)와 묻는 글의 가전 이름
         handDevices: () => deviceViews(signals),
+        // 판본이 맞는 실제 폰이 붙어 있는가: 폰이 필요한 계획만 그때 시작한다(폰 서버를 켜지 않았으면 늘 붙어 있다고 본다)
+        phoneReady: () => phoneRef.current?.ready() ?? true,
         // 멈춘 집기·놓기 단계는 보기 담당(관찰 모드 A)에 알린다
         stalled: (s) => looker?.stalled(s) ?? false,
         // 코치 계획 중 다른 행동을 본 것 같으면 보기 담당(관찰 모드 계기 off_track)에 알린다
@@ -477,17 +481,34 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
             history.db.add("feedback", nowMs(), FEEDBACK_TEXT.answer(picked.label, open.kind, open.text), { subject: id, data: { choice, via: "button" } });
           }
         },
-        // 「그만」은 실제 폰 명령이 없는 단계(기다리기·기기)에도 진행 중인 계획을 그만둔다
-        onAnswer: (text) => {
+        // 들은 말을 에이전트보다 먼저 본다(at: 말할 때 폰에 떠 있던 명령·보인 승인 대기). 「그만」은 실제 폰 명령이 없는 단계(기다리기·기기)에도 계획을 그만둔다.
+        // 지금 명령의 답이고 at이 그 명령이면 그 답으로 받는다. 말할 때와 다른 명령에 온 답(늦은 답·옛 탭)이면 버린다: 들은 말로만 남기고 에이전트로 보내지 않는다.
+        // 말 전체가 승인·거절 답이면 말할 때 보인 승인 대기 token이 하나이고 지금도 대기일 때만 그 하나에 답한다(agent.answerToken). 그 밖에는 버린다(answerAll 없음)
+        onAnswer: async (text, at) => {
           const open = tracker?.openCommand();
-          const picked = tracker?.onHeard(text) ?? null;
-          if (!picked) {
+          const heard = tracker?.onHeard(text, at) ?? null;
+          const stale = () => {
             heardSpeech(text);
-            return { handled: false };
+            history.db.add("execution", nowMs(), EXEC_TEXT.staleAnswer, { subject: open?.planId ?? (at?.kind === "command" ? at.id : PHONE_SESSION) });
+            return { handled: true, reply: "" };
+          };
+          if (heard?.kind === "answer") {
+            if (open) history.db.add("feedback", nowMs(), FEEDBACK_TEXT.answer(text, open.kind, open.text), { subject: open.planId, data: { choice: heard.choice.id, via: "voice" } });
+            return { handled: true, reply: heard.choice.reply };
           }
-          if (open) history.db.add("feedback", nowMs(), FEEDBACK_TEXT.answer(text, open.kind, open.text), { subject: open.planId, data: { choice: picked.id, via: "voice" } });
-          return { handled: true, reply: picked.reply };
+          if (heard?.kind === "stale") return stale();
+          const answer = matchChoice(text, APPROVE);
+          if (answer) {
+            const live = new Set(agent.pending(PHONE_SESSION).map((p) => p.token));
+            const token = at?.pending.length === 1 && live.has(at.pending[0]!) ? at.pending[0]! : null;
+            if (!token) return stale();
+            return { handled: true, reply: (await agent.answerToken(token, answer.id as ApprovalAnswer)).reply };
+          }
+          heardSpeech(text);
+          return { handled: false };
         },
+        // 폰이 판본 hello로 정상이 되면 지금 승인 대기 목록을 다시 받는다
+        pending: () => agent.pending(PHONE_SESSION).map((p) => ({ token: p.token, deviceLabel: p.deviceLabel, reason: p.reason, choices: p.choices })),
         ...(observe ? {
           engineMs: observe.config.engineMs,
           onEngine: (jpeg, h, eye, view, at) => {

@@ -272,7 +272,7 @@ describe("Agent + OpenAI 공급자(가짜 서버): 한국어 요청", () => {
     expect(r2.reply).toContain("현관문");
   });
 
-  it("늘 듣는 실제 폰의 말(heard)은 '응'·'네'·'어'로 승인하지 않고 모델에게 보낸다. '승인해 줘'처럼 분명한 말로만 확정한다", async () => {
+  it("늘 듣는 실제 폰의 말(heard)은 '응'·'네'·'어'로 승인하지 않고 모델에게 보낸다. 들은 말로는 분명한 '승인해 줘'도 확정하지 않고, 그 승인 대기 token 하나에 답할 때(answerToken)만 확정한다", async () => {
     const { hub, policy, agent } = llmAgent();
     await agent.chat("s", "현관문 열어줘", { heard: true });
     for (const said of ["응", "네", "어", "예 진행해 줘"]) {
@@ -280,8 +280,11 @@ describe("Agent + OpenAI 공급자(가짜 서버): 한국어 요청", () => {
       expect(twin(hub, "door_main").lock).toBe("locked");
     }
     expect(policy.pending()).toHaveLength(1);
-    const r = await agent.chat("s", "승인해 줘", { heard: true });
-    expect(r.actions[0]).toMatchObject({ tool: "unlock", ok: true });
+    await agent.chat("s", "승인해 줘", { heard: true });
+    expect(twin(hub, "door_main").lock).toBe("locked");
+    expect(policy.pending()).toHaveLength(1);
+    const r = await agent.answerToken(policy.pending()[0]!.token, "approve");
+    expect(r.ok).toBe(true);
     expect(twin(hub, "door_main").lock).toBe("unlocked");
   });
 
@@ -566,22 +569,30 @@ describe("Agent + 승인 규칙: 말로 시킨 가전 명령", () => {
     expect(r3.pendingConfirmations).toEqual([expect.objectContaining({ deviceId: "door_main", choices: BOTH })]);
   });
 
-  it("승인 대기 중 실제 폰의 말로 답한다: 「거절」「아니요」「하지 마」는 실행하지 않고, 「승인」「좋아요」는 실행한다", async () => {
+  it("들은 말로는 승인 대기에 답하지 않는다(answerAll 없음): 들은 「승인」「거절」「좋아요」는 모델에게 가고 대기는 그대로다", async () => {
+    const { hub, policy, agent } = approvalAgent();
+    await agent.chat("s", "현관문 열어 줘", { heard: true });
+    for (const said of ["승인", "거절", "좋아요", "하지 마"]) {
+      await agent.chat("s", said, { heard: true });
+      expect(policy.pending(), said).toHaveLength(1);
+      expect(twin(hub, "door_main").lock, said).toBe("locked");
+    }
+  });
+
+  it("answerToken은 그 승인 대기 하나만 답하고 같이 대기 중인 다른 것은 그대로다. 지금 대기가 아닌 token이면 ok false. 답은 둘 다 기억하지 않는다", async () => {
+    llm.script["인덕션 켜 줘"] = [[["turn_on", { device_id: "induction_1", reason: "인덕션을 켜 달라고 해서" }]], "켤까요?"];
     const { hub, policy, agent, approvals } = approvalAgent();
-    for (const no of ["거절", "아니요", "하지 마"]) {
-      await agent.chat("s", "현관문 열어 줘", { heard: true });
-      const r = await agent.chat("s", no, { heard: true });
-      expect(r.reply, no).toBe("현관문 잠금 풀기는 하지 않을게요.");
-      expect(policy.pending(), no).toEqual([]);
-      expect(twin(hub, "door_main").lock, no).toBe("locked");
-    }
-    for (const yes of ["승인", "좋아요"]) {
-      await agent.chat("s", "현관문 열어 줘", { heard: true });
-      const r = await agent.chat("s", yes, { heard: true });
-      expect(r.actions[0], yes).toMatchObject({ tool: "unlock", ok: true });
-      expect(twin(hub, "door_main").lock, yes).toBe("unlocked");
-      await hub.command("door_main", { type: "lock" });
-    }
+    const a = (await agent.chat("s", "현관문 열어 줘", { heard: true })).pendingConfirmations[0]!.token;
+    const b = (await agent.chat("s", "인덕션 켜 줘", { heard: true })).pendingConfirmations.find((p) => p.deviceId === "induction_1")!.token;
+    expect(agent.pending("s").map((p) => p.token).sort()).toEqual([a, b].sort());
+    expect(await agent.answerToken(a, "approve")).toMatchObject({ ok: true });
+    expect(twin(hub, "door_main").lock).toBe("unlocked");
+    expect(twin(hub, "induction_1").power).toBe("off");
+    expect(agent.pending("s").map((p) => p.token)).toEqual([b]);
+    expect(await agent.answerToken(a, "approve")).toMatchObject({ ok: false });
+    expect(await agent.answerToken(b, "reject")).toMatchObject({ ok: true, reply: expect.stringContaining("하지 않을게요") });
+    expect(policy.pending()).toEqual([]);
+    expect(twin(hub, "induction_1").power).toBe("off");
     expect(approvals.memory()).toEqual({ always: {} });
   });
 

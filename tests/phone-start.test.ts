@@ -9,6 +9,7 @@ import { estimateViewpoint } from "../src/phone/session.js";
 import { alignOnServer } from "./helpers/align.js";
 import { fetchRetry } from "../src/server/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
+import { PHONE_PROTOCOL } from "../src/phone/protocol.js";
 
 type Msg = Record<string, any>;
 let srv: RunningServer | undefined;
@@ -47,6 +48,7 @@ describe("startServer + 폰 AR", () => {
     await opened(dash);
     const phone = new WebSocket(`ws://${phoneUrl.host}/phone/events`, { origin: phoneUrl.origin });
     await opened(phone);
+    phone.send(JSON.stringify({ type: "hello", protocol: PHONE_PROTOCOL }));
     const aligned = next(phone, (m) => m.type === "status" && m.aligned);
     await alignOnServer(srv.url, (t) => phone.send(t), scenePath, spot);
     await aligned;

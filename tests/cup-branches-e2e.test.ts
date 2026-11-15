@@ -17,7 +17,7 @@ import { startServer, type RunningServer } from "../src/server/start.js";
 import { ScriptedDetector, det } from "./helpers/detectors.js";
 import { cupBranchPredict, startFakePam, type FakePam } from "./helpers/pam.js";
 import { CUP_SCRIPTS, FILL_SCRIPTS, plannerRespond } from "./helpers/planner.js";
-import { openWebSocket } from "./helpers/ws.js";
+import { openPhone, openWebSocket } from "./helpers/ws.js";
 
 type Msg = Record<string, any>;
 let srv: RunningServer | undefined;
@@ -68,7 +68,7 @@ async function start(scene: Scene, approved: string[]) {
   sockets.push(await openWebSocket(`${srv.url.replace(/^http/, "ws")}/events`, { setup: inbox(dash) }));
   const phoneUrl = new URL(srv.phoneUrls[0]!);
   const phone: Msg[] = [];
-  const ws = await openWebSocket(`ws://${phoneUrl.host}/phone/events`, { options: { origin: phoneUrl.origin }, setup: inbox(phone) });
+  const ws = await openPhone(`ws://${phoneUrl.host}/phone/events`, { options: { origin: phoneUrl.origin }, setup: inbox(phone) });
   sockets.push(ws);
   let n = 0;
   const frame = () => ws.send(encodeFramePacket({ kind: "engine", width: 480, height: 360, captured_at: Date.now(), time_err_ms: 0 }, Buffer.from([0xff, 0xd8, n++ % 256, n >> 8])));

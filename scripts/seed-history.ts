@@ -344,13 +344,13 @@ class Week {
     this.db.add("feedback", this.t, FEEDBACK_TEXT.answer(picked.label, open.kind, open.text), { subject: open.planId, data: { choice, via: "button" } });
   }
 
-  /** 실제 폰이 들은 말(src/server/home.ts onAnswer와 같다). */
+  /** 실제 폰이 들은 말(src/server/home.ts onAnswer와 같다). 새 폰처럼 말할 때 떠 있던 지금 명령을 at으로 싣는다. */
   say(text: string): void {
     this.wait(3);
     const open = this.open();
-    const picked = this.tracker.onHeard(text);
-    if (!picked) throw new Error(`${this.stamp()}: 「${text}」를 답으로 받지 않았어요`);
-    this.db.add("feedback", this.t, FEEDBACK_TEXT.answer(text, open.kind, open.text), { subject: open.planId, data: { choice: picked.id, via: "voice" } });
+    const heard = this.tracker.onHeard(text, { kind: "command", id: open.planId, step: open.stepId, pending: [] });
+    if (heard?.kind !== "answer") throw new Error(`${this.stamp()}: 「${text}」를 답으로 받지 않았어요`);
+    this.db.add("feedback", this.t, FEEDBACK_TEXT.answer(text, open.kind, open.text), { subject: open.planId, data: { choice: heard.choice.id, via: "voice" } });
   }
 
   /** 이동 단계: walk면 폰 눈이 목표 1.2m 안으로 들어와 넘어가고, 아니면 목표 가까이(1.2m 밖)에서 「완료」 단추나 그 말로 넘긴다. */

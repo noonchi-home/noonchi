@@ -10,7 +10,7 @@ import { fetchRetry } from "../src/server/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { CATALOG, scene } from "./helpers/layout.js";
 import { startFakeLlm, type FakeLlm } from "./helpers/llm.js";
-import { openWebSocket } from "./helpers/ws.js";
+import { openPhone, openWebSocket } from "./helpers/ws.js";
 import { alignOnServer } from "./helpers/align.js";
 
 type Msg = Record<string, any>;
@@ -75,7 +75,8 @@ function studioFixture(): { studio: string; runtime: string } {
 
 async function listen(url: string) {
   const messages: Msg[] = [];
-  const ws = await openWebSocket(url, { setup: (s) => s.on("message", (d) => messages.push(JSON.parse(String(d)))) });
+  // 폰 소켓은 새 폰처럼 판본 hello를 보낸다
+  const ws = await (url.includes("/phone/events") ? openPhone : openWebSocket)(url, { setup: (s) => s.on("message", (d) => messages.push(JSON.parse(String(d)))) });
   cleanups.push(() => ws.close());
   const waitFor = async (pred: (m: Msg) => boolean, ms = 4000) => {
     const end = Date.now() + ms;

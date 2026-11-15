@@ -12,7 +12,7 @@ import { fetchRetry } from "../src/server/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { ScriptedDetector, det } from "./helpers/detectors.js";
 import { startFakePam, type FakePam } from "./helpers/pam.js";
-import { openWebSocket } from "./helpers/ws.js";
+import { openPhone, openWebSocket } from "./helpers/ws.js";
 
 type Msg = Record<string, any>;
 let srv: RunningServer | undefined;
@@ -64,7 +64,7 @@ describe("startServer(BRAIN=1) + 관찰 흐름", () => {
     let dashBox: Msg[] = [];
     const dash = await openWebSocket(`${srv.url.replace(/^http/, "ws")}/events`, { setup: (ws) => { dashBox = inbox(ws); } });
     let phoneBox: Msg[] = [];
-    const phone = await openWebSocket(`ws://${phoneUrl.host}/phone/events`, { options: { origin: phoneUrl.origin }, setup: (ws) => { phoneBox = inbox(ws); } });
+    const phone = await openPhone(`ws://${phoneUrl.host}/phone/events`, { options: { origin: phoneUrl.origin }, setup: (ws) => { phoneBox = inbox(ws); } });
     try {
       expect(await until(phoneBox, (m) => m.type === "status")).toMatchObject({ engine_ms: 500 });
       phone.send(encodeFramePacket({ kind: "frame", width: 4, height: 3 }, Buffer.from([0xff, 0xd8, 0x00])));

@@ -1,7 +1,8 @@
 // npx tsx scripts/video-check.ts --clip cup-demo.mp4 [--step <종류>:<낱말>:<영상.mp4> ...] [--phone http://127.0.0.1:8210] [--api http://127.0.0.1:8200]
 //   [--done-after 3] [--out runtime/videos/cup-demo.<시각>.timeline.md] [--expect-after 36.3] [--record <폴더>] [--fake]
 //   [--say <초>:<글> ...] [--start-at <cup|tv|microwave|kitchen>] [--home mokryeon_180b] [--tail 30] [--max 1800] [--approve <초>] [--done-on <초>:<명령 글> ...]
-// --say: 재생 시작부터 그 초가 되면 폰 페이지 안의 폰 소켓(/phone/events)으로 {type: "say", text}를 보낸다(CDP로 그 소켓을 찾아 보냄). 시각표에 「말」 줄.
+// --say: 재생 시작부터 그 초가 되면 폰 페이지 안의 폰 소켓(/phone/events)으로 {type: "say", text, at}를 보낸다(CDP로 그 소켓을 찾아 보냄). 시각표에 「말」 줄.
+//   at은 폰 컨트롤러와 같다: 보내는 순간 명령 줄의 지금 명령(__noonchiVideo.commands 마지막의 계획 id·단계 id, 없으면 none)과 승인 대기 목록에 보인 token들(__noonchiVideo.pending).
 // --start-at: 폰 페이지를 열기 전에 그 장면 시작 위치(scripts/demo-start.ts)를 서버에 넣는다. 서버의 지금 집이 --home이 아니면 판정을 시작하지 않는다.
 // --approve: 단계 id가 :approve·:hand로 끝나는 질문에만 그 초 뒤 「승인」, --done-on: 위 줄이 그 글과 같은 명령에만 그 초 뒤 「완료」를 누른다.
 //   누를 때 지금 명령의 계획 id·단계 id·위 줄이 예약한 것과 모두 같을 때만 누른다. 누른 것은 시각표에 「누름」 줄.
@@ -289,7 +290,19 @@ export async function sendStartPose(api: string, scene: DemoScene, home: string,
   return r?.ok ? null : `시작 위치를 넣지 못함: HTTP ${r?.status ?? "연결 실패"}`;
 }
 
-/** 폰 페이지 안의 폰 소켓(/phone/events, 영상 모드면 ?video=<영상>이 붙는다. 열린 것 중 마지막)으로 {type: "say", text}를 보낸다. 보냈으면 true. */
+/** 페이지 안에서 부르는 식(this: 열린 WebSocket 목록): 폰 소켓(/phone/events, 영상 모드면 ?video=<영상>, 열린 것 중 마지막)으로
+ *  {type: "say", text, at}를 보낸다. at은 지금 명령(__noonchiVideo.commands 마지막, 없으면 none)과 보인 승인 대기 token(__noonchiVideo.pending). 보냈으면 true. */
+export const SEND_SAY = `function (text) {
+  const ws = this.filter((w) => w.readyState === 1 && /\\/phone\\/events(\\?|$)/.test(w.url)).at(-1);
+  if (!ws) return false;
+  const r = window.__noonchiVideo ?? null;
+  const last = r?.commands?.at(-1) ?? null;
+  const at = last ? { kind: "command", id: last.id, step: last.step, pending: [...(r?.pending ?? [])] } : { kind: "none", pending: [...(r?.pending ?? [])] };
+  ws.send(JSON.stringify({ type: "say", text, at }));
+  return true;
+}`;
+
+/** 폰 페이지 안의 폰 소켓으로 말을 보낸다(SEND_SAY). 보냈으면 true. */
 async function sendSay(page: Page, text: string): Promise<boolean> {
   const proto = await page.send("Runtime.evaluate", { expression: "WebSocket.prototype" });
   const protoId = (proto.result?.result as { objectId?: string } | undefined)?.objectId;
@@ -299,7 +312,7 @@ async function sendSay(page: Page, text: string): Promise<boolean> {
   if (!listId) return false;
   const sent = await page.send("Runtime.callFunctionOn", {
     objectId: listId, returnByValue: true, arguments: [{ value: text }],
-    functionDeclaration: "function (text) { const ws = this.filter((w) => w.readyState === 1 && /\\/phone\\/events(\\?|$)/.test(w.url)).at(-1); if (!ws) return false; ws.send(JSON.stringify({ type: \"say\", text })); return true; }",
+    functionDeclaration: SEND_SAY,
   });
   return sent.result?.result?.value === true;
 }

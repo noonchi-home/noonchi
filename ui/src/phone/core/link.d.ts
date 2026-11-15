@@ -13,6 +13,14 @@ export function createLink(opts: {
   onMessage: (msg: Record<string, any>) => void;
   onOpen?: () => void;
   onClose?: () => void;
+  /** 서버 판본이 달라도 다시 읽지 못함(같은 탭에서 60초 안·저장소 막힘). */
+  onStale?: () => void;
   Socket?: unknown;
   now?: () => number;
+  /** 이 빌드의 폰 계약 판본(기본 ui/src/phone/protocol.ts PHONE_PROTOCOL). */
+  protocol?: number;
+  /** 페이지 다시 읽기(기본 location.reload). */
+  reload?: () => void;
+  /** 다시 읽은 시각을 두는 곳(기본 sessionStorage). */
+  storage?: { getItem(key: string): string | null; setItem(key: string, value: string): void };
 }): PhoneLink;

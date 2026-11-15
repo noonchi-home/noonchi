@@ -340,7 +340,9 @@ npm start
 | `landmarks`(앱 감지기) | `position`, `orientation`, `projection`(16개), `width`, `height`, `boxes: [{ label 또는 cls, score, box: [x, y, w, h] }]`(32개까지, `label`은 낱말 표 키 `refrigerator`·`dining_table` 등, `cls`는 COCO 번호), `epoch` |
 | 엔진 프레임(바이너리, 웹) | 서버 YOLO가 기준점 상자를 찾아 그 프레임 자세·투영과 함께 넘긴다(원점이 지금 원점일 때만) |
 
-서버 → 폰: `status`(`{ type, aligned, sync, error?, engine_ms? }`)의 `sync: { state: "none"|"estimated"|"aligned", source: "start"|"objects"|"walls"|null, start: { label, facing }|null, started, anchors, wall_points, residual_m }`. 맞춤 상태가 바뀌거나 변환이 폰 자리에서 5cm 넘게 움직이면 붙은 폰 모두에 다시 보내고, 맞춘 상태면 지금 명령도 새 대상 자리로 다시 보낸다.
+서버 → 폰: `status`(`{ type, aligned, sync, error?, engine_ms?, protocol }`)의 `sync: { state: "none"|"estimated"|"aligned", source: "start"|"objects"|"walls"|null, start: { label, facing }|null, started, anchors, wall_points, residual_m }`. 맞춤 상태가 바뀌거나 변환이 폰 자리에서 5cm 넘게 움직이면 붙은 폰 모두에 다시 보내고, 맞춘 상태면 지금 명령도 새 대상 자리로 다시 보낸다.
+
+폰 판본(`src/phone/server.ts`, 판본 형 `src/contract/phone-version.ts`): 폰 페이지는 열리자마자 `{type:"hello", protocol}`을 보낸다. 서버는 판본이 맞는 hello를 받은 연결에만 계획 명령을 보내고 답(`answer`·`say`·`confirm`·`cancel`)을 받는다(자세·사진은 늘 받는다). 2초 안에 hello가 없거나 판본이 다르면 옛 탭으로 두고 명령 `{id:"refresh"}`(「화면을 새로 고쳐 주세요」)만 보낸다. 그 뒤 맞는 hello가 오면 그 안내를 지우고 지금 명령 전체와 승인 대기 목록을 다시 보낸다. 폰은 `status.protocol`이 폰 빌드와 다르면 페이지를 다시 읽는다(같은 탭에서 60초에 한 번, 못 읽으면 「새로 고침이 필요해요」). 말 `{type:"say", text, at}`의 `at`은 말하기 시작할 때 떠 있던 명령(`{kind:"command", id, step}`, 없으면 `{kind:"none"}`)과 보인 승인 대기 token들(`pending`)이다. 서버는 말 답을 그 명령에만, 말로 한 승인·거절은 보인 token이 하나이고 지금도 대기일 때 그 하나에만 받는다. 그 밖의 답 말은 들은 말로만 남기고 실행 기록에 「늦은 답이라 쓰지 않음」을 남긴다. 판본이 맞는 폰이 없으면 폰이 필요한 계획(사람 단계·질문·처음 하는 일·승인이 필요한 가전 단계·시간 초과 질문)은 시작을 미루고(「폰 화면 새로 고침 전이라 새 일을 미룸」), 계획 도중 물을 폰이 없으면 바로 닫는다(「폰이 없어 물을 수 없어 그만둠」).
 
 실제 폰에서 확인할 것:
 - 크롬 WebXR hit-test가 벽(수직면)을 돌려주는지, hit 자세 +Y가 면 법선인지. 수평면만 주면 벽 모양은 쓰이지 않고 시작 위치·물건만 남는다.

@@ -118,7 +118,7 @@ describe("실제 폰 화면 뿌리(PhoneApp)", () => {
     expect(await main.findByText("이 브라우저는 AR을 지원하지 않아요. 안드로이드 크롬으로 여세요.")).toBeInTheDocument();
     await userEvent.type(main.getByRole("textbox", { name: "클로이드에게 할 말" }), "TV 켜줘");
     await userEvent.click(main.getByRole("button", { name: "보내기" }));
-    expect(FakeSocket.last.sent).toContainEqual({ type: "say", text: "TV 켜줘" });
+    expect(FakeSocket.last.sent).toContainEqual({ type: "say", text: "TV 켜줘", at: { kind: "none", pending: [] } });
   });
 
   it("AR 시작: 덮개 div를 DOM 오버레이 뿌리로 세션을 연다. 평소에는 조준점이 없고, 명령이 떠 있으면 명령 대상 하나에 이름표 없는 고리(에이전트 초점은 그리지 않음)", async () => {

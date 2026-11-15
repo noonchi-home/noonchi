@@ -5,6 +5,10 @@
 // 맞춤이 바뀌면 지금 명령을 다시 보낸다(speak false). 위치 맞춤 모듈(src/sync)의 상태가 바뀌면 붙은 폰 모두에 상태를 보낸다.
 // 내부 테스트용이라 같은 와이파이의 누구나 말을 보낼 수 있다.
 // 폰 화면은 React 빌드 ui/dist/phone/이고 빌드 파일은 /assets/다(대시보드와 같은 빌드). 영상 모드 영상은 /phone/videos/다(videoDir, Range).
+// 폰 판본(src/contract/phone-version.ts): 연결마다 hello를 기다린다. 판본이 맞는 hello를 받기 전에는 그 연결에 계획 명령을 보내지 않고 답(answer·say·confirm·cancel)을
+// 받지 않는다(관찰 사진·자세는 받는다). 열린 뒤 2초 안에 hello가 없거나 판본이 다르면 옛 탭으로 두고 새로 고침 안내(명령 id refresh)를 보낸다.
+// 그 뒤라도 맞는 hello가 오면 정상으로 바꿔 새로 고침 안내를 지우고 지금 명령 전체와 승인 대기 목록을 다시 보낸다. ready(): 맞는 폰이 하나라도 붙어 있다.
+// 말(say)의 at(말할 때 떠 있던 명령·보인 승인 대기)은 모양을 본 뒤 onAnswer에 넘긴다(틀리면 칸 없음).
 
 import { existsSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server } from "node:http";
@@ -13,7 +17,9 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocket, WebSocketServer } from "ws";
 import type { FocusTarget } from "../contract/events.js";
-import type { ApprovalAnswer, PhoneCommand, PhonePending, PhoneTalkReply, PlannedCommand, PlannedCommandMessage } from "../contract/phone.js";
+import type { ApprovalAnswer, HeardAt, PhoneCommand, PhonePending, PhoneTalkReply, PlannedCommand, PlannedCommandMessage } from "../contract/phone.js";
+import { PHONE_PROTOCOL } from "./protocol.js";
+import { REFRESH_TEXT } from "../plan/labels.js";
 import { listenRetry } from "../server/net.js";
 import { serveFile, serveRange } from "../server/static.js";
 import type { EyeFeed } from "./feed.js";
@@ -83,8 +89,11 @@ export interface PhoneServerOptions {
   engineMs?: number;
   /** 실제 폰 답 단추({type:"answer", id, step, choice}: 「완료」·질문 답). */
   onChoice?: (id: string, step: string, choice: string) => void;
-  /** 폰의 말(say)을 에이전트보다 먼저 받는다. 명령·질문의 답(「완료」「그만」 등)이면 handled이고, 그때는 에이전트로 보내지 않고 reply를 돌려준다. */
-  onAnswer?: (text: string) => { handled: boolean; reply?: string };
+  /** 폰의 말(say)을 에이전트보다 먼저 받는다. 명령·질문의 답(「완료」「그만」 등)이거나 버린 답이면 handled이고, 그때는 에이전트로 보내지 않고 reply를 돌려준다.
+   *  at: 말할 때 폰에 떠 있던 명령·보인 승인 대기(없으면 옛 탭이거나 모양이 틀림). */
+  onAnswer?: (text: string, at?: HeardAt) => { handled: boolean; reply?: string } | Promise<{ handled: boolean; reply?: string }>;
+  /** 지금 승인 대기 목록. 연결이 판본 hello로 정상이 되면 이 목록을 보낸다(reply의 pending). */
+  pending?: () => PhonePending[];
 }
 
 export interface PhoneReply {
@@ -94,6 +103,23 @@ export interface PhoneReply {
 
 const MAX_SAY = 500;
 const ANSWERS: readonly ApprovalAnswer[] = ["approve", "reject"];
+/** 열린 뒤 이만큼(ms) 안에 판본 hello가 없으면 옛 탭으로 둔다. */
+export const HELLO_MS = 2000;
+/** 옛 탭에 보내는 새로 고침 안내(옛 탭도 그리는 보통 명령). */
+export const REFRESH_COMMAND: PhoneCommand = { type: "command", id: "refresh", step: "refresh", text: REFRESH_TEXT, choices: [], vision: null, target: null, speak: true };
+
+/** 말(say)의 at 모양을 본다. 틀리면 undefined(칸 없음과 같다). */
+export function heardAt(raw: unknown): HeardAt | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const a = raw as Record<string, unknown>;
+  const pending = Array.isArray(a.pending) && a.pending.length <= 20 && a.pending.every((x) => typeof x === "string" && x.length <= 80) ? (a.pending as string[]) : null;
+  if (!pending) return undefined;
+  if (a.kind === "none") return { kind: "none", pending: [...pending] };
+  if (a.kind === "command" && typeof a.id === "string" && typeof a.step === "string" && a.id.length <= 64 && a.step.length <= 80) {
+    return { kind: "command", id: a.id, step: a.step, pending: [...pending] };
+  }
+  return undefined;
+}
 
 export interface PhoneServer {
   readonly server: Server;
@@ -109,6 +135,8 @@ export interface PhoneServer {
   landmarks(header: FrameHeader, boxes: readonly LandmarkBoxIn[]): void;
   /** 위치 맞춤 모듈 상태. */
   syncState(): SyncState;
+  /** 판본이 맞는 실제 폰(맞는 hello를 받은 연결)이 하나라도 붙어 있는가. */
+  ready(): boolean;
   /** 실제 폰 명령(command)·지우기(command_clear)를 연결된 폰 모두에 보내고 지금 명령으로 둔다. 새로 붙은 폰은 상태 다음에
    *  지금 명령을 speak false로, 명령이 없으면 id 없는 command_clear를 받는다(다시 켠 서버에 다시 붙은 폰의 이전 명령이 지워진다). */
   command(msg: PlannedCommandMessage): void;
@@ -183,8 +211,8 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
   const reply = (ws: WebSocket, msg: unknown) => {
     if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
   };
-  /** 상태 메시지에 엔진 프레임 간격을 싣는다. */
-  const withEngine = (s: PhoneStatus): PhoneStatus => (opts.engineMs ? { ...s, engine_ms: opts.engineMs } : s);
+  /** 상태 메시지에 엔진 프레임 간격과 폰 계약 판본을 싣는다. */
+  const withEngine = (s: PhoneStatus): PhoneStatus => ({ ...(opts.engineMs ? { ...s, engine_ms: opts.engineMs } : s), protocol: PHONE_PROTOCOL });
   const status = (error?: string) => withEngine(session.status(error));
   // 바이너리 메시지 = 엔진 프레임(분석용)·화면 프레임(표시용)·사진·표시 영상 패킷(packet.ts). 영상은 연결 번호로 구분해 판단 없이 중계한다(video.ts)
   const onPacket = (ws: WebSocket, source: number, video: boolean, data: Buffer) => {
@@ -227,7 +255,7 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
       if (msg.type === "say") {
         const text = typeof msg.text === "string" ? msg.text.trim().slice(0, MAX_SAY) : "";
         if (!text) return say("말이 비어 있어요. 다시 말해 주세요.");
-        const answer = opts.onAnswer?.(text);
+        const answer = await opts.onAnswer?.(text, heardAt(msg.at));
         if (answer?.handled) return say(answer.reply ?? "");
         if (!opts.onSay) return say("에이전트가 연결되지 않았어요.");
         const r = await opts.onSay(text);
@@ -249,6 +277,9 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
 
   let connections = 0;
   let current: PlannedCommand | null = null;
+  /** 연결마다 판본: wait hello 기다리는 중, ok 판본이 맞음, old 옛 탭(hello 없음·판본 다름). */
+  const phase = new WeakMap<WebSocket, "wait" | "ok" | "old">();
+  const ok = (ws: WebSocket) => phase.get(ws) === "ok";
   /** 실제 폰에 보낼 명령: 대상 트윈 자리 → AR 자리(맞추기 전이면 대상 null). */
   const wire = (c: PlannedCommand, speak = c.speak): PhoneCommand => {
     const ar = c.target ? session.toAr(c.target.position) : null;
@@ -258,7 +289,7 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
   const resendIf = (wasAligned: boolean, moved = false) => {
     if (!current || (session.aligned === wasAligned && !(moved && session.aligned))) return;
     const msg = wire(current, false);
-    for (const ws of wss.clients) reply(ws, msg);
+    for (const ws of wss.clients) if (ok(ws)) reply(ws, msg);
   };
   /** 위치 맞춤 상태가 바뀌면 붙은 폰 모두에 상태를 보낸다. */
   const broadcastStatus = () => {
@@ -274,7 +305,29 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
       log(`[phone] 폰 끊김(지금 ${wss.clients.size}대)`);
     });
     reply(ws, status());
-    reply(ws, current ? wire(current, false) : { type: "command_clear" });
+    phase.set(ws, "wait");
+    // 옛 탭: 새로 고침 안내만 보낸다
+    const old = () => {
+      phase.set(ws, "old");
+      reply(ws, REFRESH_COMMAND);
+    };
+    const helloTimer = setTimeout(() => { if (phase.get(ws) === "wait") old(); }, HELLO_MS);
+    helloTimer.unref?.();
+    // 판본이 맞는 hello: 정상으로 바꾸고 지금 명령 전체(대상은 지금 맞춘 AR 자리, 읽지 않음)를 보낸다
+    const hello = (protocol: unknown) => {
+      const was = phase.get(ws);
+      if (protocol !== PHONE_PROTOCOL) {
+        if (was !== "old") old();
+        return;
+      }
+      if (was === "ok") return;
+      phase.set(ws, "ok");
+      if (was === "old") reply(ws, { type: "command_clear", id: REFRESH_COMMAND.id });
+      reply(ws, current ? wire(current, false) : { type: "command_clear" });
+      // 옛 탭이던 연결은 승인 대기 목록도 다시 받는다(그동안 받은 것이 없다)
+      if (was === "old" && opts.pending) reply(ws, { type: "reply", text: "", pending: opts.pending() } satisfies PhoneTalkReply);
+    };
+    ws.on("close", () => clearTimeout(helloTimer));
     ws.on("message", (data, isBinary) => {
       if (isBinary) {
         onPacket(ws, source, video, Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data as Buffer));
@@ -288,8 +341,13 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
         return;
       }
       const type = (raw as { type?: unknown } | null)?.type;
+      if (type === "hello") {
+        hello((raw as { protocol?: unknown }).protocol);
+        return;
+      }
+      // 판본이 맞는 연결의 답만 받는다(옛 탭의 답은 다른 명령에 갈 수 있다)
       if (type === "say" || type === "confirm" || type === "cancel") {
-        void talk(ws, raw as Record<string, unknown>);
+        if (ok(ws)) void talk(ws, raw as Record<string, unknown>);
         return;
       }
       // 시계 맞춤(NTP식): 폰이 보낸 t0를 그대로, 서버 시각을 붙여 바로 돌려준다
@@ -300,7 +358,7 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
       }
       if (type === "answer") {
         const { id, step, choice } = raw as { id?: unknown; step?: unknown; choice?: unknown };
-        if (typeof id === "string" && typeof step === "string" && typeof choice === "string" && id.length <= 64 && step.length <= 80 && choice.length <= 32) {
+        if (ok(ws) && typeof id === "string" && typeof step === "string" && typeof choice === "string" && id.length <= 64 && step.length <= 80 && choice.length <= 32) {
           opts.onChoice?.(id, step, choice);
         }
         return;
@@ -338,11 +396,12 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
       resendIf(wasAligned, true);
     },
     syncState: () => session.syncState(),
+    ready: () => [...wss.clients].some((ws) => ok(ws) && ws.readyState === WebSocket.OPEN),
     command(msg) {
       if (msg.type === "command") current = msg;
       else if (msg.id === undefined || msg.id === current?.id) current = null;
       const out = msg.type === "command" ? wire(msg) : msg;
-      for (const ws of wss.clients) reply(ws, out);
+      for (const ws of wss.clients) if (ok(ws)) reply(ws, out);
     },
     async listen(port, host) {
       const addr = await listenRetry(server, port, host, { log });

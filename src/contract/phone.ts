@@ -51,8 +51,16 @@ export type ApprovalAnswer = "approve" | "reject";
 /** 승인을 기다리는 가전 명령(위험 목록). 폰은 위에 「deviceLabel: reason」, 아래에 답(choices: 승인·거절)마다 단추 하나를 두고 confirm(choice)로 답한다. */
 export interface PhonePending { token: string; deviceLabel: string; reason: string; choices: PhoneChoice[] }
 
-/** 실제 폰 → 서버: 들은 말(say), 승인 답(confirm, choice가 없으면 approve)·취소(cancel). 들은 말이 명령·질문의 답이면 서버가 그 답으로 받는다(「완료」「다 했어」, 「그만」은 계획을 그만둔다). */
-export type PhoneTalk = { type: "say"; text: string } | { type: "confirm"; token: string; choice?: ApprovalAnswer } | { type: "cancel"; token: string };
+/** 말하기 시작할 때 폰에 떠 있던 것: 명령 줄(명령의 계획 id·단계 id, 없으면 none)과 승인 대기 목록에 보인 token들. 새 폰은 늘 싣는다. 칸이 없으면 옛 탭이다.
+ *  서버는 말 답(「완료」·질문 답·승인·거절)을 이 명령·token에만 받는다(src/act/track.ts onHeard, src/server/home.ts). */
+export type HeardAt = ({ kind: "command"; id: string; step: string } | { kind: "none" }) & { pending: string[] };
+
+/** 실제 폰 → 서버: 들은 말(say, at은 말할 때 떠 있던 것), 승인 답(confirm, choice가 없으면 approve)·취소(cancel).
+ *  들은 말이 지금 명령·질문의 답이고 at이 그 명령이면 서버가 그 답으로 받는다(「완료」「다 했어」, 「그만」은 at과 상관없이 계획을 그만둔다). */
+export type PhoneTalk = { type: "say"; text: string; at?: HeardAt } | { type: "confirm"; token: string; choice?: ApprovalAnswer } | { type: "cancel"; token: string };
+
+/** 실제 폰 → 서버: 연결하자마자 보내는 폰 계약 판본(형 src/contract/phone-version.ts, 값 src/phone/protocol.ts·ui/src/phone/protocol.ts). 없거나 다르면 서버가 그 탭을 옛 탭으로 둔다. */
+export interface PhoneHello { type: "hello"; protocol: number }
 
 /** 서버 → 실제 폰: 말·승인의 답. text가 빈 글이면 보이지도 읽지도 않는다(명령의 답을 말로 한 때: 다음 명령이 따로 온다).
  *  pending은 에이전트 답에만 싣는 지금 승인 대기 목록이다. 없으면(명령의 답·승인·취소·오류) 실제 폰은 목록을 그대로 둔다. */

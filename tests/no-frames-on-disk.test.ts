@@ -8,7 +8,7 @@ import { startFakeOpenAI, type FakeServer } from "../scripts/fake-openai.js";
 import { encodeFramePacket } from "../src/phone/packet.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { ScriptedDetector } from "./helpers/detectors.js";
-import { openWebSocket } from "./helpers/ws.js";
+import { openPhone } from "./helpers/ws.js";
 
 type Msg = Record<string, any>;
 let srv: RunningServer | undefined;
@@ -43,7 +43,7 @@ async function sendFrames(env: Record<string, string>) {
   });
   const phoneUrl = new URL(srv.phoneUrls[0]!);
   let box: Msg[] = [];
-  const phone = await openWebSocket(`ws://${phoneUrl.host}/phone/events`, { options: { origin: phoneUrl.origin }, setup: (ws) => { box = inbox(ws); } });
+  const phone = await openPhone(`ws://${phoneUrl.host}/phone/events`, { options: { origin: phoneUrl.origin }, setup: (ws) => { box = inbox(ws); } });
   try {
     await until(() => box.some((m) => m.type === "status"));
     for (let i = 1; i <= 3; i++) {

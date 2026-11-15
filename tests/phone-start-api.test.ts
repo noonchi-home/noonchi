@@ -11,6 +11,7 @@ import { fetchRetry } from "../src/server/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { startFakePam, type FakePam } from "./helpers/pam.js";
 import { look, perspective } from "./helpers/sync-sim.js";
+import { PHONE_PROTOCOL } from "../src/phone/protocol.js";
 
 type Msg = Record<string, any>;
 let srv: RunningServer | undefined;
@@ -57,6 +58,7 @@ async function phone(s: RunningServer) {
   const ws = new WebSocket(`ws://${url.host}/phone/events`, { origin: url.origin });
   const wait = inbox(ws);
   await new Promise<void>((res, rej) => { ws.once("open", () => res()); ws.once("error", rej); });
+  ws.send(JSON.stringify({ type: "hello", protocol: PHONE_PROTOCOL }));
   return { ws, wait };
 }
 const json = async (path: string, body?: unknown) => {

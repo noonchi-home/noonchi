@@ -1,4 +1,5 @@
 // 늘 듣기(createListener): 크롬 내장 음성 인식(ko-KR)을 이어서(continuous) 켜 두고, 끝나면 restartMs 뒤 다시 켠다. 끝난 말(isFinal)만 onHeard로 보낸다.
+// 말이 시작되면(인식 speechstart) onSpeechStart를 부른다: 그때 떠 있던 명령을 그 말의 답 자리로 잡는다(controller.ts).
 // pause()는 듣기를 끊고(폰이 명령을 소리로 읽는 동안 그 소리를 듣지 않게) resume()까지 다시 켜지 않는다.
 // 마이크 권한이 없거나(not-allowed·service-not-allowed) 마이크가 없으면(audio-capture) denied로 멈춘다. start()를 다시 부르면 새로 켠다(브라우저가 되면 권한을 다시 묻는다).
 // 상태(onState, 바뀔 때만): on 듣는 중, paused 읽는 동안 멈춤, denied 마이크 꺼짐, off 꺼짐(start 전·stop 뒤).
@@ -9,7 +10,7 @@ export const recognition = (w = globalThis) => w.SpeechRecognition || w.webkitSp
 
 const DENIED = new Set(["not-allowed", "service-not-allowed", "audio-capture"]);
 
-/** hooks: onState(state), onHeard(text) 끝난 말 하나. */
+/** hooks: onState(state), onHeard(text) 끝난 말 하나, onSpeechStart() 말이 시작됨(없어도 된다). */
 export function createListener(Recognition, hooks, { restartMs = 300 } = {}) {
   let rec = null;
   let want = false;
@@ -51,6 +52,7 @@ export function createListener(Recognition, hooks, { restartMs = 300 } = {}) {
         if (text) hooks.onHeard(text);
       }
     };
+    r.onspeechstart = () => hooks.onSpeechStart?.();
     r.onerror = (e) => {
       if (!DENIED.has(e.error)) return;
       denied = true;

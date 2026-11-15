@@ -13,6 +13,8 @@ import { fetchRetry } from "../src/server/net.js";
 import { BOX_START, BOX_WALLS, alignMessages } from "./helpers/align.js";
 import { ROOMS, makeHome } from "./helpers/home.js";
 import { readVideo } from "./helpers/video.js";
+import { openPhone } from "./helpers/ws.js";
+import { PHONE_PROTOCOL } from "../src/phone/protocol.js";
 
 /** 서버가 연 파일 읽기 스트림(영상 받기를 끊은 뒤 닫혔는지 본다). 나머지 node:fs는 그대로다. */
 const readStreams = vi.hoisted(() => [] as ReadStream[]);
@@ -99,6 +101,7 @@ const JPEG = Buffer.from([0xff, 0xd8, 0x12, 0x34, 0xff, 0xd9]);
 async function alignedPhone(phoneBase: string) {
   const phone = new WebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events`, { origin: phoneBase });
   await opened(phone);
+  phone.send(JSON.stringify({ type: "hello", protocol: PHONE_PROTOCOL }));
   const done = next(phone, (m) => m.type === "status" && m.aligned);
   sendAlign(phone);
   await done;
@@ -400,6 +403,114 @@ describe("phone server", () => {
   });
 });
 
+describe("폰 판본(hello)과 옛 탭", () => {
+  const REFRESH = { type: "command", id: "refresh", step: "refresh", text: "화면을 새로 고쳐 주세요", choices: [], vision: null, target: null, speak: true };
+  const PENDING = [{ token: "tok1", deviceLabel: "현관문", reason: "현관문 잠금 해제", choices: BOTH }];
+  const CMD: PlannedCommand = {
+    type: "command", id: "plan:pam-1", step: "plan:pam-1:2", text: "컵을 들어 주세요", vision: "컵 · 식탁 위", choices: [{ id: "done", label: "완료" }],
+    target: { id: "cup_1", label: "컵", position: [1, 0.9, 3.7] }, speak: true, kind: "pick",
+  };
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  async function protoSetup() {
+    const got = { choices: [] as string[][], said: [] as string[], confirmed: [] as string[], cancelled: [] as string[], answered: [] as [string, unknown][], engine: 0 };
+    const phone = createPhoneServer({
+      sync: SYNC, onEye: () => {}, log: () => {},
+      onChoice: (id, step, choice) => got.choices.push([id, step, choice]),
+      onSay: async (text) => { got.said.push(text); return { reply: "에이전트", pending: [] }; },
+      onAnswer: (text, at) => { got.answered.push([text, at]); return { handled: false }; },
+      onConfirm: async (token) => { got.confirmed.push(token); return { reply: "확정" }; },
+      onCancel: async (token) => { got.cancelled.push(token); return { reply: "취소" }; },
+      onEngine: () => { got.engine++; },
+      pending: () => PENDING,
+    });
+    const { port } = await phone.listen(0, "127.0.0.1");
+    cleanups.push(() => phone.close());
+    return { phone, got, base: `http://127.0.0.1:${port}` };
+  }
+  /** hello 없이 연다(옛 탭). */
+  async function tab(base: string) {
+    const ws = new WebSocket(`${base.replace(/^http/, "ws")}/phone/events`, { origin: base });
+    const box: Msg[] = [];
+    ws.on("message", (d, bin) => { if (!bin) box.push(JSON.parse(String(d)) as Msg); });
+    cleanups.push(() => ws.close());
+    await opened(ws);
+    return { ws, box };
+  }
+  const answers = (ws: WebSocket) => {
+    ws.send(JSON.stringify({ type: "answer", id: "plan:pam-1", step: "plan:pam-1:2", choice: "done" }));
+    ws.send(JSON.stringify({ type: "say", text: "완료", at: { kind: "command", id: "plan:pam-1", step: "plan:pam-1:2", pending: [] } }));
+    ws.send(JSON.stringify({ type: "confirm", token: "tok1", choice: "approve" }));
+    ws.send(JSON.stringify({ type: "cancel", token: "tok1" }));
+  };
+
+  it("판본 없는 폰 탭은 상태(protocol)만 받고 2초 뒤 「화면을 새로 고쳐 주세요」를 받는다. 계획 명령은 받지 않고 그 탭의 answer·say·confirm·cancel은 받지 않는다(관찰 사진은 받는다)", async () => {
+    const { phone, got, base } = await protoSetup();
+    phone.command(CMD);
+    const old = await tab(base);
+    await wait(300);
+    expect(old.box).toEqual([expect.objectContaining({ type: "status", protocol: PHONE_PROTOCOL })]);
+    expect(phone.ready()).toBe(false);
+    await wait(2000);
+    expect(old.box.slice(1)).toEqual([REFRESH]);
+    answers(old.ws);
+    old.ws.send(encodeFramePacket({ kind: "engine", width: 4, height: 3 }, JPEG));
+    phone.command({ ...CMD, step: "plan:pam-1:3", text: "싱크대로 가 주세요" });
+    await wait(300);
+    expect(got).toMatchObject({ choices: [], said: [], confirmed: [], cancelled: [], answered: [], engine: 1 });
+    expect(old.box.slice(1)).toEqual([REFRESH]);
+  });
+
+  it("protocol이 다른 hello도 옛 탭이다: 2초를 기다리지 않고 새로 고침 안내를 받는다", async () => {
+    const { phone, base } = await protoSetup();
+    phone.command(CMD);
+    const old = await tab(base);
+    old.ws.send(JSON.stringify({ type: "hello", protocol: PHONE_PROTOCOL - 1 }));
+    await wait(300);
+    expect(old.box.slice(1)).toEqual([REFRESH]);
+    expect(phone.ready()).toBe(false);
+  });
+
+  it("늦은 hello는 연결을 정상으로 되돌린다: 새로 고침 안내를 지우고 처음 보낸 명령 전체(kind·target(AR)·vision)와 승인 대기 목록을 다시 보내며, 그 뒤 답을 받는다", async () => {
+    const { phone, got, base } = await protoSetup();
+    const late = await tab(base);
+    const aligned = next(late.ws, (m) => m.type === "status" && m.aligned);
+    sendAlign(late.ws);
+    await aligned;
+    phone.command(CMD);
+    await wait(2100);
+    expect(late.box.filter((m) => m.type !== "status")).toEqual([REFRESH]);
+    const n = late.box.length;
+    late.ws.send(JSON.stringify({ type: "hello", protocol: PHONE_PROTOCOL }));
+    for (const end = Date.now() + 2000; late.box.length < n + 3 && Date.now() < end; ) await wait(20);
+    expect(late.box.slice(n)).toEqual([
+      { type: "command_clear", id: "refresh" },
+      { ...CMD, target: { id: "cup_1", label: "컵", ar: [1, 0.9, 3.7] }, speak: false },
+      { type: "reply", text: "", pending: PENDING },
+    ]);
+    expect(phone.ready()).toBe(true);
+    late.ws.send(JSON.stringify({ type: "answer", id: "plan:pam-1", step: "plan:pam-1:2", choice: "done" }));
+    for (const end = Date.now() + 2000; !got.choices.length && Date.now() < end; ) await wait(20);
+    expect(got.choices).toEqual([["plan:pam-1", "plan:pam-1:2", "done"]]);
+    // 그 뒤 계획 명령도 받는다
+    const more = next(late.ws, (m) => m.type === "command" && m.step === "plan:pam-1:3");
+    phone.command({ ...CMD, step: "plan:pam-1:3" });
+    await more;
+  });
+
+  it("말(say)의 at을 onAnswer에 넘긴다. at 칸이 없거나 모양이 틀리면 at 없이 넘긴다(옛 탭과 같다)", async () => {
+    const { got, base } = await protoSetup();
+    const ws = await openPhone(`${base.replace(/^http/, "ws")}/phone/events`, { options: { origin: base } });
+    cleanups.push(() => ws.close());
+    const at = { kind: "command", id: "plan:pam-1", step: "plan:pam-1:2", pending: ["tok1"] };
+    ws.send(JSON.stringify({ type: "say", text: "완료", at }));
+    ws.send(JSON.stringify({ type: "say", text: "다 했어", at: { kind: "none", pending: [] } }));
+    ws.send(JSON.stringify({ type: "say", text: "승인" }));
+    ws.send(JSON.stringify({ type: "say", text: "그만", at: { kind: "command", id: 3, pending: [] } }));
+    for (const end = Date.now() + 2000; got.answered.length < 4 && Date.now() < end; ) await wait(20);
+    expect(got.answered).toEqual([["완료", at], ["다 했어", { kind: "none", pending: [] }], ["승인", undefined], ["그만", undefined]]);
+  });
+});
+
 describe("폰 대화·승인·초점", () => {
   async function talkSetup() {
     const said: string[] = [];
@@ -480,6 +591,7 @@ describe("폰 대화·승인·초점", () => {
     ws.on("message", (d) => box.push(JSON.parse(String(d)) as Msg));
     cleanups.push(() => ws.close());
     await opened(ws);
+    ws.send(JSON.stringify({ type: "hello", protocol: PHONE_PROTOCOL }));
     for (const end = Date.now() + 2000; box.length < n && Date.now() < end; ) await new Promise((r) => setTimeout(r, 20));
     return { ws, box };
   }

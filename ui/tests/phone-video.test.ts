@@ -121,7 +121,7 @@ function make(over: Partial<ControllerDeps> = {}, search = "?clip=cup-demo.mp4",
   made.push(c);
   const ws = FakeSocket.last;
   if (open) ws.open();
-  const sent = () => ws.sent.filter((m) => m.type !== "clock");
+  const sent = () => ws.sent.filter((m) => m.type !== "clock" && m.type !== "hello");
   const marks: { id: string; u: number; v: number; off: boolean; angle: number }[][] = [];
   const draw: ControllerDraw = { start: () => {}, aim: () => {}, hit: () => {}, marks: (m) => marks.push(m) };
   // 덮개 뿌리: 실제 페이지처럼 body 안에 둔다(영상은 그 앞에 깔린다)

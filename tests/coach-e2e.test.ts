@@ -19,7 +19,7 @@ import { turnOf } from "./helpers/llm.js";
 import { isObserving, observerRespond } from "./helpers/observer.js";
 import { coachPredict, startFakePam, type FakePam } from "./helpers/pam.js";
 import { plannerRespond, ramenScripts } from "./helpers/planner.js";
-import { openWebSocket } from "./helpers/ws.js";
+import { heardAtOf, openPhone, openWebSocket } from "./helpers/ws.js";
 
 type Msg = Record<string, any>;
 let srv: RunningServer | undefined;
@@ -93,7 +93,7 @@ async function start(o: { assist: "coach" | "noonchi"; scene?: Scene } = { assis
   sockets.push(await openWebSocket(`${srv.url.replace(/^http/, "ws")}/events`, { setup: inbox(dash) }));
   const phoneUrl = new URL(srv.phoneUrls[0]!);
   const phone: Msg[] = [];
-  const ws = await openWebSocket(`ws://${phoneUrl.host}/phone/events`, { options: { origin: phoneUrl.origin }, setup: inbox(phone) });
+  const ws = await openPhone(`ws://${phoneUrl.host}/phone/events`, { options: { origin: phoneUrl.origin }, setup: inbox(phone) });
   sockets.push(ws);
   let n = 0;
   const frame = () => ws.send(encodeFramePacket({ kind: "engine", width: 480, height: 360, captured_at: Date.now(), time_err_ms: 0 }, Buffer.from([0xff, 0xd8, n++ % 256, n >> 8])));
@@ -111,7 +111,8 @@ async function start(o: { assist: "coach" | "noonchi"; scene?: Scene } = { assis
   const said = (text: string) => spoken().find((m) => m.text === text);
   const last = () => commands().at(-1)!;
   const answer = (m: Msg, choice = "done") => ws.send(JSON.stringify({ type: "answer", id: m.id, step: m.step, choice }));
-  const say = (text: string) => ws.send(JSON.stringify({ type: "say", text }));
+  // 새 폰처럼 말할 때 떠 있던 명령(at)을 싣는다
+  const say = (text: string) => ws.send(JSON.stringify({ type: "say", text, at: heardAtOf(phone) }));
   const replies = () => phone.filter((m) => m.type === "reply");
   const agentBodies = () => fake!.requests.filter((r) => r.method === "POST" && r.path.endsWith("/responses") && !isObserving(r.body) && !planning(r.body)).map((r) => r.body);
   const observerBodies = () => fake!.requests.filter((r) => r.method === "POST" && r.path.endsWith("/responses") && isObserving(r.body)).map((r) => r.body);

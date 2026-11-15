@@ -16,7 +16,7 @@ import { startServer, type RunningServer } from "../src/server/start.js";
 import { ScriptedDetector, det } from "./helpers/detectors.js";
 import { startFakePam, type FakePam } from "./helpers/pam.js";
 import { CUP_SCRIPTS, plannerRespond } from "./helpers/planner.js";
-import { openWebSocket } from "./helpers/ws.js";
+import { heardAtOf, openPhone, openWebSocket } from "./helpers/ws.js";
 
 type Msg = Record<string, any>;
 let srv: RunningServer | undefined;
@@ -65,7 +65,7 @@ describe("NOONCHI 처음부터 끝까지", () => {
     sockets.push(await openWebSocket(`${srv.url.replace(/^http/, "ws")}/events`, { setup: inbox(dash) }));
     const phoneUrl = new URL(srv.phoneUrls[0]!);
     const phone: Msg[] = [];
-    const ws = await openWebSocket(`ws://${phoneUrl.host}/phone/events`, { options: { origin: phoneUrl.origin }, setup: inbox(phone) });
+    const ws = await openPhone(`ws://${phoneUrl.host}/phone/events`, { options: { origin: phoneUrl.origin }, setup: inbox(phone) });
     sockets.push(ws);
     let n = 0;
     // 조건이 맞을 때까지 엔진 프레임을 150ms마다 보낸다(판단 뒤에도 대상을 다시 보도록, 최대 15초)
@@ -93,7 +93,7 @@ describe("NOONCHI 처음부터 끝까지", () => {
     await pump(() => !!said("싱크대로 가 주세요"));
     expect(said("싱크대로 가 주세요")).toMatchObject({ id: planId, step: `${planId}:3`, vision: "컵 · 손에 있음 · 싱크대까지 거리 모름" });
     // 3 이동: 말로 「다 했어」(답 글은 비어 있고 다음 명령이 따로 온다)
-    ws.send(JSON.stringify({ type: "say", text: "다 했어" }));
+    ws.send(JSON.stringify({ type: "say", text: "다 했어", at: heardAtOf(phone) }));
     await pump(() => !!said("컵을 싱크대에 넣어 주세요"));
     await pump(() => phone.some((m) => m.type === "reply"));
     expect(phone.find((m) => m.type === "reply")).toEqual({ type: "reply", text: "" });
@@ -177,7 +177,7 @@ describe("NOONCHI 처음부터 끝까지", () => {
     sockets.push(await openWebSocket(`${srv.url.replace(/^http/, "ws")}/events`, { setup: inbox(dash) }));
     const phoneUrl = new URL(srv.phoneUrls[0]!);
     const phone: Msg[] = [];
-    const ws = await openWebSocket(`ws://${phoneUrl.host}/phone/events`, { options: { origin: phoneUrl.origin }, setup: inbox(phone) });
+    const ws = await openPhone(`ws://${phoneUrl.host}/phone/events`, { options: { origin: phoneUrl.origin }, setup: inbox(phone) });
     sockets.push(ws);
     let n = 0;
     const pump = async (until: () => boolean | Promise<boolean>, ms = 15_000) => {

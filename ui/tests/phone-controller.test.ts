@@ -4,6 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPhoneController, type ControllerDeps, type ControllerDraw } from "../src/phone/controller";
 import { supportText } from "../src/phone/state";
+import { PHONE_PROTOCOL } from "../src/phone/protocol";
 
 class FakeSocket {
   static OPEN = 1;
@@ -27,6 +28,7 @@ class Rec {
   onresult: ((e: unknown) => void) | null = null;
   onerror: ((e: { error: string }) => void) | null = null;
   onend: (() => void) | null = null;
+  onspeechstart: (() => void) | null = null;
   started = 0;
   aborted = 0;
   constructor() { Rec.all.push(this); }
@@ -34,6 +36,8 @@ class Rec {
   stop() { this.onend?.(); }
   abort() { this.aborted += 1; this.onend?.(); }
   hear(transcript: string) { this.onresult?.({ resultIndex: 0, results: [Object.assign([{ transcript }], { isFinal: true })] }); }
+  /** 말이 시작됨(인식 speechstart). */
+  speechStart() { this.onspeechstart?.(); }
 }
 const rec = () => Rec.all.at(-1)!;
 
@@ -94,7 +98,7 @@ function make(over: Partial<ControllerDeps> = {}) {
   made.push(c);
   const ws = FakeSocket.last;
   ws.open();
-  const sent = () => ws.sent.filter((m) => m.type !== "clock");
+  const sent = () => ws.sent.filter((m) => m.type !== "clock" && m.type !== "hello");
   const drawn: string[] = [];
   const marks: { id: string; label: string }[][] = [];
   const draw: ControllerDraw = { start: () => drawn.push("start"), aim: (on) => drawn.push(`aim ${on}`), hit: () => {}, marks: (m) => marks.push(m) };
@@ -165,7 +169,7 @@ describe("늘 듣기", () => {
     expect(c.view().listening).toBe("on");
     expect(rec().continuous).toBe(true);
     rec().hear("다 했어");
-    expect(sent()).toContainEqual({ type: "say", text: "다 했어" });
+    expect(sent()).toContainEqual({ type: "say", text: "다 했어", at: { kind: "none", pending: [] } });
     rec().stop();
     vi.advanceTimersByTime(300);
     expect(Rec.all).toHaveLength(2);
@@ -224,6 +228,41 @@ describe("늘 듣기", () => {
   });
 });
 
+describe("말의 at: 말할 때 떠 있던 명령과 승인 대기", () => {
+  it("새 폰은 열리자마자 판본 hello를 보낸다", () => {
+    const { ws } = make();
+    expect(ws.sent[0]).toEqual({ type: "hello", protocol: PHONE_PROTOCOL });
+  });
+
+  it("말하기 시작할 때(speechstart) 떠 있던 명령을 잡아 그 말을 보낼 때 at으로 싣는다: 그 사이 명령이 바뀌어도 시작 때 명령. 시작 알림 없이 온 말은 보낼 때 명령", async () => {
+    vi.useFakeTimers();
+    const { ws, sent, startAr } = make();
+    await startAr();
+    ws.push(command({ speak: false }));
+    rec().speechStart();
+    ws.push(command({ step: "plan:pam-1:3", text: "싱크대로 가 주세요", speak: false }));
+    rec().hear("완료");
+    expect(sent().filter((m) => m.type === "say")).toEqual([{ type: "say", text: "완료", at: { kind: "command", id: "plan:pam-1", step: "plan:pam-1:2", pending: [] } }]);
+    rec().hear("다 했어");
+    expect(sent().filter((m) => m.type === "say").at(-1)).toEqual({ type: "say", text: "다 했어", at: { kind: "command", id: "plan:pam-1", step: "plan:pam-1:3", pending: [] } });
+    ws.push({ type: "command_clear" });
+    rec().hear("불 꺼 줘");
+    expect(sent().filter((m) => m.type === "say").at(-1)).toEqual({ type: "say", text: "불 꺼 줘", at: { kind: "none", pending: [] } });
+  });
+
+  it("승인 대기 목록에 보인 token들을 싣는다: AR 엄지 자리는 맨 앞 대기 하나, 처음 화면(글 입력)은 보인 대기 전부", async () => {
+    vi.useFakeTimers();
+    const { c, ws, sent, startAr } = make();
+    const pend = (token: string) => ({ token, deviceLabel: "현관문", reason: "현관문 잠금 해제", choices: [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }] });
+    ws.push({ type: "reply", text: "", pending: [pend("t1"), pend("t2")] });
+    c.actions.say("승인");
+    expect(sent().at(-1)).toEqual({ type: "say", text: "승인", at: { kind: "none", pending: ["t1", "t2"] } });
+    await startAr();
+    rec().hear("승인");
+    expect(sent().at(-1)).toEqual({ type: "say", text: "승인", at: { kind: "none", pending: ["t1"] } });
+  });
+});
+
 describe("명령·질문·승인", () => {
   it("명령: 지금 명령으로 두고, 답은 받은 id·step 그대로. 연결이 끊기면 잠깐 알릴 말", () => {
     const { c, ws, sent } = make();
@@ -251,7 +290,7 @@ describe("명령·질문·승인", () => {
   it("말의 답: 글이 있으면 처음 화면 답 줄과 소리, 빈 글이면 지운다. 승인 대기와 답(승인·거절)", () => {
     const { c, ws, spoken, sent } = make();
     c.actions.say(" TV 켜줘 ");
-    expect(sent()).toEqual([{ type: "say", text: "TV 켜줘" }]);
+    expect(sent()).toEqual([{ type: "say", text: "TV 켜줘", at: { kind: "none", pending: [] } }]);
     const approve = { id: "approve", label: "승인" };
     const reject = { id: "reject", label: "거절" };
     ws.push({ type: "reply", text: "현관문 잠금 해제는 승인이 필요해요.", pending: [{ token: "t1", deviceLabel: "현관문", reason: "현관문 잠금 해제", choices: [approve, reject] }, { token: "t2", deviceLabel: "창문", reason: "창문 열기", choices: [approve, reject] }] });

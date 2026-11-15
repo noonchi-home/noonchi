@@ -11,7 +11,7 @@ import { startServer, type RunningServer } from "../src/server/start.js";
 import { alignOnServer } from "./helpers/align.js";
 import { ScriptedDetector, det } from "./helpers/detectors.js";
 import { startFakePam, type FakePam } from "./helpers/pam.js";
-import { openWebSocket } from "./helpers/ws.js";
+import { openPhone, openWebSocket } from "./helpers/ws.js";
 
 type Msg = Record<string, any>;
 let srv: RunningServer | undefined;
@@ -61,7 +61,7 @@ describe("카메라로 가전 상태 맞추기, 한양목련 끝까지", () => {
     sockets.push(await openWebSocket(`${srv.url.replace(/^http/, "ws")}/events`, { setup: inbox(dash) }));
     const phoneUrl = new URL(srv.phoneUrls[0]!);
     const phone: Msg[] = [];
-    const ws = await openWebSocket(`ws://${phoneUrl.host}/phone/events`, { options: { origin: phoneUrl.origin }, setup: inbox(phone) });
+    const ws = await openPhone(`ws://${phoneUrl.host}/phone/events`, { options: { origin: phoneUrl.origin }, setup: inbox(phone) });
     sockets.push(ws);
     const until = async (ok: () => boolean, what: string) => {
       for (const end = Date.now() + 5000; Date.now() < end; await new Promise((r) => setTimeout(r, 20))) if (ok()) return;

@@ -2,7 +2,7 @@
 // 아래에는 명령이 있을 때만 엄지 자리 카드 하나(비전 상태 한 줄, 그 바로 아래 「완료」나 답 단추). 설정은 미어캣을 누르면 열린다.
 // 큰 단추(말하기·사진·끝내기)·상태 줄·fps·⋯ 메뉴·「나중에」·판단 말풍선은 없다. 일이 멈추는 문제는 모달과 고치는 단추, 추적 약함은 비전 상태 줄에만.
 // 글 크기는 부품 원래 크기(단추 label 토큰, 큰 글 토큰 없음), 누르는 것은 48px(h-12·size-12). 세로가 기본 배치이고 가로는 landscape:로만 바꾼다.
-import { act as flush, render, screen, within } from "@testing-library/react";
+import { act as flush, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -200,6 +200,39 @@ describe("아래: 엄지 자리 카드(비전 상태 바로 아래 「완료」)
     expect(zone("top")!).toHaveTextContent('물건 아래 바닥을 가리키고 "냉장고 여기로"라고 말해 주세요');
     await userEvent.click(within(zone("thumb")!).getByRole("button", { name: "완료" }));
     expect(act.endSetup).toHaveBeenCalledOnce();
+  });
+});
+
+describe("명령 단추는 그 명령에만(key = 계획 id:단계 id)", () => {
+  const A = SHOTS["pick-cup"].view;
+  const B: PhoneView = { ...A, command: { ...A.command!, step: "plan:pam-1:3", text: "싱크대로 가 주세요", vision: "싱크대까지 2.0m" } };
+  const doneIn = (c: HTMLElement) => within(c.querySelector<HTMLElement>("[data-phone-zone=thumb]")!).getByRole("button", { name: "완료" });
+
+  it("A 명령 「완료」를 누르는 중(pointerdown 뒤) B 명령으로 바뀌면 손을 떼도 아무 답도 보내지 않는다", () => {
+    const act = actions();
+    const r = render(<PhoneScreen view={A} act={act} />);
+    const done = doneIn(r.container);
+    fireEvent.pointerDown(done);
+    r.rerender(<PhoneScreen view={B} act={act} />);
+    fireEvent.pointerUp(done);
+    fireEvent.click(done);
+    expect(act.answer).not.toHaveBeenCalled();
+    // 새 명령의 단추는 그 명령으로 답한다
+    const next = doneIn(r.container);
+    fireEvent.pointerDown(next);
+    fireEvent.click(next);
+    expect(act.answer).toHaveBeenCalledExactlyOnceWith("plan:pam-1", "plan:pam-1:3", "done");
+  });
+
+  it("명령이 바뀌면 단추 묶음이 새로 그려진다. 같은 명령의 비전 상태만 바뀌면 그대로다", () => {
+    const act = actions();
+    const r = render(<PhoneScreen view={A} act={act} />);
+    const first = doneIn(r.container);
+    r.rerender(<PhoneScreen view={{ ...A, command: { ...A.command!, vision: "컵 · 손에 있음" } }} act={act} />);
+    expect(doneIn(r.container)).toBe(first);
+    r.rerender(<PhoneScreen view={B} act={act} />);
+    expect(first.isConnected).toBe(false);
+    expect(doneIn(r.container)).not.toBe(first);
   });
 });
 
