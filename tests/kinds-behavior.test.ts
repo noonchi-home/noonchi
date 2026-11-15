@@ -172,6 +172,11 @@ describe("등록부 검증(checkKinds)", () => {
     expect(checkKinds(overridden).join("\n")).toMatch(/aircon.*ThinQ 어댑터 air_conditioner는 start를 받지 않는다/);
   });
 
+  it("설정값이 필요한 confirm 명령(climate)은 프로필에서 만든 유효한 표본으로 본다: 에어컨형 프로필에 confirm climate면 통과", () => {
+    expect(checkKinds(with_("aircon", { confirm: { command: "climate", reason: (l) => l } }))).toEqual([]);
+    expect(checkKinds(with_("thermostat", { confirm: { command: "climate", reason: (l) => l } }))).toEqual([]);
+  });
+
   it("제어가 있는 프로필에 refrigerator 어댑터(읽기만)를 붙이면 거절", () => {
     expect(checkKinds(with_("dryer", { thinq: { type: /X/, adapter: "refrigerator" } })).join("\n")).toMatch(/dryer.*refrigerator/);
   });

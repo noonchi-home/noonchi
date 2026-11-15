@@ -35,16 +35,20 @@ function commandsOf(caps: readonly Capability[]): CommandType[] {
   return [...out];
 }
 
-/** 이름만 있는 명령의 표본(검사용 값). */
-const sample = (type: CommandType): Command => {
+/** 이름만 있는 명령의 검사용 표본: 설정값이 필요한 명령은 그 프로필에 맞는 유효한 값(모드는 프로필 modes 첫 값, 설정 온도는 setpoint 범위 안, 바람만 있으면 auto). */
+function sample(type: CommandType, e: KindEntry, caps: readonly Capability[]): Command {
   switch (type) {
     case "level": return { type, percent: 50 };
-    case "climate": return { type };
     case "covering": return { type, openPercent: 50 };
     case "valve": return { type, open: true };
+    case "climate": {
+      const p = e.profile;
+      if (!caps.includes("climate")) return { type, fan: "auto" };
+      return { type, ...(p.modes?.length ? { mode: p.modes[0] } : {}), setpointC: p.setpoint ? Math.round((p.setpoint.min + p.setpoint.max) / 2) : 22 };
+    }
     default: return { type } as Command;
   }
-};
+}
 
 export function checkKinds(kinds: Readonly<Record<string, KindEntry>>): string[] {
   const out: string[] = [];
@@ -57,7 +61,7 @@ export function checkKinds(kinds: Readonly<Record<string, KindEntry>>): string[]
     if (e.confirm) {
       const want = e.confirm.command;
       for (const s of specs) {
-        const c = normalizeCommand(s, sample(want));
+        const c = normalizeCommand(s, sample(want, e, s.capabilities));
         if (c.type !== want) out.push(`${kind}: confirm ${want}은(는) ${s.name}에서 ${c.type}(으)로 바뀐다(정규화로 이름이 바뀌는 명령은 confirm에 쓰지 않는다)`);
         else {
           const bad = checkCommand({ kind: kind as never, label: s.name, capabilities: s.capabilities, sensors: [] }, c);
