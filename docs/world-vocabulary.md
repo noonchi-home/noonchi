@@ -241,7 +241,7 @@ FSM을 쓰는 사람(박석준·김준형)이 보는 목록이다. World State�
 <!-- /vocab:home -->
 
 - 이 집에는 TV·식기세척기·현관문 가전이 없다. TV는 가전 설비(비전)로, 현관 드나듦은 하는 일(집에 들어옴·집을 나섬)로 본다.
-- 주방 전자레인지(`microwave_kitchen`)는 시연용으로 더한 가전이다(`twin/data/homes/mokryeon_180b/added_devices.json`).
+- 주방 전자레인지(`microwave_kitchen`)는 시연용으로 더한 가전이다(`twin/data/homes/mokryeon_180b/added_devices.json`). 실제 자리를 확인하기 전이라 AR 위치 맞추기 기준점으로 쓰지 않는다(항목에 `landmark: true`를 적어야 쓴다).
 - 문·창은 트윈에만 있고 신호가 없다.
 - 이 집에서 카메라로 맞추는 가전은 냉장고 문과 전자레인지 둘이다(싱크대는 도면 설비라 가전이 아니다).
 

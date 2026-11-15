@@ -59,6 +59,8 @@ export interface LandmarkSource {
   footprint?: number[];
   height?: number;
   anchors?: unknown;
+  /** false면 기준점으로 쓰지 않는다(시연용으로 더한 가전의 기본, src/model/scene.ts). */
+  landmark?: boolean;
 }
 
 const baseType = (t: string) => t.replace(/_\d+$/, "");
@@ -70,7 +72,7 @@ export function twinLandmarks(objects: readonly LandmarkSource[], catalog: Reado
   const out: TwinLandmark[] = [];
   for (const [cls, spec] of Object.entries(LANDMARK_TYPES) as [LandmarkClass, (typeof LANDMARK_TYPES)[LandmarkClass]][]) {
     for (const group of spec.groups) {
-      const found = objects.filter((o) => group.types.includes(baseType(o.type)) && pair(o.plan?.position));
+      const found = objects.filter((o) => o.landmark !== false && group.types.includes(baseType(o.type)) && pair(o.plan?.position));
       if (!found.length) continue;
       for (const o of found) {
         const info = catalog.get(baseType(o.type));

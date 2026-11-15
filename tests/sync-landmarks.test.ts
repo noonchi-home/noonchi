@@ -25,10 +25,9 @@ describe("종류 표", () => {
     expect(Object.keys(LANDMARK_TYPES).sort()).toEqual([...LANDMARK_KEYS].sort());
   });
 
-  it("목련 트윈: 소파·식탁·전자레인지(시연용으로 더한 주방 전자레인지)는 하나, 냉장고·변기·침대·싱크대·TV 자리는 여럿, 오븐은 없다", () => {
+  it("목련 트윈: 소파·식탁은 하나, 냉장고·변기·침대·싱크대·TV 자리는 여럿, 오븐·전자레인지는 없다(시연용으로 더한 전자레인지는 기준점이 아니다)", () => {
     const count = Object.fromEntries(LANDMARK_KEYS.map((c) => [c, ofClass(c).length]));
-    expect(count).toEqual({ couch: 1, bed: 4, dining_table: 1, toilet: 3, tv: 3, microwave: 1, oven: 0, sink: 4, refrigerator: 3 });
-    expect(ofClass("microwave")[0]).toMatchObject({ id: "microwave_kitchen", center: [7.66, -0.0715], baseM: 0.9, unique: true });
+    expect(count).toEqual({ couch: 1, bed: 4, dining_table: 1, toilet: 3, tv: 3, microwave: 0, oven: 0, sink: 4, refrigerator: 3 });
     expect(ofClass("refrigerator").map((l) => l.id).sort()).toEqual(["freezer_0c022ae2", "fridge_bbc363a3", "kimchi_fridge_bce0bf96"]);
     expect(ofClass("couch")[0]).toMatchObject({ id: "sofa_a848b595", center: [7.3864, 9.8138], baseM: 0, unique: true });
     expect(ofClass("bed").every((l) => !l.unique)).toBe(true);

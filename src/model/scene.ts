@@ -9,8 +9,9 @@ import type { Home } from "./homes.js";
 
 const read = (p: string) => JSON.parse(readFileSync(p, "utf8").replace(/^﻿/, "")) as unknown;
 
-/** 시연용으로 더하는 가전 한 줄(added_devices.json items). 자리는 평면 [x, y], 높이는 놓는 면 윗면(m). */
-export interface AddedDevice { id: string; type: string; label: string; room: string; position: [number, number]; facing_deg: number; elevation: number }
+/** 시연용으로 더하는 가전 한 줄(added_devices.json items). 자리는 평면 [x, y], 높이는 놓는 면 윗면(m).
+ *  landmark: AR 위치 맞추기 기준점으로 쓰는가. 실제 자리를 확인한 뒤 true로 적을 때만 쓴다(기본 빼기). */
+export interface AddedDevice { id: string; type: string; label: string; room: string; position: [number, number]; facing_deg: number; elevation: number; landmark?: boolean }
 
 const round = (v: number, digits = 6) => Math.round(v * 10 ** digits) / 10 ** digits + 0;
 /** 배치 물건 방향 → 장면 yaw(rad). 배치 편집기(src/layout/editor.ts yawOf)와 같다. */
@@ -36,7 +37,7 @@ function addedObject(d: AddedDevice, home: Pick<Home, "scenePath" | "dataDir">):
     id: d.id, name: d.label, type: d.type, asset, category, mount: typeof c.mount === "string" ? c.mount : "surface", node_type: c.node_type ?? "device", room: d.room,
     plan: { position: [x, y], facing_deg: d.facing_deg, elevation: d.elevation, on: null, surface: null, wall: null },
     position: [x, d.elevation, y], rotation: [0, yawOf(d.facing_deg), 0], scale: [1, 1, 1],
-    interactive: true, attrs: (c.attrs as Record<string, unknown>) ?? {}, states: (c.states as Record<string, unknown>) ?? {}, state: {},
+    interactive: true, attrs: (c.attrs as Record<string, unknown>) ?? {}, states: (c.states as Record<string, unknown>) ?? {}, state: {}, landmark: d.landmark === true,
     ...(Array.isArray(c.footprint) ? { footprint: c.footprint as [number, number] } : {}), ...(typeof c.height === "number" ? { height: c.height } : {}),
     provenance: { origin: "added_devices", size: "catalog", facing: "added_devices", height: "added_devices", model: "catalog", builder: "added_devices" },
   };

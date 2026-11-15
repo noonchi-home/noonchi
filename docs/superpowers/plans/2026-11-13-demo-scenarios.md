@@ -546,7 +546,7 @@ export function judgeState(o: {
 | `src/world/sight.ts` `linkDevice`·`rulesOf` | 위 카메라 낱말을 읽음 | 등록부를 읽음 |
 | `src/plan/names.ts`, `src/agent/{tools,prompts,planInput}.ts`, `src/server/start.ts` | `KIND_LABELS`를 읽음 | 그대로(파생된 `KIND_LABELS`) |
 
-**등록부 밖에 두는 것(종류별 표가 아님):** `src/world/relations.ts` `RELATIONS`(물건 종류 → 관련 가전 종류, 물건 기준 표), `src/world/vocab.ts` `DEVICE_LONG`(사건마다 종류 목록), `ATTR_DEFAULTS`·`SENSOR_ATTRS`(속성 기준), `src/matter/deviceTypes.ts`(Matter 기기 종류 이름 → 엔드포인트, 기기 종류 이름 기준), `src/agent/phrases.ts`·`ui/src/bubbles/summary.ts`·`src/thinq/appliance.ts`의 종류별 코드 갈래(말 꾸밈·ThinQ 읽기, 표가 아니라 그 종류만의 동작). 대시보드 `KIND_ICON`(`ui/src/dashboard/steps.tsx`)은 가전 종류가 아니라 계획 단계 종류 표라 상관없다. 코치 행동 체계(`TaskSpec`)는 이미 행동 한 덩어리라 이번 범위 밖이다.
+**등록부 밖에 두는 것(종류별 표가 아님):** `src/world/relations.ts` `RELATIONS`(물건 종류 → 관련 가전 종류, 물건 기준 표), `src/world/vocab.ts` `DEVICE_LONG`(사건마다 종류 목록), `ATTR_DEFAULTS`·`SENSOR_ATTRS`(속성 기준), `src/matter/deviceTypes.ts`(Matter 기기 종류 이름 → 엔드포인트, 기기 종류 이름 기준), `src/agent/phrases.ts`·`ui/src/bubbles/summary.ts`·`src/thinq/appliance.ts`의 종류별 코드 갈래(말 꾸밈·ThinQ 읽기, 표가 아니라 그 종류만의 동작). 대시보드 `KIND_ICON`(`ui/src/dashboard/steps.tsx`)은 가전 종류가 아니라 계획 단계 종류 표라 상관없다. 코치 행동 체계(`TaskSpec`)는 이미 행동 한 덩어리라 이번 범위 밖이다. `added_devices.json` 항목의 `landmark`(AR 위치 맞추기 기준점으로 쓰는가, 기본 빼기·`true`일 때만)는 물건마다 정하는 칸이라 등록부 칸이 아니다(`src/sync/landmarks.ts` `twinLandmarks`가 `landmark: false` 물건을 뺀다).
 
 **Files:**
 - Create: `src/model/kinds.ts`(등록부), `tests/kinds-registry.test.ts`(같은 결과 시험·구조 검사), `scripts/kinds-snapshot.ts`(바꾸기 전 값을 뽑는 한 번 쓰는 명령), `tests/fixtures/kinds-before.json`

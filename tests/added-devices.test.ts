@@ -10,7 +10,9 @@ import { loadLayout } from "../src/layout/load.js";
 import { DEFAULT_TWIN_DIR, loadTwin } from "../src/model/devices.js";
 import { resolveHome } from "../src/model/homes.js";
 import { loadScene } from "../src/model/scene.js";
+import { loadCatalog } from "../src/layout/catalog.js";
 import { floorPlanFrom } from "../src/plan/route.js";
+import { twinLandmarks } from "../src/sync/landmarks.js";
 import { fetchRetry } from "../src/server/net.js";
 import { startServer } from "../src/server/start.js";
 import { openWebSocket } from "./helpers/ws.js";
@@ -72,6 +74,26 @@ describe("시연용으로 더하는 가전(added_devices.json)", () => {
     } finally {
       await srv.close();
       rmSync(runtime, { recursive: true, force: true });
+    }
+  });
+
+  it("더한 가전은 기본으로 AR 기준점이 아니다(landmark false). 항목에 landmark: true를 적었을 때만 기준점이 된다", () => {
+    const catalog = loadCatalog("twin/data/catalog");
+    const scene = loadScene(home)!;
+    expect((scene.objects as { id: string; landmark?: boolean }[]).find((o) => o.id === ID)!.landmark).toBe(false);
+    expect(twinLandmarks(scene.objects as never, catalog).some((l) => l.id === ID)).toBe(false);
+    const dir = mkdtempSync(join(tmpdir(), "added-landmark-"));
+    try {
+      const data = join(dir, "data");
+      mkdirSync(data);
+      const room = { id: "kitchen", label: "주방", polygon: [[0, 0], [4, 0], [4, 4], [0, 4]] };
+      writeFileSync(join(dir, "scene.json"), JSON.stringify({ plan: { rooms: [room] }, objects: [] }));
+      const item = { id: ID, type: "microwave", label: "주방 전자레인지", room: "kitchen", position: [2, 2], facing_deg: 90, elevation: 0.9 };
+      writeFileSync(join(data, "added_devices.json"), JSON.stringify({ source: "시험", items: [{ ...item, landmark: true }] }));
+      const marked = loadScene({ scenePath: join(dir, "scene.json"), dataDir: data })!;
+      expect(twinLandmarks(marked.objects as never, catalog)).toEqual([expect.objectContaining({ cls: "microwave", id: ID, center: [2, 2], baseM: 0.9 })]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 
