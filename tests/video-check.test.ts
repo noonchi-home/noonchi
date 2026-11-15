@@ -347,21 +347,25 @@ describe("video-check", () => {
       expect(plannedClicks({ ...off, step: "plan:pam-1:12" }, rule, 0)).toEqual([expect.objectContaining({ at: 10_000, label: "완료", step: "plan:pam-1:12" })]);
     });
 
-    it("--say 완료는 떠 있는 명령에 받힌다: 보낸 say의 at이 페이지 기록의 마지막 명령(계획 id·단계 id)과 보인 승인 대기 token이다. 명령이 없으면 none", () => {
+    it("--say의 at은 페이지가 화면에 맞춰 남긴 at 기록(__noonchiVideo.at) 그대로다. 마지막 명령·따로 남은 대기 목록으로 만들지 않는다. 기록이 없으면 none", () => {
       const sent: string[] = [];
       const sockets = [{ readyState: 1, url: "ws://pc/phone/events?video=a.mp4", send: (d: string) => sent.push(d) }, { readyState: 1, url: "ws://pc/api/events", send: () => {} }];
       const g = globalThis as Record<string, unknown>;
       const keep = g.window;
       try {
         const send = (0, eval)(`(${SEND_SAY})`) as (this: unknown[], text: string) => boolean;
-        g.window = { __noonchiVideo: { commands: [{ video_ms: 0, id: "plan:pam-1", step: "plan:pam-1:1", text: "a" }, { video_ms: 1, id: "plan:pam-1", step: "plan:pam-1:2", text: "b" }], pending: ["t1"] } };
+        g.window = { __noonchiVideo: { commands: [{ video_ms: 0, id: "plan:pam-1", step: "plan:pam-1:1", text: "a" }, { video_ms: 1, id: "plan:pam-1", step: "plan:pam-1:2", text: "b" }], at: { kind: "command", id: "plan:pam-1", step: "plan:pam-1:2", pending: [] } } };
         expect(send.call(sockets, "완료")).toBe(true);
+        // 안전 명령이 승인 카드를 가린 동안: 승인 token은 기록에 없어 싣지 않는다
+        g.window = { __noonchiVideo: { commands: [{ video_ms: 0, id: "plan:pam-1", step: "plan:pam-1:2", text: "b" }], at: { kind: "command", id: "plan:pam-0", step: "off:plan:pam-0:induction_1:1", pending: [] }, pending: ["t1"] } };
+        expect(send.call(sockets, "승인")).toBe(true);
         g.window = {};
         expect(send.call(sockets, "불 꺼 줘")).toBe(true);
         expect(send.call([], "완료")).toBe(false);
       } finally { g.window = keep; }
       expect(sent.map((s) => JSON.parse(s))).toEqual([
-        { type: "say", text: "완료", at: { kind: "command", id: "plan:pam-1", step: "plan:pam-1:2", pending: ["t1"] } },
+        { type: "say", text: "완료", at: { kind: "command", id: "plan:pam-1", step: "plan:pam-1:2", pending: [] } },
+        { type: "say", text: "승인", at: { kind: "command", id: "plan:pam-0", step: "off:plan:pam-0:induction_1:1", pending: [] } },
         { type: "say", text: "불 꺼 줘", at: { kind: "none", pending: [] } },
       ]);
     });

@@ -155,9 +155,6 @@ export function heardAtOf(v: PhoneView): HeardAt {
   return { kind: "none", pending: t?.kind === "pending" ? [t.item.token] : [] };
 }
 
-/** 지금 화면에 보인 승인 대기 token들(말의 at과 같다). */
-export const shownPending = (v: PhoneView): string[] => heardAtOf(v).pending;
-
 /** 일이 멈추는 문제(AR 중에만, 하나): 연결 끊김 → 마이크 꺼짐 → 시작 위치 없음(집에 시작 위치가 없고 아직 아무 변환도 없을 때). */
 export function problemOf(v: PhoneView): Problem | null {
   if (!v.ar) return null;

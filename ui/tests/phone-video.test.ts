@@ -467,14 +467,26 @@ describe("영상 입력 모드: 명령 시각 기록·화면", () => {
     expect((c as unknown as { view(): unknown }).view()).toBeTruthy();
   });
 
-  it("docs/reference.md 영상 모드 설명은 단계 영상이 받는 종류(do 포함), 같은 칸의 차례 쓰기, 마지막 장면 붙잡기, 기록 칸(hold·pending·current)을 적는다", () => {
+  it("docs/reference.md 영상 모드 설명은 단계 영상이 받는 종류(do 포함), 같은 칸의 차례 쓰기, 마지막 장면 붙잡기, 기록 칸(hold·at·current)을 적는다", () => {
     const doc = readFileSync(join(process.cwd(), "..", "docs", "reference.md"), "utf8");
     const kinds = ["go", "pick", "place", "do"].filter((k) => videoParams(new URLSearchParams(`clip=a.mp4&step=${k}:cup:a.mp4`))?.steps.length === 1);
     expect(kinds).toEqual(["go", "pick", "place", "do"]);
     expect(doc).toContain(`(여러 개, 종류 ${kinds.join("·")})`);
     expect(doc).toContain("같은 종류·낱말 칸이 여럿이면 적은 차례대로 쓴다");
     expect(doc).toContain("단계 영상이 끝나면 마지막 장면을 붙잡는다");
-    expect(doc).toMatch(/window\.__noonchiVideo = \{ t0, ended, hold, commands: .*pending, current \}/);
+    expect(doc).toMatch(/window\.__noonchiVideo = \{ t0, ended, hold, commands: .*at, current \}/);
+  });
+
+  it("말의 at 기록(at)은 화면이 바뀔 때마다 실제 폰 말과 같은 heardAtOf로 다시 쓴다: 안전 명령이 승인 카드를 가린 동안에는 승인 token을 싣지 않는다", async () => {
+    const { ws, startAr } = make();
+    await startAr();
+    const DOOR = { token: "t1", deviceLabel: "현관문", reason: "현관문 잠금 해제", choices: [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }] };
+    ws.push({ type: "reply", text: "", pending: [DOOR] });
+    expect(window.__noonchiVideo!.at).toEqual({ kind: "none", pending: ["t1"] });
+    ws.push(command({ id: "plan:pam-0", step: "off:plan:pam-0:induction_1:1", text: "인덕션을 꺼 주세요", grade: "safety" }));
+    expect(window.__noonchiVideo!.at).toEqual({ kind: "command", id: "plan:pam-0", step: "off:plan:pam-0:induction_1:1", pending: [] });
+    ws.push({ type: "command_clear", id: "plan:pam-0" });
+    expect(window.__noonchiVideo!.at).toEqual({ kind: "none", pending: ["t1"] });
   });
 
   it("지금 명령 줄의 명령(current)을 남기고, 그 명령이 지워지면 null로 둔다(영상 판정이 끄기 안내가 남았는지 본다)", async () => {

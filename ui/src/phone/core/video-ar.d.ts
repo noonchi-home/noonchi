@@ -1,5 +1,5 @@
 // video-ar.js의 형.
-import type { PhoneCommand, PhoneStepKind } from "../../../../src/contract/phone.ts";
+import type { HeardAt, PhoneCommand, PhoneStepKind } from "../../../../src/contract/phone.ts";
 import type { ArHooks, PhoneAr } from "./ar.js";
 import type { JpegEncoder } from "./capture.js";
 import type { PhoneLink } from "./link.js";
@@ -62,8 +62,8 @@ export interface VideoClipEntry { video_ms: number; clip: string; duration_ms?: 
  *  hold: 단계 영상이 끝나 마지막 장면을 붙잡는 중이면 그 영상과 붙잡기 시작한 영상 시각, 아니면 null. */
 export interface VideoRecord {
   t0: number | null; ended: boolean; hold: { clip: string; since: number } | null; commands: VideoCommandEntry[]; clips: VideoClipEntry[];
-  /** 승인 대기 목록에 보인 token들(영상 판정 --say의 at). 기록 전이면 없음. */
-  pending?: string[];
+  /** 지금 말의 at(화면이 바뀔 때마다 heardAtOf로 다시 쓴다, 영상 판정 --say가 그대로 싣는다). 기록 전이면 없음. */
+  at?: HeardAt;
   /** 지금 명령 줄의 명령(지워졌으면 null). 기록 전이면 없음. */
   current?: { id: string; step: string } | null;
 }
@@ -71,7 +71,7 @@ export interface VideoRecord {
 export function videoParams(params: URLSearchParams): Required<Pick<VideoArDeps, "clipUrl" | "fovDeg" | "pitchDeg" | "heightM" | "steps" | "reactMs">> | null;
 export function videoRecord(target?: object): VideoRecord;
 export function logVideoCommand(videoMs: number, command: { id: string; step: string; text: string }): void;
-export function logVideoPending(tokens: readonly string[]): void;
+export function logVideoAt(at: HeardAt): void;
 export function logVideoCurrent(command: { id: string; step: string } | null): void;
 export function createVideoAr(opts: { link: PhoneLink; params: URLSearchParams; hooks: ArHooks; deps: VideoArDeps }): VideoAr;
 

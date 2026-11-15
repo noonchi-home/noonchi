@@ -23,11 +23,11 @@
 // 받은 명령은 그 영상 시각으로 기록하고(window.__noonchiVideo), 영상 AR에 넘겨 맞는 단계 영상(?step=)으로 바꾸고 go 단계면 자세를 걷게 한다.
 import type { HeardAt, PhoneCommand, PhoneCommandClear, TalkGrade } from "../../../src/contract/phone.ts";
 import { createAr, type ArHooks, type PhoneAr } from "./core/ar.js";
-import { createVideoAr, logVideoCommand, logVideoCurrent, logVideoPending, videoParams, type VideoArDeps } from "./core/video-ar.js";
+import { createVideoAr, logVideoAt, logVideoCommand, logVideoCurrent, videoParams, type VideoArDeps } from "./core/video-ar.js";
 import { createLink, phoneSocketUrl } from "./core/link.js";
 import { createListener, hush as hushAloud, recognition, speak as speakAloud, type RecognitionCtor } from "./core/talk.js";
 import {
-  createStore, handOf, heardAtOf, initialView, isStartWord, onStatus, shownPending,
+  createStore, handOf, heardAtOf, initialView, isStartWord, onStatus,
   type FocusMark, type Pending, type PhoneActions, type PhoneView, type SyncWire,
 } from "./state";
 
@@ -135,6 +135,8 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
     return null;
   }
 
+  // 영상 모드: 말의 at 기록을 화면이 바뀔 때마다 실제 폰 말과 같은 heardAtOf로 다시 쓴다(영상 판정 --say가 그대로 싣는다)
+  if (video) store.subscribe(() => logVideoAt(heardAtOf(store.get())));
   // 조준점은 물건 자리 맞추기 때만: setup이 바뀌면 그림에 알린다
   store.subscribe(() => {
     const on = store.get().setup === "place";
@@ -299,7 +301,6 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
         sayAloud(text, null, msg.grade === "safety" ? "safety" : "reply");
       }
       set((v) => ({ ...v, reply: text || null, pending: pending ?? v.pending }));
-      if (video) logVideoPending(shownPending(store.get()));
     } else if (msg.type === "focus") {
       if (!store.get().command) ar.setFocus(msg.targets, msg.ttl_ms);
     } else if (msg.type === "command") {
@@ -365,7 +366,6 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
     say: (text) => say(text, heardAtOf(store.get())),
     confirm(token, choice) {
       set((v) => ({ ...v, pending: v.pending.filter((p) => p.token !== token) }));
-      if (video) logVideoPending(shownPending(store.get()));
       link.send({ type: "confirm", token, choice });
     },
     answer(id, step, choice) {

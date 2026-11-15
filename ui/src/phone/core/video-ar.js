@@ -82,9 +82,9 @@ const clockText = (ms) => {
   return `${String(Math.floor(t / 600)).padStart(2, "0")}:${((t % 600) / 10).toFixed(1).padStart(4, "0")}`;
 };
 
-/** 승인 대기 목록에 보인 token들을 기록한다(영상 판정 --say가 말의 at으로 싣는다). */
-export function logVideoPending(tokens) {
-  videoRecord().pending = [...tokens];
+/** 지금 말의 at(controller가 화면이 바뀔 때마다 heardAtOf로 준다)을 기록한다. 영상 판정 --say는 이 기록만 싣는다. */
+export function logVideoAt(at) {
+  videoRecord().at = structuredClone(at);
 }
 
 /** 지금 명령 줄의 명령(계획 id·단계 id, 지워졌으면 null)을 기록한다(영상 판정이 끄기 안내가 남았는지 본다). */
