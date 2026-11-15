@@ -64,12 +64,15 @@ export interface VideoRecord {
   t0: number | null; ended: boolean; hold: { clip: string; since: number } | null; commands: VideoCommandEntry[]; clips: VideoClipEntry[];
   /** 승인 대기 목록에 보인 token들(영상 판정 --say의 at). 기록 전이면 없음. */
   pending?: string[];
+  /** 지금 명령 줄의 명령(지워졌으면 null). 기록 전이면 없음. */
+  current?: { id: string; step: string } | null;
 }
 
 export function videoParams(params: URLSearchParams): Required<Pick<VideoArDeps, "clipUrl" | "fovDeg" | "pitchDeg" | "heightM" | "steps" | "reactMs">> | null;
 export function videoRecord(target?: object): VideoRecord;
 export function logVideoCommand(videoMs: number, command: { id: string; step: string; text: string }): void;
 export function logVideoPending(tokens: readonly string[]): void;
+export function logVideoCurrent(command: { id: string; step: string } | null): void;
 export function createVideoAr(opts: { link: PhoneLink; params: URLSearchParams; hooks: ArHooks; deps: VideoArDeps }): VideoAr;
 
 declare global {

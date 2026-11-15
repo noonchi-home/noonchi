@@ -23,7 +23,7 @@
 // 받은 명령은 그 영상 시각으로 기록하고(window.__noonchiVideo), 영상 AR에 넘겨 맞는 단계 영상(?step=)으로 바꾸고 go 단계면 자세를 걷게 한다.
 import type { HeardAt, PhoneCommand, PhoneCommandClear, TalkGrade } from "../../../src/contract/phone.ts";
 import { createAr, type ArHooks, type PhoneAr } from "./core/ar.js";
-import { createVideoAr, logVideoCommand, logVideoPending, videoParams, type VideoArDeps } from "./core/video-ar.js";
+import { createVideoAr, logVideoCommand, logVideoCurrent, logVideoPending, videoParams, type VideoArDeps } from "./core/video-ar.js";
 import { createLink, phoneSocketUrl } from "./core/link.js";
 import { createListener, hush as hushAloud, recognition, speak as speakAloud, type RecognitionCtor } from "./core/talk.js";
 import {
@@ -313,6 +313,7 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
       set((v) => ({ ...v, command: { id: m.id, step: m.step, text: m.text, vision: m.vision, choices: m.choices, target: m.target?.id ?? null, ...(m.grade === "safety" ? { safety: true as const } : {}) } }));
       ar.setFocus(m.target ? [m.target] : [], COMMAND_FOCUS_MS);
       if (ar.videoTime) logVideoCommand(ar.videoTime(), m);
+      if (video) logVideoCurrent(store.get().command);
       ar.command?.(m);
       if (m.speak) {
         owed = { text: m.text, target, grade: lastGrade.grade };
@@ -326,6 +327,7 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
       armTalk();
       if (m.id !== undefined && m.id !== store.get().command?.id) return;
       set((v) => ({ ...v, command: null }));
+      if (video) logVideoCurrent(null);
       ar.setFocus([], 0);
     }
   }

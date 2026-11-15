@@ -197,7 +197,7 @@ describe("video-check", () => {
   });
 
   it("영상이 멈춘 뒤에는 단추를 누르지 않는 판도 계획이 열려 있으면 tail(기본 30초)까지 더 본다", () => {
-    const at = (stillForMs: number, due: number, planStatus: string | undefined) => judgeState({ stillForMs, clipPlayedMs: 0, clipDurationMs: 10_000, due, planStatus, tailMs: 30_000, totalMs: 60_000, maxMs: 1_800_000 });
+    const at = (stillForMs: number, due: number, planStatus: string | undefined) => judgeState({ stillForMs, clipPlayedMs: 0, clipDurationMs: 10_000, due, planStatus, tailMs: 30_000, totalMs: 60_000, maxMs: 1_800_000, offOpen: false });
     expect(at(5_000, 0, "running")).toBe("watch");
     expect(at(5_000, 0, "planned")).toBe("watch");
     expect(at(5_000, 1, undefined)).toBe("watch");
@@ -209,7 +209,7 @@ describe("video-check", () => {
   });
 
   describe("끝내기(judgeState)", () => {
-    const base = { stillForMs: null as number | null, clipPlayedMs: 10_000, clipDurationMs: 30_000 as number | null, due: 0, planStatus: "running" as string | undefined, tailMs: 300_000, totalMs: 100_000, maxMs: 1_800_000 };
+    const base = { stillForMs: null as number | null, clipPlayedMs: 10_000, clipDurationMs: 30_000 as number | null, due: 0, planStatus: "running" as string | undefined, tailMs: 300_000, totalMs: 100_000, maxMs: 1_800_000, offOpen: false };
     it("붙잡는 중 + 계획 열림 + 멈춘 지 100초, tail 300 → watch. 301초 → tail_over", () => {
       expect(judgeState({ ...base, stillForMs: 100_000 })).toBe("watch");
       expect(judgeState({ ...base, stillForMs: 301_000 })).toBe("tail_over");
@@ -222,6 +222,12 @@ describe("video-check", () => {
       expect(judgeState({ ...base, planStatus: undefined, stillForMs: 100_000 })).toBe("watch");
       expect(judgeState({ ...base, planStatus: undefined, stillForMs: 301_000 })).toBe("tail_over");
       for (const s of ["done", "failed", "cancelled"]) expect(judgeState({ ...base, planStatus: s, stillForMs: 1_000 }), s).toBe("done");
+    });
+    it("계획이 done이어도 끄기 안내(off: 명령)가 명령 줄에 남아 있으면 끝내지 않고 tail까지 본다. 안내가 풀리면 done", () => {
+      expect(judgeState({ ...base, planStatus: "done", offOpen: true })).toBe("watch");
+      expect(judgeState({ ...base, planStatus: "cancelled", offOpen: true, stillForMs: 100_000 })).toBe("watch");
+      expect(judgeState({ ...base, planStatus: "done", offOpen: true, stillForMs: 301_000 })).toBe("tail_over");
+      expect(judgeState({ ...base, planStatus: "done", offOpen: false, stillForMs: 100_000 })).toBe("done");
     });
     it("단계 영상이 20초짜리면 80초 넘게 돌 때 clip_over다(첫 영상 길이와 상관없다)", () => {
       expect(judgeState({ ...base, clipDurationMs: 20_000, clipPlayedMs: 80_000 })).toBe("watch");

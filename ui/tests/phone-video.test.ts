@@ -465,6 +465,17 @@ describe("영상 입력 모드: 명령 시각 기록·화면", () => {
     expect((c as unknown as { view(): unknown }).view()).toBeTruthy();
   });
 
+  it("지금 명령 줄의 명령(current)을 남기고, 그 명령이 지워지면 null로 둔다(영상 판정이 끄기 안내가 남았는지 본다)", async () => {
+    const { ws, startAr } = make();
+    await startAr();
+    ws.push(command({ id: "plan:pam-1", step: "off:plan:pam-1:induction_1:1", text: "인덕션을 꺼 주세요", grade: "safety" }));
+    expect(window.__noonchiVideo!.current).toEqual({ id: "plan:pam-1", step: "off:plan:pam-1:induction_1:1" });
+    ws.push({ type: "command_clear", id: "plan:pam-0" });
+    expect(window.__noonchiVideo!.current).toEqual({ id: "plan:pam-1", step: "off:plan:pam-1:induction_1:1" });
+    ws.push({ type: "command_clear", id: "plan:pam-1" });
+    expect(window.__noonchiVideo!.current).toBeNull();
+  });
+
   it("t0: 시계를 맞추기 전에는 폰 시계의 재생 시작 시각, 맞춘 뒤 첫 프레임에서 서버 시계(오프셋 1000 ms)로 고친다", async () => {
     const { ws, video, startAr } = make();
     const b0 = phoneNow();
