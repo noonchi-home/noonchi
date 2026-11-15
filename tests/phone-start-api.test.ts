@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import WebSocket from "ws";
+import type WebSocket from "ws";
 import { startFakeOpenAI, type FakeServer } from "../scripts/fake-openai.js";
 import type { DetectResult, Detector } from "../src/brain/detector.js";
 import { encodeFramePacket } from "../src/phone/packet.js";
@@ -11,7 +11,7 @@ import { fetchRetry } from "../src/server/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { startFakePam, type FakePam } from "./helpers/pam.js";
 import { look, perspective } from "./helpers/sync-sim.js";
-import { PHONE_PROTOCOL } from "../src/phone/protocol.js";
+import { openPhone } from "./helpers/ws.js";
 
 type Msg = Record<string, any>;
 let srv: RunningServer | undefined;
@@ -55,10 +55,9 @@ function inbox(ws: WebSocket) {
 
 async function phone(s: RunningServer) {
   const url = new URL(s.phoneUrls[0]!);
-  const ws = new WebSocket(`ws://${url.host}/phone/events`, { origin: url.origin });
-  const wait = inbox(ws);
-  await new Promise<void>((res, rej) => { ws.once("open", () => res()); ws.once("error", rej); });
-  ws.send(JSON.stringify({ type: "hello", protocol: PHONE_PROTOCOL }));
+  let wait!: ReturnType<typeof inbox>;
+  // 판본 hello는 openPhone이 연 뒤 바로 보낸다
+  const ws = await openPhone(`ws://${url.host}/phone/events`, { options: { origin: url.origin }, setup: (s) => { wait = inbox(s); } });
   return { ws, wait };
 }
 const json = async (path: string, body?: unknown) => {

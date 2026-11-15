@@ -2,7 +2,6 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import WebSocket from "ws";
 import { Agent } from "../src/agent/agent.js";
 import type { BrainLog, SeenEvent } from "../src/contract/events.js";
 import { MemoryHub } from "../src/hub/memory.js";
@@ -12,6 +11,7 @@ import { createHub } from "../src/server/hubFactory.js";
 import { fetchRetry } from "../src/server/net.js";
 import { ROOMS, homeDevices, makeHome, twin } from "./helpers/home.js";
 import { HOME_SCRIPT, startFakeLlm, type FakeLlm } from "./helpers/llm.js";
+import { openWebSocket } from "./helpers/ws.js";
 
 type Msg = Record<string, any>;
 
@@ -51,21 +51,16 @@ async function api(url: string, path: string, init: { method?: string; body?: un
 
 /** WebSocket을 열고 메시지를 모은다. waitFor(pred)로 조건을 만족하는 메시지를 기다린다. */
 async function listen(url: string) {
-  const ws = new WebSocket(url.replace(/^http/, "ws") + "/events");
   const messages: Msg[] = [];
   const waiters: { pred: (m: Msg) => boolean; resolve: (m: Msg) => void }[] = [];
-  ws.on("message", (data) => {
+  const ws = await openWebSocket(url.replace(/^http/, "ws") + "/events", { setup: (s) => s.on("message", (data) => {
     const m = JSON.parse(String(data)) as Msg;
     messages.push(m);
     for (const w of [...waiters]) if (w.pred(m)) {
       waiters.splice(waiters.indexOf(w), 1);
       w.resolve(m);
     }
-  });
-  await new Promise<void>((resolve, reject) => {
-    ws.once("open", () => resolve());
-    ws.once("error", reject);
-  });
+  }) });
   cleanups.push(() => ws.close());
   const waitFor = (pred: (m: Msg) => boolean, ms = 3000) =>
     new Promise<Msg>((resolve, reject) => {

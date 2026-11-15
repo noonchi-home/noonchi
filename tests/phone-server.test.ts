@@ -13,7 +13,7 @@ import { fetchRetry } from "../src/server/net.js";
 import { BOX_START, BOX_WALLS, alignMessages } from "./helpers/align.js";
 import { ROOMS, makeHome } from "./helpers/home.js";
 import { readVideo } from "./helpers/video.js";
-import { openPhone } from "./helpers/ws.js";
+import { openPhone, openWebSocket } from "./helpers/ws.js";
 import { PHONE_PROTOCOL } from "../src/phone/protocol.js";
 
 /** 서버가 연 파일 읽기 스트림(영상 받기를 끊은 뒤 닫혔는지 본다). 나머지 node:fs는 그대로다. */
@@ -99,8 +99,7 @@ async function setup(opts: { log?: (m: string) => void } = {}) {
 const JPEG = Buffer.from([0xff, 0xd8, 0x12, 0x34, 0xff, 0xd9]);
 
 async function alignedPhone(phoneBase: string) {
-  const phone = new WebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events`, { origin: phoneBase });
-  await opened(phone);
+  const phone = await openWebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events`, { options: { origin: phoneBase } });
   phone.send(JSON.stringify({ type: "hello", protocol: PHONE_PROTOCOL }));
   const done = next(phone, (m) => m.type === "status" && m.aligned);
   sendAlign(phone);
@@ -126,8 +125,7 @@ describe("phone camera", () => {
 
   it("맞춘 뒤 photo 패킷은 트윈 좌표 눈 자세와 함께 저장되고 /events로 알린다", async () => {
     const { url, phoneBase } = await setup();
-    const dash = new WebSocket(`${url.replace(/^http/, "ws")}/events`);
-    await opened(dash);
+    const dash = await openWebSocket(`${url.replace(/^http/, "ws")}/events`);
     const phone = await alignedPhone(phoneBase);
     const saved = next(phone, (m) => m.type === "photo_saved");
     const event = next(dash, (m) => m.type === "photo");
@@ -142,8 +140,7 @@ describe("phone camera", () => {
 
   it("깨진 바이너리는 이유를 돌려준다", async () => {
     const { phoneBase } = await setup();
-    const phone = new WebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events`, { origin: phoneBase });
-    await opened(phone);
+    const phone = await openWebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events`, { options: { origin: phoneBase } });
     const reply = next(phone, (m) => m.type === "status" && m.error);
     phone.send(encodeFramePacket({ kind: "frame", width: 640, height: 480 }, Buffer.from([1, 2])));
     expect((await reply).error).toBe("JPEG가 아닙니다");
@@ -153,8 +150,7 @@ describe("phone camera", () => {
   it("video_config·video 패킷은 본 서버 /api/eye/video로 중계되고, 폰이 끊기면 end", async () => {
     const { url, phoneBase } = await setup();
     const v = await readVideo(`${url}/api/eye/video`);
-    const phone = new WebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events`, { origin: phoneBase });
-    await opened(phone);
+    const phone = await openWebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events`, { options: { origin: phoneBase } });
     phone.send(encodeFramePacket({ kind: "video_config", codec: "avc1.42E01F", width: 592, height: 1280 }, Buffer.from([1, 0x42])));
     phone.send(encodeFramePacket({ kind: "video", key: true, ts: 0, width: 592, height: 1280 }, Buffer.alloc(800, 0x65)));
     phone.send(encodeFramePacket({ kind: "video", key: false, ts: 33_333, width: 592, height: 1280 }, Buffer.alloc(90, 0x41)));
@@ -171,8 +167,7 @@ describe("phone camera", () => {
 
   it("깨진 영상 패킷은 이유를 돌려준다", async () => {
     const { phoneBase } = await setup();
-    const phone = new WebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events`, { origin: phoneBase });
-    await opened(phone);
+    const phone = await openWebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events`, { options: { origin: phoneBase } });
     const reply = next(phone, (m) => m.type === "status" && m.error);
     phone.send(encodeFramePacket({ kind: "video_config", width: 592, height: 1280 } as never, Buffer.alloc(0)));
     expect((await reply).error).toContain("codec");
@@ -182,8 +177,7 @@ describe("phone camera", () => {
   it("폰 연결·끊김을 로그에 한 줄씩 남긴다", async () => {
     const lines: string[] = [];
     const { phoneBase } = await setup({ log: (m) => lines.push(m) });
-    const phone = new WebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events`, { origin: phoneBase });
-    await opened(phone);
+    const phone = await openWebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events`, { options: { origin: phoneBase } });
     const closed = new Promise((r) => phone.once("close", r));
     phone.close();
     await closed;
@@ -209,9 +203,8 @@ describe("엔진 프레임", () => {
 
   it("engineMs를 주면 연결 직후 상태에 engine_ms를 싣는다", async () => {
     const { phoneBase } = await engineSetup();
-    const ws = new WebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events`, { origin: phoneBase });
-    const status = next(ws, (m) => m.type === "status");
-    await opened(ws);
+    let status!: Promise<Msg>;
+    const ws = await openWebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events`, { options: { origin: phoneBase }, setup: (s) => { status = next(s, (m) => m.type === "status"); } });
     expect(await status).toMatchObject({ engine_ms: 1000 });
     ws.close();
   });
@@ -237,8 +230,7 @@ describe("엔진 프레임", () => {
     writeFileSync(join(videoDir, "cup-demo.mp4"), "mp4");
     const { got, phoneBase } = await engineSetup(videoDir);
     const send = async (query: string) => {
-      const ws = new WebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events${query}`, { origin: phoneBase });
-      await opened(ws);
+      const ws = await openWebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events${query}`, { options: { origin: phoneBase } });
       const before = got.length;
       for (let i = 0; i < 2; i++) ws.send(encodeFramePacket({ kind: "engine", width: 480, height: 360, captured_at: 1000 + i * 100, time_err_ms: 5, held: true }, JPEG));
       for (let i = 0; i < 40 && got.length < before + 2; i++) await new Promise((r) => setTimeout(r, 25));
@@ -264,11 +256,9 @@ describe("sameHost", () => {
 describe("phone server", () => {
   it("위치를 맞춘 뒤의 자세가 본 서버 /events에 eye로 나간다", async () => {
     const { url, phoneBase } = await setup();
-    const dash = new WebSocket(`${url.replace(/^http/, "ws")}/events`);
-    await opened(dash);
-    const phone = new WebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events`, { origin: phoneBase });
-    const first = next(phone, (m) => m.type === "status");
-    await opened(phone);
+    const dash = await openWebSocket(`${url.replace(/^http/, "ws")}/events`);
+    let first!: Promise<Msg>;
+    const phone = await openWebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events`, { options: { origin: phoneBase }, setup: (s) => { first = next(s, (m) => m.type === "status"); } });
     expect((await first).aligned).toBe(false);
     const done = next(phone, (m) => m.type === "status" && m.aligned);
     sendAlign(phone);
@@ -282,7 +272,7 @@ describe("phone server", () => {
 
   it("다른 출처의 WebSocket은 거절한다", async () => {
     const { phoneBase } = await setup();
-    const ws = new WebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events`, { origin: "http://evil.example" });
+    const ws = new WebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events`, { origin: "http://evil.example" }); // 시험 소켓: 거절 확인
     await expect(opened(ws)).rejects.toThrow();
   });
 
@@ -429,11 +419,9 @@ describe("폰 판본(hello)과 옛 탭", () => {
   }
   /** hello 없이 연다(옛 탭). */
   async function tab(base: string) {
-    const ws = new WebSocket(`${base.replace(/^http/, "ws")}/phone/events`, { origin: base });
     const box: Msg[] = [];
-    ws.on("message", (d, bin) => { if (!bin) box.push(JSON.parse(String(d)) as Msg); });
+    const ws = await openWebSocket(`${base.replace(/^http/, "ws")}/phone/events`, { options: { origin: base }, setup: (s) => s.on("message", (d, bin) => { if (!bin) box.push(JSON.parse(String(d)) as Msg); }) });
     cleanups.push(() => ws.close());
-    await opened(ws);
     return { ws, box };
   }
   const answers = (ws: WebSocket) => {
@@ -623,11 +611,9 @@ describe("폰 대화·승인·초점", () => {
 
   /** 붙자마자 받는 메시지 n개. */
   async function connect(phoneBase: string, n: number) {
-    const ws = new WebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events`, { origin: phoneBase });
     const box: Msg[] = [];
-    ws.on("message", (d) => box.push(JSON.parse(String(d)) as Msg));
+    const ws = await openWebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events`, { options: { origin: phoneBase }, setup: (s) => s.on("message", (d) => box.push(JSON.parse(String(d)) as Msg)) });
     cleanups.push(() => ws.close());
-    await opened(ws);
     ws.send(JSON.stringify({ type: "hello", protocol: PHONE_PROTOCOL }));
     for (const end = Date.now() + 2000; box.length < n && Date.now() < end; ) await new Promise((r) => setTimeout(r, 20));
     return { ws, box };

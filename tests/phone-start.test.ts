@@ -4,9 +4,10 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import WebSocket from "ws";
+import type WebSocket from "ws";
 import { estimateViewpoint } from "../src/phone/session.js";
 import { alignOnServer } from "./helpers/align.js";
+import { openWebSocket } from "./helpers/ws.js";
 import { fetchRetry } from "../src/server/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { PHONE_PROTOCOL } from "../src/phone/protocol.js";
@@ -32,7 +33,6 @@ function next(ws: WebSocket, pred: (m: Msg) => boolean): Promise<Msg> {
     });
   });
 }
-const opened = (ws: WebSocket) => new Promise<void>((res, rej) => { ws.once("open", () => res()); ws.once("error", rej); });
 
 describe("startServer + 폰 AR", () => {
   it("PHONE_PORT가 있으면 폰 서버를 함께 띄우고 눈 자세를 본 서버 /events로 보낸다", async () => {
@@ -44,10 +44,8 @@ describe("startServer + 폰 AR", () => {
     const scenePath = join(srv.twin.dir, "apartment", "scene.json");
     const spot = estimateViewpoint(JSON.parse(readFileSync(scenePath, "utf8"))).position;
 
-    const dash = new WebSocket(`${srv.url.replace(/^http/, "ws")}/events`);
-    await opened(dash);
-    const phone = new WebSocket(`ws://${phoneUrl.host}/phone/events`, { origin: phoneUrl.origin });
-    await opened(phone);
+    const dash = await openWebSocket(`${srv.url.replace(/^http/, "ws")}/events`);
+    const phone = await openWebSocket(`ws://${phoneUrl.host}/phone/events`, { options: { origin: phoneUrl.origin } });
     phone.send(JSON.stringify({ type: "hello", protocol: PHONE_PROTOCOL }));
     const aligned = next(phone, (m) => m.type === "status" && m.aligned);
     await alignOnServer(srv.url, (t) => phone.send(t), scenePath, spot);
