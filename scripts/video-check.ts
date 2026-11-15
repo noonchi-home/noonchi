@@ -289,7 +289,7 @@ export async function sendStartPose(api: string, scene: DemoScene, home: string,
   return r?.ok ? null : `시작 위치를 넣지 못함: HTTP ${r?.status ?? "연결 실패"}`;
 }
 
-/** 폰 페이지 안의 폰 소켓(/phone/events, 열린 것 중 마지막)으로 {type: "say", text}를 보낸다. 보냈으면 true. */
+/** 폰 페이지 안의 폰 소켓(/phone/events, 영상 모드면 ?video=<영상>이 붙는다. 열린 것 중 마지막)으로 {type: "say", text}를 보낸다. 보냈으면 true. */
 async function sendSay(page: Page, text: string): Promise<boolean> {
   const proto = await page.send("Runtime.evaluate", { expression: "WebSocket.prototype" });
   const protoId = (proto.result?.result as { objectId?: string } | undefined)?.objectId;
@@ -299,7 +299,7 @@ async function sendSay(page: Page, text: string): Promise<boolean> {
   if (!listId) return false;
   const sent = await page.send("Runtime.callFunctionOn", {
     objectId: listId, returnByValue: true, arguments: [{ value: text }],
-    functionDeclaration: "function (text) { const ws = this.filter((w) => w.readyState === 1 && /\\/phone\\/events$/.test(w.url)).at(-1); if (!ws) return false; ws.send(JSON.stringify({ type: \"say\", text })); return true; }",
+    functionDeclaration: "function (text) { const ws = this.filter((w) => w.readyState === 1 && /\\/phone\\/events(\\?|$)/.test(w.url)).at(-1); if (!ws) return false; ws.send(JSON.stringify({ type: \"say\", text })); return true; }",
   });
   return sent.result?.result?.value === true;
 }

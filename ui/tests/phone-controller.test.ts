@@ -120,6 +120,11 @@ describe("연결·지원", () => {
     expect(make().ws.url).toBe("wss://pc.ts.net:8443/phone/events");
   });
 
+  it("영상 모드(clip)면 소켓 주소에 그 영상 이름(video=)을 붙인다", () => {
+    expect(make({ location: { protocol: "https:", host: "pc.ts.net:8443", search: "?clip=cup-demo.mp4&step=go:table:go.mp4" } }).ws.url)
+      .toBe("wss://pc.ts.net:8443/phone/events?video=cup-demo.mp4");
+  });
+
   it("AR 지원: 보안 연결·immersive-ar면 준비, 아니면 그 까닭", async () => {
     const ok = make();
     await vi.waitFor(() => expect(ok.c.view().support).toEqual({ kind: "ready" }));

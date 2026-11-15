@@ -6,7 +6,7 @@
 // 내부 테스트용이라 같은 와이파이의 누구나 말을 보낼 수 있다.
 // 폰 화면은 React 빌드 ui/dist/phone/이고 빌드 파일은 /assets/다(대시보드와 같은 빌드). 영상 모드 영상은 /phone/videos/다(videoDir, Range).
 
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { networkInterfaces } from "node:os";
 import { join, resolve } from "node:path";
@@ -34,6 +34,26 @@ export const PHONE_NOT_BUILT = "폰 화면이 아직 빌드되지 않았어요. 
 const PHONE_FILES = /^\/(assets|brand|fonts)\/(.+)$|^\/(favicon\.ico|favicon-32\.png|apple-touch-icon\.png|icon-192\.png|icon-512\.png)$/;
 /** 영상 모드가 트는 영상(videoDir 바로 아래 파일 하나). */
 const VIDEO_PATH = /^\/phone\/videos\/([A-Za-z0-9_-]{1,64}\.(?:mp4|webm))$/;
+const VIDEO_NAME = /^[A-Za-z0-9_-]{1,64}\.(?:mp4|webm)$/;
+
+/** 영상 모드 연결인가: 소켓 주소의 video=<영상 이름>이 이 서버가 내주는 영상(videoDir 바로 아래 파일)일 때만. 실제 폰 페이지는 붙이지 않는다. */
+export function videoSession(url: string | undefined, videoDir: string | null): boolean {
+  if (!videoDir || !url) return false;
+  const name = new URL(url, "http://phone").searchParams.get("video");
+  if (!name || !VIDEO_NAME.test(name)) return false;
+  try {
+    return statSync(join(videoDir, name)).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/** 붙잡은 장면 표시(held)는 영상 모드 연결의 엔진 프레임에만 둔다. 실제 폰은 같은 사진을 새 관찰로 쌓지 않는다(관찰 흐름이 중복으로 버린다). */
+export function engineHeader(header: FrameHeader, video: boolean): FrameHeader {
+  if (video || header.held === undefined) return header;
+  const { held: _held, ...rest } = header;
+  return rest;
+}
 
 export interface PhoneServerOptions {
   onEye: (eye: EyeEvent) => void;
@@ -167,7 +187,7 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
   const withEngine = (s: PhoneStatus): PhoneStatus => (opts.engineMs ? { ...s, engine_ms: opts.engineMs } : s);
   const status = (error?: string) => withEngine(session.status(error));
   // 바이너리 메시지 = 엔진 프레임(분석용)·화면 프레임(표시용)·사진·표시 영상 패킷(packet.ts). 영상은 연결 번호로 구분해 판단 없이 중계한다(video.ts)
-  const onPacket = (ws: WebSocket, source: number, data: Buffer) => {
+  const onPacket = (ws: WebSocket, source: number, video: boolean, data: Buffer) => {
     const receivedAtMs = Date.now();
     const packet = parsePacket(data);
     if ("error" in packet) {
@@ -186,7 +206,7 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
       : null);
     if (header.kind === "engine") {
       const view = header.position && header.orientation ? session.viewAt(header.position, header.orientation, header.projection, header.epoch) : null;
-      opts.onEngine?.(jpeg, header, eyeOf(), view, receivedAtMs);
+      opts.onEngine?.(jpeg, engineHeader(header, video), eyeOf(), view, receivedAtMs);
       return;
     }
     // 화면 프레임은 표시만, 사진은 저장만 한다(관찰 흐름에는 엔진 프레임만 들어간다)
@@ -244,8 +264,10 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
   const broadcastStatus = () => {
     for (const ws of wss.clients) reply(ws, status());
   };
-  wss.on("connection", (ws) => {
+  wss.on("connection", (ws, req) => {
     const source = ++connections;
+    // 이 서버가 내주는 영상으로 연 연결(영상 시험·영상 폰 페이지)만 영상 모드다
+    const video = videoSession(req.url, videoDir);
     log(`[phone] 폰 연결(지금 ${wss.clients.size}대)`);
     ws.on("close", () => {
       opts.feed?.video.endSource(source);
@@ -255,7 +277,7 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
     reply(ws, current ? wire(current, false) : { type: "command_clear" });
     ws.on("message", (data, isBinary) => {
       if (isBinary) {
-        onPacket(ws, source, Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data as Buffer));
+        onPacket(ws, source, video, Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data as Buffer));
         return;
       }
       let raw: unknown;

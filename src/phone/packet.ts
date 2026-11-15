@@ -48,7 +48,8 @@ export interface FrameHeader {
   time_err_ms?: number;
   /** 엔진 프레임의 투영 행렬(16개, 열 우선). */
   projection?: number[];
-  /** 엔진 프레임: 붙잡은 장면을 다시 보낸 것(영상 시험의 단계 영상 끝 장면). 같은 사진이어도 VLM 간격마다 새 관찰로 받는다(src/observe/ring.ts). */
+  /** 엔진 프레임: 붙잡은 장면을 다시 보낸 것(영상 시험의 단계 영상 끝 장면). 같은 사진이어도 VLM 간격마다 새 관찰로 받는다(src/observe/ring.ts).
+   *  폰 서버는 영상 모드 연결(src/phone/server.ts videoSession)에서 온 것만 넘기고 실제 폰의 것은 지운다. */
   held?: true;
 }
 

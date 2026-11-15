@@ -79,7 +79,7 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
   });
 
   const link = createLink({
-    url: phoneSocketUrl(deps.location), onMessage, Socket: deps.Socket, now: undefined,
+    url: phoneSocketUrl(deps.location, video ? params.get("clip") : null), onMessage, Socket: deps.Socket, now: undefined,
     onOpen: () => set((v) => ({ ...v, connected: true })),
     onClose: () => set((v) => ({ ...v, connected: false })),
   });

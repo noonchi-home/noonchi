@@ -190,13 +190,13 @@ describe("phone camera", () => {
 });
 
 describe("엔진 프레임", () => {
-  async function engineSetup() {
+  async function engineSetup(videoDir?: string) {
     const photoDir = mkdtempSync(join(tmpdir(), "phone-photos-"));
     cleanups.push(() => rmSync(photoDir, { recursive: true, force: true }));
     const feed = new EyeFeed({ photoDir, broadcast: () => {} });
     const got: { header: Msg; eye: Msg | null; view: Msg | null; at: number }[] = [];
     const phone = createPhoneServer({
-      sync: SYNC, feed, onEye: () => {}, log: () => {}, engineMs: 1000,
+      sync: SYNC, feed, onEye: () => {}, log: () => {}, engineMs: 1000, videoDir,
       onEngine: (_jpeg, header, eye, view, at) => got.push({ header, eye, view, at }),
     });
     const { port } = await phone.listen(0, "127.0.0.1");
@@ -226,6 +226,26 @@ describe("엔진 프레임", () => {
     expect(got[0]!.view).toMatchObject({ origin: [3.9, 1.4, 5], projection });
     expect(feed.stats().frames).toBe(1);
     ws.close();
+  });
+
+  it("붙잡은 장면 표시(held)는 이 서버가 내주는 영상으로 연 연결(video=<영상>)에서만 넘긴다. 실제 폰·없는 영상 이름의 held는 지운다", async () => {
+    const videoDir = mkdtempSync(join(tmpdir(), "phone-videos-"));
+    cleanups.push(() => rmSync(videoDir, { recursive: true, force: true }));
+    writeFileSync(join(videoDir, "cup-demo.mp4"), "mp4");
+    const { got, phoneBase } = await engineSetup(videoDir);
+    const send = async (query: string) => {
+      const ws = new WebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events${query}`, { origin: phoneBase });
+      await opened(ws);
+      const before = got.length;
+      for (let i = 0; i < 2; i++) ws.send(encodeFramePacket({ kind: "engine", width: 480, height: 360, captured_at: 1000 + i * 100, time_err_ms: 5, held: true }, JPEG));
+      for (let i = 0; i < 40 && got.length < before + 2; i++) await new Promise((r) => setTimeout(r, 25));
+      ws.close();
+      return got.slice(before).map((g) => g.header.held);
+    };
+    expect(await send("")).toEqual([undefined, undefined]);
+    expect(await send("?video=nope.mp4")).toEqual([undefined, undefined]);
+    expect(await send("?video=../cup-demo.mp4")).toEqual([undefined, undefined]);
+    expect(await send("?video=cup-demo.mp4")).toEqual([true, true]);
   });
 });
 

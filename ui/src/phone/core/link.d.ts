@@ -7,7 +7,7 @@ export interface PhoneLink {
   stamp(phoneMs: number): { captured_at?: number; time_err_ms?: number };
   close(): void;
 }
-export function phoneSocketUrl(loc: { protocol: string; host: string }): string;
+export function phoneSocketUrl(loc: { protocol: string; host: string }, video?: string | null): string;
 export function createLink(opts: {
   url: string;
   onMessage: (msg: Record<string, any>) => void;

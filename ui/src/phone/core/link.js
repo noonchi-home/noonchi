@@ -6,9 +6,9 @@ const CLOCK_MS = 2000;
 const RECONNECT_MS = 1000;
 const phoneNow = () => performance.timeOrigin + performance.now();
 
-/** 페이지 주소 → 폰 서버 WebSocket 주소(https면 wss). */
-export function phoneSocketUrl(loc) {
-  return `${loc.protocol === "https:" ? "wss" : "ws"}://${loc.host}/phone/events`;
+/** 페이지 주소 → 폰 서버 WebSocket 주소(https면 wss). 영상 모드면 트는 영상 이름(video=)을 붙인다: 서버가 그 영상이 있을 때만 영상 모드 연결로 본다. */
+export function phoneSocketUrl(loc, video = null) {
+  return `${loc.protocol === "https:" ? "wss" : "ws"}://${loc.host}/phone/events${video ? `?video=${encodeURIComponent(video)}` : ""}`;
 }
 
 /** onMessage: 서버 JSON 메시지(clock 답은 여기서 쓰고 넘기지 않는다). onOpen·onClose: 붙음·끊김. Socket·now는 시험이 바꾼다. */
