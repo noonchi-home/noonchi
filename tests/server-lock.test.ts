@@ -67,6 +67,20 @@ describe("서버 잠금(RUNTIME_DIR/server.lock.db 파일 잠금)", () => {
     expect(free(dir)).toBe(true);
   });
 
+  it("다른 프로세스가 잠금 파일을 잠깐 읽는 중(SHARED)이면 곧 놓이니 잠깐 다시 해 보고 잡는다: 준비 명령 둘이 함께 잡으려 할 때 둘 다 멈추지 않는다", async () => {
+    const dir = tempDir();
+    acquireServerLock(dir).release();
+    // 자식: 배타 잠금 방식으로 잠금 파일을 읽어 SHARED를 쥐고 「ready」를 찍은 뒤 120ms 뒤에 놓는다(함께 잡으려던 다른 준비 명령과 같은 모양)
+    const code = `const { DatabaseSync } = require("node:sqlite"); const db = new DatabaseSync(${JSON.stringify(serverLockPath(dir))});
+      db.exec("PRAGMA locking_mode=EXCLUSIVE; BEGIN; SELECT count(*) FROM held;"); console.log("ready"); setTimeout(() => { db.close(); process.exit(0); }, 120);`;
+    const kid = spawn(process.execPath, ["-e", code], { stdio: ["ignore", "pipe", "inherit"] });
+    kids.push(kid);
+    await new Promise<void>((ok) => kid.stdout!.on("data", (d) => { if (String(d).includes("ready")) ok(); }));
+    const held = acquireServerLock(dir);
+    locks.push(held);
+    expect(free(dir)).toBe(false);
+  });
+
   it("정션(심볼릭 링크)·대소문자가 다른 경로로 열어도 같은 잠금이다", () => {
     const dir = tempDir();
     hold(dir);
