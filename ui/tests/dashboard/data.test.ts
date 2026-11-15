@@ -52,8 +52,8 @@ describe("대시보드 자료", () => {
       expect(thoughtOf(waited)).toBeNull();
       expect(thoughtOf(reduceDash(waited, decided(BRANCHES.clear, 3), 0))).toMatchObject({ state: "컵을 두고 자리를 뜸", action: "컵 치우기" });
     });
-    it("코치 판단이면 「상태 · 요리를 시작함」, 「코치 · 라면 끓이기 알려 주기」다. 그 규칙은 서버 FSM 기억의 cooking 상태에 있다", () => {
-      expect(thoughtOf(feed([decided(COACH, 1)]))).toEqual({ reasoning: COACH.reasoning, state: "요리를 시작함", habit: false, assist: "coach", action: "라면 끓이기 알려 주기" });
+    it("코치 판단이면 「상태 · 주방에서 할 일을 찾음」, 「코치 · 라면 끓이기 알려 주기」다. 그 규칙은 서버 FSM 기억의 cooking 상태에 있다", () => {
+      expect(thoughtOf(feed([decided(COACH, 1)]))).toEqual({ reasoning: COACH.reasoning, state: "주방에서 할 일을 찾음", habit: false, assist: "coach", action: "라면 끓이기 알려 주기" });
       expect(fsmRuleOf(CUP_FSM_MEMORY, "fsm", COACH.action)).toEqual({ state: COACH.state, trigger: COACH.trigger, learned: false });
     });
     it("갈래 판단의 상태 id는 모두 서버 FSM 기억(CUP_FSM_MEMORY)에서 그 행동의 규칙이 있는 상태다", () => {

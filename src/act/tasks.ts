@@ -64,6 +64,12 @@ export const TASKS: Record<string, TaskSpec> = {
     description: "사람이 라면을 끓이려 하거나 방법을 물으면 냄비 꺼내기부터 불 끄기까지 사람이 할 일을 단계마다 알려 준다. 클로이드는 가전을 조작하지 않는다.",
     allow: { kinds: ["go", "pick", "place", "do", "wait", "say"], need: ["do"] },
   },
+  // 저절로 꺼지는 가전(등록부 selfStop): 켠 뒤 끄기 do 대신 그 가전의 꺼짐을 기다리는 wait를 둔다(src/agent/planTools.ts finish, 실행 추적 cycleEnded)
+  "전자레인지로 데우기 알려 주기": {
+    name: "전자레인지로 데우기 알려 주기", coach: true, maxSteps: 12,
+    description: "사람이 전자레인지 앞에서 쓰는 법을 묻거나 막히면 문 열기부터 꺼내기까지 사람이 할 일을 단계마다 천천히 알려 준다. 클로이드는 가전을 조작하지 않는다.",
+    allow: { kinds: ["go", "pick", "place", "do", "wait", "say"], need: ["do", "wait"] },
+  },
 };
 
 /** 모든 행동 이름(검사·tasks.json 견주기). PAM에 보내는 목록은 돕는 방식마다 다르다(tasksFor). */

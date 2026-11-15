@@ -147,6 +147,7 @@ const ENTRIES = {
     riskyOn: { names: ["전자레인지", "전자렌지", "레인지", "microwave"], caution: "그릇이 뜨거워져요." },
     riskyReason: (l) => `${l} 시작은 사용자 승인이 필요합니다.`,
     hand: ["열기", "닫기", "켜기", "끄기"],
+    selfStop: true,
     camera: {
       fixture: "microwave",
       sight: [
@@ -252,6 +253,9 @@ export const kindLabel = (kind: DeviceKind): string => KINDS[kind].label;
 
 /** 위험 가전 종류인가(riskyOn이 있는 종류). */
 export const isRiskyKind = (kind: string | null | undefined): kind is DeviceKind => !!kindEntry(kind)?.riskyOn;
+
+/** 다 되면 스스로 멈추는 가전 종류인가(등록부 selfStop). 켠 뒤 그 가전이 꺼짐을 기다리는 wait를 끄는 단계로 인정한다(src/agent/planTools.ts selfStopWait). */
+export const isSelfStop = (kind: string | null | undefined): boolean => kindEntry(kind)?.selfStop === true;
 
 /** 카메라 설비 종류 → 그 설비로 맞추는 가전 종류(camera.fixture). 없으면 null. */
 export function cameraKindOf(fixture: FixtureClass): DeviceKind | null {

@@ -15,7 +15,7 @@ import type { WorldObject, WorldView } from "../contract/world.js";
 import type { Capability, RoomSpec } from "../hub/types.js";
 import type { FloorPlan } from "../plan/floor.js";
 import { ALL_ACTS, CAUTION_LINE, DEVICE_VERB, EXTRA_ITEMS, ITEM_CLASS, NOTICES, NOTICE_KEYS, STEP_ACTS, STEP_LABEL, STEP_TEXT, noticeLabel, type StepAct } from "../plan/labels.js";
-import { KINDS, KIND_ORDER, kindEntry } from "../model/kinds.js";
+import { KINDS, KIND_ORDER, isSelfStop, kindEntry } from "../model/kinds.js";
 import { KIND_LABELS, findTypeRule } from "../model/mapping.js";
 import { placeName, type PlaceNames } from "../plan/names.js";
 import { OBJECT_NAME } from "../world/labels.js";
@@ -171,6 +171,17 @@ export function needsPhone(plan: Pick<AgentPlan, "steps">, approval: ApprovalWhy
   });
 }
 
+/** 저절로 꺼지는 가전의 꺼짐 기다리기인가: wait이고 until이 정확히 {"device": 그 가전, "state": "off"}이며 그 가전 종류가 등록부 selfStop(src/model/kinds.ts isSelfStop).
+ *  맞으면 그 가전 id, 아니면 null. 실행 추적은 이 단계를 끝 조건 대신 작동 한 번 끝남(cycleEnded)으로 넘긴다. */
+export function selfStopWait(step: Pick<AgentStep, "kind" | "until">, devices: readonly { id: string; kind: string }[]): string | null {
+  if (step.kind !== "wait" || !step.until) return null;
+  const u = step.until as Record<string, unknown>;
+  const keys = Object.keys(u).sort();
+  if (keys.length !== 2 || keys[0] !== "device" || keys[1] !== "state" || u.state !== "off" || typeof u.device !== "string") return null;
+  const d = devices.find((x) => x.id === u.device);
+  return d && isSelfStop(d.kind) ? d.id : null;
+}
+
 const isId = (name: string) => /_\d+$/.test(name);
 const worldObject = (w: WorldView, id: string): WorldObject | undefined => w.objects.find((o) => o.id === id);
 
@@ -288,11 +299,13 @@ export class PlanDraft {
       const later = dev ? this.added.slice(i + 1).findIndex((b) => HUMAN_KINDS.includes(b.step.kind) && b.step.target === dev) : -1;
       if (later >= 0) return { ok: false, error: `${i + 1}번 가전 단계는 같은 가전 자리에서 사람이 하는 ${i + 2 + later}번 단계 뒤에 둡니다.` };
     }
-    // 손으로 켠 위험 목록 가전은 그 뒤에 같은 가전을 끄는 단계가 있어야 한다(켠 채 끝나는 계획을 받지 않는다)
+    // 손으로 켠 위험 목록 가전은 그 뒤에 같은 가전을 끄는 단계가 있어야 한다(켠 채 끝나는 계획을 받지 않는다).
+    // 끄는 단계: 같은 가전 hand_device off do, 또는 저절로 꺼지는 가전(등록부 selfStop)이면 그 가전의 꺼짐 기다리기(selfStopWait)
     for (const [i, a] of this.added.entries()) {
       if (!riskyHand(a.step, this.ctx.devices)) continue;
       const dev = a.step.hand!.deviceId;
-      if (!this.added.slice(i + 1).some((b) => b.step.hand?.deviceId === dev && b.step.hand.to === "off")) {
+      const offs = (b: Added) => (b.step.hand?.deviceId === dev && b.step.hand.to === "off") || selfStopWait(b.step, this.ctx.devices) === dev;
+      if (!this.added.slice(i + 1).some(offs)) {
         return { ok: false, error: `켠 가전은 계획 안에서 끕니다: ${i + 1}번 단계 뒤에 ${dev}를 끄는 do(hand_device to off)를 두세요.` };
       }
     }

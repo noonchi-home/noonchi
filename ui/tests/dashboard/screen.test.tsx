@@ -310,7 +310,7 @@ describe("대시보드 생각 말풍선(마스코트 위)", () => {
     const plan = coachPlanAt(2);
     rerender(<DashboardScreen {...screenAt(2, { plan, step: plan.steps[1]!, thought: of(COACH), say: COACH_SAY.quiet })} />);
     expect(now()).toHaveTextContent(COACH.reasoning);
-    expect(chips().map((c) => c.textContent)).toEqual(["상태 · 요리를 시작함", "코치 · 라면 끓이기 알려 주기"]);
+    expect(chips().map((c) => c.textContent)).toEqual(["상태 · 주방에서 할 일을 찾음", "코치 · 라면 끓이기 알려 주기"]);
   });
 
   it("배운 규칙이 있는 행동이면 앞 칩이 「습관 · 상태」(상태를 모르면 「습관 · 배운 규칙」)이고 뒤 칩은 「눈치 · 행동」이다. 칩 두 개와 줄 높이는 그대로다", () => {

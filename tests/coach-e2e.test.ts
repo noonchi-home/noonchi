@@ -146,7 +146,7 @@ describe("코치 모드: 라면 끓이기 알려 주기", () => {
     expect(first).toMatchObject({ step: `${planId}:1`, kind: "go", choices: [{ id: "done", label: "완료" }] });
     const chosen = pam!.bodies.find((b) => String(b.observation_text).includes(`사람이 말함: 「${ASK_RAMEN}」`))!;
     expect(chosen.tasks).toEqual(tasksFor("coach"));
-    expect(chosen.tasks).toEqual(["사용자에게 물어보기", RAMEN]);
+    expect(chosen.tasks).toEqual(["사용자에게 물어보기", RAMEN, "전자레인지로 데우기 알려 주기"]);
     expect(Object.keys(chosen).sort()).toEqual(["contract", "final_time", "memory", "memory_kind", "observation_text", "tasks"]);
     const during = s.predicts();
 

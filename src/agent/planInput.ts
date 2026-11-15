@@ -46,6 +46,7 @@ export const PLANNER_PROMPT = `너는 이 집 스마트홈 에이전트의 계�
 - 비전이 볼 수 있는 것만 until로 쓴다: 폰 위치(phone_near), 무언가 들고 있음({"person_fact": "holding", "value": "holding_object"}), 싱크대 물 흐름({"fixture": "sink", "facts": {"use": "water_running"}}), 가전 상태(device). 볼 수 없는 일은 until 없이 둔다(사람이 「완료」나 말로 넘긴다).
 - 손으로 가전을 켜고 끄거나 문을 열고 닫는 do(act 켜기·끄기·열기·닫기)는 target을 그 가전 id로 두고 hand_device {"id": target, "to": "on"|"off"|"open"|"close"}를 같이 쓴다. 가전마다 할 수 있는 동작: 인덕션 켜기·끄기, 전자레인지 열기·닫기·켜기·끄기, 냉장고 열기·닫기. 이 do의 until은 서버가 정한다. 불·열이 나는 가전을 켜면 계획 안에서 그 가전을 끄는 do를 꼭 둔다.
 - 시간이 걸리는 일(물 끓기, 익기)은 say로 한 줄 알린 뒤 wait {"elapsed_s": 초}. 둘 다 같은 notice를 쓴다.
+- 다 되면 스스로 멈추는 가전(전자레인지)은 켠 뒤 끄기 do 대신 notice 다 되기, until {"device": id, "state": "off"}인 wait를 둔다. 꺼낼 때는 pick(act 꺼내기, target 그 가전)을 따로 둔다.
 - [지난 수업]이 있으면 그 단계 순서를 그대로 쓴다.
 - 질문(question)에는 불·열이 나는 가전(인덕션·전자레인지) 이름을 쓰지 않는다.
 

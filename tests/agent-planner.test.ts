@@ -10,7 +10,8 @@ import { TASKS } from "../src/act/tasks.js";
 import { ExecutionTracker, type TrackerOptions } from "../src/act/track.js";
 import { ApprovalStore, type ApprovalAnswer } from "../src/agent/approval.js";
 import { PLANNER_PROMPT, planInput } from "../src/agent/planInput.js";
-import { PLAN_LIMITS, PlanDraft, SUBMIT_ARGS, riskyHand, type PlanContext, type TaskInfo } from "../src/agent/planTools.js";
+import { PLAN_LIMITS, PlanDraft, SUBMIT_ARGS, riskyHand, selfStopWait, type AgentStep, type PlanContext, type TaskInfo } from "../src/agent/planTools.js";
+import { isSelfStop } from "../src/model/kinds.js";
 import { Policy } from "../src/agent/policy.js";
 import { deviceViews } from "../src/agent/tools.js";
 import { CUP_FSM_MEMORY, CUP_TASKS } from "../src/brain/decision.js";
@@ -33,7 +34,7 @@ import { DEVICE_STATES } from "../src/world/vocab.js";
 import { cupPlan } from "./helpers/cup-plan.js";
 import { smallFloor } from "./helpers/floor.js";
 import { startFakePam } from "./helpers/pam.js";
-import { CUP_SCRIPTS, FILL_SCRIPTS, ramenScripts, ramenSteps, cupSteps, fillSteps, idsFrom, planCalls, planContext, startFakePlanner, testPlanner, type FakePlanner, type PlanScript } from "./helpers/planner.js";
+import { CUP_SCRIPTS, FILL_SCRIPTS, microwaveScripts, microwaveSteps, ramenScripts, ramenSteps, cupSteps, fillSteps, idsFrom, planCalls, planContext, startFakePlanner, testPlanner, type FakePlanner, type PlanScript } from "./helpers/planner.js";
 import { heardAtOf } from "./helpers/ws.js";
 
 // 작은 집: 복도(hall)·주방(kitchen)·후면 발코니(balcony, 바닥 −0.1m라 로봇 이동 가능 방이 아님). 세탁기·건조기는 발코니
@@ -270,15 +271,16 @@ describe("계획 모드: 컵 치우기", () => {
       const lines = PLANNER_PROMPT.split("\n");
       const at = lines.indexOf("코치(쓸 수 있는 단계에 device가 없는 할 일)");
       expect(at).toBeGreaterThan(0);
-      expect(lines.slice(at + 1, at + 7)).toEqual([
+      expect(lines.slice(at + 1, at + 8)).toEqual([
         "- 사람이 스스로 하는 일을 처음부터 끝까지 단계마다 알려 준다. 한 단계에 할 일 하나. 클로이드는 가전을 조작하지 않는다.",
         "- 자리를 옮겨야 하면 go를 먼저 둔다. 물건을 꺼내면 pick, 올려놓으면 place, 그 자리에서 하는 일(받기·넣기·켜기·끄기)은 do.",
         `- 비전이 볼 수 있는 것만 until로 쓴다: 폰 위치(phone_near), 무언가 들고 있음({"person_fact": "holding", "value": "holding_object"}), 싱크대 물 흐름({"fixture": "sink", "facts": {"use": "water_running"}}), 가전 상태(device). 볼 수 없는 일은 until 없이 둔다(사람이 「완료」나 말로 넘긴다).`,
         `- 손으로 가전을 켜고 끄거나 문을 열고 닫는 do(act 켜기·끄기·열기·닫기)는 target을 그 가전 id로 두고 hand_device {"id": target, "to": "on"|"off"|"open"|"close"}를 같이 쓴다. 가전마다 할 수 있는 동작: 인덕션 켜기·끄기, 전자레인지 열기·닫기·켜기·끄기, 냉장고 열기·닫기. 이 do의 until은 서버가 정한다. 불·열이 나는 가전을 켜면 계획 안에서 그 가전을 끄는 do를 꼭 둔다.`,
         `- 시간이 걸리는 일(물 끓기, 익기)은 say로 한 줄 알린 뒤 wait {"elapsed_s": 초}. 둘 다 같은 notice를 쓴다.`,
+        `- 다 되면 스스로 멈추는 가전(전자레인지)은 켠 뒤 끄기 do 대신 notice 다 되기, until {"device": id, "state": "off"}인 wait를 둔다. 꺼낼 때는 pick(act 꺼내기, target 그 가전)을 따로 둔다.`,
         "- [지난 수업]이 있으면 그 단계 순서를 그대로 쓴다.",
       ]);
-      expect(lines[at + 7]).toBe("- 질문(question)에는 불·열이 나는 가전(인덕션·전자레인지) 이름을 쓰지 않는다.");
+      expect(lines[at + 8]).toBe("- 질문(question)에는 불·열이 나는 가전(인덕션·전자레인지) 이름을 쓰지 않는다.");
       expect(PLANNER_PROMPT).not.toMatch(/라면|냄비/);
       expect(PLANNER_PROMPT).toContain("단계 수는 [할 일]의 「단계 한도」까지다.");
     });
@@ -350,6 +352,98 @@ describe("계획 모드: 컵 치우기", () => {
     // 치운 것이 없으면 표시도 검사도 없다
     expect(planInput(planContext({ decision: decision("컵 치우기"), world: two, floor: floor() }))).not.toContain("이미 치움");
     expect(new PlanDraft(planContext({ decision: decision("컵 치우기"), world: two, floor: floor() })).submit({ steps: cupSteps({ ...ids, cup: "cup_1" }) })).toMatchObject({ ok: true });
+  });
+});
+
+describe("코치: 전자레인지로 데우기 알려 주기(저절로 꺼지는 가전)", () => {
+  const MW_TASK = "전자레인지로 데우기 알려 주기";
+  const MW = "microwave_kitchen";
+  // 전자레인지는 가전이자 평면도 물건(같은 id, 방 kitchen, 평면도 종류 microwave). 인덕션·냉장고도 있는 주방
+  const mwFloor = () => floorPlanFrom({ ...structuredClone(SCENE), objects: [...structuredClone(SCENE.objects),
+    { id: MW, type: "microwave", room: "kitchen", plan: { position: [7.6, 0.2] } }, { id: "induction_1", type: "induction_counter", room: "kitchen", plan: { position: [6, 0.5] } },
+    { id: "fridge_1", type: "fridge", room: "kitchen", plan: { position: [7.5, 0.5] } }] });
+  const MW_DEVICES = [...DEVICES, spec(MW, "주방 전자레인지", "kitchen", "microwave", { power: ["off", "on"] })];
+  const mctx = () => planContext({ decision: decision(MW_TASK), world: view([]), floor: mwFloor(), hub: new MemoryHub(MW_DEVICES), nowIso: "t" });
+  const steps = () => microwaveSteps({ microwave: MW });
+  const submit = (s: Record<string, unknown>[]) => new PlanDraft(mctx()).submit({ steps: s });
+  const DOOR_OPEN = { fixture: "microwave", room: "kitchen", facts: { open: "open" } };
+
+  it("가짜 모델의 전자레인지 계획이 계획 검사를 지나고, 단계마다 이름·명령·끝 조건이 표와 같으며 5번만 안전 문구가 있다", async () => {
+    llm.scripts = { ...llm.scripts, ...microwaveScripts() };
+    const r = await testPlanner(llm).plan(mctx());
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.plan.steps.map((s) => [s.kind, s.label, s.command ?? s.text, s.until])).toEqual([
+      ["go", "전자레인지로 가기", "전자레인지로 가 주세요", { phone_near: MW }],
+      ["do", "전자레인지 문 열기", "전자레인지 문을 열어 주세요", DOOR_OPEN],
+      ["place", "그릇 내려놓기", "그릇을 전자레인지에 넣어 주세요", null],
+      ["do", "전자레인지 문 닫기", "전자레인지 문을 닫아 주세요", { fixture: "microwave", room: "kitchen", facts: { open: "closed" } }],
+      ["do", "전자레인지 켜기", "전자레인지를 켜 주세요", { device: MW, became: "on" }],
+      ["say", "다 되기 알림", "다 될 때까지 기다려요.", r.plan.steps[5]!.until],
+      ["wait", "다 되기 기다리기", null, { device: MW, state: "off" }],
+      ["do", "전자레인지 문 열기", "전자레인지 문을 열어 주세요", DOOR_OPEN],
+      ["pick", "그릇 꺼내기", "그릇을 꺼내 주세요", null],
+    ]);
+    expect(r.plan.steps.map((s) => s.caution)).toEqual([null, null, null, null, "그릇이 뜨거워져요.", null, null, null, null]);
+    expect(r.plan.steps[4]).toMatchObject({ hand: { deviceId: MW, to: "on" } });
+    expect(r.plan.steps[6]).toMatchObject({ onTimeout: "ask", timeoutMs: 300_000 });
+    expect(selfStopWait(r.plan.steps[6]!, MW_DEVICES)).toBe(MW);
+  });
+
+  it("대본 6번 say에 모델 글(text)을 넣어도 쓰이지 않고 서버 글 「다 될 때까지 기다려요.」만 나간다. 5번 대본 until {device, state: on}은 서버가 {device, became: on}으로 바꾼다", () => {
+    const s = steps();
+    s[5] = { ...s[5]!, text: "전자레인지가 돌아가요" };
+    s[4] = { ...s[4]!, until: { device: MW, state: "on" } };
+    const r = submit(s);
+    expect(r.ok && [r.plan.steps[5]!.text, r.plan.steps[4]!.until]).toEqual(["다 될 때까지 기다려요.", { device: MW, became: "on" }]);
+  });
+
+  it("2번에 hand_device가 없거나 to가 다르면 버린다. 냉장고에 켜기, 에어컨에 켜기(손 조작)도 버린다", () => {
+    const noHand = steps();
+    noHand[1] = { kind: "do", act: "열기", target: MW, timeout_s: 120 };
+    expect(submit(noHand)).toMatchObject({ ok: false });
+    const wrong = steps();
+    wrong[1] = { ...wrong[1]!, hand_device: { id: MW, to: "close" } };
+    expect(submit(wrong)).toMatchObject({ ok: false });
+    for (const target of ["fridge_1", "ac_living"]) {
+      const s = steps();
+      s[4] = { kind: "do", act: "켜기", target, hand_device: { id: target, to: "on" }, timeout_s: 120 };
+      expect(submit(s), target).toMatchObject({ ok: false });
+    }
+  });
+
+  it("7번 wait를 빼면 버리고(wait가 꼭 있는 할 일), 꺼짐 기다리기가 아닌 wait(시간 기다리기)로 바꾸면 「켠 가전은 계획 안에서 끕니다」로 버린다. 7번 until이 {device, state: off}면 받는다. 같은 wait를 인덕션 켜기 뒤에 두면 버린다(등록부 selfStop 아님). notice가 「끝」이면 wait로 받지 않는다", () => {
+    const noWait = steps().filter((_, i) => i !== 6);
+    expect(submit(noWait)).toMatchObject({ ok: false, error: expect.stringContaining("wait 단계가 있어야 합니다") });
+    const timed = steps();
+    timed[6] = { ...timed[6]!, until: { elapsed_s: 120 } };
+    expect(submit(timed)).toMatchObject({ ok: false, error: expect.stringContaining("켠 가전은 계획 안에서 끕니다") });
+    expect(submit(steps())).toMatchObject({ ok: true });
+    const other = steps();
+    other[6] = { ...other[6]!, until: { device: MW, became: "off" } };
+    expect(submit(other)).toMatchObject({ ok: false, error: expect.stringContaining("켠 가전은 계획 안에서 끕니다") });
+    const cook = [
+      { kind: "go", act: "가기", target: "induction_1", until: { phone_near: "induction_1" }, timeout_s: 120 },
+      { kind: "do", act: "켜기", target: "induction_1", hand_device: { id: "induction_1", to: "on" }, timeout_s: 120 },
+      { kind: "wait", notice: "다 되기", until: { device: "induction_1", state: "off" }, timeout_s: 300 },
+    ];
+    expect(submit(cook)).toMatchObject({ ok: false, error: expect.stringContaining("켠 가전은 계획 안에서 끕니다") });
+    const end = steps();
+    end[6] = { ...end[6]!, notice: "끝" };
+    expect(submit(end)).toMatchObject({ ok: false, error: expect.stringContaining("wait에 쓰지 않는 notice") });
+  });
+
+  it("selfStopWait: 등록부 selfStop 가전의 until이 정확히 {device, state: off}인 wait만 그 가전 id, 인덕션 wait·until이 다른 wait·다른 단계는 null", () => {
+    const step = (kind: string, until: unknown) => ({ kind, until }) as unknown as AgentStep;
+    expect(selfStopWait(step("wait", { device: MW, state: "off" }), MW_DEVICES)).toBe(MW);
+    expect(selfStopWait(step("wait", { device: "induction_1", state: "off" }), MW_DEVICES)).toBeNull();
+    expect(selfStopWait(step("wait", { device: MW, became: "off" }), MW_DEVICES)).toBeNull();
+    expect(selfStopWait(step("wait", { all: [{ device: MW, state: "off" }] }), MW_DEVICES)).toBeNull();
+    expect(selfStopWait(step("wait", { device: MW, state: "off", extra: 1 }), MW_DEVICES)).toBeNull();
+    expect(selfStopWait(step("do", { device: MW, state: "off" }), MW_DEVICES)).toBeNull();
+    expect(selfStopWait(step("wait", { device: MW, state: "off" }), [])).toBeNull();
+    expect(isSelfStop("microwave")).toBe(true);
+    expect(isSelfStop("cooktop")).toBe(false);
   });
 });
 

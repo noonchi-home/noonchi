@@ -142,6 +142,33 @@ export const ramenScripts = (waitS?: number): Record<string, PlanScript> => ({
   "라면 끓이기 알려 주기": (input) => [planCalls(ramenSteps({ ...ramenIdsFrom(input), ...(waitS === undefined ? {} : { waitS }) }))],
 });
 
+/** 전자레인지로 데우기 알려 주기 시험 대본 9단계: 전자레인지로 가기 · 문 열기 · 그릇 넣기 · 문 닫기 · 켜기(손으로, 안전 문구) · 다 되기 알림 ·
+ *  다 되기 기다리기(저절로 꺼지는 가전의 꺼짐 기다리기, until {device, state: "off"}) · 문 열기 · 그릇 꺼내기. 글과 손 조작 끝 조건은 서버가 만든다.
+ *  waitS: 7번 기다리기 시간 한도(초, 기본 300). */
+export function microwaveSteps(ids: { microwave: string; waitS?: number }): Record<string, unknown>[] {
+  const { microwave: mw, waitS = 300 } = ids;
+  const door = (act: "열기" | "닫기", to: "open" | "close") => ({ kind: "do", act, target: mw, hand_device: { id: mw, to }, timeout_s: 120 });
+  return [
+    { kind: "go", act: "가기", target: mw, until: { phone_near: mw }, timeout_s: 120 },
+    door("열기", "open"),
+    { kind: "place", act: "넣기", target: mw, item: "그릇", timeout_s: 120 },
+    door("닫기", "close"),
+    { kind: "do", act: "켜기", target: mw, hand_device: { id: mw, to: "on" }, timeout_s: 120 },
+    { kind: "say", notice: "다 되기", timeout_s: 10 },
+    { kind: "wait", notice: "다 되기", until: { device: mw, state: "off" }, timeout_s: waitS, on_timeout: "ask" },
+    door("열기", "open"),
+    { kind: "pick", act: "꺼내기", target: mw, item: "그릇", timeout_s: 120 },
+  ];
+}
+
+/** 입력 글에서 전자레인지(평면도 종류 microwave) id. */
+export const microwaveIdsFrom = (input: string): { microwave: string } => ({ microwave: /^- (\S+) .*\[microwave\]/m.exec(input)?.[1] ?? "" });
+
+/** 전자레인지로 데우기 알려 주기 대본. waitS: 7번 기다리기 시간 한도. */
+export const microwaveScripts = (waitS?: number): Record<string, PlanScript> => ({
+  "전자레인지로 데우기 알려 주기": (input) => [planCalls(microwaveSteps({ ...microwaveIdsFrom(input), ...(waitS === undefined ? {} : { waitS }) }))],
+});
+
 /** 컵 치우기·물어보기 대본(지금 서버와 같은 계획). */
 export const CUP_SCRIPTS: Record<string, PlanScript> = {
   "컵 치우기": (input) => [planCalls(cupSteps(idsFrom(input)))],

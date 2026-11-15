@@ -36,7 +36,9 @@ describe("행동 목록", () => {
 
   it("눈치 모드 행동 목록은 일곱이고 앞 넷의 순서는 그대로다(task_index를 지킨다). 코치 행동은 없다", () => {
     expect(tasksFor("noonchi")).toEqual(["컵 치우기", "사용자에게 물어보기", "세탁물 건조기로 옮기기", "에어컨 켜기", "컵 그대로 두기", "컵에 물 채워 주기", "컵에 콜라 따라 주기"]);
-    expect(TASK_NAMES).toEqual([...tasksFor("noonchi"), "라면 끓이기 알려 주기"]);
+    expect(TASK_NAMES).toEqual([...tasksFor("noonchi"), "라면 끓이기 알려 주기", "전자레인지로 데우기 알려 주기"]);
+    expect(TASK_NAMES).toHaveLength(9);
+    expect(tasksFor("noonchi")).not.toContain("전자레인지로 데우기 알려 주기");
   });
 
   it("자동이면 PAM에 눈치·코치 행동을 모두 순서 그대로 보낸다(task_index가 같다)", () => {
@@ -44,8 +46,9 @@ describe("행동 목록", () => {
   });
 
   it("코치 모드에서는 PAM에 코치 행동과 「사용자에게 물어보기」만 보낸다", () => {
-    expect(tasksFor("coach")).toEqual(["사용자에게 물어보기", "라면 끓이기 알려 주기"]);
-    expect(TASK_NAMES.filter((n) => TASKS[n]!.coach)).toEqual(["라면 끓이기 알려 주기"]);
+    expect(tasksFor("coach")).toEqual(["사용자에게 물어보기", "라면 끓이기 알려 주기", "전자레인지로 데우기 알려 주기"]);
+    expect(TASK_NAMES.filter((n) => TASKS[n]!.coach)).toEqual(["라면 끓이기 알려 주기", "전자레인지로 데우기 알려 주기"]);
+    expect(tasksFor("auto")).toContain("전자레인지로 데우기 알려 주기");
   });
 
   it("코치 행동은 가전을 조작하지 않는다: device 단계를 쓸 수 없고 do가 꼭 있어야 하며 14단계까지다", () => {
@@ -58,6 +61,10 @@ describe("행동 목록", () => {
     const ramen = TASKS["라면 끓이기 알려 주기"]!;
     expect(ramen.allow).toEqual({ kinds: ["go", "pick", "place", "do", "wait", "say"], need: ["do"] });
     expect([ramen.maxSteps, ramen.target, ramen.plan]).toEqual([14, undefined, undefined]);
+    // 전자레인지: 문 열기부터 꺼내기까지, 저절로 꺼지는 가전이라 끄기 do 대신 꺼짐을 기다리는 wait가 꼭 있다
+    const mw = TASKS["전자레인지로 데우기 알려 주기"]!;
+    expect(mw.allow).toEqual({ kinds: ["go", "pick", "place", "do", "wait", "say"], need: ["do", "wait"] });
+    expect([mw.coach, mw.maxSteps, mw.target, mw.plan]).toEqual([true, 12, undefined, undefined]);
     expect(TASKS["컵 치우기"]!.maxSteps).toBeUndefined();
   });
 

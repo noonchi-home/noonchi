@@ -20,6 +20,8 @@
 // 폰 판본(phoneReady, src/phone/server.ts): 판본이 맞는 실제 폰이 없으면 폰이 필요한 계획(needsPhone)만 시작을 미루고(실행 기록 EXEC_TEXT.phoneOld, 한 번),
 // 맞는 폰이 붙으면 시작한다. 계획 도중 폰에 물어야 할 때(승인·시간 초과 질문) 맞는 폰이 없으면 기다리지 않고 실패로 닫는다(EXEC_TEXT.phoneGone).
 // 들은 말(onHeard)은 말할 때 폰에 떠 있던 명령(at)의 답일 때만 받는다: 다른 명령·옛 탭(at 없음)이면 버린다(stale). 「그만」은 at과 상관없다.
+// 저절로 꺼지는 가전의 꺼짐 기다리기(selfStopWait, 전자레인지 「다 되기 기다리기」)는 끝 조건(지금 상태 꺼짐) 대신 이 계획이 켠 그 가전의 작동 한 번 끝남(cycleEnded)으로만 넘긴다.
+// 그 단계가 showAskMs 넘게 안 끝나고 상태가 이미 꺼짐이면(켜짐을 놓침) 그 단계 id로 보이게 해 달라는 부탁을 한 번 띄운다.
 // 다른 행동 알림(코치 계획, 관찰 모드 계기 off_track): 사람 단계가 진행 중인데 의미 있는 변화(사람 방·가전 상태·가전 설비 상태)가 왔고 그 단계가 넘어가지 않았거나,
 // 이동이 아닌 단계에서 폰이 그 단계 자리를 떠나 다른 평면도 자리 가까이로 갔으면 strayed를 부른다(결정론). 단계마다 strayMax번(받은 것만), strayGapMs에 한 번.
 // 무엇이 틀렸는지와 할 말은 관찰 모드(LLM)가 정한다. tell: 지금 명령 글을 그 한 줄로 바꿔 읽고 tellHoldMs 뒤 원래 명령으로 되돌린다(읽지 않음).
@@ -69,7 +71,7 @@ import { DEVICE_STATES, NEAR_M, PHONE_NEAR_M } from "../world/vocab.js";
 import type { DecisionRecord } from "../world/decide.js";
 import { approvalNeed, taskKey, type ApprovalAnswer, type ApprovalBook } from "../agent/approval.js";
 
-import { HUMAN_KINDS, needsPhone, objectNames, riskyHand, type AgentPlan, type AgentStep, type PlanResult } from "../agent/planTools.js";
+import { HUMAN_KINDS, needsPhone, objectNames, riskyHand, selfStopWait, type AgentPlan, type AgentStep, type PlanResult } from "../agent/planTools.js";
 import { offStep } from "./off-step.js";
 import type { ToolResult } from "../agent/tools.js";
 import type { CheckResult } from "./check.js";
@@ -889,9 +891,13 @@ export class ExecutionTracker {
       off.sent = { ...off.sent, text, choices: [], speak: true };
       off.at = now;
       this.o.toPhone(off.sent);
-    } else if (r?.state === "running" && r.sent && !r.asking && step?.kind === "do" && step.hand?.to === "off" && step.hand.deviceId === deviceId) {
+    } else if (r?.state === "running" && !r.asking && step && ((r.sent && step.kind === "do" && step.hand?.to === "off" && step.hand.deviceId === deviceId)
+      || selfStopWait(step, this.o.handDevices?.() ?? []) === deviceId)) {
+      // 끄기 do는 그 명령 글을, 꺼짐 기다리기(명령이 없는 단계)는 그 단계 id로 새 명령을 띄운다(답 단추 없음)
       Object.assign(r, { spokeAt: now, helped: true, quietOn: false });
-      r.sent = { ...r.sent, text, choices: [], speak: true };
+      r.sent = r.sent
+        ? { ...r.sent, text, choices: [], speak: true }
+        : { type: "command", id: r.plan.view.id, step: step.id, text, vision: null, choices: [], target: null, speak: true };
       this.o.toPhone(r.sent);
     } else return false;
     const cycle = this.cycles.get(deviceId);
@@ -901,8 +907,9 @@ export class ExecutionTracker {
 
   /** 실행 중 끄기 do 단계: showAskMs 넘게 안 끝나고 그 가전 상태가 이미 꺼짐인데 작동 끝남을 확인하지 못했으면(켜짐을 놓침) 부탁을 그 단계에 한 번 보낸다. */
   private offAsk(r: Run, step: AgentStep, now: number): void {
-    const id = step.kind === "do" && step.hand?.to === "off" ? step.hand.deviceId : null;
-    if (!id || !r.hot.has(id) || r.asking || !r.sent || r.offAsked === r.gen || now - r.stepAt < this.cfg.showAskMs) return;
+    const self = selfStopWait(step, this.o.handDevices?.() ?? []);
+    const id = self ?? (step.kind === "do" && step.hand?.to === "off" ? step.hand.deviceId : null);
+    if (!id || !r.hot.has(id) || r.asking || (!r.sent && !self) || r.offAsked === r.gen || now - r.stepAt < this.cfg.showAskMs) return;
     if (!offNow(this.o.world().devices.find((d) => d.id === id))) return;
     r.offAsked = r.gen;
     this.askToShow(id);
@@ -1261,7 +1268,11 @@ export class ExecutionTracker {
     if (step.kind === "device" && r.device !== "done" && r.device !== "sent") return false;
     const world = this.o.world();
     // 끄기 do 단계는 그 가전 추적이 풀려도(확인된 꺼짐) 끝난다
-    const reached = (r.watch ? r.watch.check(this.conditionView(world), this.context(r, world)) : step.kind === "device" && r.device === "done") || this.offReleased(r, step);
+    // 저절로 꺼지는 가전의 꺼짐 기다리기: 이 계획이 켠 그 가전의 지금 회차가 끝났을 때만(cycleEnded, 명시 근거) 넘긴다
+    const self = selfStopWait(step, this.o.handDevices?.() ?? []);
+    const reached = self !== null
+      ? r.onAt.has(self) && this.cycleEnded(self) !== null
+      : (r.watch ? r.watch.check(this.conditionView(world), this.context(r, world)) : step.kind === "device" && r.device === "done") || this.offReleased(r, step);
     if (reached) {
       this.advance(r);
       return true;

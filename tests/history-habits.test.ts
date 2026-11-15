@@ -6,6 +6,8 @@ import { coachGuard, keepAll, learnedRules } from "../src/history/habits.js";
 const RAMEN = "라면 끓이기 알려 주기";
 const SEED_COOK = CUP_FSM_MEMORY.states.find((s) => s.id === "cooking")!;
 const SEED_RULE = SEED_COOK.rules[0]!;
+/** seed 요리 상태의 코치 규칙 전부(라면 끓이기·전자레인지로 데우기 알려 주기). */
+const SEED_RULES = SEED_COOK.rules;
 const AIRCON = { trigger: "사용자가 TV를 보러 소파에 앉는다.", action: "에어컨 켜기" };
 const clone = (): FsmMemory => structuredClone(CUP_FSM_MEMORY);
 const state = (m: FsmMemory, id: string) => m.states.find((s) => s.id === id);
@@ -25,9 +27,9 @@ describe("코치 규칙 지키기(coachGuard)", () => {
     const proposed = clone();
     state(proposed, "cooking")!.rules[0] = { trigger: `${SEED_RULE.trigger.replace(/\.$/, "")} 또는 라면 봉지를 든다.`, action: RAMEN };
     const r = coachGuard(CUP_FSM_MEMORY, proposed);
-    expect(state(r.memory, "cooking")!.rules).toEqual([SEED_RULE]);
+    expect(state(r.memory, "cooking")!.rules).toEqual(SEED_RULES);
     expect(r.notes.filter((n) => n.reason === "coach")).toEqual([{ state: "cooking", trigger: state(proposed, "cooking")!.rules[0]!.trigger, action: RAMEN, kept: false, reason: "coach" }]);
-    expect(coachGuard(CUP_FSM_MEMORY, clone()).notes).toEqual([{ state: "cooking", ...SEED_RULE, kept: true, reason: "unchanged" }]);
+    expect(coachGuard(CUP_FSM_MEMORY, clone()).notes).toEqual(SEED_RULES.map((rule) => ({ state: "cooking", ...rule, kept: true, reason: "unchanged" })));
   });
 
   it("반성이 cooking 상태를 지우면 seed cooking 상태가 그 코치 규칙과 함께 끝에 돌아오고, next는 있는 상태로 가는 것만 남는다. initial_state는 그대로다", () => {
@@ -37,7 +39,7 @@ describe("코치 규칙 지키기(coachGuard)", () => {
     };
     const r = coachGuard(CUP_FSM_MEMORY, proposed);
     expect(r.memory.initial_state).toBe("watching_tv");
-    expect(r.memory.states.at(-1)).toEqual({ id: "cooking", description: SEED_COOK.description, rules: [SEED_RULE], next: [] });
+    expect(r.memory.states.at(-1)).toEqual({ id: "cooking", description: SEED_COOK.description, rules: SEED_RULES, next: [] });
     expect(validateMemory(r.memory, "fsm")).toBe(r.memory);
   });
 
@@ -49,8 +51,8 @@ describe("코치 규칙 지키기(coachGuard)", () => {
     }
     const r = coachGuard(CUP_FSM_MEMORY, proposed);
     expect(state(r.memory, "kitchen")!.rules).toEqual([]);
-    expect(state(r.memory, "cooking")).toEqual({ id: "cooking", description: SEED_COOK.description, rules: [SEED_RULE], next: SEED_COOK.next });
-    expect(r.notes).toContainEqual({ state: "kitchen", ...SEED_RULE, kept: false, reason: "coach" });
+    expect(state(r.memory, "cooking")).toEqual({ id: "cooking", description: SEED_COOK.description, rules: SEED_RULES, next: SEED_COOK.next });
+    for (const rule of SEED_RULES) expect(r.notes).toContainEqual({ state: "kitchen", ...rule, kept: false, reason: "coach" });
   });
 
   it("에어컨 습관 규칙은 그대로 남고 learnedRules에 있다", () => {
