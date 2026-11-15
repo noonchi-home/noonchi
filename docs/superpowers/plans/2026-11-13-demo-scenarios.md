@@ -527,7 +527,7 @@ export function judgeState(o: {
 
 사용자 결정(2026-11-15): 가전 종류는 앞으로 사용자가 직접 늘려 간다. 지금은 새 종류 하나를 넣으려면 여러 파일의 종류별 표를 따로 고쳐야 한다. 가전 종류마다 이름·Matter 연결·트윈 type·카메라 낱말·위험 동작·손 조작을 **한 곳(등록부)** 에 적고, 흩어진 곳은 등록부에서 파생해 읽게 바꾼다. 새 종류는 등록부 한 줄 + 집 파일(`added_devices.json`) 한 줄로 끝난다. 전자레인지가 첫 사용 예다.
 
-사용자 결정(2026-11-15): 이 일은 둘로 나눈다. **이 Task(11r-1)는 결과가 바뀌지 않는 옮기기만 한다**(지금 21종의 값과 동작이 전과 똑같다, 넓어짐도 없음). 결과가 바뀌는 승인 판정·ThinQ 어댑터·등록부 검증은 Task 11r-2가 한다. Task 11 바로 뒤에 하고, 차례는 11r-1 → 11r-2 → 11a다(11a~12는 종류별 값을 등록부 칸으로 더한다).
+코디네이터 결정(2026-11-15): 이 일은 둘로 나눈다. **이 Task(11r-1)는 결과가 바뀌지 않는 옮기기만 한다**(지금 21종의 값과 동작이 전과 똑같다, 넓어짐도 없음). 결과가 바뀌는 승인 판정·ThinQ 어댑터·등록부 검증은 Task 11r-2가 한다. Task 11 바로 뒤에 하고, 차례는 11r-1 → 11r-2 → 11a다(11a~12는 종류별 값을 등록부 칸으로 더한다).
 
 **지금 흩어진 종류별 표(f0ace1f, `grep`·`trail grep`로 찾음)와 맡는 Task:**
 
@@ -611,7 +611,7 @@ export const cameraKindOf: (fixture: FixtureClass) => DeviceKind | null;       /
 - 배열 리터럴 안에 종류 이름 문자열이 둘 이상(`["aircon", "fridge"]`, `PAIRABLE_KINDS`·`DEVICE_LONG` kinds 같은 목록).
 - 속성 `deviceKind`에 문자열 값(리터럴·종류 이름 상수)을 저장하는 자리(`deviceKind: "fridge"`). 이름 조회 콜백처럼 값이 함수인 자리(`deviceKind: (id) => …`, 인터페이스의 `deviceKind?: (id: string) => string`, `src/act/track.ts` 1047행·`src/agent/planTools.ts` 325행)는 허용.
 - 종류 이름 문자열과 견주는 비교: `===`·`!==`·`switch`의 `case "<종류 이름>"`에서 다른 쪽 식의 타입이 `DeviceKind`(또는 그 일부 유니언)이거나 이름이 `kind`인 지역 변수·매개변수·`.kind` 속성인 것. 범위는 `src/`·`ui/src/`·`scripts/` 전체(`src/thinq/` 포함)이고, 허용은 말 꾸밈 두 파일(`src/agent/phrases.ts`·`ui/src/bubbles/summary.ts`)뿐이다. 계획 단계 종류(`step.kind === "go"` 등)는 다른 쪽 타입이 `DeviceKind`가 아니라 걸리지 않는다.
-- **잠시 허용(11r-1에서만):** `src/thinq/appliance.ts`의 ThinQ 읽기·제어·반영 갈래(73·84·99·116·127행)는 허용 목록 `TEMP_ALLOW`에 그 파일·줄 내용으로 적고 까닭 「Task 11r-2에서 어댑터로 옮기며 지움」을 단다. 11r-2가 이 목록을 비운다.
+- **잠시 허용(11r-1에서만):** `src/thinq/appliance.ts`의 ThinQ 읽기·제어·반영 갈래(73·84·99·116·127행)는 허용 목록 `TEMP_ALLOW`에 그 파일·줄 내용으로 적고 까닭 「Task 11r-2에서 어댑터로 옮기며 지움」을 단다. 11r-2의 시험 「kinds registry: TEMP_ALLOW is empty」가 이 목록이 빈 것을 강제한다.
 - 문자열 리터럴 `kind: "<종류 이름>"`가 든 배열 리터럴(규칙 목록).
 - 시험 파일(`tests/`, 예제 폴더 제외)과 등록부는 검사하지 않는다.
 - 검사 함수 `findKindTables(program, file): { line: number; rule: string }[]`를 따로 내보내 예제 파일로 시험한다.
@@ -621,6 +621,8 @@ export const cameraKindOf: (fixture: FixtureClass) => DeviceKind | null;       /
 - 허용(통과해야 한다): `{ deviceKind: (id: string) => lookup(id) }`, `interface X { deviceKind?: (id: string) => string | undefined }`, `const L: Record<DeviceKind, string> = mapEntries(KINDS, (e) => e.label)`, `Object.fromEntries(KIND_ORDER.map((k) => [k, KINDS[k].label]))`, TaskSpec의 `devices: { kinds: ["aircon"] }`(하나), `ui/src/bubbles/summary.ts` 꼴의 `d.kind === "aircon"` 말 꾸밈, 계획 단계 종류 비교 `step.kind === "go"`, 어댑터 이름 비교 `adapter === "air_conditioner"`.
 
 **같은 결과 시험(21종 값이 전과 똑같다, 넓어짐도 없음):** 바꾸기 전 커밋에서 `scripts/kinds-snapshot.ts`로 지금 21종의 값을 `tests/fixtures/kinds-before.json`에 뽑아 둔다: 라벨, Matter 프로필 전체, 카탈로그의 모든 트윈 type에 대한 `findTypeRule` 결과, `CONFIRM_RULES`, **승인 표**(종류마다 기본 사양과 twinTypes 덮어쓴 사양에 표본 명령 on·off·start·stop·level·climate·lock·unlock·covering·valve를 보냈을 때 `requiresConfirmation` 결과), `RISKY_ON_NAMES`·`NOT_RISKY`로 본 `riskyNames` 표본 글 결과, `CAUTION_LINE`, `DEVICE_ACTS`, `KIND_SYNONYMS`, `PAIRABLE_KINDS`·`fitsKind` 표본, ThinQ 읽기·제어·트윈 반영 표본(aircon·fridge 원본 값 → `readAppliance`·`thinqSteps`·`mirrorPlan`), `DEVICE_TEXT`, `DEVICE_LONG` 사건, 카메라 설비 → 종류와 SIGHT 규칙, 종류마다 `twinChange` 결과. 바꾼 뒤 파생 값이 이것과 **모두 똑같은지** 본다(승인 표 포함, 한 칸도 달라지면 실패).
+- 시험은 두 묶음으로 나눠 둔다: 「kinds same: non-approval」(라벨·Matter 프로필·트윈 type·별명·위험 이름·안전 문구·손 조작·ThinQ 짝짓기·사건·상태 글·카메라·`twinChange`)과 「kinds same: approval」(`CONFIRM_RULES`·승인 표). 11r-2는 뒤 묶음만 차이표 검사로 바꾸고, 앞 묶음은 11r-2 뒤에도 완전 일치로 남는다.
+- 원본 스냅샷 `tests/fixtures/kinds-before.json`은 11r-2 뒤에도 고치지 않고 그대로 둔다(차이표의 기준이다). ThinQ 읽기·제어·반영 표본도 이 파일에서 읽어 11r-2 뒤에 완전 일치로 본다.
 
 **프로필로 가르기 시험:** 「lock 프로필을 다시 쓰는 새 종류(시험 전용 등록부 확장)의 트윈 제어 attr을 바꾸면 lock/unlock 명령이 나간다(on/off가 아니다)」, 「covering 프로필을 다시 쓰는 새 종류면 covering 0·100%」, 「thermostat 프로필을 다시 쓰는 새 종류도 난방 설정점을 쓴다」, 「지금 21종의 `twinChange` 결과는 같은 결과 시험과 같다」.
 
@@ -637,7 +639,7 @@ export const cameraKindOf: (fixture: FixtureClass) => DeviceKind | null;       /
 
 **Files:**
 - Create: `src/model/kinds-check.ts`(등록부 검증 `checkKinds`), `tests/kinds-behavior.test.ts`(승인 차이표·승인 대상·ThinQ 어댑터·등록부 검증 시험)
-- Modify: `src/model/kinds.ts`(위험 켜기 종류의 `confirm` → `riskyReason`, `thinq.adapter`), `src/agent/policy.ts`(`needsConfirm`, `requiresConfirmation`이 그것을 씀), `src/agent/planTools.ts`(`riskyHand`가 `needsConfirm`을 씀), `src/agent/planInput.ts`(계획 입력의 위험 목록 글을 등록부에서), `src/agent/prompts.ts`(에이전트 지시문의 승인 규칙 글을 등록부에서), `src/thinq/appliance.ts`(`THINQ_ADAPTERS`, 읽기·제어·반영을 어댑터로), `src/thinq/link.ts`(어댑터로 부름), `src/server/start.ts`(시작 때 `checkKinds`), `tests/kinds-registry.test.ts`(잠시 허용 목록 `TEMP_ALLOW`를 비움), `docs/reference.md`(새 종류 추가하는 법 5), `CLAUDE.md`(승인 규칙 줄의 위험 목록 글)
+- Modify: `src/model/kinds.ts`(위험 켜기 종류의 `confirm` → `riskyReason`, `thinq.adapter`), `src/agent/policy.ts`(`needsConfirm`, `requiresConfirmation`이 그것을 씀), `src/agent/planTools.ts`(`riskyHand`가 `needsConfirm`을 씀), `src/agent/planInput.ts`(계획 입력의 위험 목록 글을 등록부에서), `src/agent/prompts.ts`(에이전트 지시문의 승인 규칙 글을 등록부에서), `src/thinq/appliance.ts`(`THINQ_ADAPTERS`, 읽기·제어·반영을 어댑터로), `src/thinq/link.ts`(어댑터로 부름), `src/server/start.ts`(시작 때 `checkKinds`), `tests/kinds-registry.test.ts`(잠시 허용 목록 `TEMP_ALLOW`를 비움, 「kinds same: approval」 묶음을 지움), `docs/reference.md`(새 종류 추가하는 법 5), `CLAUDE.md`(승인 규칙 줄의 위험 목록 글)
 - Test: `tests/kinds-behavior.test.ts`, `tests/kinds-registry.test.ts`, `tests/policy.test.ts`, `tests/approval.test.ts`, `tests/agent.test.ts`, `tests/agent-planner.test.ts`, `tests/act-track.test.ts`, `tests/thinq-appliance.test.ts`, `tests/thinq-link.test.ts`, 기존 시험 전체
 
 **Interfaces:**
@@ -689,10 +691,13 @@ export function checkKinds(kinds: Readonly<Record<string, KindEntry>>): string[]
 
 **ThinQ: 어댑터를 고른 까닭.** 「지원하지 않는 조합을 검증에서 거절」만 하려면 지원 종류 목록(`["aircon", "fridge"]`)이 등록부 밖에 또 생겨 11r-1의 구조 검사와 부딪친다. 어댑터 이름을 등록부 칸으로 고르게 하면 지원 여부가 타입(`ThinqAdapter`)으로 바로 정해지고, 지금 코드의 두 갈래를 어댑터 둘로 옮기기만 하면 돼 바꿀 양도 더 작다. 제어가 없는 어댑터에 제어 프로필을 붙이는 조합과 받는 명령이 맞지 않는 조합만 `checkKinds`가 거절한다.
 
-- [ ] **Step 1: 실패하는 시험.** `tests/kinds-behavior.test.ts`에 승인 차이표·승인 대상·ThinQ 어댑터·등록부 검증 시험을 쓰고, `tests/kinds-registry.test.ts`의 잠시 허용 목록을 비운다.
-- [ ] **Step 2: 실패 확인.** `npm run heavy -- npx vitest run tests/kinds-behavior.test.ts tests/kinds-registry.test.ts` → 승인 대상 시험(덮은 전자레인지 `on`이 지금은 승인 없이 감)·ThinQ 어댑터·`checkKinds` 없음으로 실패하고, 구조 검사가 `src/thinq/appliance.ts` 73·84·99·116·127행을 짚는 것을 본다.
+- [ ] **Step 1: 실패하는 시험.**
+  - `tests/kinds-registry.test.ts`의 「kinds same: approval」(승인 표·`CONFIRM_RULES` 완전 일치) 묶음을 지우고, 그 자리를 `tests/kinds-behavior.test.ts`의 「approval diff: only widened, never narrowed」(위 승인 차이표, 기준은 그대로 둔 `kinds-before.json`)로 바꾼다. 「kinds same: non-approval」 묶음은 그대로 둔다.
+  - `tests/kinds-registry.test.ts`에 「kinds registry: TEMP_ALLOW is empty」를 더한다(허용 목록에 줄이 하나라도 있으면 실패, 까닭 글 「ThinQ 갈래를 어댑터로 옮기고 TEMP_ALLOW를 비운다」).
+  - `tests/kinds-behavior.test.ts`에 승인 대상·ThinQ 어댑터·등록부 검증 시험을 쓴다.
+- [ ] **Step 2: 실패 확인.** `npm run heavy -- npx vitest run tests/kinds-behavior.test.ts tests/kinds-registry.test.ts` → 「kinds registry: TEMP_ALLOW is empty」가 지금 허용 목록(thinq 다섯 줄) 때문에 실패하고, 승인 대상 시험(덮은 전자레인지 `on`이 지금은 승인 없이 감)·ThinQ 어댑터·`checkKinds` 없음으로 실패하는 것을 본다. 「approval diff」는 아직 넓어진 칸이 없어 통과하고, 「kinds same: non-approval」도 통과한다.
 - [ ] **Step 3: 구현.**
-- [ ] **Step 4: 통과 확인.** 두 시험 파일과 기존 시험 전체, ui 시험. 기존 승인 시험(`tests/policy.test.ts`·`tests/approval.test.ts`·`tests/agent.test.ts`·`tests/act-track.test.ts`)에서 위험 켜기 종류의 끄기 아닌 명령을 승인 없이 기대하던 곳이 있으면 승인 차이표와 같게 고친다(좁히는 쪽으로는 고치지 않는다).
+- [ ] **Step 4: 통과 확인.** 두 시험 파일과 기존 시험 전체, ui 시험. 「kinds same: non-approval」은 완전 일치, 「approval diff」는 넓어진 칸만(위험 켜기 종류의 끄기 아닌 명령), 「TEMP_ALLOW is empty」는 통과. 기존 승인 시험(`tests/policy.test.ts`·`tests/approval.test.ts`·`tests/agent.test.ts`·`tests/act-track.test.ts`)에서 위험 켜기 종류의 끄기 아닌 명령을 승인 없이 기대하던 곳이 있으면 승인 차이표와 같게 고친다(좁히는 쪽으로는 고치지 않는다).
 - [ ] **Step 5: 문서와 규칙.** `docs/reference.md` 「새 종류 추가하는 법」 5. `CLAUDE.md` 승인 규칙 줄의 위험 목록 글을 「현관 잠금 해제, 인덕션·전자레인지는 끄기 말고 상태를 바꾸는 명령 전부」로 고치고 막는 장치에 `tests/kinds-behavior.test.ts`를 더한다.
 - [ ] **Step 6:** 커밋 `feat(policy): confirm every non-off command on risky kinds, route ThinQ through adapters and validate the kind registry`.
 
@@ -1173,7 +1178,8 @@ export function microwaveSteps(ids: { microwave: string; waitS?: number /* wait 
 - PAM 계약 그대로: 「PAM 계약」 절, Task 13 시험 7.
 - Codex 1차 지적 9개: 1 Task 4 바꾸기 2·4, 2 「일주일을 시연 안에서 보이는 길」·Task 7·8, 3 Task 5 범위, 4 Task 2 행동 단위, 5 Task 6 API·Task 8 확인, 6 Task 8 `start`·Task 9 `--start-at`, 7 Task 11 `unbaked`, 8 Task 10 차례 쓰기, 9 Task 10 붙잡기·Task 9 `--tail`.
 - 서버 글 구조(T1~T4)에 맞춤: 「조사한 사실」 사람 단계 글 절, Task 12 표(글·끝 조건을 코드가 내는 값으로), 「라면 대본」 절, Task 13 시험 5·6.
-- 사용자 결정: Task 11r을 둘로 나눔(2026-11-15): Task 11r-1(등록부·파생·구조 검사·같은 결과, 21종 값과 승인 표가 전과 똑같음, ThinQ 갈래는 잠시 허용 목록)과 Task 11r-2(승인 판정 `needsConfirm`·ThinQ 어댑터·`checkKinds`, 승인 차이표는 넓어진 것만·좁아진 것 없음). 11r-1 → 11r-2 → 11a 차례를 Consumes·Produces로 이음.
+- Codex 27차 지적 2개: P2 11r-1 같은 결과 시험을 「kinds same: non-approval」·「kinds same: approval」 두 묶음으로 나누고 11r-2 Step 1에서 승인 묶음만 「approval diff: only widened, never narrowed」로 바꿈(`kinds-before.json`은 그대로, 승인 아닌 부분은 계속 완전 일치), P3 11r-2에 「kinds registry: TEMP_ALLOW is empty」 실패 시험. 기록 바로잡음: Task 11r 나누기는 코디네이터 결정.
+- 코디네이터 결정: Task 11r을 둘로 나눔(2026-11-15): Task 11r-1(등록부·파생·구조 검사·같은 결과, 21종 값과 승인 표가 전과 똑같음, ThinQ 갈래는 잠시 허용 목록)과 Task 11r-2(승인 판정 `needsConfirm`·ThinQ 어댑터·`checkKinds`, 승인 차이표는 넓어진 것만·좁아진 것 없음). 11r-1 → 11r-2 → 11a 차례를 Consumes·Produces로 이음.
 - Codex 26차 지적 5개: P1 Task 11r 위험 켜기 종류는 끄기 말고 상태를 바꾸는 명령 전부를 승인 대상으로(`needsConfirm`, 이름 정규화·capabilities 덮어쓰기와 무관), 등록부 검증은 덮어쓴 실제 사양까지, P2 ThinQ 트윈 반영(`mirrorPlan`)도 어댑터로, P2 어댑터가 받는 명령과 프로필이 내는 명령이 맞는지 검증, P3 `heatingSetpoint`의 `|| systemMode === "heat"`는 그대로, P3 구조 검사가 지역 변수 `kind`·`switch`·`src/thinq/`까지.
 - Codex 25차(재부팅 뒤 첫 리뷰) 지적 5개: P1 Task 11r 등록부 검증 `checkKinds`(승인 명령은 프로필로 정규화한 명령과 같아야 함 등), P2 `deviceKind` 금지는 문자열 값을 저장하는 자리만(이름 조회 콜백 허용), P2 `twinChange`·`heatingSetpoint`를 종류 이름 대신 프로필로 가름, P2 ThinQ 읽기·제어는 등록부 `thinq.adapter`로 고른 어댑터(지원 목록을 따로 두지 않음), P3 구조 검사에 SIGHT 꼴·계산 키·`Object.fromEntries`·종류 이름 배열 금지 예제.
 - 사용자 결정: 가전 종류 등록부 먼저(2026-11-15): Task 11r(등록부 `src/model/kinds.ts`, 흩어진 종류별 표 파생, 등록부 밖 종류별 표를 찾는 구조 검사, 바꾸기 전 21종과 같은 결과 시험, 새 종류 추가하는 법), Task 11a·11b·12의 종류별 값(카메라 규칙·selfStop)을 등록부 칸으로.
