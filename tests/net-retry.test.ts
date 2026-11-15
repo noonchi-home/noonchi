@@ -6,7 +6,10 @@ import type { Server } from "node:http";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import type { AddressInfo } from "node:net";
+import { WebSocketServer } from "ws";
 import { fetchRetry, listenRetry } from "../src/server/net.js";
+import { openWebSocket } from "./helpers/ws.js";
 
 const efault = (syscall: string) => Object.assign(new Error(`${syscall} EFAULT: bad address in system call argument 127.0.0.1`), { code: "EFAULT", syscall });
 
@@ -50,6 +53,45 @@ describe("EFAULT를 견딘다", () => {
     const r = await fetchRetry("http://127.0.0.1:1/x", {}, { fetchImpl, baseMs: 1 });
     expect(await r.text()).toBe("ok");
     expect(calls).toBe(8);
+  });
+});
+
+describe("시험 소켓 다시 열기는 실패한 시도의 대기를 치운다", () => {
+  it("첫 시도가 EFAULT로 실패하고 다음 시도가 붙어도, 실패한 시도에서 setup이 건 대기(타이머)는 치워져 처리되지 않은 거절이 남지 않는다", async () => {
+    const wss = new WebSocketServer({ port: 0, host: "127.0.0.1" });
+    await new Promise<void>((ok) => wss.once("listening", () => ok()));
+    wss.on("connection", (s) => s.send("hi"));
+    const port = (wss.address() as AddressInfo).port;
+    const unhandled: unknown[] = [];
+    const note = (e: unknown) => { unhandled.push(e); };
+    process.on("unhandledRejection", note);
+    try {
+      let attempt = 0;
+      let got!: Promise<string>;
+      const ws = await openWebSocket(`ws://127.0.0.1:${port}`, {
+        setup: (s) => {
+          attempt++;
+          // 시험 소켓의 대기 모양(tests/phone-server.test.ts next): 오지 않으면 일정 시간 뒤 거절
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          got = new Promise<string>((ok, no) => {
+            timer = setTimeout(() => no(new Error("메시지가 오지 않았습니다")), 150);
+            s.once("message", (d) => { clearTimeout(timer); ok(String(d)); });
+          });
+          // 첫 시도는 연결 EFAULT처럼 실패시킨다
+          if (attempt === 1) setImmediate(() => s.emit("error", efault("connect")));
+          return () => clearTimeout(timer);
+        },
+      });
+      expect(attempt).toBe(2);
+      expect(await got).toBe("hi");
+      ws.close();
+      // 실패한 시도의 타이머(150ms)가 지나도록 기다린다
+      await new Promise((r) => setTimeout(r, 400));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", note);
+      await new Promise<void>((ok) => wss.close(() => ok()));
+    }
   });
 });
 
