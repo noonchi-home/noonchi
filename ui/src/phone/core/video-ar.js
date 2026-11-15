@@ -335,52 +335,58 @@ export function createVideoAr({ link, params, hooks, deps }) {
         });
     };
 
-    /** 영상 v의 프레임 고리. 단계 영상으로 바꾸면 앞 영상 고리는 멈춘다. */
+    /** 영상 v의 프레임 한 장 보내기(엔진·표시). 다음 프레임 예약은 하지 않는다: 영상 고리(frameLoop)와 붙잡기 타이머가 같이 쓴다. */
+    const frameSend = (v) => (now) => {
+      if (run !== current || v !== video || ended) return;
+      const t = timeline();
+      const stamp = link.stamp(performance.timeOrigin + now);
+      // 시계를 맞춘 뒤 첫 프레임에서 t0를 서버 시계로 고친다
+      if (!clockFixed && stamp.captured_at !== undefined) {
+        clockFixed = true;
+        record.t0 = Math.round(stamp.captured_at - t);
+      }
+      const marks = frameMarks();
+      showMarks(marks);
+      if (ws()?.readyState !== OPEN) return;
+      // 엔진 프레임 차례: 앞 엔진 프레임이 인코딩 중이거나 보낼 것이 쌓였으면 건너뛴다(쌓지 않는다)
+      const step = engineStep({ last: lastEngine, now: t, intervalMs: engineMs, canStart: enginePipeline.canStart(), buffered: ws().bufferedAmount, maxBuffered: MAX_BUFFERED });
+      lastEngine = step.last;
+      if (step.action !== "wait" && step.action !== "send") stats.skipped("engine");
+      if (step.action === "send") {
+        const ew = Math.min(frameWidth(params.get("w"), portrait), fw);
+        const eh = Math.round((ew * fh) / fw);
+        const e0 = performance.now();
+        const pixels = grab(ew, eh);
+        // 붙잡은 장면은 같은 사진이라 held를 붙인다: 서버가 같은 사진도 VLM 간격마다 새 관찰로 받는다
+        const header = { kind: "engine", width: ew, height: eh, position, orientation, tracking: "ok", epoch: state.epoch, projection, ...stamp, ...(record.hold ? { held: true } : {}) };
+        sendFrame(pixels, header, ENGINE_QUALITY, [], performance.now() - e0, true, enginePipeline);
+      }
+      if (t < due) return;
+      if (!pipeline.canStart()) {
+        stats.skipped("encoding");
+        return;
+      }
+      if (ws().bufferedAmount > MAX_BUFFERED) {
+        stats.skipped("buffer");
+        return;
+      }
+      due = Math.max(due + FRAME_MS, t + FRAME_MS / 2);
+      const long = Math.min(FRAME_LONG, Math.max(fw, fh));
+      const width = portrait ? Math.round((long * fw) / fh) : long;
+      const h = portrait ? long : Math.round((long * fh) / fw);
+      state.size = `${width}×${h}`;
+      const r0 = performance.now();
+      const pixels = grab(width, h);
+      const header = { kind: "frame", width, height: h, position, orientation, tracking: "ok", epoch: state.epoch, ...stamp };
+      sendFrame(pixels, header, FRAME_QUALITY, marks, performance.now() - r0, false);
+    };
+    /** 영상 v의 프레임 고리: 다음 프레임을 예약하고 한 장 보낸다. 단계 영상으로 바꾸면 앞 영상 고리는 멈춘다. */
     const frameLoop = (v) => {
+      const send = frameSend(v);
       const onFrame = (now) => {
         if (run !== current || v !== video || ended) return;
         v.nextFrame(onFrame);
-        const t = timeline();
-        const stamp = link.stamp(performance.timeOrigin + now);
-        // 시계를 맞춘 뒤 첫 프레임에서 t0를 서버 시계로 고친다
-        if (!clockFixed && stamp.captured_at !== undefined) {
-          clockFixed = true;
-          record.t0 = Math.round(stamp.captured_at - t);
-        }
-        const marks = frameMarks();
-        showMarks(marks);
-        if (ws()?.readyState !== OPEN) return;
-        // 엔진 프레임 차례: 앞 엔진 프레임이 인코딩 중이거나 보낼 것이 쌓였으면 건너뛴다(쌓지 않는다)
-        const step = engineStep({ last: lastEngine, now: t, intervalMs: engineMs, canStart: enginePipeline.canStart(), buffered: ws().bufferedAmount, maxBuffered: MAX_BUFFERED });
-        lastEngine = step.last;
-        if (step.action !== "wait" && step.action !== "send") stats.skipped("engine");
-        if (step.action === "send") {
-          const ew = Math.min(frameWidth(params.get("w"), portrait), fw);
-          const eh = Math.round((ew * fh) / fw);
-          const e0 = performance.now();
-          const pixels = grab(ew, eh);
-          // 붙잡은 장면은 같은 사진이라 held를 붙인다: 서버가 같은 사진도 VLM 간격마다 새 관찰로 받는다
-          const header = { kind: "engine", width: ew, height: eh, position, orientation, tracking: "ok", epoch: state.epoch, projection, ...stamp, ...(record.hold ? { held: true } : {}) };
-          sendFrame(pixels, header, ENGINE_QUALITY, [], performance.now() - e0, true, enginePipeline);
-        }
-        if (t < due) return;
-        if (!pipeline.canStart()) {
-          stats.skipped("encoding");
-          return;
-        }
-        if (ws().bufferedAmount > MAX_BUFFERED) {
-          stats.skipped("buffer");
-          return;
-        }
-        due = Math.max(due + FRAME_MS, t + FRAME_MS / 2);
-        const long = Math.min(FRAME_LONG, Math.max(fw, fh));
-        const width = portrait ? Math.round((long * fw) / fh) : long;
-        const h = portrait ? long : Math.round((long * fh) / fw);
-        state.size = `${width}×${h}`;
-        const r0 = performance.now();
-        const pixels = grab(width, h);
-        const header = { kind: "frame", width, height: h, position, orientation, tracking: "ok", epoch: state.epoch, ...stamp };
-        sendFrame(pixels, header, FRAME_QUALITY, marks, performance.now() - r0, false);
+        send(now);
       };
       return onFrame;
     };
@@ -392,11 +398,11 @@ export function createVideoAr({ link, params, hooks, deps }) {
         console.info(`[video] ${clockText(timeline())} 영상 끝`);
         return;
       }
-      // 단계 영상: 마지막 장면을 붙잡고 그 장면으로 프레임을 계속 보낸다(영상 프레임 알림이 없어 타이머로 돈다)
+      // 단계 영상: 마지막 장면을 붙잡고 그 장면으로 프레임을 계속 보낸다(영상 프레임 알림이 없어 타이머로 돈다). 타이머는 보내기만 하고 다음 프레임을 예약하지 않는다
       const since = Math.round(timeline());
       record.hold = { clip: stepClip, since };
       console.info(`[video] ${clockText(since)} 단계 영상 끝 · 마지막 장면 붙잡기 ${stepClip}`);
-      const tick = frameLoop(v);
+      const tick = frameSend(v);
       const every = Math.max(20, Math.floor(FRAME_MS / 2));
       holdTimer = setInterval(() => {
         holdMs += every;

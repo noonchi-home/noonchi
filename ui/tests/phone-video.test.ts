@@ -636,6 +636,25 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
       expect(rec().hold).toBeNull();
       expect(rec().clips.map((c) => c.clip)).toEqual(["a.mp4", "b.mp4"]);
     });
+
+    it("붙잡는 동안 타이머는 프레임만 보내고 다음 프레임을 예약하지 않는다(예약 콜백이 늘지 않는다)", async () => {
+      fakeTimers();
+      const { ws, videos, startAr } = make({}, ORDER);
+      await startAr();
+      ws.push({ ...ALIGNED, engine_ms: 500 });
+      ws.push(doMw("plan:pam-1:2", "전자레인지 문을 열어 주세요"));
+      await after(1500);
+      const a = videos[1]!;
+      a.advance(1);
+      await after(0);
+      const scheduled = vi.spyOn(a, "nextFrame");
+      a.end();
+      const engineBefore = (await Promise.all(ws.packets.map(headerOf))).filter((h) => h.kind === "engine").length;
+      await after(5000);
+      const engineAfter = (await Promise.all(ws.packets.map(headerOf))).filter((h) => h.kind === "engine").length;
+      expect(engineAfter - engineBefore).toBeGreaterThanOrEqual(8);
+      expect(scheduled).not.toHaveBeenCalled();
+    });
   });
 
   it("go 명령(대상 dining_table_1)이 오면 1.5초 뒤 go-table.mp4를 만들어 덮개 앞에 깔고 튼다. 그 전에는 바꾸지 않고, 바꾸면 앞 영상을 닫는다", async () => {
