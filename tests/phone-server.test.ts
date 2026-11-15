@@ -470,6 +470,17 @@ describe("폰 판본(hello)과 옛 탭", () => {
     expect(phone.ready()).toBe(false);
   });
 
+  it("소리 등급(grade)을 모르는 판본 2 탭은 옛 탭이다: 새로 고침 안내를 받고 그 탭으로는 명령을 보내지 않는다", async () => {
+    const { phone, base } = await protoSetup();
+    phone.command(CMD);
+    const old = await tab(base);
+    old.ws.send(JSON.stringify({ type: "hello", protocol: 2 }));
+    await wait(300);
+    expect(PHONE_PROTOCOL).toBe(3);
+    expect(old.box.slice(1)).toEqual([REFRESH]);
+    expect(phone.ready()).toBe(false);
+  });
+
   it("늦은 hello는 연결을 정상으로 되돌린다: 새로 고침 안내를 지우고 처음 보낸 명령 전체(kind·target(AR)·vision)와 승인 대기 목록을 다시 보내며, 그 뒤 답을 받는다", async () => {
     const { phone, got, base } = await protoSetup();
     const late = await tab(base);
