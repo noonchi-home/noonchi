@@ -44,6 +44,7 @@ const VIDEO_PATH = /^\/phone\/videos\/([A-Za-z0-9_-]{1,64}\.(?:mp4|webm))$/;
 const VIDEO_NAME = /^[A-Za-z0-9_-]{1,64}\.(?:mp4|webm)$/;
 
 /** 영상 모드 연결인가: 소켓 주소의 video=<영상 이름>이 이 서버가 내주는 영상(videoDir 바로 아래 파일)일 때만. 실제 폰 페이지는 붙이지 않는다. */
+// 영상 모드: 카메라 입력
 export function videoSession(url: string | undefined, videoDir: string | null): boolean {
   if (!videoDir || !url) return false;
   const name = new URL(url, "http://phone").searchParams.get("video");
@@ -56,6 +57,7 @@ export function videoSession(url: string | undefined, videoDir: string | null): 
 }
 
 /** 붙잡은 장면 표시(held)는 영상 모드 연결의 엔진 프레임에만 둔다. 실제 폰은 같은 사진을 새 관찰로 쌓지 않는다(관찰 흐름이 중복으로 버린다). */
+// 영상 모드: held
 export function engineHeader(header: FrameHeader, video: boolean): FrameHeader {
   if (video || header.held === undefined) return header;
   const { held: _held, ...rest } = header;
@@ -241,6 +243,7 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
       : null);
     if (header.kind === "engine") {
       const view = header.position && header.orientation ? session.viewAt(header.position, header.orientation, header.projection, header.epoch) : null;
+      // 영상 모드: held
       opts.onEngine?.(jpeg, engineHeader(header, video), eyeOf(), view, receivedAtMs);
       return;
     }
@@ -305,6 +308,7 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
   wss.on("connection", (ws, req) => {
     const source = ++connections;
     // 이 서버가 내주는 영상으로 연 연결(영상 시험·영상 폰 페이지)만 영상 모드다
+    // 영상 모드: 카메라 입력
     const video = videoSession(req.url, videoDir);
     log(`[phone] 폰 연결(지금 ${wss.clients.size}대)`);
     ws.on("close", () => {

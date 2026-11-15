@@ -23,3 +23,4 @@
 | 켠 위험 가전 추적(hot·끄기 안내)은 확인된 꺼짐(cycleEnded)으로만 푼다(완료·말·만료로 풀지 않음) | `tests/act-track-release.test.ts`·`tests/act-track.test.ts` |
 | 대시보드 단계가 바뀔 때 움직이는 것은 transform·opacity만이다. 트윈 캔버스·영상·칸 크기를 바꾸지 않고, 트윈은 카메라만 옮기며 SVG 판은 같은 카메라로 움직인다. 가장 긴 그림 간격 50 ms 이하. | ui/tests/dashboard/steps.test.tsx(칸·캔버스·영상 요소와 그 class·inline style 그대로, 움직임은 transform·opacity만, 단계가 바뀌면 화면을 한 번만 다시 그림), ui/tests/dashboard/map-overlay.test.tsx(단계가 바뀌면 가짜 엔진에 setView만 오고 resize는 오지 않음), ui/scripts/measure-switch.mjs --mode visible(손으로 돌림) |
 | 폰·대시보드에 새 안내·알림을 더할 때 새 화면 자리를 만들지 않고 지금 있는 명령 줄·생각 말풍선 같은 길로 보낸다. | 없음(2026-11-15 사용자 바로잡음: 끄기 안내용 안전 안내 자리) |
+| 영상 모드(폰 페이지 `?clip=`)는 카메라 입력만 다르고 지시·소리 읽기·완료 판단·트윈 반영은 실제 모드와 같다(마이크 듣기만 끔). 다른 갈래는 카메라 입력·자세 흉내·단계 영상·held·시험 기록·듣기 끔뿐이다. | `tests/video-mode-parity.test.ts`(영상 모드 갈래 줄마다 허용 표시 `영상 모드: <갈래>`가 있어야 하고, 소리·폰 화면·실행 추적·서버 묶음에는 갈래가 없어야 한다. 예전의 소리 읽기 끔 갈래를 잡는지도 본다) |

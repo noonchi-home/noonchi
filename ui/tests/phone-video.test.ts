@@ -1,6 +1,6 @@
 // 영상 입력 모드(?clip=, core/video-ar.js): 실제 카메라 대신 영상을 틀고, 고정 자세·투영으로 실제 폰과 같은 길로 보낸다.
 // jsdom은 영상을 틀지 못하므로 영상·JPEG 인코딩·2D 그림판은 대역(arDeps)으로 넣는다.
-// 지원은 바로 됨(http·WebXR 없어도), 소리 읽기·늘 듣기 없음, reset → start fixed → pose, 화면·엔진 프레임 헤더, 명령 시각 기록,
+// 지원은 바로 됨(http·WebXR 없어도), 명령은 실제 폰처럼 소리로 읽고 늘 듣기만 끔, reset → start fixed → pose, 화면·엔진 프레임 헤더, 명령 시각 기록,
 // 맞춤 상태면 「여기서 시작」·시작 위치 모달 없음, 영상이 끝나면 프레임을 멈춘다. 단계 영상(step=)·go 단계 걷기·집기·놓기 대상 바라보기. video-math 표도 본다.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -170,25 +170,38 @@ describe("영상 입력 모드: 연결·지원", () => {
     expect(c.view().support).toEqual({ kind: "insecure" });
   });
 
-  it("B 명령이 떠 있을 때 reply가 오면 소리는 없고 엄지 자리 비전 상태 줄이 20초 동안 그 글(warn)이었다가 B 비전 상태로 돌아온다", () => {
+  it("B 명령이 떠 있을 때 reply가 오면 실제 폰처럼 명령·reply를 차례로 읽고 명령을 한 번 다시 읽으며, 엄지 자리 비전 상태 줄이 20초 동안 그 글(warn)이었다가 B 비전 상태로 돌아온다", () => {
     vi.useFakeTimers();
     const { c, ws, spoken } = make();
     ws.push(command());
     ws.push({ type: "reply", text: "인덕션이 다시 켜졌어요. 꺼 주세요" });
-    expect(spoken).toEqual([]);
+    expect(spoken).toEqual(["식탁으로 가 주세요", "인덕션이 다시 켜졌어요. 꺼 주세요", "식탁으로 가 주세요"]);
     expect(handOf(c.view())).toMatchObject({ top: "식탁으로 가 주세요", vision: { text: "인덕션이 다시 켜졌어요. 꺼 주세요", tone: "warn" } });
     vi.advanceTimersByTime(20_001);
     expect(handOf(c.view()).vision).toEqual({ text: "식탁까지 2.1m", tone: "plain" });
   });
 
-  it("음성 인식을 만들지 않고(듣기 꺼짐), 명령이 와도 소리로 읽지 않는다", async () => {
+  it("음성 인식만 만들지 않고(듣기 꺼짐), 명령은 실제 폰처럼 소리로 읽는다", async () => {
     const { c, ws, spoken, startAr } = make();
     await startAr();
     ws.push(command());
     expect(Rec.all).toHaveLength(0);
     expect(c.view().listening).toBe("off");
-    expect(spoken).toEqual([]);
+    expect(spoken).toEqual(["식탁으로 가 주세요"]);
     expect(c.view().command?.text).toBe("식탁으로 가 주세요");
+  });
+
+  it("소리 끝 알림이 오지 않아도(헤드리스 판정) 말 줄의 시간 상한으로 다음 말을 읽는다", async () => {
+    vi.useFakeTimers();
+    const said: string[] = [];
+    const { ws } = make({ speak: (s) => { said.push(s); } });
+    ws.push(command());
+    ws.push({ type: "reply", text: "인덕션이 다시 켜졌어요. 꺼 주세요" });
+    expect(said).toEqual(["식탁으로 가 주세요"]);
+    vi.advanceTimersByTime(2000 + "식탁으로 가 주세요".length * 300);
+    expect(said).toEqual(["식탁으로 가 주세요", "인덕션이 다시 켜졌어요. 꺼 주세요"]);
+    vi.advanceTimersByTime(2000 + "인덕션이 다시 켜졌어요. 꺼 주세요".length * 300);
+    expect(said).toEqual(["식탁으로 가 주세요", "인덕션이 다시 켜졌어요. 꺼 주세요", "식탁으로 가 주세요"]);
   });
 
   it("영상은 덮개 앞(문서 순서상 먼저)에 놓고, AR을 끝내면 치운다", async () => {

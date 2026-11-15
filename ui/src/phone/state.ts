@@ -209,13 +209,15 @@ export interface SyncWire {
 
 /** 서버 상태(status) → 맞춤·위치 맞춤. AR 중 시작 위치가 있고 이번 AR에서 아직 시작하지 않았으면(변환 없음) 시작 위치 맞추기를 연다.
  *  시작 위치가 지워지면 닫는다. 「여기서 시작」을 보내면 controller.ts가 닫는다(다시 맞추기를 연 동안 오는 상태로는 닫지 않는다).
- *  autoStart false(영상 입력 모드: 시작 자세를 스스로 보낸다)면 저절로 열지 않는다. */
+ *  autoStart false(영상 입력 모드: 시작 자세를 스스로 보낸다)면 저절로 열지 않는다.
+ *  영상 모드: 자세 흉내 */
 export function onStatus(v: PhoneView, s: { aligned: boolean; sync?: SyncWire }, opts: { autoStart?: boolean } = {}): PhoneView {
   const sync: SyncView | null = s.sync
     ? { state: s.sync.state, source: s.sync.source, start: s.sync.start, started: s.sync.started, anchors: s.sync.anchors, wallPoints: s.sync.wall_points, residualM: s.sync.residual_m }
     : null;
   let setup = v.setup;
   if (setup === "start" && !sync?.start) setup = null;
+  // 영상 모드: 자세 흉내
   if (setup === null && (opts.autoStart ?? true) && v.ar && sync?.start && !sync.started && sync.state === "none") setup = "start";
   return { ...v, aligned: s.aligned, sync, setup };
 }

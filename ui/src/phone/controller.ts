@@ -18,8 +18,9 @@
 // 마지막 폰 자세와 원점으로 {type:"start"}를 보낸다. 그 뒤 서버가 걸으면서 물건·벽 모양으로 맞춘다(src/sync).
 // 명령 대상 고리: 명령에 실린 대상(target, AR 자리) 하나만, 위 줄·엄지 자리에 그 명령이 보일 때만(handOf) 그린다. 에이전트 초점(focus)은
 // 명령이 없을 때만 AR에 넘긴다(대시보드로 가는 화면 프레임에만 그려지고 실제 폰 화면에는 그리지 않는다). 조준점은 물건 자리 맞추기 때만(draw.aim).
-// 영상 입력 모드(?clip=, core/video-ar.js): 카메라 대신 영상을 틀고 고정 자세로 바로 맞춘다(start fixed). 지원은 바로 되고(WebXR·https 없어도),
-// 소리 읽기·늘 듣기는 끈다(답은 화면 단추). 「여기서 시작」은 저절로 열지 않고, 서버 맞춤이 없으면 영상 AR이 시작 자세를 다시 보낸다(syncStatus).
+// 영상 입력 모드(?clip=, core/video-ar.js): 카메라 입력만 다르고 지시·소리 읽기·완료 판단·트윈 반영은 실제 모드와 같다(tests/video-mode-parity.test.ts).
+// 카메라 대신 영상을 틀고 고정 자세로 바로 맞춘다(start fixed). 지원은 바로 되고(WebXR·https 없어도), 마이크로 늘 듣기만 끈다(답은 화면 단추).
+// 「여기서 시작」은 저절로 열지 않고(영상 AR이 고정 시작 자세를 스스로 보냄), 서버 맞춤이 없으면 영상 AR이 시작 자세를 다시 보낸다(syncStatus).
 // 받은 명령은 그 영상 시각으로 기록하고(window.__noonchiVideo), 영상 AR에 넘겨 맞는 단계 영상(?step=)으로 바꾸고 go 단계면 자세를 걷게 한다.
 import type { HeardAt, PhoneCommand, PhoneCommandClear, TalkGrade } from "../../../src/contract/phone.ts";
 import { createAr, type ArHooks, type PhoneAr } from "./core/ar.js";
@@ -96,8 +97,9 @@ const needMs = (t: Talk) => (whole(t) ? speakMs(t.text) : talkMs(t.text));
 export function createPhoneController(deps: ControllerDeps): PhoneController {
   const params = new URLSearchParams(deps.location.search);
   const video = videoParams(params);
-  const speak = video ? (_text: string, done: () => void) => done() : deps.speak ?? speakAloud;
-  const hush = video ? () => {} : deps.hush ?? hushAloud;
+  const speak = deps.speak ?? speakAloud;
+  const hush = deps.hush ?? hushAloud;
+  // 영상 모드: 듣기 끔. 영상에는 사람 목소리가 없어 마이크로 늘 듣기만 끈다(답은 화면 단추)
   const Recognition = video ? null : deps.Recognition === undefined ? recognition() : deps.Recognition;
   const store = createStore<PhoneView>(initialView());
   const set = (fn: (v: PhoneView) => PhoneView) => store.set(fn);
@@ -135,7 +137,7 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
     return null;
   }
 
-  // 영상 모드: 말의 at 기록을 화면이 바뀔 때마다 실제 폰 말과 같은 heardAtOf로 다시 쓴다(영상 판정 --say가 그대로 싣는다)
+  // 영상 모드: 시험 기록. 말의 at 기록을 화면이 바뀔 때마다 실제 폰 말과 같은 heardAtOf로 다시 쓴다(영상 판정 --say가 그대로 싣는다)
   if (video) store.subscribe(() => logVideoAt(heardAtOf(store.get())));
   // 조준점은 물건 자리 맞추기 때만: setup이 바뀌면 그림에 알린다
   store.subscribe(() => {
@@ -162,6 +164,7 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
   });
 
   const link = createLink({
+    // 영상 모드: 카메라 입력. 소켓 주소에 트는 영상 이름을 붙여 서버가 영상 연결로 안다(붙잡은 장면 표시를 받는다)
     url: phoneSocketUrl(deps.location, video ? params.get("clip") : null), onMessage, Socket: deps.Socket, now: undefined,
     onOpen: () => set((v) => ({ ...v, connected: true })),
     onClose: () => set((v) => ({ ...v, connected: false })),
@@ -216,8 +219,8 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
       showNote(text);
     },
   };
-  // 영상 모드: 같은 형(PhoneAr)의 영상 AR. 표시 영상(H.264)은 없고 화면·엔진 JPEG만 보낸다
-  const ar: PhoneAr & { videoTime?(): number; syncStatus?(sync: SyncWire | undefined): void; command?(cmd: PhoneCommand): void } = video
+  // 영상 모드: 카메라 입력. 같은 형(PhoneAr)의 영상 AR. 표시 영상(H.264)은 없고 화면·엔진 JPEG만 보낸다
+  const ar: PhoneAr & { videoTime?(): number; syncStatus?(sync: SyncWire | undefined): void; command?(cmd: PhoneCommand): void } = video // 영상 모드: 카메라 입력
     ? createVideoAr({ link, params, hooks, deps: { ...video, ...deps.arDeps } as VideoArDeps })
     : createAr({ link, params, hooks, deps: deps.arDeps });
 
@@ -288,6 +291,7 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
   function onMessage(msg: Msg) {
     if (msg.type === "status") {
       ar.setEngineMs(msg.engine_ms);
+      // 영상 모드: 자세 흉내. 영상 AR이 고정 시작 자세를 스스로 보내므로 「여기서 시작」을 저절로 열지 않는다
       set((v) => ({ ...onStatus(v, msg as { aligned: boolean; sync?: SyncWire }, { autoStart: !video }), connected: true }));
       ar.syncStatus?.(msg.sync);
       if (msg.error) showNote(msg.error);
@@ -353,7 +357,7 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
     confirmStart() {
       if (!ar.state.on) return showNote("AR을 먼저 시작하세요");
       if (!ar.state.position || !ar.state.orientation) return showNote("폰 위치를 아직 몰라요. 폰을 조금 움직인 뒤 다시 눌러 주세요");
-      // 영상 모드는 고정 카메라라 다시 맞춰도 바로 맞춤(fixed)
+      // 영상 모드: 자세 흉내. 고정 카메라라 다시 맞춰도 바로 맞춤(fixed)
       const fixed = video ? { fixed: true } : {};
       if (!link.send({ type: "start", position: ar.state.position, orientation: ar.state.orientation, epoch: ar.state.epoch, ...fixed })) return showNote("서버와 연결이 끊겨 보내지 못했어요");
       set((v) => ({ ...v, setup: v.setup === "start" ? null : v.setup }));
@@ -372,7 +376,7 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
   };
 
   async function checkSupport() {
-    // 영상 모드는 WebXR·보안 연결 없이 된다
+    // 영상 모드: 카메라 입력. 카메라 대신 영상이라 WebXR·보안 연결 없이 된다
     if (video) return set((v) => ({ ...v, support: { kind: "ready" } }));
     if (!(deps.secure ?? window.isSecureContext)) return set((v) => ({ ...v, support: { kind: "insecure" } }));
     const xr = "xr" in deps ? deps.xr : (navigator as Navigator & { xr?: XrLike }).xr;

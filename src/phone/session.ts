@@ -373,6 +373,7 @@ export class PhoneSession {
       if (this.adoptEpoch(msg.epoch).stale) return { reply: this.status("이전 AR 세션의 기록이라 받지 않았어요. 다시 눌러 주세요") };
       this.last = null;
       this.lastPhone = [msg.position[0], msg.position[2]];
+      // 영상 모드: 자세 흉내
       if (msg.fixed) this.sync.fixStart(this.startPose, msg.position, msg.orientation);
       else this.sync.confirmStart(this.startPose, msg.position, msg.orientation);
       return { reply: this.status() };

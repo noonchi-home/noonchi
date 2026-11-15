@@ -12,7 +12,7 @@ const RECONNECT_MS = 1000;
 const phoneNow = () => performance.timeOrigin + performance.now();
 
 /** 페이지 주소 → 폰 서버 WebSocket 주소(https면 wss). 영상 모드면 트는 영상 이름(video=)을 붙인다: 서버가 그 영상이 있을 때만 영상 모드 연결로 본다. */
-export function phoneSocketUrl(loc, video = null) {
+export function phoneSocketUrl(loc, video = null) { // 영상 모드: 카메라 입력
   return `${loc.protocol === "https:" ? "wss" : "ws"}://${loc.host}/phone/events${video ? `?video=${encodeURIComponent(video)}` : ""}`;
 }
 

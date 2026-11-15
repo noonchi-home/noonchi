@@ -25,6 +25,7 @@ import { applyRigid, limitStep, ransacRigid, rigidGap, solveTerms, type P2, type
 import { startRigid, type StartPose } from "./start.js";
 import { SurfacePoints, classifyHit, normalRotation, wallQuality, wallTerms, type WallPoint, type WallSeg } from "./walls.js";
 
+// 영상 모드: 자세 흉내
 export type SyncSource = "start" | "objects" | "walls" | "video";
 
 export const SYNC_LIMITS = {
@@ -207,9 +208,11 @@ export class SyncAligner {
   }
 
   /** 영상 모드: 고정 카메라라 시작 자리가 곧 카메라 자리다. 바로 맞춤으로 두고 물건·벽으로 움직이지 않는다. */
+  // 영상 모드: 자세 흉내
   fixStart(pose: StartPose, position: Vec3, orientation: Quat): void {
     this.confirmStart(pose, position, orientation);
     this.aligned = true;
+    // 영상 모드: 자세 흉내
     this.source = "video";
     this.fixed = true;
     this.dirty = false;
