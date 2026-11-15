@@ -423,6 +423,8 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     }
     // 실제 폰이 들은 말 가운데 지금 명령의 답이 아닌 말: 관찰 텍스트 한 줄로 판단 호출에 넘긴다(눈치 모드에서도).
     // 그 말 자체는 기록하지 않는다: 기록·대시보드에는 내용 없는 표시(HEARD_MARK)만 남긴다. KEEP_HEARD_TEXT=1이면 그대로 남긴다(기본 꺼짐)
+    /** 실제 폰 세션의 지금 승인 대기 목록(폰에 보내는 모양). */
+    const phonePending = () => agent.pending(PHONE_SESSION).map((p) => ({ token: p.token, deviceLabel: p.deviceLabel, reason: p.reason, choices: p.choices }));
     const heardSpeech = (text: string) => {
       if (!world || !decider) return;
       const changes = world.heard(text, nowMs());
@@ -497,11 +499,12 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
           // 말로 한 승인·거절: 말할 때 보인 승인 대기 token이 하나이고 지금도 대기일 때 그 하나에만 답한다.
           // at에 승인 token이 있으면 명령(실행 추적)의 답으로 보내지 않는다(뒤에 숨은 명령 승인으로 가지 않게)
           const approval = matchChoice(text, APPROVE);
+          // 답한 뒤(버린 때도) 지금 승인 대기 목록을 같이 보낸다: 단추 답처럼 끝난 질문이 폰에 남지 않게
           const byToken = async () => {
             const live = new Set(agent.pending(PHONE_SESSION).map((p) => p.token));
             const token = at?.pending.length === 1 && live.has(at.pending[0]!) ? at.pending[0]! : null;
-            if (!token) return stale();
-            return { handled: true, reply: (await agent.answerToken(token, approval!.id as ApprovalAnswer)).reply };
+            const reply = token ? (await agent.answerToken(token, approval!.id as ApprovalAnswer)).reply : stale().reply;
+            return { handled: true, reply, pending: phonePending() };
           };
           if (approval && at && at.pending.length > 0) return byToken();
           const heard = tracker?.onHeard(text, at) ?? null;
@@ -515,7 +518,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
           return { handled: false };
         },
         // 폰이 판본 hello로 정상이 되면 지금 승인 대기 목록을 다시 받는다
-        pending: () => agent.pending(PHONE_SESSION).map((p) => ({ token: p.token, deviceLabel: p.deviceLabel, reason: p.reason, choices: p.choices })),
+        pending: () => phonePending(),
         ...(observe ? {
           engineMs: observe.config.engineMs,
           onEngine: (jpeg, h, eye, view, at) => {

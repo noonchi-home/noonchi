@@ -91,10 +91,13 @@ export interface PhoneServerOptions {
   onChoice?: (id: string, step: string, choice: string) => void;
   /** 폰의 말(say)을 에이전트보다 먼저 받는다. 명령·질문의 답(「완료」「그만」 등)이거나 버린 답이면 handled이고, 그때는 에이전트로 보내지 않고 reply를 돌려준다.
    *  at: 말할 때 폰에 떠 있던 명령·보인 승인 대기(없으면 옛 탭이거나 모양이 틀림). */
-  onAnswer?: (text: string, at?: HeardAt) => { handled: boolean; reply?: string } | Promise<{ handled: boolean; reply?: string }>;
+  onAnswer?: (text: string, at?: HeardAt) => Handled | Promise<Handled>;
   /** 지금 승인 대기 목록. 연결이 판본 hello로 정상이 되면 이 목록을 보낸다(reply의 pending). */
   pending?: () => PhonePending[];
 }
+
+/** 들은 말을 먼저 받은 결과: handled면 에이전트로 보내지 않고 reply를 돌려준다. pending이 있으면(말로 한 승인·거절 뒤) 지금 승인 대기 목록을 같이 보낸다. */
+export interface Handled { handled: boolean; reply?: string; pending?: PhonePending[] }
 
 export interface PhoneReply {
   reply: string;
@@ -258,7 +261,7 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
         const text = typeof msg.text === "string" ? msg.text.trim().slice(0, MAX_SAY) : "";
         if (!text) return say("말이 비어 있어요. 다시 말해 주세요.");
         const answer = await opts.onAnswer?.(text, heardAt(msg.at));
-        if (answer?.handled) return say(answer.reply ?? "");
+        if (answer?.handled) return say(answer.reply ?? "", answer.pending);
         if (!opts.onSay) return say("에이전트가 연결되지 않았어요.");
         const r = await opts.onSay(text);
         return say(r.reply, r.pending);

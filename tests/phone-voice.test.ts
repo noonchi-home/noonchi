@@ -333,6 +333,8 @@ describe("startServer: 실제 폰의 말로 하는 승인", () => {
     say("승인", [door]);
     await until(replies, 6, 5000);
     expect(await lock()).toBe("unlocked");
+    // 말로 답한 뒤에도 지금 승인 대기 목록을 보낸다(끝난 질문이 폰에 남지 않게)
+    expect(replies[5]!.pending).toEqual([]);
   }, 30_000);
 
   it("들은 승인은 말할 때 보인 대기 token 하나만 답한다: 그사이 그 대기가 끝나고 다른 대기가 생겼으면 확정하지 않고, 둘 이상 보였으면 버린다. 보인 token이 아직 대기면 그것만 확정한다", async () => {
@@ -364,7 +366,7 @@ describe("startServer: 실제 폰의 말로 하는 승인", () => {
     // A가 보일 때 말한 늦은 「승인」: B는 확정되지 않고 에이전트로도 가지 않는다
     say("승인", [a]);
     await until(replies, 4, 5000);
-    expect(replies[3]).toEqual({ type: "reply", text: "" });
+    expect(replies[3]).toEqual({ type: "reply", text: "", pending: [expect.objectContaining({ token: b[0] })] });
     expect(power()).not.toBe("on");
     // 둘 이상 보였으면 버린다
     say("승인", [a, b[0]!]);
@@ -375,6 +377,7 @@ describe("startServer: 실제 폰의 말로 하는 승인", () => {
     say("승인", [b[0]!]);
     await until(replies, 6, 5000);
     expect(power()).toBe("on");
+    expect(replies[5]!.pending).toEqual([]);
     expect(srv.hub.get("door_main")?.twin.lock).toBe("locked");
   }, 30_000);
 });
