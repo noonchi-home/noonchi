@@ -12,7 +12,7 @@ import type { DraftStep, PlanHead } from "../plan/planner.js";
 import { assemblePlan } from "../plan/planner.js";
 import type { PlanTarget, PlanView, StepKind, XZ } from "../contract/plan.js";
 import type { WorldObject, WorldView } from "../contract/world.js";
-import type { RoomSpec } from "../hub/types.js";
+import type { Capability, RoomSpec } from "../hub/types.js";
 import type { FloorPlan } from "../plan/floor.js";
 import { ALL_ACTS, CAUTION_LINE, DEVICE_VERB, EXTRA_ITEMS, ITEM_CLASS, NOTICES, NOTICE_KEYS, STEP_ACTS, STEP_LABEL, STEP_TEXT, noticeLabel, type StepAct } from "../plan/labels.js";
 import { KINDS, KIND_ORDER, kindEntry } from "../model/kinds.js";
@@ -22,7 +22,7 @@ import { OBJECT_NAME } from "../world/labels.js";
 import { CLASSES, DEVICE_STATES, type DeviceStateKey } from "../world/vocab.js";
 import { ConditionSchema, checkCondition, type Condition, type ConditionHome } from "../world/conditions.js";
 import type { DecisionRecord } from "../world/decide.js";
-import { CONFIRM_RULES, RISKY_NAME_PROBLEM, riskyNames } from "./policy.js";
+import { RISKY_NAME_PROBLEM, needsConfirm, riskyNames } from "./policy.js";
 import { TOOLS, type ToolDef, type ToolResult } from "./tools.js";
 
 /** 에이전트 단계 종류. go·pick·place·do는 사람이 하는 일(실제 폰 명령, do는 그 자리에서 하는 일: 따르기·붓기), ask 질문, say 알림, device 가전 조작, wait 기다리기. */
@@ -149,11 +149,11 @@ export const STEP_ARGS = z.object({
 });
 export type StepArgs = z.infer<typeof STEP_ARGS>;
 
-/** 손으로 켜는 가전이 위험 목록(src/agent/policy.ts CONFIRM_RULES: 그 종류를 켜거나 시작하는 명령)인가. 끄는 단계·위험 목록이 아닌 가전은 아니다. */
-export function riskyHand(step: Pick<AgentStep, "hand">, devices: readonly { id: string; kind: string }[]): boolean {
+/** 손으로 켜는 가전이 위험 목록인가(승인 판정 src/agent/policy.ts needsConfirm에 켜기를 넣어 본다). 끄는 단계·위험 목록이 아닌 가전은 아니다. */
+export function riskyHand(step: Pick<AgentStep, "hand">, devices: readonly { id: string; kind: string; capabilities?: readonly Capability[] }[]): boolean {
   if (step.hand?.to !== "on") return false;
-  const kind = devices.find((d) => d.id === step.hand!.deviceId)?.kind;
-  return CONFIRM_RULES.some((r) => r.kind === kind && (r.command === "on" || r.command === "start"));
+  const d = devices.find((x) => x.id === step.hand!.deviceId);
+  return !!d && needsConfirm(d, { type: "on" });
 }
 
 const isId = (name: string) => /_\d+$/.test(name);

@@ -5,7 +5,7 @@
 // 기기마다 한 번에 한 단계만 보낸다. 앞 명령이 끝나기 전 같은 기기 명령은 거절한다.
 
 import type { Command, CommandResult, DeviceHub, DeviceSpec, Readback } from "../hub/types.js";
-import { mirrorPlan, readAppliance, thinqSteps, type Reading } from "./appliance.js";
+import { mirrorPlan, readAppliance, thinqAdapterOf, thinqSteps, type Reading } from "./appliance.js";
 import { ThinqError, type ThinqClient } from "./client.js";
 
 export interface ThinqLinkOptions {
@@ -101,7 +101,8 @@ export class ThinqLink {
     const execution = { id: `thinq-${++this.seq}`, route: "thinq" as const, target };
     const end = (r: Omit<CommandResult, "execution" | "state">): CommandResult => ({ ...r, state: this.world.get(id), execution });
     try {
-      const steps = thinqSteps(spec.kind, cmd);
+      const adapter = thinqAdapterOf(spec.kind);
+      const steps = adapter ? thinqSteps(adapter, cmd) : null;
       if (!steps) return end({ ok: false, outcome: "not_sent", error: `${label}: ThinQ로 보낼 수 없는 명령이에요.` });
       let reading = await this.read(id, target);
       if (!reading) return end({ ok: false, outcome: "not_sent", error: `${label}: 지금 상태를 읽지 못해 보내지 않았어요.` });
@@ -168,7 +169,8 @@ export class ThinqLink {
       return null;
     }
     if (this.failing.delete(id)) this.log(`ThinQ: ${spec.label} 상태를 다시 읽었어요.`);
-    const reading = readAppliance(spec.kind, raw);
+    const adapter = thinqAdapterOf(spec.kind);
+    const reading = adapter ? readAppliance(adapter, raw) : {};
     const first = !this.backs.has(id);
     this.backs.set(id, { source: "thinq", deviceId: target, at: this.now().toISOString() });
     const changed = await this.mirror(spec, reading);
@@ -180,7 +182,8 @@ export class ThinqLink {
   private async mirror(spec: DeviceSpec, reading: Reading): Promise<boolean> {
     const state = this.world.get(spec.id);
     if (!state) return false;
-    const plan = mirrorPlan(spec, reading, state);
+    const adapter = thinqAdapterOf(spec.kind);
+    const plan = adapter ? mirrorPlan(adapter, reading, state) : { commands: [], sensors: [] };
     for (const c of plan.commands) {
       const r = await this.world.command(spec.id, c);
       if (!r.ok) this.log(`[경고] ThinQ: ${spec.label} 트윈에 비추지 못했어요: ${r.error ?? c.type}`);

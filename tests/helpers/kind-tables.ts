@@ -18,14 +18,8 @@ export interface KindTableHit {
   text: string;
 }
 
-/** 잠시 허용(11r-1에서만): ThinQ 읽기·제어·반영 갈래. Task 11r-2에서 어댑터로 옮기며 지운다(11r-2 시험 「kinds registry: TEMP_ALLOW is empty」). */
-export const TEMP_ALLOW: readonly { file: string; text: string; why: string }[] = [
-  { file: "src/thinq/appliance.ts", text: 'if (kind === "aircon") {', why: "Task 11r-2에서 어댑터로 옮기며 지움" },
-  { file: "src/thinq/appliance.ts", text: 'if (kind === "fridge") {', why: "Task 11r-2에서 어댑터로 옮기며 지움" },
-  { file: "src/thinq/appliance.ts", text: 'if (kind !== "aircon") return null;', why: "Task 11r-2에서 어댑터로 옮기며 지움" },
-  { file: "src/thinq/appliance.ts", text: 'if (spec.kind === "aircon") {', why: "Task 11r-2에서 어댑터로 옮기며 지움" },
-  { file: "src/thinq/appliance.ts", text: '} else if (spec.kind === "fridge") {', why: "Task 11r-2에서 어댑터로 옮기며 지움" },
-];
+/** 잠시 허용 목록(파일·줄 내용과 까닭). 비어 있어야 한다(tests/kinds-registry.test.ts 「kinds registry: TEMP_ALLOW is empty」). */
+export const TEMP_ALLOW: readonly { file: string; text: string; why: string }[] = [];
 
 /** 종류·카메라 설비 이름이 키·글로 둘 이상 나와도 가전 종류 표가 아닌 표(파일·선언 이름과 까닭). object-keys·array-kinds 규칙에서만 뺀다. */
 export const TABLE_ALLOW: readonly { file: string; name: string; why: string }[] = [

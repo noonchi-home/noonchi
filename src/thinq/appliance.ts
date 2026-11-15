@@ -2,9 +2,10 @@
 //   에어컨: operation.airConOperationMode, airConJobMode.currentJobMode, temperatureInUnits[unit C].targetTemperature, airFlow.windStrength
 //   냉장고: doorStatus[locationName MAIN].doorState(문 닫기 명령은 없다)
 // 실제 가전 값과 다를 수 있는 부분은 docs/superpowers/plans/2026-11-06-control-mode.md 「실제 연결 때 확인할 것」.
+// 읽기·제어·트윈 반영은 가전 종류 이름이 아니라 어댑터(THINQ_ADAPTERS)로 가른다. 가전 종류는 등록부 thinq.adapter로 어댑터를 고른다(src/model/kinds.ts).
 
-import type { ClimateMode, Command, DeviceKind, DeviceSpec, DeviceState, FanSpeed } from "../hub/types.js";
-import { KINDS, KIND_ORDER } from "../model/kinds.js";
+import type { ClimateMode, Command, CommandType, DeviceKind, DeviceState, FanSpeed } from "../hub/types.js";
+import { KINDS, KIND_ORDER, kindEntry } from "../model/kinds.js";
 
 /** 설정에서 ThinQ 기기와 짝지을 수 있는 트윈 기기 종류(등록부 thinq). */
 export const PAIRABLE_KINDS: DeviceKind[] = KIND_ORDER.filter((k) => KINDS[k].thinq);
@@ -68,24 +69,6 @@ function clean(r: Reading): Reading {
   return Object.fromEntries(Object.entries(r).filter(([, v]) => v !== undefined)) as Reading;
 }
 
-export function readAppliance(kind: DeviceKind, raw: Record<string, unknown>): Reading {
-  if (kind === "aircon") {
-    const op = obj(raw.operation)?.airConOperationMode;
-    const t = celsius(raw);
-    return clean({
-      power: op === "POWER_ON" ? "on" : op === "POWER_OFF" ? "off" : undefined,
-      mode: JOB_BACK[String(obj(raw.airConJobMode)?.currentJobMode)],
-      setpointC: num(t?.targetTemperature),
-      currentC: num(t?.currentTemperature),
-      fan: WIND_BACK[String(obj(raw.airFlow)?.windStrength)],
-    });
-  }
-  if (kind === "fridge") {
-    const d = mainDoor(raw)?.doorState;
-    return clean({ door: d === "OPEN" ? "open" : d === "CLOSE" ? "closed" : undefined });
-  }
-  return {};
-}
 
 const powerStep = (on: boolean): ThinqStep => ({
   name: on ? "전원 켜기" : "전원 끄기",
@@ -93,9 +76,8 @@ const powerStep = (on: boolean): ThinqStep => ({
   done: (r) => r.power === (on ? "on" : "off"),
 });
 
-/** 트윈 명령 → ThinQ 단계(한 번에 하나씩 보낸다). ThinQ로 보낼 수 없으면 null. 냉난방 설정은 켜기를 먼저 한다. */
-export function thinqSteps(kind: DeviceKind, cmd: Command): ThinqStep[] | null {
-  if (kind !== "aircon") return null;
+/** 에어컨: 트윈 명령 → ThinQ 단계(한 번에 하나씩 보낸다). ThinQ로 보낼 수 없으면 null. 냉난방 설정은 켜기를 먼저 한다. */
+function airConditionerSteps(cmd: Command): ThinqStep[] | null {
   if (cmd.type === "on" || cmd.type === "off") return [powerStep(cmd.type === "on")];
   if (cmd.type !== "climate") return null;
   const steps: ThinqStep[] = [powerStep(true)];
@@ -108,23 +90,70 @@ export function thinqSteps(kind: DeviceKind, cmd: Command): ThinqStep[] | null {
   return steps;
 }
 
-/** 읽은 값을 트윈(안쪽 허브)에 비추는 명령·센서 값. 달라진 것만. climate 명령은 에어컨을 켜므로 전원은 맨 뒤에 맞춘다. */
-export function mirrorPlan(spec: Pick<DeviceSpec, "kind">, r: Reading, world: Pick<DeviceState, "twin" | "matter">): { commands: Command[]; sensors: [string, unknown][] } {
+type World = Pick<DeviceState, "twin" | "matter">;
+type Mirror = { commands: Command[]; sensors: [string, unknown][] };
+
+/** 에어컨이 읽은 값을 트윈에 비추는 명령. 달라진 것만. climate 명령은 에어컨을 켜므로 전원은 맨 뒤에 맞춘다. */
+function airConditionerMirror(r: Reading, world: World): Mirror {
   const commands: Command[] = [];
-  const sensors: [string, unknown][] = [];
-  if (spec.kind === "aircon") {
-    const m = world.matter;
-    const climate: Extract<Command, { type: "climate" }> = { type: "climate" };
-    if (r.mode !== undefined && r.mode !== m.systemMode) climate.mode = r.mode;
-    if (r.setpointC !== undefined && r.setpointC !== m.setpointC) climate.setpointC = r.setpointC;
-    if (r.fan !== undefined && r.fan !== m.fanMode) climate.fan = r.fan;
-    const changed = Object.keys(climate).length > 1;
-    if (changed) commands.push(climate);
-    const onNow = changed ? true : m.onOff === true;
-    const want = r.power === undefined ? m.onOff === true : r.power === "on";
-    if (want !== onNow) commands.push({ type: want ? "on" : "off" });
-  } else if (spec.kind === "fridge") {
-    if (r.door !== undefined && r.door !== world.twin.door) sensors.push(["door", r.door]);
-  }
-  return { commands, sensors };
+  const m = world.matter;
+  const climate: Extract<Command, { type: "climate" }> = { type: "climate" };
+  if (r.mode !== undefined && r.mode !== m.systemMode) climate.mode = r.mode;
+  if (r.setpointC !== undefined && r.setpointC !== m.setpointC) climate.setpointC = r.setpointC;
+  if (r.fan !== undefined && r.fan !== m.fanMode) climate.fan = r.fan;
+  const changed = Object.keys(climate).length > 1;
+  if (changed) commands.push(climate);
+  const onNow = changed ? true : m.onOff === true;
+  const want = r.power === undefined ? m.onOff === true : r.power === "on";
+  if (want !== onNow) commands.push({ type: want ? "on" : "off" });
+  return { commands, sensors: [] };
 }
+
+/** ThinQ 기기 종류마다 읽기·제어·트윈 반영. 이름은 가전 종류 이름과 다르게 짓는다(등록부 thinq.adapter가 고른다). */
+export type ThinqAdapter = "air_conditioner" | "refrigerator";
+export interface ThinqAdapterSpec {
+  read: (raw: Record<string, unknown>) => Reading;
+  /** 받는 명령 종류(정규화한 이름). 빈 목록이면 읽기만. */
+  commands: readonly CommandType[];
+  steps: (cmd: Command) => ThinqStep[] | null;
+  /** 읽은 값을 트윈(안쪽 허브)에 비추는 명령·센서 값. 달라진 것만. */
+  mirror: (r: Reading, world: World) => Mirror;
+}
+
+export const THINQ_ADAPTERS: Record<ThinqAdapter, ThinqAdapterSpec> = {
+  air_conditioner: {
+    read: (raw) => {
+      const op = obj(raw.operation)?.airConOperationMode;
+      const t = celsius(raw);
+      return clean({
+        power: op === "POWER_ON" ? "on" : op === "POWER_OFF" ? "off" : undefined,
+        mode: JOB_BACK[String(obj(raw.airConJobMode)?.currentJobMode)],
+        setpointC: num(t?.targetTemperature),
+        currentC: num(t?.currentTemperature),
+        fan: WIND_BACK[String(obj(raw.airFlow)?.windStrength)],
+      });
+    },
+    commands: ["on", "off", "climate"],
+    steps: airConditionerSteps,
+    mirror: airConditionerMirror,
+  },
+  refrigerator: {
+    read: (raw) => {
+      const d = mainDoor(raw)?.doorState;
+      return clean({ door: d === "OPEN" ? "open" : d === "CLOSE" ? "closed" : undefined });
+    },
+    commands: [],
+    steps: () => null,
+    mirror: (r, world) => ({ commands: [], sensors: r.door !== undefined && r.door !== world.twin.door ? [["door", r.door]] : [] }),
+  },
+};
+
+/** 그 가전 종류를 맡는 ThinQ 어댑터(등록부 thinq.adapter). 없으면 null. */
+export const thinqAdapterOf = (kind: string): ThinqAdapter | null => kindEntry(kind)?.thinq?.adapter ?? null;
+
+/** ThinQ에서 읽은 원본 값 → 트윈 말. */
+export const readAppliance = (adapter: ThinqAdapter, raw: Record<string, unknown>): Reading => THINQ_ADAPTERS[adapter].read(raw);
+/** 트윈 명령 → ThinQ 단계. ThinQ로 보낼 수 없으면 null. */
+export const thinqSteps = (adapter: ThinqAdapter, cmd: Command): ThinqStep[] | null => THINQ_ADAPTERS[adapter].steps(cmd);
+/** 읽은 값을 트윈(안쪽 허브)에 비추는 명령·센서 값. */
+export const mirrorPlan = (adapter: ThinqAdapter, r: Reading, world: World): Mirror => THINQ_ADAPTERS[adapter].mirror(r, world);

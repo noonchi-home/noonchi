@@ -4,6 +4,7 @@
 // 새 종류는 여기 한 줄 + 집 파일(twin/data/homes/<집>/added_devices.json) 한 줄(docs/reference.md 「새 종류 추가하는 법」). 등록부 밖 종류별 표는 tests/kinds-registry.test.ts가 막는다.
 // 런타임 import 없음(type import만). ui 타입 검사가 src/hub/types.ts를 거쳐 읽으므로 Dockerfile ui 단계가 이 파일과 src/world/vocab.ts를 COPY한다.
 import type { Capability, ClimateMode, CommandType, FanSpeed } from "../hub/types.js";
+import type { ThinqAdapter } from "../thinq/appliance.js";
 import type { DeviceLongKey, DeviceStateKey, FixtureClass, SightRule } from "../world/vocab.js";
 
 /** Matter 쪽 모델: 켜짐·동작·열림·잠김을 어떤 요약 키로 나타내는가(src/model/mapping.ts가 해석한다). */
@@ -54,18 +55,20 @@ export interface KindEntry {
   synonyms: readonly string[];
   profile: KindProfile;
   twinTypes: readonly TwinTypeRule[];
-  /** 늘 승인을 묻는 명령(정규화한 명령 기준, 전자레인지 on → start)과 까닭 글. order: 승인 규칙 목록 순서(Task 11r-2에서 지움). */
-  confirm?: { command: CommandType; reason: (label: string) => string; order: number };
-  /** 위험 가전: 부르는 이름(별명·흔한 오타·영어 포함, 이름 기본 거부)과 켜기 전 안전 문구. */
+  /** 그 명령 하나를 늘 승인(잠금 해제처럼 정규화해도 이름이 하나뿐인 명령)과 까닭 글. 위험 켜기 종류(riskyOn)에는 쓰지 않는다(src/model/kinds-check.ts). */
+  confirm?: { command: CommandType; reason: (label: string) => string };
+  /** 위험 가전: 부르는 이름(별명·흔한 오타·영어 포함, 이름 기본 거부)과 켜기 전 안전 문구. 끄기 말고 상태를 바꾸는 명령은 모두 승인을 묻는다(src/agent/policy.ts needsConfirm). */
   riskyOn?: { names: readonly string[]; caution: string };
+  /** 위험 켜기 종류(riskyOn)의 승인 까닭 글. */
+  riskyReason?: (label: string) => string;
   /** 사람이 손으로 하는 동작. */
   hand?: readonly HandAct[];
   /** 다 되면 스스로 멈춤(Task 12가 더한다). */
   selfStop?: true;
   /** 카메라 설비 종류와 맞추는 규칙(같은 방의 이 종류 가전에 넘긴다). */
   camera?: { fixture: FixtureClass; sight: readonly SightRule[] };
-  /** ThinQ 짝짓기: ThinQ deviceType. */
-  thinq?: { type: RegExp };
+  /** ThinQ 짝짓기: ThinQ deviceType과 읽기·제어·반영을 맡는 어댑터(src/thinq/appliance.ts THINQ_ADAPTERS). */
+  thinq?: { type: RegExp; adapter: ThinqAdapter };
   /** 오래 이어지면 나는 사건(src/world/vocab.ts DEVICE_LONG). */
   longEvents?: readonly DeviceLongKey[];
   /** 이 종류에서 바꿔 쓰는 상태 글·사건 글. */
@@ -108,7 +111,7 @@ const ENTRIES = {
       defaults: { systemMode: "cool", setpointC: 24, fanMode: "auto" }, setpoint: { min: 18, max: 30 }, modes: ["cool", "heat", "auto", "dry", "fan"],
     },
     twinTypes: [{ types: ["stand_ac", "wall_ac"] }],
-    thinq: { type: /AIR_CONDITIONER/i },
+    thinq: { type: /AIR_CONDITIONER/i, adapter: "air_conditioner" },
   },
   purifier: {
     label: "공기청정기", synonyms: ["공기청정기", "청정기"],
@@ -129,20 +132,20 @@ const ENTRIES = {
     label: "인덕션", synonyms: ["인덕션", "쿡탑", "가스레인지", "화구"],
     profile: { model: "onoff", matterDeviceType: "CooktopDevice", capabilities: ["onoff"], control: POWER, sensors: [] },
     twinTypes: [{ types: ["induction_counter"] }],
-    confirm: { command: "on", reason: (l) => `${l} 켜기는 화재 위험이 있어 사용자 승인이 필요합니다.`, order: 1 },
     riskyOn: {
       // 세 글자 이상인 이름은 띄어 써도 찾는다. 「레인지」만 쓰면 전자레인지로 본다(가스레인지·전기레인지는 긴 이름이 먼저 맞는다)
       names: ["인덕션", "인덕선", "인덕숀", "전기레인지", "전기렌지", "가스레인지", "가스렌지", "하이라이트", "가스불", "화구", "버너", "쿡탑", "쿡톱", "induction", "cooktop"],
       caution: "냄비와 상판이 뜨거워져요.",
     },
+    riskyReason: (l) => `${l} 켜기는 화재 위험이 있어 사용자 승인이 필요합니다.`,
     hand: ["켜기", "끄기"],
   },
   microwave: {
     label: "전자레인지", synonyms: ["전자레인지", "전자렌지"],
     profile: { model: "operation", matterDeviceType: "MicrowaveOvenDevice", capabilities: ["operation"], control: POWER, sensors: [] },
     twinTypes: [{ types: ["microwave"] }],
-    confirm: { command: "start", reason: (l) => `${l} 시작은 사용자 승인이 필요합니다.`, order: 2 },
     riskyOn: { names: ["전자레인지", "전자렌지", "레인지", "microwave"], caution: "그릇이 뜨거워져요." },
+    riskyReason: (l) => `${l} 시작은 사용자 승인이 필요합니다.`,
     hand: ["열기", "닫기", "켜기", "끄기"],
     camera: {
       fixture: "microwave",
@@ -177,7 +180,7 @@ const ENTRIES = {
     twinTypes: [{ types: ["fridge", "kimchi_fridge", "freezer"] }],
     hand: ["열기", "닫기"],
     camera: { fixture: "refrigerator", sight: [{ facet: "open", attr: "door", values: { open: "open", closed: "closed" } }] },
-    thinq: { type: /REFRIGERATOR/i },
+    thinq: { type: /REFRIGERATOR/i, adapter: "refrigerator" },
     longEvents: ["door_open_long"],
   },
   vacuum: {
@@ -195,7 +198,7 @@ const ENTRIES = {
     label: "도어록", synonyms: ["현관문", "도어락", "도어록", "문", "현관"],
     profile: { model: "lock", matterDeviceType: "DoorLockDevice", capabilities: ["lock"], control: { attrs: ["lock"], active: "locked", inactive: "unlocked" }, sensors: ["door"] },
     twinTypes: [{ types: ["door_main"] }],
-    confirm: { command: "unlock", reason: (l) => `${l} 잠금 해제는 사용자 승인이 필요합니다.`, order: 0 },
+    confirm: { command: "unlock", reason: (l) => `${l} 잠금 해제는 사용자 승인이 필요합니다.` },
     longEvents: ["door_open_long"],
   },
   contact: {

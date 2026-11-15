@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { CONFIRM_RULES, Policy, RISKY_ON_NAMES, isRiskyKind, riskyNames } from "../src/agent/policy.js";
+import { CONFIRM_RULES, Policy, RISKY_ON_NAMES, isRiskyKind, needsConfirm, riskyNames } from "../src/agent/policy.js";
+import { KIND_ORDER } from "../src/model/kinds.js";
 import { MemoryHub } from "../src/hub/memory.js";
 import type { DeviceSpec } from "../src/hub/types.js";
 import { describeDevice } from "../src/model/mapping.js";
@@ -43,8 +44,10 @@ describe("requiresConfirmation", () => {
 });
 
 describe("위험 가전 이름 표", () => {
-  it("이름 표의 가전 종류는 CONFIRM_RULES의 켜기·시작 대상과 같다", () => {
-    expect(Object.keys(RISKY_ON_NAMES).sort()).toEqual(CONFIRM_RULES.filter((r) => r.command === "on" || r.command === "start").map((r) => r.kind).sort());
+  it("이름 표의 가전 종류는 위험 켜기 종류(등록부 riskyOn)와 같고, 그 종류의 켜기는 늘 승인 대상이다. CONFIRM_RULES에는 위험 켜기 종류가 없다", () => {
+    expect(Object.keys(RISKY_ON_NAMES).sort()).toEqual(KIND_ORDER.filter((k) => isRiskyKind(k)).sort());
+    expect(Object.keys(RISKY_ON_NAMES).every((k) => needsConfirm({ kind: k }, { type: "on" }))).toBe(true);
+    expect(CONFIRM_RULES.filter((r) => isRiskyKind(r.kind))).toEqual([]);
     expect(["cooktop", "microwave"].every(isRiskyKind)).toBe(true);
     expect(isRiskyKind("aircon")).toBe(false);
   });

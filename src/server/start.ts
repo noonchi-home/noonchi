@@ -25,6 +25,8 @@ import type { PipelineInject } from "../observe/pipeline.js";
 import { resolveTwinStudioDir, type TwinData } from "../model/devices.js";
 import { listHomes } from "../model/homes.js";
 import { acquireServerLock } from "./lock.js";
+import { KINDS } from "../model/kinds.js";
+import { checkKinds } from "../model/kinds-check.js";
 import { SetupError, SetupStore, effectiveSources, parsePairs, parseSources } from "../setup/store.js";
 import { PAIRABLE_KINDS, fitsKind } from "../thinq/appliance.js";
 import { ThinqClient, ThinqError, thinqConfig } from "../thinq/client.js";
@@ -115,6 +117,9 @@ export interface RunningServer {
 export async function startServer(opts: StartServerOptions = {}): Promise<RunningServer> {
   const env = opts.env ?? process.env;
   const log = opts.log ?? ((line: string) => console.log(line));
+  // 가전 종류 등록부가 틀린 조합이면(승인·ThinQ 어댑터·손 조작) 까닭과 함께 시작을 막는다
+  const kindProblems = checkKinds(KINDS);
+  if (kindProblems.length) throw new Error(`가전 종류 등록부가 틀렸어요(src/model/kinds.ts): ${kindProblems.join(" / ")}`);
   const runtimeDir = env.RUNTIME_DIR?.trim() || DEFAULT_RUNTIME_DIR;
   const store = new SetupStore({ runtimeDir, persist: opts.persistSetup ?? false, log });
   let mode: ControlMode = store.mode();

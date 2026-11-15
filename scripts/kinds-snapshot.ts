@@ -9,7 +9,7 @@ import { KIND_SYNONYMS } from "../src/agent/search.js";
 import { CONFIRM_RULES, Policy, RISKY_ON_NAMES, isRiskyKind, riskyNames } from "../src/agent/policy.js";
 import { CAUTION_LINE } from "../src/plan/labels.js";
 import { DEVICE_ACTS } from "../src/agent/planTools.js";
-import { PAIRABLE_KINDS, fitsKind, mirrorPlan, readAppliance, thinqSteps, type Reading } from "../src/thinq/appliance.js";
+import { PAIRABLE_KINDS, fitsKind, mirrorPlan, readAppliance, thinqAdapterOf, thinqSteps, type Reading } from "../src/thinq/appliance.js";
 import { KINDS, KIND_ORDER, cameraKindOf } from "../src/model/kinds.js";
 import { rulesOf } from "../src/world/sight.js";
 import { CLASSES, DEVICE_LONG, type ClassKey, type DeviceLongKey, type FixtureClass } from "../src/world/vocab.js";
@@ -77,9 +77,10 @@ export function kindsSnapshot() {
   const thinq = {
     pairable: PAIRABLE_KINDS,
     fits: Object.fromEntries(KIND_ORDER.map((k) => [k, THINQ_TYPES.filter((t) => fitsKind(k, t))])),
-    read: Object.fromEntries(KIND_ORDER.map((k) => [k, RAWS.map((raw) => readAppliance(k, raw))])),
-    steps: Object.fromEntries(KIND_ORDER.map((k) => [k, COMMANDS.map((c) => thinqSteps(k, c)?.map((s) => ({ name: s.name, body: s.body, done: READINGS.map((r) => s.done(r)) })) ?? null)])),
-    mirror: Object.fromEntries(KIND_ORDER.map((k) => [k, READINGS.flatMap((r) => WORLDS.map((w) => mirrorPlan({ kind: k }, r, w)))])),
+    // 종류마다 그 종류의 ThinQ 어댑터(등록부 thinq.adapter)로 읽기·제어·반영. 어댑터가 없는 종류는 빈 값(바꾸기 전과 같은 모양)
+    read: Object.fromEntries(KIND_ORDER.map((k) => { const a = thinqAdapterOf(k); return [k, RAWS.map((raw) => (a ? readAppliance(a, raw) : {}))]; })),
+    steps: Object.fromEntries(KIND_ORDER.map((k) => { const a = thinqAdapterOf(k); return [k, COMMANDS.map((c) => (a ? thinqSteps(a, c) : null)?.map((s) => ({ name: s.name, body: s.body, done: READINGS.map((r) => s.done(r)) })) ?? null)]; })),
+    mirror: Object.fromEntries(KIND_ORDER.map((k) => { const a = thinqAdapterOf(k); return [k, READINGS.flatMap((r) => WORLDS.map((w) => (a ? mirrorPlan(a, r, w) : { commands: [], sensors: [] })))]; })),
   };
   const twin = Object.fromEntries(KIND_ORDER.map((kind) => {
     const p = KIND_PROFILES[kind];

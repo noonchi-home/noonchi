@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { kindsSnapshot } from "../scripts/kinds-snapshot.js";
-import { KIND_TABLE_WHY, findAllKindTables, findKindTables, openKindProject, type KindProject } from "./helpers/kind-tables.js";
+import { KIND_TABLE_WHY, TEMP_ALLOW, findAllKindTables, findKindTables, openKindProject, type KindProject } from "./helpers/kind-tables.js";
 
 const ROOT = join(import.meta.dirname, "..");
 const before = JSON.parse(readFileSync(join(ROOT, "tests", "fixtures", "kinds-before.json"), "utf8")) as ReturnType<typeof kindsSnapshot>;
@@ -23,9 +23,11 @@ describe("kinds same: non-approval", () => {
   });
 });
 
-describe("kinds same: approval", () => {
-  it("승인 규칙(CONFIRM_RULES, 순서 포함)과 승인 표(종류·사양·표본 명령마다 requiresConfirmation)가 바꾸기 전과 같다", () => {
-    expect(now().approval).toEqual(before.approval);
+// 승인 규칙·승인 표는 Task 11r-2에서 넓어졌다(위험 켜기 종류는 끄기 말고 전부): 좁아지지 않았는지는 tests/kinds-behavior.test.ts 「approval diff」가 본다
+
+describe("kinds registry: TEMP_ALLOW is empty", () => {
+  it("잠시 허용 목록이 비어 있다", () => {
+    expect(TEMP_ALLOW, "ThinQ 갈래를 어댑터로 옮기고 TEMP_ALLOW를 비운다").toEqual([]);
   });
 });
 

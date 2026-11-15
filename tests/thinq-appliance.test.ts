@@ -1,55 +1,55 @@
-// ThinQ 상태 ↔ 트윈(src/thinq/appliance.ts): 에어컨·냉장고 읽기, 트윈 명령 → ThinQ 단계, 읽은 값을 트윈에 비추기.
+// ThinQ 상태 ↔ 트윈(src/thinq/appliance.ts): 어댑터(air_conditioner·refrigerator)로 읽기, 트윈 명령 → ThinQ 단계, 읽은 값을 트윈에 비추기.
 import { describe, expect, it } from "vitest";
 import { MemoryHub } from "../src/hub/memory.js";
 import type { Command } from "../src/hub/types.js";
-import { PAIRABLE_KINDS, fitsKind, mirrorPlan, readAppliance, thinqSteps } from "../src/thinq/appliance.js";
+import { PAIRABLE_KINDS, fitsKind, mirrorPlan, readAppliance, thinqAdapterOf, thinqSteps } from "../src/thinq/appliance.js";
 import { homeDevices } from "./helpers/home.js";
 import { fakeAirconState } from "./helpers/thinq.js";
 
 describe("readAppliance", () => {
   it("에어컨: 전원·모드·설정 온도(°C)·지금 온도·바람", () => {
-    expect(readAppliance("aircon", fakeAirconState())).toEqual({ power: "on", mode: "cool", setpointC: 24, currentC: 27, fan: "auto" });
-    expect(readAppliance("aircon", {
+    expect(readAppliance("air_conditioner", fakeAirconState())).toEqual({ power: "on", mode: "cool", setpointC: 24, currentC: 27, fan: "auto" });
+    expect(readAppliance("air_conditioner", {
       operation: { airConOperationMode: "POWER_OFF" }, airConJobMode: { currentJobMode: "AIR_DRY" }, airFlow: { windStrength: "MID" },
     })).toEqual({ power: "off", mode: "dry", fan: "medium" });
   });
 
   it("에어컨 온도: temperatureInUnits 객체, temperature 대체, 화씨만 있으면 모름", () => {
-    expect(readAppliance("aircon", { temperatureInUnits: { targetTemperature: 22, unit: "C" } }).setpointC).toBe(22);
-    expect(readAppliance("aircon", { temperature: { targetTemperature: 23, currentTemperature: 26, unit: "C" } })).toEqual({ setpointC: 23, currentC: 26 });
-    expect(readAppliance("aircon", { temperatureInUnits: [{ unit: "F", targetTemperature: 75 }] }).setpointC).toBeUndefined();
+    expect(readAppliance("air_conditioner", { temperatureInUnits: { targetTemperature: 22, unit: "C" } }).setpointC).toBe(22);
+    expect(readAppliance("air_conditioner", { temperature: { targetTemperature: 23, currentTemperature: 26, unit: "C" } })).toEqual({ setpointC: 23, currentC: 26 });
+    expect(readAppliance("air_conditioner", { temperatureInUnits: [{ unit: "F", targetTemperature: 75 }] }).setpointC).toBeUndefined();
   });
 
   it("모르는 값은 비워 둔다", () => {
-    expect(readAppliance("aircon", { operation: { airConOperationMode: "STANDBY" }, airConJobMode: { currentJobMode: "X" } })).toEqual({});
-    expect(readAppliance("aircon", {})).toEqual({});
+    expect(readAppliance("air_conditioner", { operation: { airConOperationMode: "STANDBY" }, airConJobMode: { currentJobMode: "X" } })).toEqual({});
+    expect(readAppliance("air_conditioner", {})).toEqual({});
   });
 
   it("냉장고: 문(MAIN) OPEN·CLOSE", () => {
-    expect(readAppliance("fridge", { doorStatus: [{ locationName: "MAIN", doorState: "OPEN" }] })).toEqual({ door: "open" });
-    expect(readAppliance("fridge", { doorStatus: [{ locationName: "MAIN", doorState: "CLOSE" }] })).toEqual({ door: "closed" });
-    expect(readAppliance("fridge", { doorStatus: { doorState: "OPEN" } })).toEqual({ door: "open" });
-    expect(readAppliance("fridge", {})).toEqual({});
+    expect(readAppliance("refrigerator", { doorStatus: [{ locationName: "MAIN", doorState: "OPEN" }] })).toEqual({ door: "open" });
+    expect(readAppliance("refrigerator", { doorStatus: [{ locationName: "MAIN", doorState: "CLOSE" }] })).toEqual({ door: "closed" });
+    expect(readAppliance("refrigerator", { doorStatus: { doorState: "OPEN" } })).toEqual({ door: "open" });
+    expect(readAppliance("refrigerator", {})).toEqual({});
   });
 
-  it("짝지을 수 없는 종류는 읽지 않는다", () => {
-    expect(readAppliance("light", fakeAirconState())).toEqual({});
+  it("짝지을 수 없는 종류는 어댑터가 없다(등록부 thinq.adapter): 에어컨·냉장고만", () => {
+    expect(["aircon", "fridge", "light", "microwave"].map(thinqAdapterOf)).toEqual(["air_conditioner", "refrigerator", null, null]);
   });
 });
 
 describe("thinqSteps", () => {
-  const names = (cmd: Command) => thinqSteps("aircon", cmd)?.map((s) => s.name);
+  const names = (cmd: Command) => thinqSteps("air_conditioner", cmd)?.map((s) => s.name);
 
   it("켜기·끄기", () => {
-    const [on] = thinqSteps("aircon", { type: "on" })!;
+    const [on] = thinqSteps("air_conditioner", { type: "on" })!;
     expect(on!.body).toEqual({ operation: { airConOperationMode: "POWER_ON" } });
     expect(on!.done({ power: "on" })).toBe(true);
     expect(on!.done({ power: "off" })).toBe(false);
-    expect(thinqSteps("aircon", { type: "off" })![0]!.body).toEqual({ operation: { airConOperationMode: "POWER_OFF" } });
+    expect(thinqSteps("air_conditioner", { type: "off" })![0]!.body).toEqual({ operation: { airConOperationMode: "POWER_OFF" } });
   });
 
   it("냉난방 설정은 켜기를 먼저, 그다음 모드 · 온도 · 바람을 한 단계씩", () => {
-    const steps = thinqSteps("aircon", { type: "climate", mode: "cool", setpointC: 26, fan: "high" })!;
+    const steps = thinqSteps("air_conditioner", { type: "climate", mode: "cool", setpointC: 26, fan: "high" })!;
     expect(steps.map((s) => s.name)).toEqual(["전원 켜기", "모드 냉방", "설정 온도 26도", "바람 세게"]);
     expect(steps.map((s) => s.body)).toEqual([
       { operation: { airConOperationMode: "POWER_ON" } },
@@ -64,9 +64,8 @@ describe("thinqSteps", () => {
   });
 
   it("ThinQ로 보낼 수 없는 명령은 null", () => {
-    expect(thinqSteps("aircon", { type: "lock" })).toBeNull();
-    expect(thinqSteps("fridge", { type: "on" })).toBeNull();
-    expect(thinqSteps("light", { type: "on" })).toBeNull();
+    expect(thinqSteps("air_conditioner", { type: "lock" })).toBeNull();
+    expect(thinqSteps("refrigerator", { type: "on" })).toBeNull();
   });
 });
 
@@ -76,7 +75,7 @@ describe("mirrorPlan", () => {
 
   it("에어컨: 달라진 값만 명령으로, 꺼진 채 읽혔으면 climate 뒤에 끈다", async () => {
     const h = hub();
-    const ac = spec(h, "ac_living");
+    const ac = thinqAdapterOf(spec(h, "ac_living").kind)!;
     expect(h.get("ac_living")!.matter).toMatchObject({ onOff: false, setpointC: 24, systemMode: "cool", fanMode: "auto" });
     expect(mirrorPlan(ac, { power: "off", setpointC: 24, mode: "cool", fan: "auto" }, h.get("ac_living")!)).toEqual({ commands: [], sensors: [] });
     const plan = mirrorPlan(ac, { power: "off", setpointC: 26, fan: "high" }, h.get("ac_living")!);
@@ -88,7 +87,7 @@ describe("mirrorPlan", () => {
 
   it("냉장고: 문은 센서 값으로", () => {
     const h = hub();
-    const fridge = spec(h, "fridge_1");
+    const fridge = thinqAdapterOf(spec(h, "fridge_1").kind)!;
     expect(mirrorPlan(fridge, { door: "open" }, h.get("fridge_1")!)).toEqual({ commands: [], sensors: [["door", "open"]] });
     expect(mirrorPlan(fridge, { door: "closed" }, h.get("fridge_1")!)).toEqual({ commands: [], sensors: [] });
   });

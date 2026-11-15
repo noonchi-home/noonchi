@@ -574,7 +574,7 @@ Claude Desktop(`claude_desktop_config.json`)은 같은 명령을 이렇게 적�
 ```
 
 - 사용 예: Claude Code에서 "거실 불 켜고 TV 꺼줘" → `find_devices` → `turn_on`/`turn_off`.
-- 승인이 필요한 명령(현관문 잠금 해제, 인덕션 켜기, 전자레인지 시작)은 `needsConfirmation.token`을 돌려준다. 사용자가 승인하면 `confirm_action{token}`으로 실행한다. 웹 화면의 승인 버튼으로 확정해도 된다.
+- 승인이 필요한 명령(현관문 잠금 해제, 인덕션·전자레인지는 끄기 말고 상태를 바꾸는 명령 전부)은 `needsConfirmation.token`을 돌려준다. 사용자가 승인하면 `confirm_action{token}`으로 실행한다. 웹 화면의 승인 버튼으로 확정해도 된다.
 - 실패는 `isError: true`와 한국어 `error`로 돌려준다. 서버가 꺼져 있으면 "twin-home 서버에 연결하지 못했습니다…"라고 알린다.
 - stdout은 MCP 전용이고 로그는 stderr로 쓴다.
 - 테스트(`tests/mcp.test.ts`, `tests/e2e.test.ts`)는 `node --import tsx src/mcp/server.ts`를 레포 폴더에서 실제로 띄워 SDK 클라이언트로 부른다.
@@ -698,11 +698,13 @@ matter.js 0.17.9에 매핑 표의 기기 종류 21개가 모두 있어 **대체�
 2. 집 파일 `twin/data/homes/<집>/added_devices.json`에 한 줄을 더한다: `id`·`type`(1번 `twinTypes`의 이름)·`label`·`room`·`position`·`facing_deg`·`elevation`.
 3. 카메라로 볼 수 있으면: YOLO(COCO)에 그 종류가 있으면 `src/world/vocab.ts` `CLASSES`에 설비 종류(role fixture)를 두고, 등록부 항목에 `camera: { fixture, sight }`를 적는다.
 4. 3D 모델이 없으면: 카탈로그(`twin/data/catalog/<type>.json`)나 모델 파일이 없어도 기기는 생기고, 대시보드 트윈에는 그 자리의 회색 상자로 보인다. 모양을 넣으려면 카탈로그와 `twin/library/assets/`의 모델을 더한다.
-5. `npm run heavy -- npx vitest run tests/kinds-registry.test.ts`로 확인한다.
+5. 불·열이 나는 가전은 `riskyOn`과 `riskyReason`을 둔다(끄기 말고 상태를 바꾸는 명령은 전부 승인 질문). 잠금 해제처럼 명령 하나만 승인하려면 `confirm`에 그 명령 이름을 적는다(정규화로 이름이 바뀌는 on·off는 쓰지 않는다). ThinQ로 짝지으려면 이미 있는 어댑터(`air_conditioner`·`refrigerator`) 가운데 받는 명령이 맞는 것을 `thinq.adapter`로 고르고, 맞는 어댑터가 없으면 `src/thinq/appliance.ts`에 어댑터를 먼저 더한다. 틀린 조합은 서버 시작 때 `checkKinds`가 까닭과 함께 막는다.
+6. `npm run heavy -- npx vitest run tests/kinds-registry.test.ts tests/kinds-behavior.test.ts`로 확인한다.
 
 ## 승인 정책 (src/agent/policy.ts)
 
-- 현관문 잠금 해제, 인덕션 켜기, 전자레인지 시작(`on` 포함)은 승인 토큰이 있어야 실행한다(`CONFIRM_RULES`).
+- 승인 대상 판정은 `needsConfirm` 하나다: 위험 켜기 종류(등록부 `riskyOn`: 인덕션·전자레인지)는 그 기기 사양으로 정규화한 명령이 끄기(`off`·`stop`)가 아니면 모두(켜기·시작·세기 등, 덮어쓴 capabilities여도), 그 밖에는 등록부 `confirm` 명령(현관문 잠금 해제). 승인 토큰이 있어야 실행한다. 정책·손 조작 켜기 질문(`riskyHand`)·계획 입력과 에이전트 지시문의 위험 목록 글이 모두 이 판정과 등록부에서 나온다.
+- 서버는 시작 때 등록부를 검증한다(`src/model/kinds-check.ts` `checkKinds`): confirm 명령이 모든 사양에서 정규화해도 같은 이름인지, 위험 켜기 종류에 confirm 대신 riskyReason이 있는지, ThinQ 어댑터가 그 종류의 모든 사양 명령을 받는지(읽기만 하는 어댑터에는 제어 없는 프로필만), 손 조작이 제어·문 센서·카메라 열림 면과 맞는지. 틀리면 까닭과 함께 시작을 멈춘다.
 - `policy.guard(hub, id, cmd, confirmToken?)`: 실행할 수 없는 명령은 바로 오류. 승인이 필요하면 `{ ok: false, needsConfirmation: { token, reason } }`(서버는 409). 토큰은 한 번만 쓰고 5분 뒤 만료된다.
 - `policy.confirm(hub, token)`: 토큰만으로 대기 중인 명령을 실행한다(화면 승인 버튼).
 

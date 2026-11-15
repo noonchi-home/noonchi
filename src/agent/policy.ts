@@ -1,10 +1,11 @@
-// 승인 정책(src/agent/approval.ts 규칙): 가전 명령은 말로 시킨 것이라 그 말이 승인이다. 위험 목록(현관 잠금 해제, 인덕션 켜기, 전자레인지 시작)만
-// 승인 토큰이 있어야 실행하고 늘 묻는다. 위험 목록의 답(승인·거절)은 둘 다 이번만이라 승인 기억에 남기지 않는다.
+// 승인 정책(src/agent/approval.ts 규칙): 가전 명령은 말로 시킨 것이라 그 말이 승인이다. 위험 목록만 승인 토큰이 있어야 실행하고 늘 묻는다:
+// 위험 켜기 종류(등록부 riskyOn: 인덕션·전자레인지)는 끄기 말고 상태를 바꾸는 명령 전부, 그 밖에는 등록부 confirm 명령(현관 잠금 해제).
+// 판정은 needsConfirm 하나다. 위험 목록의 답(승인·거절)은 둘 다 이번만이라 승인 기억에 남기지 않는다.
 
 import { randomUUID } from "node:crypto";
 import { isUnknown } from "../hub/signals.js";
-import type { Command, CommandResult, CommandType, DeviceHub, DeviceKind, DeviceSpec } from "../hub/types.js";
-import { KINDS, KIND_ORDER, isRiskyKind } from "../model/kinds.js";
+import type { Capability, Command, CommandResult, CommandType, DeviceHub, DeviceKind, DeviceSpec } from "../hub/types.js";
+import { KINDS, KIND_ORDER, isRiskyKind, kindEntry } from "../model/kinds.js";
 import { checkCommand, normalizeCommand } from "../model/mapping.js";
 import { DEVICE_VERB, STEP_LABEL } from "../plan/labels.js";
 import { approvalNeed, deviceKey, memoryApprovals, type ApprovalBook } from "./approval.js";
@@ -16,11 +17,36 @@ export interface ConfirmRule {
   reason: (label: string) => string;
 }
 
-/** 늘 승인을 묻는 명령(등록부 confirm, 등록부의 목록 순서). */
-export const CONFIRM_RULES: ConfirmRule[] = KIND_ORDER
-  .flatMap((k) => { const c = KINDS[k].confirm; return c ? [{ kind: k, command: c.command, reason: c.reason, order: c.order }] : []; })
-  .sort((a, b) => a.order - b.order)
-  .map(({ kind, command, reason }) => ({ kind, command, reason }));
+/** 그 명령 하나를 늘 승인(등록부 confirm, 등록부 순서). 위험 켜기 종류는 여기 없고 needsConfirm이 끄기 말고 전부를 묻는다. */
+export const CONFIRM_RULES: ConfirmRule[] = KIND_ORDER.flatMap((k) => { const c = KINDS[k].confirm; return c ? [{ kind: k, command: c.command, reason: c.reason }] : []; });
+
+/** 끄기 명령(정규화한 이름). 위험 켜기 종류도 끄기는 묻지 않는다. */
+const OFF_COMMANDS: readonly CommandType[] = ["off", "stop"];
+
+/** 승인 대상인가(하나뿐인 판정). 명령은 그 기기 사양으로 정규화해서 본다. capabilities가 없으면 등록부 프로필.
+ *  위험 켜기 종류(riskyOn): 끄기(off·stop)가 아니면 모두. confirm이 있는 종류: 정규화한 이름이 confirm.command일 때. 그 밖: 없음. */
+export function needsConfirm(device: { kind: string; capabilities?: readonly Capability[] }, cmd: Command): boolean {
+  const e = kindEntry(device.kind);
+  if (!e) return false;
+  const c = normalizeCommand({ capabilities: [...(device.capabilities ?? e.profile.capabilities)] }, cmd);
+  if (e.riskyOn) return !OFF_COMMANDS.includes(c.type);
+  return e.confirm?.command === c.type;
+}
+
+/** 위험 목록 글(계획 입력·에이전트 지시문): 위험 켜기 종류는 「끄기 말고 전부」, confirm 종류는 그 명령. */
+export const RISKY_LIST = {
+  /** 「cooktop 켜기·시작 등, microwave 켜기·시작 등, lock unlock」(계획 입력, 종류 키). */
+  keys: (): string => KIND_ORDER.flatMap((k) => {
+    const e = KINDS[k];
+    return e.riskyOn ? [`${k} 켜기·시작 등(끄기 말고 전부)`] : e.confirm ? [`${k} ${e.confirm.command}`] : [];
+  }).join(", "),
+  /** 「인덕션·전자레인지의 끄기가 아닌 명령, 도어록 잠금 풀기」(에이전트 지시문, 종류 이름). */
+  labels: (): string => {
+    const risky = KIND_ORDER.filter((k) => KINDS[k].riskyOn).map((k) => KINDS[k].label);
+    const one = KIND_ORDER.flatMap((k) => { const c = KINDS[k].confirm; return c ? [`${KINDS[k].label} ${DEVICE_VERB[toolForCommand({ type: c.command } as Command)] ?? c.command}`] : []; });
+    return [...(risky.length ? [`${risky.join("·")}의 끄기가 아닌 명령(켜기·시작 등)`] : []), ...one].join(", ");
+  },
+};
 
 // ── 폰으로 나가는 사람용 글: 위험 가전은 기본 거부 ─────────────────────
 // 사람 단계(go·pick·place·do)의 이름·명령·안전 문구는 모델이 고른 동작·대상·물건으로 서버가 만든다(src/plan/labels.ts STEP_TEXT). 모델 문장은 받지 않는다.
@@ -123,11 +149,12 @@ export class Policy {
     this.approvals = opts.approvals ?? memoryApprovals();
   }
 
-  /** 위험 목록 명령이면 한국어 이유, 아니면 null. */
+  /** 위험 목록 명령(needsConfirm)이면 한국어 이유, 아니면 null. */
   requiresConfirmation(device: Pick<DeviceSpec, "kind" | "label" | "capabilities">, cmd: Command): string | null {
-    const c = normalizeCommand(device, cmd);
-    const rule = CONFIRM_RULES.find((r) => r.kind === device.kind && r.command === c.type);
-    return rule ? rule.reason(device.label) : null;
+    if (!needsConfirm(device, cmd)) return null;
+    const e = kindEntry(device.kind)!;
+    const reason = e.riskyOn ? e.riskyReason : e.confirm?.reason;
+    return reason ? reason(device.label) : `${device.label}: 사용자 승인이 필요합니다.`;
   }
 
   issue(deviceId: string, cmd: Command, reason: string): PendingConfirmation {

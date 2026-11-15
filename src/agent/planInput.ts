@@ -5,7 +5,7 @@ import type { WorldView } from "../contract/world.js";
 import { CONDITION_KINDS } from "../world/conditions.js";
 import { CLASSES, DEVICE_STATES, STATES, type ClassKey, type Facet, type Target } from "../world/vocab.js";
 import { PLAN_LIMITS, type PlanContext } from "./planTools.js";
-import { CONFIRM_RULES } from "./policy.js";
+import { RISKY_LIST } from "./policy.js";
 import { KIND_LABELS } from "../model/mapping.js";
 
 export const PLANNER_PROMPT = `너는 이 집 스마트홈 에이전트의 계획 모드다. PAM이 고른 할 일 하나를 지금 집 상태에서 실제로 할 수 있는 단계 계획으로 바꾼다.
@@ -111,7 +111,7 @@ export function planInput(ctx: PlanContext): string {
     ...devices.map((x) => `- ${x.id} ${x.label} [${x.kind} ${KIND_LABELS[x.kind]}] · 방 ${x.room} · 지금 ${state.get(x.id) ?? "모름"}`),
     ...(ctx.lesson ? [`[지난 수업] ${ctx.lesson.runs}번 함`, ...ctx.lesson.steps.map((s) => `- ${s.label} · 혼자 ${s.alone}번`)] : []),
     `[손] 폰 자리 ${xz(floor.robot.position)} · 방 ${roomName(floor.robot.room)}`,
-    `[승인] 처음 하는 할 일은 첫 단계 전에 폰으로 묻는다. 위험 목록(${CONFIRM_RULES.map((r) => `${r.kind} ${r.command}`).join(", ")})은 그 단계에서 늘 묻는다. 너는 승인하지 못한다.`,
+    `[승인] 처음 하는 할 일은 첫 단계 전에 폰으로 묻는다. 위험 목록(${RISKY_LIST.keys()})은 그 단계에서 늘 묻는다. 너는 승인하지 못한다.`,
     "[조건 낱말]",
     `- 조건 종류: ${CONDITION_KINDS.join(", ")}`,
     `- 물건 종류: ${objectClasses.join(" ")}`,
