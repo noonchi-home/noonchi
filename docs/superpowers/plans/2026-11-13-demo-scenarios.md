@@ -711,7 +711,8 @@ private askToShow(deviceId: string): void;
 **Files:**
 - Create: `src/contract/phone-version.ts`(`PHONE_PROTOCOL`)
 - Modify: `src/contract/phone.ts`(`PhoneSafety`, `PhoneSafetyAnswer`, `PhoneTalk` say의 `at`, `PhoneStatus.protocol`), `src/phone/server.ts`(안전 안내 보내기·받기, say `at` 넘기기, 상태에 판본), `src/server/home.ts`(`onAnswer`·`onSay` 연결: 버린 답은 에이전트로 보내지 않음, 판본이 맞는 폰이 없으면 새 계획을 미룸), `src/act/track.ts`(`onHeard(text, at)` → `HeardResult`), `src/agent/agent.ts`(들은 말의 승인은 `answerToken` 하나만, 들은 말로 `answerAll` 하지 않음), `ui/src/phone/core/link.js`(연결 때 판본 알리기, 다시 붙을 때 판본 확인), `ui/src/phone/core/talk.js`·`talk.d.ts`(말 시작 알림), `ui/src/phone/controller.ts`(`say`, `safetyAnswer`), `ui/src/phone/state.ts`, `ui/src/phone/PhoneScreen.tsx`(안전 안내 자리, 명령 단추 key)
-- Test: `tests/phone-server.test.ts`, `tests/act-track.test.ts`, `tests/agent.test.ts`, `tests/phone-talk.test.ts`, `ui/tests/phone-screen.test.tsx`, `ui/tests/phone-controller.test.ts`, `tests/phone-link.test.ts`(link.js 시험이 있는 곳)
+- Modify: `scripts/video-check.ts`(`--say`가 보내는 말에 `at` 싣기)
+- Test: `tests/phone-server.test.ts`, `tests/act-track.test.ts`, `tests/agent.test.ts`, `tests/phone-talk.test.ts`, `ui/tests/phone-screen.test.tsx`, `ui/tests/phone-controller.test.ts`, `tests/phone-link.test.ts`(link.js 시험이 있는 곳), `tests/video-check.test.ts`
 
 **Interfaces:**
 
@@ -746,6 +747,7 @@ onHeard(text: string, at?: HeardAt): HeardResult;
 // src/agent/agent.ts
 /** 승인 대기 token 하나만 답한다(지금 대기가 아니면 false). 다른 대기는 그대로. */
 answerToken(token: string, answer: ApprovalAnswer): Promise<{ ok: boolean; reply: string }>;
+// scripts/video-check.ts --say: 폰 컨트롤러와 같은 길로 보낸다. 보내는 그 순간 명령 줄의 지금 명령(__noonchiVideo.commands 마지막의 계획 id·단계 id, 없으면 none)과 승인 대기 목록에 보인 token들을 at으로 싣는다(at 없이 보내면 「완료」·「승인」이 stale로 버려진다).
 // ui/src/phone/core/talk.js createListener hooks에 onSpeechStart() 더함(인식 speechstart). controller가 그때 명령 줄의 지금 명령(없으면 none)과 승인 대기 목록에 보인 token들을 잡아 두고 그 말을 보낼 때 at으로 싣는다.
 // ui/src/phone/core/link.js: 소켓이 열리면 바로 { type: "hello", protocol: PHONE_PROTOCOL }를 보낸다. 연결·다시 붙음마다 상태의 protocol이 폰 빌드의 PHONE_PROTOCOL과 다르면 페이지를 다시 읽는다(location.reload).
 //   같은 탭에서 60초 안에 두 번 다시 읽지 않는다(sessionStorage, 막히면 다시 읽지 않고 화면에 「새로 고침이 필요해요」 상태 한 줄).
@@ -779,6 +781,7 @@ export function needsPhone(plan: AgentPlan, approval: ApprovalWhy | null, device
   - 판본: 「폰 상태의 protocol이 폰 빌드와 다르면 다시 붙을 때 페이지를 다시 읽는다」, 「새 폰은 열리자마자 hello를 보낸다」, 「같으면 다시 읽지 않는다」, 「60초 안에 두 번 다시 읽지 않는다」, 「안전 안내 자리 요소가 `[data-phone-zone=thumb]` 밖에 있다」.
   - 단추 key: **「A 명령 「완료」를 누르는 중(pointerdown 뒤) B 명령으로 바뀌면 손을 떼도 아무 답도 보내지 않는다」**, **「명령이 바뀌면 단추 묶음이 새로 그려진다(key = 계획 id:단계 id)」**.
   - 폰 서버: 「`safety_answer`를 받아 실행 추적에 넘기고, 모르는 id는 무시한다」, 「새로 붙은 폰은 지금 안전 안내 목록을 받는다」.
+  - 영상 판정: 「`--say 완료`가 떠 있는 명령에 받힌다(보낸 say의 at이 그 명령의 계획 id·단계 id)」.
 - [ ] **Step 2:** `npm run heavy -- npx vitest run tests/phone-server.test.ts tests/act-track.test.ts`, `npm run heavy -- npm test --prefix ui -- phone-screen phone-controller` → 실패 확인.
 - [ ] **Step 3:** 구현.
 - [ ] **Step 4:** 통과 확인, `npm run lint`(부품·색·화면 글 검사). 이어서 폰 소켓을 직접 여는 기존 시험이 옛 탭으로 막히지 않게 고친다: 시험 대역 `tests/helpers/ws.ts`에 판본 hello를 보내는 `openPhone`을 두고 `tests/{noonchi-e2e,cup-branches-e2e,coach-e2e,mokryeon-e2e,video-mode-e2e,vision-e2e,phone-server,phone-voice,phone-start,phone-start-api,plan-server,observe-start,focus,no-frames-on-disk,setup-server,phone-link}.test.ts`의 폰 연결을 그것으로 바꾼다(옛 탭 동작을 보는 시험만 hello 없이 연다). 영상 판정(`scripts/video-check.ts`)은 이 저장소 빌드의 폰 페이지를 열어 hello를 보내므로 `--approve`·`--done-on`이 이 조건에 막히지 않는다.
