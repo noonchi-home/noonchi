@@ -30,6 +30,7 @@ export const TABLE_ALLOW: readonly { file: string; name: string; why: string }[]
   { file: "src/sync/landmarks.ts", name: "LANDMARK_TYPES", why: "기준점 감지 종류(COCO) → 트윈 type 표" },
   { file: "src/plan/labels.ts", name: "PLACE_SHORT", why: "평면도 물건 트윈 type → 짧은 이름 표(가구 포함)" },
   { file: "src/model/mapping.ts", name: "MODEL_KEY", why: "Matter 모델 → 요약 키 표(모델 이름이 종류 이름과 겹친다)" },
+  { file: "src/model/kinds-check.ts", name: "CAPABILITY_COMMANDS", why: "기능(capability) → 낼 수 있는 명령 표(기능 이름 fan·covering·lock·valve가 종류 이름과 겹친다)" },
 ];
 
 /** 종류 이름과 견주는 비교(compare-kind·array-kinds의 includes 꼴)를 허용하는 파일: 말 꾸밈 갈래(밝기·음량·냉방 모드 글, 제어·승인 길이 아니다). */

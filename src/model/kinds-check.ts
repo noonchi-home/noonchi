@@ -22,17 +22,15 @@ function specsOf(kind: string, e: KindEntry): { name: string; capabilities: Capa
   return [base, ...over];
 }
 
-/** 그 사양이 낼 수 있는 명령(정규화한 이름). */
+/** 기능마다 실제로 낼 수 있는 명령(정규화한 이름). onoff가 없을 때의 on·off는 operation이면 start·stop, valve면 valve로 바뀌어 여기 이미 있다. */
+const CAPABILITY_COMMANDS: Readonly<Record<Capability, readonly CommandType[]>> = {
+  onoff: ["on", "off"], level: ["level"], climate: ["climate"], fan: ["climate"], covering: ["covering"], lock: ["lock", "unlock"],
+  operation: ["start", "stop", "pause"], valve: ["valve"],
+};
+
+/** 그 사양이 낼 수 있는 명령 전체: 기능마다 따로 모은다. */
 function commandsOf(caps: readonly Capability[]): CommandType[] {
-  const out = new Set<CommandType>();
-  if (caps.includes("onoff")) out.add("on").add("off");
-  else if (caps.includes("operation")) out.add("start").add("stop");
-  if (caps.includes("climate")) out.add("climate");
-  if (caps.includes("level")) out.add("level");
-  if (caps.includes("covering")) out.add("covering");
-  if (caps.includes("lock")) out.add("lock").add("unlock");
-  if (caps.includes("valve")) out.add("valve");
-  return [...out];
+  return [...new Set(caps.flatMap((c) => CAPABILITY_COMMANDS[c]))];
 }
 
 /** 이름만 있는 명령의 검사용 표본: 설정값이 필요한 명령은 그 프로필에 맞는 유효한 값(모드는 프로필 modes 첫 값, 설정 온도는 setpoint 범위 안, 바람만 있으면 auto). */

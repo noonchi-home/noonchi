@@ -177,6 +177,13 @@ describe("등록부 검증(checkKinds)", () => {
     expect(checkKinds(with_("thermostat", { confirm: { command: "climate", reason: (l) => l } }))).toEqual([]);
   });
 
+  it("onoff와 operation이 함께 있는 사양도 start·stop·pause를 낼 수 있다: 거기에 air_conditioner 어댑터면 「start를 받지 않는다」로 거절", () => {
+    const both = with_("aircon", { twinTypes: [...KINDS.aircon.twinTypes, { types: ["test_ac_runner"], capabilities: ["onoff", "operation", "climate"] }] });
+    const why = checkKinds(both).join(" / ");
+    expect(why).toMatch(/aircon.*ThinQ 어댑터 air_conditioner는 start를 받지 않는다/);
+    expect(why).toMatch(/air_conditioner는 pause를 받지 않는다/);
+  });
+
   it("제어가 있는 프로필에 refrigerator 어댑터(읽기만)를 붙이면 거절", () => {
     expect(checkKinds(with_("dryer", { thinq: { type: /X/, adapter: "refrigerator" } })).join("\n")).toMatch(/dryer.*refrigerator/);
   });
