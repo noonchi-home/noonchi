@@ -2,12 +2,11 @@
 // 서버 listen·fetch·시험 소켓 열기는 EFAULT가 여러 번 이어져도 다시 해 끝내 붙는다. 다른 오류는 바로 던진다.
 // 시험 파일은 소켓을 helpers/ws.ts(openWebSocket·openPhone)로만 연다: 직접 new WebSocket(...)으로 열면 EFAULT를 다시 해 보지 않아 가끔 깨진다.
 import { EventEmitter } from "node:events";
-import type { Server } from "node:http";
+import { createServer, type Server } from "node:http";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { AddressInfo } from "node:net";
-import { WebSocketServer } from "ws";
+import WebSocket, { WebSocketServer } from "ws";
 import { fetchRetry, listenRetry } from "../src/server/net.js";
 import { openWebSocket } from "./helpers/ws.js";
 
@@ -57,33 +56,45 @@ describe("EFAULT를 견딘다", () => {
 });
 
 describe("시험 소켓 다시 열기는 실패한 시도의 대기를 치운다", () => {
-  it("첫 시도가 EFAULT로 실패하고 다음 시도가 붙어도, 실패한 시도에서 setup이 건 대기(타이머)는 치워져 처리되지 않은 거절이 남지 않는다", async () => {
-    const wss = new WebSocketServer({ port: 0, host: "127.0.0.1" });
-    await new Promise<void>((ok) => wss.once("listening", () => ok()));
+  it("첫 시도가 EFAULT로 실패하고 마지막 시도가 붙으면, 실패한 시도마다 setup이 건 대기(타이머)는 치워져 처리되지 않은 거절이 남지 않는다", async () => {
+    // 서버도 저장소의 다시 해 보는 listen으로 띄운다(EFAULT가 나도 시험이 서버 띄우기에서 깨지지 않게)
+    const http = createServer();
+    const { port } = await listenRetry(http, 0, "127.0.0.1");
+    const wss = new WebSocketServer({ server: http });
     wss.on("connection", (s) => s.send("hi"));
-    const port = (wss.address() as AddressInfo).port;
     const unhandled: unknown[] = [];
     const note = (e: unknown) => { unhandled.push(e); };
     process.on("unhandledRejection", note);
     try {
-      let attempt = 0;
-      let got!: Promise<string>;
+      // 시도마다: 소켓, 그 시도의 대기, 정리를 불렀는지
+      const tries: { socket: WebSocket; got: Promise<string>; cleaned: boolean }[] = [];
+      // 첫 시도는 시험이 만든 가짜 소켓이 연결 EFAULT를 낸다. 그다음은 실제 소켓이다(실제 EFAULT가 나도 다시 해 본다)
+      const create = (url: string, options?: WebSocket.ClientOptions): WebSocket => {
+        if (tries.length > 0) return new WebSocket(url, options);
+        const fake = Object.assign(new EventEmitter(), { terminate() {} }) as unknown as WebSocket;
+        setImmediate(() => fake.emit("error", efault("connect")));
+        return fake;
+      };
       const ws = await openWebSocket(`ws://127.0.0.1:${port}`, {
+        create, attempts: 12,
         setup: (s) => {
-          attempt++;
           // 시험 소켓의 대기 모양(tests/phone-server.test.ts next): 오지 않으면 일정 시간 뒤 거절
           let timer: ReturnType<typeof setTimeout> | undefined;
-          got = new Promise<string>((ok, no) => {
+          const got = new Promise<string>((ok, no) => {
             timer = setTimeout(() => no(new Error("메시지가 오지 않았습니다")), 150);
             s.once("message", (d) => { clearTimeout(timer); ok(String(d)); });
           });
-          // 첫 시도는 연결 EFAULT처럼 실패시킨다
-          if (attempt === 1) setImmediate(() => s.emit("error", efault("connect")));
-          return () => clearTimeout(timer);
+          const t = { socket: s, got, cleaned: false };
+          tries.push(t);
+          return () => { t.cleaned = true; clearTimeout(timer); };
         },
       });
-      expect(attempt).toBe(2);
-      expect(await got).toBe("hi");
+      // 첫 시도는 실패, 마지막 시도가 붙은 소켓이고, 실패한 시도는 모두 정리했다
+      expect(tries.length).toBeGreaterThanOrEqual(2);
+      expect(tries.at(-1)!.socket).toBe(ws);
+      expect(tries.slice(0, -1).map((t) => t.cleaned)).toEqual(tries.slice(0, -1).map(() => true));
+      expect(tries.at(-1)!.cleaned).toBe(false);
+      expect(await tries.at(-1)!.got).toBe("hi");
       ws.close();
       // 실패한 시도의 타이머(150ms)가 지나도록 기다린다
       await new Promise((r) => setTimeout(r, 400));
@@ -91,6 +102,7 @@ describe("시험 소켓 다시 열기는 실패한 시도의 대기를 치운다
     } finally {
       process.off("unhandledRejection", note);
       await new Promise<void>((ok) => wss.close(() => ok()));
+      await new Promise<void>((ok) => http.close(() => ok()));
     }
   });
 });

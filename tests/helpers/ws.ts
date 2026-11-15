@@ -13,12 +13,14 @@ export interface OpenOptions {
   setup?: (ws: WebSocket) => unknown;
   options?: WebSocket.ClientOptions;
   attempts?: number;
+  /** 소켓 만들기(기본 new WebSocket). 시험이 시도 실패를 통제해 넣을 때 바꾼다. */
+  create?: (url: string, options?: WebSocket.ClientOptions) => WebSocket;
 }
 
 export async function openWebSocket(url: string, opts: OpenOptions = {}): Promise<WebSocket> {
   const attempts = opts.attempts ?? RETRY_ATTEMPTS;
   for (let attempt = 1; ; attempt++) {
-    const ws = new WebSocket(url, opts.options);
+    const ws = opts.create ? opts.create(url, opts.options) : new WebSocket(url, opts.options);
     const cleanup = opts.setup?.(ws);
     try {
       await new Promise<void>((resolve, reject) => {
