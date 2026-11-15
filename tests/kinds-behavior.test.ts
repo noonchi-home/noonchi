@@ -177,6 +177,23 @@ describe("등록부 검증(checkKinds)", () => {
     expect(checkKinds(with_("thermostat", { confirm: { command: "climate", reason: (l) => l } }))).toEqual([]);
   });
 
+  it("설정 온도 표본은 반올림하지 않은 범위 가운데라 좁은 범위(37.2~37.4)에서도 범위 안이다", async () => {
+    vi.resetModules();
+    vi.doMock("../src/model/kinds.js", async (importOriginal) => {
+      const real = await importOriginal<typeof import("../src/model/kinds.js")>();
+      const aircon = { ...real.KINDS.aircon, profile: { ...real.KINDS.aircon.profile, setpoint: { min: 37.2, max: 37.4 } }, confirm: { command: "climate" as const, reason: (l: string) => l } };
+      return { ...real, KINDS: { ...real.KINDS, aircon } };
+    });
+    try {
+      const { KINDS: mocked } = await import("../src/model/kinds.js");
+      const { checkKinds: check } = await import("../src/model/kinds-check.js");
+      expect(check(mocked)).toEqual([]);
+    } finally {
+      vi.doUnmock("../src/model/kinds.js");
+      vi.resetModules();
+    }
+  });
+
   it("onoff와 operation이 함께 있는 사양도 start·stop·pause를 낼 수 있다: 거기에 air_conditioner 어댑터면 「start를 받지 않는다」로 거절", () => {
     const both = with_("aircon", { twinTypes: [...KINDS.aircon.twinTypes, { types: ["test_ac_runner"], capabilities: ["onoff", "operation", "climate"] }] });
     const why = checkKinds(both).join(" / ");

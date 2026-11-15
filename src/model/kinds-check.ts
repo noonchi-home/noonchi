@@ -33,7 +33,7 @@ function commandsOf(caps: readonly Capability[]): CommandType[] {
   return [...new Set(caps.flatMap((c) => CAPABILITY_COMMANDS[c]))];
 }
 
-/** 이름만 있는 명령의 검사용 표본: 설정값이 필요한 명령은 그 프로필에 맞는 유효한 값(모드는 프로필 modes 첫 값, 설정 온도는 setpoint 범위 안, 바람만 있으면 auto). */
+/** 이름만 있는 명령의 검사용 표본: 설정값이 필요한 명령은 그 프로필에 맞는 유효한 값(모드는 프로필 modes 첫 값, 설정 온도는 setpoint 범위의 반올림하지 않은 가운데, 바람만 있으면 auto). */
 function sample(type: CommandType, e: KindEntry, caps: readonly Capability[]): Command {
   switch (type) {
     case "level": return { type, percent: 50 };
@@ -42,7 +42,7 @@ function sample(type: CommandType, e: KindEntry, caps: readonly Capability[]): C
     case "climate": {
       const p = e.profile;
       if (!caps.includes("climate")) return { type, fan: "auto" };
-      return { type, ...(p.modes?.length ? { mode: p.modes[0] } : {}), setpointC: p.setpoint ? Math.round((p.setpoint.min + p.setpoint.max) / 2) : 22 };
+      return { type, ...(p.modes?.length ? { mode: p.modes[0] } : {}), setpointC: p.setpoint ? (p.setpoint.min + p.setpoint.max) / 2 : 22 };
     }
     default: return { type } as Command;
   }
