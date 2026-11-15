@@ -24,6 +24,7 @@ import { KIND_LABELS } from "../model/mapping.js";
 import type { PipelineInject } from "../observe/pipeline.js";
 import { resolveTwinStudioDir, type TwinData } from "../model/devices.js";
 import { listHomes } from "../model/homes.js";
+import { holdServerLock } from "./lock.js";
 import { SetupError, SetupStore, effectiveSources, parsePairs, parseSources } from "../setup/store.js";
 import { PAIRABLE_KINDS, fitsKind } from "../thinq/appliance.js";
 import { ThinqClient, ThinqError, thinqConfig } from "../thinq/client.js";
@@ -400,6 +401,8 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     closeDb();
     throw e;
   }
+  // 이 런타임 폴더를 쓰는 서버라는 표시(pid·포트). 서버 밖 명령(시연 준비)이 보고 멈춘다. 끌 때 지운다
+  const releaseLock = holdServerLock(runtimeDir, listened.port);
 
   // 보관 기간: 시작 때와 1시간마다 지난 사진 찍기 사진·시험 자료를 지운다
   const clean = () => {
@@ -448,6 +451,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       await current?.close();
       await shell.close();
       closeDb();
+      releaseLock();
     },
   };
 }

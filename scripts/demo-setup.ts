@@ -18,6 +18,7 @@ import { HistoryDb, historyTzMinutes } from "../src/history/db.js";
 import { REFLECT_TEXT } from "../src/history/labels.js";
 import { isDay } from "../src/history/summary.js";
 import { DEFAULT_TWIN_DIR, resolveTwinStudioDir } from "../src/model/devices.js";
+import { liveServerLock } from "../src/server/lock.js";
 import { resolveHome } from "../src/model/homes.js";
 import { loadScene } from "../src/model/scene.js";
 import { TASKS } from "../src/act/tasks.js";
@@ -79,9 +80,12 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
     if (!r.ok) throw new DemoStop(`${method} ${path} 실패(${r.status}): ${json.error ?? ""}`.trim());
     return json;
   };
-  // 서버가 꺼졌는지: 서버는 런타임 폴더에 잠금·pid 파일을 남기지 않는다. 그래서 --api 주소가 연결을 거부할 때(ECONNREFUSED)만 꺼졌다고 본다.
-  // 답이 늦거나(시간 초과) 그 밖의 오류면 켜져 있을 수 있어 멈춘다(쓰는 중인 폴더를 옮기거나 열린 DB에 쓰지 않게)
-  const requireServerOff = async () => {
+  // 서버가 꺼졌는지: 그 폴더의 서버 잠금(server.lock, src/server/lock.ts)의 pid가 살아 있으면 다른 포트 서버라도 켜진 것이다(pid가 죽었으면 남은 잠금).
+  // 그다음 --api 주소가 연결을 거부할 때(ECONNREFUSED)만 꺼졌다고 본다. 답이 늦거나(시간 초과) 그 밖의 오류면 켜져 있을 수 있어 멈춘다
+  // (쓰는 중인 폴더를 옮기거나 열린 DB에 쓰지 않게)
+  const requireServerOff = async (dir: string) => {
+    const held = liveServerLock(dir);
+    if (held) throw new DemoStop(`서버를 먼저 끄세요: 이 폴더를 쓰는 서버가 켜져 있어요(${dir}, pid ${held.pid}, 포트 ${held.port})`);
     let why: string;
     try {
       await fetch(`${api}/api/health`, { signal: AbortSignal.timeout(1500) });
@@ -106,7 +110,7 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
   if (cmd === "day1" || cmd === "week") {
     const dir = resolve(arg("--dir") ?? join("runtime", "demo", cmd));
     if (has("--fresh")) {
-      await requireServerOff();
+      await requireServerOff(dir);
       if (existsSync(dir)) {
         const old = `${dir}.old-${new Date(now()).toISOString().replace(/[-:]/g, "").replace(/\..*$/, "")}`;
         renameSync(dir, old);
@@ -150,7 +154,7 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
 
   if (cmd === "reflect" && has("--scripted")) {
     const dir = resolve(arg("--dir") ?? join("runtime", "demo", "week"));
-    await requireServerOff();
+    await requireServerOff(dir);
     const dbPath = join(dir, "noonchi.db");
     if (!existsSync(dbPath)) throw new DemoStop(`기록 DB가 없어요(${dbPath}). week부터 하세요`);
     const db = HistoryDb.open(dbPath, tz);

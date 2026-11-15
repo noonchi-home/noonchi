@@ -1,6 +1,7 @@
 // 시연 준비 명령(scripts/demo-setup.ts)과 장면 시작 위치(scripts/demo-start.ts). 서버는 시험 안의 가짜 HTTP 서버만 쓴다(실제 서버·PAM은 띄우지 않는다).
+import { spawnSync } from "node:child_process";
 import { createServer, type Server } from "node:http";
-import { existsSync, mkdtempSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -147,6 +148,29 @@ describe("서버가 꺼졌는지(--fresh·--scripted)", () => {
     const db = HistoryDb.open(join(dir, "noonchi.db"), 540);
     expect(db.list({ kinds: ["reflection"] })).toEqual([]);
     db.close();
+  }, 60_000);
+
+  it("그 폴더를 쓰는 서버가 다른 포트에서 돌면(살아 있는 server.lock) --api가 꺼져 있어도 멈추고, pid가 죽은 잠금이면 진행한다", async () => {
+    const base = tmp();
+    const dir = join(base, "week");
+    await run(["week", "--dir", dir, "--api", CLOSED]);
+    // 다른 포트에 뜬 서버: 이 프로세스(살아 있는 pid)가 그 포트로 잠금을 쓴 것처럼
+    const other = createServer((_req, res) => { res.writeHead(200); res.end("{}"); });
+    servers.push(other);
+    const { port } = await listenRetry(other, 0, "127.0.0.1");
+    writeFileSync(join(dir, "server.lock"), JSON.stringify({ pid: process.pid, port, at: "2026-11-14T00:00:00.000Z" }));
+    await expect(run(["week", "--dir", dir, "--fresh", "--api", CLOSED])).rejects.toThrow(new RegExp(`이 폴더를 쓰는 서버가 켜져 있어요.*포트 ${port}`));
+    expect(readdirSync(base)).toEqual(["week"]);
+    await expect(run(["reflect", "--scripted", "--dir", dir, "--api", CLOSED])).rejects.toThrow(/이 폴더를 쓰는 서버가 켜져 있어요/);
+    const db = HistoryDb.open(join(dir, "noonchi.db"), 540);
+    expect(db.list({ kinds: ["reflection"] })).toEqual([]);
+    db.close();
+    // 서버가 죽고 남은 잠금: 무시하고 진행한다
+    const dead = spawnSync(process.execPath, ["-e", ""]).pid!;
+    writeFileSync(join(dir, "server.lock"), JSON.stringify({ pid: dead, port, at: "2026-11-14T00:00:00.000Z" }));
+    await run(["reflect", "--scripted", "--dir", dir, "--api", CLOSED]);
+    await run(["week", "--dir", dir, "--fresh", "--api", CLOSED]);
+    expect(readdirSync(base).filter((n) => n.startsWith("week.old-"))).toHaveLength(1);
   }, 60_000);
 });
 
