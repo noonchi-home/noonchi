@@ -1137,6 +1137,47 @@ describe("실행 추적: 켠 위험 가전 추적은 확인된 꺼짐으로만 �
     expect(s.t.safety()).toMatchObject({ released: {}, cycles: { microwave_1: { cycle: 2, onAt: onAt + 3_000, askedAt: null } } });
   });
 
+  it("끄기 단계는 hot이 없다는 것만으로 끝나지 않는다: 풀린 지 11분 뒤(다시 걸기 기간 밖) 다시 켜진 인덕션이면 그 단계에서 다시 걸고, 허브 꺼짐을 봐야 끝난다", async () => {
+    let w = { ...world([]), devices: [cooktop(["off"])] };
+    const s = coachSetup({ w: () => w });
+    const steps = ramenSteps({ cabinet: "cabinet_1", sink: "sink_1", cooktop: "induction_1", cooktopDevice: "induction_1", waitS: 700 });
+    llm.scripts[RAMEN] = () => [planCalls([steps[6]!, steps[8]!, steps[11]!])];
+    await s.decide(ramenDecision());
+    s.t.onAnswer(P, `${P}:1:hand`, "approve");
+    s.clock.t += 1_000;
+    const on = { attr: "power", from: "off", to: "on", at_ms: s.clock.t };
+    w = { ...world([]), devices: [cooktop(["on"], [on])] };
+    s.t.onWorld();
+    expect(s.steps()[1]).toBe("active");
+    // 기다리는 동안 꺼짐(풀림)
+    s.clock.t += 1_000;
+    const off = { attr: "power", from: "on", to: "off", at_ms: s.clock.t };
+    w = { ...world([]), devices: [cooktop(["off"], [on, off])] };
+    s.t.onWorld();
+    expect(s.t.safety()).toMatchObject({ hot: [], released: { induction_1: { via: "switch" } } });
+    // 11분 뒤 다시 켜짐: 다시 걸기 기간이 지나 그때는 걸리지 않는다
+    s.clock.t += 660_000;
+    s.t.tick();
+    const again = { attr: "power", from: "off", to: "on", at_ms: s.clock.t };
+    w = { ...world([]), devices: [cooktop(["on"], [on, off, again])] };
+    s.t.onWorld();
+    expect(s.t.safety().hot).toEqual([]);
+    // 기다리기가 끝나 끄기 단계(3번): 지금 켜져 있으니 끝나지 않고 그 자리에서 다시 건다
+    s.clock.t += 45_000;
+    s.t.tick();
+    for (let i = 0; i < 3; i++) { s.clock.t += 500; s.t.onWorld(); s.t.tick(); }
+    expect(s.last()).toMatchObject({ step: `${P}:3`, text: "인덕션을 꺼 주세요" });
+    expect(s.steps()[2]).toBe("active");
+    expect(s.t.safety()).toMatchObject({ hot: ["induction_1"], cycles: { induction_1: { cycle: 2, onAt: again.at_ms, askedAt: null } } });
+    // 허브 꺼짐을 보면 풀리고 끝난다
+    s.clock.t += 1_000;
+    w = { ...world([]), devices: [cooktop(["off"], [on, off, again, { attr: "power", from: "on", to: "off", at_ms: s.clock.t }])] };
+    s.t.onWorld();
+    expect(s.plans.current()).toMatchObject({ status: "done" });
+    expect(s.t.safety().hot).toEqual([]);
+    expect(s.phone.some((m) => m.type === "command" && /:off(:\d+)?$/.test(m.step))).toBe(false);
+  });
+
   it("다시 걸기: 같은 계획이 돌고 있으면 그 계획 hot에 다시 넣고 onAt이 그 켜짐 시각이 된다(라면, 허브 근거)", async () => {
     let w = { ...world([]), devices: [cooktop(["off"])] };
     const s = coachSetup({ w: () => w });

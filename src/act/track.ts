@@ -176,9 +176,9 @@ const evidenceTime = (h: HistoryLine) => h.seen_ms ?? h.at_ms;
 const onNow = (d: DeviceView) => d.state.includes("on") || d.state.includes("running");
 /** 지금 상태가 이미 꺼짐(꺼짐·멈춤, 켜짐 아님)인가. 신호가 없거나 가전을 모르면 아니다. */
 const offNow = (d: DeviceView | undefined) => !!d && d.status !== null && !onNow(d) && (d.state.includes("off") || d.state.includes("stopped"));
-/** after 뒤(until까지) 그 가전이 켜졌다는 가장 이른 근거 시각(촬영 시각). 이력의 켜짐 줄(허브·실제 가전 신호·카메라 명시·추정)과
+/** after 뒤(until까지) 그 가전이 켜졌다는 근거 시각(촬영 시각) 가운데 가장 이른 것(last면 가장 늦은 것). 이력의 켜짐 줄(허브·실제 가전 신호·카메라 명시·추정)과
  *  카메라 마지막 관측(sight_last, 허브가 꺼짐을 말해 이력 줄이 없을 때도 남는다)의 켜짐을 본다. 없으면 null. */
-function onSeenAfter(d: DeviceView | undefined, after: number, until = Number.POSITIVE_INFINITY): number | null {
+function onSeenAfter(d: DeviceView | undefined, after: number, until = Number.POSITIVE_INFINITY, last = false): number | null {
   if (!d) return null;
   const lines = d.history.filter((h) => CYCLE_VALUES.some((k) => h.attr === k.attr && h.to === k.on)).map(evidenceTime);
   const seen = CYCLE_VALUES.flatMap((k) => {
@@ -186,7 +186,7 @@ function onSeenAfter(d: DeviceView | undefined, after: number, until = Number.PO
     return s && s.value === k.on ? [s.seen_ms] : [];
   });
   const times = [...lines, ...seen].filter((x) => x > after && x <= until);
-  return times.length ? Math.min(...times) : null;
+  return times.length ? (last ? Math.max(...times) : Math.min(...times)) : null;
 }
 
 /** 다른 행동의 계기가 되는 변화: 사람 방, 가전 상태, 가전 설비 상태. */
@@ -851,9 +851,26 @@ export class ExecutionTracker {
     this.askToShow(id);
   }
 
-  /** 끄기 do 단계: 이 계획이 켠 그 가전의 추적이 풀렸으면(releaseIfOff) 그 단계는 끝난 것이다. */
+  /** 끄기 do 단계: 이 계획이 켠 그 가전의 추적이 풀렸고(hot 아님) 지금 직접 봐도 끝났으면 그 단계는 끝난 것이다. hot이 없다는 것만으로는 끝내지 않는다.
+   *  지금 켜져 있으면(허브·실제 가전 신호, 또는 지금 회차의 꺼짐 근거 뒤 카메라 켜짐) 다시 걸기 기간과 상관없이 그 자리에서 새 회차로 hot에 다시 건다.
+   *  꺼져 있으면 지금 회차에 꺼짐 근거(cycleEnded)가 있어야 끝난다. */
   private offReleased(r: Run, step: AgentStep): boolean {
-    return step.kind === "do" && step.hand?.to === "off" && r.onAt.has(step.hand.deviceId) && !r.hot.has(step.hand.deviceId);
+    const id = step.kind === "do" && step.hand?.to === "off" ? step.hand.deviceId : null;
+    const cycle = id ? this.cycles.get(id) : undefined;
+    if (!id || !cycle || !r.onAt.has(id) || r.hot.has(id)) return false;
+    const d = this.o.world().devices.find((x) => x.id === id);
+    const end = this.cycleEnded(id);
+    const since = end?.evidenceAt ?? cycle.onAt;
+    if ((d && onNow(d)) || onSeenAfter(d, since) !== null) {
+      // 새 회차의 시작: 그 켜짐의 가장 늦은 근거(지금 켜져 있게 한 켜짐), 모르면 지금
+      const next: Cycle = { cycle: cycle.cycle + 1, onAt: onSeenAfter(d, cycle.onAt, Number.POSITIVE_INFINITY, true) ?? this.clock.now(), askedAt: null };
+      this.cycles.set(id, next);
+      this.released.delete(id);
+      r.onAt.set(id, next);
+      r.hot.add(id);
+      return false;
+    }
+    return end !== null;
   }
 
   /** 끄기 안내 때문에 새 계획 시작을 미루는 중이면 기다리는 가전 이름(대시보드 말풍선 카드). 아니면 null. */
