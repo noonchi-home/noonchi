@@ -61,6 +61,7 @@ export function videoParams(params) {
   const clip = params.get("clip");
   if (!clip) return null;
   return {
+    clip,
     clipUrl: clipUrlOf(clip),
     fovDeg: clamp(params.get("fov"), 20, 120, 60),
     pitchDeg: clamp(params.get("pitch"), -89, 89, -25),

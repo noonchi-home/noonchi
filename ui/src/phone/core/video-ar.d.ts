@@ -66,7 +66,8 @@ export interface VideoRecord {
   at?: HeardAt;
 }
 
-export function videoParams(params: URLSearchParams): Required<Pick<VideoArDeps, "clipUrl" | "fovDeg" | "pitchDeg" | "heightM" | "steps" | "reactMs">> | null;
+/** 영상 모드인지 아는 하나뿐인 길: 주소의 clip(영상 이름)이 있으면 그 이름과 영상 AR 값, 없으면 null(실제 모드). clip은 여기서만 읽는다. */
+export function videoParams(params: URLSearchParams): (Required<Pick<VideoArDeps, "clipUrl" | "fovDeg" | "pitchDeg" | "heightM" | "steps" | "reactMs">> & { clip: string }) | null;
 export function videoRecord(target?: object): VideoRecord;
 export function logVideoCommand(videoMs: number, command: { id: string; step: string; text: string }): void;
 export function logVideoAt(at: HeardAt): void;

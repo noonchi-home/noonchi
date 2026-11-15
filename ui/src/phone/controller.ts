@@ -165,7 +165,7 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
 
   const link = createLink({
     // 영상 모드: 카메라 입력. 소켓 주소에 트는 영상 이름을 붙여 서버가 영상 연결로 안다(붙잡은 장면 표시를 받는다)
-    url: phoneSocketUrl(deps.location, video ? params.get("clip") : null), onMessage, Socket: deps.Socket, now: undefined,
+    url: phoneSocketUrl(deps.location, video ? video.clip : null), onMessage, Socket: deps.Socket, now: undefined,
     onOpen: () => set((v) => ({ ...v, connected: true })),
     onClose: () => set((v) => ({ ...v, connected: false })),
     onStale: () => {
