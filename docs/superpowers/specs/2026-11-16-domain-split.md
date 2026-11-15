@@ -157,7 +157,7 @@
 | 한국어 글 도우미 | `agent/phrases.ts`(`josa`), `agent/search.ts`의 `compact`·`stripParticle`, `plan/copy.ts`(화면 글 규칙) | `src/shared/korean.ts`·`copy.ts` |
 | 평면 계산 | `phone/align.ts`(AR 자세 → 트윈 평면, 순수 함수) | `src/shared/geometry.ts` |
 | 마스크 풀기 | `brain/seg.ts`(순수 함수, World State·대시보드·감지기가 씀) | `src/shared/mask.ts` |
-| 파일 자리 기준 자원 경로 | `MODELS_DIR`·`DEFAULT_TWIN_DIR`·`DEFAULT_UI_DIR`·`DEFAULT_WEB_DIR`·`SHARED_VIDEO_DIR`·`DEFAULT_RUNTIME_DIR`(각 파일의 `new URL("../../…", import.meta.url)`) | `src/shared/paths.ts`의 `repoPath()` 하나(0단계) |
+| 파일 자리 기준 자원 경로 | `MODELS_DIR`·`DEFAULT_TWIN_DIR`·`DEFAULT_UI_DIR`·`DEFAULT_WEB_DIR`·`SHARED_VIDEO_DIR`·`DEFAULT_RUNTIME_DIR`(각 파일의 `new URL("../../…", import.meta.url)`) | `src/shared/paths.ts`의 `repoPath()` 하나(0단계). 직접 실행 검사는 같은 파일의 `isEntry()` |
 | 디자인 토큰 | `src/design/` | 그대로(규칙 표가 이 경로를 원본으로 적음) |
 | 화면 공용 | `ui/src/components/ui/`(21st.dev 부품), `ui/src/lib/` | 그대로. 부품은 파일마다 가져온다(lint-ui-parts가 이미 봄) |
 | 옛 화면 조각 | `web/` | 그대로 |
@@ -274,7 +274,7 @@
 | 화면이 닿는 `src` 파일(따라 들어간 import 전체)에 node 모듈이 있음 | 「브라우저 입구에 node 모듈 `<모듈>`이 섞여요(`<길>`)」 |
 | 의존 표에 고리가 생김 | 오류 |
 | 실제 파일 그래프에 도메인을 넘는 고리(`shared`·계약·표를 거치는 것 포함, 기반층 안 타입 전용 고리만 허용) | 「`<a>` → … → `<a>` 고리예요」 |
-| `import.meta.url`을 `shared/paths.ts`와 `new Worker(new URL("./…", import.meta.url))` 줄 밖에서 씀, 또는 Worker 대상 파일이 없음 | 오류 |
+| `import.meta.url`을 허용한 세 꼴 밖에서 씀: `shared/paths.ts` 안, `new Worker(new URL("./…", import.meta.url))`, 직접 실행 검사 `isEntry(import.meta.url)`. 또는 Worker 대상 파일이 없음 | 오류 |
 | 도메인에 `index.ts`가 없음 | 오류 |
 
 ### 3.2 옮기는 동안(줄어들기만 하는 예외 목록)
@@ -315,13 +315,28 @@
   3. `npm run lint`(화면 글·색·부품·글 크기 + 도메인 검사)
   4. **옮김 단계: import 경로만 달라짐을 AST로 증명.** `npx tsx scripts/check-moves.ts <앞 커밋> <뒤 커밋>`(1단계에서 만듦)이 통과해야 한다.
      - 파서: TypeScript 7.0.2에는 JS 컴파일러 API가 없다. 그래서 `rolldown/parseAst`(oxc 파서, vite·vitest가 이미 깐 것)를 쓰고 `rolldown`을 개발 의존성에 직접 적는다.
-     - 이동 대응표: `git diff -M100% --name-status`의 이름 바뀜(옛 경로 → 새 경로).
+     - 이동 대응표: git의 이름 바뀜 찾기를 쓰지 않는다(import 경로를 고친 파일은 100% 같지 않아 지움·더함으로 잡힌다). 단계마다 대응표 파일을 그 커밋에 함께 둔다: `docs/superpowers/specs/2026-11-16-domain-split/moves/<단계>.json`.
+       ```json
+       { "files": { "src/sync/aligner.ts": "src/phone/sync/aligner.ts" },
+         "decls": { "src/world/decide.ts#DecisionRecord": "src/contract/events.ts#DecisionRecord" },
+         "new": ["src/phone/index.ts"] }
+       ```
+       `files`는 파일째 옮김, `decls`는 파일 일부(선언 하나)를 옮김(옛 파일#이름 → 새 파일#이름, F 단계), `new`는 새로 만든 파일이다. 지운 파일·새 파일이 대응표에 없으면 실패한다.
      - 파일마다 옛 파일과 새 파일을 파싱해 셋을 본다.
        (1) import·`export … from`이 아닌 문장을 정규화한 AST로 견준다. 하나라도 다르면 실패한다(`import …; 실행문()`처럼 붙인 동작도 여기서 잡힌다).
-       (2) import마다 (가져온 이름, `type` 여부, 그 이름을 정의한 파일)을 구해 견준다. 정의한 파일은 모듈 경로를 풀고 `index.ts`의 `export … from`을 따라가 찾는다. 그 뒤 대응표로 옛 경로를 새 경로로 바꾼다. 모음이 다르면 실패한다.
-       (3) 새로 생긴 파일은 `export … from` 문장만 있어야 한다(입구).
+       (2) import마다 (가져온 이름, `type` 여부, 그 이름을 정의한 자리 `파일#이름`)을 구해 견준다. 정의한 자리는 모듈 경로를 풀고 `index.ts`의 `export … from`을 따라가 찾는다. 옛 쪽 자리는 `decls`를 먼저, 그다음 `files`로 새 자리로 바꾼다. 모음이 다르면 실패한다. 그래서 시험이 `DecisionRecord`를 옛 파일 대신 계약에서 가져오게 바뀐 것은 통과한다.
+       (3) `new`의 파일은 `export … from` 문장만 있어야 한다(입구). 그 밖의 새 파일(`shared/paths.ts` 등)은 옮김 단계가 아닌 0·2단계에서만 생긴다.
      - 경로를 글로 적은 시험·문서 줄은 따로 확인한다.
-  5. **고리 끊기(F) 단계:** `check-moves.ts --moved`로 바뀐 파일 전체의 맨 위 선언(import 빼고)을 모은다. 옮기기 앞과 뒤가 같은 모음(정규화한 AST)인지 본다. 시험 파일은 (1)(2) 검사를 통과해야 한다(기대값을 하나도 고치지 않는다).
+  5. **고리 끊기(F) 단계:** `check-moves.ts --moved`가 대응표(`decls`)로 옮긴 선언마다 넷을 본다. 시험 파일은 (1)(2) 검사를 통과해야 한다(기대값을 하나도 고치지 않는다).
+     - **글:** 옛 선언과 새 선언의 정규화한 AST가 같다.
+     - **빠짐·더함:** 바뀐 파일 전체의 맨 위 선언(import 빼고) 모음이 옮기기 앞과 뒤에 같다. 대응표에 없는 선언이 생기거나 사라지면 실패한다.
+     - **초기화 차례:** 모듈마다 맨 위 실행 문장(타입·인터페이스·`declare`·import를 뺀 것: 변수·함수·클래스 선언, 식 문장, `export default`)을 차례대로 적는다.
+       - 새 파일의 각 문장을 옛 자리(옛 파일, 옛 차례 번호)로 바꾼 뒤, 같은 옛 파일에서 온 문장끼리는 번호가 커지는 차례여야 한다.
+       - 옮긴 문장이 모듈을 읽을 때 쓰는 이름(함수 몸통 밖 초기화 식에서 쓰는 이름)은 같은 파일 앞쪽 선언이거나 import여야 한다.
+       - 옮긴 파일끼리 import 고리가 새로 생기면 실패한다(읽는 차례가 바뀌어 아직 정해지지 않은 값을 읽을 수 있음).
+     - **이름이 가리키는 정의:** 옮긴 선언 안의 자유 이름(그 선언 안에서 묶이지 않은 이름)마다 옛 자리와 새 자리에서 가리키는 정의를 구한다. 정의는 `파일#이름`, import면 정의한 자리까지 따라감, 없으면 「전역」이다. 옛 쪽을 대응표로 바꾼 값이 새 쪽과 같아야 한다.
+       - 묶임은 스크립트 안의 작은 범위 계산으로 센다. ESTree를 걸으며 함수 인자, `let`·`const`·`var`·`class`·`function`, `catch` 인자, 구조 분해를 범위마다 모은다.
+       - 스크립트 시험으로 잡는 경우: 같은 이름이 새 파일에서 다른 선언을 가리키는 것, 지역 이름이 옮긴 뒤 모듈 이름을 가림, 전역(`Math`)이 새 파일의 같은 이름 선언에 잡힘.
   6. **쪼개기 단계:** 코드 모양이 바뀌어 AST로 같음을 증명하지 못한다. 시험 파일이 (1)(2) 검사를 통과하고(import 줄만 바뀜), 아래 흐름 시험이 통과하는 것으로 본다.
 - **경로를 글로 적은 곳(단계마다 함께 고침)**
   - 시험·스크립트 15개(`tests/act-track-release.test.ts`, `kinds-registry`, `world-vocab`, `mcp`, `scripts/lint-ui-type.ts` 등)
@@ -334,8 +349,8 @@
 
 | 단계 | 할 일 | 남는 예외 | 대략 시간 |
 |---|---|---|---|
-| 0 | 새 브랜치·worktree, 기준 시험 통과 수·시간 재기. 파일 자리 기준 자원 경로를 뿌리 기준으로 바꾼다: `src/shared/paths.ts`의 `repoPath()` 하나만 `import.meta.url`을 쓰고, `MODELS_DIR`(`brain/detector.ts:101`)·`DEFAULT_TWIN_DIR`(`model/devices.ts:63`)·`DEFAULT_UI_DIR`(`phone/server.ts:37`)·`DEFAULT_WEB_DIR`(`server/app.ts:113`)·`SHARED_VIDEO_DIR`(`server/home.ts:83`)·`DEFAULT_RUNTIME_DIR`(`server/start.ts:43`)를 그것으로 바꾼다. Worker 줄(`brain/detector.ts:511·512` → `detector-worker.mjs`·`detector-thread.ts`, `ui/src/panels/eye-video.ts:252` → `eye-video-worker.ts`, `ui/src/phone/core/capture.js:107` → `encoder-worker.js`)은 대상 파일과 늘 같이 옮긴다. `src/mcp/server.ts:53`(직접 실행인지 확인)은 자원을 읽지 않아 그대로다. 확인: 서버 시험의 기본 폴더 시험(「기본 화면 폴더는 ui/dist」)이 그대로 통과 | — | 1.5시간 |
-| 1 | 막는 장치(2.1·2.3 표, 예외 목록 방식) + 가짜 트리·과거 실수 시험. 엄격 모드 실패 수 = 목록 수 확인. `scripts/check-moves.ts`와 그 시험(import 뒤 실행문 덧붙임·이름 바꿈·다른 파일로 가져옴을 잡는지) | 전부 | 3시간 |
+| 0 | 새 브랜치·worktree, 기준 시험 통과 수·시간 재기. 파일 자리 기준 자원 경로를 뿌리 기준으로 바꾼다: `src/shared/paths.ts`의 `repoPath()` 하나만 `import.meta.url`을 쓰고, `MODELS_DIR`(`brain/detector.ts:101`)·`DEFAULT_TWIN_DIR`(`model/devices.ts:63`)·`DEFAULT_UI_DIR`(`phone/server.ts:37`)·`DEFAULT_WEB_DIR`(`server/app.ts:113`)·`SHARED_VIDEO_DIR`(`server/home.ts:83`)·`DEFAULT_RUNTIME_DIR`(`server/start.ts:43`)를 그것으로 바꾼다. Worker 줄(`brain/detector.ts:511·512` → `detector-worker.mjs`·`detector-thread.ts`, `ui/src/panels/eye-video.ts:252` → `eye-video-worker.ts`, `ui/src/phone/core/capture.js:107` → `encoder-worker.js`)은 대상 파일과 늘 같이 옮긴다. `src/mcp/server.ts:53`의 직접 실행 검사(`fileURLToPath(import.meta.url)`을 `process.argv[1]`과 견줌)는 `shared/paths.ts`의 `isEntry(metaUrl)`로 옮기고, 그 자리는 `isEntry(import.meta.url)` 한 꼴만 남긴다(3.1 허용 꼴). 확인: 서버 시험의 기본 폴더 시험(「기본 화면 폴더는 ui/dist」)이 그대로 통과 | — | 1.5시간 |
+| 1 | 막는 장치(2.1·2.3 표, 예외 목록 방식) + 가짜 트리·과거 실수 시험. 엄격 모드 실패 수 = 목록 수 확인. `scripts/check-moves.ts`와 그 시험(import 뒤 실행문 덧붙임·이름 바꿈·다른 파일로 가져옴·대응표에 없는 지움·초기화 차례 바뀜·이름이 다른 정의를 가리킴을 잡는지). 단계마다 대응표 파일 `moves/<단계>.json`을 함께 커밋 | 전부 | 3시간 |
 | 2 | 기반 만들기: `src/shared/`(net·static·korean·copy·geometry·mask), 계약에 공용 타입 옮김(F1·F3·F5·F7·F9) | 줄어듦 | 2시간 |
 | 3 | 폴더 옮기기(파일 이동만, 도메인마다 커밋 하나): 3a `sync` → `phone/sync`, 3b `brain` → `observe`·`pam` + `world/decide` → `pam`, 3c `hub`·`matter`·`thinq`·`model` 가전 쪽 → `devices`, 3d `model` 배치 쪽·`plan/floor·route·names`·`phone/home-plan` → `layout`, 3e `plan/planner`·`mcp` → `agent`, `plan` 나머지 → `act`, 3f `setup` → `server` | 줄어듦 | 4시간 |
 | 4 | 도메인마다 `index.ts`를 만들고 다른 도메인 import를 입구로 바꿈 | 거꾸로 가는 것만 남음 | 2시간 |
@@ -376,3 +391,4 @@
 ## 6. 지적 기록
 
 - Codex 설계 리뷰 지적 9개(2026-11-16): 계약 ↔ 등록부 `DeviceKind` 타입 전용 의존 규칙(물을 것 2에 따라), 화면용 `layout/browser.ts`와 node 모듈 섞임 검사, `loadTwin` 파일 읽기·catalog 대신 길은 배치 저장소·가전 만들기는 가전으로, `shared`의 도메인 import·다시 내보내기 금지와 실제 파일 그래프 고리 검사, 실패 예제를 새 규칙 위반 줄로 바꿈, 끄기 추적 구조 검사를 `act/track/` 전체·각 파일 과거 실수로, 파일 자리 기준 자원 경로를 0단계에서 뿌리 기준으로, 「import 경로만」을 `scripts/check-moves.ts` AST 비교로, 흐름 확인을 `tests/demo-e2e.test.ts`로.
+- Codex 설계 재리뷰 지적 4개(2026-11-16): git 이름 바뀜 대신 단계마다 이동 대응표 파일(`moves/<단계>.json`), 대응표를 선언 단위(`파일#이름`)까지, `--moved`에 초기화 차례와 이름이 가리키는 정의 검사와 세는 법, MCP 직접 실행 검사는 `shared/paths.ts` `isEntry()`로 옮기고 `isEntry(import.meta.url)`를 허용 꼴로.
