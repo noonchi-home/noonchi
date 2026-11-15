@@ -137,7 +137,6 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
     const dir = resolve(arg("--dir") ?? join("runtime", "demo", cmd));
     const fresh = has("--fresh");
     const dbPath = join(dir, "noonchi.db");
-    if (!fresh && existsSync(dbPath)) throw new DemoStop(`기록 DB가 이미 있어요(${dbPath}). --fresh로 새로 시작하세요`);
     mkdirSync(dir, { recursive: true });
     // 그 폴더 잠금을 끝까지 한 번도 놓지 않는다(그동안 서버가 이 폴더로 뜨지 못한다). --fresh는 폴더를 옮기지 않고 잠금을 쥔 채 옛 항목을 옮긴다
     const folder = holdFolder(dir);
@@ -146,6 +145,8 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
         await requireServerOff();
         moveOldEntries(dir);
       }
+      // 잠금을 잡은 뒤에 본다: 준비 명령 둘이 같은 폴더를 함께 돌려도 뒤쪽은 앞쪽이 만든 DB를 보고 멈춘다
+      if (existsSync(dbPath)) throw new DemoStop(`기록 DB가 이미 있어요(${dbPath}). --fresh로 새로 시작하세요`);
       writeFileSync(join(dir, "setup.json"), `${JSON.stringify({ version: 1, home: DEMO_HOME, done: true, mode: "test", assist: "auto" }, null, 2)}
 `);
       const at = () => new Date(now()).toISOString();
@@ -190,6 +191,8 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
     const folder = holdFolder(dir);
     try {
       await requireServerOff();
+      // 잠금을 잡은 뒤에 다시 본다(그 사이 다른 준비 명령이 옛 항목을 옮겼을 수 있다)
+      if (!existsSync(dbPath)) throw new DemoStop(`기록 DB가 없어요(${dbPath}). week부터 하세요`);
     } catch (e) {
       folder.release();
       throw e;

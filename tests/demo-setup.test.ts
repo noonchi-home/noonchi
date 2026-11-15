@@ -1,4 +1,5 @@
 // 시연 준비 명령(scripts/demo-setup.ts)과 장면 시작 위치(scripts/demo-start.ts). 서버는 시험 안의 가짜 HTTP 서버만 쓴다(실제 서버·PAM은 띄우지 않는다).
+import { spawn } from "node:child_process";
 import { createServer, type Server } from "node:http";
 import { existsSync, mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -217,6 +218,36 @@ describe("서버가 꺼졌는지(--fresh·--scripted)", () => {
     expect(existsSync(join(dir, "noonchi.db"))).toBe(true);
     expect(lockFree(dir)).toBe(true);
   }, 60_000);
+
+  it("기록 DB 검사는 잠금을 잡은 뒤에 한다: 다른 준비 명령이 그 폴더 잠금을 쥐고 있으면 DB가 이미 있어도 잠금에서 멈춘다", async () => {
+    const dir = join(tmp(), "week");
+    await run(["day1", "--dir", dir, "--api", CLOSED]);
+    const held = acquireServerLock(dir);
+    try {
+      await expect(run(["week", "--dir", dir, "--api", CLOSED])).rejects.toThrow(/서버를 먼저 끄세요: 이 폴더를 쓰는 서버가 켜져 있어요/);
+    } finally {
+      held.release();
+    }
+  });
+
+  it("같은 폴더에 week를 둘 동시에 돌리면 하나만 만들고 다른 하나는 멈춘다", async () => {
+    const dir = join(tmp(), "week");
+    const once = () => new Promise<{ code: number | null; err: string }>((ok) => {
+      const kid = spawn(process.execPath, ["--import", "tsx", join("scripts", "demo-setup.ts"), "week", "--dir", dir, "--api", CLOSED], { stdio: ["ignore", "ignore", "pipe"], env: { ...process.env, ...env } });
+      let err = "";
+      kid.stderr!.on("data", (d) => { err += String(d); });
+      kid.once("exit", (code) => ok({ code, err }));
+    });
+    const runs = await Promise.all([once(), once()]);
+    expect(runs.map((r) => r.code).sort()).toEqual([0, 1]);
+    expect(runs.find((r) => r.code === 1)!.err).toMatch(/서버를 먼저 끄세요|기록 DB가 이미 있어요/);
+    const db = HistoryDb.open(join(dir, "noonchi.db"), 540);
+    try {
+      expect(db.list({ limit: 1 })).toHaveLength(1);
+    } finally {
+      db.close();
+    }
+  }, 120_000);
 
   it.skipIf(process.platform !== "win32")("--fresh: 옛 항목 가운데 열린 파일이 있어 옮기지 못하면 옮긴 것을 되돌리고 멈춘다(Windows)", async () => {
     const base = tmp();
