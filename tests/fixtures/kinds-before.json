@@ -1,0 +1,5446 @@
+{
+ "approval": {
+  "confirmRules": [
+   {
+    "kind": "lock",
+    "command": "unlock",
+    "reason": "〈이름〉 잠금 해제는 사용자 승인이 필요합니다."
+   },
+   {
+    "kind": "cooktop",
+    "command": "on",
+    "reason": "〈이름〉 켜기는 화재 위험이 있어 사용자 승인이 필요합니다."
+   },
+   {
+    "kind": "microwave",
+    "command": "start",
+    "reason": "〈이름〉 시작은 사용자 승인이 필요합니다."
+   }
+  ],
+  "table": {
+   "light": [
+    {
+     "from": "profile",
+     "results": [
+      {
+       "command": {
+        "type": "on"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "off"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "start"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "stop"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "pause"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "level",
+        "percent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "climate",
+        "mode": "cool"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "lock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "unlock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "covering",
+        "openPercent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": true
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": false
+       },
+       "reason": null
+      }
+     ]
+    },
+    {
+     "from": "downlight",
+     "results": [
+      {
+       "command": {
+        "type": "on"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "off"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "start"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "stop"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "pause"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "level",
+        "percent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "climate",
+        "mode": "cool"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "lock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "unlock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "covering",
+        "openPercent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": true
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": false
+       },
+       "reason": null
+      }
+     ]
+    }
+   ],
+   "plug": [
+    {
+     "from": "profile",
+     "results": [
+      {
+       "command": {
+        "type": "on"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "off"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "start"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "stop"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "pause"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "level",
+        "percent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "climate",
+        "mode": "cool"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "lock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "unlock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "covering",
+        "openPercent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": true
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": false
+       },
+       "reason": null
+      }
+     ]
+    }
+   ],
+   "tv": [
+    {
+     "from": "profile",
+     "results": [
+      {
+       "command": {
+        "type": "on"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "off"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "start"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "stop"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "pause"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "level",
+        "percent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "climate",
+        "mode": "cool"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "lock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "unlock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "covering",
+        "openPercent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": true
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": false
+       },
+       "reason": null
+      }
+     ]
+    }
+   ],
+   "speaker": [
+    {
+     "from": "profile",
+     "results": [
+      {
+       "command": {
+        "type": "on"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "off"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "start"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "stop"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "pause"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "level",
+        "percent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "climate",
+        "mode": "cool"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "lock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "unlock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "covering",
+        "openPercent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": true
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": false
+       },
+       "reason": null
+      }
+     ]
+    }
+   ],
+   "aircon": [
+    {
+     "from": "profile",
+     "results": [
+      {
+       "command": {
+        "type": "on"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "off"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "start"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "stop"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "pause"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "level",
+        "percent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "climate",
+        "mode": "cool"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "lock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "unlock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "covering",
+        "openPercent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": true
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": false
+       },
+       "reason": null
+      }
+     ]
+    }
+   ],
+   "purifier": [
+    {
+     "from": "profile",
+     "results": [
+      {
+       "command": {
+        "type": "on"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "off"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "start"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "stop"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "pause"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "level",
+        "percent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "climate",
+        "mode": "cool"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "lock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "unlock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "covering",
+        "openPercent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": true
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": false
+       },
+       "reason": null
+      }
+     ]
+    }
+   ],
+   "fan": [
+    {
+     "from": "profile",
+     "results": [
+      {
+       "command": {
+        "type": "on"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "off"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "start"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "stop"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "pause"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "level",
+        "percent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "climate",
+        "mode": "cool"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "lock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "unlock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "covering",
+        "openPercent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": true
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": false
+       },
+       "reason": null
+      }
+     ]
+    }
+   ],
+   "hood": [
+    {
+     "from": "profile",
+     "results": [
+      {
+       "command": {
+        "type": "on"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "off"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "start"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "stop"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "pause"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "level",
+        "percent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "climate",
+        "mode": "cool"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "lock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "unlock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "covering",
+        "openPercent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": true
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": false
+       },
+       "reason": null
+      }
+     ]
+    }
+   ],
+   "cooktop": [
+    {
+     "from": "profile",
+     "results": [
+      {
+       "command": {
+        "type": "on"
+       },
+       "reason": "〈이름〉 켜기는 화재 위험이 있어 사용자 승인이 필요합니다."
+      },
+      {
+       "command": {
+        "type": "off"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "start"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "stop"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "pause"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "level",
+        "percent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "climate",
+        "mode": "cool"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "lock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "unlock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "covering",
+        "openPercent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": true
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": false
+       },
+       "reason": null
+      }
+     ]
+    }
+   ],
+   "microwave": [
+    {
+     "from": "profile",
+     "results": [
+      {
+       "command": {
+        "type": "on"
+       },
+       "reason": "〈이름〉 시작은 사용자 승인이 필요합니다."
+      },
+      {
+       "command": {
+        "type": "off"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "start"
+       },
+       "reason": "〈이름〉 시작은 사용자 승인이 필요합니다."
+      },
+      {
+       "command": {
+        "type": "stop"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "pause"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "level",
+        "percent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "climate",
+        "mode": "cool"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "lock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "unlock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "covering",
+        "openPercent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": true
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": false
+       },
+       "reason": null
+      }
+     ]
+    }
+   ],
+   "dishwasher": [
+    {
+     "from": "profile",
+     "results": [
+      {
+       "command": {
+        "type": "on"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "off"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "start"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "stop"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "pause"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "level",
+        "percent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "climate",
+        "mode": "cool"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "lock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "unlock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "covering",
+        "openPercent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": true
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": false
+       },
+       "reason": null
+      }
+     ]
+    }
+   ],
+   "washer": [
+    {
+     "from": "profile",
+     "results": [
+      {
+       "command": {
+        "type": "on"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "off"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "start"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "stop"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "pause"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "level",
+        "percent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "climate",
+        "mode": "cool"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "lock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "unlock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "covering",
+        "openPercent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": true
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": false
+       },
+       "reason": null
+      }
+     ]
+    }
+   ],
+   "dryer": [
+    {
+     "from": "profile",
+     "results": [
+      {
+       "command": {
+        "type": "on"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "off"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "start"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "stop"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "pause"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "level",
+        "percent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "climate",
+        "mode": "cool"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "lock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "unlock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "covering",
+        "openPercent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": true
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": false
+       },
+       "reason": null
+      }
+     ]
+    }
+   ],
+   "fridge": [
+    {
+     "from": "profile",
+     "results": [
+      {
+       "command": {
+        "type": "on"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "off"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "start"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "stop"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "pause"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "level",
+        "percent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "climate",
+        "mode": "cool"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "lock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "unlock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "covering",
+        "openPercent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": true
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": false
+       },
+       "reason": null
+      }
+     ]
+    }
+   ],
+   "vacuum": [
+    {
+     "from": "profile",
+     "results": [
+      {
+       "command": {
+        "type": "on"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "off"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "start"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "stop"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "pause"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "level",
+        "percent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "climate",
+        "mode": "cool"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "lock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "unlock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "covering",
+        "openPercent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": true
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": false
+       },
+       "reason": null
+      }
+     ]
+    }
+   ],
+   "covering": [
+    {
+     "from": "profile",
+     "results": [
+      {
+       "command": {
+        "type": "on"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "off"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "start"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "stop"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "pause"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "level",
+        "percent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "climate",
+        "mode": "cool"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "lock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "unlock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "covering",
+        "openPercent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": true
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": false
+       },
+       "reason": null
+      }
+     ]
+    }
+   ],
+   "lock": [
+    {
+     "from": "profile",
+     "results": [
+      {
+       "command": {
+        "type": "on"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "off"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "start"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "stop"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "pause"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "level",
+        "percent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "climate",
+        "mode": "cool"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "lock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "unlock"
+       },
+       "reason": "〈이름〉 잠금 해제는 사용자 승인이 필요합니다."
+      },
+      {
+       "command": {
+        "type": "covering",
+        "openPercent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": true
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": false
+       },
+       "reason": null
+      }
+     ]
+    }
+   ],
+   "contact": [
+    {
+     "from": "profile",
+     "results": [
+      {
+       "command": {
+        "type": "on"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "off"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "start"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "stop"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "pause"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "level",
+        "percent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "climate",
+        "mode": "cool"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "lock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "unlock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "covering",
+        "openPercent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": true
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": false
+       },
+       "reason": null
+      }
+     ]
+    }
+   ],
+   "valve": [
+    {
+     "from": "profile",
+     "results": [
+      {
+       "command": {
+        "type": "on"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "off"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "start"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "stop"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "pause"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "level",
+        "percent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "climate",
+        "mode": "cool"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "lock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "unlock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "covering",
+        "openPercent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": true
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": false
+       },
+       "reason": null
+      }
+     ]
+    }
+   ],
+   "thermostat": [
+    {
+     "from": "profile",
+     "results": [
+      {
+       "command": {
+        "type": "on"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "off"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "start"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "stop"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "pause"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "level",
+        "percent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "climate",
+        "mode": "cool"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "lock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "unlock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "covering",
+        "openPercent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": true
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": false
+       },
+       "reason": null
+      }
+     ]
+    }
+   ],
+   "status": [
+    {
+     "from": "profile",
+     "results": [
+      {
+       "command": {
+        "type": "on"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "off"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "start"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "stop"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "pause"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "level",
+        "percent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "climate",
+        "mode": "cool"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "lock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "unlock"
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "covering",
+        "openPercent": 50
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": true
+       },
+       "reason": null
+      },
+      {
+       "command": {
+        "type": "valve",
+        "open": false
+       },
+       "reason": null
+      }
+     ]
+    }
+   ]
+  }
+ },
+ "labels": {
+  "light": "조명",
+  "plug": "플러그",
+  "tv": "TV",
+  "speaker": "스피커",
+  "aircon": "에어컨",
+  "purifier": "공기청정기",
+  "fan": "팬",
+  "hood": "후드",
+  "cooktop": "인덕션",
+  "microwave": "전자레인지",
+  "dishwasher": "식기세척기",
+  "washer": "세탁기",
+  "dryer": "건조기",
+  "fridge": "냉장고",
+  "vacuum": "로봇청소기",
+  "covering": "커튼·블라인드",
+  "lock": "도어록",
+  "contact": "문 센서",
+  "valve": "수전",
+  "thermostat": "보일러",
+  "status": "상태 표시"
+ },
+ "profiles": {
+  "light": {
+   "model": "onoff",
+   "matterDeviceType": "DimmableLightDevice",
+   "capabilities": [
+    "onoff",
+    "level"
+   ],
+   "control": {
+    "attrs": [
+     "power"
+    ],
+    "active": "on",
+    "inactive": "off"
+   },
+   "sensors": [],
+   "defaults": {
+    "level": 100
+   },
+   "levelTurnsOn": true
+  },
+  "plug": {
+   "model": "onoff",
+   "matterDeviceType": "OnOffPlugInUnitDevice",
+   "capabilities": [
+    "onoff"
+   ],
+   "control": {
+    "attrs": [
+     "power"
+    ],
+    "active": "on",
+    "inactive": "off"
+   },
+   "sensors": []
+  },
+  "tv": {
+   "model": "onoff",
+   "matterDeviceType": "BasicVideoPlayerDevice",
+   "capabilities": [
+    "onoff"
+   ],
+   "control": {
+    "attrs": [
+     "power"
+    ],
+    "active": "on",
+    "inactive": "off"
+   },
+   "sensors": []
+  },
+  "speaker": {
+   "model": "onoff",
+   "matterDeviceType": "SpeakerDevice",
+   "capabilities": [
+    "onoff",
+    "level"
+   ],
+   "control": {
+    "attrs": [
+     "power"
+    ],
+    "active": "on",
+    "inactive": "off"
+   },
+   "sensors": [],
+   "defaults": {
+    "level": 50
+   }
+  },
+  "aircon": {
+   "model": "onoff",
+   "matterDeviceType": "RoomAirConditionerDevice",
+   "capabilities": [
+    "onoff",
+    "climate",
+    "fan"
+   ],
+   "control": {
+    "attrs": [
+     "power"
+    ],
+    "active": "on",
+    "inactive": "off"
+   },
+   "sensors": [],
+   "defaults": {
+    "systemMode": "cool",
+    "setpointC": 24,
+    "fanMode": "auto"
+   },
+   "setpoint": {
+    "min": 18,
+    "max": 30
+   },
+   "modes": [
+    "cool",
+    "heat",
+    "auto",
+    "dry",
+    "fan"
+   ]
+  },
+  "purifier": {
+   "model": "fan",
+   "matterDeviceType": "AirPurifierDevice",
+   "capabilities": [
+    "onoff",
+    "fan"
+   ],
+   "control": {
+    "attrs": [
+     "power"
+    ],
+    "active": "on",
+    "inactive": "off"
+   },
+   "sensors": [],
+   "fanOn": "auto"
+  },
+  "fan": {
+   "model": "fan",
+   "matterDeviceType": "FanDevice",
+   "capabilities": [
+    "onoff",
+    "fan"
+   ],
+   "control": {
+    "attrs": [
+     "power"
+    ],
+    "active": "on",
+    "inactive": "off"
+   },
+   "sensors": [],
+   "fanOn": "high"
+  },
+  "hood": {
+   "model": "fan",
+   "matterDeviceType": "ExtractorHoodDevice",
+   "capabilities": [
+    "onoff",
+    "fan"
+   ],
+   "control": {
+    "attrs": [
+     "power"
+    ],
+    "active": "on",
+    "inactive": "off"
+   },
+   "sensors": [],
+   "fanOn": "high"
+  },
+  "cooktop": {
+   "model": "onoff",
+   "matterDeviceType": "CooktopDevice",
+   "capabilities": [
+    "onoff"
+   ],
+   "control": {
+    "attrs": [
+     "power"
+    ],
+    "active": "on",
+    "inactive": "off"
+   },
+   "sensors": []
+  },
+  "microwave": {
+   "model": "operation",
+   "matterDeviceType": "MicrowaveOvenDevice",
+   "capabilities": [
+    "operation"
+   ],
+   "control": {
+    "attrs": [
+     "power"
+    ],
+    "active": "on",
+    "inactive": "off"
+   },
+   "sensors": []
+  },
+  "dishwasher": {
+   "model": "operation",
+   "matterDeviceType": "DishwasherDevice",
+   "capabilities": [
+    "operation"
+   ],
+   "control": {
+    "attrs": [
+     "running"
+    ],
+    "active": true,
+    "inactive": false
+   },
+   "sensors": [
+    "door"
+   ]
+  },
+  "washer": {
+   "model": "operation",
+   "matterDeviceType": "LaundryWasherDevice",
+   "capabilities": [
+    "operation"
+   ],
+   "control": {
+    "attrs": [
+     "running"
+    ],
+    "active": true,
+    "inactive": false
+   },
+   "sensors": [
+    "door"
+   ]
+  },
+  "dryer": {
+   "model": "operation",
+   "matterDeviceType": "LaundryDryerDevice",
+   "capabilities": [
+    "operation"
+   ],
+   "control": {
+    "attrs": [
+     "running"
+    ],
+    "active": true,
+    "inactive": false
+   },
+   "sensors": []
+  },
+  "fridge": {
+   "model": "contact",
+   "matterDeviceType": "RefrigeratorDevice",
+   "capabilities": [],
+   "sensors": [
+    "door"
+   ]
+  },
+  "vacuum": {
+   "model": "rvc",
+   "matterDeviceType": "RoboticVacuumCleanerDevice",
+   "capabilities": [
+    "operation"
+   ],
+   "control": {
+    "attrs": [
+     "running"
+    ],
+    "active": true,
+    "inactive": false
+   },
+   "sensors": []
+  },
+  "covering": {
+   "model": "covering",
+   "matterDeviceType": "WindowCoveringDevice",
+   "capabilities": [
+    "covering"
+   ],
+   "control": {
+    "attrs": [
+     "curtain",
+     "blind"
+    ],
+    "active": "open",
+    "inactive": "closed"
+   },
+   "sensors": []
+  },
+  "lock": {
+   "model": "lock",
+   "matterDeviceType": "DoorLockDevice",
+   "capabilities": [
+    "lock"
+   ],
+   "control": {
+    "attrs": [
+     "lock"
+    ],
+    "active": "locked",
+    "inactive": "unlocked"
+   },
+   "sensors": [
+    "door"
+   ]
+  },
+  "contact": {
+   "model": "contact",
+   "matterDeviceType": "ContactSensorDevice",
+   "capabilities": [],
+   "sensors": [
+    "door"
+   ]
+  },
+  "valve": {
+   "model": "valve",
+   "matterDeviceType": "WaterValveDevice",
+   "capabilities": [
+    "valve"
+   ],
+   "control": {
+    "attrs": [
+     "faucet",
+     "water"
+    ],
+    "active": "on",
+    "inactive": "off"
+   },
+   "sensors": []
+  },
+  "thermostat": {
+   "model": "thermostat",
+   "matterDeviceType": "ThermostatDevice",
+   "capabilities": [
+    "onoff",
+    "climate"
+   ],
+   "control": {
+    "attrs": [
+     "heating"
+    ],
+    "active": "on",
+    "inactive": "off"
+   },
+   "sensors": [],
+   "defaults": {
+    "setpointC": 22
+   },
+   "setpoint": {
+    "min": 10,
+    "max": 30
+   },
+   "modes": [
+    "heat",
+    "auto"
+   ]
+  },
+  "status": {
+   "model": "status",
+   "matterDeviceType": "none",
+   "capabilities": [],
+   "sensors": [
+    "charging"
+   ]
+  }
+ },
+ "typeRules": {
+  "air_purifier": {
+   "types": [
+    "air_purifier"
+   ],
+   "kind": "purifier"
+  },
+  "armchair": null,
+  "basket": null,
+  "bed_queen": null,
+  "bed_single": null,
+  "bed_single_2": null,
+  "bedside_lamp": {
+   "types": [
+    "ceiling_light",
+    "ceiling_panel",
+    "pendant_lamp",
+    "floor_lamp",
+    "bedside_lamp",
+    "desk_lamp"
+   ],
+   "kind": "light"
+  },
+  "blind_175": {
+   "prefixes": [
+    "curtain_",
+    "blind_"
+   ],
+   "kind": "covering"
+  },
+  "boiler": {
+   "types": [
+    "boiler"
+   ],
+   "kind": "thermostat"
+  },
+  "bookcase": null,
+  "books_row": null,
+  "cabinet": null,
+  "ceiling_light": {
+   "types": [
+    "ceiling_light",
+    "ceiling_panel",
+    "pendant_lamp",
+    "floor_lamp",
+    "bedside_lamp",
+    "desk_lamp"
+   ],
+   "kind": "light"
+  },
+  "ceiling_panel": {
+   "types": [
+    "ceiling_light",
+    "ceiling_panel",
+    "pendant_lamp",
+    "floor_lamp",
+    "bedside_lamp",
+    "desk_lamp"
+   ],
+   "kind": "light"
+  },
+  "chair": null,
+  "coffee_table": null,
+  "counter_base_60": null,
+  "counter_drawer_60": null,
+  "counter_filler": null,
+  "curtain_250": {
+   "prefixes": [
+    "curtain_",
+    "blind_"
+   ],
+   "kind": "covering"
+  },
+  "curtain_290": {
+   "prefixes": [
+    "curtain_",
+    "blind_"
+   ],
+   "kind": "covering"
+  },
+  "desk": null,
+  "desk_lamp": {
+   "types": [
+    "ceiling_light",
+    "ceiling_panel",
+    "pendant_lamp",
+    "floor_lamp",
+    "bedside_lamp",
+    "desk_lamp"
+   ],
+   "kind": "light"
+  },
+  "desk_small": null,
+  "dining_chair": null,
+  "dining_table": null,
+  "dish_cabinet": null,
+  "dishwasher": {
+   "types": [
+    "dishwasher"
+   ],
+   "kind": "dishwasher"
+  },
+  "door_bath_l": {
+   "prefixes": [
+    "door_room_",
+    "door_bath_",
+    "door_glass_",
+    "door_fire_",
+    "sliding_door_"
+   ],
+   "kind": "contact"
+  },
+  "door_bath_r": {
+   "prefixes": [
+    "door_room_",
+    "door_bath_",
+    "door_glass_",
+    "door_fire_",
+    "sliding_door_"
+   ],
+   "kind": "contact"
+  },
+  "door_fire_l": {
+   "prefixes": [
+    "door_room_",
+    "door_bath_",
+    "door_glass_",
+    "door_fire_",
+    "sliding_door_"
+   ],
+   "kind": "contact"
+  },
+  "door_fire_r": {
+   "prefixes": [
+    "door_room_",
+    "door_bath_",
+    "door_glass_",
+    "door_fire_",
+    "sliding_door_"
+   ],
+   "kind": "contact"
+  },
+  "door_glass_l": {
+   "prefixes": [
+    "door_room_",
+    "door_bath_",
+    "door_glass_",
+    "door_fire_",
+    "sliding_door_"
+   ],
+   "kind": "contact"
+  },
+  "door_glass_r": {
+   "prefixes": [
+    "door_room_",
+    "door_bath_",
+    "door_glass_",
+    "door_fire_",
+    "sliding_door_"
+   ],
+   "kind": "contact"
+  },
+  "door_main": {
+   "types": [
+    "door_main"
+   ],
+   "kind": "lock"
+  },
+  "door_room_l": {
+   "prefixes": [
+    "door_room_",
+    "door_bath_",
+    "door_glass_",
+    "door_fire_",
+    "sliding_door_"
+   ],
+   "kind": "contact"
+  },
+  "door_room_r": {
+   "prefixes": [
+    "door_room_",
+    "door_bath_",
+    "door_glass_",
+    "door_fire_",
+    "sliding_door_"
+   ],
+   "kind": "contact"
+  },
+  "downlight": {
+   "types": [
+    "downlight"
+   ],
+   "kind": "light",
+   "matterDeviceType": "OnOffLightDevice",
+   "capabilities": [
+    "onoff"
+   ]
+  },
+  "dresser": null,
+  "dryer": {
+   "types": [
+    "dryer"
+   ],
+   "kind": "dryer"
+  },
+  "extinguisher": null,
+  "floor_lamp": {
+   "types": [
+    "ceiling_light",
+    "ceiling_panel",
+    "pendant_lamp",
+    "floor_lamp",
+    "bedside_lamp",
+    "desk_lamp"
+   ],
+   "kind": "light"
+  },
+  "floors": null,
+  "freezer": {
+   "types": [
+    "fridge",
+    "kimchi_fridge",
+    "freezer"
+   ],
+   "kind": "fridge"
+  },
+  "fridge": {
+   "types": [
+    "fridge",
+    "kimchi_fridge",
+    "freezer"
+   ],
+   "kind": "fridge"
+  },
+  "humidifier": {
+   "types": [
+    "humidifier",
+    "vent_fan"
+   ],
+   "kind": "fan"
+  },
+  "induction_counter": {
+   "types": [
+    "induction_counter"
+   ],
+   "kind": "cooktop"
+  },
+  "kettle": {
+   "types": [
+    "monitor",
+    "kettle",
+    "rice_cooker"
+   ],
+   "kind": "plug"
+  },
+  "keyboard_mouse": null,
+  "kimchi_fridge": {
+   "types": [
+    "fridge",
+    "kimchi_fridge",
+    "freezer"
+   ],
+   "kind": "fridge"
+  },
+  "kitchen_cabinet": null,
+  "magazine": null,
+  "microwave": {
+   "types": [
+    "microwave"
+   ],
+   "kind": "microwave"
+  },
+  "mirror_cabinet": null,
+  "mk_door_alpha_l": null,
+  "mk_door_balcony_living": null,
+  "mk_door_balcony_north_l": null,
+  "mk_door_balcony_se": null,
+  "mk_door_balcony_sw": null,
+  "mk_door_balcony_west": null,
+  "mk_door_bath_center_l": null,
+  "mk_door_bath_east_l": null,
+  "mk_door_bath_west_r": null,
+  "mk_door_bed_ne_l": null,
+  "mk_door_bed_se_l": null,
+  "mk_door_bed_sw_r": null,
+  "mk_door_closet": null,
+  "mk_door_entry_r": null,
+  "mk_door_main_l": null,
+  "mk_win_balcony_front_e": null,
+  "mk_win_balcony_front_w": null,
+  "mk_win_balcony_north": null,
+  "mk_win_balcony_west": null,
+  "mk_win_bed_ne": null,
+  "mk_win_curve_1": null,
+  "mk_win_curve_2": null,
+  "mk_win_curve_3": null,
+  "mk_win_kitchen": null,
+  "mk_win_vestibule": null,
+  "monitor": {
+   "types": [
+    "monitor",
+    "kettle",
+    "rice_cooker"
+   ],
+   "kind": "plug"
+  },
+  "nightstand": null,
+  "pantry_shelf": null,
+  "pendant_lamp": {
+   "types": [
+    "ceiling_light",
+    "ceiling_panel",
+    "pendant_lamp",
+    "floor_lamp",
+    "bedside_lamp",
+    "desk_lamp"
+   ],
+   "kind": "light"
+  },
+  "picture_frame": null,
+  "picture_frame_abstract": null,
+  "picture_frame_botanical": null,
+  "picture_frame_figure": null,
+  "picture_frame_quote": null,
+  "picture_frame_sketch": null,
+  "plant": null,
+  "plant_herb": null,
+  "plant_monstera": null,
+  "plant_pothos": null,
+  "plant_small": null,
+  "plant_succulent": null,
+  "pot": null,
+  "range_hood": {
+   "types": [
+    "range_hood"
+   ],
+   "kind": "hood"
+  },
+  "rice_cooker": {
+   "types": [
+    "monitor",
+    "kettle",
+    "rice_cooker"
+   ],
+   "kind": "plug"
+  },
+  "robot": {
+   "types": [
+    "wall_pad",
+    "robot"
+   ],
+   "twinOnly": true
+  },
+  "robot_dock": {
+   "types": [
+    "robot_dock",
+    "vacuum_dock",
+    "stick_vacuum"
+   ],
+   "kind": "status"
+  },
+  "robot_vacuum": {
+   "types": [
+    "robot_vacuum"
+   ],
+   "kind": "vacuum"
+  },
+  "rug": null,
+  "shoe_cabinet": null,
+  "shower_booth": {
+   "types": [
+    "sink_counter",
+    "utility_sink",
+    "shower_booth"
+   ],
+   "kind": "valve"
+  },
+  "side_table": null,
+  "sink_counter": {
+   "types": [
+    "sink_counter",
+    "utility_sink",
+    "shower_booth"
+   ],
+   "kind": "valve"
+  },
+  "sliding_door_110": {
+   "prefixes": [
+    "door_room_",
+    "door_bath_",
+    "door_glass_",
+    "door_fire_",
+    "sliding_door_"
+   ],
+   "kind": "contact"
+  },
+  "sliding_door_95": {
+   "prefixes": [
+    "door_room_",
+    "door_bath_",
+    "door_glass_",
+    "door_fire_",
+    "sliding_door_"
+   ],
+   "kind": "contact"
+  },
+  "slippers": null,
+  "sofa": null,
+  "speaker": {
+   "types": [
+    "speaker"
+   ],
+   "kind": "speaker"
+  },
+  "stand_ac": {
+   "types": [
+    "stand_ac",
+    "wall_ac"
+   ],
+   "kind": "aircon"
+  },
+  "stick_vacuum": {
+   "types": [
+    "robot_dock",
+    "vacuum_dock",
+    "stick_vacuum"
+   ],
+   "kind": "status"
+  },
+  "storage_box": null,
+  "storage_cabinet": null,
+  "toilet": null,
+  "tv": {
+   "types": [
+    "tv"
+   ],
+   "kind": "tv"
+  },
+  "tv_stand": null,
+  "tv_stand_2": null,
+  "tv_stand_3": null,
+  "upper_cabinet_40": null,
+  "upper_cabinet_60": null,
+  "upper_cabinet_80": null,
+  "utility_sink": {
+   "types": [
+    "sink_counter",
+    "utility_sink",
+    "shower_booth"
+   ],
+   "kind": "valve"
+  },
+  "vacuum_dock": {
+   "types": [
+    "robot_dock",
+    "vacuum_dock",
+    "stick_vacuum"
+   ],
+   "kind": "status"
+  },
+  "vanity": null,
+  "vase_flowers": null,
+  "vent_fan": {
+   "types": [
+    "humidifier",
+    "vent_fan"
+   ],
+   "kind": "fan"
+  },
+  "wall_ac": {
+   "types": [
+    "stand_ac",
+    "wall_ac"
+   ],
+   "kind": "aircon"
+  },
+  "wall_pad": {
+   "types": [
+    "wall_pad",
+    "robot"
+   ],
+   "twinOnly": true
+  },
+  "wall_shelf": null,
+  "walls": null,
+  "wardrobe": null,
+  "wardrobe_2": null,
+  "wardrobe_3": null,
+  "wardrobe_4": null,
+  "wardrobe_module": null,
+  "washer": {
+   "types": [
+    "washer"
+   ],
+   "kind": "washer"
+  },
+  "window_bed": null,
+  "window_inner": null,
+  "window_living": null,
+  "window_master": null,
+  "window_small": null
+ },
+ "synonyms": {
+  "light": [
+   "불",
+   "조명",
+   "등",
+   "전등",
+   "전구",
+   "램프",
+   "라이트"
+  ],
+  "plug": [
+   "플러그",
+   "콘센트"
+  ],
+  "tv": [
+   "tv",
+   "티비",
+   "텔레비전",
+   "테레비"
+  ],
+  "speaker": [
+   "스피커"
+  ],
+  "aircon": [
+   "에어컨",
+   "에어콘",
+   "냉방기"
+  ],
+  "purifier": [
+   "공기청정기",
+   "청정기"
+  ],
+  "fan": [
+   "팬",
+   "환풍기",
+   "선풍기",
+   "가습기"
+  ],
+  "hood": [
+   "후드",
+   "레인지후드"
+  ],
+  "cooktop": [
+   "인덕션",
+   "쿡탑",
+   "가스레인지",
+   "화구"
+  ],
+  "microwave": [
+   "전자레인지",
+   "전자렌지"
+  ],
+  "dishwasher": [
+   "식기세척기",
+   "식세기"
+  ],
+  "washer": [
+   "세탁기"
+  ],
+  "dryer": [
+   "건조기"
+  ],
+  "fridge": [
+   "냉장고"
+  ],
+  "vacuum": [
+   "로봇청소기",
+   "청소기",
+   "로청"
+  ],
+  "covering": [
+   "커튼",
+   "블라인드"
+  ],
+  "lock": [
+   "현관문",
+   "도어락",
+   "도어록",
+   "문",
+   "현관"
+  ],
+  "contact": [
+   "문"
+  ],
+  "valve": [
+   "물",
+   "수도",
+   "수전",
+   "샤워",
+   "싱크"
+  ],
+  "thermostat": [
+   "보일러",
+   "난방"
+  ],
+  "status": [
+   "충전대"
+  ]
+ },
+ "risky": {
+  "names": {
+   "cooktop": [
+    "인덕션",
+    "인덕선",
+    "인덕숀",
+    "전기레인지",
+    "전기렌지",
+    "가스레인지",
+    "가스렌지",
+    "하이라이트",
+    "가스불",
+    "화구",
+    "버너",
+    "쿡탑",
+    "쿡톱",
+    "induction",
+    "cooktop"
+   ],
+   "microwave": [
+    "전자레인지",
+    "전자렌지",
+    "레인지",
+    "microwave"
+   ]
+  },
+  "kinds": [
+   "cooktop",
+   "microwave"
+  ],
+  "texts": {
+   "": [],
+   "거실 불 켜 줘": [],
+   "레인지후드 켜 줘": [],
+   "레인지 후드": [],
+   "가스 레인지 켜": [
+    "cooktop"
+   ],
+   "전자 레인지 돌려 줘": [
+    "microwave"
+   ],
+   "전자레인지": [
+    "microwave"
+   ],
+   "레인지": [
+    "microwave"
+   ],
+   "화 구": [],
+   "화구": [
+    "cooktop"
+   ],
+   "버너 불": [
+    "cooktop"
+   ],
+   "인덕션이랑 전자레인지": [
+    "cooktop",
+    "microwave"
+   ],
+   "INDUCTION on": [
+    "cooktop"
+   ],
+   "Microwave": [
+    "microwave"
+   ],
+   "쿡 탑": [],
+   "하이 라이트": [
+    "cooktop"
+   ],
+   "전기 렌지": [
+    "cooktop"
+   ],
+   "TV 켜 줘": [],
+   "냉장고 문 닫아": [],
+   "레인지후드와 전자레인지": [
+    "microwave"
+   ]
+  }
+ },
+ "caution": {
+  "cooktop": "냄비와 상판이 뜨거워져요.",
+  "microwave": "그릇이 뜨거워져요."
+ },
+ "hand": {
+  "cooktop": [
+   "켜기",
+   "끄기"
+  ],
+  "microwave": [
+   "열기",
+   "닫기",
+   "켜기",
+   "끄기"
+  ],
+  "fridge": [
+   "열기",
+   "닫기"
+  ]
+ },
+ "thinq": {
+  "pairable": [
+   "aircon",
+   "fridge"
+  ],
+  "fits": {
+   "light": [],
+   "plug": [],
+   "tv": [],
+   "speaker": [],
+   "aircon": [
+    "DEVICE_AIR_CONDITIONER",
+    "air_conditioner"
+   ],
+   "purifier": [],
+   "fan": [],
+   "hood": [],
+   "cooktop": [],
+   "microwave": [],
+   "dishwasher": [],
+   "washer": [],
+   "dryer": [],
+   "fridge": [
+    "DEVICE_REFRIGERATOR",
+    "refrigerator",
+    "DEVICE_KIMCHI_REFRIGERATOR"
+   ],
+   "vacuum": [],
+   "covering": [],
+   "lock": [],
+   "contact": [],
+   "valve": [],
+   "thermostat": [],
+   "status": []
+  },
+  "read": {
+   "light": [
+    {},
+    {},
+    {},
+    {},
+    {}
+   ],
+   "plug": [
+    {},
+    {},
+    {},
+    {},
+    {}
+   ],
+   "tv": [
+    {},
+    {},
+    {},
+    {},
+    {}
+   ],
+   "speaker": [
+    {},
+    {},
+    {},
+    {},
+    {}
+   ],
+   "aircon": [
+    {},
+    {
+     "power": "on",
+     "mode": "cool",
+     "setpointC": 24,
+     "currentC": 26,
+     "fan": "high"
+    },
+    {
+     "power": "off",
+     "mode": "dry",
+     "setpointC": 20,
+     "fan": "medium"
+    },
+    {},
+    {}
+   ],
+   "purifier": [
+    {},
+    {},
+    {},
+    {},
+    {}
+   ],
+   "fan": [
+    {},
+    {},
+    {},
+    {},
+    {}
+   ],
+   "hood": [
+    {},
+    {},
+    {},
+    {},
+    {}
+   ],
+   "cooktop": [
+    {},
+    {},
+    {},
+    {},
+    {}
+   ],
+   "microwave": [
+    {},
+    {},
+    {},
+    {},
+    {}
+   ],
+   "dishwasher": [
+    {},
+    {},
+    {},
+    {},
+    {}
+   ],
+   "washer": [
+    {},
+    {},
+    {},
+    {},
+    {}
+   ],
+   "dryer": [
+    {},
+    {},
+    {},
+    {},
+    {}
+   ],
+   "fridge": [
+    {},
+    {},
+    {},
+    {
+     "door": "open"
+    },
+    {
+     "door": "closed"
+    }
+   ],
+   "vacuum": [
+    {},
+    {},
+    {},
+    {},
+    {}
+   ],
+   "covering": [
+    {},
+    {},
+    {},
+    {},
+    {}
+   ],
+   "lock": [
+    {},
+    {},
+    {},
+    {},
+    {}
+   ],
+   "contact": [
+    {},
+    {},
+    {},
+    {},
+    {}
+   ],
+   "valve": [
+    {},
+    {},
+    {},
+    {},
+    {}
+   ],
+   "thermostat": [
+    {},
+    {},
+    {},
+    {},
+    {}
+   ],
+   "status": [
+    {},
+    {},
+    {},
+    {},
+    {}
+   ]
+  },
+  "steps": {
+   "light": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "plug": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "tv": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "speaker": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "aircon": [
+    [
+     {
+      "name": "전원 켜기",
+      "body": {
+       "operation": {
+        "airConOperationMode": "POWER_ON"
+       }
+      },
+      "done": [
+       false,
+       true,
+       false,
+       false,
+       false,
+       true
+      ]
+     }
+    ],
+    [
+     {
+      "name": "전원 끄기",
+      "body": {
+       "operation": {
+        "airConOperationMode": "POWER_OFF"
+       }
+      },
+      "done": [
+       false,
+       false,
+       true,
+       false,
+       false,
+       false
+      ]
+     }
+    ],
+    null,
+    null,
+    null,
+    null,
+    [
+     {
+      "name": "전원 켜기",
+      "body": {
+       "operation": {
+        "airConOperationMode": "POWER_ON"
+       }
+      },
+      "done": [
+       false,
+       true,
+       false,
+       false,
+       false,
+       true
+      ]
+     },
+     {
+      "name": "모드 냉방",
+      "body": {
+       "airConJobMode": {
+        "currentJobMode": "COOL"
+       }
+      },
+      "done": [
+       false,
+       false,
+       false,
+       false,
+       false,
+       true
+      ]
+     }
+    ],
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "purifier": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fan": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "hood": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "cooktop": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "microwave": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "dishwasher": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "washer": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "dryer": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fridge": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "vacuum": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "covering": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "lock": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "contact": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "valve": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "thermostat": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "status": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ]
+  },
+  "mirror": {
+   "light": [
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    }
+   ],
+   "plug": [
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    }
+   ],
+   "tv": [
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    }
+   ],
+   "speaker": [
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    }
+   ],
+   "aircon": [
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [
+      {
+       "type": "climate",
+       "mode": "heat",
+       "setpointC": 22,
+       "fan": "low"
+      }
+     ],
+     "sensors": []
+    },
+    {
+     "commands": [
+      {
+       "type": "climate",
+       "setpointC": 22
+      }
+     ],
+     "sensors": []
+    },
+    {
+     "commands": [
+      {
+       "type": "off"
+      }
+     ],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [
+      {
+       "type": "climate",
+       "mode": "cool",
+       "setpointC": 24,
+       "fan": "auto"
+      }
+     ],
+     "sensors": []
+    }
+   ],
+   "purifier": [
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    }
+   ],
+   "fan": [
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    }
+   ],
+   "hood": [
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    }
+   ],
+   "cooktop": [
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    }
+   ],
+   "microwave": [
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    }
+   ],
+   "dishwasher": [
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    }
+   ],
+   "washer": [
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    }
+   ],
+   "dryer": [
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    }
+   ],
+   "fridge": [
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": [
+      [
+       "door",
+       "open"
+      ]
+     ]
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": [
+      [
+       "door",
+       "closed"
+      ]
+     ]
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    }
+   ],
+   "vacuum": [
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    }
+   ],
+   "covering": [
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    }
+   ],
+   "lock": [
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    }
+   ],
+   "contact": [
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    }
+   ],
+   "valve": [
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    }
+   ],
+   "thermostat": [
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    }
+   ],
+   "status": [
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    },
+    {
+     "commands": [],
+     "sensors": []
+    }
+   ]
+  }
+ },
+ "deviceText": {
+  "washer": {
+   "running": {
+    "became": "세탁 시작"
+   },
+   "stopped": {
+    "became": "세탁 멈춤"
+   }
+  },
+  "dryer": {
+   "running": {
+    "became": "건조 시작"
+   },
+   "stopped": {
+    "became": "건조 멈춤"
+   }
+  },
+  "dishwasher": {
+   "running": {
+    "became": "세척 시작"
+   },
+   "stopped": {
+    "label": "이용 가능",
+    "became": "세척 멈춤"
+   }
+  },
+  "vacuum": {
+   "running": {
+    "became": "청소 시작"
+   },
+   "stopped": {
+    "became": "청소 멈춤"
+   }
+  }
+ },
+ "deviceLong": {
+  "door_open_long": {
+   "state": "door_open",
+   "kinds": [
+    "fridge",
+    "lock"
+   ],
+   "afterMs": 60000,
+   "label": "문이 1분 넘게 열림"
+  }
+ },
+ "camera": {
+  "kindOf": {
+   "tv": "tv",
+   "refrigerator": "fridge",
+   "microwave": "microwave",
+   "oven": null,
+   "toaster": null,
+   "sink": "valve"
+  },
+  "sight": {
+   "tv": [
+    {
+     "facet": "screen",
+     "attr": "power",
+     "values": {
+      "screen_on": "on",
+      "screen_off": "off"
+     }
+    }
+   ],
+   "refrigerator": [
+    {
+     "facet": "open",
+     "attr": "door",
+     "values": {
+      "open": "open",
+      "closed": "closed"
+     }
+    }
+   ],
+   "microwave": [
+    {
+     "facet": "use",
+     "attr": "power",
+     "values": {
+      "in_use": "on"
+     },
+     "absent": "off"
+    },
+    {
+     "facet": "open",
+     "attr": "door",
+     "values": {
+      "open": "open",
+      "closed": "closed"
+     }
+    }
+   ],
+   "sink": [
+    {
+     "facet": "use",
+     "attr": "faucet",
+     "values": {
+      "water_running": "on"
+     },
+     "absent": "off"
+    }
+   ]
+  }
+ },
+ "twinChange": {
+  "light": [
+   {
+    "attr": "power",
+    "value": "off",
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "off"
+     },
+     "value": "off"
+    }
+   },
+   {
+    "attr": "power",
+    "value": "on",
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "on"
+     },
+     "value": "on"
+    }
+   },
+   {
+    "attr": "nope",
+    "value": "on",
+    "change": {
+     "type": "invalid",
+     "error": "〈이름〉: 상태 nope이(가) 없습니다(있는 상태: power)."
+    }
+   }
+  ],
+  "plug": [
+   {
+    "attr": "power",
+    "value": "off",
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "off"
+     },
+     "value": "off"
+    }
+   },
+   {
+    "attr": "power",
+    "value": "on",
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "on"
+     },
+     "value": "on"
+    }
+   },
+   {
+    "attr": "nope",
+    "value": "on",
+    "change": {
+     "type": "invalid",
+     "error": "〈이름〉: 상태 nope이(가) 없습니다(있는 상태: power)."
+    }
+   }
+  ],
+  "tv": [
+   {
+    "attr": "power",
+    "value": "off",
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "off"
+     },
+     "value": "off"
+    }
+   },
+   {
+    "attr": "power",
+    "value": "on",
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "on"
+     },
+     "value": "on"
+    }
+   },
+   {
+    "attr": "nope",
+    "value": "on",
+    "change": {
+     "type": "invalid",
+     "error": "〈이름〉: 상태 nope이(가) 없습니다(있는 상태: power)."
+    }
+   }
+  ],
+  "speaker": [
+   {
+    "attr": "power",
+    "value": "off",
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "off"
+     },
+     "value": "off"
+    }
+   },
+   {
+    "attr": "power",
+    "value": "on",
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "on"
+     },
+     "value": "on"
+    }
+   },
+   {
+    "attr": "nope",
+    "value": "on",
+    "change": {
+     "type": "invalid",
+     "error": "〈이름〉: 상태 nope이(가) 없습니다(있는 상태: power)."
+    }
+   }
+  ],
+  "aircon": [
+   {
+    "attr": "power",
+    "value": "off",
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "off"
+     },
+     "value": "off"
+    }
+   },
+   {
+    "attr": "power",
+    "value": "on",
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "on"
+     },
+     "value": "on"
+    }
+   },
+   {
+    "attr": "nope",
+    "value": "on",
+    "change": {
+     "type": "invalid",
+     "error": "〈이름〉: 상태 nope이(가) 없습니다(있는 상태: power)."
+    }
+   }
+  ],
+  "purifier": [
+   {
+    "attr": "power",
+    "value": "off",
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "off"
+     },
+     "value": "off"
+    }
+   },
+   {
+    "attr": "power",
+    "value": "on",
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "on"
+     },
+     "value": "on"
+    }
+   },
+   {
+    "attr": "nope",
+    "value": "on",
+    "change": {
+     "type": "invalid",
+     "error": "〈이름〉: 상태 nope이(가) 없습니다(있는 상태: power)."
+    }
+   }
+  ],
+  "fan": [
+   {
+    "attr": "power",
+    "value": "off",
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "off"
+     },
+     "value": "off"
+    }
+   },
+   {
+    "attr": "power",
+    "value": "on",
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "on"
+     },
+     "value": "on"
+    }
+   },
+   {
+    "attr": "nope",
+    "value": "on",
+    "change": {
+     "type": "invalid",
+     "error": "〈이름〉: 상태 nope이(가) 없습니다(있는 상태: power)."
+    }
+   }
+  ],
+  "hood": [
+   {
+    "attr": "power",
+    "value": "off",
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "off"
+     },
+     "value": "off"
+    }
+   },
+   {
+    "attr": "power",
+    "value": "on",
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "on"
+     },
+     "value": "on"
+    }
+   },
+   {
+    "attr": "nope",
+    "value": "on",
+    "change": {
+     "type": "invalid",
+     "error": "〈이름〉: 상태 nope이(가) 없습니다(있는 상태: power)."
+    }
+   }
+  ],
+  "cooktop": [
+   {
+    "attr": "power",
+    "value": "off",
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "off"
+     },
+     "value": "off"
+    }
+   },
+   {
+    "attr": "power",
+    "value": "on",
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "on"
+     },
+     "value": "on"
+    }
+   },
+   {
+    "attr": "nope",
+    "value": "on",
+    "change": {
+     "type": "invalid",
+     "error": "〈이름〉: 상태 nope이(가) 없습니다(있는 상태: power)."
+    }
+   }
+  ],
+  "microwave": [
+   {
+    "attr": "power",
+    "value": "off",
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "off"
+     },
+     "value": "off"
+    }
+   },
+   {
+    "attr": "power",
+    "value": "on",
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "on"
+     },
+     "value": "on"
+    }
+   },
+   {
+    "attr": "nope",
+    "value": "on",
+    "change": {
+     "type": "invalid",
+     "error": "〈이름〉: 상태 nope이(가) 없습니다(있는 상태: power)."
+    }
+   }
+  ],
+  "dishwasher": [
+   {
+    "attr": "running",
+    "value": false,
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "off"
+     },
+     "value": false
+    }
+   },
+   {
+    "attr": "running",
+    "value": true,
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "on"
+     },
+     "value": true
+    }
+   },
+   {
+    "attr": "door",
+    "value": "closed",
+    "change": {
+     "type": "sensor",
+     "value": "closed"
+    }
+   },
+   {
+    "attr": "door",
+    "value": "open",
+    "change": {
+     "type": "sensor",
+     "value": "open"
+    }
+   },
+   {
+    "attr": "nope",
+    "value": "on",
+    "change": {
+     "type": "invalid",
+     "error": "〈이름〉: 상태 nope이(가) 없습니다(있는 상태: running, door)."
+    }
+   }
+  ],
+  "washer": [
+   {
+    "attr": "running",
+    "value": false,
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "off"
+     },
+     "value": false
+    }
+   },
+   {
+    "attr": "running",
+    "value": true,
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "on"
+     },
+     "value": true
+    }
+   },
+   {
+    "attr": "door",
+    "value": "closed",
+    "change": {
+     "type": "sensor",
+     "value": "closed"
+    }
+   },
+   {
+    "attr": "door",
+    "value": "open",
+    "change": {
+     "type": "sensor",
+     "value": "open"
+    }
+   },
+   {
+    "attr": "nope",
+    "value": "on",
+    "change": {
+     "type": "invalid",
+     "error": "〈이름〉: 상태 nope이(가) 없습니다(있는 상태: running, door)."
+    }
+   }
+  ],
+  "dryer": [
+   {
+    "attr": "running",
+    "value": false,
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "off"
+     },
+     "value": false
+    }
+   },
+   {
+    "attr": "running",
+    "value": true,
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "on"
+     },
+     "value": true
+    }
+   },
+   {
+    "attr": "nope",
+    "value": "on",
+    "change": {
+     "type": "invalid",
+     "error": "〈이름〉: 상태 nope이(가) 없습니다(있는 상태: running)."
+    }
+   }
+  ],
+  "fridge": [
+   {
+    "attr": "door",
+    "value": "closed",
+    "change": {
+     "type": "sensor",
+     "value": "closed"
+    }
+   },
+   {
+    "attr": "door",
+    "value": "open",
+    "change": {
+     "type": "sensor",
+     "value": "open"
+    }
+   },
+   {
+    "attr": "nope",
+    "value": "on",
+    "change": {
+     "type": "invalid",
+     "error": "〈이름〉: 상태 nope이(가) 없습니다(있는 상태: door)."
+    }
+   }
+  ],
+  "vacuum": [
+   {
+    "attr": "running",
+    "value": false,
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "off"
+     },
+     "value": false
+    }
+   },
+   {
+    "attr": "running",
+    "value": true,
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "on"
+     },
+     "value": true
+    }
+   },
+   {
+    "attr": "nope",
+    "value": "on",
+    "change": {
+     "type": "invalid",
+     "error": "〈이름〉: 상태 nope이(가) 없습니다(있는 상태: running)."
+    }
+   }
+  ],
+  "covering": [
+   {
+    "attr": "curtain",
+    "value": "closed",
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "covering",
+      "openPercent": 0
+     },
+     "value": "closed"
+    }
+   },
+   {
+    "attr": "curtain",
+    "value": "open",
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "covering",
+      "openPercent": 100
+     },
+     "value": "open"
+    }
+   },
+   {
+    "attr": "blind",
+    "value": "closed",
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "covering",
+      "openPercent": 0
+     },
+     "value": "closed"
+    }
+   },
+   {
+    "attr": "blind",
+    "value": "open",
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "covering",
+      "openPercent": 100
+     },
+     "value": "open"
+    }
+   },
+   {
+    "attr": "nope",
+    "value": "on",
+    "change": {
+     "type": "invalid",
+     "error": "〈이름〉: 상태 nope이(가) 없습니다(있는 상태: curtain, blind)."
+    }
+   }
+  ],
+  "lock": [
+   {
+    "attr": "lock",
+    "value": "unlocked",
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "unlock"
+     },
+     "value": "unlocked"
+    }
+   },
+   {
+    "attr": "lock",
+    "value": "locked",
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "lock"
+     },
+     "value": "locked"
+    }
+   },
+   {
+    "attr": "door",
+    "value": "closed",
+    "change": {
+     "type": "sensor",
+     "value": "closed"
+    }
+   },
+   {
+    "attr": "door",
+    "value": "open",
+    "change": {
+     "type": "sensor",
+     "value": "open"
+    }
+   },
+   {
+    "attr": "nope",
+    "value": "on",
+    "change": {
+     "type": "invalid",
+     "error": "〈이름〉: 상태 nope이(가) 없습니다(있는 상태: lock, door)."
+    }
+   }
+  ],
+  "contact": [
+   {
+    "attr": "door",
+    "value": "closed",
+    "change": {
+     "type": "sensor",
+     "value": "closed"
+    }
+   },
+   {
+    "attr": "door",
+    "value": "open",
+    "change": {
+     "type": "sensor",
+     "value": "open"
+    }
+   },
+   {
+    "attr": "nope",
+    "value": "on",
+    "change": {
+     "type": "invalid",
+     "error": "〈이름〉: 상태 nope이(가) 없습니다(있는 상태: door)."
+    }
+   }
+  ],
+  "valve": [
+   {
+    "attr": "faucet",
+    "value": "off",
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "off"
+     },
+     "value": "off"
+    }
+   },
+   {
+    "attr": "faucet",
+    "value": "on",
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "on"
+     },
+     "value": "on"
+    }
+   },
+   {
+    "attr": "water",
+    "value": "off",
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "off"
+     },
+     "value": "off"
+    }
+   },
+   {
+    "attr": "water",
+    "value": "on",
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "on"
+     },
+     "value": "on"
+    }
+   },
+   {
+    "attr": "nope",
+    "value": "on",
+    "change": {
+     "type": "invalid",
+     "error": "〈이름〉: 상태 nope이(가) 없습니다(있는 상태: faucet, water)."
+    }
+   }
+  ],
+  "thermostat": [
+   {
+    "attr": "heating",
+    "value": "off",
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "off"
+     },
+     "value": "off"
+    }
+   },
+   {
+    "attr": "heating",
+    "value": "on",
+    "change": {
+     "type": "command",
+     "command": {
+      "type": "on"
+     },
+     "value": "on"
+    }
+   },
+   {
+    "attr": "nope",
+    "value": "on",
+    "change": {
+     "type": "invalid",
+     "error": "〈이름〉: 상태 nope이(가) 없습니다(있는 상태: heating)."
+    }
+   }
+  ],
+  "status": [
+   {
+    "attr": "charging",
+    "value": "off",
+    "change": {
+     "type": "sensor",
+     "value": "off"
+    }
+   },
+   {
+    "attr": "charging",
+    "value": "on",
+    "change": {
+     "type": "sensor",
+     "value": "on"
+    }
+   },
+   {
+    "attr": "nope",
+    "value": "on",
+    "change": {
+     "type": "invalid",
+     "error": "〈이름〉: 상태 nope이(가) 없습니다(있는 상태: charging)."
+    }
+   }
+  ]
+ }
+}
