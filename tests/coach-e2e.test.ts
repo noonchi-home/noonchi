@@ -257,8 +257,10 @@ describe("코치 모드: 라면 끓이기 알려 주기", () => {
     s.say("그만");
     await s.pump(() => s.commands().some((m) => m.step === `off:${planId}:${s.cooktop}:1`), "끄기 안내");
     const off = s.commands().find((m) => m.step === `off:${planId}:${s.cooktop}:1`)!;
-    expect(off).toMatchObject({ id: planId, choices: [{ id: "done", label: "완료" }], speak: true });
+    expect(off).toMatchObject({ id: planId, choices: [{ id: "done", label: "완료" }], speak: true, grade: "safety" });
     expect(off.text).toMatch(/인덕션.* 꺼 주세요$/);
+    // 끄기 안내가 승인 대기 카드를 가리는 동안 승인 시간 제한이 멈춘다
+    expect(srv!.policy.paused()).toBe(true);
     await s.pump(async () => (await s.history("execution")).some((r) => r.subject === planId && r.text === "사용자가 그만둠"), "취소 기록");
     await s.pump(() => s.dash.some((m) => m.type === "say" && m.text === "불을 꺼 달라고 했어요."), "말풍선 카드");
     s.answer(off);
@@ -267,6 +269,7 @@ describe("코치 모드: 라면 끓이기 알려 주기", () => {
     expect(s.phone.at(-1)?.type).toBe("command");
     await srv!.hub.command(s.cooktop, { type: "off" });
     await s.pump(() => s.phone.at(-1)?.type === "command_clear", "안내 지움");
+    expect(srv!.policy.paused()).toBe(false);
     expect(existsSync(join(s.runtimeDir, "homes", "mokryeon_180b", "lessons.json"))).toBe(false);
   }, 90_000);
 

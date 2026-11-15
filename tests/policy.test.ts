@@ -91,6 +91,23 @@ describe("승인 토큰", () => {
     expect(policy.pending()).toHaveLength(0);
     expect(policy.consume(p.token)).toBeUndefined();
   });
+
+  it("끄기 안내가 승인 대기를 가린 동안(pause) 시간 제한이 멈추고, 풀면 가린 만큼 늦게 만료된다. 가린 동안 받은 대기는 푼 때부터 5분이다", () => {
+    const { policy, advance } = setup();
+    const p = policy.issue("door_main", { type: "unlock" }, "r");
+    advance(60_000);
+    policy.pause(true);
+    advance(10 * 60 * 1000);
+    const q = policy.issue("induction_1", { type: "on" }, "r");
+    expect(policy.pending().map((x) => x.token)).toEqual([p.token, q.token]);
+    policy.pause(false);
+    advance(4 * 60 * 1000 - 1);
+    expect(policy.pending()).toHaveLength(2);
+    advance(2);
+    expect(policy.pending().map((x) => x.token)).toEqual([q.token]);
+    advance(60 * 1000);
+    expect(policy.pending()).toEqual([]);
+  });
 });
 
 describe("guard", () => {

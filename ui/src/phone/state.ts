@@ -1,6 +1,7 @@
 // 실제 폰 화면 상태: 서버 메시지·AR·듣기가 바꾸는 값과, 화면 글을 만드는 순수 함수. 타이머·보내기는 controller.ts가 맡는다.
 // 실제 폰은 에이전트의 손이다: 위에는 지금 할 명령 한 줄(handOf top), 아래 엄지 자리에는 비전 상태 한 줄과 그 바로 아래 답 단추(thumb).
-// 엄지 자리 차례: 시작 위치 맞추기·물건 자리 맞추기 > 승인 대기(가전) > 명령·질문. 일이 멈추는 문제는 모달(problemOf), 추적 약함·잠깐 알릴 말은 비전 상태 줄.
+// 엄지 자리 차례: 시작 위치 맞추기·물건 자리 맞추기 > 안전 명령(끄기 안내·부탁, 서버 grade safety) > 승인 대기(가전) > 명령·질문.
+// 안전 명령이 승인 대기를 가리는 동안 서버는 승인 시간 제한을 멈추고(src/agent/policy.ts pause), 안내가 풀리면 승인 대기가 다시 보인다. 일이 멈추는 문제는 모달(problemOf), 추적 약함·잠깐 알릴 말은 비전 상태 줄.
 // 엄지 자리 카드가 없으면(기다리기·가전 단계라 명령이 없을 때) 잠깐 알릴 말은 위 줄에 보인다(명령을 가리지 않는다).
 // 위치 맞춤(서버 status.sync, src/sync): 시작 위치가 있으면 AR을 켤 때 「여기서 시작」을 띄우고, 어림인 동안 명령의 비전 상태 줄 앞에 「위치 맞추는 중」.
 // 집에 시작 위치가 없으면 AR 중 「설정 화면에서 시작 위치를 정해 주세요」 모달이 뜬다.
@@ -18,7 +19,7 @@ export interface Choice { id: string; label: string }
 /** 승인 대기 가전 명령. choices: 답(승인·거절)마다 단추 하나. */
 export interface Pending { token: string; deviceLabel: string; reason: string; choices: Choice[] }
 /** 서버가 보낸 지금 명령·질문(src/contract/phone.ts PhoneCommand에서 speak를 빼고 대상은 id만). target: 고리를 그릴 명령 대상 id(없으면 null). */
-export interface Command { id: string; step: string; text: string; vision: string | null; choices: Choice[]; target: string | null }
+export interface Command { id: string; step: string; text: string; vision: string | null; choices: Choice[]; target: string | null; safety?: true }
 /** 화면 위 초점 표시 하나(core/project.js focusMarks와 같은 모양). */
 export interface FocusMark { id: string; label: string; u: number; v: number; off: boolean; angle: number }
 /** 엄지 자리를 차지하는 일: 물건 자리 맞추기(「여기」 말하기), 시작 위치 맞추기(「여기서 시작」). */
@@ -126,6 +127,7 @@ export function handOf(v: PhoneView): Hand {
   const start = v.setup === "start" ? v.sync?.start ?? null : null;
   const thumb: Thumb | null = start ? { kind: "start" }
     : v.setup === "place" ? { kind: "place" }
+    : v.command?.safety ? { kind: "command", command: v.command }
     : pending ? { kind: "pending", item: pending }
     : v.command ? { kind: "command", command: v.command }
     : null;

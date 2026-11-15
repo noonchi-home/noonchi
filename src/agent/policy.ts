@@ -141,6 +141,8 @@ export class Policy {
   private readonly tokens = new Map<string, PendingConfirmation>();
   private readonly ttlMs: number;
   private readonly now: () => number;
+  /** 시간 제한을 멈춘 때(pause). 멈춘 동안은 그때를 지금으로 본다. */
+  private pausedAt: number | null = null;
   readonly approvals: ApprovalBook;
 
   constructor(opts: PolicyOptions = {}) {
@@ -157,9 +159,29 @@ export class Policy {
     return reason ? reason(device.label) : `${device.label}: 사용자 승인이 필요합니다.`;
   }
 
+  /** 승인 대기를 실제 폰에서 가린 동안(끄기 안내가 명령 줄에 떠 있음, src/server/home.ts) 시간 제한을 멈춘다. 풀면 가린 시간만큼 만료를 늦춘다.
+   *  가린 동안 받은 대기는 푼 때부터 제 시간(ttlMs)을 받는다. 승인 대기가 보이지 않는 사이 시간 초과로 닫히지 않게 한다. */
+  pause(on: boolean): void {
+    if (on && this.pausedAt === null) this.pausedAt = this.now();
+    if (on || this.pausedAt === null) return;
+    const held = this.now() - this.pausedAt;
+    for (const p of this.tokens.values()) p.expiresAt += held;
+    this.pausedAt = null;
+  }
+
+  /** 시간 제한이 멈춰 있는가. */
+  paused(): boolean {
+    return this.pausedAt !== null;
+  }
+
+  /** 만료를 셀 때의 지금: 멈춘 동안은 멈춘 때. */
+  private clock(): number {
+    return this.pausedAt ?? this.now();
+  }
+
   issue(deviceId: string, cmd: Command, reason: string): PendingConfirmation {
     this.purge();
-    const p: PendingConfirmation = { token: randomUUID(), deviceId, command: structuredClone(cmd), reason, expiresAt: this.now() + this.ttlMs };
+    const p: PendingConfirmation = { token: randomUUID(), deviceId, command: structuredClone(cmd), reason, expiresAt: this.clock() + this.ttlMs };
     this.tokens.set(p.token, p);
     return structuredClone(p);
   }
@@ -218,7 +240,7 @@ export class Policy {
   private peek(token: string): PendingConfirmation | undefined {
     const p = this.tokens.get(token);
     if (!p) return undefined;
-    if (this.now() >= p.expiresAt) {
+    if (this.clock() >= p.expiresAt) {
       this.tokens.delete(token);
       return undefined;
     }
@@ -226,7 +248,7 @@ export class Policy {
   }
 
   private purge(): void {
-    const now = this.now();
+    const now = this.clock();
     for (const [t, p] of this.tokens) if (now >= p.expiresAt) this.tokens.delete(t);
   }
 }

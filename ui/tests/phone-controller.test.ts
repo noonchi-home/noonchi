@@ -309,6 +309,28 @@ describe("소리 차례(sayAloud): 앞 말을 끊지 않고 차례로 읽는다"
     expect(spoken.slice(5)).toEqual(["싱크대로 가 주세요", "현관문을 열었어요", "싱크대로 가 주세요"]);
   });
 
+  it("승인 대기(현관문) 중에 다른 계획의 끄기 안내(안전)가 오면 엄지 자리·소리·at이 끄기 안내다. 안내가 풀리면 승인 질문이 다시 보이고 다시 읽힌다", async () => {
+    const { c, ws, spoken, dones, sent, startAr } = make();
+    await startAr();
+    const DOOR = { token: "t1", deviceLabel: "현관문", reason: "현관문 잠금 해제", choices: [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }] };
+    const DOOR_ASK = "현관문: 현관문 잠금 해제";
+    const OFF_NOTE = command({ id: "plan:pam-0", step: "off:plan:pam-0:induction_1:1", text: "인덕션을 꺼 주세요", grade: "safety" });
+    ws.push({ type: "reply", text: "현관문 잠금 해제는 승인이 필요해요.", pending: [DOOR] });
+    dones[0]!();
+    dones[1]!();
+    expect(spoken).toEqual(["현관문 잠금 해제는 승인이 필요해요.", DOOR_ASK]);
+    ws.push(OFF_NOTE);
+    expect(handOf(c.view())).toMatchObject({ top: "인덕션을 꺼 주세요", thumb: { kind: "command" } });
+    expect(spoken.at(-1)).toBe("인덕션을 꺼 주세요");
+    c.actions.say("완료");
+    expect(sent().at(-1)).toEqual({ type: "say", text: "완료", at: { kind: "command", id: "plan:pam-0", step: "off:plan:pam-0:induction_1:1", pending: [] } });
+    dones[2]!();
+    ws.push({ type: "command_clear", id: "plan:pam-0" });
+    expect(handOf(c.view())).toMatchObject({ top: DOOR_ASK, thumb: { kind: "pending" } });
+    expect(spoken.at(-1)).toBe(DOOR_ASK);
+    expect(c.view().pending).toEqual([DOOR]);
+  });
+
   it("서버 reply가 승인 대기를 풀어도 reply를 먼저 읽고 숨었던 명령을 바로 이어 읽는다(한 번만)", () => {
     const { ws, spoken, dones } = make();
     const DOOR = { token: "t1", deviceLabel: "현관문", reason: "현관문 잠금 해제", choices: [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }] };

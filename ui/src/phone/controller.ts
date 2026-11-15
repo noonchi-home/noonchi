@@ -117,6 +117,7 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
   let owed: Talk | null = null;
   /** 화면에 보이던 대상(가림이 풀렸는지 본다). */
   let shownBefore: TalkTarget | null = null;
+  let shownWasSafety = false;
   /** 마지막으로 받은 명령의 소리 등급(보이는 명령을 다시 읽을 때 쓴다). */
   let lastGrade: { id: string; step: string; grade: Grade } | null = null;
   let aim = false;
@@ -141,11 +142,17 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
     aim = on;
     draw.aim(on);
   });
-  // 가림(맞추기·승인 대기)이 풀려 보이는 대상이 아직 못 읽은 명령이 되면 reply를 기다리지 않고 바로 줄에 넣는다
+  // 가림(맞추기·승인 대기)이 풀려 보이는 대상이 아직 못 읽은 명령이 되면 reply를 기다리지 않고 바로 줄에 넣는다.
+  // 안전 명령(끄기 안내)이 풀려 가렸던 승인 대기가 다시 보이면 그 질문을 다시 읽는다
   store.subscribe(() => {
-    const shown = shownTalk(store.get())?.target ?? null;
+    const now = shownTalk(store.get());
+    const shown = now?.target ?? null;
     if (shown === shownBefore || (shown && sameTarget(shown, shownBefore))) return;
+    const wasSafety = shownWasSafety;
     shownBefore = shown;
+    shownWasSafety = now?.grade === "safety";
+    const queued = (target: TalkTarget) => (t: Talk | null) => !!t?.target && sameTarget(target, t.target);
+    if (wasSafety && now?.target?.kind === "pending" && !queued(now.target)(talking) && !talkQueue.some(queued(now.target))) return sayAloud(now.text, now.target, now.grade);
     const o = owed;
     const has = (t: Talk | null) => !!t?.target && !!o?.target && sameTarget(o.target, t.target);
     if (!o?.target || !sameTarget(o.target, shown) || has(talking) || talkQueue.some(has)) return;
@@ -303,7 +310,7 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
       if (owed?.target && !sameTarget(owed.target, target)) owed = null;
       lastGrade = { id: m.id, step: m.step, grade: m.grade ?? "command" };
       armTalk();
-      set((v) => ({ ...v, command: { id: m.id, step: m.step, text: m.text, vision: m.vision, choices: m.choices, target: m.target?.id ?? null } }));
+      set((v) => ({ ...v, command: { id: m.id, step: m.step, text: m.text, vision: m.vision, choices: m.choices, target: m.target?.id ?? null, ...(m.grade === "safety" ? { safety: true as const } : {}) } }));
       ar.setFocus(m.target ? [m.target] : [], COMMAND_FOCUS_MS);
       if (ar.videoTime) logVideoCommand(ar.videoTime(), m);
       ar.command?.(m);

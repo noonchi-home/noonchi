@@ -353,6 +353,8 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         toPhone: (m) => {
           if (m.type === "command") command = m;
           else if (!m.id || command?.id === m.id) command = null;
+          // 안전 명령(끄기 안내·부탁)은 실제 폰에서 승인 대기 카드보다 먼저 보인다: 가린 동안 승인 시간 제한을 멈춘다
+          policy.pause(command?.grade === "safety");
           phoneRef.current?.command(m);
           if (m.type === "command") speak();
         },
