@@ -230,6 +230,9 @@ interface Run {
   onAt: Map<string, Cycle>;
   /** 아직 작동 한 번 끝남을 확인하지 못한 켠 가전(안전 추적). releaseIfOff만 빼고, 닫힐 때 handOver가 끄기 안내 줄로 옮긴다. */
   hot: Set<string>;
+  /** 이 계획이 켠 가전마다 지금 회차가 풀린 근거(회차 번호·근거 촬영 시각·판정 길·푼 시각). 가전 이력(최근 몇 줄만 남음)에 기대지 않고 끄기 do 단계가 읽는다.
+   *  회차가 바뀌거나 계획이 닫히면 지우고, 푼 뒤 rearmMs가 지나면 지운다(그 가전의 끄기 do 단계가 열려 있는 동안은 두고). */
+  ends: Map<string, { cycle: number; seenAt: number; how: CycleEnd["via"]; at: number }>;
   /** 끄기 do 단계의 보이게 해 달라는 부탁을 보낸 단계 세대(단계마다 한 번). deferred: 끄기 안내 때문에 시작을 미룬다고 기록했다. */
   offAsked: number; deferred: boolean;
   /** 이 단계에서 받은 다른 행동 알림 수와 마지막으로 부른 시각, 폰이 가까이 간 다른 자리(그 자리마다 한 번). */
@@ -651,6 +654,7 @@ export class ExecutionTracker {
     this.cycles.set(id, cycle);
     r.onAt.set(id, cycle);
     r.hot.add(id);
+    r.ends.delete(id);
     this.released.delete(id);
     this.show(r, step);
   }
@@ -696,8 +700,10 @@ export class ExecutionTracker {
     const tracked = new Set([...(this.run?.hot ?? []), ...(this.reminder ? [this.reminder.note.deviceId] : []), ...this.offQueue.map((n) => n.deviceId)]);
     for (const id of tracked) this.releaseIfOff(id);
     for (const id of [...this.released.keys()]) this.rearmIfOn(id);
-    const off = this.reminder;
     const now = this.clock.now();
+    const r = this.run;
+    if (r) for (const [id, end] of r.ends) if (now - end.at > this.cfg.rearmMs && !this.offStepOpen(r, id)) r.ends.delete(id);
+    const off = this.reminder;
     if (!off || now - off.at <= this.cfg.offHoldMs) return;
     if (this.offQueue.length) return this.nextReminder(true);
     off.at = now;
@@ -762,7 +768,9 @@ export class ExecutionTracker {
     const planId = inHot ? r!.plan.view.id : (shown?.note ?? queued)!.planId;
     r?.hot.delete(deviceId);
     for (let i = this.offQueue.length - 1; i >= 0; i--) if (this.offQueue[i]!.deviceId === deviceId) this.offQueue.splice(i, 1);
-    this.released.set(deviceId, { planId, evidenceAt: end.evidenceAt, via: end.via, at: this.clock.now() });
+    const now = this.clock.now();
+    this.released.set(deviceId, { planId, evidenceAt: end.evidenceAt, via: end.via, at: now });
+    if (r?.onAt.has(deviceId)) r.ends.set(deviceId, { cycle: end.cycle, seenAt: end.evidenceAt, how: end.via, at: now });
     if (shown) {
       this.reminder = null;
       this.o.toPhone({ type: "command_clear", id: shown.sent.id });
@@ -791,6 +799,7 @@ export class ExecutionTracker {
     if (r && OPEN.has(r.state) && r.plan.view.id === rel.planId) {
       r.onAt.set(deviceId, cycle);
       r.hot.add(deviceId);
+      r.ends.delete(deviceId);
       return true;
     }
     this.queueOff(rel.planId, deviceId, false);
@@ -851,26 +860,41 @@ export class ExecutionTracker {
     this.askToShow(id);
   }
 
-  /** 끄기 do 단계: 이 계획이 켠 그 가전의 추적이 풀렸고(hot 아님) 지금 직접 봐도 끝났으면 그 단계는 끝난 것이다. hot이 없다는 것만으로는 끝내지 않는다.
-   *  지금 켜져 있으면(허브·실제 가전 신호, 또는 지금 회차의 꺼짐 근거 뒤 카메라 켜짐) 다시 걸기 기간과 상관없이 그 자리에서 새 회차로 hot에 다시 건다.
-   *  꺼져 있으면 지금 회차에 꺼짐 근거(cycleEnded)가 있어야 끝난다. */
+  /** 지금 단계가 그 가전을 끄는 손 조작 do인가. */
+  private offStepOpen(r: Run, deviceId: string): boolean {
+    const step = OPEN.has(r.state) ? this.stepOf(r) : undefined;
+    return step?.kind === "do" && step.hand?.to === "off" && step.hand.deviceId === deviceId;
+  }
+
+  /** 끄기 do 단계: 이 계획이 켠 그 가전의 지금 회차가 풀렸으면(실행 추적이 든 풀린 근거 r.ends, 가전 이력에 기대지 않음) 그 근거 뒤 새 켜짐을 직접 본다.
+   *  새 켜짐이 없으면(허브·실제 가전 신호가 켜짐이 아니고 근거 뒤 이력·카메라 마지막 관측에 켜짐이 없음) 그 단계는 끝난다.
+   *  켜져 있으면 다시 걸기 기간과 상관없이 그 자리에서 새 회차로 hot에 다시 건다. 지금 회차의 풀린 근거가 없는데(기록이 지워짐) 켜짐도 아니면
+   *  끝내지 않고 같은 회차로 hot에 다시 넣어 추적(releaseIfOff·부탁 offAsk)이 이어지게 한다. */
   private offReleased(r: Run, step: AgentStep): boolean {
     const id = step.kind === "do" && step.hand?.to === "off" ? step.hand.deviceId : null;
     const cycle = id ? this.cycles.get(id) : undefined;
     if (!id || !cycle || !r.onAt.has(id) || r.hot.has(id)) return false;
     const d = this.o.world().devices.find((x) => x.id === id);
-    const end = this.cycleEnded(id);
-    const since = end?.evidenceAt ?? cycle.onAt;
-    if ((d && onNow(d)) || onSeenAfter(d, since) !== null) {
+    const rec = r.ends.get(id);
+    const end = rec?.cycle === cycle.cycle ? rec : undefined;
+    const since = end?.seenAt ?? cycle.onAt;
+    const onAgain = (!!d && onNow(d)) || (!!end && onSeenAfter(d, since) !== null);
+    if (!end && !onAgain) {
+      r.ends.delete(id);
+      r.hot.add(id);
+      return false;
+    }
+    if (onAgain) {
       // 새 회차의 시작: 그 켜짐의 가장 늦은 근거(지금 켜져 있게 한 켜짐), 모르면 지금
-      const next: Cycle = { cycle: cycle.cycle + 1, onAt: onSeenAfter(d, cycle.onAt, Number.POSITIVE_INFINITY, true) ?? this.clock.now(), askedAt: null };
+      const next: Cycle = { cycle: cycle.cycle + 1, onAt: onSeenAfter(d, since, Number.POSITIVE_INFINITY, true) ?? this.clock.now(), askedAt: null };
       this.cycles.set(id, next);
       this.released.delete(id);
+      r.ends.delete(id);
       r.onAt.set(id, next);
       r.hot.add(id);
       return false;
     }
-    return end !== null;
+    return true;
   }
 
   /** 끄기 안내 때문에 새 계획 시작을 미루는 중이면 기다리는 가전 이름(대시보드 말풍선 카드). 아니면 null. */
@@ -966,7 +990,7 @@ export class ExecutionTracker {
     const run: Run = {
       plan: r.plan, decision: d, state: "decided", since: now, at: -1, stepAt: now, spokeAt: now, visionAt: now, sent: null,
       asking: null, askAt: now, watch: null, others, alias: new Map([...ids].map((id) => [id, id])), carried: new Set(), placeAt: (id) => (id ? this.o.floor().objects.get(id)?.position ?? null : null), deadline: now, again: false, device: "idle", gen: 0,
-      looks: 0, lookAt: Number.NEGATIVE_INFINITY, stepEnd: null, gapAt: job.at, onAt: new Map(), hot: new Set(), offAsked: -1, deferred: false,
+      looks: 0, lookAt: Number.NEGATIVE_INFINITY, stepEnd: null, gapAt: job.at, onAt: new Map(), hot: new Set(), ends: new Map(), offAsked: -1, deferred: false,
       strays: 0, strayAt: Number.NEGATIVE_INFINITY, strayNear: null, told: null, helped: false,
       quiet: taskOf(r.plan.task)?.coach ? quietLabels(this.o.lessons?.get(r.plan.task) ?? null) : new Set(), quietOn: false, outcomes: [],
     };
@@ -1339,6 +1363,7 @@ export class ExecutionTracker {
     if (close) this.o.plans.close(r.plan.view.id, close);
     // 손으로 켠 위험 가전이 작동 끝남 확인 전에 닫혔다: 가전마다 끄기 안내 줄로 옮기고 차례로 띄운다(확인된 꺼짐으로만 하나씩 지운다)
     this.handOver(r);
+    r.ends.clear();
   }
 
   private step(r: Run, state: ExecState, text?: string): void {

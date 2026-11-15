@@ -1137,6 +1137,40 @@ describe("실행 추적: 켠 위험 가전 추적은 확인된 꺼짐으로만 �
     expect(s.t.safety()).toMatchObject({ released: {}, cycles: { microwave_1: { cycle: 2, onAt: onAt + 3_000, askedAt: null } } });
   });
 
+  it("끄기 단계는 실행 추적이 회차마다 든 풀린 근거로 끝난다: 꺼짐 확인 뒤 이력 줄이 20개 넘게 쌓여 그 근거가 밀려나도 끝나고, 그 근거 뒤 새 켜짐(sight_last)이 있으면 끝나지 않고 다시 건다", async () => {
+    const steps = ramenSteps({ cabinet: "cabinet_1", sink: "sink_1", cooktop: "induction_1", cooktopDevice: "induction_1", waitS: 60 });
+    /** 끄기 단계(3번)까지: 켜짐(허브) → 기다리는 동안 꺼짐(허브, 풀림) → 이력 20개 넘게 다른 줄(앞 줄은 밀려남). */
+    async function toOff(sight?: WorldView["devices"][number]["sight_last"]) {
+      let w = { ...world([]), devices: [cooktop(["off"])] };
+      const s = coachSetup({ w: () => w });
+      llm.scripts[RAMEN] = () => [planCalls([steps[6]!, steps[8]!, steps[11]!])];
+      await s.decide(ramenDecision());
+      s.t.onAnswer(P, `${P}:1:hand`, "approve");
+      s.clock.t += 1_000;
+      const on = { attr: "power", from: "off", to: "on", at_ms: s.clock.t };
+      w = { ...world([]), devices: [cooktop(["on"], [on])] };
+      s.t.onWorld();
+      s.clock.t += 1_000;
+      const offAt = s.clock.t;
+      w = { ...world([]), devices: [cooktop(["off"], [on, { attr: "power", from: "on", to: "off", at_ms: offAt }])] };
+      s.t.onWorld();
+      expect(s.t.safety()).toMatchObject({ hot: [], released: { induction_1: { evidenceAt: offAt, via: "switch" } } });
+      const filler = Array.from({ length: 21 }, (_, i) => ({ attr: "door", from: i % 2 ? "open" : "closed", to: i % 2 ? "closed" : "open", at_ms: offAt + 100 + i }));
+      w = { ...world([]), devices: [{ ...cooktop(["off"], filler), ...(sight ? { sight_last: sight } : {}) }] };
+      s.clock.t += 60_000;
+      s.t.tick();
+      for (let i = 0; i < 3; i++) { s.clock.t += 500; s.t.onWorld(); s.t.tick(); }
+      return { s, offAt };
+    }
+    const done = await toOff();
+    expect(done.s.plans.current()).toMatchObject({ status: "done" });
+    expect(done.s.phone.some((m) => m.type === "command" && /:off(:\d+)?$/.test(m.step))).toBe(false);
+    // 근거 뒤 카메라가 새 켜짐을 봤다(허브는 꺼짐): 끝나지 않고 다시 건다
+    const again = await toOff({ power: { value: "on", seen_ms: 12_500, explicit: true, close: false } });
+    expect(again.s.steps()[2]).toBe("active");
+    expect(again.s.t.safety()).toMatchObject({ hot: ["induction_1"], cycles: { induction_1: { cycle: 2, onAt: 12_500 } } });
+  });
+
   it("끄기 단계는 hot이 없다는 것만으로 끝나지 않는다: 풀린 지 11분 뒤(다시 걸기 기간 밖) 다시 켜진 인덕션이면 그 단계에서 다시 걸고, 허브 꺼짐을 봐야 끝난다", async () => {
     let w = { ...world([]), devices: [cooktop(["off"])] };
     const s = coachSetup({ w: () => w });
