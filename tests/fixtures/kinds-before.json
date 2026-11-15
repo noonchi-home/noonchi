@@ -2669,6 +2669,9 @@
   },
   "storage_box": null,
   "storage_cabinet": null,
+  "storage_cabinet_2": null,
+  "storage_cabinet_3": null,
+  "storage_cabinet_4": null,
   "toilet": null,
   "tv": {
    "types": [
@@ -2727,6 +2730,7 @@
   "wardrobe_2": null,
   "wardrobe_3": null,
   "wardrobe_4": null,
+  "wardrobe_5": null,
   "wardrobe_module": null,
   "washer": {
    "types": [

@@ -1100,267 +1100,344 @@
     {
       "path": "data/homes/mokryeon_180b/catalog/armchair.json",
       "bytes": 520,
-      "sha256": "f27600b2f4ccd648a9dfd23cbcccac4820c991025e2b0aaa6a63d7d01887fd09"
+      "sha256": "f27600b2f4ccd648a9dfd23cbcccac4820c991025e2b0aaa6a63d7d01887fd09",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/bed_queen.json",
       "bytes": 857,
-      "sha256": "ceecef7426a4241baa88568994f19025c3adbf3ed7fb7d3e4505f833d1b7c3bb"
+      "sha256": "ceecef7426a4241baa88568994f19025c3adbf3ed7fb7d3e4505f833d1b7c3bb",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/bed_single.json",
       "bytes": 765,
-      "sha256": "4aa6b33c39380c77e6585759d09ce8cc16f5f9c5173ac861bcaec5f7210ac408"
+      "sha256": "4aa6b33c39380c77e6585759d09ce8cc16f5f9c5173ac861bcaec5f7210ac408",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/bed_single_2.json",
       "bytes": 769,
-      "sha256": "ee21ba6e957adeb98e92358c43deb7b84dbed1bc73fc2c5b98dc6f555d7c640d"
+      "sha256": "ee21ba6e957adeb98e92358c43deb7b84dbed1bc73fc2c5b98dc6f555d7c640d",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/bookcase.json",
       "bytes": 806,
-      "sha256": "a4952c1bd54612a6d47e773e110c2f6f1d4203b2e9a1e6714b03011bc5bab8b2"
+      "sha256": "a4952c1bd54612a6d47e773e110c2f6f1d4203b2e9a1e6714b03011bc5bab8b2",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/coffee_table.json",
       "bytes": 456,
-      "sha256": "537da5b05e0dada16273fdf2636c20e811dc69c5d4e5a4d1623ac18d1881781a"
+      "sha256": "537da5b05e0dada16273fdf2636c20e811dc69c5d4e5a4d1623ac18d1881781a",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/desk_small.json",
       "bytes": 639,
-      "sha256": "a6b851aa09186c163a721b9e5007455057e1b838040cda9b996f5e9034f12c43"
+      "sha256": "a6b851aa09186c163a721b9e5007455057e1b838040cda9b996f5e9034f12c43",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/dining_table.json",
       "bytes": 448,
-      "sha256": "e63e439ee3c5b9e67538b52b39fedca1609d4beffaf9c9e824fbec06628b75b0"
+      "sha256": "e63e439ee3c5b9e67538b52b39fedca1609d4beffaf9c9e824fbec06628b75b0",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/dish_cabinet.json",
       "bytes": 451,
-      "sha256": "216add2ffd8cddba7472960416976cea8a3d4b465caa84881549b4d3884d0565"
+      "sha256": "216add2ffd8cddba7472960416976cea8a3d4b465caa84881549b4d3884d0565",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/dresser.json",
       "bytes": 634,
-      "sha256": "6a4d8846bc65b18eea2a382678adf237cd722a2bb3990d388aad601230d415c1"
+      "sha256": "6a4d8846bc65b18eea2a382678adf237cd722a2bb3990d388aad601230d415c1",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/dryer.json",
       "bytes": 1889,
-      "sha256": "f7b90c08e303a6beeb910122fd13208fb97cce3663c85140d633ca72282ae578"
+      "sha256": "f7b90c08e303a6beeb910122fd13208fb97cce3663c85140d633ca72282ae578",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/freezer.json",
       "bytes": 360,
-      "sha256": "010f14db592f281b688e78d1251e7f23c1bcb2599292caed4b85c48d7f87c25b"
+      "sha256": "010f14db592f281b688e78d1251e7f23c1bcb2599292caed4b85c48d7f87c25b",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/fridge.json",
       "bytes": 1776,
-      "sha256": "1fcbf6b96eff8a0d128a0afcb77ba9be9cdc73bef1b019b3bbf3578d49a35ab6"
+      "sha256": "1fcbf6b96eff8a0d128a0afcb77ba9be9cdc73bef1b019b3bbf3578d49a35ab6",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/induction_counter.json",
       "bytes": 1472,
-      "sha256": "9df257b86adf91fe6fc8c8e32071ca49375aec4106da9474fc79507be9b4014c"
+      "sha256": "9df257b86adf91fe6fc8c8e32071ca49375aec4106da9474fc79507be9b4014c",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/kimchi_fridge.json",
       "bytes": 388,
-      "sha256": "213125180179968af3108deef222858b0d1124258beb3963759a5802fc990cf6"
+      "sha256": "213125180179968af3108deef222858b0d1124258beb3963759a5802fc990cf6",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/kitchen_cabinet.json",
       "bytes": 459,
-      "sha256": "e76cb213e568e6e8d11e04a898f3e45401b9d2b5c95bda7619e5ccac05081007"
+      "sha256": "e76cb213e568e6e8d11e04a898f3e45401b9d2b5c95bda7619e5ccac05081007",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/mk_door_alpha_l.json",
       "bytes": 1319,
-      "sha256": "cbd5219cf14befc179e6aa36edab7412a5756127203eaedf343ecf65451d2d67"
+      "sha256": "cbd5219cf14befc179e6aa36edab7412a5756127203eaedf343ecf65451d2d67",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/mk_door_balcony_living.json",
       "bytes": 1523,
-      "sha256": "2d11af0a5c369e85bda2472d7260d5fd121ea783f883001b9fcaf5c266d53faf"
+      "sha256": "2d11af0a5c369e85bda2472d7260d5fd121ea783f883001b9fcaf5c266d53faf",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/mk_door_balcony_north_l.json",
       "bytes": 1346,
-      "sha256": "776dd5cb3771e2d3466ba70bb97a2a617025e340035dea0846c17b485c0953c2"
+      "sha256": "776dd5cb3771e2d3466ba70bb97a2a617025e340035dea0846c17b485c0953c2",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/mk_door_balcony_se.json",
       "bytes": 1503,
-      "sha256": "37760b015e0b1129ec4aa3b2b3a5fe78a9acc63c58b1d6d9d608b46e32c71c84"
+      "sha256": "37760b015e0b1129ec4aa3b2b3a5fe78a9acc63c58b1d6d9d608b46e32c71c84",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/mk_door_balcony_sw.json",
       "bytes": 1505,
-      "sha256": "3e9904ccdb592a9d70b69df095e860005fe31ebb9eeee862d64037c9793d5454"
+      "sha256": "3e9904ccdb592a9d70b69df095e860005fe31ebb9eeee862d64037c9793d5454",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/mk_door_balcony_west.json",
       "bytes": 1503,
-      "sha256": "763f0c6082e3b656b796d7b20c2623ae9889ced121004500a0fa6b3f3a5c8482"
+      "sha256": "763f0c6082e3b656b796d7b20c2623ae9889ced121004500a0fa6b3f3a5c8482",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/mk_door_bath_center_l.json",
       "bytes": 1338,
-      "sha256": "25369a48fcc168d0c109f4aebea9c339b685c0ef00a34560d7a8d777ead72c27"
+      "sha256": "25369a48fcc168d0c109f4aebea9c339b685c0ef00a34560d7a8d777ead72c27",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/mk_door_bath_east_l.json",
       "bytes": 1332,
-      "sha256": "77f7ececaf7bd6b697bfd2c26f9774742ee04e1eeff611a5b55e2e7839e3457f"
+      "sha256": "77f7ececaf7bd6b697bfd2c26f9774742ee04e1eeff611a5b55e2e7839e3457f",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/mk_door_bath_west_r.json",
       "bytes": 1335,
-      "sha256": "830efd030383a46072d68b15f1b3a809558c2f57f5ac394212cbf71d77b05fbe"
+      "sha256": "830efd030383a46072d68b15f1b3a809558c2f57f5ac394212cbf71d77b05fbe",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/mk_door_bed_ne_l.json",
       "bytes": 1322,
-      "sha256": "7b63ae155ff2177d3601f1cd8130d3bf2a2fa289a6d0e7e78a68cac7835b39ba"
+      "sha256": "7b63ae155ff2177d3601f1cd8130d3bf2a2fa289a6d0e7e78a68cac7835b39ba",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/mk_door_bed_se_l.json",
       "bytes": 1322,
-      "sha256": "8b0e15d312119232b8e60492119bfbcc94a5241f07a99d0d9f9f6d72498cc26d"
+      "sha256": "8b0e15d312119232b8e60492119bfbcc94a5241f07a99d0d9f9f6d72498cc26d",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/mk_door_bed_sw_r.json",
       "bytes": 1325,
-      "sha256": "2cc8ba0ead76d59d386e6ffa1f54cbe828a8e2c0b527e119a2e5a92e70f5fbca"
+      "sha256": "2cc8ba0ead76d59d386e6ffa1f54cbe828a8e2c0b527e119a2e5a92e70f5fbca",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/mk_door_closet.json",
       "bytes": 1500,
-      "sha256": "ea21772a7f06df8b143fc7355a2a10e1ae195c5d842bd49afe692a5226eea37f"
+      "sha256": "ea21772a7f06df8b143fc7355a2a10e1ae195c5d842bd49afe692a5226eea37f",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/mk_door_entry_r.json",
       "bytes": 1322,
-      "sha256": "83f8717702ded6d7b30e44b104bb2590a20ea900cbe5e5460f4f53d4bcc3feb7"
+      "sha256": "83f8717702ded6d7b30e44b104bb2590a20ea900cbe5e5460f4f53d4bcc3feb7",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/mk_door_main_l.json",
       "bytes": 3324,
-      "sha256": "724c25c91890d2a9218d4d9a15e1530bbd85edab623105f5aef0508bfa8fe273"
+      "sha256": "724c25c91890d2a9218d4d9a15e1530bbd85edab623105f5aef0508bfa8fe273",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/mk_win_balcony_front_e.json",
       "bytes": 798,
-      "sha256": "63d005f0fbf12fe8194fcc22d47398ce788e1c3ccb7c36c332b738e0ee22d794"
+      "sha256": "63d005f0fbf12fe8194fcc22d47398ce788e1c3ccb7c36c332b738e0ee22d794",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/mk_win_balcony_front_w.json",
       "bytes": 799,
-      "sha256": "8e49819ce03331538f7be109a2f694860c3259d2f1cfc6f5a1ca69ea127fa7fd"
+      "sha256": "8e49819ce03331538f7be109a2f694860c3259d2f1cfc6f5a1ca69ea127fa7fd",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/mk_win_balcony_north.json",
       "bytes": 792,
-      "sha256": "ee915162a3fc97343dd8e63c6312f137b3e4381dacb84f19edcc52083f02a536"
+      "sha256": "ee915162a3fc97343dd8e63c6312f137b3e4381dacb84f19edcc52083f02a536",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/mk_win_balcony_west.json",
       "bytes": 789,
-      "sha256": "2c16883cb20e66592c40f1cde023f8280b6743e5763860c47de36ee901597e68"
+      "sha256": "2c16883cb20e66592c40f1cde023f8280b6743e5763860c47de36ee901597e68",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/mk_win_bed_ne.json",
       "bytes": 784,
-      "sha256": "6667daca7a3efa6cf747e9c76fb5be5d5c3421decad2d7ff5907ece35a0b1832"
+      "sha256": "6667daca7a3efa6cf747e9c76fb5be5d5c3421decad2d7ff5907ece35a0b1832",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/mk_win_curve_1.json",
       "bytes": 788,
-      "sha256": "37d9795ce39a946c63202e4d98f11dd18fafd1f1492990b13629df63ce8ff910"
+      "sha256": "37d9795ce39a946c63202e4d98f11dd18fafd1f1492990b13629df63ce8ff910",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/mk_win_curve_2.json",
       "bytes": 787,
-      "sha256": "b93f07f8506cb1041ee672af7acdd57f0aea86731093e9f8562a39cf02b3623a"
+      "sha256": "b93f07f8506cb1041ee672af7acdd57f0aea86731093e9f8562a39cf02b3623a",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/mk_win_curve_3.json",
       "bytes": 788,
-      "sha256": "450d292a3fed72527c64fd1ef8bde0410f92c322faca8f52d943208e1d86b346"
+      "sha256": "450d292a3fed72527c64fd1ef8bde0410f92c322faca8f52d943208e1d86b346",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/mk_win_kitchen.json",
       "bytes": 784,
-      "sha256": "f2b92986267b8e478452e65398d34e033027bde2cb991f24a5431ceaf7d4c0e6"
+      "sha256": "f2b92986267b8e478452e65398d34e033027bde2cb991f24a5431ceaf7d4c0e6",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/mk_win_vestibule.json",
       "bytes": 782,
-      "sha256": "48e9f340835d6a71a046307071f2fdd469973c0cffe18c22892798391f61c599"
+      "sha256": "48e9f340835d6a71a046307071f2fdd469973c0cffe18c22892798391f61c599",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/sofa.json",
       "bytes": 353,
-      "sha256": "5c13142136b07bcfc44f9e861228363edbc838e38344eb9de17ea1a449595167"
+      "sha256": "5c13142136b07bcfc44f9e861228363edbc838e38344eb9de17ea1a449595167",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/stand_ac.json",
       "bytes": 1835,
-      "sha256": "2003bbc398e386062c7524bb83298f3776de84089527ef08c28b48acd322a45b"
+      "sha256": "2003bbc398e386062c7524bb83298f3776de84089527ef08c28b48acd322a45b",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/storage_cabinet.json",
       "bytes": 611,
-      "sha256": "a1a3c1bab7b44f1bff4f4a55f8213674e27f50f80be4394b1cfc19bcbacf8189"
+      "sha256": "a1a3c1bab7b44f1bff4f4a55f8213674e27f50f80be4394b1cfc19bcbacf8189",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/storage_cabinet_2.json",
+      "bytes": 615,
+      "sha256": "3d197761d1f9238a0a5a493598b960d3649cc7624fdc3e8f48e6ef3c46c60249",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/storage_cabinet_3.json",
+      "bytes": 615,
+      "sha256": "e0825bf33351848913a7a5a09a7a996d14f1135b32a48d7a78a5f267f528965f",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/storage_cabinet_4.json",
+      "bytes": 615,
+      "sha256": "a18e62c13cba48ac61c2a5ec8e29ef4bfe647e249db2489d26e1fd54f0bce2a6",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/tv_stand.json",
       "bytes": 636,
-      "sha256": "4b77c25b82b3468378c0f1e2789ee6b928005d68f4a76fe0eb4a80cd7edddc88"
+      "sha256": "4b77c25b82b3468378c0f1e2789ee6b928005d68f4a76fe0eb4a80cd7edddc88",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/tv_stand_2.json",
       "bytes": 640,
-      "sha256": "9d376f5601e847efed2107792dd11e27625565a0ca7251537a036debc50284cb"
+      "sha256": "9d376f5601e847efed2107792dd11e27625565a0ca7251537a036debc50284cb",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/tv_stand_3.json",
       "bytes": 640,
-      "sha256": "5b73b18ec6855985b37146d8f26e621cb4f37e283966fa5738c101c7bc1eda31"
+      "sha256": "5b73b18ec6855985b37146d8f26e621cb4f37e283966fa5738c101c7bc1eda31",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/wall_ac.json",
       "bytes": 2138,
-      "sha256": "93f43ab026640a1224414def7849301e59289f3d3bac5a9cc1763c5c82254e0b"
+      "sha256": "93f43ab026640a1224414def7849301e59289f3d3bac5a9cc1763c5c82254e0b",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/wardrobe.json",
       "bytes": 592,
-      "sha256": "51ac554209e75a57ddfc31b16e74f55d4063eb1240c2dc9d56e6f16da681c9f7"
+      "sha256": "51ac554209e75a57ddfc31b16e74f55d4063eb1240c2dc9d56e6f16da681c9f7",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/wardrobe_2.json",
       "bytes": 598,
-      "sha256": "122e782cdfab21cb3952c90c97efb37ab5d409be60ef06033ea75b24d63535b4"
+      "sha256": "122e782cdfab21cb3952c90c97efb37ab5d409be60ef06033ea75b24d63535b4",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/wardrobe_3.json",
       "bytes": 598,
-      "sha256": "d131e1979919bf3e1dcbbdcfc92b608e22d4cffe68341ea29c87de6ae883aac2"
+      "sha256": "d131e1979919bf3e1dcbbdcfc92b608e22d4cffe68341ea29c87de6ae883aac2",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/wardrobe_4.json",
       "bytes": 598,
-      "sha256": "4e506b5dad0c127963b9b28b2fa793ef15c76faecabd367aa694dcaa719db194"
+      "sha256": "4e506b5dad0c127963b9b28b2fa793ef15c76faecabd367aa694dcaa719db194",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
+    },
+    {
+      "path": "data/homes/mokryeon_180b/catalog/wardrobe_5.json",
+      "bytes": 598,
+      "sha256": "3d6175f589186ec4b39b231b5ca44b478e5f980333917b54e5ff93be8b32d25e",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/catalog/washer.json",
       "bytes": 3174,
-      "sha256": "0c8b98353d3e435fe3e5ccbc6e2e92528b65fd222570e0bc28f2b4e273d7e6e1"
+      "sha256": "0c8b98353d3e435fe3e5ccbc6e2e92528b65fd222570e0bc28f2b4e273d7e6e1",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/mokryeon_180b/drawn_fixtures.json",
@@ -1375,8 +1452,9 @@
     },
     {
       "path": "data/homes/mokryeon_180b/placement.json",
-      "bytes": 5682,
-      "sha256": "6f2d47f68dfb0106bb6e5e0a33a8aa0239c283c4f20eb2a8fbe2f80989de80af"
+      "bytes": 6457,
+      "sha256": "dc32ff5f9be97541e8e9f1fb982428b526ca5a7629fba20547544f3515fce14e",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "data/homes/oneroom/floorplan.json",
@@ -1624,6 +1702,24 @@
       "sha256": "e657355be3a4d673a5ef1ffb9a93cd845f8fe39bae1cc00f48ed7a666144b918"
     },
     {
+      "path": "homes/mokryeon_180b/assets/furniture/storage_cabinet_2.glb",
+      "bytes": 136932,
+      "sha256": "0d24593648d7dc63061d0c4520938caf4cb2c8dc57d712a2571f703e14f33abd",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/furniture/storage_cabinet_3.glb",
+      "bytes": 138440,
+      "sha256": "37bea711d98dc3a588b9c9382d00a2f03afdaf4c7a2889b80bc9e77d07b6f0f7",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/furniture/storage_cabinet_4.glb",
+      "bytes": 137004,
+      "sha256": "568b8376bf1d27f774659a54c29210de31c1de83dfdd010197542cff6e885d09",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
+    },
+    {
       "path": "homes/mokryeon_180b/assets/furniture/tv_stand.glb",
       "bytes": 181796,
       "sha256": "66084360fea1a64200dfc8c2170127f35139ec0445083a0fcc7e68a9c4895774"
@@ -1657,6 +1753,12 @@
       "path": "homes/mokryeon_180b/assets/furniture/wardrobe_4.glb",
       "bytes": 137716,
       "sha256": "4410cc0f5d75c4c1eb1d33e3c6b412b35d9d1594445429c1891a86c16495f521"
+    },
+    {
+      "path": "homes/mokryeon_180b/assets/furniture/wardrobe_5.glb",
+      "bytes": 137180,
+      "sha256": "5eea0d2b5ca3f41092f127e9d8a447e2b54311526a0eb647eaa7b87fdc97be51",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "homes/mokryeon_180b/assets/structure/floors.glb",
@@ -1712,8 +1814,9 @@
     },
     {
       "path": "homes/mokryeon_180b/scene.json",
-      "bytes": 102688,
-      "sha256": "974086945c576de6db23ad64b4a938638a5a59c1aa5fc66315692d1f99f1f637"
+      "bytes": 106008,
+      "sha256": "2a7335e805011e6d4733f47b3fe3ee31ffa5b3ea17324826e652ea8410222cf7",
+      "commit": "616b1b2702449ba6770ff233565fb482f21d3768"
     },
     {
       "path": "homes/oneroom/assets/appliances/air_purifier.glb",

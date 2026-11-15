@@ -29,6 +29,10 @@
     {"id": "desk_small_ce7e768b", "type": "desk_small", "label": "침실 1 책상", "room": "bed_sw", "position": [6.2357, 11.7339], "facing_deg": 270.0, "label_name": "책상"},
     {"id": "wardrobe_dba14d56", "type": "wardrobe_4", "label": "알파룸 옷장", "room": "alpha", "position": [0.3965, 7.5545], "facing_deg": 0.0, "label_name": "옷장"},
     {"id": "dresser_6e620743", "type": "dresser", "label": "알파룸 화장대", "room": "alpha", "position": [3.247, 8.0565], "facing_deg": 180.0, "label_name": "화장대"},
-    {"id": "tv_stand_48d2767d", "type": "tv_stand_3", "label": "알파룸 TV수납장", "room": "alpha", "position": [1.4002, 6.3531], "facing_deg": 90.0, "label_name": "TV수납장_알"}
+    {"id": "tv_stand_48d2767d", "type": "tv_stand_3", "label": "알파룸 TV수납장", "room": "alpha", "position": [1.4002, 6.3531], "facing_deg": 90.0, "label_name": "TV수납장_알"},
+    {"id": "storage_cabinet_141e4df4", "type": "storage_cabinet_2", "label": "전실 수납장", "room": "vestibule", "position": [5.0826, 3.4175], "facing_deg": 180.0, "label_name": "수납장_전실"},
+    {"id": "wardrobe_821557c9", "type": "wardrobe_5", "label": "침실 3 옷장", "room": "bed_ne", "position": [15.8625, 3.6764], "facing_deg": 180.0, "label_name": "옷장"},
+    {"id": "storage_cabinet_6ca18ec6", "type": "storage_cabinet_3", "label": "침실 3 수납장 1", "room": "bed_ne", "position": [12.1969, 2.8614], "facing_deg": 0.0, "label_name": "수납장"},
+    {"id": "storage_cabinet_90380e6a", "type": "storage_cabinet_4", "label": "침실 3 수납장 2", "room": "bed_ne", "position": [12.1969, 3.6859], "facing_deg": 0.0, "label_name": "수납장"}
   ]
 }
