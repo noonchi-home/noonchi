@@ -803,7 +803,7 @@ export function refineFixture(d: Detection, o: {
 - [ ] **Step 4:** 통과 확인.
 - [ ] **Step 5:** 커밋 `feat(world): read induction power from oven detections that overlap the induction counter`.
 
-**비전으로 못 볼 때(Step 0에서 안 잡힐 때):** 켜기 단계(7번)는 「완료」로 넘길 수 있다(`--done-on <초>:인덕션을 켜 주세요`). 끄기는 「완료」로 인정하지 않는다(Task 11c-1): 12번을 「완료」로 넘겨도 hot이 남고 끄기 안내가 계속 간다. **라면 시연이 깨끗하게 끝나지 않는다.** 이때는 사용자 결정이 필요하다(「남은 결정」 5).
+**비전으로 못 볼 때(Step 0에서 안 잡힐 때):** 켜기 단계(7번)는 「완료」로 넘길 수 있다(`--done-on "<초>:인덕션을 켜 주세요"`). 끄기는 「완료」로 인정하지 않는다(Task 11c-1): 12번을 「완료」로 넘겨도 hot이 남고 끄기 안내가 계속 간다. **라면 시연이 깨끗하게 끝나지 않는다.** 이때는 사용자 결정이 필요하다(「남은 결정」 5).
 
 ### Task 11c-1: 끄기 추적은 확인된 꺼짐으로만 풀기 — 판정·풀기·다시 걸기(명령 줄 안내)
 
@@ -1181,14 +1181,16 @@ export function microwaveSteps(ids: { microwave: string; waitS?: number /* wait 
 | 0 | 설정 | day1 | 없음 | 설정 3단계 돕는 방식 「자동」 (3초) |
 | 1 | 눈치 · 1일차 상황 | day1 | `video-check --start-at cup --clip cup-empty-leave.mp4` + 치우기 단계 영상 | `상태 · 컵을 두고 자리를 뜸`·`눈치 · 컵 치우기`, 네 명령 |
 | 2 | 눈치 · 1일차 상황 | day1 | `--start-at cup --clip cup-full-leave.mp4` | `눈치 · 컵 그대로 두기`, 「컵을 그대로 두기로 했어요.」 |
-| 3 | 눈치 · 1일차 의도 | day1 | `--start-at tv --clip tv-hot-say.mp4 --say 15:아 덥다` | `눈치 · 에어컨 켜기`, 트윈 거실 에어컨 켜짐 |
+| 3 | 눈치 · 1일차 의도 | day1 | `--start-at tv --clip tv-hot-say.mp4 --say "15:아 덥다"` | `눈치 · 에어컨 켜기`, 트윈 거실 에어컨 켜짐 |
 | 4 | 눈치 · 일주일 | week | (녹화 전 `reflect --chain`) `demo-setup reflect` | 이번에 배웠으면 `습관 · 새로 배움`·「어제 기록으로 새 습관 1개를 배웠어요.」, 앞서 배웠으면 `습관 · 배운 규칙`·「배운 습관 1개를 쓰고 있어요.」 |
 | 5 | 눈치 · 8일차 선제 | week | `--start-at tv --clip tv-sit.mp4` | 말없이 `습관 · …`·`눈치 · 에어컨 켜기` |
-| 6 | 코치 · 노인 | day1 | `--start-at microwave --clip microwave-start.mp4 --say 4:이거 어떻게 하지 --tail 120 --approve 2 --done-on 8:그릇을 전자레인지에 넣어 주세요 --done-on 6:그릇을 꺼내 주세요` + `go:microwave:go-microwave.mp4`, `do:microwave:open-microwave.mp4`, `place:microwave:put-bowl.mp4`, `do:microwave:close-microwave.mp4`, `do:microwave:start-microwave.mp4`, `do:microwave:open-microwave.mp4`, `pick:microwave:take-bowl.mp4` | `코치 · 전자레인지로 데우기 알려 주기`, 서버 글 명령, 문 열림·닫힘을 비전으로 넘김, 시작 전 질문, 트윈 전자레인지 켜짐·꺼짐, 기다리기가 꺼짐으로 끝남 |
-| 7 | 코치 · 탈시설 장애인 | day1 | `--start-at kitchen --clip kitchen-start.mp4 --say 5:라면 끓이는 법 알려 줘 --tail 600 --approve 2 --done-on 15:냄비에 물을 받아 주세요 --done-on 8:냄비를 인덕션에 올려 주세요 --done-on 10:면과 스프를 넣어 주세요` + 라면 단계 영상, 물 받기에 `wrong-fridge.mp4`, 면 넣기 때 `--say <초>:어 뭐 해야 되지` | `코치 · 라면 끓이기 알려 주기`, 인덕션 켜기 전 질문, 바로잡기, 조용한 단계(수업 기록 씨앗) |
+| 6 | 코치 · 노인 | day1 | `--start-at microwave --clip microwave-start.mp4 --say "4:이거 어떻게 하지" --tail 120 --approve 2 --done-on "8:그릇을 전자레인지에 넣어 주세요" --done-on "6:그릇을 꺼내 주세요"` + `go:microwave:go-microwave.mp4`, `do:microwave:open-microwave.mp4`, `place:microwave:put-bowl.mp4`, `do:microwave:close-microwave.mp4`, `do:microwave:start-microwave.mp4`, `do:microwave:open-microwave.mp4`, `pick:microwave:take-bowl.mp4` | `코치 · 전자레인지로 데우기 알려 주기`, 서버 글 명령, 문 열림·닫힘을 비전으로 넘김, 시작 전 질문, 트윈 전자레인지 켜짐·꺼짐, 기다리기가 꺼짐으로 끝남 |
+| 7 | 코치 · 탈시설 장애인 | day1 | `--start-at kitchen --clip kitchen-start.mp4 --say "5:라면 끓이는 법 알려 줘" --tail 600 --approve 2 --done-on "15:냄비에 물을 받아 주세요" --done-on "8:냄비를 인덕션에 올려 주세요" --done-on "10:면과 스프를 넣어 주세요"` + 라면 단계 영상, 물 받기에 `wrong-fridge.mp4`, 면 넣기 때 `--say "<초>:어 뭐 해야 되지"` | `코치 · 라면 끓이기 알려 주기`, 인덕션 켜기 전 질문, 바로잡기, 조용한 단계(수업 기록 씨앗) |
 
 - 장면 6의 do 칸 넷은 적은 차례(열기·닫기·켜기·다시 열기)대로 쓰인다(Task 10). 기다리기(7번) 동안은 `start-microwave.mp4` 마지막 장면(불 꺼짐)을 붙잡는다. 계획 모델이 다른 순서로 do를 내면 그 판은 다시 돌린다.
 - 장면 6·7은 1일차 폴더를 그대로 쓴다(코치 행동은 습관과 상관없다). 폴더를 바꿀 때는 서버를 다시 띄운다(PAM 서비스는 그대로). 장면마다 `--start-at`이 시작 위치를 다시 넣는다.
+- 같은 폴더여도 장면마다 서버를 다시 띄운다(PAM 서비스는 그대로). 영상 판정은 앞 장면이 남긴 서버(끝나지 않은 계획, 이미 받은 엔진 프레임이라 앞 장면 World State가 남음)에서는 시작하지 않는다(`scripts/video-check.ts` `usedServer`).
+- 공백이 있는 인자(`--say`·`--done-on`)는 따옴표로 묶어 셸이 한 인자로 넘기게 한다.
 
 ## 찍을 영상 (사용자, 가로 1280×720, 폰을 가로로 고정)
 
@@ -1245,6 +1247,7 @@ export function microwaveSteps(ids: { microwave: string; waitS?: number /* wait 
 - PAM 계약 그대로: 「PAM 계약」 절, Task 13 시험 7.
 - Codex 1차 지적 9개: 1 Task 4 바꾸기 2·4, 2 「일주일을 시연 안에서 보이는 길」·Task 7·8, 3 Task 5 범위, 4 Task 2 행동 단위, 5 Task 6 API·Task 8 확인, 6 Task 8 `start`·Task 9 `--start-at`, 7 Task 11 `unbaked`, 8 Task 10 차례 쓰기, 9 Task 10 붙잡기·Task 9 `--tail`.
 - 서버 글 구조(T1~T4)에 맞춤: 「조사한 사실」 사람 단계 글 절, Task 12 표(글·끝 조건을 코드가 내는 값으로), 「라면 대본」 절, Task 13 시험 5·6.
+- Codex 브랜치 전체 리뷰 지적(계획서 2개): P2 「시연 순서」 장면 3·6·7과 「비전으로 못 볼 때」의 공백 있는 `--say`·`--done-on` 인자를 따옴표로 묶음, P3 같은 폴더여도 장면마다 서버를 다시 띄운다는 줄과 까닭(`usedServer`).
 - Codex 31차 지적 1개: P2 Task 11c-2 새 명령이 올 때만 줄의 옛 말을 버려 `command_clear`만 오면 옛 부탁이 늦게 읽힘 → 명령 말마다 계획 id·단계 id를 붙이고 `command_clear`에서도 그 말을 지우며, 재생 바로 앞에 지금 명령과 다시 견줘 다르면 건너뜀(reply 경고는 붙이지 않음).
 - Codex 30차 지적 2개: P2 Task 11c-2 폰 `speak`가 앞 말을 끊어 경고와 B 명령이 서로 잘림 → `sayAloud` 안에서 차례로 읽고, 새 명령이 오면 안 읽은 옛 명령 말은 버리며, 경고 뒤 지금 명령을 한 번 다시 읽음. P2 영상 모드·무음 폰·AR 화면에 경고가 안 보임 → AR 중 reply를 지금 있는 잠깐 알림 줄(`PhoneView.note`)에 20초, 엄지 자리 카드가 있으면 비전 상태 줄 자리, 없으면 빈 위 줄.
 - Codex 29차 지적 1개: P1 Task 11c-2 B가 긴 기다리기·승인 대기에 있으면 다시 켜진 A 가전 안내가 B가 닫힐 때까지 전혀 가지 않음 → 명령 줄은 B 그대로 두고 있는 말의 답 메시지(reply)로 폰에 소리로만 바로 알리고 대시보드 말풍선 줄도 보이며, 120초마다 다시 알림(폰 서버에 reply 보내는 함수 하나만 더함).
