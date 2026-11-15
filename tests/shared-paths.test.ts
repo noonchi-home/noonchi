@@ -1,5 +1,7 @@
 // 저장소 뿌리 기준 경로(repoPath)와 직접 실행 검사(isEntry). 파일 자리(import.meta.url)로 자원 경로를 찾는 곳은 src/shared/paths.ts 하나다.
 // 파일을 다른 폴더로 옮겨도 자원 경로(models/·twin/·ui/dist/·runtime/)가 바뀌지 않아야 한다.
+import { mkdtempSync, rmSync, symlinkSync, unlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -43,6 +45,21 @@ describe("직접 실행 검사", () => {
 
   it("Windows에서는 대소문자를 보지 않는다", () => {
     expect(isEntry(url, file.toUpperCase())).toBe(process.platform === "win32");
+  });
+
+  it("링크(정션·심볼릭 링크)를 거친 경로로 띄워도 같은 파일이면 참이다", () => {
+    const dir = mkdtempSync(join(tmpdir(), "entry-link-"));
+    const link = join(dir, "mcp");
+    try {
+      symlinkSync(join(ROOT, "src", "mcp"), link, "junction");
+      expect(isEntry(url, join(link, "server.ts"))).toBe(true);
+      expect(isEntry(url, join(link, "server"))).toBe(true);
+      expect(isEntry(url, join(link, "client.ts"))).toBe(false);
+    } finally {
+      // 링크만 지운다(링크가 가리키는 src/mcp는 그대로)
+      try { unlinkSync(link); } catch { /* 링크를 못 만들었음 */ }
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("다른 파일이거나 띄운 파일이 없으면 거짓이다", () => {
