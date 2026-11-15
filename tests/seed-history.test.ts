@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CUP_FSM_MEMORY, validateMemory, type FsmMemory } from "../src/brain/decision.js";
+import { TASK_NAMES } from "../src/act/tasks.js";
 import { HistoryDb, type HistoryRow } from "../src/history/db.js";
 import { memoryForDay } from "../src/history/reflect.js";
 import { daySummary } from "../src/history/summary.js";
@@ -103,6 +104,19 @@ describe("합성 기록 넣기", () => {
     for (const v of all) {
       const m = validateMemory(v.memory, "fsm") as FsmMemory;
       for (const s of CUP_FSM_MEMORY.states) for (const r of s.rules) expect(m.states.find((x) => x.id === s.id)?.rules, `${v.version}판 ${s.id}`).toContainEqual(r);
+    }
+  });
+
+  it("합성 판본의 규칙 행동은 모두 행동 목록 안이다. 밤 상태에는 규칙이 없고 아침까지 컵을 그대로 두고 묻지 않는다는 것은 상태 설명에 있다", () => {
+    const db = HistoryDb.open(":memory:", 540);
+    seedHistory(db, { home: "mokryeon_180b", end: END, habit: true });
+    for (const v of versions(db)) {
+      const m = v.memory as FsmMemory;
+      for (const s of m.states) for (const r of s.rules) expect(TASK_NAMES, `${v.version}판 ${s.id}: ${r.action}`).toContain(r.action);
+      const night = m.states.find((s) => s.id === "night");
+      if (!night) continue;
+      expect(night.rules, `${v.version}판`).toEqual([]);
+      expect(night.description).toMatch(/컵을 그대로 두고 아침까지 기다린다/);
     }
   });
 

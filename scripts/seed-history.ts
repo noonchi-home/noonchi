@@ -409,8 +409,9 @@ export function memoryAfter(i: number, h: Pick<HomeInfo, "table" | "side" | "liv
   state("watching_tv").next.push({ to: "night", on: "22시가 넘는다." });
   const night = {
     id: "night",
-    description: `22시가 넘은 밤이다. 사용자는 밤에는 폰으로 묻지 않기를 바란다.${i >= 1 ? ` 23시쯤 ${josa(h.livingAc.label, "을/를")} 끄고 침실로 간다.` : ""}`,
-    rules: [{ trigger: `22시 이후 사용자가 자리를 비웠고 ${h.side.label} 위나 ${T} 위에 컵이 남아 있다.`, action: "대기" }],
+    // 밤에는 할 일이 없다: 행동 목록 밖 행동(대기)을 규칙으로 두지 않고 기다린다는 것을 설명에 적는다
+    description: `22시가 넘은 밤이다. 사용자는 밤에는 폰으로 묻지 않기를 바란다. 22시 이후 사용자가 자리를 비웠고 ${h.side.label} 위나 ${T} 위에 컵이 남아 있어도 컵을 그대로 두고 아침까지 기다린다.${i >= 1 ? ` 23시쯤 ${josa(h.livingAc.label, "을/를")} 끄고 침실로 간다.` : ""}`,
+    rules: [],
     next: [{ to: i >= 1 ? "morning_coffee" : "drinking", on: `다음 날 아침 사용자가 ${T}에 앉아 커피를 마신다.` }],
   };
   if (i >= 1) {
