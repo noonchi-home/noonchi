@@ -16,9 +16,13 @@ describe("kinds same: non-approval", () => {
     expect(KIND_ORDER).toEqual(Object.keys(before.labels));
   });
 
-  it("라벨·Matter 프로필·트윈 type·별명·위험 이름·안전 문구·손 조작·ThinQ·사건·상태 글·카메라·twinChange가 바꾸기 전과 같다", () => {
+  it("라벨·Matter 프로필·트윈 type·별명·위험 이름·안전 문구·손 조작·ThinQ·사건·상태 글·카메라·twinChange가 바꾸기 전과 같다(Task 11a가 더한 명시 꺼짐 값만 빼고)", () => {
     const { approval: _now, ...rest } = now();
     const { approval: _was, ...was } = before;
+    // Task 11a: 카메라 규칙에 명시 꺼짐 값(not_in_use → off)을 더했다. 그 값만 빼고 나머지는 완전 일치다
+    const sight = rest.camera.sight as unknown as Record<string, { values: Record<string, unknown> }[]>;
+    expect(sight.microwave!.find((r) => "in_use" in r.values)!.values.not_in_use).toBe("off");
+    for (const rules of Object.values(sight)) for (const r of rules) delete r.values.not_in_use;
     expect(rest).toEqual(was);
   });
 });

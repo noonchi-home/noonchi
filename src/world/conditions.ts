@@ -282,7 +282,8 @@ function check(c: Condition, w: WorldView, x: ConditionContext, m: Memo, path: s
     if (!devs.length) return null;
     if ("state" in c) return devs.some((d) => d.state.includes(c.state));
     const s = DEVICE_STATES[c.became];
-    return devs.some((d) => d.history.some((h) => h.at_ms >= x.sinceMs && h.attr === s.attr && h.to === s.value && h.from !== null && h.from !== s.value));
+    // 근거 시각(카메라면 근거 사진의 촬영 시각 seen_ms, 허브 신호면 도착 시각)이 단계 시작 뒤여야 한다. 추정 근거도 단계 진행에는 쓴다
+    return devs.some((d) => d.history.some((h) => (h.seen_ms ?? h.at_ms) >= x.sinceMs && h.attr === s.attr && h.to === s.value && h.from !== null && h.from !== s.value));
   }
   if ("phone_near" in c) {
     const e = w.eye;

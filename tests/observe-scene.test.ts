@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { startFakeOpenAI, type FakeServer } from "../scripts/fake-openai.js";
 import { VlmClient } from "../src/infer/vlm.js";
-import { analyzeScene, CLOSER_NOTE, parseScene, SCENE_JSON_SCHEMA } from "../src/observe/scene.js";
+import { analyzeScene, CLOSER_NOTE, parseScene, SCENE_JSON_SCHEMA, SCENE_PROMPT } from "../src/observe/scene.js";
 import { sha256, type EngineFrame } from "../src/observe/ring.js";
 
 let fake: FakeServer | undefined;
@@ -14,6 +14,10 @@ describe("VLM 장면 분석", () => {
   it("스키마 밖 상태는 거절하고 모르는 번호는 버린다", () => {
     expect(() => parseScene('{"scene":"k","observations":[{"object_id":"d1","state":"dirty"}],"summary":"s"}', new Set(["d1"]))).toThrow();
     expect(parseScene('{"scene":"k","observations":[{"object_id":"d9","state":"empty"}],"summary":"s"}', new Set(["d1"])).observations).toEqual([]);
+  });
+  it("VLM 스키마 enum과 프롬프트 값 목록에 「꺼져 있음」(not_in_use)이 있다", () => {
+    expect(JSON.stringify(SCENE_JSON_SCHEMA)).toContain('"not_in_use"');
+    expect(SCENE_PROMPT).toContain("not_in_use");
   });
   it("JSON Schema는 엄격 모드(모든 칸 필수, 다른 칸 없음)", () => {
     expect(SCENE_JSON_SCHEMA).toMatchObject({ type: "object", additionalProperties: false, required: ["scene", "observations", "summary"] });

@@ -150,7 +150,8 @@ const ENTRIES = {
     camera: {
       fixture: "microwave",
       sight: [
-        { facet: "use", attr: "power", values: { in_use: "on" }, absent: "off" },
+        // 명시 꺼짐(not_in_use)과 답이 없어 넣은 추정 꺼짐(absent)을 나눠 남긴다(src/world/sight.ts sightValues explicit)
+        { facet: "use", attr: "power", values: { in_use: "on", not_in_use: "off" }, absent: "off" },
         { facet: "open", attr: "door", values: { open: "open", closed: "closed" } },
       ],
     },

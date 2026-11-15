@@ -64,6 +64,7 @@ export const STATE_DOC: Record<StateKey, { how?: string; example: string }> = {
   open: { example: "노트북이 열려 있다. 냉장고가 열림으로 보인다." },
   closed: { example: "전자레인지 문이 닫혀 있다." },
   in_use: { how: "물건은 지금 쓰는 중, 가전은 돌아가는 중", example: "전자레인지 쓰는 중이 끝났다." },
+  not_in_use: { how: "가전이 꺼진 것이 분명히 보임(불빛·화면·불꽃·열 없음)", example: "전자레인지가 꺼져 있다." },
   water_running: { example: "싱크대 물이 흐름이 5분 넘게 이어진다." },
   screen_on: { example: "TV 화면이 켜져 있고 사람이 안 보인다." },
   screen_off: { example: "TV 화면이 꺼졌다." },

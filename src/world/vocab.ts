@@ -115,6 +115,7 @@ export const STATES = {
   open: { facet: "open", label: "열림", for: ["object", "fixture"] },
   closed: { facet: "open", label: "닫힘", for: ["object", "fixture"] },
   in_use: { facet: "use", label: "쓰는 중", for: ["object", "fixture"], hint: "used right now, or an appliance running" },
+  not_in_use: { facet: "use", label: "꺼져 있음", for: ["fixture"], hint: "appliance clearly switched off: no light, display, flame or heat visible" },
   water_running: { facet: "use", label: "물이 흐름", for: ["fixture"], hint: "water flowing from a sink tap" },
   screen_on: { facet: "screen", label: "화면 켜짐", for: ["object", "fixture"] },
   screen_off: { facet: "screen", label: "화면 꺼짐", for: ["object", "fixture"] },

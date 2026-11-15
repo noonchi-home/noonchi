@@ -97,6 +97,17 @@ describe("계획 단계 조건", () => {
     expect(evaluate({ device: "washer", state: "running" }, view({ devices: [washer({ status: null, state: [] })] }), ctx(0))).toBeNull();
   });
 
+  it("became은 근거 시각(카메라면 촬영 시각 seen_ms, 허브 신호면 도착 시각)이 단계 시작 뒤여야 한다", () => {
+    const off = (h: Partial<WorldDevice["history"][number]>) => view({ devices: [washer({ id: "mw_1", kind: "microwave", state: ["off"], status: "꺼짐", history: [{ attr: "power", from: "on", to: "off", at_ms: 5000, ...h }] })] });
+    // 단계 시작(4000) 전에 찍힌 꺼짐 사진의 답이 단계 시작 뒤(5000) 도착: 끝나지 않는다
+    expect(evaluate({ device: "mw_1", became: "off" }, off({ seen_ms: 3000, explicit: true }), ctx(6000, 4000))).toBe(false);
+    // 단계 시작 뒤 찍힌 꺼짐이면 끝난다(추정 꺼짐도 단계 진행에는 쓴다)
+    expect(evaluate({ device: "mw_1", became: "off" }, off({ seen_ms: 4500, explicit: true }), ctx(6000, 4000))).toBe(true);
+    expect(evaluate({ device: "mw_1", became: "off" }, off({ seen_ms: 4500, explicit: false }), ctx(6000, 4000))).toBe(true);
+    // 허브 신호(seen_ms 없음)는 도착 시각으로 본다
+    expect(evaluate({ device: "mw_1", became: "off" }, off({}), ctx(6000, 4000))).toBe(true);
+  });
+
   it("가전 설비(방까지), 폰 근처는 같은 방·평면 거리·새 폰 자리, 지난 시간, 하루 때, 사람 수", () => {
     const eye = { position: [5, 5.5] as [number, number], height_m: 1.2, yaw_deg: 0, pitch_deg: 0, room: "kitchen", room_label: "주방", at_ms: 1000 };
     const w = view({ fixtures: [microwave({ facts: { use: fact("in_use") } })], eye });

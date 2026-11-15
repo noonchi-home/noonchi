@@ -262,8 +262,8 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         surfaces, floorAt: floorLookup(plan.rooms), roomAt: roomNamedAt(floorPlan, twin.rooms), devices: () => signals.list(),
         locate: (id) => { const c = layout?.editor.center(id); return c ? [c.position[0], c.position[2]] : null; },
         place: (id) => layout?.editor.center(id)?.position ?? null,
-        see: (id, seen, at) => {
-          const r = signals.observe(id, seen, at);
+        see: (id, seen, at, evidence) => {
+          const r = signals.observe(id, seen, at, evidence);
           if (r.kind === "mismatch") log(`카메라로 본 값이 기기 값과 달라 기기 값을 둡니다: ${specOf.get(id)?.label ?? id} 카메라 ${JSON.stringify(seen)} · 기기 ${JSON.stringify(r.real)}`);
           return r;
         },

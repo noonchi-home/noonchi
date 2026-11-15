@@ -770,6 +770,27 @@ describe("실행 추적: 코치 계획(손으로 켜는 위험 가전)", () => {
     expect(s.last()).toEqual({ type: "command_clear", id: P });
   });
 
+  it("끄기 안내는 켜라고 한 뒤에 찍힌 꺼짐 사진으로만 지운다: 켜라고 한 뒤 도착했어도 그 전에 찍힌 사진의 답이면 그대로 둔다", async () => {
+    let w = { ...world([]), devices: [cooktop(["off"])] };
+    const s = coachSetup({ w: () => w });
+    await toOn(s);
+    s.t.onAnswer(P, `${P}:7:hand`, "approve");
+    const onAt = s.clock.t;
+    s.t.onHeard("그만");
+    expect(s.last()).toEqual(OFF);
+    // 켜라고 한 뒤(onAt + 1000) 도착했지만 켜라고 하기 전(onAt - 500)에 찍힌 꺼짐 사진: 지우지 않는다
+    s.clock.t += 1_000;
+    w = { ...world([]), devices: [cooktop(["off"], [{ attr: "power", from: "on", to: "off", at_ms: s.clock.t, seen_ms: onAt - 500, explicit: true }])] };
+    s.t.onWorld();
+    s.t.tick();
+    expect(s.last()).toEqual(OFF);
+    // 켜라고 한 뒤 찍힌 꺼짐 사진이면 지운다
+    s.clock.t += 1_000;
+    w = { ...world([]), devices: [cooktop(["off"], [{ attr: "power", from: "on", to: "off", at_ms: s.clock.t, seen_ms: onAt + 200, explicit: true }])] };
+    s.t.onWorld();
+    expect(s.last()).toEqual({ type: "command_clear", id: P });
+  });
+
   it("끄기 안내가 떠 있는 동안 새 계획이 와도 안내를 지우지 않는다: 새 계획은 첫 명령(승인 질문 포함)을 미루고, 안내가 끝나면 그때 시작한다", async () => {
     const s = coachSetup();
     await toOn(s);

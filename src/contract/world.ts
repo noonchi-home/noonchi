@@ -106,9 +106,17 @@ export interface WorldDevice {
   started_ms: number | null;
   /** 남은 분(코스 시간이 없으면 null). */
   remaining_min: number | null;
-  history: { attr: string; from: unknown; to: unknown; at_ms: number }[];
+  history: {
+    attr: string; from: unknown; to: unknown; at_ms: number;
+    /** 카메라로 본 바뀜이면 그 근거 사진의 촬영 시각(안정 셈을 채운 연속 프레임 가운데 가장 이른 것). 허브·실제 가전 신호면 없음. */
+    seen_ms?: number;
+    /** 카메라로 본 바뀜이면 VLM이 그 값을 직접 답했는가(true 명시, false 답이 없어 넣은 추정). 허브·실제 가전 신호면 없음(명시로 본다). */
+    explicit?: boolean;
+  }[];
   /** 지금 상태가 카메라로 본 것(실제 신호가 없음)이면 마지막으로 본 촬영 시각. 실제 신호 상태면 없음. */
   vision?: { at_ms: number };
+  /** 속성마다 카메라가 마지막으로 이어 본 값과 그 촬영 시각·근거 종류(같은 값·같은 종류의 새 촬영은 이력 줄 대신 여기만 바뀐다). 본 적 없으면 없음. */
+  sight_last?: Record<string, { value: unknown; seen_ms: number; explicit: boolean }>;
 }
 
 /** 클로이드 눈(폰) 위치. room은 방 id, room_label은 방 이름(관찰 텍스트의 [눈] 줄). */

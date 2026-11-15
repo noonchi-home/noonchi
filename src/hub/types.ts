@@ -48,7 +48,12 @@ export interface VisionSeen {
   at: string;
   /** true: 실제 출처(ThinQ 읽기·명령 받은 가상 기기)가 없어 이 값이 기기 상태다. false: 실제 상태가 이겨 보임 기록만이다. */
   applied: boolean;
+  /** 속성마다 그 값의 근거: 근거 사진의 촬영 시각(seenAt, epoch ms)과 VLM이 직접 답했는가(explicit). World State 가전 이력에 남는다. */
+  evidence?: Record<string, SightEvidence>;
 }
+
+/** 카메라로 본 값 하나의 근거. */
+export interface SightEvidence { seenAt: number; explicit: boolean }
 
 /** 카메라로 본 상태를 넘긴 결과. applied 기기 상태가 됨, seen 실제 상태와 같거나 이미 알린 다름, mismatch 실제 상태와 처음 다름(real은 다른 속성의 실제 값), ignored 모르는 기기·속성·값. */
 export type VisionResult = { kind: "applied" } | { kind: "seen" } | { kind: "mismatch"; real: Record<string, unknown> } | { kind: "ignored" };

@@ -146,10 +146,11 @@ export interface Stray {
 /** 끄기 안내 하나: 그 가전과 켜라고 한 시각, 실제 폰 명령의 계획·단계 id와 글. */
 interface OffNote { planId: string; step: string; deviceId: string; onAt: number; text: string }
 
-/** 그 가전이 켜라고 한 시각 뒤에 꺼졌다고 새로 보였는가(지금 꺼짐이고, 그 뒤 가전 이력에 꺼짐으로 바뀐 줄이 있다). 처음부터 남아 있던 꺼짐 값은 아니다. */
+/** 그 가전이 켜라고 한 시각 뒤에 꺼졌다고 새로 보였는가(지금 꺼짐이고, 가전 이력에 꺼짐으로 바뀐 줄이 있다). 처음부터 남아 있던 꺼짐 값은 아니다.
+ *  근거 시각은 seen_ms(카메라: 근거 사진의 촬영 시각), 없으면 at_ms(허브 신호 도착). 근거 시각이 onAt보다 뒤여야 한다(켜라고 하기 전 사진의 늦은 답은 아니다). */
 function offSince(d: WorldView["devices"][number] | undefined, onAt: number): boolean {
   const off = DEVICE_STATES.off;
-  return !!d && d.state.includes("off") && d.history.some((h) => h.at_ms > onAt && h.attr === off.attr && h.to === off.value && h.from !== off.value);
+  return !!d && d.state.includes("off") && d.history.some((h) => (h.seen_ms ?? h.at_ms) > onAt && h.attr === off.attr && h.to === off.value && h.from !== off.value);
 }
 
 /** 다른 행동의 계기가 되는 변화: 사람 방, 가전 상태, 가전 설비 상태. */

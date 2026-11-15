@@ -35,7 +35,7 @@ import type {
   Facet, FixtureClass, ObjClass, VlmMissing, WorldChange, WorldDevice, WorldEye, WorldFact, WorldFixture, WorldObject, WorldPerson, WorldView, YoloMissing,
 } from "../contract/world.js";
 import type { Detection, Pose } from "../brain/detector.js";
-import type { DeviceState, VisionResult, VisionSeen } from "../hub/types.js";
+import type { DeviceState, SightEvidence, VisionResult, VisionSeen } from "../hub/types.js";
 import type { EngineFrame } from "../observe/ring.js";
 import type { CameraView } from "../phone/session.js";
 import type { SceneObservation } from "../observe/scene.js";
@@ -147,6 +147,8 @@ interface Dev {
   history: WorldDevice["history"]; known: boolean;
   /** 지금 상태가 카메라로 본 것이면 그 기록(허브 vision, applied). */
   vision: VisionSeen | null;
+  /** 속성마다 카메라가 마지막으로 이어 본 값·촬영 시각·근거 종류(WorldDevice.sight_last). */
+  sight: Record<string, { value: unknown; seen_ms: number; explicit: boolean }>;
 }
 
 export interface WorldStateOptions {
@@ -161,7 +163,7 @@ export interface WorldStateOptions {
   /** 가전 가운데 트윈 자리 [x, 높이, y](카메라로 가전을 고를 때 시야·방향). 없거나 모르면 그 가전을 고르지 않는다. */
   place?: (id: string) => V3 | null;
   /** 카메라로 이어 본 가전 상태를 허브에 넘긴다(src/hub/signals.ts observe). 없으면 넘기지 않는다. */
-  see?: (id: string, twin: Record<string, unknown>, atMs: number) => VisionResult;
+  see?: (id: string, twin: Record<string, unknown>, atMs: number, evidence?: Record<string, SightEvidence>) => VisionResult;
   /** 같은 물체로 볼 기본 거리(m, 기본 0.25). 종류에 identityM이 있으면 그 값. */
   identityM?: number;
   /** 등장·사라짐·관절 사실 확인에서 한 장으로 치는 시간(ms, 기본 EVIDENCE_STEP_MS 2000). 장면을 다른 간격(1초)으로 적은 시험이 그 간격을 준다. */
@@ -372,7 +374,7 @@ export class WorldState {
     this.links.delete(frameId);
     for (const [id, x] of this.links) if (x.at < capturedAtMs - LINK_KEEP_MS) this.links.delete(id);
     if (!m) return [];
-    const stable: [string, Record<string, unknown>][] = [];
+    const stable: [string, Record<string, unknown>, Record<string, SightEvidence>][] = [];
     for (const [tmp, { cls, link }] of m.dets) {
       const device = link.device;
       if (!device) continue;
@@ -380,17 +382,44 @@ export class WorldState {
       if (said.some((s) => (VLM_ONLY as readonly string[]).includes(s))) continue; // 가렸다: 답이 아니다
       const keys = said.filter((s): s is StateKey => s in STATES && fits(s as StateKey, cls, "fixture"));
       const values = sightValues(cls, keys, this.o.devices().find((d) => d.id === device)?.twinAttrs);
-      const kept = Object.entries(values).filter(([attr, v]) => this.readings.read(device, attr, v, capturedAtMs));
-      if (kept.length) stable.push([device, Object.fromEntries(kept)]);
+      const twin: Record<string, unknown> = {};
+      const evidence: Record<string, SightEvidence> = {};
+      for (const [attr, v] of Object.entries(values)) {
+        const first = this.readings.read(device, attr, v, capturedAtMs);
+        if (first === null) continue;
+        twin[attr] = v.value;
+        evidence[attr] = { seenAt: first, explicit: v.explicit };
+      }
+      if (Object.keys(twin).length) stable.push([device, twin, evidence]);
     }
     const changes: WorldChange[] = [];
-    for (const [id, twin] of stable) {
-      const r = this.o.see?.(id, twin, capturedAtMs);
+    for (const [id, twin, evidence] of stable) {
+      const r = this.o.see?.(id, twin, capturedAtMs, evidence);
+      changes.push(...this.sightLast(id, twin, evidence, capturedAtMs));
       if (r?.kind !== "mismatch") continue;
       const spec = this.o.devices().find((d) => d.id === id);
       const text = (t: Record<string, unknown>) => deviceStatus(spec?.kind ?? "", t) ?? Object.entries(t).map(([a, v]) => `${a} ${String(v)}`).join(" · ");
       const seen = Object.fromEntries(Object.keys(r.real).map((a) => [a, twin[a]]));
       changes.push({ kind: "device", at_ms: capturedAtMs, subject: id, meaningful: false, text: CHANGE_TEXT.deviceMismatch(spec?.label ?? id, text(seen), text(r.real)) });
+    }
+    return changes;
+  }
+
+  /** 카메라가 이어 본 값의 마지막 근거(sight_last)를 쓴다. 지금 값과 같은 값을 다른 근거 종류로 보면(추정 꺼짐 → 명시 꺼짐, 그 반대)
+   *  이력 줄 { from: 값, to: 값, seen_ms, explicit }을 남기고 변화(판단 계기 아님)로 알린다. 같은 값·같은 종류의 새 촬영은 촬영 시각만 새로 쓴다. */
+  private sightLast(id: string, twin: Record<string, unknown>, evidence: Record<string, SightEvidence>, atMs: number): WorldChange[] {
+    const d = this.devs.get(id);
+    if (!d) return [];
+    const changes: WorldChange[] = [];
+    for (const [attr, value] of Object.entries(twin)) {
+      const ev = evidence[attr]!;
+      const prev = d.sight[attr];
+      d.sight[attr] = { value, seen_ms: atMs, explicit: ev.explicit };
+      if (!prev || !same(prev.value, value) || prev.explicit === ev.explicit || !same(d.twin[attr], value)) continue;
+      d.history = [...d.history, { attr, from: value, to: value, at_ms: atMs, seen_ms: ev.seenAt, explicit: ev.explicit }].slice(-HISTORY_MAX);
+      const key = becameKey(attr, value);
+      const text = key ? deviceText(d.kind, key).became : String(value);
+      changes.push({ kind: "device", at_ms: atMs, subject: d.id, meaningful: false, text: CHANGE_TEXT.deviceSeen(d.label, text) });
     }
     return changes;
   }
@@ -921,12 +950,12 @@ export class WorldState {
 
   /** 가전 상태. 처음 받은 상태는 상태 이름 변화 하나, 그 뒤로는 바뀐 속성마다 이력과 사건 줄(아는 상태가 아니면 속성 줄, 판단 계기 아님).
    *  카메라로 본 값이 상태가 된 속성(vision.applied)의 줄은 「카메라로 봄」을 붙인다. */
-  applyDevice(s: DeviceState, atMs: number): WorldChange[] {
+  applyDevice(s: DeviceState, atMs: number, evidence?: Record<string, SightEvidence>): WorldChange[] {
     const spec = this.o.devices().find((d) => d.id === s.id);
     if (!spec) return [];
     let d = this.devs.get(s.id);
     if (!d) {
-      d = { id: s.id, kind: spec.kind, label: spec.label, twin: {}, status: null, state: [], changed: atMs, eventAt: null, since: {}, long: new Set(), history: [], known: false, vision: null };
+      d = { id: s.id, kind: spec.kind, label: spec.label, twin: {}, status: null, state: [], changed: atMs, eventAt: null, since: {}, long: new Set(), history: [], known: false, vision: null, sight: {} };
       this.devs.set(s.id, d);
     }
     d.vision = s.signal !== "none" && s.vision?.applied ? s.vision : null;
@@ -938,11 +967,14 @@ export class WorldState {
       return [];
     }
     const seen = (attr: string, to: unknown) => !!d.vision && attr in d.vision.twin && same(d.vision.twin[attr], to);
+    // 카메라로 본 값이 상태가 된 속성의 근거(근거 사진 촬영 시각·명시/추정): 넘겨받은 것, 없으면 허브 상태의 vision.evidence
+    const proof = (attr: string, to: unknown): SightEvidence | undefined => (seen(attr, to) ? evidence?.[attr] ?? d!.vision!.evidence?.[attr] : undefined);
     const changes: WorldChange[] = [];
     for (const [attr, to] of Object.entries(s.twin)) {
       const from = d.twin[attr];
       if (d.known && same(from, to)) continue;
-      d.history = [...d.history, { attr, from: from ?? null, to, at_ms: atMs }].slice(-HISTORY_MAX);
+      const ev = proof(attr, to);
+      d.history = [...d.history, { attr, from: from ?? null, to, at_ms: atMs, ...(ev ? { seen_ms: ev.seenAt, explicit: ev.explicit } : {}) }].slice(-HISTORY_MAX);
       d.changed = atMs;
       const key = becameKey(attr, to);
       if (key) d.since[key] = atMs;
@@ -1020,6 +1052,7 @@ export class WorldState {
         id: d.id, kind: d.kind, label: d.label, status: d.status, state: [...d.state], active: d.state.some((k) => DEVICE_STATES[k].active),
         changed_ms: d.changed, event_ms: d.eventAt, started_ms: this.remaining.startedAt(d.id), remaining_min: this.remaining.remainingMin(d.id, nowMs), history: [...d.history],
         ...(d.vision ? { vision: { at_ms: Math.max(this.sighted.get(d.id) ?? 0, Date.parse(d.vision.at) || 0) } } : {}),
+        ...(Object.keys(d.sight).length ? { sight_last: Object.fromEntries(Object.entries(d.sight).map(([a, v]) => [a, { ...v }])) } : {}),
       })),
       eye: this.eye, frame_ms: this.frameAt, vlm_missing: this.vlmMissing, yolo_missing: this.yoloMissing,
     };

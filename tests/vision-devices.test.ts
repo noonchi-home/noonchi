@@ -70,7 +70,7 @@ function wire(o: { devices: DeviceSpec[]; sources?: Record<string, SignalSource>
   let clock = 0;
   const world = new WorldState({
     surfaces: () => [], floorAt: () => 0, roomAt: o.roomAt, devices: () => hub.list(), place: o.place,
-    see: (id, twin, at) => hub.observe(id, twin, at),
+    see: (id, twin, at, evidence) => hub.observe(id, twin, at, evidence),
   });
   for (const s of hub.states()) world.applyDevice(s, 0);
   hub.subscribe((s) => {
@@ -269,6 +269,38 @@ describe("전자레인지·싱크대: 쓰는 중이 답에 없으면 꺼짐", ()
     for (let i = 3; i <= 4; i++) look(h.world, i, front, EYE, [det("microwave", boxOn(AT.mw_1!))], [{ object_id: "d1", state: "closed" }]);
     expect(h.hub.get("mw_1")!.twin.power).toBe("off");
     expect(seen).toEqual([{ power: "on" }, { power: "off" }]);
+  });
+
+  it("카메라로 바뀐 이력 줄에 근거 사진들 가운데 가장 이른 촬영 시각(seen_ms)과 명시·추정(explicit)이 남는다. 「꺼져 있음」은 명시, 「쓰는 중」이 없어 넣은 꺼짐은 추정이고 트윈은 둘 다 꺼짐", () => {
+    const h = kitchen();
+    const mwBox = () => [det("microwave", boxOn(AT.mw_1!))];
+    const hist = () => h.world.view(40_000).devices.find((d) => d.id === "mw_1")!.history.slice(1);
+    h.at(20_000); // 답이 도착한 시각
+    for (let i = 1; i <= 2; i++) look(h.world, i, front, EYE, mwBox(), [{ object_id: "d1", state: "in_use" }]);
+    for (let i = 3; i <= 4; i++) look(h.world, i, front, EYE, mwBox(), [{ object_id: "d1", state: "closed" }]);
+    expect(h.hub.get("mw_1")!.twin.power).toBe("off");
+    expect(hist()).toEqual([
+      { attr: "power", from: "off", to: "on", at_ms: 20_000, seen_ms: 2000, explicit: true },
+      { attr: "power", from: "on", to: "off", at_ms: 20_000, seen_ms: 6000, explicit: false },
+    ]);
+    // 추정 꺼짐 뒤 명시 꺼짐: 값이 같아도 명시 이력 줄이 생기고 World State 변화(판단 계기 아님)로 알린다
+    const changes = [5, 6].flatMap((i) => look(h.world, i, front, EYE, mwBox(), [{ object_id: "d1", state: "not_in_use" }]));
+    expect(h.hub.get("mw_1")!.twin.power).toBe("off");
+    expect(hist().at(-1)).toEqual({ attr: "power", from: "off", to: "off", at_ms: 12_000, seen_ms: 10_000, explicit: true });
+    expect(changes).toContainEqual(expect.objectContaining({ kind: "device", subject: "mw_1", meaningful: false }));
+    // 같은 값·같은 종류가 이어지면 줄이 늘지 않고 sight_last 촬영 시각만 바뀐다
+    const lines = hist().length;
+    for (let i = 7; i <= 8; i++) look(h.world, i, front, EYE, mwBox(), [{ object_id: "d1", state: "not_in_use" }]);
+    expect(hist()).toHaveLength(lines);
+    expect(h.world.view(40_000).devices.find((d) => d.id === "mw_1")!.sight_last).toEqual({ power: { value: "off", seen_ms: 16_000, explicit: true } });
+  });
+
+  it("허브로 바뀐 이력 줄에는 seen_ms·explicit이 없다", async () => {
+    const h = kitchen();
+    h.at(5000);
+    expect((await h.hub.command("mw_1", { type: "on" })).ok).toBe(true);
+    const last = h.world.view(6000).devices.find((d) => d.id === "mw_1")!.history.at(-1)!;
+    expect(last).toEqual({ attr: "power", from: "off", to: "on", at_ms: 5000 });
   });
 
   it("싱크대 물이 흐름 두 장이면 물 나옴, 쓰는 중만 말하면 넘기지 않는다", () => {

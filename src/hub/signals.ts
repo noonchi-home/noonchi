@@ -11,7 +11,7 @@
 
 import { matterFromTwin } from "../model/mapping.js";
 import type { ThinqLink } from "../thinq/link.js";
-import type { Command, CommandResult, DeviceHub, DeviceSpec, DeviceState, VisionResult } from "./types.js";
+import type { Command, CommandResult, DeviceHub, DeviceSpec, DeviceState, SightEvidence, VisionResult } from "./types.js";
 
 /** virtual: 트윈 시뮬레이터, none: 신호 없음, thinq: 실제 가전(ThinQ 기기 id). */
 export type SignalSource = { kind: "virtual" } | { kind: "none" } | { kind: "thinq"; deviceId: string };
@@ -46,7 +46,7 @@ export class SignalHub implements DeviceHub {
   private stopped = false;
   private link: ThinqLinkLike | null = null;
   /** 카메라로 본 트윈 속성 값과 마지막으로 본 촬영 시각. */
-  private readonly vision = new Map<string, { twin: Record<string, unknown>; atMs: number }>();
+  private readonly vision = new Map<string, { twin: Record<string, unknown>; atMs: number; evidence: Record<string, SightEvidence> }>();
   /** 명령·센서 값을 받은 가상 기기(실제 출처가 생김). */
   private readonly commanded = new Set<string>();
   /** 이미 알린 다름(기기마다 본 값·실제 값). 같아지면 지운다. */
@@ -60,14 +60,20 @@ export class SignalHub implements DeviceHub {
    * 카메라로 본 상태(World State가 같은 값을 연속으로 본 뒤 넘긴다). 그 기기에 있는 속성·값만 받는다.
    * 실제 출처가 없으면 그 값이 기기 상태가 되고(보기가 바뀌면 알린다), 있으면 실제 상태를 두고 보임 기록만 남긴다.
    */
-  observe(id: string, twin: Record<string, unknown>, atMs: number): VisionResult {
+  observe(id: string, twin: Record<string, unknown>, atMs: number, evidence: Record<string, SightEvidence> = {}): VisionResult {
     const spec = this.stopped ? undefined : this.world.list().find((d) => d.id === id);
     const seen = spec ? Object.fromEntries(Object.entries(twin).filter(([attr, v]) => (spec.twinAttrs[attr] ?? []).some((x) => same(x, v)))) : {};
     if (!spec || !Object.keys(seen).length) return { kind: "ignored" };
     const before = this.get(id);
     const prev = this.vision.get(id);
     if (prev && atMs < prev.atMs) return { kind: "seen" }; // 늦게 온 앞선 사진
-    this.vision.set(id, { twin: { ...prev?.twin, ...seen }, atMs });
+    // 근거는 이번에 본 속성마다 새로 쓴다(근거 없이 온 속성은 옛 근거를 지운다)
+    const ev: Record<string, SightEvidence> = { ...prev?.evidence };
+    for (const attr of Object.keys(seen)) {
+      if (evidence[attr]) ev[attr] = evidence[attr]!;
+      else delete ev[attr];
+    }
+    this.vision.set(id, { twin: { ...prev?.twin, ...seen }, atMs, evidence: ev });
     const after = this.get(id);
     if (after && shown(after) !== shown(before)) this.emit(after);
     if (!this.real(id)) {
@@ -223,7 +229,7 @@ export class SignalHub implements DeviceHub {
     const v = this.vision.get(s.id);
     if (!v) return base;
     const applied = !this.real(s.id);
-    const vision = { twin: { ...v.twin }, at: new Date(v.atMs).toISOString(), applied };
+    const vision = { twin: { ...v.twin }, at: new Date(v.atMs).toISOString(), applied, ...(Object.keys(v.evidence).length ? { evidence: { ...v.evidence } } : {}) };
     if (!applied) return { ...base, vision };
     // 실제 출처가 없다: 본 값이 상태다. 모름으로 가린 기기는 본 속성만 안다
     const { signal, ...rest } = base;
