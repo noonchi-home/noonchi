@@ -20,5 +20,6 @@
 | 도면 설비(싱크대·조리대·변기·세면대·욕조)는 twin-studio drawn_fixtures.json을 twin/에 복사하고 서버가 장면을 읽을 때 더한다(src/model/scene.ts loadScene). 평면도·배치 편집기·/api/scene이 같은 장면을 쓴다. | tests/drawn-fixtures.test.ts, tests/mokryeon-cup.test.ts(싱크대가 평면도에 있고 컵 치우기가 네 단계) |
 | 시연용으로 더하는 가전은 `twin/data/homes/<집>/added_devices.json`에 두고 장면을 읽을 때 더하며, 뷰어에는 연결 때 add로 보낸다 | `tests/added-devices.test.ts` |
 | 가전 종류별 값(이름·Matter·트윈 type·위험 동작·손 조작·카메라 낱말)은 `src/model/kinds.ts` 등록부에만 둔다 | `tests/kinds-registry.test.ts`(등록부 밖 종류별 표를 찾으면 실패, 바꾸기 전 21종과 같은 결과) |
+| 켠 위험 가전 추적(hot·끄기 안내)은 확인된 꺼짐(cycleEnded)으로만 푼다(완료·말·만료로 풀지 않음) | `tests/act-track-release.test.ts`·`tests/act-track.test.ts` |
 | 대시보드 단계가 바뀔 때 움직이는 것은 transform·opacity만이다. 트윈 캔버스·영상·칸 크기를 바꾸지 않고, 트윈은 카메라만 옮기며 SVG 판은 같은 카메라로 움직인다. 가장 긴 그림 간격 50 ms 이하. | ui/tests/dashboard/steps.test.tsx(칸·캔버스·영상 요소와 그 class·inline style 그대로, 움직임은 transform·opacity만, 단계가 바뀌면 화면을 한 번만 다시 그림), ui/tests/dashboard/map-overlay.test.tsx(단계가 바뀌면 가짜 엔진에 setView만 오고 resize는 오지 않음), ui/scripts/measure-switch.mjs --mode visible(손으로 돌림) |
 | 폰·대시보드에 새 안내·알림을 더할 때 새 화면 자리를 만들지 않고 지금 있는 명령 줄·생각 말풍선 같은 길로 보낸다. | 없음(2026-11-15 사용자 바로잡음: 끄기 안내용 안전 안내 자리) |

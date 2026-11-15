@@ -91,6 +91,12 @@ describe("말풍선 카드 글", () => {
       expect(say({ plan: null, command: off })).toBe("불을 꺼 달라고 했어요.");
       expect(say({ plan: coach("cancelled"), command: null })).toBe("라면 끓이기 알려 주기를 그만뒀어요.");
     });
+
+    it("끄기 안내 때문에 새 계획을 미루는 동안은 「인덕션 꺼짐을 기다리고 있어요.」(끄기 안내 글보다 먼저)", () => {
+      const off = { ...cmd("plan:d0:off"), id: "plan:d0", text: "인덕션을 꺼 주세요" };
+      expect(say({ plan: coach("planned"), command: off, offWait: "인덕션" })).toBe("인덕션 꺼짐을 기다리고 있어요.");
+      expect(say({ plan: coach("planned"), command: off, offWait: null })).toBe("불을 꺼 달라고 했어요.");
+    });
   });
   it("그대로 둔 지 20초 안이면 「컵을 그대로 두기로 했어요.」, 그 뒤에는 지켜보는 글. 열린 계획이나 그 뒤에 끝난 계획이 있으면 그 글이 먼저다", () => {
     const left = { atMs: T - 5000 };

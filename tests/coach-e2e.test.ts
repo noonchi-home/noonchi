@@ -189,7 +189,8 @@ describe("코치 모드: 라면 끓이기 알려 주기", () => {
     expect(s.said("인덕션을 켜 주세요")).toBeUndefined();
     s.answer(ask, "approve");
     await s.pump(() => !!s.said("인덕션을 켜 주세요"), "켜라는 명령");
-    s.answer(s.said("인덕션을 켜 주세요")!);
+    // 사람이 켠다: 허브가 켜짐을 알려 7번이 끝난다(켠 위험 가전 추적은 확인된 꺼짐까지 남는다)
+    await srv!.hub.command(s.cooktop, { type: "on" });
 
     // 8 알림 · 9 기다리기(2초) → 10 면 넣기: 혼잣말 → 관찰 모드(heard)가 지금 할 일을 다시 읽는다. 말 요청 에이전트는 부르지 않는다
     await s.pump(() => !!s.said("물이 끓을 때까지 기다려요."), "알림");
@@ -208,11 +209,11 @@ describe("코치 모드: 라면 끓이기 알려 주기", () => {
     await s.pump(() => s.replies().some((m) => m.text === "에어컨을 켰어요."), "가전 요청의 답");
     expect(srv!.hub.get(s.light)!.twin.power).toBe("on");
 
-    // 끝까지: 면 넣기 완료 → 기다리기 → 인덕션 끄기 완료 → 알림 → 완료
+    // 끝까지: 면 넣기 완료 → 기다리기 → 인덕션 끄기(허브 꺼짐: 확인된 꺼짐이라 추적도 풀린다) → 알림 → 완료. 끄기 안내는 없다
     s.answer({ id: planId, step: `${planId}:10` });
     await s.pump(() => !!s.said("인덕션을 꺼 주세요"), "12번");
     expect(s.said("인덕션을 꺼 주세요")).toMatchObject({ step: `${planId}:12`, kind: "do" });
-    s.answer(s.said("인덕션을 꺼 주세요")!);
+    await srv!.hub.command(s.cooktop, { type: "off" });
     await s.pump(() => !!s.said("라면이 다 됐어요."), "끝 알림");
     await s.pump(async () => (await s.history("execution")).some((r) => r.subject === planId && r.text === "완료"), "완료");
     // 진행 중에는 PAM을 부르지 않는다(시작 때 나가 있던 판단 하나까지는 봐준다)
@@ -246,11 +247,12 @@ describe("코치 모드: 라면 끓이기 알려 주기", () => {
     expect(readFileSync(join(s.runtimeDir, "homes", "mokryeon_180b", "lessons.json"), "utf8")).not.toMatch(/알려 줘|뭐 해야/);
   }, 120_000);
 
-  it("인덕션을 켜라고 한 뒤 「그만」이면 계획을 취소하고 「…꺼 주세요」 명령을 보낸다. 거절이면 켜라는 명령도 끄기 안내도 없다", async () => {
+  it("인덕션을 켠 뒤 「그만」이면 계획을 취소하고 「…꺼 주세요」 명령을 보낸다. 「완료」로는 풀리지 않고 보이게 해 달라는 부탁으로 바뀌며, 허브 꺼짐을 보면 지운다", async () => {
     const s = await start({ assist: "coach" });
     const planId = await toStep(s, 7);
     s.answer({ id: planId, step: `${planId}:7:hand` }, "approve");
     await s.pump(() => !!s.said("인덕션을 켜 주세요"), "켜라는 명령");
+    await srv!.hub.command(s.cooktop, { type: "on" });
     s.say("그만");
     await s.pump(() => s.commands().some((m) => m.step === `${planId}:off`), "끄기 안내");
     const off = s.commands().find((m) => m.step === `${planId}:off`)!;
@@ -259,6 +261,10 @@ describe("코치 모드: 라면 끓이기 알려 주기", () => {
     await s.pump(async () => (await s.history("execution")).some((r) => r.subject === planId && r.text === "사용자가 그만둠"), "취소 기록");
     await s.pump(() => s.dash.some((m) => m.type === "say" && m.text === "불을 꺼 달라고 했어요."), "말풍선 카드");
     s.answer(off);
+    await s.pump(() => s.commands().some((m) => m.step === `${planId}:off` && m.choices.length === 0), "부탁으로 바뀜");
+    expect(s.commands().at(-1)).toMatchObject({ id: planId, step: `${planId}:off`, text: "인덕션이 보이게 폰을 가까이 대 주세요", choices: [] });
+    expect(s.phone.at(-1)?.type).toBe("command");
+    await srv!.hub.command(s.cooktop, { type: "off" });
     await s.pump(() => s.phone.at(-1)?.type === "command_clear", "안내 지움");
     expect(existsSync(join(s.runtimeDir, "homes", "mokryeon_180b", "lessons.json"))).toBe(false);
   }, 90_000);

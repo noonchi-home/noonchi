@@ -35,6 +35,7 @@ import type {
   Facet, FixtureClass, ObjClass, VlmMissing, WorldChange, WorldDevice, WorldEye, WorldFact, WorldFixture, WorldObject, WorldPerson, WorldView, YoloMissing,
 } from "../contract/world.js";
 import type { Detection, Pose } from "../brain/detector.js";
+import { maskCells, type Mask } from "../brain/seg.js";
 import type { DeviceState, SightEvidence, VisionResult, VisionSeen } from "../hub/types.js";
 import type { EngineFrame } from "../observe/ring.js";
 import type { CameraView } from "../phone/session.js";
@@ -65,6 +66,16 @@ const GONE_KEEP_MS = 600_000;
 const FEET_EDGE = 0.98;
 /** VLM 답이 오지 않은 프레임의 가전 맞춤은 이만큼(촬영 시각 기준) 두었다가 버린다. */
 const LINK_KEEP_MS = 60_000;
+/** 가까이 본 가전 관측(sight_last close): 맞춘 감지 마스크가 사진 넓이의 이 비율 이상. */
+const CLOSE_AREA = 0.1;
+/** 마스크가 덮는 넓이(원본 픽셀²): 1인 칸 비율 × 그림 자리 넓이. 모양이 없으면 0. */
+function maskArea(m: Mask): number {
+  const cells = m.cols * m.rows ? maskCells(m) : null;
+  if (!cells) return 0;
+  let n = 0;
+  for (const c of cells) n += c;
+  return (n / cells.length) * m.at[2] * m.at[3];
+}
 /** 가까이 보기로 찾거나 고친 물건은 이만큼(ms, 촬영 시각 기준) 전체 사진에서 못 봐도 사라짐으로 세지 않는다(전체 사진의 감지기는 그 물건을 못 본다). */
 export const CLOSER_HOLD_MS = 30_000;
 /** 가까이 보기로 VLM 확인 없이 새 물건을 만들려면 같은 자리로 보인 서로 다른 원본 프레임이 이만큼 있어야 한다(물건 등장 확인 장수와 같다).
@@ -148,7 +159,7 @@ interface Dev {
   /** 지금 상태가 카메라로 본 것이면 그 기록(허브 vision, applied). */
   vision: VisionSeen | null;
   /** 속성마다 카메라가 마지막으로 이어 본 값·촬영 시각·근거 종류(WorldDevice.sight_last). */
-  sight: Record<string, { value: unknown; seen_ms: number; explicit: boolean }>;
+  sight: Record<string, { value: unknown; seen_ms: number; explicit: boolean; close: boolean }>;
 }
 
 export interface WorldStateOptions {
@@ -204,7 +215,7 @@ export class WorldState {
   private readonly byPose = new WeakSet<WorldFact>();
   private readonly identityM: number;
   /** 프레임 id → 감지 번호마다 카메라로 고른 가전(그 프레임 VLM 답이 올 때까지). */
-  private readonly links = new Map<string, { at: number; dets: Map<string, { cls: FixtureClass; link: SightLink }> }>();
+  private readonly links = new Map<string, { at: number; dets: Map<string, { cls: FixtureClass; link: SightLink; close: boolean }> }>();
   /** 가전마다 카메라로 이어 본 값의 수. */
   private readonly readings = new SightReadings();
   /** 가전마다 카메라로 마지막으로 본 촬영 시각. */
@@ -352,11 +363,11 @@ export class WorldState {
   }
 
   /** 가전 설비 상자 하나를 트윈 가전에 맞춰 두고(등록부 camera가 있는 설비만), 그 프레임 VLM 답을 기다린다. */
-  private sight(frame: EngineFrame, tmp: string, fix: Fix, box: Detection["box"], room: { id: string } | null): void {
+  private sight(frame: EngineFrame, tmp: string, fix: Fix, det: Detection, room: { id: string } | null): void {
     if (!rulesOf(fix.cls).length) return;
     const at = frame.capturedAtMs;
     const link = linkDevice({
-      cls: fix.cls, box, size: { width: frame.width, height: frame.height }, view: frame.view, room: room?.id ?? null, devices: this.o.devices(), place: this.o.place ?? (() => null),
+      cls: fix.cls, box: det.box, size: { width: frame.width, height: frame.height }, view: frame.view, room: room?.id ?? null, devices: this.o.devices(), place: this.o.place ?? (() => null),
     });
     fix.link = { ...link, at_ms: at };
     if (link.device) this.sighted.set(link.device, at);
@@ -365,7 +376,7 @@ export class WorldState {
       m = { at, dets: new Map() };
       this.links.set(frame.id, m);
     }
-    m.dets.set(tmp, { cls: fix.cls, link });
+    m.dets.set(tmp, { cls: fix.cls, link, close: maskArea(det.mask) >= CLOSE_AREA * frame.width * frame.height });
   }
 
   /** 그 프레임 VLM 답에서 고른 가전의 값을 읽고, 이어 본 값은 허브에 넘긴다. 실제 상태와 처음 다르면 다름 줄(판단 계기 아님). */
@@ -374,8 +385,8 @@ export class WorldState {
     this.links.delete(frameId);
     for (const [id, x] of this.links) if (x.at < capturedAtMs - LINK_KEEP_MS) this.links.delete(id);
     if (!m) return [];
-    const stable: [string, Record<string, unknown>, Record<string, SightEvidence>][] = [];
-    for (const [tmp, { cls, link }] of m.dets) {
+    const stable: [string, Record<string, unknown>, Record<string, SightEvidence>, boolean][] = [];
+    for (const [tmp, { cls, link, close }] of m.dets) {
       const device = link.device;
       if (!device) continue;
       const said = scene.observations.filter((o) => o.object_id === tmp).map((o) => o.state as string);
@@ -390,12 +401,12 @@ export class WorldState {
         twin[attr] = v.value;
         evidence[attr] = { seenAt: first, explicit: v.explicit };
       }
-      if (Object.keys(twin).length) stable.push([device, twin, evidence]);
+      if (Object.keys(twin).length) stable.push([device, twin, evidence, close]);
     }
     const changes: WorldChange[] = [];
-    for (const [id, twin, evidence] of stable) {
+    for (const [id, twin, evidence, close] of stable) {
       const r = this.o.see?.(id, twin, capturedAtMs, evidence);
-      changes.push(...this.sightLast(id, twin, evidence, capturedAtMs));
+      changes.push(...this.sightLast(id, twin, evidence, capturedAtMs, close));
       if (r?.kind !== "mismatch") continue;
       const spec = this.o.devices().find((d) => d.id === id);
       const text = (t: Record<string, unknown>) => deviceStatus(spec?.kind ?? "", t) ?? Object.entries(t).map(([a, v]) => `${a} ${String(v)}`).join(" · ");
@@ -407,14 +418,14 @@ export class WorldState {
 
   /** 카메라가 이어 본 값의 마지막 근거(sight_last)를 쓴다. 지금 값과 같은 값을 다른 근거 종류로 보면(추정 꺼짐 → 명시 꺼짐, 그 반대)
    *  이력 줄 { from: 값, to: 값, seen_ms, explicit }을 남기고 변화(판단 계기 아님)로 알린다. 같은 값·같은 종류의 새 촬영은 촬영 시각만 새로 쓴다. */
-  private sightLast(id: string, twin: Record<string, unknown>, evidence: Record<string, SightEvidence>, atMs: number): WorldChange[] {
+  private sightLast(id: string, twin: Record<string, unknown>, evidence: Record<string, SightEvidence>, atMs: number, close: boolean): WorldChange[] {
     const d = this.devs.get(id);
     if (!d) return [];
     const changes: WorldChange[] = [];
     for (const [attr, value] of Object.entries(twin)) {
       const ev = evidence[attr]!;
       const prev = d.sight[attr];
-      d.sight[attr] = { value, seen_ms: atMs, explicit: ev.explicit };
+      d.sight[attr] = { value, seen_ms: atMs, explicit: ev.explicit, close };
       if (!prev || !same(prev.value, value) || prev.explicit === ev.explicit || !same(d.twin[attr], value)) continue;
       d.history = [...d.history, { attr, from: value, to: value, at_ms: atMs, seen_ms: ev.seenAt, explicit: ev.explicit }].slice(-HISTORY_MAX);
       const key = becameKey(attr, value);
@@ -451,7 +462,7 @@ export class WorldState {
       if (FIXTURE_CLASSES.has(d.label)) {
         const fix = this.fixture(d.label as FixtureClass, at, eyeRoom);
         ids.set(tmp, fix.id);
-        if (frame.vlm !== false) this.sight(frame, tmp, fix, d.box, eyeRoom); // 카메라로 가전 맞추기는 그 프레임 VLM 답이 쓴다: 빠른 프레임은 답이 없다
+        if (frame.vlm !== false) this.sight(frame, tmp, fix, d, eyeRoom); // 카메라로 가전 맞추기는 그 프레임 VLM 답이 쓴다: 빠른 프레임은 답이 없다
         return;
       }
       if (!OBJ_CLASSES.has(d.label)) return;

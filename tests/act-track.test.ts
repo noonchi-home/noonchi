@@ -604,6 +604,8 @@ describe("실행 추적: 코치 계획(손으로 켜는 위험 가전)", () => {
   const ASK = "냄비와 상판이 뜨거워져요. 인덕션을 켤까요?";
   const YESNO = [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }];
   const OFF = { type: "command", id: P, step: `${P}:off`, text: "인덕션을 꺼 주세요", vision: null, choices: DONE, target: null, speak: true };
+  /** 끄기 안내의 「완료」 뒤·상태가 이미 꺼짐인 채 닫힌 뒤: 보이게 해 달라는 부탁(답 단추 없음). */
+  const ASK_OFF = { ...OFF, text: "인덕션이 보이게 폰을 가까이 대 주세요", choices: [] };
 
   it("인덕션 켜기 단계는 먼저 안전 문구와 함께 묻고(승인·거절), 승인 뒤에만 「인덕션을 켜 주세요」를 보낸다. 「완료」·말·비전으로는 승인 없이 넘어가지 않고, 답은 기억하지 않아 다음 판에도 또 묻는다", async () => {
     expect(CAUTION_TEXT.ask(CAUTION_LINE.cooktop!, "인덕션")).toBe(ASK);
@@ -667,28 +669,52 @@ describe("실행 추적: 코치 계획(손으로 켜는 위험 가전)", () => {
     expect(s.spoken()).not.toContain("인덕션을 꺼 주세요");
   });
 
-  it("켠 뒤 「그만」이면 계획을 닫고 「인덕션을 꺼 주세요」와 「완료」를 보낸다. 「완료」면 지운다", async () => {
-    const s = coachSetup();
+  it("켠 뒤 「그만」이면 계획을 닫고 「인덕션을 꺼 주세요」와 「완료」를 보낸다. 「완료」면 풀지 않고 보이게 해 달라는 부탁(답 단추 없음)으로 바뀌고, 확인된 꺼짐(허브 켜짐 → 꺼짐)을 보면 지운다", async () => {
+    let w = world([]);
+    const s = coachSetup({ w: () => w });
     await toOn(s);
     s.t.onAnswer(P, `${P}:7:hand`, "approve");
+    const onAt = s.clock.t;
     expect(s.t.onHeard("그만")).toMatchObject({ id: "stop" });
     expect(s.phone.slice(-2)).toEqual([{ type: "command_clear", id: P }, OFF]);
     expect(s.plans.current()).toMatchObject({ status: "cancelled" });
     expect(s.t.openCommand()).toMatchObject({ planId: P, stepId: `${P}:off`, kind: "command", text: "인덕션을 꺼 주세요", choices: [{ id: "done" }] });
     expect(s.t.onAnswer(P, `${P}:off`, "approve")).toBe(false);
     expect(s.t.onAnswer(P, `${P}:off`, "done")).toBe(true);
+    expect(s.last()).toEqual(ASK_OFF);
+    expect(s.t.openCommand()).toMatchObject({ stepId: `${P}:off`, text: ASK_OFF.text, choices: [] });
+    expect(s.t.safety().cycles.induction_1).toEqual({ cycle: 1, onAt, askedAt: s.clock.t });
+    expect(s.t.onAnswer(P, `${P}:off`, "done")).toBe(false);
+    s.clock.t += 1_000;
+    s.t.tick();
+    expect(s.last()).toEqual(ASK_OFF);
+    // 허브가 켜짐 → 꺼짐을 알리면(명시) 지운다
+    w = { ...world([]), devices: [cooktop(["off"], [{ attr: "power", from: "off", to: "on", at_ms: onAt + 100 }, { attr: "power", from: "on", to: "off", at_ms: s.clock.t }])] };
+    s.t.onWorld();
     expect(s.last()).toEqual({ type: "command_clear", id: P });
     expect(s.t.openCommand()).toBeNull();
-    expect(s.t.onAnswer(P, `${P}:off`, "done")).toBe(false);
+    expect(s.t.safety().released).toEqual({ induction_1: { planId: P, evidenceAt: s.clock.t, via: "switch" } });
   });
 
-  it("끄기 안내는 말 「다 했어」, 그 가전이 꺼짐, 120초 중 먼저 오는 것으로 지운다. 시간 초과로 닫힌 계획에도 보낸다", async () => {
+  it("끄기 안내는 말 「완료」·「다 했어」로 풀리지도 바뀌지도 않고, 120초가 지나도 남아 같은 안내를 다시 소리로 보낸다. 시간 초과로 닫힌 계획에도 보내고 허브 꺼짐을 보면 지운다", async () => {
     const said = coachSetup();
     await toOn(said);
     said.t.onAnswer(P, `${P}:7:hand`, "approve");
     said.t.onHeard("그만");
-    expect(said.t.onHeard("다 했어")).toMatchObject({ id: "done" });
-    expect(said.last()).toEqual({ type: "command_clear", id: P });
+    const n = said.phone.length;
+    expect(said.t.onHeard("완료")).toBeNull();
+    expect(said.t.onHeard("다 했어")).toBeNull();
+    expect(said.phone).toHaveLength(n);
+    said.clock.t += 119_000;
+    said.t.tick();
+    expect(said.phone).toHaveLength(n);
+    said.clock.t += 1_001;
+    said.t.tick();
+    expect(said.phone.slice(n)).toEqual([OFF]);
+    said.clock.t += 120_001;
+    said.t.tick();
+    expect(said.phone.slice(n)).toEqual([OFF, OFF]);
+    expect(said.t.openCommand()).toMatchObject({ stepId: `${P}:off`, choices: [{ id: "done" }] });
 
     let w = { ...world([]), devices: [cooktop(["on"])] };
     const seen = coachSetup({ w: () => w });
@@ -705,20 +731,9 @@ describe("실행 추적: 코치 계획(손으로 켜는 위험 가전)", () => {
     w = { ...world([]), devices: [cooktop(["off"], [{ attr: "power", from: "on", to: "off", at_ms: seen.clock.t }])] };
     seen.t.onWorld();
     expect(seen.last()).toEqual({ type: "command_clear", id: P });
-
-    const late = coachSetup();
-    await toOn(late);
-    late.t.onAnswer(P, `${P}:7:hand`, "approve");
-    late.t.onHeard("그만");
-    late.clock.t += 119_000;
-    late.t.tick();
-    expect(late.last()).toEqual(OFF);
-    late.clock.t += 1_001;
-    late.t.tick();
-    expect(late.last()).toEqual({ type: "command_clear", id: P });
   });
 
-  it("끄는 단계까지 끝낸 계획은 끄기 안내를 보내지 않는다. 코치 계획이 열려 있는 동안 coaching()이 참이다(판단 호출을 쉬게 한다)", async () => {
+  it("끄기 단계(12번)를 「완료」로 넘기면 다음 단계로 가지만 켠 가전 추적(hot)은 남고, 계획이 끝나면 끄기 안내가 간다. 코치 계획이 열려 있는 동안 coaching()이 참이다(판단 호출을 쉬게 한다)", async () => {
     const s = coachSetup();
     expect(s.t.coaching()).toBe(false);
     await toOn(s);
@@ -734,35 +749,118 @@ describe("실행 추적: 코치 계획(손으로 켜는 위험 가전)", () => {
     s.t.onAnswer(P, `${P}:10`, "done");
     s.clock.t += 240_001; s.t.tick();
     expect(s.last()).toMatchObject({ step: `${P}:12`, text: "인덕션을 꺼 주세요", choices: DONE, kind: "do" });
-    s.t.onAnswer(P, `${P}:12`, "done");
+    expect(s.t.onAnswer(P, `${P}:12`, "done")).toBe(true);
+    expect(s.steps()[12]).toBe("active");
+    expect(s.t.safety().hot).toEqual(["induction_1"]);
     s.clock.t += 4_001; s.t.tick();
     expect(s.plans.current()).toMatchObject({ status: "done" });
-    expect(s.last()).toEqual({ type: "command_clear", id: P });
-    expect(s.phone.filter((m) => m.type === "command" && m.step === `${P}:off`)).toEqual([]);
+    expect(s.phone.slice(-2)).toEqual([{ type: "command_clear", id: P }, OFF]);
+    expect(s.t.safety().hot).toEqual([]);
     expect(s.t.coaching()).toBe(false);
     expect(s.spoken()).toEqual([
       "수납장으로 가 주세요", "냄비를 꺼내 주세요", "싱크대로 가 주세요", "냄비에 물을 받아 주세요", "인덕션으로 가 주세요", "냄비를 인덕션에 올려 주세요",
-      ASK, "인덕션을 켜 주세요", "물이 끓을 때까지 기다려요.", "면과 스프를 넣어 주세요", "인덕션을 꺼 주세요", "라면이 다 됐어요.",
+      ASK, "인덕션을 켜 주세요", "물이 끓을 때까지 기다려요.", "면과 스프를 넣어 주세요", "인덕션을 꺼 주세요", "라면이 다 됐어요.", "인덕션을 꺼 주세요",
     ]);
   });
 
-  it("끄기 안내는 켜라고 한 뒤에 새로 본 꺼짐으로만 지운다: 처음부터 남아 있던 꺼짐 값으로는 지우지 않는다", async () => {
+  it("허브가 인덕션을 켜짐 → 꺼짐으로 바꿔 12번이 끝나면 추적이 풀리고 계획이 끝나도 끄기 안내가 없다. 풀려도 회차(onAt)는 남는다", async () => {
+    let w = { ...world([]), devices: [cooktop(["off"])] };
+    const s = coachSetup({ w: () => w });
+    await toOn(s);
+    s.t.onAnswer(P, `${P}:7:hand`, "approve");
+    const onAt = s.clock.t;
+    s.clock.t += 1_000;
+    const on = { attr: "power", from: "off", to: "on", at_ms: s.clock.t };
+    w = { ...world([]), devices: [cooktop(["on"], [on])] };
+    s.t.onWorld();
+    expect(s.steps()[7]).toBe("active");
+    s.clock.t += 4_001; s.t.tick();
+    s.clock.t += 240_001; s.t.tick();
+    s.t.onAnswer(P, `${P}:10`, "done");
+    s.clock.t += 240_001; s.t.tick();
+    expect(s.last()).toMatchObject({ step: `${P}:12`, text: "인덕션을 꺼 주세요" });
+    expect(s.t.safety().hot).toEqual(["induction_1"]);
+    s.clock.t += 1_000;
+    w = { ...world([]), devices: [cooktop(["off"], [on, { attr: "power", from: "on", to: "off", at_ms: s.clock.t }])] };
+    s.t.onWorld();
+    expect(s.steps()[12]).toBe("active");
+    expect(s.t.safety()).toEqual({ hot: [], cycles: { induction_1: { cycle: 1, onAt, askedAt: null } }, released: { induction_1: { planId: P, evidenceAt: s.clock.t, via: "switch" } } });
+    s.clock.t += 4_001; s.t.tick();
+    expect(s.plans.current()).toMatchObject({ status: "done" });
+    expect(s.phone.some((m) => m.type === "command" && /:off(:\d+)?$/.test(m.step))).toBe(false);
+  });
+
+  it("12번이 20초 넘게 안 끝나고 인덕션 상태가 이미 꺼짐(켜짐을 못 봄)이면 보이게 해 달라는 부탁을 12번 명령 줄에 한 번 보낸다(답 단추 없음)", async () => {
+    const w = { ...world([]), devices: [cooktop(["off"])] };
+    const s = coachSetup({ w: () => w });
+    await toOn(s);
+    s.t.onAnswer(P, `${P}:7:hand`, "approve");
+    s.t.onAnswer(P, `${P}:7`, "done");
+    s.clock.t += 4_001; s.t.tick();
+    s.clock.t += 240_001; s.t.tick();
+    s.t.onAnswer(P, `${P}:10`, "done");
+    s.clock.t += 240_001; s.t.tick();
+    expect(s.last()).toMatchObject({ step: `${P}:12`, text: "인덕션을 꺼 주세요" });
+    s.clock.t += 19_000; s.t.tick();
+    expect(s.last()).toMatchObject({ step: `${P}:12`, text: "인덕션을 꺼 주세요" });
+    s.clock.t += 1_001; s.t.tick();
+    expect(s.last()).toMatchObject({ type: "command", id: P, step: `${P}:12`, text: ASK_OFF.text, choices: [], speak: true, kind: "do" });
+    for (let i = 0; i < 8; i++) { s.clock.t += 1_000; s.t.tick(); }
+    expect(s.phone.filter((m) => m.type === "command" && m.text === ASK_OFF.text)).toHaveLength(1);
+    expect(s.t.safety().cycles.induction_1!.askedAt).toBe(s.clock.t - 8_000);
+  });
+
+  it("한 판정: 전원 모름 → 켜기 지시 → 첫 관측이 꺼짐(모름 → 꺼짐)이면 풀지 않는다(부탁이 남는다)", async () => {
+    let w = { ...world([]), devices: [cooktop([])] };
+    const s = coachSetup({ w: () => w });
+    await toOn(s);
+    s.t.onAnswer(P, `${P}:7:hand`, "approve");
+    const onAt = s.clock.t;
+    s.clock.t += 1_000;
+    w = { ...world([]), devices: [cooktop(["off"], [{ attr: "power", from: null, to: "off", at_ms: onAt + 500 }])] };
+    s.t.onHeard("그만");
+    expect(s.last()).toEqual(ASK_OFF);
+    for (let i = 0; i < 4; i++) { s.clock.t += 1_000; s.t.onWorld(); s.t.tick(); }
+    expect(s.last()).toEqual(ASK_OFF);
+    expect(s.t.safety().released).toEqual({});
+  });
+
+  it("한 판정: 켜기 단계(7번) 진행 중에는 켜짐 → 꺼짐을 봐도 풀지 않고, 그 단계가 끝난 뒤에 푼다", async () => {
+    let w = { ...world([]), devices: [cooktop(["on"], [{ attr: "power", from: "off", to: "on", at_ms: 5_000 }])] };
+    const s = coachSetup({ w: () => w });
+    await toOn(s);
+    s.t.onAnswer(P, `${P}:7:hand`, "approve");
+    const onAt = s.clock.t;
+    // 켜라고 하기 전부터 켜져 있었다(7번 끝 조건 became on은 서지 않는다). 그 뒤 꺼짐을 허브가 알린다
+    s.clock.t += 1_000;
+    w = { ...world([]), devices: [cooktop(["off"], [{ attr: "power", from: "off", to: "on", at_ms: 5_000 }, { attr: "power", from: "on", to: "off", at_ms: onAt + 500 }])] };
+    s.t.onWorld();
+    s.t.tick();
+    expect(s.steps()[6]).toBe("active");
+    expect(s.t.safety().hot).toEqual(["induction_1"]);
+    expect(s.t.safety().released).toEqual({});
+    s.t.onAnswer(P, `${P}:7`, "done");
+    s.t.tick();
+    expect(s.t.safety()).toMatchObject({ hot: [], released: { induction_1: { evidenceAt: onAt + 500, via: "switch" } } });
+  });
+
+  it("끄기 안내는 켜라고 한 뒤에 새로 본 꺼짐으로만 지운다: 처음부터 남아 있던 꺼짐 값으로는 지우지 않는다(상태가 이미 꺼짐이면 끄라는 안내 대신 부탁)", async () => {
     let w = { ...world([]), devices: [cooktop(["off"])] };
     const s = coachSetup({ w: () => w });
     await toOn(s);
     s.t.onAnswer(P, `${P}:7:hand`, "approve");
     const onAt = s.clock.t;
     s.t.onHeard("그만");
-    expect(s.last()).toEqual(OFF);
+    expect(s.last()).toEqual(ASK_OFF);
     s.t.onWorld();
     s.clock.t += 1_000;
     s.t.tick();
-    expect(s.last()).toEqual(OFF);
+    expect(s.last()).toEqual(ASK_OFF);
     // 켜라고 하기 전의 꺼짐 기록도 아니다
     w = { ...world([]), devices: [cooktop(["off"], [{ attr: "power", from: "on", to: "off", at_ms: onAt - 1 }])] };
     s.t.onWorld();
     s.t.tick();
-    expect(s.last()).toEqual(OFF);
+    expect(s.last()).toEqual(ASK_OFF);
     // 켜라고 한 뒤 켰다가 끈 것을 보면 지운다
     s.clock.t += 1_000;
     w = { ...world([]), devices: [cooktop(["off"], [{ attr: "power", from: "off", to: "on", at_ms: onAt + 500 }, { attr: "power", from: "on", to: "off", at_ms: s.clock.t }])] };
@@ -777,13 +875,13 @@ describe("실행 추적: 코치 계획(손으로 켜는 위험 가전)", () => {
     s.t.onAnswer(P, `${P}:7:hand`, "approve");
     const onAt = s.clock.t;
     s.t.onHeard("그만");
-    expect(s.last()).toEqual(OFF);
+    expect(s.last()).toEqual(ASK_OFF);
     // 켜라고 한 뒤(onAt + 1000) 도착했지만 켜라고 하기 전(onAt - 500)에 찍힌 꺼짐 사진: 지우지 않는다
     s.clock.t += 1_000;
     w = { ...world([]), devices: [cooktop(["off"], [{ attr: "power", from: "on", to: "off", at_ms: s.clock.t, seen_ms: onAt - 500, explicit: true }])] };
     s.t.onWorld();
     s.t.tick();
-    expect(s.last()).toEqual(OFF);
+    expect(s.last()).toEqual(ASK_OFF);
     // 켜라고 한 뒤 찍힌 꺼짐 사진이면 지운다
     s.clock.t += 1_000;
     w = { ...world([]), devices: [cooktop(["off"], [{ attr: "power", from: "on", to: "off", at_ms: s.clock.t, seen_ms: onAt + 200, explicit: true }])] };
@@ -791,12 +889,15 @@ describe("실행 추적: 코치 계획(손으로 켜는 위험 가전)", () => {
     expect(s.last()).toEqual({ type: "command_clear", id: P });
   });
 
-  it("끄기 안내가 떠 있는 동안 새 계획이 와도 안내를 지우지 않는다: 새 계획은 첫 명령(승인 질문 포함)을 미루고, 안내가 끝나면 그때 시작한다", async () => {
-    const s = coachSetup();
+  it("끄기 안내가 남은 동안 새 계획이 와도 안내를 지우지 않는다: 새 계획은 첫 명령(승인 질문 포함)을 미루고 실행 기록·말풍선에 그 가전 꺼짐을 기다린다고 남긴다. 안내가 풀리면 그때 시작한다", async () => {
+    let w = world([]);
+    const s = coachSetup({ w: () => w });
     await toOn(s);
     s.t.onAnswer(P, `${P}:7:hand`, "approve");
+    const onAt = s.clock.t;
     s.t.onHeard("그만");
     expect(s.last()).toEqual(OFF);
+    expect(s.t.offWaiting()).toBeNull();
     s.clock.t += 1_000;
     await s.decide(ramenDecision("pam-2", 2));
     expect(s.t.current()).toEqual({ planId: "plan:pam-2", state: "planned" });
@@ -804,19 +905,27 @@ describe("실행 추적: 코치 계획(손으로 켜는 위험 가전)", () => {
     expect(s.last()).toEqual(OFF);
     expect(s.phone.some((m) => m.type === "command" && m.id === "plan:pam-2")).toBe(false);
     expect(s.t.openCommand()).toMatchObject({ stepId: `${P}:off` });
-    // 안내의 답(말 「다 했어」)을 받으면 지우고 새 계획의 첫 명령을 보낸다
-    expect(s.t.onHeard("다 했어")).toMatchObject({ id: "done" });
+    expect(s.exec().filter((l) => l.plan_id === "plan:pam-2" && l.text === EXEC_TEXT.deferred("인덕션"))).toEqual([expect.objectContaining({ state: "planned", text: "인덕션 꺼짐 확인 전이라 새 일을 미룸" })]);
+    expect(s.t.offWaiting()).toBe("인덕션");
+    // 말 「다 했어」로는 풀리지 않는다. 허브 켜짐 → 꺼짐을 보면 지우고 새 계획의 첫 명령을 보낸다
+    expect(s.t.onHeard("다 했어")).toBeNull();
+    expect(s.last()).toEqual(OFF);
+    w = { ...world([]), devices: [cooktop(["off"], [{ attr: "power", from: "off", to: "on", at_ms: onAt + 100 }, { attr: "power", from: "on", to: "off", at_ms: s.clock.t }])] };
+    s.t.onWorld();
     expect(s.phone.slice(-2)).toEqual([{ type: "command_clear", id: P }, expect.objectContaining({ id: "plan:pam-2", step: "plan:pam-2:1", text: "수납장으로 가 주세요", speak: true })]);
     expect(s.t.current()).toEqual({ planId: "plan:pam-2", state: "running" });
+    expect(s.t.offWaiting()).toBeNull();
   });
 
-  it("켠 위험 가전이 여럿이면 가전마다 끄기 안내를 차례로 보내고, 하나의 「완료」는 그 가전 안내만 지운다", async () => {
+  it("켠 위험 가전이 여럿이면 가전마다 끄기 안내를 줄에 넣고 120초마다 차례로 돌아가며 띄운다. 그 가전 꺼짐을 보면 그 가전 안내만 지운다", async () => {
     const MW = { kind: "do", act: "켜기", target: "microwave_1", hand_device: { id: "microwave_1", to: "on" }, timeout_s: 120 };
-    const s = coachSetup({ handDevices: () => [{ id: "induction_1", kind: "cooktop", label: "인덕션" }, { id: "microwave_1", kind: "microwave", label: "전자레인지" }] });
+    let w = world([]);
+    const s = coachSetup({ w: () => w, handDevices: () => [{ id: "induction_1", kind: "cooktop", label: "인덕션" }, { id: "microwave_1", kind: "microwave", label: "전자레인지" }] });
     const steps = ramenSteps({ cabinet: "cabinet_1", sink: "sink_1", cooktop: "induction_1", cooktopDevice: "induction_1" });
     llm.scripts[RAMEN] = () => [planCalls([steps[6]!, MW, steps[11]!, { ...MW, act: "끄기", hand_device: { id: "microwave_1", to: "off" } }])];
     await s.decide(ramenDecision());
     s.t.onAnswer(P, `${P}:1:hand`, "approve");
+    const onAt = s.clock.t;
     s.t.onAnswer(P, `${P}:1`, "done");
     expect(s.last()).toMatchObject({ step: `${P}:2:hand`, text: "그릇이 뜨거워져요. 전자레인지를 켤까요?" });
     s.t.onAnswer(P, `${P}:2:hand`, "approve");
@@ -824,13 +933,23 @@ describe("실행 추적: 코치 계획(손으로 켜는 위험 가전)", () => {
     expect(s.last()).toMatchObject({ step: `${P}:3`, text: "인덕션을 꺼 주세요" });
     s.t.onHeard("그만");
     expect(s.last()).toEqual(OFF);
-    expect(s.t.onAnswer(P, `${P}:off`, "done")).toBe(true);
-    expect(s.phone.slice(-2)).toEqual([{ type: "command_clear", id: P }, { ...OFF, step: `${P}:off:2`, text: "전자레인지를 꺼 주세요" }]);
+    const MW_OFF = { ...OFF, step: `${P}:off:2`, text: "전자레인지를 꺼 주세요" };
+    s.clock.t += 120_001;
+    s.t.tick();
+    expect(s.phone.slice(-2)).toEqual([{ type: "command_clear", id: P }, MW_OFF]);
     expect(s.t.openCommand()).toMatchObject({ stepId: `${P}:off:2`, text: "전자레인지를 꺼 주세요" });
+    s.clock.t += 120_001;
+    s.t.tick();
+    expect(s.phone.slice(-2)).toEqual([{ type: "command_clear", id: P }, OFF]);
+    // 인덕션 꺼짐(허브): 인덕션 안내만 지우고 전자레인지 안내를 띄운다
+    w = { ...world([]), devices: [cooktop(["off"], [{ attr: "power", from: "off", to: "on", at_ms: onAt + 100 }, { attr: "power", from: "on", to: "off", at_ms: s.clock.t }])] };
+    s.t.onWorld();
+    expect(s.phone.slice(-2)).toEqual([{ type: "command_clear", id: P }, MW_OFF]);
     expect(s.t.onAnswer(P, `${P}:off`, "done")).toBe(false);
-    expect(s.t.onAnswer(P, `${P}:off:2`, "done")).toBe(true);
-    expect(s.last()).toEqual({ type: "command_clear", id: P });
-    expect(s.t.openCommand()).toBeNull();
+    s.clock.t += 120_001;
+    s.t.tick();
+    expect(s.last()).toEqual(MW_OFF);
+    expect(s.t.openCommand()).toMatchObject({ stepId: `${P}:off:2` });
   });
 
   it("다시 알리기(tell)·사람 부탁(askCloser)은 서버 글만 보낸다: 지금 명령(그대로·「먼저」), 그 단계의 곳이 보이게 대 달라는 부탁. 모르는 곳·모델 글은 보내지 않는다(그 판은 원래 명령 그대로)", async () => {
@@ -867,9 +986,9 @@ describe("실행 추적: 코치 계획(손으로 켜는 위험 가전)", () => {
     s.t.tick();
     expect(s.last()).toMatchObject({ step: `${P}:2` });
     expect(s.t.current()).toMatchObject({ state: "running" });
-    // 그만두면 켠 가전이 남아 있어 끄기 안내가 뜬다
+    // 그만두면 켠 가전이 남아 있어 안내가 뜬다(상태가 이미 꺼짐이라 끄라는 안내 대신 보이게 해 달라는 부탁)
     s.t.onHeard("그만");
-    expect(s.last()).toEqual({ ...OFF, step: `${P}:off` });
+    expect(s.last()).toEqual(ASK_OFF);
     // 다른 판: 그 단계 뒤에 꺼진 것을 보면 넘어가 계획이 끝나고 안내가 없다
     const t2 = coachSetup({ w: () => w });
     llm.scripts[RAMEN] = () => [planCalls([steps[6]!, { ...steps[11]!, until: { device: "induction_1", became: "off" } }])];
@@ -897,6 +1016,234 @@ describe("실행 추적: 코치 계획(손으로 켜는 위험 가전)", () => {
     await s.decide(decision);
     expect(s.t.current()).toMatchObject({ state: "running" });
     expect(s.t.coaching()).toBe(false);
+  });
+});
+
+describe("실행 추적: 켠 위험 가전 추적은 확인된 꺼짐으로만 푼다(전자레인지 카메라 근거·다시 걸기·회차·확인 불가 복구)", () => {
+  const P = "plan:pam-1";
+  type Dev = WorldView["devices"][number];
+  type Line = Dev["history"][number];
+  const MW_ON = { kind: "do", act: "켜기", target: "microwave_1", hand_device: { id: "microwave_1", to: "on" }, timeout_s: 120 };
+  const MW_OFF_STEP = { ...MW_ON, act: "끄기", hand_device: { id: "microwave_1", to: "off" } };
+  const OFF = { type: "command", id: P, step: `${P}:off`, text: "전자레인지를 꺼 주세요", vision: null, choices: DONE, target: null, speak: true };
+  const ASK = { ...OFF, text: "전자레인지가 보이게 폰을 가까이 대 주세요", choices: [] };
+  /** 카메라로 본 전자레인지(이력 줄 seen_ms·explicit, 마지막 관측 sight_last). */
+  const mw = (state: string[], history: Line[] = [], sight?: Dev["sight_last"]): Dev => ({ ...cooktop(state, history), id: "microwave_1", kind: "microwave", label: "전자레인지", ...(sight ? { sight_last: sight } : {}) });
+  /** 카메라 이력 줄: 도착 at, 촬영 seen. */
+  const cam = (from: string | null, to: string, seen: number, explicit = true, at = seen + 1_500): Line => ({ attr: "power", from, to, at_ms: at, seen_ms: seen, explicit });
+  const lastOff = (seen: number, close = true, explicit = true): Dev["sight_last"] => ({ power: { value: "off", seen_ms: seen, explicit, close } });
+
+  /** 전자레인지 켜기(1번)·끄기(2번) 계획을 받아 켜기 질문에 승인한다. 돌려준 값: 켜라고 한 시각. */
+  async function mwOn(o: { w: () => WorldView; steps?: Record<string, unknown>[]; handDevices?: TrackerOptions["handDevices"] }) {
+    const s = coachSetup({ w: o.w, handDevices: "handDevices" in o ? o.handDevices : () => [{ id: "microwave_1", kind: "microwave", label: "전자레인지" }] });
+    llm.scripts[RAMEN] = () => [planCalls(o.steps ?? [MW_ON, MW_OFF_STEP])];
+    await s.decide(ramenDecision());
+    expect(s.t.onAnswer(P, `${P}:1:hand`, "approve")).toBe(true);
+    return { s, onAt: s.clock.t };
+  }
+  const settle = (s: ReturnType<typeof coachSetup>, n = 2) => { for (let i = 0; i < n; i++) { s.clock.t += 500; s.t.onWorld(); s.t.tick(); } };
+
+  it("명시·추정: 크게 보여도 VLM이 전원을 말하지 않은 답(추정 꺼짐)만 이어지면 트윈이 꺼짐이어도 풀지 않는다. 켜짐 → 추정 꺼짐 → 같은 꺼짐 값의 명시 줄이 오면 switch로 푼다", async () => {
+    let w = world([]);
+    const { s, onAt } = await mwOn({ w: () => w });
+    const on = cam("off", "on", onAt + 100);
+    w = { ...world([]), devices: [mw(["on"], [on])] };
+    s.t.onHeard("그만");
+    expect(s.last()).toEqual(OFF);
+    w = { ...world([]), devices: [mw(["off"], [on, cam("on", "off", onAt + 4_000, false)], lastOff(onAt + 6_000, true, false))] };
+    settle(s);
+    expect(s.last()).toEqual(OFF);
+    expect(s.t.safety().released).toEqual({});
+    w = { ...world([]), devices: [mw(["off"], [on, cam("on", "off", onAt + 4_000, false), cam("off", "off", onAt + 8_000)], lastOff(onAt + 8_000, false))] };
+    s.t.onWorld();
+    expect(s.last()).toEqual({ type: "command_clear", id: P });
+    expect(s.t.safety().released).toEqual({ microwave_1: { planId: P, evidenceAt: onAt + 8_000, via: "switch" } });
+  });
+
+  it("명시·추정: VLM이 「꺼져 있음」을 답한 켜짐 → 꺼짐(명시)이면 바로 푼다", async () => {
+    let w = world([]);
+    const { s, onAt } = await mwOn({ w: () => w });
+    const on = cam("off", "on", onAt + 100);
+    w = { ...world([]), devices: [mw(["on"], [on])] };
+    s.t.onHeard("그만");
+    w = { ...world([]), devices: [mw(["off"], [on, cam("on", "off", onAt + 3_000)])] };
+    s.t.onWorld();
+    expect(s.last()).toEqual({ type: "command_clear", id: P });
+    expect(s.t.safety().released.microwave_1).toEqual({ planId: P, evidenceAt: onAt + 3_000, via: "switch" });
+  });
+
+  it("다시 걸기: 꺼짐 촬영 → 다시 켜짐 촬영 → 꺼짐 답 도착·해제 → 켜짐 답 도착 순서면 다시 건다(닫힌 계획이면 끄기 안내). 회차 번호가 오르고 onAt은 그 켜짐 촬영 시각이다", async () => {
+    let w = world([]);
+    const { s, onAt } = await mwOn({ w: () => w });
+    const on = cam("off", "on", onAt + 100);
+    w = { ...world([]), devices: [mw(["on"], [on])] };
+    s.t.onHeard("그만");
+    const off = cam("on", "off", onAt + 1_000, true, onAt + 5_000);
+    w = { ...world([]), devices: [mw(["off"], [on, off])] };
+    s.clock.t = onAt + 5_000;
+    s.t.onWorld();
+    expect(s.last()).toEqual({ type: "command_clear", id: P });
+    // 켜짐 사진은 꺼짐 사진 뒤(onAt + 2000)에 찍혔지만 답은 해제 뒤에 왔다
+    s.clock.t = onAt + 6_000;
+    w = { ...world([]), devices: [mw(["on"], [on, off, cam("off", "on", onAt + 2_000, true, onAt + 6_000)])] };
+    s.t.onWorld();
+    expect(s.last()).toEqual({ ...OFF, step: `${P}:off:2` });
+    expect(s.t.safety()).toMatchObject({ released: {}, cycles: { microwave_1: { cycle: 2, onAt: onAt + 2_000, askedAt: null } } });
+  });
+
+  it("다시 걸기: 해제 근거보다 먼저 찍힌 켜짐이 늦게 와도, 해제 근거 촬영 10분 뒤의 켜짐도 다시 걸지 않는다", async () => {
+    let w = world([]);
+    const { s, onAt } = await mwOn({ w: () => w });
+    const on = cam("off", "on", onAt + 100);
+    w = { ...world([]), devices: [mw(["on"], [on])] };
+    s.t.onHeard("그만");
+    const off = cam("on", "off", onAt + 1_000, true, onAt + 5_000);
+    w = { ...world([]), devices: [mw(["off"], [on, off])] };
+    s.clock.t = onAt + 5_000;
+    s.t.onWorld();
+    const n = s.phone.length;
+    // 해제 근거(onAt + 1000)보다 먼저 찍힌 켜짐
+    w = { ...world([]), devices: [mw(["on"], [on, off, cam("off", "on", onAt + 900, true, onAt + 6_000)])] };
+    settle(s);
+    expect(s.phone).toHaveLength(n);
+    // 해제 근거 촬영 10분 뒤의 켜짐
+    s.clock.t = onAt + 1_000 + 600_001;
+    w = { ...world([]), devices: [mw(["on"], [on, off, cam("off", "on", onAt + 1_000 + 600_001, true, s.clock.t)])] };
+    settle(s);
+    expect(s.phone).toHaveLength(n);
+    expect(s.t.safety().cycles.microwave_1!.cycle).toBe(1);
+  });
+
+  it("다시 걸기: 같은 계획이 돌고 있으면 그 계획 hot에 다시 넣고 onAt이 그 켜짐 시각이 된다(라면, 허브 근거)", async () => {
+    let w = { ...world([]), devices: [cooktop(["off"])] };
+    const s = coachSetup({ w: () => w });
+    await s.decide(ramenDecision());
+    for (let n = 1; n <= 6; n++) s.t.onAnswer(P, `${P}:${n}`, "done");
+    s.t.onAnswer(P, `${P}:7:hand`, "approve");
+    const onAt = s.clock.t;
+    s.clock.t += 1_000;
+    const on = { attr: "power", from: "off", to: "on", at_ms: s.clock.t };
+    w = { ...world([]), devices: [cooktop(["on"], [on])] };
+    s.t.onWorld();
+    // 9번 기다리는 동안 꺼졌다가(풀림) 다시 켜졌다(다시 걸림)
+    s.clock.t += 4_001; s.t.tick();
+    expect(s.steps()[8]).toBe("active");
+    s.clock.t += 1_000;
+    const off = { attr: "power", from: "on", to: "off", at_ms: s.clock.t };
+    w = { ...world([]), devices: [cooktop(["off"], [on, off])] };
+    s.t.onWorld();
+    expect(s.t.safety()).toMatchObject({ hot: [], cycles: { induction_1: { cycle: 1, onAt } } });
+    s.clock.t += 1_000;
+    w = { ...world([]), devices: [cooktop(["on"], [on, off, { attr: "power", from: "off", to: "on", at_ms: s.clock.t }])] };
+    s.t.onWorld();
+    expect(s.t.safety()).toEqual({ hot: ["induction_1"], cycles: { induction_1: { cycle: 2, onAt: s.clock.t, askedAt: null } }, released: {} });
+    expect(s.t.current()).toMatchObject({ state: "running" });
+  });
+
+  it("다시 걸기: 계획 A가 풀린 뒤 계획 B가 도는 중에 A의 가전이 다시 켜지면 B 명령이 명령 줄에 그대로이고, A의 끄기 안내는 B가 끝난 뒤 뜬다", async () => {
+    let w = world([]);
+    const { s, onAt } = await mwOn({ w: () => w });
+    const on = cam("off", "on", onAt + 100);
+    const off = cam("on", "off", onAt + 1_000);
+    w = { ...world([]), devices: [mw(["off"], [on, off])] };
+    s.t.onHeard("그만");
+    expect(s.t.safety().released).toMatchObject({ microwave_1: { planId: P } });
+    // 계획 B(라면, 승인 기억 있음): 첫 명령이 바로 뜬다
+    llm.scripts = { ...llm.scripts, ...ramenScripts() };
+    s.clock.t += 1_000;
+    await s.decide(ramenDecision("pam-2", 2));
+    expect(s.last()).toMatchObject({ id: "plan:pam-2", step: "plan:pam-2:1" });
+    const b = s.last();
+    w = { ...world([]), devices: [mw(["on"], [on, off, cam("off", "on", onAt + 3_000)])] };
+    settle(s);
+    expect(s.last()).toEqual(b);
+    expect(s.t.openCommand()).toMatchObject({ planId: "plan:pam-2" });
+    s.t.onHeard("그만");
+    expect(s.phone.slice(-2)).toEqual([{ type: "command_clear", id: "plan:pam-2" }, OFF]);
+  });
+
+  it("확인 불가 복구: 켜짐을 놓친 채 닫히면 부탁이 뜬다. 부탁 전에 찍힌 것·멀리서 본 것(close 거짓)·추정 꺼짐으로는 풀지 않고, 부탁 뒤 촬영된 가까이 본 명시 꺼짐이면 confirmed로 푼다", async () => {
+    let w = { ...world([]), devices: [mw(["off"])] };
+    const { s } = await mwOn({ w: () => w });
+    s.clock.t += 1_000;
+    s.t.onHeard("그만");
+    expect(s.last()).toEqual(ASK);
+    const askedAt = s.clock.t;
+    expect(s.t.safety().cycles.microwave_1!.askedAt).toBe(askedAt);
+    for (const sight of [lastOff(askedAt - 1), lastOff(askedAt + 1_000, false), lastOff(askedAt + 1_000, true, false)]) {
+      w = { ...world([]), devices: [mw(["off"], [], sight)] };
+      settle(s);
+      expect(s.last()).toEqual(ASK);
+    }
+    w = { ...world([]), devices: [mw(["off"], [], lastOff(askedAt + 1_000))] };
+    s.t.onWorld();
+    expect(s.last()).toEqual({ type: "command_clear", id: P });
+    expect(s.t.safety().released.microwave_1).toEqual({ planId: P, evidenceAt: askedAt + 1_000, via: "confirmed" });
+  });
+
+  it("회차: 다시 걸린 뒤에는 옛 회차의 부탁 뒤에 찍혔던 가까이 본 꺼짐 기록이 남아 있어도 풀지 않는다(회차가 오르고 askedAt이 비워진다)", async () => {
+    let w = { ...world([]), devices: [mw(["off"])] };
+    const { s } = await mwOn({ w: () => w });
+    s.clock.t += 1_000;
+    s.t.onHeard("그만");
+    const askedAt = s.clock.t;
+    const close = lastOff(askedAt + 1_000);
+    w = { ...world([]), devices: [mw(["off"], [], close)] };
+    s.t.onWorld();
+    expect(s.t.safety().released.microwave_1).toMatchObject({ via: "confirmed" });
+    // 다시 켜짐(카메라) → 다시 걸림
+    const on = cam("off", "on", askedAt + 2_000);
+    s.clock.t = askedAt + 4_000;
+    w = { ...world([]), devices: [mw(["on"], [on], close)] };
+    s.t.onWorld();
+    expect(s.last()).toEqual({ ...OFF, step: `${P}:off:2` });
+    expect(s.t.safety().cycles.microwave_1).toEqual({ cycle: 2, onAt: askedAt + 2_000, askedAt: null });
+    // 추정 꺼짐 + 옛 회차의 가까이 본 명시 꺼짐 기록: 풀지 않는다
+    w = { ...world([]), devices: [mw(["off"], [on, cam("on", "off", askedAt + 5_000, false)], close)] };
+    settle(s);
+    expect(s.last()).toEqual({ ...OFF, step: `${P}:off:2` });
+  });
+
+  it("회차: 카메라는 가까이 본 명시 꺼짐을 말해도 허브 신호가 지금 켜짐이면 풀지 않는다", async () => {
+    let w = { ...world([]), devices: [mw(["off"])] };
+    const { s } = await mwOn({ w: () => w });
+    s.clock.t += 1_000;
+    s.t.onHeard("그만");
+    const askedAt = s.clock.t;
+    w = { ...world([]), devices: [mw(["on"], [], lastOff(askedAt + 1_000))] };
+    settle(s);
+    expect(s.last()).toEqual(ASK);
+    expect(s.t.safety().released).toEqual({});
+  });
+
+  it("확인 불가 복구: 시간 초과 질문에서 「그만」이면 hot이 남고 안내는 부탁 하나로 120초마다 되풀이된다", async () => {
+    const w = { ...world([]), devices: [mw(["off"])] };
+    const { s } = await mwOn({ w: () => w, steps: [MW_ON, { ...MW_OFF_STEP, on_timeout: "ask" }] });
+    s.t.onAnswer(P, `${P}:1`, "done");
+    expect(s.last()).toMatchObject({ step: `${P}:2`, text: "전자레인지를 꺼 주세요" });
+    s.clock.t += 20_001; s.t.tick();
+    expect(s.last()).toMatchObject({ step: `${P}:2`, text: ASK.text, choices: [] });
+    s.clock.t += 100_000; s.t.tick();
+    expect(s.last()).toMatchObject({ step: `${P}:2:again` });
+    expect(s.t.onAnswer(P, `${P}:2:again`, "stop")).toBe(true);
+    expect(s.last()).toEqual(ASK);
+    const n = s.phone.length;
+    s.clock.t += 120_001; s.t.tick();
+    s.clock.t += 120_001; s.t.tick();
+    expect(s.phone.slice(n)).toEqual([ASK, ASK]);
+    expect(s.t.safety().released).toEqual({});
+  });
+
+  it("이름 없는 가전이면 「완료」에 부탁을 보내지 않고 끄라는 안내 그대로 둔다", async () => {
+    const w = world([]);
+    const { s } = await mwOn({ w: () => w, handDevices: undefined });
+    s.t.onHeard("그만");
+    const OFF_ANY = { ...OFF, text: "가전을 꺼 주세요" };
+    expect(s.last()).toEqual(OFF_ANY);
+    const n = s.phone.length;
+    expect(s.t.onAnswer(P, `${P}:off`, "done")).toBe(true);
+    expect(s.phone).toHaveLength(n);
+    expect(s.t.openCommand()).toMatchObject({ text: "가전을 꺼 주세요", choices: [{ id: "done" }] });
   });
 });
 
@@ -1152,8 +1499,8 @@ describe("실행 추적: 잘한 단계는 말을 줄인다(수업 기록)", () =
     const steps = lessons.get(RAMEN)!.steps;
     expect(steps[0]).toEqual({ label: "수납장으로 가기", alone: 0 });
     expect(steps.slice(1).every((x) => x.alone === 3)).toBe(true);
-    // 알림(say) 단계는 조용한 단계가 아니다: 늘 읽는다
-    expect(s.spoken()).toEqual(["수납장으로 가 주세요", ASK_ON, "인덕션을 켜 주세요", "물이 끓을 때까지 기다려요.", "라면이 다 됐어요."]);
+    // 알림(say) 단계는 조용한 단계가 아니다: 늘 읽는다. 12번을 「완료」로 넘겨 확인된 꺼짐이 없으니 끝난 뒤 끄기 안내를 읽는다
+    expect(s.spoken()).toEqual(["수납장으로 가 주세요", ASK_ON, "인덕션을 켜 주세요", "물이 끓을 때까지 기다려요.", "라면이 다 됐어요.", "인덕션을 꺼 주세요"]);
   });
 
   it("수업 기록이 없으면(lessons 없음) 지금처럼 모든 명령을 읽는다", async () => {

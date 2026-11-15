@@ -292,7 +292,24 @@ describe("전자레인지·싱크대: 쓰는 중이 답에 없으면 꺼짐", ()
     const lines = hist().length;
     for (let i = 7; i <= 8; i++) look(h.world, i, front, EYE, mwBox(), [{ object_id: "d1", state: "not_in_use" }]);
     expect(hist()).toHaveLength(lines);
-    expect(h.world.view(40_000).devices.find((d) => d.id === "mw_1")!.sight_last).toEqual({ power: { value: "off", seen_ms: 16_000, explicit: true } });
+    expect(h.world.view(40_000).devices.find((d) => d.id === "mw_1")!.sight_last).toEqual({ power: { value: "off", seen_ms: 16_000, explicit: true, close: false } });
+  });
+
+  it("sight_last는 속성마다 가까이 본 관측인가(close)를 남긴다: 맞춘 감지 마스크가 사진 넓이 10% 이상이면 참, 작게 보였거나 상자는 커도 마스크가 10% 미만이면 거짓", () => {
+    const h = kitchen();
+    const last = () => h.world.view(40_000).devices.find((d) => d.id === "mw_1")!.sight_last;
+    const small = boxOn(AT.mw_1!);
+    const cx = small[0] + small[2] / 2, cy = small[1] + small[3] / 2;
+    const big: Box = [cx - 120, cy - 120, 240, 240]; // 사진(480×360)의 33%
+    const off = [{ object_id: "d1", state: "not_in_use" }];
+    for (let i = 1; i <= 2; i++) look(h.world, i, front, EYE, [det("microwave", small)], off);
+    expect(last()).toEqual({ power: { value: "off", seen_ms: 4000, explicit: true, close: false } });
+    for (let i = 3; i <= 4; i++) look(h.world, i, front, EYE, [det("microwave", big)], off);
+    expect(last()).toEqual({ power: { value: "off", seen_ms: 8000, explicit: true, close: true } });
+    // 상자는 사진의 33%지만 마스크는 그 1/4(8%)
+    const sparse: Detection = { ...det("microwave", big), mask: { at: big, cols: 2, rows: 2, bits: Buffer.from([0x80]).toString("base64") } };
+    look(h.world, 5, front, EYE, [sparse], off);
+    expect(last()).toEqual({ power: { value: "off", seen_ms: 10_000, explicit: true, close: false } });
   });
 
   it("허브로 바뀐 이력 줄에는 seen_ms·explicit이 없다", async () => {

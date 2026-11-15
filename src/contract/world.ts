@@ -115,8 +115,9 @@ export interface WorldDevice {
   }[];
   /** 지금 상태가 카메라로 본 것(실제 신호가 없음)이면 마지막으로 본 촬영 시각. 실제 신호 상태면 없음. */
   vision?: { at_ms: number };
-  /** 속성마다 카메라가 마지막으로 이어 본 값과 그 촬영 시각·근거 종류(같은 값·같은 종류의 새 촬영은 이력 줄 대신 여기만 바뀐다). 본 적 없으면 없음. */
-  sight_last?: Record<string, { value: unknown; seen_ms: number; explicit: boolean }>;
+  /** 속성마다 카메라가 마지막으로 이어 본 값과 그 촬영 시각·근거 종류(같은 값·같은 종류의 새 촬영은 이력 줄 대신 여기만 바뀐다). 본 적 없으면 없음.
+   *  close: 가까이 본 관측(맞춘 감지 마스크가 사진 넓이의 10% 이상). 켠 위험 가전 추적의 확인 불가 복구(src/act/track.ts cycleEnded confirmed)가 쓴다. */
+  sight_last?: Record<string, { value: unknown; seen_ms: number; explicit: boolean; close: boolean }>;
 }
 
 /** 클로이드 눈(폰) 위치. room은 방 id, room_label은 방 이름(관찰 텍스트의 [눈] 줄). */

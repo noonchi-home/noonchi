@@ -297,7 +297,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       const leftAt = tracker?.leftAt() ?? null;
       const toldAt = tracker?.toldAt() ?? null;
       const text = sayLine({ plan: plans.current(), command, world: world?.view(nowMs()) ?? null, nowMs: Date.now(), look: lookSay, left: leftAt === null ? null : { atMs: leftAt },
-        told: toldAt === null ? null : { atMs: toldAt }, quiet: tracker?.quietStep() ?? null, reflected });
+        told: toldAt === null ? null : { atMs: toldAt }, quiet: tracker?.quietStep() ?? null, reflected, offWait: tracker?.offWaiting() ?? null });
       if (text === said) return;
       said = text;
       appRef.current?.broadcast({ type: "say", text });

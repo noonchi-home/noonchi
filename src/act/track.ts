@@ -5,9 +5,13 @@
 // 그 판단 줄에 「그대로 둠」만 남긴다(leftGapMs에 한 번). 진행 중인 다른 계획은 바꾸지 않는다. 대시보드 말풍선 카드는 leftAt()으로 그 시각을 본다.
 // 손으로 켜는 위험 가전(코치 계획의 do 단계, AgentStep.hand가 위험 목록 가전을 켬): 그 단계가 되면 명령보다 먼저 안전 문구와 함께 묻는다(승인·거절, 단계 id :hand).
 // 승인 뒤에만 켜라는 명령을 보내고, 거절이면 취소로 닫는다. 답은 기억하지 않는다(다음 판에도 또 묻는다). 묻는 동안은 「완료」·말·비전으로 넘어가지 않는다.
-// 켜라는 명령을 보낸 가전은 끄는 단계가 끝날 때까지 「켠 것」(hot, 켜라고 한 시각)으로 본다. 켠 채 계획이 닫히면(그만·시간 초과·실패·새 계획) 닫은 뒤 실제 폰에
-// 가전마다 끄라는 안내(단계 id :off, 둘째부터 :off:2…, 「완료」 하나)를 차례로 보낸다. 안내 하나는 「완료」·말 답, 켜라고 한 뒤에 새로 본 그 가전 꺼짐(가전 이력),
-// offHoldMs 중 먼저 오는 것으로 지우고 다음 가전 안내를 띄운다. 안내가 남아 있는 동안 새 계획은 첫 명령(승인 질문 포함)을 미루고, 안내가 다 끝나면 시작한다.
+// 켜라는 명령을 보낸 가전은 작동 한 번이 끝난 것을 확인할 때까지 「켠 것」(hot)으로 본다. 켜기 회차(Run.onAt: 회차 번호·켜라고 한 시각·부탁 시각)는 풀어도 남는다.
+// 작동 끝남은 cycleEnded 하나만 판정하고(명시 근거만: 켜라고 한 뒤 촬영된 아는 켜짐 → 꺼짐, 또는 부탁 뒤 촬영된 가까이 본 명시 꺼짐) 추적은 releaseIfOff 하나만 푼다.
+// 「완료」·말·만료·끄기 단계 넘김은 풀지 않는다(끄기 do 단계는 「완료」로 넘어가도 hot이 남고, 추적이 풀리면 그 단계도 끝난다).
+// 켠 채 계획이 닫히면(그만·시간 초과·실패·새 계획·끝까지 마침) handOver가 가전마다 끄라는 안내(단계 id :off, 둘째부터 :off:2…, 「완료」 하나)를 줄에 넣고
+// 실제 폰에 차례로 띄운다. 상태가 이미 꺼짐인데 끝남을 확인하지 못한 가전은 보이게 해 달라는 부탁(답 단추 없음)으로 넣는다. 안내의 「완료」는 풀리지 않으면 부탁으로 바뀐다.
+// 안내는 offHoldMs마다 다시 읽고, 줄에 다른 가전이 기다리면 차례를 돌린다. 풀린 가전이 rearmMs 안에 다시 켜지면 다시 건다(rearmIfOn).
+// 안내가 남아 있는 동안 새 계획은 첫 명령(승인 질문 포함)을 미루고(실행 기록 EXEC_TEXT.deferred), 안내가 다 풀리면 시작한다. 다른 계획이 도는 동안 생긴 안내는 그 계획이 끝난 뒤 띄운다.
 // 다시 알리기(tell)·사람 부탁(askCloser)은 모델이 쓴 글이라, 위험 가전 이름이 나오거나 지금 단계가 위험 가전 단계(대상이 위험 가전이거나 hand_device가 붙음)면 보내지 않는다(기본 거부).
 // 코치 행동(TaskSpec.coach) 계획이 열려 있거나 만드는 중이면 coaching()이 참이다: 그동안 판단 호출(PAM)을 쉰다.
 // 다른 행동 알림(코치 계획, 관찰 모드 계기 off_track): 사람 단계가 진행 중인데 의미 있는 변화(사람 방·가전 상태·가전 설비 상태)가 왔고 그 단계가 넘어가지 않았거나,
@@ -123,8 +127,12 @@ export interface TrackerOptions {
   tellHoldMs?: number;
   /** 이 집 가전(id·종류·이름): 손으로 켜는 단계가 위험 목록인지와 묻는 글의 이름. 없으면 손으로 켜는 단계는 모두 묻는다. */
   handDevices?: () => readonly { id: string; kind: string; label: string }[];
-  /** 켠 채 닫힌 계획의 끄기 안내를 이만큼(ms) 뒤 지운다. */
+  /** 켠 채 닫힌 계획의 끄기 안내를 이만큼(ms)마다 다시 읽는다(줄에 다른 가전 안내가 있으면 차례를 돌린다). 지우지 않는다. */
   offHoldMs?: number;
+  /** 풀린 가전이 풀린 근거 촬영 시각 뒤 이만큼(ms) 안에 다시 켜지면 추적을 다시 건다. */
+  rearmMs?: number;
+  /** 끄기 do 단계가 이만큼(ms) 넘게 안 끝나고 그 가전 상태가 이미 꺼짐이면 보이게 해 달라는 부탁을 한 번 보낸다. */
+  showAskMs?: number;
   /** 멈춘 집기·놓기 단계 알림(관찰 모드 A, src/act/look.ts). 받았으면 true(그때만 센다). 받은 부름은 끝날 때 s.settle(counted)를 부른다. 없으면 부르지 않는다. */
   stalled?: (s: Stall) => boolean;
   /** 집기·놓기 단계가 이만큼(ms) 안 끝나면 stalled를 부른다(단계 시작 뒤, 받은 부름 뒤). */
@@ -133,8 +141,12 @@ export interface TrackerOptions {
   stallMax?: number;
 }
 
-/** 기본값: 다시 읽기 30초, 비전 상태 0.5초에 한 번, 검사 3초, 승인 답 2분, 같은 행동 다시 계획 15초, 그대로 두기 기록 60초에 한 번, 멈춘 단계 8초·단계마다 3번. 단계 시간 한도는 계획 단계마다 있다. */
-export const TRACK_DEFAULTS = { repeatMs: 30_000, visionMs: 500, recheckMs: 3000, askMs: 120_000, planGapMs: 15_000, leftGapMs: 60_000, stallMs: 8000, stallMax: 3, offHoldMs: 120_000, strayGapMs: 6000, strayMax: 2, tellHoldMs: 8000 } as const;
+/** 기본값: 다시 읽기 30초, 비전 상태 0.5초에 한 번, 검사 3초, 승인 답 2분, 같은 행동 다시 계획 15초, 그대로 두기 기록 60초에 한 번, 멈춘 단계 8초·단계마다 3번,
+ *  끄기 안내 다시 읽기 2분, 다시 걸기 10분, 끄기 단계 부탁 20초. 단계 시간 한도는 계획 단계마다 있다. */
+export const TRACK_DEFAULTS = {
+  repeatMs: 30_000, visionMs: 500, recheckMs: 3000, askMs: 120_000, planGapMs: 15_000, leftGapMs: 60_000, stallMs: 8000, stallMax: 3, offHoldMs: 120_000, strayGapMs: 6000, strayMax: 2, tellHoldMs: 8000,
+  rearmMs: 600_000, showAskMs: 20_000,
+} as const;
 
 /** 코치 계획 중 다른 행동을 본 것 같다: 지금 단계(이름·명령·번호 1부터)와 계획 단계 목록, 방금 본 변화 줄(최근 30초, 오래된 것부터, 들은 말은 넣지 않는다).
  *  signal은 이 단계가 끝나면 끊긴다. */
@@ -143,15 +155,27 @@ export interface Stray {
   changes: string[]; signal: AbortSignal;
 }
 
-/** 끄기 안내 하나: 그 가전과 켜라고 한 시각, 실제 폰 명령의 계획·단계 id와 글. */
-interface OffNote { planId: string; step: string; deviceId: string; onAt: number; text: string }
+/** 켜기 회차: 회차 번호(가전마다 1부터), 회차 시작 시각(켜라고 한 시각, 다시 걸면 그 켜짐의 촬영 시각), 이 회차에 보낸 첫 부탁 시각. */
+export interface Cycle { cycle: number; onAt: number; askedAt: number | null }
+/** 작동 한 번 끝남 판정(cycleEnded): switch(아는 켜짐 → 꺼짐) 또는 confirmed(부탁 뒤 가까이 본 명시 꺼짐), 근거 촬영 시각, 회차 번호. */
+export interface CycleEnd { via: "switch" | "confirmed"; evidenceAt: number; cycle: number }
 
-/** 그 가전이 켜라고 한 시각 뒤에 꺼졌다고 새로 보였는가(지금 꺼짐이고, 가전 이력에 꺼짐으로 바뀐 줄이 있다). 처음부터 남아 있던 꺼짐 값은 아니다.
- *  근거 시각은 seen_ms(카메라: 근거 사진의 촬영 시각), 없으면 at_ms(허브 신호 도착). 근거 시각이 onAt보다 뒤여야 한다(켜라고 하기 전 사진의 늦은 답은 아니다). */
-function offSince(d: WorldView["devices"][number] | undefined, onAt: number): boolean {
-  const off = DEVICE_STATES.off;
-  return !!d && d.state.includes("off") && d.history.some((h) => (h.seen_ms ?? h.at_ms) > onAt && h.attr === off.attr && h.to === off.value && h.from !== off.value);
-}
+/** 끄기 안내 하나: 그 가전, 실제 폰 명령의 계획·단계 id와 글. ask면 보이게 해 달라는 부탁(답 단추 없음). */
+interface OffNote { planId: string; step: string; deviceId: string; text: string; ask: boolean }
+
+type DeviceView = WorldView["devices"][number];
+type HistoryLine = DeviceView["history"][number];
+/** 작동 한 번의 켜짐·꺼짐 값: 전원 켜짐 → 꺼짐, 작동 중 → 멈춤. */
+const CYCLE_VALUES: readonly { attr: string; on: unknown; off: unknown }[] = [
+  { attr: DEVICE_STATES.on.attr, on: DEVICE_STATES.on.value, off: DEVICE_STATES.off.value },
+  { attr: DEVICE_STATES.running.attr, on: DEVICE_STATES.running.value, off: DEVICE_STATES.stopped.value },
+];
+/** 이력 줄의 근거 시각: 카메라면 근거 사진 촬영 시각(seen_ms), 허브·실제 가전 신호면 도착 시각. */
+const evidenceTime = (h: HistoryLine) => h.seen_ms ?? h.at_ms;
+/** 지금 상태가 켜짐(켜짐·작동 중)을 말하는가. */
+const onNow = (d: DeviceView) => d.state.includes("on") || d.state.includes("running");
+/** 지금 상태가 이미 꺼짐(꺼짐·멈춤, 켜짐 아님)인가. 신호가 없거나 가전을 모르면 아니다. */
+const offNow = (d: DeviceView | undefined) => !!d && d.status !== null && !onNow(d) && (d.state.includes("off") || d.state.includes("stopped"));
 
 /** 다른 행동의 계기가 되는 변화: 사람 방, 가전 상태, 가전 설비 상태. */
 const STRAY_KINDS: ReadonlySet<WorldChangeKind> = new Set<WorldChangeKind>(["person_room", "device", "fixture"]);
@@ -190,8 +214,12 @@ interface Run {
   looks: number; lookAt: number; stepEnd: AbortController | null;
   /** 같은 행동 다시 계획 간격을 세려고 적은 시각(Job.at). */
   gapAt: number;
-  /** 손으로 켜라는 명령을 보낸 위험 가전 id → 켜라고 한 시각(끄는 단계가 끝나면 뺀다). */
-  hot: Map<string, number>;
+  /** 켜라고 한 가전과 지금 켜기 회차(추적을 풀어도 지우지 않는다. 다시 걸면 새 회차로 바뀐다). */
+  onAt: Map<string, Cycle>;
+  /** 아직 작동 한 번 끝남을 확인하지 못한 켠 가전(안전 추적). releaseIfOff만 빼고, 닫힐 때 handOver가 끄기 안내 줄로 옮긴다. */
+  hot: Set<string>;
+  /** 끄기 do 단계의 보이게 해 달라는 부탁을 보낸 단계 세대(단계마다 한 번). deferred: 끄기 안내 때문에 시작을 미룬다고 기록했다. */
+  offAsked: number; deferred: boolean;
   /** 이 단계에서 받은 다른 행동 알림 수와 마지막으로 부른 시각, 폰이 가까이 간 다른 자리(그 자리마다 한 번). */
   strays: number; strayAt: number; strayNear: string | null;
   /** tell로 바꿔 띄운 글: 되돌릴 원래 명령 글과 되돌릴 시각. */
@@ -230,11 +258,20 @@ export class ExecutionTracker {
   /** 켠 채 닫힌 계획의 끄기 안내: 실제 폰에 떠 있는 것(reminder, 띄운 시각)과 그 뒤에 띄울 것(offQueue). 가전마다 하나. */
   private reminder: { sent: PlannedCommand; at: number; note: OffNote } | null = null;
   private offQueue: OffNote[] = [];
+  /** 계획마다 붙인 끄기 안내 수(단계 id :off, :off:2…). */
+  private readonly offSeq = new Map<string, number>();
+  /** 가전마다 지금 켜기 회차(계획이 닫혀도 남는다). */
+  private readonly cycles = new Map<string, Cycle>();
+  /** 추적이 풀린 가전: 그 계획, 풀린 근거 촬영 시각, 판정 길, 푼 시각(다시 걸기 rearmIfOn이 본다). */
+  private readonly released = new Map<string, { planId: string; evidenceAt: number; via: CycleEnd["via"]; at: number }>();
   /** 방금 본 변화 줄(다른 행동 알림에 넣는다). */
   private seen: { at: number; text: string }[] = [];
   /** 마지막으로 tell을 보낸 시각(Date.now 시계, 대시보드 말풍선 카드). */
   private toldWallAt: number | null = null;
-  private readonly cfg: { repeatMs: number; visionMs: number; recheckMs: number; askMs: number; planGapMs: number; leftGapMs: number; stallMs: number; stallMax: number; offHoldMs: number; strayGapMs: number; strayMax: number; tellHoldMs: number };
+  private readonly cfg: {
+    repeatMs: number; visionMs: number; recheckMs: number; askMs: number; planGapMs: number; leftGapMs: number; stallMs: number; stallMax: number; offHoldMs: number; strayGapMs: number; strayMax: number;
+    tellHoldMs: number; rearmMs: number; showAskMs: number;
+  };
 
   constructor(private readonly o: TrackerOptions) {
     this.clock = o.clock ?? { now: () => Date.now() };
@@ -243,6 +280,7 @@ export class ExecutionTracker {
       askMs: o.askMs ?? TRACK_DEFAULTS.askMs, planGapMs: o.planGapMs ?? TRACK_DEFAULTS.planGapMs, leftGapMs: o.leftGapMs ?? TRACK_DEFAULTS.leftGapMs,
       stallMs: o.stallMs ?? TRACK_DEFAULTS.stallMs, stallMax: o.stallMax ?? TRACK_DEFAULTS.stallMax, offHoldMs: o.offHoldMs ?? TRACK_DEFAULTS.offHoldMs,
       strayGapMs: o.strayGapMs ?? TRACK_DEFAULTS.strayGapMs, strayMax: o.strayMax ?? TRACK_DEFAULTS.strayMax, tellHoldMs: o.tellHoldMs ?? TRACK_DEFAULTS.tellHoldMs,
+      rearmMs: o.rearmMs ?? TRACK_DEFAULTS.rearmMs, showAskMs: o.showAskMs ?? TRACK_DEFAULTS.showAskMs,
     };
   }
 
@@ -258,7 +296,8 @@ export class ExecutionTracker {
   /** 실제 폰에 띄운 지금 명령·질문(답을 기다리는 중). 승인·다시 묻기·질문 단계는 질문(ask), 그 밖은 부탁(command). 없으면 null. */
   openCommand(): { planId: string; stepId: string; kind: "command" | "ask"; text: string; choices: ActionChoice[] } | null {
     const r = this.shown();
-    if (!r && this.reminder && !this.stopped) return { planId: this.reminder.sent.id, stepId: this.reminder.sent.step, kind: "command", text: this.reminder.sent.text, choices: [STEP_DONE] };
+    const off = this.reminder;
+    if (!r && off && !this.stopped) return { planId: off.sent.id, stepId: off.sent.step, kind: "command", text: off.sent.text, choices: off.note.ask ? [] : [STEP_DONE] };
     if (!r) return null;
     const ask = r.asking !== null || this.stepOf(r)?.kind === "ask";
     return { planId: r.plan.view.id, stepId: r.sent.step, kind: ask ? "ask" : "command", text: r.sent.text, choices: choicesOf(r, this.stepOf(r)) };
@@ -323,8 +362,9 @@ export class ExecutionTracker {
   onAnswer(planId: string, stepId: string, choice: string): boolean {
     const off = this.reminder;
     if (!this.stopped && off && off.sent.id === planId && off.sent.step === stepId) {
-      if (choice !== STEP_DONE.id) return false;
-      this.clearReminder();
+      // 「완료」는 확인된 꺼짐일 때만 지운다. 아니면 보이게 해 달라는 부탁으로 바꾼다(부를 이름이 없으면 그대로)
+      if (choice !== STEP_DONE.id || off.note.ask) return false;
+      if (!this.releaseIfOff(off.note.deviceId)) this.askToShow(off.note.deviceId);
       return true;
     }
     const r = this.shown();
@@ -366,12 +406,7 @@ export class ExecutionTracker {
       if (open) this.finish(open, "failed", EXEC_TEXT.stopped, "cancelled");
       return STOP;
     }
-    // 끄기 안내가 떠 있으면(새 계획은 시작을 미루는 중) 「완료」·「다 했어」로 지운다
-    if (this.reminder && !this.shown()) {
-      const done = matchChoice(text, [STEP_DONE]);
-      if (done) this.clearReminder();
-      return done;
-    }
+    // 끄기 안내는 말(「완료」·「다 했어」)로 풀지도 바꾸지도 않는다(확인된 꺼짐으로만 푼다)
     if (!open) return null;
     const r = this.shown();
     if (!r) return null;
@@ -539,6 +574,7 @@ export class ExecutionTracker {
       this.o.toPhone(r.sent);
     }
     this.strayNear(r, step);
+    this.offAsk(r, step, now);
     // 조용한 단계가 QUIET_HINT_MS 안에 안 끝나면 한 번 읽는다(그 단계는 혼자 해낸 것으로 세지 않는다)
     if (r.quietOn && r.sent && now - r.stepAt >= QUIET_HINT_MS) {
       r.quietOn = false;
@@ -598,47 +634,231 @@ export class ExecutionTracker {
     if (answer === "reject" || !step?.hand) return this.finish(r, "failed", APPROVAL_TEXT.refused, "cancelled");
     const now = this.clock.now();
     Object.assign(r, { asking: null, stepAt: now, spokeAt: now, visionAt: now, deadline: now + step.timeoutMs, watch: step.until ? new ConditionWatch(step.until) : null });
-    r.hot.set(step.hand.deviceId, now);
+    const id = step.hand.deviceId;
+    const cycle: Cycle = { cycle: (this.cycles.get(id)?.cycle ?? 0) + 1, onAt: now, askedAt: null };
+    this.cycles.set(id, cycle);
+    r.onAt.set(id, cycle);
+    r.hot.add(id);
+    this.released.delete(id);
     this.show(r, step);
   }
 
-  /** 떠 있는 끄기 안내를 지우고 다음 가전 안내를 띄운다. 안내가 다 끝났으면 미뤄 둔 새 계획을 시작해 본다. */
-  private clearReminder(): void {
+  /** 다음 끄기 안내를 띄운다. 다른 계획이 실제 폰 명령 줄을 쓰는 중(진행 중·승인 질문 중)이면 띄우지 않고 그 계획이 끝난 뒤 띄운다.
+   *  rotate: 떠 있는 안내를 줄 끝으로 돌리고 다음 가전 안내를 띄운다(줄에 다른 안내가 있을 때만). 꺼내기 전에 작동이 끝난 가전은 releaseIfOff가 줄에서 뺀다.
+   *  남은 것이 없으면 미뤄 둔 새 계획을 시작해 본다. */
+  private nextReminder(rotate = false): void {
+    if (this.stopped) return;
+    const r = this.run;
+    if (r && (r.state === "running" || r.state === "verifying" || (r.state === "planned" && r.asking))) return;
     const off = this.reminder;
-    if (!off) return;
-    this.reminder = null;
-    this.o.toPhone({ type: "command_clear", id: off.sent.id });
-    this.nextReminder();
-  }
-
-  /** 다음 끄기 안내를 띄운다(이미 켜라고 한 뒤 꺼진 것이 보인 가전은 건너뛴다). 남은 것이 없으면 미뤄 둔 새 계획을 시작해 본다. */
-  private nextReminder(): void {
-    if (this.stopped || this.reminder) return;
-    const devices = this.o.world().devices;
-    let note: OffNote | undefined;
-    while ((note = this.offQueue.shift()) && offSince(devices.find((d) => d.id === note!.deviceId), note.onAt));
+    if (off && rotate && this.offQueue.length) {
+      this.offQueue.push(off.note);
+      this.reminder = null;
+      this.o.toPhone({ type: "command_clear", id: off.sent.id });
+    }
+    if (this.reminder) return;
+    while (this.offQueue.length && this.releaseIfOff(this.offQueue[0]!.deviceId));
+    const note = this.offQueue.shift();
+    const now = this.clock.now();
     if (note) {
       const sent: PlannedCommand = {
         type: "command", id: note.planId, step: note.step, text: note.text, vision: null,
-        choices: [{ id: STEP_DONE.id, label: STEP_DONE.label }], target: null, speak: true,
+        choices: note.ask ? [] : [{ id: STEP_DONE.id, label: STEP_DONE.label }], target: null, speak: true,
       };
-      this.reminder = { sent, at: this.clock.now(), note };
+      this.reminder = { sent, at: now, note };
+      const cycle = this.cycles.get(note.deviceId);
+      if (note.ask && cycle && cycle.askedAt === null) cycle.askedAt = now;
       this.o.toPhone(sent);
       return;
     }
-    const r = this.run;
     if (r?.state === "planned" && !r.asking) {
-      r.since = this.clock.now();
+      r.since = now;
       this.tryStart(r, false);
     }
   }
 
-  /** 끄기 안내: 켜라고 한 뒤에 그 가전이 꺼진 것이 새로 보였거나 offHoldMs가 지나면 지운다(다음 가전 안내로). */
+  /** 켠 위험 가전 추적 보기(tick·World State 변화마다, 실행 추적이 쉬는 동안에도): 지금 계획 hot·끄기 안내에 남은 가전마다 releaseIfOff,
+   *  풀린 가전마다 rearmIfOn. 떠 있는 끄기 안내는 offHoldMs마다 같은 글을 다시 소리로 보내고, 줄에 다른 가전 안내가 기다리면 차례를 돌린다. */
   private reminderTick(): void {
+    if (this.stopped) return;
+    const tracked = new Set([...(this.run?.hot ?? []), ...(this.reminder ? [this.reminder.note.deviceId] : []), ...this.offQueue.map((n) => n.deviceId)]);
+    for (const id of tracked) this.releaseIfOff(id);
+    for (const id of [...this.released.keys()]) this.rearmIfOn(id);
     const off = this.reminder;
-    if (!off) return;
-    const d = this.o.world().devices.find((x) => x.id === off.note.deviceId);
-    if (offSince(d, off.note.onAt) || this.clock.now() - off.at > this.cfg.offHoldMs) this.clearReminder();
+    const now = this.clock.now();
+    if (!off || now - off.at <= this.cfg.offHoldMs) return;
+    if (this.offQueue.length) return this.nextReminder(true);
+    off.at = now;
+    this.o.toPhone({ ...off.sent, speak: true });
+  }
+
+  /** 작동 한 번 끝남 판정(하나뿐, 그 가전의 지금 켜기 회차에 대해). 아니면 null. 근거 시각은 촬영 시각(카메라 seen_ms, 허브·실제 가전 신호는 도착 시각)이고
+   *  근거는 명시만 쓴다(카메라 추정 꺼짐은 쓰지 않는다. 허브·실제 가전 신호 줄은 명시로 본다).
+   *  switch: 회차 onAt 뒤에 촬영된 근거로 아는 켜짐 값(on·running)에서 꺼짐으로 바뀌었고(앞 값이 모름·null이면 아님), 그 바뀜이 명시이거나
+   *  그 뒤(켜짐 없이) 같은 꺼짐 값의 명시 근거 줄이 있다. 그 뒤 다시 켜짐 줄이 오면 그 바뀜은 지난 것이다.
+   *  confirmed: 이 회차에 보낸 부탁(askedAt) 뒤이고 회차 onAt 뒤에 촬영된, 가까이 본(close) 명시 꺼짐 관측(sight_last)이 있다(켜짐을 놓쳤을 때의 복구).
+   *  지금 상태(허브·실제 가전 신호)가 켜짐이거나 그 근거보다 새 카메라 명시 값이 켜짐이면 null. */
+  private cycleEnded(deviceId: string): CycleEnd | null {
+    const c = this.cycles.get(deviceId);
+    const d = this.o.world().devices.find((x) => x.id === deviceId);
+    if (!c || !d || d.status === null || onNow(d)) return null;
+    for (const k of CYCLE_VALUES) {
+      let switched: number | null = null;
+      let pending = false;
+      for (const h of d.history) {
+        if (h.attr !== k.attr || evidenceTime(h) <= c.onAt) continue;
+        if (h.to === k.on) {
+          switched = null;
+          pending = false;
+        } else if (h.to === k.off && h.from === k.on) {
+          pending = h.explicit === false;
+          switched = pending ? null : evidenceTime(h);
+        } else if (h.to === k.off && h.from === k.off && pending && h.explicit !== false) {
+          pending = false;
+          switched = evidenceTime(h);
+        }
+      }
+      const seen = d.sight_last?.[k.attr];
+      const confirmed = c.askedAt !== null && seen && seen.value === k.off && seen.explicit && seen.close && seen.seen_ms > c.askedAt && seen.seen_ms > c.onAt ? seen.seen_ms : null;
+      const end: CycleEnd | null = switched !== null ? { via: "switch", evidenceAt: switched, cycle: c.cycle } : confirmed !== null ? { via: "confirmed", evidenceAt: confirmed, cycle: c.cycle } : null;
+      if (!end) continue;
+      if (seen && seen.value === k.on && seen.explicit && seen.seen_ms >= end.evidenceAt) return null;
+      return end;
+    }
+    return null;
+  }
+
+  /** 그 가전의 켜기 단계가 아직 끝나지 않았는가: 열린 계획의 지금 단계가 그 가전을 켜는 손 조작 do(켜기 전 질문 중 포함)다. */
+  private onStepOpen(deviceId: string): boolean {
+    const r = this.run;
+    const step = r && OPEN.has(r.state) ? this.stepOf(r) : undefined;
+    return step?.kind === "do" && step.hand?.to === "on" && step.hand.deviceId === deviceId;
+  }
+
+  /** 추적을 푸는 하나뿐인 자리. 그 가전의 켜기 단계가 끝났고(onStepOpen 아님) cycleEnded가 null이 아니면 hot·떠 있는 끄기 안내·줄의 끄기 안내에서
+   *  그 가전을 지우고 released에 그 계획과 근거를 남긴 뒤 true. 아니면 false. 떠 있던 안내를 지웠으면 다음 안내를 띄운다. */
+  private releaseIfOff(deviceId: string): boolean {
+    const r = this.run;
+    const off = this.reminder;
+    const shown = off?.note.deviceId === deviceId ? off : null;
+    const queued = this.offQueue.find((n) => n.deviceId === deviceId);
+    const inHot = !!r?.hot.has(deviceId);
+    if (!inHot && !shown && !queued) return false;
+    if (this.onStepOpen(deviceId)) return false;
+    const end = this.cycleEnded(deviceId);
+    if (!end) return false;
+    const planId = inHot ? r!.plan.view.id : (shown?.note ?? queued)!.planId;
+    r?.hot.delete(deviceId);
+    for (let i = this.offQueue.length - 1; i >= 0; i--) if (this.offQueue[i]!.deviceId === deviceId) this.offQueue.splice(i, 1);
+    this.released.set(deviceId, { planId, evidenceAt: end.evidenceAt, via: end.via, at: this.clock.now() });
+    if (shown) {
+      this.reminder = null;
+      this.o.toPhone({ type: "command_clear", id: shown.sent.id });
+      this.nextReminder();
+    }
+    return true;
+  }
+
+  /** 다시 걸기: 풀린 가전의 새 켜짐(근거 촬영 시각이 풀린 근거의 촬영 시각 evidenceAt 뒤이고 그 뒤 rearmMs 안)을 보면 추적을 다시 건다.
+   *  켜짐 근거는 명시·추정 모두 받는다. 회차를 올리고(onAt은 그 켜짐 촬영 시각, 옛 부탁은 버림) 같은 계획이 열려 있으면 hot에 다시 넣고,
+   *  닫혔으면 끄기 안내 줄에 넣는다(다른 계획이 도는 중이면 그 계획이 끝난 뒤 뜬다). 푼 뒤 rearmMs가 지나면 더 보지 않는다. */
+  private rearmIfOn(deviceId: string): boolean {
+    const rel = this.released.get(deviceId);
+    if (!rel) return false;
+    if (this.clock.now() - rel.at > this.cfg.rearmMs) {
+      this.released.delete(deviceId);
+      return false;
+    }
+    const d = this.o.world().devices.find((x) => x.id === deviceId);
+    const on = d?.history.find((h) => CYCLE_VALUES.some((k) => h.attr === k.attr && h.to === k.on) && evidenceTime(h) > rel.evidenceAt && evidenceTime(h) <= rel.evidenceAt + this.cfg.rearmMs);
+    if (!on) return false;
+    this.released.delete(deviceId);
+    const cycle: Cycle = { cycle: (this.cycles.get(deviceId)?.cycle ?? 0) + 1, onAt: evidenceTime(on), askedAt: null };
+    this.cycles.set(deviceId, cycle);
+    const r = this.run;
+    if (r && OPEN.has(r.state) && r.plan.view.id === rel.planId) {
+      r.onAt.set(deviceId, cycle);
+      r.hot.add(deviceId);
+      return true;
+    }
+    this.queueOff(rel.planId, deviceId, false);
+    this.nextReminder();
+    return true;
+  }
+
+  /** 끄기 안내를 줄에 넣는다(계획마다 단계 id :off, :off:2…). ask면 보이게 해 달라는 부탁, 부를 이름이 없으면 끄라는 안내. */
+  private queueOff(planId: string, deviceId: string, ask: boolean): void {
+    const n = (this.offSeq.get(planId) ?? 0) + 1;
+    this.offSeq.set(planId, n);
+    const name = ask ? this.nameOf(deviceId) : null;
+    this.offQueue.push({ planId, step: n === 1 ? `${planId}:off` : `${planId}:off:${n}`, deviceId, text: name ? CLOSER_TEXT(name) : CAUTION_TEXT.off(this.handLabel(deviceId)), ask: !!name });
+  }
+
+  /** 닫히는 계획의 hot을 끄기 안내 줄로 옮긴다(푸는 것이 아니다. 이미 작동이 끝난 가전은 releaseIfOff가 푼다). 그 가전 상태가 이미 꺼짐인데
+   *  작동 끝남을 확인하지 못했으면 끄라는 안내 대신 보이게 해 달라는 부탁으로 넣는다. 그 뒤 기다리던 안내(다른 계획 것 포함)를 띄운다. */
+  private handOver(r: Run): void {
+    if (this.stopped) return;
+    for (const id of [...r.hot]) this.releaseIfOff(id);
+    const devices = this.o.world().devices;
+    for (const id of r.hot) this.queueOff(r.plan.view.id, id, offNow(devices.find((d) => d.id === id)));
+    r.hot.clear();
+    this.nextReminder();
+  }
+
+  /** 보이게 해 달라는 부탁(CLOSER_TEXT(가전 이름), 답 단추 없음)을 보내고 지금 회차의 첫 부탁 시각(askedAt)을 남긴다. 떠 있는 끄기 안내가 그 가전이면
+   *  그 안내를, 아니면 그 가전을 끄는 지금 do 단계 명령 줄(그 단계 id)을 바꾼다. 부를 이름이 없거나 바꿀 자리가 없으면 보내지 않는다. 보냈으면 true. */
+  private askToShow(deviceId: string): boolean {
+    const name = this.nameOf(deviceId);
+    if (!name) return false;
+    const text = CLOSER_TEXT(name);
+    const now = this.clock.now();
+    const off = this.reminder;
+    const r = this.run;
+    const step = r ? this.stepOf(r) : undefined;
+    if (off?.note.deviceId === deviceId) {
+      off.note = { ...off.note, text, ask: true };
+      off.sent = { ...off.sent, text, choices: [], speak: true };
+      off.at = now;
+      this.o.toPhone(off.sent);
+    } else if (r?.state === "running" && r.sent && !r.asking && step?.kind === "do" && step.hand?.to === "off" && step.hand.deviceId === deviceId) {
+      Object.assign(r, { spokeAt: now, helped: true, quietOn: false });
+      r.sent = { ...r.sent, text, choices: [], speak: true };
+      this.o.toPhone(r.sent);
+    } else return false;
+    const cycle = this.cycles.get(deviceId);
+    if (cycle && cycle.askedAt === null) cycle.askedAt = now;
+    return true;
+  }
+
+  /** 실행 중 끄기 do 단계: showAskMs 넘게 안 끝나고 그 가전 상태가 이미 꺼짐인데 작동 끝남을 확인하지 못했으면(켜짐을 놓침) 부탁을 그 단계에 한 번 보낸다. */
+  private offAsk(r: Run, step: AgentStep, now: number): void {
+    const id = step.kind === "do" && step.hand?.to === "off" ? step.hand.deviceId : null;
+    if (!id || !r.hot.has(id) || r.asking || !r.sent || r.offAsked === r.gen || now - r.stepAt < this.cfg.showAskMs) return;
+    if (!offNow(this.o.world().devices.find((d) => d.id === id))) return;
+    r.offAsked = r.gen;
+    this.askToShow(id);
+  }
+
+  /** 끄기 do 단계: 이 계획이 켠 그 가전의 추적이 풀렸으면(releaseIfOff) 그 단계는 끝난 것이다. */
+  private offReleased(r: Run, step: AgentStep): boolean {
+    return step.kind === "do" && step.hand?.to === "off" && r.onAt.has(step.hand.deviceId) && !r.hot.has(step.hand.deviceId);
+  }
+
+  /** 끄기 안내 때문에 새 계획 시작을 미루는 중이면 기다리는 가전 이름(대시보드 말풍선 카드). 아니면 null. */
+  offWaiting(): string | null {
+    const r = this.run;
+    if (this.stopped || r?.state !== "planned" || r.asking || !r.deferred) return null;
+    const id = this.reminder?.note.deviceId ?? this.offQueue[0]?.deviceId;
+    return id ? this.handLabel(id) : null;
+  }
+
+  /** 켠 위험 가전 추적(시험·안내 자리): 지금 계획의 hot, 가전마다 지금 켜기 회차, 풀린 가전과 그 근거. */
+  safety(): { hot: string[]; cycles: Record<string, Cycle>; released: Record<string, { planId: string; evidenceAt: number; via: CycleEnd["via"] }> } {
+    return {
+      hot: [...(this.run?.hot ?? [])],
+      cycles: Object.fromEntries([...this.cycles].map(([id, c]) => [id, { ...c }])),
+      released: Object.fromEntries([...this.released].map(([id, { planId, evidenceAt, via }]) => [id, { planId, evidenceAt, via }])),
+    };
   }
 
   /** 판단 뒤에 가까이 보기가 그 행동 대상 종류 물건의 볼 면을 바꿨는가: 사라지지 않은 그 종류 물건의 볼 면 가까이 보기 횟수(closer_rev)가
@@ -717,7 +937,7 @@ export class ExecutionTracker {
     const run: Run = {
       plan: r.plan, decision: d, state: "decided", since: now, at: -1, stepAt: now, spokeAt: now, visionAt: now, sent: null,
       asking: null, askAt: now, watch: null, others, alias: new Map([...ids].map((id) => [id, id])), carried: new Set(), placeAt: (id) => (id ? this.o.floor().objects.get(id)?.position ?? null : null), deadline: now, again: false, device: "idle", gen: 0,
-      looks: 0, lookAt: Number.NEGATIVE_INFINITY, stepEnd: null, gapAt: job.at, hot: new Map(),
+      looks: 0, lookAt: Number.NEGATIVE_INFINITY, stepEnd: null, gapAt: job.at, onAt: new Map(), hot: new Set(), offAsked: -1, deferred: false,
       strays: 0, strayAt: Number.NEGATIVE_INFINITY, strayNear: null, told: null, helped: false,
       quiet: taskOf(r.plan.task)?.coach ? quietLabels(this.o.lessons?.get(r.plan.task) ?? null) : new Set(), quietOn: false, outcomes: [],
     };
@@ -740,8 +960,16 @@ export class ExecutionTracker {
       this.ungap(r.decision, r.gapAt);
       return this.finish(r, "failed", EXEC_TEXT.closerNewer, "cancelled");
     }
-    // 끄기 안내가 남아 있으면 첫 명령(승인 질문 포함)을 미룬다: 안내가 다 끝나면 nextReminder가 다시 부른다
-    if (this.reminder || this.offQueue.length) return;
+    // 끄기 안내가 남아 있으면 첫 명령(승인 질문 포함)을 미룬다(한 번 기록): 안내가 다 풀리면 nextReminder가 다시 부른다
+    if (this.reminder || this.offQueue.length) {
+      const id = this.reminder?.note.deviceId ?? this.offQueue[0]!.deviceId;
+      if (!r.deferred) {
+        r.deferred = true;
+        this.emit(r.plan.view.id, "planned", EXEC_TEXT.deferred(this.handLabel(id)));
+      }
+      if (!this.reminder) this.nextReminder();
+      return;
+    }
     const c = this.o.check(r.decision, r.plan.view);
     if (!c.ok) {
       if (last) this.finish(r, "failed", c.text);
@@ -798,7 +1026,6 @@ export class ExecutionTracker {
     const done = this.stepOf(r);
     if (done && HUMAN_KINDS.includes(done.kind)) r.outcomes.push({ label: done.label, alone: !r.helped });
     if (done?.kind === "pick" && done.object) r.carried.add(done.object);
-    if (done?.kind === "do" && done.hand?.to === "off") r.hot.delete(done.hand.deviceId);
     if (done?.kind === "place" && done.object) {
       r.carried.delete(done.object);
       // 치운 물건으로 남기는 것은 그 행동의 치우는 대상뿐이다(src/act/tasks.ts clearsAway): 따르고 내려놓은 병처럼 다시 쓰는 물건은 남기지 않는다
@@ -905,7 +1132,8 @@ export class ExecutionTracker {
     }
     if (step.kind === "device" && r.device !== "done" && r.device !== "sent") return false;
     const world = this.o.world();
-    const reached = r.watch ? r.watch.check(this.conditionView(world), this.context(r, world)) : step.kind === "device" && r.device === "done";
+    // 끄기 do 단계는 그 가전 추적이 풀려도(확인된 꺼짐) 끝난다
+    const reached = (r.watch ? r.watch.check(this.conditionView(world), this.context(r, world)) : step.kind === "device" && r.device === "done") || this.offReleased(r, step);
     if (reached) {
       this.advance(r);
       return true;
@@ -1080,16 +1308,8 @@ export class ExecutionTracker {
       this.o.toPhone({ type: "command_clear", id: r.plan.view.id });
     }
     if (close) this.o.plans.close(r.plan.view.id, close);
-    // 손으로 켠 위험 가전이 켜진 채 닫혔다: 가전마다 끄라고 차례로 알린다(「완료」·말·켜라고 한 뒤 새로 본 꺼짐·offHoldMs로 하나씩 지운다)
-    if (r.hot.size && !this.stopped) {
-      const id = r.plan.view.id;
-      const seq = this.offQueue.filter((n) => n.planId === id).length + (this.reminder?.note.planId === id ? 1 : 0);
-      [...r.hot].forEach(([deviceId, onAt], i) => this.offQueue.push({
-        planId: id, step: seq + i === 0 ? `${id}:off` : `${id}:off:${seq + i + 1}`, deviceId, onAt, text: CAUTION_TEXT.off(this.handLabel(deviceId)),
-      }));
-      r.hot.clear();
-      this.nextReminder();
-    }
+    // 손으로 켠 위험 가전이 작동 끝남 확인 전에 닫혔다: 가전마다 끄기 안내 줄로 옮기고 차례로 띄운다(확인된 꺼짐으로만 하나씩 지운다)
+    this.handOver(r);
   }
 
   private step(r: Run, state: ExecState, text?: string): void {
