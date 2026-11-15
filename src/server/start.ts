@@ -3,7 +3,6 @@
 // 운영 모드: 시험(기본, ThinQ를 부르지 않음) · 실제(짝지은 에어컨·냉장고는 ThinQ). ThinQ 클라이언트는 실제 모드에서만 만든다.
 
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { Agent } from "../agent/agent.js";
 import type { Policy } from "../agent/policy.js";
 import { agentEndpoint } from "../agent/providers/index.js";
@@ -28,6 +27,7 @@ import { acquireServerLock, restoreNeeded } from "./lock.js";
 import { KINDS } from "../model/kinds.js";
 import { checkKinds } from "../model/kinds-check.js";
 import { SetupError, SetupStore, effectiveSources, parsePairs, parseSources } from "../setup/store.js";
+import { repoPath } from "../shared/paths.js";
 import { PAIRABLE_KINDS, fitsKind } from "../thinq/appliance.js";
 import { ThinqClient, ThinqError, thinqConfig } from "../thinq/client.js";
 import { DEFAULT_POLL_MS, DEFAULT_READBACK_MS, ThinqLink } from "../thinq/link.js";
@@ -40,7 +40,7 @@ import { createShell } from "./shell.js";
 type Env = Record<string, string | undefined>;
 
 /** 실행 중 만든 파일(사진·배치 수정본·설정) 폴더(커밋하지 않음). RUNTIME_DIR로 바꾼다. */
-const DEFAULT_RUNTIME_DIR = fileURLToPath(new URL("../../runtime/", import.meta.url));
+const DEFAULT_RUNTIME_DIR = repoPath("runtime/");
 
 const msOf = (raw: string | undefined, fallback: number) => {
   const n = Number(raw);

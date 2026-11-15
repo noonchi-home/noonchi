@@ -15,7 +15,6 @@ import { existsSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { networkInterfaces } from "node:os";
 import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { WebSocket, WebSocketServer } from "ws";
 import type { FocusTarget } from "../contract/events.js";
 import type { ApprovalAnswer, HeardAt, PhoneCommand, PhonePending, PhoneTalkReply, PlannedCommand, PlannedCommandMessage } from "../contract/phone.js";
@@ -23,6 +22,7 @@ import { PHONE_PROTOCOL } from "./protocol.js";
 import { REFRESH_TEXT } from "../plan/labels.js";
 import { listenRetry } from "../server/net.js";
 import { serveFile, serveRange } from "../server/static.js";
+import { repoPath } from "../shared/paths.js";
 import type { EyeFeed } from "./feed.js";
 import { MAX_PACKET_BYTES, parsePacket, type FrameHeader } from "./packet.js";
 import type { Plan2 } from "./align.js";
@@ -34,7 +34,7 @@ import type { StartPose } from "../sync/start.js";
 export type { FocusTarget } from "../contract/events.js";
 
 /** 폰 화면 빌드 폴더: ui/dist(대시보드와 같은 빌드). npm start·npm run dev가 먼저 빌드한다. */
-export const DEFAULT_UI_DIR = fileURLToPath(new URL("../../ui/dist/", import.meta.url));
+export const DEFAULT_UI_DIR = repoPath("ui/dist/");
 /** 빌드 전이면 /phone/ 요청에 주는 글. */
 export const PHONE_NOT_BUILT = "폰 화면이 아직 빌드되지 않았어요. npm run ui:build";
 /** /phone/ 밖에서 내주는 ui/dist 파일: 빌드 파일·브랜드 그림·글꼴 라이선스 폴더와 파비콘. 대시보드·설정 화면은 내주지 않는다. */

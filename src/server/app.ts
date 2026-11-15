@@ -5,7 +5,6 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { existsSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { WebSocket, WebSocketServer } from "ws";
 import { z } from "zod";
 import type { Agent } from "../agent/agent.js";
@@ -24,6 +23,7 @@ import { daySummary, isDay } from "../history/summary.js";
 import type { LayoutEditor } from "../layout/editor.js";
 import type { SyncState } from "../sync/aligner.js";
 import { StartPoseError, type StartPose } from "../sync/start.js";
+import { repoPath } from "../shared/paths.js";
 import type { PlanHub } from "../plan/hub.js";
 import { twinChange } from "../model/mapping.js";
 import { listenRetry } from "./net.js";
@@ -110,7 +110,7 @@ export interface TwinHomeApp {
 }
 
 /** 대시보드·설정 화면 폴더: React 빌드(ui/dist). npm start·npm run dev가 먼저 빌드한다. */
-export const DEFAULT_WEB_DIR = fileURLToPath(new URL("../../ui/dist/", import.meta.url));
+export const DEFAULT_WEB_DIR = repoPath("ui/dist/");
 /** 화면 폴더에 index.html이 없을 때(빌드 전) 화면 요청에 주는 오류. */
 export const NOT_BUILT = "화면이 아직 빌드되지 않았어요. npm run ui:build";
 

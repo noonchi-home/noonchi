@@ -2,12 +2,11 @@
 // Claude Code: claude mcp add twin-home -- npx tsx src/mcp/server.ts
 // stdout은 MCP 프로토콜 전용이다. 로그는 stderr로만 쓴다.
 
-import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { MCP_TOOLS, runTool, type ToolBackend } from "../agent/tools.js";
+import { isEntry } from "../shared/paths.js";
 import { DEFAULT_TWIN_HOME_URL, httpBackend } from "./client.js";
 
 const INSTRUCTIONS = `twin-home: 가상 아파트(디지털 트윈)의 Matter 가전을 제어합니다.
@@ -46,14 +45,7 @@ async function main(): Promise<void> {
   process.stderr.write(`[twin-home mcp] stdio 대기 중 · REST ${url}\n`);
 }
 
-function isEntry(): boolean {
-  const entry = process.argv[1];
-  if (!entry) return false;
-  const norm = (p: string) => (process.platform === "win32" ? resolve(p).toLowerCase() : resolve(p)).replace(/\.(ts|js)$/, "");
-  return norm(fileURLToPath(import.meta.url)) === norm(entry);
-}
-
-if (isEntry()) {
+if (isEntry(import.meta.url)) {
   main().catch((e) => {
     process.stderr.write(`[twin-home mcp] 시작 실패: ${(e as Error).stack ?? e}\n`);
     process.exit(1);

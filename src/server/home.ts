@@ -4,7 +4,6 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { checkDecision, checkPlan, loadActConfig } from "../act/check.js";
 import { Looker } from "../act/look.js";
 import { SAY_DONE_MS, sayLine } from "../act/say.js";
@@ -52,6 +51,7 @@ import type { FrameHeader } from "../phone/packet.js";
 import { twinLandmarks } from "../sync/landmarks.js";
 import { StartStore, describeStart, readStartPose, startPosePath, type StartPose } from "../sync/start.js";
 import { wallSegments } from "../sync/walls.js";
+import { repoPath } from "../shared/paths.js";
 import { PlanHub } from "../plan/hub.js";
 import { HEARD_MARK } from "../world/labels.js";
 import { floorPlanFrom, roomNamedAt } from "../plan/route.js";
@@ -80,7 +80,7 @@ const PHONE_SESSION = "phone";
 
 /** 영상 모드 영상 공용 폴더(저장소 runtime/videos). 시연 폴더(RUNTIME_DIR=runtime/demo/day1·week)로 띄워도 여기서 읽는다:
  *  영상은 커서 시연 폴더마다 복사하지 않고, 시연 폴더를 지우는 준비 명령(demo-setup --fresh)이 이은 폴더를 따라 지우지 않게 정션도 쓰지 않는다. */
-const SHARED_VIDEO_DIR = fileURLToPath(new URL("../../runtime/videos/", import.meta.url));
+const SHARED_VIDEO_DIR = repoPath("runtime/videos/");
 /** 영상 모드 영상 폴더: PHONE_VIDEO_DIR, 없으면 공용 runtime/videos(RUNTIME_DIR와 상관없다). */
 export function phoneVideoDir(env: Record<string, string | undefined>): string {
   return env.PHONE_VIDEO_DIR?.trim() || SHARED_VIDEO_DIR;

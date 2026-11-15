@@ -12,8 +12,8 @@
 // 이 내보내기는 한 물체에 겹친 상자를 여럿 낸다(컵 영상: 같은 컵 상위 상자끼리 IoU 0.99). 그래서 Ultralytics predict처럼
 // 앵커마다 가장 높은 클래스 하나를 보고 IoU 0.5로 NMS 한다(ultralytics 8.4 predict 기본값 PREDICT_IOU).
 
-import { fileURLToPath } from "node:url";
 import jpeg from "jpeg-js";
+import { repoPath } from "../shared/paths.js";
 import { LANDMARK_IDS } from "../sync/classes.js";
 import { CLASSES, type ClassKey, type DetLabel } from "../world/vocab.js";
 import { COEFFS, PROTO, boxFoot, emptyMask, maskOf, type Box, type LetterboxPlace, type Mask } from "./seg.js";
@@ -98,7 +98,7 @@ export const DETECTOR_MODEL = { file: "yolo26n-seg.onnx", sha256: "2e8fc38ffb5df
 export const POSE_MODEL = { file: "yolo26n-pose.onnx", sha256: "dd0e47a03ea0f2b9e766b038559de14fb1dd5e51d8dfb331051740998628d91e" } as const;
 
 /** 저장소에 커밋한 모델 폴더(models/). Docker 이미지에서는 /app/models/. */
-export const MODELS_DIR = fileURLToPath(new URL("../../models/", import.meta.url));
+export const MODELS_DIR = repoPath("models/");
 
 const PAD = 114;
 /** 푼 사진: 화소마다 channels 바이트(RGB 3 또는 RGBA 4, 없으면 4). 레터박스는 앞 세 바이트만 읽는다. */
