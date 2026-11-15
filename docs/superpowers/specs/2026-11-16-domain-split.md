@@ -277,7 +277,9 @@
 
 ### 3.2 옮기는 동안(줄어들기만 하는 예외 목록)
 
-- 1단계에서 지금 위반을 모두 `scripts/domain-exceptions.json`에 적는다.
+- 1단계에서 지금 위반을 모두 `scripts/domain-exceptions.json`에 적는다. 줄 하나는 위반 하나이고 열쇠는 `<검사> <파일> -> <대상>`이다(고리는 고리 안에서 단위를 넘는 import마다 한 줄).
+- 아직 옮기지 않은 파일은 `scripts/lint-domains.ts`의 `LEGACY` 표(2.1 「들어갈 지금 코드」)로 도메인을 정한다. shared로 갈 파일(`server/net`·`static`, `agent/phrases`, `plan/copy`, `phone/align`, `brain/seg`)은 2단계에서 옮기기 전까지 지금 폴더의 도메인이다. 옮길 때마다 표를 줄이고 9단계에 비운다.
+- `tsx scripts/lint-domains.ts --strict`는 예외 목록 없이 돌고, `--json`은 위반 열쇠를 JSON으로 낸다.
 - 목록에 없는 새 위반은 실패한다.
 - 목록에 있는데 이제 안 생기는 줄도 실패한다(지운 만큼 목록에서 빼게 함).
 - 단계마다 목록이 줄고, 9단계에서 비어 파일을 지운다.
@@ -317,17 +319,21 @@
        ```json
        { "files": { "src/sync/aligner.ts": "src/phone/sync/aligner.ts" },
          "decls": { "src/world/decide.ts#DecisionRecord": "src/contract/events.ts#DecisionRecord" },
-         "new": ["src/phone/index.ts"] }
+         "new": ["src/phone/index.ts"],
+         "text": ["tests/act-track-release.test.ts"] }
        ```
-       `files`는 파일째 옮김, `decls`는 파일 일부(선언 하나)를 옮김(옛 파일#이름 → 새 파일#이름, F 단계), `new`는 새로 만든 파일이다. 지운 파일·새 파일이 대응표에 없으면 실패한다.
+       `files`는 파일째 옮김, `decls`는 파일 일부(선언 하나)를 옮김(옛 파일#이름 → 새 파일#이름, F 단계), `new`는 새로 만든 파일이다. 지운 파일·새 파일이 대응표에 없으면 실패한다. `text`는 경로를 조각으로 적은 시험·스크립트(`join(ROOT, "src", "act", "track.ts")`)다. 글자열 말고는 AST가 같아야 하고, 바뀐 글자열은 출력해 따로 확인한다.
+     - 대응표를 주지 않으면 두 커밋 사이에 새로 생기거나 바뀐 대응표 하나를 쓴다(`--moves <경로>`로 줄 수 있다). 1단계 대응표 `1.json`은 비어 있다(도구를 만드는 단계라 견주지 않는다).
+     - 견주는 곳: `src/`·`ui/src/`·`tests/`·`ui/tests/`·`scripts/`·`ui/scripts/`의 코드 파일. 검사 도구(`scripts/lint-domains.ts`·`check-moves.ts`·`domain-ast.ts`)는 단계마다 표가 바뀌어 견주지 않는다. `--only <경로 앞부분>`으로 좁힌다(7단계는 `tests/`).
      - 파일마다 옛 파일과 새 파일을 파싱해 셋을 본다.
-       (1) import·`export … from`이 아닌 문장을 정규화한 AST로 견준다. 하나라도 다르면 실패한다(`import …; 실행문()`처럼 붙인 동작도 여기서 잡힌다).
+       (1) import·`export … from`이 아닌 문장을 정규화한 AST로 견준다. 하나라도 다르면 실패한다(`import …; 실행문()`처럼 붙인 동작도 여기서 잡힌다). 옮긴 파일의 경로 글(`"src/sync/aligner.ts"`, 확장자 없음·`.js` 포함)과 상대 모듈 글(`vi.mock("../src/…")`·`import("…")`·`new URL("./…", import.meta.url)`)은 대응표로 바꾼 뒤 견준다.
        (2) import마다 (가져온 이름, `type` 여부, 그 이름을 정의한 자리 `파일#이름`)을 구해 견준다. 정의한 자리는 모듈 경로를 풀고 `index.ts`의 `export … from`을 따라가 찾는다. 옛 쪽 자리는 `decls`를 먼저, 그다음 `files`로 새 자리로 바꾼다. 모음이 다르면 실패한다. 그래서 시험이 `DecisionRecord`를 옛 파일 대신 계약에서 가져오게 바뀐 것은 통과한다.
        (3) `new`의 파일은 `export … from` 문장만 있어야 한다(입구). 그 밖의 새 파일(`shared/paths.ts` 등)은 옮김 단계가 아닌 0·2단계에서만 생긴다.
      - 경로를 글로 적은 시험·문서 줄은 따로 확인한다.
   5. **고리 끊기(F) 단계:** `check-moves.ts --moved`가 대응표(`decls`)로 옮긴 선언마다 넷을 본다. 시험 파일은 (1)(2) 검사를 통과해야 한다(기대값을 하나도 고치지 않는다).
      - **글:** 옛 선언과 새 선언의 정규화한 AST가 같다.
      - **빠짐·더함:** 바뀐 파일 전체의 맨 위 선언(import 빼고) 모음이 옮기기 앞과 뒤에 같다. 대응표에 없는 선언이 생기거나 사라지면 실패한다.
+     - **import 차이:** (2)에서 옮긴 선언 때문에 생기는 차이만 된다. 뒤에 더한 import는 옮겨 나간 선언(이제 가져와 씀)이나 옮겨 온 선언이 쓰는 이름이고, 앞에만 있던 import는 옮겨 나간 선언만 쓰던 이름(남은 문장이 쓰지 않음)이나 옮겨 온 선언이다. 옮긴 선언과 import만 있는 새 파일(`contract/observe.ts` 등)과, 선언을 모두 `decls`로 옮긴 지운 파일은 대응표에 있는 것으로 본다.
      - **초기화 차례:** 모듈마다 맨 위 실행 문장(타입·인터페이스·`declare`·import를 뺀 것: 변수·함수·클래스 선언, 식 문장, `export default`)을 차례대로 적는다.
        - 새 파일의 각 문장을 옛 자리(옛 파일, 옛 차례 번호)로 바꾼 뒤, 같은 옛 파일에서 온 문장끼리는 번호가 커지는 차례여야 한다.
        - 옮긴 문장이 모듈을 읽을 때 쓰는 이름(함수 몸통 밖 초기화 식에서 쓰는 이름)은 넷 가운데 하나여야 한다.

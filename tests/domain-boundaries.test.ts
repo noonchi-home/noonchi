@@ -1,0 +1,202 @@
+// 도메인 경계 검사(scripts/lint-domains.ts, 도메인 나누기 설계 3.1~3.3). npm run lint와 같은 검사다.
+// 실제 트리는 예외 목록(scripts/domain-exceptions.json)과 꼭 맞아야 하고, 가짜 트리·0a392c5 실제 줄은 정한 오류 글로 실패해야 한다.
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import { CONFIG, DEPS, SCREEN_DOMAINS, SERVER_DOMAINS, checkTree, compareExceptions, readExceptions, tableCycles, type Config } from "../scripts/lint-domains.js";
+
+const ROOT = join(import.meta.dirname, "..");
+
+const roots: string[] = [];
+afterEach(() => { while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true }); });
+
+/** 도메인마다 입구가 있는 가짜 트리. files로 파일을 더하거나 덮고, null이면 뺀다. */
+function fakeTree(files: Record<string, string | null> = {}): string {
+  const root = mkdtempSync(join(tmpdir(), "domains-"));
+  roots.push(root);
+  const base: Record<string, string | null> = {};
+  for (const d of SERVER_DOMAINS) base[`src/${d}/index.ts`] = "export {};\n";
+  for (const d of SCREEN_DOMAINS) base[`ui/src/${d.slice(3)}/index.ts`] = "export {};\n";
+  base["src/contract/events.ts"] = "export interface Ev { id: string }\n";
+  base["src/shared/korean.ts"] = "export const josa = (s: string) => s;\n";
+  for (const [p, text] of Object.entries({ ...base, ...files })) {
+    if (text === null) continue;
+    mkdirSync(dirname(join(root, p)), { recursive: true });
+    writeFileSync(join(root, p), text);
+  }
+  return root;
+}
+const check = (root: string, config?: Config) => checkTree(root, config);
+const keys = (root: string, config?: Config) => check(root, config).map((v) => v.key);
+const message = (root: string, key: string) => check(root).find((v) => v.key === key)?.message ?? "";
+
+describe("도메인 경계: 가짜 트리", () => {
+  it("입구만 있는 트리는 위반이 없다", () => {
+    expect(keys(fakeTree())).toEqual([]);
+  });
+
+  it("다른 도메인 안쪽 파일을 가져오면 실패하고 입구를 말한다(입구로 가져오면 통과)", () => {
+    const root = fakeTree({ "src/server/a.ts": 'import { x } from "../act/b.js";\nexport const y = x;\n', "src/act/b.ts": "export const x = 1;\n" });
+    expect(keys(root)).toEqual(["inner src/server/a.ts -> src/act/b.ts"]);
+    expect(message(root, "inner src/server/a.ts -> src/act/b.ts")).toBe("`src/server/a.ts`이 `act` 안쪽 `src/act/b.ts`을 가져와요. `src/act/index.ts`로 가져오세요");
+    const ok = fakeTree({ "src/server/a.ts": 'import { x } from "../act/index.js";\nexport const y = x;\n', "src/act/index.ts": "export { x } from \"./b.js\";\n", "src/act/b.ts": "export const x = 1;\n" });
+    expect(keys(ok)).toEqual([]);
+  });
+
+  it("의존 표에 없는 방향(거꾸로)이면 실패하고 쓸 수 있는 도메인을 말한다", () => {
+    const root = fakeTree({ "src/world/a.ts": 'import type { X } from "../act/index.js";\nexport type Y = X;\n' });
+    expect(keys(root)).toEqual(["direction src/world/a.ts -> src/act/index.ts"]);
+    expect(message(root, "direction src/world/a.ts -> src/act/index.ts")).toBe(
+      "`src/world/a.ts` → `src/act/index.ts`: `world`는 `act`를 쓸 수 없어요(쓸 수 있는 것: devices·layout). 공용 타입이면 contract로, 공용 도우미면 shared로 옮기세요",
+    );
+  });
+
+  it("도메인을 넘는 고리는 실패한다(타입 전용 import로 돌아도)", () => {
+    for (const kw of ["import", "import type"]) {
+      const root = fakeTree({
+        "src/act/index.ts": 'export { b } from "./b.js";\n',
+        "src/act/b.ts": `${kw} { a } from "../world/index.js";\nexport const b = 1;\nexport type B = typeof a;\n`,
+        "src/world/index.ts": 'export { a } from "./a.js";\n',
+        "src/world/a.ts": `${kw} { b } from "../act/index.js";\nexport const a = 1;\nexport type A = typeof b;\n`,
+      });
+      const ks = keys(root);
+      expect(ks).toContain("cycle src/world/a.ts -> src/act/index.ts");
+      expect(ks).toContain("cycle src/act/b.ts -> src/world/index.ts");
+      expect(message(root, "cycle src/world/a.ts -> src/act/index.ts")).toMatch(/^`world` → `act` → `world` 고리예요/);
+    }
+  });
+
+  it("shared를 거쳐 도는 고리(world → shared/x.ts → act/index.ts → world)도 잡고, shared가 도메인을 가져온 것도 잡는다", () => {
+    const root = fakeTree({
+      "src/world/index.ts": 'export { w } from "./w.js";\n',
+      "src/world/w.ts": 'import { x } from "../shared/x.js";\nexport const w = x;\n',
+      "src/shared/x.ts": 'import { a } from "../act/index.js";\nexport const x = a;\n',
+      "src/act/index.ts": 'export { a } from "./a.js";\n',
+      "src/act/a.ts": 'import { w } from "../world/index.js";\nexport const a = () => w;\n',
+    });
+    const ks = keys(root);
+    expect(ks).toContain("foundation src/shared/x.ts -> src/act/index.ts");
+    expect(message(root, "foundation src/shared/x.ts -> src/act/index.ts")).toContain("기반층은 도메인을 몰라야 해요. `src/act/index.ts`을 가져오지 마세요");
+    expect(ks).toContain("cycle src/world/w.ts -> src/shared/x.ts");
+    expect(message(root, "cycle src/world/w.ts -> src/shared/x.ts")).toMatch(/^`world` → `shared` → `act` → `world` 고리예요/);
+  });
+
+  it("shared·infer는 계약·shared·node 기본 모듈만 가져온다(바깥 패키지·공용 표도 안 됨)", () => {
+    const root = fakeTree({
+      "src/shared/y.ts": 'import { join } from "node:path";\nimport { z } from "zod";\nimport type { Ev } from "../contract/events.js";\nexport const y = [join, z] as unknown as Ev;\n',
+      "src/infer/v.ts": 'import { CLASSES } from "../world/vocab.js";\nimport { josa } from "../shared/korean.js";\nexport const v = [CLASSES, josa];\n',
+      "src/world/vocab.ts": "export const CLASSES = [];\n",
+    });
+    expect(keys(root)).toEqual(["foundation src/infer/v.ts -> src/world/vocab.ts", "foundation src/shared/y.ts -> zod"]);
+  });
+
+  it("공용 표가 도메인 파일을 가져오면 실패한다(계약·shared·다른 표는 된다)", () => {
+    const root = fakeTree({
+      "src/world/vocab.ts": 'import type { Ev } from "../contract/events.js";\nimport { josa } from "../shared/korean.js";\nimport { OBJECT_NAME } from "./labels.js";\nimport { s } from "./state.js";\nexport const CLASSES = [josa, s, OBJECT_NAME] as unknown as Ev[];\n',
+      "src/world/labels.ts": "export const OBJECT_NAME = {};\n",
+      "src/world/state.ts": "export const s = 1;\n",
+    });
+    expect(keys(root)).toEqual(["table src/world/vocab.ts -> src/world/state.ts"]);
+    expect(message(root, "table src/world/vocab.ts -> src/world/state.ts")).toBe("`src/world/vocab.ts` → `src/world/state.ts`: 공용 표는 계약·shared·다른 공용 표만 가져와요");
+  });
+
+  it("계약은 계약·공용 표의 타입만 import type으로 가져온다: 값 import와 밖 import는 실패, 계약 ↔ 공용 표 타입 전용 고리는 된다", () => {
+    const ok = fakeTree({
+      "src/contract/world.ts": 'import type { ObjClass } from "../world/vocab.js";\nexport interface W { o: ObjClass }\n',
+      "src/world/vocab.ts": 'import type { W } from "../contract/world.js";\nexport type ObjClass = "cup";\nexport type X = W;\n',
+    });
+    expect(keys(ok)).toEqual([]);
+    const bad = fakeTree({
+      "src/contract/world.ts": 'import { CLASSES } from "../world/vocab.js";\nimport type { S } from "../brain/index.js";\nexport type W = [typeof CLASSES, S];\n',
+      "src/world/vocab.ts": "export const CLASSES = [];\n",
+    });
+    expect(keys(bad)).toEqual(["contract src/contract/world.ts -> src/brain/index.ts", "contract src/contract/world.ts -> src/world/vocab.ts"]);
+    expect(message(bad, "contract src/contract/world.ts -> src/world/vocab.ts")).toBe("`src/contract/world.ts` → `src/world/vocab.ts`: 계약은 계약·공용 표의 타입만 import type으로 가져와요(값 import 금지)");
+  });
+
+  it("화면은 src에서 계약·공용 표·shared·design·layout/browser.ts만 가져온다", () => {
+    const root = fakeTree({
+      "ui/src/dashboard/a.ts": 'import { s } from "../../../src/world/state.js";\nimport type { Ev } from "../../../src/contract/events.ts";\nexport const a = s as unknown as Ev;\n',
+      "src/world/state.ts": "export const s = 1;\n",
+    });
+    expect(keys(root)).toEqual(["screen-src ui/src/dashboard/a.ts -> src/world/state.ts"]);
+  });
+
+  it("화면 → layout/browser.ts → node:fs를 쓰는 파일이면 실패하고 길을 말한다(타입 import는 빌드에서 지워져 된다)", () => {
+    const root = fakeTree({
+      "ui/src/twin/walk.ts": 'import { route } from "../../../src/layout/browser.js";\nexport const walk = route;\n',
+      "src/layout/browser.ts": 'export { route } from "./route.js";\n',
+      "src/layout/route.ts": 'import { readFileSync } from "node:fs";\nexport const route = () => readFileSync;\n',
+    });
+    expect(keys(root)).toEqual(["node src/layout/route.ts -> node:fs"]);
+    expect(message(root, "node src/layout/route.ts -> node:fs")).toBe("브라우저 입구에 node 모듈 `node:fs`이 섞여요(`ui/src/twin/walk.ts` → `src/layout/browser.ts` → `src/layout/route.ts`)");
+    const typeOnly = fakeTree({
+      "ui/src/twin/walk.ts": 'import type { R } from "../../../src/layout/browser.js";\nexport type W = R;\n',
+      "src/layout/browser.ts": 'export type { R } from "./route.js";\n',
+      "src/layout/route.ts": 'import { readFileSync } from "node:fs";\nexport type R = typeof readFileSync;\n',
+    });
+    expect(keys(typeOnly)).toEqual([]);
+  });
+
+  it("import.meta.url은 세 꼴만 되고, Worker 대상 파일이 없으면 실패한다", () => {
+    const ok = fakeTree({
+      "src/observe/d.ts": 'export const w = () => new Worker(new URL("./w.mjs", import.meta.url), { workerData: { entry: new URL("./t.ts", import.meta.url).href } });\n',
+      "src/observe/w.mjs": "export {};\n",
+      "src/observe/t.ts": "export {};\n",
+      "src/agent/mcp.ts": 'import { isEntry } from "../shared/paths.js";\nif (isEntry(import.meta.url)) console.log(1);\n',
+      "src/shared/paths.ts": 'export const ROOT = new URL("../../", import.meta.url);\nexport const isEntry = (u: string) => !!u;\n',
+    });
+    expect(keys(ok)).toEqual([]);
+    const bad = fakeTree({
+      "src/observe/d.ts": 'export const w = () => new Worker(new URL("./none.mjs", import.meta.url));\n',
+      "src/server/app.ts": 'export const DIR = new URL("../../ui/dist/", import.meta.url);\n',
+    });
+    expect(keys(bad)).toEqual(["meta-url src/server/app.ts", "worker src/observe/d.ts -> ./none.mjs"]);
+  });
+
+  it("도메인에 입구 index.ts가 없으면 실패한다", () => {
+    expect(keys(fakeTree({ "src/act/index.ts": null, "ui/src/twin/index.ts": null }))).toEqual(["no-index act", "no-index ui/twin"]);
+  });
+
+  it("어느 도메인·기반층에도 없는 파일은 실패한다", () => {
+    expect(keys(fakeTree({ "src/misc/x.ts": "export {};\n" }))).toEqual(["unknown src/misc/x.ts"]);
+  });
+
+  it("의존 표에 고리가 생기면 실패한다(지금 표에는 고리가 없다)", () => {
+    expect(tableCycles(DEPS)).toEqual([]);
+    const ks = keys(fakeTree(), { ...CONFIG, deps: { ...DEPS, devices: ["act"] } });
+    expect(ks).toContain("deps-cycle devices -> act -> devices");
+    expect(ks.every((k) => k.startsWith("deps-cycle "))).toBe(true);
+  });
+});
+
+describe("도메인 경계: 0a392c5의 실제 위반 줄", () => {
+  const fixture = JSON.parse(readFileSync(join(ROOT, "tests/fixtures/domains/past-mistakes.json"), "utf8")) as {
+    cases: { file: string; line: string; target: string; why: string; expect: string[] }[];
+  };
+  it("고정 자료는 여섯 줄이다", () => expect(fixture.cases).toHaveLength(6));
+  for (const c of fixture.cases) {
+    it(`${c.file}: ${c.line} → 실패(${c.why})`, () => {
+      const root = fakeTree({ [c.file]: `${c.line}\nexport {};\n`, [c.target]: "export const x = 1;\n" });
+      expect(keys(root)).toEqual(c.expect);
+    });
+  }
+});
+
+describe("도메인 경계: 예외 목록(줄어들기만 함)", () => {
+  it("목록에 없는 새 위반과, 목록에 있는데 이제 안 생기는 줄(두 번 적은 줄 포함)을 모두 잡는다", () => {
+    const v = [{ key: "inner a -> b", message: "m1" }, { key: "inner c -> d", message: "m2" }];
+    expect(compareExceptions(v, ["inner a -> b", "inner c -> d"])).toEqual({ added: [], stale: [] });
+    expect(compareExceptions(v, ["inner a -> b"])).toEqual({ added: [v[1]], stale: [] });
+    expect(compareExceptions(v, ["inner a -> b", "inner c -> d", "inner e -> f", "inner a -> b"])).toEqual({ added: [], stale: ["inner e -> f", "inner a -> b"] });
+  });
+
+  it("실제 트리: 새 위반도 지울 예외도 없고, 엄격 모드 실패 수 = 예외 목록 줄 수", () => {
+    const violations = checkTree(ROOT);
+    const exceptions = readExceptions(ROOT);
+    expect(compareExceptions(violations, exceptions)).toEqual({ added: [], stale: [] });
+    expect(violations.length).toBe(exceptions.length);
+    expect([...exceptions].sort()).toEqual(violations.map((v) => v.key));
+  });
+});

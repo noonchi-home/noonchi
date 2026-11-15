@@ -1,0 +1,805 @@
+// 옮김 검사(도메인 나누기 설계 4.1 ④⑤): 두 커밋 사이에서 「import 경로만 달라짐」을 AST로 증명한다. git의 이름 바뀜 찾기는 쓰지 않는다.
+// 쓰는 법: tsx scripts/check-moves.ts <앞 커밋> <뒤 커밋> [--moves <대응표 경로>] [--moved] [--only <경로 앞부분>]...
+//   대응표(MOVES_DIR/<단계>.json, 그 커밋에 함께 둠)를 안 주면 두 커밋 사이에 새로 생기거나 바뀐 대응표 하나를 쓴다.
+//   files: 파일째 옮김(옛 → 새). decls: 선언 하나 옮김("옛 파일#이름" → "새 파일#이름", --moved에서만). new: 새로 만든 입구(index.ts).
+//   text: 경로를 글로 적은 시험·스크립트. 글자열 말고는 AST가 같아야 하고, 바뀐 글자열은 따로 확인하게 출력한다.
+// 파일마다 (1) import·export … from이 아닌 문장을 정규화한 AST로 견준다. (2) import마다 (이름, type 여부, 정의한 자리 파일#이름)를 견준다.
+//   (3) new 파일은 export … from 문장만 있어야 한다. 대응표에 없는 지움·새 파일은 실패다.
+// --moved(고리 끊기 단계): 옮긴 선언마다 글·빠짐과 더함·초기화 차례·이름이 가리키는 정의를 보고, 실행 때 남는 값 import 그래프에 새 고리가 생기면 실패다.
+import { execFileSync } from "node:child_process";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { isCode, parseCode, resolveSpec, type AstNode, type Resolved } from "./domain-ast.js";
+
+export const MOVES_DIR = "docs/superpowers/specs/2026-11-16-domain-split/moves/";
+/** 견주는 곳. */
+export const SCOPE = ["src/", "ui/src/", "tests/", "ui/tests/", "scripts/", "ui/scripts/"] as const;
+/** 검사 도구: 의존 표·예외 목록이 단계마다 바뀌어 견주지 않는다(따로 검토). */
+export const TOOL_FILES = ["scripts/lint-domains.ts", "scripts/check-moves.ts", "scripts/domain-ast.ts"] as const;
+
+export type Tree = Map<string, string>;
+export interface Moves { files: Record<string, string>; decls: Record<string, string>; new: string[]; text: string[] }
+export interface Options { moved?: boolean; only?: readonly string[] }
+export interface Result { failures: string[]; notes: string[] }
+
+export function parseMoves(text: string): Moves {
+  const raw = JSON.parse(text) as Record<string, unknown>;
+  for (const k of Object.keys(raw)) if (!["files", "decls", "new", "text"].includes(k)) throw new Error(`대응표에 모르는 칸이 있어요: ${k}`);
+  return {
+    files: (raw.files ?? {}) as Record<string, string>,
+    decls: (raw.decls ?? {}) as Record<string, string>,
+    new: (raw.new ?? []) as string[],
+    text: (raw.text ?? []) as string[],
+  };
+}
+
+// ---------- 모듈 읽기 ----------
+
+type DeclKind = "function" | "class" | "var" | "let" | "const" | "type" | "enum" | "other";
+interface Decl { index: number; stmt: AstNode; kind: DeclKind }
+interface ModInfo {
+  body: AstNode[];
+  decls: Map<string, Decl[]>;
+  exportsLocal: Map<string, string>;
+  imports: Map<string, { spec: string; imported: string; type: boolean }>;
+  reexports: Map<string, { spec: string; imported: string }>;
+  starExports: string[];
+}
+
+const isImportLike = (st: AstNode) => st.type === "ImportDeclaration" || (st.type === "ExportNamedDeclaration" && !!st.source) || st.type === "ExportAllDeclaration";
+
+/** 맨 위 문장이 선언하는 이름과 종류(export로 감싼 것은 안을 본다). */
+export function declaredBy(st: AstNode): { names: string[]; kind: DeclKind; inner: AstNode } {
+  const inner = (st.type === "ExportNamedDeclaration" || st.type === "ExportDefaultDeclaration") && st.declaration ? st.declaration : st;
+  switch (inner.type) {
+    case "VariableDeclaration":
+      return { names: inner.declarations.flatMap((d: AstNode) => patternNames(d.id)), kind: inner.kind === "var" ? "var" : inner.kind === "let" ? "let" : "const", inner };
+    case "FunctionDeclaration":
+      return { names: inner.id ? [inner.id.name] : st.type === "ExportDefaultDeclaration" ? ["default"] : [], kind: "function", inner };
+    case "ClassDeclaration":
+      return { names: inner.id ? [inner.id.name] : st.type === "ExportDefaultDeclaration" ? ["default"] : [], kind: "class", inner };
+    case "TSInterfaceDeclaration":
+    case "TSTypeAliasDeclaration":
+      return { names: [inner.id.name], kind: "type", inner };
+    case "TSDeclareFunction":
+      return { names: inner.id ? [inner.id.name] : [], kind: "type", inner };
+    case "TSEnumDeclaration":
+      return { names: [inner.id.name], kind: "enum", inner };
+    case "TSModuleDeclaration":
+      return { names: inner.id?.type === "Identifier" ? [inner.id.name] : [], kind: "other", inner };
+    default:
+      return { names: st.type === "ExportDefaultDeclaration" ? ["default"] : [], kind: "other", inner };
+  }
+}
+
+export function patternNames(p: AstNode | null | undefined): string[] {
+  if (!p) return [];
+  switch (p.type) {
+    case "Identifier": return [p.name];
+    case "ObjectPattern": return p.properties.flatMap((q: AstNode) => patternNames(q.type === "RestElement" ? q.argument : q.value));
+    case "ArrayPattern": return p.elements.flatMap((e: AstNode | null) => patternNames(e));
+    case "RestElement": return patternNames(p.argument);
+    case "AssignmentPattern": return patternNames(p.left);
+    case "TSParameterProperty": return patternNames(p.parameter);
+    default: return [];
+  }
+}
+
+const nameOf = (n: AstNode | null | undefined): string => (!n ? "" : n.type === "Identifier" ? n.name : String(n.value));
+
+class TreeIndex {
+  private asts = new Map<string, AstNode>();
+  private infos = new Map<string, ModInfo>();
+  constructor(readonly tree: Tree, readonly label: string) {}
+  exists = (p: string) => this.tree.has(p);
+  ast(p: string): AstNode {
+    let a = this.asts.get(p);
+    if (!a) {
+      try { a = parseCode(p, this.tree.get(p) ?? ""); } catch (e) { throw new Error(`${this.label} ${p}를 파싱하지 못했어요: ${(e as Error).message}`); }
+      this.asts.set(p, a);
+    }
+    return a;
+  }
+  resolve(from: string, spec: string): Resolved { return resolveSpec(from, spec, this.exists); }
+  info(p: string): ModInfo {
+    let info = this.infos.get(p);
+    if (info) return info;
+    const body = this.ast(p).body as AstNode[];
+    info = { body, decls: new Map(), exportsLocal: new Map(), imports: new Map(), reexports: new Map(), starExports: [] };
+    body.forEach((st, index) => {
+      if (st.type === "ImportDeclaration") {
+        for (const s of st.specifiers as AstNode[]) {
+          const imported = s.type === "ImportDefaultSpecifier" ? "default" : s.type === "ImportNamespaceSpecifier" ? "*" : nameOf(s.imported);
+          info!.imports.set(s.local.name, { spec: st.source.value, imported, type: st.importKind === "type" || s.importKind === "type" });
+        }
+        return;
+      }
+      if (st.type === "ExportNamedDeclaration" && st.source) {
+        for (const s of st.specifiers as AstNode[]) info!.reexports.set(nameOf(s.exported), { spec: st.source.value, imported: nameOf(s.local) });
+        return;
+      }
+      if (st.type === "ExportAllDeclaration") {
+        if (st.exported) info!.reexports.set(nameOf(st.exported), { spec: st.source.value, imported: "*" });
+        else info!.starExports.push(st.source.value);
+        return;
+      }
+      if (st.type === "ExportNamedDeclaration" && !st.declaration) {
+        for (const s of st.specifiers as AstNode[]) info!.exportsLocal.set(nameOf(s.exported), nameOf(s.local));
+        return;
+      }
+      if (st.type === "ExportDefaultDeclaration" && st.declaration?.type === "Identifier") {
+        info!.exportsLocal.set("default", st.declaration.name);
+        return;
+      }
+      const { names, kind } = declaredBy(st);
+      for (const n of names) {
+        (info!.decls.get(n) ?? info!.decls.set(n, []).get(n)!).push({ index, stmt: st, kind });
+        if (st.type === "ExportNamedDeclaration") info!.exportsLocal.set(n, n);
+        if (st.type === "ExportDefaultDeclaration") info!.exportsLocal.set("default", n);
+      }
+    });
+    this.infos.set(p, info);
+    return info;
+  }
+  /** 모듈이 내보내는 이름의 정의 자리: "파일#이름", 바깥 모듈은 "pkg:모듈#이름". export … from·export *를 따라간다. */
+  defOf(file: string, name: string, seen = new Set<string>()): string | undefined {
+    if (!this.tree.has(file)) return `missing:${file}`;
+    if (name === "*") return `${file}#*`;
+    const k = `${file}#${name}`;
+    if (seen.has(k)) return undefined;
+    seen.add(k);
+    const info = this.info(file);
+    const local = info.exportsLocal.get(name);
+    if (local !== undefined) return this.localDef(file, local, seen);
+    const re = info.reexports.get(name);
+    if (re) return this.importedDef(file, re.spec, re.imported, seen);
+    for (const spec of info.starExports) {
+      const r = this.resolve(file, spec);
+      if ("path" in r) { const d = this.defOf(r.path, name, seen); if (d && !d.endsWith("?")) return d; }
+    }
+    return `${file}#${name}?`;
+  }
+  /** 파일 안 맨 위 이름이 가리키는 정의(선언·import를 따라감). 없으면 전역. */
+  localDef(file: string, local: string, seen = new Set<string>()): string {
+    const info = this.info(file);
+    if (info.decls.has(local)) return `${file}#${local}`;
+    const imp = info.imports.get(local);
+    if (imp) return this.importedDef(file, imp.spec, imp.imported, seen);
+    return `global:${local}`;
+  }
+  importedDef(file: string, spec: string, imported: string, seen = new Set<string>()): string {
+    const r = this.resolve(file, spec);
+    if ("external" in r) return `pkg:${spec}#${imported}`;
+    if ("missing" in r) return `missing:${spec}`;
+    return imported === "*" ? `${r.path}#*` : (this.defOf(r.path, imported, seen) ?? `${r.path}#${imported}?`);
+  }
+}
+
+// ---------- 이름 범위(옮긴 선언 안의 자유 이름, 모듈을 읽을 때 쓰는 이름) ----------
+
+interface Scope { names: Set<string>; parent?: Scope }
+interface RefCtx { inType: boolean; inFn: boolean }
+type OnRef = (name: string, ctx: RefCtx) => void;
+
+const bound = (name: string, s: Scope | undefined): boolean => { for (let c = s; c; c = c.parent) if (c.names.has(name)) return true; return false; };
+
+/** var·함수 선언(함수 맨 위)처럼 끌어올려지는 이름. 안쪽 함수로는 들어가지 않는다. */
+function hoisted(stmts: AstNode[]): string[] {
+  const out: string[] = [];
+  const visit = (n: AstNode | null | undefined) => {
+    if (!n || typeof n !== "object") return;
+    if (n.type === "VariableDeclaration" && n.kind === "var") out.push(...n.declarations.flatMap((d: AstNode) => patternNames(d.id)));
+    if (/Function|Class/.test(n.type) && n.type !== "VariableDeclaration") return;
+    for (const v of Object.values(n)) {
+      if (Array.isArray(v)) v.forEach((c) => c && typeof c.type === "string" && visit(c));
+      else if (v && typeof v === "object" && typeof (v as AstNode).type === "string") visit(v as AstNode);
+    }
+  };
+  stmts.forEach(visit);
+  return out;
+}
+
+/** 블록 맨 위의 let·const·class·function·타입 선언 이름. */
+function lexical(stmts: AstNode[]): string[] {
+  return stmts.flatMap((st) => {
+    const inner = st.type === "ExportNamedDeclaration" && st.declaration ? st.declaration : st;
+    if (inner.type === "VariableDeclaration") return inner.kind === "var" ? [] : inner.declarations.flatMap((d: AstNode) => patternNames(d.id));
+    if (["FunctionDeclaration", "ClassDeclaration", "TSInterfaceDeclaration", "TSTypeAliasDeclaration", "TSEnumDeclaration"].includes(inner.type)) return inner.id ? [inner.id.name] : [];
+    return [];
+  });
+}
+
+const typeParamNames = (tp: AstNode | null | undefined): string[] => (tp?.params ?? []).map((p: AstNode) => (p.name?.type === "Identifier" ? p.name.name : nameOf(p.name)));
+const leftmost = (n: AstNode): AstNode | undefined => (n.type === "Identifier" || n.type === "JSXIdentifier" ? n : n.left ? leftmost(n.left) : n.object ? leftmost(n.object) : undefined);
+
+function inferNames(n: AstNode | null | undefined, out: string[] = []): string[] {
+  if (!n || typeof n !== "object") return out;
+  if (n.type === "TSInferType") out.push(n.typeParameter?.name?.name ?? nameOf(n.typeParameter?.name));
+  for (const v of Object.values(n)) {
+    if (Array.isArray(v)) v.forEach((c) => c && typeof c.type === "string" && inferNames(c, out));
+    else if (v && typeof v === "object" && typeof (v as AstNode).type === "string") inferNames(v as AstNode, out);
+  }
+  return out;
+}
+
+/** 노드 안에서 쓴 이름(그 노드 안에서 묶이지 않은 것)을 onRef로 낸다. inType: 타입 자리, inFn: 함수 몸통 안(모듈을 읽을 때 돌지 않음). */
+export function visitRefs(node: AstNode | null | undefined, scope: Scope | undefined, ctx: RefCtx, onRef: OnRef): void {
+  if (!node || typeof node !== "object") return;
+  const v = (n: AstNode | null | undefined, s: Scope | undefined = scope, c: RefCtx = ctx) => visitRefs(n, s, c, onRef);
+  const vs = (ns: (AstNode | null)[] | undefined, s: Scope | undefined = scope, c: RefCtx = ctx) => (ns ?? []).forEach((n) => v(n, s, c));
+  const typ = { ...ctx, inType: true };
+  const ref = (id: AstNode | undefined, c: RefCtx = ctx) => { if (id?.name && !bound(id.name, scope)) onRef(id.name, c); };
+  const child = (names: string[]): Scope => ({ names: new Set(names), parent: scope });
+  /** 묶는 자리(이름은 쓰지 않음): 기본값·계산 키·타입만 본다. */
+  const pattern = (p: AstNode | null | undefined, s: Scope | undefined, c: RefCtx) => {
+    if (!p) return;
+    switch (p.type) {
+      case "Identifier": v(p.typeAnnotation, s, { ...c, inType: true }); return;
+      case "ObjectPattern":
+        for (const q of p.properties as AstNode[]) {
+          if (q.type === "RestElement") pattern(q.argument, s, c);
+          else { if (q.computed) v(q.key, s, c); pattern(q.value, s, c); }
+        }
+        v(p.typeAnnotation, s, { ...c, inType: true });
+        return;
+      case "ArrayPattern": (p.elements as (AstNode | null)[]).forEach((e) => pattern(e, s, c)); v(p.typeAnnotation, s, { ...c, inType: true }); return;
+      case "RestElement": pattern(p.argument, s, c); v(p.typeAnnotation, s, { ...c, inType: true }); return;
+      case "AssignmentPattern": pattern(p.left, s, c); v(p.right, s, c); return;
+      case "TSParameterProperty": pattern(p.parameter, s, c); return;
+      default: v(p, s, c);
+    }
+  };
+  const fn = (n: AstNode) => {
+    const body: AstNode[] = n.body?.type === "BlockStatement" ? n.body.body : [];
+    const s: Scope = child([
+      ...(n.type === "FunctionExpression" && n.id ? [n.id.name] : []),
+      ...typeParamNames(n.typeParameters),
+      ...(n.params as AstNode[]).flatMap(patternNames),
+      ...hoisted(body),
+      ...lexical(body),
+    ]);
+    const inner = { ...ctx, inFn: true };
+    vs(n.typeParameters?.params, s, { ...inner, inType: true });
+    for (const p of n.params as AstNode[]) pattern(p, s, inner);
+    v(n.returnType, s, { ...inner, inType: true });
+    if (n.body?.type === "BlockStatement") vs(n.body.body, s, inner);
+    else v(n.body, s, inner);
+  };
+  switch (node.type) {
+    case "Identifier": ref(node); return;
+    case "Literal": case "TemplateElement": case "ThisExpression": case "Super": case "MetaProperty":
+    case "BreakStatement": case "ContinueStatement": case "TSImportType": case "JSXText": case "JSXClosingElement": case "JSXClosingFragment": case "JSXOpeningFragment":
+      return;
+    case "ImportDeclaration": case "ExportAllDeclaration": return;
+    case "ExportNamedDeclaration":
+      if (node.source) return;
+      if (node.declaration) v(node.declaration);
+      else for (const s of node.specifiers as AstNode[]) ref(s.local);
+      return;
+    case "MemberExpression": v(node.object); if (node.computed) v(node.property); return;
+    case "Property": if (node.computed) v(node.key); v(node.value); return;
+    case "LabeledStatement": v(node.body); return;
+    case "VariableDeclaration": for (const d of node.declarations as AstNode[]) { pattern(d.id, scope, ctx); v(d.init); } return;
+    case "FunctionDeclaration": case "FunctionExpression": case "ArrowFunctionExpression": fn(node); return;
+    case "TSDeclareFunction": case "TSDeclareMethod": {
+      const s = child([...typeParamNames(node.typeParameters), ...(node.params as AstNode[]).flatMap(patternNames)]);
+      for (const p of node.params as AstNode[]) pattern(p, s, typ);
+      v(node.returnType, s, typ);
+      return;
+    }
+    case "ClassDeclaration": case "ClassExpression": {
+      const s = child([...(node.id ? [node.id.name] : []), ...typeParamNames(node.typeParameters)]);
+      vs(node.typeParameters?.params, s, typ);
+      v(node.superClass, s);
+      v(node.superTypeArguments ?? node.superTypeParameters, s, typ);
+      vs(node.implements, s, typ);
+      vs(node.decorators, s);
+      for (const el of node.body.body as AstNode[]) {
+        if (el.computed) v(el.key, s);
+        vs(el.decorators, s);
+        if (el.type === "StaticBlock") { const b = { names: new Set([...lexical(el.body), ...hoisted(el.body)]), parent: s }; vs(el.body, b); continue; }
+        if (el.type === "TSIndexSignature") { v(el, s, typ); continue; }
+        v(el.typeAnnotation, s, typ);
+        if (el.value) v(el.value, s, el.type === "MethodDefinition" || el.type === "TSAbstractMethodDefinition" || !el.static ? { ...ctx, inFn: true } : ctx);
+      }
+      return;
+    }
+    case "BlockStatement": case "StaticBlock": vs(node.body, child([...lexical(node.body), ...(node.type === "StaticBlock" ? hoisted(node.body) : [])])); return;
+    case "ForStatement": case "ForInStatement": case "ForOfStatement": {
+      const decl = node.type === "ForStatement" ? node.init : node.left;
+      const s = child(decl?.type === "VariableDeclaration" && decl.kind !== "var" ? decl.declarations.flatMap((d: AstNode) => patternNames(d.id)) : []);
+      for (const [k, c] of Object.entries(node)) if (c && typeof c === "object" && k !== "start" && k !== "end") visitRefs(c as AstNode, s, ctx, onRef);
+      return;
+    }
+    case "CatchClause": { const s = child(patternNames(node.param)); pattern(node.param, s, ctx); v(node.body, s); return; }
+    case "SwitchStatement": { v(node.discriminant); const s = child(lexical((node.cases as AstNode[]).flatMap((c) => c.consequent))); for (const c of node.cases as AstNode[]) { v(c.test, s); vs(c.consequent, s); } return; }
+    case "TSTypeAnnotation": case "TSTypeParameterInstantiation": v(node.typeAnnotation ?? null, scope, typ); vs(node.params, scope, typ); return;
+    case "TSTypeReference": ref(leftmost(node.typeName), typ); v(node.typeArguments ?? node.typeParameters, scope, typ); return;
+    case "TSQualifiedName": ref(leftmost(node), typ); return;
+    case "TSTypeQuery": if (node.exprName?.type !== "TSImportType") ref(leftmost(node.exprName), typ); v(node.typeArguments, scope, typ); return;
+    case "TSInterfaceHeritage": case "TSClassImplements": ref(leftmost(node.expression), typ); v(node.typeArguments, scope, typ); return;
+    case "TSInterfaceDeclaration": { const s = child(typeParamNames(node.typeParameters)); vs(node.typeParameters?.params, s, typ); vs(node.extends, s, typ); v(node.body, s, typ); return; }
+    case "TSTypeAliasDeclaration": { const s = child([...typeParamNames(node.typeParameters), ...inferNames(node.typeAnnotation)]); vs(node.typeParameters?.params, s, typ); v(node.typeAnnotation, s, typ); return; }
+    case "TSTypeParameter": v(node.constraint, scope, typ); v(node.default, scope, typ); return;
+    case "TSPropertySignature": if (node.computed) v(node.key, scope, typ); v(node.typeAnnotation, scope, typ); return;
+    case "TSMethodSignature": case "TSCallSignatureDeclaration": case "TSConstructSignatureDeclaration": case "TSFunctionType": case "TSConstructorType": {
+      if (node.computed) v(node.key, scope, typ);
+      const s = child([...typeParamNames(node.typeParameters), ...(node.params as AstNode[]).flatMap(patternNames)]);
+      vs(node.typeParameters?.params, s, typ);
+      for (const p of node.params as AstNode[]) pattern(p, s, typ);
+      v(node.returnType, s, typ);
+      return;
+    }
+    case "TSIndexSignature": for (const p of node.parameters as AstNode[]) v(p.typeAnnotation, scope, typ); v(node.typeAnnotation, scope, typ); return;
+    case "TSMappedType": {
+      const key = node.typeParameter?.name?.name ?? node.key?.name;
+      const s = child(key ? [key] : []);
+      v(node.typeParameter?.constraint ?? node.constraint, s, typ);
+      v(node.nameType, s, typ);
+      v(node.typeAnnotation, s, typ);
+      return;
+    }
+    case "TSConditionalType": {
+      v(node.checkType, scope, typ);
+      const s = child(inferNames(node.extendsType));
+      v(node.extendsType, s, typ);
+      v(node.trueType, s, typ);
+      v(node.falseType, scope, typ);
+      return;
+    }
+    case "TSTypePredicate": v(node.typeAnnotation, scope, typ); return;
+    case "TSAsExpression": case "TSSatisfiesExpression": case "TSTypeAssertion": v(node.expression); v(node.typeAnnotation, scope, typ); return;
+    case "TSEnumDeclaration": for (const m of (node.body?.members ?? node.members ?? []) as AstNode[]) v(m.initializer); return;
+    case "TSModuleDeclaration": return;
+    case "JSXOpeningElement": {
+      const root = leftmost(node.name);
+      if (root && (node.name.type === "JSXMemberExpression" || /^[A-Z]/.test(root.name))) ref(root);
+      for (const a of node.attributes as AstNode[]) v(a.type === "JSXAttribute" ? a.value : a.argument);
+      v(node.typeArguments, scope, typ);
+      return;
+    }
+    default:
+      for (const [k, c] of Object.entries(node)) {
+        if (k === "start" || k === "end") continue;
+        if (Array.isArray(c)) c.forEach((x) => x && typeof x.type === "string" && v(x));
+        else if (c && typeof c === "object" && typeof (c as AstNode).type === "string") v(c as AstNode);
+      }
+  }
+}
+
+/** 맨 위 문장 하나의 자유 이름(타입 자리 포함). 문장이 선언하는 맨 위 이름도 모듈 이름으로 본다(묶지 않음). */
+function freeNames(st: AstNode): { all: Set<string>; evalTime: Set<string> } {
+  const all = new Set<string>();
+  const evalTime = new Set<string>();
+  visitRefs(st, undefined, { inType: false, inFn: false }, (name, c) => { all.add(name); if (!c.inType && !c.inFn) evalTime.add(name); });
+  return { all, evalTime };
+}
+
+/** 파일에서 값 자리로 쓴 이름(가림은 보지 않음, 넓게). */
+function valueNames(program: AstNode): Set<string> {
+  const out = new Set<string>();
+  for (const st of program.body as AstNode[]) if (!isImportLike(st)) visitRefs(st, undefined, { inType: false, inFn: false }, (n, c) => { if (!c.inType) out.add(n); });
+  return out;
+}
+
+const isRuntime = (st: AstNode): boolean => {
+  if (isImportLike(st)) return false;
+  const inner = (st.type === "ExportNamedDeclaration" || st.type === "ExportDefaultDeclaration") && st.declaration ? st.declaration : st;
+  if (inner.declare) return false;
+  if (st.type === "ExportNamedDeclaration" && !st.declaration) return false;
+  return !["TSInterfaceDeclaration", "TSTypeAliasDeclaration", "TSDeclareFunction", "TSModuleDeclaration", "TSExportAssignment", "TSNamespaceExportDeclaration", "TSImportEqualsDeclaration", "EmptyStatement"].includes(inner.type);
+};
+
+// ---------- 정규화한 AST ----------
+
+const SKIP_KEYS = new Set(["start", "end", "range", "loc", "raw"]);
+
+function normalize(node: unknown, str: (s: string) => string): unknown {
+  if (Array.isArray(node)) return node.map((n) => normalize(n, str));
+  if (!node || typeof node !== "object") return node;
+  const n = node as AstNode;
+  const out: Record<string, unknown> = {};
+  for (const [k, val] of Object.entries(n)) {
+    if (SKIP_KEYS.has(k)) continue;
+    if (n.type === "Literal" && k === "value" && typeof val === "string") out[k] = str(val);
+    else if (n.type === "TemplateElement" && k === "value" && val && typeof val === "object") out[k] = { cooked: str(String((val as { cooked?: string }).cooked ?? "")), raw: str(String((val as { raw?: string }).raw ?? "")) };
+    else out[k] = normalize(val, str);
+  }
+  return out;
+}
+
+const snippet = (text: string, n: AstNode) => text.slice(n.start, n.end).replace(/\s+/g, " ").slice(0, 160);
+
+// ---------- 검사 ----------
+
+export function checkMoves(before: Tree, after: Tree, moves: Moves, opts: Options = {}): Result {
+  const failures: string[] = [];
+  const notes: string[] = [];
+  const fail = (m: string) => failures.push(m);
+  const B = new TreeIndex(before, "앞");
+  const A = new TreeIndex(after, "뒤");
+  const inScope = (p: string) => isCode(p) && SCOPE.some((s) => p.startsWith(s)) && !(TOOL_FILES as readonly string[]).includes(p);
+  const only = (p: string) => !opts.only?.length || opts.only.some((s) => p.startsWith(s));
+  const files = moves.files;
+  const moved = !!opts.moved;
+  if (!moved && Object.keys(moves.decls).length) fail("decls(선언 옮김)는 --moved로만 봐요");
+
+  const mapFile = (p: string) => files[p] ?? p;
+  const mapDef = (d: string): string => {
+    if (moves.decls[d]) return moves.decls[d]!;
+    const m = /^(.*)#(.*)$/.exec(d);
+    if (!m || d.startsWith("pkg:") || d.startsWith("global:") || d.startsWith("missing:")) return d;
+    return `${mapFile(m[1]!)}#${m[2]}`;
+  };
+  const inverse = new Map(Object.entries(files).map(([o, n]) => [n, o]));
+
+  // 옛 경로 글 → 새 경로 글(확장자 있음·없음·.js)
+  const pathText = new Map<string, string>();
+  for (const [o, n] of Object.entries(files)) {
+    const stem = (p: string) => p.replace(/\.(tsx?|mts|jsx?|mjs)$/, "");
+    pathText.set(o, n);
+    pathText.set(stem(o), stem(n));
+    pathText.set(`${stem(o)}.js`, `${stem(n)}.js`);
+  }
+
+  // 옮긴 선언(파일#이름)
+  const declOut = new Map<string, Set<string>>();
+  const declIn = new Map<string, Set<string>>();
+  for (const [o, n] of Object.entries(moves.decls)) {
+    const [of, on] = o.split("#") as [string, string];
+    const [nf, nn] = n.split("#") as [string, string];
+    if (!of || !on || !nf || !nn) { fail(`decls 칸 모양이 틀렸어요: ${o} → ${n}("파일#이름")`); continue; }
+    if (on !== nn) fail(`옮긴 선언의 이름이 바뀌었어요: ${o} → ${n}`);
+    (declOut.get(of) ?? declOut.set(of, new Set()).get(of)!).add(on);
+    (declIn.get(nf) ?? declIn.set(nf, new Set()).get(nf)!).add(nn);
+  }
+
+  // 견줄 짝: [옛 경로, 새 경로]
+  const pairs: [string | null, string | null][] = [];
+  const pairedNew = new Set<string>();
+  for (const [o, n] of Object.entries(files)) {
+    if (!before.has(o)) fail(`대응표 files의 옛 파일이 앞 커밋에 없어요: ${o}`);
+    if (!after.has(n)) fail(`대응표 files의 새 파일이 뒤 커밋에 없어요: ${n}`);
+    if (after.has(o) && !Object.values(files).includes(o)) fail(`옮겼다는 옛 파일이 뒤 커밋에도 남아 있어요: ${o}`);
+    if (before.has(n) && !files[n]) fail(`옮겨 간 새 파일이 앞 커밋에 이미 있어요: ${n}`);
+  }
+  for (const p of [...before.keys()].filter(inScope).sort()) {
+    if (files[p]) { pairs.push([p, files[p]!]); pairedNew.add(files[p]!); continue; }
+    if (after.has(p)) { pairedNew.add(p); if (before.get(p) !== after.get(p)) pairs.push([p, p]); continue; }
+    pairs.push([p, null]);
+  }
+  for (const p of [...after.keys()].filter(inScope).sort()) {
+    if (pairedNew.has(p) || Object.values(files).includes(p)) continue;
+    pairs.push([null, p]);
+  }
+  for (const n of moves.new) if (before.has(n)) fail(`new의 파일이 앞 커밋에 이미 있어요: ${n}`);
+
+  const textFiles = new Set(moves.text);
+  for (const [o, n] of pairs) {
+    if (!only((n ?? o)!)) continue;
+    if (n === null) {
+      // 지움: 대응표 files에 없으면 실패. --moved에서는 선언을 모두 decls로 옮긴 파일만 된다
+      const out = declOut.get(o!);
+      const info = B.info(o!);
+      const rest = info.body.filter((st) => !isImportLike(st) && !declaredBy(st).names.every((x) => out?.has(x)));
+      if (!(moved && out && rest.length === 0)) fail(`대응표에 없는 지움: ${o}`);
+      continue;
+    }
+    if (o === null) {
+      if (!moves.new.includes(n)) {
+        if (!(moved && declIn.has(n))) { fail(`대응표에 없는 새 파일: ${n}`); continue; }
+      }
+      const info = A.info(n);
+      const ins = declIn.get(n);
+      const bad = info.body.filter((st) => !(st.type === "ExportNamedDeclaration" && st.source) && st.type !== "ExportAllDeclaration" && !(moved && ins && declaredBy(st).names.length > 0 && declaredBy(st).names.every((x) => ins.has(x))) && st.type !== "ImportDeclaration");
+      if (moves.new.includes(n) && info.body.some((st) => st.type === "ImportDeclaration")) fail(`새 입구 ${n}에 import가 있어요. 입구는 export … from 문장만 둬요`);
+      for (const st of bad) fail(`새 파일 ${n}에 export … from이 아닌 문장이 있어요: ${snippet(after.get(n)!, st)}`);
+      continue;
+    }
+    comparePair(o, n);
+  }
+
+  function comparePair(o: string, n: string) {
+    const oldText = before.get(o)!;
+    const newText = after.get(n)!;
+    const oi = B.info(o);
+    const ni = A.info(n);
+    const outNames = declOut.get(o) ?? new Set<string>();
+    const inNames = declIn.get(n) ?? new Set<string>();
+    const keep = (names: Set<string>, side: string, file: string) => (st: AstNode) => {
+      if (isImportLike(st)) return false;
+      const d = declaredBy(st).names;
+      const hit = d.filter((x) => names.has(x));
+      if (hit.length && hit.length !== d.length) fail(`${side} ${file}: 문장 하나가 선언하는 이름(${d.join("·")}) 가운데 일부만 옮겼어요`);
+      return hit.length === 0;
+    };
+    // (1) import가 아닌 문장
+    const strOld = (s: string) => {
+      if (textFiles.has(n)) return "@str";
+      if (s.startsWith("./") || s.startsWith("../")) { const r = B.resolve(o, s); if ("path" in r) return `@mod:${mapFile(r.path)}`; }
+      return pathText.get(s) ?? s;
+    };
+    const strNew = (s: string) => {
+      if (textFiles.has(n)) return "@str";
+      if (s.startsWith("./") || s.startsWith("../")) { const r = A.resolve(n, s); if ("path" in r) return `@mod:${r.path}`; }
+      return s;
+    };
+    const os = oi.body.filter(keep(outNames, "앞", o));
+    const ns = ni.body.filter(keep(inNames, "뒤", n));
+    const len = Math.max(os.length, ns.length);
+    for (let i = 0; i < len; i++) {
+      const a = os[i];
+      const b = ns[i];
+      if (a && b && JSON.stringify(normalize(a, strOld)) === JSON.stringify(normalize(b, strNew))) continue;
+      fail(`${n}${o !== n ? `(옛 ${o})` : ""}: import가 아닌 문장이 달라요(${i + 1}번째)\n  앞: ${a ? snippet(oldText, a) : "(없음)"}\n  뒤: ${b ? snippet(newText, b) : "(없음)"}`);
+      break;
+    }
+    if (textFiles.has(n)) {
+      const ol: string[] = [];
+      const nl: string[] = [];
+      collectStrings(B.ast(o), ol);
+      collectStrings(A.ast(n), nl);
+      const had = new Set(ol);
+      const changed = [...new Set(nl.filter((x) => !had.has(x)))];
+      if (changed.length) notes.push(`${n}: 바뀐 글자열(따로 확인): ${changed.map((x) => JSON.stringify(x)).join(", ")}`);
+    }
+    // (2) import마다 (이름, type, 정의한 자리)
+    const tuples = (I: TreeIndex, file: string, map: (d: string) => string) => {
+      const out: string[] = [];
+      for (const st of I.info(file).body) {
+        if (st.type === "ImportDeclaration") {
+          if (!st.specifiers.length) {
+            const r = I.resolve(file, st.source.value);
+            out.push(`side ${"path" in r ? mapFileFor(I, r.path) : st.source.value}`);
+          }
+          for (const s of st.specifiers as AstNode[]) {
+            const imported = s.type === "ImportDefaultSpecifier" ? "default" : s.type === "ImportNamespaceSpecifier" ? "*" : nameOf(s.imported);
+            const t = st.importKind === "type" || s.importKind === "type";
+            out.push(`import ${s.local.name}${t ? " type" : ""} = ${map(I.importedDef(file, st.source.value, imported))}`);
+          }
+        } else if (st.type === "ExportNamedDeclaration" && st.source) {
+          for (const s of st.specifiers as AstNode[]) {
+            const t = st.exportKind === "type" || s.exportKind === "type";
+            out.push(`export ${nameOf(s.exported)}${t ? " type" : ""} = ${map(I.importedDef(file, st.source.value, nameOf(s.local)))}`);
+          }
+        } else if (st.type === "ExportAllDeclaration") {
+          out.push(`export ${st.exported ? nameOf(st.exported) : "*"}${st.exportKind === "type" ? " type" : ""} = ${map(I.importedDef(file, st.source.value, "*"))}`);
+        }
+      }
+      return out.sort();
+    };
+    const mapFileFor = (I: TreeIndex, p: string) => (I === B ? mapFile(p) : p);
+    const ot = tuples(B, o, mapDef);
+    const nt = tuples(A, n, (d) => d);
+    // --moved: 옮긴 선언 때문에 생기는 import 차이만 된다. 뒤에 더한 import는 옮겨 나간 선언(이제 가져와 씀)이거나 옮겨 온 선언이 쓰는 이름,
+    // 앞에만 있던 import는 옮겨 나간 선언만 쓰던 이름이거나 옮겨 온 선언(이제 이 파일에 있음)이다. 가리키는 정의는 위 이름 검사가 본다.
+    const localOf = (t: string) => /^(?:import|export) (\S+)/.exec(t)?.[1] ?? "";
+    const freeOf = (I: TreeIndex, file: string, names: Set<string>) =>
+      new Set(I.info(file).body.filter((st) => declaredBy(st).names.some((x) => names.has(x))).flatMap((st) => [...freeNames(declaredBy(st).inner).all]));
+    const outFree = moved && outNames.size ? freeOf(B, o, outNames) : new Set<string>();
+    const inFree = moved && inNames.size ? freeOf(A, n, inNames) : new Set<string>();
+    const missingNew = nt.filter((t) => !ot.includes(t) && !(t.startsWith("import ") && (outNames.has(localOf(t)) || inFree.has(localOf(t)))));
+    const restUses = new Set(ni.body.filter((st) => !isImportLike(st) && !declaredBy(st).names.some((x) => inNames.has(x))).flatMap((st) => [...freeNames(st).all]));
+    const missingOld = ot.filter((t) => !nt.includes(t) && !(t.startsWith("import ") && ((outFree.has(localOf(t)) && !restUses.has(localOf(t))) || inNames.has(localOf(t)))));
+    if (missingNew.length || missingOld.length) {
+      fail(`${n}${o !== n ? `(옛 ${o})` : ""}: import가 가리키는 정의가 달라요\n${missingOld.map((t) => `  앞에만: ${t}`).join("\n")}${missingOld.length && missingNew.length ? "\n" : ""}${missingNew.map((t) => `  뒤에만: ${t}`).join("\n")}`);
+    }
+  }
+
+  if (moved) movedChecks();
+
+  function movedChecks() {
+    // 글: 옮긴 선언의 정규화한 AST
+    const findDecl = (I: TreeIndex, file: string, name: string) => I.tree.has(file) ? I.info(file).decls.get(name) ?? [] : [];
+    for (const [o, n] of Object.entries(moves.decls)) {
+      const [of, on] = o.split("#") as [string, string];
+      const [nf, nn] = n.split("#") as [string, string];
+      const a = findDecl(B, of, on);
+      const b = findDecl(A, nf, nn);
+      if (!a.length) { fail(`옮긴 선언이 앞 커밋에 없어요: ${o}`); continue; }
+      if (!b.length) { fail(`옮긴 선언이 뒤 커밋에 없어요: ${n}`); continue; }
+      const strO = (s: string) => pathText.get(s) ?? s;
+      const ja = JSON.stringify(a.map((d) => normalize(declaredBy(d.stmt).inner, strO)));
+      const jb = JSON.stringify(b.map((d) => normalize(declaredBy(d.stmt).inner, (s) => s)));
+      if (ja !== jb) fail(`옮긴 선언의 글이 달라요: ${o} → ${n}\n  앞: ${snippet(before.get(of)!, a[0]!.stmt)}\n  뒤: ${snippet(after.get(nf)!, b[0]!.stmt)}`);
+      // 이름이 가리키는 정의
+      for (const d of a) {
+        for (const name of freeNames(declaredBy(d.stmt).inner).all) {
+          const od = mapDef(B.localDef(of, name));
+          const nd = A.localDef(nf, name);
+          if (od !== nd) fail(`옮긴 선언 ${n}: 이름 \`${name}\`이 옮기기 전에는 ${od}, 뒤에는 ${nd}를 가리켜요`);
+        }
+      }
+    }
+    // 빠짐·더함: 바뀐 파일 전체의 맨 위 선언 모음
+    const oldDecls = new Set<string>();
+    const newDecls = new Set<string>();
+    for (const [o, n] of pairs) {
+      if (o) for (const name of B.info(o).decls.keys()) oldDecls.add(mapDef(`${o}#${name}`));
+      if (n) for (const name of A.info(n).decls.keys()) newDecls.add(`${n}#${name}`);
+    }
+    for (const d of oldDecls) if (!newDecls.has(d)) fail(`대응표에 없이 사라진 선언: ${d}`);
+    for (const d of newDecls) if (!oldDecls.has(d)) fail(`대응표에 없이 생긴 선언: ${d}`);
+    // 초기화 차례
+    const runtimeIndex = (I: TreeIndex, file: string) => I.info(file).body.filter(isRuntime);
+    for (const [o, n] of pairs) {
+      if (!n) continue;
+      const ins = declIn.get(n) ?? new Set<string>();
+      const nb = runtimeIndex(A, n);
+      const ob = o ? runtimeIndex(B, o).filter((st) => !declaredBy(st).names.some((x) => declOut.get(o)?.has(x))) : [];
+      const origin = new Map<AstNode, [string, number]>();
+      let k = 0;
+      for (const st of nb) {
+        const names = declaredBy(st).names;
+        if (names.length && names.every((x) => ins.has(x))) {
+          const src = Object.entries(moves.decls).find(([, v]) => v === `${n}#${names[0]}`)?.[0];
+          if (src) {
+            const [of, on] = src.split("#") as [string, string];
+            const idx = runtimeIndex(B, of).findIndex((s) => declaredBy(s).names.includes(on));
+            origin.set(st, [of, idx]);
+          }
+        } else if (o) {
+          const os = ob[k++];
+          if (os) origin.set(st, [o, runtimeIndex(B, o).indexOf(os)]);
+        }
+      }
+      const last = new Map<string, number>();
+      for (const st of nb) {
+        const or = origin.get(st);
+        if (!or) continue;
+        const prev = last.get(or[0]);
+        if (prev !== undefined && or[1] < prev) fail(`${n}: ${or[0]}에서 온 문장의 차례가 바뀌었어요(${snippet(after.get(n)!, st)})`);
+        last.set(or[0], or[1]);
+      }
+      // 모듈을 읽을 때 쓰는 이름은 앞쪽 선언·function 선언·import·전역이어야 한다
+      const info = A.info(n);
+      nb.forEach((st) => {
+        const mine = declaredBy(st).names.some((x) => ins.has(x));
+        for (const name of freeNames(st).evalTime) {
+          const ds = info.decls.get(name);
+          if (!ds) continue;
+          const declMoved = ins.has(name);
+          if (!mine && !declMoved) continue;
+          const at = info.body.indexOf(st);
+          if (ds.some((d) => d.kind === "function" || d.index < at)) continue;
+          if (ds.every((d) => d.kind === "type")) continue;
+          fail(`${n}: \`${name}\`을 선언하기 전에 읽어요(초기화 차례, ${snippet(after.get(n)!, st)})`);
+        }
+      });
+    }
+    // 실행 때 남는 값 import 그래프의 새 고리
+    const valueGraph = (I: TreeIndex) => {
+      const g = new Map<string, string[]>();
+      for (const f of [...I.tree.keys()].filter(inScope)) {
+        let used: Set<string>;
+        try { used = valueNames(I.ast(f)); } catch { continue; }
+        const out: string[] = [];
+        for (const st of I.info(f).body) {
+          let spec: string | undefined;
+          if (st.type === "ImportDeclaration" && st.importKind !== "type") {
+            const vals = (st.specifiers as AstNode[]).filter((s) => s.importKind !== "type");
+            if (!st.specifiers.length || vals.some((s) => used.has(s.local.name))) spec = st.source.value;
+          } else if (st.type === "ExportNamedDeclaration" && st.source && st.exportKind !== "type" && (st.specifiers as AstNode[]).some((s) => s.exportKind !== "type")) spec = st.source.value;
+          else if (st.type === "ExportAllDeclaration" && st.exportKind !== "type") spec = st.source.value;
+          if (spec === undefined) continue;
+          const r = I.resolve(f, spec);
+          if ("path" in r) out.push(r.path);
+        }
+        g.set(f, out);
+      }
+      return g;
+    };
+    const gb = valueGraph(B);
+    const ga = valueGraph(A);
+    const cb = components(gb);
+    const ca = components(ga);
+    const touched = new Set(pairs.flatMap(([, n]) => (n ? [n] : [])));
+    const groups = new Map<number, string[]>();
+    for (const [f, c] of ca) (groups.get(c) ?? groups.set(c, []).get(c)!).push(f);
+    // 입구(export … from만 있는 파일)는 고리를 새로 만들지 않으니 빼고 본다
+    const entryOnly = (f: string) => A.info(f).body.every((st) => (st.type === "ExportNamedDeclaration" && !!st.source) || st.type === "ExportAllDeclaration");
+    for (const members of groups.values()) {
+      if (members.length < 2 || !members.some((m) => touched.has(m))) continue;
+      const pre = members.filter((m) => !entryOnly(m)).map((m) => inverse.get(m) ?? (before.has(m) ? m : undefined));
+      if (pre.length < 2) continue;
+      const first = pre[0] === undefined ? undefined : cb.get(pre[0]);
+      if (first === undefined || pre.some((p) => p === undefined || cb.get(p) !== first)) {
+        fail(`옮긴 파일끼리 실행 때 값 import 고리가 새로 생겼어요: ${members.sort().join(" · ")}`);
+      }
+    }
+  }
+
+  return { failures, notes };
+}
+
+function collectStrings(n: unknown, out: string[]): void {
+  if (Array.isArray(n)) { n.forEach((c) => collectStrings(c, out)); return; }
+  if (!n || typeof n !== "object") return;
+  const node = n as AstNode;
+  if (node.type === "ImportDeclaration" || node.type === "ExportAllDeclaration" || (node.type === "ExportNamedDeclaration" && node.source)) return;
+  if (node.type === "Literal" && typeof node.value === "string") out.push(node.value);
+  for (const [k, v] of Object.entries(node)) if (k !== "start" && k !== "end") collectStrings(v, out);
+}
+
+/** 강하게 이어진 묶음 번호(크기 1이고 제 고리 없는 것도 번호를 받는다). */
+function components(g: Map<string, string[]>): Map<string, number> {
+  const index = new Map<string, number>();
+  const low = new Map<string, number>();
+  const onStack = new Set<string>();
+  const stack: string[] = [];
+  const comp = new Map<string, number>();
+  let counter = 0;
+  let id = 0;
+  for (const start of g.keys()) {
+    if (index.has(start)) continue;
+    const work: { n: string; i: number }[] = [{ n: start, i: 0 }];
+    index.set(start, counter); low.set(start, counter); counter++; stack.push(start); onStack.add(start);
+    while (work.length) {
+      const top = work[work.length - 1]!;
+      const succ = g.get(top.n) ?? [];
+      if (top.i < succ.length) {
+        const m = succ[top.i++]!;
+        if (!index.has(m)) { index.set(m, counter); low.set(m, counter); counter++; stack.push(m); onStack.add(m); work.push({ n: m, i: 0 }); }
+        else if (onStack.has(m)) low.set(top.n, Math.min(low.get(top.n)!, index.get(m)!));
+        continue;
+      }
+      work.pop();
+      if (work.length) { const p = work[work.length - 1]!.n; low.set(p, Math.min(low.get(p)!, low.get(top.n)!)); }
+      if (low.get(top.n) === index.get(top.n)) { let m: string; do { m = stack.pop()!; onStack.delete(m); comp.set(m, id); } while (m !== top.n); id++; }
+    }
+  }
+  return comp;
+}
+
+// ---------- git ----------
+
+/** 커밋 하나의 파일(견주는 곳의 코드 파일과 대응표). */
+export function gitTree(root: string, ref: string): Tree {
+  const names = execFileSync("git", ["-C", root, "ls-tree", "-r", "-z", "--name-only", ref], { maxBuffer: 1 << 28 })
+    .toString("utf8").split("\0").filter((p) => p && ((isCode(p) && SCOPE.some((s) => p.startsWith(s))) || (p.startsWith(MOVES_DIR) && p.endsWith(".json"))));
+  const out = execFileSync("git", ["-C", root, "cat-file", "--batch"], { input: names.map((n) => `${ref}:${n}`).join("\n") + "\n", maxBuffer: 1 << 30 });
+  const tree: Tree = new Map();
+  let pos = 0;
+  for (const name of names) {
+    const nl = out.indexOf(10, pos);
+    const header = out.subarray(pos, nl).toString("utf8");
+    const size = Number(header.split(" ")[2]);
+    if (!Number.isFinite(size)) throw new Error(`git cat-file이 ${name}를 못 읽었어요: ${header}`);
+    tree.set(name, out.subarray(nl + 1, nl + 1 + size).toString("utf8"));
+    pos = nl + 1 + size + 1;
+  }
+  return tree;
+}
+
+export function runCli(root: string, args: string[]): Result {
+  const pos = args.filter((a, i) => !a.startsWith("--") && !["--moves", "--only"].includes(args[i - 1] ?? ""));
+  const [beforeRef, afterRef] = pos;
+  if (!beforeRef || !afterRef) throw new Error("쓰는 법: tsx scripts/check-moves.ts <앞 커밋> <뒤 커밋> [--moves <대응표>] [--moved] [--only <경로>]…");
+  const before = gitTree(root, beforeRef);
+  const after = gitTree(root, afterRef);
+  let movesPath = args[args.indexOf("--moves") + 1];
+  if (!args.includes("--moves")) {
+    const changed = [...after.keys()].filter((p) => p.startsWith(MOVES_DIR) && before.get(p) !== after.get(p));
+    if (changed.length !== 1) throw new Error(`두 커밋 사이에 새로 생기거나 바뀐 대응표가 하나여야 해요(${changed.length}개: ${changed.join(", ")}). --moves로 주세요`);
+    movesPath = changed[0];
+  }
+  const text = after.get(movesPath!);
+  if (text === undefined) throw new Error(`뒤 커밋에 대응표가 없어요: ${movesPath}`);
+  const only = args.flatMap((a, i) => (args[i - 1] === "--only" ? [a] : []));
+  const result = checkMoves(before, after, parseMoves(text), { moved: args.includes("--moved"), only });
+  result.notes.unshift(`대응표: ${movesPath}`);
+  return result;
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  const root = fileURLToPath(new URL("..", import.meta.url));
+  try {
+    const { failures, notes } = runCli(root, process.argv.slice(2));
+    for (const n of notes) console.log(n);
+    for (const f of failures) console.error(f);
+    if (failures.length) { console.error(`옮김 검사 실패 ${failures.length}개`); process.exit(1); }
+    console.log("옮김 검사 통과: import 경로만 달라졌어요");
+  } catch (e) {
+    console.error((e as Error).message);
+    process.exit(2);
+  }
+}

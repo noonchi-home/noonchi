@@ -1,0 +1,48 @@
+{
+  "from": "0a392c5",
+  "note": "0a392c5의 실제 import 줄(도메인 나누기 설계 3.3). 가짜 트리의 같은 자리에 이 줄을 넣으면 expect의 검사가 실패해야 한다.",
+  "cases": [
+    {
+      "file": "src/contract/events.ts",
+      "line": "import type { Mask } from \"../brain/seg.js\";",
+      "target": "src/brain/seg.ts",
+      "why": "계약이 밖을 가져옴",
+      "expect": ["contract src/contract/events.ts -> src/brain/seg.ts"]
+    },
+    {
+      "file": "src/layout/editor.ts",
+      "line": "import { compact, detectRooms, stripParticle } from \"../agent/search.js\";",
+      "target": "src/agent/search.ts",
+      "why": "배치 → 에이전트, 표에 없는 방향",
+      "expect": ["direction src/layout/editor.ts -> src/agent/search.ts", "inner src/layout/editor.ts -> src/agent/search.ts"]
+    },
+    {
+      "file": "src/world/state.ts",
+      "line": "import type { EngineFrame } from \"../observe/ring.js\";",
+      "target": "src/observe/ring.ts",
+      "why": "World State → 관찰 흐름, 거꾸로",
+      "expect": ["direction src/world/state.ts -> src/observe/ring.ts", "inner src/world/state.ts -> src/observe/ring.ts"]
+    },
+    {
+      "file": "src/agent/planTools.ts",
+      "line": "import type { Lesson } from \"../act/lessons.js\";",
+      "target": "src/act/lessons.ts",
+      "why": "에이전트 → 판단·검사·실행, 거꾸로(공용 표 아님)",
+      "expect": ["direction src/agent/planTools.ts -> src/act/lessons.ts", "inner src/agent/planTools.ts -> src/act/lessons.ts"]
+    },
+    {
+      "file": "src/phone/server.ts",
+      "line": "import { listenRetry } from \"../server/net.js\";",
+      "target": "src/server/net.ts",
+      "why": "실제 폰 → API 서버 런타임",
+      "expect": ["direction src/phone/server.ts -> src/server/net.ts", "inner src/phone/server.ts -> src/server/net.ts"]
+    },
+    {
+      "file": "src/server/home.ts",
+      "line": "import { ExecutionTracker } from \"../act/track.js\";",
+      "target": "src/act/track.ts",
+      "why": "입구가 아닌 안쪽 파일",
+      "expect": ["inner src/server/home.ts -> src/act/track.ts"]
+    }
+  ]
+}

@@ -14,7 +14,7 @@
     "dev": "tsx watch src/server/main.ts",
     "test": "vitest run && npm --prefix ui test",
     "typecheck": "tsc --noEmit",
-    "lint": "tsx scripts/lint-ui-copy.ts && tsx scripts/lint-ui-color.ts && tsx scripts/lint-ui-parts.ts && tsx scripts/lint-ui-type.ts",
+    "lint": "tsx scripts/lint-ui-copy.ts && tsx scripts/lint-ui-color.ts && tsx scripts/lint-ui-parts.ts && tsx scripts/lint-ui-type.ts && tsx scripts/lint-domains.ts",
     "tokens": "tsx scripts/design-tokens.ts",
     "demo": "tsx scripts/demo.ts",
     "mcp": "tsx src/mcp/server.ts",
@@ -41,6 +41,7 @@
   "devDependencies": {
     "@types/node": "^26.6.5",
     "@types/ws": "^8.18.2",
+    "rolldown": "^1.2.13",
     "typescript": "^7.0.2",
     "vitest": "^5.0.3",
     "yaml": "^2.9.1"
