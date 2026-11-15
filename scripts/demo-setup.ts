@@ -18,7 +18,7 @@ import { HistoryDb, historyTzMinutes } from "../src/history/db.js";
 import { REFLECT_TEXT } from "../src/history/labels.js";
 import { isDay } from "../src/history/summary.js";
 import { DEFAULT_TWIN_DIR, resolveTwinStudioDir } from "../src/model/devices.js";
-import { ServerLockError, acquireServerLock, serverLockPath, type HeldServerLock } from "../src/server/lock.js";
+import { ServerLockError, acquireServerLock, restoreNeeded, restoreNeededPath, serverLockPath, type HeldServerLock } from "../src/server/lock.js";
 import { resolveHome } from "../src/model/homes.js";
 import { loadScene } from "../src/model/scene.js";
 import { TASKS } from "../src/act/tasks.js";
@@ -47,6 +47,8 @@ export interface DemoDeps {
   env: Record<string, string | undefined>;
   log?: (line: string) => void;
   now?: () => number;
+  /** 항목 옮기기(기본 renameSync). 시험이 실패를 넣는다. */
+  rename?: (from: string, to: string) => void;
 }
 
 type RuleLine = { state: string; trigger: string; action: string };
@@ -57,6 +59,7 @@ const addDays = (day: string, n: number) => new Date(Date.parse(`${day}T00:00:00
 export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
   const log = deps.log ?? console.log;
   const now = deps.now ?? (() => Date.now());
+  const rename = deps.rename ?? renameSync;
   const arg = (k: string) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : undefined; };
   const has = (k: string) => argv.includes(k);
   const tz = historyTzMinutes(deps.env);
@@ -83,14 +86,23 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
   // 그 폴더의 서버 잠금(RUNTIME_DIR/server.lock.db, src/server/lock.ts)을 잡는다: 그 폴더를 쓰는 서버가 켜져 있으면(다른 포트여도) 잡지 못해 멈춘다.
   // 잡은 동안에는 서버가 그 폴더로 뜨지 못한다. 일이 끝나면 놓는다
   const holdFolder = (dir: string): HeldServerLock => {
+    let held: HeldServerLock;
     try {
-      return acquireServerLock(dir);
+      held = acquireServerLock(dir);
     } catch (e) {
       if (e instanceof ServerLockError) throw new DemoStop(`서버를 먼저 끄세요: 이 폴더를 쓰는 서버가 켜져 있어요(${dir})`);
       throw e;
     }
+    // 앞 --fresh가 옛 항목을 다 되돌리지 못한 폴더면 멈춘다
+    const unfinished = restoreNeeded(dir);
+    if (unfinished) {
+      held.release();
+      throw new DemoStop(unfinished);
+    }
+    return held;
   };
-  // --fresh: 잠금 파일(server.lock.db…)을 뺀 옛 항목을 <dir>.old-<시각>/으로 하나씩 옮긴다. 하나라도 못 옮기면(열린 파일 등) 옮긴 것을 되돌리고 멈춘다
+  // --fresh: 잠금 파일(server.lock.db…)을 뺀 옛 항목을 <dir>.old-<시각>/으로 하나씩 옮긴다. 하나라도 못 옮기면(열린 파일 등) 옮긴 것을 모두 되돌려 본다.
+  // 되돌리기는 하나가 실패해도 끝까지 하고, 그래도 못 돌린 것이 있으면 잠금을 쥔 채 표시 파일(RESTORE_NEEDED.json: 백업 위치·못 돌린 항목)을 남긴다
   const moveOldEntries = (dir: string) => {
     const lockFile = basename(serverLockPath(dir));
     const names = readdirSync(dir).filter((n) => !n.startsWith(lockFile));
@@ -100,13 +112,28 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
     const done: string[] = [];
     try {
       for (const n of names) {
-        renameSync(join(dir, n), join(old, n));
+        rename(join(dir, n), join(old, n));
         done.push(n);
       }
     } catch (e) {
-      for (const n of done.reverse()) renameSync(join(old, n), join(dir, n));
-      rmSync(old, { recursive: true, force: true });
-      throw new DemoStop(`옛 항목을 옮기지 못했어요(${dir}: ${(e as NodeJS.ErrnoException).code ?? (e as Error).message}). 그 폴더 파일을 연 프로그램을 끈 뒤 다시 하세요`);
+      const why = (e as NodeJS.ErrnoException).code ?? (e as Error).message;
+      const missing: string[] = [];
+      for (const n of done.reverse()) {
+        try {
+          rename(join(old, n), join(dir, n));
+        } catch {
+          missing.push(n);
+        }
+      }
+      if (!missing.length) {
+        rmSync(old, { recursive: true, force: true });
+        throw new DemoStop(`옛 항목을 옮기지 못했어요(${dir}: ${why}). 그 폴더 파일을 연 프로그램을 끈 뒤 다시 하세요`);
+      }
+      const marker = restoreNeededPath(dir);
+      writeFileSync(marker, `${JSON.stringify({ version: 1, backup: old, missing, at: new Date(now()).toISOString() }, null, 2)}
+`);
+      log(`옛 항목을 다 되돌리지 못했어요. 표시 파일: ${marker} (백업 ${old}, 못 돌린 항목 ${missing.join(", ")})`);
+      throw new DemoStop(restoreNeeded(dir)!);
     }
     log(`옛 항목을 옮겼어요: ${old}`);
   };

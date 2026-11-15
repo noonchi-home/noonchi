@@ -1,9 +1,9 @@
 // 시연 준비 명령(scripts/demo-setup.ts)과 장면 시작 위치(scripts/demo-start.ts). 서버는 시험 안의 가짜 HTTP 서버만 쓴다(실제 서버·PAM은 띄우지 않는다).
 import { spawn } from "node:child_process";
 import { createServer, type Server } from "node:http";
-import { existsSync, mkdtempSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, renameSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { FsmMemory } from "../src/brain/decision.js";
 import { HistoryDb } from "../src/history/db.js";
@@ -248,6 +248,39 @@ describe("서버가 꺼졌는지(--fresh·--scripted)", () => {
       db.close();
     }
   }, 120_000);
+
+  it("--fresh 되돌리기 중 하나가 실패해도 나머지는 돌려놓고, 못 돌린 것은 표시 파일(RESTORE_NEEDED.json)에 남긴다. 그 파일이 있으면 서버 시작과 준비 명령이 멈춘다", async () => {
+    const base = tmp();
+    const dir = join(base, "week");
+    await run(["week", "--dir", dir, "--api", CLOSED]);
+    const names = readdirSync(dir).filter((n) => !n.startsWith("server.lock.db")).sort();
+    expect(names.length).toBeGreaterThanOrEqual(3);
+    const first = names[0]!;
+    const last = names.at(-1)!;
+    // 앞으로 옮기기는 마지막 항목에서, 되돌리기는 첫 항목에서 실패한다(열린 파일처럼)
+    const busy = () => Object.assign(new Error("busy"), { code: "EBUSY" });
+    const rename = (from: string, to: string) => {
+      if (dirname(from) === dir && basename(from) === last) throw busy();
+      if (dirname(to) === dir && basename(to) === first) throw busy();
+      renameSync(from, to);
+    };
+    const logs: string[] = [];
+    await expect(demoSetup(["week", "--dir", dir, "--fresh", "--api", CLOSED], { env, now: () => NOW, log: (l) => logs.push(l), rename }))
+      .rejects.toThrow(/--fresh 복구가 덜 끝났어요/);
+    const old = join(base, readdirSync(base).find((n) => n.startsWith("week.old-"))!);
+    expect(readdirSync(old)).toEqual([first]);
+    for (const n of names.slice(1)) expect(existsSync(join(dir, n)), n).toBe(true);
+    const marker = join(dir, "RESTORE_NEEDED.json");
+    expect(JSON.parse(readFileSync(marker, "utf8"))).toMatchObject({ backup: old, missing: [first] });
+    expect(logs.join(" / ")).toContain(marker);
+    expect(lockFree(dir)).toBe(true);
+    await expect(startServer({ env: {
+      HUB: "memory", PORT: "0", RUNTIME_DIR: dir, REFLECT_AT: "off",
+      VLM_BASE_URL: "http://127.0.0.1:9/v1", PAM_URL: "http://127.0.0.1:9", OPENAI_BASE_URL: "http://127.0.0.1:9/v1",
+    }, log: () => {} })).rejects.toThrow(/--fresh 복구가 덜 끝났어요/);
+    await expect(run(["week", "--dir", dir, "--fresh", "--api", CLOSED])).rejects.toThrow(/--fresh 복구가 덜 끝났어요/);
+    await expect(run(["reflect", "--scripted", "--dir", dir, "--api", CLOSED])).rejects.toThrow(/--fresh 복구가 덜 끝났어요/);
+  }, 60_000);
 
   it.skipIf(process.platform !== "win32")("--fresh: 옛 항목 가운데 열린 파일이 있어 옮기지 못하면 옮긴 것을 되돌리고 멈춘다(Windows)", async () => {
     const base = tmp();

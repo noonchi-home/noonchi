@@ -24,7 +24,7 @@ import { KIND_LABELS } from "../model/mapping.js";
 import type { PipelineInject } from "../observe/pipeline.js";
 import { resolveTwinStudioDir, type TwinData } from "../model/devices.js";
 import { listHomes } from "../model/homes.js";
-import { acquireServerLock } from "./lock.js";
+import { acquireServerLock, restoreNeeded } from "./lock.js";
 import { KINDS } from "../model/kinds.js";
 import { checkKinds } from "../model/kinds-check.js";
 import { SetupError, SetupStore, effectiveSources, parsePairs, parseSources } from "../setup/store.js";
@@ -136,6 +136,12 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   // 이 런타임 폴더를 쓰는 서버라는 표시(RUNTIME_DIR/server.lock.db의 SQLite 배타 잠금, src/server/lock.ts). DB를 열기 전에 잡는다:
   // 같은 폴더를 쓰는 서버·시연 준비가 이미 있으면 여기서 멈춘다. 끌 때·시작이 실패할 때 놓고, 프로세스가 죽으면 OS가 푼다
   const lock = acquireServerLock(runtimeDir);
+  // 시연 준비 --fresh가 옛 항목을 다 되돌리지 못한 폴더면 DB를 열기 전에 멈춘다(파일이 두 폴더에 나뉘어 있다)
+  const unfinished = restoreNeeded(runtimeDir);
+  if (unfinished) {
+    lock.release();
+    throw new Error(unfinished);
+  }
   // 기록 DB(RUNTIME_DIR/noonchi.db)와 기록기. 집 묶음이 가전·관찰·판단·계획을 넘기고, 운영 모드는 여기서 넘긴다. 시작이 실패하면 닫는다
   let db: HistoryDb;
   try {

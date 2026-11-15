@@ -4,7 +4,7 @@
 // - 같은 파일이면 정션·심볼릭 링크·대소문자가 다른 경로로 열어도 같은 잠금이다.
 // - 시연 준비(scripts/demo-setup.ts)의 --fresh·reflect --scripted도 같은 잠금을 잡고 일이 끝날 때까지 쥔다.
 // 호스트와 컨테이너(다른 OS)가 같은 폴더를 함께 쓰면 두 OS의 파일 잠금이 서로 안 보일 수 있다(docs/reference.md).
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
@@ -16,6 +16,20 @@ export interface HeldServerLock {
 }
 
 export const serverLockPath = (runtimeDir: string): string => join(runtimeDir, "server.lock.db");
+
+/** 시연 준비 --fresh가 옛 항목을 다 되돌리지 못했을 때 남기는 표시 파일(백업 위치·못 돌린 항목). 있으면 서버·준비 명령이 멈춘다. */
+export const restoreNeededPath = (runtimeDir: string): string => join(runtimeDir, "RESTORE_NEEDED.json");
+
+/** 표시 파일이 있으면 멈출 까닭 글, 없으면 null. */
+export function restoreNeeded(runtimeDir: string): string | null {
+  const path = restoreNeededPath(runtimeDir);
+  if (!existsSync(path)) return null;
+  let backup = "";
+  try {
+    backup = String((JSON.parse(readFileSync(path, "utf8")) as { backup?: unknown }).backup ?? "");
+  } catch { /* 깨진 표시 파일도 표시로 본다 */ }
+  return `--fresh 복구가 덜 끝났어요: ${path}${backup ? ` (백업 ${backup})` : ""}. 백업의 항목을 이 폴더로 옮긴 뒤 표시 파일을 지우세요`;
+}
 
 /** SQLITE_BUSY·SQLITE_LOCKED: 다른 연결이 잠금을 쥐고 있다. */
 const busy = (e: unknown) => [5, 6].includes((e as { errcode?: number }).errcode ?? -1);
