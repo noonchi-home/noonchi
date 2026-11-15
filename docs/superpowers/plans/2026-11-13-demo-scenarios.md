@@ -985,8 +985,8 @@ export function needsPhone(plan: AgentPlan, approval: ApprovalWhy | null, device
 **겹침을 코드에서 본 결과(618b343):** 실행 추적은 계획을 하나만 돌린다(`src/act/track.ts` `private run: Run | null`). 새 계획이 오면 지금 계획을 먼저 닫아 그 hot을 끄기 안내 줄로 넘기고(`handOver`), 새 계획은 그 안내 때문에 미뤄진다(`tryStart`). 그래서 「B가 도는 중에 A가 닫혀 안내가 생기는」 길은 없다. B가 도는 중에 A 안내가 생기는 길은 다시 걸기(`rearmIfOn`)뿐이다. 그 가운데 B가 승인한 손 켜기는 승인 때 그 가전의 회차를 올리고 B hot에 넣으며 released를 지운다(`approvedHand`). 그래서 B 7번이 A가 쓰던 인덕션을 10분 안에 다시 켜도 A는 다시 걸리지 않는다. 남는 길은 B가 켜지 않은 A 가전이 10분 안에 다시 켜질 때뿐이다.
 
 **Files:**
-- Modify: `src/contract/phone.ts`(`offStep`, `isOffStep`), `src/act/track.ts`(`queueOff`의 step 모양·가전마다 안내 하나, `offPending`, 미룸을 needsPhone 계획만, 가전 계획 say 막기, 끄기 안내에 말 답 안 받기 `onHeard`), `scripts/video-check.ts`(`plannedClicks`가 `off:` 명령을 건너뜀)
-- Test: `tests/act-track.test.ts`, `tests/act-track-release.test.ts`, `tests/video-check.test.ts`, `tests/coach-e2e.test.ts`
+- Modify: `src/contract/phone.ts`(`offStep`, `isOffStep`), `src/act/track.ts`(`queueOff`의 step 모양·가전마다 안내 하나, `offPending`, 미룸을 needsPhone 계획만, 가전 계획 say 막기, 끄기 안내에 말 답 안 받기 `onHeard`, 기다리는 안내 소리 알림 `sayAloud`·`offTold`), `src/phone/server.ts`(`reply(text)`), `src/server/home.ts`(`sayAloud`·`offTold` 연결), `src/plan/labels.ts`(`CAUTION_TEXT.rearmed`, `SAY_TEXT.rearmed`), `src/act/say.ts`(`rearmed`), `scripts/video-check.ts`(`plannedClicks`가 `off:` 명령을 건너뜀)
+- Test: `tests/act-track.test.ts`, `tests/act-track-release.test.ts`, `tests/video-check.test.ts`, `tests/coach-e2e.test.ts`, `tests/phone-server.test.ts`, `tests/act-say.test.ts`, `tests/phone-lines.test.ts`, `ui/tests/phone-controller.test.ts`
 
 **Interfaces:**
 - Consumes: Task 11c-1(618b343)의 `releaseIfOff`·`cycleEnded`·`handOver`·`askToShow`·`rearmIfOn`·`queueOff`·`approvedHand`, 회차 `Cycle`(가전마다 `cycles`, `Run.onAt`이 같은 것을 가리킴), 끄기 안내 줄(`reminder`·`offQueue`·`nextReminder`), Task 11d의 `needsPhone`·`HeardAt`.
@@ -1002,6 +1002,15 @@ export const isOffStep = (step: string): boolean => step.startsWith("off:");
 // src/act/track.ts queueOff: 같은 가전 안내가 이미 떠 있거나 줄에 있으면 새로 넣지 않는다(가전마다 하나, 풀림은 가전 기준 releaseIfOff).
 /** 끄기 안내가 떠 있거나 줄에 남았는가. 참이면 needsPhone 계획의 첫 명령(승인 질문 포함)을 보내지 않는다. */
 private offPending(): boolean;
+// TrackerOptions: 명령 줄을 바꾸지 않고 붙은 폰에 소리로만 알린다(home.ts가 폰 서버 reply에 잇는다).
+sayAloud?: (text: string) => void;
+/** 줄에서 기다리는 끄기 안내를 마지막으로 소리로 알린 가전 이름과 시각(대시보드 말풍선). 없으면 null. */
+offTold(): { device: string; atMs: number } | null;
+// src/phone/server.ts PhoneServer: 있는 말의 답 메시지(PhoneTalkReply { type: "reply", text }, pending 없음)를 붙은 폰 모두에 보낸다(11d 판본이 맞는 폰만).
+//   폰은 이 메시지에 명령 줄을 건드리지 않고 소리로 읽는다(ui/src/phone/controller.ts onMessage reply → sayAloud). AR 화면에는 보이지 않고, AR 전 첫 화면의 답 줄(Alert)에만 남는다.
+reply(text: string): void;
+// src/plan/labels.ts
+// CAUTION_TEXT.rearmed = (label) => `${josa(label, "이/가")} 다시 켜졌어요. 꺼 주세요`   SAY_TEXT.rearmed = (device) => `${josa(device, "이/가")} 다시 켜졌어요.`
 ```
 - 차례: 명령 줄에는 하나만 뜬다. 가전이 둘이면 끄기 안내도 명령처럼 하나씩 차례로 띄운다(11c-1 그대로, 120초마다 줄 끝으로 돌림, 돌리기는 `nextReminder` 안에서).
 - 말: 지금 명령이 끄기 안내(`isOffStep`)면 말 「완료」·「다 했어」는 at이 그 안내여도 답으로 받지 않는다(들은 말로만 남김, 11c-1 그대로).
@@ -1011,7 +1020,8 @@ private offPending(): boolean;
 - 끄기 안내가 남아 있는 동안 폰이 필요한 계획(Task 11d `needsPhone`: 사람 단계·ask·승인 질문·위험 가전 단계·시간 초과 질문)은 시작하지 않고 기다린다(코디네이터 기본값). 실행 기록에 `EXEC_TEXT.deferred(가전)`(한 번), 대시보드 말풍선 카드에 `SAY_TEXT.offWait(가전)`. 안내가 다 풀리면 시작한다(`nextReminder` → `tryStart`).
 - 폰이 필요 없는 가전 계획은 그대로 돈다. 그 계획의 say 줄은 끄기 안내가 떠 있는 동안 명령 줄로 보내지 않는다(명령 줄에는 하나만, 실행 기록에는 남긴다).
 - 돌고 있는 계획 B가 승인한 손 켜기는 B의 회차다(618b343 `approvedHand` 그대로). 그 켜짐으로 닫힌 계획 A를 다시 걸지 않는다. 그 가전 안내가 줄에 남아 있었어도 승인을 그대로 받고 B hot이 이어 추적하며, B가 닫힐 때 같은 가전 안내를 또 넣지 않는다(가전마다 하나). 이미 켜져 있던 가전이면 그 켜기 단계는 지금처럼 시간 초과 질문으로 간다.
-- 그 밖의 까닭(B가 켜지 않은 A 가전이 10분 안에 다시 켜짐)으로 B가 도는 중에 A 안내가 생기면 B는 끝까지 그대로 간다. 막지도 닫지도 않는다. A 안내는 줄에서 기다렸다가 B가 닫히면 명령 줄에 뜬다(618b343 `nextReminder` 그대로: 진행 중·확인 중·승인 질문 중이면 띄우지 않음). 까닭: B를 닫으면 B가 켠 가전을 끄는 단계를 잃어 위험이 늘고, 단계 사이에 막으면 B의 끄기 단계까지 막힌다. 끝까지 가게 두면 B의 끄기 단계가 그대로 나가고 코드도 그대로다.
+- 그 밖의 까닭(B가 켜지 않은 A 가전이 10분 안에 다시 켜짐)으로 B가 도는 중에 A 안내가 생기면 B는 끝까지 그대로 간다. 막지도 닫지도 않고 명령 줄도 B 것 그대로다. A 안내는 줄에서 기다렸다가 B가 닫히면 명령 줄에 뜬다(618b343 `nextReminder` 그대로: 진행 중·확인 중·승인 질문 중이면 띄우지 않음). 까닭: B를 닫으면 B가 켠 가전을 끄는 단계를 잃어 위험이 늘고, 단계 사이에 막으면 B의 끄기 단계까지 막힌다.
+- 그 대신 기다리는 동안 있는 길로 바로 알린다. 다시 걸린 그때(`rearmIfOn`) 실제 폰에 `CAUTION_TEXT.rearmed(가전)`(「인덕션이 다시 켜졌어요. 꺼 주세요」)을 소리로만 보내고(`sayAloud` → 폰 서버 `reply`), 대시보드 말풍선 카드에 `SAY_TEXT.rearmed(가전)`(「인덕션이 다시 켜졌어요.」)을 20초(`SAY_DONE_MS`) 보인다(`offTold` → `sayLine`, 11c-1 `offWaiting`과 같은 길). 그 안내가 줄에서 기다리는 동안 `reminderTick`이 120초(`offHoldMs`)마다 같은 말을 다시 보낸다. B가 닫혀 명령 줄에 끄기 안내가 뜨면 소리 알림은 멈추고 지금처럼 명령 줄 안내가 읽힌다. 새 칸·새 메시지 종류는 없다. 폰 서버에 붙은 폰 모두에 `reply`를 보내는 함수 하나만 더한다(지금은 말을 건 폰에만 답으로 보낸다, `src/phone/server.ts` 225행).
 
 **영상 판정:** 지금은 `--done-after`가 모든 새 명령의 첫 단추를 누르고, `--done-on`은 글만 견준다. 끄기 안내 「인덕션을 꺼 주세요」는 라면 12번 명령 글과 같아 눌릴 수 있다. 그래서 `plannedClicks`는 step이 `off:`인 명령(`isOffStep`)에는 어떤 누르기도 예약하지 않는다(`--done-after`·`--done-on`·`--approve` 모두).
 
@@ -1020,12 +1030,13 @@ private offPending(): boolean;
   - 미룸: **「안내가 남은 동안 컵 치우기(사람 단계) 계획은 시작하지 않고 실행 기록 「인덕션 꺼짐 확인 전이라 새 일을 미룸」, 안내가 풀리면 첫 명령이 간다」**, **「같은 때 이미 승인된 에어컨 켜기(가전 단계만)는 바로 돌아 트윈 에어컨이 켜지고, 명령 줄의 끄기 안내는 그대로다」**, 「그 가전 계획의 say는 안내가 떠 있는 동안 명령 줄로 가지 않는다」.
   - B 자기 켜기: **「A 라면이 끝나 인덕션이 풀린 뒤 10분 안에 B 라면 7번이 인덕션을 다시 켜도 A 안내가 생기지 않고, 그 회차는 B 것이며 B가 12번 끄기까지 간다」**, 「A 안내가 줄에 남은 가전을 B가 승인해 켜면 승인을 받고, B가 켠 채 닫혀도 그 가전 안내는 하나만 남는다」.
   - B가 켜지 않은 A 가전: **「B가 수납장으로 가는 단계 중에 A의 전자레인지가 10분 안에 다시 켜지면 A 안내는 줄에서 기다리고 B는 단계 시간·끄기 단계까지 그대로 간다. B가 닫히면 A 안내가 명령 줄에 뜬다」**, 「B가 익기를 기다리는 중이어도 익기 시간이 그대로 흐른다」.
+  - 기다리는 동안 알림: **「B가 기다리기 중 A 인덕션이 다시 켜지면 명령 줄은 B 그대로이고, 폰 말하기(reply 「인덕션이 다시 켜졌어요. 꺼 주세요」)와 말풍선 줄 「인덕션이 다시 켜졌어요.」가 바로 나가며, 120초 뒤 다시 말하고, B가 닫히면 끄기 안내가 명령 줄에 뜬다」**, 「B 승인 질문을 기다리는 중이어도 같다」, 「말풍선 줄은 20초 뒤 B 줄로 돌아온다」, 「폰 서버 `reply(text)`는 판본이 맞는 붙은 폰 모두에 pending 없는 reply를 보내고 옛 탭에는 보내지 않는다」, 「폰은 reply를 받아도 명령 줄(command)이 그대로이고 그 글을 읽는다」(`ui/tests/phone-controller.test.ts`), 「`CAUTION_TEXT.rearmed`·`SAY_TEXT.rearmed` 글은 60자 아래, 화살표·괄호 없음」(`tests/phone-lines.test.ts`).
   - 영상 판정: 「`--done-after 3`에서도 step이 `off:`인 명령에는 누르기를 예약하지 않는다」, 「`--done-on 10:인덕션을 꺼 주세요`는 라면 12번 명령에만 눌리고 같은 글의 끄기 안내에는 안 눌린다」, 「`--approve`도 `off:` 명령에는 안 눌린다」.
   - 11c-1 시험 가운데 「안내가 남은 동안 새 계획을 미룬다」는 폰이 필요한 계획만으로 고친다. 「다른 계획이 도는 동안 생긴 안내는 그 계획이 끝난 뒤 뜬다」는 그대로 둔다.
-- [ ] **Step 2:** `npm run heavy -- npx vitest run tests/act-track.test.ts tests/act-track-release.test.ts tests/video-check.test.ts` → 실패 확인.
+- [ ] **Step 2:** `npm run heavy -- npx vitest run tests/act-track.test.ts tests/act-track-release.test.ts tests/video-check.test.ts tests/phone-server.test.ts tests/act-say.test.ts tests/phone-lines.test.ts`, `npm run heavy -- npm test --prefix ui -- phone-controller` → 실패 확인.
 - [ ] **Step 3:** 구현.
-- [ ] **Step 4:** 통과 확인, `tests/coach-e2e.test.ts`도. 구조 검사(`tests/act-track-release.test.ts`)는 그대로 통과해야 한다(안내를 지우는 곳이 `releaseIfOff`뿐).
-- [ ] **Step 5:** 커밋 `feat(act): send closed-plan off reminders as ordinary commands and defer only plans that need the phone`.
+- [ ] **Step 4:** 통과 확인, `tests/coach-e2e.test.ts`·`npm run lint`도. 구조 검사(`tests/act-track-release.test.ts`)는 그대로 통과해야 한다(안내를 지우는 곳이 `releaseIfOff`뿐).
+- [ ] **Step 5:** 커밋 `feat(act): send closed-plan off reminders as ordinary commands, defer only plans that need the phone and speak a re-armed reminder while another plan runs`.
 
 **시연 흐름에 주는 영향:** 노인 장면(전자레인지)은 끄기 do가 없고 7번이 `cycleEnded`(switch)로 끝나 그대로다(Task 12). 켜짐을 놓치면 7번 동안 부탁이 떠 가까이 비추면 끝난다. 라면 장면 12번은 카메라 켜짐 → 꺼짐(Task 11b)으로 넘어가야 hot이 풀린다. 「완료」·「다 했어」로 넘기면 끝난 뒤 부탁이 명령 줄에 남는다(그래서 시연 순서 7의 `--done-on`에는 12번 글을 넣지 않는다). 한 장면 안에서는 다른 계획과 겹치지 않는다.
 
@@ -1232,6 +1243,7 @@ export function microwaveSteps(ids: { microwave: string; waitS?: number /* wait 
 - PAM 계약 그대로: 「PAM 계약」 절, Task 13 시험 7.
 - Codex 1차 지적 9개: 1 Task 4 바꾸기 2·4, 2 「일주일을 시연 안에서 보이는 길」·Task 7·8, 3 Task 5 범위, 4 Task 2 행동 단위, 5 Task 6 API·Task 8 확인, 6 Task 8 `start`·Task 9 `--start-at`, 7 Task 11 `unbaked`, 8 Task 10 차례 쓰기, 9 Task 10 붙잡기·Task 9 `--tail`.
 - 서버 글 구조(T1~T4)에 맞춤: 「조사한 사실」 사람 단계 글 절, Task 12 표(글·끝 조건을 코드가 내는 값으로), 「라면 대본」 절, Task 13 시험 5·6.
+- Codex 29차 지적 1개: P1 Task 11c-2 B가 긴 기다리기·승인 대기에 있으면 다시 켜진 A 가전 안내가 B가 닫힐 때까지 전혀 가지 않음 → 명령 줄은 B 그대로 두고 있는 말의 답 메시지(reply)로 폰에 소리로만 바로 알리고 대시보드 말풍선 줄도 보이며, 120초마다 다시 알림(폰 서버에 reply 보내는 함수 하나만 더함).
 - Codex 28차 지적 2개: P1 Task 11c-2 B 자기 켜기가 A를 다시 걸어 B를 막음 → 돌고 있는 계획이 승인한 켜기는 그 계획 회차(618b343 `approvedHand`가 released를 지움), 그 밖의 까닭으로 B 도중 생긴 A 안내는 B를 끝까지 진행한 뒤 띄움, B 단계 사이 끼우기와 끄는 단계 예외(022c08a) 지움, 가전마다 안내 하나. P2 B 승인 질문을 같은 id로 다시 내는 일은 「안내 중 가전 켜기 승인은 받지 않음」 규칙을 지워 없어짐.
 - 코디네이터 결정: 끄는 단계 예외(2026-11-15): Task 11c-2에서 A 끄기 안내가 떠 있어도 B의 가전 끄기 단계(off·stop, 손 끄기)는 막지 않고 먼저 띄우며, 끝나면 A 안내를 다시 띄운다.
 - 사용자 결정: 안전 안내 자리를 만들지 않고 끄기 안내를 명령 줄로(2026-11-15): Task 11d에서 안전 안내 자리·Step 0 스케치를 빼고 이름을 「폰 답이 그 명령에만 가게」로, Task 11c-2는 끄기 안내를 보통 명령처럼 명령 줄로(step `off:<계획>:<가전>:<회차>`, 가전 둘이면 차례로, 안내 동안 폰이 필요한 계획만 미룸, 도는 계획 B에는 단계 사이에 끼움, 안내 중 가전을 켜는 B 승인은 안 받음, 영상 판정은 `off:` 명령을 안 누름). 겹칠 때 규칙은 코디네이터 기본값.
