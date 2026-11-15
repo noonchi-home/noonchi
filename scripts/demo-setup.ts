@@ -49,6 +49,8 @@ export interface DemoDeps {
   now?: () => number;
   /** 항목 옮기기(기본 renameSync). 시험이 실패를 넣는다. */
   rename?: (from: string, to: string) => void;
+  /** --fresh 표시 파일 쓰기(기본 writeFileSync). 시험이 실패를 넣는다. */
+  writeMarker?: (path: string, text: string) => void;
 }
 
 type RuleLine = { state: string; trigger: string; action: string };
@@ -60,6 +62,7 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
   const log = deps.log ?? console.log;
   const now = deps.now ?? (() => Date.now());
   const rename = deps.rename ?? renameSync;
+  const writeMarker = deps.writeMarker ?? ((path: string, text: string) => writeFileSync(path, text));
   const arg = (k: string) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : undefined; };
   const has = (k: string) => argv.includes(k);
   const tz = historyTzMinutes(deps.env);
@@ -101,16 +104,27 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
     }
     return held;
   };
-  // --fresh: 잠금 파일(server.lock.db…)을 뺀 옛 항목을 <dir>.old-<시각>/으로 하나씩 옮긴다. 하나라도 못 옮기면(열린 파일 등) 옮긴 것을 모두 되돌려 본다.
-  // 되돌리기는 하나가 실패해도 끝까지 하고, 그래도 못 돌린 것이 있으면 잠금을 쥔 채 표시 파일(RESTORE_NEEDED.json: 백업 위치·못 돌린 항목)을 남긴다
-  const moveOldEntries = (dir: string) => {
+  // --fresh: 잠금 파일(server.lock.db…)·표시 파일을 뺀 옛 항목을 <dir>.old-<시각>/으로 하나씩 옮긴다.
+  // 옮기기 전에 표시 파일(RESTORE_NEEDED.json: 백업 위치·옮길 항목)을 먼저 쓰고, 쓰지 못하면 아무것도 옮기지 않고 멈춘다.
+  // 표시 파일은 옮기기와 새로 쓰기가 다 끝났을 때(또는 옮기기가 실패해 다 되돌렸을 때)만 지운다. 그 전에는 서버·준비 명령이 그 폴더로 시작하지 않는다.
+  // 하나라도 못 옮기면 옮긴 것을 끝까지 되돌려 보고, 못 돌린 항목은 표시 파일에 적는다. 돌려준 값: 다 끝난 뒤 지울 표시 파일(옮길 것이 없으면 null)
+  const moveOldEntries = (dir: string): string | null => {
     const lockFile = basename(serverLockPath(dir));
-    const names = readdirSync(dir).filter((n) => !n.startsWith(lockFile));
-    if (!names.length) return;
+    const marker = restoreNeededPath(dir);
+    const names = readdirSync(dir).filter((n) => !n.startsWith(lockFile) && n !== basename(marker));
+    if (!names.length) return null;
     const old = `${dir}.old-${new Date(now()).toISOString().replace(/[-:]/g, "").replace(/\..*$/, "")}`;
-    mkdirSync(old);
+    const mark = (extra: Record<string, unknown> = {}) =>
+      writeMarker(marker, `${JSON.stringify({ version: 1, backup: old, entries: names, at: new Date(now()).toISOString(), ...extra }, null, 2)}\n`);
+    try {
+      mark();
+    } catch (e) {
+      rmSync(marker, { force: true });
+      throw new DemoStop(`표시 파일을 쓰지 못해 옮기지 않았어요(${marker}: ${(e as NodeJS.ErrnoException).code ?? (e as Error).message})`);
+    }
     const done: string[] = [];
     try {
+      mkdirSync(old);
       for (const n of names) {
         rename(join(dir, n), join(old, n));
         done.push(n);
@@ -127,15 +141,17 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
       }
       if (!missing.length) {
         rmSync(old, { recursive: true, force: true });
+        rmSync(marker, { force: true });
         throw new DemoStop(`옛 항목을 옮기지 못했어요(${dir}: ${why}). 그 폴더 파일을 연 프로그램을 끈 뒤 다시 하세요`);
       }
-      const marker = restoreNeededPath(dir);
-      writeFileSync(marker, `${JSON.stringify({ version: 1, backup: old, missing, at: new Date(now()).toISOString() }, null, 2)}
-`);
+      try {
+        mark({ missing });
+      } catch { /* 먼저 쓴 표시 파일(옮길 항목 전부)이 남아 있다 */ }
       log(`옛 항목을 다 되돌리지 못했어요. 표시 파일: ${marker} (백업 ${old}, 못 돌린 항목 ${missing.join(", ")})`);
       throw new DemoStop(restoreNeeded(dir)!);
     }
     log(`옛 항목을 옮겼어요: ${old}`);
+    return marker;
   };
   // --api 주소의 서버도 꺼져 있어야 한다: 연결을 거부할 때(ECONNREFUSED)만 꺼졌다고 본다. 답이 늦거나(시간 초과) 그 밖의 오류면 켜져 있을 수 있어 멈춘다
   const requireServerOff = async () => {
@@ -168,9 +184,10 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
     // 그 폴더 잠금을 끝까지 한 번도 놓지 않는다(그동안 서버가 이 폴더로 뜨지 못한다). --fresh는 폴더를 옮기지 않고 잠금을 쥔 채 옛 항목을 옮긴다
     const folder = holdFolder(dir);
     try {
+      let marker: string | null = null;
       if (fresh) {
         await requireServerOff();
-        moveOldEntries(dir);
+        marker = moveOldEntries(dir);
       }
       // 잠금을 잡은 뒤에 본다: 준비 명령 둘이 같은 폴더를 함께 돌려도 뒤쪽은 앞쪽이 만든 DB를 보고 멈춘다
       if (existsSync(dbPath)) throw new DemoStop(`기록 DB가 이미 있어요(${dbPath}). --fresh로 새로 시작하세요`);
@@ -192,6 +209,8 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
       } finally {
         db.close();
       }
+      // 옮기기와 새로 쓰기가 다 끝났다: 표시 파일을 지운다
+      if (marker) rmSync(marker, { force: true });
       log(`시연 폴더를 만들었어요: ${dir} (RUNTIME_DIR=${dir})`);
     } finally {
       folder.release();

@@ -249,6 +249,24 @@ describe("서버가 꺼졌는지(--fresh·--scripted)", () => {
     }
   }, 120_000);
 
+  it("--fresh는 옮기기 전에 표시 파일(RESTORE_NEEDED.json)을 먼저 쓴다: 쓰기가 실패하면 아무것도 옮기지 않고 멈추고, 옮기기·새로 쓰기가 다 끝나면 표시 파일이 남지 않는다", async () => {
+    const base = tmp();
+    const dir = join(base, "week");
+    const marker = join(dir, "RESTORE_NEEDED.json");
+    await run(["week", "--dir", dir, "--api", CLOSED]);
+    const before = readdirSync(dir).sort();
+    const denied = () => { throw Object.assign(new Error("denied"), { code: "EACCES" }); };
+    await expect(demoSetup(["week", "--dir", dir, "--fresh", "--api", CLOSED], { env, now: () => NOW, log: () => {}, writeMarker: denied }))
+      .rejects.toThrow(/표시 파일을 쓰지 못해 옮기지 않았어요/);
+    expect(readdirSync(base)).toEqual(["week"]);
+    expect(readdirSync(dir).sort()).toEqual(before);
+    const seen: boolean[] = [];
+    await demoSetup(["week", "--dir", dir, "--fresh", "--api", CLOSED], { env, now: () => NOW, log: (l) => { if (l.startsWith("옛 항목을 옮겼어요")) seen.push(existsSync(marker)); } });
+    expect(seen).toEqual([true]);
+    expect(existsSync(marker)).toBe(false);
+    expect(readdirSync(base).filter((n) => n.startsWith("week.old-"))).toHaveLength(1);
+  }, 60_000);
+
   it("--fresh 되돌리기 중 하나가 실패해도 나머지는 돌려놓고, 못 돌린 것은 표시 파일(RESTORE_NEEDED.json)에 남긴다. 그 파일이 있으면 서버 시작과 준비 명령이 멈춘다", async () => {
     const base = tmp();
     const dir = join(base, "week");
