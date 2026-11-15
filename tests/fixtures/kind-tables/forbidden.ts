@@ -11,6 +11,8 @@ export const ENTRIES = Object.fromEntries([["aircon", 1], ["fridge", 2]]); // �
 const kinds: DeviceKind[] = ["light"];
 export const MAPPED = Object.fromEntries(kinds.map((x) => [x, 1])); // 금지
 export const LIST = ["aircon", "fridge"]; // 금지
+export const MIXED = { aircon: 1, fridge: 2, other: 3 }; // 금지
+export const MIXED_LIST = ["aircon", "fridge", "other"]; // 금지
 export const FIXTURE = { deviceKind: "fridge" }; // 금지
 export const RULES = [{ kind: "light" }, { kind: "tv" }]; // 금지
 export function pick(kind: DeviceKind): number {

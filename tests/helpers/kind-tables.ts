@@ -27,6 +27,17 @@ export const TEMP_ALLOW: readonly { file: string; text: string; why: string }[] 
   { file: "src/thinq/appliance.ts", text: '} else if (spec.kind === "fridge") {', why: "Task 11r-2에서 어댑터로 옮기며 지움" },
 ];
 
+/** 종류·카메라 설비 이름이 키·글로 둘 이상 나와도 가전 종류 표가 아닌 표(파일·선언 이름과 까닭). object-keys·array-kinds 규칙에서만 뺀다. */
+export const TABLE_ALLOW: readonly { file: string; name: string; why: string }[] = [
+  { file: "src/world/vocab.ts", name: "CLASSES", why: "감지 종류(COCO) 낱말 표: 사람·물건·가구·가전 설비 종류가 함께 있다" },
+  { file: "src/world/vocab-doc.ts", name: "CLASS_DOC", why: "감지 종류(COCO) 낱말 표의 문서 글(계기 예)" },
+  { file: "scripts/demo-start.ts", name: "DEMO_STARTS", why: "시연 장면 이름 → 시작 위치 표(장면 이름 tv·microwave가 종류 이름과 겹친다)" },
+  { file: "src/sync/classes.ts", name: "LANDMARK_KEYS", why: "위치 맞추기 기준점 감지 종류(COCO) 목록" },
+  { file: "src/sync/landmarks.ts", name: "LANDMARK_TYPES", why: "기준점 감지 종류(COCO) → 트윈 type 표" },
+  { file: "src/plan/labels.ts", name: "PLACE_SHORT", why: "평면도 물건 트윈 type → 짧은 이름 표(가구 포함)" },
+  { file: "src/model/mapping.ts", name: "MODEL_KEY", why: "Matter 모델 → 요약 키 표(모델 이름이 종류 이름과 겹친다)" },
+];
+
 /** 종류 이름과 견주는 비교(compare-kind·array-kinds의 includes 꼴)를 허용하는 파일: 말 꾸밈 갈래(밝기·음량·냉방 모드 글, 제어·승인 길이 아니다). */
 export const COMPARE_ALLOW = ["src/agent/phrases.ts", "ui/src/bubbles/summary.ts"];
 
@@ -61,7 +72,7 @@ export function scannedFiles(kp: KindProject): string[] {
   return [...out].sort();
 }
 
-interface Names { kinds: Set<string>; fixtures: Set<string>; others: Set<string>; deviceKind: Type }
+interface Names { kinds: Set<string>; fixtures: Set<string>; deviceKind: Type }
 
 const literalValues = (t: Type | undefined): string[] => {
   if (!t) return [];
@@ -97,9 +108,7 @@ function names(kp: KindProject): Names & { checker: Checker; project: Project } 
       const d = find(vocab, (n) => n.kind === SyntaxKind.TypeAliasDeclaration && nameText((n as unknown as { name: Node }).name) === name);
       return literalValues(d ? checker.getTypeAtLocation((d as unknown as { name: Node }).name) : undefined);
     };
-    const fixtures = new Set(alias("FixtureClass"));
-    const all = alias("ClassKey");
-    return { kinds: new Set(literalValues(deviceKind)), fixtures, others: new Set(all.filter((c) => !fixtures.has(c))), deviceKind, checker, project };
+    return { kinds: new Set(literalValues(deviceKind)), fixtures: new Set(alias("FixtureClass")), deviceKind, checker, project };
   }
   throw new Error("src/hub/types.ts·src/world/vocab.ts를 읽지 못했어요");
 }
@@ -109,7 +118,7 @@ const KIND_TYPE_ANNOTATION = /\bRecord<\s*DeviceKind\b|\bDeviceKind\s*\[\s*\]|Ar
 
 /**
  * 한 파일의 종류별 표 자리. as: 이 파일을 그 저장소 경로에 있는 것처럼 본다(예제 파일 시험).
- * 규칙: type-record(Record<DeviceKind,…>·DeviceKind[] 값 목록 상수), object-keys(종류·카메라 설비 이름 키 둘 이상, 사람·물건·가구 감지 종류가 섞인 감지 종류 표는 뺀다),
+ * 규칙: type-record(Record<DeviceKind,…>·DeviceKind[] 값 목록 상수), object-keys(종류·카메라 설비 이름 키 둘 이상, TABLE_ALLOW 표는 뺀다),
  * computed-key(식 타입이 DeviceKind인 계산 키), from-entries(Object.fromEntries에 종류 이름 둘 이상 또는 DeviceKind 키 쌍), array-kinds(배열에 종류 이름 둘 이상),
  * device-kind(deviceKind에 글 값), compare-kind(종류 이름과 견주는 비교·switch case), kind-rules(kind: "<종류 이름>"가 든 배열).
  * 등록부(KINDS·KIND_ORDER)에서 만든 식은 통과한다.
@@ -197,6 +206,16 @@ export function findKindTables(kp: KindProject, file: string, opts: { as?: strin
     }
     return undefined;
   };
+  /** 그 자리를 품은 선언이 TABLE_ALLOW에 있는가. */
+  const tableAllowed = (node: Node): boolean => {
+    for (let p: Node | undefined = node; p; p = p.parent) {
+      if (p.kind === SyntaxKind.VariableDeclaration) {
+        const nm = nameText((p as unknown as { name?: Node }).name);
+        if (TABLE_ALLOW.some((a) => a.file === repoPath && a.name === nm)) return true;
+      }
+    }
+    return false;
+  };
   const compareOps = new Set([SyntaxKind.EqualsEqualsEqualsToken, SyntaxKind.ExclamationEqualsEqualsToken, SyntaxKind.EqualsEqualsToken, SyntaxKind.ExclamationEqualsToken]);
   const compareAllowed = COMPARE_ALLOW.includes(repoPath);
 
@@ -208,15 +227,10 @@ export function findKindTables(kp: KindProject, file: string, opts: { as?: strin
         break;
       }
       case SyntaxKind.ObjectLiteralExpression: {
-        // 키가 모두 종류·카메라 설비 이름이고 둘 이상. 다른 이름이 섞인 표(감지 종류·트윈 type·Matter 모델 표)와, 다른 유니언으로 키를 정한 표(Record<Model, …>)는 아니다
+        // 종류·카메라 설비 이름인 키가 둘 이상(다른 키가 섞여도). 가전 종류 표가 아닌 표는 TABLE_ALLOW로 뺀다
         const props = (node as unknown as { properties: readonly Node[] }).properties;
-        const keys = props.map(keyName);
-        const named = (k: string | undefined) => k !== undefined && (n.kinds.has(k) || n.fixtures.has(k));
-        if (keys.length < 2 || !keys.every(named) || fromRegistry(node)) break;
-        const ctx = checker.getContextualType(node as Parameters<Checker["getContextualType"]>[0]);
-        const ctxKeys = ctx ? checker.getPropertiesOfType(ctx).map((sym) => (sym as unknown as { name: string }).name) : [];
-        if (ctxKeys.length && !ctxKeys.every((k) => named(k))) break;
-        add(node, "object-keys");
+        const named = props.map(keyName).filter((k) => k !== undefined && (n.kinds.has(k) || n.fixtures.has(k)));
+        if (named.length >= 2 && !fromRegistry(node) && !tableAllowed(node)) add(node, "object-keys");
         break;
       }
       case SyntaxKind.ComputedPropertyName: {
@@ -242,10 +256,9 @@ export function findKindTables(kp: KindProject, file: string, opts: { as?: strin
         break;
       }
       case SyntaxKind.ArrayLiteralExpression: {
-        // 글 원소가 모두 종류 이름이고 둘 이상(감지 종류 목록처럼 다른 이름이 섞인 것은 아니다). 말 꾸밈 파일의 includes 꼴은 비교로 본다
+        // 종류 이름 글이 둘 이상(다른 글이 섞여도). 가전 종류 목록이 아닌 목록은 TABLE_ALLOW로 빼고, 말 꾸밈 파일의 includes 꼴은 비교로 본다
         const els = (node as unknown as { elements: readonly Node[] }).elements;
-        const strs = els.filter((e) => isStr(e));
-        if (strs.length >= 2 && strs.every((e) => kindStr(e)) && !compareAllowed && !fromRegistry(node)) add(node, "array-kinds");
+        if (els.filter((e) => kindStr(e)).length >= 2 && !compareAllowed && !fromRegistry(node) && !tableAllowed(node)) add(node, "array-kinds");
         const rules = els.filter((e) => e.kind === SyntaxKind.ObjectLiteralExpression
           && (e as unknown as { properties: readonly Node[] }).properties.some((p) => p.kind === SyntaxKind.PropertyAssignment && keyName(p) === "kind" && kindStr((p as unknown as { initializer: Node }).initializer)));
         if (rules.length) add(node, "kind-rules");
