@@ -2,6 +2,8 @@
 // jsdom은 영상을 틀지 못하므로 영상·JPEG 인코딩·2D 그림판은 대역(arDeps)으로 넣는다.
 // 지원은 바로 됨(http·WebXR 없어도), 소리 읽기·늘 듣기 없음, reset → start fixed → pose, 화면·엔진 프레임 헤더, 명령 시각 기록,
 // 맞춤 상태면 「여기서 시작」·시작 위치 모달 없음, 영상이 끝나면 프레임을 멈춘다. 단계 영상(step=)·go 단계 걷기·집기·놓기 대상 바라보기. video-math 표도 본다.
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPhoneController, type ControllerDeps, type ControllerDraw } from "../src/phone/controller";
 import { createVideoAr, videoParams } from "../src/phone/core/video-ar.js";
@@ -463,6 +465,16 @@ describe("영상 입력 모드: 명령 시각 기록·화면", () => {
     ]);
     expect(info.mock.calls.some((a) => String(a[0]).startsWith("[video]"))).toBe(true);
     expect((c as unknown as { view(): unknown }).view()).toBeTruthy();
+  });
+
+  it("docs/reference.md 영상 모드 설명은 단계 영상이 받는 종류(do 포함), 같은 칸의 차례 쓰기, 마지막 장면 붙잡기, 기록 칸(hold·pending·current)을 적는다", () => {
+    const doc = readFileSync(join(process.cwd(), "..", "docs", "reference.md"), "utf8");
+    const kinds = ["go", "pick", "place", "do"].filter((k) => videoParams(new URLSearchParams(`clip=a.mp4&step=${k}:cup:a.mp4`))?.steps.length === 1);
+    expect(kinds).toEqual(["go", "pick", "place", "do"]);
+    expect(doc).toContain(`(여러 개, 종류 ${kinds.join("·")})`);
+    expect(doc).toContain("같은 종류·낱말 칸이 여럿이면 적은 차례대로 쓴다");
+    expect(doc).toContain("단계 영상이 끝나면 마지막 장면을 붙잡는다");
+    expect(doc).toMatch(/window\.__noonchiVideo = \{ t0, ended, hold, commands: .*pending, current \}/);
   });
 
   it("지금 명령 줄의 명령(current)을 남기고, 그 명령이 지워지면 null로 둔다(영상 판정이 끄기 안내가 남았는지 본다)", async () => {
