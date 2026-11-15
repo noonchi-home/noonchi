@@ -21,8 +21,6 @@ export interface ClassEntry {
   facets: readonly Facet[];
   /** 같은 물체로 볼 거리(m). 없으면 World State 기본값(0.25). */
   identityM?: number;
-  /** 같은 방에 있는 트윈 가전 종류(fixture). */
-  deviceKind?: string;
 }
 
 const OBJ = ["place", "use"] as const;
@@ -61,12 +59,12 @@ export const CLASSES = {
   cake: { label: "케이크", role: "object", coco: { 55: "cake" }, minScore: 0.5, facets: ["place"] },
   cat: { label: "고양이", role: "object", coco: { 15: "cat" }, minScore: 0.5, facets: ["place"], identityM: 1.5 },
   dog: { label: "개", role: "object", coco: { 16: "dog" }, minScore: 0.5, facets: ["place"], identityM: 1.5 },
-  tv: { label: "TV", role: "fixture", coco: { 62: "tv" }, minScore: 0.5, facets: ["screen"], deviceKind: "tv" },
-  refrigerator: { label: "냉장고", role: "fixture", coco: { 72: "refrigerator" }, minScore: 0.5, facets: ["open"], deviceKind: "fridge" },
-  microwave: { label: "전자레인지", role: "fixture", coco: { 68: "microwave" }, minScore: 0.5, facets: ["open", "use"], deviceKind: "microwave" },
+  tv: { label: "TV", role: "fixture", coco: { 62: "tv" }, minScore: 0.5, facets: ["screen"] },
+  refrigerator: { label: "냉장고", role: "fixture", coco: { 72: "refrigerator" }, minScore: 0.5, facets: ["open"] },
+  microwave: { label: "전자레인지", role: "fixture", coco: { 68: "microwave" }, minScore: 0.5, facets: ["open", "use"] },
   oven: { label: "오븐", role: "fixture", coco: { 69: "oven" }, minScore: 0.5, facets: ["open", "use"] },
   toaster: { label: "토스터", role: "fixture", coco: { 70: "toaster" }, minScore: 0.5, facets: ["use"] },
-  sink: { label: "싱크대", role: "fixture", coco: { 71: "sink" }, minScore: 0.5, facets: ["use"], deviceKind: "valve" },
+  sink: { label: "싱크대", role: "fixture", coco: { 71: "sink" }, minScore: 0.5, facets: ["use"] },
   chair: { label: "의자", role: "scene", coco: { 56: "chair" }, minScore: 1, facets: [] },
   couch: { label: "소파", role: "scene", coco: { 57: "couch" }, minScore: 1, facets: [] },
   potted_plant: { label: "화분", role: "scene", coco: { 58: "potted plant" }, minScore: 1, facets: [] },
@@ -214,19 +212,13 @@ export const DEVICE_STATES = {
 
 export type DeviceStateKey = keyof typeof DEVICE_STATES;
 
-/** 가전 종류마다 바꿔 쓰는 글(세탁기 작동 멈춤 → 세탁 멈춤). 트윈 신호는 running 참·거짓뿐이라 끝까지 돈 것과 중간에 끈 것을 가르지 못해 「멈춤」이다.
- *  식기세척기 멈춤은 출처 규칙대로 이용 가능(docs/provenance.md). */
-export const DEVICE_TEXT: Readonly<Record<string, Partial<Record<DeviceStateKey, { label?: string; became?: string }>>>> = {
-  washer: { running: { became: "세탁 시작" }, stopped: { became: "세탁 멈춤" } },
-  dryer: { running: { became: "건조 시작" }, stopped: { became: "건조 멈춤" } },
-  dishwasher: { running: { became: "세척 시작" }, stopped: { label: "이용 가능", became: "세척 멈춤" } },
-  vacuum: { running: { became: "청소 시작" }, stopped: { became: "청소 멈춤" } },
-};
+// 가전 종류마다 바꿔 쓰는 글(세탁기 작동 멈춤 → 세탁 멈춤)은 가전 종류 등록부(src/model/kinds.ts stateText)에 있다. 트윈 신호는 running 참·거짓뿐이라
+// 끝까지 돈 것과 중간에 끈 것을 가르지 못해 「멈춤」이다.
 
-/** 시간이 지나야 나는 가전 사건: 그 상태가 afterMs 넘게 이어지면 한 번. */
+/** 시간이 지나야 나는 가전 사건: 그 상태가 afterMs 넘게 이어지면 한 번. 사건이 나는 가전 종류는 등록부(src/model/kinds.ts longEvents)에 있다. */
 export const DEVICE_LONG = {
-  door_open_long: { state: "door_open", kinds: ["fridge", "lock"], afterMs: 60_000, label: "문이 1분 넘게 열림" },
-} as const satisfies Record<string, { state: DeviceStateKey; kinds: readonly string[]; afterMs: number; label: string }>;
+  door_open_long: { state: "door_open", afterMs: 60_000, label: "문이 1분 넘게 열림" },
+} as const satisfies Record<string, { state: DeviceStateKey; afterMs: number; label: string }>;
 export type DeviceLongKey = keyof typeof DEVICE_LONG;
 
 // ── 카메라로 맞추는 가전 상태 ──
@@ -242,16 +234,7 @@ export interface SightRule {
   absent?: string | boolean;
 }
 
-/** 가전 설비 종류 → 카메라로 맞추는 트윈 가전 상태(CLASSES deviceKind 종류의 가전). 오븐·토스터는 트윈 가전 종류가 없어 맞추지 않는다. */
-export const SIGHT = {
-  tv: [{ facet: "screen", attr: "power", values: { screen_on: "on", screen_off: "off" } }],
-  refrigerator: [{ facet: "open", attr: "door", values: { open: "open", closed: "closed" } }],
-  microwave: [
-    { facet: "use", attr: "power", values: { in_use: "on" }, absent: "off" },
-    { facet: "open", attr: "door", values: { open: "open", closed: "closed" } },
-  ],
-  sink: [{ facet: "use", attr: "faucet", values: { water_running: "on" }, absent: "off" }],
-} as const satisfies Partial<Record<FixtureClass, readonly SightRule[]>>;
+// 가전 설비 종류 → 카메라로 맞추는 트윈 가전 상태(규칙 SightRule)는 가전 종류 등록부(src/model/kinds.ts camera)에 있다. 오븐·토스터는 트윈 가전 종류가 없어 맞추지 않는다.
 
 /** 카메라 상태 안정: 같은 가전·속성에서 같은 값이 연속 frames번(엔진 프레임 2초면 2장) 이어야 넘긴다. 앞 값과 withinMs 넘게 떨어지면 처음부터 센다. */
 export const SIGHT_STABLE = { frames: 2, withinMs: 4000 } as const;

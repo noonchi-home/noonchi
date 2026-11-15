@@ -2,32 +2,11 @@
 // 순서: 방 찾기(긴 이름 우선) → 방만 말했으면 그 방 전체 → 이름 구절 일치 → 낱말(이름·종류 동의어) AND 일치.
 
 import type { DeviceKind, DeviceSpec, RoomSpec } from "../hub/types.js";
+import { KINDS, mapEntries } from "../model/kinds.js";
 import { KIND_LABELS } from "../model/mapping.js";
 
-/** 종류별로 사람들이 부르는 말(소문자, 띄어쓰기 없음). */
-export const KIND_SYNONYMS: Record<DeviceKind, string[]> = {
-  light: ["불", "조명", "등", "전등", "전구", "램프", "라이트"],
-  plug: ["플러그", "콘센트"],
-  tv: ["tv", "티비", "텔레비전", "테레비"],
-  speaker: ["스피커"],
-  aircon: ["에어컨", "에어콘", "냉방기"],
-  purifier: ["공기청정기", "청정기"],
-  fan: ["팬", "환풍기", "선풍기", "가습기"],
-  hood: ["후드", "레인지후드"],
-  cooktop: ["인덕션", "쿡탑", "가스레인지", "화구"],
-  microwave: ["전자레인지", "전자렌지"],
-  dishwasher: ["식기세척기", "식세기"],
-  washer: ["세탁기"],
-  dryer: ["건조기"],
-  fridge: ["냉장고"],
-  vacuum: ["로봇청소기", "청소기", "로청"],
-  covering: ["커튼", "블라인드"],
-  lock: ["현관문", "도어락", "도어록", "문", "현관"],
-  contact: ["문"],
-  valve: ["물", "수도", "수전", "샤워", "싱크"],
-  thermostat: ["보일러", "난방"],
-  status: ["충전대"],
-};
+/** 종류별로 사람들이 부르는 말(소문자, 띄어쓰기 없음, 등록부 synonyms). */
+export const KIND_SYNONYMS: Record<DeviceKind, readonly string[]> = mapEntries(KINDS, (e) => e.synonyms);
 
 /** 방 별칭 → 방 이름(label). 그 이름의 방이 있을 때만 쓴다. */
 const ROOM_ALIASES: Record<string, string> = {

@@ -15,6 +15,7 @@ import type { WorldObject, WorldView } from "../contract/world.js";
 import type { RoomSpec } from "../hub/types.js";
 import type { FloorPlan } from "../plan/floor.js";
 import { ALL_ACTS, CAUTION_LINE, DEVICE_VERB, EXTRA_ITEMS, ITEM_CLASS, NOTICES, NOTICE_KEYS, STEP_ACTS, STEP_LABEL, STEP_TEXT, noticeLabel, type StepAct } from "../plan/labels.js";
+import { KINDS, KIND_ORDER, kindEntry } from "../model/kinds.js";
 import { KIND_LABELS, findTypeRule } from "../model/mapping.js";
 import { placeName, type PlaceNames } from "../plan/names.js";
 import { OBJECT_NAME } from "../world/labels.js";
@@ -39,7 +40,7 @@ export const STEP_ITEMS = [...new Set([...Object.values(CLASSES).filter((c) => c
 /** 손으로 다루는 가전 동작 → hand_device to. 이 동작은 가전 대상에만, 그 가전의 같은 hand_device와 함께만 쓴다. */
 export const HAND_ACT: Partial<Record<StepAct, "on" | "off" | "open" | "close">> = { 켜기: "on", 끄기: "off", 열기: "open", 닫기: "close" };
 /** 가전마다 사람이 손으로 할 수 있는 동작. 여기 없는 가전·동작은 버린다(이름 표가 아니라 동작으로 막는다). */
-export const DEVICE_ACTS: Partial<Record<string, readonly StepAct[]>> = { cooktop: ["켜기", "끄기"], microwave: ["열기", "닫기", "켜기", "끄기"], fridge: ["열기", "닫기"] };
+export const DEVICE_ACTS: Partial<Record<string, readonly StepAct[]>> = Object.fromEntries(KIND_ORDER.flatMap((k) => { const h = KINDS[k].hand; return h ? [[k, h]] : []; }));
 /** 손 조작 동작의 끝 조건에 쓰는 가전 상태 후보(그 가전에 있는 첫 것). */
 const HAND_STATES: Record<"on" | "off" | "open" | "close", readonly DeviceStateKey[]> = {
   on: ["on", "running"], off: ["off", "stopped"], open: ["door_open"], close: ["door_closed"],
@@ -352,7 +353,8 @@ export class PlanDraft {
     const key = d ? HAND_STATES[to].find((k) => (d.twinAttrs[DEVICE_STATES[k].attr] ?? []).includes(DEVICE_STATES[k].value)) : undefined;
     if (key) return { device: id, became: key };
     if (to !== "open" && to !== "close") return null;
-    const fixture = (Object.keys(CLASSES) as (keyof typeof CLASSES)[]).find((k) => CLASSES[k].role === "fixture" && (CLASSES[k] as { deviceKind?: string }).deviceKind === kind && (CLASSES[k].facets as readonly string[]).includes("open"));
+    const camera = kindEntry(kind)?.camera?.fixture;
+    const fixture = camera && (CLASSES[camera].facets as readonly string[]).includes("open") ? camera : undefined;
     if (!fixture) return null;
     const room = this.ctx.floor.objects.get(id)?.room ?? d?.room;
     return { fixture, ...(room ? { room } : {}), facts: { open: to === "open" ? "open" : "closed" } };

@@ -1,7 +1,8 @@
 // 관계표와 가전 상태(출처: docs/provenance.md). 물건 종류 → 관련 가전 종류, 트윈 속성 값 → 가전 상태 키·글(src/world/vocab.ts DEVICE_STATES), 남은 시간.
 // 사실만 붙이고 할 일은 넣지 않는다.
 import type { ObjClass } from "../contract/world.js";
-import { DEVICE_STATES, DEVICE_TEXT, type DeviceStateKey } from "./vocab.js";
+import { kindEntry } from "../model/kinds.js";
+import { DEVICE_STATES, type DeviceStateKey } from "./vocab.js";
 
 const DISHES = ["dishwasher"];
 const FOOD = ["fridge"];
@@ -28,10 +29,10 @@ export function deviceStateKeys(_kind: string, twin: Record<string, unknown>): D
   return Object.entries(twin).flatMap(([attr, v]) => KEYS.filter((k) => DEVICE_STATES[k].attr === attr && DEVICE_STATES[k].value === v));
 }
 
-/** 그 종류에서 쓰는 상태 글·사건 글(세탁기 작동 끝남 → 세탁 끝남). */
+/** 그 종류에서 쓰는 상태 글·사건 글(세탁기 작동 끝남 → 세탁 끝남, 등록부 stateText). */
 export function deviceText(kind: string, key: DeviceStateKey): { label: string; became: string } {
   const s = DEVICE_STATES[key];
-  const o = DEVICE_TEXT[kind]?.[key];
+  const o = kindEntry(kind)?.stateText?.[key];
   return { label: o?.label ?? s.label, became: o?.became ?? s.became };
 }
 

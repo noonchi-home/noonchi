@@ -1,5 +1,6 @@
 // twin-studio 카탈로그 type/attrs ↔ Matter 기기 매핑 (docs/plan.md "기기 매핑" 표).
-// 표(데이터)는 TYPE_RULES·KIND_PROFILES에 있고, 함수들은 그 표를 해석만 한다.
+// 종류별 표(TYPE_RULES·KIND_PROFILES·KIND_LABELS)는 가전 종류 등록부(src/model/kinds.ts)에서 파생하고, 함수들은 그 표를 해석만 한다.
+// 제어 명령은 종류 이름이 아니라 프로필(profile.model)로 가른다.
 //
 // Matter 요약(summary) 키와 값:
 //   onOff: boolean               OnOff.onOff
@@ -15,6 +16,9 @@
 //   stateValue: boolean (true = 닫힘/접촉) BooleanState.stateValue (문 센서)
 
 import type { Capability, ClimateMode, Command, DeviceKind, DeviceSpec, DeviceState, FanSpeed } from "../hub/types.js";
+import { KINDS, KIND_ORDER, mapEntries, type KindProfile, type Model } from "./kinds.js";
+
+export type { KindProfile } from "./kinds.js";
 
 export type MatterSummary = Record<string, unknown>;
 export type FanMode = "off" | FanSpeed;
@@ -27,98 +31,40 @@ export type MatterOp =
 /** 요약 ↔ Matter 클러스터 상태. matter.js endpoint state 모양({ onOff: { onOff: true }, ... }). */
 export type MatterClusters = Record<string, Record<string, unknown>>;
 
-type Model = "onoff" | "fan" | "operation" | "rvc" | "covering" | "lock" | "contact" | "valve" | "thermostat" | "status";
-
-interface Control {
-  attrs: string[];   // 제어 attr 이름 후보(첫 번째가 기본)
-  active: unknown;   // 켜짐/동작/열림/잠김에 해당하는 twin 값
-  inactive: unknown;
-}
-
-export interface KindProfile {
-  model: Model;
-  matterDeviceType: string; // matter.js 기기 export 이름. Matter 기기가 아니면 "none"
-  capabilities: Capability[];
-  control?: Control;
-  sensors: string[];        // 이 종류가 기본으로 가진 센서 attr
-  defaults?: MatterSummary; // 제어값 외 Matter 요약 기본값
-  fanOn?: FanMode;          // on 명령 때 fanMode
-  levelTurnsOn?: boolean;   // level > 0이면 켜고 0이면 끈다(조명)
-  setpoint?: { min: number; max: number };
-  modes?: ClimateMode[];
-}
-
-const POWER: Control = { attrs: ["power"], active: "on", inactive: "off" };
-const RUNNING: Control = { attrs: ["running"], active: true, inactive: false };
-
-export const KIND_PROFILES: Record<DeviceKind, KindProfile> = {
-  light: { model: "onoff", matterDeviceType: "DimmableLightDevice", capabilities: ["onoff", "level"], control: POWER, sensors: [], defaults: { level: 100 }, levelTurnsOn: true },
-  plug: { model: "onoff", matterDeviceType: "OnOffPlugInUnitDevice", capabilities: ["onoff"], control: POWER, sensors: [] },
-  tv: { model: "onoff", matterDeviceType: "BasicVideoPlayerDevice", capabilities: ["onoff"], control: POWER, sensors: [] },
-  speaker: { model: "onoff", matterDeviceType: "SpeakerDevice", capabilities: ["onoff", "level"], control: POWER, sensors: [], defaults: { level: 50 } },
-  aircon: {
-    model: "onoff", matterDeviceType: "RoomAirConditionerDevice", capabilities: ["onoff", "climate", "fan"], control: POWER, sensors: [],
-    defaults: { systemMode: "cool", setpointC: 24, fanMode: "auto" }, setpoint: { min: 18, max: 30 }, modes: ["cool", "heat", "auto", "dry", "fan"],
-  },
-  purifier: { model: "fan", matterDeviceType: "AirPurifierDevice", capabilities: ["onoff", "fan"], control: POWER, sensors: [], fanOn: "auto" },
-  fan: { model: "fan", matterDeviceType: "FanDevice", capabilities: ["onoff", "fan"], control: POWER, sensors: [], fanOn: "high" },
-  hood: { model: "fan", matterDeviceType: "ExtractorHoodDevice", capabilities: ["onoff", "fan"], control: POWER, sensors: [], fanOn: "high" },
-  cooktop: { model: "onoff", matterDeviceType: "CooktopDevice", capabilities: ["onoff"], control: POWER, sensors: [] },
-  microwave: { model: "operation", matterDeviceType: "MicrowaveOvenDevice", capabilities: ["operation"], control: POWER, sensors: [] },
-  dishwasher: { model: "operation", matterDeviceType: "DishwasherDevice", capabilities: ["operation"], control: RUNNING, sensors: ["door"] },
-  washer: { model: "operation", matterDeviceType: "LaundryWasherDevice", capabilities: ["operation"], control: RUNNING, sensors: ["door"] },
-  dryer: { model: "operation", matterDeviceType: "LaundryDryerDevice", capabilities: ["operation"], control: RUNNING, sensors: [] },
-  fridge: { model: "contact", matterDeviceType: "RefrigeratorDevice", capabilities: [], sensors: ["door"] },
-  vacuum: { model: "rvc", matterDeviceType: "RoboticVacuumCleanerDevice", capabilities: ["operation"], control: RUNNING, sensors: [] },
-  covering: { model: "covering", matterDeviceType: "WindowCoveringDevice", capabilities: ["covering"], control: { attrs: ["curtain", "blind"], active: "open", inactive: "closed" }, sensors: [] },
-  lock: { model: "lock", matterDeviceType: "DoorLockDevice", capabilities: ["lock"], control: { attrs: ["lock"], active: "locked", inactive: "unlocked" }, sensors: ["door"] },
-  contact: { model: "contact", matterDeviceType: "ContactSensorDevice", capabilities: [], sensors: ["door"] },
-  valve: { model: "valve", matterDeviceType: "WaterValveDevice", capabilities: ["valve"], control: { attrs: ["faucet", "water"], active: "on", inactive: "off" }, sensors: [] },
-  thermostat: {
-    model: "thermostat", matterDeviceType: "ThermostatDevice", capabilities: ["onoff", "climate"], control: { attrs: ["heating"], active: "on", inactive: "off" }, sensors: [],
-    defaults: { setpointC: 22 }, setpoint: { min: 10, max: 30 }, modes: ["heat", "auto"],
-  },
-  status: { model: "status", matterDeviceType: "none", capabilities: [], sensors: ["charging"] },
-};
+/** 종류 → Matter 연결(등록부 profile). */
+export const KIND_PROFILES: Record<DeviceKind, KindProfile> = mapEntries(KINDS, (e) => e.profile);
 
 export interface TypeRule {
-  types?: string[];
-  prefixes?: string[];
+  types?: readonly string[];
+  prefixes?: readonly string[];
   kind?: DeviceKind;
-  matterDeviceType?: string;    // 종류 기본값 덮어쓰기
-  capabilities?: Capability[];  // 종류 기본값 덮어쓰기
-  twinOnly?: boolean;           // Matter 기기 아님, twin 전용(기기 목록에서 뺀다)
+  matterDeviceType?: string;            // 종류 기본값 덮어쓰기
+  capabilities?: readonly Capability[]; // 종류 기본값 덮어쓰기
+  twinOnly?: boolean;                   // Matter 기기 아님, twin 전용(기기 목록에서 뺀다)
 }
 
-/** twin type → 종류. 위에서부터 처음 맞는 규칙을 쓴다. */
+/** twin type → 종류(등록부 twinTypes, 등록부 순서). 위에서부터 처음 맞는 규칙을 쓴다. 종류 없는 twin 전용 줄은 여기 둔다. */
 export const TYPE_RULES: TypeRule[] = [
-  { types: ["ceiling_light", "ceiling_panel", "pendant_lamp", "floor_lamp", "bedside_lamp", "desk_lamp"], kind: "light" },
-  { types: ["downlight"], kind: "light", matterDeviceType: "OnOffLightDevice", capabilities: ["onoff"] },
-  { types: ["tv"], kind: "tv" },
-  { types: ["speaker"], kind: "speaker" },
-  { types: ["monitor", "kettle", "rice_cooker"], kind: "plug" },
-  { types: ["stand_ac", "wall_ac"], kind: "aircon" },
-  { types: ["air_purifier"], kind: "purifier" },
-  { types: ["humidifier", "vent_fan"], kind: "fan" },
-  { types: ["range_hood"], kind: "hood" },
-  { types: ["induction_counter"], kind: "cooktop" },
-  { types: ["microwave"], kind: "microwave" },
-  { types: ["dishwasher"], kind: "dishwasher" },
-  { types: ["washer"], kind: "washer" },
-  { types: ["dryer"], kind: "dryer" },
-  { types: ["fridge", "kimchi_fridge", "freezer"], kind: "fridge" },
-  { types: ["robot_vacuum"], kind: "vacuum" },
-  { prefixes: ["curtain_", "blind_"], kind: "covering" },
-  { types: ["door_main"], kind: "lock" },
-  { prefixes: ["door_room_", "door_bath_", "door_glass_", "door_fire_", "sliding_door_"], kind: "contact" },
-  { types: ["sink_counter", "utility_sink", "shower_booth"], kind: "valve" },
-  { types: ["boiler"], kind: "thermostat" },
-  { types: ["robot_dock", "vacuum_dock", "stick_vacuum"], kind: "status" },
+  ...KIND_ORDER.flatMap((k) => KINDS[k].twinTypes.map((t): TypeRule => ({ ...t, kind: k }))),
   { types: ["wall_pad", "robot"], twinOnly: true },
 ];
 
 /** 에이전트가 못 바꾸는 attr(사람·세계 시뮬레이션이 바꾼다). */
 export const SENSOR_ATTRS = ["door", "charging"];
+
+/** 센서 attr의 값 목록(카탈로그가 없는 종류의 기본 attrs, src/model/scene.ts). */
+export const SENSOR_VALUES: Readonly<Record<string, readonly unknown[]>> = { door: ["closed", "open"], charging: ["off", "on"] };
+
+/** 카탈로그가 없는 트윈 type의 attrs: 등록부 프로필의 제어 attr(첫 이름, [꺼짐, 켜짐])과 센서 attr. 종류를 모르면 빈 attrs. */
+export function profileAttrs(twinType: string): Record<string, unknown[]> {
+  const kind = findTypeRule(twinType)?.kind;
+  if (!kind) return {};
+  const p = KIND_PROFILES[kind];
+  const attrs: Record<string, unknown[]> = {};
+  if (p.control) attrs[p.control.attrs[0]!] = [p.control.inactive, p.control.active];
+  for (const s of p.sensors) attrs[s] = [...(SENSOR_VALUES[s] ?? ["off", "on"])];
+  return attrs;
+}
 
 /** attr 기본값(꺼짐·닫힘·잠금·멈춤). 카탈로그 states.default나 placement state가 없을 때 쓴다. */
 export const ATTR_DEFAULTS: Record<string, unknown> = {
@@ -126,12 +72,8 @@ export const ATTR_DEFAULTS: Record<string, unknown> = {
   faucet: "off", water: "off", heating: "off", charging: "off", screen: "off", mode: "sleep",
 };
 
-export const KIND_LABELS: Record<DeviceKind, string> = {
-  light: "조명", plug: "플러그", tv: "TV", speaker: "스피커", aircon: "에어컨", purifier: "공기청정기",
-  fan: "팬", hood: "후드", cooktop: "인덕션", microwave: "전자레인지", dishwasher: "식기세척기",
-  washer: "세탁기", dryer: "건조기", fridge: "냉장고", vacuum: "로봇청소기", covering: "커튼·블라인드",
-  lock: "도어록", contact: "문 센서", valve: "수전", thermostat: "보일러", status: "상태 표시",
-};
+/** 종류 이름(등록부 label). */
+export const KIND_LABELS: Record<DeviceKind, string> = mapEntries(KINDS, (e) => e.label);
 
 // Matter 1.4 열거형 값
 export const MATTER_ENUMS = {
@@ -219,7 +161,7 @@ export type AttrNames = string[] | Record<string, unknown[]>;
 interface Resolved {
   kind: DeviceKind;
   profile: KindProfile;
-  caps: Capability[];
+  caps: readonly Capability[];
   attrNames?: string[];
 }
 
@@ -317,12 +259,12 @@ export function twinChange(spec: Pick<DeviceSpec, "kind" | "label" | "sensors" |
   const v = values.find((x) => x === value) ?? values.find((x) => String(x) === String(value));
   if (v === undefined) return { type: "invalid", error: `${spec.label}.${attr}: 값 ${JSON.stringify(value)}은(는) 쓸 수 없습니다(가능한 값: ${values.map(String).join(", ")}).` };
   if (spec.sensors.includes(attr)) return { type: "sensor", value: v };
-  const control = KIND_PROFILES[spec.kind].control;
+  const { control, model } = KIND_PROFILES[spec.kind];
   if (!control || !control.attrs.includes(attr)) return { type: "invalid", error: `${spec.label}: ${attr}은(는) 바꿀 수 없는 상태입니다.` };
   const active = v === control.active;
   let command: Command;
-  if (spec.kind === "lock") command = { type: active ? "lock" : "unlock" };
-  else if (spec.kind === "covering") command = { type: "covering", openPercent: active ? 100 : 0 };
+  if (model === "lock") command = { type: active ? "lock" : "unlock" };
+  else if (model === "covering") command = { type: "covering", openPercent: active ? 100 : 0 };
   else command = { type: active ? "on" : "off" };
   return { type: "command", command, value: v };
 }
@@ -478,13 +420,13 @@ export function applySensorToMatter(target: DeviceTarget, matter: MatterSummary,
 
 const LEVEL_ARGS = { transitionTime: 0, optionsMask: {}, optionsOverride: {} };
 
-function heatingSetpoint(kind: DeviceKind, systemMode: unknown): boolean {
-  return kind === "thermostat" || systemMode === "heat";
+function heatingSetpoint(model: Model, systemMode: unknown): boolean {
+  return model === "thermostat" || systemMode === "heat";
 }
 
 /** 명령 → Matter 클러스터 동작 목록(브리지/컨트롤러가 그대로 실행). matter는 현재 요약(선택). */
 export function matterFromCommand(target: DeviceTarget, cmd: Command, matter: MatterSummary = {}): MatterOp[] {
-  const { kind, profile } = resolve(target);
+  const { profile } = resolve(target);
   const model = profile.model;
   const E = MATTER_ENUMS;
   switch (cmd.type) {
@@ -510,7 +452,7 @@ export function matterFromCommand(target: DeviceTarget, cmd: Command, matter: Ma
         ops.push({ cluster: "onOff", command: "on" });
         if (cmd.mode !== undefined) ops.push({ cluster: "thermostat", attribute: "systemMode", value: encodeEnum(E.systemMode, cmd.mode) });
         if (cmd.setpointC !== undefined) {
-          const heat = heatingSetpoint(kind, cmd.mode ?? matter.systemMode);
+          const heat = heatingSetpoint(model, cmd.mode ?? matter.systemMode);
           ops.push({ cluster: "thermostat", attribute: heat ? "occupiedHeatingSetpoint" : "occupiedCoolingSetpoint", value: Math.round(cmd.setpointC * 100) });
         }
         if (cmd.fan !== undefined) ops.push({ cluster: "fanControl", attribute: "fanMode", value: encodeEnum(E.fanMode, cmd.fan) });
@@ -558,7 +500,7 @@ export function matterFromCommand(target: DeviceTarget, cmd: Command, matter: Ma
 
 /** 요약 → matter.js endpoint state 모양(브리지 초기 상태·쓰기용). 요약에 있는 값만 만든다. */
 export function clustersFromSummary(target: DeviceTarget, s: MatterSummary): MatterClusters {
-  const { kind, profile } = resolve(target);
+  const { profile } = resolve(target);
   const E = MATTER_ENUMS;
   const c: MatterClusters = {};
   const put = (cluster: string, values: Record<string, unknown>) => { c[cluster] = { ...c[cluster], ...values }; };
@@ -566,7 +508,7 @@ export function clustersFromSummary(target: DeviceTarget, s: MatterSummary): Mat
   if (typeof s.level === "number") put("levelControl", { currentLevel: levelFromPercent(s.level) });
   if (s.systemMode !== undefined) put("thermostat", { systemMode: encodeEnum(E.systemMode, s.systemMode) });
   if (typeof s.setpointC === "number") {
-    const attr = heatingSetpoint(kind, s.systemMode) ? "occupiedHeatingSetpoint" : "occupiedCoolingSetpoint";
+    const attr = heatingSetpoint(profile.model, s.systemMode) ? "occupiedHeatingSetpoint" : "occupiedCoolingSetpoint";
     put("thermostat", { [attr]: Math.round(s.setpointC * 100) });
   }
   if (s.fanMode !== undefined) put("fanControl", { fanMode: encodeEnum(E.fanMode, s.fanMode) });
@@ -587,7 +529,7 @@ export function clustersFromSummary(target: DeviceTarget, s: MatterSummary): Mat
 
 /** matter.js endpoint state(또는 구독으로 받은 속성) → 요약. 있는 클러스터만 읽는다. */
 export function summaryFromClusters(target: DeviceTarget, c: MatterClusters): MatterSummary {
-  const { kind, profile } = resolve(target);
+  const { profile } = resolve(target);
   const E = MATTER_ENUMS;
   const s: MatterSummary = {};
   if (typeof c.onOff?.onOff === "boolean") s.onOff = c.onOff.onOff;
@@ -595,7 +537,7 @@ export function summaryFromClusters(target: DeviceTarget, c: MatterClusters): Ma
   const t = c.thermostat;
   if (t) {
     if (t.systemMode !== undefined) s.systemMode = decodeEnum(E.systemMode, t.systemMode);
-    const heat = heatingSetpoint(kind, s.systemMode);
+    const heat = heatingSetpoint(profile.model, s.systemMode);
     const raw = heat ? t.occupiedHeatingSetpoint : t.occupiedCoolingSetpoint;
     if (typeof raw === "number") s.setpointC = raw / 100;
   }

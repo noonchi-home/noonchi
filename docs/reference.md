@@ -664,7 +664,7 @@ matter.js 0.17.9에 매핑 표의 기기 종류 21개가 모두 있어 **대체�
 
 ## 기기 매핑 (src/model/mapping.ts)
 
-`TYPE_RULES`(twin type → 종류)와 `KIND_PROFILES`(종류 → matter.js 기기·능력·제어 attr)가 표다.
+가전 종류별 값은 가전 종류 등록부(`src/model/kinds.ts` `KINDS`) 한 곳에 있다: 이름(`label`)·찾기 말(`synonyms`)·Matter 연결(`profile`)·트윈 type(`twinTypes`)·늘 묻는 승인(`confirm`)·위험 가전 이름과 안전 문구(`riskyOn`)·손 조작(`hand`)·카메라 설비와 맞추는 규칙(`camera`)·ThinQ 짝짓기(`thinq`)·오래 이어지면 나는 사건(`longEvents`)·종류별 상태 글(`stateText`). `TYPE_RULES`(twin type → 종류)·`KIND_PROFILES`(종류 → matter.js 기기·능력·제어 attr)·`KIND_LABELS`와 에이전트·정책·카메라 쪽 표는 모두 등록부에서 파생한다. 제어 명령(잠금·커튼·난방 설정점)은 종류 이름이 아니라 프로필 모델(`profile.model`)로 가른다. 등록부 밖에 종류별 표를 새로 두면 `tests/kinds-registry.test.ts`의 구조 검사가 실패한다.
 
 | 종류 | matter.js 기기 | 능력 | twin attr |
 |---|---|---|---|
@@ -689,7 +689,16 @@ matter.js 0.17.9에 매핑 표의 기기 종류 21개가 모두 있어 **대체�
 - 별칭: onoff가 없는 동작형 기기는 `on/off` → `start/stop`, 밸브는 `on/off` → `valve{open}`. 정책도 바뀐 명령으로 판단한다.
 - 안전: 문이 열린 식기세척기·세탁기는 시작하지 않는다. 동작 중이 아니면 일시정지하지 않는다.
 - 에어컨·보일러에 `climate` 명령을 주면 켠다. 조명 `level > 0`은 켜고 `0`은 끈다.
+- 카탈로그가 없는 트윈 type(`added_devices.json`으로 더한 새 종류)은 등록부 프로필의 제어 attr(`[꺼짐, 켜짐]`)과 센서 attr로 상태를 만든다(`profileAttrs`). 모델 파일이 없으면 장면 물건의 `asset`이 null이라 대시보드 트윈이 그 자리에 회색 상자(`footprint`·`height`, 없으면 0.4m)로 그린다.
 - Matter 요약 키(`DeviceState.matter`): `onOff`, `level`(%), `systemMode`, `setpointC`(°C), `fanMode`, `operationalState`, `runMode`, `openPercent`(100 = 열림), `lockState`, `valveState`, `stateValue`(문 센서, true = 닫힘).
+
+### 새 종류 추가하는 법
+
+1. `src/model/kinds.ts`의 `KINDS`에 항목 하나를 더한다: `label`(이름), `synonyms`(찾기 말), `profile`(Matter 기기 종류·기능·제어 속성·센서), `twinTypes`(트윈 type 이름). 사람이 손으로 조작하면 `hand`, ThinQ와 짝지으면 `thinq`. 필수 칸을 빼면 타입 오류가 난다.
+2. 집 파일 `twin/data/homes/<집>/added_devices.json`에 한 줄을 더한다: `id`·`type`(1번 `twinTypes`의 이름)·`label`·`room`·`position`·`facing_deg`·`elevation`.
+3. 카메라로 볼 수 있으면: YOLO(COCO)에 그 종류가 있으면 `src/world/vocab.ts` `CLASSES`에 설비 종류(role fixture)를 두고, 등록부 항목에 `camera: { fixture, sight }`를 적는다.
+4. 3D 모델이 없으면: 카탈로그(`twin/data/catalog/<type>.json`)나 모델 파일이 없어도 기기는 생기고, 대시보드 트윈에는 그 자리의 회색 상자로 보인다. 모양을 넣으려면 카탈로그와 `twin/library/assets/`의 모델을 더한다.
+5. `npm run heavy -- npx vitest run tests/kinds-registry.test.ts`로 확인한다.
 
 ## 승인 정책 (src/agent/policy.ts)
 

@@ -1,9 +1,8 @@
 // twin-home 공용 계약(docs/plan.md "인터페이스"). 바꾸려면 plan.md를 먼저 고친다.
 
-export type DeviceKind =
-  | "light" | "plug" | "tv" | "speaker" | "aircon" | "purifier" | "fan" | "hood" | "cooktop"
-  | "microwave" | "dishwasher" | "washer" | "dryer" | "fridge" | "vacuum" | "covering" | "lock"
-  | "contact" | "valve" | "thermostat" | "status";
+/** 가전 종류: 등록부(src/model/kinds.ts KINDS)의 키. */
+export type { DeviceKind } from "../model/kinds.js";
+import type { DeviceKind } from "../model/kinds.js";
 
 /** 기기가 받는 명령 묶음(트윈 수준). Matter에서 어떻게 실현하는지는 model/mapping.ts가 정한다. */
 export type Capability = "onoff" | "level" | "climate" | "fan" | "covering" | "lock" | "operation" | "valve";

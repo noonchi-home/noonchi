@@ -3,14 +3,16 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { Command, DeviceKind } from "../src/hub/types.js";
+import type { Command } from "../src/hub/types.js";
 import { KIND_LABELS, KIND_PROFILES, TYPE_RULES, findTypeRule, twinChange } from "../src/model/mapping.js";
 import { KIND_SYNONYMS } from "../src/agent/search.js";
 import { CONFIRM_RULES, Policy, RISKY_ON_NAMES, isRiskyKind, riskyNames } from "../src/agent/policy.js";
 import { CAUTION_LINE } from "../src/plan/labels.js";
 import { DEVICE_ACTS } from "../src/agent/planTools.js";
 import { PAIRABLE_KINDS, fitsKind, mirrorPlan, readAppliance, thinqSteps, type Reading } from "../src/thinq/appliance.js";
-import { CLASSES, DEVICE_LONG, DEVICE_TEXT, SIGHT } from "../src/world/vocab.js";
+import { KINDS, KIND_ORDER, cameraKindOf } from "../src/model/kinds.js";
+import { rulesOf } from "../src/world/sight.js";
+import { CLASSES, DEVICE_LONG, type ClassKey, type DeviceLongKey, type FixtureClass } from "../src/world/vocab.js";
 
 const ROOT = join(import.meta.dirname, "..");
 const NAME = "〈이름〉";
@@ -64,32 +66,31 @@ const SENSOR_VALUES: Record<string, unknown[]> = { door: ["closed", "open"], cha
 
 /** 지금 값 전부(JSON으로 쓸 수 있는 모양). */
 export function kindsSnapshot() {
-  const kinds = Object.keys(KIND_LABELS) as DeviceKind[];
   const policy = new Policy();
-  const approval = Object.fromEntries(kinds.map((kind) => {
+  const approval = Object.fromEntries(KIND_ORDER.map((kind) => {
     const specs = [
       { from: "profile", capabilities: KIND_PROFILES[kind].capabilities },
       ...TYPE_RULES.filter((r) => r.kind === kind && r.capabilities).map((r) => ({ from: (r.types ?? r.prefixes ?? []).join(","), capabilities: r.capabilities! })),
     ];
-    return [kind, specs.map((s) => ({ from: s.from, results: COMMANDS.map((c) => ({ command: c, reason: policy.requiresConfirmation({ kind, label: NAME, capabilities: s.capabilities }, c) })) }))];
+    return [kind, specs.map((s) => ({ from: s.from, results: COMMANDS.map((c) => ({ command: c, reason: policy.requiresConfirmation({ kind, label: NAME, capabilities: [...s.capabilities] }, c) })) }))];
   }));
   const thinq = {
     pairable: PAIRABLE_KINDS,
-    fits: Object.fromEntries(kinds.map((k) => [k, THINQ_TYPES.filter((t) => fitsKind(k, t))])),
-    read: Object.fromEntries(kinds.map((k) => [k, RAWS.map((raw) => readAppliance(k, raw))])),
-    steps: Object.fromEntries(kinds.map((k) => [k, COMMANDS.map((c) => thinqSteps(k, c)?.map((s) => ({ name: s.name, body: s.body, done: READINGS.map((r) => s.done(r)) })) ?? null)])),
-    mirror: Object.fromEntries(kinds.map((k) => [k, READINGS.flatMap((r) => WORLDS.map((w) => mirrorPlan({ kind: k }, r, w)))])),
+    fits: Object.fromEntries(KIND_ORDER.map((k) => [k, THINQ_TYPES.filter((t) => fitsKind(k, t))])),
+    read: Object.fromEntries(KIND_ORDER.map((k) => [k, RAWS.map((raw) => readAppliance(k, raw))])),
+    steps: Object.fromEntries(KIND_ORDER.map((k) => [k, COMMANDS.map((c) => thinqSteps(k, c)?.map((s) => ({ name: s.name, body: s.body, done: READINGS.map((r) => s.done(r)) })) ?? null)])),
+    mirror: Object.fromEntries(KIND_ORDER.map((k) => [k, READINGS.flatMap((r) => WORLDS.map((w) => mirrorPlan({ kind: k }, r, w)))])),
   };
-  const twin = Object.fromEntries(kinds.map((kind) => {
+  const twin = Object.fromEntries(KIND_ORDER.map((kind) => {
     const p = KIND_PROFILES[kind];
     const twinAttrs: Record<string, unknown[]> = {};
     for (const a of p.control?.attrs ?? []) twinAttrs[a] = [p.control!.inactive, p.control!.active];
     for (const s of p.sensors) twinAttrs[s] = SENSOR_VALUES[s] ?? ["off", "on"];
-    const spec = { kind, label: NAME, sensors: p.sensors, twinAttrs };
+    const spec = { kind, label: NAME, sensors: [...p.sensors], twinAttrs };
     const results = Object.entries(twinAttrs).flatMap(([attr, values]) => values.map((v) => ({ attr, value: v, change: twinChange(spec, attr, v) })));
     return [kind, [...results, { attr: "nope", value: "on", change: twinChange(spec, "nope", "on") }]];
   }));
-  const fixtures = (Object.keys(CLASSES) as (keyof typeof CLASSES)[]).filter((c) => CLASSES[c].role === "fixture");
+  const fixtures = (Object.keys(CLASSES) as ClassKey[]).filter((c): c is FixtureClass => CLASSES[c].role === "fixture");
   return {
     approval: {
       confirmRules: CONFIRM_RULES.map((r) => ({ kind: r.kind, command: r.command, reason: r.reason(NAME) })),
@@ -101,17 +102,18 @@ export function kindsSnapshot() {
     synonyms: KIND_SYNONYMS,
     risky: {
       names: RISKY_ON_NAMES,
-      kinds: kinds.filter((k) => isRiskyKind(k)),
+      kinds: KIND_ORDER.filter((k) => isRiskyKind(k)),
       texts: Object.fromEntries(RISKY_TEXTS.map((t) => [t, riskyNames(t)])),
     },
     caution: CAUTION_LINE,
     hand: DEVICE_ACTS,
     thinq,
-    deviceText: DEVICE_TEXT,
-    deviceLong: DEVICE_LONG,
+    // 종류마다 바꿔 쓰는 상태 글·오래 이어지면 나는 사건·카메라 설비 → 종류와 규칙: 등록부 stateText·longEvents·camera
+    deviceText: Object.fromEntries(KIND_ORDER.flatMap((k) => (KINDS[k].stateText ? [[k, KINDS[k].stateText]] : []))),
+    deviceLong: Object.fromEntries((Object.entries(DEVICE_LONG) as [DeviceLongKey, (typeof DEVICE_LONG)[DeviceLongKey]][]).map(([key, l]) => [key, { ...l, kinds: KIND_ORDER.filter((k) => KINDS[k].longEvents?.includes(key)) }])),
     camera: {
-      kindOf: Object.fromEntries(fixtures.map((c) => [c, (CLASSES[c] as { deviceKind?: string }).deviceKind ?? null])),
-      sight: SIGHT,
+      kindOf: Object.fromEntries(fixtures.map((c) => [c, cameraKindOf(c)])),
+      sight: Object.fromEntries(fixtures.flatMap((c) => (rulesOf(c).length ? [[c, rulesOf(c)]] : []))),
     },
     twinChange: twin,
   };

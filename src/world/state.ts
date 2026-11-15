@@ -44,9 +44,10 @@ import { CHANGE_TEXT, HEARD_MAX, OBJECT_NAME, fixtureName, objectName, onSurface
 import { inView, placeBox, placePoint, type PlaneSurface } from "./place.js";
 import { describePose, heldByAny, mainPerson } from "./pose.js";
 import { RemainingTracker, becameKey, deviceStateKeys, deviceStatus, deviceText, relatedDeviceIds } from "./relations.js";
-import { SightReadings, linkDevice, sightValues, type SightLink } from "./sight.js";
+import { SightReadings, linkDevice, rulesOf, sightValues, type SightLink } from "./sight.js";
+import { cameraKindOf, kindEntry } from "../model/kinds.js";
 import {
-  CLASSES, DEVICE_LONG, DEVICE_STATES, FACT_FRESH_MS, FRESH_MS, NEAR_M, NOW_FACETS, POSE_HOLD, POSE_POSTURE, SIGHT, STATES, VLM_ONLY, type ClassKey, type DeviceStateKey, type StateKey, type Target,
+  CLASSES, DEVICE_LONG, DEVICE_STATES, FACT_FRESH_MS, FRESH_MS, NEAR_M, NOW_FACETS, POSE_HOLD, POSE_POSTURE, STATES, VLM_ONLY, type ClassKey, type DeviceLongKey, type DeviceStateKey, type StateKey, type Target,
 } from "./vocab.js";
 
 type V3 = [number, number, number];
@@ -348,9 +349,9 @@ export class WorldState {
     return f;
   }
 
-  /** 가전 설비 상자 하나를 트윈 가전에 맞춰 두고(SIGHT에 있는 종류만), 그 프레임 VLM 답을 기다린다. */
+  /** 가전 설비 상자 하나를 트윈 가전에 맞춰 두고(등록부 camera가 있는 설비만), 그 프레임 VLM 답을 기다린다. */
   private sight(frame: EngineFrame, tmp: string, fix: Fix, box: Detection["box"], room: { id: string } | null): void {
-    if (!(fix.cls in SIGHT)) return;
+    if (!rulesOf(fix.cls).length) return;
     const at = frame.capturedAtMs;
     const link = linkDevice({
       cls: fix.cls, box, size: { width: frame.width, height: frame.height }, view: frame.view, room: room?.id ?? null, devices: this.o.devices(), place: this.o.place ?? (() => null),
@@ -966,13 +967,13 @@ export class WorldState {
     return changes;
   }
 
-  /** 시간이 지나야 나는 사건(vocab DEVICE_LONG: 냉장고·현관문 문이 1분 넘게 열림). 한 상태가 이어지는 동안 한 번. 판단 타이머가 부른다. */
+  /** 시간이 지나야 나는 사건(vocab DEVICE_LONG, 종류는 등록부 longEvents: 냉장고·현관문 문이 1분 넘게 열림). 한 상태가 이어지는 동안 한 번. 판단 타이머가 부른다. */
   tick(nowMs: number): WorldChange[] {
     const changes: WorldChange[] = [];
     for (const d of this.devs.values()) {
-      for (const [key, rule] of Object.entries(DEVICE_LONG)) {
+      for (const [key, rule] of Object.entries(DEVICE_LONG) as [DeviceLongKey, (typeof DEVICE_LONG)[DeviceLongKey]][]) {
         const since = d.since[rule.state];
-        if (since === undefined || d.status === null || !d.state.includes(rule.state) || !(rule.kinds as readonly string[]).includes(d.kind) || nowMs - since < rule.afterMs) continue;
+        if (since === undefined || d.status === null || !d.state.includes(rule.state) || !kindEntry(d.kind)?.longEvents?.includes(key) || nowMs - since < rule.afterMs) continue;
         const mark = `${key}@${since}`;
         if (d.long.has(mark)) continue;
         d.long.add(mark);
@@ -999,7 +1000,7 @@ export class WorldState {
     }));
     const fixtures: WorldFixture[] = [...this.fixtures.values()].map((f) => ({
       id: f.id, cls: f.cls, room: f.room, room_label: f.roomLabel, first_seen_ms: f.firstSeen, last_seen_ms: f.lastSeen, facts: { ...f.facts }, answered_ms: f.answered,
-      device: devices.find((d) => d.kind === (CLASSES[f.cls] as { deviceKind?: string }).deviceKind && d.room !== undefined && d.room === f.room)?.id ?? null,
+      device: devices.find((d) => d.kind === cameraKindOf(f.cls) && d.room !== undefined && d.room === f.room)?.id ?? null,
       ...(f.link ? { link: { device: f.link.device, miss: f.link.miss, at_ms: f.link.at_ms } } : {}),
     }));
     const p = this.person;

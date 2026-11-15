@@ -4,6 +4,7 @@
 import { randomUUID } from "node:crypto";
 import { isUnknown } from "../hub/signals.js";
 import type { Command, CommandResult, CommandType, DeviceHub, DeviceKind, DeviceSpec } from "../hub/types.js";
+import { KINDS, KIND_ORDER, isRiskyKind } from "../model/kinds.js";
 import { checkCommand, normalizeCommand } from "../model/mapping.js";
 import { DEVICE_VERB, STEP_LABEL } from "../plan/labels.js";
 import { approvalNeed, deviceKey, memoryApprovals, type ApprovalBook } from "./approval.js";
@@ -15,11 +16,11 @@ export interface ConfirmRule {
   reason: (label: string) => string;
 }
 
-export const CONFIRM_RULES: ConfirmRule[] = [
-  { kind: "lock", command: "unlock", reason: (l) => `${l} 잠금 해제는 사용자 승인이 필요합니다.` },
-  { kind: "cooktop", command: "on", reason: (l) => `${l} 켜기는 화재 위험이 있어 사용자 승인이 필요합니다.` },
-  { kind: "microwave", command: "start", reason: (l) => `${l} 시작은 사용자 승인이 필요합니다.` },
-];
+/** 늘 승인을 묻는 명령(등록부 confirm, 등록부의 목록 순서). */
+export const CONFIRM_RULES: ConfirmRule[] = KIND_ORDER
+  .flatMap((k) => { const c = KINDS[k].confirm; return c ? [{ kind: k, command: c.command, reason: c.reason, order: c.order }] : []; })
+  .sort((a, b) => a.order - b.order)
+  .map(({ kind, command, reason }) => ({ kind, command, reason }));
 
 // ── 폰으로 나가는 사람용 글: 위험 가전은 기본 거부 ─────────────────────
 // 사람 단계(go·pick·place·do)의 이름·명령·안전 문구는 모델이 고른 동작·대상·물건으로 서버가 만든다(src/plan/labels.ts STEP_TEXT). 모델 문장은 받지 않는다.
@@ -30,17 +31,16 @@ export const CONFIRM_RULES: ConfirmRule[] = [
 // 자리 목록은 PHONE_LINE_SITES이고, tests/phone-lines.test.ts가 자리마다 본다.
 // 한계: 이름 표(별명·흔한 오타 포함)로만 본다. 이름 없이 조작만 말하는 글(예: 「전원 버튼을 눌러 주세요」)은 질문·에이전트 답에서 막지 못한다.
 
-/** 위험 가전 이름 표: 가전 종류 → 부르는 이름(별명·흔한 오타·영어 포함). 종류는 CONFIRM_RULES의 켜기·시작 대상과 같다(tests/policy.test.ts).
+/** 위험 가전 이름 표(등록부 riskyOn.names): 가전 종류 → 부르는 이름(별명·흔한 오타·영어 포함). 종류는 CONFIRM_RULES의 켜기·시작 대상과 같다(tests/policy.test.ts).
  *  세 글자 이상인 이름은 띄어 써도 찾는다. 「레인지」만 쓰면 전자레인지로 본다(가스레인지·전기레인지는 긴 이름이 먼저 맞는다). */
-export const RISKY_ON_NAMES: Partial<Record<DeviceKind, readonly string[]>> = {
-  cooktop: ["인덕션", "인덕선", "인덕숀", "전기레인지", "전기렌지", "가스레인지", "가스렌지", "하이라이트", "가스불", "화구", "버너", "쿡탑", "쿡톱", "induction", "cooktop"],
-  microwave: ["전자레인지", "전자렌지", "레인지", "microwave"],
-};
+export const RISKY_ON_NAMES: Partial<Record<DeviceKind, readonly string[]>> = Object.fromEntries(
+  KIND_ORDER.flatMap((k) => { const r = KINDS[k].riskyOn; return r ? [[k, r.names]] : []; }),
+);
 /** 위험 가전이 아닌데 위험 가전 이름을 품은 이름(먼저 지운다). */
 const NOT_RISKY = ["레인지후드"];
 
-/** 위험 가전 종류인가. */
-export const isRiskyKind = (kind: string | null | undefined): kind is DeviceKind => !!kind && Object.hasOwn(RISKY_ON_NAMES, kind);
+/** 위험 가전 종류인가(등록부 riskyOn). */
+export { isRiskyKind };
 
 /** 이름 → 종류(위험 가전이 아닌 이름은 null), 긴 이름부터. */
 const NAME_ORDER: [string, DeviceKind | null][] = [

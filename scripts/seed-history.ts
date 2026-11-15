@@ -74,7 +74,9 @@ function loadHome(id: string, twinDir?: string): HomeInfo {
   const table = place("dining_table", 0.75);
   const sink = place("sink_counter", 0.9);
   const side = place("coffee_table", 0.45);
-  const acs = twin.devices.filter((d) => d.kind === "aircon" && d.twinAttrs.power);
+  // 에어컨 습관 기록은 「에어컨 켜기」 할 일이 다루는 가전 종류(TaskSpec devices)에 쌓는다
+  const acKinds: readonly string[] = TASKS["에어컨 켜기"].allow.devices?.kinds ?? [];
+  const acs = twin.devices.filter((d) => acKinds.includes(d.kind) && d.twinAttrs.power);
   const livingAc = acs.find((d) => d.room === table.room);
   const bedAc = acs.find((d) => d.room !== table.room);
   if (!livingAc || !bedAc) throw new Error(`집 ${id}: 식탁 방 에어컨과 다른 방 에어컨이 있어야 해요`);

@@ -74,7 +74,8 @@ describe("World State 낱말 표", () => {
     const keyMap = new RegExp(`\\b(${stateKeys.join("|")})\\s*:\\s*["'\`]`, "g");
     const classMap = new RegExp(`\\b(${classKeys.join("|")})\\s*:\\s*["'\`]`, "g");
     const cocoMap = new RegExp(`\\b\\d+\\s*:\\s*["'](${classKeys.join("|")})["']`, "g");
-    const own = new Set(["src/world/vocab.ts", "src/world/vocab-doc.ts"]);
+    // 가전 종류 등록부의 카메라 규칙(camera.sight: VLM 값 → 트윈 값)은 등록부에 둔다(src/model/kinds.ts)
+    const own = new Set(["src/world/vocab.ts", "src/world/vocab-doc.ts", "src/model/kinds.ts"]);
     const found: string[] = [];
     for (const f of [...files(join(ROOT, "src")), ...files(join(ROOT, "scripts")), ...files(join(ROOT, "ui", "src"))]) {
       const name = relative(ROOT, f).replace(/\\/g, "/");

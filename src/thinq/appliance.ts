@@ -4,15 +4,14 @@
 // 실제 가전 값과 다를 수 있는 부분은 docs/superpowers/plans/2026-11-06-control-mode.md 「실제 연결 때 확인할 것」.
 
 import type { ClimateMode, Command, DeviceKind, DeviceSpec, DeviceState, FanSpeed } from "../hub/types.js";
+import { KINDS, KIND_ORDER } from "../model/kinds.js";
 
-/** 설정에서 ThinQ 기기와 짝지을 수 있는 트윈 기기 종류. */
-export const PAIRABLE_KINDS: DeviceKind[] = ["aircon", "fridge"];
+/** 설정에서 ThinQ 기기와 짝지을 수 있는 트윈 기기 종류(등록부 thinq). */
+export const PAIRABLE_KINDS: DeviceKind[] = KIND_ORDER.filter((k) => KINDS[k].thinq);
 
-const TYPE_FIT: Partial<Record<DeviceKind, RegExp>> = { aircon: /AIR_CONDITIONER/i, fridge: /REFRIGERATOR/i };
-
-/** 트윈 기기 종류와 ThinQ deviceType이 맞는가. */
+/** 트윈 기기 종류와 ThinQ deviceType이 맞는가(등록부 thinq.type). */
 export function fitsKind(kind: DeviceKind, thinqType: string): boolean {
-  return TYPE_FIT[kind]?.test(thinqType) ?? false;
+  return KINDS[kind]?.thinq?.type.test(thinqType) ?? false;
 }
 
 /** ThinQ에서 읽은 값(트윈 말로). 모르는 값은 비운다. */

@@ -1,13 +1,15 @@
-// docs/world-vocabulary.md의 표를 낱말 표(src/world/vocab.ts, vocab-doc.ts)와 이 집 가전(twin/)에서 만든다.
+// docs/world-vocabulary.md의 표를 낱말 표(src/world/vocab.ts, vocab-doc.ts), 가전 종류 등록부(src/model/kinds.ts camera·longEvents)와 이 집 가전(twin/)에서 만든다.
 // 표는 <!-- vocab:이름 --> … <!-- /vocab:이름 --> 사이에만 쓴다. tests/world-vocab.test.ts가 문서 표와 만든 표가 다르면 실패한다.
 //   npx tsx scripts/world-vocab-doc.ts          문서 표를 다시 쓴다
 //   npx tsx scripts/world-vocab-doc.ts --check  다르면 1로 끝난다
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { loadTwin } from "../src/model/devices.js";
+import { KINDS, KIND_ORDER, cameraKindOf } from "../src/model/kinds.js";
+import { rulesOf } from "../src/world/sight.js";
 import { deviceStateKeys, deviceText } from "../src/world/relations.js";
 import { CLASS_DOC, DEVICE_LONG_DOC, DEVICE_STATE_DOC, STATE_DOC } from "../src/world/vocab-doc.js";
-import { CLASSES, DEVICE_LONG, DEVICE_STATES, SIGHT, STATES, type ClassKey, type DeviceStateKey, type FixtureClass, type SightRule, type StateKey } from "../src/world/vocab.js";
+import { CLASSES, DEVICE_LONG, DEVICE_STATES, STATES, type ClassKey, type DeviceLongKey, type DeviceStateKey, type FixtureClass, type SightRule, type StateKey } from "../src/world/vocab.js";
 
 export const DOC_PATH = fileURLToPath(new URL("../docs/world-vocabulary.md", import.meta.url));
 /** 문서 가전 표의 집. */
@@ -42,22 +44,31 @@ function devices(): string {
     const s = DEVICE_STATES[k];
     return [code(k), `${s.attr} = ${String(s.value)}`, s.label, s.became, s.active ? "예" : "아니오", DEVICE_STATE_DOC[k]];
   });
-  const long = Object.entries(DEVICE_LONG).map(([k, l]) => [code(k), `${l.state} ${l.afterMs / 1000}초 넘게`, "—", l.label, "—", `${DEVICE_LONG_DOC[k as keyof typeof DEVICE_LONG_DOC]} 종류: ${l.kinds.join(", ")}`]);
+  const long = (Object.entries(DEVICE_LONG) as [DeviceLongKey, (typeof DEVICE_LONG)[DeviceLongKey]][]).map(([k, l]) => [
+    code(k), `${l.state} ${l.afterMs / 1000}초 넘게`, "—", l.label, "—", `${DEVICE_LONG_DOC[k]} 종류: ${longKinds(k).join(", ")}`,
+  ]);
   return table(["키", "트윈 속성", "상태 글", "사건 글", "늘 보임", "계기 예"], [...rows, ...long]);
 }
 
-const SIGHT_RULES = Object.entries(SIGHT) as [FixtureClass, readonly SightRule[]][];
+/** 그 사건이 나는 가전 종류(등록부 longEvents, 등록부 순서). */
+const longKinds = (key: DeviceLongKey): string[] => KIND_ORDER.filter((k) => KINDS[k].longEvents?.includes(key));
+/** 카메라로 맞추는 가전 설비와 규칙(등록부 camera, 낱말 표 순서). */
+const SIGHT_RULES = (Object.keys(CLASSES) as ClassKey[]).flatMap((c): [FixtureClass, readonly SightRule[]][] => {
+  if (CLASSES[c].role !== "fixture") return [];
+  const rules = rulesOf(c as FixtureClass);
+  return rules.length ? [[c as FixtureClass, rules]] : [];
+});
 const sightValue = (r: SightRule) => Object.entries(r.values).map(([k, v]) => `${code(k)} ${r.attr} = ${String(v)}`).join(", ");
 
 function sight(): string {
   return table(["가전 설비", "트윈 가전 종류", "면", "본 값", "답에 그 면 값이 없으면"], SIGHT_RULES.flatMap(([cls, rules]) => rules.map((r) => [
-    `${code(cls)} ${CLASSES[cls].label}`, (CLASSES[cls] as { deviceKind?: string }).deviceKind ?? "—", FACET[r.facet], sightValue(r), r.absent !== undefined ? `${r.attr} = ${String(r.absent)}` : "—",
+    `${code(cls)} ${CLASSES[cls].label}`, cameraKindOf(cls) ?? "—", FACET[r.facet], sightValue(r), r.absent !== undefined ? `${r.attr} = ${String(r.absent)}` : "—",
   ])));
 }
 
 /** 그 가전을 카메라로 맞추는 값(가전 설비 글 + 값 글). 없으면 —. */
 function sightOf(d: { kind: string; twinAttrs: Record<string, unknown[]> }): string {
-  const hits = SIGHT_RULES.filter(([cls]) => (CLASSES[cls] as { deviceKind?: string }).deviceKind === d.kind)
+  const hits = SIGHT_RULES.filter(([cls]) => cameraKindOf(cls) === d.kind)
     .flatMap(([cls, rules]) => rules.filter((r) => r.attr in d.twinAttrs).map((r) => `${CLASSES[cls].label} ${Object.keys(r.values).map((k) => STATES[k as StateKey].label).join("·")}`));
   return hits.join(", ") || "—";
 }
@@ -67,7 +78,7 @@ function home(): string {
   return table(["가전 id", "이름", "종류", "상태 키", "사건 줄", "카메라로 맞춤"], twin.devices.map((d) => {
     const keys = Object.entries(d.twinAttrs).flatMap(([attr, values]) => values.flatMap((v) => deviceStateKeys(d.kind, { [attr]: v })));
     const events = keys.map((k) => `${d.label} ${deviceText(d.kind, k).became}`);
-    const long = Object.values(DEVICE_LONG).filter((l) => (l.kinds as readonly string[]).includes(d.kind)).map((l) => `${d.label} ${l.label}`);
+    const long = (Object.entries(DEVICE_LONG) as [DeviceLongKey, (typeof DEVICE_LONG)[DeviceLongKey]][]).filter(([k]) => longKinds(k).includes(d.kind)).map(([, l]) => `${d.label} ${l.label}`);
     return [code(d.id), d.label, d.kind, keys.map(code).join(", "), [...events, ...long].join(", "), sightOf(d)];
   }));
 }

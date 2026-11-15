@@ -1,6 +1,7 @@
 // 서버가 만들어 화면에 그대로 나가는 글. npm run lint가 이 파일도 검사한다(60자 아래, 화살표·괄호 없음).
 import { josa } from "../agent/phrases.js";
 import type { CloserMiss } from "../contract/events.js";
+import { KINDS, KIND_ORDER } from "../model/kinds.js";
 import { OBJECT_NAME } from "../world/labels.js";
 
 export const STEP_LABEL = {
@@ -137,9 +138,8 @@ export type TellMode = keyof typeof TELL_TEXT;
 /** 관찰 모드의 사람 부탁 글(src/act/track.ts askCloser): 가까이 볼 곳 이름으로 그 곳이 보이게 폰을 가까이 대 달라고 한다. */
 export const CLOSER_TEXT = (place: string) => `${josa(place, "이/가")} 보이게 폰을 가까이 대 주세요`;
 
-/** 위험 가전을 켜는 단계에서 켜기 전 질문 앞에 읽는 안전 한 줄(가전 종류마다, 서버 글). 열쇠는 가전 종류다. 낱말 표 종류(microwave)와 이름이 같아도
- *  다른 것이라 낱말 목록 검사와 헷갈리지 않게 따옴표로 쓴다. */
-export const CAUTION_LINE: Record<string, string> = { "cooktop": "냄비와 상판이 뜨거워져요.", "microwave": "그릇이 뜨거워져요." };
+/** 위험 가전을 켜는 단계에서 켜기 전 질문 앞에 읽는 안전 한 줄(가전 종류마다, 서버 글, 등록부 riskyOn.caution). 열쇠는 가전 종류다. */
+export const CAUTION_LINE: Record<string, string> = Object.fromEntries(KIND_ORDER.flatMap((k) => { const r = KINDS[k].riskyOn; return r ? [[k, r.caution]] : []; }));
 
 /** 손으로 켜는 위험 가전(src/act/track.ts): 켜기 전에 안전 문구와 함께 묻는 글, 켠 채 계획이 닫혔을 때 끄라고 알리는 명령. */
 export const CAUTION_TEXT = {
