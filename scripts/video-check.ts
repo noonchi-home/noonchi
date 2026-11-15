@@ -33,7 +33,7 @@
 // 식탁 1.5m 앞 시작 자리와 컵 치우기 승인을 미리 둔다. 기본 --expect-after는 대본 사람 시간(30초), 기본 --out은 <clip>.fake.timeline.md다.
 // 사람 사라짐, PAM 컵 치우기, 사람 사라짐 뒤 첫 명령, 네 단계 끝, 계획 끝, 트윈 눈·컵 줄 중 하나라도 없으면 끝 코드 1. ui/dist 빌드가 있어야 한다.
 // 잠금: npm run heavy -- 로 부르면 그 잠금(TWIN3D_HEAVY_PID) 안에서 돌고 크롬 pid를 그 잠금에 더한다. 혼자 부르면 withHeavy로 잡는다.
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -379,9 +379,8 @@ async function startFake(clip: string, steps: string[]): Promise<Fake> {
   const names = [...new Set([clip, ...steps.map((s) => s.split(":")[2]!)])];
   const missing = names.find((n) => !existsSync(join(ROOT, "runtime", "videos", n)));
   if (missing) throw new Error(`영상이 없어요: runtime/videos/${missing}`);
+  // 영상은 폰 서버가 공용 runtime/videos에서 바로 읽는다(src/server/home.ts phoneVideoDir)
   const runtimeDir = mkdtempSync(join(tmpdir(), "video-check-"));
-  mkdirSync(join(runtimeDir, "videos"), { recursive: true });
-  for (const n of names) copyFileSync(join(ROOT, "runtime", "videos", n), join(runtimeDir, "videos", n));
   mkdirSync(join(runtimeDir, "homes", HOME), { recursive: true });
   writeFileSync(join(runtimeDir, "homes", HOME, "approvals.json"), JSON.stringify({ always: { "task:컵 치우기": "2026-11-11T00:00:00.000Z" }, never: {} }));
   const logs: string[] = [];

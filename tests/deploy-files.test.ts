@@ -21,8 +21,8 @@ function serverEnvNames(): Set<string> {
   const res = [/\benv\??\.([A-Z][A-Z0-9_]+)/g, /\(env, "([A-Z][A-Z0-9_]+)"/g, /\bv\("([A-Z][A-Z0-9_]+)"\)/g, /keyEnv: "([A-Z][A-Z0-9_]+)"/g];
   return new Set(files.flatMap((f) => { const t = readFileSync(f, "utf8"); return res.flatMap((re) => [...t.matchAll(re)].map((m) => m[1]!)); }));
 }
-/** 컨테이너에 넘기지 않는 서버 설정: 호스트 경로(이미지 안 twin/·모델, RUNTIME_DIR/photos), MCP 서버용 주소, matter.js 안쪽 값. */
-const NOT_FOR_CONTAINER = new Set(["TWIN_STUDIO_DIR", "PHONE_PHOTO_DIR", "BRAIN_YOLO_PATH", "BRAIN_POSE_PATH", "TWIN_HOME_URL", "MATTER_RUNTIME_SIGNALS"]);
+/** 컨테이너에 넘기지 않는 서버 설정: 호스트 경로(이미지 안 twin/·모델, RUNTIME_DIR/photos, 영상 모드 영상 폴더), MCP 서버용 주소, matter.js 안쪽 값. */
+const NOT_FOR_CONTAINER = new Set(["TWIN_STUDIO_DIR", "PHONE_PHOTO_DIR", "PHONE_VIDEO_DIR", "BRAIN_YOLO_PATH", "BRAIN_POSE_PATH", "TWIN_HOME_URL", "MATTER_RUNTIME_SIGNALS"]);
 
 describe("배포 파일", () => {
   it("Dockerfile: Node 22.15 이상 22.x, 운영 의존성만, 화면 빌드, 트윈 포함, 저장소 models/의 YOLO26 두 개 sha256 검사", () => {

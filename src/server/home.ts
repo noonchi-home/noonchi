@@ -4,6 +4,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { checkDecision, checkPlan, loadActConfig } from "../act/check.js";
 import { Looker } from "../act/look.js";
 import { SAY_DONE_MS, sayLine } from "../act/say.js";
@@ -76,6 +77,14 @@ export interface HomeHistory {
 
 /** 폰에서 말한 것은 "phone" 세션 하나로 이어진다(대시보드 대화와 따로 기억). */
 const PHONE_SESSION = "phone";
+
+/** 영상 모드 영상 공용 폴더(저장소 runtime/videos). 시연 폴더(RUNTIME_DIR=runtime/demo/day1·week)로 띄워도 여기서 읽는다:
+ *  영상은 커서 시연 폴더마다 복사하지 않고, 시연 폴더를 지우는 준비 명령(demo-setup --fresh)이 이은 폴더를 따라 지우지 않게 정션도 쓰지 않는다. */
+const SHARED_VIDEO_DIR = fileURLToPath(new URL("../../runtime/videos/", import.meta.url));
+/** 영상 모드 영상 폴더: PHONE_VIDEO_DIR, 없으면 공용 runtime/videos(RUNTIME_DIR와 상관없다). */
+export function phoneVideoDir(env: Record<string, string | undefined>): string {
+  return env.PHONE_VIDEO_DIR?.trim() || SHARED_VIDEO_DIR;
+}
 
 export interface HomeContext {
   env: Env;
@@ -461,7 +470,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       // 맞추기 전에도 원뿔이 보이게: 창가 고정 위치 + 폰 방향(추정, 사진에는 쓰지 않음)
       const fallback = estimateViewpoint(JSON.parse(readFileSync(home.scenePath, "utf8").replace(/^﻿/, "")));
       phone = createPhoneServer({
-        eyeHeightM, feed, log, fallback, floorAt: floorLookup(plan.rooms), videoDir: join(runtimeDir, "videos"),
+        eyeHeightM, feed, log, fallback, floorAt: floorLookup(plan.rooms), videoDir: phoneVideoDir(env),
         sync: { landmarks: landmarksNow(), walls: wallSegments(plan), start: startStore?.get() ?? null },
         onEye: (eye) => {
           appNow.broadcast({ type: "eye", eye });
