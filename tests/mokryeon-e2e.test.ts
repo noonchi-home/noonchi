@@ -106,7 +106,7 @@ describe("한양목련 처음부터 끝까지", () => {
     const planId = asked.id as string;
     expect(asked).toEqual({
       type: "command", id: expect.stringMatching(/^plan:pam-\d+$/), step: `${planId}:approve`, text: "컵 치우기를 할까요?", vision: null,
-      choices: [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }], target: null, speak: true,
+      choices: [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }], target: null, speak: true, grade: "question",
     });
     const waiting = dash.filter((m) => m.type === "plan" && m.plan?.id === planId).at(-1)!.plan;
     expect(waiting.status).toBe("planned");

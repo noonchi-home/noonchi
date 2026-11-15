@@ -388,8 +388,8 @@ describe("소리 차례(sayAloud): 앞 말을 끊지 않고 차례로 읽는다"
     const LONG = "가".repeat(500);
     ws.push({ type: "reply", text: LONG });
     vi.advanceTimersByTime(1_000);
-    ws.push({ type: "reply", text: WARN });
-    ws.push(command({ text: ASK }));
+    ws.push({ type: "reply", text: WARN, grade: "safety" });
+    ws.push(command({ text: ASK, choices: [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }], grade: "question" }));
     vi.advanceTimersByTime(3_000);
     expect(spoken).toEqual([LONG, WARN]);
     vi.advanceTimersByTime(7_000);
@@ -401,6 +401,45 @@ describe("소리 차례(sayAloud): 앞 말을 끊지 않고 차례로 읽는다"
     expect(c.view().listening).toBe("on");
     expect(spoken).toHaveLength(3);
     expect(hushed).toBe(1);
+  });
+
+  it("끄기 경고(안전)와 승인 질문(질문) 뒤에 500자 reply가 와도 경고와 질문은 자르지 않고 끝까지 읽고, reply만 남은 시간까지 줄인다. 다시 읽는 질문은 시간이 없으면 건너뛰고 20초에 다시 듣는다", async () => {
+    vi.useFakeTimers();
+    let hushed = 0;
+    const { c, ws, spoken, startAr } = make({ hush: () => { hushed += 1; } });
+    await startAr();
+    const LONG = "가".repeat(500);
+    ws.push({ type: "reply", text: WARN, grade: "safety" });
+    ws.push(command({ text: ASK, choices: [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }], grade: "question" }));
+    ws.push({ type: "reply", text: LONG });
+    vi.advanceTimersByTime(7_699);
+    expect(spoken).toEqual([WARN]);
+    vi.advanceTimersByTime(1);
+    expect(spoken).toEqual([WARN, ASK]);
+    vi.advanceTimersByTime(9_199);
+    expect(spoken).toEqual([WARN, ASK]);
+    vi.advanceTimersByTime(1);
+    expect(spoken).toEqual([WARN, ASK, LONG]);
+    vi.advanceTimersByTime(3_099);
+    expect(c.view().listening).toBe("paused");
+    vi.advanceTimersByTime(1);
+    expect([c.view().listening, hushed, spoken.length]).toEqual(["on", 1, 3]);
+  });
+
+  it("안전·질문 말이 듣기 멈춤 20초보다 길게 쌓여도 모두 끝까지 읽고, 그 뒤 일반 reply는 건너뛴다", async () => {
+    vi.useFakeTimers();
+    const { c, ws, spoken, startAr } = make();
+    await startAr();
+    const OFF_NOTE = "전자레인지를 꺼 주세요";
+    ws.push({ type: "reply", text: WARN, grade: "safety" });
+    ws.push({ type: "reply", text: "전자레인지가 다시 켜졌어요. 꺼 주세요", grade: "safety" });
+    ws.push(command({ id: "plan:pam-0", step: "off:plan:pam-0:microwave_1:2", text: OFF_NOTE, grade: "safety" }));
+    ws.push({ type: "reply", text: "네 알겠어요" });
+    vi.advanceTimersByTime(7_700 + 8_600);
+    expect(spoken).toEqual([WARN, "전자레인지가 다시 켜졌어요. 꺼 주세요", OFF_NOTE]);
+    vi.advanceTimersByTime(2_000 + OFF_NOTE.length * 300);
+    expect(spoken).toHaveLength(3);
+    expect(c.view().listening).toBe("on");
   });
 
   it("혼자 읽는 긴 말도 15초(TALK_MAX_MS)에서 끊고 다시 듣는다. 끝 알림이 제때 오면 끊지 않는다", async () => {

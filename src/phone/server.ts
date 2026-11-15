@@ -3,6 +3,7 @@
 // 넘긴다(그 뒤는 에이전트·승인 정책이 맡는다). 실제 폰에 명령·질문이 떠 있으면 말을 먼저 그 답으로 맞춰 보고(onAnswer),
 // 답 단추(answer)는 onChoice로 넘긴다(src/contract/phone.ts). 명령 대상의 트윈 자리는 맞춘 변환으로 AR 자리로 바꿔 보내고(맞추기 전 null),
 // 맞춤이 바뀌면 지금 명령을 다시 보낸다(speak false). 위치 맞춤 모듈(src/sync)의 상태가 바뀌면 붙은 폰 모두에 상태를 보낸다.
+// 명령에는 소리 등급(grade, talkGrade: 끄기 안내 safety·질문 question)을 붙여 보낸다. 실제 폰은 그 말을 자르지 않고 끝까지 읽는다.
 // 내부 테스트용이라 같은 와이파이의 누구나 말을 보낼 수 있다.
 // 폰 화면은 React 빌드 ui/dist/phone/이고 빌드 파일은 /assets/다(대시보드와 같은 빌드). 영상 모드 영상은 /phone/videos/다(videoDir, Range).
 // 폰 판본(src/contract/phone-version.ts): 연결마다 hello를 기다린다. 판본이 맞는 hello를 받기 전에는 그 연결에 계획 명령을 보내지 않고 답(answer·say·confirm·cancel)을
@@ -17,7 +18,8 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocket, WebSocketServer } from "ws";
 import type { FocusTarget } from "../contract/events.js";
-import type { ApprovalAnswer, HeardAt, PhoneCommand, PhonePending, PhoneTalkReply, PlannedCommand, PlannedCommandMessage } from "../contract/phone.js";
+import type { ApprovalAnswer, HeardAt, PhoneCommand, PhonePending, PhoneTalkReply, PlannedCommand, PlannedCommandMessage, TalkGrade } from "../contract/phone.js";
+import { isOffStep } from "../act/off-step.js";
 import { PHONE_PROTOCOL } from "./protocol.js";
 import { REFRESH_TEXT } from "../plan/labels.js";
 import { listenRetry } from "../server/net.js";
@@ -140,13 +142,20 @@ export interface PhoneServer {
   syncState(): SyncState;
   /** 판본이 맞는 실제 폰(맞는 hello를 받은 연결)이 하나라도 붙어 있는가. */
   ready(): boolean;
-  /** 말의 답 메시지(pending 없음)를 판본이 맞는 붙은 폰 모두에 보낸다. 폰은 명령 줄을 건드리지 않고 소리로 읽고 잠깐 알림 줄에 남긴다. */
-  reply(text: string): void;
+  /** 말의 답 메시지(pending 없음)를 판본이 맞는 붙은 폰 모두에 보낸다. 폰은 명령 줄을 건드리지 않고 소리로 읽고 잠깐 알림 줄에 남긴다.
+   *  grade safety(다시 켜짐 경고)면 폰이 자르지 않고 끝까지 읽는다. */
+  reply(text: string, grade?: "safety"): void;
   /** 실제 폰 명령(command)·지우기(command_clear)를 연결된 폰 모두에 보내고 지금 명령으로 둔다. 새로 붙은 폰은 상태 다음에
    *  지금 명령을 speak false로, 명령이 없으면 id 없는 command_clear를 받는다(다시 켠 서버에 다시 붙은 폰의 이전 명령이 지워진다). */
   command(msg: PlannedCommandMessage): void;
   listen(port: number, host: string): Promise<{ port: number; urls: string[] }>;
   close(): Promise<void>;
+}
+
+/** 명령의 소리 등급: 닫힌 계획의 끄기 안내·부탁(off: 단계, src/act/off-step.ts)은 safety, 답 단추가 「완료」 말고 있으면(승인·시간 초과·물어보기) question. */
+export function talkGrade(c: Pick<PlannedCommand, "step" | "choices">): TalkGrade | undefined {
+  if (isOffStep(c.step)) return "safety";
+  return c.choices.some((x) => x.id !== "done") ? "question" : undefined;
 }
 
 /** 페이지를 준 호스트와 같은 출처만 받는다(다른 사이트가 가짜 자세를 보내지 못하게). */
@@ -288,7 +297,8 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
   /** 실제 폰에 보낼 명령: 대상 트윈 자리 → AR 자리(맞추기 전이면 대상 null). */
   const wire = (c: PlannedCommand, speak = c.speak): PhoneCommand => {
     const ar = c.target ? session.toAr(c.target.position) : null;
-    return { ...c, target: c.target && ar ? { id: c.target.id, label: c.target.label, ar } : null, speak };
+    const grade = talkGrade(c);
+    return { ...c, target: c.target && ar ? { id: c.target.id, label: c.target.label, ar } : null, speak, ...(grade ? { grade } : {}) };
   };
   /** 맞춤이 바뀌었으면(moved: 맞춘 변환이 움직였어도) 지금 명령을 새 대상 자리로 다시 보낸다. */
   const resendIf = (wasAligned: boolean, moved = false) => {
@@ -402,8 +412,8 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
     },
     syncState: () => session.syncState(),
     ready: () => [...wss.clients].some((ws) => ok(ws) && ws.readyState === WebSocket.OPEN),
-    reply(text) {
-      for (const ws of wss.clients) if (ok(ws)) reply(ws, { type: "reply", text } satisfies PhoneTalkReply);
+    reply(text, grade) {
+      for (const ws of wss.clients) if (ok(ws)) reply(ws, { type: "reply", text, ...(grade ? { grade } : {}) } satisfies PhoneTalkReply);
     },
     command(msg) {
       if (msg.type === "command") current = msg;

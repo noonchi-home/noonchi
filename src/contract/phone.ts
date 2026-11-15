@@ -11,6 +11,10 @@ export interface PhoneTarget { id: string; label: string; ar: [number, number, n
 /** 사람 단계 종류: 가기·집기·놓기·그 자리에서 하는 일(따르기). */
 export type PhoneStepKind = "go" | "pick" | "place" | "do";
 
+/** 소리 등급: safety 끄기 안내·다시 켜짐 경고, question 승인·물음. 서버 글 틀이라 짧아 실제 폰은 자르거나 건너뛰지 않고 끝까지 읽는다.
+ *  칸이 없으면 명령(command)·에이전트 답(reply)이고, 듣기 멈춤 시간이 모자라면 실제 폰이 줄이거나 건너뛴다(reply 먼저). */
+export type TalkGrade = "safety" | "question";
+
 /**
  * 서버 → 실제 폰: 지금 할 명령. 바뀔 때마다 통째로 보낸다. 같은 id·step이면 같은 명령이고 비전 상태만 바뀐 것이다.
  * 새로 붙은 폰은 상태(status) 다음에 지금 명령을 speak false로 받는다.
@@ -32,6 +36,8 @@ export interface PhoneCommand {
   speak: boolean;
   /** 사람 단계 명령의 단계 종류. 질문·승인·알림에는 없다. 영상 모드가 단계 영상을 고를 때 쓴다. */
   kind?: PhoneStepKind;
+  /** 소리 등급(폰 서버가 붙인다). 보통 명령이면 없다. */
+  grade?: TalkGrade;
 }
 
 /** 서버 안(실행 추적 → 폰 서버)의 명령: 대상 자리가 트윈 좌표 [x, 높이, y]다. 폰 서버가 AR 좌표로 바꿔 PhoneCommand로 보낸다. */
@@ -64,7 +70,7 @@ export interface PhoneHello { type: "hello"; protocol: number }
 
 /** 서버 → 실제 폰: 말·승인의 답. text가 빈 글이면 보이지도 읽지도 않는다(명령의 답을 말로 한 때: 다음 명령이 따로 온다).
  *  pending은 에이전트 답에만 싣는 지금 승인 대기 목록이다. 없으면(명령의 답·승인·취소·오류) 실제 폰은 목록을 그대로 둔다. */
-export interface PhoneTalkReply { type: "reply"; text: string; pending?: PhonePending[] }
+export interface PhoneTalkReply { type: "reply"; text: string; pending?: PhonePending[]; grade?: "safety" }
 
 /** 서버가 실제 폰에 보내는 명령 메시지. */
 export type PhoneCommandMessage = PhoneCommand | PhoneCommandClear;
