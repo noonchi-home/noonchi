@@ -3,7 +3,7 @@
 // pause()는 듣기를 끊고(폰이 명령을 소리로 읽는 동안 그 소리를 듣지 않게) resume()까지 다시 켜지 않는다.
 // 마이크 권한이 없거나(not-allowed·service-not-allowed) 마이크가 없으면(audio-capture) denied로 멈춘다. start()를 다시 부르면 새로 켠다(브라우저가 되면 권한을 다시 묻는다).
 // 상태(onState, 바뀔 때만): on 듣는 중, paused 읽는 동안 멈춤, denied 마이크 꺼짐, off 꺼짐(start 전·stop 뒤).
-// speak는 앞 소리를 끊고 읽은 뒤(끝·오류) done을 부른다.
+// speak는 앞 소리를 끊고 읽은 뒤(끝·오류) done을 부른다. hush는 읽던 소리를 끊는다.
 
 /** 이 브라우저의 음성 인식(없으면 null). */
 export const recognition = (w = globalThis) => w.SpeechRecognition || w.webkitSpeechRecognition || null;
@@ -107,4 +107,9 @@ export function speak(text, done = () => {}) {
   u.onend = () => done();
   u.onerror = () => done();
   speechSynthesis.speak(u);
+}
+
+/** 읽던 소리를 끊는다. 음성 합성이 없으면 아무것도 안 한다. */
+export function hush() {
+  if ("speechSynthesis" in globalThis) speechSynthesis.cancel();
 }

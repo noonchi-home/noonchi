@@ -19,3 +19,4 @@ export interface Listener { start(): void; stop(): void; pause(): void; resume()
 export function recognition(w?: object): RecognitionCtor | null;
 export function createListener(Recognition: RecognitionCtor, hooks: ListenHooks, opts?: { restartMs?: number }): Listener;
 export function speak(text: string, done?: () => void): void;
+export function hush(): void;

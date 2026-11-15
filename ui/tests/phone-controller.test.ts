@@ -352,6 +352,44 @@ describe("소리 차례(sayAloud): 앞 말을 끊지 않고 차례로 읽는다"
     expect(c.view().listening).toBe("on");
   });
 
+  it("끝 알림이 없는 긴 reply(500자) 뒤에 경고와 승인 질문이 오면 긴 말을 뒤 말 차례만큼 일찍 끊고, 경고·질문을 읽은 뒤 듣기 멈춤 20초(LISTEN_PAUSE_MAX_MS)에 다시 듣는다", async () => {
+    vi.useFakeTimers();
+    let hushed = 0;
+    const { c, ws, spoken, startAr } = make({ hush: () => { hushed += 1; } });
+    await startAr();
+    const LONG = "가".repeat(500);
+    ws.push({ type: "reply", text: LONG });
+    vi.advanceTimersByTime(1_000);
+    ws.push({ type: "reply", text: WARN });
+    ws.push(command({ text: ASK }));
+    vi.advanceTimersByTime(3_000);
+    expect(spoken).toEqual([LONG, WARN]);
+    vi.advanceTimersByTime(7_000);
+    expect(spoken).toEqual([LONG, WARN, ASK]);
+    expect(c.view().listening).toBe("paused");
+    vi.advanceTimersByTime(8_999);
+    expect(c.view().listening).toBe("paused");
+    vi.advanceTimersByTime(1);
+    expect(c.view().listening).toBe("on");
+    expect(spoken).toHaveLength(3);
+    expect(hushed).toBe(1);
+  });
+
+  it("혼자 읽는 긴 말도 15초(TALK_MAX_MS)에서 끊고 다시 듣는다. 끝 알림이 제때 오면 끊지 않는다", async () => {
+    vi.useFakeTimers();
+    let hushed = 0;
+    const { c, ws, dones, startAr } = make({ hush: () => { hushed += 1; } });
+    await startAr();
+    ws.push({ type: "reply", text: "가".repeat(500) });
+    vi.advanceTimersByTime(14_999);
+    expect(c.view().listening).toBe("paused");
+    vi.advanceTimersByTime(1);
+    expect([c.view().listening, hushed]).toEqual(["on", 1]);
+    ws.push({ type: "reply", text: WARN });
+    dones[1]!();
+    expect([c.view().listening, hushed]).toEqual(["on", 1]);
+  });
+
   it("빈 글이 아닌 reply는 잠깐 알림 줄에 20초 남는다(명령 줄은 그대로)", () => {
     vi.useFakeTimers();
     const { c, ws } = make();

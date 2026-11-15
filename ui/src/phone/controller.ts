@@ -5,10 +5,12 @@
 // 서버는 그 명령·token에만 답으로 받는다(말하는 사이 명령이 바뀌면 버린다). 서버 판본이 다르면 core/link.js가 다시 읽고, 못 읽으면 「새로 고침이 필요해요」.
 // 답 단추는 받은 명령의 id·step으로 answer를, 승인 대기 답 단추는 그 토큰과 답(승인·거절)으로 confirm을 보낸다.
 // 말의 답(reply)이 빈 글이면 보이지도 읽지도 않는다. 빈 글이 아니면 소리로 읽고 잠깐 알림 줄에 20초 남긴다(명령 줄은 그대로). 그 밖의 잠깐 알릴 말은 4초.
-// 소리는 차례로 읽는다(sayAloud 줄): 앞 말을 끊지 않고 끝난 뒤(끝 알림, 오지 않으면 speakMs) 다음 말을 읽는다. 명령 말에는 그 명령(계획 id·단계 id)을 붙이고,
+// 소리는 차례로 읽는다(sayAloud 줄): 앞 말이 끝난 뒤(끝 알림, 오지 않으면 speakMs) 다음 말을 읽는다. 명령 말에는 그 명령(계획 id·단계 id)을 붙이고,
 // 새 명령·그 명령의 command_clear가 오면 아직 안 읽은 그 명령 말을 버린다. 읽기 바로 앞에는 화면 엄지 자리에 실제로 보이는 대상(handOf, 말의 at과 같은 길)과
 // 견줘 다르면 건너뛴다(승인 대기 뒤에 숨은 명령은 읽지 않는다). reply를 읽은 뒤 보이는 명령·승인 대기가 있고 줄에 그 말이 없으면 한 번 다시 읽는다
-// (승인 대기는 위 줄 「기기: 까닭」). 듣기는 줄이 빌 때까지 멈춘다.
+// (승인 대기는 위 줄 「기기: 까닭」). 듣기는 줄이 빌 때까지 멈춘다(읽는 동안 들으면 폰 스피커 소리를 인식이 듣고 그 글이 말로 서버에 간다).
+// 다만 말 하나는 많아야 TALK_MAX_MS(15초)까지 읽고, 듣기 멈춤은 멈춘 때부터 많아야 LISTEN_PAUSE_MAX_MS(20초)다: 기다리는 말이 있으면 그 차례를 남기고
+// 앞 말을 일찍 끊고(뒤에 온 경고·질문이 먼저), 다 쓰면 남은 말을 버리고 소리를 끊은 뒤 다시 듣는다. 끊은 말의 글은 답 줄·알림 줄에 남는다.
 // 카메라 화면을 못 보내면(core/ar.js 알림) 그 AR 동안 cameraOff로 두어 설정 모달에 「카메라 · 못 보냄」을 남긴다.
 // 위치 맞춤: 시작 위치가 있으면 AR을 켤 때 「여기서 시작」(시작 위치 맞추기)을 띄운다(state.ts onStatus). 단추나 말 「여기서 시작」이면
 // 마지막 폰 자세와 원점으로 {type:"start"}를 보낸다. 그 뒤 서버가 걸으면서 물건·벽 모양으로 맞춘다(src/sync).
@@ -21,7 +23,7 @@ import type { HeardAt, PhoneCommand, PhoneCommandClear } from "../../../src/cont
 import { createAr, type ArHooks, type PhoneAr } from "./core/ar.js";
 import { createVideoAr, logVideoCommand, logVideoPending, videoParams, type VideoArDeps } from "./core/video-ar.js";
 import { createLink, phoneSocketUrl } from "./core/link.js";
-import { createListener, recognition, speak as speakAloud, type RecognitionCtor } from "./core/talk.js";
+import { createListener, hush as hushAloud, recognition, speak as speakAloud, type RecognitionCtor } from "./core/talk.js";
 import {
   createStore, handOf, heardAtOf, initialView, isStartWord, onStatus, shownPending,
   type FocusMark, type Pending, type PhoneActions, type PhoneView, type SyncWire,
@@ -38,6 +40,12 @@ const CAMERA_NOTE = "카메라 화면을 보낼 수 없어요";
 const COMMAND_FOCUS_MS = 3_600_000;
 /** 소리 끝 알림이 오지 않을 때 다시 듣기까지: 2초 + 글자마다 0.3초. */
 const speakMs = (text: string) => 2000 + text.length * 300;
+/** 말 하나를 읽는 가장 긴 시간: 끝 알림이 없거나 더 길면 여기서 끊고 다음 말로 간다. */
+const TALK_MAX_MS = 15_000;
+/** 소리 줄 때문에 듣기를 멈추는 가장 긴 시간(멈춘 때부터): 기다리는 말이 있으면 그 차례를 남기고 지금 말을 끊고, 다 쓰면 남은 말을 버리고 다시 듣는다. */
+const LISTEN_PAUSE_MAX_MS = 20_000;
+/** 말 하나에 잡는 시간. */
+const talkMs = (text: string) => Math.min(speakMs(text), TALK_MAX_MS);
 
 type XrLike = { isSessionSupported(mode: string): Promise<boolean> };
 export interface ControllerDeps {
@@ -48,6 +56,8 @@ export interface ControllerDeps {
   Recognition?: RecognitionCtor | null;
   /** 소리로 읽기. 다 읽으면 done. */
   speak?: (text: string, done: () => void) => void;
+  /** 읽던 소리 끊기. 없으면 브라우저 음성 합성 cancel. */
+  hush?: () => void;
   secure?: boolean;
   /** 없으면 navigator.xr. null이면 AR 없음. */
   xr?: XrLike | null;
@@ -83,6 +93,7 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
   const params = new URLSearchParams(deps.location.search);
   const video = videoParams(params);
   const speak = video ? (_text: string, done: () => void) => done() : deps.speak ?? speakAloud;
+  const hush = video ? () => {} : deps.hush ?? hushAloud;
   const Recognition = video ? null : deps.Recognition === undefined ? recognition() : deps.Recognition;
   const store = createStore<PhoneView>(initialView());
   const set = (fn: (v: PhoneView) => PhoneView) => store.set(fn);
@@ -94,6 +105,10 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
   /** 소리 줄: 읽을 글과 화면 대상의 말이면 그 대상. talking: 지금 읽는 말. */
   let talkQueue: Talk[] = [];
   let talking: Talk | null = null;
+  /** 지금 말의 제 끝(talkMs), 이번 듣기 멈춤의 끝(LISTEN_PAUSE_MAX_MS), 지금 말 끊기. */
+  let talkEnd = 0;
+  let pauseEnd = 0;
+  let cutTalk = () => {};
   let aim = false;
   /** 말 시작 때 잡아 둔 at(그 말을 보내면 비운다). */
   let heardAt: HeardAt | null = null;
@@ -172,22 +187,40 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
     noteTimer = setTimeout(() => set((v) => ({ ...v, note: null })), ms);
   }
 
-  /** 소리 줄에 넣는다(target: 화면 대상의 말이면 그 대상). 읽는 동안 듣기를 멈추고, 앞 말이 끝나면 차례로 읽는다. */
+  /** 소리 줄에 넣는다(target: 화면 대상의 말이면 그 대상). 읽는 동안 듣기를 멈추고(멈춘 때부터 LISTEN_PAUSE_MAX_MS까지), 앞 말이 끝나면 차례로 읽는다. */
   function sayAloud(text: string, target: TalkTarget | null = null) {
     talkQueue.push({ text, target });
+    if (talking) return armTalk();
+    pauseEnd = Date.now() + LISTEN_PAUSE_MAX_MS;
     listener?.pause();
-    if (!talking) playNext();
+    playNext();
   }
 
-  /** 줄의 다음 말을 읽는다. 대상이 있는 말은 읽기 바로 앞에 화면에 보이는 대상(handOf)과 다시 견줘 다르면 건너뛴다. 줄이 비면 듣기를 다시 켠다. */
-  function playNext() {
+  /** 대상이 있는 말이 지금 화면에 보이는 대상(handOf)의 말인가. reply는 늘 읽는다. */
+  const playable = (t: Talk) => !t.target || sameTarget(t.target, shownTalk(store.get())?.target ?? null);
+  /** 줄에서 기다리는 말들 차례(읽을 말만). */
+  const waitingMs = () => talkQueue.reduce((ms, t) => ms + (playable(t) ? talkMs(t.text) : 0), 0);
+
+  /** 지금 말을 끊을 때를 다시 잡는다: 제 끝과, 듣기 멈춤 끝에서 기다리는 말들 차례를 뺀 때 중 이른 때. */
+  function armTalk() {
+    if (!talking) return;
+    clearTimeout(talkTimer);
+    talkTimer = setTimeout(cutTalk, Math.max(0, Math.min(talkEnd, pauseEnd - waitingMs()) - Date.now()));
+  }
+
+  /** 줄의 다음 말을 읽는다. 대상이 있는 말은 읽기 바로 앞에 화면에 보이는 대상(handOf)과 다시 견줘 다르면 건너뛰고,
+   *  듣기 멈춤 끝까지 뒤 말들 차례를 빼면 남는 시간이 없는 말도 건너뛴다(뒤에 온 말이 먼저). 줄이 비면(끊은 말이면 소리를 끊고) 듣기를 다시 켠다. */
+  function playNext(cut = false) {
     clearTimeout(talkTimer);
     for (let next = talkQueue.shift(); next; next = talkQueue.shift()) {
-      if (next.target && !sameTarget(next.target, shownTalk(store.get())?.target ?? null)) continue;
+      if (!playable(next)) continue;
+      const now = Date.now();
+      if (pauseEnd - waitingMs() <= now) continue;
       const item = next;
       talking = item;
+      talkEnd = now + talkMs(item.text);
       const turn = ++talkTurn;
-      const done = () => {
+      const done = (cutting: boolean) => {
         if (turn !== talkTurn) return;
         talkTurn += 1;
         clearTimeout(talkTimer);
@@ -195,13 +228,15 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
         // reply를 읽은 뒤: 화면에 보이는 명령·승인 대기가 있고 줄에 그 말이 없으면 한 번 다시 읽는다(뒤에 숨은 명령은 읽지 않는다)
         const shown = shownTalk(store.get());
         if (!item.target && shown && !talkQueue.some((t) => t.target && sameTarget(t.target, shown.target))) talkQueue.push(shown);
-        playNext();
+        playNext(cutting);
       };
-      talkTimer = setTimeout(done, speakMs(item.text));
-      speak(item.text, done);
+      cutTalk = () => done(true);
+      armTalk();
+      speak(item.text, () => done(false));
       return;
     }
     talking = null;
+    if (cut) hush();
     listener?.resume();
   }
 
@@ -227,6 +262,7 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
       const m = msg as PhoneCommand;
       // 아직 안 읽은 다른 명령 말은 버린다(같은 명령의 비전 상태만 바뀐 것은 그대로)
       talkQueue = talkQueue.filter((t) => t.target?.kind !== "command" || (t.target.id === m.id && t.target.step === m.step));
+      armTalk();
       set((v) => ({ ...v, command: { id: m.id, step: m.step, text: m.text, vision: m.vision, choices: m.choices, target: m.target?.id ?? null } }));
       ar.setFocus(m.target ? [m.target] : [], COMMAND_FOCUS_MS);
       if (ar.videoTime) logVideoCommand(ar.videoTime(), m);
@@ -236,6 +272,7 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
       const m = msg as PhoneCommandClear;
       // 아직 안 읽은 그 명령 말(id가 없으면 모든 명령 말)은 버린다
       talkQueue = talkQueue.filter((t) => t.target?.kind !== "command" || (m.id !== undefined && t.target.id !== m.id));
+      armTalk();
       if (m.id !== undefined && m.id !== store.get().command?.id) return;
       set((v) => ({ ...v, command: null }));
       ar.setFocus([], 0);
