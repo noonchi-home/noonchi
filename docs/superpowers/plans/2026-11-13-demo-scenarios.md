@@ -985,7 +985,7 @@ export function needsPhone(plan: AgentPlan, approval: ApprovalWhy | null, device
 **겹침을 코드에서 본 결과:** 실행 추적은 계획을 하나만 돌린다(`src/act/track.ts` `private run: Run | null`). 새 계획이 오면 지금 계획을 먼저 닫아(`finish(open, "failed", EXEC_TEXT.superseded, null)`) 그 hot을 끄기 안내 줄로 넘긴 뒤 새 계획을 받고, 새 계획은 그 안내 때문에 미뤄진다(`tryStart`). 그래서 지금 코드(ecfe46f)에는 「B가 도는 중에 A가 닫혀 안내가 생기는」 길이 없다. 11c-1의 다시 걸기(`rearmIfOn`)가 한 길을 만든다: 닫힌 A의 풀린 가전이 10분 안에 다시 켜지면 B가 도는 중에도 A 안내가 줄에 들어간다. 이 Task가 그 경우를 다룬다.
 
 **Files:**
-- Modify: `src/contract/phone.ts`(`offStep`, `isOffStep`), `src/act/track.ts`(끄기 안내 step 모양, `offPending`, 미룸을 needsPhone 계획만, B 단계 사이에 안내 끼우기 `advance`·`activate`, 안내 중 가전을 켜는 승인 막기, 가전 계획 say 막기, 끄기 안내에 말 답 안 받기 `onHeard`), `scripts/video-check.ts`(`plannedClicks`가 `off:` 명령을 건너뜀)
+- Modify: `src/contract/phone.ts`(`offStep`, `isOffStep`), `src/act/track.ts`(끄기 안내 step 모양, `offPending`, 미룸을 needsPhone 계획만, B 단계 사이에 안내 끼우기 `advance`·`activate`, 끄는 단계 예외, 안내 중 가전을 켜는 승인 막기, 가전 계획 say 막기, 끄기 안내에 말 답 안 받기 `onHeard`), `scripts/video-check.ts`(`plannedClicks`가 `off:` 명령을 건너뜀), `src/agent/policy.ts`(`turnsOff`, `OFF_COMMANDS` 옆)
 - Test: `tests/act-track.test.ts`, `tests/act-track-release.test.ts`, `tests/video-check.test.ts`, `tests/coach-e2e.test.ts`
 
 **Interfaces:**
@@ -1000,8 +1000,11 @@ export const isOffStep = (step: string): boolean => step.startsWith("off:");
 //   choices: 「완료」 하나(부탁이면 없음), vision: null, target: null, speak: true }. 지금 step(`<계획 id>:off`, `<계획 id>:off:<n>`)을 이것으로 바꾼다.
 //   「완료」를 누르면 11c-1 그대로: releaseIfOff가 참이면 지우고, 아니면 같은 id·step으로 부탁 글(단추 없음)로 바꾼다.
 // src/act/track.ts
-/** 끄기 안내가 떠 있거나 줄에 남았는가. 참이면 needsPhone 계획의 첫 명령(승인 질문 포함)과 도는 계획의 다음 명령을 보내지 않는다. */
+/** 끄기 안내가 떠 있거나 줄에 남았는가. 참이면 needsPhone 계획의 첫 명령(승인 질문 포함)과 도는 계획의 다음 명령을 보내지 않는다(끄는 단계는 예외, turnsOff). */
 private offPending(): boolean;
+// src/agent/policy.ts
+/** 가전을 끄는 단계인가: 가전 단계의 명령이 off·stop(OFF_COMMANDS)이거나 손 끄기(do, hand_device.to === "off"). */
+export function turnsOff(step: AgentStep): boolean;
 ```
 - 차례: 명령 줄에는 하나만 뜬다. 가전이 둘이면 끄기 안내도 명령처럼 하나씩 차례로 띄운다(11c-1 줄 그대로, 120초마다 줄 끝으로 돌림, 돌리기는 `nextReminder` 안에서).
 - 말: 지금 명령이 끄기 안내(`isOffStep`)면 말 「완료」·「다 했어」는 at이 그 안내여도 답으로 받지 않는다(들은 말로만 남김, 11c-1 그대로).
@@ -1011,6 +1014,7 @@ private offPending(): boolean;
 - 끄기 안내가 남아 있는 동안 폰이 필요한 계획(Task 11d `needsPhone`: 사람 단계·ask·승인 질문·위험 가전 단계·시간 초과 질문)은 시작하지 않고 기다린다. 실행 기록에 `EXEC_TEXT.deferred(가전)`(한 번), 대시보드 말풍선 카드에 `SAY_TEXT.offWait(가전)`. 안내가 다 풀리면 시작한다(`nextReminder` → `tryStart`).
 - 폰이 필요 없는 가전 계획은 그대로 돈다. 그 계획의 say 줄은 끄기 안내가 떠 있는 동안 명령 줄로 보내지 않는다(명령 줄에는 하나만, 실행 기록에는 남긴다).
 - 계획 B가 도는 중에 A 안내가 생기면(11c-1 다시 걸기): B의 지금 명령은 그대로 두고 그 단계가 끝나기를 기다린다(시간 한도·조건·`cycleEnded`도 그대로). B 단계가 끝나면 B의 다음 명령을 보내기 전에 A 끄기 안내를 명령 줄에 띄우고, B의 다음 명령은 안내가 모두 풀린 뒤에 보낸다. 기다리는 동안 B 다음 단계는 시작 전이라 시간 한도가 흐르지 않고, B의 hot은 그대로 추적한다. B의 마지막 단계가 끝나면 B가 닫히고 안내가 뜬다.
+- 예외(코디네이터 결정): B의 다음 단계가 가전을 끄는 단계(`turnsOff`: 가전 off·stop 명령, 손 끄기 `hand_device off`)면 A 끄기 안내가 떠 있어도 막지 않는다. 끄는 일은 위험을 줄이기 때문이다. 명령 줄에는 B의 끄기 명령을 먼저 띄우고(A 안내는 지우지 않고 잠시 내려 둔다, 내리고 다시 띄우는 것은 `nextReminder` 안에서라 구조 검사 그대로), 그 단계가 끝나면 A 안내를 다시 띄운다. 그 뒤 B의 다음 명령은 다시 안내가 풀린 뒤에 보낸다.
 - B의 승인 질문이 안내 중인 가전(같은 가전 id)을 켜는 것이면(`needsConfirm`) 그 「승인」은 받지 않는다. 그 자리에 A 끄기 안내를 띄우고, B 승인 질문은 안내가 풀린 뒤 다시 보낸다(켜진 채로 또 켜라는 지시 방지).
 
 **영상 판정:** 지금은 `--done-after`가 모든 새 명령의 첫 단추를 누르고, `--done-on`은 글만 견준다. 끄기 안내 「인덕션을 꺼 주세요」는 라면 12번 명령 글과 같아 눌릴 수 있다. 그래서 `plannedClicks`는 step이 `off:`인 명령(`isOffStep`)에는 어떤 누르기도 예약하지 않는다(`--done-after`·`--done-on`·`--approve` 모두).
@@ -1019,6 +1023,7 @@ private offPending(): boolean;
   - 명령 모양: 「두 가전이 켜진 채 닫히면 명령 줄에 끄기 안내가 하나 뜨고 120초마다 다른 가전 안내와 차례를 바꾼다. 명령 id는 닫힌 계획 id, step은 `off:<계획>:<가전>:<회차>`」, 「「완료」 → 같은 id·step으로 부탁 「인덕션이 보이게 폰을 가까이 대 주세요」(단추 없음)로 바뀌고 hot은 남는다」, 「at이 그 안내인 말 「완료」는 안내를 바꾸지 않는다」.
   - 미룸: **「안내가 남은 동안 컵 치우기(사람 단계) 계획은 시작하지 않고 실행 기록 「인덕션 꺼짐 확인 전이라 새 일을 미룸」, 안내가 풀리면 첫 명령이 간다」**, **「같은 때 이미 승인된 에어컨 켜기(가전 단계만)는 바로 돌아 트윈 에어컨이 켜지고, 명령 줄의 끄기 안내는 그대로다」**, 「그 가전 계획의 say는 안내가 떠 있는 동안 명령 줄로 가지 않는다」.
   - B 단계 사이: **「B가 수납장으로 가는 단계 중에 A가 다시 걸리면 B 명령은 그대로이고 그 단계 시간 한도·조건도 그대로다. B 단계가 끝나면 A 끄기 안내가 명령 줄에 뜨고 B 다음 명령은 나가지 않는다. 확인된 꺼짐으로 안내가 풀리면 B 다음 명령이 간다」**, 「B가 익기를 기다리는 중이면 익기 시간이 그대로 흐르고, 끝난 뒤 안내가 뜬다」, 「기다리는 동안 B 다음 단계의 시간 초과가 오지 않는다」, 「B 마지막 단계가 끝나면 B가 닫히고 안내가 뜬다」.
+  - 끄는 단계 예외: **「A 인덕션 안내 중 B가 전자레인지 끄기 단계에 오면 B 끄기 명령이 나가고, 끝나면 A 안내가 돌아온다」**, 「B 가전 단계가 off·stop 명령이어도 같다」, 「`turnsOff`는 켜기·열기·맞추기 단계에는 거짓」.
   - 승인: 「B 승인 질문이 안내 중인 가전을 켜는 것이면 「승인」을 받지 않고 A 끄기 안내가 뜨며, 안내가 풀린 뒤 B 승인 질문이 다시 간다」.
   - 영상 판정: 「`--done-after 3`에서도 step이 `off:`인 명령에는 누르기를 예약하지 않는다」, 「`--done-on 10:인덕션을 꺼 주세요`는 라면 12번 명령에만 눌리고 같은 글의 끄기 안내에는 안 눌린다」, 「`--approve`도 `off:` 명령에는 안 눌린다」.
   - 11c-1 시험 가운데 「A 안내는 B가 끝난 뒤 뜬다」는 「B 단계 사이에 뜬다」로, 「안내가 남은 동안 새 계획을 미룬다」는 폰이 필요한 계획만으로 고친다.
@@ -1232,6 +1237,7 @@ export function microwaveSteps(ids: { microwave: string; waitS?: number /* wait 
 - PAM 계약 그대로: 「PAM 계약」 절, Task 13 시험 7.
 - Codex 1차 지적 9개: 1 Task 4 바꾸기 2·4, 2 「일주일을 시연 안에서 보이는 길」·Task 7·8, 3 Task 5 범위, 4 Task 2 행동 단위, 5 Task 6 API·Task 8 확인, 6 Task 8 `start`·Task 9 `--start-at`, 7 Task 11 `unbaked`, 8 Task 10 차례 쓰기, 9 Task 10 붙잡기·Task 9 `--tail`.
 - 서버 글 구조(T1~T4)에 맞춤: 「조사한 사실」 사람 단계 글 절, Task 12 표(글·끝 조건을 코드가 내는 값으로), 「라면 대본」 절, Task 13 시험 5·6.
+- 코디네이터 결정: 끄는 단계 예외(2026-11-15): Task 11c-2에서 A 끄기 안내가 떠 있어도 B의 가전 끄기 단계(off·stop, 손 끄기)는 막지 않고 먼저 띄우며, 끝나면 A 안내를 다시 띄운다.
 - 사용자 결정: 안전 안내 자리를 만들지 않고 끄기 안내를 명령 줄로(2026-11-15): Task 11d에서 안전 안내 자리·Step 0 스케치를 빼고 이름을 「폰 답이 그 명령에만 가게」로, Task 11c-2는 끄기 안내를 보통 명령처럼 명령 줄로(step `off:<계획>:<가전>:<회차>`, 가전 둘이면 차례로, 안내 동안 폰이 필요한 계획만 미룸, 도는 계획 B에는 단계 사이에 끼움, 안내 중 가전을 켜는 B 승인은 안 받음, 영상 판정은 `off:` 명령을 안 누름). 겹칠 때 규칙은 코디네이터 기본값.
 - 코디네이터 결정: Task 11c를 둘로 나눔(2026-11-15): Task 11c-1(track.ts 핵심: 회차 `onAt`·`cycleEnded`·`releaseIfOff`·`rearmIfOn`·`handOver`·`askToShow`, `sight_last`는 구현된 11a 모양(속성마다 `{ value, seen_ms, explicit }`)에 `close`를 더함, 끄기 안내는 지금 명령 줄에서 「완료」는 부탁으로·말로는 안 풀림·120초 만료는 다시 보냄·끄기 do 「완료」 뒤 hot 남음, 구조 검사·CLAUDE.md 한 줄, 시험은 라면 12번 허브 근거·전자레인지 카메라, 인덕션 카메라 근거 시험은 Task 11b로)와 Task 11c-2(11d 뒤: 안전 안내 자리로 옮김·두 가전 목록·120초 다시 읽기·B 명령 줄 안 막음·안내 중 가전을 켜는 B 승인 안 받음·영상 판정기는 안전 안내 단추를 안 누름). 7번 「다 되기 기다리기」 `cycleEnded` 시험은 Task 12로. 차례 11c-1 → 11d → 11c-2 → 12.
 - Codex 27차 지적 2개: P2 11r-1 같은 결과 시험을 「kinds same: non-approval」·「kinds same: approval」 두 묶음으로 나누고 11r-2 Step 1에서 승인 묶음만 「approval diff: only widened, never narrowed」로 바꿈(`kinds-before.json`은 그대로, 승인 아닌 부분은 계속 완전 일치), P3 11r-2에 「kinds registry: TEMP_ALLOW is empty」 실패 시험. 기록 바로잡음: Task 11r 나누기는 코디네이터 결정.
