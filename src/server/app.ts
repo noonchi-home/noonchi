@@ -78,8 +78,6 @@ export interface AppOptions {
   mode?: () => ControlMode;
   /** 준비 상태(/api/health ready, src/server/ready.ts). 없으면 준비 안 됨. */
   ready?: () => Promise<ReadyView>;
-  /** 서버 실행 하나의 무작위 표시(/api/health instance, 서버 잠금 token). */
-  instance?: string;
   /** 클로이드 계획 보관(src/plan/hub.ts). 있으면 에이전트 행동을 넘기고 POST /api/plan*을 받는다. 접속 때 지금 계획을 보낸다. */
   plan?: Pick<PlanHub, "current" | "onAgent" | "put" | "setStep">;
   /** 기록 DB(src/history/db.ts). 있으면 GET /api/history·/api/history/day/{날짜}·/api/decisions. */
@@ -299,7 +297,7 @@ export function createApp(opts: AppOptions): TwinHomeApp {
     ok: true, devices: hub.list().length, hub: opts.hubKind ?? "memory", transport: matterInfo()?.transport ?? null,
     provider: agent?.provider.name ?? null, model: agent?.provider.model ?? null, twin: !!twinDir && existsSync(twinDir),
     eye: !!opts.eye, home: opts.home ?? null, phone_urls: opts.phoneUrls?.() ?? [], brain: !!opts.brain, mode: opts.mode?.() ?? "test",
-    ready: opts.ready ? await opts.ready() : NOT_READY, instance: opts.instance ?? null,
+    ready: opts.ready ? await opts.ready() : NOT_READY,
   }));
 
   route("GET", /^\/api\/brain$/, async () => {

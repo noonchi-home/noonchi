@@ -33,8 +33,6 @@ export interface ShellOptions {
   webDir?: string;
   allowOrigin?: (origin: string) => boolean;
   log?: (msg: string) => void;
-  /** 서버 실행 하나의 무작위 표시. 집을 바꾸는 중에도 /api/health 503 답에 싣는다(서버 잠금 주인 확인). */
-  instance?: string;
 }
 
 export interface Shell {
@@ -107,7 +105,7 @@ export function createShell(opts: ShellOptions): Shell {
     // 바꾸는 중에도 설정 화면 파일은 내준다(바꾸기가 실패해도 다시 고를 수 있게)
     if ((req.method === "GET" || req.method === "HEAD") && !path.startsWith("/api/") && !path.startsWith("/twin/")
       && serveFile(res, webDir, path === "/" ? "index.html" : path, req.method === "HEAD")) return;
-    sendJson(res, 503, { ok: false, error: BUSY, ...(path === "/api/health" && opts.instance ? { instance: opts.instance } : {}) });
+    sendJson(res, 503, { ok: false, error: BUSY });
   });
 
   server.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {

@@ -8,7 +8,6 @@ import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type WebSocket from "ws";
 import { MemoryHub } from "../src/hub/memory.js";
-import { liveServerLock, readServerLock } from "../src/server/lock.js";
 import { fetchRetry } from "../src/server/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { HOME_SCRIPT, startFakeLlm, type FakeLlm } from "./helpers/llm.js";
@@ -174,7 +173,7 @@ describe("설정 흐름 서버", () => {
     expect((await post("/api/setup/home", {})).status).toBe(400);
   });
 
-  it("집을 바꾸는 동안: 다른 API 503, 겹친 바꾸기 409, 설정 화면 파일은 나온다. /api/health 503 답에도 instance가 있어 서버 잠금 주인이 살아 있다고 본다", async () => {
+  it("집을 바꾸는 동안: 다른 API 503, 겹친 바꾸기 409, 설정 화면 파일은 나온다", async () => {
     // 허브 시작을 붙잡아 바꾸는 중인 상태를 만든다(HUB=matter 자리에 늦게 시작하는 MemoryHub)
     let gate: Promise<void> = Promise.resolve();
     const importer = async () => ({
@@ -185,14 +184,11 @@ describe("설정 흐름 서버", () => {
         return hub;
       },
     });
-    const dir = runtime();
-    srv = await startServer({ env: env(dir, { HUB: "matter", MATTER_TRANSPORT: "local" }), log: () => {}, importer, webDir: web() });
+    srv = await startServer({ env: env(runtime(), { HUB: "matter", MATTER_TRANSPORT: "local" }), log: () => {}, importer, webDir: web() });
     let open!: () => void;
     gate = new Promise((r) => { open = r; });
     const switching = srv.switchHome("apartment");
     const during = await get("/api/devices");
-    const health = await get("/api/health");
-    const live = await liveServerLock(dir);
     const second = await post("/api/setup/home", { home: "oneroom" });
     const page = await fetchRetry(`${srv.url}/setup/`);
     const view = (await get("/api/setup")).json;
@@ -200,9 +196,6 @@ describe("설정 흐름 서버", () => {
     await switching;
     expect(during.status).toBe(503);
     expect(during.json.error).toMatch(/바꾸는 중/);
-    expect(health.status).toBe(503);
-    expect(health.json.instance).toBe(readServerLock(dir)!.token);
-    expect(live).toMatchObject({ port: srv.port });
     expect(second.status).toBe(409);
     expect(page.status).toBe(200);
     expect(await page.text()).toContain("설정");

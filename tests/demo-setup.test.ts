@@ -1,7 +1,6 @@
 // 시연 준비 명령(scripts/demo-setup.ts)과 장면 시작 위치(scripts/demo-start.ts). 서버는 시험 안의 가짜 HTTP 서버만 쓴다(실제 서버·PAM은 띄우지 않는다).
-import { spawnSync } from "node:child_process";
 import { createServer, type Server } from "node:http";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -10,6 +9,7 @@ import { HistoryDb } from "../src/history/db.js";
 import { insidePolygon } from "../src/phone/home-plan.js";
 import { loadScene } from "../src/model/scene.js";
 import { resolveHome } from "../src/model/homes.js";
+import { acquireServerLock } from "../src/server/lock.js";
 import { listenRetry } from "../src/server/net.js";
 import { DEMO_APPROVALS, DemoStop, demoSetup, silentAircon } from "../scripts/demo-setup.js";
 import { DEMO_STARTS, startFor } from "../scripts/demo-start.js";
@@ -150,29 +150,24 @@ describe("서버가 꺼졌는지(--fresh·--scripted)", () => {
     db.close();
   }, 60_000);
 
-  it("그 폴더를 쓰는 서버가 다른 포트에서 돌면(살아 있는 server.lock, 그 포트 /api/health가 같은 instance) --api가 꺼져 있어도 멈추고, pid가 죽었거나 다른 프로세스가 pid를 다시 쓴 잠금이면 진행한다", async () => {
+  it("그 폴더를 쓰는 서버가 다른 포트에서 돌면(그 폴더의 서버 잠금 파이프에 붙음) --api가 꺼져 있어도 멈추고, 서버가 없으면 진행한다", async () => {
     const base = tmp();
     const dir = join(base, "week");
     await run(["week", "--dir", dir, "--api", CLOSED]);
-    // 다른 포트에 뜬 서버: 이 프로세스(살아 있는 pid)가 그 포트로 잠금을 쓴 것처럼. /api/health가 잠금의 token을 instance로 준다
-    const other = createServer((_req, res) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ ok: true, instance: "run-1" })); });
-    servers.push(other);
-    const { port } = await listenRetry(other, 0, "127.0.0.1");
-    const lock = { pid: process.pid, token: "run-1", port, url: `http://127.0.0.1:${port}`, at: "2026-11-14T00:00:00.000Z" };
-    writeFileSync(join(dir, "server.lock"), JSON.stringify(lock));
-    await expect(run(["week", "--dir", dir, "--fresh", "--api", CLOSED])).rejects.toThrow(new RegExp(`이 폴더를 쓰는 서버가 켜져 있어요.*포트 ${port}`));
-    expect(readdirSync(base)).toEqual(["week"]);
-    await expect(run(["reflect", "--scripted", "--dir", dir, "--api", CLOSED])).rejects.toThrow(/이 폴더를 쓰는 서버가 켜져 있어요/);
-    const db = HistoryDb.open(join(dir, "noonchi.db"), 540);
-    expect(db.list({ kinds: ["reflection"] })).toEqual([]);
-    db.close();
-    // 비정상 종료 뒤 pid를 다른 프로세스(여기서는 이 프로세스)가 다시 쓰고 그 포트가 비었다: 주인이 아니라 무시한다
-    const closedPort = Number(new URL(CLOSED).port);
-    writeFileSync(join(dir, "server.lock"), JSON.stringify({ ...lock, port: closedPort, url: CLOSED }));
+    // 다른 포트에 뜬 서버: 그 폴더의 서버 잠금을 잡고 있다
+    const held = await acquireServerLock(dir);
+    try {
+      await expect(run(["week", "--dir", dir, "--fresh", "--api", CLOSED])).rejects.toThrow(/이 폴더를 쓰는 서버가 켜져 있어요/);
+      expect(readdirSync(base)).toEqual(["week"]);
+      await expect(run(["reflect", "--scripted", "--dir", dir, "--api", CLOSED])).rejects.toThrow(/이 폴더를 쓰는 서버가 켜져 있어요/);
+      const db = HistoryDb.open(join(dir, "noonchi.db"), 540);
+      expect(db.list({ kinds: ["reflection"] })).toEqual([]);
+      db.close();
+    } finally {
+      await held.release();
+    }
+    // 서버가 끝났다(잠금을 놓았다): 진행한다
     await run(["reflect", "--scripted", "--dir", dir, "--api", CLOSED]);
-    // 서버가 죽고 남은 잠금: 무시하고 진행한다
-    const dead = spawnSync(process.execPath, ["-e", ""]).pid!;
-    writeFileSync(join(dir, "server.lock"), JSON.stringify({ ...lock, pid: dead }));
     await run(["week", "--dir", dir, "--fresh", "--api", CLOSED]);
     expect(readdirSync(base).filter((n) => n.startsWith("week.old-"))).toHaveLength(1);
   }, 60_000);

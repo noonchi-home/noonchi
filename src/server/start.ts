@@ -128,15 +128,15 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   const endpoints = loadEndpoints(env);
   const reflectAt = loadReflectAt(env);
   const retention = loadRetention(env);
-  // 이 런타임 폴더를 쓰는 서버라는 표시(RUNTIME_DIR/server.lock). DB를 열기 전에 배타적으로 만든다: 같은 폴더의 서버가 이미 있으면 여기서 멈춘다.
-  // 뜨면 포트를 적고, 끌 때·시작이 실패할 때 지운다. 서버 밖 명령(시연 준비)이 보고 멈춘다
+  // 이 런타임 폴더를 쓰는 서버라는 표시(OS 파이프, src/server/lock.ts). DB를 열기 전에 잡는다: 같은 폴더의 서버가 이미 있으면 여기서 멈춘다.
+  // 끌 때·시작이 실패할 때 놓고, 프로세스가 죽으면 OS가 치운다. 서버 밖 명령(시연 준비)이 붙어 보고 멈춘다
   const lock = await acquireServerLock(runtimeDir);
   // 기록 DB(RUNTIME_DIR/noonchi.db)와 기록기. 집 묶음이 가전·관찰·판단·계획을 넘기고, 운영 모드는 여기서 넘긴다. 시작이 실패하면 닫는다
   let db: HistoryDb;
   try {
     db = HistoryDb.open(join(runtimeDir, "noonchi.db"), historyTzMinutes(env));
   } catch (e) {
-    lock.release();
+    await lock.release();
     throw e;
   }
   const feed = { device: topic<[DeviceState, DeviceNote?]>(), brain: topic<[BrainLog]>(), plan: topic<[PlanView]>(), mode: topic<[ControlMode]>() };
@@ -144,7 +144,6 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   const closeDb = () => {
     stopRecorder();
     db.close();
-    lock.release();
   };
   // 반성: 한 번에 하나. 결과는 지금 집의 대시보드 판단 기록으로 보낸다(기록 DB에는 runReflection이 적는다)
   const pam = new PamClient({ url: endpoints.pamUrl });
@@ -167,7 +166,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   const ctx: HomeContext = {
     env, log, runtimeDir, importer: opts.importer, matter: opts.matter, brain: opts.brain, servedPhoneUrls: opts.servedPhoneUrls, webDir: opts.webDir,
     sources: (homeId, ids) => store.sources(homeId, ids), mode: () => mode, assist: () => store.assist(), allowOrigin, planToken: env.PLAN_TOKEN?.trim() || undefined, ready: makeReady({ endpoints, agent: agentEndpoint(env), db }),
-    history: { db, device: feed.device.emit, brain: feed.brain.emit, plan: feed.plan.emit, reflect }, instance: lock.token,
+    history: { db, device: feed.device.emit, brain: feed.brain.emit, plan: feed.plan.emit, reflect },
   };
   const studioDir = resolveTwinStudioDir(env.TWIN_STUDIO_DIR);
   const pollMs = msOf(env.THINQ_POLL_MS, DEFAULT_POLL_MS);
@@ -219,6 +218,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     }
   } catch (e) {
     closeDb();
+    await lock.release();
     throw e;
   }
   if (mode === "live") log("운영 모드: 실제(짝지은 가전은 ThinQ)");
@@ -306,7 +306,6 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
 
   const shell = createShell({
     current: () => current?.app ?? null,
-    instance: lock.token,
     webDir: opts.webDir,
     allowOrigin,
     log,
@@ -410,9 +409,9 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   } catch (e) {
     await rt.close().catch(() => {});
     closeDb();
+    await lock.release();
     throw e;
   }
-  lock.listening(listened.url, listened.port);
 
   // 보관 기간: 시작 때와 1시간마다 지난 사진 찍기 사진·시험 자료를 지운다
   const clean = () => {
@@ -461,6 +460,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       await current?.close();
       await shell.close();
       closeDb();
+      await lock.release();
     },
   };
 }

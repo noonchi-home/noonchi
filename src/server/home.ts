@@ -101,8 +101,6 @@ export interface HomeContext {
   planToken?: string;
   /** 준비 상태(/api/health ready). 집을 바꿔도 같은 것을 쓴다. */
   ready?: () => Promise<ReadyView>;
-  /** 서버 실행 하나의 무작위 표시(/api/health instance, 서버 잠금 token). */
-  instance?: string;
   /** 기록 DB·기록기·반성. */
   history: HomeHistory;
 }
@@ -438,7 +436,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     app = createApp({
       hub: signals, policy, agent, rooms: twin.rooms, twinDir, viewerDir: home.viewerDir, libraryDir: home.libraryDir, hubKind, log, eye: feed,
       brain: observe ? { status: () => ({ ...observe.status(), look: looker?.status() ?? null }) } : undefined, world: worldNow ?? undefined,
-      home: { id: home.id, name: home.name }, homes: listHomes(twin.dir), layout: layout?.editor, phoneUrls: () => phoneUrls, mode: ctx.mode, webDir: ctx.webDir, allowOrigin: ctx.allowOrigin, planToken: ctx.planToken, ready: ctx.ready, instance: ctx.instance,
+      home: { id: home.id, name: home.name }, homes: listHomes(twin.dir), layout: layout?.editor, phoneUrls: () => phoneUrls, mode: ctx.mode, webDir: ctx.webDir, allowOrigin: ctx.allowOrigin, planToken: ctx.planToken, ready: ctx.ready,
       start: startStore && { get: () => startStore.get(), save: (raw) => startStore.save(raw), preview: (raw) => startStore.preview(raw), clear: () => startStore.clear() },
       phoneSync: () => phoneRef.current?.syncState() ?? null,
       plan: plans, history: history.db, reflect: history.reflect, scene: () => scene,
