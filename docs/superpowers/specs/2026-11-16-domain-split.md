@@ -6,12 +6,12 @@
 
 ## 0. 결론
 
-- **도메인은 문서 구성 단위 그대로 15개다.** 서버 11개(실제 폰, 관찰 흐름, World State, PAM 서비스 연결, 판단·검사·실행, 에이전트, 외부 API 게이트웨이, 기록·반성, 가상 가전·ThinQ, 배치 저장소, API 서버 런타임)와 화면 4개(대시보드, 트윈 화면, 실제 폰 화면, 설정 화면)다. 그 밖에 기반 둘(계약, 공용 표)과 공용 도우미 하나를 둔다.
+- **도메인은 문서 구성 단위로 13개다(사용자 결정 2026-11-16).** 서버 9개는 실제 폰 `phone`, 관찰 흐름 `observe`, World State `world`, 판단·반성 `brain`(PAM 서비스 연결과 기록·반성), 판단·검사·실행 `act`, 에이전트 `agent`, 가상 가전·ThinQ `devices`, 배치 저장소 `layout`, API 서버 런타임 `server`다. 화면 4개는 대시보드, 트윈 화면, 실제 폰 화면, 설정 화면이다. 그 밖은 기반층이다: 계약, 공용 표, 공용 도우미 `shared`, 외부 API 게이트웨이 `infer`, 디자인 토큰.
 - **지금은 한 덩어리다.** `src/` 20개 폴더 가운데 18개가 서로 물고 도는 고리 하나에 들어 있다. 서로 가져오는 폴더 짝이 18쌍이다.
-- **새 방향에서 거꾸로 가는 import는 29개, 고칠 자리는 13곳이다.** 위 도메인으로 묶고 공용 표를 따로 세우면 도메인 사이 import 491개 가운데 29개만 남는다.
+- **새 방향에서 거꾸로 가는 import는 28개이고, 고침은 13가지(F1~F13)다.** 위 도메인으로 묶고 공용 표·기반층을 따로 세우면 도메인 사이 import 488개 가운데 28개만 남는다.
 - **막는 장치는 `scripts/lint-domains.ts`와 `tests/domain-boundaries.test.ts`다.** 다른 도메인은 입구(`index.ts`)로만, 정한 방향으로만 가져온다. 실제 파일 그래프 전체에서 도메인을 넘는 고리를 찾고, 화면이 닿는 서버 파일에 node 모듈이 섞이면 실패한다. 옮기는 동안은 예외 목록이 줄어들기만 하게 한다.
-- **옮기는 단계는 0~9단계다.** 단계마다 전체 시험 통과와 `scripts/check-moves.ts`(AST 비교)로 「import 경로만 달라짐」을 확인한다. 에이전트 시간으로 약 3일 걸린다.
-- **물을 것은 3개다(5절).** 폴더 이름, 공용 표 자리, 큰 파일 쪼개기 범위.
+- **옮기는 단계는 0~9단계다.** 단계마다 전체 시험 통과와 `scripts/check-moves.ts`(AST 비교)로 「import 경로만 달라짐」을 확인한다. 에이전트 시간으로 약 22시간 걸린다.
+- **정한 것(5절, 사용자 2026-11-16):** 짧은 영어 폴더 이름, 서버 도메인 9개, 공용 표는 도메인에, 큰 파일은 `track.ts`·`home.ts`·`app.ts` 셋만 쪼갠다.
 
 ## 1. 지금 지도
 
@@ -111,7 +111,7 @@
 
 ### 2.1 도메인 목록
 
-폴더 이름은 짧은 영어로 두고, 문서 이름은 각 `index.ts` 첫 줄과 이 표에 적는다(5절 물을 것 1).
+폴더 이름은 짧은 영어로 두고, 문서 이름은 각 `index.ts` 첫 줄과 이 표에 적는다(5절 정한 것 1).
 
 **서버**
 
@@ -120,11 +120,9 @@
 | 실제 폰(클로이드의 눈) | 3.1, 9.6, 12 | `src/phone/` | `phone/*`(`home-plan.ts`·`align.ts` 빼고), `sync/*` → `phone/sync/` | 2,500 |
 | 관찰 흐름 | 6.1 | `src/observe/` | `observe/*`, `brain/detector.ts`·`detector-thread.ts` | 1,500 |
 | World State와 PAM 관찰 텍스트 | 6.2 | `src/world/` | `world/*`(`decide.ts` 빼고) | 2,550 |
-| PAM 서비스(연결 쪽) | 6.12, 3.3 ⑤ | `src/pam/` | `brain/pam.ts`·`decision.ts`, `world/decide.ts`. Python 서비스는 `services/pam/` 그대로 | 560 |
+| PAM 서비스 연결·기록·반성 | 6.12, 6.13, 3.3 ⑤⑧ | `src/brain/` | `brain/pam.ts`·`decision.ts`(그대로), `world/decide.ts`, `history/*` → `brain/history/`. 감지기 파일은 관찰 흐름으로 나간다. Python 서비스는 `services/pam/` 그대로 | 1,200 |
 | 판단·검사·실행 | 6.3 | `src/act/` | `act/*`, `plan/hub.ts`·`labels.ts` | 2,700 |
 | 에이전트(LLM) | 6.6 | `src/agent/` | `agent/*`(`phrases.ts` 빼고), `plan/planner.ts`, `mcp/*` → `agent/mcp/` | 3,000 |
-| 외부 API 게이트웨이 | 6.9 | `src/infer/` | `infer/*` | 210 |
-| 기록·반성 | 6.13 | `src/history/` | `history/*` | 650 |
 | 가상 가전·ThinQ | 3.1, 4, 9.2 | `src/devices/` | `hub/*` → `devices/hub/`, `matter/*`, `thinq/*`, `model/kinds.ts`·`kinds-check.ts`·`mapping.ts`·`devices.ts` | 3,600 |
 | 배치 저장소(트윈 공간) | 3.1, 9 | `src/layout/` | `layout/*`, `model/scene.ts`·`drawn.ts`·`homes.ts`, `plan/floor.ts`·`route.ts`·`names.ts`, `phone/home-plan.ts` | 1,400 |
 | API 서버 런타임 | 6.11 | `src/server/` | `server/*`(`net.ts`·`static.ts` 빼고), `setup/store.ts` | 2,500 |
@@ -138,13 +136,14 @@
 | 실제 폰 화면 | 12 「실제 폰」 | `ui/src/phone/` | 그대로 |
 | 설정 화면 | 12 「설정 화면」 | `ui/src/setup/` | 그대로 |
 
-**기반(도메인이 아님, 누구나 가져옴)**
+**기반층(도메인이 아님, 누구나 가져옴, 입구 없이 파일로 가져옴)**
 
 | 이름 | 자리 | 무엇 |
 |---|---|---|
 | 계약 | `src/contract/` | 순수 타입만. 값 import는 하지 않는다. 계약 밖은 공용 표의 타입만 `import type`으로 가져온다(2.3 타입 전용 의존). 지금 도메인에 흩어진 공용 타입을 여기로 모은다(2.5) |
-| 공용 표 | 각 도메인 안 정한 파일 | 문서가 「하나뿐인 표」로 적은 것: 낱말 표 `world/vocab.ts`·`world/labels.ts`, 가전 종류 등록부 `devices/kinds.ts`·`devices/types.ts`, 행동 목록 `act/tasks.ts`·`act/prompts.ts`, 서버 글 `act/labels.ts`. 어느 도메인·화면이든 가져오고, 표 파일은 계약·공용 도우미·다른 표만 가져온다(5절 물을 것 2) |
+| 공용 표 | 각 도메인 안 정한 파일 | 문서가 「하나뿐인 표」로 적은 것: 낱말 표 `world/vocab.ts`·`world/labels.ts`, 가전 종류 등록부 `devices/kinds.ts`·`devices/types.ts`, 행동 목록 `act/tasks.ts`·`act/prompts.ts`, 서버 글 `act/labels.ts`. 어느 도메인·화면이든 가져오고, 표 파일은 계약·공용 도우미·다른 표만 가져온다(5절 정한 것 2) |
 | 공용 도우미 | `src/shared/` | 도메인 지식이 없는 순수 도우미(2.2). 계약·다른 shared 파일·node 기본 모듈만 가져온다. 도메인·공용 표를 가져오거나 다시 내보내지 않는다 |
+| 외부 API 게이트웨이 | `src/infer/` 그대로 | 구현명세서 6.9. 관찰 흐름(VLM)·에이전트(관찰 모드)·서버(준비 상태)가 쓰는 통로다. 규칙은 `shared`와 같다: 계약·`shared`·node 기본 모듈만 가져온다. 지금 가져오는 밖은 `server/net.ts`(`fetchRetry`) 하나이고 2단계에서 `shared/net.ts`가 되어 규칙을 지킨다. `src/shared/infer/`로 옮기지 않는 까닭: 옮길 파일 0개, 시험 import 13곳이 그대로이고, 저장소 규칙 표와 `tests/same-structure.test.ts`가 `src/infer/endpoints.ts` 경로를 이름으로 적는다 |
 | 브라우저 입구 | `src/layout/browser.ts` | 화면이 쓰는 경로 찾기만 낸다(`route`·`approach`·`floorPlanFrom`·`roomAt`). 따라 들어가는 import 어디에도 node 모듈이 없다. 장면 읽기·배치 편집기(node:fs)는 `layout/index.ts`에만 있다 |
 
 ### 2.2 어느 단위에도 안 맞는 코드
@@ -170,71 +169,69 @@
 ```text
                  [API 서버 런타임 server]  ← 모든 도메인을 잇는 조립 자리
                            │
-          ┌────────────────┴────────────────┐
-  [판단·검사·실행 act]                 [기록·반성 history]
-          │                                  │
-  ┌───────┼───────────┬──────────┐           │
-[에이전트 agent] [PAM 연결 pam] [관찰 흐름 observe]
-          │            │          │
-          └────────────┴────┬─────┘
-                  [World State world] ←── [실제 폰 phone]
-                            │
-        ┌───────────────────┼──────────────┐
- [배치 저장소 layout] → [가전 devices]   [게이트웨이 infer]
-                            │
-       ── 기반: 계약 contract · 공용 표 · 공용 도우미 shared ──
+                 [판단·검사·실행 act]
+                           │
+      ┌────────────────────┼─────────────────────┐
+[에이전트 agent]   [판단·반성 brain]    [관찰 흐름 observe]
+      │                    │                     │
+      │                    │              [실제 폰 phone]
+      │                    │                     │
+      └────────────────────┼─────────────────────┘
+                  [World State world]
+                           │
+                 [배치 저장소 layout]
+                           │
+                 [가상 가전·ThinQ devices]
+
+  ── 기반층: 계약 contract · 공용 표 · shared · 게이트웨이 infer · design ──
 ```
 
-| 도메인 | 가져와도 되는 도메인(계약·공용 표·shared는 늘 됨) |
+| 도메인 | 가져와도 되는 도메인(기반층은 늘 됨) |
 |---|---|
 | `devices` | 없음 |
-| `infer` | 없음 |
 | `layout` | `devices` |
 | `world` | `devices`, `layout` |
 | `phone` | `world`, `layout` |
-| `observe` | `phone`, `world`, `devices`, `infer` |
-| `pam` | `world`, `infer` |
-| `agent` | `world`, `devices`, `layout`, `infer` |
-| `history` | `pam`, `world`, `devices` |
-| `act` | `agent`, `pam`, `observe`, `phone`, `world`, `devices`, `layout` |
+| `observe` | `phone`, `world`, `devices` |
+| `brain` | `world`, `devices` |
+| `agent` | `world`, `devices`, `layout` |
+| `act` | `agent`, `brain`, `observe`, `phone`, `world`, `devices`, `layout` |
 | `server` | 모두 |
 | 화면 `ui/src/twin` | 화면 공용, `src/layout/browser.ts`(경로 찾기 브라우저 입구)만 |
 | 화면 `dashboard`·`setup` | `ui/src/twin`, 화면 공용 |
 | 화면 `phone` | 화면 공용 |
 | 화면 → `src` | 계약, 공용 표, `shared`, `design`, `layout/browser.ts`만. 화면이 닿는 `src` 파일은 따라 들어간 import까지 node 모듈(`node:*`·`fs`·`path`·`url`·`worker_threads` 등)을 쓰지 않는다 |
 
-이 표에는 고리가 없다. 도메인을 하나 더하거나 줄을 고칠 때는 이 표 하나만 고친다. 막는 장치는 이 표의 고리와, 실제 파일 그래프 전체에서 도메인을 넘는 고리(`shared`·계약·표를 거쳐 도는 것 포함)를 모두 찾는다.
+이 표에는 고리가 없다(차례: `devices` → `layout` → `world` → `phone` → `observe`·`brain`·`agent` → `act` → `server`). 도메인을 하나 더하거나 줄을 고칠 때는 이 표 하나만 고친다. 막는 장치는 이 표의 고리와, 실제 파일 그래프 전체에서 도메인을 넘는 고리(`shared`·`infer`·계약·표를 거쳐 도는 것 포함)를 모두 찾는다.
 
-**타입 전용 의존(`DeviceKind`):** 계약 타입 `DeviceSpec`·`Command`는 가전 종류 등록부에서 파생한 `DeviceKind`를 쓴다. 그래서 계약을 옮겨도 등록부 타입 의존이 남는다. 물을 것 2의 답에 따라 정한다.
-- 가(표를 도메인에 둠): 계약은 공용 표 파일에서 `import type`만 할 수 있다(실행 때 지워진다, 값 import 금지). 계약 ↔ 공용 표 사이 타입 전용 고리는 기반층(계약·공용 표) 안에서만 허용한다. 그 밖의 고리는 타입 전용이어도 실패한다.
-- 나(표를 `src/contract/`로 모음): 등록부가 계약 안에 들어가 계약이 값을 갖는다. 예외가 필요 없고 계약은 계약만 가져온다.
+**타입 전용 의존(`DeviceKind`, 정한 것 2):** 계약 타입 `DeviceSpec`·`Command`는 가전 종류 등록부에서 파생한 `DeviceKind`를 쓴다. 표는 도메인에 두기로 했으므로 계약은 공용 표 파일에서 `import type`만 할 수 있다(실행 때 지워진다, 값 import 금지). 계약 ↔ 공용 표 사이 타입 전용 고리는 기반층(계약·공용 표) 안에서만 허용한다. 그 밖의 고리는 타입 전용이어도 실패한다.
 
 ### 2.4 입구 하나
 
 - 도메인마다 `index.ts` 하나가 밖에 내놓는 것을 모두 내보낸다(`export … from`만, 로직 없음). 첫 줄에 문서 이름과 절을 적는다. 예: `// 판단·검사·실행(구현명세서 6.3)`.
 - 다른 도메인은 `index.ts`나 공용 표 파일로만 가져온다. 도메인 안에서는 지금처럼 파일끼리 가져온다.
-- 지금 다른 폴더가 가져오는 파일 수로 본 입구 크기: `act` 11 → 7(경로·이름·계획 모양이 빠진 뒤), `phone` 11, `devices` 9, `agent` 9, `layout` 7, `history` 6, `observe` 6, `world` 6, `infer` 5, `pam` 3.
+- 지금 다른 폴더가 가져오는 파일 수로 본 입구 크기: `act` 11 → 7(경로·이름·계획 모양이 빠진 뒤), `phone` 11, `devices` 9, `agent` 9, `brain` 8, `layout` 7, `observe` 6, `world` 6. 기반층(`contract`·`shared`·`infer`·`design`·공용 표)은 입구 없이 파일로 가져온다.
 - 화면 공용 부품(`ui/src/components/ui/`)은 입구 없이 파일마다 가져온다.
 
-### 2.5 거꾸로 가는 import 고치기(29개, 13곳)
+### 2.5 거꾸로 가는 import 고치기(28개, 고침 13가지)
 
 | # | 지금 | 고침 |
 |---|---|---|
-| F1 | `world/state.ts`·`pose.ts` → 감지기·`observe/ring.ts`·`observe/scene.ts` 타입(5) | World State 입력 모양(`Detection`·`Pose`·`Keypoint`·`EngineFrame`·`SceneObservation`·`CameraView`)을 `contract/observe.ts`로 옮김 |
+| F1 | `world/state.ts`·`pose.ts` → 감지기·`observe/ring.ts`·`observe/scene.ts` 타입(5), `world/place.ts`·`sight.ts`·`state.ts` → `phone/session.ts`(`CameraView`, 3), `history/retention.ts` → `observe/ring.ts`(`EngineFrame`, 1) | World State 입력 모양(`Detection`·`Pose`·`Keypoint`·`EngineFrame`·`SceneObservation`·`CameraView`)을 `contract/observe.ts`로 옮김 |
 | F2 | `agent/planTools.ts` → `plan/floor`·`names`·`planner`, `act/lessons`(4) | `floor`·`route`·`names`는 배치 저장소로, `planner`(계획 모양 만들기)는 에이전트로, `Lesson` 타입은 `contract/plan.ts`로 |
-| F3 | `agent/planTools.ts` → `world/decide.ts`(`DecisionRecord`) | 타입을 계약으로 |
+| F3 | `agent/planTools.ts` → `world/decide.ts`(`DecisionRecord`, 옮긴 뒤 `brain`) | 타입을 계약으로 |
 | F4 | `layout/catalog.ts`·`editor.ts` → `agent/search.ts`, `layout/focus.ts` → `agent/agent.ts` | 글 도우미는 `shared/korean.ts`로, `AgentAction`은 이미 계약에 있는 것을 씀 |
 | F5 | `layout/focus.ts` → `phone/server.ts`(`FocusTarget`) | 타입을 `contract/phone.ts`로 |
-| F6 | `phone/home-plan.ts` → `phone/align.ts` | `align.ts`를 `shared/geometry.ts`로 |
+| F6 | `phone/home-plan.ts`·`world/place.ts` → `phone/align.ts`(2) | `align.ts`를 `shared/geometry.ts`로 |
 | F7 | `contract/events.ts` → `brain/seg.ts`(`Mask`) | `Mask` 타입은 계약으로, 풀기 함수는 `shared/mask.ts`로 |
 | F8 | `model/devices.ts` → `model/homes.ts`·`scene.ts` | `loadTwin()`을 둘로 나눈다. 파일 읽기(합친 장면 scene.json, 그것이 없거나 못 읽으면 floorplan·placement·catalog로 대신하는 길, `source: "scene" \| "catalog"`, `opts.source` 고르기, 경고 글)는 배치 저장소 `layout/twin-files.ts`가 맡아 날 물건 목록(방·문·물건)을 낸다. 가전 만들기(`buildTwin`: DeviceSpec·초기 상태)는 `devices`가 그 목록을 받아 한다. `loadTwin()`은 이름·인자·동작 그대로 `layout` 입구에 둔다(배치 → 가전 방향만). 가전은 배치를 가져오지 않는다 |
 | F9 | `model/kinds.ts` → `thinq/appliance.ts`(`ThinqAdapter` 타입) | 타입을 `devices/types.ts`로(표 파일은 표·계약만) |
-| F10 | `hub/types.ts` ↔ `model/kinds.ts`(`DeviceKind` 다시 내보내기) | `DeviceSpec`·`Command` 같은 계약 타입은 `contract/devices.ts`로 옮기고, 등록부와 `DeviceKind`는 공용 표 「가전 종류 등록부」 한 입구에서 낸다. 계약 → 등록부는 2.3 타입 전용 의존(물을 것 2 「가」), 「나」면 등록부째 계약으로 |
+| F10 | `hub/types.ts` ↔ `model/kinds.ts`(`DeviceKind` 다시 내보내기) | `DeviceSpec`·`Command` 같은 계약 타입은 `contract/devices.ts`로 옮기고, 등록부와 `DeviceKind`는 공용 표 「가전 종류 등록부」 한 입구에서 낸다. 계약 → 등록부는 2.3 타입 전용 의존 |
 | F11 | `phone/server.ts` → `plan/labels.ts`, `server/net.ts`·`static.ts` | 서버 글은 공용 표, 도우미는 `shared` |
 | F12 | `ui/src/setup/*` → `dashboard/hub.ts`·`mascot-image.ts`, `panels/phone-url.ts`(4) | `ui/src/lib/`로 |
 | F13 | `ui/src/dashboard/masks.ts` → `brain/seg.ts`, `ui/src/twin3d/walk.ts` → `plan/route.ts` | `shared/mask.ts`, `layout/browser.ts` |
 
-`world/decide.ts` → `act/tasks.ts`, `history` → `act/tasks.ts`, `plan/labels.ts` → `agent/phrases.ts`는 공용 표·`shared`로 풀린다.
+`world/decide.ts`·`history` → `act/tasks.ts`, `plan/labels.ts` → `agent/phrases.ts`, `infer` → `server/net.ts`는 공용 표·`shared`로 풀린다.
 
 ### 2.6 큰 파일 쪼개기
 
@@ -249,11 +246,12 @@
   - `answers.ts`: 폰 명령·답·말(`openCommand`, `onAnswer`, `onHeard`, `send`)
   - `coach.ts`: 다시 알리기·떠남·조용한 단계·수업 기록(`tell`, `stray`, `askCloser`, `quietStep`)
   - 나누는 방법: 상태와 `emit`·`toPhone`을 든 안쪽 객체(`TrackCore`)를 두고, 부분마다 그 객체를 받는 작은 클래스로 만든다.
-  - 구조 검사(`tests/act-track-release.test.ts`)는 `act/track/` 폴더 파일 전체와 `TrackCore`를 본다. 지우는 패턴은 받는 쪽 이름과 상관없이 찾는다(`this.reminder = null`만이 아니라 `.reminder = null`, `.hot.delete(`). 79ff269 과거 실수를 `steps.ts`·`answers.ts`·`tracker.ts`에 하나씩 넣은 자료에서도 실패해야 한다. 물을 것 3에서 「나」(쪼개지 않음)를 고르면 이 고침은 필요 없다.
+  - 구조 검사(`tests/act-track-release.test.ts`)는 `act/track/` 폴더 파일 전체와 `TrackCore`를 본다. 지우는 패턴은 받는 쪽 이름과 상관없이 찾는다(`this.reminder = null`만이 아니라 `.reminder = null`, `.hot.delete(`). 79ff269 과거 실수를 `steps.ts`·`answers.ts`·`tracker.ts`에 하나씩 넣은 자료에서도 실패해야 한다.
 - **`server/home.ts`(616줄) → `server/home/`:** 도메인별 잇기(`devices.ts`, `observe.ts`, `act.ts`, `phone.ts`, `say.ts`)와 조립(`index.ts`). 파일 자리 기준 경로(`SHARED_VIDEO_DIR`)는 0단계에서 뿌리 기준으로 바꾼 뒤 옮긴다.
-- **`server/app.ts`(721줄) → `server/routes/`:** 경로를 도메인별로 나눈다(`brain-world.ts`, `history.ts`, `layout.ts`, `phone.ts`, `plan.ts`, `devices.ts`, `agent.ts`). `app.ts`는 HTTP·WS 껍데기만 남는다.
-- **`world/state.ts`(1,071줄) → `world/state/`:** `objects.ts`(감지 합치기), `people.ts`(사람·관절), `facts.ts`(VLM 사실), `closer.ts`(가까이 보기), `devices.ts`(카메라로 본 가전).
-- **`agent/planTools.ts`(616줄):** 단계 규칙(`needsPhone`·`riskyHand`·`selfStopWait`·`HUMAN_KINDS`)을 `agent/plan-rules.ts`로 뺀다. 실행 추적은 에이전트 입구로 쓴다.
+- **`server/app.ts`(721줄) → `server/routes/`:** 경로를 도메인별로 나눈다(`observe.ts`(brain·world 상태), `brain.ts`(기록·반성·기억·판단), `layout.ts`, `phone.ts`, `plan.ts`, `devices.ts`, `agent.ts`). `app.ts`는 HTTP·WS 껍데기만 남는다.
+- **다음에(정한 것 3, 이번에 하지 않음):**
+  - `world/state.ts`(1,071줄) → `world/state/`: `objects.ts`(감지 합치기), `people.ts`(사람·관절), `facts.ts`(VLM 사실), `closer.ts`(가까이 보기), `devices.ts`(카메라로 본 가전)
+  - `agent/planTools.ts`(616줄): 단계 규칙(`needsPhone`·`riskyHand`·`selfStopWait`·`HUMAN_KINDS`)을 `agent/plan-rules.ts`로
 
 ## 3. 막는 장치
 
@@ -268,8 +266,8 @@
 | 다른 도메인 안쪽 파일을 가져옴 | 「`<파일>`이 `<도메인>` 안쪽 `<대상>`을 가져와요. `<도메인>/index.ts`로 가져오세요」 |
 | 의존 표에 없는 방향 | 「`<a>`는 `<b>`를 쓸 수 없어요(쓸 수 있는 것: …). 공용 타입이면 contract로, 공용 도우미면 shared로 옮기세요」 |
 | 공용 표 파일이 표·계약·shared 밖을 가져옴 | 오류 |
-| `shared` 파일이 계약·다른 shared·node 기본 모듈 밖을 가져오거나 다시 내보냄 | 「shared는 도메인을 몰라야 해요. `<대상>`을 가져오지 마세요」 |
-| `contract`가 값 import를 하거나, 계약·공용 표(`import type`만) 밖을 가져옴 | 오류(물을 것 2 「나」면 계약 밖 모두 금지) |
+| `shared`·`infer` 파일이 계약·`shared`·같은 폴더·node 기본 모듈 밖을 가져오거나 다시 내보냄 | 「기반층은 도메인을 몰라야 해요. `<대상>`을 가져오지 마세요」 |
+| `contract`가 값 import를 하거나, 계약·공용 표(`import type`만) 밖을 가져옴 | 오류 |
 | 화면이 `src`에서 허용 밖을 가져옴 | 오류 |
 | 화면이 닿는 `src` 파일(따라 들어간 import 전체)에 node 모듈이 있음 | 「브라우저 입구에 node 모듈 `<모듈>`이 섞여요(`<길>`)」 |
 | 의존 표에 고리가 생김 | 오류 |
@@ -300,7 +298,7 @@
 ### 3.4 저장소 규칙 표에 넣을 줄
 
 ```text
-| 서버(`src/`)와 화면(`ui/src/`) 코드는 구현명세서 구성 단위로 나눈 도메인 폴더에 둔다. 다른 도메인은 그 입구(`index.ts`)나 공용 표로만 가져오고, 정한 방향(`scripts/lint-domains.ts` 의존 표)으로만 가져온다. 공용 타입은 `src/contract/`, 공용 도우미는 `src/shared/`에 둔다. | `npm run lint`(scripts/lint-domains.ts, CI도 돌린다)와 `tests/domain-boundaries.test.ts`가 안쪽 import·거꾸로 import·고리·입구 없음을 잡는다(가짜 트리와 0a392c5 실제 줄로 실패를 확인). |
+| 서버(`src/`)와 화면(`ui/src/`) 코드는 구현명세서 구성 단위로 나눈 도메인 폴더에 둔다. 다른 도메인은 그 입구(`index.ts`)나 공용 표로만 가져오고, 정한 방향(`scripts/lint-domains.ts` 의존 표)으로만 가져온다. 공용 타입은 `src/contract/`, 공용 도우미는 `src/shared/`, 외부 API 통로는 `src/infer/`(기반층, 도메인을 가져오지 않음)에 둔다. | `npm run lint`(scripts/lint-domains.ts, CI도 돌린다)와 `tests/domain-boundaries.test.ts`가 안쪽 import·거꾸로 import·고리·입구 없음을 잡는다(가짜 트리와 0a392c5 실제 줄로 실패를 확인). |
 ```
 
 ## 4. 옮기는 차례
@@ -359,15 +357,15 @@
 | 0 | 새 브랜치·worktree, 기준 시험 통과 수·시간 재기. 파일 자리 기준 자원 경로를 뿌리 기준으로 바꾼다: `src/shared/paths.ts`의 `repoPath()` 하나만 `import.meta.url`을 쓰고, `MODELS_DIR`(`brain/detector.ts:101`)·`DEFAULT_TWIN_DIR`(`model/devices.ts:63`)·`DEFAULT_UI_DIR`(`phone/server.ts:37`)·`DEFAULT_WEB_DIR`(`server/app.ts:113`)·`SHARED_VIDEO_DIR`(`server/home.ts:83`)·`DEFAULT_RUNTIME_DIR`(`server/start.ts:43`)를 그것으로 바꾼다. Worker 줄(`brain/detector.ts:511·512` → `detector-worker.mjs`·`detector-thread.ts`, `ui/src/panels/eye-video.ts:252` → `eye-video-worker.ts`, `ui/src/phone/core/capture.js:107` → `encoder-worker.js`)은 대상 파일과 늘 같이 옮긴다. `src/mcp/server.ts:53`의 직접 실행 검사(`fileURLToPath(import.meta.url)`을 `process.argv[1]`과 견줌)는 `shared/paths.ts`의 `isEntry(metaUrl)`로 옮기고, 그 자리는 `isEntry(import.meta.url)` 한 꼴만 남긴다(3.1 허용 꼴). 확인: 서버 시험의 기본 폴더 시험(「기본 화면 폴더는 ui/dist」)이 그대로 통과 | — | 1.5시간 |
 | 1 | 막는 장치(2.1·2.3 표, 예외 목록 방식) + 가짜 트리·과거 실수 시험. 엄격 모드 실패 수 = 목록 수 확인. `scripts/check-moves.ts`와 그 시험(import 뒤 실행문 덧붙임·이름 바꿈·다른 파일로 가져옴·대응표에 없는 지움·초기화 차례 바뀜·이름이 다른 정의를 가리킴을 잡는지). 단계마다 대응표 파일 `moves/<단계>.json`을 함께 커밋 | 전부 | 3시간 |
 | 2 | 기반 만들기: `src/shared/`(net·static·korean·copy·geometry·mask), 계약에 공용 타입 옮김(F1·F3·F5·F7·F9) | 줄어듦 | 2시간 |
-| 3 | 폴더 옮기기(파일 이동만, 도메인마다 커밋 하나): 3a `sync` → `phone/sync`, 3b `brain` → `observe`·`pam` + `world/decide` → `pam`, 3c `hub`·`matter`·`thinq`·`model` 가전 쪽 → `devices`, 3d `model` 배치 쪽·`plan/floor·route·names`·`phone/home-plan` → `layout`, 3e `plan/planner`·`mcp` → `agent`, `plan` 나머지 → `act`, 3f `setup` → `server` | 줄어듦 | 4시간 |
+| 3 | 폴더 옮기기(파일 이동만, 도메인마다 커밋 하나): 3a `sync` → `phone/sync`, 3b `brain`의 감지기 파일(`detector.ts`·`detector-thread.ts`·`detector-worker.mjs`, Worker 줄과 같이) → `observe`, 그다음 같은 커밋에서 `world/decide.ts` → `brain`, `history/*` → `brain/history/`(이 뒤로 `src/brain/`은 판단·반성 자리), 3c `hub`·`matter`·`thinq`·`model` 가전 쪽 → `devices`, 3d `model` 배치 쪽·`plan/floor·route·names`·`phone/home-plan` → `layout`, 3e `plan/planner`·`mcp` → `agent`, `plan` 나머지 → `act`, 3f `setup` → `server` | 줄어듦 | 4시간 |
 | 4 | 도메인마다 `index.ts`를 만들고 다른 도메인 import를 입구로 바꿈 | 거꾸로 가는 것만 남음 | 2시간 |
 | 5 | 남은 고리 끊기(F2·F4·F6·F8·F10·F11) | 화면 쪽만 남음 | 2시간 |
 | 6 | 화면: `twin3d`+`twin` → `ui/src/twin`, `bubbles`·`panels`·`checks` → `dashboard`, F12·F13, 화면 입구 | 0에 가까움 | 1.5시간 |
-| 7 | 큰 파일 쪼개기: 7a `track.ts`(구조 검사를 `act/track/` 폴더 전체로, 79ff269 과거 실수를 각 파일에 넣은 자료가 실패하는지 확인), 7b `home.ts`·`app.ts`, 7c `world/state.ts`·`planTools.ts`(5절 물을 것 3) | 0 | 5~6시간 |
+| 7 | 큰 파일 쪼개기: 7a `track.ts`(구조 검사를 `act/track/` 폴더 전체로, 79ff269 과거 실수를 각 파일에 넣은 자료가 실패하는지 확인), 7b `home.ts`·`app.ts`. `world/state.ts`·`planTools.ts`는 다음에(정한 것 3) | 0 | 3.5~4시간 |
 | 8 | 흐름 확인: `tests/demo-e2e.test.ts`(네 장면 가짜 서버 흐름: 컵, 에어컨, 전자레인지 승인·꺼짐 확인, 라면)와 `coach-e2e`·`noonchi-e2e`를 따로 한 번 더 돌린다(단계마다 전체 시험에도 들어 있다). `video-check --fake`는 컵 감지·컵 PAM 판단·`CUP_SCRIPTS`로 고정이라(`scripts/video-check.ts:384`) 쓰지 않는다. `docs/reference.md` 「구조」, 저장소 `CLAUDE.md` 경로, 규칙 표 줄(3.4) | 0 | 1.5시간 |
 | 9 | 예외 목록 파일 지움, 엄격 모드, 3.3 마지막 확인. 구현명세서 SSOT 18.1 폴더 구조와 본문 경로(`src/world/vocab.ts` 등)를 docs 저장소에서 고침 | 없음 | 1시간 |
 
-합계 약 23~24시간(에이전트 시간, 시험 시간 포함)이다.
+합계 약 22시간(에이전트 시간, 시험 시간 포함)이다. `infer`는 옮기지 않는다.
 
 ### 4.3 위험
 
@@ -380,23 +378,17 @@
 | `track.ts` 쪼개기에서 동작이 바뀜 | 시험 기대값을 안 고침. 끄기 안내·승인·말 시험(`act-track*`, `coach-e2e`, `noonchi-e2e`, `demo-e2e`)으로 봄 |
 | 문서(SSOT·reference·CLAUDE.md)의 경로가 낡음 | 8·9단계에 경로 찾기(`src/<옛 폴더>/`)로 하나도 안 남게 함 |
 
-## 5. 물을 것
+## 5. 정한 것 (사용자, 2026-11-16)
 
-1. **도메인 폴더 이름**
-   - 가(추천): 짧은 영어 폴더(`phone`·`observe`·`world`·`pam`·`act`·`agent`·`infer`·`history`·`devices`·`layout`·`server`). 문서 이름은 각 입구 첫 줄과 이 표에 둔다. import 경로·도구·Docker가 영어 경로를 전제로 한다.
-   - 나: 문서 이름을 그대로 한글 폴더 이름으로 쓴다(`src/관찰흐름/` 등).
-2. **공용 표(낱말 표·가전 종류 등록부·행동 목록·서버 글) 자리**
-   - 가(추천): 지금 도메인에 두고 「표 입구」로 모든 도메인이 읽게 한다. 문서에 적힌 경로가 거의 그대로다.
-   - 나: `src/contract/`로 모은다. 계약이 값(표)까지 갖게 되고, 문서의 「계약은 순수 타입」 규칙과 경로가 바뀐다.
-   - 답에 따라 바뀌는 것: 가면 계약이 공용 표 타입만 `import type`으로 가져오는 예외 하나와 기반층 안 타입 전용 고리 허용이 생긴다(2.3, F10). 나면 예외가 없다.
-3. **큰 파일 쪼개기 범위**
-   - 가(추천): 이번에 `track.ts`·`home.ts`·`app.ts`까지(7a·7b).
-   - 나: 폴더 나누기만 하고 쪼개기는 다음에(7단계 뺌, 약 6시간 줄어듦).
-   - 다: `world/state.ts`·`planTools.ts`까지 모두(7c 포함).
-   - 답에 따라 바뀌는 것: 나면 2.6의 끄기 추적 구조 검사 넓히기(폴더 전체·각 파일에 과거 실수)가 필요 없다.
+1. **폴더 이름:** 짧은 영어 폴더. 문서 이름은 각 입구 첫 줄과 2.1 표에 둔다. 도메인 수를 더 줄여 서버 9개로 한다.
+   - `brain`은 PAM 서비스 연결과 기록·반성을 합친다. 입구 첫 줄은 「PAM 서비스 연결·기록·반성(구현명세서 6.12·6.13)」이다.
+   - 외부 API 게이트웨이 `infer`는 도메인이 아니라 기반층이다. 자리는 `src/infer/` 그대로다(2.1 기반층 표의 까닭).
+2. **공용 표:** 지금 도메인에 두고 「표 입구」로 모든 도메인이 읽는다. 계약은 공용 표 타입만 `import type`으로 가져오고, 계약 ↔ 공용 표 타입 전용 고리만 허용한다(2.3).
+3. **큰 파일 쪼개기:** `track.ts`·`home.ts`·`app.ts`(7a·7b). `world/state.ts`·`planTools.ts`는 다음에 한다.
 
 ## 6. 지적 기록
 
 - Codex 설계 리뷰 지적 9개(2026-11-16): 계약 ↔ 등록부 `DeviceKind` 타입 전용 의존 규칙(물을 것 2에 따라), 화면용 `layout/browser.ts`와 node 모듈 섞임 검사, `loadTwin` 파일 읽기·catalog 대신 길은 배치 저장소·가전 만들기는 가전으로, `shared`의 도메인 import·다시 내보내기 금지와 실제 파일 그래프 고리 검사, 실패 예제를 새 규칙 위반 줄로 바꿈, 끄기 추적 구조 검사를 `act/track/` 전체·각 파일 과거 실수로, 파일 자리 기준 자원 경로를 0단계에서 뿌리 기준으로, 「import 경로만」을 `scripts/check-moves.ts` AST 비교로, 흐름 확인을 `tests/demo-e2e.test.ts`로.
 - Codex 설계 재리뷰 지적 4개(2026-11-16): git 이름 바뀜 대신 단계마다 이동 대응표 파일(`moves/<단계>.json`), 대응표를 선언 단위(`파일#이름`)까지, `--moved`에 초기화 차례와 이름이 가리키는 정의 검사와 세는 법, MCP 직접 실행 검사는 `shared/paths.ts` `isEntry()`로 옮기고 `isEntry(import.meta.url)`를 허용 꼴로.
 - Codex 설계 재리뷰 지적 2개(2026-11-16): `--moved` 초기화 차례에서 옮기기 앞뒤 같은 전역과 끌어올려지는 `function` 선언은 허용, 옮긴 파일끼리 고리 검사는 실행 때 남는 값 의존 그래프로만(타입 전용 고리는 2.3 규칙).
+- 사용자 결정(2026-11-16): 짧은 영어 이름, 서버 도메인 9개(brain=PAM+반성, infer는 기반), 표는 도메인에, 큰 파일 3개.
