@@ -6,6 +6,9 @@
 // 재생을 기다리는 동안 다시 시작하면 같은 시작을 기다리고(영상은 하나), 그 사이 끝내면 그 영상을 닫고 시작하지 않는다.
 // 단계 영상(?step=<종류>:<대상 낱말>:<영상>, 여러 개): 사람 단계 명령(command)의 종류가 같고 대상 id에 낱말이 든 첫 칸이면, 그 id·step에 한 번
 // ?react=초(기본 1.5) 뒤 그 영상으로 바꿔 튼다(새 영상을 깔고 튼 뒤 앞 영상을 닫는다). 영상 시각은 앞 영상들 시각에 이어 센다.
+// 같은 종류·낱말 칸이 여럿이면 적은 차례대로 쓴다: 그 종류·낱말에 맞는 새 명령마다 다음 칸, 칸이 다 떨어지면 지금 영상을 둔다(칸이 하나면 맞는 새 명령마다 그 칸).
+// 단계 영상이 끝나면 마지막 장면을 붙잡는다: 다음 단계 영상이 오거나 끝낼 때까지 그 장면으로 프레임을 계속 보내고(시각은 흐른다),
+// window.__noonchiVideo.hold = { clip, since: 영상 시각 }(다음 단계 영상이 시작되면 null). ended는 첫 영상이 끝났을 때만 참이다.
 // 자세는 새 영상이 틀어질 때 함께 바꾼다(열지 못하거나 더 새 바꾸기가 있으면 그대로).
 // go 단계면 자세가 대상 쪽으로 돌아 시작 숙인 각(?pitch=)으로 초당 0.8m 걸어(자세 타이머가 한 칸씩) 대상 0.6m 앞에서 멈춘다.
 // 집기·놓기 단계면 걷기를 멈추고 그 자리에서 대상(cmd.target.ar, 면이면 서버가 윗면 가운데로 준다)을 바라본다: 사람이 폰을 대상에 겨누듯
@@ -69,7 +72,7 @@ export function videoParams(params) {
 
 /** 판정 기록(window.__noonchiVideo). 없으면 만든다. */
 export function videoRecord(target = globalThis) {
-  target.__noonchiVideo ??= { t0: null, ended: false, commands: [], clips: [] };
+  target.__noonchiVideo ??= { t0: null, ended: false, hold: null, commands: [], clips: [] };
   return target.__noonchiVideo;
 }
 
@@ -111,6 +114,7 @@ function browserVideo(url) {
     get videoWidth() { return el.videoWidth; },
     get videoHeight() { return el.videoHeight; },
     get ended() { return el.ended; },
+    get duration() { return el.duration; },
     drawTo(ctx, width, height) { ctx.drawImage(el, 0, 0, width, height); },
     play: () => el.play(),
     nextFrame(cb) {
@@ -215,6 +219,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
     const record = videoRecord();
     record.t0 = Math.round(phoneNow() - video.currentTime * 1000);
     record.ended = false;
+    record.hold = null;
     record.commands = [];
     record.clips = [];
     let offset = 0; // 앞 영상들 시각 합(ms): 단계 영상으로 바꿔도 한 시각표로 센다
@@ -225,8 +230,13 @@ export function createVideoAr({ link, params, hooks, deps }) {
     let walk = null; // go 단계 걷기: { goal }
     let swapTurn = 0;
     const handled = new Set(); // 단계 영상으로 바꾼 명령 id:step
+    const used = new Map(); // 종류:낱말 → 쓴 칸 수(같은 종류·낱말 칸이 여럿일 때 차례)
     const reactTimers = new Set();
-    const timeline = () => offset + video.currentTime * 1000;
+    let stepClip = null; // 지금 도는 단계 영상 이름(첫 영상이면 null)
+    let holdMs = 0; // 마지막 장면을 붙잡은 시간(타이머 칸을 센다): 붙잡는 동안에도 영상 시각이 흐른다
+    let holdTimer = null;
+    const held = () => holdMs;
+    const timeline = () => offset + video.currentTime * 1000 + held();
 
     hooks.onStart();
     setPose(startPosition, startOrientation);
@@ -375,10 +385,30 @@ export function createVideoAr({ link, params, hooks, deps }) {
     };
     const watchEnd = (v) => v.onEnded(() => {
       if (v !== video) return;
-      ended = true;
-      record.ended = true;
-      console.info(`[video] ${clockText(timeline())} 영상 끝`);
+      if (stepClip === null) {
+        ended = true;
+        record.ended = true;
+        console.info(`[video] ${clockText(timeline())} 영상 끝`);
+        return;
+      }
+      // 단계 영상: 마지막 장면을 붙잡고 그 장면으로 프레임을 계속 보낸다(영상 프레임 알림이 없어 타이머로 돈다)
+      const since = Math.round(timeline());
+      record.hold = { clip: stepClip, since };
+      console.info(`[video] ${clockText(since)} 단계 영상 끝 · 마지막 장면 붙잡기 ${stepClip}`);
+      const tick = frameLoop(v);
+      const every = Math.max(20, Math.floor(FRAME_MS / 2));
+      holdTimer = setInterval(() => {
+        holdMs += every;
+        tick(performance.now());
+      }, every);
     });
+    const stopHold = () => {
+      if (holdTimer !== null) clearInterval(holdTimer);
+      holdTimer = null;
+      offset += held();
+      holdMs = 0;
+      record.hold = null;
+    };
 
     /** 단계 영상으로 바꾼다: 새 영상을 앞 영상 밑에 깔고 튼 뒤 앞 영상을 닫는다. 마지막에 건 바꾸기만 쓴다.
      *  pose: 새 영상으로 바꿀 때 함께 바꿀 자세(go 걷기·집기·놓기 바라보기). 열지 못하거나 더 새 바꾸기가 있으면 부르지 않는다. */
@@ -398,6 +428,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
         return;
       }
       const old = video;
+      stopHold();
       offset += old.currentTime * 1000;
       video = next;
       if (next.videoWidth !== fw || next.videoHeight !== fh) {
@@ -411,7 +442,9 @@ export function createVideoAr({ link, params, hooks, deps }) {
       ended = false;
       record.ended = false;
       const ms = timeline();
-      record.clips.push({ video_ms: Math.round(ms), clip: clipNameOf(url) });
+      stepClip = clipNameOf(url);
+      const dur = Number(next.duration);
+      record.clips.push({ video_ms: Math.round(ms), clip: stepClip, ...(Number.isFinite(dur) && dur > 0 ? { duration_ms: Math.round(dur * 1000) } : {}) });
       console.info(`[video] ${clockText(ms)} 단계 영상 ${clipNameOf(url)}`);
       old.close();
       watchEnd(next);
@@ -423,11 +456,17 @@ export function createVideoAr({ link, params, hooks, deps }) {
       /** 사람 단계 명령: 맞는 step 칸이 있으면 그 id·step에 한 번, reactMs 뒤 단계 영상으로 바꾸고, 바뀌면 go는 걷고 집기·놓기·그 자리에서 하는 일(do)은 대상을 바라본다. */
       command(cmd) {
         const id = cmd.target?.id;
-        const entry = typeof id === "string" ? steps.find((s) => s.kind === cmd.kind && id.includes(s.word)) : undefined;
-        if (!entry) return;
+        const first = typeof id === "string" ? steps.find((s) => s.kind === cmd.kind && id.includes(s.word)) : undefined;
+        if (!first) return;
         const key = `${cmd.id}:${cmd.step}`;
         if (handled.has(key)) return;
         handled.add(key);
+        // 같은 종류·낱말 칸이 여럿이면 새 명령마다 다음 칸(다 떨어지면 지금 영상을 둔다), 하나면 늘 그 칸
+        const group = steps.filter((s) => s.kind === first.kind && s.word === first.word);
+        const n = used.get(`${first.kind}:${first.word}`) ?? 0;
+        if (group.length > 1 && n >= group.length) return;
+        used.set(`${first.kind}:${first.word}`, n + 1);
+        const entry = group.length > 1 ? group[n] : first;
         const target = Array.isArray(cmd.target.ar) ? cmd.target.ar : null;
         const timer = setTimeout(() => {
           reactTimers.delete(timer);
@@ -440,6 +479,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
       close() {
         clearInterval(poseTimer);
         clearInterval(perfTimer);
+        if (holdTimer !== null) clearInterval(holdTimer);
         for (const timer of reactTimers) clearTimeout(timer);
         reactTimers.clear();
         walk = null;
