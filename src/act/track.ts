@@ -20,7 +20,8 @@
 // 폰 판본(phoneReady, src/phone/server.ts): 판본이 맞는 실제 폰이 없으면 폰이 필요한 계획(needsPhone)만 시작을 미루고(실행 기록 EXEC_TEXT.phoneOld, 한 번),
 // 맞는 폰이 붙으면 시작한다. 계획 도중 폰에 물어야 할 때(승인·시간 초과 질문) 맞는 폰이 없으면 기다리지 않고 실패로 닫는다(EXEC_TEXT.phoneGone).
 // 들은 말(onHeard)은 말할 때 폰에 떠 있던 명령(at)의 답일 때만 받는다: 다른 명령·옛 탭(at 없음)이면 버린다(stale). 「그만」은 at과 상관없다.
-// 저절로 꺼지는 가전의 꺼짐 기다리기(selfStopWait, 전자레인지 「다 되기 기다리기」)는 끝 조건(지금 상태 꺼짐) 대신 이 계획이 켠 그 가전의 작동 한 번 끝남(cycleEnded)으로만 넘긴다.
+// 저절로 꺼지는 가전의 꺼짐 기다리기(selfStopWait, 전자레인지 「다 되기 기다리기」)는 끝 조건(지금 상태 꺼짐) 대신 이 계획이 켠 그 가전의 지금 회차가 풀렸을 때만 넘긴다.
+// 끄기 do와 같은 판단(offReleased): 실행 추적이 든 풀린 근거(Run.ends, cycleEnded로 풀 때 남김)로 보고 가전 이력에 기대지 않으며, 그 뒤 새 켜짐이면 새 회차로 다시 건다.
 // 그 단계가 showAskMs 넘게 안 끝나고 상태가 이미 꺼짐이면(켜짐을 놓침) 그 단계 id로 보이게 해 달라는 부탁을 한 번 띄운다.
 // 다른 행동 알림(코치 계획, 관찰 모드 계기 off_track): 사람 단계가 진행 중인데 의미 있는 변화(사람 방·가전 상태·가전 설비 상태)가 왔고 그 단계가 넘어가지 않았거나,
 // 이동이 아닌 단계에서 폰이 그 단계 자리를 떠나 다른 평면도 자리 가까이로 갔으면 strayed를 부른다(결정론). 단계마다 strayMax번(받은 것만), strayGapMs에 한 번.
@@ -910,28 +911,32 @@ export class ExecutionTracker {
     return true;
   }
 
-  /** 실행 중 끄기 do 단계: showAskMs 넘게 안 끝나고 그 가전 상태가 이미 꺼짐인데 작동 끝남을 확인하지 못했으면(켜짐을 놓침) 부탁을 그 단계에 한 번 보낸다. */
+  /** 실행 중 끄는 단계(끄기 do·꺼짐 기다리기): showAskMs 넘게 안 끝나고 그 가전 상태가 이미 꺼짐인데 작동 끝남을 확인하지 못했으면(켜짐을 놓침) 부탁을 그 단계에 한 번 보낸다. */
   private offAsk(r: Run, step: AgentStep, now: number): void {
-    const self = selfStopWait(step, this.o.handDevices?.() ?? []);
-    const id = self ?? (step.kind === "do" && step.hand?.to === "off" ? step.hand.deviceId : null);
-    if (!id || !r.hot.has(id) || r.asking || (!r.sent && !self) || r.offAsked === r.gen || now - r.stepAt < this.cfg.showAskMs) return;
+    const id = this.offTarget(step);
+    if (!id || !r.hot.has(id) || r.asking || (!r.sent && step.kind === "do") || r.offAsked === r.gen || now - r.stepAt < this.cfg.showAskMs) return;
     if (!offNow(this.o.world().devices.find((d) => d.id === id))) return;
     r.offAsked = r.gen;
     this.askToShow(id);
   }
 
-  /** 지금 단계가 그 가전을 끄는 손 조작 do인가. */
-  private offStepOpen(r: Run, deviceId: string): boolean {
-    const step = OPEN.has(r.state) ? this.stepOf(r) : undefined;
-    return step?.kind === "do" && step.hand?.to === "off" && step.hand.deviceId === deviceId;
+  /** 그 단계가 끄는 가전: 손 조작 끄기 do의 그 가전, 저절로 꺼지는 가전의 꺼짐 기다리기(selfStopWait)의 그 가전. 아니면 null. */
+  private offTarget(step: AgentStep | undefined): string | null {
+    if (!step) return null;
+    return selfStopWait(step, this.o.handDevices?.() ?? []) ?? (step.kind === "do" && step.hand?.to === "off" ? step.hand.deviceId : null);
   }
 
-  /** 끄기 do 단계: 이 계획이 켠 그 가전의 지금 회차가 풀렸으면(실행 추적이 든 풀린 근거 r.ends, 가전 이력에 기대지 않음) 그 근거 뒤 새 켜짐을 직접 본다.
+  /** 지금 단계가 그 가전을 끄는 단계(끄기 do·꺼짐 기다리기)인가. */
+  private offStepOpen(r: Run, deviceId: string): boolean {
+    return OPEN.has(r.state) && this.offTarget(this.stepOf(r)) === deviceId;
+  }
+
+  /** 끄는 단계(끄기 do·꺼짐 기다리기, offTarget)의 판단 하나: 이 계획이 켠 그 가전의 지금 회차가 풀렸으면(실행 추적이 든 풀린 근거 r.ends, 가전 이력에 기대지 않음) 그 근거 뒤 새 켜짐을 직접 본다.
    *  새 켜짐이 없으면(허브·실제 가전 신호가 켜짐이 아니고 근거 뒤 이력·카메라 마지막 관측에 켜짐이 없음) 그 단계는 끝난다.
    *  켜져 있으면 다시 걸기 기간과 상관없이 그 자리에서 새 회차로 hot에 다시 건다. 지금 회차의 풀린 근거가 없는데(기록이 지워짐) 켜짐도 아니면
    *  끝내지 않고 같은 회차로 hot에 다시 넣어 추적(releaseIfOff·부탁 offAsk)이 이어지게 한다. */
   private offReleased(r: Run, step: AgentStep): boolean {
-    const id = step.kind === "do" && step.hand?.to === "off" ? step.hand.deviceId : null;
+    const id = this.offTarget(step);
     const cycle = id ? this.cycles.get(id) : undefined;
     if (!id || !cycle || !r.onAt.has(id) || r.hot.has(id)) return false;
     const d = this.o.world().devices.find((x) => x.id === id);
@@ -1272,12 +1277,10 @@ export class ExecutionTracker {
     }
     if (step.kind === "device" && r.device !== "done" && r.device !== "sent") return false;
     const world = this.o.world();
-    // 끄기 do 단계는 그 가전 추적이 풀려도(확인된 꺼짐) 끝난다
-    // 저절로 꺼지는 가전의 꺼짐 기다리기: 이 계획이 켠 그 가전의 지금 회차가 끝났을 때만(cycleEnded, 명시 근거) 넘긴다
-    const self = selfStopWait(step, this.o.handDevices?.() ?? []);
-    const reached = self !== null
-      ? r.onAt.has(self) && this.cycleEnded(self) !== null
-      : (r.watch ? r.watch.check(this.conditionView(world), this.context(r, world)) : step.kind === "device" && r.device === "done") || this.offReleased(r, step);
+    // 끄기 do 단계는 그 가전 추적이 풀려도(확인된 꺼짐) 끝난다. 저절로 꺼지는 가전의 꺼짐 기다리기는 그것으로만 넘긴다(끝 조건을 보지 않는다)
+    const self = selfStopWait(step, this.o.handDevices?.() ?? []) !== null;
+    const reached = (!self && (r.watch ? r.watch.check(this.conditionView(world), this.context(r, world)) : step.kind === "device" && r.device === "done"))
+      || this.offReleased(r, step);
     if (reached) {
       this.advance(r);
       return true;

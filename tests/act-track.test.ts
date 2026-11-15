@@ -1660,6 +1660,51 @@ describe("실행 추적: 전자레인지로 데우기 알려 주기(7번 다 되
     expect(offCommands(s)).toEqual([]);
   });
 
+  /** 5번 승인 뒤 켜짐, 6번 동안 명시 꺼짐을 봐 hot이 풀린 데까지. 돌려준 값: 켜라고 한 시각. */
+  async function releasedIn6(s: ReturnType<typeof setup>, set: (d: Dev[]) => void) {
+    const onAt = await toOn(s);
+    const on = cam("off", "on", onAt + 500);
+    s.clock.t += 2_000;
+    set([mwk(["on"], [on])]);
+    s.t.onWorld();
+    s.clock.t += 2_000;
+    set([mwk(["off"], [on, cam("on", "off", onAt + 3_000)])]);
+    s.t.onWorld();
+    s.t.tick();
+    expect(s.t.safety()).toMatchObject({ hot: [], released: { [MWK]: { via: "switch", evidenceAt: onAt + 3_000 } } });
+    return onAt;
+  }
+  /** 전원이 아닌 이력 줄 n개(이력 한도 20줄을 넘겨 켜짐·꺼짐 줄을 밀어낸다). */
+  const doorLines = (n: number, from: number): Line[] => Array.from({ length: n }, (_, i) => ({ attr: "door", from: i % 2 ? "open" : "closed", to: i % 2 ? "closed" : "open", at_ms: from + i * 10 }));
+
+  it("6번 동안 꺼짐을 확인해 hot이 풀린 뒤 이력 줄이 21개 넘게 쌓여 켜짐·꺼짐 줄이 밀려나도 7번은 실행 추적이 든 풀린 근거로 끝난다", async () => {
+    let devs: Dev[] = [mwk(["off"])];
+    const s = mwSetup({ w: () => ({ ...world([]), devices: devs }) });
+    const onAt = await releasedIn6(s, (d) => { devs = d; });
+    devs = [mwk(["off"], doorLines(21, onAt + 4_000))];
+    toWait(s);
+    expect(s.last()).toMatchObject({ step: `${P}:8`, text: "전자레인지 문을 열어 주세요" });
+    expect(s.t.safety().hot).toEqual([]);
+  });
+
+  it("6번에 풀리고 이력이 밀려난 뒤 전자레인지가 다시 켜짐이면 7번은 끝나지 않고 새 회차로 hot에 다시 건다. 그 회차가 꺼지면 끝난다", async () => {
+    let devs: Dev[] = [mwk(["off"])];
+    const s = mwSetup({ w: () => ({ ...world([]), devices: devs }) });
+    const onAt = await releasedIn6(s, (d) => { devs = d; });
+    const lines = doorLines(21, onAt + 4_000);
+    devs = [mwk(["on"], lines)];
+    toWait(s);
+    expect(s.steps()[6]).toBe("active");
+    expect(s.t.safety()).toMatchObject({ hot: [MWK], cycles: { [MWK]: { cycle: 2 } } });
+    s.clock.t += 1_000; s.t.tick();
+    expect(s.steps()[6]).toBe("active");
+    s.clock.t += 1_000;
+    devs = [mwk(["off"], [...lines, cam("on", "off", s.clock.t - 500)])];
+    s.t.onWorld();
+    expect(s.last()).toMatchObject({ step: `${P}:8` });
+    expect(s.t.safety().hot).toEqual([]);
+  });
+
   it("5번을 「완료」로 넘기고 전자레인지가 옛 꺼짐 그대로면 7번이 끝나지 않고 hot도 남는다. 20초 뒤 그 단계에 부탁(답 단추 없음)이 한 번 뜨고, 부탁 전에 찍힌·멀리서 본 꺼짐으로는 안 끝나며, 부탁 뒤 촬영된 가까이 본 명시 꺼짐이면 7번이 끝나고 hot이 풀린다", async () => {
     let devs: Dev[] = [mwk(["off"])];
     const s = mwSetup({ w: () => ({ ...world([]), devices: devs }) });
