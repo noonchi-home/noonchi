@@ -130,7 +130,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   const retention = loadRetention(env);
   // 이 런타임 폴더를 쓰는 서버라는 표시(RUNTIME_DIR/server.lock). DB를 열기 전에 배타적으로 만든다: 같은 폴더의 서버가 이미 있으면 여기서 멈춘다.
   // 뜨면 포트를 적고, 끌 때·시작이 실패할 때 지운다. 서버 밖 명령(시연 준비)이 보고 멈춘다
-  const lock = acquireServerLock(runtimeDir);
+  const lock = await acquireServerLock(runtimeDir);
   // 기록 DB(RUNTIME_DIR/noonchi.db)와 기록기. 집 묶음이 가전·관찰·판단·계획을 넘기고, 운영 모드는 여기서 넘긴다. 시작이 실패하면 닫는다
   let db: HistoryDb;
   try {
@@ -167,7 +167,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   const ctx: HomeContext = {
     env, log, runtimeDir, importer: opts.importer, matter: opts.matter, brain: opts.brain, servedPhoneUrls: opts.servedPhoneUrls, webDir: opts.webDir,
     sources: (homeId, ids) => store.sources(homeId, ids), mode: () => mode, assist: () => store.assist(), allowOrigin, planToken: env.PLAN_TOKEN?.trim() || undefined, ready: makeReady({ endpoints, agent: agentEndpoint(env), db }),
-    history: { db, device: feed.device.emit, brain: feed.brain.emit, plan: feed.plan.emit, reflect },
+    history: { db, device: feed.device.emit, brain: feed.brain.emit, plan: feed.plan.emit, reflect }, instance: lock.token,
   };
   const studioDir = resolveTwinStudioDir(env.TWIN_STUDIO_DIR);
   const pollMs = msOf(env.THINQ_POLL_MS, DEFAULT_POLL_MS);
@@ -306,6 +306,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
 
   const shell = createShell({
     current: () => current?.app ?? null,
+    instance: lock.token,
     webDir: opts.webDir,
     allowOrigin,
     log,
@@ -411,7 +412,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     closeDb();
     throw e;
   }
-  lock.listening(listened.port);
+  lock.listening(listened.url, listened.port);
 
   // 보관 기간: 시작 때와 1시간마다 지난 사진 찍기 사진·시험 자료를 지운다
   const clean = () => {

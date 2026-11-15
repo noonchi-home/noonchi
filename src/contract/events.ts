@@ -197,6 +197,8 @@ export interface HealthView {
   mode: ControlMode;
   /** 준비 상태: 추론 모드, 모델 주소 응답, 기록 DB. 모델 주소가 답하지 않아도 health는 200이고 ready.ok가 false다. */
   ready: ReadyView;
+  /** 서버 실행 하나의 무작위 표시(RUNTIME_DIR/server.lock의 token). 서버 밖 명령이 잠금 주인이 살아 있는지 확인한다. 화면은 쓰지 않는다. */
+  instance?: string | null;
 }
 
 /** 준비 상태(/api/health ready). 모델은 부르지 않고 주소가 답하는지만 본다. */

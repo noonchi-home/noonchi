@@ -80,11 +80,12 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
     if (!r.ok) throw new DemoStop(`${method} ${path} 실패(${r.status}): ${json.error ?? ""}`.trim());
     return json;
   };
-  // 서버가 꺼졌는지: 그 폴더의 서버 잠금(server.lock, src/server/lock.ts)의 pid가 살아 있으면 다른 포트 서버라도 켜진 것이다(pid가 죽었으면 남은 잠금).
+  // 서버가 꺼졌는지: 그 폴더의 서버 잠금(server.lock, src/server/lock.ts)의 주인이 살아 있으면 다른 포트 서버라도 켜진 것이다
+  // (pid가 죽었거나 잠금 주소가 다른 instance·연결 거부면 남은 잠금).
   // 그다음 --api 주소가 연결을 거부할 때(ECONNREFUSED)만 꺼졌다고 본다. 답이 늦거나(시간 초과) 그 밖의 오류면 켜져 있을 수 있어 멈춘다
   // (쓰는 중인 폴더를 옮기거나 열린 DB에 쓰지 않게)
   const requireServerOff = async (dir: string) => {
-    const held = liveServerLock(dir);
+    const held = await liveServerLock(dir);
     if (held) throw new DemoStop(`서버를 먼저 끄세요: 이 폴더를 쓰는 서버가 켜져 있어요(${dir}, pid ${held.pid}, 포트 ${held.port})`);
     let why: string;
     try {

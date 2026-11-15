@@ -150,25 +150,29 @@ describe("서버가 꺼졌는지(--fresh·--scripted)", () => {
     db.close();
   }, 60_000);
 
-  it("그 폴더를 쓰는 서버가 다른 포트에서 돌면(살아 있는 server.lock) --api가 꺼져 있어도 멈추고, pid가 죽은 잠금이면 진행한다", async () => {
+  it("그 폴더를 쓰는 서버가 다른 포트에서 돌면(살아 있는 server.lock, 그 포트 /api/health가 같은 instance) --api가 꺼져 있어도 멈추고, pid가 죽었거나 다른 프로세스가 pid를 다시 쓴 잠금이면 진행한다", async () => {
     const base = tmp();
     const dir = join(base, "week");
     await run(["week", "--dir", dir, "--api", CLOSED]);
-    // 다른 포트에 뜬 서버: 이 프로세스(살아 있는 pid)가 그 포트로 잠금을 쓴 것처럼
-    const other = createServer((_req, res) => { res.writeHead(200); res.end("{}"); });
+    // 다른 포트에 뜬 서버: 이 프로세스(살아 있는 pid)가 그 포트로 잠금을 쓴 것처럼. /api/health가 잠금의 token을 instance로 준다
+    const other = createServer((_req, res) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ ok: true, instance: "run-1" })); });
     servers.push(other);
     const { port } = await listenRetry(other, 0, "127.0.0.1");
-    writeFileSync(join(dir, "server.lock"), JSON.stringify({ pid: process.pid, port, at: "2026-11-14T00:00:00.000Z" }));
+    const lock = { pid: process.pid, token: "run-1", port, url: `http://127.0.0.1:${port}`, at: "2026-11-14T00:00:00.000Z" };
+    writeFileSync(join(dir, "server.lock"), JSON.stringify(lock));
     await expect(run(["week", "--dir", dir, "--fresh", "--api", CLOSED])).rejects.toThrow(new RegExp(`이 폴더를 쓰는 서버가 켜져 있어요.*포트 ${port}`));
     expect(readdirSync(base)).toEqual(["week"]);
     await expect(run(["reflect", "--scripted", "--dir", dir, "--api", CLOSED])).rejects.toThrow(/이 폴더를 쓰는 서버가 켜져 있어요/);
     const db = HistoryDb.open(join(dir, "noonchi.db"), 540);
     expect(db.list({ kinds: ["reflection"] })).toEqual([]);
     db.close();
+    // 비정상 종료 뒤 pid를 다른 프로세스(여기서는 이 프로세스)가 다시 쓰고 그 포트가 비었다: 주인이 아니라 무시한다
+    const closedPort = Number(new URL(CLOSED).port);
+    writeFileSync(join(dir, "server.lock"), JSON.stringify({ ...lock, port: closedPort, url: CLOSED }));
+    await run(["reflect", "--scripted", "--dir", dir, "--api", CLOSED]);
     // 서버가 죽고 남은 잠금: 무시하고 진행한다
     const dead = spawnSync(process.execPath, ["-e", ""]).pid!;
-    writeFileSync(join(dir, "server.lock"), JSON.stringify({ pid: dead, port, at: "2026-11-14T00:00:00.000Z" }));
-    await run(["reflect", "--scripted", "--dir", dir, "--api", CLOSED]);
+    writeFileSync(join(dir, "server.lock"), JSON.stringify({ ...lock, pid: dead }));
     await run(["week", "--dir", dir, "--fresh", "--api", CLOSED]);
     expect(readdirSync(base).filter((n) => n.startsWith("week.old-"))).toHaveLength(1);
   }, 60_000);
