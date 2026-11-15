@@ -173,7 +173,7 @@ export const keepAll: HabitFilter;   // proposed 그대로, 새 규칙마다 { k
 | `scripts/video-check.ts`, `ui/src/phone/core/video-ar.js` | `--say`·`--start-at`·`--tail`, 단계 영상 차례·붙잡기 |
 | `src/model/kinds.ts`(새로), `src/hub/types.ts`, `src/model/mapping.ts`, `src/agent/{search,policy,planTools}.ts`, `src/plan/labels.ts`, `src/thinq/appliance.ts`(짝짓기 파생만), `src/world/{vocab,sight,state,relations}.ts`, `tests/kinds-registry.test.ts`, `scripts/kinds-snapshot.ts` | 가전 종류 등록부: 등록부·파생·구조 검사·같은 결과(Task 11r-1) |
 | `src/model/kinds-check.ts`(새로), `src/agent/{policy,planTools,planInput,prompts}.ts`, `src/thinq/{appliance,link}.ts`, `src/server/start.ts`, `tests/kinds-behavior.test.ts` | 가전 종류 등록부: 승인 판정 `needsConfirm`·ThinQ 어댑터·`checkKinds`(Task 11r-2) |
-| `src/world/{sight.ts,state.ts,vocab.ts,conditions.ts}`, `src/observe/pipeline.ts`, `src/hub/{types.ts,signals.ts}`, `src/act/track.ts` | 가전 이력 촬영 시각(Task 11a), 인덕션 자리 oven만 인덕션으로(Task 11b), 끄기 추적은 새로 본 꺼짐으로만(Task 11c) |
+| `src/world/{sight.ts,state.ts,vocab.ts,conditions.ts}`, `src/observe/pipeline.ts`, `src/hub/{types.ts,signals.ts}`, `src/act/track.ts` | 가전 이력 촬영 시각(Task 11a), 인덕션 자리 oven만 인덕션으로(Task 11b), 끄기 추적은 확인된 꺼짐으로만(Task 11c-1·11c-2) |
 | `twin/data/homes/mokryeon_180b/added_devices.json`(새로), `src/model/scene.ts`, `src/model/devices.ts`, `src/layout/{editor.ts,load.ts}` | 트윈에 전자레인지, 뷰어 add |
 | `src/act/tasks.ts`, `src/brain/decision.ts`, `tests/helpers/planner.ts` | 「전자레인지로 데우기 알려 주기」 |
 | `tests/demo-e2e.test.ts`(새로) | 네 장면 가짜 서버 흐름 |
@@ -644,7 +644,7 @@ export const cameraKindOf: (fixture: FixtureClass) => DeviceKind | null;       /
 
 **Interfaces:**
 - Consumes: 11r-1의 `KINDS`·`KindEntry`·`DeviceKind`·`KIND_ORDER`·`isRiskyKind`·`findKindTables`·`tests/fixtures/kinds-before.json`(승인 표).
-- Produces(11a·11c·12가 쓴다): `KindEntry.riskyReason`, `KindEntry.thinq.adapter`, `ThinqAdapter`, `THINQ_ADAPTERS`, `needsConfirm`, `checkKinds`.
+- Produces(11a·11c-2·12가 쓴다): `KindEntry.riskyReason`, `KindEntry.thinq.adapter`, `ThinqAdapter`, `THINQ_ADAPTERS`, `needsConfirm`, `checkKinds`.
 
 ```ts
 // src/model/kinds.ts KindEntry에 더하고 바꾸는 칸
@@ -713,7 +713,7 @@ export function checkKinds(kinds: Readonly<Record<string, KindEntry>>): string[]
 
 카메라로 맞춘 가전 상태(SIGHT)는 VLM 답이 도착한 시각으로 이력에 쌓인다(`src/observe/pipeline.ts` `onDevice` → `world.applyDevice(s, this.clock.now())`). 켜라고 하기 전(또는 단계 시작 전)에 찍은 사진의 답이 늦게 오면 그 뒤의 바뀜으로 보여 세 곳이 뚫린다: 끄기 안내를 지우는 `offSince`(fec2e7d), Task 12의 꺼짐 기다리기, 단계 끝 조건 `became`(`src/world/conditions.ts`, `h.at_ms >= sinceMs`, 끄기 do가 끝나 hot이 풀림). 이 Task는 근거 사진의 촬영 시각을 남기고 세 곳이 그것을 보게 한다.
 
-또 지금 SIGHT는 VLM 답에 「쓰는 중」이 없으면 꺼짐으로 만든다(`absent: "off"`, `src/world/sight.ts` 59행). 가전이 크게 보여도 전원 표시를 못 본 답만으로 꺼짐이 되어, 가열 중인데 안전 추적이 풀릴 수 있다. 그래서 VLM이 꺼짐을 직접 답한 「명시 꺼짐」과 답이 없어 넣은 「추정 꺼짐」을 나눠 남긴다. 추정 꺼짐은 지금처럼 트윈 상태에는 쓰고, 안전 해제(Task 11c `cycleEnded`)에는 쓰지 않는다. Task 11c·12보다 먼저 한다.
+또 지금 SIGHT는 VLM 답에 「쓰는 중」이 없으면 꺼짐으로 만든다(`absent: "off"`, `src/world/sight.ts` 59행). 가전이 크게 보여도 전원 표시를 못 본 답만으로 꺼짐이 되어, 가열 중인데 안전 추적이 풀릴 수 있다. 그래서 VLM이 꺼짐을 직접 답한 「명시 꺼짐」과 답이 없어 넣은 「추정 꺼짐」을 나눠 남긴다. 추정 꺼짐은 지금처럼 트윈 상태에는 쓰고, 안전 해제(Task 11c-1 `cycleEnded`)에는 쓰지 않는다. Task 11c-1·12보다 먼저 한다.
 
 **Files:**
 - Modify: `src/world/vocab.ts`(`STATES.not_in_use`), `src/model/kinds.ts`(등록부 `microwave.camera.sight`의 values, Task 11r-1), `docs/world-vocabulary.md`(낱말 표 생성 글), `src/world/sight.ts`(안정 셈의 첫 프레임 촬영 시각, 값마다 명시·추정), `src/observe/pipeline.ts`(카메라로 바꾼 가전 상태에 촬영 시각을 실어 보냄), `src/hub/types.ts`·`src/hub/signals.ts`(가전 상태 알림에 `seenAt` 칸), `src/contract/world.ts`(이력 칸), `src/world/state.ts`(`applyDevice`), `src/world/conditions.ts`(`became`), `src/act/track.ts`(`offSince`)
@@ -721,11 +721,14 @@ export function checkKinds(kinds: Readonly<Record<string, KindEntry>>): string[]
 
 **Interfaces:**
 - Consumes: Task 11r-1의 `KINDS`(`microwave.camera.sight`에 값을 더함)·`cameraKindOf`, Task 11r-2 뒤에 한다(등록부 칸과 승인 판정이 굳은 뒤).
+- Produces(11c-1·11b·12가 쓴다): 이력 `seen_ms`·`explicit`, `sight_last`(속성마다 `{ value, seen_ms, explicit }`, 11c-1이 `close`를 더함), `offSince`, 명시 꺼짐 값 `not_in_use`.
 
 ```ts
 // src/contract/world.ts WorldDevice.history 한 줄
 { attr: string; from: unknown; to: unknown; at_ms: number; /** 카메라로 본 바뀜이면 그 근거 사진의 촬영 시각(안정 셈을 채운 연속 프레임 가운데 가장 이른 것). 허브·실제 가전 신호면 없음. */ seen_ms?: number;
   /** 카메라로 본 바뀜이면 VLM이 그 값을 직접 답했는가(true 명시, false 답이 없어 넣은 추정). 허브·실제 가전 신호면 없음(명시로 본다). */ explicit?: boolean }
+// src/contract/world.ts WorldDevice.sight_last: 속성마다 카메라가 마지막으로 이어 본 값·촬영 시각·근거 종류(상태가 바뀌지 않아도 남는다)
+sight_last?: Record<string, { value: unknown; seen_ms: number; explicit: boolean }>;
 // src/world/vocab.ts STATES에 더함(VLM 스키마 enum·프롬프트 값 목록이 여기서 나온다, src/observe/scene.ts)
 not_in_use: { facet: "use", label: "꺼져 있음", for: ["fixture"], hint: "appliance clearly switched off: no light, display, flame or heat visible" },
 // 등록부(src/model/kinds.ts, Task 11r-1) KINDS.microwave.camera.sight: 명시 꺼짐 값을 더한다(absent는 그대로 두어 트윈 상태는 지금처럼 바뀐다)
@@ -742,7 +745,7 @@ function offSince(d: WorldView["devices"][number] | undefined, onAt: number): bo
 //   d.history.some((h) => (h.seen_ms ?? h.at_ms) >= x.sinceMs && h.attr === s.attr && h.to === s.value && h.from !== null && h.from !== s.value)
 ```
 - 같은 값 생략은 값과 근거 종류가 모두 같을 때만 한다. 값이 같아도 근거 종류가 바뀌면(추정 꺼짐 → 명시 꺼짐, 그 반대) 이력 줄 `{ from: 꺼짐, to: 꺼짐, seen_ms, explicit }`을 남기고 World State 변화(판단 계기 아님)로 알린다. 같은 값·같은 종류의 새 촬영은 이력 줄 대신 `sight_last`의 촬영 시각만 새로 쓴다(사진마다 줄이 늘지 않게).
-- Task 11c의 `cycleEnded`가 이 `offSince`를 감싸 쓰고(명시 근거만), 단계 끝 조건 `became`도 같은 근거 시각을 쓴다. `became`은 추정 근거도 지금처럼 받는다(단계 진행용, 안전 해제는 `cycleEnded`만).
+- Task 11c-1의 `cycleEnded`가 이 `offSince`를 감싸 쓰고(명시 근거만), 단계 끝 조건 `became`도 같은 근거 시각을 쓴다. `became`은 추정 근거도 지금처럼 받는다(단계 진행용, 안전 해제는 `cycleEnded`만).
 
 - [ ] **Step 1: 실패하는 시험.** 「SIGHT로 꺼짐이 된 이력 줄에 근거 사진들 가운데 가장 이른 촬영 시각이 `seen_ms`로 남는다」, 「VLM이 「꺼져 있음」을 답한 꺼짐은 `explicit: true`, 「쓰는 중」을 말하지 않아 넣은 꺼짐은 `explicit: false`이고 둘 다 트윈 상태는 꺼짐」, 「VLM 스키마 enum과 프롬프트 값 목록에 `not_in_use`가 있다」, 「추정 꺼짐 뒤 명시 꺼짐이 오면 값이 같아도 명시 이력 줄이 생긴다」, 「같은 값·같은 종류가 이어지면 줄이 늘지 않고 `sight_last` 촬영 시각만 바뀐다」, 「허브로 바뀐 이력 줄에는 `seen_ms`가 없다」, 「켜라고 한 뒤(onAt) 도착했지만 onAt 전에 찍은 꺼짐 사진 답이면 `offSince`가 거짓: 끄기 안내가 그대로 떠 있고 hot도 그대로」, 「onAt 뒤에 찍은 꺼짐 사진이면 참」, 「끄기 do 단계가 시작되기 전에 찍힌 꺼짐 사진의 답이 단계 시작 뒤 도착하면 `became: off`가 거짓이라 그 단계가 끝나지 않고 hot이 남는다」, 「단계 시작 뒤 찍힌 꺼짐이면 끝난다」, 「허브 신호(`seen_ms` 없음)는 지금처럼 도착 시각으로 본다」.
 - [ ] **Step 2:** `npm run heavy -- npx vitest run tests/vision-devices.test.ts tests/world-state.test.ts tests/act-track.test.ts` → 실패 확인.
@@ -756,9 +759,10 @@ function offSince(d: WorldView["devices"][number] | undefined, onAt: number): bo
 
 **Files:**
 - Modify: `src/world/vocab.ts`(`CLASSES.cooktop` 새 카메라 설비 종류), `src/model/kinds.ts`(등록부 `cooktop.camera`, Task 11r-1), `src/world/sight.ts`(`refineFixture`), `src/observe/pipeline.ts`(VLM 감지 목록·World State에 넣기 전에 바꿈), `docs/world-vocabulary.md`(낱말 표 생성 글), `tests/fixtures/`(인덕션 사진 고정 자료)
-- Test: `tests/vision-devices.test.ts`, `tests/world-vocab.test.ts`, `tests/brain-detector.test.ts`, `tests/observe-pipeline.test.ts`
+- Test: `tests/vision-devices.test.ts`, `tests/world-vocab.test.ts`, `tests/brain-detector.test.ts`, `tests/observe-pipeline.test.ts`, `tests/act-track.test.ts`
 
 **Interfaces:**
+- Consumes: Task 11a의 명시 꺼짐(`not_in_use`)·`sightValues`, Task 11c-1의 `cycleEnded`·`releaseIfOff`. 11c-1 다음에 하므로 인덕션 카메라 근거로 추적이 풀리는 시험은 여기서 더한다.
 
 ```ts
 // src/world/vocab.ts: COCO에 바로 없는 설비 종류. from은 이 종류로 바꿀 수 있는 감지 종류와 그 자리의 평면도 종류.
@@ -791,40 +795,48 @@ export function refineFixture(d: Detection, o: {
   - 비스듬히 본 상판: 「인덕션을 45도 옆에서 가까이 본 정상 상판(마스크 맨 아랫줄이 가까운 변 가운데 줄보다 낮지만 투영한 상판 다각형의 가장 낮은 줄 안)은 cooktop으로 바뀐다」.
   - 빌트인 오븐: 「인덕션 바로 아래 오븐 문(마스크가 투영한 상판 다각형의 가장 낮은 줄보다 사진 높이 10% 아래까지 내려감)은 평면 자리가 같아도, 비스듬히 봐도 cooktop이 안 된다」, 「그 오븐이 쓰는 중 → 아님으로 바뀌어도 트윈 인덕션 상태·hot·끄기 안내가 바뀌지 않는다」.
   - 「눈 자세(view)를 모르거나 사진 크기를 모르면 바꾸지 않는다」.
+  - 추적 풀기(Task 11c-1 판정): 「인덕션 카메라로 켜짐 → 명시 꺼짐(「꺼져 있음」)을 보면 `cycleEnded.switch`가 서고 라면 12번 hot과 끄기 안내가 풀린다」, 「추정 꺼짐만 이어지면 풀리지 않는다」.
   - 「`turn-on.mp4` 고정 사진에서 감지기가 oven을 내고, 그 자리가 인덕션과 겹친다」, 낱말 표 문서가 새 표와 같다.
-- [ ] **Step 2:** `npm run heavy -- npx vitest run tests/vision-devices.test.ts tests/world-vocab.test.ts tests/brain-detector.test.ts tests/observe-pipeline.test.ts` → 실패 확인.
+- [ ] **Step 2:** `npm run heavy -- npx vitest run tests/vision-devices.test.ts tests/world-vocab.test.ts tests/brain-detector.test.ts tests/observe-pipeline.test.ts tests/act-track.test.ts` → 실패 확인.
 - [ ] **Step 3:** 구현. 낱말 표 문서를 다시 만든다.
 - [ ] **Step 4:** 통과 확인.
 - [ ] **Step 5:** 커밋 `feat(world): read induction power from oven detections that overlap the induction counter`.
 
-**비전으로 못 볼 때(Step 0에서 안 잡힐 때):** 켜기 단계(7번)는 「완료」로 넘길 수 있다(`--done-on <초>:인덕션을 켜 주세요`). 끄기는 「완료」로 인정하지 않는다(Task 11c): 12번을 「완료」로 넘겨도 hot이 남고 끄기 안내가 계속 간다. **라면 시연이 깨끗하게 끝나지 않는다.** 이때는 사용자 결정이 필요하다(「남은 결정」 5).
+**비전으로 못 볼 때(Step 0에서 안 잡힐 때):** 켜기 단계(7번)는 「완료」로 넘길 수 있다(`--done-on <초>:인덕션을 켜 주세요`). 끄기는 「완료」로 인정하지 않는다(Task 11c-1): 12번을 「완료」로 넘겨도 hot이 남고 끄기 안내가 계속 간다. **라면 시연이 깨끗하게 끝나지 않는다.** 이때는 사용자 결정이 필요하다(「남은 결정」 5).
 
-### Task 11c: 끄기 추적은 확인된 꺼짐으로만 풀기
+### Task 11c-1: 끄기 추적은 확인된 꺼짐으로만 풀기 — 판정·풀기·다시 걸기(명령 줄 안내)
+
+코디네이터 결정(2026-11-15): 11c는 아직 없는 11d(안전 안내 자리)와 Task 12(전자레인지 7번)에 기대는 부분이 있어 둘로 나눈다. **11c-1**은 지금 있는 것만으로 할 수 있는 핵심(판정·풀기·다시 걸기, 지금 명령 줄에 뜨는 끄기 안내의 동작)이고, **11c-2**는 11d 뒤에 안내를 안전 안내 자리로 옮기는 일이다. 7번 「다 되기 기다리기」가 `cycleEnded`로 끝나는 시험은 Task 12로 옮긴다. 차례: 11c-1 → 11d → 11c-2 → 12.
 
 지금 코드에는 실제로 끄지 않아도 켠 위험 가전 추적(실행 중 hot, 닫힌 뒤 끄기 안내)을 푸는 길이 있다. `src/act/track.ts`(79ff269)에서 찾은 지우는 자리 전부:
 
-| 자리 | 하는 일 | 새로 본 꺼짐인가 | 이 Task |
+| 자리 | 하는 일 | 새로 본 꺼짐인가 | 맡는 Task |
 |---|---|---|---|
-| `onAnswer` 326행 | 끄기 안내에 「완료」 단추 → `clearReminder()` | 아님 | 바꿈 |
-| `onHeard` 369~372행 | 끄기 안내가 떠 있을 때 말 「완료」·「다 했어」 → `clearReminder()` | 아님 | 바꿈 |
-| `reminderTick` 640행 | `offSince`이면 지움(앞 값 null도 참), **`offHoldMs`(120초) 지나면 지움** | 만료는 아님 | 바꿈 |
-| `nextReminder` 618행 | 줄에서 꺼낼 때 `offSince`인 가전은 건너뜀 | 앞 값 null도 참 | 한 판정으로 옮김 |
-| `advance` 800행 | 끄기 do 단계가 끝나면(「완료」 포함) `r.hot.delete` | 아님 | 바꿈 |
-| `finish` 1089행 | 닫힐 때 hot을 끄기 안내 줄로 옮긴 뒤 `r.hot.clear()` | 옮기기(풀기 아님) | 그대로(옮기기 함수로) |
+| `onAnswer` 326행 | 끄기 안내에 「완료」 단추 → `clearReminder()` | 아님 | 11c-1 |
+| `onHeard` 369~372행 | 끄기 안내가 떠 있을 때 말 「완료」·「다 했어」 → `clearReminder()` | 아님 | 11c-1 |
+| `reminderTick` 640행 | `offSince`이면 지움(앞 값 null도 참), **`offHoldMs`(120초) 지나면 지움** | 만료는 아님 | 11c-1 |
+| `nextReminder` 618행 | 줄에서 꺼낼 때 `offSince`인 가전은 건너뜀 | 앞 값 null도 참 | 11c-1(한 판정으로 옮김) |
+| `advance` 800행 | 끄기 do 단계가 끝나면(「완료」 포함) `r.hot.delete` | 아님 | 11c-1 |
+| `finish` 1089행 | 닫힐 때 hot을 끄기 안내 줄로 옮긴 뒤 `r.hot.clear()` | 옮기기(풀기 아님) | 11c-1(옮기기 함수로) |
 | `stop` 553행 | 집을 닫거나 서버를 끌 때 추적이 메모리와 함께 사라짐 | 아님 | 이 계획 밖(「그 뒤」) |
 
-단계 진행과 안전 추적을 나눈다. 「작동 한 번 끝남」은 한 함수(`cycleEnded`)만 판정하고, 추적을 푸는 것은 한 함수(`releaseIfOff`)만 한다. 꺼짐 기다리기(Task 12 7번)·끄기 do 단계의 hot 풀기·끄기 안내 지우기가 모두 이 둘을 쓴다. Task 11a 다음, Task 12 앞에 한다.
+단계 진행과 안전 추적을 나눈다. 「작동 한 번 끝남」은 한 함수(`cycleEnded`)만 판정하고, 추적을 푸는 것은 한 함수(`releaseIfOff`)만 한다. 끄기 do 단계의 hot 풀기·끄기 안내 지우기가 이 둘을 쓰고, Task 12의 7번 꺼짐 기다리기도 쓴다. 11c-1에서 끄기 안내는 지금처럼 명령 줄에 뜬다.
 
 **Files:**
-- Modify: `src/act/track.ts`(`Run.onAt`, `cycleEnded`, `releaseIfOff`, `rearmIfOn`, `handOver`, `askToShow`, `onAnswer`, `onHeard`, `onSafetyAnswer`, `reminderTick`, `nextReminder`, `advance`, `tick`, `finish`, 안전 안내 목록 내기 `safetyItems`), `src/contract/world.ts`·`src/world/state.ts`·`src/world/sight.ts`(가전마다 마지막 카메라 관측 `sight_last`), `src/plan/labels.ts`(`SAY_TEXT.offWait`, `EXEC_TEXT.deferred`), `src/act/say.ts`
+- Modify: `src/act/track.ts`(`Run.onAt`, `cycleEnded`, `releaseIfOff`, `rearmIfOn`, `handOver`, `askToShow`, `onAnswer`, `onHeard`, `reminderTick`, `nextReminder`, `advance`, `tick`, `finish`), `src/contract/world.ts`·`src/world/state.ts`·`src/world/sight.ts`(`sight_last` 속성마다 `close` 칸), `src/plan/labels.ts`(`SAY_TEXT.offWait`, `EXEC_TEXT.deferred`), `src/act/say.ts`, `CLAUDE.md`(규칙 표 한 줄)
 - Create: `tests/act-track-release.test.ts`
-- Test: `tests/act-track.test.ts`, `tests/act-track-release.test.ts`, `tests/vision-devices.test.ts`, `tests/act-say.test.ts`, `tests/video-check.test.ts`, `tests/coach-e2e.test.ts`, `tests/agent-planner.test.ts`
+- Test: `tests/act-track.test.ts`, `tests/act-track-release.test.ts`, `tests/vision-devices.test.ts`, `tests/act-say.test.ts`, `tests/coach-e2e.test.ts`, `tests/agent-planner.test.ts`
 
 **Interfaces:**
+- Consumes: Task 11a의 이력 `seen_ms`·`explicit`과 `sight_last`(속성마다 `{ value, seen_ms, explicit }`), Task 11(전자레인지 기기, 시험용).
+- Produces(11d·11c-2·12가 쓴다): `Run.onAt`(회차), `cycleEnded`, `releaseIfOff`, `rearmIfOn`, `handOver`, `askToShow`, `sight_last[attr].close`, `TRACK_DEFAULTS.rearmMs`·`showAskMs`, `SAY_TEXT.offWait`, `EXEC_TEXT.deferred`.
 
 ```ts
-// src/contract/world.ts WorldDevice: 마지막 카메라 관측(상태가 바뀌지 않아도 남는다). SIGHT 안정 셈을 채운 관측일 때만 쓴다.
-sight_last?: { attr: string; value: unknown; seen_ms: number; /** VLM이 그 값을 직접 답했는가(Task 11a). */ explicit: boolean; /** 가까이 본 관측: 맞춘 감지 마스크가 사진 넓이의 10% 이상이거나 가까이 보기(look_closer) 잘라 본 사진에서 나옴. */ close: boolean };
+// src/contract/world.ts WorldDevice.sight_last: Task 11a가 만든 모양(속성마다 마지막 카메라 관측)에 close 칸을 더한다. SIGHT 안정 셈을 채운 관측일 때만 쓴다.
+sight_last?: Record<string /* 트윈 속성(power 등) */, {
+  value: unknown; seen_ms: number; /** VLM이 그 값을 직접 답했는가(Task 11a). */ explicit: boolean;
+  /** 가까이 본 관측: 맞춘 감지 마스크가 사진 넓이의 10% 이상이거나 가까이 보기(look_closer) 잘라 본 사진에서 나옴(11c-1). */ close: boolean;
+}>;
 
 interface Run { /* … */
   /** 켜라고 한 가전과 지금 켜기 회차: 회차 번호, 그 회차의 시작 시각(켜기 명령을 보낸 시각, 다시 걸면 그 켜짐의 촬영 시각), 그 회차에 보낸 부탁 시각.
@@ -835,7 +847,7 @@ interface Run { /* … */
 }
 /** 작동 한 번 끝남 판정(하나뿐, 지금 켜기 회차에 대해). 아니면 null. 근거 시각은 모두 촬영 시각, 근거는 모두 명시 꺼짐(explicit, Task 11a)만 쓴다.
  *  switch: 회차 onAt 뒤에 촬영된 근거로 아는 켜짐 값(on·running)에서 꺼짐으로 바뀌었고(앞 값이 모름·null이면 아님), 그 바뀜이 명시이거나 그 뒤(켜짐 없이) 같은 꺼짐 값의 명시 근거 줄이 있다. 허브 바뀜은 명시로 본다.
- *  confirmed: 이 회차에 보낸 부탁(askedAt) 뒤이고 회차 onAt 뒤에 촬영된, 가까이 본(close) 명시 꺼짐 관측(sight_last)이 있다(켜짐을 놓쳤을 때의 복구).
+ *  confirmed: 이 회차에 보낸 부탁(askedAt) 뒤이고 회차 onAt 뒤에 촬영된, 가까이 본(close) 명시 꺼짐 관측(sight_last[제어 속성])이 있다(켜짐을 놓쳤을 때의 복구).
  *  둘 다 마지막으로: 그 가전의 지금 상태(허브·실제 가전 신호·카메라 명시 값 가운데 가장 새것)가 켜짐을 말하면 null. */
 private cycleEnded(deviceId: string): { via: "switch" | "confirmed"; evidenceAt: number; cycle: number } | null;
 /** 추적을 푸는 하나뿐인 자리. 그 가전의 켜기 단계가 끝났고(실행 중 계획이면 그 손 조작 on do가 advance를 지남, 승인 대기·켜기 단계 진행 중이면 아님)
@@ -848,55 +860,49 @@ private rearmIfOn(deviceId: string): boolean;
 // TRACK_DEFAULTS.rearmMs = 600_000, TRACK_DEFAULTS.showAskMs = 20_000
 /** 닫히는 계획의 hot을 끄기 안내 줄로 옮긴다(푸는 것이 아니다). 그 가전 상태가 이미 꺼짐인데 작동 끝남을 확인하지 못했으면 줄에는 「끄라는 안내」 대신 보이게 해 달라는 부탁으로 넣는다. */
 private handOver(r: Run): void;
-/** 보이게 해 달라는 부탁(CLOSER_TEXT(placeName(가전)), 답 단추 없음)을 보내고 지금 회차의 askedAt을 남긴다. 이름이 없으면 보내지 않는다. */
+/** 보이게 해 달라는 부탁(CLOSER_TEXT(placeName(가전)), 답 단추 없음)을 보내고 지금 회차의 askedAt을 남긴다. 이름이 없으면 보내지 않는다. 11c-1에서는 명령 줄에 보낸다. */
 private askToShow(deviceId: string): void;
 // src/plan/labels.ts
 // SAY_TEXT.offWait = (device) => `${device} 꺼짐을 기다리고 있어요.`   EXEC_TEXT.deferred = (device) => `${device} 꺼짐 확인 전이라 새 일을 미룸`
 ```
 
-**추적을 푸는 길(하나):** `releaseIfOff` → `cycleEnded`(switch 또는 confirmed). 「완료」·말·만료·끄기 do 단계 넘김은 풀지 않는다.
-- 끄기 안내는 안전 안내 자리(Task 11d)에 있다. 그 자리 「완료」 단추(`onSafetyAnswer`)는 `releaseIfOff`가 참이면 지우고, 거짓이면 `askToShow`. 말 「완료」·「다 했어」(`onHeard`)는 안전 안내에 쓰이지 않는다(지금 `onHeard` 369~372행의 끄기 안내 답 길은 지운다).
-- 120초 만료(`offHoldMs`): 풀지 않는다. 그 안내(부탁이면 부탁)를 안전 안내 자리에서 다시 소리로 읽는다(되풀이 간격 120초). 안전 안내 자리는 남은 안내를 모두 목록으로 보이므로(안내마다 Item 하나) 줄을 돌리지 않는다.
+**추적을 푸는 길(하나):** `releaseIfOff` → `cycleEnded`(switch 또는 confirmed). 「완료」·말·만료·끄기 do 단계 넘김은 풀지 않는다. 11c-1에서 끄기 안내는 지금 명령 줄에 뜬다.
+- 명령 줄 끄기 안내의 「완료」 단추(`onAnswer`): `releaseIfOff`가 참이면 지우고, 거짓이면 그 안내를 `askToShow`(보이게 해 달라는 부탁, 답 단추 없음)로 바꾼다.
+- 말 「완료」·「다 했어」(`onHeard`)는 끄기 안내를 풀지도 바꾸지도 않는다(지금 `onHeard` 369~372행의 끄기 안내 답 길을 지운다).
+- 120초 만료(`offHoldMs`): 풀지 않는다. 같은 안내(부탁이면 부탁)를 명령 줄에 다시 소리로 보낸다. 줄에 다른 가전 안내가 기다리면 지금 것을 줄 끝으로 돌리고 다음 것을 띄운다(돌리기는 `nextReminder` 안에서, 하나가 다른 것을 막지 않게).
 - 끄기 do 단계를 「완료」로 넘기면 단계는 넘어가지만 hot은 `releaseIfOff`가 참일 때만 풀린다. 계획이 끝날 때 남은 hot은 `handOver`가 줄로 옮긴다.
 - `tick`(실행 중)과 `reminderTick`(닫힌 뒤, 실행 추적이 쉬는 동안에도 돈다)이 hot·안내에 남은 가전마다 `releaseIfOff`를, released 가전마다 `rearmIfOn`을 부른다.
+- 새 계획은 지금처럼(fec2e7d) 끄기 안내가 남아 있는 동안 미룬다. 미루는 동안 실행 기록에 `EXEC_TEXT.deferred(가전)`, 대시보드 말풍선 카드에 `SAY_TEXT.offWait(가전)`(서버 글)을 보인다.
+- 11c-1 동안 계획 B가 도는 중에 A의 가전이 다시 걸리면, A의 안내는 줄에서 기다리고 B는 막지 않는다(명령 줄은 B 것). B가 끝나면 안내가 뜬다. 따로 보이게 하는 것은 11c-2다.
 
-**켜짐을 놓쳤을 때(확인 불가 복구):** 켜기 단계를 「완료」로 넘겼거나 켜짐을 카메라로 못 봐 「아는 켜짐 → 꺼짐」 이력이 생기지 않으면 switch로는 끝나지 않는다. 그때는
-- 실행 중: 꺼짐 기다리기(Task 12 7번)나 끄기 do 단계(라면 12번)가 `showAskMs`(20초) 넘게 끝나지 않고 그 가전 상태가 이미 꺼짐이면 `askToShow`를 한 번 보낸다(wait 단계에도 부탁 한 줄을 띄운다, 시간 초과 전에).
+**켜짐을 놓쳤을 때(확인 불가 복구):** 켜기 단계를 「완료」로 넘겼거나 켜짐을 못 봐 「아는 켜짐 → 꺼짐」 이력이 생기지 않으면 switch로는 끝나지 않는다. 그때는
+- 실행 중: 끄기 do 단계(라면 12번)가 `showAskMs`(20초) 넘게 끝나지 않고 그 가전 상태가 이미 꺼짐이면 `askToShow`를 한 번 보낸다(그 단계 명령 줄에 그 단계 id로, 답 단추 없음). 꺼짐 기다리기(7번)의 부탁은 Task 12가 이 함수로 한다.
 - 닫힌 뒤: `handOver`가 그 가전을 부탁으로 줄에 넣는다(상태가 꺼짐일 때). 시간 초과 질문에서 「그만」을 골라도 hot은 확인된 꺼짐 전까지 남고, 안내는 부탁 하나로 120초마다 되풀이된다.
-- 부탁 뒤에 촬영된 가까이 본 관측이 꺼짐이면 `cycleEnded`가 confirmed를 내고, 켜기 단계가 끝난 뒤일 때만 풀린다. 7번 기다리기·12번 끄기 단계도 이것으로 끝난다. 풀린 뒤에는 `rearmIfOn`이 지킨다.
-
-**다른 계획과 겹칠 때(안전 먼저, 아무것도 잃지 않게):** 닫힌 계획의 끄기 안내와 확인 불가 부탁은 폰 명령 줄이 아니라 따로 있는 **안전 안내 자리**(Task 11d)에 나간다. 그래서
-- 이미 돌고 있는 계획 B는 멈추지 않는다. B의 명령은 그대로 명령 줄에 나가고 시간 한도·조건·`cycleEnded`도 그대로다(가열 중인 B가 수납장으로 가는 단계·끄기 단계 모두 막히지 않는다).
-- 안전 안내 자리의 안내마다 자기 id(`off:<계획 id>:<가전 id>:<회차>`)가 있고, 답은 그 자리 버튼으로만 받는다. 말 「완료」·「다 했어」는 이 자리로 가지 않는다(명령 줄의 지금 명령 답으로만 쓰인다, Task 11d). 이 자리 「완료」는 hot을 풀지 않고 그 안내를 보이게 해 달라는 부탁(`askToShow`)으로 바꾸는 데만 쓴다.
-- 실행 중 계획 안의 부탁(7번·12번이 20초 넘게 안 끝날 때)은 그 계획의 단계이므로 명령 줄에 그 단계 id로 나간다(답 단추 없음).
-- B가 안전 안내에 남은 가전(같은 id)을 켜는 승인 질문에 답하면 그 승인은 받지 않는다(질문은 남고, 안내가 풀리면 다시 받는다).
-- 새 계획은 지금처럼(fec2e7d) 안전 안내가 남아 있는 동안 미룬다. 미루는 동안 실행 기록에 `EXEC_TEXT.deferred(가전)`, 대시보드 말풍선 카드에 `SAY_TEXT.offWait(가전)`(서버 글)을 보인다.
+- 부탁 뒤에 촬영된 가까이 본 명시 꺼짐이면 `cycleEnded`가 confirmed를 내고, 켜기 단계가 끝난 뒤일 때만 풀린다. 풀린 뒤에는 `rearmIfOn`이 지킨다.
 
 - 구조 검사(`tests/act-track-release.test.ts`): `src/act/track.ts`에서 `hot.delete(`·`hot.clear(`·`this.reminder = null`·`offQueue.splice(`·`offQueue.shift(`이 `releaseIfOff`·`handOver`·`nextReminder` 몸통 밖에 나오면, 또 `offSince(`·`history.some(`이 `cycleEnded` 몸통 밖에 나오면 실패하고, 그 까닭 글에 「추적은 releaseIfOff로만 풀고, 작동 끝남은 cycleEnded로만 본다」를 쓴다. 과거 실수(79ff269의 `onAnswer`·`onHeard`·`reminderTick`·`advance`)에서 실패하는지 먼저 본다.
-- 시험 모드(트윈만)에서는 말로 「인덕션 꺼 줘」라고 하면 말 요청 에이전트가 트윈 인덕션을 끈다(위험 목록은 켜기만). 허브 바뀜(켜짐 → 꺼짐)은 switch 근거라 풀린다.
+- 시험 근거: 라면 12번은 **허브 근거**로 본다(시험 모드에서 말 요청 에이전트나 시험 허브가 트윈 인덕션을 켜짐 → 꺼짐으로 바꿈, 허브 바뀜은 명시). 전자레인지는 **카메라 근거**로 본다(SIGHT `microwave.camera.sight`, 명시 `not_in_use`). 인덕션 카메라 근거 시험은 Task 11b 뒤 11b가 더한다.
 
 - [ ] **Step 1: 실패하는 시험.**
-  - 「완료」·말·만료: 「안전 안내 자리 「완료」 단추 → 안내·hot이 남고 부탁으로 바뀜(답 단추 없음)」, **「말 「다 했어」·「완료」는 안전 안내를 바꾸지도 풀지도 않는다(안전 안내 답은 그 자리 단추로만)」**, 「120초가 지나도 남고 같은 안내가 다시 간다」, 「두 가전이 켜진 채 닫히면 안전 안내 자리에 둘 다 목록으로 뜬다」, 「이름 없는 가전이면 부탁을 보내지 않고 안내 그대로」, 각각 「그 뒤 switch 근거가 오면 지움」.
-  - 끄기 do 「완료」: 「다음 단계로 가지만 hot이 남고 계획이 끝나면 안내가 간다」, 「switch 근거로 끝나면 hot이 풀리고 안내가 없다」.
-  - 한 판정: 「전원 모름 → 켜기 지시 → 첫 관측이 꺼짐(모름 → 꺼짐) → `cycleEnded` null」, 「켜기 단계 진행 중에 켜짐 → 꺼짐을 봐도 그 단계가 끝나기 전에는 풀리지 않는다」, **「5번을 「완료」로 넘긴 뒤 첫 관측이 꺼짐이면 7번이 끝나지 않고 hot도 남는다(7번과 releaseIfOff가 같은 판정)」**, 「hot이 풀려도 `onAt`은 남는다」.
-  - 다시 걸기: **「꺼짐 촬영 → 다시 켜짐 촬영 → 꺼짐 답 도착·해제 → 켜짐 답 도착 순서면 다시 건다(켜짐 촬영 시각이 해제 근거 촬영 시각 뒤)」**, 「같은 계획 hot에 다시 걸리고 onAt이 그 켜짐 촬영 시각이 된다」, 「계획 취소 뒤 10분 안 켜짐이면 끄기 안내」, 「해제 근거보다 먼저 찍힌 켜짐이 늦게 와도 다시 걸지 않는다」, 「10분 뒤 켜짐은 다시 걸지 않는다」.
-  - 명시·추정: **「가전이 크게 보이지만 VLM이 전원을 말하지 않은 답(추정 꺼짐)만 이어지면 트윈은 꺼짐이 되어도 풀리지 않고 7번도 안 끝난다」**, **「VLM이 「꺼져 있음」을 답하면(명시) 풀리고 7번이 끝난다」**, **「켜짐 → 추정 꺼짐 → (같은 꺼짐 값의) 명시 꺼짐 순서면 `cycleEnded.switch`가 선다」**.
+  - 명령 줄 끄기 안내: 「「완료」 단추 → 안내·hot이 남고 부탁으로 바뀜(답 단추 없음)」, **「말 「다 했어」·「완료」는 끄기 안내를 풀지도 바꾸지도 않는다」**, 「120초가 지나도 남고 같은 안내가 다시 소리로 간다」, 「두 가전이 켜진 채 닫히면 120초마다 줄에서 차례로 돌아가며 뜬다」, 「이름 없는 가전이면 부탁을 보내지 않고 안내 그대로」, 각각 「그 뒤 switch 근거(라면: 허브 꺼짐)가 오면 지움」.
+  - 끄기 do 「완료」(라면 12번, 허브 근거): 「다음 단계로 가지만 hot이 남고 계획이 끝나면 안내가 간다」, 「허브가 켜짐 → 꺼짐으로 바뀌어 끝나면 hot이 풀리고 안내가 없다」, 「12번이 20초 넘게 안 끝나고 상태가 이미 꺼짐이면 부탁이 그 단계 명령 줄에 한 번 뜬다」.
+  - 한 판정: 「전원 모름 → 켜기 지시 → 첫 관측이 꺼짐(모름 → 꺼짐) → `cycleEnded` null」, 「켜기 단계 진행 중에 켜짐 → 꺼짐을 봐도 그 단계가 끝나기 전에는 풀리지 않는다」, 「hot이 풀려도 `onAt`은 남는다」.
+  - 명시·추정(전자레인지, 카메라 근거): **「전자레인지가 크게 보이지만 VLM이 전원을 말하지 않은 답(추정 꺼짐)만 이어지면 트윈은 꺼짐이 되어도 풀리지 않는다」**, **「VLM이 「꺼져 있음」을 답하면(명시) 풀린다」**, **「켜짐 → 추정 꺼짐 → (같은 꺼짐 값의) 명시 꺼짐 순서면 `cycleEnded.switch`가 선다」**.
+  - 다시 걸기: **「꺼짐 촬영 → 다시 켜짐 촬영 → 꺼짐 답 도착·해제 → 켜짐 답 도착 순서면 다시 건다」**, 「같은 계획 hot에 다시 걸리고 onAt이 그 켜짐 촬영 시각이 된다」, 「계획 취소 뒤 10분 안 켜짐이면 끄기 안내」, 「해제 근거보다 먼저 찍힌 켜짐이 늦게 와도 다시 걸지 않는다」, 「10분 뒤 켜짐은 다시 걸지 않는다」, 「B가 도는 중 A가 다시 걸리면 B 명령이 명령 줄에 그대로이고 A 안내는 B가 끝난 뒤 뜬다」.
   - 회차: **「다시 걸린 뒤, 옛 회차의 부탁 뒤에 찍혔던 가까이 본 꺼짐 기록이 남아 있어도 풀리지 않는다」**, 「다시 걸릴 때 회차 번호가 오르고 askedAt이 비워진다」, 「카메라는 꺼짐을 말해도 허브 신호가 지금 켜짐이면 풀리지 않는다」.
-  - 확인 불가 복구: **「켜짐을 놓친 뒤 부탁 → 부탁 뒤 촬영된 가까이 본 명시 꺼짐 → 풀림·7번 끝남」**, **「부탁 전에 찍힌 가까이 본 꺼짐 → 안 풀림」**, **「켜기 단계 진행 중 가까이 본 꺼짐 → 안 풀림」**, 「멀리서 본 꺼짐(close 거짓) → 안 풀림」, 「시간 초과 질문에서 「그만」이면 hot이 남고 안내는 부탁 하나로 120초마다 되풀이」.
-  - 다른 계획과 겹침: **「B가 인덕션을 켜고 수납장으로 가는 단계 중에 A의 다시 건 안내가 생기면 B 명령은 명령 줄에 그대로이고 B 단계 시간·끄기 단계가 막히지 않으며, A 안내는 안전 안내 자리에 따로 뜬다」**, 「B가 익기를 기다리는 중 A 안내가 와도 익기 시간이 그대로 흐른다」, 「안전 안내 자리 「완료」는 그 안내만 부탁으로 바꾸고 B 단계에는 가지 않는다」, 「말 「완료」는 B의 지금 명령 답으로만 쓰이고 A 안내를 바꾸지 않는다」, 「B의 승인이 안전 안내에 남은 가전(같은 id)을 켜는 것이면 그 답을 받지 않고 질문이 남는다(켜진 채로 또 켜라는 지시 방지)」, 「미루는 동안 실행 기록 「인덕션 꺼짐 확인 전이라 새 일을 미룸」과 말풍선 카드 「인덕션 꺼짐을 기다리고 있어요.」」.
-  - 영상 판정(Task 9 `plannedClicks`·`clickChoice`): 「안전 안내 자리가 떠 있어도 명령 줄의 B 명령에 예약한 「완료」는 B에 가고, 판정기는 안전 안내 자리 버튼을 누르지 않는다(명령 줄 `[data-phone-zone=thumb]` 단추만)」.
+  - 확인 불가 복구(전자레인지, 닫힌 뒤): **「켜짐을 놓친 뒤 부탁 → 부탁 뒤 촬영된 가까이 본 명시 꺼짐 → 풀림」**, **「부탁 전에 찍힌 가까이 본 꺼짐 → 안 풀림」**, **「켜기 단계 진행 중 가까이 본 꺼짐 → 안 풀림」**, 「멀리서 본 꺼짐(close 거짓) → 안 풀림」, 「시간 초과 질문에서 「그만」이면 hot이 남고 안내는 부탁 하나로 120초마다 되풀이」.
+  - 미룸: 「끄기 안내가 남은 동안 실행 기록 「인덕션 꺼짐 확인 전이라 새 일을 미룸」과 말풍선 카드 「인덕션 꺼짐을 기다리고 있어요.」」.
+  - `sight_last`: 「속성마다 `close`가 남고, 마스크가 사진 넓이 10% 미만이면 거짓, 가까이 보기 결과면 참」.
   - 구조 검사가 79ff269의 `track.ts`에서 실패하고, 고친 뒤 통과한다.
   - 지금 시험 `tests/act-track.test.ts` 「켠 뒤 「그만」이면 … 「완료」면 지운다」는 「「완료」면 부탁으로 바뀌고 확인된 꺼짐을 보면 지운다」로 고친다.
-- [ ] **Step 2:** `npm run heavy -- npx vitest run tests/act-track.test.ts tests/act-track-release.test.ts tests/vision-devices.test.ts tests/act-say.test.ts tests/video-check.test.ts` → 실패 확인.
+- [ ] **Step 2:** `npm run heavy -- npx vitest run tests/act-track.test.ts tests/act-track-release.test.ts tests/vision-devices.test.ts tests/act-say.test.ts` → 실패 확인.
 - [ ] **Step 3:** 구현.
-- [ ] **Step 4:** 통과 확인. 이어서 영향을 받는 시험을 돌려 고친다: `tests/coach-e2e.test.ts`(라면 끝까지 가는 판에서 12번을 「완료」·「다 했어」로 넘겼다면 가짜 감지기·VLM이 인덕션 켜짐 → 꺼짐을 내게 하거나, 끝난 뒤 부탁이 남는 것을 기대값으로 바꾼다), `tests/agent-planner.test.ts`(코치 실행 추적 시험 중 끄기 단계 「완료」 판). 컵 시험(`noonchi-e2e`·`cup-branches-e2e`)과 승인 시험은 손 조작 가전이 없어 그대로다.
+- [ ] **Step 4:** 통과 확인. 이어서 영향을 받는 시험을 돌려 고친다: `tests/coach-e2e.test.ts`(라면 끝까지 가는 판에서 12번을 「완료」·「다 했어」로 넘겼다면 허브 꺼짐을 내게 하거나, 끝난 뒤 부탁이 남는 것을 기대값으로 바꾼다), `tests/agent-planner.test.ts`(코치 실행 추적 시험 중 끄기 단계 「완료」 판). 컵 시험(`noonchi-e2e`·`cup-branches-e2e`)과 승인 시험은 손 조작 가전이 없어 그대로다.
 - [ ] **Step 5:** 커밋 `fix(act): release switch-off tracking only through releaseIfOff on a confirmed end of the appliance cycle`. CLAUDE.md 규칙 표에 한 줄: 「켠 위험 가전 추적(hot·끄기 안내)은 확인된 꺼짐(cycleEnded)으로만 푼다(완료·말·만료로 풀지 않음) | `tests/act-track-release.test.ts`·`tests/act-track.test.ts`」.
-
-**시연 흐름에 주는 영향:** 노인 장면(전자레인지)은 끄기 do가 없고 7번이 `cycleEnded`(switch)로 끝나 그대로다. 켜짐을 놓치면 7번 동안 부탁이 떠 가까이 비추면 끝난다. 라면 장면 12번은 카메라 켜짐 → 꺼짐(Task 11b)으로 넘어가야 hot이 풀린다. 「완료」·「다 했어」로 넘기면 끝난 뒤 부탁이 남는다(그래서 시연 순서 7의 `--done-on`에는 12번 글을 넣지 않는다). 한 장면 안에서는 다른 계획과 겹치지 않는다.
 
 ### Task 11d: 폰 안전 안내 자리와 답이 그 명령에만 가게
 
-끄기 안내·확인 불가 부탁을 명령 줄과 따로 보이는 안전 안내 자리를 만들고(Task 11c가 쓴다), 답이 다른 명령에 가는 두 구멍을 막는다: 음성 답은 글만 보내 계획·단계 id가 없다(`ui/src/phone/controller.ts` 205행 `say`), 명령 단추는 id·step을 보내지만 같은 DOM(`key` 답 id)을 다시 써 누르는 중 명령이 바뀌면 새 명령 처리기가 돌 수 있다(`ui/src/phone/PhoneScreen.tsx` `ChoiceButtons`).
+끄기 안내·확인 불가 부탁을 명령 줄과 따로 보이는 안전 안내 자리를 만들고(Task 11c-2가 옮겨 쓴다), 답이 다른 명령에 가는 두 구멍을 막는다: 음성 답은 글만 보내 계획·단계 id가 없다(`ui/src/phone/controller.ts` 205행 `say`), 명령 단추는 id·step을 보내지만 같은 DOM(`key` 답 id)을 다시 써 누르는 중 명령이 바뀌면 새 명령 처리기가 돌 수 있다(`ui/src/phone/PhoneScreen.tsx` `ChoiceButtons`).
 
 **Files:**
 - Create: `src/contract/phone-version.ts`(`PHONE_PROTOCOL`)
@@ -905,6 +911,8 @@ private askToShow(deviceId: string): void;
 - Test: `tests/phone-server.test.ts`, `tests/act-track.test.ts`, `tests/agent.test.ts`, `tests/phone-talk.test.ts`, `ui/tests/phone-screen.test.tsx`, `ui/tests/phone-controller.test.ts`, `tests/phone-link.test.ts`(link.js 시험이 있는 곳), `tests/video-check.test.ts`
 
 **Interfaces:**
+- Consumes: Task 11c-1의 `handOver`(폰이 모두 끊겨 계획을 닫을 때 hot을 넘김), 지금 실행 추적의 `openCommand`·`r.sent`.
+- Produces(11c-2가 쓴다): `PhoneSafety`·`PhoneSafetyAnswer`, 안전 안내 자리(`data-phone-zone=safety`, 엄지 영역 밖), 폰 서버의 `safety` 보내기·`safety_answer` 받는 자리(실행 추적의 `onSafetyAnswer`는 11c-2), `HeardAt`·`HeardResult`(말 답은 명령 줄에만), `PHONE_PROTOCOL`, `needsPhone`.
 
 ```ts
 // src/contract/phone.ts
@@ -954,7 +962,7 @@ export interface PhoneHello { type: "hello"; protocol: number }
 //   어떤 단계든 on_timeout이 "ask"(시간 초과 때 계속·그만을 폰에 묻는다, device·wait 포함)인 계획.
 //   가전 단계·기다리기·say만 있고 이미 승인되고 on_timeout이 모두 "fail"인 계획(에어컨 켜기 등)은 폰 없이 시작한다(say 글은 붙은 맞는 폰이 없으면 보내지 않는다).
 //   계획 도중 맞는 폰이 모두 끊겨 폰에 물어야 할 때(시간 초과의 계속·그만 질문, 승인 질문)가 오면 askMs(120초)를 기다리지 않고 그 계획을 바로 실패로 닫는다(실행 기록 EXEC_TEXT.phoneGone = "폰이 없어 물을 수 없어 그만둠").
-//   그래서 행동 중 기다리기·기기 단계로 멈춰 있던 PAM 판단(src/act/track.ts waiting, 925행 근처)이 곧 풀린다. 켠 위험 가전 추적(hot)은 그대로 handOver로 끄기 안내 줄에 넘긴다(Task 11c).
+//   그래서 행동 중 기다리기·기기 단계로 멈춰 있던 PAM 판단(src/act/track.ts waiting, 925행 근처)이 곧 풀린다. 켠 위험 가전 추적(hot)은 그대로 handOver로 끄기 안내 줄에 넘긴다(Task 11c-1).
 /** 폰 답·폰 안내가 꼭 필요한 계획인가. */
 export function needsPhone(plan: AgentPlan, approval: ApprovalWhy | null, devices: readonly { id: string; kind: string }[]): boolean;
 //   hello가 판본이 맞게 오기 전(2초 안)에는 그 연결에 계획 명령을 보내지 않는다.
@@ -977,19 +985,58 @@ export function needsPhone(plan: AgentPlan, approval: ApprovalWhy | null, device
 - [ ] **Step 4:** 통과 확인, `npm run lint`(부품·색·화면 글 검사). 이어서 폰 소켓을 직접 여는 기존 시험이 옛 탭으로 막히지 않게 고친다: 시험 대역 `tests/helpers/ws.ts`에 판본 hello를 보내는 `openPhone`을 두고 `tests/{noonchi-e2e,cup-branches-e2e,coach-e2e,mokryeon-e2e,video-mode-e2e,vision-e2e,phone-server,phone-voice,phone-start,phone-start-api,plan-server,observe-start,focus,no-frames-on-disk,setup-server,phone-link}.test.ts`의 폰 연결을 그것으로 바꾼다(옛 탭 동작을 보는 시험만 hello 없이 연다). 영상 판정(`scripts/video-check.ts`)은 이 저장소 빌드의 폰 페이지를 열어 hello를 보내므로 `--approve`·`--done-on`이 이 조건에 막히지 않는다.
 - [ ] **Step 5:** 커밋 `feat(phone): show safety reminders apart from the command line and bind voice and button answers to the shown command`.
 
+### Task 11c-2: 끄기 안내를 안전 안내 자리로
+
+11d가 만든 실제 폰 안전 안내 자리(`data-phone-zone=safety`)로 닫힌 계획의 끄기 안내와 확인 불가 부탁을 옮긴다. 명령 줄은 돌고 있는 계획의 것만 남아 다른 계획을 막지 않는다. 11d 다음, Task 12 앞에 한다.
+
+**Files:**
+- Modify: `src/act/track.ts`(`onSafetyAnswer`, 안전 안내 목록 내기 `safetyItems`, `handOver`·`askToShow`·`reminderTick`·`rearmIfOn`이 안전 안내 자리로 보냄, 승인 막기), `src/server/home.ts`(목록을 폰 서버로), `src/phone/server.ts`(11d의 `safety` 메시지로 보냄)
+- Test: `tests/act-track.test.ts`, `tests/act-track-release.test.ts`, `tests/phone-server.test.ts`, `tests/video-check.test.ts`, `tests/coach-e2e.test.ts`
+
+**Interfaces:**
+- Consumes: Task 11c-1의 `releaseIfOff`·`cycleEnded`·`handOver`·`askToShow`·`rearmIfOn`·`Run.onAt`, Task 11d의 `PhoneSafety`·`PhoneSafetyAnswer`·안전 안내 자리(엄지 영역 밖), `HeardAt`(말 답은 안전 안내에 가지 않음), Task 11r-2의 `needsConfirm`(B 승인이 안내 중 가전을 켜는지 보기).
+- Produces(Task 12가 쓴다): `ExecutionTracker.safetyItems(): PhoneSafety["items"]`, `onSafetyAnswer(id: string, choice: string): boolean`.
+
+```ts
+/** 안전 안내 목록: 닫힌 계획의 끄기 안내·확인 불가 부탁. 안내마다 id `off:<계획 id>:<가전 id>:<회차>`, 글은 CAUTION_TEXT.off 또는 CLOSER_TEXT, 답은 「완료」 하나(부탁은 답 없음). */
+safetyItems(): { id: string; text: string; choices: PhoneChoice[]; speak: boolean }[];
+/** 안전 안내 자리 단추 답: releaseIfOff가 참이면 그 안내를 지우고, 거짓이면 그 안내를 askToShow 부탁으로 바꾼다. 모르는 id는 false. */
+onSafetyAnswer(id: string, choice: string): boolean;
+```
+- 닫힌 계획의 끄기 안내·부탁은 명령 줄이 아니라 안전 안내 자리에 목록으로 뜬다(가전마다 Item 하나). 120초 만료는 그 자리에서 그 안내를 다시 소리로 읽는다. 목록이라 줄을 돌리지 않는다.
+- 실행 중 계획 안의 부탁(12번, Task 12의 7번)은 그 계획의 단계라서 명령 줄에 그 단계 id로 남는다.
+- 다른 계획과 겹칠 때: 이미 돌고 있는 계획 B는 멈추지 않는다. B의 명령은 명령 줄에 그대로이고 시간 한도·조건·`cycleEnded`도 그대로다. A의 다시 건 안내는 B가 끝나기를 기다리지 않고 안전 안내 자리에 바로 뜬다.
+- B가 안전 안내에 남은 가전(같은 id)을 켜는 승인 질문에 답하면 그 승인은 받지 않는다(켜진 채로 또 켜라는 지시 방지, 질문은 남고 안내가 풀리면 다시 받는다).
+- 말 「완료」·「다 했어」는 안전 안내 자리로 가지 않는다(명령 줄의 지금 명령 답으로만, Task 11d `HeardAt`).
+- 새 계획은 지금처럼 안전 안내가 남아 있는 동안 미룬다(11c-1의 미룸 글 그대로).
+
+- [ ] **Step 1: 실패하는 시험.**
+  - 「두 가전이 켜진 채 닫히면 안전 안내 자리에 둘 다 목록으로 뜨고 명령 줄은 비어 있다」, 「안전 안내 자리 「완료」 → 그 안내만 부탁으로 바뀌고 hot은 남는다」, 「120초가 지나면 그 자리에서 같은 안내가 다시 소리로 간다」, 「switch 근거가 오면 그 안내만 목록에서 빠진다」.
+  - 다른 계획과 겹침: **「B가 인덕션을 켜고 수납장으로 가는 단계 중에 A의 다시 건 안내가 생기면 B 명령은 명령 줄에 그대로이고 B 단계 시간·끄기 단계가 막히지 않으며, A 안내는 안전 안내 자리에 바로 뜬다」**, 「B가 익기를 기다리는 중 A 안내가 와도 익기 시간이 그대로 흐른다」, 「안전 안내 자리 「완료」는 B 단계에 가지 않는다」, 「말 「완료」는 B의 지금 명령 답으로만 쓰이고 A 안내를 바꾸지 않는다」, 「B의 승인이 안전 안내에 남은 가전(같은 id)을 켜는 것이면 그 답을 받지 않고 질문이 남는다」.
+  - 영상 판정(Task 9 `plannedClicks`·`clickChoice`): 「안전 안내 자리가 떠 있어도 명령 줄의 B 명령에 예약한 「완료」는 B에 가고, 판정기는 안전 안내 자리 버튼을 누르지 않는다(명령 줄 `[data-phone-zone=thumb]` 단추만)」.
+  - 폰 서버: 「`safety` 메시지가 목록이 바뀔 때마다 가고, 새로 붙은 맞는 판본 폰도 지금 목록을 받는다」.
+  - 11c-1 시험 가운데 「명령 줄 끄기 안내」·「A 안내는 B가 끝난 뒤 뜬다」는 안전 안내 자리 기대로 고친다.
+- [ ] **Step 2:** `npm run heavy -- npx vitest run tests/act-track.test.ts tests/act-track-release.test.ts tests/phone-server.test.ts tests/video-check.test.ts` → 실패 확인.
+- [ ] **Step 3:** 구현.
+- [ ] **Step 4:** 통과 확인, `tests/coach-e2e.test.ts`도. 구조 검사(`tests/act-track-release.test.ts`)는 그대로 통과해야 한다(안내를 지우는 곳이 `releaseIfOff`뿐).
+- [ ] **Step 5:** 커밋 `feat(act): move closed-plan off reminders to the phone safety slot and keep running plans unblocked`.
+
+**시연 흐름에 주는 영향:** 노인 장면(전자레인지)은 끄기 do가 없고 7번이 `cycleEnded`(switch)로 끝나 그대로다(Task 12). 켜짐을 놓치면 7번 동안 부탁이 떠 가까이 비추면 끝난다. 라면 장면 12번은 카메라 켜짐 → 꺼짐(Task 11b)으로 넘어가야 hot이 풀린다. 「완료」·「다 했어」로 넘기면 끝난 뒤 부탁이 안전 안내 자리에 남는다(그래서 시연 순서 7의 `--done-on`에는 12번 글을 넣지 않는다). 한 장면 안에서는 다른 계획과 겹치지 않는다.
+
 ### Task 12: 코치 행동 「전자레인지로 데우기 알려 주기」
 
 **Files:**
 - Modify: `src/act/tasks.ts`, `services/pam/scenarios/noonchi/tasks.json`, `services/pam/scenarios/noonchi/scenario.json`(Task 4 행동 이름 줄·코치 행동 줄에 새 이름), `src/brain/decision.ts`(`cooking` 상태), `src/world/labels.ts`(`FSM_STATE_TEXT.cooking` → `"주방에서 할 일을 찾음"`), `src/model/kinds.ts`(등록부 `microwave.selfStop`, Task 11r-1), `src/agent/planTools.ts`(끄기 검사), `src/agent/planInput.ts`(지시문 한 줄), `src/act/track.ts`(켠 가전 추적), `tests/helpers/planner.ts`(`microwaveSteps`, 대본 표)
 - Test: `tests/act-tasks.test.ts`, `tests/agent-planner.test.ts`, `tests/act-track.test.ts`, `tests/phone-lines.test.ts`, `tests/brain-decision.test.ts`, `tests/pam-scenario.test.ts`
 
-**먼저:** Task 11·11a·11c·11d. 전자레인지가 기기이자 평면도 물건이어야 대상이 되고 이름이 붙는다(기기 id와 평면도 id가 같은 `microwave_kitchen`, 방 `kitchen`, 평면도 종류 `microwave` → 이름 「전자레인지」).
+**먼저:** Task 11·11a·11c-1·11d·11c-2. 전자레인지가 기기이자 평면도 물건이어야 대상이 되고 이름이 붙는다(기기 id와 평면도 id가 같은 `microwave_kitchen`, 방 `kitchen`, 평면도 종류 `microwave` → 이름 「전자레인지」).
 
 **글과 끝 조건은 서버가 만든다(T1~T4):** 대본은 `{kind, target, act, item, hand_device, notice}`만 고른다. 폰 글은 `STEP_TEXT`·`NOTICES`가 내고, 손 조작 동작의 끝 조건은 `handUntil`이 낸다.
 
-**저절로 꺼지는 가전:** 전자레인지는 다 되면 스스로 멈춘다. 지금 검사는 켠 위험 가전 뒤에 끄기 do(hand_device off)를 꼭 두게 해, 이미 꺼진 뒤에 「전자레인지를 꺼 주세요」를 보내게 된다. 또 기다리는 동안 꺼지면 끄기 do의 `became: off`는 단계 시작 전 사건이라 끝나지 않는다. 그래서 저절로 꺼지는 가전(등록부 `selfStop`)만 「꺼짐을 기다리는 wait」를 끄는 단계로 인정한다. 이 wait는 notice 「다 되기」(이름 「다 되기 기다리기」, 폰 글 없음)와 모델이 쓰는 until `{"device": id, "state": "off"}`(wait until은 모델 것을 그대로 받는다)로 표시만 한다. **끝나는 기준은 실행 추적이 따로 본다**: 지금 상태가 꺼짐인 것만으로는 끝나지 않고, 작동 한 번 끝남(`cycleEnded(가전)`, Task 11c, 명시 꺼짐만)이 있어야 끝난다: 켜라고 한 시각(`onAt`, 추적이 풀려도 남는다) 뒤에 촬영된 근거로 아는 켜짐에서 꺼짐으로 바뀌었거나(switch), 켜짐을 놓쳐 보이게 해 달라고 부탁한 뒤 가까이 본 관측이 꺼짐이다(confirmed). hot을 푸는 `releaseIfOff`도 같은 판정을 쓰고, 5번 켜기 단계가 끝난 뒤에만 푼다. 그래서 켜기 단계를 사람이 「완료」로 넘겼는데 가전이 옛 꺼짐 그대로이면(켜짐을 한 번도 못 봄) 기다리기가 끝나지 않고 hot이 남으며, 시간 초과 질문에서 그만두거나 계획이 닫히면 끄기 안내가 간다. 그릇 꺼내기는 따로 pick으로 둔다.
+**저절로 꺼지는 가전:** 전자레인지는 다 되면 스스로 멈춘다. 지금 검사는 켠 위험 가전 뒤에 끄기 do(hand_device off)를 꼭 두게 해, 이미 꺼진 뒤에 「전자레인지를 꺼 주세요」를 보내게 된다. 또 기다리는 동안 꺼지면 끄기 do의 `became: off`는 단계 시작 전 사건이라 끝나지 않는다. 그래서 저절로 꺼지는 가전(등록부 `selfStop`)만 「꺼짐을 기다리는 wait」를 끄는 단계로 인정한다. 이 wait는 notice 「다 되기」(이름 「다 되기 기다리기」, 폰 글 없음)와 모델이 쓰는 until `{"device": id, "state": "off"}`(wait until은 모델 것을 그대로 받는다)로 표시만 한다. **끝나는 기준은 실행 추적이 따로 본다**: 지금 상태가 꺼짐인 것만으로는 끝나지 않고, 작동 한 번 끝남(`cycleEnded(가전)`, Task 11c-1, 명시 꺼짐만)이 있어야 끝난다: 켜라고 한 시각(`onAt`, 추적이 풀려도 남는다) 뒤에 촬영된 근거로 아는 켜짐에서 꺼짐으로 바뀌었거나(switch), 켜짐을 놓쳐 보이게 해 달라고 부탁한 뒤 가까이 본 관측이 꺼짐이다(confirmed). hot을 푸는 `releaseIfOff`도 같은 판정을 쓰고, 5번 켜기 단계가 끝난 뒤에만 푼다. 그래서 켜기 단계를 사람이 「완료」로 넘겼는데 가전이 옛 꺼짐 그대로이면(켜짐을 한 번도 못 봄) 기다리기가 끝나지 않고 hot이 남으며, 시간 초과 질문에서 그만두거나 계획이 닫히면 끄기 안내가 간다. 그릇 꺼내기는 따로 pick으로 둔다.
 
 **Interfaces:**
+- Consumes: Task 11c-1의 `cycleEnded`·`releaseIfOff`·`askToShow`·`Run.onAt`·`TRACK_DEFAULTS.showAskMs`, Task 11c-2의 안전 안내 자리 끄기 안내, Task 11r-1 등록부(`selfStop` 칸), Task 11r-2 `needsConfirm`(5번 승인).
 
 ```ts
 "전자레인지로 데우기 알려 주기": {
@@ -1005,9 +1052,9 @@ export const isSelfStop = (k: DeviceKind): boolean => (KINDS[k] as KindEntry).se
 // src/agent/planTools.ts finish(): 켠 위험 가전(riskyHand) 뒤에 (a) 같은 가전 hand_device off do 또는
 //   (b) 그 가전 종류가 등록부 selfStop이고 until이 정확히 {"device": 그 가전, "state": "off"}인 wait 가 있어야 끝낸다.
 // src/act/track.ts: (b) 모양 wait는 ConditionWatch 결과를 쓰지 않는다. look()에서 그 단계는 cycleEnded(그 가전)(지금 회차) 가 null이 아닐 때만 넘긴다
-//   (지금 상태 꺼짐만·앞 값 모름인 꺼짐으로는 넘기지 않음, onAt이 없으면 넘기지 않음). hot이 6번 동안 이미 풀렸어도 onAt은 남아 있어 끝난다(Task 11c).
-//   20초 넘게 안 끝나고 상태가 이미 꺼짐이면 askToShow를 한 번 보낸다. hot은 releaseIfOff(그 가전)로만 푼다.
-//   그 전에 계획이 닫히면 handOver가 끄기 안내(「전자레인지를 꺼 주세요」) 줄로 옮긴다. 안내는 releaseIfOff(새로 본 꺼짐)로만 지운다: 「완료」·「다 했어」는 보이게 해 달라는 부탁으로 바꾸고, 120초 만료는 같은 안내를 다시 보낸다(Task 11c).
+//   (지금 상태 꺼짐만·앞 값 모름인 꺼짐으로는 넘기지 않음, onAt이 없으면 넘기지 않음). hot이 6번 동안 이미 풀렸어도 onAt은 남아 있어 끝난다(Task 11c-1).
+//   20초 넘게 안 끝나고 상태가 이미 꺼짐이면 askToShow를 한 번 보낸다(명령 줄에 그 단계 id로, 답 단추 없음). hot은 releaseIfOff(그 가전)로만 푼다.
+//   그 전에 계획이 닫히면 handOver가 끄기 안내(「전자레인지를 꺼 주세요」)를 안전 안내 자리로 옮긴다(Task 11c-2). 안내는 releaseIfOff(확인된 꺼짐)로만 지운다: 그 자리 「완료」는 보이게 해 달라는 부탁으로 바꾸고, 말 「완료」·「다 했어」는 안내를 바꾸지 않으며, 120초 만료는 같은 안내를 다시 읽는다.
 /** 저절로 꺼지는 가전의 꺼짐 기다리기(등록부 selfStop 가전, until이 정확히 {device, state: "off"}인 wait)인가. */
 export function selfStopWait(step: AgentStep, devices: readonly { id: string; kind: string }[]): string | null; // 그 가전 id, 아니면 null
 // 지시문(planInput) 한 줄: "- 다 되면 스스로 멈추는 가전(전자레인지)은 켠 뒤 끄기 do 대신 notice 다 되기, until {\"device\": id, \"state\": \"off\"}인 wait를 둔다. 꺼낼 때는 pick(act 꺼내기, target 그 가전)을 따로 둔다."
@@ -1039,7 +1086,8 @@ export function microwaveSteps(ids: { microwave: string; waitS?: number /* wait 
   - 「5번 대본에 until `{"device": mw, "state": "on"}`을 써도 버리지 않고 서버가 `{"device": mw, "became": "on"}`으로 바꾼다」.
   - 「2번에 hand_device가 없거나 `to`가 다르면 버린다」, 「냉장고에 켜기, 에어컨에 켜기(손 조작)는 버린다」.
   - 「7번 wait를 빼면 `켠 가전은 계획 안에서 끕니다`로 버린다. 7번 until이 `{"device": mw, "state": "off"}`면 받는다. 같은 wait를 인덕션 켜기 뒤에 두면 버린다(등록부 selfStop 아님). notice가 「끝」이면 wait로 받지 않는다(지금 검사)」.
-  - 실행 추적: 「5번 명령 전에 승인 질문, 승인 뒤 VLM 쓰는 중이면 넘어감」, 「켜라고 한 뒤 켜짐을 보고 6번 동안 꺼짐을 보면 `tick`이 hot을 풀고, 7번은 `onAt`으로 바로 끝나며, 계획이 끝나도 끄기 안내가 없다」, 「5번을 「완료」로 넘기고 첫 관측이 꺼짐이면 7번이 끝나지 않고 20초 뒤 부탁이 뜨며, 가까이 본 꺼짐이면 끝난다」, 「7번 전에 그만두면 끄기 안내(「전자레인지를 꺼 주세요」)가 간다」, **「5번을 「완료」로 넘겼고 전자레인지가 옛 꺼짐 그대로면(켜짐 이력 없음) 7번이 끝나지 않고 hot이 남으며, 시간 초과 질문에 「그만」이면 끄기 안내가 간다」**, 「켜라고 하기 전에 있던 켜짐 → 꺼짐 이력으로는 7번이 끝나지 않는다」, **「켜라고 하기 전에 찍은 꺼짐 사진의 답이 켜라고 한 뒤 늦게 도착해도 7번이 끝나지 않고 hot·끄기 안내가 그대로다」**, 「`selfStopWait`는 인덕션 wait·until이 다른 wait에는 null」.
+  - 실행 추적: 「5번 명령 전에 승인 질문, 승인 뒤 VLM 쓰는 중이면 넘어감」, 「켜라고 한 뒤 켜짐을 보고 6번 동안 꺼짐을 보면 `tick`이 hot을 풀고, 7번은 `onAt`으로 바로 끝나며, 계획이 끝나도 끄기 안내가 없다」, 「5번을 「완료」로 넘기고 첫 관측이 꺼짐이면 7번이 끝나지 않고 20초 뒤 부탁이 뜨며, 가까이 본 꺼짐이면 끝난다」, 「7번 전에 그만두면 안전 안내 자리에 끄기 안내(「전자레인지를 꺼 주세요」)가 뜬다」, **「5번을 「완료」로 넘겼고 전자레인지가 옛 꺼짐 그대로면(켜짐 이력 없음) 7번이 끝나지 않고 hot이 남으며, 시간 초과 질문에 「그만」이면 끄기 안내가 간다」**, 「켜라고 하기 전에 있던 켜짐 → 꺼짐 이력으로는 7번이 끝나지 않는다」, **「켜라고 하기 전에 찍은 꺼짐 사진의 답이 켜라고 한 뒤 늦게 도착해도 7번이 끝나지 않고 hot·끄기 안내가 그대로다」**, 「`selfStopWait`는 인덕션 wait·until이 다른 wait에는 null」.
+  - 7번과 안전 추적이 같은 판정(Task 11c-1에서 옮김): **「5번을 「완료」로 넘긴 뒤 첫 관측이 꺼짐이면 7번이 끝나지 않고 hot도 남는다(7번과 `releaseIfOff`가 같은 `cycleEnded`)」**, **「추정 꺼짐(VLM이 전원을 말하지 않음)만 이어지면 트윈이 꺼짐이 되어도 7번이 끝나지 않고 hot도 남는다」**, **「명시 꺼짐(「꺼져 있음」)이면 7번이 끝나고 hot이 풀린다」**, **「켜짐을 놓친 뒤 7번이 20초 넘게 안 끝나면 명령 줄에 그 단계 id로 부탁 「전자레인지가 보이게 폰을 가까이 대 주세요」(답 단추 없음)가 한 번 뜨고, 부탁 뒤 촬영된 가까이 본 명시 꺼짐이면 7번이 끝나고 hot이 풀린다」**, 「부탁 전에 찍힌 가까이 본 꺼짐·멀리서 본 꺼짐(close 거짓)으로는 7번이 끝나지 않는다」, 「6번에 풀린 뒤 다시 켜져 회차가 오르면 7번은 새 회차의 꺼짐으로만 끝난다」, 「안전 안내 자리에 다른 계획의 안내가 떠 있어도 7번 부탁은 명령 줄에 뜬다」.
 - [ ] **Step 2:** `npm run heavy -- npx vitest run tests/act-tasks.test.ts tests/agent-planner.test.ts tests/act-track.test.ts tests/phone-lines.test.ts tests/brain-decision.test.ts tests/pam-scenario.test.ts` → 실패 확인.
 - [ ] **Step 3:** 구현.
 - [ ] **Step 4:** 통과 확인.
@@ -1162,8 +1210,8 @@ export function microwaveSteps(ids: { microwave: string; waitS?: number /* wait 
 2. **문 열기·닫기 끝 조건: 가로 진행.** 서버가 만드는 값이 그대로 「가」다: 문 상태가 없는 전자레인지는 단계가 시작된 뒤 본 설비 열림 사실의 지금 값(이미 열려 있으면 바로 넘어감). 「나」(바뀐 것만, `seq`)는 쓰지 않는다.
 3. **서버 글의 물건 이름: 가로 진행.** 새 글 틀(c22ca2b)이 item을 넣어 「그릇을 전자레인지에 넣어 주세요」, 「냄비를 인덕션에 올려 주세요」처럼 나온다. 따로 할 일은 없다. 이름이 빠지는 곳은 do 넣기(「면과 스프를 넣어 주세요」, 자리 이름 없음)와 pick 꺼내기(「그릇을 꺼내 주세요」, 자리 이름 없음)다.
 4. **전자레인지 끄기는 기다리기로 인정: 가로 진행.** Task 12의 등록부 `selfStop`.
-5. **(Task 11b Step 0에서 인덕션이 카메라로 안 잡힐 때만) 라면 시연의 끄기.** 「완료」로 끄기를 인정하지 않으므로(Task 11c) 12번을 「완료」로 넘겨도 hot과 끄기 안내가 남는다. 가: 인덕션 켜짐 표시가 크게 보이게 `turn-on.mp4`·`turn-off.mp4`를 다시 찍고 Step 0을 다시 잰다(추천). 나: 라면 장면을 11번(익기 기다리기)까지만 쓰고 끄기는 영상에서 뺀다. 다: 12번만 「완료」로 넘기게 허용한다(안전 규칙을 느슨하게 하는 것이라 이 계획은 하지 않는다. 고르면 따로 정한다).
-6. **풀린 추적을 다시 거는 기간: 가로 진행(10분).** 풀린 근거의 촬영 시각 뒤 10분 안에 그 가전의 새 켜짐을 보면 다시 건다(Task 11c `rearmMs`). 나: 계획이 닫힌 뒤에는 다시 걸지 않는다(라면·전자레인지를 코치 밖에서 다시 쓸 때 안내가 뜨지 않지만, 취소 뒤 켠 불을 놓친다). 다: 집을 닫을 때까지 늘 다시 건다(코치 밖 평소 사용에도 끄기 안내가 뜬다).
+5. **(Task 11b Step 0에서 인덕션이 카메라로 안 잡힐 때만) 라면 시연의 끄기.** 「완료」로 끄기를 인정하지 않으므로(Task 11c-1) 12번을 「완료」로 넘겨도 hot과 끄기 안내가 남는다. 가: 인덕션 켜짐 표시가 크게 보이게 `turn-on.mp4`·`turn-off.mp4`를 다시 찍고 Step 0을 다시 잰다(추천). 나: 라면 장면을 11번(익기 기다리기)까지만 쓰고 끄기는 영상에서 뺀다. 다: 12번만 「완료」로 넘기게 허용한다(안전 규칙을 느슨하게 하는 것이라 이 계획은 하지 않는다. 고르면 따로 정한다).
+6. **풀린 추적을 다시 거는 기간: 가로 진행(10분).** 풀린 근거의 촬영 시각 뒤 10분 안에 그 가전의 새 켜짐을 보면 다시 건다(Task 11c-1 `rearmMs`). 나: 계획이 닫힌 뒤에는 다시 걸지 않는다(라면·전자레인지를 코치 밖에서 다시 쓸 때 안내가 뜨지 않지만, 취소 뒤 켠 불을 놓친다). 다: 집을 닫을 때까지 늘 다시 건다(코치 밖 평소 사용에도 끄기 안내가 뜬다).
 7. **사용자 결정: 가전 종류 등록부 먼저(2026-11-15).** 가전 종류마다 이름·Matter 연결·트윈 type·카메라 낱말·위험 동작·손 조작을 `src/model/kinds.ts` 한 곳에 적고 흩어진 곳은 거기서 파생한다(Task 11 바로 뒤, Task 11r-1 결과가 같은 옮기기 → Task 11r-2 승인 판정·ThinQ 어댑터·등록부 검증). 새 종류는 등록부 한 줄 + `added_devices.json` 한 줄이다.
 
 ## Self-Review
@@ -1178,6 +1226,7 @@ export function microwaveSteps(ids: { microwave: string; waitS?: number /* wait 
 - PAM 계약 그대로: 「PAM 계약」 절, Task 13 시험 7.
 - Codex 1차 지적 9개: 1 Task 4 바꾸기 2·4, 2 「일주일을 시연 안에서 보이는 길」·Task 7·8, 3 Task 5 범위, 4 Task 2 행동 단위, 5 Task 6 API·Task 8 확인, 6 Task 8 `start`·Task 9 `--start-at`, 7 Task 11 `unbaked`, 8 Task 10 차례 쓰기, 9 Task 10 붙잡기·Task 9 `--tail`.
 - 서버 글 구조(T1~T4)에 맞춤: 「조사한 사실」 사람 단계 글 절, Task 12 표(글·끝 조건을 코드가 내는 값으로), 「라면 대본」 절, Task 13 시험 5·6.
+- 코디네이터 결정: Task 11c를 둘로 나눔(2026-11-15): Task 11c-1(track.ts 핵심: 회차 `onAt`·`cycleEnded`·`releaseIfOff`·`rearmIfOn`·`handOver`·`askToShow`, `sight_last`는 구현된 11a 모양(속성마다 `{ value, seen_ms, explicit }`)에 `close`를 더함, 끄기 안내는 지금 명령 줄에서 「완료」는 부탁으로·말로는 안 풀림·120초 만료는 다시 보냄·끄기 do 「완료」 뒤 hot 남음, 구조 검사·CLAUDE.md 한 줄, 시험은 라면 12번 허브 근거·전자레인지 카메라, 인덕션 카메라 근거 시험은 Task 11b로)와 Task 11c-2(11d 뒤: 안전 안내 자리로 옮김·두 가전 목록·120초 다시 읽기·B 명령 줄 안 막음·안내 중 가전을 켜는 B 승인 안 받음·영상 판정기는 안전 안내 단추를 안 누름). 7번 「다 되기 기다리기」 `cycleEnded` 시험은 Task 12로. 차례 11c-1 → 11d → 11c-2 → 12.
 - Codex 27차 지적 2개: P2 11r-1 같은 결과 시험을 「kinds same: non-approval」·「kinds same: approval」 두 묶음으로 나누고 11r-2 Step 1에서 승인 묶음만 「approval diff: only widened, never narrowed」로 바꿈(`kinds-before.json`은 그대로, 승인 아닌 부분은 계속 완전 일치), P3 11r-2에 「kinds registry: TEMP_ALLOW is empty」 실패 시험. 기록 바로잡음: Task 11r 나누기는 코디네이터 결정.
 - 코디네이터 결정: Task 11r을 둘로 나눔(2026-11-15): Task 11r-1(등록부·파생·구조 검사·같은 결과, 21종 값과 승인 표가 전과 똑같음, ThinQ 갈래는 잠시 허용 목록)과 Task 11r-2(승인 판정 `needsConfirm`·ThinQ 어댑터·`checkKinds`, 승인 차이표는 넓어진 것만·좁아진 것 없음). 11r-1 → 11r-2 → 11a 차례를 Consumes·Produces로 이음.
 - Codex 26차 지적 5개: P1 Task 11r 위험 켜기 종류는 끄기 말고 상태를 바꾸는 명령 전부를 승인 대상으로(`needsConfirm`, 이름 정규화·capabilities 덮어쓰기와 무관), 등록부 검증은 덮어쓴 실제 사양까지, P2 ThinQ 트윈 반영(`mirrorPlan`)도 어댑터로, P2 어댑터가 받는 명령과 프로필이 내는 명령이 맞는지 검증, P3 `heatingSetpoint`의 `|| systemMode === "heat"`는 그대로, P3 구조 검사가 지역 변수 `kind`·`switch`·`src/thinq/`까지.
