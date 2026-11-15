@@ -8,7 +8,7 @@
 // 끝내기(judgeState): 계획이 닫혔고 누를 답이 없으면 끝, 영상이 멈춘(첫 영상 끝·단계 영상 마지막 장면 붙잡기) 뒤 --tail초, 지금 영상 길이 + 60초, 판 전체 --max초.
 // 영상 모드 판정: 헤드리스 크롬 하나(390×844)로 폰 페이지 <phone>/phone/?clip=<clip>을 열고 「AR 시작」을 눌러 영상을 끝까지 튼다.
 // --step(여러 번, 종류 go·pick·place·do, 낱말 a-z·_)은 폰 주소에 step=으로 하나씩 붙는다. 폰 페이지는 종류가 같고 대상 id에 낱말이 든 명령이 오면
-// 그 단계 영상으로 바꿔 튼다(영상 시각은 이어 셈). --step이 있으면 --done-after 기본은 0이다(단추를 누르지 않고 비전·폰 위치로 단계가 넘어가는지 본다).
+// 그 단계 영상으로 바꿔 튼다(영상 시각은 이어 셈). --step·--approve·--done-on이 있으면 --done-after 기본은 0이다(고른 명령 밖에는 단추를 누르지 않고 비전·폰 위치로 단계가 넘어가는지 본다).
 // 판마다 서버를 새로 띄운다. 앞 판 계획이 끝나지 않았거나 엔진 프레임을 이미 받은 서버(World State가 남음)면 크롬을 띄우기 전에 멈춘다.
 // 1초마다 window.__noonchiVideo(t0·받은 명령·바꾼 단계 영상의 영상 시각·끝)와 GET /api/world(눈 자리·컵)를 읽는다(World State를 못 받으면 넘어감).
 // 새 명령이 오면 --done-after초 뒤 엄지 자리 첫 답 단추(승인·완료)를 누른다(0이면 안 누름).
@@ -241,7 +241,7 @@ export function costLine(brain: BrainNow): string {
   return `VLM ${brain.vlm.sent ?? 0}장 · ${usd(brain.vlm.costUsd ?? 0)}${closer}${look} · 엔진 프레임 ${brain.frames ?? 0}장 · PAM·계획 비용 빠짐`;
 }
 
-/** 끝내기: watch 더 본다, done 계획이 닫혔고(또는 영상이 멈췄는데 열린 계획이 없고) 누를 답이 없음, tail_over 영상이 멈춘 뒤 tailMs가 지남,
+/** 끝내기: watch 더 본다, done 계획이 명시적으로 닫혔고(done·failed·cancelled) 누를 답이 없음, tail_over 영상이 멈춘 뒤 tailMs가 지남,
  *  clip_over 지금 영상이 그 길이 + 60초를 넘게 도는 중, max_over 판 전체가 maxMs를 넘음. */
 export function judgeState(o: {
   /** 영상이 멈춘 지(첫 영상 끝 __noonchiVideo.ended, 또는 붙잡는 중 __noonchiVideo.hold) ms. 도는 중이면 null. */
@@ -252,10 +252,8 @@ export function judgeState(o: {
 }): "watch" | "done" | "tail_over" | "clip_over" | "max_over" {
   if (o.totalMs > o.maxMs) return "max_over";
   if (o.due === 0 && PLAN_END.has(o.planStatus ?? "")) return "done";
-  if (o.stillForMs !== null) {
-    if (o.due === 0 && !PLAN_OPEN.has(o.planStatus ?? "")) return "done";
-    return o.stillForMs > o.tailMs ? "tail_over" : "watch";
-  }
+  // 계획을 만드는 중이거나 조회가 실패한(undefined) 때는 닫힌 계획으로 보지 않는다: 영상이 멈춰도 tail까지 본다
+  if (o.stillForMs !== null) return o.stillForMs > o.tailMs ? "tail_over" : "watch";
   if (o.clipDurationMs !== null && o.clipPlayedMs > o.clipDurationMs + 60_000) return "clip_over";
   return "watch";
 }
@@ -443,7 +441,8 @@ export function parseArgs(argv: string[]): Args | string {
   const record = arg("record");
   if (argv.includes("--record") && (!record || record.startsWith("--"))) return "--record 뒤에 시연 영상을 남길 폴더를 주세요: --record <폴더>";
   const fake = argv.includes("--fake");
-  const doneAfterMs = Number(arg("done-after") ?? (steps.length ? "0" : "3")) * 1000;
+  // --step·--approve·--done-on이 있으면 --done-after 기본은 0이다(고른 명령에만 누른다)
+  const doneAfterMs = Number(arg("done-after") ?? (steps.length || argv.includes("--approve") || argv.includes("--done-on") ? "0" : "3")) * 1000;
   const expectMs = Number(arg("expect-after") ?? (fake ? String(FAKE_PERSON_MS / 1000) : "36.3")) * 1000;
   if (!Number.isFinite(doneAfterMs) || doneAfterMs < 0 || !Number.isFinite(expectMs)) return "--done-after·--expect-after는 0 이상 숫자(초)예요";
   // <초>:<글>: 초는 0 이상 숫자, 글은 비지 않고 60자까지

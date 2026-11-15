@@ -202,7 +202,9 @@ describe("video-check", () => {
     expect(at(5_000, 0, "planned")).toBe("watch");
     expect(at(5_000, 1, undefined)).toBe("watch");
     expect(at(5_000, 0, "done")).toBe("done");
-    expect(at(5_000, 0, undefined)).toBe("done");
+    // 계획이 아직 만들어지는 중이거나 조회가 실패한(undefined) 때는 닫힌 계획으로 보지 않고 tail까지 본다
+    expect(at(5_000, 0, undefined)).toBe("watch");
+    expect(at(30_001, 0, undefined)).toBe("tail_over");
     expect(at(30_001, 1, "running")).toBe("tail_over");
   });
 
@@ -215,6 +217,11 @@ describe("video-check", () => {
     it("영상 도는 중 + 계획 done + 답 없음 → done. 누를 답이 남았으면 더 본다", () => {
       expect(judgeState({ ...base, planStatus: "done" })).toBe("done");
       expect(judgeState({ ...base, planStatus: "done", due: 1 })).toBe("watch");
+    });
+    it("planStatus가 undefined(계획을 만드는 중·조회 실패)면 영상이 멈춰도 tail까지 본다. 명시적으로 닫힌 상태(done·failed·cancelled)만 바로 끝낸다", () => {
+      expect(judgeState({ ...base, planStatus: undefined, stillForMs: 100_000 })).toBe("watch");
+      expect(judgeState({ ...base, planStatus: undefined, stillForMs: 301_000 })).toBe("tail_over");
+      for (const s of ["done", "failed", "cancelled"]) expect(judgeState({ ...base, planStatus: s, stillForMs: 1_000 }), s).toBe("done");
     });
     it("단계 영상이 20초짜리면 80초 넘게 돌 때 clip_over다(첫 영상 길이와 상관없다)", () => {
       expect(judgeState({ ...base, clipDurationMs: 20_000, clipPlayedMs: 80_000 })).toBe("watch");
@@ -285,6 +292,22 @@ describe("video-check", () => {
       expect(plannedClicks(cmd("plan:pam-3:approve", "라면 끓이기 알려 주기를 할까요?"), rule({ approveAfterMs: 2000 }), 0)).toHaveLength(1);
       expect(plannedClicks(cmd("plan:pam-3:2", "전자레인지 문을 열어 주세요"), rule({ approveAfterMs: 2000 }), 0)).toEqual([]);
     });
+    it("단계 영상 없이 --approve나 --done-on만 주면 --done-after 기본은 0이다: :again 같은 다른 질문에는 예약이 없다", () => {
+      for (const flags of [["--approve", "2"], ["--done-on", "8:그릇을 꺼내 주세요"]]) {
+        const a = parseArgs(["--clip", "a.mp4", ...flags]);
+        if (typeof a === "string") throw new Error(a);
+        expect(a.doneAfterMs, flags.join(" ")).toBe(0);
+        const r = { approveAfterMs: a.approveAfterMs, doneOn: a.doneOn, doneAfterMs: a.doneAfterMs };
+        expect(plannedClicks(cmd("plan:pam-3:4:again", "물 받기를 계속할까요?"), r, 0), flags.join(" ")).toEqual([]);
+      }
+      const given = parseArgs(["--clip", "a.mp4", "--approve", "2", "--done-after", "3"]);
+      if (typeof given === "string") throw new Error(given);
+      expect(given.doneAfterMs).toBe(3000);
+      const plain = parseArgs(["--clip", "a.mp4"]);
+      if (typeof plain === "string") throw new Error(plain);
+      expect(plain.doneAfterMs).toBe(3000);
+    });
+
     it("--done-on 8:그릇을 전자레인지에 넣어 주세요면 그 글 명령에만 8초 뒤 「완료」. --step이 있고 --done-after가 없으면 그 밖 명령에는 없다", () => {
       const r = rule({ doneOn: [{ afterMs: 8000, text: "그릇을 전자레인지에 넣어 주세요" }] });
       expect(plannedClicks(cmd("plan:pam-3:3", "그릇을 전자레인지에 넣어 주세요"), r, 0)).toEqual([{ at: 8000, label: "완료", id: "plan:pam-3", step: "plan:pam-3:3", text: "그릇을 전자레인지에 넣어 주세요" }]);
