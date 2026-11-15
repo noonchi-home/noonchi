@@ -141,3 +141,24 @@ describe("트윈 결과물 복사", () => {
     expect(() => copyTwinAssets({ from, to, commit: "b", only: ["nope/"] })).toThrow(/맞는 파일이 없어요/);
   });
 });
+
+describe("저장소 twin/SOURCE.json", () => {
+  const twin = join(dirname(fileURLToPath(import.meta.url)), "..", "twin");
+  const src = JSON.parse(readFileSync(join(twin, "SOURCE.json"), "utf8")) as { files: { path: string; bytes: number; sha256: string; patched?: string }[] };
+  /** 복사 때와 같이 글 파일은 LF로 맞춘 내용으로 잰다. */
+  const body = (rel: string) => (/\.(json|mjs|js|html|css)$/.test(rel) ? Buffer.from(readFileSync(join(twin, rel), "utf8").replace(/\r\n/g, "\n"), "utf8") : readFileSync(join(twin, rel)));
+
+  it("적힌 파일마다 bytes·sha256이 지금 twin/ 파일과 같다(이 저장소에서 고친 파일은 patched에 그 커밋을 적고 해시를 고친 내용으로 맞춘다)", () => {
+    const wrong = src.files.filter((f) => {
+      const b = body(f.path);
+      return b.length !== f.bytes || createHash("sha256").update(b).digest("hex") !== f.sha256;
+    }).map((f) => f.path);
+    expect(wrong).toEqual([]);
+  });
+
+  it("이 저장소에서 고친 복사본은 뷰어 main.mjs·scene.mjs 둘이다(docs/provenance.md, tests/twin-viewer.test.ts)", () => {
+    expect(src.files.filter((f) => f.patched).map((f) => [f.path, f.patched])).toEqual([
+      ["apartment/viewer/main.mjs", "23a8a2f"], ["apartment/viewer/scene.mjs", "23a8a2f"],
+    ]);
+  });
+});

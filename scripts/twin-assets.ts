@@ -65,7 +65,8 @@ function checkTarget(to: string, from: string): void {
 /** 구운 결과 중 화면이 읽는 것. 굽기 장면·중간 파일(bake.blend, lm/, lm<n>.png, layout.json, timings.json)은 twin-studio에 남는다. */
 const BAKE_FILE = /^(?:[\w-]+_baked\.glb|lm\d+\.webp|ground\.png|manifest\.json)$/;
 const HOME_DATA = ["floorplan.json", "placement.json", "drawn_fixtures.json"];
-type Entry = { path: string; bytes: number; sha256: string; commit?: string };
+/** SOURCE.json 한 줄. patched: 이 저장소에서 고친 복사본의 고친 커밋(해시는 고친 내용, docs/provenance.md). --only가 아닌 새 복사는 고친 것을 덮는다. */
+type Entry = { path: string; bytes: number; sha256: string; commit?: string; patched?: string };
 const byPath = (a: Entry, b: Entry) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
 
 export function copyTwinAssets(o: { from: string; to: string; commit?: string; only?: string[] }): { files: number; bytes: number; commit: string } {

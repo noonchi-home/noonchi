@@ -529,8 +529,9 @@
     },
     {
       "path": "apartment/viewer/main.mjs",
-      "bytes": 68645,
-      "sha256": "5b0fd9a118c10df9bda581951980022daba874fe6b7726fcab32199a7a99d2c4"
+      "bytes": 69066,
+      "sha256": "157a3fed5727360e55abe69185f8311832e81799ad177e4a9a1b74ee00df8a21",
+      "patched": "23a8a2f"
     },
     {
       "path": "apartment/viewer/plan.mjs",
@@ -539,8 +540,9 @@
     },
     {
       "path": "apartment/viewer/scene.mjs",
-      "bytes": 5893,
-      "sha256": "8a321c5fe06b99771060c8a14db0544f1ba3611e1d286c464059138f56fe22dc"
+      "bytes": 6275,
+      "sha256": "650fd92702dbd16d897516db7bb3d1ed12cc77e1a57edc16fe4ee8f77f8e6335",
+      "patched": "23a8a2f"
     },
     {
       "path": "apartment/viewer/states.mjs",
