@@ -143,18 +143,18 @@ export function handOf(v: PhoneView): Hand {
   return { top, thumb, vision };
 }
 
-/** 지금 화면에 보인 승인 대기 token들: AR 중이면 엄지 자리에 뜬 맨 앞 대기 하나(다른 것이 엄지 자리를 차지하면 없음), 처음 화면이면 목록 전부. */
-export function shownPending(v: PhoneView): string[] {
-  if (!v.ar) return v.pending.map((p) => p.token);
+/** 말의 at(src/contract/phone.ts HeardAt): 화면에 실제로 보이는 것만 싣는다. 화면 그리기와 같은 handOf로 정한다.
+ *  AR 중: 엄지 자리가 명령이면 그 명령(계획 id·단계 id), 승인 대기면 그 token 하나(뒤에 숨은 명령은 싣지 않는다), 맞추기 중이면 둘 다 없음.
+ *  처음 화면(AR 전): 명령 줄이 없어 명령은 싣지 않고, 목록에 보인 승인 대기 token을 모두 싣는다. */
+export function heardAtOf(v: PhoneView): HeardAt {
+  if (!v.ar) return { kind: "none", pending: v.pending.map((p) => p.token) };
   const t = handOf(v).thumb;
-  return t?.kind === "pending" ? [t.item.token] : [];
+  if (t?.kind === "command") return { kind: "command", id: t.command.id, step: t.command.step, pending: [] };
+  return { kind: "none", pending: t?.kind === "pending" ? [t.item.token] : [] };
 }
 
-/** 말의 at(src/contract/phone.ts HeardAt): 지금 명령 줄의 명령(계획 id·단계 id, 없으면 none)과 보인 승인 대기 token들. */
-export function heardAtOf(v: PhoneView): HeardAt {
-  const c = v.command;
-  return { ...(c ? { kind: "command" as const, id: c.id, step: c.step } : { kind: "none" as const }), pending: shownPending(v) };
-}
+/** 지금 화면에 보인 승인 대기 token들(말의 at과 같다). */
+export const shownPending = (v: PhoneView): string[] => heardAtOf(v).pending;
 
 /** 일이 멈추는 문제(AR 중에만, 하나): 연결 끊김 → 마이크 꺼짐 → 시작 위치 없음(집에 시작 위치가 없고 아직 아무 변환도 없을 때). */
 export function problemOf(v: PhoneView): Problem | null {

@@ -12,6 +12,7 @@ import { createPhoneServer, type PhoneServer } from "../src/phone/server.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { ScriptedDetector, det } from "./helpers/detectors.js";
 import { HOME_SCRIPT, startFakeLlm, type FakeLlm } from "./helpers/llm.js";
+import { CUP_SCRIPTS, planCalls } from "./helpers/planner.js";
 import { startFakePam, type FakePam } from "./helpers/pam.js";
 import { BOX_START, BOX_WALLS } from "./helpers/align.js";
 import { heardAtOf, openPhone, openWebSocket } from "./helpers/ws.js";
@@ -233,6 +234,58 @@ describe("startServer(BRAIN=1): 말 답은 말할 때 떠 있던 명령에만", 
     expect(replies()[1]).toMatchObject({ text: "알겠어요. 그대로 둘게요" });
     expect(rows().some((r) => r.kind === "execution" && r.subject === ask!.id && r.text === "완료: 그대로 둬요")).toBe(true);
   }, 30_000);
+});
+
+describe("startServer(BRAIN=1): 말로 하는 승인은 at의 승인 token에만", () => {
+  let srv: RunningServer | undefined;
+  let fake: FakeServer | undefined;
+  let pam: FakePam | undefined;
+  let llm: FakeLlm | undefined;
+  afterEach(async () => {
+    ws?.close();
+    ws = undefined;
+    await srv?.close();
+    srv = undefined;
+    await fake?.close();
+    fake = undefined;
+    await pam?.close();
+    pam = undefined;
+    await llm?.close();
+    llm = undefined;
+  });
+
+  it("현관문 승인 대기가 보이는 동안 「승인」이라고 하면 at에 계획 승인 질문이 같이 실려 와도 현관문만 확정되고, 계획 승인 질문·에어컨은 그대로다", async () => {
+    fake = await startFakeOpenAI();
+    llm = await startFakeLlm({ ...HOME_SCRIPT }, { ...CUP_SCRIPTS, "에어컨 켜기": () => [planCalls([{ kind: "device", label: "거실 에어컨 켜기", target: "ac_living", tool: "turn_on", timeout_s: 60 }])] });
+    pam = await startFakePam({ predict: () => ({ observation: "더움", reasoning: "에어컨을 켠다", task_index: 3 }) });
+    const rt = mkdtempSync(join(tmpdir(), "rt-"));
+    srv = await startServer({
+      env: { HUB: "memory", PORT: "0", RUNTIME_DIR: rt, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url, ...llm.env },
+      brain: { detector: new ScriptedDetector(() => [det("cup", 0.9, [1, 1, 2, 1], 41)]) }, log: () => {},
+    });
+    const phoneUrl = new URL(srv.phoneUrls[0]!);
+    const box: Msg[] = [];
+    ws = await openPhone(`ws://${phoneUrl.host}/phone/events`, { options: { origin: phoneUrl.origin }, setup: (s) => s.on("message", (d, bin) => { if (!bin) box.push(JSON.parse(String(d)) as Msg); }) });
+    let n = 0;
+    let ask: Msg | undefined;
+    for (const end = Date.now() + 10_000; !ask && Date.now() < end; ) {
+      ask = box.find((x) => x.type === "command" && /:approve$/.test(x.step));
+      ws.send(encodeFramePacket({ kind: "engine", width: 4, height: 3, captured_at: Date.now(), time_err_ms: 0 }, Buffer.from([0xff, 0xd8, n++ % 256, n >> 8])));
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    expect(ask).toMatchObject({ text: "에어컨 켜기를 할까요?" });
+    const replies = () => box.filter((m) => m.type === "reply");
+    const count = replies().length;
+    ws.send(JSON.stringify({ type: "say", text: "현관문 열어줘", at: { kind: "command", id: ask!.id, step: ask!.step, pending: [] } }));
+    for (const end = Date.now() + 5000; replies().length < count + 1 && Date.now() < end; ) await new Promise((r) => setTimeout(r, 20));
+    const door = replies().at(-1)!.pending[0].token as string;
+    // 예전 폰처럼 승인 대기와 그 뒤에 숨은 명령을 같이 실은 at
+    ws.send(JSON.stringify({ type: "say", text: "승인", at: { kind: "command", id: ask!.id, step: ask!.step, pending: [door] } }));
+    for (const end = Date.now() + 5000; replies().length < count + 2 && Date.now() < end; ) await new Promise((r) => setTimeout(r, 20));
+    expect(srv.hub.get("door_main")?.twin.lock).toBe("unlocked");
+    expect(srv.hub.get("ac_living")?.twin.power).toBe("off");
+    expect(srv.history.list({ kinds: ["execution"] }).some((r) => r.subject === ask!.id && r.text === "실행 중")).toBe(false);
+  }, 40_000);
 });
 
 describe("startServer: 실제 폰의 말로 하는 승인", () => {

@@ -489,24 +489,28 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         // 말 전체가 승인·거절 답이면 말할 때 보인 승인 대기 token이 하나이고 지금도 대기일 때만 그 하나에 답한다(agent.answerToken). 그 밖에는 버린다(answerAll 없음)
         onAnswer: async (text, at) => {
           const open = tracker?.openCommand();
-          const heard = tracker?.onHeard(text, at) ?? null;
           const stale = () => {
             heardSpeech(text);
             history.db.add("execution", nowMs(), EXEC_TEXT.staleAnswer, { subject: open?.planId ?? (at?.kind === "command" ? at.id : PHONE_SESSION) });
             return { handled: true, reply: "" };
           };
+          // 말로 한 승인·거절: 말할 때 보인 승인 대기 token이 하나이고 지금도 대기일 때 그 하나에만 답한다.
+          // at에 승인 token이 있으면 명령(실행 추적)의 답으로 보내지 않는다(뒤에 숨은 명령 승인으로 가지 않게)
+          const approval = matchChoice(text, APPROVE);
+          const byToken = async () => {
+            const live = new Set(agent.pending(PHONE_SESSION).map((p) => p.token));
+            const token = at?.pending.length === 1 && live.has(at.pending[0]!) ? at.pending[0]! : null;
+            if (!token) return stale();
+            return { handled: true, reply: (await agent.answerToken(token, approval!.id as ApprovalAnswer)).reply };
+          };
+          if (approval && at && at.pending.length > 0) return byToken();
+          const heard = tracker?.onHeard(text, at) ?? null;
           if (heard?.kind === "answer") {
             if (open) history.db.add("feedback", nowMs(), FEEDBACK_TEXT.answer(text, open.kind, open.text), { subject: open.planId, data: { choice: heard.choice.id, via: "voice" } });
             return { handled: true, reply: heard.choice.reply };
           }
           if (heard?.kind === "stale") return stale();
-          const answer = matchChoice(text, APPROVE);
-          if (answer) {
-            const live = new Set(agent.pending(PHONE_SESSION).map((p) => p.token));
-            const token = at?.pending.length === 1 && live.has(at.pending[0]!) ? at.pending[0]! : null;
-            if (!token) return stale();
-            return { handled: true, reply: (await agent.answerToken(token, answer.id as ApprovalAnswer)).reply };
-          }
+          if (approval) return byToken();
           heardSpeech(text);
           return { handled: false };
         },

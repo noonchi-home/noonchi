@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ASK_PROMPT, STEP_DONE } from "../../src/act/prompts.ts";
 import { STEP_COMMAND } from "../../src/plan/labels.ts";
 import {
-  createStore, handOf, initialView, isStartWord, onStatus, PLACE_LINE, problemOf, settingsRows, START_BUTTON,
+  createStore, handOf, heardAtOf, initialView, isStartWord, onStatus, PLACE_LINE, problemOf, settingsRows, START_BUTTON,
   startLine, supportText, type Command, type PhoneView, type SyncView,
 } from "../src/phone/state";
 
@@ -65,6 +65,22 @@ describe("엄지 자리와 위 한 줄(handOf)", () => {
   it("맞추는 중(어림)이면 명령의 비전 상태 줄 앞에 「위치 맞추는 중」, 맞추면 그대로", () => {
     expect(handOf(ar({ aligned: false, command: cmd(), sync: sync({ state: "estimated", source: "start" }) })).vision).toEqual({ text: "위치 맞추는 중 · 컵 · 식탁 위", tone: "plain" });
     expect(handOf(ar({ command: cmd() })).vision).toEqual({ text: "컵 · 식탁 위", tone: "plain" });
+  });
+});
+
+describe("말의 at(heardAtOf): 화면에 실제로 보이는 것만", () => {
+  const door = { token: "t-door", deviceLabel: "현관문", reason: "현관문 잠금 해제", choices: done };
+  it("AR에서 승인 대기가 명령을 가리면 at은 그 대기 token 하나이고 명령은 싣지 않는다(뒤에 숨은 명령 승인으로 가지 않게)", () => {
+    const v = ar({ command: cmd({ step: "plan:pam-1:5:hand" }), pending: [door, { ...door, token: "t-2" }] });
+    expect(handOf(v).thumb).toMatchObject({ kind: "pending", item: { token: "t-door" } });
+    expect(heardAtOf(v)).toEqual({ kind: "none", pending: ["t-door"] });
+  });
+  it("AR에서 명령이 보이면 그 명령만 싣는다. 시작 위치·물건 자리 맞추기가 엄지 자리를 차지하면 둘 다 싣지 않는다", () => {
+    expect(heardAtOf(ar({ command: cmd() }))).toEqual({ kind: "command", id: "plan:pam-1", step: "plan:pam-1:2", pending: [] });
+    expect(heardAtOf(ar({ command: cmd(), setup: "place" }))).toEqual({ kind: "none", pending: [] });
+  });
+  it("처음 화면(AR 전)은 명령 줄이 없어 명령을 싣지 않고, 목록에 보인 승인 대기 token을 모두 싣는다", () => {
+    expect(heardAtOf({ ...ar({ command: cmd(), pending: [door] }), ar: false })).toEqual({ kind: "none", pending: ["t-door"] });
   });
 });
 
