@@ -11,6 +11,7 @@ import { loadScene } from "../src/model/scene.js";
 import { resolveHome } from "../src/model/homes.js";
 import { ServerLockError, acquireServerLock } from "../src/server/lock.js";
 import { listenRetry } from "../src/server/net.js";
+import { startServer, type RunningServer } from "../src/server/start.js";
 import { DEMO_APPROVALS, DemoStop, demoSetup, silentAircon } from "../scripts/demo-setup.js";
 import { DEMO_STARTS, startFor } from "../scripts/demo-start.js";
 
@@ -187,19 +188,52 @@ describe("서버가 꺼졌는지(--fresh·--scripted)", () => {
     expect(lockFree(dir)).toBe(true);
   }, 60_000);
 
-  it.skipIf(process.platform !== "win32")("--fresh: 옛 폴더 잠금을 닫은 뒤 옮기기 전에 그 폴더 파일이 열려 있으면 옮기기가 실패해 멈춘다(Windows)", async () => {
+  it("--fresh는 잠금을 한 번도 놓지 않는다: 잠금 파일 말고 옛 항목을 <dir>.old-<시각>/으로 옮기고 같은 잠금을 쥔 채 새로 쓴다. 그동안 서버 시작은 늘 멈춘다", async () => {
     const base = tmp();
     const dir = join(base, "week");
     await run(["week", "--dir", dir, "--api", CLOSED]);
-    // 닫기와 옮기기 사이에 뜬 서버처럼 그 폴더의 기록 DB를 연다(잠금은 잡지 않는다)
+    const free: boolean[] = [];
+    const starts: Promise<RunningServer>[] = [];
+    const tryStart = () => startServer({ env: {
+      HUB: "memory", PORT: "0", RUNTIME_DIR: dir, REFLECT_AT: "off",
+      VLM_BASE_URL: "http://127.0.0.1:9/v1", PAM_URL: "http://127.0.0.1:9", OPENAI_BASE_URL: "http://127.0.0.1:9/v1",
+    }, log: () => {} });
+    try {
+      await demoSetup(["week", "--dir", dir, "--fresh", "--api", CLOSED], { env, now: () => NOW, log: () => {
+        free.push(lockFree(dir));
+        starts.push(tryStart());
+      } });
+    } finally {
+      for (const r of await Promise.allSettled(starts)) if (r.status === "fulfilled") await r.value.close();
+    }
+    expect(free.length).toBeGreaterThanOrEqual(3);
+    expect(free).toEqual(free.map(() => false));
+    const results = await Promise.allSettled(starts);
+    expect(results.map((r) => (r.status === "rejected" ? String(r.reason) : "떴음"))).toEqual(results.map(() => expect.stringMatching(/이 폴더를 쓰는 서버가 이미 있어요/)));
+    const moved = readdirSync(base).filter((n) => n.startsWith("week.old-"));
+    expect(moved).toHaveLength(1);
+    expect(readdirSync(join(base, moved[0]!))).toEqual(expect.arrayContaining(["noonchi.db", "setup.json"]));
+    expect(readdirSync(join(base, moved[0]!)).some((n) => n.startsWith("server.lock.db"))).toBe(false);
+    expect(existsSync(join(dir, "noonchi.db"))).toBe(true);
+    expect(lockFree(dir)).toBe(true);
+  }, 60_000);
+
+  it.skipIf(process.platform !== "win32")("--fresh: 옛 항목 가운데 열린 파일이 있어 옮기지 못하면 옮긴 것을 되돌리고 멈춘다(Windows)", async () => {
+    const base = tmp();
+    const dir = join(base, "week");
+    await run(["week", "--dir", dir, "--api", CLOSED]);
+    const before = readdirSync(dir).sort();
+    // 잠금 없이 그 폴더의 기록 DB를 연다
     const open = HistoryDb.open(join(dir, "noonchi.db"), 540);
     try {
-      await expect(run(["week", "--dir", dir, "--fresh", "--api", CLOSED])).rejects.toThrow(/옛 폴더를 옮기지 못했어요/);
+      await expect(run(["week", "--dir", dir, "--fresh", "--api", CLOSED])).rejects.toThrow(/옛 항목을 옮기지 못했어요/);
       expect(readdirSync(base)).toEqual(["week"]);
+      expect(readdirSync(dir)).toEqual(expect.arrayContaining(before));
     } finally {
       open.close();
     }
   }, 60_000);
+
 });
 
 describe("장면 시작 위치", () => {

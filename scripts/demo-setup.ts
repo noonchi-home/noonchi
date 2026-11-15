@@ -6,8 +6,8 @@
 //   reflect [--api URL] [--day 어제]                      어제를 반성해 오늘부터 쓰게 한다(폰을 켜기 전에)
 //   reflect --scripted [--dir runtime/demo/week]          서버를 끈 채 합성 판본(말없이 에어컨 켜는 습관)을 오늘부터로 넣는다
 // 한 폴더 안에서 판본·날 고정을 지우거나 덮지 않는다. 다시 할 때는 서버를 끄고 week --fresh부터 한다.
-import { existsSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import dotenv from "dotenv";
 import { LessonStore, lessonsPath } from "../src/act/lessons.js";
@@ -18,7 +18,7 @@ import { HistoryDb, historyTzMinutes } from "../src/history/db.js";
 import { REFLECT_TEXT } from "../src/history/labels.js";
 import { isDay } from "../src/history/summary.js";
 import { DEFAULT_TWIN_DIR, resolveTwinStudioDir } from "../src/model/devices.js";
-import { ServerLockError, acquireServerLock, type HeldServerLock } from "../src/server/lock.js";
+import { ServerLockError, acquireServerLock, serverLockPath, type HeldServerLock } from "../src/server/lock.js";
 import { resolveHome } from "../src/model/homes.js";
 import { loadScene } from "../src/model/scene.js";
 import { TASKS } from "../src/act/tasks.js";
@@ -90,6 +90,26 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
       throw e;
     }
   };
+  // --fresh: 잠금 파일(server.lock.db…)을 뺀 옛 항목을 <dir>.old-<시각>/으로 하나씩 옮긴다. 하나라도 못 옮기면(열린 파일 등) 옮긴 것을 되돌리고 멈춘다
+  const moveOldEntries = (dir: string) => {
+    const lockFile = basename(serverLockPath(dir));
+    const names = readdirSync(dir).filter((n) => !n.startsWith(lockFile));
+    if (!names.length) return;
+    const old = `${dir}.old-${new Date(now()).toISOString().replace(/[-:]/g, "").replace(/\..*$/, "")}`;
+    mkdirSync(old);
+    const done: string[] = [];
+    try {
+      for (const n of names) {
+        renameSync(join(dir, n), join(old, n));
+        done.push(n);
+      }
+    } catch (e) {
+      for (const n of done.reverse()) renameSync(join(old, n), join(dir, n));
+      rmSync(old, { recursive: true, force: true });
+      throw new DemoStop(`옛 항목을 옮기지 못했어요(${dir}: ${(e as NodeJS.ErrnoException).code ?? (e as Error).message}). 그 폴더 파일을 연 프로그램을 끈 뒤 다시 하세요`);
+    }
+    log(`옛 항목을 옮겼어요: ${old}`);
+  };
   // --api 주소의 서버도 꺼져 있어야 한다: 연결을 거부할 때(ECONNREFUSED)만 꺼졌다고 본다. 답이 늦거나(시간 초과) 그 밖의 오류면 켜져 있을 수 있어 멈춘다
   const requireServerOff = async () => {
     let why: string;
@@ -115,34 +135,19 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
   const [cmd, scene] = argv;
   if (cmd === "day1" || cmd === "week") {
     const dir = resolve(arg("--dir") ?? join("runtime", "demo", cmd));
-    if (has("--fresh")) {
-      // 옛 폴더: 잠금을 잡아 서버가 없는 것을 확인하고, 닫은 뒤 바로 옮긴다(Windows는 열린 파일이 있으면 폴더를 옮기지 못한다).
-      // 닫기와 옮기기 사이에 서버가 뜨면 그 서버가 연 파일 때문에 옮기기가 실패하고 여기서 멈춘다
-      const old = existsSync(dir) ? holdFolder(dir) : null;
-      try {
-        await requireServerOff();
-      } catch (e) {
-        old?.release();
-        throw e;
-      }
-      if (old) {
-        old.release();
-        const moved = `${dir}.old-${new Date(now()).toISOString().replace(/[-:]/g, "").replace(/\..*$/, "")}`;
-        try {
-          renameSync(dir, moved);
-        } catch (e) {
-          throw new DemoStop(`옛 폴더를 옮기지 못했어요(${dir}: ${(e as NodeJS.ErrnoException).code ?? (e as Error).message}). 그 폴더를 쓰는 서버를 끈 뒤 다시 하세요`);
-        }
-        log(`옛 폴더를 옮겼어요: ${moved}`);
-      }
-    }
+    const fresh = has("--fresh");
     const dbPath = join(dir, "noonchi.db");
-    if (existsSync(dbPath)) throw new DemoStop(`기록 DB가 이미 있어요(${dbPath}). --fresh로 새로 시작하세요`);
+    if (!fresh && existsSync(dbPath)) throw new DemoStop(`기록 DB가 이미 있어요(${dbPath}). --fresh로 새로 시작하세요`);
     mkdirSync(dir, { recursive: true });
-    // 새 폴더도 다 쓸 때까지 잠금을 쥔다(그동안 서버가 이 폴더로 뜨지 못한다)
+    // 그 폴더 잠금을 끝까지 한 번도 놓지 않는다(그동안 서버가 이 폴더로 뜨지 못한다). --fresh는 폴더를 옮기지 않고 잠금을 쥔 채 옛 항목을 옮긴다
     const folder = holdFolder(dir);
     try {
-      writeFileSync(join(dir, "setup.json"), `${JSON.stringify({ version: 1, home: DEMO_HOME, done: true, mode: "test", assist: "auto" }, null, 2)}\n`);
+      if (fresh) {
+        await requireServerOff();
+        moveOldEntries(dir);
+      }
+      writeFileSync(join(dir, "setup.json"), `${JSON.stringify({ version: 1, home: DEMO_HOME, done: true, mode: "test", assist: "auto" }, null, 2)}
+`);
       const at = () => new Date(now()).toISOString();
       const approvals = new ApprovalStore(approvalsPath(dir, DEMO_HOME), at);
       for (const name of DEMO_APPROVALS) approvals.answer(`task:${name}`, "approve");
@@ -159,10 +164,10 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
       } finally {
         db.close();
       }
+      log(`시연 폴더를 만들었어요: ${dir} (RUNTIME_DIR=${dir})`);
     } finally {
       folder.release();
     }
-    log(`시연 폴더를 만들었어요: ${dir} (RUNTIME_DIR=${dir})`);
     return;
   }
 
