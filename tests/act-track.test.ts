@@ -1516,6 +1516,52 @@ describe("실행 추적: 켠 위험 가전 추적은 확인된 꺼짐으로만 �
       expect(s.phone.slice(-2)).toEqual([{ type: "command_clear", id: P2 }, { ...OFF, step: `off:${P}:microwave_1:2` }]);
     });
 
+    it("B 도중 두 가전(전자레인지·인덕션) 안내가 줄에서 기다리면 120초마다 소리 알림을 두 가전에 번갈아 보낸다", async () => {
+      let devs: Dev[] = [];
+      const said: string[] = [];
+      const s = coachSetup({
+        w: () => ({ ...world([]), devices: devs }), sayAloud: (t) => said.push(t),
+        handDevices: () => [{ id: "induction_1", kind: "cooktop", label: "인덕션" }, { id: "microwave_1", kind: "microwave", label: "전자레인지" }],
+      });
+      const IND_ON = { ...MW_ON, target: "induction_1", hand_device: { id: "induction_1", to: "on" } };
+      const IND_OFF = { ...IND_ON, act: "끄기", hand_device: { id: "induction_1", to: "off" } };
+      llm.scripts[RAMEN] = () => [planCalls([MW_ON, IND_ON, MW_OFF_STEP, IND_OFF])];
+      await s.decide(ramenDecision());
+      s.t.onAnswer(P, `${P}:1:hand`, "approve");
+      const mwLines = [cam("off", "on", s.clock.t + 100)];
+      devs = [mw(["on"], mwLines), cooktop(["off"])];
+      settle(s);
+      expect(s.last()).toMatchObject({ step: `${P}:2:hand` });
+      s.t.onAnswer(P, `${P}:2:hand`, "approve");
+      s.clock.t += 1_000;
+      const indLines: Line[] = [{ attr: "power", from: "off", to: "on", at_ms: s.clock.t }];
+      devs = [mw(["on"], mwLines), cooktop(["on"], indLines)];
+      s.t.onWorld();
+      s.heard("그만");
+      s.clock.t += 1_000;
+      mwLines.push(cam("on", "off", s.clock.t));
+      indLines.push({ attr: "power", from: "on", to: "off", at_ms: s.clock.t });
+      devs = [mw(["off"], mwLines), cooktop(["off"], indLines)];
+      s.t.onWorld();
+      expect(Object.keys(s.t.safety().released).sort()).toEqual(["induction_1", "microwave_1"]);
+      const B = ramenSteps({ cabinet: "cabinet_1", sink: "sink_1", cooktop: "induction_1", cooktopDevice: "induction_1", waitS: 300 });
+      llm.scripts[RAMEN] = () => [planCalls([GO, B[8]!, B[3]!])];
+      s.clock.t += 1_000;
+      await s.decide(ramenDecision("pam-2", 2));
+      expect(s.t.onAnswer(P2, `${P2}:1`, "done")).toBe(true);
+      // 기다리는 동안 두 가전이 다시 켜짐
+      s.clock.t += 2_000;
+      devs = [mw(["on"], [...mwLines, cam("off", "on", s.clock.t - 500)]), cooktop(["on"], [...indLines, { attr: "power", from: "off", to: "on", at_ms: s.clock.t - 500 }])];
+      s.t.onWorld();
+      const MW_TOLD = "전자레인지가 다시 켜졌어요. 꺼 주세요";
+      const IND_TOLD = "인덕션이 다시 켜졌어요. 꺼 주세요";
+      expect([...said].sort()).toEqual([MW_TOLD, IND_TOLD].sort());
+      for (let i = 0; i < 4; i++) { s.clock.t += 60_001; s.t.tick(); }
+      expect(s.steps()[1]).toBe("active");
+      expect(said.slice(2)).toEqual([said[0], said[1]]);
+      expect(s.t.offTold()).toMatchObject({ device: said[1] === MW_TOLD ? "전자레인지" : "인덕션" });
+    });
+
     it("A 안내가 줄에 남은 가전을 B가 승인해 켜면 승인을 받고, B가 켠 채 닫혀도 그 가전 안내는 하나만 남는다", async () => {
       let devs: Dev[] = [];
       const { s, lines, onAt } = await releasedA({ w: () => ({ ...world([]), devices: devs }), set: (d) => { devs = d; } });

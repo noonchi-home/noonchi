@@ -14,7 +14,7 @@
 // 안내가 남아 있는 동안 폰이 필요한 새 계획(needsPhone)은 첫 명령(승인 질문 포함)을 미루고(실행 기록 EXEC_TEXT.deferred), 안내가 다 풀리면 시작한다.
 // 폰이 필요 없는 가전 계획은 그대로 돌고, 그 알림 줄(say)은 안내가 떠 있는 동안 명령 줄로 보내지 않는다.
 // 폰이 필요한 다른 계획이 도는 동안 다시 걸려 생긴 안내는 그 계획이 끝난 뒤 띄우고(그 계획은 막지 않는다), 기다리는 동안 붙은 폰에 소리로만 알린다
-// (sayAloud, CAUTION_TEXT.rearmed, offHoldMs마다 다시). 그 시각은 offTold()로 말풍선 카드가 본다.
+// (sayAloud, CAUTION_TEXT.rearmed, offHoldMs마다 다시, 여러 가전이 기다리면 돌아가며). 그 시각은 offTold()로 말풍선 카드가 본다.
 // 다시 알리기(tell)·사람 부탁(askCloser)은 모델이 쓴 글이라, 위험 가전 이름이 나오거나 지금 단계가 위험 가전 단계(대상이 위험 가전이거나 hand_device가 붙음)면 보내지 않는다(기본 거부).
 // 코치 행동(TaskSpec.coach) 계획이 열려 있거나 만드는 중이면 coaching()이 참이다: 그동안 판단 호출(PAM)을 쉰다.
 // 폰 판본(phoneReady, src/phone/server.ts): 판본이 맞는 실제 폰이 없으면 폰이 필요한 계획(needsPhone)만 시작을 미루고(실행 기록 EXEC_TEXT.phoneOld, 한 번),
@@ -291,8 +291,9 @@ export class ExecutionTracker {
   /** 켠 채 닫힌 계획의 끄기 안내: 실제 폰에 떠 있는 것(reminder, 띄운 시각)과 그 뒤에 띄울 것(offQueue). 가전마다 하나. */
   private reminder: { sent: PlannedCommand; at: number; note: OffNote } | null = null;
   private offQueue: OffNote[] = [];
-  /** 줄에서 기다리는 끄기 안내를 마지막으로 소리로 알린 시각(실행 추적 시계, 다시 알릴 때를 센다)과 그 가전 이름·Date.now 시각(말풍선 카드). */
+  /** 줄에서 기다리는 끄기 안내를 마지막으로 소리로 알린 시각(실행 추적 시계, 다시 알릴 때를 센다)과 그 가전(다음 차례를 센다), 그 가전 이름·Date.now 시각(말풍선 카드). */
   private offToldAt: number | null = null;
+  private offToldId: string | null = null;
   private offToldWall: { device: string; atMs: number } | null = null;
   /** 가전마다 지금 켜기 회차(계획이 닫혀도 남는다). */
   private readonly cycles = new Map<string, Cycle>();
@@ -729,8 +730,11 @@ export class ExecutionTracker {
     const now = this.clock.now();
     const r = this.run;
     if (r) for (const [id, end] of r.ends) if (now - end.at > this.cfg.rearmMs && !this.offStepOpen(r, id)) r.ends.delete(id);
-    // 폰이 필요한 다른 계획이 도는 동안 줄에서 기다리는 안내: offHoldMs마다 소리로만 다시 알린다
-    if (!this.reminder && this.offQueue.length && this.offToldAt !== null && now - this.offToldAt > this.cfg.offHoldMs) this.tellWaiting(this.offQueue[0]!.deviceId);
+    // 폰이 필요한 다른 계획이 도는 동안 줄에서 기다리는 안내: offHoldMs마다 소리로만 다시 알리고, 여러 가전이 기다리면 마지막으로 알린 가전 다음 차례로 돌아가며 알린다
+    if (!this.reminder && this.offQueue.length && this.offToldAt !== null && now - this.offToldAt > this.cfg.offHoldMs) {
+      const ids = this.offQueue.map((n) => n.deviceId);
+      this.tellWaiting(ids[(ids.indexOf(this.offToldId ?? "") + 1) % ids.length]!);
+    }
     const off = this.reminder;
     if (!off || now - off.at <= this.cfg.offHoldMs) return;
     if (this.offQueue.length) return this.nextReminder(true);
@@ -848,6 +852,7 @@ export class ExecutionTracker {
     const name = this.handLabel(deviceId);
     this.o.sayAloud?.(CAUTION_TEXT.rearmed(name));
     this.offToldAt = this.clock.now();
+    this.offToldId = deviceId;
     this.offToldWall = { device: name, atMs: Date.now() };
   }
 
