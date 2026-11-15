@@ -9,8 +9,8 @@
 - **도메인은 문서 구성 단위 그대로 15개다.** 서버 11개(실제 폰, 관찰 흐름, World State, PAM 서비스 연결, 판단·검사·실행, 에이전트, 외부 API 게이트웨이, 기록·반성, 가상 가전·ThinQ, 배치 저장소, API 서버 런타임)와 화면 4개(대시보드, 트윈 화면, 실제 폰 화면, 설정 화면)다. 그 밖에 기반 둘(계약, 공용 표)과 공용 도우미 하나를 둔다.
 - **지금은 한 덩어리다.** `src/` 20개 폴더 가운데 18개가 서로 물고 도는 고리 하나에 들어 있다. 서로 가져오는 폴더 짝이 18쌍이다.
 - **새 방향에서 거꾸로 가는 import는 29개, 고칠 자리는 13곳이다.** 위 도메인으로 묶고 공용 표를 따로 세우면 도메인 사이 import 491개 가운데 29개만 남는다.
-- **막는 장치는 `scripts/lint-domains.ts`와 `tests/domain-boundaries.test.ts`다.** 다른 도메인은 입구(`index.ts`)로만 가져오고, 정한 방향으로만 가져온다. 옮기는 동안은 예외 목록이 줄어들기만 하게 한다.
-- **옮기는 단계는 9개다.** 단계마다 전체 시험 통과와 「바뀐 줄이 import 경로뿐」을 확인한다. 에이전트 시간으로 약 2~2.5일 걸린다.
+- **막는 장치는 `scripts/lint-domains.ts`와 `tests/domain-boundaries.test.ts`다.** 다른 도메인은 입구(`index.ts`)로만, 정한 방향으로만 가져온다. 실제 파일 그래프 전체에서 도메인을 넘는 고리를 찾고, 화면이 닿는 서버 파일에 node 모듈이 섞이면 실패한다. 옮기는 동안은 예외 목록이 줄어들기만 하게 한다.
+- **옮기는 단계는 0~9단계다.** 단계마다 전체 시험 통과와 `scripts/check-moves.ts`(AST 비교)로 「import 경로만 달라짐」을 확인한다. 에이전트 시간으로 약 3일 걸린다.
 - **물을 것은 3개다(5절).** 폴더 이름, 공용 표 자리, 큰 파일 쪼개기 범위.
 
 ## 1. 지금 지도
@@ -142,8 +142,10 @@
 
 | 이름 | 자리 | 무엇 |
 |---|---|---|
-| 계약 | `src/contract/` | 순수 타입만. 다른 폴더를 가져오지 않는다. 지금 도메인에 흩어진 공용 타입을 여기로 모은다(2.5) |
+| 계약 | `src/contract/` | 순수 타입만. 값 import는 하지 않는다. 계약 밖은 공용 표의 타입만 `import type`으로 가져온다(2.3 타입 전용 의존). 지금 도메인에 흩어진 공용 타입을 여기로 모은다(2.5) |
 | 공용 표 | 각 도메인 안 정한 파일 | 문서가 「하나뿐인 표」로 적은 것: 낱말 표 `world/vocab.ts`·`world/labels.ts`, 가전 종류 등록부 `devices/kinds.ts`·`devices/types.ts`, 행동 목록 `act/tasks.ts`·`act/prompts.ts`, 서버 글 `act/labels.ts`. 어느 도메인·화면이든 가져오고, 표 파일은 계약·공용 도우미·다른 표만 가져온다(5절 물을 것 2) |
+| 공용 도우미 | `src/shared/` | 도메인 지식이 없는 순수 도우미(2.2). 계약·다른 shared 파일·node 기본 모듈만 가져온다. 도메인·공용 표를 가져오거나 다시 내보내지 않는다 |
+| 브라우저 입구 | `src/layout/browser.ts` | 화면이 쓰는 경로 찾기만 낸다(`route`·`approach`·`floorPlanFrom`·`roomAt`). 따라 들어가는 import 어디에도 node 모듈이 없다. 장면 읽기·배치 편집기(node:fs)는 `layout/index.ts`에만 있다 |
 
 ### 2.2 어느 단위에도 안 맞는 코드
 
@@ -155,6 +157,7 @@
 | 한국어 글 도우미 | `agent/phrases.ts`(`josa`), `agent/search.ts`의 `compact`·`stripParticle`, `plan/copy.ts`(화면 글 규칙) | `src/shared/korean.ts`·`copy.ts` |
 | 평면 계산 | `phone/align.ts`(AR 자세 → 트윈 평면, 순수 함수) | `src/shared/geometry.ts` |
 | 마스크 풀기 | `brain/seg.ts`(순수 함수, World State·대시보드·감지기가 씀) | `src/shared/mask.ts` |
+| 파일 자리 기준 자원 경로 | `MODELS_DIR`·`DEFAULT_TWIN_DIR`·`DEFAULT_UI_DIR`·`DEFAULT_WEB_DIR`·`SHARED_VIDEO_DIR`·`DEFAULT_RUNTIME_DIR`(각 파일의 `new URL("../../…", import.meta.url)`) | `src/shared/paths.ts`의 `repoPath()` 하나(0단계) |
 | 디자인 토큰 | `src/design/` | 그대로(규칙 표가 이 경로를 원본으로 적음) |
 | 화면 공용 | `ui/src/components/ui/`(21st.dev 부품), `ui/src/lib/` | 그대로. 부품은 파일마다 가져온다(lint-ui-parts가 이미 봄) |
 | 옛 화면 조각 | `web/` | 그대로 |
@@ -195,12 +198,16 @@
 | `history` | `pam`, `world`, `devices` |
 | `act` | `agent`, `pam`, `observe`, `phone`, `world`, `devices`, `layout` |
 | `server` | 모두 |
-| 화면 `ui/src/twin` | 화면 공용, `src/layout`(경로 찾기만) |
+| 화면 `ui/src/twin` | 화면 공용, `src/layout/browser.ts`(경로 찾기 브라우저 입구)만 |
 | 화면 `dashboard`·`setup` | `ui/src/twin`, 화면 공용 |
 | 화면 `phone` | 화면 공용 |
-| 화면 → `src` | 계약, 공용 표, `shared`, `design`만(위 `twin` 예외 하나) |
+| 화면 → `src` | 계약, 공용 표, `shared`, `design`, `layout/browser.ts`만. 화면이 닿는 `src` 파일은 따라 들어간 import까지 node 모듈(`node:*`·`fs`·`path`·`url`·`worker_threads` 등)을 쓰지 않는다 |
 
-이 표에는 고리가 없다. 도메인을 하나 더하거나 줄을 고칠 때는 이 표 하나만 고친다. 막는 장치가 고리를 찾으면 실패한다.
+이 표에는 고리가 없다. 도메인을 하나 더하거나 줄을 고칠 때는 이 표 하나만 고친다. 막는 장치는 이 표의 고리와, 실제 파일 그래프 전체에서 도메인을 넘는 고리(`shared`·계약·표를 거쳐 도는 것 포함)를 모두 찾는다.
+
+**타입 전용 의존(`DeviceKind`):** 계약 타입 `DeviceSpec`·`Command`는 가전 종류 등록부에서 파생한 `DeviceKind`를 쓴다. 그래서 계약을 옮겨도 등록부 타입 의존이 남는다. 물을 것 2의 답에 따라 정한다.
+- 가(표를 도메인에 둠): 계약은 공용 표 파일에서 `import type`만 할 수 있다(실행 때 지워진다, 값 import 금지). 계약 ↔ 공용 표 사이 타입 전용 고리는 기반층(계약·공용 표) 안에서만 허용한다. 그 밖의 고리는 타입 전용이어도 실패한다.
+- 나(표를 `src/contract/`로 모음): 등록부가 계약 안에 들어가 계약이 값을 갖는다. 예외가 필요 없고 계약은 계약만 가져온다.
 
 ### 2.4 입구 하나
 
@@ -220,12 +227,12 @@
 | F5 | `layout/focus.ts` → `phone/server.ts`(`FocusTarget`) | 타입을 `contract/phone.ts`로 |
 | F6 | `phone/home-plan.ts` → `phone/align.ts` | `align.ts`를 `shared/geometry.ts`로 |
 | F7 | `contract/events.ts` → `brain/seg.ts`(`Mask`) | `Mask` 타입은 계약으로, 풀기 함수는 `shared/mask.ts`로 |
-| F8 | `model/devices.ts` → `model/homes.ts`·`scene.ts` | 가전 목록은 장면을 인자로 받는다(서버가 장면을 읽어 넘김). 가전은 배치를 가져오지 않는다 |
+| F8 | `model/devices.ts` → `model/homes.ts`·`scene.ts` | `loadTwin()`을 둘로 나눈다. 파일 읽기(합친 장면 scene.json, 그것이 없거나 못 읽으면 floorplan·placement·catalog로 대신하는 길, `source: "scene" \| "catalog"`, `opts.source` 고르기, 경고 글)는 배치 저장소 `layout/twin-files.ts`가 맡아 날 물건 목록(방·문·물건)을 낸다. 가전 만들기(`buildTwin`: DeviceSpec·초기 상태)는 `devices`가 그 목록을 받아 한다. `loadTwin()`은 이름·인자·동작 그대로 `layout` 입구에 둔다(배치 → 가전 방향만). 가전은 배치를 가져오지 않는다 |
 | F9 | `model/kinds.ts` → `thinq/appliance.ts`(`ThinqAdapter` 타입) | 타입을 `devices/types.ts`로(표 파일은 표·계약만) |
-| F10 | `hub/types.ts` ↔ `model/kinds.ts`(`DeviceKind` 다시 내보내기) | 둘 다 공용 표 「가전 종류 등록부」로 묶어 한 입구에서 냄 |
+| F10 | `hub/types.ts` ↔ `model/kinds.ts`(`DeviceKind` 다시 내보내기) | `DeviceSpec`·`Command` 같은 계약 타입은 `contract/devices.ts`로 옮기고, 등록부와 `DeviceKind`는 공용 표 「가전 종류 등록부」 한 입구에서 낸다. 계약 → 등록부는 2.3 타입 전용 의존(물을 것 2 「가」), 「나」면 등록부째 계약으로 |
 | F11 | `phone/server.ts` → `plan/labels.ts`, `server/net.ts`·`static.ts` | 서버 글은 공용 표, 도우미는 `shared` |
 | F12 | `ui/src/setup/*` → `dashboard/hub.ts`·`mascot-image.ts`, `panels/phone-url.ts`(4) | `ui/src/lib/`로 |
-| F13 | `ui/src/dashboard/masks.ts` → `brain/seg.ts`, `ui/src/twin3d/walk.ts` → `plan/route.ts` | `shared/mask.ts`, `layout` 경로 찾기(2.3 예외) |
+| F13 | `ui/src/dashboard/masks.ts` → `brain/seg.ts`, `ui/src/twin3d/walk.ts` → `plan/route.ts` | `shared/mask.ts`, `layout/browser.ts` |
 
 `world/decide.ts` → `act/tasks.ts`, `history` → `act/tasks.ts`, `plan/labels.ts` → `agent/phrases.ts`는 공용 표·`shared`로 풀린다.
 
@@ -238,11 +245,12 @@
   - `start.ts`: 판단 받기·계획 시작(`onDecision`, `tryStart`, `begin`, `closerNewer`, `phoneOk`)
   - `steps.ts`: 단계 진행(`advance`, `activate`, `show`, `runDevice`, `timeout`, `stall`, `finish`)
   - `approval.ts`: 승인 질문(`ask`, `approvedPlan`, `approvedDevice`, `approvedHand`)
-  - `safety.ts`: 켠 위험 가전·끄기 안내(`cycleEnded`, `releaseIfOff`, `rearmIfOn`, `handOver`, `nextReminder`, `queueOff`, `askToShow`). `tests/act-track-release.test.ts` 구조 검사가 이 파일을 본다
+  - `safety.ts`: 켠 위험 가전·끄기 안내(`cycleEnded`, `releaseIfOff`, `rearmIfOn`, `handOver`, `nextReminder`, `queueOff`, `askToShow`). 추적 상태(`hot`·`reminder`·`offQueue`·`cycles`·`released`)는 `SafetyTracker`의 `#` 비공개 칸으로 둬 다른 파일이 지울 수 없게 한다(`hot`은 `Run`에서 이 클래스로 옮김)
   - `answers.ts`: 폰 명령·답·말(`openCommand`, `onAnswer`, `onHeard`, `send`)
   - `coach.ts`: 다시 알리기·떠남·조용한 단계·수업 기록(`tell`, `stray`, `askCloser`, `quietStep`)
   - 나누는 방법: 상태와 `emit`·`toPhone`을 든 안쪽 객체(`TrackCore`)를 두고, 부분마다 그 객체를 받는 작은 클래스로 만든다.
-- **`server/home.ts`(616줄) → `server/home/`:** 도메인별 잇기(`devices.ts`, `observe.ts`, `act.ts`, `phone.ts`, `say.ts`)와 조립(`index.ts`).
+  - 구조 검사(`tests/act-track-release.test.ts`)는 `act/track/` 폴더 파일 전체와 `TrackCore`를 본다. 지우는 패턴은 받는 쪽 이름과 상관없이 찾는다(`this.reminder = null`만이 아니라 `.reminder = null`, `.hot.delete(`). 79ff269 과거 실수를 `steps.ts`·`answers.ts`·`tracker.ts`에 하나씩 넣은 자료에서도 실패해야 한다. 물을 것 3에서 「나」(쪼개지 않음)를 고르면 이 고침은 필요 없다.
+- **`server/home.ts`(616줄) → `server/home/`:** 도메인별 잇기(`devices.ts`, `observe.ts`, `act.ts`, `phone.ts`, `say.ts`)와 조립(`index.ts`). 파일 자리 기준 경로(`SHARED_VIDEO_DIR`)는 0단계에서 뿌리 기준으로 바꾼 뒤 옮긴다.
 - **`server/app.ts`(721줄) → `server/routes/`:** 경로를 도메인별로 나눈다(`brain-world.ts`, `history.ts`, `layout.ts`, `phone.ts`, `plan.ts`, `devices.ts`, `agent.ts`). `app.ts`는 HTTP·WS 껍데기만 남는다.
 - **`world/state.ts`(1,071줄) → `world/state/`:** `objects.ts`(감지 합치기), `people.ts`(사람·관절), `facts.ts`(VLM 사실), `closer.ts`(가까이 보기), `devices.ts`(카메라로 본 가전).
 - **`agent/planTools.ts`(616줄):** 단계 규칙(`needsPhone`·`riskyHand`·`selfStopWait`·`HUMAN_KINDS`)을 `agent/plan-rules.ts`로 뺀다. 실행 추적은 에이전트 입구로 쓴다.
@@ -260,9 +268,13 @@
 | 다른 도메인 안쪽 파일을 가져옴 | 「`<파일>`이 `<도메인>` 안쪽 `<대상>`을 가져와요. `<도메인>/index.ts`로 가져오세요」 |
 | 의존 표에 없는 방향 | 「`<a>`는 `<b>`를 쓸 수 없어요(쓸 수 있는 것: …). 공용 타입이면 contract로, 공용 도우미면 shared로 옮기세요」 |
 | 공용 표 파일이 표·계약·shared 밖을 가져옴 | 오류 |
-| `contract`가 밖을 가져옴 | 오류 |
+| `shared` 파일이 계약·다른 shared·node 기본 모듈 밖을 가져오거나 다시 내보냄 | 「shared는 도메인을 몰라야 해요. `<대상>`을 가져오지 마세요」 |
+| `contract`가 값 import를 하거나, 계약·공용 표(`import type`만) 밖을 가져옴 | 오류(물을 것 2 「나」면 계약 밖 모두 금지) |
 | 화면이 `src`에서 허용 밖을 가져옴 | 오류 |
+| 화면이 닿는 `src` 파일(따라 들어간 import 전체)에 node 모듈이 있음 | 「브라우저 입구에 node 모듈 `<모듈>`이 섞여요(`<길>`)」 |
 | 의존 표에 고리가 생김 | 오류 |
+| 실제 파일 그래프에 도메인을 넘는 고리(`shared`·계약·표를 거치는 것 포함, 기반층 안 타입 전용 고리만 허용) | 「`<a>` → … → `<a>` 고리예요」 |
+| `import.meta.url`을 `shared/paths.ts`와 `new Worker(new URL("./…", import.meta.url))` 줄 밖에서 씀, 또는 Worker 대상 파일이 없음 | 오류 |
 | 도메인에 `index.ts`가 없음 | 오류 |
 
 ### 3.2 옮기는 동안(줄어들기만 하는 예외 목록)
@@ -274,12 +286,14 @@
 
 ### 3.3 실패하는지 확인하는 법
 
-- **가짜 트리:** 시험이 임시 폴더에 작은 가짜 트리를 만든다. 안쪽 import, 거꾸로 import, 고리, 표 파일의 도메인 import, `contract`의 밖 import를 하나씩 넣는다. 그때마다 위 오류 글로 실패해야 한다.
+- **가짜 트리:** 시험이 임시 폴더에 작은 가짜 트리를 만든다. 안쪽 import, 거꾸로 import, 고리, 표 파일의 도메인 import, `contract`의 밖 import, `world` → `shared/x.ts` → `act/index.ts`(shared를 거쳐 도는 길), 화면 → `layout/browser.ts` → `node:fs`를 쓰는 파일, Worker 대상 없음을 하나씩 넣는다. 그때마다 위 오류 글로 실패해야 한다.
 - **실제 과거 실수:** 0a392c5에서 가져온 실제 줄을 고정 자료로 둔다(`tests/fixtures/domains/`). 그 줄이 실패해야 한다.
-  - `contract/events.ts` → `brain/seg.ts`
-  - `layout/editor.ts` → `agent/search.ts`
-  - `world/decide.ts` → `act/tasks.ts`
-  - `agent/planTools.ts` → `plan/planner.ts`
+  - `contract/events.ts` → `brain/seg.ts`: 계약이 밖을 가져옴
+  - `layout/editor.ts` → `agent/search.ts`: 배치 → 에이전트, 표에 없는 방향
+  - `world/state.ts` → `observe/ring.ts`: World State → 관찰 흐름, 거꾸로
+  - `agent/planTools.ts` → `act/lessons.ts`: 에이전트 → 판단·검사·실행, 거꾸로(공용 표 아님)
+  - `phone/server.ts` → `server/net.ts`: 실제 폰 → API 서버 런타임
+  - `server/home.ts` → `act/track.ts`: 입구가 아닌 안쪽 파일
 - **예외 목록 확인:** 1단계에서 엄격 모드(예외 목록 없이)로 지금 트리를 돌린다. 실패 줄 수가 예외 목록 줄 수와 같아야 한다.
 - **마지막 확인:** 9단계에서 `src/world/state.ts`에 `import … from "../act/index.js"` 한 줄을 넣는다. `npm run lint`가 실패하는지 본 뒤 되돌린다.
 
@@ -299,15 +313,19 @@
   1. `npm run typecheck`, `npm --prefix ui run build`(화면 타입 검사·빌드)
   2. `npm run heavy -- npm test`(서버·화면 시험 전체). 0단계에서 잰 통과 수와 같아야 한다.
   3. `npm run lint`(화면 글·색·부품·글 크기 + 도메인 검사)
-  4. **옮김 단계: 바뀐 줄이 import 경로뿐.** 아래 명령이 아무것도 내지 않아야 한다(새 `index.ts`는 `export … from` 줄만). 경로를 글로 적은 시험·문서 줄은 따로 확인한다.
-
-     ```text
-     git diff -U0 HEAD~1 -- src ui/src tests scripts | grep -E '^[+-][^+-]' | grep -vE '^[+-]\s*(import|export .* from|\} from|from )'
-     ```
-
-  5. **고리 끊기(F)·쪼개기 단계:** 시험 파일은 import 줄만 바뀐다(기대값을 하나도 고치지 않는다). `git diff --color-moved=plain`으로 옮긴 덩어리가 그대로인지 본다.
+  4. **옮김 단계: import 경로만 달라짐을 AST로 증명.** `npx tsx scripts/check-moves.ts <앞 커밋> <뒤 커밋>`(1단계에서 만듦)이 통과해야 한다.
+     - 파서: TypeScript 7.0.2에는 JS 컴파일러 API가 없다. 그래서 `rolldown/parseAst`(oxc 파서, vite·vitest가 이미 깐 것)를 쓰고 `rolldown`을 개발 의존성에 직접 적는다.
+     - 이동 대응표: `git diff -M100% --name-status`의 이름 바뀜(옛 경로 → 새 경로).
+     - 파일마다 옛 파일과 새 파일을 파싱해 셋을 본다.
+       (1) import·`export … from`이 아닌 문장을 정규화한 AST로 견준다. 하나라도 다르면 실패한다(`import …; 실행문()`처럼 붙인 동작도 여기서 잡힌다).
+       (2) import마다 (가져온 이름, `type` 여부, 그 이름을 정의한 파일)을 구해 견준다. 정의한 파일은 모듈 경로를 풀고 `index.ts`의 `export … from`을 따라가 찾는다. 그 뒤 대응표로 옛 경로를 새 경로로 바꾼다. 모음이 다르면 실패한다.
+       (3) 새로 생긴 파일은 `export … from` 문장만 있어야 한다(입구).
+     - 경로를 글로 적은 시험·문서 줄은 따로 확인한다.
+  5. **고리 끊기(F) 단계:** `check-moves.ts --moved`로 바뀐 파일 전체의 맨 위 선언(import 빼고)을 모은다. 옮기기 앞과 뒤가 같은 모음(정규화한 AST)인지 본다. 시험 파일은 (1)(2) 검사를 통과해야 한다(기대값을 하나도 고치지 않는다).
+  6. **쪼개기 단계:** 코드 모양이 바뀌어 AST로 같음을 증명하지 못한다. 시험 파일이 (1)(2) 검사를 통과하고(import 줄만 바뀜), 아래 흐름 시험이 통과하는 것으로 본다.
 - **경로를 글로 적은 곳(단계마다 함께 고침)**
   - 시험·스크립트 15개(`tests/act-track-release.test.ts`, `kinds-registry`, `world-vocab`, `mcp`, `scripts/lint-ui-type.ts` 등)
+  - 파일 자리 기준 자원 경로와 Worker 대상(0단계 목록)
   - `ui/tsconfig.json` include, `vitest.config.ts`
   - 저장소 `CLAUDE.md` 규칙 표의 경로
   - `docs/reference.md`
@@ -316,18 +334,18 @@
 
 | 단계 | 할 일 | 남는 예외 | 대략 시간 |
 |---|---|---|---|
-| 0 | 새 브랜치·worktree, 기준 시험 통과 수·시간 재기 | — | 0.5시간 |
-| 1 | 막는 장치(2.1·2.3 표, 예외 목록 방식) + 가짜 트리·과거 실수 시험. 엄격 모드 실패 수 = 목록 수 확인 | 전부 | 2시간 |
+| 0 | 새 브랜치·worktree, 기준 시험 통과 수·시간 재기. 파일 자리 기준 자원 경로를 뿌리 기준으로 바꾼다: `src/shared/paths.ts`의 `repoPath()` 하나만 `import.meta.url`을 쓰고, `MODELS_DIR`(`brain/detector.ts:101`)·`DEFAULT_TWIN_DIR`(`model/devices.ts:63`)·`DEFAULT_UI_DIR`(`phone/server.ts:37`)·`DEFAULT_WEB_DIR`(`server/app.ts:113`)·`SHARED_VIDEO_DIR`(`server/home.ts:83`)·`DEFAULT_RUNTIME_DIR`(`server/start.ts:43`)를 그것으로 바꾼다. Worker 줄(`brain/detector.ts:511·512` → `detector-worker.mjs`·`detector-thread.ts`, `ui/src/panels/eye-video.ts:252` → `eye-video-worker.ts`, `ui/src/phone/core/capture.js:107` → `encoder-worker.js`)은 대상 파일과 늘 같이 옮긴다. `src/mcp/server.ts:53`(직접 실행인지 확인)은 자원을 읽지 않아 그대로다. 확인: 서버 시험의 기본 폴더 시험(「기본 화면 폴더는 ui/dist」)이 그대로 통과 | — | 1.5시간 |
+| 1 | 막는 장치(2.1·2.3 표, 예외 목록 방식) + 가짜 트리·과거 실수 시험. 엄격 모드 실패 수 = 목록 수 확인. `scripts/check-moves.ts`와 그 시험(import 뒤 실행문 덧붙임·이름 바꿈·다른 파일로 가져옴을 잡는지) | 전부 | 3시간 |
 | 2 | 기반 만들기: `src/shared/`(net·static·korean·copy·geometry·mask), 계약에 공용 타입 옮김(F1·F3·F5·F7·F9) | 줄어듦 | 2시간 |
 | 3 | 폴더 옮기기(파일 이동만, 도메인마다 커밋 하나): 3a `sync` → `phone/sync`, 3b `brain` → `observe`·`pam` + `world/decide` → `pam`, 3c `hub`·`matter`·`thinq`·`model` 가전 쪽 → `devices`, 3d `model` 배치 쪽·`plan/floor·route·names`·`phone/home-plan` → `layout`, 3e `plan/planner`·`mcp` → `agent`, `plan` 나머지 → `act`, 3f `setup` → `server` | 줄어듦 | 4시간 |
 | 4 | 도메인마다 `index.ts`를 만들고 다른 도메인 import를 입구로 바꿈 | 거꾸로 가는 것만 남음 | 2시간 |
 | 5 | 남은 고리 끊기(F2·F4·F6·F8·F10·F11) | 화면 쪽만 남음 | 2시간 |
 | 6 | 화면: `twin3d`+`twin` → `ui/src/twin`, `bubbles`·`panels`·`checks` → `dashboard`, F12·F13, 화면 입구 | 0에 가까움 | 1.5시간 |
-| 7 | 큰 파일 쪼개기: 7a `track.ts`(구조 검사 경로를 `act/track/safety.ts`로, 79ff269 과거 실수 자료가 여전히 실패하는지 확인), 7b `home.ts`·`app.ts`, 7c `world/state.ts`·`planTools.ts`(5절 물을 것 3) | 0 | 5~6시간 |
-| 8 | 영상 판정 가짜 돌리기(`video-check --fake`, 시연 장면 1·6)로 실제 흐름 확인. `docs/reference.md` 「구조」, 저장소 `CLAUDE.md` 경로, 규칙 표 줄(3.4) | 0 | 1.5시간 |
+| 7 | 큰 파일 쪼개기: 7a `track.ts`(구조 검사를 `act/track/` 폴더 전체로, 79ff269 과거 실수를 각 파일에 넣은 자료가 실패하는지 확인), 7b `home.ts`·`app.ts`, 7c `world/state.ts`·`planTools.ts`(5절 물을 것 3) | 0 | 5~6시간 |
+| 8 | 흐름 확인: `tests/demo-e2e.test.ts`(네 장면 가짜 서버 흐름: 컵, 에어컨, 전자레인지 승인·꺼짐 확인, 라면)와 `coach-e2e`·`noonchi-e2e`를 따로 한 번 더 돌린다(단계마다 전체 시험에도 들어 있다). `video-check --fake`는 컵 감지·컵 PAM 판단·`CUP_SCRIPTS`로 고정이라(`scripts/video-check.ts:384`) 쓰지 않는다. `docs/reference.md` 「구조」, 저장소 `CLAUDE.md` 경로, 규칙 표 줄(3.4) | 0 | 1.5시간 |
 | 9 | 예외 목록 파일 지움, 엄격 모드, 3.3 마지막 확인. 구현명세서 SSOT 18.1 폴더 구조와 본문 경로(`src/world/vocab.ts` 등)를 docs 저장소에서 고침 | 없음 | 1시간 |
 
-합계 약 21~22시간(에이전트 시간, 시험 시간 포함)이다.
+합계 약 23~24시간(에이전트 시간, 시험 시간 포함)이다.
 
 ### 4.3 위험
 
@@ -336,7 +354,8 @@
 | feat/coach-cup이 계속 바뀌어 옮긴 파일과 충돌 | 큰 이동(3단계)은 feat/coach-cup이 조용할 때 몰아서 한다. `git mv`로 이름 바뀜을 남긴다. 단계마다 feat/coach-cup을 받아 들인다 |
 | 경로를 글로 적은 구조 검사가 엉뚱한 파일을 봄(통과하는데 아무것도 안 봄) | 그 검사의 과거 실수 자료가 여전히 실패하는지 단계마다 본다(`act-track-release`, `kinds-registry`) |
 | 화면이 `src`를 상대 경로로 가져와 ui 빌드·Docker ui 단계가 깨짐 | `npm --prefix ui run build`, `tests/docker-ui-stage.test.ts`를 단계마다 돌림 |
-| `track.ts` 쪼개기에서 동작이 바뀜 | 시험 기대값을 안 고침. 끄기 안내·승인·말 시험(`act-track*`, `coach-e2e`, `noonchi-e2e`)과 영상 판정 가짜 돌리기로 봄 |
+| 파일 자리 기준 경로가 옮긴 뒤 다른 곳을 읽음(예: `home.ts`의 `../../runtime/videos/`를 `server/home/`으로 옮기면 `src/runtime/videos/`를 읽음) | 0단계에서 뿌리 기준 `repoPath()`로 바꾸고, `import.meta.url` 검사(3.1)로 새로 생기지 않게 함 |
+| `track.ts` 쪼개기에서 동작이 바뀜 | 시험 기대값을 안 고침. 끄기 안내·승인·말 시험(`act-track*`, `coach-e2e`, `noonchi-e2e`, `demo-e2e`)으로 봄 |
 | 문서(SSOT·reference·CLAUDE.md)의 경로가 낡음 | 8·9단계에 경로 찾기(`src/<옛 폴더>/`)로 하나도 안 남게 함 |
 
 ## 5. 물을 것
@@ -347,7 +366,13 @@
 2. **공용 표(낱말 표·가전 종류 등록부·행동 목록·서버 글) 자리**
    - 가(추천): 지금 도메인에 두고 「표 입구」로 모든 도메인이 읽게 한다. 문서에 적힌 경로가 거의 그대로다.
    - 나: `src/contract/`로 모은다. 계약이 값(표)까지 갖게 되고, 문서의 「계약은 순수 타입」 규칙과 경로가 바뀐다.
+   - 답에 따라 바뀌는 것: 가면 계약이 공용 표 타입만 `import type`으로 가져오는 예외 하나와 기반층 안 타입 전용 고리 허용이 생긴다(2.3, F10). 나면 예외가 없다.
 3. **큰 파일 쪼개기 범위**
    - 가(추천): 이번에 `track.ts`·`home.ts`·`app.ts`까지(7a·7b).
    - 나: 폴더 나누기만 하고 쪼개기는 다음에(7단계 뺌, 약 6시간 줄어듦).
    - 다: `world/state.ts`·`planTools.ts`까지 모두(7c 포함).
+   - 답에 따라 바뀌는 것: 나면 2.6의 끄기 추적 구조 검사 넓히기(폴더 전체·각 파일에 과거 실수)가 필요 없다.
+
+## 6. 지적 기록
+
+- Codex 설계 리뷰 지적 9개(2026-11-16): 계약 ↔ 등록부 `DeviceKind` 타입 전용 의존 규칙(물을 것 2에 따라), 화면용 `layout/browser.ts`와 node 모듈 섞임 검사, `loadTwin` 파일 읽기·catalog 대신 길은 배치 저장소·가전 만들기는 가전으로, `shared`의 도메인 import·다시 내보내기 금지와 실제 파일 그래프 고리 검사, 실패 예제를 새 규칙 위반 줄로 바꿈, 끄기 추적 구조 검사를 `act/track/` 전체·각 파일 과거 실수로, 파일 자리 기준 자원 경로를 0단계에서 뿌리 기준으로, 「import 경로만」을 `scripts/check-moves.ts` AST 비교로, 흐름 확인을 `tests/demo-e2e.test.ts`로.
