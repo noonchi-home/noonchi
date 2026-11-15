@@ -539,7 +539,8 @@ export function judgeState(o: {
 | `src/agent/policy.ts` `RISKY_ON_NAMES` | 위험 가전 이름·별명·오타 | `riskyOn.names` |
 | `src/plan/labels.ts` `CAUTION_LINE` | 켜기 전 안전 문구 | `riskyOn.caution` |
 | `src/agent/planTools.ts` `DEVICE_ACTS` | 손 조작 동작(켜기·끄기·열기·닫기) | `hand` |
-| `src/thinq/appliance.ts` `PAIRABLE_KINDS`·`TYPE_FIT`, `readAppliance`·`thinqSteps`의 `kind === "aircon"`·`"fridge"` 갈래 | ThinQ와 짝지을 수 있는 종류, ThinQ 기기 종류, 읽기·제어 | `thinq: { type, adapter }`(읽기·제어는 어댑터 이름으로 가른다) |
+| `src/thinq/appliance.ts` `PAIRABLE_KINDS`·`TYPE_FIT`, `readAppliance`(73·84행)·`thinqSteps`(99행)·`mirrorPlan`(116·127행)의 `kind === "aircon"`·`"fridge"` 갈래, 부르는 곳 `src/thinq/link.ts` 104·171·183행 | ThinQ와 짝지을 수 있는 종류, ThinQ 기기 종류, 읽기·제어·트윈 반영 | `thinq: { type, adapter }`(읽기·제어·트윈 반영 모두 어댑터 이름으로 가른다) |
+| `src/agent/policy.ts` `requiresConfirmation`(127행, 명령 이름을 정규화해 `CONFIRM_RULES`와 견줌), `src/agent/planTools.ts` `riskyHand`(152행) | 승인 대상 명령 | 위험 켜기 종류(`riskyOn`)는 「끄기 말고 상태를 바꾸는 명령 전부」를 묻는다(이름 정규화에 기대지 않음), `confirm`은 잠금 해제 같은 명령 하나 |
 | `src/world/vocab.ts` `DEVICE_LONG[*].kinds` | 오래 이어지면 사건이 되는 종류(냉장고·현관 문 1분 넘게 열림) | `longEvents` |
 | `src/model/mapping.ts` `twinChange` 324·325행(`kind === "lock"`·`"covering"`), `heatingSetpoint` 482행(`kind === "thermostat"`) | 종류 이름으로 제어 명령을 가름 | 갈래를 프로필(`profile.model`)로 바꾼다(종류 이름 비교를 지움) |
 | `src/world/vocab.ts` `DEVICE_TEXT` | 종류마다 바꿔 쓰는 상태 글(세탁 멈춤…) | `stateText` |
@@ -552,7 +553,7 @@ export function judgeState(o: {
 
 **Files:**
 - Create: `src/model/kinds.ts`(등록부), `src/model/kinds-check.ts`(등록부 검증 `checkKinds`), `tests/kinds-registry.test.ts`(같은 결과 시험·등록부 검증 시험·구조 검사), `tests/fixtures/kind-tables/`(구조 검사 금지·허용 예제 파일), `scripts/kinds-snapshot.ts`(바꾸기 전 값을 뽑는 한 번 쓰는 명령), `tests/fixtures/kinds-before.json`
-- Modify: `src/hub/types.ts`(`DeviceKind`를 등록부에서), `src/model/mapping.ts`(`KIND_PROFILES`·`KIND_LABELS`·`TYPE_RULES`를 파생으로, 프로필 타입은 kinds.ts로), `src/agent/search.ts`, `src/agent/policy.ts`(`CONFIRM_RULES`·`RISKY_ON_NAMES` 파생), `src/plan/labels.ts`(`CAUTION_LINE` 파생), `src/agent/planTools.ts`(`DEVICE_ACTS`·`handUntil`), `src/thinq/appliance.ts`(`PAIRABLE_KINDS`·`TYPE_FIT` 파생, 읽기·제어를 어댑터 `THINQ_ADAPTERS`로), `src/model/mapping.ts`(`twinChange`·`heatingSetpoint`를 프로필로 가름), `src/server/start.ts`(시작 때 `checkKinds`), `src/world/vocab.ts`(`CLASSES[*].deviceKind`·`SIGHT`·`DEVICE_TEXT`·`DEVICE_LONG[*].kinds` 지움), `src/world/sight.ts`·`src/world/state.ts`·`src/world/relations.ts`(등록부를 읽음), `docs/world-vocabulary.md`(생성 글), `Dockerfile`(ui 단계 COPY), `CLAUDE.md`(규칙 표 한 줄), `docs/reference.md`(새 종류 추가하는 법)
+- Modify: `src/hub/types.ts`(`DeviceKind`를 등록부에서), `src/model/mapping.ts`(`KIND_PROFILES`·`KIND_LABELS`·`TYPE_RULES`를 파생으로, 프로필 타입은 kinds.ts로), `src/agent/search.ts`, `src/agent/policy.ts`(`CONFIRM_RULES`·`RISKY_ON_NAMES` 파생), `src/plan/labels.ts`(`CAUTION_LINE` 파생), `src/agent/planTools.ts`(`DEVICE_ACTS`·`handUntil`), `src/thinq/appliance.ts`(`PAIRABLE_KINDS`·`TYPE_FIT` 파생, 읽기·제어·트윈 반영을 어댑터 `THINQ_ADAPTERS`로), `src/thinq/link.ts`(어댑터로 부름), `src/agent/policy.ts`(승인 대상 판정 `needsConfirm`), `src/agent/planInput.ts`(위험 목록 글을 등록부에서), `src/model/mapping.ts`(`twinChange`·`heatingSetpoint`를 프로필로 가름), `src/server/start.ts`(시작 때 `checkKinds`), `src/world/vocab.ts`(`CLASSES[*].deviceKind`·`SIGHT`·`DEVICE_TEXT`·`DEVICE_LONG[*].kinds` 지움), `src/world/sight.ts`·`src/world/state.ts`·`src/world/relations.ts`(등록부를 읽음), `docs/world-vocabulary.md`(생성 글), `Dockerfile`(ui 단계 COPY), `CLAUDE.md`(규칙 표 한 줄), `docs/reference.md`(새 종류 추가하는 법)
 - Test: `tests/kinds-registry.test.ts`, 기존 시험 전체(`npm run heavy -- npx vitest run`, ui 시험), `tests/docker-ui-stage.test.ts`
 
 **Interfaces:**
@@ -567,7 +568,8 @@ export interface KindEntry {
   synonyms: readonly string[];                            // 찾기 말(소문자, 띄어쓰기 없음)
   profile: KindProfile;                                   // Matter 연결
   twinTypes: readonly { types?: readonly string[]; prefixes?: readonly string[]; matterDeviceType?: string; capabilities?: Capability[] }[]; // 트윈 type → 이 종류
-  confirm?: { command: CommandType; reason: (label: string) => string };      // 늘 승인
+  confirm?: { command: CommandType; reason: (label: string) => string };      // 그 명령 하나를 늘 승인(잠금 해제처럼 프로필 모델이 내는 이름이 하나뿐인 명령). 위험 켜기 종류에는 쓰지 않는다
+  riskyReason?: (label: string) => string;                // riskyOn 종류의 승인 까닭 글(켜기는 화재 위험…)
   riskyOn?: { names: readonly string[]; caution: string };                    // 위험 가전(이름 기본 거부, 켜기 전 안전 문구)
   hand?: readonly HandAct[];                              // 사람이 손으로 하는 동작
   selfStop?: true;                                        // 다 되면 스스로 멈춤(Task 12)
@@ -587,25 +589,41 @@ export const cameraKindOf: (fixture: FixtureClass) => DeviceKind | null;       /
 // src/hub/types.ts: export type { DeviceKind } from "../model/kinds.js";
 // src/thinq/appliance.ts: 종류 이름이 아니라 어댑터 이름으로 가른다(어댑터 이름은 가전 종류 이름과 다르게 짓는다)
 export type ThinqAdapter = "air_conditioner" | "refrigerator";
-export const THINQ_ADAPTERS: Record<ThinqAdapter, { read: (raw: Record<string, unknown>) => Reading; steps: ((cmd: Command) => ThinqStep[] | null) | null }>;
-//   air_conditioner: 지금 readAppliance·thinqSteps의 aircon 갈래, refrigerator: fridge 갈래(제어 없음, steps null).
-//   readAppliance(adapter, raw)·thinqSteps(adapter, cmd)는 어댑터를 받는다. 짝지은 기기의 어댑터는 등록부 thinq.adapter에서.
+export const THINQ_ADAPTERS: Record<ThinqAdapter, {
+  read: (raw: Record<string, unknown>) => Reading;
+  /** 받는 명령 종류(정규화한 이름). 빈 목록이면 읽기만. */
+  commands: readonly CommandType[];
+  steps: (cmd: Command) => ThinqStep[] | null;
+  /** 읽은 값을 트윈(안쪽 허브)에 비추는 명령·센서 값(지금 mirrorPlan의 갈래). */
+  mirror: (r: Reading, world: Pick<DeviceState, "twin" | "matter">) => { commands: Command[]; sensors: [string, unknown][] };
+}>;
+//   air_conditioner: 지금 readAppliance·thinqSteps·mirrorPlan의 aircon 갈래, commands ["on", "off", "climate"]. refrigerator: fridge 갈래, commands [](읽기만), mirror는 문 센서.
+//   readAppliance·thinqSteps·mirrorPlan은 어댑터를 받고(src/thinq/link.ts가 등록부 thinq.adapter로 고른다) 종류 이름으로 가르지 않는다.
 // src/model/kinds-check.ts: 등록부 검증(런타임). 시험과 서버 시작(src/server/start.ts)이 부르고, 틀리면 까닭 목록으로 시작을 막는다.
 export function checkKinds(kinds: Readonly<Record<string, KindEntry>>): string[];
-//   1) confirm.command는 그 프로필로 정규화한 명령과 같아야 한다: normalizeCommand(profile, { type: confirm.command }).type === confirm.command
-//      (operation 종류에 "on"을 쓰면 실행 때 start로 바뀌어 승인을 건너뛰므로 거절, 「승인 명령은 정규화한 명령(start)으로 적는다」). 그 명령을 프로필이 받는지도 본다(checkCommand).
-//   2) riskyOn이 있으면 켜기·시작(on·start) confirm이 있어야 한다(이름은 막는데 승인 없이 켜지는 일 방지).
-//   3) thinq.adapter의 steps가 null인데 프로필에 제어(control)가 있으면 거절(짝지어도 제어가 실패하는 조합).
+//   1) confirm.command는 그 종류의 모든 실제 사양(기본 프로필, twinTypes마다 capabilities·matterDeviceType를 덮어쓴 것)에서 정규화해도 같은 이름이고 그 사양이 받는 명령이어야 한다
+//      (checkCommand). 정규화로 이름이 바뀌는 명령(on·off처럼 동작형에서 start·stop이 되는 것)은 confirm에 쓰지 않는다.
+//   2) riskyOn 종류에는 confirm을 쓰지 않고 riskyReason을 둔다. 그 종류의 승인 대상은 아래 needsConfirm이 정한다.
+// src/agent/policy.ts: 승인 대상 판정(하나뿐). 명령 이름 정규화나 capabilities 덮어쓰기와 상관없이 기본 거부다.
+export function needsConfirm(device: Pick<DeviceSpec, "kind" | "capabilities">, cmd: Command): boolean;
+//   riskyOn 종류: 그 기기 사양으로 정규화한 명령이 끄기(off·stop)가 아니면 모두 승인 대상(on·start와, 그 사양이 받는 다른 상태 바꾸기 명령: level·climate 등 켜짐으로 갈 수 있는 것 전부).
+//   confirm이 있는 종류: 정규화한 명령 이름이 confirm.command일 때. 그 밖: 승인 없음.
+//   requiresConfirmation·riskyHand·실행 추적의 손 조작 켜기 질문이 모두 이것을 쓴다.
+//   더 단순한 길을 고른 까닭: 「켜지게 하는 명령」을 사양마다 하나하나 찾아 목록으로 맞추는 길은 사양·명령이 늘 때마다 빠뜨릴 수 있다. 위험 켜기 종류는 「끄기 말고 전부」로 두면
+//   목록이 필요 없고, 덮어쓴 capabilities·새 명령 종류가 생겨도 기본으로 묻는다(끄기를 묻지 않는 것만 예외라 안전 쪽으로 틀린다).
+//   3) thinq가 있으면: 그 종류의 모든 실제 사양이 낼 수 있는 명령(capabilities를 정규화한 이름: onoff → on·off, operation만 → start·stop, climate → climate, level → level, covering → covering, lock → lock·unlock, valve → valve)이
+//      모두 adapter.commands 안이어야 한다. 읽기만 하는 어댑터(commands [])에는 제어 없는 프로필만 붙인다. 어긋나면 「ThinQ 어댑터 air_conditioner는 start를 받지 않는다」처럼 거절.
 //   4) hand의 켜기·끄기는 프로필 제어가 있을 때만, 열기·닫기는 문 센서(door)가 있거나 그 종류 camera 설비가 열림(open) 면을 볼 때만.
 // src/model/mapping.ts twinChange·heatingSetpoint: 종류 이름 대신 프로필로 가른다
-//   profile.model === "lock" → lock/unlock, profile.model === "covering" → covering, 그 밖 → on/off. heatingSetpoint: profile.model === "thermostat".
+//   profile.model === "lock" → lock/unlock, profile.model === "covering" → covering, 그 밖 → on/off. heatingSetpoint: profile.model === "thermostat" || systemMode === "heat"(뒤 조건은 지금 그대로 둔다).
 // src/model/mapping.ts: KIND_PROFILES = mapEntries(KINDS, (e) => e.profile), KIND_LABELS = mapEntries(KINDS, (e) => e.label),
 //   TYPE_RULES = [...KIND_ORDER.flatMap((k) => KINDS[k].twinTypes.map((t) => ({ ...t, kind: k }))), { types: ["wall_pad", "robot"], twinOnly: true }]
 // src/agent/policy.ts: CONFIRM_RULES = KIND_ORDER.flatMap((k) => KINDS[k].confirm ? [{ kind: k, ...KINDS[k].confirm }] : []), RISKY_ON_NAMES는 riskyOn.names에서
+//   승인 판정은 needsConfirm 하나다. 계획 입력의 「위험 목록」 글(src/agent/planInput.ts)과 에이전트 지시문의 승인 규칙 글은 riskyOn 종류(「켜기·시작 등」)와 confirm 명령에서 만든다.
 // src/plan/labels.ts: CAUTION_LINE은 riskyOn.caution에서. src/agent/planTools.ts: DEVICE_ACTS는 hand에서.
 ```
 - 칸 이름·모양을 틀리거나 필수 칸(`label`·`synonyms`·`profile`·`twinTypes`)을 빼면 `satisfies Record<string, KindEntry>`가 타입 오류를 낸다. 손으로 맞추던 목록(`DeviceKind` 유니언, `KIND_LABELS` 등 위 표의 원본)은 지운다.
-- 전자레인지 항목이 첫 사용 예다: `label: "전자레인지"`, `twinTypes: [{ types: ["microwave"] }]`, `confirm: { command: "start", … }`, `riskyOn: { names: [...], caution: "그릇이 뜨거워져요." }`, `hand: ["열기", "닫기", "켜기", "끄기"]`, `camera: { fixture: "microwave", sight: [...] }`. Task 11a가 sight에 명시 꺼짐 값을, Task 12가 `selfStop: true`를 더한다.
+- 전자레인지 항목이 첫 사용 예다: `label: "전자레인지"`, `twinTypes: [{ types: ["microwave"] }]`, `riskyReason: (l) => `${l} 시작은 사용자 승인이 필요합니다.``(위험 켜기 종류라 끄기 말고 전부 승인, confirm 없음), `riskyOn: { names: [...], caution: "그릇이 뜨거워져요." }`, `hand: ["열기", "닫기", "켜기", "끄기"]`, `camera: { fixture: "microwave", sight: [...] }`. Task 11a가 sight에 명시 꺼짐 값을, Task 12가 `selfStop: true`를 더한다.
 
 **구조 검사(`tests/kinds-registry.test.ts`, `npm test`·CI):** `src/`·`ui/src/`·`scripts/`의 TypeScript를 TypeScript 프로그램(구문 트리 + 타입 검사기)으로 읽어, `src/model/kinds.ts` 밖에서 아래가 나오면 실패한다. 까닭 글: 「가전 종류별 값은 src/model/kinds.ts 등록부 칸으로 둔다(새 종류는 등록부 한 줄 + added_devices.json 한 줄)」. 「종류 이름」은 등록부 키, 「카메라 설비 이름」은 등록부 `camera.fixture`에 나오는 이름이다.
 - 타입에 `Record<DeviceKind, …>`·`Partial<Record<DeviceKind, …>>`·`DeviceKind[]` 값 목록을 직접 쓴 상수 선언(오른쪽이 `KINDS`·`KIND_ORDER`에서 만든 식이면 통과).
@@ -614,25 +632,29 @@ export function checkKinds(kinds: Readonly<Record<string, KindEntry>>): string[]
 - `Object.fromEntries(…)` 호출의 인자에 종류 이름 문자열이 둘 이상 나오거나, 인자가 `DeviceKind`를 키로 하는 쌍 목록이면서 `KINDS`·`KIND_ORDER`에서 만든 것이 아닌 것.
 - 배열 리터럴 안에 종류 이름 문자열이 둘 이상(`["aircon", "fridge"]`, `PAIRABLE_KINDS`·`DEVICE_LONG` kinds 같은 목록).
 - 속성 `deviceKind`에 문자열 값(리터럴·종류 이름 상수)을 저장하는 자리(`deviceKind: "fridge"`). 이름 조회 콜백처럼 값이 함수인 자리(`deviceKind: (id) => …`, 인터페이스의 `deviceKind?: (id: string) => string`, `src/act/track.ts` 1047행·`src/agent/planTools.ts` 325행)는 허용.
-- 제어·승인 길(`src/model/`·`src/hub/`·`src/agent/policy.ts`·`src/agent/planTools.ts`·`src/act/`)에서 `.kind === "<종류 이름>"`·`!==` 비교(프로필이나 등록부 칸으로 가른다). 말 꾸밈(`src/agent/phrases.ts`·`ui/src/bubbles/summary.ts`)은 허용.
+- 종류 이름 문자열과 견주는 비교: `===`·`!==`·`switch`의 `case "<종류 이름>"`에서 다른 쪽 식의 타입이 `DeviceKind`(또는 그 일부 유니언)이거나 이름이 `kind`인 지역 변수·매개변수·`.kind` 속성인 것. 범위는 `src/`·`ui/src/`·`scripts/` 전체(`src/thinq/` 포함)이고, 허용은 말 꾸밈 두 파일(`src/agent/phrases.ts`·`ui/src/bubbles/summary.ts`)뿐이다. 계획 단계 종류(`step.kind === "go"` 등)는 다른 쪽 타입이 `DeviceKind`가 아니라 걸리지 않는다.
 - 문자열 리터럴 `kind: "<종류 이름>"`가 든 배열 리터럴(규칙 목록).
 - 시험 파일(`tests/`, 예제 폴더 제외)과 등록부는 검사하지 않는다.
 - 검사 함수 `findKindTables(program, file): { line: number; rule: string }[]`를 따로 내보내 예제 파일로 시험한다.
 
-**등록부 검증(`checkKinds`) 시험:** 「microwave(operation)에 `confirm.command: "on"`이면 「승인 명령은 정규화한 명령(start)으로 적는다」로 거절, `"start"`면 통과」, 「cooktop(onoff)의 `"on"`은 통과」, 「riskyOn만 있고 켜기 confirm이 없으면 거절」, 「제어가 있는 프로필에 steps 없는 어댑터(refrigerator)를 붙이면 거절」, 「지금 21종 등록부는 까닭 없음」, 「서버 시작이 틀린 등록부에서 까닭과 함께 멈춘다」.
+**등록부 검증(`checkKinds`) 시험:** 「lock의 `confirm.command: "unlock"`은 통과」, 「operation 종류에 `confirm.command: "on"`(정규화로 이름이 바뀜)이면 거절」, 「riskyOn 종류에 confirm을 두면 거절(riskyReason을 쓴다)」, 「operation 프로필에 air_conditioner 어댑터를 붙이면 「start를 받지 않는다」로 거절」, 「twinTypes가 capabilities를 덮어 operation을 더한 사양도 어댑터 명령 검사에 들어간다」, 「제어가 있는 프로필에 refrigerator 어댑터를 붙이면 거절」, 「지금 21종 등록부는 까닭 없음」, 「서버 시작이 틀린 등록부에서 까닭과 함께 멈춘다」.
+
+**승인 대상 시험(`needsConfirm`·실제 정책 길):** **「twin type이 capabilities를 `["onoff", "operation"]`으로 덮은 전자레인지에 `on`을 보내도 승인 질문이 나온다(이름이 start로 정규화되지 않아도)」**, 「같은 기기의 `start`·level 같은 다른 바꾸기 명령도 승인」, 「`off`·`stop`은 승인 없이 간다」, 「cooktop `on`은 승인」, 「lock `unlock`은 승인, `lock`은 승인 없음」, 「위험 종류가 아닌 에어컨 `on`은 승인 없음(말로 시킨 명령)」, 「실행 추적의 손 조작 켜기 질문도 같은 판정으로 나온다」.
+
+**ThinQ 어댑터 시험:** **「시험 전용 새 종류(refrigerator 어댑터, 문 센서 프로필)를 짝지어 ThinQ 원본 값을 읽으면 어댑터 read → mirror를 거쳐 트윈 문 센서가 바뀐다」**, 「air_conditioner 어댑터로 짝지은 시험 전용 새 종류가 climate 명령을 ThinQ 단계로 바꾸고, 읽은 전원·모드가 트윈에 비친다」, 「`readAppliance`·`thinqSteps`·`mirrorPlan`이 종류 이름을 받지 않는다(타입)」.
 
 **프로필로 가르기 시험:** 「lock 프로필을 다시 쓰는 새 종류(시험 전용 등록부 확장)의 트윈 제어 attr을 바꾸면 lock/unlock 명령이 나간다(on/off가 아니다)」, 「covering 프로필을 다시 쓰는 새 종류면 covering 0·100%」, 「thermostat 프로필을 다시 쓰는 새 종류도 난방 설정점을 쓴다」.
 
 **구조 검사 예제(`tests/fixtures/kind-tables/`):**
-- 금지(하나씩 실패해야 한다): `Record<DeviceKind, string>` 상수, `{ aircon: 1, fridge: 2 }`, `{ tv: [...], refrigerator: [...] }`(지금 SIGHT 꼴), `{ ["aircon"]: 1, ["fridge"]: 2 }`, `const k: DeviceKind = …; ({ [k]: 1 })`, `Object.fromEntries([["aircon", 1], ["fridge", 2]])`, `Object.fromEntries(kinds.map((k) => [k, 1]))`(kinds: `DeviceKind[]` 리터럴), `["aircon", "fridge"]`, `{ deviceKind: "fridge" }`, `[{ kind: "light" }, { kind: "tv" }]`, `src/model/` 안의 `spec.kind === "lock"`.
-- 허용(통과해야 한다): `{ deviceKind: (id: string) => lookup(id) }`, `interface X { deviceKind?: (id: string) => string | undefined }`, `const L: Record<DeviceKind, string> = mapEntries(KINDS, (e) => e.label)`, `Object.fromEntries(KIND_ORDER.map((k) => [k, KINDS[k].label]))`, TaskSpec의 `devices: { kinds: ["aircon"] }`(하나), `ui/src/bubbles/summary.ts` 꼴의 `d.kind === "aircon"` 말 꾸밈.
+- 금지(하나씩 실패해야 한다): `Record<DeviceKind, string>` 상수, `{ aircon: 1, fridge: 2 }`, `{ tv: [...], refrigerator: [...] }`(지금 SIGHT 꼴), `{ ["aircon"]: 1, ["fridge"]: 2 }`, `const k: DeviceKind = …; ({ [k]: 1 })`, `Object.fromEntries([["aircon", 1], ["fridge", 2]])`, `Object.fromEntries(kinds.map((k) => [k, 1]))`(kinds: `DeviceKind[]` 리터럴), `["aircon", "fridge"]`, `{ deviceKind: "fridge" }`, `[{ kind: "light" }, { kind: "tv" }]`, `src/model/` 안의 `spec.kind === "lock"`, `src/thinq/` 안의 지역 변수 `if (kind === "aircon")`, `switch (kind) { case "fridge": … }`.
+- 허용(통과해야 한다): `{ deviceKind: (id: string) => lookup(id) }`, `interface X { deviceKind?: (id: string) => string | undefined }`, `const L: Record<DeviceKind, string> = mapEntries(KINDS, (e) => e.label)`, `Object.fromEntries(KIND_ORDER.map((k) => [k, KINDS[k].label]))`, TaskSpec의 `devices: { kinds: ["aircon"] }`(하나), `ui/src/bubbles/summary.ts` 꼴의 `d.kind === "aircon"` 말 꾸밈, 계획 단계 종류 비교 `step.kind === "go"`, 어댑터 이름 비교 `adapter === "air_conditioner"`.
 
 **결과가 바뀌지 않는다는 시험:** 바꾸기 전 커밋에서 `scripts/kinds-snapshot.ts`로 지금 21종의 값을 `tests/fixtures/kinds-before.json`에 뽑아 두고(라벨, Matter 프로필 전체, 카탈로그의 모든 트윈 type에 대한 `findTypeRule` 결과, `CONFIRM_RULES`, `RISKY_ON_NAMES`·`NOT_RISKY`로 본 `riskyNames` 표본 글 결과, `CAUTION_LINE`, `DEVICE_ACTS`, `KIND_SYNONYMS`, `PAIRABLE_KINDS`·`fitsKind` 표본, `DEVICE_TEXT`, 카메라 설비 → 종류와 SIGHT 규칙), 바꾼 뒤 파생 값이 그것과 같은지 본다.
 
 - [ ] **Step 1: 실패하는 시험과 바꾸기 전 값.** 지금 코드(f0ace1f 위)에서 `npx tsx scripts/kinds-snapshot.ts > tests/fixtures/kinds-before.json`. `tests/kinds-registry.test.ts`에 같은 결과 시험(`src/model/kinds.ts`가 없어 실패)과 구조 검사를 쓴다.
-- [ ] **Step 2: 검사가 지금 코드에서 실제로 실패하는지 확인.** `npm run heavy -- npx vitest run tests/kinds-registry.test.ts` → 구조 검사가 지금 흩어진 표 전부(`KIND_PROFILES`·`KIND_LABELS`·`TYPE_RULES`·`KIND_SYNONYMS`·`CONFIRM_RULES`·`RISKY_ON_NAMES`·`CAUTION_LINE`·`DEVICE_ACTS`·`PAIRABLE_KINDS`·`TYPE_FIT`·`DEVICE_TEXT`·`DEVICE_LONG` kinds·`CLASSES[*].deviceKind`·`SIGHT`·mapping.ts 324·325·482행·thinq 종류 갈래)를 하나씩 이름과 줄로 짚고, 이름 조회 콜백(track.ts 1047행·planTools.ts 325행)은 짚지 않는지 본다. 예제 파일의 금지·허용도 기대대로인지 본다. 하나라도 어긋나면 검사를 고친다. 등록부 검증·프로필로 가르기 시험은 `checkKinds`·등록부가 없어 실패하는 것을 본다.
+- [ ] **Step 2: 검사가 지금 코드에서 실제로 실패하는지 확인.** `npm run heavy -- npx vitest run tests/kinds-registry.test.ts` → 구조 검사가 지금 흩어진 표 전부(`KIND_PROFILES`·`KIND_LABELS`·`TYPE_RULES`·`KIND_SYNONYMS`·`CONFIRM_RULES`·`RISKY_ON_NAMES`·`CAUTION_LINE`·`DEVICE_ACTS`·`PAIRABLE_KINDS`·`TYPE_FIT`·`DEVICE_TEXT`·`DEVICE_LONG` kinds·`CLASSES[*].deviceKind`·`SIGHT`·mapping.ts 324·325·482행·`src/thinq/appliance.ts` 73·84·99·116·127행의 지역 변수·속성 종류 비교)를 하나씩 이름과 줄로 짚고, 이름 조회 콜백(track.ts 1047행·planTools.ts 325행)은 짚지 않는지 본다. 예제 파일의 금지·허용도 기대대로인지 본다. 하나라도 어긋나면 검사를 고친다. 등록부 검증·프로필로 가르기 시험은 `checkKinds`·등록부가 없어 실패하는 것을 본다.
 - [ ] **Step 3: 구현.** 등록부를 만들고 위 표의 자리를 파생으로 바꾼다. `Dockerfile` ui 단계에 `src/model/kinds.ts`·`src/world/vocab.ts` COPY(`tests/docker-ui-stage.test.ts`가 본다). 낱말 표 문서를 다시 만든다.
-- [ ] **Step 4: 통과 확인.** `npx tsc --noEmit -p .`, ui 타입 검사, `npm run lint`, `npm run heavy -- npx vitest run`(기존 시험 전체), ui 시험. 같은 결과 시험이 21종 모두 같다고 보고(ThinQ 짝짓기·읽기·제어 표본과 `DEVICE_LONG` 사건 포함), 등록부 검증·프로필로 가르기 시험이 통과한다. 시험 하나 더: 「`added_devices.json`에 카탈로그도 3D 모델도 없는 새 type으로 등록부 새 종류 한 줄(시험 전용 등록부 확장) + 집 파일 한 줄이면 기기 목록에 그 종류로 생기고, 속성은 프로필 제어·센서 속성의 기본값(ATTR_DEFAULTS)이며, 대시보드 트윈에는 회색 상자(바닥 넓이·높이)로 그려진다」. 이 시험이 지금 코드로 안 되면 그 부분을 같은 Task에서 맞춘다.
+- [ ] **Step 4: 통과 확인.** `npx tsc --noEmit -p .`, ui 타입 검사, `npm run lint`, `npm run heavy -- npx vitest run`(기존 시험 전체), ui 시험. 같은 결과 시험이 21종 모두 같다고 보고(ThinQ 짝짓기·읽기·제어·트윈 반영 표본, 지금 승인 표(현관 해제·인덕션 켜기·전자레인지 시작)와 `DEVICE_LONG` 사건 포함), 등록부 검증·승인 대상·ThinQ 어댑터·프로필로 가르기 시험이 통과한다. 승인 표는 전보다 넓어진다(위험 켜기 종류의 끄기 아닌 명령 전부): 그 차이는 같은 결과 시험에서 「넓어진 것만, 좁아진 것 없음」으로 본다. 시험 하나 더: 「`added_devices.json`에 카탈로그도 3D 모델도 없는 새 type으로 등록부 새 종류 한 줄(시험 전용 등록부 확장) + 집 파일 한 줄이면 기기 목록에 그 종류로 생기고, 속성은 프로필 제어·센서 속성의 기본값(ATTR_DEFAULTS)이며, 대시보드 트윈에는 회색 상자(바닥 넓이·높이)로 그려진다」. 이 시험이 지금 코드로 안 되면 그 부분을 같은 Task에서 맞춘다.
 - [ ] **Step 5: 문서와 규칙.** `docs/reference.md`에 아래 「새 종류 추가하는 법」 단락. `CLAUDE.md` 규칙 표에 한 줄: 「가전 종류별 값(이름·Matter·트윈 type·위험 동작·손 조작·카메라 낱말)은 `src/model/kinds.ts` 등록부에만 둔다 | `tests/kinds-registry.test.ts`(등록부 밖 종류별 표를 찾으면 실패, 바꾸기 전 21종과 같은 결과)」.
 - [ ] **Step 6:** 커밋 `refactor(model): move appliance kind tables into one registry and derive the rest`.
 
@@ -641,7 +663,7 @@ export function checkKinds(kinds: Readonly<Record<string, KindEntry>>): string[]
 2. 집 파일 `twin/data/homes/<집>/added_devices.json`에 한 줄을 더한다: `id`·`type`(1번 `twinTypes`의 이름)·`label`·`room`·`position`·`facing_deg`·`elevation`.
 3. 카메라로 볼 수 있으면: YOLO(COCO)에 그 종류가 있으면 `src/world/vocab.ts` `CLASSES`에 설비 종류(role fixture)를 두고, 없으면 `from`(다른 감지에서 바꾸기)을 둔 설비 종류를 둔다. 그리고 등록부 항목에 `camera: { fixture, sight }`를 적는다.
 4. 3D 모델이 없으면: 카탈로그(`twin/data/catalog/<type>.json`)나 모델 파일이 없어도 기기는 생기고, 대시보드 트윈에는 그 자리의 회색 상자로 보인다. 모양을 넣으려면 카탈로그와 `twin/library/assets/`의 모델을 더한다.
-5. 승인이 필요한 명령은 그 프로필로 정규화한 이름으로 적는다(동작형 가전의 켜기는 `start`). ThinQ로 짝지으려면 이미 있는 어댑터(`air_conditioner`·`refrigerator`) 가운데 하나를 고르고, 맞는 어댑터가 없으면 `src/thinq/appliance.ts`에 어댑터를 먼저 더한다.
+5. 불·열이 나는 가전은 `riskyOn`과 `riskyReason`을 둔다(끄기 말고 상태를 바꾸는 명령은 전부 승인 질문). 잠금 해제처럼 명령 하나만 승인하려면 `confirm`에 그 명령 이름을 적는다(정규화로 이름이 바뀌는 on·off는 쓰지 않는다). ThinQ로 짝지으려면 이미 있는 어댑터(`air_conditioner`·`refrigerator`) 가운데 하나를 고르고, 맞는 어댑터가 없으면 `src/thinq/appliance.ts`에 어댑터를 먼저 더한다.
 6. `npm run heavy -- npx vitest run tests/kinds-registry.test.ts`로 확인한다(등록부 검증 `checkKinds`가 틀린 조합을 까닭과 함께 알려 준다).
 
 **ThinQ: 어댑터를 고른 까닭.** 「지원하지 않는 조합을 검증에서 거절」만 하려면 지원 종류 목록(`["aircon", "fridge"]`)이 등록부 밖에 또 생겨 이 Task의 구조 검사와 부딪친다. 어댑터 이름을 등록부 칸으로 고르게 하면 지원 여부가 타입(`ThinqAdapter`)으로 바로 정해지고, 지금 코드의 두 갈래를 어댑터 둘로 옮기기만 하면 돼 바꿀 양도 더 작다. 제어가 없는 어댑터에 제어 프로필을 붙이는 조합만 `checkKinds`가 거절한다.
@@ -1114,6 +1136,7 @@ export function microwaveSteps(ids: { microwave: string; waitS?: number /* wait 
 - PAM 계약 그대로: 「PAM 계약」 절, Task 13 시험 7.
 - Codex 1차 지적 9개: 1 Task 4 바꾸기 2·4, 2 「일주일을 시연 안에서 보이는 길」·Task 7·8, 3 Task 5 범위, 4 Task 2 행동 단위, 5 Task 6 API·Task 8 확인, 6 Task 8 `start`·Task 9 `--start-at`, 7 Task 11 `unbaked`, 8 Task 10 차례 쓰기, 9 Task 10 붙잡기·Task 9 `--tail`.
 - 서버 글 구조(T1~T4)에 맞춤: 「조사한 사실」 사람 단계 글 절, Task 12 표(글·끝 조건을 코드가 내는 값으로), 「라면 대본」 절, Task 13 시험 5·6.
+- Codex 26차 지적 5개: P1 Task 11r 위험 켜기 종류는 끄기 말고 상태를 바꾸는 명령 전부를 승인 대상으로(`needsConfirm`, 이름 정규화·capabilities 덮어쓰기와 무관), 등록부 검증은 덮어쓴 실제 사양까지, P2 ThinQ 트윈 반영(`mirrorPlan`)도 어댑터로, P2 어댑터가 받는 명령과 프로필이 내는 명령이 맞는지 검증, P3 `heatingSetpoint`의 `|| systemMode === "heat"`는 그대로, P3 구조 검사가 지역 변수 `kind`·`switch`·`src/thinq/`까지.
 - Codex 25차(재부팅 뒤 첫 리뷰) 지적 5개: P1 Task 11r 등록부 검증 `checkKinds`(승인 명령은 프로필로 정규화한 명령과 같아야 함 등), P2 `deviceKind` 금지는 문자열 값을 저장하는 자리만(이름 조회 콜백 허용), P2 `twinChange`·`heatingSetpoint`를 종류 이름 대신 프로필로 가름, P2 ThinQ 읽기·제어는 등록부 `thinq.adapter`로 고른 어댑터(지원 목록을 따로 두지 않음), P3 구조 검사에 SIGHT 꼴·계산 키·`Object.fromEntries`·종류 이름 배열 금지 예제.
 - 사용자 결정: 가전 종류 등록부 먼저(2026-11-15): Task 11r(등록부 `src/model/kinds.ts`, 흩어진 종류별 표 파생, 등록부 밖 종류별 표를 찾는 구조 검사, 바꾸기 전 21종과 같은 결과 시험, 새 종류 추가하는 법), Task 11a·11b·12의 종류별 값(카메라 규칙·selfStop)을 등록부 칸으로.
 - Codex 16차 지적 2개: P2 Task 11d 늦은 hello 뒤에는 처음 보낸 명령 전체(kind·target·vision)를 지금 AR 좌표로 다시 보냄, P2 on_timeout "ask"가 있는 계획은 needsPhone, 계획 도중 물을 폰이 없으면 바로 실패로 닫아 PAM을 풀고 위험 가전 추적은 남김.
