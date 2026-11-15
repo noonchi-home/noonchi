@@ -624,8 +624,12 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
       const engineBefore = (await Promise.all(ws.packets.map(headerOf))).filter((h) => h.kind === "engine").length;
       const drawsBefore = a.drawTo.mock.calls.length;
       await after(5000);
-      const engineAfter = (await Promise.all(ws.packets.map(headerOf))).filter((h) => h.kind === "engine").length;
+      const engines = (await Promise.all(ws.packets.map(headerOf))).filter((h) => h.kind === "engine");
+      const engineAfter = engines.length;
       expect(engineAfter - engineBefore).toBeGreaterThanOrEqual(8);
+      // 붙잡은 장면은 held로 보내 서버가 같은 사진도 간격마다 새 관찰로 받게 한다. 붙잡기 전 프레임에는 없다
+      expect(engines.slice(engineBefore).every((h) => h.held === true)).toBe(true);
+      expect(engines.slice(0, engineBefore).some((h) => "held" in h)).toBe(false);
       expect(a.drawTo.mock.calls.length).toBeGreaterThan(drawsBefore);
       ws.push(doMw("plan:pam-1:4", "전자레인지 문을 닫아 주세요"));
       await after(1500);

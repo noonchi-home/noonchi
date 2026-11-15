@@ -9,6 +9,12 @@ describe("frame packet", () => {
     expect(parseFramePacket(encodeFramePacket(header, JPEG))).toEqual({ header, jpeg: JPEG });
   });
 
+  it("엔진 프레임의 held(붙잡은 장면 다시 보내기)는 true만 받아 그대로 넘긴다", () => {
+    const header: FrameHeader = { kind: "engine", width: 480, height: 360, captured_at: 1000, time_err_ms: 0, held: true };
+    expect(parseFramePacket(encodeFramePacket(header, JPEG))).toEqual({ header, jpeg: JPEG });
+    expect(parseFramePacket(encodeFramePacket({ ...header, held: false } as never, JPEG))).toMatchObject({ error: expect.stringContaining("held") });
+  });
+
   it("짧은 패킷·깨진 헤더·JPEG 아님·잘못된 크기는 이유를 준다", () => {
     expect(parseFramePacket(Buffer.from([0, 0]))).toEqual({ error: "패킷이 너무 짧습니다" });
     const broken = Buffer.concat([Buffer.from([0, 0, 0, 3]), Buffer.from("{x}"), JPEG]);

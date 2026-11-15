@@ -229,7 +229,8 @@ export class ObservationPipeline {
     this.timeSource = t.source;
     this.timeErr = t.source === "phone" ? header.time_err_ms ?? null : null;
     const frame: EngineFrame = { id: `e${++this.seq}`, capturedAtMs: t.atMs, latestAtMs: t.latestMs, jpeg, sha256: sha256(jpeg), width: header.width, height: header.height, eye, view, vlm: false };
-    const pushed = this.ring.push(frame);
+    // 붙잡은 장면(held)은 같은 사진이어도 VLM 간격마다 새 관찰로 넣는다: 붙잡는 동안 VLM은 영상이 돌 때와 같은 간격으로 부른다
+    const pushed = this.ring.push(frame, header.held ? { resendAfterMs: vlmStepMs(this.o.config) } : {});
     if (pushed === "duplicate") return;
     this.frames++;
     if (pushed === "stale") {

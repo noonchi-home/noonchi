@@ -359,7 +359,8 @@ export function createVideoAr({ link, params, hooks, deps }) {
           const eh = Math.round((ew * fh) / fw);
           const e0 = performance.now();
           const pixels = grab(ew, eh);
-          const header = { kind: "engine", width: ew, height: eh, position, orientation, tracking: "ok", epoch: state.epoch, projection, ...stamp };
+          // 붙잡은 장면은 같은 사진이라 held를 붙인다: 서버가 같은 사진도 VLM 간격마다 새 관찰로 받는다
+          const header = { kind: "engine", width: ew, height: eh, position, orientation, tracking: "ok", epoch: state.epoch, projection, ...stamp, ...(record.hold ? { held: true } : {}) };
           sendFrame(pixels, header, ENGINE_QUALITY, [], performance.now() - e0, true, enginePipeline);
         }
         if (t < due) return;

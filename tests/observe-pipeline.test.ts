@@ -70,6 +70,23 @@ describe("관찰 흐름", () => {
     await p.close();
   });
 
+  it("붙잡은 장면(held)은 같은 사진이어도 VLM 간격(기본 2초)마다 새 관찰로 받는다. held가 없는 같은 사진은 그대로 버린다", async () => {
+    const run = async (held: boolean) => {
+      let sent = 0;
+      const vlm = { model: "w", json: async () => { sent++; return { value: { scene: "k", observations: [], summary: "s" }, costUsd: 0, model: "w", attempts: 1 }; } } as unknown as VlmClient;
+      const p = new ObservationPipeline({ config: { engineMs: 100, vlmMs: 2000, vlmMaxInflight: 4, vlmTimeoutMs: 5000, detectQueueMax: 8, keepMs: 20_000 }, detector: null, vlm,
+        world: new WorldState({ evidenceStepMs: 2000, surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }), emit: () => {}, broadcastWorld: () => {} });
+      p.onEngine(jpeg(1), head(1000), null, null, 1005);
+      for (let t = 1100; t <= 7000; t += 100) p.onEngine(jpeg(1), { ...head(t), ...(held ? { held: true as const } : {}) }, null, null, t + 5);
+      await p.idle();
+      const s = p.status();
+      await p.close();
+      return { frames: s.frames, duplicates: s.duplicates, sent };
+    };
+    expect(await run(true)).toEqual({ frames: 4, duplicates: 57, sent: 4 });
+    expect(await run(false)).toEqual({ frames: 1, duplicates: 60, sent: 1 });
+  });
+
   it("엔진 프레임이 올 때마다(같은 사진·늦은 프레임 포함) onFrame을 부른다: 판단 시점이 관찰이 살아 있는지 본다", async () => {
     let frames = 0;
     const vlm = { model: "w", json: async () => ({ value: { scene: "k", observations: [], summary: "s" }, costUsd: 0, model: "w", attempts: 1 }) } as unknown as VlmClient;

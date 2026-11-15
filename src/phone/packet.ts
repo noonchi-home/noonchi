@@ -27,6 +27,8 @@ const HeaderSchema = z.object({
   time_err_ms: z.number().min(0).max(60_000).optional(),
   /** 엔진 프레임: 찍은 순간 XRView.projectionMatrix(16개, 열 우선). 물건의 트윈 위치를 구할 때 쓴다. */
   projection: z.array(num).length(16).optional(),
+  /** 엔진 프레임: 붙잡은 장면 다시 보내기(true만). 관찰 흐름이 같은 사진도 VLM 간격마다 받는다. */
+  held: z.literal(true).optional(),
 });
 // 코덱 이름은 대시보드가 VideoDecoder에 그대로 넘기므로 avc1.42E01F 같은 모양만 받는다
 const VideoHeaderSchema = z.discriminatedUnion("kind", [
@@ -46,6 +48,8 @@ export interface FrameHeader {
   time_err_ms?: number;
   /** 엔진 프레임의 투영 행렬(16개, 열 우선). */
   projection?: number[];
+  /** 엔진 프레임: 붙잡은 장면을 다시 보낸 것(영상 시험의 단계 영상 끝 장면). 같은 사진이어도 VLM 간격마다 새 관찰로 받는다(src/observe/ring.ts). */
+  held?: true;
 }
 
 /** 표시 영상 패킷 헤더. ts는 폰 인코더 시각(µs), width·height는 인코딩 크기. */
