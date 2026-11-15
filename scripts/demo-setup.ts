@@ -18,7 +18,7 @@ import { HistoryDb, historyTzMinutes } from "../src/history/db.js";
 import { REFLECT_TEXT } from "../src/history/labels.js";
 import { isDay } from "../src/history/summary.js";
 import { DEFAULT_TWIN_DIR, resolveTwinStudioDir } from "../src/model/devices.js";
-import { serverRunning } from "../src/server/lock.js";
+import { ServerLockError, acquireServerLock, type HeldServerLock } from "../src/server/lock.js";
 import { resolveHome } from "../src/model/homes.js";
 import { loadScene } from "../src/model/scene.js";
 import { TASKS } from "../src/act/tasks.js";
@@ -80,17 +80,18 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
     if (!r.ok) throw new DemoStop(`${method} ${path} 실패(${r.status}): ${json.error ?? ""}`.trim());
     return json;
   };
-  // 서버가 꺼졌는지: 그 폴더의 서버 잠금(OS 파이프, src/server/lock.ts)에 붙으면 다른 포트 서버라도 켜진 것이다.
-  // 그다음 --api 주소가 연결을 거부할 때(ECONNREFUSED)만 꺼졌다고 본다. 답이 늦거나(시간 초과) 그 밖의 오류면 켜져 있을 수 있어 멈춘다
-  // (쓰는 중인 폴더를 옮기거나 열린 DB에 쓰지 않게)
-  const requireServerOff = async (dir: string) => {
-    let running: boolean;
+  // 그 폴더의 서버 잠금(RUNTIME_DIR/server.lock.db, src/server/lock.ts)을 잡는다: 그 폴더를 쓰는 서버가 켜져 있으면(다른 포트여도) 잡지 못해 멈춘다.
+  // 잡은 동안에는 서버가 그 폴더로 뜨지 못한다. 일이 끝나면 놓는다
+  const holdFolder = (dir: string): HeldServerLock => {
     try {
-      running = await serverRunning(dir);
+      return acquireServerLock(dir);
     } catch (e) {
-      throw new DemoStop(`서버가 꺼졌는지 알 수 없어요(${dir} 서버 잠금: ${(e as Error).message}). 서버를 끈 뒤 다시 하세요`);
+      if (e instanceof ServerLockError) throw new DemoStop(`서버를 먼저 끄세요: 이 폴더를 쓰는 서버가 켜져 있어요(${dir})`);
+      throw e;
     }
-    if (running) throw new DemoStop(`서버를 먼저 끄세요: 이 폴더를 쓰는 서버가 켜져 있어요(${dir})`);
+  };
+  // --api 주소의 서버도 꺼져 있어야 한다: 연결을 거부할 때(ECONNREFUSED)만 꺼졌다고 본다. 답이 늦거나(시간 초과) 그 밖의 오류면 켜져 있을 수 있어 멈춘다
+  const requireServerOff = async () => {
     let why: string;
     try {
       await fetch(`${api}/api/health`, { signal: AbortSignal.timeout(1500) });
@@ -115,32 +116,51 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
   if (cmd === "day1" || cmd === "week") {
     const dir = resolve(arg("--dir") ?? join("runtime", "demo", cmd));
     if (has("--fresh")) {
-      await requireServerOff(dir);
-      if (existsSync(dir)) {
-        const old = `${dir}.old-${new Date(now()).toISOString().replace(/[-:]/g, "").replace(/\..*$/, "")}`;
-        renameSync(dir, old);
-        log(`옛 폴더를 옮겼어요: ${old}`);
+      // 옛 폴더: 잠금을 잡아 서버가 없는 것을 확인하고, 닫은 뒤 바로 옮긴다(Windows는 열린 파일이 있으면 폴더를 옮기지 못한다).
+      // 닫기와 옮기기 사이에 서버가 뜨면 그 서버가 연 파일 때문에 옮기기가 실패하고 여기서 멈춘다
+      const old = existsSync(dir) ? holdFolder(dir) : null;
+      try {
+        await requireServerOff();
+      } catch (e) {
+        old?.release();
+        throw e;
+      }
+      if (old) {
+        old.release();
+        const moved = `${dir}.old-${new Date(now()).toISOString().replace(/[-:]/g, "").replace(/\..*$/, "")}`;
+        try {
+          renameSync(dir, moved);
+        } catch (e) {
+          throw new DemoStop(`옛 폴더를 옮기지 못했어요(${dir}: ${(e as NodeJS.ErrnoException).code ?? (e as Error).message}). 그 폴더를 쓰는 서버를 끈 뒤 다시 하세요`);
+        }
+        log(`옛 폴더를 옮겼어요: ${moved}`);
       }
     }
     const dbPath = join(dir, "noonchi.db");
     if (existsSync(dbPath)) throw new DemoStop(`기록 DB가 이미 있어요(${dbPath}). --fresh로 새로 시작하세요`);
     mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, "setup.json"), `${JSON.stringify({ version: 1, home: DEMO_HOME, done: true, mode: "test", assist: "auto" }, null, 2)}\n`);
-    const at = () => new Date(now()).toISOString();
-    const approvals = new ApprovalStore(approvalsPath(dir, DEMO_HOME), at);
-    for (const name of DEMO_APPROVALS) approvals.answer(`task:${name}`, "approve");
-    const lessons = new LessonStore(lessonsPath(dir, DEMO_HOME));
-    for (let i = 0; i < 2; i++) lessons.record(RAMEN, RAMEN_RUN, at());
-    writeStart(dir, twinDir, cmd === "day1" ? "cup" : "tv");
-    const db = HistoryDb.open(dbPath, tz);
+    // 새 폴더도 다 쓸 때까지 잠금을 쥔다(그동안 서버가 이 폴더로 뜨지 못한다)
+    const folder = holdFolder(dir);
     try {
-      if (cmd === "week") {
-        const end = day("--end", addDays(today, -1));
-        const r = seedHistory(db, { home: DEMO_HOME, end, memories: "none", twinDir });
-        log(`합성 관찰 7일을 넣었어요: ${r.days[0]} ~ ${r.days.at(-1)}, 기억 판본 ${r.versions.join(", ")}판(seed)`);
+      writeFileSync(join(dir, "setup.json"), `${JSON.stringify({ version: 1, home: DEMO_HOME, done: true, mode: "test", assist: "auto" }, null, 2)}\n`);
+      const at = () => new Date(now()).toISOString();
+      const approvals = new ApprovalStore(approvalsPath(dir, DEMO_HOME), at);
+      for (const name of DEMO_APPROVALS) approvals.answer(`task:${name}`, "approve");
+      const lessons = new LessonStore(lessonsPath(dir, DEMO_HOME));
+      for (let i = 0; i < 2; i++) lessons.record(RAMEN, RAMEN_RUN, at());
+      writeStart(dir, twinDir, cmd === "day1" ? "cup" : "tv");
+      const db = HistoryDb.open(dbPath, tz);
+      try {
+        if (cmd === "week") {
+          const end = day("--end", addDays(today, -1));
+          const r = seedHistory(db, { home: DEMO_HOME, end, memories: "none", twinDir });
+          log(`합성 관찰 7일을 넣었어요: ${r.days[0]} ~ ${r.days.at(-1)}, 기억 판본 ${r.versions.join(", ")}판(seed)`);
+        }
+      } finally {
+        db.close();
       }
     } finally {
-      db.close();
+      folder.release();
     }
     log(`시연 폴더를 만들었어요: ${dir} (RUNTIME_DIR=${dir})`);
     return;
@@ -159,9 +179,16 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
 
   if (cmd === "reflect" && has("--scripted")) {
     const dir = resolve(arg("--dir") ?? join("runtime", "demo", "week"));
-    await requireServerOff(dir);
     const dbPath = join(dir, "noonchi.db");
     if (!existsSync(dbPath)) throw new DemoStop(`기록 DB가 없어요(${dbPath}). week부터 하세요`);
+    // 그 폴더의 잠금을 쥔 채로 넣는다(그동안 서버가 이 폴더로 뜨지 못한다)
+    const folder = holdFolder(dir);
+    try {
+      await requireServerOff();
+    } catch (e) {
+      folder.release();
+      throw e;
+    }
     const db = HistoryDb.open(dbPath, tz);
     try {
       if (db.pinnedMemory(today) !== null) throw new DemoStop(`오늘(${today}) 기억이 이미 고정됐어요. 폰을 켜기 전에 넣어야 해요. week --fresh로 다시 시작하세요`);
@@ -185,6 +212,7 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
       log(`  쓰는 습관: ${rulesLine(active)}`);
     } finally {
       db.close();
+      folder.release();
     }
     return;
   }

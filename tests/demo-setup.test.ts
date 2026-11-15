@@ -9,7 +9,7 @@ import { HistoryDb } from "../src/history/db.js";
 import { insidePolygon } from "../src/phone/home-plan.js";
 import { loadScene } from "../src/model/scene.js";
 import { resolveHome } from "../src/model/homes.js";
-import { acquireServerLock } from "../src/server/lock.js";
+import { ServerLockError, acquireServerLock } from "../src/server/lock.js";
 import { listenRetry } from "../src/server/net.js";
 import { DEMO_APPROVALS, DemoStop, demoSetup, silentAircon } from "../scripts/demo-setup.js";
 import { DEMO_STARTS, startFor } from "../scripts/demo-start.js";
@@ -26,6 +26,16 @@ beforeAll(async () => {
   await new Promise<void>((ok) => s.close(() => ok()));
   CLOSED = `http://127.0.0.1:${port}`;
 });
+/** 지금 그 폴더의 서버 잠금을 잡을 수 있는가(잡았다가 바로 놓는다). */
+const lockFree = (dir: string): boolean => {
+  try {
+    acquireServerLock(dir).release();
+    return true;
+  } catch (e) {
+    if (e instanceof ServerLockError) return false;
+    throw e;
+  }
+};
 const run = async (argv: string[]) => {
   const logs: string[] = [];
   await demoSetup(argv, { env, now: () => NOW, log: (l) => logs.push(l) });
@@ -150,26 +160,45 @@ describe("서버가 꺼졌는지(--fresh·--scripted)", () => {
     db.close();
   }, 60_000);
 
-  it("그 폴더를 쓰는 서버가 다른 포트에서 돌면(그 폴더의 서버 잠금 파이프에 붙음) --api가 꺼져 있어도 멈추고, 서버가 없으면 진행한다", async () => {
+  it("그 폴더를 쓰는 서버가 다른 포트에서 돌면(그 폴더의 서버 잠금이 잡혀 있음) --api가 꺼져 있어도 --fresh·--scripted가 멈추고, 놓으면 진행한다", async () => {
     const base = tmp();
     const dir = join(base, "week");
     await run(["week", "--dir", dir, "--api", CLOSED]);
     // 다른 포트에 뜬 서버: 그 폴더의 서버 잠금을 잡고 있다
-    const held = await acquireServerLock(dir);
+    const held = acquireServerLock(dir);
     try {
-      await expect(run(["week", "--dir", dir, "--fresh", "--api", CLOSED])).rejects.toThrow(/이 폴더를 쓰는 서버가 켜져 있어요/);
+      await expect(run(["week", "--dir", dir, "--fresh", "--api", CLOSED])).rejects.toThrow(/서버를 먼저 끄세요: 이 폴더를 쓰는 서버가 켜져 있어요/);
       expect(readdirSync(base)).toEqual(["week"]);
-      await expect(run(["reflect", "--scripted", "--dir", dir, "--api", CLOSED])).rejects.toThrow(/이 폴더를 쓰는 서버가 켜져 있어요/);
+      await expect(run(["reflect", "--scripted", "--dir", dir, "--api", CLOSED])).rejects.toThrow(/서버를 먼저 끄세요: 이 폴더를 쓰는 서버가 켜져 있어요/);
       const db = HistoryDb.open(join(dir, "noonchi.db"), 540);
       expect(db.list({ kinds: ["reflection"] })).toEqual([]);
       db.close();
     } finally {
-      await held.release();
+      held.release();
     }
-    // 서버가 끝났다(잠금을 놓았다): 진행한다
+    // 서버가 끝났다(잠금을 놓았다): 진행하고, 끝나면 잠금을 놓는다
     await run(["reflect", "--scripted", "--dir", dir, "--api", CLOSED]);
+    expect(lockFree(dir)).toBe(true);
     await run(["week", "--dir", dir, "--fresh", "--api", CLOSED]);
-    expect(readdirSync(base).filter((n) => n.startsWith("week.old-"))).toHaveLength(1);
+    const moved = readdirSync(base).filter((n) => n.startsWith("week.old-"));
+    expect(moved).toHaveLength(1);
+    // --fresh: 옛 폴더 잠금은 닫고 옮겼고, 새 폴더 잠금은 다 쓴 뒤 놓았다
+    expect(lockFree(join(base, moved[0]!))).toBe(true);
+    expect(lockFree(dir)).toBe(true);
+  }, 60_000);
+
+  it.skipIf(process.platform !== "win32")("--fresh: 옛 폴더 잠금을 닫은 뒤 옮기기 전에 그 폴더 파일이 열려 있으면 옮기기가 실패해 멈춘다(Windows)", async () => {
+    const base = tmp();
+    const dir = join(base, "week");
+    await run(["week", "--dir", dir, "--api", CLOSED]);
+    // 닫기와 옮기기 사이에 뜬 서버처럼 그 폴더의 기록 DB를 연다(잠금은 잡지 않는다)
+    const open = HistoryDb.open(join(dir, "noonchi.db"), 540);
+    try {
+      await expect(run(["week", "--dir", dir, "--fresh", "--api", CLOSED])).rejects.toThrow(/옛 폴더를 옮기지 못했어요/);
+      expect(readdirSync(base)).toEqual(["week"]);
+    } finally {
+      open.close();
+    }
   }, 60_000);
 });
 

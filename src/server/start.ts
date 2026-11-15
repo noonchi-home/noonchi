@@ -128,15 +128,15 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   const endpoints = loadEndpoints(env);
   const reflectAt = loadReflectAt(env);
   const retention = loadRetention(env);
-  // 이 런타임 폴더를 쓰는 서버라는 표시(OS 파이프, src/server/lock.ts). DB를 열기 전에 잡는다: 같은 폴더의 서버가 이미 있으면 여기서 멈춘다.
-  // 끌 때·시작이 실패할 때 놓고, 프로세스가 죽으면 OS가 치운다. 서버 밖 명령(시연 준비)이 붙어 보고 멈춘다
-  const lock = await acquireServerLock(runtimeDir);
+  // 이 런타임 폴더를 쓰는 서버라는 표시(RUNTIME_DIR/server.lock.db의 SQLite 배타 잠금, src/server/lock.ts). DB를 열기 전에 잡는다:
+  // 같은 폴더를 쓰는 서버·시연 준비가 이미 있으면 여기서 멈춘다. 끌 때·시작이 실패할 때 놓고, 프로세스가 죽으면 OS가 푼다
+  const lock = acquireServerLock(runtimeDir);
   // 기록 DB(RUNTIME_DIR/noonchi.db)와 기록기. 집 묶음이 가전·관찰·판단·계획을 넘기고, 운영 모드는 여기서 넘긴다. 시작이 실패하면 닫는다
   let db: HistoryDb;
   try {
     db = HistoryDb.open(join(runtimeDir, "noonchi.db"), historyTzMinutes(env));
   } catch (e) {
-    await lock.release();
+    lock.release();
     throw e;
   }
   const feed = { device: topic<[DeviceState, DeviceNote?]>(), brain: topic<[BrainLog]>(), plan: topic<[PlanView]>(), mode: topic<[ControlMode]>() };
@@ -218,7 +218,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     }
   } catch (e) {
     closeDb();
-    await lock.release();
+    lock.release();
     throw e;
   }
   if (mode === "live") log("운영 모드: 실제(짝지은 가전은 ThinQ)");
@@ -409,7 +409,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   } catch (e) {
     await rt.close().catch(() => {});
     closeDb();
-    await lock.release();
+    lock.release();
     throw e;
   }
 
@@ -460,7 +460,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       await current?.close();
       await shell.close();
       closeDb();
-      await lock.release();
+      lock.release();
     },
   };
 }

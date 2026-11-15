@@ -84,7 +84,7 @@ HUB=memory npm run demo
 | `ANTHROPIC_FALLBACKS` | (켬) | `off`면 서버 측 거절 대체를 끈다 |
 | `TWIN_STUDIO_DIR` | `twin/` | 트윈 결과물 폴더(상대 경로는 실행 위치 기준) |
 | `HOME_ID` | `homes.json`의 `default` | 불러올 집(twin-studio `homes.json`의 id, 예: `oneroom`) |
-| `RUNTIME_DIR` | `runtime` | 실행 중 만든 파일의 바탕 폴더: 배치 수정본 `homes/<id>/edits.json`, 사진 `photos/`, 기록 DB `noonchi.db`(SQLite, 커밋하지 않음) |
+| `RUNTIME_DIR` | `runtime` | 실행 중 만든 파일의 바탕 폴더: 배치 수정본 `homes/<id>/edits.json`, 사진 `photos/`, 기록 DB `noonchi.db`(SQLite, 커밋하지 않음), 서버 잠금 `server.lock.db`(아래 「시작 순서」 0) |
 | `HISTORY_TZ_MINUTES` | `540` | 기록 DB가 날짜(하루 요약·반성)를 나누는 시간대(분, -720~840). PAM 관찰 텍스트 시각도 이 시간대다. 틀린 값이면 시작하지 않는다 |
 | `REFLECT_AT` | `23:30` | 매일 그날을 반성하는 시각(HH:MM, 기록 시간대). `off`면 끈다. 틀린 값이면 시작하지 않는다 |
 | `PHOTO_RETENTION_DAYS`, `DATASET_RETENTION_DAYS` | `7`, `7` | 폰 사진 찍기 사진·시험 자료 보관 일(0보다 큰 숫자). 지나면 파일과 표 줄을 지운다. 틀린 값이면 시작하지 않는다 |
@@ -144,7 +144,7 @@ HUB=memory npm run demo
 
 `npm start` → `main.ts`(`.env` 읽기) → `startServer()`(`start.ts`):
 
-0. 서버 잠금(`src/server/lock.ts`): 기록 DB를 열기 전에 `RUNTIME_DIR` 절대 경로의 해시로 만든 이름 있는 파이프를 잡는다(Windows `\\.\pipe\twin-home-<해시>`, Linux 추상 소켓 `\0twin-home-<해시>`). OS가 같은 이름을 하나만 허락하므로 같은 폴더로 두 번째 서버를 켜면 「이 폴더를 쓰는 서버가 이미 있어요」로 멈춘다. 끄거나 시작이 실패하면 놓고, 프로세스가 죽으면 OS가 치워 남은 잠금이 없다. 시연 준비(`npx tsx scripts/demo-setup.ts`의 `--fresh`·`reflect --scripted`)는 같은 이름에 붙어 보고, 붙으면 켜진 서버로 보고 멈춘다.
+0. 서버 잠금(`src/server/lock.ts`): 기록 DB를 열기 전에 `RUNTIME_DIR/server.lock.db`에 SQLite 배타 잠금(OS 파일 잠금)을 걸고, 서버가 사는 동안 쥔다. 같은 폴더를 쓰는 서버가 이미 있거나 시연 준비가 쥐고 있으면 「이 폴더를 쓰는 서버가 이미 있어요」로 멈춘다. 끄거나 시작이 실패하면 놓고, 프로세스가 죽으면 OS가 푼다(파일이 남아도 남은 잠금이 아니다). 같은 파일이면 정션·심볼릭 링크·대소문자가 다른 경로도 같은 잠금이다. 시연 준비(`npx tsx scripts/demo-setup.ts`의 `--fresh`·`reflect --scripted`)도 같은 잠금을 잡고 일이 끝날 때까지 쥐며, 잡지 못하면 「서버를 먼저 끄세요」로 멈춘다. `--fresh`는 옛 폴더 잠금을 잡았다가 닫은 뒤 바로 옮기고, 옮기기가 실패하면(그 사이 뜬 서버가 연 파일, Windows) 멈춘다. 같은 runtime 폴더를 호스트와 컨테이너가 동시에 쓰지 않는다: Docker Desktop처럼 호스트(Windows)와 컨테이너(Linux)가 같은 폴더를 쓰면 두 OS의 파일 잠금이 서로 안 보일 수 있다.
 1. `loadTwin(TWIN_STUDIO_DIR)`: 기기 65개, 방 13개(아래 "기기 목록").
 2. `startHub()`(`hubFactory.ts`): 허브를 만들고 시작한다.
    - `HUB`가 없으면 **matter**. `MATTER_TRANSPORT`가 없으면 **network**.
