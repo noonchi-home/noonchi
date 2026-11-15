@@ -7,8 +7,8 @@
 // 말의 답(reply)이 빈 글이면 보이지도 읽지도 않는다. 빈 글이 아니면 소리로 읽고 잠깐 알림 줄에 20초 남긴다(명령 줄은 그대로). 그 밖의 잠깐 알릴 말은 4초.
 // 소리는 차례로 읽는다(sayAloud 줄): 앞 말이 끝난 뒤(끝 알림, 오지 않으면 speakMs) 다음 말을 읽는다. 명령 말에는 그 명령(계획 id·단계 id)을 붙이고,
 // 새 명령·그 명령의 command_clear가 오면 아직 안 읽은 그 명령 말을 버린다. 읽기 바로 앞에는 화면 엄지 자리에 실제로 보이는 대상(handOf, 말의 at과 같은 길)과
-// 견줘 다르면 건너뛴다(승인 대기 뒤에 숨은 명령은 읽지 않는다). reply를 읽은 뒤 보이는 명령·승인 대기가 있고 줄에 그 말이 없으면 한 번 다시 읽는다
-// (승인 대기는 위 줄 「기기: 까닭」). 듣기는 줄이 빌 때까지 멈춘다(읽는 동안 들으면 폰 스피커 소리를 인식이 듣고 그 글이 말로 서버에 간다).
+// 견줘 다르면 건너뛴다(승인 대기 뒤에 숨은 명령은 읽지 않는다). 그렇게 못 읽은 명령 말은 가림(맞추기·승인 대기)이 풀려 그 명령이 보이는 순간 바로 읽는다.
+// reply를 읽은 뒤 보이는 명령·승인 대기가 있고 줄에 그 말이 없으면 한 번 다시 읽는다(승인 대기는 위 줄 「기기: 까닭」). 듣기는 줄이 빌 때까지 멈춘다(읽는 동안 들으면 폰 스피커 소리를 인식이 듣고 그 글이 말로 서버에 간다).
 // 다만 말 하나는 많아야 TALK_MAX_MS(15초)까지 읽고, 듣기 멈춤은 멈춘 때부터 많아야 LISTEN_PAUSE_MAX_MS(20초)다: 기다리는 말이 있으면 그 차례를 남기고
 // 앞 말을 일찍 끊고(뒤에 온 경고·질문이 먼저), 다 쓰면 남은 말을 버리고 소리를 끊은 뒤 다시 듣는다. 끊은 말의 글은 답 줄·알림 줄에 남는다.
 // 카메라 화면을 못 보내면(core/ar.js 알림) 그 AR 동안 cameraOff로 두어 설정 모달에 「카메라 · 못 보냄」을 남긴다.
@@ -109,6 +109,10 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
   let talkEnd = 0;
   let pauseEnd = 0;
   let cutTalk = () => {};
+  /** 아직 읽지 못한 지금 명령의 말(speak로 왔는데 맞추기·승인 대기에 가려 건너뛴 말). 읽으면·명령이 바뀌면 비운다. */
+  let owed: Talk | null = null;
+  /** 화면에 보이던 대상(가림이 풀렸는지 본다). */
+  let shownBefore: TalkTarget | null = null;
   let aim = false;
   /** 말 시작 때 잡아 둔 at(그 말을 보내면 비운다). */
   let heardAt: HeardAt | null = null;
@@ -119,6 +123,16 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
     if (on === aim) return;
     aim = on;
     draw.aim(on);
+  });
+  // 가림(맞추기·승인 대기)이 풀려 보이는 대상이 아직 못 읽은 명령이 되면 reply를 기다리지 않고 바로 줄에 넣는다
+  store.subscribe(() => {
+    const shown = shownTalk(store.get())?.target ?? null;
+    if (shown === shownBefore || (shown && sameTarget(shown, shownBefore))) return;
+    shownBefore = shown;
+    const o = owed;
+    const has = (t: Talk | null) => !!t?.target && !!o?.target && sameTarget(o.target, t.target);
+    if (!o?.target || !sameTarget(o.target, shown) || has(talking) || talkQueue.some(has)) return;
+    sayAloud(o.text, o.target);
   });
 
   const link = createLink({
@@ -218,6 +232,7 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
       if (pauseEnd - waitingMs() <= now) continue;
       const item = next;
       talking = item;
+      if (owed?.target && item.target && sameTarget(owed.target, item.target)) owed = null;
       talkEnd = now + talkMs(item.text);
       const turn = ++talkTurn;
       const done = (cutting: boolean) => {
@@ -250,28 +265,35 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
       // pending 칸이 없으면(명령의 답·승인·취소의 답) 승인 대기 목록을 그대로 둔다
       const pending: Pending[] | undefined = msg.pending;
       const text = String(msg.text ?? "");
-      set((v) => ({ ...v, reply: text || null, pending: pending ?? v.pending }));
-      if (video) logVideoPending(shownPending(store.get()));
+      // 글을 먼저 줄에 넣는다: 승인 대기가 풀려 숨었던 명령이 보이면 그 말은 reply 뒤에 읽는다
       if (text) {
         showNote(text, REPLY_NOTE_MS);
         sayAloud(text);
       }
+      set((v) => ({ ...v, reply: text || null, pending: pending ?? v.pending }));
+      if (video) logVideoPending(shownPending(store.get()));
     } else if (msg.type === "focus") {
       if (!store.get().command) ar.setFocus(msg.targets, msg.ttl_ms);
     } else if (msg.type === "command") {
       const m = msg as PhoneCommand;
+      const target: TalkTarget = { kind: "command", id: m.id, step: m.step };
       // 아직 안 읽은 다른 명령 말은 버린다(같은 명령의 비전 상태만 바뀐 것은 그대로)
       talkQueue = talkQueue.filter((t) => t.target?.kind !== "command" || (t.target.id === m.id && t.target.step === m.step));
+      if (owed?.target && !sameTarget(owed.target, target)) owed = null;
       armTalk();
       set((v) => ({ ...v, command: { id: m.id, step: m.step, text: m.text, vision: m.vision, choices: m.choices, target: m.target?.id ?? null } }));
       ar.setFocus(m.target ? [m.target] : [], COMMAND_FOCUS_MS);
       if (ar.videoTime) logVideoCommand(ar.videoTime(), m);
       ar.command?.(m);
-      if (m.speak) sayAloud(m.text, { kind: "command", id: m.id, step: m.step });
+      if (m.speak) {
+        owed = { text: m.text, target };
+        sayAloud(m.text, target);
+      }
     } else if (msg.type === "command_clear") {
       const m = msg as PhoneCommandClear;
       // 아직 안 읽은 그 명령 말(id가 없으면 모든 명령 말)은 버린다
       talkQueue = talkQueue.filter((t) => t.target?.kind !== "command" || (m.id !== undefined && t.target.id !== m.id));
+      if (owed?.target?.kind === "command" && (m.id === undefined || owed.target.id === m.id)) owed = null;
       armTalk();
       if (m.id !== undefined && m.id !== store.get().command?.id) return;
       set((v) => ({ ...v, command: null }));

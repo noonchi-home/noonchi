@@ -282,7 +282,7 @@ describe("소리 차례(sayAloud): 앞 말을 끊지 않고 차례로 읽는다"
     expect(c.view().command).toMatchObject({ text: ASK });
   });
 
-  it("승인 대기(현관문)가 엄지 자리에 보이는 동안 reply 뒤 다시 읽는 말은 뒤에 숨은 명령이 아니라 현관문 질문이다. 숨은 명령 말은 읽지 않고, 대기가 풀린 뒤 reply 다음에 그 명령을 읽는다", () => {
+  it("승인 대기(현관문)가 엄지 자리에 보이는 동안 reply 뒤 다시 읽는 말은 뒤에 숨은 명령이 아니라 현관문 질문이다. 숨은 명령 말은 읽지 않고, 대기가 풀리면 reply를 기다리지 않고 바로 그 명령을 읽는다", () => {
     const { c, ws, spoken, dones } = make();
     const DOOR = { token: "t1", deviceLabel: "현관문", reason: "현관문 잠금 해제", choices: [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }] };
     const NEED = "현관문 잠금 해제는 승인이 필요해요.";
@@ -302,9 +302,37 @@ describe("소리 차례(sayAloud): 앞 말을 끊지 않고 차례로 읽는다"
     dones[4]!();
     expect(spoken).toHaveLength(5);
     c.actions.confirm("t1", "approve");
+    expect(spoken.slice(5)).toEqual(["싱크대로 가 주세요"]);
     ws.push({ type: "reply", text: "현관문을 열었어요" });
     dones[5]!();
-    expect(spoken.slice(5)).toEqual(["현관문을 열었어요", "싱크대로 가 주세요"]);
+    dones[6]!();
+    expect(spoken.slice(5)).toEqual(["싱크대로 가 주세요", "현관문을 열었어요", "싱크대로 가 주세요"]);
+  });
+
+  it("서버 reply가 승인 대기를 풀어도 reply를 먼저 읽고 숨었던 명령을 바로 이어 읽는다(한 번만)", () => {
+    const { ws, spoken, dones } = make();
+    const DOOR = { token: "t1", deviceLabel: "현관문", reason: "현관문 잠금 해제", choices: [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }] };
+    ws.push({ type: "reply", text: "", pending: [DOOR] });
+    ws.push(command());
+    expect(spoken).toEqual([]);
+    ws.push({ type: "reply", text: "현관문을 열었어요", pending: [] });
+    dones[0]!();
+    dones[1]!();
+    expect(spoken).toEqual(["현관문을 열었어요", "컵을 들어 주세요"]);
+  });
+
+  it("물건 자리 맞추기 중에 온 첫 명령은 읽지 않고, 맞추기가 끝나자마자 reply 없이 그 명령을 읽는다. 이미 읽은 명령은 가림이 다시 풀려도 읽지 않는다", () => {
+    const { c, ws, spoken, dones } = make();
+    c.actions.startPlace();
+    ws.push(command());
+    ws.push(command({ speak: false, vision: "컵 · 손에 있음" }));
+    expect(spoken).toEqual([]);
+    c.actions.endSetup();
+    expect(spoken).toEqual(["컵을 들어 주세요"]);
+    dones[0]!();
+    c.actions.startPlace();
+    c.actions.endSetup();
+    expect(spoken).toHaveLength(1);
   });
 
   it("경고를 읽는 중 새 B 명령이 오면 경고를 끝까지 읽은 뒤 새 명령을 읽고, 옛 명령 다시 읽기는 버린다. 아직 안 읽은 옛 명령 말도 새 명령이 오면 버린다", () => {
