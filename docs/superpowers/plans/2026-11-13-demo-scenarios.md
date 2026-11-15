@@ -145,6 +145,7 @@ export const keepAll: HabitFilter;   // proposed 그대로, 새 규칙마다 { k
   - PAM에 사진을 넘기지 않는다.
   - 대시보드에 입력창·단추를 더하지 않는다. 반성은 명령줄(`scripts/demo-setup.ts`)이 API로 부른다.
   - 대시보드에 새 화면 칸을 만들지 않는다(생각 말풍선을 그대로 쓴다). 실제 폰의 안전 안내 자리(Task 11d)는 새 배치라 구조만 그린 HTML 스케치를 먼저 보여 주고 확인을 받는다. 부품은 21st.dev 부품, 색은 토큰, 글은 상태만(60자 아래, 화살표·괄호 없음), 글 크기는 부품 원래 크기.
+  - 가전 종류별 값(이름·Matter·트윈 type·위험 동작·손 조작·카메라 낱말·selfStop)은 Task 11r 뒤로 `src/model/kinds.ts` 등록부 칸에만 둔다. 다른 파일에 종류별 표를 새로 두지 않는다.
   - 사람 단계·say·wait·관찰 모드 글은 서버가 만든다(T1~T4). 대본과 지시문은 `{kind, target, act, item}`·`notice`·`mode`만 고르고 문장을 쓰지 않는다. 손 조작은 `DEVICE_ACTS` 안에서만, 같은 `hand_device`와 함께.
   - 승인 규칙 그대로. 위험 목록(인덕션 켜기·전자레인지 시작)은 늘 묻는다.
 - 시험·빌드·크롬은 `npm run heavy -- <cmd>`로만, 한 번에 하나. 크롬·dev3d는 PC에 하나만.
@@ -170,6 +171,7 @@ export const keepAll: HabitFilter;   // proposed 그대로, 새 규칙마다 { k
 | `src/server/app.ts`, `src/server/home.ts`, `src/server/start.ts`, `src/history/db.ts` | 기억 상태 API, 마지막 반성 다시 보내기 |
 | `scripts/seed-history.ts`, `scripts/demo-setup.ts`(새로), `scripts/demo-start.ts`(새로) | 합성 관찰, 시연 준비, 장면 시작 위치 |
 | `scripts/video-check.ts`, `ui/src/phone/core/video-ar.js` | `--say`·`--start-at`·`--tail`, 단계 영상 차례·붙잡기 |
+| `src/model/kinds.ts`(새로), `src/hub/types.ts`, `src/model/mapping.ts`, `src/agent/{search,policy,planTools}.ts`, `src/plan/labels.ts`, `src/thinq/appliance.ts`, `src/world/{vocab,sight,state,relations}.ts`, `tests/kinds-registry.test.ts` | 가전 종류 등록부(Task 11r) |
 | `src/world/{sight.ts,state.ts,vocab.ts,conditions.ts}`, `src/observe/pipeline.ts`, `src/hub/{types.ts,signals.ts}`, `src/act/track.ts` | 가전 이력 촬영 시각(Task 11a), 인덕션 자리 oven만 인덕션으로(Task 11b), 끄기 추적은 새로 본 꺼짐으로만(Task 11c) |
 | `twin/data/homes/mokryeon_180b/added_devices.json`(새로), `src/model/scene.ts`, `src/model/devices.ts`, `src/layout/{editor.ts,load.ts}` | 트윈에 전자레인지, 뷰어 add |
 | `src/act/tasks.ts`, `src/brain/decision.ts`, `tests/helpers/planner.ts` | 「전자레인지로 데우기 알려 주기」 |
@@ -520,6 +522,97 @@ export function judgeState(o: {
 - [ ] **Step 4:** 통과 확인, `tests/drawn-fixtures.test.ts`·`tests/mokryeon-cup.test.ts`·`ui/tests/twin3d/`도.
 - [ ] **Step 5:** 커밋 `feat(twin): add a kitchen microwave to the Mokryeon home and draw it in the live twin`. CLAUDE.md 규칙 표에 한 줄: 「시연용으로 더하는 가전은 `twin/data/homes/<집>/added_devices.json`에 두고 장면을 읽을 때 더하며, 뷰어에는 연결 때 add로 보낸다 | `tests/added-devices.test.ts`」.
 
+### Task 11r: 가전 종류 등록부
+
+사용자 결정(2026-11-15): 가전 종류는 앞으로 사용자가 직접 늘려 간다. 지금은 새 종류 하나를 넣으려면 여러 파일의 종류별 표를 따로 고쳐야 한다. 가전 종류마다 이름·Matter 연결·트윈 type·카메라 낱말·위험 동작·손 조작을 **한 곳(등록부)** 에 적고, 흩어진 곳은 등록부에서 파생해 읽게 바꾼다. 새 종류는 등록부 한 줄 + 집 파일(`added_devices.json`) 한 줄로 끝난다. 전자레인지가 첫 사용 예다. Task 11 바로 뒤, Task 11a 앞에 한다(11a~12는 종류별 값을 등록부 칸으로 더한다).
+
+**지금 흩어진 종류별 표(f0ace1f, `grep`·`trail grep`로 찾음):**
+
+| 자리 | 무엇 | 등록부 칸 |
+|---|---|---|
+| `src/hub/types.ts` `DeviceKind` | 종류 21개 유니언 | 등록부 키에서 파생(`keyof typeof KINDS`) |
+| `src/model/mapping.ts` `KIND_PROFILES` | Matter 모델·기기 종류·기능·제어 속성·센서·기본값 | `profile` |
+| `src/model/mapping.ts` `KIND_LABELS` | 종류 이름(인덕션·전자레인지…) | `label` |
+| `src/model/mapping.ts` `TYPE_RULES` | 트윈 type·접두어 → 종류(+ Matter 기기 종류·기능 덮어쓰기), 위에서 처음 맞는 것 | `twinTypes`(종류 줄들). 종류 없는 줄(`wall_pad`·`robot` 트윈 전용)은 mapping.ts에 남긴다 |
+| `src/agent/search.ts` `KIND_SYNONYMS` | 사람들이 부르는 말 | `synonyms` |
+| `src/agent/policy.ts` `CONFIRM_RULES` | 승인이 필요한 명령과 까닭 글(현관 잠금 해제·인덕션 켜기·전자레인지 시작) | `confirm` |
+| `src/agent/policy.ts` `RISKY_ON_NAMES` | 위험 가전 이름·별명·오타 | `riskyOn.names` |
+| `src/plan/labels.ts` `CAUTION_LINE` | 켜기 전 안전 문구 | `riskyOn.caution` |
+| `src/agent/planTools.ts` `DEVICE_ACTS` | 손 조작 동작(켜기·끄기·열기·닫기) | `hand` |
+| `src/thinq/appliance.ts` `PAIRABLE_KINDS`·`TYPE_FIT` | ThinQ와 짝지을 수 있는 종류와 ThinQ 기기 종류 | `thinq.type` |
+| `src/world/vocab.ts` `DEVICE_TEXT` | 종류마다 바꿔 쓰는 상태 글(세탁 멈춤…) | `stateText` |
+| `src/world/vocab.ts` `CLASSES[*].deviceKind`, `SIGHT` | 카메라 설비 종류 → 트윈 가전 종류, 카메라로 맞추는 속성 규칙 | `camera: { fixture, sight }` |
+| `src/agent/planTools.ts` `handUntil`(355행) | 문 상태 없는 가전의 카메라 설비 찾기(CLASSES deviceKind로) | `camera.fixture`를 읽음 |
+| `src/world/sight.ts` `linkDevice`·`rulesOf` | 위 카메라 낱말을 읽음 | 등록부를 읽음 |
+| `src/plan/names.ts`, `src/agent/{tools,prompts,planInput}.ts`, `src/server/start.ts` | `KIND_LABELS`를 읽음 | 그대로(파생된 `KIND_LABELS`) |
+
+**등록부 밖에 두는 것(종류별 표가 아님):** `src/world/relations.ts` `RELATIONS`(물건 종류 → 관련 가전 종류, 물건 기준 표), `src/world/vocab.ts` `DEVICE_LONG`(사건마다 종류 목록), `ATTR_DEFAULTS`·`SENSOR_ATTRS`(속성 기준), `src/matter/deviceTypes.ts`(Matter 기기 종류 이름 → 엔드포인트, 기기 종류 이름 기준), `src/agent/phrases.ts`·`ui/src/bubbles/summary.ts`·`src/thinq/appliance.ts`의 종류별 코드 갈래(말 꾸밈·ThinQ 읽기, 표가 아니라 그 종류만의 동작). 대시보드 `KIND_ICON`(`ui/src/dashboard/steps.tsx`)은 가전 종류가 아니라 계획 단계 종류 표라 상관없다. 코치 행동 체계(`TaskSpec`)는 이미 행동 한 덩어리라 이번 범위 밖이다.
+
+**Files:**
+- Create: `src/model/kinds.ts`(등록부), `tests/kinds-registry.test.ts`(같은 결과 시험·구조 검사), `scripts/kinds-snapshot.ts`(바꾸기 전 값을 뽑는 한 번 쓰는 명령), `tests/fixtures/kinds-before.json`
+- Modify: `src/hub/types.ts`(`DeviceKind`를 등록부에서), `src/model/mapping.ts`(`KIND_PROFILES`·`KIND_LABELS`·`TYPE_RULES`를 파생으로, 프로필 타입은 kinds.ts로), `src/agent/search.ts`, `src/agent/policy.ts`(`CONFIRM_RULES`·`RISKY_ON_NAMES` 파생), `src/plan/labels.ts`(`CAUTION_LINE` 파생), `src/agent/planTools.ts`(`DEVICE_ACTS`·`handUntil`), `src/thinq/appliance.ts`(`PAIRABLE_KINDS`·`TYPE_FIT` 파생), `src/world/vocab.ts`(`CLASSES[*].deviceKind`·`SIGHT` 지움, `DEVICE_TEXT` 지움), `src/world/sight.ts`·`src/world/state.ts`·`src/world/relations.ts`(등록부를 읽음), `docs/world-vocabulary.md`(생성 글), `Dockerfile`(ui 단계 COPY), `CLAUDE.md`(규칙 표 한 줄), `docs/reference.md`(새 종류 추가하는 법)
+- Test: `tests/kinds-registry.test.ts`, 기존 시험 전체(`npm run heavy -- npx vitest run`, ui 시험), `tests/docker-ui-stage.test.ts`
+
+**Interfaces:**
+
+```ts
+// src/model/kinds.ts: 가전 종류 등록부. 하나뿐인 원본. 런타임 import 없음(type import만: ../hub/types.js, ../world/vocab.js).
+// ui 타입 검사가 hub/types.ts를 거쳐 읽으므로 Dockerfile ui 단계가 이 파일과 vocab.ts를 COPY한다.
+export type HandAct = "켜기" | "끄기" | "열기" | "닫기";
+export interface KindProfile { model: Model; matterDeviceType: string; capabilities: Capability[]; control?: Control; sensors: string[]; defaults?: …; setpoint?: …; modes?: …; fanOn?: …; levelTurnsOn?: true } // 지금 mapping.ts 타입 그대로 옮김
+export interface KindEntry {
+  label: string;                                          // 화면·에이전트 이름
+  synonyms: readonly string[];                            // 찾기 말(소문자, 띄어쓰기 없음)
+  profile: KindProfile;                                   // Matter 연결
+  twinTypes: readonly { types?: readonly string[]; prefixes?: readonly string[]; matterDeviceType?: string; capabilities?: Capability[] }[]; // 트윈 type → 이 종류
+  confirm?: { command: CommandType; reason: (label: string) => string };      // 늘 승인
+  riskyOn?: { names: readonly string[]; caution: string };                    // 위험 가전(이름 기본 거부, 켜기 전 안전 문구)
+  hand?: readonly HandAct[];                              // 사람이 손으로 하는 동작
+  selfStop?: true;                                        // 다 되면 스스로 멈춤(Task 12)
+  camera?: { fixture: FixtureClass; sight: readonly SightRule[] };            // 카메라 설비 종류와 맞추는 규칙(Task 11a·11b)
+  thinq?: { type: RegExp };                               // ThinQ 짝짓기
+  stateText?: Partial<Record<DeviceStateKey, { label?: string; became?: string }>>;
+}
+/** 순서가 곧 TYPE_RULES 순서·도구 enum 순서다(지금 DeviceKind 순서 그대로). */
+export const KINDS = { light: {…}, plug: {…}, …, status: {…} } as const satisfies Record<string, KindEntry>;
+export type DeviceKind = keyof typeof KINDS;
+// 파생(각 쓰는 곳은 이것만 읽는다)
+export const KIND_ORDER: readonly DeviceKind[];
+export const kindLabel: (k: DeviceKind) => string;
+export const isRiskyKind: (k: string | null | undefined) => k is DeviceKind;   // riskyOn 있는 종류
+export const cameraKindOf: (fixture: FixtureClass) => DeviceKind | null;       // camera.fixture로 거꾸로
+// src/hub/types.ts: export type { DeviceKind } from "../model/kinds.js";
+// src/model/mapping.ts: KIND_PROFILES = mapEntries(KINDS, (e) => e.profile), KIND_LABELS = mapEntries(KINDS, (e) => e.label),
+//   TYPE_RULES = [...KIND_ORDER.flatMap((k) => KINDS[k].twinTypes.map((t) => ({ ...t, kind: k }))), { types: ["wall_pad", "robot"], twinOnly: true }]
+// src/agent/policy.ts: CONFIRM_RULES = KIND_ORDER.flatMap((k) => KINDS[k].confirm ? [{ kind: k, ...KINDS[k].confirm }] : []), RISKY_ON_NAMES는 riskyOn.names에서
+// src/plan/labels.ts: CAUTION_LINE은 riskyOn.caution에서. src/agent/planTools.ts: DEVICE_ACTS는 hand에서.
+```
+- 칸 이름·모양을 틀리거나 필수 칸(`label`·`synonyms`·`profile`·`twinTypes`)을 빼면 `satisfies Record<string, KindEntry>`가 타입 오류를 낸다. 손으로 맞추던 목록(`DeviceKind` 유니언, `KIND_LABELS` 등 위 표의 원본)은 지운다.
+- 전자레인지 항목이 첫 사용 예다: `label: "전자레인지"`, `twinTypes: [{ types: ["microwave"] }]`, `confirm: { command: "start", … }`, `riskyOn: { names: [...], caution: "그릇이 뜨거워져요." }`, `hand: ["열기", "닫기", "켜기", "끄기"]`, `camera: { fixture: "microwave", sight: [...] }`. Task 11a가 sight에 명시 꺼짐 값을, Task 12가 `selfStop: true`를 더한다.
+
+**구조 검사(`tests/kinds-registry.test.ts`, `npm test`·CI):** `src/`·`ui/src/`·`scripts/`의 TypeScript를 TypeScript 구문 트리로 읽어, `src/model/kinds.ts` 밖에서 아래가 나오면 실패한다. 까닭 글: 「가전 종류별 값은 src/model/kinds.ts 등록부 칸으로 둔다(새 종류는 등록부 한 줄 + added_devices.json 한 줄)」.
+- 타입에 `Record<DeviceKind, …>`·`Partial<Record<DeviceKind, …>>`·`DeviceKind[]` 값 목록을 직접 쓴 상수 선언(파생 함수 결과에 붙인 타입은 제외: 오른쪽이 `KINDS`·`KIND_ORDER`에서 만든 식이면 통과).
+- 객체 리터럴의 키가 둘 이상이고 모두 가전 종류 이름(등록부 키)인 것.
+- 속성 `deviceKind:`(vocab.ts 등에서 종류를 잇는 칸).
+- 문자열 리터럴 `kind: "<가전 종류>"`가 든 배열 리터럴(규칙 목록).
+- 시험 파일(`tests/`)과 등록부는 검사하지 않는다.
+
+**결과가 바뀌지 않는다는 시험:** 바꾸기 전 커밋에서 `scripts/kinds-snapshot.ts`로 지금 21종의 값을 `tests/fixtures/kinds-before.json`에 뽑아 두고(라벨, Matter 프로필 전체, 카탈로그의 모든 트윈 type에 대한 `findTypeRule` 결과, `CONFIRM_RULES`, `RISKY_ON_NAMES`·`NOT_RISKY`로 본 `riskyNames` 표본 글 결과, `CAUTION_LINE`, `DEVICE_ACTS`, `KIND_SYNONYMS`, `PAIRABLE_KINDS`·`fitsKind` 표본, `DEVICE_TEXT`, 카메라 설비 → 종류와 SIGHT 규칙), 바꾼 뒤 파생 값이 그것과 같은지 본다.
+
+- [ ] **Step 1: 실패하는 시험과 바꾸기 전 값.** 지금 코드(f0ace1f 위)에서 `npx tsx scripts/kinds-snapshot.ts > tests/fixtures/kinds-before.json`. `tests/kinds-registry.test.ts`에 같은 결과 시험(`src/model/kinds.ts`가 없어 실패)과 구조 검사를 쓴다.
+- [ ] **Step 2: 검사가 지금 코드에서 실제로 실패하는지 확인.** `npm run heavy -- npx vitest run tests/kinds-registry.test.ts` → 구조 검사가 지금 흩어진 표 전부(`KIND_PROFILES`·`KIND_LABELS`·`TYPE_RULES`·`KIND_SYNONYMS`·`CONFIRM_RULES`·`RISKY_ON_NAMES`·`CAUTION_LINE`·`DEVICE_ACTS`·`PAIRABLE_KINDS`·`TYPE_FIT`·`DEVICE_TEXT`·`CLASSES[*].deviceKind`)를 하나씩 이름과 줄로 짚는지 본다. 하나라도 못 짚으면 검사를 고친다.
+- [ ] **Step 3: 구현.** 등록부를 만들고 위 표의 자리를 파생으로 바꾼다. `Dockerfile` ui 단계에 `src/model/kinds.ts`·`src/world/vocab.ts` COPY(`tests/docker-ui-stage.test.ts`가 본다). 낱말 표 문서를 다시 만든다.
+- [ ] **Step 4: 통과 확인.** `npx tsc --noEmit -p .`, ui 타입 검사, `npm run lint`, `npm run heavy -- npx vitest run`(기존 시험 전체), ui 시험. 같은 결과 시험이 21종 모두 같다고 본다. 시험 하나 더: 「`added_devices.json`에 카탈로그도 3D 모델도 없는 새 type으로 등록부 새 종류 한 줄(시험 전용 등록부 확장) + 집 파일 한 줄이면 기기 목록에 그 종류로 생기고, 속성은 프로필 제어·센서 속성의 기본값(ATTR_DEFAULTS)이며, 대시보드 트윈에는 회색 상자(바닥 넓이·높이)로 그려진다」. 이 시험이 지금 코드로 안 되면 그 부분을 같은 Task에서 맞춘다.
+- [ ] **Step 5: 문서와 규칙.** `docs/reference.md`에 아래 「새 종류 추가하는 법」 단락. `CLAUDE.md` 규칙 표에 한 줄: 「가전 종류별 값(이름·Matter·트윈 type·위험 동작·손 조작·카메라 낱말)은 `src/model/kinds.ts` 등록부에만 둔다 | `tests/kinds-registry.test.ts`(등록부 밖 종류별 표를 찾으면 실패, 바꾸기 전 21종과 같은 결과)」.
+- [ ] **Step 6:** 커밋 `refactor(model): move appliance kind tables into one registry and derive the rest`.
+
+**새 종류 추가하는 법(`docs/reference.md`에 넣을 단락):**
+1. `src/model/kinds.ts`의 `KINDS`에 항목 하나를 더한다: `label`(이름), `synonyms`(찾기 말), `profile`(Matter 기기 종류·기능·제어 속성·센서), `twinTypes`(트윈 type 이름). 위험한 가전이면 `confirm`·`riskyOn`, 사람이 손으로 조작하면 `hand`, 다 되면 스스로 멈추면 `selfStop`, ThinQ와 짝지으면 `thinq`. 필수 칸을 빼면 타입 오류가 난다.
+2. 집 파일 `twin/data/homes/<집>/added_devices.json`에 한 줄을 더한다: `id`·`type`(1번 `twinTypes`의 이름)·`label`·`room`·`position`·`facing_deg`·`elevation`.
+3. 카메라로 볼 수 있으면: YOLO(COCO)에 그 종류가 있으면 `src/world/vocab.ts` `CLASSES`에 설비 종류(role fixture)를 두고, 없으면 `from`(다른 감지에서 바꾸기)을 둔 설비 종류를 둔다. 그리고 등록부 항목에 `camera: { fixture, sight }`를 적는다.
+4. 3D 모델이 없으면: 카탈로그(`twin/data/catalog/<type>.json`)나 모델 파일이 없어도 기기는 생기고, 대시보드 트윈에는 그 자리의 회색 상자로 보인다. 모양을 넣으려면 카탈로그와 `twin/library/assets/`의 모델을 더한다.
+5. `npm run heavy -- npx vitest run tests/kinds-registry.test.ts`로 확인한다.
+
 ### Task 11a: 가전 이력에 근거의 촬영 시각과 종류(명시·추정) 남기기
 
 카메라로 맞춘 가전 상태(SIGHT)는 VLM 답이 도착한 시각으로 이력에 쌓인다(`src/observe/pipeline.ts` `onDevice` → `world.applyDevice(s, this.clock.now())`). 켜라고 하기 전(또는 단계 시작 전)에 찍은 사진의 답이 늦게 오면 그 뒤의 바뀜으로 보여 세 곳이 뚫린다: 끄기 안내를 지우는 `offSince`(fec2e7d), Task 12의 꺼짐 기다리기, 단계 끝 조건 `became`(`src/world/conditions.ts`, `h.at_ms >= sinceMs`, 끄기 do가 끝나 hot이 풀림). 이 Task는 근거 사진의 촬영 시각을 남기고 세 곳이 그것을 보게 한다.
@@ -527,7 +620,7 @@ export function judgeState(o: {
 또 지금 SIGHT는 VLM 답에 「쓰는 중」이 없으면 꺼짐으로 만든다(`absent: "off"`, `src/world/sight.ts` 59행). 가전이 크게 보여도 전원 표시를 못 본 답만으로 꺼짐이 되어, 가열 중인데 안전 추적이 풀릴 수 있다. 그래서 VLM이 꺼짐을 직접 답한 「명시 꺼짐」과 답이 없어 넣은 「추정 꺼짐」을 나눠 남긴다. 추정 꺼짐은 지금처럼 트윈 상태에는 쓰고, 안전 해제(Task 11c `cycleEnded`)에는 쓰지 않는다. Task 11c·12보다 먼저 한다.
 
 **Files:**
-- Modify: `src/world/vocab.ts`(`STATES.not_in_use`, `SIGHT.microwave`·`SIGHT.cooktop`의 values), `docs/world-vocabulary.md`(낱말 표 생성 글), `src/world/sight.ts`(안정 셈의 첫 프레임 촬영 시각, 값마다 명시·추정), `src/observe/pipeline.ts`(카메라로 바꾼 가전 상태에 촬영 시각을 실어 보냄), `src/hub/types.ts`·`src/hub/signals.ts`(가전 상태 알림에 `seenAt` 칸), `src/contract/world.ts`(이력 칸), `src/world/state.ts`(`applyDevice`), `src/world/conditions.ts`(`became`), `src/act/track.ts`(`offSince`)
+- Modify: `src/world/vocab.ts`(`STATES.not_in_use`), `src/model/kinds.ts`(등록부 `microwave.camera.sight`의 values, Task 11r), `docs/world-vocabulary.md`(낱말 표 생성 글), `src/world/sight.ts`(안정 셈의 첫 프레임 촬영 시각, 값마다 명시·추정), `src/observe/pipeline.ts`(카메라로 바꾼 가전 상태에 촬영 시각을 실어 보냄), `src/hub/types.ts`·`src/hub/signals.ts`(가전 상태 알림에 `seenAt` 칸), `src/contract/world.ts`(이력 칸), `src/world/state.ts`(`applyDevice`), `src/world/conditions.ts`(`became`), `src/act/track.ts`(`offSince`)
 - Test: `tests/vision-devices.test.ts`, `tests/world-state.test.ts`, `tests/world-conditions.test.ts`, `tests/act-track.test.ts`, `tests/world-vocab.test.ts`, `tests/observe-scene.test.ts`
 
 **Interfaces:**
@@ -538,9 +631,9 @@ export function judgeState(o: {
   /** 카메라로 본 바뀜이면 VLM이 그 값을 직접 답했는가(true 명시, false 답이 없어 넣은 추정). 허브·실제 가전 신호면 없음(명시로 본다). */ explicit?: boolean }
 // src/world/vocab.ts STATES에 더함(VLM 스키마 enum·프롬프트 값 목록이 여기서 나온다, src/observe/scene.ts)
 not_in_use: { facet: "use", label: "꺼져 있음", for: ["fixture"], hint: "appliance clearly switched off: no light, display, flame or heat visible" },
-// SIGHT: 명시 꺼짐 값을 더한다(absent는 그대로 두어 트윈 상태는 지금처럼 바뀐다)
-microwave: [{ facet: "use", attr: "power", values: { in_use: "on", not_in_use: "off" }, absent: "off" }, /* open 규칙 그대로 */],
-// Task 11b의 SIGHT.cooktop도 같은 values({ in_use: "on", not_in_use: "off" })로 만든다.
+// 등록부(src/model/kinds.ts, Task 11r) KINDS.microwave.camera.sight: 명시 꺼짐 값을 더한다(absent는 그대로 두어 트윈 상태는 지금처럼 바뀐다)
+sight: [{ facet: "use", attr: "power", values: { in_use: "on", not_in_use: "off" }, absent: "off" }, /* open 규칙 그대로 */],
+// Task 11b의 KINDS.cooktop.camera.sight도 같은 values({ in_use: "on", not_in_use: "off" })로 만든다.
 // src/world/sight.ts: 값마다 명시(values에서 옴)·추정(absent에서 옴)을 함께 낸다
 export function sightValues(...): Record<string, { value: unknown; explicit: boolean }>;
 // src/world/state.ts
@@ -565,17 +658,17 @@ function offSince(d: WorldView["devices"][number] | undefined, onAt: number): bo
 인덕션 전원은 카메라로 맞추는 표(`SIGHT`)에 없고, 손으로 켜라는 명령은 허브 상태를 바꾸지 않는다. 그래서 라면 7번 켜기(`became on`)와 12번 끄기(`became off`)가 영상으로는 끝나지 않는다. COCO에는 인덕션 종류가 없고 `oven`(69)이 상판을 잡을 때가 있다. 감지 종류(oven)와 확인된 설비(인덕션)를 나눈다: 그 방 트윈 인덕션 자리와 겹치는 oven 감지만 인덕션 설비로 바꾸고, 관찰 텍스트·이름표·기록에는 「인덕션」으로 낸다. 겹치지 않는 oven은 지금처럼 「오븐」이고 트윈 가전에 맞추지 않는다. 안전 규칙은 그대로다.
 
 **Files:**
-- Modify: `src/world/vocab.ts`(`CLASSES.cooktop` 새 설비 종류, `SIGHT.cooktop`), `src/world/sight.ts`(`refineFixture`), `src/observe/pipeline.ts`(VLM 감지 목록·World State에 넣기 전에 바꿈), `docs/world-vocabulary.md`(낱말 표 생성 글), `tests/fixtures/`(인덕션 사진 고정 자료)
+- Modify: `src/world/vocab.ts`(`CLASSES.cooktop` 새 카메라 설비 종류), `src/model/kinds.ts`(등록부 `cooktop.camera`, Task 11r), `src/world/sight.ts`(`refineFixture`), `src/observe/pipeline.ts`(VLM 감지 목록·World State에 넣기 전에 바꿈), `docs/world-vocabulary.md`(낱말 표 생성 글), `tests/fixtures/`(인덕션 사진 고정 자료)
 - Test: `tests/vision-devices.test.ts`, `tests/world-vocab.test.ts`, `tests/brain-detector.test.ts`, `tests/observe-pipeline.test.ts`
 
 **Interfaces:**
 
 ```ts
 // src/world/vocab.ts: COCO에 바로 없는 설비 종류. from은 이 종류로 바꿀 수 있는 감지 종류와 그 자리의 평면도 종류.
-cooktop: { label: "인덕션", role: "fixture", coco: {}, from: { cls: "oven", place: "induction_counter" }, minScore: 0.5, facets: ["use"], deviceKind: "cooktop" },
-// oven은 그대로(deviceKind 없음, 「오븐」).
-// SIGHT
-cooktop: [{ facet: "use", attr: "power", values: { in_use: "on", not_in_use: "off" }, absent: "off" }],   // 명시 꺼짐(not_in_use)은 Task 11a
+cooktop: { label: "인덕션", role: "fixture", coco: {}, from: { cls: "oven", place: "induction_counter" }, minScore: 0.5, facets: ["use"] },
+// oven은 그대로(등록부 어느 종류의 camera.fixture도 아님, 「오븐」).
+// 등록부(src/model/kinds.ts) KINDS.cooktop에 더함: 카메라 설비 종류 cooktop을 트윈 인덕션(cooktop)에 잇는다
+camera: { fixture: "cooktop", sight: [{ facet: "use", attr: "power", values: { in_use: "on", not_in_use: "off" }, absent: "off" }] },   // 명시 꺼짐(not_in_use)은 Task 11a
 // src/world/sight.ts
 /** 인덕션 상판 확인. 아래 셋을 모두 지나야 cooktop으로 바꾼 감지를 내고, 하나라도 못 보거나 어긋나면 그대로(oven) 둔다(확실하지 않으면 바꾸지 않는다).
  *  1) 같은 방에 from.place(induction_counter) 평면도 물건이 있다.
@@ -790,14 +883,14 @@ export function needsPhone(plan: AgentPlan, approval: ApprovalWhy | null, device
 ### Task 12: 코치 행동 「전자레인지로 데우기 알려 주기」
 
 **Files:**
-- Modify: `src/act/tasks.ts`, `services/pam/scenarios/noonchi/tasks.json`, `services/pam/scenarios/noonchi/scenario.json`(Task 4 행동 이름 줄·코치 행동 줄에 새 이름), `src/brain/decision.ts`(`cooking` 상태), `src/world/labels.ts`(`FSM_STATE_TEXT.cooking` → `"주방에서 할 일을 찾음"`), `src/agent/policy.ts`(`SELF_STOP`), `src/agent/planTools.ts`(끄기 검사), `src/agent/planInput.ts`(지시문 한 줄), `src/act/track.ts`(켠 가전 추적), `tests/helpers/planner.ts`(`microwaveSteps`, 대본 표)
+- Modify: `src/act/tasks.ts`, `services/pam/scenarios/noonchi/tasks.json`, `services/pam/scenarios/noonchi/scenario.json`(Task 4 행동 이름 줄·코치 행동 줄에 새 이름), `src/brain/decision.ts`(`cooking` 상태), `src/world/labels.ts`(`FSM_STATE_TEXT.cooking` → `"주방에서 할 일을 찾음"`), `src/model/kinds.ts`(등록부 `microwave.selfStop`, Task 11r), `src/agent/planTools.ts`(끄기 검사), `src/agent/planInput.ts`(지시문 한 줄), `src/act/track.ts`(켠 가전 추적), `tests/helpers/planner.ts`(`microwaveSteps`, 대본 표)
 - Test: `tests/act-tasks.test.ts`, `tests/agent-planner.test.ts`, `tests/act-track.test.ts`, `tests/phone-lines.test.ts`, `tests/brain-decision.test.ts`, `tests/pam-scenario.test.ts`
 
 **먼저:** Task 11·11a·11c·11d. 전자레인지가 기기이자 평면도 물건이어야 대상이 되고 이름이 붙는다(기기 id와 평면도 id가 같은 `microwave_kitchen`, 방 `kitchen`, 평면도 종류 `microwave` → 이름 「전자레인지」).
 
 **글과 끝 조건은 서버가 만든다(T1~T4):** 대본은 `{kind, target, act, item, hand_device, notice}`만 고른다. 폰 글은 `STEP_TEXT`·`NOTICES`가 내고, 손 조작 동작의 끝 조건은 `handUntil`이 낸다.
 
-**저절로 꺼지는 가전:** 전자레인지는 다 되면 스스로 멈춘다. 지금 검사는 켠 위험 가전 뒤에 끄기 do(hand_device off)를 꼭 두게 해, 이미 꺼진 뒤에 「전자레인지를 꺼 주세요」를 보내게 된다. 또 기다리는 동안 꺼지면 끄기 do의 `became: off`는 단계 시작 전 사건이라 끝나지 않는다. 그래서 저절로 꺼지는 가전(`SELF_STOP`)만 「꺼짐을 기다리는 wait」를 끄는 단계로 인정한다. 이 wait는 notice 「다 되기」(이름 「다 되기 기다리기」, 폰 글 없음)와 모델이 쓰는 until `{"device": id, "state": "off"}`(wait until은 모델 것을 그대로 받는다)로 표시만 한다. **끝나는 기준은 실행 추적이 따로 본다**: 지금 상태가 꺼짐인 것만으로는 끝나지 않고, 작동 한 번 끝남(`cycleEnded(가전)`, Task 11c, 명시 꺼짐만)이 있어야 끝난다: 켜라고 한 시각(`onAt`, 추적이 풀려도 남는다) 뒤에 촬영된 근거로 아는 켜짐에서 꺼짐으로 바뀌었거나(switch), 켜짐을 놓쳐 보이게 해 달라고 부탁한 뒤 가까이 본 관측이 꺼짐이다(confirmed). hot을 푸는 `releaseIfOff`도 같은 판정을 쓰고, 5번 켜기 단계가 끝난 뒤에만 푼다. 그래서 켜기 단계를 사람이 「완료」로 넘겼는데 가전이 옛 꺼짐 그대로이면(켜짐을 한 번도 못 봄) 기다리기가 끝나지 않고 hot이 남으며, 시간 초과 질문에서 그만두거나 계획이 닫히면 끄기 안내가 간다. 그릇 꺼내기는 따로 pick으로 둔다.
+**저절로 꺼지는 가전:** 전자레인지는 다 되면 스스로 멈춘다. 지금 검사는 켠 위험 가전 뒤에 끄기 do(hand_device off)를 꼭 두게 해, 이미 꺼진 뒤에 「전자레인지를 꺼 주세요」를 보내게 된다. 또 기다리는 동안 꺼지면 끄기 do의 `became: off`는 단계 시작 전 사건이라 끝나지 않는다. 그래서 저절로 꺼지는 가전(등록부 `selfStop`)만 「꺼짐을 기다리는 wait」를 끄는 단계로 인정한다. 이 wait는 notice 「다 되기」(이름 「다 되기 기다리기」, 폰 글 없음)와 모델이 쓰는 until `{"device": id, "state": "off"}`(wait until은 모델 것을 그대로 받는다)로 표시만 한다. **끝나는 기준은 실행 추적이 따로 본다**: 지금 상태가 꺼짐인 것만으로는 끝나지 않고, 작동 한 번 끝남(`cycleEnded(가전)`, Task 11c, 명시 꺼짐만)이 있어야 끝난다: 켜라고 한 시각(`onAt`, 추적이 풀려도 남는다) 뒤에 촬영된 근거로 아는 켜짐에서 꺼짐으로 바뀌었거나(switch), 켜짐을 놓쳐 보이게 해 달라고 부탁한 뒤 가까이 본 관측이 꺼짐이다(confirmed). hot을 푸는 `releaseIfOff`도 같은 판정을 쓰고, 5번 켜기 단계가 끝난 뒤에만 푼다. 그래서 켜기 단계를 사람이 「완료」로 넘겼는데 가전이 옛 꺼짐 그대로이면(켜짐을 한 번도 못 봄) 기다리기가 끝나지 않고 hot이 남으며, 시간 초과 질문에서 그만두거나 계획이 닫히면 끄기 안내가 간다. 그릇 꺼내기는 따로 pick으로 둔다.
 
 **Interfaces:**
 
@@ -809,16 +902,16 @@ export function needsPhone(plan: AgentPlan, approval: ApprovalWhy | null, device
 },
 // cooking 상태 description: "사용자가 주방에서 음식을 만들거나 데우려 한다. 방법을 묻거나 무엇을 할지 몰라 멈춰 있으면 단계마다 알려 준다."
 // cooking rules에 더함: { trigger: "사용자가 전자레인지 앞에서 쓰는 법을 묻거나 이거 어떻게 하냐고 말한다.", action: "전자레인지로 데우기 알려 주기" }
-// src/agent/policy.ts
-/** 다 되면 스스로 멈추는 위험 가전. 켠 뒤 그 가전이 꺼짐을 기다리는 wait를 끄는 단계로 인정한다. */
-export const SELF_STOP: Partial<Record<DeviceKind, true>> = { microwave: true };
+// src/model/kinds.ts KINDS.microwave에 selfStop: true를 더한다(다 되면 스스로 멈추는 위험 가전. 켠 뒤 그 가전이 꺼짐을 기다리는 wait를 끄는 단계로 인정한다).
+/** 등록부에서 파생. 종류별 표를 따로 두지 않는다(Task 11r 구조 검사). */
+export const isSelfStop = (k: DeviceKind): boolean => (KINDS[k] as KindEntry).selfStop === true;
 // src/agent/planTools.ts finish(): 켠 위험 가전(riskyHand) 뒤에 (a) 같은 가전 hand_device off do 또는
-//   (b) 그 가전 종류가 SELF_STOP이고 until이 정확히 {"device": 그 가전, "state": "off"}인 wait 가 있어야 끝낸다.
+//   (b) 그 가전 종류가 등록부 selfStop이고 until이 정확히 {"device": 그 가전, "state": "off"}인 wait 가 있어야 끝낸다.
 // src/act/track.ts: (b) 모양 wait는 ConditionWatch 결과를 쓰지 않는다. look()에서 그 단계는 cycleEnded(그 가전)(지금 회차) 가 null이 아닐 때만 넘긴다
 //   (지금 상태 꺼짐만·앞 값 모름인 꺼짐으로는 넘기지 않음, onAt이 없으면 넘기지 않음). hot이 6번 동안 이미 풀렸어도 onAt은 남아 있어 끝난다(Task 11c).
 //   20초 넘게 안 끝나고 상태가 이미 꺼짐이면 askToShow를 한 번 보낸다. hot은 releaseIfOff(그 가전)로만 푼다.
 //   그 전에 계획이 닫히면 handOver가 끄기 안내(「전자레인지를 꺼 주세요」) 줄로 옮긴다. 안내는 releaseIfOff(새로 본 꺼짐)로만 지운다: 「완료」·「다 했어」는 보이게 해 달라는 부탁으로 바꾸고, 120초 만료는 같은 안내를 다시 보낸다(Task 11c).
-/** 저절로 꺼지는 가전의 꺼짐 기다리기(SELF_STOP 가전, until이 정확히 {device, state: "off"}인 wait)인가. */
+/** 저절로 꺼지는 가전의 꺼짐 기다리기(등록부 selfStop 가전, until이 정확히 {device, state: "off"}인 wait)인가. */
 export function selfStopWait(step: AgentStep, devices: readonly { id: string; kind: string }[]): string | null; // 그 가전 id, 아니면 null
 // 지시문(planInput) 한 줄: "- 다 되면 스스로 멈추는 가전(전자레인지)은 켠 뒤 끄기 do 대신 notice 다 되기, until {\"device\": id, \"state\": \"off\"}인 wait를 둔다. 꺼낼 때는 pick(act 꺼내기, target 그 가전)을 따로 둔다."
 export function microwaveSteps(ids: { microwave: string; waitS?: number /* wait timeout_s, 기본 300 */ }): Record<string, unknown>[];
@@ -848,7 +941,7 @@ export function microwaveSteps(ids: { microwave: string; waitS?: number /* wait 
   - 「대본 6번 say에 모델 글(text)을 넣어도 쓰이지 않고 서버 글 「다 될 때까지 기다려요.」만 나간다」.
   - 「5번 대본에 until `{"device": mw, "state": "on"}`을 써도 버리지 않고 서버가 `{"device": mw, "became": "on"}`으로 바꾼다」.
   - 「2번에 hand_device가 없거나 `to`가 다르면 버린다」, 「냉장고에 켜기, 에어컨에 켜기(손 조작)는 버린다」.
-  - 「7번 wait를 빼면 `켠 가전은 계획 안에서 끕니다`로 버린다. 7번 until이 `{"device": mw, "state": "off"}`면 받는다. 같은 wait를 인덕션 켜기 뒤에 두면 버린다(SELF_STOP 아님). notice가 「끝」이면 wait로 받지 않는다(지금 검사)」.
+  - 「7번 wait를 빼면 `켠 가전은 계획 안에서 끕니다`로 버린다. 7번 until이 `{"device": mw, "state": "off"}`면 받는다. 같은 wait를 인덕션 켜기 뒤에 두면 버린다(등록부 selfStop 아님). notice가 「끝」이면 wait로 받지 않는다(지금 검사)」.
   - 실행 추적: 「5번 명령 전에 승인 질문, 승인 뒤 VLM 쓰는 중이면 넘어감」, 「켜라고 한 뒤 켜짐을 보고 6번 동안 꺼짐을 보면 `tick`이 hot을 풀고, 7번은 `onAt`으로 바로 끝나며, 계획이 끝나도 끄기 안내가 없다」, 「5번을 「완료」로 넘기고 첫 관측이 꺼짐이면 7번이 끝나지 않고 20초 뒤 부탁이 뜨며, 가까이 본 꺼짐이면 끝난다」, 「7번 전에 그만두면 끄기 안내(「전자레인지를 꺼 주세요」)가 간다」, **「5번을 「완료」로 넘겼고 전자레인지가 옛 꺼짐 그대로면(켜짐 이력 없음) 7번이 끝나지 않고 hot이 남으며, 시간 초과 질문에 「그만」이면 끄기 안내가 간다」**, 「켜라고 하기 전에 있던 켜짐 → 꺼짐 이력으로는 7번이 끝나지 않는다」, **「켜라고 하기 전에 찍은 꺼짐 사진의 답이 켜라고 한 뒤 늦게 도착해도 7번이 끝나지 않고 hot·끄기 안내가 그대로다」**, 「`selfStopWait`는 인덕션 wait·until이 다른 wait에는 null」.
 - [ ] **Step 2:** `npm run heavy -- npx vitest run tests/act-tasks.test.ts tests/agent-planner.test.ts tests/act-track.test.ts tests/phone-lines.test.ts tests/brain-decision.test.ts tests/pam-scenario.test.ts` → 실패 확인.
 - [ ] **Step 3:** 구현.
@@ -971,9 +1064,10 @@ export function microwaveSteps(ids: { microwave: string; waitS?: number /* wait 
 1. **비용 한도: 정함.** $2.20(사용자 승인).
 2. **문 열기·닫기 끝 조건: 가로 진행.** 서버가 만드는 값이 그대로 「가」다: 문 상태가 없는 전자레인지는 단계가 시작된 뒤 본 설비 열림 사실의 지금 값(이미 열려 있으면 바로 넘어감). 「나」(바뀐 것만, `seq`)는 쓰지 않는다.
 3. **서버 글의 물건 이름: 가로 진행.** 새 글 틀(c22ca2b)이 item을 넣어 「그릇을 전자레인지에 넣어 주세요」, 「냄비를 인덕션에 올려 주세요」처럼 나온다. 따로 할 일은 없다. 이름이 빠지는 곳은 do 넣기(「면과 스프를 넣어 주세요」, 자리 이름 없음)와 pick 꺼내기(「그릇을 꺼내 주세요」, 자리 이름 없음)다.
-4. **전자레인지 끄기는 기다리기로 인정: 가로 진행.** Task 12의 `SELF_STOP`.
+4. **전자레인지 끄기는 기다리기로 인정: 가로 진행.** Task 12의 등록부 `selfStop`.
 5. **(Task 11b Step 0에서 인덕션이 카메라로 안 잡힐 때만) 라면 시연의 끄기.** 「완료」로 끄기를 인정하지 않으므로(Task 11c) 12번을 「완료」로 넘겨도 hot과 끄기 안내가 남는다. 가: 인덕션 켜짐 표시가 크게 보이게 `turn-on.mp4`·`turn-off.mp4`를 다시 찍고 Step 0을 다시 잰다(추천). 나: 라면 장면을 11번(익기 기다리기)까지만 쓰고 끄기는 영상에서 뺀다. 다: 12번만 「완료」로 넘기게 허용한다(안전 규칙을 느슨하게 하는 것이라 이 계획은 하지 않는다. 고르면 따로 정한다).
 6. **풀린 추적을 다시 거는 기간: 가로 진행(10분).** 풀린 근거의 촬영 시각 뒤 10분 안에 그 가전의 새 켜짐을 보면 다시 건다(Task 11c `rearmMs`). 나: 계획이 닫힌 뒤에는 다시 걸지 않는다(라면·전자레인지를 코치 밖에서 다시 쓸 때 안내가 뜨지 않지만, 취소 뒤 켠 불을 놓친다). 다: 집을 닫을 때까지 늘 다시 건다(코치 밖 평소 사용에도 끄기 안내가 뜬다).
+7. **사용자 결정: 가전 종류 등록부 먼저(2026-11-15).** 가전 종류마다 이름·Matter 연결·트윈 type·카메라 낱말·위험 동작·손 조작을 `src/model/kinds.ts` 한 곳에 적고 흩어진 곳은 거기서 파생한다(Task 11r, Task 11 바로 뒤). 새 종류는 등록부 한 줄 + `added_devices.json` 한 줄이다.
 
 ## Self-Review
 
@@ -987,6 +1081,7 @@ export function microwaveSteps(ids: { microwave: string; waitS?: number /* wait 
 - PAM 계약 그대로: 「PAM 계약」 절, Task 13 시험 7.
 - Codex 1차 지적 9개: 1 Task 4 바꾸기 2·4, 2 「일주일을 시연 안에서 보이는 길」·Task 7·8, 3 Task 5 범위, 4 Task 2 행동 단위, 5 Task 6 API·Task 8 확인, 6 Task 8 `start`·Task 9 `--start-at`, 7 Task 11 `unbaked`, 8 Task 10 차례 쓰기, 9 Task 10 붙잡기·Task 9 `--tail`.
 - 서버 글 구조(T1~T4)에 맞춤: 「조사한 사실」 사람 단계 글 절, Task 12 표(글·끝 조건을 코드가 내는 값으로), 「라면 대본」 절, Task 13 시험 5·6.
+- 사용자 결정: 가전 종류 등록부 먼저(2026-11-15): Task 11r(등록부 `src/model/kinds.ts`, 흩어진 종류별 표 파생, 등록부 밖 종류별 표를 찾는 구조 검사, 바꾸기 전 21종과 같은 결과 시험, 새 종류 추가하는 법), Task 11a·11b·12의 종류별 값(카메라 규칙·selfStop)을 등록부 칸으로.
 - Codex 16차 지적 2개: P2 Task 11d 늦은 hello 뒤에는 처음 보낸 명령 전체(kind·target·vision)를 지금 AR 좌표로 다시 보냄, P2 on_timeout "ask"가 있는 계획은 needsPhone, 계획 도중 물을 폰이 없으면 바로 실패로 닫아 PAM을 풀고 위험 가전 추적은 남김.
 - Codex 15차 지적 2개: P2 Task 11d 2초 뒤라도 맞는 hello가 오면 연결을 정상으로 되돌리고 지금 명령·안전 안내를 다시 보냄, P2 맞는 폰이 없을 때 폰이 필요한 계획만 미루고(`needsPhone`) 가전만 쓰는 승인된 계획은 시작, 기존 시험의 폰 연결은 hello를 보내는 `openPhone`으로.
 - Codex 14차 지적 2개: P1 Task 11d 들은 승인은 말할 때 보인 승인 대기 token 하나만 답하고(`answerToken`) 없거나 다르면 버림, 들은 말로 `answerAll` 안 함, P2 폰이 연결 때 판본(hello)을 알리고 판본 없거나 다른 옛 탭은 서버가 새로 고침 명령만 보내고 실행·답을 막음.
