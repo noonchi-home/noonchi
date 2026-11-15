@@ -9,7 +9,7 @@ task planner가 클로이드 계획(판단·단계·이동 경로)을 트윈 화
 - `id`가 같으면 그 계획을 바꾼다. 바꿀 때마다 `revision`을 1 올린다. 서버는 같은 `id`의 번호를 지금 번호보다 크게 맞춘다. 화면은 지금 것과 같거나 작은 번호를 버린다.
 - 모양이 틀리면 400과 틀린 필드를 돌려준다. 답은 `{ "ok": true, "plan": 서버가 보관한 계획 }`.
 - 단계 상태만 바꿀 때: `POST http://127.0.0.1:8200/api/plan/:id/steps/:stepId`, 본문 `{ "status": "done" }`. 이때 `revision`은 서버가 올린다. 보내는 규칙은 계획과 같다.
-- 지금 계획 보기: `GET http://127.0.0.1:8200/api/plan` → `{ "ok": true, "plan": PlanView | null }`.
+- 지금 계획 보기: `GET http://127.0.0.1:8200/api/plan` → `{ "ok": true, "plan": PlanView | null, "off": { "hot": string[], "notices": string[] } | null }`. `off`는 켠 위험 가전 끄기 추적 요약이다: 지금 계획이 켠 채 추적하는 가전(`hot`)과 끄기 안내가 떠 있거나 줄에서 기다리는 가전(`notices`). 실행 추적이 없으면 null.
 
 ## 좌표
 

@@ -71,7 +71,7 @@ describe("/api/plan", () => {
     const { url } = await start();
     const dash = await listen(url);
     expect(await dash.waitFor((m) => m.type === "plan")).toEqual({ type: "plan", plan: null });
-    expect(await api(url, "/api/plan")).toEqual({ status: 200, json: { ok: true, plan: null } });
+    expect(await api(url, "/api/plan")).toEqual({ status: 200, json: { ok: true, plan: null, off: null } });
   });
 
   it("계약 문서 예시를 받으면 방송하고, 다시 접속하면 그 계획부터 받는다", async () => {
@@ -116,7 +116,7 @@ describe("/api/plan", () => {
 
   it("계획 보관이 없는 앱: GET은 null, 보내기는 404", async () => {
     const { url } = await start(false);
-    expect((await api(url, "/api/plan")).json).toEqual({ ok: true, plan: null });
+    expect((await api(url, "/api/plan")).json).toEqual({ ok: true, plan: null, off: null });
     expect((await api(url, "/api/plan", { plan: docPlan() })).status).toBe(404);
   });
 

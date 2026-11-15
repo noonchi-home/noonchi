@@ -87,11 +87,6 @@ export function logVideoAt(at) {
   videoRecord().at = structuredClone(at);
 }
 
-/** 지금 명령 줄의 명령(계획 id·단계 id, 지워졌으면 null)을 기록한다(영상 판정이 끄기 안내가 남았는지 본다). */
-export function logVideoCurrent(command) {
-  videoRecord().current = command ? { id: command.id, step: command.step } : null;
-}
-
 /** 받은 명령을 그 영상 시각으로 기록한다. 같은 단계·글(비전 상태만 바뀐 것)은 한 번만. */
 export function logVideoCommand(videoMs, { id, step, text }) {
   const record = videoRecord();

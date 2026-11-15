@@ -6,7 +6,7 @@
 // --start-at: 폰 페이지를 열기 전에 그 장면 시작 위치(scripts/demo-start.ts)를 서버에 넣는다. 서버의 지금 집이 --home이 아니면 판정을 시작하지 않는다.
 // --approve: 단계 id가 :approve·:hand로 끝나는 질문에만 그 초 뒤 「승인」, --done-on: 위 줄이 그 글과 같은 명령에만 그 초 뒤 「완료」를 누른다.
 //   누를 때 지금 명령의 계획 id·단계 id·위 줄이 예약한 것과 모두 같을 때만 누른다. 누른 것은 시각표에 「누름」 줄.
-// 끝내기(judgeState): 계획이 닫혔고 누를 답이 없고 끄기 안내(off: 명령)가 명령 줄에 남지 않으면 끝, 영상이 멈춘(첫 영상 끝·단계 영상 마지막 장면 붙잡기) 뒤 --tail초,
+// 끝내기(judgeState): 계획이 닫혔고 누를 답이 없고 끄기 추적(hot·끄기 안내, GET /api/plan의 같은 답)이 남지 않으면 끝, 영상이 멈춘(첫 영상 끝·단계 영상 마지막 장면 붙잡기) 뒤 --tail초,
 // 지금 영상 길이 + 60초, 판 전체 --max초. 끄기 안내가 남은 채 끝나면 「끝까지 돌지 않음」에 남긴다.
 // 영상 모드 판정: 헤드리스 크롬 하나(390×844)로 폰 페이지 <phone>/phone/?clip=<clip>을 열고 「AR 시작」을 눌러 영상을 끝까지 튼다.
 // --step(여러 번, 종류 go·pick·place·do, 낱말 a-z·_)은 폰 주소에 step=으로 하나씩 붙는다. 폰 페이지는 종류가 같고 대상 id에 낱말이 든 명령이 오면
@@ -49,6 +49,7 @@ import { heldLock, withHeavy, type Lock } from "./twin3d/heavy.js";
 import { demoFile, encodeDemo, RECORD_FPS, startRecording, type Recorded, type Recording } from "./video-record.js";
 import { det } from "../tests/helpers/detectors.js";
 import type { SceneJson } from "../src/contract/layout.js";
+import type { OffTrack } from "../src/contract/plan.js";
 import { isOffStep } from "../src/act/off-step.js";
 import { resolveTwinStudioDir } from "../src/model/devices.js";
 import { resolveHome } from "../src/model/homes.js";
@@ -221,6 +222,13 @@ export function markdown(o: { clip: string; mode: string; ranAt: string; rows: R
 // 서버 상태
 
 type PlanNow = { status?: string; goal?: string } | null;
+/** GET /api/plan 답(계획과 끄기 추적 요약). */
+type PlanAnswer = { plan: PlanNow; off?: OffTrack | null } | null;
+
+/** 끝낼지 볼 값을 GET /api/plan 한 답에서 함께 읽는다: 계획 상태와 끄기 추적(hot·끄기 안내)이 남았는지. 따로 읽으면 계획이 막 닫힌 순간 생긴 끄기 안내를 놓친다. */
+export function judgeInput(a: PlanAnswer): { planStatus: string | undefined; offOpen: boolean } {
+  return { planStatus: a?.plan?.status, offOpen: !!a?.off && (a.off.hot.length > 0 || a.off.notices.length > 0) };
+}
 type BrainNow = {
   frames?: number; vlm?: { sent?: number; costUsd?: number }; closer?: { looks?: number; model?: string }; look?: { calls?: number; costUsd?: number | null } | null;
 } | null;
@@ -244,7 +252,7 @@ export function costLine(brain: BrainNow): string {
   return `VLM ${brain.vlm.sent ?? 0}장 · ${usd(brain.vlm.costUsd ?? 0)}${closer}${look} · 엔진 프레임 ${brain.frames ?? 0}장 · PAM·계획 비용 빠짐`;
 }
 
-/** 끝내기: watch 더 본다, done 계획이 명시적으로 닫혔고(done·failed·cancelled) 누를 답이 없고 끄기 안내(off: 명령)가 명령 줄에 남지 않음,
+/** 끝내기: watch 더 본다, done 계획이 명시적으로 닫혔고(done·failed·cancelled) 누를 답이 없고 끄기 추적(hot·끄기 안내)이 남지 않음,
  *  tail_over 영상이 멈춘 뒤 tailMs가 지남(끄기 안내가 남았으면 계획이 닫혀도 여기까지 본다: 카메라가 꺼짐 확인을 이어 가게 폰을 닫지 않는다),
  *  clip_over 지금 영상이 그 길이 + 60초를 넘게 도는 중, max_over 판 전체가 maxMs를 넘음. */
 export function judgeState(o: {
@@ -253,7 +261,7 @@ export function judgeState(o: {
   /** 지금 도는 영상(첫 영상이나 바꾼 단계 영상)이 시작된 뒤 ms와 그 영상 길이 ms. */
   clipPlayedMs: number; clipDurationMs: number | null;
   due: number; planStatus: string | undefined; tailMs: number; totalMs: number; maxMs: number;
-  /** 폰 명령 줄에 닫힌 계획의 끄기 안내·부탁(off: 단계)이 남아 있는가(__noonchiVideo.current). */
+  /** 끄기 추적(지금 계획 hot·끄기 안내)이 남아 있는가(judgeInput, GET /api/plan off). */
   offOpen: boolean;
 }): "watch" | "done" | "tail_over" | "clip_over" | "max_over" {
   if (o.totalMs > o.maxMs) return "max_over";
@@ -338,7 +346,7 @@ const READ = `(() => {
   const r = window.__noonchiVideo ?? null;
   const v = document.querySelector("video[data-phone-video]");
   return {
-    record: r && { t0: r.t0, ended: r.ended, hold: r.hold ?? null, commands: r.commands, clips: r.clips ?? [], current: r.current ?? null },
+    record: r && { t0: r.t0, ended: r.ended, hold: r.hold ?? null, commands: r.commands, clips: r.clips ?? [] },
     time: v ? v.currentTime : null, duration: v && Number.isFinite(v.duration) ? v.duration : null, ended: v ? v.ended : false,
     top: document.querySelector("[data-phone-zone=top] [data-phone-text]")?.textContent ?? null,
     buttons: [...document.querySelectorAll("[data-phone-zone=thumb] button")].map((b) => b.textContent.trim()),
@@ -346,7 +354,7 @@ const READ = `(() => {
   };
 })()`;
 type Seen = {
-  record: { t0: number | null; ended: boolean; hold: { clip: string; since: number } | null; commands: VideoCommand[]; clips: VideoClip[]; current: { id: string; step: string } | null } | null;
+  record: { t0: number | null; ended: boolean; hold: { clip: string; since: number } | null; commands: VideoCommand[]; clips: VideoClip[] } | null;
   time: number | null; duration: number | null; ended: boolean; top: string | null; buttons: string[]; support: string | null;
 };
 /** 페이지의 지금 명령(__noonchiVideo.commands 마지막)의 계획 id·단계 id와 위 줄 글이 모두 c와 같을 때만 label 글의 엄지 자리 단추(null이면 첫 단추)를 누르고 그 글을 돌려준다. */
@@ -558,7 +566,7 @@ async function main(): Promise<number> {
       fake = fakeMode ? await startFake(clip, steps) : undefined;
       const api = (fake?.api ?? args.api).replace(/\/+$/, "");
       const url = phoneUrl(fake?.phone ?? args.phone, clip, steps);
-      const planNow = () => getJson<{ plan: PlanNow }>(`${api}/api/plan`);
+      const planNow = () => getJson<NonNullable<PlanAnswer>>(`${api}/api/plan`);
 
       // 앞 판 계획·World State가 남은 서버면 시작하지 않는다(새로 붙은 폰은 남은 명령을 바로 받는다)
       const before = await planNow();
@@ -682,10 +690,10 @@ async function main(): Promise<number> {
         const still = seen.record ? seen.record.ended || seen.record.hold !== null : seen.ended;
         stillSince = still ? stillSince ?? Date.now() : null;
         const clipDurationMs = clips.at(-1)?.duration_ms ?? (seen.duration !== null ? seen.duration * 1000 : null);
-        const offOpen = isOffStep(seen.record?.current?.step ?? "");
+        const { planStatus, offOpen } = judgeInput(await planNow());
         const state = judgeState({
           stillForMs: stillSince === null ? null : Date.now() - stillSince, clipPlayedMs: Date.now() - clipAt, clipDurationMs,
-          due: due.length, planStatus: (await planNow())?.plan?.status, tailMs: args.tailMs, totalMs: Date.now() - runStart, maxMs: args.maxMs, offOpen,
+          due: due.length, planStatus, tailMs: args.tailMs, totalMs: Date.now() - runStart, maxMs: args.maxMs, offOpen,
         });
         if (offOpen && state !== "watch" && state !== "done") unfinished.push("끄기 안내가 풀리지 않음");
         if (state === "clip_over") { unfinished.push(`${Math.round((clipDurationMs! + 60_000) / 1000)}초 안에 영상이 끝나지 않음`); break; }

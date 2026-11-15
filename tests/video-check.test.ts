@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { HistoryRow } from "../src/contract/history.js";
 import type { WorldEye, WorldObject, WorldView } from "../src/contract/world.js";
-import { SEND_SAY, clickChoice, clock, costLine, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, stepVerdict, timeline, twinRows, usedServer, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
+import { SEND_SAY, clickChoice, clock, costLine, judgeInput, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, stepVerdict, timeline, twinRows, usedServer, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
 import { createServer, type Server } from "node:http";
 import { listenRetry } from "../src/server/net.js";
 import type { SceneJson } from "../src/contract/layout.js";
@@ -223,6 +223,14 @@ describe("video-check", () => {
       expect(judgeState({ ...base, planStatus: undefined, stillForMs: 301_000 })).toBe("tail_over");
       for (const s of ["done", "failed", "cancelled"]) expect(judgeState({ ...base, planStatus: s, stillForMs: 1_000 }), s).toBe("done");
     });
+    it("계획 상태와 끄기 추적은 GET /api/plan 한 답에서 함께 읽는다: 계획이 막 닫힌 답에 끄기 안내가 있으면 끝내지 않는다", () => {
+      expect(judgeInput({ plan: { status: "cancelled" }, off: { hot: [], notices: ["induction_1"] } })).toEqual({ planStatus: "cancelled", offOpen: true });
+      expect(judgeInput({ plan: { status: "done" }, off: { hot: ["induction_1"], notices: [] } })).toEqual({ planStatus: "done", offOpen: true });
+      expect(judgeInput({ plan: { status: "done" }, off: { hot: [], notices: [] } })).toEqual({ planStatus: "done", offOpen: false });
+      expect(judgeInput(null)).toEqual({ planStatus: undefined, offOpen: false });
+      expect(judgeState({ ...base, ...judgeInput({ plan: { status: "cancelled" }, off: { hot: [], notices: ["induction_1"] } }) })).toBe("watch");
+    });
+
     it("계획이 done이어도 끄기 안내(off: 명령)가 명령 줄에 남아 있으면 끝내지 않고 tail까지 본다. 안내가 풀리면 done", () => {
       expect(judgeState({ ...base, planStatus: "done", offOpen: true })).toBe("watch");
       expect(judgeState({ ...base, planStatus: "cancelled", offOpen: true, stillForMs: 100_000 })).toBe("watch");

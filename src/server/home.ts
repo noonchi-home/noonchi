@@ -459,7 +459,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       home: { id: home.id, name: home.name }, homes: listHomes(twin.dir), layout: layout?.editor, phoneUrls: () => phoneUrls, mode: ctx.mode, webDir: ctx.webDir, allowOrigin: ctx.allowOrigin, planToken: ctx.planToken, ready: ctx.ready,
       start: startStore && { get: () => startStore.get(), save: (raw) => startStore.save(raw), preview: (raw) => startStore.preview(raw), clear: () => startStore.clear() },
       phoneSync: () => phoneRef.current?.syncState() ?? null,
-      plan: plans, history: history.db, reflect: history.reflect, scene: () => scene,
+      plan: plans, offTrack: () => tracker?.offTrack() ?? null, history: history.db, reflect: history.reflect, scene: () => scene,
       brainLast: () => [...todayReflection(), ...(lastDecision ? [lastDecision] : [])], seenLast: () => lastSeen, say: () => said,
     });
     const appNow = app;

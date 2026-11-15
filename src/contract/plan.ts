@@ -7,6 +7,8 @@ export type PlanSource = "brain" | "agent" | "planner";
 export type StepKind = "move" | "act" | "ask" | "device" | "wait";
 export type StepStatus = "pending" | "active" | "done" | "failed" | "skipped";
 export type PlanStatus = "planned" | "running" | "done" | "cancelled" | "failed";
+/** 켠 위험 가전 끄기 추적 요약(GET /api/plan off): 지금 계획이 켠 채 추적하는 가전(hot)과 끄기 안내가 떠 있거나 줄에서 기다리는 가전(notices). */
+export interface OffTrack { hot: string[]; notices: string[] }
 
 export interface PlanTarget { objectId?: string; deviceId?: string; room?: string; position?: XZ }
 

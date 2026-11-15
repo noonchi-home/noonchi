@@ -261,6 +261,9 @@ describe("코치 모드: 라면 끓이기 알려 주기", () => {
     expect(off.text).toMatch(/인덕션.* 꺼 주세요$/);
     // 끄기 안내가 승인 대기 카드를 가리는 동안 승인 시간 제한이 멈춘다
     expect(srv!.policy.paused()).toBe(true);
+    // GET /api/plan은 닫힌 계획 상태와 끄기 추적 요약을 한 답으로 준다(영상 판정이 같은 순간 값으로 끝낼지 본다)
+    const planNow = async () => (await (await fetchRetry(`${srv!.url}/api/plan`)).json()) as { plan: { id: string; status: string } | null; off: { hot: string[]; notices: string[] } | null };
+    expect(await planNow()).toMatchObject({ plan: { id: planId, status: "cancelled" }, off: { hot: [], notices: [s.cooktop] } });
     await s.pump(async () => (await s.history("execution")).some((r) => r.subject === planId && r.text === "사용자가 그만둠"), "취소 기록");
     await s.pump(() => s.dash.some((m) => m.type === "say" && m.text === "불을 꺼 달라고 했어요."), "말풍선 카드");
     s.answer(off);
@@ -270,6 +273,7 @@ describe("코치 모드: 라면 끓이기 알려 주기", () => {
     await srv!.hub.command(s.cooktop, { type: "off" });
     await s.pump(() => s.phone.at(-1)?.type === "command_clear", "안내 지움");
     expect(srv!.policy.paused()).toBe(false);
+    expect((await planNow()).off).toEqual({ hot: [], notices: [] });
     expect(existsSync(join(s.runtimeDir, "homes", "mokryeon_180b", "lessons.json"))).toBe(false);
   }, 90_000);
 

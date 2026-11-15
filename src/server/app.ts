@@ -14,7 +14,7 @@ import { Policy } from "../agent/policy.js";
 import type { BrainLog, HealthView, ReadyView, SeenEvent } from "../contract/events.js";
 import type { HistoryKind } from "../contract/history.js";
 import type { WorldView } from "../contract/world.js";
-import type { PlanView } from "../contract/plan.js";
+import type { OffTrack, PlanView } from "../contract/plan.js";
 import type { ControlMode } from "../contract/setup.js";
 import { deviceViews, roomViews } from "../agent/tools.js";
 import type { Command, CommandResult, DeviceHub, RoomSpec } from "../hub/types.js";
@@ -80,6 +80,8 @@ export interface AppOptions {
   ready?: () => Promise<ReadyView>;
   /** 클로이드 계획 보관(src/plan/hub.ts). 있으면 에이전트 행동을 넘기고 POST /api/plan*을 받는다. 접속 때 지금 계획을 보낸다. */
   plan?: Pick<PlanHub, "current" | "onAgent" | "put" | "setStep">;
+  /** 끄기 추적 요약(실행 추적 offTrack). GET /api/plan이 계획과 같은 답에 싣는다(영상 판정이 같은 순간 값으로 끝낼지 본다). 없으면 null. */
+  offTrack?: () => OffTrack | null;
   /** 기록 DB(src/history/db.ts). 있으면 GET /api/history·/api/history/day/{날짜}·/api/decisions. */
   history?: HistoryDb;
   /** 그날 반성(src/history/reflect.ts). 있으면 POST /api/reflection/run. */
@@ -438,7 +440,7 @@ export function createApp(opts: AppOptions): TwinHomeApp {
 
   // ── 클로이드 계획 ──
 
-  route("GET", /^\/api\/plan$/, async () => ({ ok: true, plan: opts.plan?.current() ?? null }));
+  route("GET", /^\/api\/plan$/, async () => ({ ok: true, plan: opts.plan?.current() ?? null, off: opts.offTrack?.() ?? null }));
   const requirePlan = (req: IncomingMessage) => {
     if (!opts.plan) throw new HttpError(404, "계획을 받을 수 없습니다(집이 아직 없음).");
     if (!canSendPlan(req.socket.remoteAddress, req.headers.authorization, opts.planToken)) throw new HttpError(403, "계획은 서버와 같은 PC에서 보내거나 PLAN_TOKEN을 붙여 보내야 합니다.");

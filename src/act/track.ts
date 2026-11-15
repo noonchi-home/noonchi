@@ -58,7 +58,7 @@
 // 계획 전·실행 전 검사·계획 입력·제출 검사와 대상 고르기가 이미 치운 것으로 본다. 다시 집거나(손에 있음 확인됨) 그 영역 밖(다른 면, 싱크볼이면 싱크볼 밖)에서 보이면 지운다.
 import type { BrainLog, ExecState } from "../contract/events.js";
 import type { HeardAt, PhoneStepKind, PlannedCommand, PlannedCommandMessage } from "../contract/phone.js";
-import type { PlanView, StepStatus, XZ } from "../contract/plan.js";
+import type { OffTrack, PlanView, StepStatus, XZ } from "../contract/plan.js";
 import type { Facet, WorldChange, WorldChangeKind, WorldEye, WorldObject, WorldView } from "../contract/world.js";
 import type { LookSpot } from "../observe/crop.js";
 import type { FloorPlan } from "../plan/floor.js";
@@ -990,6 +990,12 @@ export class ExecutionTracker {
     if (this.stopped || r?.state !== "planned" || r.asking || !r.deferred) return null;
     const id = this.reminder?.note.deviceId ?? this.offQueue[0]?.deviceId;
     return id ? this.handLabel(id) : null;
+  }
+
+  /** 끄기 추적 요약(GET /api/plan off, 영상 판정): 지금 계획 hot 가전과 끄기 안내가 떠 있거나 줄에서 기다리는 가전. 멈췄으면 빈 요약. */
+  offTrack(): OffTrack {
+    if (this.stopped) return { hot: [], notices: [] };
+    return { hot: [...(this.run?.hot ?? [])], notices: [...(this.reminder ? [this.reminder.note.deviceId] : []), ...this.offQueue.map((n) => n.deviceId)] };
   }
 
   /** 켠 위험 가전 추적(시험·안내 자리): 지금 계획의 hot, 가전마다 지금 켜기 회차, 풀린 가전과 그 근거. */
