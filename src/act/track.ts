@@ -176,6 +176,18 @@ const evidenceTime = (h: HistoryLine) => h.seen_ms ?? h.at_ms;
 const onNow = (d: DeviceView) => d.state.includes("on") || d.state.includes("running");
 /** 지금 상태가 이미 꺼짐(꺼짐·멈춤, 켜짐 아님)인가. 신호가 없거나 가전을 모르면 아니다. */
 const offNow = (d: DeviceView | undefined) => !!d && d.status !== null && !onNow(d) && (d.state.includes("off") || d.state.includes("stopped"));
+/** after 뒤(until까지) 그 가전이 켜졌다는 가장 이른 근거 시각(촬영 시각). 이력의 켜짐 줄(허브·실제 가전 신호·카메라 명시·추정)과
+ *  카메라 마지막 관측(sight_last, 허브가 꺼짐을 말해 이력 줄이 없을 때도 남는다)의 켜짐을 본다. 없으면 null. */
+function onSeenAfter(d: DeviceView | undefined, after: number, until = Number.POSITIVE_INFINITY): number | null {
+  if (!d) return null;
+  const lines = d.history.filter((h) => CYCLE_VALUES.some((k) => h.attr === k.attr && h.to === k.on)).map(evidenceTime);
+  const seen = CYCLE_VALUES.flatMap((k) => {
+    const s = d.sight_last?.[k.attr];
+    return s && s.value === k.on ? [s.seen_ms] : [];
+  });
+  const times = [...lines, ...seen].filter((x) => x > after && x <= until);
+  return times.length ? Math.min(...times) : null;
+}
 
 /** 다른 행동의 계기가 되는 변화: 사람 방, 가전 상태, 가전 설비 상태. */
 const STRAY_KINDS: ReadonlySet<WorldChangeKind> = new Set<WorldChangeKind>(["person_room", "device", "fixture"]);
@@ -760,7 +772,7 @@ export class ExecutionTracker {
   }
 
   /** 다시 걸기: 풀린 가전의 새 켜짐(근거 촬영 시각이 풀린 근거의 촬영 시각 evidenceAt 뒤이고 그 뒤 rearmMs 안)을 보면 추적을 다시 건다.
-   *  켜짐 근거는 명시·추정 모두 받는다. 회차를 올리고(onAt은 그 켜짐 촬영 시각, 옛 부탁은 버림) 같은 계획이 열려 있으면 hot에 다시 넣고,
+   *  켜짐 근거는 이력 줄과 카메라 마지막 관측(sight_last), 명시·추정 모두 받는다(onSeenAfter). 회차를 올리고(onAt은 그 켜짐 촬영 시각, 옛 부탁은 버림) 같은 계획이 열려 있으면 hot에 다시 넣고,
    *  닫혔으면 끄기 안내 줄에 넣는다(다른 계획이 도는 중이면 그 계획이 끝난 뒤 뜬다). 푼 뒤 rearmMs가 지나면 더 보지 않는다. */
   private rearmIfOn(deviceId: string): boolean {
     const rel = this.released.get(deviceId);
@@ -770,10 +782,10 @@ export class ExecutionTracker {
       return false;
     }
     const d = this.o.world().devices.find((x) => x.id === deviceId);
-    const on = d?.history.find((h) => CYCLE_VALUES.some((k) => h.attr === k.attr && h.to === k.on) && evidenceTime(h) > rel.evidenceAt && evidenceTime(h) <= rel.evidenceAt + this.cfg.rearmMs);
-    if (!on) return false;
+    const on = onSeenAfter(d, rel.evidenceAt, rel.evidenceAt + this.cfg.rearmMs);
+    if (on === null) return false;
     this.released.delete(deviceId);
-    const cycle: Cycle = { cycle: (this.cycles.get(deviceId)?.cycle ?? 0) + 1, onAt: evidenceTime(on), askedAt: null };
+    const cycle: Cycle = { cycle: (this.cycles.get(deviceId)?.cycle ?? 0) + 1, onAt: on, askedAt: null };
     this.cycles.set(deviceId, cycle);
     const r = this.run;
     if (r && OPEN.has(r.state) && r.plan.view.id === rel.planId) {

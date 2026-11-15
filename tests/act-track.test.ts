@@ -1114,6 +1114,29 @@ describe("실행 추적: 켠 위험 가전 추적은 확인된 꺼짐으로만 �
     expect(s.t.safety().cycles.microwave_1!.cycle).toBe(1);
   });
 
+  it("다시 걸기: 허브는 꺼짐 그대로인데 카메라가 새로 켜짐을 보면(sight_last에만 남음) 다시 건다. 풀린 근거보다 먼저 찍힌 카메라 켜짐으로는 걸지 않는다", async () => {
+    let w = world([]);
+    const { s, onAt } = await mwOn({ w: () => w });
+    const on = cam("off", "on", onAt + 100);
+    w = { ...world([]), devices: [mw(["on"], [on])] };
+    s.t.onHeard("그만");
+    const off = cam("on", "off", onAt + 1_000, true, onAt + 5_000);
+    w = { ...world([]), devices: [mw(["off"], [on, off])] };
+    s.clock.t = onAt + 5_000;
+    s.t.onWorld();
+    expect(s.last()).toEqual({ type: "command_clear", id: P });
+    const n = s.phone.length;
+    // 풀린 근거(onAt + 1000)보다 먼저 찍힌 카메라 켜짐: 걸지 않는다
+    w = { ...world([]), devices: [mw(["off"], [on, off], { power: { value: "on", seen_ms: onAt + 900, explicit: true, close: false } })] };
+    settle(s);
+    expect(s.phone).toHaveLength(n);
+    // 허브는 꺼짐 그대로(이력 줄 없음), 카메라 마지막 관측만 새 켜짐
+    w = { ...world([]), devices: [mw(["off"], [on, off], { power: { value: "on", seen_ms: onAt + 3_000, explicit: true, close: false } })] };
+    s.t.onWorld();
+    expect(s.last()).toEqual({ ...OFF, step: `${P}:off:2` });
+    expect(s.t.safety()).toMatchObject({ released: {}, cycles: { microwave_1: { cycle: 2, onAt: onAt + 3_000, askedAt: null } } });
+  });
+
   it("다시 걸기: 같은 계획이 돌고 있으면 그 계획 hot에 다시 넣고 onAt이 그 켜짐 시각이 된다(라면, 허브 근거)", async () => {
     let w = { ...world([]), devices: [cooktop(["off"])] };
     const s = coachSetup({ w: () => w });
