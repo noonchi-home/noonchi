@@ -359,7 +359,7 @@ describe("실행 추적: 단계마다 실제 폰 명령", () => {
     await a.decide(ask("pam-1", 1));
     expect(a.phone).toEqual([{
       type: "command", id: "plan:pam-1", step: "plan:pam-1:1", text: "컵을 치울까요?", vision: null,
-      choices: [{ id: "clear", label: "치워 주세요" }, { id: "keep", label: "그대로 둬요" }], target: null, speak: true,
+      choices: [{ id: "clear", label: "치워 주세요" }, { id: "keep", label: "그대로 둬요" }], target: null, speak: true, grade: "question",
     }]);
     expect(a.steps()).toEqual(["active"]);
     expect(a.t.onAnswer("plan:pam-1", "plan:pam-1:1", "done")).toBe(false);
@@ -613,7 +613,7 @@ describe("실행 추적: 코치 계획(손으로 켜는 위험 가전)", () => {
   // 켜기 전 질문의 안전 문구는 서버 글(CAUTION_LINE)이다
   const ASK = "냄비와 상판이 뜨거워져요. 인덕션을 켤까요?";
   const YESNO = [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }];
-  const OFF = { type: "command", id: P, step: `off:${P}:induction_1:1`, text: "인덕션을 꺼 주세요", vision: null, choices: DONE, target: null, speak: true };
+  const OFF = { type: "command", id: P, step: `off:${P}:induction_1:1`, text: "인덕션을 꺼 주세요", vision: null, choices: DONE, target: null, speak: true, grade: "safety" };
   /** 끄기 안내의 「완료」 뒤·상태가 이미 꺼짐인 채 닫힌 뒤: 보이게 해 달라는 부탁(답 단추 없음). */
   const ASK_OFF = { ...OFF, text: "인덕션이 보이게 폰을 가까이 대 주세요", choices: [] };
 
@@ -623,7 +623,7 @@ describe("실행 추적: 코치 계획(손으로 켜는 위험 가전)", () => {
     let w = world([]);
     const s = coachSetup({ approvals, w: () => w });
     await toOn(s);
-    expect(s.last()).toEqual({ type: "command", id: P, step: `${P}:7:hand`, text: ASK, vision: null, choices: YESNO, target: null, speak: true });
+    expect(s.last()).toEqual({ type: "command", id: P, step: `${P}:7:hand`, text: ASK, vision: null, choices: YESNO, target: null, speak: true, grade: "question" });
     expect(s.spoken()).not.toContain("인덕션을 켜 주세요");
     expect(s.steps()[6]).toBe("active");
     // 승인 없이 넘기는 길이 없다: 단계 「완료」, 질문에 「완료」, 말 「완료」·「다 했어」, 가전이 켜졌다는 관찰, 시간
@@ -756,9 +756,11 @@ describe("실행 추적: 코치 계획(손으로 켜는 위험 가전)", () => {
     expect(s.t.coaching()).toBe(true);
     s.clock.t += 240_001; s.t.tick();
     expect(s.last()).toMatchObject({ step: `${P}:10`, text: "면과 스프를 넣어 주세요" });
+    // 소리 등급: 보통 명령은 칸이 없고, 계획 안 끄기 단계(12번)는 안전
+    expect(s.last()).not.toHaveProperty("grade");
     s.t.onAnswer(P, `${P}:10`, "done");
     s.clock.t += 240_001; s.t.tick();
-    expect(s.last()).toMatchObject({ step: `${P}:12`, text: "인덕션을 꺼 주세요", choices: DONE, kind: "do" });
+    expect(s.last()).toMatchObject({ step: `${P}:12`, text: "인덕션을 꺼 주세요", choices: DONE, kind: "do", grade: "safety" });
     expect(s.t.onAnswer(P, `${P}:12`, "done")).toBe(true);
     expect(s.steps()[12]).toBe("active");
     expect(s.t.safety().hot).toEqual(["induction_1"]);
@@ -814,7 +816,7 @@ describe("실행 추적: 코치 계획(손으로 켜는 위험 가전)", () => {
     s.clock.t += 19_000; s.t.tick();
     expect(s.last()).toMatchObject({ step: `${P}:12`, text: "인덕션을 꺼 주세요" });
     s.clock.t += 1_001; s.t.tick();
-    expect(s.last()).toMatchObject({ type: "command", id: P, step: `${P}:12`, text: ASK_OFF.text, choices: [], speak: true, kind: "do" });
+    expect(s.last()).toMatchObject({ type: "command", id: P, step: `${P}:12`, text: ASK_OFF.text, choices: [], speak: true, kind: "do", grade: "safety" });
     for (let i = 0; i < 8; i++) { s.clock.t += 1_000; s.t.tick(); }
     expect(s.phone.filter((m) => m.type === "command" && m.text === ASK_OFF.text)).toHaveLength(1);
     expect(s.t.safety().cycles.induction_1!.askedAt).toBe(s.clock.t - 8_000);
@@ -1054,7 +1056,7 @@ describe("실행 추적: 켠 위험 가전 추적은 확인된 꺼짐으로만 �
   type Line = Dev["history"][number];
   const MW_ON = { kind: "do", act: "켜기", target: "microwave_1", hand_device: { id: "microwave_1", to: "on" }, timeout_s: 120 };
   const MW_OFF_STEP = { ...MW_ON, act: "끄기", hand_device: { id: "microwave_1", to: "off" } };
-  const OFF = { type: "command", id: P, step: `off:${P}:microwave_1:1`, text: "전자레인지를 꺼 주세요", vision: null, choices: DONE, target: null, speak: true };
+  const OFF = { type: "command", id: P, step: `off:${P}:microwave_1:1`, text: "전자레인지를 꺼 주세요", vision: null, choices: DONE, target: null, speak: true, grade: "safety" };
   const ASK = { ...OFF, text: "전자레인지가 보이게 폰을 가까이 대 주세요", choices: [] };
   /** 카메라로 본 전자레인지(이력 줄 seen_ms·explicit, 마지막 관측 sight_last). */
   const mw = (state: string[], history: Line[] = [], sight?: Dev["sight_last"]): Dev => ({ ...cooktop(state, history), id: "microwave_1", kind: "microwave", label: "전자레인지", ...(sight ? { sight_last: sight } : {}) });
@@ -1626,7 +1628,7 @@ describe("실행 추적: 전자레인지로 데우기 알려 주기(7번 다 되
   async function toOn(s: ReturnType<typeof setup>) {
     await s.decide(mwDecision());
     for (let n = 1; n <= 4; n++) expect(s.t.onAnswer(P, `${P}:${n}`, "done"), String(n)).toBe(true);
-    expect(s.last()).toMatchObject({ step: `${P}:5:hand`, text: ASK, choices: [{ id: "approve" }, { id: "reject" }] });
+    expect(s.last()).toMatchObject({ step: `${P}:5:hand`, text: ASK, choices: [{ id: "approve" }, { id: "reject" }], grade: "question" });
     expect(s.phone.some((m) => m.type === "command" && m.text === "전자레인지를 켜 주세요")).toBe(false);
     expect(s.t.onAnswer(P, `${P}:5:hand`, "approve")).toBe(true);
     expect(s.last()).toMatchObject({ step: `${P}:5`, text: "전자레인지를 켜 주세요" });
@@ -1715,7 +1717,7 @@ describe("실행 추적: 전자레인지로 데우기 알려 주기(7번 다 되
     s.clock.t += 19_000; s.t.tick();
     expect(s.phone.filter((m) => m.type === "command" && m.text === SHOW)).toEqual([]);
     s.clock.t += 1_001; s.t.tick();
-    expect(s.last()).toMatchObject({ type: "command", id: P, step: `${P}:7`, text: SHOW, choices: [], speak: true });
+    expect(s.last()).toMatchObject({ type: "command", id: P, step: `${P}:7`, text: SHOW, choices: [], speak: true, grade: "safety" });
     const askedAt = s.clock.t;
     for (const sight of [lastOff(askedAt - 1), lastOff(askedAt + 500, false), lastOff(askedAt + 500, true, false)]) {
       devs = [mwk(["off"], [], sight)];
@@ -1751,7 +1753,7 @@ describe("실행 추적: 전자레인지로 데우기 알려 주기(7번 다 되
     devs = [mwk(["on"], [cam("off", "on", onAt + 500)])];
     s.t.onWorld();
     s.heard("그만");
-    expect(s.last()).toEqual({ type: "command", id: P, step: `off:${P}:${MWK}:1`, text: "전자레인지를 꺼 주세요", vision: null, choices: DONE, target: null, speak: true });
+    expect(s.last()).toEqual({ type: "command", id: P, step: `off:${P}:${MWK}:1`, text: "전자레인지를 꺼 주세요", vision: null, choices: DONE, target: null, speak: true, grade: "safety" });
   });
 
   it("켜라고 하기 전에 있던 켜짐 → 꺼짐 이력으로도, 켜라고 하기 전에 찍은 꺼짐 사진의 답이 늦게 도착해도 7번이 끝나지 않고 hot·끄기 안내가 그대로다", async () => {
@@ -2687,7 +2689,7 @@ describe("실행 추적: 승인(처음 하는 PAM 계획)", () => {
   it("처음 컵 치우기는 실제 폰에 「컵 치우기를 할까요?」와 승인·거절 두 단추를 띄우고, 「승인」이면 기억하고 첫 명령을 보낸다", async () => {
     const { t, heard, decide, phone, plans, approvals, spoken, exec } = setup({ approvals: store() });
     await decide(decision);
-    expect(phone).toEqual([{ type: "command", id: "plan:pam-1", step: "plan:pam-1:approve", text: "컵 치우기를 할까요?", vision: null, choices: APPROVE, target: null, speak: true }]);
+    expect(phone).toEqual([{ type: "command", id: "plan:pam-1", step: "plan:pam-1:approve", text: "컵 치우기를 할까요?", vision: null, choices: APPROVE, target: null, speak: true, grade: "question" }]);
     expect(APPROVAL_TEXT.ask("컵 치우기")).toBe("컵 치우기를 할까요?");
     expect(plans.current()).toMatchObject({ id: "plan:pam-1", status: "planned", steps: [{ status: "pending" }, { status: "pending" }, { status: "pending" }, { status: "pending" }] });
     expect(t.current()).toMatchObject({ state: "planned" });

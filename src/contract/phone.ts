@@ -36,7 +36,7 @@ export interface PhoneCommand {
   speak: boolean;
   /** 사람 단계 명령의 단계 종류. 질문·승인·알림에는 없다. 영상 모드가 단계 영상을 고를 때 쓴다. */
   kind?: PhoneStepKind;
-  /** 소리 등급(폰 서버가 붙인다). 보통 명령이면 없다. */
+  /** 소리 등급(실행 추적이 붙인다, src/act/talk-grade.ts). 보통 명령이면 없다. */
   grade?: TalkGrade;
 }
 

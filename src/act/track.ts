@@ -72,8 +72,9 @@ import { DEVICE_STATES, NEAR_M, PHONE_NEAR_M } from "../world/vocab.js";
 import type { DecisionRecord } from "../world/decide.js";
 import { approvalNeed, taskKey, type ApprovalAnswer, type ApprovalBook } from "../agent/approval.js";
 
-import { HUMAN_KINDS, needsPhone, objectNames, riskyHand, selfStopWait, type AgentPlan, type AgentStep, type PlanResult } from "../agent/planTools.js";
+import { HUMAN_KINDS, TOOL_STATES, needsPhone, objectNames, riskyHand, selfStopWait, type AgentPlan, type AgentStep, type PlanResult } from "../agent/planTools.js";
 import { offStep } from "./off-step.js";
+import { talkGrade } from "./talk-grade.js";
 import type { ToolResult } from "../agent/tools.js";
 import type { CheckResult } from "./check.js";
 import { QUIET_HINT_MS, quietLabels, type LessonBook, type StepOutcome } from "./lessons.js";
@@ -531,7 +532,7 @@ export class ExecutionTracker {
     r.quietOn = false;
     r.sent = { ...r.sent, text: said, speak: true };
     this.toldWallAt = Date.now();
-    this.o.toPhone(r.sent);
+    this.send(r.sent);
     return said;
   }
 
@@ -584,7 +585,7 @@ export class ExecutionTracker {
     r.helped = true;
     r.quietOn = false;
     r.sent = { ...r.sent, text: said, speak: true };
-    this.o.toPhone(r.sent);
+    this.send(r.sent);
     return said;
   }
 
@@ -614,7 +615,7 @@ export class ExecutionTracker {
     if (r.told && now >= r.told.until && r.sent) {
       r.sent = { ...r.sent, text: r.told.text, speak: false };
       r.told = null;
-      this.o.toPhone(r.sent);
+      this.send(r.sent);
     }
     this.strayNear(r, step);
     this.offAsk(r, step, now);
@@ -623,7 +624,7 @@ export class ExecutionTracker {
       r.quietOn = false;
       r.helped = true;
       r.spokeAt = now;
-      this.o.toPhone({ ...r.sent, speak: true });
+      this.send({ ...r.sent, speak: true });
     }
     this.stall(r, step, now);
     if (HUMAN_KINDS.includes(step.kind) || step.kind === "ask") this.repeat(r, now);
@@ -697,7 +698,7 @@ export class ExecutionTracker {
     if (off && rotate && this.offQueue.length) {
       this.offQueue.push(off.note);
       this.reminder = null;
-      this.o.toPhone({ type: "command_clear", id: off.sent.id });
+      this.send({ type: "command_clear", id: off.sent.id });
     }
     if (this.reminder) return;
     while (this.offQueue.length && this.releaseIfOff(this.offQueue[0]!.deviceId));
@@ -712,7 +713,7 @@ export class ExecutionTracker {
       this.offToldAt = null;
       const cycle = this.cycles.get(note.deviceId);
       if (note.ask && cycle && cycle.askedAt === null) cycle.askedAt = now;
-      this.o.toPhone(sent);
+      this.send(sent);
       return;
     }
     if (r?.state === "planned" && !r.asking) {
@@ -740,7 +741,7 @@ export class ExecutionTracker {
     if (!off || now - off.at <= this.cfg.offHoldMs) return;
     if (this.offQueue.length) return this.nextReminder(true);
     off.at = now;
-    this.o.toPhone({ ...off.sent, speak: true });
+    this.send({ ...off.sent, speak: true });
   }
 
   /** 작동 한 번 끝남 판정(하나뿐, 그 가전의 지금 켜기 회차에 대해). 아니면 null. 근거 시각은 촬영 시각(카메라 seen_ms, 허브·실제 가전 신호는 도착 시각)이고
@@ -806,7 +807,7 @@ export class ExecutionTracker {
     if (r?.onAt.has(deviceId)) r.ends.set(deviceId, { cycle: end.cycle, seenAt: end.evidenceAt, how: end.via, at: now });
     if (shown) {
       this.reminder = null;
-      this.o.toPhone({ type: "command_clear", id: shown.sent.id });
+      this.send({ type: "command_clear", id: shown.sent.id });
       this.nextReminder();
     }
     return true;
@@ -896,7 +897,7 @@ export class ExecutionTracker {
       off.note = { ...off.note, text, ask: true };
       off.sent = { ...off.sent, text, choices: [], speak: true };
       off.at = now;
-      this.o.toPhone(off.sent);
+      this.send(off.sent);
     } else if (r?.state === "running" && !r.asking && step && ((r.sent && step.kind === "do" && step.hand?.to === "off" && step.hand.deviceId === deviceId)
       || selfStopWait(step, this.o.handDevices?.() ?? []) === deviceId)) {
       // 끄기 do는 그 명령 글을, 꺼짐 기다리기(명령이 없는 단계)는 그 단계 id로 새 명령을 띄운다(답 단추 없음)
@@ -904,7 +905,7 @@ export class ExecutionTracker {
       r.sent = r.sent
         ? { ...r.sent, text, choices: [], speak: true }
         : { type: "command", id: r.plan.view.id, step: step.id, text, vision: null, choices: [], target: null, speak: true };
-      this.o.toPhone(r.sent);
+      this.send(r.sent);
     } else return false;
     const cycle = this.cycles.get(deviceId);
     if (cycle && cycle.askedAt === null) cycle.askedAt = now;
@@ -924,6 +925,22 @@ export class ExecutionTracker {
   private offTarget(step: AgentStep | undefined): string | null {
     if (!step) return null;
     return selfStopWait(step, this.o.handDevices?.() ?? []) ?? (step.kind === "do" && step.hand?.to === "off" ? step.hand.deviceId : null);
+  }
+
+  /** 가전을 끄는 단계인가(그 명령·부탁은 안전 등급): 끄는 단계(offTarget: 손 끄기 do·꺼짐 기다리기), 또는 끝나는 조건이 가전 꺼짐·멈춤인 단계. */
+  private turnsOff(step: AgentStep): boolean {
+    if (this.offTarget(step) !== null) return true;
+    const u = step.until as Record<string, unknown> | null;
+    return !!u && typeof u.device === "string" && typeof u.state === "string" && TOOL_STATES.turn_off!.includes(u.state);
+  }
+
+  /** 실제 폰으로 보내는 하나뿐인 길: 명령에는 소리 등급(talkGrade)을 붙인다. 열린 계획의 단계 명령이면 그 단계가 끄는 단계인지 본다. */
+  private send(msg: PlannedCommandMessage): void {
+    if (msg.type !== "command") return this.o.toPhone(msg);
+    const r = this.run;
+    const step = r?.plan.view.id === msg.id ? r.plan.steps.find((x) => x.id === msg.step) : undefined;
+    const grade = talkGrade(msg, !!step && this.turnsOff(step));
+    this.o.toPhone(grade ? { ...msg, grade } : msg);
   }
 
   /** 지금 단계가 그 가전을 끄는 단계(끄기 do·꺼짐 기다리기)인가. */
@@ -1136,7 +1153,7 @@ export class ExecutionTracker {
       type: "command", id: r.plan.view.id, step: stepId, text, vision: null,
       choices: choicesOf(r, this.stepOf(r)).map(({ id, label }) => ({ id, label })), target: null, speak: true,
     };
-    this.o.toPhone(r.sent);
+    this.send(r.sent);
   }
 
   /** 첫 단계 전 승인 답: 승인이면 기억하고, 실행 전 검사를 다시 본 뒤 첫 단계로(답을 기다리는 사이 대상이 바뀌었을 수 있다). 거절이면 기억하지 않고 취소로 닫는다. */
@@ -1218,7 +1235,7 @@ export class ExecutionTracker {
     };
     // 알림 글은 판본이 맞는 폰이 없거나 끄기 안내가 명령 줄에 떠 있으면 보내지 않는다(폰 없이 도는 가전 계획, 명령 줄에는 하나만)
     if (step.kind === "say" && (!this.phoneOk() || this.reminder)) return;
-    this.o.toPhone(r.sent);
+    this.send(r.sent);
   }
 
   /** 기기 단계: 정책을 거쳐 기기 도구를 부른다. 승인 토큰이 오면 실제 폰에 묻는다. */
@@ -1291,7 +1308,7 @@ export class ExecutionTracker {
     if (vision !== r.sent.vision && now - r.visionAt >= this.cfg.visionMs) {
       r.visionAt = now;
       r.sent = { ...r.sent, vision, speak: false };
-      this.o.toPhone(r.sent);
+      this.send(r.sent);
     }
     return false;
   }
@@ -1351,14 +1368,14 @@ export class ExecutionTracker {
     if (!r.sent || now - r.spokeAt < this.cfg.repeatMs) return;
     r.spokeAt = now;
     r.helped = true;
-    this.o.toPhone({ ...r.sent, speak: true });
+    this.send({ ...r.sent, speak: true });
   }
 
   /** 실제 폰 명령을 지운다(기다리기·기기 단계). */
   private clear(r: Run): void {
     if (!r.sent) return;
     r.sent = null;
-    this.o.toPhone({ type: "command_clear", id: r.plan.view.id });
+    this.send({ type: "command_clear", id: r.plan.view.id });
   }
 
   /** 조건을 볼 World State: 폰 자리는 실행 추적이 받은 맞춘 눈과 World State 눈 중 새것. */
@@ -1452,7 +1469,7 @@ export class ExecutionTracker {
     if (state === "done" && taskOf(r.plan.task)?.coach && r.outcomes.length) this.o.lessons?.record(r.plan.task, r.outcomes, new Date(this.clock.now()).toISOString());
     if (r.sent) {
       r.sent = null;
-      this.o.toPhone({ type: "command_clear", id: r.plan.view.id });
+      this.send({ type: "command_clear", id: r.plan.view.id });
     }
     if (close) this.o.plans.close(r.plan.view.id, close);
     // 손으로 켠 위험 가전이 작동 끝남 확인 전에 닫혔다: 가전마다 끄기 안내 줄로 옮기고 차례로 띄운다(확인된 꺼짐으로만 하나씩 지운다)

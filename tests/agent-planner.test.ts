@@ -495,7 +495,7 @@ describe("계획 모드: 기기 단계와 승인", () => {
     const { t, decide, settle, phone, hub, plans, exec } = rig({ approvals });
     await decide(decision("에어컨 켜기"));
     expect(plans.current()).toMatchObject({ goal: "에어컨 켜기", dryRun: false, steps: [{ kind: "device", label: "거실 에어컨 켜기", target: { deviceId: "ac_living" } }] });
-    expect(phone).toEqual([{ type: "command", id: "plan:pam-1", step: "plan:pam-1:approve", text: APPROVAL_TEXT.ask("에어컨 켜기"), vision: null, choices: [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }], target: null, speak: true }]);
+    expect(phone).toEqual([{ type: "command", id: "plan:pam-1", step: "plan:pam-1:approve", text: APPROVAL_TEXT.ask("에어컨 켜기"), vision: null, choices: [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }], target: null, speak: true, grade: "question" }]);
     expect(hub.get("ac_living")!.twin.power).toBe("off");
     expect(t.onAnswer("plan:pam-1", "plan:pam-1:approve", "approve")).toBe(true);
     await settle();
@@ -574,7 +574,7 @@ describe("계획 모드: 행동 중 기다리기", () => {
       a.t.tick();
       expect(a.phone).toEqual([{
         type: "command", id: "plan:pam-1", step: "plan:pam-1:1:again", text: AGAIN_TEXT.ask("세탁 멈춤"), vision: null,
-        choices: [{ id: "continue", label: "계속" }, { id: "stop", label: "그만" }], target: null, speak: true,
+        choices: [{ id: "continue", label: "계속" }, { id: "stop", label: "그만" }], target: null, speak: true, grade: "question",
       }]);
       expect(AGAIN_TEXT.ask("세탁 멈춤")).toBe("세탁 멈춤을 계속할까요?");
       expect(a.t.onAnswer("plan:pam-1", "plan:pam-1:1:again", "continue")).toBe(true);

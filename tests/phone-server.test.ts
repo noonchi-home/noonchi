@@ -674,22 +674,19 @@ describe("폰 대화·승인·초점", () => {
     expect(later.box[1]).toEqual({ ...cmd, target: { id: "cup_1", label: "컵", ar: [1, 0.9, 3.7] }, speak: false });
   });
 
-  it("소리 등급(grade): 끄기 안내(off: 단계)는 safety, 답 단추가 「완료」 말고 있는 질문은 question, 그 밖의 명령은 칸이 없다. reply(text, \"safety\")는 safety를 싣는다", async () => {
+  it("소리 등급(grade): 실행 추적이 붙인 등급을 그대로 보내고, 없는 명령에는 칸을 만들지 않는다. reply(text, \"safety\")는 safety를 싣는다", async () => {
     const { phone, phoneBase } = await talkSetup();
     const first = await connect(phoneBase, 2);
     const base: PlannedCommand = { type: "command", id: "plan:pam-1", step: "plan:pam-1:1", text: "식탁으로 가 주세요", vision: null, choices: [{ id: "done", label: "완료" }], target: null, speak: true };
-    const cases: [PlannedCommand, string | undefined][] = [
-      [{ ...base, step: "off:plan:pam-1:induction_1:1", text: "인덕션을 꺼 주세요" }, "safety"],
-      [{ ...base, step: "off:plan:pam-1:microwave_1:2", text: "전자레인지가 보이게 폰을 가까이 대 주세요", choices: [] }, "safety"],
-      [{ ...base, step: "plan:pam-1:7:hand", text: "냄비와 상판이 뜨거워져요. 인덕션을 켤까요?", choices: [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }] }, "question"],
-      [{ ...base, step: "plan:pam-1:3", text: "물이 끓었나요?", choices: [{ id: "yes", label: "네" }, { id: "no", label: "아니요" }] }, "question"],
-      [{ ...base, step: "plan:pam-1:4", text: "인덕션이 보이게 폰을 가까이 대 주세요", choices: [] }, undefined],
-      [base, undefined],
+    const cases: PlannedCommand[] = [
+      { ...base, step: "plan:pam-1:12", text: "인덕션을 꺼 주세요", grade: "safety" },
+      { ...base, step: "plan:pam-1:7:hand", text: "냄비와 상판이 뜨거워져요. 인덕션을 켤까요?", choices: [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }], grade: "question" },
+      base,
     ];
-    for (const [cmd, grade] of cases) {
+    for (const cmd of cases) {
       const got = next(first.ws, (m) => m.type === "command" && m.step === cmd.step);
       phone.command(cmd);
-      expect(await got, cmd.step).toEqual(grade ? { ...cmd, grade } : cmd);
+      expect(await got, cmd.step).toEqual(cmd);
     }
     let said = next(first.ws, (m) => m.type === "reply");
     phone.reply("인덕션이 다시 켜졌어요. 꺼 주세요", "safety");

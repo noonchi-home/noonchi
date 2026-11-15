@@ -442,6 +442,29 @@ describe("소리 차례(sayAloud): 앞 말을 끊지 않고 차례로 읽는다"
     expect(c.view().listening).toBe("on");
   });
 
+  it("안전 말이 듣기 멈춤 20초를 다 쓴 뒤에 온 계획 안 끄기 명령(라면 12번, 안전)과 그 자리 꺼짐 확인 부탁(안전)도 건너뛰지 않고 끝까지 읽는다", async () => {
+    vi.useFakeTimers();
+    const { c, ws, spoken, startAr } = make();
+    await startAr();
+    const RE = "전자레인지가 다시 켜졌어요. 꺼 주세요";
+    const OFF12 = "인덕션을 꺼 주세요";
+    const SHOW = "인덕션이 보이게 폰을 가까이 대 주세요";
+    const step12 = { step: "plan:pam-1:12", kind: "do", grade: "safety" };
+    for (const text of [WARN, RE, WARN]) ws.push({ type: "reply", text, grade: "safety" });
+    vi.advanceTimersByTime(1_000);
+    ws.push(command({ ...step12, text: OFF12 }));
+    vi.advanceTimersByTime(23_000);
+    ws.push(command({ ...step12, text: SHOW, choices: [] }));
+    vi.advanceTimersByTime(4_699);
+    expect(spoken).toEqual([WARN, RE, WARN, OFF12]);
+    vi.advanceTimersByTime(1);
+    expect(spoken).toEqual([WARN, RE, WARN, OFF12, SHOW]);
+    vi.advanceTimersByTime(8_299);
+    expect(c.view().listening).toBe("paused");
+    vi.advanceTimersByTime(1);
+    expect(c.view().listening).toBe("on");
+  });
+
   it("혼자 읽는 긴 말도 15초(TALK_MAX_MS)에서 끊고 다시 듣는다. 끝 알림이 제때 오면 끊지 않는다", async () => {
     vi.useFakeTimers();
     let hushed = 0;
