@@ -8,6 +8,9 @@ import { parseAst } from "rolldown/parseAst";
 /** oxc ESTree 노드(TS 노드 포함). 칸은 노드 종류마다 달라 넓게 둔다. */
 export type AstNode = { type: string; start: number; end: number; [key: string]: any };
 
+/** 단계마다 둔 옮김 대응표 폴더(scripts/check-moves.ts, 도메인 나누기 설계 4.1). */
+export const MOVES_DIR = "docs/superpowers/specs/2026-11-16-domain-split/moves/";
+
 /** 파싱하는 코드 파일 확장자. */
 export const CODE_EXT = [".ts", ".tsx", ".mts", ".js", ".jsx", ".mjs"] as const;
 export const isCode = (path: string) => CODE_EXT.some((e) => path.endsWith(e)) && !path.endsWith(".d.ts");
@@ -43,7 +46,7 @@ export interface ImportName { imported: string; local: string; type: boolean }
 /** import·export … from·import()·타입 자리 import("…") 하나. */
 export interface ImportRef {
   spec: string;
-  kind: "import" | "reexport" | "dynamic" | "type-query";
+  kind: "import" | "reexport" | "dynamic" | "require" | "type-query";
   /** 실행 때 지워진다(import type, 이름이 모두 type, 타입 자리 import("…")). */
   typeOnly: boolean;
   names: ImportName[];
@@ -52,7 +55,25 @@ export interface ImportRef {
 
 const nameOf = (n: AstNode | null | undefined): string => (!n ? "" : n.type === "Identifier" ? n.name : String(n.value));
 
-/** 맨 위 import·export from 문장과, 코드 안의 import("…")·타입 자리 import("…")를 모두 읽는다. 글이 아닌 import(식)은 뺀다. */
+/** 글자 그대로인 모듈 글: "…"·식 없는 `…`. 아니면 undefined. */
+export function literalSpec(n: AstNode | null | undefined): string | undefined {
+  if (n?.type === "Literal" && typeof n.value === "string") return n.value;
+  if (n?.type === "TemplateLiteral" && n.expressions.length === 0) return String(n.quasis[0]?.value?.cooked ?? "");
+  return undefined;
+}
+
+const isRequire = (n: AstNode) => n.type === "CallExpression" && n.callee?.type === "Identifier" && n.callee.name === "require" && n.arguments.length >= 1;
+
+/** 글자 그대로가 아닌 import(식)·require(식). 경로를 변수로 넘기면 도메인 검사가 따라가지 못한다. */
+export function nonLiteralLoads(program: AstNode): AstNode[] {
+  const out: AstNode[] = [];
+  walk(program, (n) => {
+    if ((n.type === "ImportExpression" && literalSpec(n.source) === undefined) || (isRequire(n) && literalSpec(n.arguments[0]) === undefined)) out.push(n);
+  });
+  return out;
+}
+
+/** 맨 위 import·export from 문장과, 코드 안의 import("…")·require("…")·타입 자리 import("…")를 모두 읽는다. 글자 그대로가 아닌 것은 nonLiteralLoads가 낸다. */
 export function importsOf(program: AstNode): ImportRef[] {
   const refs: ImportRef[] = [];
   for (const st of program.body as AstNode[]) {
@@ -74,8 +95,10 @@ export function importsOf(program: AstNode): ImportRef[] {
     }
   }
   walk(program, (n) => {
-    if (n.type === "ImportExpression" && n.source?.type === "Literal" && typeof n.source.value === "string") {
-      refs.push({ spec: n.source.value, kind: "dynamic", typeOnly: false, names: [{ imported: "*", local: "*", type: false }], node: n });
+    const dyn = n.type === "ImportExpression" ? literalSpec(n.source) : undefined;
+    const req = isRequire(n) ? literalSpec(n.arguments[0]) : undefined;
+    if (dyn !== undefined || req !== undefined) {
+      refs.push({ spec: (dyn ?? req)!, kind: dyn !== undefined ? "dynamic" : "require", typeOnly: false, names: [{ imported: "*", local: "*", type: false }], node: n });
     } else if (n.type === "TSImportType") {
       const lit = n.source ?? n.argument?.literal ?? n.argument;
       if (lit?.type === "Literal" && typeof lit.value === "string") {

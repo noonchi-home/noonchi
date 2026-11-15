@@ -181,6 +181,77 @@ describe("옮김 검사 --moved: 선언 옮김", () => {
   });
 });
 
+describe("옮김 검사: 빠져나가는 꼴", () => {
+  const REL_BEFORE = 'const f = join(ROOT, "src", "sync", "aligner.ts");\nexpect(state()).toBe("on");\nconst a = "x";\nconst b = "y";\nconst t = `${f}:on`;\nexport const g = [f, a, b, t];\n';
+  const relAfter = (from: string, to: string, path = 'join(ROOT, "src", "phone/sync", "aligner.ts")') =>
+    ({ ...AFTER, "tests/release.test.ts": REL_BEFORE.replace('join(ROOT, "src", "sync", "aligner.ts")', path).replace(from, to) });
+  const relBefore = { ...BEFORE, "tests/release.test.ts": REL_BEFORE };
+  const TEXT = { ...MOVE, text: ["tests/release.test.ts"] };
+
+  it("text 파일에서 경로가 아닌 글자열(상태 글·글자열 맞바꿈·템플릿)이 바뀌면 실패한다", () => {
+    for (const [from, to] of [['toBe("on")', 'toBe("off")'], ['const a = "x";\nconst b = "y";', 'const a = "y";\nconst b = "x";'], ["`${f}:on`", "`${f}:off`"]]) {
+      expect(run(relBefore, relAfter(from!, to!), TEXT).failures.join("\n"), to).toContain("tests/release.test.ts: import가 아닌 문장이 달라요");
+    }
+  });
+
+  it("text 파일은 대응표의 옛 경로 → 새 경로로 설명되는 경로 조각만 받는다(조각 수가 바뀌어도 된다)", () => {
+    expect(run(relBefore, relAfter("", ""), TEXT).failures).toEqual([]);
+    expect(run(relBefore, relAfter("", "", 'join(ROOT, "src", "phone", "sync", "aligner.ts")'), TEXT).failures).toEqual([]);
+    expect(run(relBefore, relAfter("", "", 'join(ROOT, "src", "world", "aligner.ts")'), TEXT).failures.join("\n")).toContain("tests/release.test.ts: import가 아닌 문장이 달라요");
+  });
+
+  it("지운 파일의 이름 없는 실행문(init())을 빼먹으면 실패하고, 새 자리에 같은 AST로 옮기면 통과한다", () => {
+    const before = { "src/a.ts": "export const x = 1;\nexport function init() { return x; }\ninit();\n" };
+    const decls = { "src/a.ts#x": "src/b.ts#x", "src/a.ts#init": "src/b.ts#init" };
+    expect(run(before, { "src/b.ts": "export const x = 1;\nexport function init() { return x; }\n" }, { decls }, true).failures).toEqual(["지운 파일 src/a.ts의 이름 없는 실행문이 새 자리에 없어요: init();"]);
+    expect(run(before, { "src/b.ts": "export const x = 1;\nexport function init() { return x; }\ninit();\n" }, { decls }, true).failures).toEqual([]);
+  });
+
+  it("옮겨 온 함수용 import가 남아 있던 문장의 전역 이름(fetch)을 가리면 실패한다", () => {
+    const before = {
+      "src/http.ts": "export const fetch = (u: string) => u;\n",
+      "src/a.ts": 'import { fetch } from "./http.js";\nexport const f = () => fetch("a");\n',
+      "src/b.ts": 'export const g = () => fetch("b");\n',
+    };
+    const after = { "src/http.ts": before["src/http.ts"], "src/a.ts": "", "src/b.ts": 'import { fetch } from "./http.js";\nexport const g = () => fetch("b");\nexport const f = () => fetch("a");\n' };
+    expect(run(before, after, { decls: { "src/a.ts#f": "src/b.ts#f" } }, true).failures).toEqual([
+      'src/b.ts: 이름 `fetch`이 옮기기 전에는 global:fetch, 뒤에는 src/http.ts#fetch를 가리켜요(export const g = () => fetch("b");)',
+    ]);
+  });
+
+  it("구현 파일이 자기 입구를 거쳐 도는 값 고리(a → index → a)는 실패한다. 전부터 있던 고리 사이에 입구가 끼는 것은 된다", () => {
+    const before = { "src/act/help.ts": "export const helper = () => 1;\n", "src/act/track.ts": 'import { helper } from "./help.js";\nexport const t = helper();\n' };
+    const after = {
+      "src/act/help.ts": before["src/act/help.ts"],
+      "src/act/index.ts": 'export { helper } from "./help.js";\nexport { t } from "./track.js";\n',
+      "src/act/track.ts": 'import { helper } from "./index.js";\nexport const t = helper();\n',
+    };
+    for (const moved of [false, true]) {
+      expect(run(before, after, { new: ["src/act/index.ts"] }, moved).failures, String(moved)).toEqual(["옮긴 파일끼리 실행 때 값 import 고리가 새로 생겼어요: src/act/index.ts · src/act/track.ts"]);
+    }
+    const cb = { "src/x/a.ts": 'import { b } from "./b.js";\nexport const a = () => b;\n', "src/x/b.ts": 'import { a } from "./a.js";\nexport const b = () => a;\n' };
+    const ca = { "src/x/index.ts": 'export { b } from "./b.js";\n', "src/x/a.ts": 'import { b } from "./index.js";\nexport const a = () => b;\n', "src/x/b.ts": cb["src/x/b.ts"] };
+    expect(run(cb, ca, { new: ["src/x/index.ts"] }).failures).toEqual([]);
+  });
+
+  it("부수 효과가 있는 import(이름 없는 import, 맨 위 실행문이 있는 모듈)의 차례를 바꾸면 실패한다. 부수 효과 없는 모듈은 된다", () => {
+    const lib = {
+      "src/init.ts": 'console.log("init");\n',
+      "src/run.ts": 'console.log("run");\n',
+      "src/reg.ts": "export const reg = 1;\nregister();\nfunction register() {}\n",
+      "src/pure.ts": "export const pure = 1;\n",
+      "src/pure2.ts": "export const pure2 = 2;\n",
+    };
+    const I = { init: 'import "./init.js";', run: 'import "./run.js";', reg: 'import { reg } from "./reg.js";', pure: 'import { pure } from "./pure.js";', pure2: 'import { pure2 } from "./pure2.js";' };
+    const main = (lines: string[]) => ({ ...lib, "src/main.ts": `${lines.join("\n")}\nexport const m = [reg, pure, pure2];\n` });
+    const before = main([I.init, I.run, I.reg, I.pure, I.pure2]);
+    for (const order of [[I.run, I.init, I.reg, I.pure, I.pure2], [I.reg, I.init, I.run, I.pure, I.pure2]]) {
+      expect(run(before, main(order)).failures.join("\n")).toContain("src/main.ts: 부수 효과가 있는 import의 차례가 달라요");
+    }
+    expect(run(before, main([I.init, I.run, I.reg, I.pure2, I.pure])).failures).toEqual([]);
+  });
+});
+
 describe("옮김 검사: git 두 커밋", () => {
   const roots: string[] = [];
   afterEach(() => { while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true }); });

@@ -1,10 +1,14 @@
 // 도메인 경계 검사(scripts/lint-domains.ts, 도메인 나누기 설계 3.1~3.3). npm run lint와 같은 검사다.
 // 실제 트리는 예외 목록(scripts/domain-exceptions.json)과 꼭 맞아야 하고, 가짜 트리·0a392c5 실제 줄은 정한 오류 글로 실패해야 한다.
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { CONFIG, DEPS, SCREEN_DOMAINS, SERVER_DOMAINS, checkTree, compareExceptions, readExceptions, tableCycles, type Config } from "../scripts/lint-domains.js";
+import { MOVES_DIR } from "../scripts/domain-ast.js";
+import {
+  CONFIG, DEPS, EXCEPTIONS_FILE, SCREEN_DOMAINS, SERVER_DOMAINS, checkRepo, checkTree, compareExceptions, readBase, readExceptions, tableCycles, unbasedKeys, type Config,
+} from "../scripts/lint-domains.js";
 
 const ROOT = join(import.meta.dirname, "..");
 
@@ -155,6 +159,39 @@ describe("도메인 경계: 가짜 트리", () => {
     expect(keys(bad)).toEqual(["meta-url src/server/app.ts", "worker src/observe/d.ts -> ./none.mjs"]);
   });
 
+  it("글자 그대로가 아닌 import()·require는 실패한다(허용 목록 파일만 된다). 글자 그대로면 import처럼 본다", () => {
+    const root = fakeTree({
+      "src/world/a.ts": 'const p = "../act/index.js";\nexport const load = () => import(p);\n',
+      "src/world/b.ts": "export const load = (n: string) => import(`../act/${n}.js`);\n",
+      "src/world/c.ts": "export const load = () => import(`../act/index.js`);\n",
+      "src/world/d.ts": 'export const x = require("../act/index.js");\nconst n = "../act/index.js";\nexport const y = require(n);\n',
+    });
+    expect(keys(root)).toEqual([
+      "direction src/world/c.ts -> src/act/index.ts",
+      "direction src/world/d.ts -> src/act/index.ts",
+      "dynamic src/world/a.ts",
+      "dynamic src/world/b.ts",
+      "dynamic src/world/d.ts",
+    ]);
+    expect(message(root, "dynamic src/world/a.ts")).toContain("글자 그대로가 아닌 import()·require");
+    const worker = fakeTree({ "src/observe/w.mjs": 'import { workerData } from "node:worker_threads";\nawait import(workerData.entry);\n' });
+    expect(keys(worker)).toEqual(["dynamic src/observe/w.mjs"]);
+    expect(keys(worker, { ...CONFIG, dynamicOk: ["src/observe/w.mjs"] })).toEqual([]);
+  });
+
+  it("공용 표는 파일마다 따로 본다: 표끼리 값 import 고리는 실패하고 타입 전용 고리는 된다", () => {
+    const value = fakeTree({
+      "src/world/vocab.ts": 'import { TASKS } from "../act/tasks.js";\nexport const CLASSES = [TASKS];\n',
+      "src/act/tasks.ts": 'import { CLASSES } from "../world/vocab.js";\nexport const TASKS = () => CLASSES;\n',
+    });
+    expect(keys(value)).toEqual(["cycle src/act/tasks.ts -> src/world/vocab.ts", "cycle src/world/vocab.ts -> src/act/tasks.ts"]);
+    const types = fakeTree({
+      "src/world/vocab.ts": 'import type { Task } from "../act/tasks.js";\nexport type Cls = { t: Task };\n',
+      "src/act/tasks.ts": 'import type { Cls } from "../world/vocab.js";\nexport type Task = { c?: Cls };\n',
+    });
+    expect(keys(types)).toEqual([]);
+  });
+
   it("도메인에 입구 index.ts가 없으면 실패한다", () => {
     expect(keys(fakeTree({ "src/act/index.ts": null, "ui/src/twin/index.ts": null }))).toEqual(["no-index act", "no-index ui/twin"]);
   });
@@ -198,5 +235,44 @@ describe("도메인 경계: 예외 목록(줄어들기만 함)", () => {
     expect(compareExceptions(violations, exceptions)).toEqual({ added: [], stale: [] });
     expect(violations.length).toBe(exceptions.length);
     expect([...exceptions].sort()).toEqual(violations.map((v) => v.key));
+  });
+
+  it("새 위반을 예외 목록에 같이 넣어도 기준 목록에 없던 줄이면 실패한다", () => {
+    const v = [{ key: "inner a -> b", message: "m1" }, { key: "inner c -> d", message: "m2" }];
+    // 지금 위반과 지금 목록만 견주면 통과해 버린다
+    expect(compareExceptions(v, ["inner a -> b", "inner c -> d"])).toEqual({ added: [], stale: [] });
+    expect(unbasedKeys(["inner a -> b", "inner c -> d"], { keys: ["inner a -> b"], moves: [] })).toEqual(["inner c -> d"]);
+  });
+
+  it("기준 뒤 대응표로 옮긴 경로와, 같은 도메인 입구로 바꾼 import는 기준 줄로 본다", () => {
+    const base = {
+      keys: ["inner src/server/a.ts -> src/sync/b.ts", "direction src/world/a.ts -> src/act/b.ts", "cycle src/world/a.ts -> src/act/b.ts"],
+      moves: [{ "src/sync/b.ts": "src/phone/sync/b.ts" }],
+    };
+    expect(unbasedKeys(["inner src/server/a.ts -> src/phone/sync/b.ts", "direction src/world/a.ts -> src/act/index.ts", "cycle src/world/a.ts -> src/act/index.ts"], base)).toEqual([]);
+    expect(unbasedKeys(["direction src/world/a.ts -> src/agent/index.ts", "inner src/server/a.ts -> src/sync/b.ts"], base)).toEqual([
+      "direction src/world/a.ts -> src/agent/index.ts",
+      "inner src/server/a.ts -> src/sync/b.ts",
+    ]);
+  });
+
+  it("기준은 git으로 읽는다: 기준 커밋의 예외 목록과, 그 뒤 새로 생긴 대응표의 files", () => {
+    const root = mkdtempSync(join(tmpdir(), "domains-base-"));
+    roots.push(root);
+    const git = (...args: string[]) => execFileSync("git", ["-C", root, "-c", "user.name=t", "-c", "user.email=t@example.com", ...args], { encoding: "utf8" }).trim();
+    const put = (p: string, text: string) => { mkdirSync(dirname(join(root, p)), { recursive: true }); writeFileSync(join(root, p), text); };
+    git("init", "-q");
+    put(EXCEPTIONS_FILE, JSON.stringify(["inner src/server/a.ts -> src/sync/b.ts"]));
+    put(`${MOVES_DIR}1.json`, '{ "files": {}, "decls": {}, "new": [], "text": [] }');
+    git("add", "-A");
+    git("commit", "-q", "-m", "base");
+    const base = git("rev-parse", "HEAD");
+    put(`${MOVES_DIR}2.json`, '{ "files": { "src/sync/b.ts": "src/phone/sync/b.ts" }, "decls": {}, "new": [], "text": [] }');
+    expect(readBase(root, base)).toEqual({ keys: ["inner src/server/a.ts -> src/sync/b.ts"], moves: [{ "src/sync/b.ts": "src/phone/sync/b.ts" }] });
+    expect(() => readBase(root, "0000000000000000000000000000000000000000")).toThrow(/기준 커밋/);
+  }, 30_000);
+
+  it("실제 트리: 예외 목록의 모든 줄이 기준 목록(scripts/lint-domains.ts EXCEPTIONS_BASE)에 있다", () => {
+    expect(checkRepo(ROOT)).toEqual({ added: [], stale: [], unbased: [] });
   });
 });

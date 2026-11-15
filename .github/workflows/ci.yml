@@ -10,7 +10,10 @@ jobs:
       # YOLO는 CPU로 돈다. onnxruntime-node의 CUDA 파일은 받지 않는다
       ONNXRUNTIME_NODE_INSTALL: skip
     steps:
+      # 도메인 검사의 예외 목록 기준(scripts/lint-domains.ts EXCEPTIONS_BASE)을 git으로 읽으니 기록 전체를 받는다
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version

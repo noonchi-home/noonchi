@@ -2,15 +2,20 @@
 // 쓰는 법: tsx scripts/check-moves.ts <앞 커밋> <뒤 커밋> [--moves <대응표 경로>] [--moved] [--only <경로 앞부분>]...
 //   대응표(MOVES_DIR/<단계>.json, 그 커밋에 함께 둠)를 안 주면 두 커밋 사이에 새로 생기거나 바뀐 대응표 하나를 쓴다.
 //   files: 파일째 옮김(옛 → 새). decls: 선언 하나 옮김("옛 파일#이름" → "새 파일#이름", --moved에서만). new: 새로 만든 입구(index.ts).
-//   text: 경로를 글로 적은 시험·스크립트. 글자열 말고는 AST가 같아야 하고, 바뀐 글자열은 따로 확인하게 출력한다.
+//   text: 경로를 조각으로 적은 시험·스크립트. join·resolve의 이어진 글자 인자를 "/"로 붙이고 옮긴 경로(파일·통째로 옮긴 폴더)를 새 경로로 바꾼 뒤
+//   AST가 같아야 한다. 그 밖의 글자열 변화는 실패다. 바뀐 글자열은 따로 확인하게 출력한다.
 // 파일마다 (1) import·export … from이 아닌 문장을 정규화한 AST로 견준다. (2) import마다 (이름, type 여부, 정의한 자리 파일#이름)를 견준다.
 //   (3) new 파일은 export … from 문장만 있어야 한다. 대응표에 없는 지움·새 파일은 실패다.
-// --moved(고리 끊기 단계): 옮긴 선언마다 글·빠짐과 더함·초기화 차례·이름이 가리키는 정의를 보고, 실행 때 남는 값 import 그래프에 새 고리가 생기면 실패다.
+//   부수 효과가 있는 import(이름 없는 import, 이름 없는 맨 위 실행문이 있는 모듈)는 파일 안 차례도 같아야 한다.
+//   실행 때 남는 값 import 그래프(입구 포함)에 새 고리가 생기면 실패다(a → index → a 포함).
+// --moved(고리 끊기 단계): 옮긴 선언마다 글·빠짐과 더함·초기화 차례를 보고, 바뀐 파일의 모든 문장에서 자유 이름이 가리키는 정의가 같아야 한다.
+//   지운 파일의 이름 없는 맨 위 실행문은 하나하나 받는 파일에 같은 AST로 있어야 한다.
 import { execFileSync } from "node:child_process";
+import { posix } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { isCode, parseCode, resolveSpec, type AstNode, type Resolved } from "./domain-ast.js";
+import { MOVES_DIR, isCode, parseCode, resolveSpec, type AstNode, type Resolved } from "./domain-ast.js";
 
-export const MOVES_DIR = "docs/superpowers/specs/2026-11-16-domain-split/moves/";
+export { MOVES_DIR };
 /** 견주는 곳. */
 export const SCOPE = ["src/", "ui/src/", "tests/", "ui/tests/", "scripts/", "ui/scripts/"] as const;
 /** 검사 도구: 의존 표·예외 목록이 단계마다 바뀌어 견주지 않는다(따로 검토). */
@@ -71,6 +76,15 @@ export function declaredBy(st: AstNode): { names: string[]; kind: DeclKind; inne
   }
 }
 
+/** 문장이 맡는 이름: 선언 이름, export { a } 목록은 그 지역 이름. 없으면 이름 없는 문장. */
+export function namesOf(st: AstNode): string[] {
+  if (st.type === "ExportNamedDeclaration" && !st.declaration && !st.source) return (st.specifiers as AstNode[]).map((x) => nameOf(x.local));
+  return declaredBy(st).names;
+}
+
+/** 이름 없는 맨 위 실행문(모듈을 읽을 때 도는 동작). */
+const isAnonRun = (st: AstNode) => !isImportLike(st) && isRuntime(st) && namesOf(st).length === 0;
+
 export function patternNames(p: AstNode | null | undefined): string[] {
   if (!p) return [];
   switch (p.type) {
@@ -100,6 +114,13 @@ class TreeIndex {
     return a;
   }
   resolve(from: string, spec: string): Resolved { return resolveSpec(from, spec, this.exists); }
+  private effectMemo = new Map<string, boolean>();
+  /** 모듈을 읽을 때 도는 이름 없는 맨 위 실행문이 있다. */
+  hasEffects(p: string): boolean {
+    let v = this.effectMemo.get(p);
+    if (v === undefined) { v = this.tree.has(p) && this.info(p).body.some(isAnonRun); this.effectMemo.set(p, v); }
+    return v;
+  }
   info(p: string): ModInfo {
     let info = this.infos.get(p);
     if (info) return info;
@@ -393,16 +414,30 @@ const isRuntime = (st: AstNode): boolean => {
 
 const SKIP_KEYS = new Set(["start", "end", "range", "loc", "raw"]);
 
-function normalize(node: unknown, str: (s: string) => string): unknown {
-  if (Array.isArray(node)) return node.map((n) => normalize(n, str));
+/** join(…)·resolve(…)(path.join 등)의 이어진 글자 인자를 "/"로 붙인다: join(ROOT, "src", "act")와 join(ROOT, "src/act")는 같은 경로다. */
+function foldPathArgs(n: AstNode): AstNode {
+  const c = n.callee;
+  const name = c?.type === "Identifier" ? c.name : c?.type === "MemberExpression" && !c.computed ? c.property?.name : undefined;
+  if (name !== "join" && name !== "resolve") return n;
+  const args: AstNode[] = [];
+  for (const a of n.arguments as AstNode[]) {
+    const prev = args[args.length - 1];
+    if (a.type === "Literal" && typeof a.value === "string" && prev?.type === "Literal" && typeof prev.value === "string") args[args.length - 1] = { ...prev, value: `${prev.value}/${a.value}` };
+    else args.push(a);
+  }
+  return { ...n, arguments: args };
+}
+
+function normalize(node: unknown, str: (s: string) => string, fold = false): unknown {
+  if (Array.isArray(node)) return node.map((n) => normalize(n, str, fold));
   if (!node || typeof node !== "object") return node;
-  const n = node as AstNode;
+  const n = fold && (node as AstNode).type === "CallExpression" ? foldPathArgs(node as AstNode) : (node as AstNode);
   const out: Record<string, unknown> = {};
   for (const [k, val] of Object.entries(n)) {
     if (SKIP_KEYS.has(k)) continue;
     if (n.type === "Literal" && k === "value" && typeof val === "string") out[k] = str(val);
     else if (n.type === "TemplateElement" && k === "value" && val && typeof val === "object") out[k] = { cooked: str(String((val as { cooked?: string }).cooked ?? "")), raw: str(String((val as { raw?: string }).raw ?? "")) };
-    else out[k] = normalize(val, str);
+    else out[k] = normalize(val, str, fold);
   }
   return out;
 }
@@ -441,6 +476,24 @@ export function checkMoves(before: Tree, after: Tree, moves: Moves, opts: Option
     pathText.set(`${stem(o)}.js`, `${stem(n)}.js`);
   }
 
+  // text 파일: 글 안의 옮긴 경로(파일·확장자 없음·.js, 파일을 모두 같은 꼴로 옮긴 폴더)를 새 경로로. 경로 경계에서만 바꾼다
+  const textPairs = new Map(pathText);
+  for (const [o, n] of Object.entries(files)) {
+    if (posix.basename(o) !== posix.basename(n)) continue;
+    let od = posix.dirname(o);
+    let nd = posix.dirname(n);
+    while (od !== "." && nd !== "." && od !== nd) {
+      const tailOk = [...before.keys()].filter((p) => p.startsWith(`${od}/`)).every((p) => files[p] === `${nd}/${p.slice(od.length + 1)}`);
+      if (tailOk) textPairs.set(od, nd);
+      if (posix.basename(od) !== posix.basename(nd)) break;
+      od = posix.dirname(od);
+      nd = posix.dirname(nd);
+    }
+  }
+  const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const textRe = textPairs.size ? new RegExp(`(?<![\\w.-])(${[...textPairs.keys()].sort((a, b) => b.length - a.length).map(esc).join("|")})(?![\\w.-])`, "g") : undefined;
+  const mapText = (x: string) => (textRe ? x.replace(textRe, (m) => textPairs.get(m) ?? m) : x);
+
   // 옮긴 선언(파일#이름)
   const declOut = new Map<string, Set<string>>();
   const declIn = new Map<string, Set<string>>();
@@ -473,14 +526,33 @@ export function checkMoves(before: Tree, after: Tree, moves: Moves, opts: Option
   }
   for (const n of moves.new) if (before.has(n)) fail(`new의 파일이 앞 커밋에 이미 있어요: ${n}`);
 
+  // --moved: 지운 파일의 이름 없는 맨 위 실행문은 하나하나 그 파일의 선언을 받은 파일에 같은 AST로 있어야 한다
+  const anonIn = new Map<string, Set<AstNode>>();
+  const anonOrigin = new Map<AstNode, [string, number]>();
+  if (moved) {
+    for (const [o, n] of pairs) {
+      if (n !== null || !o || !declOut.has(o) || !only(o)) continue;
+      const receivers = [...new Set(Object.entries(moves.decls).filter(([k]) => k.startsWith(`${o}#`)).map(([, v]) => v.split("#")[0]!))].filter((r) => after.has(r));
+      const runtime = B.info(o).body.filter(isRuntime);
+      for (const st of B.info(o).body.filter(isAnonRun)) {
+        const want = JSON.stringify(normalize(st, (x) => pathText.get(x) ?? x));
+        const hit = receivers.flatMap((r) => A.info(r).body.map((x) => [r, x] as const))
+          .find(([r, x]) => isAnonRun(x) && !anonIn.get(r)?.has(x) && JSON.stringify(normalize(x, (y) => y)) === want);
+        if (!hit) { fail(`지운 파일 ${o}의 이름 없는 실행문이 새 자리에 없어요: ${snippet(before.get(o)!, st)}`); continue; }
+        (anonIn.get(hit[0]) ?? anonIn.set(hit[0], new Set()).get(hit[0])!).add(hit[1]);
+        anonOrigin.set(hit[1], [o, runtime.indexOf(st)]);
+      }
+    }
+  }
+
   const textFiles = new Set(moves.text);
   for (const [o, n] of pairs) {
     if (!only((n ?? o)!)) continue;
     if (n === null) {
-      // 지움: 대응표 files에 없으면 실패. --moved에서는 선언을 모두 decls로 옮긴 파일만 된다
+      // 지움: 대응표 files에 없으면 실패. --moved에서는 선언을 모두 decls로 옮긴 파일만 된다(이름 없는 실행문은 위에서 새 자리를 본다)
       const out = declOut.get(o!);
       const info = B.info(o!);
-      const rest = info.body.filter((st) => !isImportLike(st) && !declaredBy(st).names.every((x) => out?.has(x)));
+      const rest = info.body.filter((st) => !isImportLike(st) && namesOf(st).length > 0 && !namesOf(st).every((x) => out?.has(x)));
       if (!(moved && out && rest.length === 0)) fail(`대응표에 없는 지움: ${o}`);
       continue;
     }
@@ -490,7 +562,8 @@ export function checkMoves(before: Tree, after: Tree, moves: Moves, opts: Option
       }
       const info = A.info(n);
       const ins = declIn.get(n);
-      const bad = info.body.filter((st) => !(st.type === "ExportNamedDeclaration" && st.source) && st.type !== "ExportAllDeclaration" && !(moved && ins && declaredBy(st).names.length > 0 && declaredBy(st).names.every((x) => ins.has(x))) && st.type !== "ImportDeclaration");
+      const claimed = anonIn.get(n);
+      const bad = info.body.filter((st) => !(st.type === "ExportNamedDeclaration" && st.source) && st.type !== "ExportAllDeclaration" && !(moved && ins && namesOf(st).length > 0 && namesOf(st).every((x) => ins.has(x))) && !claimed?.has(st) && st.type !== "ImportDeclaration");
       if (moves.new.includes(n) && info.body.some((st) => st.type === "ImportDeclaration")) fail(`새 입구 ${n}에 import가 있어요. 입구는 export … from 문장만 둬요`);
       for (const st of bad) fail(`새 파일 ${n}에 export … from이 아닌 문장이 있어요: ${snippet(after.get(n)!, st)}`);
       continue;
@@ -507,19 +580,19 @@ export function checkMoves(before: Tree, after: Tree, moves: Moves, opts: Option
     const inNames = declIn.get(n) ?? new Set<string>();
     const keep = (names: Set<string>, side: string, file: string) => (st: AstNode) => {
       if (isImportLike(st)) return false;
-      const d = declaredBy(st).names;
+      if (side === "뒤" && anonIn.get(file)?.has(st)) return false;
+      const d = namesOf(st);
       const hit = d.filter((x) => names.has(x));
       if (hit.length && hit.length !== d.length) fail(`${side} ${file}: 문장 하나가 선언하는 이름(${d.join("·")}) 가운데 일부만 옮겼어요`);
       return hit.length === 0;
     };
     // (1) import가 아닌 문장
+    const isText = textFiles.has(n);
     const strOld = (s: string) => {
-      if (textFiles.has(n)) return "@str";
       if (s.startsWith("./") || s.startsWith("../")) { const r = B.resolve(o, s); if ("path" in r) return `@mod:${mapFile(r.path)}`; }
-      return pathText.get(s) ?? s;
+      return isText ? mapText(s) : (pathText.get(s) ?? s);
     };
     const strNew = (s: string) => {
-      if (textFiles.has(n)) return "@str";
       if (s.startsWith("./") || s.startsWith("../")) { const r = A.resolve(n, s); if ("path" in r) return `@mod:${r.path}`; }
       return s;
     };
@@ -529,7 +602,7 @@ export function checkMoves(before: Tree, after: Tree, moves: Moves, opts: Option
     for (let i = 0; i < len; i++) {
       const a = os[i];
       const b = ns[i];
-      if (a && b && JSON.stringify(normalize(a, strOld)) === JSON.stringify(normalize(b, strNew))) continue;
+      if (a && b && JSON.stringify(normalize(a, strOld, isText)) === JSON.stringify(normalize(b, strNew, isText))) continue;
       fail(`${n}${o !== n ? `(옛 ${o})` : ""}: import가 아닌 문장이 달라요(${i + 1}번째)\n  앞: ${a ? snippet(oldText, a) : "(없음)"}\n  뒤: ${b ? snippet(newText, b) : "(없음)"}`);
       break;
     }
@@ -583,9 +656,35 @@ export function checkMoves(before: Tree, after: Tree, moves: Moves, opts: Option
     if (missingNew.length || missingOld.length) {
       fail(`${n}${o !== n ? `(옛 ${o})` : ""}: import가 가리키는 정의가 달라요\n${missingOld.map((t) => `  앞에만: ${t}`).join("\n")}${missingOld.length && missingNew.length ? "\n" : ""}${missingNew.map((t) => `  뒤에만: ${t}`).join("\n")}`);
     }
+    // 부수 효과가 있는 import는 파일 안 차례대로 견준다(이름 없는 import, 정의한 모듈에 이름 없는 맨 위 실행문이 있는 import)
+    const effects = (I: TreeIndex, file: string, map: (d: string) => string, skip: (local: string) => boolean) => {
+      const seq: string[] = [];
+      for (const st of I.info(file).body) {
+        if (st.type !== "ImportDeclaration" || st.importKind === "type") continue;
+        if (!st.specifiers.length) {
+          const r = I.resolve(file, st.source.value);
+          seq.push(`side ${"path" in r ? mapFileFor(I, r.path) : st.source.value}`);
+          continue;
+        }
+        const mods = new Set<string>();
+        for (const sp of st.specifiers as AstNode[]) {
+          if (sp.importKind === "type" || skip(sp.local.name)) continue;
+          const imported = sp.type === "ImportDefaultSpecifier" ? "default" : sp.type === "ImportNamespaceSpecifier" ? "*" : nameOf(sp.imported);
+          const def = I.importedDef(file, st.source.value, imported);
+          const mod = /^(.*)#/.exec(def)?.[1];
+          if (mod && I.hasEffects(mod)) mods.add(/^(.*)#/.exec(map(def))?.[1] ?? mod);
+        }
+        if (mods.size) seq.push(`effect ${[...mods].sort().join(",")}`);
+      }
+      return seq;
+    };
+    const oe = effects(B, o, mapDef, (l) => moved && ((outFree.has(l) && !restUses.has(l)) || inNames.has(l)));
+    const ne = effects(A, n, (d) => d, (l) => moved && (outNames.has(l) || inFree.has(l)));
+    if (JSON.stringify(oe) !== JSON.stringify(ne)) fail(`${n}${o !== n ? `(옛 ${o})` : ""}: 부수 효과가 있는 import의 차례가 달라요\n  앞: ${oe.join(" → ")}\n  뒤: ${ne.join(" → ")}`);
   }
 
   if (moved) movedChecks();
+  valueCycles();
 
   function movedChecks() {
     // 글: 옮긴 선언의 정규화한 AST
@@ -610,6 +709,24 @@ export function checkMoves(before: Tree, after: Tree, moves: Moves, opts: Option
         }
       }
     }
+    // 바뀐 파일의 옮기지 않은 문장(받은 이름 없는 실행문 포함)도 자유 이름이 가리키는 정의가 같아야 한다(옮겨 온 import가 전역 이름을 가리는 것 등)
+    for (const [o, n] of pairs) {
+      if (!n || !only(n)) continue;
+      const ins = declIn.get(n) ?? new Set<string>();
+      const claimed = anonIn.get(n);
+      for (const st of A.info(n).body) {
+        if (isImportLike(st)) continue;
+        const names = namesOf(st);
+        if (names.length && names.every((x) => ins.has(x))) continue;
+        const from = claimed?.has(st) ? anonOrigin.get(st)![0] : o;
+        if (!from) continue;
+        for (const name of freeNames(st).all) {
+          const od = mapDef(B.localDef(from, name));
+          const nd = A.localDef(n, name);
+          if (od !== nd) fail(`${n}: 이름 \`${name}\`이 옮기기 전에는 ${od}, 뒤에는 ${nd}를 가리켜요(${snippet(after.get(n)!, st)})`);
+        }
+      }
+    }
     // 빠짐·더함: 바뀐 파일 전체의 맨 위 선언 모음
     const oldDecls = new Set<string>();
     const newDecls = new Set<string>();
@@ -630,7 +747,9 @@ export function checkMoves(before: Tree, after: Tree, moves: Moves, opts: Option
       let k = 0;
       for (const st of nb) {
         const names = declaredBy(st).names;
-        if (names.length && names.every((x) => ins.has(x))) {
+        if (anonOrigin.has(st) && anonIn.get(n)?.has(st)) {
+          origin.set(st, anonOrigin.get(st)!);
+        } else if (names.length && names.every((x) => ins.has(x))) {
           const src = Object.entries(moves.decls).find(([, v]) => v === `${n}#${names[0]}`)?.[0];
           if (src) {
             const [of, on] = src.split("#") as [string, string];
@@ -653,7 +772,7 @@ export function checkMoves(before: Tree, after: Tree, moves: Moves, opts: Option
       // 모듈을 읽을 때 쓰는 이름은 앞쪽 선언·function 선언·import·전역이어야 한다
       const info = A.info(n);
       nb.forEach((st) => {
-        const mine = declaredBy(st).names.some((x) => ins.has(x));
+        const mine = declaredBy(st).names.some((x) => ins.has(x)) || !!anonIn.get(n)?.has(st);
         for (const name of freeNames(st).evalTime) {
           const ds = info.decls.get(name);
           if (!ds) continue;
@@ -666,7 +785,10 @@ export function checkMoves(before: Tree, after: Tree, moves: Moves, opts: Option
         }
       });
     }
-    // 실행 때 남는 값 import 그래프의 새 고리
+  }
+
+  /** 실행 때 남는 값 import 그래프(입구 포함)의 새 고리. 새 입구(앞에 없던 export … from만 있는 파일)는 전부터 있던 고리 사이에 낄 때만 된다. */
+  function valueCycles() {
     const valueGraph = (I: TreeIndex) => {
       const g = new Map<string, string[]>();
       for (const f of [...I.tree.keys()].filter(inScope)) {
@@ -695,16 +817,15 @@ export function checkMoves(before: Tree, after: Tree, moves: Moves, opts: Option
     const touched = new Set(pairs.flatMap(([, n]) => (n ? [n] : [])));
     const groups = new Map<number, string[]>();
     for (const [f, c] of ca) (groups.get(c) ?? groups.set(c, []).get(c)!).push(f);
-    // 입구(export … from만 있는 파일)는 고리를 새로 만들지 않으니 빼고 본다
     const entryOnly = (f: string) => A.info(f).body.every((st) => (st.type === "ExportNamedDeclaration" && !!st.source) || st.type === "ExportAllDeclaration");
     for (const members of groups.values()) {
       if (members.length < 2 || !members.some((m) => touched.has(m))) continue;
-      const pre = members.filter((m) => !entryOnly(m)).map((m) => inverse.get(m) ?? (before.has(m) ? m : undefined));
-      if (pre.length < 2) continue;
-      const first = pre[0] === undefined ? undefined : cb.get(pre[0]);
-      if (first === undefined || pre.some((p) => p === undefined || cb.get(p) !== first)) {
-        fail(`옮긴 파일끼리 실행 때 값 import 고리가 새로 생겼어요: ${members.sort().join(" · ")}`);
-      }
+      const pre = members.map((m) => ({ m, p: inverse.get(m) ?? (before.has(m) ? m : undefined) }));
+      const old = pre.filter((x) => x.p !== undefined);
+      const first = old.length ? cb.get(old[0]!.p!) : undefined;
+      const fresh = pre.filter((x) => x.p === undefined);
+      const ok = fresh.every((x) => entryOnly(x.m)) && old.length >= 2 && old.every((x) => cb.get(x.p!) === first);
+      if (!ok) fail(`옮긴 파일끼리 실행 때 값 import 고리가 새로 생겼어요: ${members.sort().join(" · ")}`);
     }
   }
 

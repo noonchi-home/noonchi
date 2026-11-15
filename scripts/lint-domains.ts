@@ -1,11 +1,13 @@
 // 도메인 경계 검사(도메인 나누기 설계 2.1·2.3·3.1). npm run lint와 tests/domain-boundaries.test.ts가 같은 검사를 돌린다.
 // src/**·ui/src/**의 import를 읽어 파일 → 도메인 표(DOMAINS·LEGACY·TABLES)와 의존 표(DEPS)로 본다.
 // 옮기는 동안은 지금 위반을 scripts/domain-exceptions.json에 적는다(3.2). 목록에 없는 새 위반도, 목록에 있는데 이제 안 생기는 줄도 실패다.
-// 쓰는 법: tsx scripts/lint-domains.ts [--strict(예외 목록 없이)] [--json(위반 열쇠를 JSON으로)]
+// 예외 목록은 줄기만 한다: 줄마다 기준 목록(EXCEPTIONS_BASE 커밋의 목록, 그 뒤 대응표로 옮긴 경로 반영)에 있어야 한다(readBase·unbasedKeys).
+// 쓰는 법: tsx scripts/lint-domains.ts [--strict(예외 목록 없이)] [--json(위반 열쇠를 JSON으로)] [--base <커밋>(기준 바꿔 보기)]
+import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, posix, relative, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { importsOf, isCode, parseCode, resolveSpec, walk, type AstNode, type ImportRef } from "./domain-ast.js";
+import { MOVES_DIR, importsOf, isCode, nonLiteralLoads, parseCode, resolveSpec, walk, type AstNode, type ImportRef } from "./domain-ast.js";
 
 /** 서버 도메인(2.1). 폴더 src/<이름>/, 입구 src/<이름>/index.ts. */
 export const SERVER_DOMAINS = ["phone", "observe", "world", "brain", "act", "agent", "devices", "layout", "server"] as const;
@@ -88,8 +90,13 @@ export const BROWSER_ENTRY = "src/layout/browser.ts";
 /** import.meta.url을 마음대로 써도 되는 파일(뿌리 기준 경로를 내는 곳). */
 export const PATHS_FILE = "src/shared/paths.ts";
 
-export interface Config { deps: Record<string, readonly string[]>; legacy: Record<string, string>; tables: readonly string[] }
-export const CONFIG: Config = { deps: DEPS, legacy: LEGACY, tables: TABLES };
+/** 글자 그대로가 아닌 import()·require를 써도 되는 파일과 까닭. 옮기면 새 자리로 고친다. */
+export const DYNAMIC_OK: Record<string, string> = {
+  "src/brain/detector-worker.mjs": "Worker 입구: workerData로 받은 감지 스레드 파일(같은 폴더 detector-thread.ts)을 연다",
+};
+
+export interface Config { deps: Record<string, readonly string[]>; legacy: Record<string, string>; tables: readonly string[]; dynamicOk: readonly string[] }
+export const CONFIG: Config = { deps: DEPS, legacy: LEGACY, tables: TABLES, dynamicOk: Object.keys(DYNAMIC_OK) };
 
 type Kind = "domain" | "table" | "contract" | "shared" | "infer" | "design" | "ui-common" | "unknown";
 interface Place { kind: Kind; domain?: string; unit: string }
@@ -101,7 +108,7 @@ const entriesOf = (d: string) => (isScreen(d) ? [`ui/src/${d.slice(3)}/index.ts`
 const SCREEN_SRC = "contract·공용 표·shared·design·src/layout/browser.ts";
 
 export function placeOf(path: string, config: Config): Place {
-  if (config.tables.includes(path)) return { kind: "table", unit: "공용 표" };
+  if (config.tables.includes(path)) return { kind: "table", unit: `공용 표 ${path}` };
   for (const [prefix, kind] of Object.entries(FOUNDATION)) if (path.startsWith(prefix)) return { kind, unit: kind };
   let best = "";
   for (const key of Object.keys(config.legacy)) {
@@ -168,6 +175,9 @@ export function checkTree(root: string, config: Config = CONFIG): Violation[] {
     }
     refsOf.set(f, list);
     checkMetaUrl(f, ast, exists, add);
+    if (nonLiteralLoads(ast).length && !config.dynamicOk.includes(f)) {
+      add(`dynamic ${f}`, `\`${f}\`가 글자 그대로가 아닌 import()·require를 써요. 경로를 글자 그대로 적으세요(검사가 따라가지 못함). 꼭 필요하면 scripts/lint-domains.ts DYNAMIC_OK에 까닭과 함께 적어요`);
+    }
     for (const { ref, to, external, builtin } of list) {
       if (to !== undefined) {
         if (!to.startsWith("src/") && !to.startsWith("ui/src/")) continue;
@@ -278,11 +288,11 @@ export function tableCycles(deps: Record<string, readonly string[]>): string[][]
   return out;
 }
 
-/** 실제 파일 그래프에서 단위(도메인·기반층 이름)를 넘는 고리. 계약·공용 표 사이 타입 전용 import만 고리에서 뺀다(2.3).
+/** 실제 파일 그래프에서 단위(도메인·기반층 이름, 공용 표는 파일마다)를 넘는 고리. 계약·공용 표 사이 타입 전용 import만 고리에서 뺀다(2.3).
  *  고리 안에서 단위를 넘는 import마다 위반 하나(열쇠가 import 하나라 예외 목록이 다른 곳 변화에 흔들리지 않는다). */
 export function fileCycles(all: Edge[], unitOf: (f: string) => string): Violation[] {
-  const typeUnits = new Set(["contract", "공용 표"]);
-  const edges = all.filter((e) => !(e.typeOnly && typeUnits.has(unitOf(e.from)) && typeUnits.has(unitOf(e.to))));
+  const typeUnit = (u: string) => u === "contract" || u.startsWith("공용 표 ");
+  const edges = all.filter((e) => !(e.typeOnly && typeUnit(unitOf(e.from)) && typeUnit(unitOf(e.to))));
   const next = new Map<string, string[]>();
   for (const e of edges) (next.get(e.from) ?? next.set(e.from, []).get(e.from)!).push(e.to);
   const comp = scc([...new Set(edges.flatMap((e) => [e.from, e.to]))], (n) => next.get(n) ?? []);
@@ -401,6 +411,59 @@ export function readExceptions(root: string): string[] {
   return existsSync(p) ? (JSON.parse(readFileSync(p, "utf8")) as string[]) : [];
 }
 
+/** 예외 목록의 기준 커밋(1단계, 목록을 처음 적은 커밋). 예외 줄은 이 커밋의 목록에 있어야 한다. 시험·CI·로컬 모두 git으로 읽는다(CI는 checkout fetch-depth: 0). */
+export const EXCEPTIONS_BASE = "55cef6de171cac3f0f2e6bae1fd3072f507b6752";
+/** 기준 목록에 없는데 꼭 남겨야 하는 예외 줄: 열쇠 → 까닭·기한(단계). 사용자 승인을 받고 적는다. */
+export const ADDED_EXCEPTIONS: Record<string, { why: string; until: string }> = {};
+
+/** 기준 목록과, 기준 뒤에 새로 생긴 대응표의 files(단계 차례). */
+export interface BaseList { keys: string[]; moves: Record<string, string>[] }
+
+/** 기준 커밋의 예외 목록을 git으로 읽고, 지금 트리에 있는데 기준 커밋에 없던 대응표(moves/*.json)의 files를 단계 차례로 모은다. 못 읽으면 실패. */
+export function readBase(root: string, ref: string = EXCEPTIONS_BASE): BaseList {
+  const git = (...args: string[]) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 1 << 26 });
+  let keys: string[];
+  let baseMoves: Set<string>;
+  try {
+    keys = JSON.parse(git("show", `${ref}:${EXCEPTIONS_FILE}`)) as string[];
+    baseMoves = new Set(git("ls-tree", "-r", "--name-only", ref, "--", MOVES_DIR).split("\n").filter(Boolean));
+  } catch (e) {
+    throw new Error(`기준 커밋 ${ref}의 ${EXCEPTIONS_FILE}를 git으로 못 읽어요. 저장소 기록 전체가 있어야 해요(CI는 actions/checkout fetch-depth: 0): ${(e as Error).message.split("\n")[0]}`);
+  }
+  const dir = join(root, MOVES_DIR);
+  const names = existsSync(dir) ? readdirSync(dir).filter((n) => n.endsWith(".json")).sort((a, b) => a.localeCompare(b, "en", { numeric: true })) : [];
+  const moves = names
+    .filter((n) => !baseMoves.has(`${MOVES_DIR}${n}`))
+    .map((n) => (JSON.parse(readFileSync(join(dir, n), "utf8")) as { files?: Record<string, string> }).files ?? {});
+  return { keys, moves };
+}
+
+/** 예외 줄 가운데 기준 목록으로 설명되지 않는 것. 기준 줄의 경로는 대응표로 옮기고, 같은 도메인 입구로 바꾼 대상(…/index.ts)은 같은 줄로 본다. */
+export function unbasedKeys(exceptions: readonly string[], base: BaseList, config: Config = CONFIG): string[] {
+  const mapPath = (p: string) => base.moves.reduce((acc, m) => m[acc] ?? acc, p);
+  const mapKey = (k: string) => k.split(" ").map((t) => (/^(src|ui\/src)\//.test(t) ? mapPath(t) : t)).join(" ");
+  const allowed = new Set([...base.keys.map(mapKey), ...Object.keys(ADDED_EXCEPTIONS)]);
+  const targets = new Map<string, string[]>();
+  for (const k of allowed) {
+    const m = /^(\S+) (\S+) -> (\S+)$/.exec(k);
+    if (m) (targets.get(`${m[1]} ${m[2]}`) ?? targets.set(`${m[1]} ${m[2]}`, []).get(`${m[1]} ${m[2]}`)!).push(m[3]!);
+  }
+  const entryDomain = (p: string) => Object.keys(config.deps).find((d) => entriesOf(d).includes(p));
+  return exceptions.filter((k) => {
+    if (allowed.has(k)) return false;
+    const m = /^(\S+) (\S+) -> (\S+)$/.exec(k);
+    const d = m ? entryDomain(m[3]!) : undefined;
+    return !(m && d && (targets.get(`${m[1]} ${m[2]}`) ?? []).some((t) => placeOf(t, config).domain === d));
+  });
+}
+
+/** 트리 전체 검사: 새 위반(added), 지울 예외(stale), 기준에 없던 예외 줄(unbased). */
+export function checkRepo(root: string, base: string = EXCEPTIONS_BASE, config: Config = CONFIG): { added: Violation[]; stale: string[]; unbased: string[] } {
+  const exceptions = readExceptions(root);
+  const { added, stale } = compareExceptions(checkTree(root, config), exceptions);
+  return { added, stale, unbased: unbasedKeys(exceptions, readBase(root, base), config) };
+}
+
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   const root = fileURLToPath(new URL("..", import.meta.url));
   const strict = process.argv.includes("--strict");
@@ -409,11 +472,22 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
     console.log(JSON.stringify(violations.map((v) => v.key), null, 2));
     process.exit(0);
   }
+  const baseArg = process.argv.indexOf("--base");
+  let unbased: string[] = [];
   const { added, stale } = strict ? { added: violations, stale: [] } : compareExceptions(violations, readExceptions(root));
+  if (!strict) {
+    try {
+      unbased = unbasedKeys(readExceptions(root), readBase(root, baseArg > 0 ? process.argv[baseArg + 1] : EXCEPTIONS_BASE));
+    } catch (e) {
+      console.error((e as Error).message);
+      process.exit(1);
+    }
+  }
   for (const v of added) console.error(v.message);
   for (const k of stale) console.error(`예외 목록 줄이 이제 생기지 않아요(또는 두 번 적혔어요): ${k}. ${EXCEPTIONS_FILE}에서 지우세요`);
-  if (added.length || stale.length) {
-    console.error(`도메인 검사: 새 위반 ${added.length}개, 지울 예외 ${stale.length}개`);
+  for (const k of unbased) console.error(`기준 목록에 없던 예외 줄이에요: ${k}. 위반을 고치세요(꼭 남겨야 하면 사용자 승인 뒤 ADDED_EXCEPTIONS에 까닭·기한과 함께)`);
+  if (added.length || stale.length || unbased.length) {
+    console.error(`도메인 검사: 새 위반 ${added.length}개, 지울 예외 ${stale.length}개, 기준에 없던 예외 ${unbased.length}개`);
     process.exit(1);
   }
   console.log(`도메인 검사 통과(${strict ? "엄격 모드" : `예외 ${violations.length}개`})`);
