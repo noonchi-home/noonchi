@@ -24,7 +24,7 @@ import { KIND_LABELS } from "../model/mapping.js";
 import type { PipelineInject } from "../observe/pipeline.js";
 import { resolveTwinStudioDir, type TwinData } from "../model/devices.js";
 import { listHomes } from "../model/homes.js";
-import { holdServerLock } from "./lock.js";
+import { acquireServerLock } from "./lock.js";
 import { SetupError, SetupStore, effectiveSources, parsePairs, parseSources } from "../setup/store.js";
 import { PAIRABLE_KINDS, fitsKind } from "../thinq/appliance.js";
 import { ThinqClient, ThinqError, thinqConfig } from "../thinq/client.js";
@@ -128,13 +128,23 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   const endpoints = loadEndpoints(env);
   const reflectAt = loadReflectAt(env);
   const retention = loadRetention(env);
+  // 이 런타임 폴더를 쓰는 서버라는 표시(RUNTIME_DIR/server.lock). DB를 열기 전에 배타적으로 만든다: 같은 폴더의 서버가 이미 있으면 여기서 멈춘다.
+  // 뜨면 포트를 적고, 끌 때·시작이 실패할 때 지운다. 서버 밖 명령(시연 준비)이 보고 멈춘다
+  const lock = acquireServerLock(runtimeDir);
   // 기록 DB(RUNTIME_DIR/noonchi.db)와 기록기. 집 묶음이 가전·관찰·판단·계획을 넘기고, 운영 모드는 여기서 넘긴다. 시작이 실패하면 닫는다
-  const db = HistoryDb.open(join(runtimeDir, "noonchi.db"), historyTzMinutes(env));
+  let db: HistoryDb;
+  try {
+    db = HistoryDb.open(join(runtimeDir, "noonchi.db"), historyTzMinutes(env));
+  } catch (e) {
+    lock.release();
+    throw e;
+  }
   const feed = { device: topic<[DeviceState, DeviceNote?]>(), brain: topic<[BrainLog]>(), plan: topic<[PlanView]>(), mode: topic<[ControlMode]>() };
   const stopRecorder = attachRecorder(db, { onDevice: feed.device.on, onBrain: feed.brain.on, onPlan: feed.plan.on, onMode: feed.mode.on });
   const closeDb = () => {
     stopRecorder();
     db.close();
+    lock.release();
   };
   // 반성: 한 번에 하나. 결과는 지금 집의 대시보드 판단 기록으로 보낸다(기록 DB에는 runReflection이 적는다)
   const pam = new PamClient({ url: endpoints.pamUrl });
@@ -401,8 +411,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     closeDb();
     throw e;
   }
-  // 이 런타임 폴더를 쓰는 서버라는 표시(pid·포트). 서버 밖 명령(시연 준비)이 보고 멈춘다. 끌 때 지운다
-  const releaseLock = holdServerLock(runtimeDir, listened.port);
+  lock.listening(listened.port);
 
   // 보관 기간: 시작 때와 1시간마다 지난 사진 찍기 사진·시험 자료를 지운다
   const clean = () => {
@@ -451,7 +460,6 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       await current?.close();
       await shell.close();
       closeDb();
-      releaseLock();
     },
   };
 }
