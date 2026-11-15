@@ -3,7 +3,7 @@
 // 명령 대상 고리(명령이 떠 있을 때 첫 대상 하나)와 조준점(찍기·맞추기 때만)을 본다.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPhoneController, type ControllerDeps, type ControllerDraw } from "../src/phone/controller";
-import { supportText } from "../src/phone/state";
+import { handOf, supportText } from "../src/phone/state";
 import { PHONE_PROTOCOL } from "../src/phone/protocol";
 
 class FakeSocket {
@@ -280,6 +280,31 @@ describe("소리 차례(sayAloud): 앞 말을 끊지 않고 차례로 읽는다"
     dones[2]!();
     expect(spoken).toHaveLength(3);
     expect(c.view().command).toMatchObject({ text: ASK });
+  });
+
+  it("승인 대기(현관문)가 엄지 자리에 보이는 동안 reply 뒤 다시 읽는 말은 뒤에 숨은 명령이 아니라 현관문 질문이다. 숨은 명령 말은 읽지 않고, 대기가 풀린 뒤 reply 다음에 그 명령을 읽는다", () => {
+    const { c, ws, spoken, dones } = make();
+    const DOOR = { token: "t1", deviceLabel: "현관문", reason: "현관문 잠금 해제", choices: [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }] };
+    const NEED = "현관문 잠금 해제는 승인이 필요해요.";
+    const DOOR_ASK = "현관문: 현관문 잠금 해제";
+    ws.push(command({ text: ASK }));
+    ws.push({ type: "reply", text: NEED, pending: [DOOR] });
+    dones[0]!();
+    expect(spoken).toEqual([ASK, NEED]);
+    dones[1]!();
+    expect(handOf(c.view()).top).toBe(DOOR_ASK);
+    expect(spoken).toEqual([ASK, NEED, DOOR_ASK]);
+    ws.push({ type: "reply", text: WARN });
+    dones[2]!();
+    dones[3]!();
+    expect(spoken).toEqual([ASK, NEED, DOOR_ASK, WARN, DOOR_ASK]);
+    ws.push(command({ step: "plan:pam-1:3", text: "싱크대로 가 주세요" }));
+    dones[4]!();
+    expect(spoken).toHaveLength(5);
+    c.actions.confirm("t1", "approve");
+    ws.push({ type: "reply", text: "현관문을 열었어요" });
+    dones[5]!();
+    expect(spoken.slice(5)).toEqual(["현관문을 열었어요", "싱크대로 가 주세요"]);
   });
 
   it("경고를 읽는 중 새 B 명령이 오면 경고를 끝까지 읽은 뒤 새 명령을 읽고, 옛 명령 다시 읽기는 버린다. 아직 안 읽은 옛 명령 말도 새 명령이 오면 버린다", () => {

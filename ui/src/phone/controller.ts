@@ -6,8 +6,9 @@
 // 답 단추는 받은 명령의 id·step으로 answer를, 승인 대기 답 단추는 그 토큰과 답(승인·거절)으로 confirm을 보낸다.
 // 말의 답(reply)이 빈 글이면 보이지도 읽지도 않는다. 빈 글이 아니면 소리로 읽고 잠깐 알림 줄에 20초 남긴다(명령 줄은 그대로). 그 밖의 잠깐 알릴 말은 4초.
 // 소리는 차례로 읽는다(sayAloud 줄): 앞 말을 끊지 않고 끝난 뒤(끝 알림, 오지 않으면 speakMs) 다음 말을 읽는다. 명령 말에는 그 명령(계획 id·단계 id)을 붙이고,
-// 새 명령·그 명령의 command_clear가 오면 아직 안 읽은 그 명령 말을 버리며, 읽기 바로 앞에도 지금 명령과 다르면 건너뛴다. reply를 읽은 뒤 떠 있는 명령이 있고
-// 줄에 그 명령 말이 없으면 그 명령을 한 번 다시 읽는다. 듣기는 줄이 빌 때까지 멈춘다.
+// 새 명령·그 명령의 command_clear가 오면 아직 안 읽은 그 명령 말을 버린다. 읽기 바로 앞에는 화면 엄지 자리에 실제로 보이는 대상(handOf, 말의 at과 같은 길)과
+// 견줘 다르면 건너뛴다(승인 대기 뒤에 숨은 명령은 읽지 않는다). reply를 읽은 뒤 보이는 명령·승인 대기가 있고 줄에 그 말이 없으면 한 번 다시 읽는다
+// (승인 대기는 위 줄 「기기: 까닭」). 듣기는 줄이 빌 때까지 멈춘다.
 // 카메라 화면을 못 보내면(core/ar.js 알림) 그 AR 동안 cameraOff로 두어 설정 모달에 「카메라 · 못 보냄」을 남긴다.
 // 위치 맞춤: 시작 위치가 있으면 AR을 켤 때 「여기서 시작」(시작 위치 맞추기)을 띄운다(state.ts onStatus). 단추나 말 「여기서 시작」이면
 // 마지막 폰 자세와 원점으로 {type:"start"}를 보낸다. 그 뒤 서버가 걸으면서 물건·벽 모양으로 맞춘다(src/sync).
@@ -64,8 +65,19 @@ export interface PhoneController {
 }
 
 type Msg = Record<string, any>;
-/** 소리 줄 하나: 읽을 글, 명령 말이면 그 명령(계획 id·단계 id). reply는 null. */
-type Talk = { text: string; cmd: { id: string; step: string } | null };
+/** 소리 줄의 대상: 화면 엄지 자리에 보이는 명령(계획 id·단계 id)이나 승인 대기(token). */
+type TalkTarget = { kind: "command"; id: string; step: string } | { kind: "pending"; token: string };
+/** 소리 줄 하나: 읽을 글, 화면 대상의 말이면 그 대상. reply는 null. */
+type Talk = { text: string; target: TalkTarget | null };
+const sameTarget = (a: TalkTarget, b: TalkTarget | null) =>
+  a.kind === "command" ? b?.kind === "command" && a.id === b.id && a.step === b.step : b?.kind === "pending" && a.token === b.token;
+/** 화면에 실제로 보이는 대상과 그 말(handOf, 말의 at과 같은 길): 명령이면 명령 글, 승인 대기면 위 줄(기기: 까닭). 맞추기 중·빈 자리면 없음. */
+function shownTalk(v: PhoneView): Talk | null {
+  const { top, thumb } = handOf(v);
+  if (thumb?.kind === "command") return { text: thumb.command.text, target: { kind: "command", id: thumb.command.id, step: thumb.command.step } };
+  if (thumb?.kind === "pending") return { text: top ?? "", target: { kind: "pending", token: thumb.item.token } };
+  return null;
+}
 
 export function createPhoneController(deps: ControllerDeps): PhoneController {
   const params = new URLSearchParams(deps.location.search);
@@ -79,7 +91,7 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
   let noteTimer: ReturnType<typeof setTimeout> | undefined;
   let talkTimer: ReturnType<typeof setTimeout> | undefined;
   let talkTurn = 0;
-  /** 소리 줄: 읽을 글과 명령 말이면 그 명령. talking: 지금 읽는 말. */
+  /** 소리 줄: 읽을 글과 화면 대상의 말이면 그 대상. talking: 지금 읽는 말. */
   let talkQueue: Talk[] = [];
   let talking: Talk | null = null;
   let aim = false;
@@ -160,19 +172,18 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
     noteTimer = setTimeout(() => set((v) => ({ ...v, note: null })), ms);
   }
 
-  /** 소리 줄에 넣는다(cmd: 명령 말이면 그 명령). 읽는 동안 듣기를 멈추고, 앞 말이 끝나면 차례로 읽는다. */
-  function sayAloud(text: string, cmd: Talk["cmd"] = null) {
-    talkQueue.push({ text, cmd });
+  /** 소리 줄에 넣는다(target: 화면 대상의 말이면 그 대상). 읽는 동안 듣기를 멈추고, 앞 말이 끝나면 차례로 읽는다. */
+  function sayAloud(text: string, target: TalkTarget | null = null) {
+    talkQueue.push({ text, target });
     listener?.pause();
     if (!talking) playNext();
   }
 
-  /** 줄의 다음 말을 읽는다. 명령 말은 읽기 바로 앞에 지금 명령과 다시 견줘 다르면 건너뛴다. 줄이 비면 듣기를 다시 켠다. */
+  /** 줄의 다음 말을 읽는다. 대상이 있는 말은 읽기 바로 앞에 화면에 보이는 대상(handOf)과 다시 견줘 다르면 건너뛴다. 줄이 비면 듣기를 다시 켠다. */
   function playNext() {
     clearTimeout(talkTimer);
     for (let next = talkQueue.shift(); next; next = talkQueue.shift()) {
-      const c = store.get().command;
-      if (next.cmd && (!c || c.id !== next.cmd.id || c.step !== next.cmd.step)) continue;
+      if (next.target && !sameTarget(next.target, shownTalk(store.get())?.target ?? null)) continue;
       const item = next;
       talking = item;
       const turn = ++talkTurn;
@@ -181,9 +192,9 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
         talkTurn += 1;
         clearTimeout(talkTimer);
         talking = null;
-        // reply를 읽은 뒤: 떠 있는 명령이 있고 줄에 그 명령 말이 없으면 한 번 다시 읽는다
-        const now = store.get().command;
-        if (!item.cmd && now && !talkQueue.some((t) => t.cmd?.id === now.id && t.cmd.step === now.step)) talkQueue.push({ text: now.text, cmd: { id: now.id, step: now.step } });
+        // reply를 읽은 뒤: 화면에 보이는 명령·승인 대기가 있고 줄에 그 말이 없으면 한 번 다시 읽는다(뒤에 숨은 명령은 읽지 않는다)
+        const shown = shownTalk(store.get());
+        if (!item.target && shown && !talkQueue.some((t) => t.target && sameTarget(t.target, shown.target))) talkQueue.push(shown);
         playNext();
       };
       talkTimer = setTimeout(done, speakMs(item.text));
@@ -215,16 +226,16 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
     } else if (msg.type === "command") {
       const m = msg as PhoneCommand;
       // 아직 안 읽은 다른 명령 말은 버린다(같은 명령의 비전 상태만 바뀐 것은 그대로)
-      talkQueue = talkQueue.filter((t) => !t.cmd || (t.cmd.id === m.id && t.cmd.step === m.step));
+      talkQueue = talkQueue.filter((t) => t.target?.kind !== "command" || (t.target.id === m.id && t.target.step === m.step));
       set((v) => ({ ...v, command: { id: m.id, step: m.step, text: m.text, vision: m.vision, choices: m.choices, target: m.target?.id ?? null } }));
       ar.setFocus(m.target ? [m.target] : [], COMMAND_FOCUS_MS);
       if (ar.videoTime) logVideoCommand(ar.videoTime(), m);
       ar.command?.(m);
-      if (m.speak) sayAloud(m.text, { id: m.id, step: m.step });
+      if (m.speak) sayAloud(m.text, { kind: "command", id: m.id, step: m.step });
     } else if (msg.type === "command_clear") {
       const m = msg as PhoneCommandClear;
       // 아직 안 읽은 그 명령 말(id가 없으면 모든 명령 말)은 버린다
-      talkQueue = talkQueue.filter((t) => !t.cmd || (m.id !== undefined && t.cmd.id !== m.id));
+      talkQueue = talkQueue.filter((t) => t.target?.kind !== "command" || (m.id !== undefined && t.target.id !== m.id));
       if (m.id !== undefined && m.id !== store.get().command?.id) return;
       set((v) => ({ ...v, command: null }));
       ar.setFocus([], 0);
