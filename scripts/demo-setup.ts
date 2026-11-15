@@ -6,7 +6,7 @@
 //   reflect [--api URL] [--day 어제]                      어제를 반성해 오늘부터 쓰게 한다(폰을 켜기 전에)
 //   reflect --scripted [--dir runtime/demo/week]          서버를 끈 채 합성 판본(말없이 에어컨 켜는 습관)을 오늘부터로 넣는다
 // 한 폴더 안에서 판본·날 고정을 지우거나 덮지 않는다. 다시 할 때는 서버를 끄고 week --fresh부터 한다.
-import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, renameSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import dotenv from "dotenv";
@@ -104,7 +104,7 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
     }
     return held;
   };
-  // --fresh: 잠금 파일(server.lock.db…)·표시 파일을 뺀 옛 항목을 <dir>.old-<시각>/으로 하나씩 옮긴다.
+  // --fresh: 잠금 파일(server.lock.db…)·표시 파일을 뺀 옛 항목을 <dir>.old-<시각>/(그 이름이 이미 있으면 <dir>.old-<시각>-2/…)으로 하나씩 옮긴다.
   // 옮기기 전에 표시 파일(RESTORE_NEEDED.json: 백업 위치·옮길 항목)을 먼저 쓰고, 쓰지 못하면 아무것도 옮기지 않고 멈춘다.
   // 표시 파일은 옮기기와 새로 쓰기가 다 끝났을 때(또는 옮기기가 실패해 다 되돌렸을 때)만 지운다. 그 전에는 서버·준비 명령이 그 폴더로 시작하지 않는다.
   // 하나라도 못 옮기면 옮긴 것을 끝까지 되돌려 보고, 못 돌린 항목은 표시 파일에 적는다. 돌려준 값: 다 끝난 뒤 지울 표시 파일(옮길 것이 없으면 null)
@@ -113,18 +113,36 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
     const marker = restoreNeededPath(dir);
     const names = readdirSync(dir).filter((n) => !n.startsWith(lockFile) && n !== basename(marker));
     if (!names.length) return null;
-    const old = `${dir}.old-${new Date(now()).toISOString().replace(/[-:]/g, "").replace(/\..*$/, "")}`;
+    // 백업 폴더는 새로 만들어서 이름을 잡는다: 같은 이름(같은 초)이 이미 있으면 그 폴더는 두고 뒤에 -2, -3…을 붙인다
+    const stamp = `${dir}.old-${new Date(now()).toISOString().replace(/[-:]/g, "").replace(/\..*$/, "")}`;
+    let old = "";
+    for (let n = 1; !old; n++) {
+      const name = n === 1 ? stamp : `${stamp}-${n}`;
+      try {
+        mkdirSync(name);
+        old = name;
+      } catch (e) {
+        const code = (e as NodeJS.ErrnoException).code;
+        if (code !== "EEXIST" || n >= 100) throw new DemoStop(`백업 폴더를 만들지 못해 옮기지 않았어요(${name}: ${code ?? (e as Error).message})`);
+      }
+    }
+    // 이번 호출이 만든 백업 폴더만, 비어 있을 때만 지운다
+    const dropBackup = () => {
+      try {
+        rmdirSync(old);
+      } catch { /* 비어 있지 않으면 둔다 */ }
+    };
     const mark = (extra: Record<string, unknown> = {}) =>
       writeMarker(marker, `${JSON.stringify({ version: 1, backup: old, entries: names, at: new Date(now()).toISOString(), ...extra }, null, 2)}\n`);
     try {
       mark();
     } catch (e) {
       rmSync(marker, { force: true });
+      dropBackup();
       throw new DemoStop(`표시 파일을 쓰지 못해 옮기지 않았어요(${marker}: ${(e as NodeJS.ErrnoException).code ?? (e as Error).message})`);
     }
     const done: string[] = [];
     try {
-      mkdirSync(old);
       for (const n of names) {
         rename(join(dir, n), join(old, n));
         done.push(n);
@@ -140,7 +158,7 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
         }
       }
       if (!missing.length) {
-        rmSync(old, { recursive: true, force: true });
+        dropBackup();
         rmSync(marker, { force: true });
         throw new DemoStop(`옛 항목을 옮기지 못했어요(${dir}: ${why}). 그 폴더 파일을 연 프로그램을 끈 뒤 다시 하세요`);
       }

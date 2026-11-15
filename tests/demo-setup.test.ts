@@ -1,7 +1,7 @@
 // 시연 준비 명령(scripts/demo-setup.ts)과 장면 시작 위치(scripts/demo-start.ts). 서버는 시험 안의 가짜 HTTP 서버만 쓴다(실제 서버·PAM은 띄우지 않는다).
 import { spawn } from "node:child_process";
 import { createServer, type Server } from "node:http";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, renameSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -248,6 +248,22 @@ describe("서버가 꺼졌는지(--fresh·--scripted)", () => {
       db.close();
     }
   }, 120_000);
+
+  it("--fresh 백업 폴더 이름이 이미 있으면(같은 초) 그 폴더는 건드리지 않고 뒤에 번호를 붙인 새 이름으로 옮긴다", async () => {
+    const base = tmp();
+    const dir = join(base, "week");
+    await run(["week", "--dir", dir, "--api", CLOSED]);
+    const taken = `${dir}.old-${new Date(NOW).toISOString().replace(/[-:]/g, "").replace(/\..*$/, "")}`;
+    mkdirSync(taken);
+    writeFileSync(join(taken, "keep.txt"), "앞 백업");
+    await run(["week", "--dir", dir, "--fresh", "--api", CLOSED]);
+    expect(readFileSync(join(taken, "keep.txt"), "utf8")).toBe("앞 백업");
+    expect(readdirSync(taken)).toEqual(["keep.txt"]);
+    const fresh = readdirSync(base).filter((n) => n.startsWith("week.old-") && join(base, n) !== taken);
+    expect(fresh).toEqual([`${basename(taken)}-2`]);
+    expect(readdirSync(join(base, fresh[0]!))).toEqual(expect.arrayContaining(["noonchi.db", "setup.json"]));
+    expect(existsSync(join(dir, "noonchi.db"))).toBe(true);
+  }, 60_000);
 
   it("--fresh는 옮기기 전에 표시 파일(RESTORE_NEEDED.json)을 먼저 쓴다: 쓰기가 실패하면 아무것도 옮기지 않고 멈추고, 옮기기·새로 쓰기가 다 끝나면 표시 파일이 남지 않는다", async () => {
     const base = tmp();
