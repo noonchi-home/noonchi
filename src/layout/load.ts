@@ -19,7 +19,8 @@ export function loadLayout(home: Home, opts: { runtimeDir: string; log: (line: s
   if (!scene) return undefined;
   const catalog = loadCatalog(home.catalogDir);
   const savePath = join(opts.runtimeDir, "homes", home.id, "edits.json");
-  const editor = new LayoutEditor({ homeId: home.id, scene, catalog, savePath, outDir: home.outDir, libraryDir: home.libraryDir });
+  // 시연용으로 더한 가전(scene.added)은 구운 장면에 없어 연결 때 add로 보낸다
+  const editor = new LayoutEditor({ homeId: home.id, scene, catalog, savePath, outDir: home.outDir, libraryDir: home.libraryDir, unbaked: scene.added });
   if (existsSync(savePath)) {
     try {
       const saved = JSON.parse(readFileSync(savePath, "utf8")) as { home?: string; edits?: Edit[] };

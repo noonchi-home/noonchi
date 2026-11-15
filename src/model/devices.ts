@@ -6,6 +6,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { DeviceSpec, RoomSpec } from "../hub/types.js";
 import { resolveHome, type Home } from "./homes.js";
+import { loadScene } from "./scene.js";
 import { defaultTwinValue, describeDevice } from "./mapping.js";
 
 export type TwinSource = "scene" | "catalog";
@@ -157,7 +158,8 @@ function buildTwin(home: Home, source: TwinSource, rooms: RoomSpec[], objects: R
 }
 
 function loadFromScene(home: Home, warnings: string[]): TwinData {
-  const scene = asRecord(readJson(home.scenePath));
+  // 합친 장면(scene.json + 도면 설비 + 시연용으로 더하는 가전, src/model/scene.ts)에서 기기를 만든다
+  const scene = asRecord(loadScene(home) ?? readJson(home.scenePath));
   const plan = asRecord(scene.plan);
   let rooms = parseRooms(plan.rooms);
   let doors = parseDoors(plan.doors);

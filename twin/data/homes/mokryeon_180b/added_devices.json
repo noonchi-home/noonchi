@@ -1,0 +1,6 @@
+{
+  "source": "noonchi 시연(2026-11-13)",
+  "items": [
+    { "id": "microwave_kitchen", "type": "microwave", "label": "주방 전자레인지", "room": "kitchen", "position": [7.66, -0.0715], "facing_deg": 90, "elevation": 0.9 }
+  ]
+}

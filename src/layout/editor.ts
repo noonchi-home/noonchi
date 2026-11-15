@@ -48,6 +48,8 @@ export interface LayoutEditorOptions {
   /** 라이브러리 폴더(/twin/lib/) */
   libraryDir?: string;
   here?: HereResolver;
+  /** 구운 장면에 없는 기본 물건(시연용으로 더한 가전, src/model/scene.ts added). 연결 때 지금 자리로 add를 보낸다. */
+  unbaked?: readonly string[];
 }
 
 export class LayoutError extends Error {}
@@ -103,6 +105,7 @@ export class LayoutEditor {
   private readonly libraryDir?: string;
   private here?: HereResolver;
   private readonly base = new Map<string, SceneObject>();
+  private readonly unbaked: ReadonlySet<string>;
   private current = new Map<string, SceneObject>();
   private readonly everAdded = new Set<string>();
   private readonly listeners = new Set<(m: LayoutMessage) => void>();
@@ -120,6 +123,7 @@ export class LayoutEditor {
     this.outDir = opts.outDir;
     this.libraryDir = opts.libraryDir;
     this.here = opts.here;
+    this.unbaked = new Set(opts.unbaked ?? []);
     for (const raw of opts.scene.objects) {
       const o = asObject(raw);
       if (o && !this.base.has(o.id)) this.base.set(o.id, o);
@@ -294,11 +298,15 @@ export class LayoutEditor {
     return out;
   }
 
-  /** 원래 scene.json을 불러온 뷰어를 지금 상태로 맞추는 메시지(연결 때 보낸다). */
+  /** 원래 scene.json을 불러온 뷰어를 지금 상태로 맞추는 메시지(연결 때 보낸다). 구운 장면에 없는 기본 물건(unbaked)은 지금 자리로 add(지웠으면 보내지 않는다). */
   syncMessages(): LayoutMessage[] {
     const out: LayoutMessage[] = [];
     for (const [id, b] of this.base) {
       const c = this.current.get(id);
+      if (this.unbaked.has(id)) {
+        if (c) out.push({ type: "layout", op: "add", object: clone(c) });
+        continue;
+      }
       if (!c) out.push({ type: "layout", op: "remove", id });
       else if (this.changed(b, c)) out.push(this.moveMessage(c));
     }

@@ -174,6 +174,19 @@ describe("수정본·되돌리기·저장", () => {
     expect(e.syncMessages()).toEqual([]);
   });
 
+  it("구운 장면에 없는 기본 물건(unbaked)은 연결 때 지금 자리로 add, 지우면 보내지 않고, reset() 뒤에도 남는다", () => {
+    const e = new LayoutEditor({ homeId: "oneroom", scene: scene(), catalog: CATALOG, savePath: join(tempDir(), "edits.json"), unbaked: ["fridge_1"] });
+    expect(e.syncMessages()).toEqual([{ type: "layout", op: "add", object: expect.objectContaining({ id: "fridge_1", plan: expect.objectContaining({ position: [1, 1] }) }) }]);
+    e.move("fridge_1", { x: 3, y: 3 });
+    expect(e.syncMessages()).toEqual([{ type: "layout", op: "add", object: expect.objectContaining({ id: "fridge_1", plan: expect.objectContaining({ position: [3, 3] }) }) }]);
+    expect(e.edits()).toEqual([{ op: "move", id: "fridge_1", position: [3, 3], facing_deg: 90, room: "room" }]);
+    e.remove("fridge_1");
+    expect(e.syncMessages()).toEqual([]);
+    e.reset();
+    expect(e.objects().some((o) => o.id === "fridge_1")).toBe(true);
+    expect(e.syncMessages().map((m) => m.op)).toEqual(["add"]);
+  });
+
   it("저장하면 계약 B 모양의 파일, 저장 뒤 바뀐 것이 없으면 dirty false", () => {
     const path = join(tempDir(), "homes", "oneroom", "edits.json");
     const { e } = editor({ savePath: path });
