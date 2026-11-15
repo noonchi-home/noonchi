@@ -2,7 +2,7 @@
 // 엄지 자리(handOf)·승인 대기 목록이 하나도 다르지 않아야 한다. 명령 소리 읽기·단추 답·승인·명령 줄 차례·끄기 안내를 한 대본으로 돌린다.
 // AR을 연 뒤에는 말에 at(그때 떠 있던 명령·보인 승인 대기)이 실리니, 같은 대본 사이사이 말을 넣어 at까지 견준다(실제 모드는 가짜 WebXR 세션, 영상 모드는 대역 영상).
 // 영상 모드에서 소리 읽기·답·승인·at 같은 동작을 따로 두면(예전의 소리 끄기 갈래) 이 시험이 실패한다(tests/video-mode-parity.test.ts는 갈래 자리를 본다).
-// 서버 쪽(영상 연결 ?video=와 실제 연결의 명령·단계 끝·World State 반영)은 tests/video-mode-e2e.test.ts가 견준다.
+// 서버 쪽(영상 연결 ?video=와 실제 연결의 명령·단계 끝·World State 반영)은 tests/video-real-e2e.test.ts가 견준다.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createPhoneController, type ControllerDeps, type PhoneController } from "../src/phone/controller";
 import { handOf } from "../src/phone/state";
