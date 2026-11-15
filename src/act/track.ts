@@ -8,10 +8,13 @@
 // 켜라는 명령을 보낸 가전은 작동 한 번이 끝난 것을 확인할 때까지 「켠 것」(hot)으로 본다. 켜기 회차(Run.onAt: 회차 번호·켜라고 한 시각·부탁 시각)는 풀어도 남는다.
 // 작동 끝남은 cycleEnded 하나만 판정하고(명시 근거만: 켜라고 한 뒤 촬영된 아는 켜짐 → 꺼짐, 또는 부탁 뒤 촬영된 가까이 본 명시 꺼짐) 추적은 releaseIfOff 하나만 푼다.
 // 「완료」·말·만료·끄기 단계 넘김은 풀지 않는다(끄기 do 단계는 「완료」로 넘어가도 hot이 남고, 추적이 풀리면 그 단계도 끝난다).
-// 켠 채 계획이 닫히면(그만·시간 초과·실패·새 계획·끝까지 마침) handOver가 가전마다 끄라는 안내(단계 id :off, 둘째부터 :off:2…, 「완료」 하나)를 줄에 넣고
-// 실제 폰에 차례로 띄운다. 상태가 이미 꺼짐인데 끝남을 확인하지 못한 가전은 보이게 해 달라는 부탁(답 단추 없음)으로 넣는다. 안내의 「완료」는 풀리지 않으면 부탁으로 바뀐다.
+// 켠 채 계획이 닫히면(그만·시간 초과·실패·새 계획·끝까지 마침) handOver가 가전마다 끄라는 안내 하나(명령 id는 닫힌 계획 id, 단계 id off:<계획>:<가전>:<회차>,
+// src/act/off-step.ts, 「완료」 하나)를 줄에 넣고 실제 폰 명령 줄에 보통 명령처럼 차례로 띄운다. 상태가 이미 꺼짐인데 끝남을 확인하지 못한 가전은 보이게 해 달라는 부탁(답 단추 없음)으로 넣는다. 안내의 「완료」는 풀리지 않으면 부탁으로 바뀐다.
 // 안내는 offHoldMs마다 다시 읽고, 줄에 다른 가전이 기다리면 차례를 돌린다. 풀린 가전이 rearmMs 안에 다시 켜지면 다시 건다(rearmIfOn).
-// 안내가 남아 있는 동안 새 계획은 첫 명령(승인 질문 포함)을 미루고(실행 기록 EXEC_TEXT.deferred), 안내가 다 풀리면 시작한다. 다른 계획이 도는 동안 생긴 안내는 그 계획이 끝난 뒤 띄운다.
+// 안내가 남아 있는 동안 폰이 필요한 새 계획(needsPhone)은 첫 명령(승인 질문 포함)을 미루고(실행 기록 EXEC_TEXT.deferred), 안내가 다 풀리면 시작한다.
+// 폰이 필요 없는 가전 계획은 그대로 돌고, 그 알림 줄(say)은 안내가 떠 있는 동안 명령 줄로 보내지 않는다.
+// 폰이 필요한 다른 계획이 도는 동안 다시 걸려 생긴 안내는 그 계획이 끝난 뒤 띄우고(그 계획은 막지 않는다), 기다리는 동안 붙은 폰에 소리로만 알린다
+// (sayAloud, CAUTION_TEXT.rearmed, offHoldMs마다 다시). 그 시각은 offTold()로 말풍선 카드가 본다.
 // 다시 알리기(tell)·사람 부탁(askCloser)은 모델이 쓴 글이라, 위험 가전 이름이 나오거나 지금 단계가 위험 가전 단계(대상이 위험 가전이거나 hand_device가 붙음)면 보내지 않는다(기본 거부).
 // 코치 행동(TaskSpec.coach) 계획이 열려 있거나 만드는 중이면 coaching()이 참이다: 그동안 판단 호출(PAM)을 쉰다.
 // 폰 판본(phoneReady, src/phone/server.ts): 판본이 맞는 실제 폰이 없으면 폰이 필요한 계획(needsPhone)만 시작을 미루고(실행 기록 EXEC_TEXT.phoneOld, 한 번),
@@ -67,6 +70,7 @@ import type { DecisionRecord } from "../world/decide.js";
 import { approvalNeed, taskKey, type ApprovalAnswer, type ApprovalBook } from "../agent/approval.js";
 
 import { HUMAN_KINDS, needsPhone, objectNames, riskyHand, type AgentPlan, type AgentStep, type PlanResult } from "../agent/planTools.js";
+import { offStep } from "./off-step.js";
 import type { ToolResult } from "../agent/tools.js";
 import type { CheckResult } from "./check.js";
 import { QUIET_HINT_MS, quietLabels, type LessonBook, type StepOutcome } from "./lessons.js";
@@ -138,6 +142,8 @@ export interface TrackerOptions {
   showAskMs?: number;
   /** 판본이 맞는 실제 폰이 붙어 있는가(src/phone/server.ts ready). 없으면 늘 붙어 있다고 본다. */
   phoneReady?: () => boolean;
+  /** 명령 줄을 바꾸지 않고 붙은 폰에 소리로만 알린다(src/server/home.ts가 폰 서버 reply에 잇는다). 줄에서 기다리는 끄기 안내가 쓴다. */
+  sayAloud?: (text: string) => void;
   /** 멈춘 집기·놓기 단계 알림(관찰 모드 A, src/act/look.ts). 받았으면 true(그때만 센다). 받은 부름은 끝날 때 s.settle(counted)를 부른다. 없으면 부르지 않는다. */
   stalled?: (s: Stall) => boolean;
   /** 집기·놓기 단계가 이만큼(ms) 안 끝나면 stalled를 부른다(단계 시작 뒤, 받은 부름 뒤). */
@@ -243,8 +249,8 @@ interface Run {
   ends: Map<string, { cycle: number; seenAt: number; how: CycleEnd["via"]; at: number }>;
   /** 끄기 do 단계의 보이게 해 달라는 부탁을 보낸 단계 세대(단계마다 한 번). deferred: 끄기 안내 때문에 시작을 미룬다고 기록했다. */
   offAsked: number; deferred: boolean;
-  /** 판본이 맞는 폰이 없어 시작을 미룬다고 기록했다. */
-  phoneWait: boolean;
+  /** 판본이 맞는 폰이 없어 시작을 미룬다고 기록했다. phone: 폰이 필요한 계획(needsPhone, 시작할 때 정한다). 폰 명령 줄을 쓰는 동안 끄기 안내는 기다린다. */
+  phoneWait: boolean; phone: boolean;
   /** 이 단계에서 받은 다른 행동 알림 수와 마지막으로 부른 시각, 폰이 가까이 간 다른 자리(그 자리마다 한 번). */
   strays: number; strayAt: number; strayNear: string | null;
   /** tell로 바꿔 띄운 글: 되돌릴 원래 명령 글과 되돌릴 시각. */
@@ -283,8 +289,9 @@ export class ExecutionTracker {
   /** 켠 채 닫힌 계획의 끄기 안내: 실제 폰에 떠 있는 것(reminder, 띄운 시각)과 그 뒤에 띄울 것(offQueue). 가전마다 하나. */
   private reminder: { sent: PlannedCommand; at: number; note: OffNote } | null = null;
   private offQueue: OffNote[] = [];
-  /** 계획마다 붙인 끄기 안내 수(단계 id :off, :off:2…). */
-  private readonly offSeq = new Map<string, number>();
+  /** 줄에서 기다리는 끄기 안내를 마지막으로 소리로 알린 시각(실행 추적 시계, 다시 알릴 때를 센다)과 그 가전 이름·Date.now 시각(말풍선 카드). */
+  private offToldAt: number | null = null;
+  private offToldWall: { device: string; atMs: number } | null = null;
   /** 가전마다 지금 켜기 회차(계획이 닫혀도 남는다). */
   private readonly cycles = new Map<string, Cycle>();
   /** 추적이 풀린 가전: 그 계획, 풀린 근거 촬영 시각, 판정 길, 푼 시각(다시 걸기 rearmIfOn이 본다). */
@@ -320,9 +327,10 @@ export class ExecutionTracker {
 
   /** 실제 폰에 띄운 지금 명령·질문(답을 기다리는 중). 승인·다시 묻기·질문 단계는 질문(ask), 그 밖은 부탁(command). 없으면 null. */
   openCommand(): { planId: string; stepId: string; kind: "command" | "ask"; text: string; choices: ActionChoice[] } | null {
-    const r = this.shown();
+    // 끄기 안내가 떠 있으면 명령 줄은 그 안내다(폰이 필요 없는 가전 계획이 함께 돌 수 있다)
     const off = this.reminder;
-    if (!r && off && !this.stopped) return { planId: off.sent.id, stepId: off.sent.step, kind: "command", text: off.sent.text, choices: off.note.ask ? [] : [STEP_DONE] };
+    if (off && !this.stopped) return { planId: off.sent.id, stepId: off.sent.step, kind: "command", text: off.sent.text, choices: off.note.ask ? [] : [STEP_DONE] };
+    const r = this.shown();
     if (!r) return null;
     const ask = r.asking !== null || this.stepOf(r)?.kind === "ask";
     return { planId: r.plan.view.id, stepId: r.sent.step, kind: ask ? "ask" : "command", text: r.sent.text, choices: choicesOf(r, this.stepOf(r)) };
@@ -434,7 +442,7 @@ export class ExecutionTracker {
       if (open) this.finish(open, "failed", EXEC_TEXT.stopped, "cancelled");
       return { kind: "answer", choice: STOP };
     }
-    const r = this.shown();
+    const r = this.reminder ? null : this.shown();
     if (r) {
       const picked = matchChoice(text, choicesOf(r, this.stepOf(r)));
       if (!picked) return null;
@@ -679,9 +687,8 @@ export class ExecutionTracker {
    *  rotate: 떠 있는 안내를 줄 끝으로 돌리고 다음 가전 안내를 띄운다(줄에 다른 안내가 있을 때만). 꺼내기 전에 작동이 끝난 가전은 releaseIfOff가 줄에서 뺀다.
    *  남은 것이 없으면 미뤄 둔 새 계획을 시작해 본다. */
   private nextReminder(rotate = false): void {
-    if (this.stopped) return;
+    if (this.stopped || this.lineBusy()) return;
     const r = this.run;
-    if (r && (r.state === "running" || r.state === "verifying" || (r.state === "planned" && r.asking))) return;
     const off = this.reminder;
     if (off && rotate && this.offQueue.length) {
       this.offQueue.push(off.note);
@@ -698,6 +705,7 @@ export class ExecutionTracker {
         choices: note.ask ? [] : [{ id: STEP_DONE.id, label: STEP_DONE.label }], target: null, speak: true,
       };
       this.reminder = { sent, at: now, note };
+      this.offToldAt = null;
       const cycle = this.cycles.get(note.deviceId);
       if (note.ask && cycle && cycle.askedAt === null) cycle.askedAt = now;
       this.o.toPhone(sent);
@@ -719,6 +727,8 @@ export class ExecutionTracker {
     const now = this.clock.now();
     const r = this.run;
     if (r) for (const [id, end] of r.ends) if (now - end.at > this.cfg.rearmMs && !this.offStepOpen(r, id)) r.ends.delete(id);
+    // 폰이 필요한 다른 계획이 도는 동안 줄에서 기다리는 안내: offHoldMs마다 소리로만 다시 알린다
+    if (!this.reminder && this.offQueue.length && this.offToldAt !== null && now - this.offToldAt > this.cfg.offHoldMs) this.tellWaiting(this.offQueue[0]!.deviceId);
     const off = this.reminder;
     if (!off || now - off.at <= this.cfg.offHoldMs) return;
     if (this.offQueue.length) return this.nextReminder(true);
@@ -820,15 +830,37 @@ export class ExecutionTracker {
     }
     this.queueOff(rel.planId, deviceId, false);
     this.nextReminder();
+    // 다른 계획이 명령 줄을 쓰는 중이라 안내가 줄에서 기다리면 소리로만 바로 알린다
+    if (this.lineBusy()) this.tellWaiting(deviceId);
     return true;
   }
 
-  /** 끄기 안내를 줄에 넣는다(계획마다 단계 id :off, :off:2…). ask면 보이게 해 달라는 부탁, 부를 이름이 없으면 끄라는 안내. */
+  /** 폰이 필요한 계획이 실제 폰 명령 줄을 쓰는 중인가(진행 중·확인 중·승인 질문 중). 그동안 끄기 안내는 줄에서 기다린다. */
+  private lineBusy(): boolean {
+    const r = this.run;
+    return !!r && r.phone && (r.state === "running" || r.state === "verifying" || (r.state === "planned" && r.asking !== null));
+  }
+
+  /** 줄에서 기다리는 끄기 안내를 붙은 폰에 소리로만 알리고(명령 줄은 그대로) 그 시각을 남긴다. */
+  private tellWaiting(deviceId: string): void {
+    const name = this.handLabel(deviceId);
+    this.o.sayAloud?.(CAUTION_TEXT.rearmed(name));
+    this.offToldAt = this.clock.now();
+    this.offToldWall = { device: name, atMs: Date.now() };
+  }
+
+  /** 끄기 안내를 줄에 넣는다(가전마다 하나: 그 가전 안내가 이미 떠 있거나 줄에 있으면 넣지 않는다). 명령 id는 그 계획 id, 단계 id는 off:<계획>:<가전>:<지금 회차>.
+   *  ask면 보이게 해 달라는 부탁, 부를 이름이 없으면 끄라는 안내. */
   private queueOff(planId: string, deviceId: string, ask: boolean): void {
-    const n = (this.offSeq.get(planId) ?? 0) + 1;
-    this.offSeq.set(planId, n);
+    if (this.reminder?.note.deviceId === deviceId || this.offQueue.some((n) => n.deviceId === deviceId)) return;
     const name = ask ? this.nameOf(deviceId) : null;
-    this.offQueue.push({ planId, step: n === 1 ? `${planId}:off` : `${planId}:off:${n}`, deviceId, text: name ? CLOSER_TEXT(name) : CAUTION_TEXT.off(this.handLabel(deviceId)), ask: !!name });
+    const step = offStep(planId, deviceId, this.cycles.get(deviceId)?.cycle ?? 1);
+    this.offQueue.push({ planId, step, deviceId, text: name ? CLOSER_TEXT(name) : CAUTION_TEXT.off(this.handLabel(deviceId)), ask: !!name });
+  }
+
+  /** 끄기 안내가 떠 있거나 줄에 남았는가. 참이면 폰이 필요한 계획의 첫 명령(승인 질문 포함)을 보내지 않는다. */
+  private offPending(): boolean {
+    return this.reminder !== null || this.offQueue.length > 0;
   }
 
   /** 닫히는 계획의 hot을 끄기 안내 줄로 옮긴다(푸는 것이 아니다. 이미 작동이 끝난 가전은 releaseIfOff가 푼다). 그 가전 상태가 이미 꺼짐인데
@@ -911,6 +943,11 @@ export class ExecutionTracker {
       return false;
     }
     return true;
+  }
+
+  /** 줄에서 기다리는 끄기 안내를 마지막으로 소리로 알린 가전 이름과 시각(Date.now, 대시보드 말풍선 카드). 없으면 null. */
+  offTold(): { device: string; atMs: number } | null {
+    return this.stopped ? null : this.offToldWall;
   }
 
   /** 끄기 안내 때문에 새 계획 시작을 미루는 중이면 기다리는 가전 이름(대시보드 말풍선 카드). 아니면 null. */
@@ -1006,7 +1043,7 @@ export class ExecutionTracker {
     const run: Run = {
       plan: r.plan, decision: d, state: "decided", since: now, at: -1, stepAt: now, spokeAt: now, visionAt: now, sent: null,
       asking: null, askAt: now, watch: null, others, alias: new Map([...ids].map((id) => [id, id])), carried: new Set(), placeAt: (id) => (id ? this.o.floor().objects.get(id)?.position ?? null : null), deadline: now, again: false, device: "idle", gen: 0,
-      looks: 0, lookAt: Number.NEGATIVE_INFINITY, stepEnd: null, gapAt: job.at, onAt: new Map(), hot: new Set(), ends: new Map(), offAsked: -1, deferred: false, phoneWait: false,
+      looks: 0, lookAt: Number.NEGATIVE_INFINITY, stepEnd: null, gapAt: job.at, onAt: new Map(), hot: new Set(), ends: new Map(), offAsked: -1, deferred: false, phoneWait: false, phone: false,
       strays: 0, strayAt: Number.NEGATIVE_INFINITY, strayNear: null, told: null, helped: false,
       quiet: taskOf(r.plan.task)?.coach ? quietLabels(this.o.lessons?.get(r.plan.task) ?? null) : new Set(), quietOn: false, outcomes: [],
     };
@@ -1029,8 +1066,16 @@ export class ExecutionTracker {
       this.ungap(r.decision, r.gapAt);
       return this.finish(r, "failed", EXEC_TEXT.closerNewer, "cancelled");
     }
-    // 끄기 안내가 남아 있으면 첫 명령(승인 질문 포함)을 미룬다(한 번 기록): 안내가 다 풀리면 nextReminder가 다시 부른다
-    if (this.reminder || this.offQueue.length) {
+    const c = this.o.check(r.decision, r.plan.view);
+    if (!c.ok) {
+      if (last) this.finish(r, "failed", c.text);
+      return;
+    }
+    const why = this.approval(r);
+    r.phone = needsPhone(r.plan, why, this.o.handDevices?.() ?? []);
+    // 끄기 안내가 남아 있으면 폰이 필요한 계획은 첫 명령(승인 질문 포함)을 미룬다(한 번 기록): 안내가 다 풀리면 nextReminder가 다시 부른다.
+    // 폰이 필요 없는 가전 계획은 그대로 시작한다
+    if (r.phone && this.offPending()) {
       const id = this.reminder?.note.deviceId ?? this.offQueue[0]!.deviceId;
       if (!r.deferred) {
         r.deferred = true;
@@ -1039,14 +1084,8 @@ export class ExecutionTracker {
       if (!this.reminder) this.nextReminder();
       return;
     }
-    const c = this.o.check(r.decision, r.plan.view);
-    if (!c.ok) {
-      if (last) this.finish(r, "failed", c.text);
-      return;
-    }
-    const why = this.approval(r);
     // 폰이 필요한 계획은 판본이 맞는 실제 폰이 붙어 있을 때만 시작한다(한 번 기록, 붙으면 tick이 다시 부른다)
-    if (!this.phoneOk() && needsPhone(r.plan, why, this.o.handDevices?.() ?? [])) {
+    if (!this.phoneOk() && r.phone) {
       if (!r.phoneWait) {
         r.phoneWait = true;
         this.emit(r.plan.view.id, "planned", EXEC_TEXT.phoneOld);
@@ -1160,8 +1199,8 @@ export class ExecutionTracker {
       target: human ? this.target(r, step, world) : null, speak: !r.quietOn,
       ...(human ? { kind: step.kind as PhoneStepKind } : {}),
     };
-    // 알림 글은 판본이 맞는 폰이 없으면 보내지 않는다(폰 없이 도는 가전 계획)
-    if (step.kind === "say" && !this.phoneOk()) return;
+    // 알림 글은 판본이 맞는 폰이 없거나 끄기 안내가 명령 줄에 떠 있으면 보내지 않는다(폰 없이 도는 가전 계획, 명령 줄에는 하나만)
+    if (step.kind === "say" && (!this.phoneOk() || this.reminder)) return;
     this.o.toPhone(r.sent);
   }
 

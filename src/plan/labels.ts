@@ -51,6 +51,8 @@ export const SAY_TEXT = {
   offAsked: "불을 꺼 달라고 했어요.",
   /** 끄기 안내가 남아 새 계획 시작을 미루는 동안(그 가전 이름). */
   offWait: (device: string) => `${device} 꺼짐을 기다리고 있어요.`,
+  /** 다른 계획이 도는 동안 닫힌 계획의 가전이 다시 켜져 끄기 안내가 줄에서 기다릴 때(20초). */
+  rearmed: (device: string) => `${josa(device, "이/가")} 다시 켜졌어요.`,
   /** 계획 없는 행동(컵 그대로 두기)을 고른 뒤. */
   left: "컵을 그대로 두기로 했어요.",
   done: (goal: string) => DONE[goal] ?? `${josa(goal, "을/를")} 마쳤어요.`,
@@ -150,6 +152,8 @@ export const REFRESH_TEXT = "화면을 새로 고쳐 주세요";
 export const CAUTION_TEXT = {
   ask: (caution: string, label: string) => `${caution} ${josa(label, "을/를")} 켤까요?`.trim(),
   off: (label: string) => `${josa(label, "을/를")} 꺼 주세요`,
+  /** 다른 계획이 도는 동안 닫힌 계획의 가전이 다시 켜졌을 때 폰에 소리로만 알리는 글(명령 줄은 그 계획 것 그대로). */
+  rearmed: (label: string) => `${josa(label, "이/가")} 다시 켜졌어요. 꺼 주세요`,
 };
 
 /** 시간 안에 끝나지 않은 단계를 실제 폰에 다시 묻는 글(src/act/track.ts, 답은 계속·그만). */

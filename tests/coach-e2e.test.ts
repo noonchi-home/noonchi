@@ -219,7 +219,7 @@ describe("코치 모드: 라면 끓이기 알려 주기", () => {
     await s.pump(async () => (await s.history("execution")).some((r) => r.subject === planId && r.text === "완료"), "완료");
     // 진행 중에는 PAM을 부르지 않는다(시작 때 나가 있던 판단 하나까지는 봐준다)
     expect(s.predicts() - during).toBeLessThanOrEqual(1);
-    expect(s.commands().some((m) => m.step === `${planId}:off`)).toBe(false);
+    expect(s.commands().some((m) => /^off:/.test(m.step))).toBe(false);
 
     // 수업 기록: 사람 단계 아홉(알림·기다리기는 없음). 도움을 받은 단계는 0
     const lessons = JSON.parse(readFileSync(join(s.runtimeDir, "homes", "mokryeon_180b", "lessons.json"), "utf8")) as { lessons: Record<string, { runs: number; steps: { label: string; alone: number }[] }> };
@@ -255,15 +255,15 @@ describe("코치 모드: 라면 끓이기 알려 주기", () => {
     await s.pump(() => !!s.said("인덕션을 켜 주세요"), "켜라는 명령");
     await srv!.hub.command(s.cooktop, { type: "on" });
     s.say("그만");
-    await s.pump(() => s.commands().some((m) => m.step === `${planId}:off`), "끄기 안내");
-    const off = s.commands().find((m) => m.step === `${planId}:off`)!;
+    await s.pump(() => s.commands().some((m) => m.step === `off:${planId}:${s.cooktop}:1`), "끄기 안내");
+    const off = s.commands().find((m) => m.step === `off:${planId}:${s.cooktop}:1`)!;
     expect(off).toMatchObject({ id: planId, choices: [{ id: "done", label: "완료" }], speak: true });
     expect(off.text).toMatch(/인덕션.* 꺼 주세요$/);
     await s.pump(async () => (await s.history("execution")).some((r) => r.subject === planId && r.text === "사용자가 그만둠"), "취소 기록");
     await s.pump(() => s.dash.some((m) => m.type === "say" && m.text === "불을 꺼 달라고 했어요."), "말풍선 카드");
     s.answer(off);
-    await s.pump(() => s.commands().some((m) => m.step === `${planId}:off` && m.choices.length === 0), "부탁으로 바뀜");
-    expect(s.commands().at(-1)).toMatchObject({ id: planId, step: `${planId}:off`, text: "인덕션이 보이게 폰을 가까이 대 주세요", choices: [] });
+    await s.pump(() => s.commands().some((m) => m.step === `off:${planId}:${s.cooktop}:1` && m.choices.length === 0), "부탁으로 바뀜");
+    expect(s.commands().at(-1)).toMatchObject({ id: planId, step: `off:${planId}:${s.cooktop}:1`, text: "인덕션이 보이게 폰을 가까이 대 주세요", choices: [] });
     expect(s.phone.at(-1)?.type).toBe("command");
     await srv!.hub.command(s.cooktop, { type: "off" });
     await s.pump(() => s.phone.at(-1)?.type === "command_clear", "안내 지움");

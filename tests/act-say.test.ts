@@ -86,14 +86,22 @@ describe("말풍선 카드 글", () => {
       expect(say({ plan: coach(), command: asking })).not.toBe("폰으로 물어봤어요.");
     });
     it("끄기 안내가 떠 있는 동안은 「불을 꺼 달라고 했어요.」(계획이 닫힌 뒤에도)", () => {
-      const off = { ...cmd("plan:d1:off"), text: "인덕션을 꺼 주세요" };
+      const off = { ...cmd("off:plan:d1:induction_1:1"), text: "인덕션을 꺼 주세요" };
       expect(say({ plan: coach("cancelled"), command: off })).toBe("불을 꺼 달라고 했어요.");
       expect(say({ plan: null, command: off })).toBe("불을 꺼 달라고 했어요.");
       expect(say({ plan: coach("cancelled"), command: null })).toBe("라면 끓이기 알려 주기를 그만뒀어요.");
     });
 
+    it("다시 걸린 끄기 안내가 줄에서 기다리면(다른 계획이 도는 중) 20초 동안 「인덕션이 다시 켜졌어요.」, 그 뒤 그 계획 줄로 돌아온다", () => {
+      const b = coach("running");
+      const told = { device: "인덕션", atMs: T };
+      expect(say({ plan: b, command: null, offTold: told })).toBe("인덕션이 다시 켜졌어요.");
+      expect(say({ plan: b, command: null, offTold: told, nowMs: T + SAY_DONE_MS })).toBe("인덕션이 다시 켜졌어요.");
+      expect(say({ plan: b, command: null, offTold: told, nowMs: T + SAY_DONE_MS + 1 })).toBe(say({ plan: b, command: null, nowMs: T + SAY_DONE_MS + 1 }));
+    });
+
     it("끄기 안내 때문에 새 계획을 미루는 동안은 「인덕션 꺼짐을 기다리고 있어요.」(끄기 안내 글보다 먼저)", () => {
-      const off = { ...cmd("plan:d0:off"), id: "plan:d0", text: "인덕션을 꺼 주세요" };
+      const off = { ...cmd("off:plan:d0:induction_1:1"), id: "plan:d0", text: "인덕션을 꺼 주세요" };
       expect(say({ plan: coach("planned"), command: off, offWait: "인덕션" })).toBe("인덕션 꺼짐을 기다리고 있어요.");
       expect(say({ plan: coach("planned"), command: off, offWait: null })).toBe("불을 꺼 달라고 했어요.");
     });

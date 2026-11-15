@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPhoneController, type ControllerDeps, type ControllerDraw } from "../src/phone/controller";
 import { createVideoAr, videoParams } from "../src/phone/core/video-ar.js";
 import { coverMap, lookAt, pitchQuat, projectionFromFov, viewMatrix, walkGoal, yawPitchQuat } from "../src/phone/core/video-math.js";
-import { problemOf } from "../src/phone/state";
+import { handOf, problemOf } from "../src/phone/state";
 import { focusMarks } from "../src/phone/core/project.js";
 
 class FakeSocket {
@@ -166,6 +166,17 @@ describe("영상 입력 모드: 연결·지원", () => {
   it("clip이 없으면 지금처럼 보안 연결이 아니면 insecure", () => {
     const { c } = make({}, "");
     expect(c.view().support).toEqual({ kind: "insecure" });
+  });
+
+  it("B 명령이 떠 있을 때 reply가 오면 소리는 없고 엄지 자리 비전 상태 줄이 20초 동안 그 글(warn)이었다가 B 비전 상태로 돌아온다", () => {
+    vi.useFakeTimers();
+    const { c, ws, spoken } = make();
+    ws.push(command());
+    ws.push({ type: "reply", text: "인덕션이 다시 켜졌어요. 꺼 주세요" });
+    expect(spoken).toEqual([]);
+    expect(handOf(c.view())).toMatchObject({ top: "식탁으로 가 주세요", vision: { text: "인덕션이 다시 켜졌어요. 꺼 주세요", tone: "warn" } });
+    vi.advanceTimersByTime(20_001);
+    expect(handOf(c.view()).vision).toEqual({ text: "식탁까지 2.1m", tone: "plain" });
   });
 
   it("음성 인식을 만들지 않고(듣기 꺼짐), 명령이 와도 소리로 읽지 않는다", async () => {

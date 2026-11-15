@@ -14,13 +14,24 @@ import { PHONE_LINE_SITES, RISKY_REPLY, riskyNames } from "../src/agent/policy.j
 import type { PlannedCommandMessage } from "../src/contract/phone.js";
 import type { WorldView } from "../src/contract/world.js";
 import { PlanHub } from "../src/plan/hub.js";
-import { CAUTION_LINE, type TellMode } from "../src/plan/labels.js";
+import { CAUTION_LINE, CAUTION_TEXT, SAY_TEXT, type TellMode } from "../src/plan/labels.js";
 import { floorPlanFrom } from "../src/plan/route.js";
 import type { DecisionRecord } from "../src/world/decide.js";
 import { SMALL_SCENE } from "./helpers/floor.js";
 import { ROOMS, makeHome } from "./helpers/home.js";
 import { startFakeObserver, type FakeObserver } from "./helpers/observer.js";
 import { planContext } from "./helpers/planner.js";
+
+describe("다시 걸린 끄기 안내 글", () => {
+  it("CAUTION_TEXT.rearmed(폰 소리)·SAY_TEXT.rearmed(말풍선)는 60자 아래이고 화살표·괄호가 없다", () => {
+    expect(CAUTION_TEXT.rearmed("인덕션")).toBe("인덕션이 다시 켜졌어요. 꺼 주세요");
+    expect(SAY_TEXT.rearmed("전자레인지")).toBe("전자레인지가 다시 켜졌어요.");
+    for (const t of [CAUTION_TEXT.rearmed("인덕션"), CAUTION_TEXT.rearmed("전자레인지"), SAY_TEXT.rearmed("인덕션")]) {
+      expect(t.length, t).toBeLessThan(60);
+      expect(t, t).not.toMatch(/[→←⇒()（）[\]]/);
+    }
+  });
+});
 
 describe("위험 가전 이름(riskyNames)", () => {
   it("이름 표의 종류만 낸다. 켜는 말·끄는 말·상태 말을 가르지 않는다", () => {

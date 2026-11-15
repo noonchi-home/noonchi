@@ -137,6 +137,8 @@ export interface PhoneServer {
   syncState(): SyncState;
   /** 판본이 맞는 실제 폰(맞는 hello를 받은 연결)이 하나라도 붙어 있는가. */
   ready(): boolean;
+  /** 말의 답 메시지(pending 없음)를 판본이 맞는 붙은 폰 모두에 보낸다. 폰은 명령 줄을 건드리지 않고 소리로 읽고 잠깐 알림 줄에 남긴다. */
+  reply(text: string): void;
   /** 실제 폰 명령(command)·지우기(command_clear)를 연결된 폰 모두에 보내고 지금 명령으로 둔다. 새로 붙은 폰은 상태 다음에
    *  지금 명령을 speak false로, 명령이 없으면 id 없는 command_clear를 받는다(다시 켠 서버에 다시 붙은 폰의 이전 명령이 지워진다). */
   command(msg: PlannedCommandMessage): void;
@@ -397,6 +399,9 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
     },
     syncState: () => session.syncState(),
     ready: () => [...wss.clients].some((ws) => ok(ws) && ws.readyState === WebSocket.OPEN),
+    reply(text) {
+      for (const ws of wss.clients) if (ok(ws)) reply(ws, { type: "reply", text } satisfies PhoneTalkReply);
+    },
     command(msg) {
       if (msg.type === "command") current = msg;
       else if (msg.id === undefined || msg.id === current?.id) current = null;

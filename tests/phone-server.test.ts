@@ -497,6 +497,21 @@ describe("폰 판본(hello)과 옛 탭", () => {
     await more;
   });
 
+  it("reply(text)는 판본이 맞는 붙은 폰 모두에 pending 없는 reply를 보내고 옛 탭에는 보내지 않는다", async () => {
+    const { phone, base } = await protoSetup();
+    const url = `${base.replace(/^http/, "ws")}/phone/events`;
+    const boxes: Msg[][] = [[], []];
+    const ws = await Promise.all(boxes.map((box) => openPhone(url, { options: { origin: base }, setup: (s) => s.on("message", (d, bin) => { if (!bin) box.push(JSON.parse(String(d)) as Msg); }) })));
+    for (const s of ws) cleanups.push(() => s.close());
+    const old = await tab(base);
+    for (const end = Date.now() + 2000; !phone.ready() && Date.now() < end; ) await wait(20);
+    phone.reply("인덕션이 다시 켜졌어요. 꺼 주세요");
+    for (const end = Date.now() + 2000; boxes.some((b) => !b.some((m) => m.type === "reply")) && Date.now() < end; ) await wait(20);
+    for (const box of boxes) expect(box.filter((m) => m.type === "reply")).toEqual([{ type: "reply", text: "인덕션이 다시 켜졌어요. 꺼 주세요" }]);
+    await wait(100);
+    expect(old.box.filter((m) => m.type === "reply")).toEqual([]);
+  });
+
   it("말(say)의 at을 onAnswer에 넘긴다. at 칸이 없거나 모양이 틀리면 at 없이 넘긴다(옛 탭과 같다)", async () => {
     const { got, base } = await protoSetup();
     const ws = await openPhone(`${base.replace(/^http/, "ws")}/phone/events`, { options: { origin: base } });

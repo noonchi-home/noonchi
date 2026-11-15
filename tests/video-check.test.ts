@@ -333,6 +333,14 @@ describe("video-check", () => {
     }
     const planned = { id: "plan:pam-3", step: "plan:pam-3:3", text: "그릇을 전자레인지에 넣어 주세요", label: "완료" };
 
+    it("step이 off:인 끄기 안내 명령에는 --done-after·--done-on·--approve 어떤 누르기도 예약하지 않는다. 같은 글의 라면 12번 명령에는 --done-on이 눌린다", () => {
+      const rule: ClickRule = { approveAfterMs: 1_000, doneOn: [{ afterMs: 10_000, text: "인덕션을 꺼 주세요" }], doneAfterMs: 3_000 };
+      const off: VideoCommand = { video_ms: 0, id: "plan:pam-1", step: "off:plan:pam-1:induction_1:1", text: "인덕션을 꺼 주세요" };
+      expect(plannedClicks(off, rule, 0)).toEqual([]);
+      expect(plannedClicks({ ...off, step: "off:plan:pam-1:induction_1:1", text: "인덕션이 보이게 폰을 가까이 대 주세요" }, rule, 0)).toEqual([]);
+      expect(plannedClicks({ ...off, step: "plan:pam-1:12" }, rule, 0)).toEqual([expect.objectContaining({ at: 10_000, label: "완료", step: "plan:pam-1:12" })]);
+    });
+
     it("--say 완료는 떠 있는 명령에 받힌다: 보낸 say의 at이 페이지 기록의 마지막 명령(계획 id·단계 id)과 보인 승인 대기 token이다. 명령이 없으면 none", () => {
       const sent: string[] = [];
       const sockets = [{ readyState: 1, url: "ws://pc/phone/events?video=a.mp4", send: (d: string) => sent.push(d) }, { readyState: 1, url: "ws://pc/api/events", send: () => {} }];

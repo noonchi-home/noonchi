@@ -48,6 +48,7 @@ import { heldLock, withHeavy, type Lock } from "./twin3d/heavy.js";
 import { demoFile, encodeDemo, RECORD_FPS, startRecording, type Recorded, type Recording } from "./video-record.js";
 import { det } from "../tests/helpers/detectors.js";
 import type { SceneJson } from "../src/contract/layout.js";
+import { isOffStep } from "../src/act/off-step.js";
 import { resolveTwinStudioDir } from "../src/model/devices.js";
 import { resolveHome } from "../src/model/homes.js";
 import { loadScene } from "../src/model/scene.js";
@@ -266,6 +267,8 @@ export interface PlannedClick { at: number; label: string | null; id: string; st
 export function plannedClicks(cmd: VideoCommand, rule: ClickRule, now: number): PlannedClick[] {
   const at = (ms: number, label: string | null): PlannedClick => ({ at: now + ms, label, id: cmd.id, step: cmd.step, text: cmd.text });
   const out: PlannedClick[] = [];
+  // 닫힌 계획의 끄기 안내·부탁(src/act/off-step.ts)에는 어떤 누르기도 예약하지 않는다(같은 글의 라면 12번 명령과 가른다)
+  if (isOffStep(cmd.step)) return out;
   if (rule.approveAfterMs > 0 && /:(approve|hand)$/.test(cmd.step)) out.push(at(rule.approveAfterMs, "승인"));
   for (const d of rule.doneOn) if (d.text === cmd.text) out.push(at(d.afterMs, "완료"));
   if (!out.length && rule.doneAfterMs > 0) out.push(at(rule.doneAfterMs, null));

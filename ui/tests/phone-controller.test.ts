@@ -263,6 +263,84 @@ describe("말의 at: 말할 때 떠 있던 명령과 승인 대기", () => {
   });
 });
 
+describe("소리 차례(sayAloud): 앞 말을 끊지 않고 차례로 읽는다", () => {
+  const WARN = "인덕션이 다시 켜졌어요. 꺼 주세요";
+  const ASK = "냄비와 상판이 뜨거워져요. 인덕션을 켤까요?";
+
+  it("B 명령(안전 문구 포함)을 읽는 중 경고 reply가 오면 명령을 끝까지 읽은 뒤 경고를 읽고, 그다음 B 명령을 한 번 다시 읽는다. 명령 줄은 그대로다", () => {
+    const { c, ws, spoken, dones } = make();
+    ws.push(command({ text: ASK }));
+    ws.push({ type: "reply", text: WARN });
+    expect(spoken).toEqual([ASK]);
+    expect(c.view().command).toMatchObject({ text: ASK });
+    dones[0]!();
+    expect(spoken).toEqual([ASK, WARN]);
+    dones[1]!();
+    expect(spoken).toEqual([ASK, WARN, ASK]);
+    dones[2]!();
+    expect(spoken).toHaveLength(3);
+    expect(c.view().command).toMatchObject({ text: ASK });
+  });
+
+  it("경고를 읽는 중 새 B 명령이 오면 경고를 끝까지 읽은 뒤 새 명령을 읽고, 옛 명령 다시 읽기는 버린다. 아직 안 읽은 옛 명령 말도 새 명령이 오면 버린다", () => {
+    const { ws, spoken, dones } = make();
+    ws.push(command());
+    dones[0]!();
+    ws.push({ type: "reply", text: WARN });
+    ws.push(command({ step: "plan:pam-1:3", text: "싱크대로 가 주세요" }));
+    ws.push(command({ step: "plan:pam-1:4", text: "컵을 싱크대에 넣어 주세요" }));
+    expect(spoken).toEqual(["컵을 들어 주세요", WARN]);
+    dones[1]!();
+    expect(spoken).toEqual(["컵을 들어 주세요", WARN, "컵을 싱크대에 넣어 주세요"]);
+    dones[2]!();
+    expect(spoken).toHaveLength(3);
+  });
+
+  it("부탁 말이 줄에 있는 동안 그 명령의 command_clear가 오면 그 말을 읽지 않는다. 단계가 바뀐 말(읽지 않는 새 명령)도 건너뛴다. reply 경고는 명령이 없어져도 읽는다", () => {
+    const { ws, spoken, dones } = make();
+    ws.push({ type: "reply", text: WARN });
+    ws.push(command({ text: "인덕션이 보이게 폰을 가까이 대 주세요", choices: [] }));
+    ws.push({ type: "command_clear", id: "plan:pam-1" });
+    dones[0]!();
+    expect(spoken).toEqual([WARN]);
+    ws.push(command({ step: "plan:pam-1:5" }));
+    ws.push({ type: "reply", text: WARN });
+    ws.push(command({ step: "plan:pam-1:6", text: "다른 단계", speak: false }));
+    ws.push({ type: "command_clear" });
+    dones[1]!();
+    expect(spoken).toEqual([WARN, "컵을 들어 주세요", WARN]);
+    dones[2]!();
+    expect(spoken).toHaveLength(3);
+  });
+
+  it("줄이 빌 때까지 듣기가 멈춰 있다", async () => {
+    const { c, ws, dones, startAr } = make();
+    await startAr();
+    ws.push(command());
+    ws.push({ type: "reply", text: WARN });
+    expect(c.view().listening).toBe("paused");
+    dones[0]!();
+    expect(c.view().listening).toBe("paused");
+    dones[1]!();
+    expect(c.view().listening).toBe("paused");
+    dones[2]!();
+    expect(c.view().listening).toBe("on");
+  });
+
+  it("빈 글이 아닌 reply는 잠깐 알림 줄에 20초 남는다(명령 줄은 그대로)", () => {
+    vi.useFakeTimers();
+    const { c, ws } = make();
+    ws.push(command({ speak: false }));
+    ws.push({ type: "reply", text: WARN });
+    expect(c.view().note).toBe(WARN);
+    expect(c.view().command).toMatchObject({ text: "컵을 들어 주세요" });
+    vi.advanceTimersByTime(19_000);
+    expect(c.view().note).toBe(WARN);
+    vi.advanceTimersByTime(1_001);
+    expect(c.view().note).toBeNull();
+  });
+});
+
 describe("명령·질문·승인", () => {
   it("명령: 지금 명령으로 두고, 답은 받은 id·step 그대로. 연결이 끊기면 잠깐 알릴 말", () => {
     const { c, ws, sent } = make();

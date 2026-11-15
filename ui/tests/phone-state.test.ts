@@ -16,6 +16,12 @@ const cmd = (over: Partial<Command> = {}): Command => ({ id: "plan:pam-1", step:
 const ar = (over: Partial<PhoneView> = {}): PhoneView => ({ ...initialView(), ar: true, connected: true, listening: "on", aligned: true, sync: sync(), ...over });
 
 describe("엄지 자리와 위 한 줄(handOf)", () => {
+  it("엄지 자리 카드가 없으면(기다리기·가전 단계라 명령이 없을 때) 잠깐 알릴 말을 위 줄에 보인다. 명령이 있으면 위 줄은 명령 글 그대로이고 잠깐 알릴 말은 비전 상태 줄(경고)", () => {
+    const WARN = "인덕션이 다시 켜졌어요. 꺼 주세요";
+    expect(handOf(ar({ note: WARN }))).toEqual({ top: WARN, thumb: null, vision: null });
+    expect(handOf(ar({ command: cmd(), note: WARN }))).toMatchObject({ top: cmd().text, vision: { text: WARN, tone: "warn" } });
+  });
+
   it("명령이 없으면 위도 아래도 비어 있다(미어캣만)", () => {
     expect(handOf(ar())).toEqual({ top: null, thumb: null, vision: null });
   });

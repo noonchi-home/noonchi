@@ -299,7 +299,8 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       const leftAt = tracker?.leftAt() ?? null;
       const toldAt = tracker?.toldAt() ?? null;
       const text = sayLine({ plan: plans.current(), command, world: world?.view(nowMs()) ?? null, nowMs: Date.now(), look: lookSay, left: leftAt === null ? null : { atMs: leftAt },
-        told: toldAt === null ? null : { atMs: toldAt }, quiet: tracker?.quietStep() ?? null, reflected, offWait: tracker?.offWaiting() ?? null });
+        told: toldAt === null ? null : { atMs: toldAt }, quiet: tracker?.quietStep() ?? null, reflected, offWait: tracker?.offWaiting() ?? null,
+        offTold: tracker?.offTold() ?? null });
       if (text === said) return;
       said = text;
       appRef.current?.broadcast({ type: "say", text });
@@ -365,6 +366,8 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         handDevices: () => deviceViews(signals),
         // 판본이 맞는 실제 폰이 붙어 있는가: 폰이 필요한 계획만 그때 시작한다(폰 서버를 켜지 않았으면 늘 붙어 있다고 본다)
         phoneReady: () => phoneRef.current?.ready() ?? true,
+        // 다른 계획이 도는 동안 줄에서 기다리는 끄기 안내: 명령 줄을 바꾸지 않고 붙은 폰에 소리로만 알린다
+        sayAloud: (text) => phoneRef.current?.reply(text),
         // 멈춘 집기·놓기 단계는 보기 담당(관찰 모드 A)에 알린다
         stalled: (s) => looker?.stalled(s) ?? false,
         // 코치 계획 중 다른 행동을 본 것 같으면 보기 담당(관찰 모드 계기 off_track)에 알린다

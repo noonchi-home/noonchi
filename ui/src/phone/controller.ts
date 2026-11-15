@@ -4,7 +4,10 @@
 // 말에는 at(말하기 시작할 때 떠 있던 명령·보인 승인 대기 token)을 싣는다: 인식이 말 시작(speechstart)을 알리면 그때 잡아 두고, 알림 없이 온 말·글 입력은 보낼 때 것.
 // 서버는 그 명령·token에만 답으로 받는다(말하는 사이 명령이 바뀌면 버린다). 서버 판본이 다르면 core/link.js가 다시 읽고, 못 읽으면 「새로 고침이 필요해요」.
 // 답 단추는 받은 명령의 id·step으로 answer를, 승인 대기 답 단추는 그 토큰과 답(승인·거절)으로 confirm을 보낸다.
-// 말의 답(reply)이 빈 글이면 보이지도 읽지도 않는다. 잠깐 알릴 말은 4초.
+// 말의 답(reply)이 빈 글이면 보이지도 읽지도 않는다. 빈 글이 아니면 소리로 읽고 잠깐 알림 줄에 20초 남긴다(명령 줄은 그대로). 그 밖의 잠깐 알릴 말은 4초.
+// 소리는 차례로 읽는다(sayAloud 줄): 앞 말을 끊지 않고 끝난 뒤(끝 알림, 오지 않으면 speakMs) 다음 말을 읽는다. 명령 말에는 그 명령(계획 id·단계 id)을 붙이고,
+// 새 명령·그 명령의 command_clear가 오면 아직 안 읽은 그 명령 말을 버리며, 읽기 바로 앞에도 지금 명령과 다르면 건너뛴다. reply를 읽은 뒤 떠 있는 명령이 있고
+// 줄에 그 명령 말이 없으면 그 명령을 한 번 다시 읽는다. 듣기는 줄이 빌 때까지 멈춘다.
 // 카메라 화면을 못 보내면(core/ar.js 알림) 그 AR 동안 cameraOff로 두어 설정 모달에 「카메라 · 못 보냄」을 남긴다.
 // 위치 맞춤: 시작 위치가 있으면 AR을 켤 때 「여기서 시작」(시작 위치 맞추기)을 띄운다(state.ts onStatus). 단추나 말 「여기서 시작」이면
 // 마지막 폰 자세와 원점으로 {type:"start"}를 보낸다. 그 뒤 서버가 걸으면서 물건·벽 모양으로 맞춘다(src/sync).
@@ -24,6 +27,8 @@ import {
 } from "./state";
 
 const NOTE_MS = 4000;
+/** 말의 답(reply)을 잠깐 알림 줄에 남기는 시간. */
+const REPLY_NOTE_MS = 20_000;
 /** 서버 판본이 달라 다시 읽지 못했을 때(같은 탭에서 60초 안) 처음 화면 답 줄과 잠깐 알릴 말. */
 const STALE_TEXT = "새로 고침이 필요해요";
 /** core/ar.js가 AR을 켜고 3초 안에 카메라 화면이 없을 때 내는 말의 앞부분. */
@@ -59,6 +64,8 @@ export interface PhoneController {
 }
 
 type Msg = Record<string, any>;
+/** 소리 줄 하나: 읽을 글, 명령 말이면 그 명령(계획 id·단계 id). reply는 null. */
+type Talk = { text: string; cmd: { id: string; step: string } | null };
 
 export function createPhoneController(deps: ControllerDeps): PhoneController {
   const params = new URLSearchParams(deps.location.search);
@@ -72,6 +79,9 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
   let noteTimer: ReturnType<typeof setTimeout> | undefined;
   let talkTimer: ReturnType<typeof setTimeout> | undefined;
   let talkTurn = 0;
+  /** 소리 줄: 읽을 글과 명령 말이면 그 명령. talking: 지금 읽는 말. */
+  let talkQueue: Talk[] = [];
+  let talking: Talk | null = null;
   let aim = false;
   /** 말 시작 때 잡아 둔 at(그 말을 보내면 비운다). */
   let heardAt: HeardAt | null = null;
@@ -144,25 +154,44 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
     ? createVideoAr({ link, params, hooks, deps: { ...video, ...deps.arDeps } as VideoArDeps })
     : createAr({ link, params, hooks, deps: deps.arDeps });
 
-  function showNote(text: string) {
+  function showNote(text: string, ms = NOTE_MS) {
     set((v) => ({ ...v, note: text }));
     clearTimeout(noteTimer);
-    noteTimer = setTimeout(() => set((v) => ({ ...v, note: null })), NOTE_MS);
+    noteTimer = setTimeout(() => set((v) => ({ ...v, note: null })), ms);
   }
 
-  /** 소리로 읽는 동안 듣기를 멈춘다. 마지막으로 시작한 읽기가 끝나야 다시 켠다. */
-  function sayAloud(text: string) {
-    const turn = ++talkTurn;
+  /** 소리 줄에 넣는다(cmd: 명령 말이면 그 명령). 읽는 동안 듣기를 멈추고, 앞 말이 끝나면 차례로 읽는다. */
+  function sayAloud(text: string, cmd: Talk["cmd"] = null) {
+    talkQueue.push({ text, cmd });
     listener?.pause();
-    const done = () => {
-      if (turn !== talkTurn) return;
-      talkTurn += 1;
-      clearTimeout(talkTimer);
-      listener?.resume();
-    };
+    if (!talking) playNext();
+  }
+
+  /** 줄의 다음 말을 읽는다. 명령 말은 읽기 바로 앞에 지금 명령과 다시 견줘 다르면 건너뛴다. 줄이 비면 듣기를 다시 켠다. */
+  function playNext() {
     clearTimeout(talkTimer);
-    talkTimer = setTimeout(done, speakMs(text));
-    speak(text, done);
+    for (let next = talkQueue.shift(); next; next = talkQueue.shift()) {
+      const c = store.get().command;
+      if (next.cmd && (!c || c.id !== next.cmd.id || c.step !== next.cmd.step)) continue;
+      const item = next;
+      talking = item;
+      const turn = ++talkTurn;
+      const done = () => {
+        if (turn !== talkTurn) return;
+        talkTurn += 1;
+        clearTimeout(talkTimer);
+        talking = null;
+        // reply를 읽은 뒤: 떠 있는 명령이 있고 줄에 그 명령 말이 없으면 한 번 다시 읽는다
+        const now = store.get().command;
+        if (!item.cmd && now && !talkQueue.some((t) => t.cmd?.id === now.id && t.cmd.step === now.step)) talkQueue.push({ text: now.text, cmd: { id: now.id, step: now.step } });
+        playNext();
+      };
+      talkTimer = setTimeout(done, speakMs(item.text));
+      speak(item.text, done);
+      return;
+    }
+    talking = null;
+    listener?.resume();
   }
 
   function onMessage(msg: Msg) {
@@ -177,18 +206,25 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
       const text = String(msg.text ?? "");
       set((v) => ({ ...v, reply: text || null, pending: pending ?? v.pending }));
       if (video) logVideoPending(shownPending(store.get()));
-      if (text) sayAloud(text);
+      if (text) {
+        showNote(text, REPLY_NOTE_MS);
+        sayAloud(text);
+      }
     } else if (msg.type === "focus") {
       if (!store.get().command) ar.setFocus(msg.targets, msg.ttl_ms);
     } else if (msg.type === "command") {
       const m = msg as PhoneCommand;
+      // 아직 안 읽은 다른 명령 말은 버린다(같은 명령의 비전 상태만 바뀐 것은 그대로)
+      talkQueue = talkQueue.filter((t) => !t.cmd || (t.cmd.id === m.id && t.cmd.step === m.step));
       set((v) => ({ ...v, command: { id: m.id, step: m.step, text: m.text, vision: m.vision, choices: m.choices, target: m.target?.id ?? null } }));
       ar.setFocus(m.target ? [m.target] : [], COMMAND_FOCUS_MS);
       if (ar.videoTime) logVideoCommand(ar.videoTime(), m);
       ar.command?.(m);
-      if (m.speak) sayAloud(m.text);
+      if (m.speak) sayAloud(m.text, { id: m.id, step: m.step });
     } else if (msg.type === "command_clear") {
       const m = msg as PhoneCommandClear;
+      // 아직 안 읽은 그 명령 말(id가 없으면 모든 명령 말)은 버린다
+      talkQueue = talkQueue.filter((t) => !t.cmd || (m.id !== undefined && t.cmd.id !== m.id));
       if (m.id !== undefined && m.id !== store.get().command?.id) return;
       set((v) => ({ ...v, command: null }));
       ar.setFocus([], 0);

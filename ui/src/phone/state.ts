@@ -1,6 +1,7 @@
 // 실제 폰 화면 상태: 서버 메시지·AR·듣기가 바꾸는 값과, 화면 글을 만드는 순수 함수. 타이머·보내기는 controller.ts가 맡는다.
 // 실제 폰은 에이전트의 손이다: 위에는 지금 할 명령 한 줄(handOf top), 아래 엄지 자리에는 비전 상태 한 줄과 그 바로 아래 답 단추(thumb).
 // 엄지 자리 차례: 시작 위치 맞추기·물건 자리 맞추기 > 승인 대기(가전) > 명령·질문. 일이 멈추는 문제는 모달(problemOf), 추적 약함·잠깐 알릴 말은 비전 상태 줄.
+// 엄지 자리 카드가 없으면(기다리기·가전 단계라 명령이 없을 때) 잠깐 알릴 말은 위 줄에 보인다(명령을 가리지 않는다).
 // 위치 맞춤(서버 status.sync, src/sync): 시작 위치가 있으면 AR을 켤 때 「여기서 시작」을 띄우고, 어림인 동안 명령의 비전 상태 줄 앞에 「위치 맞추는 중」.
 // 집에 시작 위치가 없으면 AR 중 「설정 화면에서 시작 위치를 정해 주세요」 모달이 뜬다.
 import type { ApprovalAnswer, HeardAt } from "../../../src/contract/phone.ts";
@@ -128,7 +129,7 @@ export function handOf(v: PhoneView): Hand {
     : pending ? { kind: "pending", item: pending }
     : v.command ? { kind: "command", command: v.command }
     : null;
-  if (!thumb) return { top: null, thumb: null, vision: null };
+  if (!thumb) return { top: v.note, thumb: null, vision: null };
   const top = thumb.kind === "start" ? startLine(start!)
     : thumb.kind === "place" ? PLACE_LINE
     : thumb.kind === "pending" ? `${thumb.item.deviceLabel}: ${thumb.item.reason}`
