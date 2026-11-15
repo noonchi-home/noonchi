@@ -79,13 +79,21 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
     if (!r.ok) throw new DemoStop(`${method} ${path} 실패(${r.status}): ${json.error ?? ""}`.trim());
     return json;
   };
-  const serverUp = async () => {
+  // 서버가 꺼졌는지: 서버는 런타임 폴더에 잠금·pid 파일을 남기지 않는다. 그래서 --api 주소가 연결을 거부할 때(ECONNREFUSED)만 꺼졌다고 본다.
+  // 답이 늦거나(시간 초과) 그 밖의 오류면 켜져 있을 수 있어 멈춘다(쓰는 중인 폴더를 옮기거나 열린 DB에 쓰지 않게)
+  const requireServerOff = async () => {
+    let why: string;
     try {
       await fetch(`${api}/api/health`, { signal: AbortSignal.timeout(1500) });
-      return true;
-    } catch {
-      return false;
+      throw new DemoStop("서버를 먼저 끄세요");
+    } catch (e) {
+      if (e instanceof DemoStop) throw e;
+      const cause = (e as { cause?: { code?: string; errors?: { code?: string }[] } }).cause;
+      const code = cause?.code ?? cause?.errors?.find((x) => x.code)?.code;
+      if (code === "ECONNREFUSED") return;
+      why = (e as Error).name === "TimeoutError" ? "1.5초 안에 답이 없음" : code ?? (e as Error).message;
     }
+    throw new DemoStop(`서버가 꺼졌는지 알 수 없어요(${api}: ${why}). 서버를 끈 뒤 다시 하세요`);
   };
   const lastReflection = async () => {
     const r = await call<{ rows: { data: { learned?: RuleLine[]; active?: RuleLine[] } | null }[] }>("GET", "/api/history?kinds=reflection&limit=1");
@@ -98,7 +106,7 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
   if (cmd === "day1" || cmd === "week") {
     const dir = resolve(arg("--dir") ?? join("runtime", "demo", cmd));
     if (has("--fresh")) {
-      if (await serverUp()) throw new DemoStop("서버를 먼저 끄세요");
+      await requireServerOff();
       if (existsSync(dir)) {
         const old = `${dir}.old-${new Date(now()).toISOString().replace(/[-:]/g, "").replace(/\..*$/, "")}`;
         renameSync(dir, old);
@@ -142,7 +150,7 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
 
   if (cmd === "reflect" && has("--scripted")) {
     const dir = resolve(arg("--dir") ?? join("runtime", "demo", "week"));
-    if (await serverUp()) throw new DemoStop("서버를 먼저 끄세요");
+    await requireServerOff();
     const dbPath = join(dir, "noonchi.db");
     if (!existsSync(dbPath)) throw new DemoStop(`기록 DB가 없어요(${dbPath}). week부터 하세요`);
     const db = HistoryDb.open(dbPath, tz);

@@ -3,7 +3,7 @@ import { createServer, type Server } from "node:http";
 import { existsSync, mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { FsmMemory } from "../src/brain/decision.js";
 import { HistoryDb } from "../src/history/db.js";
 import { insidePolygon } from "../src/phone/home-plan.js";
@@ -17,7 +17,14 @@ const NOW = Date.parse("2026-11-14T00:30:00Z"); // 서울 11-14 09:30
 const TODAY = "2026-11-14";
 const env = { HISTORY_TZ_MINUTES: "540" };
 const tmp = () => mkdtempSync(join(tmpdir(), "demo-"));
-const CLOSED = "http://127.0.0.1:9"; // 닿지 않는 주소(서버 꺼짐)
+/** 꺼진 서버 주소: 잠깐 연 포트를 닫아 연결이 거부되는 곳(ECONNREFUSED). */
+let CLOSED = "";
+beforeAll(async () => {
+  const s = createServer();
+  const { port } = await listenRetry(s, 0, "127.0.0.1");
+  await new Promise<void>((ok) => s.close(() => ok()));
+  CLOSED = `http://127.0.0.1:${port}`;
+});
 const run = async (argv: string[]) => {
   const logs: string[] = [];
   await demoSetup(argv, { env, now: () => NOW, log: (l) => logs.push(l) });
@@ -117,6 +124,29 @@ describe("시연 폴더(day1·week)", () => {
     await run(["week", "--dir", dir, "--fresh", "--api", CLOSED]);
     expect(readdirSync(base).filter((n) => n.startsWith("week.old-"))).toHaveLength(1);
     expect(existsSync(join(dir, "noonchi.db"))).toBe(true);
+  }, 60_000);
+});
+
+describe("서버가 꺼졌는지(--fresh·--scripted)", () => {
+  /** 연결은 받지만 답을 늦게(3초) 주는 서버: 켜져 있을 수 있다. */
+  async function slowServer(): Promise<string> {
+    const srv = createServer((_req, res) => { setTimeout(() => { res.writeHead(200); res.end("{}"); }, 3000); });
+    servers.push(srv);
+    const { port } = await listenRetry(srv, 0, "127.0.0.1");
+    return `http://127.0.0.1:${port}`;
+  }
+
+  it("서버가 늦게 답하면(시간 초과) 꺼졌다고 보지 않고 멈춘다: --fresh는 폴더를 옮기지 않고, --scripted는 DB에 쓰지 않는다", async () => {
+    const base = tmp();
+    const dir = join(base, "week");
+    await run(["week", "--dir", dir, "--api", CLOSED]);
+    const slow = await slowServer();
+    await expect(run(["week", "--dir", dir, "--fresh", "--api", slow])).rejects.toThrow(/서버가 꺼졌는지 알 수 없어요/);
+    expect(readdirSync(base)).toEqual(["week"]);
+    await expect(run(["reflect", "--scripted", "--dir", dir, "--api", slow])).rejects.toThrow(/서버가 꺼졌는지 알 수 없어요/);
+    const db = HistoryDb.open(join(dir, "noonchi.db"), 540);
+    expect(db.list({ kinds: ["reflection"] })).toEqual([]);
+    db.close();
   }, 60_000);
 });
 
