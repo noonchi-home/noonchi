@@ -4,7 +4,7 @@
 // 시험 기록(window.__noonchiVideo), 듣기 끔. 소리 읽기·명령·승인·완료 판단·트윈 반영을 영상 모드에서 따로 두면 표시를 달 수 없어 실패한다.
 // 영상 모드 갈래가 없어야 하는 파일(소리·실행 추적·서버 묶음·폰 화면)에 갈래가 생겨도 실패한다.
 // 영상 모드인지 아는 길은 하나다: 주소의 clip은 video-ar.js의 videoParams만 읽고(ui/src 모든 파일), 그 값은 controller.ts의 `const video` 한 이름으로만
-// 받으며 다른 이름으로 넘기지 않는다(별칭이 생기면 갈래를 좇을 수 없다). 허용 표시만으로는 막을 수 없는 동작 차이는
+// 받으며 허용 꼴(VIDEO_OK: 갈래 조건·펼치기·영상 이름·시작 자세)로만 쓴다(별칭이 생기면 갈래를 좇을 수 없다). 허용 표시만으로는 막을 수 없는 동작 차이는
 // ui/tests/phone-mode-parity.test.ts가 같은 대본을 실제 모드·영상 모드로 돌려 견준다.
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
@@ -78,8 +78,21 @@ export function untaggedVideoBranches(file: string, source: string, pattern: Reg
 
 /** 주소의 clip을 읽는 코드(URLSearchParams get·has·getAll, ?clip=·&clip= 글). */
 const CLIP_READ = /\.(?:get|has|getAll)\(\s*["'`]clip["'`]\s*\)|[?&]clip=/;
-/** 영상 모드 값을 다른 이름으로 받거나 함수에 그대로 넘기는 코드(삼항·if·속성 읽기는 아님). */
-const ALIAS = /\b(?:const|let|var)\s+\w+\s*=\s*video\b(?!\s*\?)|[^\w.]=\s*video\s*;|(?<!\bif\s?)\(\s*video\s*[,)]|,\s*video\s*[,)]/;
+/**
+ * controller.ts에서 영상 모드 값(video)을 쓸 수 있는 꼴(허용 목록): 받는 선언, 갈래 조건(삼항 `video ?`, `if (video)`), 영상 AR 값 펼치기(`...video`),
+ * 영상 이름(`video.clip`), 시작 자세 흉내(`autoStart: !video`). 참·거짓만 내는 삼항(`video ? true : false`)은 별칭이라 조건으로 치지 않는다.
+ * 그 밖의 꼴(`!!video`·`{ mode: video }`·`const v = video`·함수에 넘기기·`video &&`·비교)은 갈래를 다른 이름으로 옮겨 좇을 수 없게 하니 실패한다.
+ * 한계: 삼항·if 몸통이 만든 다른 값(`video ? 1 : 0`)을 다른 이름으로 받아 가르는 것은 값 흐름을 따라가지 않아 못 잡는다. 그 줄도 허용 표시가 있어야 하고,
+ * 소리 읽기·답·승인·at 차이는 ui/tests/phone-mode-parity.test.ts가 동작으로 본다.
+ */
+const VIDEO_OK = [
+  /const video = videoParams\(params\);/g,
+  /(?<![.\w$])video(?=\s*\?(?![.?])(?!\s*(?:true|false)\s*:\s*(?:true|false)\b))/g,
+  /\bif\s*\(\s*video\s*\)/g,
+  /\.\.\.video\b/g,
+  /(?<![.\w$])video\.clip\b/g,
+  /\bautoStart:\s*!video\b/g,
+];
 
 const walk = (dir: string): string[] => readdirSync(dir).flatMap((n) => {
   const p = join(dir, n);
@@ -116,9 +129,18 @@ export function clipReadsOutside(file: string, source: string): string[] {
   return out;
 }
 
-/** 영상 모드 값의 별칭·그대로 넘기기 줄. */
+/** 영상 모드 값(video)을 허용 꼴(VIDEO_OK) 밖에서 쓰는 줄: 별칭·그대로 넘기기·조건 밖 쓰임. */
 export function videoAliases(file: string, source: string): string[] {
-  return stripComments(source).split("\n").flatMap((line, i) => (ALIAS.test(line) ? [`${file}:${i + 1}: ${line.trim()}`] : []));
+  // import 줄(파일 이름 video-ar.js)은 값이 아니다
+  const code = stripComments(source).replace(/^import .*$/gm, (m) => " ".repeat(m.length));
+  const ok: [number, number][] = VIDEO_OK.flatMap((re) => [...code.matchAll(re)].map((m) => [m.index, m.index + m[0].length] as [number, number]));
+  const lines = new Set<number>();
+  for (const m of code.matchAll(/(?<![.\w$])video\b/g)) {
+    if (ok.some(([a, b]) => m.index >= a && m.index < b)) continue;
+    lines.add(code.slice(0, m.index).split("\n").length);
+  }
+  const text = code.split("\n");
+  return [...lines].sort((a, b) => a - b).map((n) => `${file}:${n}: ${text[n - 1]!.trim()}`);
 }
 
 describe("영상 모드인지 아는 길은 하나다", () => {
@@ -142,6 +164,14 @@ describe("영상 모드인지 아는 길은 하나다", () => {
     expect(videoAliases("c.ts", "const v = video;\nspeakFor(video);\nmode(1, video);\nif (video) go();\nconst x = video ? 1 : 2;\ncreate({ ...video, a });")).toEqual([
       "c.ts:1: const v = video;", "c.ts:2: speakFor(video);", "c.ts:3: mode(1, video);",
     ]);
+    // 허용 표시를 단 줄에서 별칭을 만들고 그 별칭으로 가르는 꼴(Codex P3): 부정 두 번, 객체 칸, 참·거짓만 내는 삼항, &&, 비교
+    expect(videoAliases("c.ts", [
+      "const isClip = !!video; // 영상 모드: 카메라 입력",
+      "start({ mode: video }); // 영상 모드: 카메라 입력",
+      "const clip = video ? true : false; // 영상 모드: 카메라 입력",
+      "video && hush(); // 영상 모드: 듣기 끔",
+      "const same = video !== null; // 영상 모드: 카메라 입력",
+    ].join("\n"))).toHaveLength(5);
   });
 });
 
