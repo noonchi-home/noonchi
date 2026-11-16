@@ -119,8 +119,12 @@ describe("video-check", () => {
     const d = twinRows(b.seen, world(3000, e, [cup("cup_1", "in_hand", { surface: null, surface_label: null }), sinkCup]), t0);
     expect(texts(d.rows)).toEqual(["컵 cup_9 싱크대 · 싱크대 안"]);
   });
-  it("장면(/api/scene)의 방 목록으로 방 id → 이름 표를 만든다(이름이 없으면 id)", () => {
-    expect(roomLabels({ scene: { plan: { rooms: [{ id: "living", label: "거실·복도" }, { id: "kitchen" }] } } })).toEqual(new Map([["living", "거실·복도"], ["kitchen", "kitchen"]]));
+  it("장면(/api/scene)의 방 목록으로 방 id → 이름 표를 만든다. 이름이 없는 방은 표에 넣지 않아 컵 줄에 「방 모름」이 나온다(id를 쓰지 않음)", () => {
+    const rooms = roomLabels({ scene: { plan: { rooms: [{ id: "living", label: "거실·복도" }, { id: "kitchen" }, { id: "bath", label: "  " }] } } });
+    expect(rooms).toEqual(new Map([["living", "거실·복도"]]));
+    const e = eye("living", "거실", 8.46, 3.92);
+    expect(texts(twinRows(null, world(1000, e, [cup("cup_1", "in_hand", { surface: null, surface_label: null, room: "kitchen" })]), 0, rooms).rows))
+      .toEqual(["눈 거실 (8.5, 3.9)", "컵 cup_1 방 모름 · 손에 있음"]);
     expect(roomLabels(null)).toEqual(new Map());
     expect(roomLabels({ scene: { plan: {} } })).toEqual(new Map());
   });
@@ -135,6 +139,16 @@ describe("video-check", () => {
     ];
     expect(ownAssetFailures(errors, base)).toEqual(["http://127.0.0.1:8210/assets/alert-dialog-PYGbO-i9.js"]);
     expect(ownAssetFailures(errors.filter((e) => !e.includes("/assets/")), base)).toEqual([]);
+  });
+  it("자기 자원 견주기는 주소를 정규화한 origin으로 한다: 기본 포트를 적은 --phone, 끝 슬래시, 대소문자가 달라도 같은 곳이다", () => {
+    const fail = (url: string) => `log: Failed to load resource: net::ERR_CONNECTION_FAILED ${url}`;
+    // 크롬은 기본 포트를 뺀 주소를 적는다
+    expect(ownAssetFailures([fail("https://win-pc.tail0c3e15.ts.net/assets/a.js")], "https://win-pc.tail0c3e15.ts.net:443")).toEqual(["https://win-pc.tail0c3e15.ts.net/assets/a.js"]);
+    expect(ownAssetFailures([fail("http://127.0.0.1/assets/a.js")], "http://127.0.0.1:80/")).toEqual(["http://127.0.0.1/assets/a.js"]);
+    expect(ownAssetFailures([fail("http://127.0.0.1:8210/assets/a.js")], "HTTP://127.0.0.1:8210///")).toEqual(["http://127.0.0.1:8210/assets/a.js"]);
+    expect(ownAssetFailures([fail("http://win-pc:8210/assets/a.js")], "http://WIN-PC:8210")).toEqual(["http://win-pc:8210/assets/a.js"]);
+    // 다른 포트·호스트·자원 밖 경로는 아니다
+    expect(ownAssetFailures([fail("http://127.0.0.1:8200/assets/a.js"), fail("http://127.0.0.1:8210/phone/x.js"), fail("not a url")], "http://127.0.0.1:8210")).toEqual([]);
   });
   it("트윈 줄: 컵 상태가 시야 밖·사라짐이면 덧붙이고, 놓인 곳·자리를 모르면 그렇게 쓰고, 목록에서 빠졌다 같은 값으로 오면 줄이 없다", () => {
     const a = twinRows(null, world(1000, null, [cup("cup_1", null, { surface_label: null, room: null })]), 0);

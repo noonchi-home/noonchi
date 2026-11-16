@@ -161,17 +161,35 @@ const placeLabel = (v: string | null | undefined): string | null => (v ? ((STATE
 const cupSeen = (o: WorldObject): CupSeen => ({ status: o.status, place: o.facts.place?.value ?? null, surface_label: o.surface_label, room: o.room });
 const CUP_STATUS: Record<WorldObject["status"], string> = { present: "", out_of_view: " · 시야 밖", gone: " · 사라짐" };
 
-/** 장면(GET /api/scene 답)의 방 목록 → 방 id → 이름 표. 이름이 없으면 id. 장면을 모르면 빈 표. */
+/** 장면(GET /api/scene 답)의 방 목록 → 방 id → 이름 표. 이름이 없는(빈) 방은 넣지 않는다(컵 줄은 「방 모름」). 장면을 모르면 빈 표. */
 export function roomLabels(scene: { scene?: { plan?: { rooms?: { id: string; label?: string }[] } } } | null): Map<string, string> {
-  return new Map((scene?.scene?.plan?.rooms ?? []).map((r) => [r.id, r.label ?? r.id]));
+  return new Map((scene?.scene?.plan?.rooms ?? []).flatMap((r) => (r.label?.trim() ? [[r.id, r.label.trim()] as [string, string]] : [])));
 }
 
-/** 폰 페이지 자기 자원(<base>/assets/…)을 받지 못한 오류의 자원 주소들(크롬 「Failed to load resource」 로그 줄). */
+/** 주소 → origin(기본 포트 빼고 소문자). 주소가 아니면 null. */
+const originOf = (url: string): string | null => {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return null;
+  }
+};
+
+/** 폰 페이지 자기 자원(base와 같은 origin의 /assets/…)을 받지 못한 오류의 자원 주소들(크롬 「Failed to load resource」 로그 줄).
+ *  주소는 정규화한 origin으로 견준다: 기본 포트를 적은 --phone(https://…:443)·끝 슬래시·대소문자가 달라도 같은 곳이다. */
 export function ownAssetFailures(errors: readonly string[], base: string): string[] {
-  const prefix = `${base.replace(/\/+$/, "")}/assets/`;
+  const home = originOf(base);
+  if (!home) return [];
   return errors.flatMap((e) => {
     const m = /^log: Failed to load resource: .*?(\S+)\s*$/.exec(e);
-    return m && m[1]!.startsWith(prefix) ? [m[1]!] : [];
+    if (!m) return [];
+    let u: URL;
+    try {
+      u = new URL(m[1]!);
+    } catch {
+      return [];
+    }
+    return u.origin === home && u.pathname.startsWith("/assets/") ? [m[1]!] : [];
   });
 }
 
