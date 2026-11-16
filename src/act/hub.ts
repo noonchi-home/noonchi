@@ -2,9 +2,9 @@
 // 에이전트 기기 행동, PAM 판단 계획(src/act/), task planner가 보낸 계획(POST /api/plan)이 들어온다. 같은 계획을 고칠 때마다 revision을 올린다.
 import type { AgentEvent, ServerMessage } from "../contract/events.js";
 import type { PlanStatus, PlanStep, PlanView, StepStatus, XZ } from "../contract/plan.js";
-import type { FloorPlan } from "../layout/floor.js";
+import type { FloorPlan } from "../layout/index.js";
 import { devicePlan } from "../agent/planShape.js";
-import { roomAt } from "../layout/route.js";
+import { roomAt } from "../layout/index.js";
 
 const isOpen = (p: PlanView | null): p is PlanView => !!p && (p.status === "planned" || p.status === "running");
 

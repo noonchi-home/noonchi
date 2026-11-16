@@ -20,7 +20,7 @@ import type { Command, CommandResult, DeviceHub, RoomSpec } from "../devices/ind
 import { HISTORY_KINDS, type HistoryDb } from "../brain/history/db.js";
 import type { ReflectResult } from "../brain/history/reflect.js";
 import { daySummary, isDay } from "../brain/history/summary.js";
-import type { LayoutEditor } from "../layout/editor.js";
+import type { LayoutEditor } from "../layout/index.js";
 import type { SyncState } from "../phone/sync/aligner.js";
 import { StartPoseError, type StartPose } from "../phone/sync/start.js";
 import { repoPath } from "../shared/paths.js";

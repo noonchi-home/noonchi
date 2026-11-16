@@ -2,7 +2,7 @@
 // 경로는 평면도(scene.json plan)로 찾고, 로봇 자리를 모르거나 길이 없으면 경로 없이 단계만 낸다. 무슨 단계를 할지는 여기서 정하지 않는다.
 import type { AgentAction } from "../contract/events.js";
 import type { PlanStep, PlanTarget, PlanView, StepKind, XZ } from "../contract/plan.js";
-import type { FloorPlan } from "../layout/floor.js";
+import type { FloorPlan } from "../layout/index.js";
 import { DEVICE_VERB, STEP_LABEL } from "../act/labels.js";
 import { approach, route } from "../layout/route.js";
 
