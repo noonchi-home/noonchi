@@ -150,6 +150,34 @@ describe("다시 보내기 기억(runtime/homes/<집>/service-retry.json)", () =
     now += SERVICE_RETRY_MS + 1;
     expect(new ServiceRetryStore(path, () => now).idFor(fall)).toBeNull();
   });
+
+  it("같은 집 파일을 쓰는 저장소가 둘이어도(집을 A→B→A로 바꿈) 서로의 기억을 덮어쓰거나 지우지 않는다: 쓸 때마다 파일을 다시 읽는다", () => {
+    const path = serviceRetryPath(mkdtempSync(join(tmpdir(), "svc-retry-two-")), "oneroom");
+    const old = new ServiceRetryStore(path);
+    const fresh = new ServiceRetryStore(path);
+    const fall = { kind: "guardian", to: DAUGHTER, device: null, problem: null, errorCode: null, person: "거실에서 넘어짐" } as const;
+    old.unsure(WASHER_CALL, "c1");
+    fresh.unsure(fall, "g1");
+    expect([old.idFor(fall), fresh.idFor(WASHER_CALL)]).toEqual(["g1", "c1"]);
+    old.settled(WASHER_CALL);
+    expect(fresh.idFor(fall)).toBe("g1");
+    expect(new ServiceRetryStore(path).idFor(fall)).toBe("g1");
+    expect(new ServiceRetryStore(path).idFor(WASHER_CALL)).toBeNull();
+  });
+
+  it("파일이 없으면 빈 기억이고, 깨졌거나 읽을 수 없으면(폴더·권한 등) 빈 기억으로 두지 않고 그 까닭을 알린다(problem)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "svc-retry-bad-"));
+    const path = serviceRetryPath(dir, "oneroom");
+    expect(new ServiceRetryStore(path).problem()).toBeNull();
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, "{ 깨짐");
+    const broken = new ServiceRetryStore(path);
+    expect(broken.problem()).toMatch(/service-retry\.json/);
+    expect(() => broken.idFor(WASHER_CALL)).toThrow(/service-retry\.json/);
+    const folder = serviceRetryPath(dir, "folder");
+    mkdirSync(folder, { recursive: true });
+    expect(new ServiceRetryStore(folder).problem()).toMatch(/service-retry\.json/);
+  });
 });
 
 describe("승인 정책: 외부 연락 대기", () => {
@@ -206,6 +234,7 @@ describe("Agent + call_service(가짜 모델·가짜 전화 서비스)", () => {
         [["call_service", { kind: "as_center", device_id: "microwave_1", problem: "데워지지 않음", reason: "전자레인지 고장으로 AS센터 전화를 부탁해서" }]],
         "전자레인지 AS센터에 전화할지 골라 주세요.",
       ],
+      "어떤 내용으로 요청했지?": ["탈수할 때 멈춤 · 에러 UE로 LG전자 서비스센터에 요청했어요."],
     });
   });
   afterAll(async () => { await llm?.close(); });
@@ -416,6 +445,64 @@ describe("Agent + call_service(가짜 모델·가짜 전화 서비스)", () => {
     } finally {
       await fake.close();
     }
+  });
+
+  it("보내기 전에 id를 집 파일에 먼저 남긴다: 전화 서비스가 받고 답하기 전에 서버가 꺼져도, 다시 띄운 뒤 같은 내용은 같은 id다. 닿지 못한 새 연락은 남기지 않는다", async () => {
+    const fake = await startFakeCallService();
+    const path = serviceRetryPath(mkdtempSync(join(tmpdir(), "svc-before-")), "oneroom");
+    try {
+      fake.answer = "hang";
+      const first = serviceAgent(client(fake.url, 60_000), { retries: new ServiceRetryStore(path) });
+      const r1 = await first.agent.chat("phone", "보호자에게 연락해 줘", { heard: true });
+      const waiting = first.agent.confirm(r1.pendingConfirmations[0]!.token, "approve");
+      for (const end = Date.now() + 5000; fake.requests.length === 0 && Date.now() < end; await new Promise((r) => setTimeout(r, 20)));
+      expect(fake.requests).toHaveLength(1);
+      // 답을 기다리는 동안(서버가 여기서 꺼졌다고 보고) 다시 띄운 에이전트
+      fake.answer = "reply";
+      const again = serviceAgent(client(fake.url), { retries: new ServiceRetryStore(path) });
+      const r2 = await again.agent.chat("phone", "보호자에게 연락해 줘", { heard: true });
+      expect((await again.agent.confirm(r2.pendingConfirmations[0]!.token, "approve")).ok).toBe(true);
+      expect(fake.requests[1]!.body.id).toBe(fake.requests[0]!.body.id);
+      await fake.close();
+      expect((await waiting).ok).toBe(false);
+    } finally {
+      await fake.close();
+    }
+    const dead = await startFakeCallService();
+    await dead.close();
+    const fresh = serviceRetryPath(mkdtempSync(join(tmpdir(), "svc-before-dead-")), "oneroom");
+    const lone = serviceAgent(new CallServiceClient(dead.url), { retries: new ServiceRetryStore(fresh) });
+    const r = await lone.agent.chat("phone", "세탁기 AS 불러 줘", { heard: true });
+    expect((await lone.agent.confirm(r.pendingConfirmations[0]!.token, "approve")).reply).toBe("AS센터에 전화하지 못했어요.");
+    expect(new ServiceRetryStore(fresh).idFor(WASHER_CALL)).toBeNull();
+  });
+
+  it("다시 보내기 기억 파일이 깨졌거나 읽을 수 없으면 묻지도 보내지도 않고 실제 폰 답이 「외부 연락 기록을 읽지 못해 연락하지 않았어요.」다", async () => {
+    const fake = await startFakeCallService();
+    try {
+      const path = serviceRetryPath(mkdtempSync(join(tmpdir(), "svc-broken-")), "oneroom");
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, "{ 깨짐");
+      const { agent, results } = serviceAgent(client(fake.url), { retries: new ServiceRetryStore(path) });
+      const r = await agent.chat("phone", "세탁기 AS 불러 줘", { heard: true });
+      expect(r.pendingConfirmations).toEqual([]);
+      expect(r.reply).toBe("외부 연락 기록을 읽지 못해 연락하지 않았어요.");
+      expect(fake.requests).toEqual([]);
+      expect(results).toEqual([]);
+      expect(readFileSync(path, "utf8")).toBe("{ 깨짐");
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("앞 차례 외부 연락의 받는 이·내용은 같은 대화가 이어지는 동안 /events 답에서 계속 가린다(모델이 다음 차례에 그 내용을 다시 말해도). 실제 폰 답은 그대로다", async () => {
+    const { agent, events } = serviceAgent(null);
+    const r = await agent.chat("phone", "세탁기 AS 불러 줘", { heard: true });
+    await agent.confirm(r.pendingConfirmations[0]!.token, "approve");
+    const later = await agent.chat("phone", "어떤 내용으로 요청했지?", { heard: true });
+    expect(later.reply).toBe("탈수할 때 멈춤 · 에러 UE로 LG전자 서비스센터에 요청했어요.");
+    expect(JSON.stringify(events)).not.toMatch(SECRET);
+    expect(events.some((e) => e.event === "reply" && e.reply.includes("요청했어요"))).toBe(true);
   });
 
   it("보호자 연락: 실제 폰에 사람 상태와 받는 이(「거실에서 넘어진 뒤 일어나지 못함. 딸에게 연락할까요?」). 들은 말 승인(answerToken)으로 보낸다", async () => {

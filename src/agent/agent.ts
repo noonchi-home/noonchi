@@ -5,8 +5,10 @@
 // 말할 때 보인 대기 token이 하나일 때만 answerToken으로 그 대기 하나에 답한다. 글로 한 말은 「승인」「응」「아니」로 대기 전부에 답한다.
 // 외부 연락(call_service)도 같은 승인 대기 길로 묻는다: 받는 이는 등록부(contacts)에서 정하고(등록이 없으면 묻지 않고 「…연락처가 등록되지 않았어요.」),
 // 승인이면 외부 연락 통로(service, CALL_SERVICE_URL)로 보내고, 통로가 없으면 부르지 않고 「연결 없음」.
-// 보낸 뒤 답이 없어 확인 불가면, 접수(2xx)가 확인될 때까지 같은 내용으로 다시 승인된 연락은 같은 id로 보낸다(다시 보내기 기억 retries, 전화 서비스가 같은 id를 한 번만 처리).
-// /events로 내보내는 사본은 KEEP_HEARD_TEXT가 꺼져 있으면 외부 연락의 받는 이·보낼 내용을 가린다(실제 폰이 받는 답·대기 목록은 그대로).
+// id는 보내기 전에 다시 보내기 기억(retries, 집마다 파일)에 남긴다: 확인 불가거나 보내는 사이 서버가 꺼져도, 접수(2xx)가 확인될 때까지 같은 내용으로 다시 승인된 연락은
+// 같은 id로 보낸다(전화 서비스가 같은 id를 한 번만 처리). 그 기억을 읽을 수 없으면 묻지도 보내지도 않는다.
+// /events로 내보내는 사본은 KEEP_HEARD_TEXT가 꺼져 있으면 외부 연락의 받는 이·보낼 내용을 가린다. 모델 대화에 그 내용이 남으므로 같은 세션이 이어지는 동안 계속 가린다
+// (실제 폰이 받는 답·대기 목록은 그대로).
 // 결과(보냄·거절·연결 없음·실패·확인 불가)는 onService로 알린다(서버가 기록 DB·대시보드 말풍선 카드에 남긴다).
 
 import { randomUUID } from "node:crypto";
@@ -28,7 +30,7 @@ import type { ServiceCall, ServiceOutcome, ServiceResult } from "../contract/ser
 import type { CallServiceSent } from "../infer/call-service.js";
 import type { PendingService } from "./policy.js";
 import {
-  CALL_SERVICE, SERVICE_KINDS, SERVICE_MISSING, SERVICE_UNCONNECTED, ServiceRetryStore, serviceArgs, serviceCancelled, serviceReply, serviceSecrets,
+  CALL_SERVICE, SERVICE_BLOCKED, SERVICE_KINDS, SERVICE_RETRY_BROKEN, SERVICE_UNCONNECTED, ServiceRetryStore, serviceArgs, serviceCancelled, serviceReply, serviceSecrets,
   type ServiceContacts, type ServiceRetryBook,
 } from "./service.js";
 
@@ -130,7 +132,7 @@ interface Session {
   queue: Promise<unknown>;
   /** 지금 차례가 들은 말이고 가려야 하면 그 말(이벤트에 싣지 않는다). */
   hide: string | null;
-  /** 지금 차례에 승인을 물은 외부 연락의 받는 이·보낼 내용(가려야 하면 이벤트 답 글에서 뺀다). */
+  /** 이 세션에서 승인을 물은 외부 연락의 받는 이·보낼 내용(가려야 하면 이벤트 사본에서 뺀다. 모델 대화에 남으므로 세션 동안 지킨다). */
   secrets: string[];
 }
 
@@ -146,6 +148,14 @@ function hideIn<T>(value: T, said: string): T {
   if (typeof value === "string") return redactSaid(value, [said]) as T;
   if (Array.isArray(value)) return value.map((v) => hideIn(v, said)) as T;
   if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, hideIn(v, said)])) as T;
+  return value;
+}
+
+/** 값 안의 모든 글에서 가릴 글들을 뺀 사본(이벤트로 내보낼 때). */
+function hideAllIn<T>(value: T, hidden: readonly string[]): T {
+  if (typeof value === "string") return hideTexts(value, hidden) as T;
+  if (Array.isArray(value)) return value.map((v) => hideAllIn(v, hidden)) as T;
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, hideAllIn(v, hidden)])) as T;
   return value;
 }
 
@@ -299,7 +309,6 @@ export class Agent {
     // 늘 듣는 실제 폰이 들은 말은 이벤트(/events 방송)에 싣지 않는다: 돌려주는 답(폰이 읽는 글)은 그대로
     const said = opts.heard && !this.keepHeard && message.trim() ? message.trim() : null;
     s.hide = said;
-    s.secrets = [];
     let reply: string;
     const waiting = s.pending.size > 0;
     // 들은 말로는 대기 전부에 답하지 않는다(실제 폰 서버가 말할 때 보인 token 하나에만 answerToken으로 답한다)
@@ -319,25 +328,29 @@ export class Agent {
         const calling = views.find((p) => p.service);
         reply = waiting ? askApproval(waiting.reason) : calling ? calling.reason : RISKY_REPLY;
       }
-      // 외부 연락 받는 이가 등록되지 않아 막았으면 정한 답(「보호자 연락처가 등록되지 않았어요.」)
-      const missing = actions.find((a) => a.tool === CALL_SERVICE && a.error !== undefined && SERVICE_MISSING.has(a.error));
+      // 외부 연락을 막았으면(받는 이 없음·기억을 읽을 수 없음) 정한 답(「보호자 연락처가 등록되지 않았어요.」)
+      const missing = actions.find((a) => a.tool === CALL_SERVICE && a.error !== undefined && SERVICE_BLOCKED.has(a.error));
       if (missing) reply = missing.error!;
     }
     const pendingConfirmations = this.pending(s.id);
     s.hide = null;
-    // 이벤트 사본: 들은 말과(가려야 하면) 이번 차례 외부 연락의 받는 이·보낼 내용을 뺀다
+    // 이벤트 사본: 들은 말과(가려야 하면) 이 세션 외부 연락의 받는 이·보낼 내용을 뺀다
     const secrets = this.keepHeard ? [] : s.secrets;
     this.emit({
       event: "reply", sessionId: s.id, message: said ? HEARD_MARK : hideTexts(message, secrets), reply: hideTexts(reply, [...(said ? [said] : []), ...secrets]),
-      actions: actions.map((a) => this.outward(a, said)), pendingConfirmations: pendingConfirmations.map((p) => this.outwardPending(p)),
+      actions: actions.map((a) => this.outward(a, said, secrets)), pendingConfirmations: pendingConfirmations.map((p) => this.outwardPending(p)),
     });
     return { sessionId: s.id, reply, actions, pendingConfirmations, provider: this.provider.name };
   }
 
-  /** 이벤트로 내보내는 action: 외부 연락이면 받는 이·보낼 내용을 가리고(publicAction), 들은 말 차례면 그 말을 통째로 가린 사본. */
-  private outward(a: AgentAction, said: string | null): AgentAction {
+  /** 이벤트로 내보내는 action: 외부 연락이면 받는 이·보낼 내용을 가리고(publicAction), 들은 말 차례면 그 말을 통째로 가리고, 세션의 외부 연락 내용(secrets)도 뺀 사본. */
+  private outward(a: AgentAction, said: string | null, secrets: readonly string[]): AgentAction {
     const pub = this.publicAction(a);
-    return said ? this.shown(pub, said) : pub;
+    const heard = said ? this.shown(pub, said) : pub;
+    if (!secrets.length) return heard;
+    // 글 칸만 가린다(도구 이름·기기 id·때는 그대로)
+    const t = (v: string | undefined) => (v === undefined ? undefined : hideTexts(v, secrets));
+    return { ...heard, args: hideAllIn(heard.args, secrets), reason: t(heard.reason), message: t(heard.message), observation: t(heard.observation), error: t(heard.error) };
   }
 
   /** 외부 연락 action의 이벤트 사본(KEEP_HEARD_TEXT가 꺼져 있을 때): 종류·가전 id만 두고 받는 이·보낼 내용·승인 질문·모델 까닭을 가린다. 그 밖은 그대로. */
@@ -367,6 +380,7 @@ export class Agent {
       ...localBackend(this.hub, this.policy, this.rooms, this.layout),
       service: {
         contacts: this.contacts,
+        blocked: () => this.retries.problem(),
         ask: (call) => {
           const p = this.policy.askService(call);
           s.secrets.push(...serviceSecrets(call));
@@ -419,7 +433,7 @@ export class Agent {
     if (typeof reason === "string" && reason.trim()) this.rawReason.set(action, reason.trim());
     actions.push(action);
     // 들은 말 차례면 내보내는 action은 통째로 가린다(인자·결과 글·관찰·까닭). 실행한 인자와 돌려주는 action은 그대로
-    this.emit({ event: "action", sessionId: s.id, action: this.outward(action, s.hide) });
+    this.emit({ event: "action", sessionId: s.id, action: this.outward(action, s.hide, this.keepHeard ? [] : s.secrets) });
     let shown: ToolResult = result;
     if (result.needsConfirmation) {
       s.pending.add(result.needsConfirmation.token);
@@ -526,16 +540,35 @@ export class Agent {
   }
 
   /** 승인한 외부 연락: 통로가 있으면 보내고(2xx 보냄, 답 없음·끊김 확인 불가, 그 밖 실패), 없으면 부르지 않는다(연결 없음). 결과를 알리고 답한다.
-   *  id는 새 값이고, 같은 내용의 앞 연락이 확인 불가로 남아 있으면 그 id다. 접수(2xx)가 확인돼야 잊는다(닿지 못함·2xx 아닌 답으로는 잊지 않는다). */
+   *  id는 새 값이고, 같은 내용의 앞 연락이 남아 있으면 그 id다. 보내기 전에 기억에 남기고(보내는 사이 꺼져도 남는다),
+   *  접수(2xx)가 확인되거나 앞 기억 없이 실패한 새 연락이면 잊는다(확인 불가가 남은 연락은 닿지 못함·2xx 아닌 답으로 잊지 않는다).
+   *  기억을 읽거나 쓸 수 없으면 보내지 않는다. */
   private async sendService(p: PendingService): Promise<ConfirmResult> {
-    const id = this.retries.idFor(p.call) ?? randomUUID();
     const at = new Date().toISOString();
-    const sent = this.service ? await this.service.send(p.call, { id, approvedAt: at }) : null;
-    const outcome: Exclude<ServiceOutcome, "refused"> = !sent ? "unconnected" : sent.ok ? "sent" : sent.unknown ? "unknown" : "failed";
-    if (outcome === "unknown") this.retries.unsure(p.call, id);
-    else if (outcome === "sent") this.retries.settled(p.call);
-    const error = !sent ? SERVICE_UNCONNECTED : sent.ok ? undefined : sent.error;
-    const reply = serviceReply(p.call.kind, outcome);
+    let prev: string | null = null;
+    let id: string = randomUUID();
+    let blocked: string | null = null;
+    if (this.service) {
+      try {
+        prev = this.retries.idFor(p.call);
+        id = prev ?? id;
+        this.retries.unsure(p.call, id);
+      } catch (e) {
+        blocked = (e as Error).message;
+      }
+    }
+    const sent = this.service && !blocked ? await this.service.send(p.call, { id, approvedAt: at }) : null;
+    const outcome: Exclude<ServiceOutcome, "refused"> = blocked ? "failed" : !sent ? "unconnected" : sent.ok ? "sent" : sent.unknown ? "unknown" : "failed";
+    if (sent) {
+      try {
+        if (outcome === "unknown") this.retries.unsure(p.call, id);
+        else if (outcome === "sent" || prev === null) this.retries.settled(p.call);
+      } catch {
+        // 기억을 쓰지 못했다: 다음 연락은 blocked로 막힌다
+      }
+    }
+    const error = blocked ?? (!sent ? SERVICE_UNCONNECTED : sent.ok ? undefined : sent.error);
+    const reply = blocked ? SERVICE_RETRY_BROKEN : serviceReply(p.call.kind, outcome);
     this.serviceDone(p.call, outcome, id, error);
     const ok = outcome === "sent";
     const action: AgentAction = { tool: CALL_SERVICE, args: serviceArgs(p.call), ok, ...(ok ? { message: reply } : { error }), at };

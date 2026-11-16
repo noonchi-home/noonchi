@@ -4,7 +4,8 @@
 // 보내는 칸은 승인 질문에 보이는 칸뿐이다: AS센터 전화는 가전·고장 설명·에러 코드, 보호자 연락은 사람 상태. 다른 칸을 넣으면 묻지 않고 모델에게 돌려준다.
 // 모델이 쓴 보낼 글에 위험 가전 이름이 있어도 돌려준다(tools.ts).
 // 기록·대시보드 사본은 KEEP_HEARD_TEXT가 꺼져 있으면(기본) 받는 이·고장 설명·에러 코드·사람 상태를 남기지 않는다(들은 말·개인정보 가림).
-// 다시 보내기 기억(ServiceRetryStore): 확인 불가로 끝난 연락의 id를 내용 해시로 runtime/homes/<집>/service-retry.json에 남겨, 접수가 확인될 때까지 같은 내용은 같은 id로 보낸다.
+// 다시 보내기 기억(ServiceRetryStore): 보내기 전에 연락 id를 내용 해시로 runtime/homes/<집>/service-retry.json에 남기고, 접수가 확인될 때까지 같은 내용은 같은 id로 보낸다.
+// 그 파일을 읽을 수 없으면(깨짐·권한) 연락을 막는다.
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -33,8 +34,11 @@ export const SERVICE_KIND_IDS = Object.keys(SERVICE_KINDS) as [ServiceKind, ...S
 /** CALL_SERVICE_URL이 없을 때 실제 폰 답·말풍선 카드 글. */
 export const SERVICE_UNCONNECTED = "전화 서비스가 아직 연결되지 않았어요.";
 
-/** 받는 이가 등록되지 않은 종류의 답(이 글이 도구 오류면 실제 폰 답도 이 글이다). */
-export const SERVICE_MISSING: ReadonlySet<string> = new Set(SERVICE_KIND_IDS.map((k) => SERVICE_KINDS[k].missing));
+/** 다시 보내기 기억 파일을 읽을 수 없을 때 답(연락을 막는다). */
+export const SERVICE_RETRY_BROKEN = "외부 연락 기록을 읽지 못해 연락하지 않았어요.";
+
+/** 연락을 막은 정한 답: 받는 이가 등록되지 않음, 다시 보내기 기억을 읽을 수 없음(이 글이 도구 오류면 실제 폰 답도 이 글이다). */
+export const SERVICE_BLOCKED: ReadonlySet<string> = new Set([...SERVICE_KIND_IDS.map((k) => SERVICE_KINDS[k].missing), SERVICE_RETRY_BROKEN]);
 
 const OUTCOME_TEXT: Record<ServiceOutcome, string> = { sent: "보냄", refused: "거절", unconnected: "연결 없음", failed: "실패", unknown: "확인 불가" };
 
@@ -162,73 +166,92 @@ export const serviceRetryPath = (runtimeDir: string, homeId: string) => join(run
 const retryKey = (call: ServiceCall) =>
   createHash("sha256").update(JSON.stringify([call.kind, call.to.name, call.to.phone, call.device?.id ?? null, call.problem, call.errorCode, call.person])).digest("hex");
 
-/** 다시 보내기 기억: 확인 불가인 연락의 id. 접수(2xx)가 확인돼야 잊는다. */
+/** 다시 보내기 기억: 확인 불가(또는 보내는 중)인 연락의 id. 접수(2xx)가 확인되거나 확실히 닿지 못한 새 연락이어야 잊는다.
+ *  파일을 읽을 수 없으면(깨짐·권한·폴더) problem이 그 까닭이고 나머지는 던진다: 에이전트는 그동안 연락을 막는다. */
 export interface ServiceRetryBook {
-  /** 같은 내용의 앞 연락이 확인 불가로 남아 있으면 그 id. */
+  /** 읽을 수 없으면 그 까닭, 아니면 null. */
+  problem(): string | null;
+  /** 같은 내용의 앞 연락이 남아 있으면 그 id. */
   idFor(call: ServiceCall): string | null;
-  /** 확인 불가로 끝났다(그 id를 남기고 기간을 새로 센다). */
+  /** 이 id로 보낸다·확인 불가로 끝났다(남기고 기간을 새로 센다). */
   unsure(call: ServiceCall, id: string): void;
-  /** 접수가 확인됐다(잊는다). */
+  /** 접수가 확인됐다·닿지 못한 새 연락이다(잊는다). */
   settled(call: ServiceCall): void;
 }
 
 type RetryFile = Record<string, { id: string; at_ms: number }>;
 
+/** 기억 파일을 읽는다. 없으면 빈 기억. 깨졌거나(JSON·모양) 읽을 수 없으면(권한·폴더) 던진다(빈 기억으로 두면 확인 불가 id를 잃는다). */
 function readRetry(path: string): RetryFile {
+  let text: string;
   try {
-    const raw = JSON.parse(readFileSync(path, "utf8")) as unknown;
-    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
-    return Object.fromEntries(Object.entries(raw as Record<string, unknown>).flatMap(([k, v]) => {
-      const e = v as { id?: unknown; at_ms?: unknown } | null;
-      return e && typeof e.id === "string" && typeof e.at_ms === "number" ? [[k, { id: e.id, at_ms: e.at_ms }]] : [];
-    }));
-  } catch {
-    return {};
+    text = readFileSync(path, "utf8");
+  } catch (e) {
+    if ((e as { code?: string }).code === "ENOENT") return {};
+    throw new Error(`${path}을 읽지 못했어요: ${(e as Error).message}`);
   }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text.replace(/^﻿/, ""));
+  } catch (e) {
+    throw new Error(`${path}이 깨졌어요: ${(e as Error).message}`);
+  }
+  const ok = (v: unknown): v is { id: string; at_ms: number } =>
+    !!v && typeof v === "object" && typeof (v as { id?: unknown }).id === "string" && typeof (v as { at_ms?: unknown }).at_ms === "number";
+  if (!raw || typeof raw !== "object" || Array.isArray(raw) || !Object.values(raw).every(ok)) throw new Error(`${path}의 모양이 틀렸어요`);
+  return Object.fromEntries(Object.entries(raw as RetryFile).map(([k, v]) => [k, { id: v.id, at_ms: v.at_ms }]));
 }
 
-/** 파일(path, null이면 이 프로세스 안에서만)에 남는 다시 보내기 기억. SERVICE_RETRY_MS가 지난 것은 잊는다. 임시 파일에 쓴 뒤 이름을 바꾼다. */
+/** 파일(path, null이면 이 프로세스 안에서만)에 남는 다시 보내기 기억. 일마다 파일을 다시 읽고 바꾼 뒤 쓴다(읽기·쓰기가 동기라 끼어들지 않는다):
+ *  같은 집 파일을 쓰는 저장소가 둘이어도(집을 A→B→A로 바꿈) 서로의 기억을 덮어쓰지 않는다. SERVICE_RETRY_MS가 지난 것은 잊는다. 임시 파일에 쓴 뒤 이름을 바꾼다. */
 export class ServiceRetryStore implements ServiceRetryBook {
-  private readonly mem: RetryFile;
+  private mem: RetryFile = {};
 
-  constructor(private readonly path: string | null, private readonly now: () => number = () => Date.now()) {
-    this.mem = path ? readRetry(path) : {};
+  constructor(private readonly path: string | null, private readonly now: () => number = () => Date.now()) {}
+
+  problem(): string | null {
+    if (!this.path) return null;
+    try {
+      readRetry(this.path);
+      return null;
+    } catch (e) {
+      return (e as Error).message;
+    }
   }
 
   idFor(call: ServiceCall): string | null {
-    this.prune();
-    return this.mem[retryKey(call)]?.id ?? null;
+    return this.load()[retryKey(call)]?.id ?? null;
   }
 
   unsure(call: ServiceCall, id: string): void {
-    this.prune();
-    this.mem[retryKey(call)] = { id, at_ms: this.now() };
-    this.save();
+    const file = this.load();
+    file[retryKey(call)] = { id, at_ms: this.now() };
+    this.save(file);
   }
 
   settled(call: ServiceCall): void {
+    const file = this.load();
     const key = retryKey(call);
-    if (!Object.hasOwn(this.mem, key)) return;
-    delete this.mem[key];
-    this.save();
+    if (!Object.hasOwn(file, key)) return;
+    delete file[key];
+    this.save(file);
   }
 
-  private prune(): void {
+  /** 지금 기억(지난 것은 뺀 사본). */
+  private load(): RetryFile {
     const t = this.now();
-    let gone = false;
-    for (const [k, v] of Object.entries(this.mem)) {
-      if (t - v.at_ms <= SERVICE_RETRY_MS) continue;
-      delete this.mem[k];
-      gone = true;
-    }
-    if (gone) this.save();
+    const file = this.path ? readRetry(this.path) : this.mem;
+    return Object.fromEntries(Object.entries(file).filter(([, v]) => t - v.at_ms <= SERVICE_RETRY_MS));
   }
 
-  private save(): void {
-    if (!this.path) return;
+  private save(file: RetryFile): void {
+    if (!this.path) {
+      this.mem = file;
+      return;
+    }
     mkdirSync(dirname(this.path), { recursive: true });
     const tmp = `${this.path}.${process.pid}.tmp`;
-    writeFileSync(tmp, `${JSON.stringify(this.mem, null, 2)}\n`);
+    writeFileSync(tmp, `${JSON.stringify(file, null, 2)}\n`);
     renameSync(tmp, this.path);
   }
 }

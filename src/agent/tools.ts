@@ -13,7 +13,7 @@ import { findDevices } from "./search.js";
 import { resolveRoom } from "../layout/index.js";
 import { compact } from "../shared/korean.js";
 import type { ServiceCall, ServiceKind } from "../contract/service.js";
-import { CALL_SERVICE, SERVICE_KINDS, SERVICE_KIND_IDS, SERVICE_RISKY_PROBLEM, serviceCall, serviceText, type ServiceContacts } from "./service.js";
+import { CALL_SERVICE, SERVICE_KINDS, SERVICE_KIND_IDS, SERVICE_RETRY_BROKEN, SERVICE_RISKY_PROBLEM, serviceCall, serviceText, type ServiceContacts } from "./service.js";
 import { riskyNames } from "./policy.js";
 
 export type { DeviceView } from "../contract/events.js";
@@ -32,8 +32,8 @@ export interface ToolBackend {
   confirm(token: string): Promise<CommandResult & { deviceId?: string }>;
   /** 배치 보정(서버 안 에이전트만). */
   layout?: LayoutTools;
-  /** 외부 연락(서버 안 에이전트만): 종류마다 등록한 받는 이와 승인 대기 만들기(정책 askService). */
-  service?: { contacts: ServiceContacts; ask(call: ServiceCall): { token: string; reason: string } };
+  /** 외부 연락(서버 안 에이전트만): 종류마다 등록한 받는 이, 다시 보내기 기억을 읽을 수 없으면 그 까닭(blocked), 승인 대기 만들기(정책 askService). */
+  service?: { contacts: ServiceContacts; blocked(): string | null; ask(call: ServiceCall): { token: string; reason: string } };
 }
 
 export interface ToolResult {
@@ -265,6 +265,7 @@ export const TOOLS: ToolDef[] = [
       const id = typeof args.device_id === "string" ? args.device_id : undefined;
       const d = id ? await resolveDevice(backend, id) : undefined;
       if (id && !d) return notFound(id);
+      if (backend.service.blocked()) return { ok: false, error: SERVICE_RETRY_BROKEN };
       const kind = args.kind as ServiceKind;
       const to = backend.service.contacts[kind];
       if (!to) return { ok: false, error: SERVICE_KINDS[kind].missing };

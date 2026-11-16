@@ -241,8 +241,11 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       serviceSaid = { text, atMs: Date.now() };
       speak();
     };
-    // 확인 불가로 끝난 연락의 id(접수가 확인될 때까지 같은 내용은 같은 id로 다시 보낸다): runtime/homes/<집>/service-retry.json, 다시 띄워도 남는다
+    // 외부 연락 id 기억(보내기 전에 남기고, 접수가 확인될 때까지 같은 내용은 같은 id로 다시 보낸다): runtime/homes/<집>/service-retry.json.
+    // 다시 띄우거나 집을 바꿔도 남고, 일마다 파일을 다시 읽어 쓴다. 읽을 수 없으면 외부 연락을 막는다
     const retries = new ServiceRetryStore(serviceRetryPath(runtimeDir, home.id));
+    const retriesProblem = retries.problem();
+    if (retriesProblem) log(`[경고] ${retriesProblem}. 고칠 때까지 외부 연락을 하지 않습니다.`);
     const agent = new Agent({ hub: signals, policy, rooms: twin.rooms, provider, layout, keepHeard, service, onService, contacts, retries });
     // 에이전트 계획 모드(src/agent/planner.ts): PAM이 고른 행동 하나를 단계 계획으로. 말 요청 에이전트와 같은 공급자
     const planner = new Planner({ provider });
