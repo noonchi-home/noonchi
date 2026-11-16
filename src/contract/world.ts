@@ -43,7 +43,7 @@ export interface WorldObject {
    *  지킴(closer_hold)은 그때 풀려 이 물건도 사라짐을 센다. 실행 추적은 이 표시가 있는 물건을 「아직 있음」으로 세지 않고 새 물건으로 바로 이어 간다. */
   followed_by: string | null;
   /** 면마다 가까이 보기 VLM 답이 그 면 값을 새로 넣거나 바꾼 횟수(한 번도 없으면 칸이 없다). 지금 값의 출처와 따로 남아 전체 사진이 값을 바꿔도 줄지 않는다.
-   *  실행 추적이 판단 기록의 횟수(DecisionWorld closer_rev)와 견줘 판단 뒤에 가까이 보기가 바꾼 면인지 본다(src/act/track.ts). */
+   *  실행 추적이 판단 기록의 횟수(DecisionWorld closer_rev)와 견줘 판단 뒤에 가까이 보기가 바꾼 면인지 본다(src/act/track/start.ts closerNewer). */
   closer_rev?: Partial<Record<Facet, number>>;
   /** 들고 감 보호 중: 사람이 안 보이게 될 때 관절이 붙인 「손에 있음」 물건이 아직 움직이고 있어, 3초 동안 움직임이 없을 때까지 그 손에 있음을 두고
    *  VLM·가까이 보기의 다른 자리 답이 덮지 않는다(src/world/state.ts track). 실행 추적은 이 동안 실행 전 다시 보기 기한을 세지 않는다. 아니면 칸이 없다. */
@@ -119,7 +119,7 @@ export interface WorldDevice {
   /** 지금 상태가 카메라로 본 것(실제 신호가 없음)이면 마지막으로 본 촬영 시각. 실제 신호 상태면 없음. */
   vision?: { at_ms: number };
   /** 속성마다 카메라가 마지막으로 이어 본 값과 그 촬영 시각·근거 종류(같은 값·같은 종류의 새 촬영은 이력 줄 대신 여기만 바뀐다). 본 적 없으면 없음.
-   *  close: 가까이 본 관측(맞춘 감지 마스크가 사진 넓이의 10% 이상). 켠 위험 가전 추적의 확인 불가 복구(src/act/track.ts cycleEnded confirmed)가 쓴다. */
+   *  close: 가까이 본 관측(맞춘 감지 마스크가 사진 넓이의 10% 이상). 켠 위험 가전 추적의 확인 불가 복구(src/act/track/safety.ts cycleEnded confirmed)가 쓴다. */
   sight_last?: Record<string, { value: unknown; seen_ms: number; explicit: boolean; close: boolean }>;
 }
 

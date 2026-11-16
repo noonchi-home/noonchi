@@ -1,7 +1,7 @@
 // 에이전트 계획 모드의 도구와 계획 검사(docs/superpowers/plans/2026-11-10-agent-plans.md).
 // 에이전트는 submit_plan 한 번으로 계획 전체를 낸다. 낼 때마다 전체를 새로 검사해 틀리면 첫 틀린 단계와 이유를 돌려준다(모델이 고친 전체를 다시 낸다).
 // 경로는 모델이 아니라 assemblePlan(src/agent/planShape.ts)이 이동 단계마다 잇는다. 기기를 바꾸는 도구는 계획 모드에 없다:
-// 기기 단계는 도구 이름·인자만 적어 두고, 실행 추적(src/act/track.ts)이 그 단계가 되면 정책(승인 규칙)을 거쳐 부른다.
+// 기기 단계는 도구 이름·인자만 적어 두고, 실행 추적(src/act/track/)이 그 단계가 되면 정책(승인 규칙)을 거쳐 부른다.
 import { z } from "zod";
 import { copyRules } from "../shared/copy.js";
 import { ASK_CHOICES, type ActionPrompt } from "../act/prompts.js";
@@ -107,7 +107,7 @@ export function placesOf(floor: FloorPlan, names: PlaceNames = {}): PlaceInfo[] 
   });
 }
 
-/** 계획 입력. floor.robot은 손(맞춘 폰 눈) 자리다. placed는 실행 추적이 놓기를 끝낸 물건(이미 치운 것, src/act/track.ts placed):
+/** 계획 입력. floor.robot은 손(맞춘 폰 눈) 자리다. placed는 실행 추적이 놓기를 끝낸 물건(이미 치운 것, src/act/track/steps.ts placed):
  *  입력 물건 줄에 「이미 치움」을 붙이고, 그 물건을 집거나 놓는 단계는 버린다. */
 export interface PlanContext {
   decision: DecisionRecord;

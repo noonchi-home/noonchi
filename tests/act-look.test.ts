@@ -2,7 +2,7 @@
 // 관찰 모드는 진짜 Observer를 가짜 OpenAI 서버에 붙인다(tests/helpers/observer.ts). 가까이 보기 자리는 testCloser(tests/helpers/look.ts)다.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { LOOK_DEFAULTS, Looker, type LookerOptions } from "../src/act/look.js";
-import type { Stall, Stray } from "../src/act/track.js";
+import type { Stall, Stray } from "../src/act/track/tracker.js";
 import { Observer } from "../src/agent/observer.js";
 import type { BrainLog, CloserResult } from "../src/contract/events.js";
 import type { WorldObject, WorldView } from "../src/contract/world.js";

@@ -1,0 +1,444 @@
+// 실행 추적의 단계 진행(Steps): 단계를 시작하고(activate·show·runDevice) 끝나는 조건·기기 결과·끄기 단계 판단으로 넘기며(look·advance),
+// 시간 한도(timeout)·멈춘 단계 알림(stall)·다시 읽기(repeat)를 보고, 계획을 닫는다(finish). 비전 상태 줄·명령 대상·가까이 볼 곳과 같은 물건 따라가기(ours)도 여기 있다.
+// 치운 물건(placed)도 여기 둔다: 놓기 단계를 끝낼 때(advance) 적고, 사라진 뒤 같은 종류가 넣은 곳에 새 id로 다시 잡히면(PUT_HANDOVER_MS 안, 하나뿐일 때) 이어 간다.
+import type { PhoneStepKind, PlannedCommand } from "../../contract/phone.js";
+import type { Facet, WorldEye, WorldObject, WorldView } from "../../contract/world.js";
+import type { LookSpot } from "../../observe/index.js";
+import { AGAIN_TEXT, APPROVAL_TEXT, CAUTION_TEXT, EXEC_TEXT, VISION_TEXT } from "../labels.js";
+import { roomAt } from "../../layout/index.js";
+import { OBJECT_NAME, PLACE_UNKNOWN, STATE_TEXT, onSurface } from "../../world/labels.js";
+import { ConditionWatch, type Condition, type ConditionContext } from "../../world/index.js";
+import { NEAR_M } from "../../world/vocab.js";
+import { HUMAN_KINDS, selfStopWait, type AgentStep, type ToolResult } from "../../agent/index.js";
+import { clearsAway, taskOf, type Placed } from "../tasks.js";
+import { Part, choicesOf, clsOf, type Run } from "./core.js";
+
+/** 놓기를 끝낸 물건이 사라진 뒤 새 id로 다시 잡히기를 기다리는 시간(ms). 등장 확인(물건 4초)·사라짐(6초)보다 넉넉히. */
+const PUT_HANDOVER_MS = 30_000;
+/** 이어 갈 새 물건은 넣은 물건을 마지막으로 본 때보다 이만큼(ms) 앞까지 처음 보인 것이다(새 id가 옛 id보다 조금 먼저 잡히기도 한다). 그보다 먼저 있던 물건은 원래 있던 옆 물건이다. */
+const PUT_LOST_SLACK_MS = 2000;
+
+/** 멈춘 집기·놓기 단계. command: 실제 폰에 띄운 지금 명령 글. stuckMs: 단계 시작 뒤 지난 시간. looks: 이 단계에서 센 부름 수(시도).
+ *  spots: 계획 물건(지금 따라가는 World State 물건, 자리를 알 때)과 단계 대상 자리(평면도, 물건과 다를 때).
+ *  gen: 단계 세대(단계가 바뀌거나 계획이 닫힐 때마다 오른다). signal: 이 단계가 끝나면(다음 단계·완료·실패·그만·새 계획·멈춤) 끊긴다.
+ *  settle(counted): 받은 부름(stalled가 true)이 끝나면 부른다. 받을 때 시도로 먼저 세고, settle(false)면(자원 사정: 가까이 보기 no_fresh_frames·vlm_busy) 돌려받아
+ *  stallMax에 넣지 않는다. settle(true)는 그대로 센다. 처음 한 번만 듣고, 그 단계 세대가 지났으면(다른 단계·닫힌 계획) 아무것도 하지 않는다.
+ *  다음 부름은 셈과 상관없이 받은 부름에서 stallMs 뒤다. */
+export interface Stall {
+  planId: string; stepId: string; kind: "pick" | "place" | "do"; label: string; command: string; until: Condition;
+  stuckMs: number; looks: number; spots: LookSpot[]; gen: number; signal: AbortSignal;
+  settle(counted: boolean): void;
+}
+
+/** 단계 진행·치운 물건. */
+export class Steps extends Part {
+  /** 놓기 단계를 끝낸 물건(placed). */
+  private readonly put = new Map<string, { target: string; part?: "basin"; atMs: number }>();
+  /** 놓기를 끝낸 물건의 종류(새 id로 다시 잡혔을 때 같은 종류만 이어 간다). */
+  private readonly putCls = new Map<string, string>();
+
+  /** 놓기 단계를 끝낸 물건(이미 치운 것): World State id → 그 계획의 넣은 곳, 끝낸 때 싱크볼 안이었으면 part basin, 끝낸 시각.
+   *  그 뒤 손에 있음이 확인되거나(다시 집음, VLM 한 번의 손에 있음은 싱크대 속 컵에도 나와 확인됨만 본다) 트윈 자리가 그 영역을 벗어나거나
+   *  (다른 면·면 없음, part basin이면 같은 면이어도 싱크볼 밖: 옮김) 사라지면 지운다. 사라진 뒤 같은 종류가 그 넣은 곳에 새 id로 다시 잡히면 그 물건으로 이어 간다.
+   *  돌려줄 때는 지금 싱크볼 안이고 손에 있음이 확인되지 않은 물건도 더한다(넣은 기억이 없어도 치운 것).
+   *  계획을 만들지 않는다. 계획 전·실행 전 검사와 대상 고르기가 이미 치운 것을 아는 근거로만 쓴다. */
+  placed(): Placed {
+    const objects = this.o.world().objects;
+    const now = this.clock.now();
+    for (const [id, p] of this.put) {
+      const o = objects.find((x) => x.id === id);
+      const hand = o?.facts.place;
+      const picked = hand?.value === "in_hand" && hand.certainty === "confirmed" && hand.at_ms > p.atMs;
+      // 트윈 자리를 모르는 채(맞추기 전) 본 것은 옮긴 근거가 아니다
+      const out = !!o && (o.surface !== p.target || (p.part !== undefined && o.surface_part !== p.part));
+      const moved = !!o && o.last_seen_ms > p.atMs && o.position !== null && out;
+      if (picked || moved) {
+        this.put.delete(id);
+        this.putCls.delete(id);
+      } else if (!o || o.status === "gone") this.carryPut(id, p, objects, now);
+    }
+    // 싱크볼 안에 있고 손에 있음이 확인되지 않은 물건도 치운 것이다(치우기 계획 놓기 끝 자리: 싱크대 면의 싱크볼 안이고 손에 없음).
+    // 실행 추적이 넣은 기억이 없는 컵(서버를 다시 띄운 뒤 본 컵, 새 id로 잡힌 컵)을 다시 치우지 않게 한다(2026-11-16 23:48)
+    const all = new Map(this.put);
+    for (const o of objects) {
+      if (all.has(o.id) || o.status === "gone" || o.surface === null || o.surface_part !== "basin") continue;
+      if (o.facts.place?.value === "in_hand" && o.facts.place.certainty === "confirmed") continue;
+      all.set(o.id, { target: o.surface, part: "basin", atMs: o.first_seen_ms });
+    }
+    return all;
+  }
+
+  /** 놓기를 끝낸 물건이 사라졌다: 같은 종류 물건 하나가 사라진 무렵 뒤 그 넣은 곳(싱크볼이었으면 싱크볼)에 새 id로 다시 잡혔으면 그 물건으로 이어 간다
+   *  (놓은 컵이 끝낸 뒤 2초 만에 새 id로 잡혀 치운 기억이 없어졌다, 2026-11-16 23:36). 아직 없거나 둘 이상이면 사라진 때부터 PUT_HANDOVER_MS 동안 기다린다. */
+  private carryPut(id: string, p: { target: string; part?: "basin"; atMs: number }, objects: WorldView["objects"], now: number): void {
+    const cls = this.putCls.get(id);
+    // 사라진 때: 그 물건을 마지막으로 본 때(놓은 뒤 오래 보이다 사라졌으면 그 마지막 확인, World State에 없으면 끝낸 때). 기한과 후보는 이 때를 기준으로 본다
+    const lostAt = objects.find((o) => o.id === id)?.last_seen_ms ?? p.atMs;
+    // 후보: 같은 종류가 넣은 곳(싱크볼이었으면 싱크볼)에, 사라진 무렵(PUT_LOST_SLACK_MS 앞) 뒤에 처음 보인 것. 원래 있던 옆 컵은 아니다
+    const next = objects.filter((o) => o.id !== id && o.status !== "gone" && o.cls === cls && o.surface === p.target
+      && (p.part === undefined || o.surface_part === p.part) && o.first_seen_ms >= lostAt - PUT_LOST_SLACK_MS && o.first_seen_ms <= lostAt + PUT_HANDOVER_MS
+      && !this.put.has(o.id));
+    // 하나뿐일 때만 잇는다(둘 이상이면 어느 것인지 모른다). 사라진 때부터 PUT_HANDOVER_MS가 지나면 잊는다
+    const one = next.length === 1 ? next[0]! : null;
+    if (one || now - lostAt > PUT_HANDOVER_MS) {
+      this.put.delete(id);
+      this.putCls.delete(id);
+    }
+    if (one) {
+      this.put.set(one.id, p);
+      if (cls) this.putCls.set(one.id, cls);
+    }
+  }
+
+  /** 놓기 단계를 끝낸 물건을 적는다: 지금 그 물건으로 보는 World State id(따라가지 못하면 계획 물건 id)와 그 계획의 넣은 곳.
+   *  그때 트윈 자리가 넣은 곳 면의 싱크볼 안이면 part basin도 적는다(그 뒤 싱크볼 밖이면 옮긴 것). */
+  private remember(r: Run, object: string, target: string): void {
+    const now = this.clock.now();
+    const objs = ours(r, object, this.o.world()).filter((o) => o.status !== "gone");
+    const at = objs.length ? objs.map((o) => ({ id: o.id, basin: o.position !== null && o.surface === target && o.surface_part === "basin" })) : [{ id: r.alias.get(object) ?? object, basin: false }];
+    const cls = objs[0]?.cls ?? this.o.world().objects.find((o) => o.id === (r.alias.get(object) ?? object))?.cls ?? object.replace(/_\d+$/, "");
+    for (const { id, basin } of at) {
+      this.put.set(id, { target, ...(basin ? { part: "basin" as const } : {}), atMs: now });
+      this.putCls.set(id, cls);
+    }
+  }
+
+  /** 지금 단계를 끝내고 다음 단계로. 마지막이었으면 계획 완료. 집기를 마치면 그 물건은 사람이 들고 다니고, 놓기를 마치면 그 물건은 넣은 곳에 치운 것이다. */
+  advance(r: Run): void {
+    const done = this.core.stepOf(r);
+    if (done && HUMAN_KINDS.includes(done.kind)) r.outcomes.push({ label: done.label, alone: !r.helped });
+    if (done?.kind === "pick" && done.object) r.carried.add(done.object);
+    if (done?.kind === "place" && done.object) {
+      r.carried.delete(done.object);
+      // 치운 물건으로 남기는 것은 그 행동의 치우는 대상뿐이다(src/act/tasks.ts clearsAway): 따르고 내려놓은 병처럼 다시 쓰는 물건은 남기지 않는다
+      if (done.target && clearsAway(taskOf(r.plan.task), clsOf(this.o.world(), done.object))) this.remember(r, done.object, done.target);
+    }
+    if (r.at + 1 >= r.plan.steps.length) return this.finish(r, "done");
+    this.activate(r, r.at + 1);
+  }
+
+  /** i번째 단계를 지금 단계로: PlanHub 단계 상태(앞 단계 done, 이 단계 active)를 한 번에 바꾸고 단계 종류대로 시작한다. */
+  activate(r: Run, i: number): void {
+    const prev = r.plan.steps[r.at];
+    const step = r.plan.steps[i]!;
+    const now = this.clock.now();
+    r.stepEnd?.abort();
+    Object.assign(r, {
+      at: i, stepAt: now, spokeAt: now, visionAt: now, deadline: now + step.timeoutMs, asking: null, watch: step.until ? new ConditionWatch(step.until) : null,
+      again: false, device: "idle", gen: r.gen + 1, looks: 0, lookAt: Number.NEGATIVE_INFINITY, stepEnd: new AbortController(),
+      strays: 0, strayAt: Number.NEGATIVE_INFINITY, strayNear: null, told: null, helped: false, quietOn: false,
+    });
+    this.o.plans.setSteps(r.plan.view.id, { ...(prev ? { [prev.id]: "done" as const } : {}), [step.id]: "active" });
+    if (step.kind === "wait" || step.kind === "device") this.core.quietFrom = now;
+    if (step.kind === "wait") return this.clear(r);
+    if (step.kind === "device") {
+      this.clear(r);
+      return this.runDevice(r, step);
+    }
+    // 손으로 켜는 위험 가전: 명령보다 먼저 안전 문구와 함께 묻는다(승인 뒤에만 켜라는 명령, approvedHand)
+    if (this.core.approval.risky(step)) {
+      r.watch = null;
+      return this.core.approval.ask(r, { why: "hand" }, CAUTION_TEXT.ask(step.caution ?? "", this.core.handLabel(step.hand!.deviceId, step.target)), `${step.id}:hand`);
+    }
+    this.show(r, step);
+  }
+
+  /** 사람 단계·질문·알림을 실제 폰에 띄운다(소리로 읽음). */
+  show(r: Run, step: AgentStep): void {
+    const world = this.o.world();
+    const human = HUMAN_KINDS.includes(step.kind);
+    // 조용한 단계: 지난 수업에서 이어서 혼자 해낸 사람 단계는 글만 띄운다. 손으로 켜는 위험 가전 단계는 늘 읽는다
+    r.quietOn = human && r.quiet.has(step.label) && !this.core.approval.risky(step) && !r.helped;
+    r.sent = {
+      type: "command", id: r.plan.view.id, step: step.id, text: (human ? step.command : step.kind === "ask" ? step.prompt?.text : step.text) ?? step.label,
+      vision: human ? this.vision(r, step, world) : null, choices: choicesOf(r, step).map(({ id, label }) => ({ id, label })),
+      target: human ? this.target(r, step, world) : null, speak: !r.quietOn,
+      ...(human ? { kind: step.kind as PhoneStepKind } : {}),
+    };
+    // 알림 글은 판본이 맞는 폰이 없거나 끄기 안내가 명령 줄에 떠 있으면 보내지 않는다(폰 없이 도는 가전 계획, 명령 줄에는 하나만)
+    if (step.kind === "say" && (!this.core.start.phoneOk() || this.core.safety.shownOff())) return;
+    this.core.answers.send(r.sent);
+  }
+
+  /** 기기 단계: 정책을 거쳐 기기 도구를 부른다. 승인 토큰이 오면 실제 폰에 묻는다. */
+  private runDevice(r: Run, step: AgentStep): void {
+    const devices = this.o.devices;
+    if (!devices || !step.device) return this.finish(r, "failed", EXEC_TEXT.deviceFailed);
+    const gen = r.gen;
+    r.device = "running";
+    devices.run(step.device.tool, step.device.deviceId, step.device.args, () => this.core.live(r, gen)).then(
+      (res) => {
+        const token = res.needsConfirmation?.token;
+        if (!this.core.live(r, gen)) {
+          if (token) devices.cancel(token);
+          return;
+        }
+        if (token) return this.core.approval.ask(r, { why: "device", token }, APPROVAL_TEXT.ask(step.label), `${step.id}:approve`);
+        this.deviceResult(r, gen, res);
+      },
+      () => this.deviceResult(r, gen, { ok: false }),
+    );
+  }
+
+  /** 기기 결과: 실패면 실패로 닫는다. 적용을 확인하지 못했으면(신호 없음·미확인) 끝나는 조건이 참이 될 때까지만 기다리고, 조건이 없으면 실패로 닫는다. */
+  deviceResult(r: Run, gen: number, res: Pick<ToolResult, "ok" | "error" | "unverified" | "state">): void {
+    if (!this.core.live(r, gen)) return;
+    if (!res.ok) return this.finish(r, "failed", EXEC_TEXT.deviceFailed);
+    const verified = !res.unverified && res.state !== "모름";
+    if (!verified && !r.watch) return this.finish(r, "failed", EXEC_TEXT.deviceUnverified);
+    r.device = verified ? "done" : "sent";
+    this.look(r);
+  }
+
+  /** 시간 초과 질문에 「계속」: 시간 한도만 한 번 더 준다. 조건 기준 시각·기기 실행 기록은 그대로라 기기를 다시 보내지 않는다. */
+  resume(r: Run): void {
+    const step = this.core.stepOf(r)!;
+    const now = this.clock.now();
+    Object.assign(r, { asking: null, deadline: now + step.timeoutMs });
+    if (HUMAN_KINDS.includes(step.kind) || step.kind === "ask" || step.kind === "say") this.show(r, step);
+    else this.clear(r);
+  }
+
+  /** 지금 단계가 됐으면 다음 단계로 넘기고 true. 아니면 사람 단계의 비전 상태가 바뀌었을 때 보낸다(visionMs에 한 번까지). */
+  look(r: Run): boolean {
+    const step = this.core.stepOf(r);
+    if (!step || r.state !== "running" || step.kind === "ask") return false;
+    if (r.asking && r.asking.why !== "again") return false;
+    // 시간 한도가 지난 뒤 온 관찰·기기 결과로는 넘기지 않는다(시간 초과가 먼저다)
+    if (!r.asking && this.clock.now() > r.deadline) {
+      this.timeout(r, step);
+      return true;
+    }
+    if (step.kind === "device" && r.device !== "done" && r.device !== "sent") return false;
+    const world = this.o.world();
+    // 끄기 do 단계는 그 가전 추적이 풀려도(확인된 꺼짐) 끝난다. 저절로 꺼지는 가전의 꺼짐 기다리기는 그것으로만 넘긴다(끝 조건을 보지 않는다)
+    const self = selfStopWait(step, this.o.handDevices?.() ?? []) !== null;
+    const reached = (!self && (r.watch ? r.watch.check(this.conditionView(world), this.context(r, world)) : step.kind === "device" && r.device === "done"))
+      || this.core.safety.offReleased(r, step);
+    if (reached) {
+      this.advance(r);
+      return true;
+    }
+    if (!HUMAN_KINDS.includes(step.kind) || !r.sent || r.asking) return false;
+    const vision = this.vision(r, step, world);
+    const now = this.clock.now();
+    if (vision !== r.sent.vision && now - r.visionAt >= this.cfg.visionMs) {
+      r.visionAt = now;
+      r.sent = { ...r.sent, vision, speak: false };
+      this.core.answers.send(r.sent);
+    }
+    return false;
+  }
+
+  /** 시간 한도를 넘은 단계: on_timeout이 ask이고 아직 묻지 않았으면 실제 폰에 계속할지 한 번 묻고, 아니면 실패로 닫는다. */
+  timeout(r: Run, step: AgentStep): void {
+    if (step.onTimeout === "ask" && !r.again) {
+      r.again = true;
+      r.helped = true;
+      return this.core.approval.ask(r, { why: "again" }, AGAIN_TEXT.ask(step.label), `${step.id}:again`);
+    }
+    this.finish(r, "failed", step.kind === "ask" ? EXEC_TEXT.noAnswer : EXEC_TEXT.timeout);
+  }
+
+  /** 끝나는 조건이 있는 집기·놓기 단계가 stallMs 넘게(단계 시작 뒤, 받은 부름 뒤) 안 끝나면 관찰 모드를 부른다. 단계마다 stallMax번까지.
+   *  받은 것만 먼저 세고, 그 부름의 settle(false)는 셈을 돌려준다(같은 계획·단계 세대일 때만, 한 번). */
+  stall(r: Run, step: AgentStep, now: number): void {
+    if (!this.o.stalled || (step.kind !== "pick" && step.kind !== "place" && step.kind !== "do") || !step.until || !r.sent || r.asking || !r.stepEnd) return;
+    if (r.looks >= this.cfg.stallMax || now - r.stepAt < this.cfg.stallMs || now - r.lookAt < this.cfg.stallMs) return;
+    const gen = r.gen;
+    // asking: stalled를 부르는 중(그 안에서 정하면 받은 뒤 셈에 바로 반영), open: 받았고 아직 안 정함, done: 정함(또는 받지 않음)
+    let state: "asking" | "open" | "done" = "asking";
+    let counted = true;
+    const s: Stall = {
+      planId: r.plan.view.id, stepId: step.id, kind: step.kind, label: step.label, command: r.sent.text, until: step.until,
+      stuckMs: now - r.stepAt, looks: r.looks, spots: this.spots(r, step, this.o.world()), gen, signal: r.stepEnd.signal,
+      settle: (c) => {
+        if (state === "done") return;
+        const open = state === "open";
+        state = "done";
+        counted = c;
+        if (open && !c && this.core.run === r && r.gen === gen && r.looks > 0) r.looks--;
+      },
+    };
+    if (!this.o.stalled(s)) {
+      state = "done";
+      return;
+    }
+    if (state === "asking") state = "open";
+    if (counted) r.looks++;
+    r.lookAt = now;
+  }
+
+  /** 가까이 볼 곳: 계획 물건(지금 따라가는 World State 물건, 자리를 알 때)과 단계 대상 자리(평면도, 물건과 다를 때). */
+  spots(r: Run, step: AgentStep, world: WorldView): LookSpot[] {
+    const out: LookSpot[] = [];
+    const id = step.object ?? step.target;
+    const obj = id ? ours(r, id, world).find((o) => o.status !== "gone" && o.position) : undefined;
+    if (obj?.position) out.push({ id: obj.id, label: OBJECT_NAME[obj.cls] ?? obj.cls, position: obj.position });
+    const at = step.target ? this.o.locate?.(step.target) : undefined;
+    if (step.target && at && step.target !== id && step.target !== obj?.id) out.push({ id: step.target, label: this.core.nameOf(step.target) ?? PLACE_UNKNOWN, position: at.position });
+    return out;
+  }
+
+  /** repeatMs마다 지금 명령·질문을 다시 읽는다. */
+  repeat(r: Run, now: number): void {
+    if (!r.sent || now - r.spokeAt < this.cfg.repeatMs) return;
+    r.spokeAt = now;
+    r.helped = true;
+    this.core.answers.send({ ...r.sent, speak: true });
+  }
+
+  /** 실제 폰 명령을 지운다(기다리기·기기 단계). */
+  clear(r: Run): void {
+    if (!r.sent) return;
+    r.sent = null;
+    this.core.answers.send({ type: "command_clear", id: r.plan.view.id });
+  }
+
+  /** 조건을 볼 World State: 폰 자리는 실행 추적이 받은 맞춘 눈과 World State 눈 중 새것. */
+  private conditionView(w: WorldView): WorldView {
+    const e = this.core.eye;
+    if (!e || (w.eye && w.eye.at_ms >= e.at)) return w;
+    const eye: WorldEye = {
+      position: e.position, height_m: w.eye?.height_m ?? 0, yaw_deg: w.eye?.yaw_deg ?? 0, pitch_deg: w.eye?.pitch_deg ?? 0,
+      room: roomAt(this.o.floor(), e.position), room_label: null, at_ms: e.at,
+    };
+    return { ...w, eye };
+  }
+
+  private context(r: Run, world: WorldView): ConditionContext {
+    const fp = this.o.floor();
+    return {
+      nowMs: this.clock.now(), sinceMs: r.stepAt, offsetMinutes: this.o.offsetMinutes,
+      locate: (id) => fp.objects.get(id)?.position ?? null,
+      roomOf: (id) => {
+        const o = fp.objects.get(id);
+        return o ? o.room ?? roomAt(fp, o.position) : null;
+      },
+      follow: (id) => ours(r, id, world).map((o) => o.id),
+    };
+  }
+
+  /** 비전 상태 한 줄: go는 든 물건 자리와 목표까지 거리, pick·place는 그 물건 자리. 비전으로 못 보는 단계면 null.
+   *  do는 대상이 World State 물건이면 그 이름과 끝나는 조건이 보는 면의 지금 값(없으면 그 물건 자리), 평면도 자리면 거기까지 거리. */
+  private vision(r: Run, step: AgentStep, world: WorldView): string | null {
+    if (step.kind === "do") {
+      const id = step.target;
+      if (!id) return null;
+      if (this.o.floor().objects.has(id)) return VISION_TEXT.distance(this.core.nameOf(id), this.distance(id, world));
+      const o = ours(r, id, world).find((x) => x.status !== "gone") ?? null;
+      const value = step.until ? factFacets(step.until).map((f) => o?.facts[f]?.value).find((v) => v !== undefined) : undefined;
+      const cls = clsOf(world, id);
+      return `${OBJECT_NAME[cls] ?? cls} · ${value ? STATE_TEXT[value] ?? value : place(o)}`;
+    }
+    if (step.kind === "go") {
+      const carried = this.carried(r);
+      const place = step.target ? this.core.nameOf(step.target) : null;
+      const far = VISION_TEXT.distance(place, this.distance(step.target, world));
+      return carried ? `${objectLine(r, carried, world)} · ${far}` : far;
+    }
+    return step.object ? objectLine(r, step.object, world) : null;
+  }
+
+  /** 지금 단계 앞의 마지막 집기 물건(그 뒤에 내려놓기가 없을 때). */
+  private carried(r: Run): string | null {
+    for (let i = r.at - 1; i >= 0; i--) {
+      const s = r.plan.steps[i]!;
+      if (s.kind === "place") return null;
+      if (s.kind === "pick") return s.object;
+    }
+    return null;
+  }
+
+  /** 명령 대상(실제 폰 고리 하나): 집기는 그 물건, do는 그 일을 받는 물건(World State 자리), 그 밖은 목표 자리(평면도). 자리를 모르면 null. */
+  private target(r: Run, step: AgentStep, world: WorldView): PlannedCommand["target"] {
+    const thing = step.kind === "pick" ? step.object : step.kind === "do" ? step.target : null;
+    const obj = thing ? ours(r, thing, world).find((o) => o.status !== "gone") : undefined;
+    if (obj?.position) return { id: obj.id, label: OBJECT_NAME[obj.cls] ?? obj.cls, position: obj.position };
+    const id = step.target;
+    const at = id ? this.o.locate?.(id) : undefined;
+    return id && at ? { id, label: at.label, position: at.position } : null;
+  }
+
+  /** 폰 눈에서 평면도 물건까지 거리(m). 눈이나 목표 자리를 모르면 null. */
+  private distance(id: string | null, world: WorldView): number | null {
+    const at = id ? this.o.floor().objects.get(id)?.position : undefined;
+    const eye = this.conditionView(world).eye?.position;
+    return eye && at ? Math.hypot(eye[0] - at[0], eye[1] - at[1]) : null;
+  }
+
+  /** close: 계획을 닫을 상태. null이면 닫지 않는다(새 계획이 PlanHub.onDecision으로 취소로 닫는다). */
+  finish(r: Run, state: "done" | "failed", text?: string, close: "done" | "failed" | "cancelled" | null = state): void {
+    if (r.asking?.why === "device") this.o.devices?.cancel(r.asking.token);
+    r.asking = null;
+    r.gen++;
+    r.stepEnd?.abort();
+    this.core.step(r, state, text);
+    // 수업 기록: 코치 계획을 끝까지 마친 판만 남긴다
+    if (state === "done" && taskOf(r.plan.task)?.coach && r.outcomes.length) this.o.lessons?.record(r.plan.task, r.outcomes, new Date(this.clock.now()).toISOString());
+    if (r.sent) {
+      r.sent = null;
+      this.core.answers.send({ type: "command_clear", id: r.plan.view.id });
+    }
+    if (close) this.o.plans.close(r.plan.view.id, close);
+    // 손으로 켠 위험 가전이 작동 끝남 확인 전에 닫혔다: 가전마다 끄기 안내 줄로 옮기고 차례로 띄운다(확인된 꺼짐으로만 하나씩 지운다)
+    this.core.safety.handOver(r);
+    r.ends.clear();
+  }
+}
+
+/** 가까이 봐서 찾은 물건을 전체 사진이 못 봐도 지키는 중이거나(World State closer_hold), 지키던 중 같은 종류 새 물건이 다른 자리에 생겼는가(followed_by).
+ *  그동안 보인 것이 아니라 「아직 있음」으로 세지 않는다. */
+const held = (o: WorldObject) => o.closer_hold === true || !!o.followed_by;
+
+/** 계획 물건으로 보는 지금 World State 물건(하나, 없으면 빈 목록). 지금 id가 사라졌거나(그 자리가 시야 안인데 없음), 사람이 들고 다니다 시야 밖이 됐거나,
+ *  가까이 봐서 지키는 중이거나 옮김 표시(followed_by)가 있을 때만 그 뒤에 처음 보인 같은 종류 물건(계획 전부터 있던 것·앞서 이은 것은 뺀다)이 하나일 때 그것으로 이어 간다.
+ *  옮김 표시가 가리키는 물건은 처음 보인 시각과 상관없이 후보다. 후보가 여럿이면(옮김 표시가 가리키는 것이 끼어 있어도) 어느 것인지 모르므로 잇지 않는다.
+ *  여럿이거나 들지 않은 물건이 시야 밖이면 잇지 않는다(「완료」로 넘긴다). */
+function ours(r: Run, id: string, world: WorldView): WorldObject[] {
+  const cur = r.alias.get(id) ?? id;
+  const own = world.objects.find((o) => o.id === cur);
+  if (own && own.status !== "gone" && !held(own) && !(own.status === "out_of_view" && r.carried.has(id))) return [own];
+  const cls = clsOf(world, id);
+  const others = r.others.get(id) ?? new Set<string>();
+  const seen = new Set(r.alias.values());
+  const after = own?.last_seen_ms ?? -Infinity;
+  const marked = own?.followed_by ?? null;
+  // 들고 다니다 시야 밖이 된 물건은 내려놓기 목표 자리 가까이(NEAR_M 안)에서 새로 보인 것만 잇는다(그 자리를 모르면 거리는 보지 않는다)
+  const step = r.plan.steps[r.at];
+  const near = own?.status === "out_of_view" && step?.kind === "place" ? r.placeAt(step.target) : null;
+  const next = world.objects.filter((o) => o.cls === cls && o.id !== cur && o.id !== id && !others.has(o.id) && !seen.has(o.id) && o.status !== "gone"
+    && (o.first_seen_ms > after || o.id === marked)
+    && (!near || !o.position || Math.hypot(o.position[0] - near[0], o.position[2] - near[1]) <= NEAR_M));
+  const pick = next.length === 1 ? next[0] : undefined;
+  if (pick) {
+    r.alias.set(id, pick.id);
+    return [pick];
+  }
+  return own ? [own] : [];
+}
+
+/** 물건 줄: 「컵 · 손에 있음」. 사라지지 않은 같은 물건 중 가장 최근 것. */
+function objectLine(r: Run, id: string, world: WorldView): string {
+  const cls = clsOf(world, id);
+  return `${OBJECT_NAME[cls] ?? cls} · ${place(ours(r, id, world).find((o) => o.status !== "gone") ?? null)}`;
+}
+
+/** 조건이 보는 물건 사실의 면(쓴 순서, 겹치지 않게). */
+function factFacets(c: Condition, out: Facet[] = []): Facet[] {
+  if ("all" in c) c.all.forEach((x) => factFacets(x, out));
+  else if ("any" in c) c.any.forEach((x) => factFacets(x, out));
+  else if ("seq" in c) c.seq.forEach((x) => factFacets(x, out));
+  else if ("not" in c) factFacets(c.not, out);
+  else if ("for_s" in c) factFacets(c.cond, out);
+  else if ("object" in c) for (const f of Object.keys(c.facts ?? {}) as Facet[]) if (!out.includes(f)) out.push(f);
+  return out;
+}
+
+/** World State 물건 자리 글: VLM이 본 자리, 없으면 놓인 면, 그것도 없으면 자리 모름. 없으면 안 보임. */
+function place(o: WorldObject | null): string {
+  if (!o) return VISION_TEXT.unseen;
+  const p = o.facts.place?.value;
+  if (p) return STATE_TEXT[p] ?? p;
+  return o.surface_label ? onSurface(o.surface_label) : PLACE_UNKNOWN;
+}

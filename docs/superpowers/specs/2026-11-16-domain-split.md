@@ -238,16 +238,17 @@
 
 공개 이름·인자·동작은 그대로 둔다. 시험 파일은 import 줄만 바뀐다.
 
-- **`act/track.ts`(1,566줄) → `act/track/`(7a, 다음에: 정한 것 4, 시연 뒤)**
-  - `tracker.ts`: 겉 클래스 `ExecutionTracker`, 공개 메서드, `tick`, 상태(약 300줄)
-  - `start.ts`: 판단 받기·계획 시작(`onDecision`, `tryStart`, `begin`, `closerNewer`, `phoneOk`)
-  - `steps.ts`: 단계 진행(`advance`, `activate`, `show`, `runDevice`, `timeout`, `stall`, `finish`)
-  - `approval.ts`: 승인 질문(`ask`, `approvedPlan`, `approvedDevice`, `approvedHand`)
-  - `safety.ts`: 켠 위험 가전·끄기 안내(`cycleEnded`, `releaseIfOff`, `rearmIfOn`, `handOver`, `nextReminder`, `queueOff`, `askToShow`). 추적 상태(`hot`·`reminder`·`offQueue`·`cycles`·`released`)는 `SafetyTracker`의 `#` 비공개 칸으로 둬 다른 파일이 지울 수 없게 한다(`hot`은 `Run`에서 이 클래스로 옮김)
+- **`act/track.ts`(1,616줄) → `act/track/`(7a)**
+  - `tracker.ts`: 겉 클래스 `ExecutionTracker`(공개 메서드는 부분에 넘김), `tick`, `onWorld`, `stop`, 공개 옵션(`DeviceRunner`·`TrackerOptions`·`TRACK_DEFAULTS`)과 부분 타입(`Stall`·`Stray`·`Cycle`·`CycleEnd`·`HeardResult`) 다시 내보내기. 다른 파일은 이 파일에서 가져온다
+  - `core.ts`: 안쪽 공유 객체 `TrackCore`(지금 계획 `run`·만드는 계획 `planning`·멈춤·폰 눈·조용한 때, `emit`·`step`·`open`·`shown`·`live`·`waiting`·`nameOf`·`handLabel`), 계획 실행 상태 `Run`·`Job`, 부분의 바탕 `Part`, `choicesOf`
+  - `start.ts`: 판단 받기·계획 시작(`onDecision`, `planned`, `tryStart`, `begin`, `closerNewer`, `phoneOk`, 같은 행동 다시 계획 간격, 그대로 두기 기록 `leftAt`). 들고 감 보호(carried) 동안 실행 전 검사 기한을 미루는 것도 `tryStart`에 있다
+  - `steps.ts`: 단계 진행(`advance`, `activate`, `show`, `runDevice`, `look`, `timeout`, `stall`, `repeat`, `finish`), 같은 물건 따라가기(`ours`)·비전 상태 줄·명령 대상·가까이 볼 곳(`spots`). 치운 물건(`placed`: 놓기 단계를 끝낼 때 적고, 사라진 뒤 넣은 곳에 새 id로 다시 잡히면 30초 안에 하나뿐일 때 이어 가며, 싱크볼 안이고 손에 없는 물건은 치운 것으로 본다)
+  - `approval.ts`: 승인 질문(`ask`, `need`, `risky`, `approvedPlan`, `approvedDevice`, `approvedHand`)
+  - `safety.ts`: 켠 위험 가전·끄기 안내(`cycleEnded`, `releaseIfOff`, `rearmIfOn`, `handOver`, `nextReminder`, `reminderTick`, `queueOff`, `askToShow`, `offAsk`, `offReleased`, `turnsOff`, 켜라는 명령 때 회차를 여는 `turnedOn`). 추적 상태(`hot`·`reminder`·`offQueue`·`cycles`·`released`)는 `SafetyTracker`의 `#` 비공개 칸이라 다른 파일이 지울 수 없다(`hot`은 `Run`에서 이 클래스로 옮김: 지금 계획이 켠 가전)
   - `answers.ts`: 폰 명령·답·말(`openCommand`, `onAnswer`, `onHeard`, `send`)
-  - `coach.ts`: 다시 알리기·떠남·조용한 단계·수업 기록(`tell`, `stray`, `askCloser`, `quietStep`)
-  - 나누는 방법: 상태와 `emit`·`toPhone`을 든 안쪽 객체(`TrackCore`)를 두고, 부분마다 그 객체를 받는 작은 클래스로 만든다.
-  - 구조 검사(`tests/act-track-release.test.ts`)는 `act/track/` 폴더 파일 전체와 `TrackCore`를 본다. 지우는 패턴은 받는 쪽 이름과 상관없이 찾는다(`this.reminder = null`만이 아니라 `.reminder = null`, `.hot.delete(`). 79ff269 과거 실수를 `steps.ts`·`answers.ts`·`tracker.ts`에 하나씩 넣은 자료에서도 실패해야 한다.
+  - `coach.ts`: 다시 알리기·떠남·조용한 단계(`coachStep`, `tell`, `stray`, `strayNear`, `askCloser`, `quietStep`)
+  - 나누는 방법: 상태와 `emit`·`toPhone`을 든 안쪽 객체(`TrackCore`)를 두고, 부분마다 그 객체를 받는 작은 클래스(`Part`)로 만든다. 부분은 서로를 `TrackCore`의 칸으로 부르고 부분끼리 값 import가 없다(`ExecutionTracker`가 만들어 단다).
+  - 구조 검사(`tests/act-track-release.test.ts`)는 `act/track/` 폴더 파일 전체와 `TrackCore`를 본다. 지우는 패턴은 받는 쪽 이름과 상관없이 찾는다(`this.reminder = null`만이 아니라 `.reminder = null`, `.hot.delete(`, `#`). 추적 상태가 `SafetyTracker`의 `#` 칸에만 있는지(`TrackCore`·`Run`·다른 부분에 없음)도 본다. 79ff269 과거 실수를 `steps.ts`·`answers.ts`·`tracker.ts`·`safety.ts`·`core.ts`에 하나씩 넣은 자료와 `hot`을 `Run`에 다시 둔 자료에서 실패한다.
 - **`server/home.ts`(616줄) → `server/home/`(다음에: 정한 것 5, 시연 뒤):** 도메인별 잇기(`devices.ts`, `observe.ts`, `act.ts`, `phone.ts`, `say.ts`)와 조립(`index.ts`). 파일 자리 기준 경로(`SHARED_VIDEO_DIR`)는 0단계에서 뿌리 기준으로 바꾼 뒤 옮긴다.
 - **`server/app.ts`(721줄) → `server/routes/`:** 경로를 도메인별로 나눈다(`observe.ts`(brain·world 상태), `brain.ts`(기록·반성·기억·판단), `layout.ts`(장면·배치·고를 집), `phone.ts`, `plan.ts`, `devices.ts`(Matter·방·기기), `agent.ts`). 묶음 함수가 함께 받는 등록 도구·오류·본문 읽기는 `kit.ts`(RouteKit·HttpError·readJson)에 둔다. `app.ts`는 HTTP·WS 껍데기와 `/api/health`만 남고, 묶음 함수를 나누기 전 등록 차례대로 부른다.
 - **다음에(정한 것 3, 이번에 하지 않음):**
@@ -384,7 +385,7 @@
 | 4 | 도메인마다 `index.ts`를 만들고 다른 도메인 import를 입구로 바꿈 | 거꾸로 가는 것만 남음 | 2시간 |
 | 5 | 남은 고리 끊기(F2·F4·F6·F8·F10·F11) | 화면 쪽만 남음 | 2시간 |
 | 6 | 화면: `twin3d`+`twin` → `ui/src/twin`, `bubbles`·`panels`·`checks` → `dashboard`, F12·F13, 화면 입구 | 0에 가까움 | 1.5시간 |
-| 7 | 큰 파일 쪼개기: `app.ts` → `server/routes/`. `track.ts`(7a, 구조 검사를 `act/track/` 폴더 전체로, 79ff269 과거 실수를 각 파일에 넣은 자료가 실패하는지 확인)와 `home.ts`는 다음에(정한 것 4·5, 시연 뒤). `world/state.ts`·`planTools.ts`도 다음에(정한 것 3) | 0 | 3.5~4시간 |
+| 7 | 큰 파일 쪼개기: `app.ts` → `server/routes/`. `track.ts` → `act/track/`(7a, 구조 검사를 `act/track/` 폴더 전체로, 79ff269 과거 실수를 각 파일에 넣은 자료가 실패하는지 확인). `home.ts`는 다음에(정한 것 5, 시연 뒤). `world/state.ts`·`planTools.ts`도 다음에(정한 것 3) | 0 | 3.5~4시간 |
 | 8 | 흐름 확인: `tests/demo-e2e.test.ts`(네 장면 가짜 서버 흐름: 컵, 에어컨, 전자레인지 승인·꺼짐 확인, 라면)와 `coach-e2e`·`noonchi-e2e`를 따로 한 번 더 돌린다(단계마다 전체 시험에도 들어 있다). `video-check --fake`는 컵 감지·컵 PAM 판단·`CUP_SCRIPTS`로 고정이라(`scripts/video-check.ts:384`) 쓰지 않는다. `docs/reference.md` 「구조」, 저장소 `CLAUDE.md` 경로, 규칙 표 줄(3.4) | 0 | 1.5시간 |
 | 9 | 예외 목록 파일 지움, 엄격 모드, 3.3 마지막 확인. 구현명세서 SSOT 18.1 폴더 구조와 본문 경로(`src/world/vocab.ts` 등)를 docs 저장소에서 고침 | 없음 | 1시간 |
 
@@ -408,7 +409,7 @@
    - 외부 API 게이트웨이 `infer`는 도메인이 아니라 기반층이다. 자리는 `src/infer/` 그대로다(2.1 기반층 표의 까닭).
 2. **공용 표:** 지금 도메인에 두고 「표 입구」로 모든 도메인이 읽는다. 계약은 공용 표 타입만 `import type`으로 가져오고, 계약 ↔ 공용 표 타입 전용 고리만 허용한다(2.3).
 3. **큰 파일 쪼개기:** `track.ts`·`home.ts`·`app.ts`(7a·7b). `world/state.ts`·`planTools.ts`는 다음에 한다.
-4. **track.ts 쪼개기는 시연 뒤로 미룸.** 까닭: 시연 브랜치에서 11-10 뒤로 커밋 36개가 고친 파일이라 합칠 때 충돌이 큼(사용자, 2026-11-16).
+4. **track.ts 쪼개기는 시연 뒤로 미룸.** 까닭: 시연 브랜치에서 11-10 뒤로 커밋 36개가 고친 파일이라 합칠 때 충돌이 큼(사용자, 2026-11-16). 시연 뒤 7a로 했다(사용자, 2026-11-17).
 5. **server/home.ts 쪼개기도 시연 뒤로 미룸.** 까닭: 시연 브랜치에서 11-10 뒤로 커밋 32개가 고쳤고, startHome 한 함수가 클로저 변수를 나눠 써서 나누면 거의 모든 줄이 바뀜(사용자, 2026-11-16). 이번 7단계는 `app.ts` → `server/routes/`만 한다.
 
 ## 6. 지적 기록

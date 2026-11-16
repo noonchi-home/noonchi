@@ -43,7 +43,7 @@ src/                    도메인 폴더(구현명세서 구성 단위, 도메�
   observe/              관찰 흐름(YOLO 감지·VLM)
   brain/                PAM 서비스 연결, history/(기록·반성)
   agent/                도구 호출 루프(agent.ts), 도구(tools.ts), 기기 찾기, 승인 정책(policy.ts), 공급자(providers/), 계획 모드, mcp/(MCP stdio 서버·REST 백엔드)
-  act/                  판단·검사·실행 추적(track.ts)
+  act/                  판단·검사·실행 추적(track/: tracker.ts 겉 클래스, core.ts 안쪽 공유 객체 TrackCore, start·steps·approval·safety·answers·coach)
   server/start.ts       시작 순서: twin 데이터 → 허브(대체 경로 포함) → 정책·에이전트 → HTTP/WS
   server/hubFactory.ts  HUB 고르기, startHub(network 실패 → local → memory)
   server/app.ts         HTTP + WebSocket + 정적 파일. API 경로는 server/routes/(도메인별)

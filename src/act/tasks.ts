@@ -100,7 +100,7 @@ export function lookTargets(): { cls: ObjClass; facets: readonly Facet[] }[] {
   return [...by].map(([cls, facets]) => ({ cls, facets }));
 }
 
-/** 실행 추적이 놓기 단계를 끝낸 물건(src/act/track.ts placed): World State id → 그 계획의 넣은 곳(평면도 id), 끝낸 때 그 면의 싱크볼 안이었으면 part basin, 끝낸 시각.
+/** 실행 추적이 놓기 단계를 끝낸 물건(src/act/track/steps.ts placed): World State id → 그 계획의 넣은 곳(평면도 id), 끝낸 때 그 면의 싱크볼 안이었으면 part basin, 끝낸 시각.
  *  계획을 만들지 않는다. 이미 치운 것을 아는 근거로만 쓴다. */
 export type Placed = ReadonlyMap<string, { target: string; part?: "basin"; atMs: number }>;
 

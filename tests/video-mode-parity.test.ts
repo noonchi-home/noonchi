@@ -24,11 +24,13 @@ const SITES: { file: string; pattern: RegExp; skip?: RegExp }[] = [
   { file: "src/phone/sync/aligner.ts", pattern: /fixStart\(|"video"/ },
   { file: "src/observe/pipeline.ts", pattern: /\.held\b/ },
 ];
+/** 실행 추적 폴더(src/act/track/)의 파일 전체. */
+const TRACK_FILES = readdirSync(join(ROOT, "src", "act", "track")).filter((f) => f.endsWith(".ts")).sort().map((f) => `src/act/track/${f}`);
 /** 영상 모드 갈래가 없어야 하는 파일. */
 const NONE: { file: string; pattern: RegExp }[] = [
   { file: "ui/src/phone/core/talk.js", pattern: /\bvideo\b|__noonchiVideo|\?clip/ },
   { file: "ui/src/phone/PhoneScreen.tsx", pattern: /\bvideo\b|__noonchiVideo|\?clip/ },
-  { file: "src/act/track.ts", pattern: /\bvideo\b|videoSession|\.fixed\b/ },
+  ...TRACK_FILES.map((file) => ({ file, pattern: /\bvideo\b|videoSession|\.fixed\b/ })),
   { file: "src/server/home.ts", pattern: /\bvideo\b|videoSession|\.fixed\b/ },
 ];
 
@@ -182,6 +184,8 @@ describe("영상 모드는 카메라 입력만 다르다", () => {
   });
 
   it("소리·폰 화면·실행 추적·서버 묶음에는 영상 모드 갈래가 없다", () => {
+    // 실행 추적은 폴더 파일 전체를 본다(엉뚱한 폴더를 보고 통과하지 않게)
+    expect(TRACK_FILES).toEqual(expect.arrayContaining(["src/act/track/tracker.ts", "src/act/track/answers.ts", "src/act/track/steps.ts"]));
     const bad = NONE.flatMap((s) => stripComments(read(s.file)).split("\n").flatMap((c, i) => (s.pattern.test(c) ? [`${s.file}:${i + 1}`] : [])));
     expect(bad, WHY).toEqual([]);
   });

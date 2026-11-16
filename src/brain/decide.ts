@@ -38,7 +38,7 @@ export interface DeciderOptions {
   /** 관찰 텍스트·마지막 관찰 시각의 시간대(분). */
   offsetMinutes: number;
   clock?: { now(): number };
-  /** 참이면 부르지 않는다: 실행 추적이 행동 중 기다리기·기기 단계를 보는 동안(src/act/track.ts waiting). */
+  /** 참이면 부르지 않는다: 실행 추적이 행동 중 기다리기·기기 단계를 보는 동안(src/act/track/tracker.ts waiting). */
   hold?: () => boolean;
   /** 참이면 기록에 남는 판단 줄에도 들은 말을 그대로 둔다(KEEP_HEARD_TEXT, 기본 꺼짐). 없거나 거짓이면 「들은 말 있음」만 남긴다. */
   keepHeard?: () => boolean;

@@ -1,4 +1,4 @@
-// 실행 추적(src/act/track.ts): 실제 폰은 에이전트의 손이다. 계획은 에이전트 계획 모드(src/agent/planner.ts)가 만들고, 시험의 모델은
+// 실행 추적(src/act/track/): 실제 폰은 에이전트의 손이다. 계획은 에이전트 계획 모드(src/agent/planner.ts)가 만들고, 시험의 모델은
 // 같은 주소 자리의 가짜 OpenAI 서버가 도구 호출로 낸다(tests/helpers/planner.ts, 지금 서버와 같은 컵 계획). 계획 단계마다 사람에게 명령 하나를 보내고,
 // 그 단계가 됐는지를 폰 눈 위치(이동)와 World State(컵 자리)로 본 뒤 다음 명령을 보낸다. 「완료」(단추·말)는 지금 단계 하나를 넘기고 「그만」은 계획을 그만둔다.
 // 조건은 단계가 시작된 뒤 본 사실만 쓰므로 손에 있음·싱크대 안 사실은 지금 시계(clock.t)로 둔다.
@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { ActionChoice } from "../src/act/prompts.js";
-import { ExecutionTracker, TRACK_DEFAULTS, type Stall, type Stray, type TrackerOptions } from "../src/act/track.js";
+import { ExecutionTracker, TRACK_DEFAULTS, type Stall, type Stray, type TrackerOptions } from "../src/act/track/tracker.js";
 import { ApprovalStore, type ApprovalAnswer } from "../src/agent/approval.js";
 import type { AgentStep } from "../src/agent/planTools.js";
 import { checkDecision, type CheckResult } from "../src/act/check.js";

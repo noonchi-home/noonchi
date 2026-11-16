@@ -1,4 +1,4 @@
-// 에이전트 계획 모드(src/agent/planner.ts·planTools.ts)와 어떤 계획이든 돌리는 실행 추적(src/act/track.ts).
+// 에이전트 계획 모드(src/agent/planner.ts·planTools.ts)와 어떤 계획이든 돌리는 실행 추적(src/act/track/).
 // 모델은 같은 주소 자리의 가짜 OpenAI 서버가 도구 호출로 낸다(tests/helpers/planner.ts). 실제 OpenAI는 부르지 않는다.
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { deviceRunner } from "../src/act/devices.js";
 import { sayLine } from "../src/act/say.js";
 import { TASKS } from "../src/act/tasks.js";
-import { ExecutionTracker, type TrackerOptions } from "../src/act/track.js";
+import { ExecutionTracker, type TrackerOptions } from "../src/act/track/tracker.js";
 import { ApprovalStore, type ApprovalAnswer } from "../src/agent/approval.js";
 import { PLANNER_PROMPT, planInput } from "../src/agent/planInput.js";
 import { PLAN_LIMITS, PlanDraft, SUBMIT_ARGS, riskyHand, selfStopWait, type AgentStep, type PlanContext, type TaskInfo } from "../src/agent/planTools.js";

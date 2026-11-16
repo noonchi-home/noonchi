@@ -9,7 +9,7 @@ export const STEP_LABEL = {
   askUser: "폰으로 물어보기", device: (device: string, verb: string) => `${device} ${verb}`.trim(),
 };
 
-/** 실제 폰 위에 보내는 단계 명령(src/act/track.ts). 열쇠는 STEP_LABEL과 같다. 사람에게 하는 말이고, 클로이드가 스스로 하는 말로 쓰지 않는다. */
+/** 실제 폰 위에 보내는 단계 명령(src/act/track/steps.ts). 열쇠는 STEP_LABEL과 같다. 사람에게 하는 말이고, 클로이드가 스스로 하는 말로 쓰지 않는다. */
 export const STEP_COMMAND = {
   goTable: "식탁으로 가 주세요", pickCup: "컵을 들어 주세요", goSink: "싱크대로 가 주세요", placeCup: "컵을 싱크대에 넣어 주세요",
 } as const;
@@ -23,7 +23,7 @@ export const VISION_TEXT = {
   movedNear: (place: string) => `폰이 ${place} 가까이로 감`,
 };
 
-/** 가전 이름을 하나도 못 찾았을 때 묻는 글·끄기 안내에 쓰는 말(src/act/track.ts handLabel). */
+/** 가전 이름을 하나도 못 찾았을 때 묻는 글·끄기 안내에 쓰는 말(src/act/track/core.ts handLabel). */
 export const DEVICE_UNKNOWN = "가전";
 
 export const GOAL = { clearCup: "컵 치우기", askUser: "사용자에게 물어보기" };
@@ -80,7 +80,7 @@ export const CHECK_TEXT = {
   device_mode: "시험 모드라 실제 가전은 부르지 않아요",
 } as const;
 
-/** 승인(src/act/track.ts): 처음 하는 계획을 실제 폰에 묻는 글, 「거절」을 받은 계획의 실행 기록. */
+/** 승인(src/act/track/approval.ts): 처음 하는 계획을 실제 폰에 묻는 글, 「거절」을 받은 계획의 실행 기록. */
 export const APPROVAL_TEXT = {
   ask: (task: string) => `${josa(task, "을/를")} 할까요?`,
   refused: "사용자가 거절한 일",
@@ -135,19 +135,19 @@ export const NOTICE_KEYS = Object.keys(NOTICES) as [string, ...string[]];
 /** 알림 단계 이름. */
 export const noticeLabel = (key: string) => `${key} 알림`;
 
-/** 관찰 모드의 다시 알리기 글(src/act/track.ts tell). 모델은 방식만 고르고 글은 지금 명령으로 만든다: repeat 그대로, earlier 「먼저」를 붙여 지금 할 일부터 하라는 말. */
+/** 관찰 모드의 다시 알리기 글(src/act/track/coach.ts tell). 모델은 방식만 고르고 글은 지금 명령으로 만든다: repeat 그대로, earlier 「먼저」를 붙여 지금 할 일부터 하라는 말. */
 export const TELL_TEXT = {
   repeat: (command: string) => command,
   earlier: (command: string) => `먼저 ${command}`,
 };
 export type TellMode = keyof typeof TELL_TEXT;
-/** 관찰 모드의 사람 부탁 글(src/act/track.ts askCloser): 가까이 볼 곳 이름으로 그 곳이 보이게 폰을 가까이 대 달라고 한다. */
+/** 관찰 모드의 사람 부탁 글(src/act/track/coach.ts askCloser): 가까이 볼 곳 이름으로 그 곳이 보이게 폰을 가까이 대 달라고 한다. */
 export const CLOSER_TEXT = (place: string) => `${josa(place, "이/가")} 보이게 폰을 가까이 대 주세요`;
 
 /** 위험 가전을 켜는 단계에서 켜기 전 질문 앞에 읽는 안전 한 줄(가전 종류마다, 서버 글, 등록부 riskyOn.caution). 열쇠는 가전 종류다. */
 export const CAUTION_LINE: Record<string, string> = Object.fromEntries(KIND_ORDER.flatMap((k) => { const r = KINDS[k].riskyOn; return r ? [[k, r.caution]] : []; }));
 
-/** 손으로 켜는 위험 가전(src/act/track.ts): 켜기 전에 안전 문구와 함께 묻는 글, 켠 채 계획이 닫혔을 때 끄라고 알리는 명령. */
+/** 손으로 켜는 위험 가전(src/act/track/approval.ts·safety.ts): 켜기 전에 안전 문구와 함께 묻는 글, 켠 채 계획이 닫혔을 때 끄라고 알리는 명령. */
 /** 판본이 다른(옛) 폰 탭에 보내는 명령 줄 글(src/phone/server.ts). 옛 탭도 그리는 보통 명령으로 간다. */
 export const REFRESH_TEXT = "화면을 새로 고쳐 주세요";
 
@@ -158,7 +158,7 @@ export const CAUTION_TEXT = {
   rearmed: (label: string) => `${josa(label, "이/가")} 다시 켜졌어요. 꺼 주세요`,
 };
 
-/** 시간 안에 끝나지 않은 단계를 실제 폰에 다시 묻는 글(src/act/track.ts, 답은 계속·그만). */
+/** 시간 안에 끝나지 않은 단계를 실제 폰에 다시 묻는 글(src/act/track/steps.ts timeout, 답은 계속·그만). */
 export const AGAIN_TEXT = { ask: (label: string) => `${josa(label, "을/를")} 계속할까요?` };
 
 /** 비전 상태 줄에 쓰는 평면도 물건 짧은 이름(낱말 표에 없는 종류). 낱말 표 종류(식탁 등)는 그 글을 쓰고(placeShort), 둘 다 없으면 배치 이름을 쓴다. */
@@ -171,7 +171,7 @@ export const PLACE_SHORT: Record<string, string> = {
 /** 평면도 물건 종류의 짧은 이름. 없으면 undefined. */
 export const placeShort = (type: string): string | undefined => PLACE_SHORT[type] ?? OBJECT_NAME[type];
 
-/** 실행 추적 글(src/act/track.ts): 단계 이름과 끝난 까닭. */
+/** 실행 추적 글(src/act/track/): 단계 이름과 끝난 까닭. */
 export const EXEC_TEXT = {
   decided: "판단", planned: "계획", running: "실행 중", verifying: "결과 확인", done: "완료", failed: "실패",
   wait: "대기", decisionFailed: "판단 실패", superseded: "새 판단으로 바뀜", noPlan: "계획을 만들 수 없음", stopped: "사용자가 그만둠",

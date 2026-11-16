@@ -1,5 +1,5 @@
 // 보기 담당: 관찰 모드(src/agent/observer.ts)를 부르고 고른 도구를 실행한다. 한 번에 하나만 돈다.
-// A 멈춘 단계(실행 추적 stalled, src/act/track.ts Stall): 집기·놓기 단계가 안 끝남 → look_closer·ask_person·wait.
+// A 멈춘 단계(실행 추적 stalled, src/act/track/steps.ts Stall): 집기·놓기 단계가 안 끝남 → look_closer·ask_person·wait.
 //   관찰 모드 호출과 가까이 보기는 그 단계 신호(Stall.signal)로 끊긴다. 끊겨서 그쳤으면(관찰 모드 답 전, 감지를 합치기 전에 끊긴 가까이 보기 aborted)
 //   기록도 settle도 하지 않는다. 가까이 본 결과가 World State에 들어가 그 단계를 끝냈으면(그래서 신호가 끊김, 감지만 합치고 VLM 답은 넣지 않은
 //   vlm aborted 포함) 실행한 관찰로 기록한다(지난 단계 세대의 settle은 아무것도 하지 않는다).
@@ -7,7 +7,7 @@
 //   Stall.settle(false)로 시도에서 빼고, 그 밖(wait·ask_person 포함)은 settle(true).
 // B 판단 전 보기(판단 타이머 tick): 행동 대상 종류 물건이 사진 안에 있는데 볼 면(TaskSpec.look)을 모름 → look_closer·wait. PAM 판단을 막지 않는다.
 //   물건마다 objectGapMs, B 전체로 gapMs에 한 번. 이미 싱크대 안·시야 밖 물건, frameFreshMs 넘게 낡은 프레임, 카메라 없는 프레임은 보지 않는다.
-// C 코치 계획의 다른 행동(실행 추적 strayed, src/act/track.ts Stray): 사람이 지금 단계와 다른 일을 하는 것 같다 → tell_person·wait.
+// C 코치 계획의 다른 행동(실행 추적 strayed, src/act/track/coach.ts Stray): 사람이 지금 단계와 다른 일을 하는 것 같다 → tell_person·wait.
 //   다른 일(A·B·C)이 도는 중이면 받지 않는다. 그 단계 신호로 끊긴다(끊기면 기록 없음). tell_person이면 실행 추적의 tell을 부른다.
 // D 코치 계획 중 들은 말(heard): 명령의 답이 아닌 말 → tell_person(told)·pass_on(passed, 말 요청 에이전트로 넘김)·wait(waited).
 //   보기 담당이 바쁘거나 한 시간 상한을 넘었거나 관찰 모드가 실패하면 passed다. 들은 말은 관찰 모드 입력에만 넣고 기록(글·까닭)에는 남기지 않는다.
@@ -25,7 +25,7 @@ import { OBJECT_NAME, redactSaid } from "../world/labels.js";
 import { inView } from "../world/index.js";
 import { CLASSES, UNKNOWN_STATES, type ClassKey, type StateKey } from "../world/vocab.js";
 import { putAway, type Placed } from "./tasks.js";
-import type { Stall, Stray } from "./track.js";
+import type { Stall, Stray } from "./track/tracker.js";
 import { headWithin } from "../shared/cut.js";
 
 /** 들은 말에 관찰 모드가 고른 것: told 지금 할 일을 다시 알림, passed 말 요청 에이전트로 넘김, waited 답하지 않음. */
@@ -47,14 +47,14 @@ export interface LookerOptions {
   /** 고리 가장 새 프레임(src/observe/pipeline.ts latest). */
   frame: () => LatestFrame | null;
   world: () => WorldView;
-  /** 사람 부탁(src/act/track.ts askCloser): 가까이 볼 곳 id로 서버가 부탁 글을 만든다. 보낸 글, 못 보냈으면 null. */
+  /** 사람 부탁(src/act/track/coach.ts askCloser): 가까이 볼 곳 id로 서버가 부탁 글을 만든다. 보낸 글, 못 보냈으면 null. */
   askPerson: (planId: string, stepId: string, spot: string) => string | null;
-  /** 지금 할 일 다시 알리기(src/act/track.ts tell): 방식으로 서버가 글을 만든다. 보낸 글, 못 보냈으면 null. 없으면 보내지 못한 것으로 본다. */
+  /** 지금 할 일 다시 알리기(src/act/track/coach.ts tell): 방식으로 서버가 글을 만든다. 보낸 글, 못 보냈으면 null. 없으면 보내지 못한 것으로 본다. */
   tell?: (planId: string, stepId: string, mode: TellMode) => string | null;
   emit: (l: BrainLog) => void;
   /** 판단 전에 더 잘 볼 종류와 면(src/act/tasks.ts lookTargets). */
   targets: () => readonly { cls: ObjClass; facets: readonly Facet[] }[];
-  /** 실행 추적이 놓기 단계를 끝낸 물건(이미 치운 것, src/act/track.ts placed). 판단 전 보기(B)에서 뺀다. */
+  /** 실행 추적이 놓기 단계를 끝낸 물건(이미 치운 것, src/act/track/steps.ts placed). 판단 전 보기(B)에서 뺀다. */
   placed?: () => Placed;
   /** 가까이 보기를 시작할 때(대시보드 말풍선 카드). */
   onLook?: (spot: LookSpot) => void;

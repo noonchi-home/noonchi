@@ -27,7 +27,7 @@ export interface CheckInput {
   mode: ControlMode;
   /** 계획의 가전 단계와 그 가전이 실제 가전(ThinQ)과 짝지어졌는가. */
   deviceSteps?: { deviceId: string; paired: boolean }[];
-  /** 실행 추적이 놓기 단계를 끝낸 물건(이미 치운 것, src/act/track.ts placed). */
+  /** 실행 추적이 놓기 단계를 끝낸 물건(이미 치운 것, src/act/track/steps.ts placed). */
   placed?: Placed;
 }
 

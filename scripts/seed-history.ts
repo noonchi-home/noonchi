@@ -13,7 +13,7 @@ import dotenv from "dotenv";
 import { checkPlan } from "../src/act/check.js";
 import { planIdOf, targetOf, TASK_NAMES, TASKS } from "../src/act/tasks.js";
 import { PlanDraft, type PlanResult } from "../src/agent/planTools.js";
-import { ExecutionTracker } from "../src/act/track.js";
+import { ExecutionTracker } from "../src/act/track/tracker.js";
 import { memoryApprovals } from "../src/agent/approval.js";
 import { josa } from "../src/shared/korean.js";
 import { CUP_FSM_MEMORY, CUP_TASKS, isoWithOffset, type FsmMemory } from "../src/brain/decision.js";

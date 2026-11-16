@@ -4,7 +4,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ExecutionTracker } from "../src/act/track.js";
+import { ExecutionTracker } from "../src/act/track/tracker.js";
 import { ApprovalStore } from "../src/agent/approval.js";
 import { PlanDraft } from "../src/agent/planTools.js";
 import type { PlannedCommandMessage } from "../src/contract/phone.js";

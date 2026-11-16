@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { startFakeOpenAI, type FakeServer } from "../scripts/fake-openai.js";
 import { Looker } from "../src/act/look.js";
 import { lookTargets } from "../src/act/tasks.js";
-import { ExecutionTracker } from "../src/act/track.js";
+import { ExecutionTracker } from "../src/act/track/tracker.js";
 import { ApprovalStore } from "../src/agent/approval.js";
 import { Observer } from "../src/agent/observer.js";
 import { Planner } from "../src/agent/planner.js";

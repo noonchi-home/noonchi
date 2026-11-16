@@ -1,10 +1,10 @@
 // 대시보드 말풍선 카드 한 문장: 사람 자세가 쓰러짐 의심(src/world/fall.ts)이면 무엇보다 먼저 그것을 알린다. 열린 계획이면 실제 폰에 낸 지금 명령(컵 명령은 정한 글, 그 밖의 사람 단계는 단계 이름), 명령이 없는 기다리기·기기 단계는
 // 그 단계, 그것도 아니면 정한 것. 닫힌 지 SAY_DONE_MS 안이면 끝낸 일, 그 밖에는 지켜보는 것.
-// 계획 없는 행동(컵 그대로 두기, src/act/track.ts leftAt)을 고른 지 SAY_DONE_MS 안이고 열린 계획이 없으면 그대로 두기로 했다고 한다(그 뒤에 끝난 계획이 있으면 그 끝낸 일이 먼저).
+// 계획 없는 행동(컵 그대로 두기, src/act/track/start.ts leftAt)을 고른 지 SAY_DONE_MS 안이고 열린 계획이 없으면 그대로 두기로 했다고 한다(그 뒤에 끝난 계획이 있으면 그 끝낸 일이 먼저).
 // 승인 질문은 대시보드에 보이지 않는다(D37): 단계 id가 :approve(처음 하는 일)·:hand(손으로 켜는 위험 가전 켜기 전 질문)로 끝나는 명령은 없는 것으로 본다.
 // 코치 계획: 다시 알린(tell) 지 SAY_TOLD_MS 안이면 다시 알려 줬다고, 조용한 단계면 그 단계를 지켜본다고, 끄기 안내(:off)가 떠 있으면 불을 꺼 달라고 했다고 한다.
-// 끄기 안내가 남아 새 계획 시작을 미루는 동안(src/act/track.ts offWaiting)은 그 가전 꺼짐을 기다린다고 한다.
-// 다른 계획이 도는 동안 닫힌 계획의 가전이 다시 켜져 그 안내가 줄에서 기다리면(src/act/track.ts offTold) SAY_DONE_MS 동안 다시 켜졌다고 한다.
+// 끄기 안내가 남아 새 계획 시작을 미루는 동안(src/act/track/safety.ts offWaiting)은 그 가전 꺼짐을 기다린다고 한다.
+// 다른 계획이 도는 동안 닫힌 계획의 가전이 다시 켜져 그 안내가 줄에서 기다리면(src/act/track/safety.ts offTold) SAY_DONE_MS 동안 다시 켜졌다고 한다.
 // 가까이 보기(src/act/look.ts)를 시작한 지 SAY_LOOK_MS 안이면 계획과 상관없이 그 자리를 가까이 보고 있다고 한다.
 // 외부 연락 결과(AS센터 전화·보호자 연락, src/agent/service.ts serviceSay)는 SAY_DONE_MS 동안 계획·지켜보기 글보다 먼저 말하되, 안전 알림(쓰러짐 의심·다시 켜짐·끄기 안내·꺼짐 기다림)이 먼저다.
 import type { PlannedCommandMessage } from "../contract/phone.js";
@@ -27,7 +27,7 @@ const cupKey = (label: string | undefined, text: string) =>
   (Object.keys(STEP_COMMAND) as (keyof typeof STEP_COMMAND)[]).find((k) => STEP_LABEL[k] === label || STEP_COMMAND[k] === text) ?? null;
 
 /** look: 마지막으로 가까이 보기를 시작한 자리 이름과 그 시각. left: 마지막으로 「그대로 둠」을 기록한 시각.
- *  told: 마지막으로 다시 알린(tell) 시각. quiet: 지금 조용히 띄운 단계 이름(src/act/track.ts quietStep).
+ *  told: 마지막으로 다시 알린(tell) 시각. quiet: 지금 조용히 띄운 단계 이름(src/act/track/coach.ts quietStep).
  *  reflected: 마지막 반성 시각과 새로 배운 규칙 수·쓰고 있는 습관 수(20초 동안 말한다). offWait: 끄기 안내 때문에 새 계획을 미루는 동안 기다리는 가전 이름.
  *  offTold: 줄에서 기다리는 끄기 안내를 마지막으로 소리로 알린 가전 이름과 시각(20초 동안 말한다). service: 마지막 외부 연락 결과 글과 그 시각(20초 동안 말한다). */
 export function sayLine({ plan, command, world, nowMs, look = null, left = null, told = null, quiet = null, reflected = null, offWait = null, offTold = null, service = null }: {

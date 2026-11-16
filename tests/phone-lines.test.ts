@@ -5,7 +5,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { ExecutionTracker } from "../src/act/track.js";
+import { ExecutionTracker } from "../src/act/track/tracker.js";
 import { Agent, type LlmProvider, type StepOptions, type StepResult } from "../src/agent/agent.js";
 import { ApprovalStore } from "../src/agent/approval.js";
 import { Observer, type ObserveSituation } from "../src/agent/observer.js";
