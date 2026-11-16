@@ -343,6 +343,23 @@ describe("World State + 관절", () => {
     expect(v.objects[0]!.facts.place).toBeUndefined();
   });
 
+  // Codex(4ce9100): 컵을 들고 나가는 장면에서 사람·손목만 먼저 안 보이게 되고 컵은 잠깐 더 보이면, 「손에 있음」을 지워 놓아둔 컵처럼 보였다
+  it("사람이 안 보이게 될 때 들고 있던 컵이 아직 움직이고 있으면 손에 있음을 두고, 3초 넘게 제자리에 있으면(내려놓음) 그때 지운다", () => {
+    const w = ws();
+    for (let i = 1; i <= 3; i++) w.applyDetections(frame(i), [person, cup], [grip]);
+    expect(w.view(3000).objects[0]!.facts.place?.value).toBe("in_hand");
+    // 4초부터 사람은 안 보이고 컵만 옆으로 움직이며 보인다(들고 나가는 중)
+    const moving = (i: number) => det("cup", 0.9, [220 + (i - 3) * 30, 160, 40, 20], 41);
+    for (let i = 4; i <= 9; i++) w.applyDetections(frame(i), [moving(i)]);
+    let v = w.view(9000);
+    expect(v.person.visible).toBe(false);
+    expect(v.objects[0]!.facts.place?.value).toBe("in_hand");
+    // 그 자리에 3초 넘게 머물면 내려놓은 것이다
+    for (let i = 10; i <= 13; i++) w.applyDetections(frame(i), [moving(9)]);
+    v = w.view(13_000);
+    expect(v.objects[0]!.facts.place).toBeUndefined();
+  });
+
   it("자세는 가장 확실한 한 사람으로, 손에 듦은 모든 관절의 손목으로 본다(팔 조각의 손목이 컵 상자 안)", () => {
     const w = ws();
     const arm = poseOf({ 10: [235, 170, 0.6] }, [200, 120, 150, 60], 0.3);

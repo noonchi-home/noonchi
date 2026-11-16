@@ -76,6 +76,11 @@ function maskArea(m: Mask): number {
 }
 /** 가까이 보기로 찾거나 고친 물건은 이만큼(ms, 촬영 시각 기준) 전체 사진에서 못 봐도 사라짐으로 세지 않는다(전체 사진의 감지기는 그 물건을 못 본다). */
 export const CLOSER_HOLD_MS = 30_000;
+/** 사람이 안 보이게 될 때 관절이 붙인 「손에 있음」 물건이 이만큼(ms) 제자리에 있었으면 내려놓은 것이다. 아니면 들고 가는 중일 수 있어 둔다. */
+const SETTLE_MS = 3000;
+/** 제자리로 보는 움직임: 트윈 자리 0.15m, 트윈 자리를 모르면 사진 가운데 점이 사진 너비·높이의 5%. */
+const MOVE_M = 0.15;
+const MOVE_IMAGE = 0.05;
 /** 가까이 보기로 VLM 확인 없이 새 물건을 만들려면 같은 자리로 보인 서로 다른 원본 프레임이 이만큼 있어야 한다(물건 등장 확인 장수와 같다).
  *  이보다 적으면 같은 가까이 보기의 VLM이 그 감지에 사실을 답해야 만든다(CloserPending). */
 export const CLOSER_NEW_FRAMES = 3;
@@ -127,6 +132,11 @@ interface Obj {
   closerAt: number | null;
   /** 자리를 마지막으로 고친 촬영 시각과 그것이 가까이 보기였는가(같은 촬영이면 잘라 본 자리가 앞선다). */
   posAt: number;
+  /** 마지막으로 움직인 촬영 시각(트윈 자리 MOVE_M, 자리를 모르면 사진 가운데 점 MOVE_IMAGE 넘게)과 마지막 사진 가운데 점(0~1). */
+  movedAt: number;
+  center: [number, number] | null;
+  /** 사람이 안 보이게 됐을 때 아직 움직이던 든 물건: 제자리에 SETTLE_MS 있으면 관절의 손에 있음을 지운다. */
+  carried: boolean;
   posCloser: boolean;
   /** 보임(있음·시야 밖·사라짐)을 마지막으로 판단한 촬영 시각: 전체 사진이 보거나, 시야 밖이거나, 사라짐·등장을 확인한 촬영과 가까이 보기로 본 촬영.
    *  이보다 옛 촬영은 보임을 바꾸지 않고 등장·사라짐 셈에도 들어가지 않는다(넣는 전체 사진보다 새 판단은 가까이 보기에서만 나온다). 시야 안인데 못 본 프레임(사라짐 셈 중)은 판단이 아니다:
@@ -247,6 +257,7 @@ export class WorldState {
       id: `${cls}_${n}`, cls, position: null, surface: null, surfaceLabel: null, part: null, room: null, errorM: null, confirmed: false, status: "present",
       firstSeen: atMs, lastSeen: atMs, lastInView: atMs, goneAt: null, facts: {}, answered: null, closerAt: null,
       posAt: Number.NEGATIVE_INFINITY, posCloser: false, judgedAt: atMs, judgedFrame: frameId, judgedCloser: false, followed: null, closerRev: {},
+      movedAt: atMs, center: null, carried: false,
     };
     this.objects.set(obj.id, obj);
     return obj;
@@ -475,6 +486,7 @@ export class WorldState {
       obj.lastInView = Math.max(obj.lastInView, at);
       this.judge(obj, at, frame.id, false);
       this.sawAgain(obj, at, frame.id);
+      this.track(obj, at, placed?.position ?? null, [(d.box[0] + d.box[2] / 2) / frame.width, (d.box[1] + d.box[3] / 2) / frame.height]);
       // 가까이 보기가 더 새 촬영(같은 촬영이면 잘라 본 자리)으로 고친 자리를 되돌리지 않는다
       if (placed?.position && this.newerPlace(obj, at, false)) {
         obj.position = placed.position;
@@ -516,7 +528,11 @@ export class WorldState {
           this.person.facts = {};
           this.person.count = 0;
           this.heldIds = [];
-          for (const o of this.objects.values()) this.dropPoseFact(o.facts, "place", POSE_HOLD.object); // 사람이 없으면 손에 있을 수 없다
+          // 사람이 없으면 손에 있을 수 없다. 다만 든 물건이 아직 움직이면 사람·손목만 먼저 안 보이는 것(들고 나가는 중)일 수 있어 내려놓음(제자리 SETTLE_MS)까지 둔다
+          for (const o of this.objects.values()) {
+            if (this.posedInHand(o) && at - o.movedAt < SETTLE_MS) o.carried = true;
+            else this.dropPoseFact(o.facts, "place", POSE_HOLD.object);
+          }
         }
         changes.push({ kind: e.kind === "appeared" ? "person_appeared" : "person_gone", at_ms: at, subject: PERSON, meaningful: true,
           text: e.kind === "appeared" ? CHANGE_TEXT.personAppeared : CHANGE_TEXT.personGone });
@@ -645,6 +661,27 @@ export class WorldState {
   private dropPoseFact(facts: Facts, facet: Facet, value: string): void {
     const f = facts[facet];
     if (f && f.value === value && this.byPose.has(f)) delete facts[facet];
+  }
+
+  /** 관절이 붙인 「손에 있음」인가. */
+  private posedInHand(o: Obj): boolean {
+    const f = o.facts.place;
+    return !!f && f.value === POSE_HOLD.object && this.byPose.has(f);
+  }
+
+  /** 물건이 움직였는지 센다(트윈 자리, 모르면 사진 가운데 점). 사람이 안 보이는 동안 들고 가던 물건이 제자리에 SETTLE_MS 있으면 내려놓은 것으로 손에 있음을 지운다. */
+  private track(o: Obj, at: number, position: V3 | null, center: [number, number]): void {
+    const moved = position && o.position
+      ? Math.hypot(position[0] - o.position[0], position[2] - o.position[2]) > MOVE_M
+      : o.center !== null && Math.hypot(center[0] - o.center[0], center[1] - o.center[1]) > MOVE_IMAGE;
+    if (moved) o.movedAt = at;
+    o.center = center;
+    if (!o.carried) return;
+    if (this.person.visible || !this.posedInHand(o)) o.carried = false;
+    else if (at - o.movedAt >= SETTLE_MS) {
+      this.dropPoseFact(o.facts, "place", POSE_HOLD.object);
+      o.carried = false;
+    }
   }
 
   /** 관절이 이 프레임(또는 더 새 프레임)에서 붙인 사실이면 VLM 답이 바꾸거나 지우지 않는다. */
