@@ -45,6 +45,27 @@ describe("글 자르기 검사", () => {
     expect(fileProblems("src/x.ts", `const b = "앞".concat(said).slice(0, 3);`)).toHaveLength(1);
   });
 
+  it("ASCII 글에 붙인 값도 ASCII로 확인되지 않으면 글로 본다", () => {
+    expect(fileProblems("src/x.ts", `const a = new Date().toISOString().concat(said).slice(0, 20);`)).toHaveLength(1);
+    expect(fileProblems("src/x.ts", `const b = (new Date().toISOString() + said).slice(0, 20);`)).toHaveLength(1);
+    expect(fileProblems("src/x.ts", `const c = new Date().toISOString().concat("Z").slice(0, 20);`)).toEqual([]);
+  });
+
+  it("지역 변수는 선언한 함수·블록 안에서만 뜻을 가진다(다른 함수의 같은 이름으로 판정하지 않는다)", () => {
+    const miss = [
+      "function a(rows: Row[]) { const parts = rows.map((r) => r.id); return parts.slice(0, 3); }",
+      "function b(line: string) { const parts = line.split(\",\"); return parts.map((p) => p.slice(0, 2)); }",
+    ].join("\n");
+    expect(fileProblems("src/x.ts", miss).map((p) => p.text)).toEqual(["p.slice(0, 2)"]);
+    const wrong = [
+      "function a(said: string) { const parts = said.trim(); return headWithin(parts, 2); }",
+      "function b(rows: Row[]) { const parts = rows.map((r) => r.id); return parts.slice(0, 3); }",
+    ].join("\n");
+    expect(fileProblems("src/x.ts", wrong)).toEqual([]);
+    const blocks = "if (ok) { const parts = rows; use(parts.slice(0, 2)); } else { const parts = say.split(\" \"); use(parts[0].slice(0, 1)); }";
+    expect(fileProblems("src/x.ts", blocks).map((p) => p.text)).toEqual(["parts[0].slice(0, 1)"]);
+  });
+
   it("배열 자르기, toISOString 날짜, 자르기 도움 함수 자신은 잡지 않는다", () => {
     const src = [
       "const items: string[] = [];",

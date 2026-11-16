@@ -3,7 +3,8 @@
 // 글 앞 자르기는 src/shared/cut.ts의 headWithin(글, n) 하나로만 한다. 그 파일만 검사하지 않는다.
 // 타입 정보 없이(TypeScript 7에는 JS 컴파일러 API가 없다) 받는 값이 글인지 모양으로 본다: 글 리터럴·템플릿, String(…), 글을 돌려주는 메서드(trim·replace·join…),
 // 글에 붙인 concat·slice, split(…) 결과(글 배열)의 원소와 map·forEach 같은 콜백 인자, 「…TEXT」 글 표 함수, 글로 쓰는 이름(text·reason·label·message…),
-// 이 파일에서 그런 값으로 만든 이름·string 인자. 배열 자르기는 잡지 않는다. toISOString() 글(ASCII만)은 잘라도 된다. 예외 목록이나 검사를 끄는 인자는 없다.
+// 그런 값으로 만든 이름(선언한 블록·함수 안에서만)·string 인자. 배열 자르기는 잡지 않는다. ASCII로 확인된 글(toISOString()·ASCII 리터럴, 그것끼리만 붙인 것)은 잘라도 되고,
+// 붙인 값 하나라도 ASCII로 확인되지 않으면 글로 본다. 예외 목록이나 검사를 끄는 인자는 없다.
 // 사용: npm run lint (tests/lint-text-cut.test.ts도 같은 검사를 돌린다).
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
@@ -47,20 +48,33 @@ class Scope {
   }
 }
 
+const ASCII = /^[\x00-\x7f]*$/;
+/** 둘 중 하나일 수 있는 값(a ?? b, c ? a : b, a + b): 글이 섞이면 글, ASCII로 확인된 글끼리만 ASCII, 글 하나와 모르는 값이면 글. */
+function either(a: Kind, b: Kind): Kind {
+  if (a === "text" || b === "text") return "text";
+  if (a === "texts" || b === "texts") return "texts";
+  if (a === "ascii" && b === "ascii") return "ascii";
+  return a === "ascii" || b === "ascii" ? "text" : null;
+}
+
 function kindOf(n: AstNode, scope: Scope, depth = 0): Kind {
   if (depth > 6) return null;
   const x = unwrap(n);
   switch (x.type) {
-    case "TemplateLiteral":
-      return "text";
+    case "TemplateLiteral": {
+      const plain = (x.quasis ?? []).every((q: AstNode) => ASCII.test(q.value?.raw ?? ""));
+      return plain && (x.expressions ?? []).every((e: AstNode) => kindOf(e, scope, depth + 1) === "ascii") ? "ascii" : "text";
+    }
     case "Literal":
-      return typeof x.value === "string" ? "text" : null;
+      return typeof x.value === "string" ? (ASCII.test(x.value) ? "ascii" : "text") : null;
     case "TSAsExpression":
       return x.typeAnnotation?.type === "TSStringKeyword" ? "text" : kindOf(x.expression, scope, depth + 1);
     case "LogicalExpression":
-      return kindOf(x.left, scope, depth + 1) ?? kindOf(x.right, scope, depth + 1);
+      return either(kindOf(x.left, scope, depth + 1), kindOf(x.right, scope, depth + 1));
     case "ConditionalExpression":
-      return kindOf(x.consequent, scope, depth + 1) ?? kindOf(x.alternate, scope, depth + 1);
+      return either(kindOf(x.consequent, scope, depth + 1), kindOf(x.alternate, scope, depth + 1));
+    case "BinaryExpression":
+      return x.operator === "+" ? either(kindOf(x.left, scope, depth + 1), kindOf(x.right, scope, depth + 1)) : null;
     case "CallExpression": {
       const c = unwrap(x.callee);
       if (c.type === "Identifier" && c.name === "String") return "text";
@@ -69,9 +83,16 @@ function kindOf(n: AstNode, scope: Scope, depth = 0): Kind {
       if (m === "split") return "texts";
       if (m && TEXT_METHODS.has(m)) return "text";
       const owner = c.type === "MemberExpression" ? unwrap(c.object) : null;
+      if (m === "concat" && owner) {
+        // 글에 붙이면 붙인 값 하나라도 ASCII로 확인되지 않으면 글
+        const k = kindOf(owner, scope, depth + 1);
+        if (k === "texts") return "texts";
+        if (k !== "text" && k !== "ascii") return null;
+        return k === "ascii" && (x.arguments ?? []).every((a: AstNode) => kindOf(a, scope, depth + 1) === "ascii") ? "ascii" : "text";
+      }
       if (m && SAME_KIND.has(m) && owner) {
         const k = kindOf(owner, scope, depth + 1);
-        return k === "text" || k === "texts" ? k : null;
+        return k === "text" || k === "texts" || k === "ascii" ? k : null;
       }
       if (owner?.type === "Identifier" && /TEXT$/.test(owner.name)) return "text";
       return null;
@@ -91,11 +112,22 @@ function kindOf(n: AstNode, scope: Scope, depth = 0): Kind {
   }
 }
 
-/** 이 파일의 이름 뜻: const 값(파일 전체), 함수 인자(그 함수 안: string 타입이면 글, 글 배열 콜백의 첫 인자면 글, 아니면 모름). */
+/** 변수 선언이 보이는 범위: let·const는 가장 가까운 블록·for·함수·파일, var는 가장 가까운 함수·파일. */
+const BLOCKS = new Set(["BlockStatement", "StaticBlock", "ForStatement", "ForInStatement", "ForOfStatement", "SwitchStatement", "Program", ...FUNCTIONS]);
+function declRange(ancestors: readonly AstNode[]): { start: number; end: number } {
+  const isVar = ancestors.at(-1)?.type === "VariableDeclaration" && ancestors.at(-1)?.kind === "var";
+  for (let i = ancestors.length - 1; i >= 0; i--) {
+    const a = ancestors[i]!;
+    if (isVar ? FUNCTIONS.has(a.type) || a.type === "Program" : BLOCKS.has(a.type)) return { start: a.start, end: a.end };
+  }
+  return { start: 0, end: Infinity };
+}
+
+/** 이 파일의 이름 뜻: 변수 값(선언한 블록·함수 안), 함수 인자(그 함수 안: string 타입이면 글, 글 배열 콜백의 첫 인자면 글, 아니면 모름). */
 function scopeOf(program: AstNode): Scope {
   const scope = new Scope();
-  walk(program, (n) => {
-    if (n.type === "VariableDeclarator" && n.id?.type === "Identifier" && n.init) scope.add(n.id.name, { start: 0, end: Infinity, init: n.init });
+  walk(program, (n, ancestors) => {
+    if (n.type === "VariableDeclarator" && n.id?.type === "Identifier" && n.init) scope.add(n.id.name, { ...declRange(ancestors), init: n.init });
     if (FUNCTIONS.has(n.type)) {
       for (const p of n.params ?? []) {
         const id = p.type === "AssignmentPattern" ? p.left : p;
