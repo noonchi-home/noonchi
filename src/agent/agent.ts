@@ -409,6 +409,8 @@ export class Agent {
         const allowTools = round < this.maxRounds;
         if (this.closed) throw new Error(AGENT_CLOSED);
         const r = await this.modelStep(s.state, { system, tools: this.modelTools, allowTools });
+        // 모델 답을 기다리는 동안 닫혔으면(모델이 끊기를 듣지 않았어도) 그 답의 도구는 하나도 실행하지 않는다
+        if (this.closed) throw new Error(AGENT_CLOSED);
         if (r.calls.length === 0) return called.size === 1 && called.has(LEAVE_IT) ? "" : r.text.trim() || "(답이 비어 있어요)";
         if (!allowTools) {
           // 한도를 넘긴 호출은 실행하지 않고 결과만 채워 대화 형식을 맞춘다
@@ -420,6 +422,8 @@ export class Agent {
         }
         const results: ToolCallResult[] = [];
         for (const call of r.calls) {
+          // 앞 도구를 실행하는 동안 닫혔으면 남은 도구는 실행하지 않는다(가전 말고 배치 저장 같은 것도)
+          if (this.closed) throw new Error(AGENT_CLOSED);
           called.add(call.name);
           results.push(await this.execute(s, call, backend, actions));
         }

@@ -609,6 +609,68 @@ describe("Agent + call_service(가짜 모델·가짜 전화 서비스)", () => {
     }
   });
 
+  describe("닫는 중에는 남은 도구를 실행하지 않는다", () => {
+    /** 차례마다 정한 결과를 내는 모델(시험 대역). gate가 있으면 그 차례는 gate가 풀릴 때 답한다(끊기 신호를 듣지 않는 모델). */
+    class ScriptProvider implements LlmProvider {
+      readonly name = "script";
+      steps = 0;
+      constructor(private readonly turns: { result: StepResult; gate?: Promise<void> }[]) {}
+      createState() { return { round: 0 }; }
+      addUserMessage(): void {}
+      addToolResults(): void {}
+      async step(state: unknown): Promise<StepResult> {
+        const st = state as { round: number };
+        const turn = this.turns[st.round++] ?? { result: { text: "끝", calls: [] } };
+        this.steps++;
+        await turn.gate;
+        return turn.result;
+      }
+    }
+    const gate = () => { let open!: () => void; const p = new Promise<void>((r) => { open = r; }); return { p, open }; };
+    const twoLights: StepResult = { text: "", calls: [
+      { id: "c1", name: "turn_on", args: { device_id: "tv_living", reason: "켜 달라고 해서" } },
+      { id: "c2", name: "turn_on", args: { device_id: "light_living", reason: "켜 달라고 해서" } },
+    ] };
+
+    it("첫 도구를 실행하는 동안 닫으면 그 뒤 도구는 실행하지 않고 모델을 다시 부르지 않는다. 답은 「집을 닫는 중이라 요청을 받지 않았어요.」", async () => {
+      const base = makeHome().hub;
+      const hold = gate();
+      let commands = 0;
+      // 첫 가전 명령을 붙잡는 허브(나머지는 그대로)
+      const hub = new Proxy(base, {
+        get(t, k) {
+          if (k === "command") return async (...a: Parameters<typeof base.command>) => { if (commands++ === 0) await hold.p; return t.command(...a); };
+          const v = Reflect.get(t, k) as unknown;
+          return typeof v === "function" ? (v as (...x: unknown[]) => unknown).bind(t) : v;
+        },
+      });
+      const provider = new ScriptProvider([{ result: twoLights }, { result: { text: "켰어요.", calls: [] } }]);
+      const agent = new Agent({ hub, policy: new Policy(), rooms: ROOMS, provider });
+      const talking = agent.chat("s", "거실 불이랑 TV 켜 줘");
+      for (const end = Date.now() + 2000; commands === 0 && Date.now() < end; await new Promise((r) => setTimeout(r, 10)));
+      await agent.close();
+      hold.open();
+      expect((await talking).reply).toBe("집을 닫는 중이라 요청을 받지 않았어요.");
+      expect(twin(base, "light_living").power).toBe("off");
+      expect(commands).toBe(1);
+      expect(provider.steps).toBe(1);
+    });
+
+    it("모델 응답을 기다리는 동안 닫혔는데 모델이 끊기를 듣지 않고 도구 호출을 내도 하나도 실행하지 않는다", async () => {
+      const { hub } = makeHome();
+      const hold = gate();
+      const provider = new ScriptProvider([{ result: twoLights, gate: hold.p }]);
+      const agent = new Agent({ hub, policy: new Policy(), rooms: ROOMS, provider });
+      const talking = agent.chat("s", "거실 불이랑 TV 켜 줘");
+      for (const end = Date.now() + 2000; provider.steps === 0 && Date.now() < end; await new Promise((r) => setTimeout(r, 10)));
+      await agent.close();
+      hold.open();
+      expect((await talking).reply).toBe("집을 닫는 중이라 요청을 받지 않았어요.");
+      expect(twin(hub, "tv_living").power).toBe("off");
+      expect(twin(hub, "light_living").power).toBe("off");
+    });
+  });
+
   it("같은 세션의 모델 호출이 끝나지 않은 채 그 뒤에 승인 답이 기다려도, 닫으면 모델 호출을 끊고 승인 답은 바로 취소로 끝난다(닫기가 모델 응답을 기다리지 않는다)", async () => {
     /** 세션마다: 첫 차례 call_service → 글, 그다음 차례는 끊길 때까지 답하지 않는 모델(시험 대역). */
     class HangingProvider implements LlmProvider {
