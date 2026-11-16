@@ -148,6 +148,49 @@ describe("seed 판본 올리기", () => {
   });
 });
 
+describe("습관 넣기는 판본마다", () => {
+  const habit = CUP_FSM_MEMORY.states.find((st) => st.id === "left_cup")!.rules;
+  const past: FsmMemory = {
+    ...CUP_FSM_MEMORY,
+    states: CUP_FSM_MEMORY.states.map((st) => (st.id === "left_cup" ? { ...st, rules: [{ trigger: "사용자가 자리를 비웠지만 컵에 음료가 남아 있다.", action: "컵 그대로 두기" }] } : st)),
+  };
+  const leftCup = (m: unknown) => (m as FsmMemory).states.find((st) => st.id === "left_cup")!.rules;
+
+  // Codex(0be4ffb): 오늘 고정 판본과 가장 새 판본이 다르면 가장 새 것만 고치고 전역 완료 표시를 남겨 오늘 판본에는 습관이 들어가지 않았다
+  it("오늘 고정한 판본이 가장 새 판본(내일부터 쓰는 반성 판본)보다 옛것이어도 오늘 판본과 가장 새 판본에 각각 한 번 넣는다. 가장 새 판본을 고친 것이 가장 높은 판본이다", () => {
+    const db = HistoryDb.open(":memory:");
+    db.saveMemory({ kind: "fsm", memory: CUP_FSM_MEMORY, day: null, appliesDay: null, source: "seed" });
+    db.saveMemory({ kind: "fsm", memory: past, day: "2026-11-15", appliesDay: "2026-11-16", source: "synthetic" });
+    db.pinMemory("2026-11-16", 2);
+    db.saveMemory({ kind: "fsm", memory: { ...past, initial_state: "left_cup" }, day: "2026-11-16", appliesDay: "2026-11-17", source: "reflection" });
+    const today = memoryForDay(db, "2026-11-16");
+    expect(leftCup(today.memory)).toEqual(habit);
+    expect(db.pinnedMemory("2026-11-16")).toBe(today.version);
+    const tomorrow = db.memoryFor("2026-11-17")!;
+    expect(tomorrow.version).toBeGreaterThan(today.version);
+    expect([leftCup(tomorrow.memory), (tomorrow.memory as FsmMemory).initial_state, tomorrow.source]).toEqual([habit, "left_cup", "reflection"]);
+    // 다시 불러도 더 만들지 않는다
+    const n = db.latestMemoryVersion();
+    expect(memoryForDay(db, "2026-11-16").version).toBe(today.version);
+    expect(memoryForDay(db, "2026-11-17").version).toBe(tomorrow.version);
+    expect(db.latestMemoryVersion()).toBe(n);
+  });
+
+  // Codex(0be4ffb): 지난날 반성(reflect --chain)이 습관을 넣어 그날 판본·날 고정을 바꿨다
+  it("지난날 반성은 그날 판본을 그대로 읽는다: 습관을 넣지 않고 날 고정도 바꾸지 않는다", async () => {
+    const db = HistoryDb.open(":memory:");
+    db.saveMemory({ kind: "fsm", memory: past, day: null, appliesDay: null, source: "synthetic" });
+    db.pinMemory("2026-11-03", 1);
+    const t = Date.UTC(2026, 10, 2, 23);
+    db.add("detection", t, "사람 보임");
+    got.length = 0;
+    const r = await runReflection(db, new PamClient({ url: await startPam(past) }), "2026-11-03", { now: () => t + 3_600_000 });
+    expect(r.ok).toBe(true);
+    expect(leftCup(got[0]!.memory)).toEqual(past.states.find((st) => st.id === "left_cup")!.rules);
+    expect(db.pinnedMemory("2026-11-03")).toBe(1);
+  });
+});
+
 describe("반성", () => {
   it("하루 관찰 텍스트·행동 요약·피드백을 pam-reflect/2로 보내고, 새 기억은 다음 날부터 쓴다", async () => {
     const db = HistoryDb.open(":memory:");

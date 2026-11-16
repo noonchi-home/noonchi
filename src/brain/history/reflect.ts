@@ -44,34 +44,49 @@ const HABIT_KINDS = ["world", "device", "decision", "execution", "feedback"] as 
  *  가장 새 판본이 반성 판본(또는 합성 기록)이면 건드리지 않는다: seed는 seed 뒤에만 올리므로 새 seed가 반성 판본을 덮지 않는다. */
 export function memoryForDay(db: HistoryDb, day: string, o: { patch?: boolean } = {}): DayMemory {
   const cur = dayMemory(db, day);
-  // 합성 기록을 만드는 동안(scripts/seed-history.ts)은 넣지 않는다: 합성 일주일은 습관을 배우기 전 기록이다
+  // 합성 기록을 만드는 동안(scripts/seed-history.ts, 습관을 배우기 전 기록)과 지난날 반성(그날 판본 그대로)은 넣지 않는다
   return o.patch === false ? cur : patchedForDay(db, day, cur);
 }
 
-/** seed 바뀜(SEED_PATCHES)을 가장 새 판본이 반성·합성 판본인 DB에 한 번 넣는다: 그 판본을 고친 새 판본(같은 출처·적용일)을 저장하고,
- *  그날 쓰던 것이 그 가장 새 판본이면 그날을 새 판본으로 다시 고정한다. 가장 새 판본이 seed면(이미 지금 seed) 넣은 것으로 적기만 한다. */
+/** seed 바뀜(SEED_PATCHES)을 이미 배운 기억(반성·합성 판본)에 넣는다. 그 바뀜을 처음 본 때의 가장 새 판본까지(경계, meta seed_patch:<id>)만 넣고
+ *  그 뒤 판본(반성이 고친 기억에서 다시 배운 것)은 둔다. 넣는 것은 판본마다 한 번(meta seed_patch:<id>:<판본>): 그날 쓰는 판본을 먼저, 가장 새 판본을 나중에 고쳐
+ *  가장 새 판본을 고친 것이 가장 높은 판본이 되게 한다(앞으로의 날이 옛 판본을 고친 것을 쓰지 않게). 그날 쓰던 판본을 고쳤으면 그날을 고친 판본으로 다시 고정한다.
+ *  seed 판본은 seed 올리기가 맡는다. */
 function patchedForDay(db: HistoryDb, day: string, cur: DayMemory): DayMemory {
   let out = cur;
   for (const patch of SEED_PATCHES) {
-    if (db.seedPatch(patch.id) !== null) continue;
-    const latest = db.memoryVersion(db.latestMemoryVersion() ?? out.version);
-    if (!latest || latest.kind !== "fsm" || latest.source === "seed") {
-      db.markSeedPatch(patch.id, latest?.version ?? out.version);
-      continue;
+    let edge = db.seedPatch(patch.id);
+    if (edge === null) {
+      edge = db.latestMemoryVersion() ?? cur.version;
+      db.markSeedPatch(patch.id, edge);
     }
-    const memory = patchMemory(validateMemory(latest.memory as never, "fsm") as FsmMemory, patch);
-    if (!memory || JSON.stringify(memory) === JSON.stringify(latest.memory)) {
-      db.markSeedPatch(patch.id, latest.version);
-      continue;
-    }
-    const version = db.saveMemory({ kind: "fsm", memory, day: latest.day, appliesDay: latest.appliesDay, source: latest.source });
-    db.markSeedPatch(patch.id, version);
-    if (out.version === latest.version) {
-      db.pinMemory(day, version, true);
-      out = { memory, kind: "fsm", version };
+    const latest = db.latestMemoryVersion();
+    for (const base of [...new Set([cur.version, ...(latest === null ? [] : [latest])])]) {
+      if (base > edge) continue;
+      const made = patchVersion(db, patch, base);
+      if (made !== null && out.version === base) {
+        db.pinMemory(day, made, true);
+        out = { memory: validateMemory(db.memoryVersion(made)!.memory as never, "fsm"), kind: "fsm", version: made };
+      }
     }
   }
   return out;
+}
+
+/** 판본 하나에 seed 바뀜을 넣은 판본(같은 출처·적용일). 넣을 것이 없으면(seed·list·그 상태 없음·이미 같음) null. 판본마다 한 번만 만든다. */
+function patchVersion(db: HistoryDb, patch: (typeof SEED_PATCHES)[number], base: number): number | null {
+  const key = `${patch.id}:${base}`;
+  const done = db.seedPatch(key);
+  if (done !== null) return done === base ? null : done;
+  const m = db.memoryVersion(base);
+  const memory = m && m.kind === "fsm" && m.source !== "seed" ? patchMemory(validateMemory(m.memory as never, "fsm") as FsmMemory, patch) : null;
+  if (!m || !memory || JSON.stringify(memory) === JSON.stringify(m.memory)) {
+    db.markSeedPatch(key, base);
+    return null;
+  }
+  const version = db.saveMemory({ kind: "fsm", memory, day: m.day, appliesDay: m.appliesDay, source: m.source });
+  db.markSeedPatch(key, version);
+  return version;
 }
 
 function dayMemory(db: HistoryDb, day: string): DayMemory {
@@ -108,7 +123,8 @@ export async function runReflection(db: HistoryDb, pam: PamClient, day: string, 
     return { ok: false, empty: true, error: REFLECT_TEXT.empty };
   }
   try {
-    const cur = memoryForDay(db, day);
+    // 지난날 반성은 그날 판본을 그대로 읽는다(습관을 넣거나 날 고정을 바꾸지 않는다)
+    const cur = memoryForDay(db, day, { patch: false });
     const feedback = latestWithin(db.list({ day, kinds: ["feedback"] }).map((r) => r.text), MAX_REFLECT_TEXT.feedback).join("\n") || null;
     const limits = await pam.limits();
     // 요약이 비면 대신 보내는 글(관찰 없음·행동 없음)도 한도 안에 들게 미리 뺀다

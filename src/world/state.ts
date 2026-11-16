@@ -132,9 +132,9 @@ interface Obj {
   closerAt: number | null;
   /** 자리를 마지막으로 고친 촬영 시각과 그것이 가까이 보기였는가(같은 촬영이면 잘라 본 자리가 앞선다). */
   posAt: number;
-  /** 마지막으로 움직인 촬영 시각(트윈 자리 MOVE_M, 자리를 모르면 사진 가운데 점 MOVE_IMAGE 넘게)과 마지막 사진 가운데 점(0~1). */
+  /** 마지막으로 움직인 촬영 시각(최근 본 자리에서 트윈 자리 MOVE_M, 자리를 모르면 사진 가운데 점 MOVE_IMAGE 넘게 떨어짐)과 최근 SETTLE_MS 동안 본 자리. */
   movedAt: number;
-  center: [number, number] | null;
+  trail: { at: number; position: V3 | null; center: [number, number] }[];
   /** 사람이 안 보이게 됐을 때 아직 움직이던 든 물건: 제자리에 SETTLE_MS 있으면 관절의 손에 있음을 지운다. */
   carried: boolean;
   posCloser: boolean;
@@ -257,7 +257,7 @@ export class WorldState {
       id: `${cls}_${n}`, cls, position: null, surface: null, surfaceLabel: null, part: null, room: null, errorM: null, confirmed: false, status: "present",
       firstSeen: atMs, lastSeen: atMs, lastInView: atMs, goneAt: null, facts: {}, answered: null, closerAt: null,
       posAt: Number.NEGATIVE_INFINITY, posCloser: false, judgedAt: atMs, judgedFrame: frameId, judgedCloser: false, followed: null, closerRev: {},
-      movedAt: atMs, center: null, carried: false,
+      movedAt: atMs, trail: [], carried: false,
     };
     this.objects.set(obj.id, obj);
     return obj;
@@ -663,19 +663,27 @@ export class WorldState {
     if (f && f.value === value && this.byPose.has(f)) delete facts[facet];
   }
 
+  /** 들고 가는 중(carried)인 물건의 자리 면: 내려놓음이 확인될 때까지 VLM·가까이 보기 자리 답이 손에 있음을 덮지 않는다. */
+  private carriedPlace(id: string, facet: Facet): boolean {
+    return facet === "place" && this.objects.get(id)?.carried === true;
+  }
+
   /** 관절이 붙인 「손에 있음」인가. */
   private posedInHand(o: Obj): boolean {
     const f = o.facts.place;
     return !!f && f.value === POSE_HOLD.object && this.byPose.has(f);
   }
 
-  /** 물건이 움직였는지 센다(트윈 자리, 모르면 사진 가운데 점). 사람이 안 보이는 동안 들고 가던 물건이 제자리에 SETTLE_MS 있으면 내려놓은 것으로 손에 있음을 지운다. */
+  /** 물건이 움직였는지 센다: 최근 SETTLE_MS 동안 본 자리(트윈 자리, 모르면 사진 가운데 점) 가운데 지금 자리에서 MOVE_M(MOVE_IMAGE) 넘게 떨어진 것이 있으면
+   *  그 가장 늦은 촬영 시각이 movedAt이다(직전 프레임과만 견주면 100ms마다 조금씩 들고 가도 제자리로 보인다).
+   *  사람이 안 보이는 동안 들고 가던 물건이 제자리에 SETTLE_MS 있으면 내려놓은 것으로 손에 있음을 지운다. */
   private track(o: Obj, at: number, position: V3 | null, center: [number, number]): void {
-    const moved = position && o.position
-      ? Math.hypot(position[0] - o.position[0], position[2] - o.position[2]) > MOVE_M
-      : o.center !== null && Math.hypot(center[0] - o.center[0], center[1] - o.center[1]) > MOVE_IMAGE;
-    if (moved) o.movedAt = at;
-    o.center = center;
+    const far = (s: { position: V3 | null; center: [number, number] }) => position && s.position
+      ? Math.hypot(position[0] - s.position[0], position[2] - s.position[2]) > MOVE_M
+      : Math.hypot(center[0] - s.center[0], center[1] - s.center[1]) > MOVE_IMAGE;
+    o.trail = o.trail.filter((s) => at - s.at <= SETTLE_MS);
+    for (const s of o.trail) if (far(s)) o.movedAt = Math.max(o.movedAt, s.at);
+    o.trail.push({ at, position, center });
     if (!o.carried) return;
     if (this.person.visible || !this.posedInHand(o)) o.carried = false;
     else if (at - o.movedAt >= SETTLE_MS) {
@@ -769,7 +777,7 @@ export class WorldState {
       if (!fits(value, target.cls, target.kind)) continue;
       const facet = STATES[value].facet;
       said.add(`${id}|${facet}`);
-      if (this.poseHolds(target.facts[facet], capturedAtMs)) continue;
+      if (this.poseHolds(target.facts[facet], capturedAtMs) || this.carriedPlace(id, facet)) continue;
       if (!this.answer(frameId, id, target.facts, facet, value, capturedAtMs, false, NOW_FACETS[target.kind].includes(facet), turn)) continue;
       if (target.kind === "person") {
         if (this.person.visible) changes.push({ kind: "person_state", at_ms: capturedAtMs, subject: PERSON, meaningful: false, text: CHANGE_TEXT.state(OBJECT_NAME.person!, value) });
@@ -966,7 +974,7 @@ export class WorldState {
       const value = ob.state as StateKey;
       if (!fits(value, obj.cls, "object")) continue;
       const facet = STATES[value].facet;
-      if (this.poseHolds(obj.facts[facet], capturedAtMs)) continue;
+      if (this.poseHolds(obj.facts[facet], capturedAtMs) || this.carriedPlace(obj.id, facet)) continue;
       if (!this.answer(sourceFrameId, obj.id, obj.facts, facet, value, capturedAtMs, true, NOW_FACETS.object.includes(facet), turn)) continue;
       obj.closerRev[facet] = (obj.closerRev[facet] ?? 0) + 1;
       if (obj.confirmed && obj.status !== "gone") changes.push({ kind: "state", at_ms: capturedAtMs, subject: obj.id, meaningful: true, text: CHANGE_TEXT.state(this.name(obj), value) });

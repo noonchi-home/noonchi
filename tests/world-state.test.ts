@@ -360,6 +360,28 @@ describe("World State + 관절", () => {
     expect(v.objects[0]!.facts.place).toBeUndefined();
   });
 
+  // Codex(e3a75ab): 직전 프레임과만 견주면 100ms마다 조금씩 들고 가도 제자리로 보였고, 움직이는 컵의 「책상 위」 VLM 답 한 장이 손에 있음을 덮었다
+  it("들고 가는지는 3초 동안 쌓인 움직임으로 본다(100ms마다 조금씩 움직여도 들고 가는 중). 그동안 VLM·가까이 보기의 다른 자리 답은 손에 있음을 덮지 않는다", () => {
+    const w = ws();
+    const at = (t: number): EngineFrame => ({ ...frame(0), id: `t${t}`, capturedAtMs: t, latestAtMs: t });
+    for (let t = 0; t <= 2000; t += 100) w.applyDetections(at(t), [person, cup], [grip]);
+    expect(w.view(2000).objects[0]!.facts.place?.value).toBe("in_hand");
+    // 사람은 안 보이고 컵이 100ms마다 4px(사진 너비의 0.8%)씩 옆으로 간다
+    const step = (t: number) => det("cup", 0.9, [220 + ((t - 2000) / 100) * 4, 160, 40, 20], 41);
+    let ids = new Map<string, string>();
+    for (let t = 2100; t <= 9000; t += 100) ids = w.applyDetections(at(t), [step(t)]).ids;
+    let v = w.view(9000);
+    expect(v.person.visible).toBe(false);
+    expect(v.objects[0]!.facts.place?.value).toBe("in_hand");
+    // 들고 가는 동안 VLM이 「책상 위」라고 답해도(전체 사진·가까이 보기) 손에 있음을 둔다
+    w.applyScene("t9000", 9000, { scene: "k", observations: [{ object_id: "d1", state: "on_desk" }], summary: "s" }, ids);
+    expect(w.view(9000).objects[0]!.facts.place?.value).toBe("in_hand");
+    // 제자리에 3초 머물면 내려놓은 것이다
+    for (let t = 9100; t <= 12_300; t += 100) w.applyDetections(at(t), [step(9000)]);
+    v = w.view(12_300);
+    expect(v.objects[0]!.facts.place).toBeUndefined();
+  });
+
   it("자세는 가장 확실한 한 사람으로, 손에 듦은 모든 관절의 손목으로 본다(팔 조각의 손목이 컵 상자 안)", () => {
     const w = ws();
     const arm = poseOf({ 10: [235, 170, 0.6] }, [200, 120, 150, 60], 0.3);

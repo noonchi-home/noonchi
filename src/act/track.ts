@@ -211,6 +211,8 @@ const QUIET_KINDS: ReadonlySet<WorldChangeKind> = new Set<WorldChangeKind>(["vlm
 const STRAY_KEEP_MS = 30_000;
 /** 놓기를 끝낸 물건이 사라진 뒤 새 id로 다시 잡히기를 기다리는 시간(ms). 등장 확인(물건 4초)·사라짐(6초)보다 넉넉히. */
 const PUT_HANDOVER_MS = 30_000;
+/** 이어 갈 새 물건은 넣은 물건을 마지막으로 본 때보다 이만큼(ms) 앞까지 처음 보인 것이다(새 id가 옛 id보다 조금 먼저 잡히기도 한다). 그보다 먼저 있던 물건은 원래 있던 옆 물건이다. */
+const PUT_LOST_SLACK_MS = 2000;
 
 /** 멈춘 집기·놓기 단계. command: 실제 폰에 띄운 지금 명령 글. stuckMs: 단계 시작 뒤 지난 시간. looks: 이 단계에서 센 부름 수(시도).
  *  spots: 계획 물건(지금 따라가는 World State 물건, 자리를 알 때)과 단계 대상 자리(평면도, 물건과 다를 때).
@@ -575,19 +577,25 @@ export class ExecutionTracker {
     return all;
   }
 
-  /** 놓기를 끝낸 물건이 사라졌다: 같은 종류 물건이 그 넣은 곳(싱크볼이었으면 싱크볼)에 새 id로 다시 잡혔으면 그 물건으로 이어 간다
-   *  (놓은 컵이 끝낸 뒤 2초 만에 새 id로 잡혀 치운 기억이 없어졌다, 2026-11-16 23:36). 아직 없으면 PUT_HANDOVER_MS 동안 기다린다. */
+  /** 놓기를 끝낸 물건이 사라졌다: 같은 종류 물건 하나가 사라진 무렵 뒤 그 넣은 곳(싱크볼이었으면 싱크볼)에 새 id로 다시 잡혔으면 그 물건으로 이어 간다
+   *  (놓은 컵이 끝낸 뒤 2초 만에 새 id로 잡혀 치운 기억이 없어졌다, 2026-11-16 23:36). 아직 없거나 둘 이상이면 사라진 때부터 PUT_HANDOVER_MS 동안 기다린다. */
   private carryPut(id: string, p: { target: string; part?: "basin"; atMs: number }, objects: WorldView["objects"], now: number): void {
     const cls = this.putCls.get(id);
+    // 사라진 때: 그 물건을 마지막으로 본 때(World State에 없으면 끝낸 때). 기한과 후보는 이 때를 기준으로 본다
+    const lostAt = Math.min(p.atMs, objects.find((o) => o.id === id)?.last_seen_ms ?? p.atMs);
+    // 후보: 같은 종류가 넣은 곳(싱크볼이었으면 싱크볼)에, 사라진 무렵(PUT_LOST_SLACK_MS 앞) 뒤에 처음 보인 것. 원래 있던 옆 컵은 아니다
     const next = objects.filter((o) => o.id !== id && o.status !== "gone" && o.cls === cls && o.surface === p.target
-      && (p.part === undefined || o.surface_part === p.part) && o.first_seen_ms >= p.atMs - PUT_HANDOVER_MS && !this.put.has(o.id));
-    if (next.length || now - p.atMs > PUT_HANDOVER_MS) {
+      && (p.part === undefined || o.surface_part === p.part) && o.first_seen_ms >= lostAt - PUT_LOST_SLACK_MS && o.first_seen_ms <= lostAt + PUT_HANDOVER_MS
+      && !this.put.has(o.id));
+    // 하나뿐일 때만 잇는다(둘 이상이면 어느 것인지 모른다). 사라진 때부터 PUT_HANDOVER_MS가 지나면 잊는다
+    const one = next.length === 1 ? next[0]! : null;
+    if (one || now - lostAt > PUT_HANDOVER_MS) {
       this.put.delete(id);
       this.putCls.delete(id);
     }
-    for (const o of next) {
-      this.put.set(o.id, p);
-      if (cls) this.putCls.set(o.id, cls);
+    if (one) {
+      this.put.set(one.id, p);
+      if (cls) this.putCls.set(one.id, cls);
     }
   }
 

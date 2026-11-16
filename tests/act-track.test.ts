@@ -2872,6 +2872,30 @@ describe("실행 추적: 놓기 단계를 끝낸 물건(이미 치운 것)", () 
     expect(t2.t.placed().size).toBe(0);
   });
 
+  // Codex(1d14c37): 싱크대 면의 후보를 모두 잇고 30초가 지나도 이어, 원래 있던 옆 컵이나 나중에 생긴 컵도 치운 것이 됐다
+  it("이어 갈 새 물건은 넣은 컵이 사라진 무렵 뒤에 처음 보인 하나뿐일 때만이다. 원래 있던 옆 컵이나 후보가 둘이면 잇지 않고, 기한은 사라진 때부터 30초다", async () => {
+    let w = world([cup("present")]);
+    const { t, decide, clock } = setup({ w: () => w });
+    await decide(decision);
+    for (const n of [1, 2, 3, 4]) t.onAnswer("plan:pam-1", `plan:pam-1:${n}`, "done");
+    const done = clock.t;
+    const onSink = (id: string, first: number): WorldObject => ({ ...cup("present", "on_counter", clock.t), id, first_seen_ms: first, position: [5, 0.9, 0.6], surface: "sink_1", surface_label: "싱크대" });
+    const gone = cup("gone", undefined, done - 1000);
+    // 놓기 전부터 싱크대에 있던 옆 컵은 잇지 않는다
+    clock.t += 1000;
+    w = { ...world([gone, onSink("cup_9", 0)]), frame_ms: clock.t };
+    expect([...t.placed().keys()]).toEqual(["cup_1"]);
+    // 새로 보인 컵이 둘이면 어느 것인지 몰라 잇지 않는다
+    clock.t += 1000;
+    w = { ...world([gone, onSink("cup_9", 0), onSink("cup_28", clock.t), onSink("cup_29", clock.t)]), frame_ms: clock.t };
+    expect([...t.placed().keys()]).toEqual(["cup_1"]);
+    // 기한은 사라진 때(마지막으로 본 때)부터 30초: 그 뒤에 하나만 보여도 잇지 않고 잊는다
+    clock.t = done - 1000 + 30_001;
+    w = { ...world([gone, onSink("cup_9", 0), onSink("cup_30", clock.t)]), frame_ms: clock.t };
+    expect(t.placed().has("cup_1")).toBe(false);
+    expect(t.placed().has("cup_30")).toBe(false);
+  });
+
   it("싱크볼 안 컵은 실행 추적이 넣은 기억이 없어도(서버를 다시 띄운 뒤, 새 id) 치운 것이라 치우기를 막는다. 손에 있음이 확인되면 아니고, 식탁 위 컵이 있으면 그 컵을 치운다", async () => {
     const basin: WorldObject = { ...cup("present", "on_desk"), id: "cup_32", position: [5, 0.9, 1.1], surface: "sink_1", surface_label: "싱크대", surface_part: "basin" };
     basin.facts = { place: { value: "on_desk", at_ms: 9_000, since_ms: 9_000, certainty: "inferred" } };
