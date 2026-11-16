@@ -1,6 +1,6 @@
 // 도메인 경계 검사(scripts/lint-domains.ts, 도메인 나누기 설계 3.1~3.3). npm run lint와 같은 검사다.
 // 실제 트리는 예외 목록(scripts/domain-exceptions.json)과 꼭 맞아야 하고, 가짜 트리·0a392c5 실제 줄은 정한 오류 글로 실패해야 한다.
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -161,6 +161,21 @@ describe("도메인 경계: 가짜 트리", () => {
     });
     expect(keys(root).filter((k) => k.startsWith("node "))).toEqual(["node src/shared/paths.ts -> node:url"]);
     expect(message(root, "node src/shared/paths.ts -> node:url")).toBe("화면 시험(jsdom)이 따라 들어간 src 파일에 node 모듈 `node:url`이 섞여요(`ui/tests/dashboard/run.ts` → `src/agent/plan.ts` → `src/layout/index.ts` → `src/layout/twin.ts` → `src/shared/paths.ts`). 시험이 바로 가져온 src 파일만 node 모듈을 써도 돼요");
+  });
+
+  it("화면 시험 길에 고리(ui/tests → a → b → a)가 있어도 시간 안에 끝나고, 길을 한 번만 적는다(시험이 바로 가져온 a는 node 모듈을 써도 된다)", () => {
+    const root = fakeTree({
+      "ui/tests/x.test.ts": 'import { a } from "../../src/agent/a.js";\nexport const x = a;\n',
+      "src/agent/a.ts": 'import { join } from "node:path";\nimport { b } from "./b.js";\nexport const a = () => [join, b];\n',
+      "src/agent/b.ts": 'import { readFileSync } from "node:fs";\nimport { a } from "./a.js";\nexport const b = () => [readFileSync, a];\n',
+    });
+    // 검사가 끝없이 돌면 메모리를 먹으므로 따로 띄운 node에서 시간·메모리를 묶어 돌린다
+    const code = 'const { pathToFileURL } = await import("node:url"); const { checkTree } = await import(pathToFileURL("scripts/lint-domains.ts").href); console.log(JSON.stringify(checkTree(process.env.CHECK_ROOT)));';
+    const r = spawnSync(process.execPath, ["--max-old-space-size=128", "--import", "tsx", "--input-type=module", "-e", code], { cwd: ROOT, env: { ...process.env, CHECK_ROOT: root }, encoding: "utf8", timeout: 60_000 });
+    expect(r.error?.message).toBeUndefined();
+    expect(r.status, r.stderr).toBe(0);
+    const node = (JSON.parse(r.stdout) as { key: string; message: string }[]).filter((v) => v.key.startsWith("node "));
+    expect(node).toEqual([{ key: "node src/agent/b.ts -> node:fs", message: "화면 시험(jsdom)이 따라 들어간 src 파일에 node 모듈 `node:fs`이 섞여요(`ui/tests/x.test.ts` → `src/agent/a.ts` → `src/agent/b.ts`). 시험이 바로 가져온 src 파일만 node 모듈을 써도 돼요" }]);
   });
 
   it("import.meta.url은 세 꼴만 되고, Worker 대상 파일이 없으면 실패한다", () => {

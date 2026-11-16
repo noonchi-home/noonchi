@@ -372,18 +372,22 @@ function browserNodeModules(refsOf: Map<string, { ref: ImportRef; to?: string; e
     for (const { ref, external, builtin } of refsOf.get(f) ?? []) {
       if (ref.typeOnly || external === undefined || !builtin) continue;
       const chain: string[] = [];
-      for (let n = f; n; n = prev.get(n) ?? "") chain.unshift(n);
+      const onChain = new Set<string>();
+      for (let n = f; n && !onChain.has(n); n = prev.get(n) ?? "") { onChain.add(n); chain.unshift(n); }
       out.push({ key: `node ${f} -> ${external}`, message: say(external, chain.map((c) => `\`${c}\``).join(" → ")) });
     }
   };
-  const walkFrom = (starts: [string, string][], say: (external: string, chain: string) => string) => {
+  /** 처음 방문할 때만 앞 파일(prev)을 적는다(BFS 방문 표시). skip은 따라가지 않는 파일(시험이 바로 가져온 파일). */
+  const walkFrom = (starts: [string, string][], say: (external: string, chain: string) => string, skip: ReadonlySet<string> = new Set()) => {
     const prev = new Map<string, string>(starts);
+    const visited = new Set<string>([...skip, ...starts.map(([f]) => f)]);
     const queue = starts.map(([f]) => f);
     while (queue.length) {
       const f = queue.shift()!;
       nodeUses(f, prev, say);
       for (const { ref, to } of refsOf.get(f) ?? []) {
-        if (ref.typeOnly || to === undefined || !refsOf.has(to) || prev.has(to)) continue;
+        if (ref.typeOnly || to === undefined || !refsOf.has(to) || visited.has(to)) continue;
+        visited.add(to);
         prev.set(to, f);
         queue.push(to);
       }
@@ -396,7 +400,7 @@ function browserNodeModules(refsOf: Map<string, { ref: ImportRef; to?: string; e
   const starts: [string, string][] = [];
   const seen = new Set<string>();
   for (const [p] of picked) for (const { ref, to } of refsOf.get(p) ?? []) {
-    if (ref.typeOnly || to === undefined || !refsOf.has(to) || seen.has(to)) continue;
+    if (ref.typeOnly || to === undefined || !refsOf.has(to) || seen.has(to) || picked.has(to)) continue;
     seen.add(to);
     starts.push([to, p]);
   }
@@ -405,7 +409,7 @@ function browserNodeModules(refsOf: Map<string, { ref: ImportRef; to?: string; e
     const first = chain.match(/^`([^`]+)`/)?.[1] ?? "";
     const before = first && chainPrev.get(first) ? `\`${chainPrev.get(first)}\` → ` : "";
     return `화면 시험(jsdom)이 따라 들어간 src 파일에 node 모듈 \`${m}\`이 섞여요(${before}${chain}). 시험이 바로 가져온 src 파일만 node 모듈을 써도 돼요`;
-  });
+  }, new Set(picked.keys()));
   return out;
 }
 
