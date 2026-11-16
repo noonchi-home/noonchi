@@ -4,7 +4,7 @@ import type { AgentEndpoint } from "../agent/providers/index.js";
 import type { ReadyView } from "../contract/events.js";
 import type { Endpoints } from "../infer/endpoints.js";
 import { ReachCache, reachable } from "../infer/reach.js";
-import type { HistoryDb } from "../brain/history/db.js";
+import type { HistoryDb } from "../brain/index.js";
 import { fetchRetry } from "../shared/net.js";
 
 /** 에이전트 주소가 답하는지(모델은 부르지 않는다). */
