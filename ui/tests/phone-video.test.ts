@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPhoneController, type ControllerDeps, type ControllerDraw } from "../src/phone/controller";
-import { createVideoAr, noteSync, videoParams } from "../src/phone/core/video-ar.js";
+import { SYNC_MAX, createSyncLog, createVideoAr, videoParams } from "../src/phone/core/video-ar.js";
 import { coverMap, lookAt, pitchQuat, projectionFromFov, viewMatrix, walkGoal, yawPitchQuat } from "../src/phone/core/video-math.js";
 import { handOf, problemOf } from "../src/phone/state";
 import { focusMarks } from "../src/phone/core/project.js";
@@ -646,7 +646,8 @@ describe("영상 입력 모드: 명령 시각 기록·화면", () => {
     video.frameAt(0.1, base + 2300);
     video.frameAt(0.1, base + 2400);
     const sync = window.__noonchiVideo!.sync!;
-    expect(sync.map((p) => p[1])).toEqual([100, 300, 400]);
+    // 멈칫 앞 끝(300)과 멈칫 뒤(400·500)를 짝으로 둔다
+    expect(sync.map((p) => p[1]).slice(0, 3)).toEqual([100, 300, 400]);
     expect(sync[2]![0] - sync[1]![0]).toBeGreaterThanOrEqual(2099);
     expect(sync[2]![0] - sync[1]![0]).toBeLessThanOrEqual(2101);
     // 첫 짝은 t0와 같은 관계다(서버 시각 − 영상 시각)
@@ -712,19 +713,53 @@ describe("영상 입력 모드: 명령 시각 기록·화면", () => {
     ar.stop();
   });
 
-  // Codex(9738b45): 멈춘 동안 같은 영상 시각의 짝을 초당 4개씩 쌓아, 1시간이면 약 14 400개를 판정기가 매초 읽었다
-  it("noteSync: 같은 직선 구간(멈춤·1:1)은 양 끝점으로 줄인다", () => {
-    const sync: [number, number][] = [];
-    let prev: [number, number] | null = null;
-    prev = noteSync(sync, prev, 1000, 0);
-    // 1:1로 3초
-    for (let t = 1040; t <= 4000; t += 40) prev = noteSync(sync, prev, t, t - 1000);
-    // 1분 멈춤(영상 시각 3000 그대로, 0.25초마다)
-    for (let t = 4250; t <= 64_000; t += 250) prev = noteSync(sync, prev, t, 3000);
-    // 다시 1:1로 2초
-    for (let t = 64_040; t <= 66_000; t += 40) prev = noteSync(sync, prev, t, 3000 + (t - 64_000));
-    // 멈춤 뒤 1:1은 마지막 짝에서 1:1로 이어 세므로 새 짝이 없다
-    expect(sync).toEqual([[1000, 0], [4000, 3000], [64_000, 3000]]);
+  describe("짝 줄이기(createSyncLog): 판정 도구가 옮길 때(짝 사이는 잇고 앞뒤는 1:1) 모든 표본의 오차가 50ms 안이다", () => {
+    /** 짝으로 서버 시각 at의 영상 시각(scripts/video-check.ts videoClock과 같은 셈). */
+    const mapAt = (sync: [number, number][], at: number) => {
+      if (at <= sync[0]![0]) return sync[0]![1] - (sync[0]![0] - at);
+      for (let i = 1; i < sync.length; i++) {
+        const [a1, v1] = sync[i]!;
+        if (at > a1) continue;
+        const [a, v] = sync[i - 1]!;
+        return a1 === a ? v1 : v + ((at - a) * (v1 - v)) / (a1 - a);
+      }
+      const [an, vn] = sync.at(-1)!;
+      return vn + (at - an);
+    };
+    const run = (samples: [number, number][]) => {
+      const sync: [number, number][] = [];
+      const log = createSyncLog(sync);
+      for (const [at, ms] of samples) log.note(at, ms);
+      const worst = Math.max(...samples.map(([at, ms]) => Math.abs(mapAt(sync, at) - Math.round(ms))));
+      return { sync, worst };
+    };
+    // Codex(9738b45): 멈춘 동안 같은 영상 시각의 짝을 초당 4개씩 쌓아, 1시간이면 약 14 400개를 판정기가 매초 읽었다
+    it("1:1 3초 → 1분 멈춤(0.25초마다) → 1:1 2초: 짝 네 개 안", () => {
+      const samples: [number, number][] = [[1000, 0]];
+      for (let t = 1040; t <= 4000; t += 40) samples.push([t, t - 1000]);
+      for (let t = 4250; t <= 64_000; t += 250) samples.push([t, 3000]);
+      for (let t = 64_040; t <= 66_000; t += 40) samples.push([t, 3000 + (t - 64_000)]);
+      const { sync, worst } = run(samples);
+      expect(sync.length).toBeLessThanOrEqual(4);
+      expect(worst).toBeLessThanOrEqual(51);
+    });
+    // Codex(c7fc7f3): 새 짝의 오차만 보고 끝점을 계속 바꿔 지운 표본의 오차가 쌓였다(20초 동안 속도가 서서히 줄면 가운데가 2.5초 틀어짐)
+    it("20초 동안 재생 속도가 1에서 0.5로 서서히 줄어도(25fps) 모든 표본이 50ms 안이다", () => {
+      const samples: [number, number][] = [];
+      for (let t = 0; t <= 20_000; t += 40) samples.push([1_000_000 + t, t - (t * t) / 80_000]);
+      const { sync, worst } = run(samples);
+      expect(worst).toBeLessThanOrEqual(51);
+      expect(sync.length).toBeLessThan(60);
+    });
+    it("짝 수에는 상한(SYNC_MAX)이 있어 넘으면 오래된 짝부터 버린다", () => {
+      const samples: [number, number][] = [];
+      for (let i = 0; i < SYNC_MAX * 3; i++) samples.push([i * 100, i * 100 + (i % 2 ? 300 : 0)]);
+      const sync: [number, number][] = [];
+      const log = createSyncLog(sync);
+      for (const [at, ms] of samples) log.note(at, ms);
+      expect(sync.length).toBeLessThanOrEqual(SYNC_MAX);
+      expect(sync.at(-1)).toEqual(samples.at(-1));
+    });
   });
 
   it("서버 sync가 맞춤(video)이면 「여기서 시작」 카드도, 시작 위치 모달도 뜨지 않는다. 맞추기 전 상태가 먼저 와도 열지 않는다", async () => {

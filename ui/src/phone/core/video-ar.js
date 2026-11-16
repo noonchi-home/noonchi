@@ -18,9 +18,9 @@
 // 명령 대상 자리는 지금 view·투영으로 잡고(focusMarks), 화면에는 영상이 덮인 자리(coverMap)로 옮겨 넘긴다(화면 밖·칸에 가릴 때만 세모가 그려진다).
 // 판정 기록 window.__noonchiVideo(t0: 재생 시작 서버 시각, commands: 받은 명령의 영상 시각, clips: 바꾼 단계 영상, sync: [서버 시각, 영상 시각] 짝)과
 // console [video] 줄은 scripts/video-check.ts가 읽는다. 영상은 멈칫할 수 있어(버퍼·디코딩 밀림, 헤드리스 크롬에서 처음 몇 초) 영상 시각이 서버 시계보다
-// 늦게 간다. 그래서 t0 하나로는 서버 사건을 영상 시각에 옮기지 못하고, 시계를 맞춘 뒤 프레임마다 견줘 1:1로 이어 셀 수 없게 어긋날 때 짝을 남긴다(noteSync).
+// 늦게 간다. 그래서 t0 하나로는 서버 사건을 영상 시각에 옮기지 못하고, 시계를 맞춘 뒤 프레임마다 견줘 짝을 남긴다(createSyncLog: 모든 견주기 오차 50ms 안).
 // 멈칫하는 동안에는 프레임이 오지 않으므로 SYNC_EVERY_MS마다, 그리고 끝낼 때도 지금 짝을 견준다(시계를 맞춘 뒤 프레임보다 먼저면 t0도 고친다).
-// 같은 직선 구간(멈춘 동안 같은 영상 시각 등)은 양 끝점만 둬 오래 돌아도 짝이 쌓이지 않는다.
+// 같은 직선 구간(1:1·멈춤)은 양 끝점만 둬 오래 돌아도 짝이 쌓이지 않고, 짝 수에는 상한(SYNC_MAX)이 있다.
 // PhoneAr(ar.d.ts)와 같은 형이라 controller·화면은 그대로 쓴다. 시험은 deps로 영상·인코딩·그림판을 바꾼다(jsdom은 영상을 틀지 못한다).
 
 import { createEncoder, framePacket } from "./capture.js";
@@ -86,34 +86,51 @@ const SYNC_SLACK_MS = 50;
 /** 프레임과 따로 지금 짝을 견주는 간격(ms): 멈칫하는 동안(프레임 없음) 판정이 끝나도 멈춘 시간을 이만큼 안에서 남긴다. */
 const SYNC_EVERY_MS = 250;
 
-/** 프레임 하나(또는 주기 견주기)의 서버 시각 at·영상 시각 ms를 sync([서버 시각, 영상 시각] 짝)에 견준다. 첫 짝은 그대로 넣고, 마지막 짝에서 1:1로
- *  이어 센 값과 SYNC_SLACK_MS 넘게 어긋나면 바로 앞 짝(prev, 그 마지막 짝보다 뒤일 때)과 이 짝을 넣는다(멈칫한 구간을 두 견주기 사이로 좁힌다).
- *  같은 직선 구간(멈춘 동안 같은 영상 시각 등)은 양 끝점만 둔다(addSync). 이 짝을 돌려준다(다음 견주기의 prev). */
-export function noteSync(sync, prev, at, ms) {
-  const pair = [Math.round(at), Math.round(ms)];
-  const last = sync.at(-1);
-  if (!last) {
-    sync.push(pair);
-    return pair;
-  }
-  if (Math.abs(pair[0] - last[0] - (pair[1] - last[1])) <= SYNC_SLACK_MS) return pair;
-  if (prev && prev[0] > last[0]) addSync(sync, prev);
-  addSync(sync, pair);
-  return pair;
-}
+/** 짝 수 상한: 넘으면 가장 오래된 짝부터 버린다(그 앞 서버 시각은 첫 짝에서 1:1로 센다). 보통은 멈칫마다 두세 개라 닿지 않는다. */
+export const SYNC_MAX = 4000;
 
-/** 짝 하나를 더한다: 마지막 두 짝이 이은 직선에서 SYNC_SLACK_MS 안이면 마지막 짝을 이 짝으로 바꾼다(같은 직선 구간은 양 끝점만, 옮김 오차는 그 폭 안). */
-function addSync(sync, p) {
-  const a = sync.at(-2);
-  const b = sync.at(-1);
-  if (a && b && b[0] > a[0]) {
-    const onLine = b[1] + ((p[0] - b[0]) * (b[1] - a[1])) / (b[0] - a[0]);
-    if (Math.abs(onLine - p[1]) <= SYNC_SLACK_MS) {
-      sync[sync.length - 1] = p;
-      return;
-    }
-  }
-  sync.push(p);
+/** [서버 시각, 영상 시각] 짝 기록(sync에 쌓는다). note(at, ms)마다 견주기 하나를 받아, 마지막으로 고정한 짝(앞 끝)에서 지금 견주기까지 이은 직선이
+ *  그 사이 모든 견주기에서 SYNC_SLACK_MS 안이면 마지막 짝(열린 끝)을 지금 견주기로 바꾸고, 아니면 열린 끝을 고정하고 지금 견주기를 새 끝으로 둔다.
+ *  허용 기울기 범위(lo~hi)를 견주기마다 좁혀 가므로(swinging door) 지운 견주기를 두지 않고도 판정 도구가 옮길 때(짝 사이는 잇고 마지막 짝 뒤는 1:1)
+ *  모든 견주기의 오차가 SYNC_SLACK_MS 안이다. 같은 직선 구간(1:1·멈춤)은 양 끝점만 남는다. 서버 시각이 앞 짝보다 늦지 않은 견주기는 버린다. */
+export function createSyncLog(sync) {
+  let lo = Number.NEGATIVE_INFINITY;
+  let hi = Number.POSITIVE_INFINITY;
+  let open = false; // 마지막 짝이 열린 끝인가(바꿀 수 있다)
+  const limit = (anchor, p) => {
+    const dt = p[0] - anchor[0];
+    return [(p[1] - SYNC_SLACK_MS - anchor[1]) / dt, (p[1] + SYNC_SLACK_MS - anchor[1]) / dt];
+  };
+  const start = (p) => {
+    const [l, h] = limit(sync.at(-1), p);
+    sync.push(p);
+    lo = l;
+    hi = h;
+    open = true;
+  };
+  return {
+    note(at, ms) {
+      const p = [Math.round(at), Math.round(ms)];
+      const last = sync.at(-1);
+      if (!last) {
+        sync.push(p);
+        return;
+      }
+      if (p[0] <= last[0]) return;
+      if (!open) start(p);
+      else {
+        const anchor = sync.at(-2);
+        const slope = (p[1] - anchor[1]) / (p[0] - anchor[0]);
+        if (slope >= lo && slope <= hi) {
+          sync[sync.length - 1] = p;
+          const [l, h] = limit(anchor, p);
+          lo = Math.max(lo, l);
+          hi = Math.min(hi, h);
+        } else start(p);
+      }
+      if (sync.length > SYNC_MAX) sync.splice(0, sync.length - SYNC_MAX);
+    },
+  };
 }
 
 // 0.1초로 먼저 반올림해 59.96초가 01:00.0이 된다(scripts/video-check.ts clock과 같다)
@@ -318,7 +335,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
     record.commands = [];
     record.clips = [];
     record.sync = [];
-    let syncPrev = null; // 바로 앞 프레임의 [서버 시각, 영상 시각]
+    const syncLog = createSyncLog(record.sync);
     let offset = 0; // 앞 영상들 시각 합(ms): 단계 영상으로 바꿔도 한 시각표로 센다
     let clockFixed = false;
     let due = 0;
@@ -407,7 +424,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
         clockFixed = true;
         record.t0 = Math.round(stamp.captured_at - t);
       }
-      syncPrev = noteSync(record.sync, syncPrev, stamp.captured_at, t);
+      syncLog.note(stamp.captured_at, t);
     };
     const syncTimer = setInterval(syncNow, SYNC_EVERY_MS);
     const perfTimer = setInterval(hooks.onPerf, 1000);
@@ -452,7 +469,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
           clockFixed = true;
           record.t0 = Math.round(stamp.captured_at - t);
         }
-        syncPrev = noteSync(record.sync, syncPrev, stamp.captured_at, t);
+        syncLog.note(stamp.captured_at, t);
       }
       const marks = frameMarks();
       showMarks(marks);

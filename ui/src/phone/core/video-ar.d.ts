@@ -71,7 +71,10 @@ export interface VideoRecord {
 /** 영상 모드인지 아는 하나뿐인 길: 주소의 clip(영상 이름)이 있으면 그 이름과 영상 AR 값, 없으면 null(실제 모드). clip은 여기서만 읽는다. */
 export function videoParams(params: URLSearchParams): (Required<Pick<VideoArDeps, "clipUrl" | "fovDeg" | "pitchDeg" | "heightM" | "steps" | "reactMs">> & { clip: string }) | null;
 export function videoRecord(target?: object): VideoRecord;
-export function noteSync(sync: [number, number][], prev: [number, number] | null, at: number, ms: number): [number, number];
+/** 짝 수 상한. */
+export const SYNC_MAX: number;
+/** [서버 시각, 영상 시각] 짝 기록: note마다 견줘 같은 직선 구간은 끝점만 둔다(모든 표본 오차 50ms 안). */
+export function createSyncLog(sync: [number, number][]): { note(at: number, ms: number): void };
 export function logVideoCommand(videoMs: number, command: { id: string; step: string; text: string }): void;
 export function logVideoAt(at: HeardAt): void;
 export function createVideoAr(opts: { link: PhoneLink; params: URLSearchParams; hooks: ArHooks; deps: VideoArDeps }): VideoAr;
