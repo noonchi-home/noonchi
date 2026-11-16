@@ -274,11 +274,55 @@ describe("옮김 검사: 빠져나가는 꼴", () => {
     expect(ok.notes).toContain(`허용(대응표): ${f[0]} — 전부터 있던 a ↔ b 고리에 입구가 낌`);
   });
 
+  it("allow는 그 한 불일치만 넘기고 뒤 문장도 끝까지 견준다", () => {
+    const before = { ...BEFORE, "src/phone/server.ts": 'import { align } from "../sync/aligner.js";\nexport const s = align(1);\nexport const ok = (x: boolean) => x;\n' };
+    const after = (rest: string) => ({ ...AFTER, "src/phone/server.ts": `import { align } from "./sync/aligner.js";\nalign(2);\nexport const s = align(1);\n${rest}` });
+    const first = run(before, after("export const ok = (x: boolean) => x;\n"), MOVE).failures;
+    expect(first).toEqual(["src/phone/server.ts: import가 아닌 문장이 달라요(1번째)\n  앞: (없음)\n  뒤: align(2);"]);
+    const allow = { ...MOVE, allow: { [first[0]!.split("\n")[0]!]: "시연용 호출" } };
+    expect(run(before, after("export const ok = (x: boolean) => x;\n"), allow).failures).toEqual([]);
+    // 뒤 문장(승인 판단)을 바꾸면 앞 불일치를 allow로 넘겨도 실패한다
+    expect(run(before, after("export const ok = (x: boolean) => !x;\n"), allow).failures).toEqual([
+      "src/phone/server.ts: import가 아닌 문장이 달라요(3번째)\n  앞: export const ok = (x: boolean) => x;\n  뒤: export const ok = (x: boolean) => !x;",
+    ]);
+  });
+
+  it("allow 한 줄은 정확히 한 실패에만 맞아야 한다", () => {
+    const before = { "src/http.ts": "export const fetch = (u: string) => u;\n", "src/a.ts": 'import { fetch } from "./http.js";\nexport const f = () => fetch("a");\n', "src/b.ts": 'fetch("b");\nfetch("b");\n' };
+    const after = { "src/http.ts": before["src/http.ts"], "src/a.ts": "", "src/b.ts": 'import { fetch } from "./http.js";\nfetch("b");\nfetch("b");\nexport const f = () => fetch("a");\n' };
+    const decls = { "src/a.ts#f": "src/b.ts#f" };
+    const f = run(before, after, { decls }, true).failures;
+    expect(f).toHaveLength(2);
+    expect(f[0]).toBe(f[1]);
+    expect(run(before, after, { decls, allow: { [f[0]!]: "까닭" } }, true).failures).toEqual([...f, `대응표 allow 한 줄이 실패 2개에 맞아요: ${f[0]}`]);
+  });
+
   it("allow는 까닭이 있어야 하고, 쓰지 않은 allow는 실패한다", () => {
     expect(run(BEFORE, AFTER, { ...MOVE, allow: { "없는 실패": "까닭" } }).failures).toEqual(["대응표 allow에 있는데 생기지 않은 실패예요: 없는 실패"]);
     const after = { ...AFTER, "src/phone/server.ts": 'import { align } from "./sync/aligner.js";\nalign(2);\nexport const s = align(1);\n' };
     const key = run(BEFORE, after, MOVE).failures[0]!.split("\n")[0]!;
     expect(run(BEFORE, after, { ...MOVE, allow: { [key]: " " } }).failures).toEqual([`대응표 allow의 까닭이 비었어요: ${key}`]);
+  });
+
+  it("입구로 import하면 입구가 다시 내보내는 모듈까지 실제로 읽히는 차례를 견준다(입구가 다른 초기화를 더 읽으면 실패)", () => {
+    const lib = {
+      "src/x/reg.ts": "export const reg = register();\nfunction register() { return 1; }\n",
+      "src/x/boot.ts": "export const boot = start();\nfunction start() { return 1; }\n",
+      "src/x/pure.ts": "export const pure = 1;\n",
+      "src/x/index.ts": 'export { boot } from "./boot.js";\nexport { reg } from "./reg.js";\n',
+      "src/x/only.ts": 'export { pure } from "./pure.js";\nexport { reg } from "./reg.js";\n',
+    };
+    const main = (spec: string) => ({ ...lib, "src/main.ts": `import { reg } from "${spec}";\nexport const m = reg;\n` });
+    expect(run(main("./x/reg.js"), main("./x/index.js")).failures).toEqual([
+      "src/main.ts: 부수 효과가 있는 import의 차례가 달라요\n  앞: effect src/x/reg.ts\n  뒤: effect src/x/boot.ts → effect src/x/reg.ts",
+    ]);
+    expect(run(main("./x/reg.js"), main("./x/only.js")).failures).toEqual([]);
+  });
+
+  it("새 자기 import(선언을 합치며 자기 파일 뒤쪽 const를 별칭으로 먼저 읽음)는 실패한다", () => {
+    const before = { "src/a.ts": 'import { x as bx } from "./b.js";\nexport const y = bx;\n', "src/b.ts": "export const x = 1;\n" };
+    const after = { "src/a.ts": 'import { x as bx } from "./a.js";\nexport const y = bx;\nexport const x = 1;\n', "src/b.ts": "" };
+    expect(run(before, after, { decls: { "src/b.ts#x": "src/a.ts#x" } }, true).failures).toEqual(["실행 때 값 import 고리에 새 import가 생겼어요: src/a.ts → src/a.ts(고리: src/a.ts)"]);
   });
 
   it("맨 위에서 함수 호출·new·static 초기화를 하는 모듈(const X = register())도 부수 효과 모듈로 보고 import 차례를 지킨다", () => {

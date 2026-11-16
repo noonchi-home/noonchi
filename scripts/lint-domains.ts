@@ -437,22 +437,30 @@ export function readBase(root: string, ref: string = EXCEPTIONS_BASE): BaseList 
   return { keys, moves };
 }
 
-/** 예외 줄 가운데 기준 목록으로 설명되지 않는 것. 기준 줄의 경로는 대응표로 옮기고, 같은 도메인 입구로 바꾼 대상(…/index.ts)은 같은 줄로 본다. extra는 대응표 exceptions로 허용한 줄. */
+/** 예외 줄 가운데 기준 목록으로 설명되지 않는 것. 기준 줄의 경로는 대응표로 옮긴다. 같은 도메인 입구로 바꾼 대상(…/index.ts)은 옛 줄이 없어졌을 때만 1:1로 같은 줄로 본다. extra는 대응표 exceptions로 허용한 줄. */
 export function unbasedKeys(exceptions: readonly string[], base: BaseList, config: Config = CONFIG, extra: Iterable<string> = []): string[] {
   const mapPath = (p: string) => base.moves.reduce((acc, m) => m[acc] ?? acc, p);
   const mapKey = (k: string) => k.split(" ").map((t) => (/^(src|ui\/src)\//.test(t) ? mapPath(t) : t)).join(" ");
   const allowed = new Set([...base.keys.map(mapKey), ...extra]);
-  const targets = new Map<string, string[]>();
-  for (const k of allowed) {
+  // 입구로 바꾼 줄은 짝이 될 옛 줄(같은 검사·같은 파일, 대상이 그 도메인)이 지금 목록에서 없어졌을 때만, 옛 줄 하나에 새 줄 하나로 본다
+  const present = new Set(exceptions);
+  const gone = new Map<string, string[]>();
+  for (const k of base.keys.map(mapKey)) {
+    if (present.has(k)) continue;
     const m = /^(\S+) (\S+) -> (\S+)$/.exec(k);
-    if (m) (targets.get(`${m[1]} ${m[2]}`) ?? targets.set(`${m[1]} ${m[2]}`, []).get(`${m[1]} ${m[2]}`)!).push(m[3]!);
+    if (m) (gone.get(`${m[1]} ${m[2]}`) ?? gone.set(`${m[1]} ${m[2]}`, []).get(`${m[1]} ${m[2]}`)!).push(m[3]!);
   }
   const entryDomain = (p: string) => Object.keys(config.deps).find((d) => entriesOf(d).includes(p));
   return exceptions.filter((k) => {
     if (allowed.has(k)) return false;
     const m = /^(\S+) (\S+) -> (\S+)$/.exec(k);
     const d = m ? entryDomain(m[3]!) : undefined;
-    return !(m && d && (targets.get(`${m[1]} ${m[2]}`) ?? []).some((t) => placeOf(t, config).domain === d));
+    if (!m || !d) return true;
+    const list = gone.get(`${m[1]} ${m[2]}`) ?? [];
+    const i = list.findIndex((t) => placeOf(t, config).domain === d);
+    if (i < 0) return true;
+    list.splice(i, 1);
+    return false;
   });
 }
 

@@ -469,6 +469,32 @@ function normalize(node: unknown, str: (s: string) => string): unknown {
   return out;
 }
 
+/** 두 문장 목록을 최장 공통 차례로 맞추고, 맞지 않은 자리를 [옛 번호, 새 번호]로 낸다(바뀐 것은 둘 다, 지운 것은 새 번호 없음, 더한 것은 옛 번호 없음). */
+function diffPairs(n: number, m: number, same: (i: number, j: number) => boolean): [number | undefined, number | undefined][] {
+  const eq: boolean[][] = Array.from({ length: n }, (_, i) => Array.from({ length: m }, (_, j) => same(i, j)));
+  const L: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i]![j] = eq[i]![j] ? L[i + 1]![j + 1]! + 1 : Math.max(L[i + 1]![j]!, L[i]![j + 1]!);
+  const out: [number | undefined, number | undefined][] = [];
+  let i = 0;
+  let j = 0;
+  const gap: { old: number[]; nu: number[] } = { old: [], nu: [] };
+  const flush = () => {
+    const k = Math.min(gap.old.length, gap.nu.length);
+    for (let x = 0; x < k; x++) out.push([gap.old[x], gap.nu[x]]);
+    for (const x of gap.old.slice(k)) out.push([x, undefined]);
+    for (const x of gap.nu.slice(k)) out.push([undefined, x]);
+    gap.old = [];
+    gap.nu = [];
+  };
+  while (i < n || j < m) {
+    if (i < n && j < m && eq[i]![j]) { flush(); i++; j++; }
+    else if (j >= m || (i < n && L[i + 1]![j]! >= L[i]![j + 1]!)) gap.old.push(i++);
+    else gap.nu.push(j++);
+  }
+  flush();
+  return out;
+}
+
 /** text 파일 문장 비교: 모양(배열 길이·인자 수)이 같아야 한다. 이어진 글자열 조각은 그대로 같거나, 앞에서부터 붙인 경로가 조각마다
  *  mapText(옛 경로) = 새 경로여야 한다(조각을 나누거나 합치거나, "/"를 더하거나 빼면 붙인 경로가 달라져 실패). */
 function textSame(a: unknown, b: unknown, strOld: (s: string) => string, strNew: (s: string) => string, mapText: (s: string) => string): boolean {
@@ -521,13 +547,9 @@ const snippet = (text: string, n: AstNode) => text.slice(n.start, n.end).replace
 export function checkMoves(before: Tree, after: Tree, moves: Moves, opts: Options = {}): Result {
   const failures: string[] = [];
   const notes: string[] = [];
-  // 대응표 allow: 실패 첫 줄이 allow에 있으면 허용으로 적는다(까닭이 없거나 쓰지 않은 허용은 끝에서 실패)
-  const allowUsed = new Set<string>();
-  const fail = (m: string) => {
-    const key = m.split("\n")[0]!;
-    if (Object.hasOwn(moves.allow, key)) { allowUsed.add(key); notes.push(`허용(대응표): ${key} — ${moves.allow[key]}`); return; }
-    failures.push(m);
-  };
+  // 실패를 모두 모은 뒤 대응표 allow를 견준다: allow 한 줄은 실패 첫 줄 하나에 꼭 하나만 맞아야 그 실패를 허용한다
+  const raw: string[] = [];
+  const fail = (m: string) => { raw.push(m); };
   const B = new TreeIndex(before, "앞");
   const A = new TreeIndex(after, "뒤");
   const inScope = (p: string) => isCode(p) && SCOPE.some((s) => p.startsWith(s)) && !(TOOL_FILES as readonly string[]).includes(p);
@@ -604,25 +626,39 @@ export function checkMoves(before: Tree, after: Tree, moves: Moves, opts: Option
   for (const n of moves.new) if (before.has(n)) fail(`new의 파일이 앞 커밋에 이미 있어요: ${n}`);
 
   const mapFileFor = (I: TreeIndex, p: string) => (I === B ? mapFile(p) : p);
-  /** 부수 효과가 있는 import를 파일 안 차례대로: 이름 없는 import("side 경로"), 가져온 이름을 정의한 모듈이 부수 효과 모듈인 import("effect 모듈"). */
-  const effects = (I: TreeIndex, file: string, map: (d: string) => string, skip: (local: string) => boolean) => {
+  /** 이 파일의 import로 실제로 읽히는 부수 효과 모듈 차례. import한 모듈(입구 포함)과 그 모듈이 export … from으로 다시 내보내는 모듈을
+   *  ESM 차례(다시 내보내는 모듈 먼저, 한 번만)로 돌며 부수 효과 모듈을 "effect 경로"로, 이름 없는 import는 "side 경로"로 적는다.
+   *  값으로 쓰지 않는 import(실행 때 지워짐)와 skip한 이름만 가져오는 import는 뺀다. */
+  const effects = (I: TreeIndex, file: string, _map: (d: string) => string, skip: (local: string) => boolean) => {
     const seq: string[] = [];
+    const seen = new Set<string>([file]); // 모듈은 자기를 다시 읽지 않는다(자기를 다시 내보내는 입구를 거쳐도)
+    let used: Set<string>;
+    try { used = valueNames(I.ast(file)); } catch { used = new Set(); }
+    const reexports = (m: string) => {
+      for (const st of I.info(m).body) {
+        const live = (st.type === "ExportNamedDeclaration" && st.source && st.exportKind !== "type" && (st.specifiers as AstNode[]).some((x) => x.exportKind !== "type"))
+          || (st.type === "ExportAllDeclaration" && st.exportKind !== "type");
+        if (!live) continue;
+        const r = I.resolve(m, st.source.value);
+        if ("path" in r) visit(r.path);
+      }
+    };
+    const visit = (m: string) => {
+      if (seen.has(m) || !I.tree.has(m)) return;
+      seen.add(m);
+      reexports(m);
+      if (I.hasEffects(m)) seq.push(`effect ${mapFileFor(I, m)}`);
+    };
     for (const st of I.info(file).body) {
       if (st.type !== "ImportDeclaration" || st.importKind === "type") continue;
+      const r = I.resolve(file, st.source.value);
       if (!st.specifiers.length) {
-        const r = I.resolve(file, st.source.value);
+        if ("path" in r && !seen.has(r.path) && I.tree.has(r.path)) { seen.add(r.path); reexports(r.path); }
         seq.push(`side ${"path" in r ? mapFileFor(I, r.path) : st.source.value}`);
         continue;
       }
-      const mods = new Set<string>();
-      for (const sp of st.specifiers as AstNode[]) {
-        if (sp.importKind === "type" || skip(sp.local.name)) continue;
-        const imported = sp.type === "ImportDefaultSpecifier" ? "default" : sp.type === "ImportNamespaceSpecifier" ? "*" : nameOf(sp.imported);
-        const def = I.importedDef(file, st.source.value, imported);
-        const mod = /^(.*)#/.exec(def)?.[1];
-        if (mod && I.hasEffects(mod)) mods.add(/^(.*)#/.exec(map(def))?.[1] ?? mod);
-      }
-      if (mods.size) seq.push(`effect ${[...mods].sort().join(",")}`);
+      const live = (st.specifiers as AstNode[]).some((sp) => sp.importKind !== "type" && !skip(sp.local.name) && used.has(sp.local.name));
+      if (live && "path" in r) visit(r.path);
     }
     return seq;
   };
@@ -729,13 +765,14 @@ export function checkMoves(before: Tree, after: Tree, moves: Moves, opts: Option
     };
     const os = oi.body.filter(keep(outNames, "앞", o));
     const ns = ni.body.filter(keep(inNames, "뒤", n));
-    const len = Math.max(os.length, ns.length);
-    for (let i = 0; i < len; i++) {
-      const a = os[i];
-      const b = ns[i];
-      if (a && b && (isText ? textSame(a, b, strOld, strNew, mapText) : JSON.stringify(normalize(a, strOld)) === JSON.stringify(normalize(b, strNew)))) continue;
-      fail(`${n}${o !== n ? `(옛 ${o})` : ""}: import가 아닌 문장이 달라요(${i + 1}번째)\n  앞: ${a ? snippet(oldText, a) : "(없음)"}\n  뒤: ${b ? snippet(newText, b) : "(없음)"}`);
-      break;
+    const oj = isText ? [] : os.map((x) => JSON.stringify(normalize(x, strOld)));
+    const nj = isText ? [] : ns.map((x) => JSON.stringify(normalize(x, strNew)));
+    const same = (i: number, j: number) => (isText ? textSame(os[i], ns[j], strOld, strNew, mapText) : oj[i] === nj[j]);
+    const at = `${n}${o !== n ? `(옛 ${o})` : ""}: import가 아닌 문장이 달라요`;
+    for (const [i, j] of diffPairs(os.length, ns.length, same)) {
+      const a = i === undefined ? undefined : os[i];
+      const b = j === undefined ? undefined : ns[j];
+      fail(`${at}(${j === undefined ? `앞 ${i! + 1}` : j + 1}번째)\n  앞: ${a ? snippet(oldText, a) : "(없음)"}\n  뒤: ${b ? snippet(newText, b) : "(없음)"}`);
     }
     if (textFiles.has(n)) {
       const ol: string[] = [];
@@ -936,15 +973,25 @@ export function checkMoves(before: Tree, after: Tree, moves: Moves, opts: Option
     for (const u of [...ga.keys()].sort()) {
       for (const v of [...new Set(ga.get(u))].sort()) {
         const c = ca.get(u);
-        if (u === v || c === undefined || c !== ca.get(v) || old.has(`${u}\n${v}`)) continue;
+        if (c === undefined || c !== ca.get(v) || old.has(`${u}\n${v}`)) continue;
         fail(`실행 때 값 import 고리에 새 import가 생겼어요: ${u} → ${v}(고리: ${[...groups.get(c)!].sort().join(" · ")})`);
       }
     }
   }
 
+  const firstLine = (m: string) => m.split("\n")[0]!;
+  const hits = new Map<string, number>();
+  for (const m of raw) hits.set(firstLine(m), (hits.get(firstLine(m)) ?? 0) + 1);
+  for (const m of raw) {
+    const key = firstLine(m);
+    if (Object.hasOwn(moves.allow, key) && hits.get(key) === 1) notes.push(`허용(대응표): ${key} — ${moves.allow[key]}`);
+    else failures.push(m);
+  }
   for (const [key, why] of Object.entries(moves.allow)) {
+    const count = hits.get(key) ?? 0;
     if (!String(why ?? "").trim()) failures.push(`대응표 allow의 까닭이 비었어요: ${key}`);
-    else if (!allowUsed.has(key)) failures.push(`대응표 allow에 있는데 생기지 않은 실패예요: ${key}`);
+    else if (count === 0) failures.push(`대응표 allow에 있는데 생기지 않은 실패예요: ${key}`);
+    else if (count > 1) failures.push(`대응표 allow 한 줄이 실패 ${count}개에 맞아요: ${key}`);
   }
   return { failures, notes };
 }

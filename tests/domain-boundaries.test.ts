@@ -256,6 +256,16 @@ describe("도메인 경계: 예외 목록(줄어들기만 함)", () => {
     ]);
   });
 
+  it("같은 도메인 입구로 바꾼 줄은 옛 줄이 없어졌을 때만 같은 줄로 본다(1:1)", () => {
+    const old = "direction src/world/a.ts -> src/act/b.ts";
+    const entry = "direction src/world/a.ts -> src/act/index.ts";
+    expect(unbasedKeys([old, entry], { keys: [old], moves: [] })).toEqual([entry]);
+    expect(unbasedKeys([entry], { keys: [old], moves: [] })).toEqual([]);
+    const two = { keys: [old, "direction src/world/a.ts -> src/act/c.ts"], moves: [] };
+    expect(unbasedKeys([entry], two)).toEqual([]);
+    expect(unbasedKeys([entry, "direction src/world/b.ts -> src/act/index.ts"], two)).toEqual(["direction src/world/b.ts -> src/act/index.ts"]);
+  });
+
   it("기준은 git으로 읽는다: 기준 커밋의 예외 목록과, 그 뒤 새로 생긴 대응표의 files", () => {
     const root = mkdtempSync(join(tmpdir(), "domains-base-"));
     roots.push(root);
