@@ -22,7 +22,7 @@ import type { PlaceNames, LayoutEditor } from "../layout/index.js";
 import { Policy } from "../agent/index.js";
 import { createProvider } from "../agent/index.js";
 import { deviceViews } from "../agent/index.js";
-import { contactsPath, loadContacts, serviceRecord, serviceSay } from "../agent/index.js";
+import { ServiceRetryStore, contactsPath, loadContacts, serviceRecord, serviceRetryPath, serviceSay } from "../agent/index.js";
 import { callServiceFrom } from "../infer/call-service.js";
 import { PamClient, ThoughtWriter, lastStoredThoughts, storeThought, thoughtFeed, type ThoughtFeed } from "../brain/index.js";
 import type { BrainLog, ReadyView, SeenEvent } from "../contract/events.js";
@@ -241,7 +241,9 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       serviceSaid = { text, atMs: Date.now() };
       speak();
     };
-    const agent = new Agent({ hub: signals, policy, rooms: twin.rooms, provider, layout, keepHeard, service, onService, contacts });
+    // 확인 불가로 끝난 연락의 id(접수가 확인될 때까지 같은 내용은 같은 id로 다시 보낸다): runtime/homes/<집>/service-retry.json, 다시 띄워도 남는다
+    const retries = new ServiceRetryStore(serviceRetryPath(runtimeDir, home.id));
+    const agent = new Agent({ hub: signals, policy, rooms: twin.rooms, provider, layout, keepHeard, service, onService, contacts, retries });
     // 에이전트 계획 모드(src/agent/planner.ts): PAM이 고른 행동 하나를 단계 계획으로. 말 요청 에이전트와 같은 공급자
     const planner = new Planner({ provider });
     // 에이전트 관찰 모드(src/agent/observer.ts): 잘 못 볼 때 가까이 보기·사람 부탁·기다리기 중 하나를 고른다. 말 요청·계획 모드와 같은 공급자

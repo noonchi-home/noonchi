@@ -3,8 +3,10 @@
 // 승인 대기는 위험 목록뿐이라(src/agent/policy.ts) 답은 둘 다 이번만이다: 승인이면 실행하고, 거절이면 실행하지 않는다. 둘 다 기억하지 않아 다음에 또 묻는다.
 // 늘 듣는 실제 폰의 말(heard)로는 승인 대기에 답하지 않는다(answerAll 없음): 실제 폰 서버(src/server/home.ts)가 말 전체가 승인·거절 답이고
 // 말할 때 보인 대기 token이 하나일 때만 answerToken으로 그 대기 하나에 답한다. 글로 한 말은 「승인」「응」「아니」로 대기 전부에 답한다.
-// 외부 연락(call_service)도 같은 승인 대기 길로 묻는다: 받는 이는 등록부(contacts)에서 정하고, 승인이면 외부 연락 통로(service, CALL_SERVICE_URL)로 보내고,
-// 통로가 없으면 부르지 않고 「연결 없음」. 보낸 뒤 답이 없어 확인 불가면, SERVICE_RETRY_MS 안에 같은 종류·가전으로 다시 승인된 연락은 같은 id로 보낸다(전화 서비스가 같은 id를 한 번만 처리).
+// 외부 연락(call_service)도 같은 승인 대기 길로 묻는다: 받는 이는 등록부(contacts)에서 정하고(등록이 없으면 묻지 않고 「…연락처가 등록되지 않았어요.」),
+// 승인이면 외부 연락 통로(service, CALL_SERVICE_URL)로 보내고, 통로가 없으면 부르지 않고 「연결 없음」.
+// 보낸 뒤 답이 없어 확인 불가면, 접수(2xx)가 확인될 때까지 같은 내용으로 다시 승인된 연락은 같은 id로 보낸다(다시 보내기 기억 retries, 전화 서비스가 같은 id를 한 번만 처리).
+// /events로 내보내는 사본은 KEEP_HEARD_TEXT가 꺼져 있으면 외부 연락의 받는 이·보낼 내용을 가린다(실제 폰이 받는 답·대기 목록은 그대로).
 // 결과(보냄·거절·연결 없음·실패·확인 불가)는 onService로 알린다(서버가 기록 DB·대시보드 말풍선 카드에 남긴다).
 
 import { randomUUID } from "node:crypto";
@@ -25,10 +27,10 @@ import { headWithin } from "../shared/cut.js";
 import type { ServiceCall, ServiceOutcome, ServiceResult } from "../contract/service.js";
 import type { CallServiceSent } from "../infer/call-service.js";
 import type { PendingService } from "./policy.js";
-import { CALL_SERVICE, DEFAULT_CONTACTS, SERVICE_KINDS, SERVICE_UNCONNECTED, serviceArgs, serviceCancelled, serviceKey, serviceReply, type ServiceContacts } from "./service.js";
-
-/** 확인 불가 뒤 같은 종류·가전 연락을 같은 id로 다시 보내는 기간. */
-export const SERVICE_RETRY_MS = 30 * 60 * 1000;
+import {
+  CALL_SERVICE, SERVICE_KINDS, SERVICE_MISSING, SERVICE_UNCONNECTED, ServiceRetryStore, serviceArgs, serviceCancelled, serviceReply, serviceSecrets,
+  type ServiceContacts, type ServiceRetryBook,
+} from "./service.js";
 
 export type { AgentAction, AgentEvent, ChatResult, ConfirmResult, PendingView } from "../contract/events.js";
 
@@ -111,8 +113,10 @@ export interface AgentOptions {
   service?: ServiceLine | null;
   /** 외부 연락 결과(보냄·거절·연결 없음·실패·확인 불가)마다 부른다. */
   onService?: (r: ServiceResult) => void;
-  /** 외부 연락 받는 이 등록부(src/agent/service.ts loadContacts). 없으면 종류 이름(AS센터·보호자). */
+  /** 외부 연락 받는 이 등록부(src/agent/service.ts loadContacts). 없는 종류는 연락하지 않는다. */
   contacts?: ServiceContacts;
+  /** 외부 연락 다시 보내기 기억(src/agent/service.ts ServiceRetryStore, 집마다 파일). 없으면 이 프로세스 안에서만. */
+  retries?: ServiceRetryBook;
 }
 
 /** 승인한 외부 연락을 보내는 곳(CallServiceClient). */
@@ -126,6 +130,8 @@ interface Session {
   queue: Promise<unknown>;
   /** 지금 차례가 들은 말이고 가려야 하면 그 말(이벤트에 싣지 않는다). */
   hide: string | null;
+  /** 지금 차례에 승인을 물은 외부 연락의 받는 이·보낼 내용(가려야 하면 이벤트 답 글에서 뺀다). */
+  secrets: string[];
 }
 
 const AFFIRMATIVE = /^(응|어|엉|네|넹|예|그래|좋아|확인|승인|ㅇㅇ|ㅇㅋ|오케이|ok|okay|yes|진행)(요|해|해요|해줘|해주세요|할게|합니다|이요)?[\s.!~,]*(열어\s*줘|해\s*줘|진행해\s*줘|부탁해)?[\s.!~]*$/i;
@@ -141,6 +147,12 @@ function hideIn<T>(value: T, said: string): T {
   if (Array.isArray(value)) return value.map((v) => hideIn(v, said)) as T;
   if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, hideIn(v, said)])) as T;
   return value;
+}
+
+/** 글에서 가릴 글들을 뺀 사본(긴 것부터). */
+function hideTexts(text: string, hidden: readonly string[]): string {
+  const list = [...new Set(hidden.filter((h) => h.trim()))].sort((a, b) => b.length - a.length);
+  return list.length ? redactSaid(text, list) : text;
 }
 
 export function isAffirmative(text: string): boolean {
@@ -185,8 +197,7 @@ export class Agent {
   private readonly service: ServiceLine | null;
   private readonly onService?: (r: ServiceResult) => void;
   private readonly contacts: ServiceContacts;
-  /** 확인 불가로 끝난 연락: 열쇠(종류·가전) → 그 요청 id와 때. 다시 승인되면 같은 id로 보낸다. */
-  private readonly unsure = new Map<string, { id: string; atMs: number }>();
+  private readonly retries: ServiceRetryBook;
 
   constructor(opts: AgentOptions) {
     this.hub = opts.hub;
@@ -195,7 +206,8 @@ export class Agent {
     this.rooms = opts.rooms;
     this.service = opts.service ?? null;
     this.onService = opts.onService;
-    this.contacts = opts.contacts ?? DEFAULT_CONTACTS;
+    this.contacts = opts.contacts ?? {};
+    this.retries = opts.retries ?? new ServiceRetryStore(null);
     this.maxRounds = opts.maxToolRounds ?? 6;
     this.maxSessions = opts.maxSessions ?? 200;
     this.keepHeard = opts.keepHeard === true;
@@ -287,6 +299,7 @@ export class Agent {
     // 늘 듣는 실제 폰이 들은 말은 이벤트(/events 방송)에 싣지 않는다: 돌려주는 답(폰이 읽는 글)은 그대로
     const said = opts.heard && !this.keepHeard && message.trim() ? message.trim() : null;
     s.hide = said;
+    s.secrets = [];
     let reply: string;
     const waiting = s.pending.size > 0;
     // 들은 말로는 대기 전부에 답하지 않는다(실제 폰 서버가 말할 때 보인 token 하나에만 answerToken으로 답한다)
@@ -306,14 +319,40 @@ export class Agent {
         const calling = views.find((p) => p.service);
         reply = waiting ? askApproval(waiting.reason) : calling ? calling.reason : RISKY_REPLY;
       }
+      // 외부 연락 받는 이가 등록되지 않아 막았으면 정한 답(「보호자 연락처가 등록되지 않았어요.」)
+      const missing = actions.find((a) => a.tool === CALL_SERVICE && a.error !== undefined && SERVICE_MISSING.has(a.error));
+      if (missing) reply = missing.error!;
     }
     const pendingConfirmations = this.pending(s.id);
     s.hide = null;
+    // 이벤트 사본: 들은 말과(가려야 하면) 이번 차례 외부 연락의 받는 이·보낼 내용을 뺀다
+    const secrets = this.keepHeard ? [] : s.secrets;
     this.emit({
-      event: "reply", sessionId: s.id, message: said ? HEARD_MARK : message, reply: said ? redactSaid(reply, [said]) : reply,
-      actions: said ? actions.map((a) => this.shown(a, said)) : actions, pendingConfirmations,
+      event: "reply", sessionId: s.id, message: said ? HEARD_MARK : hideTexts(message, secrets), reply: hideTexts(reply, [...(said ? [said] : []), ...secrets]),
+      actions: actions.map((a) => this.outward(a, said)), pendingConfirmations: pendingConfirmations.map((p) => this.outwardPending(p)),
     });
     return { sessionId: s.id, reply, actions, pendingConfirmations, provider: this.provider.name };
+  }
+
+  /** 이벤트로 내보내는 action: 외부 연락이면 받는 이·보낼 내용을 가리고(publicAction), 들은 말 차례면 그 말을 통째로 가린 사본. */
+  private outward(a: AgentAction, said: string | null): AgentAction {
+    const pub = this.publicAction(a);
+    return said ? this.shown(pub, said) : pub;
+  }
+
+  /** 외부 연락 action의 이벤트 사본(KEEP_HEARD_TEXT가 꺼져 있을 때): 종류·가전 id만 두고 받는 이·보낼 내용·승인 질문·모델 까닭을 가린다. 그 밖은 그대로. */
+  private publicAction(a: AgentAction): AgentAction {
+    if (this.keepHeard || a.tool !== CALL_SERVICE) return a;
+    return {
+      ...a, args: { kind: a.args.kind, device_id: a.args.device_id ?? null, detail: HEARD_MARK },
+      message: a.needsConfirmation ? undefined : a.message, reason: a.reason === undefined ? undefined : HEARD_MARK,
+      observation: a.observation === undefined ? undefined : a.needsConfirmation ? `승인 대기 · ${HEARD_MARK}` : a.ok ? a.observation : HEARD_MARK,
+    };
+  }
+
+  /** 승인 대기의 이벤트 사본: 외부 연락이면(KEEP_HEARD_TEXT가 꺼져 있을 때) 승인 질문을 가린다. 실제 폰이 받는 대기 목록은 pending()이라 그대로다. */
+  private outwardPending(p: PendingView): PendingView {
+    return p.service && !this.keepHeard ? { ...p, reason: HEARD_MARK } : p;
   }
 
   /** 이벤트로 내보내는 action: 들은 말을 통째로 가린 사본. 까닭은 자르기 전 글을 가린 뒤 자른다(인용 중간이 잘려 원문 일부가 남지 않게). */
@@ -326,7 +365,14 @@ export class Agent {
   private async runModel(s: Session, message: string, actions: AgentAction[]): Promise<string> {
     const backend: ToolBackend = {
       ...localBackend(this.hub, this.policy, this.rooms, this.layout),
-      service: { contacts: this.contacts, ask: (call) => this.policy.askService(call) },
+      service: {
+        contacts: this.contacts,
+        ask: (call) => {
+          const p = this.policy.askService(call);
+          s.secrets.push(...serviceSecrets(call));
+          return p;
+        },
+      },
     };
     const system = this.systemPrompt();
     try {
@@ -373,12 +419,12 @@ export class Agent {
     if (typeof reason === "string" && reason.trim()) this.rawReason.set(action, reason.trim());
     actions.push(action);
     // 들은 말 차례면 내보내는 action은 통째로 가린다(인자·결과 글·관찰·까닭). 실행한 인자와 돌려주는 action은 그대로
-    this.emit({ event: "action", sessionId: s.id, action: s.hide ? this.shown(action, s.hide) : action });
+    this.emit({ event: "action", sessionId: s.id, action: this.outward(action, s.hide) });
     let shown: ToolResult = result;
     if (result.needsConfirmation) {
       s.pending.add(result.needsConfirmation.token);
       const p = this.pending().find((x) => x.token === result.needsConfirmation!.token);
-      if (p) this.emit({ event: "pending", sessionId: s.id, pending: p });
+      if (p) this.emit({ event: "pending", sessionId: s.id, pending: this.outwardPending(p) });
       const { needsConfirmation, ...rest } = result;
       shown = {
         ...rest,
@@ -480,17 +526,14 @@ export class Agent {
   }
 
   /** 승인한 외부 연락: 통로가 있으면 보내고(2xx 보냄, 답 없음·끊김 확인 불가, 그 밖 실패), 없으면 부르지 않는다(연결 없음). 결과를 알리고 답한다.
-   *  id는 새 값이고, 같은 종류·가전의 앞 연락이 SERVICE_RETRY_MS 안에 확인 불가로 끝났으면 그 id다(답을 받으면 잊는다). */
+   *  id는 새 값이고, 같은 내용의 앞 연락이 확인 불가로 남아 있으면 그 id다. 접수(2xx)가 확인돼야 잊는다(닿지 못함·2xx 아닌 답으로는 잊지 않는다). */
   private async sendService(p: PendingService): Promise<ConfirmResult> {
-    const key = serviceKey(p.call);
-    const now = Date.now();
-    const prev = this.unsure.get(key);
-    const id = prev && now - prev.atMs <= SERVICE_RETRY_MS ? prev.id : randomUUID();
-    const at = new Date(now).toISOString();
+    const id = this.retries.idFor(p.call) ?? randomUUID();
+    const at = new Date().toISOString();
     const sent = this.service ? await this.service.send(p.call, { id, approvedAt: at }) : null;
     const outcome: Exclude<ServiceOutcome, "refused"> = !sent ? "unconnected" : sent.ok ? "sent" : sent.unknown ? "unknown" : "failed";
-    if (outcome === "unknown") this.unsure.set(key, { id, atMs: now });
-    else if (sent) this.unsure.delete(key);
+    if (outcome === "unknown") this.retries.unsure(p.call, id);
+    else if (outcome === "sent") this.retries.settled(p.call);
     const error = !sent ? SERVICE_UNCONNECTED : sent.ok ? undefined : sent.error;
     const reply = serviceReply(p.call.kind, outcome);
     this.serviceDone(p.call, outcome, id, error);
@@ -531,7 +574,7 @@ export class Agent {
         const oldest = [...this.sessions.values()].sort((a, b) => a.lastUsed - b.lastUsed)[0];
         if (oldest) this.sessions.delete(oldest.id);
       }
-      s = { id: key, state: this.provider.createState(), pending: new Set(), lastUsed: Date.now(), queue: Promise.resolve(), hide: null };
+      s = { id: key, state: this.provider.createState(), pending: new Set(), lastUsed: Date.now(), queue: Promise.resolve(), hide: null, secrets: [] };
       this.sessions.set(key, s);
     }
     s.lastUsed = Date.now();

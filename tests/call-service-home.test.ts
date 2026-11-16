@@ -1,6 +1,6 @@
 // 서버의 외부 연락 연결(src/server/home.ts): 실제 폰 말 「세탁기 AS 불러 줘」 → 에이전트 call_service → 실제 폰 승인 질문 → 답 →
 // 전화 서비스(CALL_SERVICE_URL, 가짜 HTTP 서버) → 실제 폰 답·대시보드 말풍선 카드·기록 DB service 줄. 주소가 없으면 부르지 않고 연결 없음으로 남긴다.
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -52,9 +52,8 @@ async function listen(url: string) {
   return { ws, messages, waitFor };
 }
 
-/** 원룸(세탁기 washer_1) 서버와 대시보드·실제 폰 소켓. 폰이 「세탁기 AS 불러 줘」라고 말하고 승인 질문을 받을 때까지.
- *  contacts: 서버에 등록한 받는 이(RUNTIME_DIR/homes/oneroom/contacts.json). ask: 실제 폰 승인 줄(받는 이·보낼 내용). */
-async function asked(extra: Record<string, string>, contacts?: unknown, ask = "탈수할 때 멈춤 · 에러 UE. AS센터에 전화할까요?") {
+/** 원룸 서버를 띄우고 대시보드·실제 폰 소켓을 연다. contacts: 서버에 등록한 받는 이(RUNTIME_DIR/homes/oneroom/contacts.json, undefined면 파일 없음). */
+async function home(extra: Record<string, string>, contacts?: unknown) {
   const runtime = mkdtempSync(join(tmpdir(), "rt-svc-"));
   if (contacts !== undefined) {
     mkdirSync(join(runtime, "homes", "oneroom"), { recursive: true });
@@ -67,10 +66,16 @@ async function asked(extra: Record<string, string>, contacts?: unknown, ask = "�
   const dash = await listen(`${srv.url.replace(/^http/, "ws")}/events`);
   const phoneUrl = new URL(srv.phoneUrls[0]!);
   const phone = await listen(`ws://${phoneUrl.host}/phone/events`);
+  return { runtime, dash, phone };
+}
+
+/** 등록한 AS센터(기본 「AS센터」)로 폰이 「세탁기 AS 불러 줘」라고 말하고 승인 질문을 받을 때까지. ask: 실제 폰 승인 줄(받는 이·보낼 내용). */
+async function asked(extra: Record<string, string>, contacts: unknown = { as_center: { name: "AS센터", phone: "1588-0000" } }, ask = "탈수할 때 멈춤 · 에러 UE. AS센터에 전화할까요?") {
+  const { runtime, dash, phone } = await home(extra, contacts);
   phone.ws.send(JSON.stringify({ type: "say", text: "세탁기 AS 불러 줘" }));
   const reply = await phone.waitFor((m) => m.type === "reply" && Array.isArray(m.pending) && m.pending.length > 0, "승인 질문");
   expect(reply.pending).toEqual([{ token: expect.any(String), deviceLabel: "세탁기", reason: ask, choices: BOTH }]);
-  return { dash, phone, token: reply.pending[0].token as string };
+  return { runtime, dash, phone, token: reply.pending[0].token as string };
 }
 
 describe("서버: 실제 폰 말 → 외부 연락 승인 → 전화 서비스 → 기록 DB·말풍선 카드", () => {
@@ -91,13 +96,37 @@ describe("서버: 실제 폰 말 → 외부 연락 승인 → 전화 서비스 �
       data: { id: body.id, kind: "as_center", outcome: "sent", device: { id: "washer_1", label: "세탁기", kind: "washer" }, detail: HEARD_MARK },
     })]);
     expect(JSON.stringify(rows)).not.toMatch(/탈수|UE|1544|LG전자/);
+    // 대시보드 /events 사본에는 받는 이·보낼 내용이 없다(실제 폰 승인 질문에는 있다)
+    expect(JSON.stringify(dash.messages.filter((m) => m.type === "agent"))).not.toMatch(/탈수|UE|1544|LG전자/);
+    expect(dash.messages.some((m) => m.type === "agent" && m.event === "pending")).toBe(true);
+  }, SLOW);
+
+  it("연락처를 등록하지 않았으면 묻지도 보내지도 않고 실제 폰 답이 「AS센터 연락처가 등록되지 않았어요.」다", async () => {
+    fake = await startFakeCallService();
+    const { phone } = await home({ CALL_SERVICE_URL: fake.url });
+    phone.ws.send(JSON.stringify({ type: "say", text: "세탁기 AS 불러 줘" }));
+    const reply = await phone.waitFor((m) => m.type === "reply" && m.text !== "", "폰 답");
+    expect(reply).toMatchObject({ text: "AS센터 연락처가 등록되지 않았어요.", pending: [] });
+    expect(fake.requests).toEqual([]);
+    expect(srv!.history.list({ kinds: ["service"] })).toEqual([]);
+  }, SLOW);
+
+  it("보낸 뒤 답이 없어 확인 불가인 연락은 집 폴더(RUNTIME_DIR/homes/oneroom/service-retry.json)에 남는다", async () => {
+    fake = await startFakeCallService();
+    fake.answer = "drop";
+    const { runtime, phone, token } = await asked({ CALL_SERVICE_URL: fake.url });
+    phone.ws.send(JSON.stringify({ type: "confirm", token, choice: "approve" }));
+    await phone.waitFor((m) => m.type === "reply" && m.text === "AS센터 전화 요청이 접수됐는지 확인하지 못했어요.", "폰 답");
+    const saved = readFileSync(join(runtime, "homes", "oneroom", "service-retry.json"), "utf8");
+    expect(saved).toContain(fake.requests[0]!.body.id);
+    expect(saved).not.toMatch(/탈수|UE|1588/);
   }, SLOW);
 
   it("KEEP_HEARD_TEXT=1이면 기록 DB service 줄에 받는 이·내용을 그대로 남긴다", async () => {
     const { phone, token } = await asked({ KEEP_HEARD_TEXT: "1" });
     phone.ws.send(JSON.stringify({ type: "confirm", token, choice: "approve" }));
     await phone.waitFor((m) => m.type === "reply" && m.text === "전화 서비스가 아직 연결되지 않았어요.", "폰 답");
-    expect(srv!.history.list({ kinds: ["service"] })[0]!.data).toMatchObject({ outcome: "unconnected", to: { name: "AS센터", phone: null }, problem: "탈수할 때 멈춤", error_code: "UE" });
+    expect(srv!.history.list({ kinds: ["service"] })[0]!.data).toMatchObject({ outcome: "unconnected", to: { name: "AS센터", phone: "1588-0000" }, problem: "탈수할 때 멈춤", error_code: "UE" });
   }, SLOW);
 
   it("CALL_SERVICE_URL이 없으면 승인해도 부르지 않고, 실제 폰 답·말풍선 카드가 「전화 서비스가 아직 연결되지 않았어요.」, 기록 DB에 연결 없음", async () => {

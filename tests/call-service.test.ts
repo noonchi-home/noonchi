@@ -1,17 +1,18 @@
 // 외부 연락(전화 에이전트 자리): 에이전트 도구 call_service(AS센터 전화·보호자 연락)는 늘 실제 폰으로 승인을 먼저 묻고(답은 이번만),
 // 승인되면 외부 API 통로(src/infer/call-service.ts)로 CALL_SERVICE_URL에 JSON을 보낸다. 주소가 없으면 부르지 않고 「전화 서비스가 아직 연결되지 않았어요.」.
-// 받는 이는 서버에 등록한 연락처(runtime/homes/<집>/contacts.json, 없으면 종류 이름)뿐이고 모델이 정하지 않는다. 보낼 내용은 승인 질문에 그대로 보인다.
-// 접수했는지 모르는 실패(답 없음·연결 끊김)는 확인 불가이고, 다시 승인하면 같은 id로 보낸다.
+// 받는 이는 서버에 등록한 연락처(runtime/homes/<집>/contacts.json)뿐이다. 등록이 없으면 묻지도 보내지도 않는다. 모델은 받는 이를 정하지 못한다.
+// 보내는 칸은 승인 질문에 보이는 칸뿐이다(AS센터: 가전·고장 설명·에러 코드, 보호자: 사람 상태). 대시보드로 가는 사본은 KEEP_HEARD_TEXT가 꺼져 있으면 그 내용을 가린다.
+// 접수했는지 모르는 실패(답 없음·연결 끊김)는 확인 불가이고, 접수가 확인될 때까지 같은 내용을 다시 승인하면 같은 id로 보낸다(집마다 파일에 남는다).
 // 결과(보냄·거절·연결 없음·실패·확인 불가)는 onService로 알린다(서버가 기록 DB·말풍선 카드에 남긴다, tests/call-service-home.test.ts).
 // 모델 자리는 가짜 OpenAI 호환 서버, 전화 서비스 자리는 가짜 HTTP 서버(tests/helpers/call-service.ts)다.
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { Agent, type AgentEvent } from "../src/agent/agent.js";
+import { Agent, type AgentEvent, type ServiceLine } from "../src/agent/agent.js";
 import { ApprovalStore } from "../src/agent/approval.js";
 import { Policy } from "../src/agent/policy.js";
-import { DEFAULT_CONTACTS, contactsPath, loadContacts, serviceRecord, type ServiceContacts } from "../src/agent/service.js";
+import { SERVICE_RETRY_MS, ServiceRetryStore, contactsPath, loadContacts, serviceRecord, serviceRetryPath, type ServiceContacts } from "../src/agent/service.js";
 import { AGENT_TOOLS, MCP_TOOLS } from "../src/agent/tools.js";
 import type { ServiceCall, ServiceResult } from "../src/contract/service.js";
 import { CallServiceClient, callServiceBody, callServiceFrom } from "../src/infer/call-service.js";
@@ -28,6 +29,8 @@ const WASHER_CALL: ServiceCall = {
   kind: "as_center", to: AS, device: { id: "washer_1", label: "세탁기", kind: "washer" }, problem: "탈수할 때 멈춤", errorCode: "UE", person: null,
 };
 const META = { id: "c1", approvedAt: "2026-11-17T01:00:00.000Z" };
+/** 대시보드로 가는 사본에 나오면 안 되는 내용(받는 이·고장 설명·에러 코드·사람 상태). */
+const SECRET = /탈수|UE|LG전자|1544|딸|010-|넘어진/;
 
 describe("외부 연락 통로(src/infer/call-service.ts)", () => {
   it("CALL_SERVICE_URL이 없으면 통로가 없고, http(s) 주소가 아니면 시작하지 않는다", () => {
@@ -68,7 +71,7 @@ describe("외부 연락 통로(src/infer/call-service.ts)", () => {
     expect(gone).not.toHaveProperty("unknown");
   });
 
-  it("docs/reference.md 「외부 연락」 요청 예시는 서버가 보내는 본문과 칸·값 모양이 같다(전화 서비스가 그대로 받아 구현한다)", () => {
+  it("docs/reference.md 「외부 연락」 예시: 등록부와, 서버가 보내는 본문과 칸·값 모양이 같은 요청 둘(전화 서비스가 그대로 받아 구현한다)", () => {
     const md = readFileSync(new URL("../docs/reference.md", import.meta.url), "utf8");
     const section = md.slice(md.indexOf("### 외부 연락"));
     const blocks = [...section.matchAll(/```json\r?\n([\s\S]*?)```/g)].slice(0, 3).map((m) => JSON.parse(m[1]!) as Record<string, unknown>);
@@ -93,17 +96,16 @@ function writeTemp(text: string): string {
 }
 
 describe("받는 이 등록부(runtime/homes/<집>/contacts.json)", () => {
-  it("파일이 없으면 종류 이름(AS센터·보호자)에 번호 없음, 있으면 그 값, 깨졌거나 모양이 틀린 칸은 종류 이름으로 두고 까닭을 알린다", () => {
+  it("파일이 없으면 등록된 받는 이가 없다. 있으면 그 값, 깨졌거나 모양이 틀린 칸은 등록이 없는 것으로 두고 까닭을 알린다(일반 이름으로 채우지 않는다)", () => {
     expect(contactsPath("rt", "oneroom")).toBe(join("rt", "homes", "oneroom", "contacts.json"));
-    expect(DEFAULT_CONTACTS).toEqual({ as_center: { name: "AS센터", phone: null }, guardian: { name: "보호자", phone: null } });
-    expect(loadContacts(join(mkdtempSync(join(tmpdir(), "svc-none-")), "contacts.json"))).toEqual({ contacts: DEFAULT_CONTACTS });
+    expect(loadContacts(join(mkdtempSync(join(tmpdir(), "svc-none-")), "contacts.json"))).toEqual({ contacts: {} });
     expect(loadContacts(writeTemp(JSON.stringify(CONTACTS)))).toEqual({ contacts: CONTACTS });
-    expect(loadContacts(writeTemp(JSON.stringify({ guardian: { name: "딸" } })))).toEqual({ contacts: { as_center: DEFAULT_CONTACTS.as_center, guardian: { name: "딸", phone: null } } });
+    expect(loadContacts(writeTemp(JSON.stringify({ guardian: { name: "딸" } })))).toEqual({ contacts: { guardian: { name: "딸", phone: null } } });
     const broken = loadContacts(writeTemp("{ 딸"));
-    expect(broken.contacts).toEqual(DEFAULT_CONTACTS);
+    expect(broken.contacts).toEqual({});
     expect(broken.warning).toMatch(/contacts\.json/);
     const wrong = loadContacts(writeTemp(JSON.stringify({ as_center: { name: "" }, guardian: { name: "딸", phone: "전화해" } })));
-    expect(wrong.contacts).toEqual(DEFAULT_CONTACTS);
+    expect(wrong.contacts).toEqual({});
     expect(wrong.warning).toMatch(/as_center.*guardian/);
   });
 });
@@ -126,6 +128,30 @@ describe("기록 DB service 줄(serviceRecord): 들은 말·개인정보 가림"
   });
 });
 
+describe("다시 보내기 기억(runtime/homes/<집>/service-retry.json)", () => {
+  it("확인 불가인 연락은 접수가 확인될 때까지 같은 내용이면 같은 id. 내용(고장 설명·에러 코드·사람 상태·받는 이)이 다르면 다른 연락이다. 파일에 남아 다시 띄워도 같고, 내용 글은 파일에 쓰지 않는다. 30분이 지나면 잊는다", () => {
+    let now = 1_000;
+    const path = serviceRetryPath(mkdtempSync(join(tmpdir(), "svc-retry-")), "oneroom");
+    expect(path).toMatch(/homes[\\/]oneroom[\\/]service-retry\.json$/);
+    const a = new ServiceRetryStore(path, () => now);
+    expect(a.idFor(WASHER_CALL)).toBeNull();
+    a.unsure(WASHER_CALL, "c1");
+    expect(a.idFor(WASHER_CALL)).toBe("c1");
+    expect(a.idFor({ ...WASHER_CALL, problem: "문이 안 열림" })).toBeNull();
+    expect(a.idFor({ ...WASHER_CALL, errorCode: "OE" })).toBeNull();
+    const fall = { kind: "guardian", to: DAUGHTER, device: null, problem: null, errorCode: null, person: "거실에서 넘어짐" } as const;
+    a.unsure(fall, "g1");
+    expect(a.idFor({ ...fall, person: "약을 먹지 않음" })).toBeNull();
+    expect(readFileSync(path, "utf8")).not.toMatch(SECRET);
+    const b = new ServiceRetryStore(path, () => now);
+    expect([b.idFor(WASHER_CALL), b.idFor(fall)]).toEqual(["c1", "g1"]);
+    b.settled(WASHER_CALL);
+    expect(new ServiceRetryStore(path, () => now).idFor(WASHER_CALL)).toBeNull();
+    now += SERVICE_RETRY_MS + 1;
+    expect(new ServiceRetryStore(path, () => now).idFor(fall)).toBeNull();
+  });
+});
+
 describe("승인 정책: 외부 연락 대기", () => {
   it("외부 연락은 늘 묻고 승인을 기억하지 않는다. 대기는 가전 승인과 같은 시간 제한(5분)이고 실제 폰에서 가린 동안(pause)은 멈춘다", () => {
     let now = 0;
@@ -143,7 +169,7 @@ describe("승인 정책: 외부 연락 대기", () => {
     now += 5 * 60_000;
     expect(policy.services()).toEqual([]);
     expect(policy.takeService(a.token)).toBeUndefined();
-    const b = policy.askService({ ...WASHER_CALL, kind: "guardian", to: DAUGHTER, device: null, problem: null, errorCode: null, person: "넘어짐." });
+    const b = policy.askService({ kind: "guardian", to: DAUGHTER, device: null, problem: null, errorCode: null, person: "넘어짐." });
     expect(b.reason).toBe("넘어짐. 딸에게 연락할까요?");
     expect(policy.takeService(b.token)?.call.kind).toBe("guardian");
     expect(policy.takeService(b.token)).toBeUndefined();
@@ -159,6 +185,10 @@ describe("Agent + call_service(가짜 모델·가짜 전화 서비스)", () => {
         [["call_service", { kind: "as_center", device_id: "washer_1", problem: "탈수할 때 멈춤", error_code: "UE", reason: "세탁기가 고장 나 AS센터 전화를 부탁해서" }]],
         "AS센터에 전화할지 폰에서 골라 주세요.",
       ],
+      "세탁기 문이 안 열려 AS 불러 줘": [
+        [["call_service", { kind: "as_center", device_id: "washer_1", problem: "문이 안 열림", reason: "세탁기 문 고장으로 AS센터 전화를 부탁해서" }]],
+        "AS센터에 전화할지 폰에서 골라 주세요.",
+      ],
       "보호자에게 연락해 줘": [
         [["call_service", { kind: "guardian", person: "거실에서 넘어진 뒤 일어나지 못함", reason: "보호자 연락을 부탁해서" }]],
         "보호자에게 연락할지 폰에서 골라 주세요.",
@@ -170,6 +200,8 @@ describe("Agent + call_service(가짜 모델·가짜 전화 서비스)", () => {
       "AS센터에 전화해 줘": [[["call_service", { kind: "as_center", reason: "AS센터 전화를 부탁해서" }]], "어느 가전이 고장 났나요?"],
       "보호자 불러 줘": [[["call_service", { kind: "guardian", reason: "보호자 연락을 부탁해서" }]], "어떤 상황인지 알려 주세요."],
       "인덕션 AS 불러 줘": [[["call_service", { kind: "as_center", problem: "인덕션이 꺼져 있어요. 전원 버튼을 눌러 주세요", reason: "AS센터 전화를 부탁해서" }]], "확인했어요."],
+      "세탁기 AS에 엄마 상태도 알려 줘": [[["call_service", { kind: "as_center", device_id: "washer_1", problem: "탈수할 때 멈춤", person: "엄마가 어지러워함", reason: "AS센터 전화를 부탁해서" }]], "확인했어요."],
+      "보호자에게 세탁기 고장도 알려 줘": [[["call_service", { kind: "guardian", person: "도움이 필요함", device_id: "washer_1", problem: "탈수할 때 멈춤", error_code: "UE", reason: "보호자 연락을 부탁해서" }]], "확인했어요."],
       "전자레인지가 안 돼서 AS 불러 줘": [
         [["call_service", { kind: "as_center", device_id: "microwave_1", problem: "데워지지 않음", reason: "전자레인지 고장으로 AS센터 전화를 부탁해서" }]],
         "전자레인지 AS센터에 전화할지 골라 주세요.",
@@ -178,13 +210,16 @@ describe("Agent + call_service(가짜 모델·가짜 전화 서비스)", () => {
   });
   afterAll(async () => { await llm?.close(); });
 
-  function serviceAgent(service: CallServiceClient | null, contacts: ServiceContacts = CONTACTS) {
+  function serviceAgent(service: ServiceLine | null, o: { contacts?: ServiceContacts; keepHeard?: boolean; retries?: ServiceRetryStore } = {}) {
     const { hub } = makeHome();
     const approvals = new ApprovalStore(join(mkdtempSync(join(tmpdir(), "svc-agent-")), "approvals.json"), () => "t");
     const policy = new Policy({ approvals });
     const results: ServiceResult[] = [];
     const events: AgentEvent[] = [];
-    const agent = new Agent({ hub, policy, rooms: ROOMS, provider: llm.provider(), service, contacts, onService: (r) => results.push(r), onEvent: (e) => events.push(e) });
+    const agent = new Agent({
+      hub, policy, rooms: ROOMS, provider: llm.provider(), service, contacts: o.contacts ?? CONTACTS, keepHeard: o.keepHeard, retries: o.retries,
+      onService: (r) => results.push(r), onEvent: (e) => events.push(e),
+    });
     return { agent, policy, approvals, results, events };
   }
   const sentFrom = () => {
@@ -196,7 +231,7 @@ describe("Agent + call_service(가짜 모델·가짜 전화 서비스)", () => {
   it("「세탁기 AS 불러 줘」 → 실제 폰 승인 질문에 받는 이와 보낼 내용이 보이고(「세탁기: 탈수할 때 멈춤 · 에러 UE. LG전자 서비스센터에 전화할까요?」), 모델에는 토큰 없이 승인 대기만. 승인하면 보이는 그대로 보내고 기억하지 않는다", async () => {
     const fake = await startFakeCallService();
     try {
-      const { agent, approvals, results, events } = serviceAgent(client(fake.url));
+      const { agent, approvals, results } = serviceAgent(client(fake.url));
       const bodies = sentFrom();
       const r = await agent.chat("phone", "세탁기 AS 불러 줘", { heard: true });
       const ask = "탈수할 때 멈춤 · 에러 UE. LG전자 서비스센터에 전화할까요?";
@@ -204,7 +239,6 @@ describe("Agent + call_service(가짜 모델·가짜 전화 서비스)", () => {
       expect(r.pendingConfirmations[0]!.command).toBeUndefined();
       expect(r.actions).toEqual([expect.objectContaining({ tool: "call_service", ok: false, needsConfirmation: true })]);
       expect(r.actions[0]!.deviceId).toBeUndefined();
-      expect(events.some((e) => e.event === "pending" && e.pending.service === "as_center")).toBe(true);
       const token = r.pendingConfirmations[0]!.token;
       expect(toolOutputs(bodies()[1])[0]).toMatchObject({ ok: false, pendingApproval: { reason: ask } });
       expect(JSON.stringify(bodies())).not.toContain(token);
@@ -227,7 +261,22 @@ describe("Agent + call_service(가짜 모델·가짜 전화 서비스)", () => {
     }
   });
 
-  it("받는 이는 모델이 정하지 못한다: 모델이 다른 받는 이를 넣어도 등록한 보호자에게만 묻고 보낸다. 등록이 없으면 종류 이름(보호자)이다", async () => {
+  it("대시보드로 가는 사본(/events: action·pending·reply)은 KEEP_HEARD_TEXT가 꺼져 있으면 받는 이·보낼 내용을 가린다. 실제 폰이 받는 답(대기 목록)은 그대로다. 켜져 있으면 사본도 그대로다", async () => {
+    const hidden = serviceAgent(null);
+    const r = await hidden.agent.chat("phone", "세탁기 AS 불러 줘", { heard: true });
+    expect(r.pendingConfirmations[0]!.reason).toBe("탈수할 때 멈춤 · 에러 UE. LG전자 서비스센터에 전화할까요?");
+    await hidden.agent.confirm(r.pendingConfirmations[0]!.token, "approve");
+    const g = await hidden.agent.chat("s", "보호자에게 연락해 줘");
+    expect(g.pendingConfirmations[0]!.reason).toContain("딸에게");
+    await hidden.agent.chat("s", "응");
+    expect(hidden.events.map((e) => e.event)).toEqual(expect.arrayContaining(["action", "pending", "reply", "confirmed"]));
+    expect(JSON.stringify(hidden.events)).not.toMatch(SECRET);
+    const shown = serviceAgent(null, { keepHeard: true });
+    await shown.agent.chat("phone", "세탁기 AS 불러 줘", { heard: true });
+    expect(JSON.stringify(shown.events)).toMatch(/탈수할 때 멈춤 · 에러 UE\. LG전자 서비스센터에 전화할까요\?/);
+  });
+
+  it("받는 이는 모델이 정하지 못한다: 모델이 다른 받는 이를 넣어도 등록한 보호자에게만 묻고 보낸다", async () => {
     const fake = await startFakeCallService();
     try {
       const { agent } = serviceAgent(client(fake.url));
@@ -236,14 +285,37 @@ describe("Agent + call_service(가짜 모델·가짜 전화 서비스)", () => {
       await agent.confirm(r.pendingConfirmations[0]!.token, "approve");
       expect(fake.requests[0]!.body.to).toEqual(DAUGHTER);
       expect(JSON.stringify(fake.requests[0]!.body)).not.toContain("옆집");
-      const plain = serviceAgent(client(fake.url), DEFAULT_CONTACTS).agent;
-      const p = await plain.chat("phone", "옆집 아저씨한테 연락해 줘", { heard: true });
-      expect(p.pendingConfirmations[0]!.reason).toBe("도움이 필요함. 보호자에게 연락할까요?");
-      await plain.confirm(p.pendingConfirmations[0]!.token, "approve");
-      expect(fake.requests[1]!.body.to).toEqual({ name: "보호자", phone: null });
     } finally {
       await fake.close();
     }
+  });
+
+  it("그 종류의 받는 이가 등록되지 않았으면 묻지도 보내지도 않고 실제 폰 답이 「보호자 연락처가 등록되지 않았어요.」다", async () => {
+    const fake = await startFakeCallService();
+    try {
+      const { agent, results } = serviceAgent(client(fake.url), { contacts: { as_center: AS } });
+      const bodies = sentFrom();
+      const r = await agent.chat("phone", "보호자에게 연락해 줘", { heard: true });
+      expect(r.pendingConfirmations).toEqual([]);
+      expect(r.reply).toBe("보호자 연락처가 등록되지 않았어요.");
+      expect(toolOutputs(bodies()[1])[0]).toMatchObject({ ok: false, error: "보호자 연락처가 등록되지 않았어요." });
+      const none = serviceAgent(client(fake.url), { contacts: {} });
+      expect((await none.agent.chat("phone", "세탁기 AS 불러 줘", { heard: true })).reply).toBe("AS센터 연락처가 등록되지 않았어요.");
+      expect(fake.requests).toEqual([]);
+      expect(results).toEqual([]);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("승인 질문에 보이지 않는 칸은 보내지 않는다: AS센터 전화에 사람 상태, 보호자 연락에 가전·고장 설명·에러 코드를 넣으면 묻지 않고 모델에게 까닭을 돌려준다", async () => {
+    const { agent, results } = serviceAgent(null);
+    for (const [said, why] of [["세탁기 AS에 엄마 상태도 알려 줘", /AS센터 전화에는 person/], ["보호자에게 세탁기 고장도 알려 줘", /보호자 연락에는 person만/]] as const) {
+      const r = await agent.chat("phone", said, { heard: true });
+      expect(r.pendingConfirmations, said).toEqual([]);
+      expect(r.actions[0], said).toMatchObject({ tool: "call_service", ok: false, error: expect.stringMatching(why) });
+    }
+    expect(results).toEqual([]);
   });
 
   it("거절·취소면 보내지 않는다: 「AS센터 전화는 하지 않을게요.」, 결과는 거절", async () => {
@@ -272,7 +344,7 @@ describe("Agent + call_service(가짜 모델·가짜 전화 서비스)", () => {
     expect(results.map((x) => x.outcome)).toEqual(["unconnected"]);
   });
 
-  it("전화 서비스가 2xx가 아닌 답을 하면 「AS센터에 전화하지 못했어요.」, 결과는 실패(까닭 HTTP 500). 다시 승인하면 새 id다", async () => {
+  it("전화 서비스가 2xx가 아닌 답을 하면 「AS센터에 전화하지 못했어요.」, 결과는 실패(까닭 HTTP 500). 앞 연락이 확인 불가가 아니면 다시 승인할 때 새 id다", async () => {
     const fake = await startFakeCallService(500);
     try {
       const { agent, results } = serviceAgent(client(fake.url));
@@ -287,29 +359,60 @@ describe("Agent + call_service(가짜 모델·가짜 전화 서비스)", () => {
     }
   });
 
-  it("보낸 뒤 답이 없으면 확인 불가(「AS센터 전화 요청이 접수됐는지 확인하지 못했어요.」). 같은 가전으로 다시 승인하면 같은 id로 보내고, 접수되면 다음 요청은 새 id다", async () => {
+  it("보낸 뒤 답이 없으면 확인 불가(「AS센터 전화 요청이 접수됐는지 확인하지 못했어요.」). 같은 내용을 다시 승인하면 접수가 확인될 때까지(닿지 못함·2xx 아닌 답이 끼어도) 같은 id로 보낸다. 내용이 다른 고장은 새 id다", async () => {
     const fake = await startFakeCallService();
+    const dead = await startFakeCallService();
+    await dead.close();
     try {
-      const { agent, results } = serviceAgent(client(fake.url, 400));
-      const once = async () => {
-        const r = await agent.chat("phone", "세탁기 AS 불러 줘", { heard: true });
+      const live = client(fake.url, 400);
+      const refused = new CallServiceClient(dead.url);
+      let refuse = false;
+      const line: ServiceLine = { send: (c, m) => (refuse ? refused : live).send(c, m) };
+      const { agent, results } = serviceAgent(line);
+      const once = async (said = "세탁기 AS 불러 줘") => {
+        const r = await agent.chat("phone", said, { heard: true });
         return agent.confirm(r.pendingConfirmations[0]!.token, "approve");
       };
       fake.answer = "hang";
       expect(await once()).toMatchObject({ ok: false, reply: "AS센터 전화 요청이 접수됐는지 확인하지 못했어요." });
       fake.answer = "drop";
       expect(await once()).toMatchObject({ ok: false, reply: "AS센터 전화 요청이 접수됐는지 확인하지 못했어요." });
+      refuse = true;
+      expect(await once()).toMatchObject({ ok: false, reply: "AS센터에 전화하지 못했어요." });
+      refuse = false;
       fake.answer = "reply";
+      fake.status = 503;
+      expect(await once()).toMatchObject({ ok: false, reply: "AS센터에 전화하지 못했어요." });
+      fake.status = 200;
+      expect(await once("세탁기 문이 안 열려 AS 불러 줘")).toMatchObject({ ok: true });
       expect(await once()).toMatchObject({ ok: true, reply: "AS센터에 전화를 요청했어요." });
       expect(await once()).toMatchObject({ ok: true });
-      const ids = fake.requests.map((q) => q.body.id);
-      expect(ids[1]).toBe(ids[0]);
-      expect(ids[2]).toBe(ids[0]);
+      const ids = fake.requests.map((q) => q.body.id as string);
+      expect(ids).toHaveLength(6);
+      expect([ids[1], ids[2], ids[4]]).toEqual([ids[0], ids[0], ids[0]]);
       expect(ids[3]).not.toBe(ids[0]);
-      expect(results.map((x) => x.outcome)).toEqual(["unknown", "unknown", "sent", "sent"]);
-      const r = await agent.chat("phone", "보호자에게 연락해 줘", { heard: true });
-      await agent.confirm(r.pendingConfirmations[0]!.token, "approve");
-      expect(fake.requests[4]!.body.id).not.toBe(ids[0]);
+      expect(ids[5]).not.toBe(ids[0]);
+      expect(results.map((x) => x.outcome)).toEqual(["unknown", "unknown", "failed", "failed", "sent", "sent", "sent"]);
+      expect(results[2]!.id).toBe(ids[0]);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("다시 보내기 기억은 집 파일에 남는다: 서버를 다시 띄워도(새 에이전트) 같은 내용은 같은 id로 보낸다", async () => {
+    const fake = await startFakeCallService();
+    try {
+      const path = serviceRetryPath(mkdtempSync(join(tmpdir(), "svc-restart-")), "oneroom");
+      const first = serviceAgent(client(fake.url, 400), { retries: new ServiceRetryStore(path) });
+      fake.answer = "hang";
+      const r1 = await first.agent.chat("phone", "보호자에게 연락해 줘", { heard: true });
+      expect((await first.agent.confirm(r1.pendingConfirmations[0]!.token, "approve")).reply).toBe("보호자 연락 요청이 접수됐는지 확인하지 못했어요.");
+      expect(existsSync(path)).toBe(true);
+      fake.answer = "reply";
+      const again = serviceAgent(client(fake.url), { retries: new ServiceRetryStore(path) });
+      const r2 = await again.agent.chat("phone", "보호자에게 연락해 줘", { heard: true });
+      expect((await again.agent.confirm(r2.pendingConfirmations[0]!.token, "approve")).ok).toBe(true);
+      expect(fake.requests[1]!.body.id).toBe(fake.requests[0]!.body.id);
     } finally {
       await fake.close();
     }

@@ -137,7 +137,10 @@ describe("모델이 쓴 위험 가전 글은 어느 자리에서도 폰으로 �
     "service.ask": async (text) => {
       const home = makeHome();
       const call = { id: "c1", name: "call_service", args: { kind: "as_center", problem: text, reason: "AS센터 전화를 부탁해서" } };
-      const agent = new Agent({ hub: home.hub, policy: home.policy, rooms: ROOMS, provider: new LineProvider([{ text: "", calls: [call] }, { text: "", calls: [] }]) });
+      const agent = new Agent({
+        hub: home.hub, policy: home.policy, rooms: ROOMS, provider: new LineProvider([{ text: "", calls: [call] }, { text: "", calls: [] }]),
+        contacts: { as_center: { name: "AS센터", phone: null } },
+      });
       return (await agent.chat("phone", "AS 불러 줘", { heard: true })).pendingConfirmations[0]?.reason ?? null;
     },
   };

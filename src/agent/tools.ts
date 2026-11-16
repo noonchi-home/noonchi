@@ -13,7 +13,7 @@ import { findDevices } from "./search.js";
 import { resolveRoom } from "../layout/index.js";
 import { compact } from "../shared/korean.js";
 import type { ServiceCall, ServiceKind } from "../contract/service.js";
-import { CALL_SERVICE, SERVICE_KIND_IDS, SERVICE_RISKY_PROBLEM, serviceCall, serviceText, type ServiceContacts } from "./service.js";
+import { CALL_SERVICE, SERVICE_KINDS, SERVICE_KIND_IDS, SERVICE_RISKY_PROBLEM, serviceCall, serviceText, type ServiceContacts } from "./service.js";
 import { riskyNames } from "./policy.js";
 
 export type { DeviceView } from "../contract/events.js";
@@ -250,8 +250,8 @@ export const TOOLS: ToolDef[] = [
     { open: z.boolean().describe("true = 물 틀기, false = 잠그기") }, (a) => ({ type: "valve", open: Boolean(a.open) })),
   {
     name: CALL_SERVICE, title: "외부 연락", agentOnly: true,
-    description: "밖으로 연락합니다. as_center: 가전이 고장 나 AS센터에 전화(상담·방문 예약)할 때. 고장 난 가전 device_id, 고장 설명 problem, 에러 코드 error_code를 넣습니다. "
-      + "guardian: 사람 상태가 걱정돼 보호자에게 연락할 때. 사람 상태 요약 person을 넣습니다. 받는 이는 서버에 등록한 연락처로 정해집니다. "
+    description: "밖으로 연락합니다. as_center: 가전이 고장 나 AS센터에 전화(상담·방문 예약)할 때. 고장 난 가전 device_id, 고장 설명 problem, 에러 코드 error_code만 넣습니다(person 없음). "
+      + "guardian: 사람 상태가 걱정돼 보호자에게 연락할 때. 사람 상태 요약 person만 넣습니다. 받는 이는 서버에 등록한 연락처로 정해지고, 등록이 없으면 연락하지 않습니다. "
       + "보낼 글은 사용자 승인 질문에 그대로 보이고, 부르면 늘 사용자 승인을 먼저 묻고, 승인해야 연락합니다.",
     schema: z.object({
       kind: z.enum(SERVICE_KIND_IDS).describe("as_center AS센터 전화, guardian 보호자 연락"),
@@ -266,7 +266,9 @@ export const TOOLS: ToolDef[] = [
       const d = id ? await resolveDevice(backend, id) : undefined;
       if (id && !d) return notFound(id);
       const kind = args.kind as ServiceKind;
-      const call = serviceCall(args as { kind: ServiceKind }, d ? { id: d.id, label: d.label, kind: d.kind } : null, backend.service.contacts[kind]);
+      const to = backend.service.contacts[kind];
+      if (!to) return { ok: false, error: SERVICE_KINDS[kind].missing };
+      const call = serviceCall(args as { kind: ServiceKind }, d ? { id: d.id, label: d.label, kind: d.kind } : null, to);
       if (typeof call === "string") return { ok: false, error: call };
       if (riskyNames(serviceText(call)).length) return { ok: false, error: SERVICE_RISKY_PROBLEM };
       const p = backend.service.ask(call);
