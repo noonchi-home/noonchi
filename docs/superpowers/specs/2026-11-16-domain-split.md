@@ -249,7 +249,7 @@
   - 나누는 방법: 상태와 `emit`·`toPhone`을 든 안쪽 객체(`TrackCore`)를 두고, 부분마다 그 객체를 받는 작은 클래스로 만든다.
   - 구조 검사(`tests/act-track-release.test.ts`)는 `act/track/` 폴더 파일 전체와 `TrackCore`를 본다. 지우는 패턴은 받는 쪽 이름과 상관없이 찾는다(`this.reminder = null`만이 아니라 `.reminder = null`, `.hot.delete(`). 79ff269 과거 실수를 `steps.ts`·`answers.ts`·`tracker.ts`에 하나씩 넣은 자료에서도 실패해야 한다.
 - **`server/home.ts`(616줄) → `server/home/`(다음에: 정한 것 5, 시연 뒤):** 도메인별 잇기(`devices.ts`, `observe.ts`, `act.ts`, `phone.ts`, `say.ts`)와 조립(`index.ts`). 파일 자리 기준 경로(`SHARED_VIDEO_DIR`)는 0단계에서 뿌리 기준으로 바꾼 뒤 옮긴다.
-- **`server/app.ts`(721줄) → `server/routes/`:** 경로를 도메인별로 나눈다(`observe.ts`(brain·world 상태), `brain.ts`(기록·반성·기억·판단), `layout.ts`, `phone.ts`, `plan.ts`, `devices.ts`, `agent.ts`). `app.ts`는 HTTP·WS 껍데기만 남는다.
+- **`server/app.ts`(721줄) → `server/routes/`:** 경로를 도메인별로 나눈다(`observe.ts`(brain·world 상태), `brain.ts`(기록·반성·기억·판단), `layout.ts`(장면·배치·고를 집), `phone.ts`, `plan.ts`, `devices.ts`(Matter·방·기기), `agent.ts`). 묶음 함수가 함께 받는 등록 도구·오류·본문 읽기는 `kit.ts`(RouteKit·HttpError·readJson)에 둔다. `app.ts`는 HTTP·WS 껍데기와 `/api/health`만 남고, 묶음 함수를 나누기 전 등록 차례대로 부른다.
 - **다음에(정한 것 3, 이번에 하지 않음):**
   - `world/state.ts`(1,071줄) → `world/state/`: `objects.ts`(감지 합치기), `people.ts`(사람·관절), `facts.ts`(VLM 사실), `closer.ts`(가까이 보기), `devices.ts`(카메라로 본 가전)
   - `agent/planTools.ts`(616줄): 단계 규칙(`needsPhone`·`riskyHand`·`selfStopWait`·`HUMAN_KINDS`)을 `agent/plan-rules.ts`로

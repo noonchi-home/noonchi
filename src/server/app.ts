@@ -1,33 +1,37 @@
 // HTTP + WebSocket 서버(docs/plan.md "서버"). DeviceHub 하나를 받아 REST·WS·웹 화면을 제공한다.
-// 정책(승인)은 Policy, 자연어는 Agent가 맡는다. 외부 라이브러리는 ws만 쓴다.
+// 정책(승인)은 Policy, 자연어는 Agent가 맡는다. 외부 라이브러리는 ws만 쓴다. API 경로는 도메인별 파일(routes/*)이 등록한다.
 
-import { createHash, timingSafeEqual } from "node:crypto";
 import { existsSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { join, resolve } from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
-import { z } from "zod";
 import type { Agent } from "../agent/index.js";
-import { newSessionId } from "../agent/index.js";
 import { Policy } from "../agent/index.js";
 import type { BrainLog, HealthView, ReadyView, SeenEvent } from "../contract/events.js";
-import type { HistoryKind } from "../contract/history.js";
 import type { WorldView } from "../contract/world.js";
-import type { OffTrack, PlanView } from "../contract/plan.js";
+import type { OffTrack } from "../contract/plan.js";
 import type { ControlMode } from "../contract/setup.js";
-import { deviceViews, roomViews } from "../agent/index.js";
-import type { Command, CommandResult, DeviceHub, RoomSpec } from "../contract/devices.js";
-import { HISTORY_KINDS, type HistoryDb } from "../brain/index.js";
+import type { DeviceHub, RoomSpec } from "../contract/devices.js";
+import type { HistoryDb } from "../brain/index.js";
 import type { ReflectResult } from "../brain/index.js";
-import { daySummary, isDay } from "../brain/index.js";
 import type { LayoutEditor } from "../layout/index.js";
 import type { SyncState } from "../phone/index.js";
-import { StartPoseError, type StartPose } from "../phone/index.js";
+import type { StartPose } from "../phone/index.js";
 import { repoPath } from "../shared/paths.js";
 import type { PlanHub } from "../act/index.js";
-import { twinChange } from "../devices/index.js";
 import { listenRetry } from "../shared/net.js";
 import { serveFile } from "../shared/static.js";
+import { HttpError, type Handler, type RouteKit } from "./routes/kit.js";
+import { agentRoutes } from "./routes/agent.js";
+import { brainRoutes } from "./routes/brain.js";
+import { devicesRoutes, type MatterControl, type MatterInfoView } from "./routes/devices.js";
+import { homeRoutes, layoutRoutes } from "./routes/layout.js";
+import { observeRoutes } from "./routes/observe.js";
+import { phoneRoutes } from "./routes/phone.js";
+import { planRoutes } from "./routes/plan.js";
+
+export { HttpError, readJson } from "./routes/kit.js";
+export { canSendPlan, isLoopback } from "./routes/plan.js";
 
 export interface AppOptions {
   hub: DeviceHub;
@@ -88,18 +92,6 @@ export interface AppOptions {
   reflect?: (day: string) => Promise<ReflectResult>;
 }
 
-/** MatterHub에서 서버가 쓰는 부분(src/devices/matter/matterHub.ts를 직접 불러오지 않으려고 모양만 적는다). */
-interface MatterInfoView {
-  transport: string;
-  commissioning?: string;
-  storageDir?: string;
-  [key: string]: unknown;
-}
-interface MatterControl {
-  readonly info: MatterInfoView;
-  openCommissioningWindow(timeoutSeconds?: number): Promise<unknown>;
-}
-
 export interface TwinHomeApp {
   readonly server: Server;
   readonly wss: WebSocketServer;
@@ -141,132 +133,6 @@ export function originChecker(raw: string | undefined): (origin: string) => bool
   }));
   return (origin) => isLocalOrigin(origin) || listed.has(origin);
 }
-const MAX_BODY = 1 << 20;
-
-export class HttpError extends Error {
-  constructor(readonly status: number, message: string, readonly extra?: Record<string, unknown>) {
-    super(message);
-  }
-}
-
-// ── 요청 본문 검사 ─────────────────────────────────────────
-
-const CommandSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("on") }),
-  z.object({ type: z.literal("off") }),
-  z.object({ type: z.literal("level"), percent: z.number() }),
-  z.object({
-    type: z.literal("climate"),
-    mode: z.enum(["cool", "heat", "auto", "dry", "fan"]).optional(),
-    setpointC: z.number().optional(),
-    fan: z.enum(["low", "medium", "high", "auto"]).optional(),
-  }),
-  z.object({ type: z.literal("covering"), openPercent: z.number() }),
-  z.object({ type: z.literal("lock") }),
-  z.object({ type: z.literal("unlock") }),
-  z.object({ type: z.literal("start") }),
-  z.object({ type: z.literal("stop") }),
-  z.object({ type: z.literal("pause") }),
-  z.object({ type: z.literal("valve"), open: z.boolean() }),
-]);
-
-const KO_ERRORS = z.locales.ko().localeError;
-
-// 클로이드 계획(docs/plan-contract.md). 글은 화면에 그대로 나가므로 화면 글 규칙(60자 아래, 화살표·괄호 없음)을 여기서도 본다
-const PlanCopy = z.string().max(60).refine((t) => !/→|⇒|->|=>|[()]/.test(t), { error: "화살표·괄호 없이 지금 상태나 할 일만 써 주세요" });
-const XZSchema = z.tuple([z.number(), z.number()]);
-const PlanSchema = z.object({
-  id: z.string().min(1).max(200),
-  revision: z.number().int().min(1),
-  supersedes: z.string().min(1).max(200).optional(),
-  origin: z.enum(["live", "mock"]).optional(),
-  source: z.enum(["brain", "agent", "planner"]),
-  goal: PlanCopy.min(1),
-  judgment: PlanCopy,
-  dryRun: z.boolean(),
-  robot: z.object({ position: XZSchema.nullable(), room: z.string().nullable() }),
-  path: z.array(XZSchema).max(1000),
-  legs: z.array(z.object({ stepId: z.string(), end: z.number().int().min(0) })),
-  steps: z.array(z.object({
-    id: z.string().min(1).max(200),
-    kind: z.enum(["move", "act", "ask", "device", "wait"]),
-    label: PlanCopy.min(1),
-    target: z.object({ objectId: z.string().optional(), deviceId: z.string().optional(), room: z.string().optional(), position: XZSchema.optional() }).optional(),
-    status: z.enum(["pending", "active", "done", "failed", "skipped"]),
-  })).min(1).max(50),
-  status: z.enum(["planned", "running", "done", "cancelled", "failed"]),
-  updatedAt: z.string().max(64),
-}).superRefine((p, ctx) => {
-  if (p.robot.position === null && p.path.length > 0) ctx.addIssue({ code: "custom", path: ["path"], message: "로봇 위치를 모르면 path는 []" });
-  const moves = new Set(p.steps.filter((s) => s.kind === "move").map((s) => s.id));
-  p.legs.forEach((l, i) => {
-    if (!moves.has(l.stepId)) ctx.addIssue({ code: "custom", path: ["legs", i, "stepId"], message: "move 단계 id가 아님" });
-    if (l.end >= p.path.length) ctx.addIssue({ code: "custom", path: ["legs", i, "end"], message: "path 밖 점 번호" });
-  });
-});
-const StepStatusSchema = PlanSchema.shape.steps.element.shape.status;
-
-function parsePlan(raw: unknown): PlanView {
-  const r = PlanSchema.safeParse(raw, { error: KO_ERRORS });
-  if (!r.success) {
-    const issues = r.error.issues.map((i) => `${i.path.join(".") || "plan"}: ${i.message}`).join("; ");
-    throw new HttpError(400, `계획 형식이 올바르지 않습니다: ${issues}`);
-  }
-  return r.data as PlanView;
-}
-
-/** 같은 PC에서 온 요청인가(127.0.0.1·::1). */
-export const isLoopback = (address: string | undefined): boolean => !!address && /^(127\.\d+\.\d+\.\d+|::1|::ffff:127\.\d+\.\d+\.\d+)$/.test(address);
-
-const digest = (s: string) => createHash("sha256").update(s).digest();
-
-/** 계획을 보낼 수 있는가: 같은 PC 주소이거나, PLAN_TOKEN이 있고 Authorization: Bearer <토큰>이 맞다.
- *  compose로 띄우면 호스트·tailscale serve에서 온 요청도 컨테이너에는 Docker 브리지 주소로 보이므로 토큰을 쓴다. */
-export function canSendPlan(address: string | undefined, authorization: string | undefined, token: string | undefined): boolean {
-  if (isLoopback(address)) return true;
-  const got = /^Bearer\s+(.+)$/i.exec(authorization?.trim() ?? "")?.[1];
-  return !!token && !!got && timingSafeEqual(digest(got), digest(token));
-}
-
-function parseCommand(raw: unknown): Command {
-  const value = typeof raw === "string" ? { type: raw } : raw;
-  const r = CommandSchema.safeParse(value, { error: KO_ERRORS });
-  if (!r.success) {
-    const issues = r.error.issues.map((i) => `${i.path.join(".") || "command"}: ${i.message}`).join("; ");
-    throw new HttpError(400, `명령 형식이 올바르지 않습니다: ${issues}`);
-  }
-  return r.data as Command;
-}
-
-function record(v: unknown): Record<string, unknown> {
-  if (!v || typeof v !== "object" || Array.isArray(v)) throw new HttpError(400, "요청 본문은 JSON 객체여야 합니다.");
-  return v as Record<string, unknown>;
-}
-
-export async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
-  const chunks: Buffer[] = [];
-  let size = 0;
-  for await (const chunk of req) {
-    size += (chunk as Buffer).length;
-    if (size > MAX_BODY) throw new HttpError(413, "요청 본문이 너무 큽니다(최대 1MB).");
-    chunks.push(chunk as Buffer);
-  }
-  const text = Buffer.concat(chunks).toString("utf8").trim();
-  if (!text) return {};
-  try {
-    return record(JSON.parse(text));
-  } catch (e) {
-    if (e instanceof HttpError) throw e;
-    throw new HttpError(400, "요청 본문 JSON을 읽지 못했습니다.");
-  }
-}
-
-/** ThinQ가 받았지만 적용을 확인하지 못한 명령은 202(받음). */
-function commandStatus(r: CommandResult): number {
-  if (r.ok) return r.outcome === "unverified" ? 202 : 200;
-  if (r.needsConfirmation) return 409;
-  return 400;
-}
 
 // ── 앱 ────────────────────────────────────────────────────
 
@@ -280,18 +146,11 @@ export function createApp(opts: AppOptions): TwinHomeApp {
   const allowOrigin = opts.allowOrigin ?? isLocalOrigin;
   const log = opts.log ?? ((m: string) => console.log(m));
 
-  const spec = (id: string) => hub.list().find((d) => d.id === id);
   const matterInfo = (): MatterInfoView | undefined => {
     const info = (hub as Partial<MatterControl>).info;
     return info && typeof info === "object" && "transport" in info ? info : undefined;
   };
-  const requireSpec = (id: string) => {
-    const s = spec(id);
-    if (!s) throw new HttpError(404, `기기를 찾을 수 없습니다: ${id}`);
-    return s;
-  };
 
-  type Handler = (req: IncomingMessage, url: URL, params: string[]) => Promise<unknown>;
   const routes: { method: string; pattern: RegExp; handler: Handler; status?: (body: unknown) => number }[] = [];
   const route = (method: string, pattern: RegExp, handler: Handler, status?: (body: unknown) => number) => routes.push({ method, pattern, handler, status });
 
@@ -302,265 +161,22 @@ export function createApp(opts: AppOptions): TwinHomeApp {
     ready: opts.ready ? await opts.ready() : NOT_READY,
   }));
 
-  route("GET", /^\/api\/brain$/, async () => {
-    if (!opts.brain) throw new HttpError(404, "관찰 흐름이 꺼져 있습니다(BRAIN=1, PHONE_PORT 필요)");
-    return { ok: true, ...opts.brain.status() };
-  });
-
-  route("GET", /^\/api\/world$/, async () => {
-    if (!opts.world) throw new HttpError(404, "관찰 흐름이 꺼져 있습니다(BRAIN=1, PHONE_PORT 필요)");
-    return { ok: true, world: opts.world() };
-  });
-
-  // ── 기록 ──
-
-  const requireHistory = () => {
-    if (!opts.history) throw new HttpError(404, "기록 DB가 없습니다.");
-    return opts.history;
-  };
-  const msParam = (url: URL, key: string) => {
-    const raw = url.searchParams.get(key)?.trim();
-    if (!raw) return undefined;
-    const v = Number(raw);
-    if (!Number.isFinite(v) || v < 0) throw new HttpError(400, `${key}는 0 이상의 시각(ms)이어야 합니다.`);
-    return v;
-  };
-  const limitParam = (url: URL, fallback: number, max: number) => {
-    const raw = url.searchParams.get("limit")?.trim();
-    if (!raw) return fallback;
-    const v = Number(raw);
-    if (!Number.isInteger(v) || v < 1 || v > max) throw new HttpError(400, `limit는 1~${max} 사이 정수여야 합니다.`);
-    return v;
-  };
-  // since가 없으면 최근 limit줄, 있으면 since부터 limit줄(둘 다 시각 순)
-  route("GET", /^\/api\/history$/, async (_req, url) => {
-    const db = requireHistory();
-    const kinds = (url.searchParams.get("kinds") ?? "").split(",").map((k) => k.trim()).filter(Boolean);
-    const unknown = kinds.filter((k) => !HISTORY_KINDS.includes(k as HistoryKind));
-    if (unknown.length) throw new HttpError(400, `모르는 기록 종류입니다: ${unknown.join(", ")} (있는 종류: ${HISTORY_KINDS.join(", ")})`);
-    const since = msParam(url, "since");
-    return { ok: true, rows: db.list({ since, until: msParam(url, "until"), kinds: kinds as HistoryKind[], limit: limitParam(url, 500, 5000), latest: since === undefined }) };
-  });
-  route("GET", /^\/api\/history\/day\/(\d{4}-\d{2}-\d{2})$/, async (_req, _url, [day]) => {
-    const db = requireHistory();
-    if (!isDay(day!)) throw new HttpError(400, `없는 날짜입니다: ${day}`);
-    return { ok: true, ...daySummary(db, day!) };
-  });
-  // 반성 바로 하기: day(기본 오늘). 그날 기록이 없거나 이미 반성 중이면 409, PAM 실패는 502
-  route("POST", /^\/api\/reflection\/run$/, async (req) => {
-    const db = requireHistory();
-    if (!opts.reflect) throw new HttpError(404, "반성을 쓸 수 없습니다.");
-    const body = await readJson(req);
-    const day = body.day ?? db.dayOf(Date.now());
-    if (typeof day !== "string" || !isDay(day)) throw new HttpError(400, "day는 YYYY-MM-DD 날짜여야 합니다.");
-    const r = await opts.reflect(day);
-    if (!r.ok) throw new HttpError(r.empty ? 409 : 502, r.error);
-    return { ok: true, day, version: r.version, appliesDay: r.appliesDay };
-  });
-  // 그날 기억 고정 상태(읽기만, 고정하지 않는다): 그날 판단이 고정한 판본, 지금 판단이 부르면 쓸 판본(고정 판본, 없으면 그날 쓸 수 있는 가장 새 판본), 가장 새 판본
-  route("GET", /^\/api\/memory\/day\/(\d{4}-\d{2}-\d{2})$/, async (_req, _url, [day]) => {
-    const db = requireHistory();
-    if (!isDay(day!)) throw new HttpError(400, `없는 날짜입니다: ${day}`);
-    const pinned = db.pinnedMemory(day!);
-    const v = pinned !== null ? db.memoryVersion(pinned) : db.memoryFor(day!);
-    return { ok: true, day, pinned, uses: v ? { version: v.version, source: v.source, appliesDay: v.appliesDay, day: v.day } : null, latest: db.latestMemoryVersion() };
-  });
-  route("GET", /^\/api\/decisions$/, async (_req, url) => ({ ok: true, decisions: requireHistory().decisions(limitParam(url, 20, 500)) }));
-
-  // ── 집 장면·배치 보정 ──
-
-  route("GET", /^\/api\/scene$/, async () => {
-    const scene = opts.scene?.();
-    if (!scene) throw new HttpError(404, "집 장면이 없어요.");
-    return { ok: true, scene };
-  });
-
-  const requireLayout = () => {
-    if (!opts.layout) throw new HttpError(404, "배치 보정을 쓸 수 없습니다(집 scene.json이 없음).");
-    return opts.layout;
-  };
-  route("GET", /^\/api\/layout$/, async () => {
-    const editor = requireLayout();
-    return { ok: true, ...editor.status(), items: editor.edits() };
-  });
   // 설정 화면은 자기가 본 집(home)을 같이 보낸다. 다른 탭에서 집을 바꿨으면 새 집을 고치지 않는다.
   // 본문을 기다리는 사이 이 앱이 닫혔으면(집을 바꿈) 쓰지 않는다
   const sameHome = (body: Record<string, unknown>) => {
     if (closed) throw new HttpError(503, "집을 바꾸는 중이에요. 잠시 뒤 다시 해 주세요.");
     if (typeof body.home === "string" && opts.home && body.home !== opts.home.id) throw new HttpError(409, `집이 바뀌었어요(지금 ${opts.home.name}). 화면을 새로 고치세요.`);
   };
-  route("POST", /^\/api\/layout\/save$/, async (req) => {
-    sameHome(await readJson(req));
-    return { ok: true, ...requireLayout().save() };
-  });
-  route("POST", /^\/api\/layout\/reset$/, async (req) => {
-    sameHome(await readJson(req));
-    return { ok: true, reverted: requireLayout().reset().length };
-  });
-
-  // ── 폰 위치 맞추기: 시작 위치(자리·방향)와 맞춤 상태 ──
-
-  const requireStart = () => {
-    if (!opts.start) throw new HttpError(404, "시작 위치를 쓸 수 없습니다(집 scene.json이 없음).");
-    return opts.start;
-  };
-  const startView = (s: StartPose | null) => ({
-    ok: true, start: s ? { position: s.position, yaw_deg: s.yawDeg, label: s.label, facing_label: s.facingLabel } : null,
-  });
-  route("GET", /^\/api\/phone\/start-pose$/, async () => startView(requireStart().get()));
-  route("POST", /^\/api\/phone\/start-pose$/, async (req) => {
-    const store = requireStart();
-    const body = await readJson(req);
-    sameHome(body);
-    try {
-      return startView(store.save(body));
-    } catch (e) {
-      if (e instanceof StartPoseError) throw new HttpError(400, e.message);
-      throw e;
-    }
-  });
-  // 저장하지 않고 검사·이름 채우기만(설정 화면이 자리·방향을 바꿀 때)
-  route("POST", /^\/api\/phone\/start-pose\/preview$/, async (req) => {
-    const store = requireStart();
-    const body = await readJson(req);
-    sameHome(body);
-    try {
-      return startView(store.preview(body));
-    } catch (e) {
-      if (e instanceof StartPoseError) throw new HttpError(400, e.message);
-      throw e;
-    }
-  });
-  route("POST", /^\/api\/phone\/start-pose\/clear$/, async (req) => {
-    sameHome(await readJson(req));
-    requireStart().clear();
-    return startView(null);
-  });
-  route("GET", /^\/api\/phone\/sync$/, async () => ({ ok: true, sync: opts.phoneSync?.() ?? null }));
-
-  // ── 클로이드 계획 ──
-
-  route("GET", /^\/api\/plan$/, async () => ({ ok: true, plan: opts.plan?.current() ?? null, off: opts.offTrack?.() ?? null }));
-  const requirePlan = (req: IncomingMessage) => {
-    if (!opts.plan) throw new HttpError(404, "계획을 받을 수 없습니다(집이 아직 없음).");
-    if (!canSendPlan(req.socket.remoteAddress, req.headers.authorization, opts.planToken)) throw new HttpError(403, "계획은 서버와 같은 PC에서 보내거나 PLAN_TOKEN을 붙여 보내야 합니다.");
-    if (closed) throw new HttpError(503, "집을 바꾸는 중이에요. 잠시 뒤 다시 해 주세요.");
-    return opts.plan;
-  };
-  route("POST", /^\/api\/plan$/, async (req) => {
-    const plans = requirePlan(req);
-    plans.put(parsePlan((await readJson(req)).plan));
-    return { ok: true, plan: plans.current() };
-  });
-  route("POST", /^\/api\/plan\/([^/]+)\/steps\/([^/]+)$/, async (req, _url, [id, stepId]) => {
-    const plans = requirePlan(req);
-    const r = StepStatusSchema.safeParse((await readJson(req)).status);
-    if (!r.success) throw new HttpError(400, "status는 pending·active·done·failed·skipped 중 하나여야 합니다.");
-    if (!plans.setStep(id!, stepId!, r.data)) throw new HttpError(404, `지금 계획에 없는 단계입니다: ${id} ${stepId}`);
-    return { ok: true, plan: plans.current() };
-  });
-
-  route("GET", /^\/api\/homes$/, async () => ({ current: opts.home?.id ?? null, homes: opts.homes ?? (opts.home ? [opts.home] : []) }));
-
-  // ── Matter(허브가 MatterHub일 때) ──
-
-  route("GET", /^\/api\/matter$/, async () => {
-    const info = matterInfo();
-    if (!info) throw new HttpError(404, "Matter 허브가 아닙니다(HUB=memory로 떠 있음).");
-    const { storageDir: _dir, ...rest } = info;
-    return { ok: true, ...rest };
-  });
-
-  route("POST", /^\/api\/matter\/commissioning-window$/, async (req) => {
-    const control = hub as Partial<MatterControl>;
-    if (!matterInfo() || typeof control.openCommissioningWindow !== "function") throw new HttpError(404, "Matter 허브가 아닙니다(HUB=memory로 떠 있음).");
-    const body = await readJson(req);
-    const raw = body.timeoutSeconds ?? 900;
-    // Matter 규격: 커미셔닝 창은 180초~900초
-    if (typeof raw !== "number" || !Number.isInteger(raw) || raw < 180 || raw > 900) throw new HttpError(400, "timeoutSeconds는 180~900 사이 정수여야 합니다.");
-    let pairing: unknown;
-    try {
-      pairing = await control.openCommissioningWindow(raw);
-    } catch (e) {
-      throw new HttpError(400, `페어링 창을 열지 못했습니다: ${(e as Error).message}`);
-    }
-    return { ok: true, timeoutSeconds: raw, pairing, reply: `${Math.round(raw / 60)}분 동안 다른 Matter 컨트롤러(Home Assistant 등)가 이 페어링 코드로 브리지를 추가할 수 있어요.` };
-  });
-
-  route("GET", /^\/api\/rooms$/, async () => roomViews(hub.list(), opts.rooms));
-
-  route("GET", /^\/api\/devices$/, async (_req, url) => {
-    const room = url.searchParams.get("room");
-    const kind = url.searchParams.get("kind");
-    return deviceViews(hub).filter((d) => (!room || d.room === room) && (!kind || d.kind === kind));
-  });
-
-  route("GET", /^\/api\/devices\/([^/]+)$/, async (_req, _url, [id]) => {
-    const s = requireSpec(id!);
-    return { ...s, state: hub.get(s.id) };
-  });
-
-  route("POST", /^\/api\/devices\/([^/]+)\/command$/, async (req, _url, [id]) => {
-    const body = await readJson(req);
-    requireSpec(id!);
-    const cmd = parseCommand(body.command);
-    const token = typeof body.confirmToken === "string" && body.confirmToken ? body.confirmToken : undefined;
-    return policy.guard(hub, id!, cmd, token);
-  }, (b) => commandStatus(b as CommandResult));
-
-  // 3D 트윈 화면에서 바꾼 twin 상태(docs/plan.md "3D 트윈 연결"). 제어 attr은 명령으로 바꿔 정책을 거치고, 센서 attr은 센서 값을 바꾼다.
-  route("POST", /^\/api\/devices\/([^/]+)\/twin$/, async (req, _url, [id]) => {
-    const body = await readJson(req);
-    const s = requireSpec(id!);
-    if (typeof body.attr !== "string" || !body.attr) throw new HttpError(400, "attr(twin 상태 이름)가 필요합니다.");
-    if (!("value" in body)) throw new HttpError(400, "value가 필요합니다.");
-    const change = twinChange(s, body.attr, body.value);
-    if (change.type === "invalid") throw new HttpError(400, change.error);
-    if (change.type === "sensor") return { ...(await hub.setSensor(s.id, body.attr, change.value)), via: "sensor" };
-    const token = typeof body.confirmToken === "string" && body.confirmToken ? body.confirmToken : undefined;
-    return { ...(await policy.guard(hub, s.id, change.command, token)), via: "command", command: change.command };
-  }, (b) => commandStatus(b as CommandResult));
-
-  route("POST", /^\/api\/sensors\/([^/]+)$/, async (req, _url, [id]) => {
-    const body = await readJson(req);
-    requireSpec(id!);
-    if (typeof body.attr !== "string" || !body.attr) throw new HttpError(400, "attr(센서 이름)가 필요합니다.");
-    if (!("value" in body)) throw new HttpError(400, "value가 필요합니다.");
-    return hub.setSensor(id!, body.attr, body.value);
-  }, (b) => ((b as CommandResult).ok ? 200 : 400));
-
-  route("POST", /^\/api\/agent\/chat$/, async (req) => {
-    if (!agent) throw new HttpError(503, "에이전트가 설정되지 않았습니다.");
-    const body = await readJson(req);
-    const message = typeof body.message === "string" ? body.message.trim() : "";
-    if (!message) throw new HttpError(400, "message(보낼 말)가 필요합니다.");
-    if (message.length > 2000) throw new HttpError(400, "message가 너무 깁니다(최대 2000자).");
-    const sessionId = typeof body.sessionId === "string" && body.sessionId.trim() ? body.sessionId.trim().slice(0, 100) : newSessionId();
-    return agent.chat(sessionId, message);
-  });
-
-  route("POST", /^\/api\/agent\/confirm$/, async (req) => {
-    const body = await readJson(req);
-    if (typeof body.token !== "string" || !body.token) throw new HttpError(400, "token이 필요합니다.");
-    if (agent) return agent.confirm(body.token);
-    const p = policy.pending().find((x) => x.token === body.token);
-    const r = await policy.confirm(hub, body.token);
-    return { ...r, deviceId: p?.deviceId, reply: r.ok ? "승인한 명령을 실행했어요." : r.error };
-  }, (b) => ((b as { ok: boolean }).ok ? 200 : 400));
-
-  route("POST", /^\/api\/agent\/cancel$/, async (req) => {
-    const body = await readJson(req);
-    if (typeof body.token !== "string" || !body.token) throw new HttpError(400, "token이 필요합니다.");
-    if (agent) return agent.cancel(body.token);
-    const p = policy.consume(body.token);
-    return { ok: !!p, reply: p ? "취소했어요." : "취소할 승인 대기가 없어요." };
-  });
-
-  route("GET", /^\/api\/agent\/pending$/, async (_req, url) => {
-    const sessionId = url.searchParams.get("sessionId") ?? undefined;
-    if (agent) return agent.pending(sessionId);
-    return policy.pending().map((p) => ({ ...p, expiresAt: new Date(p.expiresAt).toISOString() }));
-  });
+  // API 경로는 도메인별 파일(routes/*)이 등록한다. 등록 차례는 나누기 전과 같다(같은 경로·메서드면 먼저 등록한 것이 이긴다).
+  const kit: RouteKit = { route, opts, hub, agent, policy, closed: () => closed, sameHome, matterInfo };
+  observeRoutes(kit);
+  brainRoutes(kit);
+  layoutRoutes(kit);
+  phoneRoutes(kit);
+  planRoutes(kit);
+  homeRoutes(kit);
+  devicesRoutes(kit);
+  agentRoutes(kit);
 
   // ── HTTP ──
 
