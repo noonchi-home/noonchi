@@ -8,7 +8,7 @@
 // 그 파일을 읽을 수 없으면(깨짐·권한) 연락을 막는다.
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type { ServiceCall, ServiceContact, ServiceKind, ServiceOutcome, ServiceResult } from "../contract/service.js";
 import { josa } from "../shared/korean.js";
 import { HEARD_MARK } from "../world/labels.js";
@@ -40,7 +40,7 @@ export const SERVICE_RETRY_BROKEN = "외부 연락 기록을 읽지 못해 연�
 /** 연락을 막은 정한 답: 받는 이가 등록되지 않음, 다시 보내기 기억을 읽을 수 없음(이 글이 도구 오류면 실제 폰 답도 이 글이다). */
 export const SERVICE_BLOCKED: ReadonlySet<string> = new Set([...SERVICE_KIND_IDS.map((k) => SERVICE_KINDS[k].missing), SERVICE_RETRY_BROKEN]);
 
-const OUTCOME_TEXT: Record<ServiceOutcome, string> = { sent: "보냄", refused: "거절", unconnected: "연결 없음", failed: "실패", unknown: "확인 불가" };
+const OUTCOME_TEXT: Record<ServiceOutcome, string> = { sent: "보냄", refused: "거절", unconnected: "연결 없음", failed: "실패", unknown: "확인 불가", cancelled: "취소" };
 
 // ── 받는 이 등록부 ─────────────────────────────────────────
 
@@ -98,8 +98,9 @@ export function serviceAsk(call: ServiceCall): string {
   return what ? `${what}. ${ask}` : ask;
 }
 
-/** 승인한 뒤의 답(보냄·연결 없음·실패·확인 불가). 거절은 REFUSED_REPLY(일 이름)이다. */
+/** 승인한 뒤의 답(보냄·연결 없음·실패·확인 불가·취소). 거절은 REFUSED_REPLY(일 이름)이다. */
 export function serviceReply(kind: ServiceKind, outcome: Exclude<ServiceOutcome, "refused">): string {
+  if (outcome === "cancelled") return serviceCancelled(kind);
   return outcome === "unconnected" ? SERVICE_UNCONNECTED : SERVICE_KINDS[kind][outcome];
 }
 
@@ -177,7 +178,12 @@ export interface ServiceRetryBook {
   unsure(call: ServiceCall, id: string): void;
   /** 접수가 확인됐다·닿지 못한 새 연락이다(잊는다). */
   settled(call: ServiceCall): void;
+  /** 같은 내용(같은 열쇠)의 보내기를 차례로 한다: 앞 것이 끝난 뒤 send를 부른다. 같은 집 파일을 쓰는 저장소끼리 같은 차례를 쓴다. */
+  queue(call: ServiceCall, send: () => Promise<void>): Promise<void>;
 }
+
+/** 보내기 차례: 집 파일(절대 경로)마다 하나(집을 A→B→A로 바꿔 저장소·에이전트가 둘이어도 같은 차례). 열쇠 → 마지막 보내기가 끝나는 때. */
+const LANES = new Map<string, Map<string, Promise<void>>>();
 
 type RetryFile = Record<string, { id: string; at_ms: number }>;
 
@@ -206,6 +212,8 @@ function readRetry(path: string): RetryFile {
  *  같은 집 파일을 쓰는 저장소가 둘이어도(집을 A→B→A로 바꿈) 서로의 기억을 덮어쓰지 않는다. SERVICE_RETRY_MS가 지난 것은 잊는다. 임시 파일에 쓴 뒤 이름을 바꾼다. */
 export class ServiceRetryStore implements ServiceRetryBook {
   private mem: RetryFile = {};
+  /** 파일이 없을 때(path null) 이 저장소만의 보내기 차례. */
+  private readonly ownLanes = new Map<string, Promise<void>>();
 
   constructor(private readonly path: string | null, private readonly now: () => number = () => Date.now()) {}
 
@@ -235,6 +243,21 @@ export class ServiceRetryStore implements ServiceRetryBook {
     if (!Object.hasOwn(file, key)) return;
     delete file[key];
     this.save(file);
+  }
+
+  queue(call: ServiceCall, send: () => Promise<void>): Promise<void> {
+    const home = this.path ? resolve(this.path) : null;
+    const lanes = home ? LANES.get(home) ?? new Map<string, Promise<void>>() : this.ownLanes;
+    if (home) LANES.set(home, lanes);
+    const key = serviceRetryKey(call);
+    const run = (lanes.get(key) ?? Promise.resolve()).then(send);
+    const done = run.then(() => undefined, () => undefined);
+    lanes.set(key, done);
+    void done.then(() => {
+      if (lanes.get(key) === done) lanes.delete(key);
+      if (home && lanes.size === 0 && LANES.get(home) === lanes) LANES.delete(home);
+    });
+    return run;
   }
 
   /** 지금 기억(지난 것은 뺀 사본). */

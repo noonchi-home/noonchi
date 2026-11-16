@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type WebSocket from "ws";
+import { HistoryDb } from "../src/brain/history/db.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { HEARD_MARK } from "../src/world/labels.js";
 import { startFakeCallService, type FakeCallService } from "./helpers/call-service.js";
@@ -147,5 +148,32 @@ describe("서버: 실제 폰 말 → 외부 연락 승인 → 전화 서비스 �
     expect(JSON.stringify(srv!.history.list({ kinds: ["service"] }))).not.toMatch(/탈수|UE/);
     await new Promise((r) => setTimeout(r, 1200));
     expect(dash.messages.filter((m) => m.type === "say").map((m) => m.text)).not.toContain("AS센터 전화는 하지 않을게요.");
+  }, SLOW);
+
+  it("서버(집)를 닫으면 차례를 기다리던 같은 내용의 연락은 보내지 않고 기록 DB에 취소로 남기고, 보내는 중인 연락이 끝난 뒤 닫는다", async () => {
+    fake = await startFakeCallService();
+    fake.answer = "hang";
+    const { runtime, phone, token } = await asked({ CALL_SERVICE_URL: fake.url });
+    phone.ws.send(JSON.stringify({ type: "say", text: "세탁기 AS 불러 줘" }));
+    const again = await phone.waitFor((m) => m.type === "reply" && Array.isArray(m.pending) && m.pending.length === 2, "두 번째 승인 질문");
+    const second = (again.pending as Msg[]).find((p) => p.token !== token)!.token as string;
+    phone.ws.send(JSON.stringify({ type: "confirm", token, choice: "approve" }));
+    phone.ws.send(JSON.stringify({ type: "confirm", token: second, choice: "approve" }));
+    for (const end = Date.now() + 5000; fake.requests.length === 0 && Date.now() < end; await new Promise((r) => setTimeout(r, 20)));
+    expect(fake.requests).toHaveLength(1);
+    await new Promise((r) => setTimeout(r, 200));
+    const closing = srv!.close();
+    srv = undefined;
+    await new Promise((r) => setTimeout(r, 200));
+    await fake.close();
+    await closing;
+    expect(fake.requests).toHaveLength(1);
+    const db = HistoryDb.open(join(runtime, "noonchi.db"));
+    try {
+      expect(db.list({ kinds: ["service"] }).map((r) => (r.data as Msg).outcome).sort()).toEqual(["cancelled", "unknown"]);
+      expect(db.list({ kinds: ["service"] }).map((r) => r.text)).toContain("세탁기 AS센터 전화 · 취소");
+    } finally {
+      db.close();
+    }
   }, SLOW);
 });

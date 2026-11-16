@@ -633,9 +633,10 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       async close() {
         if (closed) return;
         closed = true;
-        // 한 단계가 실패해도 나머지(특히 폰 포트·허브)는 닫는다. 새 집이 같은 포트를 다시 잡아야 한다
+        // 한 단계가 실패해도 나머지(특히 폰 포트·허브)는 닫는다. 새 집이 같은 포트를 다시 잡아야 한다.
+        // 외부 연락이 먼저다: 차례를 기다리던 연락은 취소로 기록하고, 보내는 중인 연락은 끝난 뒤(기록 DB·말풍선이 아직 열려 있을 때) 닫는다
         const steps: [string, () => unknown][] = [
-          ["초점", unsubFocus], ["관찰 흐름", () => { clearInterval(decideTimer); decider?.stop(); thoughts?.close(); tracker?.stop(); looker?.stop(); planner.abort(); unsubWorld(); return pipeline?.close(); }], ["눈 화면", () => feed?.close()],
+          ["외부 연락", () => agent.close()], ["초점", unsubFocus], ["관찰 흐름", () => { clearInterval(decideTimer); decider?.stop(); thoughts?.close(); tracker?.stop(); looker?.stop(); planner.abort(); unsubWorld(); return pipeline?.close(); }], ["눈 화면", () => feed?.close()],
           ["폰 서버", () => phoneNow?.close()], ["앱", () => appNow.close()], ["배치", () => layout?.editor.close()], ["ThinQ", () => link?.stop()],
           ["기록", unsubHistory], ["허브", () => signals.stop()],
         ];

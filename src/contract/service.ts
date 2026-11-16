@@ -23,8 +23,9 @@ export interface ServiceCall {
 }
 
 /** 연락 결과: sent 보냄(전화 서비스가 2xx), refused 거절(승인 답 거절·취소), unconnected 연결 없음(CALL_SERVICE_URL 없음),
- *  failed 실패(2xx가 아닌 답, 또는 보내기 전에 닿지 못함), unknown 확인 불가(보낸 뒤 답이 없거나 끊김: 접수했는지 모른다). */
-export type ServiceOutcome = "sent" | "refused" | "unconnected" | "failed" | "unknown";
+ *  failed 실패(2xx가 아닌 답, 또는 보내기 전에 닿지 못함), unknown 확인 불가(보낸 뒤 답이 없거나 끊김: 접수했는지 모른다),
+ *  cancelled 취소(승인했지만 보낼 차례 전에 집을 닫음: 보내지 않았다). */
+export type ServiceOutcome = "sent" | "refused" | "unconnected" | "failed" | "unknown" | "cancelled";
 
 /** 연락 결과 하나(서버가 기록 DB service 줄과 말풍선 카드에 쓴다). id는 보낸 요청의 id다(확인 불가 뒤 다시 보낸 요청은 같은 id). error는 실패·확인 불가 까닭. */
 export interface ServiceResult { id: string; call: ServiceCall; outcome: ServiceOutcome; atMs: number; error?: string }

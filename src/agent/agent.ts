@@ -30,7 +30,7 @@ import type { ServiceCall, ServiceOutcome, ServiceResult } from "../contract/ser
 import type { CallServiceSent } from "../infer/call-service.js";
 import type { PendingService } from "./policy.js";
 import {
-  CALL_SERVICE, SERVICE_BLOCKED, SERVICE_KINDS, SERVICE_RETRY_BROKEN, SERVICE_UNCONNECTED, ServiceRetryStore, serviceArgs, serviceCancelled, serviceReply, serviceRetryKey, serviceSecrets,
+  CALL_SERVICE, SERVICE_BLOCKED, SERVICE_KINDS, SERVICE_RETRY_BROKEN, SERVICE_UNCONNECTED, ServiceRetryStore, serviceArgs, serviceCancelled, serviceReply, serviceSecrets,
   type ServiceContacts, type ServiceRetryBook,
 } from "./service.js";
 
@@ -208,8 +208,10 @@ export class Agent {
   private readonly onService?: (r: ServiceResult) => void;
   private readonly contacts: ServiceContacts;
   private readonly retries: ServiceRetryBook;
-  /** 같은 내용의 외부 연락 보내기 차례(기억 열쇠 → 마지막 보내기가 끝나는 때). */
-  private readonly sending = new Map<string, Promise<void>>();
+  /** 이 에이전트가 승인해 보내기를 기다리거나 보내는 중인 외부 연락. 닫을 때 기다리는 것은 취소하고 보내는 중인 것은 끝날 때까지 기다린다. */
+  private readonly sends = new Set<{ started: boolean; finish(r: ConfirmResult): boolean; cancel(): void; done: Promise<void> }>();
+  /** 닫혔다(집을 닫음): 새로 승인된 외부 연락은 보내지 않고 취소로 끝낸다. */
+  private closed = false;
 
   constructor(opts: AgentOptions) {
     this.hub = opts.hub;
@@ -544,15 +546,49 @@ export class Agent {
    *  id는 새 값이고, 같은 내용의 앞 연락이 남아 있으면 그 id다. 보내기 전에 기억에 남기고(보내는 사이 꺼져도 남는다),
    *  접수(2xx)가 확인되거나 앞 기억 없이 실패한 새 연락이면 잊는다(확인 불가가 남은 연락은 닿지 못함·2xx 아닌 답으로 잊지 않는다).
    *  기억을 읽거나 쓸 수 없으면 보내지 않는다.
-   *  같은 내용(같은 기억 열쇠)의 보내기는 앞 것이 끝난 뒤 차례로 한다(앞 새 연락의 실패가 보내는 중인 다음 연락의 id를 지우지 않게). */
+   *  같은 내용(같은 기억 열쇠)의 보내기는 앞 것이 끝난 뒤 차례로 한다(앞 새 연락의 실패가 보내는 중인 다음 연락의 id를 지우지 않게).
+   *  차례는 집 파일마다 하나라(retries.queue) 집을 바꿔 에이전트가 둘이어도 같다. 닫힌 뒤거나 차례 전에 닫히면 보내지 않고 취소로 끝낸다. */
   private sendService(p: PendingService): Promise<ConfirmResult> {
-    const key = serviceRetryKey(p.call);
-    const before = this.sending.get(key) ?? Promise.resolve();
-    const run = before.then(() => this.sendOnce(p));
-    const done = run.then(() => undefined, () => undefined);
-    this.sending.set(key, done);
-    void done.then(() => { if (this.sending.get(key) === done) this.sending.delete(key); });
-    return run;
+    if (this.closed) return Promise.resolve(this.cancelSend(p));
+    let resolveResult!: (r: ConfirmResult) => void;
+    const result = new Promise<ConfirmResult>((r) => { resolveResult = r; });
+    let settled = false;
+    const finish = (r: ConfirmResult) => {
+      if (settled) return false;
+      settled = true;
+      resolveResult(r);
+      return true;
+    };
+    const job = {
+      started: false, finish,
+      cancel: () => { if (!job.started && !settled) finish(this.cancelSend(p)); },
+      done: Promise.resolve(),
+    };
+    job.done = this.retries.queue(p.call, async () => {
+      if (settled) return;
+      job.started = true;
+      finish(await this.sendOnce(p));
+    }).catch((e: unknown) => {
+      finish({ ok: false, reply: serviceReply(p.call.kind, "failed"), error: (e as Error).message });
+    });
+    this.sends.add(job);
+    void job.done.then(() => this.sends.delete(job));
+    return result;
+  }
+
+  /** 닫는다(집을 닫음): 차례를 기다리던 외부 연락은 보내지 않고 취소로 끝내고(결과 cancelled), 보내는 중인 것은 끝날 때까지 기다린다. 그 뒤 승인은 보내지 않는다. */
+  async close(): Promise<void> {
+    this.closed = true;
+    const sends = [...this.sends];
+    for (const j of sends) j.cancel();
+    await Promise.all(sends.filter((j) => j.started).map((j) => j.done));
+  }
+
+  /** 보내지 않고 취소로 끝낸 외부 연락의 답(결과를 알린다). */
+  private cancelSend(p: PendingService): ConfirmResult {
+    const reply = serviceReply(p.call.kind, "cancelled");
+    this.serviceDone(p.call, "cancelled");
+    return { ok: false, reply, error: reply, action: { tool: CALL_SERVICE, args: serviceArgs(p.call), ok: false, error: reply, at: new Date().toISOString() } };
   }
 
   private async sendOnce(p: PendingService): Promise<ConfirmResult> {

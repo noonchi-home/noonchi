@@ -459,14 +459,22 @@ describe("Agent + call_service(가짜 모델·가짜 전화 서비스)", () => {
       const waiting = first.agent.confirm(r1.pendingConfirmations[0]!.token, "approve");
       for (const end = Date.now() + 5000; fake.requests.length === 0 && Date.now() < end; await new Promise((r) => setTimeout(r, 20)));
       expect(fake.requests).toHaveLength(1);
-      // 답을 기다리는 동안(서버가 여기서 꺼졌다고 보고) 다시 띄운 에이전트
-      fake.answer = "reply";
-      const again = serviceAgent(client(fake.url), { retries: new ServiceRetryStore(path) });
-      const r2 = await again.agent.chat("phone", "보호자에게 연락해 줘", { heard: true });
-      expect((await again.agent.confirm(r2.pendingConfirmations[0]!.token, "approve")).ok).toBe(true);
-      expect(fake.requests[1]!.body.id).toBe(fake.requests[0]!.body.id);
+      // 답을 기다리는 동안(서버가 여기서 꺼지면 다시 띄운 서버가 읽을) 집 파일에 이미 그 id가 있다
+      const id = fake.requests[0]!.body.id as string;
+      const fall = { kind: "guardian", to: DAUGHTER, device: null, problem: null, errorCode: null, person: "거실에서 넘어진 뒤 일어나지 못함" } as const;
+      expect(new ServiceRetryStore(path).idFor(fall)).toBe(id);
       await fake.close();
       expect((await waiting).ok).toBe(false);
+      // 다시 띄운 에이전트(새 저장소)는 같은 내용을 그 id로 보낸다
+      const back = await startFakeCallService();
+      try {
+        const again = serviceAgent(client(back.url), { retries: new ServiceRetryStore(path) });
+        const r2 = await again.agent.chat("phone", "보호자에게 연락해 줘", { heard: true });
+        expect((await again.agent.confirm(r2.pendingConfirmations[0]!.token, "approve")).ok).toBe(true);
+        expect(back.requests[0]!.body.id).toBe(id);
+      } finally {
+        await back.close();
+      }
     } finally {
       await fake.close();
     }
@@ -540,6 +548,57 @@ describe("Agent + call_service(가짜 모델·가짜 전화 서비스)", () => {
       expect(new ServiceRetryStore(path).idFor(WASHER_CALL)).toBe(fake.requests[0]!.body.id);
       await fake.close();
       expect((await second).ok).toBe(false);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("같은 집 파일을 쓰는 에이전트 둘(집을 A→B→A로 바꿈)도 같은 내용의 보내기를 차례로 한다: 옛 에이전트의 새 연락이 닿지 못해 잊어도, 새 에이전트가 보내는 중인 id는 남는다", async () => {
+    const fake = await startFakeCallService();
+    fake.answer = "hang";
+    const dead = await startFakeCallService();
+    await dead.close();
+    const path = serviceRetryPath(mkdtempSync(join(tmpdir(), "svc-two-agents-")), "oneroom");
+    try {
+      const old = serviceAgent(new CallServiceClient(dead.url), { retries: new ServiceRetryStore(path) });
+      const fresh = serviceAgent(client(fake.url, 60_000), { retries: new ServiceRetryStore(path) });
+      const a = (await old.agent.chat("s", "세탁기 AS 불러 줘")).pendingConfirmations[0]!.token;
+      const b = (await fresh.agent.chat("s", "세탁기 AS 불러 줘")).pendingConfirmations[0]!.token;
+      const first = old.agent.confirm(a, "approve");
+      const second = fresh.agent.confirm(b, "approve");
+      expect((await first).reply).toBe("AS센터에 전화하지 못했어요.");
+      for (const end = Date.now() + 5000; fake.requests.length === 0 && Date.now() < end; await new Promise((r) => setTimeout(r, 20)));
+      expect(fake.requests).toHaveLength(1);
+      expect(new ServiceRetryStore(path).idFor(WASHER_CALL)).toBe(fake.requests[0]!.body.id);
+      await fake.close();
+      expect((await second).ok).toBe(false);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("에이전트를 닫으면(집을 닫음) 차례를 기다리던 연락은 보내지 않고 취소로 끝내고(결과 cancelled, 「AS센터 전화를 취소했어요.」), 보내는 중인 연락이 끝날 때까지 기다린다. 닫은 뒤 승인은 보내지 않는다", async () => {
+    const fake = await startFakeCallService();
+    fake.answer = "hang";
+    try {
+      const { agent, results } = serviceAgent(client(fake.url, 60_000));
+      const a = (await agent.chat("s1", "세탁기 AS 불러 줘")).pendingConfirmations[0]!.token;
+      const b = (await agent.chat("s2", "세탁기 AS 불러 줘")).pendingConfirmations[0]!.token;
+      const c = (await agent.chat("s3", "보호자에게 연락해 줘")).pendingConfirmations[0]!.token;
+      const sending = agent.confirm(a, "approve");
+      const queued = agent.confirm(b, "approve");
+      for (const end = Date.now() + 5000; fake.requests.length === 0 && Date.now() < end; await new Promise((r) => setTimeout(r, 20)));
+      let closed = false;
+      const closing = agent.close().then(() => { closed = true; });
+      expect(await queued).toMatchObject({ ok: false, reply: "AS센터 전화를 취소했어요." });
+      await new Promise((r) => setTimeout(r, 100));
+      expect(closed).toBe(false);
+      await fake.close();
+      expect((await sending).reply).toBe("AS센터 전화 요청이 접수됐는지 확인하지 못했어요.");
+      await closing;
+      expect(await agent.confirm(c, "approve")).toMatchObject({ ok: false, reply: "보호자 연락을 취소했어요." });
+      expect(fake.requests).toHaveLength(1);
+      expect(results.map((r) => r.outcome).sort()).toEqual(["cancelled", "cancelled", "unknown"]);
     } finally {
       await fake.close();
     }
