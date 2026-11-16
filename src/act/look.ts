@@ -22,7 +22,7 @@ import { LOOK_MARGIN, type LookSpot } from "../observe/crop.js";
 import type { LatestFrame } from "../observe/pipeline.js";
 import { LOOK_TEXT, type TellMode } from "./labels.js";
 import { OBJECT_NAME, redactSaid } from "../world/labels.js";
-import { inView } from "../world/place.js";
+import { inView } from "../world/index.js";
 import { CLASSES, UNKNOWN_STATES, type ClassKey, type StateKey } from "../world/vocab.js";
 import { putAway, type Placed } from "./tasks.js";
 import type { Stall, Stray } from "./track.js";

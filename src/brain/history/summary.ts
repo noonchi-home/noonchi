@@ -3,7 +3,7 @@
 // maxBytes(UTF-8)를 넘으면 오래된 줄부터 빼고 첫 줄에 「앞선 기록 N줄 생략」을 둔다. 관찰 텍스트가 70%, 행동 요약이 30%를 쓰고, 한쪽이 덜 쓰면 남는 몫을 다른 쪽이 쓴다.
 // caps는 칸마다의 상한(바이트, PAM 반성 칸 상한)이다.
 import type { DaySummary, HistoryKind } from "../../contract/history.js";
-import { collapseLines } from "../../world/text.js";
+import { collapseLines } from "../../world/index.js";
 import type { HistoryDb } from "./db.js";
 import { SUMMARY_TEXT } from "./labels.js";
 

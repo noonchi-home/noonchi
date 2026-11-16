@@ -67,7 +67,7 @@ import { AGAIN_TEXT, APPROVAL_TEXT, CAUTION_TEXT, CLOSER_TEXT, DEVICE_UNKNOWN, E
 import { placeName, type PlaceNames } from "../layout/index.js";
 import { roomAt } from "../layout/index.js";
 import { OBJECT_NAME, PLACE_UNKNOWN, STATE_TEXT, onSurface } from "../world/labels.js";
-import { ConditionWatch, type Condition, type ConditionContext } from "../world/conditions.js";
+import { ConditionWatch, type Condition, type ConditionContext } from "../world/index.js";
 import { DEVICE_STATES, NEAR_M, PHONE_NEAR_M } from "../world/vocab.js";
 import { approvalNeed, taskKey, type ApprovalAnswer, type ApprovalBook } from "../agent/approval.js";
 

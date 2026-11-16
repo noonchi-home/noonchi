@@ -6,7 +6,7 @@ import type { PlanView } from "../../contract/plan.js";
 import type { ControlMode } from "../../contract/setup.js";
 import type { DeviceState } from "../../devices/index.js";
 import { CHANGE_TEXT } from "../../world/labels.js";
-import { becameKey, deviceText } from "../../world/relations.js";
+import { becameKey, deviceText } from "../../world/index.js";
 import type { HistoryDb } from "./db.js";
 import { DECISION_TEXT, MODE_TEXT, PLAN_STATUS_TEXT } from "./labels.js";
 

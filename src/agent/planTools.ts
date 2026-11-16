@@ -20,7 +20,7 @@ import { KIND_LABELS, findTypeRule } from "../devices/index.js";
 import { placeName, type PlaceNames } from "../layout/index.js";
 import { OBJECT_NAME } from "../world/labels.js";
 import { CLASSES, DEVICE_STATES, type DeviceStateKey } from "../world/vocab.js";
-import { ConditionSchema, checkCondition, type Condition, type ConditionHome } from "../world/conditions.js";
+import { ConditionSchema, checkCondition, type Condition, type ConditionHome } from "../world/index.js";
 import { RISKY_NAME_PROBLEM, needsConfirm, riskyNames } from "./policy.js";
 import { TOOLS, toolCommand, type ToolDef, type ToolResult } from "./tools.js";
 import type { ApprovalWhy } from "./approval.js";

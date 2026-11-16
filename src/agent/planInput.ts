@@ -2,7 +2,7 @@
 // 사용자 말에는 PAM 행동·판단, World State(실행 추적이 이미 치운 물건 표시 포함), 평면도, 가전, 손(폰) 자리, 승인 규칙, 조건 낱말 키를 글로 넣는다.
 import type { Placed } from "../act/tasks.js";
 import type { WorldView } from "../contract/world.js";
-import { CONDITION_KINDS } from "../world/conditions.js";
+import { CONDITION_KINDS } from "../world/index.js";
 import { CLASSES, DEVICE_STATES, STATES, type ClassKey, type Facet, type Target } from "../world/vocab.js";
 import { PLAN_LIMITS, type PlanContext } from "./planTools.js";
 import { RISKY_LIST } from "./policy.js";

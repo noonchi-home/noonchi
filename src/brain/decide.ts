@@ -7,9 +7,9 @@ import { taskOf } from "../act/tasks.js";
 import { checkInput, fsmRuleOf, isoWithOffset, type PamMemory } from "./decision.js";
 import { PamLinkError, type PamClient } from "./pam.js";
 import { LINK_TEXT, TRIGGER_TEXT, redactHeard, redactSaid, saidIn } from "../world/labels.js";
-import type { WorldState } from "../world/state.js";
-import { textFromWorld } from "../world/text.js";
-import type { Trigger, TriggerPause } from "../world/trigger.js";
+import type { WorldState } from "../world/index.js";
+import { textFromWorld } from "../world/index.js";
+import type { Trigger, TriggerPause } from "../world/index.js";
 
 /** 관찰 텍스트에 넣을 변화를 이만큼 둔다(텍스트 창은 그 안의 최근 60초). */
 const RECENT_KEEP_MS = 600_000;
