@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { deviceAnchor } from "./anchors";
-import { screenPoints, type ScreenPoint } from "./project";
-import { useViewer } from "./viewer";
+import { screenPoints, type ScreenPoint } from "../lib/twin-project";
+import { useViewer } from "../lib/twin-viewer";
 import { hiddenByFocus } from "./visibility";
 
-export type { ScreenPoint } from "./project";
+export type { ScreenPoint } from "../lib/twin-project";
 
 /**
  * 매 프레임 기기 id들의 덮개 좌표. 방 초점(초점 방만)으로 숨은 다른 방 기기는 visible=false.

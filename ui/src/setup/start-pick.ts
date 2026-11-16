@@ -1,8 +1,8 @@
-// 설정 4단계 시작 위치 고르기: 3D 트윈(같은 출처 iframe의 뷰어, ui/src/twin/viewer.ts)에서 누른 픽셀 → 바닥 평면 점, 평면 점 → 트윈 칸 픽셀.
+// 설정 4단계 시작 위치 고르기: 3D 트윈(같은 출처 iframe의 뷰어, ui/src/lib/twin-viewer.ts)에서 누른 픽셀 → 바닥 평면 점, 평면 점 → 트윈 칸 픽셀.
 // 뷰어 카메라를 그대로 쓴다(three 광선이 높이 0 면과 만나는 점). 화면(PositionStep.tsx)은 이 값으로 부품을 놓기만 한다.
 import { useEffect, useRef, useState, type RefObject } from "react";
-import { projectPoint } from "../twin/project";
-import type { AptViewer } from "../twin/viewer";
+import { projectPoint } from "../lib/twin-project";
+import type { AptViewer } from "../lib/twin-viewer";
 
 export type Pos = [number, number];
 type Rect = { left: number; top: number; width: number; height: number };

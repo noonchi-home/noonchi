@@ -1,8 +1,8 @@
 import { TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Alert, AlertTitle } from "../components/ui/alert";
-import { hideViewerBar } from "./embed";
-import { ViewerContext, waitForViewer, type AptViewer } from "./viewer";
+import { hideViewerBar } from "../lib/twin-embed";
+import { ViewerContext, waitForViewer, type AptViewer } from "../lib/twin-viewer";
 
 const SRC = "/twin/viewer/?live=auto&embed=1";
 

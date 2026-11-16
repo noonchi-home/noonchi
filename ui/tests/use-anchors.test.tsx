@@ -2,7 +2,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it } from "vitest";
 import { useAnchors } from "../src/twin/use-anchors";
-import { ViewerContext, type AptViewer } from "../src/twin/viewer";
+import { ViewerContext, type AptViewer } from "../src/lib/twin-viewer";
 
 // 실제 THREE 대신 useAnchors·deviceAnchor가 쓰는 만큼만: 모든 기기는 원점, 행렬은 단위 행렬.
 class Vector3 { x = 0; y = 0; z = 0; }

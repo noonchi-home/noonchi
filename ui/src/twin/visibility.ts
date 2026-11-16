@@ -1,4 +1,4 @@
-import type { AptViewer, TwinObject } from "./viewer";
+import type { AptViewer, TwinObject } from "../lib/twin-viewer";
 
 /**
  * 말풍선을 감출지: 방 초점 + 초점 방만 때문에 다른 방 물건이 숨었을 때만 true.

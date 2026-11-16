@@ -1,8 +1,8 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { hideViewerBar } from "../src/twin/embed";
+import { hideViewerBar } from "../src/lib/twin-embed";
 import { TwinStage } from "../src/twin/TwinStage";
-import { useViewer, waitForViewer } from "../src/twin/viewer";
+import { useViewer, waitForViewer } from "../src/lib/twin-viewer";
 
 // 실제 뷰어(twin-studio main.mjs)처럼: window.aptViewer는 scene.json을 받기 전에 먼저 생기고,
 // 그때 ready는 이미 풀린 Promise다. show()가 시작되면 loading=true, 끝나면 results.mode가 채워진다.

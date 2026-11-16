@@ -13,8 +13,8 @@ import { Skeleton } from "../components/ui/skeleton";
 import { Status } from "../components/ui/status";
 import { cn } from "../lib/utils";
 import { pickPhoneUrl, urlParts } from "../lib/phone-url";
-import { hideViewerBar } from "../twin/embed";
-import { waitForViewer, type AptViewer } from "../twin/viewer";
+import { hideViewerBar } from "../lib/twin-embed";
+import { waitForViewer, type AptViewer } from "../lib/twin-viewer";
 import { call, failText, isOk } from "./setup-api";
 import { arrowPath, clockwiseSign, floorAtBox, useFloorClicks, useOverlay, yawOf, type Pos } from "./start-pick";
 

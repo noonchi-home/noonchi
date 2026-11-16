@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { projectPoint, screenPoints } from "../src/twin/project";
+import { projectPoint, screenPoints } from "../src/lib/twin-project";
 
 const I = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 

@@ -9,7 +9,7 @@ import { useEvents } from "../lib/use-events";
 import { useHealth } from "../lib/use-health";
 import { TwinStage } from "../twin/TwinStage";
 import { useAnchors } from "../twin/use-anchors";
-import { useViewer } from "../twin/viewer";
+import { useViewer } from "../lib/twin-viewer";
 import type { TwinEngine } from "../twin/3d/engine";
 import { LiveQueue, attachLive } from "../twin/3d/live";
 import { BAKE_VIEWS } from "../twin/3d/projection";
