@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { fetchRetry } from "../src/server/net.js";
+import { fetchRetry } from "../src/shared/net.js";
 import { phoneVideoDir } from "../src/server/home.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 

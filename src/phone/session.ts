@@ -11,7 +11,8 @@ import type { TwinLandmark } from "../sync/landmarks.js";
 import { rigidGap } from "../sync/rigid.js";
 import type { StartPose } from "../sync/start.js";
 import type { WallSeg } from "../sync/walls.js";
-import { fromTwin, planOf, toTwin, type Alignment, type Plan2, type Quat, type Vec3 } from "./align.js";
+import { fromTwin, planOf, toTwin, type Alignment, type Plan2, type Vec3 } from "../shared/geometry.js";
+import type { Quat, CameraView } from "../contract/observe.js";
 import { DEFAULT_EYE_HEIGHT_M } from "./home-plan.js";
 import type { FrameHeader } from "./packet.js";
 
@@ -141,13 +142,6 @@ export function estimateViewpoint(scene: { plan?: { rooms?: { id: string; polygo
   };
 }
 
-/** 엔진 프레임의 카메라: 원점은 트윈 눈 위치 [x, 높이, y], 방향 계산에 쓸 AR 회전과 맞춤 회전(theta), 투영 행렬(16개, 열 우선). */
-export interface CameraView {
-  origin: Vec3;
-  orientation: Quat;
-  theta: number;
-  projection: number[];
-}
 
 /** '여기'로 쓸 수 있는 마지막 자세의 나이(ms). */
 export const HERE_MAX_AGE_MS = 15_000;

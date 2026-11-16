@@ -5,7 +5,7 @@
 //   값마다 근거 종류를 함께 낸다: VLM이 그 값을 직접 답했으면 명시(explicit true), 답이 없어 absent를 넣었으면 추정(false).
 // - 안정: 같은 가전·속성에서 같은 값이 연속으로 이어져야 넘긴다. 값이 없는 프레임(시야 밖·가림·답 없음)은 셈을 끊지 않고 상태도 바꾸지 않는다.
 import type { SightMiss } from "../contract/world.js";
-import type { CameraView } from "../phone/session.js";
+import type { CameraView } from "../contract/observe.js";
 import { inView, rayDir } from "./place.js";
 import { KINDS, cameraKindOf } from "../model/kinds.js";
 import { SIGHT_MATCH, SIGHT_STABLE, STATES, type FixtureClass, type SightRule, type StateKey } from "./vocab.js";

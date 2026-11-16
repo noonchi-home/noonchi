@@ -38,7 +38,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import type { Detection } from "../src/brain/detector.js";
+import type { Detection } from "../src/contract/observe.js";
 import type { HistoryRow } from "../src/contract/history.js";
 import type { WorldObject, WorldView } from "../src/contract/world.js";
 import { EXEC_TEXT } from "../src/plan/labels.js";

@@ -1,5 +1,5 @@
 // 시험용 관절: COCO 17개(기본은 안 보임, 신뢰도 0)에 번호별 [x, y, 신뢰도]를 넣는다. 5·6 어깨, 9·10 손목, 11·12 엉덩이, 13·14 무릎.
-import type { Keypoint, Pose } from "../../src/brain/detector.js";
+import type { Keypoint, Pose } from "../../src/contract/observe.js";
 
 export function poseOf(points: Record<number, Keypoint>, box: Pose["box"] = [80, 60, 100, 300], score = 0.9): Pose {
   const keypoints: Keypoint[] = Array.from({ length: 17 }, () => [0, 0, 0] as Keypoint);

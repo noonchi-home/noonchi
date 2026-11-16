@@ -5,7 +5,7 @@
 
 import { randomUUID } from "node:crypto";
 import type { ThinqDeviceView } from "../contract/setup.js";
-import { fetchRetry } from "../server/net.js";
+import { fetchRetry } from "../shared/net.js";
 
 type Env = Record<string, string | undefined>;
 

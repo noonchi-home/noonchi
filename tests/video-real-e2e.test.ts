@@ -12,7 +12,7 @@ import type { HistoryRow } from "../src/contract/history.js";
 import type { WorldView } from "../src/contract/world.js";
 import { encodeFramePacket } from "../src/phone/packet.js";
 import { videoSession } from "../src/phone/server.js";
-import { fetchRetry } from "../src/server/net.js";
+import { fetchRetry } from "../src/shared/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { ScriptedDetector, det } from "./helpers/detectors.js";
 import { startFakePam, type FakePam } from "./helpers/pam.js";

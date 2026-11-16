@@ -18,7 +18,8 @@
 // 다시 푸는 것은 0.5초에 한 번, 새 벽 점 10개나 새 물건 관찰이 있을 때만.
 // 영상 모드(fixStart): 고정 카메라라 시작 자리가 곧 카메라 자리다. 바로 맞춤(출처 video)으로 두고 물건·벽으로 변환을 움직이지 않는다.
 
-import type { Quat, Vec3 } from "../phone/align.js";
+import type { Vec3 } from "../shared/geometry.js";
+import type { Quat } from "../contract/observe.js";
 import { landmarkClass, type LandmarkClass } from "./classes.js";
 import { LandmarkStore, boxRay, edgePoint, rayFloor, type FrameCamera, type LandmarkCluster, type LandmarkObs, type TwinLandmark } from "./landmarks.js";
 import { applyRigid, limitStep, ransacRigid, rigidGap, solveTerms, type P2, type Rigid, type Term } from "./rigid.js";

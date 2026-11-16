@@ -56,7 +56,7 @@
 // 그 면을 바꾸는 것도 이 계획의 관찰이다. 다른 행동이 맞으면 다음 판단이 새 계획으로 바꾼다.
 // 치운 물건(placed): 놓기 단계를 끝낸 물건과 그 계획의 넣은 곳(끝낸 때 싱크볼 안이면 그 싱크볼)을 남긴다. VLM 자리 사실이 싱크대 안이 아니어도
 // 계획 전·실행 전 검사·계획 입력·제출 검사와 대상 고르기가 이미 치운 것으로 본다. 다시 집거나(손에 있음 확인됨) 그 영역 밖(다른 면, 싱크볼이면 싱크볼 밖)에서 보이면 지운다.
-import type { BrainLog, ExecState } from "../contract/events.js";
+import type { BrainLog, ExecState, DecisionRecord } from "../contract/events.js";
 import type { HeardAt, PhoneStepKind, PlannedCommand, PlannedCommandMessage } from "../contract/phone.js";
 import type { OffTrack, PlanView, StepStatus, XZ } from "../contract/plan.js";
 import type { Facet, WorldChange, WorldChangeKind, WorldEye, WorldObject, WorldView } from "../contract/world.js";
@@ -69,7 +69,6 @@ import { roomAt } from "../plan/route.js";
 import { OBJECT_NAME, PLACE_UNKNOWN, STATE_TEXT, onSurface } from "../world/labels.js";
 import { ConditionWatch, type Condition, type ConditionContext } from "../world/conditions.js";
 import { DEVICE_STATES, NEAR_M, PHONE_NEAR_M } from "../world/vocab.js";
-import type { DecisionRecord } from "../world/decide.js";
 import { approvalNeed, taskKey, type ApprovalAnswer, type ApprovalBook } from "../agent/approval.js";
 
 import { HUMAN_KINDS, TOOL_STATES, needsPhone, objectNames, riskyHand, selfStopWait, type AgentPlan, type AgentStep, type PlanResult } from "../agent/planTools.js";

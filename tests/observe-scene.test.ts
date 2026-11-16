@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { startFakeOpenAI, type FakeServer } from "../scripts/fake-openai.js";
 import { VlmClient } from "../src/infer/vlm.js";
 import { analyzeScene, CLOSER_NOTE, parseScene, SCENE_JSON_SCHEMA, SCENE_PROMPT } from "../src/observe/scene.js";
-import { sha256, type EngineFrame } from "../src/observe/ring.js";
+import { sha256 } from "../src/observe/ring.js";
+import type { EngineFrame } from "../src/contract/observe.js";
 
 let fake: FakeServer | undefined;
 afterEach(async () => { await fake?.close(); fake = undefined; });

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { originChecker } from "../src/server/app.js";
-import { fetchRetry } from "../src/server/net.js";
+import { fetchRetry } from "../src/shared/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { openWebSocket } from "./helpers/ws.js";
 

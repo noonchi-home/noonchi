@@ -4,8 +4,9 @@
 
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { josa } from "../agent/phrases.js";
-import { compact, detectRooms, stripParticle } from "../agent/search.js";
+import { josa } from "../shared/korean.js";
+import { detectRooms } from "../agent/search.js";
+import { compact, stripParticle } from "../shared/korean.js";
 import type { TypeInfo } from "./catalog.js";
 
 // 장면·배치 메시지 타입은 계약(src/contract/layout.ts)에 있다. 다른 파일이 이 파일에서 가져가던 이름을 그대로 내보낸다.

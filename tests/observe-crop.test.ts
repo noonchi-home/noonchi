@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import jpeg from "jpeg-js";
 import { cropBox, cropJpeg, onCropEdge, toFrameBox, toFrameDetection, toFramePoint } from "../src/observe/crop.js";
-import { maskCells } from "../src/brain/seg.js";
+import { maskCells } from "../src/shared/mask.js";
 import { det } from "./helpers/detectors.js";
 import { pixelOf, placeBox } from "../src/world/place.js";
 import { frameJpeg, LOOK_SIZE, LOOK_VIEW } from "./helpers/camera.js";

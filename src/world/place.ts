@@ -1,7 +1,7 @@
 // 물건의 트윈 위치: 박스 아래 가운데로 카메라 광선을 쏴 트윈의 아는 면(식탁·책상·조리대·싱크대 윗면)과 만나는 점, 없으면 바닥.
 // 광선: 투영 역행렬로 시점 방향을 구하고, AR 회전 → 맞춤 회전(theta, 수평)으로 트윈 [x, 높이, y]로 옮긴다.
-import { rotate2, rotate3, type Quat } from "../phone/align.js";
-import type { CameraView } from "../phone/session.js";
+import { rotate2, rotate3 } from "../shared/geometry.js";
+import type { Quat, CameraView } from "../contract/observe.js";
 
 type V3 = [number, number, number];
 /** 면 안의 싱크볼 사각형: 가운데 평면도 [x, y], 크기 [폭, 깊이](m), 깊이는 facing_deg 방향(배치 facing, 0 = +x, 90 = +y). */

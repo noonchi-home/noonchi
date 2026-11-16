@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { PlanView } from "../src/contract/plan.js";
 import { HistoryDb } from "../src/history/db.js";
-import { fetchRetry } from "../src/server/net.js";
+import { fetchRetry } from "../src/shared/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 
 let srv: RunningServer | undefined;

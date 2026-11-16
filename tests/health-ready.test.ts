@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { HealthView } from "../src/contract/events.js";
-import { fetchRetry, listenRetry } from "../src/server/net.js";
+import { fetchRetry, listenRetry } from "../src/shared/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 
 let srv: RunningServer | undefined;

@@ -7,7 +7,7 @@ import type WebSocket from "ws";
 import { startFakeOpenAI, type FakeServer } from "../scripts/fake-openai.js";
 import type { DetectResult, Detector } from "../src/brain/detector.js";
 import { encodeFramePacket } from "../src/phone/packet.js";
-import { fetchRetry } from "../src/server/net.js";
+import { fetchRetry } from "../src/shared/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { startFakePam, type FakePam } from "./helpers/pam.js";
 import { look, perspective } from "./helpers/sync-sim.js";

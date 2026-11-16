@@ -4,7 +4,7 @@
 import { z } from "zod";
 import type { VlmClient } from "../infer/vlm.js";
 import { SCENE_STATES, STATES, type Facet, type StateKey, type Target } from "../world/vocab.js";
-import type { EngineFrame } from "./ring.js";
+import type { EngineFrame } from "../contract/observe.js";
 
 export { SCENE_STATES };
 export type SceneState = (typeof SCENE_STATES)[number];

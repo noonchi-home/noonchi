@@ -1,7 +1,7 @@
-// seg 출력 풀기(src/brain/seg.ts): 프로토 32장 × 계수 → 상자로 자른 0/1 그림, 그 테두리 상자, 바닥 점. 합성 값으로 본다.
+// seg 출력 풀기(src/shared/mask.ts): 프로토 32장 × 계수 → 상자로 자른 0/1 그림, 그 테두리 상자, 바닥 점. 합성 값으로 본다.
 
 import { describe, expect, it } from "vitest";
-import { maskCells, maskOf } from "../src/brain/seg.js";
+import { maskCells, maskOf } from "../src/shared/mask.js";
 
 const P = 160;
 /** 프로토 [32, 160, 160]: k번 장을 fill(c, r) 값으로 채운다. */

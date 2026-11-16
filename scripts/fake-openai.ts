@@ -5,7 +5,7 @@
 //     respond는 Promise도 돌려줄 수 있다(시험에서 답을 붙잡아 두기).
 import { createServer } from "node:http";
 import { pathToFileURL } from "node:url";
-import { listenRetry } from "../src/server/net.js";
+import { listenRetry } from "../src/shared/net.js";
 
 export interface FakeRequest { method: string; path: string; body: any }
 export interface FakeServer { url: string; requests: FakeRequest[]; close(): Promise<void> }

@@ -9,7 +9,8 @@ import { KINDS, KIND_ORDER, isRiskyKind, kindEntry } from "../model/kinds.js";
 import { checkCommand, normalizeCommand } from "../model/mapping.js";
 import { DEVICE_VERB, STEP_LABEL } from "../plan/labels.js";
 import { approvalNeed, deviceKey, memoryApprovals, type ApprovalBook } from "./approval.js";
-import { josa, toolForCommand } from "./phrases.js";
+import { toolForCommand } from "./phrases.js";
+import { josa } from "../shared/korean.js";
 
 export interface ConfirmRule {
   kind: DeviceKind;

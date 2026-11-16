@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { AgentAction } from "../src/agent/agent.js";
 import { focusFromActions } from "../src/layout/focus.js";
-import { fetchRetry } from "../src/server/net.js";
+import { fetchRetry } from "../src/shared/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { CATALOG, scene } from "./helpers/layout.js";
 import { startFakeLlm, type FakeLlm } from "./helpers/llm.js";

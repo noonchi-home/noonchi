@@ -1,6 +1,6 @@
 // 시험용 위치 맞춤: 폰이 시작 위치에 서서 「여기서 시작」을 하고, 그 자리에서 보이는 벽 점·바닥 점을 한 번에 보내면(앱의 surface 메시지)
 // 위치 맞춤 모듈이 바로 맞춤이 된다. 실제 폰이 보내는 메시지와 같은 길로 간다(src/phone/session.ts).
-import type { Vec3 } from "../../src/phone/align.js";
+import type { Vec3 } from "../../src/shared/geometry.js";
 import { readScenePlan, type HomePlan } from "../../src/phone/home-plan.js";
 import { applyRigid, IDENTITY, invertRigid, rotateVec, type P2, type Rigid } from "../../src/sync/rigid.js";
 import type { StartPose } from "../../src/sync/start.js";

@@ -8,7 +8,8 @@ import type { Command, CommandResult, DeviceHub, DeviceKind, DeviceSpec, RoomSpe
 import { KIND_LABELS } from "../model/mapping.js";
 import { doneSentence } from "./phrases.js";
 import type { LayoutTools } from "./layoutTools.js";
-import { compact, findDevices, resolveRoom } from "./search.js";
+import { findDevices, resolveRoom } from "./search.js";
+import { compact } from "../shared/korean.js";
 
 export type { DeviceView } from "../contract/events.js";
 

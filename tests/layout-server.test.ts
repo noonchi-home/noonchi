@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { LayoutEditor } from "../src/layout/editor.js";
 import { createApp } from "../src/server/app.js";
-import { fetchRetry } from "../src/server/net.js";
+import { fetchRetry } from "../src/shared/net.js";
 import { ROOMS, makeHome } from "./helpers/home.js";
 import { CATALOG, scene } from "./helpers/layout.js";
 import { openWebSocket } from "./helpers/ws.js";

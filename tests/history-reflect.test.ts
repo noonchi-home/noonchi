@@ -9,7 +9,7 @@ import { PamClient } from "../src/brain/pam.js";
 import type { BrainLog } from "../src/contract/events.js";
 import { HistoryDb } from "../src/history/db.js";
 import { loadReflectAt, memoryForDay, runReflection, scheduleReflection } from "../src/history/reflect.js";
-import { fetchRetry, listenRetry } from "../src/server/net.js";
+import { fetchRetry, listenRetry } from "../src/shared/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { startFakePam, type FakePam } from "./helpers/pam.js";
 import { openWebSocket } from "./helpers/ws.js";

@@ -13,7 +13,7 @@ import { loadScene } from "../src/model/scene.js";
 import { loadCatalog } from "../src/layout/catalog.js";
 import { floorPlanFrom } from "../src/plan/route.js";
 import { twinLandmarks } from "../src/sync/landmarks.js";
-import { fetchRetry } from "../src/server/net.js";
+import { fetchRetry } from "../src/shared/net.js";
 import { startServer } from "../src/server/start.js";
 import { openWebSocket } from "./helpers/ws.js";
 

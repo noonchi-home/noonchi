@@ -2,28 +2,8 @@
 // (멈춘 카메라가 같은 사진을 보내면 새로 본 것이 아니다). 붙잡은 장면을 다시 보낸 프레임(held)만 resendAfterMs 간격마다 넣는다.
 // 가장 새 프레임보다 keepMs 넘게 앞서 찍힌 프레임(늦게 온 프레임)도 넣지 않는다.
 import { createHash } from "node:crypto";
-import type { EyePose } from "../contract/events.js";
-import type { CameraView } from "../phone/session.js";
+import type { EngineFrame } from "../contract/observe.js";
 
-export interface EngineFrame {
-  id: string;
-  /** 촬영 시각(가장 이른 가능 시각, captureTime). */
-  capturedAtMs: number;
-  /** 가장 늦은 가능 촬영 시각. */
-  latestAtMs: number;
-  jpeg: Buffer;
-  sha256: string;
-  width: number;
-  height: number;
-  /** 그 순간 트윈 눈 자세(맞추기 전 null). */
-  eye: EyePose | null;
-  /** 그 순간 카메라(맞추기 전·투영 없음이면 null). */
-  view: CameraView | null;
-  /** 가까이 보기로 잘라 키운 사진이면 잘라 낸 자리(원래 엔진 프레임 픽셀 [x, y, w, h]). 고리에는 넣지 않고 VLM 풀에만 간다. */
-  crop?: [number, number, number, number];
-  /** 이 프레임을 VLM·기록·가까이 보기에 쓰는가. false면 YOLO만 돌리는 빠른 프레임이다. 없으면 VLM 프레임. */
-  vlm?: boolean;
-}
 
 export const sha256 = (b: Buffer): string => createHash("sha256").update(b).digest("hex");
 

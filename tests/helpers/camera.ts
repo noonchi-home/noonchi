@@ -1,8 +1,8 @@
 // 시험 카메라와 사진: 트윈 (0, 1.5, 0)에서 45° 아래로 숙인 90° 정사각 투영(열 우선). tests/world-place.test.ts와 같은 카메라다.
 // 사진은 jpeg-js로 만든 회색 바탕에 흰 네모(밝기는 번호마다 달라 고리의 같은 사진 버림에 걸리지 않는다).
 import jpeg from "jpeg-js";
-import type { CameraView } from "../../src/phone/session.js";
-import { sha256, type EngineFrame } from "../../src/observe/ring.js";
+import type { CameraView, EngineFrame } from "../../src/contract/observe.js";
+import { sha256 } from "../../src/observe/ring.js";
 
 type Box = [number, number, number, number];
 const P = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1.0002, -1, 0, 0, -0.020002, 0];

@@ -3,7 +3,7 @@
 
 import WebSocket from "ws";
 import type { DeviceHub, DeviceSpec, DeviceState } from "../src/hub/types.js";
-import { fetchRetry } from "../src/server/net.js";
+import { fetchRetry } from "../src/shared/net.js";
 
 export interface ScenarioRow {
   no: string;

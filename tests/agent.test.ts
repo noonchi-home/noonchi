@@ -1,6 +1,6 @@
 import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
-import { listenRetry } from "../src/server/net.js";
+import { listenRetry } from "../src/shared/net.js";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

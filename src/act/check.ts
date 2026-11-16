@@ -9,7 +9,7 @@ import type { PlanView } from "../contract/plan.js";
 import type { ControlMode } from "../contract/setup.js";
 import type { WorldView } from "../contract/world.js";
 import { CHECK_TEXT } from "../plan/labels.js";
-import type { DecisionRecord } from "../world/decide.js";
+import type { DecisionRecord } from "../contract/events.js";
 import { holdsTarget, planObjectOf, putAway, taskOf, type Placed } from "./tasks.js";
 
 export type CheckFail = keyof typeof CHECK_TEXT;

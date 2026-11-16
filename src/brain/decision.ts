@@ -4,6 +4,9 @@
 // 검사 메시지는 PAM 원문(영어)과 같게 두어 두 쪽 기록을 대조하기 쉽게 한다.
 
 
+
+import type { Prediction, FsmRuleAt } from "../contract/pam.js";
+
 export class ContractError extends Error {}
 
 type Json = unknown;
@@ -88,7 +91,6 @@ export function validateMemory(value: Json, kind: "list" | "fsm"): PamMemory {
   return m as unknown as FsmMemory;
 }
 
-export interface Prediction { observation: string; reasoning: string; task_index: number }
 
 export function validatePrediction(value: Json, tasks: string[]): Prediction {
   validateTasks(tasks);
@@ -249,12 +251,6 @@ export const CUP_FSM_MEMORY: FsmMemory = {
   ],
 };
 
-/** 고른 행동의 FSM 규칙 자리(대시보드 생각 말풍선 「상태」 칩). */
-/** 고른 행동의 FSM 자리(행동 단위). PAM 답에는 어느 규칙이 불렸는지가 없어 기억에서 그 행동의 규칙을 모아 본다.
- *  state: 그 행동의 규칙이 모두 한 상태에 있으면 그 상태 id, 여러 상태에 흩어졌으면 null.
- *  trigger: 그 행동의 규칙이 하나면 그 트리거, 둘 이상이면 null.
- *  learned: 그 행동의 규칙 가운데 seed 기억(CUP_FSM_MEMORY)에 없는 트리거·행동 쌍이 하나라도 있다. */
-export interface FsmRuleAt { state: string | null; trigger: string | null; learned: boolean }
 
 /** 대기(null)·list 기억·기억에 없는 행동이면 null. */
 export function fsmRuleOf(memory: PamMemory, kind: "list" | "fsm", action: string | null): FsmRuleAt | null {

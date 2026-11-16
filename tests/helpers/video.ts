@@ -11,7 +11,7 @@ export interface VideoReader {
   close(): void;
 }
 
-/** http.get. 이 PC의 Windows는 127.0.0.1 connect가 가끔 EFAULT로 실패해 다시 시도한다(src/server/net.ts). */
+/** http.get. 이 PC의 Windows는 127.0.0.1 connect가 가끔 EFAULT로 실패해 다시 시도한다(src/shared/net.ts). */
 export async function readVideo(url: string): Promise<VideoReader> {
   let res: IncomingMessage;
   for (let attempt = 1; ; attempt++) {

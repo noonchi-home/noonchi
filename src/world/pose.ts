@@ -8,7 +8,7 @@
 // - 손에 듦: 사람 상자 넓이의 25%를 넘는 큰 물건은 손목이 상자 안, 작은 물건은 손목과 상자 사이가 scale × 0.35 안.
 //   관절 모델이 한 사람을 팔 조각 여럿으로 낼 때가 있어 World State는 모든 관절의 손목을 본다(heldByAny).
 //   scale은 어깨 너비, 몸통 길이 × 0.6, 상자 짧은 변 × 0.25, 1 가운데 큰 값.
-import type { Keypoint, Pose } from "../brain/detector.js";
+import type { Keypoint, Pose } from "../contract/observe.js";
 
 type Pt = [number, number];
 type Box = [number, number, number, number];

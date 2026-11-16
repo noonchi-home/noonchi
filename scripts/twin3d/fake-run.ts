@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { sayLine } from "../../src/act/say.js";
 import { planIdOf } from "../../src/act/tasks.js";
 import { CUP_FSM_MEMORY, fsmRuleOf } from "../../src/brain/decision.js";
-import type { Mask } from "../../src/brain/seg.js";
+import type { Mask } from "../../src/contract/observe.js";
 import type { BrainLog, EyeEvent, SeenEvent, ServerMessage } from "../../src/contract/events.js";
 import type { PlannedCommand } from "../../src/contract/phone.js";
 import type { PlanView, XZ } from "../../src/contract/plan.js";
@@ -51,7 +51,7 @@ const round = (v: number, d = 3) => Math.round(v * 10 ** d) / 10 ** d;
 const iso = (ms: number) => new Date(ms).toISOString();
 const yawOf = (a: XZ, b: XZ) => round(((Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI + 360) % 360, 1) % 360;
 
-/** 상자 [x, y, w, h]를 4px 칸으로 나눠 컵꼴(위는 곧고 아래 모서리가 둥근 통)로 채운 마스크. 비트는 줄 순서, 바이트 안에서는 높은 비트부터(src/brain/seg.ts). */
+/** 상자 [x, y, w, h]를 4px 칸으로 나눠 컵꼴(위는 곧고 아래 모서리가 둥근 통)로 채운 마스크. 비트는 줄 순서, 바이트 안에서는 높은 비트부터(src/shared/mask.ts). */
 function cupMask(at: [number, number, number, number]): Mask {
   const cols = Math.max(2, Math.round(at[2] / 4)), rows = Math.max(2, Math.round(at[3] / 4));
   const bytes = Buffer.alloc(Math.ceil((cols * rows) / 8));

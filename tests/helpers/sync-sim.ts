@@ -1,7 +1,8 @@
 // 위치 맞추기 시험용 가짜 카메라와 가짜 집.
 // 카메라: WebXR과 같은 모양의 투영 행렬(열 우선)·자세 쿼터니언, AR 점 → 화면 픽셀.
 // 집: 정답 변환(AR → 트윈)을 알고, 자세마다 화면 가운데 hit 점(벽·가구 옆면·가구 윗면·바닥)과 YOLO 기준점 상자를 만든다.
-import { rotate3, type Quat, type Vec3 } from "../../src/phone/align.js";
+import { rotate3, type Vec3 } from "../../src/shared/geometry.js";
+import type { Quat } from "../../src/contract/observe.js";
 import { edgePoint, type TwinLandmark } from "../../src/sync/landmarks.js";
 import { applyRigid, invertRigid, rotateVec, type P2, type Rigid } from "../../src/sync/rigid.js";
 import type { WallSeg } from "../../src/sync/walls.js";

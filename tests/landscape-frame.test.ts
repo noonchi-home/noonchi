@@ -1,9 +1,9 @@
 // 폰을 가로로 든 엔진 프레임(640×360)과 세로로 든 프레임(360×640): 서버 셈은 프레임 헤더의 width·height·투영 행렬만 쓰므로 방향과 상관없이 같은 트윈 자리가 나와야 한다.
 // 트윈 자리 ↔ 프레임 픽셀(src/world/place.ts), 가까이 보기 자르기(프레임 절반 크기, src/observe/crop.ts), 잘라 본 감지의 상자·바닥 점·마스크 자리.
 import { describe, expect, it } from "vitest";
-import { fullMask } from "../src/brain/seg.js";
+import { fullMask } from "../src/shared/mask.js";
 import { cropBox, toFrameDetection } from "../src/observe/crop.js";
-import type { CameraView } from "../src/phone/session.js";
+import type { CameraView } from "../src/contract/observe.js";
 import { pixelOf, placePoint } from "../src/world/place.js";
 import { cameraAt } from "./helpers/camera.js";
 

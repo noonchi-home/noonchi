@@ -2,7 +2,7 @@
 
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { compact, stripParticle } from "../agent/search.js";
+import { compact, stripParticle } from "../shared/korean.js";
 
 export interface TypeInfo {
   type: string;

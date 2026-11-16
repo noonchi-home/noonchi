@@ -1,6 +1,6 @@
 // 대시보드 폰 칸 물체 모양(마스크) 그리기: 비트 풀기, 종류 무리와 색, 영상과 같은 contain 자리에 1인 칸만 칠하기, seen 저장소(600ms).
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { maskCells as serverCells, maskOf } from "../../../src/brain/seg.ts";
+import { maskCells as serverCells, maskOf } from "../../../src/shared/mask.ts";
 import type { SeenEvent } from "../../../src/contract/events.ts";
 import { viz } from "../../../src/design/tokens.ts";
 import {
@@ -39,7 +39,7 @@ function fakeCtx() {
 }
 
 describe("마스크 비트와 무리", () => {
-  it("비트 풀기는 서버(src/brain/seg.ts)와 같은 규칙이다", () => {
+  it("비트 풀기는 서버(src/shared/mask.ts)와 같은 규칙이다", () => {
     expect([CUP.cols, CUP.rows]).toEqual([10, 10]);
     expect([...maskCells(CUP)]).toEqual([...serverCells(CUP)]);
     expect(maskCells(CUP).reduce((a, b) => a + b, 0)).toBe(6 * 8);

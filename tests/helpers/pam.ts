@@ -1,6 +1,6 @@
 // 시험용 PAM 서비스 자리: pam-predict/2·pam-reflect/2를 받아 본문을 기록하고 정해진 답을 낸다. /health는 입력 한도를 알린다.
 import { createServer } from "node:http";
-import { listenRetry } from "../../src/server/net.js";
+import { listenRetry } from "../../src/shared/net.js";
 
 export interface FakePam { url: string; bodies: Record<string, unknown>[]; paths: string[]; close(): Promise<void> }
 type Pred = { observation: string; reasoning: string; task_index: number };

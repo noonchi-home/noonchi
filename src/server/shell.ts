@@ -5,8 +5,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { Duplex } from "node:stream";
 import { resolve } from "node:path";
 import { DEFAULT_WEB_DIR, HttpError, isLocalOrigin, readJson, type TwinHomeApp } from "./app.js";
-import { listenRetry } from "./net.js";
-import { serveFile } from "./static.js";
+import { listenRetry } from "../shared/net.js";
+import { serveFile } from "../shared/static.js";
 
 /** 설정 API(start.ts가 구현). 던지는 HttpError는 그 상태 코드로 나간다. */
 export interface SetupApi {

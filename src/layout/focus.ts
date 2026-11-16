@@ -2,7 +2,7 @@
 // 화면 표시 전용이다(엔진 입력 아님).
 
 import type { AgentAction } from "../agent/agent.js";
-import type { FocusTarget } from "../phone/server.js";
+import type { FocusTarget } from "../contract/events.js";
 
 export type { Focus } from "../contract/events.js";
 

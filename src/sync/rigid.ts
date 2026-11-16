@@ -1,5 +1,5 @@
 // 바닥 평면 2D 강체 변환(회전 + 이동, 크기 없음): AR 바닥 점 [x, z] → 트윈 평면 [x, y] = R(theta)·p + t.
-// src/phone/align.ts Alignment와 같은 뜻이다. 순수 함수만 둔다.
+// src/shared/geometry.ts Alignment와 같은 뜻이다. 순수 함수만 둔다.
 //
 // - fitRigid: 가중 점 짝 닫힌 꼴(2D Kabsch).
 // - ransacRigid: 점 짝 둘씩 모든 조합으로 가정을 세우고 맞는 짝이 가장 많은 것을 고른 뒤 다시 푼다(결과가 늘 같다).

@@ -32,8 +32,7 @@ export const DEPS: Record<string, readonly string[]> = {
   "ui/phone": [],
 };
 
-/** 지금 자리 → 도메인(2.1 「들어갈 지금 코드」). 끝이 /면 폴더. 옮기는 단계(3·6단계)마다 줄이고 9단계에 빈다.
- *  shared로 갈 파일(server/net·static, agent/phrases, plan/copy, phone/align, brain/seg)은 2단계에서 옮기기 전까지 지금 폴더의 도메인이다. */
+/** 지금 자리 → 도메인(2.1 「들어갈 지금 코드」). 끝이 /면 폴더. 옮기는 단계(3·6단계)마다 줄이고 9단계에 빈다. */
 export const LEGACY: Record<string, string> = {
   "src/sync/": "phone",
   "src/brain/detector.ts": "observe",
@@ -43,7 +42,6 @@ export const LEGACY: Record<string, string> = {
   "src/history/": "brain",
   "src/plan/hub.ts": "act",
   "src/plan/labels.ts": "act",
-  "src/plan/copy.ts": "act",
   "src/plan/planner.ts": "agent",
   "src/mcp/": "agent",
   "src/hub/": "devices",
@@ -75,6 +73,7 @@ export const TABLES: readonly string[] = [
   "src/act/tasks.ts",
   "src/act/prompts.ts",
   "src/plan/labels.ts",
+  "src/devices/types.ts",
 ];
 
 /** 기반층 폴더. */

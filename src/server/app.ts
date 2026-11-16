@@ -26,8 +26,8 @@ import { StartPoseError, type StartPose } from "../sync/start.js";
 import { repoPath } from "../shared/paths.js";
 import type { PlanHub } from "../plan/hub.js";
 import { twinChange } from "../model/mapping.js";
-import { listenRetry } from "./net.js";
-import { serveFile } from "./static.js";
+import { listenRetry } from "../shared/net.js";
+import { serveFile } from "../shared/static.js";
 
 export interface AppOptions {
   hub: DeviceHub;

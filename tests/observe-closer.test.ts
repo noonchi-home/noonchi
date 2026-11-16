@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { startFakeOpenAI, type FakeServer } from "../scripts/fake-openai.js";
-import type { Detection, Detector } from "../src/brain/detector.js";
+import type { Detector } from "../src/brain/detector.js";
+import type { Detection, CameraView } from "../src/contract/observe.js";
 import type { BrainLog } from "../src/contract/events.js";
 import type { WorldChange } from "../src/contract/world.js";
 import { VlmClient } from "../src/infer/vlm.js";
@@ -8,7 +9,6 @@ import { cropJpeg } from "../src/observe/crop.js";
 import { closerSpanMs, closerStaleMs, createPipeline, ObservationPipeline } from "../src/observe/pipeline.js";
 import { sha256 } from "../src/observe/ring.js";
 import { CLOSER_NOTE } from "../src/observe/scene.js";
-import type { CameraView } from "../src/phone/session.js";
 import { WorldState } from "../src/world/state.js";
 import { AWAY_VIEW, frameJpeg, LOOK_SIZE, LOOK_VIEW } from "./helpers/camera.js";
 import { cropAware, cropTurns, det } from "./helpers/detectors.js";

@@ -1,4 +1,4 @@
-// 이 PC의 Windows는 127.0.0.1 listen·connect가 가끔 EFAULT로 실패하고, 시험을 많이 함께 돌리면 몇 번 이어서 난다(src/server/net.ts).
+// 이 PC의 Windows는 127.0.0.1 listen·connect가 가끔 EFAULT로 실패하고, 시험을 많이 함께 돌리면 몇 번 이어서 난다(src/shared/net.ts).
 // 서버 listen·fetch·시험 소켓 열기는 EFAULT가 여러 번 이어져도 다시 해 끝내 붙는다. 다른 오류는 바로 던진다.
 // 시험 파일은 소켓을 helpers/ws.ts(openWebSocket·openPhone)로만 연다: 직접 new WebSocket(...)으로 열면 EFAULT를 다시 해 보지 않아 가끔 깨진다.
 import { EventEmitter } from "node:events";
@@ -7,7 +7,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import WebSocket, { WebSocketServer } from "ws";
-import { fetchRetry, listenRetry } from "../src/server/net.js";
+import { fetchRetry, listenRetry } from "../src/shared/net.js";
 import { openWebSocket } from "./helpers/ws.js";
 
 const efault = (syscall: string) => Object.assign(new Error(`${syscall} EFAULT: bad address in system call argument 127.0.0.1`), { code: "EFAULT", syscall });

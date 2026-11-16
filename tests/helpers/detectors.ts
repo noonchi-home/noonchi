@@ -1,6 +1,7 @@
 // 시험용 감지기: 함수가 감지(와 관절)를 정한다. 실제 감지기는 src/brain/detector.ts의 OnnxDetector·WorkerDetector.
-import type { DetectResult, Detection, Detector, Pose } from "../../src/brain/detector.js";
-import { boxFoot, fullMask } from "../../src/brain/seg.js";
+import type { DetectResult, Detector } from "../../src/brain/detector.js";
+import type { Detection, Pose } from "../../src/contract/observe.js";
+import { boxFoot, fullMask } from "../../src/shared/mask.js";
 import { CLASSES } from "../../src/world/vocab.js";
 import { sha256 } from "../../src/observe/ring.js";
 

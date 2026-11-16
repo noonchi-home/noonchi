@@ -11,7 +11,7 @@ import { insidePolygon } from "../src/phone/home-plan.js";
 import { loadScene } from "../src/model/scene.js";
 import { resolveHome } from "../src/model/homes.js";
 import { ServerLockError, acquireServerLock } from "../src/server/lock.js";
-import { listenRetry } from "../src/server/net.js";
+import { listenRetry } from "../src/shared/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { DEMO_APPROVALS, DemoStop, demoSetup, silentAircon } from "../scripts/demo-setup.js";
 import { DEMO_STARTS, startFor } from "../scripts/demo-start.js";

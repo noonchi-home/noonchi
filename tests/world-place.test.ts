@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BASIN_SIZE, inView, placeBox, placePoint, rayDir, surfacesFromLayout } from "../src/world/place.js";
-import type { CameraView } from "../src/phone/session.js";
+import type { CameraView } from "../src/contract/observe.js";
 
 // 90° 시야 정사각형 투영(열 우선), 카메라는 트윈 (0, 1.5, 0)에서 +x를 보고 45° 아래로 숙임
 const P = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1.0002, -1, 0, 0, -0.020002, 0];

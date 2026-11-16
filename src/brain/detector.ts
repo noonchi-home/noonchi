@@ -7,7 +7,7 @@
 //
 // YOLO26 ONNX 입출력(ultralytics 8.4, opset 17, imgsz 640): 입력 images [1,3,640,640] float32, RGB, 0~1, 가운데 레터박스(114 채움).
 // 감지 출력 output0 [1,116,8400] 채널 우선 = (cx, cy, w, h, 클래스 80개 점수, 마스크 계수 32개). 물체 점수는 없고 클래스 점수는 시그모이드를 거쳤다.
-// 프로토 출력 output1 [1,32,160,160]: 계수와 곱해 더한 값이 0보다 크면 그 칸은 물체다(src/brain/seg.ts).
+// 프로토 출력 output1 [1,32,160,160]: 계수와 곱해 더한 값이 0보다 크면 그 칸은 물체다(src/shared/mask.ts).
 // 관절 출력 output0 [1,56,8400] = (cx, cy, w, h, 사람 점수, 관절 17개 × (x, y, 신뢰도)). 좌표는 640 레터박스 픽셀이다.
 // 이 내보내기는 한 물체에 겹친 상자를 여럿 낸다(컵 영상: 같은 컵 상위 상자끼리 IoU 0.99). 그래서 Ultralytics predict처럼
 // 앵커마다 가장 높은 클래스 하나를 보고 IoU 0.5로 NMS 한다(ultralytics 8.4 predict 기본값 PREDICT_IOU).
@@ -16,22 +16,11 @@ import jpeg from "jpeg-js";
 import { repoPath } from "../shared/paths.js";
 import { LANDMARK_IDS } from "../sync/classes.js";
 import { CLASSES, type ClassKey, type DetLabel } from "../world/vocab.js";
-import { COEFFS, PROTO, boxFoot, emptyMask, maskOf, type Box, type LetterboxPlace, type Mask } from "./seg.js";
+import { COEFFS, PROTO, boxFoot, emptyMask, maskOf, type LetterboxPlace } from "../shared/mask.js";
+import type { Box, Mask, Detection, Keypoint, Pose } from "../contract/observe.js";
 
 export type { DetLabel, LetterboxPlace, Mask };
 
-export interface Detection {
-  label: DetLabel;
-  score: number;
-  /** 마스크 바깥 테두리(원본 사진 픽셀 [x, y, w, h]). 마스크가 비면 모델 상자. */
-  box: [number, number, number, number];
-  /** COCO 클래스 번호(0 person, 41 cup, 40 wine glass …). */
-  cls: number;
-  /** 물체 모양. 못 만들었으면 칸 수 0. */
-  mask: Mask;
-  /** 마스크 가장 아래 줄의 가운데(원본 픽셀 [x, y]). 마스크가 비면 상자 아랫변 가운데. */
-  foot: [number, number];
-}
 
 /** 위치 맞추기 기준점 상자(냉장고·소파 등 크고 바닥에 서는 물건, src/sync/classes.ts). World State는 받지 않는다. */
 export interface LandmarkBox {
@@ -42,16 +31,7 @@ export interface LandmarkBox {
   box: [number, number, number, number];
 }
 
-/** COCO 관절 하나: 원본 사진 픽셀 x, y와 신뢰도(0~1). */
-export type Keypoint = [number, number, number];
 
-/** 사람 한 명의 관절(YOLO26-pose). keypoints는 COCO 순서 17개(0 코 … 9·10 왼·오른 손목 … 15·16 발목). */
-export interface Pose {
-  score: number;
-  /** 원본 사진 픽셀 [x, y, w, h]. */
-  box: [number, number, number, number];
-  keypoints: Keypoint[];
-}
 
 export interface DetectResult {
   detections: Detection[];

@@ -5,7 +5,7 @@ import type { ReadyView } from "../contract/events.js";
 import type { Endpoints } from "../infer/endpoints.js";
 import { ReachCache, reachable } from "../infer/reach.js";
 import type { HistoryDb } from "../history/db.js";
-import { fetchRetry } from "./net.js";
+import { fetchRetry } from "../shared/net.js";
 
 /** 에이전트 주소가 답하는지(모델은 부르지 않는다). */
 function agentProbe(a: AgentEndpoint, fetchImpl?: typeof fetch): () => Promise<boolean> {

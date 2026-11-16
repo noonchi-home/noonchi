@@ -1,5 +1,5 @@
 // OpenAI 호환 chat completions 한 번(OpenAI·vLLM·가짜 서버가 같은 길). 연결 단계 EFAULT만 다시 보낸다(fetchRetry).
-import { fetchRetry } from "../server/net.js";
+import { fetchRetry } from "../shared/net.js";
 import type { ModelEndpoint } from "./endpoints.js";
 
 export type ChatPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string; detail?: "low" | "high" } };

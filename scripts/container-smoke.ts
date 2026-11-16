@@ -21,7 +21,7 @@ import { checkPorts, type CheckPorts } from "./check-ports.js";
 import { KEY_OWNERS } from "./compose-keys.js";
 import { phoneAssetFailures } from "./phone-assets.js";
 import { encodeFramePacket } from "../src/phone/packet.js";
-import { fetchRetry } from "../src/server/net.js";
+import { fetchRetry } from "../src/shared/net.js";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 let PORTS: CheckPorts;
@@ -132,7 +132,7 @@ try {
   console.log(`서비스마다 받는 키: ${leaks.length ? leaks.join("; ") : "키는 그 키를 쓰는 서비스만 받음"}`);
   if (compose(["build"]).status !== 0) throw new Error("compose build 실패");
   // 이 PC(Windows)는 포트를 열 때 가끔 EFAULT(invalid pointer address)로 실패하고, up이 성공해도 호스트 포트 하나가 안 열릴 때가 있다
-  // (src/server/net.ts). 그때만 내리고 다시 띄운다
+  // (src/shared/net.ts). 그때만 내리고 다시 띄운다
   for (let attempt = 1; ; attempt++) {
     const up = compose(["up", "-d", "noonchi", "pam", "fake-openai"], true);
     process.stdout.write(up.stdout ?? "");

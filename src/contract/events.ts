@@ -5,9 +5,10 @@ import type { LayoutMessage } from "./layout.js";
 import type { PhoneChoice } from "./phone.js";
 import type { PlanView } from "./plan.js";
 import type { ControlMode } from "./setup.js";
-import type { Mask } from "../brain/seg.js";
+import type { Mask } from "./observe.js";
 import type { DetLabel } from "../world/vocab.js";
 import type { VlmMissing, WorldChangeKind, WorldView, YoloMissing } from "./world.js";
+import type { Prediction, FsmRuleAt } from "./pam.js";
 
 // 좌표
 
@@ -88,7 +89,7 @@ export interface DecisionWorld {
 }
 
 /** 감지가 끝난 엔진 프레임 하나의 물체 모양(/events {type:"seen", …}). 빠른 프레임마다(기본 100ms) 대시보드로만 가는 가벼운 사건이고
- *  기록 DB·실행 기록에 넣지 않는다. mask는 엔진 프레임 픽셀 자리의 0/1 그림(src/brain/seg.ts), frame은 엔진 프레임 크기. 감지 없음이면 shapes가 빈 목록이다. */
+ *  기록 DB·실행 기록에 넣지 않는다. mask는 엔진 프레임 픽셀 자리의 0/1 그림(src/shared/mask.ts), frame은 엔진 프레임 크기. 감지 없음이면 shapes가 빈 목록이다. */
 export interface SeenEvent {
   type: "seen"; at_ms: number; frame_id: string; captured_at_ms: number;
   frame: { width: number; height: number };
@@ -271,3 +272,23 @@ export type ServerMessage =
   | LayoutMessage
   /** 대시보드 말풍선 카드 한 문장(src/act/say.ts). 바뀔 때마다, 그리고 접속 때 한 번. null이면 글 없음. */
   | { type: "say"; text: string | null };
+
+export interface DecisionRecord {
+  id: string;
+  seq: number;
+  atMs: number;
+  /** PAM에 보낸 관찰 텍스트. 들은 말 줄이 그대로 들어 있다: 그 순간 판단·계획에만 쓰고 기록하지 않는다(기록에는 판단 방송의 text_sent). */
+  textSent: string;
+  finalTime: string;
+  status: "valid" | "failed";
+  prediction: Prediction | null;
+  /** 고른 행동(대기·실패면 null). */
+  action: string | null;
+  /** 고른 행동의 FSM 규칙 자리(그때 보낸 기억에서 찾는다). 대기·실패·못 찾으면 null. */
+  fsm?: FsmRuleAt | null;
+  error?: string;
+  memoryVersion: number;
+  /** 이 판단에 보낸 행동 목록(돕는 방식마다 다르다). 계획 전·실행 전 검사가 이 목록으로 본다. */
+  tasks?: string[];
+  world: DecisionWorld;
+}

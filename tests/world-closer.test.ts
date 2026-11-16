@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Detection } from "../src/brain/detector.js";
+import type { Detection } from "../src/contract/observe.js";
 import type { SceneObservation, SceneState } from "../src/observe/scene.js";
 import { decisionWorld } from "../src/world/decide.js";
 import { CLOSER_HOLD_MS, WorldState, type CloserPass } from "../src/world/state.js";

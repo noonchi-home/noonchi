@@ -1,10 +1,10 @@
 // 판단 호출: Trigger가 허락하면 World State 관찰 텍스트 + 기억 + 행동 목록으로 PAM을 부른다. 요청마다 번호(seq)를 붙인다.
 // 동시 상한을 넘으면 부르지 않는다(Trigger.due가 false). 결과는 기록(decision)과 onDecision으로 넘긴다. 늦게 온 답의 처리는 실행 추적이 seq로 한다.
 // PAM 연결 끊김·연결됨(link)과 주기 판단 멈춤(폰 사진 없음·사람 없음)·다시 시작(trigger)은 바뀔 때 한 번씩 기록한다.
-import type { BrainLog, DecisionWorld } from "../contract/events.js";
+import type { BrainLog, DecisionWorld, DecisionRecord } from "../contract/events.js";
 import type { WorldChange, WorldView } from "../contract/world.js";
 import { taskOf } from "../act/tasks.js";
-import { checkInput, fsmRuleOf, isoWithOffset, type FsmRuleAt, type PamMemory, type Prediction } from "../brain/decision.js";
+import { checkInput, fsmRuleOf, isoWithOffset, type PamMemory } from "../brain/decision.js";
 import { PamLinkError, type PamClient } from "../brain/pam.js";
 import { LINK_TEXT, TRIGGER_TEXT, redactHeard, redactSaid, saidIn } from "./labels.js";
 import type { WorldState } from "./state.js";
@@ -14,25 +14,6 @@ import type { Trigger, TriggerPause } from "./trigger.js";
 /** 관찰 텍스트에 넣을 변화를 이만큼 둔다(텍스트 창은 그 안의 최근 60초). */
 const RECENT_KEEP_MS = 600_000;
 
-export interface DecisionRecord {
-  id: string;
-  seq: number;
-  atMs: number;
-  /** PAM에 보낸 관찰 텍스트. 들은 말 줄이 그대로 들어 있다: 그 순간 판단·계획에만 쓰고 기록하지 않는다(기록에는 판단 방송의 text_sent). */
-  textSent: string;
-  finalTime: string;
-  status: "valid" | "failed";
-  prediction: Prediction | null;
-  /** 고른 행동(대기·실패면 null). */
-  action: string | null;
-  /** 고른 행동의 FSM 규칙 자리(그때 보낸 기억에서 찾는다). 대기·실패·못 찾으면 null. */
-  fsm?: FsmRuleAt | null;
-  error?: string;
-  memoryVersion: number;
-  /** 이 판단에 보낸 행동 목록(돕는 방식마다 다르다). 계획 전·실행 전 검사가 이 목록으로 본다. */
-  tasks?: string[];
-  world: DecisionWorld;
-}
 
 /** 판단 기록에 붙이는 World State 요약: 사라지지 않은 물건의 상태·면(id·이름)·위치 오차·사실, 사람이 보이는가, 분석 없음 수. */
 export function decisionWorld(w: WorldView): DecisionWorld {

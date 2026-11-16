@@ -4,7 +4,7 @@
 // - 점이 든 방의 바닥 높이(floorLookup), 집 범위(homeBounds·inBounds), 다각형 안(insidePolygon), 눈높이(eyeHeightOf).
 
 import { readFileSync } from "node:fs";
-import type { Plan2 } from "./align.js";
+import type { Plan2 } from "../shared/geometry.js";
 
 export interface PlanRoom {
   id?: string;

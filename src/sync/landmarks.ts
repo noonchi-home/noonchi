@@ -11,7 +11,8 @@
 //   묶음만 쓴다.
 
 import { rayDir } from "../world/place.js";
-import type { Quat, Vec3 } from "../phone/align.js";
+import type { Vec3 } from "../shared/geometry.js";
+import type { Quat } from "../contract/observe.js";
 import { LANDMARK_KEYS, type LandmarkClass } from "./classes.js";
 import type { P2 } from "./rigid.js";
 

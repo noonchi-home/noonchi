@@ -4,7 +4,7 @@
 // 새 종류는 여기 한 줄 + 집 파일(twin/data/homes/<집>/added_devices.json) 한 줄(docs/reference.md 「새 종류 추가하는 법」). 등록부 밖 종류별 표는 tests/kinds-registry.test.ts가 막는다.
 // 런타임 import 없음(type import만). ui 타입 검사가 src/hub/types.ts를 거쳐 읽으므로 Dockerfile ui 단계가 이 파일과 src/world/vocab.ts를 COPY한다.
 import type { Capability, ClimateMode, CommandType, FanSpeed } from "../hub/types.js";
-import type { ThinqAdapter } from "../thinq/appliance.js";
+import type { ThinqAdapter } from "../devices/types.js";
 import type { DeviceLongKey, DeviceStateKey, FixtureClass, SightRule } from "../world/vocab.js";
 
 /** Matter 쪽 모델: 켜짐·동작·열림·잠김을 어떤 요약 키로 나타내는가(src/model/mapping.ts가 해석한다). */

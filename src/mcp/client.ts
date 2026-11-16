@@ -2,11 +2,11 @@
 
 import type { ToolBackend, DeviceView, RoomView } from "../agent/tools.js";
 import type { Command, CommandResult } from "../hub/types.js";
-import { fetchRetry } from "../server/net.js";
+import { fetchRetry } from "../shared/net.js";
 
 export const DEFAULT_TWIN_HOME_URL = "http://127.0.0.1:8200";
 
-// 기본 fetch는 Windows의 일시적 connect EFAULT를 다시 시도한다(src/server/net.ts)
+// 기본 fetch는 Windows의 일시적 connect EFAULT를 다시 시도한다(src/shared/net.ts)
 const defaultFetch = ((input: string | URL, init?: RequestInit) => fetchRetry(input, init)) as typeof fetch;
 
 export function httpBackend(baseUrl: string = DEFAULT_TWIN_HOME_URL, fetchImpl: typeof fetch = defaultFetch): ToolBackend {

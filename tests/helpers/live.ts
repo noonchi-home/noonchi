@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import WebSocket from "ws";
-import { fetchRetry } from "../../src/server/net.js";
+import { fetchRetry } from "../../src/shared/net.js";
 
 export type Msg = Record<string, any>;
 

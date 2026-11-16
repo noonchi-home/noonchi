@@ -1,6 +1,7 @@
 // 시험용 판단 모델: 사실(컵 안)만 보고 정한다. 빈 컵 → 컵 치우기, 남음 → 대기, 모름 → 묻기(목록에 없으면 대기).
 // 실제 판단은 PAM 서비스(src/brain/pam.ts PamDecision)다.
-import { checkInput, validatePrediction, type DecisionFacts, type DecisionInput, type DecisionModel, type Prediction } from "../../src/brain/decision.js";
+import { checkInput, validatePrediction, type DecisionFacts, type DecisionInput, type DecisionModel } from "../../src/brain/decision.js";
+import type { Prediction } from "../../src/contract/pam.js";
 
 export class ScriptedDecision implements DecisionModel {
   readonly name = "scripted";

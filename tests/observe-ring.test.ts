@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { FrameRing, captureTime, sha256, type EngineFrame } from "../src/observe/ring.js";
+import { FrameRing, captureTime, sha256 } from "../src/observe/ring.js";
+import type { EngineFrame } from "../src/contract/observe.js";
 
 const frame = (id: string, at: number, body = id): EngineFrame => ({ id, capturedAtMs: at, latestAtMs: at, jpeg: Buffer.from(body), sha256: sha256(Buffer.from(body)), width: 1, height: 1, eye: null, view: null });
 

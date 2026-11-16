@@ -2,21 +2,13 @@
 // 모양의 바깥 테두리 상자와 바닥 점을 원본 사진 픽셀로 낸다. 프로토 한 칸은 640 레터박스의 4px이다.
 // 모양은 Ultralytics처럼 모델 상자 안에서만 본다(상자로 자름). 화면에는 Mask를 그대로 보낸다(비트는 base64).
 
-export type Box = [number, number, number, number];
+
+import type { Box, Mask } from "../contract/observe.js";
+
 export interface Size { width: number; height: number }
 /** 레터박스 자리: 원본 픽셀 = (레터박스 픽셀 − pad) / ratio. */
 export interface LetterboxPlace { ratio: number; padX: number; padY: number }
 
-/** 물체 모양: 프로토 격자(160×160, 레터박스 4px = 1칸)에서 그 물체 상자만 잘라 낸 0/1 그림. */
-export interface Mask {
-  /** 원본 사진 픽셀에서 이 그림이 덮는 자리 [x, y, w, h]. 사진 밖으로 나갈 수 있다(자르지 않음). */
-  at: Box;
-  /** 그림 크기(칸). 모양을 못 만든 감지는 0. */
-  cols: number;
-  rows: number;
-  /** 줄 순서 비트(1 = 물체, 바이트 안에서는 높은 비트부터), base64. 길이 ceil(cols*rows/8). */
-  bits: string;
-}
 
 /** 프로토 한 변(칸), 한 칸의 레터박스 픽셀, 마스크 계수 수. */
 export const PROTO = 160, STRIDE = 4, COEFFS = 32;

@@ -1,8 +1,7 @@
 // World State가 낱말 표의 새 사실을 쌓는다: 새 물건 종류, 가전 설비(TV·냉장고…), 사람 하는 일·자리·방·수, 가전 상태와 사건(세탁 끝남·문 오래 열림).
 import { describe, expect, it } from "vitest";
-import type { Detection } from "../src/brain/detector.js";
-import { sha256, type EngineFrame } from "../src/observe/ring.js";
-import type { CameraView } from "../src/phone/session.js";
+import type { Detection, EngineFrame, CameraView } from "../src/contract/observe.js";
+import { sha256 } from "../src/observe/ring.js";
 import { WorldState } from "../src/world/state.js";
 import { holdsTarget } from "../src/act/tasks.js";
 import { standing } from "./helpers/poses.js";

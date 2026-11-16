@@ -8,7 +8,7 @@ import { MemoryHub } from "../src/hub/memory.js";
 import type { DeviceHub } from "../src/hub/types.js";
 import { createApp, type TwinHomeApp } from "../src/server/app.js";
 import { createHub } from "../src/server/hubFactory.js";
-import { fetchRetry } from "../src/server/net.js";
+import { fetchRetry } from "../src/shared/net.js";
 import { ROOMS, homeDevices, makeHome, twin } from "./helpers/home.js";
 import { HOME_SCRIPT, startFakeLlm, type FakeLlm } from "./helpers/llm.js";
 import { openWebSocket } from "./helpers/ws.js";

@@ -8,7 +8,7 @@ import { DEFAULT_TWIN_DIR } from "../src/model/devices.js";
 import { withDrawn, type DrawnFixture } from "../src/model/drawn.js";
 import { resolveHome } from "../src/model/homes.js";
 import { loadScene } from "../src/model/scene.js";
-import { fetchRetry } from "../src/server/net.js";
+import { fetchRetry } from "../src/shared/net.js";
 import { startServer } from "../src/server/start.js";
 
 const home = resolveHome(DEFAULT_TWIN_DIR, "mokryeon_180b");

@@ -5,9 +5,9 @@
 // 회전 각은 평면 규칙(yaw 0 = +x, 90 = +y)을 따른다.
 
 import type { EyePose, Plan2, Vec3 } from "../contract/events.js";
+import type { Quat } from "../contract/observe.js";
 
 export type { EyePose, Plan2, Vec3 } from "../contract/events.js";
-export type Quat = [number, number, number, number]; // x, y, z, w
 
 /** AR → 트윈 맞춤: 수평 회전 theta·이동 tx·ty(src/sync/rigid.ts Rigid)와 트윈 높이 0의 AR y. */
 export interface Alignment {

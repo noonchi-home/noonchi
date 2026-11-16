@@ -1,17 +1,8 @@
 // 한국어 문장 조각: 조사, 상태 설명, "~를 켰어요" 같은 결과 문장.
 
 import type { Command, DeviceKind, DeviceSpec, DeviceState } from "../hub/types.js";
+import { josa } from "../shared/korean.js";
 
-/** 받침에 맞는 조사. 한글이 아니면(TV 등) 받침 없음으로 본다. */
-export function josa(word: string, pair: "을/를" | "이/가" | "은/는" | "으로/로" | "과/와"): string {
-  const [withBatchim, without] = pair.split("/") as [string, string];
-  const last = word.trim().slice(-1);
-  const code = last.charCodeAt(0) - 0xac00;
-  if (code < 0 || code > 11171) return word + without;
-  const jong = code % 28;
-  if (pair === "으로/로") return word + (jong === 0 || jong === 8 ? without : withBatchim); // ㄹ받침은 "로"
-  return word + (jong === 0 ? without : withBatchim);
-}
 
 const MODE_KO: Record<string, string> = { cool: "냉방", heat: "난방", auto: "자동", dry: "제습", fan: "송풍", off: "꺼짐" };
 const FAN_KO: Record<string, string> = { low: "약", medium: "중", high: "강", auto: "자동", off: "꺼짐" };

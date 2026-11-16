@@ -4,7 +4,7 @@
 // 가까이 보기(src/observe/pipeline.ts closer)는 따로 둔 자리(closerSlots)로 간다: 보통 프레임이 maxInflight를 다 써도 막히지 않고, 보통 프레임은 그 자리를 쓰지 않는다.
 // 가까이 보기 답은 onResult가 아니라 submitCloser가 돌려준 약속으로 온다. 멈추거나 부른 쪽 신호가 끊기면 HTTP 요청을 끊고 답을 기다리지 않고 분석 없음(error)으로 끝난다.
 import type { VlmMissing } from "../contract/world.js";
-import type { EngineFrame } from "./ring.js";
+import type { EngineFrame } from "../contract/observe.js";
 import type { SceneDetection, SceneObservation } from "./scene.js";
 
 export type { VlmMissing } from "../contract/world.js";

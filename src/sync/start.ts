@@ -7,7 +7,8 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { z } from "zod";
-import { forwardOf, rotate3, type Plan2, type Quat, type Vec3 } from "../phone/align.js";
+import { forwardOf, rotate3, type Plan2, type Vec3 } from "../shared/geometry.js";
+import type { Quat } from "../contract/observe.js";
 import { inBounds, insidePolygon, type Bounds } from "../phone/home-plan.js";
 import { rotateVec, wrapAngle, type Rigid } from "./rigid.js";
 

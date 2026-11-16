@@ -4,7 +4,7 @@ import { Agent } from "../src/agent/agent.js";
 import { createProvider } from "../src/agent/providers/index.js";
 import { twinChange } from "../src/model/mapping.js";
 import { createApp } from "../src/server/app.js";
-import { fetchRetry } from "../src/server/net.js";
+import { fetchRetry } from "../src/shared/net.js";
 import { ROOMS, homeDevices, makeHome, twin } from "./helpers/home.js";
 
 type Msg = Record<string, any>;

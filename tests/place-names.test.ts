@@ -12,7 +12,7 @@ import type { WorldView } from "../src/contract/world.js";
 import { PlanHub } from "../src/plan/hub.js";
 import { placeName, type PlaceNames } from "../src/plan/names.js";
 import { floorPlanFrom } from "../src/plan/route.js";
-import type { DecisionRecord } from "../src/world/decide.js";
+import type { DecisionRecord } from "../src/contract/events.js";
 import { SMALL_SCENE } from "./helpers/floor.js";
 import { planContext } from "./helpers/planner.js";
 

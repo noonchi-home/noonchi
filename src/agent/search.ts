@@ -4,6 +4,7 @@
 import type { DeviceKind, DeviceSpec, RoomSpec } from "../hub/types.js";
 import { KINDS, mapEntries } from "../model/kinds.js";
 import { KIND_LABELS } from "../model/mapping.js";
+import { compact, stripParticle } from "../shared/korean.js";
 
 /** 종류별로 사람들이 부르는 말(소문자, 띄어쓰기 없음, 등록부 synonyms). */
 export const KIND_SYNONYMS: Record<DeviceKind, readonly string[]> = mapEntries(KINDS, (e) => e.synonyms);
@@ -23,20 +24,9 @@ const ROOM_ALIASES: Record<string, string> = {
   리빙룸: "거실",
 };
 
-const PARTICLES = ["에서", "으로", "이랑", "한테", "까지", "부터", "랑", "을", "를", "이", "가", "은", "는", "도", "의", "에", "로", "만", "좀"];
 const STOPWORDS = new Set(["좀", "다", "모든", "모두", "전부", "전체", "것", "거", "기기", "장치", "방", "집", "우리", "있는"]);
 
-/** 비교용: 소문자, 괄호 안·띄어쓰기·가운뎃점·문장부호 제거. */
-export function compact(s: string): string {
-  return s.toLowerCase().replace(/\([^)]*\)/g, "").replace(/[\s·.,!?~'"]/g, "");
-}
 
-export function stripParticle(token: string): string {
-  for (const p of PARTICLES) {
-    if (token.length > p.length && token.endsWith(p)) return token.slice(0, -p.length);
-  }
-  return token;
-}
 
 function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

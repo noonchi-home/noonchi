@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import type { WorldChange, WorldView } from "../src/contract/world.js";
 import { buildPamText, clock, collapseLines, textFromWorld } from "../src/world/text.js";
 import { readFileSync } from "node:fs";
-import type { Detection } from "../src/brain/detector.js";
-import { sha256, type EngineFrame } from "../src/observe/ring.js";
+import type { Detection, EngineFrame } from "../src/contract/observe.js";
+import { sha256 } from "../src/observe/ring.js";
 import { WorldState } from "../src/world/state.js";
 import { det } from "./helpers/detectors.js";
 

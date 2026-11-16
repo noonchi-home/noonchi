@@ -10,7 +10,7 @@ import { loadScene } from "../src/model/scene.js";
 import { STEP_LABEL } from "../src/plan/labels.js";
 import { floorPlanFrom } from "../src/plan/route.js";
 import type { WorldView } from "../src/contract/world.js";
-import type { DecisionRecord } from "../src/world/decide.js";
+import type { DecisionRecord } from "../src/contract/events.js";
 import { cupPlan } from "./helpers/cup-plan.js";
 import { planContext, startFakePlanner, testPlanner } from "./helpers/planner.js";
 

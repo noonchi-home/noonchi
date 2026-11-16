@@ -15,9 +15,9 @@ import type { WorldView } from "../../src/contract/world.js";
 import { MemoryHub } from "../../src/hub/memory.js";
 import type { DeviceHub, RoomSpec } from "../../src/hub/types.js";
 import type { FloorPlan } from "../../src/plan/floor.js";
-import { josa } from "../../src/agent/phrases.js";
+import { josa } from "../../src/shared/korean.js";
 import { placeShort } from "../../src/plan/labels.js";
-import type { DecisionRecord } from "../../src/world/decide.js";
+import type { DecisionRecord } from "../../src/contract/events.js";
 import type { LlmTurn } from "./llm.js";
 
 /** 입력 글 → 차례 목록(첫 요청, 도구 결과를 받은 뒤 요청, …). */

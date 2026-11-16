@@ -3,11 +3,11 @@
 // 경로는 모델이 아니라 assemblePlan(src/plan/planner.ts)이 이동 단계마다 잇는다. 기기를 바꾸는 도구는 계획 모드에 없다:
 // 기기 단계는 도구 이름·인자만 적어 두고, 실행 추적(src/act/track.ts)이 그 단계가 되면 정책(승인 규칙)을 거쳐 부른다.
 import { z } from "zod";
-import { copyRules } from "../plan/copy.js";
+import { copyRules } from "../shared/copy.js";
 import { ASK_CHOICES, type ActionPrompt } from "../act/prompts.js";
 import type { Lesson } from "../act/lessons.js";
 import { planIdOf, type Placed, type TaskSpec } from "../act/tasks.js";
-import type { DeviceView } from "../contract/events.js";
+import type { DeviceView, DecisionRecord } from "../contract/events.js";
 import type { DraftStep, PlanHead } from "../plan/planner.js";
 import { assemblePlan } from "../plan/planner.js";
 import type { PlanTarget, PlanView, StepKind, XZ } from "../contract/plan.js";
@@ -21,7 +21,6 @@ import { placeName, type PlaceNames } from "../plan/names.js";
 import { OBJECT_NAME } from "../world/labels.js";
 import { CLASSES, DEVICE_STATES, type DeviceStateKey } from "../world/vocab.js";
 import { ConditionSchema, checkCondition, type Condition, type ConditionHome } from "../world/conditions.js";
-import type { DecisionRecord } from "../world/decide.js";
 import { RISKY_NAME_PROBLEM, needsConfirm, riskyNames } from "./policy.js";
 import { TOOLS, toolCommand, type ToolDef, type ToolResult } from "./tools.js";
 import type { ApprovalWhy } from "./approval.js";

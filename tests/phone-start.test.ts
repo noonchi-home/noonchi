@@ -8,7 +8,7 @@ import type WebSocket from "ws";
 import { estimateViewpoint } from "../src/phone/session.js";
 import { alignOnServer } from "./helpers/align.js";
 import { openWebSocket } from "./helpers/ws.js";
-import { fetchRetry } from "../src/server/net.js";
+import { fetchRetry } from "../src/shared/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { PHONE_PROTOCOL } from "../src/phone/protocol.js";
 

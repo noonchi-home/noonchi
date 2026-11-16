@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { VlmPool, type VlmResult } from "../src/observe/vlm-pool.js";
-import { sha256, type EngineFrame } from "../src/observe/ring.js";
+import { sha256 } from "../src/observe/ring.js";
+import type { EngineFrame } from "../src/contract/observe.js";
 
 const f = (id: string, at: number): EngineFrame => ({ id, capturedAtMs: at, latestAtMs: at, jpeg: Buffer.from(id), sha256: sha256(Buffer.from(id)), width: 1, height: 1, eye: null, view: null });
 const scene = { scene: "s", observations: [], summary: "x" };

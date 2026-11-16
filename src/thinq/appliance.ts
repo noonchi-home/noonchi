@@ -6,6 +6,7 @@
 
 import type { ClimateMode, Command, CommandType, DeviceKind, DeviceState, FanSpeed } from "../hub/types.js";
 import { KINDS, KIND_ORDER, kindEntry } from "../model/kinds.js";
+import type { ThinqAdapter } from "../devices/types.js";
 
 /** 설정에서 ThinQ 기기와 짝지을 수 있는 트윈 기기 종류(등록부 thinq). */
 export const PAIRABLE_KINDS: DeviceKind[] = KIND_ORDER.filter((k) => KINDS[k].thinq);
@@ -109,8 +110,6 @@ function airConditionerMirror(r: Reading, world: World): Mirror {
   return { commands, sensors: [] };
 }
 
-/** ThinQ 기기 종류마다 읽기·제어·트윈 반영. 이름은 가전 종류 이름과 다르게 짓는다(등록부 thinq.adapter가 고른다). */
-export type ThinqAdapter = "air_conditioner" | "refrigerator";
 export interface ThinqAdapterSpec {
   read: (raw: Record<string, unknown>) => Reading;
   /** 받는 명령 종류(정규화한 이름). 빈 목록이면 읽기만. */

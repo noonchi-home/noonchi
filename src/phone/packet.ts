@@ -3,7 +3,8 @@
 // 본문: engine(분석용)·frame(표시용)·photo는 JPEG, video_config는 H.264 디코더 설정(avcC), video는 H.264 청크(표시 전용, src/phone/video.ts).
 
 import { z } from "zod";
-import type { Quat, Vec3 } from "./align.js";
+import type { Vec3 } from "../shared/geometry.js";
+import type { Quat } from "../contract/observe.js";
 
 /** ws maxPayload와 같다. 사진(카메라 원본 크기, 품질 0.9)도 이 안에 든다. */
 export const MAX_PACKET_BYTES = 4 * 1024 * 1024;

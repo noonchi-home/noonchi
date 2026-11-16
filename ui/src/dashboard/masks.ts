@@ -3,7 +3,7 @@
 // 색은 종류 무리마다 하나(토큰 viz.mask): 사람 · 마시는 그릇(컵·병·그릇) · 가전 설비 · 그 밖의 물건.
 // seen이 SEEN_TTL_MS 넘게 안 오면 지운다(멈춘 그림이 남지 않게). seen은 초당 10번 오므로 대시보드 자료(data.ts)에 넣지 않고
 // 따로 둔 저장소를 마스크 층(MaskLayer)만 듣는다: 화면 전체를 다시 그리지 않는다.
-import type { Mask } from "../../../src/brain/seg.ts";
+import type { Mask } from "../../../src/contract/observe.ts";
 import type { SeenEvent } from "../../../src/contract/events.ts";
 import { viz } from "../../../src/design/tokens.ts";
 import { CLASSES } from "../../../src/world/vocab.ts";
@@ -30,7 +30,7 @@ export function maskGroup(kind: string): MaskGroup {
 export interface Shape { kind: string; label: string; score: number; mask: Mask }
 export const shapesOf = (e: SeenEvent): Shape[] => e.shapes.map((s) => ({ kind: s.label, label: BOX_NAME[s.label] ?? s.label, score: s.score, mask: s.mask }));
 
-/** 비트 풀기(서버 src/brain/seg.ts maskCells와 같은 규칙): 줄 순서, 바이트 안에서는 높은 비트부터. */
+/** 비트 풀기(서버 src/shared/mask.ts maskCells와 같은 규칙): 줄 순서, 바이트 안에서는 높은 비트부터. */
 export function maskCells(m: Mask): Uint8Array {
   const bytes = atob(m.bits);
   const cells = new Uint8Array(m.cols * m.rows);

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { EyeFeed } from "../src/phone/feed.js";
-import { fetchRetry, listenRetry } from "../src/server/net.js";
+import { fetchRetry, listenRetry } from "../src/shared/net.js";
 import type { EyeEvent } from "../src/phone/session.js";
 import { readVideo } from "./helpers/video.js";
 
@@ -35,7 +35,7 @@ async function setup() {
   return { feed, base, photoDir, sent };
 }
 
-/** http.get. 이 PC의 Windows는 127.0.0.1 connect가 가끔 EFAULT로 실패해 다시 시도한다(src/server/net.ts). */
+/** http.get. 이 PC의 Windows는 127.0.0.1 connect가 가끔 EFAULT로 실패해 다시 시도한다(src/shared/net.ts). */
 async function openStream(url: string): Promise<IncomingMessage> {
   for (let attempt = 1; ; attempt++) {
     try {

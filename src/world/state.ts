@@ -34,11 +34,9 @@ import type { EyePose } from "../contract/events.js";
 import type {
   Facet, FixtureClass, ObjClass, VlmMissing, WorldChange, WorldDevice, WorldEye, WorldFact, WorldFixture, WorldObject, WorldPerson, WorldView, YoloMissing,
 } from "../contract/world.js";
-import type { Detection, Pose } from "../brain/detector.js";
-import { maskCells, type Mask } from "../brain/seg.js";
+import type { Detection, Pose, Mask, EngineFrame, CameraView } from "../contract/observe.js";
+import { maskCells } from "../shared/mask.js";
 import type { DeviceState, SightEvidence, VisionResult, VisionSeen } from "../hub/types.js";
-import type { EngineFrame } from "../observe/ring.js";
-import type { CameraView } from "../phone/session.js";
 import type { SceneObservation } from "../observe/scene.js";
 import { Confirmer, EVIDENCE_GAP_MS, EVIDENCE_STEP_MS } from "./confirm.js";
 import { CHANGE_TEXT, HEARD_MAX, OBJECT_NAME, fixtureName, objectName, onSurface } from "./labels.js";

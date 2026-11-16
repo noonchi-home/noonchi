@@ -9,7 +9,7 @@ import { EyeFeed } from "../src/phone/feed.js";
 import { encodeFramePacket } from "../src/phone/packet.js";
 import { createPhoneServer, DEFAULT_UI_DIR, sameHost } from "../src/phone/server.js";
 import { createApp, type TwinHomeApp } from "../src/server/app.js";
-import { fetchRetry } from "../src/server/net.js";
+import { fetchRetry } from "../src/shared/net.js";
 import { BOX_START, BOX_WALLS, alignMessages } from "./helpers/align.js";
 import { ROOMS, makeHome } from "./helpers/home.js";
 import { readVideo } from "./helpers/video.js";

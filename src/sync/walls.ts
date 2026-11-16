@@ -9,7 +9,7 @@
 //   한 면에 점이 30개를 넘으면 그 면 점마다 시그마를 키워 한 벽이 다른 증거를 누르지 않게 한다.
 
 import { roomFaces, type HomePlan } from "../phone/home-plan.js";
-import type { Vec3 } from "../phone/align.js";
+import type { Vec3 } from "../shared/geometry.js";
 import { applyRigid, rotateVec, type LineTerm, type P2, type Rigid } from "./rigid.js";
 
 export interface WallSeg {

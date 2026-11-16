@@ -5,7 +5,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { COPY_RULES, copyRules as planCopyRules } from "../src/plan/copy.js";
+import { COPY_RULES, copyRules as planCopyRules } from "../src/shared/copy.js";
 
 export type Copy = { text: string; line: number; start?: number };
 export type Problem = { file: string; line: number; text: string; rule: string };
@@ -225,8 +225,8 @@ export function tsxCopy(src: string): Copy[] {
   return codeCopy(src, true);
 }
 
-// 화면 글 규칙(생각 과정·구현 설명 표시)은 서버가 에이전트 계획 글을 검사할 때도 쓰므로 src/plan/copy.ts에 둔다.
-export { MAX_COPY } from "../src/plan/copy.js";
+// 화면 글 규칙(생각 과정·구현 설명 표시)은 서버가 에이전트 계획 글을 검사할 때도 쓰므로 src/shared/copy.ts에 둔다.
+export { MAX_COPY } from "../src/shared/copy.js";
 
 /** 설명 칸: 제목·버튼·상태 말고 덧붙이는 설명 문단을 담는 자리. */
 const BLURB_CLASS = /\bclass(?:Name)?\s*[=:]\s*["'`][^"'`]*?(?<![\w-])(sub|note|help|hint|desc|touch-help)(?![\w-])/g;

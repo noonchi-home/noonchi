@@ -1,6 +1,6 @@
 // 주소가 답하는지 본다(2xx). 결과는 ttlMs 동안 둔다. 모델을 부르지 않는다: VLM은 GET {base}/models, PAM은 GET {url}/health.
 // 연결 단계의 EFAULT(이 PC Windows의 일시 오류)는 fetchRetry가 다시 보낸다.
-import { fetchRetry } from "../server/net.js";
+import { fetchRetry } from "../shared/net.js";
 
 export async function reachable(url: string, opts: { headers?: Record<string, string>; timeoutMs?: number; fetchImpl?: typeof fetch } = {}): Promise<boolean> {
   try {
