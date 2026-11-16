@@ -335,7 +335,7 @@ class Week {
     return open;
   }
 
-  /** 실제 폰 답 단추(src/server/home.ts onChoice와 같다). */
+  /** 실제 폰 답 단추(src/server/home/phone.ts onChoice와 같다). */
   tap(choice: string): void {
     this.wait(3);
     const open = this.open();
@@ -344,7 +344,7 @@ class Week {
     this.db.add("feedback", this.t, FEEDBACK_TEXT.answer(picked.label, open.kind, open.text), { subject: open.planId, data: { choice, via: "button" } });
   }
 
-  /** 실제 폰이 들은 말(src/server/home.ts onAnswer와 같다). 새 폰처럼 말할 때 떠 있던 지금 명령을 at으로 싣는다. */
+  /** 실제 폰이 들은 말(src/server/home/phone.ts onAnswer와 같다). 새 폰처럼 말할 때 떠 있던 지금 명령을 at으로 싣는다. */
   say(text: string): void {
     this.wait(3);
     const open = this.open();

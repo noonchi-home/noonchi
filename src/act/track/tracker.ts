@@ -85,7 +85,7 @@ export type { Stray } from "./coach.js";
 export type { Cycle, CycleEnd } from "./safety.js";
 export type { Stall } from "./steps.js";
 
-/** 기기 단계 실행(src/server/home.ts: 기기 도구 + 정책). run이 승인 토큰을 내면 실제 폰에 묻고 confirm·cancel로 답한다.
+/** 기기 단계 실행(src/server/home/act.ts: 기기 도구 + 정책). run이 승인 토큰을 내면 실제 폰에 묻고 confirm·cancel로 답한다.
  *  결과의 unverified(ThinQ가 받았지만 다시 읽은 값이 다름)·state 「모름」(신호 없음)은 적용을 확인하지 못한 것이다. */
 export interface DeviceRunner {
   /** live가 거짓이면(계획이 바뀌었거나 닫힘) 가전에 보내지 않는다. 보내기 바로 앞에서 본다. */
@@ -150,7 +150,7 @@ export interface TrackerOptions {
   showAskMs?: number;
   /** 판본이 맞는 실제 폰이 붙어 있는가(src/phone/server.ts ready). 없으면 늘 붙어 있다고 본다. */
   phoneReady?: () => boolean;
-  /** 명령 줄을 바꾸지 않고 붙은 폰에 소리로만 알린다(src/server/home.ts가 폰 서버 reply에 잇는다). 줄에서 기다리는 끄기 안내가 쓴다. */
+  /** 명령 줄을 바꾸지 않고 붙은 폰에 소리로만 알린다(src/server/home/act.ts가 폰 서버 reply에 잇는다). 줄에서 기다리는 끄기 안내가 쓴다. */
   sayAloud?: (text: string) => void;
   /** 멈춘 집기·놓기 단계 알림(관찰 모드 A, src/act/look.ts). 받았으면 true(그때만 센다). 받은 부름은 끝날 때 s.settle(counted)를 부른다. 없으면 부르지 않는다. */
   stalled?: (s: Stall) => boolean;
@@ -321,7 +321,7 @@ export class ExecutionTracker {
     return this.core.waiting();
   }
 
-  /** 코치 행동(TaskSpec.coach) 계획이 열려 있거나 만드는 중인가: 그동안 판단 호출(PAM)을 쉰다(src/server/home.ts hold). */
+  /** 코치 행동(TaskSpec.coach) 계획이 열려 있거나 만드는 중인가: 그동안 판단 호출(PAM)을 쉰다(src/server/home/act.ts hold). */
   coaching(): boolean {
     const core = this.core;
     if (core.stopped) return false;

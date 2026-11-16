@@ -1,4 +1,4 @@
-// 서버의 외부 연락 연결(src/server/home.ts): 실제 폰 말 「세탁기 AS 불러 줘」 → 에이전트 call_service → 실제 폰 승인 질문 → 답 →
+// 서버의 외부 연락 연결(src/server/home/agent.ts): 실제 폰 말 「세탁기 AS 불러 줘」 → 에이전트 call_service → 실제 폰 승인 질문 → 답 →
 // 전화 서비스(CALL_SERVICE_URL, 가짜 HTTP 서버) → 실제 폰 답·대시보드 말풍선 카드·기록 DB service 줄. 주소가 없으면 부르지 않고 연결 없음으로 남긴다.
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

@@ -59,7 +59,7 @@ export type ApprovalAnswer = "approve" | "reject";
 export interface PhonePending { token: string; deviceLabel: string; reason: string; choices: PhoneChoice[] }
 
 /** 말하기 시작할 때 폰에 떠 있던 것: 명령 줄(명령의 계획 id·단계 id, 없으면 none)과 승인 대기 목록에 보인 token들. 새 폰은 늘 싣는다. 칸이 없으면 옛 탭이다.
- *  서버는 말 답(「완료」·질문 답·승인·거절)을 이 명령·token에만 받는다(src/act/track/answers.ts onHeard, src/server/home.ts). */
+ *  서버는 말 답(「완료」·질문 답·승인·거절)을 이 명령·token에만 받는다(src/act/track/answers.ts onHeard, src/server/home/phone.ts). */
 export type HeardAt = ({ kind: "command"; id: string; step: string } | { kind: "none" }) & { pending: string[] };
 
 /** 실제 폰 → 서버: 들은 말(say, at은 말할 때 떠 있던 것), 승인 답(confirm, choice가 없으면 approve)·취소(cancel).

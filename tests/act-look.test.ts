@@ -14,7 +14,7 @@ import { CLOSER_FOUND, testCloser, type TestCloser } from "./helpers/look.js";
 import { startFakeObserver, type FakeObserver, type ObserveScript } from "./helpers/observer.js";
 
 const ASK = CLOSER_TEXT("싱크대");
-// 실행 추적이 주는 싱크대 자리는 윗면 가운데다(src/server/home.ts placeLocator)
+// 실행 추적이 주는 싱크대 자리는 윗면 가운데다(src/server/home/act.ts placeLocator)
 const SINK_TOP: [number, number, number] = [0.6, 0.9, 0];
 const SINK: LookSpot = { id: "sink_1", label: "싱크대", position: SINK_TOP };
 const CUP: LookSpot = { id: "cup_1", label: "컵", position: [1.5, 0, 0] };

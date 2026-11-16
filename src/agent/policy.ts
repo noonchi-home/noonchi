@@ -134,7 +134,7 @@ export interface PendingService {
 export interface PolicyOptions {
   ttlMs?: number;
   now?: () => number;
-  /** 승인 기억(src/server/home.ts가 runtime/homes/<집>/approvals.json으로 만든다). 없으면 이 프로세스 안에서만 기억한다. 실행 추적과 같은 기억을 쓴다. */
+  /** 승인 기억(src/server/home/agent.ts가 runtime/homes/<집>/approvals.json으로 만든다). 없으면 이 프로세스 안에서만 기억한다. 실행 추적과 같은 기억을 쓴다. */
   approvals?: ApprovalBook;
 }
 
@@ -180,7 +180,7 @@ export class Policy {
     return reason ? reason(device.label) : `${device.label}: 사용자 승인이 필요합니다.`;
   }
 
-  /** 승인 대기를 실제 폰에서 가린 동안(끄기 안내가 명령 줄에 떠 있음, src/server/home.ts) 시간 제한을 멈춘다. 풀면 가린 시간만큼 만료를 늦춘다.
+  /** 승인 대기를 실제 폰에서 가린 동안(끄기 안내가 명령 줄에 떠 있음, src/server/home/act.ts) 시간 제한을 멈춘다. 풀면 가린 시간만큼 만료를 늦춘다.
    *  가린 동안 받은 대기는 푼 때부터 제 시간(ttlMs)을 받는다. 승인 대기가 보이지 않는 사이 시간 초과로 닫히지 않게 한다. */
   pause(on: boolean): void {
     if (on && this.pausedAt === null) this.pausedAt = this.now();

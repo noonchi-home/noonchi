@@ -433,7 +433,7 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
     },
     async close() {
       // 처리 중인 승인 답(confirm·cancel)의 답을 보내고, 보낸 글이 소켓에 다 넘어갈 때까지(최대 1초) 기다린 뒤 연결을 끊는다.
-      // 집을 닫을 때 에이전트가 취소로 끝낸 외부 연락의 답이 실제 폰에 닿게 한다(src/server/home.ts는 에이전트를 먼저 닫는다)
+      // 집을 닫을 때 에이전트가 취소로 끝낸 외부 연락의 답이 실제 폰에 닿게 한다(src/server/home/index.ts는 에이전트를 먼저 닫는다)
       await Promise.allSettled([...answering]);
       for (const end = Date.now() + 1000; [...wss.clients].some((ws) => ws.bufferedAmount > 0) && Date.now() < end; ) await new Promise((r) => setTimeout(r, 10));
       for (const ws of wss.clients) ws.terminate();

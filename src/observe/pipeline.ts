@@ -114,7 +114,7 @@ export interface PipelineOptions {
   world: WorldState;
   emit: (log: BrainLog) => void;
   broadcastWorld: (w: WorldView) => void;
-  /** 감지가 끝난 프레임마다(빠른 프레임 포함) 물체 모양. 대시보드로만 보내고 기록하지 않는다(src/server/home.ts). */
+  /** 감지가 끝난 프레임마다(빠른 프레임 포함) 물체 모양. 대시보드로만 보내고 기록하지 않는다(src/server/home/observe.ts). */
   onSeen?: (e: SeenEvent) => void;
   /** World State 변화(분석 없음 포함). 판단 호출 시점이 받는다. */
   onChanges?: (c: WorldChange[]) => void;
@@ -122,7 +122,7 @@ export interface PipelineOptions {
   onFrame?: () => void;
   /** 시험 자료 저장(DATASET_COLLECT=1일 때만). 고리에 넣은 프레임마다 부른다. */
   dataset?: (f: EngineFrame) => void;
-  /** 감지가 끝난 프레임(받은 JPEG 그대로)과 감지 결과. 폰 위치 맞추기가 기준점 상자(landmarks)를 쓴다(src/server/home.ts). */
+  /** 감지가 끝난 프레임(받은 JPEG 그대로)과 감지 결과. 폰 위치 맞추기가 기준점 상자(landmarks)를 쓴다(src/server/home/observe.ts). */
   onDetected?: (jpeg: Buffer, result: DetectResult) => void;
   clock?: { now(): number };
 }

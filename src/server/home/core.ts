@@ -1,0 +1,96 @@
+// 집 실행 묶음(src/server/home/)의 안쪽 공유 객체 HomeCore: 도메인별 잇기(devices·agent·phone·act·observe·say)가 함께 쓰는 상태와 집 맥락.
+// startHome 한 함수가 나눠 쓰던 클로저 변수를 칸으로 둔 것이다. 조립(index.ts)이 만들어 도메인별 잇기를 옛 차례대로 부르고, 닫을 때도 이 칸을 본다.
+// 칸은 그 잇기가 채우기 전에는 읽지 않는다. 말풍선 카드 speak는 say.ts가 채우기 전까지 아무것도 하지 않는다.
+import type { ExecutionTracker, LessonStore, Looker, PlanHub, loadActConfig } from "../../act/index.js";
+import type { Agent, ApprovalStore, Observer, PlaceInfo, Planner, Policy } from "../../agent/index.js";
+import type { Decider, ThoughtFeed } from "../../brain/index.js";
+import type { BrainLog, SeenEvent } from "../../contract/events.js";
+import type { PlannedCommand } from "../../contract/phone.js";
+import type { AssistMode } from "../../contract/setup.js";
+import type { SignalHub, ThinqLink } from "../../devices/index.js";
+import type { FloorPlan, HomePlan, PlaceNames, TwinData, loadLayout, loadScene } from "../../layout/index.js";
+import type { ObservationPipeline } from "../../observe/index.js";
+import type { EyeFeed, FrameHeader, PhoneServer, StartStore, twinLandmarks } from "../../phone/index.js";
+import type { PlaneSurface, WorldState } from "../../world/index.js";
+import type { TwinHomeApp } from "../app.js";
+import type { StartedHub } from "../hubFactory.js";
+import type { HomeContext } from "./index.js";
+
+/** 집 하나를 띄우는 동안의 공유 상태. */
+export class HomeCore {
+  // 가전(devices.ts)
+  twin!: TwinData;
+  started!: StartedHub;
+  signals!: SignalHub;
+  /** 기기 id → twin 기기(이름·종류). */
+  specOf!: Map<string, TwinData["devices"][number]>;
+  unsubHistory!: () => void;
+  /** ThinQ 연결(실제 모드). 닫힌 집이면 붙이지 않는다. */
+  link: ThinqLink | null = null;
+  closed = false;
+  // 에이전트(agent.ts)
+  approvals!: ApprovalStore;
+  policy!: Policy;
+  layout: ReturnType<typeof loadLayout>;
+  /** 들은 말을 기록·방송에 그대로 남길지(KEEP_HEARD_TEXT). */
+  keepHeard = false;
+  agent!: Agent;
+  planner!: Planner;
+  observer!: Observer;
+  unsubFocus: () => void = () => {};
+  // 실제 폰(phone.ts)
+  phoneOn = false;
+  feed: EyeFeed | undefined;
+  eyeHeightM = 0;
+  /** 방·벽(scene.json, 없거나 깨졌으면 빈 목록). */
+  plan!: HomePlan;
+  startStore: StartStore | undefined;
+  /** 지금 배치의 물건 기준점(폰 위치 맞추기). */
+  landmarksNow!: () => ReturnType<typeof twinLandmarks>;
+  /** 엔진 프레임 헤더(찍은 순간 AR 자세·투영): 감지가 끝나면 기준점 상자와 함께 폰 위치 맞추기로 넘긴다. */
+  engineHeaders = new WeakMap<Buffer, FrameHeader>();
+  phone: PhoneServer | undefined;
+  phoneUrls: string[] = [];
+  phonePort: number | undefined;
+  // 계획·판단·실행(act.ts)
+  scene!: ReturnType<typeof loadScene>;
+  floorPlan!: FloorPlan;
+  placeNames!: PlaceNames;
+  places!: () => PlaceInfo[];
+  plans!: PlanHub;
+  act!: ReturnType<typeof loadActConfig>;
+  lessons!: LessonStore;
+  thoughts: ThoughtFeed | null = null;
+  decider: Decider | null = null;
+  tracker: ExecutionTracker | null = null;
+  looker: Looker | null = null;
+  // 관찰 흐름·World State(observe.ts)
+  surfaces!: () => PlaneSurface[];
+  world: WorldState | null = null;
+  pipeline: ObservationPipeline | null = null;
+  unsubWorld: () => void = () => {};
+  decideTimer: NodeJS.Timeout | undefined;
+  // 말풍선 카드(say.ts): 실제 폰에 낸 지금 명령, 마지막 판단·물체 모양, 보낸 글, 가까이 보기·반성·외부 연락 결과
+  speak: () => void = () => {};
+  command: PlannedCommand | null = null;
+  lastDecision: BrainLog | null = null;
+  lastSeen: SeenEvent | null = null;
+  said: string | null = null;
+  lookSay: { place: string; atMs: number } | null = null;
+  reflected: { atMs: number; learned: number; active: number } | null = null;
+  serviceSaid: { text: string; atMs: number } | null = null;
+  // 앱(index.ts)
+  app: TwinHomeApp | undefined;
+
+  constructor(readonly ctx: HomeContext) {}
+
+  /** 지금 시각(시험 시계가 있으면 그 시계). */
+  nowMs(): number {
+    return this.ctx.brain?.clock?.now() ?? Date.now();
+  }
+
+  /** 지금 돕는 방식(눈치·코치). 판단 호출이 그때그때 읽는다(집을 다시 띄우지 않고 바뀐다). */
+  assist(): AssistMode {
+    return this.ctx.assist?.() ?? "noonchi";
+  }
+}

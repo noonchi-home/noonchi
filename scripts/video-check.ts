@@ -426,7 +426,7 @@ async function startFake(clip: string, steps: string[]): Promise<Fake> {
   const names = [...new Set([clip, ...steps.map((s) => s.split(":")[2]!)])];
   const missing = names.find((n) => !existsSync(join(ROOT, "runtime", "videos", n)));
   if (missing) throw new Error(`영상이 없어요: runtime/videos/${missing}`);
-  // 영상은 폰 서버가 공용 runtime/videos에서 바로 읽는다(src/server/home.ts phoneVideoDir)
+  // 영상은 폰 서버가 공용 runtime/videos에서 바로 읽는다(src/server/home/phone.ts phoneVideoDir)
   const runtimeDir = mkdtempSync(join(tmpdir(), "video-check-"));
   mkdirSync(join(runtimeDir, "homes", HOME), { recursive: true });
   writeFileSync(join(runtimeDir, "homes", HOME, "approvals.json"), JSON.stringify({ always: { "task:컵 치우기": "2026-11-11T00:00:00.000Z" }, never: {} }));

@@ -266,7 +266,7 @@ export interface PhotoRecord {
   pose_note?: "not_aligned";
 }
 
-/** /events로 화면이 받는 메시지 전체. 서버의 send·broadcast와 같은 모양이다(src/server/app.ts·home.ts, src/observe/pipeline.ts, src/phone/feed.ts). */
+/** /events로 화면이 받는 메시지 전체. 서버의 send·broadcast와 같은 모양이다(src/server/app.ts·home/, src/observe/pipeline.ts, src/phone/feed.ts). */
 export type ServerMessage =
   | { type: "hello"; devices: number; provider: string | null; hub: string; home: string | null }
   | { type: "state"; state: DeviceState }

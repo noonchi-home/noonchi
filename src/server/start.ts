@@ -1,4 +1,4 @@
-// 서버 시작(npm start·데모·e2e 테스트 공용): 껍데기 서버(포트·설정 API) + 집 실행 묶음(src/server/home.ts).
+// 서버 시작(npm start·데모·e2e 테스트 공용): 껍데기 서버(포트·설정 API) + 집 실행 묶음(src/server/home/).
 // 설정 흐름(집 → 가전 → 운영 모드 → 위치 동기화 → 대시보드): 집을 고르면 묶음을 닫고 새 집으로 다시 만든다. 포트는 그대로다.
 // 운영 모드: 시험(기본, ThinQ를 부르지 않음) · 실제(짝지은 에어컨·냉장고는 ThinQ). ThinQ 클라이언트는 실제 모드에서만 만든다.
 
@@ -32,7 +32,7 @@ import { ThinqClient, ThinqError, thinqConfig } from "../devices/index.js";
 import { DEFAULT_POLL_MS, DEFAULT_READBACK_MS, ThinqLink } from "../devices/index.js";
 import { HttpError, originChecker, type TwinHomeApp } from "./app.js";
 import type { HubKind, MatterTransport, StartHubOptions } from "./hubFactory.js";
-import { startHome, type HomeContext, type HomeRuntime } from "./home.js";
+import { startHome, type HomeContext, type HomeRuntime } from "./home/index.js";
 import { makeReady } from "./ready.js";
 import { createShell } from "./shell.js";
 

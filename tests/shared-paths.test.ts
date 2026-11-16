@@ -10,7 +10,7 @@ import { MODELS_DIR } from "../src/observe/detector.js";
 import { DEFAULT_TWIN_DIR } from "../src/layout/twin-files.js";
 import { DEFAULT_UI_DIR } from "../src/phone/server.js";
 import { DEFAULT_WEB_DIR } from "../src/server/app.js";
-import { phoneVideoDir } from "../src/server/home.js";
+import { phoneVideoDir } from "../src/server/home/index.js";
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
 const fromTests = (rel: string) => fileURLToPath(new URL(`../${rel}`, import.meta.url));

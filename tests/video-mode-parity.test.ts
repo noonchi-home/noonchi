@@ -26,12 +26,14 @@ const SITES: { file: string; pattern: RegExp; skip?: RegExp }[] = [
 ];
 /** 실행 추적 폴더(src/act/track/)의 파일 전체. */
 const TRACK_FILES = readdirSync(join(ROOT, "src", "act", "track")).filter((f) => f.endsWith(".ts")).sort().map((f) => `src/act/track/${f}`);
+/** 서버 집 실행 묶음 폴더(src/server/home/)의 파일 전체. */
+const HOME_FILES = readdirSync(join(ROOT, "src", "server", "home")).filter((f) => f.endsWith(".ts")).sort().map((f) => `src/server/home/${f}`);
 /** 영상 모드 갈래가 없어야 하는 파일. */
 const NONE: { file: string; pattern: RegExp }[] = [
   { file: "ui/src/phone/core/talk.js", pattern: /\bvideo\b|__noonchiVideo|\?clip/ },
   { file: "ui/src/phone/PhoneScreen.tsx", pattern: /\bvideo\b|__noonchiVideo|\?clip/ },
   ...TRACK_FILES.map((file) => ({ file, pattern: /\bvideo\b|videoSession|\.fixed\b/ })),
-  { file: "src/server/home.ts", pattern: /\bvideo\b|videoSession|\.fixed\b/ },
+  ...HOME_FILES.map((file) => ({ file, pattern: /\bvideo\b|videoSession|\.fixed\b/ })),
 ];
 
 /** 주석을 같은 길이의 빈칸으로 바꾼다(줄 번호를 지키려고 줄바꿈은 둔다). 글 안의 //는 건드리지 않게 따옴표·백틱 글은 건너뛴다. */
@@ -184,8 +186,9 @@ describe("영상 모드는 카메라 입력만 다르다", () => {
   });
 
   it("소리·폰 화면·실행 추적·서버 묶음에는 영상 모드 갈래가 없다", () => {
-    // 실행 추적은 폴더 파일 전체를 본다(엉뚱한 폴더를 보고 통과하지 않게)
+    // 실행 추적·집 실행 묶음은 폴더 파일 전체를 본다(엉뚱한 폴더를 보고 통과하지 않게)
     expect(TRACK_FILES).toEqual(expect.arrayContaining(["src/act/track/tracker.ts", "src/act/track/answers.ts", "src/act/track/steps.ts"]));
+    expect(HOME_FILES).toEqual(expect.arrayContaining(["src/server/home/index.ts", "src/server/home/phone.ts", "src/server/home/act.ts"]));
     const bad = NONE.flatMap((s) => stripComments(read(s.file)).split("\n").flatMap((c, i) => (s.pattern.test(c) ? [`${s.file}:${i + 1}`] : [])));
     expect(bad, WHY).toEqual([]);
   });

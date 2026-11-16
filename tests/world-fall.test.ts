@@ -20,7 +20,7 @@ import { SCENE_STATES } from "../src/world/vocab.js";
 import { resolveHome } from "../src/layout/homes.js";
 import { loadLayout } from "../src/layout/load.js";
 import { DEFAULT_TWIN_DIR } from "../src/layout/twin-files.js";
-import { restSource } from "../src/server/home.js";
+import { restSource } from "../src/server/home/index.js";
 import { LOOK_VIEW } from "./helpers/camera.js";
 import { det } from "./helpers/detectors.js";
 import { poseOf } from "./helpers/poses.js";

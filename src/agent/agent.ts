@@ -1,7 +1,7 @@
 // 에이전트: LLM 공급자 + 도구 호출 루프(최대 6라운드) + 세션별 대화 기억 + 승인 대기 관리.
 // 승인 토큰은 LLM에게 보여 주지 않는다. 사용자가 실제 폰 답 단추(confirm, 승인·거절)나 다음 말로만 확정한다.
 // 승인 대기는 위험 목록뿐이라(src/agent/policy.ts) 답은 둘 다 이번만이다: 승인이면 실행하고, 거절이면 실행하지 않는다. 둘 다 기억하지 않아 다음에 또 묻는다.
-// 늘 듣는 실제 폰의 말(heard)로는 승인 대기에 답하지 않는다(answerAll 없음): 실제 폰 서버(src/server/home.ts)가 말 전체가 승인·거절 답이고
+// 늘 듣는 실제 폰의 말(heard)로는 승인 대기에 답하지 않는다(answerAll 없음): 실제 폰 서버(src/server/home/phone.ts)가 말 전체가 승인·거절 답이고
 // 말할 때 보인 대기 token이 하나일 때만 answerToken으로 그 대기 하나에 답한다. 글로 한 말은 「승인」「응」「아니」로 대기 전부에 답한다.
 // 외부 연락(call_service)도 같은 승인 대기 길로 묻는다: 받는 이는 등록부(contacts)에서 정하고(등록이 없으면 묻지 않고 「…연락처가 등록되지 않았어요.」),
 // 승인이면 외부 연락 통로(service, CALL_SERVICE_URL)로 보내고, 통로가 없으면 부르지 않고 「연결 없음」.
@@ -264,7 +264,7 @@ export class Agent {
     return this.answer(s ? this.serialize(s, run) : run());
   }
 
-  /** 승인 대기 token 하나만 답한다(들은 말의 승인·거절, src/server/home.ts). 다른 대기는 그대로. 지금 대기가 아니면 ok false.
+  /** 승인 대기 token 하나만 답한다(들은 말의 승인·거절, src/server/home/phone.ts). 다른 대기는 그대로. 지금 대기가 아니면 ok false.
    *  승인이면 실행하고, 거절이면 실행하지 않는다(둘 다 그 대기에 답한 것이라 ok true). */
   answerToken(token: string, answer: ApprovalAnswer): Promise<{ ok: boolean; reply: string }> {
     const s = this.owner(token);

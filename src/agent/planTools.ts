@@ -98,7 +98,7 @@ export type TaskInfo = TaskSpec;
 /** 평면도 물건 하나(가구·가전·도면 설비): id·종류·방·자리와 이름(name 배치 이름, short 부를 짧은 이름), 싱크볼 가운데(있을 때). */
 export interface PlaceInfo { id: string; type: string; room: string | null; position: XZ; name: string; short: string; basin?: XZ }
 
-/** 계획 입력의 평면도 물건(벽·바닥·문·창은 뺀다). 서버(src/server/home.ts)와 시험이 같이 쓴다.
+/** 계획 입력의 평면도 물건(벽·바닥·문·창은 뺀다). 서버(src/server/home/act.ts)와 시험이 같이 쓴다.
  *  name은 배치 이름(없으면 id), short는 부르는 이름(src/layout/names.ts placeName, 없으면 배치 이름). */
 export function placesOf(floor: FloorPlan, names: PlaceNames = {}): PlaceInfo[] {
   return [...floor.objects.values()].filter((p) => !/^(walls|floors)$|door|win/.test(p.type)).map((p) => {

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { fetchRetry } from "../src/shared/net.js";
-import { phoneVideoDir } from "../src/server/home.js";
+import { phoneVideoDir } from "../src/server/home/index.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 
 const REPO_VIDEOS = fileURLToPath(new URL("../runtime/videos/", import.meta.url));

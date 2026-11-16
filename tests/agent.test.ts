@@ -391,7 +391,7 @@ describe("Agent + OpenAI 공급자(가짜 서버): 한국어 요청", () => {
     expect(r.reply).toBe("");
     expect(r.actions.map((a) => a.tool)).toEqual(["leave_it"]);
     expect(JSON.stringify(hub.list().map((d) => hub.get(d.id)!.twin))).toBe(before);
-    // 서버(src/server/home.ts)는 같은 말을 World State 들은 말로 넣고 판단 호출이 관찰 텍스트에 싣는다
+    // 서버(src/server/home/phone.ts)는 같은 말을 World State 들은 말로 넣고 판단 호출이 관찰 텍스트에 싣는다
     const pam = await startFakePam();
     try {
       const world = new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] });
