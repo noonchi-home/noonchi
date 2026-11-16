@@ -48,7 +48,6 @@
   "inner ui/src/setup/SetupApp.tsx -> ui/src/dashboard/mascot-image.ts",
   "inner ui/src/setup/start-pick.ts -> ui/src/twin/project.ts",
   "inner ui/src/setup/start-pick.ts -> ui/src/twin/viewer.ts",
-  "no-index server",
   "no-index ui/dashboard",
   "no-index ui/phone",
   "no-index ui/setup",
