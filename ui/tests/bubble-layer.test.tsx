@@ -1,8 +1,8 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { DeviceView } from "../../src/contract/events.ts";
-import { BubbleLayer } from "../src/bubbles/BubbleLayer";
-import type { Check } from "../src/checks/checks";
+import { BubbleLayer } from "../src/dashboard/bubbles/BubbleLayer";
+import type { Check } from "../src/dashboard/checks/checks";
 
 const dev = (id: string, label: string, power: string): [string, DeviceView] => [id, {
   id, label, room: "r", roomLabel: "거실", twinType: "t", kind: "light", matterDeviceType: "x", capabilities: [], sensors: [], twinAttrs: {},

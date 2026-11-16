@@ -1,0 +1,20 @@
+{
+  "files": {
+    "ui/src/bubbles/BubbleLayer.tsx": "ui/src/dashboard/bubbles/BubbleLayer.tsx",
+    "ui/src/bubbles/place.ts": "ui/src/dashboard/bubbles/place.ts",
+    "ui/src/bubbles/summary.ts": "ui/src/dashboard/bubbles/summary.ts",
+    "ui/src/panels/eye-video-worker.ts": "ui/src/dashboard/panels/eye-video-worker.ts",
+    "ui/src/panels/eye-video.ts": "ui/src/dashboard/panels/eye-video.ts",
+    "ui/src/checks/checks.ts": "ui/src/dashboard/checks/checks.ts",
+    "ui/src/checks/use-checks.ts": "ui/src/dashboard/checks/use-checks.ts"
+  },
+  "decls": {},
+  "new": [],
+  "text": [
+    "tests/helpers/kind-tables.ts",
+    "tests/kinds-registry.test.ts",
+    "tests/lint-ui-color.test.ts"
+  ],
+  "allow": {},
+  "exceptions": {}
+}

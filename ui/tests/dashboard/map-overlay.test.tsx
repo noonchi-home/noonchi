@@ -4,7 +4,7 @@
 import { act, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import type { DeviceView, EyeEvent, HealthView, ServerMessage } from "../../../src/contract/events.ts";
-import type { Check } from "../../src/checks/checks";
+import type { Check } from "../../src/dashboard/checks/checks";
 import { coverScale, focusOf, livedOf, toScreen, wideCamera } from "../../src/dashboard/camera";
 import { Dashboard } from "../../src/dashboard/Dashboard";
 import { roomSetsOf, twinFrame } from "../../src/dashboard/frame";

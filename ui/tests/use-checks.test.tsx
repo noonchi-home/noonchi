@@ -1,7 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ServerMessage } from "../../src/contract/events.ts";
-import { useChecks } from "../src/checks/use-checks";
+import { useChecks } from "../src/dashboard/checks/use-checks";
 
 const observed: ServerMessage = {
   type: "brain", event: { type: "observe", at_ms: 0, frame_id: "e1", captured_at_ms: 0, yolo: "컵 0.80", vlm: null },

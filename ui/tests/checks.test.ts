@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentAction, BrainLog, PendingView, ServerMessage } from "../../src/contract/events.ts";
 import type { PlanStatus, PlanStep, PlanView } from "../../src/contract/plan.ts";
-import { checkList, checksReducer, EMPTY_CHECKS, type ChecksState } from "../src/checks/checks";
+import { checkList, checksReducer, EMPTY_CHECKS, type ChecksState } from "../src/dashboard/checks/checks";
 
 const act = (tool: string, deviceId: string | undefined, extra: Partial<AgentAction> = {}): AgentAction =>
   ({ tool, args: {}, ok: true, deviceId, deviceLabel: deviceId, at: "t", ...extra });

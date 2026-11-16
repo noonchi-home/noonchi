@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DeviceView } from "../../src/contract/events.ts";
-import { deviceSummary } from "../src/bubbles/summary";
+import { deviceSummary } from "../src/dashboard/bubbles/summary";
 
 const base: Omit<DeviceView, "state"> = {
   id: "ac", label: "거실 에어컨", room: "living_room", roomLabel: "거실", twinType: "wall_ac", kind: "aircon",

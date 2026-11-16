@@ -1,8 +1,8 @@
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { DeviceView } from "../../../src/contract/events.ts";
-import { BubbleLayer } from "../bubbles/BubbleLayer";
-import { deviceSummary } from "../bubbles/summary";
-import type { Check } from "../checks/checks";
+import { BubbleLayer } from "./bubbles/BubbleLayer";
+import { deviceSummary } from "./bubbles/summary";
+import type { Check } from "./checks/checks";
 import { LineDrawSvg } from "../components/ui/line-draw-svg";
 import { Status } from "../components/ui/status";
 import type { TwinEngine } from "../twin/3d/engine";

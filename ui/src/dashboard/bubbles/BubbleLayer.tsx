@@ -1,12 +1,12 @@
 import { CircleHelp, TriangleAlert } from "lucide-react";
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
-import type { DeviceView } from "../../../src/contract/events.ts";
+import type { DeviceView } from "../../../../src/contract/events.ts";
 import type { Check, CheckVerb } from "../checks/checks";
-import { Avatar, AvatarFallback } from "../components/ui/avatar";
-import { Status, StatusIndicator } from "../components/ui/status";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../components/ui/tooltip";
-import { cn } from "../lib/utils";
-import type { ScreenPoint } from "../twin/use-anchors";
+import { Avatar, AvatarFallback } from "../../components/ui/avatar";
+import { Status, StatusIndicator } from "../../components/ui/status";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../components/ui/tooltip";
+import { cn } from "../../lib/utils";
+import type { ScreenPoint } from "../../twin/use-anchors";
 import { ALIGN_EDGE, placeBubbles, type Box, type Placement, type Rect } from "./place";
 import { deviceSummary, type Tone } from "./summary";
 

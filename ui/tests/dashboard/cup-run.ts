@@ -11,7 +11,7 @@ import { loadScene } from "../../../src/layout/scene.ts";
 import { floorPlanFrom } from "../../../src/layout/floor.ts";
 import { STEP_LABEL } from "../../../src/act/labels.ts";
 import { assemblePlan } from "../../../src/agent/planShape.ts";
-import type { Check } from "../../src/checks/checks";
+import type { Check } from "../../src/dashboard/checks/checks";
 import run from "../../src/dashboard/fake-run.json";
 import { homeIndexOf } from "../../src/dashboard/home";
 import { MOKRYEON_MAP_CAMERA } from "../../src/twin/3d/projection";

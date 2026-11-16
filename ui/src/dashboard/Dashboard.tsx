@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { DeviceView, EyeEvent, ServerMessage } from "../../../src/contract/events.ts";
 import type { PlanView } from "../../../src/contract/plan.ts";
-import { BubbleLayer } from "../bubbles/BubbleLayer";
-import { checkList, dashboardChecks, type ChecksState } from "../checks/checks";
-import { useChecks } from "../checks/use-checks";
+import { BubbleLayer } from "./bubbles/BubbleLayer";
+import { checkList, dashboardChecks, type ChecksState } from "./checks/checks";
+import { useChecks } from "./checks/use-checks";
 import { useDevices } from "../lib/use-devices";
 import { useEvents } from "../lib/use-events";
 import { useHealth } from "../lib/use-health";

@@ -1,6 +1,6 @@
-// 눈 영상(H.264) 순수 부분: web/eye-video.js를 TS로 옮긴 ui/src/panels/eye-video.ts. 루트 tests/eye-video.test.ts와 같은 규칙.
+// 눈 영상(H.264) 순수 부분: web/eye-video.js를 TS로 옮긴 ui/src/dashboard/panels/eye-video.ts. 루트 tests/eye-video.test.ts와 같은 규칙.
 import { afterEach, describe, expect, it } from "vitest";
-import { createDecodeGate, createDisplayMode, createStreamParser, runDecoder } from "../src/panels/eye-video";
+import { createDecodeGate, createDisplayMode, createStreamParser, runDecoder } from "../src/dashboard/panels/eye-video";
 
 /** 서버 src/phone/video.ts encodeStreamMessage와 같은 틀: [헤더 길이 u32][본문 길이 u32][JSON 헤더][본문]. */
 function encode(header: object, body: Uint8Array): Uint8Array {

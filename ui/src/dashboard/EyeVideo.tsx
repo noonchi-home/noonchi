@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { attachEyeVideo, type EyeMode } from "../panels/eye-video";
+import { attachEyeVideo, type EyeMode } from "./panels/eye-video";
 
 const streamUrl = () => `/api/eye/stream?t=${Date.now()}`;
 

@@ -3,7 +3,7 @@
 // 열린 계획(planned·running)만 쓴다. 클로이드 자리는 맞춘 눈만(추정 눈은 쓰지 않는다).
 import type { EyeEvent } from "../../../src/contract/events.ts";
 import type { PlanStep, PlanView, XZ } from "../../../src/contract/plan.ts";
-import { dashboardChecks, type Check } from "../checks/checks";
+import { dashboardChecks, type Check } from "./checks/checks";
 import { conePixelBox } from "../twin/3d/eye";
 import { planDirToScreen, planToPixel, screenAngle, type OrthoCamera } from "../twin/3d/projection";
 import type { Px } from "./camera";

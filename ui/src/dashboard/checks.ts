@@ -1,6 +1,6 @@
 // 트윈 위 확인 목록 고르기(순수 함수, 시안 A 그대로). 지도 말풍선은 최근에 확인한 것만, 화면에서 겹치면 최신 것만, 지금 갈 길을 가리면 빼고 띄운다.
 // 지도 표시는 상자 가장자리에 걸리면 흐리게 지운다.
-import type { Check } from "../checks/checks";
+import type { Check } from "./checks/checks";
 import type { ScreenPoint } from "../twin/use-anchors";
 
 export const thingId = (c: Check) => c.deviceId ?? c.objectId ?? "";

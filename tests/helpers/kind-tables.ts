@@ -34,7 +34,7 @@ export const TABLE_ALLOW: readonly { file: string; name: string; why: string }[]
 ];
 
 /** 종류 이름과 견주는 비교(compare-kind·array-kinds의 includes 꼴)를 허용하는 파일: 말 꾸밈 갈래(밝기·음량·냉방 모드 글, 제어·승인 길이 아니다). */
-export const COMPARE_ALLOW = ["src/agent/phrases.ts", "ui/src/bubbles/summary.ts"];
+export const COMPARE_ALLOW = ["src/agent/phrases.ts", "ui/src/dashboard/bubbles/summary.ts"];
 
 /** 등록부 파일(검사하지 않는다). */
 export const REGISTRY_FILE = "src/devices/kinds.ts";

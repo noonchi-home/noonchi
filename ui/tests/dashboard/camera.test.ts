@@ -2,7 +2,7 @@
 // 트윈 지도 카메라: 트윈이 화면 전체라 구운 보기 그림(1920×1536)보다 옆으로 넓다. 지켜보기는 집 전체(모든 방)를, 계획 단계는 그 단계에 중요한 것(목적지·클로이드·확인한 것·지금 길·말풍선·방 이름표)을
 // 지도 카메라 칸(focus) 안, 얹은 것(말풍선 카드·마스코트·미니맵·생각 말풍선) 밑이 아닌 곳에 맞춘다. 그림 밖은 3D 장면 바탕이라 비워 둬도 된다. 가장자리 표시 흐리기, 길을 가리는 말풍선 빼기, 방 이름표 자리.
 import { describe, expect, it } from "vitest";
-import type { Check } from "../../src/checks/checks";
+import type { Check } from "../../src/dashboard/checks/checks";
 import { coverScale, focusOf, HOME_ZOOM, homeCamera, legOf, livedOf, still, toScreen, wholeOf, wideCamera } from "../../src/dashboard/camera";
 import { BUBBLE_BOX, clearOfRoute, edgeFade } from "../../src/dashboard/checks";
 import { twinFrame } from "../../src/dashboard/frame";

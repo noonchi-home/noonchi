@@ -68,6 +68,6 @@ describe("kinds registry: 구조 검사", () => {
 
   it("허용 예제(이름 조회 콜백·등록부에서 만든 표·하나뿐인 종류·계획 단계·어댑터 이름·말 꾸밈 파일)는 짚지 않는다", () => {
     expect(findKindTables(kp, "tests/fixtures/kind-tables/allowed.ts")).toEqual([]);
-    expect(findKindTables(kp, "tests/fixtures/kind-tables/allowed-summary.ts", { as: "ui/src/bubbles/summary.ts" })).toEqual([]);
+    expect(findKindTables(kp, "tests/fixtures/kind-tables/allowed-summary.ts", { as: "ui/src/dashboard/bubbles/summary.ts" })).toEqual([]);
   }, 60_000);
 });

@@ -77,7 +77,7 @@ describe("날 색 값을 잡는다", () => {
   });
 
   it("components/ui 밖에서 accent를 쓰면 brand를 쓰라고 한다", () => {
-    expect(rules("ui/src/bubbles/BubbleLayer.tsx", 'const a = <span className="bg-accent" />;')).toEqual(["1 accent bg-accent"]);
+    expect(rules("ui/src/dashboard/bubbles/BubbleLayer.tsx", 'const a = <span className="bg-accent" />;')).toEqual(["1 accent bg-accent"]);
     expect(rules("ui/src/components/ui/button.tsx", 'const a = <span className="hover:bg-accent" />;')).toEqual([]);
   });
 });
@@ -113,7 +113,7 @@ describe("토큰은 통과한다", () => {
 describe("ui/src·입구 HTML·web 전체", () => {
   it("대시보드·설정·폰 화면 파일을 본다", () => {
     const files = colorFiles(COLOR_TARGETS).map((f) => f.replace(/\\/g, "/"));
-    for (const p of ["ui/index.html", "ui/setup/index.html", "ui/src/styles.css", "ui/src/bubbles/BubbleLayer.tsx", "ui/src/phone/PhoneScreen.tsx", "ui/src/phone/core/marks.js", "ui/phone/index.html"]) {
+    for (const p of ["ui/index.html", "ui/setup/index.html", "ui/src/styles.css", "ui/src/dashboard/bubbles/BubbleLayer.tsx", "ui/src/phone/PhoneScreen.tsx", "ui/src/phone/core/marks.js", "ui/phone/index.html"]) {
       expect(files.some((f) => f.endsWith(p))).toBe(true);
     }
     expect(files.some((f) => /\.d\.ts$|[\\/]tests[\\/]|node_modules/.test(f))).toBe(false);

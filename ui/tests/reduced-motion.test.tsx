@@ -5,7 +5,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DeviceView } from "../../src/contract/events.ts";
-import { BubbleLayer } from "../src/bubbles/BubbleLayer";
+import { BubbleLayer } from "../src/dashboard/bubbles/BubbleLayer";
 import { SetupApp } from "../src/setup/SetupApp";
 import { FakeWebSocket, fakeSetupApi, setupView } from "./helpers/setup-api";
 

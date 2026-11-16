@@ -1,7 +1,7 @@
 // @vitest-environment node
 // 말풍선 자리 고르기: 말풍선끼리, 패널(판단 기록·눈 창·상태 알약)과 겹치지 않고 트윈 보이는 곳 안에 둔다. 크기는 하나(디자인 전 크기, label 글).
 import { describe, expect, it } from "vitest";
-import { bubbleRect, placeBubbles, type Rect } from "../src/bubbles/place";
+import { bubbleRect, placeBubbles, type Rect } from "../src/dashboard/bubbles/place";
 
 const AREA: Rect = { left: 0, top: 0, right: 1440, bottom: 900 };
 const LOG: Rect = { left: 1047, top: 12, right: 1428, bottom: 888 };

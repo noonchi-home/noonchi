@@ -2,7 +2,7 @@
 // 띄울 기기 말풍선(최근 것만, 지금 갈 길을 가리지 않고, 겹치면 최신 것만), 밝힌 방 이름표 자리.
 // 가린 자리(blocked: 지도 위에 얹은 마스코트 말풍선·마스코트)에 걸리는 말풍선은 빼고, 이름표는 비켜 둔다.
 // 클로이드 3D 원뿔 자리·목적지 표시 둘레(keep)는 말풍선이 덮지 않게 BubbleLayer가 판을 옆·아래로 옮긴다.
-import type { Check } from "../checks/checks";
+import type { Check } from "./checks/checks";
 import type { ScreenPoint } from "../twin/use-anchors";
 import type { BoxSize } from "./fit";
 import type { TwinFrame } from "./frame";
@@ -10,7 +10,7 @@ import type { RoomShape } from "./home";
 import { legOf, toScreen, type Camera, type Px } from "./camera";
 import { BUBBLE_BOX, clearOfRoute, recentChecks, spread, thingId } from "./checks";
 import { avoidBoxes, LABEL, placeLabel, type Box } from "./labels";
-import type { Rect } from "../bubbles/place";
+import type { Rect } from "./bubbles/place";
 
 export type { Box } from "./labels";
 

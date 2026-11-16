@@ -2,7 +2,7 @@
 // 트윈 위 표시 한 순간(twinFrame): 실제 한양목련 장면·컵 치우기 계획·맞춘 눈 → 경로·목적지·클로이드·확인한 것 자리·밝힐 방(구운 보기 그림 픽셀).
 import { describe, expect, it } from "vitest";
 import type { PlanView } from "../../../src/contract/plan.ts";
-import type { Check } from "../../src/checks/checks";
+import type { Check } from "../../src/dashboard/checks/checks";
 import { litRooms, progressOn, roomSetsOf, twinFrame } from "../../src/dashboard/frame";
 import { planToPixel } from "../../src/twin/3d/projection";
 import { anchorOf, CAM, CUP_PLAN, HOME, moment, PLAN, PLAN_CHECKS, SINK, START, TABLE } from "./cup-run";

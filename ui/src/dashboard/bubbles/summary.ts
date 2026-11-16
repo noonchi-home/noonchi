@@ -1,5 +1,5 @@
-import type { DeviceView } from "../../../src/contract/events.ts";
-import { SEEN_TEXT } from "../../../src/world/labels.ts";
+import type { DeviceView } from "../../../../src/contract/events.ts";
+import { SEEN_TEXT } from "../../../../src/world/labels.ts";
 
 const ATTR_TEXT: Record<string, Record<string, string>> = {
   power: { on: "켜짐", off: "꺼짐" }, running: { true: "동작 중", false: "멈춤" },
