@@ -1,5 +1,5 @@
 // 실제 폰 화면 뿌리(PhoneApp): 제어(controller.ts)의 상태를 그대로 그리고, AR 덮개 div를 DOM 오버레이 뿌리로, canvas 그림(draw.ts)을 controller에 잇는다.
-// 평소 AR에는 조준점이 없고, 명령이 떠 있으면 그 대상 하나에 작은 고리(이름표 없음). 미어캣 → 설정 → 물건 자리 맞추기를 고르면 조준점이 보인다.
+// 평소 AR에는 조준점이 없고, 명령이 떠 있어도 화면 안 대상에는 아무것도 그리지 않는다(고리 없음). 미어캣 → 설정 → 물건 자리 맞추기를 고르면 조준점이 보인다.
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -121,7 +121,7 @@ describe("실제 폰 화면 뿌리(PhoneApp)", () => {
     expect(FakeSocket.last.sent).toContainEqual({ type: "say", text: "TV 켜줘", at: { kind: "none", pending: [] } });
   });
 
-  it("AR 시작: 덮개 div를 DOM 오버레이 뿌리로 세션을 연다. 평소에는 조준점이 없고, 명령이 떠 있으면 명령 대상 하나에 이름표 없는 고리(에이전트 초점은 그리지 않음)", async () => {
+  it("AR 시작: 덮개 div를 DOM 오버레이 뿌리로 세션을 연다. 평소에는 조준점이 없고, 명령이 떠 있어도 화면 안 명령 대상에는 고리를 그리지 않는다(에이전트 초점도 그리지 않음)", async () => {
     const ops = paintLog();
     const { session, requested, ws, overlay, start } = arApp();
     act(() => ws.push(status));
@@ -138,9 +138,7 @@ describe("실제 폰 화면 뿌리(PhoneApp)", () => {
     });
     const canvas = overlay.querySelector("canvas")!;
     expect(ops.filter((o) => o.op === "ctx").every((o) => o.canvas === canvas)).toBe(true);
-    const arcs = ops.filter((o) => o.op === "arc");
-    expect(arcs).toHaveLength(5);
-    expect(arcs.every((a) => a.x === 0.6 * innerWidth && a.y === 0.6 * innerHeight)).toBe(true);
+    expect(ops.filter((o) => o.op === "arc")).toEqual([]);
     expect(centerArcs(ops)).toEqual([]);
     expect(ops.filter((o) => o.op === "text" || o.op === "round")).toEqual([]);
   });

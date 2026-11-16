@@ -64,11 +64,6 @@ describe("실제 폰 덮개 배치 검사", () => {
     ])).toEqual(["「에어컨」 화살표가 「위 줄」 칸과 겹쳐요", "「TV」 화살표가 「엄지 자리」 칸과 겹쳐요"]);
   });
 
-  it("화면 안 고리가 칸 밑에 깔리면 문제", () => {
-    expect(layoutIssues(PORTRAIT, [meerkat, done], [top, thumb], [], [{ name: "컵", box: box(172, 399, 218, 445) }])).toEqual([]);
-    expect(layoutIssues(PORTRAIT, [meerkat, done], [top, thumb], [], [{ name: "컵", box: box(172, 740, 218, 786) }, { name: "식탁", box: box(100, 50, 146, 96) }]))
-      .toEqual(["「컵」 고리가 「엄지 자리」 칸 밑에 깔려요", "「식탁」 고리가 「위 줄」 칸 밑에 깔려요"]);
-  });
 });
 
 describe("글 잘림 검사", () => {

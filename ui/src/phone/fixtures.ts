@@ -1,5 +1,5 @@
 // 실제 폰 화면 상태 예시: 화면 시험(ui/tests/phone-screen.test.tsx)과 화면 사진 페이지(shots.tsx)가 함께 쓴다.
-// 명령·비전 상태·질문·승인 글은 서버 글(src/act/labels.ts STEP_COMMAND·VISION_TEXT·APPROVAL_TEXT, src/act/prompts.ts) 그대로다. marks는 명령 대상(command.target) 고리 하나다.
+// 명령·비전 상태·질문·승인 글은 서버 글(src/act/labels.ts STEP_COMMAND·VISION_TEXT·APPROVAL_TEXT, src/act/prompts.ts) 그대로다. marks는 명령 대상(command.target) 하나다(화면 밖이거나 칸에 가릴 때만 세모로 보인다).
 // 모든 상태를 세로(390×844·412×915·360×780)와 가로(844×390·780×360)로 찍어 본다.
 import { APPROVE, ASK_PROMPT, STEP_DONE } from "../../../src/act/prompts.ts";
 import { APPROVAL_TEXT, STEP_COMMAND, VISION_TEXT } from "../../../src/act/labels.ts";
@@ -33,7 +33,7 @@ export const SHOTS: Record<ShotName, Shot> = {
   intro: { view: intro, marks: [] },
   "go-table": { view: { ...live, command: step(1, STEP_COMMAND.goTable, VISION_TEXT.distance(VISION_TEXT.table, 6.1), "table") }, marks: [ring("table", "식탁", 0.44, 0.6)] },
   "pick-cup": { view: { ...live, command: pickCup }, marks: [ring("cup", "컵", 0.5, 0.56)] },
-  // 컵이 엄지 자리 카드 밑에 비침: 고리 대신 카드 위에 아래를 가리키는 세모
+  // 컵이 엄지 자리 카드 밑에 비침: 카드 위에 아래를 가리키는 세모
   "low-cup": { view: { ...live, command: pickCup }, marks: [ring("cup", "컵", 0.5, 0.92)] },
   // 싱크대가 화면 밖(오른쪽): 가장자리 화살표 하나
   "go-sink": {

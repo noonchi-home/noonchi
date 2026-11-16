@@ -18,7 +18,7 @@ export type Support =
 export interface Choice { id: string; label: string }
 /** 승인 대기 가전 명령. choices: 답(승인·거절)마다 단추 하나. */
 export interface Pending { token: string; deviceLabel: string; reason: string; choices: Choice[] }
-/** 서버가 보낸 지금 명령·질문(src/contract/phone.ts PhoneCommand에서 speak를 빼고 대상은 id만). target: 고리를 그릴 명령 대상 id(없으면 null). */
+/** 서버가 보낸 지금 명령·질문(src/contract/phone.ts PhoneCommand에서 speak를 빼고 대상은 id만). target: 화면 밖·칸에 가릴 때 세모로 가리킬 명령 대상 id(없으면 null). */
 export interface Command { id: string; step: string; text: string; vision: string | null; choices: Choice[]; target: string | null; safety?: true }
 /** 화면 위 초점 표시 하나(core/project.js focusMarks와 같은 모양). */
 export interface FocusMark { id: string; label: string; u: number; v: number; off: boolean; angle: number }

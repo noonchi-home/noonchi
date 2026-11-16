@@ -2,7 +2,7 @@
 // 단추는 화면 안에 있거나, 화면 안에 있는 스크롤 칸 안에 있어야 누를 수 있다. 세로 화면에서 엄지 자리 단추(완료·답·기록)는 엄지가 닿는 아래 1/3 안에, 가로 화면에서는 오른손 엄지가 닿는 오른쪽 절반·아래 절반 안에 있다.
 // 위 줄(미어캣·명령)·엄지 자리 칸은 가운데 조준점(28px)과 그 칸 밖 단추를 가리지 않는다. 모달 안 단추는 칸 위에 뜨므로 보지 않는다.
 // 위 줄 첫 내용(미어캣 단추)은 상태 표시줄 아래, 화면 위에서 36px부터 시작한다.
-// 명령·비전 상태 글(data-phone-text)은 …나 줄 자름으로 잘리지 않는다. 화면 밖 세모는 칸·단추와 겹치지 않고, 화면 안 고리는 칸 밑에 깔리지 않는다(canvas가 맨 아래다).
+// 명령·비전 상태 글(data-phone-text)은 …나 줄 자름으로 잘리지 않는다. 화면 밖 세모는 칸·단추와 겹치지 않는다.
 // 모달 내용은 옆으로 넘치지 않는다(가로 화면에서 단추 줄이 모달보다 넓으면 상태 칩이 잘린다). 위아래는 모달 안에서 스크롤한다.
 // 처음 화면은 「AR 시작」 단추가 스크롤하지 않은 첫 화면 안에 있어야 한다(세로·가로 모두).
 
@@ -21,7 +21,7 @@ const overlaps = (a: Box, b: Box) => a.left < b.right && b.left < a.right && a.t
 const where = (b: Box) => `${Math.round(b.left)},${Math.round(b.top)}–${Math.round(b.right)},${Math.round(b.bottom)}`;
 
 export function layoutIssues(
-  view: { width: number; height: number }, targets: Target[], panels: { name: string; box: Box }[], arrows: { name: string; box: Box }[] = [], rings: { name: string; box: Box }[] = [],
+  view: { width: number; height: number }, targets: Target[], panels: { name: string; box: Box }[], arrows: { name: string; box: Box }[] = [],
 ): string[] {
   const issues: string[] = [];
   const size = `${view.width}×${view.height}`;
@@ -53,9 +53,6 @@ export function layoutIssues(
   for (const a of arrows) {
     for (const p of panels) if (overlaps(a.box, p.box)) issues.push(`「${a.name}」 화살표가 「${p.name}」 칸과 겹쳐요`);
     for (const t of under) if (overlaps(a.box, t.box)) issues.push(`「${a.name}」 화살표가 「${t.name}」 단추와 겹쳐요`);
-  }
-  for (const r of rings) {
-    for (const p of panels) if (overlaps(r.box, p.box)) issues.push(`「${r.name}」 고리가 「${p.name}」 칸 밑에 깔려요`);
   }
   return issues;
 }

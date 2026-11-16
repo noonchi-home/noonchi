@@ -15,7 +15,7 @@
 // 집기·놓기 단계면 걷기를 멈추고 그 자리에서 대상(cmd.target.ar, 면이면 서버가 윗면 가운데로 준다)을 바라본다: 사람이 폰을 대상에 겨누듯
 // 대상 쪽 yaw와 대상 높이까지 숙인 각(video-math lookAt)으로 돈다. 대상이 수평 1cm 안(바로 위·아래)이면 자세를 바꾸지 않는다. 높이는 늘 그대로다.
 // 영상에는 위치 추적이 없어 자세를 페이지가 옮긴다. 단계를 넘기는 판단은 서버가 한다.
-// 명령 대상 고리는 지금 view·투영으로 잡고(focusMarks), 화면에는 영상이 덮인 자리(coverMap)로 옮겨 그린다.
+// 명령 대상 자리는 지금 view·투영으로 잡고(focusMarks), 화면에는 영상이 덮인 자리(coverMap)로 옮겨 넘긴다(화면 밖·칸에 가릴 때만 세모가 그려진다).
 // 판정 기록 window.__noonchiVideo(t0: 재생 시작 서버 시각, commands: 받은 명령의 영상 시각, clips: 바꾼 단계 영상)과 console [video] 줄은
 // scripts/video-check.ts가 읽는다.
 // PhoneAr(ar.d.ts)와 같은 형이라 controller·화면은 그대로 쓴다. 시험은 deps로 영상·인코딩·그림판을 바꾼다(jsdom은 영상을 틀지 못한다).
