@@ -143,6 +143,26 @@ describe("도메인 경계: 가짜 트리", () => {
     expect(keys(typeOnly)).toEqual([]);
   });
 
+  it("화면 시험(ui/tests)이 바로 가져온 src 파일은 node 모듈을 써도 되지만, 그 파일을 거쳐 따라 들어간 src 파일에 node 모듈이 있으면 실패한다(jsdom에서 깨짐)", () => {
+    const files = {
+      "ui/tests/dashboard/run.ts": 'import { readHome } from "../../../src/layout/homes.js";\nimport { plan } from "../../../src/agent/plan.js";\nexport const run = [readHome, plan];\n',
+      "ui/tests/dashboard/a.test.ts": 'import { run } from "./run.js";\nexport const a = run;\n',
+      "src/layout/homes.ts": 'import { readFileSync } from "node:fs";\nexport const readHome = readFileSync;\n',
+      "src/agent/plan.ts": 'import { route } from "../layout/route.js";\nexport const plan = route;\n',
+      "src/layout/route.ts": "export const route = 1;\n",
+    };
+    expect(keys(fakeTree(files)).filter((k) => k.startsWith("node "))).toEqual([]);
+    const root = fakeTree({
+      ...files,
+      "src/agent/plan.ts": 'import { route } from "../layout/index.js";\nexport const plan = route;\n',
+      "src/layout/index.ts": 'export { route } from "./route.js";\nexport { twinDir } from "./twin.js";\n',
+      "src/layout/twin.ts": 'import { repoPath } from "../shared/paths.js";\nexport const twinDir = repoPath("twin/");\n',
+      "src/shared/paths.ts": 'import { fileURLToPath } from "node:url";\nexport const repoPath = (rel: string) => fileURLToPath(new URL(rel, "file:///r/"));\n',
+    });
+    expect(keys(root).filter((k) => k.startsWith("node "))).toEqual(["node src/shared/paths.ts -> node:url"]);
+    expect(message(root, "node src/shared/paths.ts -> node:url")).toBe("화면 시험(jsdom)이 따라 들어간 src 파일에 node 모듈 `node:url`이 섞여요(`ui/tests/dashboard/run.ts` → `src/agent/plan.ts` → `src/layout/index.ts` → `src/layout/twin.ts` → `src/shared/paths.ts`). 시험이 바로 가져온 src 파일만 node 모듈을 써도 돼요");
+  });
+
   it("import.meta.url은 세 꼴만 되고, Worker 대상 파일이 없으면 실패한다", () => {
     const ok = fakeTree({
       "src/observe/d.ts": 'export const w = () => new Worker(new URL("./w.mjs", import.meta.url), { workerData: { entry: new URL("./t.ts", import.meta.url).href } });\n',

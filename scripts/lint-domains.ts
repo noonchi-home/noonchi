@@ -99,6 +99,22 @@ export function placeOf(path: string, config: Config): Place {
   return { kind: "unknown", unit: "unknown" };
 }
 
+/** root 아래 한 폴더의 파일 전체(뿌리 기준 posix 경로). */
+function listUnder(root: string, dir: string): string[] {
+  const out: string[] = [];
+  const visit = (d: string) => {
+    if (!existsSync(d)) return;
+    for (const name of readdirSync(d)) {
+      if (name === "node_modules" || name === "dist") continue;
+      const p = join(d, name);
+      if (statSync(p).isDirectory()) visit(p);
+      else out.push(relative(root, p).split(sep).join("/"));
+    }
+  };
+  visit(join(root, ...dir.split("/")));
+  return out.sort();
+}
+
 /** root 아래 src/·ui/src/의 파일 전체(뿌리 기준 posix 경로). */
 export function listFiles(root: string): string[] {
   const out: string[] = [];
@@ -176,7 +192,19 @@ export function checkTree(root: string, config: Config = CONFIG): Violation[] {
     }
   }
   for (const v of fileCycles([...edges.values()], (f) => place(f).unit)) add(v.key, v.message);
-  for (const v of browserNodeModules(refsOf)) add(v.key, v.message);
+  // 화면 시험(ui/tests, jsdom): 다른 규칙은 보지 않고 node 모듈 길만 본다
+  const testFiles = listUnder(root, "ui/tests").filter(isCode);
+  const testSet = new Set(testFiles);
+  const testRefs = new Map<string, { ref: ImportRef; to?: string }[]>();
+  for (const f of testFiles) {
+    const list: { ref: ImportRef; to?: string }[] = [];
+    for (const ref of importsOf(parseCode(f, readFileSync(join(root, f), "utf8")))) {
+      const r = resolveSpec(f, ref.spec, (p) => fileSet.has(p) || testSet.has(p));
+      if ("path" in r) list.push({ ref, to: r.path });
+    }
+    testRefs.set(f, list);
+  }
+  for (const v of browserNodeModules(refsOf, testRefs)) add(v.key, v.message);
   return [...found].map(([key, message]) => ({ key, message })).sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
 }
 
@@ -333,24 +361,50 @@ function shortestPath(from: string, to: string, next: (n: string) => string[]): 
   return [from, ...path].slice(1);
 }
 
-/** 화면 파일에서 값 import로 따라 들어간 src 파일이 node 기본 모듈을 쓰면 위반(타입 import는 빌드에서 지워져 뺀다). */
-function browserNodeModules(refsOf: Map<string, { ref: ImportRef; to?: string; external?: string; builtin?: boolean }[]>): Violation[] {
+/** 화면 파일에서 값 import로 따라 들어간 src 파일이 node 기본 모듈을 쓰면 위반(타입 import는 빌드에서 지워져 뺀다).
+ *  화면 시험(ui/tests)은 jsdom에서 돈다. 시험이 바로 가져온 src 파일은 시험이 고른 것이라(2.2) node 모듈을 써도 되고,
+ *  그 파일을 거쳐 따라 들어간 src 파일에 node 모듈이 있으면 위반이다(입구가 node 파일을 끌어와 jsdom에서 깨진 일, 4b planShape). */
+function browserNodeModules(refsOf: Map<string, { ref: ImportRef; to?: string; external?: string; builtin?: boolean }[]>, testRefs: Map<string, { ref: ImportRef; to?: string }[]> = new Map()): Violation[] {
   const out: Violation[] = [];
-  const prev = new Map<string, string>();
-  const queue: string[] = [];
-  for (const f of refsOf.keys()) if (f.startsWith("ui/src/")) { prev.set(f, ""); queue.push(f); }
-  while (queue.length) {
-    const f = queue.shift()!;
-    for (const { ref, to, external, builtin } of refsOf.get(f) ?? []) {
-      if (ref.typeOnly) continue;
-      if (to !== undefined && refsOf.has(to) && !prev.has(to)) { prev.set(to, f); queue.push(to); }
-      if (external !== undefined && builtin && f.startsWith("src/")) {
-        const chain: string[] = [];
-        for (let n = f; n; n = prev.get(n) ?? "") chain.unshift(n);
-        out.push({ key: `node ${f} -> ${external}`, message: `브라우저 입구에 node 모듈 \`${external}\`이 섞여요(${chain.map((c) => `\`${c}\``).join(" → ")})` });
+  const nodeUses = (f: string, prev: Map<string, string>, say: (external: string, chain: string) => string) => {
+    if (!f.startsWith("src/")) return;
+    for (const { ref, external, builtin } of refsOf.get(f) ?? []) {
+      if (ref.typeOnly || external === undefined || !builtin) continue;
+      const chain: string[] = [];
+      for (let n = f; n; n = prev.get(n) ?? "") chain.unshift(n);
+      out.push({ key: `node ${f} -> ${external}`, message: say(external, chain.map((c) => `\`${c}\``).join(" → ")) });
+    }
+  };
+  const walkFrom = (starts: [string, string][], say: (external: string, chain: string) => string) => {
+    const prev = new Map<string, string>(starts);
+    const queue = starts.map(([f]) => f);
+    while (queue.length) {
+      const f = queue.shift()!;
+      nodeUses(f, prev, say);
+      for (const { ref, to } of refsOf.get(f) ?? []) {
+        if (ref.typeOnly || to === undefined || !refsOf.has(to) || prev.has(to)) continue;
+        prev.set(to, f);
+        queue.push(to);
       }
     }
+  };
+  walkFrom([...refsOf.keys()].filter((f) => f.startsWith("ui/src/")).map((f) => [f, ""]), (m, chain) => `브라우저 입구에 node 모듈 \`${m}\`이 섞여요(${chain})`);
+  // 시험이 바로 가져온 파일의 다음 파일부터 따라간다(시작 자리의 앞은 시험 파일, 바로 가져온 파일)
+  const picked = new Map<string, string>();
+  for (const [t, list] of testRefs) for (const { ref, to } of list) if (!ref.typeOnly && to !== undefined && refsOf.has(to) && !picked.has(to)) picked.set(to, t);
+  const starts: [string, string][] = [];
+  const seen = new Set<string>();
+  for (const [p] of picked) for (const { ref, to } of refsOf.get(p) ?? []) {
+    if (ref.typeOnly || to === undefined || !refsOf.has(to) || seen.has(to)) continue;
+    seen.add(to);
+    starts.push([to, p]);
   }
+  const chainPrev = new Map(picked);
+  walkFrom(starts.map(([f, p]) => [f, `${p}`]), (m, chain) => {
+    const first = chain.match(/^`([^`]+)`/)?.[1] ?? "";
+    const before = first && chainPrev.get(first) ? `\`${chainPrev.get(first)}\` → ` : "";
+    return `화면 시험(jsdom)이 따라 들어간 src 파일에 node 모듈 \`${m}\`이 섞여요(${before}${chain}). 시험이 바로 가져온 src 파일만 node 모듈을 써도 돼요`;
+  });
   return out;
 }
 
