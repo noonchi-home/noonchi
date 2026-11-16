@@ -34,7 +34,7 @@ function states(): string {
   return table(["키", "한국어", "면", "대상", "보는 방법", "계기 예"], (Object.keys(STATES) as StateKey[]).map((k) => {
     const s = STATES[k];
     const d = STATE_DOC[k];
-    const src = s.facet === "posture" || s.facet === "holding" || k === "in_hand" ? "관절·VLM" : "VLM";
+    const src = "pose" in s ? "관절" : s.facet === "posture" || s.facet === "holding" || k === "in_hand" ? "관절·VLM" : "VLM";
     return [code(k), s.label, FACET[s.facet], s.for.map((t) => TARGET[t]).join(", "), d.how ? `${src}, ${d.how}` : src, d.example];
   }));
 }

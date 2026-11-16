@@ -21,9 +21,9 @@ type Assert<T extends true> = T;
 export type SceneSame = Assert<Equal<z.infer<typeof SceneSchema>, SceneObservation>>;
 export const SCENE_JSON_SCHEMA = z.toJSONSchema(SceneSchema) as Record<string, unknown>;
 
-/** 그 면·대상의 값 목록(설명이 있으면 「값 (설명)」). */
+/** 그 면·대상의 값 목록(설명이 있으면 「값 (설명)」). 관절만 정하는 값(쓰러짐 의심)은 묻지 않는다. */
 const values = (facet: Facet, target: Target) => (Object.keys(STATES) as StateKey[])
-  .filter((k) => STATES[k].facet === facet && (STATES[k].for as readonly Target[]).includes(target))
+  .filter((k) => STATES[k].facet === facet && (STATES[k].for as readonly Target[]).includes(target) && !("pose" in STATES[k]))
   .map((k) => { const h = (STATES[k] as { hint?: string }).hint; return h ? `${k} (${h})` : k; }).join(", ");
 
 /** VLM에 넘기는 감지 한 줄: 임시 번호(d1…), 종류, 픽셀 박스 [x, y, w, h], 신뢰도. */

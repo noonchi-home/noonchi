@@ -57,7 +57,7 @@ import { floorPlanFrom, roomNamedAt } from "../layout/index.js";
 import { surfacesFromLayout, type PlaneSurface } from "../world/index.js";
 import { Decider } from "../brain/index.js";
 import { WorldState } from "../world/index.js";
-import { Trigger, loadTriggerConfig } from "../world/index.js";
+import { Trigger, loadFallConfig, loadTriggerConfig } from "../world/index.js";
 import type { ThinqLink } from "../devices/index.js";
 import { createApp, type TwinHomeApp } from "./app.js";
 import { startHub, type HubKind, type MatterTransport, type StartHubOptions } from "./hubFactory.js";
@@ -271,7 +271,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     // 카메라로 본 가전 상태는 허브로 넘긴다(src/devices/hub/signals.ts observe): 실제 출처가 없으면 기기 상태가 되고, 실제 상태와 다르면 처음 한 번 로그에 남긴다
     const world = brainWanted && phoneOn
       ? new WorldState({
-        surfaces, floorAt: floorLookup(plan.rooms), roomAt: roomNamedAt(floorPlan, twin.rooms), devices: () => signals.list(),
+        surfaces, floorAt: floorLookup(plan.rooms), roomAt: roomNamedAt(floorPlan, twin.rooms), devices: () => signals.list(), fall: loadFallConfig(env),
         locate: (id) => { const c = layout?.editor.center(id); return c ? [c.position[0], c.position[2]] : null; },
         place: (id) => layout?.editor.center(id)?.position ?? null,
         see: (id, seen, at, evidence) => {

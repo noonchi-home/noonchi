@@ -1,4 +1,4 @@
-// 대시보드 말풍선 카드 한 문장: 열린 계획이면 실제 폰에 낸 지금 명령(컵 명령은 정한 글, 그 밖의 사람 단계는 단계 이름), 명령이 없는 기다리기·기기 단계는
+// 대시보드 말풍선 카드 한 문장: 사람 자세가 쓰러짐 의심(src/world/fall.ts)이면 무엇보다 먼저 그것을 알린다. 열린 계획이면 실제 폰에 낸 지금 명령(컵 명령은 정한 글, 그 밖의 사람 단계는 단계 이름), 명령이 없는 기다리기·기기 단계는
 // 그 단계, 그것도 아니면 정한 것. 닫힌 지 SAY_DONE_MS 안이면 끝낸 일, 그 밖에는 지켜보는 것.
 // 계획 없는 행동(컵 그대로 두기, src/act/track.ts leftAt)을 고른 지 SAY_DONE_MS 안이고 열린 계획이 없으면 그대로 두기로 했다고 한다(그 뒤에 끝난 계획이 있으면 그 끝낸 일이 먼저).
 // 승인 질문은 대시보드에 보이지 않는다(D37): 단계 id가 :approve(처음 하는 일)·:hand(손으로 켜는 위험 가전 켜기 전 질문)로 끝나는 명령은 없는 것으로 본다.
@@ -12,6 +12,7 @@ import type { WorldView } from "../contract/world.js";
 import { SAY_TEXT, STEP_COMMAND, STEP_LABEL } from "./labels.js";
 import { isOffStep } from "./off-step.js";
 import { planTargetId } from "./tasks.js";
+import { POSE_FALL } from "../world/vocab.js";
 
 export const SAY_DONE_MS = 20_000;
 export const SAY_LOOK_MS = 6000;
@@ -33,6 +34,7 @@ export function sayLine({ plan, command, world, nowMs, look = null, left = null,
   told?: { atMs: number } | null; quiet?: string | null; reflected?: { atMs: number; learned: number; active: number } | null; offWait?: string | null;
   offTold?: { device: string; atMs: number } | null;
 }): string {
+  if (world?.person?.facts.posture?.value === POSE_FALL) return SAY_TEXT.fall;
   if (look && nowMs - look.atMs <= SAY_LOOK_MS) return SAY_TEXT.closer(look.place);
   if (offTold && nowMs - offTold.atMs <= SAY_DONE_MS) return SAY_TEXT.rearmed(offTold.device);
   if (offWait) return SAY_TEXT.offWait(offWait);

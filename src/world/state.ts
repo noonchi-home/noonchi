@@ -42,11 +42,12 @@ import { Confirmer, EVIDENCE_GAP_MS, EVIDENCE_STEP_MS } from "./confirm.js";
 import { CHANGE_TEXT, HEARD_MAX, OBJECT_NAME, fixtureName, objectName, onSurface } from "./labels.js";
 import { inView, placeBox, placePoint, type PlaneSurface } from "./place.js";
 import { describePose, heldByAny, mainPerson } from "./pose.js";
+import { FALL_DEFAULTS, FallWatch, type FallConfig } from "./fall.js";
 import { RemainingTracker, becameKey, deviceStateKeys, deviceStatus, deviceText, relatedDeviceIds } from "./relations.js";
 import { SightReadings, linkDevice, rulesOf, sightValues, type SightLink } from "./sight.js";
 import { cameraKindOf, kindEntry } from "../devices/kinds.js";
 import {
-  CLASSES, DEVICE_LONG, DEVICE_STATES, FACT_FRESH_MS, FRESH_MS, NEAR_M, NOW_FACETS, POSE_HOLD, POSE_POSTURE, STATES, VLM_ONLY, type ClassKey, type DeviceLongKey, type DeviceStateKey, type StateKey, type Target,
+  CLASSES, DEVICE_LONG, DEVICE_STATES, FACT_FRESH_MS, FRESH_MS, NEAR_M, NOW_FACETS, POSE_FALL, POSE_HOLD, POSE_POSTURE, STATES, VLM_ONLY, type ClassKey, type DeviceLongKey, type DeviceStateKey, type StateKey, type Target,
 } from "./vocab.js";
 
 type V3 = [number, number, number];
@@ -189,6 +190,8 @@ export interface WorldStateOptions {
   identityM?: number;
   /** 등장·사라짐·관절 사실 확인에서 한 장으로 치는 시간(ms, 기본 EVIDENCE_STEP_MS 2000). 장면을 다른 간격(1초)으로 적은 시험이 그 간격을 준다. */
   evidenceStepMs?: number;
+  /** 쓰러짐 의심 시간·각도(src/world/fall.ts, 기본 FALL_DEFAULTS). */
+  fall?: FallConfig;
 }
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
@@ -235,7 +238,13 @@ export class WorldState {
   /** 이미 끝낸 가까이 보기 후보(applyCloserScene·endCloser는 한 번만 쓴다). */
   private readonly closerDone = new WeakSet<CloserPending>();
 
+  /** 쓰러짐 의심(가장 확실한 한 사람의 관절 자세 변화). */
+  private readonly fall: FallWatch;
+  private readonly fallCfg: FallConfig;
+
   constructor(private readonly o: WorldStateOptions) {
+    this.fallCfg = o.fall ?? FALL_DEFAULTS;
+    this.fall = new FallWatch(this.fallCfg);
     this.identityM = o.identityM ?? 0.25;
     this.stepMs = o.evidenceStepMs ?? EVIDENCE_STEP_MS;
     this.confirmer = new Confirmer((key) => (key === PERSON ? 2 : 3), this.stepMs);
@@ -617,12 +626,14 @@ export class WorldState {
   }
 
   /** 관절로 본 사실(규칙: src/world/pose.ts). 어느 관절이든 손목이 물건 상자 안·가까이면 그 물건 손에 있음과 사람 물건을 들고 있음,
-   *  자세는 가장 확실한 한 사람의 서 있음·앉아 있음·누워 있음.
+   *  자세는 가장 확실한 한 사람의 서 있음·앉아 있음·누워 있음. 쓰러짐 의심(src/world/fall.ts)이 되면 자세를 쓰러짐 의심으로 두고 의미 있는 변화 줄을 한 번 내며,
+   *  일어날(서 있음·앉아 있음) 때까지 누운 자세 대신 그 값을 이어 둔다.
    *  손목이 보이는데 든 것이 없으면 관절이 붙인 손에 있음·들고 있음만 지운다(VLM이 붙인 사실은 둔다). */
   private applyPose(at: number, poses: Pose[], boxes: { obj: Obj; box: Detection["box"] }[], changes: WorldChange[]): void {
-    const person = mainPerson(poses);
+    const flatDeg = { torsoDeg: this.fallCfg.torsoDeg, thighDeg: this.fallCfg.thighDeg };
+    const person = mainPerson(poses, flatDeg);
     if (!person) return;
-    const people = poses.map(describePose);
+    const people = poses.map((p) => describePose(p, flatDeg));
     const wrists = people.some((p) => Object.keys(p.wrists).length > 0);
     const held: string[] = [];
     for (const { obj, box } of boxes) {
@@ -646,6 +657,17 @@ export class WorldState {
     } else if (wrists) {
       this.dropPoseFact(this.person.facts, "holding", POSE_HOLD.person);
       this.heldIds = [];
+    }
+    const fall = this.fall.see(at, person);
+    if (fall === "fall") {
+      this.setPoseFact(this.person.facts, "posture", POSE_FALL, at);
+      changes.push({ kind: "person_state", at_ms: at, subject: PERSON, meaningful: true, text: CHANGE_TEXT.state(OBJECT_NAME.person!, POSE_FALL) });
+      return;
+    }
+    if (this.fall.active) {
+      // 일어나기 전(누운 채·가림)에는 쓰러짐 의심을 이어 둔다
+      if (person.level !== "low") this.setPoseFact(this.person.facts, "posture", POSE_FALL, at);
+      return;
     }
     const posture = (POSE_POSTURE as Record<string, string | undefined>)[person.posture];
     if (posture && person.level !== "low") personFact("posture", posture);

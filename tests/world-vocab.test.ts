@@ -31,11 +31,15 @@ describe("World State 낱말 표", () => {
     expect(STATE_TEXT).toEqual(Object.fromEntries(stateKeys.map((k) => [k, STATES[k as keyof typeof STATES].label])));
   });
 
-  it("VLM 스키마 enum과 프롬프트는 낱말 표의 사실 값 전부다", () => {
+  it("VLM 스키마 enum과 프롬프트는 낱말 표의 사실 값 가운데 관절만 정하는 값을 뺀 전부다", () => {
     expect([...SCENE_ENUM]).toEqual([...SCENE_STATES]);
     const schema = JSON.stringify(SCENE_JSON_SCHEMA);
     for (const k of SCENE_STATES) expect(schema).toContain(`"${k}"`);
-    for (const k of stateKeys) expect(SCENE_PROMPT, k).toMatch(new RegExp(`\\b${k}\\b`));
+    // 관절만 정하는 값(pose: 쓰러짐 의심)은 VLM에 묻지 않는다
+    const vlmKeys = stateKeys.filter((k) => !(STATES[k as keyof typeof STATES] as { pose?: true }).pose);
+    expect(vlmKeys).toEqual((SCENE_STATES as readonly string[]).filter((k) => k in STATES));
+    expect(vlmKeys.length).toBeLessThan(stateKeys.length);
+    for (const k of vlmKeys) expect(SCENE_PROMPT, k).toMatch(new RegExp(`\\b${k}\\b`));
   });
 
   it("감지기는 사람·물건·가전 설비 종류만 내고 가구·나머지 COCO 종류는 거른다", () => {

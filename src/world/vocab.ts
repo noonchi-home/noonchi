@@ -93,6 +93,8 @@ export interface StateEntry {
   for: readonly Target[];
   /** VLM 프롬프트에 붙이는 영어 설명(src/observe/scene.ts). */
   hint?: string;
+  /** 관절만 정하는 값: VLM 스키마·프롬프트에 넣지 않는다(쓰러짐 의심, src/world/fall.ts). */
+  pose?: true;
 }
 
 /** VLM·관절이 고르는 사실 값. 키가 VLM 스키마 enum이고, 글이 관찰 텍스트다. */
@@ -122,6 +124,7 @@ export const STATES = {
   standing: { facet: "posture", label: "서 있음", for: ["person"] },
   sitting: { facet: "posture", label: "앉아 있음", for: ["person"] },
   lying: { facet: "posture", label: "누워 있음", for: ["person"] },
+  fall_suspected: { facet: "posture", label: "쓰러짐 의심", for: ["person"], pose: true },
   holding_object: { facet: "holding", label: "물건을 들고 있음", for: ["person"] },
   eating: { facet: "activity", label: "먹는 중", for: ["person"] },
   drinking: { facet: "activity", label: "마시는 중", for: ["person"] },
@@ -157,8 +160,10 @@ export type Activity = StateOf<"activity">;
 
 /** VLM이 낼 수 있지만 사실로 쌓지 않는 값: 감지 목록의 물건이 가려 안 보임. */
 export const VLM_ONLY = ["not_visible"] as const;
-/** VLM 스키마 enum: 사실 값 전부 + VLM만 내는 값. */
-export const SCENE_STATES = [...(Object.keys(STATES) as StateKey[]), ...VLM_ONLY] as const;
+/** 관절만 정하는 사실 값(pose). */
+type PoseOnly = { [K in StateKey]: (typeof STATES)[K] extends { pose: true } ? K : never }[StateKey];
+/** VLM 스키마 enum: 관절만 정하는 값을 뺀 사실 값 전부 + VLM만 내는 값. */
+export const SCENE_STATES = [...(Object.keys(STATES) as StateKey[]).filter((k): k is Exclude<StateKey, PoseOnly> => !("pose" in STATES[k])), ...VLM_ONLY] as const;
 
 /** 지금만 맞는 면: 그 대상을 본 프레임의 VLM 답에 없으면 지운다. 사람의 자리(소파 위·침대 위·의자 위·바닥)도 일어나면 바뀌므로 지운다.
  *  하는 일(activity)은 이어지는 일, 순간 동작(moment)은 그 답의 사진들 사이에 일어난 일이다. */
@@ -170,6 +175,8 @@ export const NOW_FACETS: Readonly<Record<Target, readonly Facet[]>> = {
 
 /** 관절 자세 → 사람 자세 값(src/world/pose.ts Posture). 다리 가림·모름은 사실을 바꾸지 않는다. */
 export const POSE_POSTURE = { standing: "standing", sitting: "sitting", lying: "lying" } as const satisfies Record<string, StateOf<"posture">>;
+/** 쓰러짐 의심(src/world/fall.ts): 서 있다가 갑자기 바닥에 누운 자세로 이어지면 사람 자세를 이 값으로 둔다. */
+export const POSE_FALL = "fall_suspected" as const satisfies StateOf<"posture">;
 /** 관절로 든 물건이 보이면 그 물건의 자리 값과 사람의 들고 있음 값. */
 export const POSE_HOLD = { object: "in_hand", person: "holding_object" } as const satisfies { object: StateOf<"place">; person: StateOf<"holding"> };
 
