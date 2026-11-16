@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPhoneController, type ControllerDeps, type ControllerDraw } from "../src/phone/controller";
-import { createVideoAr, videoParams } from "../src/phone/core/video-ar.js";
+import { createVideoAr, noteSync, videoParams } from "../src/phone/core/video-ar.js";
 import { coverMap, lookAt, pitchQuat, projectionFromFov, viewMatrix, walkGoal, yawPitchQuat } from "../src/phone/core/video-math.js";
 import { handOf, problemOf } from "../src/phone/state";
 import { focusMarks } from "../src/phone/core/project.js";
@@ -674,11 +674,57 @@ describe("영상 입력 모드: 명령 시각 기록·화면", () => {
     const stall = window.__noonchiVideo!.sync.at(-1)!;
     expect(stall[1]).toBe(100);
     expect(stall[0] - window.__noonchiVideo!.sync[0]![0]).toBeGreaterThanOrEqual(450);
+    // 멈춘 동안의 짝은 같은 직선이라 양 끝점만 둔다(첫 짝 + 멈춤 끝)
+    expect(window.__noonchiVideo!.sync).toHaveLength(2);
     await new Promise((r) => setTimeout(r, 120));
     ar.stop();
     const end = window.__noonchiVideo!.sync.at(-1)!;
     expect(end[1]).toBe(100);
     expect(phoneNow() + 1000 - end[0]).toBeLessThanOrEqual(60);
+  });
+
+  // Codex(9738b45): 시계 응답 전에 영상이 멈추면 다음 프레임이 올 때까지 주기·끝 짝도 건너뛰었다
+  it("sync: 시계를 맞춘 뒤 프레임이 오지 않아도(멈칫) 주기 견주기가 t0를 서버 시계로 고치고 짝을 남긴다", async () => {
+    let synced = false;
+    const link = {
+      send: () => true, socket: () => ({ readyState: 1, bufferedAmount: 0, send() {} }), open: () => true, close() {},
+      // 시계 응답 전에는 서버 시각이 없다. 응답 뒤 서버 시계 = 폰 시계 + 1000
+      stamp: (ms: number) => (synced ? { captured_at: Math.round(ms) + 1000 } : {}),
+    };
+    const video = fakeVideo();
+    const hooks = { onStart: vi.fn(), onEnd: vi.fn(), onHit() {}, onMarks() {}, onPerf() {}, note: vi.fn() };
+    const ar = createVideoAr({
+      link: link as never, params: new URLSearchParams(), hooks,
+      deps: { clipUrl: "/phone/videos/x.mp4", createVideo: () => video, createEncoder: fakeEncoder, createCanvas: fakeCanvas, screen: () => ({ width: 390, height: 844 }) },
+    });
+    await ar.start({});
+    video.frameAt(0.1, performance.now());
+    expect(window.__noonchiVideo!.sync).toHaveLength(0);
+    synced = true;
+    // 시계 응답 뒤 프레임 없이 0.6초
+    await new Promise((r) => setTimeout(r, 600));
+    const rec = window.__noonchiVideo!;
+    expect(rec.sync.length).toBeGreaterThanOrEqual(1);
+    expect(rec.sync.at(-1)![1]).toBe(100);
+    // t0는 서버 시계로 고쳤다(첫 짝과 같은 관계)
+    expect(Math.abs(rec.sync[0]![0] - rec.sync[0]![1] - rec.t0!)).toBeLessThanOrEqual(1);
+    expect(Math.abs(rec.t0! - (phoneNow() + 1000 - 100))).toBeLessThanOrEqual(700);
+    ar.stop();
+  });
+
+  // Codex(9738b45): 멈춘 동안 같은 영상 시각의 짝을 초당 4개씩 쌓아, 1시간이면 약 14 400개를 판정기가 매초 읽었다
+  it("noteSync: 같은 직선 구간(멈춤·1:1)은 양 끝점으로 줄인다", () => {
+    const sync: [number, number][] = [];
+    let prev: [number, number] | null = null;
+    prev = noteSync(sync, prev, 1000, 0);
+    // 1:1로 3초
+    for (let t = 1040; t <= 4000; t += 40) prev = noteSync(sync, prev, t, t - 1000);
+    // 1분 멈춤(영상 시각 3000 그대로, 0.25초마다)
+    for (let t = 4250; t <= 64_000; t += 250) prev = noteSync(sync, prev, t, 3000);
+    // 다시 1:1로 2초
+    for (let t = 64_040; t <= 66_000; t += 40) prev = noteSync(sync, prev, t, 3000 + (t - 64_000));
+    // 멈춤 뒤 1:1은 마지막 짝에서 1:1로 이어 세므로 새 짝이 없다
+    expect(sync).toEqual([[1000, 0], [4000, 3000], [64_000, 3000]]);
   });
 
   it("서버 sync가 맞춤(video)이면 「여기서 시작」 카드도, 시작 위치 모달도 뜨지 않는다. 맞추기 전 상태가 먼저 와도 열지 않는다", async () => {
