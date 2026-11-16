@@ -133,6 +133,13 @@ describe("모델이 쓴 위험 가전 글은 어느 자리에서도 폰으로 �
   const SITES: Record<(typeof PHONE_LINE_SITES)[number], (text: string, onRisky: boolean) => Promise<string | null> | string | null> = {
     "ask.question": (text) => planStep(ask({ question: `${text.replace(/ 주세요$/, "")} 볼까요?` }), ASK_TASK)?.prompt?.text ?? null,
     "agent.reply": async (text) => agentReply([{ text, calls: [] }]),
+    // 외부 연락 승인 줄: 모델이 쓴 고장 설명이 실제 폰 승인 질문에 그대로 보인다(보낼 내용)
+    "service.ask": async (text) => {
+      const home = makeHome();
+      const call = { id: "c1", name: "call_service", args: { kind: "as_center", problem: text, reason: "AS센터 전화를 부탁해서" } };
+      const agent = new Agent({ hub: home.hub, policy: home.policy, rooms: ROOMS, provider: new LineProvider([{ text: "", calls: [call] }, { text: "", calls: [] }]) });
+      return (await agent.chat("phone", "AS 불러 줘", { heard: true })).pendingConfirmations[0]?.reason ?? null;
+    },
   };
 
   // 대상이 있는 자리는 없다(사람 단계·실행 추적 글은 모두 서버 글이다). 남은 자리는 이름으로만 본다

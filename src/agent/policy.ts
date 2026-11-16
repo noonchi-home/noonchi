@@ -5,7 +5,7 @@
 
 import { randomUUID } from "node:crypto";
 import type { ServiceCall } from "../contract/service.js";
-import { SERVICE_KINDS } from "./service.js";
+import { serviceAsk } from "./service.js";
 import { isUnknown } from "../devices/index.js";
 import type { Capability, Command, CommandResult, CommandType, DeviceHub, DeviceSpec } from "../contract/devices.js";
 import type { DeviceKind } from "../devices/kinds.js";
@@ -57,7 +57,8 @@ export const RISKY_LIST = {
 // 사람 단계(go·pick·place·do)의 이름·명령·안전 문구는 모델이 고른 동작·대상·물건으로 서버가 만든다(src/act/labels.ts STEP_TEXT). 모델 문장은 받지 않는다.
 // 알림(say)·기다리기 이름은 열쇠(notice), 질문의 답 단추·답 말은 답 묶음으로 서버가 정한다.
 // 관찰 모드의 다시 알리기·사람 부탁은 방식·가까이 볼 곳만 고르고 실행 추적이 서버 글로 보낸다(src/act/labels.ts TELL_TEXT·CLOSER_TEXT).
-// 모델이 쓰는 글은 질문과 말 요청 에이전트의 답뿐이고, 거기에 위험 가전(인덕션·전자레인지) 이름이 나오면 폰으로 보내지 않는다(버리거나 고정 글로 바꾼다).
+// 모델이 쓰는 글은 질문, 말 요청 에이전트의 답, 외부 연락 승인 질문의 보낼 내용(src/agent/service.ts serviceAsk)뿐이고,
+// 거기에 위험 가전(인덕션·전자레인지) 이름이 나오면 폰으로 보내지 않는다(버리거나 고정 글로 바꾸거나 모델에게 돌려준다).
 // 켜는 말인지 끄는 말인지 낱말로 가르지 않는다.
 // 자리 목록은 PHONE_LINE_SITES이고, tests/phone-lines.test.ts가 자리마다 본다.
 // 한계: 이름 표(별명·흔한 오타 포함)로만 본다. 이름 없이 조작만 말하는 글(예: 「전원 버튼을 눌러 주세요」)은 질문·에이전트 답에서 막지 못한다.
@@ -97,7 +98,7 @@ export function riskyNames(text: string): DeviceKind[] {
 
 /** 폰으로 나가는 사람용 글이 생기는 자리. 모델이 쓴 위험 가전 글은 어느 자리에서도 나가지 않는다(tests/phone-lines.test.ts가 자리마다 본다). */
 export const PHONE_LINE_SITES = [
-  "ask.question", "agent.reply",
+  "ask.question", "agent.reply", "service.ask",
 ] as const;
 
 /** 모델이 쓴 글에 위험 가전 이름이 나와 버릴 때의 까닭(계획 검사·관찰 모드가 모델에게 돌려준다). */
@@ -122,7 +123,7 @@ export interface PendingConfirmation {
   expiresAt: number; // epoch ms
 }
 
-/** 승인을 기다리는 외부 연락 하나. reason은 실제 폰 승인 질문(「AS센터에 전화할까요?」). */
+/** 승인을 기다리는 외부 연락 하나. reason은 실제 폰 승인 질문: 보낼 내용과 등록한 받는 이(「탈수할 때 멈춤 · 에러 UE. LG전자 서비스센터에 전화할까요?」). */
 export interface PendingService {
   token: string;
   call: ServiceCall;
@@ -217,7 +218,7 @@ export class Policy {
   /** 외부 연락은 늘 묻는다: 승인 대기를 하나 만든다. 승인 기억을 보지도 남기지도 않는다(답 둘 다 이번만). */
   askService(call: ServiceCall): PendingService {
     this.purge();
-    const p: PendingService = { token: randomUUID(), call: structuredClone(call), reason: SERVICE_KINDS[call.kind].ask, expiresAt: this.clock() + this.ttlMs };
+    const p: PendingService = { token: randomUUID(), call: structuredClone(call), reason: serviceAsk(call), expiresAt: this.clock() + this.ttlMs };
     this.calls.set(p.token, p);
     return structuredClone(p);
   }

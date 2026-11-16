@@ -22,7 +22,7 @@ import type { PlaceNames, LayoutEditor } from "../layout/index.js";
 import { Policy } from "../agent/index.js";
 import { createProvider } from "../agent/index.js";
 import { deviceViews } from "../agent/index.js";
-import { serviceRecordText, serviceSay } from "../agent/index.js";
+import { contactsPath, loadContacts, serviceRecord, serviceSay } from "../agent/index.js";
 import { callServiceFrom } from "../infer/call-service.js";
 import { PamClient, ThoughtWriter, lastStoredThoughts, storeThought, thoughtFeed, type ThoughtFeed } from "../brain/index.js";
 import type { BrainLog, ReadyView, SeenEvent } from "../contract/events.js";
@@ -223,21 +223,22 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     if (!layout) log(`[경고] ${home.scenePath}이 없어 배치 보정을 끕니다(twin-studio에서 집을 먼저 빌드하세요).`);
     // 들은 말(실제 폰이 들은 말 가운데 명령의 답이 아닌 말)을 기록·방송에 그대로 남길지(KEEP_HEARD_TEXT=1, 기본 꺼짐: 「들은 말 있음」만)
     const keepHeard = /^(1|true|on)$/i.test(env.KEEP_HEARD_TEXT?.trim() ?? "");
-    // 외부 연락(call_service: AS센터 전화·보호자 연락): 승인되면 CALL_SERVICE_URL로 보낸다. 주소가 없으면 통로가 없어 부르지 않는다(연결 없음).
-    // 결과는 기록 DB service 줄과 대시보드 말풍선 카드(SAY_DONE_MS 동안, 거절은 승인 답이라 보이지 않음)에 남긴다
+    // 외부 연락(call_service: AS센터 전화·보호자 연락): 받는 이는 등록부(runtime/homes/<집>/contacts.json)에서 정하고, 승인되면 CALL_SERVICE_URL로 보낸다.
+    // 주소가 없으면 통로가 없어 부르지 않는다(연결 없음). 결과는 기록 DB service 줄(KEEP_HEARD_TEXT가 꺼져 있으면 받는 이·내용은 가림)과
+    // 대시보드 말풍선 카드(SAY_DONE_MS 동안 안전 알림 다음 차례, 거절은 승인 답이라 보이지 않음)에 남긴다
     const service = callServiceFrom(env, { id: home.id, name: home.name });
+    const { contacts, warning: contactsWarning } = loadContacts(contactsPath(runtimeDir, home.id));
+    if (contactsWarning) log(`[경고] ${contactsWarning}`);
     let serviceSaid: { text: string; atMs: number } | null = null;
     const onService = (r: ServiceResult) => {
-      history.db.add("service", r.atMs, serviceRecordText(r), {
-        subject: r.call.device?.id,
-        data: { id: r.id, kind: r.call.kind, outcome: r.outcome, to: r.call.to, device: r.call.device, problem: r.call.problem, error_code: r.call.errorCode, person: r.call.person, ...(r.error ? { error: r.error } : {}) },
-      });
+      const row = serviceRecord(r, keepHeard);
+      history.db.add("service", r.atMs, row.text, { subject: row.subject, data: row.data });
       const text = serviceSay(r);
       if (text === null) return;
       serviceSaid = { text, atMs: Date.now() };
       speak();
     };
-    const agent = new Agent({ hub: signals, policy, rooms: twin.rooms, provider, layout, keepHeard, service, onService });
+    const agent = new Agent({ hub: signals, policy, rooms: twin.rooms, provider, layout, keepHeard, service, onService, contacts });
     // 에이전트 계획 모드(src/agent/planner.ts): PAM이 고른 행동 하나를 단계 계획으로. 말 요청 에이전트와 같은 공급자
     const planner = new Planner({ provider });
     // 에이전트 관찰 모드(src/agent/observer.ts): 잘 못 볼 때 가까이 보기·사람 부탁·기다리기 중 하나를 고른다. 말 요청·계획 모드와 같은 공급자
@@ -335,14 +336,13 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         ...(data.learned ? { learned: data.learned } : {}), ...(data.active ? { active: data.active } : {}), ...(data.dropped ? { dropped: data.dropped } : {}),
       }];
     };
-    // 끝난 지 20초·가까이 보기 6초는 계획 updatedAt(PlanHub, Date.now)과 같은 시계로 잰다. 외부 연락 결과는 20초 동안 다른 글보다 먼저 말한다
+    // 끝난 지 20초·가까이 보기 6초·외부 연락 결과 20초는 계획 updatedAt(PlanHub, Date.now)과 같은 시계로 잰다
     speak = () => {
       const leftAt = tracker?.leftAt() ?? null;
       const toldAt = tracker?.toldAt() ?? null;
-      const called = serviceSaid && Date.now() - serviceSaid.atMs <= SAY_DONE_MS ? serviceSaid.text : null;
-      const text = called ?? sayLine({ plan: plans.current(), command, world: world?.view(nowMs()) ?? null, nowMs: Date.now(), look: lookSay, left: leftAt === null ? null : { atMs: leftAt },
+      const text = sayLine({ plan: plans.current(), command, world: world?.view(nowMs()) ?? null, nowMs: Date.now(), look: lookSay, left: leftAt === null ? null : { atMs: leftAt },
         told: toldAt === null ? null : { atMs: toldAt }, quiet: tracker?.quietStep() ?? null, reflected, offWait: tracker?.offWaiting() ?? null,
-        offTold: tracker?.offTold() ?? null });
+        offTold: tracker?.offTold() ?? null, service: serviceSaid });
       if (text === said) return;
       said = text;
       appRef.current?.broadcast({ type: "say", text });

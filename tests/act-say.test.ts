@@ -4,6 +4,7 @@ import type { PlanView } from "../src/contract/plan.js";
 import type { WorldView } from "../src/contract/world.js";
 import { SAY_DONE_MS, SAY_LOOK_MS, SAY_TOLD_MS, sayLine } from "../src/act/say.js";
 import { STEP_LABEL } from "../src/act/labels.js";
+import { POSE_FALL } from "../src/world/vocab.js";
 
 const T = Date.parse("2026-11-09T00:00:00Z");
 const plan = (status: PlanView["status"], goal = "컵 치우기", at = T): PlanView => ({
@@ -130,5 +131,21 @@ describe("말풍선 카드 글", () => {
     expect(say({ plan: plan("running"), command: cmd("plan:d1:4"), look, nowMs: T + SAY_LOOK_MS + 1 })).toBe("컵을 싱크대에 넣으라고 했어요.");
     expect(say({ world: world("식탁"), look, nowMs: T + SAY_LOOK_MS + 1 })).toBe("식탁을 보고 있어요.");
     expect(say({ look: null })).toBe("지켜보고 있어요.");
+  });
+});
+
+describe("말풍선 카드 글: 외부 연락 결과", () => {
+  const service = { text: "AS센터에 전화를 요청했어요.", atMs: T - 1000 };
+  const fallen = { objects: [], person: { facts: { posture: { value: POSE_FALL } } } } as unknown as WorldView;
+  it("결과는 20초 동안 계획·지켜보기 글보다 먼저 말하고, 20초가 지나면 원래 글이다", () => {
+    expect(say({ service })).toBe("AS센터에 전화를 요청했어요.");
+    expect(say({ service, plan: plan("running") })).toBe("AS센터에 전화를 요청했어요.");
+    expect(say({ service: { ...service, atMs: T - SAY_DONE_MS - 1 } })).toBe("지켜보고 있어요.");
+  });
+  it("안전 알림(쓰러짐 의심·다시 켜짐·끄기 안내·꺼짐 기다림)은 결과보다 먼저다", () => {
+    expect(say({ service, world: fallen })).toBe(say({ world: fallen }));
+    expect(say({ service, offTold: { device: "인덕션", atMs: T - 500 } })).toBe("인덕션이 다시 켜졌어요.");
+    expect(say({ service, offWait: "인덕션" })).toBe(say({ offWait: "인덕션" }));
+    expect(say({ service, command: cmd("off:plan:d1:1") })).toBe(say({ command: cmd("off:plan:d1:1") }));
   });
 });

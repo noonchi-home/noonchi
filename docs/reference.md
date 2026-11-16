@@ -88,7 +88,7 @@ HUB=memory npm run demo
 | `ANTHROPIC_FALLBACKS` | (켬) | `off`면 서버 측 거절 대체를 끈다 |
 | `TWIN_STUDIO_DIR` | `twin/` | 트윈 결과물 폴더(상대 경로는 실행 위치 기준) |
 | `HOME_ID` | `homes.json`의 `default` | 불러올 집(twin-studio `homes.json`의 id, 예: `oneroom`) |
-| `RUNTIME_DIR` | `runtime` | 실행 중 만든 파일의 바탕 폴더: 배치 수정본 `homes/<id>/edits.json`, 사진 `photos/`, 기록 DB `noonchi.db`(SQLite, 커밋하지 않음), 서버 잠금 `server.lock.db`(아래 「시작 순서」 0) |
+| `RUNTIME_DIR` | `runtime` | 실행 중 만든 파일의 바탕 폴더: 배치 수정본 `homes/<id>/edits.json`, 외부 연락 받는 이 `homes/<id>/contacts.json`(아래 「외부 연락」), 사진 `photos/`, 기록 DB `noonchi.db`(SQLite, 커밋하지 않음), 서버 잠금 `server.lock.db`(아래 「시작 순서」 0) |
 | `HISTORY_TZ_MINUTES` | `540` | 기록 DB가 날짜(하루 요약·반성)를 나누는 시간대(분, -720~840). PAM 관찰 텍스트 시각도 이 시간대다. 틀린 값이면 시작하지 않는다 |
 | `REFLECT_AT` | `23:30` | 매일 그날을 반성하는 시각(HH:MM, 기록 시간대). `off`면 끈다. 틀린 값이면 시작하지 않는다 |
 | `PHOTO_RETENTION_DAYS`, `DATASET_RETENTION_DAYS` | `7`, `7` | 폰 사진 찍기 사진·시험 자료 보관 일(0보다 큰 숫자). 지나면 파일과 표 줄을 지운다. 틀린 값이면 시작하지 않는다 |
@@ -490,7 +490,7 @@ tailscale serve --bg 8210   # 이미 켜져 있으면 생략. 폰: https://<이 
   - `vlm` 프레임마다 VLM 답 또는 「… VLM 분석 없음」, `yolo` 「감지 오류로 YOLO 분석 없음」·「요청이 몰려 YOLO·VLM 분석 없음」
   - `pam_text` PAM에 보낸 관찰 텍스트, `decision` 판단(고른 행동·대기·판단 실패), `plan` 계획(목표·상태), `execution` 실행 단계, `mode` 운영 모드 변경
   - `link` PAM 연결 끊김·연결됨, `trigger` 판단 멈춤·다시 시작
-  - `service` 외부 연락 결과(「세탁기 AS센터 전화 · 보냄」, 보냄·거절·연결 없음·실패). 대상은 고장 난 가전 id, data는 연락 id·종류·결과·받는 이·가전·고장 설명·에러 코드·사람 상태(실패면 까닭)
+  - `service` 외부 연락 결과(「세탁기 AS센터 전화 · 보냄」, 보냄·거절·연결 없음·실패·확인 불가). 대상은 고장 난 가전 id, data는 연락 id·종류·결과·가전(실패·확인 불가면 까닭). 받는 이·고장 설명·에러 코드·사람 상태는 `KEEP_HEARD_TEXT=1`일 때만 남고, 기본은 `detail: "들은 말 있음"`이다
   - 사진은 적지 않는다. YOLO 결과는 등장·사라짐으로, 관절 사실은 World State 변화로 남는다.
 - 날짜는 `HISTORY_TZ_MINUTES`(기본 서울) 기준이다.
 - **하루 요약(`GET /api/history/day/{날짜}`):** 반성 입력이다.
@@ -584,11 +584,24 @@ HOME_ID=oneroom PHONE_PORT=8210 npm start
 가전이 고장 났을 때 AS센터에 전화(상담·방문 예약)하거나, 사람 상태가 걱정될 때 보호자에게 연락하는 자리다. 실제 전화는 전화 서비스(`CALL_SERVICE_URL`)가 맡는다.
 
 - 부르는 곳: 말로 시킨 요청(「세탁기 AS 불러 줘」)과 말 요청 에이전트가 스스로 정한 도구 호출뿐이다. PAM 행동 목록(`src/act/tasks.ts`)과 에이전트 계획 모드 단계에는 없다.
-- 도구 `call_service`: `kind`(`as_center` AS센터 전화, `guardian` 보호자 연락), `to`(누구에게, 없으면 「AS센터」·「보호자」), `device_id`·`problem`(고장 설명)·`error_code`(에러 코드), `person`(사람 상태 요약). AS센터 전화는 가전이나 고장 설명, 보호자 연락은 사람 상태가 없으면 묻지 않고 모델에게 까닭을 돌려준다.
-- 승인: 부르면 늘 실제 폰으로 먼저 묻는다(「세탁기: AS센터에 전화할까요?」, 가전이 없으면 「보호자에게 연락할까요?」, 답 승인·거절). 위험 목록처럼 답 둘 다 이번만이라 기억하지 않는다. 대기는 가전 승인과 같은 5분 제한이다.
-- 승인되면 외부 API 통로(`src/infer/call-service.ts`)가 `CALL_SERVICE_URL`에 아래 JSON 하나를 `POST`한다(`content-type: application/json`, 제한 시간 10초, 다시 보내지 않음). 2xx면 보냄, 그 밖의 상태·연결 오류는 실패다. 답 본문은 읽지 않는다.
+- 도구 `call_service`: `kind`(`as_center` AS센터 전화, `guardian` 보호자 연락), `device_id`·`problem`(고장 증상 80자까지)·`error_code`(에러 코드 20자까지), `person`(사람 상태 요약 80자까지). 받는 이 칸은 없다.
+  - AS센터 전화는 가전이나 고장 설명, 보호자 연락은 사람 상태가 없으면 묻지 않고 모델에게 까닭을 돌려준다. 고장 설명·사람 상태에 위험 가전 이름(인덕션·전자레인지)이 있어도 돌려준다(가전은 `device_id`로 정한다).
+- 받는 이: 서버에 등록한 연락처 `RUNTIME_DIR/homes/<집>/contacts.json`(커밋하지 않음)뿐이다. 모델은 받는 이를 정하지 못한다. 종류마다 이름(40자까지)과 번호(숫자·`+`·`-`, 없어도 됨)를 둔다. 파일이나 칸이 없으면 종류 이름(「AS센터」·「보호자」)에 번호 없음이고, 틀린 칸도 그렇게 두고 시작 로그에 경고를 남긴다.
+
+```json
+{
+  "as_center": { "name": "LG전자 서비스센터", "phone": "1544-7777" },
+  "guardian": { "name": "딸", "phone": "010-1234-5678" }
+}
+```
+
+- 승인: 부르면 늘 실제 폰으로 먼저 묻는다. 질문에 보낼 내용과 받는 이 이름이 그대로 보인다: 「세탁기: 탈수할 때 멈춤 · 에러 UE. LG전자 서비스센터에 전화할까요?」, 가전이 없으면 「거실에서 넘어진 뒤 일어나지 못함. 딸에게 연락할까요?」. 답은 승인·거절이고 위험 목록처럼 둘 다 이번만이라 기억하지 않는다. 대기는 가전 승인과 같은 5분 제한이다.
+- 승인되면 외부 API 통로(`src/infer/call-service.ts`)가 `CALL_SERVICE_URL`에 아래 JSON 하나를 `POST`한다(`content-type: application/json`, 제한 시간 10초, 스스로 다시 보내지 않음). 답 본문은 읽지 않는다.
+  - 2xx: 보냄.
+  - 2xx가 아닌 답, 보내기 전에 닿지 못함(연결 거부·주소 못 찾음·TLS 실패): 실패.
+  - 보낸 뒤 답이 없거나(10초) 연결이 끊김: 확인 불가. 30분 안에 같은 종류·같은 가전 연락이 다시 승인되면 같은 `id`로 보낸다. 답(2xx든 아니든)을 받으면 그 `id`는 잊는다.
 - 주소가 없으면 부르지 않는다. 실제 폰 답과 대시보드 말풍선 카드가 「전화 서비스가 아직 연결되지 않았어요.」다.
-- 결과: 실제 폰 답(보냄 「AS센터에 전화를 요청했어요.」, 거절 「AS센터 전화는 하지 않을게요.」, 실패 「AS센터에 전화하지 못했어요.」), 대시보드 말풍선 카드 20초(거절은 보이지 않음), 기록 DB `service` 줄.
+- 결과: 실제 폰 답(보냄 「AS센터에 전화를 요청했어요.」, 거절 「AS센터 전화는 하지 않을게요.」, 실패 「AS센터에 전화하지 못했어요.」, 확인 불가 「AS센터 전화 요청이 접수됐는지 확인하지 못했어요.」), 대시보드 말풍선 카드 20초(쓰러짐 의심·다시 켜짐·끄기 안내 다음 차례, 거절은 보이지 않음), 기록 DB `service` 줄.
 
 AS센터 전화 요청:
 
@@ -597,10 +610,10 @@ AS센터 전화 요청:
   "version": 1,
   "id": "6f1c2a9e-3b7d-4c1e-9a52-0d8e4f7b21c3",
   "kind": "as_center",
-  "to": "AS센터",
+  "to": { "name": "LG전자 서비스센터", "phone": "1544-7777" },
   "home": { "id": "mokryeon_180b", "name": "한양목련 180B (도면 기준 · 방 4·욕실 3)" },
   "device": { "id": "washer_1", "label": "세탁기", "kind": "washer" },
-  "problem": "탈수할 때 멈추고 에러가 뜸",
+  "problem": "탈수할 때 멈춤",
   "error_code": "UE",
   "person": null,
   "approved_at": "2026-11-17T10:00:00.000Z"
@@ -614,7 +627,7 @@ AS센터 전화 요청:
   "version": 1,
   "id": "0b9e7d41-58a2-4f36-8c1d-2e6a9f3b7c50",
   "kind": "guardian",
-  "to": "딸",
+  "to": { "name": "딸", "phone": "010-1234-5678" },
   "home": { "id": "mokryeon_180b", "name": "한양목련 180B (도면 기준 · 방 4·욕실 3)" },
   "device": null,
   "problem": null,
@@ -624,7 +637,7 @@ AS센터 전화 요청:
 }
 ```
 
-- `id`: 연락마다 새 값(같은 연락을 두 번 받으면 이 값으로 가린다). `home`: 이 서버가 띄운 집. `device.kind`: 가전 종류 등록부 키(`src/devices/kinds.ts`). 없는 값은 `null`이다. `approved_at`: 사용자가 승인한 때.
+- `id`: 연락 하나의 값. 전화 서비스는 같은 `id`를 한 번만 처리하고, 이미 받은 `id`가 다시 오면 다시 전화하지 않고 2xx로 답한다. `to`: 등록한 받는 이(번호가 없으면 `null`, 전화 서비스가 정한다). `home`: 이 서버가 띄운 집. `device.kind`: 가전 종류 등록부 키(`src/devices/kinds.ts`). 없는 값은 `null`이다. `approved_at`: 사용자가 승인한 때.
 
 ## MCP (src/agent/mcp/server.ts)
 

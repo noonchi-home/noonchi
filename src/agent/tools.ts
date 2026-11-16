@@ -13,7 +13,8 @@ import { findDevices } from "./search.js";
 import { resolveRoom } from "../layout/index.js";
 import { compact } from "../shared/korean.js";
 import type { ServiceCall, ServiceKind } from "../contract/service.js";
-import { CALL_SERVICE, SERVICE_KIND_IDS, serviceCall } from "./service.js";
+import { CALL_SERVICE, SERVICE_KIND_IDS, SERVICE_RISKY_PROBLEM, serviceCall, serviceText, type ServiceContacts } from "./service.js";
+import { riskyNames } from "./policy.js";
 
 export type { DeviceView } from "../contract/events.js";
 
@@ -31,8 +32,8 @@ export interface ToolBackend {
   confirm(token: string): Promise<CommandResult & { deviceId?: string }>;
   /** 배치 보정(서버 안 에이전트만). */
   layout?: LayoutTools;
-  /** 외부 연락 승인 대기를 만든다(서버 안 에이전트만, 정책 askService). */
-  service?: { ask(call: ServiceCall): { token: string; reason: string } };
+  /** 외부 연락(서버 안 에이전트만): 종류마다 등록한 받는 이와 승인 대기 만들기(정책 askService). */
+  service?: { contacts: ServiceContacts; ask(call: ServiceCall): { token: string; reason: string } };
 }
 
 export interface ToolResult {
@@ -90,7 +91,6 @@ export function deviceViews(hub: DeviceHub): DeviceView[] {
 export function localBackend(hub: DeviceHub, policy: Policy, rooms?: RoomSpec[], layout?: LayoutTools): ToolBackend {
   return {
     layout,
-    service: { ask: (call) => policy.askService(call) },
     rooms: async () => roomViews(hub.list(), rooms),
     devices: async () => deviceViews(hub),
     command: (id, cmd, token) => policy.guard(hub, id, cmd, token),
@@ -251,22 +251,24 @@ export const TOOLS: ToolDef[] = [
   {
     name: CALL_SERVICE, title: "외부 연락", agentOnly: true,
     description: "밖으로 연락합니다. as_center: 가전이 고장 나 AS센터에 전화(상담·방문 예약)할 때. 고장 난 가전 device_id, 고장 설명 problem, 에러 코드 error_code를 넣습니다. "
-      + "guardian: 사람 상태가 걱정돼 보호자에게 연락할 때. 사람 상태 요약 person을 넣습니다. 부르면 늘 사용자 승인을 먼저 묻고, 승인해야 연락합니다.",
+      + "guardian: 사람 상태가 걱정돼 보호자에게 연락할 때. 사람 상태 요약 person을 넣습니다. 받는 이는 서버에 등록한 연락처로 정해집니다. "
+      + "보낼 글은 사용자 승인 질문에 그대로 보이고, 부르면 늘 사용자 승인을 먼저 묻고, 승인해야 연락합니다.",
     schema: z.object({
       kind: z.enum(SERVICE_KIND_IDS).describe("as_center AS센터 전화, guardian 보호자 연락"),
-      to: z.string().max(60).optional().describe("누구에게(예: LG전자 서비스센터, 딸). 모르면 비웁니다"),
       device_id: deviceId.optional(),
-      problem: z.string().max(300).optional().describe("고장 설명 한 문장"),
-      error_code: z.string().max(40).optional().describe("가전 화면의 에러 코드(예: UE, OE)"),
-      person: z.string().max(300).optional().describe("사람 상태 요약 한 문장"),
+      problem: z.string().max(80).optional().describe("고장 증상 한 문장(가전 이름 없이)"),
+      error_code: z.string().max(20).optional().describe("가전 화면의 에러 코드(예: UE, OE)"),
+      person: z.string().max(80).optional().describe("사람 상태 요약 한 문장"),
     }),
     async run(backend, args) {
       if (!backend.service) return { ok: false, error: "외부 연락은 서버 안 에이전트만 할 수 있습니다." };
       const id = typeof args.device_id === "string" ? args.device_id : undefined;
       const d = id ? await resolveDevice(backend, id) : undefined;
       if (id && !d) return notFound(id);
-      const call = serviceCall(args as { kind: ServiceKind }, d ? { id: d.id, label: d.label, kind: d.kind } : null);
+      const kind = args.kind as ServiceKind;
+      const call = serviceCall(args as { kind: ServiceKind }, d ? { id: d.id, label: d.label, kind: d.kind } : null, backend.service.contacts[kind]);
       if (typeof call === "string") return { ok: false, error: call };
+      if (riskyNames(serviceText(call)).length) return { ok: false, error: SERVICE_RISKY_PROBLEM };
       const p = backend.service.ask(call);
       return { ok: false, needsConfirmation: { token: p.token, reason: p.reason }, message: `${p.reason} 사용자가 승인하면 연락합니다.` };
     },

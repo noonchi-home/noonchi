@@ -6,6 +6,7 @@
 // 끄기 안내가 남아 새 계획 시작을 미루는 동안(src/act/track.ts offWaiting)은 그 가전 꺼짐을 기다린다고 한다.
 // 다른 계획이 도는 동안 닫힌 계획의 가전이 다시 켜져 그 안내가 줄에서 기다리면(src/act/track.ts offTold) SAY_DONE_MS 동안 다시 켜졌다고 한다.
 // 가까이 보기(src/act/look.ts)를 시작한 지 SAY_LOOK_MS 안이면 계획과 상관없이 그 자리를 가까이 보고 있다고 한다.
+// 외부 연락 결과(AS센터 전화·보호자 연락, src/agent/service.ts serviceSay)는 SAY_DONE_MS 동안 계획·지켜보기 글보다 먼저 말하되, 안전 알림(쓰러짐 의심·다시 켜짐·끄기 안내·꺼짐 기다림)이 먼저다.
 import type { PlannedCommandMessage } from "../contract/phone.js";
 import type { PlanView } from "../contract/plan.js";
 import type { WorldView } from "../contract/world.js";
@@ -28,11 +29,11 @@ const cupKey = (label: string | undefined, text: string) =>
 /** look: 마지막으로 가까이 보기를 시작한 자리 이름과 그 시각. left: 마지막으로 「그대로 둠」을 기록한 시각.
  *  told: 마지막으로 다시 알린(tell) 시각. quiet: 지금 조용히 띄운 단계 이름(src/act/track.ts quietStep).
  *  reflected: 마지막 반성 시각과 새로 배운 규칙 수·쓰고 있는 습관 수(20초 동안 말한다). offWait: 끄기 안내 때문에 새 계획을 미루는 동안 기다리는 가전 이름.
- *  offTold: 줄에서 기다리는 끄기 안내를 마지막으로 소리로 알린 가전 이름과 시각(20초 동안 말한다). */
-export function sayLine({ plan, command, world, nowMs, look = null, left = null, told = null, quiet = null, reflected = null, offWait = null, offTold = null }: {
+ *  offTold: 줄에서 기다리는 끄기 안내를 마지막으로 소리로 알린 가전 이름과 시각(20초 동안 말한다). service: 마지막 외부 연락 결과 글과 그 시각(20초 동안 말한다). */
+export function sayLine({ plan, command, world, nowMs, look = null, left = null, told = null, quiet = null, reflected = null, offWait = null, offTold = null, service = null }: {
   plan: PlanView | null; command: PlannedCommandMessage | null; world: WorldView | null; nowMs: number; look?: { place: string; atMs: number } | null; left?: { atMs: number } | null;
   told?: { atMs: number } | null; quiet?: string | null; reflected?: { atMs: number; learned: number; active: number } | null; offWait?: string | null;
-  offTold?: { device: string; atMs: number } | null;
+  offTold?: { device: string; atMs: number } | null; service?: { text: string; atMs: number } | null;
 }): string {
   if (world?.person?.facts.posture?.value === POSE_FALL) return SAY_TEXT.fall;
   if (look && nowMs - look.atMs <= SAY_LOOK_MS) return SAY_TEXT.closer(look.place);
@@ -40,6 +41,7 @@ export function sayLine({ plan, command, world, nowMs, look = null, left = null,
   if (offWait) return SAY_TEXT.offWait(offWait);
   // 끄기 안내(켠 채 닫힌 계획 뒤)가 떠 있는 동안
   if (command?.type === "command" && isOffStep(command.step)) return SAY_TEXT.offAsked;
+  if (service && nowMs - service.atMs <= SAY_DONE_MS) return service.text;
   if (plan && OPEN.has(plan.status)) {
     if (told && nowMs - told.atMs <= SAY_TOLD_MS) return SAY_TEXT.retold;
     if (quiet) return SAY_TEXT.quiet(quiet);

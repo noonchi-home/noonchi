@@ -3,8 +3,9 @@
 // 승인 대기는 위험 목록뿐이라(src/agent/policy.ts) 답은 둘 다 이번만이다: 승인이면 실행하고, 거절이면 실행하지 않는다. 둘 다 기억하지 않아 다음에 또 묻는다.
 // 늘 듣는 실제 폰의 말(heard)로는 승인 대기에 답하지 않는다(answerAll 없음): 실제 폰 서버(src/server/home.ts)가 말 전체가 승인·거절 답이고
 // 말할 때 보인 대기 token이 하나일 때만 answerToken으로 그 대기 하나에 답한다. 글로 한 말은 「승인」「응」「아니」로 대기 전부에 답한다.
-// 외부 연락(call_service)도 같은 승인 대기 길로 묻는다: 승인이면 외부 연락 통로(service, CALL_SERVICE_URL)로 보내고, 통로가 없으면 부르지 않고 「연결 없음」.
-// 결과(보냄·거절·연결 없음·실패)는 onService로 알린다(서버가 기록 DB·대시보드 말풍선 카드에 남긴다).
+// 외부 연락(call_service)도 같은 승인 대기 길로 묻는다: 받는 이는 등록부(contacts)에서 정하고, 승인이면 외부 연락 통로(service, CALL_SERVICE_URL)로 보내고,
+// 통로가 없으면 부르지 않고 「연결 없음」. 보낸 뒤 답이 없어 확인 불가면, SERVICE_RETRY_MS 안에 같은 종류·가전으로 다시 승인된 연락은 같은 id로 보낸다(전화 서비스가 같은 id를 한 번만 처리).
+// 결과(보냄·거절·연결 없음·실패·확인 불가)는 onService로 알린다(서버가 기록 DB·대시보드 말풍선 카드에 남긴다).
 
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -24,7 +25,10 @@ import { headWithin } from "../shared/cut.js";
 import type { ServiceCall, ServiceOutcome, ServiceResult } from "../contract/service.js";
 import type { CallServiceSent } from "../infer/call-service.js";
 import type { PendingService } from "./policy.js";
-import { CALL_SERVICE, SERVICE_KINDS, SERVICE_UNCONNECTED, serviceArgs, serviceCancelled, serviceReply } from "./service.js";
+import { CALL_SERVICE, DEFAULT_CONTACTS, SERVICE_KINDS, SERVICE_UNCONNECTED, serviceArgs, serviceCancelled, serviceKey, serviceReply, type ServiceContacts } from "./service.js";
+
+/** 확인 불가 뒤 같은 종류·가전 연락을 같은 id로 다시 보내는 기간. */
+export const SERVICE_RETRY_MS = 30 * 60 * 1000;
 
 export type { AgentAction, AgentEvent, ChatResult, ConfirmResult, PendingView } from "../contract/events.js";
 
@@ -105,8 +109,10 @@ export interface AgentOptions {
   keepHeard?: boolean;
   /** 외부 연락 통로(src/infer/call-service.ts, CALL_SERVICE_URL). 없으면 승인돼도 부르지 않고 「전화 서비스가 아직 연결되지 않았어요.」. */
   service?: ServiceLine | null;
-  /** 외부 연락 결과(보냄·거절·연결 없음·실패)마다 부른다. */
+  /** 외부 연락 결과(보냄·거절·연결 없음·실패·확인 불가)마다 부른다. */
   onService?: (r: ServiceResult) => void;
+  /** 외부 연락 받는 이 등록부(src/agent/service.ts loadContacts). 없으면 종류 이름(AS센터·보호자). */
+  contacts?: ServiceContacts;
 }
 
 /** 승인한 외부 연락을 보내는 곳(CallServiceClient). */
@@ -178,6 +184,9 @@ export class Agent {
   private prompt?: { key: string; text: string };
   private readonly service: ServiceLine | null;
   private readonly onService?: (r: ServiceResult) => void;
+  private readonly contacts: ServiceContacts;
+  /** 확인 불가로 끝난 연락: 열쇠(종류·가전) → 그 요청 id와 때. 다시 승인되면 같은 id로 보낸다. */
+  private readonly unsure = new Map<string, { id: string; atMs: number }>();
 
   constructor(opts: AgentOptions) {
     this.hub = opts.hub;
@@ -186,6 +195,7 @@ export class Agent {
     this.rooms = opts.rooms;
     this.service = opts.service ?? null;
     this.onService = opts.onService;
+    this.contacts = opts.contacts ?? DEFAULT_CONTACTS;
     this.maxRounds = opts.maxToolRounds ?? 6;
     this.maxSessions = opts.maxSessions ?? 200;
     this.keepHeard = opts.keepHeard === true;
@@ -314,7 +324,10 @@ export class Agent {
   }
 
   private async runModel(s: Session, message: string, actions: AgentAction[]): Promise<string> {
-    const backend = localBackend(this.hub, this.policy, this.rooms, this.layout);
+    const backend: ToolBackend = {
+      ...localBackend(this.hub, this.policy, this.rooms, this.layout),
+      service: { contacts: this.contacts, ask: (call) => this.policy.askService(call) },
+    };
     const system = this.systemPrompt();
     try {
       this.provider.addUserMessage(s.state, message);
@@ -466,12 +479,18 @@ export class Agent {
     return new Set([...this.policy.pending(), ...this.policy.services()].map((p) => p.token));
   }
 
-  /** 승인한 외부 연락: 통로가 있으면 보내고(2xx 보냄, 아니면 실패), 없으면 부르지 않는다(연결 없음). 결과를 알리고 답한다. */
+  /** 승인한 외부 연락: 통로가 있으면 보내고(2xx 보냄, 답 없음·끊김 확인 불가, 그 밖 실패), 없으면 부르지 않는다(연결 없음). 결과를 알리고 답한다.
+   *  id는 새 값이고, 같은 종류·가전의 앞 연락이 SERVICE_RETRY_MS 안에 확인 불가로 끝났으면 그 id다(답을 받으면 잊는다). */
   private async sendService(p: PendingService): Promise<ConfirmResult> {
-    const id = randomUUID();
-    const at = new Date().toISOString();
+    const key = serviceKey(p.call);
+    const now = Date.now();
+    const prev = this.unsure.get(key);
+    const id = prev && now - prev.atMs <= SERVICE_RETRY_MS ? prev.id : randomUUID();
+    const at = new Date(now).toISOString();
     const sent = this.service ? await this.service.send(p.call, { id, approvedAt: at }) : null;
-    const outcome: Exclude<ServiceOutcome, "refused"> = !sent ? "unconnected" : sent.ok ? "sent" : "failed";
+    const outcome: Exclude<ServiceOutcome, "refused"> = !sent ? "unconnected" : sent.ok ? "sent" : sent.unknown ? "unknown" : "failed";
+    if (outcome === "unknown") this.unsure.set(key, { id, atMs: now });
+    else if (sent) this.unsure.delete(key);
     const error = !sent ? SERVICE_UNCONNECTED : sent.ok ? undefined : sent.error;
     const reply = serviceReply(p.call.kind, outcome);
     this.serviceDone(p.call, outcome, id, error);
@@ -483,7 +502,7 @@ export class Agent {
   /** 외부 연락 결과 하나를 알린다(구독자 오류는 무시). */
   private serviceDone(call: ServiceCall, outcome: ServiceOutcome, id: string = randomUUID(), error?: string): void {
     try {
-      this.onService?.({ id, call, outcome, atMs: Date.now(), ...(error && outcome === "failed" ? { error } : {}) });
+      this.onService?.({ id, call, outcome, atMs: Date.now(), ...(error && (outcome === "failed" || outcome === "unknown") ? { error } : {}) });
     } catch {
       // 기록 실패가 답을 막지 않게 한다
     }
