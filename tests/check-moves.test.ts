@@ -421,6 +421,26 @@ describe("옮김 검사: 빠져나가는 꼴", () => {
   });
 });
 
+describe("옮김 검사: 안 바뀐 파일", () => {
+  it("내용이 안 바뀐 파일의 import가 옮긴 파일 때문에 뒤 커밋에서 풀리지 않으면 실패한다", () => {
+    const user = 'import { align } from "../src/sync/aligner.js";\nexport const u = align(1);\n';
+    const f = run({ ...BEFORE, "scripts/use.ts": user }, { ...AFTER, "scripts/use.ts": user }, MOVE).failures;
+    // 읽기 차례는 바뀐 파일에서만 본다(안 바뀐 파일은 import가 풀리는지와 가리키는 정의만)
+    expect(f).toEqual(["scripts/use.ts: import가 가리키는 정의가 달라요\n  앞에만: import align = src/phone/sync/aligner.ts#align\n  뒤에만: import align = missing:../src/sync/aligner.js"]);
+  });
+
+  it("안 바뀐 파일의 vi.mock·import() 상대 모듈 글이 옮긴 파일 때문에 깨져도 실패한다", () => {
+    const user = 'vi.mock("../src/sync/aligner.js");\nexport const load = () => import("../src/sync/aligner.js");\n';
+    const f = run({ ...BEFORE, "tests/mocked.test.ts": user }, { ...AFTER, "tests/mocked.test.ts": user }, MOVE).failures;
+    expect(f.map((x) => x.split("\n")[0])).toEqual(["tests/mocked.test.ts: import가 아닌 문장이 달라요(1번째)", "tests/mocked.test.ts: import가 아닌 문장이 달라요(2번째)"]);
+  });
+
+  it("안 바뀐 파일이 옮긴 파일과 상관없으면 통과한다(옮긴 경로와 같은 글이 자료로 있어도)", () => {
+    const user = 'import { josa } from "../src/agent/phrases.js";\nexport const u = josa("a");\nexport const data = "src/sync/aligner.ts";\n';
+    expect(run({ ...BEFORE, "scripts/use.ts": user }, { ...AFTER, "scripts/use.ts": user }, MOVE).failures).toEqual([]);
+  });
+});
+
 describe("옮김 검사: 타입 선언 파일", () => {
   it(".d.ts·.d.mts·.d.cts 타입 선언 파일은 코드로 읽지 않는다(값 없는 선언이라 파서가 거절함)", () => {
     const decl = (n: number) => `export const WIN: { before: number };\nexport declare function f${n}(): void;\n`;

@@ -651,6 +651,8 @@ export function checkMoves(before: Tree, after: Tree, moves: Moves, opts: Option
 
   // 견줄 짝: [옛 경로, 새 경로]
   const pairs: [string | null, string | null][] = [];
+  /** 내용이 그대로인 파일: 옮긴 파일 때문에 import·모듈 글이 깨지지 않았는지 (1)(2)와 부수 효과 차례만 본다. */
+  const unchanged: string[] = [];
   const pairedNew = new Set<string>();
   for (const [o, n] of Object.entries(files)) {
     if (!before.has(o)) fail(`대응표 files의 옛 파일이 앞 커밋에 없어요: ${o}`);
@@ -660,7 +662,7 @@ export function checkMoves(before: Tree, after: Tree, moves: Moves, opts: Option
   }
   for (const p of [...before.keys()].filter(inScope).sort()) {
     if (files[p]) { pairs.push([p, files[p]!]); pairedNew.add(files[p]!); continue; }
-    if (after.has(p)) { pairedNew.add(p); if (before.get(p) !== after.get(p)) pairs.push([p, p]); continue; }
+    if (after.has(p)) { pairedNew.add(p); if (before.get(p) !== after.get(p)) pairs.push([p, p]); else unchanged.push(p); continue; }
     pairs.push([p, null]);
   }
   for (const p of [...after.keys()].filter(inScope).sort()) {
@@ -750,7 +752,7 @@ export function checkMoves(before: Tree, after: Tree, moves: Moves, opts: Option
     comparePair(o, n);
   }
 
-  function comparePair(o: string, n: string) {
+  function comparePair(o: string, n: string, untouched = false) {
     const oldText = before.get(o)!;
     const newText = after.get(n)!;
     const oi = B.info(o);
@@ -769,7 +771,8 @@ export function checkMoves(before: Tree, after: Tree, moves: Moves, opts: Option
     const isText = textFiles.has(n);
     const strOld = (s: string) => {
       if (s.startsWith("./") || s.startsWith("../")) { const r = B.resolve(o, s); if ("path" in r) return `@mod:${mapFile(r.path)}`; }
-      return isText ? mapText(s) : (pathText.get(s) ?? s);
+      // 안 바뀐 파일의 글은 그대로 둔다(옮긴 경로와 같은 글이어도 모듈을 가리키지 않으면 자료다). 상대 모듈 글만 위에서 풀어 견준다
+      return untouched ? s : isText ? mapText(s) : (pathText.get(s) ?? s);
     };
     const strNew = (s: string) => {
       if (s.startsWith("./") || s.startsWith("../")) { const r = A.resolve(n, s); if ("path" in r) return `@mod:${r.path}`; }
@@ -780,8 +783,9 @@ export function checkMoves(before: Tree, after: Tree, moves: Moves, opts: Option
     const oj = isText ? [] : os.map((x) => JSON.stringify(normalize(x, strOld)));
     const nj = isText ? [] : ns.map((x) => JSON.stringify(normalize(x, strNew)));
     const same = (i: number, j: number) => (isText ? textSame(os[i], ns[j], strOld, strNew, mapText) : oj[i] === nj[j]);
+    const identical = !isText && oj.length === nj.length && oj.every((x, i) => x === nj[i]);
     const at = `${n}${o !== n ? `(옛 ${o})` : ""}: import가 아닌 문장이 달라요`;
-    for (const [i, j] of diffPairs(os.length, ns.length, same)) {
+    for (const [i, j] of identical ? [] : diffPairs(os.length, ns.length, same)) {
       const a = i === undefined ? undefined : os[i];
       const b = j === undefined ? undefined : ns[j];
       fail(`${at}(${j === undefined ? `앞 ${i! + 1}` : j + 1}번째)\n  앞: ${a ? snippet(oldText, a) : "(없음)"}\n  뒤: ${b ? snippet(newText, b) : "(없음)"}`);
@@ -845,9 +849,11 @@ export function checkMoves(before: Tree, after: Tree, moves: Moves, opts: Option
       left.splice(i, 1);
       return false;
     });
-    if (JSON.stringify(oe) !== JSON.stringify(ne)) fail(`${n}${o !== n ? `(옛 ${o})` : ""}: 부수 효과가 있는 import의 차례가 달라요\n  앞: ${oe.join(" → ")}\n  뒤: ${ne.join(" → ")}`);
+    // 안 바뀐 파일의 읽기 차례가 달라지는 것은 그 아래 바뀐 파일 때문이고, 그 파일에서 이미 본다(같은 실패를 위로 다시 세지 않는다)
+    if (!untouched && JSON.stringify(oe) !== JSON.stringify(ne)) fail(`${n}${o !== n ? `(옛 ${o})` : ""}: 부수 효과가 있는 import의 차례가 달라요\n  앞: ${oe.join(" → ")}\n  뒤: ${ne.join(" → ")}`);
   }
 
+  for (const p of unchanged) if (only(p)) comparePair(p, p, true);
   if (moved) movedChecks();
   valueCycles();
 
