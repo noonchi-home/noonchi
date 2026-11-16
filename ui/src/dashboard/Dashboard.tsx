@@ -9,7 +9,7 @@ import { useEvents } from "../lib/use-events";
 import { useHealth } from "../lib/use-health";
 import { TwinStage, useAnchors, type TwinEngine, LiveQueue, attachLive, BAKE_VIEWS, Twin3D, useLayoutBox } from "../twin";
 import { useViewer } from "../lib/twin-viewer";
-import { focusOf, homeCamera, livedOf, still, wholeOf, wideCamera, type Camera } from "./camera";
+import { focusOf, homeCamera, homeKeep, livedOf, still, wholeOf, wideCamera, type Camera } from "./camera";
 import { currentStep, facingOf, isOpen, stepIndex, thoughtOf } from "./data";
 import { DashboardScreen } from "./DashboardScreen";
 import { debugPhone, debugQuery, useDebugSteps, type Moment } from "./debug";
@@ -118,9 +118,11 @@ function BakedStage({ home, layout, plan, eye, checks, devices, onEngine: toLive
   const whole = useMemo(() => (homeData ? wholeOf(homeData.index.shapes) : null), [homeData]);
   const lived = useMemo(() => (homeData ? livedOf(homeData.index.shapes) : null), [homeData]);
   const focus = frame && homeData ? focusOf(frame, homeData.index.shapes) : null;
+  // 지켜보기가 칸 안에 지키는 곳: 사람이 있는 방과 클로이드 원뿔
+  const keep = frame && homeData ? homeKeep(frame, homeData.index.shapes) : lived;
   // 계획 단계는 그 단계에 중요한 것, 지켜보기는 기본 보기(집 전체보다 HOME_ZOOM배 당김)
   const want = !v || size.width <= 0 || size.height <= 0 ? null
-    : !focus && whole && lived ? homeCamera(size, whole, lived, layout.camPad) : wideCamera(v, size, focus, layout.camPad, whole);
+    : !focus && whole && keep ? homeCamera(size, whole, keep, layout.camPad) : wideCamera(v, size, focus, layout.camPad, whole);
   const last = useRef<Camera | null>(null);
   const cam = want && last.current && still(last.current, want) ? last.current : want;
   useLayoutEffect(() => { last.current = cam; });
@@ -167,7 +169,9 @@ function BakedStage({ home, layout, plan, eye, checks, devices, onEngine: toLive
 export function Dashboard() {
   const debug = useMemo(() => debugQuery(location.search), []);
   const { devices, apply } = useDevices();
-  const health = useHealth();
+  // 서버에 다시 붙을 때(hello)마다 health를 다시 받는다: 서버를 다른 설정(기록 시간대 등)으로 다시 띄웠을 수 있다
+  const [hellos, setHellos] = useState(0);
+  const health = useHealth(hellos);
   const { checks, onMessage: toChecks } = useChecks();
   const { dash, seen, onMessage: toDash, load } = useDash({ hold: debug !== null });
   const [connected, setConnected] = useState<boolean | null>(null);
@@ -184,6 +188,7 @@ export function Dashboard() {
       location.reload(); // 설정에서 집을 바꿨다
       return;
     }
+    if (m.type === "hello") setHellos((n) => n + 1);
     apply(m);
     if (!debug) {
       toChecks(m);

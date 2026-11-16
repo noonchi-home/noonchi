@@ -131,9 +131,19 @@ export function livedOf(shapes: RoomShape[]): Bounds | null {
   return wholeOf(lived.length ? lived : shapes);
 }
 
+/** 지켜보기 기본 보기가 지도 카메라 칸 안에 지키는 곳: 사람이 있는 방(livedOf)과, 맞춘 눈이 있으면 그 3D 원뿔 상자(frame.robot.body).
+ *  클로이드가 사람이 있는 방 밖(알파룸 등)에 있어도 당긴 보기에서 화면 밖·얹은 것 밑으로 가지 않게 한다. 둘 다 없으면 null. */
+export function homeKeep(frame: Pick<TwinFrame, "robot">, shapes: RoomShape[]): Bounds | null {
+  const lived = livedOf(shapes);
+  const body = frame.robot?.body;
+  if (!body) return lived;
+  if (!lived) return { x0: body.x0, y0: body.y0, x1: body.x1, y1: body.y1 };
+  return { x0: Math.min(lived.x0, body.x0), y0: Math.min(lived.y0, body.y0), x1: Math.max(lived.x1, body.x1), y1: Math.max(lived.y1, body.y1) };
+}
+
 /**
  * 지켜보기(기본 보기): 집 전체 보기(whole이 pad 안쪽에 다 드는 배율)보다 zoom배 당겨 집이 트윈 칸을 더 채우게 한다.
- * 집 가운데를 트윈 칸 가운데에 두되, 사람이 있는 방(keep)이 pad 안쪽(미니맵·생각 말풍선·말풍선 카드·진행 칩 밖)에 다 들게 옮긴다.
+ * 집 가운데를 트윈 칸 가운데에 두되, 지킬 곳(keep: homeKeep, 사람이 있는 방과 클로이드 원뿔)이 pad 안쪽(미니맵·생각 말풍선·말풍선 카드·칩 밖)에 다 들게 옮긴다.
  * keep이 pad 안쪽보다 커지는 배율로는 당기지 않는다. 집 가장자리(다른 방)는 얹은 것 밑에 깔리거나 트윈 밖으로 조금 잘릴 수 있다.
  */
 export function homeCamera(box: BoxSize, whole: Bounds, keep: Bounds, pad: Pad, zoom = HOME_ZOOM): Camera {

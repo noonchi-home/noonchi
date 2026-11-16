@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import type { DeviceView, HealthView, ServerMessage } from "../../../src/contract/events.ts";
 import { Dashboard } from "../../src/dashboard/Dashboard";
+import { clockText } from "../../src/dashboard/clock";
 import run from "../../src/dashboard/fake-run.json";
 
 const SPOT = new Map<string, { x: number; y: number; visible: boolean }>();
@@ -42,6 +43,7 @@ function stubServer(eye: boolean, twin = true) {
   };
   vi.stubGlobal("fetch", vi.fn(async (path: string) => (
     path === "/api/health" ? Response.json(health) : path === "/api/devices" ? Response.json(DEVICES) : new Response("{}", { status: 404 }))));
+  return health;
 }
 
 const moment = (n: number) => run.moments[n]!.messages as ServerMessage[];
@@ -146,6 +148,23 @@ describe("대시보드 자료 연결", () => {
     send([{ type: "thought", messages: [msg("c", 3, "치우는 습관이 있어요"), msg("d", 4, "컵을 치울게요")] }]);
     await waitFor(() => expect(messageTexts()).toEqual(["컵이 남아 있어요", "치우는 습관이 있어요", "컵을 치울게요"]));
     expect(thought()).not.toHaveTextContent("사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.");
+  });
+
+  it("다시 연결되면(hello) health를 다시 받아 날짜·시간 칩이 새 서버 기록 시간대를 쓴다(서버를 다른 시간대로 다시 띄운 때)", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const at = Date.UTC(2026, 10, 16, 16, 30, 0);
+      vi.setSystemTime(at);
+      const health = stubServer(false);
+      health.tz_minutes = 540;
+      render(<Dashboard />);
+      await waitFor(() => expect(FakeSocket.last).not.toBeNull());
+      await waitFor(() => expect(document.querySelector("[data-clock]")).toHaveTextContent(clockText(at, 540)));
+      act(() => FakeSocket.last!.onopen?.());
+      health.tz_minutes = 0;
+      send([{ type: "hello", devices: 2, provider: null, hub: "memory", home: "h" }]);
+      await waitFor(() => expect(document.querySelector("[data-clock]")).toHaveTextContent(clockText(at, 0)));
+    } finally { vi.useRealTimers(); }
   });
 
   it("폰 서버가 꺼져 있으면(health.eye false) 대시보드 폰 칸은 연결 QR이다", async () => {
