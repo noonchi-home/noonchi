@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { HistoryRow } from "../src/contract/history.js";
 import type { WorldEye, WorldObject, WorldView } from "../src/contract/world.js";
-import { SEND_SAY, clickChoice, clock, costLine, judgeInput, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, stepVerdict, timeline, twinRows, usedServer, roomLabels, ownAssetFailures, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
+import { SEND_SAY, clickChoice, clock, costLine, judgeInput, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, stepVerdict, timeline, twinRows, usedServer, roomLabels, ownAssetFailures, videoClock, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
 import { createServer, type Server } from "node:http";
 import { listenRetry } from "../src/shared/net.js";
 import type { SceneJson } from "../src/contract/layout.js";
@@ -205,6 +205,29 @@ describe("video-check", () => {
     expect(timeline(0, [], commands, null)).toEqual([{ ms: 34_500, kind: "명령", text: "식탁으로 가 주세요", n: 1 }]);
   });
 
+  // 2026-11-17 cup-empty --fake: 영상이 처음 17초 동안 여러 번 멈칫해(waiting) 영상 시각이 서버 시계보다 6.6초 늦어졌는데, 서버 사건을 t0 하나로 옮겨
+  // 폰 명령·누름(영상 시각)보다 늘 약 8초 늦게 찍혔다(명령 00:28.0 ↔ 계획 00:35.6)
+  describe("서버 시각 → 영상 시각(videoClock): 폰 페이지가 남긴 짝(sync: [서버 시각, 영상 시각])으로 옮긴다", () => {
+    it("짝이 없으면(옛 기록) t0를 뺀다", () => {
+      expect(videoClock(1000, [])(5000)).toBe(4000);
+    });
+    it("짝 사이는 잇고(멈칫한 구간은 그 사이에 몰린다), 첫 짝 앞과 마지막 짝 뒤는 1:1로 센다", () => {
+      // 서버 10 000에 영상 0, 13 000에 3 000(1:1), 그 뒤 2초 멈칫해 15 100에 영상 3 100
+      const at = videoClock(10_000, [[10_000, 0], [13_000, 3_000], [15_100, 3_100]]);
+      expect(at(9_000)).toBe(-1_000);
+      expect(at(12_000)).toBe(2_000);
+      expect(at(14_050)).toBeCloseTo(3_050, 0);
+      expect(at(20_100)).toBe(8_100);
+    });
+    it("시각표의 서버 기록·트윈 줄은 그 짝으로 옮겨 폰 명령(영상 시각)과 한 시계에 선다", () => {
+      // 영상 시각 7 600ms만큼 멈칫한 뒤: 폰 명령 28 000(영상 시각)은 서버 시각 1 035 600 무렵에 받았고 그때 계획이 생겼다
+      const clockOf = videoClock(1_000_000, [[1_000_000, 0], [1_004_000, 4_000], [1_011_600, 4_000]]);
+      const plan: HistoryRow = { id: 1, at_ms: 1_035_600, day: "2026-11-17", kind: "plan", subject: "plan:pam-1", text: "컵 치우기 계획됨", data: { status: "planned", steps: [] } };
+      const rows = timeline(clockOf, [plan], [{ video_ms: 28_000, id: "plan:pam-1", step: "s1", text: "식탁으로 가 주세요" }], null, { twin: [{ ms: clockOf(1_035_600), kind: "트윈", text: "눈 거실 (8.5, 3.9)", n: 1 }] });
+      expect(Object.fromEntries(rows.map((r) => [r.kind, clock(r.ms)]))).toEqual({ 명령: "00:28.0", 계획: "00:28.0", 트윈: "00:28.0" });
+    });
+  });
+
   it("시각표는 관찰 모드 기록(look)을 「가까이 보기」 줄로 넣고 같은 글이 이어지면 묶는다", () => {
     const row = (id: number, at_ms: number, text: string): HistoryRow => ({ id, at_ms, day: "2026-11-11", kind: "look", subject: "sink_1", text, data: { trigger: "stalled", tool: "look_closer" } });
     const rows = timeline(0, [row(1, 40_000, "싱크대 쪽은 기다림"), row(2, 45_000, "싱크대 쪽은 기다림"), row(3, 52_000, "싱크대 쪽을 가까이 봄 · 컵 보임")], []);
@@ -271,6 +294,10 @@ describe("video-check", () => {
     it("영상 도는 중 + 계획 done + 답 없음 → done. 누를 답이 남았으면 더 본다", () => {
       expect(judgeState({ ...base, planStatus: "done" })).toBe("done");
       expect(judgeState({ ...base, planStatus: "done", due: 1 })).toBe("watch");
+    });
+    it("스스로 시험(--fake)은 영상 끝까지 본다(untilEnd): 계획이 닫혀도 첫 영상이 도는 중이면 watch, 멈추면(끝·붙잡기) done", () => {
+      expect(judgeState({ ...base, planStatus: "done", untilEnd: true })).toBe("watch");
+      expect(judgeState({ ...base, planStatus: "done", untilEnd: true, stillForMs: 0 })).toBe("done");
     });
     it("planStatus가 undefined(계획을 만드는 중·조회 실패)면 영상이 멈춰도 tail까지 본다. 명시적으로 닫힌 상태(done·failed·cancelled)만 바로 끝낸다", () => {
       expect(judgeState({ ...base, planStatus: undefined, stillForMs: 100_000 })).toBe("watch");

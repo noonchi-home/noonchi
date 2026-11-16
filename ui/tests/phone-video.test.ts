@@ -65,6 +65,13 @@ function fakeVideo() {
       frameCb = null;
       f?.(performance.now());
     },
+    /** 영상 시각을 s초 앞으로 하고 그 프레임을 now(performance 시각)에 알린다: 벽시계와 영상 시각이 다르게 가는 것(멈칫)을 흉내 낸다. */
+    frameAt(s: number, now: number) {
+      v.currentTime += s;
+      const f = frameCb;
+      frameCb = null;
+      f?.(now);
+    },
     end() {
       v.ended = true;
       endedCb?.();
@@ -622,6 +629,28 @@ describe("영상 입력 모드: 명령 시각 기록·화면", () => {
     const t0 = window.__noonchiVideo!.t0!;
     expect(t0).toBeGreaterThanOrEqual(Math.floor(b1 + 1000 - 500) - 2);
     expect(t0).toBeLessThanOrEqual(Math.ceil(a1 + 1000 - 500) + 2);
+  });
+
+  // 2026-11-17 cup-empty --fake: 헤드리스 크롬에서 영상이 처음 17초 동안 여러 번 멈칫해(waiting) 영상 시각이 서버 시계보다 6.6초 늦어졌는데
+  // 기록에는 첫 프레임의 t0 하나뿐이라, 판정 도구가 서버 사건을 폰 명령보다 약 8초 늦게 찍었다
+  it("sync: 시계를 맞춘 뒤 프레임마다 서버 시각↔영상 시각을 견주고, 1:1로 이어 셀 수 없게 어긋나면(멈칫) 바로 앞 프레임 짝과 그 짝을 남긴다", async () => {
+    const { ws, video, startAr } = make();
+    await startAr();
+    const ping = ws.sent.filter((m) => m.type === "clock").at(-1)!;
+    ws.push({ type: "clock", t0: ping.t0, server: (ping.t0 + phoneNow()) / 2 + 1000 });
+    const base = performance.now();
+    video.frameAt(0.1, base);
+    video.frameAt(0.1, base + 100);
+    video.frameAt(0.1, base + 200);
+    // 2초 멈칫: 벽시계 2.1초 동안 영상 0.1초
+    video.frameAt(0.1, base + 2300);
+    video.frameAt(0.1, base + 2400);
+    const sync = window.__noonchiVideo!.sync!;
+    expect(sync.map((p) => p[1])).toEqual([100, 300, 400]);
+    expect(sync[2]![0] - sync[1]![0]).toBeGreaterThanOrEqual(2099);
+    expect(sync[2]![0] - sync[1]![0]).toBeLessThanOrEqual(2101);
+    // 첫 짝은 t0와 같은 관계다(서버 시각 − 영상 시각)
+    expect(Math.abs(sync[0]![0] - sync[0]![1] - window.__noonchiVideo!.t0!)).toBeLessThanOrEqual(1);
   });
 
   it("서버 sync가 맞춤(video)이면 「여기서 시작」 카드도, 시작 위치 모달도 뜨지 않는다. 맞추기 전 상태가 먼저 와도 열지 않는다", async () => {

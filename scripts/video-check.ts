@@ -18,7 +18,8 @@
 // 1초마다 window.__noonchiVideo(t0·받은 명령·바꾼 단계 영상의 영상 시각·끝)와 GET /api/world(눈 자리·컵)를 읽는다(World State를 못 받으면 넘어감).
 // 새 명령이 오면 --done-after초 뒤 엄지 자리 첫 답 단추(승인·완료)를 누른다(0이면 안 누름).
 // 영상이 끝나도 계획이 열려 있으면 최대 30초 더 보고, 남은 답과 그 뒤 온 명령을 누른다. 단계 영상이 새로 시작되면 끝 시각을 지우고 다시 끝날 때까지 본다.
-// t0는 폰 페이지가 서버 시계로 고친 마지막 값을 쓴다.
+// t0는 폰 페이지가 서버 시계로 고친 마지막 값을 쓴다. 서버 기록·트윈 줄·누름은 폰 페이지가 남긴 [서버 시각, 영상 시각] 짝(__noonchiVideo.sync)으로
+// 영상 시각에 옮긴다(videoClock): 영상이 멈칫하면 영상 시각이 서버 시계보다 늦게 가 t0 하나로는 폰 명령과 어긋난다. 짝이 없는 옛 기록은 t0를 뺀다.
 // 트윈 컵 줄은 면 이름, 면이 없으면 장면(GET /api/scene)의 방 이름을 쓴다.
 // 끝나면 서버 기록(GET /api/history: 사람·물건 등장·사라짐, PAM 판단, 계획·단계, 실행, 관찰 모드가 고른 것(가까이 보기)), 폰 명령, 바꾼 단계 영상(영상 줄), 트윈 줄(눈 방이 바뀌거나
 // 마지막 눈 줄에서 0.5m 넘게 옮김, 컵 상태·놓인 곳·면·방이 바뀜)을 영상 시각(at_ms − t0)순 표 하나로 합쳐 찍고 --out에 markdown으로 쓴다.
@@ -36,7 +37,8 @@
 // --fake: 실제 모델 없이 같은 프로세스에서 스스로 시험한다. 본 서버(HUB=memory, 한양목련, 새 RUNTIME_DIR, 영상·단계 영상은 공용 runtime/videos에서 바로 읽음, BRAIN=1, PAM 1초마다)와
 // 가짜 OpenAI(VLM: 컵 식탁 위, 계획: 컵 치우기 네 단계), 가짜 PAM(컵이 있고 사람이 안 보이면 컵 치우기), 대본 YOLO(첫 프레임부터 30초 사람+컵, 그 뒤 컵만)를 띄운다.
 // 식탁 1.5m 앞 시작 자리와 컵 치우기 승인을 미리 둔다. 기본 --expect-after는 대본 사람 시간(30초), 기본 --out은 <clip>.fake.timeline.md다.
-// 사람 사라짐, PAM 컵 치우기, 사람 사라짐 뒤 첫 명령, 네 단계 끝, 계획 끝, 트윈 눈·컵 줄 중 하나라도 없으면 끝 코드 1. ui/dist 빌드가 있어야 한다.
+// 사람 사라짐, PAM 컵 치우기, 사람 사라짐 뒤 첫 명령, 네 단계 끝, 계획 끝, 영상 끝, 트윈 눈·컵 줄 중 하나라도 없으면 끝 코드 1. ui/dist 빌드가 있어야 한다.
+// 스스로 시험은 계획이 닫혀도 첫 영상이 멈출(끝·붙잡기) 때까지 본다(영상 끝 줄을 보려고). 기본 --expect-after는 대본 사람 시간(서버 시계)을 영상 시각으로 옮긴 값이다.
 // 잠금: npm run heavy -- 로 부르면 그 잠금(TWIN3D_HEAVY_PID) 안에서 돌고 크롬 pid를 그 잠금에 더한다. 혼자 부르면 withHeavy로 잡는다.
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -94,12 +96,30 @@ type PlanData = { status?: string; steps?: { id: string; label: string; status: 
 
 /** 서버 기록·폰 명령·바꾼 단계 영상·트윈 줄(영상 시각으로 고친 것) → 영상 시각순 표. 같은 출처(기록 종류·명령·트윈)의 같은 글이 이어지면 한 줄로 묶는다.
  *  endMs가 있으면 「영상 끝」. */
-export function timeline(t0: number, history: HistoryRow[], commands: VideoCommand[], endMs: number | null = null,
+/** 서버 시각 → 영상 시각. sync는 폰 페이지가 남긴 [서버 시각, 영상 시각] 짝(시각순): 짝 사이는 잇고(멈칫한 구간은 그 두 프레임 사이에 몰린다),
+ *  첫 짝 앞과 마지막 짝 뒤는 1:1로 센다. 짝이 없으면(옛 기록) at − t0. */
+export function videoClock(t0: number, sync: readonly (readonly [number, number])[]): (atMs: number) => number {
+  if (!sync.length) return (at) => at - t0;
+  return (at) => {
+    const [a0, v0] = sync[0]!;
+    if (at <= a0) return v0 - (a0 - at);
+    for (let i = 1; i < sync.length; i++) {
+      const [a1, v1] = sync[i]!;
+      if (at > a1) continue;
+      const [a, v] = sync[i - 1]!;
+      return a1 === a ? v1 : v + ((at - a) * (v1 - v)) / (a1 - a);
+    }
+    const [an, vn] = sync.at(-1)!;
+    return vn + (at - an);
+  };
+}
+
+export function timeline(t0: number | ((atMs: number) => number), history: HistoryRow[], commands: VideoCommand[], endMs: number | null = null,
   more: { clips?: VideoClip[]; twin?: Row[]; says?: { atMs: number; text: string }[]; clicks?: { ms: number; label: string; text: string }[] } = {}): Row[] {
   const raw: (Row & { from: string })[] = [];
   const plans = new Map<string, { status: string; steps: Map<string, string> }>();
   for (const h of [...history].sort((a, b) => a.at_ms - b.at_ms || a.id - b.id)) {
-    const ms = h.at_ms - t0;
+    const ms = typeof t0 === "number" ? h.at_ms - t0 : t0(h.at_ms);
     if (h.kind === "detection") {
       const kind = DETECTION_KIND[(h.data as { kind?: string } | null)?.kind ?? ""];
       if (kind) raw.push({ ms, kind, text: h.text, n: 1, from: "detection" });
@@ -295,6 +315,8 @@ export function costLine(brain: BrainNow): string {
 export function judgeState(o: {
   /** 영상이 멈춘 지(첫 영상 끝 __noonchiVideo.ended, 또는 붙잡는 중 __noonchiVideo.hold) ms. 도는 중이면 null. */
   stillForMs: number | null;
+  /** 스스로 시험: 계획이 닫혀도 영상이 멈출(첫 영상 끝·붙잡기) 때까지 본다. */
+  untilEnd?: boolean;
   /** 지금 도는 영상(첫 영상이나 바꾼 단계 영상)이 시작된 뒤 ms와 그 영상 길이 ms. */
   clipPlayedMs: number; clipDurationMs: number | null;
   due: number; planStatus: string | undefined; tailMs: number; totalMs: number; maxMs: number;
@@ -302,7 +324,7 @@ export function judgeState(o: {
   offOpen: boolean;
 }): "watch" | "done" | "tail_over" | "clip_over" | "max_over" {
   if (o.totalMs > o.maxMs) return "max_over";
-  if (o.due === 0 && PLAN_END.has(o.planStatus ?? "") && !o.offOpen) return "done";
+  if (o.due === 0 && PLAN_END.has(o.planStatus ?? "") && !o.offOpen && (!o.untilEnd || o.stillForMs !== null)) return "done";
   // 계획을 만드는 중이거나 조회가 실패한(undefined) 때는 닫힌 계획으로 보지 않는다: 영상이 멈춰도 tail까지 본다
   if (o.stillForMs !== null) return o.stillForMs > o.tailMs ? "tail_over" : "watch";
   if (o.clipDurationMs !== null && o.clipPlayedMs > o.clipDurationMs + 60_000) return "clip_over";
@@ -383,7 +405,7 @@ const READ = `(() => {
   const r = window.__noonchiVideo ?? null;
   const v = document.querySelector("video[data-phone-video]");
   return {
-    record: r && { t0: r.t0, ended: r.ended, hold: r.hold ?? null, commands: r.commands, clips: r.clips ?? [] },
+    record: r && { t0: r.t0, ended: r.ended, hold: r.hold ?? null, commands: r.commands, clips: r.clips ?? [], sync: r.sync ?? [] },
     time: v ? v.currentTime : null, duration: v && Number.isFinite(v.duration) ? v.duration : null, ended: v ? v.ended : false,
     top: document.querySelector("[data-phone-zone=top] [data-phone-text]")?.textContent ?? null,
     buttons: [...document.querySelectorAll("[data-phone-zone=thumb] button")].map((b) => b.textContent.trim()),
@@ -391,7 +413,7 @@ const READ = `(() => {
   };
 })()`;
 type Seen = {
-  record: { t0: number | null; ended: boolean; hold: { clip: string; since: number } | null; commands: VideoCommand[]; clips: VideoClip[] } | null;
+  record: { t0: number | null; ended: boolean; hold: { clip: string; since: number } | null; commands: VideoCommand[]; clips: VideoClip[]; sync: [number, number][] } | null;
   time: number | null; duration: number | null; ended: boolean; top: string | null; buttons: string[]; support: string | null;
 };
 /** 페이지의 지금 명령(__noonchiVideo.commands 마지막)의 계획 id·단계 id와 위 줄 글이 모두 c와 같을 때만 label 글의 엄지 자리 단추(null이면 첫 단추)를 누르고 그 글을 돌려준다. */
@@ -417,7 +439,8 @@ const START: [number, number] = [9.9612 - 1.5, 3.9242];
 const CUP: Detection = det("cup", 0.9, [160, 300, 40, 20], 41);
 const PERSON: Detection = det("person", 0.9, [100, 60, 160, 420], 0);
 
-interface Fake { api: string; phone: string; logs: string[]; close(): Promise<void> }
+/** personUntil: 대본 YOLO가 사람을 내지 않기 시작하는 서버 시각(첫 엔진 프레임 전이면 null). */
+interface Fake { api: string; phone: string; logs: string[]; personUntil(): number | null; close(): Promise<void> }
 
 async function startFake(clip: string, steps: string[]): Promise<Fake> {
   const [{ startFakeOpenAI }, { startFakePam }, { ScriptedDetector }, { CUP_SCRIPTS, plannerRespond }, { startServer }] = await Promise.all([
@@ -475,7 +498,7 @@ async function startFake(clip: string, steps: string[]): Promise<Fake> {
     closers.push(() => srv.close());
     const saved = await fetch(`${srv.url}/api/phone/start-pose`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ position: START, yaw_deg: 0 }) });
     if (!saved.ok) throw new Error(`시작 자리 저장 실패: HTTP ${saved.status} ${await saved.text()}`);
-    return { api: srv.url, phone: new URL(srv.phoneUrls[0]!).origin, logs, close };
+    return { api: srv.url, phone: new URL(srv.phoneUrls[0]!).origin, logs, personUntil: () => (first === null ? null : first + FAKE_PERSON_MS), close };
   } catch (e) {
     await close();
     throw e;
@@ -494,7 +517,8 @@ export interface Camera { fov?: number; pitch?: number; h?: number }
 const CAMERA_RANGE: Record<keyof Camera, [number, number]> = { fov: [20, 120], pitch: [-89, 89], h: [0.2, 3] };
 
 export interface Args {
-  clip: string; fake: boolean; steps: string[]; doneAfterMs: number; expectMs: number; phone: string; api: string; out: string | undefined; record: string | undefined;
+  /** expectSet: --expect-after를 적었는가(아니면 스스로 시험은 대본 사람 시간을 영상 시각으로 옮겨 쓴다). */
+  clip: string; fake: boolean; steps: string[]; doneAfterMs: number; expectMs: number; expectSet: boolean; phone: string; api: string; out: string | undefined; record: string | undefined;
   says: { atMs: number; text: string }[]; startAt: DemoScene | null; home: string; tailMs: number; maxMs: number; approveAfterMs: number; doneOn: { afterMs: number; text: string }[];
   camera: Camera;
 }
@@ -544,7 +568,7 @@ export function parseArgs(argv: string[]): Args | string {
     camera[k] = v;
   }
   return {
-    clip, fake, steps, doneAfterMs, expectMs, phone: arg("phone") ?? "http://127.0.0.1:8210", api: arg("api") ?? "http://127.0.0.1:8200", out: arg("out"), record,
+    clip, fake, steps, doneAfterMs, expectMs, expectSet: arg("expect-after") !== undefined, phone: arg("phone") ?? "http://127.0.0.1:8210", api: arg("api") ?? "http://127.0.0.1:8200", out: arg("out"), record,
     says: says.map((x) => ({ atMs: x!.ms, text: x!.text })), startAt: startAt as DemoScene | null, home: arg("home") ?? HOME, tailMs, maxMs, approveAfterMs,
     doneOn: doneOn.map((x) => ({ afterMs: x!.ms, text: x!.text })), camera,
   };
@@ -704,7 +728,7 @@ async function main(): Promise<number> {
       const rule: ClickRule = { approveAfterMs: args.approveAfterMs, doneOn: args.doneOn, doneAfterMs };
       const saysLeft = [...args.says].sort((a, b) => a.atMs - b.atMs);
       const said: { atMs: number; text: string }[] = [];
-      const pressed: { ms: number; label: string; text: string }[] = [];
+      const pressed: { ms: number; at: number; label: string; text: string }[] = [];
       let known = 0;
       let knownClips = 0;
       let clicks = 0;
@@ -743,8 +767,10 @@ async function main(): Promise<number> {
           const label = (await cdp.evaluate(clickChoice(d), 10_000)) as string | null;
           if (!label) continue;
           clicks += 1;
-          const ms = clipStart() + (seen.time ?? 0) * 1000;
-          pressed.push({ ms, label, text: d.text });
+          // 누른 때(이 PC 시계 = 같은 PC 서버 시계)를 폰 페이지의 짝으로 영상 시각에 옮긴다. 끝에서 마지막 짝으로 다시 옮긴다
+          const pressAt = Date.now();
+          const ms = videoClock(seen.record?.t0 ?? firstT0, seen.record?.sync ?? [])(pressAt);
+          pressed.push({ ms, at: pressAt, label, text: d.text });
           console.log(`[video-check] ${clock(ms)} 누름 · ${label} · ${d.text}`);
         }
         await pollWorld();
@@ -759,7 +785,7 @@ async function main(): Promise<number> {
         const clipDurationMs = clips.at(-1)?.duration_ms ?? (seen.duration !== null ? seen.duration * 1000 : null);
         const { planStatus, offOpen } = judgeInput(await planNow());
         const state = judgeState({
-          stillForMs: stillSince === null ? null : Date.now() - stillSince, clipPlayedMs: Date.now() - clipAt, clipDurationMs,
+          stillForMs: stillSince === null ? null : Date.now() - stillSince, untilEnd: fakeMode, clipPlayedMs: Date.now() - clipAt, clipDurationMs,
           due: due.length, planStatus, tailMs: args.tailMs, totalMs: Date.now() - runStart, maxMs: args.maxMs, offOpen,
         });
         if (offOpen && state !== "watch" && state !== "done") unfinished.push("끄기 안내가 풀리지 않음");
@@ -782,8 +808,13 @@ async function main(): Promise<number> {
       const brain = await getJson<BrainNow>(`${api}/api/brain`);
       const cost = costLine(brain);
 
-      const rows = timeline(t0, history, commands, endMs, { clips, twin: twin.rows.map((r) => ({ ...r, ms: r.ms - t0 })), says: said, clicks: pressed });
-      const v = verdict(rows, commands, history, expectMs);
+      // 서버 시각 → 영상 시각: 폰 페이지가 남긴 짝으로(영상이 멈칫한 만큼을 뺀다)
+      const toVideo = videoClock(t0, seen.record?.sync ?? []);
+      const clicksAt = pressed.map((p) => ({ ...p, ms: toVideo(p.at) }));
+      const rows = timeline(toVideo, history, commands, endMs, { clips, twin: twin.rows.map((r) => ({ ...r, ms: toVideo(r.ms) })), says: said, clicks: clicksAt });
+      const personUntil = fake?.personUntil() ?? null;
+      const expect = fakeMode && !args.expectSet && personUntil !== null ? toVideo(personUntil) : expectMs;
+      const v = verdict(rows, commands, history, expect);
       const stepLine = steps.length ? stepVerdict(history, commands, clicks, twin.last) : null;
       const pageErrors = errors.filter((e) => !/favicon/.test(e));
       const notes = [

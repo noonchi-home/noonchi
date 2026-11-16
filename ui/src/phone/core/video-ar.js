@@ -16,8 +16,9 @@
 // 대상 쪽 yaw와 대상 높이까지 숙인 각(video-math lookAt)으로 돈다. 대상이 수평 1cm 안(바로 위·아래)이면 자세를 바꾸지 않는다. 높이는 늘 그대로다.
 // 영상에는 위치 추적이 없어 자세를 페이지가 옮긴다. 단계를 넘기는 판단은 서버가 한다.
 // 명령 대상 자리는 지금 view·투영으로 잡고(focusMarks), 화면에는 영상이 덮인 자리(coverMap)로 옮겨 넘긴다(화면 밖·칸에 가릴 때만 세모가 그려진다).
-// 판정 기록 window.__noonchiVideo(t0: 재생 시작 서버 시각, commands: 받은 명령의 영상 시각, clips: 바꾼 단계 영상)과 console [video] 줄은
-// scripts/video-check.ts가 읽는다.
+// 판정 기록 window.__noonchiVideo(t0: 재생 시작 서버 시각, commands: 받은 명령의 영상 시각, clips: 바꾼 단계 영상, sync: [서버 시각, 영상 시각] 짝)과
+// console [video] 줄은 scripts/video-check.ts가 읽는다. 영상은 멈칫할 수 있어(버퍼·디코딩 밀림, 헤드리스 크롬에서 처음 몇 초) 영상 시각이 서버 시계보다
+// 늦게 간다. 그래서 t0 하나로는 서버 사건을 영상 시각에 옮기지 못하고, 시계를 맞춘 뒤 프레임마다 견줘 1:1로 이어 셀 수 없게 어긋날 때 짝을 남긴다(noteSync).
 // PhoneAr(ar.d.ts)와 같은 형이라 controller·화면은 그대로 쓴다. 시험은 deps로 영상·인코딩·그림판을 바꾼다(jsdom은 영상을 틀지 못한다).
 
 import { createEncoder, framePacket } from "./capture.js";
@@ -74,8 +75,27 @@ export function videoParams(params) {
 
 /** 판정 기록(window.__noonchiVideo). 없으면 만든다. */
 export function videoRecord(target = globalThis) {
-  target.__noonchiVideo ??= { t0: null, ended: false, hold: null, commands: [], clips: [] };
+  target.__noonchiVideo ??= { t0: null, ended: false, hold: null, commands: [], clips: [], sync: [] };
   return target.__noonchiVideo;
+}
+
+/** 서버 시각↔영상 시각 짝이 1:1로 이어 센 값에서 벗어나도 되는 폭(ms): 프레임 간격(25fps 40ms)과 시계 반올림은 넘기고 멈칫만 남긴다. */
+const SYNC_SLACK_MS = 50;
+
+/** 프레임 하나의 서버 시각 at·영상 시각 ms를 sync([서버 시각, 영상 시각] 짝)에 견준다. 첫 짝은 그대로 넣고, 마지막 짝에서 1:1로 이어 센 값과
+ *  SYNC_SLACK_MS 넘게 어긋나면 바로 앞 프레임 짝(prev, 그 마지막 짝보다 뒤일 때)과 이 짝을 넣는다(멈칫한 구간을 두 프레임 사이로 좁힌다).
+ *  이 프레임 짝을 돌려준다(다음 프레임의 prev). */
+export function noteSync(sync, prev, at, ms) {
+  const pair = [Math.round(at), Math.round(ms)];
+  const last = sync.at(-1);
+  if (!last) {
+    sync.push(pair);
+    return pair;
+  }
+  if (Math.abs(pair[0] - last[0] - (pair[1] - last[1])) <= SYNC_SLACK_MS) return pair;
+  if (prev && prev[0] > last[0]) sync.push(prev);
+  sync.push(pair);
+  return pair;
 }
 
 // 0.1초로 먼저 반올림해 59.96초가 01:00.0이 된다(scripts/video-check.ts clock과 같다)
@@ -279,6 +299,8 @@ export function createVideoAr({ link, params, hooks, deps }) {
     record.hold = null;
     record.commands = [];
     record.clips = [];
+    record.sync = [];
+    let syncPrev = null; // 바로 앞 프레임의 [서버 시각, 영상 시각]
     let offset = 0; // 앞 영상들 시각 합(ms): 단계 영상으로 바꿔도 한 시각표로 센다
     let clockFixed = false;
     let due = 0;
@@ -394,10 +416,13 @@ export function createVideoAr({ link, params, hooks, deps }) {
       if (run !== current || v !== video) return;
       const t = timeline();
       const stamp = link.stamp(performance.timeOrigin + now);
-      // 시계를 맞춘 뒤 첫 프레임에서 t0를 서버 시계로 고친다
-      if (!clockFixed && stamp.captured_at !== undefined) {
-        clockFixed = true;
-        record.t0 = Math.round(stamp.captured_at - t);
+      // 시계를 맞춘 뒤 첫 프레임에서 t0를 서버 시계로 고치고, 그 뒤 프레임마다 서버 시각↔영상 시각 짝을 견준다
+      if (stamp.captured_at !== undefined) {
+        if (!clockFixed) {
+          clockFixed = true;
+          record.t0 = Math.round(stamp.captured_at - t);
+        }
+        syncPrev = noteSync(record.sync, syncPrev, stamp.captured_at, t);
       }
       const marks = frameMarks();
       showMarks(marks);

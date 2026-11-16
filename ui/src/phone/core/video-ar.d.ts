@@ -62,6 +62,8 @@ export interface VideoClipEntry { video_ms: number; clip: string; duration_ms?: 
  *  hold: 영상(첫 영상이나 단계 영상)이 끝나 마지막 장면을 붙잡는 중이면 그 영상과 붙잡기 시작한 영상 시각, 아니면 null. */
 export interface VideoRecord {
   t0: number | null; ended: boolean; hold: { clip: string; since: number } | null; commands: VideoCommandEntry[]; clips: VideoClipEntry[];
+  /** [서버 시각, 영상 시각] 짝: 시계를 맞춘 뒤 첫 프레임과, 1:1로 이어 셀 수 없게 어긋난(멈칫) 곳의 앞뒤 프레임(noteSync). 판정 도구가 서버 사건을 영상 시각에 옮긴다. */
+  sync: [number, number][];
   /** 지금 말의 at(화면이 바뀔 때마다 heardAtOf로 다시 쓴다, 영상 판정 --say가 그대로 싣는다). 기록 전이면 없음. */
   at?: HeardAt;
 }
@@ -69,6 +71,7 @@ export interface VideoRecord {
 /** 영상 모드인지 아는 하나뿐인 길: 주소의 clip(영상 이름)이 있으면 그 이름과 영상 AR 값, 없으면 null(실제 모드). clip은 여기서만 읽는다. */
 export function videoParams(params: URLSearchParams): (Required<Pick<VideoArDeps, "clipUrl" | "fovDeg" | "pitchDeg" | "heightM" | "steps" | "reactMs">> & { clip: string }) | null;
 export function videoRecord(target?: object): VideoRecord;
+export function noteSync(sync: [number, number][], prev: [number, number] | null, at: number, ms: number): [number, number];
 export function logVideoCommand(videoMs: number, command: { id: string; step: string; text: string }): void;
 export function logVideoAt(at: HeardAt): void;
 export function createVideoAr(opts: { link: PhoneLink; params: URLSearchParams; hooks: ArHooks; deps: VideoArDeps }): VideoAr;
