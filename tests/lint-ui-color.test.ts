@@ -68,7 +68,7 @@ describe("날 색 값을 잡는다", () => {
       "c.setRGB(1, 1, 1); c.setHex(0xffffff);",
       "const ok = new THREE.Color(scene3d.groundShade); light.color.setRGB(...spec.color); new THREE.Color(...sky);",
     ].join("\n");
-    expect(rules("ui/src/twin3d/ground.ts", src)).toEqual(["2 숫자 색 new THREE.Color(0", "3 숫자 색 color: 0x5d5b5c", "4 숫자 색 setRGB(1", "4 숫자 색 setHex(0x"]);
+    expect(rules("ui/src/twin/3d/ground.ts", src)).toEqual(["2 숫자 색 new THREE.Color(0", "3 숫자 색 color: 0x5d5b5c", "4 숫자 색 setRGB(1", "4 숫자 색 setHex(0x"]);
   });
 
   it("HTML: 파비콘 data URI의 %23hex", () => {

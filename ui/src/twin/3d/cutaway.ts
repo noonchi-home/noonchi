@@ -3,7 +3,7 @@
 // 키 큰 가구는 속이 보이는 열린 상자, 낮춘 벽의 창은 그 자리 낮은 유리 난간, 낮춘 벽의 문짝은 숨긴다.
 import * as THREE from "three";
 import { cameraHeading, collectWalls, cutAction, upperVisible } from "@viewer/walls.mjs";
-import { scene3d } from "../../../src/design/tokens.ts";
+import { scene3d } from "../../../../src/design/tokens.ts";
 import type { Manifest } from "./materials";
 import type { OrthoCamera } from "./projection";
 import { placeCamera, viewTarget } from "./view";

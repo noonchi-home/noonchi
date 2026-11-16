@@ -7,8 +7,8 @@
 // 눈 자세 값(World State·판정이 쓰는 것)은 바꾸지 않는다. 거의 같은 눈(2 cm·1° 안)이면 그대로 둬서 집을 다시 그리지 않는다.
 // 색은 토큰만: viz.cone(ok·limited).
 import * as THREE from "three";
-import type { EyeEvent, Plan2 } from "../../../src/contract/events.ts";
-import { viz } from "../../../src/design/tokens.ts";
+import type { EyeEvent, Plan2 } from "../../../../src/contract/events.ts";
+import { viz } from "../../../../src/design/tokens.ts";
 import { basis, planToPixel, type OrthoCamera } from "./projection";
 import type { WalkGuide } from "./walk";
 

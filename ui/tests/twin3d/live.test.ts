@@ -7,9 +7,9 @@ import type { ServerMessage } from "../../../src/contract/events.ts";
 import type { LayoutMessage, SceneObject, Vec3 } from "../../../src/contract/layout.ts";
 import { scene3d } from "../../../src/design/tokens.ts";
 import scene from "../../../twin/homes/mokryeon_180b/scene.json";
-import { LayoutOps, LiveQueue, attachLive, liveViewer, type StateEntry } from "../../src/twin3d/live";
-import { StaticMerge } from "../../src/twin3d/merge";
-import { TwinStates } from "../../src/twin3d/states";
+import { LayoutOps, LiveQueue, attachLive, liveViewer, type StateEntry } from "../../src/twin/3d/live";
+import { StaticMerge } from "../../src/twin/3d/merge";
+import { TwinStates } from "../../src/twin/3d/states";
 
 const FRIDGE = "fridge_bbc363a3";
 const SOFA = "sofa_a848b595";

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { PlanView } from "../../../src/contract/plan.ts";
 import type { Check } from "../../src/checks/checks";
 import { litRooms, progressOn, roomSetsOf, twinFrame } from "../../src/dashboard/frame";
-import { planToPixel } from "../../src/twin3d/projection";
+import { planToPixel } from "../../src/twin/3d/projection";
 import { anchorOf, CAM, CUP_PLAN, HOME, moment, PLAN, PLAN_CHECKS, SINK, START, TABLE } from "./cup-run";
 
 const frameAt = (n: number, checks: Check[] = PLAN_CHECKS, over: Partial<Parameters<typeof twinFrame>[0]> = {}) =>

@@ -1,0 +1,31 @@
+{
+  "files": {
+    "ui/src/twin3d/Twin3D.tsx": "ui/src/twin/3d/Twin3D.tsx",
+    "ui/src/twin3d/cutaway.ts": "ui/src/twin/3d/cutaway.ts",
+    "ui/src/twin3d/engine.ts": "ui/src/twin/3d/engine.ts",
+    "ui/src/twin3d/eye.ts": "ui/src/twin/3d/eye.ts",
+    "ui/src/twin3d/ground.ts": "ui/src/twin/3d/ground.ts",
+    "ui/src/twin3d/irradiance.ts": "ui/src/twin/3d/irradiance.ts",
+    "ui/src/twin3d/light.ts": "ui/src/twin/3d/light.ts",
+    "ui/src/twin3d/live.ts": "ui/src/twin/3d/live.ts",
+    "ui/src/twin3d/materials.ts": "ui/src/twin/3d/materials.ts",
+    "ui/src/twin3d/merge.ts": "ui/src/twin/3d/merge.ts",
+    "ui/src/twin3d/projection.ts": "ui/src/twin/3d/projection.ts",
+    "ui/src/twin3d/schedule.ts": "ui/src/twin/3d/schedule.ts",
+    "ui/src/twin3d/states.ts": "ui/src/twin/3d/states.ts",
+    "ui/src/twin3d/tone.ts": "ui/src/twin/3d/tone.ts",
+    "ui/src/twin3d/view.ts": "ui/src/twin/3d/view.ts",
+    "ui/src/twin3d/walk.ts": "ui/src/twin/3d/walk.ts"
+  },
+  "decls": {},
+  "new": [],
+  "text": [
+    "ui/tests/dashboard/wording.test.ts",
+    "tests/lint-ui-color.test.ts",
+    "ui/tests/twin3d/boundaries.test.ts"
+  ],
+  "allow": {
+    "ui/tests/twin3d/boundaries.test.ts: import가 아닌 문장이 달라요(1번째)": "엔진 경계 시험이 보는 폴더 글만 ui/src/twin3d/에서 옮긴 자리 ui/src/twin/3d/로 바꾼다(상대 경로 \"../../src/twin3d/\" → \"../../src/twin/3d/\"라 text 대응이 조각 수를 못 맞춘다). 보는 파일(그 폴더의 .ts)은 옮기기 전과 같다"
+  },
+  "exceptions": {}
+}

@@ -3,7 +3,7 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import { scene3d } from "../../../src/design/tokens.ts";
-import { bakeMaterials } from "../../src/twin3d/materials";
+import { bakeMaterials } from "../../src/twin/3d/materials";
 
 const withUv1 = () => {
   const g = new THREE.BoxGeometry(1, 1, 1);

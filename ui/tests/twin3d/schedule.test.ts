@@ -1,7 +1,7 @@
 // @vitest-environment node
 // 그리기 차례: 바뀔 때만 그린다. 한 그림 안 여러 요청은 한 번, 그리기가 「더 그려야 함」이면 다음 그림 한 번 더.
 import { describe, expect, it } from "vitest";
-import { RenderLoop } from "../../src/twin3d/schedule";
+import { RenderLoop } from "../../src/twin/3d/schedule";
 
 function fakeRaf() {
   const queue: { id: number; cb: (now: number) => void }[] = [];

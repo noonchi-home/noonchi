@@ -6,8 +6,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { Plan2 } from "../../../src/contract/events.ts";
 import { floorPlanFrom, roomAt } from "../../../src/layout/route.ts";
-import { CONE } from "../../src/twin3d/eye";
-import { walkGuide } from "../../src/twin3d/walk";
+import { CONE } from "../../src/twin/3d/eye";
+import { walkGuide } from "../../src/twin/3d/walk";
 
 const SCENE = JSON.parse(readFileSync(fileURLToPath(new URL("../../../twin/apartment/scene.json", import.meta.url)), "utf8")) as {
   plan: { walls: { a: Plan2 | null; b: Plan2 | null; thickness: number | null }[] };

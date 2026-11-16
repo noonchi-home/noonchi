@@ -6,8 +6,8 @@
 // 색은 토큰(scene3d)만 쓴다.
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import type { EyeEvent, Plan2 } from "../../../src/contract/events.ts";
-import { scene3d } from "../../../src/design/tokens.ts";
+import type { EyeEvent, Plan2 } from "../../../../src/contract/events.ts";
+import { scene3d } from "../../../../src/design/tokens.ts";
 import { applyDefaultView, viewHeading, type SceneData } from "./cutaway";
 import { CONE, createEyeCone, type EyeCone } from "./eye";
 import { bakedGround } from "./ground";

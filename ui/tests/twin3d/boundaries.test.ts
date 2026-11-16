@@ -1,10 +1,10 @@
 // @vitest-environment node
-// 엔진 경계: ui/src/twin3d의 .ts(엔진·셈)는 React와 대시보드 화면을 가져오지 않는다. React 감싸개는 Twin3D.tsx 하나다.
+// 엔진 경계: ui/src/twin/3d의 .ts(엔진·셈)는 React와 대시보드 화면을 가져오지 않는다. React 감싸개는 Twin3D.tsx 하나다.
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-const DIR = fileURLToPath(new URL("../../src/twin3d/", import.meta.url));
+const DIR = fileURLToPath(new URL("../../src/twin/3d/", import.meta.url));
 const imports = (src: string) => [...src.matchAll(/^\s*(?:import|export)\b[^;]*?\bfrom\s*["']([^"']+)["']|^\s*import\s*["']([^"']+)["']|\bimport\(\s*["']([^"']+)["']\s*\)/gm)].map((m) => m[1] ?? m[2] ?? m[3]!);
 
 describe("엔진 경계", () => {

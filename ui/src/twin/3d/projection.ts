@@ -1,7 +1,7 @@
 // 미리 그린 집 그림(Blender 정사영 카메라) 위 자리 계산. 순수 함수만 둔다.
 // 평면 [x, z] 미터는 Blender (x, -z, 높이)다. 카메라는 바라보는 점에서 방위·고도 쪽에 있고,
 // ortho_scale은 그림 가로 길이(m, 가로가 더 길다), shift는 그 길이에 대한 비율로 화면 가운데를 옮긴다.
-import type { XZ } from "../../../src/contract/plan.ts";
+import type { XZ } from "../../../../src/contract/plan.ts";
 
 export interface OrthoCamera {
   /** Blender +x에서 반시계로 잰 방위(도). */

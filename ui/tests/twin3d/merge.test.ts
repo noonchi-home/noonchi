@@ -2,7 +2,7 @@
 // 정적 메시 합치기: 같은 재질을 하나로 합치고, 옮길 물건을 떼면 그 물건 메시만 다시 보인다.
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
-import { StaticMerge } from "../../src/twin3d/merge";
+import { StaticMerge } from "../../src/twin/3d/merge";
 
 const mat = new THREE.MeshBasicMaterial({ name: "wood" });
 const part = (name: string, x: number) => { const m = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat); m.name = name; m.position.x = x; return m; };

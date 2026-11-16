@@ -1,6 +1,6 @@
 // 트윈 지도 카메라(순수 함수, 시안 A에서 옮김). 계획 전 지켜보기는 집 전체를 보이고, 이동 중이면 지금 구간과 목적지 둘레를 당겨 보이고,
 // 서 있는 단계면 관계된 곳(밝힐 방·다음 길·목적지·확인한 것)을 맞춰 보인다.
-// 카메라는 「상자 가운데에 올 구운 보기 그림 픽셀 자리 + 배율」(twin3d/view.ts MapCamera와 같음)이다.
+// 카메라는 「상자 가운데에 올 구운 보기 그림 픽셀 자리 + 배율」(twin/3d/view.ts MapCamera와 같음)이다.
 import type { BoxSize } from "./fit";
 import type { TwinFrame } from "./frame";
 import type { RoomShape } from "./home";

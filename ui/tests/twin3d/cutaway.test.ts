@@ -4,8 +4,8 @@ import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import manifest from "../../../twin/homes/mokryeon_180b/bake/manifest.json";
 import scene from "../../../twin/homes/mokryeon_180b/scene.json";
-import { applyDefaultView, raisedWalls, viewHeading, type SceneData } from "../../src/twin3d/cutaway";
-import { MOKRYEON_MAP_CAMERA } from "../../src/twin3d/projection";
+import { applyDefaultView, raisedWalls, viewHeading, type SceneData } from "../../src/twin/3d/cutaway";
+import { MOKRYEON_MAP_CAMERA } from "../../src/twin/3d/projection";
 
 describe("기본 보기 벽", () => {
   it("카메라 수평 방향은 [0.7071, 0.7071]이다", () => {

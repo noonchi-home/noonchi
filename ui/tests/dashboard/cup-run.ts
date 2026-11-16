@@ -14,7 +14,7 @@ import { assemblePlan } from "../../../src/agent/planShape.ts";
 import type { Check } from "../../src/checks/checks";
 import run from "../../src/dashboard/fake-run.json";
 import { homeIndexOf } from "../../src/dashboard/home";
-import { MOKRYEON_MAP_CAMERA } from "../../src/twin3d/projection";
+import { MOKRYEON_MAP_CAMERA } from "../../src/twin/3d/projection";
 
 export const CAM = MOKRYEON_MAP_CAMERA;
 export const IMAGE = { width: CAM.width, height: CAM.height };

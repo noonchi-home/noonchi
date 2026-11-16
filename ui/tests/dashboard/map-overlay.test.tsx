@@ -11,9 +11,9 @@ import { roomSetsOf, twinFrame } from "../../src/dashboard/frame";
 import { MapOverlay } from "../../src/dashboard/MapOverlay";
 import { outsideBox } from "../../src/dashboard/marks";
 import { PreDrawing } from "../../src/dashboard/motion";
-import { TwinEngine } from "../../src/twin3d/engine";
-import { conePixelBox } from "../../src/twin3d/eye";
-import { plateTransform, type MapCamera } from "../../src/twin3d/view";
+import { TwinEngine } from "../../src/twin/3d/engine";
+import { conePixelBox } from "../../src/twin/3d/eye";
+import { plateTransform, type MapCamera } from "../../src/twin/3d/view";
 import { anchorOf, CAM, HOME, IMAGE, moment, PLAN, PLAN_CHECKS, SCENE, SINK } from "./cup-run";
 
 const SIZE = { width: 1320, height: 1020 };

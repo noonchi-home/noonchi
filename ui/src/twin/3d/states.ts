@@ -5,7 +5,7 @@ import * as THREE from "three";
 import { RectAreaLightUniformsLib } from "three/addons/lights/RectAreaLightUniformsLib.js";
 import { parseProp, statesOf } from "@viewer/scene.mjs";
 import { applyAttr, applyState, attrValues, collectTargets, createContext, defaultValue, tickSpins, type StateContext } from "@viewer/states.mjs";
-import { scene3d } from "../../../src/design/tokens.ts";
+import { scene3d } from "../../../../src/design/tokens.ts";
 
 /** 종류마다 미리 만드는 빛 수 상한(트윈 뷰어와 같음). 빛마다 픽셀 셈이 늘어서 둔다. */
 const POOL_CAP = { spot: 11, area: 6, point: 6 } as const;

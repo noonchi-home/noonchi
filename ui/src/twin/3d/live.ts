@@ -7,8 +7,8 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { boxSpec, routeLayout, type MovePatch } from "@viewer/layout.mjs";
 import { createLiveSync } from "@viewer/live.mjs";
 import { assetRoot } from "@viewer/scene.mjs";
-import type { ServerMessage } from "../../../src/contract/events.ts";
-import { scene3d } from "../../../src/design/tokens.ts";
+import type { ServerMessage } from "../../../../src/contract/events.ts";
+import { scene3d } from "../../../../src/design/tokens.ts";
 
 /** 물건의 상태 칸(scene.json attrs·state·states). */
 export type StateEntry = { attrs?: Record<string, unknown[]>; state?: Record<string, unknown>; states?: unknown };

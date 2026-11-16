@@ -11,7 +11,7 @@ import { pageLayout, type Rect } from "../../src/dashboard/layout";
 import { MASCOT } from "../../src/dashboard/mascot-image";
 import { LABEL_BOX, mapScene, type Box } from "../../src/dashboard/scene";
 import type { ScreenPoint } from "../../src/twin/use-anchors";
-import { conePixelBox } from "../../src/twin3d/eye";
+import { conePixelBox } from "../../src/twin/3d/eye";
 import { anchorOf, CAM, HOME, IMAGE, moment, PLAN_CHECKS } from "./cup-run";
 
 const hit = (a: Box, b: Box) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;

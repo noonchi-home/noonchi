@@ -1,4 +1,4 @@
-// 트윈 위 표시(길·목적지·확인한 것 점)를 21st.dev Line Draw SVG 여러 장으로 겹쳐 그릴 자리와 굵기(순수 함수). 클로이드는 엔진의 3D 원뿔(twin3d/eye.ts)이다.
+// 트윈 위 표시(길·목적지·확인한 것 점)를 21st.dev Line Draw SVG 여러 장으로 겹쳐 그릴 자리와 굵기(순수 함수). 클로이드는 엔진의 3D 원뿔(twin/3d/eye.ts)이다.
 // 한 장은 path 하나를 토큰 색 선으로 그린다. 칠한 원은 반지름 r/2 원을 굵기 r로 그려 만든다. 크기는 화면 px이고 k(그림 px당 화면 px의 역수)를 곱한다.
 import type { LineTone } from "../components/ui/line-draw-svg";
 import { paint, TWIN } from "../lib/tokens";

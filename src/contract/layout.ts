@@ -1,4 +1,4 @@
-// 장면(scene.json)·배치 보정 메시지 계약(docs/plan.md 계약 C). 순수 타입만 둔다: 서버(src/layout/editor.ts)와 대시보드(ui/src/twin3d)가 같이 본다.
+// 장면(scene.json)·배치 보정 메시지 계약(docs/plan.md 계약 C). 순수 타입만 둔다: 서버(src/layout/editor.ts)와 대시보드(ui/src/twin/3d)가 같이 본다.
 // 평면도 좌표: x 오른쪽(동), y 아래쪽(남), facing_deg 0 = +x, 90 = +y. 장면 좌표 position = [x, 높이, y], 회전 y = (90 − facing_deg)°.
 
 export type Vec2 = [number, number];

@@ -1,9 +1,9 @@
 // 굽기에 쓴 하늘 사진(HDR)에서 반구광 하늘·아래 색을 한 번 셈해 둔다. 대시보드는 HDR을 받지 않는다.
-//   npx tsx ui/scripts/bake-light.ts --hdr <studio_small_09 .hdr> --manifest twin/homes/<집>/bake/manifest.json --out ui/src/twin3d/homes/<집>.light.json
+//   npx tsx ui/scripts/bake-light.ts --hdr <studio_small_09 .hdr> --manifest twin/homes/<집>/bake/manifest.json --out ui/src/twin/3d/homes/<집>.light.json
 import { readFileSync, writeFileSync } from "node:fs";
 import * as THREE from "three";
 import { HDRLoader } from "three/addons/loaders/HDRLoader.js";
-import { hemisphere, irradiance } from "../src/twin3d/irradiance";
+import { hemisphere, irradiance } from "../src/twin/3d/irradiance";
 
 const arg = (k: string) => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : undefined; };
 const [hdr, manifest, out] = [arg("--hdr"), arg("--manifest"), arg("--out")];

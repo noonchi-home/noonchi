@@ -37,7 +37,6 @@ export const LEGACY: Record<string, string> = {
   "ui/src/bubbles/": "ui/dashboard",
   "ui/src/panels/": "ui/dashboard",
   "ui/src/checks/": "ui/dashboard",
-  "ui/src/twin3d/": "ui/twin",
 };
 
 /** 공용 표(2.1 기반층, 정한 것 2): 낱말 표, 가전 종류 등록부, 행동 목록, 서버 글, 기준점 종류. 지금 자리로 적고 옮기면 새 자리로 고친다. */

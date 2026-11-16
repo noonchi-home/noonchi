@@ -1,6 +1,6 @@
 import { TriangleAlert } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
-import { Alert, AlertTitle } from "../components/ui/alert";
+import { Alert, AlertTitle } from "../../components/ui/alert";
 import { TwinEngine } from "./engine";
 import { CAMERA_MS, type Box, type MapCamera } from "./view";
 

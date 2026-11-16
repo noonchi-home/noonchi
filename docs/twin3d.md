@@ -1,6 +1,6 @@
 # 대시보드 3D 트윈
 
-한양목련 180B(`mokryeon_180b`)는 대시보드 트윈 칸에 구운 빛 three.js 트윈으로 그린다(`ui/src/twin3d/`). 다른 집은 트윈 칸에 iframe 뷰어를 둔다.
+한양목련 180B(`mokryeon_180b`)는 대시보드 트윈 칸에 구운 빛 three.js 트윈으로 그린다(`ui/src/twin/3d/`). 다른 집은 트윈 칸에 iframe 뷰어를 둔다.
 
 ## 트윈 자산
 
@@ -8,7 +8,7 @@
 |---|---|
 | `twin/homes/mokryeon_180b/bake/` | `mokryeon_180b_baked.glb`(19.8 MB), 빛 지도 `lm0.webp`~`lm3.webp`, 땅 그림자 `ground.png`, `manifest.json`. 모두 약 21 MB |
 | `twin/SOURCE.json` | 위 7개 파일의 twin-studio 커밋과 sha256 |
-| `ui/src/twin3d/homes/mokryeon_180b.light.json` | 반구광 하늘·아래 색(하늘빛 `studio_small_09`, 세기 0.72에서 셈). 대시보드는 HDR을 받지 않는다 |
+| `ui/src/twin/3d/homes/mokryeon_180b.light.json` | 반구광 하늘·아래 색(하늘빛 `studio_small_09`, 세기 0.72에서 셈). 대시보드는 HDR을 받지 않는다 |
 
 - 서버는 `/twin/<경로>`를 지금 집 폴더에서 찾는다: `/twin/bake/manifest.json`, `/twin/bake/mokryeon_180b_baked.glb`, `/twin/bake/lm<n>.webp`, `/twin/bake/ground.png`.
 - 배치를 바꾸면 트윈에 바로 보인다. 다시 굽기 전까지 옛 자리 그림자가 남고 새 물건은 그림자가 없다.
@@ -34,7 +34,7 @@
 3. 반구광을 다시 셈한다. 하늘빛이나 그 세기를 바꿨을 때만 값이 바뀐다.
 
    ```powershell
-   npx tsx ui/scripts/bake-light.ts --hdr <twin-studio 폴더>/external_cache/studio_small_09/studio_small_09_1k.hdr --manifest twin/homes/mokryeon_180b/bake/manifest.json --out ui/src/twin3d/homes/mokryeon_180b.light.json
+   npx tsx ui/scripts/bake-light.ts --hdr <twin-studio 폴더>/external_cache/studio_small_09/studio_small_09_1k.hdr --manifest twin/homes/mokryeon_180b/bake/manifest.json --out ui/src/twin/3d/homes/mokryeon_180b.light.json
    ```
 
 4. 화면을 다시 빌드한다: `npm run heavy -- npm --prefix ui run build`.

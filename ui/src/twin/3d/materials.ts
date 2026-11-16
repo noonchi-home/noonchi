@@ -2,7 +2,7 @@
 // 벽 윗면 = 어두운 단색, 창·난간 유리 = 밝은 반투명 단색, 발광 재질은 그대로, 나머지는 실시간 재질 그대로.
 // 색은 토큰(scene3d)만 쓴다.
 import * as THREE from "three";
-import { scene3d } from "../../../src/design/tokens.ts";
+import { scene3d } from "../../../../src/design/tokens.ts";
 
 /** 구운 자산 목록(/twin/bake/manifest.json). 쓰는 칸만. */
 export interface Manifest {

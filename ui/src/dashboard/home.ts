@@ -1,7 +1,7 @@
 // 집 평면 색인(순수 함수): 서버 장면(/api/scene)의 방 다각형·바닥 높이와 물건 자리 → 방 찾기, 물건이 든 방, 방마다 구운 보기 그림 위 모양.
-// 평면 [x, z] 미터. 그림 픽셀은 twin3d/projection.ts planToPixel(구운 보기 카메라)로 바꾼다.
+// 평면 [x, z] 미터. 그림 픽셀은 twin/3d/projection.ts planToPixel(구운 보기 카메라)로 바꾼다.
 import type { XZ } from "../../../src/contract/plan.ts";
-import { pathOf, planToPixel, polygonToPixels, type OrthoCamera } from "../twin3d/projection";
+import { pathOf, planToPixel, polygonToPixels, type OrthoCamera } from "../twin/3d/projection";
 
 export interface HomeRoom { id: string; label: string; floor: number; polygon: XZ[] }
 

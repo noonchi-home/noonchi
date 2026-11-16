@@ -3,8 +3,8 @@
 // 두 카메라 사이는 판 transform(translate·scale)을 곧게 잇는다.
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
-import { MOKRYEON_MAP_CAMERA as V, planToPixel } from "../../src/twin3d/projection";
-import { between, ease, frustumOf, placeCamera, plateTransform, projectThree, screenOf } from "../../src/twin3d/view";
+import { MOKRYEON_MAP_CAMERA as V, planToPixel } from "../../src/twin/3d/projection";
+import { between, ease, frustumOf, placeCamera, plateTransform, projectThree, screenOf } from "../../src/twin/3d/view";
 
 const box = { width: 1282, height: 1048 };
 const whole = { cx: V.width / 2, cy: V.height / 2, scale: box.width / V.width };

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 import type { HealthView, ServerMessage } from "../../src/contract/events.ts";
 import type { LayoutMessage } from "../../src/contract/layout.ts";
 import { Dashboard } from "../src/dashboard/Dashboard";
-import { TwinEngine } from "../src/twin3d/engine";
+import { TwinEngine } from "../src/twin/3d/engine";
 
 /** /api/health는 집 id, /twin/bake/manifest.json은 manifest 상태로 답한다. 나머지는 404. */
 function stubHealth(home: string, manifest: number, eye = false) {

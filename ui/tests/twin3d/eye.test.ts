@@ -10,9 +10,9 @@ import { describe, expect, it } from "vitest";
 import type { EyeEvent, Plan2 } from "../../../src/contract/events.ts";
 import { viz } from "../../../src/design/tokens.ts";
 import { floorPlanFrom, roomAt } from "../../../src/layout/route.ts";
-import { CONE, conePixelBox, createEyeCone, type EyeCone } from "../../src/twin3d/eye";
-import { MOKRYEON_MAP_CAMERA as CAM, planToPixel } from "../../src/twin3d/projection";
-import { walkGuide } from "../../src/twin3d/walk";
+import { CONE, conePixelBox, createEyeCone, type EyeCone } from "../../src/twin/3d/eye";
+import { MOKRYEON_MAP_CAMERA as CAM, planToPixel } from "../../src/twin/3d/projection";
+import { walkGuide } from "../../src/twin/3d/walk";
 
 const EYE: EyeEvent = { position: [3, 4], height_m: 1.4, yaw_deg: 30, pitch_deg: -25, tracking: "ok", at: "t" };
 const file = (rel: string) => fileURLToPath(new URL(rel, import.meta.url));

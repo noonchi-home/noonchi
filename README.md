@@ -104,7 +104,7 @@ noonchi-home | 26-2 소프트웨어공학
 ├── 장면 (src/model · src/layout) — scene.json + 도면 설비 · 배치 보정
 └── 기기 허브 (src/devices/hub)       — MatterHub(matter.js) · MemoryHub(시험용)
         ↓  REST · WebSocket /events (127.0.0.1)
-화면 (ui/, React)             — 대시보드 · three.js 트윈(ui/src/twin3d) · 설정 화면(ui/src/setup)
+화면 (ui/, React)             — 대시보드 · three.js 트윈(ui/src/twin/3d) · 설정 화면(ui/src/setup)
 
 MCP 서버 (src/agent/mcp)            — 기기 도구를 stdio로, 서버 REST를 부른다
 twin/                         — twin-studio에서 가져온 집 자산: 장면 · 뷰어 · 구운 3D

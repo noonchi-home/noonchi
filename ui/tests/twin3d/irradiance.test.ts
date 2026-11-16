@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { hemisphere, irradiance } from "../../src/twin3d/irradiance";
+import { hemisphere, irradiance } from "../../src/twin/3d/irradiance";
 
 const uniform = (w: number, h: number, v: number) => ({ width: w, height: h, data: new Float32Array(w * h * 4).fill(v) });
 
