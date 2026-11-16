@@ -1,6 +1,7 @@
 // 가전 상태(스파이크 docs/twin3d-spike/main.mjs 403~438줄, 트윈 뷰어 states.mjs): 지금 상태(장면의 state)를 먼저 넣는다. 구운 GLB는 쉴 때 자세·최대 발광이라서다.
 // 빛은 트윈 뷰어 main.mjs의 빛 풀처럼 종류마다 미리 만들어 세기 0으로 장면에 두고, 켤 때 빌려 기준점 자리로 옮긴다.
 // three는 장면의 빛 개수가 바뀌면 모든 재질의 셰이더를 다시 만들어 화면이 멈추기 때문이다.
+// 풀은 구운 장면의 빛 기준점 수로 만들고, 나중에 더한 물건(연결 때 layout add: 목련 거실등·현관등)을 이을 때 그 빛 기준점만큼 늘린다(켤 때가 아니라 더할 때 한 번).
 import * as THREE from "three";
 import { RectAreaLightUniformsLib } from "three/addons/lights/RectAreaLightUniformsLib.js";
 import { parseProp, statesOf } from "@viewer/scene.mjs";
@@ -28,22 +29,15 @@ interface Item {
 export class TwinStates {
   readonly ctx: StateContext;
   private readonly items = new Map<string, Item>();
-  private readonly free = new Map<Kind, THREE.Light[]>();
+  private readonly free = new Map<Kind, THREE.Light[]>([["spot", []], ["area", []], ["point", []]]);
   private readonly all: THREE.Light[] = [];
+  /** 센 빛 기준점(같은 노드를 다시 이어도 또 세지 않는다)과 종류마다 센 수·만든 풀 빛 수. */
+  private readonly counted = new WeakSet<THREE.Object3D>();
+  private readonly count: Record<Kind, number> = { spot: 0, area: 0, point: 0 };
+  private readonly made: Record<Kind, number> = { spot: 0, area: 0, point: 0 };
 
-  constructor(scene: THREE.Object3D, root: THREE.Object3D) {
-    const count: Record<Kind, number> = { spot: 0, area: 0, point: 0 };
-    root.traverse((n) => {
-      const spec = n.userData?.light !== undefined ? (parseProp(n.userData.light) as Spec | null) : null;
-      if (spec) count[kindOf(spec)] += 1;
-    });
-    if (count.area && !areaReady) { RectAreaLightUniformsLib.init(); areaReady = true; }
-    for (const kind of Object.keys(count) as Kind[]) {
-      const list = Array.from({ length: Math.min(count[kind], POOL_CAP[kind]) }, () => this.poolLight(kind));
-      for (const light of list) scene.add(light);
-      this.free.set(kind, list);
-      this.all.push(...list);
-    }
+  constructor(private readonly scene: THREE.Object3D, root: THREE.Object3D) {
+    this.reserve(root);
     this.ctx = createContext({
       maxLights: MAX_LIGHTS,
       makeLight: (spec) => this.makeLight(spec as Spec),
@@ -56,6 +50,7 @@ export class TwinStates {
   add(id: string, node: THREE.Object3D, entry: { attrs?: Record<string, unknown[]>; state?: Record<string, unknown>; states?: unknown }): boolean {
     const states = statesOf(entry, node);
     if (!Object.keys(states).length) return false;
+    this.reserve(node);
     const attrs = entry.attrs ?? {};
     const initial = Object.fromEntries(Object.keys(states).map((a) => [a, defaultValue(states, attrs, a)]));
     const item: Item = { node, states, attrs, targets: collectTargets(node), state: { ...initial, ...(entry.state ?? {}) } };
@@ -105,6 +100,28 @@ export class TwinStates {
 
   dispose(): void {
     for (const light of this.all) { light.removeFromParent(); light.dispose(); }
+  }
+
+  /** node 아래 아직 세지 않은 빛 기준점을 세고, 종류마다 풀을 그 수(상한 POOL_CAP)까지 늘린다. 늘린 빛은 세기 0으로 장면에 둔다. */
+  private reserve(node: THREE.Object3D): void {
+    node.traverse((n) => {
+      if (n.userData?.light === undefined || this.counted.has(n)) return;
+      const spec = parseProp(n.userData.light) as Spec | null;
+      if (!spec) return;
+      this.counted.add(n);
+      this.count[kindOf(spec)] += 1;
+    });
+    for (const kind of Object.keys(this.count) as Kind[]) {
+      const want = Math.min(this.count[kind], POOL_CAP[kind]);
+      if (kind === "area" && want > this.made.area && !areaReady) { RectAreaLightUniformsLib.init(); areaReady = true; }
+      while (this.made[kind] < want) {
+        const light = this.poolLight(kind);
+        this.scene.add(light);
+        this.free.get(kind)!.push(light);
+        this.all.push(light);
+        this.made[kind] += 1;
+      }
+    }
   }
 
   private poolLight(kind: Kind): THREE.Light {

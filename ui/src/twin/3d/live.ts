@@ -227,31 +227,46 @@ export interface LiveEngine {
 }
 
 /** 엔진에 /events 메시지를 잇는다. 상태·배치가 바뀌면 그리게 한다. hello(다시 접속)면 배치를 원래 장면으로 돌린다: 뒤따르는 맞추기 메시지가 지금 배치를 다시 넣는다.
+ *  기기마다 마지막 상태를 둔다: 서버는 접속 때 state를 layout add보다 먼저 보내고, 더하는 물건(모델을 받는 동안)은 그때 아직 없어 상태를 건너뛴다.
+ *  더하기가 끝나면 그 기기의 마지막 상태를 다시 넣는다(닫은 커튼·켠 조명이 기본값으로 보이지 않게). hello면 앞 접속의 상태는 버린다.
  *  대시보드는 기기를 바꾸지 않으므로 보내기는 없다. */
 export function attachLive(engine: LiveEngine): { handle(m: ServerMessage): void; dispose(): void } {
   let off = false;
   let dirty = false;
+  const last = new Map<string, Extract<ServerMessage, { type: "state" }>>();
   const base = liveViewer(engine.states);
-  const done = (changed: unknown) => { if (changed === true && !off) engine.requestRender(); };
+  const apply = (m: ServerMessage) => {
+    dirty = false;
+    sync.handleMessage(m);
+    if (dirty) engine.requestRender();
+  };
+  const done = (changed: unknown, added: string | null) => {
+    if (off) return;
+    if (changed === true) engine.requestRender();
+    const s = added ? last.get(added) : undefined;
+    if (changed === true && s) apply(s);
+  };
   const sync = createLiveSync({
     viewer: { ...base, setState: (id, attr, value) => { base.setState(id, attr, value); dirty = true; } },
     send: async () => ({ ok: false }),
     onLayout: (m) => {
+      const add = m as { op?: unknown; object?: { id?: unknown } } | null;
+      const added = add?.op === "add" && typeof add.object?.id === "string" ? add.object.id : null;
       const r = routeLayout(m, engine.layout);
-      if (r instanceof Promise) r.then(done, (e: unknown) => console.warn("[twin3d] 배치 반영 실패", e));
-      else done(r);
+      if (r instanceof Promise) r.then((c) => done(c, added), (e: unknown) => console.warn("[twin3d] 배치 반영 실패", e));
+      else done(r, added);
     },
   });
   return {
     handle(m) {
       if (off) return;
       if (m.type === "hello") {
+        last.clear();
         if (engine.layout.restore()) engine.requestRender();
         return;
       }
-      dirty = false;
-      sync.handleMessage(m);
-      if (dirty) engine.requestRender();
+      if (m.type === "state") last.set(m.state.id, m);
+      apply(m);
     },
     dispose() { off = true; },
   };

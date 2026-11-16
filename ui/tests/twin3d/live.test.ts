@@ -205,6 +205,36 @@ describe("배치 더하기", () => {
     expect(engine.requestRender).toHaveBeenCalledTimes(1);
   });
 
+  it("접속 때 상태가 더하기보다 먼저 와도(서버는 state 다음 layout add를 보낸다) 더하기가 끝나면 그 기기의 마지막 상태를 넣는다: 닫은 커튼·켠 조명이 기본값으로 보이지 않는다", async () => {
+    const load = vi.fn(async () => {
+      const gltf = new THREE.Group();
+      const top = new THREE.Group();
+      top.name = "ceiling_light";
+      top.add(mesh("ceiling_light_diffuser", 0, "diffuser"));
+      gltf.add(top);
+      return gltf;
+    });
+    const { engine } = fakeEngine({ load });
+    const light = {
+      ...crate, id: "light_living", type: "ceiling_light", asset: "assets/fixtures/ceiling_light.glb",
+      attrs: { power: ["off", "on"] },
+      states: { power: { default: "off", effects: { off: [{ part: "diffuser", emissive: 0 }], on: [{ part: "diffuser", emissive: 1 }] } } },
+      state: { power: "off" },
+    } as unknown as SceneObject;
+    const live = attachLive(engine);
+    live.handle(state("light_living", { power: "on" }));
+    expect(engine.states.has("light_living")).toBe(false);
+    live.handle({ type: "layout", op: "add", object: light });
+    await flush();
+    expect(engine.states.getState("light_living")).toEqual({ power: "on" });
+    expect(engine.requestRender).toHaveBeenCalled();
+    // 다시 접속(hello)하면 앞 접속의 상태는 버린다: 새 접속이 상태를 다시 보낸다
+    live.handle(hello);
+    live.handle({ type: "layout", op: "add", object: light });
+    await flush();
+    expect(engine.states.getState("light_living")).toEqual({ power: "off" });
+  });
+
   it("asset을 못 불러오면 회색 상자", async () => {
     const { engine } = fakeEngine({ load: async () => { throw new Error("404"); } });
     attachLive(engine).handle({ type: "layout", op: "add", object: { ...crate, asset: "assets/props/none.glb" } });
