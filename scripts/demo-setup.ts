@@ -22,7 +22,7 @@ import { ServerLockError, acquireServerLock, restoreNeeded, restoreNeededPath, s
 import { resolveHome } from "../src/model/homes.js";
 import { loadScene } from "../src/model/scene.js";
 import { TASKS } from "../src/act/tasks.js";
-import { describeStart, parseStartPose, startPosePath, type DescribeObject } from "../src/sync/start.js";
+import { describeStart, parseStartPose, startPosePath, type DescribeObject } from "../src/phone/sync/start.js";
 import { DEMO_STARTS, startFor, type DemoScene } from "./demo-start.js";
 import { seedHistory } from "./seed-history.js";
 
