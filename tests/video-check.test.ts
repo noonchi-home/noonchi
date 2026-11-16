@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { HistoryRow } from "../src/contract/history.js";
 import type { WorldEye, WorldObject, WorldView } from "../src/contract/world.js";
-import { SEND_SAY, clickChoice, clock, costLine, judgeInput, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, stepVerdict, timeline, twinRows, usedServer, roomLabels, ownAssetFailures, videoClock, runTimeline, clipEnd, syncWarning, mustStop, openDashboard, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
+import { SEND_SAY, clickChoice, clock, costLine, judgeInput, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, stepVerdict, timeline, twinRows, usedServer, roomLabels, ownAssetFailures, videoClock, runTimeline, clipEnd, syncWarning, mustStop, openDashboard, waitLoaded, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
 import { createServer, type Server } from "node:http";
 import { listenRetry } from "../src/shared/net.js";
 import type { SceneJson } from "../src/contract/layout.js";
@@ -276,6 +276,22 @@ describe("video-check", () => {
     it("정한 시간 안에 다 불러오지 못하면 던진다", async () => {
       const tab = fakeTab([["null", "complete"]]);
       await expect(openDashboard(tab as never, "http://127.0.0.1:8200", { waitMs: 50, everyMs: 5 })).rejects.toThrow(/대시보드/);
+    });
+    // Codex(9e88b73): Runtime.evaluate 답 자체에 시간 제한이 없어, 답이 멈추면 상한도 안 걸리고 크롬 정리까지 못 갔다
+    it("확인 답이 오지 않아도(멈춤) 남은 대기 시간이 지나면 던진다", async () => {
+      const tab = { send: (method: string) => (method === "Runtime.evaluate" ? new Promise(() => {}) : Promise.resolve({})) };
+      const t0 = Date.now();
+      await expect(openDashboard(tab as never, "http://127.0.0.1:8200", { waitMs: 200, everyMs: 5 })).rejects.toThrow(/대시보드/);
+      expect(Date.now() - t0).toBeLessThan(2000);
+    });
+    // Codex(9e88b73): 폰 문서 로드는 녹화 시작 뒤에 기다려, 폰 탐색이 늦으면 폰에서도 같은 「Not attached to an active page」가 났다
+    it("폰 페이지도 같은 기다리기(waitLoaded)로 그 origin 문서가 다 뜬 뒤 녹화를 시작한다", async () => {
+      const tab = fakeTab([["null", "complete"], ["http://127.0.0.1:8210", "interactive"], ["http://127.0.0.1:8210", "complete"]]);
+      await waitLoaded(tab as never, "http://127.0.0.1:8210/phone/?clip=cup-empty.mp4", { what: "폰 페이지", waitMs: 5_000, everyMs: 1 });
+      expect(tab.calls.filter((c) => c === "Runtime.evaluate")).toHaveLength(3);
+      const src = readFileSync(new URL("../scripts/video-check.ts", import.meta.url), "utf8");
+      expect(src.indexOf("await waitLoaded(cdp, url")).toBeGreaterThan(0);
+      expect(src.indexOf("await waitLoaded(cdp, url")).toBeLessThan(src.indexOf("rec = await startRecording("));
     });
   });
 

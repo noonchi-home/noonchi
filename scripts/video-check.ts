@@ -611,21 +611,26 @@ export function phoneUrl(phone: string, clip: string, steps: string[], camera: C
   return `${phone.replace(/\/+$/, "")}/phone/?clip=${encodeURIComponent(clip)}${steps.map((s) => `&step=${encodeURIComponent(s)}`).join("")}${cam}`;
 }
 
-/** 탭 크기를 DASH_SIZE(모바일 아님)로 두고 대시보드 <api>/를 연다. */
-/** 대시보드 탭·창: 크기를 맞추고 대시보드로 옮긴 뒤, 그 문서가 다 불러와질 때까지(주소가 대시보드 origin이고 readyState complete) 기다린다.
- *  Page.navigate 답은 새 문서가 들어서기(commit) 전에 오므로, 바로 Page.startScreencast를 보내면 「Not attached to an active page」로 실패한다
- *  (about:blank → http 주소는 렌더러가 바뀐다). 옛 빈 문서(origin "null")·붙지 못한 답은 아직으로 본다. waitMs 안에 안 되면 던진다. */
-export async function openDashboard(tab: Pick<Page, "send">, api: string, o: { waitMs?: number; everyMs?: number } = {}): Promise<void> {
-  await withTimeout(tab.send("Emulation.setDeviceMetricsOverride", { width: DASH_SIZE[0], height: DASH_SIZE[1], deviceScaleFactor: 1, mobile: false }), 10_000, "대시보드 탭 크기");
-  await withTimeout(tab.send("Page.navigate", { url: `${api}/` }), 30_000, "대시보드 열기");
-  const origin = new URL(`${api}/`).origin;
+/** 옮긴 문서가 다 불러와질 때까지(주소가 url의 origin이고 readyState complete) 기다린다. Page.navigate 답은 새 문서가 들어서기(commit) 전에 오므로,
+ *  바로 Page.startScreencast를 보내면 「Not attached to an active page」로 실패한다(about:blank → http 주소는 렌더러가 바뀐다).
+ *  옛 빈 문서(origin "null")·붙지 못한 답·답 없음은 아직으로 본다. 확인 한 번도 남은 대기 시간 안에서만 기다리고, waitMs 안에 안 되면 던진다. */
+export async function waitLoaded(tab: Pick<Page, "send">, url: string, o: { what: string; waitMs?: number; everyMs?: number }): Promise<void> {
+  const origin = new URL(url).origin;
   const waitMs = o.waitMs ?? 30_000;
   for (const end = Date.now() + waitMs; Date.now() < end; await sleep(o.everyMs ?? 100)) {
-    const r = await tab.send("Runtime.evaluate", { expression: "[location.origin, document.readyState]", returnByValue: true }).catch(() => null);
+    const left = Math.max(1, end - Date.now());
+    const r = await withTimeout(tab.send("Runtime.evaluate", { expression: "[location.origin, document.readyState]", returnByValue: true }), left, o.what).catch(() => null);
     const v = r?.result?.result?.value as [string, string] | undefined;
     if (Array.isArray(v) && v[0] === origin && v[1] === "complete") return;
   }
-  throw new Error(`대시보드를 ${Math.round(waitMs / 1000)}초 안에 다 불러오지 못했어요`);
+  throw new Error(`${o.what}를 ${Math.round(waitMs / 1000)}초 안에 다 불러오지 못했어요`);
+}
+
+/** 대시보드 탭·창: 크기를 DASH_SIZE(모바일 아님)로 맞추고 대시보드 <api>/로 옮긴 뒤 그 문서가 다 불러와질 때까지 기다린다(waitLoaded). */
+export async function openDashboard(tab: Pick<Page, "send">, api: string, o: { waitMs?: number; everyMs?: number } = {}): Promise<void> {
+  await withTimeout(tab.send("Emulation.setDeviceMetricsOverride", { width: DASH_SIZE[0], height: DASH_SIZE[1], deviceScaleFactor: 1, mobile: false }), 10_000, "대시보드 탭 크기");
+  await withTimeout(tab.send("Page.navigate", { url: `${api}/` }), 30_000, "대시보드 열기");
+  await waitLoaded(tab, `${api}/`, { what: "대시보드", ...o });
 }
 
 /** 대시보드 사진을 file에 쓴다. open(--record로 판정 내내 띄운 대시보드 창)이 있으면 그 창을 바로 찍고,
@@ -708,6 +713,8 @@ async function main(): Promise<number> {
       await cdp.send("Emulation.setDeviceMetricsOverride", { width: SIZE[0], height: SIZE[1], deviceScaleFactor: 1, mobile: true });
       await cdp.send("Page.navigate", { url });
       console.log(`[video-check] ${url}`);
+      // 폰 문서가 다 뜬 뒤에 녹화·「AR 시작」으로 간다(새 문서가 들어서기 전 screencast는 「Not attached to an active page」로 실패한다)
+      await waitLoaded(cdp, url, { what: "폰 페이지" });
       const read = async () => (await cdp.evaluate(READ, 10_000)) as Seen;
 
       // 시연 녹화: 같은 크롬 새 창(탭은 폰 탭을 가린다)으로 대시보드를 판정 내내 띄우고, 두 화면의 프레임을 받는다
@@ -722,14 +729,13 @@ async function main(): Promise<number> {
       }
 
       // 폰 페이지 자기 자원을 못 받았으면(이 PC는 127.0.0.1 연결이 가끔 실패하고 크롬은 다시 받지 않는다) 「AR 시작」 전에 한 번 다시 읽는다
-      for (const end = Date.now() + 30_000; (await cdp.evaluate("document.readyState", 10_000).catch(() => "")) !== "complete" && Date.now() < end; ) await sleep(250);
       const failed = ownAssetFailures(errors, fake?.phone ?? args.phone);
       if (failed.length) {
         recordNotes.push(`자원 받기 실패로 폰 페이지를 한 번 다시 읽음: ${failed.join(", ")}`);
         errors.length = 0;
         await cdp.send("Page.navigate", { url });
         await sleep(500);
-        for (const end = Date.now() + 30_000; (await cdp.evaluate("document.readyState", 10_000).catch(() => "")) !== "complete" && Date.now() < end; ) await sleep(250);
+        await waitLoaded(cdp, url, { what: "폰 페이지" });
       }
 
       // 「AR 시작」을 누르고 재생이 시작될 때까지(t0)
