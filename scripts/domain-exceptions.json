@@ -1,5 +1,4 @@
 [
-  "direction src/agent/planTools.ts -> src/act/lessons.ts",
   "direction src/devices/devices.ts -> src/layout/homes.ts",
   "direction src/devices/devices.ts -> src/layout/scene.ts",
   "direction src/layout/editor.ts -> src/agent/search.ts",
@@ -11,7 +10,6 @@
   "inner src/agent/layoutTools.ts -> src/layout/catalog.ts",
   "inner src/agent/layoutTools.ts -> src/layout/editor.ts",
   "inner src/agent/planShape.ts -> src/layout/route.ts",
-  "inner src/agent/planTools.ts -> src/act/lessons.ts",
   "inner src/agent/search.ts -> src/devices/mapping.ts",
   "inner src/devices/devices.ts -> src/layout/homes.ts",
   "inner src/devices/devices.ts -> src/layout/scene.ts",

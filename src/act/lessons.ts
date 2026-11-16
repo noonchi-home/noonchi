@@ -5,10 +5,8 @@
 // 들은 말이나 관찰 글은 여기에 남기지 않는다: 행동 이름·단계 이름·횟수·시각뿐이다.
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import type { Lesson } from "../contract/plan.js";
 
-/** alone: 이 단계를 도움 없이 이어서 해낸 횟수(도움을 받으면 0). */
-export interface LessonStep { label: string; alone: number }
-export interface Lesson { task: string; runs: number; steps: LessonStep[]; updatedAt: string }
 /** 이번 판의 사람 단계 하나: 도움(다시 읽기·다시 알리기·부탁·힌트·시간 초과 질문) 없이 끝냈는가. */
 export interface StepOutcome { label: string; alone: boolean }
 export interface LessonBook { get(task: string): Lesson | null; record(task: string, outcomes: StepOutcome[], at: string): void }

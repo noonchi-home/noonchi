@@ -5,12 +5,11 @@
 import { z } from "zod";
 import { copyRules } from "../shared/copy.js";
 import { ASK_CHOICES, type ActionPrompt } from "../act/prompts.js";
-import type { Lesson } from "../act/lessons.js";
+import type { Lesson, PlanTarget, PlanView, StepKind, XZ } from "../contract/plan.js";
 import { planIdOf, type Placed, type TaskSpec } from "../act/tasks.js";
 import type { DeviceView, DecisionRecord } from "../contract/events.js";
 import type { DraftStep, PlanHead } from "./planShape.js";
 import { assemblePlan } from "./planShape.js";
-import type { PlanTarget, PlanView, StepKind, XZ } from "../contract/plan.js";
 import type { WorldObject, WorldView } from "../contract/world.js";
 import type { Capability, RoomSpec } from "../contract/devices.js";
 import type { FloorPlan } from "../layout/index.js";

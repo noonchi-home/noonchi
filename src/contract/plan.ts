@@ -36,3 +36,7 @@ export interface PlanView {
   status: PlanStatus;
   updatedAt: string;
 }
+
+/** alone: 이 단계를 도움 없이 이어서 해낸 횟수(도움을 받으면 0). */
+export interface LessonStep { label: string; alone: number }
+export interface Lesson { task: string; runs: number; steps: LessonStep[]; updatedAt: string }
