@@ -248,7 +248,7 @@
   - `coach.ts`: 다시 알리기·떠남·조용한 단계·수업 기록(`tell`, `stray`, `askCloser`, `quietStep`)
   - 나누는 방법: 상태와 `emit`·`toPhone`을 든 안쪽 객체(`TrackCore`)를 두고, 부분마다 그 객체를 받는 작은 클래스로 만든다.
   - 구조 검사(`tests/act-track-release.test.ts`)는 `act/track/` 폴더 파일 전체와 `TrackCore`를 본다. 지우는 패턴은 받는 쪽 이름과 상관없이 찾는다(`this.reminder = null`만이 아니라 `.reminder = null`, `.hot.delete(`). 79ff269 과거 실수를 `steps.ts`·`answers.ts`·`tracker.ts`에 하나씩 넣은 자료에서도 실패해야 한다.
-- **`server/home.ts`(616줄) → `server/home/`:** 도메인별 잇기(`devices.ts`, `observe.ts`, `act.ts`, `phone.ts`, `say.ts`)와 조립(`index.ts`). 파일 자리 기준 경로(`SHARED_VIDEO_DIR`)는 0단계에서 뿌리 기준으로 바꾼 뒤 옮긴다.
+- **`server/home.ts`(616줄) → `server/home/`(다음에: 정한 것 5, 시연 뒤):** 도메인별 잇기(`devices.ts`, `observe.ts`, `act.ts`, `phone.ts`, `say.ts`)와 조립(`index.ts`). 파일 자리 기준 경로(`SHARED_VIDEO_DIR`)는 0단계에서 뿌리 기준으로 바꾼 뒤 옮긴다.
 - **`server/app.ts`(721줄) → `server/routes/`:** 경로를 도메인별로 나눈다(`observe.ts`(brain·world 상태), `brain.ts`(기록·반성·기억·판단), `layout.ts`, `phone.ts`, `plan.ts`, `devices.ts`, `agent.ts`). `app.ts`는 HTTP·WS 껍데기만 남는다.
 - **다음에(정한 것 3, 이번에 하지 않음):**
   - `world/state.ts`(1,071줄) → `world/state/`: `objects.ts`(감지 합치기), `people.ts`(사람·관절), `facts.ts`(VLM 사실), `closer.ts`(가까이 보기), `devices.ts`(카메라로 본 가전)
@@ -383,7 +383,7 @@
 | 4 | 도메인마다 `index.ts`를 만들고 다른 도메인 import를 입구로 바꿈 | 거꾸로 가는 것만 남음 | 2시간 |
 | 5 | 남은 고리 끊기(F2·F4·F6·F8·F10·F11) | 화면 쪽만 남음 | 2시간 |
 | 6 | 화면: `twin3d`+`twin` → `ui/src/twin`, `bubbles`·`panels`·`checks` → `dashboard`, F12·F13, 화면 입구 | 0에 가까움 | 1.5시간 |
-| 7 | 큰 파일 쪼개기: 7b `home.ts`·`app.ts`. 7a `track.ts`(구조 검사를 `act/track/` 폴더 전체로, 79ff269 과거 실수를 각 파일에 넣은 자료가 실패하는지 확인)는 다음에(정한 것 4, 시연 뒤). `world/state.ts`·`planTools.ts`도 다음에(정한 것 3) | 0 | 3.5~4시간 |
+| 7 | 큰 파일 쪼개기: `app.ts` → `server/routes/`. `track.ts`(7a, 구조 검사를 `act/track/` 폴더 전체로, 79ff269 과거 실수를 각 파일에 넣은 자료가 실패하는지 확인)와 `home.ts`는 다음에(정한 것 4·5, 시연 뒤). `world/state.ts`·`planTools.ts`도 다음에(정한 것 3) | 0 | 3.5~4시간 |
 | 8 | 흐름 확인: `tests/demo-e2e.test.ts`(네 장면 가짜 서버 흐름: 컵, 에어컨, 전자레인지 승인·꺼짐 확인, 라면)와 `coach-e2e`·`noonchi-e2e`를 따로 한 번 더 돌린다(단계마다 전체 시험에도 들어 있다). `video-check --fake`는 컵 감지·컵 PAM 판단·`CUP_SCRIPTS`로 고정이라(`scripts/video-check.ts:384`) 쓰지 않는다. `docs/reference.md` 「구조」, 저장소 `CLAUDE.md` 경로, 규칙 표 줄(3.4) | 0 | 1.5시간 |
 | 9 | 예외 목록 파일 지움, 엄격 모드, 3.3 마지막 확인. 구현명세서 SSOT 18.1 폴더 구조와 본문 경로(`src/world/vocab.ts` 등)를 docs 저장소에서 고침 | 없음 | 1시간 |
 
@@ -407,7 +407,8 @@
    - 외부 API 게이트웨이 `infer`는 도메인이 아니라 기반층이다. 자리는 `src/infer/` 그대로다(2.1 기반층 표의 까닭).
 2. **공용 표:** 지금 도메인에 두고 「표 입구」로 모든 도메인이 읽는다. 계약은 공용 표 타입만 `import type`으로 가져오고, 계약 ↔ 공용 표 타입 전용 고리만 허용한다(2.3).
 3. **큰 파일 쪼개기:** `track.ts`·`home.ts`·`app.ts`(7a·7b). `world/state.ts`·`planTools.ts`는 다음에 한다.
-4. **track.ts 쪼개기는 시연 뒤로 미룸.** 까닭: 시연 브랜치에서 11-10 뒤로 커밋 36개가 고친 파일이라 합칠 때 충돌이 큼(사용자, 2026-11-16). 이번 7단계는 7b만 한다.
+4. **track.ts 쪼개기는 시연 뒤로 미룸.** 까닭: 시연 브랜치에서 11-10 뒤로 커밋 36개가 고친 파일이라 합칠 때 충돌이 큼(사용자, 2026-11-16).
+5. **server/home.ts 쪼개기도 시연 뒤로 미룸.** 까닭: 시연 브랜치에서 11-10 뒤로 커밋 32개가 고쳤고, startHome 한 함수가 클로저 변수를 나눠 써서 나누면 거의 모든 줄이 바뀜(사용자, 2026-11-16). 이번 7단계는 `app.ts` → `server/routes/`만 한다.
 
 ## 6. 지적 기록
 
