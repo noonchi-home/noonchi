@@ -4,7 +4,7 @@ FSM을 쓰는 사람(박석준·김준형)이 보는 목록이다. World State�
 
 - FSM 계기는 표의 「한국어」 글로 쓴다. 그 글이 PAM 관찰 텍스트에 그대로 나온다.
 - 계획 단계 조건과 코드는 「키」를 쓴다.
-- 표는 `src/world/vocab.ts`(키·글·신뢰도), 가전 종류 등록부 `src/model/kinds.ts`(카메라로 맞추는 규칙·오래 이어지면 나는 사건의 종류·종류별 상태 글)와 `src/world/vocab-doc.ts`(보는 방법·계기 예)에서 만든다: `npx tsx scripts/world-vocab-doc.ts`. 표를 손으로 고치지 않는다. 다르면 `tests/world-vocab.test.ts`가 실패한다.
+- 표는 `src/world/vocab.ts`(키·글·신뢰도), 가전 종류 등록부 `src/devices/kinds.ts`(카메라로 맞추는 규칙·오래 이어지면 나는 사건의 종류·종류별 상태 글)와 `src/world/vocab-doc.ts`(보는 방법·계기 예)에서 만든다: `npx tsx scripts/world-vocab-doc.ts`. 표를 손으로 고치지 않는다. 다르면 `tests/world-vocab.test.ts`가 실패한다.
 
 ## 보는 곳
 
@@ -248,7 +248,7 @@ FSM을 쓰는 사람(박석준·김준형)이 보는 목록이다. World State�
 
 ## 카메라로 맞추는 가전 상태
 
-폰 카메라가 본 가전 설비 상태가 트윈 가전 상태로 이어진다(`src/world/sight.ts`, `src/hub/signals.ts` `observe`).
+폰 카메라가 본 가전 설비 상태가 트윈 가전 상태로 이어진다(`src/world/sight.ts`, `src/devices/hub/signals.ts` `observe`).
 
 <!-- vocab:sight -->
 | 가전 설비 | 트윈 가전 종류 | 면 | 본 값 | 답에 그 면 값이 없으면 |

@@ -59,7 +59,7 @@ twin-studio (Blender)                twin-home (Node 22 + TypeScript)
 - matter.js 0.17에 없는 기기 종류는 가장 가까운 종류로 대체한다(예: On/Off Plug-in Unit). 대체한 것은 README에 적는다.
 - **센서**(문 열림, 충전 중)는 에이전트가 바꿀 수 없다. 세계 시뮬레이션 API(`POST /api/sensors/:id`)나 트윈 화면에서 사람이 바꾼다.
 
-## 인터페이스 (src/hub/types.ts)
+## 인터페이스 (src/devices/hub/types.ts)
 
 ```ts
 type DeviceKind = "light" | "plug" | "tv" | "speaker" | "aircon" | "purifier" | "fan" | "hood" | "cooktop"
@@ -122,15 +122,15 @@ interface DeviceHub {
 - 시스템 프롬프트: 한국어. 방·기기 목록 요약, 승인 규칙, 실행 후 결과를 짧게 보고하라는 지시.
 - `.env`에서 키를 읽는다. 키를 로그에 출력하지 않는다.
 
-## MCP 서버 (src/mcp/server.ts)
+## MCP 서버 (src/agent/mcp/server.ts)
 
 - stdio. 위 도구를 그대로 노출하고, 실행 중인 twin-home 서버의 REST(`TWIN_HOME_URL`, 기본 http://127.0.0.1:8200)를 부른다.
 - 그래서 Claude Code나 Claude Desktop이 그대로 에이전트가 된다.
-- README에 `claude mcp add twin-home -- npx tsx src/mcp/server.ts` 예시를 적는다.
+- README에 `claude mcp add twin-home -- npx tsx src/agent/mcp/server.ts` 예시를 적는다.
 
-## 기기 목록 만들기 (src/model/devices.ts)
+## 기기 목록 만들기 (src/devices/devices.ts)
 
-- 집: twin-studio `homes.json`에서 `HOME_ID`(없으면 `default`)로 고른다(`src/model/homes.ts`, 아래 "집 고르기").
+- 집: twin-studio `homes.json`에서 `HOME_ID`(없으면 `default`)로 고른다(`src/layout/homes.ts`, 아래 "집 고르기").
 - 1순위: 그 집 `<out>/scene.json`의 objects 중 `attrs`가 있는 것.
 - 없으면 그 집 `<data>`의 `placement.json` + `floorplan.json`(문) + 카탈로그를 읽는다.
 - 카탈로그: `<data>/catalog` → 공용 `data/catalog` → (옛 체크아웃) `data/apartment/catalog` 순서로 찾는다.
@@ -148,7 +148,7 @@ interface DeviceHub {
 
 - `PHONE_PORT`(예: 8210)를 주면 폰 전용 서버가 `PHONE_HOST`(기본 0.0.0.0)에 뜬다. 주는 것은 `/phone/`(페이지)과 `/phone/events`(WebSocket)뿐이다. 기기 API는 본 서버(127.0.0.1)에만 있다.
 - 폰 → 서버: `{type:"pose", position:[x,y,z], orientation:[x,y,z,w], tracking:"ok"|"limited", hit:[x,y,z]|null, hit_estimated}`(WebXR local 공간, 초당 10번, hit_estimated는 조준점이 어림 바닥 점일 때 true) · `{type:"start"}`(시작 자리에서 「여기서 시작」) · `{type:"surface", points}`(실제 hit 점) · `{type:"reset"}`. 서버 → 폰: `{type:"status", aligned, sync, error?}`.
-- 위치 맞추기는 `src/sync/`가 한다: 설정에서 저장한 시작 자리·방향(어림), 걸으며 보이는 큰 가구(YOLO26n), 벽 모양(hit-test 벽 점 ICP). 결과는 수평 회전·이동·바닥 높이(`src/phone/align.ts` `Alignment`)다. 자세한 규칙은 [reference.md](reference.md) "위치 맞추기".
+- 위치 맞추기는 `src/phone/sync/`가 한다: 설정에서 저장한 시작 자리·방향(어림), 걸으며 보이는 큰 가구(YOLO26n), 벽 모양(hit-test 벽 점 ICP). 결과는 수평 회전·이동·바닥 높이(`src/shared/geometry.ts` `Alignment`)다. 자세한 규칙은 [reference.md](reference.md) "위치 맞추기".
 - 맞춘 뒤 자세는 본 서버 `/events`로 `{type:"eye", eye:{position:[x,y], height_m, yaw_deg, pitch_deg, tracking, at}}`가 된다. 뷰어는 `aptViewer.setEye`로 눈 마커만 움직인다. 판단에는 쓰지 않는다.
 - WebSocket은 페이지를 준 호스트와 같은 출처만 받는다.
 - 카메라(WebXR `camera-access`): 폰은 `/phone/events`에 바이너리 패킷 `[헤더 길이 4바이트 BE][JSON 헤더][JPEG]`(`src/phone/packet.ts`, 최대 4MB)을 보낸다. 헤더 `{kind:"frame"|"photo", width, height, position?, orientation?, tracking?}`. `frame`은 기본 초당 12장·가로 480px·품질 0.55(폰 주소 `?fps=`·`?w=`로 바꾼다, 인코딩 중이거나 와이파이에 쌓이면 건너뜀), `photo`는 카메라 원본 크기.
@@ -192,13 +192,13 @@ interface DeviceHub {
 
 **A. 집 실행 묶음** (`src/server/home.ts`): 집 하나에 딸린 허브·정책·에이전트·배치 편집기·시작 자리·폰 서버·두뇌·앱. 집을 바꾸면 통째로 닫고 새로 만든다. 본 서버 포트는 껍데기 서버(`src/server/shell.ts`)가 계속 잡고 `/api/setup*`만 직접 처리하며, 나머지 요청과 `/events`는 지금 묶음의 앱으로 넘긴다. 폰 서버는 처음 잡은 포트를 다시 쓴다. 바꾸는 동안 다른 API는 503, 설정 화면 파일은 그대로 나온다. 실패하면 이전 집으로 되돌린다.
 
-**B. 신호 출처** (`src/hub/signals.ts`, 구현명세서 6.3 정보 확보 수단·7.1 `read_appliance`): 기기마다 `virtual`(트윈 시뮬레이터), `none`(신호 없음), `{ kind: "thinq", deviceId }`(실제 모드에서 ThinQ와 짝지은 기기, 아래 「운영 모드」).
+**B. 신호 출처** (`src/devices/hub/signals.ts`, 구현명세서 6.3 정보 확보 수단·7.1 `read_appliance`): 기기마다 `virtual`(트윈 시뮬레이터), `none`(신호 없음), `{ kind: "thinq", deviceId }`(실제 모드에서 ThinQ와 짝지은 기기, 아래 「운영 모드」).
 - 엔진·대시보드는 `SignalHub`로 읽는다. `none` 기기는 상태가 `{ twin: {}, matter: {}, signal: "none" }`(모름)이고, 바뀌어도 `/events`에 보내지 않는다. 출처를 바꾸면 그 기기 상태를 한 번 보낸다.
 - 명령(가상 실행)은 숨은 세계(안쪽 허브)에서 그대로 실행된다. `none` 기기는 결과도 모르므로, 숨은 세계가 상태 때문에 거절해도 `{ ok: true, state: 모름 }`으로 돌려준다(거절 이유가 숨은 상태를 드러냄). 정책의 사전 검사는 모르는 상태로 하지 않는다.
 - 에이전트 도구는 `state: "모름"`, `signal: "none"`을 보고, 명령·승인 답은 「보냈지만 결과는 확인하지 못했어요」다.
 - 3D 뷰어(twin-studio `live.mjs`)는 `signal: "none"` 상태를 받으면 화면 값을 그대로 두고, 그 기기 조작은 계속 twin-home으로 보낸다.
 
-**C. 저장** (`src/setup/store.ts`, `npm start`만 파일에 쓴다)
+**C. 저장** (`src/server/setup/store.ts`, `npm start`만 파일에 쓴다)
 - `RUNTIME_DIR/setup.json`: `{ version: 1, home, done, updated_at }`. 다른 집을 고르면 `done: false`.
 - `RUNTIME_DIR/homes/<id>/signals.json`: `{ version: 1, home, sources: { <기기 id>: { kind } }, updated_at }`(virtual이 아닌 것만). 배치에서 빠진 기기 id는 읽을 때 버린다.
 - 시작 집: 저장한 집 → (없거나 못 띄우면) `HOME_ID` → 기본 집. `startServer`(테스트·데모)는 파일을 읽지 않고 「끝냄」으로 시작한다.
