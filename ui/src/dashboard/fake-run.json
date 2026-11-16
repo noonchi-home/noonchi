@@ -224,7 +224,8 @@
             "action": "컵 치우기",
             "fsm": {
               "state": "left_cup",
-              "trigger": "사용자가 자리를 비웠고 컵이 비어 있으며 아무도 컵을 들거나 만지지 않는다."
+              "trigger": "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다.",
+              "learned": false
             },
             "memory_version": 1,
             "world": {
@@ -244,6 +245,12 @@
               "yolo_missing": 0
             }
           }
+        },
+        {
+          "type": "thought",
+          "id": "pam-1",
+          "seen": "사람이 컵을 식탁에 두고 자리를 떠났어요",
+          "why": "컵을 두고 떠나면 치우는 습관대로 컵을 치울게요"
         },
         {
           "type": "brain",
@@ -412,7 +419,8 @@
             "action": "컵 치우기",
             "fsm": {
               "state": "left_cup",
-              "trigger": "사용자가 자리를 비웠고 컵이 비어 있으며 아무도 컵을 들거나 만지지 않는다."
+              "trigger": "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다.",
+              "learned": false
             },
             "memory_version": 1,
             "world": {
@@ -432,6 +440,12 @@
               "yolo_missing": 0
             }
           }
+        },
+        {
+          "type": "thought",
+          "id": "pam-1",
+          "seen": "사람이 컵을 식탁에 두고 자리를 떠났어요",
+          "why": "컵을 두고 떠나면 치우는 습관대로 컵을 치울게요"
         },
         {
           "type": "brain",
@@ -600,7 +614,8 @@
             "action": "컵 치우기",
             "fsm": {
               "state": "left_cup",
-              "trigger": "사용자가 자리를 비웠고 컵이 비어 있으며 아무도 컵을 들거나 만지지 않는다."
+              "trigger": "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다.",
+              "learned": false
             },
             "memory_version": 1,
             "world": {
@@ -620,6 +635,12 @@
               "yolo_missing": 0
             }
           }
+        },
+        {
+          "type": "thought",
+          "id": "pam-1",
+          "seen": "사람이 컵을 식탁에 두고 자리를 떠났어요",
+          "why": "컵을 두고 떠나면 치우는 습관대로 컵을 치울게요"
         },
         {
           "type": "brain",
@@ -772,7 +793,8 @@
             "action": "컵 치우기",
             "fsm": {
               "state": "left_cup",
-              "trigger": "사용자가 자리를 비웠고 컵이 비어 있으며 아무도 컵을 들거나 만지지 않는다."
+              "trigger": "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다.",
+              "learned": false
             },
             "memory_version": 1,
             "world": {
@@ -792,6 +814,12 @@
               "yolo_missing": 0
             }
           }
+        },
+        {
+          "type": "thought",
+          "id": "pam-1",
+          "seen": "사람이 컵을 식탁에 두고 자리를 떠났어요",
+          "why": "컵을 두고 떠나면 치우는 습관대로 컵을 치울게요"
         },
         {
           "type": "brain",

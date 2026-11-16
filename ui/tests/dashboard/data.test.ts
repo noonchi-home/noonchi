@@ -4,7 +4,7 @@ import type { ServerMessage } from "../../../src/contract/events.ts";
 import { EMPTY_DASH, facingOf, reduceDash, stepIndex, thoughtOf } from "../../src/dashboard/data";
 import run from "../../src/dashboard/fake-run.json";
 import { CUP_FSM_MEMORY, fsmRuleOf } from "../../../src/brain/decision.ts";
-import { BRANCHES, COACH, LEFT_SAY, branchDecision, type Branch } from "./fixtures";
+import { BRANCHES, COACH, LEFT_SAY, LINES, REASON, branchDecision, type Branch } from "./fixtures";
 
 const feed = (ms: ServerMessage[], now = 0) => ms.reduce((s, m) => reduceDash(s, m, now), EMPTY_DASH);
 const at = (i: number) => feed(run.moments[i]!.messages as ServerMessage[]);
@@ -15,8 +15,33 @@ describe("대시보드 자료", () => {
     expect([stepIndex(s.plan), facingOf(s.plan), thoughtOf(s)]).toEqual([0, "video", null]);
     expect(thoughtOf(EMPTY_DASH)).toBeNull();
   });
-  it("생각 말풍선: 행동을 고른 판단의 생각 한 문장, FSM 상태 이름표(영어 id가 아닌 화면 글), 행동 이름", () => {
-    expect(thoughtOf(at(1))).toEqual({ reasoning: "사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.", state: "컵을 두고 자리를 뜸", habit: false, assist: "noonchi", action: "컵 치우기" });
+  it("생각 말풍선: 행동을 고른 판단의 생각 한 문장과 그 판단의 두 줄(본 것·그래서), FSM 상태 이름표(영어 id가 아닌 화면 글), 행동 이름", () => {
+    expect(thoughtOf(at(1))).toEqual({
+      reasoning: "사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.", lines: LINES, state: "컵을 두고 자리를 뜸", habit: false, assist: "noonchi", action: "컵 치우기",
+    });
+  });
+  describe("생각 두 줄(thought)", () => {
+    const decided = branchDecision(BRANCHES.clear, 3);
+    const lines = (id: string): ServerMessage => ({ type: "thought", id, ...LINES });
+    it("판단 id가 같은 두 줄이 오면 생각에 붙인다. 원래 생각(reasoning)은 그대로 둔다", () => {
+      expect(thoughtOf(feed([decided]))).not.toHaveProperty("lines");
+      expect(thoughtOf(feed([decided, lines("pam-3")]))).toEqual({ reasoning: REASON, lines: LINES, state: "컵을 두고 자리를 뜸", habit: false, assist: "noonchi", action: "컵 치우기" });
+      // 접속 때 다시 받은 것도 같다
+      expect(thoughtOf(feed([decided, { ...lines("pam-3"), replay: true } as ServerMessage]))?.lines).toEqual(LINES);
+    });
+    it("다른 판단 id의 두 줄은 쓰지 않는다: 새 판단이 오면 그 판단의 두 줄이 올 때까지 원래 생각이다", () => {
+      expect(thoughtOf(feed([decided, lines("pam-2")]))).not.toHaveProperty("lines");
+      const next = feed([decided, lines("pam-3"), branchDecision(BRANCHES.clear, 4)]);
+      expect(thoughtOf(next)).not.toHaveProperty("lines");
+      expect(thoughtOf(reduceDash(next, lines("pam-4"), 0))?.lines).toEqual(LINES);
+    });
+    it("대기 판단이면 두 줄이 있어도 말풍선을 숨기고(null), 반성 생각에는 두 줄을 붙이지 않는다. hello면 지운다", () => {
+      expect(thoughtOf(feed([decided, lines("pam-3"), branchDecision(null, 4), lines("pam-4")]))).toBeNull();
+      const rule = { state: "watching_tv", trigger: "사용자가 TV를 보러 소파에 앉는다.", action: "에어컨 켜기" };
+      const reflected: ServerMessage = { type: "brain", event: { type: "reflection", at_ms: 1_794_214_900_000, day: "2026-11-08", ok: true, version: 3, applies_day: "2026-11-09", text: "반성 완료", learned: [rule], active: [rule], dropped: [] } };
+      expect(thoughtOf(feed([decided, lines("pam-3"), reflected]))).not.toHaveProperty("lines");
+      expect(reduceDash(feed([decided, lines("pam-3")]), { type: "hello", devices: 1, provider: null, hub: "memory", home: "apartment" }, 0)).toEqual(EMPTY_DASH);
+    });
   });
   it("서버가 상태를 못 찾았거나(fsm null·없음, fsm.state null) 상태는 null이다(칩을 숨긴다). 이름표가 없는 상태면 그 트리거를 보인다", () => {
     const s = at(1);
@@ -80,7 +105,7 @@ describe("대시보드 자료", () => {
     const seen = (run.moments[1]!.messages as ServerMessage[]).find((m) => m.type === "seen")!;
     expect(seen).toMatchObject({ type: "seen", frame: { width: 405, height: 720 }, shapes: [{ label: "cup" }] });
     expect(reduceDash(s, seen, 5)).toBe(s);
-    expect(Object.keys(s).sort()).toEqual(["decision", "eye", "plan", "reflection", "say"]);
+    expect(Object.keys(s).sort()).toEqual(["decision", "eye", "lines", "plan", "reflection", "say"]);
   });
   describe("반성 뒤 생각 말풍선", () => {
     const AIRCON = { state: "watching_tv", trigger: "사용자가 TV를 보러 소파에 앉는다.", action: "에어컨 켜기" };

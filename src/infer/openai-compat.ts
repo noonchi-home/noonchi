@@ -15,6 +15,15 @@ interface ChatBody {
 export class OpenAICompatClient {
   constructor(private readonly ep: ModelEndpoint, private readonly opts: { fetchImpl?: typeof fetch; timeoutMs?: number } = {}) {}
 
+  get model(): string {
+    return this.ep.model;
+  }
+
+  /** 보내는 주소·모델·키·요청 칸. */
+  get endpoint(): ModelEndpoint {
+    return { ...this.ep };
+  }
+
   /** signal이나 제한 시간(timeoutMs, 기본 20000)이 끊기면 요청도 끊는다. HTTP 오류는 던진다. */
   async chat(req: { messages: ChatMessage[]; schema?: { name: string; schema: Record<string, unknown> }; maxTokens?: number; signal?: AbortSignal }): Promise<ChatReply> {
     const t0 = performance.now();

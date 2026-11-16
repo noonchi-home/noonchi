@@ -1,6 +1,6 @@
 // 대시보드 가짜 단계 자료(ui/src/dashboard/fake-run.json)를 만든다. 실행: npx tsx scripts/twin3d/fake-run.ts
 // 한양목련 실제 장면·평면도(loadScene·floorPlanFrom)로 컵 치우기 계획(에이전트 컵 계획이 맞춰야 할 모양 tests/helpers/cup-plan.ts, 로봇 [10.6, 8.6])을 짜고, 다섯 순간(0 지켜보기, 1~4 계획 단계)마다
-// 서버가 대시보드 /events로 보내는 메시지 묶음(plan·eye·brain decision·brain observe·seen·say)을 적는다. 판단(decision)은 생각 한 문장(reasoning)과 고른 행동의 FSM 상태(fsm, 지켜보기는 null)를 싣는다. 말은 sayLine에 그 단계 명령을 넣은 글이다.
+// 서버가 대시보드 /events로 보내는 메시지 묶음(plan·eye·brain decision·생각 두 줄 thought·brain observe·seen·say)을 적는다. 계획 순간의 판단에는 그 판단 id의 생각 두 줄(본 것·그래서)이 뒤따른다. 판단(decision)은 생각 한 문장(reasoning)과 고른 행동의 FSM 상태(fsm, 지켜보기는 null)를 싣는다. 말은 sayLine에 그 단계 명령을 넣은 글이다.
 // 대시보드 폰 칸 그림은 시안 눈 그림(ui/public/debug-eye/, 세로 405×720)이고, 컵 모양(seen 마스크)은 시안 가로 그림 상자를 잘라 낸 자리만큼 옮긴 상자 안에 컵꼴로 채운 것이다.
 // 시각을 고정해서 다시 만들어도 같은 파일이 나온다.
 import { writeFileSync } from "node:fs";
@@ -28,6 +28,8 @@ const HOME = "mokryeon_180b";
 const START: XZ = [10.6, 8.6];
 const T0 = Date.parse("2026-11-09T09:00:00.000Z");
 const STEP_MS = 4000;
+/** 계획 판단의 생각 두 줄(src/brain/thought.ts가 작은 모델로 만드는 모양). */
+const THOUGHT_LINES = { seen: "사람이 컵을 식탁에 두고 자리를 떠났어요", why: "컵을 두고 떠나면 치우는 습관대로 컵을 치울게요" };
 const FRAME = { width: 405, height: 720 };
 const EYE_HEIGHT_M = 1.1;
 const OBSERVATION = "식탁 위에 컵이 있고 사람이 자리를 비웠어요.";
@@ -142,6 +144,7 @@ function build(): Moment[] {
       { type: "plan", plan: open },
       { type: "eye", eye: eyeEvent },
       { type: "brain", event: decision },
+      ...(n === 0 ? [] : [{ type: "thought", id: decisionId, ...THOUGHT_LINES } as const]),
       { type: "brain", event: observe },
       seen,
       { type: "say", text: sayLine({ plan: open, command, world, nowMs: now }) },

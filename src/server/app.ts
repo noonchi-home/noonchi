@@ -7,7 +7,7 @@ import { join, resolve } from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
 import type { Agent } from "../agent/index.js";
 import { Policy } from "../agent/index.js";
-import type { BrainLog, HealthView, ReadyView, SeenEvent } from "../contract/events.js";
+import type { BrainLog, HealthView, ReadyView, SeenEvent, ThoughtEvent } from "../contract/events.js";
 import type { WorldView } from "../contract/world.js";
 import type { OffTrack } from "../contract/plan.js";
 import type { ControlMode } from "../contract/setup.js";
@@ -74,6 +74,8 @@ export interface AppOptions {
   world?: () => WorldView;
   /** 마지막 판단(BRAIN=1). /events 접속 때 world 다음에 {type:"brain", replay:true}로 보낸다. */
   brainLast?: () => BrainLog[];
+  /** 마지막 판단의 생각 말풍선 두 줄(BRAIN=1, src/brain/thought.ts). /events 접속 때 마지막 판단 다음에 replay:true를 붙여 보낸다. */
+  thoughtLast?: () => ThoughtEvent | null;
   /** 마지막 물체 모양(BRAIN=1). /events 접속 때 그대로 replay:true를 붙여 보낸다. */
   seenLast?: () => SeenEvent | null;
   /** 지금 대시보드 말풍선 카드 글(src/act/say.ts). /events 접속 때 {type:"say"}. 없으면 null. */
@@ -298,6 +300,8 @@ export function createApp(opts: AppOptions): TwinHomeApp {
     send(ws, { type: "plan", plan: opts.plan?.current() ?? null });
     if (opts.world) send(ws, { type: "world", world: opts.world() });
     for (const event of opts.brainLast?.() ?? []) send(ws, { type: "brain", event, replay: true });
+    const thought = opts.thoughtLast?.();
+    if (thought) send(ws, { ...thought, replay: true });
     const seen = opts.seenLast?.();
     if (seen) send(ws, { ...seen, replay: true });
     send(ws, { type: "say", text: opts.say?.() ?? null });

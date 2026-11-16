@@ -96,6 +96,9 @@ export const REASON = "사람이 자리를 비운 뒤에도 컵이 식탁에 남
 export const LEFT_CUP_STATE = "컵을 두고 자리를 뜸";
 /** 계획 단계의 생각 말풍선(PAM의 생각 한 문장·FSM 상태 이름표·습관 아님·눈치·판단). 지켜보기는 대기라 없다. */
 export const THOUGHT: Thought = { reasoning: REASON, state: LEFT_CUP_STATE, habit: false, assist: "noonchi", action: CLEAR_CUP };
+/** 작은 모델이 고친 생각 두 줄(「본 것」·「그래서」, src/brain/thought.ts)과 그 두 줄이 붙은 생각 말풍선. */
+export const LINES = { seen: "사람이 컵을 식탁에 두고 자리를 떠났어요", why: "컵을 두고 떠나면 치우는 습관대로 컵을 치울게요" };
+export const THOUGHT_LINES: Thought = { ...THOUGHT, lines: LINES };
 
 /** 컵 갈래 판단 고정 자료: 행동, 그 규칙이 있는 FSM 상태 id·트리거(src/brain/decision.ts CUP_FSM_MEMORY와 같다, data.test.ts가 견준다), PAM의 생각 한 문장. */
 export interface Branch { action: string; state: string; trigger: string; reasoning: string }

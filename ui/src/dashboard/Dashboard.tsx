@@ -230,7 +230,7 @@ export function Dashboard() {
       <BakedStage home={kind === "three" ? homeId : null} layout={layout} plan={dash.plan} eye={dash.eye} checks={checks} devices={devices} onEngine={onEngine} onReady={onBakedReady} />
     );
   const plan = isOpen(dash.plan) ? dash.plan : null;
-  const thought = useMemo(() => thoughtOf(dash), [dash.decision, dash.reflection]);
+  const thought = useMemo(() => thoughtOf(dash), [dash.decision, dash.lines, dash.reflection]);
   return (
     <DashboardScreen
       index={stepIndex(plan)} plan={plan} step={currentStep(plan)} robotKnown={dash.eye !== null} connected={online} map={map} mapReady={mapReady}

@@ -22,7 +22,7 @@ import type { PlaceNames, LayoutEditor } from "../layout/index.js";
 import { Policy } from "../agent/index.js";
 import { createProvider } from "../agent/index.js";
 import { deviceViews } from "../agent/index.js";
-import { PamClient } from "../brain/index.js";
+import { PamClient, ThoughtWriter, thoughtFeed, type ThoughtFeed } from "../brain/index.js";
 import type { BrainLog, ReadyView, SeenEvent } from "../contract/events.js";
 import type { ApprovalAnswer, PlannedCommand } from "../contract/phone.js";
 import type { PlanView } from "../contract/plan.js";
@@ -33,6 +33,7 @@ import { FEEDBACK_TEXT, PHOTO_TEXT } from "../brain/index.js";
 import { datasetWriter } from "../brain/index.js";
 import { SignalHub, type SignalSource } from "../devices/index.js";
 import { loadEndpoints } from "../infer/endpoints.js";
+import { createInference } from "../infer/inference.js";
 import { createPipeline, type ObservationPipeline, type PipelineInject } from "../observe/index.js";
 import type { DeviceHub, DeviceState } from "../contract/devices.js";
 import { FOCUS_TTL_MS, focusFromActions, type Focus } from "../layout/index.js";
@@ -284,6 +285,8 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     // 실제 폰에 낸 지금 명령(실행 추적이 보낸 것), 마지막 판단, 마지막 물체 모양(seen): 새로 붙은 대시보드에도 보낸다
     let command: PlannedCommand | null = null;
     let lastDecision: BrainLog | null = null;
+    // 생각 말풍선 두 줄(src/brain/thought.ts): 판단 기록 뒤에 따로 만들어 대시보드로만 보낸다(관찰 흐름이 있을 때)
+    let thoughts: ThoughtFeed | null = null;
     let lastSeen: SeenEvent | null = null;
     let said: string | null = null;
     // 마지막으로 가까이 보기를 시작한 자리와 시각(말풍선 카드 6초)
@@ -318,10 +321,14 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     const assist = () => ctx.assist?.() ?? "noonchi";
     if (world) {
       const now = () => ctx.brain?.clock?.now() ?? Date.now();
+      // 판단·계획은 두 줄을 기다리지 않는다: 판단 기록을 보낸 뒤 부르고, 두 줄이 오면 그 판단 id로 보낸다
+      const feed = thoughtFeed({ writer: new ThoughtWriter({ chat: createInference(env).thought }), send: (m) => appRef.current?.broadcast(m) });
+      thoughts = feed;
       const emit = (event: BrainLog) => {
         if (event.type === "decision") lastDecision = event;
         appRef.current?.broadcast({ type: "brain", event });
         history.brain(event);
+        if (event.type === "decision") feed.decision(event);
       };
       // 판단 호출(src/brain/decide.ts): World State 관찰 텍스트 + 기억 + 행동 목록으로 PAM 서비스를 부른다.
       // 기억은 그날 처음 정한 판본(src/brain/history/reflect.ts). 관찰 텍스트 시각은 기록 DB와 같은 시간대
@@ -458,7 +465,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       start: startStore && { get: () => startStore.get(), save: (raw) => startStore.save(raw), preview: (raw) => startStore.preview(raw), clear: () => startStore.clear() },
       phoneSync: () => phoneRef.current?.syncState() ?? null,
       plan: plans, offTrack: () => tracker?.offTrack() ?? null, history: history.db, reflect: history.reflect, scene: () => scene,
-      brainLast: () => [...todayReflection(), ...(lastDecision ? [lastDecision] : [])], seenLast: () => lastSeen, say: () => said,
+      brainLast: () => [...todayReflection(), ...(lastDecision ? [lastDecision] : [])], thoughtLast: () => thoughts?.last() ?? null, seenLast: () => lastSeen, say: () => said,
     });
     const appNow = app;
     appRef.current = app;

@@ -3,7 +3,7 @@
 import { act, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DashboardScreen, type ScreenProps } from "../../src/dashboard/DashboardScreen";
-import { EYE_FRAMES, imageSlot, PHONE_URL, REASON, SAY, screenAt, seenOf, THOUGHT } from "./fixtures";
+import { EYE_FRAMES, imageSlot, LINES, PHONE_URL, REASON, SAY, screenAt, seenOf, THOUGHT, THOUGHT_LINES } from "./fixtures";
 
 const STAGE = { width: 1504, height: 896 };
 const ALLOWED = new Set(["transform", "opacity", "offset", "easing", "composite"]);
@@ -125,9 +125,9 @@ describe("대시보드 단계 바뀜", () => {
     const t = thoughtOf(view.container);
     expect(still(t)).toBe(was.boxes.thought);
     expect(box(t.querySelector<HTMLElement>("[data-slot=thought-bubble]")!)).toBe(was.boxes.bubble);
-    const lines = [...t.querySelectorAll<HTMLElement>("[data-thought-line]")];
-    expect(lines.map((l) => l.textContent)).toEqual([REASON, next.reasoning]);
-    const [old, now] = lines.map((l) => l.parentElement!);
+    const items = [...t.querySelectorAll<HTMLElement>("[data-thought-item]")];
+    expect(items.map((l) => l.querySelector("[data-thought-line]")!.textContent)).toEqual([REASON, next.reasoning]);
+    const [old, now] = items;
     const out = calls.filter((c) => c.el === old);
     const into = calls.filter((c) => c.el === now);
     expect(out).toHaveLength(1);
@@ -137,11 +137,27 @@ describe("대시보드 단계 바뀜", () => {
     expect(into[0]!.keyframes.some((k) => "transform" in k)).toBe(true);
   });
 
+  it("원래 생각에 그 판단의 두 줄(본 것·그래서)이 오면 원래 생각은 opacity로 사라지고 두 줄이 opacity·transform으로 떠오른다. 말풍선 칸 크기는 그대로다", () => {
+    motionOn();
+    const { view, was } = step(screenAt(1), screenAt(1, { thought: THOUGHT_LINES }));
+    const t = thoughtOf(view.container);
+    expect(still(t)).toBe(was.boxes.thought);
+    expect(box(t.querySelector<HTMLElement>("[data-slot=thought-bubble]")!)).toBe(was.boxes.bubble);
+    const [old, now] = [...t.querySelectorAll<HTMLElement>("[data-thought-item]")];
+    expect(old!.querySelector("[data-thought-line]")).toHaveAttribute("data-thought-line", "raw");
+    expect([...now!.querySelectorAll("[data-thought-line]")].map((l) => l.textContent)).toEqual([LINES.seen, LINES.why]);
+    const out = calls.filter((c) => c.el === old);
+    const into = calls.filter((c) => c.el === now);
+    expect(out.map((c) => c.keyframes.map((k) => k.opacity))).toEqual([[1, 0]]);
+    expect(into.map((c) => c.keyframes.map((k) => k.opacity))).toEqual([[0, 1]]);
+    for (const c of calls) for (const k of c.keyframes) for (const p of Object.keys(k)) expect(ALLOWED.has(p), p).toBe(true);
+  });
+
   it("계획 단계끼리는 생각이 같아 생각 말풍선을 다시 띄우지 않는다", () => {
     motionOn();
     const { view } = step(screenAt(1), screenAt(2));
     const t = thoughtOf(view.container);
-    expect(t.querySelectorAll("[data-thought-line]")).toHaveLength(1);
+    expect(t.querySelectorAll("[data-thought-item]")).toHaveLength(1);
     expect(calls.filter((c) => t.contains(c.el))).toEqual([]);
   });
 

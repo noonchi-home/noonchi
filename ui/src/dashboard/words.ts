@@ -9,6 +9,8 @@ export const WORDS = {
   habit: "습관",
   learnedRule: "배운 규칙",
   learnedNow: "새로 배움",
+  seen: "본 것",
+  why: "그래서",
   offline: "연결 끊김 · 다시 연결 중",
   noRobot: "클로이드 위치 모름",
   phoneOff: "폰 서버가 꺼져 있어요.",

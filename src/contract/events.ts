@@ -96,6 +96,10 @@ export interface SeenEvent {
   shapes: { label: DetLabel; score: number; mask: Mask }[];
 }
 
+/** 생각 말풍선 두 줄(/events {type:"thought", …}, src/brain/thought.ts): 행동을 고른 판단(id)의 관찰·생각을 작은 모델이 고친 「본 것」(seen)·「그래서」(why).
+ *  판단 기록 뒤에 따로 오고 대시보드로만 간다(기록 DB에 넣지 않는다. 판단 기록에는 원래 생각이 남는다). 대시보드는 지금 판단 id와 같을 때만 쓰고, 없으면 원래 생각을 보인다. */
+export interface ThoughtEvent { type: "thought"; id: string; seen: string; why: string }
+
 /** 관찰 흐름·판단이 대시보드로 보내는 기록(/events {type:"brain", event}). VLM 프레임(VLM_FRAME_MS마다 한 장) 하나는 observe 기록으로 반드시 남는다:
  *  YOLO 결과(yolo) 또는 yolo_missing, VLM 답(vlm) 또는 vlm_missing. 그 사이 빠른 프레임은 observe 기록 없이 SeenEvent만 낸다.
  *  상자는 싣지 않는다: 물체 모양은 SeenEvent의 마스크로만 간다.
@@ -261,6 +265,8 @@ export type ServerMessage =
   | { type: "brain"; event: BrainLog; replay?: true }
   /** 감지가 끝난 엔진 프레임의 물체 모양. replay: 접속 때 다시 보낸 마지막 것. */
   | (SeenEvent & { replay?: true })
+  /** 생각 말풍선 두 줄. replay: 접속 때 다시 보낸 마지막 것(마지막 판단 다음). */
+  | (ThoughtEvent & { replay?: true })
   | { type: "photo"; photo: PhotoRecord }
   | { type: "focus"; focus: Focus }
   | { type: "eye"; eye: EyeEvent }

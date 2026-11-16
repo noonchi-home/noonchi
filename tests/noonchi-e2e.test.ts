@@ -16,6 +16,7 @@ import { startServer, type RunningServer } from "../src/server/start.js";
 import { ScriptedDetector, det } from "./helpers/detectors.js";
 import { startFakePam, type FakePam } from "./helpers/pam.js";
 import { CUP_SCRIPTS, plannerRespond } from "./helpers/planner.js";
+import { LINES, thoughtReplies } from "./helpers/thought.js";
 import { heardAtOf, openPhone, openWebSocket } from "./helpers/ws.js";
 
 type Msg = Record<string, any>;
@@ -38,8 +39,13 @@ const inbox = (list: Msg[]) => (ws: WebSocket) => ws.on("message", (d, bin) => {
 describe("NOONCHI 처음부터 끝까지", () => {
   it("관찰부터 단계 명령·실행 결과까지 한 흐름으로 돌고 기록·대시보드에 남는다", async () => {
     let cupPlace = "on_table";
+    // 생각 말풍선 두 줄(VLM 주소 자리의 같은 가짜 서버): 첫 명령이 나갈 때까지 답을 붙잡아 둔다(판단·계획이 두 줄을 기다리지 않는지)
+    const thoughts = thoughtReplies();
+    thoughts.hold();
     fake = await startFakeOpenAI({
       reply: (body) => {
+        const lines = thoughts.reply(body);
+        if (lines !== null) return lines;
         if (body?.response_format?.json_schema?.name !== "scene_observation") return null;
         const parts = (body.messages as { role: string; content: unknown }[]).filter((m) => m.role === "user").flatMap((m) => (Array.isArray(m.content) ? m.content : [{ text: m.content }]));
         const text = parts.map((p: { text?: unknown }) => (typeof p.text === "string" ? p.text : "")).join("\n");
@@ -84,6 +90,15 @@ describe("NOONCHI 처음부터 끝까지", () => {
     const first = said("식탁으로 가 주세요")!;
     expect(first).toEqual({ type: "command", id: expect.stringMatching(/^plan:pam-\d+$/), step: `${first.id}:1`, text: "식탁으로 가 주세요", vision: "식탁까지 거리 모름", choices: [{ id: "done", label: "완료" }], target: null, speak: true, kind: "go" });
     const planId = first.id as string;
+    // 두 줄 답을 붙잡아 둔 동안에도 판단 → 계획 → 첫 명령이 나갔다. 놓으면 마지막 판단 id로 두 줄이 대시보드에 온다
+    expect(thoughts.bodies.length).toBeGreaterThan(0);
+    expect(dash.some((m) => m.type === "thought")).toBe(false);
+    thoughts.release();
+    await pump(() => dash.some((m) => m.type === "thought"));
+    const lineAt = dash.findIndex((m) => m.type === "thought");
+    const decidedBefore = dash.slice(0, lineAt).filter((m) => m.type === "brain" && m.event.type === "decision" && m.event.status === "valid").at(-1)!.event;
+    expect(dash[lineAt]).toEqual({ type: "thought", id: decidedBefore.id, ...LINES });
+    expect(decidedBefore.prediction.reasoning).toBe("자리를 비워 컵을 치운다");
     // 1 이동: 「완료」 단추
     ws.send(JSON.stringify({ type: "answer", id: planId, step: first.step, choice: "done" }));
     await pump(() => !!said("컵을 들어 주세요"));
@@ -120,6 +135,9 @@ describe("NOONCHI 처음부터 끝까지", () => {
     expect(all.rows.filter((r) => r.kind === "feedback").sort((a, b) => a.id - b.id).map((r) => r.text)).toEqual(["완료 · 부탁: 식탁으로 가 주세요", "다 했어 · 부탁: 싱크대로 가 주세요"]);
     const decided = all.rows.find((r) => r.kind === "decision" && `plan:${r.subject}` === planId)!;
     expect(decided.text).toBe("컵 치우기");
+    // 기록 DB 판단 줄에는 원래 생각이 그대로 남는다. 같은 생각은 두 줄을 한 번만 만들었다
+    expect((decided.data as { prediction: { reasoning: string } }).prediction.reasoning).toBe("자리를 비워 컵을 치운다");
+    expect(thoughts.bodies).toHaveLength(1);
     expect(pam.bodies.some((b) => String(b.observation_text).includes("컵 cup_1 보임"))).toBe(true);
     // 대시보드: 판단·실행 기록과 계획(집기 대상 cup_1). 단계 상태가 지금 단계를 따라가고 끝나면 done
     const planMsgs = dash.filter((m) => m.type === "plan" && m.plan?.id === planId).map((m) => m.plan);
@@ -140,12 +158,13 @@ describe("NOONCHI 처음부터 끝까지", () => {
     const told = says.indexOf("식탁으로 가라고 했어요.");
     expect(says[told - 1]).toMatch(/컵을 치우기로 했어요\.$/);
     expect(says.slice(told, told + 5)).toEqual(["식탁으로 가라고 했어요.", "컵을 들라고 했어요.", "싱크대로 가라고 했어요.", "컵을 싱크대에 넣으라고 했어요.", "컵을 다 치웠어요."]);
-    // 새로 붙은 대시보드: world 다음에 마지막 판단과 마지막 물체 모양(seen), 그다음 지금 말풍선 글
+    // 새로 붙은 대시보드: world 다음에 마지막 판단과 그 판단의 생각 두 줄, 마지막 물체 모양(seen), 그다음 지금 말풍선 글
     const late: Msg[] = [];
     sockets.push(await openWebSocket(`${srv.url.replace(/^http/, "ws")}/events`, { setup: inbox(late) }));
     for (const end = Date.now() + 3000; !late.some((m) => m.type === "say") && Date.now() < end; ) await new Promise((r) => setTimeout(r, 20));
     const from = late.findIndex((m) => m.type === "world");
-    expect(late.slice(from, late.findIndex((m) => m.type === "say") + 1).map((m) => (m.type === "brain" ? `brain:${m.event.type}` : m.type))).toEqual(["world", "brain:decision", "seen", "say"]);
+    expect(late.slice(from, late.findIndex((m) => m.type === "say") + 1).map((m) => (m.type === "brain" ? `brain:${m.event.type}` : m.type))).toEqual(["world", "brain:decision", "thought", "seen", "say"]);
+    expect(late.find((m) => m.type === "thought")).toEqual({ type: "thought", replay: true, id: late.find((m) => m.type === "brain")!.event.id, ...LINES });
     expect(late.find((m) => m.type === "seen")).toMatchObject({
       replay: true, shapes: [{ label: "cup", score: 0.9, mask: { at: [220, 160, 40, 20] } }], frame: { width: 480, height: 360 },
     });

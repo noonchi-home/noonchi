@@ -96,6 +96,7 @@ HUB=memory npm run demo
 | `INFERENCE_MODE` | `mock` | `mock`(GPU 없음, VLM은 OpenAI) · `live`(GPU 서버, VLM은 같은 서버 vLLM `http://vllm-vlm:8000/v1`, 모델 이름 `vlm`). 두 모드는 같은 코드 경로이고 주소·모델 이름만 다르다. 다른 값이면 시작하지 않는다 |
 | `VLM_BASE_URL`, `VLM_MODEL`, `VLM_API_KEY`, `VLM_EXTRA_BODY` | 모드 기본값 | 따로 주면 모드 기본값 대신 쓴다(OpenAI 호환 주소). mock 기본: `https://api.openai.com/v1`·`gpt-5.4-mini`·`OPENAI_API_KEY`·`{"reasoning_effort":"none"}`, live 기본: `http://vllm-vlm:8000/v1`·`vlm`·`VLLM_API_KEY`·`{}` |
 | `VLM_CLOSER_MODEL` | `VLM_MODEL`과 같음 | 가까이 보기 VLM 모델 이름. 같은 VLM 주소·키·요청 칸에 모델 이름만 바꿔 보낸다. 비용은 그 모델 가격으로 세고, 가격표(`src/infer/cost.ts`)에 없으면 모름 |
+| `THOUGHT_MODEL` | mock `gpt-5.4-nano`, live `vlm` | 대시보드 생각 말풍선 두 줄(「본 것」·「그래서」, `src/brain/thought.ts`)을 쓰는 작은 모델 이름. 같은 VLM 주소·키·요청 칸에 모델 이름만 바꿔 보낸다 |
 | `VLM_TIMEOUT_MS` | `20000` | 사진 한 장 VLM 분석 제한 시간(1000 이상) |
 | `PAM_URL` | `http://127.0.0.1:8300` | PAM 서비스 주소(compose 안은 compose가 `http://pam:8300`으로 둔다) |
 | `PAM_LLM_BASE_URL`, `PAM_LLM_MODEL`, `PAM_LLM_API_KEY` | 모드 기본값 | PAM 서비스(`services/pam/`)가 부르는 PAM LLM(OpenAI 호환 주소). mock 기본: `https://openrouter.ai/api/v1`·`qwen/qwen3.5-27b`(provider alibaba 고정)·`OPENROUTER_API_KEY`, live 기본: `http://vllm-pam:8000/v1`·`pam`·`VLLM_API_KEY` |
@@ -215,7 +216,7 @@ twin-home 서버: http://127.0.0.1:8200  (허브 matter/network, 에이전트 op
 | `POST /api/phone/start-pose/clear` | `{ home? }` | `{ ok, start: null }` |
 | `GET /api/phone/sync` | | `{ ok, sync }` 위치 맞춤 모듈 상태(`rigid`, `floorY`, `aligned`, `source`, `started`, `anchors`, `anchorIds`(짝지은 트윈 물건), `wallPoints`, `residualM`, `observed`). 폰 서버가 없으면 `sync: null` |
 | `GET /api/decisions?limit=` | | `{ ok, decisions: [{ id, at_ms, day, text, text_sent, seq, status, prediction, memory_version, world }] }` 최근 판단과 그때 보낸 관찰 텍스트(기본 20, 최대 500) |
-| `GET /events` (WebSocket) | | 붙으면 `{type:"hello", home}`, 모든 기기의 `{type:"state", state}`, 지금 배치 보정의 `{type:"layout"}`들, `{type:"plan"}`, (`BRAIN=1`이면) `{type:"world"}`와 마지막 판단·상자 있는 마지막 observe의 `{type:"brain", event}` 하나씩. 맨 끝은 늘 말풍선 카드 글 `{type:"say", text}`(글이 없으면 `null`). 이후 바뀔 때마다 `{type:"state"}`, `{type:"agent", event:"action"\|"reply"\|"pending"\|"confirmed"\|"cancelled", ...}`, `{type:"layout"}`, `{type:"focus"}`, `{type:"eye"}`, `{type:"photo"}`, `{type:"brain", event}`(관찰·World State 변화·판단·실행·연결·판단 시점·반성 기록, `src/contract/events.ts` `BrainLog`), `{type:"world"}`, `{type:"say"}`(글이 바뀔 때만, `src/act/say.ts`) (모양은 [plan.md](plan.md)) |
+| `GET /events` (WebSocket) | | 붙으면 `{type:"hello", home}`, 모든 기기의 `{type:"state", state}`, 지금 배치 보정의 `{type:"layout"}`들, `{type:"plan"}`, (`BRAIN=1`이면) `{type:"world"}`와 마지막 판단·상자 있는 마지막 observe의 `{type:"brain", event}` 하나씩, 마지막 판단의 생각 두 줄 `{type:"thought", id, seen, why, replay:true}`(있을 때). 맨 끝은 늘 말풍선 카드 글 `{type:"say", text}`(글이 없으면 `null`). 이후 바뀔 때마다 `{type:"state"}`, `{type:"agent", event:"action"\|"reply"\|"pending"\|"confirmed"\|"cancelled", ...}`, `{type:"layout"}`, `{type:"focus"}`, `{type:"eye"}`, `{type:"photo"}`, `{type:"brain", event}`(관찰·World State 변화·판단·실행·연결·판단 시점·반성 기록, `src/contract/events.ts` `BrainLog`), `{type:"thought", id, seen, why}`(행동을 고른 판단 id의 생각 두 줄, 판단 뒤에 따로 오고 기록 DB에는 넣지 않는다), `{type:"world"}`, `{type:"say"}`(글이 바뀔 때만, `src/act/say.ts`) (모양은 [plan.md](plan.md)) |
 
 - `command`는 `docs/plan.md`의 `Command` 객체다. 줄임으로 문자열(`"on"`, `"off"`, `"lock"` …)도 받는다.
 - 정적 파일: `/`·`/setup/`은 React 빌드 `ui/dist/`다. `/twin/`은 고른 집의 twin-studio 산출물 폴더(아파트는 `apartment/`, 원룸 예시는 `homes/oneroom/`), `/twin/viewer/`는 모든 집이 함께 쓰는 뷰어(`homes.json` viewer), `/twin/lib/`은 모든 종류의 GLB(`homes.json` library)다. 경로 탈출(`..`)은 막는다.
@@ -225,7 +226,9 @@ twin-home 서버: http://127.0.0.1:8200  (허브 matter/network, 에이전트 op
 
 React+TypeScript 화면(`ui/`, Vite 다중 페이지)이다. 서버는 빌드 결과 `ui/dist/`를 내준다. `npm start`·`npm run dev`가 먼저 `npm run ui:build`로 빌드하고, 빌드 전이면 화면 요청은 503(「화면이 아직 빌드되지 않았어요. npm run ui:build」)이다. 화면만 고칠 때는 `npm run ui:dev`(5173, `/api`·`/twin`·`/events`를 8200으로 넘김).
 
-- **대시보드** (`/`): 3D 트윈이 화면 전체 배경이고 그 위에 패널이 떠 있다. 위 가운데 상태 알약(연결·집·운영 모드·허브·에이전트·설정 다시 하기), 왼쪽 위 클로이드의 눈(접기), 오른쪽 판단 기록(요청마다 카드, 「폰 화면」 탭). 입력창이 없다. 요청·승인은 폰에서 음성으로 한다. 말풍선은 에이전트가 판단하면서 확인한 기기·물건에만 뜬다. 패널·알약·말풍선은 21st.dev 부품의 흰 카드다.
+- **대시보드** (`/`): 3D 트윈이 화면 전체(둘레 여백 안)를 쓰고, 그 위에 오른쪽 위 폰 카메라 미니맵, 오른쪽 아래 마스코트(누르면 설정 창), 마스코트 위 생각 말풍선, 트윈 아래쪽 말풍선 카드를 얹는다(자리는 `ui/src/dashboard/layout.ts`). 입력창이 없다. 요청·승인은 폰에서 음성으로 한다. 트윈 위 말풍선은 에이전트가 판단하면서 확인한 기기·물건에만 뜬다. 부품은 모두 21st.dev 받은 코드다.
+  - 폰 카메라 미니맵: 가로 16:9 칸, 너비는 화면 너비의 340/1280(1920에서 510×286.9, 1440에서 382.5×215.2)이고 높이는 영상 비율을 따른다. 세로 영상은 트윈 높이의 절반과 생각 말풍선 위 사이(gap)까지 중 작은 쪽에서 멈춘다.
+  - 생각 말풍선: 크기 420×156 고정. 마지막 유효 판단이 행동을 골랐을 때만 보인다. 서버가 그 판단의 관찰·생각을 작은 모델(`THOUGHT_MODEL`)로 고친 두 줄이 오면 이름표 칩 「본 것」(무엇을 봤는지)·「그래서」(왜 그 행동인지) 옆에 줄마다 두 줄까지(넘으면 말줄임) 보이고, 두 줄이 오기 전이나 못 만들면(8초 넘음·실패) 원래 생각을 네 줄까지 보인다. 그 아래 칩 둘은 「상태 · …」(습관이면 「습관 · …」)과 「눈치·코치 · 행동」이다. 판단·계획은 두 줄을 기다리지 않고, 같은 생각은 모델을 다시 부르지 않는다. 기록 DB 판단 줄에는 원래 생각이 남는다.
 - **설정 화면** (`/setup/`): 아래 "설정 흐름". 설정을 안 끝냈으면(`npm start`) 서버가 `/`를 `/setup/`으로 보낸다(302).
 - **폰 화면** (`/phone/`, `ui/phone/index.html`·`ui/src/phone/`): 폰 서버가 `ui/dist`에서 폰 화면과 그 빌드 파일(`/assets/`)·브랜드 그림·파비콘만 내준다. tailscale serve는 폰 포트를 사이트 뿌리(`/`)로 잇는다.
 - WebSocket `/events`로 실시간 반영하고, 끊기면 다시 연결한다.

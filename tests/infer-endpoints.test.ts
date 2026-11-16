@@ -35,6 +35,17 @@ describe("추론 모드", () => {
     const same = createInference({ VLM_MODEL: "gpt-5.4-nano" });
     expect(same.closerVlm.model).toBe("gpt-5.4-nano");
   });
+  it("생각 말풍선 모델(THOUGHT_MODEL)은 같은 VLM 주소·키·요청 칸에 모델 이름만 바꾼다: 비우면 mock gpt-5.4-nano, live vlm", () => {
+    expect(VLM_PRESETS.mock.thoughtModel).toBe("gpt-5.4-nano");
+    expect(VLM_PRESETS.live.thoughtModel).toBe("vlm");
+    expect(loadEndpoints({}).vlm.thoughtModel).toBe("gpt-5.4-nano");
+    expect(loadEndpoints({ INFERENCE_MODE: "live" }).vlm.thoughtModel).toBe("vlm");
+    expect(loadEndpoints({ VLM_MODEL: "gpt-5.4-mini", THOUGHT_MODEL: " " }).vlm.thoughtModel).toBe("gpt-5.4-nano");
+    expect(loadEndpoints({ THOUGHT_MODEL: "small" }).vlm).toMatchObject({ model: VLM_PRESETS.mock.model, thoughtModel: "small" });
+    const { thought } = createInference({ VLM_BASE_URL: "http://127.0.0.1:9/v1", OPENAI_API_KEY: "k" });
+    expect(thought.model).toBe("gpt-5.4-nano");
+    expect(thought.endpoint).toEqual({ baseUrl: "http://127.0.0.1:9/v1", model: "gpt-5.4-nano", apiKey: "k", extraBody: { reasoning_effort: "none" } });
+  });
   it("PAM_URL이 없으면 이 PC의 PAM 서비스 주소", () => {
     expect(loadEndpoints({}).pamUrl).toBe("http://127.0.0.1:8300");
   });

@@ -62,6 +62,9 @@ const pending: ServerMessage = {
 const called = (path: string) => vi.mocked(fetch).mock.calls.some((c) => c[0] === path);
 const phonePane = () => screen.getByRole("region", { name: "폰 카메라" });
 const thought = () => document.querySelector<HTMLElement>("[data-thought]")!;
+/** 지금 생각의 칩 둘(이름표 칩 「본 것」·「그래서」는 빼고). */
+const chipTexts = () => [...thought().querySelectorAll("[data-thought-item]")].at(-1)!.querySelectorAll("[data-thought-chips] [data-slot=status]");
+const lineTexts = () => [...[...thought().querySelectorAll("[data-thought-item]")].at(-1)!.querySelectorAll("[data-thought-line]")].map((l) => l.textContent);
 const sayLine = () => [...document.querySelectorAll<HTMLElement>("[data-say-line]")].find((p) => !p.hasAttribute("aria-hidden"))!;
 
 /** 대시보드를 그리고 health·소켓이 붙을 때까지 기다린 뒤 연결을 연다. */
@@ -117,17 +120,27 @@ describe("대시보드 자료 연결", () => {
     const rule = { state: "watching_tv", trigger: "사용자가 소파에 앉아 TV를 보기 시작한다.", action: "에어컨 켜기" };
     send([{ type: "brain", replay: true, event: { type: "reflection", at_ms: 5, day: "2026-11-13", ok: true, version: 3, applies_day: "2026-11-14", text: "반성 완료", learned: [rule], active: [rule], dropped: [] } }]);
     expect(thought()).toHaveAttribute("data-thought", "shown");
-    expect([...thought().querySelectorAll("[data-slot=status]")].map((c) => c.textContent)).toEqual(["습관 · 새로 배움", "눈치 · 에어컨 켜기"]);
+    expect([...chipTexts()].map((c) => c.textContent)).toEqual(["습관 · 새로 배움", "눈치 · 에어컨 켜기"]);
   });
 
-  it("서버 판단이 행동을 고르면 생각 말풍선에 생각 한 문장과 상태·판단 칩을 보이고, 대기 판단이 오면 숨긴다", async () => {
+  it("서버 판단이 행동을 고르면 생각 말풍선에 그 판단의 두 줄(본 것·그래서)과 상태·판단 칩을 보이고, 대기 판단이 오면 숨긴다", async () => {
     await mount(false);
     send(moment(2));
     expect(thought()).toHaveAttribute("data-thought", "shown");
-    expect(thought().querySelector("[data-thought-line]")).toHaveTextContent("사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.");
-    expect([...thought().querySelectorAll("[data-slot=status]")].map((c) => c.textContent)).toEqual(["상태 · 컵을 두고 자리를 뜸", "눈치 · 컵 치우기"]);
+    expect(lineTexts()).toEqual(["사람이 컵을 식탁에 두고 자리를 떠났어요", "컵을 두고 떠나면 치우는 습관대로 컵을 치울게요"]);
+    expect([...chipTexts()].map((c) => c.textContent)).toEqual(["상태 · 컵을 두고 자리를 뜸", "눈치 · 컵 치우기"]);
     send(moment(0));
     expect(thought()).toHaveAttribute("data-thought", "hidden");
+  });
+
+  it("판단만 오면 원래 생각을 보이고, 그 판단 id의 두 줄(/events thought)이 오면 두 줄로 바뀐다. 다른 판단 id의 두 줄은 쓰지 않는다", async () => {
+    await mount(false);
+    send(moment(2).filter((m) => m.type !== "thought"));
+    expect(lineTexts()).toEqual(["사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요."]);
+    send([{ type: "thought", id: "pam-0", seen: "다른 판단", why: "다른 판단" }]);
+    expect(lineTexts()).toEqual(["사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요."]);
+    send([{ type: "thought", id: "pam-1", seen: "사람이 떠났어요", why: "컵을 치울게요" }]);
+    expect(lineTexts()).toEqual(["사람이 떠났어요", "컵을 치울게요"]);
   });
 
   it("폰 서버가 꺼져 있으면(health.eye false) 대시보드 폰 칸은 연결 QR이다", async () => {
