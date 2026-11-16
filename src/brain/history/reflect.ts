@@ -50,7 +50,8 @@ export function memoryForDay(db: HistoryDb, day: string, o: { patch?: boolean } 
 
 /** seed 바뀜(SEED_PATCHES)을 이미 배운 기억(반성·합성 판본)에 넣는다. 그 바뀜을 처음 본 때의 가장 새 판본까지(경계, meta seed_patch:<id>)만 넣고
  *  그 뒤 판본(반성이 고친 기억에서 다시 배운 것)은 둔다. 넣는 것은 판본마다 한 번(meta seed_patch:<id>:<판본>): 그날 쓰는 판본을 먼저, 가장 새 판본을 나중에 고쳐
- *  가장 새 판본을 고친 것이 가장 높은 판본이 되게 한다(앞으로의 날이 옛 판본을 고친 것을 쓰지 않게). 그날 쓰던 판본을 고쳤으면 그날을 고친 판본으로 다시 고정한다.
+ *  가장 새 판본을 고친 것이 가장 높은 판본이 되게 한다(앞으로의 날이 옛 판본을 고친 것을 쓰지 않게). 가장 새 판본에 고칠 것이 없으면(이미 습관이 있음·경계 뒤 판본)
+ *  옛 판본을 고친 것보다 앞서게 같은 내용으로 다시 저장한다. 그날 쓰던 판본을 고쳤으면 그날을 고친 판본으로 다시 고정한다.
  *  seed 판본은 seed 올리기가 맡는다. */
 function patchedForDay(db: HistoryDb, day: string, cur: DayMemory): DayMemory {
   let out = cur;
@@ -60,14 +61,28 @@ function patchedForDay(db: HistoryDb, day: string, cur: DayMemory): DayMemory {
       edge = db.latestMemoryVersion() ?? cur.version;
       db.markSeedPatch(patch.id, edge);
     }
-    const latest = db.latestMemoryVersion();
-    for (const base of [...new Set([cur.version, ...(latest === null ? [] : [latest])])]) {
-      if (base > edge) continue;
-      const made = patchVersion(db, patch, base);
-      if (made !== null && out.version === base) {
-        db.pinMemory(day, made, true);
-        out = { memory: validateMemory(db.memoryVersion(made)!.memory as never, "fsm"), kind: "fsm", version: made };
+    const head = db.latestMemoryVersion();
+    if (head === null) continue;
+    const pin = (made: number) => {
+      db.pinMemory(day, made, true);
+      out = { memory: validateMemory(db.memoryVersion(made)!.memory as never, "fsm"), kind: "fsm", version: made };
+    };
+    // 그날 판본이 가장 새 판본이 아니면 그것을 먼저 고친다
+    let copied = false;
+    if (cur.version !== head && cur.version <= edge) {
+      const made = patchVersion(db, patch, cur.version);
+      if (made !== null) {
+        pin(made);
+        copied = made > head;
       }
+    }
+    const headMade = head <= edge ? patchVersion(db, patch, head) : null;
+    if (headMade !== null && headMade > head) {
+      if (out.version === head) pin(headMade);
+    } else if (copied) {
+      // 옛 그날 판본을 고친 것이 가장 높은 판본이 됐다: 가장 새 판본을 그대로 다시 저장해 앞서게 한다(다음 날이 그 배운 규칙을 잃지 않게)
+      const src = db.memoryVersion(head)!;
+      db.saveMemory({ kind: src.kind, memory: src.memory, day: src.day, appliesDay: src.appliesDay, source: src.source });
     }
   }
   return out;

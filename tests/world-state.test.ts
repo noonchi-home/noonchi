@@ -354,9 +354,11 @@ describe("World State + 관절", () => {
     let v = w.view(9000);
     expect(v.person.visible).toBe(false);
     expect(v.objects[0]!.facts.place?.value).toBe("in_hand");
-    // 그 자리에 3초 넘게 머물면 내려놓은 것이다
+    // 그 자리에 머물면(앞 자리들과 다 가까워진 뒤 3초) 내려놓은 것이다
     for (let i = 10; i <= 13; i++) w.applyDetections(frame(i), [moving(9)]);
-    v = w.view(13_000);
+    expect(w.view(13_000).objects[0]!.facts.place?.value).toBe("in_hand");
+    w.applyDetections(frame(14), [moving(9)]);
+    v = w.view(14_000);
     expect(v.objects[0]!.facts.place).toBeUndefined();
   });
 
@@ -376,10 +378,27 @@ describe("World State + 관절", () => {
     // 들고 가는 동안 VLM이 「책상 위」라고 답해도(전체 사진·가까이 보기) 손에 있음을 둔다
     w.applyScene("t9000", 9000, { scene: "k", observations: [{ object_id: "d1", state: "on_desk" }], summary: "s" }, ids);
     expect(w.view(9000).objects[0]!.facts.place?.value).toBe("in_hand");
-    // 제자리에 3초 머물면 내려놓은 것이다
-    for (let t = 9100; t <= 12_300; t += 100) w.applyDetections(at(t), [step(9000)]);
-    v = w.view(12_300);
+    // 제자리에 머물면(앞 자리들과 다 가까워진 뒤 3초) 내려놓은 것이다
+    for (let t = 9100; t <= 11_000; t += 100) w.applyDetections(at(t), [step(9000)]);
+    expect(w.view(11_000).objects[0]!.facts.place?.value).toBe("in_hand");
+    for (let t = 11_100; t <= 14_500; t += 100) w.applyDetections(at(t), [step(9000)]);
+    v = w.view(14_500);
     expect(v.objects[0]!.facts.place).toBeUndefined();
+  });
+
+  // Codex(e0f0c33): 움직임을 찾아도 movedAt에 옛 샘플 시각을 넣어, 3초 전 샘플과만 멀어지는 느린 걸음에서는 들고 가는 중에도 손에 있음을 풀었다
+  it("천천히 들고 가도(3초 전 자리와만 기준 넘게 떨어짐) 움직임을 찾은 지금 시각을 기준으로 지켜 손에 있음을 둔다", () => {
+    const w = ws();
+    const at = (t: number): EngineFrame => ({ ...frame(0), id: `t${t}`, capturedAtMs: t, latestAtMs: t });
+    for (let t = 0; t <= 2000; t += 100) w.applyDetections(at(t), [person, cup], [grip]);
+    // 사람은 안 보이고 컵이 5초까지 100ms마다 4px, 그 뒤로는 100ms마다 0.82px씩 간다
+    // (느린 걸음은 3초 앞 자리와만 24.6px로 사진 너비 5% 넘게, 2.9초 앞 자리와는 23.8px로 5% 안)
+    const x = (t: number) => (t <= 5000 ? 220 + ((t - 2000) / 100) * 4 : 340 + ((t - 5000) / 100) * 0.82);
+    for (let t = 2100; t <= 11_000; t += 100) {
+      w.applyDetections(at(t), [det("cup", 0.9, [x(t), 160, 40, 20], 41)]);
+      if (t >= 4000) expect(w.view(t).objects[0]!.facts.place?.value, `${t}ms`).toBe("in_hand");
+    }
+    expect(w.view(11_000).person.visible).toBe(false);
   });
 
   it("자세는 가장 확실한 한 사람으로, 손에 듦은 모든 관절의 손목으로 본다(팔 조각의 손목이 컵 상자 안)", () => {

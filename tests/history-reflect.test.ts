@@ -176,6 +176,22 @@ describe("습관 넣기는 판본마다", () => {
     expect(db.latestMemoryVersion()).toBe(n);
   });
 
+  // Codex(e0f0c33): 가장 새 판본에 이미 습관이 있으면 옛 오늘 판본을 고친 것이 가장 높은 판본이 되어, 다음 날 가장 새 판본의 다른 배운 규칙을 잃었다
+  it("가장 새 판본에 이미 습관이 있어도 옛 오늘 판본을 고치면 가장 새 판본이 다시 앞선다: 다음 날은 가장 새 판본의 배운 규칙을 그대로 쓴다", () => {
+    const db = HistoryDb.open(":memory:");
+    const aircon = { trigger: "사용자가 TV를 보러 소파에 앉는다.", action: "에어컨 켜기" };
+    const learned: FsmMemory = { ...CUP_FSM_MEMORY, states: CUP_FSM_MEMORY.states.map((st) => (st.id === "watching_tv" ? { ...st, rules: [...st.rules, aircon] } : st)) };
+    db.saveMemory({ kind: "fsm", memory: CUP_FSM_MEMORY, day: null, appliesDay: null, source: "seed" });
+    db.saveMemory({ kind: "fsm", memory: past, day: "2026-11-15", appliesDay: "2026-11-16", source: "synthetic" });
+    db.pinMemory("2026-11-16", 2);
+    db.saveMemory({ kind: "fsm", memory: learned, day: "2026-11-16", appliesDay: "2026-11-17", source: "reflection" });
+    expect(leftCup(memoryForDay(db, "2026-11-16").memory)).toEqual(habit);
+    const tomorrow = db.memoryFor("2026-11-17")!;
+    expect(tomorrow.version).toBe(db.latestMemoryVersion());
+    expect(tomorrow.memory).toEqual(learned);
+    expect(tomorrow).toMatchObject({ source: "reflection", appliesDay: "2026-11-17" });
+  });
+
   // Codex(0be4ffb): 지난날 반성(reflect --chain)이 습관을 넣어 그날 판본·날 고정을 바꿨다
   it("지난날 반성은 그날 판본을 그대로 읽는다: 습관을 넣지 않고 날 고정도 바꾸지 않는다", async () => {
     const db = HistoryDb.open(":memory:");

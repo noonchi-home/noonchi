@@ -2896,6 +2896,22 @@ describe("실행 추적: 놓기 단계를 끝낸 물건(이미 치운 것)", () 
     expect(t.placed().has("cup_30")).toBe(false);
   });
 
+  // Codex(e0f0c33): 사라진 때를 놓기 시각에 묶어, 놓은 뒤 오래 보이다 사라진 컵은 새 id로 잇지 못했다
+  it("놓은 뒤 1분 동안 보이다 사라진 컵도 그 마지막 확인 뒤 새 id로 잡히면 잇는다", async () => {
+    let w = world([cup("present")]);
+    const { t, decide, clock } = setup({ w: () => w });
+    await decide(decision);
+    for (const n of [1, 2, 3, 4]) t.onAnswer("plan:pam-1", `plan:pam-1:${n}`, "done");
+    const done = clock.t;
+    const sink = { position: [5, 0.9, 0.6] as [number, number, number], surface: "sink_1", surface_label: "싱크대" };
+    clock.t = done + 60_000;
+    w = { ...world([{ ...cup("present", "on_counter", clock.t), ...sink }]), frame_ms: clock.t };
+    expect(t.placed().has("cup_1")).toBe(true);
+    clock.t += 2000;
+    w = { ...world([{ ...cup("gone", "on_counter", done + 60_000), ...sink }, { ...cup("present", "on_counter", clock.t), ...sink, id: "cup_28", first_seen_ms: clock.t }]), frame_ms: clock.t };
+    expect([...t.placed()]).toEqual([["cup_28", { target: "sink_1", atMs: done }]]);
+  });
+
   it("싱크볼 안 컵은 실행 추적이 넣은 기억이 없어도(서버를 다시 띄운 뒤, 새 id) 치운 것이라 치우기를 막는다. 손에 있음이 확인되면 아니고, 식탁 위 컵이 있으면 그 컵을 치운다", async () => {
     const basin: WorldObject = { ...cup("present", "on_desk"), id: "cup_32", position: [5, 0.9, 1.1], surface: "sink_1", surface_label: "싱크대", surface_part: "basin" };
     basin.facts = { place: { value: "on_desk", at_ms: 9_000, since_ms: 9_000, certainty: "inferred" } };

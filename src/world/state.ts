@@ -675,14 +675,15 @@ export class WorldState {
   }
 
   /** 물건이 움직였는지 센다: 최근 SETTLE_MS 동안 본 자리(트윈 자리, 모르면 사진 가운데 점) 가운데 지금 자리에서 MOVE_M(MOVE_IMAGE) 넘게 떨어진 것이 있으면
-   *  그 가장 늦은 촬영 시각이 movedAt이다(직전 프레임과만 견주면 100ms마다 조금씩 들고 가도 제자리로 보인다).
+   *  지금 움직이는 중이라 movedAt을 지금 촬영 시각으로 둔다(직전 프레임과만 견주면 100ms마다 조금씩 들고 가도 제자리로 보이고,
+   *  떨어진 옛 자리의 시각을 두면 천천히 들고 가는 동안에도 3초 전 것만 떨어져 바로 내려놓은 것이 된다).
    *  사람이 안 보이는 동안 들고 가던 물건이 제자리에 SETTLE_MS 있으면 내려놓은 것으로 손에 있음을 지운다. */
   private track(o: Obj, at: number, position: V3 | null, center: [number, number]): void {
     const far = (s: { position: V3 | null; center: [number, number] }) => position && s.position
       ? Math.hypot(position[0] - s.position[0], position[2] - s.position[2]) > MOVE_M
       : Math.hypot(center[0] - s.center[0], center[1] - s.center[1]) > MOVE_IMAGE;
     o.trail = o.trail.filter((s) => at - s.at <= SETTLE_MS);
-    for (const s of o.trail) if (far(s)) o.movedAt = Math.max(o.movedAt, s.at);
+    if (o.trail.some(far)) o.movedAt = at;
     o.trail.push({ at, position, center });
     if (!o.carried) return;
     if (this.person.visible || !this.posedInHand(o)) o.carried = false;

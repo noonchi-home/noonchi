@@ -581,8 +581,8 @@ export class ExecutionTracker {
    *  (놓은 컵이 끝낸 뒤 2초 만에 새 id로 잡혀 치운 기억이 없어졌다, 2026-11-16 23:36). 아직 없거나 둘 이상이면 사라진 때부터 PUT_HANDOVER_MS 동안 기다린다. */
   private carryPut(id: string, p: { target: string; part?: "basin"; atMs: number }, objects: WorldView["objects"], now: number): void {
     const cls = this.putCls.get(id);
-    // 사라진 때: 그 물건을 마지막으로 본 때(World State에 없으면 끝낸 때). 기한과 후보는 이 때를 기준으로 본다
-    const lostAt = Math.min(p.atMs, objects.find((o) => o.id === id)?.last_seen_ms ?? p.atMs);
+    // 사라진 때: 그 물건을 마지막으로 본 때(놓은 뒤 오래 보이다 사라졌으면 그 마지막 확인, World State에 없으면 끝낸 때). 기한과 후보는 이 때를 기준으로 본다
+    const lostAt = objects.find((o) => o.id === id)?.last_seen_ms ?? p.atMs;
     // 후보: 같은 종류가 넣은 곳(싱크볼이었으면 싱크볼)에, 사라진 무렵(PUT_LOST_SLACK_MS 앞) 뒤에 처음 보인 것. 원래 있던 옆 컵은 아니다
     const next = objects.filter((o) => o.id !== id && o.status !== "gone" && o.cls === cls && o.surface === p.target
       && (p.part === undefined || o.surface_part === p.part) && o.first_seen_ms >= lostAt - PUT_LOST_SLACK_MS && o.first_seen_ms <= lostAt + PUT_HANDOVER_MS
