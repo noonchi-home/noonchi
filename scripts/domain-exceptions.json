@@ -5,7 +5,6 @@
   "direction ui/src/setup/SetupApp.tsx -> ui/src/dashboard/mascot-image.ts",
   "inner src/agent/planShape.ts -> src/layout/route.ts",
   "inner src/layout/scene.ts -> src/devices/mapping.ts",
-  "inner src/observe/detector.ts -> src/phone/sync/classes.ts",
   "inner ui/src/bubbles/BubbleLayer.tsx -> ui/src/twin/use-anchors.ts",
   "inner ui/src/dashboard/Dashboard.tsx -> ui/src/twin/TwinStage.tsx",
   "inner ui/src/dashboard/Dashboard.tsx -> ui/src/twin/use-anchors.ts",

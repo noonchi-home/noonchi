@@ -141,7 +141,7 @@
 | 이름 | 자리 | 무엇 |
 |---|---|---|
 | 계약 | `src/contract/` | 순수 타입만. 값 import는 하지 않는다. 계약 밖은 공용 표의 타입만 `import type`으로 가져온다(2.3 타입 전용 의존). 지금 도메인에 흩어진 공용 타입을 여기로 모은다(2.5) |
-| 공용 표 | 각 도메인 안 정한 파일 | 문서가 「하나뿐인 표」로 적은 것: 낱말 표 `world/vocab.ts`·`world/labels.ts`, 가전 종류 등록부 `devices/kinds.ts`·`devices/types.ts`, 행동 목록 `act/tasks.ts`·`act/prompts.ts`, 서버 글 `act/labels.ts`. 어느 도메인·화면이든 가져오고, 표 파일은 계약·공용 도우미·다른 표만 가져온다(5절 정한 것 2) |
+| 공용 표 | 각 도메인 안 정한 파일 | 문서가 「하나뿐인 표」로 적은 것: 낱말 표 `world/vocab.ts`·`world/labels.ts`, 가전 종류 등록부 `devices/kinds.ts`·`devices/types.ts`, 행동 목록 `act/tasks.ts`·`act/prompts.ts`, 서버 글 `act/labels.ts`, 위치 맞추기 기준점 종류 `phone/sync/classes.ts`(낱말 표에서만 만든다. 감지 Worker가 phone 입구 없이 읽는다). 어느 도메인·화면이든 가져오고, 표 파일은 계약·공용 도우미·다른 표만 가져온다(5절 정한 것 2) |
 | 공용 도우미 | `src/shared/` | 도메인 지식이 없는 순수 도우미(2.2). 계약·다른 shared 파일·node 기본 모듈만 가져온다. 도메인·공용 표를 가져오거나 다시 내보내지 않는다 |
 | 외부 API 게이트웨이 | `src/infer/` 그대로 | 구현명세서 6.9. 관찰 흐름(VLM)·에이전트(관찰 모드)·서버(준비 상태)가 쓰는 통로다. 규칙은 `shared`와 같다: 계약·`shared`·node 기본 모듈만 가져온다. 지금 가져오는 밖은 `server/net.ts`(`fetchRetry`) 하나이고 2단계에서 `shared/net.ts`가 되어 규칙을 지킨다. `src/shared/infer/`로 옮기지 않는 까닭: 옮길 파일 0개, 시험 import 13곳이 그대로이고, 저장소 규칙 표와 `tests/same-structure.test.ts`가 `src/infer/endpoints.ts` 경로를 이름으로 적는다 |
 | 브라우저 입구 | `src/layout/browser.ts` | 화면이 쓰는 경로 찾기만 낸다(`route`·`approach`·`floorPlanFrom`·`roomAt`). 따라 들어가는 import 어디에도 node 모듈이 없다. 장면 읽기·배치 편집기(node:fs)는 `layout/index.ts`에만 있다 |
