@@ -29,8 +29,16 @@ const WASHER_CALL: ServiceCall = {
   kind: "as_center", to: AS, device: { id: "washer_1", label: "세탁기", kind: "washer" }, problem: "탈수할 때 멈춤", errorCode: "UE", person: null,
 };
 const META = { id: "c1", approvedAt: "2026-11-17T01:00:00.000Z" };
-/** 대시보드로 가는 사본에 나오면 안 되는 내용(받는 이·고장 설명·에러 코드·사람 상태). */
-const SECRET = /탈수|UE|LG전자|1544|딸|010-|넘어진/;
+/** 대시보드로 가는 사본에 나오면 안 되는 내용(받는 이·고장 설명·에러 코드·사람 상태). 번호는 통째로, 에러 코드는 낱말로만 본다
+ *  (기록 시각 1794859871544·uuid의 「-4010-」 같은 숫자 칸에 맞지 않게). */
+const SECRET = /탈수|(?<![A-Za-z0-9])UE(?![A-Za-z0-9])|LG전자|1544-7777|딸|010-1234-5678|넘어진/;
+
+describe("가림 확인 글(SECRET)", () => {
+  it("가릴 내용에는 맞고, 기록 시각·uuid·숫자 칸에는 맞지 않는다", () => {
+    for (const leak of ["탈수할 때 멈춤", '"error_code":"UE"', "에러 UE.", "LG전자 서비스센터", "1544-7777", "딸에게", "010-1234-5678", "넘어진 뒤"]) expect(leak, leak).toMatch(SECRET);
+    for (const fine of ['{"at_ms":1794859871544}', '"id":"6f1c2a9e-3b7d-4010-9a52-0d8e4f7b21c3"', '"at":"2026-11-17T10:15:44.010Z"', "QUEUE", "true"]) expect(fine, fine).not.toMatch(SECRET);
+  });
+});
 
 describe("외부 연락 통로(src/infer/call-service.ts)", () => {
   it("CALL_SERVICE_URL이 없으면 통로가 없고, http(s) 주소가 아니면 시작하지 않는다", () => {
@@ -115,13 +123,13 @@ describe("기록 DB service 줄(serviceRecord): 들은 말·개인정보 가림"
   it("KEEP_HEARD_TEXT가 꺼져 있으면(기본) 받는 이·고장 설명·에러 코드·사람 상태를 남기지 않는다. 거절도 같다", () => {
     const r = serviceRecord(result, false);
     expect(r).toEqual({ text: "보호자 연락 · 거절", data: { id: "c1", kind: "guardian", outcome: "refused", device: null, detail: HEARD_MARK } });
-    expect(JSON.stringify(r)).not.toMatch(/딸|010|넘어짐/);
+    expect(JSON.stringify(r)).not.toMatch(/딸|010-1234-5678|넘어짐/);
     const washer = serviceRecord({ id: "c2", call: WASHER_CALL, outcome: "failed", atMs: 1, error: "전화 서비스 HTTP 500" }, false);
     expect(washer).toEqual({
       text: "세탁기 AS센터 전화 · 실패", subject: "washer_1",
       data: { id: "c2", kind: "as_center", outcome: "failed", device: WASHER_CALL.device, detail: HEARD_MARK, error: "전화 서비스 HTTP 500" },
     });
-    expect(JSON.stringify(washer)).not.toMatch(/탈수|UE|1544/);
+    expect(JSON.stringify(washer)).not.toMatch(SECRET);
   });
   it("KEEP_HEARD_TEXT=1이면 그대로 남긴다", () => {
     expect(serviceRecord(result, true).data).toEqual({ id: "c1", kind: "guardian", outcome: "refused", device: null, to: DAUGHTER, problem: null, error_code: null, person: "거실에서 넘어짐" });

@@ -15,6 +15,8 @@ import { openPhone, openWebSocket } from "./helpers/ws.js";
 
 type Msg = Record<string, any>;
 const BOTH = [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }];
+/** 가린 사본·기록·파일에 나오면 안 되는 내용. 번호는 통째로, 에러 코드는 낱말로만 본다(기록 시각·id 같은 숫자 칸에 맞지 않게). */
+const HIDDEN = /탈수|(?<![A-Za-z0-9])UE(?![A-Za-z0-9])|LG전자|1544-7777|1588-0000/;
 /** 서버를 띄우고 소켓을 여는 시험 하나의 한도. */
 const SLOW = 20_000;
 
@@ -97,9 +99,9 @@ describe("서버: 실제 폰 말 → 외부 연락 승인 → 전화 서비스 �
       kind: "service", subject: "washer_1", text: "세탁기 AS센터 전화 · 보냄",
       data: { id: body.id, kind: "as_center", outcome: "sent", device: { id: "washer_1", label: "세탁기", kind: "washer" }, detail: HEARD_MARK },
     })]);
-    expect(JSON.stringify(rows)).not.toMatch(/탈수|UE|1544|LG전자/);
+    expect(JSON.stringify(rows)).not.toMatch(HIDDEN);
     // 대시보드 /events 사본에는 받는 이·보낼 내용이 없다(실제 폰 승인 질문에는 있다)
-    expect(JSON.stringify(dash.messages.filter((m) => m.type === "agent"))).not.toMatch(/탈수|UE|1544|LG전자/);
+    expect(JSON.stringify(dash.messages.filter((m) => m.type === "agent"))).not.toMatch(HIDDEN);
     expect(dash.messages.some((m) => m.type === "agent" && m.event === "pending")).toBe(true);
   }, SLOW);
 
@@ -121,7 +123,7 @@ describe("서버: 실제 폰 말 → 외부 연락 승인 → 전화 서비스 �
     await phone.waitFor((m) => m.type === "reply" && m.text === "AS센터 전화 요청이 접수됐는지 확인하지 못했어요.", "폰 답");
     const saved = readFileSync(join(runtime, "homes", "oneroom", "service-retry.json"), "utf8");
     expect(saved).toContain(fake.requests[0]!.body.id);
-    expect(saved).not.toMatch(/탈수|UE|1588/);
+    expect(saved).not.toMatch(HIDDEN);
   }, SLOW);
 
   it("KEEP_HEARD_TEXT=1이면 기록 DB service 줄에 받는 이·내용을 그대로 남긴다", async () => {
@@ -146,7 +148,7 @@ describe("서버: 실제 폰 말 → 외부 연락 승인 → 전화 서비스 �
     await phone.waitFor((m) => m.type === "reply" && m.text === "AS센터 전화는 하지 않을게요.", "폰 답");
     expect(fake.requests).toEqual([]);
     expect(srv!.history.list({ kinds: ["service"] }).map((r) => [r.text, (r.data as Msg).outcome])).toEqual([["세탁기 AS센터 전화 · 거절", "refused"]]);
-    expect(JSON.stringify(srv!.history.list({ kinds: ["service"] }))).not.toMatch(/탈수|UE/);
+    expect(JSON.stringify(srv!.history.list({ kinds: ["service"] }))).not.toMatch(HIDDEN);
     await new Promise((r) => setTimeout(r, 1200));
     expect(dash.messages.filter((m) => m.type === "say").map((m) => m.text)).not.toContain("AS센터 전화는 하지 않을게요.");
   }, SLOW);
