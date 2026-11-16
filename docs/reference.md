@@ -38,7 +38,7 @@ src/                    도메인 폴더(구현명세서 구성 단위, 도메�
   devices/              가상 가전·ThinQ: kinds.ts(가전 종류 등록부), mapping.ts(twin ↔ Matter 매핑), devices.ts(가전 만들기),
                         hub/(MemoryHub·SignalHub), matter/(MatterHub, 아래 "Matter"), thinq/
   layout/               배치 저장소: twin-files.ts(twin-studio 데이터 읽기 loadTwin), scene.ts, editor.ts(배치 보정), route.ts(경로 찾기)
-  world/                World State와 PAM 관찰 텍스트(vocab.ts 낱말 표)
+  world/                World State(state/: world.ts 겉 클래스, core.ts 안쪽 공유 객체 WorldCore, objects·people·facts·closer·devices)와 PAM 관찰 텍스트(vocab.ts 낱말 표)
   phone/                실제 폰 서버·눈, sync/(위치 맞추기)
   observe/              관찰 흐름(YOLO 감지·VLM)
   brain/                PAM 서비스 연결, history/(기록·반성)
@@ -446,7 +446,7 @@ npm start
 |---|---|---|
 | 엔진 프레임·고리 | `src/phone/`, `src/observe/ring.ts` | `GET /api/brain` |
 | YOLO 감지·관절·VLM | `src/observe/detector.ts`, `src/observe/pipeline.ts`, `src/observe/scene.ts` | `{type:"brain", event:{type:"observe"}}`, 기록 `vlm`·`yolo` |
-| World State | `src/world/state.ts`, `src/world/pose.ts` | `{type:"world"}`, `world_change`, `GET /api/world`, 기록 `detection`·`world` |
+| World State | `src/world/state/`, `src/world/pose.ts` | `{type:"world"}`, `world_change`, `GET /api/world`, 기록 `detection`·`world` |
 | 판단 | `src/brain/decide.ts`, `src/brain/pam.ts` | `decision`, 기록 `pam_text`·`decision`, `GET /api/decisions` |
 | 계획·검사·실행 | `src/act/` | `{type:"plan"}`, `execution`, 실제 폰 `{type:"command"}`·`{type:"command_clear"}`, 기록 `plan`·`execution`·`feedback` |
 | 반성 | `src/brain/history/reflect.ts` | `reflection`, 기록 `reflection`, `POST /api/reflection/run` |

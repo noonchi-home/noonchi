@@ -19,7 +19,7 @@ import { ObservationPipeline } from "../src/observe/pipeline.js";
 import { sha256 } from "../src/observe/ring.js";
 import { PlanHub } from "../src/act/hub.js";
 import { decisionWorld } from "../src/brain/decide.js";
-import { WorldState } from "../src/world/state.js";
+import { WorldState } from "../src/world/state/world.js";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

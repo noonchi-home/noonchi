@@ -3,7 +3,7 @@
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { CUT_HELPER, fileProblems, lintTextCut } from "../scripts/lint-text-cut.js";
-import { WorldState } from "../src/world/state.js";
+import { WorldState } from "../src/world/state/world.js";
 import { HEARD_MAX } from "../src/world/labels.js";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -18,7 +18,7 @@ describe("글 자르기 검사", () => {
     const heard = `function heard(text: string) {\n  const said = text.replace(/[「」]/g, "").replace(/\\s+/g, " ").trim().slice(0, HEARD_MAX);\n}`;
     const say = `const text = typeof msg.text === "string" ? msg.text.trim().slice(0, MAX_SAY) : "";`;
     const pamLine = `const lines = text.split("\\n");\nconst cut = (cap: number) => lines.map((l) => (l.length > cap ? \`\${l.slice(0, Math.max(0, cap - 1))}…\` : l)).join("\\n");`;
-    for (const [file, src] of [["src/world/state.ts", heard], ["src/phone/server.ts", say]] as const) {
+    for (const [file, src] of [["src/world/state/world.ts", heard], ["src/phone/server.ts", say]] as const) {
       const got = fileProblems(file, src);
       expect(got.map((p) => p.file)).toEqual([file]);
       expect(got[0]!.fix).toContain("headWithin");

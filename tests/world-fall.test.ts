@@ -14,7 +14,7 @@ import { SCENE_JSON_SCHEMA, SCENE_PROMPT } from "../src/observe/scene.js";
 import { FALL_DEFAULTS, fallPose, loadFallConfig, type FallConfig } from "../src/world/fall.js";
 import { describePose } from "../src/world/pose.js";
 import { pixelOf, restsFromLayout, type RestSpot } from "../src/world/place.js";
-import { WorldState } from "../src/world/state.js";
+import { WorldState } from "../src/world/state/world.js";
 import { textFromWorld } from "../src/world/text.js";
 import { SCENE_STATES } from "../src/world/vocab.js";
 import { resolveHome } from "../src/layout/homes.js";

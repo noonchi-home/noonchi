@@ -9,7 +9,7 @@ import { COCO_LABELS } from "../src/observe/detector.js";
 import { SCENE_JSON_SCHEMA, SCENE_PROMPT, SCENE_STATES as SCENE_ENUM } from "../src/observe/scene.js";
 import { CONDITION_KINDS } from "../src/world/conditions.js";
 import { OBJECT_NAME, STATE_TEXT } from "../src/world/labels.js";
-import { WorldState } from "../src/world/state.js";
+import { WorldState } from "../src/world/state/world.js";
 import { CLASSES, POSE_POSTURE, SCENE_STATES, STATES, type ClassKey } from "../src/world/vocab.js";
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));

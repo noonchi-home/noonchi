@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import type { Detection, EngineFrame, CameraView } from "../src/contract/observe.js";
 import { sha256 } from "../src/observe/ring.js";
-import { WorldState } from "../src/world/state.js";
+import { WorldState } from "../src/world/state/world.js";
 import { holdsTarget } from "../src/act/tasks.js";
 import { standing } from "./helpers/poses.js";
 import { det as mkDet } from "./helpers/detectors.js";

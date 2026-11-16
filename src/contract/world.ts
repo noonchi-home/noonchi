@@ -1,5 +1,5 @@
 // World State 계약(서버 → 화면 /events {type:"world"}, GET /api/world, 판단 기록). 순수 타입만 둔다: ui/가 그대로 가져다 쓴다.
-// 만드는 곳은 src/world/state.ts다.
+// 만드는 곳은 src/world/state/다.
 
 import type { DeviceStateKey, Facet, FixtureClass, ObjClass } from "../world/vocab.js";
 
@@ -46,7 +46,7 @@ export interface WorldObject {
    *  실행 추적이 판단 기록의 횟수(DecisionWorld closer_rev)와 견줘 판단 뒤에 가까이 보기가 바꾼 면인지 본다(src/act/track/start.ts closerNewer). */
   closer_rev?: Partial<Record<Facet, number>>;
   /** 들고 감 보호 중: 사람이 안 보이게 될 때 관절이 붙인 「손에 있음」 물건이 아직 움직이고 있어, 3초 동안 움직임이 없을 때까지 그 손에 있음을 두고
-   *  VLM·가까이 보기의 다른 자리 답이 덮지 않는다(src/world/state.ts track). 실행 추적은 이 동안 실행 전 다시 보기 기한을 세지 않는다. 아니면 칸이 없다. */
+   *  VLM·가까이 보기의 다른 자리 답이 덮지 않는다(src/world/state/objects.ts track). 실행 추적은 이 동안 실행 전 다시 보기 기한을 세지 않는다. 아니면 칸이 없다. */
   carried?: true;
 }
 

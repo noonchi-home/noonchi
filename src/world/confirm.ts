@@ -46,7 +46,7 @@ export class Confirmer {
     this.lastAt.delete(key);
   }
 
-  /** 셈 없이 있다고 인정하고 그 키의 셈을 지운다(가까이 보기가 새 촬영으로 본 물건, src/world/state.ts applyCloser). */
+  /** 셈 없이 있다고 인정하고 그 키의 셈을 지운다(가까이 보기가 새 촬영으로 본 물건, src/world/state/closer.ts applyCloser). */
   mark(key: string): void {
     this.on.add(key);
     this.streak.delete(key);

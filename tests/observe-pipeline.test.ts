@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { startFakeOpenAI, type FakeServer } from "../scripts/fake-openai.js";
 import { VlmClient } from "../src/infer/vlm.js";
 import { ObservationPipeline, loadObserveConfig } from "../src/observe/pipeline.js";
-import { WorldState } from "../src/world/state.js";
+import { WorldState } from "../src/world/state/world.js";
 import type { Detector } from "../src/observe/detector.js";
 import type { Detection } from "../src/contract/observe.js";
 import { ScriptedDetector, det as mkDet } from "./helpers/detectors.js";

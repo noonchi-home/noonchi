@@ -42,7 +42,7 @@ const DEFAULT_RUNTIME_DIR = fileURLToPath(new URL("../runtime/", import.meta.url
 const DAY_MS = 86_400_000;
 const addDays = (day: string, n: number) => new Date(Date.parse(`${day}T00:00:00Z`) + n * DAY_MS).toISOString().slice(0, 10);
 
-/** VLM 상태 → 면(낱말 표, src/world/state.ts와 같다). */
+/** VLM 상태 → 면(낱말 표, src/world/state/facts.ts와 같다). */
 const facetOf = (s: string): Facet => STATES[s as StateKey].facet;
 const PERSON = "person";
 

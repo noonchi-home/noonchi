@@ -28,7 +28,7 @@ import { PlanHub } from "../src/act/hub.js";
 import { AGAIN_TEXT, APPROVAL_TEXT, EXEC_TEXT, STEP_COMMAND } from "../src/act/labels.js";
 import { floorPlanFrom } from "../src/layout/route.js";
 import { Decider } from "../src/brain/decide.js";
-import { WorldState } from "../src/world/state.js";
+import { WorldState } from "../src/world/state/world.js";
 import { Trigger } from "../src/world/trigger.js";
 import { DEVICE_STATES } from "../src/world/vocab.js";
 import { cupPlan } from "./helpers/cup-plan.js";

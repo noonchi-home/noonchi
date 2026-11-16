@@ -7,7 +7,7 @@ import { MAX_OBSERVATION_TEXT, checkInput } from "../src/brain/decision.js";
 import { readFileSync } from "node:fs";
 import type { Detection, EngineFrame } from "../src/contract/observe.js";
 import { sha256 } from "../src/observe/ring.js";
-import { WorldState } from "../src/world/state.js";
+import { WorldState } from "../src/world/state/world.js";
 import { det } from "./helpers/detectors.js";
 
 const T = (h: number, m: number, s: number) => Date.UTC(2026, 10, 7, h - 9, m, s);

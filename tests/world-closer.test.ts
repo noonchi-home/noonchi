@@ -3,7 +3,7 @@ import type { Detection } from "../src/contract/observe.js";
 import type { SceneState } from "../src/observe/scene.js";
 import type { SceneObservation } from "../src/contract/observe.js";
 import { decisionWorld } from "../src/brain/decide.js";
-import { CLOSER_HOLD_MS, WorldState, type CloserPass } from "../src/world/state.js";
+import { CLOSER_HOLD_MS, WorldState, type CloserPass } from "../src/world/state/world.js";
 import type { DetLabel } from "../src/world/vocab.js";
 import { AWAY_VIEW, engineFrame, frameJpeg, LOOK_SIZE, LOOK_VIEW } from "./helpers/camera.js";
 import { det as mkDet } from "./helpers/detectors.js";

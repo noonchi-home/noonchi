@@ -260,8 +260,16 @@
   - `say.ts`: 말풍선 카드(`speak`), 관찰 흐름이 없을 때의 말풍선 타이머, 반성 사건
   - 나누는 방법: 도메인별 잇기는 `HomeCore`를 받는 함수이고 서로를 부르지 않는다(조립이 차례를 정한다).
 - **`server/app.ts`(721줄) → `server/routes/`:** 경로를 도메인별로 나눈다(`observe.ts`(brain·world 상태), `brain.ts`(기록·반성·기억·판단), `layout.ts`(장면·배치·고를 집), `phone.ts`, `plan.ts`, `devices.ts`(Matter·방·기기), `agent.ts`). 묶음 함수가 함께 받는 등록 도구·오류·본문 읽기는 `kit.ts`(RouteKit·HttpError·readJson)에 둔다. `app.ts`는 HTTP·WS 껍데기와 `/api/health`만 남고, 묶음 함수를 나누기 전 등록 차례대로 부른다.
-- **다음에(정한 것 3, 이번에 하지 않음):**
-  - `world/state.ts`(1,071줄) → `world/state/`: `objects.ts`(감지 합치기), `people.ts`(사람·관절), `facts.ts`(VLM 사실), `closer.ts`(가까이 보기), `devices.ts`(카메라로 본 가전)
+- **`world/state.ts`(1,190줄) → `world/state/`(8a, 정한 것 3)**
+  - `world.ts`: 겉 클래스 `WorldState`(공개 메서드는 부분에 넘김), `applyMissing`·`heard`·`setEye`·`view`, `WorldStateOptions`, 부분 이름(`CLOSER_HOLD_MS`·`CLOSER_NEW_FRAMES`·`CloserPass` 등) 다시 내보내기. 바깥은 이 파일(다른 도메인은 `world/index.ts`)에서 가져온다
+  - `core.ts`: 안쪽 공유 객체 `WorldCore`(물건·가전 설비·사람·등장 셈·관절이 붙인 사실·쓰러짐·사람 여럿 본 때, 물건 만들기·잊기·이름·보임 판단·자리 고칠 촬영·지킴), `Obj`·`Fix`, `fits`·`dist`, `CLOSER_HOLD_MS`
+  - `objects.ts`: 감지 합치기(`applyDetections`: 같은 물체 찾기, 등장·사라짐·시야 밖, 사람 방 반영), 물건 움직임과 들고 감 보호(`track`: 원본 프레임마다 본 자리로 3초 누적 이동, 가까이 보기 묶음도 넣음, `carriedPlace`)
+  - `people.ts`: 사람 자리·방, 관절 사실, 쓰러짐 의심(FallWatch, 쓰러짐 의심 중 VLM 자세 막기 `fallHeld`, 침대·소파는 누운 구간 안 VLM 자리 답으로만 뺌), 관절 사실 우선(`poseHolds`)
+  - `facts.ts`: VLM 사실(`setFact`·`answer`·`applyScene`, 원본 프레임·대상·면마다 한 번, 잘라 본 답이 앞섬)
+  - `closer.ts`: 가까이 보기(`applyCloser`·`applyCloserScene`·`endCloser`·`closerObject`), 지킴 풀기·옮김 표시(`liftHolds`·`sawAgain`), `CLOSER_NEW_FRAMES`
+  - `devices.ts`: 가전 설비, 카메라로 가전 맞추기·이어 본 값(`sight`·`seeDevices`·`sightLast`), 가전 상태(`applyDevice`·`tick`), 가전 줄(`deviceViews`)
+  - 나누는 방법: 실행 추적(`TrackCore`)과 같다. 부분은 `WorldCore`를 받는 작은 클래스(`Part`)이고 서로를 그 칸으로 부르며, 부분끼리 값 import가 없다(`WorldState`가 만들어 단다).
+- **다음에(정한 것 3):**
   - `agent/planTools.ts`(616줄): 단계 규칙(`needsPhone`·`riskyHand`·`selfStopWait`·`HUMAN_KINDS`)을 `agent/plan-rules.ts`로
 
 ## 3. 막는 장치
@@ -394,7 +402,7 @@
 | 4 | 도메인마다 `index.ts`를 만들고 다른 도메인 import를 입구로 바꿈 | 거꾸로 가는 것만 남음 | 2시간 |
 | 5 | 남은 고리 끊기(F2·F4·F6·F8·F10·F11) | 화면 쪽만 남음 | 2시간 |
 | 6 | 화면: `twin3d`+`twin` → `ui/src/twin`, `bubbles`·`panels`·`checks` → `dashboard`, F12·F13, 화면 입구 | 0에 가까움 | 1.5시간 |
-| 7 | 큰 파일 쪼개기: `app.ts` → `server/routes/`. `track.ts` → `act/track/`(7a, 구조 검사를 `act/track/` 폴더 전체로, 79ff269 과거 실수를 각 파일에 넣은 자료가 실패하는지 확인). `home.ts` → `server/home/`(7b-home, 도메인별 잇기와 안쪽 공유 객체 `HomeCore`, 닫기 차례 그대로). `world/state.ts`·`planTools.ts`도 다음에(정한 것 3) | 0 | 3.5~4시간 |
+| 7 | 큰 파일 쪼개기: `app.ts` → `server/routes/`. `track.ts` → `act/track/`(7a, 구조 검사를 `act/track/` 폴더 전체로, 79ff269 과거 실수를 각 파일에 넣은 자료가 실패하는지 확인). `home.ts` → `server/home/`(7b-home, 도메인별 잇기와 안쪽 공유 객체 `HomeCore`, 닫기 차례 그대로). `world/state.ts` → `world/state/`(8a, 부분과 안쪽 공유 객체 `WorldCore`). `planTools.ts`는 다음에(정한 것 3) | 0 | 3.5~4시간 |
 | 8 | 흐름 확인: `tests/demo-e2e.test.ts`(네 장면 가짜 서버 흐름: 컵, 에어컨, 전자레인지 승인·꺼짐 확인, 라면)와 `coach-e2e`·`noonchi-e2e`를 따로 한 번 더 돌린다(단계마다 전체 시험에도 들어 있다). `video-check --fake`는 컵 감지·컵 PAM 판단·`CUP_SCRIPTS`로 고정이라(`scripts/video-check.ts:384`) 쓰지 않는다. `docs/reference.md` 「구조」, 저장소 `CLAUDE.md` 경로, 규칙 표 줄(3.4) | 0 | 1.5시간 |
 | 9 | 예외 목록 파일 지움, 엄격 모드, 3.3 마지막 확인. 구현명세서 SSOT 18.1 폴더 구조와 본문 경로(`src/world/vocab.ts` 등)를 docs 저장소에서 고침 | 없음 | 1시간 |
 
@@ -417,7 +425,7 @@
    - `brain`은 PAM 서비스 연결과 기록·반성을 합친다. 입구 첫 줄은 「PAM 서비스 연결·기록·반성(구현명세서 6.12·6.13)」이다.
    - 외부 API 게이트웨이 `infer`는 도메인이 아니라 기반층이다. 자리는 `src/infer/` 그대로다(2.1 기반층 표의 까닭).
 2. **공용 표:** 지금 도메인에 두고 「표 입구」로 모든 도메인이 읽는다. 계약은 공용 표 타입만 `import type`으로 가져오고, 계약 ↔ 공용 표 타입 전용 고리만 허용한다(2.3).
-3. **큰 파일 쪼개기:** `track.ts`·`home.ts`·`app.ts`(7a·7b). `world/state.ts`·`planTools.ts`는 다음에 한다.
+3. **큰 파일 쪼개기:** `track.ts`·`home.ts`·`app.ts`(7a·7b). `world/state.ts`·`planTools.ts`는 다음에 한다. `world/state.ts`는 8a로 했다(사용자, 2026-11-17).
 4. **track.ts 쪼개기는 시연 뒤로 미룸.** 까닭: 시연 브랜치에서 11-10 뒤로 커밋 36개가 고친 파일이라 합칠 때 충돌이 큼(사용자, 2026-11-16). 시연 뒤 7a로 했다(사용자, 2026-11-17).
 5. **server/home.ts 쪼개기도 시연 뒤로 미룸.** 까닭: 시연 브랜치에서 11-10 뒤로 커밋 32개가 고쳤고, startHome 한 함수가 클로저 변수를 나눠 써서 나누면 거의 모든 줄이 바뀜(사용자, 2026-11-16). 이번 7단계는 `app.ts` → `server/routes/`만 한다. 시연 뒤 7b-home으로 했다(사용자, 2026-11-17).
 

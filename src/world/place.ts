@@ -104,7 +104,7 @@ export function placePoint(view: CameraView, point: [number, number], size: { wi
 
 /** 쉬는 가구 후보: 몸 점들(엉덩이·어깨 픽셀)마다 광선이 몸 점 높이(누울 면 top + REST_BODY_M)를 지나는 동안 가장자리에서 REST_INSET_M 안쪽을 지나면 그 가구.
  *  카메라 한 대의 광선으로는 높이와 거리를 가르지 못한다(가구 너머 바닥의 몸도 이 높이에서 가구 위로 비칠 수 있다). 그래서 이것은 후보일 뿐이고,
- *  빼는 결정은 그 사람의 VLM 자리 답(침대 위·소파 위)으로 한다(src/world/state.ts). 광선이 그 높이에 닿지 않으면 후보가 아니다. */
+ *  빼는 결정은 그 사람의 VLM 자리 답(침대 위·소파 위)으로 한다(src/world/state/people.ts). 광선이 그 높이에 닿지 않으면 후보가 아니다. */
 export function onRest(view: CameraView, points: readonly [number, number][], size: { width: number; height: number }, rests: readonly RestSpot[]): RestSpot | null {
   if (points.length === 0) return null;
   const o = view.origin;

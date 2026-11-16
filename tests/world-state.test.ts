@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { WorldState } from "../src/world/state.js";
+import { WorldState } from "../src/world/state/world.js";
 import { CHANGE_TEXT, redactHeard, redactSaid, saidIn } from "../src/world/labels.js";
 import { placeBox, placePoint } from "../src/world/place.js";
 import { sha256 } from "../src/observe/ring.js";

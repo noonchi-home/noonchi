@@ -5,7 +5,7 @@ import type { Detector } from "../src/observe/detector.js";
 import type { BrainLog, SeenEvent } from "../src/contract/events.js";
 import type { VlmClient } from "../src/infer/vlm.js";
 import { FAST_QUEUE_MAX, ObservationPipeline, loadObserveConfig, type ObserveConfig } from "../src/observe/pipeline.js";
-import { WorldState } from "../src/world/state.js";
+import { WorldState } from "../src/world/state/world.js";
 import { det } from "./helpers/detectors.js";
 
 type Observe = Extract<BrainLog, { type: "observe" }>;

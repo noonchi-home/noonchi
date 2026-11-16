@@ -9,7 +9,7 @@ import { cropJpeg } from "../src/observe/crop.js";
 import { closerSpanMs, closerStaleMs, createPipeline, ObservationPipeline } from "../src/observe/pipeline.js";
 import { sha256 } from "../src/observe/ring.js";
 import { CLOSER_NOTE } from "../src/observe/scene.js";
-import { WorldState } from "../src/world/state.js";
+import { WorldState } from "../src/world/state/world.js";
 import { AWAY_VIEW, frameJpeg, LOOK_SIZE, LOOK_VIEW } from "./helpers/camera.js";
 import { cropAware, cropTurns, det } from "./helpers/detectors.js";
 import { CLOSER_SUMMARY, closerVlmReply } from "./helpers/look.js";

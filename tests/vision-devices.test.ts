@@ -19,7 +19,7 @@ import { sha256 } from "../src/observe/ring.js";
 import { floorPlanFrom, roomNamedAt } from "../src/layout/route.js";
 import { ThinqClient, thinqConfig } from "../src/devices/thinq/client.js";
 import { ThinqLink } from "../src/devices/thinq/link.js";
-import { WorldState } from "../src/world/state.js";
+import { WorldState } from "../src/world/state/world.js";
 import { textFromWorld } from "../src/world/text.js";
 import { FAKE_FRIDGE, startFakeThinq, type FakeThinq } from "./helpers/thinq.js";
 import { det as mkDet } from "./helpers/detectors.js";

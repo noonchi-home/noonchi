@@ -4,7 +4,7 @@ import { CUP_FSM_MEMORY, CUP_TASKS } from "../src/brain/decision.js";
 import { PamClient } from "../src/brain/pam.js";
 import type { BrainLog, DecisionRecord } from "../src/contract/events.js";
 import { Decider } from "../src/brain/decide.js";
-import { WorldState } from "../src/world/state.js";
+import { WorldState } from "../src/world/state/world.js";
 import { Trigger } from "../src/world/trigger.js";
 import { startFakePam, type FakePam } from "./helpers/pam.js";
 

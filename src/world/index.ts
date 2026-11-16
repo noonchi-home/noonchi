@@ -3,7 +3,7 @@
 export { ConditionWatch, type Condition, type ConditionContext, CONDITION_KINDS, ConditionSchema, checkCondition, type ConditionHome } from "./conditions.js";
 export { inView, pixelOf, rayDir, restsFromLayout, surfacesFromLayout, type PlaneSurface, type RestSpot } from "./place.js";
 export { becameKey, deviceText } from "./relations.js";
-export { WorldState, CLOSER_NEW_FRAMES, type CloserPass } from "./state.js";
+export { WorldState, CLOSER_NEW_FRAMES, type CloserPass } from "./state/world.js";
 export { textFromWorld, collapseLines, PAM_TEXT_MAX } from "./text.js";
 export { Trigger, type TriggerPause, loadTriggerConfig } from "./trigger.js";
 export { loadFallConfig, FALL_DEFAULTS, type FallConfig } from "./fall.js";

@@ -6,7 +6,7 @@
 // 침대·소파 위에 누운 것(rest)은 쓰러짐 셈을 멈춘다(다시 바닥에 누운 자세면 그때부터 다시 세고, 서 있음에서 빨리 누운 것은 기억한다).
 // 이미 쓰러짐 의심이면 풀지 않는다. 놓치는 것보다 잘못 알리는 것이 낫다:
 // 기하(엉덩이·어깨 광선이 그 가구의 몸 점 높이, 곧 누울 면 + 0.1~0.25m에서 가장자리 0.1m 안쪽을 지남, src/world/place.ts onRest)는 후보만 고르고,
-// 빼는 결정은 그 사람을 본 VLM 자리 답(침대 위·소파 위, vocab.ts REST_PLACES)으로 한다(src/world/state.ts). 그 답은 지금 누운 구간(lyingSince) 안에서
+// 빼는 결정은 그 사람을 본 VLM 자리 답(침대 위·소파 위, vocab.ts REST_PLACES)으로 한다(src/world/state/people.ts). 그 답은 지금 누운 구간(lyingSince) 안에서
 // 찍혀야 하고, 그 구간에 사람이 둘 넘게 보였으면 누구의 답인지 몰라 빼지 않는다. 답이 없거나 바닥이면 그대로 센다.
 // 서 있음에서 dropMs 안에 flat이 되고, 이어서 본 flat이 holdMs 이어지면 쓰러짐 의심이다. flat 사이가 gapMs 넘게 끊기면 다시 본 때부터 센다.
 // 서 있음·앉아 있음이 보이면 풀고 셈을 다시 한다. 모름·확실하지 않은 관절은 셈을 그대로 둔다.
@@ -18,7 +18,7 @@
 // - gapMs 1초: 관절 간격 0.3초의 세 배 남짓이라 한두 장 놓쳐도 이어 보고, 그보다 길게 끊기면 그사이 일어났는지 모른다.
 // - torsoDeg 60°·thighDeg 45°: 누움·앉음 규칙과 같은 각도(docs/provenance.md, Perception-lab describe_pose). 허리 숙이기는 허벅지가 45° 안이다.
 // - viewDeg 15°: 광선이 수직에서 15° 안이면 선 몸통도 사진에서 제 길이의 1/4 아래로 짧아져(sin 15° ≈ 0.26) 기울기를 믿을 수 없다.
-// - 사진 경계 2%: 사람 발이 보이는지 보는 기준(src/world/state.ts FEET_EDGE 0.98)과 같다.
+// - 사진 경계 2%: 사람 발이 보이는지 보는 기준(src/world/state/people.ts FEET_EDGE 0.98)과 같다.
 import { LYING_DEG, SITTING_DEG, type Lean } from "./pose.js";
 
 export interface FallConfig { dropMs: number; holdMs: number; gapMs: number; torsoDeg: number; thighDeg: number; viewDeg: number }

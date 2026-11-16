@@ -21,7 +21,7 @@ import { PlanHub } from "../src/act/hub.js";
 import { APPROVAL_TEXT, CAUTION_TEXT, CHECK_TEXT, EXEC_TEXT, CAUTION_LINE, STEP_COMMAND, STEP_LABEL, type TellMode } from "../src/act/labels.js";
 /** 인덕션 켜기 전 질문(서버 글). */
 const ASK_ON = "냄비와 상판이 뜨거워져요. 인덕션을 켤까요?";
-import { WorldState, type CloserPass } from "../src/world/state.js";
+import { WorldState, type CloserPass } from "../src/world/state/world.js";
 import { sha256 } from "../src/observe/ring.js";
 import type { EngineFrame, Detection, CameraView } from "../src/contract/observe.js";
 import { floorPlanFrom } from "../src/layout/route.js";
