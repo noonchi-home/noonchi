@@ -1,6 +1,6 @@
 """저장소의 가짜 OpenAI 호환 서버(scripts/fake-openai.ts)를 띄운다. 실제 API를 부르지 않는다.
 
-이 PC(Windows)는 127.0.0.1 소켓을 열거나 붙을 때 가끔 WinError 10014(EFAULT)로 실패한다(src/server/net.ts와 같은 문제).
+이 PC(Windows)는 127.0.0.1 소켓을 열거나 붙을 때 가끔 WinError 10014(EFAULT)로 실패한다(src/shared/net.ts와 같은 문제).
 시험에서만 socketpair(asyncio 이벤트 루프·TestClient)와 create_connection(httpx)을 그 오류일 때만 다시 시도한다."""
 import functools
 import shutil

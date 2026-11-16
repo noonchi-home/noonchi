@@ -3,7 +3,7 @@
 /** 가전 종류는 등록부(src/devices/kinds.ts KINDS)의 키다. 등록부 한 곳에서 내고, 계약은 타입으로만 읽는다(도메인 나누기 F10). */
 import type { DeviceKind } from "../devices/kinds.js";
 
-/** 기기가 받는 명령 묶음(트윈 수준). Matter에서 어떻게 실현하는지는 model/mapping.ts가 정한다. */
+/** 기기가 받는 명령 묶음(트윈 수준). Matter에서 어떻게 실현하는지는 src/devices/mapping.ts가 정한다. */
 export type Capability = "onoff" | "level" | "climate" | "fan" | "covering" | "lock" | "operation" | "valve";
 
 export interface DeviceSpec {

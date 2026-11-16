@@ -32,19 +32,23 @@ npm start               # 화면을 빌드하고 http://127.0.0.1:8200  (허브 
 ## 구조
 
 ```
-src/
-  hub/types.ts          DeviceSpec·DeviceState·Command·DeviceHub (공용 계약)
-  hub/memory.ts         MemoryHub: Matter 없이 메모리에서 동작하는 DeviceHub (테스트·HUB=memory)
-  matter/               MatterHub: matter.js 브리지(가상 가전) + 컨트롤러 (아래 "Matter")
-  model/mapping.ts      twin type/attrs ↔ Matter 기기·클러스터 매핑 표와 변환 함수
-  model/devices.ts      twin-studio 데이터 → DeviceSpec[] + 초기 상태
-  agent/                도구 호출 루프(agent.ts), 도구(tools.ts), 기기 찾기, 승인 정책(policy.ts), 공급자(providers/)
+src/                    도메인 폴더(구현명세서 구성 단위, 도메인 나누기 설계 2.1). 다른 도메인은 index.ts(또는 browser.ts) 입구로만 가져온다
+  contract/             공용 타입만(devices.ts: DeviceSpec·DeviceState·Command·DeviceHub, events·plan·phone·world 등)
+  shared/ · infer/ · design/   공용 도우미, 외부 API 통로, 디자인 토큰(기반층)
+  devices/              가상 가전·ThinQ: kinds.ts(가전 종류 등록부), mapping.ts(twin ↔ Matter 매핑), devices.ts(가전 만들기),
+                        hub/(MemoryHub·SignalHub), matter/(MatterHub, 아래 "Matter"), thinq/
+  layout/               배치 저장소: twin-files.ts(twin-studio 데이터 읽기 loadTwin), scene.ts, editor.ts(배치 보정), route.ts(경로 찾기)
+  world/                World State와 PAM 관찰 텍스트(vocab.ts 낱말 표)
+  phone/                실제 폰 서버·눈, sync/(위치 맞추기)
+  observe/              관찰 흐름(YOLO 감지·VLM)
+  brain/                PAM 서비스 연결, history/(기록·반성)
+  agent/                도구 호출 루프(agent.ts), 도구(tools.ts), 기기 찾기, 승인 정책(policy.ts), 공급자(providers/), 계획 모드, mcp/(MCP stdio 서버·REST 백엔드)
+  act/                  판단·검사·실행 추적(track.ts)
   server/start.ts       시작 순서: twin 데이터 → 허브(대체 경로 포함) → 정책·에이전트 → HTTP/WS
   server/hubFactory.ts  HUB 고르기, startHub(network 실패 → local → memory)
-  server/app.ts         REST + WebSocket + 정적 파일
+  server/app.ts         HTTP + WebSocket + 정적 파일. API 경로는 server/routes/(도메인별)
   server/main.ts        npm start 진입점(.env, 출력, 종료 신호)
-  mcp/                  MCP stdio 서버(server.ts)와 REST 백엔드(client.ts)
-ui/                     대시보드·설정·폰 화면(React+TypeScript, 빌드 결과 ui/dist/)
+ui/                     대시보드·설정·폰 화면(React+TypeScript, 빌드 결과 ui/dist/): ui/src/dashboard·twin(3d/)·phone·setup, 화면 공용 lib/·components/ui/
 scripts/demo.ts         npm run demo
 scripts/scenarios.ts    데모 시나리오(데모와 e2e 테스트가 함께 씀)
 scripts/matter-smoke.ts Matter 연기 시험
@@ -586,7 +590,7 @@ Claude Desktop(`claude_desktop_config.json`)은 같은 명령을 이렇게 적�
 
 ## Matter (src/devices/matter)
 
-`MatterHub`가 `DeviceHub`를 matter.js 0.17.9로 구현한다. 상태의 원천은 브리지의 Matter 속성이고, twin 상태는 `model/mapping.ts`로 계산한다.
+`MatterHub`가 `DeviceHub`를 matter.js 0.17.9로 구현한다. 상태의 원천은 브리지의 Matter 속성이고, twin 상태는 `src/devices/mapping.ts`로 계산한다.
 
 | 파일 | 하는 일 |
 |---|---|
