@@ -1,6 +1,6 @@
 // 관찰 문장: 도구 결과를 화면의 추론 과정(ReAct: 생각 → 행동 → 관찰)에 보일 한 줄로 줄인다. 모델이 아니라 결과에서 만든다.
 
-import type { DeviceKind } from "../devices/hub/types.js";
+import type { DeviceKind } from "../devices/index.js";
 import { stateText } from "./phrases.js";
 import type { ToolResult } from "./tools.js";
 

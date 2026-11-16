@@ -8,9 +8,9 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { AssistMode, ControlMode } from "../../contract/setup.js";
-import type { SignalSource } from "../../devices/hub/signals.js";
-import type { DeviceKind } from "../../devices/hub/types.js";
-import { PAIRABLE_KINDS } from "../../devices/thinq/appliance.js";
+import type { SignalSource } from "../../devices/index.js";
+import type { DeviceKind } from "../../devices/index.js";
+import { PAIRABLE_KINDS } from "../../devices/index.js";
 
 /** 저장하는 출처(설정 2단계). */
 export type StoredSource = { kind: "virtual" } | { kind: "none" };

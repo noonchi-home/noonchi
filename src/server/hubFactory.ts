@@ -5,9 +5,9 @@
 //   default 같은 함수 | MatterHub.fromTwin(twin, opts) | new MatterHub(twin, opts)
 // startHub: 만들고 시작까지 한다. network 커미셔닝이 실패하면 local 전송으로, local도 실패하면 MemoryHub로 대신한다.
 
-import { MemoryHub } from "../devices/hub/memory.js";
-import type { DeviceHub } from "../devices/hub/types.js";
-import type { TwinData } from "../devices/devices.js";
+import { MemoryHub } from "../devices/index.js";
+import type { DeviceHub } from "../devices/index.js";
+import type { TwinData } from "../devices/index.js";
 
 export type HubKind = "memory" | "matter";
 export type MatterTransport = "network" | "local";

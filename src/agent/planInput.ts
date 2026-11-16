@@ -6,7 +6,7 @@ import { CONDITION_KINDS } from "../world/conditions.js";
 import { CLASSES, DEVICE_STATES, STATES, type ClassKey, type Facet, type Target } from "../world/vocab.js";
 import { PLAN_LIMITS, type PlanContext } from "./planTools.js";
 import { RISKY_LIST } from "./policy.js";
-import { KIND_LABELS } from "../devices/mapping.js";
+import { KIND_LABELS } from "../devices/index.js";
 
 export const PLANNER_PROMPT = `너는 이 집 스마트홈 에이전트의 계획 모드다. PAM이 고른 할 일 하나를 지금 집 상태에서 실제로 할 수 있는 단계 계획으로 바꾼다.
 

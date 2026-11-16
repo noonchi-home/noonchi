@@ -12,7 +12,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { BrainLog, CloserMiss, CloserResult, CloserVlm, SeenEvent } from "../contract/events.js";
 import type { WorldChange, WorldView, YoloMissing } from "../contract/world.js";
-import type { DeviceState } from "../devices/hub/types.js";
+import type { DeviceState } from "../devices/index.js";
 import { DETECTOR_MODEL, MODELS_DIR, POSE_MODEL, PROVIDERS, WorkerDetector, type DetectResult, type Detector, type DetectorSpec, type Provider } from "./detector.js";
 import type { Detection, Pose, CameraView, EngineFrame } from "../contract/observe.js";
 import { hasPrice } from "../infer/cost.js";

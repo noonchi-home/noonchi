@@ -1,6 +1,6 @@
 // 한국어 문장 조각: 조사, 상태 설명, "~를 켰어요" 같은 결과 문장.
 
-import type { Command, DeviceKind, DeviceSpec, DeviceState } from "../devices/hub/types.js";
+import type { Command, DeviceKind, DeviceSpec, DeviceState } from "../devices/index.js";
 import { josa } from "../shared/korean.js";
 
 

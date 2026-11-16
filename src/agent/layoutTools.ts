@@ -4,7 +4,7 @@
 import { z } from "zod";
 import { findTypes, type TypeInfo } from "../layout/catalog.js";
 import { LayoutError, type LayoutEditor, type SceneObject, type To } from "../layout/editor.js";
-import { describeDevice } from "../devices/mapping.js";
+import { describeDevice } from "../devices/index.js";
 import type { ToolBackend, ToolDef, ToolResult } from "./tools.js";
 
 export interface LayoutTools {

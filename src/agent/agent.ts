@@ -7,7 +7,7 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { AgentAction, AgentEvent, ChatResult, ConfirmResult, PendingView } from "../contract/events.js";
-import type { DeviceHub, RoomSpec } from "../devices/hub/types.js";
+import type { DeviceHub, RoomSpec } from "../devices/index.js";
 import { matchChoice } from "../act/tasks.js";
 import { APPROVE } from "../act/prompts.js";
 import type { ApprovalAnswer } from "./approval.js";
