@@ -94,10 +94,13 @@ export const SAY = ["식탁을 보고 있어요.", "식탁으로 가 주세요."
 export const CLEAR_CUP = "컵 치우기";
 export const REASON = "사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.";
 export const LEFT_CUP_STATE = "컵을 두고 자리를 뜸";
-/** 작은 모델이 고친 생각 두 줄(「본 것」·「그래서」, src/brain/thought.ts). 「그래서」는 결정적인 근거(습관)와 할 일이다. */
-export const LINES = { seen: "사람이 컵을 식탁에 두고 자리를 떠났어요", why: "컵을 두고 자리를 비우면 치우는 습관이라 바로 컵을 치울게요" };
-/** 계획 단계의 생각 말풍선(두 줄·FSM 상태 이름표·습관 아님·눈치·판단). 지켜보기는 대기라 없다. */
-export const THOUGHT: Thought = { lines: LINES, state: LEFT_CUP_STATE, habit: false, assist: "noonchi", action: CLEAR_CUP };
+/** 작은 모델이 쓴 생각 메시지(src/brain/thought.ts): 컵 치우기 판단의 흐름(본 것 → 결정적인 근거와 할 일). */
+export const MESSAGES = [
+  { id: "pam-1@1794214809000:0", text: "사람이 컵을 두고 자리를 떠났어요" },
+  { id: "pam-1@1794214809000:1", text: "치우는 습관이라 컵을 치울게요" },
+];
+/** 계획 단계의 생각 말풍선(메시지·FSM 상태 이름표·습관 아님·눈치·판단). 지켜보기는 메시지가 없어 숨긴다. */
+export const THOUGHT: Thought = { messages: MESSAGES, state: LEFT_CUP_STATE, habit: false, assist: "noonchi", action: CLEAR_CUP };
 
 /** 컵 갈래 판단 고정 자료: 행동, 그 규칙이 있는 FSM 상태 id·트리거(src/brain/decision.ts CUP_FSM_MEMORY와 같다, data.test.ts가 견준다), PAM의 생각 한 문장. */
 export interface Branch { action: string; state: string; trigger: string; reasoning: string }

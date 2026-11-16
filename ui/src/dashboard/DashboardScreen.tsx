@@ -78,7 +78,7 @@ export function DashboardScreen({ index, plan, step, robotKnown, connected, map,
         </PreDrawing.Provider>
       </LiquidGlass>
       <PhonePane slot={phone} seen={seen} box={L.video} connected={connected} onVideoSize={onVideoSize} />
-      <ThoughtCard thought={thought} box={L.thought} tail={L.tail} animate={!reduced} />
+      <ThoughtCard thought={thought} box={L.thought} tail={L.tail} />
       <SayCard say={say} box={L.bubble} animate={!reduced} />
       <Mascot image={MASCOT} hub={hub} box={L.mascot} imageBox={L.image} logoBox={L.logo} facing={facing} settingsOpen={settingsOpen} />
     </main>

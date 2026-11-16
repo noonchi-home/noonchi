@@ -16,7 +16,7 @@ import { startServer, type RunningServer } from "../src/server/start.js";
 import { ScriptedDetector, det } from "./helpers/detectors.js";
 import { startFakePam, type FakePam } from "./helpers/pam.js";
 import { CUP_SCRIPTS, plannerRespond } from "./helpers/planner.js";
-import { LINES, thoughtReplies } from "./helpers/thought.js";
+import { CUP_MESSAGES, thoughtReplies } from "./helpers/thought.js";
 import { heardAtOf, openPhone, openWebSocket } from "./helpers/ws.js";
 
 type Msg = Record<string, any>;
@@ -39,7 +39,7 @@ const inbox = (list: Msg[]) => (ws: WebSocket) => ws.on("message", (d, bin) => {
 describe("NOONCHI 처음부터 끝까지", () => {
   it("관찰부터 단계 명령·실행 결과까지 한 흐름으로 돌고 기록·대시보드에 남는다", async () => {
     let cupPlace = "on_table";
-    // 생각 말풍선 두 줄(VLM 주소 자리의 같은 가짜 서버): 첫 명령이 나갈 때까지 답을 붙잡아 둔다(판단·계획이 두 줄을 기다리지 않는지)
+    // 생각 말풍선 메시지(VLM 주소 자리의 같은 가짜 서버): 첫 명령이 나갈 때까지 답을 붙잡아 둔다(판단·계획이 메시지를 기다리지 않는지)
     const thoughts = thoughtReplies();
     thoughts.hold();
     fake = await startFakeOpenAI({
@@ -91,14 +91,15 @@ describe("NOONCHI 처음부터 끝까지", () => {
     expect(first).toEqual({ type: "command", id: expect.stringMatching(/^plan:pam-\d+$/), step: `${first.id}:1`, text: "식탁으로 가 주세요", vision: "식탁까지 거리 모름", choices: [{ id: "done", label: "완료" }], target: null, speak: true, kind: "go" });
     const planId = first.id as string;
     // 두 줄 답을 붙잡아 둔 동안에도 판단 → 계획 → 첫 명령이 나갔다. 놓으면 마지막 판단 id로 두 줄이 대시보드에 온다
+    // 메시지 답을 붙잡아 둔 동안에도 판단 → 계획 → 첫 명령이 나갔다. 놓으면 컵 치우기 판단의 메시지(본 것 → 근거와 할 일)가 차례로 온다
     expect(thoughts.bodies.length).toBeGreaterThan(0);
     expect(dash.some((m) => m.type === "thought")).toBe(false);
     thoughts.release();
-    await pump(() => dash.some((m) => m.type === "thought"));
-    const lineAt = dash.findIndex((m) => m.type === "thought");
-    const decidedBefore = dash.slice(0, lineAt).filter((m) => m.type === "brain" && m.event.type === "decision" && m.event.status === "valid").at(-1)!.event;
-    expect(dash[lineAt]).toEqual({ type: "thought", id: decidedBefore.id, action: "컵 치우기", ...LINES });
-    expect(decidedBefore.prediction.reasoning).toBe("자리를 비워 컵을 치운다");
+    const shown = () => dash.filter((m) => m.type === "thought").flatMap((m) => m.messages as { id: string; text: string; decision: string }[]);
+    await pump(() => CUP_MESSAGES.every((t) => shown().some((m) => m.text === t)));
+    const cupAt = shown().find((m) => m.text === CUP_MESSAGES[0])!;
+    const cupDecision = dash.find((m) => m.type === "brain" && m.event.type === "decision" && m.event.id === cupAt.decision)!.event;
+    expect(cupDecision).toMatchObject({ action: "컵 치우기", prediction: { reasoning: "자리를 비워 컵을 치운다" } });
     // 1 이동: 「완료」 단추
     ws.send(JSON.stringify({ type: "answer", id: planId, step: first.step, choice: "done" }));
     await pump(() => !!said("컵을 들어 주세요"));
@@ -137,14 +138,16 @@ describe("NOONCHI 처음부터 끝까지", () => {
     expect(decided.text).toBe("컵 치우기");
     // 기록 DB 판단 줄에는 원래 생각이 그대로 남는다
     expect((decided.data as { prediction: { reasoning: string } }).prediction.reasoning).toBe("자리를 비워 컵을 치운다");
-    // 같은 행동(컵 치우기)이 이어지는 동안은 두 줄을 한 번만 만들고, 그 뒤 판단마다 같은 두 줄을 그 판단 id로 다시 보낸다
-    expect(thoughts.bodies).toHaveLength(1);
-    const lineIds = dash.filter((m) => m.type === "thought").map((m) => m.id as string);
-    expect(lineIds.length).toBeGreaterThan(1);
-    expect(new Set(lineIds).size).toBe(lineIds.length);
-    for (const m of dash.filter((x) => x.type === "thought")) expect(m).toMatchObject({ action: "컵 치우기", ...LINES });
-    // 두 줄은 기록 DB에 처음 만든 때 한 번 남는다(서버를 다시 띄워도 이어 쓴다)
-    expect((await history("thought")).rows.map((r) => [r.subject, r.data])).toEqual([[decidedBefore.id, { home: "apartment", action: "컵 치우기", ...LINES }]]);
+    // 메시지는 같은 말을 되풀이하지 않고, PAM 원래 생각·관찰은 대시보드로 보내지 않는다
+    const texts = shown().map((m) => m.text);
+    expect(new Set(texts).size).toBe(texts.length);
+    expect(texts.indexOf(CUP_MESSAGES[0]!)).toBeLessThan(texts.indexOf(CUP_MESSAGES[1]!));
+    for (const raw of ["자리를 비워 컵을 치운다", "빈 컵이 식탁에 남음", "할 일 없음", "컵 없음"]) expect(JSON.stringify(dash.filter((m) => m.type === "thought"))).not.toContain(raw);
+    // 메시지는 기록 DB에 하나씩 집 id와 함께 남는다(다시 붙은 대시보드·다시 띄운 서버에 최근 것을 다시 보낸다)
+    const stored = (await history("thought")).rows;
+    expect(stored.map((r) => r.text)).toEqual(texts);
+    expect(stored.map((r) => r.data)).toEqual(shown().map((m) => ({ home: "apartment", id: m.id })));
+    expect(stored.find((r) => r.text === CUP_MESSAGES[0])!.subject).toBe(cupDecision.id);
     expect(pam.bodies.some((b) => String(b.observation_text).includes("컵 cup_1 보임"))).toBe(true);
     // 대시보드: 판단·실행 기록과 계획(집기 대상 cup_1). 단계 상태가 지금 단계를 따라가고 끝나면 done
     const planMsgs = dash.filter((m) => m.type === "plan" && m.plan?.id === planId).map((m) => m.plan);
@@ -171,7 +174,7 @@ describe("NOONCHI 처음부터 끝까지", () => {
     for (const end = Date.now() + 3000; !late.some((m) => m.type === "say") && Date.now() < end; ) await new Promise((r) => setTimeout(r, 20));
     const from = late.findIndex((m) => m.type === "world");
     expect(late.slice(from, late.findIndex((m) => m.type === "say") + 1).map((m) => (m.type === "brain" ? `brain:${m.event.type}` : m.type))).toEqual(["world", "brain:decision", "thought", "seen", "say"]);
-    expect(late.find((m) => m.type === "thought")).toEqual({ type: "thought", replay: true, id: late.find((m) => m.type === "brain")!.event.id, action: "컵 치우기", ...LINES });
+    expect(late.find((m) => m.type === "thought")).toEqual({ type: "thought", replay: true, messages: shown().slice(-5) });
     expect(late.find((m) => m.type === "seen")).toMatchObject({
       replay: true, shapes: [{ label: "cup", score: 0.9, mask: { at: [220, 160, 40, 20] } }], frame: { width: 480, height: 360 },
     });

@@ -22,8 +22,7 @@ import type { PlaceNames, LayoutEditor } from "../layout/index.js";
 import { Policy } from "../agent/index.js";
 import { createProvider } from "../agent/index.js";
 import { deviceViews } from "../agent/index.js";
-import { PamClient, ThoughtWriter, lastStoredThought, storeThought, thoughtFeed, type ThoughtFeed } from "../brain/index.js";
-import type { ThoughtEvent } from "../contract/events.js";
+import { PamClient, ThoughtWriter, lastStoredThoughts, storeThought, thoughtFeed, type ThoughtFeed } from "../brain/index.js";
 import type { BrainLog, ReadyView, SeenEvent } from "../contract/events.js";
 import type { ApprovalAnswer, PlannedCommand } from "../contract/phone.js";
 import type { PlanView } from "../contract/plan.js";
@@ -191,7 +190,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
   let unsubWorld = () => {};
   let decider: Decider | null = null;
   let tracker: ExecutionTracker | null = null;
-  // 생각 말풍선 두 줄(src/brain/thought.ts): 판단 기록 뒤에 따로 만들어 대시보드로 보내고 기록 DB(thought)에 남긴다(관찰 흐름이 있을 때). 닫을 때 나가 있는 요청을 끊는다
+  // 생각 말풍선 메시지(src/brain/thought.ts): 판단 기록 뒤에 따로 만들어 대시보드로 보내고 기록 DB(thought)에 남긴다(관찰 흐름이 있을 때). 닫을 때 나가 있는 요청을 끊는다
   let thoughts: ThoughtFeed | null = null;
   let looker: Looker | null = null;
   let decideTimer: NodeJS.Timeout | undefined;
@@ -288,14 +287,6 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     // 실제 폰에 낸 지금 명령(실행 추적이 보낸 것), 마지막 판단, 마지막 물체 모양(seen): 새로 붙은 대시보드에도 보낸다
     let command: PlannedCommand | null = null;
     let lastDecision: BrainLog | null = null;
-    // 새로 붙은 대시보드에 다시 보낼 두 줄: 보낸 것이 없으면 기록 DB의 마지막 두 줄이 마지막 판단과 행동이 같을 때 그 판단 id로
-    const thoughtNow = (): ThoughtEvent | null => {
-      const sent = thoughts?.last();
-      if (sent) return sent;
-      const d = lastDecision?.type === "decision" && lastDecision.status === "valid" ? lastDecision : null;
-      const kept = d?.action ? lastStoredThought(history.db, home.id, Date.now()) : null;
-      return d && kept && kept.action === d.action ? { type: "thought", id: d.id, ...kept } : null;
-    };
     let lastSeen: SeenEvent | null = null;
     let said: string | null = null;
     // 마지막으로 가까이 보기를 시작한 자리와 시각(말풍선 카드 6초)
@@ -330,11 +321,10 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     const assist = () => ctx.assist?.() ?? "noonchi";
     if (world) {
       const now = () => ctx.brain?.clock?.now() ?? Date.now();
-      // 판단·계획은 두 줄을 기다리지 않는다: 판단 기록을 보낸 뒤 부르고, 두 줄이 오면 그 판단 id로 보낸다
-      // 같은 행동이 이어지는 동안은 처음 두 줄을 다시 보낸다. 다시 띄우면 기록의 마지막 두 줄(10분 안)을 이어 쓴다
+      // 판단·계획은 메시지를 기다리지 않는다: 판단 기록을 보낸 뒤 부르고, 새 메시지가 오면 보낸다. 다시 띄우면 이 집의 최근 메시지(10분 안)로 시작한다
       const feed = thoughtFeed({
         writer: new ThoughtWriter({ chat: createInference(env).thought }), send: (m) => appRef.current?.broadcast(m),
-        record: (m) => storeThought(history.db, home.id, m, Date.now()), seed: lastStoredThought(history.db, home.id, Date.now()),
+        record: (m) => storeThought(history.db, home.id, m), seed: lastStoredThoughts(history.db, home.id, Date.now()),
       });
       thoughts = feed;
       const emit = (event: BrainLog) => {
@@ -478,7 +468,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       start: startStore && { get: () => startStore.get(), save: (raw) => startStore.save(raw), preview: (raw) => startStore.preview(raw), clear: () => startStore.clear() },
       phoneSync: () => phoneRef.current?.syncState() ?? null,
       plan: plans, offTrack: () => tracker?.offTrack() ?? null, history: history.db, reflect: history.reflect, scene: () => scene,
-      brainLast: () => [...todayReflection(), ...(lastDecision ? [lastDecision] : [])], thoughtLast: thoughtNow, seenLast: () => lastSeen, say: () => said,
+      brainLast: () => [...todayReflection(), ...(lastDecision ? [lastDecision] : [])], thoughtLast: () => thoughts?.last() ?? null, seenLast: () => lastSeen, say: () => said,
     });
     const appNow = app;
     appRef.current = app;

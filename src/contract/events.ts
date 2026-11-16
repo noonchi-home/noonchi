@@ -96,10 +96,11 @@ export interface SeenEvent {
   shapes: { label: DetLabel; score: number; mask: Mask }[];
 }
 
-/** 생각 말풍선 두 줄(/events {type:"thought", …}, src/brain/thought.ts): 행동(action)을 고른 판단(id)의 관찰·생각을 작은 모델이 고친 「본 것」(seen)·「그래서」(why).
- *  판단 기록 뒤에 따로 온다. 같은 행동이 이어지는 동안은 처음 두 줄을 새 판단 id로 다시 보낸다. 기록 DB에는 처음 만든 때 한 번 thought 줄로 남는다(판단 줄에는 원래 생각).
- *  대시보드는 원래 생각을 보이지 않는다: 지금 판단 id나 같은 행동의 두 줄을 쓰고, 없으면 아는 값(상태 이름표)으로 만든 짧은 두 줄을 보인다. */
-export interface ThoughtEvent { type: "thought"; id: string; action: string; seen: string; why: string }
+/** 생각 말풍선 메시지 하나(src/brain/thought.ts): 판단(decision)마다 작은 모델이 쓴 짧은 문장. id는 메시지마다 다르다(판단 id@시각:차례). */
+export interface ThoughtMessage { id: string; text: string; at_ms: number; decision: string }
+/** 생각 말풍선 메시지(/events {type:"thought", messages}): 판단 기록 뒤에 따로 오는 새 메시지(오래된 것부터). 대시보드는 카톡처럼 차례로 쌓는다.
+ *  접속 때는 최근 메시지를 replay로 다시 보낸다. 기록 DB에는 메시지마다 thought 줄로 남는다(판단 줄에는 PAM 원래 생각). PAM 원래 생각은 대시보드로 보내지 않는다. */
+export interface ThoughtEvent { type: "thought"; messages: ThoughtMessage[] }
 
 /** 관찰 흐름·판단이 대시보드로 보내는 기록(/events {type:"brain", event}). VLM 프레임(VLM_FRAME_MS마다 한 장) 하나는 observe 기록으로 반드시 남는다:
  *  YOLO 결과(yolo) 또는 yolo_missing, VLM 답(vlm) 또는 vlm_missing. 그 사이 빠른 프레임은 observe 기록 없이 SeenEvent만 낸다.

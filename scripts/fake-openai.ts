@@ -1,6 +1,6 @@
 // 가짜 OpenAI 호환 서버: 정해진 답만 내고 밖으로 나가지 않는다. 자동 시험·CI·키 없는 컨테이너 확인에서 모델 주소 자리에 붙인다.
 //   npx tsx scripts/fake-openai.ts --port 8500 [--host 0.0.0.0]    (0이면 빈 포트, 첫 줄 "listening <포트>")
-// 답: 장면 스키마(scene_observation) → 감지 번호마다 contents_unknown, 생각 말풍선 두 줄(thought_lines) → 정한 두 줄, PAM 판단(task inference module) → 대기(-1),
+// 답: 장면 스키마(scene_observation) → 감지 번호마다 contents_unknown, 생각 말풍선 메시지(thought_messages) → 정한 메시지 하나, PAM 판단(task inference module) → 대기(-1),
 //     PAM 반성(procedural memory) → 받은 Current memory 그대로, 에이전트(POST /v1/responses) → respond가 정한 도구 호출·글, 없으면 글 답 「가짜 답」.
 //     reply·respond는 Promise도 돌려줄 수 있다(시험에서 답을 붙잡아 두기).
 import { createServer } from "node:http";
@@ -24,7 +24,7 @@ export function defaultReply(body: any): string {
     const dets: { id: string }[] = m ? JSON.parse(m[1]!) : [];
     return JSON.stringify({ scene: "unknown", observations: dets.map((d) => ({ object_id: d.id, state: "contents_unknown" })), summary: "가짜 장면" });
   }
-  if (body?.response_format?.json_schema?.name === "thought_lines") return JSON.stringify({ seen: "가짜 장면을 봤어요", why: "가짜 습관이라 가짜 일을 할게요" });
+  if (body?.response_format?.json_schema?.name === "thought_messages") return JSON.stringify({ messages: ["가짜 장면을 봤어요"] });
   if (system.includes("procedural memory")) {
     const m = /Current memory:\n([\s\S]*?)\n\nSummary:/.exec(user);
     if (m) return JSON.stringify(JSON.parse(m[1]!));

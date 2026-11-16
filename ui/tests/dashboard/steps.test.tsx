@@ -3,7 +3,7 @@
 import { act, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DashboardScreen, type ScreenProps } from "../../src/dashboard/DashboardScreen";
-import { EYE_FRAMES, imageSlot, LINES, PHONE_URL, SAY, screenAt, seenOf, THOUGHT } from "./fixtures";
+import { EYE_FRAMES, imageSlot, MESSAGES, PHONE_URL, SAY, screenAt, seenOf, THOUGHT } from "./fixtures";
 
 const STAGE = { width: 1504, height: 896 };
 const ALLOWED = new Set(["transform", "opacity", "offset", "easing", "composite"]);
@@ -60,6 +60,7 @@ function step(from: ScreenProps, to: ScreenProps) {
       phone: box(phone), twin: box(twin), stage: box(twin.parentElement!), map: box(twin.querySelector<HTMLElement>("[data-map]")!), canvas: box(twin.querySelector("canvas")!),
       thought: still(thought), bubble: box(thought.querySelector<HTMLElement>("[data-slot=thought-bubble]")!),
     },
+    messages: [...thought.querySelectorAll<HTMLElement>("[data-thought-message]")],
   };
   calls = [];
   view.rerender(<DashboardScreen {...to} />);
@@ -113,52 +114,34 @@ describe("대시보드 단계 바뀜", () => {
     expect(thoughtOf(view.container)).toBe(t);
     expect(t.style.opacity).toBe("0");
     expect(still(t)).toBe(was.boxes.thought);
-    // 숨는 동안 마지막 생각 글을 그대로 둔다(글을 비우면 사라지는 동안 빈 말풍선이 보인다)
-    expect(t).toHaveTextContent(LINES.seen);
+    // 숨는 동안 마지막 메시지를 그대로 둔다(글을 비우면 사라지는 동안 빈 말풍선이 보인다)
+    expect(t).toHaveTextContent(MESSAGES[0]!.text);
     for (const c of calls) for (const k of c.keyframes) for (const p of Object.keys(k)) expect(ALLOWED.has(p), p).toBe(true);
   });
 
-  it("생각이 바뀌면 앞 생각은 opacity로 사라지고 새 생각은 opacity·transform으로 떠오른다. 말풍선 칸 크기는 그대로다", () => {
+  it("새 메시지가 오면 아래에 붙고 앞 메시지는 같은 요소 그대로 위로 올라간다(넘친 오래된 것은 사라지는 동안만 남는다). 말풍선 칸 크기는 그대로이고 움직임은 transform·opacity만이다", () => {
     motionOn();
-    const next = { ...THOUGHT, lines: { seen: "식사 중인데 컵이 비어 있어요", why: "식사 중 빈 컵이라 물을 채우라고 할게요" } };
-    const { view, was } = step(screenAt(1), screenAt(1, { thought: next }));
+    const m = (n: number) => ({ id: `m${n}`, text: `메시지 ${n}` });
+    const { view, was } = step(screenAt(1, { thought: { ...THOUGHT, messages: [m(1), m(2), m(3)] } }), screenAt(1, { thought: { ...THOUGHT, messages: [m(1), m(2), m(3), m(4)] } }));
     const t = thoughtOf(view.container);
     expect(still(t)).toBe(was.boxes.thought);
     expect(box(t.querySelector<HTMLElement>("[data-slot=thought-bubble]")!)).toBe(was.boxes.bubble);
-    const items = [...t.querySelectorAll<HTMLElement>("[data-thought-item]")];
-    expect(items.map((l) => l.querySelector("[data-thought-line]")!.textContent)).toEqual([LINES.seen, next.lines.seen]);
-    const [old, now] = items;
-    const out = calls.filter((c) => c.el === old);
-    const into = calls.filter((c) => c.el === now);
-    expect(out).toHaveLength(1);
-    expect(into).toHaveLength(1);
-    expect(out[0]!.keyframes.map((k) => k.opacity)).toEqual([1, 0]);
-    expect(into[0]!.keyframes.map((k) => k.opacity)).toEqual([0, 1]);
-    expect(into[0]!.keyframes.some((k) => "transform" in k)).toBe(true);
-  });
-
-  it("정리 중 두 줄(상태 이름표·「생각을 정리하고 있어요」)에 그 판단의 두 줄이 오면 앞 것은 opacity로 사라지고 두 줄이 opacity·transform으로 떠오른다. 말풍선 칸 크기는 그대로다", () => {
-    motionOn();
-    const waiting = { ...THOUGHT, lines: { seen: "컵을 두고 자리를 뜸", why: "생각을 정리하고 있어요" } };
-    const { view, was } = step(screenAt(1, { thought: waiting }), screenAt(1));
-    const t = thoughtOf(view.container);
-    expect(still(t)).toBe(was.boxes.thought);
-    expect(box(t.querySelector<HTMLElement>("[data-slot=thought-bubble]")!)).toBe(was.boxes.bubble);
-    const [old, now] = [...t.querySelectorAll<HTMLElement>("[data-thought-item]")];
-    expect([...old!.querySelectorAll("[data-thought-line]")].map((l) => l.textContent)).toEqual([waiting.lines.seen, waiting.lines.why]);
-    expect([...now!.querySelectorAll("[data-thought-line]")].map((l) => l.textContent)).toEqual([LINES.seen, LINES.why]);
-    const out = calls.filter((c) => c.el === old);
-    const into = calls.filter((c) => c.el === now);
-    expect(out.map((c) => c.keyframes.map((k) => k.opacity))).toEqual([[1, 0]]);
-    expect(into.map((c) => c.keyframes.map((k) => k.opacity))).toEqual([[0, 1]]);
+    const items = () => [...t.querySelectorAll<HTMLElement>("[data-thought-message]")];
+    const before = was.messages;
+    // 앞 메시지(2·3)는 다시 만들지 않고, 새 메시지(4)는 맨 아래다. 빠지는 메시지(1)는 사라지는 동안만 남는다
+    expect(items().slice(-3).map((el) => el.textContent)).toEqual(["메시지 2", "메시지 3", "메시지 4"]);
+    expect(items().slice(-3, -1)).toEqual(before.slice(1));
+    // 메시지 요소의 inline style과 기록한 움직임에는 transform·opacity만 있다(크기·자리 값을 움직이지 않는다)
+    const layoutProps = /\b(width|height|top|left|right|bottom|margin[\w-]*|padding[\w-]*)\s*:/;
+    for (const el of items()) expect(el.style.cssText, el.textContent!).not.toMatch(layoutProps);
     for (const c of calls) for (const k of c.keyframes) for (const p of Object.keys(k)) expect(ALLOWED.has(p), p).toBe(true);
   });
 
-  it("계획 단계끼리는 생각이 같아 생각 말풍선을 다시 띄우지 않는다", () => {
+  it("계획 단계끼리는 메시지가 같아 생각 말풍선을 다시 띄우지 않고 메시지 요소도 그대로다", () => {
     motionOn();
-    const { view } = step(screenAt(1), screenAt(2));
+    const { view, was } = step(screenAt(1), screenAt(2));
     const t = thoughtOf(view.container);
-    expect(t.querySelectorAll("[data-thought-item]")).toHaveLength(1);
+    expect([...t.querySelectorAll<HTMLElement>("[data-thought-message]")]).toEqual(was.messages);
     expect(calls.filter((c) => t.contains(c.el))).toEqual([]);
   });
 

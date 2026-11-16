@@ -1,6 +1,6 @@
 // 대시보드 화면 틀(DashboardScreen): 머리줄 막대·맨 아래 줄·오른쪽 칸 없이 트윈(지도 자리는 칸을 꽉 채우고, 할 일 진행도는 여기에만)이 화면 전체를 쓴다.
 // 그 위에 얹는 것: 오른쪽 위 비전 미니맵 「폰 카메라」(가로 16:9 영상에 마스크·이름표, 영상이 없으면 연결 QR), 오른쪽 아래 마스코트(판 없이 아래 끝을 화면 밑 선에 댄다, 누르면 설정 창),
-// 마스코트 위 생각 말풍선(PAM 생각의 「본 것」·「그래서」 두 줄, 두 줄이 없으면 원래 생각, 그 아래 상태·판단 칩, 대기면 숨김), 트윈 아래쪽 말풍선 카드 하나. 자리는 화면 크기로만 정해진다(layout.ts). 자료는 fixtures.ts.
+// 마스코트 위 생각 말풍선(짧은 메시지가 카톡처럼 쌓인 목록과 그 아래 상태·판단 칩, 메시지가 없으면 숨김), 트윈 아래쪽 말풍선 카드 하나. 자리는 화면 크기로만 정해진다(layout.ts). 자료는 fixtures.ts.
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import tokens from "../../../src/design/tokens.json";
@@ -11,10 +11,11 @@ import { MASCOT } from "../../src/lib/mascot-image";
 import { WORDS } from "../../src/dashboard/words";
 import { EMPTY_DASH, reduceDash, thoughtOf } from "../../src/dashboard/data";
 import { BRANCHES, COACH, COACH_SAY, LEFT_SAY, branchDecision, coachPlanAt, type Branch } from "./fixtures";
-import { CLEAR_CUP, EYE_FRAMES, HUB, imageSlot, LEFT_CUP_STATE, LINES, PHONE_URL, PLAN, REASON, SAY, screenAt, seenEvent, seenOf, THOUGHT } from "./fixtures";
+import { CLEAR_CUP, EYE_FRAMES, HUB, imageSlot, LEFT_CUP_STATE, MESSAGES, PHONE_URL, PLAN, REASON, SAY, screenAt, seenEvent, seenOf, THOUGHT } from "./fixtures";
 import { createSeenStore } from "../../src/dashboard/masks";
 import { act } from "@testing-library/react";
 import type { PlanView } from "../../../src/contract/plan.ts";
+import type { ServerMessage } from "../../../src/contract/events.ts";
 
 /** WCAG 대비(hex 두 개). */
 const lum = (hex: string) => {
@@ -210,8 +211,9 @@ describe("대시보드 배치", () => {
       const variants: [string, ScreenProps][] = [
         ["0", screenAt(0)], ["2", screenAt(2)], ["3", screenAt(3)], ["4", screenAt(4)],
         ["로봇 모름", screenAt(2, { robotKnown: false })], ["연결 끊김", screenAt(2, { connected: false })], ["모양 없음", screenAt(0, { seen: seenOf(null) })],
-        ["긴 두 줄", screenAt(2, { thought: { ...THOUGHT, lines: { seen: LINES.seen.repeat(4), why: LINES.why.repeat(4) } } })], ["상태 모름", screenAt(2, { thought: { ...THOUGHT, state: null } })],
-        ["정리 중", screenAt(2, { thought: { ...THOUGHT, lines: { seen: LEFT_CUP_STATE, why: WORDS.thinking } } })],
+        ["긴 메시지", screenAt(2, { thought: { ...THOUGHT, messages: MESSAGES.map((m) => ({ ...m, text: m.text.repeat(5) })) } })], ["상태 모름", screenAt(2, { thought: { ...THOUGHT, state: null } })],
+        ["메시지 여섯", screenAt(2, { thought: { ...THOUGHT, messages: Array.from({ length: 6 }, (_, i) => ({ id: `m${i}`, text: `메시지 ${i}` })) } })],
+        ["대기 칩 없음", screenAt(2, { thought: { ...THOUGHT, state: null, action: null } })],
       ];
       for (const [name, p] of variants) expect(boxes(p), name).toEqual(first);
     } finally { rect.mockRestore(); }
@@ -284,36 +286,39 @@ describe("대시보드 말풍선(트윈 아래쪽 카드 하나)", () => {
 
 describe("대시보드 생각 말풍선(마스코트 위)", () => {
   const bubble = () => thought().querySelector<HTMLElement>('[data-slot="thought-bubble"][data-shape="bubble"]')!;
-  /** 지금 생각 하나(바뀌는 동안 앞 생각과 겹쳐 있는 것 중 뒤). */
-  const item = () => [...thought().querySelectorAll<HTMLElement>("[data-thought-item]")].at(-1)!;
-  const now = () => item().querySelector<HTMLElement>("[data-thought-line]")!;
-  const chips = () => [...item().querySelectorAll<HTMLElement>("[data-thought-chips] [data-slot=status]")];
+  const list = () => thought().querySelector<HTMLElement>("[data-thought-list]")!;
+  const messages = () => [...list().querySelectorAll<HTMLElement>("[data-thought-message]")];
+  const chips = () => [...thought().querySelectorAll<HTMLElement>("[data-thought-chips] [data-slot=status]")];
 
-  it.each([1, 2, 3, 4])("%i: 이름표 칩 「본 것」·「그래서」와 그 옆 두 줄을 보이고 원래 생각 칸은 없다. 칩 둘 「상태 · …」「눈치 · 행동 이름」은 그 아래다", (n) => {
+  it.each([1, 2, 3, 4])("%i: 짧은 메시지가 차례로 쌓인 목록(21st.dev Animated List, 오래된 것이 위)과 그 아래 칩 둘 「상태 · …」「눈치 · 행동 이름」을 보인다. 이름표·원래 생각은 없다", (n) => {
     draw(screenAt(n));
     expect(thought()).toHaveAttribute("data-thought", "shown");
     expect(thought().style.opacity).toBe("1");
     expect(thought()).toHaveAttribute("aria-hidden", "false");
-    const it = item();
-    expect(it.querySelector('[data-thought-line="raw"]')).toBeNull();
-    const dl = it.querySelector("dl")!;
-    expect(bubble().contains(dl)).toBe(true);
-    expect([...dl.children].map((c) => c.tagName)).toEqual(["DT", "DD", "DT", "DD"]);
-    const labels = [...it.querySelectorAll<HTMLElement>("[data-thought-label]")];
-    expect(labels.map((l) => [l.dataset.slot, l.dataset.variant, l.textContent])).toEqual([["status", "default", "본 것"], ["status", "default", "그래서"]]);
-    expect([...it.querySelectorAll<HTMLElement>("[data-thought-line]")].map((l) => [l.dataset.thoughtLine, l.textContent])).toEqual([["seen", LINES.seen], ["why", LINES.why]]);
-    expect(it).not.toHaveTextContent(REASON);
+    expect(list().tagName).toBe("UL");
+    expect(bubble().contains(list())).toBe(true);
+    expect(messages().map((m) => [m.tagName, m.textContent])).toEqual(MESSAGES.map((m) => ["LI", m.text]));
+    expect(thought().querySelector("[data-thought-label], [data-thought-line], dl")).toBeNull();
+    expect(thought()).not.toHaveTextContent(REASON);
     expect(chips().map((c) => c.textContent)).toEqual([`상태 · ${LEFT_CUP_STATE}`, `눈치 · ${CLEAR_CUP}`]);
-    expect(before(dl, it.querySelector("[data-thought-chips]")!)).toBe(true);
+    expect(before(list(), thought().querySelector("[data-thought-chips]")!)).toBe(true);
   });
 
-  it("컵 갈래: 계획이 없는 그대로 두기도 생각 한 문장과 칩 둘 「상태 · 컵을 두고 자리를 뜸」「눈치 · 컵 그대로 두기」를 보이고, 물 채워 주기는 「상태 · 먹거나 마시는 중」「눈치 · 컵에 물 채워 주기」다", () => {
-    const of = (b: Branch) => thoughtOf(reduceDash(EMPTY_DASH, branchDecision(b, 1), 0))!;
+  it("최근 3개만 보인다: 새 메시지가 오면 맨 아래에 붙고 넘친 맨 위 메시지가 빠진다(움직임 줄이기면 바로)", async () => {
+    const m = (n: number) => ({ id: `m${n}`, text: `메시지 ${n}` });
+    const { rerender } = draw(screenAt(2, { thought: { ...THOUGHT, messages: [0, 1, 2, 3, 4, 5].map(m) } }));
+    expect(messages().map((el) => el.textContent)).toEqual(["메시지 3", "메시지 4", "메시지 5"]);
+    rerender(<DashboardScreen {...screenAt(2, { thought: { ...THOUGHT, messages: [3, 4, 5, 6].map(m) } })} />);
+    await waitFor(() => expect(messages().map((el) => el.textContent)).toEqual(["메시지 4", "메시지 5", "메시지 6"]));
+  });
+
+  it("컵 갈래: 계획이 없는 그대로 두기도 메시지와 칩 둘 「상태 · 컵을 두고 자리를 뜸」「눈치 · 컵 그대로 두기」를 보이고, 물 채워 주기는 「상태 · 먹거나 마시는 중」「눈치 · 컵에 물 채워 주기」다", () => {
+    const one: ServerMessage = { type: "thought", messages: [{ id: "pam-1@1:0", text: "컵을 살피고 있어요", at_ms: 1, decision: "pam-1" }] };
+    const of = (b: Branch) => thoughtOf(reduceDash(reduceDash(EMPTY_DASH, branchDecision(b, 1), 0), one, 0))!;
     const { rerender } = draw(screenAt(0, { thought: of(BRANCHES.leave), say: LEFT_SAY }));
     expect(thought()).toHaveAttribute("data-thought", "shown");
-    // 두 줄이 오기 전: 원래 생각 대신 상태 이름표와 「생각을 정리하고 있어요」
-    expect([...item().querySelectorAll("[data-thought-line]")].map((l) => l.textContent)).toEqual(["컵을 두고 자리를 뜸", WORDS.thinking]);
-    expect(item()).not.toHaveTextContent(BRANCHES.leave.reasoning);
+    expect(messages().map((m) => m.textContent)).toEqual(["컵을 살피고 있어요"]);
+    expect(thought()).not.toHaveTextContent(BRANCHES.leave.reasoning);
     expect(chips().map((c) => c.textContent)).toEqual(["상태 · 컵을 두고 자리를 뜸", "눈치 · 컵 그대로 두기"]);
     rerender(<DashboardScreen {...screenAt(1, { thought: of(BRANCHES.water) })} />);
     expect(chips().map((c) => c.textContent)).toEqual(["상태 · 먹거나 마시는 중", "눈치 · 컵에 물 채워 주기"]);
@@ -322,25 +327,27 @@ describe("대시보드 생각 말풍선(마스코트 위)", () => {
     // 코치 판단: 진행 중에는 PAM을 쉬므로 이 말풍선이 계획 끝까지 남는다
     const plan = coachPlanAt(2);
     rerender(<DashboardScreen {...screenAt(2, { plan, step: plan.steps[1]!, thought: of(COACH), say: COACH_SAY.quiet })} />);
-    expect(now()).toHaveTextContent("주방에서 할 일을 찾음");
     expect(chips().map((c) => c.textContent)).toEqual(["상태 · 주방에서 할 일을 찾음", "코치 · 라면 끓이기 알려 주기"]);
   });
 
-  it("배운 규칙이 있는 행동이면 앞 칩이 「습관 · 상태」(상태를 모르면 「습관 · 배운 규칙」)이고 뒤 칩은 「눈치 · 행동」이다. 칩 두 개와 줄 높이는 그대로다", () => {
+  it("배운 규칙이 있는 행동이면 앞 칩이 「습관 · 상태」(상태를 모르면 「습관 · 배운 규칙」)이고 뒤 칩은 「눈치 · 행동」이다. 칩 줄 높이는 그대로다", () => {
     const aircon = { ...THOUGHT, action: "에어컨 켜기", habit: true };
     const { rerender } = draw(screenAt(0, { thought: { ...aircon, state: "TV 보는 중" } }));
     expect(chips().map((c) => c.textContent)).toEqual(["습관 · TV 보는 중", "눈치 · 에어컨 켜기"]);
     rerender(<DashboardScreen {...screenAt(0, { thought: { ...aircon, state: null } })} />);
     expect(chips().map((c) => c.textContent)).toEqual(["습관 · 배운 규칙", "눈치 · 에어컨 켜기"]);
-    const row = item().querySelector<HTMLElement>("[data-thought-chips]")!;
+    const row = thought().querySelector<HTMLElement>("[data-thought-chips]")!;
     for (const c of ["h-[26px]", "overflow-hidden"]) expect(row.className.split(/\s+/), c).toContain(c);
   });
 
-  it("PAM이 대기(행동 없음)면 말풍선을 숨긴다: 칸은 그대로 두고 opacity 0이며 읽어 주지 않는다", () => {
+  it("대기(행동 없음)여도 메시지가 있으면 보이고 칩은 없다. 메시지가 없으면(thought null) 숨긴다: 칸은 그대로 두고 opacity 0이며 읽어 주지 않는다. 숨는 동안 마지막 메시지를 그대로 둔다", () => {
     const rect = atScreen(1920, 1080);
     try {
-      const { rerender } = draw(screenAt(1));
+      const waiting = { ...THOUGHT, state: null, action: null };
+      const { rerender } = draw(screenAt(0, { thought: waiting }));
       const el = thought();
+      expect(el).toHaveAttribute("data-thought", "shown");
+      expect(chips()).toEqual([]);
       const boxWas = boxOf(el);
       rerender(<DashboardScreen {...screenAt(0)} />);
       expect(thought()).toBe(el);
@@ -348,10 +355,11 @@ describe("대시보드 생각 말풍선(마스코트 위)", () => {
       expect(el.style.opacity).toBe("0");
       expect(el).toHaveAttribute("aria-hidden", "true");
       expect(boxOf(el)).toEqual(boxWas);
+      expect(messages().map((m) => m.textContent)).toEqual(MESSAGES.map((m) => m.text));
     } finally { rect.mockRestore(); }
   });
 
-  it("처음부터 대기면 숨긴 채 비어 있다", () => {
+  it("처음부터 메시지가 없으면 숨긴 채 비어 있다", () => {
     draw(screenAt(0));
     expect(thought().style.opacity).toBe("0");
     expect(thought().textContent).toBe("");
@@ -362,7 +370,7 @@ describe("대시보드 생각 말풍선(마스코트 위)", () => {
     expect(chips().map((c) => c.textContent)).toEqual([`눈치 · ${CLEAR_CUP}`]);
   });
 
-  it("21st.dev 부품으로 그린다: 말풍선과 꼬리 점 둘은 ThoughtBubble, 칩은 Status다. 말풍선 카드(유리 판 + Item)와 모양이 다르다", () => {
+  it("21st.dev 부품으로 그린다: 말풍선과 꼬리 점 둘은 ThoughtBubble, 메시지 목록은 Animated List, 칩은 Status다. 말풍선 카드(유리 판 + Item)와 모양이 다르다", () => {
     draw(screenAt(2));
     const t = thought();
     expect(t.querySelectorAll('[data-slot="thought-bubble"][data-shape="bubble"]')).toHaveLength(1);
@@ -370,27 +378,27 @@ describe("대시보드 생각 말풍선(마스코트 위)", () => {
     expect(t.querySelector("[data-glass], [data-slot=item]")).toBeNull();
     expect(say().querySelector('[data-slot="thought-bubble"]')).toBeNull();
     expect(chips().map((c) => c.dataset.variant)).toEqual(["default", "brand"]);
-    const labels = [...document.querySelectorAll("[data-thought-label]")];
-    expect(labels.map((l) => l.getAttribute("data-slot"))).toEqual(["status", "status"]);
+    // Animated List 받은 코드의 목록·항목 모양(flex 목록, 둥근 테두리 항목, 받은 글 크기 text-sm)
+    expect(cls(list(), "flex") && cls(list(), "flex-col") && cls(list(), "gap-2")).toBe(true);
+    for (const m of messages()) for (const c of ["rounded-xl", "border", "px-4", "py-3", "text-sm"]) expect(cls(m, c), c).toBe(true);
     // 점선 테두리를 쓰지 않는다
-    for (const el of [t, ...t.querySelectorAll<HTMLElement>("*")]) expect(el.className).not.toMatch(/border-(dashed|dotted)/);
+    for (const el of [t, ...t.querySelectorAll<HTMLElement>("*")]) expect(String(el.className)).not.toMatch(/border-(dashed|dotted)/);
   });
 
-  it.each([[1920, 1080], [1440, 900]])("%i×%i: 말풍선 크기는 정해져 있다(420×156): 글은 받은 크기(text-sm), 두 줄은 줄마다 두 줄 높이에서 자르고, 칩 줄은 한 줄 높이라 긴 문장·긴 이름이 크기를 바꾸지 않는다", (width, height) => {
+  it.each([[1920, 1080], [1440, 900]])("%i×%i: 말풍선 크기는 정해져 있다(460×210): 메시지 목록은 메시지 셋 높이(154px)에서 아래에 붙고 넘친 위쪽은 가린다. 칩 줄은 한 줄 높이라 긴 문장·긴 이름·메시지 수가 크기를 바꾸지 않는다", (width, height) => {
     const rect = atScreen(width, height);
     try {
       const L = pageLayout({ width, height }, MASCOT);
-      const long = { ...THOUGHT, lines: { seen: LINES.seen.repeat(4), why: LINES.why.repeat(4) }, state: LEFT_CUP_STATE.repeat(5), action: CLEAR_CUP.repeat(8) };
+      const long = { ...THOUGHT, messages: MESSAGES.map((m) => ({ ...m, text: m.text.repeat(5) })), state: LEFT_CUP_STATE.repeat(5), action: CLEAR_CUP.repeat(8) };
       const seen = new Set<string>();
       for (const p of [screenAt(1), screenAt(4), screenAt(2, { thought: long }), screenAt(2, { thought: { ...THOUGHT, state: null } }), screenAt(0)]) {
         const { unmount } = draw(p);
         const t = thought();
-        seen.add([t.style.left, t.style.top, t.style.width, t.style.height, bubble().style.height, bubble().className].join(" "));
+        seen.add([t.style.left, t.style.top, t.style.width, t.style.height, bubble().style.height, bubble().className, list().className].join(" "));
         expect([px(t.style.width), px(bubble().style.height)]).toEqual([THOUGHT_SIZE.width, THOUGHT_SIZE.height]);
         expect(close({ ...boxOf(t), height: THOUGHT_SIZE.height }, L.thought)).toBe(true);
         for (const c of ["w-full", "max-w-full", "text-sm"]) expect(cls(bubble(), c), c).toBe(true);
-        for (const text of t.querySelectorAll("[data-thought-text]")) expect(cls(text, "h-[100px]")).toBe(true);
-        for (const line of t.querySelectorAll("[data-thought-line]")) for (const c of ["line-clamp-2", "h-[2lh]", "break-keep"]) expect(cls(line, c), c).toBe(true);
+        for (const c of ["h-[154px]", "justify-end", "overflow-hidden"]) expect(cls(list(), c), c).toBe(true);
         for (const row of t.querySelectorAll("[data-thought-chips]")) for (const c of ["h-[26px]", "overflow-hidden"]) expect(cls(row, c), c).toBe(true);
         for (const chip of t.querySelectorAll("[data-thought-chips] [data-slot=status]")) expect(cls(chip.firstElementChild!, "truncate")).toBe(true);
         unmount();

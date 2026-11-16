@@ -74,7 +74,7 @@ export interface AppOptions {
   world?: () => WorldView;
   /** 마지막 판단(BRAIN=1). /events 접속 때 world 다음에 {type:"brain", replay:true}로 보낸다. */
   brainLast?: () => BrainLog[];
-  /** 마지막 판단의 생각 말풍선 두 줄(BRAIN=1, src/brain/thought.ts). /events 접속 때 마지막 판단 다음에 replay:true를 붙여 보낸다. */
+  /** 최근 생각 말풍선 메시지(BRAIN=1, src/brain/thought.ts). /events 접속 때 마지막 판단 다음에 replay:true를 붙여 보낸다. */
   thoughtLast?: () => ThoughtEvent | null;
   /** 마지막 물체 모양(BRAIN=1). /events 접속 때 그대로 replay:true를 붙여 보낸다. */
   seenLast?: () => SeenEvent | null;

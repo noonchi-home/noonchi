@@ -1,5 +1,5 @@
 // @vitest-environment node
-// 대시보드 화면 배치(순수 함수): 트윈이 화면 전체(여백 안)를 쓴다. 그 위에 얹는 것: 오른쪽 위 비전 미니맵(가로 16:9, 1280 너비에서 340×191.25, 화면 너비에 비례),
+// 대시보드 화면 배치(순수 함수): 트윈이 화면 전체(여백 안)를 쓴다. 그 위에 얹는 것: 오른쪽 위 비전 미니맵(가로 16:9, 1280 너비에서 320×180, 화면 너비에 비례),
 // 오른쪽 아래 마스코트(판 없이, 아래 끝이 화면 밑 선), 마스코트 위 생각 말풍선(크기 고정)과 꼬리 점 둘, 트윈 아래쪽 말풍선 카드(마스코트 왼쪽까지).
 // 트윈 지도는 트윈 칸을 꽉 채운다. 지도 카메라는 그 단계에 중요한 것을 진행도 아래·말풍선 카드 위·미니맵과 생각 말풍선 왼쪽 칸(focus)에 맞춘다.
 import { describe, expect, it } from "vitest";
@@ -35,8 +35,8 @@ describe.each([[1920, 1080], [1440, 900], [1522, 722]])("%i×%i", (width, height
     for (const k of ["divider", "card"]) expect(k in L, k).toBe(false);
   });
 
-  it("비전 미니맵은 트윈 오른쪽 위 가로 16:9 칸이다: 너비는 화면 너비의 340/1280이고 트윈 끝에서 안쪽 여백만큼 띄운다", () => {
-    expect(MINIMAP_SHARE).toBe(340 / 1280);
+  it("비전 미니맵은 트윈 오른쪽 위 가로 16:9 칸이다: 너비는 화면 너비의 320/1280이고 트윈 끝에서 안쪽 여백만큼 띄운다", () => {
+    expect(MINIMAP_SHARE).toBe(320 / 1280);
     expect(near(L.video.width, width * MINIMAP_SHARE)).toBe(true);
     expect(near(L.video.width / L.video.height, 16 / 9)).toBe(true);
     expect(near(right(L.video), right(L.twin) - space.panelPadding)).toBe(true);
@@ -90,8 +90,8 @@ describe.each([[1920, 1080], [1440, 900], [1522, 722]])("%i×%i", (width, height
     expect(L.logo.top + L.logo.height).toBeLessThan(L.mascot.height);
   });
 
-  it("생각 말풍선은 마스코트 위다: 크기는 화면과 상관없이 정해져 있고(420 × 「본 것」·「그래서」 두 줄씩·칩 한 줄), 오른쪽 끝은 마스코트와 같으며 미니맵·마스코트·말풍선 카드와 겹치지 않는다", () => {
-    expect(THOUGHT).toEqual({ width: 420, height: 156 });
+  it("생각 말풍선은 마스코트 위다: 크기는 화면과 상관없이 정해져 있고(460 × 메시지 셋·칩 한 줄), 오른쪽 끝은 마스코트와 같으며 미니맵·마스코트·말풍선 카드와 겹치지 않는다", () => {
+    expect(THOUGHT).toEqual({ width: 460, height: 210 });
     expect([L.thought.width, L.thought.height]).toEqual([THOUGHT.width, THOUGHT.height]);
     expect(near(right(L.thought), right(L.mascot))).toBe(true);
     expect(bottom(L.thought)).toBeLessThan(L.mascot.top);
@@ -162,11 +162,14 @@ describe.each([[1920, 1080], [1440, 900], [1522, 722]])("%i×%i", (width, height
 });
 
 describe("말풍선을 키운 만큼 미니맵을 줄인다", () => {
-  it("1920×1080 16:9에서 생각 말풍선이 높아진 만큼(104 → 156, 52px) 미니맵 높이가 줄어(337.5 → 286.9) 미니맵 아래와 말풍선 위 사이가 그대로다(242.5px, 2px 안)", () => {
-    const L = pageLayout({ width: 1920, height: 1080 }, M);
-    expect(THOUGHT.height - 104).toBe(52);
-    expect(near(L.video.height, 1920 * 340 / 1280 * 9 / 16)).toBe(true);
-    expect(Math.abs(L.thought.top - bottom(L.video) - 242.5)).toBeLessThan(2);
+  it.each([[1920, 1080], [1440, 900], [1522, 722]])("%i×%i: 메시지 셋이 드는 생각 말풍선(높이 210) 아래에서도 16:9 미니맵은 높이 상한(말풍선 위 사이)에 걸리지 않는다(320/1280이면 가장 낮은 1522×722에서도 들어간다)", (width, height) => {
+    const L = pageLayout({ width, height }, M);
+    expect(near(L.video.height, (width * 320) / 1280 * (9 / 16))).toBe(true);
+    expect(bottom(L.video)).toBeLessThanOrEqual(L.thought.top - L.gap + 1e-6);
+  });
+  it("340/1280이었으면 1522×722에서 16:9 미니맵이 말풍선 위 사이에 걸려 잘렸다", () => {
+    const L = pageLayout({ width: 1522, height: 722 }, M);
+    expect((1522 * 340) / 1280 * (9 / 16)).toBeGreaterThan(L.thought.top - L.gap - L.video.top);
   });
 });
 
@@ -223,15 +226,15 @@ describe("영상 비율 고르기(떨림 방지)", () => {
 });
 
 describe("크기(스케치 6안)", () => {
-  it("1280×720: 미니맵 340×191.25", () => {
+  it("1280×720: 미니맵 320×180", () => {
     const L = pageLayout({ width: 1280, height: 720 }, M);
-    expect([L.video.width, L.video.height]).toEqual([340, 191.25]);
+    expect([L.video.width, L.video.height]).toEqual([320, 180]);
   });
 
-  it("1920×1080: 트윈 1888×1048, 미니맵 510×286.875, 마스코트 약 320 높이, 말풍선 카드 높이 74", () => {
+  it("1920×1080: 트윈 1888×1048, 미니맵 480×270, 마스코트 약 320 높이, 말풍선 카드 높이 74", () => {
     const L = pageLayout({ width: 1920, height: 1080 }, M);
     expect([L.twin.width, L.twin.height]).toEqual([1888, 1048]);
-    expect([L.video.width, L.video.height]).toEqual([510, 286.875]);
+    expect([L.video.width, L.video.height]).toEqual([480, 270]);
     expect(near(L.mascot.height, 320, 10)).toBe(true);
     expect(L.bubble.height).toBe(74);
   });
