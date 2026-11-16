@@ -59,7 +59,7 @@ export interface VideoCommandEntry { video_ms: number; id: string; step: string;
 /** 단계 영상으로 바꾼 영상 시각과 영상 이름, 그 영상 길이(알면). */
 export interface VideoClipEntry { video_ms: number; clip: string; duration_ms?: number }
 /** 판정 기록. t0: 재생 시작 순간의 서버 시계(ms, 시계를 맞추기 전에는 폰 시계). ended: 첫 영상이 끝남.
- *  hold: 단계 영상이 끝나 마지막 장면을 붙잡는 중이면 그 영상과 붙잡기 시작한 영상 시각, 아니면 null. */
+ *  hold: 영상(첫 영상이나 단계 영상)이 끝나 마지막 장면을 붙잡는 중이면 그 영상과 붙잡기 시작한 영상 시각, 아니면 null. */
 export interface VideoRecord {
   t0: number | null; ended: boolean; hold: { clip: string; since: number } | null; commands: VideoCommandEntry[]; clips: VideoClipEntry[];
   /** 지금 말의 at(화면이 바뀔 때마다 heardAtOf로 다시 쓴다, 영상 판정 --say가 그대로 싣는다). 기록 전이면 없음. */

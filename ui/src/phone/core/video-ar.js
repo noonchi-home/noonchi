@@ -2,13 +2,14 @@
 // 시작 자세: 높이 1.4m에서 아래 25°(?h=·?pitch=, 시야각 ?fov= 기본 60°). 바닥은 AR y 0이다. 시작하면 reset → start{fixed:true}를 보내 서버가
 // 시작 자리를 카메라 자리로 바로 맞춘다(src/phone/sync aligner fixStart). 서버 맞춤이 없어지면(못 보냄·다시 붙음·서버 다시 띄움) syncStatus가
 // start fixed를 다시 보낸다(늘 시작 자세: AR 원점은 걸어도 그대로다). 그 뒤 자세는 초당 10번, 화면 프레임은 초당 12장(긴 변 780, 품질 0.55),
-// 엔진 프레임은 서버 engine_ms마다(품질 0.8, 투영 행렬·서버 시계 촬영 시각). 표시 영상(H.264)은 만들지 않는다. 영상이 끝나면 프레임을 멈추고 다시 틀지 않는다.
+// 엔진 프레임은 서버 engine_ms마다(품질 0.8, 투영 행렬·서버 시계 촬영 시각). 표시 영상(H.264)은 만들지 않는다. 영상은 다시 틀지 않는다.
 // 재생을 기다리는 동안 다시 시작하면 같은 시작을 기다리고(영상은 하나), 그 사이 끝내면 그 영상을 닫고 시작하지 않는다.
 // 단계 영상(?step=<종류>:<대상 낱말>:<영상>, 여러 개): 사람 단계 명령(command)의 종류가 같고 대상 id에 낱말이 든 첫 칸이면, 그 id·step에 한 번
 // ?react=초(기본 1.5) 뒤 그 영상으로 바꿔 튼다(새 영상을 깔고 튼 뒤 앞 영상을 닫는다). 영상 시각은 앞 영상들 시각에 이어 센다.
 // 같은 종류·낱말 칸이 여럿이면 적은 차례대로 쓴다: 그 종류·낱말에 맞는 새 명령마다 다음 칸, 칸이 다 떨어지면 지금 영상을 둔다(칸이 하나면 맞는 새 명령마다 그 칸).
-// 단계 영상이 끝나면 마지막 장면을 붙잡는다: 다음 단계 영상이 오거나 끝낼 때까지 그 장면으로 프레임을 계속 보내고(시각은 흐른다),
-// window.__noonchiVideo.hold = { clip, since: 영상 시각 }(다음 단계 영상이 시작되면 null). ended는 첫 영상이 끝났을 때만 참이다.
+// 첫 영상도 단계 영상도 끝나면 마지막 장면을 붙잡는다: 다음 단계 영상이 오거나 끝낼 때까지 그 장면으로 프레임을 계속 보내고(시각은 흐른다,
+// 엔진 프레임에 held: true), window.__noonchiVideo.hold = { clip, since: 영상 시각 }(다음 단계 영상이 시작되면 null). 실제 폰은 계속 보므로
+// 판단·계획 뒤 대상 다시 확인이 영상 끝에서 끊기지 않게 한다. ended는 첫 영상이 끝났을 때만 참이다.
 // 자세는 새 영상이 틀어질 때 함께 바꾼다(열지 못하거나 더 새 바꾸기가 있으면 그대로).
 // go 단계면 자세가 대상 쪽으로 돌아 시작 숙인 각(?pitch=)으로 초당 0.8m 걸어(자세 타이머가 한 칸씩) 대상 0.6m 앞에서 멈춘다.
 // 집기·놓기 단계면 걷기를 멈추고 그 자리에서 대상(cmd.target.ar, 면이면 서버가 윗면 가운데로 준다)을 바라본다: 사람이 폰을 대상에 겨누듯
@@ -230,7 +231,6 @@ export function createVideoAr({ link, params, hooks, deps }) {
     record.clips = [];
     let offset = 0; // 앞 영상들 시각 합(ms): 단계 영상으로 바꿔도 한 시각표로 센다
     let clockFixed = false;
-    let ended = false;
     let due = 0;
     let lastEngine = null;
     let walk = null; // go 단계 걷기: { goal }
@@ -305,8 +305,6 @@ export function createVideoAr({ link, params, hooks, deps }) {
         type: "pose", position, orientation, tracking: "ok", hit: state.hitPoint, hit_estimated: state.hitEstimated,
         floor_y: 0, epoch: state.epoch,
       });
-      // 영상이 끝난 뒤에도 명령 고리는 고친다(프레임 고리가 멈춘다)
-      if (ended) showMarks(frameMarks());
     };
     sendPose();
     const poseTimer = setInterval(sendPose, SEND_MS);
@@ -343,7 +341,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
 
     /** 영상 v의 프레임 한 장 보내기(엔진·표시). 다음 프레임 예약은 하지 않는다: 영상 고리(frameLoop)와 붙잡기 타이머가 같이 쓴다. */
     const frameSend = (v) => (now) => {
-      if (run !== current || v !== video || ended) return;
+      if (run !== current || v !== video) return;
       const t = timeline();
       const stamp = link.stamp(performance.timeOrigin + now);
       // 시계를 맞춘 뒤 첫 프레임에서 t0를 서버 시계로 고친다
@@ -390,7 +388,8 @@ export function createVideoAr({ link, params, hooks, deps }) {
     const frameLoop = (v) => {
       const send = frameSend(v);
       const onFrame = (now) => {
-        if (run !== current || v !== video || ended) return;
+        // 끝난 영상은 새 프레임이 없다: 고리를 멈추고 붙잡기 타이머가 보낸다
+        if (run !== current || v !== video || v.ended) return;
         v.nextFrame(onFrame);
         send(now);
       };
@@ -398,16 +397,16 @@ export function createVideoAr({ link, params, hooks, deps }) {
     };
     const watchEnd = (v) => v.onEnded(() => {
       if (v !== video) return;
+      // 첫 영상도 단계 영상처럼 마지막 장면을 붙잡는다(실제 폰은 계속 본다: 판단·계획 뒤 대상 다시 확인이 끊기지 않게). ended는 첫 영상이 끝났다는 뜻만 둔다
+      const clip = stepClip ?? clipNameOf(d.clipUrl);
       if (stepClip === null) {
-        ended = true;
         record.ended = true;
         console.info(`[video] ${clockText(timeline())} 영상 끝`);
-        return;
       }
-      // 단계 영상: 마지막 장면을 붙잡고 그 장면으로 프레임을 계속 보낸다(영상 프레임 알림이 없어 타이머로 돈다). 타이머는 보내기만 하고 다음 프레임을 예약하지 않는다
+      // 마지막 장면을 붙잡고 그 장면으로 프레임을 계속 보낸다(영상 프레임 알림이 없어 타이머로 돈다). 타이머는 보내기만 하고 다음 프레임을 예약하지 않는다
       const since = Math.round(timeline());
-      record.hold = { clip: stepClip, since };
-      console.info(`[video] ${clockText(since)} 단계 영상 끝 · 마지막 장면 붙잡기 ${stepClip}`);
+      record.hold = { clip, since };
+      console.info(`[video] ${clockText(since)} ${stepClip === null ? "첫 영상" : "단계 영상"} 끝 · 마지막 장면 붙잡기 ${clip}`);
       const tick = frameSend(v);
       const every = Math.max(20, Math.floor(FRAME_MS / 2));
       holdTimer = setInterval(() => {
@@ -452,7 +451,6 @@ export function createVideoAr({ link, params, hooks, deps }) {
       }
       // 앞 영상 프레임 고리는 멈췄다: 새 영상 첫 프레임부터 새 자세가 실린다
       pose?.();
-      ended = false;
       record.ended = false;
       const ms = timeline();
       stepClip = clipNameOf(url);

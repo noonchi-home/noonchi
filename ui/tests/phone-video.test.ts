@@ -341,18 +341,18 @@ describe("영상 입력 모드: 보내기", () => {
     expect((await Promise.all(ws.packets.map(headerOf))).filter((h) => h.kind === "engine")).toHaveLength(1);
   });
 
-  it("영상이 끝나면 프레임을 더 보내지 않는다(반복 없음)", async () => {
+  it("첫 영상이 끝나면 다시 틀지 않고(반복 없음) 영상 프레임 고리는 멈춘다. 그 뒤 프레임은 붙잡은 장면뿐이다", async () => {
     const { ws, video, startAr } = make();
     await startAr();
     video.advance(0.5);
     await flush();
-    const before = ws.packets.length;
-    expect(before).toBeGreaterThan(0);
+    expect(ws.packets.length).toBeGreaterThan(0);
     video.end();
-    video.advance(0.5);
+    const scheduled = vi.spyOn(video, "nextFrame");
     video.advance(0.5);
     await flush();
-    expect(ws.packets.length).toBe(before);
+    expect(scheduled).not.toHaveBeenCalled();
+    expect(video.played).toBe(1);
     expect(window.__noonchiVideo?.ended).toBe(true);
   });
 });
@@ -487,6 +487,8 @@ describe("영상 입력 모드: 명령 시각 기록·화면", () => {
     expect(doc).toContain(`(여러 개, 종류 ${kinds.join("·")})`);
     expect(doc).toContain("같은 종류·낱말 칸이 여럿이면 적은 차례대로 쓴다");
     expect(doc).toContain("단계 영상이 끝나면 마지막 장면을 붙잡는다");
+    expect(doc).toContain("첫 영상도 끝나면 마지막 장면을 붙잡는다");
+    expect(doc).not.toContain("영상이 끝나면 프레임을 멈춘다");
     expect(doc).toMatch(/window\.__noonchiVideo = \{ t0, ended, hold, commands: .*clips: .*, at \}/);
   });
 
@@ -683,6 +685,30 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
       await after(1500);
       expect(rec().hold).toBeNull();
       expect(rec().clips.map((c) => c.clip)).toEqual(["a.mp4", "b.mp4"]);
+    });
+
+    it("첫 영상이 끝나도 단계 영상처럼 마지막 장면을 붙잡는다: ended는 참(첫 영상 끝), hold는 첫 영상·시각, 5초 동안 엔진 프레임이 held로 계속 나간다. 단계 영상이 오면 hold가 null(실제 폰처럼 계속 보여 판단 뒤 대상 다시 확인이 된다)", async () => {
+      fakeTimers();
+      const { ws, video, startAr } = make({}, ORDER);
+      await startAr();
+      ws.push({ ...ALIGNED, engine_ms: 500 });
+      video.advance(32.5);
+      await after(0);
+      video.end();
+      expect((window as unknown as { __noonchiVideo: { ended: boolean } }).__noonchiVideo.ended).toBe(true);
+      expect(rec().hold).toEqual({ clip: "mw-start.mp4", since: 32500 });
+      const engineBefore = (await Promise.all(ws.packets.map(headerOf))).filter((h) => h.kind === "engine").length;
+      const drawsBefore = video.drawTo.mock.calls.length;
+      await after(5000);
+      const engines = (await Promise.all(ws.packets.map(headerOf))).filter((h) => h.kind === "engine");
+      expect(engines.length - engineBefore).toBeGreaterThanOrEqual(8);
+      expect(engines.slice(engineBefore).every((h) => h.held === true)).toBe(true);
+      expect(video.drawTo.mock.calls.length).toBeGreaterThan(drawsBefore);
+      expect(video.played).toBe(1);
+      ws.push(doMw("plan:pam-1:2", "전자레인지 문을 열어 주세요"));
+      await after(1500);
+      expect(rec().hold).toBeNull();
+      expect(rec().clips.map((c) => c.clip)).toEqual(["a.mp4"]);
     });
 
     it("붙잡는 동안 타이머는 프레임만 보내고 다음 프레임을 예약하지 않는다(예약 콜백이 늘지 않는다)", async () => {
@@ -1010,28 +1036,34 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
     video.advance(40);
     video.end();
     expect(window.__noonchiVideo!.ended).toBe(true);
+    expect(info.mock.calls.some((a) => a[0] === "[video] 00:40.0 첫 영상 끝 · 마지막 장면 붙잡기 cup-empty.mp4")).toBe(true);
     ws.push(goTable());
     await after(1500);
     const next = videos[1]!;
     expect(window.__noonchiVideo!.ended).toBe(false);
-    expect(window.__noonchiVideo!.clips).toEqual([{ video_ms: 40000, clip: "go-table.mp4" }]);
-    expect(info.mock.calls.some((a) => a[0] === "[video] 00:40.0 단계 영상 go-table.mp4")).toBe(true);
+    // 첫 영상 마지막 장면을 붙잡는 동안(약 1.5초)에도 영상 시각은 흐른다
+    const go = window.__noonchiVideo!.clips[0]!;
+    expect(go.clip).toBe("go-table.mp4");
+    expect(go.video_ms).toBeGreaterThan(41_400);
+    expect(go.video_ms).toBeLessThanOrEqual(41_500);
+    const at = go.video_ms;
+    expect(info.mock.calls.some((a) => a[0] === `[video] 00:${(at / 1000).toFixed(1)} 단계 영상 go-table.mp4`)).toBe(true);
     await after(0);
     const before = ws.packets.length;
     next.advance(2);
     await after(0);
     expect(ws.packets.length).toBeGreaterThan(before);
     ws.push(pickCup());
-    expect(window.__noonchiVideo!.commands.at(-1)).toMatchObject({ video_ms: 42000, step: "plan:pam-1:2" });
+    expect(window.__noonchiVideo!.commands.at(-1)).toMatchObject({ video_ms: at + 2000, step: "plan:pam-1:2" });
     await after(1500);
-    expect(window.__noonchiVideo!.clips.at(-1)).toEqual({ video_ms: 42000, clip: "pick-cup.mp4" });
+    expect(window.__noonchiVideo!.clips.at(-1)).toEqual({ video_ms: at + 2000, clip: "pick-cup.mp4" });
     expect(next.closed).toBe(1);
     // 끝난 단계 영상도 이어 센 시각으로 남긴다: 마지막 장면을 붙잡고(hold) ended는 첫 영상 때만 참이다
     videos[2]!.advance(5);
     videos[2]!.end();
-    expect(info.mock.calls.some((a) => a[0] === "[video] 00:47.0 단계 영상 끝 · 마지막 장면 붙잡기 pick-cup.mp4")).toBe(true);
+    expect(info.mock.calls.some((a) => a[0] === `[video] 00:${((at + 7000) / 1000).toFixed(1)} 단계 영상 끝 · 마지막 장면 붙잡기 pick-cup.mp4`)).toBe(true);
     expect(window.__noonchiVideo!.ended).toBe(false);
-    expect(window.__noonchiVideo!.hold).toEqual({ clip: "pick-cup.mp4", since: 47000 });
+    expect(window.__noonchiVideo!.hold).toEqual({ clip: "pick-cup.mp4", since: at + 7000 });
   });
 
   it("크기가 다른 단계 영상(가로 1280×720)이면 투영·프레임 크기를 다시 정한다", async () => {
