@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { MOVES_DIR, checkMoves, parseMoves, runCli, type Moves } from "../scripts/check-moves.js";
 
 const tree = (files: Record<string, string>) => new Map(Object.entries(files));
-const M = (m: Partial<Moves> = {}): Moves => ({ files: {}, decls: {}, new: [], text: [], ...m });
+const M = (m: Partial<Moves> = {}): Moves => ({ files: {}, decls: {}, new: [], text: [], allow: {}, exceptions: {}, ...m });
 const run = (before: Record<string, string>, after: Record<string, string>, moves: Partial<Moves> = {}, moved = false) => checkMoves(tree(before), tree(after), M(moves), { moved });
 
 // 파일째 옮김 한 건: src/sync/aligner.ts → src/phone/sync/aligner.ts
@@ -60,7 +60,11 @@ describe("옮김 검사: 파일째 옮김", () => {
   it("같은 이름을 다른 파일에서 가져오면 실패한다", () => {
     const after = { ...AFTER, "src/phone/server.ts": 'import { align } from "../world/align.js";\nexport const s = align(1);\n' };
     const f = run(BEFORE, after, MOVE).failures;
-    expect(f).toEqual(["src/phone/server.ts: import가 가리키는 정의가 달라요\n  앞에만: import align = src/phone/sync/aligner.ts#align\n  뒤에만: import align = src/world/align.ts#align"]);
+    // aligner.ts는 맨 위에서 josa("x")를 불러 부수 효과 모듈이라, 그 모듈을 더는 읽지 않는 것도 함께 실패한다
+    expect(f).toEqual([
+      "src/phone/server.ts: import가 가리키는 정의가 달라요\n  앞에만: import align = src/phone/sync/aligner.ts#align\n  뒤에만: import align = src/world/align.ts#align",
+      "src/phone/server.ts: 부수 효과가 있는 import의 차례가 달라요\n  앞: effect src/phone/sync/aligner.ts\n  뒤: ",
+    ]);
   });
 
   it("대응표에 없는 지움과 새 파일은 실패한다", () => {
@@ -74,14 +78,16 @@ describe("옮김 검사: 파일째 옮김", () => {
     expect(run(BEFORE, after, { ...MOVE, new: ["src/phone/index.ts"] }).failures).toEqual(["새 파일 src/phone/index.ts에 export … from이 아닌 문장이 있어요: export const x = 1;"]);
   });
 
-  it("text 파일은 글자열만 바뀌어도 되고 바뀐 글자열을 알려 준다. 글자열 밖이 바뀌면 실패한다", () => {
+  it("text 파일은 경로 조각이 옮긴 경로로만 바뀌면 되고 바뀐 글자열을 알려 준다. 조각을 다시 나누거나 글자열 밖이 바뀌면 실패한다", () => {
     const before = { ...BEFORE, "tests/release.test.ts": 'const f = join(ROOT, "src", "sync", "aligner.ts");\nexport const g = f;\n' };
-    const after = { ...AFTER, "tests/release.test.ts": 'const f = join(ROOT, "src", "phone", "sync/aligner.ts");\nexport const g = f;\n' };
+    const after = { ...AFTER, "tests/release.test.ts": 'const f = join(ROOT, "src", "phone/sync", "aligner.ts");\nexport const g = f;\n' };
     expect(run(before, after, MOVE).failures.join("\n")).toContain("tests/release.test.ts: import가 아닌 문장이 달라요");
     const ok = run(before, after, { ...MOVE, text: ["tests/release.test.ts"] });
     expect(ok.failures).toEqual([]);
-    expect(ok.notes).toEqual(['tests/release.test.ts: 바뀐 글자열(따로 확인): "phone", "sync/aligner.ts"']);
-    const bad = { ...after, "tests/release.test.ts": 'const f = join(ROOT, "src", "phone", "sync/aligner.ts");\nexport const g = [f];\n' };
+    expect(ok.notes).toEqual(['tests/release.test.ts: 바뀐 글자열(따로 확인): "phone/sync"']);
+    const regroup = { ...AFTER, "tests/release.test.ts": 'const f = join(ROOT, "src", "phone", "sync/aligner.ts");\nexport const g = f;\n' };
+    expect(run(before, regroup, { ...MOVE, text: ["tests/release.test.ts"] }).failures.join("\n")).toContain("tests/release.test.ts: import가 아닌 문장이 달라요");
+    const bad = { ...after, "tests/release.test.ts": 'const f = join(ROOT, "src", "phone/sync", "aligner.ts");\nexport const g = [f];\n' };
     expect(run(before, bad, { ...MOVE, text: ["tests/release.test.ts"] }).failures.join("\n")).toContain("tests/release.test.ts: import가 아닌 문장이 달라요");
   });
 
@@ -174,7 +180,7 @@ describe("옮김 검사 --moved: 선언 옮김", () => {
       "src/a.ts": 'import { b } from "./b.js";\nexport const base = 1;\nexport const a = () => b;\n',
       "src/b.ts": 'import { base } from "./a.js";\nexport const b = 1;\nexport const helper = () => base;\n',
     };
-    expect(run(before, after, { decls: { "src/a.ts#helper": "src/b.ts#helper" } }, true).failures).toEqual(["옮긴 파일끼리 실행 때 값 import 고리가 새로 생겼어요: src/a.ts · src/b.ts"]);
+    expect(run(before, after, { decls: { "src/a.ts#helper": "src/b.ts#helper" } }, true).failures).toEqual(["실행 때 값 import 고리에 새 import가 생겼어요: src/b.ts → src/a.ts(고리: src/a.ts · src/b.ts)"]);
     const typeBefore = { ...before, "src/a.ts": 'import { b } from "./b.js";\nexport type Base = number;\nexport type Helper = Base;\nexport const a = () => b;\n' };
     const typeAfter = { "src/a.ts": 'import { b } from "./b.js";\nexport type Base = number;\nexport const a = () => b;\n', "src/b.ts": 'import type { Base } from "./a.js";\nexport const b = 1;\nexport type Helper = Base;\n' };
     expect(run(typeBefore, typeAfter, { decls: { "src/a.ts#Helper": "src/b.ts#Helper" } }, true).failures).toEqual([]);
@@ -194,10 +200,20 @@ describe("옮김 검사: 빠져나가는 꼴", () => {
     }
   });
 
-  it("text 파일은 대응표의 옛 경로 → 새 경로로 설명되는 경로 조각만 받는다(조각 수가 바뀌어도 된다)", () => {
+  it("text 파일은 인자 모양이 같고 조각이 대응표의 옛 경로 → 새 경로로만 바뀐 것만 받는다. 조각 수가 바뀌면 실패하고 allow로만 된다", () => {
     expect(run(relBefore, relAfter("", ""), TEXT).failures).toEqual([]);
-    expect(run(relBefore, relAfter("", "", 'join(ROOT, "src", "phone", "sync", "aligner.ts")'), TEXT).failures).toEqual([]);
+    const more = run(relBefore, relAfter("", "", 'join(ROOT, "src", "phone", "sync", "aligner.ts")'), TEXT).failures;
+    expect(more).toEqual(['tests/release.test.ts: import가 아닌 문장이 달라요(1번째)\n  앞: const f = join(ROOT, "src", "sync", "aligner.ts");\n  뒤: const f = join(ROOT, "src", "phone", "sync", "aligner.ts");']);
+    expect(run(relBefore, relAfter("", "", 'join(ROOT, "src", "phone", "sync", "aligner.ts")'), { ...TEXT, allow: { [more[0]!.split("\n")[0]!]: "조각을 나눠 적음" } }).failures).toEqual([]);
     expect(run(relBefore, relAfter("", "", 'join(ROOT, "src", "world", "aligner.ts")'), TEXT).failures.join("\n")).toContain("tests/release.test.ts: import가 아닌 문장이 달라요");
+  });
+
+  it("text 파일: 글자 인자를 붙이면 같아 보여도 실제 경로가 다른 꼴(resolve(ROOT, \"a\", \"/b\") → resolve(ROOT, \"a//b\"))은 실패한다", () => {
+    const before = { ...BEFORE, "tests/release.test.ts": 'const p = resolve(ROOT, "a", "/b");\nexport const q = p;\n' };
+    const after = { ...AFTER, "tests/release.test.ts": 'const p = resolve(ROOT, "a//b");\nexport const q = p;\n' };
+    expect(run(before, after, TEXT).failures.join("\n")).toContain("tests/release.test.ts: import가 아닌 문장이 달라요");
+    const slash = { ...AFTER, "tests/release.test.ts": 'const p = resolve(ROOT, "a", "//b");\nexport const q = p;\n' };
+    expect(run(before, slash, TEXT).failures.join("\n")).toContain("tests/release.test.ts: import가 아닌 문장이 달라요");
   });
 
   it("지운 파일의 이름 없는 실행문(init())을 빼먹으면 실패하고, 새 자리에 같은 AST로 옮기면 통과한다", () => {
@@ -205,6 +221,19 @@ describe("옮김 검사: 빠져나가는 꼴", () => {
     const decls = { "src/a.ts#x": "src/b.ts#x", "src/a.ts#init": "src/b.ts#init" };
     expect(run(before, { "src/b.ts": "export const x = 1;\nexport function init() { return x; }\n" }, { decls }, true).failures).toEqual(["지운 파일 src/a.ts의 이름 없는 실행문이 새 자리에 없어요: init();"]);
     expect(run(before, { "src/b.ts": "export const x = 1;\nexport function init() { return x; }\ninit();\n" }, { decls }, true).failures).toEqual([]);
+  });
+
+  it("지운 파일의 부수 효과 import(import \"./init.js\")를 버리면 실패하고, 받은 파일에 같은 차례로 있으면 통과한다", () => {
+    const lib = { "src/i1.ts": 'console.log("1");\n', "src/i2.ts": 'console.log("2");\n' };
+    const before = { ...lib, "src/a.ts": 'import "./i1.js";\nimport "./i2.js";\nexport const x = 1;\n', "src/b.ts": "export const y = 2;\n" };
+    const decls = { "src/a.ts#x": "src/b.ts#x" };
+    const after = (imports: string) => ({ ...lib, "src/b.ts": `${imports}export const y = 2;\nexport const x = 1;\n` });
+    expect(run(before, after(""), { decls }, true).failures).toEqual([
+      "지운 파일 src/a.ts의 부수 효과 import가 새 자리에 없어요: side src/i1.ts",
+      "지운 파일 src/a.ts의 부수 효과 import가 새 자리에 없어요: side src/i2.ts",
+    ]);
+    expect(run(before, after('import "./i2.js";\nimport "./i1.js";\n'), { decls }, true).failures).toEqual(["지운 파일 src/a.ts의 부수 효과 import 차례가 src/b.ts에서 바뀌었어요: side src/i2.ts"]);
+    expect(run(before, after('import "./i1.js";\nimport "./i2.js";\n'), { decls }, true).failures).toEqual([]);
   });
 
   it("옮겨 온 함수용 import가 남아 있던 문장의 전역 이름(fetch)을 가리면 실패한다", () => {
@@ -219,7 +248,7 @@ describe("옮김 검사: 빠져나가는 꼴", () => {
     ]);
   });
 
-  it("구현 파일이 자기 입구를 거쳐 도는 값 고리(a → index → a)는 실패한다. 전부터 있던 고리 사이에 입구가 끼는 것은 된다", () => {
+  it("값 고리에 새 import가 생기면 모두 실패한다(a → index → a, 전부터 있던 고리 사이에 입구가 끼는 것도). allow에 적은 것만 된다", () => {
     const before = { "src/act/help.ts": "export const helper = () => 1;\n", "src/act/track.ts": 'import { helper } from "./help.js";\nexport const t = helper();\n' };
     const after = {
       "src/act/help.ts": before["src/act/help.ts"],
@@ -227,11 +256,45 @@ describe("옮김 검사: 빠져나가는 꼴", () => {
       "src/act/track.ts": 'import { helper } from "./index.js";\nexport const t = helper();\n',
     };
     for (const moved of [false, true]) {
-      expect(run(before, after, { new: ["src/act/index.ts"] }, moved).failures, String(moved)).toEqual(["옮긴 파일끼리 실행 때 값 import 고리가 새로 생겼어요: src/act/index.ts · src/act/track.ts"]);
+      expect(run(before, after, { new: ["src/act/index.ts"] }, moved).failures, String(moved)).toEqual([
+        "실행 때 값 import 고리에 새 import가 생겼어요: src/act/index.ts → src/act/track.ts(고리: src/act/index.ts · src/act/track.ts)",
+        "실행 때 값 import 고리에 새 import가 생겼어요: src/act/track.ts → src/act/index.ts(고리: src/act/index.ts · src/act/track.ts)",
+      ]);
     }
     const cb = { "src/x/a.ts": 'import { b } from "./b.js";\nexport const a = () => b;\n', "src/x/b.ts": 'import { a } from "./a.js";\nexport const b = () => a;\n' };
     const ca = { "src/x/index.ts": 'export { b } from "./b.js";\n', "src/x/a.ts": 'import { b } from "./index.js";\nexport const a = () => b;\n', "src/x/b.ts": cb["src/x/b.ts"] };
-    expect(run(cb, ca, { new: ["src/x/index.ts"] }).failures).toEqual([]);
+    const f = run(cb, ca, { new: ["src/x/index.ts"] }).failures;
+    expect(f).toEqual([
+      "실행 때 값 import 고리에 새 import가 생겼어요: src/x/a.ts → src/x/index.ts(고리: src/x/a.ts · src/x/b.ts · src/x/index.ts)",
+      "실행 때 값 import 고리에 새 import가 생겼어요: src/x/index.ts → src/x/b.ts(고리: src/x/a.ts · src/x/b.ts · src/x/index.ts)",
+    ]);
+    const allow = Object.fromEntries(f.map((x) => [x, "전부터 있던 a ↔ b 고리에 입구가 낌"]));
+    const ok = run(cb, ca, { new: ["src/x/index.ts"], allow });
+    expect(ok.failures).toEqual([]);
+    expect(ok.notes).toContain(`허용(대응표): ${f[0]} — 전부터 있던 a ↔ b 고리에 입구가 낌`);
+  });
+
+  it("allow는 까닭이 있어야 하고, 쓰지 않은 allow는 실패한다", () => {
+    expect(run(BEFORE, AFTER, { ...MOVE, allow: { "없는 실패": "까닭" } }).failures).toEqual(["대응표 allow에 있는데 생기지 않은 실패예요: 없는 실패"]);
+    const after = { ...AFTER, "src/phone/server.ts": 'import { align } from "./sync/aligner.js";\nalign(2);\nexport const s = align(1);\n' };
+    const key = run(BEFORE, after, MOVE).failures[0]!.split("\n")[0]!;
+    expect(run(BEFORE, after, { ...MOVE, allow: { [key]: " " } }).failures).toEqual([`대응표 allow의 까닭이 비었어요: ${key}`]);
+  });
+
+  it("맨 위에서 함수 호출·new·static 초기화를 하는 모듈(const X = register())도 부수 효과 모듈로 보고 import 차례를 지킨다", () => {
+    const lib = {
+      "src/reg.ts": "export const reg = register();\nfunction register() { return 1; }\n",
+      "src/cls.ts": "export class C { static x = boot(); }\nfunction boot() { return 1; }\n",
+      "src/made.ts": "export const made = new Map();\n",
+      "src/lazy.ts": "export const lazy = () => register();\nfunction register() { return 1; }\n",
+    };
+    const I = { reg: 'import { reg } from "./reg.js";', cls: 'import { C } from "./cls.js";', made: 'import { made } from "./made.js";', lazy: 'import { lazy } from "./lazy.js";' };
+    const main = (lines: string[]) => ({ ...lib, "src/main.ts": `${lines.join("\n")}\nexport const m = [reg, C, made, lazy];\n` });
+    const before = main([I.reg, I.cls, I.made, I.lazy]);
+    for (const order of [[I.cls, I.reg, I.made, I.lazy], [I.reg, I.made, I.cls, I.lazy]]) {
+      expect(run(before, main(order)).failures.join("\n"), order.join(" ")).toContain("src/main.ts: 부수 효과가 있는 import의 차례가 달라요");
+    }
+    expect(run(before, main([I.lazy, I.reg, I.cls, I.made])).failures).toEqual([]);
   });
 
   it("부수 효과가 있는 import(이름 없는 import, 맨 위 실행문이 있는 모듈)의 차례를 바꾸면 실패한다. 부수 효과 없는 모듈은 된다", () => {

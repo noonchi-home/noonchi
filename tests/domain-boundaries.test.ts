@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { MOVES_DIR } from "../scripts/domain-ast.js";
 import {
-  CONFIG, DEPS, EXCEPTIONS_FILE, SCREEN_DOMAINS, SERVER_DOMAINS, checkRepo, checkTree, compareExceptions, readBase, readExceptions, tableCycles, unbasedKeys, type Config,
+  CONFIG, DEPS, EXCEPTIONS_FILE, SCREEN_DOMAINS, SERVER_DOMAINS, chainFailures, checkRepo, checkTree, compareExceptions, readBase, readExceptions, tableCycles, unbasedKeys, type Config,
 } from "../scripts/lint-domains.js";
 
 const ROOT = join(import.meta.dirname, "..");
@@ -235,7 +235,7 @@ describe("도메인 경계: 예외 목록(줄어들기만 함)", () => {
     expect(compareExceptions(violations, exceptions)).toEqual({ added: [], stale: [] });
     expect(violations.length).toBe(exceptions.length);
     expect([...exceptions].sort()).toEqual(violations.map((v) => v.key));
-  });
+  }, 60_000);
 
   it("새 위반을 예외 목록에 같이 넣어도 기준 목록에 없던 줄이면 실패한다", () => {
     const v = [{ key: "inner a -> b", message: "m1" }, { key: "inner c -> d", message: "m2" }];
@@ -272,7 +272,66 @@ describe("도메인 경계: 예외 목록(줄어들기만 함)", () => {
     expect(() => readBase(root, "0000000000000000000000000000000000000000")).toThrow(/기준 커밋/);
   }, 30_000);
 
+  it("예외 목록은 커밋마다 바로 앞 커밋의 목록보다 늘지 않는다: 앞 단계에서 없앤 줄을 다시 넣으면 처음 목록에 있어도 실패한다", () => {
+    const root = mkdtempSync(join(tmpdir(), "domains-chain-"));
+    roots.push(root);
+    const git = (...args: string[]) => execFileSync("git", ["-C", root, "-c", "user.name=t", "-c", "user.email=t@example.com", ...args], { encoding: "utf8" }).trim();
+    const put = (p: string, text: string) => { mkdirSync(dirname(join(root, p)), { recursive: true }); writeFileSync(join(root, p), text); };
+    const step = (n: string, lines: string[], extra: Record<string, unknown> = {}, commit = true) => {
+      put(EXCEPTIONS_FILE, JSON.stringify(lines));
+      put(`${MOVES_DIR}${n}.json`, JSON.stringify({ files: {}, decls: {}, new: [], text: [], ...extra }));
+      if (!commit) return "";
+      git("add", "-A");
+      git("commit", "-q", "-m", `step ${n}`);
+      return git("rev-parse", "HEAD");
+    };
+    const K1 = "inner src/server/a.ts -> src/act/b.ts";
+    const K2 = "inner src/server/a.ts -> src/act/c.ts";
+    const K3 = "inner src/server/a.ts -> src/act/d.ts";
+    git("init", "-q");
+    const base = step("1", [K1, K2]);
+    step("2", [K1]);
+    step("3", [K1, K2], {}, false);
+    // 처음 목록과만 견주면 통과해 버린다
+    expect(unbasedKeys([K1, K2], readBase(root, base))).toEqual([]);
+    expect(chainFailures(root, base)).toEqual([`지금 트리: 앞(${git("rev-parse", "HEAD").slice(0, 7)})에 없던 예외 줄이에요: ${K2}`]);
+    // 새 줄은 그 단계 대응표 exceptions에 까닭·기한과 함께 적어야 한다
+    step("3", [K1, K3], { exceptions: { [K3]: { why: "merge로 들어온 새 import", until: "4" } } }, false);
+    expect(chainFailures(root, base)).toEqual([]);
+    step("3", [K1, K3], { exceptions: { [K3]: { why: "", until: "4" } } }, false);
+    expect(chainFailures(root, base)).toEqual([`${MOVES_DIR}3.json exceptions의 까닭이 비었어요: ${K3}`]);
+    step("3", [K1, K3], { exceptions: { [K3]: { why: "까닭", until: "2" } } }, false);
+    expect(chainFailures(root, base)).toEqual([`${MOVES_DIR}3.json exceptions의 기한(2)이 그 단계(3)보다 앞이에요: ${K3}`]);
+    step("3", [K1, K3], { exceptions: { [K3]: { why: "까닭", until: "3" } } });
+    step("4", [K1, K3], {}, false);
+    expect(chainFailures(root, base)).toEqual([`${MOVES_DIR}3.json exceptions의 기한(3)이 지났는데 줄이 남아 있어요: ${K3}`]);
+    step("4", [K1], {}, false);
+    expect(chainFailures(root, base)).toEqual([]);
+  }, 60_000);
+
+  it("새 줄을 허용한 대응표를 뒤에 지우면 처음 목록과 견줘 실패한다(바로 앞 목록에는 있어도)", () => {
+    const root = mkdtempSync(join(tmpdir(), "domains-first-"));
+    roots.push(root);
+    const git = (...args: string[]) => execFileSync("git", ["-C", root, "-c", "user.name=t", "-c", "user.email=t@example.com", ...args], { encoding: "utf8" }).trim();
+    const put = (p: string, text: string) => { mkdirSync(dirname(join(root, p)), { recursive: true }); writeFileSync(join(root, p), text); };
+    const K1 = "inner src/server/a.ts -> src/act/b.ts";
+    const K2 = "inner src/server/a.ts -> src/act/c.ts";
+    git("init", "-q");
+    put(EXCEPTIONS_FILE, JSON.stringify([K1]));
+    put(`${MOVES_DIR}1.json`, "{}");
+    git("add", "-A");
+    git("commit", "-q", "-m", "base");
+    const base = git("rev-parse", "HEAD");
+    put(EXCEPTIONS_FILE, JSON.stringify([K1, K2]));
+    put(`${MOVES_DIR}2.json`, JSON.stringify({ exceptions: { [K2]: { why: "merge로 들어온 새 import", until: "9" } } }));
+    git("add", "-A");
+    git("commit", "-q", "-m", "step 2");
+    expect(chainFailures(root, base)).toEqual([]);
+    rmSync(join(root, `${MOVES_DIR}2.json`));
+    expect(chainFailures(root, base)).toEqual([`처음 목록(${base.slice(0, 7)})에 없던 예외 줄이에요: ${K2}`]);
+  }, 60_000);
+
   it("실제 트리: 예외 목록의 모든 줄이 기준 목록(scripts/lint-domains.ts EXCEPTIONS_BASE)에 있다", () => {
     expect(checkRepo(ROOT)).toEqual({ added: [], stale: [], unbased: [] });
-  });
+  }, 60_000);
 });
