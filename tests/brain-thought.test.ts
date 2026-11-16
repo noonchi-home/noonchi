@@ -250,10 +250,28 @@ describe("생각 말풍선 메시지 보내기(thoughtFeed)", () => {
   it("기록에서 읽은 최근 메시지(seed)로 시작한다: 바로 다시 보낼 수 있고 모델에도 이미 올린 메시지로 준다", () => {
     const w = manualWriter();
     const seed: ThoughtMessage[] = [{ id: "pam-9@1:0", text: CUP_MESSAGES[0]!, at_ms: 1, decision: "pam-9" }];
-    const feed = thoughtFeed({ writer: w, send: () => {}, seed });
+    const feed = thoughtFeed({ writer: w, send: () => {}, seed, clock: () => 1000 });
     expect(feed.last()).toEqual({ type: "thought", messages: seed });
     feed.decision(decision("pam-1", REAL.action));
     expect(w.calls[0]!.input.recent).toEqual([CUP_MESSAGES[0]]);
+  });
+
+  it("THOUGHT_KEEP_MS보다 오래된 메시지는 다시 보내지도(last) 모델에 주지도 않는다: 서버가 도는 동안 새 메시지가 없어도 전날 메시지를 되살리지 않는다", async () => {
+    const w = manualWriter();
+    let now = 1_000_000;
+    const old: ThoughtMessage = { id: "pam-9@1000000:0", text: CUP_MESSAGES[0]!, at_ms: 1_000_000, decision: "pam-9" };
+    const feed = thoughtFeed({ writer: w, send: () => {}, seed: [old], clock: () => now });
+    now = 1_000_000 + THOUGHT_KEEP_MS;
+    expect(feed.last()).toEqual({ type: "thought", messages: [old] });
+    now += 1;
+    expect(feed.last()).toBeNull();
+    feed.decision(decision("pam-1", null));
+    expect(w.calls[0]!.input.recent).toEqual([]);
+    w.calls[0]!.done([WAIT_MESSAGE]);
+    await tick();
+    expect(feed.last()!.messages.map((m) => m.text)).toEqual([WAIT_MESSAGE]);
+    now += 24 * 3600_000;
+    expect(feed.last()).toBeNull();
   });
 });
 
@@ -273,5 +291,12 @@ describe("생각 메시지 기록", () => {
     expect(lastStoredThoughts(db, HOME, 1_000_007 + THOUGHT_KEEP_MS)).toEqual([msg(7, 1_000_007)]);
     expect(lastStoredThoughts(db, HOME, 1_000_008 + THOUGHT_KEEP_MS)).toEqual([]);
     expect(THOUGHT_KEEP_MS).toBe(10 * 60_000);
+  });
+
+  it("다른 집 메시지가 그 뒤에 많이 쌓여도(250건) 10분 안의 이 집 메시지를 되살린다: 집을 먼저 거르고 개수를 센다", () => {
+    const db = HistoryDb.open(":memory:");
+    storeThought(db, HOME, msg(1, 1_000_000));
+    for (let n = 0; n < 250; n++) storeThought(db, "apartment", { id: `a${n}`, text: `다른 집 ${n}`, at_ms: 1_000_001 + n, decision: "pam-a" });
+    expect(lastStoredThoughts(db, HOME, 1_000_300)).toEqual([msg(1, 1_000_000)]);
   });
 });

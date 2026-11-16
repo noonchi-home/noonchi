@@ -18,7 +18,7 @@ export interface ThoughtInput { observation: string; reasoning: string; action: 
 export const THOUGHT_TIMEOUT_MS = 8000;
 /** 최근 메시지를 두는 수: 모델에 이미 올린 메시지로 주고, 새로 붙은 대시보드·다시 띄운 서버에 다시 보낸다. 말풍선에는 3개 안팎이 보인다. */
 export const THOUGHT_KEEP = 5;
-/** 다시 띄울 때 되살리는 기록 메시지의 나이 상한(ms). */
+/** 최근 메시지의 나이 상한(ms): 이보다 오래된 메시지는 다시 보내지도, 모델에 주지도, 다시 띄울 때 되살리지도 않는다. */
 export const THOUGHT_KEEP_MS = 10 * 60_000;
 /** 한 번에 새로 올리는 메시지 수 상한. */
 const NEW_MAX = 2;
@@ -111,7 +111,7 @@ export interface ThoughtFeed {
 
 /**
  * 판단 기록 → 메시지 보내기. 유효 판단(행동·대기)마다 모델을 한 번 부르고, 새 메시지가 오면 id(판단 id@시각:차례)·판단 id·시각을 붙여 보내고(send) 하나씩 기록한다(record).
- * 최근 THOUGHT_KEEP개를 두고 다음 요청에 이미 올린 메시지로 준다. seed는 기록에서 읽은 최근 메시지다.
+ * 최근 THOUGHT_KEEP개(THOUGHT_KEEP_MS 안)를 두고 다음 요청에 이미 올린 메시지로 주며 새로 붙은 대시보드에 다시 보낸다. seed는 기록에서 읽은 최근 메시지다.
  */
 export function thoughtFeed(o: {
   writer: { write(t: ThoughtInput, signal?: AbortSignal): Promise<string[] | null> };
@@ -125,6 +125,8 @@ export function thoughtFeed(o: {
   /** 마지막으로 답을 받은 판단 글(같은 글이면 다시 부르지 않는다). */
   let asked: string | null = null;
   const stop = () => { asking?.stop.abort(); asking = null; };
+  /** 나이 상한 안의 최근 메시지. */
+  const fresh = () => recent.filter((m) => clock() - m.at_ms <= THOUGHT_KEEP_MS);
   return {
     decision(e) {
       if (closed || e.status !== "valid" || !e.prediction) return;
@@ -137,23 +139,27 @@ export function thoughtFeed(o: {
       if (key === asked) return;
       const mine = { action, stop: new AbortController() };
       asking = mine;
-      o.writer.write({ observation: e.prediction.observation, reasoning: e.prediction.reasoning, action, recent: recent.map((m) => m.text) }, mine.stop.signal)
+      o.writer.write({ observation: e.prediction.observation, reasoning: e.prediction.reasoning, action, recent: fresh().map((m) => m.text) }, mine.stop.signal)
         .then((texts) => {
           if (closed || asking !== mine) return;
           asking = null;
           if (!texts) return;
           asked = key;
-          const fresh = texts.filter((t, i) => !recent.some((m) => same(m.text, t)) && !texts.slice(0, i).some((u) => same(u, t)));
-          if (!fresh.length) return;
+          const kept = fresh();
+          const novel = texts.filter((t, i) => !kept.some((m) => same(m.text, t)) && !texts.slice(0, i).some((u) => same(u, t)));
+          if (!novel.length) return;
           const at = clock();
-          const made = fresh.map((text, i) => ({ id: `${e.id}@${at}:${i}`, text, at_ms: at, decision: e.id }));
-          recent = [...recent, ...made].slice(-THOUGHT_KEEP);
+          const made = novel.map((text, i) => ({ id: `${e.id}@${at}:${i}`, text, at_ms: at, decision: e.id }));
+          recent = [...kept, ...made].slice(-THOUGHT_KEEP);
           try { o.send({ type: "thought", messages: made }); } catch { /* 보내기 오류는 메시지를 버리지 않는다 */ }
           for (const m of made) try { o.record?.(m); } catch { /* 닫힌 기록 DB 등: 기록만 빠진다 */ }
         })
         .catch(() => { if (asking === mine) asking = null; });
     },
-    last: () => (recent.length ? { type: "thought", messages: [...recent] } : null),
+    last: () => {
+      const kept = fresh();
+      return kept.length ? { type: "thought", messages: kept } : null;
+    },
     close() {
       closed = true;
       stop();
@@ -166,9 +172,10 @@ export function storeThought(db: Pick<HistoryDb, "add">, home: string, m: Though
   db.add("thought", m.at_ms, m.text, { subject: m.decision, data: { home, id: m.id } });
 }
 
-/** 다시 띄울 때 되살릴 메시지: 기록 DB의 이 집 thought 줄 가운데 THOUGHT_KEEP_MS 안의 최근 THOUGHT_KEEP개(오래된 것부터). */
+/** 다시 띄울 때 되살릴 메시지: 기록 DB의 이 집 thought 줄 가운데 THOUGHT_KEEP_MS 안의 최근 THOUGHT_KEEP개(오래된 것부터).
+ *  기록 DB는 집을 바꿔도 하나라, 나이 안의 줄을 모두 읽어 이 집 것만 거른 뒤 개수를 센다(다른 집 메시지에 밀리지 않게). */
 export function lastStoredThoughts(db: Pick<HistoryDb, "list">, home: string, nowMs: number): ThoughtMessage[] {
-  return db.list({ kinds: ["thought"], since: nowMs - THOUGHT_KEEP_MS, latest: true, limit: 200 })
+  return db.list({ kinds: ["thought"], since: nowMs - THOUGHT_KEEP_MS, latest: true })
     .flatMap((r) => {
       const d = (r.data ?? null) as { home?: unknown; id?: unknown } | null;
       return d?.home === home && typeof d.id === "string" ? [{ id: d.id, text: r.text, at_ms: r.at_ms, decision: r.subject ?? "" }] : [];
