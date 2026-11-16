@@ -41,6 +41,17 @@ describe("대시보드 자료", () => {
       const WATER = { seen: "사람이 먹는 중인데 컵이 비어 있어요", why: "식사 중 빈 컵이라 물을 채우라고 할게요" };
       expect(thoughtOf(reduceDash(water, lines("pam-4", "컵에 물 채워 주기", WATER), 0))?.lines).toEqual(WATER);
     });
+    it("연속 행동이 끊기면(대기 판단·다른 행동) 앞 두 줄을 지운다: A→대기→A, A→B→A에서 새 두 줄이 오기 전에는 옛 A 두 줄을 쓰지 않는다", () => {
+      const waited = feed([decided, lines("pam-3"), branchDecision(null, 4), branchDecision(BRANCHES.clear, 5)]);
+      expect(waited.lines).toBeNull();
+      expect(thoughtOf(waited)?.lines).toEqual(waiting("컵을 두고 자리를 뜸"));
+      const WATER = { seen: "사람이 먹는 중인데 컵이 비어 있어요", why: "식사 중 빈 컵이라 물을 채우라고 할게요" };
+      const switched = feed([decided, lines("pam-3"), branchDecision(BRANCHES.water, 4), lines("pam-4", "컵에 물 채워 주기", WATER), branchDecision(BRANCHES.clear, 5)]);
+      expect(switched.lines).toBeNull();
+      expect(thoughtOf(switched)?.lines).toEqual(waiting("컵을 두고 자리를 뜸"));
+      // 같은 행동이 이어지면 두 줄을 둔다
+      expect(feed([decided, lines("pam-3"), branchDecision(BRANCHES.clear, 4)]).lines).toMatchObject({ id: "pam-3" });
+    });
     it("상태 이름표가 없으면(fsm 없음·이름표 없는 상태) 「본 것」은 「지금 장면을 살피고 있어요」다", () => {
       const s = feed([decided]);
       const d = s.decision!;

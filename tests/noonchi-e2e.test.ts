@@ -144,7 +144,7 @@ describe("NOONCHI 처음부터 끝까지", () => {
     expect(new Set(lineIds).size).toBe(lineIds.length);
     for (const m of dash.filter((x) => x.type === "thought")) expect(m).toMatchObject({ action: "컵 치우기", ...LINES });
     // 두 줄은 기록 DB에 처음 만든 때 한 번 남는다(서버를 다시 띄워도 이어 쓴다)
-    expect((await history("thought")).rows.map((r) => [r.subject, r.data])).toEqual([[decidedBefore.id, { action: "컵 치우기", ...LINES }]]);
+    expect((await history("thought")).rows.map((r) => [r.subject, r.data])).toEqual([[decidedBefore.id, { home: "apartment", action: "컵 치우기", ...LINES }]]);
     expect(pam.bodies.some((b) => String(b.observation_text).includes("컵 cup_1 보임"))).toBe(true);
     // 대시보드: 판단·실행 기록과 계획(집기 대상 cup_1). 단계 상태가 지금 단계를 따라가고 끝나면 done
     const planMsgs = dash.filter((m) => m.type === "plan" && m.plan?.id === planId).map((m) => m.plan);

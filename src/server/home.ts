@@ -191,6 +191,8 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
   let unsubWorld = () => {};
   let decider: Decider | null = null;
   let tracker: ExecutionTracker | null = null;
+  // 생각 말풍선 두 줄(src/brain/thought.ts): 판단 기록 뒤에 따로 만들어 대시보드로 보내고 기록 DB(thought)에 남긴다(관찰 흐름이 있을 때). 닫을 때 나가 있는 요청을 끊는다
+  let thoughts: ThoughtFeed | null = null;
   let looker: Looker | null = null;
   let decideTimer: NodeJS.Timeout | undefined;
   let app: TwinHomeApp | undefined;
@@ -286,14 +288,12 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     // 실제 폰에 낸 지금 명령(실행 추적이 보낸 것), 마지막 판단, 마지막 물체 모양(seen): 새로 붙은 대시보드에도 보낸다
     let command: PlannedCommand | null = null;
     let lastDecision: BrainLog | null = null;
-    // 생각 말풍선 두 줄(src/brain/thought.ts): 판단 기록 뒤에 따로 만들어 대시보드로 보내고 기록 DB(thought)에 남긴다(관찰 흐름이 있을 때)
-    let thoughts: ThoughtFeed | null = null;
     // 새로 붙은 대시보드에 다시 보낼 두 줄: 보낸 것이 없으면 기록 DB의 마지막 두 줄이 마지막 판단과 행동이 같을 때 그 판단 id로
     const thoughtNow = (): ThoughtEvent | null => {
       const sent = thoughts?.last();
       if (sent) return sent;
       const d = lastDecision?.type === "decision" && lastDecision.status === "valid" ? lastDecision : null;
-      const kept = d?.action ? lastStoredThought(history.db, Date.now()) : null;
+      const kept = d?.action ? lastStoredThought(history.db, home.id, Date.now()) : null;
       return d && kept && kept.action === d.action ? { type: "thought", id: d.id, ...kept } : null;
     };
     let lastSeen: SeenEvent | null = null;
@@ -334,7 +334,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       // 같은 행동이 이어지는 동안은 처음 두 줄을 다시 보낸다. 다시 띄우면 기록의 마지막 두 줄(10분 안)을 이어 쓴다
       const feed = thoughtFeed({
         writer: new ThoughtWriter({ chat: createInference(env).thought }), send: (m) => appRef.current?.broadcast(m),
-        record: (m) => storeThought(history.db, m, Date.now()), seed: lastStoredThought(history.db, Date.now()),
+        record: (m) => storeThought(history.db, home.id, m, Date.now()), seed: lastStoredThought(history.db, home.id, Date.now()),
       });
       thoughts = feed;
       const emit = (event: BrainLog) => {
@@ -605,7 +605,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         closed = true;
         // 한 단계가 실패해도 나머지(특히 폰 포트·허브)는 닫는다. 새 집이 같은 포트를 다시 잡아야 한다
         const steps: [string, () => unknown][] = [
-          ["초점", unsubFocus], ["관찰 흐름", () => { clearInterval(decideTimer); decider?.stop(); tracker?.stop(); looker?.stop(); planner.abort(); unsubWorld(); return pipeline?.close(); }], ["눈 화면", () => feed?.close()],
+          ["초점", unsubFocus], ["관찰 흐름", () => { clearInterval(decideTimer); decider?.stop(); thoughts?.close(); tracker?.stop(); looker?.stop(); planner.abort(); unsubWorld(); return pipeline?.close(); }], ["눈 화면", () => feed?.close()],
           ["폰 서버", () => phoneNow?.close()], ["앱", () => appNow.close()], ["배치", () => layout?.editor.close()], ["ThinQ", () => link?.stop()],
           ["기록", unsubHistory], ["허브", () => signals.stop()],
         ];
@@ -623,6 +623,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     await app?.close().catch(() => {});
     clearInterval(decideTimer);
     decider?.stop();
+    thoughts?.close();
     tracker?.stop();
     looker?.stop();
     unsubWorld();

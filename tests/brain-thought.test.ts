@@ -5,6 +5,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { startFakeOpenAI, type FakeServer } from "../scripts/fake-openai.js";
 import { HistoryDb } from "../src/brain/history/db.js";
+import { DECISION_TEXT } from "../src/brain/history/labels.js";
 import { THOUGHT_KEEP_MS, THOUGHT_TIMEOUT_MS, ThoughtWriter, lastStoredThought, storeThought, thoughtFeed, type ThoughtLines } from "../src/brain/thought.js";
 import type { BrainLog, ThoughtEvent } from "../src/contract/events.js";
 import { createInference } from "../src/infer/inference.js";
@@ -102,10 +103,13 @@ const decision = (id: string, action: string | null, status: "valid" | "failed" 
   action, memory_version: 1, world: { objects: [], person_visible: false, vlm_missing: 0, yolo_missing: 0 },
 });
 
-/** 답을 손으로 내는 쓰기: 부른 차례대로 끝낼 수 있다. */
+/** 답을 손으로 내는 쓰기: 부른 차례대로 끝낼 수 있다. 받은 끊기 신호(signal)도 둔다. */
 function manualWriter() {
-  const calls: { input: { observation: string; reasoning: string; action: string }; done: (l: ThoughtLines | null) => void }[] = [];
-  return { calls, write: (input: { observation: string; reasoning: string; action: string }) => new Promise<ThoughtLines | null>((done) => { calls.push({ input, done }); }) };
+  const calls: { input: { observation: string; reasoning: string; action: string }; signal?: AbortSignal; done: (l: ThoughtLines | null) => void }[] = [];
+  return {
+    calls,
+    write: (input: { observation: string; reasoning: string; action: string }, signal?: AbortSignal) => new Promise<ThoughtLines | null>((done) => { calls.push({ input, signal, done }); }),
+  };
 }
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const CLEAR = "컵 치우기";
@@ -197,6 +201,50 @@ describe("생각 말풍선 두 줄 보내기(thoughtFeed)", () => {
     expect(sent).toEqual([shown("pam-2")]);
   });
 
+  it("닫으면(close) 나가 있는 요청을 끊고(signal), 늦게 온 답은 보내지도 기록하지도 않는다. 닫은 뒤 판단은 부르지 않는다", async () => {
+    const w = manualWriter();
+    const sent: ThoughtEvent[] = [];
+    const kept: ThoughtEvent[] = [];
+    const feed = thoughtFeed({ writer: w, send: (m) => sent.push(m), record: (m) => kept.push(m) });
+    feed.decision(decision("pam-1", CLEAR));
+    expect(w.calls[0]!.signal?.aborted).toBe(false);
+    feed.close();
+    expect(w.calls[0]!.signal?.aborted).toBe(true);
+    w.calls[0]!.done(LINES);
+    await tick();
+    expect([sent, kept, feed.last()]).toEqual([[], [], null]);
+    feed.decision(decision("pam-2", CLEAR));
+    expect(w.calls).toHaveLength(1);
+  });
+
+  it("행동이 바뀌어 버린 요청도 끊는다(signal)", () => {
+    const w = manualWriter();
+    const feed = thoughtFeed({ writer: w, send: () => {} });
+    feed.decision(decision("pam-1", CLEAR));
+    feed.decision(decision("pam-2", null));
+    expect(w.calls[0]!.signal?.aborted).toBe(true);
+  });
+
+  it("닫힌 기록 DB에 쓰다 던지거나 쓰기가 거절돼도 처리되지 않은 거절이 생기지 않는다", async () => {
+    const rejected: unknown[] = [];
+    const on = (e: unknown) => { rejected.push(e); };
+    process.on("unhandledRejection", on);
+    try {
+      const db = HistoryDb.open(":memory:");
+      db.close();
+      const w = manualWriter();
+      const feed = thoughtFeed({ writer: w, send: () => {}, record: (m) => storeThought(db, "mokryeon_180b", m, 1) });
+      feed.decision(decision("pam-1", CLEAR));
+      w.calls[0]!.done(LINES);
+      const failing = thoughtFeed({ writer: { write: () => Promise.reject(new Error("끊김")) }, send: () => {} });
+      failing.decision(decision("pam-1", CLEAR));
+      await new Promise((r) => setTimeout(r, 30));
+      expect(rejected).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", on);
+    }
+  });
+
   it("기록에서 읽은 마지막 두 줄(seed)이 있으면 같은 행동 판단에 부르지 않고 바로 보낸다. 행동이 다르면 쓰지 않는다", () => {
     const w = manualWriter();
     const sent: ThoughtEvent[] = [];
@@ -210,15 +258,42 @@ describe("생각 말풍선 두 줄 보내기(thoughtFeed)", () => {
 });
 
 describe("생각 두 줄 기록", () => {
-  it("두 줄은 기록 DB에 그 판단 id·행동과 함께 남고(thought), 다시 띄울 때 THOUGHT_KEEP_MS 안의 마지막 것을 읽는다", () => {
+  const HOME = "mokryeon_180b";
+  /** 기록기가 남기는 판단 줄 모양(src/brain/history/recorder.ts): 글은 고른 행동·대기·판단 실패. */
+  const decided = (db: HistoryDb, at: number, text: string, status: "valid" | "failed" = "valid") => db.add("decision", at, text, { subject: "pam-x", data: { status } });
+
+  it("두 줄은 기록 DB에 그 판단 id·행동·집과 함께 남고(thought), 다시 띄울 때 THOUGHT_KEEP_MS 안의 마지막 것을 읽는다", () => {
     const db = HistoryDb.open(":memory:");
-    expect(lastStoredThought(db, 1_000_000)).toBeNull();
-    storeThought(db, shown("pam-1"), 1_000_000);
-    storeThought(db, shown("pam-7", WATER_TASK), 1_000_500);
+    expect(lastStoredThought(db, HOME, 1_000_000)).toBeNull();
+    storeThought(db, HOME, shown("pam-1"), 1_000_000);
+    storeThought(db, HOME, shown("pam-7", WATER_TASK), 1_000_500);
     const [row] = db.list({ kinds: ["thought"], latest: true, limit: 1 });
-    expect(row).toMatchObject({ kind: "thought", subject: "pam-7", text: `${LINES.seen} · ${LINES.why}`, data: { action: WATER_TASK, ...LINES } });
-    expect(lastStoredThought(db, 1_000_500 + THOUGHT_KEEP_MS)).toEqual({ action: WATER_TASK, ...LINES });
-    expect(lastStoredThought(db, 1_000_501 + THOUGHT_KEEP_MS)).toBeNull();
+    expect(row).toMatchObject({ kind: "thought", subject: "pam-7", text: `${LINES.seen} · ${LINES.why}`, data: { home: HOME, action: WATER_TASK, ...LINES } });
+    expect(lastStoredThought(db, HOME, 1_000_500 + THOUGHT_KEEP_MS)).toEqual({ action: WATER_TASK, ...LINES });
+    expect(lastStoredThought(db, HOME, 1_000_501 + THOUGHT_KEEP_MS)).toBeNull();
     expect(THOUGHT_KEEP_MS).toBe(10 * 60_000);
+  });
+
+  it("다른 집의 두 줄은 되살리지 않는다(기록 DB는 집을 바꿔도 하나다)", () => {
+    const db = HistoryDb.open(":memory:");
+    storeThought(db, "apartment", shown("pam-1"), 1_000_000);
+    expect(lastStoredThought(db, HOME, 1_000_100)).toBeNull();
+    expect(lastStoredThought(db, "apartment", 1_000_100)).toEqual({ action: CLEAR, ...LINES });
+  });
+
+  it("그 두 줄 뒤에 대기 판단이나 다른 행동 판단이 있으면 연속이 끊긴 것이라 되살리지 않는다. 같은 행동·판단 실패는 이어진다", () => {
+    const db = HistoryDb.open(":memory:");
+    decided(db, 1_000_000, CLEAR);
+    storeThought(db, HOME, shown("pam-1"), 1_000_100);
+    decided(db, 1_000_200, CLEAR);
+    decided(db, 1_000_300, DECISION_TEXT.failed("시간 초과"), "failed");
+    expect(lastStoredThought(db, HOME, 1_000_400)).toEqual({ action: CLEAR, ...LINES });
+    decided(db, 1_000_500, DECISION_TEXT.wait);
+    expect(lastStoredThought(db, HOME, 1_000_600)).toBeNull();
+    const other = HistoryDb.open(":memory:");
+    storeThought(other, HOME, shown("pam-1"), 1_000_100);
+    decided(other, 1_000_200, WATER_TASK);
+    decided(other, 1_000_300, CLEAR);
+    expect(lastStoredThought(other, HOME, 1_000_400)).toBeNull();
   });
 });

@@ -42,7 +42,8 @@ export function reduceDash(s: DashData, m: ServerMessage, now: number): DashData
       return { ...s, lines: { type: "thought", id: m.id, action: m.action, seen: m.seen, why: m.why } };
     case "brain": {
       const e = m.event;
-      if (e.type === "decision") return e.status === "valid" ? { ...s, decision: e } : s;
+      // 이어지던 행동이 끊기면(대기·다른 행동) 그 행동의 두 줄도 지운다: 다시 같은 행동이 와도 새 두 줄이 올 때까지 옛 두 줄을 쓰지 않는다
+      if (e.type === "decision") return e.status === "valid" ? { ...s, decision: e, lines: s.lines && e.action === s.lines.action ? s.lines : null } : s;
       if (e.type === "reflection") return e.ok ? { ...s, reflection: e } : s;
       return s;
     }
