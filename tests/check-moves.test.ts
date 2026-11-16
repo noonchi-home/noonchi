@@ -341,6 +341,25 @@ describe("옮김 검사: 빠져나가는 꼴", () => {
     ]);
   });
 
+  it("외부 패키지 import도 차례 열에 하나의 점(pkg:이름)으로 넣는다: import \"dotenv/config\"와 내부 초기화 맞바꾸기는 실패", () => {
+    const lib = { "src/init.ts": "export const cfg = read();\nfunction read() { return process.env.X; }\n" };
+    const D = 'import "dotenv/config";';
+    const I = 'import { cfg } from "./init.js";';
+    const main = (lines: string[]) => ({ ...lib, "src/main.ts": `${lines.join("\n")}\nexport const m = cfg;\n` });
+    expect(run(main([D, I]), main([I, D])).failures).toEqual([
+      "src/main.ts: 부수 효과가 있는 import의 차례가 달라요\n  앞: pkg:dotenv/config → effect src/init.ts\n  뒤: effect src/init.ts → pkg:dotenv/config",
+    ]);
+    // 값으로 쓰는 외부 import도 점으로 남고, 타입 전용·값으로 안 쓰는 TS import는 빠진다
+    const N = 'import { join } from "node:path";';
+    const T = 'import type { Server } from "node:http";';
+    const U = 'import { readFileSync } from "node:fs";';
+    const m2 = (lines: string[]) => ({ ...lib, "src/main.ts": `${lines.join("\n")}\nexport const m = [cfg, join];\n` });
+    expect(run(m2([N, I]), m2([I, N])).failures).toEqual([
+      "src/main.ts: 부수 효과가 있는 import의 차례가 달라요\n  앞: pkg:node:path → effect src/init.ts\n  뒤: effect src/init.ts → pkg:node:path",
+    ]);
+    expect(run(m2([T, U, I, N]), m2([I, T, U, N])).failures).toEqual([]);
+  });
+
   it("줄 차례가 바뀌어도 ESM이 평가하는 차례(깊이 우선 뒤차례)가 같으면 통과한다", () => {
     const lib = { "src/x/a.ts": 'export const a = init("a");\nfunction init(s: string) { return s; }\n', "src/x/b.ts": 'import { a } from "./a.js";\nexport const b = init(a);\nfunction init(s: string) { return s; }\n' };
     const before = { ...lib, "src/x/index.ts": 'export { a } from "./a.js";\nexport { b } from "./b.js";\n' };

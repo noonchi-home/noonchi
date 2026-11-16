@@ -157,7 +157,8 @@ class TreeIndex {
   resolve(from: string, spec: string): Resolved { return resolveSpec(from, spec, this.exists); }
   private liveMemo = new Map<string, string[]>();
   /** 모듈을 읽을 때 따라가는 정적 import·export … from 대상(소스 차례). 타입 전용은 빼고, TS 파일에서는 값으로 쓰지 않는 import(실행 때 지워짐)와
-   *  skip한 이름만 가져오는 import도 뺀다. JS 파일의 import는 쓰지 않아도 남는다. 이름 없는 import는 늘 남는다. */
+   *  skip한 이름만 가져오는 import도 뺀다. JS 파일의 import는 쓰지 않아도 남는다. 이름 없는 import는 늘 남는다.
+   *  바깥 패키지(node:*·npm)는 속을 따라가지 않고 부수 효과가 있을 수 있는 점 하나 "pkg:<모듈 글>"로 둔다. */
   liveDeps(p: string, skip?: (local: string) => boolean): string[] {
     const memo = skip ? undefined : this.liveMemo.get(p);
     if (memo) return memo;
@@ -176,17 +177,23 @@ class TreeIndex {
       if (spec === undefined) continue;
       const r = this.resolve(p, spec);
       if ("path" in r) out.push(r.path);
+      else if ("external" in r) out.push(`pkg:${r.external}`);
     }
     if (!skip) this.liveMemo.set(p, out);
     return out;
   }
-  /** file을 읽을 때 ESM이 평가하는 모듈 차례: 소스 차례로 정적 import·export … from을 따라가는 깊이 우선 뒤차례, 한 번 읽은 모듈은 건너뜀. file이 끝에 온다. */
+  /** file을 읽을 때 ESM이 평가하는 모듈 차례: 소스 차례로 정적 import·export … from을 따라가는 깊이 우선 뒤차례, 한 번 읽은 모듈은 건너뜀. file이 끝에 온다.
+   *  바깥 패키지는 "pkg:<모듈 글>" 점 하나로 그 자리에 둔다(속은 따라가지 않음). */
   loadOrder(file: string, skip?: (local: string) => boolean): string[] {
     const order: string[] = [];
     const seen = new Set<string>();
     const visit = (m: string, deps: string[]) => {
       seen.add(m);
-      for (const d of deps) if (!seen.has(d) && this.tree.has(d)) visit(d, this.liveDeps(d));
+      for (const d of deps) {
+        if (seen.has(d)) continue;
+        if (d.startsWith("pkg:")) { seen.add(d); order.push(d); }
+        else if (this.tree.has(d)) visit(d, this.liveDeps(d));
+      }
       order.push(m);
     };
     if (this.tree.has(file)) visit(file, this.liveDeps(file, skip));
@@ -663,10 +670,10 @@ export function checkMoves(before: Tree, after: Tree, moves: Moves, opts: Option
   for (const n of moves.new) if (before.has(n)) fail(`new의 파일이 앞 커밋에 이미 있어요: ${n}`);
 
   const mapFileFor = (I: TreeIndex, p: string) => (I === B ? mapFile(p) : p);
-  /** 이 파일을 읽을 때 ESM이 실제로 평가하는 모듈 차례(loadOrder)에서 부수 효과 모듈만 뽑은 열("effect 경로", 옛 쪽은 대응표로 옮긴 경로).
+  /** 이 파일을 읽을 때 ESM이 실제로 평가하는 모듈 차례(loadOrder)에서 부수 효과 모듈("effect 경로", 옛 쪽은 대응표로 옮긴 경로)과 바깥 패키지 점("pkg:…")만 뽑은 열.
    *  skip은 이 파일 자신의 import에서 뺄 이름(--moved에서 옮긴 선언 때문에 더하거나 뺀 import). */
   const effects = (I: TreeIndex, file: string, _map: (d: string) => string, skip: (local: string) => boolean) =>
-    I.loadOrder(file, skip).filter((m) => m !== file && I.hasEffects(m)).map((m) => `effect ${mapFileFor(I, m)}`);
+    I.loadOrder(file, skip).filter((m) => m !== file && (m.startsWith("pkg:") || I.hasEffects(m))).map((m) => (m.startsWith("pkg:") ? m : `effect ${mapFileFor(I, m)}`));
 
   // --moved: 지운 파일의 이름 없는 맨 위 실행문은 하나하나 그 파일의 선언을 받은 파일에 같은 AST로 있어야 한다.
   // 지운 파일의 부수 효과 import도 받은 파일에 같은 차례로 있어야 한다(받은 파일의 import 검사에서는 그 줄을 뺀다)
@@ -823,7 +830,7 @@ export function checkMoves(before: Tree, after: Tree, moves: Moves, opts: Option
     const outFree = moved && outNames.size ? freeOf(B, o, outNames) : new Set<string>();
     const inFree = moved && inNames.size ? freeOf(A, n, inNames) : new Set<string>();
     const claimed = claimedEffects.get(n) ?? [];
-    const missingNew = nt.filter((t) => !ot.includes(t) && !(t.startsWith("import ") && (outNames.has(localOf(t)) || inFree.has(localOf(t)))) && !(t.startsWith("side ") && claimed.includes(`effect ${t.slice(5)}`)));
+    const missingNew = nt.filter((t) => !ot.includes(t) && !(t.startsWith("import ") && (outNames.has(localOf(t)) || inFree.has(localOf(t)))) && !(t.startsWith("side ") && (claimed.includes(`effect ${t.slice(5)}`) || claimed.includes(`pkg:${t.slice(5)}`))));
     const restUses = new Set(ni.body.filter((st) => !isImportLike(st) && !declaredBy(st).names.some((x) => inNames.has(x))).flatMap((st) => [...freeNames(st).all]));
     const missingOld = ot.filter((t) => !nt.includes(t) && !(t.startsWith("import ") && ((outFree.has(localOf(t)) && !restUses.has(localOf(t))) || inNames.has(localOf(t)))));
     if (missingNew.length || missingOld.length) {
