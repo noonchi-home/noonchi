@@ -1,5 +1,5 @@
 // 서버가 읽는 집 장면: scene.json(twin-studio 결과) + 도면 설비(집 data의 drawn_fixtures.json) + 시연용으로 더하는 가전(집 data의 added_devices.json).
-// 계획 평면도·배치 편집기·/api/scene·기기 목록(src/devices/devices.ts loadFromScene)이 같은 것을 쓴다.
+// 계획 평면도·배치 편집기·/api/scene·기기 목록(src/layout/twin-files.ts loadFromScene)이 같은 것을 쓴다.
 // 더한 가전은 구운 3D에 없어 배치 편집기가 연결 때 add로 보낸다(src/layout/editor.ts unbaked, 더한 id 목록 added).
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";

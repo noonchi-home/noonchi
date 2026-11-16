@@ -4,7 +4,7 @@
 //   npx tsx scripts/world-vocab-doc.ts --check  다르면 1로 끝난다
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { loadTwin } from "../src/devices/devices.js";
+import { loadTwin } from "../src/layout/twin-files.js";
 import { KINDS, KIND_ORDER, cameraKindOf } from "../src/devices/kinds.js";
 import { rulesOf } from "../src/world/sight.js";
 import { deviceStateKeys, deviceText } from "../src/world/relations.js";

@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { runScenarios } from "../scripts/scenarios.js";
 import type { MatterHub } from "../src/devices/matter/matterHub.js";
-import { resolveTwinStudioDir } from "../src/devices/devices.js";
+import { resolveTwinStudioDir } from "../src/layout/twin-files.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { api, listenEvents, mcpClient, type Msg } from "./helpers/live.js";
 import { HOME_SCRIPT, startFakeLlm, type FakeLlm } from "./helpers/llm.js";

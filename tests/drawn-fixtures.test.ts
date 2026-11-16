@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { SceneJson, SceneObject } from "../src/layout/editor.js";
-import { DEFAULT_TWIN_DIR } from "../src/devices/devices.js";
+import { DEFAULT_TWIN_DIR } from "../src/layout/twin-files.js";
 import { withDrawn, type DrawnFixture } from "../src/layout/drawn.js";
 import { resolveHome } from "../src/layout/homes.js";
 import { loadScene } from "../src/layout/scene.js";

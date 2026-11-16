@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadLayout } from "../src/layout/load.js";
-import { DEFAULT_TWIN_DIR } from "../src/devices/devices.js";
+import { DEFAULT_TWIN_DIR } from "../src/layout/twin-files.js";
 import { resolveHome } from "../src/layout/homes.js";
 import { loadScene } from "../src/layout/scene.js";
 import { STEP_LABEL } from "../src/act/labels.js";

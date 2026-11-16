@@ -11,7 +11,7 @@ import { formatPairingInfo } from "../src/devices/matter/bridge.js";
 import { DEVICE_TYPE_INFO, endpointTypeFor, SUPPORTED_DEVICE_TYPES } from "../src/devices/matter/deviceTypes.js";
 import { createMatterHub, isNetworkUnavailable, MatterHub, matterHubOptionsFromEnv } from "../src/devices/matter/matterHub.js";
 import { KIND_PROFILES, describeDevice } from "../src/devices/mapping.js";
-import { loadTwin } from "../src/devices/devices.js";
+import { loadTwin } from "../src/layout/twin-files.js";
 
 const POWER = { power: ["off", "on"] };
 const RUNNING_DOOR = { running: [true, false], door: ["closed", "open"] };

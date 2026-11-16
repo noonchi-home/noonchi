@@ -11,3 +11,4 @@ export { placeName, type PlaceNames } from "./names.js";
 export { detectRooms, resolveRoom } from "./rooms.js";
 export { roomAt, floorPlanFrom, roomNamedAt } from "./route.js";
 export { loadScene } from "./scene.js";
+export { loadTwin, type TwinData, resolveTwinStudioDir } from "./twin-files.js";

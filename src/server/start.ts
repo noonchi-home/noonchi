@@ -20,7 +20,7 @@ import { loadEndpoints } from "../infer/endpoints.js";
 import type { LayoutEditor } from "../layout/index.js";
 import { KIND_LABELS } from "../devices/index.js";
 import type { PipelineInject } from "../observe/index.js";
-import { resolveTwinStudioDir, type TwinData } from "../devices/index.js";
+import { resolveTwinStudioDir, type TwinData } from "../layout/index.js";
 import { listHomes } from "../layout/index.js";
 import { acquireServerLock, restoreNeeded } from "./lock.js";
 import { KINDS } from "../devices/kinds.js";

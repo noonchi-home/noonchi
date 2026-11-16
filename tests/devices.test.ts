@@ -4,7 +4,8 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 import type { DeviceKind } from "../src/devices/kinds.js";
-import { DEFAULT_TWIN_DIR, initialTwinState, loadDevices, loadTwin, resolveTwinStudioDir } from "../src/devices/devices.js";
+import { initialTwinState } from "../src/devices/devices.js";
+import { DEFAULT_TWIN_DIR, loadDevices, loadTwin, resolveTwinStudioDir } from "../src/layout/twin-files.js";
 
 const REPO = fileURLToPath(new URL("..", import.meta.url));
 const STUDIO = resolveTwinStudioDir(process.env.TWIN_STUDIO_DIR, REPO);

@@ -51,7 +51,7 @@ import { det } from "../tests/helpers/detectors.js";
 import type { SceneJson } from "../src/contract/layout.js";
 import type { OffTrack } from "../src/contract/plan.js";
 import { isOffStep } from "../src/act/off-step.js";
-import { resolveTwinStudioDir } from "../src/devices/devices.js";
+import { resolveTwinStudioDir } from "../src/layout/twin-files.js";
 import { resolveHome } from "../src/layout/homes.js";
 import { loadScene } from "../src/layout/scene.js";
 import { DEMO_STARTS, startFor, type DemoScene } from "./demo-start.js";

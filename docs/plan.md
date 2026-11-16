@@ -128,7 +128,7 @@ interface DeviceHub {
 - 그래서 Claude Code나 Claude Desktop이 그대로 에이전트가 된다.
 - README에 `claude mcp add twin-home -- npx tsx src/agent/mcp/server.ts` 예시를 적는다.
 
-## 기기 목록 만들기 (src/devices/devices.ts)
+## 기기 목록 만들기 (파일 읽기 src/layout/twin-files.ts, 가전 만들기 src/devices/devices.ts)
 
 - 집: twin-studio `homes.json`에서 `HOME_ID`(없으면 `default`)로 고른다(`src/layout/homes.ts`, 아래 "집 고르기").
 - 1순위: 그 집 `<out>/scene.json`의 objects 중 `attrs`가 있는 것.

@@ -7,7 +7,7 @@
 import "dotenv/config";
 import type { DeviceState } from "../src/contract/devices.js";
 import { MatterHub } from "../src/devices/matter/matterHub.js";
-import { loadTwin } from "../src/devices/devices.js";
+import { loadTwin } from "../src/layout/twin-files.js";
 
 const TARGETS = ["tv_living", "light_living"];
 

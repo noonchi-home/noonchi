@@ -11,7 +11,7 @@ import { MemoryHub } from "../src/devices/hub/memory.js";
 import { SignalHub, type SignalSource } from "../src/devices/hub/signals.js";
 import type { DeviceSpec, DeviceState } from "../src/contract/devices.js";
 import { loadLayout } from "../src/layout/load.js";
-import { DEFAULT_TWIN_DIR, loadTwin } from "../src/devices/devices.js";
+import { DEFAULT_TWIN_DIR, loadTwin } from "../src/layout/twin-files.js";
 import { resolveHome } from "../src/layout/homes.js";
 import { describeDevice } from "../src/devices/mapping.js";
 import { loadScene } from "../src/layout/scene.js";

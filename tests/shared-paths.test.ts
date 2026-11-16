@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import { isEntry, repoPath } from "../src/shared/paths.js";
 import { MODELS_DIR } from "../src/observe/detector.js";
-import { DEFAULT_TWIN_DIR } from "../src/devices/devices.js";
+import { DEFAULT_TWIN_DIR } from "../src/layout/twin-files.js";
 import { DEFAULT_UI_DIR } from "../src/phone/server.js";
 import { DEFAULT_WEB_DIR } from "../src/server/app.js";
 import { phoneVideoDir } from "../src/server/home.js";

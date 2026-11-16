@@ -37,7 +37,7 @@ import { createPipeline, type ObservationPipeline, type PipelineInject } from ".
 import type { DeviceHub, DeviceState } from "../contract/devices.js";
 import { FOCUS_TTL_MS, focusFromActions, type Focus } from "../layout/index.js";
 import { loadLayout } from "../layout/index.js";
-import { loadTwin, type TwinData } from "../devices/index.js";
+import { loadTwin, type TwinData } from "../layout/index.js";
 import { listHomes } from "../layout/index.js";
 import { loadScene } from "../layout/index.js";
 import { EyeFeed } from "../phone/index.js";

@@ -6,7 +6,7 @@
 
 import type { ClientNode, Endpoint, ServerNode } from "@matter/main";
 import { resolve } from "node:path";
-import type { TwinData } from "../devices.js";
+import type { TwinDevices } from "../devices.js";
 import {
   checkCommand,
   defaultTwinValue,
@@ -153,7 +153,7 @@ export class MatterHub implements DeviceHub {
     }
   }
 
-  static fromTwin(twin: Pick<TwinData, "devices" | "initial">, opts: MatterHubOptions = {}): MatterHub {
+  static fromTwin(twin: Pick<TwinDevices, "devices" | "initial">, opts: MatterHubOptions = {}): MatterHub {
     return new MatterHub(twin.devices, { ...opts, initial: { ...twin.initial, ...opts.initial } });
   }
 
@@ -439,7 +439,7 @@ export class MatterHub implements DeviceHub {
 }
 
 /** 서버(src/server/hubFactory.ts)가 쓰는 진입점. start()는 부르는 쪽에서 한다. */
-export function createMatterHub(twin: Pick<TwinData, "devices" | "initial">, opts: MatterHubOptions = {}): MatterHub {
+export function createMatterHub(twin: Pick<TwinDevices, "devices" | "initial">, opts: MatterHubOptions = {}): MatterHub {
   return MatterHub.fromTwin(twin, opts);
 }
 

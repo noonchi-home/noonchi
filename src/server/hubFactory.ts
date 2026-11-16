@@ -7,7 +7,7 @@
 
 import { MemoryHub } from "../devices/index.js";
 import type { DeviceHub } from "../contract/devices.js";
-import type { TwinData } from "../devices/index.js";
+import type { TwinData } from "../layout/index.js";
 
 export type HubKind = "memory" | "matter";
 export type MatterTransport = "network" | "local";

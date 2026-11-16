@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { loadTwin } from "../src/devices/devices.js";
+import { loadTwin } from "../src/layout/twin-files.js";
 import { listHomes, readRegistry, resolveHome } from "../src/layout/homes.js";
 
 const temps: string[] = [];

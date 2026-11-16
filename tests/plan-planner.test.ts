@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { PlanView } from "../src/contract/plan.js";
-import { resolveTwinStudioDir } from "../src/devices/devices.js";
+import { resolveTwinStudioDir } from "../src/layout/twin-files.js";
 import { devicePlan } from "../src/agent/planShape.js";
 import { askPlan, cupPlan } from "./helpers/cup-plan.js";
 import { floorPlanFrom } from "../src/layout/route.js";

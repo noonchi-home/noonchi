@@ -27,7 +27,7 @@ import { attachRecorder, topic, type DeviceNote } from "../src/brain/history/rec
 import { memoryForDay } from "../src/brain/history/reflect.js";
 import { isDay } from "../src/brain/history/summary.js";
 import type { DeviceState } from "../src/contract/devices.js";
-import { loadTwin } from "../src/devices/devices.js";
+import { loadTwin } from "../src/layout/twin-files.js";
 import { loadScene } from "../src/layout/scene.js";
 import type { FloorPlan } from "../src/layout/floor.js";
 import { PlanHub } from "../src/act/hub.js";
