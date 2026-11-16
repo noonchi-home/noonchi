@@ -155,6 +155,43 @@ class TreeIndex {
     return a;
   }
   resolve(from: string, spec: string): Resolved { return resolveSpec(from, spec, this.exists); }
+  private liveMemo = new Map<string, string[]>();
+  /** 모듈을 읽을 때 따라가는 정적 import·export … from 대상(소스 차례). 타입 전용은 빼고, TS 파일에서는 값으로 쓰지 않는 import(실행 때 지워짐)와
+   *  skip한 이름만 가져오는 import도 뺀다. JS 파일의 import는 쓰지 않아도 남는다. 이름 없는 import는 늘 남는다. */
+  liveDeps(p: string, skip?: (local: string) => boolean): string[] {
+    const memo = skip ? undefined : this.liveMemo.get(p);
+    if (memo) return memo;
+    const used = /\.(m?ts|tsx)$/.test(p) ? valueNames(this.ast(p)) : undefined;
+    const out: string[] = [];
+    for (const st of this.info(p).body) {
+      let spec: string | undefined;
+      if (st.type === "ImportDeclaration" && st.importKind !== "type") {
+        const live = (st.specifiers as AstNode[]).some((sp) => sp.importKind !== "type" && !skip?.(sp.local.name) && (!used || used.has(sp.local.name)));
+        if (!st.specifiers.length || live) spec = st.source.value;
+      } else if (st.type === "ExportNamedDeclaration" && st.source && st.exportKind !== "type" && (st.specifiers as AstNode[]).some((x) => x.exportKind !== "type")) {
+        spec = st.source.value;
+      } else if (st.type === "ExportAllDeclaration" && st.exportKind !== "type") {
+        spec = st.source.value;
+      }
+      if (spec === undefined) continue;
+      const r = this.resolve(p, spec);
+      if ("path" in r) out.push(r.path);
+    }
+    if (!skip) this.liveMemo.set(p, out);
+    return out;
+  }
+  /** file을 읽을 때 ESM이 평가하는 모듈 차례: 소스 차례로 정적 import·export … from을 따라가는 깊이 우선 뒤차례, 한 번 읽은 모듈은 건너뜀. file이 끝에 온다. */
+  loadOrder(file: string, skip?: (local: string) => boolean): string[] {
+    const order: string[] = [];
+    const seen = new Set<string>();
+    const visit = (m: string, deps: string[]) => {
+      seen.add(m);
+      for (const d of deps) if (!seen.has(d) && this.tree.has(d)) visit(d, this.liveDeps(d));
+      order.push(m);
+    };
+    if (this.tree.has(file)) visit(file, this.liveDeps(file, skip));
+    return order;
+  }
   private effectMemo = new Map<string, boolean>();
   /** 모듈을 읽을 때 무엇이든 실행한다: 이름 없는 맨 위 실행문, 또는 맨 위 식(초기화·static·export default)의 함수 호출·new·await·태그 템플릿·대입 등. */
   hasEffects(p: string): boolean {
@@ -626,42 +663,10 @@ export function checkMoves(before: Tree, after: Tree, moves: Moves, opts: Option
   for (const n of moves.new) if (before.has(n)) fail(`new의 파일이 앞 커밋에 이미 있어요: ${n}`);
 
   const mapFileFor = (I: TreeIndex, p: string) => (I === B ? mapFile(p) : p);
-  /** 이 파일의 import로 실제로 읽히는 부수 효과 모듈 차례. import한 모듈(입구 포함)과 그 모듈이 export … from으로 다시 내보내는 모듈을
-   *  ESM 차례(다시 내보내는 모듈 먼저, 한 번만)로 돌며 부수 효과 모듈을 "effect 경로"로, 이름 없는 import는 "side 경로"로 적는다.
-   *  값으로 쓰지 않는 import(실행 때 지워짐)와 skip한 이름만 가져오는 import는 뺀다. */
-  const effects = (I: TreeIndex, file: string, _map: (d: string) => string, skip: (local: string) => boolean) => {
-    const seq: string[] = [];
-    const seen = new Set<string>([file]); // 모듈은 자기를 다시 읽지 않는다(자기를 다시 내보내는 입구를 거쳐도)
-    let used: Set<string>;
-    try { used = valueNames(I.ast(file)); } catch { used = new Set(); }
-    const reexports = (m: string) => {
-      for (const st of I.info(m).body) {
-        const live = (st.type === "ExportNamedDeclaration" && st.source && st.exportKind !== "type" && (st.specifiers as AstNode[]).some((x) => x.exportKind !== "type"))
-          || (st.type === "ExportAllDeclaration" && st.exportKind !== "type");
-        if (!live) continue;
-        const r = I.resolve(m, st.source.value);
-        if ("path" in r) visit(r.path);
-      }
-    };
-    const visit = (m: string) => {
-      if (seen.has(m) || !I.tree.has(m)) return;
-      seen.add(m);
-      reexports(m);
-      if (I.hasEffects(m)) seq.push(`effect ${mapFileFor(I, m)}`);
-    };
-    for (const st of I.info(file).body) {
-      if (st.type !== "ImportDeclaration" || st.importKind === "type") continue;
-      const r = I.resolve(file, st.source.value);
-      if (!st.specifiers.length) {
-        if ("path" in r && !seen.has(r.path) && I.tree.has(r.path)) { seen.add(r.path); reexports(r.path); }
-        seq.push(`side ${"path" in r ? mapFileFor(I, r.path) : st.source.value}`);
-        continue;
-      }
-      const live = (st.specifiers as AstNode[]).some((sp) => sp.importKind !== "type" && !skip(sp.local.name) && used.has(sp.local.name));
-      if (live && "path" in r) visit(r.path);
-    }
-    return seq;
-  };
+  /** 이 파일을 읽을 때 ESM이 실제로 평가하는 모듈 차례(loadOrder)에서 부수 효과 모듈만 뽑은 열("effect 경로", 옛 쪽은 대응표로 옮긴 경로).
+   *  skip은 이 파일 자신의 import에서 뺄 이름(--moved에서 옮긴 선언 때문에 더하거나 뺀 import). */
+  const effects = (I: TreeIndex, file: string, _map: (d: string) => string, skip: (local: string) => boolean) =>
+    I.loadOrder(file, skip).filter((m) => m !== file && I.hasEffects(m)).map((m) => `effect ${mapFileFor(I, m)}`);
 
   // --moved: 지운 파일의 이름 없는 맨 위 실행문은 하나하나 그 파일의 선언을 받은 파일에 같은 AST로 있어야 한다.
   // 지운 파일의 부수 효과 import도 받은 파일에 같은 차례로 있어야 한다(받은 파일의 import 검사에서는 그 줄을 뺀다)
@@ -818,7 +823,7 @@ export function checkMoves(before: Tree, after: Tree, moves: Moves, opts: Option
     const outFree = moved && outNames.size ? freeOf(B, o, outNames) : new Set<string>();
     const inFree = moved && inNames.size ? freeOf(A, n, inNames) : new Set<string>();
     const claimed = claimedEffects.get(n) ?? [];
-    const missingNew = nt.filter((t) => !ot.includes(t) && !(t.startsWith("import ") && (outNames.has(localOf(t)) || inFree.has(localOf(t)))) && !(t.startsWith("side ") && claimed.includes(t)));
+    const missingNew = nt.filter((t) => !ot.includes(t) && !(t.startsWith("import ") && (outNames.has(localOf(t)) || inFree.has(localOf(t)))) && !(t.startsWith("side ") && claimed.includes(`effect ${t.slice(5)}`)));
     const restUses = new Set(ni.body.filter((st) => !isImportLike(st) && !declaredBy(st).names.some((x) => inNames.has(x))).flatMap((st) => [...freeNames(st).all]));
     const missingOld = ot.filter((t) => !nt.includes(t) && !(t.startsWith("import ") && ((outFree.has(localOf(t)) && !restUses.has(localOf(t))) || inNames.has(localOf(t)))));
     if (missingNew.length || missingOld.length) {

@@ -229,10 +229,10 @@ describe("옮김 검사: 빠져나가는 꼴", () => {
     const decls = { "src/a.ts#x": "src/b.ts#x" };
     const after = (imports: string) => ({ ...lib, "src/b.ts": `${imports}export const y = 2;\nexport const x = 1;\n` });
     expect(run(before, after(""), { decls }, true).failures).toEqual([
-      "지운 파일 src/a.ts의 부수 효과 import가 새 자리에 없어요: side src/i1.ts",
-      "지운 파일 src/a.ts의 부수 효과 import가 새 자리에 없어요: side src/i2.ts",
+      "지운 파일 src/a.ts의 부수 효과 import가 새 자리에 없어요: effect src/i1.ts",
+      "지운 파일 src/a.ts의 부수 효과 import가 새 자리에 없어요: effect src/i2.ts",
     ]);
-    expect(run(before, after('import "./i2.js";\nimport "./i1.js";\n'), { decls }, true).failures).toEqual(["지운 파일 src/a.ts의 부수 효과 import 차례가 src/b.ts에서 바뀌었어요: side src/i2.ts"]);
+    expect(run(before, after('import "./i2.js";\nimport "./i1.js";\n'), { decls }, true).failures).toEqual(["지운 파일 src/a.ts의 부수 효과 import 차례가 src/b.ts에서 바뀌었어요: effect src/i2.ts"]);
     expect(run(before, after('import "./i1.js";\nimport "./i2.js";\n'), { decls }, true).failures).toEqual([]);
   });
 
@@ -317,6 +317,49 @@ describe("옮김 검사: 빠져나가는 꼴", () => {
       "src/main.ts: 부수 효과가 있는 import의 차례가 달라요\n  앞: effect src/x/reg.ts\n  뒤: effect src/x/boot.ts → effect src/x/reg.ts",
     ]);
     expect(run(main("./x/reg.js"), main("./x/only.js")).failures).toEqual([]);
+  });
+
+  it("입구 → 다시 내보낸 모듈 → import \"./register.js\"처럼 깊이 더해지는 초기화도 읽히는 차례에 들어간다", () => {
+    const lib = {
+      "src/x/plain.ts": "export const reg = 1;\n",
+      "src/x/other.ts": 'import "./register.js";\nexport const other = 2;\n',
+      "src/x/register.ts": 'console.log("register");\n',
+      "src/x/index.ts": 'export { reg } from "./plain.js";\nexport { other } from "./other.js";\n',
+    };
+    const main = (spec: string) => ({ ...lib, "src/main.ts": `import { reg } from "${spec}";\nexport const m = reg;\n` });
+    expect(run(main("./x/plain.js"), main("./x/index.js")).failures).toEqual([
+      "src/main.ts: 부수 효과가 있는 import의 차례가 달라요\n  앞: \n  뒤: effect src/x/register.ts",
+    ]);
+  });
+
+  it("검사하는 파일 자신의 export … from 차례도 본다(입구의 re-export 두 줄 맞바꾸기는 실패)", () => {
+    const lib = { "src/x/a.ts": 'export const a = init("a");\nfunction init(s: string) { return s; }\n', "src/x/b.ts": 'export const b = init("b");\nfunction init(s: string) { return s; }\n' };
+    const before = { ...lib, "src/x/index.ts": 'export { a } from "./a.js";\nexport { b } from "./b.js";\n' };
+    const after = { ...lib, "src/x/index.ts": 'export { b } from "./b.js";\nexport { a } from "./a.js";\n' };
+    expect(run(before, after).failures).toEqual([
+      "src/x/index.ts: 부수 효과가 있는 import의 차례가 달라요\n  앞: effect src/x/a.ts → effect src/x/b.ts\n  뒤: effect src/x/b.ts → effect src/x/a.ts",
+    ]);
+  });
+
+  it("줄 차례가 바뀌어도 ESM이 평가하는 차례(깊이 우선 뒤차례)가 같으면 통과한다", () => {
+    const lib = { "src/x/a.ts": 'export const a = init("a");\nfunction init(s: string) { return s; }\n', "src/x/b.ts": 'import { a } from "./a.js";\nexport const b = init(a);\nfunction init(s: string) { return s; }\n' };
+    const before = { ...lib, "src/x/index.ts": 'export { a } from "./a.js";\nexport { b } from "./b.js";\n' };
+    const after = { ...lib, "src/x/index.ts": 'export { b } from "./b.js";\nexport { a } from "./a.js";\n' };
+    expect(run(before, after).failures).toEqual([]);
+  });
+
+  it("JS 파일은 값으로 쓰지 않는 import도 실행 때 남으니 차례를 본다(TS 파일만 지워진다)", () => {
+    const lib = { "src/x/a.ts": 'console.log("a");\n', "src/x/b.ts": 'console.log("b");\n' };
+    const js = (lines: string[]) => ({ ...lib, "ui/src/phone/core/boot.js": `${lines.join("\n")}\nexport const k = 1;\n` });
+    const A1 = 'import { a } from "../../../../src/x/a.js";';
+    const B1 = 'import { b } from "../../../../src/x/b.js";';
+    expect(run(js([A1, B1]), js([B1, A1])).failures).toEqual([
+      "ui/src/phone/core/boot.js: 부수 효과가 있는 import의 차례가 달라요\n  앞: effect src/x/a.ts → effect src/x/b.ts\n  뒤: effect src/x/b.ts → effect src/x/a.ts",
+    ]);
+    const ts = (lines: string[]) => ({ ...lib, "src/y/boot.ts": `${lines.join("\n")}\nexport const k = 1;\n` });
+    const A2 = 'import { a } from "../x/a.js";';
+    const B2 = 'import { b } from "../x/b.js";';
+    expect(run(ts([A2, B2]), ts([B2, A2])).failures).toEqual([]);
   });
 
   it("새 자기 import(선언을 합치며 자기 파일 뒤쪽 const를 별칭으로 먼저 읽음)는 실패한다", () => {
