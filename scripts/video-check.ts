@@ -612,9 +612,20 @@ export function phoneUrl(phone: string, clip: string, steps: string[], camera: C
 }
 
 /** 탭 크기를 DASH_SIZE(모바일 아님)로 두고 대시보드 <api>/를 연다. */
-async function openDashboard(tab: Page, api: string): Promise<void> {
+/** 대시보드 탭·창: 크기를 맞추고 대시보드로 옮긴 뒤, 그 문서가 다 불러와질 때까지(주소가 대시보드 origin이고 readyState complete) 기다린다.
+ *  Page.navigate 답은 새 문서가 들어서기(commit) 전에 오므로, 바로 Page.startScreencast를 보내면 「Not attached to an active page」로 실패한다
+ *  (about:blank → http 주소는 렌더러가 바뀐다). 옛 빈 문서(origin "null")·붙지 못한 답은 아직으로 본다. waitMs 안에 안 되면 던진다. */
+export async function openDashboard(tab: Pick<Page, "send">, api: string, o: { waitMs?: number; everyMs?: number } = {}): Promise<void> {
   await withTimeout(tab.send("Emulation.setDeviceMetricsOverride", { width: DASH_SIZE[0], height: DASH_SIZE[1], deviceScaleFactor: 1, mobile: false }), 10_000, "대시보드 탭 크기");
   await withTimeout(tab.send("Page.navigate", { url: `${api}/` }), 30_000, "대시보드 열기");
+  const origin = new URL(`${api}/`).origin;
+  const waitMs = o.waitMs ?? 30_000;
+  for (const end = Date.now() + waitMs; Date.now() < end; await sleep(o.everyMs ?? 100)) {
+    const r = await tab.send("Runtime.evaluate", { expression: "[location.origin, document.readyState]", returnByValue: true }).catch(() => null);
+    const v = r?.result?.result?.value as [string, string] | undefined;
+    if (Array.isArray(v) && v[0] === origin && v[1] === "complete") return;
+  }
+  throw new Error(`대시보드를 ${Math.round(waitMs / 1000)}초 안에 다 불러오지 못했어요`);
 }
 
 /** 대시보드 사진을 file에 쓴다. open(--record로 판정 내내 띄운 대시보드 창)이 있으면 그 창을 바로 찍고,

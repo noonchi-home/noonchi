@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { HistoryRow } from "../src/contract/history.js";
 import type { WorldEye, WorldObject, WorldView } from "../src/contract/world.js";
-import { SEND_SAY, clickChoice, clock, costLine, judgeInput, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, stepVerdict, timeline, twinRows, usedServer, roomLabels, ownAssetFailures, videoClock, runTimeline, clipEnd, syncWarning, mustStop, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
+import { SEND_SAY, clickChoice, clock, costLine, judgeInput, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, stepVerdict, timeline, twinRows, usedServer, roomLabels, ownAssetFailures, videoClock, runTimeline, clipEnd, syncWarning, mustStop, openDashboard, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
 import { createServer, type Server } from "node:http";
 import { listenRetry } from "../src/shared/net.js";
 import type { SceneJson } from "../src/contract/layout.js";
@@ -249,6 +249,34 @@ describe("video-check", () => {
     const md = markdown({ clip: "long.mp4", mode: "가짜 서버", ranAt: "2026-11-17 10:00:00", rows: [], notes: [], verdict: "판정: 명령 없음", cost: "VLM 0장", warnings: [warn] });
     expect(md.indexOf(warn)).toBeGreaterThan(0);
     expect(md.indexOf(warn)).toBeLessThan(md.indexOf("| 영상 시각 |"));
+  });
+
+  // 2026-11-17 녹화 시작 실패(4번 중 2번 「녹화 시작 응답(dash) 오류: Not attached to an active page」): Page.navigate 답은 새 문서가 들어서기(commit) 전에 와서
+  // 바로 Page.startScreencast를 보내면 실패한다(따로 재현: navigate 답 바로 뒤 12번 중 11번 실패, 불러오기 끝을 기다리면 12번 모두 됨)
+  describe("대시보드 창 열기(openDashboard)는 대시보드 문서가 다 불러와질 때까지 기다린다", () => {
+    const fakeTab = (answers: (unknown[] | null)[]) => {
+      const calls: string[] = [];
+      let i = 0;
+      return {
+        calls,
+        send: async (method: string) => {
+          calls.push(method);
+          if (method !== "Runtime.evaluate") return {};
+          const v = answers[Math.min(i++, answers.length - 1)];
+          return v === null ? { error: { message: "Not attached to an active page" } } : { result: { result: { value: v } } };
+        },
+      };
+    };
+    it("크기 → 옮기기 뒤, 옛 빈 문서(about:blank)·붙지 못함·불러오는 중을 지나 대시보드 주소가 complete일 때 돌아온다", async () => {
+      const tab = fakeTab([["null", "complete"], null, ["http://127.0.0.1:8200", "loading"], ["http://127.0.0.1:8200", "complete"]]);
+      await openDashboard(tab as never, "http://127.0.0.1:8200", { waitMs: 5_000, everyMs: 1 });
+      expect(tab.calls.slice(0, 2)).toEqual(["Emulation.setDeviceMetricsOverride", "Page.navigate"]);
+      expect(tab.calls.filter((c) => c === "Runtime.evaluate")).toHaveLength(4);
+    });
+    it("정한 시간 안에 다 불러오지 못하면 던진다", async () => {
+      const tab = fakeTab([["null", "complete"]]);
+      await expect(openDashboard(tab as never, "http://127.0.0.1:8200", { waitMs: 50, everyMs: 5 })).rejects.toThrow(/대시보드/);
+    });
   });
 
   // Codex(2f54d81): 짝 넘침 뒤에도 마지막 짝에서 1:1로 이어 세어 --say를 보냈다(영상이 멈추면 예정보다 먼저 승인·완료 말이 나가고, 끝 코드로 되돌릴 수 없다)
