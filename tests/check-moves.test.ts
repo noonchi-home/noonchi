@@ -421,6 +421,13 @@ describe("옮김 검사: 빠져나가는 꼴", () => {
   });
 });
 
+describe("옮김 검사: 타입 선언 파일", () => {
+  it(".d.ts·.d.mts·.d.cts 타입 선언 파일은 코드로 읽지 않는다(값 없는 선언이라 파서가 거절함)", () => {
+    const decl = (n: number) => `export const WIN: { before: number };\nexport declare function f${n}(): void;\n`;
+    expect(run({ ...BEFORE, "ui/scripts/judge.d.mts": decl(1) }, { ...AFTER, "ui/scripts/judge.d.mts": decl(2) }, MOVE).failures).toEqual([]);
+  });
+});
+
 describe("옮김 검사: git 두 커밋", () => {
   const roots: string[] = [];
   afterEach(() => { while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true }); });

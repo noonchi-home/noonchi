@@ -13,7 +13,8 @@ export const MOVES_DIR = "docs/superpowers/specs/2026-11-16-domain-split/moves/"
 
 /** 파싱하는 코드 파일 확장자. */
 export const CODE_EXT = [".ts", ".tsx", ".mts", ".js", ".jsx", ".mjs"] as const;
-export const isCode = (path: string) => CODE_EXT.some((e) => path.endsWith(e)) && !path.endsWith(".d.ts");
+/** 타입 선언 파일(.d.ts·.d.mts·.d.cts)은 값 없는 선언이라 코드로 읽지 않는다. */
+export const isCode = (path: string) => CODE_EXT.some((e) => path.endsWith(e)) && !/\.d\.[mc]?ts$/.test(path);
 
 export function parseCode(path: string, text: string): AstNode {
   const lang = path.endsWith(".tsx") ? "tsx" : /\.m?ts$/.test(path) ? "ts" : "jsx";
