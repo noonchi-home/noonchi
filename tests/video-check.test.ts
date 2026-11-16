@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { HistoryRow } from "../src/contract/history.js";
 import type { WorldEye, WorldObject, WorldView } from "../src/contract/world.js";
-import { SEND_SAY, clickChoice, clock, costLine, judgeInput, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, stepVerdict, timeline, twinRows, usedServer, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
+import { SEND_SAY, clickChoice, clock, costLine, judgeInput, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, stepVerdict, timeline, twinRows, usedServer, roomLabels, ownAssetFailures, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
 import { createServer, type Server } from "node:http";
 import { listenRetry } from "../src/shared/net.js";
 import type { SceneJson } from "../src/contract/layout.js";
@@ -20,6 +20,7 @@ const cup = (id: string, place: string | null, o: Partial<WorldObject> = {}): Wo
   facts: place ? { place: { value: place, at_ms: 0, since_ms: 0, certainty: "confirmed" } } : {},
   answered_ms: null, devices: [], closer_hold: false, followed_by: null, ...o,
 });
+const ROOMS = new Map([["living", "거실·복도"], ["kitchen", "주방·식당"]]);
 const world = (at_ms: number, e: WorldEye | null, objects: WorldObject[]): WorldView => ({
   at_ms, objects, eye: e, fixtures: [], devices: [], frame_ms: null, vlm_missing: 0, yolo_missing: 0,
   person: { visible: false, since_ms: null, last_seen_ms: null, count: 0, position: null, position_ms: null, room: null, room_label: null, near: [], holding: [], facts: {}, answered_ms: null },
@@ -106,14 +107,34 @@ describe("video-check", () => {
     const t0 = 0;
     const e = eye("living", "거실", 8.46, 3.92);
     const a = twinRows(null, world(1000, e, [cup("cup_1", "on_table")]), t0);
-    const b = twinRows(a.seen, world(2000, e, [cup("cup_1", "in_hand", { surface: null, surface_label: null })]), t0);
-    expect(b.rows).toEqual([{ ms: 2000, kind: "트윈", text: "컵 cup_1 living · 손에 있음", n: 1 }]);
+    const b = twinRows(a.seen, world(2000, e, [cup("cup_1", "in_hand", { surface: null, surface_label: null })]), t0, ROOMS);
+    // 면이 없으면 방 이름(장면의 방 label)을 쓴다. 방 id(living)는 쓰지 않는다
+    expect(b.rows).toEqual([{ ms: 2000, kind: "트윈", text: "컵 cup_1 거실·복도 · 손에 있음", n: 1 }]);
+    // 방 이름을 모르면 「방 모름」
+    expect(texts(twinRows(a.seen, world(2000, e, [cup("cup_1", "in_hand", { surface: null, surface_label: null })]), t0).rows)).toEqual(["컵 cup_1 방 모름 · 손에 있음"]);
     const c = twinRows(b.seen, world(3000, e, [cup("cup_1", "in_sink", { surface: "sink_kitchen", surface_label: "싱크대", room: "kitchen" })]), t0);
     expect(texts(c.rows)).toEqual(["컵 cup_1 싱크대 · 싱크대 안"]);
     // 옮긴 컵에 새 id가 붙음: 앞 컵은 그대로라 줄 없음, 새 컵 한 줄
     const sinkCup = cup("cup_9", "in_sink", { surface: "sink_kitchen", surface_label: "싱크대", room: "kitchen" });
     const d = twinRows(b.seen, world(3000, e, [cup("cup_1", "in_hand", { surface: null, surface_label: null }), sinkCup]), t0);
     expect(texts(d.rows)).toEqual(["컵 cup_9 싱크대 · 싱크대 안"]);
+  });
+  it("장면(/api/scene)의 방 목록으로 방 id → 이름 표를 만든다(이름이 없으면 id)", () => {
+    expect(roomLabels({ scene: { plan: { rooms: [{ id: "living", label: "거실·복도" }, { id: "kitchen" }] } } })).toEqual(new Map([["living", "거실·복도"], ["kitchen", "kitchen"]]));
+    expect(roomLabels(null)).toEqual(new Map());
+    expect(roomLabels({ scene: { plan: {} } })).toEqual(new Map());
+  });
+  it("폰 페이지 자기 자원(<폰 주소>/assets/…)을 받지 못한 오류만 찾는다: 다른 주소·favicon·자원 아닌 오류는 아니다", () => {
+    const base = "http://127.0.0.1:8210";
+    const errors = [
+      "받기 실패: net::ERR_CONNECTION_FAILED",
+      "log: Failed to load resource: net::ERR_CONNECTION_FAILED http://127.0.0.1:8210/assets/alert-dialog-PYGbO-i9.js",
+      "log: Failed to load resource: net::ERR_CONNECTION_FAILED http://127.0.0.1:8210/favicon.ico",
+      "log: Failed to load resource: the server responded with a status of 404 (Not Found) http://127.0.0.1:8200/api/x",
+      "console.error: 무엇",
+    ];
+    expect(ownAssetFailures(errors, base)).toEqual(["http://127.0.0.1:8210/assets/alert-dialog-PYGbO-i9.js"]);
+    expect(ownAssetFailures(errors.filter((e) => !e.includes("/assets/")), base)).toEqual([]);
   });
   it("트윈 줄: 컵 상태가 시야 밖·사라짐이면 덧붙이고, 놓인 곳·자리를 모르면 그렇게 쓰고, 목록에서 빠졌다 같은 값으로 오면 줄이 없다", () => {
     const a = twinRows(null, world(1000, null, [cup("cup_1", null, { surface_label: null, room: null })]), 0);

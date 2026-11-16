@@ -9,6 +9,7 @@
 // 끝내기(judgeState): 계획이 닫혔고 누를 답이 없고 끄기 추적(hot·끄기 안내, GET /api/plan의 같은 답)이 남지 않으면 끝, 영상이 멈춘(첫 영상 끝·단계 영상 마지막 장면 붙잡기) 뒤 --tail초,
 // 지금 영상 길이 + 60초, 판 전체 --max초. 끄기 안내가 남은 채 끝나면 「끝까지 돌지 않음」에 남긴다.
 // 영상 모드 판정: 헤드리스 크롬 하나(390×844)로 폰 페이지 <phone>/phone/?clip=<clip>을 열고 「AR 시작」을 눌러 영상을 끝까지 튼다.
+// 폰 페이지 자기 자원(<phone>/assets/…)을 못 받았으면 「AR 시작」 전에 페이지를 한 번 다시 읽고 판정 줄 위에 적는다(이 PC는 127.0.0.1 연결이 가끔 실패한다).
 // --step(여러 번, 종류 go·pick·place·do, 낱말 a-z·_)은 폰 주소에 step=으로 하나씩 붙는다. 폰 페이지는 종류가 같고 대상 id에 낱말이 든 명령이 오면
 // 그 단계 영상으로 바꿔 튼다(영상 시각은 이어 셈). --step·--approve·--done-on이 있으면 --done-after 기본은 0이다(고른 명령 밖에는 단추를 누르지 않고 비전·폰 위치로 단계가 넘어가는지 본다).
 // 판마다 서버를 새로 띄운다. 앞 판 계획이 끝나지 않았거나 엔진 프레임을 이미 받은 서버(World State가 남음)면 크롬을 띄우기 전에 멈춘다.
@@ -16,6 +17,7 @@
 // 새 명령이 오면 --done-after초 뒤 엄지 자리 첫 답 단추(승인·완료)를 누른다(0이면 안 누름).
 // 영상이 끝나도 계획이 열려 있으면 최대 30초 더 보고, 남은 답과 그 뒤 온 명령을 누른다. 단계 영상이 새로 시작되면 끝 시각을 지우고 다시 끝날 때까지 본다.
 // t0는 폰 페이지가 서버 시계로 고친 마지막 값을 쓴다.
+// 트윈 컵 줄은 면 이름, 면이 없으면 장면(GET /api/scene)의 방 이름을 쓴다.
 // 끝나면 서버 기록(GET /api/history: 사람·물건 등장·사라짐, PAM 판단, 계획·단계, 실행, 관찰 모드가 고른 것(가까이 보기)), 폰 명령, 바꾼 단계 영상(영상 줄), 트윈 줄(눈 방이 바뀌거나
 // 마지막 눈 줄에서 0.5m 넘게 옮김, 컵 상태·놓인 곳·면·방이 바뀜)을 영상 시각(at_ms − t0)순 표 하나로 합쳐 찍고 --out에 markdown으로 쓴다.
 // 같은 출처의 같은 글이 이어지면 한 줄로 묶고 번 수를 붙인다. 표 밑에 판정 줄(첫 명령 시각, --expect-after초 전 명령, 첫 명령의 계획이 끝났는지),
@@ -159,9 +161,23 @@ const placeLabel = (v: string | null | undefined): string | null => (v ? ((STATE
 const cupSeen = (o: WorldObject): CupSeen => ({ status: o.status, place: o.facts.place?.value ?? null, surface_label: o.surface_label, room: o.room });
 const CUP_STATUS: Record<WorldObject["status"], string> = { present: "", out_of_view: " · 시야 밖", gone: " · 사라짐" };
 
+/** 장면(GET /api/scene 답)의 방 목록 → 방 id → 이름 표. 이름이 없으면 id. 장면을 모르면 빈 표. */
+export function roomLabels(scene: { scene?: { plan?: { rooms?: { id: string; label?: string }[] } } } | null): Map<string, string> {
+  return new Map((scene?.scene?.plan?.rooms ?? []).map((r) => [r.id, r.label ?? r.id]));
+}
+
+/** 폰 페이지 자기 자원(<base>/assets/…)을 받지 못한 오류의 자원 주소들(크롬 「Failed to load resource」 로그 줄). */
+export function ownAssetFailures(errors: readonly string[], base: string): string[] {
+  const prefix = `${base.replace(/\/+$/, "")}/assets/`;
+  return errors.flatMap((e) => {
+    const m = /^log: Failed to load resource: .*?(\S+)\s*$/.exec(e);
+    return m && m[1]!.startsWith(prefix) ? [m[1]!] : [];
+  });
+}
+
 /** World State 하나 → 트윈 줄(ms = world.at_ms − t0). 눈: 처음, 방이 바뀜, 마지막 눈 줄에서 EYE_MOVE_M 넘게 옮김.
- *  컵(cls cup): 처음, 상태·놓인 곳·면 이름·방이 바뀜. 목록에서 빠진 컵은 앞 값을 남긴다. */
-export function twinRows(prev: TwinSeen | null, world: WorldView, t0: number): { rows: Row[]; seen: TwinSeen } {
+ *  컵(cls cup): 처음, 상태·놓인 곳·면 이름·방이 바뀜. 목록에서 빠진 컵은 앞 값을 남긴다. 면이 없으면 방 이름(rooms, roomLabels)을 쓰고 모르면 「방 모름」. */
+export function twinRows(prev: TwinSeen | null, world: WorldView, t0: number, rooms: ReadonlyMap<string, string> = new Map()): { rows: Row[]; seen: TwinSeen } {
   const ms = world.at_ms - t0;
   const rows: Row[] = [];
   let eye = prev?.eye ?? null;
@@ -177,7 +193,8 @@ export function twinRows(prev: TwinSeen | null, world: WorldView, t0: number): {
     const was = cups[o.id];
     if (was && was.status === now.status && was.place === now.place && was.surface_label === now.surface_label && was.room === now.room) continue;
     cups[o.id] = now;
-    rows.push({ ms, kind: "트윈", text: `컵 ${o.id} ${now.surface_label ?? now.room ?? "자리 모름"} · ${placeLabel(now.place) ?? "놓인 곳 모름"}${CUP_STATUS[now.status]}`, n: 1 });
+    const where = now.surface_label ?? (now.room ? rooms.get(now.room) ?? "방 모름" : "자리 모름");
+    rows.push({ ms, kind: "트윈", text: `컵 ${o.id} ${where} · ${placeLabel(now.place) ?? "놓인 곳 모름"}${CUP_STATUS[now.status]}`, n: 1 });
   }
   return { rows, seen: { eye, cups } };
 }
@@ -601,6 +618,17 @@ async function main(): Promise<number> {
         console.log(`[video-check] 녹화 시작 · ${RECORD_FPS}fps · 폰 탭 ${String(shown)} · ${framesDir}`);
       }
 
+      // 폰 페이지 자기 자원을 못 받았으면(이 PC는 127.0.0.1 연결이 가끔 실패하고 크롬은 다시 받지 않는다) 「AR 시작」 전에 한 번 다시 읽는다
+      for (const end = Date.now() + 30_000; (await cdp.evaluate("document.readyState", 10_000).catch(() => "")) !== "complete" && Date.now() < end; ) await sleep(250);
+      const failed = ownAssetFailures(errors, fake?.phone ?? args.phone);
+      if (failed.length) {
+        recordNotes.push(`자원 받기 실패로 폰 페이지를 한 번 다시 읽음: ${failed.join(", ")}`);
+        errors.length = 0;
+        await cdp.send("Page.navigate", { url });
+        await sleep(500);
+        for (const end = Date.now() + 30_000; (await cdp.evaluate("document.readyState", 10_000).catch(() => "")) !== "complete" && Date.now() < end; ) await sleep(250);
+      }
+
       // 「AR 시작」을 누르고 재생이 시작될 때까지(t0)
       for (const end = Date.now() + 60_000; !(await cdp.evaluate(CLICK_START, 10_000).catch(() => false)); await sleep(250)) {
         if (Date.now() > end || stop) throw new Error("60초 안에 「AR 시작」 단추를 누를 수 없음");
@@ -616,11 +644,13 @@ async function main(): Promise<number> {
 
       // 트윈 줄: 1초마다 World State를 읽어 바뀐 것만 쌓는다(ms는 서버 시각, 끝에 t0를 뺀다). 못 받으면 넘어간다
       const twin: { seen: TwinSeen | null; rows: Row[]; last: WorldView | null } = { seen: null, rows: [], last: null };
+      // 컵 줄의 방 이름: 장면의 방 목록(못 받으면 「방 모름」)
+      const rooms = roomLabels(await getJson<{ scene?: { plan?: { rooms?: { id: string; label?: string }[] } } }>(`${api}/api/scene`));
       const pollWorld = async () => {
         const w = (await getJson<{ world?: WorldView }>(`${api}/api/world`))?.world;
         if (!w) return;
         try {
-          const r = twinRows(twin.seen, w, 0);
+          const r = twinRows(twin.seen, w, 0, rooms);
           twin.seen = r.seen;
           twin.rows.push(...r.rows);
           twin.last = w;
