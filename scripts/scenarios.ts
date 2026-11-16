@@ -2,7 +2,7 @@
 // npm run demo와 tests/e2e.test.ts가 함께 쓴다.
 
 import WebSocket from "ws";
-import type { DeviceHub, DeviceSpec, DeviceState } from "../src/hub/types.js";
+import type { DeviceHub, DeviceSpec, DeviceState } from "../src/devices/hub/types.js";
 import { fetchRetry } from "../src/shared/net.js";
 
 export interface ScenarioRow {

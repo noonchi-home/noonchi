@@ -1,7 +1,7 @@
-// ThinQ Connect 클라이언트(src/thinq/client.ts): 공식 SDK와 같은 주소·머리글·경로, 오류 글에 토큰이 없다.
+// ThinQ Connect 클라이언트(src/devices/thinq/client.ts): 공식 SDK와 같은 주소·머리글·경로, 오류 글에 토큰이 없다.
 // 실제 ThinQ는 부르지 않는다. 가짜 서버(tests/helpers/thinq.ts)만 쓴다.
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ThinqClient, ThinqError, thinqConfig } from "../src/thinq/client.js";
+import { ThinqClient, ThinqError, thinqConfig } from "../src/devices/thinq/client.js";
 import { FAKE_AC, startFakeThinq, type FakeThinq } from "./helpers/thinq.js";
 import { guardFetch } from "./setup/no-real-thinq.js";
 

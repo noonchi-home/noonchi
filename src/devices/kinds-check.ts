@@ -1,10 +1,10 @@
-// 가전 종류 등록부 검증(src/model/kinds.ts): 틀린 조합을 까닭 목록으로 돌려준다. 서버 시작(src/server/start.ts)이 부르고, 까닭이 있으면 시작을 막는다.
+// 가전 종류 등록부 검증(src/devices/kinds.ts): 틀린 조합을 까닭 목록으로 돌려준다. 서버 시작(src/server/start.ts)이 부르고, 까닭이 있으면 시작을 막는다.
 // 1) confirm.command는 그 종류의 모든 실제 사양(기본 프로필, twinTypes마다 capabilities·matterDeviceType를 덮어쓴 것)에서 정규화해도 같은 이름이고 그 사양이 받는 명령이다.
 // 2) 위험 켜기 종류(riskyOn)에는 confirm을 쓰지 않고 riskyReason을 둔다.
 // 3) ThinQ 어댑터는 그 종류의 모든 사양이 낼 수 있는 명령을 받아야 한다. 읽기만 하는 어댑터에는 제어 없는 프로필만 붙인다.
 // 4) 손 조작: 켜기·끄기는 프로필 제어가 있을 때만, 열기·닫기는 문 센서(door)가 있거나 그 종류 카메라 설비가 열림(open) 면을 볼 때만.
-import type { Capability, Command, CommandType } from "../hub/types.js";
-import { THINQ_ADAPTERS } from "../thinq/appliance.js";
+import type { Capability, Command, CommandType } from "./hub/types.js";
+import { THINQ_ADAPTERS } from "./thinq/appliance.js";
 import { CLASSES } from "../world/vocab.js";
 import type { KindEntry } from "./kinds.js";
 import { checkCommand, normalizeCommand } from "./mapping.js";

@@ -2,8 +2,8 @@
 // 실제 matter.js는 tests/e2e.test.ts에서 쓴다. 여기서는 가짜 matter 모듈로 분기만 본다.
 
 import { describe, expect, it } from "vitest";
-import { MemoryHub } from "../src/hub/memory.js";
-import type { DeviceSpec } from "../src/hub/types.js";
+import { MemoryHub } from "../src/devices/hub/memory.js";
+import type { DeviceSpec } from "../src/devices/hub/types.js";
 import { startHub } from "../src/server/hubFactory.js";
 import { ROOMS, homeDevices } from "./helpers/home.js";
 

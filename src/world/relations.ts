@@ -1,7 +1,7 @@
 // 관계표와 가전 상태(출처: docs/provenance.md). 물건 종류 → 관련 가전 종류, 트윈 속성 값 → 가전 상태 키·글(src/world/vocab.ts DEVICE_STATES), 남은 시간.
 // 사실만 붙이고 할 일은 넣지 않는다.
 import type { ObjClass } from "../contract/world.js";
-import { kindEntry } from "../model/kinds.js";
+import { kindEntry } from "../devices/kinds.js";
 import { DEVICE_STATES, type DeviceStateKey } from "./vocab.js";
 
 const DISHES = ["dishwasher"];

@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
-import type { DeviceKind } from "../src/hub/types.js";
-import { DEFAULT_TWIN_DIR, initialTwinState, loadDevices, loadTwin, resolveTwinStudioDir } from "../src/model/devices.js";
+import type { DeviceKind } from "../src/devices/hub/types.js";
+import { DEFAULT_TWIN_DIR, initialTwinState, loadDevices, loadTwin, resolveTwinStudioDir } from "../src/devices/devices.js";
 
 const REPO = fileURLToPath(new URL("..", import.meta.url));
 const STUDIO = resolveTwinStudioDir(process.env.TWIN_STUDIO_DIR, REPO);

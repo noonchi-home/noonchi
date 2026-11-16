@@ -14,8 +14,8 @@ import { agentEndpoint, createProvider, resolveProviderName } from "../src/agent
 import { OpenAIProvider } from "../src/agent/providers/openai.js";
 import { findDevices } from "../src/agent/search.js";
 import { AGENT_TOOLS, LEAVE_IT, MCP_TOOLS, TOOLS, localBackend, runTool, toolJsonSchema } from "../src/agent/tools.js";
-import { MemoryHub } from "../src/hub/memory.js";
-import { loadTwin, resolveTwinStudioDir } from "../src/model/devices.js";
+import { MemoryHub } from "../src/devices/hub/memory.js";
+import { loadTwin, resolveTwinStudioDir } from "../src/devices/devices.js";
 import { ROOMS, homeDevices, makeHome, twin } from "./helpers/home.js";
 import { startFakePam } from "./helpers/pam.js";
 import { CUP_FSM_MEMORY, CUP_TASKS } from "../src/brain/decision.js";

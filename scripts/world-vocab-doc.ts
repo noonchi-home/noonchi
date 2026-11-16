@@ -1,11 +1,11 @@
-// docs/world-vocabulary.md의 표를 낱말 표(src/world/vocab.ts, vocab-doc.ts), 가전 종류 등록부(src/model/kinds.ts camera·longEvents)와 이 집 가전(twin/)에서 만든다.
+// docs/world-vocabulary.md의 표를 낱말 표(src/world/vocab.ts, vocab-doc.ts), 가전 종류 등록부(src/devices/kinds.ts camera·longEvents)와 이 집 가전(twin/)에서 만든다.
 // 표는 <!-- vocab:이름 --> … <!-- /vocab:이름 --> 사이에만 쓴다. tests/world-vocab.test.ts가 문서 표와 만든 표가 다르면 실패한다.
 //   npx tsx scripts/world-vocab-doc.ts          문서 표를 다시 쓴다
 //   npx tsx scripts/world-vocab-doc.ts --check  다르면 1로 끝난다
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { loadTwin } from "../src/model/devices.js";
-import { KINDS, KIND_ORDER, cameraKindOf } from "../src/model/kinds.js";
+import { loadTwin } from "../src/devices/devices.js";
+import { KINDS, KIND_ORDER, cameraKindOf } from "../src/devices/kinds.js";
 import { rulesOf } from "../src/world/sight.js";
 import { deviceStateKeys, deviceText } from "../src/world/relations.js";
 import { CLASS_DOC, DEVICE_LONG_DOC, DEVICE_STATE_DOC, STATE_DOC } from "../src/world/vocab-doc.js";

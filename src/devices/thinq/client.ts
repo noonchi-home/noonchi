@@ -4,8 +4,8 @@
 // 토큰(PAT)은 THINQ_TOKEN으로만 받고, 오류 글에서 지운다. 실제 모드(src/server/start.ts)에서만 만든다.
 
 import { randomUUID } from "node:crypto";
-import type { ThinqDeviceView } from "../contract/setup.js";
-import { fetchRetry } from "../shared/net.js";
+import type { ThinqDeviceView } from "../../contract/setup.js";
+import { fetchRetry } from "../../shared/net.js";
 
 type Env = Record<string, string | undefined>;
 

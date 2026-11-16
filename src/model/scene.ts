@@ -1,10 +1,10 @@
 // 서버가 읽는 집 장면: scene.json(twin-studio 결과) + 도면 설비(집 data의 drawn_fixtures.json) + 시연용으로 더하는 가전(집 data의 added_devices.json).
-// 계획 평면도·배치 편집기·/api/scene·기기 목록(src/model/devices.ts loadFromScene)이 같은 것을 쓴다.
+// 계획 평면도·배치 편집기·/api/scene·기기 목록(src/devices/devices.ts loadFromScene)이 같은 것을 쓴다.
 // 더한 가전은 구운 3D에 없어 배치 편집기가 연결 때 add로 보낸다(src/layout/editor.ts unbaked, 더한 id 목록 added).
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { SceneJson, SceneObject } from "../layout/editor.js";
-import { profileAttrs } from "./mapping.js";
+import { profileAttrs } from "../devices/mapping.js";
 import { withDrawn, type DrawnFixture } from "./drawn.js";
 import type { Home } from "./homes.js";
 
@@ -34,7 +34,7 @@ function catalogEntry(dataDir: string, type: string): Record<string, unknown> | 
 type SceneHome = Pick<Home, "scenePath" | "dataDir"> & Partial<Pick<Home, "libraryDir">>;
 
 /** 더하는 가전 → scene.json 물건 모양. 모델은 집 산출물 assets에 있으면 그것, 없으면 공용 라이브러리(/twin/lib/)의 같은 종류 GLB, 둘 다 없으면 null
- *  (대시보드 트윈이 그 자리에 회색 상자로 그린다). 카탈로그가 없는 종류는 등록부 프로필의 제어·센서 attr을 쓴다(src/model/mapping.ts profileAttrs). */
+ *  (대시보드 트윈이 그 자리에 회색 상자로 그린다). 카탈로그가 없는 종류는 등록부 프로필의 제어·센서 attr을 쓴다(src/devices/mapping.ts profileAttrs). */
 function addedObject(d: AddedDevice, home: SceneHome): SceneObject {
   const c = catalogEntry(home.dataDir, d.type) ?? {};
   const category = typeof c.category === "string" ? c.category : "appliances";

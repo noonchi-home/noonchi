@@ -1,4 +1,4 @@
-// 카메라로 본 가전 설비 → 트윈 가전(규칙은 가전 종류 등록부 src/model/kinds.ts camera, 낱말 표 src/world/vocab.ts SIGHT_MATCH·SIGHT_STABLE).
+// 카메라로 본 가전 설비 → 트윈 가전(규칙은 가전 종류 등록부 src/devices/kinds.ts camera, 낱말 표 src/world/vocab.ts SIGHT_MATCH·SIGHT_STABLE).
 // - 고르기: 그 사진을 찍은 눈의 방에서 그 설비로 맞추는 종류(camera.fixture)이고 규칙 속성이 있는 트윈 가전 가운데, 가운데 자리가 시야 안인 것.
 //   상자 가운데 광선과 가전 가운데 방향의 각이 가장 작은 것을 고른다. 너무 멀거나(maxDeg) 둘 이상을 가르지 못하면(marginDeg) 고르지 않는다.
 // - 값: 그 감지에 대한 VLM 답의 사실 값 → 트윈 속성 값. 쓰는 중처럼 답에 없으면 꺼짐인 면(absent)은 그 면 값을 하나도 말하지 않았을 때.
@@ -7,7 +7,7 @@
 import type { SightMiss } from "../contract/world.js";
 import type { CameraView } from "../contract/observe.js";
 import { inView, rayDir } from "./place.js";
-import { KINDS, cameraKindOf } from "../model/kinds.js";
+import { KINDS, cameraKindOf } from "../devices/kinds.js";
 import { SIGHT_MATCH, SIGHT_STABLE, STATES, type FixtureClass, type SightRule, type StateKey } from "./vocab.js";
 
 type V3 = [number, number, number];

@@ -32,14 +32,14 @@ import type { DeviceNote } from "../brain/history/recorder.js";
 import { memoryForDay, type ReflectResult } from "../brain/history/reflect.js";
 import { FEEDBACK_TEXT, PHOTO_TEXT } from "../brain/history/labels.js";
 import { datasetWriter } from "../brain/history/retention.js";
-import { SignalHub, type SignalSource } from "../hub/signals.js";
+import { SignalHub, type SignalSource } from "../devices/hub/signals.js";
 import { loadEndpoints } from "../infer/endpoints.js";
 import { createPipeline, type ObservationPipeline, type PipelineInject } from "../observe/pipeline.js";
-import type { DeviceHub, DeviceState } from "../hub/types.js";
+import type { DeviceHub, DeviceState } from "../devices/hub/types.js";
 import type { LayoutEditor } from "../layout/editor.js";
 import { FOCUS_TTL_MS, focusFromActions, type Focus } from "../layout/focus.js";
 import { loadLayout } from "../layout/load.js";
-import { loadTwin, type TwinData } from "../model/devices.js";
+import { loadTwin, type TwinData } from "../devices/devices.js";
 import { listHomes } from "../model/homes.js";
 import { loadScene } from "../model/scene.js";
 import { EyeFeed } from "../phone/feed.js";
@@ -59,7 +59,7 @@ import { surfacesFromLayout, type PlaneSurface } from "../world/place.js";
 import { Decider } from "../brain/decide.js";
 import { WorldState } from "../world/state.js";
 import { Trigger, loadTriggerConfig } from "../world/trigger.js";
-import type { ThinqLink } from "../thinq/link.js";
+import type { ThinqLink } from "../devices/thinq/link.js";
 import { createApp, type TwinHomeApp } from "./app.js";
 import { startHub, type HubKind, type MatterTransport, type StartHubOptions } from "./hubFactory.js";
 
@@ -267,7 +267,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     const surfaces = surfaceSource(layout?.editor);
     const placeAt = placeLocator(layout?.editor, surfaces);
     if (brainWanted && !phoneOn) log("[경고] BRAIN=1은 PHONE_PORT가 있어야 합니다(폰 카메라가 입력). 관찰 흐름을 끕니다.");
-    // 카메라로 본 가전 상태는 허브로 넘긴다(src/hub/signals.ts observe): 실제 출처가 없으면 기기 상태가 되고, 실제 상태와 다르면 처음 한 번 로그에 남긴다
+    // 카메라로 본 가전 상태는 허브로 넘긴다(src/devices/hub/signals.ts observe): 실제 출처가 없으면 기기 상태가 되고, 실제 상태와 다르면 처음 한 번 로그에 남긴다
     const world = brainWanted && phoneOn
       ? new WorldState({
         surfaces, floorAt: floorLookup(plan.rooms), roomAt: roomNamedAt(floorPlan, twin.rooms), devices: () => signals.list(),

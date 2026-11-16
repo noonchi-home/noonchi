@@ -6,7 +6,7 @@
 
 import type { ClientNode, Endpoint, ServerNode } from "@matter/main";
 import { resolve } from "node:path";
-import type { TwinData } from "../model/devices.js";
+import type { TwinData } from "../devices.js";
 import {
   checkCommand,
   defaultTwinValue,
@@ -16,7 +16,7 @@ import {
   summaryFromClusters,
   twinFromMatter,
   type MatterSummary,
-} from "../model/mapping.js";
+} from "../mapping.js";
 import type { Command, CommandResult, DeviceHub, DeviceSpec, DeviceState } from "../hub/types.js";
 import { BRIDGE_DEFAULTS, createBridge, formatPairingInfo, type MatterBridge, type PairingInfo } from "./bridge.js";
 import {

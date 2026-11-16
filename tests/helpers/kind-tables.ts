@@ -1,11 +1,11 @@
 // 가전 종류 등록부 구조 검사(tests/kinds-registry.test.ts): src/·ui/src/·scripts/의 TypeScript를 TypeScript 프로그램(구문 트리 + 타입 검사기, TypeScript 7 API)으로 읽어
-// src/model/kinds.ts 밖의 가전 종류별 표를 찾는다. 까닭: 가전 종류별 값은 src/model/kinds.ts 등록부 칸으로 둔다(새 종류는 등록부 한 줄 + added_devices.json 한 줄).
+// src/devices/kinds.ts 밖의 가전 종류별 표를 찾는다. 까닭: 가전 종류별 값은 src/devices/kinds.ts 등록부 칸으로 둔다(새 종류는 등록부 한 줄 + added_devices.json 한 줄).
 // 「종류 이름」은 DeviceKind의 값(등록부 키), 「카메라 설비 이름」은 FixtureClass의 값이다.
 import { join, relative, resolve } from "node:path";
 import { API, type Checker, type Project, type Type } from "typescript/unstable/sync";
 import { SyntaxKind, computeLineStarts, type Node, type SourceFile } from "typescript/unstable/ast";
 
-export const KIND_TABLE_WHY = "가전 종류별 값은 src/model/kinds.ts 등록부 칸으로 둔다(새 종류는 등록부 한 줄 + added_devices.json 한 줄)";
+export const KIND_TABLE_WHY = "가전 종류별 값은 src/devices/kinds.ts 등록부 칸으로 둔다(새 종류는 등록부 한 줄 + added_devices.json 한 줄)";
 
 export interface KindTableHit {
   /** 저장소 기준 경로(/ 구분). */
@@ -29,15 +29,15 @@ export const TABLE_ALLOW: readonly { file: string; name: string; why: string }[]
   { file: "src/phone/sync/classes.ts", name: "LANDMARK_KEYS", why: "위치 맞추기 기준점 감지 종류(COCO) 목록" },
   { file: "src/phone/sync/landmarks.ts", name: "LANDMARK_TYPES", why: "기준점 감지 종류(COCO) → 트윈 type 표" },
   { file: "src/plan/labels.ts", name: "PLACE_SHORT", why: "평면도 물건 트윈 type → 짧은 이름 표(가구 포함)" },
-  { file: "src/model/mapping.ts", name: "MODEL_KEY", why: "Matter 모델 → 요약 키 표(모델 이름이 종류 이름과 겹친다)" },
-  { file: "src/model/kinds-check.ts", name: "CAPABILITY_COMMANDS", why: "기능(capability) → 낼 수 있는 명령 표(기능 이름 fan·covering·lock·valve가 종류 이름과 겹친다)" },
+  { file: "src/devices/mapping.ts", name: "MODEL_KEY", why: "Matter 모델 → 요약 키 표(모델 이름이 종류 이름과 겹친다)" },
+  { file: "src/devices/kinds-check.ts", name: "CAPABILITY_COMMANDS", why: "기능(capability) → 낼 수 있는 명령 표(기능 이름 fan·covering·lock·valve가 종류 이름과 겹친다)" },
 ];
 
 /** 종류 이름과 견주는 비교(compare-kind·array-kinds의 includes 꼴)를 허용하는 파일: 말 꾸밈 갈래(밝기·음량·냉방 모드 글, 제어·승인 길이 아니다). */
 export const COMPARE_ALLOW = ["src/agent/phrases.ts", "ui/src/bubbles/summary.ts"];
 
 /** 등록부 파일(검사하지 않는다). */
-export const REGISTRY_FILE = "src/model/kinds.ts";
+export const REGISTRY_FILE = "src/devices/kinds.ts";
 
 export interface KindProject {
   root: string;
@@ -92,7 +92,7 @@ const nameText = (n: Node | undefined): string => (n as unknown as { text?: stri
 /** DeviceKind·감지 종류 이름을 타입 검사기에서 읽는다(등록부를 만들기 전·뒤 모두). */
 function names(kp: KindProject): Names & { checker: Checker; project: Project } {
   for (const project of kp.projects) {
-    const types = project.program.getSourceFile(join(kp.root, "src", "hub", "types.ts"));
+    const types = project.program.getSourceFile(join(kp.root, "src", "devices/hub", "types.ts"));
     const vocab = project.program.getSourceFile(join(kp.root, "src", "world", "vocab.ts"));
     if (!types || !vocab) continue;
     const checker = project.checker;
@@ -105,7 +105,7 @@ function names(kp: KindProject): Names & { checker: Checker; project: Project } 
     };
     return { kinds: new Set(literalValues(deviceKind)), fixtures: new Set(alias("FixtureClass")), deviceKind, checker, project };
   }
-  throw new Error("src/hub/types.ts·src/world/vocab.ts를 읽지 못했어요");
+  throw new Error("src/devices/hub/types.ts·src/world/vocab.ts를 읽지 못했어요");
 }
 
 const FROM_REGISTRY = /\b(KINDS|KIND_ORDER)\b/;

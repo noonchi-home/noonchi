@@ -1,7 +1,7 @@
 // 서버가 만들어 화면에 그대로 나가는 글. npm run lint가 이 파일도 검사한다(60자 아래, 화살표·괄호 없음).
 import { josa } from "../shared/korean.js";
 import type { CloserMiss } from "../contract/events.js";
-import { KINDS, KIND_ORDER } from "../model/kinds.js";
+import { KINDS, KIND_ORDER } from "../devices/kinds.js";
 import { OBJECT_NAME } from "../world/labels.js";
 
 export const STEP_LABEL = {

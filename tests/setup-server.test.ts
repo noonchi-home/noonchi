@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type WebSocket from "ws";
-import { MemoryHub } from "../src/hub/memory.js";
+import { MemoryHub } from "../src/devices/hub/memory.js";
 import { fetchRetry } from "../src/shared/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { HOME_SCRIPT, startFakeLlm, type FakeLlm } from "./helpers/llm.js";

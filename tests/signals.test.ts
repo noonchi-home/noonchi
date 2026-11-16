@@ -3,12 +3,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import { Policy } from "../src/agent/policy.js";
 import { observe } from "../src/agent/observe.js";
 import { TOOLS, deviceViews, localBackend } from "../src/agent/tools.js";
-import { MemoryHub } from "../src/hub/memory.js";
-import { SignalHub, isUnknown } from "../src/hub/signals.js";
-import type { DeviceSpec, DeviceState } from "../src/hub/types.js";
-import { describeDevice } from "../src/model/mapping.js";
-import { ThinqClient, thinqConfig } from "../src/thinq/client.js";
-import { ThinqLink } from "../src/thinq/link.js";
+import { MemoryHub } from "../src/devices/hub/memory.js";
+import { SignalHub, isUnknown } from "../src/devices/hub/signals.js";
+import type { DeviceSpec, DeviceState } from "../src/devices/hub/types.js";
+import { describeDevice } from "../src/devices/mapping.js";
+import { ThinqClient, thinqConfig } from "../src/devices/thinq/client.js";
+import { ThinqLink } from "../src/devices/thinq/link.js";
 import { FAKE_AC, FAKE_FRIDGE, startFakeThinq, type FakeThinq } from "./helpers/thinq.js";
 
 function spec(id: string, label: string, twinType: string, twinAttrs: Record<string, unknown[]>): DeviceSpec {

@@ -6,12 +6,12 @@ import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { DeviceSpec, DeviceState } from "../src/hub/types.js";
-import { formatPairingInfo } from "../src/matter/bridge.js";
-import { DEVICE_TYPE_INFO, endpointTypeFor, SUPPORTED_DEVICE_TYPES } from "../src/matter/deviceTypes.js";
-import { createMatterHub, isNetworkUnavailable, MatterHub, matterHubOptionsFromEnv } from "../src/matter/matterHub.js";
-import { KIND_PROFILES, describeDevice } from "../src/model/mapping.js";
-import { loadTwin } from "../src/model/devices.js";
+import type { DeviceSpec, DeviceState } from "../src/devices/hub/types.js";
+import { formatPairingInfo } from "../src/devices/matter/bridge.js";
+import { DEVICE_TYPE_INFO, endpointTypeFor, SUPPORTED_DEVICE_TYPES } from "../src/devices/matter/deviceTypes.js";
+import { createMatterHub, isNetworkUnavailable, MatterHub, matterHubOptionsFromEnv } from "../src/devices/matter/matterHub.js";
+import { KIND_PROFILES, describeDevice } from "../src/devices/mapping.js";
+import { loadTwin } from "../src/devices/devices.js";
 
 const POWER = { power: ["off", "on"] };
 const RUNNING_DOOR = { running: [true, false], door: ["closed", "open"] };

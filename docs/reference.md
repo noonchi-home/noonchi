@@ -435,7 +435,7 @@ npm start
 - **관절:** 사람 감지(0.25 이상)가 있는 프레임만 같은 워커에서 YOLO26n-pose(`models/yolo26n-pose.onnx`)를 같은 640 입력으로 더 돌린다(추론 DirectML 약 44ms, CPU 8스레드 약 55ms). 사람이 이어서 보이는 동안에는 `BRAIN_POSE_EVERY`(기본 3)장에 한 번만 돌리고, 돌리지 않은 장은 관절 없이 넘긴다. 관절 17개 가운데 신뢰도 0.3 이상만 쓴다(`src/world/pose.ts`). 자세: 어깨·엉덩이를 이은 몸통이 수직에서 60° 넘게 기울면 누워 있음, 아니면 엉덩이·무릎을 이은 허벅지가 45° 넘으면 앉아 있음, 아니면 서 있음. 엉덩이나 무릎이 안 보이면 자세를 정하지 않는다. 손에 듦: 어느 관절이든 손목이 컵·병·그릇 상자 안이거나, 상자까지 거리 기준(어깨 너비·몸통×0.6·사람 상자 짧은 변×0.25 중 큰 값)×0.35 안이면 든 것이다. 사람 상자 넓이의 25%를 넘는 큰 물건은 손목이 상자 안일 때만 든 것이다. 대시보드에는 관절을 그리지 않는다.
 - **VLM:** 엔진 프레임마다 한 번 부른다. 그 프레임과 앞선 엔진 프레임을 `VLM_WINDOW_FRAMES`(기본 5장, 2초 간격이면 10초)까지 오래된 것부터 보내고, 장마다 앞에 가장 새 프레임 기준 촬영 시각(「Photo 1 of 5, t-8s」 … 「Photo 5 of 5, t-0s (latest)」)을 붙인다. 처음에 프레임이 모자라면 있는 만큼 보낸다. YOLO 감지 목록(임시 번호·종류·박스)은 가장 새 프레임 것이다. 답(`{scene, observations: [{object_id, state}], summary}`, JSON Schema)의 `observations`는 가장 새 프레임에 보이는 사실(자리·안 내용·열림·쓰는 중·화면, 사람 자세·자리·들고 있음)과 5장 사이 사람의 하는 일 하나·순간 동작 하나다. state enum과 프롬프트의 값 목록은 낱말 표에서 만든다. `summary`는 여러 장 사이에 보이는 행동·변화(집어 듦·마심·내려놓음·닦음·화면 밖으로 나감)다. 요약은 World State 변화 줄 「VLM: …」로 PAM 관찰 텍스트에 들어간다. 동시 요청은 `VLM_MAX_INFLIGHT`(기본 4)까지, 제한 시간(`VLM_TIMEOUT_MS`, 기본 20초)이 지나면 HTTP 요청을 끊는다. 답은 프레임 번호로 맞춘다. 상한 초과·시간 초과·형식 오류·호출 오류 프레임은 「… VLM 분석 없음」으로 남긴다.
 - **World State:** 등장·사라짐은 장 수가 아니라 시간으로 인정한다(`src/world/confirm.ts`, 한 장 = 2초). 등장은 처음 본 뒤 사람 2초·물건 4초 이어 보일 때, 사라짐은 마지막으로 본 뒤 그 자리가 시야 안인데 사람 4초·물건 6초 못 볼 때다(2초 간격이면 사람 2장·물건 3장). 반대쪽 프레임이 와도 셈하던 쪽을 본 지 500ms가 안 됐으면 끊지 않고, 셈하던 쪽 시간이 절반 이상이어야 인정한다. 등장 확인 전 물건은 500ms 넘게 못 보면 잊는다. 관절이 붙인 사실은 같은 값이 2초 이어져야 확신으로 올린다. 맞춘 뒤에는 물건 마스크의 바닥 점(가장 아래 줄의 가운데, 마스크가 없으면 박스 아래 가운데. 가까이 보기는 엔진 프레임 픽셀로 옮긴 점) 광선이 트윈의 식탁·책상·조리대·싱크대 윗면(없으면 바닥)과 만나는 점을 물건 위치로 쓰고, 같은 종류가 0.25m 안이면 같은 물체로 본다. 싱크볼이 있는 싱크대(도면 설비 `sink` 점, 평면도 `anchors.basin`)는 그 점을 가운데로 폭 0.74 × 깊이 0.44m(깊이는 배치 facing 방향) 싱크볼을 두고, 광선이 윗면 높이에서 그 안을 지나면 물건에 `surface_part: "basin"`(싱크볼 안)을 단다. 싱크볼 옆 조리대는 같은 싱크대 면이지만 싱크볼 안이 아니다. 그 자리가 시야 밖이면 「시야 밖」이고 사라짐을 세지 않는다. 맞추기 전에는 위치를 모르고 폰이 한 곳을 비춘다고 본다. VLM 사실은 면(자리·안 내용·열림·쓰는 중·화면·자세·들고 있음·하는 일·순간 동작)마다 두고 같은 값이 두 번 이어지면 확인됨이다. 그 종류에 없는 면의 값은 버린다. TV·냉장고·전자레인지·오븐·토스터·싱크대는 가전 설비라 보임·사라짐 없이 클로이드 눈의 방마다 하나(`tv_living`)에 VLM 상태만 둔다. 사람은 보인 수, 맞춘 뒤 발이 보이면 바닥 자리·방·가까운 가전(1.5m)을 둔다. 관절 사실도 같은 면에 둔다: 든 물건은 자리 「손에 있음」, 사람은 「물건을 들고 있음」(`holding`)과 자세 「서 있음·앉아 있음·누워 있음」. 같은 프레임에서는 관절 사실이 VLM 답보다 앞서고, 손목이 보이는데 물건에서 떨어졌거나 사람이 안 보이게 되면 관절이 붙인 「손에 있음」만 지운다. 식기에는 관계표로 식기세척기를, 음식에는 냉장고를 붙인다. 모든 가전의 상태 키(트윈 속성 값, 예: 작동 중·멈춤·켜짐·문 열림)·바뀐 시각·이력·남은 시간(`course_min`)을 쌓고, 바뀌면 사건 줄(「후면 발코니 세탁기 세탁 멈춤」)을 낸다. 냉장고·현관문 문이 1분 넘게 열리면 판단 타이머(250ms)가 「문이 1분 넘게 열림」을 한 번 낸다.
-- **카메라로 맞추는 가전 상태(src/world/sight.ts, src/hub/signals.ts `observe`):** TV 화면 켜짐·꺼짐 → power, 냉장고 열림·닫힘 → door, 전자레인지 쓰는 중 → power(답에 쓰는 중이 없으면 꺼짐)와 열림·닫힘 → door(그 속성이 있는 가전만), 싱크대 물이 흐름 → faucet(답에 쓰는 중이 없으면 잠김). 오븐·토스터는 트윈 가전 종류가 없어 맞추지 않는다.
+- **카메라로 맞추는 가전 상태(src/world/sight.ts, src/devices/hub/signals.ts `observe`):** TV 화면 켜짐·꺼짐 → power, 냉장고 열림·닫힘 → door, 전자레인지 쓰는 중 → power(답에 쓰는 중이 없으면 꺼짐)와 열림·닫힘 → door(그 속성이 있는 가전만), 싱크대 물이 흐름 → faucet(답에 쓰는 중이 없으면 잠김). 오븐·토스터는 트윈 가전 종류가 없어 맞추지 않는다.
   - 고르기: 가전 설비 상자마다 그 사진을 찍은 눈의 방에서 같은 종류 트윈 가전 가운데 가운데 자리(배치 물건 가운데)가 시야 안인 것, 그중 상자 가운데 광선과 각이 가장 작은 것. 25° 넘거나 둘이 8° 안으로 붙거나 맞추기 전·방 모름·후보 없음·시야 밖이면 고르지 않고 가전 설비 `link.miss`에 까닭을 둔다.
   - 안정: 같은 값이 연속 2번(앞 값과 4초 안)이어야 허브로 넘긴다. 가림·답 없음은 값이 아니고, 시야 밖이면 마지막 상태를 그대로 둔다.
   - 우선: 실제 출처(ThinQ 읽은 값, 명령·센서 값을 받은 가상 기기)가 이긴다. 없으면(신호 없음, 읽기 전 ThinQ, 명령 받은 적 없는 가상 기기) 본 값이 기기 상태다. 기기 상태에 `vision: { twin, at, applied }`(`applied`: 본 값이 상태인가, `at`: 마지막으로 본 촬영 시각)가 붙어 3D 트윈·대시보드·에이전트가 다른 상태처럼 받는다. 실제 상태와 다르면 실제 상태를 두고 처음 한 번만 서버 로그와 World State 다름 줄(「거실 TV 카메라로는 켜짐 · 기기 값은 꺼짐」, 판단 계기 아님)을 낸다.
@@ -584,7 +584,7 @@ Claude Desktop(`claude_desktop_config.json`)은 같은 명령을 이렇게 적�
 - stdout은 MCP 전용이고 로그는 stderr로 쓴다.
 - 테스트(`tests/mcp.test.ts`, `tests/e2e.test.ts`)는 `node --import tsx src/mcp/server.ts`를 레포 폴더에서 실제로 띄워 SDK 클라이언트로 부른다.
 
-## Matter (src/matter)
+## Matter (src/devices/matter)
 
 `MatterHub`가 `DeviceHub`를 matter.js 0.17.9로 구현한다. 상태의 원천은 브리지의 Matter 속성이고, twin 상태는 `model/mapping.ts`로 계산한다.
 
@@ -659,7 +659,7 @@ matter.js 0.17.9에 매핑 표의 기기 종류 21개가 모두 있어 **대체�
 - file 드라이버는 속성 하나가 파일 하나라 65개 기기면 컨트롤러 폴더만 파일 3,211개, Windows 종료에 11초쯤 걸린다(sqlite는 0.6초). 기존 file 저장소는 자동으로 옮겨진다.
 - 다시 시작하면 기본으로 twin 초기 상태로 되돌린다(`keepState: true`면 마지막 Matter 상태를 이어받는다).
 
-## 기기 목록 (src/model/devices.ts)
+## 기기 목록 (src/devices/devices.ts)
 
 - 고른 집(`HOME_ID`)의 1순위 `<out>/scene.json` objects 중 `attrs`가 있는 것. 없거나 깨져 있으면 그 집 `<data>`의 `placement.json` + `floorplan.json`의 문 + 카탈로그(`<data>/catalog` → `data/catalog` → 옛 `data/apartment/catalog`)로 만든다(`loadTwin(dir, { source: "auto" | "scene" | "catalog", home })`).
 - 초기 twin 상태: scene/placement `state` > 카탈로그 `states.<attr>.default` > attr 기본값(꺼짐·멈춤·닫힘·잠김, 커튼은 열림).
@@ -667,9 +667,9 @@ matter.js 0.17.9에 매핑 표의 기기 종류 21개가 모두 있어 **대체�
 - 월패드(`wall_pad`)·CLOiD 로봇(`robot`)은 twin 전용이라 목록에서 뺀다(`TwinData.skipped`).
 - 현재 데이터(2026-10-11, scene.json): 기기 65개(조명 22, 문 센서 9, 수전 4, 에어컨 4, 플러그 3, 충전 상태 3, 커튼·블라인드 3, 팬 3, 공기청정기 2, 나머지 1개씩), 방 13개.
 
-## 기기 매핑 (src/model/mapping.ts)
+## 기기 매핑 (src/devices/mapping.ts)
 
-가전 종류별 값은 가전 종류 등록부(`src/model/kinds.ts` `KINDS`) 한 곳에 있다: 이름(`label`)·찾기 말(`synonyms`)·Matter 연결(`profile`)·트윈 type(`twinTypes`)·늘 묻는 승인(`confirm`)·위험 가전 이름과 안전 문구(`riskyOn`)·손 조작(`hand`)·카메라 설비와 맞추는 규칙(`camera`)·ThinQ 짝짓기(`thinq`)·오래 이어지면 나는 사건(`longEvents`)·종류별 상태 글(`stateText`). `TYPE_RULES`(twin type → 종류)·`KIND_PROFILES`(종류 → matter.js 기기·능력·제어 attr)·`KIND_LABELS`와 에이전트·정책·카메라 쪽 표는 모두 등록부에서 파생한다. 제어 명령(잠금·커튼·난방 설정점)은 종류 이름이 아니라 프로필 모델(`profile.model`)로 가른다. 등록부 밖에 종류별 표를 새로 두면 `tests/kinds-registry.test.ts`의 구조 검사가 실패한다.
+가전 종류별 값은 가전 종류 등록부(`src/devices/kinds.ts` `KINDS`) 한 곳에 있다: 이름(`label`)·찾기 말(`synonyms`)·Matter 연결(`profile`)·트윈 type(`twinTypes`)·늘 묻는 승인(`confirm`)·위험 가전 이름과 안전 문구(`riskyOn`)·손 조작(`hand`)·카메라 설비와 맞추는 규칙(`camera`)·ThinQ 짝짓기(`thinq`)·오래 이어지면 나는 사건(`longEvents`)·종류별 상태 글(`stateText`). `TYPE_RULES`(twin type → 종류)·`KIND_PROFILES`(종류 → matter.js 기기·능력·제어 attr)·`KIND_LABELS`와 에이전트·정책·카메라 쪽 표는 모두 등록부에서 파생한다. 제어 명령(잠금·커튼·난방 설정점)은 종류 이름이 아니라 프로필 모델(`profile.model`)로 가른다. 등록부 밖에 종류별 표를 새로 두면 `tests/kinds-registry.test.ts`의 구조 검사가 실패한다.
 
 | 종류 | matter.js 기기 | 능력 | twin attr |
 |---|---|---|---|
@@ -699,17 +699,17 @@ matter.js 0.17.9에 매핑 표의 기기 종류 21개가 모두 있어 **대체�
 
 ### 새 종류 추가하는 법
 
-1. `src/model/kinds.ts`의 `KINDS`에 항목 하나를 더한다: `label`(이름), `synonyms`(찾기 말), `profile`(Matter 기기 종류·기능·제어 속성·센서), `twinTypes`(트윈 type 이름). 사람이 손으로 조작하면 `hand`, ThinQ와 짝지으면 `thinq`. 필수 칸을 빼면 타입 오류가 난다.
+1. `src/devices/kinds.ts`의 `KINDS`에 항목 하나를 더한다: `label`(이름), `synonyms`(찾기 말), `profile`(Matter 기기 종류·기능·제어 속성·센서), `twinTypes`(트윈 type 이름). 사람이 손으로 조작하면 `hand`, ThinQ와 짝지으면 `thinq`. 필수 칸을 빼면 타입 오류가 난다.
 2. 집 파일 `twin/data/homes/<집>/added_devices.json`에 한 줄을 더한다: `id`·`type`(1번 `twinTypes`의 이름)·`label`·`room`·`position`·`facing_deg`·`elevation`.
 3. 카메라로 볼 수 있으면: YOLO(COCO)에 그 종류가 있으면 `src/world/vocab.ts` `CLASSES`에 설비 종류(role fixture)를 두고, 등록부 항목에 `camera: { fixture, sight }`를 적는다.
 4. 3D 모델이 없으면: 카탈로그(`twin/data/catalog/<type>.json`)나 모델 파일이 없어도 기기는 생기고, 대시보드 트윈에는 그 자리의 회색 상자로 보인다. 모양을 넣으려면 카탈로그와 `twin/library/assets/`의 모델을 더한다.
-5. 불·열이 나는 가전은 `riskyOn`과 `riskyReason`을 둔다(끄기 말고 상태를 바꾸는 명령은 전부 승인 질문). 잠금 해제처럼 명령 하나만 승인하려면 `confirm`에 그 명령 이름을 적는다(정규화로 이름이 바뀌는 on·off는 쓰지 않는다). ThinQ로 짝지으려면 이미 있는 어댑터(`air_conditioner`·`refrigerator`) 가운데 받는 명령이 맞는 것을 `thinq.adapter`로 고르고, 맞는 어댑터가 없으면 `src/thinq/appliance.ts`에 어댑터를 먼저 더한다. 틀린 조합은 서버 시작 때 `checkKinds`가 까닭과 함께 막는다.
+5. 불·열이 나는 가전은 `riskyOn`과 `riskyReason`을 둔다(끄기 말고 상태를 바꾸는 명령은 전부 승인 질문). 잠금 해제처럼 명령 하나만 승인하려면 `confirm`에 그 명령 이름을 적는다(정규화로 이름이 바뀌는 on·off는 쓰지 않는다). ThinQ로 짝지으려면 이미 있는 어댑터(`air_conditioner`·`refrigerator`) 가운데 받는 명령이 맞는 것을 `thinq.adapter`로 고르고, 맞는 어댑터가 없으면 `src/devices/thinq/appliance.ts`에 어댑터를 먼저 더한다. 틀린 조합은 서버 시작 때 `checkKinds`가 까닭과 함께 막는다.
 6. `npm run heavy -- npx vitest run tests/kinds-registry.test.ts tests/kinds-behavior.test.ts`로 확인한다.
 
 ## 승인 정책 (src/agent/policy.ts)
 
 - 승인 대상 판정은 `needsConfirm` 하나다: 위험 켜기 종류(등록부 `riskyOn`: 인덕션·전자레인지)는 그 기기 사양으로 정규화한 명령이 끄기(`off`·`stop`)가 아니면 모두(켜기·시작·세기 등, 덮어쓴 capabilities여도), 그 밖에는 등록부 `confirm` 명령(현관문 잠금 해제). 승인 토큰이 있어야 실행한다. 정책·손 조작 켜기 질문(`riskyHand`)·계획 입력과 에이전트 지시문의 위험 목록 글이 모두 이 판정과 등록부에서 나온다.
-- 서버는 시작 때 등록부를 검증한다(`src/model/kinds-check.ts` `checkKinds`): confirm 명령이 모든 사양에서 정규화해도 같은 이름인지, 위험 켜기 종류에 confirm 대신 riskyReason이 있는지, ThinQ 어댑터가 그 종류의 모든 사양 명령을 받는지(읽기만 하는 어댑터에는 제어 없는 프로필만), 손 조작이 제어·문 센서·카메라 열림 면과 맞는지. 틀리면 까닭과 함께 시작을 멈춘다.
+- 서버는 시작 때 등록부를 검증한다(`src/devices/kinds-check.ts` `checkKinds`): confirm 명령이 모든 사양에서 정규화해도 같은 이름인지, 위험 켜기 종류에 confirm 대신 riskyReason이 있는지, ThinQ 어댑터가 그 종류의 모든 사양 명령을 받는지(읽기만 하는 어댑터에는 제어 없는 프로필만), 손 조작이 제어·문 센서·카메라 열림 면과 맞는지. 틀리면 까닭과 함께 시작을 멈춘다.
 - `policy.guard(hub, id, cmd, confirmToken?)`: 실행할 수 없는 명령은 바로 오류. 승인이 필요하면 `{ ok: false, needsConfirmation: { token, reason } }`(서버는 409). 토큰은 한 번만 쓰고 5분 뒤 만료된다.
 - `policy.confirm(hub, token)`: 토큰만으로 대기 중인 명령을 실행한다(화면 승인 버튼).
 

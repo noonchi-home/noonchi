@@ -1,13 +1,13 @@
 // HUB=memory|matter로 DeviceHub를 고른다(기본 matter).
-// matter: src/matter/matterHub.ts를 동적으로 불러온다(memory만 쓸 때 matter.js를 읽지 않게). 모듈이 없으면 경고하고 MemoryHub로 대신한다.
+// matter: src/devices/matter/matterHub.ts를 동적으로 불러온다(memory만 쓸 때 matter.js를 읽지 않게). 모듈이 없으면 경고하고 MemoryHub로 대신한다.
 // matterHub.ts에 기대하는 export(하나만 있으면 된다):
 //   createMatterHub(twin: TwinData, opts: { transport, storageDir?, ... }): DeviceHub | Promise<DeviceHub>
 //   default 같은 함수 | MatterHub.fromTwin(twin, opts) | new MatterHub(twin, opts)
 // startHub: 만들고 시작까지 한다. network 커미셔닝이 실패하면 local 전송으로, local도 실패하면 MemoryHub로 대신한다.
 
-import { MemoryHub } from "../hub/memory.js";
-import type { DeviceHub } from "../hub/types.js";
-import type { TwinData } from "../model/devices.js";
+import { MemoryHub } from "../devices/hub/memory.js";
+import type { DeviceHub } from "../devices/hub/types.js";
+import type { TwinData } from "../devices/devices.js";
 
 export type HubKind = "memory" | "matter";
 export type MatterTransport = "network" | "local";
@@ -30,7 +30,7 @@ export interface CreatedHub {
 
 type TwinLike = Pick<TwinData, "devices" | "initial"> & Partial<TwinData>;
 
-const defaultImporter = () => import("../matter/matterHub.js") as unknown as Promise<Record<string, unknown>>;
+const defaultImporter = () => import("../devices/matter/matterHub.js") as unknown as Promise<Record<string, unknown>>;
 
 function isMissingModule(e: unknown): boolean {
   const err = e as { code?: string; message?: string };
@@ -62,11 +62,11 @@ export async function createHub(kind: string, twin: TwinLike, opts: HubFactoryOp
     return {
       hub: MemoryHub.fromTwin(twin),
       kind: "memory",
-      warning: `Matter 허브(src/matter/matterHub.ts)를 불러오지 못해 MemoryHub로 대신합니다: ${(e as Error).message}`,
+      warning: `Matter 허브(src/devices/matter/matterHub.ts)를 불러오지 못해 MemoryHub로 대신합니다: ${(e as Error).message}`,
     };
   }
   const factory = pickFactory(mod);
-  if (!factory) throw new Error("src/matter/matterHub.ts에 createMatterHub 함수나 MatterHub 클래스 export가 없습니다.");
+  if (!factory) throw new Error("src/devices/matter/matterHub.ts에 createMatterHub 함수나 MatterHub 클래스 export가 없습니다.");
   const hub = await factory(twin, { ...opts.matter, transport: opts.transport ?? "network", storageDir: opts.storageDir });
   return { hub, kind: "matter" };
 }

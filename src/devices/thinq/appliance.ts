@@ -2,11 +2,11 @@
 //   에어컨: operation.airConOperationMode, airConJobMode.currentJobMode, temperatureInUnits[unit C].targetTemperature, airFlow.windStrength
 //   냉장고: doorStatus[locationName MAIN].doorState(문 닫기 명령은 없다)
 // 실제 가전 값과 다를 수 있는 부분은 docs/superpowers/plans/2026-11-06-control-mode.md 「실제 연결 때 확인할 것」.
-// 읽기·제어·트윈 반영은 가전 종류 이름이 아니라 어댑터(THINQ_ADAPTERS)로 가른다. 가전 종류는 등록부 thinq.adapter로 어댑터를 고른다(src/model/kinds.ts).
+// 읽기·제어·트윈 반영은 가전 종류 이름이 아니라 어댑터(THINQ_ADAPTERS)로 가른다. 가전 종류는 등록부 thinq.adapter로 어댑터를 고른다(src/devices/kinds.ts).
 
 import type { ClimateMode, Command, CommandType, DeviceKind, DeviceState, FanSpeed } from "../hub/types.js";
-import { KINDS, KIND_ORDER, kindEntry } from "../model/kinds.js";
-import type { ThinqAdapter } from "../devices/types.js";
+import { KINDS, KIND_ORDER, kindEntry } from "../kinds.js";
+import type { ThinqAdapter } from "../types.js";
 
 /** 설정에서 ThinQ 기기와 짝지을 수 있는 트윈 기기 종류(등록부 thinq). */
 export const PAIRABLE_KINDS: DeviceKind[] = KIND_ORDER.filter((k) => KINDS[k].thinq);

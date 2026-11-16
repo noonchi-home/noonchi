@@ -213,10 +213,10 @@ export const DEVICE_STATES = {
 
 export type DeviceStateKey = keyof typeof DEVICE_STATES;
 
-// 가전 종류마다 바꿔 쓰는 글(세탁기 작동 멈춤 → 세탁 멈춤)은 가전 종류 등록부(src/model/kinds.ts stateText)에 있다. 트윈 신호는 running 참·거짓뿐이라
+// 가전 종류마다 바꿔 쓰는 글(세탁기 작동 멈춤 → 세탁 멈춤)은 가전 종류 등록부(src/devices/kinds.ts stateText)에 있다. 트윈 신호는 running 참·거짓뿐이라
 // 끝까지 돈 것과 중간에 끈 것을 가르지 못해 「멈춤」이다.
 
-/** 시간이 지나야 나는 가전 사건: 그 상태가 afterMs 넘게 이어지면 한 번. 사건이 나는 가전 종류는 등록부(src/model/kinds.ts longEvents)에 있다. */
+/** 시간이 지나야 나는 가전 사건: 그 상태가 afterMs 넘게 이어지면 한 번. 사건이 나는 가전 종류는 등록부(src/devices/kinds.ts longEvents)에 있다. */
 export const DEVICE_LONG = {
   door_open_long: { state: "door_open", afterMs: 60_000, label: "문이 1분 넘게 열림" },
 } as const satisfies Record<string, { state: DeviceStateKey; afterMs: number; label: string }>;
@@ -235,7 +235,7 @@ export interface SightRule {
   absent?: string | boolean;
 }
 
-// 가전 설비 종류 → 카메라로 맞추는 트윈 가전 상태(규칙 SightRule)는 가전 종류 등록부(src/model/kinds.ts camera)에 있다. 오븐·토스터는 트윈 가전 종류가 없어 맞추지 않는다.
+// 가전 설비 종류 → 카메라로 맞추는 트윈 가전 상태(규칙 SightRule)는 가전 종류 등록부(src/devices/kinds.ts camera)에 있다. 오븐·토스터는 트윈 가전 종류가 없어 맞추지 않는다.
 
 /** 카메라 상태 안정: 같은 가전·속성에서 같은 값이 연속 frames번(엔진 프레임 2초면 2장) 이어야 넘긴다. 앞 값과 withinMs 넘게 떨어지면 처음부터 센다. */
 export const SIGHT_STABLE = { frames: 2, withinMs: 4000 } as const;

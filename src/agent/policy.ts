@@ -3,10 +3,10 @@
 // 판정은 needsConfirm 하나다. 위험 목록의 답(승인·거절)은 둘 다 이번만이라 승인 기억에 남기지 않는다.
 
 import { randomUUID } from "node:crypto";
-import { isUnknown } from "../hub/signals.js";
-import type { Capability, Command, CommandResult, CommandType, DeviceHub, DeviceKind, DeviceSpec } from "../hub/types.js";
-import { KINDS, KIND_ORDER, isRiskyKind, kindEntry } from "../model/kinds.js";
-import { checkCommand, normalizeCommand } from "../model/mapping.js";
+import { isUnknown } from "../devices/hub/signals.js";
+import type { Capability, Command, CommandResult, CommandType, DeviceHub, DeviceKind, DeviceSpec } from "../devices/hub/types.js";
+import { KINDS, KIND_ORDER, isRiskyKind, kindEntry } from "../devices/kinds.js";
+import { checkCommand, normalizeCommand } from "../devices/mapping.js";
 import { DEVICE_VERB, STEP_LABEL } from "../plan/labels.js";
 import { approvalNeed, deviceKey, memoryApprovals, type ApprovalBook } from "./approval.js";
 import { toolForCommand } from "./phrases.js";

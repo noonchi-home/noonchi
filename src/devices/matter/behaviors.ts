@@ -17,7 +17,7 @@ import { ModeBase } from "@matter/main/clusters/mode-base";
 import { OperationalState } from "@matter/main/clusters/operational-state";
 import { RvcOperationalState } from "@matter/main/clusters/rvc-operational-state";
 import { ValveConfigurationAndControl } from "@matter/main/clusters/valve-configuration-and-control";
-import { MATTER_ENUMS } from "../model/mapping.js";
+import { MATTER_ENUMS } from "../mapping.js";
 
 const OpState = OperationalState.OperationalStateEnum;
 const OpError = OperationalState.ErrorState;

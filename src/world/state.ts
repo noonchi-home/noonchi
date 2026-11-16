@@ -36,14 +36,14 @@ import type {
 } from "../contract/world.js";
 import type { Detection, Pose, Mask, EngineFrame, CameraView, SceneObservation } from "../contract/observe.js";
 import { maskCells } from "../shared/mask.js";
-import type { DeviceState, SightEvidence, VisionResult, VisionSeen } from "../hub/types.js";
+import type { DeviceState, SightEvidence, VisionResult, VisionSeen } from "../devices/hub/types.js";
 import { Confirmer, EVIDENCE_GAP_MS, EVIDENCE_STEP_MS } from "./confirm.js";
 import { CHANGE_TEXT, HEARD_MAX, OBJECT_NAME, fixtureName, objectName, onSurface } from "./labels.js";
 import { inView, placeBox, placePoint, type PlaneSurface } from "./place.js";
 import { describePose, heldByAny, mainPerson } from "./pose.js";
 import { RemainingTracker, becameKey, deviceStateKeys, deviceStatus, deviceText, relatedDeviceIds } from "./relations.js";
 import { SightReadings, linkDevice, rulesOf, sightValues, type SightLink } from "./sight.js";
-import { cameraKindOf, kindEntry } from "../model/kinds.js";
+import { cameraKindOf, kindEntry } from "../devices/kinds.js";
 import {
   CLASSES, DEVICE_LONG, DEVICE_STATES, FACT_FRESH_MS, FRESH_MS, NEAR_M, NOW_FACETS, POSE_HOLD, POSE_POSTURE, STATES, VLM_ONLY, type ClassKey, type DeviceLongKey, type DeviceStateKey, type StateKey, type Target,
 } from "./vocab.js";
@@ -170,7 +170,7 @@ export interface WorldStateOptions {
   locate?: (id: string) => Plan2 | null;
   /** 가전 가운데 트윈 자리 [x, 높이, y](카메라로 가전을 고를 때 시야·방향). 없거나 모르면 그 가전을 고르지 않는다. */
   place?: (id: string) => V3 | null;
-  /** 카메라로 이어 본 가전 상태를 허브에 넘긴다(src/hub/signals.ts observe). 없으면 넘기지 않는다. */
+  /** 카메라로 이어 본 가전 상태를 허브에 넘긴다(src/devices/hub/signals.ts observe). 없으면 넘기지 않는다. */
   see?: (id: string, twin: Record<string, unknown>, atMs: number, evidence?: Record<string, SightEvidence>) => VisionResult;
   /** 같은 물체로 볼 기본 거리(m, 기본 0.25). 종류에 identityM이 있으면 그 값. */
   identityM?: number;

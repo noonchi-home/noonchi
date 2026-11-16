@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { CONFIRM_RULES, Policy, RISKY_ON_NAMES, isRiskyKind, needsConfirm, riskyNames } from "../src/agent/policy.js";
-import { KIND_ORDER } from "../src/model/kinds.js";
-import { MemoryHub } from "../src/hub/memory.js";
-import type { DeviceSpec } from "../src/hub/types.js";
-import { describeDevice } from "../src/model/mapping.js";
+import { KIND_ORDER } from "../src/devices/kinds.js";
+import { MemoryHub } from "../src/devices/hub/memory.js";
+import type { DeviceSpec } from "../src/devices/hub/types.js";
+import { describeDevice } from "../src/devices/mapping.js";
 
 const POWER = { power: ["off", "on"] };
 

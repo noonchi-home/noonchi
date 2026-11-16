@@ -1,0 +1,31 @@
+{
+  "files": {
+    "src/hub/memory.ts": "src/devices/hub/memory.ts",
+    "src/hub/signals.ts": "src/devices/hub/signals.ts",
+    "src/hub/types.ts": "src/devices/hub/types.ts",
+    "src/matter/behaviors.ts": "src/devices/matter/behaviors.ts",
+    "src/matter/bridge.ts": "src/devices/matter/bridge.ts",
+    "src/matter/controller.ts": "src/devices/matter/controller.ts",
+    "src/matter/deviceTypes.ts": "src/devices/matter/deviceTypes.ts",
+    "src/matter/environment.ts": "src/devices/matter/environment.ts",
+    "src/matter/matterHub.ts": "src/devices/matter/matterHub.ts",
+    "src/matter/ops.ts": "src/devices/matter/ops.ts",
+    "src/thinq/appliance.ts": "src/devices/thinq/appliance.ts",
+    "src/thinq/client.ts": "src/devices/thinq/client.ts",
+    "src/thinq/link.ts": "src/devices/thinq/link.ts",
+    "src/model/kinds.ts": "src/devices/kinds.ts",
+    "src/model/kinds-check.ts": "src/devices/kinds-check.ts",
+    "src/model/mapping.ts": "src/devices/mapping.ts",
+    "src/model/devices.ts": "src/devices/devices.ts"
+  },
+  "decls": {},
+  "new": [],
+  "text": [
+    "tests/helpers/kind-tables.ts",
+    "src/server/hubFactory.ts",
+    "src/server/start.ts",
+    "tests/lint-ui-copy.test.ts"
+  ],
+  "allow": {},
+  "exceptions": {}
+}

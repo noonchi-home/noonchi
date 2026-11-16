@@ -1,8 +1,8 @@
 // twin-home 공용 계약(docs/plan.md "인터페이스"). 바꾸려면 plan.md를 먼저 고친다.
 
-/** 가전 종류: 등록부(src/model/kinds.ts KINDS)의 키. */
-export type { DeviceKind } from "../model/kinds.js";
-import type { DeviceKind } from "../model/kinds.js";
+/** 가전 종류: 등록부(src/devices/kinds.ts KINDS)의 키. */
+export type { DeviceKind } from "../kinds.js";
+import type { DeviceKind } from "../kinds.js";
 
 /** 기기가 받는 명령 묶음(트윈 수준). Matter에서 어떻게 실현하는지는 model/mapping.ts가 정한다. */
 export type Capability = "onoff" | "level" | "climate" | "fan" | "covering" | "lock" | "operation" | "valve";
@@ -26,11 +26,11 @@ export interface DeviceState {
   twin: Record<string, unknown>;   // twin-studio state 값 (scene.json states와 같은 키/값)
   matter: Record<string, unknown>; // 보기 좋은 Matter 속성 요약 (onOff, level, lockState, fanMode, operationalState, setpointC...)
   updatedAt: string;
-  /** "none"이면 신호 없는 기기라 상태를 모른다(twin·matter가 비어 있음, src/hub/signals.ts). */
+  /** "none"이면 신호 없는 기기라 상태를 모른다(twin·matter가 비어 있음, src/devices/hub/signals.ts). */
   signal?: "none";
-  /** 실제 가전(ThinQ)에서 읽은 값이면 그 출처·ThinQ 기기 id·읽은 시각(src/thinq/link.ts). */
+  /** 실제 가전(ThinQ)에서 읽은 값이면 그 출처·ThinQ 기기 id·읽은 시각(src/devices/thinq/link.ts). */
   readback?: Readback;
-  /** 카메라(World State)가 본 상태(src/hub/signals.ts observe). */
+  /** 카메라(World State)가 본 상태(src/devices/hub/signals.ts observe). */
   vision?: VisionSeen;
 }
 

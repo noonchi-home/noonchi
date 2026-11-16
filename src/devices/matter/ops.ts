@@ -4,7 +4,7 @@
 //   - 클라이언트 엔드포인트: 명령 = Matter Invoke, 속성 쓰기 = Matter Write, get() = Matter Read
 
 import type { Endpoint } from "@matter/main";
-import type { MatterClusters, MatterOp } from "../model/mapping.js";
+import type { MatterClusters, MatterOp } from "../mapping.js";
 
 /** 매핑 요약에 쓰는 클러스터 → 속성. 이 속성이 바뀌면 상태를 다시 계산한다. */
 export const WATCHED_ATTRIBUTES: Record<string, string[]> = {

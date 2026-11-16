@@ -13,7 +13,7 @@ import type { BrainLog, EyeEvent, SeenEvent, ServerMessage } from "../../src/con
 import type { PlannedCommand } from "../../src/contract/phone.js";
 import type { PlanView, XZ } from "../../src/contract/plan.js";
 import type { WorldObject, WorldView } from "../../src/contract/world.js";
-import { DEFAULT_TWIN_DIR } from "../../src/model/devices.js";
+import { DEFAULT_TWIN_DIR } from "../../src/devices/devices.js";
 import { resolveHome } from "../../src/model/homes.js";
 import { loadScene } from "../../src/model/scene.js";
 import { STEP_COMMAND, STEP_LABEL } from "../../src/plan/labels.js";

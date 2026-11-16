@@ -1,6 +1,6 @@
 // 서버↔화면 메시지 계약(WebSocket /events, /api 응답). 순수 타입만 둔다: ui/가 이 파일을 그대로 가져다 쓴다.
 // 바꾸면 ui/src/lib/messages.ts의 parseMessage와 화면 테스트를 같이 고친다.
-import type { Command, DeviceSpec, DeviceState } from "../hub/types.js";
+import type { Command, DeviceSpec, DeviceState } from "../devices/hub/types.js";
 import type { LayoutMessage } from "./layout.js";
 import type { PhoneChoice } from "./phone.js";
 import type { PlanView } from "./plan.js";

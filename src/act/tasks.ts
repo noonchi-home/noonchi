@@ -4,7 +4,7 @@
 import type { PlanView } from "../contract/plan.js";
 import type { AssistMode } from "../contract/setup.js";
 import type { Facet, ObjClass, WorldObject, WorldView } from "../contract/world.js";
-import type { DeviceKind } from "../hub/types.js";
+import type { DeviceKind } from "../devices/hub/types.js";
 import type { ActionChoice } from "./prompts.js";
 
 type Kind = "go" | "pick" | "place" | "do" | "device" | "ask" | "say" | "wait";

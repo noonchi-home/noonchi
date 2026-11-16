@@ -3,13 +3,13 @@
 // 실행할 수 있는지(문 열림 등)는 world가 자기 상태로 판단한다(구현명세서 2.19: 환경은 숨은 세계, 엔진은 공개된 믿음).
 // 신호 없음 기기는 실행 결과도 알 수 없으므로, world가 상태 때문에 거절해도 「보냄」(ok, 가린 상태)으로 돌려준다(거절 이유가 숨은 상태를 드러냄).
 // stop() 뒤(집을 바꿈)에는 늦게 도착한 명령을 실행하지 않는다.
-// 「thinq」 기기(실제 모드에서 ThinQ와 짝지음): 상태는 ThinQ 연결(src/thinq/link.ts)이 읽어 안쪽 허브에 비춘 값 + readback이고,
+// 「thinq」 기기(실제 모드에서 ThinQ와 짝지음): 상태는 ThinQ 연결(src/devices/thinq/link.ts)이 읽어 안쪽 허브에 비춘 값 + readback이고,
 // 처음 읽기 전이거나 연결이 없으면 「모름」이다. 명령은 연결로 보내고, 안쪽 허브를 직접 바꾼 변화는 보내지 않는다(읽기로만 바뀜).
 // 카메라로 본 상태(observe, World State가 넘김): 실제 출처가 없으면 그 값이 기기 상태이고(vision.applied), 있으면 실제 상태를 두고 보임 기록만 붙인다.
 // 실제 출처: ThinQ 기기는 읽은 값이 있을 때, 가상 기기는 명령·센서 값을 한 번이라도 받은 뒤(안쪽 허브가 바뀜을 알리거나 명령이 받아짐).
 // 신호 없음 기기·읽기 전 ThinQ 기기·명령 받은 적 없는 가상 기기는 실제 출처가 없다. 실제 상태와 다르면 처음 한 번만 mismatch로 알린다.
 
-import { matterFromTwin } from "../model/mapping.js";
+import { matterFromTwin } from "../mapping.js";
 import type { ThinqLink } from "../thinq/link.js";
 import type { Command, CommandResult, DeviceHub, DeviceSpec, DeviceState, SightEvidence, VisionResult } from "./types.js";
 

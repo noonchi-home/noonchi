@@ -17,7 +17,7 @@ import { learnedRules } from "../src/brain/history/habits.js";
 import { HistoryDb, historyTzMinutes } from "../src/brain/history/db.js";
 import { REFLECT_TEXT } from "../src/brain/history/labels.js";
 import { isDay } from "../src/brain/history/summary.js";
-import { DEFAULT_TWIN_DIR, resolveTwinStudioDir } from "../src/model/devices.js";
+import { DEFAULT_TWIN_DIR, resolveTwinStudioDir } from "../src/devices/devices.js";
 import { ServerLockError, acquireServerLock, restoreNeeded, restoreNeededPath, serverLockPath, type HeldServerLock } from "../src/server/lock.js";
 import { resolveHome } from "../src/model/homes.js";
 import { loadScene } from "../src/model/scene.js";

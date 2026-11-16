@@ -1,16 +1,16 @@
-// 가전 종류별 값 스냅숏: 등록부(src/model/kinds.ts)로 옮기기 전 값을 tests/fixtures/kinds-before.json에 뽑아 두고(npx tsx scripts/kinds-snapshot.ts > tests/fixtures/kinds-before.json),
+// 가전 종류별 값 스냅숏: 등록부(src/devices/kinds.ts)로 옮기기 전 값을 tests/fixtures/kinds-before.json에 뽑아 두고(npx tsx scripts/kinds-snapshot.ts > tests/fixtures/kinds-before.json),
 // tests/kinds-registry.test.ts가 옮긴 뒤 같은 값을 다시 뽑아 견준다(결과가 바뀌지 않는 옮기기). 묶음 approval(승인 규칙·승인 표)과 나머지를 따로 본다.
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { Command } from "../src/hub/types.js";
-import { KIND_LABELS, KIND_PROFILES, TYPE_RULES, findTypeRule, twinChange } from "../src/model/mapping.js";
+import type { Command } from "../src/devices/hub/types.js";
+import { KIND_LABELS, KIND_PROFILES, TYPE_RULES, findTypeRule, twinChange } from "../src/devices/mapping.js";
 import { KIND_SYNONYMS } from "../src/agent/search.js";
 import { CONFIRM_RULES, Policy, RISKY_ON_NAMES, isRiskyKind, riskyNames } from "../src/agent/policy.js";
 import { CAUTION_LINE } from "../src/plan/labels.js";
 import { DEVICE_ACTS } from "../src/agent/planTools.js";
-import { PAIRABLE_KINDS, fitsKind, mirrorPlan, readAppliance, thinqAdapterOf, thinqSteps, type Reading } from "../src/thinq/appliance.js";
-import { KINDS, KIND_ORDER, cameraKindOf } from "../src/model/kinds.js";
+import { PAIRABLE_KINDS, fitsKind, mirrorPlan, readAppliance, thinqAdapterOf, thinqSteps, type Reading } from "../src/devices/thinq/appliance.js";
+import { KINDS, KIND_ORDER, cameraKindOf } from "../src/devices/kinds.js";
 import { rulesOf } from "../src/world/sight.js";
 import { CLASSES, DEVICE_LONG, type ClassKey, type DeviceLongKey, type FixtureClass } from "../src/world/vocab.js";
 

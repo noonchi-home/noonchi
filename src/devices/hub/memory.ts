@@ -1,7 +1,7 @@
 // MemoryHub: Matter 없이 메모리에서 DeviceHub를 흉내 낸다(테스트·데모·Matter 대체).
 // 명령은 mapping의 Matter 요약에 적용하고, twin 상태는 그 요약에서 다시 계산한다(진실의 원천 = Matter 요약).
 
-import type { TwinData } from "../model/devices.js";
+import type { TwinData } from "../devices.js";
 import {
   applyCommandToMatter,
   applySensorToMatter,
@@ -11,7 +11,7 @@ import {
   normalizeCommand,
   twinFromMatter,
   type MatterSummary,
-} from "../model/mapping.js";
+} from "../mapping.js";
 import type { Command, CommandResult, DeviceHub, DeviceSpec, DeviceState } from "./types.js";
 
 export interface MemoryHubOptions {

@@ -1,4 +1,4 @@
-// 가전 종류 등록부(src/model/kinds.ts): 흩어진 종류별 표를 등록부에서 파생한다. 결과는 바꾸기 전과 하나도 다르지 않다(tests/fixtures/kinds-before.json),
+// 가전 종류 등록부(src/devices/kinds.ts): 흩어진 종류별 표를 등록부에서 파생한다. 결과는 바꾸기 전과 하나도 다르지 않다(tests/fixtures/kinds-before.json),
 // 등록부 밖에 종류별 표가 생기면 구조 검사(tests/helpers/kind-tables.ts)가 실패한다.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -12,7 +12,7 @@ const now = () => JSON.parse(JSON.stringify(kindsSnapshot())) as ReturnType<type
 
 describe("kinds same: non-approval", () => {
   it("등록부 순서가 바꾸기 전 종류 순서(DeviceKind, 도구 enum 순서)와 같다", async () => {
-    const { KIND_ORDER } = await import("../src/model/kinds.js");
+    const { KIND_ORDER } = await import("../src/devices/kinds.js");
     expect(KIND_ORDER).toEqual(Object.keys(before.labels));
   });
 
@@ -37,7 +37,7 @@ describe("kinds registry: TEMP_ALLOW is empty", () => {
 
 describe("kinds registry: 파생", () => {
   it("이름·위험 종류·카메라 설비 → 종류를 등록부에서 읽는다", async () => {
-    const { KINDS, kindLabel, isRiskyKind, cameraKindOf, kindEntry } = await import("../src/model/kinds.js");
+    const { KINDS, kindLabel, isRiskyKind, cameraKindOf, kindEntry } = await import("../src/devices/kinds.js");
     expect(kindLabel("microwave")).toBe("전자레인지");
     expect(KINDS.microwave).toMatchObject({ twinTypes: [{ types: ["microwave"] }], hand: ["열기", "닫기", "켜기", "끄기"], camera: { fixture: "microwave" } });
     expect(["cooktop", "microwave", "aircon", null, "nope"].map((k) => isRiskyKind(k))).toEqual([true, true, false, false, false]);
@@ -58,7 +58,7 @@ describe("kinds registry: 구조 검사", () => {
   }, 120_000);
 
   it("금지 예제는 하나씩 짚는다", () => {
-    for (const [file, as] of [["tests/fixtures/kind-tables/forbidden.ts", undefined], ["tests/fixtures/kind-tables/forbidden-model.ts", "src/model/control.ts"], ["tests/fixtures/kind-tables/forbidden-thinq.ts", "src/thinq/appliance.ts"]] as const) {
+    for (const [file, as] of [["tests/fixtures/kind-tables/forbidden.ts", undefined], ["tests/fixtures/kind-tables/forbidden-model.ts", "src/model/control.ts"], ["tests/fixtures/kind-tables/forbidden-thinq.ts", "src/devices/thinq/appliance.ts"]] as const) {
       const lines = new Set(findKindTables(kp, file, as ? { as } : {}).map((h) => h.line));
       const want = marked(file);
       expect(want.length, file).toBeGreaterThan(0);

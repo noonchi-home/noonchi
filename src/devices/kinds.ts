@@ -1,13 +1,13 @@
 // 가전 종류 등록부: 하나뿐인 원본. 가전 종류마다 이름·찾기 말·Matter 연결(프로필)·트윈 type·승인·위험 가전 이름·손 조작·카메라 낱말·ThinQ·사건·상태 글을 여기에만 둔다.
-// 흩어진 곳(src/model/mapping.ts KIND_PROFILES·KIND_LABELS·TYPE_RULES, src/agent/search.ts KIND_SYNONYMS, src/agent/policy.ts CONFIRM_RULES·RISKY_ON_NAMES,
-// src/plan/labels.ts CAUTION_LINE, src/agent/planTools.ts DEVICE_ACTS, src/thinq/appliance.ts PAIRABLE_KINDS, src/world/sight.ts·state.ts·relations.ts)은 여기서 파생해 읽는다.
+// 흩어진 곳(src/devices/mapping.ts KIND_PROFILES·KIND_LABELS·TYPE_RULES, src/agent/search.ts KIND_SYNONYMS, src/agent/policy.ts CONFIRM_RULES·RISKY_ON_NAMES,
+// src/plan/labels.ts CAUTION_LINE, src/agent/planTools.ts DEVICE_ACTS, src/devices/thinq/appliance.ts PAIRABLE_KINDS, src/world/sight.ts·state.ts·relations.ts)은 여기서 파생해 읽는다.
 // 새 종류는 여기 한 줄 + 집 파일(twin/data/homes/<집>/added_devices.json) 한 줄(docs/reference.md 「새 종류 추가하는 법」). 등록부 밖 종류별 표는 tests/kinds-registry.test.ts가 막는다.
-// 런타임 import 없음(type import만). ui 타입 검사가 src/hub/types.ts를 거쳐 읽으므로 Dockerfile ui 단계가 이 파일과 src/world/vocab.ts를 COPY한다.
-import type { Capability, ClimateMode, CommandType, FanSpeed } from "../hub/types.js";
-import type { ThinqAdapter } from "../devices/types.js";
+// 런타임 import 없음(type import만). ui 타입 검사가 src/devices/hub/types.ts를 거쳐 읽으므로 Dockerfile ui 단계가 이 파일과 src/world/vocab.ts를 COPY한다.
+import type { Capability, ClimateMode, CommandType, FanSpeed } from "./hub/types.js";
+import type { ThinqAdapter } from "./types.js";
 import type { DeviceLongKey, DeviceStateKey, FixtureClass, SightRule } from "../world/vocab.js";
 
-/** Matter 쪽 모델: 켜짐·동작·열림·잠김을 어떤 요약 키로 나타내는가(src/model/mapping.ts가 해석한다). */
+/** Matter 쪽 모델: 켜짐·동작·열림·잠김을 어떤 요약 키로 나타내는가(src/devices/mapping.ts가 해석한다). */
 export type Model = "onoff" | "fan" | "operation" | "rvc" | "covering" | "lock" | "contact" | "valve" | "thermostat" | "status";
 
 export interface Control {
@@ -55,7 +55,7 @@ export interface KindEntry {
   synonyms: readonly string[];
   profile: KindProfile;
   twinTypes: readonly TwinTypeRule[];
-  /** 그 명령 하나를 늘 승인(잠금 해제처럼 정규화해도 이름이 하나뿐인 명령)과 까닭 글. 위험 켜기 종류(riskyOn)에는 쓰지 않는다(src/model/kinds-check.ts). */
+  /** 그 명령 하나를 늘 승인(잠금 해제처럼 정규화해도 이름이 하나뿐인 명령)과 까닭 글. 위험 켜기 종류(riskyOn)에는 쓰지 않는다(src/devices/kinds-check.ts). */
   confirm?: { command: CommandType; reason: (label: string) => string };
   /** 위험 가전: 부르는 이름(별명·흔한 오타·영어 포함, 이름 기본 거부)과 켜기 전 안전 문구. 끄기 말고 상태를 바꾸는 명령은 모두 승인을 묻는다(src/agent/policy.ts needsConfirm). */
   riskyOn?: { names: readonly string[]; caution: string };
@@ -67,7 +67,7 @@ export interface KindEntry {
   selfStop?: true;
   /** 카메라 설비 종류와 맞추는 규칙(같은 방의 이 종류 가전에 넘긴다). */
   camera?: { fixture: FixtureClass; sight: readonly SightRule[] };
-  /** ThinQ 짝짓기: ThinQ deviceType과 읽기·제어·반영을 맡는 어댑터(src/thinq/appliance.ts THINQ_ADAPTERS). */
+  /** ThinQ 짝짓기: ThinQ deviceType과 읽기·제어·반영을 맡는 어댑터(src/devices/thinq/appliance.ts THINQ_ADAPTERS). */
   thinq?: { type: RegExp; adapter: ThinqAdapter };
   /** 오래 이어지면 나는 사건(src/world/vocab.ts DEVICE_LONG). */
   longEvents?: readonly DeviceLongKey[];

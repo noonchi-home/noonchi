@@ -9,28 +9,28 @@ import { agentEndpoint } from "../agent/providers/index.js";
 import type { BrainLog } from "../contract/events.js";
 import type { PlanView } from "../contract/plan.js";
 import type { AssistMode, ControlMode, SetupView, ThinqDeviceView } from "../contract/setup.js";
-import type { SignalHub } from "../hub/signals.js";
+import type { SignalHub } from "../devices/hub/signals.js";
 import { HistoryDb, historyTzMinutes } from "../brain/history/db.js";
 import { REFLECT_TEXT } from "../brain/history/labels.js";
 import { attachRecorder, topic, type DeviceNote } from "../brain/history/recorder.js";
 import { loadReflectAt, runReflection, scheduleReflection, type ReflectResult } from "../brain/history/reflect.js";
 import { loadRetention, sweep } from "../brain/history/retention.js";
 import { PamClient } from "../brain/pam.js";
-import type { DeviceHub, DeviceState } from "../hub/types.js";
+import type { DeviceHub, DeviceState } from "../devices/hub/types.js";
 import { loadEndpoints } from "../infer/endpoints.js";
 import type { LayoutEditor } from "../layout/editor.js";
-import { KIND_LABELS } from "../model/mapping.js";
+import { KIND_LABELS } from "../devices/mapping.js";
 import type { PipelineInject } from "../observe/pipeline.js";
-import { resolveTwinStudioDir, type TwinData } from "../model/devices.js";
+import { resolveTwinStudioDir, type TwinData } from "../devices/devices.js";
 import { listHomes } from "../model/homes.js";
 import { acquireServerLock, restoreNeeded } from "./lock.js";
-import { KINDS } from "../model/kinds.js";
-import { checkKinds } from "../model/kinds-check.js";
+import { KINDS } from "../devices/kinds.js";
+import { checkKinds } from "../devices/kinds-check.js";
 import { SetupError, SetupStore, effectiveSources, parsePairs, parseSources } from "../setup/store.js";
 import { repoPath } from "../shared/paths.js";
-import { PAIRABLE_KINDS, fitsKind } from "../thinq/appliance.js";
-import { ThinqClient, ThinqError, thinqConfig } from "../thinq/client.js";
-import { DEFAULT_POLL_MS, DEFAULT_READBACK_MS, ThinqLink } from "../thinq/link.js";
+import { PAIRABLE_KINDS, fitsKind } from "../devices/thinq/appliance.js";
+import { ThinqClient, ThinqError, thinqConfig } from "../devices/thinq/client.js";
+import { DEFAULT_POLL_MS, DEFAULT_READBACK_MS, ThinqLink } from "../devices/thinq/link.js";
 import { HttpError, originChecker, type TwinHomeApp } from "./app.js";
 import type { HubKind, MatterTransport, StartHubOptions } from "./hubFactory.js";
 import { startHome, type HomeContext, type HomeRuntime } from "./home.js";
@@ -62,7 +62,7 @@ export interface StartServerOptions {
    *  FOCUS(1이면 초점 표시를 보낸다, 기본 끔), PHONE_PHOTO_DIR(사진 폴더, 기본 runtime/photos), PHONE_VIDEO_DIR(영상 모드 영상 폴더, 기본 공용 runtime/videos, RUNTIME_DIR와 상관없음), RUNTIME_DIR(배치 수정본·설정의 바탕, 기본 runtime),
    *  BRAIN(1이면 폰 엔진 프레임으로 관찰 흐름을 돌린다. PHONE_PORT 필요, VLM은 추론 모드가 고른 주소),
    *  ENGINE_FRAME_MS·VLM_FRAME_MS·VLM_WINDOW_FRAMES·VLM_MAX_INFLIGHT·DETECT_QUEUE_MAX·BRAIN_YOLO_PATH·BRAIN_POSE_PATH·BRAIN_YOLO_THREADS·BRAIN_YOLO_PROVIDER·BRAIN_POSE_EVERY(src/observe/pipeline.ts),
-   *  THINQ_TOKEN(실제 모드), THINQ_REGION·THINQ_COUNTRY·THINQ_CLIENT_ID·THINQ_API_KEY·THINQ_BASE_URL·THINQ_TIMEOUT_MS(src/thinq/client.ts),
+   *  THINQ_TOKEN(실제 모드), THINQ_REGION·THINQ_COUNTRY·THINQ_CLIENT_ID·THINQ_API_KEY·THINQ_BASE_URL·THINQ_TIMEOUT_MS(src/devices/thinq/client.ts),
    *  THINQ_POLL_MS(짝지은 기기 읽기 간격, 기본 15000, 0이면 처음 한 번), THINQ_READBACK_MS(명령 뒤 다시 읽기 전 기다림, 기본 1000,2000,4000)을 읽는다. */
   env?: Env;
   log?: (line: string) => void;
@@ -119,7 +119,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   const log = opts.log ?? ((line: string) => console.log(line));
   // 가전 종류 등록부가 틀린 조합이면(승인·ThinQ 어댑터·손 조작) 까닭과 함께 시작을 막는다
   const kindProblems = checkKinds(KINDS);
-  if (kindProblems.length) throw new Error(`가전 종류 등록부가 틀렸어요(src/model/kinds.ts): ${kindProblems.join(" / ")}`);
+  if (kindProblems.length) throw new Error(`가전 종류 등록부가 틀렸어요(src/devices/kinds.ts): ${kindProblems.join(" / ")}`);
   const runtimeDir = env.RUNTIME_DIR?.trim() || DEFAULT_RUNTIME_DIR;
   const store = new SetupStore({ runtimeDir, persist: opts.persistSetup ?? false, log });
   let mode: ControlMode = store.mode();

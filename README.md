@@ -102,7 +102,7 @@ noonchi-home | 26-2 소프트웨어공학
 ├── 계획·실행 (src/plan · src/act) — 어떤 계획이든 단계마다 폰 명령·가전·기다리기, World State 조건과 폰 위치로 다음 단계
 ├── 에이전트 (src/agent)      — 말로 시킨 가전 명령, PAM 행동의 계획 모드(OpenAI · Anthropic 도구) · 승인 규칙
 ├── 장면 (src/model · src/layout) — scene.json + 도면 설비 · 배치 보정
-└── 기기 허브 (src/hub)       — MatterHub(matter.js) · MemoryHub(시험용)
+└── 기기 허브 (src/devices/hub)       — MatterHub(matter.js) · MemoryHub(시험용)
         ↓  REST · WebSocket /events (127.0.0.1)
 화면 (ui/, React)             — 대시보드 · three.js 트윈(ui/src/twin3d) · 설정 화면(ui/src/setup)
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Capability, DeviceKind, DeviceSpec, DeviceState } from "../src/hub/types.js";
+import type { Capability, DeviceKind, DeviceSpec, DeviceState } from "../src/devices/hub/types.js";
 import {
   applyCommandToMatter,
   applySensorToMatter,
@@ -14,7 +14,7 @@ import {
   percentFromLevel,
   summaryFromClusters,
   twinFromMatter,
-} from "../src/model/mapping.js";
+} from "../src/devices/mapping.js";
 
 const POWER = { power: ["off", "on"] };
 

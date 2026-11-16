@@ -1,9 +1,9 @@
-// ThinQ 연결(src/thinq/link.ts): 짝지은 기기를 읽어 트윈에 비추고, 명령은 지금 상태 읽기 → 보내기 → 다시 읽기로 끝낸다.
+// ThinQ 연결(src/devices/thinq/link.ts): 짝지은 기기를 읽어 트윈에 비추고, 명령은 지금 상태 읽기 → 보내기 → 다시 읽기로 끝낸다.
 // 받았지만 다시 읽은 값이 다르면 「확인 안 됨」, 거부면 실패, 못 읽으면 보내지 않는다. 기기마다 한 번에 한 단계.
 import { afterEach, describe, expect, it } from "vitest";
-import { MemoryHub } from "../src/hub/memory.js";
-import { ThinqClient, thinqConfig } from "../src/thinq/client.js";
-import { ThinqLink } from "../src/thinq/link.js";
+import { MemoryHub } from "../src/devices/hub/memory.js";
+import { ThinqClient, thinqConfig } from "../src/devices/thinq/client.js";
+import { ThinqLink } from "../src/devices/thinq/link.js";
 import { homeDevices } from "./helpers/home.js";
 import { FAKE_AC, FAKE_FRIDGE, startFakeThinq, type FakeThinq } from "./helpers/thinq.js";
 

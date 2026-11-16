@@ -3,13 +3,13 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Capability, Command, DeviceSpec } from "../src/hub/types.js";
-import { KINDS, isRiskyKind, type KindEntry } from "../src/model/kinds.js";
-import { checkKinds } from "../src/model/kinds-check.js";
-import { KIND_PROFILES, TYPE_RULES, normalizeCommand } from "../src/model/mapping.js";
+import type { Capability, Command, DeviceSpec } from "../src/devices/hub/types.js";
+import { KINDS, isRiskyKind, type KindEntry } from "../src/devices/kinds.js";
+import { checkKinds } from "../src/devices/kinds-check.js";
+import { KIND_PROFILES, TYPE_RULES, normalizeCommand } from "../src/devices/mapping.js";
 import { riskyHand } from "../src/agent/planTools.js";
 import { Policy, needsConfirm } from "../src/agent/policy.js";
-import { THINQ_ADAPTERS, mirrorPlan, readAppliance, thinqSteps } from "../src/thinq/appliance.js";
+import { THINQ_ADAPTERS, mirrorPlan, readAppliance, thinqSteps } from "../src/devices/thinq/appliance.js";
 
 const ROOT = join(import.meta.dirname, "..");
 type Cell = { command: Command; reason: string | null };
@@ -87,19 +87,19 @@ describe("승인 대상(needsConfirm 하나로 판정)", () => {
 
 describe("ThinQ 어댑터", () => {
   afterEach(() => {
-    vi.doUnmock("../src/model/kinds.js");
+    vi.doUnmock("../src/devices/kinds.js");
     vi.resetModules();
   });
   /** 시험 전용으로 등록부를 넓힌 모듈 묶음을 새로 불러온다. */
   async function extended(extra: Record<string, KindEntry>) {
     vi.resetModules();
-    vi.doMock("../src/model/kinds.js", async (importOriginal) => {
-      const real = await importOriginal<typeof import("../src/model/kinds.js")>();
+    vi.doMock("../src/devices/kinds.js", async (importOriginal) => {
+      const real = await importOriginal<typeof import("../src/devices/kinds.js")>();
       const kinds = { ...real.KINDS, ...extra };
       return { ...real, KINDS: kinds, KIND_ORDER: Object.keys(kinds), kindEntry: (k: string | null | undefined) => (k ? (kinds as Record<string, KindEntry>)[k] : undefined) };
     });
-    const { MemoryHub: Hub } = await import("../src/hub/memory.js");
-    const { ThinqLink } = await import("../src/thinq/link.js");
+    const { MemoryHub: Hub } = await import("../src/devices/hub/memory.js");
+    const { ThinqLink } = await import("../src/devices/thinq/link.js");
     return { Hub, ThinqLink };
   }
   const spec = (id: string, kind: string, twinAttrs: Record<string, unknown[]>, capabilities: Capability[], sensors: string[] = []): DeviceSpec => ({
@@ -179,17 +179,17 @@ describe("등록부 검증(checkKinds)", () => {
 
   it("설정 온도 표본은 반올림하지 않은 범위 가운데라 좁은 범위(37.2~37.4)에서도 범위 안이다", async () => {
     vi.resetModules();
-    vi.doMock("../src/model/kinds.js", async (importOriginal) => {
-      const real = await importOriginal<typeof import("../src/model/kinds.js")>();
+    vi.doMock("../src/devices/kinds.js", async (importOriginal) => {
+      const real = await importOriginal<typeof import("../src/devices/kinds.js")>();
       const aircon = { ...real.KINDS.aircon, profile: { ...real.KINDS.aircon.profile, setpoint: { min: 37.2, max: 37.4 } }, confirm: { command: "climate" as const, reason: (l: string) => l } };
       return { ...real, KINDS: { ...real.KINDS, aircon } };
     });
     try {
-      const { KINDS: mocked } = await import("../src/model/kinds.js");
-      const { checkKinds: check } = await import("../src/model/kinds-check.js");
+      const { KINDS: mocked } = await import("../src/devices/kinds.js");
+      const { checkKinds: check } = await import("../src/devices/kinds-check.js");
       expect(check(mocked)).toEqual([]);
     } finally {
-      vi.doUnmock("../src/model/kinds.js");
+      vi.doUnmock("../src/devices/kinds.js");
       vi.resetModules();
     }
   });
@@ -212,8 +212,8 @@ describe("등록부 검증(checkKinds)", () => {
 
   it("서버 시작이 틀린 등록부에서 까닭과 함께 멈춘다", async () => {
     vi.resetModules();
-    vi.doMock("../src/model/kinds.js", async (importOriginal) => {
-      const real = await importOriginal<typeof import("../src/model/kinds.js")>();
+    vi.doMock("../src/devices/kinds.js", async (importOriginal) => {
+      const real = await importOriginal<typeof import("../src/devices/kinds.js")>();
       return { ...real, KINDS: { ...real.KINDS, dishwasher: { ...real.KINDS.dishwasher, confirm: { command: "on", reason: (l: string) => l } } } };
     });
     try {
@@ -221,7 +221,7 @@ describe("등록부 검증(checkKinds)", () => {
       await expect(startServer({ env: { HUB: "memory", PORT: "0", RUNTIME_DIR: join(ROOT, "runtime", "never-used"), REFLECT_AT: "off" }, log: () => {} }))
         .rejects.toThrow(/가전 종류 등록부.*dishwasher.*confirm on/);
     } finally {
-      vi.doUnmock("../src/model/kinds.js");
+      vi.doUnmock("../src/devices/kinds.js");
       vi.resetModules();
     }
   });

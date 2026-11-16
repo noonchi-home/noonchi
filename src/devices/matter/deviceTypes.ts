@@ -50,7 +50,7 @@ import {
   WindowCoveringDevice,
 } from "@matter/main/devices";
 import type { DeviceSpec } from "../hub/types.js";
-import { clustersFromSummary, MATTER_ENUMS, type MatterClusters, type MatterSummary } from "../model/mapping.js";
+import { clustersFromSummary, MATTER_ENUMS, type MatterClusters, type MatterSummary } from "../mapping.js";
 import {
   TwinDoorLockServer,
   TwinKeypadInputServer,

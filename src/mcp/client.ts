@@ -1,7 +1,7 @@
 // MCP 서버가 쓰는 ToolBackend: 실행 중인 twin-home 서버의 REST를 부른다.
 
 import type { ToolBackend, DeviceView, RoomView } from "../agent/tools.js";
-import type { Command, CommandResult } from "../hub/types.js";
+import type { Command, CommandResult } from "../devices/hub/types.js";
 import { fetchRetry } from "../shared/net.js";
 
 export const DEFAULT_TWIN_HOME_URL = "http://127.0.0.1:8200";

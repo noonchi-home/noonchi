@@ -16,7 +16,7 @@ import type { WorldView } from "../contract/world.js";
 import type { OffTrack, PlanView } from "../contract/plan.js";
 import type { ControlMode } from "../contract/setup.js";
 import { deviceViews, roomViews } from "../agent/tools.js";
-import type { Command, CommandResult, DeviceHub, RoomSpec } from "../hub/types.js";
+import type { Command, CommandResult, DeviceHub, RoomSpec } from "../devices/hub/types.js";
 import { HISTORY_KINDS, type HistoryDb } from "../brain/history/db.js";
 import type { ReflectResult } from "../brain/history/reflect.js";
 import { daySummary, isDay } from "../brain/history/summary.js";
@@ -25,7 +25,7 @@ import type { SyncState } from "../phone/sync/aligner.js";
 import { StartPoseError, type StartPose } from "../phone/sync/start.js";
 import { repoPath } from "../shared/paths.js";
 import type { PlanHub } from "../plan/hub.js";
-import { twinChange } from "../model/mapping.js";
+import { twinChange } from "../devices/mapping.js";
 import { listenRetry } from "../shared/net.js";
 import { serveFile } from "../shared/static.js";
 
@@ -88,7 +88,7 @@ export interface AppOptions {
   reflect?: (day: string) => Promise<ReflectResult>;
 }
 
-/** MatterHub에서 서버가 쓰는 부분(src/matter/matterHub.ts를 직접 불러오지 않으려고 모양만 적는다). */
+/** MatterHub에서 서버가 쓰는 부분(src/devices/matter/matterHub.ts를 직접 불러오지 않으려고 모양만 적는다). */
 interface MatterInfoView {
   transport: string;
   commissioning?: string;

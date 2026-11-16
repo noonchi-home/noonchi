@@ -4,7 +4,7 @@
 import type { BrainLog } from "../../contract/events.js";
 import type { PlanView } from "../../contract/plan.js";
 import type { ControlMode } from "../../contract/setup.js";
-import type { DeviceState } from "../../hub/types.js";
+import type { DeviceState } from "../../devices/hub/types.js";
 import { CHANGE_TEXT } from "../../world/labels.js";
 import { becameKey, deviceText } from "../../world/relations.js";
 import type { HistoryDb } from "./db.js";

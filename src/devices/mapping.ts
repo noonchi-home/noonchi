@@ -1,5 +1,5 @@
 // twin-studio 카탈로그 type/attrs ↔ Matter 기기 매핑 (docs/plan.md "기기 매핑" 표).
-// 종류별 표(TYPE_RULES·KIND_PROFILES·KIND_LABELS)는 가전 종류 등록부(src/model/kinds.ts)에서 파생하고, 함수들은 그 표를 해석만 한다.
+// 종류별 표(TYPE_RULES·KIND_PROFILES·KIND_LABELS)는 가전 종류 등록부(src/devices/kinds.ts)에서 파생하고, 함수들은 그 표를 해석만 한다.
 // 제어 명령은 종류 이름이 아니라 프로필(profile.model)로 가른다.
 //
 // Matter 요약(summary) 키와 값:
@@ -15,7 +15,7 @@
 //   valveState: "open"|"closed"           ValveConfigurationAndControl.currentState
 //   stateValue: boolean (true = 닫힘/접촉) BooleanState.stateValue (문 센서)
 
-import type { Capability, ClimateMode, Command, DeviceKind, DeviceSpec, DeviceState, FanSpeed } from "../hub/types.js";
+import type { Capability, ClimateMode, Command, DeviceKind, DeviceSpec, DeviceState, FanSpeed } from "./hub/types.js";
 import { KINDS, KIND_ORDER, mapEntries, type KindProfile, type Model } from "./kinds.js";
 
 export type { KindProfile } from "./kinds.js";

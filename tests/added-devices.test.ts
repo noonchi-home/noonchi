@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import type { SceneJson } from "../src/contract/layout.js";
 import { LayoutEditor } from "../src/layout/editor.js";
 import { loadLayout } from "../src/layout/load.js";
-import { DEFAULT_TWIN_DIR, loadTwin } from "../src/model/devices.js";
+import { DEFAULT_TWIN_DIR, loadTwin } from "../src/devices/devices.js";
 import { resolveHome } from "../src/model/homes.js";
 import { loadScene } from "../src/model/scene.js";
 import { loadCatalog } from "../src/layout/catalog.js";
