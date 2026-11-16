@@ -269,8 +269,7 @@
   - `closer.ts`: 가까이 보기(`applyCloser`·`applyCloserScene`·`endCloser`·`closerObject`), 지킴 풀기·옮김 표시(`liftHolds`·`sawAgain`), `CLOSER_NEW_FRAMES`
   - `devices.ts`: 가전 설비, 카메라로 가전 맞추기·이어 본 값(`sight`·`seeDevices`·`sightLast`), 가전 상태(`applyDevice`·`tick`), 가전 줄(`deviceViews`)
   - 나누는 방법: 실행 추적(`TrackCore`)과 같다. 부분은 `WorldCore`를 받는 작은 클래스(`Part`)이고 서로를 그 칸으로 부르며, 부분끼리 값 import가 없다(`WorldState`가 만들어 단다).
-- **다음에(정한 것 3):**
-  - `agent/planTools.ts`(616줄): 단계 규칙(`needsPhone`·`riskyHand`·`selfStopWait`·`HUMAN_KINDS`)을 `agent/plan-rules.ts`로
+- **`agent/planTools.ts`(614줄) → 단계 규칙 `agent/plan-rules.ts`(8b, 정한 것 3):** `HUMAN_KINDS`·`riskyHand`·`needsPhone`·`selfStopWait`를 옮겼다(글 그대로). 계획 검사(`PlanDraft`)와 실행 추적이 같은 규칙을 쓰고, 다른 도메인은 `agent/index.ts`로 가져온다. `planTools.ts`의 나머지는 그대로다.
 
 ## 3. 막는 장치
 
@@ -402,7 +401,7 @@
 | 4 | 도메인마다 `index.ts`를 만들고 다른 도메인 import를 입구로 바꿈 | 거꾸로 가는 것만 남음 | 2시간 |
 | 5 | 남은 고리 끊기(F2·F4·F6·F8·F10·F11) | 화면 쪽만 남음 | 2시간 |
 | 6 | 화면: `twin3d`+`twin` → `ui/src/twin`, `bubbles`·`panels`·`checks` → `dashboard`, F12·F13, 화면 입구 | 0에 가까움 | 1.5시간 |
-| 7 | 큰 파일 쪼개기: `app.ts` → `server/routes/`. `track.ts` → `act/track/`(7a, 구조 검사를 `act/track/` 폴더 전체로, 79ff269 과거 실수를 각 파일에 넣은 자료가 실패하는지 확인). `home.ts` → `server/home/`(7b-home, 도메인별 잇기와 안쪽 공유 객체 `HomeCore`, 닫기 차례 그대로). `world/state.ts` → `world/state/`(8a, 부분과 안쪽 공유 객체 `WorldCore`). `planTools.ts`는 다음에(정한 것 3) | 0 | 3.5~4시간 |
+| 7 | 큰 파일 쪼개기: `app.ts` → `server/routes/`. `track.ts` → `act/track/`(7a, 구조 검사를 `act/track/` 폴더 전체로, 79ff269 과거 실수를 각 파일에 넣은 자료가 실패하는지 확인). `home.ts` → `server/home/`(7b-home, 도메인별 잇기와 안쪽 공유 객체 `HomeCore`, 닫기 차례 그대로). `world/state.ts` → `world/state/`(8a, 부분과 안쪽 공유 객체 `WorldCore`). `planTools.ts`의 단계 규칙 → `agent/plan-rules.ts`(8b) | 0 | 3.5~4시간 |
 | 8 | 흐름 확인: `tests/demo-e2e.test.ts`(네 장면 가짜 서버 흐름: 컵, 에어컨, 전자레인지 승인·꺼짐 확인, 라면)와 `coach-e2e`·`noonchi-e2e`를 따로 한 번 더 돌린다(단계마다 전체 시험에도 들어 있다). `video-check --fake`는 컵 감지·컵 PAM 판단·`CUP_SCRIPTS`로 고정이라(`scripts/video-check.ts:384`) 쓰지 않는다. `docs/reference.md` 「구조」, 저장소 `CLAUDE.md` 경로, 규칙 표 줄(3.4) | 0 | 1.5시간 |
 | 9 | 예외 목록 파일 지움, 엄격 모드, 3.3 마지막 확인. 구현명세서 SSOT 18.1 폴더 구조와 본문 경로(`src/world/vocab.ts` 등)를 docs 저장소에서 고침 | 없음 | 1시간 |
 
@@ -425,7 +424,7 @@
    - `brain`은 PAM 서비스 연결과 기록·반성을 합친다. 입구 첫 줄은 「PAM 서비스 연결·기록·반성(구현명세서 6.12·6.13)」이다.
    - 외부 API 게이트웨이 `infer`는 도메인이 아니라 기반층이다. 자리는 `src/infer/` 그대로다(2.1 기반층 표의 까닭).
 2. **공용 표:** 지금 도메인에 두고 「표 입구」로 모든 도메인이 읽는다. 계약은 공용 표 타입만 `import type`으로 가져오고, 계약 ↔ 공용 표 타입 전용 고리만 허용한다(2.3).
-3. **큰 파일 쪼개기:** `track.ts`·`home.ts`·`app.ts`(7a·7b). `world/state.ts`·`planTools.ts`는 다음에 한다. `world/state.ts`는 8a로 했다(사용자, 2026-11-17).
+3. **큰 파일 쪼개기:** `track.ts`·`home.ts`·`app.ts`(7a·7b). `world/state.ts`·`planTools.ts`는 다음에 한다. `world/state.ts`는 8a, `planTools.ts` 단계 규칙은 8b로 했다(사용자, 2026-11-17).
 4. **track.ts 쪼개기는 시연 뒤로 미룸.** 까닭: 시연 브랜치에서 11-10 뒤로 커밋 36개가 고친 파일이라 합칠 때 충돌이 큼(사용자, 2026-11-16). 시연 뒤 7a로 했다(사용자, 2026-11-17).
 5. **server/home.ts 쪼개기도 시연 뒤로 미룸.** 까닭: 시연 브랜치에서 11-10 뒤로 커밋 32개가 고쳤고, startHome 한 함수가 클로저 변수를 나눠 써서 나누면 거의 모든 줄이 바뀜(사용자, 2026-11-16). 이번 7단계는 `app.ts` → `server/routes/`만 한다. 시연 뒤 7b-home으로 했다(사용자, 2026-11-17).
 

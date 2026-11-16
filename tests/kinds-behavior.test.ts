@@ -7,7 +7,7 @@ import type { Capability, Command, DeviceSpec } from "../src/contract/devices.js
 import { KINDS, isRiskyKind, type KindEntry } from "../src/devices/kinds.js";
 import { checkKinds } from "../src/devices/kinds-check.js";
 import { KIND_PROFILES, TYPE_RULES, normalizeCommand } from "../src/devices/mapping.js";
-import { riskyHand } from "../src/agent/planTools.js";
+import { riskyHand } from "../src/agent/plan-rules.js";
 import { Policy, needsConfirm } from "../src/agent/policy.js";
 import { THINQ_ADAPTERS, mirrorPlan, readAppliance, thinqSteps } from "../src/devices/thinq/appliance.js";
 
