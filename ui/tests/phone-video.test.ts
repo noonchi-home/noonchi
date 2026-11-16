@@ -489,6 +489,36 @@ describe("영상 AR: 재생을 기다리는 동안 다시 시작·끝냄", () =>
       expect(exit).toHaveBeenCalledTimes(1);
     });
 
+    it("전체 화면 요청이 끝나기 전에 AR을 끝내면, 그 요청이 나중에 성공해도 바로 푼다. 다시 시작한 AR의 요청은 풀지 않는다", async () => {
+      const pending: (() => void)[] = [];
+      const request = vi.fn(() => new Promise<void>((resolve) => { pending.push(() => { full = document.documentElement; resolve(); }); }));
+      const exit = vi.fn(async () => { full = null; });
+      root.requestFullscreen = request;
+      doc.exitFullscreen = exit;
+      const settle = async (n: number) => {
+        pending[n]!();
+        for (let i = 0; i < 5; i++) await Promise.resolve();
+      };
+      const { ar, release } = direct();
+      release();
+      await ar.start({});
+      ar.stop();
+      expect(exit).not.toHaveBeenCalled();
+      await settle(0);
+      expect(exit).toHaveBeenCalledTimes(1);
+      expect(full).toBeNull();
+      // 끝낸 AR의 요청이 늦게 와도 다시 시작한 AR의 전체 화면은 그대로 둔다
+      await ar.start({});
+      ar.stop();
+      await ar.start({});
+      await settle(1);
+      expect(exit).toHaveBeenCalledTimes(1);
+      await settle(2);
+      expect(full).toBe(document.documentElement);
+      ar.stop();
+      expect(exit).toHaveBeenCalledTimes(2);
+    });
+
     it("실제 모드(ar.js)는 DOM 오버레이와 겹쳐 전체 화면을 요청하지 않는다", () => {
       const src = readFileSync(join(process.cwd(), "src", "phone", "core", "ar.js"), "utf8");
       expect(src).not.toMatch(/requestFullscreen/);

@@ -146,34 +146,43 @@ const browser = {
 };
 
 /** link: link.js. params: 페이지 주소 검색값(fps). deps: clipUrl·fovDeg·pitchDeg·heightM·steps·reactMs, 시험은 영상·인코딩·그림판·화면 크기를 바꾼다. */
-/** 페이지 전체 화면(영상 모드 AR). 지원하지 않거나 거절돼도 넘어간다(영상 시작은 그대로). 이 AR이 요청한 전체 화면만 끝낼 때 푼다. */
+/** 페이지 전체 화면(영상 모드 AR). 지원하지 않거나 거절돼도 넘어간다(영상 시작은 그대로). 이 AR이 요청한 전체 화면만 끝낼 때 푼다.
+ *  요청은 늦게 끝날 수 있다: 끝낸 뒤에 성공한 요청은 바로 푼다. 그 사이 다시 시작했으면(새 요청) 그 전체 화면은 둔다. */
 function pageFullscreen() {
-  let asked = null; // 요청한 문서
+  let active = null; // 지금 AR의 요청: { doc }
+  const exit = (doc) => {
+    if (!doc?.fullscreenElement || typeof doc.exitFullscreen !== "function") return;
+    try {
+      Promise.resolve(doc.exitFullscreen()).catch(() => {});
+    } catch {
+      // 이미 풀렸다
+    }
+  };
+  /** 요청이 성공했을 때: 그 요청을 건 AR이 이미 끝났고 새 AR이 없으면 푼다. */
+  const settled = (ticket) => () => {
+    if (active === null) exit(ticket.doc);
+  };
   return {
     enter(doc) {
       const root = doc?.documentElement;
       if (typeof root?.requestFullscreen !== "function" || doc.fullscreenElement) return;
-      asked = doc;
+      const ticket = { doc };
+      active = ticket;
       try {
-        Promise.resolve(root.requestFullscreen({ navigationUI: "hide" })).catch(() => {});
+        Promise.resolve(root.requestFullscreen({ navigationUI: "hide" })).then(settled(ticket), () => {});
       } catch {
         // 옵션을 받지 않는 브라우저는 옵션 없이 다시 요청한다
         try {
-          Promise.resolve(root.requestFullscreen()).catch(() => {});
+          Promise.resolve(root.requestFullscreen()).then(settled(ticket), () => {});
         } catch {
           // 전체 화면을 쓸 수 없다
         }
       }
     },
     leave() {
-      const doc = asked;
-      asked = null;
-      if (!doc?.fullscreenElement || typeof doc.exitFullscreen !== "function") return;
-      try {
-        Promise.resolve(doc.exitFullscreen()).catch(() => {});
-      } catch {
-        // 이미 풀렸다
-      }
+      const ticket = active;
+      active = null;
+      if (ticket) exit(ticket.doc);
     },
   };
 }
