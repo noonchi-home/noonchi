@@ -131,8 +131,8 @@
 
 | 도메인(문서 이름) | 문서 | 폴더 | 들어갈 지금 코드 |
 |---|---|---|---|
-| 대시보드 | 12 | `ui/src/dashboard/` | `dashboard/`, `bubbles/`, `panels/`, `checks/` |
-| 트윈 화면(3D) | 10 | `ui/src/twin/` | `twin3d/`, `twin/` (대시보드와 설정 화면이 같이 씀) |
+| 대시보드 | 12 | `ui/src/dashboard/` | `dashboard/`, `bubbles/`·`panels/`·`checks/` → `dashboard/bubbles/`·`panels/`·`checks/`(대시보드에 같은 이름 `checks.ts`가 있어 하위 폴더) |
+| 트윈 화면(3D) | 10 | `ui/src/twin/` | `twin3d/` → `twin/3d/`(엔진 경계 시험이 그 폴더의 .ts를 본다), `twin/`. 설정 화면도 쓰는 뷰어 다리(`embed`·`viewer`·`project`)는 화면 공용 `lib/twin-*.ts`로 간다(설정 화면이 트윈 입구로 three.js 엔진까지 읽지 않게) |
 | 실제 폰 화면 | 12 「실제 폰」 | `ui/src/phone/` | 그대로 |
 | 설정 화면 | 12 「설정 화면」 | `ui/src/setup/` | 그대로 |
 
@@ -158,7 +158,7 @@
 | 마스크 풀기 | `brain/seg.ts`(순수 함수, World State·대시보드·감지기가 씀) | `src/shared/mask.ts` |
 | 파일 자리 기준 자원 경로 | `MODELS_DIR`·`DEFAULT_TWIN_DIR`·`DEFAULT_UI_DIR`·`DEFAULT_WEB_DIR`·`SHARED_VIDEO_DIR`·`DEFAULT_RUNTIME_DIR`(각 파일의 `new URL("../../…", import.meta.url)`) | `src/shared/paths.ts`의 `repoPath()` 하나(0단계). 직접 실행 검사는 같은 파일의 `isEntry()` |
 | 디자인 토큰 | `src/design/` | 그대로(규칙 표가 이 경로를 원본으로 적음) |
-| 화면 공용 | `ui/src/components/ui/`(21st.dev 부품), `ui/src/lib/` | 그대로. 부품은 파일마다 가져온다(lint-ui-parts가 이미 봄) |
+| 화면 공용 | `ui/src/components/ui/`(21st.dev 부품), `ui/src/lib/` | 그대로. 부품은 파일마다 가져온다(lint-ui-parts가 이미 봄). 두 화면이 같이 쓰는 것도 `lib/`에 둔다: 허브 상태 `hub.ts`·마스코트 그림 `mascot-image.ts`·폰 주소 `phone-url.ts`(F12), 트윈 뷰어 다리 `twin-embed.ts`·`twin-viewer.ts`·`twin-project.ts` |
 | 옛 화면 조각 | `web/` | 그대로 |
 | 폰 화면 사진 페이지 | `ui/src/phone/shots.tsx`·`fixtures.ts` | 그대로(서버 글은 공용 표로 가져옴) |
 

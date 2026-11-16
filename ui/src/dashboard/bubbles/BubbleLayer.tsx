@@ -6,7 +6,7 @@ import { Avatar, AvatarFallback } from "../../components/ui/avatar";
 import { Status, StatusIndicator } from "../../components/ui/status";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../components/ui/tooltip";
 import { cn } from "../../lib/utils";
-import type { ScreenPoint } from "../../twin/use-anchors";
+import type { ScreenPoint } from "../../twin";
 import { ALIGN_EDGE, placeBubbles, type Box, type Placement, type Rect } from "./place";
 import { deviceSummary, type Tone } from "./summary";
 

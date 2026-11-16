@@ -4,8 +4,7 @@
 import type { EyeEvent } from "../../../src/contract/events.ts";
 import type { PlanStep, PlanView, XZ } from "../../../src/contract/plan.ts";
 import { dashboardChecks, type Check } from "./checks/checks";
-import { conePixelBox } from "../twin/3d/eye";
-import { planDirToScreen, planToPixel, screenAngle, type OrthoCamera } from "../twin/3d/projection";
+import { conePixelBox, planDirToScreen, planToPixel, screenAngle, type OrthoCamera } from "../twin";
 import type { Px } from "./camera";
 import { isOpen, stepIndex } from "./data";
 import type { HomeIndex } from "./home";

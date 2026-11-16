@@ -1,0 +1,18 @@
+{
+  "files": {},
+  "decls": {},
+  "new": [
+    "ui/src/twin/index.ts",
+    "ui/src/dashboard/index.ts",
+    "ui/src/phone/index.ts",
+    "ui/src/setup/index.ts"
+  ],
+  "text": [],
+  "allow": {
+    "ui/src/dashboard/Dashboard.tsx: 부수 효과가 있는 import의 차례가 달라요": "대시보드가 트윈 화면을 입구(ui/src/twin/index.ts)로 가져와, 입구가 다시 내보내는 트윈 모듈을 함께 읽어 읽는 차례가 바뀐다. 차례만 바뀜: three(바깥 모듈), three/addons/loaders/GLTFLoader.js(바깥 모듈), @viewer/walls.mjs(바깥 모듈), ui/src/twin/3d/eye.ts(맨 위: 축 벡터 new THREE.Vector3), @viewer/layout.mjs(바깥 모듈), @viewer/live.mjs(바깥 모듈), @viewer/scene.mjs(바깥 모듈), three/addons/utils/BufferGeometryUtils.js(바깥 모듈), three/addons/lights/RectAreaLightUniformsLib.js(바깥 모듈), @viewer/states.mjs(바깥 모듈), ui/src/twin/3d/states.ts(맨 위: 벡터 상수 new THREE.Vector3), ui/src/lib/twin-viewer.ts(맨 위: React 문맥 createContext). 모두 맨 위에서 표·부품·상수만 만들고 상태를 바꾸는 초기화(전역 등록 등)는 없다. 이 파일은 대시보드 페이지에서만 읽히고, 페이지는 Dashboard.tsx로 이 모듈을 전에도 모두 읽었다(three의 window.__THREE__ 표시도 전과 같다)",
+    "ui/src/dashboard/MapOverlay.tsx: 부수 효과가 있는 import의 차례가 달라요": "대시보드가 트윈 화면을 입구(ui/src/twin/index.ts)로 가져와, 입구가 다시 내보내는 트윈 모듈을 함께 읽어 읽는 차례가 바뀐다. 새로 읽음: ui/src/components/ui/alert.tsx(맨 위: class 변형 표 cva), three/addons/loaders/GLTFLoader.js(바깥 모듈), @viewer/walls.mjs(바깥 모듈), ui/src/twin/3d/eye.ts(맨 위: 축 벡터 new THREE.Vector3), @viewer/layout.mjs(바깥 모듈), @viewer/live.mjs(바깥 모듈), @viewer/scene.mjs(바깥 모듈), three/addons/utils/BufferGeometryUtils.js(바깥 모듈), three/addons/lights/RectAreaLightUniformsLib.js(바깥 모듈), @viewer/states.mjs(바깥 모듈), ui/src/twin/3d/states.ts(맨 위: 벡터 상수 new THREE.Vector3), ui/src/lib/twin-viewer.ts(맨 위: React 문맥 createContext). 모두 맨 위에서 표·부품·상수만 만들고 상태를 바꾸는 초기화(전역 등록 등)는 없다. 이 파일은 대시보드 페이지에서만 읽히고, 페이지는 Dashboard.tsx로 이 모듈을 전에도 모두 읽었다(three의 window.__THREE__ 표시도 전과 같다)",
+    "ui/src/dashboard/frame.ts: 부수 효과가 있는 import의 차례가 달라요": "대시보드가 트윈 화면을 입구(ui/src/twin/index.ts)로 가져와, 입구가 다시 내보내는 트윈 모듈을 함께 읽어 읽는 차례가 바뀐다. 새로 읽음: lucide-react(바깥 모듈), react(바깥 모듈), class-variance-authority(바깥 모듈), clsx(바깥 모듈), tailwind-merge(바깥 모듈), ui/src/lib/utils.ts(맨 위: class 합치기 함수 extendTailwindMerge), ui/src/components/ui/alert.tsx(맨 위: class 변형 표 cva), three/addons/loaders/GLTFLoader.js(바깥 모듈), @viewer/walls.mjs(바깥 모듈), @viewer/layout.mjs(바깥 모듈), @viewer/live.mjs(바깥 모듈), @viewer/scene.mjs(바깥 모듈), three/addons/utils/BufferGeometryUtils.js(바깥 모듈), three/addons/lights/RectAreaLightUniformsLib.js(바깥 모듈), @viewer/states.mjs(바깥 모듈), ui/src/twin/3d/states.ts(맨 위: 벡터 상수 new THREE.Vector3), ui/src/lib/twin-viewer.ts(맨 위: React 문맥 createContext). 모두 맨 위에서 표·부품·상수만 만들고 상태를 바꾸는 초기화(전역 등록 등)는 없다. 이 파일은 대시보드 페이지에서만 읽히고, 페이지는 Dashboard.tsx로 이 모듈을 전에도 모두 읽었다(three의 window.__THREE__ 표시도 전과 같다)",
+    "ui/src/dashboard/home.ts: 부수 효과가 있는 import의 차례가 달라요": "대시보드가 트윈 화면을 입구(ui/src/twin/index.ts)로 가져와, 입구가 다시 내보내는 트윈 모듈을 함께 읽어 읽는 차례가 바뀐다. 새로 읽음: lucide-react(바깥 모듈), react(바깥 모듈), class-variance-authority(바깥 모듈), clsx(바깥 모듈), tailwind-merge(바깥 모듈), ui/src/lib/utils.ts(맨 위: class 합치기 함수 extendTailwindMerge), ui/src/components/ui/alert.tsx(맨 위: class 변형 표 cva), three(바깥 모듈), three/addons/loaders/GLTFLoader.js(바깥 모듈), @viewer/walls.mjs(바깥 모듈), ui/src/twin/3d/eye.ts(맨 위: 축 벡터 new THREE.Vector3), @viewer/layout.mjs(바깥 모듈), @viewer/live.mjs(바깥 모듈), @viewer/scene.mjs(바깥 모듈), three/addons/utils/BufferGeometryUtils.js(바깥 모듈), three/addons/lights/RectAreaLightUniformsLib.js(바깥 모듈), @viewer/states.mjs(바깥 모듈), ui/src/twin/3d/states.ts(맨 위: 벡터 상수 new THREE.Vector3), ui/src/lib/twin-viewer.ts(맨 위: React 문맥 createContext). 모두 맨 위에서 표·부품·상수만 만들고 상태를 바꾸는 초기화(전역 등록 등)는 없다. 이 파일은 대시보드 페이지에서만 읽히고, 페이지는 Dashboard.tsx로 이 모듈을 전에도 모두 읽었다(three의 window.__THREE__ 표시도 전과 같다)"
+  },
+  "exceptions": {}
+}
