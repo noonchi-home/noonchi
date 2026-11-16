@@ -9,7 +9,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { Agent, type AgentEvent, type ServiceLine } from "../src/agent/agent.js";
+import { Agent, type AgentEvent, type LlmProvider, type ServiceLine, type StepOptions, type StepResult } from "../src/agent/agent.js";
 import { ApprovalStore } from "../src/agent/approval.js";
 import { Policy } from "../src/agent/policy.js";
 import { SERVICE_RETRY_MS, ServiceRetryStore, contactsPath, loadContacts, serviceRecord, serviceRetryPath, type ServiceContacts } from "../src/agent/service.js";
@@ -607,6 +607,41 @@ describe("Agent + call_service(가짜 모델·가짜 전화 서비스)", () => {
     } finally {
       await fake.close();
     }
+  });
+
+  it("같은 세션의 모델 호출이 끝나지 않은 채 그 뒤에 승인 답이 기다려도, 닫으면 모델 호출을 끊고 승인 답은 바로 취소로 끝난다(닫기가 모델 응답을 기다리지 않는다)", async () => {
+    /** 세션마다: 첫 차례 call_service → 글, 그다음 차례는 끊길 때까지 답하지 않는 모델(시험 대역). */
+    class HangingProvider implements LlmProvider {
+      readonly name = "hanging";
+      aborted = 0;
+      createState() { return { round: 0 }; }
+      addUserMessage(): void {}
+      addToolResults(): void {}
+      step(state: unknown, opts: StepOptions): Promise<StepResult> {
+        const st = state as { round: number };
+        const round = st.round++;
+        if (round === 0) return Promise.resolve({ text: "", calls: [{ id: "c1", name: "call_service", args: { kind: "as_center", device_id: "washer_1", problem: "탈수할 때 멈춤", reason: "AS센터 전화를 부탁해서" } }] });
+        if (round === 1) return Promise.resolve({ text: "AS센터에 전화할지 골라 주세요.", calls: [] });
+        return new Promise((_, reject) => {
+          opts.signal?.addEventListener("abort", () => { this.aborted++; reject(new Error("끊김")); }, { once: true });
+        });
+      }
+    }
+    const provider = new HangingProvider();
+    const { hub } = makeHome();
+    const results: ServiceResult[] = [];
+    const agent = new Agent({ hub, policy: new Policy(), rooms: ROOMS, provider, contacts: CONTACTS, onService: (r) => results.push(r) });
+    const token = (await agent.chat("phone", "세탁기 AS 불러 줘", { heard: true })).pendingConfirmations[0]!.token;
+    const talking = agent.chat("phone", "근데 그거 언제 와?", { heard: true });
+    await new Promise((r) => setTimeout(r, 50));
+    const answered = agent.confirm(token, "approve");
+    const t0 = Date.now();
+    await agent.close();
+    expect(Date.now() - t0).toBeLessThan(2000);
+    expect(provider.aborted).toBe(1);
+    expect((await talking).reply).toBe("집을 닫는 중이라 요청을 받지 않았어요.");
+    expect(await answered).toMatchObject({ ok: false, reply: "AS센터 전화를 취소했어요." });
+    expect(results.map((r) => r.outcome)).toEqual(["cancelled"]);
   });
 
   it("에이전트를 닫으면(집을 닫음) 차례를 기다리던 연락은 보내지 않고 취소로 끝내고(결과 cancelled, 「AS센터 전화를 취소했어요.」), 보내는 중인 연락이 끝날 때까지 기다린다. 닫은 뒤 승인은 보내지 않는다", async () => {

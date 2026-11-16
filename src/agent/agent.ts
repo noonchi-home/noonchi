@@ -215,6 +215,8 @@ export class Agent {
   private readonly sends = new Set<{ started: boolean; finish(r: ConfirmResult): boolean; cancel(): void; done: Promise<void> }>();
   /** 닫혔다(집을 닫음): 새로 승인된 외부 연락은 보내지 않고 취소로 끝낸다. */
   private closed = false;
+  /** 닫을 때 끊는 모델 호출 신호: 같은 세션에서 모델 응답 뒤에 기다리던 승인 답이 바로 차례를 받게 한다. */
+  private readonly stopModel = new AbortController();
   /** 처리 중인 승인 답(confirm·answerToken, 세션 차례를 기다리는 것 포함). 닫을 때 모두 끝날 때까지 기다려 그 답이 폰에 가게 한다. */
   private readonly answering = new Set<Promise<unknown>>();
 
@@ -405,7 +407,8 @@ export class Agent {
       const called = new Set<string>();
       for (let round = 0; ; round++) {
         const allowTools = round < this.maxRounds;
-        const r = await this.provider.step(s.state, { system, tools: this.modelTools, allowTools });
+        if (this.closed) throw new Error(AGENT_CLOSED);
+        const r = await this.modelStep(s.state, { system, tools: this.modelTools, allowTools });
         if (r.calls.length === 0) return called.size === 1 && called.has(LEAVE_IT) ? "" : r.text.trim() || "(답이 비어 있어요)";
         if (!allowTools) {
           // 한도를 넘긴 호출은 실행하지 않고 결과만 채워 대화 형식을 맞춘다
@@ -423,9 +426,22 @@ export class Agent {
         this.provider.addToolResults(s.state, results);
       }
     } catch (e) {
-      // 대화 상태가 어긋났을 수 있으니 새로 시작한다
+      // 대화 상태가 어긋났을 수 있으니 새로 시작한다. 닫아서 끊은 호출이면 닫는 중이라는 답
       s.state = this.provider.createState();
+      if (this.closed) return AGENT_CLOSED;
       return `에이전트(LLM) 호출에 실패했습니다: ${describeError(e)}`;
+    }
+  }
+
+  /** 모델 한 번: 호출마다 신호를 따로 만들어 닫기(stopModel)에 잇고, 끝나면 그 이음을 뗀다(오래 쓰는 신호에 듣는 쪽이 쌓이지 않게). */
+  private async modelStep(state: unknown, opts: StepOptions): Promise<StepResult> {
+    const call = new AbortController();
+    const stop = () => call.abort(this.stopModel.signal.reason);
+    this.stopModel.signal.addEventListener("abort", stop, { once: true });
+    try {
+      return await this.provider.step(state, { ...opts, signal: call.signal });
+    } finally {
+      this.stopModel.signal.removeEventListener("abort", stop);
     }
   }
 
@@ -584,9 +600,12 @@ export class Agent {
   }
 
   /** 닫는다(집을 닫음): 새 말은 받지 않고(AGENT_CLOSED), 차례를 기다리던 외부 연락은 보내지 않고 취소로 끝내고(결과 cancelled),
-   *  보내는 중인 것과 이미 받은 승인 답(세션 차례를 기다리는 것 포함)은 끝날 때까지 기다린다. 그 뒤 승인은 보내지 않는다. 가전 명령은 정책을 닫아(Policy.close) 막는다. */
+   *  진행 중인 모델 호출은 끊는다(그 말의 답은 AGENT_CLOSED). 보내는 중인 것과 이미 받은 승인 답(세션 차례를 기다리는 것 포함)은 끝날 때까지 기다린다.
+   *  그 뒤 승인은 보내지 않는다. 가전 명령은 정책을 닫아(Policy.close) 막는다. */
   async close(): Promise<void> {
     this.closed = true;
+    // 진행 중인 모델 호출을 끊는다: 같은 세션 차례에서 그 뒤에 기다리던 승인 답이 바로 취소로 끝난다
+    this.stopModel.abort(new Error(AGENT_CLOSED));
     const sends = [...this.sends];
     for (const j of sends) j.cancel();
     // 보내는 중인 연락과, 세션 차례를 기다리던 승인 답(닫힌 뒤 차례가 오면 취소로 끝난다)이 모두 끝날 때까지
