@@ -76,7 +76,9 @@ export function textFromWorld(world: WorldView, recent: readonly WorldChange[], 
       if (!current("object", k, f, o.nowMs)) continue;
       lines.push(`${name} ${STATE_TEXT[f!.value] ?? f!.value}${f!.certainty === "inferred" ? `(${GUESS})` : ""}: ${at(f!.since_ms)}부터 ${lasting(o.nowMs - f!.since_ms)}`);
     }
-    return { lines, out: ob.status === "out_of_view", last: ob.last_seen_ms };
+    // 손에 든 물건(손에 있음 사실이거나 사람이 들고 있음)은 넘쳐도 덜어 내지 않는다
+    const held = ob.facts.place?.value === "in_hand" || world.person.holding.includes(ob.id);
+    return { lines, out: ob.status === "out_of_view", last: ob.last_seen_ms, held };
   });
   const facts: string[] = [];
   for (const f of world.fixtures) {
@@ -101,25 +103,44 @@ export function textFromWorld(world: WorldView, recent: readonly WorldChange[], 
   }
   const eye = world.eye ? `${EYE_TEXT} ${world.eye.room_label ?? ROOM_UNKNOWN}` : null;
   const time = timeText(o.nowMs, o.offsetMinutes);
-  const render = (keep: readonly ObjectLines[], maxLines?: number) =>
-    buildPamText({ lines, facts: [...keep.flatMap((x) => x.lines), ...facts], time, eye, offsetMinutes: o.offsetMinutes, maxLines });
-  let keep = objects;
-  let text = render(keep);
-  if (text.length <= PAM_TEXT_MAX) return text;
-  // PAM 상한을 넘으면 오래된 시야 밖 물건부터, 그다음 오래된 보이는 물건부터 뺀다(줄마다 「[지속] 」과 줄바꿈만큼 줄어든다)
-  let over = text.length - PAM_TEXT_MAX;
-  const drop = new Set<ObjectLines>();
-  for (const x of [...objects].sort((a, b) => Number(b.out) - Number(a.out) || a.last - b.last)) {
-    if (over <= 0) break;
-    drop.add(x);
-    over -= x.lines.reduce((n, l) => n + "[지속] ".length + l.length + 1, 0);
-  }
-  keep = objects.filter((x) => !drop.has(x));
-  text = render(keep);
-  // 그래도 넘치면 오래된 변화 줄부터 줄인다
-  for (let n = 39; text.length > PAM_TEXT_MAX && n >= 1; n--) text = render(keep, n);
-  return text;
+  return fitText(objects, (keep, maxLines) =>
+    buildPamText({ lines, facts: [...keep.flatMap((x) => x.lines), ...facts], time, eye, offsetMinutes: o.offsetMinutes, maxLines }));
 }
 
-/** 물건 하나의 [지속] 줄(면 줄 + 사실 줄)과 덜어 낼 차례를 정하는 값: 지금 시야 밖인가, 마지막으로 본 시각. */
-interface ObjectLines { lines: string[]; out: boolean; last: number }
+/** 변화 줄 기본 상한(buildPamText maxLines). */
+const MAX_CHANGE_LINES = 40;
+
+/**
+ * PAM 상한(PAM_TEXT_MAX) 안으로 맞춘다. 넘치면 차례로 덜어 낸다: 시야 밖 물건(오래된 것부터) → 오래된 변화 줄(가장 새 줄 하나는 남김) → 보이는 물건(오래된 것부터).
+ * 손에 든 물건과 사람·가전·때·눈 줄은 덜어 내지 않는다. 그래도 넘치면(아주 긴 요약·가전 줄) 줄마다 같은 길이로 잘라 꼭 상한 안으로 만든다.
+ */
+function fitText(objects: readonly ObjectLines[], render: (keep: readonly ObjectLines[], maxLines: number) => string): string {
+  let keep = [...objects];
+  let maxLines = MAX_CHANGE_LINES;
+  let text = render(keep, maxLines);
+  const over = () => text.length > PAM_TEXT_MAX;
+  const dropOldest = (pick: (x: ObjectLines) => boolean) => {
+    for (const x of objects.filter((y) => pick(y) && !y.held).sort((a, b) => a.last - b.last)) {
+      if (!over()) return;
+      keep = keep.filter((y) => y !== x);
+      text = render(keep, maxLines);
+    }
+  };
+  dropOldest((x) => x.out);
+  while (over() && maxLines > 1) text = render(keep, --maxLines);
+  dropOldest((x) => !x.out);
+  if (!over()) return text;
+  // 지켜야 할 줄만으로도 넘친다: 줄마다 같은 길이(cap)로 잘라 맞춘다. 가장 긴 cap을 반씩 찾아 고른다
+  const lines = text.split("\n");
+  const cut = (cap: number) => lines.map((l) => (l.length > cap ? `${l.slice(0, Math.max(0, cap - 1))}…` : l)).join("\n");
+  let lo = 1, hi = Math.max(...lines.map((l) => l.length));
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (cut(mid).length <= PAM_TEXT_MAX) lo = mid;
+    else hi = mid - 1;
+  }
+  return cut(lo).slice(0, PAM_TEXT_MAX);
+}
+
+/** 물건 하나의 [지속] 줄(면 줄 + 사실 줄)과 덜어 낼 차례를 정하는 값: 지금 시야 밖인가, 마지막으로 본 시각, 손에 들었는가(덜어 내지 않음). */
+interface ObjectLines { lines: string[]; out: boolean; last: number; held: boolean }

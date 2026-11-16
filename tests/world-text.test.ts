@@ -137,6 +137,52 @@ describe("PAM 관찰 텍스트", () => {
     expect(text).not.toContain("책 book_0 ");
   });
 
+  it("넘칠 때 빼는 차례: 시야 밖 오래된 물건 → 오래된 변화 줄 → 보이는 물건. 손에 든 물건과 사람 줄은 빼지 않는다(긴 VLM 요약이 쌓여도 지금 든 컵의 근거가 남는다)", () => {
+    const fact = (value: string, since: number) => ({ value, at_ms: T(21, 9, 59), since_ms: since, certainty: "confirmed" as const });
+    const thing = (id: string, cls: "cup" | "book", status: "present" | "out_of_view", last: number, facts: WorldView["objects"][number]["facts"]): WorldView["objects"][number] => ({
+      id, cls, position: null, surface: null, surface_label: null, room: null, error_m: null, status, first_seen_ms: last - 60_000, last_seen_ms: last, last_in_view_ms: last,
+      facts, answered_ms: null, devices: [], closer_hold: false, followed_by: null,
+    });
+    const view: WorldView = {
+      at_ms: T(21, 10, 0),
+      objects: [
+        thing("book_1", "book", "out_of_view", T(21, 0, 0), { open: fact("open", T(21, 0, 0)) }),
+        thing("book_2", "book", "present", T(21, 9, 59), { open: fact("open", T(21, 9, 0)) }),
+        thing("cup_1", "cup", "present", T(21, 9, 59), { place: fact("in_hand", T(21, 9, 50)), contents: fact("has_contents", T(21, 9, 40)) }),
+      ],
+      person: { visible: true, since_ms: T(21, 9, 0), last_seen_ms: T(21, 9, 59), count: 1, room: null, room_label: null, position: null, near: [], holding: ["cup_1"], position_ms: null, answered_ms: null, facts: { holding: fact("holding_object", T(21, 9, 50)) } },
+      fixtures: [], devices: [], eye: { position: [1, 2], height_m: 1.5, yaw_deg: 0, pitch_deg: -30, room: "kitchen", room_label: "주방", at_ms: T(21, 9, 59) }, frame_ms: null, vlm_missing: 0, yolo_missing: 0,
+    };
+    // 긴 VLM 요약 40줄(줄마다 약 600자): 변화 줄만으로 상한을 넘는다
+    const c = (i: number): WorldChange => ({ kind: "vlm", at_ms: T(21, 9, 20) + i * 1000, subject: "x", text: `VLM: ${"사람이 컵을 들고 식탁 옆에 서 있다 ".repeat(30)}${i}`, meaningful: false });
+    const text = textFromWorld(view, Array.from({ length: 40 }, (_, i) => c(i)), { nowMs: T(21, 10, 0), offsetMinutes: 540 });
+    expect(text.length).toBeLessThanOrEqual(MAX_OBSERVATION_TEXT);
+    const lines = text.split("\n");
+    // 시야 밖 오래된 물건은 빠지고, 오래된 변화 줄을 줄여 보이는 물건·손에 든 컵·사람 줄은 남는다. 가장 새 변화 줄은 남는다
+    expect(text).not.toContain("책 book_1 ");
+    expect(lines).toContain("[지속] 책 book_2 열림: 21:09:00부터 1분째");
+    expect(lines).toContain("[지속] 컵 cup_1 손에 있음: 21:09:50부터 10초째");
+    expect(lines).toContain("[지속] 컵 cup_1 내용물 있음: 21:09:40부터 20초째");
+    expect(lines.some((l) => l.startsWith("[지속] 사람 보임"))).toBe(true);
+    expect(lines.some((l) => l.endsWith(" 39"))).toBe(true);
+    expect(lines.some((l) => l.endsWith(" 0"))).toBe(false);
+  });
+
+  it("지켜야 할 줄만으로도 넘치면(아주 긴 마지막 VLM 요약·가전 줄) 줄마다 길이를 잘라 상한을 꼭 지킨다", () => {
+    const view: WorldView = {
+      at_ms: T(21, 10, 0), objects: [],
+      person: { visible: false, since_ms: T(21, 5, 0), last_seen_ms: T(21, 4, 58), count: 0, room: null, room_label: null, position: null, near: [], holding: [], position_ms: null, answered_ms: null, facts: {} },
+      fixtures: [], devices: Array.from({ length: 30 }, (_, i) => ({ id: `light_${i}`, kind: "light", label: `조명 ${"아주 긴 이름 ".repeat(60)}${i}`, status: "켜짐", state: ["on"], active: true, changed_ms: T(21, 0, 0), event_ms: null, started_ms: null, remaining_min: null, history: [] })),
+      eye: null, frame_ms: null, vlm_missing: 0, yolo_missing: 0,
+    };
+    const long: WorldChange = { kind: "vlm", at_ms: T(21, 9, 59), subject: "x", text: `VLM: ${"끝없이 긴 요약 ".repeat(3000)}`, meaningful: false };
+    const text = textFromWorld(view, [long], { nowMs: T(21, 10, 0), offsetMinutes: 540 });
+    expect(text.length).toBeLessThanOrEqual(MAX_OBSERVATION_TEXT);
+    expect(() => checkInput({ text, finalTime: "2026-11-07T21:10:00+09:00", memory: { initial_state: "s", states: [{ id: "s", description: "d", rules: [], next: [] }] } as never, memoryKind: "fsm", tasks: ["컵 치우기"] })).not.toThrow();
+    expect(text).toContain("[지속] 사람 안 보임: 21:05:00부터 5분째");
+    expect(text.split("\n").at(-1)).toMatch(/^\[때\] /);
+  });
+
   it("눈 줄은 눈이 있는 방의 id가 아니라 방 이름을 쓴다", () => {
     const w = new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => ({ id: "living", label: "거실" }), devices: () => [] });
     w.setEye({ position: [1, 2], height_m: 1.4, yaw_deg: 90, pitch_deg: -10 }, T(21, 0, 0));
