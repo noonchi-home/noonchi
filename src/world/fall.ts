@@ -3,9 +3,10 @@
 // 그 점을 거의 바로 아래·위로 보면(viewDeg 안) 보류한다.
 // 한 장의 자세(fallPose): 몸통이 torsoDeg 안이면 허벅지로 서 있음·앉아 있음(무릎이 안 보이면 모름), 몸통이 누웠으면 허벅지도 thighDeg 넘게 누워야
 // 바닥에 누운 자세(flat)다(허리 숙이기는 허벅지가 서 있어 모름). 무릎이 안 보이면 사진 경계에 잘리지 않은 상자가 중력에 가로로 더 길 때만 flat이다.
-// 확인된 침대·소파(트윈 가구) 위에 누운 것(rest, World State가 엉덩이 광선으로 정함)은 쓰러짐이 아니다.
+// 확인된 침대·소파(트윈 가구) 위에 누운 것(rest: 엉덩이·어깨 광선이 그 가구의 누울 면 높이와 가장자리 0.1m 안쪽에서 만남, src/world/place.ts onRest)은
+// 쓰러짐 셈을 다시 하게 하지만, 이미 쓰러짐 의심이면 풀지 않는다(트윈 배치가 어긋나도 켜진 알림을 지우지 않게).
 // 서 있음에서 dropMs 안에 flat이 되고, 이어서 본 flat이 holdMs 이어지면 쓰러짐 의심이다. flat 사이가 gapMs 넘게 끊기면 다시 본 때부터 센다.
-// 서 있음·앉아 있음·쉬는 가구 위가 보이면 풀고 셈을 다시 한다. 모름·확실하지 않은 관절은 셈을 그대로 둔다.
+// 서 있음·앉아 있음이 보이면 풀고 셈을 다시 한다. 모름·확실하지 않은 관절은 셈을 그대로 둔다.
 // 숫자 근거:
 // - dropMs 2초: 낙상의 넘어지는 단계(critical phase)는 약 0.3~0.5초다(Noury 외 2007, 「Fall detection - Principles and Methods」, IEEE EMBC).
 //   실제 노인 낙상 영상 26건에서는 그 단계가 더 길었다(BMC Geriatrics 2013, doi:10.1186/1471-2318-13-103). 관절은 0.3초마다
@@ -73,6 +74,7 @@ export class FallWatch {
       this.active = true;
       return "fall";
     }
+    if (pose === "rest" && this.active) return null;
     if (pose === "standing") this.standAt = at;
     this.flat = null;
     if (!this.active) return null;

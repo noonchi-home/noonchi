@@ -160,16 +160,19 @@ function surfaceSource(editor: LayoutEditor | undefined): () => PlaneSurface[] {
   })));
 }
 
-/** 트윈의 침대·소파: 그 위에 누운 것은 쓰러짐 의심(src/world/fall.ts)이 아니다. 배치가 바뀌면 다시 만든다. */
-function restSource(editor: LayoutEditor | undefined): () => RestSpot[] {
+/** 트윈의 침대·소파: 그 위에 누운 것은 쓰러짐 의심(src/world/fall.ts)이 아니다. 바닥 크기는 배치에 없으면 카탈로그, 누울 면 높이는 카탈로그 첫 면(매트리스).
+ *  배치가 바뀌면 다시 만든다. */
+export function restSource(editor: LayoutEditor | undefined): () => RestSpot[] {
   if (!editor) return () => [];
   let cache: RestSpot[] | null = null;
   editor.subscribe(() => { cache = null; });
   return () => (cache ??= restsFromLayout(editor.objects().map((o) => {
-    const c = editor.center(o.id);
+    const info = editor.typeInfo(o.type);
+    const footprint = o.footprint ?? info?.footprint;
+    const surface = info?.surfaces?.[0]?.height;
     return {
-      id: o.id, name: o.name, type: o.type, plan: o.plan.position, base: o.position[1],
-      height: c ? Math.max(0, 2 * (c.position[1] - o.position[1])) : o.height ?? 0, footprint: o.footprint, facing_deg: o.plan.facing_deg,
+      id: o.id, name: o.name, type: o.type, plan: o.plan.position, base: o.position[1], facing_deg: o.plan.facing_deg,
+      ...(footprint ? { footprint } : {}), ...(surface !== undefined ? { surface } : {}),
     };
   })));
 }

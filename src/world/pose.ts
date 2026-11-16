@@ -30,8 +30,8 @@ export const SITTING_DEG = 45;
 export type Posture = "standing" | "sitting" | "lying" | "upright" | "unknown";
 
 /** 중력 기준 몸 기울기(°, 0 중력과 나란함, 90 수평): 몸통은 어깨→엉덩이, 허벅지는 엉덩이→무릎(무릎이 안 보이면 null).
- *  wide: 상자가 중력에 가로로 더 길다. hip: 엉덩이 가운데(원본 픽셀). */
-export interface Lean { torso: number; thigh: number | null; wide: boolean; hip: Pt }
+ *  wide: 상자가 중력에 가로로 더 길다. hip·shoulder: 엉덩이·어깨 가운데(원본 픽셀). */
+export interface Lean { torso: number; thigh: number | null; wide: boolean; hip: Pt; shoulder: Pt }
 
 export interface PoseInfo {
   posture: Posture;
@@ -92,7 +92,7 @@ export function describePose(p: Pose, down?: (pt: Pt) => Pt | null): PoseInfo {
   const torsoOff = d ? off(sh!, hip!, d) : null;
   if (!d || torsoOff === null) return { ...info, lean: null };
   const l = Math.hypot(d[0], d[1]), ux = Math.abs(d[0] / l), uy = Math.abs(d[1] / l);
-  return { ...info, lean: { torso: torsoOff, thigh: knee ? off(hip!, knee, d) : null, wide: bw * uy + bh * ux > bw * ux + bh * uy, hip: hip! } };
+  return { ...info, lean: { torso: torsoOff, thigh: knee ? off(hip!, knee, d) : null, wide: bw * uy + bh * ux > bw * ux + bh * uy, hip: hip!, shoulder: sh! } };
 }
 
 const area = (b: Box) => Math.max(0, b[2]) * Math.max(0, b[3]);

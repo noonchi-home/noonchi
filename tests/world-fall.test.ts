@@ -1,6 +1,9 @@
 // 쓰러짐 의심(11-16 회의 안전 계층 「자세 변화로 낙상 의심」): 관절 자세가 서 있음에서 짧은 시간(FALL_DROP_MS) 안에 바닥에 누운 자세(중력 기준으로 몸통·허벅지 모두 누움)가 되고
 // 이어 본 그 자세가 FALL_HOLD_MS 이어지면 World State에 사람 자세 「쓰러짐 의심」 사실과 변화 줄을 남긴다. 천천히 눕기·소파에 앉기·허리 숙이기는 신호가 나지 않는다.
 // 기울기는 엔진 프레임 카메라 자세로 중력 방향을 잡아 잰다(맞추기 전·거의 바로 아래를 보면 보류). 확인된 침대·소파(트윈 가구) 위에 누운 것은 쓰러짐이 아니다.
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { CameraView, Detection, EngineFrame, Pose } from "../src/contract/observe.js";
 import type { WorldChange } from "../src/contract/world.js";
@@ -14,6 +17,10 @@ import { restsFromLayout, type RestSpot } from "../src/world/place.js";
 import { WorldState } from "../src/world/state.js";
 import { textFromWorld } from "../src/world/text.js";
 import { SCENE_STATES } from "../src/world/vocab.js";
+import { resolveHome } from "../src/layout/homes.js";
+import { loadLayout } from "../src/layout/load.js";
+import { DEFAULT_TWIN_DIR } from "../src/layout/twin-files.js";
+import { restSource } from "../src/server/home.js";
 import { LOOK_VIEW } from "./helpers/camera.js";
 import { det } from "./helpers/detectors.js";
 import { poseOf } from "./helpers/poses.js";
@@ -34,9 +41,9 @@ const mul = (a: number[], b: number[]) => [a[3]! * b[0]! + a[0]! * b[3]! + a[1]!
 /** LOOK_VIEW를 보는 축으로 90° 돌린 카메라(폰을 옆으로 눕혀 든 것): 서 있는 사람이 사진에서 가로로 비친다. */
 const ROLLED: CameraView = { ...LOOK_VIEW, orientation: mul(LOOK_VIEW.orientation, [0, 0, Math.sin(Math.PI / 4), Math.cos(Math.PI / 4)]) as CameraView["orientation"] };
 
-const ws = (o: { fall?: FallConfig; rests?: RestSpot[] } = {}) => new WorldState({
+const ws = (o: { fall?: FallConfig; rests?: RestSpot[] | (() => RestSpot[]) } = {}) => new WorldState({
   evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => ({ id: "living", label: "거실" }), devices: () => [],
-  ...(o.fall ? { fall: o.fall } : {}), ...(o.rests ? { rests: () => o.rests! } : {}),
+  ...(o.fall ? { fall: o.fall } : {}), ...(o.rests ? { rests: typeof o.rests === "function" ? o.rests : () => o.rests as RestSpot[] } : {}),
 });
 const frame = (t: number, view: CameraView | null = LOOK_VIEW): EngineFrame => ({ id: `e${t}`, capturedAtMs: t, latestAtMs: t, jpeg: Buffer.from(`${t}`), sha256: sha256(Buffer.from(`${t}`)), width: 480, height: 360, eye: null, view });
 /** 관절은 0.3초마다(엔진 프레임 0.1초 × BRAIN_POSE_EVERY 3). from부터 to까지 그 자세로 보고 나온 변화를 모은다. */
@@ -136,8 +143,8 @@ describe("쓰러짐 의심: 관절 자세 변화", () => {
   });
 
   // Codex(0234ddd): 바닥인지 보지 않아 침대·소파에 빨리 누워 쉬어도 낙상 알림이 났다
-  it("확인된 침대·소파(트윈 가구) 위에 누운 것은 쓰러짐이 아니다: 엉덩이 광선이 그 가구 안을 지나면 세지 않는다", () => {
-    // 엉덩이(240, 270) 광선은 바닥 (0.5, 0, 0), 높이 0.5에서 (0.33, 0.5, 0)을 지난다
+  it("확인된 침대·소파(트윈 가구) 위에 누운 것은 쓰러짐이 아니다: 엉덩이·어깨 광선이 그 가구의 누울 면(높이 top)과 가장자리 0.1m 안쪽에서 만나면 세지 않는다", () => {
+    // 엉덩이(240, 270) 광선은 바닥 (0.5, 0, 0), 높이 0.5에서 (0.33, 0.5, 0)을 지난다. 어깨(140, 265)는 높이 0.5에서 (0.36, 0.5, ±0.4) 근처다
     const bed: RestSpot = { id: "bed_1", label: "침대", center: [0.6, 0], size: [2.0, 1.0], facing_deg: 0, top: 0.5 };
     const w = ws({ rests: [bed] });
     run(w, 0, 3000, standing);
@@ -151,13 +158,52 @@ describe("쓰러짐 의심: 관절 자세 변화", () => {
     expect(posture(far, 6300)).toBe("fall_suspected");
   });
 
-  it("트윈 배치에서 침대·소파만 쉬는 가구로 고른다(협탁 조명·안락의자·바닥 크기 없는 것은 뺀다)", () => {
-    const o = (id: string, type: string, footprint?: [number, number]) => ({ id, name: id, type, plan: [1, 2] as [number, number], base: 0, height: 0.5, facing_deg: 90, ...(footprint ? { footprint } : {}) });
-    const rests = restsFromLayout([o("bed_1", "bed_queen", [1.6, 2.1]), o("sofa_1", "sofa", [2.2, 0.9]), o("lamp_1", "bedside_lamp", [0.3, 0.3]), o("chair_1", "armchair", [0.8, 0.8]), o("bed_2", "bed_single")]);
+  // Codex(9984116): 엉덩이 광선이 가구의 전체 높이~바닥 공간을 지나기만 해도 쉬는 가구 위로 단정해, 가구 바로 앞 바닥에 쓰러져도 놓쳤다
+  it("침대 바로 앞 바닥에 쓰러지면(엉덩이 광선이 침대 매트리스 면이 아니라 그 아래 공간만 지남) 쓰러짐 의심이다", () => {
+    // 침대는 x 0.4~1.4. 엉덩이 광선은 높이 0.55에서 x 0.32(침대 앞), 바닥에서 x 0.5(침대 아래)다
+    const bed: RestSpot = { id: "bed_1", label: "침대", center: [0.9, 0], size: [2.0, 1.0], facing_deg: 0, top: 0.55 };
+    const w = ws({ rests: [bed] });
+    run(w, 0, 3000, standing);
+    run(w, 3300, 6300, flat);
+    expect(posture(w, 6300)).toBe("fall_suspected");
+  });
+
+  // Codex(9984116): 쉬는 가구 판정이 이미 켜진 쓰러짐 의심도 풀었다
+  it("이미 쓰러짐 의심이면 쉬는 가구 판정으로 풀지 않는다(서 있음·앉아 있음만 푼다)", () => {
+    let rests: RestSpot[] = [];
+    const w = ws({ rests: () => rests });
+    run(w, 0, 3000, standing);
+    run(w, 3300, 6300, flat);
+    expect(posture(w, 6300)).toBe("fall_suspected");
+    rests = [{ id: "bed_1", label: "침대", center: [0.6, 0], size: [2.0, 1.0], facing_deg: 0, top: 0.5 }];
+    run(w, 6600, 7800, flat);
+    expect(posture(w, 7800)).toBe("fall_suspected");
+  });
+
+  it("트윈 배치에서 침대·소파만 쉬는 가구로 고른다(협탁 조명·안락의자·바닥 크기 없는 것은 뺀다). 누울 면 높이는 카탈로그 면(매트리스), 없으면 침대 0.55m·소파 0.45m", () => {
+    const o = (id: string, type: string, footprint?: [number, number], surface?: number) => ({ id, name: id, type, plan: [1, 2] as [number, number], base: 0, facing_deg: 90, ...(footprint ? { footprint } : {}), ...(surface !== undefined ? { surface } : {}) });
+    const rests = restsFromLayout([o("bed_1", "bed_queen", [1.6, 2.1], 0.57), o("sofa_1", "sofa", [2.2, 0.9]), o("bed_3", "bed_single", [1.3, 2.4]), o("lamp_1", "bedside_lamp", [0.3, 0.3]), o("chair_1", "armchair", [0.8, 0.8]), o("bed_2", "bed_single")]);
     expect(rests).toEqual([
-      { id: "bed_1", label: "bed_1", center: [1, 2], size: [1.6, 2.1], facing_deg: 90, top: 0.5 },
-      { id: "sofa_1", label: "sofa_1", center: [1, 2], size: [2.2, 0.9], facing_deg: 90, top: 0.5 },
+      { id: "bed_1", label: "bed_1", center: [1, 2], size: [1.6, 2.1], facing_deg: 90, top: 0.57 },
+      { id: "sofa_1", label: "sofa_1", center: [1, 2], size: [2.2, 0.9], facing_deg: 90, top: 0.45 },
+      { id: "bed_3", label: "bed_3", center: [1, 2], size: [1.3, 2.4], facing_deg: 90, top: 0.55 },
     ]);
+  });
+
+  // Codex(9984116): 목련 장면의 침대·소파는 배치에 바닥 크기가 없어 쉬는 가구 목록에서 모두 빠졌다
+  it("한양목련 서버의 쉬는 가구는 침대 넷·소파 하나이고, 바닥 크기·매트리스 높이를 카탈로그에서 채운다", () => {
+    const runtime = mkdtempSync(join(tmpdir(), "rt-rests-"));
+    try {
+      const { editor } = loadLayout(resolveHome(DEFAULT_TWIN_DIR, "mokryeon_180b"), { runtimeDir: runtime, log: () => {} })!;
+      const rests = restSource(editor)();
+      expect(rests.map((r) => r.id).sort()).toEqual(["bed_queen_08dcffff", "bed_queen_aedb6a01", "bed_single_100dda69", "bed_single_2f581c50", "sofa_a848b595"]);
+      const of = (id: string) => rests.find((r) => r.id === id)!;
+      expect(of("bed_queen_aedb6a01")).toMatchObject({ size: [1.434, 2.228], top: 0.57 });
+      expect(of("bed_single_100dda69")).toMatchObject({ size: [1.297, 2.392], top: 0.55 });
+      expect(of("sofa_a848b595")).toMatchObject({ size: [2.1, 0.95], top: 0.45 });
+    } finally {
+      rmSync(runtime, { recursive: true, force: true });
+    }
   });
 
   describe("오탐 시험: 신호가 나지 않는다", () => {

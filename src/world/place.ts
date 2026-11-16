@@ -15,8 +15,10 @@ export interface PlaneSurface { id: string; label: string; center: [number, numb
  *  폰이 싱크볼 점을 볼 때 그 점에서 0.08m다(조리대 가운데를 볼 때는 0.57m). */
 export const BASIN_SIZE: [number, number] = [0.74, 0.44];
 
-/** 쉬는 가구(침대·소파): 바닥 사각형(가운데·[폭, 깊이]·facing)과 바닥에서 높이(m). 쓰러짐 의심(src/world/fall.ts)에서 그 위에 누운 것을 뺀다. */
+/** 쉬는 가구(침대·소파): 바닥 사각형(가운데·[폭, 깊이]·facing)과 누울 면(매트리스·좌판) 높이 top(바닥에서 m). 쓰러짐 의심(src/world/fall.ts)에서 그 위에 누운 것을 뺀다. */
 export interface RestSpot extends Basin { id: string; label: string; top: number }
+/** 쉬는 가구 위라고 볼 때 누울 면 가장자리에서 안쪽으로 둘 여유(m): 트윈 배치가 실제와 조금 어긋나도 가구 앞·옆 바닥을 가구 위로 보지 않는다. */
+export const REST_INSET_M = 0.1;
 
 /** 평면 점이 싱크볼 사각형 안인가. */
 export function inBasin(b: Basin, p: [number, number]): boolean {
@@ -94,18 +96,20 @@ export function placePoint(view: CameraView, point: [number, number], size: { wi
   };
 }
 
-/** 픽셀 점의 광선이 쉬는 가구 안(바닥 사각형, 높이 top에서 바닥까지)을 지나면 그 가구. 광선이 위를 향하면 null. */
-export function onRest(view: CameraView, point: [number, number], size: { width: number; height: number }, rests: readonly RestSpot[]): RestSpot | null {
-  const d = rayDir(view, [(point[0] / size.width) * 2 - 1, 1 - (point[1] / size.height) * 2]);
-  if (d[1] >= -1e-6) return null;
+/** 몸 점들(엉덩이·어깨 픽셀)이 모두 쉬는 가구 위인가: 점마다 광선이 그 가구의 누울 면 높이(top)와 만나는 곳이 가장자리에서 REST_INSET_M 안쪽이면
+ *  그 가구. 몸이 가구 위에 있어야 몸 점이 그 면 높이에 비친다(가구 앞·너머 바닥이면 면 높이의 교점이 가구 밖이다). 광선이 그 높이에 닿지 않으면 아니다. */
+export function onRest(view: CameraView, points: readonly [number, number][], size: { width: number; height: number }, rests: readonly RestSpot[]): RestSpot | null {
+  if (points.length === 0) return null;
   const o = view.origin;
+  const rays = points.map((p) => rayDir(view, [(p[0] / size.width) * 2 - 1, 1 - (p[1] / size.height) * 2]));
   for (const r of rests) {
-    const near = Math.max(0, (r.top - o[1]) / d[1]), far = (0 - o[1]) / d[1];
-    if (far <= 0) continue;
-    for (let k = 0; k <= 8; k++) {
-      const t = near + ((far - near) * k) / 8;
-      if (inBasin(r, [o[0] + d[0] * t, o[2] + d[2] * t])) return r;
-    }
+    const inner: Basin = { center: r.center, size: [r.size[0] - 2 * REST_INSET_M, r.size[1] - 2 * REST_INSET_M], facing_deg: r.facing_deg };
+    if (inner.size[0] <= 0 || inner.size[1] <= 0) continue;
+    const on = rays.every((d) => {
+      const t = Math.abs(d[1]) > 1e-6 ? (r.top - o[1]) / d[1] : -1;
+      return t > 0 && inBasin(inner, [o[0] + d[0] * t, o[2] + d[2] * t]);
+    });
+    if (on) return r;
   }
   return null;
 }
@@ -140,10 +144,13 @@ const NOT_SURFACE = /lamp/;
  *  싱크볼 점(배치 anchors.basin, 평면도 점)이 있으면 그 점을 가운데로 BASIN_SIZE·배치 facing의 싱크볼을 붙인다. */
 /** 침대·소파 배치 종류(협탁·조명은 아니다). */
 const REST_TYPE = /^(bed|sofa)(_|$)/;
-/** 배치의 침대·소파 → 쉬는 가구. 바닥 크기를 모르면 뺀다. */
-export function restsFromLayout(objects: readonly { id: string; name: string; type: string; plan: [number, number]; base: number; height: number; footprint?: [number, number]; facing_deg?: number }[]): RestSpot[] {
+/** 카탈로그에 누울 면이 없을 때 누울 면 높이(m): 침대는 이 저장소 카탈로그 매트리스 윗면(0.55~0.57), 소파는 흔한 좌판 높이(0.4~0.5)의 가운데. */
+const REST_TOP = { bed: 0.55, sofa: 0.45 } as const;
+/** 배치의 침대·소파 → 쉬는 가구. surface는 바닥에서 누울 면 높이(카탈로그 면), 없으면 REST_TOP. 바닥 크기를 모르면 뺀다. */
+export function restsFromLayout(objects: readonly { id: string; name: string; type: string; plan: [number, number]; base: number; footprint?: [number, number]; facing_deg?: number; surface?: number }[]): RestSpot[] {
   return objects.filter((o) => REST_TYPE.test(o.type) && o.footprint).map((o) => ({
-    id: o.id, label: o.name, center: [o.plan[0], o.plan[1]], size: o.footprint!, facing_deg: o.facing_deg ?? 0, top: o.base + o.height,
+    id: o.id, label: o.name, center: [o.plan[0], o.plan[1]], size: o.footprint!, facing_deg: o.facing_deg ?? 0,
+    top: Math.round((o.base + (o.surface ?? REST_TOP[o.type.startsWith("sofa") ? "sofa" : "bed"])) * 1000) / 1000,
   }));
 }
 

@@ -16,10 +16,20 @@ export interface TypeInfo {
   attrs: Record<string, unknown[]>;
   states: Record<string, unknown>;
   nodeType?: string;
+  /** 물건을 놓거나 눕는 면(이름·바닥에서 높이 m, 예: 침대 mattress). 카탈로그에 없으면 칸이 없다. */
+  surfaces?: { name: string; height: number }[];
 }
 
 function num(v: unknown, fallback: number): number {
   return typeof v === "number" && Number.isFinite(v) ? v : fallback;
+}
+
+/** 카탈로그 surfaces: 이름과 숫자 높이가 있는 것만. 하나도 없으면 null. */
+function surfacesOf(v: unknown): { name: string; height: number }[] | null {
+  if (!Array.isArray(v)) return null;
+  const out = v.flatMap((s) => (s && typeof s === "object" && typeof (s as { name?: unknown }).name === "string" && typeof (s as { height?: unknown }).height === "number" && Number.isFinite((s as { height: number }).height)
+    ? [{ name: (s as { name: string }).name, height: (s as { height: number }).height }] : []));
+  return out.length ? out : null;
 }
 
 /** 폴더의 *.json → 종류 표. 읽지 못한 파일은 건너뛴다. */
@@ -45,6 +55,7 @@ export function loadCatalog(dir: string): Map<string, TypeInfo> {
       attrs: raw.attrs && typeof raw.attrs === "object" ? (raw.attrs as Record<string, unknown[]>) : {},
       states: raw.states && typeof raw.states === "object" ? (raw.states as Record<string, unknown>) : {},
       nodeType: typeof raw.node_type === "string" ? raw.node_type : undefined,
+      ...(surfacesOf(raw.surfaces) ? { surfaces: surfacesOf(raw.surfaces)! } : {}),
     });
   }
   return out;

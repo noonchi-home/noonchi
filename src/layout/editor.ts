@@ -182,6 +182,12 @@ export class LayoutEditor {
     return this.catalog.get(type)?.label;
   }
 
+  /** 카탈로그 종류 정보(바닥 크기·높이·면). 카탈로그에 없으면 undefined. */
+  typeInfo(type: string): TypeInfo | undefined {
+    const info = this.catalog.get(type);
+    return info ? clone(info) : undefined;
+  }
+
   center(id: string): { id: string; label: string; position: Vec3 } | undefined {
     const o = this.current.get(id);
     if (!o) return undefined;

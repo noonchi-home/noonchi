@@ -663,7 +663,7 @@ export class WorldState {
     }
     const lean = person.lean ?? null;
     let pose: FallPose | null = person.level === "low" ? null : fallPose(lean, person.box, size, this.fallCfg);
-    if (pose === "flat" && frame.view && onRest(frame.view, lean!.hip, size, this.o.rests?.() ?? [])) pose = "rest";
+    if (pose === "flat" && frame.view && onRest(frame.view, [lean!.hip, lean!.shoulder], size, this.o.rests?.() ?? [])) pose = "rest";
     const fall = this.fall.see(at, pose);
     if (fall === "fall") {
       this.setPoseFact(this.person.facts, "posture", POSE_FALL, at);
