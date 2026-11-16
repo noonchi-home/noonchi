@@ -751,14 +751,20 @@ describe("영상 입력 모드: 명령 시각 기록·화면", () => {
       expect(worst).toBeLessThanOrEqual(51);
       expect(sync.length).toBeLessThan(60);
     });
-    it("짝 수에는 상한(SYNC_MAX)이 있어 넘으면 오래된 짝부터 버린다", () => {
+    // Codex(b89b077): 상한을 넘으면 앞쪽 짝을 버려, 판정 도구가 처음 서버 사건을 첫 남은 짝에서 1:1로 옮기며 쌓인 멈춤 시간만큼 틀렸다
+    it("짝 수가 상한(SYNC_MAX)에 닿으면 앞 짝을 버리지 않고 「짝 넘침」을 한 번 알린 뒤 더 쌓지 않는다", () => {
       const samples: [number, number][] = [];
       for (let i = 0; i < SYNC_MAX * 3; i++) samples.push([i * 100, i * 100 + (i % 2 ? 300 : 0)]);
       const sync: [number, number][] = [];
-      const log = createSyncLog(sync);
+      const full = vi.fn();
+      const log = createSyncLog(sync, full);
       for (const [at, ms] of samples) log.note(at, ms);
-      expect(sync.length).toBeLessThanOrEqual(SYNC_MAX);
-      expect(sync.at(-1)).toEqual(samples.at(-1));
+      expect(sync).toHaveLength(SYNC_MAX);
+      expect(sync[0]).toEqual(samples[0]);
+      expect(full).toHaveBeenCalledTimes(1);
+      const before = JSON.stringify(sync);
+      log.note(samples.at(-1)![0] + 100, samples.at(-1)![1] + 100);
+      expect(JSON.stringify(sync)).toBe(before);
     });
   });
 

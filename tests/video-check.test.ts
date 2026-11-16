@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { HistoryRow } from "../src/contract/history.js";
 import type { WorldEye, WorldObject, WorldView } from "../src/contract/world.js";
-import { SEND_SAY, clickChoice, clock, costLine, judgeInput, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, stepVerdict, timeline, twinRows, usedServer, roomLabels, ownAssetFailures, videoClock, runTimeline, clipEnd, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
+import { SEND_SAY, clickChoice, clock, costLine, judgeInput, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, stepVerdict, timeline, twinRows, usedServer, roomLabels, ownAssetFailures, videoClock, runTimeline, clipEnd, syncWarning, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
 import { createServer, type Server } from "node:http";
 import { listenRetry } from "../src/shared/net.js";
 import type { SceneJson } from "../src/contract/layout.js";
@@ -238,6 +238,17 @@ describe("video-check", () => {
       says: [{ at: 1_035_600, text: "아 덥다" }], clicks: [{ at: 1_039_600, label: "완료", text: "식탁으로 가 주세요" }],
     });
     expect(Object.fromEntries(rows.map((r) => [r.kind, clock(r.ms)]))).toEqual({ 명령: "00:28.0", 트윈: "00:28.0", 말: "00:28.0", 누름: "00:32.0" });
+  });
+
+  // Codex(b89b077): 짝이 상한을 넘으면 틀린 시각을 보이는 대신 시각표 위에 알리고 판정을 실패로 한다
+  it("짝 넘침(record.syncFull)이면 경고 글을 내고, 시각표 위(표 머리 앞)에 적는다", () => {
+    expect(syncWarning(null)).toBeNull();
+    expect(syncWarning({ syncFull: false })).toBeNull();
+    const warn = syncWarning({ syncFull: true })!;
+    expect(warn).toMatch(/짝 넘침/);
+    const md = markdown({ clip: "long.mp4", mode: "가짜 서버", ranAt: "2026-11-17 10:00:00", rows: [], notes: [], verdict: "판정: 명령 없음", cost: "VLM 0장", warnings: [warn] });
+    expect(md.indexOf(warn)).toBeGreaterThan(0);
+    expect(md.indexOf(warn)).toBeLessThan(md.indexOf("| 영상 시각 |"));
   });
 
   // Codex(f5ff586): --fake --step은 단계 영상으로 바뀐 뒤 record.ended가 계속 거짓이라, 끝까지 돌아도 영상 끝이 없었다

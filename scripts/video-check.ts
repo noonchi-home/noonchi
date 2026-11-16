@@ -97,6 +97,11 @@ type PlanData = { status?: string; steps?: { id: string; label: string; status: 
 
 /** 서버 기록·폰 명령·바꾼 단계 영상·트윈 줄(영상 시각으로 고친 것) → 영상 시각순 표. 같은 출처(기록 종류·명령·트윈)의 같은 글이 이어지면 한 줄로 묶는다.
  *  endMs가 있으면 「영상 끝」. */
+/** 짝 넘침(폰 페이지가 짝 상한에 닿아 더 쌓지 않음)이면 시각표 위에 적을 글. 그 뒤 서버 사건의 영상 시각이 틀릴 수 있어 판정을 실패로 한다. */
+export function syncWarning(record: { syncFull?: boolean } | null): string | null {
+  return record?.syncFull ? "짝 넘침: 폰 페이지의 [서버 시각, 영상 시각] 짝이 상한에 닿아 더 쌓지 않았어요. 그 뒤 서버 사건의 영상 시각이 틀릴 수 있어 판정을 실패로 해요." : null;
+}
+
 /** 서버 시각 → 영상 시각. sync는 폰 페이지가 남긴 [서버 시각, 영상 시각] 짝(시각순): 짝 사이는 잇고(멈칫한 구간은 그 두 프레임 사이에 몰린다),
  *  첫 짝 앞과 마지막 짝 뒤는 1:1로 센다. 짝이 없으면(옛 기록) at − t0. */
 export function videoClock(t0: number, sync: readonly (readonly [number, number])[]): (atMs: number) => number {
@@ -285,11 +290,11 @@ export function verdict(rows: Row[], commands: VideoCommand[], history: HistoryR
   return { text, early, firstMs: first?.video_ms ?? null, done };
 }
 
-/** markdown 문서. notes(끝까지 돌지 않음·페이지 오류·사진 못 남김)는 판정 줄 위에, extra(단계 판정 줄)는 판정 줄 뒤에, image(대시보드 사진 경로)는 끝에 쓴다. */
-export function markdown(o: { clip: string; mode: string; ranAt: string; rows: Row[]; notes: string[]; verdict: string; extra?: string[]; cost: string; image?: string }): string {
+/** markdown 문서. warnings(짝 넘침)는 시각표 위에, notes(끝까지 돌지 않음·페이지 오류·사진 못 남김)는 판정 줄 위에, extra(단계 판정 줄)는 판정 줄 뒤에, image(대시보드 사진 경로)는 끝에 쓴다. */
+export function markdown(o: { clip: string; mode: string; ranAt: string; rows: Row[]; notes: string[]; verdict: string; extra?: string[]; cost: string; image?: string; warnings?: string[] }): string {
   const cell = (s: string) => s.replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
   return [
-    `# 영상 판정 · ${o.clip}`, "", `${o.ranAt} · ${o.mode}`, "",
+    `# 영상 판정 · ${o.clip}`, "", `${o.ranAt} · ${o.mode}`, "", ...(o.warnings ?? []).flatMap((w) => [w, ""]),
     "| 영상 시각 | 종류 | 글 |", "|---|---|---|",
     ...o.rows.map((r) => `| ${clock(r.ms)} | ${r.kind} | ${cell(rowText(r))} |`),
     "", ...o.notes.flatMap((n) => [n, ""]), o.verdict, "", ...(o.extra ?? []).flatMap((n) => [n, ""]), o.cost, "",
@@ -426,7 +431,7 @@ const READ = `(() => {
   const r = window.__noonchiVideo ?? null;
   const v = document.querySelector("video[data-phone-video]");
   return {
-    record: r && { t0: r.t0, ended: r.ended, hold: r.hold ?? null, commands: r.commands, clips: r.clips ?? [], sync: r.sync ?? [] },
+    record: r && { t0: r.t0, ended: r.ended, hold: r.hold ?? null, commands: r.commands, clips: r.clips ?? [], sync: r.sync ?? [], syncFull: r.syncFull === true },
     time: v ? v.currentTime : null, duration: v && Number.isFinite(v.duration) ? v.duration : null, ended: v ? v.ended : false,
     top: document.querySelector("[data-phone-zone=top] [data-phone-text]")?.textContent ?? null,
     buttons: [...document.querySelectorAll("[data-phone-zone=thumb] button")].map((b) => b.textContent.trim()),
@@ -434,7 +439,7 @@ const READ = `(() => {
   };
 })()`;
 type Seen = {
-  record: { t0: number | null; ended: boolean; hold: { clip: string; since: number } | null; commands: VideoCommand[]; clips: VideoClip[]; sync: [number, number][] } | null;
+  record: { t0: number | null; ended: boolean; hold: { clip: string; since: number } | null; commands: VideoCommand[]; clips: VideoClip[]; sync: [number, number][]; syncFull: boolean } | null;
   time: number | null; duration: number | null; ended: boolean; top: string | null; buttons: string[]; support: string | null;
 };
 /** 페이지의 지금 명령(__noonchiVideo.commands 마지막)의 계획 id·단계 id와 위 줄 글이 모두 c와 같을 때만 label 글의 엄지 자리 단추(null이면 첫 단추)를 누르고 그 글을 돌려준다. */
@@ -877,6 +882,9 @@ async function main(): Promise<number> {
       }
 
       console.log("");
+      // 짝 넘침이면 시각표 위에 알리고 판정을 실패로 한다(그 뒤 서버 사건의 영상 시각이 틀릴 수 있다)
+      const syncWarn = syncWarning(seen.record);
+      if (syncWarn) console.log(syncWarn);
       for (const r of rows) console.log(`${clock(r.ms)} · ${r.kind} · ${rowText(r)}`);
       console.log("");
       for (const n of notes) console.log(n);
@@ -884,11 +892,11 @@ async function main(): Promise<number> {
       if (stepLine) console.log(stepLine);
       console.log(cost);
       mkdirSync(dirname(out), { recursive: true });
-      writeFileSync(out, markdown({ clip, mode: fakeMode ? "가짜 서버" : `실제 서버 ${api}`, ranAt: new Date().toLocaleString("sv-SE"), rows, notes, verdict: v.text, extra: stepLine ? [stepLine] : [], cost, image }));
+      writeFileSync(out, markdown({ clip, mode: fakeMode ? "가짜 서버" : `실제 서버 ${api}`, ranAt: new Date().toLocaleString("sv-SE"), rows, notes, verdict: v.text, extra: stepLine ? [stepLine] : [], cost, image, warnings: syncWarn ? [syncWarn] : [] }));
       console.log(`[video-check] ${out}`);
 
       if (pageErrors.length) console.log(`[video-check] 페이지 오류\n${pageErrors.slice(0, 20).join("\n")}`);
-      if (!fakeMode) return unfinished.length ? 1 : 0;
+      if (!fakeMode) return unfinished.length || syncWarn ? 1 : 0;
       // 스스로 시험: 사람 사라짐 → PAM 컵 치우기 → 사람 사라짐 뒤 첫 명령 → 네 단계 끝 → 계획 끝, 트윈 눈·컵 줄
       const gone = rows.find((r) => r.kind === "사람 사라짐");
       const firstPlan = commands[0]?.id;
@@ -903,6 +911,7 @@ async function main(): Promise<number> {
         !rows.some((r) => r.kind === "트윈" && r.text.startsWith("눈 ")) && "트윈 눈 줄",
         !rows.some((r) => r.kind === "트윈" && r.text.startsWith("컵 ")) && "트윈 컵 줄",
         pageErrors.length > 0 && "페이지 오류 없음",
+        syncWarn !== null && "짝 넘침 없음",
       ].filter(Boolean);
       if (missing.length) {
         console.log(`[video-check] 스스로 시험 틀림: ${missing.join(", ")} 없음`);

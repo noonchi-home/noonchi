@@ -64,6 +64,8 @@ export interface VideoRecord {
   t0: number | null; ended: boolean; hold: { clip: string; since: number } | null; commands: VideoCommandEntry[]; clips: VideoClipEntry[];
   /** [서버 시각, 영상 시각] 짝: 시계를 맞춘 뒤 첫 프레임과, 1:1로 이어 셀 수 없게 어긋난(멈칫) 곳의 앞뒤 프레임(noteSync). 판정 도구가 서버 사건을 영상 시각에 옮긴다. */
   sync: [number, number][];
+  /** 짝 넘침: 짝이 SYNC_MAX에 닿아 더 쌓지 않았다(판정 도구가 알리고 실패로 한다). */
+  syncFull: boolean;
   /** 지금 말의 at(화면이 바뀔 때마다 heardAtOf로 다시 쓴다, 영상 판정 --say가 그대로 싣는다). 기록 전이면 없음. */
   at?: HeardAt;
 }
@@ -73,8 +75,8 @@ export function videoParams(params: URLSearchParams): (Required<Pick<VideoArDeps
 export function videoRecord(target?: object): VideoRecord;
 /** 짝 수 상한. */
 export const SYNC_MAX: number;
-/** [서버 시각, 영상 시각] 짝 기록: note마다 견줘 같은 직선 구간은 끝점만 둔다(모든 표본 오차 50ms 안). */
-export function createSyncLog(sync: [number, number][]): { note(at: number, ms: number): void };
+/** [서버 시각, 영상 시각] 짝 기록: note마다 견줘 같은 직선 구간은 끝점만 둔다(모든 표본 오차 50ms 안). SYNC_MAX에 닿으면 onFull을 한 번 부르고 더 쌓지 않는다. */
+export function createSyncLog(sync: [number, number][], onFull?: () => void): { note(at: number, ms: number): void };
 export function logVideoCommand(videoMs: number, command: { id: string; step: string; text: string }): void;
 export function logVideoAt(at: HeardAt): void;
 export function createVideoAr(opts: { link: PhoneLink; params: URLSearchParams; hooks: ArHooks; deps: VideoArDeps }): VideoAr;
