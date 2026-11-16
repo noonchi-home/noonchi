@@ -21,24 +21,50 @@ const full = (w: WorldState, id: string, atMs: number, dets: Detection[], view =
 const obj = (w: WorldState, id: string, nowMs: number) => w.view(nowMs).objects.find((o) => o.id === id);
 
 describe("가까이 보기 합치기(applyCloser)", () => {
-  // Codex(69d3493): 정지 판정이 전체 감지에서만 갱신돼, 전체 YOLO가 놓치고 가까이 보기로만 보는 컵은 들고 감 보호가 안 풀려 자리 답을 계속 막았다
-  it("들고 가다 내려놓은 컵을 가까이 보기로만 보면 서로 다른 원본 프레임의 자리로 정지를 보고, 머문 뒤 손에 있음을 풀어 자리 답을 받는다", () => {
+  const cupAt = (x: number) => det("cup", [x, 170, 20, 10]);
+  const placeOf = (w: WorldState, nowMs: number) => obj(w, "cup_1", nowMs)!.facts.place?.value;
+  /** 사람이 컵을 들고(관절 손목이 컵 상자 안) 있다가 안 보이게 되고, 컵만 5초까지 옆으로 가며 보인다(들고 가는 중, 마지막 자리 x=350). */
+  const carrying = () => {
     const w = ws();
     const img = frameJpeg(1);
-    const cupAt = (x: number) => det("cup", [x, 170, 20, 10]);
     const grip = standing({ 10: [240, 175, 0.9] });
     for (let t = 0; t <= 2000; t += 100) w.applyDetections(engineFrame(`t${t}`, t, { jpeg: img }), [person, cupAt(230)], [grip]);
-    expect(obj(w, "cup_1", 2000)!.facts.place?.value).toBe("in_hand");
-    // 사람은 안 보이고 컵이 5초까지 옆으로 간다(들고 가는 중)
+    expect(placeOf(w, 2000)).toBe("in_hand");
     for (let t = 2100; t <= 5000; t += 100) w.applyDetections(engineFrame(`t${t}`, t, { jpeg: img }), [cupAt(230 + (t - 2000) / 25)]);
     expect(w.view(5000).person.visible).toBe(false);
-    expect(obj(w, "cup_1", 5000)!.facts.place?.value).toBe("in_hand");
+    expect(w.view(5000).objects[0]).toMatchObject({ carried: true });
+    expect(placeOf(w, 5000)).toBe("in_hand");
+    return w;
+  };
+
+  // Codex(69d3493): 정지 판정이 전체 감지에서만 갱신돼, 전체 YOLO가 놓치고 가까이 보기로만 보는 컵은 들고 감 보호가 안 풀려 자리 답을 계속 막았다
+  it("들고 가다 내려놓은 컵을 가까이 보기로만 보면 서로 다른 원본 프레임의 자리로 정지를 보고, 머문 뒤 손에 있음을 풀어 자리 답을 받는다", () => {
+    const w = carrying();
     // 그 뒤 전체 감지는 컵을 놓치고, 가까이 보기만 원본 프레임마다(0.5초) 같은 자리에서 컵을 보고 바닥이라고 답한다
     for (let t = 5500; t <= 11_000; t += 500) {
       const { ids } = w.applyCloser([pass(`c${t}`, t, [cupAt(350)])]);
       w.applyCloserScene(`c${t}`, t, { scene: "k", observations: [{ object_id: "d1", state: "on_floor" }], summary: "s" }, ids);
     }
-    expect(obj(w, "cup_1", 11_000)!.facts.place?.value).toBe("on_floor");
+    expect(placeOf(w, 11_000)).toBe("on_floor");
+  });
+
+  // Codex(a2cf199): 감지가 3초 넘게 끊긴 뒤 온 가까이 보기 묶음의 첫 장에서 앞 근거가 빠져 바로 보호를 풀었고, 뒤 장이 움직임을 보여도 되돌리지 않았다
+  it("감지가 3초 넘게 끊긴 뒤 온 가까이 보기 묶음은 묶음 전체를 합쳐 본다: 묶음 안에서 움직이면 손에 있음을 둔다", () => {
+    const w = carrying();
+    w.applyCloser([9000, 9500, 10_000].map((t, i) => pass(`c${t}`, t, [cupAt(350 + i * 30)])));
+    expect(placeOf(w, 10_000)).toBe("in_hand");
+    expect(w.view(10_000).objects[0]).toMatchObject({ carried: true });
+  });
+
+  it("감지가 3초 넘게 끊긴 뒤에는 다시 본 때부터 정지를 세어, 이어 본 정지가 3초가 돼야 손에 있음을 푼다", () => {
+    const w = carrying();
+    w.applyCloser([9000, 9500, 10_000].map((t) => pass(`c${t}`, t, [cupAt(350)])));
+    expect(placeOf(w, 10_000)).toBe("in_hand");
+    for (let t = 10_500; t <= 11_500; t += 500) w.applyCloser([pass(`c${t}`, t, [cupAt(350)])]);
+    expect(placeOf(w, 11_500)).toBe("in_hand");
+    w.applyCloser([pass("c12000", 12_000, [cupAt(350)])]);
+    expect(placeOf(w, 12_000)).toBeUndefined();
+    expect(w.view(12_000).objects[0]!.carried).toBeUndefined();
   });
 
   it("서로 다른 원본 프레임 세 장에서 같은 자리로 보인 컵만 VLM 답 없이 확인된 컵 하나로 만든다. 두 장이나 같은 프레임 세 번이면 만들지 않는다", () => {

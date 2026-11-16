@@ -13,7 +13,8 @@ import type { DecisionRecord } from "../contract/events.js";
 import { holdsTarget, planObjectOf, putAway, taskOf, type Placed } from "./tasks.js";
 
 export type CheckFail = keyof typeof CHECK_TEXT;
-export type CheckResult = { ok: true } | { ok: false; reason: CheckFail; text: string };
+/** carried: in_hand가 대상 물건의 들고 감 보호(World State 물건 carried)에서만 왔다. 실행 추적은 이때 보호가 풀릴 때까지 다시 보기 기한을 세지 않는다. */
+export type CheckResult = { ok: true } | { ok: false; reason: CheckFail; text: string; carried?: true };
 export interface CheckInput {
   decision: DecisionRecord;
   /** 이번 판단에 보낸 행동 목록. */
@@ -58,7 +59,11 @@ export function checkPlan(i: CheckInput): CheckResult {
     }
     if (putAway(o, i.placed)) return fail("in_sink");
     if (o.last_seen_ms <= i.decision.atMs || i.nowMs - o.last_seen_ms > i.staleMs) return fail("stale");
-    if (o.facts.place?.value === "in_hand" || o.facts.use?.value === "in_use" || holdsTarget(i.world, spec.target, spec.carry !== undefined)) return fail("in_hand");
+    const inUse = o.facts.use?.value === "in_use";
+    const holds = holdsTarget(i.world, spec.target, spec.carry !== undefined);
+    if (o.facts.place?.value === "in_hand" || inUse || holds) {
+      return o.carried === true && o.facts.place?.value === "in_hand" && !inUse && !holds ? { ok: false, reason: "in_hand", text: CHECK_TEXT.in_hand, carried: true } : fail("in_hand");
+    }
   }
   // 손 자리를 모르면(맞추기 전) 길 없이 「완료」로 넘긴다. 자리를 아는데 길이 없을 때만 막는다
   if (i.plan.robot.position && i.plan.steps.some((s) => s.kind === "move") && i.plan.path.length === 0) return fail("unreachable");

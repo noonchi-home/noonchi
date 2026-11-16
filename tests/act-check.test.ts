@@ -60,6 +60,15 @@ describe("실행 전 검사", () => {
     const holding = { ...base().world, person: { visible: true, since_ms: 0, last_seen_ms: 9_000, count: 0, room: null, room_label: null, position: null, near: [], holding: [], position_ms: null, answered_ms: null, facts: { holding: fact("holding_object") } } };
     expect(checkPlan(base({ world: holding }))).toMatchObject({ reason: "in_hand" });
   });
+  // Codex(a2cf199): 검사를 막은 물건과 들고 감 보호 중인 물건이 같은지 보지 않아, 다른 물건의 보호가 다시 보기 기한을 끝없이 멈췄다
+  it("손에 있음이 대상 물건의 들고 감 보호에서만 오면 carried를 붙인다(쓰는 중·보호 아님이면 붙이지 않는다)", () => {
+    const carried = obj({ facts: { place: fact("in_hand") }, carried: true });
+    expect(checkPlan(base({ world: { ...base().world, objects: [carried] } }))).toEqual({ ok: false, reason: "in_hand", text: CHECK_TEXT.in_hand, carried: true });
+    const inUse = obj({ facts: { place: fact("in_hand"), use: fact("in_use") }, carried: true });
+    expect(checkPlan(base({ world: { ...base().world, objects: [inUse] } }))).toEqual({ ok: false, reason: "in_hand", text: CHECK_TEXT.in_hand });
+    expect(checkPlan(base({ world: { ...base().world, objects: [obj({ facts: { place: fact("in_hand") } })] } }))).toEqual({ ok: false, reason: "in_hand", text: CHECK_TEXT.in_hand });
+  });
+
   describe("채워 주기: 대상은 계획 단계 대상 가운데 그 행동의 대상 종류(컵)", () => {
     const person = (holding: string[]) => ({ ...base().world.person, visible: true, last_seen_ms: 9_000, holding, facts: { holding: fact("holding_object") } });
     const bottle = obj({ id: "bottle_1", cls: "bottle" });
@@ -87,6 +96,12 @@ describe("실행 전 검사", () => {
       const w = { ...base().world, objects: [bottle, obj()] };
       expect(planObjectOf(seen.plan!, w, "cup")).toBe("cup_1");
       expect(checkPlan({ ...seen, world: w })).toEqual({ ok: true });
+    });
+    it("컵을 실제로 들고 있으면 시야 밖 병이 들고 감 보호 중이어도 carried를 붙이지 않는다", () => {
+      const away = obj({ id: "bottle_1", cls: "bottle", status: "out_of_view", facts: { place: fact("in_hand") }, carried: true });
+      expect(checkPlan(fill({ world: { ...base().world, objects: [away, obj({ facts: { place: fact("in_hand") } })] } }))).toEqual({ ok: false, reason: "in_hand", text: CHECK_TEXT.in_hand });
+      const carriedCup = obj({ facts: { place: fact("in_hand") }, carried: true });
+      expect(checkPlan(fill({ world: { ...base().world, objects: [away, carriedCup], person: person(["cup_1"]) } }))).toEqual({ ok: false, reason: "in_hand", text: CHECK_TEXT.in_hand });
     });
     it("컵을 사람이 들고 있거나 쓰는 중이면 in_hand로 막는다", () => {
       for (const facts of [{ place: fact("in_hand") }, { use: fact("in_use") }]) {

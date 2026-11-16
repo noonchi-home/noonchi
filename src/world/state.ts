@@ -87,6 +87,8 @@ export const CLOSER_NEW_FRAMES = 3;
 /** VLM 답을 원본 프레임·대상·면마다 한 번만 세려고 기억하는 수(넣은 순서, 최근 것). */
 const ANSWERS_KEEP = 4000;
 
+/** 움직임·정지를 보는 자리 하나: 원본 프레임(전체 감지·가까이 보기)의 촬영 시각·id, 트윈 자리(모르면 null), 엔진 프레임 사진 가운데 점(0~1). */
+interface TrailSample { at: number; frame: string; position: V3 | null; center: [number, number] }
 /** 가까이 본 한 장의 감지: 상자는 엔진 프레임 픽셀, edge는 잘라 본 상자 경계에 닿음(src/observe/crop.ts onCropEdge). */
 export interface CloserDetection extends Detection { edge: boolean }
 /** 가까이 본 한 장: 원본 엔진 프레임 id·촬영 시각·카메라·크기와 그 잘라 본 사진의 감지. */
@@ -134,7 +136,7 @@ interface Obj {
   posAt: number;
   /** 마지막으로 움직인 촬영 시각(최근 본 자리에서 트윈 자리 MOVE_M, 자리를 모르면 사진 가운데 점 MOVE_IMAGE 넘게 떨어짐)과 최근 SETTLE_MS 동안 본 자리. */
   movedAt: number;
-  trail: { at: number; frame: string; position: V3 | null; center: [number, number] }[];
+  trail: TrailSample[];
   /** 사람이 안 보이게 됐을 때 아직 움직이던 든 물건: 제자리에 SETTLE_MS 있으면 관절의 손에 있음을 지운다. */
   carried: boolean;
   posCloser: boolean;
@@ -486,7 +488,7 @@ export class WorldState {
       obj.lastInView = Math.max(obj.lastInView, at);
       this.judge(obj, at, frame.id, false);
       this.sawAgain(obj, at, frame.id);
-      this.track(obj, at, frame.id, placed?.position ?? null, [(d.box[0] + d.box[2] / 2) / frame.width, (d.box[1] + d.box[3] / 2) / frame.height]);
+      this.track(obj, [{ at, frame: frame.id, position: placed?.position ?? null, center: [(d.box[0] + d.box[2] / 2) / frame.width, (d.box[1] + d.box[3] / 2) / frame.height] }]);
       // 가까이 보기가 더 새 촬영(같은 촬영이면 잘라 본 자리)으로 고친 자리를 되돌리지 않는다
       if (placed?.position && this.newerPlace(obj, at, false)) {
         obj.position = placed.position;
@@ -677,19 +679,24 @@ export class WorldState {
   /** 물건이 움직였는지 센다: 원본 프레임(전체 감지·가까이 보기)마다 본 자리(트윈 자리, 모르면 엔진 프레임 사진 가운데 점) 하나를 촬영 순서로 쌓고,
    *  SETTLE_MS 안의 다른 자리와 MOVE_M(MOVE_IMAGE) 넘게 떨어졌으면 그 둘 가운데 늦은 촬영 시각을 movedAt으로 둔다(직전 프레임과만 견주면 100ms마다
    *  조금씩 들고 가도 제자리로 보이고, 떨어진 옛 자리의 시각을 두면 천천히 들고 가는 동안에도 3초 전 것만 떨어져 바로 내려놓은 것이 된다).
-   *  같은 원본 프레임은 한 번만 센다. 사람이 안 보이는 동안 들고 가던 물건이 가장 새 촬영까지 SETTLE_MS 움직임이 없으면 내려놓은 것으로 손에 있음을 지운다. */
-  private track(o: Obj, at: number, frame: string, position: V3 | null, center: [number, number]): void {
-    const far = (s: { position: V3 | null; center: [number, number] }) => position && s.position
-      ? Math.hypot(position[0] - s.position[0], position[2] - s.position[2]) > MOVE_M
-      : Math.hypot(center[0] - s.center[0], center[1] - s.center[1]) > MOVE_IMAGE;
-    const end = Math.max(at, o.trail.at(-1)?.at ?? at);
-    o.trail = o.trail.filter((s) => end - s.at <= SETTLE_MS);
-    if (end - at <= SETTLE_MS && !o.trail.some((s) => s.frame === frame)) {
-      for (const s of o.trail) if (Math.abs(at - s.at) <= SETTLE_MS && far(s)) o.movedAt = Math.max(o.movedAt, at, s.at);
-      o.trail.push({ at, frame, position, center });
+   *  앞 SETTLE_MS 안에 본 자리가 없으면(감지가 끊겼다 다시 봄) 그사이를 모르므로 그 촬영부터 정지를 센다. 같은 원본 프레임은 한 번만 센다.
+   *  한 번에 온 자리(가까이 보기 한 번의 묶음)를 다 쌓은 뒤, 사람이 안 보이는 동안 들고 가던 물건이 이어 본 자리로 가장 새 촬영까지 SETTLE_MS
+   *  움직임이 없으면 내려놓은 것으로 손에 있음을 지운다. */
+  private track(o: Obj, samples: readonly TrailSample[]): void {
+    for (const n of [...samples].sort((a, b) => a.at - b.at)) {
+      const end = Math.max(n.at, o.trail.at(-1)?.at ?? n.at);
+      o.trail = o.trail.filter((s) => end - s.at <= SETTLE_MS);
+      if (end - n.at > SETTLE_MS || o.trail.some((s) => s.frame === n.frame)) continue;
+      const far = (s: TrailSample) => n.position && s.position
+        ? Math.hypot(n.position[0] - s.position[0], n.position[2] - s.position[2]) > MOVE_M
+        : Math.hypot(n.center[0] - s.center[0], n.center[1] - s.center[1]) > MOVE_IMAGE;
+      if (!o.trail.some((s) => s.at < n.at)) o.movedAt = Math.max(o.movedAt, n.at);
+      for (const s of o.trail) if (Math.abs(n.at - s.at) <= SETTLE_MS && far(s)) o.movedAt = Math.max(o.movedAt, n.at, s.at);
+      o.trail.push(n);
       o.trail.sort((a, b) => a.at - b.at);
     }
     if (!o.carried) return;
+    const end = o.trail.at(-1)?.at ?? o.movedAt;
     if (this.person.visible || !this.posedInHand(o)) o.carried = false;
     else if (end - o.movedAt >= SETTLE_MS) {
       this.dropPoseFact(o.facts, "place", POSE_HOLD.object);
@@ -905,8 +912,8 @@ export class WorldState {
     if (!obj) return null;
     // 옮김 표시는 보임 판단과 따로 지운다: 보임을 바꾸지 못하는 옛 촬영이어도 표시를 붙인 촬영보다 새거나 같은 원본 프레임이면 두 물건이 함께 있었다
     for (const s of g.seen) this.sawAgain(obj, s.pass.capturedAtMs, s.pass.frameId);
-    // 원본 프레임마다 본 자리도 움직임·정지 근거다(전체 감지가 놓치고 가까이 보기로만 보는 물건도 내려놓음을 안다)
-    for (const s of g.seen) this.track(obj, s.pass.capturedAtMs, s.pass.frameId, s.position, s.center);
+    // 원본 프레임마다 본 자리도 움직임·정지 근거다(전체 감지가 놓치고 가까이 보기로만 보는 물건도 내려놓음을 안다). 묶음 전체를 합친 뒤 판정한다
+    this.track(obj, g.seen.map((s) => ({ at: s.pass.capturedAtMs, frame: s.pass.frameId, position: s.position, center: s.center })));
     used.add(obj.id);
     return obj;
   }

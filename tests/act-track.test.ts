@@ -2156,7 +2156,7 @@ describe("실행 추적: 한 번에 한 계획, 실행 전 검사", () => {
   // Codex(69d3493): 들고 감 보호는 최대 약 6초인데 다시 검사는 3초뿐이라, 계획이 빨리 오면 「손에 있음」으로 실패하고 다시 계획 제한까지 걸렸다
   it("대상 물건의 손에 있음이 들고 감 보호(carried)면 보호가 풀릴 때까지 다시 보기 기한을 세지 않고, 풀린 뒤 통과하면 첫 명령을 보낸다", async () => {
     let w = world([{ ...cup("present", "in_hand", 10_000), carried: true }]);
-    const inHand = (): CheckResult => (w.objects[0]!.facts.place?.value === "in_hand" ? { ok: false, reason: "in_hand", text: "x" } : { ok: true });
+    const inHand = (): CheckResult => (w.objects[0]!.facts.place?.value === "in_hand" ? { ok: false, reason: "in_hand", text: "x", ...(w.objects[0]!.carried ? { carried: true as const } : {}) } : { ok: true });
     const { t, decide, clock, spoken } = setup({ w: () => w, check: inHand, recheckMs: 3000 });
     await decide(decision);
     for (let i = 0; i < 24; i++) {
@@ -2172,7 +2172,8 @@ describe("실행 추적: 한 번에 한 계획, 실행 전 검사", () => {
 
   it("들고 감 보호가 풀린 뒤에도 손에 있음이면 그때부터 recheckMs를 세어 실패로 끝낸다", async () => {
     let w = world([{ ...cup("present", "in_hand", 10_000), carried: true }]);
-    const { t, decide, clock, logs } = setup({ w: () => w, check: () => ({ ok: false, reason: "in_hand", text: "x" }), recheckMs: 3000 });
+    const check = (): CheckResult => ({ ok: false, reason: "in_hand", text: "x", ...(w.objects[0]!.carried ? { carried: true as const } : {}) });
+    const { t, decide, clock, logs } = setup({ w: () => w, check, recheckMs: 3000 });
     await decide(decision);
     for (let i = 0; i < 24; i++) {
       clock.t += 250;
@@ -2185,6 +2186,16 @@ describe("실행 추적: 한 번에 한 계획, 실행 전 검사", () => {
     }
     expect(t.current()).toMatchObject({ state: "planned" });
     clock.t += 500;
+    t.tick();
+    expect(logs.at(-1)).toMatchObject({ type: "execution", state: "failed", text: "x" });
+  });
+
+  // Codex(a2cf199): 검사를 막은 물건이 아닌 계획 물건의 들고 감 보호로도 다시 보기 기한이 멈췄다
+  it("검사가 들고 감 보호로 막았다고 하지 않으면(carried 없음) 계획 물건이 보호 중이어도 recheckMs가 지나면 실패로 끝낸다", async () => {
+    const w = world([{ ...cup("present", "in_hand", 10_000), carried: true }]);
+    const { t, decide, clock, logs } = setup({ w: () => w, check: () => ({ ok: false, reason: "in_hand", text: "x" }), recheckMs: 3000 });
+    await decide(decision);
+    clock.t += 3000;
     t.tick();
     expect(logs.at(-1)).toMatchObject({ type: "execution", state: "failed", text: "x" });
   });
