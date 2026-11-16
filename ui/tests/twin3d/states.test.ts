@@ -78,6 +78,29 @@ describe("빛 풀", () => {
     expect(pooled(scene)).toHaveLength(before);
   });
 
+  it("다시 접속할 때마다 더한 조명 노드가 새로 복제돼 다시 이어져도(빼기·새 노드로 더하기) 풀은 기기 id마다 한 번만 센다: area 6개·spot 11개까지 쌓이지 않는다", () => {
+    const scene = new THREE.Scene();
+    const root = new THREE.Group();
+    const fridge = lamp("fridge", "area");
+    root.add(fridge.node);
+    scene.add(root);
+    const states = new TwinStates(scene, root);
+    states.add("fridge", fridge.node, fridge.entry);
+    for (let n = 0; n < 8; n++) {
+      // 다시 접속(hello): LayoutOps.restore가 더한 노드를 떼고 상태를 끊은 뒤, 맞추기 add가 모델을 새로 복제해 다시 잇는다
+      if (n > 0) { states.remove("light_living"); states.remove("light_entrance"); }
+      const ceiling = lamp("light_living", "area", 4);
+      const down = lamp("light_entrance", "spot", 6);
+      root.add(ceiling.node, down.node);
+      states.add("light_living", ceiling.node, ceiling.entry);
+      states.add("light_entrance", down.node, down.entry);
+      // 빼지 않고 같은 id를 새 노드로 다시 이어도 다시 쓴다
+      const again = lamp("light_living", "area", 4);
+      states.add("light_living", again.node, again.entry);
+    }
+    expect(pooled(scene).map((l) => l.userData.kind).sort()).toEqual(["area", "area", "spot"]);
+  });
+
   it("같은 노드를 다시 이어도(빼고 다시 더하기) 풀을 또 늘리지 않는다", () => {
     const scene = new THREE.Scene();
     const root = new THREE.Group();

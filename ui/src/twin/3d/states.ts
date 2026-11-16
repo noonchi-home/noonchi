@@ -2,6 +2,7 @@
 // 빛은 트윈 뷰어 main.mjs의 빛 풀처럼 종류마다 미리 만들어 세기 0으로 장면에 두고, 켤 때 빌려 기준점 자리로 옮긴다.
 // three는 장면의 빛 개수가 바뀌면 모든 재질의 셰이더를 다시 만들어 화면이 멈추기 때문이다.
 // 풀은 구운 장면의 빛 기준점 수로 만들고, 나중에 더한 물건(연결 때 layout add: 목련 거실등·현관등)을 이을 때 그 빛 기준점만큼 늘린다(켤 때가 아니라 더할 때 한 번).
+// 더한 물건의 빛은 기기 id마다 센다: 다시 접속할 때마다 모델을 새로 복제해 다시 이어도 그 id의 셈을 다시 쓰고, 뺄 때 셈을 풀어 풀이 쌓이지 않는다.
 import * as THREE from "three";
 import { RectAreaLightUniformsLib } from "three/addons/lights/RectAreaLightUniformsLib.js";
 import { parseProp, statesOf } from "@viewer/scene.mjs";
@@ -26,18 +27,33 @@ interface Item {
   state: Record<string, unknown>;
 }
 
+/** node 아래 빛 기준점과 그 종류. */
+function lightAnchors(node: THREE.Object3D): [THREE.Object3D, Kind][] {
+  const out: [THREE.Object3D, Kind][] = [];
+  node.traverse((n) => {
+    const spec = n.userData?.light !== undefined ? (parseProp(n.userData.light) as Spec | null) : null;
+    if (spec) out.push([n, kindOf(spec)]);
+  });
+  return out;
+}
+
 export class TwinStates {
   readonly ctx: StateContext;
   private readonly items = new Map<string, Item>();
   private readonly free = new Map<Kind, THREE.Light[]>([["spot", []], ["area", []], ["point", []]]);
   private readonly all: THREE.Light[] = [];
-  /** 센 빛 기준점(같은 노드를 다시 이어도 또 세지 않는다)과 종류마다 센 수·만든 풀 빛 수. */
-  private readonly counted = new WeakSet<THREE.Object3D>();
-  private readonly count: Record<Kind, number> = { spot: 0, area: 0, point: 0 };
+  /** 구운 장면의 빛 기준점과 종류마다 그 수, 더한 물건(기기 id)마다 그 빛 기준점 수, 종류마다 만든 풀 빛 수. */
+  private readonly baked = new WeakSet<THREE.Object3D>();
+  private readonly bakedCount: Record<Kind, number> = { spot: 0, area: 0, point: 0 };
+  private readonly reserved = new Map<string, Record<Kind, number>>();
   private readonly made: Record<Kind, number> = { spot: 0, area: 0, point: 0 };
 
   constructor(private readonly scene: THREE.Object3D, root: THREE.Object3D) {
-    this.reserve(root);
+    for (const [anchor, kind] of lightAnchors(root)) {
+      this.baked.add(anchor);
+      this.bakedCount[kind] += 1;
+    }
+    this.grow();
     this.ctx = createContext({
       maxLights: MAX_LIGHTS,
       makeLight: (spec) => this.makeLight(spec as Spec),
@@ -50,7 +66,7 @@ export class TwinStates {
   add(id: string, node: THREE.Object3D, entry: { attrs?: Record<string, unknown[]>; state?: Record<string, unknown>; states?: unknown }): boolean {
     const states = statesOf(entry, node);
     if (!Object.keys(states).length) return false;
-    this.reserve(node);
+    this.reserve(id, node);
     const attrs = entry.attrs ?? {};
     const initial = Object.fromEntries(Object.keys(states).map((a) => [a, defaultValue(states, attrs, a)]));
     const item: Item = { node, states, attrs, targets: collectTargets(node), state: { ...initial, ...(entry.state ?? {}) } };
@@ -86,6 +102,7 @@ export class TwinStates {
     const defaults = Object.fromEntries(Object.keys(it.states).map((a) => [a, defaultValue(it.states, it.attrs, a)]));
     applyState(this.ctx, it.targets, it.states, it.attrs, defaults);
     this.items.delete(id);
+    this.reserved.delete(id);
     return true;
   }
 
@@ -102,17 +119,21 @@ export class TwinStates {
     for (const light of this.all) { light.removeFromParent(); light.dispose(); }
   }
 
-  /** node 아래 아직 세지 않은 빛 기준점을 세고, 종류마다 풀을 그 수(상한 POOL_CAP)까지 늘린다. 늘린 빛은 세기 0으로 장면에 둔다. */
-  private reserve(node: THREE.Object3D): void {
-    node.traverse((n) => {
-      if (n.userData?.light === undefined || this.counted.has(n)) return;
-      const spec = parseProp(n.userData.light) as Spec | null;
-      if (!spec) return;
-      this.counted.add(n);
-      this.count[kindOf(spec)] += 1;
-    });
-    for (const kind of Object.keys(this.count) as Kind[]) {
-      const want = Math.min(this.count[kind], POOL_CAP[kind]);
+  /** 기기 id의 빛 기준점(구운 장면 것은 빼고)을 종류마다 세어 그 id의 셈으로 다시 쓰고 풀을 늘린다. */
+  private reserve(id: string, node: THREE.Object3D): void {
+    const count: Record<Kind, number> = { spot: 0, area: 0, point: 0 };
+    for (const [anchor, kind] of lightAnchors(node)) if (!this.baked.has(anchor)) count[kind] += 1;
+    if (count.spot || count.area || count.point) this.reserved.set(id, count);
+    else this.reserved.delete(id);
+    this.grow();
+  }
+
+  /** 종류마다 풀을 구운 빛 수 + 더한 물건 빛 수(상한 POOL_CAP)까지 늘린다. 늘린 빛은 세기 0으로 장면에 둔다. 줄이지는 않는다(빛 수가 바뀌면 셰이더를 다시 만든다). */
+  private grow(): void {
+    for (const kind of Object.keys(this.made) as Kind[]) {
+      let total = this.bakedCount[kind];
+      for (const c of this.reserved.values()) total += c[kind];
+      const want = Math.min(total, POOL_CAP[kind]);
       if (kind === "area" && want > this.made.area && !areaReady) { RectAreaLightUniformsLib.init(); areaReady = true; }
       while (this.made[kind] < want) {
         const light = this.poolLight(kind);
