@@ -6,25 +6,21 @@ import type { Check } from "./checks/checks";
 import { LineDrawSvg } from "../components/ui/line-draw-svg";
 import { Status } from "../components/ui/status";
 import { type TwinEngine, plateTransform, type MapCamera } from "../twin";
-import type { Px } from "./camera";
 import { edgeFade } from "./checks";
 import type { BoxSize } from "./fit";
 import type { TwinFrame } from "./frame";
 import { otherRooms, roomsPath, type RoomShape } from "./home";
 import { PreDrawing, useFadeIn } from "./motion";
-import { checkDotLayers, destinationLayers, dimLayer, lineLayers, outsideBox, roomEdgeLayer, type Layer, type MarkTone } from "./marks";
-import { legAheadOf, mapScene, type Box } from "./scene";
+import { checkDotLayers, destinationLayers, dimLayer, roomEdgeLayer, type Layer, type MarkTone } from "./marks";
+import { mapScene, type Box } from "./scene";
 
 /** 밝힌 방 묶음 이름(순서와 상관없음). */
 const roomsKey = (rooms: string[]) => [...rooms].sort().join("+");
-/** 꺾은선 → SVG path d. */
-const lineOf = (pts: Px[]) => (pts.length ? `M${pts.map(([u, v]) => `${u.toFixed(1)},${v.toFixed(1)}`).join("L")}` : "");
 
 /**
  * 3D 트윈 위 표시 판. 구운 보기 그림 픽셀(image) 크기의 판(data-map-plate) 하나에 같은 그림 픽셀 그림(LineDrawSvg)으로
- * 밝히지 않는 방 어둡게 칠한 층, 밝힌 방 테두리, 지나온 길·남은 길·지금 구간, 목적지, 확인한 것 점을 겹쳐 놓는다.
- * 클로이드(맞춘 눈)는 판에 그리지 않고 엔진 장면의 3D 원뿔이 따른다. frame.robot은 카메라 맞춤·말풍선 비킬 자리·길 선 비울 자리에만 쓴다.
- * 판이 캔버스 위라 길 선은 원뿔이 차지하는 상자(frame.robot.body, 선 반 굵기만큼 넓혀서)를 지나는 자리에서 비운다.
+ * 밝히지 않는 방 어둡게 칠한 층, 밝힌 방 테두리, 목적지, 확인한 것 점을 겹쳐 놓는다. 동선(계획 경로 길 선)은 그리지 않는다.
+ * 클로이드(맞춘 눈)는 판에 그리지 않고 엔진 장면의 3D 원뿔이 따른다. frame.robot은 카메라 맞춤·말풍선 비킬 자리에만 쓴다.
  * 판 transform은 엔진이 그림을 그릴 때마다 그 지도 카메라로 바꾼다(React 상태를 거치지 않아 3D 그림과 같은 그림에 움직인다).
  * 어둡게 한 층은 계획의 밝힌 방 묶음(roomSets)마다 미리 만들고 지금 묶음만 opacity 1이다: 밝힌 방이 바뀌어도 새 모양을 그리지 않는다.
  * 선 굵기는 카메라가 다 옮긴 뒤 한 번 새 배율에 맞춘다. 방 이름표·확인한 기기 말풍선은 판 밖 상자 px에 두고(scene.ts가 고른다),
@@ -105,19 +101,8 @@ export function MapOverlay({ frame, checks, shapes, roomSets, image, size, cam, 
   }, [roomSets, frame.rooms, shapes]);
   const lit = frame.rooms.length ? roomsKey(frame.rooms) : null;
   const litPath = useMemo(() => roomsPath(frame.rooms, shapes), [frame.rooms, shapes]);
-  const { robot, route, target } = frame;
-  const legAhead = useMemo(() => legAheadOf(frame), [frame]);
-  // 길 선에서 원뿔 상자를 지나는 자리를 뺀 조각들. 상자는 그 선의 반 굵기만큼 넓힌다(선 가장자리도 원뿔을 덮지 않게)
-  const lines = useMemo((): [string, Px[][], "route" | "routeAhead" | "routePassed"][] => {
-    const clear = (pts: Px[], kind: "route" | "routeAhead" | "routePassed") => {
-      if (!robot) return pts.length > 1 ? [pts] : [];
-      const m = (lineLayers(kind, "", k)[0]!.width) / 2;
-      const b = robot.body;
-      return outsideBox(pts, { x0: b.x0 - m, y0: b.y0 - m, x1: b.x1 + m, y1: b.y1 + m });
-    };
-    return [["passed", clear(route.done, "routePassed"), "routePassed"], ["ahead", clear(route.ahead, "routeAhead"), "routeAhead"], ["leg-ahead", clear(legAhead, "route"), "route"]];
-  }, [robot, route, legAhead, k]);
-  const { points, checks: shownChecks, labels, keep } = mapScene(frame, checks, shapes, size, cam, blocked, legAhead);
+  const { target } = frame;
+  const { points, checks: shownChecks, labels, keep } = mapScene(frame, checks, shapes, size, cam, blocked);
   const markTone = (id: string): MarkTone => {
     const d = devices.get(id);
     return d ? deviceSummary(d).tone : "object";
@@ -136,7 +121,6 @@ export function MapOverlay({ frame, checks, shapes, roomSets, image, size, cam, 
           </div>
         ))}
         {litPath && <div data-room-edge className="absolute inset-0">{draw([roomEdgeLayer(litPath, k)])}</div>}
-        {lines.map(([id, pieces, tone]) => pieces.length > 0 && <div key={id} data-line={id} className="absolute inset-0">{draw(lineLayers(tone, pieces.map(lineOf).join(""), k))}</div>)}
         {target && <div data-target className="absolute inset-0">{draw(destinationLayers(target, k))}</div>}
         {frame.marks.map((m) => {
           // 상자 가장자리에 걸린 표시는 반쪽만 보이지 않게 흐리게 지운다

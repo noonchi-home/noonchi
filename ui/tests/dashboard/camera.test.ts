@@ -1,16 +1,14 @@
 // @vitest-environment node
 // 트윈 지도 카메라: 트윈이 화면 전체라 구운 보기 그림(1920×1536)보다 옆으로 넓다. 지켜보기는 집 전체(모든 방)를, 계획 단계는 그 단계에 중요한 것(목적지·클로이드·확인한 것·지금 길·말풍선·방 이름표)을
-// 지도 카메라 칸(focus) 안, 얹은 것(말풍선 카드·마스코트·미니맵·생각 말풍선) 밑이 아닌 곳에 맞춘다. 그림 밖은 3D 장면 바탕이라 비워 둬도 된다. 가장자리 표시 흐리기, 길을 가리는 말풍선 빼기, 방 이름표 자리.
+// 지도 카메라 칸(focus) 안, 얹은 것(말풍선 카드·마스코트·미니맵·생각 말풍선) 밑이 아닌 곳에 맞춘다. 그림 밖은 3D 장면 바탕이라 비워 둬도 된다. 가장자리 표시 흐리기, 방 이름표 자리.
 import { describe, expect, it } from "vitest";
-import type { Check } from "../../src/dashboard/checks/checks";
 import { coverScale, focusOf, HOME_ZOOM, homeCamera, legOf, livedOf, still, toScreen, wholeOf, wideCamera } from "../../src/dashboard/camera";
-import { BUBBLE_BOX, clearOfRoute, edgeFade } from "../../src/dashboard/checks";
+import { BUBBLE_BOX, edgeFade } from "../../src/dashboard/checks";
 import { twinFrame } from "../../src/dashboard/frame";
 import { avoidBoxes, placeLabel } from "../../src/dashboard/labels";
 import { pageLayout, type Rect } from "../../src/dashboard/layout";
 import { MASCOT } from "../../src/lib/mascot-image";
 import { LABEL_BOX, mapScene, type Box } from "../../src/dashboard/scene";
-import type { ScreenPoint } from "../../src/twin/use-anchors";
 import { conePixelBox } from "../../src/twin/3d/eye";
 import { anchorOf, CAM, HOME, IMAGE, moment, PLAN_CHECKS } from "./cup-run";
 
@@ -171,9 +169,6 @@ describe("작은 눈 움직임", () => {
   });
 });
 
-const obj = (id: string, order: number): Check => ({ key: `object:${id}`, order, source: "agent", objectId: id, verb: "확인", at: 0 });
-const pt = (x: number, y: number): ScreenPoint => ({ x, y, visible: true });
-
 describe("가장자리 표시", () => {
   const box = { width: 400, height: 225 };
   it("표시 원이 상자 가장자리에 걸리면 지우고, 충분히 안쪽이면 다 보인다", () => {
@@ -188,28 +183,6 @@ describe("가장자리 표시", () => {
     expect(a).toBeGreaterThan(b);
     expect(b).toBeGreaterThan(0);
     expect(a).toBeLessThan(1);
-  });
-});
-
-describe("말풍선과 지금 갈 길", () => {
-  it("꼬리 끝 위 말풍선 자리가 지금 갈 길에 걸리면 빼고, 비켜 있으면 둔다", () => {
-    const checks = [obj("cup", 2), obj("table", 1)];
-    const points = new Map([["cup", pt(300, 300)], ["table", pt(600, 300)]]);
-    const route: [number, number][] = [[300, 300], [305, 200], [320, 120]];
-    expect(clearOfRoute(checks, points, route).map((c) => c.objectId)).toEqual(["table"]);
-  });
-
-  it("길이 꼬리 끝에서 옆이나 아래로 가면 말풍선을 둔다", () => {
-    const checks = [obj("cup", 2)];
-    const points = new Map([["cup", pt(300, 300)]]);
-    expect(clearOfRoute(checks, points, [[300, 300], [300, 420], [500, 440]]).map((c) => c.objectId)).toEqual(["cup"]);
-    expect(clearOfRoute(checks, points, []).map((c) => c.objectId)).toEqual(["cup"]);
-  });
-
-  it("말풍선 자리는 디자인 시스템 전 크기(가로 약 170px)다: 꼬리 끝에서 옆으로 100px 지나는 길은 가리지 않는다", () => {
-    const checks = [obj("cup", 2)];
-    const points = new Map([["cup", pt(300, 300)]]);
-    expect(clearOfRoute(checks, points, [[400, 320], [400, 200]]).map((c) => c.objectId)).toEqual(["cup"]);
   });
 });
 

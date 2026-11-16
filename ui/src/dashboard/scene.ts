@@ -1,5 +1,5 @@
-// 트윈 위 표시 고르기(순수 함수, 시안 A 그대로). 카메라와 상자 크기 → 확인한 것의 화면 자리, 지금 이동 구간의 남은 길,
-// 띄울 기기 말풍선(최근 것만, 지금 갈 길을 가리지 않고, 겹치면 최신 것만), 밝힌 방 이름표 자리.
+// 트윈 위 표시 고르기(순수 함수, 시안 A 그대로). 카메라와 상자 크기 → 확인한 것의 화면 자리,
+// 띄울 기기 말풍선(최근 것만, 겹치면 최신 것만), 밝힌 방 이름표 자리.
 // 가린 자리(blocked: 지도 위에 얹은 마스코트 말풍선·마스코트)에 걸리는 말풍선은 빼고, 이름표는 비켜 둔다.
 // 클로이드 3D 원뿔 자리·목적지 표시 둘레(keep)는 말풍선이 덮지 않게 BubbleLayer가 판을 옆·아래로 옮긴다.
 import type { Check } from "./checks/checks";
@@ -7,8 +7,8 @@ import type { ScreenPoint } from "../twin";
 import type { BoxSize } from "./fit";
 import type { TwinFrame } from "./frame";
 import type { RoomShape } from "./home";
-import { legOf, toScreen, type Camera, type Px } from "./camera";
-import { BUBBLE_BOX, clearOfRoute, recentChecks, spread, thingId } from "./checks";
+import { toScreen, type Camera, type Px } from "./camera";
+import { BUBBLE_BOX, recentChecks, spread, thingId } from "./checks";
 import { avoidBoxes, LABEL, placeLabel, type Box } from "./labels";
 import type { Rect } from "./bubbles/place";
 
@@ -21,29 +21,17 @@ const TARGET_R = 24;
 /** 말풍선이 겹친다고 볼 꼬리 끝 사이(px). */
 const SPREAD = { dx: 168, dy: 70 };
 
-const same = (a: Px, b: Px) => Math.abs(a[0] - b[0]) < 0.5 && Math.abs(a[1] - b[1]) < 0.5;
 const hit = (a: Box, b: Box) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
 
 export interface MapScene {
   /** 확인한 것 id → 상자 안 자리(상자 안이면 visible). */
   points: Map<string, ScreenPoint>;
-  /** 지금 이동 중인 구간의 남은 길(그림 픽셀). 이동 중이 아니면 빈 배열. */
-  legAhead: Px[];
   /** 기기 말풍선을 띄울 확인. */
   checks: Check[];
   /** 밝힌 방 이름표(상자 안 가운데 자리). */
   labels: { id: string; label: string; at: { x: number; y: number } }[];
   /** 말풍선이 덮지 않을 클로이드 3D 원뿔 자리(꼭짓점 공 ~ 넓은 끝)·목적지 표시 둘레(상자 px). */
   keep: Rect[];
-}
-
-/** 지금 이동 중인 구간의 남은 길: 남은 길에서 그 구간 끝 점까지. */
-export function legAheadOf(frame: TwinFrame): Px[] {
-  const leg = legOf(frame);
-  if (!leg?.now) return [];
-  const end = frame.route.points[leg.to];
-  const at = end ? frame.route.ahead.findIndex((p) => same(p, end)) : -1;
-  return at < 0 ? frame.route.ahead : frame.route.ahead.slice(0, at + 1);
 }
 
 /** 그림 픽셀 상자 → 상자 px 상자. */
@@ -82,15 +70,14 @@ function labelSpots(r: RoomShape, cam: Camera, size: BoxSize): { x: number; y: n
 }
 
 /** checks는 확인 목록(대시보드 거르기 뒤), shapes는 방 모양(그림 픽셀). */
-export function mapScene(frame: TwinFrame, checks: Check[], shapes: RoomShape[], size: BoxSize, cam: Camera, blocked: Box[] = [], legAhead: Px[] = legAheadOf(frame)): MapScene {
+export function mapScene(frame: TwinFrame, checks: Check[], shapes: RoomShape[], size: BoxSize, cam: Camera, blocked: Box[] = []): MapScene {
   const points = new Map<string, ScreenPoint>();
   for (const mark of frame.marks) {
     const p = toScreen(cam, size, mark.px);
     points.set(mark.id, { ...p, visible: cam.scale > 0 && p.x >= 0 && p.y >= 0 && p.x <= size.width && p.y <= size.height });
   }
-  // 말풍선: 최근에 확인한 것 중 지금 갈 길을 가리지 않는 것만, 겹치면 최신 것만, 가린 자리 밑이면 뺀다
-  const legScreen = legAhead.map((q): Px => { const s = toScreen(cam, size, q); return [s.x, s.y]; });
-  const shown = spread(clearOfRoute(recentChecks(checks), points, legScreen), points, SPREAD.dx, SPREAD.dy)
+  // 말풍선: 최근에 확인한 것 중 겹치면 최신 것만, 가린 자리 밑이면 뺀다
+  const shown = spread(recentChecks(checks), points, SPREAD.dx, SPREAD.dy)
     .filter((c) => { const p = points.get(thingId(c)); return !p || !blocked.some((b) => hit(bubbleBox(p), b)); });
   // 클로이드 3D 원뿔이 상자에서 차지하는 자리(꼭짓점 공 ~ 넓은 끝)
   const cone = frame.robot && cam.scale > 0 ? screenBox(cam, size, frame.robot.body) : null;
@@ -113,5 +100,5 @@ export function mapScene(frame: TwinFrame, checks: Check[], shapes: RoomShape[],
     const p = toScreen(cam, size, frame.target);
     keep.push({ left: p.x - TARGET_R, top: p.y - TARGET_R, right: p.x + TARGET_R, bottom: p.y + TARGET_R });
   }
-  return { points, legAhead, checks: shown, labels, keep };
+  return { points, checks: shown, labels, keep };
 }

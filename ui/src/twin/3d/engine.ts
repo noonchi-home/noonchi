@@ -212,7 +212,7 @@ export class TwinEngine {
     if (!this.disposed && this.eye.setEye(eye)) this.requestRender();
   }
 
-  /** 원뿔을 그리는 자리: 눈 자리를 방 안·벽에서 떨어진 자리로 옮긴 것. 화면 표시(길 선·말풍선 비킬 자리)에만 쓴다. */
+  /** 원뿔을 그리는 자리: 눈 자리를 방 안·벽에서 떨어진 자리로 옮긴 것. 화면 표시(말풍선·이름표가 비킬 자리)에만 쓴다. */
   stand(p: Plan2): Plan2 {
     return this.guide.stand(p);
   }

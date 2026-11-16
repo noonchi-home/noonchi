@@ -1,9 +1,9 @@
 // @vitest-environment node
-// 트윈 위 표시 한 순간(twinFrame): 실제 한양목련 장면·컵 치우기 계획·맞춘 눈 → 경로·목적지·클로이드·확인한 것 자리·밝힐 방(구운 보기 그림 픽셀).
+// 트윈 위 표시 한 순간(twinFrame): 실제 한양목련 장면·컵 치우기 계획·맞춘 눈 → 경로(카메라 맞춤용, 그리지 않음)·목적지·클로이드·확인한 것 자리·밝힐 방(구운 보기 그림 픽셀).
 import { describe, expect, it } from "vitest";
 import type { PlanView } from "../../../src/contract/plan.ts";
 import type { Check } from "../../src/dashboard/checks/checks";
-import { litRooms, progressOn, roomSetsOf, twinFrame } from "../../src/dashboard/frame";
+import { litRooms, roomSetsOf, twinFrame } from "../../src/dashboard/frame";
 import { planToPixel } from "../../src/twin/3d/projection";
 import { anchorOf, CAM, CUP_PLAN, HOME, moment, PLAN, PLAN_CHECKS, SINK, START, TABLE } from "./cup-run";
 
@@ -24,37 +24,31 @@ describe("트윈 순간", () => {
   it("순간 0(지켜보기)은 계획·경로·목적지가 없고 밝힐 방이 없다(어둡게 하지 않음)", () => {
     const f = frameAt(0, []);
     expect([f.plan, f.index, f.step, f.target]).toEqual([null, 0, null, null]);
-    expect(f.route).toEqual({ points: [], legs: [], done: [], ahead: [] });
+    expect(f.route).toEqual({ points: [], legs: [] });
     expect(f.rooms).toEqual([]);
     near(f.robot?.px, px(START));
   });
 
-  it("순간 1(식탁으로 가기)은 index 1, 목적지는 첫 구간 끝, 지나온 길은 시작 자리 하나", () => {
+  it("순간 1(식탁으로 가기)은 index 1, 목적지는 첫 구간 끝, 경로는 계획 경로 그대로(지나온 길·남은 길로 나누지 않는다)", () => {
     const f = frameAt(1);
     expect(f.index).toBe(1);
     expect(f.step?.id).toBe(PLAN.steps[0]!.id);
     near(f.target ?? undefined, px(PLAN.path[PLAN.legs[0]!.end]!));
-    expect(f.route.done).toHaveLength(1);
-    near(f.route.done[0], px(START));
-    near(f.route.ahead[0], px(START));
-    expect(f.route.ahead).toHaveLength(PLAN.path.length);
+    expect(Object.keys(f.route).sort()).toEqual(["legs", "points"]);
+    expect(f.route.points).toHaveLength(PLAN.path.length);
+    near(f.route.points[0], px(START));
   });
 
-  it("순간 3(싱크대로 가기)은 길을 눈 자리에서 나누고, 목적지는 길 끝, 밝힐 방에 주방", () => {
+  it("순간 3(싱크대로 가기)은 목적지가 길 끝이고 밝힐 방에 주방", () => {
     const { eye } = moment(3);
     const f = frameAt(3);
-    near(f.route.done.at(-1), px(eye.position));
-    near(f.route.ahead[0], px(eye.position));
     near(f.target ?? undefined, px(PLAN.path.at(-1)!));
     expect(f.rooms).toContain("kitchen");
     expect(f.robot?.room).toBe(HOME.roomAt(eye.position));
   });
 
-  it("서 있는 단계(순간 2 컵 집기)는 끝난 이동 구간 끝에서 나누고 목적지는 다음 이동 구간 끝이다", () => {
+  it("서 있는 단계(순간 2 컵 집기)의 목적지는 다음 이동 구간 끝이다", () => {
     const f = frameAt(2);
-    const end = PLAN.path[PLAN.legs[0]!.end]!;
-    near(f.route.done.at(-1), px(end));
-    near(f.route.ahead[0], px(end));
     near(f.target ?? undefined, px(PLAN.path.at(-1)!));
   });
 
@@ -100,10 +94,4 @@ describe("트윈 순간", () => {
     expect(frameAt(4).rooms).toEqual(["kitchen"]);
   });
 
-  it("꺾은선 위 가장 가까운 자리의 길이 몫", () => {
-    expect(progressOn([[0, 0], [10, 0]], [2.5, 3])).toBeCloseTo(0.25, 9);
-    expect(progressOn([[0, 0], [10, 0], [10, 10]], [12, 5])).toBeCloseTo(0.75, 9);
-    expect(progressOn([[0, 0], [10, 0]], [-4, 1])).toBe(0);
-    expect(progressOn([[0, 0], [10, 0]], [14, 1])).toBe(1);
-  });
 });

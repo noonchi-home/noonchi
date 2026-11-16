@@ -107,7 +107,7 @@ function BakedStage({ home, layout, plan, eye, checks, devices, onEngine: toLive
   const [engine, setEngine] = useState<TwinEngine | null>(null);
   const homeData = useHomeData(home);
   const list = useMemo(() => dashboardChecks(checkList(checks, homeData?.tableId ?? null)), [checks, homeData]);
-  // 길 선·말풍선이 비킬 클로이드 자리는 원뿔을 그리는 자리(방 안·벽에서 떨어진 자리)다. 엔진에는 받은 눈을 그대로 넣는다
+  // 말풍선·이름표가 비킬 클로이드 자리는 원뿔을 그리는 자리(방 안·벽에서 떨어진 자리)다. 엔진에는 받은 눈을 그대로 넣는다
   const drawn = useMemo(() => (eye && engine && !eye.estimated ? { ...eye, position: engine.stand(eye.position) } : eye), [eye, engine]);
   const frame = useMemo(
     () => (v && homeData ? twinFrame({ plan, eye: drawn, checks: list, anchor: (id) => engine?.anchor(id) ?? null, home: homeData.index, cam: v }) : null),
