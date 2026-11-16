@@ -1,6 +1,6 @@
 // World State 입력 모양: 감지·관절·물체 모양·엔진 프레임·카메라. 관찰 흐름·실제 폰이 만들고 World State·기록이 받는다(도메인 나누기 F1·F7).
 
-import type { DetLabel } from "../world/vocab.js";
+import type { DetLabel, SCENE_STATES } from "../world/vocab.js";
 import type { EyePose, Vec3 } from "./events.js";
 
 export type Box = [number, number, number, number];
@@ -67,4 +67,12 @@ export interface EngineFrame {
   crop?: [number, number, number, number];
   /** 이 프레임을 VLM·기록·가까이 보기에 쓰는가. false면 YOLO만 돌리는 빠른 프레임이다. 없으면 VLM 프레임. */
   vlm?: boolean;
+}
+
+/** VLM 장면 분석 한 번의 결과: 가장 새 사진의 장면 설명, 감지 id마다 보이는 사실(낱말 표의 장면 상태), 여러 장 사이 요약.
+ *  observe/scene.ts의 SceneSchema(zod)와 같은 모양을 손으로 적은 것이다. 그 파일이 두 타입이 같은지 양쪽으로 확인한다(계약은 zod를 가져오지 않는다). */
+export interface SceneObservation {
+  scene: string;
+  observations: { object_id: string; state: (typeof SCENE_STATES)[number] }[];
+  summary: string;
 }

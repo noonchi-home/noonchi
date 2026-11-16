@@ -4,7 +4,7 @@
 import { z } from "zod";
 import type { VlmClient } from "../infer/vlm.js";
 import { SCENE_STATES, STATES, type Facet, type StateKey, type Target } from "../world/vocab.js";
-import type { EngineFrame } from "../contract/observe.js";
+import type { EngineFrame, SceneObservation } from "../contract/observe.js";
 
 export { SCENE_STATES };
 export type SceneState = (typeof SCENE_STATES)[number];
@@ -14,7 +14,11 @@ const SceneSchema = z.object({
   observations: z.array(z.object({ object_id: z.string(), state: z.enum(SCENE_STATES) }).strict()),
   summary: z.string(),
 }).strict();
-export type SceneObservation = z.infer<typeof SceneSchema>;
+/** 두 타입이 같은가(양쪽으로). Assert<Equal<…>>가 false면 tsc가 실패한다. */
+type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
+type Assert<T extends true> = T;
+/** 계약의 SceneObservation(손으로 적은 타입)과 이 스키마가 같은 모양이다. 한쪽만 바꾸면 여기서 tsc가 실패한다. */
+export type SceneSame = Assert<Equal<z.infer<typeof SceneSchema>, SceneObservation>>;
 export const SCENE_JSON_SCHEMA = z.toJSONSchema(SceneSchema) as Record<string, unknown>;
 
 /** 그 면·대상의 값 목록(설명이 있으면 「값 (설명)」). */
