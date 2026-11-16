@@ -1,0 +1,10 @@
+{
+  "files": {
+    "src/setup/store.ts": "src/server/setup/store.ts"
+  },
+  "decls": {},
+  "new": [],
+  "text": [],
+  "allow": {},
+  "exceptions": {}
+}

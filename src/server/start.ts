@@ -26,7 +26,7 @@ import { listHomes } from "../layout/homes.js";
 import { acquireServerLock, restoreNeeded } from "./lock.js";
 import { KINDS } from "../devices/kinds.js";
 import { checkKinds } from "../devices/kinds-check.js";
-import { SetupError, SetupStore, effectiveSources, parsePairs, parseSources } from "../setup/store.js";
+import { SetupError, SetupStore, effectiveSources, parsePairs, parseSources } from "./setup/store.js";
 import { repoPath } from "../shared/paths.js";
 import { PAIRABLE_KINDS, fitsKind } from "../devices/thinq/appliance.js";
 import { ThinqClient, ThinqError, thinqConfig } from "../devices/thinq/client.js";

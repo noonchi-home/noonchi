@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { SetupError, SetupStore, effectiveSources, parsePairs, parseSources } from "../src/setup/store.js";
+import { SetupError, SetupStore, effectiveSources, parsePairs, parseSources } from "../src/server/setup/store.js";
 
 const dirs: string[] = [];
 function tmp(): string {
