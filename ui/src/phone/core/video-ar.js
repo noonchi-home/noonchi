@@ -146,6 +146,38 @@ const browser = {
 };
 
 /** link: link.js. params: 페이지 주소 검색값(fps). deps: clipUrl·fovDeg·pitchDeg·heightM·steps·reactMs, 시험은 영상·인코딩·그림판·화면 크기를 바꾼다. */
+/** 페이지 전체 화면(영상 모드 AR). 지원하지 않거나 거절돼도 넘어간다(영상 시작은 그대로). 이 AR이 요청한 전체 화면만 끝낼 때 푼다. */
+function pageFullscreen() {
+  let asked = null; // 요청한 문서
+  return {
+    enter(doc) {
+      const root = doc?.documentElement;
+      if (typeof root?.requestFullscreen !== "function" || doc.fullscreenElement) return;
+      asked = doc;
+      try {
+        Promise.resolve(root.requestFullscreen({ navigationUI: "hide" })).catch(() => {});
+      } catch {
+        // 옵션을 받지 않는 브라우저는 옵션 없이 다시 요청한다
+        try {
+          Promise.resolve(root.requestFullscreen()).catch(() => {});
+        } catch {
+          // 전체 화면을 쓸 수 없다
+        }
+      }
+    },
+    leave() {
+      const doc = asked;
+      asked = null;
+      if (!doc?.fullscreenElement || typeof doc.exitFullscreen !== "function") return;
+      try {
+        Promise.resolve(doc.exitFullscreen()).catch(() => {});
+      } catch {
+        // 이미 풀렸다
+      }
+    },
+  };
+}
+
 export function createVideoAr({ link, params, hooks, deps }) {
   const d = { ...browser, ...deps };
   const FRAME_MS = 1000 / clamp(params.get("fps"), 1, 30, 12);
@@ -166,6 +198,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
   const state = { on: false, epoch: null, hitPoint: null, hitEstimated: false, limited: false, position: null, orientation: null, size: "-", encoder: "-" };
   let run = null; // 지금 재생: { videoTime, command, close }
   let opening = null; // 재생을 기다리는 중: { video, cancelled, done }
+  const fullscreen = pageFullscreen();
   let startedOn = null; // start fixed를 보내고 답을 기다리는 소켓(다시 붙으면 다른 소켓이다)
   let engineMs = 0;
   let focus = { targets: [], until: 0 };
@@ -193,11 +226,19 @@ export function createVideoAr({ link, params, hooks, deps }) {
     if (run) return Promise.resolve();
     // 재생을 기다리는 동안 또 누르면 같은 시작을 기다린다
     if (opening) return opening.done;
+    // 영상 모드: 카메라 입력. 실제 AR(immersive-ar)은 그 자체로 전체 화면이라, 영상으로 그 화면을 흉내 낼 때도 「AR 시작」을 누른 순간
+    // 전체 화면을 요청한다(사용자 제스처 안이어야 한다). 실제 모드(ar.js)는 DOM 오버레이와 겹쳐 요청하지 않는다. 방향은 고정하지 않는다
+    fullscreen.enter(overlay?.ownerDocument ?? document);
     const wait = { video: null, cancelled: false, done: null };
     opening = wait;
-    wait.done = open(overlay, wait).finally(() => {
-      if (opening === wait) opening = null;
-    });
+    wait.done = open(overlay, wait)
+      .catch((error) => {
+        fullscreen.leave();
+        throw error;
+      })
+      .finally(() => {
+        if (opening === wait) opening = null;
+      });
     return wait.done;
   }
 
@@ -504,6 +545,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
   }
 
   function stop() {
+    fullscreen.leave();
     // 재생을 기다리는 중이면 그 영상을 닫는다(play가 끝나도 시작하지 않는다)
     if (opening) {
       opening.cancelled = true;

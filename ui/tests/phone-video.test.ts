@@ -428,6 +428,73 @@ describe("영상 AR: 재생을 기다리는 동안 다시 시작·끝냄", () =>
     return { ar, sent, videos, hooks, release: g.release };
   }
 
+  describe("전체 화면(실제 AR immersive-ar는 그 자체로 전체 화면이라 영상 모드도 AR 시작 때 요청한다)", () => {
+    const root = document.documentElement as unknown as Record<string, unknown>;
+    const doc = document as unknown as Record<string, unknown>;
+    let full: Element | null = null;
+    const lock = vi.fn();
+    beforeEach(() => {
+      full = null;
+      lock.mockClear();
+      Object.defineProperty(document, "fullscreenElement", { configurable: true, get: () => full });
+      Object.defineProperty(window.screen, "orientation", { configurable: true, value: { lock } });
+    });
+    afterEach(() => {
+      delete root.requestFullscreen;
+      delete doc.exitFullscreen;
+      delete doc.fullscreenElement;
+      delete (window.screen as unknown as Record<string, unknown>).orientation;
+    });
+
+    it("AR 시작(누른 순간) 페이지 전체 화면을 요청하고(navigationUI hide), 끝내면 푼다. 화면 방향은 고정하지 않는다", async () => {
+      const request = vi.fn(async () => { full = document.documentElement; });
+      const exit = vi.fn(async () => { full = null; });
+      root.requestFullscreen = request;
+      doc.exitFullscreen = exit;
+      const { ar, videos, hooks, release } = direct();
+      const started = ar.start({});
+      expect(request).toHaveBeenCalledWith({ navigationUI: "hide" });
+      release();
+      await started;
+      expect(videos).toHaveLength(1);
+      expect(hooks.onStart).toHaveBeenCalledTimes(1);
+      ar.stop();
+      expect(exit).toHaveBeenCalledTimes(1);
+      expect(lock).not.toHaveBeenCalled();
+    });
+
+    it("전체 화면을 지원하지 않거나 거절하거나 옵션을 못 받아도 영상은 그대로 시작하고, 전체 화면이 아니면 끝낼 때 풀지 않는다", async () => {
+      const exit = vi.fn(async () => { full = null; });
+      doc.exitFullscreen = exit;
+      const noOptions = vi.fn((o?: unknown) => {
+        if (o) throw new TypeError("options");
+        full = document.documentElement;
+        return Promise.resolve();
+      });
+      for (const request of [undefined, vi.fn(async () => { throw new Error("denied"); }), noOptions]) {
+        full = null;
+        if (request) root.requestFullscreen = request;
+        else delete root.requestFullscreen;
+        const { ar, videos, sent, hooks, release } = direct();
+        const started = ar.start({});
+        release();
+        await started;
+        expect(videos).toHaveLength(1);
+        expect(hooks.onStart).toHaveBeenCalledTimes(1);
+        expect(sent.some((m) => m.type === "start")).toBe(true);
+        ar.stop();
+      }
+      // 옵션을 못 받는 브라우저는 옵션 없이 다시 요청해 전체 화면이 되고, 그때만 끝낼 때 푼다
+      expect(noOptions.mock.calls).toEqual([[{ navigationUI: "hide" }], []]);
+      expect(exit).toHaveBeenCalledTimes(1);
+    });
+
+    it("실제 모드(ar.js)는 DOM 오버레이와 겹쳐 전체 화면을 요청하지 않는다", () => {
+      const src = readFileSync(join(process.cwd(), "src", "phone", "core", "ar.js"), "utf8");
+      expect(src).not.toMatch(/requestFullscreen/);
+    });
+  });
+
   it("두 번 시작하면 영상은 하나. 끝내면 그 영상을 닫고 그 뒤 pose를 보내지 않는다", async () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     const { ar, sent, videos, hooks, release } = direct();
