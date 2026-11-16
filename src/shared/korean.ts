@@ -1,4 +1,5 @@
 // 한국어 글 도우미: 받침에 맞는 조사, 비교용 글 다듬기, 끝 조사 떼기. 도메인 지식이 없다.
+import { headWithin } from "./cut.js";
 
 /** 받침에 맞는 조사. 한글이 아니면(TV 등) 받침 없음으로 본다. */
 export function josa(word: string, pair: "을/를" | "이/가" | "은/는" | "으로/로" | "과/와"): string {
@@ -20,7 +21,7 @@ export function compact(s: string): string {
 
 export function stripParticle(token: string): string {
   for (const p of PARTICLES) {
-    if (token.length > p.length && token.endsWith(p)) return token.slice(0, -p.length);
+    if (token.length > p.length && token.endsWith(p)) return headWithin(token, token.length - p.length);
   }
   return token;
 }
