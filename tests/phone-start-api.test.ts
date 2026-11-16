@@ -77,10 +77,11 @@ describe("시작 위치 REST와 폰", () => {
 
     const mark = p.wait.mark();
     const saved = await json("/api/phone/start-pose", { home: "mokryeon_180b", position: [8.3, 10.6], yaw_deg: 0 });
-    expect(saved.json).toEqual({ ok: true, start: { position: [8.3, 10.6], yaw_deg: 0, label: "거실·복도 테이블 앞", facing_label: "거실·복도 TV수납장" } });
+    // 시작 자리에서 보는 쪽(+x)의 거실 TV(TV수납장 위)
+    expect(saved.json).toEqual({ ok: true, start: { position: [8.3, 10.6], yaw_deg: 0, label: "거실·복도 테이블 앞", facing_label: "거실·복도 TV" } });
     expect((await json("/api/phone/start-pose")).json.start.label).toBe("거실·복도 테이블 앞");
     const named = await p.wait((m) => m.type === "status" && m.sync?.start, mark);
-    expect(named.sync.start).toEqual({ label: "거실·복도 테이블 앞", facing: "거실·복도 TV수납장" });
+    expect(named.sync.start).toEqual({ label: "거실·복도 테이블 앞", facing: "거실·복도 TV" });
 
     const mark2 = p.wait.mark();
     p.ws.send(JSON.stringify({ type: "start", position: [0, 0.05, 0], orientation: look(0, -0.2), epoch: "ep1" }));

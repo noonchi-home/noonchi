@@ -25,23 +25,25 @@ describe("종류 표", () => {
     expect(Object.keys(LANDMARK_TYPES).sort()).toEqual([...LANDMARK_KEYS].sort());
   });
 
-  it("목련 트윈: 소파·식탁은 하나, 냉장고·변기·침대·싱크대·TV 자리는 여럿, 오븐·전자레인지는 없다(시연용으로 더한 전자레인지는 기준점이 아니다)", () => {
+  it("목련 트윈: 소파·식탁·TV는 하나(거실 TV가 있어 TV수납장은 쓰지 않음), 냉장고·변기·침대·싱크대 자리는 여럿, 오븐·전자레인지는 없다(시연용으로 더한 전자레인지는 기준점이 아니다)", () => {
     const count = Object.fromEntries(LANDMARK_KEYS.map((c) => [c, ofClass(c).length]));
-    expect(count).toEqual({ couch: 1, bed: 4, dining_table: 1, toilet: 3, tv: 3, microwave: 0, oven: 0, sink: 4, refrigerator: 3 });
+    expect(count).toEqual({ couch: 1, bed: 4, dining_table: 1, toilet: 3, tv: 1, microwave: 0, oven: 0, sink: 4, refrigerator: 3 });
     expect(ofClass("refrigerator").map((l) => l.id).sort()).toEqual(["freezer_0c022ae2", "fridge_bbc363a3", "kimchi_fridge_bce0bf96"]);
     expect(ofClass("couch")[0]).toMatchObject({ id: "sofa_a848b595", center: [7.3864, 9.8138], baseM: 0, unique: true });
     expect(ofClass("bed").every((l) => !l.unique)).toBe(true);
   });
 
-  it("자리·크기·바닥 높이: 냉장고는 카탈로그 크기, 싱크대는 개수대 가운데·조리대 높이, TV는 TV수납장 윗면", () => {
+  it("자리·크기·바닥 높이: 냉장고는 카탈로그 크기, 싱크대는 개수대 가운데·조리대 높이, TV는 TV수납장 위 TV(바닥 높이는 수납장 윗면)", () => {
     const fridge = mokryeon.find((l) => l.id === "fridge_bbc363a3")!;
     expect(fridge).toMatchObject({ cls: "refrigerator", center: [5.9191, 2.4596], footprint: [0.92, 0.75], facingDeg: 0, baseM: 0 });
     const sink = mokryeon.find((l) => l.id === "sink_counter_kitchen")!;
     expect(sink.center).toEqual([5.86, 1.38]);
     expect(sink.baseM).toBeCloseTo(0.9, 6);
-    const tv = mokryeon.find((l) => l.id === "tv_stand_2fdbdf48")!;
-    expect(tv.cls).toBe("tv");
-    expect(tv.baseM).toBeGreaterThan(0.3);
+    const tv = mokryeon.find((l) => l.cls === "tv")!;
+    expect(tv).toMatchObject({ id: "tv_62442cb3", center: [11.4412, 9.9068], unique: true });
+    expect(OBJECTS.find((o) => o.id === tv.id)?.plan).toMatchObject({ on: "tv_stand_2fdbdf48", surface: "top" });
+    expect(tv.baseM).toBeCloseTo(0.45, 6);
+    expect(mokryeon.some((l) => l.id.startsWith("tv_stand"))).toBe(false);
   });
 
   it("TV 물건이 있으면 TV수납장 대신 TV를 쓴다", () => {
