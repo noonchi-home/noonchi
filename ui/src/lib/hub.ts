@@ -1,6 +1,6 @@
 // 대시보드 설정 창에 보이는 허브 상태: /api/health 모양에서 화면에 쓰는 것만 고른다.
 import type { HealthView } from "../../../src/contract/events.ts";
-import { pickPhoneUrl } from "../panels/phone-url";
+import { pickPhoneUrl } from "./phone-url";
 
 export interface HubState {
   /** 허브 화면이 서버와 실시간으로 이어져 있는가. */

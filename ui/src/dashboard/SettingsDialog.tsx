@@ -5,7 +5,7 @@ import { DialogContent, DialogFooter, DialogHeader, DialogTitle } from "../compo
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from "../components/ui/item";
 import { QRCode } from "../components/ui/qr-code";
 import { Status, StatusIndicator, StatusLabel } from "../components/ui/status";
-import type { HubState } from "./hub";
+import type { HubState } from "../lib/hub";
 
 /** 운영 모드 칩: 시험 모드 default, 실제 제어 warning. */
 const MODE: Record<HubState["mode"], { text: string; variant: "default" | "warning" }> = {

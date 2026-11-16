@@ -5,7 +5,7 @@ import type { HealthView, ServerMessage } from "../../../src/contract/events.ts"
 import type { PlanStep, PlanView } from "../../../src/contract/plan.ts";
 import type { ScreenProps } from "../../src/dashboard/DashboardScreen";
 import type { Detection } from "../../src/dashboard/detections";
-import { hubOf } from "../../src/dashboard/hub";
+import { hubOf } from "../../src/lib/hub";
 import { createSeenStore, type SeenStore } from "../../src/dashboard/masks";
 import type { PhoneSlot } from "../../src/dashboard/PhonePane";
 import type { Thought } from "../../src/dashboard/data";

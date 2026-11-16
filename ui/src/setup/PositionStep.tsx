@@ -12,7 +12,7 @@ import { QRCode } from "../components/ui/qr-code";
 import { Skeleton } from "../components/ui/skeleton";
 import { Status } from "../components/ui/status";
 import { cn } from "../lib/utils";
-import { pickPhoneUrl, urlParts } from "../panels/phone-url";
+import { pickPhoneUrl, urlParts } from "../lib/phone-url";
 import { hideViewerBar } from "../twin/embed";
 import { waitForViewer, type AptViewer } from "../twin/viewer";
 import { call, failText, isOk } from "./setup-api";

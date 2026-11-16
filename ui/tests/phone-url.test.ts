@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pickPhoneUrl } from "../src/panels/phone-url";
+import { pickPhoneUrl } from "../src/lib/phone-url";
 
 describe("pickPhoneUrl", () => {
   it("집 공유기 대역(192.168)을 먼저, 그다음 10.x", () => {

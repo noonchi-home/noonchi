@@ -11,7 +11,7 @@
 import tokens from "../../../src/design/tokens.json";
 import { mascotImageBox, mascotLogoBox, mascotScale } from "./bust";
 import type { BoxSize } from "./fit";
-import type { MascotImage } from "./mascot-image";
+import type { MascotImage } from "../lib/mascot-image";
 
 export interface Rect { left: number; top: number; width: number; height: number }
 

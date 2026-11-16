@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import * as THREE from "three";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SetupApp, UPPER_BODY } from "../src/setup/SetupApp";
-import { MASCOT } from "../src/dashboard/mascot-image";
+import { MASCOT } from "../src/lib/mascot-image";
 import { FakeWebSocket, fakeSetupApi, setupView } from "./helpers/setup-api";
 
 beforeEach(() => {

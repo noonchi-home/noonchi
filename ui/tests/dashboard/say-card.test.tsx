@@ -4,7 +4,7 @@
 import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { pageLayout } from "../../src/dashboard/layout";
-import { MASCOT } from "../../src/dashboard/mascot-image";
+import { MASCOT } from "../../src/lib/mascot-image";
 import { SayCard } from "../../src/dashboard/SayCard";
 import { COACH_SAY, LEFT_SAY } from "./fixtures";
 

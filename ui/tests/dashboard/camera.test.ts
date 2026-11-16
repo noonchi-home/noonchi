@@ -8,7 +8,7 @@ import { BUBBLE_BOX, clearOfRoute, edgeFade } from "../../src/dashboard/checks";
 import { twinFrame } from "../../src/dashboard/frame";
 import { avoidBoxes, placeLabel } from "../../src/dashboard/labels";
 import { pageLayout, type Rect } from "../../src/dashboard/layout";
-import { MASCOT } from "../../src/dashboard/mascot-image";
+import { MASCOT } from "../../src/lib/mascot-image";
 import { LABEL_BOX, mapScene, type Box } from "../../src/dashboard/scene";
 import type { ScreenPoint } from "../../src/twin/use-anchors";
 import { conePixelBox } from "../../src/twin/3d/eye";

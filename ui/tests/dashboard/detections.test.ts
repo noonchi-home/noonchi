@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 import { EDGE, placeDetections, TAG_H, tagWidth, type Detection } from "../../src/dashboard/detections";
 import { pageLayout, type Rect } from "../../src/dashboard/layout";
-import { MASCOT } from "../../src/dashboard/mascot-image";
+import { MASCOT } from "../../src/lib/mascot-image";
 import { EYE_FRAMES } from "./fixtures";
 
 const IMG = { width: 1280, height: 720 };

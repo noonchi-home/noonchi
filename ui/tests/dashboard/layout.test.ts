@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import tokens from "../../../src/design/tokens.json";
 import { mascotLogoBox } from "../../src/dashboard/bust";
 import { ASPECT_STEP, LIFT, MASCOT_SHARE, mascotPoint, MINIMAP_ASPECT, MINIMAP_MAX_SHARE, MINIMAP_SHARE, nextAspect, pageLayout, RING, SAY_LINE, THOUGHT, type Rect } from "../../src/dashboard/layout";
-import { MASCOT } from "../../src/dashboard/mascot-image";
+import { MASCOT } from "../../src/lib/mascot-image";
 
 const M = MASCOT;
 /** 브랜드 mascot.png에서 잰 자리(그림 픽셀): 머리 꼭대기 줄, 귀 뒤 [x, y], 주둥이 끝 [x, y]. */

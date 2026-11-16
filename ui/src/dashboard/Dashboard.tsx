@@ -20,7 +20,7 @@ import { DashboardScreen } from "./DashboardScreen";
 import { debugPhone, debugQuery, useDebugSteps, type Moment } from "./debug";
 import { roomSetsOf, twinFrame } from "./frame";
 import { homeIndexOf, type HomeIndex } from "./home";
-import { hubOf } from "./hub";
+import { hubOf } from "../lib/hub";
 import type { PageLayout } from "./layout";
 import { MapOverlay } from "./MapOverlay";
 import { CAMERA_MS, useReducedMotionNow } from "./motion";

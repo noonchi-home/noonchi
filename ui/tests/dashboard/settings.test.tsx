@@ -5,10 +5,10 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import type { HealthView } from "../../../src/contract/events.ts";
-import { hubOf } from "../../src/dashboard/hub";
+import { hubOf } from "../../src/lib/hub";
 import { pageLayout } from "../../src/dashboard/layout";
 import { Mascot } from "../../src/dashboard/Mascot";
-import { MASCOT } from "../../src/dashboard/mascot-image";
+import { MASCOT } from "../../src/lib/mascot-image";
 
 const HEALTH: HealthView = {
   ok: true, devices: 12, hub: "matter", transport: "network", provider: "openai", model: "gpt-5.5", twin: true, eye: true,

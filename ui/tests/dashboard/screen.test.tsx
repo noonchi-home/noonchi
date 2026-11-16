@@ -7,7 +7,7 @@ import tokens from "../../../src/design/tokens.json";
 import { DashboardScreen, type ScreenProps } from "../../src/dashboard/DashboardScreen";
 import { TAG_H, tagWidth } from "../../src/dashboard/detections";
 import { pageLayout, THOUGHT as THOUGHT_SIZE, type Rect } from "../../src/dashboard/layout";
-import { MASCOT } from "../../src/dashboard/mascot-image";
+import { MASCOT } from "../../src/lib/mascot-image";
 import { WORDS } from "../../src/dashboard/words";
 import { EMPTY_DASH, reduceDash, thoughtOf } from "../../src/dashboard/data";
 import { BRANCHES, COACH, COACH_SAY, LEFT_SAY, branchDecision, coachPlanAt, type Branch } from "./fixtures";

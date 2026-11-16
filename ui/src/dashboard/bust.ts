@@ -2,7 +2,7 @@
 // 머리 꼭대기가 단추 위 끝 바로 아래, 그림의 cut 줄이 화면 밑 선(단추 아래 끝)에 오게 키운다. 그 아래 몸은 단추 밖이라 보이지 않는다.
 // 여기서는 키우고 옮기기만 한다. 그림은 오른쪽(주둥이 쪽)을 보고, 행동하는 동안 좌우로 뒤집는 것은 Mascot.tsx가 transform으로 한다.
 // 그때 가슴 LG 표시 원(mascotLogoBox)만 다시 뒤집어 바로 읽히게 한다.
-import type { MascotImage } from "./mascot-image";
+import type { MascotImage } from "../lib/mascot-image";
 
 /** 그림 배율(화면 px / 그림 픽셀): 단추 높이(shown)에서 머리 위 빈자리(headRoom)를 뺀 만큼이 머리 꼭대기에서 cut 줄까지와 같다. */
 export function mascotScale({ headTop, cut }: Pick<MascotImage, "headTop" | "cut">, shown: number, headRoom: number): number {

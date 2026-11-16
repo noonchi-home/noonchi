@@ -1,8 +1,8 @@
 import { Button } from "../components/ui/button";
 import { Dialog, DialogTrigger } from "../components/ui/dialog";
-import type { HubState } from "./hub";
+import type { HubState } from "../lib/hub";
 import type { Rect } from "./layout";
-import type { MascotImage } from "./mascot-image";
+import type { MascotImage } from "../lib/mascot-image";
 import { SettingsDialog } from "./SettingsDialog";
 
 /** 마스코트가 보는 쪽: 대기면 그림 그대로 오른쪽(video), 행동하기로 정하면 좌우를 뒤집어 왼쪽 트윈(twin). */

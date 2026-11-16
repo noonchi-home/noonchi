@@ -4,7 +4,7 @@ import { Button } from "../components/ui/button";
 import { CardContent, CardFooter } from "../components/ui/card";
 import { RadioCard, RadioGroup } from "../components/ui/radio-group";
 import { Status } from "../components/ui/status";
-import { shortName } from "../dashboard/hub";
+import { shortName } from "../lib/hub";
 
 /** 1 집 고르기. 지금 띄운 집이 먼저 골라져 있다. 제목(h-home)은 설정 화면 말풍선이 단다. */
 export function HomeStep({ view, picked, onPick, onNext, busy }: {

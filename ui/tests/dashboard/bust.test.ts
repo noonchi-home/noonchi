@@ -5,7 +5,7 @@
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { mascotImageBox, mascotLogoBox, mascotScale } from "../../src/dashboard/bust";
-import { MASCOT } from "../../src/dashboard/mascot-image";
+import { MASCOT } from "../../src/lib/mascot-image";
 import { readPng } from "../helpers/png";
 
 /** 브랜드 mascot.png에서 잰 자리(그림 픽셀, 알파 128 넘는 픽셀): 머리 꼭대기 줄과 그 줄의 왼쪽·오른쪽 끝, 발끝, 귀 뒤, 주둥이 끝, 손 아래, 무릎 아래. */
