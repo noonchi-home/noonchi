@@ -8,6 +8,7 @@
 import { MemoryHub, loadMatterHub } from "../devices/index.js";
 import type { DeviceHub } from "../contract/devices.js";
 import type { TwinData } from "../layout/index.js";
+import { headWithin } from "../shared/cut.js";
 
 export type HubKind = "memory" | "matter";
 export type MatterTransport = "network" | "local";
@@ -95,7 +96,7 @@ export interface StartedHub {
 export const DEFAULT_COMMISSION_TIMEOUT_MS = 30_000;
 
 function errorText(e: unknown): string {
-  return (e instanceof Error ? e.message : String(e)).split("\n")[0]!.slice(0, 300);
+  return headWithin((e instanceof Error ? e.message : String(e)).split("\n")[0]!, 300);
 }
 
 export async function startHub(twin: TwinLike, opts: StartHubOptions = {}): Promise<StartedHub> {

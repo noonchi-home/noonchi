@@ -1,5 +1,6 @@
 // 색 검사 함수 하나에: WCAG 2.2 대비, 반투명 겹침, 햇빛 반사, CIEDE2000 색 차이, 색약 모의(Machado 2009, 심함 1.0).
 // tests/design-contrast.test.ts가 tokens.json contrast 표를 이 함수로 다시 잰다.
+import { headWithin } from "../shared/cut.js";
 
 export type Rgb = readonly [number, number, number];
 type Color = string | Rgb;
@@ -9,7 +10,7 @@ export function rgb(c: Color): Rgb {
   if (typeof c !== "string") return c;
   const h = c.replace(/^#/, "");
   if (!/^[0-9a-f]{6}$/i.test(h)) throw new Error(`색 ${c}는 #rrggbb가 아니에요`);
-  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+  return [parseInt(headWithin(h, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
 }
 
 const lin = (v: number) => { const c = v / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };

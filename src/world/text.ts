@@ -3,6 +3,7 @@ import type { Facet, WorldChange, WorldFact, WorldView } from "../contract/world
 import { CHANGE_TEXT, EYE_TEXT, GUESS, OBJECT_NAME, OUT_OF_VIEW_NOW, PLACE_UNKNOWN, ROOM_UNKNOWN, STATE_TEXT, dayText, fixtureName, objectName, onSurface } from "./labels.js";
 import { RELATED_KINDS } from "./relations.js";
 import { FACT_FRESH_MS, NOW_FACETS, type Target } from "./vocab.js";
+import { headWithin } from "../shared/cut.js";
 
 export interface TimedLine { atMs: number; text: string }
 
@@ -140,18 +141,6 @@ function fitText(objects: readonly ObjectLines[], render: (keep: readonly Object
     else hi = mid - 1;
   }
   return headWithin(cut(lo), PAM_TEXT_MAX);
-}
-
-/**
- * 앞에서 max 단위(UTF-16, brain 검사 checkInput의 `length`와 같은 단위) 안으로 자른다. 이모지 같은 대리쌍 가운데는 자르지 않고 그 앞에서 끊는다
- * (짝 잃은 서로게이트는 PAM 요청 검증·UTF-8 인코딩에서 실패한다).
- */
-export function headWithin(s: string, max: number): string {
-  if (s.length <= max) return s;
-  let end = Math.max(0, max);
-  const before = s.charCodeAt(end - 1);
-  if (end > 0 && before >= 0xd800 && before <= 0xdbff) end--;
-  return s.slice(0, end);
 }
 
 /** 물건 하나의 [지속] 줄(면 줄 + 사실 줄)과 덜어 낼 차례를 정하는 값: 지금 시야 밖인가, 마지막으로 본 시각, 손에 들었는가(덜어 내지 않음). */

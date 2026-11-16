@@ -1,7 +1,8 @@
 // PAM 관찰 텍스트: 시각이 붙은 줄(오래된 것부터) + [지속] 오래 이어진 사실 + [눈] 클로이드 눈 위치.
 import { describe, expect, it } from "vitest";
 import type { WorldChange, WorldView } from "../src/contract/world.js";
-import { buildPamText, clock, collapseLines, headWithin, textFromWorld } from "../src/world/text.js";
+import { buildPamText, clock, collapseLines, textFromWorld } from "../src/world/text.js";
+import { headWithin } from "../src/shared/cut.js";
 import { MAX_OBSERVATION_TEXT, checkInput } from "../src/brain/decision.js";
 import { readFileSync } from "node:fs";
 import type { Detection, EngineFrame } from "../src/contract/observe.js";

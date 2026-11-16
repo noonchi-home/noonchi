@@ -18,6 +18,7 @@ import { LAYOUT_TOOLS, type LayoutTools } from "./layoutTools.js";
 import { observe } from "./observe.js";
 import { HEARD_MARK, redactSaid } from "../world/labels.js";
 import { AGENT_TOOLS, LEAVE_IT, localBackend, runTool, unverifiedSentence, type ToolBackend, type ToolDef, type ToolResult } from "./tools.js";
+import { headWithin } from "../shared/cut.js";
 
 export type { AgentAction, AgentEvent, ChatResult, ConfirmResult, PendingView } from "../contract/events.js";
 
@@ -137,7 +138,7 @@ export function isNegative(text: string): boolean {
 /** 오류를 짧은 설명으로(키처럼 보이는 문자열은 가린다). */
 export function describeError(e: unknown): string {
   const err = e as { status?: number; name?: string; message?: string };
-  const msg = String(err?.message ?? e).replace(/(sk-[A-Za-z0-9_-]{4})[A-Za-z0-9_-]+/g, "$1***").slice(0, 300);
+  const msg = headWithin(String(err?.message ?? e).replace(/(sk-[A-Za-z0-9_-]{4})[A-Za-z0-9_-]+/g, "$1***"), 300);
   return err?.status && !msg.startsWith(String(err.status)) ? `HTTP ${err.status} ${msg}` : msg;
 }
 
@@ -282,7 +283,7 @@ export class Agent {
   private shown(a: AgentAction, said: string): AgentAction {
     const raw = this.rawReason.get(a);
     const hidden = hideIn({ ...a, ...(raw !== undefined ? { reason: raw } : {}) }, said);
-    return hidden.reason === undefined ? hidden : { ...hidden, reason: hidden.reason.slice(0, REASON_MAX) };
+    return hidden.reason === undefined ? hidden : { ...hidden, reason: headWithin(hidden.reason, REASON_MAX) };
   }
 
   private async runModel(s: Session, message: string, actions: AgentAction[]): Promise<string> {
@@ -325,7 +326,7 @@ export class Agent {
     const action: AgentAction = {
       tool: call.name, args, ok: result.ok, message: result.message, error: result.error,
       deviceId: result.device?.id, deviceLabel: result.device?.label, needsConfirmation: result.needsConfirmation ? true : undefined,
-      reason: typeof reason === "string" && reason.trim() ? reason.trim().slice(0, REASON_MAX) : undefined,
+      reason: typeof reason === "string" && reason.trim() ? headWithin(reason.trim(), REASON_MAX) : undefined,
       observation: observe(call.name, result),
       at: new Date().toISOString(),
     };

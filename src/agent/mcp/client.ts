@@ -3,6 +3,7 @@
 import type { ToolBackend, DeviceView, RoomView } from "../tools.js";
 import type { Command, CommandResult } from "../../contract/devices.js";
 import { fetchRetry } from "../../shared/net.js";
+import { headWithin } from "../../shared/cut.js";
 
 export const DEFAULT_TWIN_HOME_URL = "http://127.0.0.1:8200";
 
@@ -28,7 +29,7 @@ export function httpBackend(baseUrl: string = DEFAULT_TWIN_HOME_URL, fetchImpl: 
     } catch {
       throw new Error(`twin-home 서버 응답을 읽지 못했습니다(HTTP ${res.status}).`);
     }
-    if (res.status >= 500) throw new Error(`twin-home 서버 오류(HTTP ${res.status}): ${(json as { error?: string }).error ?? text.slice(0, 200)}`);
+    if (res.status >= 500) throw new Error(`twin-home 서버 오류(HTTP ${res.status}): ${(json as { error?: string }).error ?? headWithin(text, 200)}`);
     return json as T;
   }
 

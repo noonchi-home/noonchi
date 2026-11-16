@@ -21,6 +21,7 @@ import type { ApprovalAnswer, HeardAt, PhoneCommand, PhonePending, PhoneTalkRepl
 import { PHONE_PROTOCOL } from "./protocol.js";
 import { REFRESH_TEXT } from "../act/labels.js";
 import { listenRetry } from "../shared/net.js";
+import { headWithin } from "../shared/cut.js";
 import { serveFile, serveRange } from "../shared/static.js";
 import { repoPath } from "../shared/paths.js";
 import type { EyeFeed } from "./feed.js";
@@ -264,7 +265,7 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
     const say = (text: string, pending?: PhoneReply["pending"]): void => reply(ws, { type: "reply", text, ...(pending ? { pending } : {}) } satisfies PhoneTalkReply);
     try {
       if (msg.type === "say") {
-        const text = typeof msg.text === "string" ? msg.text.trim().slice(0, MAX_SAY) : "";
+        const text = typeof msg.text === "string" ? headWithin(msg.text.trim(), MAX_SAY) : "";
         if (!text) return say("말이 비어 있어요. 다시 말해 주세요.");
         const answer = await opts.onAnswer?.(text, heardAt(msg.at));
         if (answer?.handled) return say(answer.reply ?? "", answer.pending);

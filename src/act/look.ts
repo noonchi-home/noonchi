@@ -26,6 +26,7 @@ import { inView } from "../world/index.js";
 import { CLASSES, UNKNOWN_STATES, type ClassKey, type StateKey } from "../world/vocab.js";
 import { putAway, type Placed } from "./tasks.js";
 import type { Stall, Stray } from "./track.js";
+import { headWithin } from "../shared/cut.js";
 
 /** 들은 말에 관찰 모드가 고른 것: told 지금 할 일을 다시 알림, passed 말 요청 에이전트로 넘김, waited 답하지 않음. */
 export type HeardOutcome = "told" | "passed" | "waited";
@@ -215,7 +216,7 @@ export class Looker {
       choice = await this.o.observer.decide(situation, job.signal);
     } catch (e) {
       if (job.signal.aborted || this.stopped) return;
-      choice = { tool: "wait", reason: LOOK_TEXT.failed(describeError(e)).slice(0, 200), invalid: "error" };
+      choice = { tool: "wait", reason: headWithin(LOOK_TEXT.failed(describeError(e)), 200), invalid: "error" };
       // 들은 말에 관찰 모드가 답하지 못했으면 말 요청 에이전트로 넘긴다
       job.outcome?.("passed");
       job.outcome = undefined;

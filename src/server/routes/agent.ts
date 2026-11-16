@@ -1,6 +1,7 @@
 // API 경로: 말 요청 에이전트(대화·승인·취소·승인 대기).
 import { newSessionId } from "../../agent/index.js";
 import { HttpError, readJson, type RouteKit } from "./kit.js";
+import { headWithin } from "../../shared/cut.js";
 
 export function agentRoutes({ route, hub, agent, policy }: RouteKit): void {
   route("POST", /^\/api\/agent\/chat$/, async (req) => {
@@ -9,7 +10,7 @@ export function agentRoutes({ route, hub, agent, policy }: RouteKit): void {
     const message = typeof body.message === "string" ? body.message.trim() : "";
     if (!message) throw new HttpError(400, "message(보낼 말)가 필요합니다.");
     if (message.length > 2000) throw new HttpError(400, "message가 너무 깁니다(최대 2000자).");
-    const sessionId = typeof body.sessionId === "string" && body.sessionId.trim() ? body.sessionId.trim().slice(0, 100) : newSessionId();
+    const sessionId = typeof body.sessionId === "string" && body.sessionId.trim() ? headWithin(body.sessionId.trim(), 100) : newSessionId();
     return agent.chat(sessionId, message);
   });
 

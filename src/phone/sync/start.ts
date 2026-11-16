@@ -11,6 +11,7 @@ import { forwardOf, rotate3, type Plan2, type Vec3 } from "../../shared/geometry
 import type { Quat } from "../../contract/observe.js";
 import { inBounds, insidePolygon, type Bounds } from "../../layout/index.js";
 import { rotateVec, wrapAngle, type Rigid } from "./rigid.js";
+import { headWithin } from "../../shared/cut.js";
 
 export interface StartPose {
   position: Plan2;
@@ -86,7 +87,7 @@ export function describeStart(objects: readonly DescribeObject[], rooms: readonl
     const off = Math.abs(wrapAngle(Math.atan2(at(o)[1] - position[1], at(o)[0] - position[0]) - yaw));
     return off <= (FACING_DEG * Math.PI) / 180;
   }).sort((a, b) => dist(a) - dist(b))[0];
-  return { label: label.slice(0, MAX_LABEL), facingLabel: (ahead?.name ?? "").slice(0, MAX_LABEL) };
+  return { label: headWithin(label, MAX_LABEL), facingLabel: headWithin(ahead?.name ?? "", MAX_LABEL) };
 }
 
 /** 폰이 수평으로 보는 방향(AR 평면 각, rad). */
