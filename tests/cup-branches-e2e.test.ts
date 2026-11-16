@@ -1,4 +1,4 @@
-// 컵 갈래를 처음부터 끝까지(가짜 서버): 같은 컵 장면이 사실에 따라 컵 치우기·컵 그대로 두기·컵에 물 채워 주기로 갈라진다.
+// 컵 갈래를 처음부터 끝까지(가짜 서버): 같은 컵 장면이 사실에 따라 컵 치우기(사람이 컵을 두고 떠나면 내용물과 상관없이)·컵에 물 채워 주기로 갈라진다.
 // 폰 엔진 프레임 → YOLO(대본)·VLM(가짜 OpenAI 호환 서버: 감지 종류마다 정한 사실) → World State 관찰 텍스트 → PAM(시험용 PAM 자리, cupBranchPredict가
 // 관찰 텍스트의 사실로 고른다) → 에이전트 계획 모드(같은 가짜 서버의 도구 호출) → 실행 전 검사 → 실제 폰 단계 명령. tests/noonchi-e2e.test.ts와 같은 틀이다.
 // 기본 집(마곡 아파트: 식탁·싱크대·냉장고). 맞추기 전이라 폰 눈 위치를 몰라 이동 단계는 「완료」로 넘긴다.
@@ -104,35 +104,17 @@ describe("컵 장면 갈래", () => {
     expect(pam!.bodies.at(-1)!.tasks).toEqual(tasksFor("noonchi"));
   }, 60_000);
 
-  it("내용물 있는 컵 + 사람 없음 → 컵 그대로 두기: 실제 폰 명령 없이 판단과 「그대로 둠」만 남고 말풍선 카드가 알린다. 컵이 비면 그때 치우기 명령이 온다(더 보다가 치움)", async () => {
-    const scene: Scene = { dets: [CUP], facts: { cup: ["on_table", "has_contents"] } };
-    const s = await start(scene, ["컵 치우기"]);
-    await s.pump(async () => (await s.history("execution")).some((r) => r.text === "그대로 둠"));
-    // 8초 동안(판단이 여러 번 더 온다) 실제 폰에는 아무 명령도 가지 않는다
-    await s.hold(8000);
-    expect(s.phone.filter((m) => m.type === "command")).toEqual([]);
-    const rows = await s.history("decision,execution,plan");
-    const decisions = rows.filter((r) => r.kind === "decision");
-    // VLM 답이 오기 전 첫 판단은 컵 안을 몰라 대기일 수 있다. 그 뒤로는 모두 그대로 두기다
-    const picked = decisions.sort((x, y) => x.id - y.id).map((r) => r.text).filter((t, i, all) => t !== "대기" || all.slice(0, i).some((u) => u !== "대기"));
-    expect(picked.length).toBeGreaterThan(1);
-    expect(new Set(picked)).toEqual(new Set(["컵 그대로 두기"]));
-    // 같은 판단이 이어져도 「그대로 둠」은 한 번(60초에 한 번)이고, 계획은 만들지 않는다
-    const left = rows.filter((r) => r.kind === "execution" && r.text === "그대로 둠");
-    expect(left).toHaveLength(1);
-    expect(decisions.map((r) => `plan:${r.subject}`)).toContain(left[0]!.subject);
-    expect(rows.filter((r) => r.kind === "plan")).toEqual([]);
-    expect(fake!.requests.filter((r) => r.method === "POST" && r.path.endsWith("/responses"))).toEqual([]);
-    expect(s.dash.filter((m) => m.type === "plan" && m.plan)).toEqual([]);
-    expect(s.dash.filter((m) => m.type === "say").map((m) => m.text)).toContain("컵을 그대로 두기로 했어요.");
-    // 생각 말풍선 자료: 판단 방송에 행동과 FSM 상태가 있다
-    const shown = s.dash.filter((m) => m.type === "brain" && m.event.type === "decision").at(-1)!.event;
-    expect(shown).toMatchObject({ action: "컵 그대로 두기", fsm: { state: "left_cup" } });
-    // 다 마신 컵이 되면 치우기
-    scene.facts = { cup: ["on_table", "empty"] };
+  it("물이 남은 컵 + 사람 없음 → 컵 치우기(컵을 두고 떠나면 치우는 습관, 내용물과 상관없음): 실제 폰 첫 명령은 「식탁으로 가 주세요」이고 그대로 두기는 고르지 않는다", async () => {
+    const s = await start({ dets: [CUP], facts: { cup: ["on_table", "has_contents"] } }, ["컵 치우기"]);
     await s.pump(() => s.spoken().length > 0);
     expect(s.spoken()[0]).toMatchObject({ text: "식탁으로 가 주세요", kind: "go" });
-  }, 90_000);
+    const decisions = (await s.history("decision")).map((r) => r.text);
+    expect(decisions).toContain("컵 치우기");
+    expect(decisions).not.toContain("컵 그대로 두기");
+    // PAM에 보낸 seed 기억의 left_cup은 습관 하나다
+    const left = (pam!.bodies.at(-1)!.memory as { states: { id: string; rules: { action: string }[] }[] }).states.find((x) => x.id === "left_cup")!;
+    expect(left.rules.map((r) => r.action)).toEqual(["컵 치우기"]);
+  }, 60_000);
 
   it("사람이 먹는 중 + 빈 컵 → 컵에 물 채워 주기: 네 명령이 차례로 오고, 병 집기는 병이 손에 있음으로 보일 때, 따르기는 컵이 내용물 있음일 때 「완료」 없이 넘어가 계획이 끝난다. PAM에는 사진이 가지 않는다", async () => {
     const scene: Scene = { dets: [PERSON, CUP], facts: { person: ["sitting", "eating"], cup: ["on_table", "empty"] } };

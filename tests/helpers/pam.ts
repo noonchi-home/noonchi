@@ -25,7 +25,7 @@ function cupFacts(facts: string[]): string {
 }
 
 /** 컵 갈래 시험의 PAM 답(시험 대역): 관찰 텍스트의 [지속] 사실로 고르고, 요청의 tasks에서 이름으로 번호를 찾는다(목록에 없으면 대기 -1).
- *  사람 안 보임 + 컵 비어 있음 → 컵 치우기, + 내용물 있음 → 컵 그대로 두기, + 안이 안 보임 → 사용자에게 물어보기,
+ *  사람 안 보임 + 손에 없는 컵 → 컵 치우기(seed 습관: 컵을 두고 떠나면 내용물과 상관없이 치움),
  *  사람 먹는 중 + 비어 있음 → 컵에 물 채워 주기, 사람 TV 보는 중 + 비어 있음 → 컵에 콜라 따라 주기, 그 밖 → 대기. */
 export function cupBranchPredict(body: Record<string, unknown>): Pred {
   const tasks = body.tasks as string[];
@@ -37,9 +37,7 @@ export function cupBranchPredict(body: Record<string, unknown>): Pred {
   if (!cup) return wait;
   const empty = cup.includes("비어 있음");
   if (has("사람 안 보임")) {
-    if (empty) return pick("컵 치우기", "사람이 자리를 비웠고 컵이 비어 있음", "자리를 비워 빈 컵을 치운다");
-    if (cup.includes("내용물 있음")) return pick("컵 그대로 두기", "사람이 자리를 비웠고 컵에 음료가 남음", "음료가 남아 그대로 둔다");
-    if (cup.includes("안이 안 보임")) return pick("사용자에게 물어보기", "사람이 자리를 비웠고 컵 안이 안 보임", "컵 안을 몰라 묻는다");
+    if (!cup.includes("손에 있음")) return pick("컵 치우기", "사람이 컵을 두고 자리를 비움", "컵을 두고 떠나면 치우는 습관대로 치운다");
     return wait;
   }
   if (empty && has("사람 먹는 중")) return pick("컵에 물 채워 주기", "사람이 먹는 중이고 컵이 비어 있음", "식사 중 빈 컵이라 물을 채워 준다");
@@ -58,7 +56,7 @@ export function coachPredict(body: Record<string, unknown>): Pred {
 }
 
 /** 시연 네 장면 시험의 PAM 답(시험 대역, tests/demo-e2e.test.ts): 관찰 텍스트의 들은 말·[지속] 사실과 받은 기억으로 고르고, 번호는 요청 tasks에서 이름으로 찾는다.
- *  사람 안 보임 + 빈 컵 → 컵 치우기, 사람 안 보임 + 내용물 → 컵 그대로 두기, 들은 말 「아 덥다」 → 에어컨 켜기,
+ *  사람 안 보임 + 손에 없는 컵 → 컵 치우기(seed 습관), 들은 말 「아 덥다」 → 에어컨 켜기,
  *  기억에 「소파에 앉아 TV를 보기 시작」 에어컨 규칙이 있고 사람이 TV 보는 중 → 에어컨 켜기, 들은 말 「이거 어떻게…」 + 전자레인지 보임 → 전자레인지로 데우기 알려 주기,
  *  들은 말에 「라면」 → 라면 끓이기 알려 주기, 그 밖 → 대기(-1). 답 글에는 들은 말을 옮기지 않는다. */
 export function demoPredict(body: Record<string, unknown>): Pred {
@@ -75,10 +73,7 @@ export function demoPredict(body: Record<string, unknown>): Pred {
   if (said(/라면/)) return pick("라면 끓이기 알려 주기", "사용자가 요리 방법을 물음", "방법을 물어서 단계마다 알려 준다");
   if (habit && has("사람 TV 보는 중")) return pick("에어컨 켜기", "사용자가 소파에서 TV를 봄", "배운 습관대로 에어컨을 켠다");
   const cup = cupFacts(facts);
-  if (cup && has("사람 안 보임")) {
-    if (cup.includes("비어 있음")) return pick("컵 치우기", "사람이 자리를 비웠고 컵이 비어 있음", "자리를 비워 빈 컵을 치운다");
-    if (cup.includes("내용물 있음")) return pick("컵 그대로 두기", "사람이 자리를 비웠고 컵에 음료가 남음", "음료가 남아 그대로 둔다");
-  }
+  if (cup && has("사람 안 보임") && !cup.includes("손에 있음")) return pick("컵 치우기", "사람이 컵을 두고 자리를 비움", "컵을 두고 떠나면 치우는 습관대로 치운다");
   return { observation: "할 일이 보이지 않음", reasoning: "맞는 규칙이 없어 기다린다", task_index: -1 };
 }
 

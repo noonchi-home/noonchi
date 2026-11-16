@@ -89,7 +89,9 @@ describe("고른 행동의 FSM 상태(대시보드 생각 말풍선 「상태」
   it("seed만 있는 기억에서 고른 행동의 규칙이 하나면 그 상태와 트리거를 주고, 배운 규칙이 없다(learned false)", () => {
     const left = CUP_FSM_MEMORY.states.find((s) => s.id === "left_cup")!;
     expect(fsmRuleOf(CUP_FSM_MEMORY, "fsm", "컵 치우기")).toEqual({ state: "left_cup", trigger: left.rules[0]!.trigger, learned: false });
-    expect(fsmRuleOf(CUP_FSM_MEMORY, "fsm", "사용자에게 물어보기")).toEqual({ state: "left_cup", trigger: left.rules.find((r) => r.action === "사용자에게 물어보기")!.trigger, learned: false });
+    // 컵을 두고 떠나면 치우는 습관 하나만 있다(그대로 두기·물어보기 규칙 없음)
+    expect(left.rules).toEqual([{ trigger: "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다.", action: "컵 치우기" }]);
+    expect(fsmRuleOf(CUP_FSM_MEMORY, "fsm", "사용자에게 물어보기")).toBeNull();
   });
 
   // 반성이 배운 규칙: seed에 없는 트리거·행동 쌍
@@ -141,11 +143,11 @@ describe("고른 행동의 FSM 상태(대시보드 생각 말풍선 「상태」
     expect(FSM_STATE_TEXT.cooking).toBe("주방에서 할 일을 찾음");
   });
 
-  it("컵 갈래 다섯 행동은 저마다 상태 하나의 규칙이다: 치우기·그대로 두기·물어보기는 자리를 뜸, 물은 먹는 중, 콜라는 TV 보는 중", () => {
+  it("컵 갈래 seed: 자리를 뜨면 내용물과 상관없이 치우기(습관), 물은 먹는 중, 콜라는 TV 보는 중. 그대로 두기·물어보기 규칙은 없다", () => {
     const at = (action: string) => fsmRuleOf(CUP_FSM_MEMORY, "fsm", action);
-    expect(at("컵 치우기")?.state).toBe("left_cup");
-    expect(at("컵 그대로 두기")).toEqual({ state: "left_cup", trigger: "사용자가 자리를 비웠지만 컵에 음료가 남아 있다.", learned: false });
-    expect(at("사용자에게 물어보기")?.state).toBe("left_cup");
+    expect(at("컵 치우기")).toEqual({ state: "left_cup", trigger: "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다.", learned: false });
+    expect(at("컵 그대로 두기")).toBeNull();
+    expect(at("사용자에게 물어보기")).toBeNull();
     expect(at("컵에 물 채워 주기")).toEqual({ state: "drinking", trigger: "사용자가 식탁에서 먹는 중이고 식탁 위 컵이 비어 있으며 컵을 들거나 만지지 않는다.", learned: false });
     expect(at("컵에 콜라 따라 주기")).toEqual({ state: "watching_tv", trigger: "사용자가 TV를 보는 중이고 곁의 컵이 비어 있으며 컵을 들거나 만지지 않는다.", learned: false });
     // 물·콜라를 가르는 사실은 관찰 텍스트 낱말(먹는 중·TV 보는 중)이다

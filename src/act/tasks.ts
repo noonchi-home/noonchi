@@ -33,7 +33,7 @@ const FILL: TaskAllow = { kinds: ["go", "pick", "do", "place"], need: ["go", "pi
 
 export const TASKS: Record<string, TaskSpec> = {
   "컵 치우기": {
-    name: "컵 치우기", description: "사람이 자리를 비운 뒤 식탁 등에 남은 컵을 사람이 싱크대에 넣게 한다.", target: "cup", look: ["contents"],
+    name: "컵 치우기", description: "사람이 자리를 비운 뒤 식탁 등에 남은 컵을 사람이 싱크대에 넣게 한다.", target: "cup",
     allow: { kinds: HAND, need: HAND },
   },
   "사용자에게 물어보기": { name: "사용자에게 물어보기", description: "컵 안을 확인할 수 없는 등 애매할 때 폰으로 사용자에게 어떻게 할지 묻는다.", allow: { kinds: ["ask", "say"], need: ["ask"] } },

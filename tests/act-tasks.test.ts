@@ -105,8 +105,9 @@ describe("행동 목록", () => {
     expect(putAway(objects[1]!)).toBe(false);
   });
 
-  it("판단 전에 더 잘 볼 면: 컵 치우기는 컵의 contents. 대상 종류가 있는 행동만이다", () => {
-    expect(TASKS["컵 치우기"]!.look).toEqual(["contents"]);
+  it("판단 전에 더 잘 볼 면: 컵 치우기는 내용물을 보지 않고(컵을 두고 떠나면 치우는 습관), 그대로 두기·채우기류는 컵의 contents. 대상 종류가 있는 행동만이다", () => {
+    expect(TASKS["컵 치우기"]!.look).toBeUndefined();
+    expect(TASKS["컵에 물 채워 주기"]!.look).toEqual(["contents"]);
     expect(lookTargets()).toEqual([{ cls: "cup", facets: ["contents"] }]);
   });
 

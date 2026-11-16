@@ -199,16 +199,12 @@ export const CUP_TASKS = ["컵 치우기", "사용자에게 물어보기"] as co
 
 /** 컵 시나리오의 list 기억(임시, 모의 모델 설명용). 실제 기억은 PAM이 만든다. */
 export const CUP_MEMORY: ListMemory = {
-  rules: [
-    { trigger: "사용자가 컵을 두고 자리를 비웠고 컵이 비어 있음", action: "컵 치우기" },
-    { trigger: "사용자가 자리를 비웠지만 컵에 음료가 남아 있음", action: "대기" },
-    { trigger: "컵 안을 확인할 수 없음", action: "사용자에게 물어보기" },
-  ],
+  rules: [{ trigger: "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다.", action: "컵 치우기" }],
 };
 
 /** 컵 시나리오의 FSM 기억(임시, seed). PAM fsm 기억 모양(services/pam/pam/contracts.py validate_memory)을 따른다.
  *  실제 기억은 PAM 반성기(reflector)가 만든다. 규칙의 행동 이름은 행동 목록(src/act/tasks.ts TASK_NAMES)에 있는 것이다.
- *  컵 갈래(2026-11-13)는 여기 글로 정한다: 물은 「먹는 중」, 콜라는 「TV 보는 중」, 자리를 비운 뒤에는 컵 안(비어 있음·내용물 있음·안이 안 보임)으로 가른다.
+ *  컵 갈래(2026-11-13)는 여기 글로 정한다: 물은 「먹는 중」, 콜라는 「TV 보는 중」, 컵을 두고 자리를 비우면 내용물과 상관없이 치운다(습관).
  *  이 글을 바꾸면 기록 DB의 seed 판본이 새로 올라간다(src/brain/history/reflect.ts memoryForDay). 상태 id를 더하면 화면 이름표(src/world/labels.ts FSM_STATE_TEXT)도 더한다. */
 export const CUP_FSM_MEMORY: FsmMemory = {
   initial_state: "drinking",
@@ -232,11 +228,8 @@ export const CUP_FSM_MEMORY: FsmMemory = {
     {
       id: "left_cup",
       description: "사용자가 컵을 두고 자리를 비웠다. 화면에 안 보이는 것만으로 떠났다고 보지 않는다.",
-      rules: [
-        { trigger: "사용자가 자리를 비웠고 컵이 비어 있으며 아무도 컵을 들거나 만지지 않는다.", action: "컵 치우기" },
-        { trigger: "사용자가 자리를 비웠지만 컵에 음료가 남아 있다.", action: "컵 그대로 두기" },
-        { trigger: "사용자가 자리를 비웠고 컵 안을 확인할 수 없다.", action: "사용자에게 물어보기" },
-      ],
+      // 이미 배운 습관(2026-11-16 사용자 결정): 컵을 두고 자리를 비우면 내용물과 상관없이 치운다
+      rules: [{ trigger: "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다.", action: "컵 치우기" }],
       next: [{ to: "drinking", on: "사용자가 돌아와 컵을 다시 든다." }, { to: "cooking", on: "사용자가 주방으로 가서 요리를 시작하려 한다." }],
     },
     // 코치(2026-11-13): 코치 모드에서만 이 규칙의 행동이 행동 목록에 있다(src/act/tasks.ts tasksFor). 눈치 모드에서는 PAM이 고를 수 없다

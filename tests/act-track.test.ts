@@ -5,7 +5,7 @@
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { ActionChoice } from "../src/act/prompts.js";
 import { ExecutionTracker, TRACK_DEFAULTS, type Stall, type Stray, type TrackerOptions } from "../src/act/track.js";
 import { ApprovalStore, type ApprovalAnswer } from "../src/agent/approval.js";
@@ -2524,6 +2524,24 @@ describe("실행 추적: 멈춘 집기·놓기 단계(관찰 모드 A)와 사람
 });
 
 describe("실행 추적: 판단 뒤 가까이 본 사실(B와 PAM)", () => {
+  // 이 묶음은 볼 면(TaskSpec.look)이 있는 행동의 다시 판단을 본다. 컵 치우기는 습관(2026-11-16)으로 내용물을 보지 않으니 시험 동안만 볼 면을 붙인다
+  const clear = TASKS["컵 치우기"]! as { look?: readonly string[] };
+  beforeEach(() => {
+    clear.look = ["contents"];
+  });
+  afterEach(() => {
+    delete clear.look;
+  });
+
+  it("컵 치우기는 볼 면이 없어, 판단 뒤 가까이 보기가 컵 안을 바꿔도 다시 판단하지 않고 계획한다(컵을 두고 떠나면 내용물과 상관없이 치움)", async () => {
+    delete clear.look;
+    const changed = world([{ ...cup("present"), facts: { contents: { value: "has_contents", at_ms: 9_000, since_ms: 9_000, certainty: "inferred", closer_ms: 9_500 } }, closer_rev: { contents: 1 } }]);
+    const a = setup({ w: () => changed });
+    await a.decide(decision);
+    expect(a.exec().map((e) => e.text)).not.toContain(EXEC_TEXT.closerNewer);
+    expect(a.commands()[0]).toMatchObject({ step: "plan:pam-1:1" });
+  });
+
   /** 컵 안 사실. closer: 가까이 보기가 그 값을 넣은 촬영 시각(World State closer_ms). */
   const contents = (value: string, closer?: number): WorldObject["facts"] => ({
     contents: { value, at_ms: 9_000, since_ms: 9_000, certainty: "inferred", ...(closer !== undefined ? { closer_ms: closer } : {}) },
