@@ -35,6 +35,12 @@
      "reason": "반성 입력의 영상 설명을 관찰 텍스트 설명으로 바꾼다."},
     {"old": "today's video", "new": "today's observations", "reason": "입력 이름만 바꾼다."},
     {"old": "this video and summary", "new": "these observations and summary", "reason": "입력 이름만 바꾼다."},
-    {"old": "Use the video, summary,", "new": "Use the observations, summary,", "reason": "입력 이름만 바꾼다."}
+    {"old": "Use the video, summary,", "new": "Use the observations, summary,", "reason": "입력 이름만 바꾼다."},
+    {"old": "- Treat the memory as a REFERENCE, not as a strict matcher. Do not over-fixate on\nexact trigger wording or current state: if a memory action is semantically\nappropriate for the current scene, you may fire it even when the trigger phrasing or\n its state assignment doesn't match the scene verbatim.",
+     "new": "- Fire a memory rule only when EVERY condition in its trigger holds in the latest observations: who is present or absent (a rule whose trigger says the user left does not fire while the person is visible), what the person is doing, and the state of the object (empty, has contents, contents unknown). A value marked (짐작) was guessed from a single frame and is not yet confirmed. If any condition of a rule is missing, unknown or contradicted, do not fire that rule; if no rule fully matches, respond with `task_index = -1`.",
+     "reason": "기억 규칙은 조건이 모두 맞을 때만 쓴다. 논문의 「기억은 참고일 뿐, 맞지 않아도 써도 된다」는 사람이 앉아 있는데 「자리를 비웠고」 규칙으로 치우게 했다(2026-11-16 밤 판정 F·G·E)."},
+    {"old": "- Treat the memory as a REFERENCE, not as a strict matcher. Do not over-fixate on\nexact trigger wording: if a memory action is semantically appropriate for the\ncurrent scene, you may fire it even when the trigger phrasing doesn't match the\nscene verbatim.",
+     "new": "- Fire a memory rule only when EVERY condition in its trigger holds in the latest observations: who is present or absent (a rule whose trigger says the user left does not fire while the person is visible), what the person is doing, and the state of the object (empty, has contents, contents unknown). A value marked (짐작) was guessed from a single frame and is not yet confirmed. If any condition of a rule is missing, unknown or contradicted, do not fire that rule; if no rule fully matches, respond with `task_index = -1`.",
+     "reason": "기억 규칙은 조건이 모두 맞을 때만 쓴다. 논문의 「기억은 참고일 뿐, 맞지 않아도 써도 된다」는 사람이 앉아 있는데 「자리를 비웠고」 규칙으로 치우게 했다(2026-11-16 밤 판정 F·G·E)."}
   ]
 }

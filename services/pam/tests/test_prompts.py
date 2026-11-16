@@ -102,3 +102,48 @@ def test_noonchi_reflect_new_replacements_match_once_and_old_ones_still_match():
     _, before = adapt_prompt(template, {**SCENARIO, "prompt_replacements": SCENARIO["prompt_replacements"][5:]})
     for change in before["applied_changes"]:
         assert change["old"] in applied, change["reason"]
+
+
+REFERENCE = "Treat the memory as a REFERENCE, not as a strict matcher."
+STRICT = "Fire a memory rule only when EVERY condition in its trigger holds in the latest observations"
+
+
+def _noonchi_predict_system(kind):
+    from noonchi_pam.contracts import PredictRequest
+    from noonchi_pam.prompt import build_predict_messages
+
+    memory = ({"initial_state": "s", "states": [{"id": "s", "description": "d", "rules": [], "next": []}]} if kind == "fsm"
+              else {"rules": [{"trigger": "t", "action": "컵 치우기"}]})
+    built = build_predict_messages(PredictRequest(
+        contract="pam-predict/2", final_time="2026-11-16T05:56:43+09:00", observation_text="05:56:41 사람 앉아 있음",
+        memory_kind=kind, memory=memory, tasks=["컵 치우기", "컵 그대로 두기"],
+    ))
+    return built["messages"][0]["content"]
+
+
+def test_noonchi_predict_prompt_fires_a_rule_only_when_every_trigger_condition_holds():
+    """노닌치 판단 지시문: 「기억은 참고일 뿐, 맞지 않아도 써도 된다」를 빼고 규칙 조건이 모두 맞을 때만 쓴다(2026-11-16 밤 판정 F·G·E:
+    사람이 앉아 있는데 「자리를 비웠고」 규칙으로 치우기·묻기, TV가 없는데 「TV를 보는 중」 규칙으로 콜라)."""
+    for kind in ("fsm", "list"):
+        system = _noonchi_predict_system(kind)
+        assert REFERENCE not in system, kind
+        assert "you may fire it even when the trigger phrasing" not in system, kind
+        assert STRICT in system, kind
+        assert "a rule whose trigger says the user left does not fire while the person is visible" in system, kind
+        assert "(짐작)" in system, kind
+
+
+def test_paper_predictor_prompts_keep_the_reference_clause(tmp_path):
+    """논문 재현 경로(시나리오 없이 논문 프롬프트로 만드는 판단 메시지)는 원본 그대로다: 노닌치 시나리오만 그 문장을 바꾼다."""
+    from pam.messages import build_predictor_messages
+
+    frames = []
+    for i in range(5):
+        p = tmp_path / f"f{i}.png"
+        p.write_bytes(b"png")
+        frames.append({"timestamp": f"2026-11-16T05:56:{30 + 2 * i:02d}+09:00", "image_path": str(p)})
+    fsm = {"initial_state": "s", "states": [{"id": "s", "description": "d", "rules": [], "next": []}]}
+    for kind, memory in (("fsm", fsm), ("list", {"rules": [{"trigger": "t", "action": "a"}]})):
+        system = build_predictor_messages(frames, ["a", "b"], memory_kind=kind, memory=memory)["messages"][0]["content"]
+        assert REFERENCE in system, kind
+        assert STRICT not in system, kind
