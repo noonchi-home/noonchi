@@ -3,9 +3,9 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { DecisionRow, HistoryKind, HistoryRow } from "../contract/history.js";
+import type { DecisionRow, HistoryKind, HistoryRow } from "../../contract/history.js";
 
-export type { DecisionRow, HistoryKind, HistoryRow } from "../contract/history.js";
+export type { DecisionRow, HistoryKind, HistoryRow } from "../../contract/history.js";
 
 /** 기록 종류 전부(GET /api/history의 kinds 검사). */
 export const HISTORY_KINDS: readonly HistoryKind[] = [
@@ -114,7 +114,7 @@ export class HistoryDb {
     return r ? Number(r.value) : null;
   }
 
-  /** 그날 판본을 고정한다. 이미 고정한 날은 바꾸지 않는다. replace면 바꾼다(코드의 seed가 바뀌어 seed 판본을 올릴 때만, src/history/reflect.ts). */
+  /** 그날 판본을 고정한다. 이미 고정한 날은 바꾸지 않는다. replace면 바꾼다(코드의 seed가 바뀌어 seed 판본을 올릴 때만, src/brain/history/reflect.ts). */
   pinMemory(day: string, version: number, replace = false): void {
     this.db.prepare(`INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO ${replace ? "UPDATE SET value = excluded.value" : "NOTHING"}`).run(`memory_day:${day}`, String(version));
   }

@@ -420,11 +420,11 @@ npm start
 | 단계 | 코드 | 나가는 것 |
 |---|---|---|
 | 엔진 프레임·고리 | `src/phone/`, `src/observe/ring.ts` | `GET /api/brain` |
-| YOLO 감지·관절·VLM | `src/brain/detector.ts`, `src/observe/pipeline.ts`, `src/observe/scene.ts` | `{type:"brain", event:{type:"observe"}}`, 기록 `vlm`·`yolo` |
+| YOLO 감지·관절·VLM | `src/observe/detector.ts`, `src/observe/pipeline.ts`, `src/observe/scene.ts` | `{type:"brain", event:{type:"observe"}}`, 기록 `vlm`·`yolo` |
 | World State | `src/world/state.ts`, `src/world/pose.ts` | `{type:"world"}`, `world_change`, `GET /api/world`, 기록 `detection`·`world` |
-| 판단 | `src/world/decide.ts`, `src/brain/pam.ts` | `decision`, 기록 `pam_text`·`decision`, `GET /api/decisions` |
+| 판단 | `src/brain/decide.ts`, `src/brain/pam.ts` | `decision`, 기록 `pam_text`·`decision`, `GET /api/decisions` |
 | 계획·검사·실행 | `src/act/` | `{type:"plan"}`, `execution`, 실제 폰 `{type:"command"}`·`{type:"command_clear"}`, 기록 `plan`·`execution`·`feedback` |
-| 반성 | `src/history/reflect.ts` | `reflection`, 기록 `reflection`, `POST /api/reflection/run` |
+| 반성 | `src/brain/history/reflect.ts` | `reflection`, 기록 `reflection`, `POST /api/reflection/run` |
 
 폰 엔진 프레임마다 YOLO와 VLM이 둘 다 분석하고, World State가 둘을 물체별로 합친다. 분석한 사진은 메모리(최근 20초)에만 두고 디스크에 쓰지 않는다(`DATASET_COLLECT=1`일 때만 시험 자료로 쓴다).
 
@@ -457,7 +457,7 @@ tailscale serve --bg 8210   # 이미 켜져 있으면 생략. 폰: https://<이 
 - VLM은 `INFERENCE_MODE`가 고른 OpenAI 호환 주소로 부른다(`src/infer/vlm.ts`, chat completions + JSON Schema). mock은 OpenAI `gpt-5.4-mini`(키 `OPENAI_API_KEY`), live는 같은 서버 vLLM `vlm`. 2초 간격(기본)이면 시간당 약 1,800번이다. 비용은 호출마다 답의 사용량으로 세고(`src/infer/cost.ts`, `GET /api/brain`의 `vlm.costUsd`), 사진 수에 거의 비례한다.
 - 키 없이 돌려 보기: `npx tsx scripts/fake-openai.ts --port 8500`을 띄우고 `VLM_BASE_URL=http://127.0.0.1:8500/v1`로 시작한다.
 
-## 기록과 반성 (src/history)
+## 기록과 반성 (src/brain/history)
 
 기록 DB는 `RUNTIME_DIR/noonchi.db`(SQLite 파일 하나)다. 재시작해도 남는다.
 

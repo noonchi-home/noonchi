@@ -1,10 +1,10 @@
-// 보관 기간(src/history/retention.ts): 사진 찍기 사진(PHOTO_RETENTION_DAYS)과 시험 자료(DATASET_RETENTION_DAYS)가 지나면 파일과 표 줄을 지운다.
+// 보관 기간(src/brain/history/retention.ts): 사진 찍기 사진(PHOTO_RETENTION_DAYS)과 시험 자료(DATASET_RETENTION_DAYS)가 지나면 파일과 표 줄을 지운다.
 import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { HistoryDb } from "../src/history/db.js";
-import { loadRetention, sweep } from "../src/history/retention.js";
+import { HistoryDb } from "../src/brain/history/db.js";
+import { loadRetention, sweep } from "../src/brain/history/retention.js";
 
 describe("보관 기간", () => {
   it("기간이 지난 사진 찍기 사진과 시험 자료만 지운다(같은 이름의 .json도)", () => {

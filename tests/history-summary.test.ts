@@ -1,7 +1,7 @@
-// 하루 요약(src/history/summary.ts): 반성 입력이 되는 하루 관찰 텍스트와 행동 요약.
+// 하루 요약(src/brain/history/summary.ts): 반성 입력이 되는 하루 관찰 텍스트와 행동 요약.
 import { describe, expect, it } from "vitest";
-import { HistoryDb } from "../src/history/db.js";
-import { daySummary } from "../src/history/summary.js";
+import { HistoryDb } from "../src/brain/history/db.js";
+import { daySummary } from "../src/brain/history/summary.js";
 
 const t = (h: number, m: number, s = 0) => Date.UTC(2026, 10, 7, h - 9, m, s); // 서울 시각
 const bytes = (s: string) => Buffer.byteLength(s, "utf8");

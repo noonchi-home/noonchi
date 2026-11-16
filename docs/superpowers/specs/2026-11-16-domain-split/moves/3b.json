@@ -1,0 +1,23 @@
+{
+  "files": {
+    "src/brain/detector.ts": "src/observe/detector.ts",
+    "src/brain/detector-thread.ts": "src/observe/detector-thread.ts",
+    "src/brain/detector-worker.mjs": "src/observe/detector-worker.mjs",
+    "src/world/decide.ts": "src/brain/decide.ts",
+    "src/history/db.ts": "src/brain/history/db.ts",
+    "src/history/habits.ts": "src/brain/history/habits.ts",
+    "src/history/labels.ts": "src/brain/history/labels.ts",
+    "src/history/recorder.ts": "src/brain/history/recorder.ts",
+    "src/history/reflect.ts": "src/brain/history/reflect.ts",
+    "src/history/retention.ts": "src/brain/history/retention.ts",
+    "src/history/summary.ts": "src/brain/history/summary.ts"
+  },
+  "decls": {},
+  "new": [],
+  "text": [
+    "scripts/brain-yolo-fetch.ts",
+    "tests/lint-ui-copy.test.ts"
+  ],
+  "allow": {},
+  "exceptions": {}
+}

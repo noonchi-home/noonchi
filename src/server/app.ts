@@ -17,9 +17,9 @@ import type { OffTrack, PlanView } from "../contract/plan.js";
 import type { ControlMode } from "../contract/setup.js";
 import { deviceViews, roomViews } from "../agent/tools.js";
 import type { Command, CommandResult, DeviceHub, RoomSpec } from "../hub/types.js";
-import { HISTORY_KINDS, type HistoryDb } from "../history/db.js";
-import type { ReflectResult } from "../history/reflect.js";
-import { daySummary, isDay } from "../history/summary.js";
+import { HISTORY_KINDS, type HistoryDb } from "../brain/history/db.js";
+import type { ReflectResult } from "../brain/history/reflect.js";
+import { daySummary, isDay } from "../brain/history/summary.js";
 import type { LayoutEditor } from "../layout/editor.js";
 import type { SyncState } from "../phone/sync/aligner.js";
 import { StartPoseError, type StartPose } from "../phone/sync/start.js";
@@ -82,9 +82,9 @@ export interface AppOptions {
   plan?: Pick<PlanHub, "current" | "onAgent" | "put" | "setStep">;
   /** 끄기 추적 요약(실행 추적 offTrack). GET /api/plan이 계획과 같은 답에 싣는다(영상 판정이 같은 순간 값으로 끝낼지 본다). 없으면 null. */
   offTrack?: () => OffTrack | null;
-  /** 기록 DB(src/history/db.ts). 있으면 GET /api/history·/api/history/day/{날짜}·/api/decisions. */
+  /** 기록 DB(src/brain/history/db.ts). 있으면 GET /api/history·/api/history/day/{날짜}·/api/decisions. */
   history?: HistoryDb;
-  /** 그날 반성(src/history/reflect.ts). 있으면 POST /api/reflection/run. */
+  /** 그날 반성(src/brain/history/reflect.ts). 있으면 POST /api/reflection/run. */
   reflect?: (day: string) => Promise<ReflectResult>;
 }
 

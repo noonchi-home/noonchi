@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { startFakeOpenAI, type FakeServer } from "../scripts/fake-openai.js";
-import type { Detector } from "../src/brain/detector.js";
+import type { Detector } from "../src/observe/detector.js";
 import type { Detection, CameraView } from "../src/contract/observe.js";
 import type { BrainLog } from "../src/contract/events.js";
 import type { WorldChange } from "../src/contract/world.js";

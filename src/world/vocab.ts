@@ -1,4 +1,4 @@
-// World State 낱말 표: 하나뿐인 원본. 감지기 거름(src/brain/detector.ts), VLM 스키마·프롬프트(src/observe/scene.ts), World State 면(src/world/state.ts),
+// World State 낱말 표: 하나뿐인 원본. 감지기 거름(src/observe/detector.ts), VLM 스키마·프롬프트(src/observe/scene.ts), World State 면(src/world/state.ts),
 // 화면·관찰 텍스트 글(src/world/labels.ts), 가전 상태·사건(src/world/relations.ts), 계획 조건(src/world/conditions.ts), 문서(docs/world-vocabulary.md)가 여기서 나온다.
 // 손으로 맞춘 다른 목록을 두지 않는다. tests/world-vocab.test.ts가 어긋나면 실패한다. 이 파일은 다른 파일을 import하지 않는다(ui 타입 검사도 읽는다).
 // 글(label)은 화면과 PAM 관찰 텍스트에 그대로 나간다: npm run lint가 60자 아래, 화살표·괄호 없음을 본다. 보는 방법·계기 예는 src/world/vocab-doc.ts.

@@ -1,12 +1,12 @@
 // 기록기: 가전 변화(낱말 표 사건 글, 거실 에어컨 켜짐, 카메라로 본 값이면 「· 카메라로 봄」), 관찰(VLM 답·VLM 분석 없음, YOLO 분석 없음), World State 변화, PAM에 보낸 관찰 텍스트, 판단, 계획, 실행, 운영 모드,
 // PAM 연결 끊김·연결됨, 주기 판단 멈춤·다시 시작, 관찰 모드가 고른 것(look)을 한 시간축에 적는다. 사진은 적지 않는다. 반성은 runReflection이 적는다.
 // YOLO 결과는 등장·사라짐(detection)으로 남는다. 프레임마다 YOLO 분석 없음이면 yolo, VLM 답이나 VLM 분석 없음이면 vlm 줄이 남는다.
-import type { BrainLog } from "../contract/events.js";
-import type { PlanView } from "../contract/plan.js";
-import type { ControlMode } from "../contract/setup.js";
-import type { DeviceState } from "../hub/types.js";
-import { CHANGE_TEXT } from "../world/labels.js";
-import { becameKey, deviceText } from "../world/relations.js";
+import type { BrainLog } from "../../contract/events.js";
+import type { PlanView } from "../../contract/plan.js";
+import type { ControlMode } from "../../contract/setup.js";
+import type { DeviceState } from "../../hub/types.js";
+import { CHANGE_TEXT } from "../../world/labels.js";
+import { becameKey, deviceText } from "../../world/relations.js";
 import type { HistoryDb } from "./db.js";
 import { DECISION_TEXT, MODE_TEXT, PLAN_STATUS_TEXT } from "./labels.js";
 

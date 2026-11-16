@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { FsmMemory } from "../src/brain/decision.js";
-import { HistoryDb } from "../src/history/db.js";
+import { HistoryDb } from "../src/brain/history/db.js";
 import { insidePolygon } from "../src/phone/home-plan.js";
 import { loadScene } from "../src/model/scene.js";
 import { resolveHome } from "../src/model/homes.js";

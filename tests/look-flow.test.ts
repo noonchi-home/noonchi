@@ -18,7 +18,7 @@ import { cropJpeg } from "../src/observe/crop.js";
 import { ObservationPipeline } from "../src/observe/pipeline.js";
 import { sha256 } from "../src/observe/ring.js";
 import { PlanHub } from "../src/plan/hub.js";
-import { decisionWorld } from "../src/world/decide.js";
+import { decisionWorld } from "../src/brain/decide.js";
 import { WorldState } from "../src/world/state.js";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";

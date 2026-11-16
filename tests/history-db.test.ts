@@ -1,4 +1,4 @@
-// 기록 DB(src/history/db.ts): 런타임 볼륨의 SQLite 파일 하나. WAL, 잠금 대기 5초. 한 시간축 표(events)와 기록기(src/history/recorder.ts).
+// 기록 DB(src/brain/history/db.ts): 런타임 볼륨의 SQLite 파일 하나. WAL, 잠금 대기 5초. 한 시간축 표(events)와 기록기(src/brain/history/recorder.ts).
 import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,9 +7,9 @@ import type { BrainLog } from "../src/contract/events.js";
 import type { PlanView } from "../src/contract/plan.js";
 import type { ControlMode } from "../src/contract/setup.js";
 import type { DeviceState } from "../src/hub/types.js";
-import { HISTORY_KINDS, HistoryDb, historyTzMinutes, type HistoryKind } from "../src/history/db.js";
-import { attachRecorder, type DeviceNote } from "../src/history/recorder.js";
-import { daySummary } from "../src/history/summary.js";
+import { HISTORY_KINDS, HistoryDb, historyTzMinutes, type HistoryKind } from "../src/brain/history/db.js";
+import { attachRecorder, type DeviceNote } from "../src/brain/history/recorder.js";
+import { daySummary } from "../src/brain/history/summary.js";
 
 describe("기록 DB", () => {
   it("폴더를 만들고 WAL·잠금 대기 5초로 연다", () => {

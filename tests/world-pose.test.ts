@@ -2,7 +2,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { DETECTOR_MODEL, MODELS_DIR, OnnxDetector, POSE_MODEL, decodeYolo26Pose } from "../src/brain/detector.js";
+import { DETECTOR_MODEL, MODELS_DIR, OnnxDetector, POSE_MODEL, decodeYolo26Pose } from "../src/observe/detector.js";
 import type { Keypoint } from "../src/contract/observe.js";
 import { describePose, heldBy, heldByAny, mainPerson } from "../src/world/pose.js";
 import { poseOf } from "./helpers/poses.js";

@@ -639,7 +639,7 @@ export class ExecutionTracker {
     this.stopped = true;
   }
 
-  /** 행동 중 기다리기·기기 단계인가: 그동안 판단(PAM)을 멈추고 다른 행동으로 바꾸지 않는다(src/world/decide.ts hold). */
+  /** 행동 중 기다리기·기기 단계인가: 그동안 판단(PAM)을 멈추고 다른 행동으로 바꾸지 않는다(src/brain/decide.ts hold). */
   waiting(): boolean {
     const r = this.run;
     const kind = r && r.state === "running" ? this.stepOf(r)?.kind : undefined;

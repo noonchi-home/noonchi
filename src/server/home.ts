@@ -27,11 +27,11 @@ import type { BrainLog, ReadyView, SeenEvent } from "../contract/events.js";
 import type { ApprovalAnswer, PlannedCommand } from "../contract/phone.js";
 import type { PlanView } from "../contract/plan.js";
 import type { AssistMode, ControlMode } from "../contract/setup.js";
-import type { HistoryDb } from "../history/db.js";
-import type { DeviceNote } from "../history/recorder.js";
-import { memoryForDay, type ReflectResult } from "../history/reflect.js";
-import { FEEDBACK_TEXT, PHOTO_TEXT } from "../history/labels.js";
-import { datasetWriter } from "../history/retention.js";
+import type { HistoryDb } from "../brain/history/db.js";
+import type { DeviceNote } from "../brain/history/recorder.js";
+import { memoryForDay, type ReflectResult } from "../brain/history/reflect.js";
+import { FEEDBACK_TEXT, PHOTO_TEXT } from "../brain/history/labels.js";
+import { datasetWriter } from "../brain/history/retention.js";
 import { SignalHub, type SignalSource } from "../hub/signals.js";
 import { loadEndpoints } from "../infer/endpoints.js";
 import { createPipeline, type ObservationPipeline, type PipelineInject } from "../observe/pipeline.js";
@@ -56,7 +56,7 @@ import { PlanHub } from "../plan/hub.js";
 import { HEARD_MARK } from "../world/labels.js";
 import { floorPlanFrom, roomNamedAt } from "../plan/route.js";
 import { surfacesFromLayout, type PlaneSurface } from "../world/place.js";
-import { Decider } from "../world/decide.js";
+import { Decider } from "../brain/decide.js";
 import { WorldState } from "../world/state.js";
 import { Trigger, loadTriggerConfig } from "../world/trigger.js";
 import type { ThinqLink } from "../thinq/link.js";
@@ -65,7 +65,7 @@ import { startHub, type HubKind, type MatterTransport, type StartHubOptions } fr
 
 type Env = Record<string, string | undefined>;
 
-/** 기록 DB와 기록기(src/history/recorder.ts)에 넘기는 곳. 서버(start.ts)가 만들고 집을 바꿔도 같은 것을 쓴다. */
+/** 기록 DB와 기록기(src/brain/history/recorder.ts)에 넘기는 곳. 서버(start.ts)가 만들고 집을 바꿔도 같은 것을 쓴다. */
 export interface HomeHistory {
   db: HistoryDb;
   device(s: DeviceState, note?: DeviceNote): void;
@@ -218,7 +218,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     const feed = phoneOn
       ? new EyeFeed({
         photoDir: env.PHONE_PHOTO_DIR?.trim() || join(runtimeDir, "photos"), broadcast: (m) => appRef.current?.broadcast(m),
-        // 사진 찍기 사진은 보관 기간이 지나면 지운다(src/history/retention.ts)
+        // 사진 찍기 사진은 보관 기간이 지나면 지운다(src/brain/history/retention.ts)
         onSaved: (p) => {
           history.db.addPhoto({ ...p, origin: "photo" });
           history.db.add("photo", p.atMs, PHOTO_TEXT.saved, { subject: p.id });
@@ -325,8 +325,8 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         appRef.current?.broadcast({ type: "brain", event });
         history.brain(event);
       };
-      // 판단 호출(src/world/decide.ts): World State 관찰 텍스트 + 기억 + 행동 목록으로 PAM 서비스를 부른다.
-      // 기억은 그날 처음 정한 판본(src/history/reflect.ts). 관찰 텍스트 시각은 기록 DB와 같은 시간대
+      // 판단 호출(src/brain/decide.ts): World State 관찰 텍스트 + 기억 + 행동 목록으로 PAM 서비스를 부른다.
+      // 기억은 그날 처음 정한 판본(src/brain/history/reflect.ts). 관찰 텍스트 시각은 기록 DB와 같은 시간대
       const pamTimeout = Number(env.PAM_TIMEOUT_MS);
       const decide = new Decider({
         pam: new PamClient({ url: loadEndpoints(env).pamUrl, timeoutMs: Number.isFinite(pamTimeout) && pamTimeout > 0 ? pamTimeout : undefined }),

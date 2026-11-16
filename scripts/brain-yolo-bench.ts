@@ -13,7 +13,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import jpeg from "jpeg-js";
-import { DETECTOR_MODEL, MODELS_DIR, OnnxDetector, POSE_MODEL, jpegDecoder, type DetectResult } from "../src/brain/detector.js";
+import { DETECTOR_MODEL, MODELS_DIR, OnnxDetector, POSE_MODEL, jpegDecoder, type DetectResult } from "../src/observe/detector.js";
 import { fixtureJpeg } from "../tests/helpers/jpeg.js";
 
 const RUNS = 20, WARMUP = 3;

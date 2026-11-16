@@ -30,7 +30,7 @@ ENV NODE_ENV=production HOST=0.0.0.0 PHONE_HOST=0.0.0.0 PORT=8200 PHONE_PORT=821
 WORKDIR /app
 COPY --from=deps /app/node_modules node_modules
 # 감지·관절 모델(AGPL-3.0, THIRD_PARTY.md). 잘 바뀌지 않는 큰 파일이라 src보다 먼저 복사한다.
-# sha256은 src/brain/detector.ts 모델 표와 같다(tests/deploy-files.test.ts)
+# sha256은 src/observe/detector.ts 모델 표와 같다(tests/deploy-files.test.ts)
 COPY models models
 RUN printf '%s\n' \
       "2e8fc38ffb5df4eca1fb56784121db03222c32bbfc09beb3a310339e9129e170  models/yolo26n-seg.onnx" \

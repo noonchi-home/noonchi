@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import type { DetLabel } from "../src/brain/detector.js";
+import type { DetLabel } from "../src/observe/detector.js";
 import type { BrainLog, SeenEvent, ServerMessage } from "../src/contract/events.js";
 import type { PlanView } from "../src/contract/plan.js";
 

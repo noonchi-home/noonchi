@@ -6,9 +6,9 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CUP_FSM_MEMORY, validateMemory, type FsmMemory } from "../src/brain/decision.js";
 import { TASK_NAMES } from "../src/act/tasks.js";
-import { HistoryDb, type HistoryRow } from "../src/history/db.js";
-import { memoryForDay } from "../src/history/reflect.js";
-import { daySummary } from "../src/history/summary.js";
+import { HistoryDb, type HistoryRow } from "../src/brain/history/db.js";
+import { memoryForDay } from "../src/brain/history/reflect.js";
+import { daySummary } from "../src/brain/history/summary.js";
 import { main, seedHistory } from "../scripts/seed-history.js";
 
 afterEach(() => { vi.restoreAllMocks(); });

@@ -40,7 +40,7 @@ export interface EyeFeedOptions {
   photoDir: string;
   broadcast: (msg: unknown) => void;
   now?: () => Date;
-  /** 사진 찍기 사진을 저장한 뒤(보관 기간 표에 적는다, src/history/retention.ts). */
+  /** 사진 찍기 사진을 저장한 뒤(보관 기간 표에 적는다, src/brain/history/retention.ts). */
   onSaved?: (p: { id: string; atMs: number; path: string }) => void;
 }
 

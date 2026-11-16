@@ -208,7 +208,7 @@ export const CUP_MEMORY: ListMemory = {
 /** 컵 시나리오의 FSM 기억(임시, seed). PAM fsm 기억 모양(services/pam/pam/contracts.py validate_memory)을 따른다.
  *  실제 기억은 PAM 반성기(reflector)가 만든다. 규칙의 행동 이름은 행동 목록(src/act/tasks.ts TASK_NAMES)에 있는 것이다.
  *  컵 갈래(2026-11-13)는 여기 글로 정한다: 물은 「먹는 중」, 콜라는 「TV 보는 중」, 자리를 비운 뒤에는 컵 안(비어 있음·내용물 있음·안이 안 보임)으로 가른다.
- *  이 글을 바꾸면 기록 DB의 seed 판본이 새로 올라간다(src/history/reflect.ts memoryForDay). 상태 id를 더하면 화면 이름표(src/world/labels.ts FSM_STATE_TEXT)도 더한다. */
+ *  이 글을 바꾸면 기록 DB의 seed 판본이 새로 올라간다(src/brain/history/reflect.ts memoryForDay). 상태 id를 더하면 화면 이름표(src/world/labels.ts FSM_STATE_TEXT)도 더한다. */
 export const CUP_FSM_MEMORY: FsmMemory = {
   initial_state: "drinking",
   states: [

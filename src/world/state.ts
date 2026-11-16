@@ -950,7 +950,7 @@ export class WorldState {
   }
 
   /** 실제 폰이 들은 말 한 마디를 변화 줄로 남긴다(판단 계기). HEARD_MAX자에서 자르고 줄바꿈·「」를 뺀다. 빈 말은 남기지 않는다.
-   *  World State에는 쌓지 않는다: 판단 호출(src/world/decide.ts)이 최근 변화 줄로 60초 동안만 관찰 텍스트에 넣는다. */
+   *  World State에는 쌓지 않는다: 판단 호출(src/brain/decide.ts)이 최근 변화 줄로 60초 동안만 관찰 텍스트에 넣는다. */
   heard(text: string, atMs: number): WorldChange[] {
     const said = text.replace(/[「」]/g, "").replace(/\s+/g, " ").trim().slice(0, HEARD_MAX);
     return said ? [{ kind: "heard", at_ms: atMs, subject: "person", text: CHANGE_TEXT.heard(said), meaningful: true }] : [];

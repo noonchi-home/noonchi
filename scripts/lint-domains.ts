@@ -34,11 +34,6 @@ export const DEPS: Record<string, readonly string[]> = {
 
 /** 지금 자리 → 도메인(2.1 「들어갈 지금 코드」). 끝이 /면 폴더. 옮기는 단계(3·6단계)마다 줄이고 9단계에 빈다. */
 export const LEGACY: Record<string, string> = {
-  "src/brain/detector.ts": "observe",
-  "src/brain/detector-thread.ts": "observe",
-  "src/brain/detector-worker.mjs": "observe",
-  "src/world/decide.ts": "brain",
-  "src/history/": "brain",
   "src/plan/hub.ts": "act",
   "src/plan/labels.ts": "act",
   "src/plan/planner.ts": "agent",
@@ -91,7 +86,7 @@ export const PATHS_FILE = "src/shared/paths.ts";
 
 /** 글자 그대로가 아닌 import()·require를 써도 되는 파일과 까닭. 옮기면 새 자리로 고친다. */
 export const DYNAMIC_OK: Record<string, string> = {
-  "src/brain/detector-worker.mjs": "Worker 입구: workerData로 받은 감지 스레드 파일(같은 폴더 detector-thread.ts)을 연다",
+  "src/observe/detector-worker.mjs": "Worker 입구: workerData로 받은 감지 스레드 파일(같은 폴더 detector-thread.ts)을 연다",
 };
 
 export interface Config { deps: Record<string, readonly string[]>; legacy: Record<string, string>; tables: readonly string[]; dynamicOk: readonly string[] }

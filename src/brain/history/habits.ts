@@ -1,10 +1,10 @@
-// 반성 뒤 검사 두 자리(src/history/reflect.ts runReflection이 저장 전에 부른다).
+// 반성 뒤 검사 두 자리(src/brain/history/reflect.ts runReflection이 저장 전에 부른다).
 // 1) coachGuard: 코치 규칙(행동이 코치 행동인 규칙)은 seed 그대로 지킨다. 기억 모양 검사다(행동을 고르지 않는다).
 // 2) HabitFilter: 습관 거르기 자리(박석준). 이 저장소는 모든 규칙을 그대로 두는 기본값(keepAll)만 둔다.
 //    거르기 뒤에 coachGuard를 한 번 더 돌려 거르기가 코치 규칙을 다시 넣거나 지울 수 없게 한다.
-import { TASKS } from "../act/tasks.js";
-import type { FsmMemory } from "../brain/decision.js";
-import type { HistoryRow } from "../contract/history.js";
+import { TASKS } from "../../act/tasks.js";
+import type { FsmMemory } from "../decision.js";
+import type { HistoryRow } from "../../contract/history.js";
 
 /** 거르기 입력: 반성한 날, 그날 쓴 기억, 반성이 낸 기억(coachGuard 뒤), 지난 windowDays일 기록(world·device·decision·execution·feedback, 시각 순), 기록 시간대(분). */
 export interface HabitInput {

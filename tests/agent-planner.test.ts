@@ -27,7 +27,7 @@ import { loadScene } from "../src/model/scene.js";
 import { PlanHub } from "../src/plan/hub.js";
 import { AGAIN_TEXT, APPROVAL_TEXT, EXEC_TEXT, STEP_COMMAND } from "../src/plan/labels.js";
 import { floorPlanFrom } from "../src/plan/route.js";
-import { Decider } from "../src/world/decide.js";
+import { Decider } from "../src/brain/decide.js";
 import { WorldState } from "../src/world/state.js";
 import { Trigger } from "../src/world/trigger.js";
 import { DEVICE_STATES } from "../src/world/vocab.js";

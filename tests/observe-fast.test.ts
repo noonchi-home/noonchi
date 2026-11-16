@@ -1,7 +1,7 @@
 // 빠른 프레임과 VLM 프레임: 모든 엔진 프레임에 YOLO를 돌리고, VLM 프레임 간격마다 한 장만 VLM·기록에 쓴다.
 
 import { describe, expect, it } from "vitest";
-import type { Detector } from "../src/brain/detector.js";
+import type { Detector } from "../src/observe/detector.js";
 import type { BrainLog, SeenEvent } from "../src/contract/events.js";
 import type { VlmClient } from "../src/infer/vlm.js";
 import { FAST_QUEUE_MAX, ObservationPipeline, loadObserveConfig, type ObserveConfig } from "../src/observe/pipeline.js";

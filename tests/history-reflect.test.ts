@@ -1,4 +1,4 @@
-// 반성과 기억 판본(src/history/reflect.ts): 하루 관찰 텍스트·행동 요약·피드백 → pam-reflect/2 → 새 판본은 다음 날부터.
+// 반성과 기억 판본(src/brain/history/reflect.ts): 하루 관찰 텍스트·행동 요약·피드백 → pam-reflect/2 → 새 판본은 다음 날부터.
 import { createServer, type Server } from "node:http";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -7,8 +7,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CUP_FSM_MEMORY, type FsmMemory } from "../src/brain/decision.js";
 import { PamClient } from "../src/brain/pam.js";
 import type { BrainLog } from "../src/contract/events.js";
-import { HistoryDb } from "../src/history/db.js";
-import { loadReflectAt, memoryForDay, runReflection, scheduleReflection } from "../src/history/reflect.js";
+import { HistoryDb } from "../src/brain/history/db.js";
+import { loadReflectAt, memoryForDay, runReflection, scheduleReflection } from "../src/brain/history/reflect.js";
 import { fetchRetry, listenRetry } from "../src/shared/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { startFakePam, type FakePam } from "./helpers/pam.js";

@@ -2,7 +2,7 @@
 // photos 표에 적는다. 보관 기간(PHOTO_RETENTION_DAYS, DATASET_RETENTION_DAYS, 기본 7일)이 지나면 파일(같은 이름의 .json 포함)과 표 줄을 지운다.
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { EngineFrame } from "../contract/observe.js";
+import type { EngineFrame } from "../../contract/observe.js";
 import type { HistoryDb } from "./db.js";
 
 const DAY_MS = 86_400_000;

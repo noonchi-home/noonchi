@@ -20,7 +20,7 @@ import { ROOMS, homeDevices, makeHome, twin } from "./helpers/home.js";
 import { startFakePam } from "./helpers/pam.js";
 import { CUP_FSM_MEMORY, CUP_TASKS } from "../src/brain/decision.js";
 import { PamClient } from "../src/brain/pam.js";
-import { Decider } from "../src/world/decide.js";
+import { Decider } from "../src/brain/decide.js";
 import { WorldState } from "../src/world/state.js";
 import { Trigger } from "../src/world/trigger.js";
 import { HOME_SCRIPT, startFakeLlm, toolOutputs, type FakeLlm } from "./helpers/llm.js";

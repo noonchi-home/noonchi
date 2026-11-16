@@ -3,11 +3,11 @@
 // 다음 날 판단이 이미 판본을 정했으면 그다음 날부터 쓴다. 보내기 전에 PAM /health의 입력 한도(reflect_input_bytes)에서
 // 기억 JSON·피드백 크기를 빼고 그 안으로 하루 요약을 줄인다. 칸마다 pam-reflect/2 상한도 넘지 않게 하고, 피드백은 최근 것부터 담는다.
 // 결과는 기록 DB(reflection)와 판단 기록(brain)에 남긴다.
-// fsm 기억은 저장 전에 반성 뒤 검사를 거친다(src/history/habits.ts): 코치 규칙 지키기 → 습관 거르기(기본 모두 남기기) → 코치 규칙 지키기 → 모양 검사.
-import { TASKS } from "../act/tasks.js";
-import { CUP_FSM_MEMORY, MAX_REFLECT_TEXT, validateMemory, type FsmMemory, type PamMemory } from "../brain/decision.js";
-import type { PamClient } from "../brain/pam.js";
-import type { BrainLog } from "../contract/events.js";
+// fsm 기억은 저장 전에 반성 뒤 검사를 거친다(src/brain/history/habits.ts): 코치 규칙 지키기 → 습관 거르기(기본 모두 남기기) → 코치 규칙 지키기 → 모양 검사.
+import { TASKS } from "../../act/tasks.js";
+import { CUP_FSM_MEMORY, MAX_REFLECT_TEXT, validateMemory, type FsmMemory, type PamMemory } from "../decision.js";
+import type { PamClient } from "../pam.js";
+import type { BrainLog } from "../../contract/events.js";
 import type { HistoryDb } from "./db.js";
 import { coachGuard, keepAll, learnedRules, type HabitFilter, type HabitRuleNote, type RuleLine } from "./habits.js";
 import { REFLECT_TEXT } from "./labels.js";

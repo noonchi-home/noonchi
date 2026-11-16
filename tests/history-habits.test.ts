@@ -1,7 +1,7 @@
-// 반성 뒤 검사(src/history/habits.ts): 코치 규칙은 seed 그대로 지키고(coachGuard), 습관 거르기 자리(HabitFilter)의 기본은 모두 남기기(keepAll)다.
+// 반성 뒤 검사(src/brain/history/habits.ts): 코치 규칙은 seed 그대로 지키고(coachGuard), 습관 거르기 자리(HabitFilter)의 기본은 모두 남기기(keepAll)다.
 import { describe, expect, it } from "vitest";
 import { CUP_FSM_MEMORY, validateMemory, type FsmMemory } from "../src/brain/decision.js";
-import { coachGuard, keepAll, learnedRules } from "../src/history/habits.js";
+import { coachGuard, keepAll, learnedRules } from "../src/brain/history/habits.js";
 
 const RAMEN = "라면 끓이기 알려 주기";
 const SEED_COOK = CUP_FSM_MEMORY.states.find((s) => s.id === "cooking")!;

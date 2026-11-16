@@ -5,7 +5,7 @@ import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { DOC_PATH, renderDoc } from "../scripts/world-vocab-doc.js";
-import { COCO_LABELS } from "../src/brain/detector.js";
+import { COCO_LABELS } from "../src/observe/detector.js";
 import { SCENE_JSON_SCHEMA, SCENE_PROMPT, SCENE_STATES as SCENE_ENUM } from "../src/observe/scene.js";
 import { CONDITION_KINDS } from "../src/world/conditions.js";
 import { OBJECT_NAME, STATE_TEXT } from "../src/world/labels.js";

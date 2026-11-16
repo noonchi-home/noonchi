@@ -8,7 +8,7 @@ import jpeg from "jpeg-js";
 import { describe, expect, it } from "vitest";
 import {
   DETECTOR_MODEL, MODELS_DIR, OnnxDetector, POSE_MODEL, WorkerDetector, YOLO26_IOU, decodeYolo26, decodeYolo26All, jpegDecoder, letterboxYolo26, nms,
-} from "../src/brain/detector.js";
+} from "../src/observe/detector.js";
 import { detectorSpec } from "../src/observe/pipeline.js";
 import { maskCells } from "../src/shared/mask.js";
 import { ScriptedDetector, det as d } from "./helpers/detectors.js";

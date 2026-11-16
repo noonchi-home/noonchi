@@ -160,7 +160,7 @@ export interface PhoneSessionOptions {
   sync: { landmarks: readonly TwinLandmark[]; walls: readonly WallSeg[]; start?: StartPose | null };
 }
 
-/** 기준점 상자 하나(엔진 프레임 YOLO, src/brain/detector.ts LandmarkBox). */
+/** 기준점 상자 하나(엔진 프레임 YOLO, src/observe/detector.ts LandmarkBox). */
 export interface LandmarkBoxIn { cls: number; score: number; box: [number, number, number, number] }
 
 export class PhoneSession {

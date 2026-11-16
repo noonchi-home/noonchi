@@ -116,7 +116,7 @@ describe("서버가 화면에 그대로 내보내는 계획 글(src/plan/labels.
   const worldLabels = fileURLToPath(new URL("../src/world/labels.ts", import.meta.url));
   const worldVocab = fileURLToPath(new URL("../src/world/vocab.ts", import.meta.url));
   const kinds = fileURLToPath(new URL("../src/model/kinds.ts", import.meta.url));
-  const historyLabels = fileURLToPath(new URL("../src/history/labels.ts", import.meta.url));
+  const historyLabels = fileURLToPath(new URL("../src/brain/history/labels.ts", import.meta.url));
   const prompts = fileURLToPath(new URL("../src/act/prompts.ts", import.meta.url));
   it("npm run lint가 web/·ui/src와 함께 본다", () => {
     expect(COPY_TARGETS).toEqual([webDir, uiDir, uiPhoneDir, labels, worldLabels, worldVocab, kinds, historyLabels, prompts]);
@@ -128,7 +128,7 @@ describe("서버가 화면에 그대로 내보내는 계획 글(src/plan/labels.
     expect(lintUiCopy([worldLabels, worldVocab, kinds])).toEqual([]);
     expect(texts.filter((t) => /[()→]/.test(t))).toEqual([]);
   });
-  it("기록 글(src/history/labels.ts)도 꺼내 검사한다. 괄호·화살표는 템플릿 글에도 없다", () => {
+  it("기록 글(src/brain/history/labels.ts)도 꺼내 검사한다. 괄호·화살표는 템플릿 글에도 없다", () => {
     const texts = fileCopy(historyLabels, readFileSync(historyLabels, "utf8")).map((c) => c.text);
     expect(texts).toEqual(expect.arrayContaining(["실제 모드", "진행 중", "판단 실패: …"]));
     expect(lintUiCopy([historyLabels])).toEqual([]);
