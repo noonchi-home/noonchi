@@ -1,11 +1,11 @@
 // HUB=memory|matter로 DeviceHub를 고른다(기본 matter).
-// matter: src/devices/matter/matterHub.ts를 동적으로 불러온다(memory만 쓸 때 matter.js를 읽지 않게). 모듈이 없으면 경고하고 MemoryHub로 대신한다.
+// matter: devices 입구의 지연 로더(loadMatterHub, src/devices/matter/load.ts)로 src/devices/matter/matterHub.ts를 불러온다(memory만 쓸 때 matter.js를 읽지 않게). 모듈이 없으면 경고하고 MemoryHub로 대신한다.
 // matterHub.ts에 기대하는 export(하나만 있으면 된다):
 //   createMatterHub(twin: TwinData, opts: { transport, storageDir?, ... }): DeviceHub | Promise<DeviceHub>
 //   default 같은 함수 | MatterHub.fromTwin(twin, opts) | new MatterHub(twin, opts)
 // startHub: 만들고 시작까지 한다. network 커미셔닝이 실패하면 local 전송으로, local도 실패하면 MemoryHub로 대신한다.
 
-import { MemoryHub } from "../devices/index.js";
+import { MemoryHub, loadMatterHub } from "../devices/index.js";
 import type { DeviceHub } from "../contract/devices.js";
 import type { TwinData } from "../layout/index.js";
 
@@ -30,7 +30,7 @@ export interface CreatedHub {
 
 type TwinLike = Pick<TwinData, "devices" | "initial"> & Partial<TwinData>;
 
-const defaultImporter = () => import("../devices/matter/matterHub.js") as unknown as Promise<Record<string, unknown>>;
+const defaultImporter = loadMatterHub;
 
 function isMissingModule(e: unknown): boolean {
   const err = e as { code?: string; message?: string };

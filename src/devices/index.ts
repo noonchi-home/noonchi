@@ -4,6 +4,7 @@ export { buildDevices, type Attrs, type RawObject, type SkippedObject, type Stat
 export { MemoryHub } from "./hub/memory.js";
 export { isUnknown, SignalHub, type SignalSource } from "./hub/signals.js";
 export { checkKinds } from "./kinds-check.js";
+export { loadMatterHub } from "./matter/load.js";
 export { describeDevice, KIND_LABELS, findTypeRule, checkCommand, normalizeCommand, twinChange } from "./mapping.js";
 export { PAIRABLE_KINDS, fitsKind } from "./thinq/appliance.js";
 export { ThinqClient, ThinqError, thinqConfig } from "./thinq/client.js";

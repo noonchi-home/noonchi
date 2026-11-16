@@ -1,7 +1,10 @@
 // 허브 고르기·시작(startHub): 기본은 HUB=matter, network 커미셔닝이 실패하면 local로, 그것도 안 되면 MemoryHub로.
 // 실제 matter.js는 tests/e2e.test.ts에서 쓴다. 여기서는 가짜 matter 모듈로 분기만 본다.
 
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { importsOf, parseCode, resolveSpec } from "../scripts/domain-ast.js";
 import { MemoryHub } from "../src/devices/hub/memory.js";
 import type { DeviceSpec } from "../src/contract/devices.js";
 import { startHub } from "../src/server/hubFactory.js";
@@ -89,6 +92,26 @@ describe("startHub", () => {
     const r = await startHub(data, { env: { MATTER_TRANSPORT: "local" }, importer, log: () => {} });
     expect(made.map((h) => h.opts.transport)).toEqual(["local"]);
     expect(r.transport).toBe("local");
+  });
+
+  it("서버를 띄우는 정적 import 길에 matter.js가 없다: Matter 허브는 고를 때만 devices 입구의 지연 로더(loadMatterHub)로 읽는다", () => {
+    const root = join(import.meta.dirname, "..");
+    const seen = new Set<string>(["src/server/main.ts"]);
+    const queue = ["src/server/main.ts"];
+    const exists = (p: string) => existsSync(join(root, p));
+    while (queue.length) {
+      const f = queue.shift()!;
+      for (const ref of importsOf(parseCode(f, readFileSync(join(root, f), "utf8")))) {
+        if (ref.typeOnly || ref.kind === "dynamic" || ref.kind === "type-query") continue;
+        const r = resolveSpec(f, ref.spec, exists);
+        const key = "path" in r ? r.path : "external" in r ? `pkg:${r.external}` : "";
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        if ("path" in r) queue.push(r.path);
+      }
+    }
+    expect([...seen].filter((k) => k.startsWith("pkg:@matter/") || (k.startsWith("src/devices/matter/") && k !== "src/devices/matter/load.ts"))).toEqual([]);
+    expect(seen.has("src/server/hubFactory.ts")).toBe(true);
   });
 
   it("HUB=memory면 matter 모듈을 부르지 않는다", async () => {

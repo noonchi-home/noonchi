@@ -15,10 +15,6 @@
       "why": "detector.ts는 감지 Worker 스레드(detector-worker.mjs → detector-thread.ts)에서도 읽힌다. phone 입구는 phone/server.ts(ws·http)와 거기서 닿는 layout·world·devices·agent 파일까지 50여 개를 Worker로 끌어들여 classes.ts를 바로 가리키게 남김(4d). 기준점 표(LANDMARK_IDS)를 공용 표로 둘지 정해야 함",
       "until": "9"
     },
-    "inner src/server/hubFactory.ts -> src/devices/matter/matterHub.ts": {
-      "why": "Matter 허브를 고를 때만 matter.js를 읽는 지연 import(await import)다. 입구의 정적 다시 내보내기로 바꾸면 서버를 띄울 때마다 matter.js를 읽어 바로 가리키게 남김(4a). 지연 import를 허용하는 규칙을 둘지 정해야 함",
-      "until": "9"
-    },
     "inner src/layout/scene.ts -> src/devices/mapping.ts": {
       "why": "F8로 고리는 풀렸지만, 화면 시험 ui/tests/dashboard/cup-run.ts가 jsdom에서 scene.ts를 바로 읽는다. devices 입구는 thinq/client.ts(node:crypto)까지 함께 읽어 화면 시험 node 모듈 검사(5e2662c)에 걸려 mapping.ts를 바로 가리키게 남김(5d). 화면 시험이 읽는 파일의 입구를 6단계에서 정할 때 함께 정한다",
       "until": "9"
