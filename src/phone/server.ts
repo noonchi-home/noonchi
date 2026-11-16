@@ -287,6 +287,8 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
     }
   };
 
+  /** 처리 중인 승인 답(confirm·cancel). 닫을 때 그 답을 보낸 뒤 연결을 끊는다. */
+  const answering = new Set<Promise<void>>();
   let connections = 0;
   let current: PlannedCommand | null = null;
   /** 연결마다 판본: wait hello 기다리는 중, ok 판본이 맞음, old 옛 탭(hello 없음·판본 다름). */
@@ -360,7 +362,13 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
       }
       // 판본이 맞는 연결의 답만 받는다(옛 탭의 답은 다른 명령에 갈 수 있다)
       if (type === "say" || type === "confirm" || type === "cancel") {
-        if (ok(ws)) void talk(ws, raw as Record<string, unknown>);
+        if (!ok(ws)) return;
+        const t = talk(ws, raw as Record<string, unknown>);
+        // 승인 답(confirm·cancel)은 닫을 때 그 답을 보낸 뒤 연결을 닫는다
+        if (type !== "say") {
+          answering.add(t);
+          void t.finally(() => answering.delete(t));
+        }
         return;
       }
       // 시계 맞춤(NTP식): 폰이 보낸 t0를 그대로, 서버 시각을 붙여 바로 돌려준다
@@ -424,6 +432,10 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
       return { port: addr.port, urls: lanUrls(addr.port, host) };
     },
     async close() {
+      // 처리 중인 승인 답(confirm·cancel)의 답을 보내고, 보낸 글이 소켓에 다 넘어갈 때까지(최대 1초) 기다린 뒤 연결을 끊는다.
+      // 집을 닫을 때 에이전트가 취소로 끝낸 외부 연락의 답이 실제 폰에 닿게 한다(src/server/home.ts는 에이전트를 먼저 닫는다)
+      await Promise.allSettled([...answering]);
+      for (const end = Date.now() + 1000; [...wss.clients].some((ws) => ws.bufferedAmount > 0) && Date.now() < end; ) await new Promise((r) => setTimeout(r, 10));
       for (const ws of wss.clients) ws.terminate();
       await new Promise<void>((r) => wss.close(() => r()));
       server.closeAllConnections();

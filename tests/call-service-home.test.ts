@@ -151,7 +151,7 @@ describe("서버: 실제 폰 말 → 외부 연락 승인 → 전화 서비스 �
     expect(dash.messages.filter((m) => m.type === "say").map((m) => m.text)).not.toContain("AS센터 전화는 하지 않을게요.");
   }, SLOW);
 
-  it("서버(집)를 닫으면 차례를 기다리던 같은 내용의 연락은 보내지 않고 기록 DB에 취소로 남기고, 보내는 중인 연락이 끝난 뒤 닫는다. 기다리는 동안 가전 명령은 막고 답은 실제 폰에 간다", async () => {
+  it("서버(집)를 닫으면 차례를 기다리던 같은 내용의 연락은 보내지 않고 기록 DB에 취소로 남기고, 보내는 중인 연락이 끝난 뒤 닫는다. 기다리는 동안 가전 명령은 막고, 두 연락의 답(확인 불가·취소)은 폰 연결이 닫히기 전에 실제 폰에 닿는다", async () => {
     fake = await startFakeCallService();
     fake.answer = "hang";
     const { runtime, phone, token } = await asked({ CALL_SERVICE_URL: fake.url });
@@ -164,6 +164,7 @@ describe("서버: 실제 폰 말 → 외부 연락 승인 → 전화 서비스 �
     expect(fake.requests).toHaveLength(1);
     await new Promise((r) => setTimeout(r, 200));
     const url = srv!.url;
+    const phoneClosed = new Promise<void>((r) => phone.ws.once("close", () => r()));
     const closing = srv!.close();
     srv = undefined;
     await new Promise((r) => setTimeout(r, 200));
@@ -171,8 +172,12 @@ describe("서버: 실제 폰 말 → 외부 연락 승인 → 전화 서비스 �
     const cmd = await fetchRetry(`${url}/api/devices/tv_1/command`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ command: { type: "on" } }) });
     expect(((await cmd.json()) as Msg)).toMatchObject({ ok: false, error: "집을 닫는 중이라 실행하지 않았어요." });
     await fake.close();
-    await phone.waitFor((m) => m.type === "reply" && m.text === "AS센터 전화 요청이 접수됐는지 확인하지 못했어요.", "보내던 연락의 답");
     await closing;
+    // 폰 연결이 닫히기 전에 두 답(보내던 연락의 확인 불가, 차례를 기다리던 연락의 취소)이 실제 폰에 닿았다
+    await phoneClosed;
+    const replies = phone.messages.filter((m) => m.type === "reply").map((m) => m.text);
+    expect(replies).toContain("AS센터 전화 요청이 접수됐는지 확인하지 못했어요.");
+    expect(replies).toContain("AS센터 전화를 취소했어요.");
     expect(fake.requests).toHaveLength(1);
     const db = HistoryDb.open(join(runtime, "noonchi.db"));
     try {

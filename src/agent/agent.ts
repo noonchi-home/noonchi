@@ -215,6 +215,8 @@ export class Agent {
   private readonly sends = new Set<{ started: boolean; finish(r: ConfirmResult): boolean; cancel(): void; done: Promise<void> }>();
   /** 닫혔다(집을 닫음): 새로 승인된 외부 연락은 보내지 않고 취소로 끝낸다. */
   private closed = false;
+  /** 처리 중인 승인 답(confirm·answerToken, 세션 차례를 기다리는 것 포함). 닫을 때 모두 끝날 때까지 기다려 그 답이 폰에 가게 한다. */
+  private readonly answering = new Set<Promise<unknown>>();
 
   constructor(opts: AgentOptions) {
     this.hub = opts.hub;
@@ -257,7 +259,7 @@ export class Agent {
       this.emit({ event: "confirmed", sessionId: s?.id, token, ok: r.ok, reply: r.reply, deviceId: r.deviceId });
       return r;
     };
-    return s ? this.serialize(s, run) : run();
+    return this.answer(s ? this.serialize(s, run) : run());
   }
 
   /** 승인 대기 token 하나만 답한다(들은 말의 승인·거절, src/server/home.ts). 다른 대기는 그대로. 지금 대기가 아니면 ok false.
@@ -275,7 +277,7 @@ export class Agent {
       this.emit({ event: "confirmed", sessionId: s?.id, token, ok: r.ok, reply: r.reply, deviceId: r.deviceId });
       return { ok: true, reply: r.reply };
     };
-    return s ? this.serialize(s, run) : run();
+    return this.answer(s ? this.serialize(s, run) : run());
   }
 
   /** 승인 대기를 취소한다. */
@@ -582,12 +584,21 @@ export class Agent {
   }
 
   /** 닫는다(집을 닫음): 새 말은 받지 않고(AGENT_CLOSED), 차례를 기다리던 외부 연락은 보내지 않고 취소로 끝내고(결과 cancelled),
-   *  보내는 중인 것은 끝날 때까지 기다린다. 그 뒤 승인은 보내지 않는다. 가전 명령은 정책을 닫아(Policy.close) 막는다. */
+   *  보내는 중인 것과 이미 받은 승인 답(세션 차례를 기다리는 것 포함)은 끝날 때까지 기다린다. 그 뒤 승인은 보내지 않는다. 가전 명령은 정책을 닫아(Policy.close) 막는다. */
   async close(): Promise<void> {
     this.closed = true;
     const sends = [...this.sends];
     for (const j of sends) j.cancel();
-    await Promise.all(sends.filter((j) => j.started).map((j) => j.done));
+    // 보내는 중인 연락과, 세션 차례를 기다리던 승인 답(닫힌 뒤 차례가 오면 취소로 끝난다)이 모두 끝날 때까지
+    await Promise.allSettled([...sends.filter((j) => j.started).map((j) => j.done), ...this.answering]);
+  }
+
+  /** 승인 답 하나를 처리 중으로 둔다(끝나면 뺀다). */
+  private answer<T>(p: Promise<T>): Promise<T> {
+    this.answering.add(p);
+    const drop = () => { this.answering.delete(p); };
+    p.then(drop, drop);
+    return p;
   }
 
   /** 보내지 않고 취소로 끝낸 외부 연락의 답(결과를 알린다). */
