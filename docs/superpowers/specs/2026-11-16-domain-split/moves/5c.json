@@ -1,0 +1,23 @@
+{
+  "files": {},
+  "decls": {
+    "src/agent/search.ts#ROOM_ALIASES": "src/layout/rooms.ts#ROOM_ALIASES",
+    "src/agent/search.ts#escapeRe": "src/layout/rooms.ts#escapeRe",
+    "src/agent/search.ts#roomVariants": "src/layout/rooms.ts#roomVariants",
+    "src/agent/search.ts#looseRe": "src/layout/rooms.ts#looseRe",
+    "src/agent/search.ts#RoomMatch": "src/layout/rooms.ts#RoomMatch",
+    "src/agent/search.ts#detectRooms": "src/layout/rooms.ts#detectRooms",
+    "src/agent/search.ts#resolveRoom": "src/layout/rooms.ts#resolveRoom"
+  },
+  "new": [],
+  "text": [],
+  "allow": {
+    "src/layout/index.ts: import가 가리키는 정의가 달라요": "layout 입구에 새로 내보내는 이름이다: F4로 layout/rooms.ts에 옮긴 방 찾기(detectRooms·resolveRoom, 에이전트 search.ts·tools.ts가 씀)와, F4로 고리가 풀려 입구로 바꾼 agent/layoutTools.ts의 catalog·editor 이름(findTypes·TypeInfo·LayoutError·SceneObject·To). 빠진 이름은 없다",
+    "src/agent/layoutTools.ts: 부수 효과가 있는 import의 차례가 달라요": "F4로 방 찾기를 layout/rooms.ts로 옮겨 layout이 agent/search.ts를 읽지 않고, 에이전트는 방 찾기·catalog·editor·KIND_LABELS를 layout·devices 입구로 읽어 읽는 차례가 바뀐다. 새로 읽음: world/labels.ts(맨 위: 이름 글 표 fromEntries), act/labels.ts(맨 위: 서버 글 표 계산(new Set·Object.keys·fromEntries)). 안 읽음: agent/search.ts(맨 위: 별명 표 mapEntries·불용어 new Set). 차례만 바뀜: layout/editor.ts(맨 위: 불용어 new Set), devices/kinds.ts(맨 위: 종류 차례 Object.keys), devices/mapping.ts(맨 위: 종류별 표 mapEntries). 모두 맨 위에서 표·스키마·경로 값만 만들고 상태를 바꾸는 초기화(서버 열기·파일 쓰기·전역 등록)는 없다",
+    "src/agent/search.ts: 부수 효과가 있는 import의 차례가 달라요": "F4로 방 찾기를 layout/rooms.ts로 옮겨 layout이 agent/search.ts를 읽지 않고, 에이전트는 방 찾기·catalog·editor·KIND_LABELS를 layout·devices 입구로 읽어 읽는 차례가 바뀐다. 새로 읽음: node:fs(바깥 모듈), node:path(바깥 모듈), node:url(바깥 모듈), shared/paths.ts(맨 위: 저장소 뿌리 new URL), devices/devices.ts(맨 위: 트윈 기본 폴더 경로 repoPath), devices/thinq/appliance.ts(맨 위: 짝지을 종류·되돌림 표 계산), world/vocab.ts(맨 위: 장면 상태 목록 Object.keys), node:crypto(바깥 모듈), devices/thinq/client.ts(맨 위: 지역 집합 new Set), layout/editor.ts(맨 위: 불용어 new Set), world/labels.ts(맨 위: 이름 글 표 fromEntries), act/labels.ts(맨 위: 서버 글 표 계산(new Set·Object.keys·fromEntries)). 모두 맨 위에서 표·스키마·경로 값만 만들고 상태를 바꾸는 초기화(서버 열기·파일 쓰기·전역 등록)는 없다",
+    "src/agent/tools.ts: 부수 효과가 있는 import의 차례가 달라요": "F4로 방 찾기를 layout/rooms.ts로 옮겨 layout이 agent/search.ts를 읽지 않고, 에이전트는 방 찾기·catalog·editor·KIND_LABELS를 layout·devices 입구로 읽어 읽는 차례가 바뀐다. 새로 읽음: layout/editor.ts(맨 위: 불용어 new Set), world/labels.ts(맨 위: 이름 글 표 fromEntries), act/labels.ts(맨 위: 서버 글 표 계산(new Set·Object.keys·fromEntries)). 모두 맨 위에서 표·스키마·경로 값만 만들고 상태를 바꾸는 초기화(서버 열기·파일 쓰기·전역 등록)는 없다",
+    "src/layout/editor.ts: 부수 효과가 있는 import의 차례가 달라요": "F4로 방 찾기를 layout/rooms.ts로 옮겨 layout이 agent/search.ts를 읽지 않고, 에이전트는 방 찾기·catalog·editor·KIND_LABELS를 layout·devices 입구로 읽어 읽는 차례가 바뀐다. 안 읽음: devices/kinds.ts(맨 위: 종류 차례 Object.keys), devices/mapping.ts(맨 위: 종류별 표 mapEntries), agent/search.ts(맨 위: 별명 표 mapEntries·불용어 new Set). 모두 맨 위에서 표·스키마·경로 값만 만들고 상태를 바꾸는 초기화(서버 열기·파일 쓰기·전역 등록)는 없다",
+    "src/layout/index.ts: 부수 효과가 있는 import의 차례가 달라요": "F4로 방 찾기를 layout/rooms.ts로 옮겨 layout이 agent/search.ts를 읽지 않고, 에이전트는 방 찾기·catalog·editor·KIND_LABELS를 layout·devices 입구로 읽어 읽는 차례가 바뀐다. 안 읽음: agent/search.ts(맨 위: 별명 표 mapEntries·불용어 new Set). 차례만 바뀜: layout/editor.ts(맨 위: 불용어 new Set), devices/kinds.ts(맨 위: 종류 차례 Object.keys), devices/mapping.ts(맨 위: 종류별 표 mapEntries). 모두 맨 위에서 표·스키마·경로 값만 만들고 상태를 바꾸는 초기화(서버 열기·파일 쓰기·전역 등록)는 없다"
+  },
+  "exceptions": {}
+}

@@ -5,7 +5,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { josa } from "../shared/korean.js";
-import { detectRooms } from "../agent/search.js";
+import { detectRooms } from "./rooms.js";
 import { compact, stripParticle } from "../shared/korean.js";
 import type { TypeInfo } from "./catalog.js";
 

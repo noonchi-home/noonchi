@@ -1,8 +1,7 @@
 // 초점: 클로이드가 방금 다룬 물건(에이전트 도구가 성공했거나 승인을 기다리는 대상). 대시보드 3D·폰 화면에 고리로 보인다.
 // 화면 표시 전용이다(엔진 입력 아님).
 
-import type { AgentAction } from "../agent/agent.js";
-import type { FocusTarget } from "../contract/events.js";
+import type { AgentAction, FocusTarget } from "../contract/events.js";
 
 export type { Focus } from "../contract/events.js";
 

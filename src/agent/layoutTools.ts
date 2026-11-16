@@ -2,8 +2,7 @@
 // 도구는 ToolBackend.layout(배치 편집기)을 쓴다. 결과의 device는 바뀐 물건이라 화면 초점이 그 물건으로 간다.
 
 import { z } from "zod";
-import { findTypes, type TypeInfo } from "../layout/catalog.js";
-import { LayoutError, type LayoutEditor, type SceneObject, type To } from "../layout/editor.js";
+import { findTypes, LayoutError, type LayoutEditor, type SceneObject, type To, type TypeInfo } from "../layout/index.js";
 import { describeDevice } from "../devices/index.js";
 import type { ToolBackend, ToolDef, ToolResult } from "./tools.js";
 

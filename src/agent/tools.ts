@@ -9,7 +9,8 @@ import type { DeviceKind } from "../devices/kinds.js";
 import { KIND_LABELS } from "../devices/index.js";
 import { doneSentence } from "./phrases.js";
 import type { LayoutTools } from "./layoutTools.js";
-import { findDevices, resolveRoom } from "./search.js";
+import { findDevices } from "./search.js";
+import { resolveRoom } from "../layout/index.js";
 import { compact } from "../shared/korean.js";
 
 export type { DeviceView } from "../contract/events.js";
