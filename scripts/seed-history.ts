@@ -301,7 +301,7 @@ class Week {
     const atMs = this.t;
     const view = this.view();
     const textSent = textFromWorld(view, this.recent, { nowMs: atMs, offsetMinutes: this.db.offsetMinutes });
-    const mem = this.seedOnly !== null ? { version: this.seedOnly } : memoryForDay(this.db, this.day);
+    const mem = this.seedOnly !== null ? { version: this.seedOnly } : memoryForDay(this.db, this.day, { patch: false });
     const seq = ++this.seq;
     // 판단은 돕는 방식 자동처럼 모든 행동 가운데 고른다(앞 둘의 순서는 컵 행동과 같다)
     const tasks: string[] = [...TASK_NAMES];
@@ -398,12 +398,25 @@ class Week {
   }
 }
 
-/** i번째 날 반성이 남기는 기억(PAM fsm 모양). 지금 seed 기억(CUP_FSM_MEMORY)을 바탕으로 날마다 상태(morning_coffee·away·night)를 더한다.
+/** 합성 일주일은 컵을 두고 떠나면 치우는 습관(2026-11-16)을 배우기 전 기록이다: left_cup은 그때 규칙(비면 치우기, 남으면 두기, 안이 안 보이면 묻기)이고
+ *  판단 기록(「left_cup 규칙대로 묻는다」)도 그 규칙을 따른다. 서버가 이 DB로 판단하면 습관을 가장 새 판본에 한 번 넣는다(src/brain/decision.ts SEED_PATCHES). */
+const PAST_LEFT_CUP = [
+  { trigger: "사용자가 자리를 비웠고 컵이 비어 있으며 아무도 컵을 들거나 만지지 않는다.", action: "컵 치우기" },
+  { trigger: "사용자가 자리를 비웠지만 컵에 음료가 남아 있다.", action: "컵 그대로 두기" },
+  { trigger: "사용자가 자리를 비웠고 컵 안을 확인할 수 없다.", action: "사용자에게 물어보기" },
+];
+/** 습관 전 seed: 지금 seed(CUP_FSM_MEMORY)에서 left_cup 규칙만 그때 규칙으로. */
+export const PAST_SEED: FsmMemory = {
+  ...CUP_FSM_MEMORY,
+  states: CUP_FSM_MEMORY.states.map((s) => (s.id === "left_cup" ? { ...s, rules: PAST_LEFT_CUP.map((r) => ({ ...r })) } : s)),
+};
+
+/** i번째 날 반성이 남기는 기억(PAM fsm 모양). 습관 전 seed(PAST_SEED)를 바탕으로 날마다 상태(morning_coffee·away·night)를 더한다.
  *  seed 규칙(컵 갈래·묻기·덥다·요리)은 상태 자리 그대로 모두 남는다. 첫날 답에서 밤에는 묻지 않는다는 것을 배운다.
  *  habit이면 말없이 에어컨을 켜는 규칙을 watching_tv(없으면 evening_tv)에 더한다(reflect --scripted의 마지막 판본만). */
 export function memoryAfter(i: number, h: Pick<HomeInfo, "table" | "side" | "livingAc">, habit = false): FsmMemory {
   const T = h.table.label;
-  const m = structuredClone(CUP_FSM_MEMORY);
+  const m = structuredClone(PAST_SEED);
   const state = (id: string) => m.states.find((s) => s.id === id)!;
   const leftCup = state("left_cup");
   leftCup.description += ` 컵은 ${T} 위에 있다. 사용자는 다 마시고 자리를 뜨면 컵을 치워 주기를 바란다.${i >= 3 ? " 컵 안이 안 보여 물으면 치워 달라고 답한다." : ""}`;
@@ -627,7 +640,7 @@ export function seedHistory(db: HistoryDb, o: SeedOptions): SeedResult {
   const home = loadHome(o.home, o.twinDir);
   const cleared = db.removeSynthetic();
   const days = Array.from({ length: n }, (_, i) => addDays(o.end, i - n + 1));
-  const seed = db.saveMemory({ kind: "fsm", memory: CUP_FSM_MEMORY, day: null, appliesDay: null, source: "synthetic" });
+  const seed = db.saveMemory({ kind: "fsm", memory: PAST_SEED, day: null, appliesDay: null, source: "synthetic" });
   const scripted = (o.memories ?? "scripted") === "scripted";
   const w = new Week(marked(db), home, scripted ? null : seed);
   try {

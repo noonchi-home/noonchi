@@ -4,12 +4,12 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CUP_FSM_MEMORY, validateMemory, type FsmMemory } from "../src/brain/decision.js";
+import { CUP_FSM_MEMORY, fsmRuleOf, validateMemory, type FsmMemory } from "../src/brain/decision.js";
 import { TASK_NAMES } from "../src/act/tasks.js";
 import { HistoryDb, type HistoryRow } from "../src/brain/history/db.js";
 import { memoryForDay } from "../src/brain/history/reflect.js";
 import { daySummary } from "../src/brain/history/summary.js";
-import { main, seedHistory } from "../scripts/seed-history.js";
+import { PAST_SEED, main, seedHistory } from "../scripts/seed-history.js";
 
 afterEach(() => { vi.restoreAllMocks(); });
 
@@ -98,15 +98,34 @@ describe("합성 기록 넣기", () => {
   const silentAircon = (m: FsmMemory) => m.states.flatMap((s) => s.rules.map((r) => ({ state: s.id, ...r }))).filter((r) => r.action === "에어컨 켜기" && r.trigger !== HOT);
   const versions = (db: HistoryDb) => (db.db.prepare("SELECT version FROM memories ORDER BY version").all() as { version: number }[]).map((r) => db.memoryVersion(r.version)!);
 
-  it("scripted 판본마다 지금 FSM의 seed 규칙(컵 갈래·묻기·덥다·요리)이 상태 자리 그대로 남아 있다", () => {
+  it("scripted 판본마다 습관 전 seed 규칙(컵 갈래·묻기·덥다·요리)이 상태 자리 그대로 남아 있다(합성 일주일은 컵을 두고 떠나면 치우는 습관을 배우기 전 기록)", () => {
     const db = HistoryDb.open(":memory:", 540);
     seedHistory(db, { home: "mokryeon_180b", end: END });
     const all = versions(db);
     expect(all).toHaveLength(8);
     for (const v of all) {
       const m = validateMemory(v.memory, "fsm") as FsmMemory;
-      for (const s of CUP_FSM_MEMORY.states) for (const r of s.rules) expect(m.states.find((x) => x.id === s.id)?.rules, `${v.version}판 ${s.id}`).toContainEqual(r);
+      for (const s of PAST_SEED.states) for (const r of s.rules) expect(m.states.find((x) => x.id === s.id)?.rules, `${v.version}판 ${s.id}`).toContainEqual(r);
     }
+    // 습관 전 seed는 지금 seed에서 left_cup 규칙만 다르다
+    expect(PAST_SEED.states.filter((s, i) => JSON.stringify(s) !== JSON.stringify(CUP_FSM_MEMORY.states[i])).map((s) => s.id)).toEqual(["left_cup"]);
+  });
+
+  // Codex(4ce9100) P3: 합성 기록의 「left_cup 규칙대로 묻는다」가 새 seed(습관)와 맞지 않았다
+  it("합성 기록의 묻기 판단은 그날 판본(습관 전 left_cup)의 규칙이다. 서버가 이 DB로 판단하면 습관을 가장 새 판본에 한 번 넣고, 합성 기록을 다시 넣으면 다시 넣는다", () => {
+    const db = HistoryDb.open(":memory:", 540);
+    seedHistory(db, { home: "mokryeon_180b", end: END });
+    for (const d of db.decisions(500).filter((x) => x.text === "사용자에게 물어보기")) {
+      const pinned = db.memoryVersion(db.pinnedMemory(d.day)!)!.memory as FsmMemory;
+      expect(fsmRuleOf(pinned, "fsm", "사용자에게 물어보기"), d.day).not.toBeNull();
+    }
+    const habit = CUP_FSM_MEMORY.states.find((s) => s.id === "left_cup")!.rules;
+    const live = memoryForDay(db, "2026-11-09");
+    expect(live.version).toBe(9);
+    expect((live.memory as FsmMemory).states.find((s) => s.id === "left_cup")!.rules).toEqual(habit);
+    expect(memoryForDay(db, "2026-11-10").version).toBe(9);
+    seedHistory(db, { home: "mokryeon_180b", end: END });
+    expect(((memoryForDay(db, "2026-11-09").memory as FsmMemory).states.find((s) => s.id === "left_cup")!.rules)).toEqual(habit);
   });
 
   it("합성 판본의 규칙 행동은 모두 행동 목록 안이다. 밤 상태에는 규칙이 없고 아침까지 컵을 그대로 두고 묻지 않는다는 것은 상태 설명에 있다", () => {
@@ -151,7 +170,7 @@ describe("합성 기록 넣기", () => {
     const db = HistoryDb.open(":memory:", 540);
     const r = seedHistory(db, { home: "mokryeon_180b", end: END, memories: "none" });
     expect(versions(db).map((v) => [v.version, v.source])).toEqual([[1, "synthetic"]]);
-    expect(versions(db)[0]!.memory).toEqual(CUP_FSM_MEMORY);
+    expect(versions(db)[0]!.memory).toEqual(PAST_SEED);
     expect(db.list({ kinds: ["reflection"] })).toEqual([]);
     for (const day of DAYS.slice(1)) expect(pins(db)[day], day).toBeUndefined();
     expect(new Set(db.list({ kinds: ["decision"], limit: 100_000 }).map((x) => (x.data as { memory_version: number }).memory_version))).toEqual(new Set([1]));

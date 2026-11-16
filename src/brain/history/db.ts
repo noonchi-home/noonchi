@@ -119,6 +119,17 @@ export class HistoryDb {
     this.db.prepare(`INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO ${replace ? "UPDATE SET value = excluded.value" : "NOTHING"}`).run(`memory_day:${day}`, String(version));
   }
 
+  /** 이미 배운 기억에 넣은 seed 바뀜(src/brain/decision.ts SEED_PATCHES)과 그때 만든 판본(meta seed_patch:<id>). 넣지 않았으면 null. */
+  seedPatch(id: string): number | null {
+    const r = this.db.prepare("SELECT value FROM meta WHERE key = ?").get(`seed_patch:${id}`) as { value: string } | undefined;
+    return r ? Number(r.value) : null;
+  }
+
+  /** seed 바뀜 하나를 넣었다고 적는다(한 DB에 한 번). */
+  markSeedPatch(id: string, version: number): void {
+    this.db.prepare("INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING").run(`seed_patch:${id}`, String(version));
+  }
+
   /** 디스크에 둔 사진 하나(photo 사진 찍기, dataset 시험 자료). 보관 기간이 지나면 retention.sweep이 지운다. */
   addPhoto(p: StoredPhoto): void {
     this.db.prepare("INSERT OR REPLACE INTO photos(id, at_ms, path, origin) VALUES (?, ?, ?, ?)").run(p.id, p.atMs, p.path, p.origin);
@@ -163,7 +174,7 @@ export class HistoryDb {
     });
   }
 
-  /** 합성 기록(scripts/seed-history.ts)만 지운다: data.synthetic이 참인 줄, source가 synthetic인 기억 판본, 그 판본에 고정한 날. 지운 수를 돌려준다. */
+  /** 합성 기록(scripts/seed-history.ts)만 지운다: data.synthetic이 참인 줄, source가 synthetic인 기억 판본, 그 판본에 고정한 날·넣은 seed 바뀜 표시. 지운 수를 돌려준다. */
   removeSynthetic(): { events: number; memories: number; pins: number } {
     this.db.exec("BEGIN IMMEDIATE");
     try {
@@ -171,6 +182,8 @@ export class HistoryDb {
       const pins = versions.length
         ? Number(this.db.prepare(`DELETE FROM meta WHERE key LIKE 'memory_day:%' AND value IN (${versions.map(() => "?").join(",")})`).run(...versions).changes)
         : 0;
+      // 합성 판본에 넣은 seed 바뀜 표시도 지운다(새 합성 기록에 다시 넣는다)
+      if (versions.length) this.db.prepare(`DELETE FROM meta WHERE key LIKE 'seed_patch:%' AND value IN (${versions.map(() => "?").join(",")})`).run(...versions);
       const memories = Number(this.db.prepare("DELETE FROM memories WHERE source = 'synthetic'").run().changes);
       const events = Number(this.db.prepare("DELETE FROM events WHERE json_extract(data, '$.synthetic') = 1").run().changes);
       this.db.exec("COMMIT");

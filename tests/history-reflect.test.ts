@@ -59,6 +59,11 @@ describe("기억 판본", () => {
   });
 });
 
+/** left_cup 규칙을 지금 seed의 습관 하나로 바꾼 기억. */
+const withHabit = (m: { initial_state: string; states: { id: string; rules: unknown[] }[] }) => ({
+  ...m, states: m.states.map((st) => (st.id === "left_cup" ? { ...st, rules: CUP_FSM_MEMORY.states.find((x) => x.id === "left_cup")!.rules } : st)),
+});
+
 describe("seed 판본 올리기", () => {
   // 예전 코드가 저장한 seed(상태 둘, 채워 주기·그대로 두기 규칙 없음)
   const OLD_SEED = {
@@ -94,17 +99,44 @@ describe("seed 판본 올리기", () => {
     expect(db.memoryVersion(3)).toBeNull();
   });
 
-  it("반성 판본이 있는 DB는 그대로다: 가장 새 판본이 반성 판본이면 seed를 올리지 않고, 옛 seed로 고정한 날도 바꾸지 않는다", () => {
+  it("반성 판본이 있는 DB는 seed로 덮지 않는다: 가장 새 판본이 반성 판본이면 seed를 올리지 않고, 옛 seed로 고정한 날도 바꾸지 않는다. 습관(left_cup)만 반성 판본에 한 번 넣는다", () => {
     const db = HistoryDb.open(":memory:");
     db.saveMemory({ kind: "fsm", memory: OLD_SEED, day: null, appliesDay: null, source: "seed" });
     db.pinMemory("2026-11-12", 1);
     const learned = { ...OLD_SEED, initial_state: "left_cup" };
     db.saveMemory({ kind: "fsm", memory: learned, day: "2026-11-12", appliesDay: "2026-11-13", source: "reflection" });
-    expect(memoryForDay(db, "2026-11-13")).toEqual({ memory: learned, kind: "fsm", version: 2 });
+    expect(memoryForDay(db, "2026-11-13")).toEqual({ memory: withHabit(learned), kind: "fsm", version: 3 });
     // 그날 쓰는 것은 옛 seed여도 그 뒤 반성 판본이 있으면 올리지 않는다(올리면 다음 날 반성 판본을 덮는다)
     expect(memoryForDay(db, "2026-11-12")).toEqual({ memory: OLD_SEED, kind: "fsm", version: 1 });
-    expect(db.memoryVersion(3)).toBeNull();
-    expect(db.memoryFor("2026-11-14")).toMatchObject({ version: 2, source: "reflection" });
+    expect(db.memoryVersion(4)).toBeNull();
+    expect(db.memoryFor("2026-11-14")).toMatchObject({ version: 3, source: "reflection", appliesDay: "2026-11-13" });
+  });
+
+  // Codex(4ce9100): 가장 새 판본이 반성·합성 판본인 DB는 새 seed를 받지 않아 그대로 두기·물어보기로 판단했다
+  it("컵을 두고 떠나면 치우는 습관은 반성·합성 판본에도 한 번 넣는다: left_cup 규칙만 습관 하나로 바꾸고 다른 상태의 배운 규칙은 둔다. 그 뒤 반성이 다시 배운 규칙은 바꾸지 않는다", () => {
+    const db = HistoryDb.open(":memory:");
+    const aircon = { trigger: "사용자가 TV를 보러 소파에 앉는다.", action: "에어컨 켜기" };
+    const old: FsmMemory = {
+      ...CUP_FSM_MEMORY,
+      states: CUP_FSM_MEMORY.states.map((st) => st.id === "left_cup"
+        ? { ...st, rules: [{ trigger: "사용자가 자리를 비웠지만 컵에 음료가 남아 있다.", action: "컵 그대로 두기" }, { trigger: "사용자가 자리를 비웠고 컵 안을 확인할 수 없다.", action: "사용자에게 물어보기" }] }
+        : st.id === "watching_tv" ? { ...st, rules: [...st.rules, aircon] } : st),
+    };
+    db.saveMemory({ kind: "fsm", memory: CUP_FSM_MEMORY, day: null, appliesDay: null, source: "seed" });
+    db.saveMemory({ kind: "fsm", memory: old, day: "2026-11-10", appliesDay: "2026-11-11", source: "synthetic" });
+    db.pinMemory("2026-11-16", 2);
+    const got = memoryForDay(db, "2026-11-16");
+    expect(got.version).toBe(3);
+    const states = (got.memory as FsmMemory).states;
+    expect(states.find((st) => st.id === "left_cup")!.rules).toEqual(CUP_FSM_MEMORY.states.find((st) => st.id === "left_cup")!.rules);
+    expect(states.find((st) => st.id === "watching_tv")!.rules).toContainEqual(aircon);
+    expect(db.memoryVersion(3)).toMatchObject({ source: "synthetic", appliesDay: "2026-11-11" });
+    expect(db.pinnedMemory("2026-11-16")).toBe(3);
+    // 한 번만: 다시 불러도 새 판본을 만들지 않고, 그 뒤 반성이 그대로 두기를 다시 배우면 그대로 쓴다
+    expect(memoryForDay(db, "2026-11-17").version).toBe(3);
+    db.saveMemory({ kind: "fsm", memory: old, day: "2026-11-17", appliesDay: "2026-11-18", source: "reflection" });
+    expect(memoryForDay(db, "2026-11-18")).toEqual({ memory: old, kind: "fsm", version: 4 });
+    expect(db.memoryVersion(5)).toBeNull();
   });
 
   it("지금 seed와 같은 seed는 올리지 않는다", () => {

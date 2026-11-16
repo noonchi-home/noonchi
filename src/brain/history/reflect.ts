@@ -5,7 +5,7 @@
 // 결과는 기록 DB(reflection)와 판단 기록(brain)에 남긴다.
 // fsm 기억은 저장 전에 반성 뒤 검사를 거친다(src/brain/history/habits.ts): 코치 규칙 지키기 → 습관 거르기(기본 모두 남기기) → 코치 규칙 지키기 → 모양 검사.
 import { TASKS } from "../../act/tasks.js";
-import { CUP_FSM_MEMORY, MAX_REFLECT_TEXT, validateMemory, type FsmMemory, type PamMemory } from "../decision.js";
+import { CUP_FSM_MEMORY, MAX_REFLECT_TEXT, SEED_PATCHES, patchMemory, validateMemory, type FsmMemory, type PamMemory } from "../decision.js";
 import type { PamClient } from "../pam.js";
 import type { BrainLog } from "../../contract/events.js";
 import type { HistoryDb } from "./db.js";
@@ -42,7 +42,39 @@ const HABIT_KINDS = ["world", "device", "decision", "execution", "feedback"] as 
  *  seed 판본 올리기: 그날 쓸 판본이 seed인데 내용이 지금 코드의 seed(CUP_FSM_MEMORY)와 다르고(JSON 글 비교) DB에서 가장 새 판본도 seed면,
  *  지금 seed 판본(가장 새 판본이 이미 그것이면 그 판본, 아니면 새로 저장)을 그날에 다시 고정한다.
  *  가장 새 판본이 반성 판본(또는 합성 기록)이면 건드리지 않는다: seed는 seed 뒤에만 올리므로 새 seed가 반성 판본을 덮지 않는다. */
-export function memoryForDay(db: HistoryDb, day: string): DayMemory {
+export function memoryForDay(db: HistoryDb, day: string, o: { patch?: boolean } = {}): DayMemory {
+  const cur = dayMemory(db, day);
+  // 합성 기록을 만드는 동안(scripts/seed-history.ts)은 넣지 않는다: 합성 일주일은 습관을 배우기 전 기록이다
+  return o.patch === false ? cur : patchedForDay(db, day, cur);
+}
+
+/** seed 바뀜(SEED_PATCHES)을 가장 새 판본이 반성·합성 판본인 DB에 한 번 넣는다: 그 판본을 고친 새 판본(같은 출처·적용일)을 저장하고,
+ *  그날 쓰던 것이 그 가장 새 판본이면 그날을 새 판본으로 다시 고정한다. 가장 새 판본이 seed면(이미 지금 seed) 넣은 것으로 적기만 한다. */
+function patchedForDay(db: HistoryDb, day: string, cur: DayMemory): DayMemory {
+  let out = cur;
+  for (const patch of SEED_PATCHES) {
+    if (db.seedPatch(patch.id) !== null) continue;
+    const latest = db.memoryVersion(db.latestMemoryVersion() ?? out.version);
+    if (!latest || latest.kind !== "fsm" || latest.source === "seed") {
+      db.markSeedPatch(patch.id, latest?.version ?? out.version);
+      continue;
+    }
+    const memory = patchMemory(validateMemory(latest.memory as never, "fsm") as FsmMemory, patch);
+    if (!memory || JSON.stringify(memory) === JSON.stringify(latest.memory)) {
+      db.markSeedPatch(patch.id, latest.version);
+      continue;
+    }
+    const version = db.saveMemory({ kind: "fsm", memory, day: latest.day, appliesDay: latest.appliesDay, source: latest.source });
+    db.markSeedPatch(patch.id, version);
+    if (out.version === latest.version) {
+      db.pinMemory(day, version, true);
+      out = { memory, kind: "fsm", version };
+    }
+  }
+  return out;
+}
+
+function dayMemory(db: HistoryDb, day: string): DayMemory {
   const pinned = db.pinnedMemory(day);
   const m = pinned !== null ? db.memoryVersion(pinned) : db.memoryFor(day);
   const seed = JSON.stringify(CUP_FSM_MEMORY);
