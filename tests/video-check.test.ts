@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { HistoryRow } from "../src/contract/history.js";
 import type { WorldEye, WorldObject, WorldView } from "../src/contract/world.js";
-import { SEND_SAY, clickChoice, clock, costLine, judgeInput, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, stepVerdict, timeline, twinRows, usedServer, roomLabels, ownAssetFailures, videoClock, runTimeline, clipEnd, syncWarning, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
+import { SEND_SAY, clickChoice, clock, costLine, judgeInput, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, stepVerdict, timeline, twinRows, usedServer, roomLabels, ownAssetFailures, videoClock, runTimeline, clipEnd, syncWarning, mustStop, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
 import { createServer, type Server } from "node:http";
 import { listenRetry } from "../src/shared/net.js";
 import type { SceneJson } from "../src/contract/layout.js";
@@ -249,6 +249,22 @@ describe("video-check", () => {
     const md = markdown({ clip: "long.mp4", mode: "가짜 서버", ranAt: "2026-11-17 10:00:00", rows: [], notes: [], verdict: "판정: 명령 없음", cost: "VLM 0장", warnings: [warn] });
     expect(md.indexOf(warn)).toBeGreaterThan(0);
     expect(md.indexOf(warn)).toBeLessThan(md.indexOf("| 영상 시각 |"));
+  });
+
+  // Codex(2f54d81): 짝 넘침 뒤에도 마지막 짝에서 1:1로 이어 세어 --say를 보냈다(영상이 멈추면 예정보다 먼저 승인·완료 말이 나가고, 끝 코드로 되돌릴 수 없다)
+  it("짝 넘침을 읽으면 판정 루프를 그 자리에서 멈춘다: 루프는 읽은 바로 뒤 mustStop을 보고, 말·누름 보내기는 그 뒤에 있다", () => {
+    expect(mustStop(null)).toBeNull();
+    expect(mustStop({ syncFull: false })).toBeNull();
+    expect(mustStop({ syncFull: true })).toBe("sync_full");
+    const src = readFileSync(new URL("../scripts/video-check.ts", import.meta.url), "utf8");
+    const loop = src.slice(src.indexOf("      for (;;) {"));
+    const at = (s: string) => loop.indexOf(s);
+    expect(at("mustStop(seen.record)")).toBeGreaterThan(0);
+    expect(at("mustStop(seen.record)")).toBeLessThan(at("sendSay(cdp"));
+    expect(at("mustStop(seen.record)")).toBeLessThan(at("clickChoice(d)"));
+    // 넘침이면 시각표·판정을 만들지 않고 실패로 끝낸다: 기록을 받아 판정하기 전에 돌아간다
+    expect(at("판정: 짝 넘침으로 하지 않음")).toBeGreaterThan(0);
+    expect(at("판정: 짝 넘침으로 하지 않음")).toBeLessThan(at("/api/history?since="));
   });
 
   // Codex(f5ff586): --fake --step은 단계 영상으로 바뀐 뒤 record.ended가 계속 거짓이라, 끝까지 돌아도 영상 끝이 없었다

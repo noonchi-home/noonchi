@@ -97,7 +97,12 @@ type PlanData = { status?: string; steps?: { id: string; label: string; status: 
 
 /** 서버 기록·폰 명령·바꾼 단계 영상·트윈 줄(영상 시각으로 고친 것) → 영상 시각순 표. 같은 출처(기록 종류·명령·트윈)의 같은 글이 이어지면 한 줄로 묶는다.
  *  endMs가 있으면 「영상 끝」. */
-/** 짝 넘침(폰 페이지가 짝 상한에 닿아 더 쌓지 않음)이면 시각표 위에 적을 글. 그 뒤 서버 사건의 영상 시각이 틀릴 수 있어 판정을 실패로 한다. */
+/** 판정 루프를 바로 멈춰야 하는가: sync_full 짝 넘침(그 뒤 영상 시각을 믿을 수 없어 말·누름을 더 보내지 않는다). */
+export function mustStop(record: { syncFull?: boolean } | null): "sync_full" | null {
+  return record?.syncFull ? "sync_full" : null;
+}
+
+/** 짝 넘침(폰 페이지가 짝 상한에 닿아 더 쌓지 않음)이면 시각표 위에 적을 글. 그 뒤 서버 사건의 영상 시각이 틀릴 수 있어 시각표·판정을 만들지 않고 실패로 한다. */
 export function syncWarning(record: { syncFull?: boolean } | null): string | null {
   return record?.syncFull ? "짝 넘침: 폰 페이지의 [서버 시각, 영상 시각] 짝이 상한에 닿아 더 쌓지 않았어요. 그 뒤 서버 사건의 영상 시각이 틀릴 수 있어 판정을 실패로 해요." : null;
 }
@@ -764,6 +769,8 @@ async function main(): Promise<number> {
       const clipStart = () => clips.at(-1)?.video_ms ?? 0;
       for (;;) {
         seen = await read();
+        // 짝 넘침을 읽으면 그 자리에서 멈춘다: 마지막 짝에서 1:1로 이어 센 시각으로 말·누름을 보내면 영상이 멈춘 동안 예정보다 먼저 나갈 수 있다
+        if (mustStop(seen.record)) { unfinished.push("짝 넘침"); break; }
         commands = seen.record?.commands ?? commands;
         clips = seen.record?.clips ?? clips;
         duration = seen.duration ?? duration;
@@ -828,6 +835,19 @@ async function main(): Promise<number> {
       // 마지막으로 한 번 더 읽는다: 그 사이 남은 짝(멈칫하는 도중이면 멈춘 시간)까지 옮긴다
       seen = await read().catch(() => seen);
       clips = seen.record?.clips ?? clips;
+      // 짝 넘침: 시각표·판정을 만들지 않고 실패로 끝낸다(녹화 프레임은 남긴다)
+      const syncWarn = syncWarning(seen.record);
+      if (syncWarn) {
+        console.log(syncWarn);
+        const cost = costLine(await getJson<BrainNow>(`${api}/api/brain`));
+        mkdirSync(dirname(out), { recursive: true });
+        writeFileSync(out, markdown({
+          clip, mode: fakeMode ? "가짜 서버" : `실제 서버 ${api}`, ranAt: new Date().toLocaleString("sv-SE"), rows: [],
+          notes: [`끝까지 돌지 않음: ${unfinished.join(", ")}`], verdict: "판정: 짝 넘침으로 하지 않음", cost, warnings: [syncWarn],
+        }));
+        console.log(`[video-check] ${out}`);
+        return 1;
+      }
       recorded = await rec?.stop();
       const endMs = clipEnd(seen, clipStart(), seen.duration ?? duration);
       const t0 = seen.record?.t0 ?? firstT0;
@@ -882,9 +902,6 @@ async function main(): Promise<number> {
       }
 
       console.log("");
-      // 짝 넘침이면 시각표 위에 알리고 판정을 실패로 한다(그 뒤 서버 사건의 영상 시각이 틀릴 수 있다)
-      const syncWarn = syncWarning(seen.record);
-      if (syncWarn) console.log(syncWarn);
       for (const r of rows) console.log(`${clock(r.ms)} · ${r.kind} · ${rowText(r)}`);
       console.log("");
       for (const n of notes) console.log(n);
@@ -892,11 +909,11 @@ async function main(): Promise<number> {
       if (stepLine) console.log(stepLine);
       console.log(cost);
       mkdirSync(dirname(out), { recursive: true });
-      writeFileSync(out, markdown({ clip, mode: fakeMode ? "가짜 서버" : `실제 서버 ${api}`, ranAt: new Date().toLocaleString("sv-SE"), rows, notes, verdict: v.text, extra: stepLine ? [stepLine] : [], cost, image, warnings: syncWarn ? [syncWarn] : [] }));
+      writeFileSync(out, markdown({ clip, mode: fakeMode ? "가짜 서버" : `실제 서버 ${api}`, ranAt: new Date().toLocaleString("sv-SE"), rows, notes, verdict: v.text, extra: stepLine ? [stepLine] : [], cost, image }));
       console.log(`[video-check] ${out}`);
 
       if (pageErrors.length) console.log(`[video-check] 페이지 오류\n${pageErrors.slice(0, 20).join("\n")}`);
-      if (!fakeMode) return unfinished.length || syncWarn ? 1 : 0;
+      if (!fakeMode) return unfinished.length ? 1 : 0;
       // 스스로 시험: 사람 사라짐 → PAM 컵 치우기 → 사람 사라짐 뒤 첫 명령 → 네 단계 끝 → 계획 끝, 트윈 눈·컵 줄
       const gone = rows.find((r) => r.kind === "사람 사라짐");
       const firstPlan = commands[0]?.id;
@@ -911,7 +928,6 @@ async function main(): Promise<number> {
         !rows.some((r) => r.kind === "트윈" && r.text.startsWith("눈 ")) && "트윈 눈 줄",
         !rows.some((r) => r.kind === "트윈" && r.text.startsWith("컵 ")) && "트윈 컵 줄",
         pageErrors.length > 0 && "페이지 오류 없음",
-        syncWarn !== null && "짝 넘침 없음",
       ].filter(Boolean);
       if (missing.length) {
         console.log(`[video-check] 스스로 시험 틀림: ${missing.join(", ")} 없음`);
