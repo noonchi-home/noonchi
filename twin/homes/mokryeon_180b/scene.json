@@ -5258,6 +5258,95 @@
    }
   },
   {
+   "id": "tv_62442cb3",
+   "name": "거실·복도 TV",
+   "type": "tv",
+   "asset": "assets/appliances/tv.glb",
+   "category": "appliances",
+   "node_type": "device",
+   "mount": "surface",
+   "room": "living",
+   "plan": {
+    "position": [
+     11.4412,
+     9.9068
+    ],
+    "facing_deg": 180.0,
+    "elevation": 0.45,
+    "on": "tv_stand_2fdbdf48",
+    "surface": "top",
+    "wall": null
+   },
+   "position": [
+    11.4412,
+    0.45,
+    9.9068
+   ],
+   "rotation": [
+    0.0,
+    -1.570796,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {
+    "power": [
+     "off",
+     "on"
+    ]
+   },
+   "states": {
+    "power": {
+     "default": "off",
+     "effects": {
+      "off": [
+       {
+        "part": "screen",
+        "emissive": 0.0
+       },
+       {
+        "part": "standby",
+        "emissive": 1.0
+       },
+       {
+        "light": "glow",
+        "intensity": 0.0
+       }
+      ],
+      "on": [
+       {
+        "part": "screen",
+        "emissive": 1.0
+       },
+       {
+        "part": "standby",
+        "emissive": 0.0
+       },
+       {
+        "light": "glow",
+        "intensity": 1.0
+       }
+      ]
+     }
+    }
+   },
+   "state": {
+    "power": "off"
+   },
+   "provenance": {
+    "origin": "label",
+    "size": "model",
+    "facing": "inferred",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "tv"
+   }
+  },
+  {
    "id": "door_main",
    "name": "door_main (도면 기준)",
    "type": "mk_door_main_l",

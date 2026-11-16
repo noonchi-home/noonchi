@@ -9,33 +9,33 @@
    "name": "lm0",
    "file": "lm0.png",
    "webp": "lm0.webp",
-   "bytes": 846670,
-   "webp_bytes": 596242,
+   "bytes": 818624,
+   "webp_bytes": 575462,
    "size": 1024,
    "colorSpace": "srgb",
    "flipY": false,
-   "scale": 1.68848,
-   "intensity": 5.304516363733294,
+   "scale": 1.68066,
+   "intensity": 5.279949109182222,
    "rooms": [
     "living",
     "bed_ne",
     "bath_west"
    ],
-   "density": 35.13,
-   "uv_fill": 0.5398,
+   "density": 35.14,
+   "uv_fill": 0.54,
    "area": 458.67
   },
   {
    "name": "lm1",
    "file": "lm1.png",
    "webp": "lm1.webp",
-   "bytes": 996681,
-   "webp_bytes": 698868,
+   "bytes": 949038,
+   "webp_bytes": 665628,
    "size": 1024,
    "colorSpace": "srgb",
    "flipY": false,
-   "scale": 1.70996,
-   "intensity": 5.371997773932402,
+   "scale": 1.7002,
+   "intensity": 5.341335829633366,
    "rooms": [
     "balcony_front",
     "kitchen",
@@ -44,20 +44,20 @@
     "rails"
    ],
    "density": 30.16,
-   "uv_fill": 0.3981,
+   "uv_fill": 0.3982,
    "area": 458.91
   },
   {
    "name": "lm2",
    "file": "lm2.png",
    "webp": "lm2.webp",
-   "bytes": 947465,
-   "webp_bytes": 671170,
+   "bytes": 910675,
+   "webp_bytes": 642952,
    "size": 1024,
    "colorSpace": "srgb",
    "flipY": false,
-   "scale": 1.69922,
-   "intensity": 5.338257068832848,
+   "scale": 1.69727,
+   "intensity": 5.332130963158348,
    "rooms": [
     "bed_sw",
     "bed_se",
@@ -67,27 +67,27 @@
     "shared",
     "entrance"
    ],
-   "density": 32.99,
-   "uv_fill": 0.4715,
+   "density": 32.97,
+   "uv_fill": 0.4709,
    "area": 454.38
   },
   {
    "name": "lm3",
    "file": "lm3.png",
    "webp": "lm3.webp",
-   "bytes": 721421,
-   "webp_bytes": 509782,
+   "bytes": 688392,
+   "webp_bytes": 488170,
    "size": 1024,
    "colorSpace": "srgb",
    "flipY": false,
-   "scale": 1.67676,
-   "intensity": 5.267696897833222,
+   "scale": 1.66797,
+   "intensity": 5.240082298408167,
    "rooms": [
     "balcony_north",
     "bath_center"
    ],
-   "density": 72.06,
-   "uv_fill": 0.5911,
+   "density": 72.21,
+   "uv_fill": 0.5936,
    "area": 119.36
   }
  ],
@@ -691,6 +691,7 @@
   "dryer_7aa61816": [],
   "freezer_0c022ae2": [],
   "kimchi_fridge_bce0bf96": [],
+  "tv_62442cb3": [],
   "door_main": [
    "leaf",
    "open_light",
@@ -840,7 +841,7 @@
   "strength": 0.45,
   "colorSpace": "linear",
   "flipY": true,
-  "bytes": 29476
+  "bytes": 29472
  },
- "glb_bytes": 20487032
+ "glb_bytes": 20579308
 }

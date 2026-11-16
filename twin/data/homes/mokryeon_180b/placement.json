@@ -33,6 +33,7 @@
     {"id": "storage_cabinet_141e4df4", "type": "storage_cabinet_2", "label": "전실 수납장", "room": "vestibule", "position": [5.0826, 3.4175], "facing_deg": 180.0, "label_name": "수납장_전실"},
     {"id": "wardrobe_821557c9", "type": "wardrobe_5", "label": "침실 3 옷장", "room": "bed_ne", "position": [15.8625, 3.6764], "facing_deg": 180.0, "label_name": "옷장"},
     {"id": "storage_cabinet_6ca18ec6", "type": "storage_cabinet_3", "label": "침실 3 수납장 1", "room": "bed_ne", "position": [12.1969, 2.8614], "facing_deg": 0.0, "label_name": "수납장"},
-    {"id": "storage_cabinet_90380e6a", "type": "storage_cabinet_4", "label": "침실 3 수납장 2", "room": "bed_ne", "position": [12.1969, 3.6859], "facing_deg": 0.0, "label_name": "수납장"}
+    {"id": "storage_cabinet_90380e6a", "type": "storage_cabinet_4", "label": "침실 3 수납장 2", "room": "bed_ne", "position": [12.1969, 3.6859], "facing_deg": 0.0, "label_name": "수납장"},
+    {"id": "tv_62442cb3", "type": "tv", "label": "거실·복도 TV", "room": "living", "position": [11.4412, 9.9068], "facing_deg": 180.0, "label_name": "TV", "on": "tv_stand_2fdbdf48"}
   ]
 }
