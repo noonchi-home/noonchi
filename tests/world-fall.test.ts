@@ -142,39 +142,88 @@ describe("쓰러짐 의심: 관절 자세 변화", () => {
     expect(none.some((c) => c.text === FALL_LINE)).toBe(false);
   });
 
+  // 침대·소파 위로 빼려면 기하(몸 점이 그 가구 자리에 비침)에 더해 그 사람을 본 최근 VLM 자리 답이 그 가구 위여야 한다. 기하는 후보만 고른다
+  /** 그 사람(감지 d1)을 본 VLM 답 하나(자리 값). */
+  const vlmSays = (w: WorldState, t: number, state: string) =>
+    w.applyScene(`e${t}`, t, { scene: "living", observations: [{ object_id: "d1", state: state as never }], summary: "s" }, new Map([["d1", "person"]]));
+  /** 트윈 높이 h에 옆으로(z) 누운 몸(엉덩이 x, 어깨 z −0.5, 무릎 z +0.4)의 관절을 그 카메라로 비춘다. */
+  const lyingAt = (view: CameraView, x: number, h: number) => {
+    const size = { width: 480, height: 360 };
+    const px = (z: number) => pixelOf(view, [x, h, z], size)!;
+    const [sh, hip, knee] = [px(-0.5), px(0), px(0.4)];
+    const xs = [sh[0], hip[0], knee[0]], ys = [sh[1], hip[1], knee[1]];
+    return (): Pose => poseOf({
+      5: [sh[0], sh[1] - 6, 0.9], 6: [sh[0], sh[1] + 6, 0.9], 11: [hip[0], hip[1] - 6, 0.9], 12: [hip[0], hip[1] + 6, 0.9], 13: [knee[0], knee[1] - 6, 0.9], 14: [knee[0], knee[1] + 6, 0.9],
+    }, [Math.min(...xs) - 20, Math.min(...ys) - 25, Math.max(...xs) - Math.min(...xs) + 40, Math.max(...ys) - Math.min(...ys) + 50]);
+  };
+  const BED: RestSpot = { id: "bed_1", label: "침대", kind: "bed", center: [0.6, 0], size: [2.0, 1.0], facing_deg: 0, top: 0.5 };
+
   // Codex(0234ddd): 바닥인지 보지 않아 침대·소파에 빨리 누워 쉬어도 낙상 알림이 났다
-  it("확인된 침대·소파(트윈 가구) 위에 누운 것은 쓰러짐이 아니다: 엉덩이·어깨 광선이 그 가구의 누울 면(높이 top)과 가장자리 0.1m 안쪽에서 만나면 세지 않는다", () => {
-    // 엉덩이(240, 270) 광선은 바닥 (0.5, 0, 0), 높이 0.5에서 (0.33, 0.5, 0)을 지난다. 어깨(140, 265)는 높이 0.5에서 (0.36, 0.5, ±0.4) 근처다
-    const bed: RestSpot = { id: "bed_1", label: "침대", center: [0.6, 0], size: [2.0, 1.0], facing_deg: 0, top: 0.5 };
-    const w = ws({ rests: [bed] });
-    run(w, 0, 3000, standing);
-    const out = run(w, 3300, 9300, flat);
+  it("트윈 침대 자리에 비친 몸이고 VLM이 그 사람을 「침대 위」라고 답했을 때만 쓰러짐이 아니다. 답이 없거나 「바닥」이거나 침대가 다른 자리면 쓰러짐 의심이다", () => {
+    // 엉덩이(240, 270) 광선은 몸 점 높이(0.6~0.75)에서 x 0.25~0.3, 어깨(140, 265)는 그 높이에서 z ±0.3 근처다(침대 안쪽)
+    const said = ws({ rests: [BED] });
+    run(said, 0, 3000, standing);
+    run(said, 3300, 3300, flat);
+    vlmSays(said, 3300, "on_bed");
+    const out = run(said, 3600, 9300, flat);
     expect(out.some((c) => c.text === FALL_LINE)).toBe(false);
-    expect(posture(w, 9300)).not.toBe("fall_suspected");
-    // 침대가 다른 자리면 쓰러짐 의심이다
-    const far = ws({ rests: [{ ...bed, center: [3, 2] }] });
+    expect(posture(said, 9300)).not.toBe("fall_suspected");
+    for (const answer of [null, "on_floor"]) {
+      const w = ws({ rests: [BED] });
+      run(w, 0, 3000, standing);
+      run(w, 3300, 3300, flat);
+      if (answer) vlmSays(w, 3300, answer);
+      run(w, 3600, 6300, flat);
+      expect(posture(w, 6300), String(answer)).toBe("fall_suspected");
+    }
+    const far = ws({ rests: [{ ...BED, center: [3, 2] }] });
     run(far, 0, 3000, standing);
-    run(far, 3300, 6300, flat);
+    run(far, 3300, 3300, flat);
+    vlmSays(far, 3300, "on_bed");
+    run(far, 3600, 6300, flat);
     expect(posture(far, 6300)).toBe("fall_suspected");
   });
 
+  // Codex(ca916a8): 몸 점 높이 구간의 광선 겹침만으로 빼서, 소파 너머 바닥에 쓰러진 몸이 소파 위로 빠졌다
+  it("소파 너머 35cm 바닥에 쓰러진 몸(높이 0.2m)은 광선이 소파 자리에 겹쳐도 VLM이 「바닥」이라 답하면(또는 답이 없으면) 쓰러짐 의심이다", () => {
+    // 카메라 1.5m, 소파 x 0.3~1.15(좌판 0.45m). 몸은 x 1.5, 높이 0.2. 엉덩이 광선은 높이 0.7에서 x 0.92로 소파 자리 안이다
+    const sofa: RestSpot = { id: "sofa_1", label: "소파", kind: "sofa", center: [0.725, 0], size: [2.0, 0.85], facing_deg: 0, top: 0.45 };
+    const beyond = lyingAt(LOOK_VIEW, 1.5, 0.2);
+    for (const answer of ["on_floor", null]) {
+      const w = ws({ rests: [sofa] });
+      run(w, 0, 3000, standing);
+      run(w, 3300, 3300, beyond);
+      if (answer) vlmSays(w, 3300, answer);
+      run(w, 3600, 6300, beyond);
+      expect(posture(w, 6300), String(answer)).toBe("fall_suspected");
+    }
+  });
+
+  it("소파에 빨리 누워도 VLM이 그 사람을 「소파 위」라고 답하면 쓰러짐이 아니다", () => {
+    const sofa: RestSpot = { id: "sofa_1", label: "소파", kind: "sofa", center: [0.725, 0], size: [2.0, 0.85], facing_deg: 0, top: 0.45 };
+    const onSofa = lyingAt(LOOK_VIEW, 0.725, 0.65);
+    const w = ws({ rests: [sofa] });
+    run(w, 0, 3000, standing);
+    run(w, 3300, 3300, onSofa);
+    vlmSays(w, 3300, "on_sofa");
+    const out = run(w, 3600, 9300, onSofa);
+    expect(out.some((c) => c.text === FALL_LINE)).toBe(false);
+    expect(posture(w, 9300)).not.toBe("fall_suspected");
+  });
+
   // Codex(4f515e1): 누운 사람의 엉덩이·어깨는 매트리스보다 높은데 광선을 매트리스 높이까지 내려, 먼 침대에 누운 몸이 가구 밖으로 밀려 낙상 알림이 났다
-  it("먼 침대에 빨리 누워도(몸 점은 매트리스 위 0.2m) 침대 위다: 몸 점 높이(누울 면 + 0.1~0.25m)에서 광선을 본다", () => {
+  it("먼 침대에 빨리 누워도(몸 점은 매트리스 위 0.2m) VLM이 「침대 위」라 답하면 침대 위다: 몸 점 높이(누울 면 + 0.1~0.25m)에서 광선을 본다", () => {
     // 카메라 (0, 1.5, 0)에서 15° 숙여 +x를 본다. 침대 x 2.0~3.4(매트리스 0.57m), 몸은 x 2.7, 높이 0.77에 옆으로(z) 눕는다
     // 매트리스 높이까지 내리면 엉덩이 광선이 x 3.44(침대 밖)에 닿는다
     const pitch = (-15 * Math.PI) / 180;
     const view: CameraView = { ...LOOK_VIEW, orientation: mul([0, Math.sin(-Math.PI / 4), 0, Math.cos(-Math.PI / 4)], [Math.sin(pitch / 2), 0, 0, Math.cos(pitch / 2)]) as CameraView["orientation"] };
-    const size = { width: 480, height: 360 };
-    const px = (x: number, y: number, z: number) => pixelOf(view, [x, y, z], size)!;
-    const [sh, hip, knee] = [px(2.7, 0.77, -0.5), px(2.7, 0.77, 0), px(2.7, 0.77, 0.4)];
-    const xs = [sh[0], hip[0], knee[0]], ys = [sh[1], hip[1], knee[1]];
-    const onBed = (): Pose => poseOf({
-      5: [sh[0], sh[1] - 6, 0.9], 6: [sh[0], sh[1] + 6, 0.9], 11: [hip[0], hip[1] - 6, 0.9], 12: [hip[0], hip[1] + 6, 0.9], 13: [knee[0], knee[1] - 6, 0.9], 14: [knee[0], knee[1] + 6, 0.9],
-    }, [Math.min(...xs) - 20, Math.min(...ys) - 25, Math.max(...xs) - Math.min(...xs) + 40, Math.max(...ys) - Math.min(...ys) + 50]);
-    const bed: RestSpot = { id: "bed_1", label: "침대", center: [2.7, 0], size: [2.2, 1.4], facing_deg: 0, top: 0.57 };
+    const onBed = lyingAt(view, 2.7, 0.77);
+    const bed: RestSpot = { id: "bed_1", label: "침대", kind: "bed", center: [2.7, 0], size: [2.2, 1.4], facing_deg: 0, top: 0.57 };
     const w = ws({ rests: [bed] });
     run(w, 0, 3000, standing, [], view);
-    const out = run(w, 3300, 9300, onBed, [], view);
+    run(w, 3300, 3300, onBed, [], view);
+    vlmSays(w, 3300, "on_bed");
+    const out = run(w, 3600, 9300, onBed, [], view);
     expect(out.some((c) => c.text === FALL_LINE)).toBe(false);
     expect(posture(w, 9300)).not.toBe("fall_suspected");
     // 침대가 없으면 같은 자세는 쓰러짐 의심이다(이 자세가 바닥에 누운 자세로 읽힌다)
@@ -187,7 +236,7 @@ describe("쓰러짐 의심: 관절 자세 변화", () => {
   // Codex(9984116): 엉덩이 광선이 가구의 전체 높이~바닥 공간을 지나기만 해도 쉬는 가구 위로 단정해, 가구 바로 앞 바닥에 쓰러져도 놓쳤다
   it("침대 바로 앞 바닥에 쓰러지면(엉덩이 광선이 침대 매트리스 면이 아니라 그 아래 공간만 지남) 쓰러짐 의심이다", () => {
     // 침대는 x 0.4~1.4. 엉덩이 광선은 높이 0.55에서 x 0.32(침대 앞), 바닥에서 x 0.5(침대 아래)다
-    const bed: RestSpot = { id: "bed_1", label: "침대", center: [0.9, 0], size: [2.0, 1.0], facing_deg: 0, top: 0.55 };
+    const bed: RestSpot = { ...BED, center: [0.9, 0], top: 0.55 };
     const w = ws({ rests: [bed] });
     run(w, 0, 3000, standing);
     run(w, 3300, 6300, flat);
@@ -195,13 +244,14 @@ describe("쓰러짐 의심: 관절 자세 변화", () => {
   });
 
   // Codex(9984116): 쉬는 가구 판정이 이미 켜진 쓰러짐 의심도 풀었다
-  it("이미 쓰러짐 의심이면 쉬는 가구 판정으로 풀지 않는다(서 있음·앉아 있음만 푼다)", () => {
+  it("이미 쓰러짐 의심이면 쉬는 가구 판정(침대 자리 + VLM 「침대 위」)으로 풀지 않는다(서 있음·앉아 있음만 푼다)", () => {
     let rests: RestSpot[] = [];
     const w = ws({ rests: () => rests });
     run(w, 0, 3000, standing);
     run(w, 3300, 6300, flat);
     expect(posture(w, 6300)).toBe("fall_suspected");
-    rests = [{ id: "bed_1", label: "침대", center: [0.6, 0], size: [2.0, 1.0], facing_deg: 0, top: 0.5 }];
+    rests = [BED];
+    vlmSays(w, 6300, "on_bed");
     run(w, 6600, 7800, flat);
     expect(posture(w, 7800)).toBe("fall_suspected");
   });
@@ -210,9 +260,9 @@ describe("쓰러짐 의심: 관절 자세 변화", () => {
     const o = (id: string, type: string, footprint?: [number, number], surface?: number) => ({ id, name: id, type, plan: [1, 2] as [number, number], base: 0, facing_deg: 90, ...(footprint ? { footprint } : {}), ...(surface !== undefined ? { surface } : {}) });
     const rests = restsFromLayout([o("bed_1", "bed_queen", [1.6, 2.1], 0.57), o("sofa_1", "sofa", [2.2, 0.9]), o("bed_3", "bed_single", [1.3, 2.4]), o("lamp_1", "bedside_lamp", [0.3, 0.3]), o("chair_1", "armchair", [0.8, 0.8]), o("bed_2", "bed_single")]);
     expect(rests).toEqual([
-      { id: "bed_1", label: "bed_1", center: [1, 2], size: [1.6, 2.1], facing_deg: 90, top: 0.57 },
-      { id: "sofa_1", label: "sofa_1", center: [1, 2], size: [2.2, 0.9], facing_deg: 90, top: 0.45 },
-      { id: "bed_3", label: "bed_3", center: [1, 2], size: [1.3, 2.4], facing_deg: 90, top: 0.55 },
+      { id: "bed_1", label: "bed_1", kind: "bed", center: [1, 2], size: [1.6, 2.1], facing_deg: 90, top: 0.57 },
+      { id: "sofa_1", label: "sofa_1", kind: "sofa", center: [1, 2], size: [2.2, 0.9], facing_deg: 90, top: 0.45 },
+      { id: "bed_3", label: "bed_3", kind: "bed", center: [1, 2], size: [1.3, 2.4], facing_deg: 90, top: 0.55 },
     ]);
   });
 

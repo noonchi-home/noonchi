@@ -175,6 +175,9 @@ export const NOW_FACETS: Readonly<Record<Target, readonly Facet[]>> = {
 
 /** 관절 자세 → 사람 자세 값(src/world/pose.ts Posture). 다리 가림·모름은 사실을 바꾸지 않는다. */
 export const POSE_POSTURE = { standing: "standing", sitting: "sitting", lying: "lying" } as const satisfies Record<string, StateOf<"posture">>;
+/** 쉬는 가구 종류 → 그 위에 있는 사람의 자리 값. 쓰러짐 의심(src/world/fall.ts)은 몸이 그 가구 자리에 비치고 VLM이 이 자리라고 답했을 때만 그 가구 위로 뺀다. */
+export const REST_PLACES = { bed: "on_bed", sofa: "on_sofa" } as const satisfies Record<string, StateOf<"place">>;
+export type RestKind = keyof typeof REST_PLACES;
 /** 쓰러짐 의심(src/world/fall.ts): 서 있다가 갑자기 바닥에 누운 자세로 이어지면 사람 자세를 이 값으로 둔다. */
 export const POSE_FALL = "fall_suspected" as const satisfies StateOf<"posture">;
 /** 관절로 든 물건이 보이면 그 물건의 자리 값과 사람의 들고 있음 값. */

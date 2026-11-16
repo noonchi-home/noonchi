@@ -2,6 +2,7 @@
 // 광선: 투영 역행렬로 시점 방향을 구하고, AR 회전 → 맞춤 회전(theta, 수평)으로 트윈 [x, 높이, y]로 옮긴다.
 import { rotate2, rotate3 } from "../shared/geometry.js";
 import type { Quat, CameraView } from "../contract/observe.js";
+import { REST_PLACES, type RestKind } from "./vocab.js";
 
 type V3 = [number, number, number];
 /** 면 안의 싱크볼 사각형: 가운데 평면도 [x, y], 크기 [폭, 깊이](m), 깊이는 facing_deg 방향(배치 facing, 0 = +x, 90 = +y). */
@@ -15,8 +16,9 @@ export interface PlaneSurface { id: string; label: string; center: [number, numb
  *  폰이 싱크볼 점을 볼 때 그 점에서 0.08m다(조리대 가운데를 볼 때는 0.57m). */
 export const BASIN_SIZE: [number, number] = [0.74, 0.44];
 
-/** 쉬는 가구(침대·소파): 바닥 사각형(가운데·[폭, 깊이]·facing)과 누울 면(매트리스·좌판) 높이 top(바닥에서 m). 쓰러짐 의심(src/world/fall.ts)에서 그 위에 누운 것을 뺀다. */
-export interface RestSpot extends Basin { id: string; label: string; top: number }
+/** 쉬는 가구(침대·소파): 종류, 바닥 사각형(가운데·[폭, 깊이]·facing)과 누울 면(매트리스·좌판) 높이 top(바닥에서 m).
+ *  쓰러짐 의심(src/world/fall.ts)에서 그 위에 누운 것을 뺀다: 기하(onRest)는 후보만 고르고, 빼는 결정은 VLM 자리 답(REST_PLACES)으로 한다. */
+export interface RestSpot extends Basin { id: string; label: string; kind: RestKind; top: number }
 /** 쉬는 가구 위라고 볼 때 누울 면 가장자리에서 안쪽으로 둘 여유(m): 트윈 배치가 실제와 조금 어긋나도 가구 앞·옆 바닥을 가구 위로 보지 않는다. */
 export const REST_INSET_M = 0.1;
 /** 누운 사람의 엉덩이·어깨 관절 점이 누울 면보다 높은 범위(m). 관절 점은 몸 두께·너비의 가운데쯤이다: 똑바로 누우면 가슴·엉덩이 두께(성인 약 0.2~0.25m,
@@ -100,8 +102,9 @@ export function placePoint(view: CameraView, point: [number, number], size: { wi
   };
 }
 
-/** 몸 점들(엉덩이·어깨 픽셀)이 모두 쉬는 가구 위인가: 점마다 광선이 몸 점 높이(누울 면 top + REST_BODY_M)를 지나는 동안 가장자리에서 REST_INSET_M
- *  안쪽을 지나면 그 가구. 몸이 가구 위에 있어야 몸 점이 그 높이에 비친다(가구 앞·너머 바닥이면 그 높이의 광선이 가구 밖이다). 광선이 그 높이에 닿지 않으면 아니다. */
+/** 쉬는 가구 후보: 몸 점들(엉덩이·어깨 픽셀)마다 광선이 몸 점 높이(누울 면 top + REST_BODY_M)를 지나는 동안 가장자리에서 REST_INSET_M 안쪽을 지나면 그 가구.
+ *  카메라 한 대의 광선으로는 높이와 거리를 가르지 못한다(가구 너머 바닥의 몸도 이 높이에서 가구 위로 비칠 수 있다). 그래서 이것은 후보일 뿐이고,
+ *  빼는 결정은 그 사람의 VLM 자리 답(침대 위·소파 위)으로 한다(src/world/state.ts). 광선이 그 높이에 닿지 않으면 후보가 아니다. */
 export function onRest(view: CameraView, points: readonly [number, number][], size: { width: number; height: number }, rests: readonly RestSpot[]): RestSpot | null {
   if (points.length === 0) return null;
   const o = view.origin;
@@ -153,16 +156,20 @@ const NOT_SURFACE = /lamp/;
 
 /** 배치 물건 중 식탁·책상·조리대·싱크대 윗면. top은 물건 바닥 + 높이, radius는 윗면을 덮는 원(footprint 대각선의 절반, 없으면 0.4m).
  *  싱크볼 점(배치 anchors.basin, 평면도 점)이 있으면 그 점을 가운데로 BASIN_SIZE·배치 facing의 싱크볼을 붙인다. */
-/** 침대·소파 배치 종류(협탁·조명은 아니다). */
-const REST_TYPE = /^(bed|sofa)(_|$)/;
+/** 침대·소파 배치 종류(협탁·조명은 아니다): 배치 type 앞 낱말이 쉬는 가구 종류(REST_PLACES 키)다. */
+const REST_TYPE = new RegExp(`^(${Object.keys(REST_PLACES).join("|")})(_|$)`);
 /** 카탈로그에 누울 면이 없을 때 누울 면 높이(m): 침대는 이 저장소 카탈로그 매트리스 윗면(0.55~0.57), 소파는 흔한 좌판 높이(0.4~0.5)의 가운데. */
-const REST_TOP = { bed: 0.55, sofa: 0.45 } as const;
+const REST_TOP: Record<RestKind, number> = { bed: 0.55, sofa: 0.45 };
 /** 배치의 침대·소파 → 쉬는 가구. surface는 바닥에서 누울 면 높이(카탈로그 면), 없으면 REST_TOP. 바닥 크기를 모르면 뺀다. */
 export function restsFromLayout(objects: readonly { id: string; name: string; type: string; plan: [number, number]; base: number; footprint?: [number, number]; facing_deg?: number; surface?: number }[]): RestSpot[] {
-  return objects.filter((o) => REST_TYPE.test(o.type) && o.footprint).map((o) => ({
-    id: o.id, label: o.name, center: [o.plan[0], o.plan[1]], size: o.footprint!, facing_deg: o.facing_deg ?? 0,
-    top: Math.round((o.base + (o.surface ?? REST_TOP[o.type.startsWith("sofa") ? "sofa" : "bed"])) * 1000) / 1000,
-  }));
+  return objects.flatMap((o) => {
+    const kind = REST_TYPE.exec(o.type)?.[1] as RestKind | undefined;
+    if (!kind || !o.footprint) return [];
+    return [{
+      id: o.id, label: o.name, kind, center: [o.plan[0], o.plan[1]] as [number, number], size: o.footprint, facing_deg: o.facing_deg ?? 0,
+      top: Math.round((o.base + (o.surface ?? REST_TOP[kind])) * 1000) / 1000,
+    }];
+  });
 }
 
 export function surfacesFromLayout(objects: readonly { id: string; name: string; type: string; plan: [number, number]; base: number; height: number; footprint?: [number, number]; facing_deg?: number; basin?: [number, number] }[]): PlaneSurface[] {

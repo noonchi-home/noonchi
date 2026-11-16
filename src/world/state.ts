@@ -47,7 +47,7 @@ import { RemainingTracker, becameKey, deviceStateKeys, deviceStatus, deviceText,
 import { SightReadings, linkDevice, rulesOf, sightValues, type SightLink } from "./sight.js";
 import { cameraKindOf, kindEntry } from "../devices/kinds.js";
 import {
-  CLASSES, DEVICE_LONG, DEVICE_STATES, FACT_FRESH_MS, FRESH_MS, NEAR_M, NOW_FACETS, POSE_FALL, POSE_HOLD, POSE_POSTURE, STATES, VLM_ONLY, type ClassKey, type DeviceLongKey, type DeviceStateKey, type StateKey, type Target,
+  CLASSES, DEVICE_LONG, DEVICE_STATES, FACT_FRESH_MS, FRESH_MS, NEAR_M, NOW_FACETS, POSE_FALL, POSE_HOLD, POSE_POSTURE, REST_PLACES, STATES, VLM_ONLY, type ClassKey, type DeviceLongKey, type DeviceStateKey, type StateKey, type Target,
 } from "./vocab.js";
 
 type V3 = [number, number, number];
@@ -663,7 +663,12 @@ export class WorldState {
     }
     const lean = person.lean ?? null;
     let pose: FallPose | null = person.level === "low" ? null : fallPose(lean, person.box, size, this.fallCfg);
-    if (pose === "flat" && frame.view && onRest(frame.view, [lean!.hip, lean!.shoulder], size, this.o.rests?.() ?? [])) pose = "rest";
+    // 침대·소파 위로 빼려면 몸이 그 가구 자리에 비치고(기하는 후보만) 그 사람을 본 최근 VLM 자리 답이 그 가구 위여야 한다. 답이 없거나 바닥이면 그대로 센다
+    if (pose === "flat" && frame.view) {
+      const spot = onRest(frame.view, [lean!.hip, lean!.shoulder], size, this.o.rests?.() ?? []);
+      const said = this.person.facts.place;
+      if (spot && said && said.value === REST_PLACES[spot.kind] && at - said.at_ms <= FACT_FRESH_MS) pose = "rest";
+    }
     const fall = this.fall.see(at, pose);
     if (fall === "fall") {
       this.setPoseFact(this.person.facts, "posture", POSE_FALL, at);
