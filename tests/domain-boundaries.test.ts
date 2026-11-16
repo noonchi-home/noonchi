@@ -1,13 +1,12 @@
 // 도메인 경계 검사(scripts/lint-domains.ts, 도메인 나누기 설계 3.1~3.3). npm run lint와 같은 검사다.
-// 실제 트리는 예외 목록(scripts/domain-exceptions.json)과 꼭 맞아야 하고, 가짜 트리·0a392c5 실제 줄은 정한 오류 글로 실패해야 한다.
-import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+// 실제 트리는 위반이 없어야 하고(엄격 모드 하나뿐, 예외 목록 없음), 가짜 트리·0a392c5 실제 줄은 정한 오류 글로 실패해야 한다.
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { MOVES_DIR } from "../scripts/domain-ast.js";
 import {
-  CONFIG, DEPS, EXCEPTIONS_FILE, SCREEN_DOMAINS, SERVER_DOMAINS, chainFailures, checkRepo, checkTree, compareExceptions, readBase, readExceptions, tableCycles, unbasedKeys, type Config,
+  CONFIG, DEPS, SCREEN_DOMAINS, SERVER_DOMAINS, checkTree, lintMain, tableCycles, type Config,
 } from "../scripts/lint-domains.js";
 
 const ROOT = join(import.meta.dirname, "..");
@@ -295,127 +294,38 @@ describe("도메인 경계: 0a392c5의 실제 위반 줄", () => {
   }
 });
 
-describe("도메인 경계: 예외 목록(줄어들기만 함)", () => {
-  it("목록에 없는 새 위반과, 목록에 있는데 이제 안 생기는 줄(두 번 적은 줄 포함)을 모두 잡는다", () => {
-    const v = [{ key: "inner a -> b", message: "m1" }, { key: "inner c -> d", message: "m2" }];
-    expect(compareExceptions(v, ["inner a -> b", "inner c -> d"])).toEqual({ added: [], stale: [] });
-    expect(compareExceptions(v, ["inner a -> b"])).toEqual({ added: [v[1]], stale: [] });
-    expect(compareExceptions(v, ["inner a -> b", "inner c -> d", "inner e -> f", "inner a -> b"])).toEqual({ added: [], stale: ["inner e -> f", "inner a -> b"] });
-  });
+describe("도메인 경계: 엄격 모드(예외 목록 없음)", () => {
+  /** lintMain을 부르고 끝 코드와 낸 글을 모은다. */
+  const run = (root: string, argv: string[]) => {
+    const log: string[] = [];
+    const err: string[] = [];
+    const code = lintMain(root, argv, { log: (m) => log.push(m), error: (m) => err.push(m) });
+    return { code, log, err };
+  };
 
-  it("실제 트리: 새 위반도 지울 예외도 없고, 엄격 모드 실패 수 = 예외 목록 줄 수", () => {
-    const violations = checkTree(ROOT);
-    const exceptions = readExceptions(ROOT);
-    expect(compareExceptions(violations, exceptions)).toEqual({ added: [], stale: [] });
-    expect(violations.length).toBe(exceptions.length);
-    expect([...exceptions].sort()).toEqual(violations.map((v) => v.key));
+  it("실제 트리는 위반이 없다", () => {
+    expect(checkTree(ROOT).map((v) => v.key)).toEqual([]);
   }, 60_000);
 
-  it("새 위반을 예외 목록에 같이 넣어도 기준 목록에 없던 줄이면 실패한다", () => {
-    const v = [{ key: "inner a -> b", message: "m1" }, { key: "inner c -> d", message: "m2" }];
-    // 지금 위반과 지금 목록만 견주면 통과해 버린다
-    expect(compareExceptions(v, ["inner a -> b", "inner c -> d"])).toEqual({ added: [], stale: [] });
-    expect(unbasedKeys(["inner a -> b", "inner c -> d"], { keys: ["inner a -> b"], moves: [] })).toEqual(["inner c -> d"]);
+  it("검사는 끌 수 없다: 위반이 있으면 어떤 인자로 불러도, 예외 목록 파일을 다시 만들어 그 줄을 적어도 실패한다", () => {
+    const bad = fakeTree({ "src/server/a.ts": 'import { x } from "../act/b.js";\nexport const y = x;\n', "src/act/b.ts": "export const x = 1;\n" });
+    for (const argv of [[], ["--strict"], ["--no-strict"], ["--base", "55cef6de171cac3f0f2e6bae1fd3072f507b6752"], ["--json"]]) {
+      expect(run(bad, argv).code, argv.join(" ")).toBe(1);
+    }
+    expect(run(bad, []).err).toEqual(["`src/server/a.ts`이 `act` 안쪽 `src/act/b.ts`을 가져와요. `src/act/index.ts`로 가져오세요", "도메인 검사: 위반 1개"]);
+    mkdirSync(join(bad, "scripts"), { recursive: true });
+    writeFileSync(join(bad, "scripts", "domain-exceptions.json"), JSON.stringify(["inner src/server/a.ts -> src/act/b.ts"]));
+    expect(run(bad, []).code).toBe(1);
   });
 
-  it("기준 뒤 대응표로 옮긴 경로와, 같은 도메인 입구로 바꾼 import는 기준 줄로 본다", () => {
-    const base = {
-      keys: ["inner src/server/a.ts -> src/sync/b.ts", "direction src/world/a.ts -> src/act/b.ts", "cycle src/world/a.ts -> src/act/b.ts"],
-      moves: [{ "src/sync/b.ts": "src/phone/sync/b.ts" }],
-    };
-    expect(unbasedKeys(["inner src/server/a.ts -> src/phone/sync/b.ts", "direction src/world/a.ts -> src/act/index.ts", "cycle src/world/a.ts -> src/act/index.ts"], base)).toEqual([]);
-    expect(unbasedKeys(["direction src/world/a.ts -> src/agent/index.ts", "inner src/server/a.ts -> src/sync/b.ts"], base)).toEqual([
-      "direction src/world/a.ts -> src/agent/index.ts",
-      "inner src/server/a.ts -> src/sync/b.ts",
-    ]);
+  it("위반이 없으면 통과 글을 내고 0으로 끝난다(--json은 빈 목록)", () => {
+    const ok = fakeTree();
+    expect(run(ok, [])).toEqual({ code: 0, log: ["도메인 검사 통과"], err: [] });
+    expect(run(ok, ["--json"])).toEqual({ code: 0, log: ["[]"], err: [] });
   });
 
-  it("같은 도메인 입구로 바꾼 줄은 옛 줄이 없어졌을 때만 같은 줄로 본다(1:1)", () => {
-    const old = "direction src/world/a.ts -> src/act/b.ts";
-    const entry = "direction src/world/a.ts -> src/act/index.ts";
-    expect(unbasedKeys([old, entry], { keys: [old], moves: [] })).toEqual([entry]);
-    expect(unbasedKeys([entry], { keys: [old], moves: [] })).toEqual([]);
-    const two = { keys: [old, "direction src/world/a.ts -> src/act/c.ts"], moves: [] };
-    expect(unbasedKeys([entry], two)).toEqual([]);
-    expect(unbasedKeys([entry, "direction src/world/b.ts -> src/act/index.ts"], two)).toEqual(["direction src/world/b.ts -> src/act/index.ts"]);
+  it("예외 목록 파일과 그것을 읽던 코드가 없다", () => {
+    expect(existsSync(join(ROOT, "scripts", "domain-exceptions.json"))).toBe(false);
+    expect(readFileSync(join(ROOT, "scripts", "lint-domains.ts"), "utf8")).not.toMatch(/domain-exceptions|EXCEPTIONS_BASE|chainFailures/);
   });
-
-  it("기준은 git으로 읽는다: 기준 커밋의 예외 목록과, 그 뒤 새로 생긴 대응표의 files", () => {
-    const root = mkdtempSync(join(tmpdir(), "domains-base-"));
-    roots.push(root);
-    const git = (...args: string[]) => execFileSync("git", ["-C", root, "-c", "user.name=t", "-c", "user.email=t@example.com", ...args], { encoding: "utf8" }).trim();
-    const put = (p: string, text: string) => { mkdirSync(dirname(join(root, p)), { recursive: true }); writeFileSync(join(root, p), text); };
-    git("init", "-q");
-    put(EXCEPTIONS_FILE, JSON.stringify(["inner src/server/a.ts -> src/sync/b.ts"]));
-    put(`${MOVES_DIR}1.json`, '{ "files": {}, "decls": {}, "new": [], "text": [] }');
-    git("add", "-A");
-    git("commit", "-q", "-m", "base");
-    const base = git("rev-parse", "HEAD");
-    put(`${MOVES_DIR}2.json`, '{ "files": { "src/sync/b.ts": "src/phone/sync/b.ts" }, "decls": {}, "new": [], "text": [] }');
-    expect(readBase(root, base)).toEqual({ keys: ["inner src/server/a.ts -> src/sync/b.ts"], moves: [{ "src/sync/b.ts": "src/phone/sync/b.ts" }] });
-    expect(() => readBase(root, "0000000000000000000000000000000000000000")).toThrow(/기준 커밋/);
-  }, 30_000);
-
-  it("예외 목록은 커밋마다 바로 앞 커밋의 목록보다 늘지 않는다: 앞 단계에서 없앤 줄을 다시 넣으면 처음 목록에 있어도 실패한다", () => {
-    const root = mkdtempSync(join(tmpdir(), "domains-chain-"));
-    roots.push(root);
-    const git = (...args: string[]) => execFileSync("git", ["-C", root, "-c", "user.name=t", "-c", "user.email=t@example.com", ...args], { encoding: "utf8" }).trim();
-    const put = (p: string, text: string) => { mkdirSync(dirname(join(root, p)), { recursive: true }); writeFileSync(join(root, p), text); };
-    const step = (n: string, lines: string[], extra: Record<string, unknown> = {}, commit = true) => {
-      put(EXCEPTIONS_FILE, JSON.stringify(lines));
-      put(`${MOVES_DIR}${n}.json`, JSON.stringify({ files: {}, decls: {}, new: [], text: [], ...extra }));
-      if (!commit) return "";
-      git("add", "-A");
-      git("commit", "-q", "-m", `step ${n}`);
-      return git("rev-parse", "HEAD");
-    };
-    const K1 = "inner src/server/a.ts -> src/act/b.ts";
-    const K2 = "inner src/server/a.ts -> src/act/c.ts";
-    const K3 = "inner src/server/a.ts -> src/act/d.ts";
-    git("init", "-q");
-    const base = step("1", [K1, K2]);
-    step("2", [K1]);
-    step("3", [K1, K2], {}, false);
-    // 처음 목록과만 견주면 통과해 버린다
-    expect(unbasedKeys([K1, K2], readBase(root, base))).toEqual([]);
-    expect(chainFailures(root, base)).toEqual([`지금 트리: 앞(${git("rev-parse", "HEAD").slice(0, 7)})에 없던 예외 줄이에요: ${K2}`]);
-    // 새 줄은 그 단계 대응표 exceptions에 까닭·기한과 함께 적어야 한다
-    step("3", [K1, K3], { exceptions: { [K3]: { why: "merge로 들어온 새 import", until: "4" } } }, false);
-    expect(chainFailures(root, base)).toEqual([]);
-    step("3", [K1, K3], { exceptions: { [K3]: { why: "", until: "4" } } }, false);
-    expect(chainFailures(root, base)).toEqual([`${MOVES_DIR}3.json exceptions의 까닭이 비었어요: ${K3}`]);
-    step("3", [K1, K3], { exceptions: { [K3]: { why: "까닭", until: "2" } } }, false);
-    expect(chainFailures(root, base)).toEqual([`${MOVES_DIR}3.json exceptions의 기한(2)이 그 단계(3)보다 앞이에요: ${K3}`]);
-    step("3", [K1, K3], { exceptions: { [K3]: { why: "까닭", until: "3" } } });
-    step("4", [K1, K3], {}, false);
-    expect(chainFailures(root, base)).toEqual([`${MOVES_DIR}3.json exceptions의 기한(3)이 지났는데 줄이 남아 있어요: ${K3}`]);
-    step("4", [K1], {}, false);
-    expect(chainFailures(root, base)).toEqual([]);
-  }, 60_000);
-
-  it("새 줄을 허용한 대응표를 뒤에 지우면 처음 목록과 견줘 실패한다(바로 앞 목록에는 있어도)", () => {
-    const root = mkdtempSync(join(tmpdir(), "domains-first-"));
-    roots.push(root);
-    const git = (...args: string[]) => execFileSync("git", ["-C", root, "-c", "user.name=t", "-c", "user.email=t@example.com", ...args], { encoding: "utf8" }).trim();
-    const put = (p: string, text: string) => { mkdirSync(dirname(join(root, p)), { recursive: true }); writeFileSync(join(root, p), text); };
-    const K1 = "inner src/server/a.ts -> src/act/b.ts";
-    const K2 = "inner src/server/a.ts -> src/act/c.ts";
-    git("init", "-q");
-    put(EXCEPTIONS_FILE, JSON.stringify([K1]));
-    put(`${MOVES_DIR}1.json`, "{}");
-    git("add", "-A");
-    git("commit", "-q", "-m", "base");
-    const base = git("rev-parse", "HEAD");
-    put(EXCEPTIONS_FILE, JSON.stringify([K1, K2]));
-    put(`${MOVES_DIR}2.json`, JSON.stringify({ exceptions: { [K2]: { why: "merge로 들어온 새 import", until: "9" } } }));
-    git("add", "-A");
-    git("commit", "-q", "-m", "step 2");
-    expect(chainFailures(root, base)).toEqual([]);
-    rmSync(join(root, `${MOVES_DIR}2.json`));
-    expect(chainFailures(root, base)).toEqual([`처음 목록(${base.slice(0, 7)})에 없던 예외 줄이에요: ${K2}`]);
-  }, 60_000);
-
-  it("실제 트리: 예외 목록의 모든 줄이 기준 목록(scripts/lint-domains.ts EXCEPTIONS_BASE)에 있다", () => {
-    expect(checkRepo(ROOT)).toEqual({ added: [], stale: [], unbased: [] });
-  }, 60_000);
 });

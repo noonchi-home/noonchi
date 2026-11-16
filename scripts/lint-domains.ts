@@ -1,14 +1,11 @@
 // 도메인 경계 검사(도메인 나누기 설계 2.1·2.3·3.1). npm run lint와 tests/domain-boundaries.test.ts가 같은 검사를 돌린다.
-// src/**·ui/src/**의 import를 읽어 파일 → 도메인 표(DOMAINS·LEGACY·TABLES)와 의존 표(DEPS)로 본다.
-// 옮기는 동안은 지금 위반을 scripts/domain-exceptions.json에 적는다(3.2). 목록에 없는 새 위반도, 목록에 있는데 이제 안 생기는 줄도 실패다.
-// 예외 목록은 줄기만 한다(chainFailures): EXCEPTIONS_BASE(1단계) 뒤 첫 부모 커밋마다, 그리고 지금 트리에서, 바로 앞 목록과 처음 목록에 없던 줄은 실패다.
-//   새 줄은 그 커밋에 새로 생긴 대응표(moves/<단계>.json) exceptions에 까닭·기한과 함께 적은 것만 된다. 기한이 지났는데 남은 줄도 실패다.
-// 쓰는 법: tsx scripts/lint-domains.ts [--strict(예외 목록 없이)] [--json(위반 열쇠를 JSON으로)] [--base <커밋>(기준 바꿔 보기)]
-import { execFileSync } from "node:child_process";
+// src/**·ui/src/**의 import를 읽어 파일 → 도메인 표(DOMAINS·LEGACY·TABLES)와 의존 표(DEPS)로 본다. 화면 시험(ui/tests)은 node 모듈 길만 본다.
+// 엄격 모드 하나뿐이다: 위반이 하나라도 있으면 실패하고, 예외 목록이나 검사를 끄는 인자는 없다(9단계에 옮기는 동안 쓰던 예외 목록을 지웠다).
+// 쓰는 법: tsx scripts/lint-domains.ts [--json(위반 열쇠를 JSON으로, 위반이 있으면 끝 코드 1)]
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, posix, relative, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { MOVES_DIR, importsOf, isCode, nonLiteralLoads, parseCode, resolveSpec, walk, type AstNode, type ImportRef } from "./domain-ast.js";
+import { importsOf, isCode, nonLiteralLoads, parseCode, resolveSpec, walk, type AstNode, type ImportRef } from "./domain-ast.js";
 
 /** 서버 도메인(2.1). 폴더 src/<이름>/, 입구 src/<이름>/index.ts. */
 export const SERVER_DOMAINS = ["phone", "observe", "world", "brain", "act", "agent", "devices", "layout", "server"] as const;
@@ -436,169 +433,22 @@ function checkMetaUrl(file: string, ast: AstNode, exists: (p: string) => boolean
   });
 }
 
-/** 예외 목록과 견준다: 목록에 없는 위반(added)과 목록에 있는데 이제 안 생기는 줄(stale). */
-export function compareExceptions(violations: Violation[], exceptions: readonly string[]): { added: Violation[]; stale: string[] } {
-  const keys = new Set(violations.map((v) => v.key));
-  const listed = new Set(exceptions);
-  const stale = exceptions.filter((k, i) => !keys.has(k) || exceptions.indexOf(k) !== i);
-  return { added: violations.filter((v) => !listed.has(v.key)), stale };
-}
-
-export const EXCEPTIONS_FILE = "scripts/domain-exceptions.json";
-export function readExceptions(root: string): string[] {
-  const p = join(root, EXCEPTIONS_FILE);
-  return existsSync(p) ? (JSON.parse(readFileSync(p, "utf8")) as string[]) : [];
-}
-
-/** 예외 목록을 처음 적은 커밋(1단계). 이 커밋부터 첫 부모 커밋마다 목록이 늘지 않는지 본다. 시험·CI·로컬 모두 git으로 읽는다(CI는 checkout fetch-depth: 0). */
-export const EXCEPTIONS_BASE = "55cef6de171cac3f0f2e6bae1fd3072f507b6752";
-
-/** 기준 목록과, 기준 뒤에 새로 생긴 대응표의 files(단계 차례). */
-export interface BaseList { keys: string[]; moves: Record<string, string>[] }
-
-/** 기준 커밋의 예외 목록을 git으로 읽고, 지금 트리에 있는데 기준 커밋에 없던 대응표(moves/*.json)의 files를 단계 차례로 모은다. 못 읽으면 실패. */
-export function readBase(root: string, ref: string = EXCEPTIONS_BASE): BaseList {
-  const git = (...args: string[]) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 1 << 26 });
-  let keys: string[];
-  let baseMoves: Set<string>;
-  try {
-    keys = JSON.parse(git("show", `${ref}:${EXCEPTIONS_FILE}`)) as string[];
-    baseMoves = new Set(git("ls-tree", "-r", "--name-only", ref, "--", MOVES_DIR).split("\n").filter(Boolean));
-  } catch (e) {
-    throw new Error(`기준 커밋 ${ref}의 ${EXCEPTIONS_FILE}를 git으로 못 읽어요. 저장소 기록 전체가 있어야 해요(CI는 actions/checkout fetch-depth: 0): ${(e as Error).message.split("\n")[0]}`);
+/** npm run lint 본체: 위반이 하나라도 있으면 1(엄격 모드 하나뿐, 끄는 인자 없음). --json은 위반 열쇠를 JSON으로 낸다(위반이 있으면 1). */
+export function lintMain(root: string, argv: readonly string[], io: { log(m: string): void; error(m: string): void } = { log: (m) => console.log(m), error: (m) => console.error(m) }): number {
+  const violations = checkTree(root);
+  if (argv.includes("--json")) {
+    io.log(JSON.stringify(violations.map((v) => v.key), null, 2));
+    return violations.length ? 1 : 0;
   }
-  const dir = join(root, MOVES_DIR);
-  const names = existsSync(dir) ? readdirSync(dir).filter((n) => n.endsWith(".json")).sort((a, b) => a.localeCompare(b, "en", { numeric: true })) : [];
-  const moves = names
-    .filter((n) => !baseMoves.has(`${MOVES_DIR}${n}`))
-    .map((n) => (JSON.parse(readFileSync(join(dir, n), "utf8")) as { files?: Record<string, string> }).files ?? {});
-  return { keys, moves };
-}
-
-/** 예외 줄 가운데 기준 목록으로 설명되지 않는 것. 기준 줄의 경로는 대응표로 옮긴다. 같은 도메인 입구로 바꾼 대상(…/index.ts)은 옛 줄이 없어졌을 때만 1:1로 같은 줄로 본다. extra는 대응표 exceptions로 허용한 줄. */
-export function unbasedKeys(exceptions: readonly string[], base: BaseList, config: Config = CONFIG, extra: Iterable<string> = []): string[] {
-  const mapPath = (p: string) => base.moves.reduce((acc, m) => m[acc] ?? acc, p);
-  const mapKey = (k: string) => k.split(" ").map((t) => (/^(src|ui\/src)\//.test(t) ? mapPath(t) : t)).join(" ");
-  const allowed = new Set([...base.keys.map(mapKey), ...extra]);
-  // 입구로 바꾼 줄은 짝이 될 옛 줄(같은 검사·같은 파일, 대상이 그 도메인)이 지금 목록에서 없어졌을 때만, 옛 줄 하나에 새 줄 하나로 본다
-  const present = new Set(exceptions);
-  const gone = new Map<string, string[]>();
-  for (const k of base.keys.map(mapKey)) {
-    if (present.has(k)) continue;
-    const m = /^(\S+) (\S+) -> (\S+)$/.exec(k);
-    if (m) (gone.get(`${m[1]} ${m[2]}`) ?? gone.set(`${m[1]} ${m[2]}`, []).get(`${m[1]} ${m[2]}`)!).push(m[3]!);
+  for (const v of violations) io.error(v.message);
+  if (violations.length) {
+    io.error(`도메인 검사: 위반 ${violations.length}개`);
+    return 1;
   }
-  const entryDomain = (p: string) => Object.keys(config.deps).find((d) => entriesOf(d).includes(p));
-  return exceptions.filter((k) => {
-    if (allowed.has(k)) return false;
-    const m = /^(\S+) (\S+) -> (\S+)$/.exec(k);
-    const d = m ? entryDomain(m[3]!) : undefined;
-    if (!m || !d) return true;
-    const list = gone.get(`${m[1]} ${m[2]}`) ?? [];
-    const i = list.findIndex((t) => placeOf(t, config).domain === d);
-    if (i < 0) return true;
-    list.splice(i, 1);
-    return false;
-  });
-}
-
-interface MovesExtra { files?: Record<string, string>; exceptions?: Record<string, { why?: string; until?: string }> }
-interface ListState { label: string; lines: string[]; moves: Map<string, MovesExtra> }
-const stepOf = (path: string) => posix.basename(path, ".json");
-const cmpStep = (a: string, b: string) => a.localeCompare(b, "en", { numeric: true });
-
-/** 예외 목록이 줄기만 하는지: 처음 목록 커밋(base) 뒤 첫 부모 커밋마다와 지금 트리에서, 바로 앞 목록에 없던 줄과 처음 목록에 없던 줄은 실패.
- *  그 사이 새로 생긴 대응표의 files로 옛 줄의 경로를 옮기고, 그 대응표 exceptions에 적은 줄만 새로 된다. exceptions는 까닭이 있어야 하고
- *  기한(단계)이 그 대응표 단계보다 앞이면 안 되며, 지금 가장 늦은 단계가 기한을 지났는데 줄이 남아 있으면 실패. */
-export function chainFailures(root: string, base: string = EXCEPTIONS_BASE, config: Config = CONFIG): string[] {
-  const git = (...args: string[]) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 1 << 26 });
-  let commits: string[];
-  try {
-    git("cat-file", "-e", `${base}^{commit}`);
-    commits = git("rev-list", "--first-parent", "--reverse", `${base}..HEAD`).split("\n").filter(Boolean);
-  } catch (e) {
-    throw new Error(`예외 목록 기준 커밋 ${base}를 git으로 못 읽어요. 저장소 기록 전체가 있어야 해요(CI는 actions/checkout fetch-depth: 0): ${(e as Error).message.split("\n")[0]}`);
-  }
-  const states: ListState[] = [];
-  const atCommit = (ref: string, prev?: ListState): ListState => {
-    let lines: string[] = [];
-    try { lines = JSON.parse(git("show", `${ref}:${EXCEPTIONS_FILE}`)) as string[]; } catch { if (ref === base) throw new Error(`기준 커밋 ${base}에 ${EXCEPTIONS_FILE}가 없어요`); }
-    const moves = new Map<string, MovesExtra>();
-    for (const p of git("ls-tree", "-r", "--name-only", ref, "--", MOVES_DIR).split("\n").filter((x) => x.endsWith(".json"))) {
-      moves.set(p, prev?.moves.get(p) ?? (JSON.parse(git("show", `${ref}:${p}`)) as MovesExtra));
-    }
-    return { label: ref.slice(0, 7), lines, moves };
-  };
-  states.push(atCommit(base));
-  for (const c of commits) states.push(atCommit(c, states[states.length - 1]));
-  const dir = join(root, MOVES_DIR);
-  const wtMoves = new Map<string, MovesExtra>();
-  for (const n of existsSync(dir) ? readdirSync(dir).filter((x) => x.endsWith(".json")) : []) {
-    wtMoves.set(`${MOVES_DIR}${n}`, JSON.parse(readFileSync(join(dir, n), "utf8")) as MovesExtra);
-  }
-  const wt: ListState = { label: "지금 트리", lines: readExceptions(root), moves: wtMoves };
-  states.push(wt);
-
-  const out: string[] = [];
-  const added = (p: ListState, c: ListState) => [...c.moves.keys()].filter((k) => !p.moves.has(k)).sort((a, b) => cmpStep(stepOf(a), stepOf(b)));
-  const between = (p: ListState, c: ListState) => {
-    const files = added(p, c).map((k) => c.moves.get(k)!);
-    return { moves: files.map((m) => m.files ?? {}), extra: files.flatMap((m) => Object.keys(m.exceptions ?? {})) };
-  };
-  for (let i = 1; i < states.length; i++) {
-    const p = states[i - 1]!;
-    const c = states[i]!;
-    const { moves, extra } = between(p, c);
-    for (const k of unbasedKeys(c.lines, { keys: p.lines, moves }, config, extra)) out.push(`${c.label}: 앞(${p.label})에 없던 예외 줄이에요: ${k}`);
-  }
-  const first = states[0]!;
-  const all = between(first, wt);
-  for (const k of unbasedKeys(wt.lines, { keys: first.lines, moves: all.moves }, config, all.extra)) out.push(`처음 목록(${first.label})에 없던 예외 줄이에요: ${k}`);
-  const newest = [...wt.moves.keys()].map(stepOf).sort(cmpStep).at(-1) ?? "";
-  for (const [path, m] of [...wt.moves].sort(([a], [b]) => cmpStep(stepOf(a), stepOf(b)))) {
-    const step = stepOf(path);
-    for (const [k, e] of Object.entries(m.exceptions ?? {})) {
-      const until = String(e?.until ?? "");
-      if (!String(e?.why ?? "").trim()) out.push(`${path} exceptions의 까닭이 비었어요: ${k}`);
-      else if (!/^\d+[a-z]?$/.test(until) || cmpStep(until, step) < 0) out.push(`${path} exceptions의 기한(${until})이 그 단계(${step})보다 앞이에요: ${k}`);
-      else if (cmpStep(newest, until) > 0 && wt.lines.includes(k)) out.push(`${path} exceptions의 기한(${until})이 지났는데 줄이 남아 있어요: ${k}`);
-    }
-  }
-  return out;
-}
-
-/** 트리 전체 검사: 새 위반(added), 지울 예외(stale), 목록이 늘어난 줄과 대응표 exceptions 문제(unbased). */
-export function checkRepo(root: string, base: string = EXCEPTIONS_BASE, config: Config = CONFIG): { added: Violation[]; stale: string[]; unbased: string[] } {
-  const exceptions = readExceptions(root);
-  const { added, stale } = compareExceptions(checkTree(root, config), exceptions);
-  return { added, stale, unbased: chainFailures(root, base, config) };
+  io.log("도메인 검사 통과");
+  return 0;
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
-  const root = fileURLToPath(new URL("..", import.meta.url));
-  const strict = process.argv.includes("--strict");
-  const violations = checkTree(root);
-  if (process.argv.includes("--json")) {
-    console.log(JSON.stringify(violations.map((v) => v.key), null, 2));
-    process.exit(0);
-  }
-  const baseArg = process.argv.indexOf("--base");
-  let unbased: string[] = [];
-  const { added, stale } = strict ? { added: violations, stale: [] } : compareExceptions(violations, readExceptions(root));
-  if (!strict) {
-    try {
-      unbased = chainFailures(root, baseArg > 0 ? process.argv[baseArg + 1] : EXCEPTIONS_BASE);
-    } catch (e) {
-      console.error((e as Error).message);
-      process.exit(1);
-    }
-  }
-  for (const v of added) console.error(v.message);
-  for (const k of stale) console.error(`예외 목록 줄이 이제 생기지 않아요(또는 두 번 적혔어요): ${k}. ${EXCEPTIONS_FILE}에서 지우세요`);
-  for (const m of unbased) console.error(`${m}. 위반을 고치세요(꼭 남겨야 하면 그 단계 대응표 exceptions에 까닭·기한과 함께 적고 검토받기)`);
-  if (added.length || stale.length || unbased.length) {
-    console.error(`도메인 검사: 새 위반 ${added.length}개, 지울 예외 ${stale.length}개, 목록이 늘거나 대응표 exceptions 문제 ${unbased.length}개`);
-    process.exit(1);
-  }
-  console.log(`도메인 검사 통과(${strict ? "엄격 모드" : `예외 ${violations.length}개`})`);
+  process.exit(lintMain(fileURLToPath(new URL("..", import.meta.url)), process.argv.slice(2)));
 }
