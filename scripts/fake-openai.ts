@@ -24,7 +24,7 @@ export function defaultReply(body: any): string {
     const dets: { id: string }[] = m ? JSON.parse(m[1]!) : [];
     return JSON.stringify({ scene: "unknown", observations: dets.map((d) => ({ object_id: d.id, state: "contents_unknown" })), summary: "가짜 장면" });
   }
-  if (body?.response_format?.json_schema?.name === "thought_lines") return JSON.stringify({ seen: "가짜로 본 것을 적었어요", why: "가짜 까닭대로 할게요" });
+  if (body?.response_format?.json_schema?.name === "thought_lines") return JSON.stringify({ seen: "가짜 장면을 봤어요", why: "가짜 습관이라 가짜 일을 할게요" });
   if (system.includes("procedural memory")) {
     const m = /Current memory:\n([\s\S]*?)\n\nSummary:/.exec(user);
     if (m) return JSON.stringify(JSON.parse(m[1]!));

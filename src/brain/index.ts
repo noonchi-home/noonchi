@@ -8,4 +8,4 @@ export { type ReflectResult, memoryForDay, loadReflectAt, runReflection, schedul
 export { datasetWriter, loadRetention, sweep } from "./history/retention.js";
 export { daySummary, isDay } from "./history/summary.js";
 export { PamClient } from "./pam.js";
-export { type ThoughtFeed, ThoughtWriter, thoughtFeed } from "./thought.js";
+export { type ThoughtFeed, ThoughtWriter, lastStoredThought, storeThought, thoughtFeed } from "./thought.js";

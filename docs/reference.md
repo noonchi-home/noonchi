@@ -207,7 +207,7 @@ twin-home 서버: http://127.0.0.1:8200  (허브 matter/network, 에이전트 op
 | `POST /api/matter/commissioning-window` | `{ timeoutSeconds? }`(180~900, 기본 900) | `{ ok, timeoutSeconds, pairing, reply }`. 다른 Matter 컨트롤러용 페어링 창을 연다. local 전송이면 400 |
 | `GET /api/brain` | | 관찰 흐름 상태 `{ ok, frames, duplicates, detector, vlm_model, detected, detect_ms, queued, yolo_missing: { cap, error }, vlm: { sent, missing: { cap, timeout, format, error }, inflight, costUsd }, time_source, time_err_ms, dataset, closer: { looks, failed, costUsd, model } }`(`dataset`: `DATASET_COLLECT=1`이면 `{ saved, failed }`, 아니면 null. `closer`: 가까이 보기 한 수·못 한 수·VLM 비용(가격표에 없는 모델이 답했으면 null)·VLM 모델 이름). `BRAIN=1`이 아니면 404 |
 | `GET /api/world` | | `{ ok, world }` 지금 World State(`src/contract/world.ts` `WorldView`). `BRAIN=1`이 아니면 404 |
-| `GET /api/history?since=&until=&kinds=&limit=` | | `{ ok, rows: HistoryRow[] }` 한 시간축 기록(시각 순). `since`가 없으면 최근 `limit`줄, 있으면 그 시각부터 `limit`줄(기본 500, 최대 5000). `kinds`는 쉼표 목록. 모르는 종류·숫자가 아닌 시각·범위 밖 limit은 400 |
+| `GET /api/history?since=&until=&kinds=&limit=` | | `{ ok, rows: HistoryRow[] }` 한 시간축 기록(시각 순). `since`가 없으면 최근 `limit`줄, 있으면 그 시각부터 `limit`줄(기본 500, 최대 5000). `kinds`는 쉼표 목록(생각 두 줄은 `thought`). 모르는 종류·숫자가 아닌 시각·범위 밖 limit은 400 |
 | `GET /api/history/day/{YYYY-MM-DD}` | | `{ ok, day, observation_text, action_summary, counts, dropped }` 하루 요약(아래 "기록과 반성"). 없는 날짜 400 |
 | `POST /api/reflection/run` | `{ day? }`(기본 오늘) | 그날을 바로 반성한다. `{ ok, day, version, appliesDay }`. 없는 날짜 400, 그날 기록이 없거나 이미 반성 중이면 409, PAM 실패 502 |
 | `GET /api/phone/start-pose` | | `{ ok, start: { position, yaw_deg, label, facing_label } \| null }` 폰 위치 맞추기 시작 자리(아래 "위치 맞추기"). 집 scene.json이 없으면 404 |
@@ -216,7 +216,7 @@ twin-home 서버: http://127.0.0.1:8200  (허브 matter/network, 에이전트 op
 | `POST /api/phone/start-pose/clear` | `{ home? }` | `{ ok, start: null }` |
 | `GET /api/phone/sync` | | `{ ok, sync }` 위치 맞춤 모듈 상태(`rigid`, `floorY`, `aligned`, `source`, `started`, `anchors`, `anchorIds`(짝지은 트윈 물건), `wallPoints`, `residualM`, `observed`). 폰 서버가 없으면 `sync: null` |
 | `GET /api/decisions?limit=` | | `{ ok, decisions: [{ id, at_ms, day, text, text_sent, seq, status, prediction, memory_version, world }] }` 최근 판단과 그때 보낸 관찰 텍스트(기본 20, 최대 500) |
-| `GET /events` (WebSocket) | | 붙으면 `{type:"hello", home}`, 모든 기기의 `{type:"state", state}`, 지금 배치 보정의 `{type:"layout"}`들, `{type:"plan"}`, (`BRAIN=1`이면) `{type:"world"}`와 마지막 판단·상자 있는 마지막 observe의 `{type:"brain", event}` 하나씩, 마지막 판단의 생각 두 줄 `{type:"thought", id, seen, why, replay:true}`(있을 때). 맨 끝은 늘 말풍선 카드 글 `{type:"say", text}`(글이 없으면 `null`). 이후 바뀔 때마다 `{type:"state"}`, `{type:"agent", event:"action"\|"reply"\|"pending"\|"confirmed"\|"cancelled", ...}`, `{type:"layout"}`, `{type:"focus"}`, `{type:"eye"}`, `{type:"photo"}`, `{type:"brain", event}`(관찰·World State 변화·판단·실행·연결·판단 시점·반성 기록, `src/contract/events.ts` `BrainLog`), `{type:"thought", id, seen, why}`(행동을 고른 판단 id의 생각 두 줄, 판단 뒤에 따로 오고 기록 DB에는 넣지 않는다), `{type:"world"}`, `{type:"say"}`(글이 바뀔 때만, `src/act/say.ts`) (모양은 [plan.md](plan.md)) |
+| `GET /events` (WebSocket) | | 붙으면 `{type:"hello", home}`, 모든 기기의 `{type:"state", state}`, 지금 배치 보정의 `{type:"layout"}`들, `{type:"plan"}`, (`BRAIN=1`이면) `{type:"world"}`와 마지막 판단·상자 있는 마지막 observe의 `{type:"brain", event}` 하나씩, 마지막 판단의 생각 두 줄 `{type:"thought", id, action, seen, why, replay:true}`(있을 때). 맨 끝은 늘 말풍선 카드 글 `{type:"say", text}`(글이 없으면 `null`). 이후 바뀔 때마다 `{type:"state"}`, `{type:"agent", event:"action"\|"reply"\|"pending"\|"confirmed"\|"cancelled", ...}`, `{type:"layout"}`, `{type:"focus"}`, `{type:"eye"}`, `{type:"photo"}`, `{type:"brain", event}`(관찰·World State 변화·판단·실행·연결·판단 시점·반성 기록, `src/contract/events.ts` `BrainLog`), `{type:"thought", id, action, seen, why}`(행동을 고른 판단 id의 생각 두 줄. 판단 뒤에 따로 오고, 같은 행동이 이어지면 같은 두 줄이 새 판단 id로 다시 온다), `{type:"world"}`, `{type:"say"}`(글이 바뀔 때만, `src/act/say.ts`) (모양은 [plan.md](plan.md)) |
 
 - `command`는 `docs/plan.md`의 `Command` 객체다. 줄임으로 문자열(`"on"`, `"off"`, `"lock"` …)도 받는다.
 - 정적 파일: `/`·`/setup/`은 React 빌드 `ui/dist/`다. `/twin/`은 고른 집의 twin-studio 산출물 폴더(아파트는 `apartment/`, 원룸 예시는 `homes/oneroom/`), `/twin/viewer/`는 모든 집이 함께 쓰는 뷰어(`homes.json` viewer), `/twin/lib/`은 모든 종류의 GLB(`homes.json` library)다. 경로 탈출(`..`)은 막는다.
@@ -228,7 +228,13 @@ React+TypeScript 화면(`ui/`, Vite 다중 페이지)이다. 서버는 빌드 �
 
 - **대시보드** (`/`): 3D 트윈이 화면 전체(둘레 여백 안)를 쓰고, 그 위에 오른쪽 위 폰 카메라 미니맵, 오른쪽 아래 마스코트(누르면 설정 창), 마스코트 위 생각 말풍선, 트윈 아래쪽 말풍선 카드를 얹는다(자리는 `ui/src/dashboard/layout.ts`). 입력창이 없다. 요청·승인은 폰에서 음성으로 한다. 트윈 위에는 밝힌 방, 목적지, 확인한 것 점, 방 이름표, 확인한 기기·물건 말풍선만 그리고 동선(계획 경로 길 선)은 그리지 않는다. 카메라는 계획 경로·목적지·클로이드가 보이게 맞춘다. 부품은 모두 21st.dev 받은 코드다.
   - 폰 카메라 미니맵: 가로 16:9 칸, 너비는 화면 너비의 340/1280(1920에서 510×286.9, 1440에서 382.5×215.2)이고 높이는 영상 비율을 따른다. 세로 영상은 트윈 높이의 절반과 생각 말풍선 위 사이(gap)까지 중 작은 쪽에서 멈춘다.
-  - 생각 말풍선: 크기 420×156 고정. 마지막 유효 판단이 행동을 골랐을 때만 보인다. 서버가 그 판단의 관찰·생각을 작은 모델(`THOUGHT_MODEL`)로 고친 두 줄이 오면 이름표 칩 「본 것」(무엇을 봤는지)·「그래서」(왜 그 행동인지) 옆에 줄마다 두 줄까지(넘으면 말줄임) 보이고, 두 줄이 오기 전이나 못 만들면(8초 넘음·실패) 원래 생각을 네 줄까지 보인다. 그 아래 칩 둘은 「상태 · …」(습관이면 「습관 · …」)과 「눈치·코치 · 행동」이다. 판단·계획은 두 줄을 기다리지 않고, 관찰·생각·행동이 모두 같으면 모델을 다시 부르지 않는다. 기록 DB 판단 줄에는 원래 생각이 남는다.
+  - 생각 말풍선: 크기 420×156 고정. 마지막 유효 판단이 행동을 골랐을 때만 보인다. 이름표 칩 「본 것」(무엇을 봤는지)·「그래서」(결정적인 근거 하나와 그래서 할 일) 옆에 줄마다 두 줄까지(넘으면 말줄임) 보인다. PAM의 원래 생각은 보이지 않는다.
+    - 두 줄은 서버가 그 판단의 관찰·생각·행동을 작은 모델(`THOUGHT_MODEL`)로 고친 것이다. 판단·계획은 두 줄을 기다리지 않는다.
+    - 같은 행동이 이어지는 동안(PAM은 계획이 도는 동안에도 같은 행동을 다시 고른다) 모델을 다시 부르지 않고 처음 두 줄을 새 판단 id로 다시 보낸다. 왜 이 행동을 시작했는지가 실행 내내 남는다. 행동이 바뀌거나 대기 판단이 오면 새로 만든다.
+    - 그 판단의 두 줄이 아직 없으면 같은 행동의 앞 두 줄을 그대로 둔다. 그것도 없으면(처음 1~2초, 8초 넘음·실패) 「본 것」은 상태 이름표(없으면 「지금 장면을 살피고 있어요」), 「그래서」는 「생각을 정리하고 있어요」다.
+    - 반성에서 온 생각은 「본 것」이 그 규칙의 상황, 「그래서」가 「새로 배운 습관이에요」·「전에 배운 습관이에요」다.
+    - 두 줄은 처음 만들 때 기록 DB에 `thought` 줄(판단 id·행동·두 줄)로 한 번 남는다. 서버를 다시 띄우면 10분 안의 마지막 두 줄을 같은 행동에 이어 쓴다. 기록 DB 판단 줄에는 원래 생각이 남는다.
+  - 생각 말풍선 아래 칩 둘은 「상태 · …」(습관이면 「습관 · …」)과 「눈치·코치 · 행동」이다.
 - **설정 화면** (`/setup/`): 아래 "설정 흐름". 설정을 안 끝냈으면(`npm start`) 서버가 `/`를 `/setup/`으로 보낸다(302).
 - **폰 화면** (`/phone/`, `ui/phone/index.html`·`ui/src/phone/`): 폰 서버가 `ui/dist`에서 폰 화면과 그 빌드 파일(`/assets/`)·브랜드 그림·파비콘만 내준다. tailscale serve는 폰 포트를 사이트 뿌리(`/`)로 잇는다.
 - WebSocket `/events`로 실시간 반영하고, 끊기면 다시 연결한다.

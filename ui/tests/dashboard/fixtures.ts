@@ -94,11 +94,10 @@ export const SAY = ["식탁을 보고 있어요.", "식탁으로 가 주세요."
 export const CLEAR_CUP = "컵 치우기";
 export const REASON = "사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.";
 export const LEFT_CUP_STATE = "컵을 두고 자리를 뜸";
-/** 계획 단계의 생각 말풍선(PAM의 생각 한 문장·FSM 상태 이름표·습관 아님·눈치·판단). 지켜보기는 대기라 없다. */
-export const THOUGHT: Thought = { reasoning: REASON, state: LEFT_CUP_STATE, habit: false, assist: "noonchi", action: CLEAR_CUP };
-/** 작은 모델이 고친 생각 두 줄(「본 것」·「그래서」, src/brain/thought.ts)과 그 두 줄이 붙은 생각 말풍선. */
-export const LINES = { seen: "사람이 컵을 식탁에 두고 자리를 떠났어요", why: "컵을 두고 떠나면 치우는 습관대로 컵을 치울게요" };
-export const THOUGHT_LINES: Thought = { ...THOUGHT, lines: LINES };
+/** 작은 모델이 고친 생각 두 줄(「본 것」·「그래서」, src/brain/thought.ts). 「그래서」는 결정적인 근거(습관)와 할 일이다. */
+export const LINES = { seen: "사람이 컵을 식탁에 두고 자리를 떠났어요", why: "컵을 두고 자리를 비우면 치우는 습관이라 바로 컵을 치울게요" };
+/** 계획 단계의 생각 말풍선(두 줄·FSM 상태 이름표·습관 아님·눈치·판단). 지켜보기는 대기라 없다. */
+export const THOUGHT: Thought = { lines: LINES, state: LEFT_CUP_STATE, habit: false, assist: "noonchi", action: CLEAR_CUP };
 
 /** 컵 갈래 판단 고정 자료: 행동, 그 규칙이 있는 FSM 상태 id·트리거(src/brain/decision.ts CUP_FSM_MEMORY와 같다, data.test.ts가 견준다), PAM의 생각 한 문장. */
 export interface Branch { action: string; state: string; trigger: string; reasoning: string }

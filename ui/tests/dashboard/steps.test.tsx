@@ -3,7 +3,7 @@
 import { act, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DashboardScreen, type ScreenProps } from "../../src/dashboard/DashboardScreen";
-import { EYE_FRAMES, imageSlot, LINES, PHONE_URL, REASON, SAY, screenAt, seenOf, THOUGHT, THOUGHT_LINES } from "./fixtures";
+import { EYE_FRAMES, imageSlot, LINES, PHONE_URL, SAY, screenAt, seenOf, THOUGHT } from "./fixtures";
 
 const STAGE = { width: 1504, height: 896 };
 const ALLOWED = new Set(["transform", "opacity", "offset", "easing", "composite"]);
@@ -114,19 +114,19 @@ describe("대시보드 단계 바뀜", () => {
     expect(t.style.opacity).toBe("0");
     expect(still(t)).toBe(was.boxes.thought);
     // 숨는 동안 마지막 생각 글을 그대로 둔다(글을 비우면 사라지는 동안 빈 말풍선이 보인다)
-    expect(t).toHaveTextContent(REASON);
+    expect(t).toHaveTextContent(LINES.seen);
     for (const c of calls) for (const k of c.keyframes) for (const p of Object.keys(k)) expect(ALLOWED.has(p), p).toBe(true);
   });
 
   it("생각이 바뀌면 앞 생각은 opacity로 사라지고 새 생각은 opacity·transform으로 떠오른다. 말풍선 칸 크기는 그대로다", () => {
     motionOn();
-    const next = { ...THOUGHT, reasoning: "컵이 비어 있어요." };
+    const next = { ...THOUGHT, lines: { seen: "식사 중인데 컵이 비어 있어요", why: "식사 중 빈 컵이라 물을 채우라고 할게요" } };
     const { view, was } = step(screenAt(1), screenAt(1, { thought: next }));
     const t = thoughtOf(view.container);
     expect(still(t)).toBe(was.boxes.thought);
     expect(box(t.querySelector<HTMLElement>("[data-slot=thought-bubble]")!)).toBe(was.boxes.bubble);
     const items = [...t.querySelectorAll<HTMLElement>("[data-thought-item]")];
-    expect(items.map((l) => l.querySelector("[data-thought-line]")!.textContent)).toEqual([REASON, next.reasoning]);
+    expect(items.map((l) => l.querySelector("[data-thought-line]")!.textContent)).toEqual([LINES.seen, next.lines.seen]);
     const [old, now] = items;
     const out = calls.filter((c) => c.el === old);
     const into = calls.filter((c) => c.el === now);
@@ -137,14 +137,15 @@ describe("대시보드 단계 바뀜", () => {
     expect(into[0]!.keyframes.some((k) => "transform" in k)).toBe(true);
   });
 
-  it("원래 생각에 그 판단의 두 줄(본 것·그래서)이 오면 원래 생각은 opacity로 사라지고 두 줄이 opacity·transform으로 떠오른다. 말풍선 칸 크기는 그대로다", () => {
+  it("정리 중 두 줄(상태 이름표·「생각을 정리하고 있어요」)에 그 판단의 두 줄이 오면 앞 것은 opacity로 사라지고 두 줄이 opacity·transform으로 떠오른다. 말풍선 칸 크기는 그대로다", () => {
     motionOn();
-    const { view, was } = step(screenAt(1), screenAt(1, { thought: THOUGHT_LINES }));
+    const waiting = { ...THOUGHT, lines: { seen: "컵을 두고 자리를 뜸", why: "생각을 정리하고 있어요" } };
+    const { view, was } = step(screenAt(1, { thought: waiting }), screenAt(1));
     const t = thoughtOf(view.container);
     expect(still(t)).toBe(was.boxes.thought);
     expect(box(t.querySelector<HTMLElement>("[data-slot=thought-bubble]")!)).toBe(was.boxes.bubble);
     const [old, now] = [...t.querySelectorAll<HTMLElement>("[data-thought-item]")];
-    expect(old!.querySelector("[data-thought-line]")).toHaveAttribute("data-thought-line", "raw");
+    expect([...old!.querySelectorAll("[data-thought-line]")].map((l) => l.textContent)).toEqual([waiting.lines.seen, waiting.lines.why]);
     expect([...now!.querySelectorAll("[data-thought-line]")].map((l) => l.textContent)).toEqual([LINES.seen, LINES.why]);
     const out = calls.filter((c) => c.el === old);
     const into = calls.filter((c) => c.el === now);

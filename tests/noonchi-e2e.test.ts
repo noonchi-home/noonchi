@@ -97,7 +97,7 @@ describe("NOONCHI 처음부터 끝까지", () => {
     await pump(() => dash.some((m) => m.type === "thought"));
     const lineAt = dash.findIndex((m) => m.type === "thought");
     const decidedBefore = dash.slice(0, lineAt).filter((m) => m.type === "brain" && m.event.type === "decision" && m.event.status === "valid").at(-1)!.event;
-    expect(dash[lineAt]).toEqual({ type: "thought", id: decidedBefore.id, ...LINES });
+    expect(dash[lineAt]).toEqual({ type: "thought", id: decidedBefore.id, action: "컵 치우기", ...LINES });
     expect(decidedBefore.prediction.reasoning).toBe("자리를 비워 컵을 치운다");
     // 1 이동: 「완료」 단추
     ws.send(JSON.stringify({ type: "answer", id: planId, step: first.step, choice: "done" }));
@@ -135,9 +135,16 @@ describe("NOONCHI 처음부터 끝까지", () => {
     expect(all.rows.filter((r) => r.kind === "feedback").sort((a, b) => a.id - b.id).map((r) => r.text)).toEqual(["완료 · 부탁: 식탁으로 가 주세요", "다 했어 · 부탁: 싱크대로 가 주세요"]);
     const decided = all.rows.find((r) => r.kind === "decision" && `plan:${r.subject}` === planId)!;
     expect(decided.text).toBe("컵 치우기");
-    // 기록 DB 판단 줄에는 원래 생각이 그대로 남는다. 같은 생각은 두 줄을 한 번만 만들었다
+    // 기록 DB 판단 줄에는 원래 생각이 그대로 남는다
     expect((decided.data as { prediction: { reasoning: string } }).prediction.reasoning).toBe("자리를 비워 컵을 치운다");
+    // 같은 행동(컵 치우기)이 이어지는 동안은 두 줄을 한 번만 만들고, 그 뒤 판단마다 같은 두 줄을 그 판단 id로 다시 보낸다
     expect(thoughts.bodies).toHaveLength(1);
+    const lineIds = dash.filter((m) => m.type === "thought").map((m) => m.id as string);
+    expect(lineIds.length).toBeGreaterThan(1);
+    expect(new Set(lineIds).size).toBe(lineIds.length);
+    for (const m of dash.filter((x) => x.type === "thought")) expect(m).toMatchObject({ action: "컵 치우기", ...LINES });
+    // 두 줄은 기록 DB에 처음 만든 때 한 번 남는다(서버를 다시 띄워도 이어 쓴다)
+    expect((await history("thought")).rows.map((r) => [r.subject, r.data])).toEqual([[decidedBefore.id, { action: "컵 치우기", ...LINES }]]);
     expect(pam.bodies.some((b) => String(b.observation_text).includes("컵 cup_1 보임"))).toBe(true);
     // 대시보드: 판단·실행 기록과 계획(집기 대상 cup_1). 단계 상태가 지금 단계를 따라가고 끝나면 done
     const planMsgs = dash.filter((m) => m.type === "plan" && m.plan?.id === planId).map((m) => m.plan);
@@ -164,7 +171,7 @@ describe("NOONCHI 처음부터 끝까지", () => {
     for (const end = Date.now() + 3000; !late.some((m) => m.type === "say") && Date.now() < end; ) await new Promise((r) => setTimeout(r, 20));
     const from = late.findIndex((m) => m.type === "world");
     expect(late.slice(from, late.findIndex((m) => m.type === "say") + 1).map((m) => (m.type === "brain" ? `brain:${m.event.type}` : m.type))).toEqual(["world", "brain:decision", "thought", "seen", "say"]);
-    expect(late.find((m) => m.type === "thought")).toEqual({ type: "thought", replay: true, id: late.find((m) => m.type === "brain")!.event.id, ...LINES });
+    expect(late.find((m) => m.type === "thought")).toEqual({ type: "thought", replay: true, id: late.find((m) => m.type === "brain")!.event.id, action: "컵 치우기", ...LINES });
     expect(late.find((m) => m.type === "seen")).toMatchObject({
       replay: true, shapes: [{ label: "cup", score: 0.9, mask: { at: [220, 160, 40, 20] } }], frame: { width: 480, height: 360 },
     });

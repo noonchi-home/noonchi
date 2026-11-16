@@ -15,7 +15,7 @@ export interface DashData {
   eye: EyeEvent | null;
   /** 마지막 유효 판단. */
   decision: Decision | null;
-  /** 마지막으로 받은 생각 두 줄(src/brain/thought.ts). 판단 id가 decision과 같을 때만 쓴다. */
+  /** 마지막으로 받은 생각 두 줄(src/brain/thought.ts). 판단 id나 고른 행동이 decision과 같을 때만 쓴다. */
   lines: ThoughtEvent | null;
   /** 마지막 성공한 반성(접속 때 다시 받은 오늘 것 포함). */
   reflection: Reflection | null;
@@ -39,7 +39,7 @@ export function reduceDash(s: DashData, m: ServerMessage, now: number): DashData
     case "say":
       return { ...s, say: m.text };
     case "thought":
-      return { ...s, lines: { type: "thought", id: m.id, seen: m.seen, why: m.why } };
+      return { ...s, lines: { type: "thought", id: m.id, action: m.action, seen: m.seen, why: m.why } };
     case "brain": {
       const e = m.event;
       if (e.type === "decision") return e.status === "valid" ? { ...s, decision: e } : s;
@@ -70,13 +70,18 @@ export function currentStep(p: PlanView | null): PlanStep | null {
 /** 마스코트가 보는 쪽: 열린 계획이 있으면 트윈(왼쪽), 아니면 그림 그대로(오른쪽). */
 export const facingOf = (p: PlanView | null): Facing => (isOpen(p) ? "twin" : "video");
 
-/** 생각 말풍선에 보이는 것: PAM의 원래 생각 한 문장, 그 생각을 고친 두 줄(본 것·그래서, 아직 없으면 없음), FSM 상태 이름표(모르면 null),
- *  배운 규칙이 있는 행동인가(습관), 고른 행동의 종류(눈치·코치), 고른 행동 이름. */
-export interface Thought { reasoning: string; lines?: { seen: string; why: string }; state: string | null; habit: boolean; assist: "noonchi" | "coach"; action: string }
+/** 생각 말풍선에 보이는 것: 두 줄(본 것·그래서), FSM 상태 이름표(모르면 null), 배운 규칙이 있는 행동인가(습관), 고른 행동의 종류(눈치·코치), 고른 행동 이름.
+ *  PAM의 원래 생각(reasoning)은 싣지 않는다. */
+export interface Thought { lines: { seen: string; why: string }; state: string | null; habit: boolean; assist: "noonchi" | "coach"; action: string }
+
+/** 반성 규칙의 트리거 글 → 「본 것」 한 줄(끝 마침표를 뗀다). */
+const sentence = (t: string) => t.trim().replace(/[.。]+$/, "");
 
 /**
- * 생각 말풍선: 마지막 유효 판단이 행동을 골랐으면 그 생각(reasoning)·상태·습관·종류·행동, 대기(행동 없음)거나 판단이 아직 없으면 null(말풍선을 숨긴다).
- * 그 판단 id의 두 줄(thought)을 받았으면 lines로 붙인다. 반성에서 온 생각에는 두 줄이 없다.
+ * 생각 말풍선: 마지막 유효 판단이 행동을 골랐으면 두 줄·상태·습관·종류·행동, 대기(행동 없음)거나 판단이 아직 없으면 null(말풍선을 숨긴다).
+ * 두 줄은 그 판단 id의 두 줄(thought), 아직 없으면 같은 행동의 앞 두 줄이다. 그것도 없으면 아는 값으로 만든 두 줄:
+ * 「본 것」은 상태 이름표(FSM_STATE_TEXT, 없으면 「지금 장면을 살피고 있어요」), 「그래서」는 「생각을 정리하고 있어요」. 원래 생각(reasoning)은 보이지 않는다.
+ * 반성에서 온 생각은 「본 것」이 그 규칙의 트리거, 「그래서」가 「새로 배운 습관이에요」·「전에 배운 습관이에요」다.
  * 상태는 서버가 붙인 FSM 상태 id(decision.fsm.state)의 화면 이름표(src/world/labels.ts FSM_STATE_TEXT), 이름표가 없으면 그 트리거이고, fsm.state가 없으면 null이다.
  * 습관은 서버가 붙인 learned, 종류는 서버가 붙인 assist(예전 기록에 없으면 눈치)를 그대로 보인다.
  */
@@ -87,12 +92,14 @@ export function thoughtOf(s: DashData): Thought | null {
   if (r && (!d || r.at_ms > d.at_ms)) {
     const learned = r.learned?.[0];
     const active = r.active?.[0];
-    if (learned) return { reasoning: learned.trigger, state: WORDS.learnedNow, habit: true, assist: "noonchi", action: learned.action };
-    if (active) return { reasoning: active.trigger, state: null, habit: true, assist: "noonchi", action: active.action };
+    if (learned) return { lines: { seen: sentence(learned.trigger), why: WORDS.newHabit }, state: WORDS.learnedNow, habit: true, assist: "noonchi", action: learned.action };
+    if (active) return { lines: { seen: sentence(active.trigger), why: WORDS.oldHabit }, state: null, habit: true, assist: "noonchi", action: active.action };
   }
   if (!d?.action || !d.prediction) return null;
   const fsm = d.fsm;
   const state = fsm?.state ? FSM_STATE_TEXT[fsm.state] ?? fsm.trigger ?? null : null;
-  const lines = s.lines?.id === d.id ? { lines: { seen: s.lines.seen, why: s.lines.why } } : {};
-  return { reasoning: d.prediction.reasoning, ...lines, state, habit: fsm?.learned ?? false, assist: d.assist ?? "noonchi", action: d.action };
+  const l = s.lines;
+  const lines = l && (l.id === d.id || l.action === d.action) ? { seen: l.seen, why: l.why }
+    : { seen: (fsm?.state ? FSM_STATE_TEXT[fsm.state] : undefined) ?? WORDS.looking, why: WORDS.thinking };
+  return { lines, state, habit: fsm?.learned ?? false, assist: d.assist ?? "noonchi", action: d.action };
 }

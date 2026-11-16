@@ -6,6 +6,9 @@ import run from "../../src/dashboard/fake-run.json";
 import { CUP_FSM_MEMORY, fsmRuleOf } from "../../../src/brain/decision.ts";
 import { BRANCHES, COACH, LEFT_SAY, LINES, REASON, branchDecision, type Branch } from "./fixtures";
 
+/** 그 판단의 두 줄이 아직 없을 때: 상태 이름표(없으면 「지금 장면을 살피고 있어요」)와 「생각을 정리하고 있어요」. */
+const waiting = (seen: string) => ({ seen, why: "생각을 정리하고 있어요" });
+
 const feed = (ms: ServerMessage[], now = 0) => ms.reduce((s, m) => reduceDash(s, m, now), EMPTY_DASH);
 const at = (i: number) => feed(run.moments[i]!.messages as ServerMessage[]);
 
@@ -15,31 +18,40 @@ describe("대시보드 자료", () => {
     expect([stepIndex(s.plan), facingOf(s.plan), thoughtOf(s)]).toEqual([0, "video", null]);
     expect(thoughtOf(EMPTY_DASH)).toBeNull();
   });
-  it("생각 말풍선: 행동을 고른 판단의 생각 한 문장과 그 판단의 두 줄(본 것·그래서), FSM 상태 이름표(영어 id가 아닌 화면 글), 행동 이름", () => {
-    expect(thoughtOf(at(1))).toEqual({
-      reasoning: "사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.", lines: LINES, state: "컵을 두고 자리를 뜸", habit: false, assist: "noonchi", action: "컵 치우기",
-    });
+  it("생각 말풍선: 행동을 고른 판단의 두 줄(본 것·그래서), FSM 상태 이름표(영어 id가 아닌 화면 글), 행동 이름. 원래 생각(reasoning)은 싣지 않는다", () => {
+    expect(thoughtOf(at(1))).toEqual({ lines: LINES, state: "컵을 두고 자리를 뜸", habit: false, assist: "noonchi", action: "컵 치우기" });
   });
   describe("생각 두 줄(thought)", () => {
     const decided = branchDecision(BRANCHES.clear, 3);
-    const lines = (id: string): ServerMessage => ({ type: "thought", id, ...LINES });
-    it("판단 id가 같은 두 줄이 오면 생각에 붙인다. 원래 생각(reasoning)은 그대로 둔다", () => {
-      expect(thoughtOf(feed([decided]))).not.toHaveProperty("lines");
-      expect(thoughtOf(feed([decided, lines("pam-3")]))).toEqual({ reasoning: REASON, lines: LINES, state: "컵을 두고 자리를 뜸", habit: false, assist: "noonchi", action: "컵 치우기" });
-      // 접속 때 다시 받은 것도 같다
+    const lines = (id: string, action = "컵 치우기", l = LINES): ServerMessage => ({ type: "thought", id, action, ...l });
+    it("원래 생각은 보이지 않는다: 그 판단의 두 줄이 아직 없으면 상태 이름표와 「생각을 정리하고 있어요」, 판단 id가 같은 두 줄이 오면 그 두 줄이다", () => {
+      const before = thoughtOf(feed([decided]))!;
+      expect(before).toEqual({ lines: waiting("컵을 두고 자리를 뜸"), state: "컵을 두고 자리를 뜸", habit: false, assist: "noonchi", action: "컵 치우기" });
+      expect(JSON.stringify(before)).not.toContain(REASON);
+      expect(thoughtOf(feed([decided, lines("pam-3")]))).toEqual({ lines: LINES, state: "컵을 두고 자리를 뜸", habit: false, assist: "noonchi", action: "컵 치우기" });
+      // 접속 때 다시 받은 것도, 판단보다 먼저 와도 같다
       expect(thoughtOf(feed([decided, { ...lines("pam-3"), replay: true } as ServerMessage]))?.lines).toEqual(LINES);
+      expect(thoughtOf(feed([lines("pam-3"), decided]))?.lines).toEqual(LINES);
     });
-    it("다른 판단 id의 두 줄은 쓰지 않는다: 새 판단이 오면 그 판단의 두 줄이 올 때까지 원래 생각이다", () => {
-      expect(thoughtOf(feed([decided, lines("pam-2")]))).not.toHaveProperty("lines");
+    it("새 판단의 두 줄이 아직 없으면 같은 행동의 앞 두 줄을 그대로 둔다. 행동이 다르면 앞 두 줄을 쓰지 않는다", () => {
       const next = feed([decided, lines("pam-3"), branchDecision(BRANCHES.clear, 4)]);
-      expect(thoughtOf(next)).not.toHaveProperty("lines");
-      expect(thoughtOf(reduceDash(next, lines("pam-4"), 0))?.lines).toEqual(LINES);
+      expect(thoughtOf(next)?.lines).toEqual(LINES);
+      const water = feed([decided, lines("pam-3"), branchDecision(BRANCHES.water, 4)]);
+      expect(thoughtOf(water)?.lines).toEqual(waiting("먹거나 마시는 중"));
+      const WATER = { seen: "사람이 먹는 중인데 컵이 비어 있어요", why: "식사 중 빈 컵이라 물을 채우라고 할게요" };
+      expect(thoughtOf(reduceDash(water, lines("pam-4", "컵에 물 채워 주기", WATER), 0))?.lines).toEqual(WATER);
     });
-    it("대기 판단이면 두 줄이 있어도 말풍선을 숨기고(null), 반성 생각에는 두 줄을 붙이지 않는다. hello면 지운다", () => {
-      expect(thoughtOf(feed([decided, lines("pam-3"), branchDecision(null, 4), lines("pam-4")]))).toBeNull();
+    it("상태 이름표가 없으면(fsm 없음·이름표 없는 상태) 「본 것」은 「지금 장면을 살피고 있어요」다", () => {
+      const s = feed([decided]);
+      const d = s.decision!;
+      expect(thoughtOf({ ...s, decision: { ...d, fsm: null } })?.lines).toEqual(waiting("지금 장면을 살피고 있어요"));
+      expect(thoughtOf({ ...s, decision: { ...d, fsm: { state: "made_by_reflector", trigger: "t", learned: false } } })?.lines).toEqual(waiting("지금 장면을 살피고 있어요"));
+    });
+    it("대기 판단이면 두 줄이 있어도 말풍선을 숨기고(null), 반성 생각은 그 반성의 두 줄이다. hello면 지운다", () => {
+      expect(thoughtOf(feed([decided, lines("pam-3"), branchDecision(null, 4)]))).toBeNull();
       const rule = { state: "watching_tv", trigger: "사용자가 TV를 보러 소파에 앉는다.", action: "에어컨 켜기" };
       const reflected: ServerMessage = { type: "brain", event: { type: "reflection", at_ms: 1_794_214_900_000, day: "2026-11-08", ok: true, version: 3, applies_day: "2026-11-09", text: "반성 완료", learned: [rule], active: [rule], dropped: [] } };
-      expect(thoughtOf(feed([decided, lines("pam-3"), reflected]))).not.toHaveProperty("lines");
+      expect(thoughtOf(feed([decided, lines("pam-3"), reflected]))?.lines).toEqual({ seen: "사용자가 TV를 보러 소파에 앉는다", why: "새로 배운 습관이에요" });
       expect(reduceDash(feed([decided, lines("pam-3")]), { type: "hello", devices: 1, provider: null, hub: "memory", home: "apartment" }, 0)).toEqual(EMPTY_DASH);
     });
   });
@@ -65,12 +77,12 @@ describe("대시보드 자료", () => {
     const decided = (b: Branch | null, seq: number): ServerMessage => branchDecision(b, seq);
     it("그대로 두기 판단이면 생각 말풍선은 생각 한 문장, 「상태 · 컵을 두고 자리를 뜸」, 「눈치 · 컵 그대로 두기」다. 계획이 없어 마스코트는 그림 그대로다", () => {
       const s = feed([decided(BRANCHES.leave, 1), { type: "say", text: LEFT_SAY }]);
-      expect(thoughtOf(s)).toEqual({ reasoning: BRANCHES.leave.reasoning, state: "컵을 두고 자리를 뜸", habit: false, assist: "noonchi", action: "컵 그대로 두기" });
+      expect(thoughtOf(s)).toEqual({ lines: waiting("컵을 두고 자리를 뜸"), state: "컵을 두고 자리를 뜸", habit: false, assist: "noonchi", action: "컵 그대로 두기" });
       expect([stepIndex(s.plan), facingOf(s.plan), s.say]).toEqual([0, "video", "컵을 그대로 두기로 했어요."]);
     });
     it("물 채워 주기 판단이면 「상태 · 먹거나 마시는 중」, 「눈치 · 컵에 물 채워 주기」, 콜라면 「상태 · TV 보는 중」, 「눈치 · 컵에 콜라 따라 주기」다", () => {
-      expect(thoughtOf(feed([decided(BRANCHES.water, 1)]))).toEqual({ reasoning: BRANCHES.water.reasoning, state: "먹거나 마시는 중", habit: false, assist: "noonchi", action: "컵에 물 채워 주기" });
-      expect(thoughtOf(feed([decided(BRANCHES.cola, 1)]))).toEqual({ reasoning: BRANCHES.cola.reasoning, state: "TV 보는 중", habit: false, assist: "noonchi", action: "컵에 콜라 따라 주기" });
+      expect(thoughtOf(feed([decided(BRANCHES.water, 1)]))).toEqual({ lines: waiting("먹거나 마시는 중"), state: "먹거나 마시는 중", habit: false, assist: "noonchi", action: "컵에 물 채워 주기" });
+      expect(thoughtOf(feed([decided(BRANCHES.cola, 1)]))).toEqual({ lines: waiting("TV 보는 중"), state: "TV 보는 중", habit: false, assist: "noonchi", action: "컵에 콜라 따라 주기" });
     });
     it("그 뒤 대기 판단이 오면 말풍선을 숨기고, 다시 치우기 판단이 오면 그 판단을 보인다(더 보다가 치움)", () => {
       const waited = feed([decided(BRANCHES.leave, 1), decided(null, 2)]);
@@ -78,7 +90,7 @@ describe("대시보드 자료", () => {
       expect(thoughtOf(reduceDash(waited, decided(BRANCHES.clear, 3), 0))).toMatchObject({ state: "컵을 두고 자리를 뜸", action: "컵 치우기" });
     });
     it("코치 판단이면 「상태 · 주방에서 할 일을 찾음」, 「코치 · 라면 끓이기 알려 주기」다. 그 규칙은 서버 FSM 기억의 cooking 상태에 있다", () => {
-      expect(thoughtOf(feed([decided(COACH, 1)]))).toEqual({ reasoning: COACH.reasoning, state: "주방에서 할 일을 찾음", habit: false, assist: "coach", action: "라면 끓이기 알려 주기" });
+      expect(thoughtOf(feed([decided(COACH, 1)]))).toEqual({ lines: waiting("주방에서 할 일을 찾음"), state: "주방에서 할 일을 찾음", habit: false, assist: "coach", action: "라면 끓이기 알려 주기" });
       expect(fsmRuleOf(CUP_FSM_MEMORY, "fsm", COACH.action)).toEqual({ state: COACH.state, trigger: COACH.trigger, learned: false });
     });
     it("치우기·물·콜라 갈래 판단의 상태 id는 서버 FSM 기억(CUP_FSM_MEMORY)에서 그 행동의 규칙이 있는 상태다. 그대로 두기는 seed 규칙이 없다(컵을 두고 떠나면 치우는 습관, 반성이 배우면 생긴다)", () => {
@@ -121,12 +133,12 @@ describe("대시보드 자료", () => {
 
     it("마지막 유효 판단보다 새 반성에 새로 배운 규칙이 있으면 첫 규칙: 생각은 그 트리거, 「습관 · 새로 배움」, 「눈치 · 행동」", () => {
       expect(thoughtOf(feed([decidedAt(1000), reflected(2000, [NIGHT], [AIRCON, NIGHT])]))).toEqual({
-        reasoning: NIGHT.trigger, state: "새로 배움", habit: true, assist: "noonchi", action: NIGHT.action,
+        lines: { seen: "밤에 사용자가 식탁을 떠난다", why: "새로 배운 습관이에요" }, state: "새로 배움", habit: true, assist: "noonchi", action: NIGHT.action,
       });
     });
 
     it("새로 배운 규칙이 없고 쓰는 습관이 있으면 첫 규칙: 「습관 · 배운 규칙」(상태 null). 다시 받은 반성(replay)도 같다", () => {
-      expect(thoughtOf(feed([reflected(2000, [], [AIRCON], true)]))).toEqual({ reasoning: AIRCON.trigger, state: null, habit: true, assist: "noonchi", action: AIRCON.action });
+      expect(thoughtOf(feed([reflected(2000, [], [AIRCON], true)]))).toEqual({ lines: { seen: "사용자가 TV를 보러 소파에 앉는다", why: "전에 배운 습관이에요" }, state: null, habit: true, assist: "noonchi", action: AIRCON.action });
     });
 
     it("다음 판단이 오면 그 판단으로 바뀌고, 둘 다 비면 그대로다", () => {

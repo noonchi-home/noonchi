@@ -29,7 +29,7 @@ const START: XZ = [10.6, 8.6];
 const T0 = Date.parse("2026-11-09T09:00:00.000Z");
 const STEP_MS = 4000;
 /** 계획 판단의 생각 두 줄(src/brain/thought.ts가 작은 모델로 만드는 모양). */
-const THOUGHT_LINES = { seen: "사람이 컵을 식탁에 두고 자리를 떠났어요", why: "컵을 두고 떠나면 치우는 습관대로 컵을 치울게요" };
+const THOUGHT_LINES = { seen: "사람이 컵을 식탁에 두고 자리를 떠났어요", why: "컵을 두고 자리를 비우면 치우는 습관이라 바로 컵을 치울게요" };
 const FRAME = { width: 405, height: 720 };
 const EYE_HEIGHT_M = 1.1;
 const OBSERVATION = "식탁 위에 컵이 있고 사람이 자리를 비웠어요.";
@@ -144,7 +144,7 @@ function build(): Moment[] {
       { type: "plan", plan: open },
       { type: "eye", eye: eyeEvent },
       { type: "brain", event: decision },
-      ...(n === 0 ? [] : [{ type: "thought", id: decisionId, ...THOUGHT_LINES } as const]),
+      ...(n === 0 ? [] : [{ type: "thought", id: decisionId, action: ACTION, ...THOUGHT_LINES } as const]),
       { type: "brain", event: observe },
       seen,
       { type: "say", text: sayLine({ plan: open, command, world, nowMs: now }) },

@@ -127,20 +127,21 @@ describe("대시보드 자료 연결", () => {
     await mount(false);
     send(moment(2));
     expect(thought()).toHaveAttribute("data-thought", "shown");
-    expect(lineTexts()).toEqual(["사람이 컵을 식탁에 두고 자리를 떠났어요", "컵을 두고 떠나면 치우는 습관대로 컵을 치울게요"]);
+    expect(lineTexts()).toEqual(["사람이 컵을 식탁에 두고 자리를 떠났어요", "컵을 두고 자리를 비우면 치우는 습관이라 바로 컵을 치울게요"]);
     expect([...chipTexts()].map((c) => c.textContent)).toEqual(["상태 · 컵을 두고 자리를 뜸", "눈치 · 컵 치우기"]);
     send(moment(0));
     expect(thought()).toHaveAttribute("data-thought", "hidden");
   });
 
-  it("판단만 오면 원래 생각을 보이고, 그 판단 id의 두 줄(/events thought)이 오면 두 줄로 바뀐다. 다른 판단 id의 두 줄은 쓰지 않는다", async () => {
+  it("판단만 오면 원래 생각 대신 상태 이름표와 「생각을 정리하고 있어요」를 보이고, 그 판단 id의 두 줄(/events thought)이 오면 두 줄로 바뀐다. 다른 판단·다른 행동의 두 줄은 쓰지 않는다", async () => {
     await mount(false);
     send(moment(2).filter((m) => m.type !== "thought"));
-    expect(lineTexts()).toEqual(["사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요."]);
-    send([{ type: "thought", id: "pam-0", seen: "다른 판단", why: "다른 판단" }]);
-    expect(lineTexts()).toEqual(["사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요."]);
-    send([{ type: "thought", id: "pam-1", seen: "사람이 떠났어요", why: "컵을 치울게요" }]);
-    expect(lineTexts()).toEqual(["사람이 떠났어요", "컵을 치울게요"]);
+    expect(lineTexts()).toEqual(["컵을 두고 자리를 뜸", "생각을 정리하고 있어요"]);
+    expect(thought()).not.toHaveTextContent("사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.");
+    send([{ type: "thought", id: "pam-0", action: "에어컨 켜기", seen: "다른 판단", why: "다른 판단" }]);
+    expect(lineTexts()).toEqual(["컵을 두고 자리를 뜸", "생각을 정리하고 있어요"]);
+    send([{ type: "thought", id: "pam-1", action: "컵 치우기", seen: "사람이 떠났어요", why: "치우는 습관이라 컵을 치울게요" }]);
+    expect(lineTexts()).toEqual(["사람이 떠났어요", "치우는 습관이라 컵을 치울게요"]);
   });
 
   it("폰 서버가 꺼져 있으면(health.eye false) 대시보드 폰 칸은 연결 QR이다", async () => {
