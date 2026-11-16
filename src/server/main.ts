@@ -4,7 +4,7 @@
 
 import { existsSync } from "node:fs";
 import dotenv from "dotenv";
-import { findServedPhoneUrls, runCommand } from "../phone/links.js";
+import { findServedPhoneUrls, runCommand } from "../phone/index.js";
 import { installShutdown } from "./shutdown.js";
 import { startServer } from "./start.js";
 
