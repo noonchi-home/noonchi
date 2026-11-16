@@ -159,7 +159,8 @@ export function createApp(opts: AppOptions): TwinHomeApp {
   route("GET", /^\/api\/health$/, async (): Promise<HealthView> => ({
     ok: true, devices: hub.list().length, hub: opts.hubKind ?? "memory", transport: matterInfo()?.transport ?? null,
     provider: agent?.provider.name ?? null, model: agent?.provider.model ?? null, twin: !!twinDir && existsSync(twinDir),
-    eye: !!opts.eye, home: opts.home ?? null, phone_urls: opts.phoneUrls?.() ?? [], brain: !!opts.brain, mode: opts.mode?.() ?? "test",
+    eye: !!opts.eye, home: opts.home ?? null, phone_urls: opts.phoneUrls?.() ?? [], ...(opts.history ? { tz_minutes: opts.history.offsetMinutes } : {}),
+    brain: !!opts.brain, mode: opts.mode?.() ?? "test",
     ready: opts.ready ? await opts.ready() : NOT_READY,
   }));
 

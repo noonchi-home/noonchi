@@ -199,6 +199,8 @@ export interface HealthView {
   home: { id: string; name: string } | null;
   /** 폰에서 열 주소들(와이파이·VPN 어댑터마다 하나). */
   phone_urls: string[];
+  /** 기록 시간대(분, HISTORY_TZ_MINUTES). 대시보드 날짜·시간 칩이 이 시간대로 쓴다. 기록 DB가 없으면 없다. */
+  tz_minutes?: number;
   brain: boolean;
   /** 운영 모드: test 시험(트윈만), live 실제(짝지은 가전은 ThinQ). */
   mode: ControlMode;

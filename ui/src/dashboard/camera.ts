@@ -119,8 +119,10 @@ export function wideCamera(image: BoxSize, box: BoxSize, focus: Bounds | null, p
   return whole ? { cx, cy, scale } : clampCamera({ cx, cy, scale }, image, box);
 }
 
-/** 지켜보기(기본 보기) 확대: 집 전체가 지도 카메라 칸에 다 드는 배율에 곱한다. 사용자가 그림을 보고 다시 정한다. */
-export const HOME_ZOOM = 1.3;
+/** 지켜보기(기본 보기) 확대: 집 전체가 지도 카메라 칸에 다 드는 배율에 곱한다. 사용자가 그림을 보고 다시 정한다.
+ *  1.3 → 1.5(2026-11-16 회의 「공간 전체가 너무 넓게 보인다」): 1920×1080은 사람이 있는 방이 칸에 다 드는 배율(0.889, 예전보다 6.9%)에서,
+ *  1440×900은 1.5배(0.663, 예전보다 15.4%)에서 멈춘다. 집 가장자리 방은 한 변에 트윈 칸의 15% 안으로 잘릴 수 있다. */
+export const HOME_ZOOM = 1.5;
 /** 사람이 있는 방(방 id): 거실·주방·식당. 기본 보기에서 얹은 것 밑에 깔리지 않게 지킨다. */
 const LIVED_ROOM = /^(living|kitchen|dining)/;
 /** 사람이 있는 방을 담는 그림 픽셀 상자. 그런 방이 없으면 집 전체, 방이 없으면 null. */
@@ -132,7 +134,7 @@ export function livedOf(shapes: RoomShape[]): Bounds | null {
 /**
  * 지켜보기(기본 보기): 집 전체 보기(whole이 pad 안쪽에 다 드는 배율)보다 zoom배 당겨 집이 트윈 칸을 더 채우게 한다.
  * 집 가운데를 트윈 칸 가운데에 두되, 사람이 있는 방(keep)이 pad 안쪽(미니맵·생각 말풍선·말풍선 카드·진행 칩 밖)에 다 들게 옮긴다.
- * keep이 pad 안쪽보다 커지는 배율로는 당기지 않는다. 집 가장자리(다른 방)는 얹은 것 밑에 깔리거나 위아래가 조금 잘릴 수 있다.
+ * keep이 pad 안쪽보다 커지는 배율로는 당기지 않는다. 집 가장자리(다른 방)는 얹은 것 밑에 깔리거나 트윈 밖으로 조금 잘릴 수 있다.
  */
 export function homeCamera(box: BoxSize, whole: Bounds, keep: Bounds, pad: Pad, zoom = HOME_ZOOM): Camera {
   const aw = Math.max(1, box.width - pad.left - pad.right);

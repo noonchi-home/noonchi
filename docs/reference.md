@@ -181,7 +181,7 @@ twin-home 서버: http://127.0.0.1:8200  (허브 matter/network, 에이전트 op
 
 | 메서드·경로 | 본문 | 응답 |
 |---|---|---|
-| `GET /api/health` | | `{ ok, devices, hub, transport, provider, model, twin, eye, home: { id, name }, phone_urls, brain, mode, ready }`(`mode`: `test` 시험 · `live` 실제). `ready`: `{ ok, inference_mode, vlm: { base_url, model, key, reachable }, pam: { url, reachable, llm: { base_url, model, reachable } | null }, db }`. 모델은 부르지 않고 VLM `GET {base}/models`(30초 캐시)·PAM `GET {url}/health`만 본다. 답하지 않아도 200이고 `ready.ok`가 false다 |
+| `GET /api/health` | | `{ ok, devices, hub, transport, provider, model, twin, eye, home: { id, name }, phone_urls, tz_minutes, brain, mode, ready }`(`tz_minutes`: 기록 시간대 분, 기록 DB가 없으면 없음)(`mode`: `test` 시험 · `live` 실제). `ready`: `{ ok, inference_mode, vlm: { base_url, model, key, reachable }, pam: { url, reachable, llm: { base_url, model, reachable } | null }, db }`. 모델은 부르지 않고 VLM `GET {base}/models`(30초 캐시)·PAM `GET {url}/health`만 본다. 답하지 않아도 200이고 `ready.ok`가 false다 |
 | `GET /api/homes` | | `{ current, homes: [{ id, name }] }` (twin-studio `homes.json`) |
 | `GET /api/setup` | | 설정 상태 `{ ok, persist, done, switching, error, home, homes, rooms, devices: [{ ..., source, pairable }], position, mode, thinq: { ready }, pairs }` (아래 "설정 흐름", 형은 `src/contract/setup.ts`) |
 | `POST /api/setup/home` | `{ home }` | 다른 집이면 허브·에이전트·폰 서버를 새 집으로 다시 띄운다. 없는 집 400, 바꾸는 중 409 |
@@ -227,6 +227,8 @@ twin-home 서버: http://127.0.0.1:8200  (허브 matter/network, 에이전트 op
 React+TypeScript 화면(`ui/`, Vite 다중 페이지)이다. 서버는 빌드 결과 `ui/dist/`를 내준다. `npm start`·`npm run dev`가 먼저 `npm run ui:build`로 빌드하고, 빌드 전이면 화면 요청은 503(「화면이 아직 빌드되지 않았어요. npm run ui:build」)이다. 화면만 고칠 때는 `npm run ui:dev`(5173, `/api`·`/twin`·`/events`를 8200으로 넘김).
 
 - **대시보드** (`/`): 3D 트윈이 화면 전체(둘레 여백 안)를 쓰고, 그 위에 오른쪽 위 폰 카메라 미니맵, 오른쪽 아래 마스코트(누르면 설정 창), 마스코트 위 생각 말풍선, 트윈 아래쪽 말풍선 카드를 얹는다(자리는 `ui/src/dashboard/layout.ts`). 입력창이 없다. 요청·승인은 폰에서 음성으로 한다. 트윈 위에는 밝힌 방, 목적지, 확인한 것 점, 방 이름표, 확인한 기기·물건 말풍선만 그리고 동선(계획 경로 길 선)은 그리지 않는다. 카메라는 계획 경로·목적지·클로이드가 보이게 맞춘다. 부품은 모두 21st.dev 받은 코드다.
+  - 지켜보기(계획 없음) 카메라: 집 전체가 카메라 칸(미니맵·말풍선·말풍선 카드·칩 밖)에 다 드는 배율의 1.5배까지 당기되, 사람이 있는 방(거실·주방·식당)이 칸에 다 드는 배율을 넘지 않는다(1920×1080은 0.889, 1440×900은 0.663). 집 가장자리 방은 트윈 밖으로 조금 잘릴 수 있다. 계획 단계 카메라는 그 단계에 중요한 것(밝힌 방·다음 길·목적지·확인한 것)을 칸에 맞춘다.
+  - 트윈 오른쪽 위 칩 줄(미니맵 왼쪽): 맨 위에 날짜·시간 칩 「11월 17일 (화) 01:30」을 늘 두고, 그 아래 클로이드 위치를 모를 때·연결이 끊겼을 때만 그 칩을 둔다. 시각은 브라우저 시계, 시간대는 서버 기록 시간대(`HISTORY_TZ_MINUTES`, `/api/health`의 `tz_minutes`)라 기록 DB의 날과 같다. 분이 바뀔 때만 그 칩만 다시 그린다.
   - 폰 카메라 미니맵: 가로 16:9 칸, 너비는 화면 너비의 320/1280(1920에서 480×270, 1440에서 360×202.5)이고 높이는 영상 비율을 따른다. 세로 영상은 트윈 높이의 절반과 생각 말풍선 위 사이(gap)까지 중 작은 쪽에서 멈춘다.
   - 생각 말풍선: 크기 460×210 고정. 짧은 메시지가 카톡처럼 차례로 쌓인다(2026-11-16 회의). 새 메시지는 아래에서 떠오르고 앞 것은 위로 올라가며, 최근 3개만 보이고 넘친 오래된 것은 위로 사라진다(21st.dev Animated List, 움직임은 transform·opacity만). 메시지가 하나도 없을 때만 숨기고, 대기여도 메시지가 있으면 보인다.
     - 크기: 메시지 하나(text-sm 줄 20 + 위아래 여백 24 + 테두리 2 = 46) 셋과 사이 8 둘로 목록 154, 칩 한 줄 26과 사이 8, 말풍선 여백·테두리 22를 더해 높이 210. 너비 460이면 메시지 글 칸이 396px(한글 약 28자)라 30자 안팎 메시지가 한 줄에 든다.

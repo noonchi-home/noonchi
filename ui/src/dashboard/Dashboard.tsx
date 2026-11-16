@@ -235,7 +235,7 @@ export function Dashboard() {
     <DashboardScreen
       index={stepIndex(plan)} plan={plan} step={currentStep(plan)} robotKnown={dash.eye !== null} connected={online} map={map} mapReady={mapReady}
       phone={phone} seen={seen} thought={thought} say={dash.say ?? ""}
-      facing={facingOf(plan)} hub={hub} settingsOpen={debug?.settings} onReady={onScreenReady}
+      facing={facingOf(plan)} hub={hub} settingsOpen={debug?.settings} onReady={onScreenReady} tzMinutes={health?.tz_minutes ?? null}
     />
   );
 }

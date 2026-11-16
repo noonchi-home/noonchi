@@ -65,11 +65,16 @@ describe.each([[1920, 1080], [1440, 900]])("%i×%i", (width, height) => {
     expect(LIVED.x1 - LIVED.x0).toBeLessThan(WHOLE.x1 - WHOLE.x0);
   });
 
-  it("순간 0(지켜보기, 계획 없음) 기본 보기는 집 전체 보기보다 HOME_ZOOM배 당긴다: 집이 화면을 더 채우고, 사람이 있는 방(거실·주방·식당)은 지도 카메라 칸 안이라 미니맵·생각 말풍선·말풍선 카드·진행 칩 밑에 깔리지 않는다", () => {
+  it("순간 0(지켜보기, 계획 없음) 기본 보기는 집 전체 보기의 HOME_ZOOM(1.5)배까지 당기되 사람이 있는 방(거실·주방·식당)이 지도 카메라 칸에 다 드는 배율을 넘지 않는다: 예전(1.3배)보다 집이 화면을 더 채우고, 사람이 있는 방은 미니맵·생각 말풍선·말풍선 카드·칩 밑에 깔리지 않는다", () => {
     const { cam } = view(0);
     expect(focusOf(frameAt(0), HOME.shapes)).toBeNull();
-    expect(HOME_ZOOM).toBe(1.3);
-    expect(cam.scale).toBeCloseTo(far.scale * HOME_ZOOM, 9);
+    expect(HOME_ZOOM).toBe(1.5);
+    const aw = box.width - L.camPad.left - L.camPad.right;
+    const ah = box.height - L.camPad.top - L.camPad.bottom;
+    const fitLived = Math.min(aw / (LIVED.x1 - LIVED.x0), ah / (LIVED.y1 - LIVED.y0));
+    expect(cam.scale).toBeCloseTo(Math.min(far.scale * HOME_ZOOM, fitLived), 9);
+    // 2026-11-16 회의(김준형 「공간 전체가 너무 넓게 보인다」): 예전 1.3배보다 5% 넘게 당긴다
+    expect(cam.scale).toBeGreaterThan(homeCamera(box, WHOLE, LIVED, L.camPad, 1.3).scale * 1.05);
     const [a, b] = [toScreen(cam, box, [LIVED.x0, LIVED.y0]), toScreen(cam, box, [LIVED.x1, LIVED.y1])];
     const lived: Box = { x0: a.x, y0: a.y, x1: b.x, y1: b.y };
     expect(lived.x0).toBeGreaterThanOrEqual(focus.x0 - 1e-6);
@@ -77,11 +82,10 @@ describe.each([[1920, 1080], [1440, 900]])("%i×%i", (width, height) => {
     expect(lived.x1).toBeLessThanOrEqual(focus.x1 + 1e-6);
     expect(lived.y1).toBeLessThanOrEqual(focus.y1 + 1e-6);
     for (const k of blocked) expect(hit(lived, k)).toBe(false);
-    // 집 왼쪽 끝은 트윈 안이다(옆으로는 잘리지 않는다). 위아래는 조금 잘려도 된다
+    // 집 가장자리(다른 방)는 얹은 것 밑에 깔리거나 트윈 밖으로 조금 잘릴 수 있다: 잘리는 것은 한 변에 트윈 칸의 15% 안이다
     const [h0, h1] = [toScreen(cam, box, [WHOLE.x0, WHOLE.y0]), toScreen(cam, box, [WHOLE.x1, WHOLE.y1])];
-    expect(h0.x).toBeGreaterThanOrEqual(-1e-6);
-    expect(h1.x).toBeLessThanOrEqual(box.width + 1e-6);
-    expect(Math.max(0, -h0.y) + Math.max(0, h1.y - box.height)).toBeLessThan(box.height * 0.1);
+    for (const cut of [-h0.x, h1.x - box.width]) expect(cut).toBeLessThan(box.width * 0.15);
+    for (const cut of [-h0.y, h1.y - box.height]) expect(cut).toBeLessThan(box.height * 0.15);
   });
 
   it("사람이 있는 방이 칸보다 커지는 배율로는 당기지 않는다", () => {

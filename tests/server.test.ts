@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { Agent } from "../src/agent/agent.js";
+import { HistoryDb } from "../src/brain/history/db.js";
 import type { BrainLog, SeenEvent } from "../src/contract/events.js";
 import { MemoryHub } from "../src/devices/hub/memory.js";
 import type { DeviceHub } from "../src/contract/devices.js";
@@ -346,6 +347,18 @@ describe("정적 파일·CORS", () => {
     cleanups.push(() => app.close());
     urls = ["http://192.168.0.5:8210/phone/"];
     expect((await api(url, "/api/health")).json.phone_urls).toEqual(["http://192.168.0.5:8210/phone/"]);
+  });
+
+  it("health에 기록 시간대(분, HISTORY_TZ_MINUTES)를 담는다: 대시보드 날짜·시간 칩이 그 시간대로 쓴다. 기록 DB가 없으면 칸이 없다", async () => {
+    const home = makeHome();
+    const app = createApp({ hub: home.hub, policy: home.policy, rooms: ROOMS, log: () => {}, history: HistoryDb.open(":memory:", 540) });
+    const { url } = await app.listen(0, "127.0.0.1");
+    cleanups.push(() => app.close());
+    expect((await api(url, "/api/health")).json.tz_minutes).toBe(540);
+    const bare = createApp({ hub: home.hub, policy: home.policy, rooms: ROOMS, log: () => {} });
+    const other = await bare.listen(0, "127.0.0.1");
+    cleanups.push(() => bare.close());
+    expect((await api(other.url, "/api/health")).json).not.toHaveProperty("tz_minutes");
   });
 
   it("CORS는 localhost 출처만 허용한다", async () => {

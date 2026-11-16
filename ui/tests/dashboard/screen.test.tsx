@@ -13,6 +13,7 @@ import { EMPTY_DASH, reduceDash, thoughtOf } from "../../src/dashboard/data";
 import { BRANCHES, COACH, COACH_SAY, LEFT_SAY, branchDecision, coachPlanAt, type Branch } from "./fixtures";
 import { CLEAR_CUP, EYE_FRAMES, HUB, imageSlot, LEFT_CUP_STATE, MESSAGES, PHONE_URL, PLAN, REASON, SAY, screenAt, seenEvent, seenOf, THOUGHT } from "./fixtures";
 import { createSeenStore } from "../../src/dashboard/masks";
+import { clockText } from "../../src/dashboard/clock";
 import { act } from "@testing-library/react";
 import type { PlanView } from "../../../src/contract/plan.ts";
 import type { ServerMessage } from "../../../src/contract/events.ts";
@@ -801,8 +802,42 @@ describe("대시보드 트윈", () => {
       expect(cls(chips, "right-4")).toBe(false);
       expect(px(chips.style.right)).toBeCloseTo(L.chipsRight, 5);
       expect(L.twin.left + L.twin.width - L.chipsRight).toBeLessThan(L.video.left);
-      expect([...chips.querySelectorAll("[data-slot=status]")].map((e) => e.textContent)).toEqual([WORDS.noRobot, WORDS.offline]);
+      expect([...chips.querySelectorAll("[data-slot=status]")].slice(1).map((e) => e.textContent)).toEqual([WORDS.noRobot, WORDS.offline]);
     } finally { rect.mockRestore(); }
+  });
+
+  it("트윈 오른쪽 위 칩 줄 맨 위에 날짜·시간 칩(Status)을 늘 둔다: 서버 기록 시간대(tzMinutes)로 「11월 17일 (화) 01:30」 꼴이고, 분이 바뀔 때만 그 칩만 다시 그린다(지도·트윈 칸은 다시 그리지 않는다)", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    try {
+      vi.setSystemTime(Date.UTC(2026, 10, 16, 16, 30, 59));
+      let draws = 0;
+      const map = () => { draws++; return null; };
+      draw({ ...screenAt(2), map, tzMinutes: 540 });
+      const chips = twinPane().querySelector<HTMLElement>("[data-chips]")!;
+      const clock = chips.querySelector<HTMLElement>("[data-clock]")!;
+      expect(chips.firstElementChild).toBe(clock);
+      expect([clock.dataset.slot, clock.dataset.variant]).toEqual(["status", "default"]);
+      expect(clock).toHaveTextContent("11월 17일 (화) 01:30");
+      expect(chips.querySelectorAll("[data-slot=status]")).toHaveLength(1);
+      const was = draws;
+      act(() => { vi.advanceTimersByTime(500); });
+      expect(clock).toHaveTextContent("11월 17일 (화) 01:30");
+      act(() => { vi.advanceTimersByTime(600); });
+      expect(clock).toHaveTextContent("11월 17일 (화) 01:31");
+      act(() => { vi.advanceTimersByTime(60_000); });
+      expect(clock).toHaveTextContent("11월 17일 (화) 01:32");
+      expect(draws).toBe(was);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("기록 시간대를 모르면(tzMinutes 없음) 브라우저 시간대로 쓴다", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    try {
+      const at = Date.UTC(2026, 10, 16, 16, 30, 0);
+      vi.setSystemTime(at);
+      draw(screenAt(2));
+      expect(twinPane().querySelector("[data-clock]")).toHaveTextContent(clockText(at, -new Date(at).getTimezoneOffset()));
+    } finally { vi.useRealTimers(); }
   });
 
   it("로봇 자리를 모르면 트윈에 「클로이드 위치 모름」을 보인다", () => {
