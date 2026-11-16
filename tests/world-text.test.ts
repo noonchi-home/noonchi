@@ -58,12 +58,36 @@ describe("PAM 관찰 텍스트", () => {
     expect(textFromWorld(view, recent, { nowMs: T(21, 10, 0), offsetMinutes: 540 }).split("\n")).toEqual([
       "21:09:10 VLM: 컵이 식탁 위",
       "21:09:20~21:09:22 요청이 몰려 VLM 분석 없음 3번",
-      "[지속] 컵 cup_1 식탁 위 · 비어 있음: 21:00:00부터 10분째, 마지막 확인 21:09:58",
-      "[지속] 그릇 bowl_1 싱크대 안: 21:09:30부터 30초째, 마지막 확인 21:09:40, 지금 시야 밖",
+      "[지속] 컵 cup_1 식탁 위: 21:00:00부터 10분째, 마지막 확인 21:09:58",
+      "[지속] 컵 cup_1 비어 있음: 21:09:58부터 2초째",
+      "[지속] 그릇 bowl_1 자리 모름: 21:09:30부터 30초째, 마지막 확인 21:09:40, 지금 시야 밖",
+      "[지속] 그릇 bowl_1 싱크대 안(짐작): 21:09:40부터 20초째",
       "[지속] 사람 안 보임: 21:05:00부터 5분째",
       "[지속] 식기세척기 dishwasher_1: 작동 중, 21:00:00부터 10분째, 남은 시간 42분",
       "[때] 11월 7일 토요일 밤",
       "[눈] 클로이드 눈: 주방",
+    ]);
+  });
+
+  it("물건 [지속] 줄은 사실마다 그 값이 처음 보인 시각부터 세고 짐작이면 (짐작)을 붙인다: 한 장에서 짐작한 「비어 있음」을 물건을 처음 본 때부터 이어진 것처럼 쓰지 않는다(밤 판정 F)", () => {
+    const view: WorldView = {
+      at_ms: T(21, 0, 43),
+      objects: [
+        { id: "cup_1", cls: "cup", position: [9.9, 0, 4.7], surface: null, surface_label: null, room: "living", error_m: 0.12, status: "present",
+          first_seen_ms: T(21, 0, 2), last_seen_ms: T(21, 0, 43), last_in_view_ms: T(21, 0, 43),
+          facts: {
+            place: { value: "on_table", at_ms: T(21, 0, 42), since_ms: T(21, 0, 30), certainty: "confirmed" },
+            contents: { value: "empty", at_ms: T(21, 0, 41), since_ms: T(21, 0, 41), certainty: "inferred" },
+          }, answered_ms: null, devices: [], closer_hold: false, followed_by: null },
+      ],
+      person: { visible: true, since_ms: T(21, 0, 4), last_seen_ms: T(21, 0, 43), count: 1, room: null, room_label: null, position: null, near: [], holding: [], position_ms: null, answered_ms: null, facts: {} },
+      fixtures: [], devices: [], eye: null, frame_ms: null, vlm_missing: 0, yolo_missing: 0,
+    };
+    const lines = textFromWorld(view, [], { nowMs: T(21, 0, 43), offsetMinutes: 540 }).split("\n").filter((l) => l.startsWith("[지속] 컵"));
+    expect(lines).toEqual([
+      "[지속] 컵 cup_1 자리 모름: 21:00:02부터 41초째, 마지막 확인 21:00:43",
+      "[지속] 컵 cup_1 식탁 위: 21:00:30부터 13초째",
+      "[지속] 컵 cup_1 비어 있음(짐작): 21:00:41부터 2초째",
     ]);
   });
 

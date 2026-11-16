@@ -1,6 +1,6 @@
 // PAM 관찰 텍스트: 시각이 붙은 줄(오래된 것부터) + [지속] 오래 이어진 사실 + [때] 날짜·요일·하루 때 + [눈] 클로이드 눈이 있는 방 이름. 사진은 넣지 않는다.
 import type { Facet, WorldChange, WorldFact, WorldView } from "../contract/world.js";
-import { CHANGE_TEXT, EYE_TEXT, OBJECT_NAME, OUT_OF_VIEW_NOW, PLACE_UNKNOWN, ROOM_UNKNOWN, STATE_TEXT, dayText, fixtureName, objectName, onSurface } from "./labels.js";
+import { CHANGE_TEXT, EYE_TEXT, GUESS, OBJECT_NAME, OUT_OF_VIEW_NOW, PLACE_UNKNOWN, ROOM_UNKNOWN, STATE_TEXT, dayText, fixtureName, objectName, onSurface } from "./labels.js";
 import { RELATED_KINDS } from "./relations.js";
 import { FACT_FRESH_MS, NOW_FACETS, type Target } from "./vocab.js";
 
@@ -63,12 +63,19 @@ export function textFromWorld(world: WorldView, recent: readonly WorldChange[], 
   const lines = recent.filter((c) => c.at_ms >= since && c.at_ms <= o.nowMs).map((c) => ({ atMs: c.at_ms, text: c.text }));
   const at = (ms: number) => clock(ms, o.offsetMinutes);
   const facts: string[] = [];
+  // 물건: 첫 줄은 트윈 면(위치로 정한 것, 없으면 자리 모름)과 처음 본 때·마지막 확인. 사실은 줄마다 그 값이 처음 보인 시각부터 세고,
+  // VLM 한 장만 보고 붙인 값(짐작)은 표시한다. 한 장에서 짐작한 「비어 있음」을 물건을 처음 본 때부터 이어진 것처럼 쓰지 않는다(2026-11-16 밤 판정 F·E)
   for (const ob of world.objects.filter((x) => x.status !== "gone")) {
-    const place = ob.facts.place;
-    const where = ob.surface_label ? onSurface(ob.surface_label) : place ? STATE_TEXT[place.value] ?? place.value : PLACE_UNKNOWN;
-    const extra = (Object.entries(ob.facts) as [string, WorldFact | undefined][])
-      .filter(([k, f]) => current("object", k, f, o.nowMs) && k !== "place").map(([, f]) => STATE_TEXT[f!.value] ?? f!.value);
-    facts.push(`${objectName(ob.cls, ob.id)} ${where}${extra.length ? ` · ${extra.join(" · ")}` : ""}: ${at(ob.first_seen_ms)}부터 ${lasting(o.nowMs - ob.first_seen_ms)}, 마지막 확인 ${at(ob.last_seen_ms)}${ob.status === "out_of_view" ? `, ${OUT_OF_VIEW_NOW}` : ""}`);
+    const name = objectName(ob.cls, ob.id);
+    const where = ob.surface_label ? onSurface(ob.surface_label) : PLACE_UNKNOWN;
+    facts.push(`${name} ${where}: ${at(ob.first_seen_ms)}부터 ${lasting(o.nowMs - ob.first_seen_ms)}, 마지막 확인 ${at(ob.last_seen_ms)}${ob.status === "out_of_view" ? `, ${OUT_OF_VIEW_NOW}` : ""}`);
+    for (const [k, f] of Object.entries(ob.facts) as [string, WorldFact | undefined][]) {
+      if (!current("object", k, f, o.nowMs)) continue;
+      const value = STATE_TEXT[f!.value] ?? f!.value;
+      // 면 자리와 같은 놓인 곳(식탁 위)은 첫 줄에 있다
+      if (k === "place" && value === where) continue;
+      facts.push(`${name} ${value}${f!.certainty === "inferred" ? `(${GUESS})` : ""}: ${at(f!.since_ms)}부터 ${lasting(o.nowMs - f!.since_ms)}`);
+    }
   }
   for (const f of world.fixtures) {
     const values = said((Object.entries(f.facts) as [string, WorldFact | undefined][]).map(([k, v]) => factText(current("fixture", k, v, o.nowMs))));

@@ -62,7 +62,9 @@ describe("합성 기록 넣기", () => {
     expect(new Set(decisions.map((d) => d.text))).toEqual(new Set(["대기", "컵 치우기", "사용자에게 물어보기", "에어컨 켜기"]));
     const cleared = decisions.find((d) => d.text === "컵 치우기")!;
     expect(cleared.text_sent).toMatch(/^\d\d:\d\d:\d\d 사람 안 보임$/m);
-    expect(cleared.text_sent).toMatch(/^\[지속\] 컵 cup_\d+ 거실·복도 식탁 위 · 비어 있음: /m);
+    // 물건 [지속]은 면 줄 하나와 사실마다 한 줄(그 값이 처음 보인 시각부터, 짐작이면 (짐작))
+    expect(cleared.text_sent).toMatch(/^\[지속\] 컵 cup_\d+ 거실·복도 식탁 위: /m);
+    expect(cleared.text_sent).toMatch(/^\[지속\] 컵 cup_\d+ 비어 있음(\(짐작\))?: \d\d:\d\d:\d\d부터 /m);
     expect(cleared.text_sent).toMatch(/\n\[눈\] 클로이드 눈: 거실·복도$/);
     // 평일 9시~18시는 집에 없어 관찰이 없다
     const seen = db.list({ kinds: ["detection", "world", "vlm"], limit: 1_000_000 });

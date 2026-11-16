@@ -14,13 +14,23 @@ export interface FakePamOptions {
   limits?: Record<string, number> | null;
 }
 
+/** 관찰 텍스트 [지속] 물건 줄(면 줄 하나 + 사실마다 한 줄)을 컵마다 한 글로 묶어, 싱크대 안이 아닌 첫 컵의 글(없으면 빈 글). */
+function cupFacts(facts: string[]): string {
+  const byCup = new Map<string, string[]>();
+  for (const l of facts) {
+    const id = /^컵 (cup_\d+) /.exec(l)?.[1];
+    if (id) byCup.set(id, [...(byCup.get(id) ?? []), l]);
+  }
+  return [...byCup.values()].map((ls) => ls.join(" / ")).find((t) => !t.includes("싱크대 안")) ?? "";
+}
+
 /** 컵 갈래 시험의 PAM 답(시험 대역): 관찰 텍스트의 [지속] 사실로 고르고, 요청의 tasks에서 이름으로 번호를 찾는다(목록에 없으면 대기 -1).
  *  사람 안 보임 + 컵 비어 있음 → 컵 치우기, + 내용물 있음 → 컵 그대로 두기, + 안이 안 보임 → 사용자에게 물어보기,
  *  사람 먹는 중 + 비어 있음 → 컵에 물 채워 주기, 사람 TV 보는 중 + 비어 있음 → 컵에 콜라 따라 주기, 그 밖 → 대기. */
 export function cupBranchPredict(body: Record<string, unknown>): Pred {
   const tasks = body.tasks as string[];
   const facts = String(body.observation_text).split("\n").filter((l) => l.startsWith("[지속] ")).map((l) => l.slice(5));
-  const cup = facts.find((l) => /^컵 cup_\d+ /.test(l) && !l.includes("싱크대 안")) ?? "";
+  const cup = cupFacts(facts);
   const has = (head: string) => facts.some((l) => l.startsWith(head));
   const pick = (action: string, observation: string, reasoning: string): Pred => ({ observation, reasoning, task_index: tasks.indexOf(action) });
   const wait: Pred = { observation: "할 일이 보이지 않음", reasoning: "맞는 규칙이 없어 기다린다", task_index: -1 };
@@ -64,7 +74,7 @@ export function demoPredict(body: Record<string, unknown>): Pred {
   if (said(/이거 어떻게/) && /전자레인지/.test(text)) return pick("전자레인지로 데우기 알려 주기", "전자레인지 앞에서 쓰는 법을 물음", "방법을 물어서 단계마다 알려 준다");
   if (said(/라면/)) return pick("라면 끓이기 알려 주기", "사용자가 요리 방법을 물음", "방법을 물어서 단계마다 알려 준다");
   if (habit && has("사람 TV 보는 중")) return pick("에어컨 켜기", "사용자가 소파에서 TV를 봄", "배운 습관대로 에어컨을 켠다");
-  const cup = facts.find((l) => /^컵 cup_\d+ /.test(l) && !l.includes("싱크대 안")) ?? "";
+  const cup = cupFacts(facts);
   if (cup && has("사람 안 보임")) {
     if (cup.includes("비어 있음")) return pick("컵 치우기", "사람이 자리를 비웠고 컵이 비어 있음", "자리를 비워 빈 컵을 치운다");
     if (cup.includes("내용물 있음")) return pick("컵 그대로 두기", "사람이 자리를 비웠고 컵에 음료가 남음", "음료가 남아 그대로 둔다");

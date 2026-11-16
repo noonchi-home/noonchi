@@ -77,6 +77,8 @@ export function dayText(month: number, day: number, weekday: number, hour: numbe
 
 /** 관찰 텍스트 사실 글. */
 export const PLACE_UNKNOWN = "자리 모름";
+/** VLM 한 장만 보고 붙인 사실(certainty inferred) 표시: 관찰 텍스트 [지속] 사실 줄의 값 뒤 괄호. */
+export const GUESS = "짐작";
 export const OUT_OF_VIEW_NOW = "지금 시야 밖";
 export const EYE_TEXT = "클로이드 눈:";
 export const ROOM_UNKNOWN = "방 모름";
