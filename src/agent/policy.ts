@@ -140,6 +140,9 @@ export interface PolicyOptions {
 
 export const CONFIRM_TTL_MS = 5 * 60 * 1000;
 
+/** 정책을 닫은 뒤(집을 닫는 중) 가전 명령·승인 실행의 답. */
+export const POLICY_CLOSED = "집을 닫는 중이라 실행하지 않았어요.";
+
 const TOKEN_MISSING = "승인 토큰이 없거나 만료되었습니다.";
 const TOKEN_MISMATCH = "승인 토큰이 이 기기·명령과 맞지 않습니다.";
 
@@ -157,6 +160,8 @@ export class Policy {
   private readonly calls = new Map<string, PendingService>();
   private readonly ttlMs: number;
   private readonly now: () => number;
+  /** 닫혔다(집을 닫는 중): 가전 명령·승인 실행을 하지 않는다. */
+  private closed = false;
   /** 시간 제한을 멈춘 때(pause). 멈춘 동안은 그때를 지금으로 본다. */
   private pausedAt: number | null = null;
   readonly approvals: ApprovalBook;
@@ -237,8 +242,14 @@ export class Policy {
     return p && structuredClone(p);
   }
 
-  /** 정책을 거쳐 명령한다(말로 시킨 명령). 승인이 필요하면 needsConfirmation(토큰)을 돌려주고 실행하지 않는다. */
+  /** 닫는다(집을 닫기 시작함): 그 뒤 가전 명령(guard)·승인 실행(confirm)은 하지 않는다(말·API·실행 추적 모두 이 길이다). */
+  close(): void {
+    this.closed = true;
+  }
+
+  /** 정책을 거쳐 명령한다(말로 시킨 명령). 승인이 필요하면 needsConfirmation(토큰)을 돌려주고 실행하지 않는다. 닫혔으면 하지 않는다. */
   async guard(hub: DeviceHub, id: string, cmd: Command, confirmToken?: string): Promise<CommandResult> {
+    if (this.closed) return { ok: false, error: POLICY_CLOSED };
     const spec = hub.list().find((d) => d.id === id);
     if (!spec) return { ok: false, error: `기기를 찾을 수 없습니다: ${id}` };
     const c = normalizeCommand(spec, cmd);
@@ -265,6 +276,7 @@ export class Policy {
 
   /** 「승인」: 토큰만으로 대기 중인 명령을 실행한다(POST /api/agent/confirm, 실제 폰 답 단추). 위험 목록이라 기억하지 않는다. */
   async confirm(hub: DeviceHub, token: string): Promise<CommandResult> {
+    if (this.closed) return { ok: false, error: POLICY_CLOSED };
     const p = this.consume(token);
     if (!p) return { ok: false, error: TOKEN_MISSING };
     return hub.command(p.deviceId, p.command);

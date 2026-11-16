@@ -151,6 +151,9 @@ function hideIn<T>(value: T, said: string): T {
   return value;
 }
 
+/** 닫은 뒤(집을 닫는 중) 받은 말의 답. */
+export const AGENT_CLOSED = "집을 닫는 중이라 요청을 받지 않았어요.";
+
 /** 값 안의 모든 글에서 가릴 글들을 뺀 사본(이벤트로 내보낼 때). */
 function hideAllIn<T>(value: T, hidden: readonly string[]): T {
   if (typeof value === "string") return hideTexts(value, hidden) as T;
@@ -308,6 +311,8 @@ export class Agent {
   // ── 내부 ────────────────────────────────────────────────
 
   private async handle(s: Session, message: string, opts: ChatOptions): Promise<ChatResult> {
+    // 닫은 뒤(집을 닫는 중)에는 모델을 부르지 않고 도구도 쓰지 않는다
+    if (this.closed) return { sessionId: s.id, reply: AGENT_CLOSED, actions: [], pendingConfirmations: [], provider: this.provider.name };
     const actions: AgentAction[] = [];
     this.prune(s);
     // 늘 듣는 실제 폰이 들은 말은 이벤트(/events 방송)에 싣지 않는다: 돌려주는 답(폰이 읽는 글)은 그대로
@@ -576,7 +581,8 @@ export class Agent {
     return result;
   }
 
-  /** 닫는다(집을 닫음): 차례를 기다리던 외부 연락은 보내지 않고 취소로 끝내고(결과 cancelled), 보내는 중인 것은 끝날 때까지 기다린다. 그 뒤 승인은 보내지 않는다. */
+  /** 닫는다(집을 닫음): 새 말은 받지 않고(AGENT_CLOSED), 차례를 기다리던 외부 연락은 보내지 않고 취소로 끝내고(결과 cancelled),
+   *  보내는 중인 것은 끝날 때까지 기다린다. 그 뒤 승인은 보내지 않는다. 가전 명령은 정책을 닫아(Policy.close) 막는다. */
   async close(): Promise<void> {
     this.closed = true;
     const sends = [...this.sends];

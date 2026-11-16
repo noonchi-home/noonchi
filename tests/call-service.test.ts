@@ -17,7 +17,7 @@ import { AGENT_TOOLS, MCP_TOOLS } from "../src/agent/tools.js";
 import type { ServiceCall, ServiceResult } from "../src/contract/service.js";
 import { CallServiceClient, callServiceBody, callServiceFrom } from "../src/infer/call-service.js";
 import { HEARD_MARK } from "../src/world/labels.js";
-import { ROOMS, makeHome } from "./helpers/home.js";
+import { ROOMS, makeHome, twin } from "./helpers/home.js";
 import { startFakeCallService } from "./helpers/call-service.js";
 import { startFakeLlm, toolOutputs, type FakeLlm } from "./helpers/llm.js";
 
@@ -235,6 +235,8 @@ describe("Agent + call_service(가짜 모델·가짜 전화 서비스)", () => {
         "전자레인지 AS센터에 전화할지 골라 주세요.",
       ],
       "어떤 내용으로 요청했지?": ["탈수할 때 멈춤 · 에러 UE로 LG전자 서비스센터에 요청했어요."],
+      "거실 TV 켜 줘": [[["turn_on", { device_id: "tv_living", reason: "거실 TV를 켜 달라고 해서" }]], "거실 TV를 켰어요."],
+      "현관문 열어 줘": [[["unlock", { device_id: "door_main", reason: "현관문을 열어 달라고 해서" }]], "열까요?"],
       // 까닭 200자 경계에 앞 연락 내용(「탈수할 때 멈춤」)이 걸린다
       "세탁기 다시 찾아 줘": [[["find_devices", { query: "세탁기", reason: `${"가".repeat(195)}탈수할 때 멈춤 문제라서 세탁기를 찾으려고` }]], "세탁기를 찾았어요."],
     });
@@ -243,6 +245,7 @@ describe("Agent + call_service(가짜 모델·가짜 전화 서비스)", () => {
 
   function serviceAgent(service: ServiceLine | null, o: { contacts?: ServiceContacts; keepHeard?: boolean; retries?: ServiceRetryStore } = {}) {
     const { hub } = makeHome();
+    lastHub = hub;
     const approvals = new ApprovalStore(join(mkdtempSync(join(tmpdir(), "svc-agent-")), "approvals.json"), () => "t");
     const policy = new Policy({ approvals });
     const results: ServiceResult[] = [];
@@ -253,6 +256,8 @@ describe("Agent + call_service(가짜 모델·가짜 전화 서비스)", () => {
     });
     return { agent, policy, approvals, results, events };
   }
+  /** 마지막으로 만든 에이전트의 가전 허브(닫은 뒤 가전이 바뀌지 않았는지 본다). */
+  let lastHub: ReturnType<typeof makeHome>["hub"];
   const sentFrom = () => {
     const from = llm.bodies().length;
     return () => llm.bodies().slice(from);
@@ -572,6 +577,33 @@ describe("Agent + call_service(가짜 모델·가짜 전화 서비스)", () => {
       expect(new ServiceRetryStore(path).idFor(WASHER_CALL)).toBe(fake.requests[0]!.body.id);
       await fake.close();
       expect((await second).ok).toBe(false);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("집을 닫기 시작하면(에이전트·정책 닫기) 보내는 중인 연락을 기다리는 동안에도 새 요청·가전 명령·가전 승인은 하지 않는다. 그 연락의 답은 그대로 받는다", async () => {
+    const fake = await startFakeCallService();
+    fake.answer = "hang";
+    try {
+      const { agent, policy } = serviceAgent(client(fake.url, 60_000));
+      const hub = lastHub;
+      const door = (await agent.chat("d", "현관문 열어 줘")).pendingConfirmations[0]!.token;
+      const a = (await agent.chat("s", "세탁기 AS 불러 줘")).pendingConfirmations[0]!.token;
+      const sending = agent.confirm(a, "approve");
+      for (const end = Date.now() + 5000; fake.requests.length === 0 && Date.now() < end; await new Promise((r) => setTimeout(r, 20)));
+      policy.close();
+      const closing = agent.close();
+      const bodies = sentFrom();
+      expect(await agent.chat("x", "거실 TV 켜 줘")).toMatchObject({ reply: "집을 닫는 중이라 요청을 받지 않았어요.", actions: [] });
+      expect(bodies()).toEqual([]);
+      expect(await agent.confirm(door, "approve")).toMatchObject({ ok: false });
+      expect(await policy.guard(hub, "tv_living", { type: "on" })).toMatchObject({ ok: false, error: "집을 닫는 중이라 실행하지 않았어요." });
+      expect(twin(hub, "tv_living").power).toBe("off");
+      expect(twin(hub, "door_main").lock).toBe("locked");
+      await fake.close();
+      expect((await sending).reply).toBe("AS센터 전화 요청이 접수됐는지 확인하지 못했어요.");
+      await closing;
     } finally {
       await fake.close();
     }
