@@ -1,6 +1,10 @@
 {
   "source": "noonchi 시연(2026-11-13)",
   "items": [
-    { "id": "microwave_kitchen", "type": "microwave", "label": "주방 전자레인지", "room": "kitchen", "position": [7.66, -0.0715], "facing_deg": 90, "elevation": 0.9 }
+    { "id": "microwave_kitchen", "type": "microwave", "label": "주방 전자레인지", "room": "kitchen", "position": [7.66, -0.0715], "facing_deg": 90, "elevation": 0.9 },
+    { "id": "curtain_living", "type": "curtain_290", "label": "거실 커튼", "room": "living", "position": [9.028125, 12.159375], "facing_deg": 270, "elevation": 0.02 },
+    { "id": "curtain_bed_sw", "type": "curtain_290", "label": "침실 1 커튼", "room": "bed_sw", "position": [5.175, 12.159375], "facing_deg": 270, "elevation": 0.02 },
+    { "id": "light_living", "type": "ceiling_light", "label": "거실 조명", "room": "living", "position": [9.309375, 10.0265625], "facing_deg": 90, "elevation": 2.3 },
+    { "id": "light_entrance", "type": "downlight", "label": "현관 조명", "room": "entrance", "position": [4.5140625, 5.090625], "facing_deg": 90, "elevation": 2.3 }
   ]
 }

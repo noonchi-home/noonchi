@@ -241,11 +241,16 @@ FSM을 쓰는 사람(박석준·김준형)이 보는 목록이다. World State�
 | `dryer_7aa61816` | 후면 발코니 건조기 | dryer | `stopped`, `running` | 후면 발코니 건조기 건조 멈춤, 후면 발코니 건조기 건조 시작 | — |
 | `tv_62442cb3` | 거실·복도 TV | tv | `off`, `on` | 거실·복도 TV 꺼짐, 거실·복도 TV 켜짐 | TV 화면 켜짐·화면 꺼짐 |
 | `microwave_kitchen` | 주방 전자레인지 | microwave | `off`, `on` | 주방 전자레인지 꺼짐, 주방 전자레인지 켜짐 | 전자레인지 쓰는 중·꺼져 있음 |
+| `curtain_living` | 거실 커튼 | covering | `curtain_open`, `curtain_closed` | 거실 커튼 열림, 거실 커튼 닫힘 | — |
+| `curtain_bed_sw` | 침실 1 커튼 | covering | `curtain_open`, `curtain_closed` | 침실 1 커튼 열림, 침실 1 커튼 닫힘 | — |
+| `light_living` | 거실 조명 | light | `off`, `on` | 거실 조명 꺼짐, 거실 조명 켜짐 | — |
+| `light_entrance` | 현관 조명 | light | `off`, `on` | 현관 조명 꺼짐, 현관 조명 켜짐 | — |
 <!-- /vocab:home -->
 
 - 거실·복도 TV(`tv_62442cb3`)는 거실 TV수납장 위에 놓인 가전이다. 카메라로는 TV 화면 켜짐·꺼짐을 맞춘다.
 - 이 집에는 식기세척기·현관문 가전이 없다. 현관 드나듦은 하는 일(집에 들어옴·집을 나섬)로 본다.
 - 주방 전자레인지(`microwave_kitchen`)는 시연용으로 더한 가전이다(`twin/data/homes/mokryeon_180b/added_devices.json`). 실제 자리를 확인하기 전이라 AR 위치 맞추기 기준점으로 쓰지 않는다(항목에 `landmark: true`를 적어야 쓴다).
+- 거실 커튼(`curtain_living`)·침실 1 커튼(`curtain_bed_sw`)·거실 조명(`light_living`)·현관 조명(`light_entrance`)은 습관 시연(아침에 일어나면 커튼 열기, 출근 가방을 메면 조명 끄기)용으로 더한 가상 가전이다(같은 파일). 커튼은 발코니 미닫이 앞, 조명은 천장에 있고 Matter 가상 가전으로만 움직인다.
 - 문·창은 트윈에만 있고 신호가 없다.
 - 이 집에서 카메라로 맞추는 가전은 냉장고 문, TV 화면, 전자레인지 셋이다(싱크대는 도면 설비라 가전이 아니다).
 
