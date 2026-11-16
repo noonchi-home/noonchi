@@ -100,7 +100,7 @@ export const THOUGHT: Thought = { reasoning: REASON, state: LEFT_CUP_STATE, habi
 /** 컵 갈래 판단 고정 자료: 행동, 그 규칙이 있는 FSM 상태 id·트리거(src/brain/decision.ts CUP_FSM_MEMORY와 같다, data.test.ts가 견준다), PAM의 생각 한 문장. */
 export interface Branch { action: string; state: string; trigger: string; reasoning: string }
 export const BRANCHES = {
-  clear: { action: CLEAR_CUP, state: "left_cup", trigger: "사용자가 자리를 비웠고 컵이 비어 있으며 아무도 컵을 들거나 만지지 않는다.", reasoning: REASON },
+  clear: { action: CLEAR_CUP, state: "left_cup", trigger: "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다.", reasoning: REASON },
   leave: { action: "컵 그대로 두기", state: "left_cup", trigger: "사용자가 자리를 비웠지만 컵에 음료가 남아 있다.", reasoning: "컵에 음료가 남아 있어 돌아와서 마실 수 있어요." },
   water: { action: "컵에 물 채워 주기", state: "drinking", trigger: "사용자가 식탁에서 먹는 중이고 식탁 위 컵이 비어 있으며 컵을 들거나 만지지 않는다.", reasoning: "식사 중인데 컵이 비어 있어요." },
   cola: { action: "컵에 콜라 따라 주기", state: "watching_tv", trigger: "사용자가 TV를 보는 중이고 곁의 컵이 비어 있으며 컵을 들거나 만지지 않는다.", reasoning: "TV를 보는 중인데 컵이 비어 있어요." },
