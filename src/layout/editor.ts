@@ -49,7 +49,7 @@ export interface LayoutEditorOptions {
   /** 라이브러리 폴더(/twin/lib/) */
   libraryDir?: string;
   here?: HereResolver;
-  /** 구운 장면에 없는 기본 물건(시연용으로 더한 가전, src/model/scene.ts added). 연결 때 지금 자리로 add를 보낸다. */
+  /** 구운 장면에 없는 기본 물건(시연용으로 더한 가전, src/layout/scene.ts added). 연결 때 지금 자리로 add를 보낸다. */
   unbaked?: readonly string[];
 }
 

@@ -1,6 +1,6 @@
 // 폰 세션 + 위치 맞춤 모듈: 「여기서 시작」이면 어림(estimated) 눈, 벽·물건이 기준을 넘으면 맞춤. 앱도 같은 메시지(start·pose·surface·landmarks)를 보낸다.
 import { describe, expect, it } from "vitest";
-import type { HomePlan } from "../src/phone/home-plan.js";
+import type { HomePlan } from "../src/layout/home-plan.js";
 import { PhoneSession, type PhoneStatus } from "../src/phone/session.js";
 import type { TwinLandmark } from "../src/phone/sync/landmarks.js";
 import { applyRigid, invertRigid, rigidGap, type P2, type Rigid } from "../src/phone/sync/rigid.js";

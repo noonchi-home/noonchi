@@ -60,7 +60,7 @@ export interface LandmarkSource {
   footprint?: number[];
   height?: number;
   anchors?: unknown;
-  /** false면 기준점으로 쓰지 않는다(시연용으로 더한 가전의 기본, src/model/scene.ts). */
+  /** false면 기준점으로 쓰지 않는다(시연용으로 더한 가전의 기본, src/layout/scene.ts). */
   landmark?: boolean;
 }
 

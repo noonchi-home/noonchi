@@ -86,7 +86,7 @@ describe("loadLayout: 집 scene.json + 카탈로그 + 저장한 수정본", () =
   it("scene이 있으면 편집기를 만들고 저장한 수정본을 다시 적용한다", async () => {
     const { mkdirSync, writeFileSync } = await import("node:fs");
     const { loadLayout } = await import("../src/layout/load.js");
-    const { resolveHome } = await import("../src/model/homes.js");
+    const { resolveHome } = await import("../src/layout/homes.js");
     const studio = mkdtempSync(join(tmpdir(), "twin-home-studio-"));
     const runtime = mkdtempSync(join(tmpdir(), "twin-home-runtime-"));
     cleanups.push(() => rmSync(studio, { recursive: true, force: true }), () => rmSync(runtime, { recursive: true, force: true }));

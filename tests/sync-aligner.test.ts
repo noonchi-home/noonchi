@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { HomePlan } from "../src/phone/home-plan.js";
+import type { HomePlan } from "../src/layout/home-plan.js";
 import { SyncAligner } from "../src/phone/sync/aligner.js";
 import type { TwinLandmark } from "../src/phone/sync/landmarks.js";
 import { applyRigid, invertRigid, rigidGap, type P2, type Rigid } from "../src/phone/sync/rigid.js";

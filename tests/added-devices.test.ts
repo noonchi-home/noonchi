@@ -1,4 +1,4 @@
-// 시연용으로 더하는 가전(twin/data/homes/<집>/added_devices.json): 장면을 읽을 때 더하고(src/model/scene.ts loadScene), 기기·평면도·/api/scene이 같은 물건을 쓴다.
+// 시연용으로 더하는 가전(twin/data/homes/<집>/added_devices.json): 장면을 읽을 때 더하고(src/layout/scene.ts loadScene), 기기·평면도·/api/scene이 같은 물건을 쓴다.
 // 구운 장면에는 없으니 배치 편집기가 연결 때 add로 보낸다(src/layout/editor.ts unbaked).
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -8,10 +8,10 @@ import type { SceneJson } from "../src/contract/layout.js";
 import { LayoutEditor } from "../src/layout/editor.js";
 import { loadLayout } from "../src/layout/load.js";
 import { DEFAULT_TWIN_DIR, loadTwin } from "../src/devices/devices.js";
-import { resolveHome } from "../src/model/homes.js";
-import { loadScene } from "../src/model/scene.js";
+import { resolveHome } from "../src/layout/homes.js";
+import { loadScene } from "../src/layout/scene.js";
 import { loadCatalog } from "../src/layout/catalog.js";
-import { floorPlanFrom } from "../src/plan/route.js";
+import { floorPlanFrom } from "../src/layout/route.js";
 import { twinLandmarks } from "../src/phone/sync/landmarks.js";
 import { fetchRetry } from "../src/shared/net.js";
 import { startServer } from "../src/server/start.js";

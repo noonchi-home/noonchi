@@ -6,7 +6,7 @@ import type { PlanView } from "../src/contract/plan.js";
 import { resolveTwinStudioDir } from "../src/devices/devices.js";
 import { devicePlan } from "../src/plan/planner.js";
 import { askPlan, cupPlan } from "./helpers/cup-plan.js";
-import { floorPlanFrom } from "../src/plan/route.js";
+import { floorPlanFrom } from "../src/layout/route.js";
 import { SMALL_SCENE, smallFloor } from "./helpers/floor.js";
 
 const fp = smallFloor();

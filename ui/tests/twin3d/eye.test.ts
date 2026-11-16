@@ -9,7 +9,7 @@ import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import type { EyeEvent, Plan2 } from "../../../src/contract/events.ts";
 import { viz } from "../../../src/design/tokens.ts";
-import { floorPlanFrom, roomAt } from "../../../src/plan/route.ts";
+import { floorPlanFrom, roomAt } from "../../../src/layout/route.ts";
 import { CONE, conePixelBox, createEyeCone, type EyeCone } from "../../src/twin3d/eye";
 import { MOKRYEON_MAP_CAMERA as CAM, planToPixel } from "../../src/twin3d/projection";
 import { walkGuide } from "../../src/twin3d/walk";

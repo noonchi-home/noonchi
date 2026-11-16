@@ -1,6 +1,6 @@
 // 계획 시험이 함께 쓰는 작은 평면도: 복도(hall)와 주방(kitchen)이 트여 있고, 로봇은 복도 [1, 2], 식탁 [7, 3], 싱크대 [5, 1](싱크볼 [5, 1.2]).
-import type { FloorPlan } from "../../src/plan/floor.js";
-import { floorPlanFrom } from "../../src/plan/route.js";
+import type { FloorPlan } from "../../src/layout/floor.js";
+import { floorPlanFrom } from "../../src/layout/route.js";
 
 export const SMALL_SCENE = {
   plan: {

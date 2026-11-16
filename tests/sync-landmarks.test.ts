@@ -1,7 +1,7 @@
 // 물건 기준점: COCO 종류 ↔ 트윈 물건 표, 상자 아래 가운데 광선이 AR 바닥과 만나는 점, 관찰 묶기·이상치 버리기, 앞 가장자리 점.
 import { describe, expect, it } from "vitest";
 import { loadCatalog } from "../src/layout/catalog.js";
-import { loadScene } from "../src/model/scene.js";
+import { loadScene } from "../src/layout/scene.js";
 import type { SceneObject } from "../src/contract/layout.js";
 import { LANDMARK_IDS, LANDMARK_KEYS, landmarkClass } from "../src/phone/sync/classes.js";
 import {

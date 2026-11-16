@@ -1,7 +1,7 @@
 // 평면도 물건·가전을 사람에게 부르는 이름 하나. 계획 단계 글(src/agent/planTools.ts), 실행 추적의 사람 부탁·켜기 전 질문·끄기 안내,
 // 비전 상태 줄(src/act/track.ts)이 모두 이것만 쓴다. 이름을 못 찾으면 null이고, id는 사람 글에 쓰지 않는다.
 import { KIND_LABELS, findTypeRule } from "../devices/mapping.js";
-import { placeShort } from "./labels.js";
+import { placeShort } from "../plan/labels.js";
 
 /** 이름 자료: 카탈로그 종류 이름(예: bookcase → 책장), 배치 이름(배치 편집기, 예: 침실 1 책장), [가전] 종류. 서버는 배치 편집기·허브에서 준다. */
 export interface PlaceNames {

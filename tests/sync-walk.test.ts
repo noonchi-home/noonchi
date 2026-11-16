@@ -2,8 +2,8 @@
 // 잡음(hit 1.5cm, 상자 3px), hit-test가 빠지는 몫 30%, 가구가 벽을 가림(가구 옆면 hit은 이상치), 복도(옆 벽만 보임)를 본다.
 import { describe, expect, it } from "vitest";
 import { loadCatalog } from "../src/layout/catalog.js";
-import { readScenePlan } from "../src/phone/home-plan.js";
-import { loadScene } from "../src/model/scene.js";
+import { readScenePlan } from "../src/layout/home-plan.js";
+import { loadScene } from "../src/layout/scene.js";
 import type { SceneObject } from "../src/contract/layout.js";
 import { SyncAligner } from "../src/phone/sync/aligner.js";
 import { twinLandmarks } from "../src/phone/sync/landmarks.js";

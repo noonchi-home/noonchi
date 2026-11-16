@@ -3,7 +3,7 @@
 // 더한 가전은 구운 3D에 없어 배치 편집기가 연결 때 add로 보낸다(src/layout/editor.ts unbaked, 더한 id 목록 added).
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { SceneJson, SceneObject } from "../layout/editor.js";
+import type { SceneJson, SceneObject } from "./editor.js";
 import { profileAttrs } from "../devices/mapping.js";
 import { withDrawn, type DrawnFixture } from "./drawn.js";
 import type { Home } from "./homes.js";

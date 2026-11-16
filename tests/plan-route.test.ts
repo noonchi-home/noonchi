@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { resolveTwinStudioDir } from "../src/devices/devices.js";
-import { approach, floorPlanFrom, roomAt, roomNamedAt, route } from "../src/plan/route.js";
+import { approach, floorPlanFrom, roomAt, roomNamedAt, route } from "../src/layout/route.js";
 
 // A(0..4 × 0..4)와 B(4..8 × 0..4)는 트여 있고, C(0..4 × 4..8)는 A와 (2,4) 문으로 이어진다
 const scene = {

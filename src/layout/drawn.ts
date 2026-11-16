@@ -1,6 +1,6 @@
 // 도면 설비(twin-studio data/homes/<id>/drawn_fixtures.json, 공개 도면에서 읽은 욕실·주방 설비)를 scene.json 물건 모양으로 바꾼다.
 // 구운 3D의 drawn_<id> 노드와 같은 파일에서 와서 자리가 같다. 옮길 수 없고(interactive false) 기기가 아니다(attrs 없음).
-import type { SceneJson, SceneObject } from "../layout/editor.js";
+import type { SceneJson, SceneObject } from "./editor.js";
 
 export interface DrawnFixture {
   id: string; kind: string; room: string; position: [number, number]; facing_deg: number; footprint: [number, number]; height: number;

@@ -15,7 +15,7 @@ import type { PlannedCommandMessage } from "../src/contract/phone.js";
 import type { WorldView } from "../src/contract/world.js";
 import { PlanHub } from "../src/plan/hub.js";
 import { CAUTION_LINE, CAUTION_TEXT, SAY_TEXT, type TellMode } from "../src/plan/labels.js";
-import { floorPlanFrom } from "../src/plan/route.js";
+import { floorPlanFrom } from "../src/layout/route.js";
 import type { DecisionRecord } from "../src/contract/events.js";
 import { SMALL_SCENE } from "./helpers/floor.js";
 import { ROOMS, makeHome } from "./helpers/home.js";

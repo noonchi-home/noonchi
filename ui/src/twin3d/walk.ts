@@ -1,7 +1,7 @@
 // 맞춘 눈 표시(원뿔)를 그릴 자리 보정(그리는 자리만, 눈 자세 값은 그대로): 평면 점을 방 안·벽에서 떨어진 자리로 옮기고(stand),
-// 두 자리 사이는 서버 경로 찾기(src/plan/route.ts)와 같은 방 다각형·문·트인 경계로 잇는다(path). 사람이 든 폰이라 모든 방을 지날 수 있다.
+// 두 자리 사이는 서버 경로 찾기(src/layout/route.ts)와 같은 방 다각형·문·트인 경계로 잇는다(path). 사람이 든 폰이라 모든 방을 지날 수 있다.
 import type { Plan2 } from "../../../src/contract/events.ts";
-import { floorPlanFrom, roomAt, route } from "../../../src/plan/route.ts";
+import { floorPlanFrom, roomAt, route } from "../../../src/layout/route.ts";
 
 export interface WalkGuide {
   /** 그릴 자리: 방 안이고 벽에서 벽 반 두께 + 표시 반지름만큼 떨어진 가장 가까운 자리. 방이 없는 장면이면 그대로. */

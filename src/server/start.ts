@@ -22,7 +22,7 @@ import type { LayoutEditor } from "../layout/editor.js";
 import { KIND_LABELS } from "../devices/mapping.js";
 import type { PipelineInject } from "../observe/pipeline.js";
 import { resolveTwinStudioDir, type TwinData } from "../devices/devices.js";
-import { listHomes } from "../model/homes.js";
+import { listHomes } from "../layout/homes.js";
 import { acquireServerLock, restoreNeeded } from "./lock.js";
 import { KINDS } from "../devices/kinds.js";
 import { checkKinds } from "../devices/kinds-check.js";

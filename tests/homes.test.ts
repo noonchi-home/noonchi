@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { loadTwin } from "../src/devices/devices.js";
-import { listHomes, readRegistry, resolveHome } from "../src/model/homes.js";
+import { listHomes, readRegistry, resolveHome } from "../src/layout/homes.js";
 
 const temps: string[] = [];
 function tempDir(): string {

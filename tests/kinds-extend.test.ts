@@ -19,7 +19,7 @@ vi.mock("../src/devices/kinds.js", async (importOriginal) => {
 const { kindsSnapshot } = await import("../scripts/kinds-snapshot.js");
 const { matterFromCommand, twinChange } = await import("../src/devices/mapping.js");
 const { loadTwin } = await import("../src/devices/devices.js");
-const { loadScene } = await import("../src/model/scene.js");
+const { loadScene } = await import("../src/layout/scene.js");
 // 대시보드 트윈이 모델 없는 물건을 그리는 상자(트윈 뷰어 layout.mjs, ui/src/twin3d/live.ts가 그대로 쓴다)
 const LAYOUT = "../twin/apartment/viewer/layout.mjs";
 const { boxSpec } = (await import(/* @vite-ignore */ LAYOUT)) as { boxSpec: (o: Record<string, unknown>) => { size: [number, number, number] } };

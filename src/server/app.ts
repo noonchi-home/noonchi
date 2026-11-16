@@ -49,7 +49,7 @@ export interface AppOptions {
   phoneUrls?: () => string[];
   /** 배치 보정(docs/plan.md 계약 B·C). 있으면 /api/layout*, /events layout 메시지. */
   layout?: LayoutEditor;
-  /** 서버 장면(scene.json + 도면 설비, src/model/scene.ts). GET /api/scene. 없거나 null이면 404. */
+  /** 서버 장면(scene.json + 도면 설비, src/layout/scene.ts). GET /api/scene. 없거나 null이면 404. */
   scene?: () => unknown;
   /** 허용할 브라우저 출처(기본: localhost·127.0.0.1·[::1]의 모든 포트). */
   allowOrigin?: (origin: string) => boolean;

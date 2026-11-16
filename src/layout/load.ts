@@ -1,10 +1,10 @@
-// 고른 집의 배치 편집기 만들기: 서버 장면(scene.json + 도면 설비 drawn_fixtures.json, src/model/scene.ts) + 카탈로그
+// 고른 집의 배치 편집기 만들기: 서버 장면(scene.json + 도면 설비 drawn_fixtures.json, src/layout/scene.ts) + 카탈로그
 // + (있으면) 저장해 둔 수정본(runtime/homes/<id>/edits.json). 도면 설비는 고정 설비라 옮길 수 없다.
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Home } from "../model/homes.js";
-import { loadScene } from "../model/scene.js";
+import type { Home } from "./homes.js";
+import { loadScene } from "./scene.js";
 import { loadCatalog, type TypeInfo } from "./catalog.js";
 import { LayoutEditor, type Edit } from "./editor.js";
 

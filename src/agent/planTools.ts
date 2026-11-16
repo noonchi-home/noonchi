@@ -13,11 +13,11 @@ import { assemblePlan } from "../plan/planner.js";
 import type { PlanTarget, PlanView, StepKind, XZ } from "../contract/plan.js";
 import type { WorldObject, WorldView } from "../contract/world.js";
 import type { Capability, RoomSpec } from "../devices/hub/types.js";
-import type { FloorPlan } from "../plan/floor.js";
+import type { FloorPlan } from "../layout/floor.js";
 import { ALL_ACTS, CAUTION_LINE, DEVICE_VERB, EXTRA_ITEMS, ITEM_CLASS, NOTICES, NOTICE_KEYS, STEP_ACTS, STEP_LABEL, STEP_TEXT, noticeLabel, type StepAct } from "../plan/labels.js";
 import { KINDS, KIND_ORDER, isSelfStop, kindEntry } from "../devices/kinds.js";
 import { KIND_LABELS, findTypeRule } from "../devices/mapping.js";
-import { placeName, type PlaceNames } from "../plan/names.js";
+import { placeName, type PlaceNames } from "../layout/names.js";
 import { OBJECT_NAME } from "../world/labels.js";
 import { CLASSES, DEVICE_STATES, type DeviceStateKey } from "../world/vocab.js";
 import { ConditionSchema, checkCondition, type Condition, type ConditionHome } from "../world/conditions.js";
@@ -100,7 +100,7 @@ export type TaskInfo = TaskSpec;
 export interface PlaceInfo { id: string; type: string; room: string | null; position: XZ; name: string; short: string; basin?: XZ }
 
 /** 계획 입력의 평면도 물건(벽·바닥·문·창은 뺀다). 서버(src/server/home.ts)와 시험이 같이 쓴다.
- *  name은 배치 이름(없으면 id), short는 부르는 이름(src/plan/names.ts placeName, 없으면 배치 이름). */
+ *  name은 배치 이름(없으면 id), short는 부르는 이름(src/layout/names.ts placeName, 없으면 배치 이름). */
 export function placesOf(floor: FloorPlan, names: PlaceNames = {}): PlaceInfo[] {
   return [...floor.objects.values()].filter((p) => !/^(walls|floors)$|door|win/.test(p.type)).map((p) => {
     const name = names.layoutName?.(p.id) ?? p.id;
@@ -122,7 +122,7 @@ export interface PlanContext {
   placed?: Placed;
   /** 지난 수업(코치 행동의 수업 기록, src/act/lessons.ts). 있으면 입력에 [지난 수업]으로 넣는다(단계 이름·순서를 그대로 쓰게). */
   lesson?: Lesson | null;
-  /** 부르는 이름 자료(카탈로그 종류 이름·배치 이름, src/plan/names.ts). [가전] 종류는 devices에서 본다. */
+  /** 부르는 이름 자료(카탈로그 종류 이름·배치 이름, src/layout/names.ts). [가전] 종류는 devices에서 본다. */
   names?: PlaceNames;
 }
 
@@ -345,7 +345,7 @@ export class PlanDraft {
     return { ok: true, plan: this.done };
   }
 
-  /** 단계 대상의 부를 이름. 평면도 물건·[가전]은 src/plan/names.ts placeName(종류 짧은 이름 → 카탈로그 종류 이름 → 배치 이름 → 가전 종류 이름),
+  /** 단계 대상의 부를 이름. 평면도 물건·[가전]은 src/layout/names.ts placeName(종류 짧은 이름 → 카탈로그 종류 이름 → 배치 이름 → 가전 종류 이름),
    *  World State 물건은 그 종류 이름. 부를 이름이 없으면 null(id를 폰 글에 쓰지 않는다). */
   private nameOf(id: string | null): string | null {
     if (!id) return null;

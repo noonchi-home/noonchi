@@ -10,7 +10,7 @@ export const WALL_CUT_M = 1.05;
 
 type Px = [number, number];
 
-/** 평면 점이 든 방 id(src/plan/route.ts roomAt과 같은 짝수 교차 규칙). 없으면 null. */
+/** 평면 점이 든 방 id(src/layout/route.ts roomAt과 같은 짝수 교차 규칙). 없으면 null. */
 export function roomAt([x, z]: XZ, rooms: HomeRoom[]): string | null {
   for (const r of rooms) {
     let inside = false;

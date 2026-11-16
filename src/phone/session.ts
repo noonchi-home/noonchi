@@ -13,7 +13,7 @@ import type { StartPose } from "./sync/start.js";
 import type { WallSeg } from "./sync/walls.js";
 import { fromTwin, planOf, toTwin, type Alignment, type Plan2, type Vec3 } from "../shared/geometry.js";
 import type { Quat, CameraView } from "../contract/observe.js";
-import { DEFAULT_EYE_HEIGHT_M } from "./home-plan.js";
+import { DEFAULT_EYE_HEIGHT_M } from "../layout/home-plan.js";
 import type { FrameHeader } from "./packet.js";
 
 export type { EyeEvent } from "../contract/events.js";

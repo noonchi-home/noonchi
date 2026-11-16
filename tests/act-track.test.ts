@@ -23,7 +23,7 @@ const ASK_ON = "냄비와 상판이 뜨거워져요. 인덕션을 켤까요?";
 import { WorldState, type CloserPass } from "../src/world/state.js";
 import { sha256 } from "../src/observe/ring.js";
 import type { EngineFrame, Detection, CameraView } from "../src/contract/observe.js";
-import { floorPlanFrom } from "../src/plan/route.js";
+import { floorPlanFrom } from "../src/layout/route.js";
 import { SMALL_SCENE, smallFloor } from "./helpers/floor.js";
 import { standing } from "./helpers/poses.js";
 import { fillSteps, microwaveScripts, planCalls, planContext, ramenScripts, ramenSteps, startFakePlanner, testPlanner, type FakePlanner } from "./helpers/planner.js";

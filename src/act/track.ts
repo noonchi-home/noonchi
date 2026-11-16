@@ -61,11 +61,11 @@ import type { HeardAt, PhoneStepKind, PlannedCommand, PlannedCommandMessage } fr
 import type { OffTrack, PlanView, StepStatus, XZ } from "../contract/plan.js";
 import type { Facet, WorldChange, WorldChangeKind, WorldEye, WorldObject, WorldView } from "../contract/world.js";
 import type { LookSpot } from "../observe/crop.js";
-import type { FloorPlan } from "../plan/floor.js";
+import type { FloorPlan } from "../layout/floor.js";
 import type { PlanHub } from "../plan/hub.js";
 import { AGAIN_TEXT, APPROVAL_TEXT, CAUTION_TEXT, CLOSER_TEXT, DEVICE_UNKNOWN, EXEC_TEXT, TELL_TEXT, VISION_TEXT, type TellMode } from "../plan/labels.js";
-import { placeName, type PlaceNames } from "../plan/names.js";
-import { roomAt } from "../plan/route.js";
+import { placeName, type PlaceNames } from "../layout/names.js";
+import { roomAt } from "../layout/route.js";
 import { OBJECT_NAME, PLACE_UNKNOWN, STATE_TEXT, onSurface } from "../world/labels.js";
 import { ConditionWatch, type Condition, type ConditionContext } from "../world/conditions.js";
 import { DEVICE_STATES, NEAR_M, PHONE_NEAR_M } from "../world/vocab.js";
@@ -103,7 +103,7 @@ export interface TrackerOptions {
   toPhone: (msg: PlannedCommandMessage) => void;
   /** 평면도 물건의 이름과 트윈 자리 [x, 높이, y](명령 대상 고리·가까이 볼 자리, 면이면 윗면 가운데). 모르면 undefined. */
   locate?: (id: string) => { label: string; position: [number, number, number] } | undefined;
-  /** 부르는 이름 자료(src/plan/names.ts, 계획 단계와 같은 것). 배치 이름이 없으면 locate 이름을 배치 이름으로 본다. */
+  /** 부르는 이름 자료(src/layout/names.ts, 계획 단계와 같은 것). 배치 이름이 없으면 locate 이름을 배치 이름으로 본다. */
   names?: PlaceNames;
   emit: (l: BrainLog) => void;
   /** 승인 기억(task:<행동 이름>). 처음 하는 계획은 묻고, 답을 남긴다. */
@@ -575,7 +575,7 @@ export class ExecutionTracker {
     const step = r ? this.stepOf(r) : undefined;
     if (this.stopped || !r || r.state !== "running" || r.asking || !r.sent || !step || !HUMAN_KINDS.includes(step.kind)) return null;
     if (r.plan.view.id !== planId || step.id !== stepId || r.sent.step !== stepId || this.handStep(step)) return null;
-    // 평면도 자리는 같은 이름 찾기(src/plan/names.ts)로, 물건은 그 종류 이름으로 부른다. 부를 이름이 없으면 보내지 않는다(id를 폰 글에 쓰지 않는다)
+    // 평면도 자리는 같은 이름 찾기(src/layout/names.ts)로, 물건은 그 종류 이름으로 부른다. 부를 이름이 없으면 보내지 않는다(id를 폰 글에 쓰지 않는다)
     const listed = this.spots(r, step, this.o.world()).find((p) => p.id === spot);
     const name = this.o.floor().objects.has(spot) ? (listed || spot === step.target ? this.nameOf(spot) : null) : listed?.label ?? null;
     if (!name) return null;
@@ -665,7 +665,7 @@ export class ExecutionTracker {
     return step.hand !== null;
   }
 
-  /** 손으로 다루는 가전 이름(묻는 글·끄기 안내): 같은 이름 찾기(src/plan/names.ts)로 그 가전, 없으면 단계 대상 자리. 둘 다 없으면 「가전」. */
+  /** 손으로 다루는 가전 이름(묻는 글·끄기 안내): 같은 이름 찾기(src/layout/names.ts)로 그 가전, 없으면 단계 대상 자리. 둘 다 없으면 「가전」. */
   private handLabel(deviceId: string, target: string | null = null): string {
     return this.nameOf(deviceId) ?? (target ? this.nameOf(target) : null) ?? DEVICE_UNKNOWN;
   }
@@ -1438,7 +1438,7 @@ export class ExecutionTracker {
     return null;
   }
 
-  /** 평면도 물건·가전을 부르는 이름(src/plan/names.ts placeName, 계획 단계 글과 같은 차례). 없으면 null(id를 사람 글에 쓰지 않는다). */
+  /** 평면도 물건·가전을 부르는 이름(src/layout/names.ts placeName, 계획 단계 글과 같은 차례). 없으면 null(id를 사람 글에 쓰지 않는다). */
   private nameOf(id: string): string | null {
     const names = this.o.names ?? {};
     return placeName(id, this.o.floor().objects.get(id)?.type, {

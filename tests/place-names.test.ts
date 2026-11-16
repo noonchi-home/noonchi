@@ -1,4 +1,4 @@
-// 평면도 물건·가전을 사람에게 부르는 이름은 한 곳(src/plan/names.ts placeName)에서 찾는다:
+// 평면도 물건·가전을 사람에게 부르는 이름은 한 곳(src/layout/names.ts placeName)에서 찾는다:
 // 종류 짧은 이름 → 카탈로그 종류 이름 → 배치 이름 → 가전 종류 이름. 계획 단계 글·실행 추적의 부탁·비전 상태 줄이 모두 이것을 쓰고, id는 사람 글에 내지 않는다.
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -10,8 +10,8 @@ import { PlanDraft } from "../src/agent/planTools.js";
 import type { PlannedCommandMessage } from "../src/contract/phone.js";
 import type { WorldView } from "../src/contract/world.js";
 import { PlanHub } from "../src/plan/hub.js";
-import { placeName, type PlaceNames } from "../src/plan/names.js";
-import { floorPlanFrom } from "../src/plan/route.js";
+import { placeName, type PlaceNames } from "../src/layout/names.js";
+import { floorPlanFrom } from "../src/layout/route.js";
 import type { DecisionRecord } from "../src/contract/events.js";
 import { SMALL_SCENE } from "./helpers/floor.js";
 import { planContext } from "./helpers/planner.js";

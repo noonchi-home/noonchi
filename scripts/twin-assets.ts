@@ -10,7 +10,7 @@ import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { readRegistry } from "../src/model/homes.js";
+import { readRegistry } from "../src/layout/homes.js";
 
 const TRACKED = ["homes.json", "apartment/viewer", "data"];
 /** 줄 끝을 LF로 맞춰 복사하는 글 파일. 나머지(GLB 등)는 바이트 그대로. */

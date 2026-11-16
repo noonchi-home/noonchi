@@ -1,0 +1,16 @@
+{
+  "files": {
+    "src/model/scene.ts": "src/layout/scene.ts",
+    "src/model/drawn.ts": "src/layout/drawn.ts",
+    "src/model/homes.ts": "src/layout/homes.ts",
+    "src/plan/floor.ts": "src/layout/floor.ts",
+    "src/plan/route.ts": "src/layout/route.ts",
+    "src/plan/names.ts": "src/layout/names.ts",
+    "src/phone/home-plan.ts": "src/layout/home-plan.ts"
+  },
+  "decls": {},
+  "new": [],
+  "text": [],
+  "allow": {},
+  "exceptions": {}
+}

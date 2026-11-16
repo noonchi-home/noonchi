@@ -4,10 +4,10 @@
 import { describe, expect, it } from "vitest";
 import type { SceneObject } from "../src/contract/layout.js";
 import { loadCatalog } from "../src/layout/catalog.js";
-import { loadScene } from "../src/model/scene.js";
+import { loadScene } from "../src/layout/scene.js";
 import type { Vec3 } from "../src/shared/geometry.js";
 import type { Quat } from "../src/contract/observe.js";
-import { readScenePlan } from "../src/phone/home-plan.js";
+import { readScenePlan } from "../src/layout/home-plan.js";
 import { PhoneSession } from "../src/phone/session.js";
 import { LANDMARK_IDS, landmarkClass } from "../src/phone/sync/classes.js";
 import { twinLandmarks, type TwinLandmark } from "../src/phone/sync/landmarks.js";

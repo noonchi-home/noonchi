@@ -14,7 +14,7 @@ import { deviceViews } from "../../src/agent/tools.js";
 import type { WorldView } from "../../src/contract/world.js";
 import { MemoryHub } from "../../src/devices/hub/memory.js";
 import type { DeviceHub, RoomSpec } from "../../src/devices/hub/types.js";
-import type { FloorPlan } from "../../src/plan/floor.js";
+import type { FloorPlan } from "../../src/layout/floor.js";
 import { josa } from "../../src/shared/korean.js";
 import { placeShort } from "../../src/plan/labels.js";
 import type { DecisionRecord } from "../../src/contract/events.js";

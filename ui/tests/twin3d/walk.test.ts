@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { Plan2 } from "../../../src/contract/events.ts";
-import { floorPlanFrom, roomAt } from "../../../src/plan/route.ts";
+import { floorPlanFrom, roomAt } from "../../../src/layout/route.ts";
 import { CONE } from "../../src/twin3d/eye";
 import { walkGuide } from "../../src/twin3d/walk";
 

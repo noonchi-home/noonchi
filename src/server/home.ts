@@ -18,7 +18,7 @@ import { ApprovalStore, approvalsPath } from "../agent/approval.js";
 import { Observer } from "../agent/observer.js";
 import { Planner } from "../agent/planner.js";
 import { placesOf, type PlaceInfo } from "../agent/planTools.js";
-import type { PlaceNames } from "../plan/names.js";
+import type { PlaceNames } from "../layout/names.js";
 import { Policy } from "../agent/policy.js";
 import { createProvider } from "../agent/providers/index.js";
 import { deviceViews } from "../agent/tools.js";
@@ -40,13 +40,13 @@ import type { LayoutEditor } from "../layout/editor.js";
 import { FOCUS_TTL_MS, focusFromActions, type Focus } from "../layout/focus.js";
 import { loadLayout } from "../layout/load.js";
 import { loadTwin, type TwinData } from "../devices/devices.js";
-import { listHomes } from "../model/homes.js";
-import { loadScene } from "../model/scene.js";
+import { listHomes } from "../layout/homes.js";
+import { loadScene } from "../layout/scene.js";
 import { EyeFeed } from "../phone/feed.js";
 import { orderPhoneUrls } from "../phone/links.js";
 import { createPhoneServer, type PhoneServer } from "../phone/server.js";
 import { estimateViewpoint } from "../phone/session.js";
-import { eyeHeightOf, floorLookup, homeBounds, readScenePlan } from "../phone/home-plan.js";
+import { eyeHeightOf, floorLookup, homeBounds, readScenePlan } from "../layout/home-plan.js";
 import type { FrameHeader } from "../phone/packet.js";
 import { twinLandmarks } from "../phone/sync/landmarks.js";
 import { StartStore, describeStart, readStartPose, startPosePath, type StartPose } from "../phone/sync/start.js";
@@ -54,7 +54,7 @@ import { wallSegments } from "../phone/sync/walls.js";
 import { repoPath } from "../shared/paths.js";
 import { PlanHub } from "../plan/hub.js";
 import { HEARD_MARK } from "../world/labels.js";
-import { floorPlanFrom, roomNamedAt } from "../plan/route.js";
+import { floorPlanFrom, roomNamedAt } from "../layout/route.js";
 import { surfacesFromLayout, type PlaneSurface } from "../world/place.js";
 import { Decider } from "../brain/decide.js";
 import { WorldState } from "../world/state.js";
@@ -251,7 +251,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     const scene = loadScene(home);
     const floorPlan = floorPlanFrom(scene ?? {});
     // 계획 입력의 평면도 물건(벽·바닥·문·창은 뺀다): 배치 이름과 부를 짧은 이름(종류 짧은 이름 → 카탈로그 종류 이름 → 배치 이름)
-    // 부르는 이름 자료(src/plan/names.ts): 카탈로그 종류 이름과 배치 이름. 계획 단계·실행 추적·비전 상태 줄이 같은 것을 쓴다
+    // 부르는 이름 자료(src/layout/names.ts): 카탈로그 종류 이름과 배치 이름. 계획 단계·실행 추적·비전 상태 줄이 같은 것을 쓴다
     const placeNames: PlaceNames = { typeLabel: (t) => layout?.editor.typeLabel(t), layoutName: (id) => layout?.editor.center(id)?.label };
     const places = (): PlaceInfo[] => placesOf(floorPlan, placeNames);
     // 대시보드 말풍선 카드(src/act/say.ts): 계획 방송·실제 폰 명령·World State 바뀜·판단 타이머 뒤에 다시 보고, 글이 바뀔 때만 보낸다

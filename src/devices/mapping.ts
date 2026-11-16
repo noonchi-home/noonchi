@@ -52,7 +52,7 @@ export const TYPE_RULES: TypeRule[] = [
 /** 에이전트가 못 바꾸는 attr(사람·세계 시뮬레이션이 바꾼다). */
 export const SENSOR_ATTRS = ["door", "charging"];
 
-/** 센서 attr의 값 목록(카탈로그가 없는 종류의 기본 attrs, src/model/scene.ts). */
+/** 센서 attr의 값 목록(카탈로그가 없는 종류의 기본 attrs, src/layout/scene.ts). */
 export const SENSOR_VALUES: Readonly<Record<string, readonly unknown[]>> = { door: ["closed", "open"], charging: ["off", "on"] };
 
 /** 카탈로그가 없는 트윈 type의 attrs: 등록부 프로필의 제어 attr(첫 이름, [꺼짐, 켜짐])과 센서 attr. 종류를 모르면 빈 attrs. */
