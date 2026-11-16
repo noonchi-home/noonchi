@@ -6,7 +6,7 @@
 // startHub: 만들고 시작까지 한다. network 커미셔닝이 실패하면 local 전송으로, local도 실패하면 MemoryHub로 대신한다.
 
 import { MemoryHub } from "../devices/index.js";
-import type { DeviceHub } from "../devices/index.js";
+import type { DeviceHub } from "../contract/devices.js";
 import type { TwinData } from "../devices/index.js";
 
 export type HubKind = "memory" | "matter";

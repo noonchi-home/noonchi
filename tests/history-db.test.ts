@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import type { BrainLog } from "../src/contract/events.js";
 import type { PlanView } from "../src/contract/plan.js";
 import type { ControlMode } from "../src/contract/setup.js";
-import type { DeviceState } from "../src/devices/hub/types.js";
+import type { DeviceState } from "../src/contract/devices.js";
 import { HISTORY_KINDS, HistoryDb, historyTzMinutes, type HistoryKind } from "../src/brain/history/db.js";
 import { attachRecorder, type DeviceNote } from "../src/brain/history/recorder.js";
 import { daySummary } from "../src/brain/history/summary.js";

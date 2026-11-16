@@ -11,7 +11,7 @@
 
 import { matterFromTwin } from "../mapping.js";
 import type { ThinqLink } from "../thinq/link.js";
-import type { Command, CommandResult, DeviceHub, DeviceSpec, DeviceState, SightEvidence, VisionResult } from "./types.js";
+import type { Command, CommandResult, DeviceHub, DeviceSpec, DeviceState, SightEvidence, VisionResult } from "../../contract/devices.js";
 
 /** virtual: 트윈 시뮬레이터, none: 신호 없음, thinq: 실제 가전(ThinQ 기기 id). */
 export type SignalSource = { kind: "virtual" } | { kind: "none" } | { kind: "thinq"; deviceId: string };

@@ -5,7 +5,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { Agent } from "../src/agent/agent.js";
 import type { BrainLog, SeenEvent } from "../src/contract/events.js";
 import { MemoryHub } from "../src/devices/hub/memory.js";
-import type { DeviceHub } from "../src/devices/hub/types.js";
+import type { DeviceHub } from "../src/contract/devices.js";
 import { createApp, type TwinHomeApp } from "../src/server/app.js";
 import { createHub } from "../src/server/hubFactory.js";
 import { fetchRetry } from "../src/shared/net.js";

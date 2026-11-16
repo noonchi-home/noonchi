@@ -5,7 +5,7 @@ import { Endpoint, ServerNode, VendorId } from "@matter/main";
 import { AdministratorCommissioningServer } from "@matter/main/behaviors/administrator-commissioning";
 import { AggregatorEndpoint } from "@matter/main/endpoints/aggregator";
 import { QrCode } from "@matter/main/types";
-import type { DeviceSpec } from "../hub/types.js";
+import type { DeviceSpec } from "../../contract/devices.js";
 import { clustersFromSummary, defaultTwinValue, matterFromTwin } from "../mapping.js";
 import { endpointClustersFor, endpointTypeFor } from "./deviceTypes.js";
 import { endpointId, nodeEnvironment, truncateUtf8 } from "./environment.js";

@@ -7,10 +7,6 @@
   "text": [],
   "allow": {},
   "exceptions": {
-    "inner src/agent/search.ts -> src/devices/hub/types.ts": {
-      "why": "입구로 바꾸면 F8(devices/devices.ts → layout/homes·scene)과 F4(layout/editor.ts → agent/search.ts) 때문에 devices/index.ts를 지나는 새 고리가 생겨 그 파일을 바로 가리키게 남김(4a). 5단계에서 F4·F8을 고친 뒤 입구로",
-      "until": "9"
-    },
     "inner src/agent/search.ts -> src/devices/mapping.ts": {
       "why": "입구로 바꾸면 F8(devices/devices.ts → layout/homes·scene)과 F4(layout/editor.ts → agent/search.ts) 때문에 devices/index.ts를 지나는 새 고리가 생겨 그 파일을 바로 가리키게 남김(4a). 5단계에서 F4·F8을 고친 뒤 입구로",
       "until": "9"

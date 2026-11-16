@@ -9,7 +9,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname, join } from "node:path";
 import type { AssistMode, ControlMode } from "../../contract/setup.js";
 import type { SignalSource } from "../../devices/index.js";
-import type { DeviceKind } from "../../devices/index.js";
+import type { DeviceKind } from "../../devices/kinds.js";
 import { PAIRABLE_KINDS } from "../../devices/index.js";
 
 /** 저장하는 출처(설정 2단계). */

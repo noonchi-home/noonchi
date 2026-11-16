@@ -12,7 +12,7 @@ import type { DraftStep, PlanHead } from "./planShape.js";
 import { assemblePlan } from "./planShape.js";
 import type { PlanTarget, PlanView, StepKind, XZ } from "../contract/plan.js";
 import type { WorldObject, WorldView } from "../contract/world.js";
-import type { Capability, RoomSpec } from "../devices/index.js";
+import type { Capability, RoomSpec } from "../contract/devices.js";
 import type { FloorPlan } from "../layout/index.js";
 import { ALL_ACTS, CAUTION_LINE, DEVICE_VERB, EXTRA_ITEMS, ITEM_CLASS, NOTICES, NOTICE_KEYS, STEP_ACTS, STEP_LABEL, STEP_TEXT, noticeLabel, type StepAct } from "../act/labels.js";
 import { KINDS, KIND_ORDER, isSelfStop, kindEntry } from "../devices/kinds.js";

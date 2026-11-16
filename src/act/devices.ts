@@ -2,7 +2,7 @@
 // 보내기 바로 앞(정책 → 허브)에서 그 계획 단계가 아직 진행 중인지(live) 다시 보고, 아니면 보내지 않는다. 승인 토큰을 버릴 때는 consume한다.
 import type { Policy } from "../agent/index.js";
 import { AGENT_TOOLS, localBackend, runTool, type ToolBackend } from "../agent/index.js";
-import type { DeviceHub, RoomSpec } from "../devices/index.js";
+import type { DeviceHub, RoomSpec } from "../contract/devices.js";
 import type { DeviceRunner } from "./track.js";
 
 const SKIPPED = "계획이 바뀌어 보내지 않았어요.";

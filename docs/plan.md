@@ -59,7 +59,7 @@ twin-studio (Blender)                twin-home (Node 22 + TypeScript)
 - matter.js 0.17에 없는 기기 종류는 가장 가까운 종류로 대체한다(예: On/Off Plug-in Unit). 대체한 것은 README에 적는다.
 - **센서**(문 열림, 충전 중)는 에이전트가 바꿀 수 없다. 세계 시뮬레이션 API(`POST /api/sensors/:id`)나 트윈 화면에서 사람이 바꾼다.
 
-## 인터페이스 (src/devices/hub/types.ts)
+## 인터페이스 (src/contract/devices.ts)
 
 ```ts
 type DeviceKind = "light" | "plug" | "tv" | "speaker" | "aircon" | "purifier" | "fan" | "hood" | "cooktop"

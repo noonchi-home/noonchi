@@ -4,7 +4,7 @@
 //   응답이 없으면(시간 초과·연결 끊김) 받았는지 모르므로 다시 읽어서 정한다.
 // 기기마다 한 번에 한 단계만 보낸다. 앞 명령이 끝나기 전 같은 기기 명령은 거절한다.
 
-import type { Command, CommandResult, DeviceHub, DeviceSpec, Readback } from "../hub/types.js";
+import type { Command, CommandResult, DeviceHub, DeviceSpec, Readback } from "../../contract/devices.js";
 import { mirrorPlan, readAppliance, thinqAdapterOf, thinqSteps, type Reading } from "./appliance.js";
 import { ThinqError, type ThinqClient } from "./client.js";
 

@@ -16,7 +16,7 @@ import type { WorldView } from "../contract/world.js";
 import type { OffTrack, PlanView } from "../contract/plan.js";
 import type { ControlMode } from "../contract/setup.js";
 import { deviceViews, roomViews } from "../agent/index.js";
-import type { Command, CommandResult, DeviceHub, RoomSpec } from "../devices/index.js";
+import type { Command, CommandResult, DeviceHub, RoomSpec } from "../contract/devices.js";
 import { HISTORY_KINDS, type HistoryDb } from "../brain/index.js";
 import type { ReflectResult } from "../brain/index.js";
 import { daySummary, isDay } from "../brain/index.js";

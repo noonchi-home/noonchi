@@ -1,8 +1,4 @@
 [
-  "contract src/contract/events.ts -> src/devices/hub/types.ts",
-  "contract src/contract/setup.ts -> src/devices/hub/types.ts",
-  "cycle src/devices/hub/types.ts -> src/devices/kinds.ts",
-  "cycle src/devices/kinds.ts -> src/devices/hub/types.ts",
   "direction src/agent/planTools.ts -> src/act/lessons.ts",
   "direction src/devices/devices.ts -> src/layout/homes.ts",
   "direction src/devices/devices.ts -> src/layout/scene.ts",
@@ -16,7 +12,6 @@
   "inner src/agent/layoutTools.ts -> src/layout/editor.ts",
   "inner src/agent/planShape.ts -> src/layout/route.ts",
   "inner src/agent/planTools.ts -> src/act/lessons.ts",
-  "inner src/agent/search.ts -> src/devices/hub/types.ts",
   "inner src/agent/search.ts -> src/devices/mapping.ts",
   "inner src/devices/devices.ts -> src/layout/homes.ts",
   "inner src/devices/devices.ts -> src/layout/scene.ts",
@@ -52,7 +47,5 @@
   "no-index ui/phone",
   "no-index ui/setup",
   "no-index ui/twin",
-  "screen-src ui/src/twin3d/walk.ts -> src/layout/route.ts",
-  "table src/act/tasks.ts -> src/devices/hub/types.ts",
-  "table src/devices/kinds.ts -> src/devices/hub/types.ts"
+  "screen-src ui/src/twin3d/walk.ts -> src/layout/route.ts"
 ]

@@ -5,7 +5,7 @@
 //   MATTER_STORAGE_DIR=... MATTER_PORT=... 로 바꿀 수 있다.
 
 import "dotenv/config";
-import type { DeviceState } from "../src/devices/hub/types.js";
+import type { DeviceState } from "../src/contract/devices.js";
 import { MatterHub } from "../src/devices/matter/matterHub.js";
 import { loadTwin } from "../src/devices/devices.js";
 

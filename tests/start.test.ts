@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import { MemoryHub } from "../src/devices/hub/memory.js";
-import type { DeviceSpec } from "../src/devices/hub/types.js";
+import type { DeviceSpec } from "../src/contract/devices.js";
 import { startHub } from "../src/server/hubFactory.js";
 import { ROOMS, homeDevices } from "./helpers/home.js";
 

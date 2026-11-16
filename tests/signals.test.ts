@@ -5,7 +5,7 @@ import { observe } from "../src/agent/observe.js";
 import { TOOLS, deviceViews, localBackend } from "../src/agent/tools.js";
 import { MemoryHub } from "../src/devices/hub/memory.js";
 import { SignalHub, isUnknown } from "../src/devices/hub/signals.js";
-import type { DeviceSpec, DeviceState } from "../src/devices/hub/types.js";
+import type { DeviceSpec, DeviceState } from "../src/contract/devices.js";
 import { describeDevice } from "../src/devices/mapping.js";
 import { ThinqClient, thinqConfig } from "../src/devices/thinq/client.js";
 import { ThinqLink } from "../src/devices/thinq/link.js";

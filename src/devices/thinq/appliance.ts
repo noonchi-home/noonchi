@@ -4,7 +4,8 @@
 // 실제 가전 값과 다를 수 있는 부분은 docs/superpowers/plans/2026-11-06-control-mode.md 「실제 연결 때 확인할 것」.
 // 읽기·제어·트윈 반영은 가전 종류 이름이 아니라 어댑터(THINQ_ADAPTERS)로 가른다. 가전 종류는 등록부 thinq.adapter로 어댑터를 고른다(src/devices/kinds.ts).
 
-import type { ClimateMode, Command, CommandType, DeviceKind, DeviceState, FanSpeed } from "../hub/types.js";
+import type { ClimateMode, Command, CommandType, DeviceState, FanSpeed } from "../../contract/devices.js";
+import type { DeviceKind } from "../kinds.js";
 import { KINDS, KIND_ORDER, kindEntry } from "../kinds.js";
 import type { ThinqAdapter } from "../types.js";
 

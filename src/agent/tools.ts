@@ -4,7 +4,8 @@
 import { z } from "zod";
 import type { Policy } from "./policy.js";
 import type { DeviceView } from "../contract/events.js";
-import type { Command, CommandResult, DeviceHub, DeviceKind, DeviceSpec, RoomSpec } from "../devices/index.js";
+import type { Command, CommandResult, DeviceHub, DeviceSpec, RoomSpec } from "../contract/devices.js";
+import type { DeviceKind } from "../devices/kinds.js";
 import { KIND_LABELS } from "../devices/index.js";
 import { doneSentence } from "./phrases.js";
 import type { LayoutTools } from "./layoutTools.js";

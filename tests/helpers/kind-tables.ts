@@ -92,7 +92,7 @@ const nameText = (n: Node | undefined): string => (n as unknown as { text?: stri
 /** DeviceKind·감지 종류 이름을 타입 검사기에서 읽는다(등록부를 만들기 전·뒤 모두). */
 function names(kp: KindProject): Names & { checker: Checker; project: Project } {
   for (const project of kp.projects) {
-    const types = project.program.getSourceFile(join(kp.root, "src", "devices/hub", "types.ts"));
+    const types = project.program.getSourceFile(join(kp.root, "src", "contract", "devices.ts"));
     const vocab = project.program.getSourceFile(join(kp.root, "src", "world", "vocab.ts"));
     if (!types || !vocab) continue;
     const checker = project.checker;
@@ -105,7 +105,7 @@ function names(kp: KindProject): Names & { checker: Checker; project: Project } 
     };
     return { kinds: new Set(literalValues(deviceKind)), fixtures: new Set(alias("FixtureClass")), deviceKind, checker, project };
   }
-  throw new Error("src/devices/hub/types.ts·src/world/vocab.ts를 읽지 못했어요");
+  throw new Error("src/contract/devices.ts·src/world/vocab.ts를 읽지 못했어요");
 }
 
 const FROM_REGISTRY = /\b(KINDS|KIND_ORDER)\b/;

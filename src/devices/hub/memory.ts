@@ -12,7 +12,7 @@ import {
   twinFromMatter,
   type MatterSummary,
 } from "../mapping.js";
-import type { Command, CommandResult, DeviceHub, DeviceSpec, DeviceState } from "./types.js";
+import type { Command, CommandResult, DeviceHub, DeviceSpec, DeviceState } from "../../contract/devices.js";
 
 export interface MemoryHubOptions {
   now?: () => Date;

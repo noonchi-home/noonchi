@@ -3,7 +3,7 @@
 
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
-import type { DeviceSpec, RoomSpec } from "./hub/types.js";
+import type { DeviceSpec, RoomSpec } from "../contract/devices.js";
 import { repoPath } from "../shared/paths.js";
 import { resolveHome, type Home } from "../layout/homes.js";
 import { loadScene } from "../layout/scene.js";

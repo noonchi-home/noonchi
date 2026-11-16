@@ -5,5 +5,5 @@
     "allowImportingTsExtensions": true, "resolveJsonModule": true, "types": ["vite/client", "@testing-library/jest-dom"],
     "paths": { "@/*": ["./src/*"] }
   },
-  "include": ["src", "tests", "vite.config.ts", "../src/contract", "../src/devices/hub/types.ts", "../src/design/tokens.json", "../src/design/tokens.ts"]
+  "include": ["src", "tests", "vite.config.ts", "../src/contract", "../src/design/tokens.json", "../src/design/tokens.ts"]
 }

@@ -17,7 +17,7 @@ import {
   twinFromMatter,
   type MatterSummary,
 } from "../mapping.js";
-import type { Command, CommandResult, DeviceHub, DeviceSpec, DeviceState } from "../hub/types.js";
+import type { Command, CommandResult, DeviceHub, DeviceSpec, DeviceState } from "../../contract/devices.js";
 import { BRIDGE_DEFAULTS, createBridge, formatPairingInfo, type MatterBridge, type PairingInfo } from "./bridge.js";
 import {
   commissionBridge,

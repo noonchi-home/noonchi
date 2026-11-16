@@ -3,7 +3,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Capability, Command, DeviceSpec } from "../src/devices/hub/types.js";
+import type { Capability, Command, DeviceSpec } from "../src/contract/devices.js";
 import { KINDS, isRiskyKind, type KindEntry } from "../src/devices/kinds.js";
 import { checkKinds } from "../src/devices/kinds-check.js";
 import { KIND_PROFILES, TYPE_RULES, normalizeCommand } from "../src/devices/mapping.js";

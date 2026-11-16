@@ -1,7 +1,8 @@
 // 한국어 이름·방 이름으로 기기 찾기(find_devices, list_devices의 room 인자).
 // 순서: 방 찾기(긴 이름 우선) → 방만 말했으면 그 방 전체 → 이름 구절 일치 → 낱말(이름·종류 동의어) AND 일치.
 
-import type { DeviceKind, DeviceSpec, RoomSpec } from "../devices/hub/types.js";
+import type { DeviceSpec, RoomSpec } from "../contract/devices.js";
+import type { DeviceKind } from "../devices/kinds.js";
 import { KINDS, mapEntries } from "../devices/kinds.js";
 import { KIND_LABELS } from "../devices/mapping.js";
 import { compact, stripParticle } from "../shared/korean.js";

@@ -1,7 +1,7 @@
 // 서버·에이전트·MCP 테스트가 함께 쓰는 작은 집(실제 twin-studio 데이터와 같은 id·이름).
 import { Policy } from "../../src/agent/policy.js";
 import { MemoryHub } from "../../src/devices/hub/memory.js";
-import type { DeviceSpec, RoomSpec } from "../../src/devices/hub/types.js";
+import type { DeviceSpec, RoomSpec } from "../../src/contract/devices.js";
 import { describeDevice } from "../../src/devices/mapping.js";
 
 export const ROOMS: RoomSpec[] = [

@@ -6,7 +6,7 @@ import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { DeviceSpec, DeviceState } from "../src/devices/hub/types.js";
+import type { DeviceSpec, DeviceState } from "../src/contract/devices.js";
 import { formatPairingInfo } from "../src/devices/matter/bridge.js";
 import { DEVICE_TYPE_INFO, endpointTypeFor, SUPPORTED_DEVICE_TYPES } from "../src/devices/matter/deviceTypes.js";
 import { createMatterHub, isNetworkUnavailable, MatterHub, matterHubOptionsFromEnv } from "../src/devices/matter/matterHub.js";

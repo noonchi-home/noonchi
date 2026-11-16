@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
-import type { DeviceKind } from "../src/devices/hub/types.js";
+import type { DeviceKind } from "../src/devices/kinds.js";
 import { DEFAULT_TWIN_DIR, initialTwinState, loadDevices, loadTwin, resolveTwinStudioDir } from "../src/devices/devices.js";
 
 const REPO = fileURLToPath(new URL("..", import.meta.url));

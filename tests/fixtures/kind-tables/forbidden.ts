@@ -1,5 +1,5 @@
 // 구조 검사 금지 예제(tests/kinds-registry.test.ts): 「// 금지」 줄마다 findKindTables가 짚어야 한다.
-import type { DeviceKind } from "../../../src/devices/hub/types.js";
+import type { DeviceKind } from "../../../src/devices/kinds.js";
 
 export const LABELS: Record<DeviceKind, string> = {} as Record<DeviceKind, string>; // 금지
 export const PAIR = { aircon: 1, fridge: 2 }; // 금지

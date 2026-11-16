@@ -4,7 +4,8 @@
 
 import { randomUUID } from "node:crypto";
 import { isUnknown } from "../devices/index.js";
-import type { Capability, Command, CommandResult, CommandType, DeviceHub, DeviceKind, DeviceSpec } from "../devices/index.js";
+import type { Capability, Command, CommandResult, CommandType, DeviceHub, DeviceSpec } from "../contract/devices.js";
+import type { DeviceKind } from "../devices/kinds.js";
 import { KINDS, KIND_ORDER, isRiskyKind, kindEntry } from "../devices/kinds.js";
 import { checkCommand, normalizeCommand } from "../devices/index.js";
 import { DEVICE_VERB, STEP_LABEL } from "../act/labels.js";

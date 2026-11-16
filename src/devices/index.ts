@@ -3,7 +3,6 @@
 export { loadTwin, type TwinData, resolveTwinStudioDir } from "./devices.js";
 export { MemoryHub } from "./hub/memory.js";
 export { isUnknown, SignalHub, type SignalSource } from "./hub/signals.js";
-export { type DeviceHub, type RoomSpec, type Command, type CommandResult, type DeviceKind, type DeviceSpec, type DeviceState, type Capability, type CommandType, type SightEvidence, type VisionResult, type VisionSeen } from "./hub/types.js";
 export { checkKinds } from "./kinds-check.js";
 export { describeDevice, KIND_LABELS, findTypeRule, checkCommand, normalizeCommand, twinChange } from "./mapping.js";
 export { PAIRABLE_KINDS, fitsKind } from "./thinq/appliance.js";

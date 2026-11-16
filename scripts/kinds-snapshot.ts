@@ -3,7 +3,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { Command } from "../src/devices/hub/types.js";
+import type { Command } from "../src/contract/devices.js";
 import { KIND_LABELS, KIND_PROFILES, TYPE_RULES, findTypeRule, twinChange } from "../src/devices/mapping.js";
 import { KIND_SYNONYMS } from "../src/agent/search.js";
 import { CONFIRM_RULES, Policy, RISKY_ON_NAMES, isRiskyKind, riskyNames } from "../src/agent/policy.js";

@@ -26,7 +26,7 @@ import { FEEDBACK_TEXT, REFLECT_TEXT } from "../src/brain/history/labels.js";
 import { attachRecorder, topic, type DeviceNote } from "../src/brain/history/recorder.js";
 import { memoryForDay } from "../src/brain/history/reflect.js";
 import { isDay } from "../src/brain/history/summary.js";
-import type { DeviceState } from "../src/devices/hub/types.js";
+import type { DeviceState } from "../src/contract/devices.js";
 import { loadTwin } from "../src/devices/devices.js";
 import { loadScene } from "../src/layout/scene.js";
 import type { FloorPlan } from "../src/layout/floor.js";

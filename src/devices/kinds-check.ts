@@ -3,7 +3,7 @@
 // 2) 위험 켜기 종류(riskyOn)에는 confirm을 쓰지 않고 riskyReason을 둔다.
 // 3) ThinQ 어댑터는 그 종류의 모든 사양이 낼 수 있는 명령을 받아야 한다. 읽기만 하는 어댑터에는 제어 없는 프로필만 붙인다.
 // 4) 손 조작: 켜기·끄기는 프로필 제어가 있을 때만, 열기·닫기는 문 센서(door)가 있거나 그 종류 카메라 설비가 열림(open) 면을 볼 때만.
-import type { Capability, Command, CommandType } from "./hub/types.js";
+import type { Capability, Command, CommandType } from "../contract/devices.js";
 import { THINQ_ADAPTERS } from "./thinq/appliance.js";
 import { CLASSES } from "../world/vocab.js";
 import type { KindEntry } from "./kinds.js";

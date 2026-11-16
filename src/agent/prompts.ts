@@ -1,6 +1,6 @@
 // 에이전트 시스템 프롬프트(한국어). 상태처럼 바뀌는 값은 넣지 않는다(프롬프트 캐시가 깨지지 않게).
 
-import type { DeviceSpec, RoomSpec } from "../devices/index.js";
+import type { DeviceSpec, RoomSpec } from "../contract/devices.js";
 import { KIND_LABELS } from "../devices/index.js";
 import { RISKY_LIST } from "./policy.js";
 import { roomViews } from "./tools.js";

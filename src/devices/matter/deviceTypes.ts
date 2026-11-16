@@ -49,7 +49,7 @@ import {
   WaterValveDevice,
   WindowCoveringDevice,
 } from "@matter/main/devices";
-import type { DeviceSpec } from "../hub/types.js";
+import type { DeviceSpec } from "../../contract/devices.js";
 import { clustersFromSummary, MATTER_ENUMS, type MatterClusters, type MatterSummary } from "../mapping.js";
 import {
   TwinDoorLockServer,

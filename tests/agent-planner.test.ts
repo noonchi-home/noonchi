@@ -20,7 +20,7 @@ import type { BrainLog, DecisionRecord } from "../src/contract/events.js";
 import type { PlannedCommandMessage } from "../src/contract/phone.js";
 import type { WorldDevice, WorldObject, WorldView } from "../src/contract/world.js";
 import { MemoryHub } from "../src/devices/hub/memory.js";
-import type { DeviceSpec } from "../src/devices/hub/types.js";
+import type { DeviceSpec } from "../src/contract/devices.js";
 import { loadCatalog } from "../src/layout/catalog.js";
 import { describeDevice } from "../src/devices/mapping.js";
 import { loadScene } from "../src/layout/scene.js";

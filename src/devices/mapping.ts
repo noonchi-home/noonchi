@@ -15,7 +15,8 @@
 //   valveState: "open"|"closed"           ValveConfigurationAndControl.currentState
 //   stateValue: boolean (true = 닫힘/접촉) BooleanState.stateValue (문 센서)
 
-import type { Capability, ClimateMode, Command, DeviceKind, DeviceSpec, DeviceState, FanSpeed } from "./hub/types.js";
+import type { Capability, ClimateMode, Command, DeviceSpec, DeviceState, FanSpeed } from "../contract/devices.js";
+import type { DeviceKind } from "./kinds.js";
 import { KINDS, KIND_ORDER, mapEntries, type KindProfile, type Model } from "./kinds.js";
 
 export type { KindProfile } from "./kinds.js";

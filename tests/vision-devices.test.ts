@@ -9,7 +9,7 @@ import type { Detection, EngineFrame, CameraView } from "../src/contract/observe
 import type { WorldChange } from "../src/contract/world.js";
 import { MemoryHub } from "../src/devices/hub/memory.js";
 import { SignalHub, type SignalSource } from "../src/devices/hub/signals.js";
-import type { DeviceSpec, DeviceState } from "../src/devices/hub/types.js";
+import type { DeviceSpec, DeviceState } from "../src/contract/devices.js";
 import { loadLayout } from "../src/layout/load.js";
 import { DEFAULT_TWIN_DIR, loadTwin } from "../src/devices/devices.js";
 import { resolveHome } from "../src/layout/homes.js";

@@ -13,7 +13,7 @@ import { createProvider } from "../../src/agent/providers/index.js";
 import { deviceViews } from "../../src/agent/tools.js";
 import type { WorldView } from "../../src/contract/world.js";
 import { MemoryHub } from "../../src/devices/hub/memory.js";
-import type { DeviceHub, RoomSpec } from "../../src/devices/hub/types.js";
+import type { DeviceHub, RoomSpec } from "../../src/contract/devices.js";
 import type { FloorPlan } from "../../src/layout/floor.js";
 import { josa } from "../../src/shared/korean.js";
 import { placeShort } from "../../src/act/labels.js";

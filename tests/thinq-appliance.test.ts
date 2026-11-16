@@ -1,7 +1,7 @@
 // ThinQ 상태 ↔ 트윈(src/devices/thinq/appliance.ts): 어댑터(air_conditioner·refrigerator)로 읽기, 트윈 명령 → ThinQ 단계, 읽은 값을 트윈에 비추기.
 import { describe, expect, it } from "vitest";
 import { MemoryHub } from "../src/devices/hub/memory.js";
-import type { Command } from "../src/devices/hub/types.js";
+import type { Command } from "../src/contract/devices.js";
 import { PAIRABLE_KINDS, fitsKind, mirrorPlan, readAppliance, thinqAdapterOf, thinqSteps } from "../src/devices/thinq/appliance.js";
 import { homeDevices } from "./helpers/home.js";
 import { fakeAirconState } from "./helpers/thinq.js";

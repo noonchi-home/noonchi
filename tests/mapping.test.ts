@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Capability, DeviceKind, DeviceSpec, DeviceState } from "../src/devices/hub/types.js";
+import type { Capability, DeviceSpec, DeviceState } from "../src/contract/devices.js";
+import type { DeviceKind } from "../src/devices/kinds.js";
 import {
   applyCommandToMatter,
   applySensorToMatter,

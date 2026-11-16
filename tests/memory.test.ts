@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { MemoryHub } from "../src/devices/hub/memory.js";
-import type { DeviceSpec, DeviceState } from "../src/devices/hub/types.js";
+import type { DeviceSpec, DeviceState } from "../src/contract/devices.js";
 import { loadTwin, resolveTwinStudioDir } from "../src/devices/devices.js";
 import { describeDevice } from "../src/devices/mapping.js";
 
