@@ -24,7 +24,7 @@ import type { LayoutEditor } from "../layout/index.js";
 import type { SyncState } from "../phone/index.js";
 import { StartPoseError, type StartPose } from "../phone/index.js";
 import { repoPath } from "../shared/paths.js";
-import type { PlanHub } from "../act/hub.js";
+import type { PlanHub } from "../act/index.js";
 import { twinChange } from "../devices/index.js";
 import { listenRetry } from "../shared/net.js";
 import { serveFile } from "../shared/static.js";
