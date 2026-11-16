@@ -20,6 +20,9 @@ export interface CycleEnd { via: "switch" | "confirmed"; evidenceAt: number; cyc
 /** 끄기 안내 하나: 그 가전, 실제 폰 명령의 계획·단계 id와 글. ask면 보이게 해 달라는 부탁(답 단추 없음). */
 export interface OffNote { planId: string; step: string; deviceId: string; text: string; ask: boolean }
 
+/** 깊은 읽기 전용: 받은 쪽이 안쪽 칸·배열까지 바꿀 수 없다. */
+type DeepReadonly<T> = T extends object ? { readonly [K in keyof T]: DeepReadonly<T[K]> } : T;
+
 type DeviceView = WorldView["devices"][number];
 type HistoryLine = DeviceView["history"][number];
 /** 작동 한 번의 켜짐·꺼짐 값: 전원 켜짐 → 꺼짐, 작동 중 → 멈춤. */
@@ -66,15 +69,16 @@ export class SafetyTracker extends Part {
   turnedOn(r: Run, id: string, now: number): void {
     const cycle: Cycle = { cycle: (this.#cycles.get(id)?.cycle ?? 0) + 1, onAt: now, askedAt: null };
     this.#cycles.set(id, cycle);
-    r.onAt.set(id, cycle);
+    r.onAt.set(id, { ...cycle });
     this.#hot.add(id);
     r.ends.delete(id);
     this.#released.delete(id);
   }
 
-  /** 떠 있는 끄기 안내(명령과 그 안내). 없으면 null. 실제 폰 명령 줄·답·말이 읽는다. */
-  shownOff(): { readonly sent: PlannedCommand; readonly note: OffNote } | null {
-    return this.#reminder;
+  /** 떠 있는 끄기 안내(명령과 그 안내)의 깊은 읽기 전용 복사본. 없으면 null. 실제 폰 명령 줄·답·말이 읽는다(받은 쪽이 바꿔도 추적 상태는 그대로다). */
+  shownOff(): DeepReadonly<{ sent: PlannedCommand; note: OffNote }> | null {
+    const off = this.#reminder;
+    return off && structuredClone({ sent: off.sent, note: off.note });
   }
 
   /** 끄기 안내가 떠 있거나 줄에서 기다리는 첫 가전(떠 있는 것이 먼저). 없으면 undefined. */
@@ -225,7 +229,7 @@ export class SafetyTracker extends Part {
     this.#cycles.set(deviceId, cycle);
     const r = this.core.run;
     if (r && OPEN.has(r.state) && r.plan.view.id === rel.planId) {
-      r.onAt.set(deviceId, cycle);
+      r.onAt.set(deviceId, { ...cycle });
       this.#hot.add(deviceId);
       r.ends.delete(deviceId);
       return true;
@@ -357,7 +361,7 @@ export class SafetyTracker extends Part {
       this.#cycles.set(id, next);
       this.#released.delete(id);
       r.ends.delete(id);
-      r.onAt.set(id, next);
+      r.onAt.set(id, { ...next });
       this.#hot.add(id);
       return false;
     }

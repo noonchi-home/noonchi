@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { ActionChoice } from "../src/act/prompts.js";
 import { ExecutionTracker, TRACK_DEFAULTS, type Stall, type Stray, type TrackerOptions } from "../src/act/track/tracker.js";
+import type { TrackCore } from "../src/act/track/core.js";
 import { ApprovalStore, type ApprovalAnswer } from "../src/agent/approval.js";
 import type { AgentStep } from "../src/agent/planTools.js";
 import { checkDecision, type CheckResult } from "../src/act/check.js";
@@ -1593,6 +1594,38 @@ describe("실행 추적: 켠 위험 가전 추적은 확인된 꺼짐으로만 �
     expect(s.t.onAnswer(P, `off:${P}:microwave_1:1`, "done")).toBe(true);
     expect(s.phone).toHaveLength(n);
     expect(s.t.openCommand()).toMatchObject({ text: "가전을 꺼 주세요", choices: [{ id: "done" }] });
+  });
+
+  it("떠 있는 끄기 안내를 읽는 길(SafetyTracker.shownOff)은 깊은 읽기 전용 복사본을 준다: 받은 쪽이 바꿔도 안내·추적은 그대로다", async () => {
+    let w = world([]);
+    const { s, onAt } = await mwOn({ w: () => w });
+    w = { ...world([]), devices: [mw(["on"], [cam("off", "on", onAt + 100)])] };
+    s.heard("그만");
+    expect(s.last()).toEqual(OFF);
+    const safety = (s.t as unknown as { core: TrackCore }).core.safety;
+    const off = safety.shownOff()!;
+    // @ts-expect-error 깊은 읽기 전용: 안내 가전을 바꿀 수 없다
+    off.note.deviceId = "fridge_1";
+    // @ts-expect-error 깊은 읽기 전용: 부탁으로 바꿀 수 없다
+    off.note.ask = true;
+    // @ts-expect-error 깊은 읽기 전용: 명령 글을 바꿀 수 없다
+    off.sent.text = "바뀐 글";
+    // @ts-expect-error 깊은 읽기 전용: 답 단추를 바꿀 수 없다
+    off.sent.choices.length = 0;
+    expect(s.t.openCommand()).toMatchObject({ planId: P, stepId: OFF.step, kind: "command", text: "전자레인지를 꺼 주세요", choices: [{ id: "done" }] });
+    expect(s.t.offTrack()).toEqual({ hot: [], notices: ["microwave_1"] });
+    expect(safety.shownOff()).toMatchObject({ sent: { text: "전자레인지를 꺼 주세요", choices: [{ id: "done" }] }, note: { deviceId: "microwave_1", ask: false } });
+  });
+
+  it("계획 실행 상태의 켜기 회차(Run.onAt)는 읽기 전용 복사본이다: 다른 부분이 바꿔도 SafetyTracker의 회차는 그대로다", async () => {
+    const w = world([]);
+    const { s, onAt } = await mwOn({ w: () => w });
+    const cycle = (s.t as unknown as { core: TrackCore }).core.run!.onAt.get("microwave_1")!;
+    // @ts-expect-error 읽기 전용: 회차의 부탁 시각을 바꿀 수 없다
+    cycle.askedAt = onAt;
+    // @ts-expect-error 읽기 전용: 회차 시작 시각을 바꿀 수 없다
+    cycle.onAt = 0;
+    expect(s.t.safety().cycles).toEqual({ microwave_1: { cycle: 1, onAt, askedAt: null } });
   });
 });
 

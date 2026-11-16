@@ -35,8 +35,8 @@ export interface Run {
   looks: number; lookAt: number; stepEnd: AbortController | null;
   /** 같은 행동 다시 계획 간격을 세려고 적은 시각(Job.at). */
   gapAt: number;
-  /** 켜라고 한 가전과 지금 켜기 회차(추적을 풀어도 지우지 않는다. 다시 걸면 새 회차로 바뀐다). */
-  onAt: Map<string, Cycle>;
+  /** 켜라고 한 가전과 지금 켜기 회차(추적을 풀어도 지우지 않는다. 다시 걸면 새 회차로 바뀐다). 읽기 전용 복사본이고 회차 값은 SafetyTracker의 #cycles만 바꾼다. */
+  onAt: Map<string, Readonly<Cycle>>;
   /** 이 계획이 켠 가전마다 지금 회차가 풀린 근거(회차 번호·근거 촬영 시각·판정 길·푼 시각). 가전 이력(최근 몇 줄만 남음)에 기대지 않고 끄기 do 단계가 읽는다.
    *  회차가 바뀌거나 계획이 닫히면 지우고, 푼 뒤 rearmMs가 지나면 지운다(그 가전의 끄기 do 단계가 열려 있는 동안은 두고). */
   ends: Map<string, { cycle: number; seenAt: number; how: CycleEnd["via"]; at: number }>;
