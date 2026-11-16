@@ -52,6 +52,15 @@ describe("처음 화면", () => {
     expect(act.confirm).toHaveBeenCalledWith("t1", "reject");
   });
 
+  it("가전이 없는 승인 대기(보호자 연락)는 까닭만 보인다: 처음 화면 목록과 AR 위 줄", () => {
+    const guardian = { token: "s1", deviceLabel: "", reason: "보호자에게 연락할까요?", choices: SHOTS.approve.view.pending[0]!.choices };
+    const { container } = show({ ...SHOTS.intro.view, pending: [guardian] });
+    expect(within(container.querySelector("main")!).getByText("보호자에게 연락할까요?").closest("[data-slot=item]")).not.toBeNull();
+    const ar = show({ ...SHOTS.approve.view, pending: [guardian] });
+    expect(ar.zone("top")!.textContent).toContain("보호자에게 연락할까요?");
+    expect(ar.zone("top")!.textContent).not.toContain(": 보호자");
+  });
+
   it("누르고 말하기 단추는 없고 글 입력만. 보내면 say하고 칸을 비운다. 답 줄은 role=status", async () => {
     const { act } = show({ ...SHOTS.intro.view, reply: "에이전트가 연결되지 않았어요." });
     expect(screen.queryByRole("button", { name: /말하기/ })).toBeNull();

@@ -3,6 +3,8 @@
 // 승인 대기는 위험 목록뿐이라(src/agent/policy.ts) 답은 둘 다 이번만이다: 승인이면 실행하고, 거절이면 실행하지 않는다. 둘 다 기억하지 않아 다음에 또 묻는다.
 // 늘 듣는 실제 폰의 말(heard)로는 승인 대기에 답하지 않는다(answerAll 없음): 실제 폰 서버(src/server/home.ts)가 말 전체가 승인·거절 답이고
 // 말할 때 보인 대기 token이 하나일 때만 answerToken으로 그 대기 하나에 답한다. 글로 한 말은 「승인」「응」「아니」로 대기 전부에 답한다.
+// 외부 연락(call_service)도 같은 승인 대기 길로 묻는다: 승인이면 외부 연락 통로(service, CALL_SERVICE_URL)로 보내고, 통로가 없으면 부르지 않고 「연결 없음」.
+// 결과(보냄·거절·연결 없음·실패)는 onService로 알린다(서버가 기록 DB·대시보드 말풍선 카드에 남긴다).
 
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -19,6 +21,10 @@ import { observe } from "./observe.js";
 import { HEARD_MARK, redactSaid } from "../world/labels.js";
 import { AGENT_TOOLS, LEAVE_IT, localBackend, runTool, unverifiedSentence, type ToolBackend, type ToolDef, type ToolResult } from "./tools.js";
 import { headWithin } from "../shared/cut.js";
+import type { ServiceCall, ServiceOutcome, ServiceResult } from "../contract/service.js";
+import type { CallServiceSent } from "../infer/call-service.js";
+import type { PendingService } from "./policy.js";
+import { CALL_SERVICE, SERVICE_KINDS, SERVICE_UNCONNECTED, serviceArgs, serviceCancelled, serviceReply } from "./service.js";
 
 export type { AgentAction, AgentEvent, ChatResult, ConfirmResult, PendingView } from "../contract/events.js";
 
@@ -97,7 +103,14 @@ export interface AgentOptions {
   layout?: LayoutTools;
   /** 참이면 들은 말(heard) 차례의 이벤트에도 그 말을 그대로 싣는다(KEEP_HEARD_TEXT). 기본은 「들은 말 있음」으로 가리고, 답 글·도구 까닭에 옮긴 그 말도 뺀다. */
   keepHeard?: boolean;
+  /** 외부 연락 통로(src/infer/call-service.ts, CALL_SERVICE_URL). 없으면 승인돼도 부르지 않고 「전화 서비스가 아직 연결되지 않았어요.」. */
+  service?: ServiceLine | null;
+  /** 외부 연락 결과(보냄·거절·연결 없음·실패)마다 부른다. */
+  onService?: (r: ServiceResult) => void;
 }
+
+/** 승인한 외부 연락을 보내는 곳(CallServiceClient). */
+export interface ServiceLine { send(call: ServiceCall, meta: { id: string; approvedAt: string }): Promise<CallServiceSent> }
 
 interface Session {
   id: string;
@@ -163,12 +176,16 @@ export class Agent {
   private readonly sessions = new Map<string, Session>();
   private readonly listeners = new Set<(e: AgentEvent) => void>();
   private prompt?: { key: string; text: string };
+  private readonly service: ServiceLine | null;
+  private readonly onService?: (r: ServiceResult) => void;
 
   constructor(opts: AgentOptions) {
     this.hub = opts.hub;
     this.policy = opts.policy;
     this.provider = opts.provider;
     this.rooms = opts.rooms;
+    this.service = opts.service ?? null;
+    this.onService = opts.onService;
     this.maxRounds = opts.maxToolRounds ?? 6;
     this.maxSessions = opts.maxSessions ?? 200;
     this.keepHeard = opts.keepHeard === true;
@@ -209,7 +226,7 @@ export class Agent {
   answerToken(token: string, answer: ApprovalAnswer): Promise<{ ok: boolean; reply: string }> {
     const s = this.owner(token);
     const run = async () => {
-      if (!this.policy.pending().some((p) => p.token === token)) {
+      if (!this.liveTokens().has(token)) {
         s?.pending.delete(token);
         return { ok: false, reply: "승인할 작업이 없거나 시간이 지나 만료되었어요. 다시 요청해 주세요." };
       }
@@ -226,6 +243,12 @@ export class Agent {
   cancel(token: string): { ok: boolean; reply: string } {
     const s = this.owner(token);
     s?.pending.delete(token);
+    const call = this.policy.takeService(token);
+    if (call) {
+      this.emit({ event: "cancelled", sessionId: s?.id, token });
+      this.serviceDone(call.call, "refused");
+      return { ok: true, reply: serviceCancelled(call.call.kind) };
+    }
     const p = this.policy.consume(token);
     if (!p) return { ok: false, reply: "취소할 승인 대기가 없거나 만료되었어요." };
     this.emit({ event: "cancelled", sessionId: s?.id, token });
@@ -234,11 +257,12 @@ export class Agent {
 
   /** 승인 대기 목록(세션을 주면 그 세션 것만). */
   pending(sessionId?: string): PendingView[] {
-    if (sessionId === undefined) return this.policy.pending().map((p) => this.view(p));
+    const all = [...this.policy.pending().map((p) => this.view(p)), ...this.policy.services().map((p) => this.serviceView(p))];
+    if (sessionId === undefined) return all;
     const s = this.sessions.get(sessionId);
     if (!s) return [];
     this.prune(s);
-    return this.policy.pending().filter((p) => s.pending.has(p.token)).map((p) => this.view(p));
+    return all.filter((p) => s.pending.has(p.token));
   }
 
   resetSession(sessionId: string): void {
@@ -264,10 +288,13 @@ export class Agent {
       reply = await this.runModel(s, message, actions);
       // 모델이 쓴 답도 폰으로 나가는 사람용 글이다(기본 거부, src/agent/policy.ts): 위험 가전 이름이 나오면 도구를 썼든 아니든 서버 글로 바꾼다.
       // 그 가전 승인을 기다리는 중이면 정책 승인 안내 글, 아니면 정한 한 줄
+      // 외부 연락(위험 가전의 AS센터 전화 등) 승인을 기다리는 중이면 그 승인 질문
       if (riskyNames(reply).length) {
         const kinds = new Map(this.hub.list().map((d) => [d.id, d.kind]));
-        const waiting = this.pending(s.id).find((p) => isRiskyKind(kinds.get(p.deviceId)));
-        reply = waiting ? askApproval(waiting.reason) : RISKY_REPLY;
+        const views = this.pending(s.id);
+        const waiting = views.find((p) => isRiskyKind(kinds.get(p.deviceId)));
+        const calling = views.find((p) => p.service);
+        reply = waiting ? askApproval(waiting.reason) : calling ? calling.reason : RISKY_REPLY;
       }
     }
     const pendingConfirmations = this.pending(s.id);
@@ -337,8 +364,8 @@ export class Agent {
     let shown: ToolResult = result;
     if (result.needsConfirmation) {
       s.pending.add(result.needsConfirmation.token);
-      const p = this.policy.pending().find((x) => x.token === result.needsConfirmation!.token);
-      if (p) this.emit({ event: "pending", sessionId: s.id, pending: this.view(p) });
+      const p = this.pending().find((x) => x.token === result.needsConfirmation!.token);
+      if (p) this.emit({ event: "pending", sessionId: s.id, pending: p });
       const { needsConfirmation, ...rest } = result;
       shown = {
         ...rest,
@@ -375,6 +402,14 @@ export class Agent {
   /** 거절: 실행하지 않는다. 기억하지 않아 다음에 또 묻는다. */
   private async refuseToken(token: string, s?: Session): Promise<ConfirmResult> {
     s?.pending.delete(token);
+    const call = this.policy.takeService(token);
+    if (call) {
+      const reply = REFUSED_REPLY(SERVICE_KINDS[call.call.kind].what);
+      if (s) this.provider.addExchange?.(s.state, "(거절이라고 답했다)", reply);
+      this.emit({ event: "cancelled", sessionId: s?.id, token });
+      this.serviceDone(call.call, "refused");
+      return { ok: false, reply };
+    }
     const p = this.policy.consume(token);
     if (!p) return { ok: false, error: TOKEN_MISSING, reply: "승인할 작업이 없거나 시간이 지나 만료되었어요. 다시 요청해 주세요." };
     const reply = REFUSED_REPLY(commandName(this.label(p.deviceId), p.command));
@@ -393,6 +428,8 @@ export class Agent {
 
   private async confirmToken(token: string, s?: Session): Promise<ConfirmResult> {
     s?.pending.delete(token);
+    const call = this.policy.takeService(token);
+    if (call) return this.sendService(call);
     const p = this.policy.pending().find((x) => x.token === token);
     if (!p) return { ok: false, error: TOKEN_MISSING, reply: "승인할 작업이 없거나 시간이 지나 만료되었어요. 다시 요청해 주세요." };
     const r = await this.policy.confirm(this.hub, token);
@@ -416,13 +453,49 @@ export class Agent {
     };
   }
 
+  /** 외부 연락 대기의 보기: 기기 id는 빈 글(트윈 말풍선·계획에 붙지 않는다), 이름은 고장 난 가전(없으면 빈 글: 실제 폰은 질문만 보인다). */
+  private serviceView(p: PendingService): PendingView {
+    return {
+      token: p.token, deviceId: "", deviceLabel: p.call.device?.label ?? "", service: p.call.kind, reason: p.reason,
+      choices: APPROVE.map(({ id, label }) => ({ id, label })), expiresAt: new Date(p.expiresAt).toISOString(),
+    };
+  }
+
+  /** 지금 승인 대기 token 전부(가전 명령·외부 연락). */
+  private liveTokens(): Set<string> {
+    return new Set([...this.policy.pending(), ...this.policy.services()].map((p) => p.token));
+  }
+
+  /** 승인한 외부 연락: 통로가 있으면 보내고(2xx 보냄, 아니면 실패), 없으면 부르지 않는다(연결 없음). 결과를 알리고 답한다. */
+  private async sendService(p: PendingService): Promise<ConfirmResult> {
+    const id = randomUUID();
+    const at = new Date().toISOString();
+    const sent = this.service ? await this.service.send(p.call, { id, approvedAt: at }) : null;
+    const outcome: Exclude<ServiceOutcome, "refused"> = !sent ? "unconnected" : sent.ok ? "sent" : "failed";
+    const error = !sent ? SERVICE_UNCONNECTED : sent.ok ? undefined : sent.error;
+    const reply = serviceReply(p.call.kind, outcome);
+    this.serviceDone(p.call, outcome, id, error);
+    const ok = outcome === "sent";
+    const action: AgentAction = { tool: CALL_SERVICE, args: serviceArgs(p.call), ok, ...(ok ? { message: reply } : { error }), at };
+    return { ok, reply, ...(error ? { error } : {}), action };
+  }
+
+  /** 외부 연락 결과 하나를 알린다(구독자 오류는 무시). */
+  private serviceDone(call: ServiceCall, outcome: ServiceOutcome, id: string = randomUUID(), error?: string): void {
+    try {
+      this.onService?.({ id, call, outcome, atMs: Date.now(), ...(error && outcome === "failed" ? { error } : {}) });
+    } catch {
+      // 기록 실패가 답을 막지 않게 한다
+    }
+  }
+
   private label(id: string): string {
     return this.hub.list().find((d) => d.id === id)?.label ?? id;
   }
 
   /** 만료된 토큰을 세션에서 지운다. */
   private prune(s: Session): void {
-    const live = new Set(this.policy.pending().map((p) => p.token));
+    const live = this.liveTokens();
     for (const t of [...s.pending]) if (!live.has(t)) s.pending.delete(t);
   }
 

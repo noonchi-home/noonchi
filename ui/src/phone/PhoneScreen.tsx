@@ -19,7 +19,7 @@ import { LiquidGlass } from "@/components/ui/liquid-glass";
 import { Status, StatusIndicator } from "@/components/ui/status";
 import type { ApprovalAnswer } from "../../../src/contract/phone.ts";
 import {
-  handOf, PROBLEM_TEXT, problemOf, RESTART_FROM_SPOT, settingsRows, START_BUTTON, supportText,
+  handOf, pendingLine, PROBLEM_TEXT, problemOf, RESTART_FROM_SPOT, settingsRows, START_BUTTON, supportText,
   type Choice, type Hand, type Pending, type PhoneActions, type PhoneView, type Problem, type Tone,
 } from "./state";
 
@@ -99,7 +99,7 @@ function PendingList({ items, act }: { items: Pending[]; act: PhoneActions }) {
     <Card className="flex flex-col gap-1.5 p-1.5">
       {items.map((p) => (
         <Item key={p.token} size="sm">
-          <ItemContent><ItemTitle>{p.deviceLabel}: {p.reason}</ItemTitle></ItemContent>
+          <ItemContent><ItemTitle>{pendingLine(p)}</ItemTitle></ItemContent>
           <ItemActions><ChoiceButtons choices={p.choices} pick={(id) => act.confirm(p.token, id as ApprovalAnswer)} /></ItemActions>
         </Item>
       ))}

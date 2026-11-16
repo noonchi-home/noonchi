@@ -16,8 +16,11 @@ export type Support =
   | { kind: "ready" }
   | { kind: "failed"; message: string };
 export interface Choice { id: string; label: string }
-/** 승인 대기 가전 명령. choices: 답(승인·거절)마다 단추 하나. */
+/** 승인 대기(가전 명령·외부 연락). choices: 답(승인·거절)마다 단추 하나. 가전이 없는 외부 연락(보호자 연락)은 deviceLabel이 빈 글이다. */
 export interface Pending { token: string; deviceLabel: string; reason: string; choices: Choice[] }
+
+/** 승인 대기 한 줄: 「기기: 까닭」, 가전이 없으면 까닭만. */
+export const pendingLine = (p: Pick<Pending, "deviceLabel" | "reason">): string => (p.deviceLabel ? `${p.deviceLabel}: ${p.reason}` : p.reason);
 /** 서버가 보낸 지금 명령·질문(src/contract/phone.ts PhoneCommand에서 speak를 빼고 대상은 id만). target: 화면 밖·칸에 가릴 때 세모로 가리킬 명령 대상 id(없으면 null). */
 export interface Command { id: string; step: string; text: string; vision: string | null; choices: Choice[]; target: string | null; safety?: true }
 /** 화면 위 초점 표시 하나(core/project.js focusMarks와 같은 모양). */
@@ -134,7 +137,7 @@ export function handOf(v: PhoneView): Hand {
   if (!thumb) return { top: v.note, thumb: null, vision: null };
   const top = thumb.kind === "start" ? startLine(start!)
     : thumb.kind === "place" ? PLACE_LINE
-    : thumb.kind === "pending" ? `${thumb.item.deviceLabel}: ${thumb.item.reason}`
+    : thumb.kind === "pending" ? pendingLine(thumb.item)
     : thumb.command.text;
   const tone: Tone = !v.hit ? "plain" : v.hitEstimated ? "warn" : "ok";
   const base = thumb.kind === "place" ? { text: floorLine(v), tone }

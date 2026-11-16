@@ -9,6 +9,7 @@ import type { Mask } from "./observe.js";
 import type { DetLabel } from "../world/vocab.js";
 import type { VlmMissing, WorldChangeKind, WorldView, YoloMissing } from "./world.js";
 import type { Prediction, FsmRuleAt } from "./pam.js";
+import type { ServiceKind } from "./service.js";
 
 // 좌표
 
@@ -33,11 +34,16 @@ export interface AgentAction {
   at: string;
 }
 
+/** 승인 대기 하나: 위험 목록 가전 명령(command), 또는 외부 연락(service, src/contract/service.ts).
+ *  외부 연락은 deviceId가 빈 글이고 deviceLabel은 고장 난 가전 이름(없으면 빈 글), reason은 승인 질문(「AS센터에 전화할까요?」)이다. */
 export interface PendingView {
   token: string;
   deviceId: string;
   deviceLabel: string;
-  command: Command;
+  /** 가전 명령 대기만 있다. */
+  command?: Command;
+  /** 외부 연락 대기만 있다. */
+  service?: ServiceKind;
   reason: string;
   /** 실제 폰 답 단추(src/act/prompts.ts APPROVE): 승인·거절. */
   choices: PhoneChoice[];

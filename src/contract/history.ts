@@ -4,10 +4,11 @@
 /** 한 시간축 기록 종류. detection 등장·사라짐(사람 포함), vlm VLM 답·VLM 분석 없음, yolo YOLO 분석 없음(감지 오류·대기열 초과),
  *  world 나머지 World State 변화, pam_text PAM에 보낸 관찰 텍스트, link PAM 연결 끊김·연결됨, trigger 주기 판단 멈춤·다시 시작,
  *  photo 폰 사진 찍기 사진, look 관찰 모드가 고른 것(가까이 보기·사람 부탁·기다리기, src/act/look.ts),
- *  thought 생각 말풍선 두 줄(판단 id·행동·본 것·그래서, src/brain/thought.ts). */
+ *  thought 생각 말풍선 두 줄(판단 id·행동·본 것·그래서, src/brain/thought.ts),
+ *  service 외부 연락 결과(AS센터 전화·보호자 연락의 보냄·거절·연결 없음·실패, src/agent/service.ts). */
 export type HistoryKind =
   | "device" | "detection" | "vlm" | "yolo" | "world" | "pam_text" | "mode" | "decision" | "plan" | "execution" | "reflection" | "feedback" | "photo"
-  | "link" | "trigger" | "look" | "thought";
+  | "link" | "trigger" | "look" | "thought" | "service";
 
 export interface HistoryRow {
   id: number;

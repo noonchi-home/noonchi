@@ -145,6 +145,7 @@ HUB=memory npm run demo
 | `THINQ_CLIENT_ID`, `THINQ_API_KEY` | (시작마다 uuid), SDK 공개 값 | `x-client-id`, `x-api-key` |
 | `THINQ_POLL_MS`, `THINQ_READBACK_MS`, `THINQ_TIMEOUT_MS` | `15000`, `1000,2000,4000`, `10000` | 짝지은 기기 읽기 간격(`0`이면 처음 한 번), 명령 뒤 다시 읽기 전 기다림, 요청 제한 시간 |
 | `THINQ_BASE_URL` | (지역 주소) | ThinQ 주소를 바꾼다(시험의 가짜 서버) |
+| `CALL_SERVICE_URL` | (없음) | 외부 연락(AS센터 전화·보호자 연락)을 받는 전화 서비스 주소(http(s)). 사용자가 실제 폰에서 승인하면 연락 하나를 JSON으로 POST한다(아래 「외부 연락」). 비우면 부르지 않고 「전화 서비스가 아직 연결되지 않았어요.」. http(s) 주소가 아니면 시작하지 않는다 |
 
 선택 값은 `.env.example`에서 주석으로 두었다. 빈 값(`MATTER_X=`)으로 두면 matter.js가 자기 설정으로 읽을 수 있어서다.
 
@@ -487,6 +488,7 @@ tailscale serve --bg 8210   # 이미 켜져 있으면 생략. 폰: https://<이 
   - `vlm` 프레임마다 VLM 답 또는 「… VLM 분석 없음」, `yolo` 「감지 오류로 YOLO 분석 없음」·「요청이 몰려 YOLO·VLM 분석 없음」
   - `pam_text` PAM에 보낸 관찰 텍스트, `decision` 판단(고른 행동·대기·판단 실패), `plan` 계획(목표·상태), `execution` 실행 단계, `mode` 운영 모드 변경
   - `link` PAM 연결 끊김·연결됨, `trigger` 판단 멈춤·다시 시작
+  - `service` 외부 연락 결과(「세탁기 AS센터 전화 · 보냄」, 보냄·거절·연결 없음·실패). 대상은 고장 난 가전 id, data는 연락 id·종류·결과·받는 이·가전·고장 설명·에러 코드·사람 상태(실패면 까닭)
   - 사진은 적지 않는다. YOLO 결과는 등장·사라짐으로, 관절 사실은 World State 변화로 남는다.
 - 날짜는 `HISTORY_TZ_MINUTES`(기본 서울) 기준이다.
 - **하루 요약(`GET /api/history/day/{날짜}`):** 반성 입력이다.
@@ -564,7 +566,7 @@ HOME_ID=oneroom PHONE_PORT=8210 npm start
 
 - `new Agent({ hub, policy, provider, rooms?, maxToolRounds = 6, onEvent? })`: `chat(sessionId, message)`, `confirm(token)`, `cancel(token)`, `pending(sessionId?)`, `subscribe(cb)`. 세션별 대화를 기억하고, 같은 세션 요청은 차례로 처리한다.
 - **승인**: 도구가 `needsConfirmation`을 돌려주면 에이전트가 토큰을 세션에 보관하고 LLM에게는 이유만 보여 준다. LLM은 스스로 승인할 수 없다. 사용자는 화면의 승인 버튼(`POST /api/agent/confirm`)이나 같은 세션의 "응/네/확인"으로 확정하고, "아니/취소"로 취소한다.
-- **도구**(`tools.ts`, 에이전트·MCP 공용, zod 스키마 + 한국어 설명): `list_rooms`, `list_devices{room?,kind?}`, `find_devices{query}`, `get_state{device_id}`, `turn_on`, `turn_off`, `set_level{percent}`, `set_climate{mode?,setpoint_c?,fan?}`, `set_covering{open_percent}`, `lock`, `unlock`, `start`, `stop`, `set_valve{open}`. `confirm_action{token}`은 MCP에만 있다. `device_id`에 정확한 한국어 이름("거실 TV")도 넣을 수 있다.
+- **도구**(`tools.ts`, 에이전트·MCP 공용, zod 스키마 + 한국어 설명): `list_rooms`, `list_devices{room?,kind?}`, `find_devices{query}`, `get_state{device_id}`, `turn_on`, `turn_off`, `set_level{percent}`, `set_climate{mode?,setpoint_c?,fan?}`, `set_covering{open_percent}`, `lock`, `unlock`, `start`, `stop`, `set_valve{open}`, `call_service{kind,to?,device_id?,problem?,error_code?,person?}`(아래 「외부 연락」). `confirm_action{token}`은 MCP에만, `call_service`·`leave_it`은 서버 안 에이전트에만 있다. `device_id`에 정확한 한국어 이름("거실 TV")도 넣을 수 있다.
   - 도구는 `ToolBackend`로 집을 다룬다. 서버 안은 `localBackend(hub, policy, rooms)`, MCP는 `httpBackend(url)`(REST)이다.
 - **기기 찾기**(`search.ts`): 방 이름은 긴 것부터(안방 욕실 > 안방), 별칭(화장실 → 공용 욕실, 부엌 → 주방·식당, 베란다 → 다용도실), 종류 동의어(불 → 조명, 티비 → TV), 조사 떼기.
 - **시스템 프롬프트**(`prompts.ts`, 한국어): 방·기기 목록, 승인 규칙, 센서 규칙, 방을 말하지 않으면 직전 방 → 거실, "1~2문장으로 짧게 보고". 바뀌는 상태는 넣지 않는다(캐시 유지).
@@ -574,6 +576,53 @@ HOME_ID=oneroom PHONE_PORT=8210 npm start
   - 키가 없어도 다른 공급자로 바꾸지 않는다. 부르면 요청을 보내지 않고 키가 없다고 실패한다. `/api/health` `ready.agent`(키·주소 응답)가 준비 안 됨이다.
   - 시험은 같은 OpenAI 공급자를 가짜 OpenAI 호환 서버(`tests/helpers/llm.ts`, `OPENAI_BASE_URL`)에 붙인다. 가짜 서버는 사용자 말마다 정한 도구 호출과 답을 낸다.
   - 키는 로그·응답에 넣지 않는다.
+
+### 외부 연락 (call_service, 전화 에이전트 자리)
+
+가전이 고장 났을 때 AS센터에 전화(상담·방문 예약)하거나, 사람 상태가 걱정될 때 보호자에게 연락하는 자리다. 실제 전화는 전화 서비스(`CALL_SERVICE_URL`)가 맡는다.
+
+- 부르는 곳: 말로 시킨 요청(「세탁기 AS 불러 줘」)과 말 요청 에이전트가 스스로 정한 도구 호출뿐이다. PAM 행동 목록(`src/act/tasks.ts`)과 에이전트 계획 모드 단계에는 없다.
+- 도구 `call_service`: `kind`(`as_center` AS센터 전화, `guardian` 보호자 연락), `to`(누구에게, 없으면 「AS센터」·「보호자」), `device_id`·`problem`(고장 설명)·`error_code`(에러 코드), `person`(사람 상태 요약). AS센터 전화는 가전이나 고장 설명, 보호자 연락은 사람 상태가 없으면 묻지 않고 모델에게 까닭을 돌려준다.
+- 승인: 부르면 늘 실제 폰으로 먼저 묻는다(「세탁기: AS센터에 전화할까요?」, 가전이 없으면 「보호자에게 연락할까요?」, 답 승인·거절). 위험 목록처럼 답 둘 다 이번만이라 기억하지 않는다. 대기는 가전 승인과 같은 5분 제한이다.
+- 승인되면 외부 API 통로(`src/infer/call-service.ts`)가 `CALL_SERVICE_URL`에 아래 JSON 하나를 `POST`한다(`content-type: application/json`, 제한 시간 10초, 다시 보내지 않음). 2xx면 보냄, 그 밖의 상태·연결 오류는 실패다. 답 본문은 읽지 않는다.
+- 주소가 없으면 부르지 않는다. 실제 폰 답과 대시보드 말풍선 카드가 「전화 서비스가 아직 연결되지 않았어요.」다.
+- 결과: 실제 폰 답(보냄 「AS센터에 전화를 요청했어요.」, 거절 「AS센터 전화는 하지 않을게요.」, 실패 「AS센터에 전화하지 못했어요.」), 대시보드 말풍선 카드 20초(거절은 보이지 않음), 기록 DB `service` 줄.
+
+AS센터 전화 요청:
+
+```json
+{
+  "version": 1,
+  "id": "6f1c2a9e-3b7d-4c1e-9a52-0d8e4f7b21c3",
+  "kind": "as_center",
+  "to": "AS센터",
+  "home": { "id": "mokryeon_180b", "name": "한양목련 180B (도면 기준 · 방 4·욕실 3)" },
+  "device": { "id": "washer_1", "label": "세탁기", "kind": "washer" },
+  "problem": "탈수할 때 멈추고 에러가 뜸",
+  "error_code": "UE",
+  "person": null,
+  "approved_at": "2026-11-17T10:00:00.000Z"
+}
+```
+
+보호자 연락 요청:
+
+```json
+{
+  "version": 1,
+  "id": "0b9e7d41-58a2-4f36-8c1d-2e6a9f3b7c50",
+  "kind": "guardian",
+  "to": "딸",
+  "home": { "id": "mokryeon_180b", "name": "한양목련 180B (도면 기준 · 방 4·욕실 3)" },
+  "device": null,
+  "problem": null,
+  "error_code": null,
+  "person": "거실에서 넘어진 뒤 일어나지 못함",
+  "approved_at": "2026-11-17T10:00:00.000Z"
+}
+```
+
+- `id`: 연락마다 새 값(같은 연락을 두 번 받으면 이 값으로 가린다). `home`: 이 서버가 띄운 집. `device.kind`: 가전 종류 등록부 키(`src/devices/kinds.ts`). 없는 값은 `null`이다. `approved_at`: 사용자가 승인한 때.
 
 ## MCP (src/agent/mcp/server.ts)
 
@@ -733,6 +782,7 @@ matter.js 0.17.9에 매핑 표의 기기 종류 21개가 모두 있어 **대체�
 - 서버는 시작 때 등록부를 검증한다(`src/devices/kinds-check.ts` `checkKinds`): confirm 명령이 모든 사양에서 정규화해도 같은 이름인지, 위험 켜기 종류에 confirm 대신 riskyReason이 있는지, ThinQ 어댑터가 그 종류의 모든 사양 명령을 받는지(읽기만 하는 어댑터에는 제어 없는 프로필만), 손 조작이 제어·문 센서·카메라 열림 면과 맞는지. 틀리면 까닭과 함께 시작을 멈춘다.
 - `policy.guard(hub, id, cmd, confirmToken?)`: 실행할 수 없는 명령은 바로 오류. 승인이 필요하면 `{ ok: false, needsConfirmation: { token, reason } }`(서버는 409). 토큰은 한 번만 쓰고 5분 뒤 만료된다.
 - `policy.confirm(hub, token)`: 토큰만으로 대기 중인 명령을 실행한다(화면 승인 버튼).
+- `policy.askService(call)`: 외부 연락(`call_service`) 승인 대기를 만든다. 늘 묻고 승인 기억을 보지도 남기지도 않는다. `services()`·`takeService(token)`으로 읽고 꺼낸다. 시간 제한·멈춤(`pause`)은 가전 명령 대기와 같다.
 
 ## 테스트
 

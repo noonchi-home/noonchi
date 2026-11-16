@@ -54,7 +54,8 @@ export interface PhoneAnswer { type: "answer"; id: string; step: string; choice:
 /** 승인 답: 승인(기억, 같은 일은 다음부터 묻지 않음), 거절(이번만, 하지 않고 기억하지 않음). 위험 목록은 둘 다 이번만. src/agent/approval.ts가 기억한다. */
 export type ApprovalAnswer = "approve" | "reject";
 
-/** 승인을 기다리는 가전 명령(위험 목록). 폰은 위에 「deviceLabel: reason」, 아래에 답(choices: 승인·거절)마다 단추 하나를 두고 confirm(choice)로 답한다. */
+/** 승인을 기다리는 가전 명령(위험 목록)이나 외부 연락(AS센터 전화·보호자 연락). 폰은 위에 「deviceLabel: reason」(deviceLabel이 빈 글이면 reason만),
+ *  아래에 답(choices: 승인·거절)마다 단추 하나를 두고 confirm(choice)로 답한다. */
 export interface PhonePending { token: string; deviceLabel: string; reason: string; choices: PhoneChoice[] }
 
 /** 말하기 시작할 때 폰에 떠 있던 것: 명령 줄(명령의 계획 id·단계 id, 없으면 none)과 승인 대기 목록에 보인 token들. 새 폰은 늘 싣는다. 칸이 없으면 옛 탭이다.

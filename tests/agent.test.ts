@@ -640,7 +640,8 @@ describe("시스템 프롬프트·공급자 선택", () => {
     expect(p).toContain("tv_living");
     expect(p).toContain("승인");
     expect(p).toMatch(/짧게/);
-    expect(p.split("\n")).toContain("- 가전 제어·배치 요청이 아닌 말(혼잣말, 하는 법을 묻는 말, 주변 대화)에는 leave_it만 부르고 답 글을 쓰지 않는다.");
+    expect(p.split("\n")).toContain("- 가전 제어·배치·외부 연락 요청이 아닌 말(혼잣말, 하는 법을 묻는 말, 주변 대화)에는 leave_it만 부르고 답 글을 쓰지 않는다.");
+    expect(p).toMatch(/AS센터 전화를 부탁하면 call_service\(kind as_center.*보호자 연락이 필요하면 call_service\(kind guardian.*늘 사용자 승인을 먼저 묻는다/);
   });
 
   it("AGENT_PROVIDER > ANTHROPIC_API_KEY > openai, 공급자는 openai·anthropic뿐이다", () => {

@@ -1,8 +1,11 @@
 // 승인 정책(src/agent/approval.ts 규칙): 가전 명령은 말로 시킨 것이라 그 말이 승인이다. 위험 목록만 승인 토큰이 있어야 실행하고 늘 묻는다:
 // 위험 켜기 종류(등록부 riskyOn: 인덕션·전자레인지)는 끄기 말고 상태를 바꾸는 명령 전부, 그 밖에는 등록부 confirm 명령(현관 잠금 해제).
 // 판정은 needsConfirm 하나다. 위험 목록의 답(승인·거절)은 둘 다 이번만이라 승인 기억에 남기지 않는다.
+// 외부 연락(call_service: AS센터 전화·보호자 연락)도 밖으로 나가는 일이라 위험 목록처럼 늘 묻고 답 둘 다 이번만이다(askService). 대기는 같은 시간 제한·멈춤을 쓴다.
 
 import { randomUUID } from "node:crypto";
+import type { ServiceCall } from "../contract/service.js";
+import { SERVICE_KINDS } from "./service.js";
 import { isUnknown } from "../devices/index.js";
 import type { Capability, Command, CommandResult, CommandType, DeviceHub, DeviceSpec } from "../contract/devices.js";
 import type { DeviceKind } from "../devices/kinds.js";
@@ -119,6 +122,14 @@ export interface PendingConfirmation {
   expiresAt: number; // epoch ms
 }
 
+/** 승인을 기다리는 외부 연락 하나. reason은 실제 폰 승인 질문(「AS센터에 전화할까요?」). */
+export interface PendingService {
+  token: string;
+  call: ServiceCall;
+  reason: string;
+  expiresAt: number; // epoch ms
+}
+
 export interface PolicyOptions {
   ttlMs?: number;
   now?: () => number;
@@ -141,6 +152,8 @@ function stable(v: unknown): string {
 
 export class Policy {
   private readonly tokens = new Map<string, PendingConfirmation>();
+  /** 승인을 기다리는 외부 연락(가전 명령 대기와 따로 둔다: pending()·confirm()은 가전 명령만). */
+  private readonly calls = new Map<string, PendingService>();
   private readonly ttlMs: number;
   private readonly now: () => number;
   /** 시간 제한을 멈춘 때(pause). 멈춘 동안은 그때를 지금으로 본다. */
@@ -167,7 +180,7 @@ export class Policy {
     if (on && this.pausedAt === null) this.pausedAt = this.now();
     if (on || this.pausedAt === null) return;
     const held = this.now() - this.pausedAt;
-    for (const p of this.tokens.values()) p.expiresAt += held;
+    for (const p of [...this.tokens.values(), ...this.calls.values()]) p.expiresAt += held;
     this.pausedAt = null;
   }
 
@@ -199,6 +212,28 @@ export class Policy {
   pending(): PendingConfirmation[] {
     this.purge();
     return [...this.tokens.values()].map((p) => structuredClone(p));
+  }
+
+  /** 외부 연락은 늘 묻는다: 승인 대기를 하나 만든다. 승인 기억을 보지도 남기지도 않는다(답 둘 다 이번만). */
+  askService(call: ServiceCall): PendingService {
+    this.purge();
+    const p: PendingService = { token: randomUUID(), call: structuredClone(call), reason: SERVICE_KINDS[call.kind].ask, expiresAt: this.clock() + this.ttlMs };
+    this.calls.set(p.token, p);
+    return structuredClone(p);
+  }
+
+  /** 만료되지 않은 외부 연락 대기 목록. */
+  services(): PendingService[] {
+    this.purge();
+    return [...this.calls.values()].map((p) => structuredClone(p));
+  }
+
+  /** 외부 연락 대기를 꺼내 지운다(승인·거절·취소). 없거나 만료면 undefined. */
+  takeService(token: string): PendingService | undefined {
+    this.purge();
+    const p = this.calls.get(token);
+    if (p) this.calls.delete(token);
+    return p && structuredClone(p);
   }
 
   /** 정책을 거쳐 명령한다(말로 시킨 명령). 승인이 필요하면 needsConfirmation(토큰)을 돌려주고 실행하지 않는다. */
@@ -252,5 +287,6 @@ export class Policy {
   private purge(): void {
     const now = this.clock();
     for (const [t, p] of this.tokens) if (now >= p.expiresAt) this.tokens.delete(t);
+    for (const [t, p] of this.calls) if (now >= p.expiresAt) this.calls.delete(t);
   }
 }
