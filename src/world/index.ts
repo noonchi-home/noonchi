@@ -4,5 +4,5 @@ export { ConditionWatch, type Condition, type ConditionContext, CONDITION_KINDS,
 export { inView, pixelOf, rayDir, surfacesFromLayout, type PlaneSurface } from "./place.js";
 export { becameKey, deviceText } from "./relations.js";
 export { WorldState, CLOSER_NEW_FRAMES, type CloserPass } from "./state.js";
-export { textFromWorld, collapseLines } from "./text.js";
+export { textFromWorld, collapseLines, PAM_TEXT_MAX } from "./text.js";
 export { Trigger, type TriggerPause, loadTriggerConfig } from "./trigger.js";

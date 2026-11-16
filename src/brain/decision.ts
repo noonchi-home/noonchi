@@ -6,6 +6,7 @@
 
 
 import type { Prediction, FsmRuleAt } from "../contract/pam.js";
+import { PAM_TEXT_MAX } from "../world/index.js";
 
 export class ContractError extends Error {}
 
@@ -265,8 +266,8 @@ export function fsmRuleOf(memory: PamMemory, kind: "list" | "fsm", action: strin
   };
 }
 
-/** PAM 판단 관찰 텍스트 상한(글자 수). PAM 서비스 pam-predict/2와 같다. */
-export const MAX_OBSERVATION_TEXT = 20_000;
+/** PAM 판단 관찰 텍스트 상한(글자 수). PAM 서비스 pam-predict/2와 같다. 관찰 텍스트를 만드는 World State(world/text.ts)와 한 값이다. */
+export const MAX_OBSERVATION_TEXT = PAM_TEXT_MAX;
 
 /** PAM 반성 칸 상한(글자 수). PAM 서비스 pam-reflect/2와 같다. UTF-8 바이트로 이 안에 맞추면 글자 수도 넘지 않는다. */
 export const MAX_REFLECT_TEXT = { observation: 100_000, action: 50_000, feedback: 8_000 } as const;

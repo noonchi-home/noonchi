@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import type { WorldChange, WorldView } from "../src/contract/world.js";
 import { buildPamText, clock, collapseLines, textFromWorld } from "../src/world/text.js";
+import { MAX_OBSERVATION_TEXT, checkInput } from "../src/brain/decision.js";
 import { readFileSync } from "node:fs";
 import type { Detection, EngineFrame } from "../src/contract/observe.js";
 import { sha256 } from "../src/observe/ring.js";
@@ -89,6 +90,51 @@ describe("PAM 관찰 텍스트", () => {
       "[지속] 컵 cup_1 식탁 위: 21:00:30부터 13초째",
       "[지속] 컵 cup_1 비어 있음(짐작): 21:00:41부터 2초째",
     ]);
+  });
+
+  it("면 자리와 같은 놓인 곳(식탁 위)도 사실 줄을 둔다: 그 값이 처음 보인 시각과 (짐작)을 잃지 않는다", () => {
+    const view: WorldView = {
+      at_ms: T(21, 10, 0),
+      objects: [
+        { id: "cup_1", cls: "cup", position: [1, 0.75, 2], surface: "table_1", surface_label: "식탁", room: "kitchen", error_m: 0.1, status: "present",
+          first_seen_ms: T(21, 0, 0), last_seen_ms: T(21, 9, 58), last_in_view_ms: T(21, 9, 58),
+          facts: { place: { value: "on_table", at_ms: T(21, 9, 58), since_ms: T(21, 9, 40), certainty: "inferred" } }, answered_ms: null, devices: [], closer_hold: false, followed_by: null },
+      ],
+      person: { visible: false, since_ms: null, last_seen_ms: null, count: 0, room: null, room_label: null, position: null, near: [], holding: [], position_ms: null, answered_ms: null, facts: {} },
+      fixtures: [], devices: [], eye: null, frame_ms: null, vlm_missing: 0, yolo_missing: 0,
+    };
+    expect(textFromWorld(view, [], { nowMs: T(21, 10, 0), offsetMinutes: 540 }).split("\n").filter((l) => l.startsWith("[지속] 컵"))).toEqual([
+      "[지속] 컵 cup_1 식탁 위: 21:00:00부터 10분째, 마지막 확인 21:09:58",
+      "[지속] 컵 cup_1 식탁 위(짐작): 21:09:40부터 20초째",
+    ]);
+  });
+
+  it("관찰 텍스트는 PAM 상한(20,000자) 안이다: 물건이 많아 넘치면 오래된 시야 밖 물건부터 빼고, 보이는 물건과 사람·때·눈 줄은 남는다", () => {
+    const old = (i: number): WorldView["objects"][number] => ({
+      id: `book_${i}`, cls: "book", position: null, surface: null, surface_label: null, room: null, error_m: null, status: "out_of_view",
+      first_seen_ms: T(20, 0, 0) + i * 1000, last_seen_ms: T(20, 0, 0) + i * 1000, last_in_view_ms: T(20, 0, 0) + i * 1000,
+      facts: { place: { value: "on_table", at_ms: T(20, 0, 0) + i * 1000, since_ms: T(20, 0, 0) + i * 1000, certainty: "inferred" }, open: { value: "open", at_ms: T(20, 0, 0) + i * 1000, since_ms: T(20, 0, 0) + i * 1000, certainty: "inferred" } },
+      answered_ms: null, devices: [], closer_hold: false, followed_by: null,
+    });
+    const cup: WorldView["objects"][number] = { id: "cup_1", cls: "cup", position: null, surface: null, surface_label: null, room: null, error_m: null, status: "present",
+      first_seen_ms: T(21, 9, 0), last_seen_ms: T(21, 9, 58), last_in_view_ms: T(21, 9, 58),
+      facts: { contents: { value: "empty", at_ms: T(21, 9, 58), since_ms: T(21, 9, 50), certainty: "confirmed" } }, answered_ms: null, devices: [], closer_hold: false, followed_by: null };
+    const view: WorldView = {
+      at_ms: T(21, 10, 0), objects: [...Array.from({ length: 400 }, (_, i) => old(i)), cup],
+      person: { visible: false, since_ms: T(21, 5, 0), last_seen_ms: T(21, 4, 58), count: 0, room: null, room_label: null, position: null, near: [], holding: [], position_ms: null, answered_ms: null, facts: {} },
+      fixtures: [], devices: [], eye: { position: [1, 2], height_m: 1.5, yaw_deg: 0, pitch_deg: -30, room: "kitchen", room_label: "주방", at_ms: T(21, 9, 59) }, frame_ms: null, vlm_missing: 0, yolo_missing: 0,
+    };
+    const c = (i: number): WorldChange => ({ kind: "vlm", at_ms: T(21, 9, 20) + i * 500, subject: "x", text: `VLM: ${"긴 요약 ".repeat(40)}${i}`, meaningful: false });
+    const text = textFromWorld(view, Array.from({ length: 80 }, (_, i) => c(i)), { nowMs: T(21, 10, 0), offsetMinutes: 540 });
+    expect(text.length).toBeLessThanOrEqual(MAX_OBSERVATION_TEXT);
+    expect(() => checkInput({ text, finalTime: "2026-11-07T21:10:00+09:00", memory: { initial_state: "s", states: [{ id: "s", description: "d", rules: [], next: [] }] } as never, memoryKind: "fsm", tasks: ["컵 치우기"] })).not.toThrow();
+    const lines = text.split("\n");
+    expect(lines).toContain("[지속] 컵 cup_1 비어 있음: 21:09:50부터 10초째");
+    expect(lines).toContain("[지속] 사람 안 보임: 21:05:00부터 5분째");
+    expect(lines.at(-1)).toBe("[눈] 클로이드 눈: 주방");
+    // 가장 새 시야 밖 물건은 남고 가장 오래된 것부터 빠진다
+    expect(text).toContain("책 book_399 ");
+    expect(text).not.toContain("책 book_0 ");
   });
 
   it("눈 줄은 눈이 있는 방의 id가 아니라 방 이름을 쓴다", () => {

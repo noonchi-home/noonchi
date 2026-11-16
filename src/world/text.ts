@@ -43,6 +43,9 @@ export function buildPamText(o: { lines: TimedLine[]; facts: string[]; time?: st
   ].join("\n");
 }
 
+/** PAM 판단 관찰 텍스트 상한(글자 수, PAM 서비스 pam-predict/2와 같다). textFromWorld는 이 안으로 만든다. 판단 보내기 전 검사(brain)도 이 값을 쓴다. */
+export const PAM_TEXT_MAX = 20_000;
+
 /** 오래 이어진 시간: 1분 아래는 초째, 그 위는 분째. */
 const lasting = (ms: number) => (ms < 60_000 ? `${Math.max(0, Math.round(ms / 1000))}초째` : `${Math.floor(ms / 60_000)}분째`);
 
@@ -62,21 +65,20 @@ export function textFromWorld(world: WorldView, recent: readonly WorldChange[], 
   const since = o.nowMs - (o.windowMs ?? 60_000);
   const lines = recent.filter((c) => c.at_ms >= since && c.at_ms <= o.nowMs).map((c) => ({ atMs: c.at_ms, text: c.text }));
   const at = (ms: number) => clock(ms, o.offsetMinutes);
-  const facts: string[] = [];
   // 물건: 첫 줄은 트윈 면(위치로 정한 것, 없으면 자리 모름)과 처음 본 때·마지막 확인. 사실은 줄마다 그 값이 처음 보인 시각부터 세고,
-  // VLM 한 장만 보고 붙인 값(짐작)은 표시한다. 한 장에서 짐작한 「비어 있음」을 물건을 처음 본 때부터 이어진 것처럼 쓰지 않는다(2026-11-16 밤 판정 F·E)
-  for (const ob of world.objects.filter((x) => x.status !== "gone")) {
+  // VLM 한 장만 보고 붙인 값(짐작)은 표시한다. 한 장에서 짐작한 「비어 있음」을 물건을 처음 본 때부터 이어진 것처럼 쓰지 않는다(2026-11-16 밤 판정 F·E).
+  // 놓인 곳(place)도 면 자리와 같은 값이어도 그 줄을 둔다(값이 바뀌었다 돌아온 시각·짐작을 잃지 않게)
+  const objects: ObjectLines[] = world.objects.filter((x) => x.status !== "gone").map((ob) => {
     const name = objectName(ob.cls, ob.id);
     const where = ob.surface_label ? onSurface(ob.surface_label) : PLACE_UNKNOWN;
-    facts.push(`${name} ${where}: ${at(ob.first_seen_ms)}부터 ${lasting(o.nowMs - ob.first_seen_ms)}, 마지막 확인 ${at(ob.last_seen_ms)}${ob.status === "out_of_view" ? `, ${OUT_OF_VIEW_NOW}` : ""}`);
+    const lines = [`${name} ${where}: ${at(ob.first_seen_ms)}부터 ${lasting(o.nowMs - ob.first_seen_ms)}, 마지막 확인 ${at(ob.last_seen_ms)}${ob.status === "out_of_view" ? `, ${OUT_OF_VIEW_NOW}` : ""}`];
     for (const [k, f] of Object.entries(ob.facts) as [string, WorldFact | undefined][]) {
       if (!current("object", k, f, o.nowMs)) continue;
-      const value = STATE_TEXT[f!.value] ?? f!.value;
-      // 면 자리와 같은 놓인 곳(식탁 위)은 첫 줄에 있다
-      if (k === "place" && value === where) continue;
-      facts.push(`${name} ${value}${f!.certainty === "inferred" ? `(${GUESS})` : ""}: ${at(f!.since_ms)}부터 ${lasting(o.nowMs - f!.since_ms)}`);
+      lines.push(`${name} ${STATE_TEXT[f!.value] ?? f!.value}${f!.certainty === "inferred" ? `(${GUESS})` : ""}: ${at(f!.since_ms)}부터 ${lasting(o.nowMs - f!.since_ms)}`);
     }
-  }
+    return { lines, out: ob.status === "out_of_view", last: ob.last_seen_ms };
+  });
+  const facts: string[] = [];
   for (const f of world.fixtures) {
     const values = said((Object.entries(f.facts) as [string, WorldFact | undefined][]).map(([k, v]) => factText(current("fixture", k, v, o.nowMs))));
     if (values.length) facts.push(`${fixtureName(f.cls, f.id, f.room_label)} ${values.join(" · ")}: 마지막 확인 ${at(f.last_seen_ms)}`);
@@ -98,5 +100,26 @@ export function textFromWorld(world: WorldView, recent: readonly WorldChange[], 
     facts.push(`${d.label} ${d.id}: ${d.status}, ${at(from)}부터 ${lasting(o.nowMs - from)}${d.remaining_min !== null ? `, ${CHANGE_TEXT.remaining(d.remaining_min)}` : ""}${d.vision ? `, ${CHANGE_TEXT.seenAt(at(d.vision.at_ms))}` : ""}`);
   }
   const eye = world.eye ? `${EYE_TEXT} ${world.eye.room_label ?? ROOM_UNKNOWN}` : null;
-  return buildPamText({ lines, facts, time: timeText(o.nowMs, o.offsetMinutes), eye, offsetMinutes: o.offsetMinutes });
+  const time = timeText(o.nowMs, o.offsetMinutes);
+  const render = (keep: readonly ObjectLines[], maxLines?: number) =>
+    buildPamText({ lines, facts: [...keep.flatMap((x) => x.lines), ...facts], time, eye, offsetMinutes: o.offsetMinutes, maxLines });
+  let keep = objects;
+  let text = render(keep);
+  if (text.length <= PAM_TEXT_MAX) return text;
+  // PAM 상한을 넘으면 오래된 시야 밖 물건부터, 그다음 오래된 보이는 물건부터 뺀다(줄마다 「[지속] 」과 줄바꿈만큼 줄어든다)
+  let over = text.length - PAM_TEXT_MAX;
+  const drop = new Set<ObjectLines>();
+  for (const x of [...objects].sort((a, b) => Number(b.out) - Number(a.out) || a.last - b.last)) {
+    if (over <= 0) break;
+    drop.add(x);
+    over -= x.lines.reduce((n, l) => n + "[지속] ".length + l.length + 1, 0);
+  }
+  keep = objects.filter((x) => !drop.has(x));
+  text = render(keep);
+  // 그래도 넘치면 오래된 변화 줄부터 줄인다
+  for (let n = 39; text.length > PAM_TEXT_MAX && n >= 1; n--) text = render(keep, n);
+  return text;
 }
+
+/** 물건 하나의 [지속] 줄(면 줄 + 사실 줄)과 덜어 낼 차례를 정하는 값: 지금 시야 밖인가, 마지막으로 본 시각. */
+interface ObjectLines { lines: string[]; out: boolean; last: number }
