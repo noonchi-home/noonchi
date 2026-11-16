@@ -1,5 +1,5 @@
 // 시작 위치: 설정에서 집마다 한 번 고른 자리·방향(runtime/homes/<집>/phone-start.json). 폰은 AR을 켜고 그 자리에 서서
-// 그 방향을 본 뒤 「여기서 시작」을 누르거나 말한다. 그 순간 자세 하나로 변환을 바로 정한다(어림, src/sync/aligner.ts).
+// 그 방향을 본 뒤 「여기서 시작」을 누르거나 말한다. 그 순간 자세 하나로 변환을 바로 정한다(어림, src/phone/sync/aligner.ts).
 //
 // 방향은 평면 규칙(0 = +x, 90 = +y)이다. 폰이 보는 방향은 카메라 -Z의 수평 성분이고, 바닥을 거의 내려다보면(수평 성분이
 // 0.35보다 작으면) 폰 윗쪽(+Y)의 수평 성분을 쓴다(세로로 든 폰의 위가 앞).
@@ -7,9 +7,9 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { z } from "zod";
-import { forwardOf, rotate3, type Plan2, type Vec3 } from "../shared/geometry.js";
-import type { Quat } from "../contract/observe.js";
-import { inBounds, insidePolygon, type Bounds } from "../phone/home-plan.js";
+import { forwardOf, rotate3, type Plan2, type Vec3 } from "../../shared/geometry.js";
+import type { Quat } from "../../contract/observe.js";
+import { inBounds, insidePolygon, type Bounds } from "../home-plan.js";
 import { rotateVec, wrapAngle, type Rigid } from "./rigid.js";
 
 export interface StartPose {

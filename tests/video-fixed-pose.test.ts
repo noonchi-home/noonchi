@@ -9,11 +9,11 @@ import type { Vec3 } from "../src/shared/geometry.js";
 import type { Quat } from "../src/contract/observe.js";
 import { readScenePlan } from "../src/phone/home-plan.js";
 import { PhoneSession } from "../src/phone/session.js";
-import { LANDMARK_IDS, landmarkClass } from "../src/sync/classes.js";
-import { twinLandmarks, type TwinLandmark } from "../src/sync/landmarks.js";
-import { rigidGap, type P2, type Rigid } from "../src/sync/rigid.js";
-import { startRigid, type StartPose } from "../src/sync/start.js";
-import { wallSegments, type WallSeg } from "../src/sync/walls.js";
+import { LANDMARK_IDS, landmarkClass } from "../src/phone/sync/classes.js";
+import { twinLandmarks, type TwinLandmark } from "../src/phone/sync/landmarks.js";
+import { rigidGap, type P2, type Rigid } from "../src/phone/sync/rigid.js";
+import { startRigid, type StartPose } from "../src/phone/sync/start.js";
+import { wallSegments, type WallSeg } from "../src/phone/sync/walls.js";
 import { BOX_START, BOX_WALLS } from "./helpers/align.js";
 import { SimHome } from "./helpers/sync-sim.js";
 

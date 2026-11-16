@@ -94,7 +94,7 @@ noonchi-home | 26-2 소프트웨어공학
 ```text
 실제 폰 (ui/src/phone)        — 눈과 손: WebXR 위치 · 카메라 프레임 · 늘 듣기 · 지금 명령과 「완료」
         ↓  WebSocket (Wi-Fi)
-폰 서버 (src/phone · src/sync) — 위치 맞추기 · 폰 눈 위치 · 말 전달 · 명령 보내기
+폰 서버 (src/phone · src/phone/sync) — 위치 맞추기 · 폰 눈 위치 · 말 전달 · 명령 보내기
         ↓
 서버 (src/server)             — Node.js 22
 ├── 관찰 (src/brain · src/observe · src/world) — YOLO26n 감지·YOLO26n-pose 관절(onnxruntime) · VLM · World State → 관찰 글

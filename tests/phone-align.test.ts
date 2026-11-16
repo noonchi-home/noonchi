@@ -1,4 +1,4 @@
-// AR 자세 → 트윈 눈 자세(src/shared/geometry.ts): 맞춤 변환(회전·이동·바닥 높이)으로 옮긴다. 변환은 위치 맞추기(src/sync)가 구한다.
+// AR 자세 → 트윈 눈 자세(src/shared/geometry.ts): 맞춤 변환(회전·이동·바닥 높이)으로 옮긴다. 변환은 위치 맞추기(src/phone/sync)가 구한다.
 import { describe, expect, it } from "vitest";
 import { forwardOf, fromTwin, planOf, toTwin, type Alignment } from "../src/shared/geometry.js";
 import type { Quat } from "../src/contract/observe.js";

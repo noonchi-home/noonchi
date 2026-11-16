@@ -3,7 +3,7 @@
 // 엄지 자리 차례: 시작 위치 맞추기·물건 자리 맞추기 > 안전 명령(끄기 안내·부탁, 서버 grade safety) > 승인 대기(가전) > 명령·질문.
 // 안전 명령이 승인 대기를 가리는 동안 서버는 승인 시간 제한을 멈추고(src/agent/policy.ts pause), 안내가 풀리면 승인 대기가 다시 보인다. 일이 멈추는 문제는 모달(problemOf), 추적 약함·잠깐 알릴 말은 비전 상태 줄.
 // 엄지 자리 카드가 없으면(기다리기·가전 단계라 명령이 없을 때) 잠깐 알릴 말은 위 줄에 보인다(명령을 가리지 않는다).
-// 위치 맞춤(서버 status.sync, src/sync): 시작 위치가 있으면 AR을 켤 때 「여기서 시작」을 띄우고, 어림인 동안 명령의 비전 상태 줄 앞에 「위치 맞추는 중」.
+// 위치 맞춤(서버 status.sync, src/phone/sync): 시작 위치가 있으면 AR을 켤 때 「여기서 시작」을 띄우고, 어림인 동안 명령의 비전 상태 줄 앞에 「위치 맞추는 중」.
 // 집에 시작 위치가 없으면 AR 중 「설정 화면에서 시작 위치를 정해 주세요」 모달이 뜬다.
 import type { ApprovalAnswer, HeardAt } from "../../../src/contract/phone.ts";
 import type { ListenState } from "./core/talk.js";

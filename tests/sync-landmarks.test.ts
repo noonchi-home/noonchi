@@ -3,10 +3,10 @@ import { describe, expect, it } from "vitest";
 import { loadCatalog } from "../src/layout/catalog.js";
 import { loadScene } from "../src/model/scene.js";
 import type { SceneObject } from "../src/contract/layout.js";
-import { LANDMARK_IDS, LANDMARK_KEYS, landmarkClass } from "../src/sync/classes.js";
+import { LANDMARK_IDS, LANDMARK_KEYS, landmarkClass } from "../src/phone/sync/classes.js";
 import {
   LANDMARK_TYPES, LandmarkStore, edgePoint, floorPoint, twinLandmarks, type LandmarkObs, type TwinLandmark,
-} from "../src/sync/landmarks.js";
+} from "../src/phone/sync/landmarks.js";
 import { look, perspective, project } from "./helpers/sync-sim.js";
 
 const scene = loadScene({ scenePath: "twin/homes/mokryeon_180b/scene.json", dataDir: "twin/data/homes/mokryeon_180b" })!;

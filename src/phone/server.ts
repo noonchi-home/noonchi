@@ -2,7 +2,7 @@
 // 기기 제어 REST는 여기 없다. 본 서버(127.0.0.1)는 그대로 두고 눈 자세는 onEye로, 폰의 말(say)과 승인 답(승인·거절)은 onSay·onConfirm·onCancel로
 // 넘긴다(그 뒤는 에이전트·승인 정책이 맡는다). 실제 폰에 명령·질문이 떠 있으면 말을 먼저 그 답으로 맞춰 보고(onAnswer),
 // 답 단추(answer)는 onChoice로 넘긴다(src/contract/phone.ts). 명령 대상의 트윈 자리는 맞춘 변환으로 AR 자리로 바꿔 보내고(맞추기 전 null),
-// 맞춤이 바뀌면 지금 명령을 다시 보낸다(speak false). 위치 맞춤 모듈(src/sync)의 상태가 바뀌면 붙은 폰 모두에 상태를 보낸다.
+// 맞춤이 바뀌면 지금 명령을 다시 보낸다(speak false). 위치 맞춤 모듈(src/phone/sync)의 상태가 바뀌면 붙은 폰 모두에 상태를 보낸다.
 // 명령의 소리 등급(grade)은 실행 추적이 붙여 온 그대로 보낸다(src/act/talk-grade.ts). 실제 폰은 안전·질문 말을 자르지 않고 끝까지 읽는다.
 // 내부 테스트용이라 같은 와이파이의 누구나 말을 보낼 수 있다.
 // 폰 화면은 React 빌드 ui/dist/phone/이고 빌드 파일은 /assets/다(대시보드와 같은 빌드). 영상 모드 영상은 /phone/videos/다(videoDir, Range).
@@ -28,9 +28,9 @@ import { MAX_PACKET_BYTES, parsePacket, type FrameHeader } from "./packet.js";
 import type { Plan2 } from "../shared/geometry.js";
 import { PhoneSession, type EyeEvent, type FallbackViewpoint, type HerePoint, type LandmarkBoxIn, type PhoneSessionOptions, type PhoneStatus } from "./session.js";
 import type { CameraView } from "../contract/observe.js";
-import type { SyncState } from "../sync/aligner.js";
-import type { TwinLandmark } from "../sync/landmarks.js";
-import type { StartPose } from "../sync/start.js";
+import type { SyncState } from "./sync/aligner.js";
+import type { TwinLandmark } from "./sync/landmarks.js";
+import type { StartPose } from "./sync/start.js";
 
 export type { FocusTarget } from "../contract/events.js";
 

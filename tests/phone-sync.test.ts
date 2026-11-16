@@ -2,10 +2,10 @@
 import { describe, expect, it } from "vitest";
 import type { HomePlan } from "../src/phone/home-plan.js";
 import { PhoneSession, type PhoneStatus } from "../src/phone/session.js";
-import type { TwinLandmark } from "../src/sync/landmarks.js";
-import { applyRigid, invertRigid, rigidGap, type P2, type Rigid } from "../src/sync/rigid.js";
-import type { StartPose } from "../src/sync/start.js";
-import { wallSegments } from "../src/sync/walls.js";
+import type { TwinLandmark } from "../src/phone/sync/landmarks.js";
+import { applyRigid, invertRigid, rigidGap, type P2, type Rigid } from "../src/phone/sync/rigid.js";
+import type { StartPose } from "../src/phone/sync/start.js";
+import { wallSegments } from "../src/phone/sync/walls.js";
 import { SimHome } from "./helpers/sync-sim.js";
 
 const deg = (d: number) => (d * Math.PI) / 180;

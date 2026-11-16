@@ -1,7 +1,7 @@
 // 폰 AR(WebXR local 공간) 자세를 트윈 평면 좌표의 눈 자세로 바꾼다. 순수 함수만 둔다.
 //
 // WebXR 공간은 오른손, +Y 위, 미터다. 트윈 three 좌표도 (평면 x, 높이, 평면 y)라 축 모양이 같으므로
-// AR (x, z)를 평면 (x, y)로 읽고 수평 회전 하나와 이동만 있으면 된다(위치 맞추기 src/sync가 구한다). 크기는 둘 다 미터라 맞출 필요가 없다.
+// AR (x, z)를 평면 (x, y)로 읽고 수평 회전 하나와 이동만 있으면 된다(위치 맞추기 src/phone/sync가 구한다). 크기는 둘 다 미터라 맞출 필요가 없다.
 // 회전 각은 평면 규칙(yaw 0 = +x, 90 = +y)을 따른다.
 
 import type { EyePose, Plan2, Vec3 } from "../contract/events.js";
@@ -9,7 +9,7 @@ import type { Quat } from "../contract/observe.js";
 
 export type { EyePose, Plan2, Vec3 } from "../contract/events.js";
 
-/** AR → 트윈 맞춤: 수평 회전 theta·이동 tx·ty(src/sync/rigid.ts Rigid)와 트윈 높이 0의 AR y. */
+/** AR → 트윈 맞춤: 수평 회전 theta·이동 tx·ty(src/phone/sync/rigid.ts Rigid)와 트윈 높이 0의 AR y. */
 export interface Alignment {
   theta: number;
   tx: number;

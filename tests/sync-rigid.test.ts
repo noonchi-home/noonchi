@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applyRigid, fitRigid, limitStep, ransacRigid, rigidGap, solveTerms, wrapAngle, type P2, type Rigid, type Term,
-} from "../src/sync/rigid.js";
+} from "../src/phone/sync/rigid.js";
 
 const deg = (d: number) => (d * Math.PI) / 180;
 const TRUE: Rigid = { theta: deg(37), tx: 4.2, ty: -1.3 };

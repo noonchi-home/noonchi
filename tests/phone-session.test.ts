@@ -2,7 +2,7 @@
 // AR 원점(epoch)이 바뀌면 맞춤을 버리고, 버린 원점의 늦은 메시지는 받지 않는다. 맞추기 전에는 창가 추정 눈.
 import { describe, expect, it } from "vitest";
 import { PhoneSession, estimateViewpoint } from "../src/phone/session.js";
-import type { Rigid } from "../src/sync/rigid.js";
+import type { Rigid } from "../src/phone/sync/rigid.js";
 import { BOX_START, BOX_WALLS, alignMessages } from "./helpers/align.js";
 
 const sync = { landmarks: [], walls: BOX_WALLS, start: BOX_START };

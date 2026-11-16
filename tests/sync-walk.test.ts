@@ -5,11 +5,11 @@ import { loadCatalog } from "../src/layout/catalog.js";
 import { readScenePlan } from "../src/phone/home-plan.js";
 import { loadScene } from "../src/model/scene.js";
 import type { SceneObject } from "../src/contract/layout.js";
-import { SyncAligner } from "../src/sync/aligner.js";
-import { twinLandmarks } from "../src/sync/landmarks.js";
-import { applyRigid, invertRigid, rigidGap, rotateVec, type P2, type Rigid } from "../src/sync/rigid.js";
-import type { StartPose } from "../src/sync/start.js";
-import { wallSegments } from "../src/sync/walls.js";
+import { SyncAligner } from "../src/phone/sync/aligner.js";
+import { twinLandmarks } from "../src/phone/sync/landmarks.js";
+import { applyRigid, invertRigid, rigidGap, rotateVec, type P2, type Rigid } from "../src/phone/sync/rigid.js";
+import type { StartPose } from "../src/phone/sync/start.js";
+import { wallSegments } from "../src/phone/sync/walls.js";
 import { SimHome, type SimBox, type SimPose } from "./helpers/sync-sim.js";
 
 const deg = (d: number) => (d * Math.PI) / 180;

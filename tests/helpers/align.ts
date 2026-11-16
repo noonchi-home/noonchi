@@ -2,9 +2,9 @@
 // 위치 맞춤 모듈이 바로 맞춤이 된다. 실제 폰이 보내는 메시지와 같은 길로 간다(src/phone/session.ts).
 import type { Vec3 } from "../../src/shared/geometry.js";
 import { readScenePlan, type HomePlan } from "../../src/phone/home-plan.js";
-import { applyRigid, IDENTITY, invertRigid, rotateVec, type P2, type Rigid } from "../../src/sync/rigid.js";
-import type { StartPose } from "../../src/sync/start.js";
-import { wallSegments, type WallSeg } from "../../src/sync/walls.js";
+import { applyRigid, IDENTITY, invertRigid, rotateVec, type P2, type Rigid } from "../../src/phone/sync/rigid.js";
+import type { StartPose } from "../../src/phone/sync/start.js";
+import { wallSegments, type WallSeg } from "../../src/phone/sync/walls.js";
 import { look } from "./sync-sim.js";
 
 /** 6×5 네모 방 하나(벽 두께 0.2, 중심선이 방 다각형 변). */

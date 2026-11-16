@@ -10,9 +10,9 @@
 // - LandmarkStore: 종류마다 최근 관찰만 두고(기본 40개), 자리로 묶은 뒤 묶음 가운데에서 먼 관찰을 버린다. 관찰이 3개 이상인
 //   묶음만 쓴다.
 
-import { rayDir } from "../world/place.js";
-import type { Vec3 } from "../shared/geometry.js";
-import type { Quat } from "../contract/observe.js";
+import { rayDir } from "../../world/place.js";
+import type { Vec3 } from "../../shared/geometry.js";
+import type { Quat } from "../../contract/observe.js";
 import { LANDMARK_KEYS, type LandmarkClass } from "./classes.js";
 import type { P2 } from "./rigid.js";
 

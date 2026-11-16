@@ -1,16 +1,16 @@
-// 맞춤 모듈(src/sync/aligner.ts): 시작 위치(바로, 어림) → 물건 기준점·벽 모양(걸으면서 맞춤). 6×5 가짜 방 하나로 본다.
+// 맞춤 모듈(src/phone/sync/aligner.ts): 시작 위치(바로, 어림) → 물건 기준점·벽 모양(걸으면서 맞춤). 6×5 가짜 방 하나로 본다.
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { HomePlan } from "../src/phone/home-plan.js";
-import { SyncAligner } from "../src/sync/aligner.js";
-import type { TwinLandmark } from "../src/sync/landmarks.js";
-import { applyRigid, invertRigid, rigidGap, type P2, type Rigid } from "../src/sync/rigid.js";
+import { SyncAligner } from "../src/phone/sync/aligner.js";
+import type { TwinLandmark } from "../src/phone/sync/landmarks.js";
+import { applyRigid, invertRigid, rigidGap, type P2, type Rigid } from "../src/phone/sync/rigid.js";
 import {
   StartPoseError, StartStore, describeStart, parseStartPose, readStartPose, startPosePath, startRigid, type StartPose,
-} from "../src/sync/start.js";
-import { wallSegments } from "../src/sync/walls.js";
+} from "../src/phone/sync/start.js";
+import { wallSegments } from "../src/phone/sync/walls.js";
 import { SimHome, type SimPose } from "./helpers/sync-sim.js";
 
 const deg = (d: number) => (d * Math.PI) / 180;

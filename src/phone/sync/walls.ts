@@ -8,8 +8,8 @@
 //   면 길이 안(끝에서 15cm 여유)이고, 거리가 gateM 안일 때만. 남은 짝 중 거리가 먼 15%는 잘라낸다.
 //   한 면에 점이 30개를 넘으면 그 면 점마다 시그마를 키워 한 벽이 다른 증거를 누르지 않게 한다.
 
-import { roomFaces, type HomePlan } from "../phone/home-plan.js";
-import type { Vec3 } from "../shared/geometry.js";
+import { roomFaces, type HomePlan } from "../home-plan.js";
+import type { Vec3 } from "../../shared/geometry.js";
 import { applyRigid, rotateVec, type LineTerm, type P2, type Rigid } from "./rigid.js";
 
 export interface WallSeg {

@@ -21,7 +21,7 @@ const SITES: { file: string; pattern: RegExp; skip?: RegExp }[] = [
   { file: "ui/src/phone/core/link.js", pattern: /\bvideo\b/ },
   { file: "src/phone/server.ts", pattern: /videoSession\(|engineHeader\(/ },
   { file: "src/phone/session.ts", pattern: /\.fixed\b/ },
-  { file: "src/sync/aligner.ts", pattern: /fixStart\(|"video"/ },
+  { file: "src/phone/sync/aligner.ts", pattern: /fixStart\(|"video"/ },
   { file: "src/observe/pipeline.ts", pattern: /\.held\b/ },
 ];
 /** 영상 모드 갈래가 없어야 하는 파일. */

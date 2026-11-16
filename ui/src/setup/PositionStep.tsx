@@ -19,7 +19,7 @@ import { call, failText, isOk } from "./setup-api";
 import { arrowPath, clockwiseSign, floorAtBox, useFloorClicks, useOverlay, yawOf, type Pos } from "./start-pick";
 
 // 4 위치 동기화: 3D 트윈에서 폰을 켤 시작 자리와 서서 볼 방향을 한 번 골라 저장한다(GET/POST /api/phone/start-pose).
-// 폰은 그 자리에 서서 그 쪽을 보고 「여기서 시작」을 한 뒤, 걸으면서 벽 모양·물건으로 저절로 맞춘다(src/sync).
+// 폰은 그 자리에 서서 그 쪽을 보고 「여기서 시작」을 한 뒤, 걸으면서 벽 모양·물건으로 저절로 맞춘다(src/phone/sync).
 // 말풍선 안은 트윈 칸(data-twin-box) 하나이고 모든 일을 그 위에 떠 있는 부품으로 한다(사용자 2026-11-09 「4번은 트윈화면만 띄워놓고 다 해결가능하게 수정해」):
 // 위쪽 띠에 지금 할 일 한 줄과 그 아래 한 줄로 자리·보는 쪽 칩(이름 고치기·다시 고르기·돌리기), 오른쪽 위 폰 칩(누르면 주소·QR), 아래 가운데 저장·지우기,
 // 왼쪽 아래 배치 보정(고친 게 있을 때), 오른쪽 아래 이전·완료. 구조는 스케치(dashboard-proto/options/setup-sync-sketch.html)를 따른다.

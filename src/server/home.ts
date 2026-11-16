@@ -48,9 +48,9 @@ import { createPhoneServer, type PhoneServer } from "../phone/server.js";
 import { estimateViewpoint } from "../phone/session.js";
 import { eyeHeightOf, floorLookup, homeBounds, readScenePlan } from "../phone/home-plan.js";
 import type { FrameHeader } from "../phone/packet.js";
-import { twinLandmarks } from "../sync/landmarks.js";
-import { StartStore, describeStart, readStartPose, startPosePath, type StartPose } from "../sync/start.js";
-import { wallSegments } from "../sync/walls.js";
+import { twinLandmarks } from "../phone/sync/landmarks.js";
+import { StartStore, describeStart, readStartPose, startPosePath, type StartPose } from "../phone/sync/start.js";
+import { wallSegments } from "../phone/sync/walls.js";
 import { repoPath } from "../shared/paths.js";
 import { PlanHub } from "../plan/hub.js";
 import { HEARD_MARK } from "../world/labels.js";
@@ -225,7 +225,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
         },
       })
       : undefined;
-    // 폰 위치 맞추기(src/sync): 시작 위치(설정 4단계에서 자리·방향) + 물건 기준점(엔진 프레임 YOLO) + 벽 모양(hit 벽 점)
+    // 폰 위치 맞추기(src/phone/sync): 시작 위치(설정 4단계에서 자리·방향) + 물건 기준점(엔진 프레임 YOLO) + 벽 모양(hit 벽 점)
     const eyeHeightM = eyeHeightOf(env.PHONE_EYE_HEIGHT_M);
     const phoneRef: { current?: PhoneServer } = {};
     // 방·벽(시작 위치 범위·방 검사, 방 바닥 높이, 벽 모양 짝). scene.json이 없거나 깨졌으면 빈 목록

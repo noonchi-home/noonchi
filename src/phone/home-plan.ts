@@ -1,4 +1,4 @@
-// 집 평면도(scene.json plan.rooms·plan.walls)와 평면 도우미. 폰 위치 맞추기(src/sync)·World State·폰 서버가 쓴다.
+// 집 평면도(scene.json plan.rooms·plan.walls)와 평면 도우미. 폰 위치 맞추기(src/phone/sync)·World State·폰 서버가 쓴다.
 // - 방 쪽 벽 면(roomFaces): 방 다각형은 벽 중심선이라 면은 뷰어 snapToWall과 같게 구한다. 벽은 중심선 + 법선 × 두께/2,
 //   고체(샤프트·기둥)는 법선이 같은 다각형 변. 여러 방이 함께 쓰는 벽 면은 그 방과 맞닿고 고체에 가리지 않은 구간으로 자른다.
 // - 점이 든 방의 바닥 높이(floorLookup), 집 범위(homeBounds·inBounds), 다각형 안(insidePolygon), 눈높이(eyeHeightOf).
@@ -28,7 +28,7 @@ export interface HomePlan {
   walls: PlanWall[];
 }
 
-/** 방 쪽 벽 면 한 조각(위치 맞추기 벽 모양 짝, src/sync/walls.ts): a → b, 법선 n은 방 안쪽(길이 1). */
+/** 방 쪽 벽 면 한 조각(위치 맞추기 벽 모양 짝, src/phone/sync/walls.ts): a → b, 법선 n은 방 안쪽(길이 1). */
 export interface RoomFace {
   room: string;
   a: Plan2;

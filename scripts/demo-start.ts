@@ -1,5 +1,5 @@
 // 시연 장면 시작 위치: 장면마다 바라볼 대상과 거리. 대상 가운데에서 그 방 다각형 가운데 쪽으로 거리만큼 물러선 자리에서 대상을 본다.
-// 폰 AR 시작 위치(src/sync/start.ts)와 같은 평면 규칙(방향 0 = +x, 90 = +y)이다.
+// 폰 AR 시작 위치(src/phone/sync/start.ts)와 같은 평면 규칙(방향 0 = +x, 90 = +y)이다.
 import type { SceneJson } from "../src/contract/layout.js";
 
 /** 장면 → 대상 평면도 물건 id와 대상까지 거리(m). 소파 id는 twin/homes/mokryeon_180b/scene.json의 거실 소파다. */

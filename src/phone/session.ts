@@ -1,4 +1,4 @@
-// 폰 한 대의 AR 세션 상태. 위치 맞춤 모듈(src/sync/aligner.ts)로 트윈에 맞추고, 그 뒤 자세를 눈 자세로 바꾼다.
+// 폰 한 대의 AR 세션 상태. 위치 맞춤 모듈(src/phone/sync/aligner.ts)로 트윈에 맞추고, 그 뒤 자세를 눈 자세로 바꾼다.
 // 네트워크와 무관하므로 server.ts가 WebSocket 메시지를 그대로 넘긴다.
 // 「여기서 시작」(start)이면 바로 어림, 걸으며 오는 실제 hit 벽 점(pose의 hit·hit_normal, 앱은 surface)과 물건 상자(엔진 프레임 YOLO 또는
 // 앱의 landmarks)가 기준을 넘으면 맞춤. 어림이면 눈만 estimated로 보내고 사진·카메라(World State)·고리·「여기」에는 쓰지 않는다.
@@ -6,11 +6,11 @@
 
 import { z } from "zod";
 import type { EyeEvent } from "../contract/events.js";
-import { SyncAligner, type SyncSource, type SyncState } from "../sync/aligner.js";
-import type { TwinLandmark } from "../sync/landmarks.js";
-import { rigidGap } from "../sync/rigid.js";
-import type { StartPose } from "../sync/start.js";
-import type { WallSeg } from "../sync/walls.js";
+import { SyncAligner, type SyncSource, type SyncState } from "./sync/aligner.js";
+import type { TwinLandmark } from "./sync/landmarks.js";
+import { rigidGap } from "./sync/rigid.js";
+import type { StartPose } from "./sync/start.js";
+import type { WallSeg } from "./sync/walls.js";
 import { fromTwin, planOf, toTwin, type Alignment, type Plan2, type Vec3 } from "../shared/geometry.js";
 import type { Quat, CameraView } from "../contract/observe.js";
 import { DEFAULT_EYE_HEIGHT_M } from "./home-plan.js";

@@ -7,19 +7,19 @@
 // 2. 물건 기준점(addLandmarks): 관찰을 종류·자리로 묶고, 트윈 물건과 짝지어(하나뿐인 종류 먼저, 변환이 있으면 가장 가까운 같은 종류)
 //    관찰마다 점-점 항(시그마 0.15m + 거리 1m마다 0.04m, 물건 하나에 관찰 8개가 넘으면 그만큼 키움). 변환이 없으면 하나뿐인 종류
 //    둘 이상으로 RANSAC 해서 처음 변환을 만든다.
-// 3. 벽 모양(addPose의 실제 hit 벽 점): 지금 변환에서 2D ICP(src/sync/walls.ts, 시그마 0.05m). 짝 문턱은 반복마다 좁힌다
+// 3. 벽 모양(addPose의 실제 hit 벽 점): 지금 변환에서 2D ICP(src/phone/sync/walls.ts, 시그마 0.05m). 짝 문턱은 반복마다 좁힌다
 //    (어림이면 1.0 → 0.15m, 맞춘 뒤면 0.5 → 0.15m). 최근 45초 점만 쓴다(추적이 밀려도 옛 점에 붙잡히지 않게).
 //
 // 받는 기준(SYNC_LIMITS): 벽 = 맞는 점(10cm 안) 40개 이상·RMS 6cm 이하·짝 중 맞는 몫 절반 이상, 물건 = 짝(50cm 안)과 그 RMS 35cm 이하.
-// 어림일 때는 ICP 전에 벽 점 법선과 트윈 벽 방향을 겹쳐 방향만 먼저 고친다(±20°, src/sync/walls.ts normalRotation).
+// 어림일 때는 ICP 전에 벽 점 법선과 트윈 벽 방향을 겹쳐 방향만 먼저 고친다(±20°, src/phone/sync/walls.ts normalRotation).
 // 맞춤(aligned)은 벽이 두 방향 이상이거나, 벽 한 방향 + 물건 하나, 또는 물건 셋. 벽 한 방향(복도)·물건 둘이면
 // 변환은 고치지만 어림으로 둔다(물건 하나는 회전을 못 정해 쓰지 않는다). 기준을 못 넘으면 바꾸지 않고, 맞춘 뒤에는 맞춤 기준을 넘을 때만 바꾼다.
 // 한 번에 움직이는 양은 폰 자리에서 어림이면 1.0m·20°, 맞춘 뒤면 0.3m·5°까지다(넘으면 그만큼만 가고 다음에 마저 간다).
 // 다시 푸는 것은 0.5초에 한 번, 새 벽 점 10개나 새 물건 관찰이 있을 때만.
 // 영상 모드(fixStart): 고정 카메라라 시작 자리가 곧 카메라 자리다. 바로 맞춤(출처 video)으로 두고 물건·벽으로 변환을 움직이지 않는다.
 
-import type { Vec3 } from "../shared/geometry.js";
-import type { Quat } from "../contract/observe.js";
+import type { Vec3 } from "../../shared/geometry.js";
+import type { Quat } from "../../contract/observe.js";
 import { landmarkClass, type LandmarkClass } from "./classes.js";
 import { LandmarkStore, boxRay, edgePoint, rayFloor, type FrameCamera, type LandmarkCluster, type LandmarkObs, type TwinLandmark } from "./landmarks.js";
 import { applyRigid, limitStep, ransacRigid, rigidGap, solveTerms, type P2, type Rigid, type Term } from "./rigid.js";
@@ -103,7 +103,7 @@ export interface PoseInput {
 }
 
 export interface LandmarkBoxInput {
-  /** 기준점 종류(낱말 표 키, src/sync/classes.ts) 또는 COCO 번호. */
+  /** 기준점 종류(낱말 표 키, src/phone/sync/classes.ts) 또는 COCO 번호. */
   label: string | number;
   score: number;
   /** 원본 픽셀 [x, y, w, h]. */

@@ -34,7 +34,6 @@ export const DEPS: Record<string, readonly string[]> = {
 
 /** 지금 자리 → 도메인(2.1 「들어갈 지금 코드」). 끝이 /면 폴더. 옮기는 단계(3·6단계)마다 줄이고 9단계에 빈다. */
 export const LEGACY: Record<string, string> = {
-  "src/sync/": "phone",
   "src/brain/detector.ts": "observe",
   "src/brain/detector-thread.ts": "observe",
   "src/brain/detector-worker.mjs": "observe",

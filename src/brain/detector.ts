@@ -1,6 +1,6 @@
 // 물체 감지기와 사람 관절. 엔진 프레임마다 낱말 표(src/world/vocab.ts)의 사람·물건·가전 설비 종류·박스·신뢰도를 내고, 사람이 보이면 관절 17개를 더 낸다.
 // 놓인 자리·쓰는 중·안 내용은 VLM이 본다. 가구 자리는 트윈 배치에서 읽으므로 가구 종류(식탁·의자…)는 거른다.
-// 같은 출력에서 크고 바닥에 서는 가구·가전(냉장고·소파·식탁 등, src/sync/classes.ts) 상자는 World State와 따로 폰 위치 맞추기 기준점(landmarks)으로도 낸다.
+// 같은 출력에서 크고 바닥에 서는 가구·가전(냉장고·소파·식탁 등, src/phone/sync/classes.ts) 상자는 World State와 따로 폰 위치 맞추기 기준점(landmarks)으로도 낸다.
 //
 // 모델은 YOLO26n-seg(감지 + 물체 모양)와 YOLO26n-pose(관절)다. Ultralytics 가중치를 이 저장소에서 ONNX로 내보내 models/에 커밋했다(AGPL-3.0,
 // 출처·sha256·다시 내보내기는 THIRD_PARTY.md).
@@ -14,7 +14,7 @@
 
 import jpeg from "jpeg-js";
 import { repoPath } from "../shared/paths.js";
-import { LANDMARK_IDS } from "../sync/classes.js";
+import { LANDMARK_IDS } from "../phone/sync/classes.js";
 import { CLASSES, type ClassKey, type DetLabel } from "../world/vocab.js";
 import { COEFFS, PROTO, boxFoot, emptyMask, maskOf, type LetterboxPlace } from "../shared/mask.js";
 import type { Box, Mask, Detection, Keypoint, Pose } from "../contract/observe.js";
@@ -22,7 +22,7 @@ import type { Box, Mask, Detection, Keypoint, Pose } from "../contract/observe.j
 export type { DetLabel, LetterboxPlace, Mask };
 
 
-/** 위치 맞추기 기준점 상자(냉장고·소파 등 크고 바닥에 서는 물건, src/sync/classes.ts). World State는 받지 않는다. */
+/** 위치 맞추기 기준점 상자(냉장고·소파 등 크고 바닥에 서는 물건, src/phone/sync/classes.ts). World State는 받지 않는다. */
 export interface LandmarkBox {
   /** COCO 클래스 번호. */
   cls: number;
@@ -224,7 +224,7 @@ export function decodeYolo26(out: Float32Array, dims: readonly number[], lb: Let
 
 const LANDMARK_SET = new Set(LANDMARK_IDS);
 
-/** decodeYolo26과 같고, 위치 맞추기 기준점 종류(src/sync/classes.ts) 상자도 따로 낸다(같은 종류끼리 NMS, 점수 순, 마스크 없음).
+/** decodeYolo26과 같고, 위치 맞추기 기준점 종류(src/phone/sync/classes.ts) 상자도 따로 낸다(같은 종류끼리 NMS, 점수 순, 마스크 없음).
  *  마스크는 NMS 뒤 남은 감지에만 만든다. protos가 없거나 1인 칸이 4칸 미만이면 모델 상자와 빈 마스크다. */
 export function decodeYolo26All(out: Float32Array, dims: readonly number[], lb: LetterboxPlace, image: { width: number; height: number }, opts: { minScore: number }, protos?: Protos): { detections: Detection[]; landmarks: LandmarkBox[] } {
   const n = checkShape(out, dims, 4 + COCO_CLASSES + COEFFS);

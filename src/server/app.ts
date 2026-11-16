@@ -21,8 +21,8 @@ import { HISTORY_KINDS, type HistoryDb } from "../history/db.js";
 import type { ReflectResult } from "../history/reflect.js";
 import { daySummary, isDay } from "../history/summary.js";
 import type { LayoutEditor } from "../layout/editor.js";
-import type { SyncState } from "../sync/aligner.js";
-import { StartPoseError, type StartPose } from "../sync/start.js";
+import type { SyncState } from "../phone/sync/aligner.js";
+import { StartPoseError, type StartPose } from "../phone/sync/start.js";
 import { repoPath } from "../shared/paths.js";
 import type { PlanHub } from "../plan/hub.js";
 import { twinChange } from "../model/mapping.js";
@@ -60,7 +60,7 @@ export interface AppOptions {
   hubKind?: string;
   /** 폰 AR 클로이드의 눈 화면(src/phone/feed.ts). 있으면 GET /api/eye/*를 넘긴다. */
   eye?: { handle(req: IncomingMessage, res: ServerResponse, path: string): boolean };
-  /** 폰 위치 맞추기 시작 위치(src/sync/start.ts StartStore). 있으면 /api/phone/start-pose*. */
+  /** 폰 위치 맞추기 시작 위치(src/phone/sync/start.ts StartStore). 있으면 /api/phone/start-pose*. */
   start?: { get(): StartPose | null; save(raw: unknown): StartPose; preview(raw: unknown): StartPose; clear(): void };
   /** 폰 위치 맞춤 모듈 상태(GET /api/phone/sync). 폰 서버가 없으면 null. */
   phoneSync?: () => SyncState | null;
