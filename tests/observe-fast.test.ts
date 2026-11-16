@@ -1,6 +1,6 @@
 // 빠른 프레임과 VLM 프레임: 모든 엔진 프레임에 YOLO를 돌리고, VLM 프레임 간격마다 한 장만 VLM·기록에 쓴다.
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Detector } from "../src/observe/detector.js";
 import type { BrainLog, SeenEvent } from "../src/contract/events.js";
 import type { VlmClient } from "../src/infer/vlm.js";
@@ -15,7 +15,7 @@ const CUP = det("cup", 0.9, [220, 160, 40, 20]);
 const FAST: ObserveConfig = { engineMs: 100, vlmMs: 2000, vlmMaxInflight: 4, vlmTimeoutMs: 5000, detectQueueMax: 8, keepMs: 20_000 };
 
 /** 관찰 흐름 하나. 감지기는 부른 횟수를 세고(fail이면 오류), VLM은 받은 사진(셋째 바이트 = 프레임 번호)과 글을 적는다. hold면 감지를 gates에 붙잡아 둔다. */
-function setup(config: ObserveConfig, o: { hold?: boolean; fail?: () => boolean; detector?: null } = {}) {
+function setup(config: ObserveConfig, o: { hold?: boolean; fail?: () => boolean; detector?: null; delayMs?: number } = {}) {
   const logs: BrainLog[] = [];
   const seen: SeenEvent[] = [];
   const calls: { images: number[]; captions: string[] }[] = [];
@@ -26,6 +26,7 @@ function setup(config: ObserveConfig, o: { hold?: boolean; fail?: () => boolean;
     detect: async (bytes: Buffer) => {
       detected.push(bytes[2]!);
       if (o.hold) await new Promise<void>((ok) => gates.push(ok));
+      if (o.delayMs) await new Promise<void>((ok) => setTimeout(ok, o.delayMs));
       if (o.fail?.()) throw new Error("onnx");
       return { detections: [CUP], ms: 1, width: 480, height: 360 };
     },
@@ -91,6 +92,41 @@ describe("빠른 프레임과 VLM 프레임", () => {
     expect(s.seen.map((e) => e.frame_id)).toEqual(["e1", "e21", "e22", "e23"]);
     expect(s.p.status()).toMatchObject({ detected: 4, skipped: 19, yolo_missing: { cap: 0, error: 0, stale: 0 } });
     await s.p.close();
+  });
+
+  it("감지 모델 yolo26s-seg 속도(한 장 144ms, 초당 약 7장)·엔진 프레임 100ms: 10초 동안 VLM 프레임은 모두 감지하고 분석 없음(cap)이 없다. 대기열은 빠른 프레임 FAST_QUEUE_MAX장 + VLM 프레임 안이고 끝나면 빈다. 컵은 처음 본 뒤 4초에 감지 지연(약 0.5초 안)만큼 늦게 나온다", async () => {
+    vi.useFakeTimers({ now: 0 });
+    try {
+      // 144ms: dml에서 잰 yolo26s-seg 한 장 전체(scripts/brain-yolo-bench.ts, 2026-11-16)
+      const s = setup(FAST, { delayMs: 144 });
+      let most = 0;
+      for (let i = 0; i <= 100; i++) {
+        s.send(i);
+        most = Math.max(most, s.p.status().queued);
+        await vi.advanceTimersByTimeAsync(100);
+      }
+      await vi.advanceTimersByTimeAsync(2000);
+      await s.p.idle();
+      const st = s.p.status();
+      expect(st.yolo_missing).toEqual({ cap: 0, error: 0, stale: 0 });
+      expect(most).toBeLessThanOrEqual(FAST_QUEUE_MAX + 1);
+      expect(most).toBeLessThan(FAST.detectQueueMax);
+      expect(st.queued).toBe(0);
+      for (const v of [0, 20, 40, 60, 80, 100]) expect(s.detected, `VLM 프레임 ${v}`).toContain(v);
+      // 10초 × 약 7장
+      expect(st.detected).toBeGreaterThanOrEqual(65);
+      expect(st.detected + st.skipped).toBe(101);
+      expect(s.calls).toHaveLength(6);
+      const cup = s.world.view(10_000).objects.find((x) => x.cls === "cup")!;
+      expect(cup.first_seen_ms).toBe(0);
+      const appeared = s.logs.find((l) => l.type === "world_change" && l.kind === "appeared");
+      expect(appeared && appeared.type === "world_change" ? appeared.at_ms : null).toBeGreaterThanOrEqual(4000);
+      // 등장 줄 시각은 감지를 마친 때다: 4초 뒤 장이 대기열(빠른 프레임 2장)을 지나 감지되기까지 144ms × 3 + 엔진 간격 안
+      expect(appeared && appeared.type === "world_change" ? appeared.at_ms : null).toBeLessThanOrEqual(4000 + 3 * 144 + 100);
+      await s.p.close();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("대기열이 찼을 때 VLM 프레임은 기다리는 빠른 프레임을 밀어내고 들어간다. 빠른 프레임이 없을 때만 YOLO·VLM 분석 없음(cap)이다", async () => {

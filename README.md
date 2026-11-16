@@ -24,7 +24,7 @@ noonchi-home | 26-2 소프트웨어공학
 
 | 단계 | 하는 일 | 보이는 곳 |
 |---|---|---|
-| **보기** | 실제 폰이 클로이드의 눈이다. 카메라 화면과 AR 위치가 들어오고, 사진마다 YOLO26n(물체·사람)과 VLM이 따로 분석한다. VLM은 최근 5장(2초 간격)을 함께 보고 집기·마시기·내려놓기 같은 행동도 읽는다. 사람이 보이면 YOLO26n-pose가 자세와 손에 든 컵을 본다. | 대시보드 폰 칸(YOLO 상자) |
+| **보기** | 실제 폰이 클로이드의 눈이다. 카메라 화면과 AR 위치가 들어오고, 사진마다 YOLO26s(물체·사람)과 VLM이 따로 분석한다. VLM은 최근 5장(2초 간격)을 함께 보고 집기·마시기·내려놓기 같은 행동도 읽는다. 사람이 보이면 YOLO26n-pose가 자세와 손에 든 컵을 본다. | 대시보드 폰 칸(YOLO 상자) |
 | **알기** | World State가 YOLO·VLM 결과와 집 장면(가전·가구·도면 설비)을 합쳐 지금 상태와 관찰 글을 만든다. 볼 수 있는 것은 [낱말 표](docs/world-vocabulary.md)의 물건 30종·가전 설비 6종·사람 자세와 하는 일·가전 상태와 사건뿐이다. 가전은 Matter 가상 기기다. | 3D 트윈, FSM 카드 |
 | **판단** | 폰 사진이 오는 동안 5초마다 PAM이 그때 관찰 글만 받아 할 일을 고른다(FSM이 계기·행동을 정한다). 사진은 넘기지 않는다. 폰 사진이 10초 넘게 안 오면 부르지 않아 비용도 없다. 지금 행동 목록은 컵 치우기·사용자에게 물어보기·세탁물 건조기로 옮기기·에어컨 켜기다. 말로 시킨 가전 명령은 에이전트(LLM 도구)가 맡는다. | 말풍선 카드 |
 | **행동** | 에이전트(LLM 도구)가 고른 일을 계획으로 만든다: 경로, 사람에게 하는 단계 명령, 가전 조작, 행동 중 기다리기. 실제 폰으로 사람에게 하나씩 지시하고, World State와 폰 위치로 그 단계가 된 것을 본 뒤 다음 단계를 지시한다. 기다리기(예: 세탁 멈춤)는 폰에 보내지 않고 트윈 진행도에만 「기다리는 중」으로 보인다. 가전 명령은 승인 규칙을 거쳐 Matter 속성을 바꾼다. | 실제 폰, 트윈 진행도 |
@@ -50,7 +50,7 @@ noonchi-home | 26-2 소프트웨어공학
 
 #### 02. 실제 폰: 클로이드의 눈과 손
 
-- 안드로이드 크롬에서 폰 페이지를 연다. WebXR AR이 위치와 방향을 딴다. 집마다 정한 시작 자리에 서서 「여기서 시작」을 한 번 하면 바로 트윈에 어림으로 맞고, 방을 둘러보며 걸으면 서버가 벽 모양(hit-test 벽 점)과 큰 가구(YOLO26n 냉장고·소파·식탁 등)로 저절로 맞춘다([위치 맞추기](docs/reference.md#시작-위치물건벽-모양으로-맞추기위치-맞추기)).
+- 안드로이드 크롬에서 폰 페이지를 연다. WebXR AR이 위치와 방향을 딴다. 집마다 정한 시작 자리에 서서 「여기서 시작」을 한 번 하면 바로 트윈에 어림으로 맞고, 방을 둘러보며 걸으면 서버가 벽 모양(hit-test 벽 점)과 큰 가구(YOLO26s 냉장고·소파·식탁 등)로 저절로 맞춘다([위치 맞추기](docs/reference.md#시작-위치물건벽-모양으로-맞추기위치-맞추기)).
 - 위: 미어캣 아이콘과 지금 할 명령 한 줄. 상태 표시줄(배터리 줄) 아래(위에서 36px부터)에 둔다. 계획이나 판단 글은 대시보드에만 있다.
 - 아래: 비전 상태 줄(예: 「식탁까지 2.4m」, 「컵 · 손에 있음」)과 바로 밑 「완료」 단추. 비전이 못 알아볼 때 사람이 「완료」를 누르거나 말하면 다음 단계로 간다.
 - 늘 듣는다(크롬 음성 인식). 명령은 소리로 읽고, 읽는 동안은 듣지 않는다. 「그만」이라고 하면 계획을 그만둔다.
@@ -97,7 +97,7 @@ noonchi-home | 26-2 소프트웨어공학
 폰 서버 (src/phone · src/phone/sync) — 위치 맞추기 · 폰 눈 위치 · 말 전달 · 명령 보내기
         ↓
 서버 (src/server)             — Node.js 22
-├── 관찰 (src/brain · src/observe · src/world) — YOLO26n 감지·YOLO26n-pose 관절(onnxruntime) · VLM · World State → 관찰 글
+├── 관찰 (src/brain · src/observe · src/world) — YOLO26s 감지·YOLO26n-pose 관절(onnxruntime) · VLM · World State → 관찰 글
 ├── 판단 (services/pam)       — PAM(Python): 관찰 글만 받아 행동을 고른다
 ├── 계획·실행 (src/act) — 어떤 계획이든 단계마다 폰 명령·가전·기다리기, World State 조건과 폰 위치로 다음 단계
 ├── 에이전트 (src/agent)      — 말로 시킨 가전 명령, PAM 행동의 계획 모드(OpenAI · Anthropic 도구) · 승인 규칙
@@ -144,7 +144,7 @@ npm start                 # 화면을 빌드하고 http://127.0.0.1:8200
 - 영상으로 시험하기: 시작 자리를 저장하고(설정 4단계) 영상을 `runtime/videos/`에 둔 뒤 `npm run heavy -- npx tsx scripts/video-check.ts --clip <파일> --done-after 3`. 헤드리스 크롬이 폰 페이지 영상 모드로 끝까지 틀고, 영상 시각 기준 시각표(사람 등장·사라짐, PAM 판단, 계획, 명령, 끝)와 판정을 `runtime/videos/`에 남긴다. 판마다 서버를 새로 띄운다. `--step go:table:go-table.mp4 …`을 주면 단추를 누르지 않고 단계 영상으로 단계가 넘어가는지, 트윈 눈·컵이 따라 바뀌는지 표와 대시보드 사진으로 남긴다. 모델 없이 도구만 보려면 `--fake`.
 - 시연 영상 남기기: 같은 명령에 `--record <폴더>`를 붙이면 판정 내내 폰 화면과 대시보드를 녹화해 `<폴더>/<시각표 이름>.demo.mp4`(왼쪽 폰·오른쪽 대시보드, 10fps)를 만든다. ffmpeg가 PATH에 없으면 프레임 폴더만 남는다.
 - 실제 집 사진 모으기: `.env`에 `DATASET_COLLECT=1`이면 분석한 사진이 폰 위치·방향과 함께 `runtime/dataset/<날짜>/`에 쌓인다(7일 보관).
-- 감지·관절 모델(YOLO26n·YOLO26n-pose ONNX, AGPL-3.0)은 저장소 `models/`에 있어 따로 받지 않는다. 출처·다시 내보내기는 [THIRD_PARTY](THIRD_PARTY.md#모델).
+- 감지·관절 모델(YOLO26s-seg·YOLO26n-pose ONNX, AGPL-3.0)은 저장소 `models/`에 있어 따로 받지 않는다. 출처·다시 내보내기는 [THIRD_PARTY](THIRD_PARTY.md#모델).
 - 키 없이 돌려 보기: `npx tsx scripts/fake-openai.ts --port 8500`을 띄우고 `VLM_BASE_URL`·`PAM_LLM_BASE_URL`·`OPENAI_BASE_URL`을 `http://127.0.0.1:8500/v1`로, `OPENAI_API_KEY`를 `fake-key`로 둔다.
 - 서버 한 대: `docker compose up -d --build`. GPU 서버는 `docker compose --profile gpu up -d --build`([deploy](docs/deploy.md)).
 - 대시보드 순간 보기: `?debug=steps&step=N`은 서버 자료 대신 `ui/src/dashboard/fake-run.json`의 순간(지켜보기, 1~4단계)을 보인다([twin3d](docs/twin3d.md)).

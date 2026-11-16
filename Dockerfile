@@ -33,7 +33,7 @@ COPY --from=deps /app/node_modules node_modules
 # sha256은 src/observe/detector.ts 모델 표와 같다(tests/deploy-files.test.ts)
 COPY models models
 RUN printf '%s\n' \
-      "2e8fc38ffb5df4eca1fb56784121db03222c32bbfc09beb3a310339e9129e170  models/yolo26n-seg.onnx" \
+      "705f24bb2c5aa0a25921c82768054e5792a59264b3a6d5066c6fbad57afb7a32  models/yolo26s-seg.onnx" \
       "dd0e47a03ea0f2b9e766b038559de14fb1dd5e51d8dfb331051740998628d91e  models/yolo26n-pose.onnx" \
     | sha256sum -c -
 COPY package.json tsconfig.json ./

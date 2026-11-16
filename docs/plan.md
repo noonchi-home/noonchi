@@ -148,7 +148,7 @@ interface DeviceHub {
 
 - `PHONE_PORT`(예: 8210)를 주면 폰 전용 서버가 `PHONE_HOST`(기본 0.0.0.0)에 뜬다. 주는 것은 `/phone/`(페이지)과 `/phone/events`(WebSocket)뿐이다. 기기 API는 본 서버(127.0.0.1)에만 있다.
 - 폰 → 서버: `{type:"pose", position:[x,y,z], orientation:[x,y,z,w], tracking:"ok"|"limited", hit:[x,y,z]|null, hit_estimated}`(WebXR local 공간, 초당 10번, hit_estimated는 조준점이 어림 바닥 점일 때 true) · `{type:"start"}`(시작 자리에서 「여기서 시작」) · `{type:"surface", points}`(실제 hit 점) · `{type:"reset"}`. 서버 → 폰: `{type:"status", aligned, sync, error?}`.
-- 위치 맞추기는 `src/phone/sync/`가 한다: 설정에서 저장한 시작 자리·방향(어림), 걸으며 보이는 큰 가구(YOLO26n), 벽 모양(hit-test 벽 점 ICP). 결과는 수평 회전·이동·바닥 높이(`src/shared/geometry.ts` `Alignment`)다. 자세한 규칙은 [reference.md](reference.md) "위치 맞추기".
+- 위치 맞추기는 `src/phone/sync/`가 한다: 설정에서 저장한 시작 자리·방향(어림), 걸으며 보이는 큰 가구(YOLO26s), 벽 모양(hit-test 벽 점 ICP). 결과는 수평 회전·이동·바닥 높이(`src/shared/geometry.ts` `Alignment`)다. 자세한 규칙은 [reference.md](reference.md) "위치 맞추기".
 - 맞춘 뒤 자세는 본 서버 `/events`로 `{type:"eye", eye:{position:[x,y], height_m, yaw_deg, pitch_deg, tracking, at}}`가 된다. 뷰어는 `aptViewer.setEye`로 눈 마커만 움직인다. 판단에는 쓰지 않는다.
 - WebSocket은 페이지를 준 호스트와 같은 출처만 받는다.
 - 카메라(WebXR `camera-access`): 폰은 `/phone/events`에 바이너리 패킷 `[헤더 길이 4바이트 BE][JSON 헤더][JPEG]`(`src/phone/packet.ts`, 최대 4MB)을 보낸다. 헤더 `{kind:"frame"|"photo", width, height, position?, orientation?, tracking?}`. `frame`은 기본 초당 12장·가로 480px·품질 0.55(폰 주소 `?fps=`·`?w=`로 바꾼다, 인코딩 중이거나 와이파이에 쌓이면 건너뜀), `photo`는 카메라 원본 크기.

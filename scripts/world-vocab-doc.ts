@@ -23,7 +23,7 @@ const table = (head: string[], rows: (string | number)[][]) => [row(head), row(h
 const code = (s: string) => `\`${s}\``;
 
 function classes(): string {
-  return table(["키", "한국어", "역할", "YOLO26n COCO", "최소 신뢰도", "면", "계기 예"], (Object.keys(CLASSES) as ClassKey[]).map((k) => {
+  return table(["키", "한국어", "역할", "YOLO26s COCO", "최소 신뢰도", "면", "계기 예"], (Object.keys(CLASSES) as ClassKey[]).map((k) => {
     const c = CLASSES[k];
     const coco = Object.entries(c.coco).map(([n, name]) => `${n} ${name}`).join(", ");
     return [code(k), c.label, ROLE[c.role], coco, c.role === "scene" ? "—" : c.minScore, c.facets.map((f) => FACET[f]).join(", ") || "—", CLASS_DOC[k] ?? "—"];

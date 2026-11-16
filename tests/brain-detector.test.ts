@@ -1,6 +1,7 @@
 // 감지기: YOLO26n과 YOLO26n-pose. 레터박스·출력 풀기·NMS는 합성 값으로,
-// 실제 모델은 저장소 models/의 YOLO26n으로(늘), 컵 영상 한 장은 파일이 있을 때만 본다.
+// 실제 모델은 저장소 models/의 YOLO26s-seg·YOLO26n-pose로(늘), 컵 영상 한 장은 파일이 있을 때만 본다.
 
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -11,6 +12,7 @@ import {
 } from "../src/observe/detector.js";
 import { detectorSpec } from "../src/observe/pipeline.js";
 import { maskCells } from "../src/shared/mask.js";
+import { CLASSES } from "../src/world/vocab.js";
 import { ScriptedDetector, det as d } from "./helpers/detectors.js";
 import { fixtureJpeg } from "./helpers/jpeg.js";
 
@@ -167,8 +169,8 @@ describe("nms", () => {
 });
 
 describe("모델과 감지기 값", () => {
-  it("감지기는 저장소 models/의 yolo26n-seg, 관절은 yolo26n-pose다. 파일은 BRAIN_YOLO_PATH·BRAIN_POSE_PATH로 직접 줄 수 있다", () => {
-    expect(detectorSpec({})).toEqual({ modelPath: join(MODELS_DIR, "yolo26n-seg.onnx"), posePath: join(MODELS_DIR, "yolo26n-pose.onnx"), threads: 8, provider: "auto", poseEvery: 3 });
+  it("감지기는 저장소 models/의 yolo26s-seg, 관절은 yolo26n-pose다. 파일은 BRAIN_YOLO_PATH·BRAIN_POSE_PATH로 직접 줄 수 있다", () => {
+    expect(detectorSpec({})).toEqual({ modelPath: join(MODELS_DIR, "yolo26s-seg.onnx"), posePath: join(MODELS_DIR, "yolo26n-pose.onnx"), threads: 8, provider: "auto", poseEvery: 3 });
     expect(detectorSpec({ BRAIN_YOLO_PATH: "a.onnx", BRAIN_POSE_PATH: "b.onnx", BRAIN_YOLO_THREADS: "2", BRAIN_YOLO_PROVIDER: "cpu", BRAIN_POSE_EVERY: "1" }))
       .toEqual({ modelPath: "a.onnx", posePath: "b.onnx", threads: 2, provider: "cpu", poseEvery: 1 });
   });
@@ -179,8 +181,8 @@ describe("모델과 감지기 값", () => {
     for (const bad of ["0", "1.5", "x"]) expect(() => detectorSpec({ BRAIN_POSE_EVERY: bad })).toThrow(/BRAIN_POSE_EVERY/);
   });
 
-  it("감지 모델은 yolo26n-seg이고 파일 sha256이 표와 같다", () => {
-    expect(DETECTOR_MODEL.file).toBe("yolo26n-seg.onnx");
+  it("감지 모델은 yolo26s-seg(실제 영상의 흰 머그·유리컵을 0.4 넘게 잡는다, 2026-11-16 밤 판정)이고 파일 sha256이 표와 같다", () => {
+    expect(DETECTOR_MODEL.file).toBe("yolo26s-seg.onnx");
     const sha = (p: string) => createHash("sha256").update(readFileSync(p)).digest("hex");
     expect(sha(join(MODELS_DIR, DETECTOR_MODEL.file))).toBe(DETECTOR_MODEL.sha256);
     expect(sha(join(MODELS_DIR, POSE_MODEL.file))).toBe(POSE_MODEL.sha256);
@@ -338,11 +340,11 @@ describe("ScriptedDetector", () => {
 const y26 = join(MODELS_DIR, DETECTOR_MODEL.file);
 const gray = Buffer.from(jpeg.encode(rgba(360, 780, () => [128, 128, 128]), 80).data);
 
-describe("YOLO26n-seg 실제 모델(저장소 models/)", () => {
+describe("YOLO26s-seg 실제 모델(저장소 models/)", () => {
   it("회색 세로 그림 한 장: 출력 [1, 116, 8400]과 프로토를 풀어 감지가 없고, 사람이 없으니 관절은 돌리지 않는다", async () => {
     const det = await OnnxDetector.create({ modelPath: y26, posePath: join(MODELS_DIR, POSE_MODEL.file), provider: "cpu" });
     try {
-      expect([det.name, det.pose, det.provider, det.decoder]).toEqual(["yolo26n-seg", "yolo26n-pose", "cpu", "sharp"]);
+      expect([det.name, det.pose, det.provider, det.decoder]).toEqual(["yolo26s-seg", "yolo26n-pose", "cpu", "sharp"]);
       const r = await det.detect(gray);
       expect(r.detections).toEqual([]);
       expect(r.poses).toBeUndefined();
@@ -356,7 +358,7 @@ describe("YOLO26n-seg 실제 모델(저장소 models/)", () => {
   it("워커 스레드에서도 돌고(장치 auto: 이 PC에서 되는 장치), 닫으면 기다리던 감지는 실패로 끝난다", async () => {
     const det = await WorkerDetector.create({ modelPath: y26 });
     try {
-      expect(det.name).toBe("yolo26n-seg");
+      expect(det.name).toBe("yolo26s-seg");
       expect(["dml", "cpu"]).toContain(det.provider);
       expect(det.decoder).toBe("sharp");
       expect((await det.detect(gray)).detections).toEqual([]);
@@ -419,4 +421,28 @@ describe.skipIf(!existsSync(frame))("YOLO26n-seg 컵 영상 한 장(파일이 �
       await det.close();
     }
   }, 30_000);
+});
+
+// 실제 영상(밤 판정 A 흰 머그·B 빈 유리컵·C 물 남은 유리컵)에서 사람이 나간 뒤 컵만 보이는 장면. 영상은 사용자 집이라 저장소에 넣지 않는다:
+// PHONE_VIDEO_DIR(없으면 저장소 runtime/videos)에 그 영상이 있고 ffmpeg가 있을 때만 돈다(없으면 건너뜀).
+const VIDEOS = process.env.PHONE_VIDEO_DIR ?? join(import.meta.dirname, "..", "runtime", "videos");
+const REAL_CUPS: [string, number[]][] = [["cup-mug-empty-leave.mp4", [21, 27]], ["cup-glass-empty-leave.mp4", [35, 41]], ["cup-glass-water-leave.mp4", [17, 23]]];
+const canExtract = REAL_CUPS.every(([c]) => existsSync(join(VIDEOS, c))) && spawnSync("ffmpeg", ["-version"]).status === 0;
+
+describe.skipIf(!canExtract)("실제 영상의 컵(밤 판정 A·B·C, 영상이 있을 때만)", () => {
+  it("엔진 프레임 크기(360×640)로 뽑은 장면에서 감지 모델이 컵을 World State 컵 기준(낱말 표 minScore) 넘게 잡는다", async () => {
+    const detector = await OnnxDetector.create({ modelPath: y26, provider: "cpu", minScore: 0.05 });
+    try {
+      for (const [clip, times] of REAL_CUPS) {
+        for (const t of times) {
+          const r = spawnSync("ffmpeg", ["-loglevel", "error", "-ss", String(t), "-i", join(VIDEOS, clip), "-frames:v", "1", "-vf", "scale=360:640", "-q:v", "4", "-f", "mjpeg", "pipe:1"], { maxBuffer: 1 << 24 });
+          expect(r.status, `${clip} ${t}초 장면 뽑기`).toBe(0);
+          const best = Math.max(0, ...(await detector.detect(r.stdout)).detections.filter((x) => (Object.values(CLASSES.cup.coco) as string[]).includes(x.label)).map((x) => x.score));
+          expect(best, `${clip} ${t}초 컵 점수`).toBeGreaterThanOrEqual(CLASSES.cup.minScore);
+        }
+      }
+    } finally {
+      await detector.close();
+    }
+  }, 120_000);
 });

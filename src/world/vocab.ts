@@ -13,7 +13,7 @@ export type Target = "person" | "object" | "fixture";
 export interface ClassEntry {
   label: string;
   role: Role;
-  /** COCO 80종 번호 → 이름(YOLO26n). 둘 이상이면 같은 종류로 본다. */
+  /** COCO 80종 번호 → 이름(YOLO26s 감지). 둘 이상이면 같은 종류로 본다. */
   coco: Readonly<Record<number, string>>;
   /** World State가 받는 최소 신뢰도. */
   minScore: number;

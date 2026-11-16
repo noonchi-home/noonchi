@@ -20,16 +20,16 @@
 
 | 파일 | 원본 가중치 | 라이선스 | sha256 |
 |---|---|---|---|
-| `models/yolo26n-seg.onnx` | Ultralytics YOLO26n-seg `yolo26n-seg.pt` (`https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26n-seg.pt`, sha256 `361fbfabab285c3237700b6bb91d7ecfa602cd945fffda8dbe1242829b71e73f`) | AGPL-3.0 | `2e8fc38ffb5df4eca1fb56784121db03222c32bbfc09beb3a310339e9129e170` |
+| `models/yolo26s-seg.onnx` | Ultralytics YOLO26s-seg `yolo26s-seg.pt` (`https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26s-seg.pt`, sha256 `3da1d83e31caec96f9300eb4064f4f62882c133c7c264d63dfe61a7c197837a4`) | AGPL-3.0 | `705f24bb2c5aa0a25921c82768054e5792a59264b3a6d5066c6fbad57afb7a32` |
 | `models/yolo26n-pose.onnx` | Ultralytics YOLO26n-pose `yolo26n-pose.pt` (`https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26n-pose.pt`, sha256 `eb3bb8268828aeaf515cec23a4bfafd793944a86fe9af94ba7823609c14522a9`) | AGPL-3.0 | `dd0e47a03ea0f2b9e766b038559de14fb1dd5e51d8dfb331051740998628d91e` |
 
 - YOLO26 두 파일은 AGPL-3.0이다(<https://ultralytics.com/license>). 이 저장소로 서버를 남에게 제공하면 AGPL-3.0의 소스 공개 조건이 따라온다.
-- 내보낸 환경: ultralytics 8.4.208, torch 2.15.0+cpu, onnx 1.23.2, onnxslim 0.1.99. 설정: `format=onnx imgsz=640 opset=17 simplify=True dynamic=False batch=1`, `nms`는 주지 않음(바깥 NMS, ONNX 메타데이터 `end2end=False`). 그래서 출력이 NMS 전 `[1,116,8400]`(상자 4 + 클래스 80 + 마스크 계수 32)과 프로토 `[1,32,160,160]`, 관절 `[1,56,8400]`이고, 서버가 NMS를 한다(`src/observe/detector.ts`).
+- 내보낸 환경: ultralytics 8.4.208, onnx 1.23.2, onnxslim 0.1.99, torch 2.14.1+cpu(감지 yolo26s-seg)·2.15.0+cpu(관절 yolo26n-pose). 설정: `format=onnx imgsz=640 opset=17 simplify=True dynamic=False batch=1`, `nms`는 주지 않음(바깥 NMS, ONNX 메타데이터 `end2end=False`). 그래서 출력이 NMS 전 `[1,116,8400]`(상자 4 + 클래스 80 + 마스크 계수 32)과 프로토 `[1,32,160,160]`, 관절 `[1,56,8400]`이고, 서버가 NMS를 한다(`src/observe/detector.ts`).
 - 다시 내보내기(PC에서, 저장소 밖 폴더):
 
   ```bash
   python -m venv .venv && .venv/Scripts/pip install ultralytics==8.4.208 onnx==1.23.2 onnxslim==0.1.99 onnxruntime
-  .venv/Scripts/yolo export model=yolo26n-seg.pt format=onnx imgsz=640 opset=17 simplify=True
+  .venv/Scripts/yolo export model=yolo26s-seg.pt format=onnx imgsz=640 opset=17 simplify=True
   .venv/Scripts/yolo export model=yolo26n-pose.pt format=onnx imgsz=640 opset=17 simplify=True
   npx tsx scripts/brain-yolo-fetch.ts --from <그 폴더>   # 저장소에서: sha256이 표와 같을 때만 models/에 넣는다
   ```

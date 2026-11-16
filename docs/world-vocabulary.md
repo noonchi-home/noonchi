@@ -10,7 +10,7 @@ FSM을 쓰는 사람(박석준·김준형)이 보는 목록이다. World State�
 
 | 보는 곳 | 무엇을 |
 |---|---|
-| YOLO26n | 엔진 프레임(2초)마다 종류·상자. COCO 80종 가운데 아래 표의 종류만 |
+| YOLO26s | 엔진 프레임(2초)마다 종류·상자. COCO 80종 가운데 아래 표의 종류만 |
 | YOLO26n-pose | 사람 자세(서 있음·앉아 있음·누워 있음), 손에 듦 |
 | VLM | 최근 5장(10초)을 보고 감지 번호마다 가장 새 사진의 사실, 사람은 5장 사이에 하는 일 하나 |
 | 트윈 | 물건이 닿은 면 이름(거실·복도 식탁), 방 이름, 가구·가전 자리 |
@@ -20,7 +20,7 @@ FSM을 쓰는 사람(박석준·김준형)이 보는 목록이다. World State�
 
 ## 근거로 쓴 분류
 
-- **COCO 80종**(Lin et al., ECCV 2014): YOLO26n이 아는 종류. 집 안에서 보이는 사람·식기·음식·생활용품·가전·가구만 골랐다.
+- **COCO 80종**(Lin et al., ECCV 2014): YOLO26s가 아는 종류. 집 안에서 보이는 사람·식기·음식·생활용품·가전·가구만 골랐다.
 - **Charades**(Sigurdsson et al., 「Hollywood in Homes」, ECCV 2016, 집 안 행동 157종): 하는 일 목록의 뼈대. 예: c156 Someone is eating something, c106 Drinking from a cup/glass/bottle, c147 Someone is cooking something, c121 Wash a dish/dishes, c102 Tidying up with a broom, c005 Washing some clothes, c132 Watching television, c016 Playing with a phone/camera, c052 Working/Playing on a laptop, c032 Watching/Reading/Looking at a book, c129 Taking/consuming some medicine, c148 Someone is dressing, c139 Washing their hands, c134 Lying on a bed, c124 Lying on the floor, c097 Walking through a doorway, c143 Opening a refrigerator, c119 Putting a dish/es somewhere, c110 Taking a cup/glass/bottle from somewhere.
 - **EPIC-KITCHENS-100**(Damen et al., IJCV 2022, 동사 97종·13무리): 부엌 동작. take·put·throw → 집어 듦·내려놓음·버리는 중, wash → 설거지하는 중, open·close → 열림·닫힘, turn-on·turn-off → 켜짐·꺼짐, eat → 먹는 중.
 - **HD-EPIC**(Perrett et al., CVPR 2025, 부엌 9곳·설비 413개 디지털 트윈·물건 움직임 약 2만 개): 물건 움직임을 「집은 설비 → 놓은 설비」로 단다. 물건 자리를 트윈 설비 이름(식탁·조리대·싱크대·냉장고)으로 두는 근거.
@@ -29,7 +29,7 @@ FSM을 쓰는 사람(박석준·김준형)이 보는 목록이다. World State�
 ## 감지 종류
 
 <!-- vocab:classes -->
-| 키 | 한국어 | 역할 | YOLO26n COCO | 최소 신뢰도 | 면 | 계기 예 |
+| 키 | 한국어 | 역할 | YOLO26s COCO | 최소 신뢰도 | 면 | 계기 예 |
 | --- | --- | --- | --- | --- | --- | --- |
 | `person` | 사람 | 사람 | 0 person | 0.5 | 자세, 자리, 들고 있음, 하는 일, 순간 동작 | 사람이 30분째 안 보이고 식탁 위 컵이 남아 있다. |
 | `cup` | 컵 | 물건 | 40 wine glass, 41 cup | 0.4 | 자리, 안 내용, 쓰는 중 | 식탁 위 컵이 비어 있고 사람이 자리를 비웠다. |
