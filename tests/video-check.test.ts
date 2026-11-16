@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { HistoryRow } from "../src/contract/history.js";
 import type { WorldEye, WorldObject, WorldView } from "../src/contract/world.js";
-import { SEND_SAY, clickChoice, clock, costLine, judgeInput, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, stepVerdict, timeline, twinRows, usedServer, roomLabels, ownAssetFailures, videoClock, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
+import { SEND_SAY, clickChoice, clock, costLine, judgeInput, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, stepVerdict, timeline, twinRows, usedServer, roomLabels, ownAssetFailures, videoClock, runTimeline, clipEnd, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
 import { createServer, type Server } from "node:http";
 import { listenRetry } from "../src/shared/net.js";
 import type { SceneJson } from "../src/contract/layout.js";
@@ -226,6 +226,28 @@ describe("video-check", () => {
       const rows = timeline(clockOf, [plan], [{ video_ms: 28_000, id: "plan:pam-1", step: "s1", text: "식탁으로 가 주세요" }], null, { twin: [{ ms: clockOf(1_035_600), kind: "트윈", text: "눈 거실 (8.5, 3.9)", n: 1 }] });
       expect(Object.fromEntries(rows.map((r) => [r.kind, clock(r.ms)]))).toEqual({ 명령: "00:28.0", 계획: "00:28.0", 트윈: "00:28.0" });
     });
+  });
+
+  // Codex(f5ff586): --say의 「말」 줄은 벽시계 경과 시간을 써서, 영상이 멈칫하면 짝으로 옮긴 서버 사건과 다시 어긋났다
+  it("판 끝 시각표(runTimeline): 서버 시각으로 둔 트윈 줄·누름·말을 모두 같은 짝으로 영상 시각에 옮긴다", () => {
+    // 영상 시각 4초에서 7.6초 멈칫: 서버 시각 1 011 600 뒤부터는 7.6초를 뺀다
+    const sync: [number, number][] = [[1_000_000, 0], [1_004_000, 4_000], [1_011_600, 4_000]];
+    const rows = runTimeline({
+      t0: 1_000_000, sync, history: [], commands: [{ video_ms: 28_000, id: "plan:pam-1", step: "s1", text: "식탁으로 가 주세요" }], endMs: null, clips: [],
+      twin: [{ ms: 1_035_600, kind: "트윈", text: "눈 거실 (8.5, 3.9)", n: 1 }],
+      says: [{ at: 1_035_600, text: "아 덥다" }], clicks: [{ at: 1_039_600, label: "완료", text: "식탁으로 가 주세요" }],
+    });
+    expect(Object.fromEntries(rows.map((r) => [r.kind, clock(r.ms)]))).toEqual({ 명령: "00:28.0", 트윈: "00:28.0", 말: "00:28.0", 누름: "00:32.0" });
+  });
+
+  // Codex(f5ff586): --fake --step은 단계 영상으로 바뀐 뒤 record.ended가 계속 거짓이라, 끝까지 돌아도 영상 끝이 없었다
+  it("영상 끝(clipEnd): 붙잡기(hold)면 붙잡기 시작 영상 시각, 첫 영상이 끝났는데 붙잡기 전이면 지금 영상 시작 + 길이, 도는 중이면 null", () => {
+    const rec = (over: Record<string, unknown> = {}) => ({ t0: 0, ended: false, hold: null, commands: [], clips: [], sync: [], ...over }) as never;
+    expect(clipEnd({ record: rec({ hold: { clip: "place-sink.mp4", since: 96_400 } }), time: 3.1, duration: 3.1, ended: true }, 93_300, 3.1)).toBe(96_400);
+    expect(clipEnd({ record: rec({ ended: true }), time: 74.1, duration: 74.12, ended: true }, 0, 74.12)).toBe(74_120);
+    expect(clipEnd({ record: rec(), time: 30, duration: 74.12, ended: false }, 0, 74.12)).toBeNull();
+    expect(clipEnd({ record: null, time: 74.1, duration: 74.12, ended: true }, 0, 74.12)).toBe(74_120);
+    expect(clipEnd({ record: null, time: 10, duration: 74.12, ended: false }, 0, 74.12)).toBeNull();
   });
 
   it("시각표는 관찰 모드 기록(look)을 「가까이 보기」 줄로 넣고 같은 글이 이어지면 묶는다", () => {

@@ -3,7 +3,8 @@
 //   [--say <초>:<글> ...] [--start-at <cup|tv|microwave|kitchen>] [--home mokryeon_180b] [--tail 30] [--max 1800] [--approve <초>] [--done-on <초>:<명령 글> ...]
 //   [--fov <도>] [--pitch <도>] [--h <m>]
 // --fov·--pitch·--h: 영상 모드 카메라(세로 시야각 20~120, 숙인 각 -89~89, 높이 0.2~3). 준 것만 폰 주소에 fov=·pitch=·h=로 붙고, 없으면 폰 페이지 기본값(60°, -25°, 1.4m).
-// --say: 재생 시작부터 그 초가 되면 폰 페이지 안의 폰 소켓(/phone/events)으로 {type: "say", text, at}를 보낸다(CDP로 그 소켓을 찾아 보냄). 시각표에 「말」 줄.
+// --say: 영상 시각(서버 시계를 폰 페이지 짝으로 옮긴 값)이 그 초가 되면 폰 페이지 안의 폰 소켓(/phone/events)으로 {type: "say", text, at}를 보낸다
+// (CDP로 그 소켓을 찾아 보냄). 시각표에 「말」 줄: 보낸 서버 시각을 두었다가 끝에서 같은 짝으로 옮긴다.
 //   at은 폰 페이지가 화면이 바뀔 때마다 실제 폰 말과 같은 heardAtOf로 남긴 기록(__noonchiVideo.at) 그대로다(없으면 none).
 // --start-at: 폰 페이지를 열기 전에 그 장면 시작 위치(scripts/demo-start.ts)를 서버에 넣는다. 서버의 지금 집이 --home이 아니면 판정을 시작하지 않는다.
 // --approve: 단계 id가 :approve·:hand로 끝나는 질문에만 그 초 뒤 「승인」, --done-on: 위 줄이 그 글과 같은 명령에만 그 초 뒤 「완료」를 누른다.
@@ -112,6 +113,26 @@ export function videoClock(t0: number, sync: readonly (readonly [number, number]
     const [an, vn] = sync.at(-1)!;
     return vn + (at - an);
   };
+}
+
+/** 판 끝 시각표: 서버 시각으로 둔 것(기록·트윈 줄 ms·말 at·누름 at)을 폰 페이지 짝(sync)으로 영상 시각에 옮겨 폰 명령·바꾼 영상(영상 시각)과 합친다. */
+export function runTimeline(o: {
+  t0: number; sync: readonly (readonly [number, number])[]; history: HistoryRow[]; commands: VideoCommand[]; endMs: number | null; clips: VideoClip[];
+  twin: Row[]; says: { at: number; text: string }[]; clicks: { at: number; label: string; text: string }[];
+}): Row[] {
+  const toVideo = videoClock(o.t0, o.sync);
+  return timeline(toVideo, o.history, o.commands, o.endMs, {
+    clips: o.clips, twin: o.twin.map((r) => ({ ...r, ms: toVideo(r.ms) })),
+    says: o.says.map((s) => ({ atMs: toVideo(s.at), text: s.text })), clicks: o.clicks.map((c) => ({ ms: toVideo(c.at), label: c.label, text: c.text })),
+  });
+}
+
+/** 영상 끝(영상 시각): 붙잡는 중이면 붙잡기를 시작한 영상 시각(첫 영상·단계 영상 모두), 첫 영상이 끝났는데 아직 붙잡기 전이면 지금 영상 시작 + 길이,
+ *  기록이 없으면 영상 끝 여부로 같은 셈. 도는 중이면 null. */
+export function clipEnd(seen: { record: Seen["record"]; time: number | null; duration: number | null; ended: boolean }, clipStartMs: number, duration: number | null): number | null {
+  if (seen.record?.hold) return seen.record.hold.since;
+  const ended = seen.record ? seen.record.ended : seen.ended;
+  return ended ? clipStartMs + (duration ?? seen.time ?? 0) * 1000 : null;
 }
 
 export function timeline(t0: number | ((atMs: number) => number), history: HistoryRow[], commands: VideoCommand[], endMs: number | null = null,
@@ -727,7 +748,7 @@ async function main(): Promise<number> {
       let due: PlannedClick[] = [];
       const rule: ClickRule = { approveAfterMs: args.approveAfterMs, doneOn: args.doneOn, doneAfterMs };
       const saysLeft = [...args.says].sort((a, b) => a.atMs - b.atMs);
-      const said: { atMs: number; text: string }[] = [];
+      const said: { at: number; text: string }[] = [];
       const pressed: { ms: number; at: number; label: string; text: string }[] = [];
       let known = 0;
       let knownClips = 0;
@@ -752,13 +773,14 @@ async function main(): Promise<number> {
         }
         known = commands.length;
         const now = Date.now();
-        // 말: 재생 시작부터 그 초가 되면 폰 소켓으로 보낸다
-        while (saysLeft.length && now - runStart >= saysLeft[0]!.atMs) {
+        // 말: 영상 시각(폰 페이지 짝으로 옮긴 지금)이 그 초가 되면 폰 소켓으로 보낸다. 보낸 서버 시각을 두었다가 끝에서 같은 짝으로 옮긴다
+        const videoNow = videoClock(seen.record?.t0 ?? firstT0, seen.record?.sync ?? [])(now);
+        while (saysLeft.length && videoNow >= saysLeft[0]!.atMs) {
           const x = saysLeft.shift()!;
           const ok = await sendSay(cdp, x.text).catch(() => false);
           if (ok) {
-            said.push({ atMs: now - runStart, text: x.text });
-            console.log(`[video-check] ${clock(now - runStart)} 말 · ${x.text}`);
+            said.push({ at: now, text: x.text });
+            console.log(`[video-check] ${clock(videoNow)} 말 · ${x.text}`);
           } else errors.push(`말을 보내지 못함: ${x.text}`);
         }
         const ready = due.filter((d) => d.at <= now);
@@ -774,10 +796,12 @@ async function main(): Promise<number> {
           console.log(`[video-check] ${clock(ms)} 누름 · ${label} · ${d.text}`);
         }
         await pollWorld();
-        if (seen.record ? seen.record.ended : seen.ended) {
+        // 영상 끝: 첫 영상 끝이나 붙잡기(단계 영상의 끝도 붙잡기다)
+        const endNow = clipEnd(seen, clipStart(), duration);
+        if (endNow !== null) {
           if (endedAt === null) {
             endedAt = Date.now();
-            console.log(`[video-check] ${clock(clipStart() + (duration ?? seen.time ?? 0) * 1000)} 영상 끝`);
+            console.log(`[video-check] ${clock(endNow)} 영상 끝`);
           }
         } else endedAt = null;
         const still = seen.record ? seen.record.ended || seen.record.hold !== null : seen.ended;
@@ -796,8 +820,11 @@ async function main(): Promise<number> {
         await sleep(1000);
       }
       await pollWorld();
+      // 마지막으로 한 번 더 읽는다: 그 사이 남은 짝(멈칫하는 도중이면 멈춘 시간)까지 옮긴다
+      seen = await read().catch(() => seen);
+      clips = seen.record?.clips ?? clips;
       recorded = await rec?.stop();
-      const endMs = endedAt !== null ? clipStart() + (duration ?? seen.time ?? 0) * 1000 : null;
+      const endMs = clipEnd(seen, clipStart(), seen.duration ?? duration);
       const t0 = seen.record?.t0 ?? firstT0;
       if (t0 !== firstT0) console.log(`[video-check] 서버 시계 t0=${t0} (처음 ${firstT0})`);
 
@@ -809,9 +836,9 @@ async function main(): Promise<number> {
       const cost = costLine(brain);
 
       // 서버 시각 → 영상 시각: 폰 페이지가 남긴 짝으로(영상이 멈칫한 만큼을 뺀다)
-      const toVideo = videoClock(t0, seen.record?.sync ?? []);
-      const clicksAt = pressed.map((p) => ({ ...p, ms: toVideo(p.at) }));
-      const rows = timeline(toVideo, history, commands, endMs, { clips, twin: twin.rows.map((r) => ({ ...r, ms: toVideo(r.ms) })), says: said, clicks: clicksAt });
+      const sync = seen.record?.sync ?? [];
+      const toVideo = videoClock(t0, sync);
+      const rows = runTimeline({ t0, sync, history, commands, endMs, clips, twin: twin.rows, says: said, clicks: pressed });
       const personUntil = fake?.personUntil() ?? null;
       const expect = fakeMode && !args.expectSet && personUntil !== null ? toVideo(personUntil) : expectMs;
       const v = verdict(rows, commands, history, expect);

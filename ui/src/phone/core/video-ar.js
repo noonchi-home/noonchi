@@ -19,6 +19,7 @@
 // 판정 기록 window.__noonchiVideo(t0: 재생 시작 서버 시각, commands: 받은 명령의 영상 시각, clips: 바꾼 단계 영상, sync: [서버 시각, 영상 시각] 짝)과
 // console [video] 줄은 scripts/video-check.ts가 읽는다. 영상은 멈칫할 수 있어(버퍼·디코딩 밀림, 헤드리스 크롬에서 처음 몇 초) 영상 시각이 서버 시계보다
 // 늦게 간다. 그래서 t0 하나로는 서버 사건을 영상 시각에 옮기지 못하고, 시계를 맞춘 뒤 프레임마다 견줘 1:1로 이어 셀 수 없게 어긋날 때 짝을 남긴다(noteSync).
+// 멈칫하는 동안에는 프레임이 오지 않으므로 SYNC_EVERY_MS마다, 그리고 끝낼 때도 지금 짝을 견준다.
 // PhoneAr(ar.d.ts)와 같은 형이라 controller·화면은 그대로 쓴다. 시험은 deps로 영상·인코딩·그림판을 바꾼다(jsdom은 영상을 틀지 못한다).
 
 import { createEncoder, framePacket } from "./capture.js";
@@ -81,6 +82,8 @@ export function videoRecord(target = globalThis) {
 
 /** 서버 시각↔영상 시각 짝이 1:1로 이어 센 값에서 벗어나도 되는 폭(ms): 프레임 간격(25fps 40ms)과 시계 반올림은 넘기고 멈칫만 남긴다. */
 const SYNC_SLACK_MS = 50;
+/** 프레임과 따로 지금 짝을 견주는 간격(ms): 멈칫하는 동안(프레임 없음) 판정이 끝나도 멈춘 시간을 이만큼 안에서 남긴다. */
+const SYNC_EVERY_MS = 250;
 
 /** 프레임 하나의 서버 시각 at·영상 시각 ms를 sync([서버 시각, 영상 시각] 짝)에 견준다. 첫 짝은 그대로 넣고, 마지막 짝에서 1:1로 이어 센 값과
  *  SYNC_SLACK_MS 넘게 어긋나면 바로 앞 프레임 짝(prev, 그 마지막 짝보다 뒤일 때)과 이 짝을 넣는다(멈칫한 구간을 두 프레임 사이로 좁힌다).
@@ -380,6 +383,13 @@ export function createVideoAr({ link, params, hooks, deps }) {
     };
     sendPose();
     const poseTimer = setInterval(sendPose, SEND_MS);
+    /** 프레임과 따로 지금 [서버 시각, 영상 시각]을 견준다(시계를 맞춰 t0를 고친 뒤만). 멈칫하는 동안에는 프레임이 오지 않는다. */
+    const syncNow = () => {
+      if (!clockFixed) return;
+      const stamp = link.stamp(performance.timeOrigin + performance.now());
+      if (stamp.captured_at !== undefined) syncPrev = noteSync(record.sync, syncPrev, stamp.captured_at, timeline());
+    };
+    const syncTimer = setInterval(syncNow, SYNC_EVERY_MS);
     const perfTimer = setInterval(hooks.onPerf, 1000);
 
     /** 영상을 width×height로 그린 RGBA 픽셀(위 줄부터). */
@@ -563,6 +573,9 @@ export function createVideoAr({ link, params, hooks, deps }) {
         reactTimers.add(timer);
       },
       close() {
+        // 끝낼 때 지금 짝(멈칫하는 도중이면 멈춘 시간까지)
+        syncNow();
+        clearInterval(syncTimer);
         clearInterval(poseTimer);
         clearInterval(perfTimer);
         if (holdTimer !== null) clearInterval(holdTimer);

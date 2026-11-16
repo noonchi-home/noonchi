@@ -653,6 +653,34 @@ describe("영상 입력 모드: 명령 시각 기록·화면", () => {
     expect(Math.abs(sync[0]![0] - sync[0]![1] - window.__noonchiVideo!.t0!)).toBeLessThanOrEqual(1);
   });
 
+  // Codex(f5ff586): 짝이 영상 프레임이 올 때만 남아, 멈칫하는 도중에 판정이 끝나면 마지막 구간을 1:1로 이어 세어 멈춘 시간을 놓쳤다
+  it("sync: 프레임이 오지 않는 멈칫도 일정 간격(0.25초)으로 짝을 남기고, 끝낼 때 지금 짝을 남긴다", async () => {
+    const link = {
+      send: () => true, socket: () => ({ readyState: 1, bufferedAmount: 0, send() {} }), open: () => true, close() {},
+      // 서버 시계 = 폰 시계 + 1000
+      stamp: (ms: number) => ({ captured_at: Math.round(ms) + 1000 }),
+    };
+    const video = fakeVideo();
+    const hooks = { onStart: vi.fn(), onEnd: vi.fn(), onHit() {}, onMarks() {}, onPerf() {}, note: vi.fn() };
+    const ar = createVideoAr({
+      link: link as never, params: new URLSearchParams(), hooks,
+      deps: { clipUrl: "/phone/videos/x.mp4", createVideo: () => video, createEncoder: fakeEncoder, createCanvas: fakeCanvas, screen: () => ({ width: 390, height: 844 }) },
+    });
+    await ar.start({});
+    video.frameAt(0.1, performance.now());
+    expect(window.__noonchiVideo!.sync).toHaveLength(1);
+    // 프레임 없이 0.7초(영상 시각은 0.1초 그대로)
+    await new Promise((r) => setTimeout(r, 700));
+    const stall = window.__noonchiVideo!.sync.at(-1)!;
+    expect(stall[1]).toBe(100);
+    expect(stall[0] - window.__noonchiVideo!.sync[0]![0]).toBeGreaterThanOrEqual(450);
+    await new Promise((r) => setTimeout(r, 120));
+    ar.stop();
+    const end = window.__noonchiVideo!.sync.at(-1)!;
+    expect(end[1]).toBe(100);
+    expect(phoneNow() + 1000 - end[0]).toBeLessThanOrEqual(60);
+  });
+
   it("서버 sync가 맞춤(video)이면 「여기서 시작」 카드도, 시작 위치 모달도 뜨지 않는다. 맞추기 전 상태가 먼저 와도 열지 않는다", async () => {
     const { c, ws, startAr } = make();
     await startAr();
