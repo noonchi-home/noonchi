@@ -19,6 +19,10 @@ export const BASIN_SIZE: [number, number] = [0.74, 0.44];
 export interface RestSpot extends Basin { id: string; label: string; top: number }
 /** 쉬는 가구 위라고 볼 때 누울 면 가장자리에서 안쪽으로 둘 여유(m): 트윈 배치가 실제와 조금 어긋나도 가구 앞·옆 바닥을 가구 위로 보지 않는다. */
 export const REST_INSET_M = 0.1;
+/** 누운 사람의 엉덩이·어깨 관절 점이 누울 면보다 높은 범위(m). 관절 점은 몸 두께·너비의 가운데쯤이다: 똑바로 누우면 가슴·엉덩이 두께(성인 약 0.2~0.25m,
+ *  ANSUR II 평균)의 절반인 약 0.1~0.13m, 옆으로 누우면 어깨 너비(약 0.36~0.40m)·엉덩이 너비(약 0.35m)의 절반인 약 0.17~0.2m다. 매트리스가 눌리는 만큼과
+ *  관절 점 흔들림을 더해 0.1~0.25m로 둔다. */
+export const REST_BODY_M: readonly [number, number] = [0.1, 0.25];
 
 /** 평면 점이 싱크볼 사각형 안인가. */
 export function inBasin(b: Basin, p: [number, number]): boolean {
@@ -96,8 +100,8 @@ export function placePoint(view: CameraView, point: [number, number], size: { wi
   };
 }
 
-/** 몸 점들(엉덩이·어깨 픽셀)이 모두 쉬는 가구 위인가: 점마다 광선이 그 가구의 누울 면 높이(top)와 만나는 곳이 가장자리에서 REST_INSET_M 안쪽이면
- *  그 가구. 몸이 가구 위에 있어야 몸 점이 그 면 높이에 비친다(가구 앞·너머 바닥이면 면 높이의 교점이 가구 밖이다). 광선이 그 높이에 닿지 않으면 아니다. */
+/** 몸 점들(엉덩이·어깨 픽셀)이 모두 쉬는 가구 위인가: 점마다 광선이 몸 점 높이(누울 면 top + REST_BODY_M)를 지나는 동안 가장자리에서 REST_INSET_M
+ *  안쪽을 지나면 그 가구. 몸이 가구 위에 있어야 몸 점이 그 높이에 비친다(가구 앞·너머 바닥이면 그 높이의 광선이 가구 밖이다). 광선이 그 높이에 닿지 않으면 아니다. */
 export function onRest(view: CameraView, points: readonly [number, number][], size: { width: number; height: number }, rests: readonly RestSpot[]): RestSpot | null {
   if (points.length === 0) return null;
   const o = view.origin;
@@ -106,8 +110,15 @@ export function onRest(view: CameraView, points: readonly [number, number][], si
     const inner: Basin = { center: r.center, size: [r.size[0] - 2 * REST_INSET_M, r.size[1] - 2 * REST_INSET_M], facing_deg: r.facing_deg };
     if (inner.size[0] <= 0 || inner.size[1] <= 0) continue;
     const on = rays.every((d) => {
-      const t = Math.abs(d[1]) > 1e-6 ? (r.top - o[1]) / d[1] : -1;
-      return t > 0 && inBasin(inner, [o[0] + d[0] * t, o[2] + d[2] * t]);
+      if (Math.abs(d[1]) <= 1e-6) return false;
+      const [a, b] = REST_BODY_M.map((h) => (r.top + h - o[1]) / d[1]) as [number, number];
+      const from = Math.max(0, Math.min(a, b)), to = Math.max(a, b);
+      if (to <= 0) return false;
+      for (let k = 0; k <= 8; k++) {
+        const t = from + ((to - from) * k) / 8;
+        if (inBasin(inner, [o[0] + d[0] * t, o[2] + d[2] * t])) return true;
+      }
+      return false;
     });
     if (on) return r;
   }

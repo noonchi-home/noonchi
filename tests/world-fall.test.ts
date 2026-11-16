@@ -13,7 +13,7 @@ import { sha256 } from "../src/observe/ring.js";
 import { SCENE_JSON_SCHEMA, SCENE_PROMPT } from "../src/observe/scene.js";
 import { FALL_DEFAULTS, fallPose, loadFallConfig, type FallConfig } from "../src/world/fall.js";
 import { describePose } from "../src/world/pose.js";
-import { restsFromLayout, type RestSpot } from "../src/world/place.js";
+import { pixelOf, restsFromLayout, type RestSpot } from "../src/world/place.js";
 import { WorldState } from "../src/world/state.js";
 import { textFromWorld } from "../src/world/text.js";
 import { SCENE_STATES } from "../src/world/vocab.js";
@@ -156,6 +156,32 @@ describe("쓰러짐 의심: 관절 자세 변화", () => {
     run(far, 0, 3000, standing);
     run(far, 3300, 6300, flat);
     expect(posture(far, 6300)).toBe("fall_suspected");
+  });
+
+  // Codex(4f515e1): 누운 사람의 엉덩이·어깨는 매트리스보다 높은데 광선을 매트리스 높이까지 내려, 먼 침대에 누운 몸이 가구 밖으로 밀려 낙상 알림이 났다
+  it("먼 침대에 빨리 누워도(몸 점은 매트리스 위 0.2m) 침대 위다: 몸 점 높이(누울 면 + 0.1~0.25m)에서 광선을 본다", () => {
+    // 카메라 (0, 1.5, 0)에서 15° 숙여 +x를 본다. 침대 x 2.0~3.4(매트리스 0.57m), 몸은 x 2.7, 높이 0.77에 옆으로(z) 눕는다
+    // 매트리스 높이까지 내리면 엉덩이 광선이 x 3.44(침대 밖)에 닿는다
+    const pitch = (-15 * Math.PI) / 180;
+    const view: CameraView = { ...LOOK_VIEW, orientation: mul([0, Math.sin(-Math.PI / 4), 0, Math.cos(-Math.PI / 4)], [Math.sin(pitch / 2), 0, 0, Math.cos(pitch / 2)]) as CameraView["orientation"] };
+    const size = { width: 480, height: 360 };
+    const px = (x: number, y: number, z: number) => pixelOf(view, [x, y, z], size)!;
+    const [sh, hip, knee] = [px(2.7, 0.77, -0.5), px(2.7, 0.77, 0), px(2.7, 0.77, 0.4)];
+    const xs = [sh[0], hip[0], knee[0]], ys = [sh[1], hip[1], knee[1]];
+    const onBed = (): Pose => poseOf({
+      5: [sh[0], sh[1] - 6, 0.9], 6: [sh[0], sh[1] + 6, 0.9], 11: [hip[0], hip[1] - 6, 0.9], 12: [hip[0], hip[1] + 6, 0.9], 13: [knee[0], knee[1] - 6, 0.9], 14: [knee[0], knee[1] + 6, 0.9],
+    }, [Math.min(...xs) - 20, Math.min(...ys) - 25, Math.max(...xs) - Math.min(...xs) + 40, Math.max(...ys) - Math.min(...ys) + 50]);
+    const bed: RestSpot = { id: "bed_1", label: "침대", center: [2.7, 0], size: [2.2, 1.4], facing_deg: 0, top: 0.57 };
+    const w = ws({ rests: [bed] });
+    run(w, 0, 3000, standing, [], view);
+    const out = run(w, 3300, 9300, onBed, [], view);
+    expect(out.some((c) => c.text === FALL_LINE)).toBe(false);
+    expect(posture(w, 9300)).not.toBe("fall_suspected");
+    // 침대가 없으면 같은 자세는 쓰러짐 의심이다(이 자세가 바닥에 누운 자세로 읽힌다)
+    const none = ws();
+    run(none, 0, 3000, standing, [], view);
+    run(none, 3300, 6300, onBed, [], view);
+    expect(posture(none, 6300)).toBe("fall_suspected");
   });
 
   // Codex(9984116): 엉덩이 광선이 가구의 전체 높이~바닥 공간을 지나기만 해도 쉬는 가구 위로 단정해, 가구 바로 앞 바닥에 쓰러져도 놓쳤다
