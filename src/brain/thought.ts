@@ -2,7 +2,7 @@
 // 「본 것」(seen, 무엇을 봤는지)·「그래서」(why, 왜 그 행동인지) 두 줄로 고친다. 대시보드 생각 말풍선이 보인다.
 // 모델은 VLM과 같은 OpenAI 호환 통로(src/infer/ createInference().thought: 같은 주소·키·요청 칸에 THOUGHT_MODEL, mock gpt-5.4-nano)다.
 // 판단·계획은 기다리지 않는다(thoughtFeed): 판단 기록을 낸 뒤 따로 부르고, 두 줄이 오면 대시보드로만 보낸다. 기록 DB 판단 줄에는 원래 생각이 남는다.
-// 같은 생각·행동은 다시 부르지 않는다(최근 KEEP개). 늦거나(THOUGHT_TIMEOUT_MS) 실패하거나 글이 틀리면(영어 낱말·밑줄 이름·빈 줄) null이고 기억하지 않는다:
+// 관찰·생각·행동이 모두 같으면 다시 부르지 않는다(최근 KEEP개). 「본 것」은 관찰을 따르므로 관찰이 다르면 새로 부른다. 늦거나(THOUGHT_TIMEOUT_MS) 실패하거나 글이 틀리면(영어 낱말·밑줄 이름·빈 줄) null이고 기억하지 않는다:
 // 대시보드는 원래 생각을 그대로 보인다.
 import type { BrainLog, ThoughtEvent } from "../contract/events.js";
 import type { ChatMessage, OpenAICompatClient } from "../infer/openai-compat.js";
@@ -70,9 +70,9 @@ export class ThoughtWriter {
 
   constructor(private readonly o: { chat: Pick<OpenAICompatClient, "chat">; timeoutMs?: number }) {}
 
-  /** 두 줄. 같은 생각·행동이면 기억한 것(나가 있으면 그 답)을 준다. 실패·늦음이면 null. */
+  /** 두 줄. 관찰·생각·행동이 모두 같으면 기억한 것(나가 있으면 그 답)을 준다. 실패·늦음이면 null. */
   write(t: ThoughtInput): Promise<ThoughtLines | null> {
-    const key = JSON.stringify([t.reasoning, t.action]);
+    const key = JSON.stringify([t.observation, t.reasoning, t.action]);
     const hit = this.done.get(key);
     if (hit) {
       this.done.delete(key);

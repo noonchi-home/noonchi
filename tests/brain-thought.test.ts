@@ -52,14 +52,21 @@ describe("생각 말풍선 두 줄 쓰기", () => {
     for (const word of ["본 것", "그래서", "40자", "쉬운 한국어", "규칙 id", "영어", "따옴표"]) expect(system, word).toContain(word);
   });
 
-  it("같은 생각·행동이면 다시 부르지 않는다: 동시에 와도, 다 받은 뒤에 와도 한 번이다. 생각이 다르면 새로 부른다", async () => {
-    const writer = await writerOn(thoughtReplies());
-    const [a, b] = await Promise.all([writer.write(REAL), writer.write({ ...REAL, observation: "다른 관찰" })]);
-    expect([a, b]).toEqual([LINES, LINES]);
-    expect(await writer.write(REAL)).toEqual(LINES);
+  it("관찰·생각·행동이 모두 같으면 다시 부르지 않는다: 동시에 와도, 다 받은 뒤에 와도 한 번이다. 하나라도 다르면 새로 부른다", async () => {
+    // 「본 것」은 받은 관찰을 따른다: 관찰이 다른 장면에 앞 장면의 「본 것」을 다시 쓰면 안 된다
+    const seenOf = (o: string) => o.replace(/[a-z_\d.]/g, "").trim();
+    const observed = (b: any) => String(b.messages[1].content).split("\n")[0]!.replace("관찰: ", "");
+    const writer = await writerOn(thoughtReplies((b) => JSON.stringify({ seen: seenOf(observed(b)), why: LINES.why })));
+    const [a, b] = await Promise.all([writer.write(REAL), writer.write(REAL)]);
+    expect([a, b]).toEqual([{ seen: seenOf(REAL.observation), why: LINES.why }, { seen: seenOf(REAL.observation), why: LINES.why }]);
+    expect(await writer.write(REAL)).toEqual(a);
     expect(thoughtRequests()).toHaveLength(1);
-    await writer.write({ ...REAL, reasoning: "컵이 비어 있어 치운다." });
+    const other = "사람이 컵을 싱크대 옆에 두고 떠났다";
+    expect(await writer.write({ ...REAL, observation: other })).toEqual({ seen: other, why: LINES.why });
     expect(thoughtRequests()).toHaveLength(2);
+    await writer.write({ ...REAL, reasoning: "컵이 비어 있어 치운다." });
+    await writer.write({ ...REAL, action: "컵 그대로 두기" });
+    expect(thoughtRequests()).toHaveLength(4);
   });
 
   it("모델 글의 따옴표·끝 마침표·겹친 빈칸은 정리하고, 영어 낱말·밑줄 이름이 남거나 빈 줄이면 쓰지 않는다(null)", async () => {
