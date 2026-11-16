@@ -310,7 +310,7 @@
 ### 3.4 저장소 규칙 표에 넣을 줄
 
 ```text
-| 서버(`src/`)와 화면(`ui/src/`) 코드는 구현명세서 구성 단위로 나눈 도메인 폴더에 둔다. 다른 도메인은 그 입구(`index.ts`)나 공용 표로만 가져오고, 정한 방향(`scripts/lint-domains.ts` 의존 표)으로만 가져온다. 공용 타입은 `src/contract/`, 공용 도우미는 `src/shared/`, 외부 API 통로는 `src/infer/`(기반층, 도메인을 가져오지 않음)에 둔다. | `npm run lint`(scripts/lint-domains.ts, CI도 돌린다)와 `tests/domain-boundaries.test.ts`가 안쪽 import·거꾸로 import·고리·입구 없음을 잡는다(가짜 트리와 0a392c5 실제 줄로 실패를 확인). |
+| 서버(`src/`)와 화면(`ui/src/`) 코드는 구현명세서 구성 단위로 나눈 도메인 폴더에 둔다. 다른 도메인은 그 입구(`index.ts`, 서버 도메인은 node 모듈 없이 읽히는 브라우저 입구 `browser.ts`도)나 공용 표로만 가져오고, 정한 방향(`scripts/lint-domains.ts` 의존 표)으로만 가져온다. 공용 타입은 `src/contract/`, 공용 도우미는 `src/shared/`, 외부 API 통로는 `src/infer/`(기반층, 도메인을 가져오지 않음)에 둔다. | `npm run lint`(scripts/lint-domains.ts, CI도 돌린다)와 `tests/domain-boundaries.test.ts`가 안쪽 import·거꾸로 import·고리·입구 없음, 화면과 화면 시험(jsdom)이 닿는 서버 파일의 node 모듈을 잡는다(가짜 트리와 0a392c5 실제 줄로 실패를 확인). 파일을 옮길 때는 `scripts/check-moves.ts`가 import 경로만 바뀌었는지 본다(도메인 나누기 설계 4.1). |
 ```
 
 ## 4. 옮기는 차례
