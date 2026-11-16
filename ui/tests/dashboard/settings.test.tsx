@@ -75,11 +75,12 @@ describe("대시보드 설정 창", () => {
     const { rerender } = render(<Mascot image={MASCOT} hub={HUB} box={L.mascot} imageBox={L.image} logoBox={L.logo} facing="video" />);
     const region = screen.getByRole("region", { name: "마스코트" });
     expect(region).toHaveAttribute("data-facing", "video");
-    expect(region.querySelector<HTMLElement>("[data-mascot-turn]")!.style.transform).toBe("scaleX(1)");
-    rerender(<Mascot image={MASCOT} hub={HUB} box={L.mascot} imageBox={L.image} logoBox={L.logo} facing="twin" />);
-    expect(region).toHaveAttribute("data-facing", "twin");
     expect(region.querySelector<HTMLElement>("[data-mascot-turn]")!.style.transform).toBe("scaleX(-1)");
     expect(region.querySelector<HTMLElement>("[data-mascot-logo]")!.style.transform).toBe("scaleX(-1)");
+    rerender(<Mascot image={MASCOT} hub={HUB} box={L.mascot} imageBox={L.image} logoBox={L.logo} facing="twin" />);
+    expect(region).toHaveAttribute("data-facing", "twin");
+    expect(region.querySelector<HTMLElement>("[data-mascot-turn]")!.style.transform).toBe("scaleX(1)");
+    expect(region.querySelector<HTMLElement>("[data-mascot-logo]")!.style.transform).toBe("scaleX(1)");
   });
 
   it.each([[1920, 1080], [1440, 900]])("%i×%i: 마스코트 단추는 판 없이 화면 바탕 위에 있고, 가운데가 트윈·영상 나눔선 위, 아래 끝은 화면 밑 선이다. 위·왼쪽·오른쪽 초점 고리(선 굵기 + 띄움)는 화면 안, 말풍선 밖에 그려진다", (width, height) => {

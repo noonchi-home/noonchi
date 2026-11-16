@@ -439,21 +439,21 @@ describe("대시보드 마스코트", () => {
     const box = [m.style.left, m.style.top, m.style.width, m.style.height].join(" ");
     expect(container.querySelector("main")).toHaveAttribute("data-step", "0");
     expect(m).toHaveAttribute("data-facing", "video");
-    expect(transformOf(turn)).toBe("scaleX(1)");
+    expect(transformOf(turn)).toBe("scaleX(-1)");
     rerender(<DashboardScreen {...screenAt(1)} />);
     expect(container.querySelector("main")).toHaveAttribute("data-step", "1");
     expect(mascot()).toBe(m);
     expect(turnOf()).toBe(turn);
     expect(m).toHaveAttribute("data-facing", "twin");
-    expect(transformOf(turn)).toBe("scaleX(-1)");
+    expect(transformOf(turn)).toBe("scaleX(1)");
     expect([m.style.left, m.style.top, m.style.width, m.style.height].join(" ")).toBe(box);
   });
 
-  it.each([0, 1, 2, 3, 4])("%i: 대기 때는 오른쪽(영상)을 보고, 계획이 있으면 좌우를 뒤집어 왼쪽(트윈)을 본다. 뒤집기는 단추 가운데 축(나눔선)을 중심으로 한 transform이다", (n) => {
+  it.each([0, 1, 2, 3, 4])("%i: 대기 때는 좌우를 뒤집어 왼쪽을 보고, 계획이 있으면 그림 그대로 오른쪽을 본다. 뒤집기는 단추 가운데 축(나눔선)을 중심으로 한 transform이다", (n) => {
     draw(screenAt(n));
     const turn = turnOf();
     expect(mascot()).toHaveAttribute("data-facing", n > 0 ? "twin" : "video");
-    expect(transformOf(turn)).toBe(n > 0 ? "scaleX(-1)" : "scaleX(1)");
+    expect(transformOf(turn)).toBe(n > 0 ? "scaleX(1)" : "scaleX(-1)");
     expect(turn.style.transformOrigin).toBe("50% 50%");
     for (const c of ["absolute", "inset-0", "will-change-transform", "transition-transform", "motion-reduce:transition-none"]) expect(cls(turn, c), c).toBe(true);
     expect(turn.contains(mascot().querySelector("img"))).toBe(true);
