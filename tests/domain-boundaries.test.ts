@@ -48,6 +48,30 @@ describe("도메인 경계: 가짜 트리", () => {
     expect(keys(ok)).toEqual([]);
   });
 
+  it("브라우저 입구(src/<도메인>/browser.ts)도 입구다: 방향 안이면 서버 도메인이 가져와도 되고, 따라 들어간 import에 node 모듈이 있으면 가져오는 곳이 없어도 실패한다", () => {
+    const ok = fakeTree({
+      "src/agent/plan.ts": 'import { route } from "../layout/browser.js";\nexport const plan = route;\n',
+      "src/layout/browser.ts": 'export { route } from "./route.js";\n',
+      "src/layout/route.ts": "export const route = 1;\n",
+      "src/layout/scene.ts": 'import { attrs } from "../devices/browser.js";\nexport const scene = attrs;\n',
+      "src/devices/browser.ts": 'export { attrs } from "./mapping.js";\n',
+      "src/devices/mapping.ts": "export const attrs = {};\n",
+    });
+    expect(keys(ok)).toEqual([]);
+    const reverse = fakeTree({ "src/devices/a.ts": 'import { route } from "../layout/browser.js";\nexport const a = route;\n', "src/layout/browser.ts": "export const route = 1;\n" });
+    expect(keys(reverse)).toEqual(["direction src/devices/a.ts -> src/layout/browser.ts"]);
+    const node = fakeTree({
+      "src/devices/browser.ts": 'export { attrs } from "./mapping.js";\n',
+      "src/devices/mapping.ts": 'import { readFileSync } from "node:fs";\nexport const attrs = readFileSync;\n',
+    });
+    expect(keys(node)).toEqual(["node src/devices/mapping.ts -> node:fs"]);
+    expect(message(node, "node src/devices/mapping.ts -> node:fs")).toBe("브라우저 입구에 node 모듈 `node:fs`이 섞여요(`src/devices/browser.ts` → `src/devices/mapping.ts`)");
+    const onlyBrowser = fakeTree({ "src/devices/index.ts": null, "src/devices/browser.ts": "export const attrs = {};\n" });
+    expect(keys(onlyBrowser)).toEqual(["no-index devices"]);
+    const screen = fakeTree({ "ui/src/twin/a.ts": 'import { attrs } from "../../../src/devices/browser.js";\nexport const a = attrs;\n', "src/devices/browser.ts": "export const attrs = {};\n" });
+    expect(keys(screen)).toEqual(["screen-src ui/src/twin/a.ts -> src/devices/browser.ts"]);
+  });
+
   it("의존 표에 없는 방향(거꾸로)이면 실패하고 쓸 수 있는 도메인을 말한다", () => {
     const root = fakeTree({ "src/world/a.ts": 'import type { X } from "../act/index.js";\nexport type Y = X;\n' });
     expect(keys(root)).toEqual(["direction src/world/a.ts -> src/act/index.ts"]);

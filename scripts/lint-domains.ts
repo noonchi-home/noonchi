@@ -80,7 +80,12 @@ interface Place { kind: Kind; domain?: string; unit: string }
 export interface Violation { key: string; message: string }
 
 const isScreen = (d: string) => d.startsWith("ui/");
-const entriesOf = (d: string) => (isScreen(d) ? [`ui/src/${d.slice(3)}/index.ts`, `ui/src/${d.slice(3)}/index.tsx`] : [`src/${d}/index.ts`]);
+/** 도메인의 입구 index.ts(화면은 index.tsx도). */
+const mainEntriesOf = (d: string) => (isScreen(d) ? [`ui/src/${d.slice(3)}/index.ts`, `ui/src/${d.slice(3)}/index.tsx`] : [`src/${d}/index.ts`]);
+/** 다른 도메인이 가져와도 되는 입구: index.ts와, 서버 도메인은 브라우저 입구 browser.ts(2.4). */
+const entriesOf = (d: string) => (isScreen(d) ? mainEntriesOf(d) : [...mainEntriesOf(d), browserEntryOf(d)]);
+/** 서버 도메인의 브라우저 입구: 따라 들어간 import에 node 모듈이 없는 이름만 낸다(화면·화면 시험이 닿는 파일이 쓴다). */
+const browserEntryOf = (d: string) => `src/${d}/browser.ts`;
 const SCREEN_SRC = "contract·공용 표·shared·design·src/layout/browser.ts";
 
 export function placeOf(path: string, config: Config): Place {
@@ -151,7 +156,7 @@ export function checkTree(root: string, config: Config = CONFIG): Violation[] {
   for (const cycle of tableCycles(config.deps)) add(`deps-cycle ${cycle.join(" -> ")}`, `의존 표에 고리가 있어요: ${cycle.map((d) => `\`${d}\``).join(" → ")}`);
   // 도메인마다 입구
   for (const d of Object.keys(config.deps)) {
-    if (!entriesOf(d).some(exists)) add(`no-index ${d}`, `\`${d}\`에 입구 \`${entriesOf(d)[0]}\`가 없어요`);
+    if (!mainEntriesOf(d).some(exists)) add(`no-index ${d}`, `\`${d}\`에 입구 \`${mainEntriesOf(d)[0]}\`가 없어요`);
   }
 
   for (const f of code) {
@@ -205,7 +210,8 @@ export function checkTree(root: string, config: Config = CONFIG): Violation[] {
     }
     testRefs.set(f, list);
   }
-  for (const v of browserNodeModules(refsOf, testRefs)) add(v.key, v.message);
+  const browserEntries = Object.keys(config.deps).filter((d) => !isScreen(d)).map(browserEntryOf).filter((p) => refsOf.has(p));
+  for (const v of browserNodeModules(refsOf, testRefs, browserEntries)) add(v.key, v.message);
   return [...found].map(([key, message]) => ({ key, message })).sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
 }
 
@@ -365,7 +371,7 @@ function shortestPath(from: string, to: string, next: (n: string) => string[]): 
 /** 화면 파일에서 값 import로 따라 들어간 src 파일이 node 기본 모듈을 쓰면 위반(타입 import는 빌드에서 지워져 뺀다).
  *  화면 시험(ui/tests)은 jsdom에서 돈다. 시험이 바로 가져온 src 파일은 시험이 고른 것이라(2.2) node 모듈을 써도 되고,
  *  그 파일을 거쳐 따라 들어간 src 파일에 node 모듈이 있으면 위반이다(입구가 node 파일을 끌어와 jsdom에서 깨진 일, 4b planShape). */
-function browserNodeModules(refsOf: Map<string, { ref: ImportRef; to?: string; external?: string; builtin?: boolean }[]>, testRefs: Map<string, { ref: ImportRef; to?: string }[]> = new Map()): Violation[] {
+function browserNodeModules(refsOf: Map<string, { ref: ImportRef; to?: string; external?: string; builtin?: boolean }[]>, testRefs: Map<string, { ref: ImportRef; to?: string }[]> = new Map(), browserEntries: readonly string[] = []): Violation[] {
   const out: Violation[] = [];
   const nodeUses = (f: string, prev: Map<string, string>, say: (external: string, chain: string) => string) => {
     if (!f.startsWith("src/")) return;
@@ -393,7 +399,10 @@ function browserNodeModules(refsOf: Map<string, { ref: ImportRef; to?: string; e
       }
     }
   };
-  walkFrom([...refsOf.keys()].filter((f) => f.startsWith("ui/src/")).map((f) => [f, ""]), (m, chain) => `브라우저 입구에 node 모듈 \`${m}\`이 섞여요(${chain})`);
+  const say = (m: string, chain: string) => `브라우저 입구에 node 모듈 \`${m}\`이 섞여요(${chain})`;
+  walkFrom([...refsOf.keys()].filter((f) => f.startsWith("ui/src/")).map((f) => [f, ""]), say);
+  // 서버 도메인의 브라우저 입구(browser.ts)는 가져오는 곳이 없어도 본다(화면에서 닿은 길이 있으면 그 글이 먼저다)
+  walkFrom(browserEntries.map((f) => [f, ""]), say);
   // 시험이 바로 가져온 파일의 다음 파일부터 따라간다(시작 자리의 앞은 시험 파일, 바로 가져온 파일)
   const picked = new Map<string, string>();
   for (const [t, list] of testRefs) for (const { ref, to } of list) if (!ref.typeOnly && to !== undefined && refsOf.has(to) && !picked.has(to)) picked.set(to, t);
