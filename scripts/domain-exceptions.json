@@ -3,8 +3,6 @@
   "direction ui/src/setup/PositionStep.tsx -> ui/src/panels/phone-url.ts",
   "direction ui/src/setup/SetupApp.tsx -> ui/src/dashboard/hub.ts",
   "direction ui/src/setup/SetupApp.tsx -> ui/src/dashboard/mascot-image.ts",
-  "inner src/agent/planShape.ts -> src/layout/route.ts",
-  "inner src/layout/scene.ts -> src/devices/mapping.ts",
   "inner ui/src/bubbles/BubbleLayer.tsx -> ui/src/twin/use-anchors.ts",
   "inner ui/src/dashboard/Dashboard.tsx -> ui/src/twin/TwinStage.tsx",
   "inner ui/src/dashboard/Dashboard.tsx -> ui/src/twin/use-anchors.ts",
@@ -31,6 +29,5 @@
   "no-index ui/dashboard",
   "no-index ui/phone",
   "no-index ui/setup",
-  "no-index ui/twin",
-  "screen-src ui/src/twin3d/walk.ts -> src/layout/route.ts"
+  "no-index ui/twin"
 ]

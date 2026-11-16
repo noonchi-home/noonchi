@@ -4,7 +4,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { SceneJson, SceneObject } from "./editor.js";
-import { profileAttrs } from "../devices/mapping.js";
+import { profileAttrs } from "../devices/browser.js";
 import { withDrawn, type DrawnFixture } from "./drawn.js";
 import type { Home } from "./homes.js";
 
