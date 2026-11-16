@@ -163,7 +163,7 @@ export const SERVICE_RETRY_MS = 30 * 60 * 1000;
 export const serviceRetryPath = (runtimeDir: string, homeId: string) => join(runtimeDir, "homes", homeId, "service-retry.json");
 
 /** 같은 연락인지 가르는 열쇠: 종류·받는 이·가전·고장 설명·에러 코드·사람 상태의 해시(내용 글은 파일에 쓰지 않는다). */
-const retryKey = (call: ServiceCall) =>
+export const serviceRetryKey = (call: ServiceCall) =>
   createHash("sha256").update(JSON.stringify([call.kind, call.to.name, call.to.phone, call.device?.id ?? null, call.problem, call.errorCode, call.person])).digest("hex");
 
 /** 다시 보내기 기억: 확인 불가(또는 보내는 중)인 연락의 id. 접수(2xx)가 확인되거나 확실히 닿지 못한 새 연락이어야 잊는다.
@@ -220,18 +220,18 @@ export class ServiceRetryStore implements ServiceRetryBook {
   }
 
   idFor(call: ServiceCall): string | null {
-    return this.load()[retryKey(call)]?.id ?? null;
+    return this.load()[serviceRetryKey(call)]?.id ?? null;
   }
 
   unsure(call: ServiceCall, id: string): void {
     const file = this.load();
-    file[retryKey(call)] = { id, at_ms: this.now() };
+    file[serviceRetryKey(call)] = { id, at_ms: this.now() };
     this.save(file);
   }
 
   settled(call: ServiceCall): void {
     const file = this.load();
-    const key = retryKey(call);
+    const key = serviceRetryKey(call);
     if (!Object.hasOwn(file, key)) return;
     delete file[key];
     this.save(file);

@@ -30,7 +30,7 @@ import type { ServiceCall, ServiceOutcome, ServiceResult } from "../contract/ser
 import type { CallServiceSent } from "../infer/call-service.js";
 import type { PendingService } from "./policy.js";
 import {
-  CALL_SERVICE, SERVICE_BLOCKED, SERVICE_KINDS, SERVICE_RETRY_BROKEN, SERVICE_UNCONNECTED, ServiceRetryStore, serviceArgs, serviceCancelled, serviceReply, serviceSecrets,
+  CALL_SERVICE, SERVICE_BLOCKED, SERVICE_KINDS, SERVICE_RETRY_BROKEN, SERVICE_UNCONNECTED, ServiceRetryStore, serviceArgs, serviceCancelled, serviceReply, serviceRetryKey, serviceSecrets,
   type ServiceContacts, type ServiceRetryBook,
 } from "./service.js";
 
@@ -208,6 +208,8 @@ export class Agent {
   private readonly onService?: (r: ServiceResult) => void;
   private readonly contacts: ServiceContacts;
   private readonly retries: ServiceRetryBook;
+  /** 같은 내용의 외부 연락 보내기 차례(기억 열쇠 → 마지막 보내기가 끝나는 때). */
+  private readonly sending = new Map<string, Promise<void>>();
 
   constructor(opts: AgentOptions) {
     this.hub = opts.hub;
@@ -343,14 +345,20 @@ export class Agent {
     return { sessionId: s.id, reply, actions, pendingConfirmations, provider: this.provider.name };
   }
 
-  /** 이벤트로 내보내는 action: 외부 연락이면 받는 이·보낼 내용을 가리고(publicAction), 들은 말 차례면 그 말을 통째로 가리고, 세션의 외부 연락 내용(secrets)도 뺀 사본. */
+  /** 이벤트로 내보내는 action: 외부 연락이면 받는 이·보낼 내용을 가리고(publicAction), 들은 말 차례면 그 말을 통째로 가리고, 세션의 외부 연락 내용(secrets)도 뺀 사본.
+   *  까닭은 자르기 전 글(rawReason)에서 모두 가린 뒤 headWithin으로 자른다(가릴 글이 자르는 경계에 걸려 일부가 남지 않게). */
   private outward(a: AgentAction, said: string | null, secrets: readonly string[]): AgentAction {
     const pub = this.publicAction(a);
-    const heard = said ? this.shown(pub, said) : pub;
-    if (!secrets.length) return heard;
-    // 글 칸만 가린다(도구 이름·기기 id·때는 그대로)
-    const t = (v: string | undefined) => (v === undefined ? undefined : hideTexts(v, secrets));
-    return { ...heard, args: hideAllIn(heard.args, secrets), reason: t(heard.reason), message: t(heard.message), observation: t(heard.observation), error: t(heard.error) };
+    if (!said && !secrets.length) return pub;
+    const raw = pub === a ? this.rawReason.get(a) : undefined;
+    let out: AgentAction = raw !== undefined ? { ...pub, reason: raw } : pub;
+    if (said) out = hideIn(out, said);
+    if (secrets.length) {
+      // 글 칸만 가린다(도구 이름·기기 id·때는 그대로)
+      const t = (v: string | undefined) => (v === undefined ? undefined : hideTexts(v, secrets));
+      out = { ...out, args: hideAllIn(out.args, secrets), reason: t(out.reason), message: t(out.message), observation: t(out.observation), error: t(out.error) };
+    }
+    return out.reason === undefined ? out : { ...out, reason: headWithin(out.reason, REASON_MAX) };
   }
 
   /** 외부 연락 action의 이벤트 사본(KEEP_HEARD_TEXT가 꺼져 있을 때): 종류·가전 id만 두고 받는 이·보낼 내용·승인 질문·모델 까닭을 가린다. 그 밖은 그대로. */
@@ -366,13 +374,6 @@ export class Agent {
   /** 승인 대기의 이벤트 사본: 외부 연락이면(KEEP_HEARD_TEXT가 꺼져 있을 때) 승인 질문을 가린다. 실제 폰이 받는 대기 목록은 pending()이라 그대로다. */
   private outwardPending(p: PendingView): PendingView {
     return p.service && !this.keepHeard ? { ...p, reason: HEARD_MARK } : p;
-  }
-
-  /** 이벤트로 내보내는 action: 들은 말을 통째로 가린 사본. 까닭은 자르기 전 글을 가린 뒤 자른다(인용 중간이 잘려 원문 일부가 남지 않게). */
-  private shown(a: AgentAction, said: string): AgentAction {
-    const raw = this.rawReason.get(a);
-    const hidden = hideIn({ ...a, ...(raw !== undefined ? { reason: raw } : {}) }, said);
-    return hidden.reason === undefined ? hidden : { ...hidden, reason: headWithin(hidden.reason, REASON_MAX) };
   }
 
   private async runModel(s: Session, message: string, actions: AgentAction[]): Promise<string> {
@@ -542,8 +543,19 @@ export class Agent {
   /** 승인한 외부 연락: 통로가 있으면 보내고(2xx 보냄, 답 없음·끊김 확인 불가, 그 밖 실패), 없으면 부르지 않는다(연결 없음). 결과를 알리고 답한다.
    *  id는 새 값이고, 같은 내용의 앞 연락이 남아 있으면 그 id다. 보내기 전에 기억에 남기고(보내는 사이 꺼져도 남는다),
    *  접수(2xx)가 확인되거나 앞 기억 없이 실패한 새 연락이면 잊는다(확인 불가가 남은 연락은 닿지 못함·2xx 아닌 답으로 잊지 않는다).
-   *  기억을 읽거나 쓸 수 없으면 보내지 않는다. */
-  private async sendService(p: PendingService): Promise<ConfirmResult> {
+   *  기억을 읽거나 쓸 수 없으면 보내지 않는다.
+   *  같은 내용(같은 기억 열쇠)의 보내기는 앞 것이 끝난 뒤 차례로 한다(앞 새 연락의 실패가 보내는 중인 다음 연락의 id를 지우지 않게). */
+  private sendService(p: PendingService): Promise<ConfirmResult> {
+    const key = serviceRetryKey(p.call);
+    const before = this.sending.get(key) ?? Promise.resolve();
+    const run = before.then(() => this.sendOnce(p));
+    const done = run.then(() => undefined, () => undefined);
+    this.sending.set(key, done);
+    void done.then(() => { if (this.sending.get(key) === done) this.sending.delete(key); });
+    return run;
+  }
+
+  private async sendOnce(p: PendingService): Promise<ConfirmResult> {
     const at = new Date().toISOString();
     let prev: string | null = null;
     let id: string = randomUUID();

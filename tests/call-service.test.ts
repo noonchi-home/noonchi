@@ -235,6 +235,8 @@ describe("Agent + call_service(가짜 모델·가짜 전화 서비스)", () => {
         "전자레인지 AS센터에 전화할지 골라 주세요.",
       ],
       "어떤 내용으로 요청했지?": ["탈수할 때 멈춤 · 에러 UE로 LG전자 서비스센터에 요청했어요."],
+      // 까닭 200자 경계에 앞 연락 내용(「탈수할 때 멈춤」)이 걸린다
+      "세탁기 다시 찾아 줘": [[["find_devices", { query: "세탁기", reason: `${"가".repeat(195)}탈수할 때 멈춤 문제라서 세탁기를 찾으려고` }]], "세탁기를 찾았어요."],
     });
   });
   afterAll(async () => { await llm?.close(); });
@@ -503,6 +505,44 @@ describe("Agent + call_service(가짜 모델·가짜 전화 서비스)", () => {
     expect(later.reply).toBe("탈수할 때 멈춤 · 에러 UE로 LG전자 서비스센터에 요청했어요.");
     expect(JSON.stringify(events)).not.toMatch(SECRET);
     expect(events.some((e) => e.event === "reply" && e.reply.includes("요청했어요"))).toBe(true);
+  });
+
+  it("다음 차례 다른 도구의 까닭이 길어도 앞 연락 내용을 자르기 전에 가린다(자르는 경계에 걸린 일부가 /events로 새지 않는다). 까닭은 200자 안이다", async () => {
+    const { agent, events } = serviceAgent(null);
+    await agent.chat("s", "세탁기 AS 불러 줘");
+    const r = await agent.chat("s", "세탁기 다시 찾아 줘");
+    expect(r.actions[0]!.reason).toContain("탈수");
+    const sent = events.filter((e) => e.event === "action" && e.action.tool === "find_devices").map((e) => (e as Extract<AgentEvent, { event: "action" }>).action);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.reason!.length).toBeLessThanOrEqual(200);
+    expect(JSON.stringify(events)).not.toMatch(SECRET);
+  });
+
+  it("같은 내용의 연락 둘이 함께 승인되면 차례대로 보낸다: 먼저 승인된 새 연락이 닿지 못해 잊어도, 보내는 중인 다음 연락의 id는 집 파일에 남아 있다", async () => {
+    const fake = await startFakeCallService();
+    fake.answer = "hang";
+    const dead = await startFakeCallService();
+    await dead.close();
+    const path = serviceRetryPath(mkdtempSync(join(tmpdir(), "svc-serial-")), "oneroom");
+    try {
+      let n = 0;
+      const live = client(fake.url, 60_000);
+      const refused = new CallServiceClient(dead.url);
+      const line: ServiceLine = { send: (c, m) => (n++ === 0 ? refused : live).send(c, m) };
+      const { agent } = serviceAgent(line, { retries: new ServiceRetryStore(path) });
+      const a = (await agent.chat("s1", "세탁기 AS 불러 줘")).pendingConfirmations[0]!.token;
+      const b = (await agent.chat("s2", "세탁기 AS 불러 줘")).pendingConfirmations[0]!.token;
+      const first = agent.confirm(a, "approve");
+      const second = agent.confirm(b, "approve");
+      expect((await first).reply).toBe("AS센터에 전화하지 못했어요.");
+      for (const end = Date.now() + 5000; fake.requests.length === 0 && Date.now() < end; await new Promise((r) => setTimeout(r, 20)));
+      expect(fake.requests).toHaveLength(1);
+      expect(new ServiceRetryStore(path).idFor(WASHER_CALL)).toBe(fake.requests[0]!.body.id);
+      await fake.close();
+      expect((await second).ok).toBe(false);
+    } finally {
+      await fake.close();
+    }
   });
 
   it("보호자 연락: 실제 폰에 사람 상태와 받는 이(「거실에서 넘어진 뒤 일어나지 못함. 딸에게 연락할까요?」). 들은 말 승인(answerToken)으로 보낸다", async () => {
