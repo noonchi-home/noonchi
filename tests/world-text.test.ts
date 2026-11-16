@@ -209,6 +209,35 @@ describe("PAM 관찰 텍스트", () => {
     expect(headWithin("abc", 5)).toBe("abc");
   });
 
+  // 2026-11-16 23:48: 싱크볼 안 컵을 PAM이 「책상 위(짐작)」로 읽고 다시 치우기로 골랐다. 싱크대 컵의 VLM 자리 답은 22장 중 바닥·조리대 16장, 싱크대 안 0장이었다
+  it("싱크볼 안 물건은 「<싱크대> 안 · 치움」으로 쓰고 VLM 자리 답은 쓰지 않는다. 손에 있으면 그 줄은 둔다", () => {
+    const fact = (value: string, since: number, certainty: "inferred" | "confirmed" = "inferred") => ({ value, at_ms: T(23, 48, 49), since_ms: since, certainty });
+    const cup = (facts: WorldView["objects"][number]["facts"]): WorldView["objects"][number] => ({
+      id: "cup_28", cls: "cup", position: [5, 0.9, 1], surface: "sink_counter_kitchen", surface_label: "주방·식당 싱크대", surface_part: "basin", room: "kitchen", error_m: 0.06,
+      status: "present", first_seen_ms: T(23, 36, 0), last_seen_ms: T(23, 48, 51), last_in_view_ms: T(23, 48, 51), facts, answered_ms: null, devices: [], closer_hold: false, followed_by: null,
+    });
+    const view = (o: WorldView["objects"][number]): WorldView => ({
+      at_ms: T(23, 48, 52), objects: [o],
+      person: { visible: false, since_ms: T(23, 46, 27), last_seen_ms: T(23, 46, 25), count: 0, room: null, room_label: null, position: null, near: [], holding: [], position_ms: null, answered_ms: null, facts: {} },
+      fixtures: [], devices: [], eye: null, frame_ms: null, vlm_missing: 0, yolo_missing: 0,
+    });
+    const change = (s: number, text: string): WorldChange => ({ kind: "state", at_ms: T(23, 48, s), subject: "cup_28", text, meaningful: true });
+    const recent = [change(36, "컵 cup_28 조리대 위"), change(36, "컵 cup_28 내용물 있음"), change(38, "컵 cup_28 바닥"), change(49, "컵 cup_28 책상 위")];
+    const lines = (o: WorldView["objects"][number]) => textFromWorld(view(o), recent, { nowMs: T(23, 48, 52), offsetMinutes: 540 }).split("\n").filter((l) => l.includes("cup_28"));
+    expect(lines(cup({ place: fact("on_desk", T(23, 48, 49)), contents: fact("has_contents", T(23, 48, 36)) }))).toEqual([
+      "23:48:36 컵 cup_28 내용물 있음",
+      "[지속] 컵 cup_28 주방·식당 싱크대 안 · 치움: 23:36:00부터 12분째, 마지막 확인 23:48:51",
+      "[지속] 컵 cup_28 내용물 있음(짐작): 23:48:36부터 16초째",
+    ]);
+    // 싱크볼 밖(같은 싱크대 면)이면 자리 답과 변화 줄을 그대로 쓴다
+    expect(lines({ ...cup({ place: fact("on_desk", T(23, 48, 49)) }), surface_part: undefined })).toContain("23:48:49 컵 cup_28 책상 위");
+    expect(lines(cup({ place: fact("in_hand", T(23, 48, 49), "confirmed") }))).toEqual([
+      "23:48:36 컵 cup_28 내용물 있음",
+      "[지속] 컵 cup_28 주방·식당 싱크대 안 · 치움: 23:36:00부터 12분째, 마지막 확인 23:48:51",
+      "[지속] 컵 cup_28 손에 있음: 23:48:49부터 3초째",
+    ]);
+  });
+
   it("눈 줄은 눈이 있는 방의 id가 아니라 방 이름을 쓴다", () => {
     const w = new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => ({ id: "living", label: "거실" }), devices: () => [] });
     w.setEye({ position: [1, 2], height_m: 1.4, yaw_deg: 90, pitch_deg: -10 }, T(21, 0, 0));

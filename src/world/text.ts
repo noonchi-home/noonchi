@@ -1,8 +1,8 @@
 // PAM 관찰 텍스트: 시각이 붙은 줄(오래된 것부터) + [지속] 오래 이어진 사실 + [때] 날짜·요일·하루 때 + [눈] 클로이드 눈이 있는 방 이름. 사진은 넣지 않는다.
 import type { Facet, WorldChange, WorldFact, WorldView } from "../contract/world.js";
-import { CHANGE_TEXT, EYE_TEXT, GUESS, OBJECT_NAME, OUT_OF_VIEW_NOW, PLACE_UNKNOWN, ROOM_UNKNOWN, STATE_TEXT, dayText, fixtureName, objectName, onSurface } from "./labels.js";
+import { CHANGE_TEXT, EYE_TEXT, GUESS, OBJECT_NAME, OUT_OF_VIEW_NOW, PLACE_UNKNOWN, ROOM_UNKNOWN, STATE_TEXT, dayText, fixtureName, inBasin, objectName, onSurface } from "./labels.js";
 import { RELATED_KINDS } from "./relations.js";
-import { FACT_FRESH_MS, NOW_FACETS, type Target } from "./vocab.js";
+import { FACT_FRESH_MS, NOW_FACETS, STATES, type StateKey, type Target } from "./vocab.js";
 import { headWithin } from "../shared/cut.js";
 
 export interface TimedLine { atMs: number; text: string }
@@ -59,22 +59,33 @@ const factText = (f: WorldFact | undefined) => (f ? STATE_TEXT[f.value] ?? f.val
 const current = (target: Target, facet: string, f: WorldFact | undefined, nowMs: number) =>
   f && (!(NOW_FACETS[target] as readonly string[]).includes(facet) || nowMs - f.at_ms <= FACT_FRESH_MS) ? f : undefined;
 const said = (xs: (string | null)[]) => xs.filter((t): t is string => t !== null);
+/** 손에 있음을 뺀 물건 자리 값 글(바닥·조리대 위·책상 위…). */
+const PLACE_WORDS = (Object.keys(STATES) as StateKey[]).filter((k) => STATES[k].facet === "place" && k !== "in_hand").map((k) => STATE_TEXT[k] ?? k);
 
 /** World State → PAM 관찰 텍스트: 최근 windowMs(기본 60초)의 변화 줄 + 오래 이어진 사실(물건·가전 설비·사람·가전) + 때 + 눈 위치.
  *  가전은 켜짐·작동 중·열림 같은 상태이거나, 관련 가전(식기세척기·냉장고)이거나, 10분 안에 바뀐 것만 둔다. 카메라로 본 상태면 줄 끝에 마지막으로 본 시각. */
 export function textFromWorld(world: WorldView, recent: readonly WorldChange[], o: { nowMs: number; offsetMinutes: number; windowMs?: number }): string {
   const since = o.nowMs - (o.windowMs ?? 60_000);
-  const lines = recent.filter((c) => c.at_ms >= since && c.at_ms <= o.nowMs).map((c) => ({ atMs: c.at_ms, text: c.text }));
+  // 싱크볼 안 물건의 VLM 자리 변화 줄(손에 있음 말고)도 쓰지 않는다(아래 [지속] 줄과 같은 까닭)
+  const inBasinIds = new Set(world.objects.filter((x) => x.surface_label !== null && x.surface_part === "basin").map((x) => x.id));
+  const placeWord = (c: WorldChange) => PLACE_WORDS.some((w) => c.text.endsWith(` ${w}`));
+  const lines = recent
+    .filter((c) => c.at_ms >= since && c.at_ms <= o.nowMs && !(c.kind === "state" && inBasinIds.has(c.subject) && placeWord(c)))
+    .map((c) => ({ atMs: c.at_ms, text: c.text }));
   const at = (ms: number) => clock(ms, o.offsetMinutes);
   // 물건: 첫 줄은 트윈 면(위치로 정한 것, 없으면 자리 모름)과 처음 본 때·마지막 확인. 사실은 줄마다 그 값이 처음 보인 시각부터 세고,
   // VLM 한 장만 보고 붙인 값(짐작)은 표시한다. 한 장에서 짐작한 「비어 있음」을 물건을 처음 본 때부터 이어진 것처럼 쓰지 않는다(2026-11-16 밤 판정 F·E).
   // 놓인 곳(place)도 면 자리와 같은 값이어도 그 줄을 둔다(값이 바뀌었다 돌아온 시각·짐작을 잃지 않게)
   const objects: ObjectLines[] = world.objects.filter((x) => x.status !== "gone").map((ob) => {
     const name = objectName(ob.cls, ob.id);
-    const where = ob.surface_label ? onSurface(ob.surface_label) : PLACE_UNKNOWN;
+    // 싱크볼 안 물건은 「<싱크대> 안 · 치움」으로 쓰고 VLM 자리 답(손에 있음 말고)은 쓰지 않는다: 싱크대 컵의 VLM 자리 답은 22장 중 바닥·조리대 16장,
+    // 싱크대 안 0장이었고(2026-11-16 판정), 「책상 위(짐작)」를 본 PAM이 치운 컵을 다시 치우기로 골랐다(23:48)
+    const basin = ob.surface_label !== null && ob.surface_part === "basin";
+    const where = ob.surface_label ? (basin ? inBasin(ob.surface_label) : onSurface(ob.surface_label)) : PLACE_UNKNOWN;
     const lines = [`${name} ${where}: ${at(ob.first_seen_ms)}부터 ${lasting(o.nowMs - ob.first_seen_ms)}, 마지막 확인 ${at(ob.last_seen_ms)}${ob.status === "out_of_view" ? `, ${OUT_OF_VIEW_NOW}` : ""}`];
     for (const [k, f] of Object.entries(ob.facts) as [string, WorldFact | undefined][]) {
       if (!current("object", k, f, o.nowMs)) continue;
+      if (basin && k === "place" && f!.value !== "in_hand") continue;
       lines.push(`${name} ${STATE_TEXT[f!.value] ?? f!.value}${f!.certainty === "inferred" ? `(${GUESS})` : ""}: ${at(f!.since_ms)}부터 ${lasting(o.nowMs - f!.since_ms)}`);
     }
     // 손에 든 물건(손에 있음 사실이거나 사람이 들고 있음)은 넘쳐도 덜어 내지 않는다

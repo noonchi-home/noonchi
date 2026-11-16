@@ -2824,15 +2824,69 @@ describe("실행 추적: 놓기 단계를 끝낸 물건(이미 치운 것)", () 
     const once: WorldObject = { ...inBasin, last_seen_ms: clock.t, facts: { place: { value: "in_hand", at_ms: clock.t, since_ms: clock.t, certainty: "inferred" } } };
     w = { ...world([once]), frame_ms: clock.t };
     expect(t.placed().has("cup_1")).toBe(true);
-    // 다시 집음(손에 있음 확인됨): 풀리고, 싱크대에 다시 보여도 실행 추적이 넣은 것이 아니라 다음 판단은 계획을 세운다
+    // 다시 집음(손에 있음 확인됨): 풀린다. 그 컵을 식탁에 내려놓으면 다음 판단은 계획을 세운다
     clock.t += 600;
     w = { ...world([{ ...inBasin, last_seen_ms: clock.t, facts: { place: { value: "in_hand", at_ms: clock.t, since_ms: clock.t - 600, certainty: "confirmed" } } }]), frame_ms: clock.t };
     expect(t.placed().size).toBe(0);
+    // 싱크볼 안에 다시 내려놓으면(손에 없음) 넣은 기억이 없어도 치운 것이다
     clock.t += 600;
     w = { ...world([{ ...inBasin, last_seen_ms: clock.t }]), frame_ms: clock.t };
+    expect([...t.placed().keys()]).toEqual(["cup_1"]);
+    clock.t += 600;
+    w = { ...world([cup("present", "on_table", clock.t)]), frame_ms: clock.t };
     expect(t.placed().size).toBe(0);
     await decide({ ...decision, id: "pam-3", seq: 3, atMs: clock.t });
     expect(plans.current()).toMatchObject({ id: "plan:pam-3", status: "running" });
+  });
+
+  // 2026-11-16 23:36·23:48 실제 시험: 놓은 컵(cup_11)이 끝낸 뒤 새 id(cup_28)로 다시 잡혀 치운 기억이 없어지고, 서버를 다시 본 뒤 싱크볼 안 새 컵(cup_32)도 치울 컵으로 남아 PAM이 다시 치우기를 골랐다
+  it("놓기를 끝낸 컵이 사라지고 같은 종류가 넣은 곳(싱크대 면)에 새 id로 다시 잡히면 그 컵으로 치운 기억을 이어 가 다시 치우지 않는다. 30초가 지나도 안 잡히면 잊는다", async () => {
+    let w = world([cup("present")]);
+    let tracker: ExecutionTracker | null = null;
+    const { t, decide, clock, exec } = setup({ w: () => w, precheck: (d) => checkDecision({ decision: d, tasks: TASK_LIST, world: w, placed: tracker!.placed() }) });
+    tracker = t;
+    await decide(decision);
+    for (const n of [1, 2, 3, 4]) t.onAnswer("plan:pam-1", `plan:pam-1:${n}`, "done");
+    const done = clock.t;
+    expect([...t.placed()]).toEqual([["cup_1", { target: "sink_1", atMs: done }]]);
+    // 들고 가는 동안(끝내기 전) 마지막으로 본 cup_1이 사라짐: 바로 잊지 않고 기다린다
+    clock.t += 1000;
+    w = { ...world([cup("gone", undefined, done - 1000)]), frame_ms: clock.t };
+    expect([...t.placed()]).toEqual([["cup_1", { target: "sink_1", atMs: done }]]);
+    // 2초 뒤 싱크대 면(싱크볼 옆)에 새 id
+    clock.t += 1000;
+    const again: WorldObject = { ...cup("present", "on_counter", clock.t), id: "cup_28", first_seen_ms: clock.t, position: [5, 0.9, 0.6], surface: "sink_1", surface_label: "싱크대" };
+    w = { ...world([cup("gone", undefined, done - 1000), again]), frame_ms: clock.t };
+    expect([...t.placed()]).toEqual([["cup_28", { target: "sink_1", atMs: done }]]);
+    await decide({ ...decision, id: "pam-2", seq: 2, atMs: clock.t });
+    expect(exec().at(-1)).toMatchObject({ plan_id: "plan:pam-2", state: "failed", text: CHECK_TEXT.in_sink });
+    // 다른 종류(병)나 다른 면의 새 물건은 잇지 않고, 30초 넘게 안 잡히면 잊는다
+    const t2 = setup({ w: () => w });
+    w = world([cup("present")]);
+    await t2.decide(decision);
+    for (const n of [1, 2, 3, 4]) t2.t.onAnswer("plan:pam-1", `plan:pam-1:${n}`, "done");
+    t2.clock.t += 1000;
+    w = { ...world([cup("gone", undefined, t2.clock.t - 2000), { ...again, id: "bottle_3", cls: "bottle", first_seen_ms: t2.clock.t }, { ...again, id: "cup_40", surface: "t", surface_label: "식탁", first_seen_ms: t2.clock.t }]), frame_ms: t2.clock.t };
+    expect([...t2.t.placed().keys()]).toEqual(["cup_1"]);
+    t2.clock.t += 30_001;
+    expect(t2.t.placed().size).toBe(0);
+  });
+
+  it("싱크볼 안 컵은 실행 추적이 넣은 기억이 없어도(서버를 다시 띄운 뒤, 새 id) 치운 것이라 치우기를 막는다. 손에 있음이 확인되면 아니고, 식탁 위 컵이 있으면 그 컵을 치운다", async () => {
+    const basin: WorldObject = { ...cup("present", "on_desk"), id: "cup_32", position: [5, 0.9, 1.1], surface: "sink_1", surface_label: "싱크대", surface_part: "basin" };
+    basin.facts = { place: { value: "on_desk", at_ms: 9_000, since_ms: 9_000, certainty: "inferred" } };
+    let w = world([basin]);
+    let tracker: ExecutionTracker | null = null;
+    const { t, decide, exec, plans } = setup({ w: () => w, precheck: (d) => checkDecision({ decision: d, tasks: TASK_LIST, world: w, placed: tracker!.placed() }) });
+    tracker = t;
+    expect([...t.placed()]).toEqual([["cup_32", { target: "sink_1", part: "basin", atMs: 0 }]]);
+    await decide(decision);
+    expect(exec().at(-1)).toMatchObject({ plan_id: "plan:pam-1", state: "failed", text: CHECK_TEXT.in_sink });
+    w = world([{ ...basin, facts: { place: { value: "in_hand", at_ms: 9_000, since_ms: 8_000, certainty: "confirmed" } } }]);
+    expect(t.placed().size).toBe(0);
+    w = world([cup("present"), basin]);
+    await decide({ ...decision, id: "pam-2", seq: 2 });
+    expect(plans.current()).toMatchObject({ id: "plan:pam-2", status: "running" });
   });
 
   it("「완료」로 끝낸 놓기도 남는다. 놓기 전에 본 자리·트윈 자리를 모르는 채 본 것은 근거가 아니고, 그 뒤 다른 면(식탁)에서 보이면 풀린다", async () => {

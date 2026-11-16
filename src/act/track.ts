@@ -209,6 +209,8 @@ const STRAY_KINDS: ReadonlySet<WorldChangeKind> = new Set<WorldChangeKind>(["per
 const QUIET_KINDS: ReadonlySet<WorldChangeKind> = new Set<WorldChangeKind>(["vlm", "vlm_missing", "yolo_missing", "heard"]);
 /** 방금 본 변화 줄을 두는 시간(ms). */
 const STRAY_KEEP_MS = 30_000;
+/** 놓기를 끝낸 물건이 사라진 뒤 새 id로 다시 잡히기를 기다리는 시간(ms). 등장 확인(물건 4초)·사라짐(6초)보다 넉넉히. */
+const PUT_HANDOVER_MS = 30_000;
 
 /** 멈춘 집기·놓기 단계. command: 실제 폰에 띄운 지금 명령 글. stuckMs: 단계 시작 뒤 지난 시간. looks: 이 단계에서 센 부름 수(시도).
  *  spots: 계획 물건(지금 따라가는 World State 물건, 자리를 알 때)과 단계 대상 자리(평면도, 물건과 다를 때).
@@ -277,6 +279,8 @@ export class ExecutionTracker {
   private planning: Job | null = null;
   /** 놓기 단계를 끝낸 물건(placed). */
   private readonly put = new Map<string, { target: string; part?: "basin"; atMs: number }>();
+  /** 놓기를 끝낸 물건의 종류(새 id로 다시 잡혔을 때 같은 종류만 이어 간다). */
+  private readonly putCls = new Map<string, string>();
   private readonly jobs = new Set<Promise<void>>();
   private readonly planAt = new Map<string, number>();
   private gen = 0;
@@ -542,10 +546,12 @@ export class ExecutionTracker {
 
   /** 놓기 단계를 끝낸 물건(이미 치운 것): World State id → 그 계획의 넣은 곳, 끝낸 때 싱크볼 안이었으면 part basin, 끝낸 시각.
    *  그 뒤 손에 있음이 확인되거나(다시 집음, VLM 한 번의 손에 있음은 싱크대 속 컵에도 나와 확인됨만 본다) 트윈 자리가 그 영역을 벗어나거나
-   *  (다른 면·면 없음, part basin이면 같은 면이어도 싱크볼 밖: 옮김) 사라지면 지운다.
+   *  (다른 면·면 없음, part basin이면 같은 면이어도 싱크볼 밖: 옮김) 사라지면 지운다. 사라진 뒤 같은 종류가 그 넣은 곳에 새 id로 다시 잡히면 그 물건으로 이어 간다.
+   *  돌려줄 때는 지금 싱크볼 안이고 손에 있음이 확인되지 않은 물건도 더한다(넣은 기억이 없어도 치운 것).
    *  계획을 만들지 않는다. 계획 전·실행 전 검사와 대상 고르기가 이미 치운 것을 아는 근거로만 쓴다. */
   placed(): Placed {
     const objects = this.o.world().objects;
+    const now = this.clock.now();
     for (const [id, p] of this.put) {
       const o = objects.find((x) => x.id === id);
       const hand = o?.facts.place;
@@ -553,9 +559,36 @@ export class ExecutionTracker {
       // 트윈 자리를 모르는 채(맞추기 전) 본 것은 옮긴 근거가 아니다
       const out = !!o && (o.surface !== p.target || (p.part !== undefined && o.surface_part !== p.part));
       const moved = !!o && o.last_seen_ms > p.atMs && o.position !== null && out;
-      if (!o || o.status === "gone" || picked || moved) this.put.delete(id);
+      if (picked || moved) {
+        this.put.delete(id);
+        this.putCls.delete(id);
+      } else if (!o || o.status === "gone") this.carryPut(id, p, objects, now);
     }
-    return this.put;
+    // 싱크볼 안에 있고 손에 있음이 확인되지 않은 물건도 치운 것이다(치우기 계획 놓기 끝 자리: 싱크대 면의 싱크볼 안이고 손에 없음).
+    // 실행 추적이 넣은 기억이 없는 컵(서버를 다시 띄운 뒤 본 컵, 새 id로 잡힌 컵)을 다시 치우지 않게 한다(2026-11-16 23:48)
+    const all = new Map(this.put);
+    for (const o of objects) {
+      if (all.has(o.id) || o.status === "gone" || o.surface === null || o.surface_part !== "basin") continue;
+      if (o.facts.place?.value === "in_hand" && o.facts.place.certainty === "confirmed") continue;
+      all.set(o.id, { target: o.surface, part: "basin", atMs: o.first_seen_ms });
+    }
+    return all;
+  }
+
+  /** 놓기를 끝낸 물건이 사라졌다: 같은 종류 물건이 그 넣은 곳(싱크볼이었으면 싱크볼)에 새 id로 다시 잡혔으면 그 물건으로 이어 간다
+   *  (놓은 컵이 끝낸 뒤 2초 만에 새 id로 잡혀 치운 기억이 없어졌다, 2026-11-16 23:36). 아직 없으면 PUT_HANDOVER_MS 동안 기다린다. */
+  private carryPut(id: string, p: { target: string; part?: "basin"; atMs: number }, objects: WorldView["objects"], now: number): void {
+    const cls = this.putCls.get(id);
+    const next = objects.filter((o) => o.id !== id && o.status !== "gone" && o.cls === cls && o.surface === p.target
+      && (p.part === undefined || o.surface_part === p.part) && o.first_seen_ms >= p.atMs - PUT_HANDOVER_MS && !this.put.has(o.id));
+    if (next.length || now - p.atMs > PUT_HANDOVER_MS) {
+      this.put.delete(id);
+      this.putCls.delete(id);
+    }
+    for (const o of next) {
+      this.put.set(o.id, p);
+      if (cls) this.putCls.set(o.id, cls);
+    }
   }
 
   /** 놓기 단계를 끝낸 물건을 적는다: 지금 그 물건으로 보는 World State id(따라가지 못하면 계획 물건 id)와 그 계획의 넣은 곳.
@@ -564,7 +597,11 @@ export class ExecutionTracker {
     const now = this.clock.now();
     const objs = ours(r, object, this.o.world()).filter((o) => o.status !== "gone");
     const at = objs.length ? objs.map((o) => ({ id: o.id, basin: o.position !== null && o.surface === target && o.surface_part === "basin" })) : [{ id: r.alias.get(object) ?? object, basin: false }];
-    for (const { id, basin } of at) this.put.set(id, { target, ...(basin ? { part: "basin" as const } : {}), atMs: now });
+    const cls = objs[0]?.cls ?? this.o.world().objects.find((o) => o.id === (r.alias.get(object) ?? object))?.cls ?? object.replace(/_\d+$/, "");
+    for (const { id, basin } of at) {
+      this.put.set(id, { target, ...(basin ? { part: "basin" as const } : {}), atMs: now });
+      this.putCls.set(id, cls);
+    }
   }
 
   /** 관찰 모드의 사람 부탁(ask_person): 지금 그 계획의 그 사람 단계면 같은 계획·단계 id로 명령 글만 서버 글(그 곳이 보이게 가까이 대 달라는 부탁)로 바꿔 다시 보낸다(소리로 읽음).

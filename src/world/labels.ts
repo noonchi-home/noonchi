@@ -68,6 +68,8 @@ export const fixtureName = (cls: string, id: string, roomLabel: string | null) =
 
 /** 놓인 면 글(식탁 위). */
 export const onSurface = (label: string) => `${label} 위`;
+/** 싱크볼 안 물건 글(주방·식당 싱크대 안 · 치움): 치우기 계획 놓기 끝 자리라 치울 물건으로 읽히지 않게 「치움」을 붙인다. */
+export const inBasin = (label: string) => `${label} 안 · 치움`;
 
 /** 때 글: 날짜·요일·하루 때(11월 7일 토요일 밤). 시:분은 그 시간대 기준. */
 export function dayText(month: number, day: number, weekday: number, hour: number): string {
