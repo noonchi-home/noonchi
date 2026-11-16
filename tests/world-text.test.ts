@@ -1,7 +1,7 @@
 // PAM 관찰 텍스트: 시각이 붙은 줄(오래된 것부터) + [지속] 오래 이어진 사실 + [눈] 클로이드 눈 위치.
 import { describe, expect, it } from "vitest";
 import type { WorldChange, WorldView } from "../src/contract/world.js";
-import { buildPamText, clock, collapseLines, textFromWorld } from "../src/world/text.js";
+import { buildPamText, clock, collapseLines, headWithin, textFromWorld } from "../src/world/text.js";
 import { MAX_OBSERVATION_TEXT, checkInput } from "../src/brain/decision.js";
 import { readFileSync } from "node:fs";
 import type { Detection, EngineFrame } from "../src/contract/observe.js";
@@ -181,6 +181,31 @@ describe("PAM 관찰 텍스트", () => {
     expect(() => checkInput({ text, finalTime: "2026-11-07T21:10:00+09:00", memory: { initial_state: "s", states: [{ id: "s", description: "d", rules: [], next: [] }] } as never, memoryKind: "fsm", tasks: ["컵 치우기"] })).not.toThrow();
     expect(text).toContain("[지속] 사람 안 보임: 21:05:00부터 5분째");
     expect(text.split("\n").at(-1)).toMatch(/^\[때\] /);
+  });
+
+  it("줄을 자를 때 이모지 같은 대리쌍 가운데를 자르지 않는다(짝 잃은 서로게이트는 PAM 요청 검증·UTF-8 인코딩에서 실패한다)", () => {
+    const lone = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+    // 앞에 붙이는 글자 수(0~3)를 바꿔 자르는 자리가 대리쌍 앞·가운데에 번갈아 걸리게 한다
+    for (const pad of ["", "a", "ab", "abc"]) {
+      const view: WorldView = {
+        at_ms: T(21, 10, 0), objects: [],
+        person: { visible: false, since_ms: T(21, 5, 0), last_seen_ms: T(21, 4, 58), count: 0, room: null, room_label: null, position: null, near: [], holding: [], position_ms: null, answered_ms: null, facts: {} },
+        fixtures: [], devices: Array.from({ length: 30 }, (_, i) => ({ id: `light_${i}`, kind: "light", label: `${pad}${"🍵☕".repeat(200 + i)}`, status: "켜짐", state: ["on"], active: true, changed_ms: T(21, 0, 0), event_ms: null, started_ms: null, remaining_min: null, history: [] })),
+        eye: null, frame_ms: null, vlm_missing: 0, yolo_missing: 0,
+      };
+      const long: WorldChange = { kind: "vlm", at_ms: T(21, 9, 59), subject: "x", text: `VLM: ${pad}${"🥤".repeat(12000)}`, meaningful: false };
+      const text = textFromWorld(view, [long], { nowMs: T(21, 10, 0), offsetMinutes: 540 });
+      // 길이는 brain 검사(checkInput)와 같은 UTF-16 단위로 센다. PAM은 코드 포인트로 세므로 이보다 짧거나 같다
+      expect(text.length).toBeLessThanOrEqual(MAX_OBSERVATION_TEXT);
+      expect(lone.test(text), `pad ${pad.length}`).toBe(false);
+      expect(new TextDecoder().decode(new TextEncoder().encode(text))).toBe(text);
+    }
+  });
+
+  it("앞에서 자르는 도움 함수도 대리쌍 가운데를 자르지 않는다", () => {
+    expect(headWithin("a😀b", 2)).toBe("a");
+    expect(headWithin("a😀b", 3)).toBe("a😀");
+    expect(headWithin("abc", 5)).toBe("abc");
   });
 
   it("눈 줄은 눈이 있는 방의 id가 아니라 방 이름을 쓴다", () => {
