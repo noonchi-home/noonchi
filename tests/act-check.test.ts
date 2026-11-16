@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { checkDecision, checkPlan, loadActConfig, type CheckInput } from "../src/act/check.js";
-import { CHECK_TEXT } from "../src/plan/labels.js";
+import { CHECK_TEXT } from "../src/act/labels.js";
 import type { WorldObject } from "../src/contract/world.js";
 import { planObjectOf } from "../src/act/tasks.js";
 

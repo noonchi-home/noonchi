@@ -34,7 +34,7 @@ describe("저장소 뿌리 기준 경로", () => {
 });
 
 describe("직접 실행 검사", () => {
-  const file = join(ROOT, "src", "mcp", "server.ts");
+  const file = join(ROOT, "src", "agent/mcp", "server.ts");
   const url = pathToFileURL(file).href;
 
   it("node로 바로 띄운 파일이면 참이다(확장자는 보지 않는다)", () => {
@@ -51,19 +51,19 @@ describe("직접 실행 검사", () => {
     const dir = mkdtempSync(join(tmpdir(), "entry-link-"));
     const link = join(dir, "mcp");
     try {
-      symlinkSync(join(ROOT, "src", "mcp"), link, "junction");
+      symlinkSync(join(ROOT, "src", "agent/mcp"), link, "junction");
       expect(isEntry(url, join(link, "server.ts"))).toBe(true);
       expect(isEntry(url, join(link, "server"))).toBe(true);
       expect(isEntry(url, join(link, "client.ts"))).toBe(false);
     } finally {
-      // 링크만 지운다(링크가 가리키는 src/mcp는 그대로)
+      // 링크만 지운다(링크가 가리키는 src/agent/mcp는 그대로)
       try { unlinkSync(link); } catch { /* 링크를 못 만들었음 */ }
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
   it("다른 파일이거나 띄운 파일이 없으면 거짓이다", () => {
-    expect(isEntry(url, join(ROOT, "src", "mcp", "client.ts"))).toBe(false);
+    expect(isEntry(url, join(ROOT, "src", "agent/mcp", "client.ts"))).toBe(false);
     expect(isEntry(url, undefined)).toBe(false);
     expect(isEntry(url, "")).toBe(false);
   });

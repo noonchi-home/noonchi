@@ -7,7 +7,7 @@ import { isUnknown } from "../devices/hub/signals.js";
 import type { Capability, Command, CommandResult, CommandType, DeviceHub, DeviceKind, DeviceSpec } from "../devices/hub/types.js";
 import { KINDS, KIND_ORDER, isRiskyKind, kindEntry } from "../devices/kinds.js";
 import { checkCommand, normalizeCommand } from "../devices/mapping.js";
-import { DEVICE_VERB, STEP_LABEL } from "../plan/labels.js";
+import { DEVICE_VERB, STEP_LABEL } from "../act/labels.js";
 import { approvalNeed, deviceKey, memoryApprovals, type ApprovalBook } from "./approval.js";
 import { toolForCommand } from "./phrases.js";
 import { josa } from "../shared/korean.js";
@@ -50,9 +50,9 @@ export const RISKY_LIST = {
 };
 
 // ── 폰으로 나가는 사람용 글: 위험 가전은 기본 거부 ─────────────────────
-// 사람 단계(go·pick·place·do)의 이름·명령·안전 문구는 모델이 고른 동작·대상·물건으로 서버가 만든다(src/plan/labels.ts STEP_TEXT). 모델 문장은 받지 않는다.
+// 사람 단계(go·pick·place·do)의 이름·명령·안전 문구는 모델이 고른 동작·대상·물건으로 서버가 만든다(src/act/labels.ts STEP_TEXT). 모델 문장은 받지 않는다.
 // 알림(say)·기다리기 이름은 열쇠(notice), 질문의 답 단추·답 말은 답 묶음으로 서버가 정한다.
-// 관찰 모드의 다시 알리기·사람 부탁은 방식·가까이 볼 곳만 고르고 실행 추적이 서버 글로 보낸다(src/plan/labels.ts TELL_TEXT·CLOSER_TEXT).
+// 관찰 모드의 다시 알리기·사람 부탁은 방식·가까이 볼 곳만 고르고 실행 추적이 서버 글로 보낸다(src/act/labels.ts TELL_TEXT·CLOSER_TEXT).
 // 모델이 쓰는 글은 질문과 말 요청 에이전트의 답뿐이고, 거기에 위험 가전(인덕션·전자레인지) 이름이 나오면 폰으로 보내지 않는다(버리거나 고정 글로 바꾼다).
 // 켜는 말인지 끄는 말인지 낱말로 가르지 않는다.
 // 자리 목록은 PHONE_LINE_SITES이고, tests/phone-lines.test.ts가 자리마다 본다.

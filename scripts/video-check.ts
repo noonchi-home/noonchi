@@ -41,7 +41,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import type { Detection } from "../src/contract/observe.js";
 import type { HistoryRow } from "../src/contract/history.js";
 import type { WorldObject, WorldView } from "../src/contract/world.js";
-import { EXEC_TEXT } from "../src/plan/labels.js";
+import { EXEC_TEXT } from "../src/act/labels.js";
 import { STATES } from "../src/world/vocab.js";
 import { withTimeout } from "./twin3d/capture-lib.js";
 import { chromePath, closeChrome, devtoolsPort, launchChrome, openPage, openTab, openWindow, type Chrome, type Page } from "./twin3d/cdp.js";

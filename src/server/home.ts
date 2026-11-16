@@ -10,7 +10,7 @@ import { SAY_DONE_MS, sayLine } from "../act/say.js";
 import { LessonStore, lessonsPath } from "../act/lessons.js";
 import { lookTargets, matchChoice, taskOf, tasksFor } from "../act/tasks.js";
 import { APPROVE } from "../act/prompts.js";
-import { EXEC_TEXT } from "../plan/labels.js";
+import { EXEC_TEXT } from "../act/labels.js";
 import { deviceRunner } from "../act/devices.js";
 import { ExecutionTracker } from "../act/track.js";
 import { Agent } from "../agent/agent.js";
@@ -52,7 +52,7 @@ import { twinLandmarks } from "../phone/sync/landmarks.js";
 import { StartStore, describeStart, readStartPose, startPosePath, type StartPose } from "../phone/sync/start.js";
 import { wallSegments } from "../phone/sync/walls.js";
 import { repoPath } from "../shared/paths.js";
-import { PlanHub } from "../plan/hub.js";
+import { PlanHub } from "../act/hub.js";
 import { HEARD_MARK } from "../world/labels.js";
 import { floorPlanFrom, roomNamedAt } from "../layout/route.js";
 import { surfacesFromLayout, type PlaneSurface } from "../world/place.js";
@@ -247,7 +247,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     layout?.editor.subscribe(() => phoneRef.current?.setLandmarks(landmarksNow()));
     // 엔진 프레임 헤더(찍은 순간 AR 자세·투영): 감지가 끝나면 기준점 상자와 함께 폰 위치 맞추기로 넘긴다
     const engineHeaders = new WeakMap<Buffer, FrameHeader>();
-    // 클로이드 계획(src/plan/hub.ts): 에이전트 기기 행동·맞춘 눈 → 계획을 /events로. 경로는 서버 장면(scene.json + 도면 설비)으로 찾는다
+    // 클로이드 계획(src/act/hub.ts): 에이전트 기기 행동·맞춘 눈 → 계획을 /events로. 경로는 서버 장면(scene.json + 도면 설비)으로 찾는다
     const scene = loadScene(home);
     const floorPlan = floorPlanFrom(scene ?? {});
     // 계획 입력의 평면도 물건(벽·바닥·문·창은 뺀다): 배치 이름과 부를 짧은 이름(종류 짧은 이름 → 카탈로그 종류 이름 → 배치 이름)

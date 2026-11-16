@@ -24,7 +24,7 @@ import type { LayoutEditor } from "../layout/editor.js";
 import type { SyncState } from "../phone/sync/aligner.js";
 import { StartPoseError, type StartPose } from "../phone/sync/start.js";
 import { repoPath } from "../shared/paths.js";
-import type { PlanHub } from "../plan/hub.js";
+import type { PlanHub } from "../act/hub.js";
 import { twinChange } from "../devices/mapping.js";
 import { listenRetry } from "../shared/net.js";
 import { serveFile } from "../shared/static.js";
@@ -78,7 +78,7 @@ export interface AppOptions {
   mode?: () => ControlMode;
   /** 준비 상태(/api/health ready, src/server/ready.ts). 없으면 준비 안 됨. */
   ready?: () => Promise<ReadyView>;
-  /** 클로이드 계획 보관(src/plan/hub.ts). 있으면 에이전트 행동을 넘기고 POST /api/plan*을 받는다. 접속 때 지금 계획을 보낸다. */
+  /** 클로이드 계획 보관(src/act/hub.ts). 있으면 에이전트 행동을 넘기고 POST /api/plan*을 받는다. 접속 때 지금 계획을 보낸다. */
   plan?: Pick<PlanHub, "current" | "onAgent" | "put" | "setStep">;
   /** 끄기 추적 요약(실행 추적 offTrack). GET /api/plan이 계획과 같은 답에 싣는다(영상 판정이 같은 순간 값으로 끝낼지 본다). 없으면 null. */
   offTrack?: () => OffTrack | null;

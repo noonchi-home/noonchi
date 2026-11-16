@@ -111,8 +111,8 @@ describe("web/·ui/src·폰 입구 전체", () => {
   });
 });
 
-describe("서버가 화면에 그대로 내보내는 계획 글(src/plan/labels.ts)", () => {
-  const labels = fileURLToPath(new URL("../src/plan/labels.ts", import.meta.url));
+describe("서버가 화면에 그대로 내보내는 계획 글(src/act/labels.ts)", () => {
+  const labels = fileURLToPath(new URL("../src/act/labels.ts", import.meta.url));
   const worldLabels = fileURLToPath(new URL("../src/world/labels.ts", import.meta.url));
   const worldVocab = fileURLToPath(new URL("../src/world/vocab.ts", import.meta.url));
   const kinds = fileURLToPath(new URL("../src/devices/kinds.ts", import.meta.url));

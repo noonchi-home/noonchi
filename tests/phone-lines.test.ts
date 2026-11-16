@@ -1,5 +1,5 @@
 // 위험 가전(인덕션·전자레인지)에 대한 폰 글은 기본 거부다(src/agent/policy.ts): 모델이 쓴 글에 위험 가전 이름이 나오거나 그 단계 대상이 위험 가전이면
-// 그 글은 폰으로 보내지 않는다. 켜는 말인지 끄는 말인지 낱말로 가르지 않는다. 사람 단계 글은 모델이 고른 동작·대상·물건으로 서버가 만든다(src/plan/labels.ts STEP_TEXT).
+// 그 글은 폰으로 보내지 않는다. 켜는 말인지 끄는 말인지 낱말로 가르지 않는다. 사람 단계 글은 모델이 고른 동작·대상·물건으로 서버가 만든다(src/act/labels.ts STEP_TEXT).
 // 글이 생기는 자리마다 자리 목록(PHONE_LINE_SITES)과 함께 「모델이 쓴 위험 가전 글은 어느 자리에서도 폰으로 안 나간다」를 본다.
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -13,8 +13,8 @@ import { PlanDraft, type AgentStep } from "../src/agent/planTools.js";
 import { PHONE_LINE_SITES, RISKY_REPLY, riskyNames } from "../src/agent/policy.js";
 import type { PlannedCommandMessage } from "../src/contract/phone.js";
 import type { WorldView } from "../src/contract/world.js";
-import { PlanHub } from "../src/plan/hub.js";
-import { CAUTION_LINE, CAUTION_TEXT, SAY_TEXT, type TellMode } from "../src/plan/labels.js";
+import { PlanHub } from "../src/act/hub.js";
+import { CAUTION_LINE, CAUTION_TEXT, SAY_TEXT, type TellMode } from "../src/act/labels.js";
 import { floorPlanFrom } from "../src/layout/route.js";
 import type { DecisionRecord } from "../src/contract/events.js";
 import { SMALL_SCENE } from "./helpers/floor.js";

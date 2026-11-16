@@ -10,7 +10,7 @@ import type { LookTool, LookTrigger } from "../contract/events.js";
 import type { StepStatus } from "../contract/plan.js";
 import type { WorldView } from "../contract/world.js";
 import { estimateCostUsd, hasPrice } from "../infer/cost.js";
-import type { TellMode } from "../plan/labels.js";
+import type { TellMode } from "../act/labels.js";
 import type { LlmProvider, StepUsage, ToolCall } from "./agent.js";
 import { worldLines } from "./planInput.js";
 import type { ToolDef } from "./tools.js";
@@ -152,7 +152,7 @@ function checkChoice(call: ToolCall, s: ObserveSituation): ObserveChoice | strin
     return { tool: name, target: spot.id, reason };
   }
   if (name === "pass_on") return { tool: name, reason };
-  // 사람에게 보내는 글은 서버가 만든다(src/plan/labels.ts TELL_TEXT): 모델은 가까이 볼 곳과 알리는 방식만 고른다
+  // 사람에게 보내는 글은 서버가 만든다(src/act/labels.ts TELL_TEXT): 모델은 가까이 볼 곳과 알리는 방식만 고른다
   if (name === "ask_person") {
     const target = String(args.target).trim();
     const spot = s.spots.find((p) => p.id === target);

@@ -16,8 +16,8 @@ import { PlanDraft } from "../src/agent/planTools.js";
 import type { BrainLog, DecisionRecord } from "../src/contract/events.js";
 import type { HeardAt, PlannedCommand, PlannedCommandMessage } from "../src/contract/phone.js";
 import type { WorldChange, WorldObject, WorldView } from "../src/contract/world.js";
-import { PlanHub } from "../src/plan/hub.js";
-import { APPROVAL_TEXT, CAUTION_TEXT, CHECK_TEXT, EXEC_TEXT, CAUTION_LINE, STEP_COMMAND, STEP_LABEL, type TellMode } from "../src/plan/labels.js";
+import { PlanHub } from "../src/act/hub.js";
+import { APPROVAL_TEXT, CAUTION_TEXT, CHECK_TEXT, EXEC_TEXT, CAUTION_LINE, STEP_COMMAND, STEP_LABEL, type TellMode } from "../src/act/labels.js";
 /** 인덕션 켜기 전 질문(서버 글). */
 const ASK_ON = "냄비와 상판이 뜨거워져요. 인덕션을 켤까요?";
 import { WorldState, type CloserPass } from "../src/world/state.js";

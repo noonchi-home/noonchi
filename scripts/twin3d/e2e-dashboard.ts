@@ -16,7 +16,7 @@ import { ScriptedDetector, det } from "../../tests/helpers/detectors.js";
 import { startFakePam, type FakePam } from "../../tests/helpers/pam.js";
 import { openWebSocket } from "../../tests/helpers/ws.js";
 import { encodeFramePacket } from "../../src/phone/packet.js";
-import { APPROVAL_TEXT, SAY_TEXT, STEP_LABEL } from "../../src/plan/labels.js";
+import { APPROVAL_TEXT, SAY_TEXT, STEP_LABEL } from "../../src/act/labels.js";
 import { fetchRetry } from "../../src/shared/net.js";
 import { startServer, type RunningServer } from "../../src/server/start.js";
 import { startFakeOpenAI, type FakeServer } from "../fake-openai.js";

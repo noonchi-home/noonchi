@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type WebSocket from "ws";
 import { startFakeOpenAI, type FakeServer } from "../scripts/fake-openai.js";
 import { encodeFramePacket } from "../src/phone/packet.js";
-import { APPROVAL_TEXT } from "../src/plan/labels.js";
+import { APPROVAL_TEXT } from "../src/act/labels.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { ScriptedDetector, det } from "./helpers/detectors.js";
 import { startFakePam, type FakePam } from "./helpers/pam.js";

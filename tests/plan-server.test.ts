@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { Agent } from "../src/agent/agent.js";
 import type { PlanView } from "../src/contract/plan.js";
-import { PlanHub } from "../src/plan/hub.js";
+import { PlanHub } from "../src/act/hub.js";
 import { canSendPlan, createApp, isLoopback } from "../src/server/app.js";
 import { fetchRetry } from "../src/shared/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";

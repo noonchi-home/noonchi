@@ -9,7 +9,7 @@
 import type { PlannedCommandMessage } from "../contract/phone.js";
 import type { PlanView } from "../contract/plan.js";
 import type { WorldView } from "../contract/world.js";
-import { SAY_TEXT, STEP_COMMAND, STEP_LABEL } from "../plan/labels.js";
+import { SAY_TEXT, STEP_COMMAND, STEP_LABEL } from "./labels.js";
 import { isOffStep } from "./off-step.js";
 import { planTargetId } from "./tasks.js";
 

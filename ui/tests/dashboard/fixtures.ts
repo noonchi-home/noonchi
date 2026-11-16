@@ -121,10 +121,10 @@ export function coachPlanAt(n: number): PlanView {
     steps: COACH_STEPS.map(([kind, label], i) => ({ id: `coach:${i + 1}`, kind, label, status: i + 1 < n ? "done" : i + 1 === n ? "active" : "pending" })),
   };
 }
-/** 코치 계획의 말풍선 카드 말(src/plan/labels.ts SAY_TEXT): 다시 알린 뒤, 조용한 단계, 끄기 안내. */
+/** 코치 계획의 말풍선 카드 말(src/act/labels.ts SAY_TEXT): 다시 알린 뒤, 조용한 단계, 끄기 안내. */
 export const COACH_SAY = { retold: "다시 알려 줬어요.", quiet: "냄비 꺼내기를 지켜보고 있어요.", offAsked: "불을 꺼 달라고 했어요." };
 
-/** 「그대로 두기」를 고른 뒤 말풍선 카드 말(src/plan/labels.ts SAY_TEXT.left). */
+/** 「그대로 두기」를 고른 뒤 말풍선 카드 말(src/act/labels.ts SAY_TEXT.left). */
 export const LEFT_SAY = "컵을 그대로 두기로 했어요.";
 const BRANCH_TASKS = ["컵 치우기", "사용자에게 물어보기", "세탁물 건조기로 옮기기", "에어컨 켜기", "컵 그대로 두기", "컵에 물 채워 주기", "컵에 콜라 따라 주기", "라면 끓이기 알려 주기"];
 

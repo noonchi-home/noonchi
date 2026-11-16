@@ -1,12 +1,12 @@
 // MCP stdio 서버: 에이전트 도구(src/agent/tools.ts)를 그대로 노출하고, 실행 중인 twin-home 서버 REST(TWIN_HOME_URL)를 부른다.
-// Claude Code: claude mcp add twin-home -- npx tsx src/mcp/server.ts
+// Claude Code: claude mcp add twin-home -- npx tsx src/agent/mcp/server.ts
 // stdout은 MCP 프로토콜 전용이다. 로그는 stderr로만 쓴다.
 
 import dotenv from "dotenv";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { MCP_TOOLS, runTool, type ToolBackend } from "../agent/tools.js";
-import { isEntry } from "../shared/paths.js";
+import { MCP_TOOLS, runTool, type ToolBackend } from "../tools.js";
+import { isEntry } from "../../shared/paths.js";
 import { DEFAULT_TWIN_HOME_URL, httpBackend } from "./client.js";
 
 const INSTRUCTIONS = `twin-home: 가상 아파트(디지털 트윈)의 Matter 가전을 제어합니다.

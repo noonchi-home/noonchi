@@ -106,7 +106,7 @@ noonchi-home | 26-2 소프트웨어공학
         ↓  REST · WebSocket /events (127.0.0.1)
 화면 (ui/, React)             — 대시보드 · three.js 트윈(ui/src/twin3d) · 설정 화면(ui/src/setup)
 
-MCP 서버 (src/mcp)            — 기기 도구를 stdio로, 서버 REST를 부른다
+MCP 서버 (src/agent/mcp)            — 기기 도구를 stdio로, 서버 REST를 부른다
 twin/                         — twin-studio에서 가져온 집 자산: 장면 · 뷰어 · 구운 3D
 ```
 
@@ -160,7 +160,7 @@ npm start                 # 화면을 빌드하고 http://127.0.0.1:8200
 | `npm run tokens` | 디자인 토큰(`src/design/tokens.json`)에서 화면 파일 만들기 |
 | `HUB=memory npm start` | Matter 없이 시작(빠름) |
 | `HOME_ID=oneroom PHONE_PORT=8210 npm start` | 원룸 예시와 폰 페이지로 시작 |
-| `claude mcp add twin-home -- npx tsx src/mcp/server.ts` | Claude Code에 MCP 서버 등록(`npm start`는 켜 둔다) |
+| `claude mcp add twin-home -- npx tsx src/agent/mcp/server.ts` | Claude Code에 MCP 서버 등록(`npm start`는 켜 둔다) |
 
 </details>
 

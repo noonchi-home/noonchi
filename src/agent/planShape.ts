@@ -3,7 +3,7 @@
 import type { AgentAction } from "../contract/events.js";
 import type { PlanStep, PlanTarget, PlanView, StepKind, XZ } from "../contract/plan.js";
 import type { FloorPlan } from "../layout/floor.js";
-import { DEVICE_VERB, STEP_LABEL } from "./labels.js";
+import { DEVICE_VERB, STEP_LABEL } from "../act/labels.js";
 import { approach, route } from "../layout/route.js";
 
 const STOP_M = 0.55; // 로봇 반지름 0.22m + 여유

@@ -2,8 +2,8 @@
 // 서버는 에이전트 계획 모드(src/agent/planner.ts)가 만든 계획만 쓴다. 이 모양은 시험과 개발 도구(scripts/twin3d/fake-run.ts)만 쓴다.
 import type { PlanView, XZ } from "../../src/contract/plan.js";
 import type { FloorPlan } from "../../src/layout/floor.js";
-import { GOAL, STEP_LABEL } from "../../src/plan/labels.js";
-import { assemblePlan, type DraftStep } from "../../src/plan/planner.js";
+import { GOAL, STEP_LABEL } from "../../src/act/labels.js";
+import { assemblePlan, type DraftStep } from "../../src/agent/planShape.js";
 
 const byType = (fp: FloorPlan, type: string) => [...fp.objects.values()].find((o) => o.type === type);
 

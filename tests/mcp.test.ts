@@ -26,7 +26,7 @@ describe("MCP stdio 서버(SDK 클라이언트로 실제 실행)", () => {
     env.TWIN_HOME_URL = url;
     const transport = new StdioClientTransport({
       command: process.execPath,
-      args: ["--import", "tsx", "src/mcp/server.ts"],
+      args: ["--import", "tsx", "src/agent/mcp/server.ts"],
       cwd: ROOT,
       env,
       stderr: "pipe",

@@ -16,7 +16,7 @@ import type { WorldObject, WorldView } from "../../src/contract/world.js";
 import { DEFAULT_TWIN_DIR } from "../../src/devices/devices.js";
 import { resolveHome } from "../../src/layout/homes.js";
 import { loadScene } from "../../src/layout/scene.js";
-import { STEP_COMMAND, STEP_LABEL } from "../../src/plan/labels.js";
+import { STEP_COMMAND, STEP_LABEL } from "../../src/act/labels.js";
 import { cupPlan } from "../../tests/helpers/cup-plan.js";
 import { floorPlanFrom, roomAt } from "../../src/layout/route.js";
 

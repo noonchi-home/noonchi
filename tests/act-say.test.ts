@@ -3,7 +3,7 @@ import type { PlannedCommand } from "../src/contract/phone.js";
 import type { PlanView } from "../src/contract/plan.js";
 import type { WorldView } from "../src/contract/world.js";
 import { SAY_DONE_MS, SAY_LOOK_MS, SAY_TOLD_MS, sayLine } from "../src/act/say.js";
-import { STEP_LABEL } from "../src/plan/labels.js";
+import { STEP_LABEL } from "../src/act/labels.js";
 
 const T = Date.parse("2026-11-09T00:00:00Z");
 const plan = (status: PlanView["status"], goal = "컵 치우기", at = T): PlanView => ({

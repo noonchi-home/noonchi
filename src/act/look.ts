@@ -20,7 +20,7 @@ import { describeError } from "../agent/agent.js";
 import type { ObserveChoice, ObserveSituation, Observer, ObserverStatus } from "../agent/observer.js";
 import { LOOK_MARGIN, type LookSpot } from "../observe/crop.js";
 import type { LatestFrame } from "../observe/pipeline.js";
-import { LOOK_TEXT, type TellMode } from "../plan/labels.js";
+import { LOOK_TEXT, type TellMode } from "./labels.js";
 import { OBJECT_NAME, redactSaid } from "../world/labels.js";
 import { inView } from "../world/place.js";
 import { CLASSES, UNKNOWN_STATES, type ClassKey, type StateKey } from "../world/vocab.js";

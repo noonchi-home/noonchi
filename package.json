@@ -17,7 +17,7 @@
     "lint": "tsx scripts/lint-ui-copy.ts && tsx scripts/lint-ui-color.ts && tsx scripts/lint-ui-parts.ts && tsx scripts/lint-ui-type.ts && tsx scripts/lint-domains.ts",
     "tokens": "tsx scripts/design-tokens.ts",
     "demo": "tsx scripts/demo.ts",
-    "mcp": "tsx src/mcp/server.ts",
+    "mcp": "tsx src/agent/mcp/server.ts",
     "ui:dev": "npm --prefix ui run dev",
     "ui:build": "npm --prefix ui run build",
     "ui:test": "npm --prefix ui test",

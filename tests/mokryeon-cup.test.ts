@@ -7,7 +7,7 @@ import { loadLayout } from "../src/layout/load.js";
 import { DEFAULT_TWIN_DIR } from "../src/devices/devices.js";
 import { resolveHome } from "../src/layout/homes.js";
 import { loadScene } from "../src/layout/scene.js";
-import { STEP_LABEL } from "../src/plan/labels.js";
+import { STEP_LABEL } from "../src/act/labels.js";
 import { floorPlanFrom } from "../src/layout/route.js";
 import type { WorldView } from "../src/contract/world.js";
 import type { DecisionRecord } from "../src/contract/events.js";

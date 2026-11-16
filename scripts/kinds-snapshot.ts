@@ -7,7 +7,7 @@ import type { Command } from "../src/devices/hub/types.js";
 import { KIND_LABELS, KIND_PROFILES, TYPE_RULES, findTypeRule, twinChange } from "../src/devices/mapping.js";
 import { KIND_SYNONYMS } from "../src/agent/search.js";
 import { CONFIRM_RULES, Policy, RISKY_ON_NAMES, isRiskyKind, riskyNames } from "../src/agent/policy.js";
-import { CAUTION_LINE } from "../src/plan/labels.js";
+import { CAUTION_LINE } from "../src/act/labels.js";
 import { DEVICE_ACTS } from "../src/agent/planTools.js";
 import { PAIRABLE_KINDS, fitsKind, mirrorPlan, readAppliance, thinqAdapterOf, thinqSteps, type Reading } from "../src/devices/thinq/appliance.js";
 import { KINDS, KIND_ORDER, cameraKindOf } from "../src/devices/kinds.js";

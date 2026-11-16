@@ -28,7 +28,7 @@ export const TABLE_ALLOW: readonly { file: string; name: string; why: string }[]
   { file: "scripts/demo-start.ts", name: "DEMO_STARTS", why: "시연 장면 이름 → 시작 위치 표(장면 이름 tv·microwave가 종류 이름과 겹친다)" },
   { file: "src/phone/sync/classes.ts", name: "LANDMARK_KEYS", why: "위치 맞추기 기준점 감지 종류(COCO) 목록" },
   { file: "src/phone/sync/landmarks.ts", name: "LANDMARK_TYPES", why: "기준점 감지 종류(COCO) → 트윈 type 표" },
-  { file: "src/plan/labels.ts", name: "PLACE_SHORT", why: "평면도 물건 트윈 type → 짧은 이름 표(가구 포함)" },
+  { file: "src/act/labels.ts", name: "PLACE_SHORT", why: "평면도 물건 트윈 type → 짧은 이름 표(가구 포함)" },
   { file: "src/devices/mapping.ts", name: "MODEL_KEY", why: "Matter 모델 → 요약 키 표(모델 이름이 종류 이름과 겹친다)" },
   { file: "src/devices/kinds-check.ts", name: "CAPABILITY_COMMANDS", why: "기능(capability) → 낼 수 있는 명령 표(기능 이름 fan·covering·lock·valve가 종류 이름과 겹친다)" },
 ];

@@ -10,7 +10,7 @@ import { startFakeOpenAI, type FakeServer } from "../scripts/fake-openai.js";
 import type { HistoryRow } from "../src/contract/history.js";
 import type { WorldView } from "../src/contract/world.js";
 import { encodeFramePacket } from "../src/phone/packet.js";
-import { CHECK_TEXT } from "../src/plan/labels.js";
+import { CHECK_TEXT } from "../src/act/labels.js";
 import { fetchRetry } from "../src/shared/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { ScriptedDetector, det } from "./helpers/detectors.js";

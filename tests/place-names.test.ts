@@ -9,7 +9,7 @@ import { ApprovalStore } from "../src/agent/approval.js";
 import { PlanDraft } from "../src/agent/planTools.js";
 import type { PlannedCommandMessage } from "../src/contract/phone.js";
 import type { WorldView } from "../src/contract/world.js";
-import { PlanHub } from "../src/plan/hub.js";
+import { PlanHub } from "../src/act/hub.js";
 import { placeName, type PlaceNames } from "../src/layout/names.js";
 import { floorPlanFrom } from "../src/layout/route.js";
 import type { DecisionRecord } from "../src/contract/events.js";

@@ -17,7 +17,7 @@ import { VlmClient } from "../src/infer/vlm.js";
 import { cropJpeg } from "../src/observe/crop.js";
 import { ObservationPipeline } from "../src/observe/pipeline.js";
 import { sha256 } from "../src/observe/ring.js";
-import { PlanHub } from "../src/plan/hub.js";
+import { PlanHub } from "../src/act/hub.js";
 import { decisionWorld } from "../src/brain/decide.js";
 import { WorldState } from "../src/world/state.js";
 import { mkdtempSync } from "node:fs";

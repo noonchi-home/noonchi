@@ -1,6 +1,6 @@
 // 에이전트 계획 모드의 도구와 계획 검사(docs/superpowers/plans/2026-11-10-agent-plans.md).
 // 에이전트는 submit_plan 한 번으로 계획 전체를 낸다. 낼 때마다 전체를 새로 검사해 틀리면 첫 틀린 단계와 이유를 돌려준다(모델이 고친 전체를 다시 낸다).
-// 경로는 모델이 아니라 assemblePlan(src/plan/planner.ts)이 이동 단계마다 잇는다. 기기를 바꾸는 도구는 계획 모드에 없다:
+// 경로는 모델이 아니라 assemblePlan(src/agent/planShape.ts)이 이동 단계마다 잇는다. 기기를 바꾸는 도구는 계획 모드에 없다:
 // 기기 단계는 도구 이름·인자만 적어 두고, 실행 추적(src/act/track.ts)이 그 단계가 되면 정책(승인 규칙)을 거쳐 부른다.
 import { z } from "zod";
 import { copyRules } from "../shared/copy.js";
@@ -8,13 +8,13 @@ import { ASK_CHOICES, type ActionPrompt } from "../act/prompts.js";
 import type { Lesson } from "../act/lessons.js";
 import { planIdOf, type Placed, type TaskSpec } from "../act/tasks.js";
 import type { DeviceView, DecisionRecord } from "../contract/events.js";
-import type { DraftStep, PlanHead } from "../plan/planner.js";
-import { assemblePlan } from "../plan/planner.js";
+import type { DraftStep, PlanHead } from "./planShape.js";
+import { assemblePlan } from "./planShape.js";
 import type { PlanTarget, PlanView, StepKind, XZ } from "../contract/plan.js";
 import type { WorldObject, WorldView } from "../contract/world.js";
 import type { Capability, RoomSpec } from "../devices/hub/types.js";
 import type { FloorPlan } from "../layout/floor.js";
-import { ALL_ACTS, CAUTION_LINE, DEVICE_VERB, EXTRA_ITEMS, ITEM_CLASS, NOTICES, NOTICE_KEYS, STEP_ACTS, STEP_LABEL, STEP_TEXT, noticeLabel, type StepAct } from "../plan/labels.js";
+import { ALL_ACTS, CAUTION_LINE, DEVICE_VERB, EXTRA_ITEMS, ITEM_CLASS, NOTICES, NOTICE_KEYS, STEP_ACTS, STEP_LABEL, STEP_TEXT, noticeLabel, type StepAct } from "../act/labels.js";
 import { KINDS, KIND_ORDER, isSelfStop, kindEntry } from "../devices/kinds.js";
 import { KIND_LABELS, findTypeRule } from "../devices/mapping.js";
 import { placeName, type PlaceNames } from "../layout/names.js";

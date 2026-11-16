@@ -19,7 +19,7 @@ import { WebSocket, WebSocketServer } from "ws";
 import type { FocusTarget } from "../contract/events.js";
 import type { ApprovalAnswer, HeardAt, PhoneCommand, PhonePending, PhoneTalkReply, PlannedCommand, PlannedCommandMessage } from "../contract/phone.js";
 import { PHONE_PROTOCOL } from "./protocol.js";
-import { REFRESH_TEXT } from "../plan/labels.js";
+import { REFRESH_TEXT } from "../act/labels.js";
 import { listenRetry } from "../shared/net.js";
 import { serveFile, serveRange } from "../shared/static.js";
 import { repoPath } from "../shared/paths.js";

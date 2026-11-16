@@ -40,12 +40,12 @@ export async function listenEvents(url: string) {
 
 type ToolResult = { content: { type: string; text: string }[]; isError?: boolean };
 
-/** MCP stdio 서버(src/mcp/server.ts)를 실제로 띄워 SDK 클라이언트로 붙는다. */
+/** MCP stdio 서버(src/agent/mcp/server.ts)를 실제로 띄워 SDK 클라이언트로 붙는다. */
 export async function mcpClient(twinHomeUrl: string) {
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) if (typeof v === "string") env[k] = v;
   env.TWIN_HOME_URL = twinHomeUrl;
-  const transport = new StdioClientTransport({ command: process.execPath, args: ["--import", "tsx", "src/mcp/server.ts"], cwd: ROOT, env, stderr: "pipe" });
+  const transport = new StdioClientTransport({ command: process.execPath, args: ["--import", "tsx", "src/agent/mcp/server.ts"], cwd: ROOT, env, stderr: "pipe" });
   let stderr = "";
   transport.stderr?.on("data", (d) => { stderr += String(d); });
   const client = new Client({ name: "twin-home-e2e", version: "0.0.0" });

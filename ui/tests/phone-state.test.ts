@@ -3,7 +3,7 @@
 // 위치 맞춤은 서버 status.sync: 시작 위치에서 「여기서 시작」, 걸으며 벽 모양·물건으로 맞춘다.
 import { describe, expect, it, vi } from "vitest";
 import { ASK_PROMPT, STEP_DONE } from "../../src/act/prompts.ts";
-import { STEP_COMMAND } from "../../src/plan/labels.ts";
+import { STEP_COMMAND } from "../../src/act/labels.ts";
 import {
   createStore, handOf, heardAtOf, initialView, isStartWord, onStatus, PLACE_LINE, problemOf, settingsRows, START_BUTTON,
   startLine, supportText, type Command, type PhoneView, type SyncView,

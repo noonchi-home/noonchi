@@ -8,7 +8,7 @@ import type { BrainLog, CloserResult } from "../src/contract/events.js";
 import type { WorldObject, WorldView } from "../src/contract/world.js";
 import type { LookSpot } from "../src/observe/crop.js";
 import type { LatestFrame } from "../src/observe/pipeline.js";
-import { CLOSER_TEXT, LOOK_TEXT, TELL_TEXT } from "../src/plan/labels.js";
+import { CLOSER_TEXT, LOOK_TEXT, TELL_TEXT } from "../src/act/labels.js";
 import { LOOK_VIEW } from "./helpers/camera.js";
 import { CLOSER_FOUND, testCloser, type TestCloser } from "./helpers/look.js";
 import { startFakeObserver, type FakeObserver, type ObserveScript } from "./helpers/observer.js";

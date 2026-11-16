@@ -1,4 +1,4 @@
-// 실제 폰의 답 단추와 말로 하는 답. 단계 명령 글은 src/plan/labels.ts STEP_COMMAND에 있다.
+// 실제 폰의 답 단추와 말로 하는 답. 단계 명령 글은 src/act/labels.ts STEP_COMMAND에 있다.
 // npm run lint가 이 파일도 검사한다(60자 아래, 화살표·괄호 없음).
 
 /** 답 하나. words: 폰에서 말로 답할 때 이 답으로 보는 말(단추 글도 같이 본다). reply: 말로 답하면 폰이 읽어 줄 글(빈 글이면 읽지 않는다).

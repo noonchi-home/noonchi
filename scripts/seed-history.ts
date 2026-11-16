@@ -30,7 +30,7 @@ import type { DeviceState } from "../src/devices/hub/types.js";
 import { loadTwin } from "../src/devices/devices.js";
 import { loadScene } from "../src/layout/scene.js";
 import type { FloorPlan } from "../src/layout/floor.js";
-import { PlanHub } from "../src/plan/hub.js";
+import { PlanHub } from "../src/act/hub.js";
 import { floorPlanFrom, roomNamedAt } from "../src/layout/route.js";
 import { decisionWorld } from "../src/brain/decide.js";
 import { CHANGE_TEXT, OBJECT_NAME, objectName, onSurface } from "../src/world/labels.js";

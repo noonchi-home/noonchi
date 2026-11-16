@@ -34,10 +34,6 @@ export const DEPS: Record<string, readonly string[]> = {
 
 /** 지금 자리 → 도메인(2.1 「들어갈 지금 코드」). 끝이 /면 폴더. 옮기는 단계(3·6단계)마다 줄이고 9단계에 빈다. */
 export const LEGACY: Record<string, string> = {
-  "src/plan/hub.ts": "act",
-  "src/plan/labels.ts": "act",
-  "src/plan/planner.ts": "agent",
-  "src/mcp/": "agent",
   "src/setup/": "server",
   "ui/src/bubbles/": "ui/dashboard",
   "ui/src/panels/": "ui/dashboard",
@@ -52,7 +48,7 @@ export const TABLES: readonly string[] = [
   "src/devices/kinds.ts",
   "src/act/tasks.ts",
   "src/act/prompts.ts",
-  "src/plan/labels.ts",
+  "src/act/labels.ts",
   "src/devices/types.ts",
 ];
 
