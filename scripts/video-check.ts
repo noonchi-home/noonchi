@@ -1,6 +1,8 @@
 // npx tsx scripts/video-check.ts --clip cup-demo.mp4 [--step <종류>:<낱말>:<영상.mp4> ...] [--phone http://127.0.0.1:8210] [--api http://127.0.0.1:8200]
 //   [--done-after 3] [--out runtime/videos/cup-demo.<시각>.timeline.md] [--expect-after 36.3] [--record <폴더>] [--fake]
 //   [--say <초>:<글> ...] [--start-at <cup|tv|microwave|kitchen>] [--home mokryeon_180b] [--tail 30] [--max 1800] [--approve <초>] [--done-on <초>:<명령 글> ...]
+//   [--fov <도>] [--pitch <도>] [--h <m>]
+// --fov·--pitch·--h: 영상 모드 카메라(세로 시야각 20~120, 숙인 각 -89~89, 높이 0.2~3). 준 것만 폰 주소에 fov=·pitch=·h=로 붙고, 없으면 폰 페이지 기본값(60°, -25°, 1.4m).
 // --say: 재생 시작부터 그 초가 되면 폰 페이지 안의 폰 소켓(/phone/events)으로 {type: "say", text, at}를 보낸다(CDP로 그 소켓을 찾아 보냄). 시각표에 「말」 줄.
 //   at은 폰 페이지가 화면이 바뀔 때마다 실제 폰 말과 같은 heardAtOf로 남긴 기록(__noonchiVideo.at) 그대로다(없으면 none).
 // --start-at: 폰 페이지를 열기 전에 그 장면 시작 위치(scripts/demo-start.ts)를 서버에 넣는다. 서버의 지금 집이 --home이 아니면 판정을 시작하지 않는다.
@@ -483,11 +485,18 @@ async function startFake(clip: string, steps: string[]): Promise<Fake> {
 // 돌리기
 
 const USAGE = "쓰는 법: npx tsx scripts/video-check.ts --clip <이름.mp4> [--step <종류>:<낱말>:<영상.mp4> ...] [--phone http://127.0.0.1:8210] [--api http://127.0.0.1:8200] [--done-after 3] [--out <파일.md>] [--expect-after 36.3] [--record <폴더>] [--fake]"
-  + " [--say <초>:<글> ...] [--start-at <cup|tv|microwave|kitchen>] [--home mokryeon_180b] [--tail 30] [--max 1800] [--approve <초>] [--done-on <초>:<명령 글> ...]";
+  + " [--say <초>:<글> ...] [--start-at <cup|tv|microwave|kitchen>] [--home mokryeon_180b] [--tail 30] [--max 1800] [--approve <초>] [--done-on <초>:<명령 글> ...]"
+  + " [--fov <도>] [--pitch <도>] [--h <m>]";
+
+/** 영상 모드 카메라(폰 주소 fov·pitch·h): 준 값만 있다. 없는 값은 폰 페이지 기본값(세로 시야각 60°, pitch −25°, 높이 1.4m). */
+export interface Camera { fov?: number; pitch?: number; h?: number }
+/** 카메라 값 범위: 폰 페이지(ui/src/phone/core/video-ar.js)가 받는 범위와 같다. */
+const CAMERA_RANGE: Record<keyof Camera, [number, number]> = { fov: [20, 120], pitch: [-89, 89], h: [0.2, 3] };
 
 export interface Args {
   clip: string; fake: boolean; steps: string[]; doneAfterMs: number; expectMs: number; phone: string; api: string; out: string | undefined; record: string | undefined;
   says: { atMs: number; text: string }[]; startAt: DemoScene | null; home: string; tailMs: number; maxMs: number; approveAfterMs: number; doneOn: { afterMs: number; text: string }[];
+  camera: Camera;
 }
 
 /** 인자(process.argv.slice(2)) → 판 설정, 틀리면 까닭 글. --step은 여러 번 받고, 있으면 --done-after 기본이 0이다. --record는 시연 영상 폴더. */
@@ -525,16 +534,26 @@ export function parseArgs(argv: string[]): Args | string {
   const maxMs = sec("max", 1800, 60, 3600);
   const approveAfterMs = sec("approve", 0, 0, 3600);
   if (tailMs === null || maxMs === null || approveAfterMs === null) return `--tail은 10~900초, --max는 60~3600초, --approve는 0 이상 초예요. ${USAGE}`;
+  const camera: Camera = {};
+  for (const k of Object.keys(CAMERA_RANGE) as (keyof Camera)[]) {
+    if (!argv.includes(`--${k}`)) continue;
+    const raw = arg(k);
+    const v = Number(raw);
+    const [lo, hi] = CAMERA_RANGE[k];
+    if (!raw?.trim() || raw.startsWith("--") || !Number.isFinite(v) || v < lo || v > hi) return `--fov는 20~120(도), --pitch는 -89~89(도), --h는 0.2~3(m) 숫자예요. ${USAGE}`;
+    camera[k] = v;
+  }
   return {
     clip, fake, steps, doneAfterMs, expectMs, phone: arg("phone") ?? "http://127.0.0.1:8210", api: arg("api") ?? "http://127.0.0.1:8200", out: arg("out"), record,
     says: says.map((x) => ({ atMs: x!.ms, text: x!.text })), startAt: startAt as DemoScene | null, home: arg("home") ?? HOME, tailMs, maxMs, approveAfterMs,
-    doneOn: doneOn.map((x) => ({ afterMs: x!.ms, text: x!.text })),
+    doneOn: doneOn.map((x) => ({ afterMs: x!.ms, text: x!.text })), camera,
   };
 }
 
-/** 폰 영상 모드 주소: clip 하나와 step을 하나씩. */
-export function phoneUrl(phone: string, clip: string, steps: string[]): string {
-  return `${phone.replace(/\/+$/, "")}/phone/?clip=${encodeURIComponent(clip)}${steps.map((s) => `&step=${encodeURIComponent(s)}`).join("")}`;
+/** 폰 영상 모드 주소: clip 하나, step을 하나씩, 준 카메라 값(fov·pitch·h)만. */
+export function phoneUrl(phone: string, clip: string, steps: string[], camera: Camera = {}): string {
+  const cam = (Object.keys(CAMERA_RANGE) as (keyof Camera)[]).flatMap((k) => (camera[k] === undefined ? [] : [`&${k}=${camera[k]}`])).join("");
+  return `${phone.replace(/\/+$/, "")}/phone/?clip=${encodeURIComponent(clip)}${steps.map((s) => `&step=${encodeURIComponent(s)}`).join("")}${cam}`;
 }
 
 /** 탭 크기를 DASH_SIZE(모바일 아님)로 두고 대시보드 <api>/를 연다. */
@@ -600,7 +619,7 @@ async function main(): Promise<number> {
     try {
       fake = fakeMode ? await startFake(clip, steps) : undefined;
       const api = (fake?.api ?? args.api).replace(/\/+$/, "");
-      const url = phoneUrl(fake?.phone ?? args.phone, clip, steps);
+      const url = phoneUrl(fake?.phone ?? args.phone, clip, steps, args.camera);
       const planNow = () => getJson<NonNullable<PlanAnswer>>(`${api}/api/plan`);
 
       // 앞 판 계획·World State가 남은 서버면 시작하지 않는다(새로 붙은 폰은 남은 명령을 바로 받는다)

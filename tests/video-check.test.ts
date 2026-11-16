@@ -70,6 +70,25 @@ describe("video-check", () => {
     expect(phoneUrl("http://127.0.0.1:8210", "meal-empty-cup.mp4", a.steps)).toContain("&step=do%3Acup%3Apour-water.mp4");
     expect(parseArgs(["--clip", "a.mp4", "--step", "pour:cup:pour-water.mp4"])).toMatch(/--step은 <go\|pick\|place\|do>/);
   });
+  it("--fov·--pitch·--h는 폰 주소에 fov=·pitch=·h=로 붙고, 준 것만 붙인다(없으면 폰 페이지 기본값)", () => {
+    const a = parseArgs(["--clip", "wide.mp4", "--fov", "40", "--pitch", "-10", "--h", "1.15"]);
+    if (typeof a === "string") throw new Error(a);
+    expect(a.camera).toEqual({ fov: 40, pitch: -10, h: 1.15 });
+    expect(phoneUrl("http://127.0.0.1:8210", "wide.mp4", a.steps, a.camera)).toBe("http://127.0.0.1:8210/phone/?clip=wide.mp4&fov=40&pitch=-10&h=1.15");
+    const one = parseArgs(["--clip", "wide.mp4", "--pitch", "-10", "--step", "go:table:go-table.mp4"]);
+    if (typeof one === "string") throw new Error(one);
+    expect(one.camera).toEqual({ pitch: -10 });
+    expect(phoneUrl("http://127.0.0.1:8210/", "wide.mp4", one.steps, one.camera)).toBe("http://127.0.0.1:8210/phone/?clip=wide.mp4&step=go%3Atable%3Ago-table.mp4&pitch=-10");
+    const plain = parseArgs(["--clip", "cup-demo.mp4"]);
+    if (typeof plain === "string") throw new Error(plain);
+    expect(plain.camera).toEqual({});
+    expect(phoneUrl("http://127.0.0.1:8210", "cup-demo.mp4", plain.steps, plain.camera)).toBe("http://127.0.0.1:8210/phone/?clip=cup-demo.mp4");
+  });
+  it("폰 페이지 범위 밖이거나 숫자가 아닌 --fov(20~120)·--pitch(-89~89)·--h(0.2~3)면 그 범위를 알려 준다", () => {
+    for (const bad of [["--fov", "10"], ["--fov", "130"], ["--fov", "넓게"], ["--pitch", "-90"], ["--pitch", "95"], ["--h", "0.1"], ["--h", "3.5"], ["--h"], ["--fov", "--fake"]]) {
+      expect(parseArgs(["--clip", "a.mp4", ...bad]), bad.join(" ")).toMatch(/--fov는 20~120.*--pitch는 -89~89.*--h는 0\.2~3/);
+    }
+  });
   it("모양이 틀린 --step·--clip이면 쓰는 법을 돌려준다", () => {
     for (const bad of ["jump:table:go-table.mp4", "go:Table:go-table.mp4", "go:table:../go-table.mp4", "go:table:go-table.mov", "go:table", "go::go-table.mp4"]) {
       expect(parseArgs(["--clip", "cup-empty.mp4", "--step", bad]), bad).toMatch(/--step/);
