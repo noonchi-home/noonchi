@@ -3,7 +3,7 @@
 import type { AgentEvent, ServerMessage } from "../contract/events.js";
 import type { PlanStatus, PlanStep, PlanView, StepStatus, XZ } from "../contract/plan.js";
 import type { FloorPlan } from "../layout/index.js";
-import { devicePlan } from "../agent/planShape.js";
+import { devicePlan } from "../agent/index.js";
 import { roomAt } from "../layout/index.js";
 
 const isOpen = (p: PlanView | null): p is PlanView => !!p && (p.status === "planned" || p.status === "running");

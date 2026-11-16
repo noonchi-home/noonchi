@@ -69,12 +69,12 @@ import { roomAt } from "../layout/index.js";
 import { OBJECT_NAME, PLACE_UNKNOWN, STATE_TEXT, onSurface } from "../world/labels.js";
 import { ConditionWatch, type Condition, type ConditionContext } from "../world/index.js";
 import { DEVICE_STATES, NEAR_M, PHONE_NEAR_M } from "../world/vocab.js";
-import { approvalNeed, taskKey, type ApprovalAnswer, type ApprovalBook } from "../agent/approval.js";
+import { approvalNeed, taskKey, type ApprovalAnswer, type ApprovalBook } from "../agent/index.js";
 
-import { HUMAN_KINDS, TOOL_STATES, needsPhone, objectNames, riskyHand, selfStopWait, type AgentPlan, type AgentStep, type PlanResult } from "../agent/planTools.js";
+import { HUMAN_KINDS, TOOL_STATES, needsPhone, objectNames, riskyHand, selfStopWait, type AgentPlan, type AgentStep, type PlanResult } from "../agent/index.js";
 import { offStep } from "./off-step.js";
 import { talkGrade } from "./talk-grade.js";
-import type { ToolResult } from "../agent/tools.js";
+import type { ToolResult } from "../agent/index.js";
 import type { CheckResult } from "./check.js";
 import { QUIET_HINT_MS, quietLabels, type LessonBook, type StepOutcome } from "./lessons.js";
 import { AGAIN, APPROVE, STEP_DONE, STOP, type ActionChoice } from "./prompts.js";

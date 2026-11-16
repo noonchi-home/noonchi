@@ -3,9 +3,9 @@
 // 운영 모드: 시험(기본, ThinQ를 부르지 않음) · 실제(짝지은 에어컨·냉장고는 ThinQ). ThinQ 클라이언트는 실제 모드에서만 만든다.
 
 import { join } from "node:path";
-import type { Agent } from "../agent/agent.js";
-import type { Policy } from "../agent/policy.js";
-import { agentEndpoint } from "../agent/providers/index.js";
+import type { Agent } from "../agent/index.js";
+import type { Policy } from "../agent/index.js";
+import { agentEndpoint } from "../agent/index.js";
 import type { BrainLog } from "../contract/events.js";
 import type { PlanView } from "../contract/plan.js";
 import type { AssistMode, ControlMode, SetupView, ThinqDeviceView } from "../contract/setup.js";

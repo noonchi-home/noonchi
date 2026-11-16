@@ -16,8 +16,8 @@
 // 고를 때마다 look 기록 하나. look_closer 결과는 관찰 흐름이 World State에 넣는다(다음 PAM 판단과 단계 조건이 그것을 본다).
 import type { BrainLog, CloserMiss, CloserResult, CloserVlm, CloserWait, LookResult, LookTool, LookTrigger } from "../contract/events.js";
 import type { Facet, ObjClass, WorldView } from "../contract/world.js";
-import { describeError } from "../agent/agent.js";
-import type { ObserveChoice, ObserveSituation, Observer, ObserverStatus } from "../agent/observer.js";
+import { describeError } from "../agent/index.js";
+import type { ObserveChoice, ObserveSituation, Observer, ObserverStatus } from "../agent/index.js";
 import { LOOK_MARGIN, type LookSpot } from "../observe/index.js";
 import type { LatestFrame } from "../observe/index.js";
 import { LOOK_TEXT, type TellMode } from "./labels.js";

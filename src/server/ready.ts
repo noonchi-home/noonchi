@@ -1,6 +1,6 @@
 // /api/health의 준비 상태: 추론 모드, VLM 주소 응답(GET {base}/models, 30초 캐시), PAM 서비스(GET {url}/health, 매번)와 그 LLM 응답,
 // 에이전트 키와 주소 응답(openai GET {base}/models, anthropic GET {base}/v1/models, 30초 캐시), 기록 DB.
-import type { AgentEndpoint } from "../agent/providers/index.js";
+import type { AgentEndpoint } from "../agent/index.js";
 import type { ReadyView } from "../contract/events.js";
 import type { Endpoints } from "../infer/endpoints.js";
 import { ReachCache, reachable } from "../infer/reach.js";
