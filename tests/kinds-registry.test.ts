@@ -58,7 +58,7 @@ describe("kinds registry: 구조 검사", () => {
   }, 120_000);
 
   it("금지 예제는 하나씩 짚는다", () => {
-    for (const [file, as] of [["tests/fixtures/kind-tables/forbidden.ts", undefined], ["tests/fixtures/kind-tables/forbidden-model.ts", "src/model/control.ts"], ["tests/fixtures/kind-tables/forbidden-thinq.ts", "src/devices/thinq/appliance.ts"]] as const) {
+    for (const [file, as] of [["tests/fixtures/kind-tables/forbidden.ts", undefined], ["tests/fixtures/kind-tables/forbidden-model.ts", "src/devices/control.ts"], ["tests/fixtures/kind-tables/forbidden-thinq.ts", "src/devices/thinq/appliance.ts"]] as const) {
       const lines = new Set(findKindTables(kp, file, as ? { as } : {}).map((h) => h.line));
       const want = marked(file);
       expect(want.length, file).toBeGreaterThan(0);
