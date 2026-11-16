@@ -38,6 +38,7 @@
 // - 기다리기(wait): 실제 폰 명령을 지우고 아무것도 보내지 않는다. 조건이 참이면 다음. PAM에 다시 묻지 않는다(대시보드 진행도에만 보인다).
 // 한 번 볼 때(tick·World State 변화·답) 한 단계만 넘긴다. 단계마다 시간 한도가 있고, 넘으면 on_timeout대로 한 번 다시 묻거나(계속·그만) 실패로 닫는다.
 // 「그만」(말)은 계획을 그만둔다. 실행 전 검사는 통과할 때까지 tick마다 다시 보고, recheckMs가 지나도 안 되면 그 이유로 실패한다.
+// 계획 물건이 들고 감 보호(carried)로 손에 있음이면 보호가 풀릴 때까지 그 기한을 세지 않는다.
 // 승인(src/agent/approval.ts): 검사를 통과한 계획이 처음 하는 일이면(승인을 받은 적 없음) 첫 단계 전에 실제 폰에 「…를 할까요?」와 답 둘(승인·거절)을 띄운다.
 // 승인이면 기억하고 첫 단계로, 거절이면 기억하지 않고 취소로 닫는다. 질문·알림만 있는 계획은 묻지 않는다. 위험 목록 가전 승인은 기억하지 않는다.
 // 같은 물건 따라가기: 기준점을 맞춘 뒤 물건이 identityM 넘게 움직이면 World State가 새 id를 붙인다. 계획을 받을 때 그 종류의 다른 물건을 적어 두고,
@@ -1137,6 +1138,12 @@ export class ExecutionTracker {
     this.tryStart(run, false);
   }
 
+  /** 계획 물건(옮겨 이은 id 포함) 가운데 들고 감 보호 중(carried)인 것이 있는가. */
+  private carrying(r: Run): boolean {
+    const ids = new Set(r.alias.values());
+    return this.o.world().objects.some((o) => o.carried === true && o.status !== "gone" && ids.has(o.id));
+  }
+
   /** 질문·알림만 있는 계획은 승인을 묻지 않는다. */
   private approval(r: Run): ReturnType<typeof approvalNeed> {
     if (r.plan.steps.every((s) => s.kind === "ask" || s.kind === "say")) return null;
@@ -1152,6 +1159,11 @@ export class ExecutionTracker {
     }
     const c = this.o.check(r.decision, r.plan.view);
     if (!c.ok) {
+      // 계획 물건의 손에 있음이 들고 감 보호(World State carried)면 보호가 풀릴 때까지 다시 보기 기한을 세지 않는다(풀린 때부터 recheckMs)
+      if (c.reason === "in_hand" && this.carrying(r)) {
+        r.since = this.clock.now();
+        return;
+      }
       if (last) this.finish(r, "failed", c.text);
       return;
     }

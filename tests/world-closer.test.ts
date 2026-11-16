@@ -5,8 +5,9 @@ import type { SceneObservation } from "../src/contract/observe.js";
 import { decisionWorld } from "../src/brain/decide.js";
 import { CLOSER_HOLD_MS, WorldState, type CloserPass } from "../src/world/state.js";
 import type { DetLabel } from "../src/world/vocab.js";
-import { AWAY_VIEW, engineFrame, LOOK_SIZE, LOOK_VIEW } from "./helpers/camera.js";
+import { AWAY_VIEW, engineFrame, frameJpeg, LOOK_SIZE, LOOK_VIEW } from "./helpers/camera.js";
 import { det as mkDet } from "./helpers/detectors.js";
+import { standing } from "./helpers/poses.js";
 
 // 바닥만 있는 집. 잘라 본 상자 R = [120, 90, 240, 180](엔진 프레임 픽셀), 그 안 컵 [230, 170, 20, 10]은 바닥 (1.5, 0, 0)이다.
 const ws = () => new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices: () => [] });
@@ -20,6 +21,26 @@ const full = (w: WorldState, id: string, atMs: number, dets: Detection[], view =
 const obj = (w: WorldState, id: string, nowMs: number) => w.view(nowMs).objects.find((o) => o.id === id);
 
 describe("가까이 보기 합치기(applyCloser)", () => {
+  // Codex(69d3493): 정지 판정이 전체 감지에서만 갱신돼, 전체 YOLO가 놓치고 가까이 보기로만 보는 컵은 들고 감 보호가 안 풀려 자리 답을 계속 막았다
+  it("들고 가다 내려놓은 컵을 가까이 보기로만 보면 서로 다른 원본 프레임의 자리로 정지를 보고, 머문 뒤 손에 있음을 풀어 자리 답을 받는다", () => {
+    const w = ws();
+    const img = frameJpeg(1);
+    const cupAt = (x: number) => det("cup", [x, 170, 20, 10]);
+    const grip = standing({ 10: [240, 175, 0.9] });
+    for (let t = 0; t <= 2000; t += 100) w.applyDetections(engineFrame(`t${t}`, t, { jpeg: img }), [person, cupAt(230)], [grip]);
+    expect(obj(w, "cup_1", 2000)!.facts.place?.value).toBe("in_hand");
+    // 사람은 안 보이고 컵이 5초까지 옆으로 간다(들고 가는 중)
+    for (let t = 2100; t <= 5000; t += 100) w.applyDetections(engineFrame(`t${t}`, t, { jpeg: img }), [cupAt(230 + (t - 2000) / 25)]);
+    expect(w.view(5000).person.visible).toBe(false);
+    expect(obj(w, "cup_1", 5000)!.facts.place?.value).toBe("in_hand");
+    // 그 뒤 전체 감지는 컵을 놓치고, 가까이 보기만 원본 프레임마다(0.5초) 같은 자리에서 컵을 보고 바닥이라고 답한다
+    for (let t = 5500; t <= 11_000; t += 500) {
+      const { ids } = w.applyCloser([pass(`c${t}`, t, [cupAt(350)])]);
+      w.applyCloserScene(`c${t}`, t, { scene: "k", observations: [{ object_id: "d1", state: "on_floor" }], summary: "s" }, ids);
+    }
+    expect(obj(w, "cup_1", 11_000)!.facts.place?.value).toBe("on_floor");
+  });
+
   it("서로 다른 원본 프레임 세 장에서 같은 자리로 보인 컵만 VLM 답 없이 확인된 컵 하나로 만든다. 두 장이나 같은 프레임 세 번이면 만들지 않는다", () => {
     const w = ws();
     const two = w.applyCloser([pass("e1", 1000, [cupIn]), pass("e2", 2000, [cupIn])]);

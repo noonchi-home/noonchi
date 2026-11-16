@@ -45,6 +45,9 @@ export interface WorldObject {
   /** 면마다 가까이 보기 VLM 답이 그 면 값을 새로 넣거나 바꾼 횟수(한 번도 없으면 칸이 없다). 지금 값의 출처와 따로 남아 전체 사진이 값을 바꿔도 줄지 않는다.
    *  실행 추적이 판단 기록의 횟수(DecisionWorld closer_rev)와 견줘 판단 뒤에 가까이 보기가 바꾼 면인지 본다(src/act/track.ts). */
   closer_rev?: Partial<Record<Facet, number>>;
+  /** 들고 감 보호 중: 사람이 안 보이게 될 때 관절이 붙인 「손에 있음」 물건이 아직 움직이고 있어, 3초 동안 움직임이 없을 때까지 그 손에 있음을 두고
+   *  VLM·가까이 보기의 다른 자리 답이 덮지 않는다(src/world/state.ts track). 실행 추적은 이 동안 실행 전 다시 보기 기한을 세지 않는다. 아니면 칸이 없다. */
+  carried?: true;
 }
 
 export interface WorldPerson {

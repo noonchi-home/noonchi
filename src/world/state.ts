@@ -92,7 +92,7 @@ export interface CloserDetection extends Detection { edge: boolean }
 /** 가까이 본 한 장: 원본 엔진 프레임 id·촬영 시각·카메라·크기와 그 잘라 본 사진의 감지. */
 export interface CloserPass { frameId: string; capturedAtMs: number; view: CameraView; width: number; height: number; dets: CloserDetection[] }
 /** 가까이 본 한 장의 물건 감지 하나: 그 장, 감지 번호(d1…), 트윈 자리. */
-interface CloserSeen { pass: CloserPass; tmp: string; position: V3; surface: string | null; part: "basin" | null; errorM: number | null }
+interface CloserSeen { pass: CloserPass; tmp: string; position: V3; center: [number, number]; surface: string | null; part: "basin" | null; errorM: number | null }
 /** 가까이 보기 한 번에서 같은 종류·같은 자리로 묶인 감지(장마다 하나, 촬영 순서). */
 interface CloserGroup { cls: ObjClass; seen: CloserSeen[] }
 /** 한 묶음(전체 사진 한 장·가까이 보기 한 번)에서 등장을 확인한 새 물건과 그 촬영(옮김 처리 liftHolds). */
@@ -134,7 +134,7 @@ interface Obj {
   posAt: number;
   /** 마지막으로 움직인 촬영 시각(최근 본 자리에서 트윈 자리 MOVE_M, 자리를 모르면 사진 가운데 점 MOVE_IMAGE 넘게 떨어짐)과 최근 SETTLE_MS 동안 본 자리. */
   movedAt: number;
-  trail: { at: number; position: V3 | null; center: [number, number] }[];
+  trail: { at: number; frame: string; position: V3 | null; center: [number, number] }[];
   /** 사람이 안 보이게 됐을 때 아직 움직이던 든 물건: 제자리에 SETTLE_MS 있으면 관절의 손에 있음을 지운다. */
   carried: boolean;
   posCloser: boolean;
@@ -486,7 +486,7 @@ export class WorldState {
       obj.lastInView = Math.max(obj.lastInView, at);
       this.judge(obj, at, frame.id, false);
       this.sawAgain(obj, at, frame.id);
-      this.track(obj, at, placed?.position ?? null, [(d.box[0] + d.box[2] / 2) / frame.width, (d.box[1] + d.box[3] / 2) / frame.height]);
+      this.track(obj, at, frame.id, placed?.position ?? null, [(d.box[0] + d.box[2] / 2) / frame.width, (d.box[1] + d.box[3] / 2) / frame.height]);
       // 가까이 보기가 더 새 촬영(같은 촬영이면 잘라 본 자리)으로 고친 자리를 되돌리지 않는다
       if (placed?.position && this.newerPlace(obj, at, false)) {
         obj.position = placed.position;
@@ -674,20 +674,24 @@ export class WorldState {
     return !!f && f.value === POSE_HOLD.object && this.byPose.has(f);
   }
 
-  /** 물건이 움직였는지 센다: 최근 SETTLE_MS 동안 본 자리(트윈 자리, 모르면 사진 가운데 점) 가운데 지금 자리에서 MOVE_M(MOVE_IMAGE) 넘게 떨어진 것이 있으면
-   *  지금 움직이는 중이라 movedAt을 지금 촬영 시각으로 둔다(직전 프레임과만 견주면 100ms마다 조금씩 들고 가도 제자리로 보이고,
-   *  떨어진 옛 자리의 시각을 두면 천천히 들고 가는 동안에도 3초 전 것만 떨어져 바로 내려놓은 것이 된다).
-   *  사람이 안 보이는 동안 들고 가던 물건이 제자리에 SETTLE_MS 있으면 내려놓은 것으로 손에 있음을 지운다. */
-  private track(o: Obj, at: number, position: V3 | null, center: [number, number]): void {
+  /** 물건이 움직였는지 센다: 원본 프레임(전체 감지·가까이 보기)마다 본 자리(트윈 자리, 모르면 엔진 프레임 사진 가운데 점) 하나를 촬영 순서로 쌓고,
+   *  SETTLE_MS 안의 다른 자리와 MOVE_M(MOVE_IMAGE) 넘게 떨어졌으면 그 둘 가운데 늦은 촬영 시각을 movedAt으로 둔다(직전 프레임과만 견주면 100ms마다
+   *  조금씩 들고 가도 제자리로 보이고, 떨어진 옛 자리의 시각을 두면 천천히 들고 가는 동안에도 3초 전 것만 떨어져 바로 내려놓은 것이 된다).
+   *  같은 원본 프레임은 한 번만 센다. 사람이 안 보이는 동안 들고 가던 물건이 가장 새 촬영까지 SETTLE_MS 움직임이 없으면 내려놓은 것으로 손에 있음을 지운다. */
+  private track(o: Obj, at: number, frame: string, position: V3 | null, center: [number, number]): void {
     const far = (s: { position: V3 | null; center: [number, number] }) => position && s.position
       ? Math.hypot(position[0] - s.position[0], position[2] - s.position[2]) > MOVE_M
       : Math.hypot(center[0] - s.center[0], center[1] - s.center[1]) > MOVE_IMAGE;
-    o.trail = o.trail.filter((s) => at - s.at <= SETTLE_MS);
-    if (o.trail.some(far)) o.movedAt = at;
-    o.trail.push({ at, position, center });
+    const end = Math.max(at, o.trail.at(-1)?.at ?? at);
+    o.trail = o.trail.filter((s) => end - s.at <= SETTLE_MS);
+    if (end - at <= SETTLE_MS && !o.trail.some((s) => s.frame === frame)) {
+      for (const s of o.trail) if (Math.abs(at - s.at) <= SETTLE_MS && far(s)) o.movedAt = Math.max(o.movedAt, at, s.at);
+      o.trail.push({ at, frame, position, center });
+      o.trail.sort((a, b) => a.at - b.at);
+    }
     if (!o.carried) return;
     if (this.person.visible || !this.posedInHand(o)) o.carried = false;
-    else if (at - o.movedAt >= SETTLE_MS) {
+    else if (end - o.movedAt >= SETTLE_MS) {
       this.dropPoseFact(o.facts, "place", POSE_HOLD.object);
       o.carried = false;
     }
@@ -840,7 +844,8 @@ export class WorldState {
           const gap = dist(g.seen.at(-1)!.position, placed.position);
           if (gap <= near && (!best || gap < best.d)) best = { g, d: gap };
         }
-        const seen: CloserSeen = { pass, tmp: `d${i + 1}`, position: placed.position, surface: placed.surface, part: placed.part, errorM: placed.errorM };
+        const center: [number, number] = [(d.box[0] + d.box[2] / 2) / pass.width, (d.box[1] + d.box[3] / 2) / pass.height];
+        const seen: CloserSeen = { pass, tmp: `d${i + 1}`, position: placed.position, center, surface: placed.surface, part: placed.part, errorM: placed.errorM };
         if (best) best.g.seen.push(seen);
         else groups.push({ cls, seen: [seen] });
       });
@@ -900,6 +905,8 @@ export class WorldState {
     if (!obj) return null;
     // 옮김 표시는 보임 판단과 따로 지운다: 보임을 바꾸지 못하는 옛 촬영이어도 표시를 붙인 촬영보다 새거나 같은 원본 프레임이면 두 물건이 함께 있었다
     for (const s of g.seen) this.sawAgain(obj, s.pass.capturedAtMs, s.pass.frameId);
+    // 원본 프레임마다 본 자리도 움직임·정지 근거다(전체 감지가 놓치고 가까이 보기로만 보는 물건도 내려놓음을 안다)
+    for (const s of g.seen) this.track(obj, s.pass.capturedAtMs, s.pass.frameId, s.position, s.center);
     used.add(obj.id);
     return obj;
   }
@@ -1084,6 +1091,7 @@ export class WorldState {
       id: x.id, cls: x.cls, position: x.position, surface: x.surface, surface_label: x.surfaceLabel, ...(x.part ? { surface_part: x.part } : {}), room: x.room, error_m: x.errorM, status: x.status,
       first_seen_ms: x.firstSeen, last_seen_ms: x.lastSeen, last_in_view_ms: x.lastInView, facts: { ...x.facts }, answered_ms: x.answered, devices: relatedDeviceIds(x.cls, devices),
       closer_hold: this.held(x, nowMs), followed_by: x.followed?.id ?? null, ...(Object.keys(x.closerRev).length ? { closer_rev: { ...x.closerRev } } : {}),
+      ...(x.carried ? { carried: true as const } : {}),
     }));
     const fixtures: WorldFixture[] = [...this.fixtures.values()].map((f) => ({
       id: f.id, cls: f.cls, room: f.room, room_label: f.roomLabel, first_seen_ms: f.firstSeen, last_seen_ms: f.lastSeen, facts: { ...f.facts }, answered_ms: f.answered,
