@@ -18,8 +18,8 @@ import type { BrainLog, CloserMiss, CloserResult, CloserVlm, CloserWait, LookRes
 import type { Facet, ObjClass, WorldView } from "../contract/world.js";
 import { describeError } from "../agent/agent.js";
 import type { ObserveChoice, ObserveSituation, Observer, ObserverStatus } from "../agent/observer.js";
-import { LOOK_MARGIN, type LookSpot } from "../observe/crop.js";
-import type { LatestFrame } from "../observe/pipeline.js";
+import { LOOK_MARGIN, type LookSpot } from "../observe/index.js";
+import type { LatestFrame } from "../observe/index.js";
 import { LOOK_TEXT, type TellMode } from "./labels.js";
 import { OBJECT_NAME, redactSaid } from "../world/labels.js";
 import { inView } from "../world/index.js";

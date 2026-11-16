@@ -34,7 +34,7 @@ import { FEEDBACK_TEXT, PHOTO_TEXT } from "../brain/history/labels.js";
 import { datasetWriter } from "../brain/history/retention.js";
 import { SignalHub, type SignalSource } from "../devices/index.js";
 import { loadEndpoints } from "../infer/endpoints.js";
-import { createPipeline, type ObservationPipeline, type PipelineInject } from "../observe/pipeline.js";
+import { createPipeline, type ObservationPipeline, type PipelineInject } from "../observe/index.js";
 import type { DeviceHub, DeviceState } from "../devices/index.js";
 import type { LayoutEditor } from "../layout/index.js";
 import { FOCUS_TTL_MS, focusFromActions, type Focus } from "../layout/index.js";

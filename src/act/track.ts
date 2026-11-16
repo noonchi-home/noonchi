@@ -60,7 +60,7 @@ import type { BrainLog, ExecState, DecisionRecord } from "../contract/events.js"
 import type { HeardAt, PhoneStepKind, PlannedCommand, PlannedCommandMessage } from "../contract/phone.js";
 import type { OffTrack, PlanView, StepStatus, XZ } from "../contract/plan.js";
 import type { Facet, WorldChange, WorldChangeKind, WorldEye, WorldObject, WorldView } from "../contract/world.js";
-import type { LookSpot } from "../observe/crop.js";
+import type { LookSpot } from "../observe/index.js";
 import type { FloorPlan } from "../layout/index.js";
 import type { PlanHub } from "./hub.js";
 import { AGAIN_TEXT, APPROVAL_TEXT, CAUTION_TEXT, CLOSER_TEXT, DEVICE_UNKNOWN, EXEC_TEXT, TELL_TEXT, VISION_TEXT, type TellMode } from "./labels.js";
