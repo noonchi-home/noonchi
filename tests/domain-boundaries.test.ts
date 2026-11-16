@@ -143,6 +143,21 @@ describe("도메인 경계: 가짜 트리", () => {
     expect(message(bad, "contract src/contract/world.ts -> src/world/vocab.ts")).toBe("`src/contract/world.ts` → `src/world/vocab.ts`: 계약은 계약·공용 표의 타입만 import type으로 가져와요(값 import 금지)");
   });
 
+  it("부수 효과 import(세미콜론 없이 다음 줄이 이어져도)와 식이 없는 템플릿 글 import(`…`)도 import로 본다", () => {
+    const root = fakeTree({
+      "ui/src/twin/a.ts": 'import "../dashboard/b"\nexport { c } from "./c"\nexport const late = () => import(`../dashboard/d`)\n',
+      "ui/src/twin/c.ts": "export const c = 1;\n",
+      "ui/src/dashboard/b.ts": "export const b = 1;\n",
+      "ui/src/dashboard/d.ts": "export const d = 1;\n",
+    });
+    expect(keys(root)).toEqual([
+      "direction ui/src/twin/a.ts -> ui/src/dashboard/b.ts",
+      "direction ui/src/twin/a.ts -> ui/src/dashboard/d.ts",
+      "inner ui/src/twin/a.ts -> ui/src/dashboard/b.ts",
+      "inner ui/src/twin/a.ts -> ui/src/dashboard/d.ts",
+    ]);
+  });
+
   it("화면은 src에서 계약·공용 표·shared·design·layout/browser.ts만 가져온다", () => {
     const root = fakeTree({
       "ui/src/dashboard/a.ts": 'import { s } from "../../../src/world/state.js";\nimport type { Ev } from "../../../src/contract/events.ts";\nexport const a = s as unknown as Ev;\n',
