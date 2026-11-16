@@ -199,6 +199,40 @@ describe("쓰러짐 의심: 관절 자세 변화", () => {
     }
   });
 
+  // Codex(47a227b): 침대에서 일어난 뒤 10초 안에 바닥에 쓰러지면 옛 「침대 위」 답으로 낙상 후보를 지웠고, 그 답이 만료된 뒤에도 알림이 나지 않았다
+  it("빼는 근거는 지금 누운 구간 안에서 찍힌 VLM 자리 답뿐이다: 침대에서 일어나기 전의 「침대 위」 답으로는 빼지 않는다", () => {
+    const w = ws({ rests: [BED] });
+    run(w, 0, 3000, standing);
+    vlmSays(w, 2700, "on_bed");
+    run(w, 3300, 6300, flat);
+    expect(posture(w, 6300)).toBe("fall_suspected");
+  });
+
+  it("누운 구간 안의 「침대 위」 답으로 셈을 멈춰도 서 있음에서 빨리 누운 것은 기억한다: 답이 끊겨 10초가 지나면 다시 세어 쓰러짐 의심이 된다", () => {
+    const w = ws({ rests: [BED] });
+    run(w, 0, 3000, standing);
+    run(w, 3300, 3300, flat);
+    vlmSays(w, 3300, "on_bed");
+    run(w, 3600, 13_200, flat);
+    expect(posture(w, 13_200)).toBe("lying");
+    run(w, 13_500, 16_500, flat);
+    expect(posture(w, 16_500)).toBe("fall_suspected");
+  });
+
+  // Codex(47a227b): VLM 자리 사실은 모든 사람을 하나로 합치는데 관절은 한 사람을 골라, 소파에 있는 사람의 답으로 옆에서 쓰러진 다른 사람을 뺐다
+  it("누운 구간에 사람이 둘 넘게 보였으면 VLM 「소파 위」 답이 있어도 빼지 않는다(누구의 답인지 모른다)", () => {
+    const sofa: RestSpot = { id: "sofa_1", label: "소파", kind: "sofa", center: [0.725, 0], size: [2.0, 0.85], facing_deg: 0, top: 0.45 };
+    const beyond = lyingAt(LOOK_VIEW, 1.5, 0.2);
+    const other: Detection = det("person", 0.9, [300, 60, 150, 200], 0);
+    const w = ws({ rests: [sofa] });
+    run(w, 0, 3000, standing);
+    for (let t = 3300; t <= 6300; t += 300) {
+      w.applyDetections(frame(t), [person, other], [beyond()]);
+      if (t === 3600) vlmSays(w, t, "on_sofa");
+    }
+    expect(posture(w, 6300)).toBe("fall_suspected");
+  });
+
   it("소파에 빨리 누워도 VLM이 그 사람을 「소파 위」라고 답하면 쓰러짐이 아니다", () => {
     const sofa: RestSpot = { id: "sofa_1", label: "소파", kind: "sofa", center: [0.725, 0], size: [2.0, 0.85], facing_deg: 0, top: 0.45 };
     const onSofa = lyingAt(LOOK_VIEW, 0.725, 0.65);

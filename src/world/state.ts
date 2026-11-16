@@ -243,6 +243,8 @@ export class WorldState {
   /** 쓰러짐 의심(가장 확실한 한 사람의 관절 자세 변화). */
   private readonly fall: FallWatch;
   private readonly fallCfg: FallConfig;
+  /** 사람 감지가 둘 넘게 보인 마지막 촬영 시각(VLM 자리 사실은 사람을 하나로 합치므로 그동안의 답은 누구의 것인지 모른다). */
+  private crowdAt = Number.NEGATIVE_INFINITY;
 
   constructor(private readonly o: WorldStateOptions) {
     this.fallCfg = o.fall ?? FALL_DEFAULTS;
@@ -512,6 +514,7 @@ export class WorldState {
         obj.posCloser = false;
       }
     });
+    if (people.length > 1) this.crowdAt = at;
     if (seen.has(PERSON)) {
       this.person.last_seen_ms = at;
       this.person.count = people.length;
@@ -663,11 +666,13 @@ export class WorldState {
     }
     const lean = person.lean ?? null;
     let pose: FallPose | null = person.level === "low" ? null : fallPose(lean, person.box, size, this.fallCfg);
-    // 침대·소파 위로 빼려면 몸이 그 가구 자리에 비치고(기하는 후보만) 그 사람을 본 최근 VLM 자리 답이 그 가구 위여야 한다. 답이 없거나 바닥이면 그대로 센다
+    // 침대·소파 위로 빼려면 몸이 그 가구 자리에 비치고(기하는 후보만) 그 사람을 본 VLM 자리 답이 그 가구 위여야 한다. 그 답은 지금 누운 구간 안에서 찍혔고
+    // FACT_FRESH_MS 안이어야 하며, 그 구간에 사람이 둘 넘게 보였으면 누구의 답인지 몰라 빼지 않는다. 답이 없거나 바닥이면 그대로 센다
     if (pose === "flat" && frame.view) {
       const spot = onRest(frame.view, [lean!.hip, lean!.shoulder], size, this.o.rests?.() ?? []);
       const said = this.person.facts.place;
-      if (spot && said && said.value === REST_PLACES[spot.kind] && at - said.at_ms <= FACT_FRESH_MS) pose = "rest";
+      const since = this.fall.lyingSince() ?? at;
+      if (spot && said && said.value === REST_PLACES[spot.kind] && said.at_ms >= since && at - said.at_ms <= FACT_FRESH_MS && this.crowdAt < since) pose = "rest";
     }
     const fall = this.fall.see(at, pose);
     if (fall === "fall") {

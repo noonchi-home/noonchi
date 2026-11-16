@@ -3,9 +3,11 @@
 // 그 점을 거의 바로 아래·위로 보면(viewDeg 안) 보류한다.
 // 한 장의 자세(fallPose): 몸통이 torsoDeg 안이면 허벅지로 서 있음·앉아 있음(무릎이 안 보이면 모름), 몸통이 누웠으면 허벅지도 thighDeg 넘게 누워야
 // 바닥에 누운 자세(flat)다(허리 숙이기는 허벅지가 서 있어 모름). 무릎이 안 보이면 사진 경계에 잘리지 않은 상자가 중력에 가로로 더 길 때만 flat이다.
-// 침대·소파 위에 누운 것(rest)은 쓰러짐 셈을 다시 하게 하지만, 이미 쓰러짐 의심이면 풀지 않는다. 놓치는 것보다 잘못 알리는 것이 낫다:
+// 침대·소파 위에 누운 것(rest)은 쓰러짐 셈을 멈춘다(다시 바닥에 누운 자세면 그때부터 다시 세고, 서 있음에서 빨리 누운 것은 기억한다).
+// 이미 쓰러짐 의심이면 풀지 않는다. 놓치는 것보다 잘못 알리는 것이 낫다:
 // 기하(엉덩이·어깨 광선이 그 가구의 몸 점 높이, 곧 누울 면 + 0.1~0.25m에서 가장자리 0.1m 안쪽을 지남, src/world/place.ts onRest)는 후보만 고르고,
-// 빼는 결정은 그 사람을 본 최근 VLM 자리 답(침대 위·소파 위, vocab.ts REST_PLACES)으로 한다(src/world/state.ts). 답이 없거나 바닥이면 그대로 센다.
+// 빼는 결정은 그 사람을 본 VLM 자리 답(침대 위·소파 위, vocab.ts REST_PLACES)으로 한다(src/world/state.ts). 그 답은 지금 누운 구간(lyingSince) 안에서
+// 찍혀야 하고, 그 구간에 사람이 둘 넘게 보였으면 누구의 답인지 몰라 빼지 않는다. 답이 없거나 바닥이면 그대로 센다.
 // 서 있음에서 dropMs 안에 flat이 되고, 이어서 본 flat이 holdMs 이어지면 쓰러짐 의심이다. flat 사이가 gapMs 넘게 끊기면 다시 본 때부터 센다.
 // 서 있음·앉아 있음이 보이면 풀고 셈을 다시 한다. 모름·확실하지 않은 관절은 셈을 그대로 둔다.
 // 숫자 근거:
@@ -60,22 +62,31 @@ export class FallWatch {
   /** 지금 쓰러짐 의심인가. */
   active = false;
   private standAt: number | null = null;
-  /** 누운 자세 후보: 서 있음에서 dropMs 안에 왔는가, 이어서 본 첫 시각, 마지막으로 본 시각. */
-  private flat: { fast: boolean; since: number; last: number } | null = null;
+  /** 누운 자세 후보: 서 있음에서 dropMs 안에 왔는가, 이 누운 구간을 처음 본 시각, 이어서 본 첫 시각, 마지막으로 본 시각. */
+  private flat: { fast: boolean; start: number; since: number; last: number } | null = null;
   constructor(private readonly cfg: FallConfig) {}
+
+  /** 지금 누운 구간(바닥에 누운 자세·쉬는 가구 위)을 처음 본 시각. 누운 구간이 아니면 null. */
+  lyingSince(): number | null {
+    return this.flat?.start ?? null;
+  }
 
   /** 관절 한 장. fall: 쓰러짐 의심이 됨, up: 일어나 풀림, null: 바뀐 것 없음. */
   see(at: number, pose: FallPose | null): "fall" | "up" | null {
     if (pose === null) return null;
-    if (pose === "flat") {
-      if (!this.flat) this.flat = { fast: this.standAt !== null && at - this.standAt <= this.cfg.dropMs, since: at, last: at };
-      else if (at - this.flat.last > this.cfg.gapMs) this.flat.since = at;
+    if (pose === "flat" || pose === "rest") {
+      if (!this.flat) this.flat = { fast: this.standAt !== null && at - this.standAt <= this.cfg.dropMs, start: at, since: at, last: at };
+      // 쉬는 가구 위: 셈을 멈춘다(다음 바닥에 누운 자세부터 다시 센다). 이미 쓰러짐 의심이면 그대로 둔다
+      if (pose === "rest") {
+        this.flat.last = Number.NEGATIVE_INFINITY;
+        return null;
+      }
+      if (at - this.flat.last > this.cfg.gapMs) this.flat.since = at;
       this.flat.last = at;
       if (this.active || !this.flat.fast || at - this.flat.since < this.cfg.holdMs) return null;
       this.active = true;
       return "fall";
     }
-    if (pose === "rest" && this.active) return null;
     if (pose === "standing") this.standAt = at;
     this.flat = null;
     if (!this.active) return null;
