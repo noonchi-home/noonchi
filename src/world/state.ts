@@ -40,9 +40,9 @@ import { headWithin } from "../shared/cut.js";
 import type { DeviceState, SightEvidence, VisionResult, VisionSeen } from "../contract/devices.js";
 import { Confirmer, EVIDENCE_GAP_MS, EVIDENCE_STEP_MS } from "./confirm.js";
 import { CHANGE_TEXT, HEARD_MAX, OBJECT_NAME, fixtureName, objectName, onSurface } from "./labels.js";
-import { inView, placeBox, placePoint, type PlaneSurface } from "./place.js";
-import { describePose, heldByAny, mainPerson } from "./pose.js";
-import { FALL_DEFAULTS, FallWatch, type FallConfig } from "./fall.js";
+import { inView, onRest, pixelOf, placeBox, placePoint, rayDir, type PlaneSurface, type RestSpot } from "./place.js";
+import { describePose, heldByAny, mainPerson, type Pt } from "./pose.js";
+import { FALL_DEFAULTS, FallWatch, fallPose, type FallConfig, type FallPose } from "./fall.js";
 import { RemainingTracker, becameKey, deviceStateKeys, deviceStatus, deviceText, relatedDeviceIds } from "./relations.js";
 import { SightReadings, linkDevice, rulesOf, sightValues, type SightLink } from "./sight.js";
 import { cameraKindOf, kindEntry } from "../devices/kinds.js";
@@ -192,6 +192,8 @@ export interface WorldStateOptions {
   evidenceStepMs?: number;
   /** 쓰러짐 의심 시간·각도(src/world/fall.ts, 기본 FALL_DEFAULTS). */
   fall?: FallConfig;
+  /** 트윈의 침대·소파(그 위에 누운 것은 쓰러짐 의심이 아니다). 없으면 없음. */
+  rests?: () => RestSpot[];
 }
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
@@ -602,7 +604,7 @@ export class WorldState {
       this.person.room = next;
       if (this.person.visible) changes.push(this.roomChange(at));
     } else if (appeared && this.person.room) changes.push(this.roomChange(at));
-    if (poses) this.applyPose(at, poses, boxes, changes);
+    if (poses) this.applyPose(frame, poses, boxes, changes);
     return { changes, ids };
   }
 
@@ -629,11 +631,12 @@ export class WorldState {
    *  자세는 가장 확실한 한 사람의 서 있음·앉아 있음·누워 있음. 쓰러짐 의심(src/world/fall.ts)이 되면 자세를 쓰러짐 의심으로 두고 의미 있는 변화 줄을 한 번 내며,
    *  일어날(서 있음·앉아 있음) 때까지 누운 자세 대신 그 값을 이어 둔다.
    *  손목이 보이는데 든 것이 없으면 관절이 붙인 손에 있음·들고 있음만 지운다(VLM이 붙인 사실은 둔다). */
-  private applyPose(at: number, poses: Pose[], boxes: { obj: Obj; box: Detection["box"] }[], changes: WorldChange[]): void {
-    const flatDeg = { torsoDeg: this.fallCfg.torsoDeg, thighDeg: this.fallCfg.thighDeg };
-    const person = mainPerson(poses, flatDeg);
+  private applyPose(frame: EngineFrame, poses: Pose[], boxes: { obj: Obj; box: Detection["box"] }[], changes: WorldChange[]): void {
+    const at = frame.capturedAtMs;
+    const size = { width: frame.width, height: frame.height };
+    const person = mainPerson(poses, this.downOf(frame.view, size));
     if (!person) return;
-    const people = poses.map((p) => describePose(p, flatDeg));
+    const people = poses.map((p) => describePose(p));
     const wrists = people.some((p) => Object.keys(p.wrists).length > 0);
     const held: string[] = [];
     for (const { obj, box } of boxes) {
@@ -658,7 +661,10 @@ export class WorldState {
       this.dropPoseFact(this.person.facts, "holding", POSE_HOLD.person);
       this.heldIds = [];
     }
-    const fall = this.fall.see(at, person);
+    const lean = person.lean ?? null;
+    let pose: FallPose | null = person.level === "low" ? null : fallPose(lean, person.box, size, this.fallCfg);
+    if (pose === "flat" && frame.view && onRest(frame.view, lean!.hip, size, this.o.rests?.() ?? [])) pose = "rest";
+    const fall = this.fall.see(at, pose);
     if (fall === "fall") {
       this.setPoseFact(this.person.facts, "posture", POSE_FALL, at);
       changes.push({ kind: "person_state", at_ms: at, subject: PERSON, meaningful: true, text: CHANGE_TEXT.state(OBJECT_NAME.person!, POSE_FALL) });
@@ -671,6 +677,28 @@ export class WorldState {
     }
     const posture = (POSE_POSTURE as Record<string, string | undefined>)[person.posture];
     if (posture && person.level !== "low") personFact("posture", posture);
+  }
+
+  /** 사진 점에서 중력(아래) 방향(픽셀 벡터): 그 점의 광선 2m 앞 점과 그보다 0.1m 아래 점을 다시 비춘다. 카메라 자세가 없거나(맞추기 전)
+   *  광선이 수직에서 viewDeg 안이면(거의 바로 아래·위) 모른다. */
+  private downOf(view: CameraView | null, size: { width: number; height: number }): (pt: Pt) => Pt | null {
+    const steep = Math.cos((this.fallCfg.viewDeg * Math.PI) / 180);
+    return (pt) => {
+      if (!view) return null;
+      const d = rayDir(view, [(pt[0] / size.width) * 2 - 1, 1 - (pt[1] / size.height) * 2]);
+      if (Math.abs(d[1]) >= steep) return null;
+      const o = view.origin;
+      const near: V3 = [o[0] + d[0] * 2, o[1] + d[1] * 2, o[2] + d[2] * 2];
+      const a = pixelOf(view, near, size), b = pixelOf(view, [near[0], near[1] - 0.1, near[2]], size);
+      if (!a || !b) return null;
+      const v: Pt = [b[0] - a[0], b[1] - a[1]];
+      return Math.hypot(v[0], v[1]) > 1e-6 ? v : null;
+    };
+  }
+
+  /** 쓰러짐 의심인 동안 사람 자세는 관절만 바꾼다(VLM 답이 알림을 지우지 않게). */
+  private fallHeld(id: string, facet: Facet): boolean {
+    return id === PERSON && facet === "posture" && this.fall.active;
   }
 
   private setPoseFact(facts: Facts, facet: Facet, value: string, atMs: number): boolean {
@@ -811,7 +839,7 @@ export class WorldState {
       if (!fits(value, target.cls, target.kind)) continue;
       const facet = STATES[value].facet;
       said.add(`${id}|${facet}`);
-      if (this.poseHolds(target.facts[facet], capturedAtMs) || this.carriedPlace(id, facet)) continue;
+      if (this.poseHolds(target.facts[facet], capturedAtMs) || this.carriedPlace(id, facet) || this.fallHeld(id, facet)) continue;
       if (!this.answer(frameId, id, target.facts, facet, value, capturedAtMs, false, NOW_FACETS[target.kind].includes(facet), turn)) continue;
       if (target.kind === "person") {
         if (this.person.visible) changes.push({ kind: "person_state", at_ms: capturedAtMs, subject: PERSON, meaningful: false, text: CHANGE_TEXT.state(OBJECT_NAME.person!, value) });

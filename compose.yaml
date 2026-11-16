@@ -59,8 +59,10 @@ services:
       BRAIN_POSE_EVERY:
       FALL_DROP_MS:
       FALL_HOLD_MS:
+      FALL_GAP_MS:
       FALL_TORSO_DEG:
       FALL_THIGH_DEG:
+      FALL_VIEW_DEG:
       ENGINE_FRAME_MS:
       VLM_FRAME_MS:
       VLM_WINDOW_FRAMES:

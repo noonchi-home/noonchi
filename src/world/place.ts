@@ -15,6 +15,9 @@ export interface PlaneSurface { id: string; label: string; center: [number, numb
  *  폰이 싱크볼 점을 볼 때 그 점에서 0.08m다(조리대 가운데를 볼 때는 0.57m). */
 export const BASIN_SIZE: [number, number] = [0.74, 0.44];
 
+/** 쉬는 가구(침대·소파): 바닥 사각형(가운데·[폭, 깊이]·facing)과 바닥에서 높이(m). 쓰러짐 의심(src/world/fall.ts)에서 그 위에 누운 것을 뺀다. */
+export interface RestSpot extends Basin { id: string; label: string; top: number }
+
 /** 평면 점이 싱크볼 사각형 안인가. */
 export function inBasin(b: Basin, p: [number, number]): boolean {
   const a = (b.facing_deg * Math.PI) / 180;
@@ -91,6 +94,22 @@ export function placePoint(view: CameraView, point: [number, number], size: { wi
   };
 }
 
+/** 픽셀 점의 광선이 쉬는 가구 안(바닥 사각형, 높이 top에서 바닥까지)을 지나면 그 가구. 광선이 위를 향하면 null. */
+export function onRest(view: CameraView, point: [number, number], size: { width: number; height: number }, rests: readonly RestSpot[]): RestSpot | null {
+  const d = rayDir(view, [(point[0] / size.width) * 2 - 1, 1 - (point[1] / size.height) * 2]);
+  if (d[1] >= -1e-6) return null;
+  const o = view.origin;
+  for (const r of rests) {
+    const near = Math.max(0, (r.top - o[1]) / d[1]), far = (0 - o[1]) / d[1];
+    if (far <= 0) continue;
+    for (let k = 0; k <= 8; k++) {
+      const t = near + ((far - near) * k) / 8;
+      if (inBasin(r, [o[0] + d[0] * t, o[2] + d[2] * t])) return r;
+    }
+  }
+  return null;
+}
+
 /** 트윈 점의 화면 자리(NDC [x, y], 화면 안이면 -1..1). 카메라 뒤면 null. */
 export function ndc(view: CameraView, point: V3): [number, number] | null {
   const rel: V3 = [point[0] - view.origin[0], point[1] - view.origin[1], point[2] - view.origin[2]];
@@ -119,6 +138,15 @@ const NOT_SURFACE = /lamp/;
 
 /** 배치 물건 중 식탁·책상·조리대·싱크대 윗면. top은 물건 바닥 + 높이, radius는 윗면을 덮는 원(footprint 대각선의 절반, 없으면 0.4m).
  *  싱크볼 점(배치 anchors.basin, 평면도 점)이 있으면 그 점을 가운데로 BASIN_SIZE·배치 facing의 싱크볼을 붙인다. */
+/** 침대·소파 배치 종류(협탁·조명은 아니다). */
+const REST_TYPE = /^(bed|sofa)(_|$)/;
+/** 배치의 침대·소파 → 쉬는 가구. 바닥 크기를 모르면 뺀다. */
+export function restsFromLayout(objects: readonly { id: string; name: string; type: string; plan: [number, number]; base: number; height: number; footprint?: [number, number]; facing_deg?: number }[]): RestSpot[] {
+  return objects.filter((o) => REST_TYPE.test(o.type) && o.footprint).map((o) => ({
+    id: o.id, label: o.name, center: [o.plan[0], o.plan[1]], size: o.footprint!, facing_deg: o.facing_deg ?? 0, top: o.base + o.height,
+  }));
+}
+
 export function surfacesFromLayout(objects: readonly { id: string; name: string; type: string; plan: [number, number]; base: number; height: number; footprint?: [number, number]; facing_deg?: number; basin?: [number, number] }[]): PlaneSurface[] {
   return objects.filter((o) => SURFACE_TYPE.test(o.type) && !NOT_SURFACE.test(o.type)).map((o) => ({
     id: o.id, label: o.name, center: [o.plan[0], o.plan[1]], top: o.base + o.height, radius: o.footprint ? Math.hypot(o.footprint[0], o.footprint[1]) / 2 : 0.4,

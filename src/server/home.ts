@@ -57,7 +57,7 @@ import { repoPath } from "../shared/paths.js";
 import { PlanHub } from "../act/index.js";
 import { HEARD_MARK } from "../world/labels.js";
 import { floorPlanFrom, roomNamedAt } from "../layout/index.js";
-import { surfacesFromLayout, type PlaneSurface } from "../world/index.js";
+import { restsFromLayout, surfacesFromLayout, type PlaneSurface, type RestSpot } from "../world/index.js";
 import { Decider } from "../brain/index.js";
 import { WorldState } from "../world/index.js";
 import { Trigger, loadFallConfig, loadTriggerConfig } from "../world/index.js";
@@ -156,6 +156,20 @@ function surfaceSource(editor: LayoutEditor | undefined): () => PlaneSurface[] {
       id: o.id, name: o.name, type: o.type, plan: o.plan.position, base: o.position[1],
       height: c ? Math.max(0, 2 * (c.position[1] - o.position[1])) : o.height ?? 0, footprint: o.footprint,
       facing_deg: o.plan.facing_deg, ...(pair(basin) ? { basin } : {}),
+    };
+  })));
+}
+
+/** 트윈의 침대·소파: 그 위에 누운 것은 쓰러짐 의심(src/world/fall.ts)이 아니다. 배치가 바뀌면 다시 만든다. */
+function restSource(editor: LayoutEditor | undefined): () => RestSpot[] {
+  if (!editor) return () => [];
+  let cache: RestSpot[] | null = null;
+  editor.subscribe(() => { cache = null; });
+  return () => (cache ??= restsFromLayout(editor.objects().map((o) => {
+    const c = editor.center(o.id);
+    return {
+      id: o.id, name: o.name, type: o.type, plan: o.plan.position, base: o.position[1],
+      height: c ? Math.max(0, 2 * (c.position[1] - o.position[1])) : o.height ?? 0, footprint: o.footprint, facing_deg: o.plan.facing_deg,
     };
   })));
 }
@@ -288,7 +302,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     // 카메라로 본 가전 상태는 허브로 넘긴다(src/devices/hub/signals.ts observe): 실제 출처가 없으면 기기 상태가 되고, 실제 상태와 다르면 처음 한 번 로그에 남긴다
     const world = brainWanted && phoneOn
       ? new WorldState({
-        surfaces, floorAt: floorLookup(plan.rooms), roomAt: roomNamedAt(floorPlan, twin.rooms), devices: () => signals.list(), fall: loadFallConfig(env),
+        surfaces, floorAt: floorLookup(plan.rooms), roomAt: roomNamedAt(floorPlan, twin.rooms), devices: () => signals.list(), fall: loadFallConfig(env), rests: restSource(layout?.editor),
         locate: (id) => { const c = layout?.editor.center(id); return c ? [c.position[0], c.position[2]] : null; },
         place: (id) => layout?.editor.center(id)?.position ?? null,
         see: (id, seen, at, evidence) => {

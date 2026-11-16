@@ -71,7 +71,7 @@ export const STATE_DOC: Record<StateKey, { how?: string; example: string }> = {
   standing: { how: "관절: 몸통이 서고 허벅지가 수직에 가까움", example: "사람이 앉아 있다가 일어섰다." },
   sitting: { how: "관절: 허벅지가 수직에서 45° 넘음", example: "사람이 식탁에 앉아 있다." },
   lying: { how: "관절: 몸통이 수직에서 60° 넘음", example: "사람이 바닥에 누워 있다." },
-  fall_suspected: { how: "서 있음에서 2초 안에 몸통·허벅지가 다 누운 자세가 되어 3초 이어짐, VLM에는 묻지 않음", example: "사람이 쓰러진 뒤 일어나지 않는다." },
+  fall_suspected: { how: "서 있음에서 2초 안에 중력 기준으로 몸통·허벅지가 다 누운 자세가 되어 3초 이어짐, 침대·소파 위는 아님, VLM에는 묻지 않음", example: "사람이 쓰러진 뒤 일어나지 않는다." },
   holding_object: { how: "관절: 어느 손목이든 물건 상자 안·가까이", example: "사람이 물건을 들고 있지 않다." },
   eating: { example: "사람이 식탁에서 먹는 중이다." },
   drinking: { example: "사람이 마시는 중이었다가 컵을 내려놓았다." },
