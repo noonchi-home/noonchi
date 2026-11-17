@@ -172,13 +172,21 @@ describe("보기 담당: 내용물 보류의 가까이 보기(contents)", () => 
   it("찾기의 다시 보기(force): 30초 안에 본 자리도 다시 가까이 보고 까닭은 찾기 글이다", async () => {
     const t = await setup({ script: () => [["wait", { reason: "x" }]] });
     let done = 0;
-    const h = { planId: "", objectId: "find_cup", spot: CUP, signal: new AbortController().signal, done: () => { done++; }, force: true as const };
+    const seen: (boolean | undefined)[] = [];
+    const h = { planId: "", objectId: "find_cup", spot: CUP, signal: new AbortController().signal, done: (looked?: boolean) => { done++; seen.push(looked); }, force: true as const };
     expect(t.looker.contents(h)).toBe(true);
     await t.looker.idle();
     expect(t.looker.contents(h)).toBe(true);
     await t.looker.idle();
     expect(t.looked).toEqual([CUP, CUP]);
     expect(done).toBe(2);
+    // done은 가까이 보기가 새 사진으로 실제로 봤는가를 알린다(못 봤으면 false)
+    expect(seen).toEqual([true, true]);
+    const miss = await setup({ script: () => [["wait", { reason: "x" }]], closer: testCloser({ ok: false, why: "no_fresh_frames" }) });
+    const got: (boolean | undefined)[] = [];
+    expect(miss.looker.contents({ ...h, done: (looked?: boolean) => { got.push(looked); } })).toBe(true);
+    await miss.looker.idle();
+    expect(got).toEqual([false]);
     expect(t.looks()[1]).toMatchObject({ trigger: "unknown_fact", tool: "look_closer", reason: LOOK_TEXT.find(CUP.label) });
   });
   it("위에서 보기(top): 30초 안에 본 컵도 관찰 모드 없이 topLook(그 자리, sinceMs, 신호)을 부르고 look 기록(까닭 「컵 안을 위에서 봄」)과 done 한 번", async () => {

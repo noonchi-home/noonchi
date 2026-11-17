@@ -3992,14 +3992,12 @@ describe("실행 추적: 안 보이는 대상은 마지막으로 본 자리로 �
     expect(s.exec().some((l) => l.state === "planned")).toBe(false);
   });
 
-  it("가까이 본 뒤 4초에도 못 찾으면 「대상 물건이 보이지 않아 실행하지 않아요」로 닫고, 60초 안 같은 판단은 찾으러 가지 않고 바로 닫는다", async () => {
+  it("가까이 보기가 새 사진으로 보고 없으면 사진을 기다리지 않고 바로 「대상 물건이 보이지 않아 실행하지 않아요」로 닫고, 60초 안 같은 판단은 찾으러 가지 않고 바로 닫는다", async () => {
     const s = findSetup();
     await s.decide(decision);
     toLook(s);
-    s.looks[0]!.done();
-    s.tick(3_900);
-    expect(s.exec().some((l) => l.state === "failed")).toBe(false);
-    s.tick(200);
+    s.looks[0]!.done(true);
+    s.tick();
     expect(s.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-1", state: "failed", text: CHECK_TEXT.no_target });
     const n = s.commands().length;
     await s.decide({ ...decision, id: "pam-3", seq: 3 });
@@ -4022,6 +4020,17 @@ describe("실행 추적: 안 보이는 대상은 마지막으로 본 자리로 �
     expect(s.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-1", state: "failed", text: CHECK_TEXT.no_target });
     expect(s.last()).toEqual({ type: "command_clear", id: "find:1" });
     expect(s.looks).toEqual([]);
+  });
+
+  it("가까이 보기가 사진을 보지 못하고 끝났으면(자원 사정) 4초 사진을 기다린 뒤 닫는다", async () => {
+    const s = findSetup();
+    await s.decide(decision);
+    toLook(s);
+    s.looks[0]!.done(false);
+    s.tick(3_900);
+    expect(s.exec().some((l) => l.state === "failed")).toBe(false);
+    s.tick(200);
+    expect(s.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-1", state: "failed", text: CHECK_TEXT.no_target });
   });
 
   it("보기 담당이 바쁘면 3초 뒤 다시 부탁한다", async () => {

@@ -34,10 +34,10 @@ export const CONTENTS_HOLD = { lookWaitMs: 3000, settleMs: 4000, holdMs: 30_000 
 /** 가까이 가서 보기: 가까이 가기가 끝나는 폰-컵 수평 거리(m, 식탁 가에 선 사람이 팔을 뻗어 폰을 컵 위에 둘 수 있는 거리), 명령마다 한도(ms),
  *  같은 컵·세대를 다시 가까이 가기 전 기다림(ms), 옮겨짐으로 보는 자리 바뀜(m), 맞춘 눈이 이만큼(ms) 안 오면 지금 위치를 모른다(폰 자세는 초당 10번). */
 export const PEEK = { nearM: 0.5, stepMs: 30_000, retryMs: 60_000, movedM: 0.1, eyeMs: EYE_MS } as const;
-/** 보류의 가까이 보기 부탁(보기 담당 src/act/look.ts contents). done은 끝날 때 한 번(못 봐도). signal은 보류가 풀리면 끊긴다.
+/** 보류의 가까이 보기 부탁(보기 담당 src/act/look.ts contents). done은 끝날 때 한 번(못 봐도, looked: 새 사진으로 실제로 봤는가). signal은 보류가 풀리면 끊긴다.
  *  top이 있으면 잘라 보기 대신 위에서 보기(그 뒤 찍힌 컵 안을 내려다본 사진 쌍, src/observe/pipeline.ts topLook)다. planId가 빈 글이면 계획 밖이다.
  *  force면 찾기의 다시 보기다(src/act/track/find.ts): 같은 물건을 objectGapMs 안에 봤어도 다시 본다. */
-export interface ContentsLook { planId: string; objectId: string; spot: LookSpot; signal: AbortSignal; done(): void; top?: { sinceMs: number }; force?: true }
+export interface ContentsLook { planId: string; objectId: string; spot: LookSpot; signal: AbortSignal; done(looked?: boolean): void; top?: { sinceMs: number }; force?: true }
 type V3 = [number, number, number];
 /** 가까이 가서 보기 한 차례: 지금 명령(go·above, 거뒀으면 null)과 보낸 때, 시작 때 컵 자리, 위에서 비추기를 보낸 때(위에서 보기 sinceMs), 보기 지킴을 걸었는가. */
 export interface Peek { part: "go" | "above" | null; sent: PlannedCommand | null; since: number; at: V3; aboveAt: number; guarded: boolean }
