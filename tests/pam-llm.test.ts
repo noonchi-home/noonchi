@@ -65,12 +65,12 @@ describe("PAM LLM 전송", () => {
     ]);
   });
 
-  it("모르는 모드·작은 문맥 길이·틀린 시간 제한은 시작할 때 실패하고 까닭과 고칠 값을 한 줄로 말한다. 옛 이름 mock·live는 openai·vllm으로 읽는다", () => {
+  it("모르는 모드·작은 문맥 길이·틀린 시간 제한은 시작할 때 실패하고 까닭과 맞는 값의 조건을 한 줄로 말한다(Python PAM과 같은 글). 옛 이름 mock·live는 openai·vllm으로 읽는다", () => {
     expect(pamSettings({ INFERENCE_MODE: "mock" })).toEqual(pamSettings({ INFERENCE_MODE: "openai" }));
     expect(pamSettings({ INFERENCE_MODE: "live" })).toEqual(pamSettings({ INFERENCE_MODE: "vllm" }));
-    expect(() => pamSettings({ PAM_MAX_MODEL_LEN: "16384" })).toThrow("PAM_MAX_MODEL_LEN=16384: 반성 출력 16384보다 커야 합니다. 지우면 기본값 32768을 써요");
-    expect(() => pamSettings({ PAM_MAX_MODEL_LEN: "큰 값" })).toThrow("PAM_MAX_MODEL_LEN=큰 값: 정수여야 합니다. 지우면 기본값 32768을 써요");
-    expect(() => pamSettings({ PAM_LLM_TIMEOUT_S: "0" })).toThrow("PAM_LLM_TIMEOUT_S=0: 0보다 큰 초여야 합니다. 지우면 기본값 120초를 써요");
+    expect(() => pamSettings({ PAM_MAX_MODEL_LEN: "16384" })).toThrow("PAM_MAX_MODEL_LEN=16384: 반성 출력 16384보다 커야 합니다");
+    expect(() => pamSettings({ PAM_MAX_MODEL_LEN: "큰 값" })).toThrow("PAM_MAX_MODEL_LEN=큰 값: 정수여야 합니다");
+    expect(() => pamSettings({ PAM_LLM_TIMEOUT_S: "0" })).toThrow("PAM_LLM_TIMEOUT_S=0: 0보다 큰 초여야 합니다");
     expect(() => pamSettings({ INFERENCE_MODE: "replay" })).toThrow("INFERENCE_MODE=replay: openai 또는 vllm이어야 합니다");
     expect(() => pamSettings({ INFERENCE_MODE: "vllm", PAM_MAX_MODEL_LEN: "16384" })).toThrow(/PAM_MAX_MODEL_LEN/);
   });

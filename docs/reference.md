@@ -92,8 +92,8 @@ HUB=memory npm run demo
 | `PAM_URL`·`PAM_LLM_PROVIDER`·`OPENROUTER_API_KEY` | 읽지 않음(PAM은 서버 안 `src/brain/pam/`) | 지우기 |
 | `PAM_LLM_BASE_URL`=OpenRouter 주소 | 부르지 않고 PAM 준비 안 됨(`/api/health` `ready.pam.reason`), 시작 로그에 경고 | 지우기(openai는 `OPENAI_API_KEY`로 OpenAI를 부른다) |
 | `PAM_LLM_MODEL`=OpenRouter 모델 이름 | 그 이름을 그대로 보낸다 | 지우기 |
-| `PAM_MAX_MODEL_LEN` 16384 이하 | 시작을 막고 까닭과 기본값을 한 줄로 알린다 | 지우기(기본 32768) |
-| `PAM_LLM_TIMEOUT_S` 0 이하 | 시작을 막고 까닭과 기본값을 한 줄로 알린다 | 지우기(기본 120초) |
+| `PAM_MAX_MODEL_LEN` 16384 이하 | 시작을 막고 까닭과 맞는 값을 한 줄로 알린다 | 지우기(기본 32768) |
+| `PAM_LLM_TIMEOUT_S` 0 이하 | 시작을 막고 까닭과 맞는 값을 한 줄로 알린다 | 지우기(기본 120초) |
 | `THOUGHT_MODEL` | 읽지 않음(메시지 상자는 모델 없이 만든다) | 지우기 |
 | (새) `REDIS_URL` | 있으면 Redis 통로, 없으면 메모리 통로 | compose는 `redis://redis:6379` |
 
