@@ -144,6 +144,12 @@ export class WorldState {
     return this.core.closer.applyTop(objectId, sourceFrameId, capturedAtMs, value);
   }
 
+  /** 실행 추적이 지금 집기·내려놓기 하는 대상(src/act/track/steps.ts): 그 단계 동안 대상은 사라짐으로 세지 않고, 맞는 물건이 없는 같은 종류 감지(들린 컵, 목적지
+   *  NEAR_M 안에 놓인 컵)는 그 대상 id로 잇는다(가로 유리컵 r5: 집기·내려놓기 중 새 id가 생겨 단계가 늦거나 끝나지 않았다). null이면 푼다. */
+  focus(objectId: string | null, f: { step: "pick" | "place"; spot: [number, number] | null } | null = null): void {
+    this.core.focusOn = objectId && f ? { id: objectId, step: f.step, spot: f.spot } : null;
+  }
+
   /** 보기 지킴(가까이 가서 위에서 비추는 동안, 실행 추적이 건다): on이면 그 물건을 그동안(PEEK_GUARD_MS 한도) 사라짐으로 세지 않고, off면 푼다.
    *  확인된 관측의 지킴(closer_hold)과 다른 칸이다. 물건이 없으면 아무것도 하지 않는다. */
   guard(objectId: string, atMs: number, on: boolean): void {

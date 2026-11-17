@@ -148,6 +148,7 @@ export class Steps extends Part {
     });
     this.o.plans.setSteps(r.plan.view.id, { ...(prev ? { [prev.id]: "done" as const } : {}), [step.id]: "active" });
     this.window(r, windowOf(step));
+    this.focus(r, step);
     if (step.kind === "wait" || step.kind === "device") this.core.quietFrom = now;
     if (step.kind === "wait") return this.clear(r);
     if (step.kind === "device") {
@@ -318,6 +319,20 @@ export class Steps extends Part {
     if (id) this.o.contentsAction?.(id, true);
   }
 
+  /** 집기·내려놓기 단계면 그 대상(지금 따라가는 World State id)과 자리(집기는 그 물건 자리, 내려놓기는 목적지)를 World State에 알리고, 아니면 푼다. */
+  private focus(r: Run, step: AgentStep | null): void {
+    if (!step || (step.kind !== "pick" && step.kind !== "place") || !step.object) {
+      this.o.focusObject?.(null);
+      return;
+    }
+    const world = this.o.world();
+    const obj = ours(r, step.object, world)[0] ?? null;
+    const spot: [number, number] | null = step.kind === "pick"
+      ? (obj?.position ? [obj.position[0], obj.position[2]] : null)
+      : r.placeAt(step.target);
+    this.o.focusObject?.(obj?.id ?? r.alias.get(step.object) ?? step.object, { step: step.kind, spot: spot ? [spot[0], spot[1]] : null });
+  }
+
   /** 실제 폰 명령을 지운다(기다리기·기기 단계). */
   clear(r: Run): void {
     if (!r.sent) return;
@@ -402,6 +417,7 @@ export class Steps extends Part {
     this.core.contents.release(r);
     this.core.finder.release(r);
     this.window(r, null);
+    this.focus(r, null);
     if (r.asking?.why === "device") this.o.devices?.cancel(r.asking.token);
     r.asking = null;
     r.gen++;

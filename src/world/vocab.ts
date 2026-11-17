@@ -103,14 +103,14 @@ export interface StateEntry {
 /** VLM·관절이 고르는 사실 값. 키가 VLM 스키마 enum이고, 글이 관찰 텍스트다. */
 export const STATES = {
   on_table: { facet: "place", label: "식탁 위", for: ["object"], hint: "dining or coffee table" },
-  on_counter: { facet: "place", label: "조리대 위", for: ["object"] },
+  on_counter: { facet: "place", label: "조리대 위", for: ["object"], hint: "kitchen counter top beside the sink, not inside the sink basin" },
   on_desk: { facet: "place", label: "책상 위", for: ["object"] },
   on_shelf: { facet: "place", label: "선반 위", for: ["object"], hint: "shelf, cabinet, stand or dresser top" },
   on_sofa: { facet: "place", label: "소파 위", for: ["object", "person"] },
   on_bed: { facet: "place", label: "침대 위", for: ["object", "person"] },
   on_chair: { facet: "place", label: "의자 위", for: ["object", "person"] },
   on_floor: { facet: "place", label: "바닥", for: ["object", "person"] },
-  in_sink: { facet: "place", label: "싱크대 안", for: ["object"] },
+  in_sink: { facet: "place", label: "싱크대 안", for: ["object"], hint: "inside the sink basin, including a cup standing or lying in it" },
   in_dish_rack: { facet: "place", label: "식기 건조대 안", for: ["object"], hint: "dish drying rack" },
   in_fridge: { facet: "place", label: "냉장고 안", for: ["object"], hint: "inside an open fridge" },
   in_hand: { facet: "place", label: "손에 있음", for: ["object"] },

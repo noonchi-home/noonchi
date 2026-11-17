@@ -102,7 +102,7 @@ export class Detections extends Part {
     const events = core.confirmer.observe(at, seen, candidates, (key) => {
       if (key === PERSON) return true;
       const obj = core.objects.get(key)!;
-      return !core.held(obj, at) && !core.guarded(obj, at) && !core.vlmHold(obj, at) && this.visible(obj, view) === true;
+      return !core.held(obj, at) && !core.guarded(obj, at) && !core.vlmHold(obj, at) && !core.focusHold(obj) && this.visible(obj, view) === true;
     }, stale);
     const changes: WorldChange[] = [];
     const fresh: { obj: Obj; at: number; frame: string }[] = [];
@@ -205,6 +205,9 @@ export class Detections extends Part {
       const held = [...this.core.objects.values()].filter((x) => x.confirmed && !used.has(x.id) && sameDrinkware(x.cls, cls) && x.facts.place?.value === POSE_HOLD.object);
       const reach = eye && held.length === 1 && held[0]!.position && Math.hypot(held[0]!.position[0] - eye[0], held[0]!.position[2] - eye[1]) <= REACH_M;
       if (reach) return held[0]!;
+      // 실행 추적이 지금 집기·내려놓기 하는 대상(들린 컵, 목적지에 놓인 컵)
+      const focus = this.core.focusTarget(cls, position, used);
+      if (focus) return focus;
       return pool.find((x) => x.status !== "gone" && !x.position) ?? null;
     }
     return pool.filter((x) => x.status !== "gone").sort((a, b) => Number(b.confirmed) - Number(a.confirmed) || a.firstSeen - b.firstSeen)[0] ?? null;

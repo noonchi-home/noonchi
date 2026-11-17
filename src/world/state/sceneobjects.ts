@@ -53,6 +53,8 @@ export class SceneObjects extends Part {
       const spot = !linked && look ? this.place(v.box, look, surfaces) : null;
       const placed = lifted || hidden ? null : spot;
       if (!obj && spot?.position) obj = core.matchAt(cls, spot.position, used, VLM_MATCH_M);
+      // 실행 추적이 지금 집기·내려놓기 하는 대상(들린 컵, 목적지에 놓인 컵)
+      if (!obj) obj = core.focusTarget(cls, spot?.position ?? null, used);
       // VLM 무조건 우선: YOLO가 못 봤어도 VLM이 본 물건은 있다(놓인 자리를 알 때 후보로 만든다)
       if (!obj && placed?.position && vlmFirst(false, true)) obj = core.create(cls, at, frameId);
       if (!obj) continue;

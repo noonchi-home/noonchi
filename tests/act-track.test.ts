@@ -131,6 +131,27 @@ function setup(over: Partial<TrackerOptions> & { w?: () => WorldView; check?: ()
 }
 
 describe("실행 추적: 단계마다 실제 폰 명령", () => {
+  // 가로 유리컵 실제 판 r5(2026-11-18): 집기·내려놓기 중 들린 컵·놓인 컵이 새 id가 돼 단계가 늦거나 끝나지 않았다. 실행 추적이 지금 대상을 World State에 알린다
+  it("집기·내려놓기 단계가 되면 그 대상과 자리(집기는 컵 자리, 내려놓기는 목적지)를 World State focus로 알리고, 다른 단계·계획 끝에는 푼다", async () => {
+    let w = world([cup("present")]);
+    const focuses: [string | null, unknown][] = [];
+    const { t, decide, clock } = setup({ w: () => w, focusObject: (id, f) => { focuses.push([id, f ?? null]); } });
+    await decide(decision);
+    clock.t += 600;
+    t.onEye([6.2, 3]);
+    t.tick();
+    expect(focuses.at(-1)).toEqual(["cup_1", { step: "pick", spot: [2, 1] }]);
+    clock.t += 600;
+    w = world([cup("present", "in_hand", clock.t)]);
+    t.onWorld();
+    expect(focuses.at(-1)).toEqual([null, null]);
+    clock.t += 600;
+    t.onEye([5.3, 1.5]);
+    t.tick();
+    expect(focuses.at(-1)).toEqual(["cup_1", { step: "place", spot: expect.any(Array) }]);
+    t.stop?.();
+  });
+
   it("컵 치우기는 단계마다 사람에게 하는 명령 하나를 보내고, 폰 위치와 World State로 그 단계가 된 것을 본 뒤 다음 명령을 보낸다", async () => {
     let w = world([cup("present")]);
     const { t, decide, phone, clock, plans, exec, commands, spoken, last, steps } = setup({ w: () => w });

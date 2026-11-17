@@ -7,7 +7,7 @@ import { Confirmer, EVIDENCE_STEP_MS } from "../confirm.js";
 import { objectName } from "../labels.js";
 import { FALL_DEFAULTS, FallWatch, type FallConfig } from "../fall.js";
 import type { SightLink } from "../sight.js";
-import { CLASSES, sameDrinkware, STATES, type ClassKey, type StateKey, type Target } from "../vocab.js";
+import { CLASSES, NEAR_M, sameDrinkware, STATES, type ClassKey, type StateKey, type Target } from "../vocab.js";
 import type { CloserLook } from "./closer.js";
 import type { ContentsBook, ContentsState } from "./contents.js";
 import type { DeviceSight } from "./devices.js";
@@ -163,6 +163,8 @@ export class WorldCore {
   readonly fallCfg: FallConfig;
   /** 사람 감지가 둘 넘게 보인 마지막 촬영 시각(VLM 자리 사실은 사람을 하나로 합치므로 그동안의 답은 누구의 것인지 모른다). */
   crowdAt = Number.NEGATIVE_INFINITY;
+  /** 실행 추적이 지금 집기·내려놓기 하는 대상(WorldState.focus): 물건 id, 단계, 자리(집기는 그 물건 자리, 내려놓기는 목적지, 수평 [x, z]). */
+  focusOn: { id: string; step: "pick" | "place"; spot: [number, number] | null } | null = null;
   merge!: Detections;
   scene!: SceneObjects;
   people!: People;
@@ -235,6 +237,21 @@ export class WorldCore {
     }
     obj.cls = cls;
     obj.clsVote = null;
+  }
+
+  /** 맞는 물건이 없는 감지를 실행 추적의 지금 대상(focusOn)으로 잇는가: 같은 종류이고 이번 사진에서 아직 쓰지 않았으며,
+   *  내려놓기는 그 감지 자리가 목적지 NEAR_M 안일 때(자리를 모르면 잇는다). 집기는 들린 컵 자리가 어디로 비칠지 몰라 거리를 보지 않는다. */
+  focusTarget(cls: ObjClass, position: V3 | null, used: ReadonlySet<string>): Obj | null {
+    const f = this.focusOn;
+    const t = f ? this.objects.get(f.id) : undefined;
+    if (!f || !t || t.cls !== cls || used.has(t.id)) return null;
+    if (f.step === "place" && position && f.spot && Math.hypot(position[0] - f.spot[0], position[2] - f.spot[1]) > NEAR_M) return null;
+    return t;
+  }
+
+  /** 실행 추적이 지금 집기·내려놓기 하는 대상이다: 그 단계 동안 사라짐을 세지 않는다(들고 옮기는 동안 전체 사진이 놓친다). */
+  focusHold(obj: Obj): boolean {
+    return this.focusOn?.id === obj.id;
   }
 
   /** VLM이 이 물건을 VLM_SEEN_HOLD_MS 안에 봤다: YOLO가 놓쳐도 사라짐을 세지 않는다(VLM 무조건 우선). */
