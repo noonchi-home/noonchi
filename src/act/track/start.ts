@@ -7,6 +7,7 @@ import { needsPhone, objectNames, type PlanResult } from "../../agent/index.js";
 import { APPROVAL_TEXT, EXEC_TEXT } from "../labels.js";
 import { quietLabels } from "../lessons.js";
 import { planIdOf, taskOf } from "../tasks.js";
+import { saidIn } from "../../world/labels.js";
 import { Part, clsOf, type Job, type Run } from "./core.js";
 
 /** 판단 받기·계획 시작. */
@@ -35,8 +36,12 @@ export class Starter extends Part {
     if (d.atMs < core.quietFrom && core.open()?.decision.action !== d.action) return this.note(d, EXEC_TEXT.late);
     if (d.status !== "valid") return this.note(d, EXEC_TEXT.decisionFailed);
     if (!d.action) return this.note(d, EXEC_TEXT.wait);
-    // 계획이 끝난 뒤 사용자 위치 확인·충전 자리로 가는 동안은 새 일을 미룬다(충전 자리에서 시작한다, dock.ts)
-    if (core.dock.busy()) return this.note(d, EXEC_TEXT.docking);
+    // 계획이 끝난 뒤 사용자 위치 확인·충전 자리로 가는 동안은 새 일을 미룬다(충전 자리에서 시작한다, dock.ts).
+    // 비상이면 busy가 거두고, 사람이 말로 한 부탁(들은 말이 든 판단)은 복귀를 멈추고 바로 받는다(그 들은 말은 다시 판단에 가지 않는다)
+    if (core.dock.busy()) {
+      if (!saidIn(d.textSent).length) return this.note(d, EXEC_TEXT.docking);
+      core.dock.drop();
+    }
     const open = core.open();
     if (open?.decision.action === d.action || core.planning?.decision.action === d.action) return this.note(d, EXEC_TEXT.same);
     // 그 행동 대상을 찾는 중이면 기록만 하고 가장 새 판단으로 바꿔 둔다(찾으면 그 판단으로 다시 본다, find.ts)
