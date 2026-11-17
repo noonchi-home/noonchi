@@ -5,6 +5,7 @@
 // 콜백 밖에서 도는 긴 일(LLM)은 spawn()으로 띄워 노드 수명 신호를 받고, 결과는 post()로 줄에 넣는다.
 // stop(): 닫힘 → 타이머 멈춤 → 줄에 남은 일 버림 → 돌던 콜백·spawn한 일에 취소 신호 → 둘 다 기다림 → 구독 끊기 → 미룬 메시지는 ack하지 않음.
 // 닫힌 뒤 publish·spawn은 거절하고 post는 버린다. 줄은 늘 다음 차례에 돌기 시작한다(첫 일이 동기로 던져도 줄이 멈추지 않는다).
+// 발행은 publishTimeoutMs(기본 5초) 안에 끝나야 하고, 끝내기(노드 수명 신호)가 기다리는 발행을 끊는다(통로가 끊겨 답하지 않아도 멈추지 않는다).
 import { randomUUID } from "node:crypto";
 import type { Bus, Outcome, Subscription } from "./bus.js";
 import { realClock, type Clock } from "./clock.js";
@@ -13,6 +14,22 @@ import type { Envelope } from "./header.js";
 import { TOPICS, type Body, type NodeName, type TopicName } from "./topics.js";
 
 type Settle = (ok: boolean) => void;
+
+/** 발행 한 번의 시간 제한 기본값(ms). */
+export const PUBLISH_TIMEOUT_MS = 5000;
+
+/** p를 기다리되 신호가 끊기거나 ms가 지나면 실패한다. */
+function bounded<T>(p: Promise<T>, signal: AbortSignal, ms: number, what: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const done = (f: () => void) => { clearTimeout(timer); signal.removeEventListener("abort", onAbort); f(); };
+    const onAbort = () => done(() => reject(signal.reason ?? new Error(`${what}을 멈췄어요`)));
+    if (signal.aborted) return onAbort();
+    timer = setTimeout(() => done(() => reject(new Error(`${what}이 ${ms}ms 안에 끝나지 않았어요`))), ms);
+    signal.addEventListener("abort", onAbort, { once: true });
+    p.then((v) => done(() => resolve(v)), (e: unknown) => done(() => reject(e)));
+  });
+}
 type Ctx<N extends TopicName> = { e: Envelope<N>; signal: AbortSignal; defer: () => Settle };
 type RunCtx = { signal: AbortSignal; defer: () => Settle };
 type Job = { run: (c: RunCtx) => Promise<void> | void; done?: Settle; latest?: TopicName };
@@ -26,6 +43,7 @@ export class BusNode {
   readonly #epoch: { boot: string; home: string };
   readonly #clock: Clock;
   readonly #log: (s: string) => void;
+  readonly #publishMs: number;
   readonly #fresh: Freshness;
   readonly #seq = new Map<TopicName, number>();
   readonly #subs: Sub[] = [];
@@ -41,12 +59,13 @@ export class BusNode {
   #closed = false;
   #idle: (() => void)[] = [];
 
-  constructor(o: { name: NodeName; bus: Bus; epoch: { boot: string; home: string }; clock?: Clock; log?: (s: string) => void }) {
+  constructor(o: { name: NodeName; bus: Bus; epoch: { boot: string; home: string }; clock?: Clock; log?: (s: string) => void; publishTimeoutMs?: number }) {
     this.name = o.name;
     this.#bus = o.bus;
     this.#epoch = o.epoch;
     this.#clock = o.clock ?? realClock;
     this.#log = o.log ?? ((s) => console.error(s));
+    this.#publishMs = o.publishTimeoutMs ?? PUBLISH_TIMEOUT_MS;
     this.#fresh = new Freshness(() => this.#epoch);
   }
 
@@ -92,7 +111,8 @@ export class BusNode {
     const seq = (this.#seq.get(topic) ?? 0) + 1;
     this.#seq.set(topic, seq);
     const key = (t.key as (b: Body<N>) => string)(body);
-    await this.#bus.publish({ topic, key, header: { stamp: this.#clock.now(), node: this.name, inst: this.inst, seq, ...this.#epoch }, body } as Envelope<N>);
+    const sent = this.#bus.publish({ topic, key, header: { stamp: this.#clock.now(), node: this.name, inst: this.inst, seq, ...this.#epoch }, body } as Envelope<N>);
+    await bounded(sent, this.#life.signal, this.#publishMs, `${topic} 발행`);
   }
 
   /** 콜백 밖에서 도는 긴 일(LLM 호출 등). 노드 수명 신호를 받고, stop()이 그 신호를 끊고 끝나길 기다린다. */

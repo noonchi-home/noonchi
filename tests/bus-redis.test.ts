@@ -48,4 +48,53 @@ describe.skipIf(!url)("RedisBus", () => {
     await until(() => ["state 2", "pose 7", "changes 3"].every((x) => got.includes(x)), 10_000);
     await bus.close();
   });
+
+  it("dead 발행이 실패해도 실패한 일을 다시 하지 않고 dead만 다시 보낸다", async () => {
+    const b = boot();
+    const bus = await RedisBus.connect(url!, { boot: b, keepOthers: true, log: () => {}, onLost: failOnLost });
+    await admin(["SET", `noonchi:${b}:/bus/dead`, "막음"]);
+    let tries = 0;
+    const s = await bus.subscribe("/world/changes", "act", async () => { tries++; return "retry"; });
+    s.start();
+    await bus.publish({ topic: "/world/changes", key: "_", header: { stamp: 1, node: "world", inst: "i1", seq: 1, boot: b, home: "h#1" }, body: { rev: 1 } } as never);
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(tries).toBe(3);
+    await admin(["DEL", `noonchi:${b}:/bus/dead`]);
+    let left = 1;
+    const t0 = Date.now();
+    while (left > 0 && Date.now() - t0 < 5000) { left = await bus.length("/world/changes"); await new Promise((r) => setTimeout(r, 50)); }
+    expect(left).toBe(0);
+    expect(tries).toBe(3);
+    expect(await bus.length("/bus/dead")).toBe(1);
+    await bus.close();
+  });
+
+  it("시작하다 실패하면(디스크 저장이 켜짐) 만든 연결을 닫는다", async () => {
+    const count = async () => String(await admin(["CLIENT", "LIST"])).trim().split("\n").length;
+    const before = await count();
+    await admin(["CONFIG", "SET", "appendonly", "yes"]);
+    try {
+      await expect(RedisBus.connect(url!, { boot: boot(), keepOthers: true, log: () => {}, onLost: failOnLost })).rejects.toThrow(/디스크 저장이 켜져/);
+    } finally {
+      await admin(["CONFIG", "SET", "appendonly", "no"]);
+    }
+    let after = await count();
+    const t0 = Date.now();
+    while (after > before && Date.now() - t0 < 3000) { await new Promise((r) => setTimeout(r, 100)); after = await count(); }
+    expect(after).toBe(before);
+  });
+
+  it("Redis가 답하지 않아도 close()는 끝난다", async () => {
+    const bus = await RedisBus.connect(url!, { boot: boot(), keepOthers: true, log: () => {}, onLost: () => {} });
+    const s = await bus.subscribe("/world/changes", "act", async () => "ack");
+    s.start();
+    const c = createClient({ url: url! });
+    await c.connect();
+    await c.sendCommand(["CLIENT", "PAUSE", "2500", "ALL"]);
+    c.destroy();
+    const t0 = Date.now();
+    await bus.close();
+    expect(Date.now() - t0).toBeLessThan(2000);
+    await new Promise((r) => setTimeout(r, 2600));
+  });
 });

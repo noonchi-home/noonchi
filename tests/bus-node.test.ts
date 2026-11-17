@@ -2,7 +2,7 @@
 // 처리 성공 뒤에만 ack·Freshness 확정, 상태를 기다리는 변화는 처리한 뒤 ack, 동기 예외에도 줄이 멈추지 않음,
 // 끝내기 계약(돌던 콜백·spawn한 일 취소와 대기), 가상 시계는 타이머 일이 끝난 뒤 간다.
 import { describe, expect, it } from "vitest";
-import { BusNode, MemoryBus, VirtualClock } from "../src/bus/index.js";
+import { BusNode, MemoryBus, VirtualClock, type Bus } from "../src/bus/index.js";
 
 const EPOCH = { boot: "b1", home: "h#1" };
 const tick = (ms = 20) => new Promise((r) => setTimeout(r, ms));
@@ -194,5 +194,23 @@ describe("BusNode 실행기", () => {
     n.start();
     await clock.advanceTo(750, () => n.idle());
     expect(log).toEqual(["시작 250", "끝 250@250", "시작 500", "끝 500@500", "시작 750", "끝 750@750"]);
+  });
+
+  it("통로가 발행에 답하지 않으면(끊김) 발행은 시간 제한으로 실패하고, 끝내기는 기다리는 발행을 끊는다", async () => {
+    const stuck: Bus = { publish: () => new Promise<void>(() => {}), subscribe: async () => ({ start() {}, stop: async () => {}, lost: () => 0 }), close: async () => {} };
+    const quick = new BusNode({ name: "act", bus: stuck, epoch: EPOCH, log: () => {}, publishTimeoutMs: 50 });
+    await expect(quick.publish("/act/log", { a: 1 })).rejects.toThrow(/50ms/);
+    const clock = new VirtualClock(0);
+    const n = new BusNode({ name: "act", bus: stuck, epoch: EPOCH, clock, log: () => {} });
+    let failed: unknown = null;
+    n.every(100, async () => { try { await n.publish("/act/log", { a: 2 }); } catch (e) { failed = e; throw e; } });
+    await n.prepare();
+    n.start();
+    void clock.advanceTo(100);
+    await tick(30);
+    const t0 = Date.now();
+    await n.stop();
+    expect(Date.now() - t0).toBeLessThan(1000);
+    expect(failed).not.toBeNull();
   });
 });

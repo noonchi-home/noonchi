@@ -12,13 +12,15 @@
 //   읽기·XACK가 실패하면 내 몫(id 0)부터 다시 읽는다(같은 메시지를 다시 받을 수 있다: 받는 쪽은 한 번만 쓰기로 막는다).
 // 연결마다 error 리스너를 단다(프로세스가 죽지 않는다). 막고 읽기(BLOCK)는 구독마다 따로 연결(duplicate)을 쓴다.
 import { createClient, type RedisClientType } from "redis";
-import { deadBody, gapCounter, MAX_DELIVERIES, RETRY_MS, type Bus, type Deliver, type Subscription } from "./bus.js";
+import { CLOSED, deadBody, gapCounter, MAX_DELIVERIES, RETRY_MS, type Bus, type Deliver, type Subscription } from "./bus.js";
 import { decode, encode, type Envelope } from "./header.js";
 import { TOPICS, type NodeName, type TopicName } from "./topics.js";
 
 const BLOCK_MS = 1000;
 const STATE_NOTE = 64;
 const WATCH_MS = 1000;
+/** close()가 Redis의 답을 기다리는 시간. 넘으면 연결을 끊는다. */
+const CLOSE_MS = 1000;
 const LOST = "Redis가 다시 켜져 이번 기동의 메시지를 잃었어요. 서버를 새 기동으로 다시 띄워요";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const nextId = (id: string) => { const [ms, seq] = id.split("-"); return `${ms}-${Number(seq) + 1}`; };
@@ -37,6 +39,7 @@ export class RedisBus implements Bus {
   readonly #closers = new Set<() => Promise<void>>();
   #watch: ReturnType<typeof setInterval> | null = null;
   #lost = false;
+  #closed = false;
 
   private constructor(private readonly client: RedisClientType, private readonly prefix: string, private readonly log: (s: string) => void, private readonly onLost: (e: Error) => void) {}
 
@@ -45,15 +48,20 @@ export class RedisBus implements Bus {
     const client = createClient({ url }) as RedisClientType;
     client.on("error", (e: Error) => log(`[통로] Redis 오류: ${e.message}`));
     await client.connect();
-    await assertNoPersistence(async (name) => String(Object.values(await client.configGet(name))[0] ?? ""));
     const prefix = `noonchi:${o.boot}:`;
-    if (!o.keepOthers) {
-      for await (const keys of client.scanIterator({ MATCH: "noonchi:*", COUNT: 500 })) {
-        const old = (Array.isArray(keys) ? keys : [keys]).filter((k) => !k.startsWith(prefix));
-        if (old.length) await client.del(old);
+    try {
+      await assertNoPersistence(async (name) => String(Object.values(await client.configGet(name))[0] ?? ""));
+      if (!o.keepOthers) {
+        for await (const keys of client.scanIterator({ MATCH: "noonchi:*", COUNT: 500 })) {
+          const old = (Array.isArray(keys) ? keys : [keys]).filter((k) => !k.startsWith(prefix));
+          if (old.length) await client.del(old);
+        }
       }
+      await client.set(`${prefix}alive`, "1");
+    } catch (err) {
+      client.destroy();   // 시작하다 실패하면 만든 연결을 닫는다
+      throw err;
     }
-    await client.set(`${prefix}alive`, "1");
     const bus = new RedisBus(client, prefix, log, o.onLost);
     bus.#watch = setInterval(() => void bus.#check(), WATCH_MS);
     bus.#watch.unref?.();
@@ -78,6 +86,7 @@ export class RedisBus implements Bus {
   }
 
   #open(): void {
+    if (this.#closed) throw new Error(CLOSED);
     if (this.#lost) throw new Error(LOST);
   }
 
@@ -96,11 +105,20 @@ export class RedisBus implements Bus {
 
   async subscribe<N extends TopicName>(topic: N, node: NodeName, deliver: Deliver<N>, o: { mode?: "latest" | "all" } = {}): Promise<Subscription> {
     this.#open();
-    const k = this.#k(topic);
-    const q = TOPICS[topic].qos;
-    const conn = this.client.duplicate();
+    const conn = this.client.duplicate() as RedisClientType;
     conn.on("error", (e: Error) => this.log(`[통로] ${topic} 구독 연결 오류: ${e.message}`));
     await conn.connect();
+    try {
+      return await this.#subscribeOn(conn, topic, node, deliver, o);
+    } catch (err) {
+      conn.destroy();   // 구독 준비가 실패하면 만든 연결을 닫는다
+      throw err;
+    }
+  }
+
+  async #subscribeOn<N extends TopicName>(conn: RedisClientType, topic: N, node: NodeName, deliver: Deliver<N>, o: { mode?: "latest" | "all" }): Promise<Subscription> {
+    const k = this.#k(topic);
+    const q = TOPICS[topic].qos;
     let on = true;
     let started = false;
     let loop: Promise<void> = Promise.resolve();
@@ -124,17 +142,24 @@ export class RedisBus implements Bus {
     let run: () => Promise<void>;
     if (q.kind === "reliable") {
       try { await this.client.xGroupCreate(k, node, "$", { MKSTREAM: true }); } catch (e) { if (!String(e).includes("BUSYGROUP")) throw e; }
+      /** 이 구독에서 메시지마다 실패한 횟수. dead 발행·XACK가 실패해 같은 메시지를 다시 읽어도 처음부터 세지 않는다(다 쓴 메시지는 dead만 다시 보낸다). */
+      const failed = new Map<string, number>();
       /** 한 메시지를 ack나 dead까지. 끊긴 구독이면 false(ack하지 않고 둔다). */
       const handle = async (id: string, raw: string): Promise<boolean> => {
-        for (let tries = 1; ; tries++) {
+        for (;;) {
+          const n = failed.get(id) ?? 0;
+          if (n >= MAX_DELIVERIES) { await this.#dead(topic, node, raw, n); break; }
           const out = await deliver(decode(topic, raw)).catch(() => "retry" as const);
           if (!on) return false;
           if (out === "ack") break;
-          if (tries >= MAX_DELIVERIES) { await this.#dead(topic, node, raw, tries); break; }
-          await sleep(RETRY_MS);
-          if (!on) return false;
+          failed.set(id, n + 1);
+          if (n + 1 < MAX_DELIVERIES) {
+            await sleep(RETRY_MS);
+            if (!on) return false;
+          }
         }
         await this.client.xAck(k, node, id);
+        failed.delete(id);
         await this.#trim(k);
         return true;
       };
@@ -194,7 +219,7 @@ export class RedisBus implements Bus {
     const stop = async () => {
       on = false;
       void loop.catch(() => {});
-      await conn.disconnect().catch(() => {});
+      conn.destroy();
       this.#closers.delete(stop);
     };
     this.#closers.add(stop);
@@ -226,9 +251,13 @@ export class RedisBus implements Bus {
   /** 시험용: 토픽에 남은 메시지 수. */
   async length(topic: string): Promise<number> { return this.client.xLen(this.#k(topic)); }
 
+  /** 닫는다: 구독 연결을 끊고, Redis가 CLOSE_MS 안에 답하지 않으면 기다리지 않고 연결을 끊는다. 그 뒤 발행·구독은 거절한다. */
   async close(): Promise<void> {
+    if (this.#closed) return;
+    this.#closed = true;
     if (this.#watch) clearInterval(this.#watch);
     for (const c of [...this.#closers]) await c();
-    await this.client.quit();
+    await Promise.race([this.client.close().catch(() => {}), sleep(CLOSE_MS)]);
+    try { this.client.destroy(); } catch { /* 이미 닫힘 */ }
   }
 }

@@ -602,7 +602,7 @@ git push
 // 통로 계약(MemoryBus·RedisBus가 같은 시험을 통과한다): 준비·시작 두 단계, QoS 셋, SENSOR 상한·놓친 수,
 // 처리 뒤 ack·차례를 지키며 다시 주기·dead(dead의 실패는 다시 보내지 않음), 끊긴 뒤 다시 받기, publish 안에서 동기로 부르지 않음.
 import { describe, expect, it } from "vitest";
-import type { Bus, Envelope, Outcome, TopicName } from "../../src/bus/index.js";
+import { RETRY_MS, type Bus, type Envelope, type Outcome, type TopicName } from "../../src/bus/index.js";
 
 const EPOCH = { boot: "b1", home: "h#1" };
 const env = <N extends TopicName>(topic: N, body: Record<string, unknown>, seq: number, key = "_", node = "world"): Envelope<N> =>
@@ -778,6 +778,30 @@ export function busContract(name: string, make: () => Promise<Bus>, opts: { leng
       expect(sawInside).toBe(false);
       await bus.close();
     });
+
+    it("RELIABLE: 다시 주기를 기다리는 동안 새 메시지가 와도 RETRY_MS 전에는 다시 주지 않는다", async () => {
+      const bus = await make();
+      const at: number[] = [];
+      const s = await bus.subscribe("/world/changes", "act", async (m) => {
+        if (m.body.rev !== 1) return "ack";
+        at.push(Date.now());
+        return at.length === 1 ? "retry" : "ack";
+      });
+      s.start();
+      await bus.publish(env("/world/changes", { rev: 1 }, 1));
+      await until(() => at.length === 1);
+      await bus.publish(env("/world/changes", { rev: 2 }, 2));
+      await until(() => at.length === 2, 5000);
+      expect(at[1]! - at[0]!).toBeGreaterThanOrEqual(RETRY_MS - 5);
+      await bus.close();
+    });
+
+    it("닫은 뒤에는 발행·구독을 거절한다", async () => {
+      const bus = await make();
+      await bus.close();
+      await expect(bus.publish(env("/world/changes", { rev: 1 }, 1))).rejects.toThrow(/닫힌 통로/);
+      await expect(bus.subscribe("/world/changes", "act", async () => "ack")).rejects.toThrow(/닫힌 통로/);
+    });
   });
 }
 ```
@@ -785,10 +809,50 @@ export function busContract(name: string, make: () => Promise<Bus>, opts: { leng
 `tests/bus-memory.test.ts`:
 
 ```ts
+import { describe, expect, it } from "vitest";
+import type { Envelope, TopicName } from "../src/bus/index.js";
 import { MemoryBus } from "../src/bus/memory.js";
 import { busContract } from "./helpers/bus-contract.js";
 
 busContract("MemoryBus", async () => new MemoryBus(() => {}), { length: async (b, t) => (b as MemoryBus).length(t) });
+
+const EPOCH = { boot: "b1", home: "h#1" };
+const env = <N extends TopicName>(topic: N, body: Record<string, unknown>, seq: number, node = "world"): Envelope<N> =>
+  ({ topic, key: "_", header: { stamp: seq, node, inst: "i1", seq, ...EPOCH }, body } as never);
+const until = async (f: () => boolean, ms = 3000) => { const t0 = Date.now(); while (!f()) { if (Date.now() - t0 > ms) throw new Error("기다림 초과"); await new Promise((r) => setTimeout(r, 10)); } };
+
+describe("MemoryBus", () => {
+  it("닫은 뒤에는 예약된 배달이 돌지 않고, 발행·구독을 거절한다", async () => {
+    const bus = new MemoryBus(() => {});
+    const got: number[] = [];
+    const s = await bus.subscribe("/phone/pose", "world", async (m) => { got.push(m.body.observed_ms as number); return "ack"; });
+    s.start();
+    await bus.publish(env("/phone/pose", { observed_ms: 1 }, 1, "phone"));
+    await bus.close();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(got).toEqual([]);
+    await expect(bus.publish(env("/phone/pose", { observed_ms: 2 }, 2, "phone"))).rejects.toThrow(/닫힌 통로/);
+    await expect(bus.subscribe("/phone/pose", "world", async () => "ack")).rejects.toThrow(/닫힌 통로/);
+  });
+
+  it("받는 쪽이 거절(reject)해도 다시 주기로 처리하고 줄이 멈추지 않는다", async () => {
+    const bus = new MemoryBus(() => {});
+    let calls = 0;
+    const got: number[] = [];
+    const s = await bus.subscribe("/world/changes", "act", async (m) => {
+      calls++;
+      if (calls === 1) throw new Error("받는 쪽 거절");
+      got.push(m.body.rev as number);
+      return "ack";
+    });
+    s.start();
+    await bus.publish(env("/world/changes", { rev: 1 }, 1));
+    await bus.publish(env("/world/changes", { rev: 2 }, 2));
+    await until(() => got.length === 2);
+    expect(got).toEqual([1, 2]);
+    await bus.close();
+  });
+});
 ```
 
 `tests/bus-node.test.ts`:
@@ -798,7 +862,7 @@ busContract("MemoryBus", async () => new MemoryBus(() => {}), { length: async (b
 // 처리 성공 뒤에만 ack·Freshness 확정, 상태를 기다리는 변화는 처리한 뒤 ack, 동기 예외에도 줄이 멈추지 않음,
 // 끝내기 계약(돌던 콜백·spawn한 일 취소와 대기), 가상 시계는 타이머 일이 끝난 뒤 간다.
 import { describe, expect, it } from "vitest";
-import { BusNode, MemoryBus, VirtualClock } from "../src/bus/index.js";
+import { BusNode, MemoryBus, VirtualClock, type Bus } from "../src/bus/index.js";
 
 const EPOCH = { boot: "b1", home: "h#1" };
 const tick = (ms = 20) => new Promise((r) => setTimeout(r, ms));
@@ -991,6 +1055,24 @@ describe("BusNode 실행기", () => {
     await clock.advanceTo(750, () => n.idle());
     expect(log).toEqual(["시작 250", "끝 250@250", "시작 500", "끝 500@500", "시작 750", "끝 750@750"]);
   });
+
+  it("통로가 발행에 답하지 않으면(끊김) 발행은 시간 제한으로 실패하고, 끝내기는 기다리는 발행을 끊는다", async () => {
+    const stuck: Bus = { publish: () => new Promise<void>(() => {}), subscribe: async () => ({ start() {}, stop: async () => {}, lost: () => 0 }), close: async () => {} };
+    const quick = new BusNode({ name: "act", bus: stuck, epoch: EPOCH, log: () => {}, publishTimeoutMs: 50 });
+    await expect(quick.publish("/act/log", { a: 1 })).rejects.toThrow(/50ms/);
+    const clock = new VirtualClock(0);
+    const n = new BusNode({ name: "act", bus: stuck, epoch: EPOCH, clock, log: () => {} });
+    let failed: unknown = null;
+    n.every(100, async () => { try { await n.publish("/act/log", { a: 2 }); } catch (e) { failed = e; throw e; } });
+    await n.prepare();
+    n.start();
+    void clock.advanceTo(100);
+    await tick(30);
+    const t0 = Date.now();
+    await n.stop();
+    expect(Date.now() - t0).toBeLessThan(1000);
+    expect(failed).not.toBeNull();
+  });
 });
 ```
 
@@ -1011,6 +1093,8 @@ import type { NodeName, TopicName } from "./topics.js";
 
 export const MAX_DELIVERIES = 3;
 export const RETRY_MS = 100;
+/** 닫은 통로에 발행·구독하면 이 글로 거절한다. */
+export const CLOSED = "닫힌 통로예요";
 export type Outcome = "ack" | "retry";
 export type Deliver<N extends TopicName> = (e: Envelope<N>) => Promise<Outcome>;
 export interface Subscription {
@@ -1090,16 +1174,19 @@ export class VirtualClock implements Clock {
 // STATE: 열쇠마다 마지막 하나. 바뀐 열쇠만 표시해 두고 읽을 때 그 열쇠의 지금 값을 준다. 시작할 때 모든 열쇠를 먼저 준다.
 // RELIABLE: 토픽 기록 + 그룹마다 다음 차례·처리 중 하나·전달 횟수. 처리 중인 것이 ack되거나 dead가 될 때까지 뒤 메시지를 주지 않는다.
 // 배달은 늘 다음 차례(setImmediate, 다시 주기는 RETRY_MS 뒤)에 한다: publish 안에서 콜백을 부르지 않는다. quiet()는 예약된 배달이 없는지 본다.
-import { deadBody, gapCounter, MAX_DELIVERIES, RETRY_MS, type Bus, type Deliver, type Subscription } from "./bus.js";
+// 받는 쪽이 거절(reject)하면 "retry"로 본다. 다시 주기는 RETRY_MS가 지난 뒤에만 한다(그 사이 새 메시지가 와도 앞당기지 않는다).
+// close() 뒤에는 발행·구독을 거절하고 예약된 배달도 돌리지 않는다.
+import { CLOSED, deadBody, gapCounter, MAX_DELIVERIES, RETRY_MS, type Bus, type Deliver, type Subscription } from "./bus.js";
 import { decode, encode, type Envelope } from "./header.js";
 import { TOPICS, type NodeName, type TopicName } from "./topics.js";
 
 type Raw = { id: number; raw: string };
-interface Group { name: NodeName; next: number; pending: Raw | null; tries: number; deliver: Deliver<TopicName> | null; busy: boolean; started: boolean }
+interface Group { name: NodeName; next: number; pending: Raw | null; tries: number; retryAt: number; deliver: Deliver<TopicName> | null; busy: boolean; started: boolean }
 
 export class MemoryBus implements Bus {
   #id = 0;
   #scheduled = 0;
+  #closed = false;
   readonly #log = new Map<string, Raw[]>();
   readonly #state = new Map<string, Map<string, string>>();
   readonly #wake = new Map<string, Set<(key: string) => void>>();
@@ -1109,7 +1196,7 @@ export class MemoryBus implements Bus {
 
   #later(f: () => void, ms = 0): void {
     this.#scheduled++;
-    const go = () => { this.#scheduled--; f(); };
+    const go = () => { this.#scheduled--; if (!this.#closed) f(); };
     if (ms > 0) setTimeout(go, ms);
     else setImmediate(go);
   }
@@ -1118,6 +1205,7 @@ export class MemoryBus implements Bus {
   quiet(): boolean { return this.#scheduled === 0; }
 
   async publish<N extends TopicName>(e: Envelope<N>): Promise<void> {
+    if (this.#closed) throw new Error(CLOSED);
     const raw = encode(e);
     decode(e.topic, raw);
     const q = TOPICS[e.topic].qos;
@@ -1131,11 +1219,12 @@ export class MemoryBus implements Bus {
   }
 
   async subscribe<N extends TopicName>(topic: N, node: NodeName, deliver: Deliver<N>, o: { mode?: "latest" | "all" } = {}): Promise<Subscription> {
+    if (this.#closed) throw new Error(CLOSED);
     const d = deliver as Deliver<TopicName>;
     const q = TOPICS[topic].qos;
     if (q.kind === "reliable") {
       const groups = this.#groups.get(topic) ?? this.#groups.set(topic, new Map()).get(topic)!;
-      const g = groups.get(node) ?? groups.set(node, { name: node, next: this.#id + 1, pending: null, tries: 0, deliver: null, busy: false, started: false }).get(node)!;
+      const g = groups.get(node) ?? groups.set(node, { name: node, next: this.#id + 1, pending: null, tries: 0, retryAt: 0, deliver: null, busy: false, started: false }).get(node)!;
       g.deliver = d;
       g.busy = false;
       g.tries = 0;
@@ -1173,7 +1262,7 @@ export class MemoryBus implements Bus {
       busy = true;
       const e = decode(topic, raw);
       if (all) gaps.see(e);
-      void d(e).finally(() => { busy = false; this.#later(run); });
+      void d(e).catch(() => "retry" as const).finally(() => { busy = false; this.#later(run); });
     };
     const wake = (key: string) => { if (q.kind === "state") dirty.add(key); run(); };
     const wakes = this.#wake.get(topic) ?? this.#wake.set(topic, new Set()).get(topic)!;
@@ -1190,7 +1279,7 @@ export class MemoryBus implements Bus {
   }
 
   #pump(topic: TopicName, g: Group): void {
-    if (!g.started || g.busy || !g.deliver) return;
+    if (!g.started || g.busy || !g.deliver || Date.now() < g.retryAt) return;
     const item = g.pending ?? (this.#log.get(topic) ?? []).find((r) => r.id >= g.next);
     if (!item) return;
     if (g.pending !== item) g.tries = 0;
@@ -1199,12 +1288,13 @@ export class MemoryBus implements Bus {
     g.busy = true;
     const deliver = g.deliver;
     this.#later(() => {
-      void deliver(decode(topic, item.raw)).then(async (out) => {
+      void deliver(decode(topic, item.raw)).catch(() => "retry" as const).then(async (out) => {
         if (g.deliver !== deliver) return;   // 끊긴 구독: 처리 중인 것을 그대로 둔다(다시 붙으면 다시 준다)
         g.tries++;
-        if (out === "retry" && g.tries < MAX_DELIVERIES) {   // 같은 메시지를 다시 준다. 뒤 메시지는 기다린다
+        if (out === "retry" && g.tries < MAX_DELIVERIES) {   // RETRY_MS 뒤 같은 메시지를 다시 준다. 뒤 메시지는 기다린다
           g.busy = false;
-          this.#later(() => this.#pump(topic, g), RETRY_MS);
+          g.retryAt = Date.now() + RETRY_MS;
+          this.#later(() => { g.retryAt = 0; this.#pump(topic, g); }, RETRY_MS);
           return;
         }
         if (out === "retry") await this.#dead(topic, g.name, item.raw, g.tries);
@@ -1212,7 +1302,7 @@ export class MemoryBus implements Bus {
         g.busy = false;
         this.#trim(topic);
         this.#pump(topic, g);
-      });
+      }).catch((err: Error) => this.warn(`[통로] ${topic} 배달 마무리 실패(${g.name}): ${err.message}`));
     });
   }
 
@@ -1234,6 +1324,7 @@ export class MemoryBus implements Bus {
   length(topic: string): number { return this.#log.get(topic)?.length ?? 0; }
 
   async close(): Promise<void> {
+    this.#closed = true;
     this.#wake.clear();
     for (const groups of this.#groups.values()) for (const g of groups.values()) { g.deliver = null; g.started = false; }
   }
@@ -1250,6 +1341,7 @@ export class MemoryBus implements Bus {
 // 콜백 밖에서 도는 긴 일(LLM)은 spawn()으로 띄워 노드 수명 신호를 받고, 결과는 post()로 줄에 넣는다.
 // stop(): 닫힘 → 타이머 멈춤 → 줄에 남은 일 버림 → 돌던 콜백·spawn한 일에 취소 신호 → 둘 다 기다림 → 구독 끊기 → 미룬 메시지는 ack하지 않음.
 // 닫힌 뒤 publish·spawn은 거절하고 post는 버린다. 줄은 늘 다음 차례에 돌기 시작한다(첫 일이 동기로 던져도 줄이 멈추지 않는다).
+// 발행은 publishTimeoutMs(기본 5초) 안에 끝나야 하고, 끝내기(노드 수명 신호)가 기다리는 발행을 끊는다(통로가 끊겨 답하지 않아도 멈추지 않는다).
 import { randomUUID } from "node:crypto";
 import type { Bus, Outcome, Subscription } from "./bus.js";
 import { realClock, type Clock } from "./clock.js";
@@ -1258,6 +1350,22 @@ import type { Envelope } from "./header.js";
 import { TOPICS, type Body, type NodeName, type TopicName } from "./topics.js";
 
 type Settle = (ok: boolean) => void;
+
+/** 발행 한 번의 시간 제한 기본값(ms). */
+export const PUBLISH_TIMEOUT_MS = 5000;
+
+/** p를 기다리되 신호가 끊기거나 ms가 지나면 실패한다. */
+function bounded<T>(p: Promise<T>, signal: AbortSignal, ms: number, what: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const done = (f: () => void) => { clearTimeout(timer); signal.removeEventListener("abort", onAbort); f(); };
+    const onAbort = () => done(() => reject(signal.reason ?? new Error(`${what}을 멈췄어요`)));
+    if (signal.aborted) return onAbort();
+    timer = setTimeout(() => done(() => reject(new Error(`${what}이 ${ms}ms 안에 끝나지 않았어요`))), ms);
+    signal.addEventListener("abort", onAbort, { once: true });
+    p.then((v) => done(() => resolve(v)), (e: unknown) => done(() => reject(e)));
+  });
+}
 type Ctx<N extends TopicName> = { e: Envelope<N>; signal: AbortSignal; defer: () => Settle };
 type RunCtx = { signal: AbortSignal; defer: () => Settle };
 type Job = { run: (c: RunCtx) => Promise<void> | void; done?: Settle; latest?: TopicName };
@@ -1271,6 +1379,7 @@ export class BusNode {
   readonly #epoch: { boot: string; home: string };
   readonly #clock: Clock;
   readonly #log: (s: string) => void;
+  readonly #publishMs: number;
   readonly #fresh: Freshness;
   readonly #seq = new Map<TopicName, number>();
   readonly #subs: Sub[] = [];
@@ -1286,12 +1395,13 @@ export class BusNode {
   #closed = false;
   #idle: (() => void)[] = [];
 
-  constructor(o: { name: NodeName; bus: Bus; epoch: { boot: string; home: string }; clock?: Clock; log?: (s: string) => void }) {
+  constructor(o: { name: NodeName; bus: Bus; epoch: { boot: string; home: string }; clock?: Clock; log?: (s: string) => void; publishTimeoutMs?: number }) {
     this.name = o.name;
     this.#bus = o.bus;
     this.#epoch = o.epoch;
     this.#clock = o.clock ?? realClock;
     this.#log = o.log ?? ((s) => console.error(s));
+    this.#publishMs = o.publishTimeoutMs ?? PUBLISH_TIMEOUT_MS;
     this.#fresh = new Freshness(() => this.#epoch);
   }
 
@@ -1337,7 +1447,8 @@ export class BusNode {
     const seq = (this.#seq.get(topic) ?? 0) + 1;
     this.#seq.set(topic, seq);
     const key = (t.key as (b: Body<N>) => string)(body);
-    await this.#bus.publish({ topic, key, header: { stamp: this.#clock.now(), node: this.name, inst: this.inst, seq, ...this.#epoch }, body } as Envelope<N>);
+    const sent = this.#bus.publish({ topic, key, header: { stamp: this.#clock.now(), node: this.name, inst: this.inst, seq, ...this.#epoch }, body } as Envelope<N>);
+    await bounded(sent, this.#life.signal, this.#publishMs, `${topic} 발행`);
   }
 
   /** 콜백 밖에서 도는 긴 일(LLM 호출 등). 노드 수명 신호를 받고, stop()이 그 신호를 끊고 끝나길 기다린다. */
@@ -1577,6 +1688,55 @@ describe.skipIf(!url)("RedisBus", () => {
     await until(() => ["state 2", "pose 7", "changes 3"].every((x) => got.includes(x)), 10_000);
     await bus.close();
   });
+
+  it("dead 발행이 실패해도 실패한 일을 다시 하지 않고 dead만 다시 보낸다", async () => {
+    const b = boot();
+    const bus = await RedisBus.connect(url!, { boot: b, keepOthers: true, log: () => {}, onLost: failOnLost });
+    await admin(["SET", `noonchi:${b}:/bus/dead`, "막음"]);
+    let tries = 0;
+    const s = await bus.subscribe("/world/changes", "act", async () => { tries++; return "retry"; });
+    s.start();
+    await bus.publish({ topic: "/world/changes", key: "_", header: { stamp: 1, node: "world", inst: "i1", seq: 1, boot: b, home: "h#1" }, body: { rev: 1 } } as never);
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(tries).toBe(3);
+    await admin(["DEL", `noonchi:${b}:/bus/dead`]);
+    let left = 1;
+    const t0 = Date.now();
+    while (left > 0 && Date.now() - t0 < 5000) { left = await bus.length("/world/changes"); await new Promise((r) => setTimeout(r, 50)); }
+    expect(left).toBe(0);
+    expect(tries).toBe(3);
+    expect(await bus.length("/bus/dead")).toBe(1);
+    await bus.close();
+  });
+
+  it("시작하다 실패하면(디스크 저장이 켜짐) 만든 연결을 닫는다", async () => {
+    const count = async () => String(await admin(["CLIENT", "LIST"])).trim().split("\n").length;
+    const before = await count();
+    await admin(["CONFIG", "SET", "appendonly", "yes"]);
+    try {
+      await expect(RedisBus.connect(url!, { boot: boot(), keepOthers: true, log: () => {}, onLost: failOnLost })).rejects.toThrow(/디스크 저장이 켜져/);
+    } finally {
+      await admin(["CONFIG", "SET", "appendonly", "no"]);
+    }
+    let after = await count();
+    const t0 = Date.now();
+    while (after > before && Date.now() - t0 < 3000) { await new Promise((r) => setTimeout(r, 100)); after = await count(); }
+    expect(after).toBe(before);
+  });
+
+  it("Redis가 답하지 않아도 close()는 끝난다", async () => {
+    const bus = await RedisBus.connect(url!, { boot: boot(), keepOthers: true, log: () => {}, onLost: () => {} });
+    const s = await bus.subscribe("/world/changes", "act", async () => "ack");
+    s.start();
+    const c = createClient({ url: url! });
+    await c.connect();
+    await c.sendCommand(["CLIENT", "PAUSE", "2500", "ALL"]);
+    c.destroy();
+    const t0 = Date.now();
+    await bus.close();
+    expect(Date.now() - t0).toBeLessThan(2000);
+    await new Promise((r) => setTimeout(r, 2600));
+  });
 });
 ```
 
@@ -1630,13 +1790,15 @@ Expected: `package.json` `dependencies`에 `"redis": "6.3.1"`
 //   읽기·XACK가 실패하면 내 몫(id 0)부터 다시 읽는다(같은 메시지를 다시 받을 수 있다: 받는 쪽은 한 번만 쓰기로 막는다).
 // 연결마다 error 리스너를 단다(프로세스가 죽지 않는다). 막고 읽기(BLOCK)는 구독마다 따로 연결(duplicate)을 쓴다.
 import { createClient, type RedisClientType } from "redis";
-import { deadBody, gapCounter, MAX_DELIVERIES, RETRY_MS, type Bus, type Deliver, type Subscription } from "./bus.js";
+import { CLOSED, deadBody, gapCounter, MAX_DELIVERIES, RETRY_MS, type Bus, type Deliver, type Subscription } from "./bus.js";
 import { decode, encode, type Envelope } from "./header.js";
 import { TOPICS, type NodeName, type TopicName } from "./topics.js";
 
 const BLOCK_MS = 1000;
 const STATE_NOTE = 64;
 const WATCH_MS = 1000;
+/** close()가 Redis의 답을 기다리는 시간. 넘으면 연결을 끊는다. */
+const CLOSE_MS = 1000;
 const LOST = "Redis가 다시 켜져 이번 기동의 메시지를 잃었어요. 서버를 새 기동으로 다시 띄워요";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const nextId = (id: string) => { const [ms, seq] = id.split("-"); return `${ms}-${Number(seq) + 1}`; };
@@ -1655,6 +1817,7 @@ export class RedisBus implements Bus {
   readonly #closers = new Set<() => Promise<void>>();
   #watch: ReturnType<typeof setInterval> | null = null;
   #lost = false;
+  #closed = false;
 
   private constructor(private readonly client: RedisClientType, private readonly prefix: string, private readonly log: (s: string) => void, private readonly onLost: (e: Error) => void) {}
 
@@ -1663,15 +1826,20 @@ export class RedisBus implements Bus {
     const client = createClient({ url }) as RedisClientType;
     client.on("error", (e: Error) => log(`[통로] Redis 오류: ${e.message}`));
     await client.connect();
-    await assertNoPersistence(async (name) => String(Object.values(await client.configGet(name))[0] ?? ""));
     const prefix = `noonchi:${o.boot}:`;
-    if (!o.keepOthers) {
-      for await (const keys of client.scanIterator({ MATCH: "noonchi:*", COUNT: 500 })) {
-        const old = (Array.isArray(keys) ? keys : [keys]).filter((k) => !k.startsWith(prefix));
-        if (old.length) await client.del(old);
+    try {
+      await assertNoPersistence(async (name) => String(Object.values(await client.configGet(name))[0] ?? ""));
+      if (!o.keepOthers) {
+        for await (const keys of client.scanIterator({ MATCH: "noonchi:*", COUNT: 500 })) {
+          const old = (Array.isArray(keys) ? keys : [keys]).filter((k) => !k.startsWith(prefix));
+          if (old.length) await client.del(old);
+        }
       }
+      await client.set(`${prefix}alive`, "1");
+    } catch (err) {
+      client.destroy();   // 시작하다 실패하면 만든 연결을 닫는다
+      throw err;
     }
-    await client.set(`${prefix}alive`, "1");
     const bus = new RedisBus(client, prefix, log, o.onLost);
     bus.#watch = setInterval(() => void bus.#check(), WATCH_MS);
     bus.#watch.unref?.();
@@ -1696,6 +1864,7 @@ export class RedisBus implements Bus {
   }
 
   #open(): void {
+    if (this.#closed) throw new Error(CLOSED);
     if (this.#lost) throw new Error(LOST);
   }
 
@@ -1714,11 +1883,20 @@ export class RedisBus implements Bus {
 
   async subscribe<N extends TopicName>(topic: N, node: NodeName, deliver: Deliver<N>, o: { mode?: "latest" | "all" } = {}): Promise<Subscription> {
     this.#open();
-    const k = this.#k(topic);
-    const q = TOPICS[topic].qos;
-    const conn = this.client.duplicate();
+    const conn = this.client.duplicate() as RedisClientType;
     conn.on("error", (e: Error) => this.log(`[통로] ${topic} 구독 연결 오류: ${e.message}`));
     await conn.connect();
+    try {
+      return await this.#subscribeOn(conn, topic, node, deliver, o);
+    } catch (err) {
+      conn.destroy();   // 구독 준비가 실패하면 만든 연결을 닫는다
+      throw err;
+    }
+  }
+
+  async #subscribeOn<N extends TopicName>(conn: RedisClientType, topic: N, node: NodeName, deliver: Deliver<N>, o: { mode?: "latest" | "all" }): Promise<Subscription> {
+    const k = this.#k(topic);
+    const q = TOPICS[topic].qos;
     let on = true;
     let started = false;
     let loop: Promise<void> = Promise.resolve();
@@ -1742,17 +1920,24 @@ export class RedisBus implements Bus {
     let run: () => Promise<void>;
     if (q.kind === "reliable") {
       try { await this.client.xGroupCreate(k, node, "$", { MKSTREAM: true }); } catch (e) { if (!String(e).includes("BUSYGROUP")) throw e; }
+      /** 이 구독에서 메시지마다 실패한 횟수. dead 발행·XACK가 실패해 같은 메시지를 다시 읽어도 처음부터 세지 않는다(다 쓴 메시지는 dead만 다시 보낸다). */
+      const failed = new Map<string, number>();
       /** 한 메시지를 ack나 dead까지. 끊긴 구독이면 false(ack하지 않고 둔다). */
       const handle = async (id: string, raw: string): Promise<boolean> => {
-        for (let tries = 1; ; tries++) {
+        for (;;) {
+          const n = failed.get(id) ?? 0;
+          if (n >= MAX_DELIVERIES) { await this.#dead(topic, node, raw, n); break; }
           const out = await deliver(decode(topic, raw)).catch(() => "retry" as const);
           if (!on) return false;
           if (out === "ack") break;
-          if (tries >= MAX_DELIVERIES) { await this.#dead(topic, node, raw, tries); break; }
-          await sleep(RETRY_MS);
-          if (!on) return false;
+          failed.set(id, n + 1);
+          if (n + 1 < MAX_DELIVERIES) {
+            await sleep(RETRY_MS);
+            if (!on) return false;
+          }
         }
         await this.client.xAck(k, node, id);
+        failed.delete(id);
         await this.#trim(k);
         return true;
       };
@@ -1812,7 +1997,7 @@ export class RedisBus implements Bus {
     const stop = async () => {
       on = false;
       void loop.catch(() => {});
-      await conn.disconnect().catch(() => {});
+      conn.destroy();
       this.#closers.delete(stop);
     };
     this.#closers.add(stop);
@@ -1844,10 +2029,14 @@ export class RedisBus implements Bus {
   /** 시험용: 토픽에 남은 메시지 수. */
   async length(topic: string): Promise<number> { return this.client.xLen(this.#k(topic)); }
 
+  /** 닫는다: 구독 연결을 끊고, Redis가 CLOSE_MS 안에 답하지 않으면 기다리지 않고 연결을 끊는다. 그 뒤 발행·구독은 거절한다. */
   async close(): Promise<void> {
+    if (this.#closed) return;
+    this.#closed = true;
     if (this.#watch) clearInterval(this.#watch);
     for (const c of [...this.#closers]) await c();
-    await this.client.quit();
+    await Promise.race([this.client.close().catch(() => {}), sleep(CLOSE_MS)]);
+    try { this.client.destroy(); } catch { /* 이미 닫힘 */ }
   }
 }
 ```
@@ -1905,7 +2094,7 @@ docker compose -f compose.dev.yaml down
 Stop-Process -Name "Docker Desktop" -Confirm:$false; wsl --shutdown           # WSL VM 메모리를 돌려받는다(다른 WSL 일이 돌면 wsl --shutdown은 빼고 조정자에게 알린다)
 ```
 
-Expected: `RedisBus 통로 계약` 열한 시험, 기동 표시 열쇠 시험, 연결이 잠깐 끊기는 시험 PASS. 끝나면 Docker Desktop과 WSL VM이 꺼져 있다. 빈 메모리가 모자라면 이 단계를 미루고 조정자에게 알린다.
+Expected: `RedisBus 통로 계약` 열세 시험과 Redis 전용 다섯 시험(기동 표시 열쇠, 연결이 잠깐 끊김, dead 발행 실패, 시작 실패 때 연결 닫기, 답하지 않는 Redis에서 close) PASS. 끝나면 Docker Desktop과 WSL VM이 꺼져 있다. 빈 메모리가 모자라면 이 단계를 미루고 조정자에게 알린다.
 
 - [ ] **Step 7: 커밋·push**
 

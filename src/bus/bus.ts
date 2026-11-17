@@ -7,6 +7,8 @@ import type { NodeName, TopicName } from "./topics.js";
 
 export const MAX_DELIVERIES = 3;
 export const RETRY_MS = 100;
+/** 닫은 통로에 발행·구독하면 이 글로 거절한다. */
+export const CLOSED = "닫힌 통로예요";
 export type Outcome = "ack" | "retry";
 export type Deliver<N extends TopicName> = (e: Envelope<N>) => Promise<Outcome>;
 export interface Subscription {

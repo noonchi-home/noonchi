@@ -1,7 +1,7 @@
 // 통로 계약(MemoryBus·RedisBus가 같은 시험을 통과한다): 준비·시작 두 단계, QoS 셋, SENSOR 상한·놓친 수,
 // 처리 뒤 ack·차례를 지키며 다시 주기·dead(dead의 실패는 다시 보내지 않음), 끊긴 뒤 다시 받기, publish 안에서 동기로 부르지 않음.
 import { describe, expect, it } from "vitest";
-import type { Bus, Envelope, Outcome, TopicName } from "../../src/bus/index.js";
+import { RETRY_MS, type Bus, type Envelope, type Outcome, type TopicName } from "../../src/bus/index.js";
 
 const EPOCH = { boot: "b1", home: "h#1" };
 const env = <N extends TopicName>(topic: N, body: Record<string, unknown>, seq: number, key = "_", node = "world"): Envelope<N> =>
@@ -176,6 +176,30 @@ export function busContract(name: string, make: () => Promise<Bus>, opts: { leng
       await until(async () => (await opts.length(bus, "/world/changes")) === 0);
       expect(sawInside).toBe(false);
       await bus.close();
+    });
+
+    it("RELIABLE: 다시 주기를 기다리는 동안 새 메시지가 와도 RETRY_MS 전에는 다시 주지 않는다", async () => {
+      const bus = await make();
+      const at: number[] = [];
+      const s = await bus.subscribe("/world/changes", "act", async (m) => {
+        if (m.body.rev !== 1) return "ack";
+        at.push(Date.now());
+        return at.length === 1 ? "retry" : "ack";
+      });
+      s.start();
+      await bus.publish(env("/world/changes", { rev: 1 }, 1));
+      await until(() => at.length === 1);
+      await bus.publish(env("/world/changes", { rev: 2 }, 2));
+      await until(() => at.length === 2, 5000);
+      expect(at[1]! - at[0]!).toBeGreaterThanOrEqual(RETRY_MS - 5);
+      await bus.close();
+    });
+
+    it("닫은 뒤에는 발행·구독을 거절한다", async () => {
+      const bus = await make();
+      await bus.close();
+      await expect(bus.publish(env("/world/changes", { rev: 1 }, 1))).rejects.toThrow(/닫힌 통로/);
+      await expect(bus.subscribe("/world/changes", "act", async () => "ack")).rejects.toThrow(/닫힌 통로/);
     });
   });
 }
