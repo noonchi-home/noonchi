@@ -2685,10 +2685,10 @@ Task 1 뒤 RedisBus 한 번 지나기는 같은 크기 맨 전달과 p50이 같�
 
 **Files:** Create `src/world/mirror.ts`. Test: `tests/world-mirror.test.ts`.
 
-**Interfaces:** `startWorldMirror(o: { bus; epoch; name: NodeName; onChanges?(c: WorldChange[], view: WorldView): void; onView?(view: WorldView): void }): Promise<{ node: BusNode; view(): WorldView | null }>`.
+**Interfaces:** `startWorldMirror(o: { bus; epoch; name: NodeName; clock?; log?; onChanges?(c: WorldChange[], view: WorldView): void; onView?(view: WorldView): void }): Promise<{ node: BusNode; view(): WorldView | null; rev(): number | null }>`(prepare까지). 상태 하나의 구독으로 보기·변화를 다 받는다(`withState`의 `onState`: 같은 노드가 상태를 두 번 구독하면 낡은 메시지 거르기가 둘째를 버린다).
 
-- [ ] 실패 시험: 변화는 그 `rev` 이상의 상태를 가진 뒤에 `onChanges`로 오고 그때 `view()`도 그 상태다(P2-7). `onView`는 `rev`가 바뀔 때만 부른다(250ms 다시 냄은 부르지 않음). 늦게 붙어도 가장 새 상태를 바로 받는다(STATE).
-- [ ] 구현, 통과 확인, 커밋·push.
+- [x] 실패 시험: 변화는 그 `rev` 이상의 상태를 가진 뒤에 `onChanges`로 오고 그때 `view()`도 그 상태다(P2-7). `onView`는 `rev`가 바뀔 때만 부른다(250ms 다시 냄은 부르지 않음). 늦게 붙어도 가장 새 상태를 바로 받는다(STATE).
+- [x] 구현, 통과 확인(`tests/world-mirror.test.ts`·`tests/bus-node.test.ts`, typecheck, lint), 커밋.
 
 ### Task 5: 관찰 흐름을 인식 노드로
 
