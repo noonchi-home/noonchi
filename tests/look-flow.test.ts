@@ -1,6 +1,7 @@
 // 흐름 시험: 놓기 단계에서 전체 사진은 싱크대 안 컵을 못 봐도, 멈춘 단계(A) → 관찰 모드가 고른 가까이 보기 → 최근 다섯 장에서 컵을 찾고 VLM이 싱크대 안이라 답해
 // 「완료」 없이 계획이 끝난다. 진짜 WorldState·ObservationPipeline·ExecutionTracker·Planner·Observer·Looker를 쓰고, 모델은 가짜 OpenAI 서버 하나다
 // (계획 모드 대본 CUP_SCRIPTS, 관찰 모드 대본 look_closer sink_1, 가까이 본 사진의 VLM 답 싱크대 안).
+import { pipelineOn } from "./helpers/world-port.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { startFakeOpenAI, type FakeServer } from "../scripts/fake-openai.js";
 import { Looker } from "../src/act/look.js";
@@ -67,7 +68,7 @@ async function setup(o: { stalled: boolean }) {
     toPhone: (m) => phone.push(m), emit: (l) => logs.push(l), locate: (id) => PLACES[id],
     ...(o.stalled ? { stalled: (s) => looker?.stalled(s) ?? false } : {}),
   });
-  const pipeline = new ObservationPipeline({
+  const pipeline = pipelineOn({
     config: { engineMs: 2000, vlmMaxInflight: 4, vlmTimeoutMs: 5000, detectQueueMax: 8, keepMs: 20_000 },
     detector: seenDetector(seen), vlm: new VlmClient({ baseUrl: `${fake.url}/v1`, model: "m", apiKey: "", extraBody: {} }), world,
     emit: (l) => logs.push(l), broadcastWorld: () => {}, onChanges: () => tracker.onWorld(), clock,

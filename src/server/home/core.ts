@@ -9,7 +9,8 @@ import type { PlannedCommand } from "../../contract/phone.js";
 import type { AssistMode } from "../../contract/setup.js";
 import type { SignalHub, ThinqLink } from "../../devices/index.js";
 import type { FloorPlan, HomePlan, PlaceNames, TwinData, loadLayout, loadScene } from "../../layout/index.js";
-import type { ObservationPipeline } from "../../observe/index.js";
+import type { ObservationPipeline, WorldPort } from "../../observe/index.js";
+import type { WorldChange } from "../../contract/world.js";
 import type { EyeFeed, FrameHeader, PhoneServer, StartStore, twinLandmarks } from "../../phone/index.js";
 import type { PlaneSurface, WorldState } from "../../world/index.js";
 import type { TwinHomeApp } from "../app.js";
@@ -75,6 +76,8 @@ export class HomeCore {
   surfaces!: () => PlaneSurface[];
   world: WorldState | null = null;
   pipeline: ObservationPipeline | null = null;
+  /** World State를 바로 부르는 길(묶음 2 Task 6에서 노드로 바꾼다). */
+  direct: (WorldPort & { publish(c: WorldChange[]): void }) | null = null;
   unsubWorld: () => void = () => {};
   decideTimer: NodeJS.Timeout | undefined;
   // 말풍선 카드(say.ts): 실제 폰에 낸 지금 명령, 마지막 판단·물체 모양, 보낸 글, 가까이 보기·반성·외부 연락 결과

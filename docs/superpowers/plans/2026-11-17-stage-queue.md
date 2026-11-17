@@ -2693,8 +2693,8 @@ Task 1 뒤 RedisBus 한 번 지나기는 같은 크기 맨 전달과 p50이 같�
 
 **Files:** Modify `src/observe/pipeline.ts`(`world` → `WorldPort`, `idsOf`·`publish()` 삭제), Create `src/observe/node.ts`. Test: `tests/observe-node.test.ts`, 기존 `tests/observe-*.test.ts`·가까이 보기·위에서 보기 시험(그 시험들은 `WorldState`를 바로 넘기던 것을 `WorldState`를 바로 부르는 시험 대역 `tests/helpers/world-port.ts`로 바꾼다. 대역은 같은 차례로 넣고 같은 `ids`를 돌려준다).
 
-- [ ] 실패 시험: 프레임 하나에 `/perception/scene`으로 `eye` → `frame` 차례(사진 없이), VLM 답은 `/perception/scene`으로 내고 JPEG를 싣지 않는다. 가까이 보기는 `/world/closer` 답(VLM 합치기 뒤 최종 표)으로 `found` id를 채운다(VLM 답이 새로 만든 물건 id 포함). 답이 2초 안에 없으면 `world_timeout`, 기다리는 중 인식 노드를 끝내면 `closed`로 끝난다(끝내기가 걸리지 않음). 감지 대기열 고리가 변화 콜백·`view()`를 부르지 않는다. 물체 모양은 `/perception/detections`로 낸다.
-- [ ] 구현, 통과 확인, 커밋·push.
+- [x] 실패 시험: 프레임 하나에 `/perception/scene`으로 `eye` → `frame` 차례(사진 없이), VLM 답은 `/perception/scene`으로 내고 JPEG를 싣지 않는다. 가까이 보기는 `/world/closer` 답(VLM 합치기 뒤 최종 표)으로 `found` id를 채운다(VLM 답이 새로 만든 물건 id 포함). 답이 2초 안에 없으면 `world_timeout`, 기다리는 중 인식 노드를 끝내면 `closed`로 끝난다(끝내기가 걸리지 않음). 감지 대기열 고리가 변화 콜백·`view()`를 부르지 않는다. 물체 모양은 `/perception/detections`로 낸다.
+- [x] 구현, 통과 확인(인식 노드·관찰 흐름·World State·실행 추적·서버 시험, `tests/latency-world.test.ts` p95 12.8ms, typecheck, lint), 커밋. 집 묶음은 Task 6에서 노드로 바꿀 때까지 같은 `WorldInputs`로 World State를 바로 부르는 임시 길(`src/server/home/observe.ts` `directWorld`)을 쓴다.
 
 ### Task 6: 집 묶음 잇기
 

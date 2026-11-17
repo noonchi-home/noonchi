@@ -1,5 +1,6 @@
 // 빠른 프레임과 VLM 프레임: 모든 엔진 프레임에 YOLO를 돌리고, VLM 프레임 간격마다 한 장만 VLM·기록에 쓴다.
 
+import { pipelineOn } from "./helpers/world-port.js";
 import { describe, expect, it, vi } from "vitest";
 import type { Detector } from "../src/observe/detector.js";
 import type { BrainLog, SeenEvent } from "../src/contract/events.js";
@@ -36,7 +37,7 @@ function setup(config: ObserveConfig, o: { hold?: boolean; fail?: () => boolean;
     return { value: { scene: "k", observations: [], summary: "s" }, costUsd: 0, model: "w", attempts: 1 };
   } } as unknown as VlmClient;
   const world = new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] });
-  const p = new ObservationPipeline({
+  const p = pipelineOn({
     config, detector: o.detector === null ? null : detector, vlm, world, emit: (l) => logs.push(l), broadcastWorld: () => {}, onSeen: (e) => seen.push(e),
   });
   const observed = () => logs.filter((l): l is Observe => l.type === "observe");

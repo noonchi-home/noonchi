@@ -3,9 +3,10 @@
 import { join } from "node:path";
 import { datasetWriter } from "../../brain/index.js";
 import type { BrainLog } from "../../contract/events.js";
+import type { WorldChange } from "../../contract/world.js";
 import { floorLookup, roomNamedAt, type LayoutEditor } from "../../layout/index.js";
-import { createPipeline } from "../../observe/index.js";
-import { WorldState, loadFallConfig, restsFromLayout, surfacesFromLayout, type PlaneSurface, type RestSpot } from "../../world/index.js";
+import { createPipeline, type WorldPort } from "../../observe/index.js";
+import { WorldInputs, WorldState, loadFallConfig, restsFromLayout, surfacesFromLayout, type PlaneSurface, type RestSpot } from "../../world/index.js";
 import type { HomeCore } from "./core.js";
 
 /** 트윈의 식탁·책상·조리대·싱크대 윗면(물건의 트윈 위치). 싱크볼 점(도면 설비 anchors.basin)이 있으면 그 싱크볼도. 배치가 바뀌면 다시 만든다. */
@@ -68,28 +69,52 @@ export function startWorld(core: HomeCore): void {
   core.world = world;
 }
 
+/** 프레임마다 생기는 분석 없음은 observe 기록으로 남기므로 world_change로 다시 보내지 않는다. */
+const PER_FRAME = new Set(["vlm_missing", "yolo_missing"]);
+
+/** World State를 바로 부르는 길(묶음 2 Task 6에서 인식·집 상태 노드와 거울로 바꾼다): 집 상태 노드와 같은 WorldInputs로 넣고,
+ *  변화는 지금처럼 world_change 기록 → 실행 추적·판단 → 대시보드 world 방송 차례로 바로 넘긴다. */
+function directWorld(core: HomeCore, emit: (event: BrainLog) => void): WorldPort & { publish(c: WorldChange[]): void } {
+  const world = core.world!;
+  const inputs = new WorldInputs(world, () => core.nowMs());
+  const closers = new Map<string, Map<string, string>>();
+  const publish = (changes: WorldChange[]) => {
+    if (!changes.length || core.closed) return;
+    for (const c of changes) if (!PER_FRAME.has(c.kind)) emit({ type: "world_change", at_ms: core.nowMs(), kind: c.kind, text: c.text });
+    core.tracker!.onWorld(changes);
+    core.decider!.onChanges(changes);
+    core.app?.broadcast({ type: "world", world: world.view(core.nowMs()) });
+    core.speak();
+  };
+  return {
+    publish,
+    send(i) {
+      const r = inputs.scene(i);
+      if (r.closer) closers.set(r.closer.look, r.closer.ids);
+      publish(r.changes);
+    },
+    closerIds: async (look) => {
+      const ids = closers.get(look);
+      closers.delete(look);
+      return ids ?? "closed";
+    },
+    view: () => world.view(core.nowMs()),
+  };
+}
+
 /** 관찰 흐름(src/observe/pipeline.ts)을 연다: 판단·실행 기록은 emit으로, 물체 모양·World State는 대시보드로, 변화는 실행 추적·판단 호출로. 실행 추적을 만든 뒤 부른다. */
 export async function startPipeline(core: HomeCore, emit: (event: BrainLog) => void): Promise<void> {
   const { ctx } = core;
   const { env, log, runtimeDir, history } = ctx;
-  const world = core.world!;
   const decide = core.decider!;
-  const tracking = core.tracker!;
   const { engineHeaders } = core;
+  core.direct = directWorld(core, emit);
   core.pipeline = await createPipeline({
-    env, log, world, inject: ctx.brain, emit,
+    env, log, world: core.direct, inject: ctx.brain, emit,
     // 물체 모양은 대시보드로만 보낸다(초당 10번이라 기록 DB·실행 기록에 넣지 않는다)
     onSeen: (e) => {
       core.lastSeen = e;
       core.app?.broadcast(e);
-    },
-    broadcastWorld: (w) => {
-      core.app?.broadcast({ type: "world", world: w });
-      core.speak();
-    },
-    onChanges: (c) => {
-      tracking.onWorld(c);
-      decide.onChanges(c);
     },
     // 주기 판단(기본 5초)은 엔진 프레임이 오는 동안만 부른다
     onFrame: () => decide.onFrame(),
@@ -106,12 +131,12 @@ export async function startPipeline(core: HomeCore, emit: (event: BrainLog) => v
 export function startLoop(core: HomeCore): void {
   const { signals } = core;
   const world = core.world!;
-  const observed = core.pipeline!;
+  const direct = core.direct!;
   const decide = core.decider!;
   const tracking = core.tracker!;
   const looking = core.looker!;
   core.decideTimer = setInterval(() => {
-    observed.tick(); // 오래 이어진 가전 상태(냉장고 문 1분)
+    direct.publish(world.tick(core.nowMs())); // 오래 이어진 가전 상태(냉장고 문 1분)
     decide.tick();
     tracking.tick();
     looking.tick();
@@ -119,5 +144,5 @@ export function startLoop(core: HomeCore): void {
   }, 250);
   core.decideTimer.unref?.();
   for (const s of signals.states()) world.applyDevice(s, core.nowMs()); // 시작 상태는 변화로 내지 않는다
-  core.unsubWorld = signals.subscribe((s) => observed.onDevice(s));
+  core.unsubWorld = signals.subscribe((s) => direct.publish(world.applyDevice(s, core.nowMs())));
 }

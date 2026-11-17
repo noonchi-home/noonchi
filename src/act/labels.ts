@@ -206,6 +206,7 @@ export const LOOK_TEXT = {
   miss: {
     no_fresh_frames: "새 사진이 모자라 못 봄", vlm_busy: "VLM 자리가 없어 못 봄", no_view: "카메라를 맞추기 전이라 못 봄", out_of_view: "사진 밖이라 못 봄",
     no_detector: "감지기가 없어 못 봄", aborted: "단계가 바뀌어 그만 봄", "closed": "멈춰서 못 봄", error: "감지 오류로 못 봄",
+    world_timeout: "집 상태 답이 늦어 못 봄",
   } satisfies Record<CloserMiss, string>,
   vlmMissing: "VLM 답 없음",
   /** 위에서 보기(내용물 보류의 가까이 가서 보기): 기록 까닭과 넣지 않은 장의 까닭. */

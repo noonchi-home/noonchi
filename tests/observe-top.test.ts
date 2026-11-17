@@ -1,5 +1,6 @@
 // 위에서 보기(src/observe/pipeline.ts topReady·topLook, src/observe/top.ts topDropOf): 컵 안을 내려다본 VLM 프레임 쌍(TOP_CONFIRM)을 고르고,
 // 장마다 그 컵 하나만 d1로 VLM에 보내 대상 확인(옮겨짐·not_visible·안이 안 보임·그릇 감지·같은 종류 가까이)을 거친 내용물만 World State에 넣는다.
+import { pipelineOn } from "./helpers/world-port.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { startFakeOpenAI, type FakeServer } from "../scripts/fake-openai.js";
 import type { Detector } from "../src/observe/detector.js";
@@ -59,7 +60,7 @@ function setup(vlm: VlmClient, crop: () => Detection[] = () => [BOWL]) {
       return { detections: dets, ms: 0, width: 480, height: 360 };
     },
   };
-  const p = new ObservationPipeline({
+  const p = pipelineOn({
     config: { engineMs: 1000, vlmMaxInflight: 4, vlmTimeoutMs: 5000, detectQueueMax: 8, keepMs: 30_000 },
     detector, vlm, world, emit: () => {}, broadcastWorld: () => {}, clock,
   });

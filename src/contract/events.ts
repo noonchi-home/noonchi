@@ -168,8 +168,9 @@ export type LookTrigger = "stalled" | "unknown_fact" | "off_track" | "heard";
  *  모자라거나 가장 새 프레임이 지금보다 너무 앞서 찍힘(폰 끊김, 감지가 끝난 뒤에도 다시 봄. VLM 답이 왔을 때 낡았으면 결과 vlm no_fresh_frames), vlm_busy 다른 가까이 보기가 돌거나 VLM 가까이 보기 자리가 참. */
 export type CloserWait = "no_fresh_frames" | "vlm_busy";
 /** 가까이 보기를 못 한 까닭: CloserWait, no_view 카메라를 맞추기 전, out_of_view 대상이 가장 새 사진 밖, no_detector 감지기 없음,
- *  aborted 감지를 합치기 전에 요청이 끊김(자르기 전·합치기 바로 전에 보고 넣지 않음), closed 관찰 흐름이 닫힘, error 자르기·감지 오류. */
-export type CloserMiss = CloserWait | "no_view" | "out_of_view" | "no_detector" | "aborted" | "closed" | "error";
+ *  aborted 감지를 합치기 전에 요청이 끊김(자르기 전·합치기 바로 전에 보고 넣지 않음), closed 관찰 흐름이 닫힘, error 자르기·감지 오류,
+ *  world_timeout 집 상태 노드가 VLM 합치기 뒤 찾은 물건 id 답(/world/closer)을 기한 안에 주지 않음. */
+export type CloserMiss = CloserWait | "no_view" | "out_of_view" | "no_detector" | "aborted" | "closed" | "error" | "world_timeout";
 /** VLM에 보낸 가까이 본 사진의 감지 하나: 맞추거나 만든 World State 물건 id(없으면 null), 종류, 신뢰도(소수 둘째 자리), 그 감지에 대한 VLM 답 값.
  *  맞는 물건이 없는 물건 감지는 서로 다른 원본 프레임 3장에서 같은 자리로 보였거나, 1장 이상 보이고 이 VLM 답이 그 감지에 사실을 하나 이상 답하고 가림(not_visible)은 답하지 않았을 때
  *  새 물건이 되고 그 id가 실린다. 그 밖에는 null이다. */

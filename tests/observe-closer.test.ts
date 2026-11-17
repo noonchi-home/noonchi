@@ -1,3 +1,4 @@
+import { directPort, pipelineOn } from "./helpers/world-port.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { startFakeOpenAI, type FakeServer } from "../scripts/fake-openai.js";
 import type { Detector } from "../src/observe/detector.js";
@@ -43,7 +44,7 @@ function setup(o: { vlm: VlmClient; detector?: (engine: Set<string>) => Detector
   const changes: WorldChange[][] = [];
   const clock = { t: 0, now() { return this.t; } };
   const world = new WorldState({ surfaces: () => [SINK], floorAt: () => 0, roomAt: () => null, devices: () => [] });
-  const p = new ObservationPipeline({
+  const p = pipelineOn({
     config: { engineMs: o.engineMs ?? 2000, vlmMs: o.vlmMs, vlmMaxInflight: o.vlmMaxInflight ?? 4, vlmTimeoutMs: 5000, detectQueueMax: 8, keepMs: 20_000 },
     detector: o.detector ? o.detector(engine) : cropAware(engine, { crop: [cup] }), vlm: o.vlm, world,
     emit: (l) => logs.push(l), broadcastWorld: () => {}, onChanges: (c) => { changes.push(c); o.onChanges?.(c); }, clock,
@@ -500,7 +501,7 @@ describe("가까이 보기 VLM 모델(VLM_CLOSER_MODEL)", () => {
     const clock = { t: 0, now() { return this.t; } };
     const world = new WorldState({ surfaces: () => [SINK], floorAt: () => 0, roomAt: () => null, devices: () => [] });
     const lines: string[] = [];
-    const p = await createPipeline({ env, world, emit: () => {}, broadcastWorld: () => {}, log: (l) => lines.push(l), inject: { detector: cropAware(engine, { crop: [cup] }), clock } });
+    const p = await createPipeline({ env, world: directPort(world, { now: () => clock.now() }), emit: () => {}, log: (l) => lines.push(l), inject: { detector: cropAware(engine, { crop: [cup] }), clock } });
     let n = 0;
     const frame = (atMs: number) => {
       const jpeg = frameJpeg(++n, [[0, 0, 8, 8]]);

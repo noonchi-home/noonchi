@@ -2,19 +2,20 @@
 // VLM은 엔진 프레임마다 한 번, 그 프레임과 앞선 프레임을 창 크기(VLM_WINDOW_FRAMES, 기본 5장 = 2초 간격이면 10초)까지 오래된 것부터 받는다.
 // 프레임마다 observe 기록이 반드시 남는다: 대기열이 차면 YOLO·VLM 분석 없음, 감지 실패면 YOLO 분석 없음(VLM은 그대로 분석),
 // 고리 범위(keepMs)보다 앞서 찍힌 늦은 프레임은 분석하지 않고 YOLO·VLM 분석 없음(stale). 늦은 프레임은 World State·눈 자세에 넣지 않는다.
-// 감지 번호(d1…)와 물체 id의 짝은 그 프레임의 VLM 답(또는 분석 없음)이 올 때까지 둔다.
+// World State에는 바로 넣지 않는다: 넣을 것은 WorldPort(인식 노드, src/observe/node.ts)로 /perception/scene에 차례대로 낸다(사진 없음).
+// YOLO가 World State를 바꾸는 입력(eye·frame·yolo_missing·closer_merge)은 그 토픽의 임시 갈래다(VLM 전용으로 바뀔 자리). 감지 번호 짝은 집 상태 노드가 갖는다.
 // 분석한 사진은 메모리 고리에만 있다. 디스크에 쓰지 않는다. DATASET_COLLECT=1이면 dataset(시험 자료 저장, src/brain/history/retention.ts)이 고리에 넣은 프레임을 받는다.
 // 가까이 보기(closer): 고리의 새 프레임 최대 5장마다 대상 자리를 그 프레임 카메라로 찍어 절반 크기로 잘라 2배로 키우고 같은 감지기로 본다.
-// 잘라 본 결과는 보통 프레임처럼 넣지 않고 World State applyCloser로 한 번에 합친다. 물건 감지가 있는 가장 새 장(없으면 가장 새 장) 하나만
-// VLM 풀의 가까이 보기 자리로 혼자 보내고 그 답은 applyCloserScene으로 넣는다(그때도 사진이 끊김 범위 안일 때만). 3장이 안 된 새 물건 후보는 그 답이 사실을 답할 때만 만든다.
+// 잘라 본 결과는 보통 프레임처럼 넣지 않고 closer_merge로 한 번에 합친다. 물건 감지가 있는 가장 새 장(없으면 가장 새 장) 하나만
+// VLM 풀의 가까이 보기 자리로 혼자 보내고 그 답은 closer_scene으로 넣는다(그때도 사진이 끊김 범위 안일 때만). 3장이 안 된 새 물건 후보는 그 답이 사실을 답할 때만 만든다.
+// 찾은 물건 id는 VLM 합치기 뒤 집 상태 노드의 답(/world/closer)으로 받는다.
 // 가까이 보기 VLM은 closerVlm(VLM_CLOSER_MODEL, 같은 주소에 모델 이름만 다름, 없으면 보통 프레임과 같은 VLM)이다.
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { BrainLog, CloserMiss, CloserResult, CloserVlm, SeenEvent, TopFrame } from "../contract/events.js";
-import type { WorldChange, WorldObject, WorldView, YoloMissing } from "../contract/world.js";
-import type { DeviceState } from "../contract/devices.js";
+import type { SceneInput, WorldObject, WorldView, YoloMissing } from "../contract/world.js";
 import { DETECTOR_MODEL, MODELS_DIR, POSE_MODEL, PROVIDERS, WorkerDetector, type DetectResult, type Detector, type DetectorSpec, type Provider } from "./detector.js";
-import type { Detection, Pose, CameraView, EngineFrame } from "../contract/observe.js";
+import type { Detection, Pose, CameraView, EngineFrame, FrameMeta } from "../contract/observe.js";
 import { hasPrice } from "../infer/cost.js";
 import { vlmTimeoutMs } from "../infer/endpoints.js";
 import { createInference } from "../infer/inference.js";
@@ -22,7 +23,7 @@ import type { VlmClient } from "../infer/vlm.js";
 import type { FrameHeader, EyeEvent } from "../phone/index.js";
 import { OBJECT_NAME, YOLO_TEXT } from "../world/labels.js";
 import { boxShape, cupInside, inView, pixelOf, topBox, topPairOf, topView } from "../world/index.js";
-import { CLOSER_NEW_FRAMES, type CloserPass, type WorldState } from "../world/index.js";
+import { CLOSER_NEW_FRAMES, accepts, closerObject, type CloserPass } from "../world/index.js";
 import { cropBox, cropJpeg, LOOK_MARGIN, onCropEdge, toCropBox, toFrameDetection, type Box, type LookSpot } from "./crop.js";
 import { captureTime, FrameRing, sha256 } from "./ring.js";
 import { analyzeScene, CLOSER_NOTE, TOP_NOTE, type SceneDetection } from "./scene.js";
@@ -101,8 +102,22 @@ interface TopShot { frame: EngineFrame; box: Box }
 /** 고리 가장 새 프레임의 카메라·촬영 시각·크기(관찰 모드가 대상이 사진 안인지 본다). */
 export interface LatestFrame { view: CameraView | null; capturedAtMs: number; width: number; height: number }
 
-/** 프레임마다 생기는 분석 없음은 observe 기록으로 남기므로 world_change로 다시 보내지 않는다. */
-const PER_FRAME = new Set(["vlm_missing", "yolo_missing"]);
+/** 관찰 흐름이 World State에 넣고 읽는 길(stage-queue 묶음 2): 인식 노드(src/observe/node.ts)가 /perception/scene·/world/closer·/world/state로 잇는다.
+ *  시험은 World State를 바로 부르는 대역(tests/helpers/world-port.ts)을 넘긴다. */
+export interface WorldPort {
+  /** /perception/scene 입력 하나(VLM 답, YOLO 임시 갈래). 기다리지 않는다. */
+  send(i: SceneInput): void;
+  /** 가까이 보기 한 번(look)의 VLM 합치기 뒤 최종 id 표. 답이 기한 안에 없으면 "timeout", 인식 노드가 끝나면 "closed". */
+  closerIds(look: string): Promise<Map<string, string> | "timeout" | "closed">;
+  /** 가장 새 집 상태 보기(아직 없으면 null). */
+  view(): WorldView | null;
+}
+
+/** 사진 없는 프레임(JPEG·해시는 인식 노드 밖으로 나가지 않는다). */
+function frameMeta(f: EngineFrame): FrameMeta {
+  const { jpeg: _jpeg, sha256: _sha256, ...meta } = f;
+  return meta;
+}
 
 const mean = (xs: number[]) => (xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : null);
 
@@ -115,13 +130,10 @@ export interface PipelineOptions {
   vlm: VlmClient;
   /** 가까이 보기 VLM(없으면 vlm). 같은 주소에 모델 이름만 다르다(VLM_CLOSER_MODEL, src/infer/inference.ts). */
   closerVlm?: VlmClient;
-  world: WorldState;
+  world: WorldPort;
   emit: (log: BrainLog) => void;
-  broadcastWorld: (w: WorldView) => void;
   /** 감지가 끝난 프레임마다(빠른 프레임 포함) 물체 모양. 대시보드로만 보내고 기록하지 않는다(src/server/home/observe.ts). */
   onSeen?: (e: SeenEvent) => void;
-  /** World State 변화(분석 없음 포함). 판단 호출 시점이 받는다. */
-  onChanges?: (c: WorldChange[]) => void;
   /** 엔진 프레임이 올 때마다(같은 사진·늦은 프레임 포함). 판단 호출 시점이 관찰이 살아 있는지 본다. */
   onFrame?: () => void;
   /** 시험 자료 저장(DATASET_COLLECT=1일 때만). 고리에 넣은 프레임마다 부른다. */
@@ -162,7 +174,6 @@ export class ObservationPipeline {
   private readonly ring: FrameRing;
   private readonly pool: VlmPool;
   private readonly clock: { now(): number };
-  private readonly idsOf = new Map<string, Map<string, string>>();
   private readonly queue: EngineFrame[] = [];
   private detecting: Promise<void> | null = null;
   private seq = 0;
@@ -202,11 +213,10 @@ export class ObservationPipeline {
         : analyzeScene(o.vlm, this.ring.window(f, windowFrames, windowFrames * vlmStepMs(o.config)), d, signal),
       onResult: (r) => {
         if (this.closed) return;
-        const ids = this.idsOf.get(r.frameId) ?? new Map<string, string>();
-        this.idsOf.delete(r.frameId);
-        const changes = r.scene ? o.world.applyScene(r.frameId, r.capturedAtMs, r.scene, ids) : o.world.applyMissing(r.frameId, r.capturedAtMs, { vlm: r.missing! });
+        o.world.send(r.scene
+          ? { kind: "scene", frame_id: r.frameId, observed_ms: r.capturedAtMs, scene: r.scene }
+          : { kind: "missing", frame_id: r.frameId, observed_ms: r.capturedAtMs, missing: r.missing! });
         o.emit({ type: "observe", at_ms: this.clock.now(), frame_id: r.frameId, captured_at_ms: r.capturedAtMs, yolo: null, vlm: r.scene?.summary ?? null, ...(r.missing ? { vlm_missing: r.missing } : {}) });
-        this.publish(changes);
       },
     });
   }
@@ -219,13 +229,6 @@ export class ObservationPipeline {
     const r = await analyzeScene(this.closerVlm, [f], d, signal, this.topIds.has(f.id) ? TOP_NOTE : CLOSER_NOTE);
     if (!hasPrice(r.model)) this.closerUnpriced = true;
     return r;
-  }
-
-  private publish(changes: WorldChange[]): void {
-    if (this.closed || !changes.length) return;
-    for (const c of changes) if (!PER_FRAME.has(c.kind)) this.o.emit({ type: "world_change", at_ms: this.clock.now(), kind: c.kind, text: c.text });
-    this.o.onChanges?.(changes);
-    this.o.broadcastWorld(this.o.world.view(this.clock.now()));
   }
 
   onEngine(jpeg: Buffer, header: FrameHeader, eye: EyeEvent | null, view: CameraView | null, receivedAtMs: number): void {
@@ -256,7 +259,7 @@ export class ObservationPipeline {
         this.datasetCount.failed++;
       }
     }
-    this.o.world.setEye(eye, t.atMs);
+    this.o.world.send({ kind: "eye", eye, at_ms: t.atMs });
     if (!this.o.detector) {
       if (frame.vlm) this.analyze(frame, undefined);
       return;
@@ -292,7 +295,7 @@ export class ObservationPipeline {
   private missBoth(frame: EngineFrame, why: "cap" | "stale"): void {
     this.yoloMissing[why]++;
     this.o.emit({ type: "observe", at_ms: this.clock.now(), frame_id: frame.id, captured_at_ms: frame.capturedAtMs, yolo: null, yolo_missing: why, vlm: null, vlm_missing: why });
-    this.publish(this.o.world.applyMissing(frame.id, frame.capturedAtMs, { yolo: why, vlm: why }));
+    this.o.world.send({ kind: "yolo_missing", frame_id: frame.id, observed_ms: frame.capturedAtMs, yolo: why, vlm: why });
   }
 
   /** YOLO 결과(실패면 null, 감지기가 없으면 undefined)를 World State에 넣는다. 감지가 된 프레임마다 물체 모양(seen)을 대시보드로 보낸다.
@@ -300,32 +303,29 @@ export class ObservationPipeline {
    *  World State가 받지 않는 낮은 신뢰도 감지는 모양·YOLO 글·VLM 감지 목록에서 뺀다: 화면·VLM·World State가 같은 감지를 본다.
    *  관절(poses)은 World State만 받는다(자세·손에 듦 사실). */
   private analyze(frame: EngineFrame, raw: Detection[] | null | undefined, poses?: Pose[]): void {
-    const dets = raw && raw.filter((d) => this.o.world.accepts(d));
+    const dets = raw && raw.filter((d) => accepts(d));
     if (dets) {
       this.o.onSeen?.({
         type: "seen", at_ms: this.clock.now(), frame_id: frame.id, captured_at_ms: frame.capturedAtMs, frame: { width: frame.width, height: frame.height },
         shapes: dets.map(({ label, score, mask }) => ({ label, score, mask })),
       });
     }
+    const send = (d: Detection[]) => this.o.world.send({ kind: "frame", frame: frameMeta(frame), dets: d, ...(poses ? { poses } : {}) });
     if (!frame.vlm) {
-      if (dets) this.publish(this.o.world.applyDetections(frame, dets, poses).changes);
+      if (dets) send(dets);
       else if (dets === null) this.yoloMissing.error++;
       return;
     }
     const base = { type: "observe" as const, frame_id: frame.id, captured_at_ms: frame.capturedAtMs, vlm: null };
     if (dets === undefined) {
-      this.idsOf.set(frame.id, new Map());
       this.o.emit({ ...base, at_ms: this.clock.now(), yolo: YOLO_TEXT.noDetector });
     } else if (dets) {
-      const { changes, ids } = this.o.world.applyDetections(frame, dets, poses);
-      this.idsOf.set(frame.id, ids);
+      send(dets);
       this.o.emit({ ...base, at_ms: this.clock.now(), yolo: yoloText(dets) });
-      this.publish(changes);
     } else {
       this.yoloMissing.error++;
-      this.idsOf.set(frame.id, new Map());
       this.o.emit({ ...base, at_ms: this.clock.now(), yolo: null, yolo_missing: "error" });
-      this.publish(this.o.world.applyMissing(frame.id, frame.capturedAtMs, { yolo: "error" }));
+      this.o.world.send({ kind: "yolo_missing", frame_id: frame.id, observed_ms: frame.capturedAtMs, yolo: "error" });
     }
     const sceneDets: SceneDetection[] = (dets ?? []).map((d, i) => ({ id: `d${i + 1}`, class: d.label, box: d.box, score: d.score }));
     this.pool.submit(frame, sceneDets); // 상한을 넘으면 풀이 VLM 분석 없음(cap)을 onResult로 낸다
@@ -356,15 +356,6 @@ export class ObservationPipeline {
       }
       if (!this.closed) this.analyze(frame, dets, poses);
     }
-  }
-
-  onDevice(s: DeviceState): void {
-    if (!this.closed) this.publish(this.o.world.applyDevice(s, this.clock.now()));
-  }
-
-  /** 판단 타이머가 부른다: 시간이 지나야 나는 World State 사건(냉장고 문이 1분 넘게 열림)을 낸다. */
-  tick(): void {
-    if (!this.closed) this.publish(this.o.world.tick(this.clock.now()));
   }
 
   status(): PipelineStatus {
@@ -431,7 +422,7 @@ export class ObservationPipeline {
         const crop = cropBox(pixelOf(view, spot.position, frame)!, frame);
         const jpeg = cropJpeg(frame.jpeg, crop, frame);
         const r = await detector.detect(jpeg);
-        passes.push({ frame, view, crop, jpeg, dets: r.detections.filter((d) => this.o.world.accepts(d)) });
+        passes.push({ frame, view, crop, jpeg, dets: r.detections.filter((d) => accepts(d)) });
       }
     } catch {
       return this.closerMiss(this.closed ? "closed" : "error");
@@ -448,13 +439,12 @@ export class ObservationPipeline {
       }),
     }));
     // VLM은 물건 감지가 있는 가장 새 장(없으면 가장 새 장)을 본다: 결과·기록·VLM 답의 감지 번호가 모두 그 장 기준이다
-    const objectAt = looks.findLastIndex((l) => l.dets.some((d) => this.o.world.closerObject(d)));
+    const objectAt = looks.findLastIndex((l) => l.dets.some((d) => closerObject(d)));
     const sentAt = objectAt < 0 ? looks.length - 1 : objectAt;
     const last = passes[sentAt]!;
-    // 잘라 본 몇 장은 await 없이 한 번에 합치고 변화도 한 번만 낸다
-    const { changes, ids, pending } = this.o.world.applyCloser(looks, last.frame.id);
-    this.publish(changes);
+    // 잘라 본 몇 장은 한 번에 합친다(closer_merge 하나, 변화도 한 번)
     const id = `${last.frame.id}.c${++this.closerSeq}`;
+    this.o.world.send({ kind: "closer_merge", look: id, passes: looks, from: last.frame.id });
     this.o.emit({
       type: "observe", at_ms: this.clock.now(), frame_id: id, captured_at_ms: last.frame.capturedAtMs, yolo: yoloText(last.dets), vlm: null, closer: last.crop,
     });
@@ -482,8 +472,13 @@ export class ObservationPipeline {
       });
     }
     // 3장이 안 된 새 물건 후보는 이 답이 그 감지에 사실을 답할 때만 만든다(답이 없거나 넣지 않으면 버린다)
-    if (r?.scene) this.publish(this.o.world.applyCloserScene(last.frame.id, last.frame.capturedAtMs, r.scene, ids, pending));
-    else if (pending) this.o.world.endCloser(pending);
+    this.o.world.send(r?.scene
+      ? { kind: "closer_scene", look: id, frame_id: last.frame.id, observed_ms: last.frame.capturedAtMs, scene: r.scene }
+      : { kind: "closer_end", look: id });
+    // 찾은 물건 id: VLM 합치기 뒤 집 상태 노드의 최종 표(그 답이 만든 물건 id 포함)
+    const ids = await this.o.world.closerIds(id);
+    if (ids === "closed") return this.closerMiss("closed");
+    if (ids === "timeout") return this.closerMiss("world_timeout");
     this.closerCount.looks++;
     const said = new Map<string, string[]>();
     for (const ob of r?.scene?.observations ?? []) said.set(ob.object_id, [...(said.get(ob.object_id) ?? []), ob.state]);
@@ -499,7 +494,7 @@ export class ObservationPipeline {
    *  d1 상자(topBox, 잰 크기의 원기둥)를 만들 수 있는 장만 센다(짧은 컵을 낮게 보면 고정 높이 상자는 카메라 뒤로 넘어간다). 장마다 그 상자를 같이 돌려준다.
    *  컵이 없거나 사라졌거나 자리를 모르면 null. */
   private topPair(objectId: string, sinceMs: number): { obj: WorldObject; center: [number, number, number]; pair: [TopShot, TopShot] } | null {
-    const obj = this.o.world.view(this.clock.now()).objects.find((o) => o.id === objectId && o.status !== "gone");
+    const obj = this.o.world.view()?.objects.find((o) => o.id === objectId && o.status !== "gone");
     if (!obj?.position) return null;
     const center = obj.size_m?.center ?? obj.position;
     const cup = cupInside(obj.size_m);
@@ -558,7 +553,7 @@ export class ObservationPipeline {
       const jpeg = cropJpeg(frame.jpeg, crop, frame);
       let dets: Detection[];
       try {
-        dets = (await detector.detect(jpeg)).detections.filter((d) => this.o.world.accepts(d));
+        dets = (await detector.detect(jpeg)).detections.filter((d) => accepts(d));
       } catch {
         if (!last) return this.closerMiss(this.closed ? "closed" : "error");
         break;
@@ -582,7 +577,7 @@ export class ObservationPipeline {
       });
       if (r.missing) vlm = r.missing;
       summary = r.scene?.summary ?? summary;
-      const objects = this.o.world.view(this.clock.now()).objects;
+      const objects = this.o.world.view()?.objects ?? [];
       const d = topDropOf({
         start: start.position!, now: objects.find((o) => o.id === start.id), others: objects.filter((o) => o.id !== start.id && o.cls === start.cls && o.status !== "gone"),
         scene: r.scene, dets, box,
@@ -594,7 +589,7 @@ export class ObservationPipeline {
       }
       kept.push(d.value);
       top.push({ frame_id: id, kept: true });
-      this.publish(this.o.world.applyTop(start.id, frame.id, frame.capturedAtMs, d.value));
+      this.o.world.send({ kind: "top", object_id: start.id, frame_id: frame.id, observed_ms: frame.capturedAtMs, value: d.value });
     }
     this.closerCount.looks++;
     return {
@@ -663,8 +658,8 @@ async function createDetector(env: Env, log: (line: string) => void): Promise<De
 
 /** 환경 변수로 관찰 흐름을 만든다. VLM은 추론 모드가 고른 OpenAI 호환 주소(src/infer)이고, 가까이 보기는 같은 주소에 VLM_CLOSER_MODEL 모델로 보낸다. */
 export async function createPipeline(o: {
-  env: Env; world: WorldState; emit: (log: BrainLog) => void; broadcastWorld: (w: WorldView) => void;
-  onChanges?: (c: WorldChange[]) => void; onFrame?: () => void; log: (line: string) => void; inject?: PipelineInject; dataset?: (f: EngineFrame) => void;
+  env: Env; world: WorldPort; emit: (log: BrainLog) => void;
+  onFrame?: () => void; log: (line: string) => void; inject?: PipelineInject; dataset?: (f: EngineFrame) => void;
   onSeen?: (e: SeenEvent) => void;
   onDetected?: (jpeg: Buffer, result: DetectResult) => void;
 }): Promise<ObservationPipeline> {
@@ -678,6 +673,6 @@ export async function createPipeline(o: {
   if (detector?.decoder === "jpeg-js") o.log("[경고] sharp를 불러오지 못했습니다. JPEG을 jpeg-js로 풉니다(한 장에 약 30ms 더 걸립니다).");
   if (o.dataset) o.log("[경고] 시험 자료 모으기가 켜져 있습니다. 엔진 프레임을 디스크에 씁니다.");
   return new ObservationPipeline({
-    config, detector, vlm, closerVlm, world: o.world, emit: o.emit, broadcastWorld: o.broadcastWorld, onChanges: o.onChanges, onFrame: o.onFrame, onSeen: o.onSeen, dataset: o.dataset, onDetected: o.onDetected, clock: o.inject?.clock,
+    config, detector, vlm, closerVlm, world: o.world, emit: o.emit, onFrame: o.onFrame, onSeen: o.onSeen, dataset: o.dataset, onDetected: o.onDetected, clock: o.inject?.clock,
   });
 }
