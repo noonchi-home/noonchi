@@ -40,6 +40,9 @@ export class Steps extends Part {
   private readonly putCls = new Map<string, string>();
   /** 놓기를 끝낸 물건의 옛 id와 적은 시각: 계획이 따라간 옛 id와, 놓은 뒤 사라져 새 id로 넘기거나 잊은 id. 다시 집거나 옮기거나 그 뒤 다시 보이면 지운다. */
   private readonly putOld = new Map<string, number>();
+  /** 치운 무리(2026-11-18): 놓기를 끝낸 넣은 곳(면, 싱크볼에 넣었으면 part basin)과 그 종류. 그 뒤 그 넣은 곳에 있는 같은 종류 물건은 넣은 기억이 없어도 치운 것이다.
+   *  열쇠는 「넣은 곳|종류」. 한 번 넣은 곳은 잊지 않는다(그 자리에 다시 놓인 같은 종류도 치운 것). */
+  private readonly putGroup = new Map<string, { target: string; part?: "basin"; cls: string; atMs: number }>();
 
   /** 찾기에서 뺄 물건(src/act/track/find.ts): 놓기를 끝낸 물건(placed)과 그 옛 id. 안 보이는 옛 id의 마지막 자리는 치우기 전 자리다. */
   awayIds(): ReadonlySet<string> {
@@ -49,7 +52,7 @@ export class Steps extends Part {
   /** 놓기 단계를 끝낸 물건(이미 치운 것): World State id → 그 계획의 넣은 곳, 끝낸 때 싱크볼 안이었으면 part basin, 끝낸 시각.
    *  그 뒤 손에 있음이 확인되거나(다시 집음, VLM 한 번의 손에 있음은 싱크대 속 컵에도 나와 확인됨만 본다) 트윈 자리가 그 영역을 벗어나거나
    *  (다른 면·면 없음, part basin이면 같은 면이어도 싱크볼 밖: 옮김) 사라지면 지운다. 사라진 뒤 같은 종류가 그 넣은 곳에 새 id로 다시 잡히면 그 물건으로 이어 간다.
-   *  돌려줄 때는 지금 싱크볼 안이고 손에 있음이 확인되지 않은 물건도 더한다(넣은 기억이 없어도 치운 것).
+   *  돌려줄 때는 지금 싱크볼 안이고 손에 있음이 확인되지 않은 물건과, 치운 무리(넣은 곳 면, 싱크볼에 넣었으면 그 싱크볼 안에 있는 같은 종류 물건)도 더한다(넣은 기억이 없어도 치운 것).
    *  계획을 만들지 않는다. 계획 전·실행 전 검사와 대상 고르기가 이미 치운 것을 아는 근거로만 쓴다. */
   placed(): Placed {
     const objects = this.o.world().objects;
@@ -79,6 +82,14 @@ export class Steps extends Part {
       if (all.has(o.id) || o.status === "gone" || o.surface === null || o.surface_part !== "basin") continue;
       if (o.facts.place?.value === "in_hand" && o.facts.place.certainty === "confirmed") continue;
       all.set(o.id, { target: o.surface, part: "basin", atMs: o.first_seen_ms });
+    }
+    // 치운 무리: 끝낸 계획의 넣은 곳에 있는 같은 종류 물건(새 id로 둘 이상 잡혀 어느 것이 넣은 것인지 모를 때, 그 뒤 들어온 것). 손에 있음이 확인되면 아니다
+    for (const g of this.putGroup.values()) {
+      for (const o of objects) {
+        if (all.has(o.id) || o.status === "gone" || o.cls !== g.cls || o.surface !== g.target || (g.part && o.surface_part !== g.part)) continue;
+        if (o.facts.place?.value === "in_hand" && o.facts.place.certainty === "confirmed") continue;
+        all.set(o.id, { target: g.target, ...(o.surface_part === "basin" ? { part: "basin" as const } : {}), atMs: g.atMs });
+      }
     }
     return all;
   }
@@ -117,6 +128,10 @@ export class Steps extends Part {
       this.put.set(id, { target, ...(basin ? { part: "basin" as const } : {}), atMs: now });
       this.putCls.set(id, cls);
     }
+    // 넣은 곳의 같은 종류 무리: 싱크볼에 넣었으면 그 싱크볼 안, 아니면 그 면
+    const key = `${target}|${cls}`;
+    const basinAll = at.some((x) => x.basin) || this.putGroup.get(key)?.part === "basin";
+    this.putGroup.set(key, { target, ...(basinAll ? { part: "basin" as const } : {}), cls, atMs: now });
     // 계획 물건 id와 따라간 id 가운데 지금 그 물건이 아닌 것(옮겨 새 id가 붙기 전 id)
     for (const old of [object, r.alias.get(object) ?? object]) if (!at.some((x) => x.id === old)) this.putOld.set(old, now);
   }
