@@ -32,65 +32,73 @@ export function topic<T extends unknown[]>(): { on(cb: (...v: T) => void): () =>
 
 const DETECTION = new Set(["appeared", "gone", "person_appeared", "person_gone"]);
 
+/** 가전 기록기: 가전 상태 하나를 지난 값(기록 DB device_last)과 견줘 바뀐 속성마다 device 줄을 쓰고 지난 값을 바꾼다.
+ *  initial이면 지난 값만 바꾼다. 메모리에 들지 않아 기록 노드를 다시 만들어도 이어진다(기록 노드는 db.once 트랜잭션 안에서 부른다). */
+export function deviceRecorder(db: HistoryDb, now: () => number): (s: DeviceState, note?: DeviceNote) => void {
+  return (s, note) => {
+    const prev = db.deviceLast(s.id);
+    db.setDeviceLast(s.id, { ...s.twin });
+    if (note?.initial) return;
+    const at = Date.parse(s.updatedAt) || now();
+    for (const [attr, to] of Object.entries(s.twin)) {
+      const from = prev?.[attr] ?? null;
+      if (prev && Object.is(prev[attr], to)) continue;
+      const key = becameKey(attr, to);
+      const label = note?.label ?? s.id;
+      // 카메라로 본 값이 상태가 된 속성은 「카메라로 봄」을 붙인다
+      const seen = !!s.vision?.applied && attr in s.vision.twin && Object.is(s.vision.twin[attr], to);
+      const text = key ? (seen ? CHANGE_TEXT.deviceSeen : CHANGE_TEXT.device)(label, deviceText(note?.kind ?? "", key).became) : CHANGE_TEXT.deviceAttr(label, attr, to);
+      db.add("device", at, text, { subject: s.id, data: { attr, from, to, ...(seen ? { vision: true } : {}) } });
+    }
+  };
+}
+
+/** 판단 쪽 기록 하나(관찰·World State 변화·판단·실행·연결·계기·보기)를 기록 DB 줄로 쓴다. 반성은 runReflection이 쓴다. */
+export function recordBrainLog(db: HistoryDb, l: BrainLog): void {
+  switch (l.type) {
+    case "observe":
+      if (l.yolo_missing) {
+        db.add("yolo", l.at_ms, CHANGE_TEXT.yoloMissing[l.yolo_missing], {
+          subject: l.frame_id, data: { captured_at_ms: l.captured_at_ms, yolo_missing: l.yolo_missing, vlm_missing: l.vlm_missing ?? null },
+        });
+      } else if (l.vlm !== null || l.vlm_missing) {
+        db.add("vlm", l.at_ms, l.vlm ?? CHANGE_TEXT.vlmMissing[l.vlm_missing!], { subject: l.frame_id, data: { captured_at_ms: l.captured_at_ms, missing: l.vlm_missing ?? null } });
+      }
+      return;
+    case "world_change":
+      db.add(DETECTION.has(l.kind) ? "detection" : "world", l.at_ms, l.text, { data: { kind: l.kind } });
+      return;
+    case "decision":
+      db.add("pam_text", l.at_ms, l.text_sent, { subject: l.id });
+      db.add("decision", l.at_ms, l.action ?? (l.status === "valid" ? DECISION_TEXT.wait : DECISION_TEXT.failed(l.error ?? "")), {
+        subject: l.id, data: { seq: l.seq, prediction: l.prediction, status: l.status, memory_version: l.memory_version, world: l.world, ...(l.usage ? { usage: l.usage } : {}) },
+      });
+      return;
+    case "execution":
+      db.add("execution", l.at_ms, l.text, { subject: l.plan_id, data: { state: l.state } });
+      return;
+    case "link":
+      db.add("link", l.at_ms, l.text, { subject: l.target, data: { up: l.up } });
+      return;
+    case "trigger":
+      db.add("trigger", l.at_ms, l.text, { data: { paused: l.paused } });
+      return;
+    case "look":
+      db.add("look", l.at_ms, l.text, {
+        subject: l.target ?? undefined,
+        data: { trigger: l.trigger, target: l.target, tool: l.tool, reason: l.reason, result: l.result, plan_id: l.plan_id ?? null, step_id: l.step_id ?? null },
+      });
+      return;
+    case "reflection":
+      return;
+  }
+}
+
 export function attachRecorder(db: HistoryDb, o: RecorderSources): () => void {
   const now = o.now ?? (() => Date.now());
-  const last = new Map<string, Record<string, unknown>>();
   const offs = [
-    o.onDevice((s, note) => {
-      const prev = last.get(s.id);
-      last.set(s.id, { ...s.twin });
-      if (note?.initial) return;
-      const at = Date.parse(s.updatedAt) || now();
-      for (const [attr, to] of Object.entries(s.twin)) {
-        const from = prev?.[attr] ?? null;
-        if (prev && Object.is(prev[attr], to)) continue;
-        const key = becameKey(attr, to);
-        const label = note?.label ?? s.id;
-        // 카메라로 본 값이 상태가 된 속성은 「카메라로 봄」을 붙인다
-        const seen = !!s.vision?.applied && attr in s.vision.twin && Object.is(s.vision.twin[attr], to);
-        const text = key ? (seen ? CHANGE_TEXT.deviceSeen : CHANGE_TEXT.device)(label, deviceText(note?.kind ?? "", key).became) : CHANGE_TEXT.deviceAttr(label, attr, to);
-        db.add("device", at, text, { subject: s.id, data: { attr, from, to, ...(seen ? { vision: true } : {}) } });
-      }
-    }),
-    o.onBrain((l) => {
-      switch (l.type) {
-        case "observe":
-          if (l.yolo_missing) {
-            db.add("yolo", l.at_ms, CHANGE_TEXT.yoloMissing[l.yolo_missing], {
-              subject: l.frame_id, data: { captured_at_ms: l.captured_at_ms, yolo_missing: l.yolo_missing, vlm_missing: l.vlm_missing ?? null },
-            });
-          } else if (l.vlm !== null || l.vlm_missing) {
-            db.add("vlm", l.at_ms, l.vlm ?? CHANGE_TEXT.vlmMissing[l.vlm_missing!], { subject: l.frame_id, data: { captured_at_ms: l.captured_at_ms, missing: l.vlm_missing ?? null } });
-          }
-          return;
-        case "world_change":
-          db.add(DETECTION.has(l.kind) ? "detection" : "world", l.at_ms, l.text, { data: { kind: l.kind } });
-          return;
-        case "decision":
-          db.add("pam_text", l.at_ms, l.text_sent, { subject: l.id });
-          db.add("decision", l.at_ms, l.action ?? (l.status === "valid" ? DECISION_TEXT.wait : DECISION_TEXT.failed(l.error ?? "")), {
-            subject: l.id, data: { seq: l.seq, prediction: l.prediction, status: l.status, memory_version: l.memory_version, world: l.world, ...(l.usage ? { usage: l.usage } : {}) },
-          });
-          return;
-        case "execution":
-          db.add("execution", l.at_ms, l.text, { subject: l.plan_id, data: { state: l.state } });
-          return;
-        case "link":
-          db.add("link", l.at_ms, l.text, { subject: l.target, data: { up: l.up } });
-          return;
-        case "trigger":
-          db.add("trigger", l.at_ms, l.text, { data: { paused: l.paused } });
-          return;
-        case "look":
-          db.add("look", l.at_ms, l.text, {
-            subject: l.target ?? undefined,
-            data: { trigger: l.trigger, target: l.target, tool: l.tool, reason: l.reason, result: l.result, plan_id: l.plan_id ?? null, step_id: l.step_id ?? null },
-          });
-          return;
-        case "reflection":
-          return;
-      }
-    }),
+    o.onDevice(deviceRecorder(db, now)),
+    o.onBrain((l) => recordBrainLog(db, l)),
     o.onPlan((p) => db.add("plan", Date.parse(p.updatedAt) || now(), `${p.goal} ${PLAN_STATUS_TEXT[p.status]}`, {
       subject: p.id, data: { revision: p.revision, status: p.status, steps: p.steps.map((s) => ({ id: s.id, label: s.label, status: s.status })) },
     })),

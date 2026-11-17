@@ -1,5 +1,6 @@
 // 기록 DB: 런타임 볼륨의 SQLite 파일 하나(node:sqlite, Node 22.15는 플래그 없이 쓴다).
-// events 한 시간축 기록, memories 기억 판본, photos 디스크에 둔 사진(사진 찍기·시험 자료), meta 설정 값.
+// events 한 시간축 기록, memories 기억 판본, photos 디스크에 둔 사진(사진 찍기·시험 자료), meta 설정 값,
+// bus_seen 기록 노드가 처리한 메시지(다시 와도 한 번만 쓰기), device_last 가전마다 지난 값(가전 기록기가 이전 값·같은 값을 가린다).
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -9,7 +10,7 @@ export type { DecisionRow, HistoryKind, HistoryRow } from "../../contract/histor
 
 /** 기록 종류 전부(GET /api/history의 kinds 검사). */
 export const HISTORY_KINDS: readonly HistoryKind[] = [
-  "device", "detection", "vlm", "yolo", "world", "pam_text", "mode", "decision", "plan", "execution", "reflection", "feedback", "photo", "link", "trigger", "look", "thought", "service",
+  "device", "detection", "vlm", "yolo", "world", "pam_text", "mode", "decision", "plan", "execution", "reflection", "feedback", "photo", "link", "trigger", "look", "thought", "service", "bus_gap",
 ];
 
 const SCHEMA = `
@@ -19,6 +20,8 @@ CREATE INDEX IF NOT EXISTS idx_events_at ON events(at_ms);
 CREATE INDEX IF NOT EXISTS idx_events_day_kind ON events(day, kind);
 CREATE TABLE IF NOT EXISTS memories (version INTEGER PRIMARY KEY, created_ms INTEGER NOT NULL, day TEXT, applies_day TEXT, kind TEXT NOT NULL, memory TEXT NOT NULL, source TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS photos (id TEXT PRIMARY KEY, at_ms INTEGER NOT NULL, path TEXT NOT NULL, origin TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS bus_seen (topic TEXT NOT NULL, grp TEXT NOT NULL, msg_key TEXT NOT NULL, msg TEXT NOT NULL, boot TEXT NOT NULL, PRIMARY KEY (topic, grp, msg_key, msg));
+CREATE TABLE IF NOT EXISTS device_last (id TEXT PRIMARY KEY, twin TEXT NOT NULL);
 `;
 
 /** 기록 날짜의 시간대(분). HISTORY_TZ_MINUTES(기본 540 = 서울). -720~840 사이 정수가 아니면 시작을 막는다. */
@@ -32,6 +35,9 @@ export function historyTzMinutes(env: Record<string, string | undefined>): numbe
 
 /** latest면 조건에 맞는 마지막 limit줄(시각 순으로 돌려줌). 아니면 처음부터 limit줄. */
 export interface HistoryQuery { since?: number; until?: number; kinds?: HistoryKind[]; day?: string; limit?: number; latest?: boolean }
+
+/** 기록 노드가 처리한 메시지 하나: 토픽·그룹·봉투 열쇠·메시지 식별자(msgId)·기동. */
+export interface SeenKey { topic: string; group: string; key: string; msg: string; boot: string }
 
 /** 디스크에 둔 사진: photo 폰 사진 찍기, dataset DATASET_COLLECT=1일 때의 시험 자료. */
 export interface StoredPhoto { id: string; atMs: number; path: string; origin: "photo" | "dataset" }
@@ -192,6 +198,36 @@ export class HistoryDb {
       this.db.exec("ROLLBACK");
       throw e;
     }
+  }
+
+  /** 메시지 하나를 한 번만 쓴다: 처리표에 넣고 write(같은 연결의 add 등)를 한 트랜잭션으로. 이미 처리했으면 쓰지 않고 false.
+   *  write가 던지면 처리표 줄까지 되돌리고 다시 던진다. */
+  once(k: SeenKey, write: () => void): boolean {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const fresh = Number(this.db.prepare("INSERT OR IGNORE INTO bus_seen(topic, grp, msg_key, msg, boot) VALUES (?, ?, ?, ?, ?)").run(k.topic, k.group, k.key, k.msg, k.boot).changes) > 0;
+      if (fresh) write();
+      this.db.exec(fresh ? "COMMIT" : "ROLLBACK");
+      return fresh;
+    } catch (err) {
+      this.db.exec("ROLLBACK");
+      throw err;
+    }
+  }
+
+  /** 다른 기동의 처리표 줄을 지운다(기록 노드가 시작할 때). */
+  forgetOtherBoots(boot: string): void {
+    this.db.prepare("DELETE FROM bus_seen WHERE boot <> ?").run(boot);
+  }
+
+  /** 가전의 지난 값(없으면 null). */
+  deviceLast(id: string): Record<string, unknown> | null {
+    const r = this.db.prepare("SELECT twin FROM device_last WHERE id = ?").get(id) as { twin: string } | undefined;
+    return r ? JSON.parse(r.twin) as Record<string, unknown> : null;
+  }
+
+  setDeviceLast(id: string, twin: Record<string, unknown>): void {
+    this.db.prepare("INSERT INTO device_last(id, twin) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET twin = excluded.twin").run(id, JSON.stringify(twin));
   }
 
   close(): void {

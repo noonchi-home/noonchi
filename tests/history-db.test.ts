@@ -198,3 +198,34 @@ describe("기록기", () => {
     expect(offs).toBe(4);
   });
 });
+
+describe("한 번만 쓰기(기록 노드)", () => {
+  const key = (msg: string, boot = "b1") => ({ topic: "/world/changes", group: "recorder", key: "_", msg, boot });
+
+  it("같은 메시지 열쇠는 한 번만 쓰고, 기록 줄과 처리표가 한 트랜잭션이다", () => {
+    const db = HistoryDb.open(":memory:");
+    expect(db.once(key("b1/h#1/world/i1/1"), () => db.add("world", 1000, "컵 보임"))).toBe(true);
+    expect(db.once(key("b1/h#1/world/i1/1"), () => db.add("world", 1000, "컵 보임"))).toBe(false);
+    expect(() => db.once(key("b1/h#1/world/i1/2"), () => { db.add("world", 2000, "반쯤 쓴 줄"); throw new Error("쓰다 실패"); })).toThrow("쓰다 실패");
+    expect(db.list({}).map((r) => r.text)).toEqual(["컵 보임"]);
+    expect(db.once(key("b1/h#1/world/i1/2"), () => db.add("world", 2000, "다시 쓴 줄"))).toBe(true);
+    expect(db.list({}).map((r) => r.text)).toEqual(["컵 보임", "다시 쓴 줄"]);
+  });
+
+  it("다른 기동의 처리표 줄을 지운다", () => {
+    const db = HistoryDb.open(":memory:");
+    db.once(key("b0/h#1/world/i1/1", "b0"), () => {});
+    db.once(key("b1/h#1/world/i1/1", "b1"), () => {});
+    db.forgetOtherBoots("b1");
+    expect(db.once(key("b0/h#1/world/i1/1", "b0"), () => {})).toBe(true);
+    expect(db.once(key("b1/h#1/world/i1/1", "b1"), () => {})).toBe(false);
+  });
+
+  it("가전 지난 값을 기기마다 남기고 읽는다", () => {
+    const db = HistoryDb.open(":memory:");
+    expect(db.deviceLast("tv")).toBeNull();
+    db.setDeviceLast("tv", { on: true });
+    db.setDeviceLast("tv", { on: false });
+    expect(db.deviceLast("tv")).toEqual({ on: false });
+  });
+});

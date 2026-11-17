@@ -3,7 +3,7 @@
 export { Decider } from "./decide.js";
 export { HISTORY_KINDS, HistoryDb, historyTzMinutes } from "./history/db.js";
 export { FEEDBACK_TEXT, PHOTO_TEXT, REFLECT_TEXT } from "./history/labels.js";
-export { type DeviceNote, attachRecorder, topic } from "./history/recorder.js";
+export { type DeviceNote, attachRecorder, deviceRecorder, recordBrainLog, topic } from "./history/recorder.js";
 export { type ReflectResult, memoryForDay, loadReflectAt, runReflection, scheduleReflection } from "./history/reflect.js";
 export { datasetWriter, loadRetention, sweep } from "./history/retention.js";
 export { daySummary, isDay } from "./history/summary.js";
