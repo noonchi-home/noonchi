@@ -11,6 +11,7 @@ import { PreDrawing, useFontsLoaded, usePredecode, usePreDraw } from "./motion";
 import { PhonePane, type PhoneSlot } from "./PhonePane";
 import type { Talk } from "./data";
 import { TalkBox } from "./TalkBox";
+import { ASSIST_NAME } from "../lib/assist";
 import { TwinPane } from "./TwinPane";
 import { WORDS } from "./words";
 
@@ -76,7 +77,7 @@ export function DashboardScreen({ index, plan, step, robotKnown, connected, map,
         </PreDrawing.Provider>
       </LiquidGlass>
       <PhonePane slot={phone} seen={seen} box={L.video} connected={connected} onVideoSize={onVideoSize} />
-      <TalkBox talk={talk} box={L.bubble} />
+      <TalkBox talk={talk} box={L.bubble} mode={ASSIST_NAME[hub.assist]} />
       <Mascot image={MASCOT} hub={hub} box={L.mascot} imageBox={L.image} logoBox={L.logo} facing={facing} settingsOpen={settingsOpen} />
     </main>
   );

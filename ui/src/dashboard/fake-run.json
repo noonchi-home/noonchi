@@ -37,7 +37,12 @@
               "task_index": -1
             },
             "action": null,
-            "fsm": null,
+            "fsm": {
+              "state": "drinking",
+              "trigger": null,
+              "learned": false,
+              "matched": false
+            },
             "memory_version": 1,
             "world": {
               "objects": [
@@ -236,7 +241,8 @@
             "fsm": {
               "state": "left_cup",
               "trigger": "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다.",
-              "learned": false
+              "learned": false,
+              "matched": true
             },
             "memory_version": 1,
             "world": {
@@ -448,7 +454,8 @@
             "fsm": {
               "state": "left_cup",
               "trigger": "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다.",
-              "learned": false
+              "learned": false,
+              "matched": true
             },
             "memory_version": 1,
             "world": {
@@ -660,7 +667,8 @@
             "fsm": {
               "state": "left_cup",
               "trigger": "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다.",
-              "learned": false
+              "learned": false,
+              "matched": true
             },
             "memory_version": 1,
             "world": {
@@ -856,7 +864,8 @@
             "fsm": {
               "state": "left_cup",
               "trigger": "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다.",
-              "learned": false
+              "learned": false,
+              "matched": true
             },
             "memory_version": 1,
             "world": {

@@ -155,7 +155,7 @@ function startApp(core: HomeCore): void {
   core.app = createApp({
     hub: signals, policy, agent, rooms: twin.rooms, twinDir: home.outDir, viewerDir: home.viewerDir, libraryDir: home.libraryDir, hubKind: core.started.kind, log, eye: feed,
     brain: observe ? { status: () => ({ ...observe.status(), look: core.looker?.status() ?? null }) } : undefined, world: worldNow ?? undefined,
-    home: { id: home.id, name: home.name }, homes: listHomes(twin.dir), layout: layout?.editor, phoneUrls: () => core.phoneUrls, mode: ctx.mode, webDir: ctx.webDir, allowOrigin: ctx.allowOrigin, planToken: ctx.planToken, ready: ctx.ready,
+    home: { id: home.id, name: home.name }, homes: listHomes(twin.dir), layout: layout?.editor, phoneUrls: () => core.phoneUrls, mode: ctx.mode, assist: ctx.assist, webDir: ctx.webDir, allowOrigin: ctx.allowOrigin, planToken: ctx.planToken, ready: ctx.ready,
     start: startStore && { get: () => startStore.get(), save: (raw) => startStore.save(raw), preview: (raw) => startStore.preview(raw), clear: () => startStore.clear() },
     phoneSync: () => core.phone?.syncState() ?? null,
     plan: plans, offTrack: () => core.tracker?.offTrack() ?? null, history: history.db, reflect: history.reflect, scene: () => core.scene,

@@ -37,7 +37,7 @@ const DEVICES = [device("lamp", "플로어 스탠드", "light", { power: "on" })
 function stubServer(eye: boolean, twin = true) {
   const health: HealthView = {
     ok: true, devices: 2, hub: "memory", transport: null, provider: "openai", model: "m", twin, eye,
-    home: { id: "h", name: "우리 집" }, phone_urls: [PHONE_URL], brain: true, mode: "test",
+    home: { id: "h", name: "우리 집" }, phone_urls: [PHONE_URL], brain: true, mode: "test", assist: "noonchi",
     ready: { ok: false, inference_mode: "mock", vlm: { base_url: "", model: "", key: false, reachable: false }, pam: { url: "", reachable: false, llm: null },
       agent: { provider: "openai", base_url: "", model: "", key: false, reachable: false }, db: false },
   };
@@ -226,7 +226,8 @@ describe("가짜 단계(?debug=steps)", () => {
     expect(sayLine()).toHaveTextContent("컵을 들라고 했어요.");
     const img = phonePane().querySelector<HTMLImageElement>('img[alt="폰 카메라 영상"]')!;
     expect(img.getAttribute("src")).toBe("/debug-eye/eye-table-near.webp");
-    expect(talk().querySelector("[data-talk-who]")).toHaveTextContent("눈치");
+    expect(talk().querySelector("[data-talk-mode]")).toHaveTextContent("눈치 모드");
+    expect([...talk().querySelectorAll("[data-talk-pill]")].map((p) => p.textContent)).toEqual(["상태 · 컵을 두고 자리를 뜸", expect.stringMatching(/^트리거 · /), "액션 · 컵 치우기"]);
     expect([...phonePane().querySelectorAll("[data-detection-label]")].map((t) => t.textContent?.split(" ")[0])).toEqual(["컵"]);
     expect(phonePane().querySelector("canvas[data-masks]")).not.toBeNull();
   });

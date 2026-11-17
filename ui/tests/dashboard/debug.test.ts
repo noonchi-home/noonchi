@@ -40,22 +40,18 @@ describe("가짜 단계 가로 눈 그림(&wide=1)", () => {
 });
 
 describe("가짜 단계 메시지 상자 상태(&talk)", () => {
-  it("주소의 talk는 find·habit만 받는다", () => {
+  it("주소의 talk는 find만 받는다", () => {
     expect(debugQuery("?debug=steps&talk=find")?.talk).toBe("find");
-    expect(debugQuery("?debug=steps&talk=habit")?.talk).toBe("habit");
+    expect(debugQuery("?debug=steps&talk=habit")?.talk).toBeNull();
     expect(debugQuery("?debug=steps&talk=x")?.talk).toBeNull();
     expect(debugQuery("?debug=steps")?.talk).toBeNull();
   });
 
-  it("find: 최신 줄이 찾기 상태 줄이고 습관 줄이 없다. habit: 행동을 고른 순간에 「배운 습관」 줄이 붙고 줄은 그대로다", () => {
+  it("find: 최신 줄이 찾기 상태 줄이고 판단은 컵 치우기(알약 액션 · 컵 치우기)다. 지켜보기 순간의 알약은 처음 상태와 대기다", () => {
     const find = talkAt(talkMoment(MOMENTS[0]!, "find"))!;
     expect(find.lines.at(-1)!.text).toBe(FIND_LINE);
-    expect(find.habit).toBeNull();
-    const plain = talkAt(MOMENTS[1]!)!;
-    const habit = talkAt(talkMoment(MOMENTS[1]!, "habit"))!;
-    expect(plain.habit).toBeNull();
-    expect(habit.habit).toMatch(/^배운 습관: .+ · 컵 치우기$/);
-    expect(habit.lines).toEqual(plain.lines);
+    expect(find.fsm).toEqual({ state: "컵을 두고 자리를 뜸", trigger: expect.any(String), action: "컵 치우기" });
+    expect(talkAt(MOMENTS[0]!)!.fsm).toEqual({ state: "먹거나 마시는 중", trigger: "대기", action: "대기" });
     expect(talkMoment(MOMENTS[1]!, null)).toBe(MOMENTS[1]);
   });
 });

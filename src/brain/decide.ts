@@ -4,7 +4,7 @@
 import type { BrainLog, DecisionWorld, DecisionRecord } from "../contract/events.js";
 import type { WorldChange, WorldView } from "../contract/world.js";
 import { taskOf } from "../act/tasks.js";
-import { checkInput, fsmRuleOf, isoWithOffset, type PamMemory } from "./decision.js";
+import { checkInput, fsmNow, isoWithOffset, type PamMemory } from "./decision.js";
 import { PamLinkError, type PamClient } from "./pam.js";
 import { LINK_TEXT, TRIGGER_TEXT, redactHeard, redactSaid, saidIn } from "../world/labels.js";
 import type { WorldState } from "../world/index.js";
@@ -50,6 +50,8 @@ export class Decider {
   private seq = 0;
   private stopped = false;
   private link: boolean | null = null;
+  /** 마지막으로 맞은 규칙의 FSM 상태(대기 판단의 지금 상태). 없으면 null(기억의 처음 상태). */
+  private fsmState: string | null = null;
   private paused: TriggerPause | "acting" | null = null;
   private readonly clock: { now(): number };
 
@@ -101,7 +103,9 @@ export class Decider {
           // PAM의 생각 글은 계획 이유·판단 기록·대시보드에 남는다: 들은 말을 그대로 옮겼으면 뺀다
           const said = this.o.keepHeard?.() ? [] : saidIn(textSent);
           const prediction = said.length ? { ...p, observation: redactSaid(p.observation, said), reasoning: redactSaid(p.reasoning, said) } : p;
-          this.finish({ ...base, status: "valid", prediction, action, fsm: fsmRuleOf(mem.memory, mem.kind, action) });
+          const fsm = fsmNow(mem.memory, mem.kind, action, this.fsmState);
+          if (fsm?.matched && fsm.state) this.fsmState = fsm.state;
+          this.finish({ ...base, status: "valid", prediction, action, fsm });
         },
         (e: unknown) => {
           if (e instanceof PamLinkError) this.setLink(false);

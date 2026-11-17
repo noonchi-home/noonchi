@@ -11,7 +11,7 @@ import { MASCOT } from "../../src/lib/mascot-image";
 import { WORDS } from "../../src/dashboard/words";
 import { EMPTY_DASH, reduceDash, talkOf } from "../../src/dashboard/data";
 import { BRANCHES, branchDecision, coachPlanAt, type Branch } from "./fixtures";
-import { EYE_FRAMES, HABIT, HUB, imageSlot, LEFT_CUP_STATE, MESSAGES, PHONE_URL, PLAN, REASON, screenAt, seenEvent, seenOf, TALK } from "./fixtures";
+import { EYE_FRAMES, HUB, imageSlot, MESSAGES, PHONE_URL, PILLS, PLAN, REASON, screenAt, seenEvent, seenOf, TALK } from "./fixtures";
 import { createSeenStore } from "../../src/dashboard/masks";
 import { clockText } from "../../src/dashboard/clock";
 import { act } from "@testing-library/react";
@@ -210,7 +210,7 @@ describe("대시보드 배치", () => {
         ["0", screenAt(0)], ["2", screenAt(2)], ["3", screenAt(3)], ["4", screenAt(4)],
         ["로봇 모름", screenAt(2, { robotKnown: false })], ["연결 끊김", screenAt(2, { connected: false })], ["모양 없음", screenAt(0, { seen: seenOf(null) })],
         ["긴 줄", screenAt(2, { talk: { ...TALK, lines: MESSAGES.map((m) => ({ ...m, text: m.text.repeat(5) })) } })],
-        ["습관 줄", screenAt(2, { talk: { ...TALK, habit: HABIT } })], ["줄 없음", screenAt(2, { talk: null })],
+        ["긴 트리거", screenAt(2, { talk: { ...TALK, fsm: { ...PILLS, trigger: PILLS.trigger.repeat(4) } } })], ["줄 없음", screenAt(2, { talk: null })],
       ];
       for (const [name, p] of variants) expect(boxes(p), name).toEqual(first);
     } finally { rect.mockRestore(); }
@@ -220,11 +220,11 @@ describe("대시보드 배치", () => {
 describe("대시보드 메시지 상자(트윈 아래쪽 하나, 생각 말풍선 없음)", () => {
   const lines = () => [...talk().querySelectorAll<HTMLElement>("[data-talk-line]")];
 
-  it("오른쪽 생각 말풍선은 없다. 메시지 상자 하나가 트윈 아래쪽에 있고, 맨 위에 말하는 이 「눈치」, 그 아래 두 줄(지난 줄은 흐리게 ItemDescription, 최신 줄은 진하게 ItemTitle), 오른쪽 아래 ▼다", () => {
+  it("오른쪽 생각 말풍선은 없다. 메시지 상자 하나가 트윈 아래쪽에 있고, 맨 위에 지금 돕는 방식(설정 화면 이름 「눈치 모드」), 그 아래 두 줄(지난 줄은 흐리게 ItemDescription, 최신 줄은 진하게 ItemTitle), 오른쪽 아래 ▼다", () => {
     draw(screenAt(2));
-    expect(document.querySelector("[data-thought], [data-say-card], [data-slot=thought-bubble]")).toBeNull();
+    expect(document.querySelector("[data-thought], [data-say-card], [data-slot=thought-bubble], [data-talk-who]")).toBeNull();
     expect(document.querySelectorAll("[data-talk]")).toHaveLength(1);
-    expect(talk().querySelector("[data-talk-who]")).toHaveTextContent("눈치");
+    expect(talk().querySelector("[data-talk-mode]")).toHaveTextContent(/^눈치 모드$/);
     expect(lines().map((l) => [l.dataset.talkLine, l.getAttribute("data-slot"), l.textContent])).toEqual([
       ["old", "item-description", MESSAGES[0]!.text], ["new", "item-title", MESSAGES[1]!.text],
     ]);
@@ -232,33 +232,29 @@ describe("대시보드 메시지 상자(트윈 아래쪽 하나, 생각 말풍�
     expect(talk()).not.toHaveTextContent(REASON);
   });
 
-  it("칩(「눈치 · 행동」·「습관 · 배운 규칙」)은 없다. 배운 습관대로 행동할 때만 맨 위에 그 습관 한 줄(Status)이 보인다", () => {
+  it("모드 옆에 알약 셋(Status): 「상태 · …」·「트리거 · …」·「액션 · …」이고, 「배운 습관」 줄·칩은 없다. 코치 모드면 「코치 모드」다", () => {
     const { rerender } = draw(screenAt(2));
     expect(talk().querySelector("[data-talk-habit], [data-thought-chips]")).toBeNull();
-    rerender(<DashboardScreen {...screenAt(2, { talk: { ...TALK, habit: HABIT } })} />);
-    const habit = talk().querySelector<HTMLElement>("[data-talk-habit]")!;
-    expect(habit).toHaveAttribute("data-slot", "status");
-    expect(habit).toHaveTextContent(HABIT);
-    expect(before(talk().querySelector("[data-talk-who]")!, habit)).toBe(true);
+    expect(talk()).not.toHaveTextContent("배운 습관");
+    const pills = [...talk().querySelectorAll<HTMLElement>("[data-talk-pill]")];
+    expect(pills.map((p) => [p.dataset.talkPill, p.getAttribute("data-slot"), p.textContent])).toEqual([
+      ["state", "status", `상태 · ${PILLS.state}`], ["trigger", "status", `트리거 · ${PILLS.trigger}`], ["action", "status", `액션 · ${PILLS.action}`],
+    ]);
+    expect(before(talk().querySelector("[data-talk-mode]")!, pills[0]!)).toBe(true);
+    rerender(<DashboardScreen {...screenAt(2, { hub: { ...HUB, assist: "coach" } })} />);
+    expect(talk().querySelector("[data-talk-mode]")).toHaveTextContent(/^코치 모드$/);
   });
 
-  it("배운 습관 한 줄은 서버 판단의 배운 규칙 표시(fsm.learned)로 정한다: 그대로 두기 습관이면 「배운 습관: 컵을 두고 자리를 뜸 · 컵 그대로 두기」, 배운 규칙이 아니면 없다", () => {
-    const one: ServerMessage = { type: "thought", messages: [{ id: "pam-1@1:0", text: "컵을 살피고 있어요", at_ms: 1, decision: "pam-1" }] };
-    const learned = (b: Branch, yes: boolean) => {
-      const m = branchDecision(b, 1) as Extract<ServerMessage, { type: "brain" }>;
-      const e = m.event as Extract<typeof m.event, { type: "decision" }>;
-      return { ...m, event: { ...e, fsm: { ...e.fsm!, learned: yes } } } as ServerMessage;
-    };
-    const of = (b: Branch, yes: boolean) => talkOf(reduceDash(reduceDash(EMPTY_DASH, learned(b, yes), 0), one, 0))!;
-    expect(of(BRANCHES.leave, true).habit).toBe(`배운 습관: ${LEFT_CUP_STATE} · ${BRANCHES.leave.action}`);
-    expect(of(BRANCHES.leave, false).habit).toBeNull();
+  it("판단의 FSM을 모르면(talk.fsm null) 알약이 없고 빈 알약도 두지 않는다", () => {
+    draw(screenAt(2, { talk: { ...TALK, fsm: null } }));
+    expect(talk().querySelectorAll("[data-talk-pill]")).toHaveLength(0);
   });
 
   it("자리·크기는 layout의 메시지 상자 자리이고 줄 길이·습관 줄과 상관없이 같다. 줄은 한 줄로 자른다. 보기만 하고(마우스 받지 않음) 트윈·폰 칸보다 위다", () => {
     const rect = atScreen(1920, 1080);
     try {
       const L = pageLayout({ width: 1920, height: 1080 }, MASCOT);
-      for (const p of [screenAt(0), screenAt(2), screenAt(2, { talk: { lines: MESSAGES.map((m) => ({ ...m, text: m.text.repeat(8) })), habit: HABIT.repeat(4) } })]) {
+      for (const p of [screenAt(0), screenAt(2), screenAt(2, { talk: { lines: MESSAGES.map((m) => ({ ...m, text: m.text.repeat(8) })), fsm: { ...PILLS, trigger: PILLS.trigger.repeat(4) } } })]) {
         const { unmount } = draw(p);
         expect(close(boxOf(talk()), L.bubble)).toBe(true);
         expect(L.bubble.height).toBe(TALK_H);
@@ -277,9 +273,9 @@ describe("대시보드 메시지 상자(트윈 아래쪽 하나, 생각 말풍�
     expect(item).toHaveAttribute("data-size", "sm");
   });
 
-  it("줄이 없으면(talk null) 상자는 그대로 두고 「눈치」만 보인다", () => {
+  it("줄이 없으면(talk null) 상자는 그대로 두고 지금 모드만 보인다", () => {
     draw(screenAt(2, { talk: null }));
-    expect(talk()).toHaveTextContent("눈치");
+    expect(talk()).toHaveTextContent(/^눈치 모드/);
     expect(lines()).toEqual([]);
   });
 });

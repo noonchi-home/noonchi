@@ -194,7 +194,7 @@ class FakeSocket {
 
 const HEALTH: HealthView = {
   ok: true, devices: 0, hub: "memory", transport: null, provider: "openai", model: "m", twin: true, eye: false,
-  home: { id: "mokryeon_180b", name: "한양목련 180B" }, phone_urls: [], brain: false, mode: "test",
+  home: { id: "mokryeon_180b", name: "한양목련 180B" }, phone_urls: [], brain: false, mode: "test", assist: "noonchi",
   ready: { ok: false, inference_mode: "mock", vlm: { base_url: "", model: "", key: false, reachable: false }, pam: { url: "", reachable: false, llm: null },
     agent: { provider: "openai", base_url: "", model: "", key: false, reachable: false }, db: false },
 };

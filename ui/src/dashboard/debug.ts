@@ -4,8 +4,7 @@
 //   &play=MS     화면이 다 뜬 뒤(트윈 첫 그림·미리 그려 보기 뒤 data-ready) MS마다 다음 순간: 2→3→4→0→1→2…
 //   &eye=0       대시보드 폰 칸 영상 없음(연결 QR)
 //   &wide=1      실제 폰을 가로로 든 것처럼: 눈 그림과 컵 모양이 가로 프레임(세로 눈 그림에서 잘라 낸 405×228)
-//   &talk=find   계획 전 찾기 중: 메시지 상자 최신 줄이 찾기 상태 줄(말풍선 말은 빼고)
-//   &talk=habit  배운 습관대로 행동: 그 순간 판단이 배운 규칙(fsm.learned)이라 메시지 상자에 습관 줄이 붙는다
+//   &talk=find   계획 전 찾기 중: 판단은 컵 치우기(1번 순간의 판단), 메시지 상자 최신 줄이 찾기 상태 줄(말풍선 말은 빼고)
 //   &offline=1   서버 연결 끊김
 //   &settings=1  설정 창을 연 채
 // window.__dash.step(n)으로 바로 그 순간으로 간다. 대시보드 폰 칸은 그 순간 눈 그림(세로 405×720)이다.
@@ -28,19 +27,21 @@ export const WIDE_FRAME = { width: 405, height: 228 };
 export const WIDE_TOP: Record<EyeFrameId, number> = { "table-far": 230, "table-near": 178, sink: 180, "sink-cup": 186 };
 
 /** 메시지 상자 상태를 바꾼 가짜 순간(&talk). */
-export type DebugTalk = "find" | "habit";
+export type DebugTalk = "find";
 /** 계획 전 찾기 상태 줄(서버 src/act/labels.ts FIND_THOUGHT.start와 같은 글). */
 export const FIND_LINE = "컵이 안 보여서 식탁 쪽을 다시 볼게요";
 
-/** 그 순간의 메시지 상자 상태를 바꾼다. find: 말풍선 말을 빼고 끝에 찾기 상태 줄 생각 메시지를 더한다. habit: 행동을 고른 판단을 배운 규칙으로 바꾼다. */
+/** 그 순간의 메시지 상자 상태를 바꾼다. find: 판단을 컵 치우기(1번 순간의 판단)로 바꾸고, 말풍선 말을 빼고 끝에 찾기 상태 줄 생각 메시지를 더한다. */
 export function talkMoment(m: Moment, talk: DebugTalk | null): Moment {
-  if (talk === "habit") {
-    return { ...m, messages: m.messages.map((x) => (x.type === "brain" && x.event.type === "decision" && x.event.action && x.event.fsm
-      ? { ...x, event: { ...x.event, fsm: { ...x.event.fsm, learned: true } } } : x)) };
-  }
   if (talk !== "find") return m;
+  const isDecision = (x: ServerMessage) => x.type === "brain" && x.event.type === "decision";
+  const decision = MOMENTS[1]!.messages.find(isDecision);
   const at = Math.max(0, ...m.messages.flatMap((x) => (x.type === "thought" ? x.messages.map((t) => t.at_ms) : []))) + 1;
-  return { ...m, messages: [...m.messages.filter((x) => x.type !== "say"), { type: "thought", messages: [{ id: `find@${at}:0`, text: FIND_LINE, at_ms: at, decision: "find" }] }] };
+  return {
+    ...m,
+    messages: [...m.messages.map((x) => (isDecision(x) && decision ? decision : x)).filter((x) => x.type !== "say"),
+      { type: "thought", messages: [{ id: `find@${at}:0`, text: FIND_LINE, at_ms: at, decision: "find" }] }],
+  };
 }
 
 /** 그 순간을 가로 프레임으로: seen의 프레임 크기를 가로로 바꾸고 마스크 자리를 잘라 낸 만큼 올린다. 다른 메시지는 그대로다. */
@@ -69,7 +70,7 @@ export interface DebugQuery {
   wide: boolean;
   offline: boolean;
   settings: boolean;
-  /** 메시지 상자 상태(&talk=find·habit). 없으면 null. */
+  /** 메시지 상자 상태(&talk=find). 없으면 null. */
   talk: DebugTalk | null;
 }
 
@@ -87,7 +88,7 @@ export function debugQuery(search: string): DebugQuery | null {
     wide: q.get("wide") === "1",
     offline: q.get("offline") === "1",
     settings: q.get("settings") === "1",
-    talk: q.get("talk") === "find" || q.get("talk") === "habit" ? (q.get("talk") as DebugTalk) : null,
+    talk: q.get("talk") === "find" ? "find" : null,
   };
 }
 

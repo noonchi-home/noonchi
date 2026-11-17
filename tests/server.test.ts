@@ -78,6 +78,8 @@ describe("REST 읽기", () => {
     const { url, devices } = await start();
     const h = await api(url, "/api/health");
     expect(h.json).toMatchObject({ ok: true, devices: devices.length, provider: "openai", model: "gpt-5.5" });
+    // 돕는 방식(대시보드 메시지 상자 머리의 지금 모드): 없으면 눈치 모드
+    expect(h.json.assist).toBe("noonchi");
     const rooms = await api(url, "/api/rooms");
     expect(rooms.status).toBe(200);
     expect(rooms.json.find((r: Msg) => r.id === "living_room")).toMatchObject({ label: "거실" });

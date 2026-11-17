@@ -30,7 +30,7 @@ const lamp: DeviceView = {
 /** 구운 3D가 없는 집(id "h"): 트윈 칸 지도 자리는 iframe 트윈과 확인 목록 말풍선이다. */
 const health: HealthView = {
   ok: true, devices: 1, hub: "memory", transport: null, provider: "openai", model: "m", twin: true, eye: false,
-  home: { id: "h", name: "우리 집" }, phone_urls: [], brain: false, mode: "test",
+  home: { id: "h", name: "우리 집" }, phone_urls: [], brain: false, mode: "test", assist: "noonchi",
   ready: { ok: false, inference_mode: "mock", vlm: { base_url: "", model: "", key: false, reachable: false }, pam: { url: "", reachable: false, llm: null },
     agent: { provider: "openai", base_url: "", model: "", key: false, reachable: false }, db: false },
 };

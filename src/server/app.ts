@@ -10,7 +10,7 @@ import { Policy } from "../agent/index.js";
 import type { BrainLog, HealthView, ReadyView, SeenEvent, ThoughtEvent } from "../contract/events.js";
 import type { WorldView } from "../contract/world.js";
 import type { OffTrack } from "../contract/plan.js";
-import type { ControlMode } from "../contract/setup.js";
+import type { AssistMode, ControlMode } from "../contract/setup.js";
 import type { DeviceHub, RoomSpec } from "../contract/devices.js";
 import type { HistoryDb } from "../brain/index.js";
 import type { ReflectResult } from "../brain/index.js";
@@ -82,6 +82,8 @@ export interface AppOptions {
   say?: () => { text: string | null; safety?: true };
   /** 지금 운영 모드(/api/health). 없으면 시험 모드. */
   mode?: () => ControlMode;
+  /** 지금 돕는 방식(/api/health assist). 없으면 눈치 모드. */
+  assist?: () => AssistMode;
   /** 준비 상태(/api/health ready, src/server/ready.ts). 없으면 준비 안 됨. */
   ready?: () => Promise<ReadyView>;
   /** 클로이드 계획 보관(src/act/hub.ts). 있으면 에이전트 행동을 넘기고 POST /api/plan*을 받는다. 접속 때 지금 계획을 보낸다. */
@@ -160,7 +162,7 @@ export function createApp(opts: AppOptions): TwinHomeApp {
     ok: true, devices: hub.list().length, hub: opts.hubKind ?? "memory", transport: matterInfo()?.transport ?? null,
     provider: agent?.provider.name ?? null, model: agent?.provider.model ?? null, twin: !!twinDir && existsSync(twinDir),
     eye: !!opts.eye, home: opts.home ?? null, phone_urls: opts.phoneUrls?.() ?? [], ...(opts.history ? { tz_minutes: opts.history.offsetMinutes } : {}),
-    brain: !!opts.brain, mode: opts.mode?.() ?? "test",
+    brain: !!opts.brain, mode: opts.mode?.() ?? "test", assist: opts.assist?.() ?? "noonchi",
     ready: opts.ready ? await opts.ready() : NOT_READY,
   }));
 

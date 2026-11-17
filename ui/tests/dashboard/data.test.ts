@@ -30,16 +30,20 @@ describe("대시보드 자료", () => {
     expect(textsOf(reduceDash(s, said("pam-2", 1, "컵을 찾았어요"), 0))).toEqual(["컵을 치우기로 했어요.", "컵을 찾았어요"]);
     expect(JSON.stringify(talkOf(feed([branchDecision(BRANCHES.clear, 1), said("pam-1", 10, "치우는 습관이라 컵을 치울게요")]))!)).not.toContain(REASON);
   });
-  it("배운 규칙대로 고른 판단(fsm.learned)일 때만 맨 위 한 줄 「배운 습관: 상태 · 행동」이다. 아니면, 대기면 없다", () => {
-    const learned = (b: Branch | null, yes: boolean, seq = 1) => {
-      const m = branchDecision(b, seq) as Extract<ServerMessage, { type: "brain" }>;
-      const e = m.event as Extract<typeof m.event, { type: "decision" }>;
-      return { ...m, event: { ...e, fsm: e.fsm ? { ...e.fsm, learned: yes } : null } } as ServerMessage;
-    };
+  it("알약 셋(상태·트리거·액션)은 서버 판단의 FSM으로 정한다: 규칙대로 고르면 상태 이름·트리거·행동, 대기면 트리거·액션 「대기」, 규칙 없는 행동은 트리거 「규칙 없음」, 규칙이 여럿이면 「규칙 여럿」. 판단 전·FSM 없음이면 없다", () => {
     const one = said("pam-1", 10, "컵을 살피고 있어요");
-    expect(talkOf(feed([learned(BRANCHES.clear, true), one]))!.habit).toBe("배운 습관: 컵을 두고 자리를 뜸 · 컵 치우기");
-    expect(talkOf(feed([learned(BRANCHES.clear, false), one]))!.habit).toBeNull();
-    expect(talkOf(feed([learned(BRANCHES.clear, true), one, learned(null, false, 2)]))!.habit).toBeNull();
+    const withFsm = (fsm: { state: string | null; trigger: string | null; learned: boolean; matched?: boolean } | null) => {
+      const m = branchDecision(BRANCHES.clear, 1) as Extract<ServerMessage, { type: "brain" }>;
+      const e = m.event as Extract<typeof m.event, { type: "decision" }>;
+      return { ...m, event: { ...e, fsm } } as ServerMessage;
+    };
+    expect(talkOf(feed([branchDecision(BRANCHES.clear, 1), one]))!.fsm).toEqual({ state: "컵을 두고 자리를 뜸", trigger: BRANCHES.clear.trigger, action: "컵 치우기" });
+    expect(talkOf(feed([branchDecision(BRANCHES.clear, 1), one, branchDecision(null, 2)]))!.fsm).toEqual({ state: "먹거나 마시는 중", trigger: "대기", action: "대기" });
+    expect(talkOf(feed([withFsm({ state: "left_cup", trigger: null, learned: false, matched: false }), one]))!.fsm).toEqual({ state: "컵을 두고 자리를 뜸", trigger: "규칙 없음", action: "컵 치우기" });
+    expect(talkOf(feed([withFsm({ state: "left_cup", trigger: null, learned: true, matched: true }), one]))!.fsm!.trigger).toBe("규칙 여럿");
+    expect(talkOf(feed([withFsm(null), one]))!.fsm).toBeNull();
+    expect(talkOf(feed([one]))!.fsm).toBeNull();
+    expect(JSON.stringify(talkOf(feed([branchDecision(BRANCHES.clear, 1), one])))).not.toContain("배운 습관");
   });
   // Codex(2a449e5 data.ts:75·126): 쓰러짐·끄기 안내 뒤 생각 두 줄이 오면 아직 유효한 안전 알림이 밀려 사라졌다
   it("안전 알림(say safety)이 유효한 동안 메시지 상자 최신 줄은 늘 그 알림이고, 안전 아닌 말이 오면 풀린다", () => {

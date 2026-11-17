@@ -129,7 +129,7 @@ describe("판단 호출", () => {
     });
   });
 
-  it("판단 기록에 고른 행동의 FSM 상태와 트리거를 붙인다. 대기·실패면 null이다", async () => {
+  it("판단 기록에 지금 FSM 상태·맞은 규칙 트리거를 붙인다: 처음 대기는 기억의 처음 상태, 규칙대로 고르면 그 규칙의 상태·트리거, 그 뒤 대기는 그 상태(트리거 없음). 실패면 null이다", async () => {
     let index = 0;
     pam = await startFakePam({ predict: () => ({ observation: "o", reasoning: "r", task_index: index }) });
     const logs: BrainLog[] = [];
@@ -138,12 +138,17 @@ describe("판단 호출", () => {
     const d = new Decider({ pam: new PamClient({ url: pam.url }), world: emptyWorld(), trigger: event(),
       tasks: () => [...CUP_TASKS], memory, emit: (l) => logs.push(l), onDecision: (r) => records.push(r), offsetMinutes: 540, clock: { now: () => now } });
     const poke = async () => { d.onChanges([{ kind: "appeared", at_ms: now, subject: "cup_1", text: "컵 cup_1 보임", meaningful: true }]); d.tick(); await d.idle(); now += 1000; };
+    index = -1;
+    await poke();
+    index = 0;
     await poke();
     index = -1;
     await poke();
-    const fsm = { state: "left_cup", trigger: CUP_FSM_MEMORY.states.find((x) => x.id === "left_cup")!.rules[0]!.trigger, learned: false };
-    expect(logs.filter((l) => l.type === "decision").map((l) => l.type === "decision" && [l.action, l.fsm])).toEqual([["컵 치우기", fsm], [null, null]]);
-    expect(records.map((r) => r.fsm)).toEqual([fsm, null]);
+    const first = { state: CUP_FSM_MEMORY.initial_state, trigger: null, learned: false, matched: false };
+    const fsm = { state: "left_cup", trigger: CUP_FSM_MEMORY.states.find((x) => x.id === "left_cup")!.rules[0]!.trigger, learned: false, matched: true };
+    const after = { state: "left_cup", trigger: null, learned: false, matched: false };
+    expect(logs.filter((l) => l.type === "decision").map((l) => l.type === "decision" && [l.action, l.fsm])).toEqual([[null, first], ["컵 치우기", fsm], [null, after]]);
+    expect(records.map((r) => r.fsm)).toEqual([first, fsm, after]);
   });
 
   it("판단 사건에 고른 행동의 종류를 붙인다: 라면 끓이기 알려 주기는 coach, 에어컨 켜기는 noonchi, 대기·실패는 null", async () => {

@@ -1,5 +1,6 @@
 // 대시보드 설정 창에 보이는 허브 상태: /api/health 모양에서 화면에 쓰는 것만 고른다.
 import type { HealthView } from "../../../src/contract/events.ts";
+import type { AssistMode } from "../../../src/contract/setup.ts";
 import { pickPhoneUrl } from "./phone-url";
 
 export interface HubState {
@@ -7,6 +8,8 @@ export interface HubState {
   connected: boolean;
   /** 운영 모드: test 시험(트윈만), live 실제 제어. 바꾸는 일은 설정 화면에서 한다. */
   mode: "test" | "live";
+  /** 돕는 방식(대시보드 메시지 상자 머리). health 전이면 눈치 모드. */
+  assist: AssistMode;
   /** 허브 종류와 연결 방식. */
   hub: string;
   /** 에이전트 공급자와 모델. */
@@ -26,7 +29,7 @@ export const shortName = (name: string) => name.replace(/\s*[(（].*$/, "").trim
 export function hubOf(h: HealthView | null, connected: boolean | null): HubState {
   const join = (...v: (string | null | undefined)[]) => v.filter(Boolean).join(" · ");
   return {
-    connected: connected === true, mode: h?.mode === "live" ? "live" : "test", hub: h ? join(h.hub, h.transport) : "",
+    connected: connected === true, mode: h?.mode === "live" ? "live" : "test", assist: h?.assist ?? "noonchi", hub: h ? join(h.hub, h.transport) : "",
     agent: h ? join(h.provider, h.model) : "", home: shortName(h?.home?.name ?? ""), phoneUrl: pickPhoneUrl(h?.phone_urls ?? []).best ?? "", setupHref: "/setup/",
   };
 }

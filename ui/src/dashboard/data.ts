@@ -121,21 +121,27 @@ export function currentStep(p: PlanView | null): PlanStep | null {
 /** 마스코트가 보는 쪽: 열린 계획이 있으면 트윈(왼쪽), 아니면 그림 그대로(오른쪽). */
 export const facingOf = (p: PlanView | null): Facing => (isOpen(p) ? "twin" : "video");
 
-/** 메시지 상자에 보이는 것: 최근 줄(오래된 것부터 TALK_SHOWN개, 다듬은 생각 메시지와 말풍선 카드 말을 받은 차례로)과
- *  배운 습관대로 행동할 때만 그 습관 한 줄(아니면 null). PAM의 원래 생각(reasoning)은 싣지 않는다. */
-export interface Talk { lines: { id: string; text: string }[]; habit: string | null }
+/** 메시지 상자 알약 셋(FSM 구조): 지금 상태 이름, 맞은 규칙의 트리거, 그 행동. */
+export interface Pills { state: string; trigger: string; action: string }
+/** 메시지 상자에 보이는 것: 최근 줄(오래된 것부터 TALK_SHOWN개, 다듬은 생각 메시지와 말풍선 카드 말을 받은 차례로)과 마지막 판단의 알약 셋(FSM을 모르면 null).
+ *  PAM의 원래 생각(reasoning)은 싣지 않는다. */
+export interface Talk { lines: { id: string; text: string }[]; fsm: Pills | null }
 
 /**
- * 메시지 상자: 다듬은 생각 메시지(반성 메시지 포함)와 말풍선 카드 말을 받은 차례로 섞은 최근 TALK_SHOWN줄. 줄이 하나도 없으면 null.
- * 마지막 유효 판단이 배운 규칙대로 고른 행동이면(서버가 붙인 fsm.learned) 「배운 습관: <상태> · <행동>」 한 줄을 더한다(상태 이름표가 없으면 트리거, 그것도 없으면 행동만).
+ * 메시지 상자: 다듬은 생각 메시지(반성 메시지 포함)와 말풍선 카드 말을 받은 차례로 섞은 최근 TALK_SHOWN줄과 마지막 유효 판단의 알약 셋. 둘 다 없으면 null.
+ * 알약은 서버가 판단 기록에 실은 지금 FSM(src/brain/decision.ts fsmNow)이다: 상태는 기억 상태 이름(FSM_STATE_TEXT, 없으면 상태 id), 트리거는 맞은 규칙의 트리거
+ * (대기면 「대기」, 규칙 없이 고른 행동이면 「규칙 없음」, 그 행동 규칙이 여럿이면 「규칙 여럿」), 액션은 고른 행동(대기면 「대기」). 판단의 FSM을 모르면(list 기억·판단 전) 알약이 없다.
  */
 export function talkOf(s: DashData): Talk | null {
-  if (!s.talk.length) return null;
   // 안전 알림이 유효한 동안 최신 줄은 늘 그 알림이고, 지난 줄은 그 밖의 가장 새 줄이다
   const safety = s.safety;
   const lines = safety ? [...s.talk.filter((l) => l.id !== safety.id).slice(-(TALK_SHOWN - 1)), safety] : s.talk.slice(-TALK_SHOWN);
   const d = s.decision;
-  const rule = d?.action && d.fsm?.learned ? (d.fsm.state ? FSM_STATE_TEXT[d.fsm.state] ?? d.fsm.trigger : d.fsm.trigger) : null;
-  const habit = d?.action && d.fsm?.learned ? `${WORDS.habitLine}: ${rule ? `${rule} · ` : ""}${d.action}` : null;
-  return { lines, habit };
+  const f = d?.fsm;
+  const fsm = d && f?.state ? {
+    state: FSM_STATE_TEXT[f.state] ?? f.state,
+    trigger: f.trigger ?? (d.action ? (f.matched ? WORDS.manyRules : WORDS.noRule) : WORDS.idle),
+    action: d.action ?? WORDS.idle,
+  } : null;
+  return lines.length || fsm ? { lines, fsm } : null;
 }
