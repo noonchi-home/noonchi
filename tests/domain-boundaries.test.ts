@@ -75,7 +75,7 @@ describe("도메인 경계: 가짜 트리", () => {
     const root = fakeTree({ "src/world/a.ts": 'import type { X } from "../act/index.js";\nexport type Y = X;\n' });
     expect(keys(root)).toEqual(["direction src/world/a.ts -> src/act/index.ts"]);
     expect(message(root, "direction src/world/a.ts -> src/act/index.ts")).toBe(
-      "`src/world/a.ts` → `src/act/index.ts`: `world`는 `act`를 쓸 수 없어요(쓸 수 있는 것: devices·layout). 공용 타입이면 contract로, 공용 도우미면 shared로 옮기세요",
+      "`src/world/a.ts` → `src/act/index.ts`: `world`는 `act`를 쓸 수 없어요(쓸 수 있는 것: bus·devices·layout). 공용 타입이면 contract로, 공용 도우미면 shared로 옮기세요",
     );
   });
 
