@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import tokens from "../../../src/design/tokens.json";
 import { DashboardScreen, type ScreenProps } from "../../src/dashboard/DashboardScreen";
 import { TAG_H, tagWidth } from "../../src/dashboard/detections";
-import { pageLayout, TALK_H, type Rect } from "../../src/dashboard/layout";
+import { mascotPoint, pageLayout, TALK_H, type Rect } from "../../src/dashboard/layout";
 import { MASCOT } from "../../src/lib/mascot-image";
 import { WORDS } from "../../src/dashboard/words";
 import { EMPTY_DASH, reduceDash, talkOf } from "../../src/dashboard/data";
@@ -220,11 +220,10 @@ describe("대시보드 배치", () => {
 describe("대시보드 메시지 상자(트윈 아래쪽 하나, 생각 말풍선 없음)", () => {
   const lines = () => [...talk().querySelectorAll<HTMLElement>("[data-talk-line]")];
 
-  it("오른쪽 생각 말풍선은 없다. 메시지 상자 하나가 트윈 아래쪽에 있고, 맨 위에 지금 행동의 모드(「눈치 모드」), 그 아래 두 줄(지난 줄은 흐리게 ItemDescription, 최신 줄은 진하게 ItemTitle), 오른쪽 아래 ▼다", () => {
+  it("오른쪽 생각 말풍선은 없다. 메시지 상자 하나가 트윈 아래쪽에 있고, 맨 위에 알약 줄, 그 아래 줄(지난 줄은 흐리게 ItemDescription, 최신 줄은 진하게 ItemTitle), 오른쪽 아래 ▼다", () => {
     draw(screenAt(2));
     expect(document.querySelector("[data-thought], [data-say-card], [data-slot=thought-bubble], [data-talk-who]")).toBeNull();
     expect(document.querySelectorAll("[data-talk]")).toHaveLength(1);
-    expect(talk().querySelector("[data-talk-mode]")).toHaveTextContent(/^눈치 모드$/);
     expect(lines().map((l) => [l.dataset.talkLine, l.getAttribute("data-slot"), l.textContent])).toEqual([
       ["old", "item-description", MESSAGES[0]!.text], ["new", "item-title", MESSAGES[1]!.text],
     ]);
@@ -232,25 +231,24 @@ describe("대시보드 메시지 상자(트윈 아래쪽 하나, 생각 말풍�
     expect(talk()).not.toHaveTextContent(REASON);
   });
 
-  it("모드 옆에 알약 셋(Status): 「상태 · …」·「트리거 · …」·「액션 · …」이고, 「배운 습관」 줄·칩은 없다. 코치 행동이면 「코치 모드」다", () => {
-    const { rerender } = draw(screenAt(2));
+  it("머리는 알약 셋(Status): 「상태 · …」·「트리거 · …」·「액션 · …」이고, 「배운 습관」 줄·칩·모드 글은 없다", () => {
+    draw(screenAt(2));
     expect(talk().querySelector("[data-talk-habit], [data-thought-chips]")).toBeNull();
     expect(talk()).not.toHaveTextContent("배운 습관");
     const pills = [...talk().querySelectorAll<HTMLElement>("[data-talk-pill]")];
     expect(pills.map((p) => [p.dataset.talkPill, p.getAttribute("data-slot"), p.textContent])).toEqual([
       ["state", "status", `상태 · ${PILLS.state}`], ["trigger", "status", `트리거 · ${PILLS.trigger}`], ["action", "status", `액션 · ${PILLS.action}`],
     ]);
-    expect(before(talk().querySelector("[data-talk-mode]")!, pills[0]!)).toBe(true);
-    rerender(<DashboardScreen {...screenAt(2, { talk: { ...TALK, mode: "코치 모드" } })} />);
-    expect(talk().querySelector("[data-talk-mode]")).toHaveTextContent(/^코치 모드$/);
+    expect(talk().querySelector("[data-talk-mode]")).toBeNull();
   });
 
-  // 사용자 바로잡음(2026-11-18): 「자동 이런 말 쓰지말고 어떤 모드인지 쓰라니까」, 「지금 행동을 할 때 눈치모드로 할지 코치 모드로 할지 선택하는거아니야? 그거아니면 그냥 표시하지마」
-  it("메시지 상자 머리는 지금 행동의 모드(눈치/코치)만이고, 대기면 머리가 없으며 설정 이름(「자동」)은 쓰지 않는다", () => {
+  // 사용자 바로잡음(2026-11-18): 「자동 이런 말 쓰지말고 어떤 모드인지 쓰라니까」. 모드는 마스코트 머리 위 말풍선(눈치/코치)만이고 설정 이름(「자동」)은 어디에도 없다
+  it("메시지 상자에는 모드 글이 없고, 화면 어디에도 설정 이름 「자동」이 없다. 모드 말풍선은 눈치·코치 둘뿐이다", () => {
     draw(screenAt(0));
-    expect(talk().querySelector("[data-talk-mode]")).toBeNull();
     expect(talk()).not.toHaveTextContent(/자동|모드/);
     expect(talk().querySelectorAll("[data-talk-pill]")).toHaveLength(3);
+    expect(document.querySelector("[data-mode-text]")).toHaveTextContent(/^(눈치|코치) 모드$/);
+    expect(document.body).not.toHaveTextContent("자동");
   });
 
   it("판단의 FSM을 모르면(talk.fsm null) 알약이 없고 빈 알약도 두지 않는다", () => {
@@ -262,7 +260,7 @@ describe("대시보드 메시지 상자(트윈 아래쪽 하나, 생각 말풍�
     const rect = atScreen(1920, 1080);
     try {
       const L = pageLayout({ width: 1920, height: 1080 }, MASCOT);
-      for (const p of [screenAt(0), screenAt(2), screenAt(2, { talk: { lines: MESSAGES.map((m) => ({ ...m, text: m.text.repeat(8) })), fsm: { ...PILLS, trigger: PILLS.trigger.repeat(4) }, mode: "눈치 모드" } })]) {
+      for (const p of [screenAt(0), screenAt(2), screenAt(2, { talk: { lines: MESSAGES.map((m) => ({ ...m, text: m.text.repeat(8) })), fsm: { ...PILLS, trigger: PILLS.trigger.repeat(4) } } })]) {
         const { unmount } = draw(p);
         expect(close(boxOf(talk()), L.bubble)).toBe(true);
         expect(L.bubble.height).toBe(TALK_H);
@@ -288,6 +286,43 @@ describe("대시보드 메시지 상자(트윈 아래쪽 하나, 생각 말풍�
   });
 });
 
+describe("마스코트 머리 위 모드 말풍선", () => {
+  const bubble = () => document.querySelector<HTMLElement>("[data-mode-bubble]");
+  const content = () => bubble()?.querySelector<HTMLElement>("[data-slot=tooltip-content]") ?? null;
+  const text = () => bubble()?.querySelector<HTMLElement>("[data-mode-text]") ?? null;
+
+  it("지금 행동이 눈치 모드면 brand 색(tone noonchi), 코치 모드면 초록(tone coach) 말풍선이고 화살표(꼬리)가 있다. 대기(모드 없음)도 지금 모드인 눈치 모드다", () => {
+    const { rerender } = draw(screenAt(2));
+    expect(text()).toHaveTextContent(/^눈치 모드$/);
+    expect(content()).toHaveAttribute("data-tone", "noonchi");
+    expect(bubble()!.querySelector("[data-slot=tooltip-arrow]")).not.toBeNull();
+    rerender(<DashboardScreen {...screenAt(2, { mode: "coach" })} />);
+    expect(text()).toHaveTextContent(/^코치 모드$/);
+    expect(content()).toHaveAttribute("data-tone", "coach");
+    rerender(<DashboardScreen {...screenAt(0)} />);
+    expect(text()).toHaveTextContent(/^눈치 모드$/);
+  });
+
+  it("말풍선 끝은 마스코트 머리 바로 위(늘 왼쪽을 보는 그림의 머리 가운데)에 있고 마우스를 받지 않는다. 메시지 상자에는 모드 글이 없다", () => {
+    const rect = atScreen(1920, 1080);
+    try {
+      draw(screenAt(2));
+      const L = pageLayout({ width: 1920, height: 1080 }, MASCOT);
+      const anchor = bubble()!;
+      const x = parseFloat(anchor.style.left);
+      const y = parseFloat(anchor.style.top);
+      const head = mascotPoint(L, MASCOT, MASCOT.headTop);
+      // 그림이 왼쪽을 보도록 단추 가운데 축으로 뒤집혔다
+      expect(Math.abs(x - (2 * (L.mascot.left + L.mascot.width / 2) - head.x))).toBeLessThan(1);
+      expect(y).toBeLessThanOrEqual(head.y);
+      expect(y).toBeGreaterThan(head.y - 24);
+      expect(cls(anchor, "pointer-events-none")).toBe(true);
+      expect(talk().querySelector("[data-talk-mode]")).toBeNull();
+      expect(talk()).not.toHaveTextContent(/모드/);
+    } finally { rect.mockRestore(); }
+  });
+});
+
 describe("대시보드 마스코트", () => {
   const turnOf = () => mascot().querySelector<HTMLElement>("[data-mascot-turn]")!;
   const logoOf = () => mascot().querySelector<HTMLElement>("[data-mascot-logo]")!;
@@ -307,27 +342,26 @@ describe("대시보드 마스코트", () => {
     } finally { rect.mockRestore(); }
   });
 
-  it("지켜보기(계획 없음)에서는 영상을 보고, 계획이 생기면 같은 마스코트가 축을 중심으로 돌아 트윈을 본다(transform만)", () => {
+  // 사용자 결정(2026-11-18): 마스코트는 대기·행동과 상관없이 늘 왼쪽(메시지 상자·트윈 쪽)을 본다
+  it("지켜보기에서 계획이 생겨도 마스코트는 같은 그림으로 늘 왼쪽을 보고 자리·크기가 그대로다", () => {
     const { container, rerender } = draw(screenAt(0));
     const [m, turn] = [mascot(), turnOf()];
     const box = [m.style.left, m.style.top, m.style.width, m.style.height].join(" ");
     expect(container.querySelector("main")).toHaveAttribute("data-step", "0");
-    expect(m).toHaveAttribute("data-facing", "video");
     expect(transformOf(turn)).toBe("scaleX(-1)");
     rerender(<DashboardScreen {...screenAt(1)} />);
     expect(container.querySelector("main")).toHaveAttribute("data-step", "1");
     expect(mascot()).toBe(m);
     expect(turnOf()).toBe(turn);
-    expect(m).toHaveAttribute("data-facing", "twin");
-    expect(transformOf(turn)).toBe("scaleX(1)");
+    expect(transformOf(turn)).toBe("scaleX(-1)");
+    expect(m).not.toHaveAttribute("data-facing");
     expect([m.style.left, m.style.top, m.style.width, m.style.height].join(" ")).toBe(box);
   });
 
-  it.each([0, 1, 2, 3, 4])("%i: 대기 때는 좌우를 뒤집어 왼쪽을 보고, 계획이 있으면 그림 그대로 오른쪽을 본다. 뒤집기는 단추 가운데 축(나눔선)을 중심으로 한 transform이다", (n) => {
+  it.each([0, 1, 2, 3, 4])("%i: 마스코트는 늘 좌우를 뒤집어 왼쪽을 본다. 뒤집기는 단추 가운데 축(나눔선)을 중심으로 한 transform이다", (n) => {
     draw(screenAt(n));
     const turn = turnOf();
-    expect(mascot()).toHaveAttribute("data-facing", n > 0 ? "twin" : "video");
-    expect(transformOf(turn)).toBe(n > 0 ? "scaleX(1)" : "scaleX(-1)");
+    expect(transformOf(turn)).toBe("scaleX(-1)");
     expect(turn.style.transformOrigin).toBe("50% 50%");
     for (const c of ["absolute", "inset-0", "will-change-transform", "transition-transform", "motion-reduce:transition-none"]) expect(cls(turn, c), c).toBe(true);
     expect(turn.contains(mascot().querySelector("img"))).toBe(true);

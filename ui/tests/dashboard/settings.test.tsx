@@ -31,7 +31,7 @@ const dialog = () => screen.queryByRole("dialog", { name: "설정" });
 
 function show(hub = HUB, width = 1920, height = 1080) {
   const L = pageLayout({ width, height }, MASCOT);
-  return render(<Mascot image={MASCOT} hub={hub} box={L.mascot} imageBox={L.image} logoBox={L.logo} facing="video" />);
+  return render(<Mascot image={MASCOT} hub={hub} box={L.mascot} imageBox={L.image} logoBox={L.logo} />);
 }
 
 describe("허브 상태(hubOf)", () => {
@@ -70,17 +70,14 @@ describe("대시보드 설정 창", () => {
     expect(dialog()).toBeNull();
   });
 
-  it("보는 쪽은 받은 facing 그대로다", () => {
+  it("마스코트는 늘 왼쪽을 본다(그림과 가슴 표시 원 모두 같은 뒤집기)", () => {
     const L = pageLayout({ width: 1920, height: 1080 }, MASCOT);
-    const { rerender } = render(<Mascot image={MASCOT} hub={HUB} box={L.mascot} imageBox={L.image} logoBox={L.logo} facing="video" />);
+    const { rerender } = render(<Mascot image={MASCOT} hub={HUB} box={L.mascot} imageBox={L.image} logoBox={L.logo} />);
     const region = screen.getByRole("region", { name: "마스코트" });
-    expect(region).toHaveAttribute("data-facing", "video");
     expect(region.querySelector<HTMLElement>("[data-mascot-turn]")!.style.transform).toBe("scaleX(-1)");
     expect(region.querySelector<HTMLElement>("[data-mascot-logo]")!.style.transform).toBe("scaleX(-1)");
-    rerender(<Mascot image={MASCOT} hub={HUB} box={L.mascot} imageBox={L.image} logoBox={L.logo} facing="twin" />);
-    expect(region).toHaveAttribute("data-facing", "twin");
-    expect(region.querySelector<HTMLElement>("[data-mascot-turn]")!.style.transform).toBe("scaleX(1)");
-    expect(region.querySelector<HTMLElement>("[data-mascot-logo]")!.style.transform).toBe("scaleX(1)");
+    rerender(<Mascot image={MASCOT} hub={HUB} box={L.mascot} imageBox={L.image} logoBox={L.logo} />);
+    expect(region.querySelector<HTMLElement>("[data-mascot-turn]")!.style.transform).toBe("scaleX(-1)");
   });
 
   it.each([[1920, 1080], [1440, 900]])("%i×%i: 마스코트 단추는 판 없이 화면 바탕 위에 있고, 가운데가 트윈·영상 나눔선 위, 아래 끝은 화면 밑 선이다. 위·왼쪽·오른쪽 초점 고리(선 굵기 + 띄움)는 화면 안, 말풍선 밖에 그려진다", (width, height) => {

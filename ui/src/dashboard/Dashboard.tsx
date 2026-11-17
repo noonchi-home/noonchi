@@ -10,7 +10,7 @@ import { useHealth } from "../lib/use-health";
 import { TwinStage, useAnchors, type TwinEngine, LiveQueue, attachLive, BAKE_VIEWS, Twin3D, useLayoutBox } from "../twin";
 import { useViewer } from "../lib/twin-viewer";
 import { focusOf, homeCamera, homeKeep, livedOf, still, wholeOf, wideCamera, type Camera } from "./camera";
-import { currentStep, facingOf, isOpen, stepIndex, talkOf } from "./data";
+import { currentStep, isOpen, modeNow, stepIndex, talkOf } from "./data";
 import { DashboardScreen } from "./DashboardScreen";
 import { debugPhone, debugQuery, useDebugSteps, type Moment } from "./debug";
 import { roomSetsOf, twinFrame } from "./frame";
@@ -236,12 +236,13 @@ export function Dashboard() {
     );
   const plan = isOpen(dash.plan) ? dash.plan : null;
   // talkOf가 읽는 것 모두: 판단·줄·안전 알림·계획(머리)·행동별 모드
-  const talk = useMemo(() => talkOf(dash), [dash.decision, dash.talk, dash.safety, dash.plan, dash.modes]);
+  const talk = useMemo(() => talkOf(dash), [dash.decision, dash.talk, dash.safety]);
+  const mode = modeNow(dash);
   return (
     <DashboardScreen
       index={stepIndex(plan)} plan={plan} step={currentStep(plan)} robotKnown={dash.eye !== null} connected={online} map={map} mapReady={mapReady}
       phone={phone} seen={seen} talk={talk}
-      facing={facingOf(plan)} hub={hub} settingsOpen={debug?.settings} onReady={onScreenReady} tzMinutes={health?.tz_minutes ?? null}
+      mode={mode} hub={hub} settingsOpen={debug?.settings} onReady={onScreenReady} tzMinutes={health?.tz_minutes ?? null}
     />
   );
 }

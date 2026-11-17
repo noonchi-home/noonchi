@@ -2,7 +2,7 @@
 // 메시지 상자는 서버가 보낸 짧은 메시지(thought)와 말풍선 카드 말(say)을 받은 차례로 쌓아 최근 두 줄을 보인다. PAM 원래 생각(reasoning)은 싣지 않는다.
 import { describe, expect, it } from "vitest";
 import type { ServerMessage } from "../../../src/contract/events.ts";
-import { EMPTY_DASH, facingOf, reduceDash, stepIndex, TALK_SHOWN, talkOf } from "../../src/dashboard/data";
+import { EMPTY_DASH, modeNow, reduceDash, stepIndex, TALK_SHOWN, talkOf } from "../../src/dashboard/data";
 import run from "../../src/dashboard/fake-run.json";
 import { CUP_FSM_MEMORY, fsmRuleOf } from "../../../src/brain/decision.ts";
 import { BRANCHES, COACH, LEFT_SAY, MESSAGES, PLAN, REASON, branchDecision, type Branch } from "./fixtures";
@@ -18,7 +18,7 @@ const WAIT = "식탁 위 컵을 지켜보고 있어요";
 describe("대시보드 자료", () => {
   it("지켜보기: 계획 없음, 마스코트는 그림 그대로. 줄이 없으면 메시지 상자 자료가 없다", () => {
     const s = at(0);
-    expect([stepIndex(s.plan), facingOf(s.plan)]).toEqual([0, "video"]);
+    expect(stepIndex(s.plan)).toBe(0);
     expect(talkOf(s)!.lines.length).toBeGreaterThan(0);
     expect(talkOf(EMPTY_DASH)).toBeNull();
   });
@@ -58,12 +58,12 @@ describe("대시보드 자료", () => {
     expect(textsOf(over)).toEqual(["자세가 낮아요", "계속 지켜볼게요", "지켜보고 있어요."]);
     expect(textsOf(reduceDash(more, { type: "say", text: null }, 0))).toEqual(["사람이 보여요", "자세가 낮아요", "계속 지켜볼게요"]);
   });
-  it("메시지 상자 머리는 지금 판단의 행동이 어느 모드로 하는 행동인지다: 코치 행동이면 「코치 모드」, 다른 행동이면 「눈치 모드」, 대기·판단 전이면 없다", () => {
+  it("지금 행동의 모드(modeNow)는 지금 판단의 행동이 어느 모드로 하는 행동인지다: 코치 행동이면 「코치 모드」, 다른 행동이면 「눈치 모드」, 대기·판단 전이면 없다", () => {
     const one = said("pam-1", 10, "컵을 살피고 있어요");
-    expect(talkOf(feed([branchDecision(BRANCHES.clear, 1), one]))!.mode).toBe("눈치 모드");
-    expect(talkOf(feed([branchDecision(COACH, 1), one]))!.mode).toBe("코치 모드");
-    expect(talkOf(feed([branchDecision(BRANCHES.clear, 1), one, branchDecision(null, 2)]))!.mode).toBeNull();
-    expect(talkOf(feed([one]))!.mode).toBeNull();
+    expect(modeNow(feed([branchDecision(BRANCHES.clear, 1), one]))).toBe("noonchi");
+    expect(modeNow(feed([branchDecision(COACH, 1), one]))).toBe("coach");
+    expect(modeNow(feed([branchDecision(BRANCHES.clear, 1), one, branchDecision(null, 2)]))).toBeNull();
+    expect(modeNow(feed([one]))).toBeNull();
   });
   // Codex(f8b6209 data.ts:93): 동시에 나간 판단의 옛 응답이 화면을 덮어, 실행 추적이 거절한 옛 코치 판단 때문에 진행 중 눈치 계획의 머리가 「코치 모드」로 바뀔 수 있었다
   it("seq가 더 작은 늦은 판단은 화면에 쓰지 않고, 진행 중 계획이 있으면 머리는 그 계획 행동의 모드다", () => {
@@ -72,24 +72,24 @@ describe("대시보드 자료", () => {
     // 컵 치우기(seq 2)로 계획이 도는데 옛 코치 판단(seq 1)이 늦게 온다
     const late = feed([branchDecision(BRANCHES.clear, 2), plan, branchDecision(COACH, 1), one]);
     expect(late.decision!.seq).toBe(2);
-    expect(talkOf(late)!.mode).toBe("눈치 모드");
+    expect(modeNow(late)).toBe("noonchi");
     expect(talkOf(late)!.fsm!.action).toBe("컵 치우기");
     // 실행 추적이 받아들이지 않은 새 코치 판단(seq 3)이 와도 진행 중 계획(컵 치우기)이 머리를 정한다
-    expect(talkOf(feed([branchDecision(BRANCHES.clear, 2), plan, branchDecision(COACH, 3), one]))!.mode).toBe("눈치 모드");
+    expect(modeNow(feed([branchDecision(BRANCHES.clear, 2), plan, branchDecision(COACH, 3), one]))).toBe("noonchi");
     // 계획이 없으면 가장 새 판단이다
-    expect(talkOf(feed([branchDecision(BRANCHES.clear, 2), branchDecision(COACH, 3), one]))!.mode).toBe("코치 모드");
+    expect(modeNow(feed([branchDecision(BRANCHES.clear, 2), branchDecision(COACH, 3), one]))).toBe("coach");
   });
   // Codex(cd25828 data.ts:156): 계획이 도는 중에 다시 접속하면 마지막 판단이 대기·다른 행동일 때 계획 행동의 모드를 몰라 머리가 사라졌다
   it("다시 접속해 계획 스냅숏만 받아도 머리는 그 계획에 실린 행동의 모드다", () => {
     const one = said("pam-1", 10, "컵을 살피고 있어요");
     const coachPlan: ServerMessage = { type: "plan", plan: { ...PLAN, goal: COACH.action, assist: "coach" } };
-    expect(talkOf(feed([{ type: "hello", home: null } as unknown as ServerMessage, coachPlan, branchDecision(null, 9), one]))!.mode).toBe("코치 모드");
+    expect(modeNow(feed([{ type: "hello", home: null } as unknown as ServerMessage, coachPlan, branchDecision(null, 9), one]))).toBe("coach");
   });
   it("계획 단계마다 번호·마스코트·말이 따라간다", () => {
     const says = ["식탁으로 가라고 했어요.", "컵을 들라고 했어요.", "싱크대로 가라고 했어요.", "컵을 싱크대에 넣으라고 했어요."];
     for (let n = 1; n <= 4; n++) {
       const s = at(n);
-      expect([stepIndex(s.plan), facingOf(s.plan), s.say, textsOf(s)?.at(-1)]).toEqual([n, "twin", says[n - 1], says[n - 1]]);
+      expect([stepIndex(s.plan), s.say, textsOf(s)?.at(-1)]).toEqual([n, says[n - 1], says[n - 1]]);
     }
   });
   it("추정 눈은 버리고, 같은 계획의 옛 번호도 버린다", () => {

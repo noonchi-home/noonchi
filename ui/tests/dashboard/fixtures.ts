@@ -104,9 +104,9 @@ export const PILLS = { state: "컵을 두고 자리를 뜸", trigger: "사용자
 /** 대기 판단의 알약 셋(처음 상태, 트리거·액션은 대기). */
 export const WAIT_PILLS = { state: "먹거나 마시는 중", trigger: "대기", action: "대기" };
 /** 계획 단계의 메시지 상자(다듬은 생각 두 줄과 알약 셋). */
-export const TALK: Talk = { lines: MESSAGES, fsm: PILLS, mode: "눈치 모드" };
+export const TALK: Talk = { lines: MESSAGES, fsm: PILLS };
 /** 지켜보기의 메시지 상자(말풍선 카드 말 한 줄과 대기 알약). */
-export const WATCH_TALK: Talk = { lines: [{ id: "say@0:0", text: "지켜보고 있어요." }], fsm: WAIT_PILLS, mode: null };
+export const WATCH_TALK: Talk = { lines: [{ id: "say@0:0", text: "지켜보고 있어요." }], fsm: WAIT_PILLS };
 
 /** 컵 갈래 판단 고정 자료: 행동, 그 규칙이 있는 FSM 상태 id·트리거(src/brain/decision.ts CUP_FSM_MEMORY와 같다, data.test.ts가 견준다), PAM의 생각 한 문장. */
 export interface Branch { action: string; state: string; trigger: string; reasoning: string }
@@ -162,7 +162,7 @@ export function screenAt(n: number, over: Partial<ScreenProps> = {}): ScreenProp
   return {
     index: n, plan, step: plan ? plan.steps[n - 1]! : null, robotKnown: true, connected: true, map: MAP, mapReady: true,
     phone: imageSlot(), seen: seenOf([BOX]),
-    talk: n > 0 ? TALK : WATCH_TALK, facing: n > 0 ? "twin" : "video", hub: HUB,
+    talk: n > 0 ? TALK : WATCH_TALK, mode: n > 0 ? "noonchi" : null, hub: HUB,
     ...over,
   };
 }

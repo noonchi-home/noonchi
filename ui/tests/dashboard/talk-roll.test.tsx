@@ -36,7 +36,7 @@ beforeEach(() => {
 afterEach(() => { for (const r of restore.reverse()) r(); });
 
 const line = (id: string) => ({ id, text: `줄 ${id}` });
-const talkOf = (...ids: string[]): Talk => ({ lines: ids.map(line), fsm: null, mode: null });
+const talkOf = (...ids: string[]): Talk => ({ lines: ids.map(line), fsm: null });
 const rows = () => [...document.querySelectorAll<HTMLElement>("[data-talk-line]")];
 const texts = () => rows().map((r) => r.textContent);
 /** 지금 굴리기의 움직임을 끝낸다. */
