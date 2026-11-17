@@ -2596,13 +2596,14 @@ Expected: 모두 PASS(이 묶음은 집 실행 묶음을 바꾸지 않는다).
 
 | 구간 | 지금(통로 전) | 통로 한 번 지나기: MemoryBus / RedisBus(p50·p95) | 묶음 2 뒤 예상 p95 |
 |---|---|---|---|
-| 엔진 프레임 → 집 상태 발행(대시보드 world) | p50 7.9ms · p95 13.5ms(감지기 시간 뺌, 40장) | RELIABLE(`/world/changes` 113바이트) 0.47·0.79ms / 8.3·9.5ms. STATE(`/world/state` 18.4KB) 0.54·0.86ms / 6.5·7.6ms | MemoryBus 약 15ms(두 번 지남). RedisBus 지금 그대로면 약 31ms, Task 1 목표(한 번 지나기 RELIABLE·STATE p50 3ms 이하)면 약 20ms |
+| 엔진 프레임 → 집 상태 발행(대시보드 world) | p50 7.9ms · p95 13.5ms(감지기 시간 뺌, 40장) | RELIABLE(`/world/changes` 113바이트) 0.47·0.79ms / Task 1 뒤 2.4·3.2ms(전 8.3·9.5ms). STATE(`/world/state` 18.4KB) 0.54·0.86ms / Task 1 뒤 3.3·4.1ms~3.7·4.8ms(두 판, 전 6.5·7.6ms) | MemoryBus 약 15ms(두 번 지남). RedisBus 약 21ms(13.5 + RELIABLE p95 3.2 + STATE p95 4.8) |
 | 집 상태 변화 → 판단 시작(PAM 요청), event 모드 | 47·123·191·235ms(4번): 250ms 판단 타이머 기다림이 거의 전부. 기본 periodic 모드는 5초 주기라 0~5초 | 변화 한 번 지나기(위 RELIABLE) | 타이머가 그대로면 지금 + 한 번 지나기(아래 「줄일 수 있는 곳」 2) |
 | 실제 감지(YOLO26s-seg) | DirectML 약 144ms · CPU 8스레드 약 218ms(구현명세서 4절) | — | 그대로 |
-| Redis PING 왕복 | — | p50 1.54ms · p95 1.89ms | — |
+| Redis PING 왕복 | — | p50 1.57ms · p95 2.1ms | — |
+| Redis 맨 전달(통로 없이 같은 크기 값을 `XADD` → 막고 읽던 다른 연결의 `XREAD`가 깨어남) | — | `/world/changes` 크기 p50 2.4·2.5ms · p95 3.0·3.1ms. `/world/state` 크기 p50 3.1·3.3ms · p95 3.8·4.1ms | — |
 | 봉투 만들기·읽기·검사(`/world/state` 18.4KB) | — | p50 0.27ms · p95 0.46ms | — |
 
-RedisBus가 PING보다 몇 배 느린 까닭(코드로 확인): RELIABLE은 콜백 뒤 `XACK` → `XINFO GROUPS` → 그룹마다 `XPENDING` → `XTRIM`을 메시지마다 차례로 기다려(왕복 4번 이상) 다음 `XREADGROUP`이 늦다(`src/bus/redis.ts` `handle`·`#trim`). STATE는 발행이 `INCR` 뒤 `MULTI`(왕복 2번)이고 받는 쪽이 알림마다 `HGET`(왕복 1번)을 더 한다.
+Task 1 뒤 RedisBus 한 번 지나기는 같은 크기 맨 전달과 p50이 같거나 0.6ms 안쪽으로 더 걸린다(통로가 왕복을 더하지 않는다). STATE p50 3ms는 이 PC에서 닿을 수 없다: 18.4KB 맨 전달의 바닥이 p50 3.1~3.3ms다(Docker Desktop 포트 전달에서 18KB 한 번 오가기가 PING보다 약 1.5ms 더 든다). AWS EC2 같은 호스트에서는 이 바닥이 훨씬 낮다.
 
 ### 늘지 않게 하는 장치
 
@@ -2611,7 +2612,7 @@ RedisBus가 PING보다 몇 배 느린 까닭(코드로 확인): RELIABLE은 콜�
 
 ### 줄일 수 있는 곳(근거와 함께)
 
-1. **RedisBus 한 번 지나기(이 묶음 Task 1에서 한다):** RELIABLE은 ack 뒤 자르기를 메시지마다 하지 않고 모아서(1초마다 또는 100번마다 한 번), `XACK`는 다음 `XREADGROUP`과 한 번에 보낸다(파이프라인). STATE는 `INCR`·`HSET`·`XADD`를 Lua 하나(왕복 1번)로, 알림에 값을 같이 실어 받는 쪽 `HGET`을 없앤다(알림 스트림 `MAXLEN ~64` × 18KB ≈ 1.2MB). 목표: 이 PC에서 RELIABLE·STATE p50 3ms 이하(지금 8.3·6.5ms), 통로 계약 시험 그대로 통과.
+1. **RedisBus 한 번 지나기(이 묶음 Task 1에서 한다):** RELIABLE은 ack 뒤 자르기를 메시지마다 하지 않고 모아서(1초마다 또는 100번마다 한 번), `XACK`는 다음 `XREADGROUP`과 한 번에 보낸다(파이프라인). STATE는 `INCR`·`HSET`·`XADD`를 Lua 하나(왕복 1번)로, 알림에 값을 같이 실어 받는 쪽 `HGET`을 없앤다(알림 스트림 `MAXLEN ~64` × 18KB ≈ 1.2MB). 밀린 알림은 열쇠마다 마지막 값만 준다. 결과: RELIABLE p50 8.3 → 2.4ms, STATE p50 6.5 → 3.3~3.7ms(같은 크기 맨 전달 바닥 3.1~3.3ms), 통로 계약 시험 그대로 통과.
 2. **event 모드 판단을 변화가 올 때 바로 시작:** 지금 판단은 250ms 판단 타이머(`src/server/home/observe.ts` `startLoop`)가 `decide.tick()`을 부를 때만 시작한다. event 모드의 변화 → 판단 시작(47~235ms)은 거의 이 타이머 기다림이다. 판단 노드(묶음 4)가 `/world/changes`를 받을 때 계기를 바로 보면 평균 약 125ms 줄어든다. 기본 periodic 모드(5초 주기)는 주기가 정하므로 그대로다. 묶음 4 단계 계획에서 정한다.
 3. **인식이 World State·읽는 쪽을 기다리지 않는다(이 묶음에서 저절로 생김):** 지금 `ObservationPipeline.publish()`는 감지 대기열을 비우는 고리 안에서 `world.apply…` → `tracking.onWorld` → `decide.onChanges` → `world.view()`(18.4KB) → 대시보드 JSON까지 같이 돈다(`src/observe/pipeline.ts` `publish`). 통로 뒤에는 인식 노드가 토픽만 내고 다음 프레임 감지로 간다. 감지가 밀릴 때(실제 YOLO 144~218ms) 다음 감지 시작이 그만큼 앞당겨진다.
 4. **집 상태 보기(`view`)를 한 번만 만든다:** 지금은 판단·실행 추적·보기 담당·말풍선 카드가 250ms마다 저마다 `world.view(now)`를 부른다(초당 16번 이상, 한 번 18.4KB 객체). 통로 뒤에는 집 상태 노드가 `rev`마다·250ms마다 한 번 만들고 거울이 같은 객체를 나눠 준다.
@@ -2643,9 +2644,9 @@ RedisBus가 PING보다 몇 배 느린 까닭(코드로 확인): RELIABLE은 콜�
 
 **Files:** Modify `src/bus/redis.ts`. Test: `tests/bus-redis.test.ts`(계약 그대로), `scripts/bus-latency.ts`(잼).
 
-- [ ] 실패 시험(Redis 전용): 「메시지 100개를 받는 동안 `XTRIM`을 메시지마다 부르지 않는다」(Redis `MONITOR` 대신 `INFO commandstats`의 `cmdstat_xtrim` 호출 수가 100보다 훨씬 작다), 「STATE 받는 쪽은 `HGET`을 부르지 않는다」(`cmdstat_hget` 0). 둘 다 지금 코드에서 실패한다.
-- [ ] 구현: RELIABLE은 ack 뒤 자르기를 1초 또는 100번마다 한 번, `XACK`를 다음 읽기와 파이프라인. STATE 발행은 Lua(`INCR`·`HSET`·`XADD` 값 포함), 받는 쪽은 알림의 값을 쓰고 건너뜀이면 `HGETALL` 스냅숏.
-- [ ] 통과 확인: 통로 계약 열세·Redis 전용 시험(Docker 규칙), `scripts/bus-latency.ts`로 RELIABLE·STATE p50 3ms 이하를 표에 적는다. 커밋·push.
+- [x] 실패 시험(Redis 전용): 「메시지 100개를 받는 동안 `XTRIM`을 메시지마다 부르지 않고, 다 받은 뒤에는 잘린다」(`INFO commandstats`의 `cmdstat_xtrim` 호출 수 10 이하, 전 100), 「STATE 받는 쪽은 `HGET`을 부르지 않는다」(`cmdstat_hget` 0, 전 20), 「RELIABLE·STATE 한 번 지나기 p50은 같은 크기 Redis 맨 전달 p50보다 1ms 넘게 늘지 않는다」(전 RELIABLE 9.7ms, 맨 전달 2.6ms). 셋 다 바꾸기 전 코드에서 실패했다.
+- [x] 구현: RELIABLE은 ack 뒤 자르기를 100번 또는 1초마다 한 번(읽기 줄 밖에서, 처음 ack는 바로), `XACK`는 구독 연결에서 답을 기다리지 않고 보내 다음 `XREADGROUP`과 같이 기다림. STATE 발행은 Lua(`INCR`·`HSET`·`XADD` 값 포함), 받는 쪽은 알림의 값을 쓰고 건너뜀이면 `HGETALL` 스냅숏.
+- [x] 통과 확인: 통로 계약 열셋·Redis 전용 시험(Docker 규칙), `scripts/bus-latency.ts`(맨 전달도 잼)로 잰 값을 위 표에 적었다. 커밋·push.
 
 ### Task 2: 인식·집 상태 토픽의 모양과 상태 없는 감지 거르기
 

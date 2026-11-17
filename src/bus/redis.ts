@@ -5,10 +5,12 @@
 // 읽기 루프(RELIABLE·STATE 스냅숏·SENSOR)는 연결 오류가 나면 그 루프 전체를 처음부터 다시 시도한다(잠깐 끊긴 것은 이어진다).
 // SENSOR: XADD MAXLEN = depth(정확히). latest는 깨어날 때마다 XREVRANGE COUNT 1로 가장 새 것, all은 커서로 차례로 다
 //   (준비 때 가장 새 seq가 기준, seq 건너뜀을 센다).
-// STATE: INCR 카운터 + MULTI(HSET 값 + XADD 알림{key, n} MAXLEN ~ 64). 받는 쪽은 n이 건너뛰면 HGETALL로 다시 읽는다.
+// STATE: Lua 하나(왕복 한 번)로 INCR 카운터·HSET 값·XADD 알림{key, n, m: 값}(MAXLEN ~ 64)을 한꺼번에 한다(차례가 섞이지 않는다).
+//   받는 쪽은 알림에 실린 값을 쓰고(HGET 없음), 밀린 알림은 열쇠마다 마지막 값만 준다. n이 건너뛰면 HGETALL 스냅숏으로 다시 읽는다.
 // RELIABLE: XADD(자르지 않음), 그룹 = 노드 이름 = 소비자 이름(준비 때 $부터). 먼저 내 몫으로 남은 것(id 0)을 차례대로, 다 비면 새것(>)을 읽는다.
 //   한 메시지를 "ack"까지 다시 준다(RETRY_MS 간격, 그동안 뒤 메시지를 읽지 않는다). 이 구독에서 MAX_DELIVERIES번 실패하면 /bus/dead에 남기고 XACK.
-//   /bus/dead 자체의 실패는 다시 보내지 않고 log만 남긴다. ack 뒤 모든 그룹이 넘긴 앞부분을 XTRIM MINID로 자른다.
+//   /bus/dead 자체의 실패는 다시 보내지 않고 log만 남긴다. XACK는 구독 연결에서 답을 기다리지 않고 보내 다음 XREADGROUP과 한 번에 간다(파이프라인).
+//   ack 뒤 모든 그룹이 넘긴 앞부분을 XTRIM MINID로 자르되, 메시지마다 하지 않고 모아서(TRIM_EVERY번 또는 TRIM_MS마다 한 번) 읽기 줄 밖에서 한다.
 //   읽기·XACK가 실패하면 내 몫(id 0)부터 다시 읽는다(같은 메시지를 다시 받을 수 있다: 받는 쪽은 한 번만 쓰기로 막는다).
 // 연결마다 error 리스너를 단다(프로세스가 죽지 않는다). 막고 읽기(BLOCK)는 구독마다 따로 연결(duplicate)을 쓴다.
 import { createClient, type RedisClientType } from "redis";
@@ -18,6 +20,14 @@ import { TOPICS, type NodeName, type TopicName } from "./topics.js";
 
 const BLOCK_MS = 1000;
 const STATE_NOTE = 64;
+/** ack가 이만큼 쌓이거나 지난 자르기에서 TRIM_MS가 지나면 자른다. */
+const TRIM_EVERY = 100;
+const TRIM_MS = 1000;
+/** STATE 발행 한 번: 카운터 올리기, 열쇠의 값 두기, 값을 실은 알림. KEYS = 카운터·값 표·알림 스트림, ARGV = 열쇠·값·알림 상한. */
+const STATE_PUBLISH = `local n = redis.call('INCR', KEYS[1])
+redis.call('HSET', KEYS[2], ARGV[1], ARGV[2])
+redis.call('XADD', KEYS[3], 'MAXLEN', '~', ARGV[3], '*', 'key', ARGV[1], 'n', n, 'm', ARGV[2])
+return n`;
 const WATCH_MS = 1000;
 /** close()가 Redis의 답을 기다리는 시간. 넘으면 연결을 끊는다. */
 const CLOSE_MS = 1000;
@@ -37,6 +47,8 @@ export async function assertNoPersistence(get: (name: string) => Promise<string>
 
 export class RedisBus implements Bus {
   readonly #closers = new Set<() => Promise<void>>();
+  /** 토픽마다 모아서 자르기: 지난 자르기 뒤 ack 수, 지난 자르기 시각, 기다리는 자르기. */
+  readonly #trims = new Map<TopicName, { count: number; at: number; timer: ReturnType<typeof setTimeout> | null }>();
   #watch: ReturnType<typeof setInterval> | null = null;
   #lost = false;
   #closed = false;
@@ -97,10 +109,8 @@ export class RedisBus implements Bus {
     const q = TOPICS[e.topic].qos;
     const k = this.#k(e.topic);
     if (q.kind === "sensor") await this.client.xAdd(k, "*", { m: raw }, { TRIM: { strategy: "MAXLEN", threshold: q.depth } });
-    else if (q.kind === "state") {
-      const n = await this.client.incr(`${k}:n`);
-      await this.client.multi().hSet(`${k}:state`, e.key, raw).xAdd(k, "*", { key: e.key, n: String(n) }, { TRIM: { strategy: "MAXLEN", strategyModifier: "~", threshold: STATE_NOTE } }).exec();
-    } else await this.client.xAdd(k, "*", { m: raw });
+    else if (q.kind === "state") await this.client.eval(STATE_PUBLISH, { keys: [`${k}:n`, `${k}:state`, k], arguments: [e.key, raw, String(STATE_NOTE)] });
+    else await this.client.xAdd(k, "*", { m: raw });
   }
 
   async subscribe<N extends TopicName>(topic: N, node: NodeName, deliver: Deliver<N>, o: { mode?: "latest" | "all" } = {}): Promise<Subscription> {
@@ -144,6 +154,13 @@ export class RedisBus implements Bus {
       try { await this.client.xGroupCreate(k, node, "$", { MKSTREAM: true }); } catch (e) { if (!String(e).includes("BUSYGROUP")) throw e; }
       /** 이 구독에서 메시지마다 실패한 횟수. dead 발행·XACK가 실패해 같은 메시지를 다시 읽어도 처음부터 세지 않는다(다 쓴 메시지는 dead만 다시 보낸다). */
       const failed = new Map<string, number>();
+      /** 보냈지만 답을 아직 기다리지 않은 XACK. 다음 읽기와 함께 기다린다(실패하면 그 읽기 실패로 내 몫부터 다시 읽는다). */
+      let acks: Promise<void>[] = [];
+      const ack = (id: string) => {
+        const p = conn.xAck(k, node, id).then(() => { failed.delete(id); this.#acked(topic); });
+        p.catch(() => {});   // 다음 읽기 전에 실패해도 처리되지 않은 거절로 남지 않게(기다리는 곳은 다음 읽기)
+        acks.push(p);
+      };
       /** 한 메시지를 ack나 dead까지. 끊긴 구독이면 false(ack하지 않고 둔다). */
       const handle = async (id: string, raw: string): Promise<boolean> => {
         for (;;) {
@@ -158,18 +175,18 @@ export class RedisBus implements Bus {
             if (!on) return false;
           }
         }
-        await this.client.xAck(k, node, id);
-        failed.delete(id);
-        await this.#trim(k);
+        ack(id);
         return true;
       };
       let mineDone = false;
       run = forever(async () => {
-        const r = await conn.xReadGroup(node, node, { key: k, id: mineDone ? ">" : "0" }, { COUNT: 16, ...(mineDone ? { BLOCK: BLOCK_MS } : {}) });
+        const sent = acks;
+        acks = [];
+        const [r] = await Promise.all([conn.xReadGroup(node, node, { key: k, id: mineDone ? ">" : "0" }, { COUNT: 16, ...(mineDone ? { BLOCK: BLOCK_MS } : {}) }), ...sent]);
         const ms = (r ?? []).flatMap((s) => s.messages).filter((m) => m?.message?.m);
         if (!mineDone && !ms.length) { mineDone = true; return; }
         for (const m of ms) if (!(await handle(m.id, m.message.m!))) return false;
-      }, () => { mineDone = false; });
+      }, () => { mineDone = false; acks = []; });
     } else if (q.kind === "state") {
       let lastN = 0;
       let last = tail;
@@ -186,14 +203,12 @@ export class RedisBus implements Bus {
         const r = await conn.xRead({ key: k, id: last }, { COUNT: 100, BLOCK: BLOCK_MS });
         const ms = r?.flatMap((s) => s.messages) ?? [];
         if (!ms.length) return;
-        const ns = ms.map((m) => Number(m.message.n));
-        if (ns[0] !== lastN + 1) { synced = false; return; }   // 알림이 건너뛰었다: 스냅숏부터 다시
-        for (const m of ms) {
-          const raw = await this.client.hGet(`${k}:state`, m.message.key!);
-          if (raw && on) await deliver(decode(topic, raw));
-          last = m.id;
-          lastN = Number(m.message.n);
-        }
+        if (Number(ms[0]!.message.n) !== lastN + 1) { synced = false; return; }   // 알림이 건너뛰었다: 스냅숏부터 다시
+        const newest = new Map<string, string>();   // 열쇠마다 마지막 값(STATE는 열쇠마다 최신 하나)
+        for (const m of ms) { newest.delete(m.message.key!); newest.set(m.message.key!, m.message.m!); }
+        last = ms.at(-1)!.id;
+        lastN = Number(ms.at(-1)!.message.n);
+        for (const raw of newest.values()) if (on) await deliver(decode(topic, raw));
       }, () => { synced = false; });
     } else {
       let last = tail;
@@ -236,6 +251,32 @@ export class RedisBus implements Bus {
     await this.publish({ topic: "/bus/dead", key: topic, header: { ...e.header, node: group }, body: deadBody(topic, group, raw, tries) } as never);
   }
 
+  /** ack 하나를 센다. TRIM_EVERY번 쌓였거나 지난 자르기에서 TRIM_MS가 지났으면 바로, 아니면 TRIM_MS가 찰 때 한 번 자른다. 읽기 줄은 자르기를 기다리지 않는다. */
+  #acked(topic: TopicName): void {
+    const t = this.#trims.get(topic) ?? this.#trims.set(topic, { count: 0, at: 0, timer: null }).get(topic)!;
+    t.count++;
+    const wait = t.at + TRIM_MS - Date.now();
+    if (t.count >= TRIM_EVERY || wait <= 0) return this.#trimNow(topic);
+    if (!t.timer) {
+      t.timer = setTimeout(() => this.#trimNow(topic), wait);
+      t.timer.unref?.();
+    }
+  }
+
+  #trimNow(topic: TopicName): void {
+    const t = this.#trims.get(topic)!;
+    if (t.timer) clearTimeout(t.timer);
+    t.timer = null;
+    t.count = 0;
+    t.at = Date.now();
+    if (this.#closed || this.#lost) return;
+    this.#trim(this.#k(topic)).catch((e: Error) => {
+      if (this.#closed) return;   // 닫는 중에 끊긴 자르기
+      if (String(e).includes("NOGROUP")) this.#lose();
+      else this.log(`[통로] ${topic} 자르기 실패: ${e.message}`);
+    });
+  }
+
   /** 모든 그룹이 넘긴(처리 중 없음) 앞부분을 자른다. */
   async #trim(k: string): Promise<void> {
     const groups = await this.client.xInfoGroups(k);
@@ -256,6 +297,7 @@ export class RedisBus implements Bus {
     if (this.#closed) return;
     this.#closed = true;
     if (this.#watch) clearInterval(this.#watch);
+    for (const t of this.#trims.values()) if (t.timer) clearTimeout(t.timer);
     for (const c of [...this.#closers]) await c();
     await Promise.race([this.client.close().catch(() => {}), sleep(CLOSE_MS)]);
     try { this.client.destroy(); } catch { /* 이미 닫힘 */ }

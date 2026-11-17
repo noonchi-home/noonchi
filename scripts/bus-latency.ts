@@ -1,7 +1,8 @@
 // 노드 통로 한 번 지나기의 지연을 잰다(stage-queue 묶음 2 지연 예산). 무거운 일이라 npm run heavy로 돌린다.
 // 쓰는 법: npx tsx scripts/bus-latency.ts [--n 500] [--bytes 6000]   (REDIS_URL이 있으면 RedisBus도 잰다)
 // 잰 것: 발행 부르기 → 받는 노드 콜백까지(p50·p95·최대, ms). /world/changes(RELIABLE, 작은 몸)·/world/state(STATE, 집 상태 크기 몸).
-//   Redis가 있으면 PING 왕복도. 봉투 하나의 JSON 만들기·읽기·zod 검사 시간도 따로.
+//   Redis가 있으면 PING 왕복과 맨 전달(통로 없이 같은 크기 값을 XADD → 막고 읽던 다른 연결의 XREAD가 깨어남, 통로가 넘을 수 없는 바닥)도.
+//   봉투 하나의 JSON 만들기·읽기·zod 검사 시간도 따로.
 import { randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { createClient } from "redis";
@@ -41,6 +42,32 @@ async function hop(bus: Bus, topic: "/world/changes" | "/world/state", body: (re
   return out;
 }
 
+/** 통로 없이 bytes 크기 값을 XADD하고, 막고 읽던 다른 연결의 XREAD가 깨어나기까지(ms). */
+async function bare(url: string, bytes: number): Promise<number[]> {
+  const key = `noonchi:${EPOCH.boot}:bare`;
+  const w = createClient({ url });
+  await w.connect();
+  const r = w.duplicate();
+  await r.connect();
+  const value = "x".repeat(bytes);
+  let last = "0-0";
+  const out: number[] = [];
+  for (let i = 0; i < N + 20; i++) {
+    const read = r.xRead({ key, id: last }, { COUNT: 100, BLOCK: 1000 });
+    await new Promise((res) => setTimeout(res, 1));
+    const t0 = performance.now();
+    const added = w.xAdd(key, "*", { m: value }, { TRIM: { strategy: "MAXLEN", strategyModifier: "~", threshold: 64 } });
+    const got = await read;
+    if (i >= 20) out.push(performance.now() - t0);
+    await added;
+    last = got![0]!.messages.at(-1)!.id;
+  }
+  await w.del(key);
+  await w.close();
+  await r.close();
+  return out;
+}
+
 function codec(): number[] {
   const e = { topic: "/world/state", key: "_", header: { stamp: 1, node: "world", inst: "i1", seq: 1, ...EPOCH }, body: stateBody(1) } as Envelope<TopicName>;
   const out: number[] = [];
@@ -67,6 +94,9 @@ async function main(): Promise<void> {
   for (let i = 0; i < N; i++) { const t0 = performance.now(); await c.ping(); ping.push(performance.now() - t0); }
   await c.close();
   show("Redis PING 왕복", ping);
+  const size = (body: Record<string, unknown>) => Buffer.byteLength(JSON.stringify({ key: "_", header: { stamp: 1, node: "world", inst: "i1", seq: 1, ...EPOCH }, body }));
+  show("Redis 맨 전달(/world/changes 크기)", await bare(url, size(changeBody(1))));
+  show("Redis 맨 전달(/world/state 크기)", await bare(url, size(stateBody(1))));
   const redis = await RedisBus.connect(url, { boot: EPOCH.boot, keepOthers: true, log: () => {}, onLost: (e) => { throw e; } });
   show("RedisBus /world/changes 한 번 지나기", await hop(redis, "/world/changes", changeBody));
   show("RedisBus /world/state 한 번 지나기", await hop(redis, "/world/state", stateBody));
