@@ -2599,7 +2599,7 @@ Expected: 모두 PASS(이 묶음은 집 실행 묶음을 바꾸지 않는다).
 
 | 구간 | 지금(통로 전) | 통로 한 번 지나기: MemoryBus / RedisBus(p50·p95) | 묶음 2 뒤 예상 p95 |
 |---|---|---|---|
-| 엔진 프레임 → 집 상태 발행(대시보드 world) | p50 7.9ms · p95 13.5ms(감지기 시간 뺌, 40장) | RELIABLE(`/world/changes` 113바이트) 0.47·0.79ms / Task 1 뒤 2.4·3.2ms(전 8.3·9.5ms). STATE(`/world/state` 18.4KB) 0.54·0.86ms / Task 1 뒤 3.3·4.1ms~3.7·4.8ms(두 판, 전 6.5·7.6ms). 실제 몸 모양 검사(Task 2·최상위 칸 검사) 뒤 MemoryBus RELIABLE 0.48~0.50·0.70~0.78ms, STATE 0.56~0.57·0.73~0.84ms(두 판, 그대로) | 프레임 → `/perception/scene`(RELIABLE) → 집 상태 노드 → `/world/state`(STATE), 두 번 지남(상태를 변화보다 먼저 냄). MemoryBus 약 15.2ms(13.5 + 0.8 + 0.9), RedisBus 약 21.6ms(13.5 + 3.3 + 4.8). Task 6 뒤 실제 값으로 고친다 |
+| 엔진 프레임 → 집 상태 발행(대시보드 world) | p50 7.9ms · p95 13.5ms(감지기 시간 뺌, 40장) | RELIABLE(`/world/changes` 113바이트) 0.47·0.79ms / Task 1 뒤 2.4·3.2ms(전 8.3·9.5ms). STATE(`/world/state` 18.4KB) 0.54·0.86ms / Task 1 뒤 3.3·4.1ms~3.7·4.8ms(두 판, 전 6.5·7.6ms). 실제 몸 모양 검사(Task 2·최상위 칸 검사) 뒤 MemoryBus RELIABLE 0.48~0.50·0.70~0.78ms, STATE 0.56~0.57·0.73~0.84ms(두 판, 그대로) | 프레임 → `/perception/scene`(RELIABLE) → 집 상태 노드 → `/world/state`(STATE), 두 번 지남(상태를 변화보다 먼저 냄). 예상 MemoryBus 약 15.2ms, RedisBus 약 21.6ms. 잰 값(MemoryBus, 혼자 돌림, 판마다 40장): Task 6 뒤 p50 15.8·16.0ms, p95 21.3·21.8ms. vlm-objects·domain-split을 합친 뒤 합치기 전과 번갈아 잼(같은 때): 한가할 때 p95 20.5~21.8ms로 같음, 백신이 CPU를 쓸 때 두 쪽 모두 p95 21.2~38.6ms(p50은 두 쪽 17.0ms). RedisBus 값은 조정자의 실제 Redis 영상 판에서 받아 적는다 |
 | 집 상태 변화 → 판단 시작(PAM 요청), event 모드 | 47·123·191·235ms(4번): 250ms 판단 타이머 기다림이 거의 전부. 기본 periodic 모드는 5초 주기라 0~5초 | 변화 한 번 지나기(위 RELIABLE) | 타이머가 그대로면 지금 + 한 번 지나기(아래 「줄일 수 있는 곳」 2) |
 | 실제 감지(YOLO26s-seg) | DirectML 약 144ms · CPU 8스레드 약 218ms(구현명세서 4절) | — | 그대로 |
 | Redis PING 왕복 | — | p50 1.57ms · p95 2.1ms | — |
@@ -2707,11 +2707,11 @@ Task 1 뒤 RedisBus 한 번 지나기는 같은 크기 맨 전달과 p50이 같�
 
 ### Task 7: 묶음 2 끝 조건
 
-- [ ] 묶음 공통(데모 e2e 넷·영상 모드 셋·`ui/tests/phone-mode-parity.test.ts`·typecheck·lint).
-- [ ] 기록 DB 같음 시험: e2e 세 파일의 `afterEach` 정답이 그대로 통과한다(정답 파일을 고치지 않는다).
-- [ ] 지연: `tests/latency-world.test.ts`가 한도 안(MemoryBus). `REDIS_URL`을 주고 `scripts/bus-latency.ts`와 이 시험을 한 번씩 돌려 값을 「지연 예산」 표에 적는다(Docker 규칙).
-- [ ] `grep` 끝 조건(Task 6).
-- [ ] 해시를 조정자에게 보내고 묶음 3 단계 계획을 이 파일에 더한다(domain-split을 합친 뒤라면 「VLM 메인」 확정 규칙 계획과 「사람이 쓰는 중이면 관찰만」 공통 지킴을 함께 본다).
+- [x] 묶음 공통(데모 e2e 넷·영상 모드 셋·`ui/tests/phone-mode-parity.test.ts`·typecheck·lint): feat/vlm-objects·refactor/domain-split을 합친 뒤 통과(이 PC 포트 EFAULT·부하 시간 초과는 따로 다시 돌려 통과).
+- [x] 기록 DB 같음 시험: e2e 세 파일의 `afterEach` 정답이 통과한다. 정답은 vlm-objects를 합친 동작으로 새로 썼다(조정자 결정): 물건 등장 확인이 2초라 컵 치우기 첫 명령이 내용물 확정 줄보다 먼저 나오고(습관이 내용물과 상관없음, 시험은 확정 줄이 결국 나오는지도 본다), 든 병의 「손에 있음」 줄이 더해졌다. 정답 모양은 계획 중 같은 행동을 고른 주기 판단과 「같은 행동을 진행 중」을 빼고, 서버를 닫기 전 `srv.settle`(닫기와 같은 비우기, 기한 2초를 넘기면 실패)로 통로를 비운 뒤 뽑는다.
+- [ ] 지연: `tests/latency-world.test.ts`(MemoryBus)는 한가할 때 한도 안이고 부하 때는 합치기 전 코드도 넘는다(「지연 예산」 표). `REDIS_URL` 값은 조정자의 실제 Redis 영상 판에서 받아 적는다.
+- [x] `grep` 끝 조건(Task 6): 빈다.
+- [x] 해시를 조정자에게 보내고 묶음 3 단계 계획을 이 파일에 더한다(domain-split을 합친 뒤라면 「VLM 메인」 확정 규칙 계획과 「사람이 쓰는 중이면 관찰만」 공통 지킴을 함께 본다).
 
 ## 묶음 3: 실행 추적 ↔ 폰 (콜백 22개)
 
@@ -2749,6 +2749,46 @@ Task 1 뒤 RedisBus 한 번 지나기는 같은 크기 맨 전달과 p50이 같�
 **시험:** `tests/phone-owner.test.ts`(표 차례 다섯, 계획 승인과 대화 승인이 서로 덮지 않음, 높은 것이 사라지면 낮은 것이 다시 나옴, 승인 시간 멈춤은 그 claim만), `tests/act-node.test.ts`(지난 명령의 「완료」를 버림, 「그만」·새 계획·계획 밖 보기 거두기의 차례 — e54860d·4dc5de7 사례, 집을 닫으면 돌던 추적 콜백이 취소되고 그 뒤 명령이 나가지 않음), 기존 `tests/act-track*.test.ts`는 실행 추적 함수를 그대로 시험해 통과.
 
 **끝 조건:** 묶음 공통 + 기록 DB 같음 시험 + `ExecutionTracker` 생성자 옵션에 함수가 `planner`·`precheck`·`check` 말고 남지 않는다.
+
+### 묶음 3 단계 계획
+
+**묶음 2에서 이어받는 것:**
+- 실행 추적이 읽는 집 상태는 거울(`core.view()`)에 가전 지금 상태만 허브 값으로 덮은 것(`liveDevices`, `src/server/home/act.ts`)이다. 묶음 3에서는 `act` 노드가 `/world/state`를 `withState`로 받고, 덮기는 묶음 5(`/device/state`)까지 그대로 둔다.
+- `/world/input`(지킴·따르기 창·지금 단계 대상 `focus`)·`/phone/heard`·`/device/changes`는 이미 `Outbox`(같은 봉투로 차례대로 다시 보냄)로 나간다. 새 출력 토픽도 `Outbox`나 노드 `send`로 낸다.
+- 지금 모드(`src/act/mode.ts` `modeNow`, `core.mode()`)는 실행 추적·계획·거울 보기를 읽는다. 묶음 3에서 `act` 노드가 계산해 `/act/status`에 싣고, 판단·대시보드 모드 말풍선은 그것을 읽는다.
+- 쓰는 중 지킴(`src/act/track/use.ts` UseWatch, `usingNow`)이 「사람이 쓰는 중이면 관찰만」 공통 지킴이다. 노드로 옮길 때 계획 시작·단계 명령·가까이 가서 보기·찾기가 모두 이 하나를 먼저 보는지 시험으로 묶는다.
+- 기록 DB 같음 정답은 `srv.settle`로 비운 뒤 뽑는다. 새 토픽을 더하면 `drainNodes`(`src/server/home/observe.ts`)의 비우기 차례에 그 노드도 넣는다.
+
+**Task 1: 폰 사용권 표(순수 함수)**
+- 파일: `src/phone/owner.ts`(새), `tests/phone-owner.test.ts`(새).
+- 실패 시험 먼저: 표 차례 다섯(안전 알림 > 승인 대기 > 폰 대화 > 계획 명령 > 관찰 모드 질문), 같은 차례면 먼저 낸 claim, 높은 것이 사라지면 낮은 것이 다시 나옴, 계획 승인과 대화 승인이 서로 덮지 않음, 승인 시간은 그 claim이 화면에 있을 때만 흐름.
+- 구현: `phoneOwner(claims): Claim | null`. 지금 흩어진 막기(`approvalsWaiting`·`talking`·`policy.pause`)는 아직 바꾸지 않는다.
+
+**Task 2: 실행 추적 노드 뼈대(`act`)**
+- 파일: `src/act/node.ts`(새), `src/bus/topics.ts`(`/act/phone_command`·`/act/plan`·`/act/status`·`/act/log`·`/phone/progress` 실제 몸, zod strict·계약 타입 같음 검사), `src/contract/act.ts`(새 계약), `tests/act-node.test.ts`(새).
+- 실패 시험 먼저: 지난 명령(`req`가 다른)의 「완료」를 버림, 「그만」·새 계획·계획 밖 보기 거두기의 차례(e54860d·4dc5de7 사례), 집을 닫으면 돌던 추적 콜백이 취소되고 그 뒤 명령이 나가지 않음, 250ms 타이머가 `tracking.tick()`·`looking.tick()`을 같은 줄에서 부름(a243ea5·6fb2d1d 사례).
+- 구현: `startActNode({ bus, epoch, tracker, looker, clock })`가 `/world/state`(withState)·`/world/changes`(들은 말 뺀 변화 → `tracker.onWorld`)·`/phone/progress`를 받고, `/act/phone_command`(STATE, 열쇠 명령 id·단계)·`/act/plan`(STATE)·`/act/status`(STATE: 지금 모드·행동 목록·hold·말풍선 글과 안전 표시)·`/act/log`(RELIABLE)를 낸다. `startLoop`의 250ms 타이머를 노드 `every`로 옮긴다.
+
+**Task 3: 폰 노드가 명령·답·사용권을 맡음**
+- 파일: `src/server/home/phone.ts`·`src/phone/server.ts`(주는 쪽만), `tests/phone-node.test.ts`(새), 기존 `tests/phone-voice.test.ts`·`tests/phone-server.test.ts`.
+- 실패 시험 먼저: `/act/phone_command`가 오면 실제 폰에 그 명령, 폰의 답·「완료」·「그만」·단계 영상 끝은 `/phone/progress`(`req` = 명령 id·단계)로 나가고 `Pending`에 없으면 버림(58246d8·c966b20·6a2efe9·cb07b65 사례), `/phone/claim` 여럿이면 `/phone/owner` 하나.
+- 구현: `toPhone`·`phoneReady`·`sayAloud`·`approvalsWaiting`·`talking` 콜백을 토픽으로 바꾼다. 승인 대기 시간 멈춤은 `policy.pause` 대신 사용권.
+
+**Task 4: 대시보드는 폰 노드가 토픽에서 받아 보냄**
+- 파일: `src/server/home/say.ts`·`index.ts`·`act.ts`, 기존 `tests/dashboard*`·`ui/tests/dashboard/*`.
+- 실패 시험 먼저: 계획 방송(PlanHub)·모드 말풍선(`mode` 메시지)·말풍선 글(`say`, safety)이 `/act/plan`·`/act/status`에서 오고, 접속 때 마지막 상태를 받는다.
+- 구현: `core.speak`·`core.mode()`를 `act` 노드 안으로, 대시보드 보내기는 폰 노드가.
+
+**Task 5: 관찰 모드 보기 요청을 토픽으로**
+- 파일: `src/observe/node.ts`·`src/act/look.ts`·`src/server/home/act.ts`(`startLooker`), `tests/look-flow.test.ts`·`tests/act-look.test.ts`.
+- 실패 시험 먼저: 가까이 보기·위에서 보기·찾기의 비추기 끝(`spotReady`·`topReady`)이 `/perception/look_request`(req, 끊기 신호) → `/perception/look_result`로 오가고, 기한 안에 답이 없으면 `closerMiss`와 같은 「못 봄」, 인식 노드를 끝내면 `closed`.
+- 구현: `Looker`의 `closer`·`topLook`·`latest` 직접 부르기를 없앤다.
+
+**Task 6: 잇기와 끝 조건**
+- `ExecutionTracker` 생성자 옵션의 함수가 `planner`·`precheck`·`check`만 남는다(`grep`으로 본다).
+- 쓰는 중 지킴: 계획 시작·단계 명령·가까이 가서 보기·찾기가 모두 `UseWatch` 하나를 먼저 보는지 시험(`tests/act-node.test.ts`).
+- 지연: 집 상태 변화 → 실제 폰 명령 지연을 잰다(새 `tests/latency-act.test.ts`, 묶음 3 전 기준을 먼저 재서 `tests/fixtures/latency/act.json`에 둔다. 한도는 기준 + 통로 두 번 지나기).
+- 묶음 공통(데모 e2e 넷·영상 모드 셋·`ui/tests/phone-mode-parity.test.ts`·typecheck·lint) + 기록 DB 같음 시험(`srv.settle` 뒤).
 
 ## 묶음 4: 판단 노드
 
