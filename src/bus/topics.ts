@@ -5,7 +5,7 @@
 import { z } from "zod";
 import type { DeviceState } from "../contract/devices.js";
 import type { SeenEvent } from "../contract/events.js";
-import type { SceneInput, VlmMissing, WorldChange, WorldChangeKind, WorldChangesMsg, WorldInput, WorldStateMsg, WorldView } from "../contract/world.js";
+import type { SceneInput, VlmMissing, WorldChange, WorldChangeKind, WorldChangesMsg, WorldCloserMsg, WorldInput, WorldStateMsg, WorldView } from "../contract/world.js";
 import { CLASSES, SCENE_STATES, type DetLabel } from "../world/vocab.js";
 
 export const NODES = ["phone", "perception", "world", "brain", "act", "devices", "recorder"] as const;
@@ -66,6 +66,8 @@ const CHANGE_KINDS = [
 const worldChanges = z.strictObject({ rev, changes: z.array(z.strictObject({ kind: z.enum(CHANGE_KINDS), at_ms: at, subject: z.string(), text: z.string(), meaningful: z.boolean() })) });
 const worldInput = z.strictObject({ kind: z.enum(["guard", "contents"]), id, on: z.boolean(), at_ms: at });
 const heard = z.strictObject({ text: z.string(), observed_ms: at });
+/** /world/closer: 가까이 보기 한 번의 VLM 합치기 뒤 최종 id 표. */
+const worldCloser = z.strictObject({ look: id, ids: z.record(z.string(), z.string()) });
 /** /device/changes: 기기 상태(허브가 만든 값이라 id만 본다)와 기록용 메모(첫 상태·이름·종류). */
 const deviceChange = z.strictObject({
   id, state: z.custom<DeviceState>((v) => typeof v === "object" && v !== null && typeof (v as { id?: unknown }).id === "string"),
@@ -83,6 +85,7 @@ export type TopicBodiesSame = [
   Assert<Equal<z.infer<typeof worldState>, WorldStateMsg>>,
   Assert<Equal<z.infer<typeof worldChanges>, WorldChangesMsg>>,
   Assert<Equal<z.infer<typeof worldInput>, WorldInput>>,
+  Assert<Equal<z.infer<typeof worldCloser>, WorldCloserMsg>>,
   Assert<Equal<z.infer<typeof worldChanges>["changes"][number], WorldChange>>,
 ];
 
@@ -97,6 +100,7 @@ export const TOPICS = {
   "/world/input": { qos: { kind: "reliable" }, body: worldInput, key: by("id"), order: null, from: ["act"] },
   "/world/state": { qos: { kind: "state" }, body: worldState, key: one, order: "rev", from: ["world"] },
   "/world/changes": { qos: { kind: "reliable" }, body: worldChanges, key: one, order: "rev", from: ["world"] },
+  "/world/closer": { qos: { kind: "reliable" }, body: worldCloser, key: by("look"), order: null, from: ["world"] },
   "/brain/decision": { qos: { kind: "reliable" }, body: obj, key: one, order: "stamp", from: ["brain"] },
   "/brain/plan": { qos: { kind: "reliable" }, body: obj, key: by("decision_id"), order: null, from: ["brain", "act"] },
   "/brain/thought": { qos: { kind: "reliable" }, body: obj, key: one, order: "stamp", from: ["brain"] },

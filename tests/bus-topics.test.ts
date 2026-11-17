@@ -127,6 +127,13 @@ describe("인식·집 상태 토픽 모양(묶음 2)", () => {
     expect(ok("/world/changes", { rev: 1, changes: [change], view: {} })).toBe(false);
   });
 
+  it("/world/closer는 {look, ids}(감지 번호 → 물건 id 표)만 받는다", () => {
+    expect(ok("/world/closer", { look: "e2.c1", ids: { d1: "cup_1" } })).toBe(true);
+    expect(ok("/world/closer", { look: "e2.c1", ids: {} })).toBe(true);
+    expect(ok("/world/closer", { look: "e2.c1" })).toBe(false);
+    expect(ok("/world/closer", { look: "e2.c1", ids: { d1: 1 } })).toBe(false);
+  });
+
   it("/world/input은 지킴·따르기 창만, /phone/heard는 {text, observed_ms}, /device/changes는 {id, state, note}만 받는다", () => {
     expect(ok("/world/input", { kind: "guard", id: "cup_1", on: true, at_ms: 1 })).toBe(true);
     expect(ok("/world/input", { kind: "contents", id: "cup_1", on: false, at_ms: 1 })).toBe(true);

@@ -2,7 +2,7 @@
 // 트윈 가전 하나를 고르고, 그 프레임 VLM 답의 값이 연속으로 이어지면 see로 허브에 넘긴다), 가전 상태(상태 키·바뀐 속성 이력·사건 줄·남은 시간·오래 이어진 상태 tick).
 // 카메라로 본 값이 상태가 된 가전 줄은 「카메라로 봄」을 붙이고, 실제 상태와 다르면 다름 줄 하나.
 import type { DeviceState, SightEvidence, VisionSeen } from "../../contract/devices.js";
-import type { Detection, EngineFrame, Mask, SceneObservation } from "../../contract/observe.js";
+import type { Detection, FrameMeta, Mask, SceneObservation } from "../../contract/observe.js";
 import type { FixtureClass, WorldChange, WorldDevice, WorldView } from "../../contract/world.js";
 import { maskCells } from "../../shared/mask.js";
 import { CHANGE_TEXT } from "../labels.js";
@@ -65,7 +65,7 @@ export class DeviceSight extends Part {
   }
 
   /** 가전 설비 상자 하나를 트윈 가전에 맞춰 두고(등록부 camera가 있는 설비만), 그 프레임 VLM 답을 기다린다. */
-  sight(frame: EngineFrame, tmp: string, fix: Fix, det: Detection, room: { id: string } | null): void {
+  sight(frame: FrameMeta, tmp: string, fix: Fix, det: Detection, room: { id: string } | null): void {
     if (!rulesOf(fix.cls).length) return;
     const at = frame.capturedAtMs;
     const link = linkDevice({

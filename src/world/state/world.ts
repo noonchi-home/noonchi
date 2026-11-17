@@ -35,7 +35,7 @@
 // devices.ts 가전 설비·카메라로 본 가전·가전 상태. 다른 도메인은 src/world/index.ts로 가져온다.
 import type { EyePose } from "../../contract/events.js";
 import type { VlmMissing, WorldChange, WorldEye, WorldFixture, WorldObject, WorldPerson, WorldView, YoloMissing } from "../../contract/world.js";
-import type { Detection, EngineFrame, Pose, SceneObservation } from "../../contract/observe.js";
+import type { Detection, FrameMeta, Pose, SceneObservation } from "../../contract/observe.js";
 import { headWithin } from "../../shared/cut.js";
 import type { DeviceState, SightEvidence, VisionResult } from "../../contract/devices.js";
 import { CHANGE_TEXT, HEARD_MAX } from "../labels.js";
@@ -111,7 +111,7 @@ export class WorldState {
 
   /** poses: 이 프레임의 관절(YOLO26-pose). 없으면(관절 모델이 없거나 사람이 없어 돌리지 않음) 자세·손에 듦을 보지 않는다.
    *  이미 넣은 가장 새 전체 사진보다 옛 촬영(감지 대기열에서 늦게 나온 프레임)은 넣지 않고 변화·감지 번호 없이 돌려준다(objects.ts). */
-  applyDetections(frame: EngineFrame, dets: Detection[], poses?: Pose[]): { changes: WorldChange[]; ids: Map<string, string> } {
+  applyDetections(frame: FrameMeta, dets: Detection[], poses?: Pose[]): { changes: WorldChange[]; ids: Map<string, string> } {
     return this.core.merge.applyDetections(frame, dets, poses);
   }
 

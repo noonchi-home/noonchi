@@ -2669,7 +2669,7 @@ Task 1 뒤 RedisBus 한 번 지나기는 같은 크기 맨 전달과 p50이 같�
 
 **Interfaces:** `startWorldNode(o: { bus: Bus; epoch; world: WorldState; clock?: Clock; tickMs?: number; log? }): Promise<{ node: BusNode; bridge: WorldBridge }>`(prepare까지). 받는 것: `/perception/scene`·`/world/input`·`/phone/heard`·`/device/changes`. 다리(VLM 전용으로 바뀔 자리, 모두 돌려주는 값 없음): `eye(eye, atMs)`·`frame(frame: FrameMeta, dets: Detection[], poses?)`(VLM 프레임이면 감지 번호 표를 둔다)·`missing(frameId, capturedAtMs, m)`·`closer(look, looks, from)`(YOLO 합치기, `look`마다 감지 번호 표와 `pending`을 둔다). 내는 것: `/world/state`·`/world/changes`·`/world/closer`.
 
-- [ ] 실패 시험(`tests/world-node.test.ts`, MemoryBus·VirtualClock):
+- [x] 실패 시험(`tests/world-node.test.ts`, MemoryBus·VirtualClock):
   - 같은 입력 차례를 `WorldState`에 바로 넣은 것과 집 상태 노드에 다리·토픽으로 넣은 것의 변화 줄·`view`가 같다(다리 감지 → VLM 답, 다리 가까이 보기 합치기 → 그 VLM 답, 위에서 본 값, 분석 없음).
   - `closer_scene`·`closer_end`를 넣은 뒤 `/world/closer {look, ids}`를 내고, 그 표는 VLM 답이 만든 물건 id까지 담은 최종 표다(`WorldState`에 바로 넣고 본 `ids`와 같다).
   - 다리 입력과 토픽 입력은 노드 줄에 들어온 차례대로 넣는다(같은 프레임의 다리 감지가 그 프레임 VLM 답보다 먼저).
@@ -2678,8 +2678,8 @@ Task 1 뒤 RedisBus 한 번 지나기는 같은 크기 맨 전달과 p50이 같�
   - 가전 첫 상태(`initial`)는 변화를 내지 않는다.
   - 1620be1 다시 들어오기: 변화를 받는 쪽이 같은 콜백 안에서 `/world/input`을 내도 그 입력은 지금 콜백이 끝난 뒤에 넣는다.
   - 노드를 끝낸 뒤 다리 입력은 오류 없이 버리고, 끝내기는 다리 입력 때문에 기다리지 않는다.
-- [ ] 구현: 입력마다 `world`에 넣고, 변화가 있으면 `rev++` → `/world/state`·`/world/changes`를 함께 발행. 다리는 `post`로 같은 줄에 넣는다. `idsOf`·가까이 보기 `pending`을 노드 안 표로(30초 넘은 것은 지운다). 다리 코드에 「VLM 전용으로 바뀔 자리」 주석 한 줄.
-- [ ] 통과 확인, 커밋·push.
+- [x] 구현: 입력마다 `world`에 넣고, 변화가 있으면 `rev++` → `/world/state`·`/world/changes`를 함께 발행. 다리는 `post`로 같은 줄에 넣는다. `idsOf`·가까이 보기 `pending`을 노드 안 표로(30초 넘은 것은 지운다). 다리 코드에 「VLM 전용으로 바뀔 자리」 주석 한 줄.
+- [x] 통과 확인(`tests/world-node.test.ts`·`tests/bus-topics.test.ts`·World State 시험, typecheck, lint), 커밋. World State의 프레임 인자는 사진 없는 `FrameMeta`로 바꿨다(타입만).
 
 ### Task 4: 거울
 

@@ -3,7 +3,7 @@
 // 물건 움직임과 들고 감 보호(carried)도 여기 있다: 원본 프레임(전체 감지·가까이 보기)마다 본 자리를 쌓아 SETTLE_MS 안에서 움직였는지 세고,
 // 사람이 안 보이게 될 때 아직 움직이던 관절의 「손에 있음」 물건은 제자리에 SETTLE_MS 있을 때까지 손에 있음을 두며 VLM·가까이 보기 자리 답이 덮지 않는다.
 import type { Facet, FixtureClass, ObjClass, WorldChange } from "../../contract/world.js";
-import type { Detection, EngineFrame, Pose } from "../../contract/observe.js";
+import type { Detection, FrameMeta, Pose } from "../../contract/observe.js";
 import { EVIDENCE_GAP_MS } from "../confirm.js";
 import { CHANGE_TEXT, onSurface } from "../labels.js";
 import { inView, placePoint, sizeOf } from "../place.js";
@@ -23,7 +23,7 @@ const MOVE_IMAGE = 0.05;
 export class Detections extends Part {
   /** poses: 이 프레임의 관절(YOLO26-pose). 없으면(관절 모델이 없거나 사람이 없어 돌리지 않음) 자세·손에 듦을 보지 않는다.
    *  이미 넣은 가장 새 전체 사진보다 옛 촬영(감지 대기열에서 늦게 나온 프레임)은 넣지 않고 변화·감지 번호 없이 돌려준다. */
-  applyDetections(frame: EngineFrame, dets: Detection[], poses?: Pose[]): { changes: WorldChange[]; ids: Map<string, string> } {
+  applyDetections(frame: FrameMeta, dets: Detection[], poses?: Pose[]): { changes: WorldChange[]; ids: Map<string, string> } {
     const core = this.core;
     const at = frame.capturedAtMs;
     if (core.frameAt !== null && at < core.frameAt) return { changes: [], ids: new Map() };
@@ -204,7 +204,7 @@ export class Detections extends Part {
   }
 
   /** 시야 판단: 카메라가 없으면(맞추기 전) 시야 안, 카메라가 있는데 위치를 모르면 모름(null). */
-  private visible(obj: Obj, view: EngineFrame["view"]): boolean | null {
+  private visible(obj: Obj, view: FrameMeta["view"]): boolean | null {
     if (!view) return true;
     if (!obj.position) return null;
     return inView(view, obj.position);

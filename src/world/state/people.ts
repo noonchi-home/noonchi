@@ -3,7 +3,7 @@
 // 그 사람의 VLM 자리 답(침대 위·소파 위)으로만 한다. 관절이 붙인 사실은 같은 프레임 VLM 답보다 앞선다(poseHolds).
 // 마시기·따르기 사건(src/world/sip.ts): 든 그릇을 입에 대거나 든 병을 기울여 그릇 위에 두면 그 그릇의 내용물을 다시 연다(contents.ts reopen).
 import type { Facet, WorldChange, WorldFact } from "../../contract/world.js";
-import type { CameraView, Detection, EngineFrame, Pose } from "../../contract/observe.js";
+import type { CameraView, Detection, FrameMeta, Pose } from "../../contract/observe.js";
 import { CHANGE_TEXT, OBJECT_NAME } from "../labels.js";
 import { onRest, pixelOf, placeBox, rayDir } from "../place.js";
 import { describePose, heldByAny, mainPerson, type Pt } from "../pose.js";
@@ -22,7 +22,7 @@ export class People extends Part {
   nextRoom: { id: string; label: string } | null | undefined = undefined;
 
   /** 사람 자리·방: 맞춘 뒤 가장 큰 사람 상자의 발이 보이면 그 바닥 자리와 방. 방 반영은 applyDetections 끝에서. */
-  locatePerson(frame: EngineFrame, people: Detection[]): void {
+  locatePerson(frame: FrameMeta, people: Detection[]): void {
     const main = people.reduce((a, b) => (b.score * area(b.box) > a.score * area(a.box) ? b : a));
     const feet = main.box[1] + main.box[3] < frame.height * FEET_EDGE;
     const placed = frame.view && feet ? placeBox(frame.view, main.box, { width: frame.width, height: frame.height }, [], this.o.floorAt) : null;
@@ -41,7 +41,7 @@ export class People extends Part {
    *  자세는 가장 확실한 한 사람의 서 있음·앉아 있음·누워 있음. 쓰러짐 의심(src/world/fall.ts)이 되면 자세를 쓰러짐 의심으로 두고 의미 있는 변화 줄을 한 번 내며,
    *  일어날(서 있음·앉아 있음) 때까지 누운 자세 대신 그 값을 이어 둔다.
    *  손목이 보이는데 든 것이 없으면 관절이 붙인 손에 있음·들고 있음만 지운다(VLM이 붙인 사실은 둔다). */
-  applyPose(frame: EngineFrame, poses: Pose[], boxes: { obj: Obj; box: Detection["box"]; mask: Detection["mask"] }[], changes: WorldChange[]): void {
+  applyPose(frame: FrameMeta, poses: Pose[], boxes: { obj: Obj; box: Detection["box"]; mask: Detection["mask"] }[], changes: WorldChange[]): void {
     const core = this.core;
     const at = frame.capturedAtMs;
     const size = { width: frame.width, height: frame.height };

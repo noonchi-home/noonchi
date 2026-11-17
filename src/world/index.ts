@@ -6,6 +6,7 @@ export { inView, pixelOf, rayDir, restsFromLayout, surfacesFromLayout, boxShape,
 export { TOP_CONFIRM, topPairOf } from "./state/contents.js";
 export { becameKey, deviceText } from "./relations.js";
 export { WorldState, CLOSER_NEW_FRAMES, type CloserPass } from "./state/world.js";
+export { startWorldNode, WORLD_TICK_MS, type WorldBridge, type WorldNode } from "./node.js";
 export { textFromWorld, collapseLines, PAM_TEXT_MAX } from "./text.js";
 export { Trigger, type TriggerPause, loadTriggerConfig } from "./trigger.js";
 export { loadFallConfig, FALL_DEFAULTS, type FallConfig } from "./fall.js";

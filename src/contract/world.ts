@@ -180,3 +180,5 @@ export interface WorldInput { kind: "guard" | "contents"; id: string; on: boolea
 export interface WorldStateMsg { rev: number; view: WorldView }
 /** /world/changes 몸: 그 판본에서 생긴 변화. */
 export interface WorldChangesMsg { rev: number; changes: WorldChange[] }
+/** /world/closer 몸: 가까이 보기 한 번(look)의 VLM 합치기가 끝난 뒤 감지 번호·VLM 물건 번호 → 물건 id 최종 표. 인식 노드가 found를 채운다. */
+export interface WorldCloserMsg { look: string; ids: Record<string, string> }
