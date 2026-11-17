@@ -249,7 +249,8 @@ export interface ReadyView {
   inference_mode: "openai" | "vllm";
   vlm: { base_url: string; model: string; key: boolean; reachable: boolean };
   /** PAM LLM(PAM_LLM_BASE_URL) 주소 응답. 판단·반성은 서버 안 함수(src/brain/pam/)가 이 주소를 부른다. */
-  pam: { base_url: string; model: string; key: boolean; reachable: boolean };
+  /** reason: 이 주소로는 PAM을 부르지 않는 까닭(OpenRouter 주소). 있으면 주소를 부르지 않고 준비 안 됨이다. */
+  pam: { base_url: string; model: string; key: boolean; reachable: boolean; reason?: string };
   /** 폰 대화 에이전트(상용 LLM). 키가 있고 주소가 답해야 준비됨이다. 키가 없어도 다른 공급자로 바꾸지 않는다. */
   agent: { provider: "openai" | "anthropic"; base_url: string; model: string; key: boolean; reachable: boolean };
   /** 기록 DB(RUNTIME_DIR/noonchi.db)를 쓸 수 있는가. */

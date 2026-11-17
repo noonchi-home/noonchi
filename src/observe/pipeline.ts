@@ -47,6 +47,8 @@ export interface ObserveConfig {
   keepMs: number;
   /** VLM 한 번에 보내는 최근 VLM 프레임 수(그 프레임 포함, 없으면 VLM_WINDOW_DEFAULT). 창 시간은 이 수 × VLM 프레임 간격. */
   vlmWindowFrames?: number;
+  /** 시작 로그에 남길 설정 경고(옛 뜻으로 읽은 값). 시험이 손으로 만든 설정에는 없다. */
+  warnings?: string[];
 }
 
 /** VLM 창 기본 크기: PAM 원래 입력처럼 2초 간격 5장. */
@@ -65,16 +67,23 @@ const int = (env: Env, key: string, d: number, min: number) => {
  *  VLM_MAX_INFLIGHT(4), VLM_TIMEOUT_MS(20000), DETECT_QUEUE_MAX(8), VLM_WINDOW_FRAMES(5, 1~10).
  *  고리는 20초, 창 시간(창 크기 × VLM 프레임 간격)이 더 길면 창 시간. 틀린 값이면 시작을 막는다. */
 export function loadObserveConfig(env: Env): ObserveConfig {
-  const engineMs = int(env, "ENGINE_FRAME_MS", 100, 50);
+  const given = int(env, "ENGINE_FRAME_MS", 100, 50);
+  // 옛 .env(main 합치기 전)의 ENGINE_FRAME_MS는 VLM 간격이었다: VLM_FRAME_MS 없이 OLD_ENGINE_MS 이상이면 옛 뜻으로 읽는다(YOLO 프레임은 기본 100ms, 미니맵이 2초마다만 움직이지 않게)
+  const old = !env.VLM_FRAME_MS?.trim() && given >= OLD_ENGINE_MS;
+  const engineMs = old ? 100 : given;
   // VLM_FRAME_MS를 안 주고 엔진 간격만 2초보다 길게 주면 VLM도 그 간격을 따른다
-  const vlmMs = env.VLM_FRAME_MS?.trim() ? int(env, "VLM_FRAME_MS", 2000, engineMs) : Math.max(2000, engineMs);
+  const vlmMs = env.VLM_FRAME_MS?.trim() ? int(env, "VLM_FRAME_MS", 2000, engineMs) : old ? given : Math.max(2000, engineMs);
+  const warnings = old ? [`[경고] ENGINE_FRAME_MS=${given}: 옛 뜻(VLM 간격)으로 읽어요. VLM 간격 ${vlmMs}ms, YOLO 프레임 간격 ${engineMs}ms예요. VLM_FRAME_MS에 옮기고 ENGINE_FRAME_MS는 지우세요`] : [];
   const vlmWindowFrames = int(env, "VLM_WINDOW_FRAMES", VLM_WINDOW_DEFAULT, 1);
   if (vlmWindowFrames > VLM_WINDOW_MAX) throw new Error(`VLM_WINDOW_FRAMES=${env.VLM_WINDOW_FRAMES}: 1~${VLM_WINDOW_MAX}이어야 합니다`);
   return {
     engineMs, vlmMs, vlmMaxInflight: int(env, "VLM_MAX_INFLIGHT", 4, 1), vlmTimeoutMs: vlmTimeoutMs(env),
-    detectQueueMax: int(env, "DETECT_QUEUE_MAX", 8, 1), keepMs: Math.max(20_000, vlmWindowFrames * vlmMs), vlmWindowFrames,
+    detectQueueMax: int(env, "DETECT_QUEUE_MAX", 8, 1), keepMs: Math.max(20_000, vlmWindowFrames * vlmMs), vlmWindowFrames, warnings,
   };
 }
+
+/** 이 값(ms) 이상의 ENGINE_FRAME_MS는 VLM_FRAME_MS가 없으면 옛 뜻(VLM 간격)이다. */
+export const OLD_ENGINE_MS = 1000;
 
 /** VLM 프레임 간격(없으면 엔진 프레임 간격): VLM 창·가까이 보기 범위가 쓴다. */
 export const vlmStepMs = (c: Pick<ObserveConfig, "engineMs" | "vlmMs">): number => c.vlmMs ?? c.engineMs;
@@ -740,6 +749,7 @@ export async function createPipeline(o: {
   o.log(`관찰 흐름: 엔진 프레임 ${config.engineMs}ms · VLM 프레임 ${vlmStepMs(config)}ms · 감지 ${detector ? `${detector.name}(${detector.provider})` : "없음(VLM만)"} · VLM ${vlm.model} 최근 ${config.vlmWindowFrames}장 동시 ${config.vlmMaxInflight}개${closerNote} · 감지 대기열 ${config.detectQueueMax}`);
   if (detector?.decoder === "jpeg-js") o.log("[경고] sharp를 불러오지 못했습니다. JPEG을 jpeg-js로 풉니다(한 장에 약 30ms 더 걸립니다).");
   if (o.dataset) o.log("[경고] 시험 자료 모으기가 켜져 있습니다. 엔진 프레임을 디스크에 씁니다.");
+  for (const w of config.warnings ?? []) o.log(w);
   return new ObservationPipeline({
     config, detector, vlm, closerVlm, world: o.world, emit: o.emit, onFrame: o.onFrame, onSeen: o.onSeen, dataset: o.dataset, onDetected: o.onDetected, vlmFast: o.vlmFast, clock: o.inject?.clock,
   });

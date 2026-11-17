@@ -196,8 +196,19 @@ describe("관찰 흐름 설정: 두 간격", () => {
   it("VLM_FRAME_MS는 ENGINE_FRAME_MS 이상이어야 한다. 엔진 간격만 2초보다 길게 주면 VLM도 그 간격이다", () => {
     expect(loadObserveConfig({ ENGINE_FRAME_MS: "150", VLM_FRAME_MS: "3000" })).toMatchObject({ engineMs: 150, vlmMs: 3000 });
     expect(() => loadObserveConfig({ ENGINE_FRAME_MS: "500", VLM_FRAME_MS: "400" })).toThrow(/VLM_FRAME_MS=400/);
-    expect(loadObserveConfig({ ENGINE_FRAME_MS: "5000" })).toMatchObject({ engineMs: 5000, vlmMs: 5000 });
-    expect(loadObserveConfig({ ENGINE_FRAME_MS: "500" })).toMatchObject({ engineMs: 500, vlmMs: 2000 });
+    expect(loadObserveConfig({ ENGINE_FRAME_MS: "500" })).toMatchObject({ engineMs: 500, vlmMs: 2000, warnings: [] });
+    expect(loadObserveConfig({ ENGINE_FRAME_MS: "999" })).toMatchObject({ engineMs: 999, vlmMs: 2000, warnings: [] });
+    // VLM_FRAME_MS를 같이 주면 새 뜻이다
+    expect(loadObserveConfig({ ENGINE_FRAME_MS: "2000", VLM_FRAME_MS: "2000" })).toMatchObject({ engineMs: 2000, vlmMs: 2000, warnings: [] });
+  });
+
+  it("옛 .env의 ENGINE_FRAME_MS(1000 이상, VLM_FRAME_MS 없음)는 옛 뜻(VLM 간격)으로 읽는다: VLM 간격은 그 값, YOLO 프레임 간격은 기본 100ms, 경고 한 줄", () => {
+    expect(loadObserveConfig({ ENGINE_FRAME_MS: "2000" })).toMatchObject({
+      engineMs: 100, vlmMs: 2000,
+      warnings: ["[경고] ENGINE_FRAME_MS=2000: 옛 뜻(VLM 간격)으로 읽어요. VLM 간격 2000ms, YOLO 프레임 간격 100ms예요. VLM_FRAME_MS에 옮기고 ENGINE_FRAME_MS는 지우세요"],
+    });
+    expect(loadObserveConfig({ ENGINE_FRAME_MS: "5000" })).toMatchObject({ engineMs: 100, vlmMs: 5000 });
+    expect(loadObserveConfig({ ENGINE_FRAME_MS: "1000" })).toMatchObject({ engineMs: 100, vlmMs: 1000 });
   });
 
   it("고리는 20초, VLM 창 시간(창 크기 × VLM 프레임 간격)이 더 길면 창 시간", () => {

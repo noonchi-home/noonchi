@@ -23,7 +23,8 @@ export function makeReady(o: { endpoints: Endpoints; agent: AgentEndpoint; db: H
   return async () => {
     const [vlmOk, pamOk, agentOk] = await Promise.all([
       cache.check(`vlm:${vlm.baseUrl}`, () => reachable(`${vlm.baseUrl}/models`, { headers: bearer(vlm.apiKey), fetchImpl: o.fetchImpl })),
-      cache.check(`pam:${pam.baseUrl}`, () => reachable(`${pam.baseUrl}/models`, { headers: bearer(pam.apiKey), fetchImpl: o.fetchImpl })),
+      // 막힌 주소(OpenRouter)는 부르지 않고 준비 안 됨이다
+      pam.blocked ? Promise.resolve(false) : cache.check(`pam:${pam.baseUrl}`, () => reachable(`${pam.baseUrl}/models`, { headers: bearer(pam.apiKey), fetchImpl: o.fetchImpl })),
       cache.check(`agent:${agent.provider}:${agent.baseUrl}`, agentProbe(agent, o.fetchImpl)),
     ]);
     const db = o.db.ok();
@@ -31,7 +32,7 @@ export function makeReady(o: { endpoints: Endpoints; agent: AgentEndpoint; db: H
     return {
       ok: vlmOk && pamOk && agentKey && agentOk && db, inference_mode: mode,
       vlm: { base_url: vlm.baseUrl, model: vlm.model, key: vlm.apiKey !== "", reachable: vlmOk },
-      pam: { base_url: pam.baseUrl, model: pam.model, key: pam.apiKey !== "", reachable: pamOk },
+      pam: { base_url: pam.baseUrl, model: pam.model, key: pam.apiKey !== "", reachable: pamOk, ...(pam.blocked ? { reason: pam.blocked } : {}) },
       agent: { provider: agent.provider, base_url: agent.baseUrl, model: agent.model, key: agentKey, reachable: agentOk }, db,
     };
   };

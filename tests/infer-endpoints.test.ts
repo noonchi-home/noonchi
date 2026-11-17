@@ -51,7 +51,19 @@ describe("추론 모드", () => {
   });
   it("모르는 모드는 시작을 막는다", () => {
     expect(() => loadEndpoints({ INFERENCE_MODE: "replay" })).toThrow(/openai 또는 vllm/);
-    expect(() => loadEndpoints({ INFERENCE_MODE: "live" })).toThrow("(예전 이름 live → vllm)");
+  });
+  it("옛 이름 live는 vllm으로 읽고 경고 한 줄을 남긴다", () => {
+    const e = loadEndpoints({ INFERENCE_MODE: "live" });
+    expect(e.mode).toBe("vllm");
+    expect(e.vlm).toEqual(loadEndpoints({ INFERENCE_MODE: "vllm" }).vlm);
+    expect(e.warnings).toEqual(["[경고] INFERENCE_MODE=live는 vllm으로 읽어요"]);
+  });
+  it("PAM_LLM_BASE_URL이 OpenRouter 주소면 경고 한 줄을 남기고 PAM을 막힘(blocked)으로 둔다(OpenRouter는 더 쓰지 않는다)", () => {
+    const e = loadEndpoints({ PAM_LLM_BASE_URL: "https://openrouter.ai/api/v1" });
+    expect(e.warnings).toEqual(["[경고] OpenRouter는 더 쓰지 않아요, PAM_LLM_BASE_URL을 지우세요"]);
+    expect(e.pam.blocked).toBe("OpenRouter는 더 쓰지 않아요, PAM_LLM_BASE_URL을 지우세요");
+    expect(loadEndpoints({ PAM_LLM_BASE_URL: "http://vllm-pam:8000/v1" }).pam.blocked).toBeUndefined();
+    expect(loadEndpoints({}).pam.blocked).toBeUndefined();
   });
   it("옛 이름 mock은 openai로 읽고 경고 한 줄을 남긴다(지금 .env들이 mock이다). 새 이름이면 경고가 없다", () => {
     const e = loadEndpoints({ INFERENCE_MODE: "mock" });

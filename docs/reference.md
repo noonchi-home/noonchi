@@ -80,6 +80,25 @@ HUB=memory npm run demo
 
 ## 환경 변수 (`.env.example`)
 
+### main 합친 뒤 바꿀 것(옛 .env)
+
+옛 값으로도 서버는 뜬다(막는 것은 PAM 값 둘뿐). 시작 로그의 `[경고]` 줄이 남은 옛 값을 알려 준다.
+
+| 옛 값 | 지금 | 할 일 |
+|---|---|---|
+| `INFERENCE_MODE=mock` | `openai`로 읽고 시작 로그에 경고 | `openai`로 바꾸기 |
+| `INFERENCE_MODE=live` | `vllm`으로 읽고 시작 로그에 경고 | `vllm`으로 바꾸기 |
+| `ENGINE_FRAME_MS=2000`(1000 이상, `VLM_FRAME_MS` 없음) | VLM 간격으로 읽고 YOLO 프레임 간격은 기본 100ms, 시작 로그에 경고 | `VLM_FRAME_MS=2000`으로 옮기고 `ENGINE_FRAME_MS` 지우기 |
+| `PAM_URL`·`PAM_LLM_PROVIDER`·`OPENROUTER_API_KEY` | 읽지 않음(PAM은 서버 안 `src/brain/pam/`) | 지우기 |
+| `PAM_LLM_BASE_URL`=OpenRouter 주소 | 부르지 않고 PAM 준비 안 됨(`/api/health` `ready.pam.reason`), 시작 로그에 경고 | 지우기(openai는 `OPENAI_API_KEY`로 OpenAI를 부른다) |
+| `PAM_LLM_MODEL`=OpenRouter 모델 이름 | 그 이름을 그대로 보낸다 | 지우기 |
+| `PAM_MAX_MODEL_LEN` 16384 이하 | 시작을 막고 까닭과 기본값을 한 줄로 알린다 | 지우기(기본 32768) |
+| `PAM_LLM_TIMEOUT_S` 0 이하 | 시작을 막고 까닭과 기본값을 한 줄로 알린다 | 지우기(기본 120초) |
+| `THOUGHT_MODEL` | 읽지 않음(메시지 상자는 모델 없이 만든다) | 지우기 |
+| (새) `REDIS_URL` | 있으면 Redis 통로, 없으면 메모리 통로 | compose는 `redis://redis:6379` |
+
+### 변수
+
 | 이름 | 기본값 | 뜻 |
 |---|---|---|
 | `AGENT_PROVIDER` | (자동) | `openai` / `anthropic`. 비우면 `ANTHROPIC_API_KEY`가 있으면 anthropic, 없으면 openai. 키가 없어도 다른 공급자로 바꾸지 않는다: 시작 로그에 경고, 에이전트는 준비 안 됨(`/api/health` `ready.agent`)이고 대화가 실패한다 |
@@ -94,7 +113,7 @@ HUB=memory npm run demo
 | `REFLECT_AT` | `23:30` | 매일 그날을 반성하는 시각(HH:MM, 기록 시간대). `off`면 끈다. 틀린 값이면 시작하지 않는다 |
 | `PHOTO_RETENTION_DAYS`, `DATASET_RETENTION_DAYS` | `7`, `7` | 폰 사진 찍기 사진·시험 자료 보관 일(0보다 큰 숫자). 지나면 파일과 표 줄을 지운다. 틀린 값이면 시작하지 않는다 |
 | `DATASET_COLLECT` | (끔) | `1`이면 엔진 프레임을 시험 자료로 `RUNTIME_DIR/dataset/<날짜>/`에 JPEG과 같은 이름의 `.json`(크기·자세·카메라)으로 쓴다 |
-| `INFERENCE_MODE` | `openai` | `openai`(개발, VLM·PAM LLM 모두 OpenAI API) · `vllm`(GPU 서버, VLM은 같은 서버 vLLM `http://vllm-vlm:8000/v1`의 `vlm`, PAM LLM은 `http://vllm-pam:8000/v1`의 `pam`). 두 모드는 같은 코드 경로이고 주소·모델 이름·제공자 칸만 다르다. 예전 이름 `mock`은 `openai`로 읽고 시작 로그에 경고 한 줄을 남긴다. 다른 값(예전 이름 `live` 포함)이면 시작하지 않는다 |
+| `INFERENCE_MODE` | `openai` | `openai`(개발, VLM·PAM LLM 모두 OpenAI API) · `vllm`(GPU 서버, VLM은 같은 서버 vLLM `http://vllm-vlm:8000/v1`의 `vlm`, PAM LLM은 `http://vllm-pam:8000/v1`의 `pam`). 두 모드는 같은 코드 경로이고 주소·모델 이름·제공자 칸만 다르다. 예전 이름 `mock`은 `openai`로, `live`는 `vllm`으로 읽고 시작 로그에 경고 한 줄을 남긴다. 다른 값이면 시작하지 않는다 |
 | `VLM_BASE_URL`, `VLM_MODEL`, `VLM_API_KEY`, `VLM_EXTRA_BODY` | 모드 기본값 | 따로 주면 모드 기본값 대신 쓴다(OpenAI 호환 주소). openai 기본: `https://api.openai.com/v1`·`gpt-5.4-mini`·`OPENAI_API_KEY`·`{"reasoning_effort":"none"}`, vllm 기본: `http://vllm-vlm:8000/v1`·`vlm`·`VLLM_API_KEY`·`{}` |
 | `VLM_CLOSER_MODEL` | `VLM_MODEL`과 같음 | 가까이 보기 VLM 모델 이름. 같은 VLM 주소·키·요청 칸에 모델 이름만 바꿔 보낸다. 비용은 그 모델 가격으로 세고, 가격표(`src/infer/cost.ts`)에 없으면 모름 |
 | `VLM_TIMEOUT_MS` | `20000` | 사진 한 장 VLM 분석 제한 시간(1000 이상) |
@@ -106,7 +125,7 @@ HUB=memory npm run demo
 | `PHONE_PHOTO_DIR` | `RUNTIME_DIR/photos` | 사진 폴더 |
 | `PHONE_VIDEO_DIR` | 저장소 `runtime/videos`(컨테이너는 `/data/videos`) | 영상 모드 영상 폴더. `RUNTIME_DIR`(시연 폴더 포함)와 상관없이 이 폴더 하나에서 읽는다 |
 | `BRAIN` | (끔) | `1`이면 폰 엔진 프레임으로 관찰 흐름(아래 "관찰 흐름")을 돌린다. `PHONE_PORT`가 있어야 한다. VLM·PAM LLM은 `INFERENCE_MODE`가 고른 주소로 부른다(openai는 `OPENAI_API_KEY`) |
-| `ENGINE_FRAME_MS` | `100` | 엔진 프레임 간격(50 이상). 폰 서버가 상태 메시지로 폰에 알린다. 모든 엔진 프레임에 YOLO를 돌린다 |
+| `ENGINE_FRAME_MS` | `100` | 엔진 프레임 간격(50 이상). 폰 서버가 상태 메시지로 폰에 알린다. 모든 엔진 프레임에 YOLO를 돌린다. `VLM_FRAME_MS` 없이 1000 이상이면 옛 뜻(VLM 간격)으로 읽고 YOLO 프레임 간격은 100이다(시작 로그에 경고) |
 | `VLM_FRAME_MS` | `2000` | VLM 프레임 간격(`ENGINE_FRAME_MS` 이상). 앞 VLM 프레임보다 이만큼 뒤에 찍힌 엔진 프레임 한 장만 VLM·기록·가까이 보기에 쓴다(2초면 VLM 시간당 약 1,800번). 안 주고 `ENGINE_FRAME_MS`만 2초보다 길게 주면 그 값을 따른다. `ENGINE_FRAME_MS=2000 VLM_FRAME_MS=2000`이면 프레임마다 VLM을 부르던 옛 동작이다 |
 | `VLM_WINDOW_FRAMES` | `5` | VLM 한 번에 보내는 최근 VLM 프레임 수(1~10, 그 프레임 포함). 오래된 것부터 보내고 장마다 촬영 시각(「t-8s」 … 「t-0s (latest)」)을 붙인다. 창 시간은 이 수 × `VLM_FRAME_MS`(기본 10초)이고 그보다 앞선 프레임은 넣지 않는다. 틀린 값이면 시작하지 않는다 |
 | `VLM_MAX_INFLIGHT`, `DETECT_QUEUE_MAX` | `4`, `8` | VLM 동시 요청 상한(넘친 프레임은 「요청이 몰려 VLM 분석 없음」), YOLO 대기열 상한(넘친 VLM 프레임은 「요청이 몰려 YOLO·VLM 분석 없음」. 빠른 프레임은 대기열에 2장만 두고 오래된 것부터 기록 없이 버린다, `/api/brain`의 `skipped`). 틀린 값이면 시작하지 않는다 |
