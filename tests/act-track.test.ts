@@ -27,7 +27,7 @@ import type { EngineFrame, Detection, CameraView } from "../src/contract/observe
 import { floorPlanFrom } from "../src/layout/route.js";
 import { SMALL_SCENE, smallFloor } from "./helpers/floor.js";
 import { standing } from "./helpers/poses.js";
-import { fillSteps, microwaveScripts, planCalls, planContext, ramenScripts, ramenSteps, startFakePlanner, testPlanner, type FakePlanner } from "./helpers/planner.js";
+import { cupSteps, fillSteps, microwaveScripts, planCalls, planContext, ramenScripts, ramenSteps, startFakePlanner, testPlanner, type FakePlanner } from "./helpers/planner.js";
 import { describeDevice } from "../src/devices/mapping.js";
 import { MemoryHub } from "../src/devices/hub/memory.js";
 import { makeHome } from "./helpers/home.js";
@@ -2005,6 +2005,43 @@ describe("실행 추적: 전자레인지로 데우기 알려 주기(7번 다 되
     s.clock.t += 1_000; s.t.onWorld(); s.t.tick();
     expect(s.last()).toMatchObject({ step: `${P}:8` });
     expect(s.t.safety().hot).toEqual([]);
+  });
+});
+
+describe("실행 추적: 실제 폰 질문은 모두 말로 답할 수 있다(질문을 띄우고 onHeard로 답함)", () => {
+  // 답 묶음마다 말로 맞는지는 tests/voice-answers.test.ts, 승인 대기 token이 명령 답보다 먼저인지는 tests/phone-server.test.ts·src/server/home/phone.ts가 본다
+  it("처음 하는 일 승인 질문: 말 「승인」은 그 질문의 답이고, 다른 명령에 온 「승인」은 늦은 답이다", async () => {
+    const s = setup({ approvals: store() });
+    await s.decide(decision);
+    expect(s.last()).toMatchObject({ text: APPROVAL_TEXT.ask("컵 치우기"), step: "plan:pam-1:approve" });
+    const at = heardAtOf(s.phone);
+    expect(s.t.onHeard("승인", { ...at, step: "plan:pam-1:1" })).toEqual({ kind: "stale" });
+    expect(s.t.onHeard("응 승인", at)).toEqual({ kind: "answer", choice: expect.objectContaining({ id: "approve" }) });
+    expect(s.spoken().at(-1)).toBe("식탁으로 가 주세요");
+  });
+
+  it("물어보기 단계: 말 「그대로 둬요」가 그 질문의 답이고 계획을 끝낸다. 다른 명령에 온 답은 늦은 답이다", async () => {
+    const s = setup();
+    await s.decide(ask("pam-1", 1));
+    const at = heardAtOf(s.phone);
+    expect(s.t.onHeard("그대로 둬요", { ...at, step: "plan:pam-0:1" })).toEqual({ kind: "stale" });
+    expect(s.t.onHeard("그대로 둬요", at)).toEqual({ kind: "answer", choice: expect.objectContaining({ id: "keep" }) });
+    expect(s.plans.current()).toMatchObject({ status: "done" });
+  });
+
+  it("시간 초과 다시 묻기: 말 「계속」이 그 질문의 답이고 그 단계를 다시 시작한다", async () => {
+    const before = llm.scripts["컵 치우기"];
+    llm.scripts["컵 치우기"] = () => [planCalls(cupSteps({ table: "table_1", sink: "sink_1", cup: "cup_1" }).map((st, i) => (i === 0 ? { ...st, timeout_s: 10, on_timeout: "ask" } : st)))];
+    try {
+      const s = setup();
+      await s.decide(decision);
+      s.clock.t += 10_001; s.t.tick();
+      expect(s.last()).toMatchObject({ step: "plan:pam-1:1:again" });
+      expect(s.t.onHeard("계속", heardAtOf(s.phone))).toEqual({ kind: "answer", choice: expect.objectContaining({ id: "continue" }) });
+      expect(s.last()).toMatchObject({ step: "plan:pam-1:1", text: "식탁으로 가 주세요" });
+    } finally {
+      llm.scripts["컵 치우기"] = before!;
+    }
   });
 });
 
