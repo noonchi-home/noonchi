@@ -19,7 +19,7 @@ import type { HubKind, MatterTransport, StartHubOptions } from "../hubFactory.js
 import { prepareAct, startAct, startLooker, startPlans } from "./act.js";
 import { startAgent, watchFocus } from "./agent.js";
 import { preparePhone, startPhone } from "./phone.js";
-import { startLoop, startPipeline, startWorld, startNodes, stopNodes } from "./observe.js";
+import { drainNodes, startLoop, startPipeline, startWorld, startNodes, stopNodes } from "./observe.js";
 import { onReflection, sayTimer, startSay } from "./say.js";
 import { setLink, startDevices } from "./devices.js";
 import { HomeCore } from "./core.js";
@@ -97,6 +97,8 @@ export interface HomeRuntime {
   setLink(link: ThinqLink | null): void;
   /** 반성 사건(src/server/start.ts가 넘긴다): 말풍선 카드가 20초 동안 배운 습관을 말한다. */
   onReflection(event: Extract<BrainLog, { type: "reflection" }>): void;
+  /** 닫지 않고 비운다(닫기와 같은 차례: 발행 줄 → 집 상태 → 거울). 기한(ms) 안에 다 비우면 true. */
+  settle(ms: number): Promise<boolean>;
   close(): Promise<void>;
 }
 
@@ -186,6 +188,7 @@ function runtime(core: HomeCore): HomeRuntime {
     setLink(next) {
       setLink(core, next);
     },
+    settle: (ms) => (core.closed ? Promise.resolve(true) : drainNodes(core, ms)),
     async close() {
       if (core.closed) return;
       core.closed = true;

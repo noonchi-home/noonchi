@@ -117,6 +117,8 @@ export interface RunningServer {
   readonly history: HistoryDb;
   /** 다른 집으로 바꾼다(POST /api/setup/home과 같음). */
   switchHome(id: string): Promise<void>;
+  /** 지금 집의 노드를 닫지 않고 비운다(닫기와 같은 차례: 발행 줄 → 집 상태 → 거울). 기한(ms) 안에 다 비우면 true. 시간으로 기다리지 않는다. */
+  settle(ms: number): Promise<boolean>;
   close(): Promise<void>;
 }
 
@@ -495,6 +497,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       await switchHome(id);
       store.setHome(id);
     },
+    settle: (ms) => live().settle(ms),
     async close() {
       if (closed) return;
       closed = true;

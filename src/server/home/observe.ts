@@ -140,12 +140,21 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
 /** 닫기 전 비우기 단계마다 기다리는 시간(ms). 넘으면 기다리지 않고 다음으로 간다(닫기가 걸리지 않게). */
 const DRAIN_MS = 1000;
 
-/** 노드를 끝낸다. 먼저 비운다: 발행 줄(인식·실행 추적·폰·가전 입력) → 집 상태(받은 입력을 다 넣고 출력을 다 냄) → 거울(받은 변화를 기록·판단으로 넘김).
+/** 노드를 멈추지 않고 비운다: 발행 줄(인식·실행 추적·폰·가전 입력) → 집 상태(받은 입력을 다 넣고 출력을 다 냄) → 거울(받은 변화를 기록·판단으로 넘김).
+ *  기한(ms, 세 단계를 합친 시간)을 넘기면 false. 노드가 없으면(BRAIN 꺼짐) 비울 것이 없어 true. */
+export async function drainNodes(core: HomeCore, ms = DRAIN_MS): Promise<boolean> {
+  const end = Date.now() + ms;
+  const left = () => Math.max(0, end - Date.now());
+  const inputs = await Promise.all([core.perception?.drain(ms), core.out.act?.drain(ms), core.out.phone?.drain(ms), core.out.devices?.drain(ms)]);
+  const world = (await core.worldNode?.settle(left())) ?? true;
+  const mirror = (await core.mirror?.node.settled(left())) ?? true;
+  return inputs.every((x) => x !== false) && world && mirror;
+}
+
+/** 노드를 끝낸다. 먼저 닫기 전 비우기(drainNodes, 기한을 넘겨도 멈춘다: 닫기가 걸리지 않게)를 하고,
  *  그다음 새 일을 만드는 쪽(인식) → 집 상태 → 거울·폰·가전 차례로 끝낸다. 관찰 흐름을 닫고 가전 구독을 끊은 뒤 부른다. */
 export async function stopNodes(core: HomeCore): Promise<void> {
-  await Promise.all([core.perception?.drain(DRAIN_MS), core.out.act?.drain(DRAIN_MS), core.out.phone?.drain(DRAIN_MS), core.out.devices?.drain(DRAIN_MS)]);
-  await core.worldNode?.settle(DRAIN_MS);
-  await core.mirror?.node.settled(DRAIN_MS);
+  await drainNodes(core, 3 * DRAIN_MS);
   for (const n of [core.perception?.node, core.worldNode?.node, core.mirror?.node, core.phoneNode, core.devicesNode]) await n?.stop();
 }
 

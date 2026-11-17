@@ -239,4 +239,22 @@ describe("startServer(BRAIN=1) + 관찰 흐름", () => {
     const rows = srv.history.list({ kinds: ["world"] }).slice(before);
     expect(rows.some((r) => (r.data as { kind?: string } | null)?.kind === "device" && r.text.includes(light.label)), JSON.stringify(rows.map((r) => r.text))).toBe(true);
   }, 30_000);
+
+  it("settle은 닫지 않고 닫기와 같은 차례(발행 줄 → 집 상태 → 거울)로 비운다: 가전을 바꾼 바로 뒤 settle하면 그 집 상태 줄이 기록에 있고 서버는 계속 돈다", async () => {
+    fake = await startFakeOpenAI();
+    pam = await startFakePamLlm();
+    srv = await startServer({
+      env: env({ PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, VLM_MODEL: "fake-vlm", ENGINE_FRAME_MS: "500", ...pamLlmEnv(pam) }),
+      log: () => {}, brain: { detector: new ScriptedDetector(() => [cup]) },
+    });
+    const light = srv.signals.list().find((d) => d.kind === "light")!;
+    const deviceRows = () => srv!.history.list({ kinds: ["world"] }).filter((r) => (r.data as { kind?: string } | null)?.kind === "device" && r.text.includes(light.label));
+    await srv.hub.command(light.id, { type: "on" });
+    expect(await srv.settle(2000)).toBe(true);
+    expect(deviceRows()).toHaveLength(1);
+    // 닫지 않았다: 다음 바뀜도 집 상태를 거쳐 기록된다
+    await srv.hub.command(light.id, { type: "off" });
+    expect(await srv.settle(2000)).toBe(true);
+    expect(deviceRows()).toHaveLength(2);
+  }, 30_000);
 });

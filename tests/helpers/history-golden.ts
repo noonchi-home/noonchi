@@ -6,7 +6,9 @@
 // - 흐름끼리의 앞뒤: 영상 프레임·VLM 답·폰 말·가전이 서로 다른 시계로 와서 섞이는 차례가 실행마다 다르다.
 // - 주기 판단과 그 처리 메모(대기·같은 행동·기다리는 동안·앞선 판단·방금 계획함·판단 실패·가까이 본 뒤 다시 판단): 판단은 5초 주기(PAM_PERIOD_MS)라
 //   장면 단계와 상관없는 시각에 와서 몇 번·어디에 끼는지가 실행마다 다르다(src/brain/decide.ts tick, src/act/track/start.ts onDecision). 있는지만 본다.
-//   계획을 시작한 판단(그 판단 id의 실행 줄 「판단」이 있는 것)은 차례에 남긴다.
+//   계획을 시작한 판단(그 판단 id의 실행 줄 「판단」이 있는 것)은 차례에 남긴다. 그 계획을 하는 동안 같은 행동을 고른 주기 판단과 「같은 행동을 진행 중」은
+//   있는지도 보지 않는다(계획 중에 주기 판단이 오느냐가 판마다 다르다, 2026-11-18 조정자 결정). 다른 행동을 고른 판단은 [있음]에 남긴다.
+// - 정답은 통로를 닫기와 같은 차례로 비운 뒤 뽑는다(settledRows: srv.settle, 시간으로 기다리지 않고 기한을 넘기면 시험 실패).
 // - 사람 단계의 「완료」 답: 그 단계는 비전(World State)·폰 위치로도 끝나서(CLAUDE.md 단계 확인 규칙), 사람이 먼저 눌렀는지 비전이 먼저 봤는지에 따라
 //   완료 답 줄이 있거나 없다(2026-11-18 전자레인지 장면 4번 문 닫기: 세 번 중 한 번은 VLM이 먼저 닫힘을 봐 완료 줄이 없었다). 뺀다.
 //   승인·거절·질문 답처럼 사람만 정하는 답은 차례에 남긴다.
@@ -15,6 +17,7 @@ import { expect } from "vitest";
 import type { HistoryDb } from "../../src/brain/history/db.js";
 import type { HistoryRow } from "../../src/contract/history.js";
 import { EXEC_TEXT } from "../../src/act/labels.js";
+import { DECISION_TEXT } from "../../src/brain/history/labels.js";
 
 /** 주기 판단을 받아 처리한 메모(계획을 시작하지 않은 판단의 실행 줄). */
 const DECISION_NOTES = new Set<string>([EXEC_TEXT.wait, EXEC_TEXT.same, EXEC_TEXT.busy, EXEC_TEXT.late, EXEC_TEXT.held, EXEC_TEXT.decisionFailed, EXEC_TEXT.closerNewer]);
@@ -47,6 +50,10 @@ export function reflectionRows(db: HistoryDb): string[] {
   const periodic = (r: HistoryRow) =>
     (r.kind === "decision" && !started.has(`plan:${r.subject}`)) || (r.kind === "execution" && DECISION_NOTES.has(r.text));
   const doneAnswer = (r: HistoryRow) => r.kind === "feedback" && (r.data as { choice?: string } | null)?.choice === "done";
+  // 계획을 시작한 판단의 행동: 같은 행동을 고른 주기 판단과 그 메모(같은 행동을 진행 중)는 [있음]에도 넣지 않는다.
+  // 판단 id는 날마다 다시 1부터라 대기 판단이 다른 날 계획 id와 겹칠 수 있다: 대기는 계획을 시작하지 않으므로 행동에 넣지 않는다
+  const startedActions = new Set(acted.filter((r) => r.kind === "decision" && r.text !== DECISION_TEXT.wait && started.has(`plan:${r.subject}`)).map((r) => r.text));
+  const repeat = (r: HistoryRow) => (r.kind === "decision" && startedActions.has(r.text)) || (r.kind === "execution" && r.text === EXEC_TEXT.same);
   const world = all(["detection", "world"]);
   const heard = (r: HistoryRow) => (r.data as { kind?: string } | null)?.kind === "heard";
   const out = [
@@ -55,9 +62,19 @@ export function reflectionRows(db: HistoryDb): string[] {
     ...ordered("들은 말", world.filter(heard)),
     ...ordered("가전", all(["device"])),
   ];
-  const seen = new Set(acted.filter(periodic).map((r) => `[있음] ${lineOf(r)}`));
+  const seen = new Set(acted.filter((r) => periodic(r) && !repeat(r)).map((r) => `[있음] ${lineOf(r)}`));
   for (const kind of ["vlm", "yolo"] as const) if (all([kind]).length) seen.add(`[있음] ${kind}`);
   return [...out, ...[...seen].sort()];
+}
+
+/** 정답을 뽑기 전 비우기 기한(ms). */
+export const GOLDEN_SETTLE_MS = 2000;
+
+/** 서버를 닫기 전에 통로에 들어오는 중인 메시지를 닫기와 같은 차례(발행 줄 → 집 상태 → 거울)로 다 닿게 한 뒤(srv.settle) 반성용 줄 모양을 뽑는다.
+ *  기한 안에 못 비우면 Error를 돌려준다(시험이 정리한 뒤 던져 실패한다). 줄이 안 생기는 버그는 가리지 않는다: 비운 뒤에도 없으면 정답과 다르다. */
+export async function settledRows(srv: { settle(ms: number): Promise<boolean>; history: HistoryDb }): Promise<string[] | Error> {
+  if (!(await srv.settle(GOLDEN_SETTLE_MS))) return new Error(`통로를 ${GOLDEN_SETTLE_MS}ms 안에 다 비우지 못했어요`);
+  return reflectionRows(srv.history);
 }
 
 /** 시험 하나의 기록 DB 모양(서버를 닫기 전에 reflectionRows로 뽑은 것)을 그 시험의 정답 파일과 견준다(없으면 쓴다, -u면 고쳐 쓴다).

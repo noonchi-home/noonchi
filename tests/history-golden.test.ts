@@ -33,6 +33,21 @@ describe("기록 DB 같음 시험의 모양", () => {
     expect(day(plan)).not.toEqual(a);
   });
 
+  it("계획을 시작한 판단과 같은 행동을 고른 주기 판단·「같은 행동을 진행 중」은 빼고(계획 중 주기 판단이 오느냐가 판마다 다르다), 계획을 시작한 판단 줄과 다른 행동을 고른 판단은 남긴다", () => {
+    const rows = day([...plan, ["decision", "컵 치우기", "pam-3"], ["execution", "같은 행동을 진행 중", "plan:pam-3"], ["decision", "에어컨 켜기", "pam-4"], ["decision", "대기", "pam-5"]]);
+    expect(rows).toContain("[판단·실행·답] decision 컵 치우기 valid");
+    expect(rows).toContain("[있음] decision 에어컨 켜기 valid");
+    expect(rows).toContain("[있음] decision 대기 valid");
+    expect(rows).not.toContain("[있음] decision 컵 치우기 valid");
+    expect(rows).not.toContain("[있음] execution 같은 행동을 진행 중");
+    expect(rows).toEqual(day([...plan, ["decision", "에어컨 켜기", "pam-4"], ["decision", "대기", "pam-5"]]));
+  });
+
+  it("판단 id가 날마다 다시 1부터라 대기 판단이 다른 날 계획 id와 겹쳐도 대기 판단은 [있음]에 남는다(대기는 계획을 시작하지 않는다)", () => {
+    const rows = day([["decision", "대기", "pam-2"], ...plan, ["decision", "대기", "pam-5"]]);
+    expect(rows).toContain("[있음] decision 대기 valid");
+  });
+
   it("사람 단계의 「완료」 답은 비전으로도 끝나는 단계라 빼고, 승인·거절처럼 사람만 정하는 답은 남긴다", () => {
     const done: Row = ["feedback", "완료 · 부탁: 문을 닫아 주세요", "plan:pam-2", { choice: "done", via: "button" }];
     expect(day([...plan, done, ["execution", "완료", "plan:pam-2"]])).toEqual(day([...plan, ["execution", "완료", "plan:pam-2"]]));
