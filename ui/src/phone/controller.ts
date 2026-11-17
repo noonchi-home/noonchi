@@ -220,7 +220,7 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
     },
   };
   // 영상 모드: 카메라 입력. 같은 형(PhoneAr)의 영상 AR. 표시 영상(H.264)은 없고 화면·엔진 JPEG만 보낸다
-  const ar: PhoneAr & { videoTime?(): number; syncStatus?(sync: SyncWire | undefined): void; command?(cmd: PhoneCommand): void } = video // 영상 모드: 카메라 입력
+  const ar: PhoneAr & { videoTime?(): number; syncStatus?(sync: SyncWire | undefined): void; command?(cmd: PhoneCommand): void; commandClear?(id?: string): void } = video // 영상 모드: 카메라 입력
     ? createVideoAr({ link, params, hooks, deps: { ...video, ...deps.arDeps } as VideoArDeps })
     : createAr({ link, params, hooks, deps: deps.arDeps });
 
@@ -325,6 +325,7 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
       }
     } else if (msg.type === "command_clear") {
       const m = msg as PhoneCommandClear;
+      ar.commandClear?.(m.id);
       // 아직 안 읽은 그 명령 말(id가 없으면 모든 명령 말)은 버린다
       talkQueue = talkQueue.filter((t) => t.target?.kind !== "command" || (m.id !== undefined && t.target.id !== m.id));
       if (owed?.target?.kind === "command" && (m.id === undefined || owed.target.id === m.id)) owed = null;

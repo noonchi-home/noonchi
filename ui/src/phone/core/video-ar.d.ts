@@ -49,9 +49,11 @@ export interface VideoArDeps {
 export interface VideoAr extends PhoneAr {
   /** 지금 영상 시각(ms, 앞 단계 영상들 시각에 이어 센다). 재생 전·끝낸 뒤는 0. */
   videoTime(): number;
-  /** 받은 명령: 재생 중 맞는 step 칸이 있으면 그 id·step에 한 번, reactMs 뒤 단계 영상으로 바꾸고 go면 대상 0.6m 앞까지 걷고,
-   *  집기·놓기면 걷기를 멈추고 그 자리에서 대상을 바라본다. */
+  /** 받은 명령: 재생 중 맞는 step 칸이 있으면 그 id·step에 한 번, reactMs 뒤 단계 영상으로 바꾸고 go면 대상 0.6m(near_m이 있으면 그 0.8배와 0.6m 중 작은 것) 앞까지 걷고,
+   *  집기·놓기·do면 걷기를 멈추고 그 자리에서 대상을 바라본다. do가 view above면 폰을 대상 바로 위로 옮겨 내려다본다. */
   command(cmd: PhoneCommand): void;
+  /** 지운 명령(command_clear, id가 없으면 무엇이든): 마지막 단계 영상 명령이면 예약된 바꾸기·재생을 기다리는 바꾸기를 버리고 걷기를 멈춘다(자세는 그대로). */
+  commandClear(id?: string): void;
   /** 서버 상태 sync마다: 재생 중 맞춤이 없고(none) 시작 자리가 있으면 start fixed를 다시 보낸다. */
   syncStatus(sync: { state: string; start: unknown } | null | undefined): void;
 }

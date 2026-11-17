@@ -1,4 +1,5 @@
-// 영상 입력 모드의 계산(DOM 없음): 카메라의 투영·자세·view 행렬, go 단계 걷기(멈출 자리·대상을 보는 yaw), 집기·놓기 단계 바라보기(대상을 보는 yaw·숙인 각)와
+// 영상 입력 모드의 계산(DOM 없음): 카메라의 투영·자세·view 행렬, go 단계 걷기(멈출 자리·대상을 보는 yaw), 집기·놓기 단계 바라보기(대상을 보는 yaw·숙인 각),
+// 위에서 비추기 자세(대상 바로 위에서 내려다봄)와
 // 화면 덮기(object-fit cover) 자리 바꾸기.
 // 행렬은 XRView와 같이 열 우선 4×4다. 카메라는 -Z를 보고 Y가 위다(WebXR과 같다).
 
@@ -59,6 +60,18 @@ export function lookAt(from, target) {
   if (flat < LOOK_MIN_M) return null;
   const pitchDeg = (Math.atan2(dy, flat) * 180) / Math.PI;
   return { yaw: Math.atan2(-dx, -dz), pitchDeg: Math.min(PITCH_MAX_DEG, Math.max(-PITCH_MAX_DEG, pitchDeg)) };
+}
+
+/** 위에서 비추기 자세(가까이 가서 보기 do view above): target에서 from 쪽으로 수평 backM, 높이 target + upM에 서서 target을 내려다보는
+ *  자리(goal)와 yaw·숙인 각(lookAt). from이 target 바로 위(수평 1cm 안)라 방향을 못 정하면 null. */
+export function aboveGoal(from, target, backM, upM) {
+  const dx = from[0] - target[0];
+  const dz = from[2] - target[2];
+  const flat = Math.hypot(dx, dz);
+  if (!(flat >= LOOK_MIN_M)) return null;
+  const goal = [target[0] + (dx / flat) * backM, target[1] + upM, target[2] + (dz / flat) * backM];
+  const look = lookAt(goal, target);
+  return look ? { goal, yaw: look.yaw, pitchDeg: look.pitchDeg } : null;
 }
 
 /** 카메라 자리·자세 → view 행렬(세계 → 카메라, XRView.transform.inverse.matrix와 같은 뜻). */

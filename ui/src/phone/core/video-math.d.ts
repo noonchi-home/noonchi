@@ -10,3 +10,5 @@ export function yawPitchQuat(yawRad: number, pitchDeg: number): Quat;
 export function walkGoal(from: ArrayLike<number>, target: ArrayLike<number>, stopM: number): { goal: [number, number, number]; yaw: number } | null;
 /** from에서 target을 보는 yaw(walkGoal과 같은 규칙)와 숙인 각(도, 아래가 음수, ±89°까지). 수평 1cm 안이거나 수가 아닌 값이면 null. */
 export function lookAt(from: ArrayLike<number>, target: ArrayLike<number>): { yaw: number; pitchDeg: number } | null;
+/** 위에서 비추기 자세: target에서 from 쪽으로 수평 backM, 높이 target + upM에 서서 target을 내려다보는 자리와 yaw·숙인 각. from이 target 바로 위면 null. */
+export function aboveGoal(from: ArrayLike<number>, target: ArrayLike<number>, backM: number, upM: number): { goal: [number, number, number]; yaw: number; pitchDeg: number } | null;

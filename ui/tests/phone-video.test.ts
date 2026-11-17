@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPhoneController, type ControllerDeps, type ControllerDraw } from "../src/phone/controller";
 import { SYNC_MAX, createSyncLog, createVideoAr, videoParams } from "../src/phone/core/video-ar.js";
-import { coverMap, lookAt, pitchQuat, projectionFromFov, viewMatrix, walkGoal, yawPitchQuat } from "../src/phone/core/video-math.js";
+import { aboveGoal, coverMap, lookAt, pitchQuat, projectionFromFov, viewMatrix, walkGoal, yawPitchQuat } from "../src/phone/core/video-math.js";
 import { handOf, problemOf } from "../src/phone/state";
 import { focusMarks } from "../src/phone/core/project.js";
 
@@ -1093,6 +1093,88 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
     expect(m[0]!.u).toBeCloseTo(0.5, 5);
   });
 
+  describe("가까이 가서 보기(near_m·view above)", () => {
+    const PEEK_STEPS = "?clip=cup-empty.mp4&step=go:cup:go-cup.mp4&step=do:cup:above-cup.mp4";
+    const goCup = (over: Record<string, unknown> = {}) =>
+      command({ step: "plan:pam-1:peek:cup_3:2:go:1", text: "컵 가까이 가 주세요", vision: "컵까지 1.4m", choices: [], kind: "go", near_m: 0.5, target: CUP, speak: true, ...over });
+    const aboveCup = (over: Record<string, unknown> = {}) =>
+      command({ step: "plan:pam-1:peek:cup_3:2:above:2", text: "컵 안이 보이게 위에서 비춰 주세요", vision: "컵 · 안이 안 보임", choices: [], kind: "do", view: "above", target: CUP, speak: true, ...over });
+    const flatTo = (p: number[], t: number[]) => Math.hypot(p[0]! - t[0]!, p[2]! - t[2]!);
+
+    it("go 명령에 near_m 0.5가 있으면 go-cup.mp4로 바꾸고 컵 0.4m 앞까지 걷는다(없으면 0.6m)", async () => {
+      fakeTimers();
+      const { ws, sent, urls, startAr } = make({}, PEEK_STEPS);
+      await startAr();
+      ws.push(ALIGNED);
+      ws.push(goCup());
+      await after(5000);
+      expect(urls).toEqual(["/phone/videos/cup-empty.mp4", "/phone/videos/go-cup.mp4"]);
+      expect(flatTo(lastPose(sent).position, CUP.ar)).toBeCloseTo(0.4, 6);
+      const plain = make({}, PEEK_STEPS);
+      await plain.startAr();
+      plain.ws.push(ALIGNED);
+      plain.ws.push(goCup({ near_m: undefined }));
+      await after(5000);
+      expect(flatTo(lastPose(plain.sent).position, CUP.ar)).toBeCloseTo(0.6, 6);
+    });
+
+    it("do 명령이 view above면 above-cup.mp4로 바꾸고 폰을 컵 입구 바로 위(수평 2cm, 위 40cm)로 옮겨 컵을 내려다본다", async () => {
+      fakeTimers();
+      const { ws, sent, urls, startAr } = make({}, PEEK_STEPS);
+      await startAr();
+      ws.push(ALIGNED);
+      ws.push(aboveCup());
+      await after(2000);
+      expect(urls).toEqual(["/phone/videos/cup-empty.mp4", "/phone/videos/above-cup.mp4"]);
+      const want = aboveGoal([0, 1.4, 0], CUP.ar as [number, number, number], 0.02, 0.4)!;
+      closeTo(lastPose(sent).position, want.goal);
+      closeTo(lastPose(sent).orientation, yawPitchQuat(want.yaw, want.pitchDeg));
+      expect(flatTo(lastPose(sent).position, CUP.ar)).toBeCloseTo(0.02, 6);
+      expect(lastPose(sent).position[1]).toBeCloseTo(1.2, 6);
+    });
+
+    it("반응 시간 전에 그 명령이 지워지면(command_clear) 영상을 바꾸지 않고 걷지 않는다. 걷는 중에 지워지면 그 자리에 멈춘다", async () => {
+      fakeTimers();
+      const { ws, sent, urls, startAr } = make({}, PEEK_STEPS);
+      await startAr();
+      ws.push(ALIGNED);
+      ws.push(goCup());
+      await after(1000);
+      ws.push({ type: "command_clear", id: "plan:pam-1" });
+      await after(3000);
+      expect(urls).toEqual(["/phone/videos/cup-empty.mp4"]);
+      for (const p of sent().filter((m) => m.type === "pose")) expect(p.position).toEqual([0, 1.4, 0]);
+      const w = make({}, PEEK_STEPS);
+      await w.startAr();
+      w.ws.push(ALIGNED);
+      w.ws.push(goCup());
+      await after(2000);
+      w.ws.push({ type: "command_clear", id: "plan:pam-1" });
+      await after(100);
+      const stop = lastPose(w.sent).position;
+      await after(2000);
+      closeTo(lastPose(w.sent).position, stop);
+      expect(flatTo(stop, CUP.ar)).toBeGreaterThan(0.5);
+    });
+
+    it("새 영상 재생을 기다리는 동안 명령이 지워지면, 재생이 끝난 뒤 새 영상을 닫고 앞 영상과 자세를 그대로 둔다", async () => {
+      fakeTimers();
+      const g = gate();
+      const { ws, sent, videos, startAr } = make({}, PEEK_STEPS, { later: { play: g.play } });
+      await startAr();
+      ws.push(ALIGNED);
+      ws.push(goCup());
+      await after(1500);
+      expect(videos).toHaveLength(2);
+      ws.push({ type: "command_clear", id: "plan:pam-1" });
+      g.release();
+      await after(2000);
+      expect(videos[1]!.closed).toBe(1);
+      expect(videos[0]!.closed).toBe(0);
+      for (const p of sent().filter((m) => m.type === "pose")) expect(p.position).toEqual([0, 1.4, 0]);
+    });
+  });
+
   it("do 칸이 없으면 do 명령에는 영상을 바꾸지 않는다", async () => {
     fakeTimers();
     const { ws, urls, startAr } = make({}, STEPS);
@@ -1429,6 +1511,17 @@ describe("video-math", () => {
     }
     expect(lookAt([0, 1.4, 0], [0, 0.4, -1])!.pitchDeg).toBeCloseTo(-45, 10);
     expect(lookAt([0, 1, 0], [0, 2, 1])!.pitchDeg).toBeCloseTo(45, 10);
+  });
+
+  it("aboveGoal: 대상에서 지금 자리 쪽으로 수평 backM, 대상 위 upM에 서서 대상을 내려다본다(수평 2cm·위 40cm면 숙인 각 약 87°)", () => {
+    const a = aboveGoal([0, 1.4, 0], [0, 0.8, -1.4], 0.02, 0.4)!;
+    a.goal.forEach((x, i) => expect(x).toBeCloseTo([0, 1.2, -1.38][i]!, 10));
+    expect(a.pitchDeg).toBeCloseTo((Math.atan2(-0.4, 0.02) * 180) / Math.PI, 10);
+    expect(a.pitchDeg).toBeLessThan(-87);
+    const l = lookAt(a.goal, [0, 0.8, -1.4])!;
+    expect(a.yaw).toBeCloseTo(l.yaw, 10);
+    // 대상 바로 위에 서 있으면 방향을 정할 수 없어 null
+    expect(aboveGoal([0, 1.4, -1.4], [0, 0.8, -1.4], 0.02, 0.4)).toBeNull();
   });
 
   it("lookAt: 수평 1cm 안(yaw를 못 정함)이거나 수가 아닌 값이면 null, 숙인 각은 ±89°까지", () => {
