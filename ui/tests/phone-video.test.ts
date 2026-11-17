@@ -1199,6 +1199,36 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
       expect(flatTo(stopAt, CUP.ar)).toBeGreaterThan(0.45);
     });
 
+    it("지운 명령과 같은 id·단계가 다시 오면 다시 예약해 바꾼다(예약만 하고 지운 것은 끝난 것이 아니다)", async () => {
+      fakeTimers();
+      const { ws, urls, startAr } = make({}, PEEK_STEPS);
+      await startAr();
+      ws.push(ALIGNED);
+      ws.push(goCup());
+      await after(1000);
+      ws.push({ type: "command_clear", id: "plan:pam-1" });
+      ws.push(goCup());
+      await after(2000);
+      expect(urls).toEqual(["/phone/videos/cup-empty.mp4", "/phone/videos/go-cup.mp4"]);
+    });
+
+    it("시간 초과 질문 뒤 「계속」으로 같은 go 명령이 다시 오면 영상 칸을 더 쓰지 않고 걷기만 다시 시작한다", async () => {
+      fakeTimers();
+      const { ws, sent, urls, startAr } = make({}, PEEK_STEPS);
+      await startAr();
+      ws.push(ALIGNED);
+      ws.push(goCup());
+      await after(2000);
+      ws.push(command({ step: "plan:pam-1:peek:cup_3:2:go:1:again", text: "계속할까요?", vision: null, choices: [], target: null }));
+      await after(1000);
+      const stopped = lastPose(sent).position;
+      expect(flatTo(stopped, CUP.ar)).toBeGreaterThan(0.45);
+      ws.push(goCup());
+      await after(5000);
+      expect(flatTo(lastPose(sent).position, CUP.ar)).toBeCloseTo(0.4, 6);
+      expect(urls).toEqual(["/phone/videos/cup-empty.mp4", "/phone/videos/go-cup.mp4"]);
+    });
+
     it("취소된 바꾸기는 단계 영상 칸을 쓰지 않는다: 같은 do:cup 칸이 둘이면 위에서 비추기를 지우고 다시 받아도 첫 칸을 튼다", async () => {
       fakeTimers();
       const { ws, urls, startAr } = make({}, "?clip=cup-empty.mp4&step=do:cup:above-a.mp4&step=do:cup:above-b.mp4");

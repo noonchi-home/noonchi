@@ -361,13 +361,14 @@ export function createVideoAr({ link, params, hooks, deps }) {
     let lastEngine = null;
     let walk = null; // go 단계 걷기: { goal }
     let swapTurn = 0;
-    const handled = new Set(); // 단계 영상으로 바꾼 명령 id:step
+    const switched = new Set(); // 단계 영상으로 바꾸기를 끝낸 명령 id:step(예약만 하고 지운 것은 넣지 않는다)
     const used = new Map(); // 종류:낱말 → 쓴 칸 수(같은 종류·낱말 칸이 여럿일 때 차례)
     const reactTimers = new Set();
     // 명령 세대: 새 단계 영상 명령·지우기마다 오른다. 예약 타이머와 재생을 기다리는 바꾸기는 세대가 다르면 버린다
     let cmdGen = 0;
     let lastCmdId = null;
     let lastKey = null; // 마지막으로 받은 명령 id:단계(같은 명령이 다시 오면 비전 상태만 바뀐 것)
+    let pendingKey = null; // 단계 영상 바꾸기를 예약한 명령 id:단계(끝나거나 지워지기 전)
     let stepClip = null; // 지금 도는 단계 영상 이름(첫 영상이면 null)
     let holdMs = 0; // 마지막 장면을 붙잡은 시간(타이머 칸을 센다): 붙잡는 동안에도 영상 시각이 흐른다
     let holdTimer = null;
@@ -622,10 +623,13 @@ export function createVideoAr({ link, params, hooks, deps }) {
       /** 사람 단계 명령: 맞는 step 칸이 있으면 그 id·step에 한 번, reactMs 뒤 단계 영상으로 바꾸고, 바뀌면 go는 걷고 집기·놓기·그 자리에서 하는 일(do)은 대상을 바라본다. */
       command(cmd) {
         const key = `${cmd.id}:${cmd.step}`;
-        // 새 명령(다른 id·단계, 단계 영상이 없는 질문·승인도): 앞 명령의 예약된 바꾸기·재생을 기다리는 바꾸기·걷기를 먼저 멈춘다.
-        // 같은 명령이 다시 오면(비전 상태만 바뀜) 그대로 둔다
-        if (key !== lastKey) {
+        const fresh = key !== lastKey;
+        // 같은 명령이 이어서 다시 오면(비전 상태만 바뀜) 이미 예약했거나 바꾼 것은 그대로 둔다(대상이 그제야 붙었으면 아래에서 예약한다)
+        if (!fresh && (pendingKey === key || switched.has(key))) return;
+        // 새 명령(다른 id·단계, 단계 영상이 없는 질문·승인도): 앞 명령의 예약된 바꾸기·재생을 기다리는 바꾸기·걷기를 먼저 멈춘다
+        if (fresh) {
           lastKey = key;
+          pendingKey = null;
           cmdGen++;
           for (const timer of reactTimers) clearTimeout(timer);
           reactTimers.clear();
@@ -634,33 +638,44 @@ export function createVideoAr({ link, params, hooks, deps }) {
         const id = cmd.target?.id;
         const first = typeof id === "string" ? steps.find((s) => s.kind === cmd.kind && id.includes(s.word)) : undefined;
         if (!first) return;
-        if (handled.has(key)) return;
-        handled.add(key);
-        // 같은 종류·낱말 칸이 여럿이면 새 명령마다 다음 칸(다 떨어지면 지금 영상을 둔다), 하나면 늘 그 칸.
-        // 칸은 바꾸기가 끝났을 때만 쓴 것으로 센다(지워진 바꾸기는 칸을 쓰지 않는다)
-        const group = steps.filter((s) => s.kind === first.kind && s.word === first.word);
-        const slot = `${first.kind}:${first.word}`;
-        const n = used.get(slot) ?? 0;
-        if (group.length > 1 && n >= group.length) return;
-        const entry = group.length > 1 ? group[n] : first;
         const target = Array.isArray(cmd.target.ar) ? cmd.target.ar : null;
         const gen = cmdGen;
         lastCmdId = cmd.id;
         // go는 걷기(near_m이 있으면 그 거리 안까지), view above면 위에서 비추기, 그 밖은 그 자리에서 바라보기
         const stopM = typeof cmd.near_m === "number" ? Math.min(WALK_STOP_M, cmd.near_m * NEAR_WALK) : WALK_STOP_M;
-        const pose = target && (entry.kind === "go" ? () => startWalk(target, stopM) : cmd.view === "above" ? () => holdAbove(target) : () => face(target));
-        const timer = setTimeout(() => {
-          reactTimers.delete(timer);
-          if (run !== current || gen !== cmdGen) return;
-          void swap(entry.clipUrl, pose, gen, () => used.set(slot, Math.max(used.get(slot) ?? 0, n + 1)));
-        }, reactMs);
-        reactTimers.add(timer);
+        const pose = target && (first.kind === "go" ? () => startWalk(target, stopM) : cmd.view === "above" ? () => holdAbove(target) : () => face(target));
+        const later = (fn) => {
+          const timer = setTimeout(() => {
+            reactTimers.delete(timer);
+            if (run !== current || gen !== cmdGen) return;
+            fn();
+          }, reactMs);
+          reactTimers.add(timer);
+        };
+        // 이미 그 단계 영상으로 바꾼 명령이 다시 왔다(시간 초과 질문 뒤 「계속」 등): 영상 칸을 더 쓰지 않고 자세 동작만 다시 시작한다
+        if (switched.has(key)) {
+          if (pose) later(pose);
+          return;
+        }
+        // 같은 종류·낱말 칸이 여럿이면 새 명령마다 다음 칸(다 떨어지면 지금 영상을 둔다), 하나면 늘 그 칸.
+        // 칸과 그 명령은 바꾸기가 끝났을 때만 쓴 것으로 센다(예약만 하고 지운 바꾸기는 칸을 쓰지 않고, 같은 명령이 다시 오면 다시 예약한다)
+        const group = steps.filter((s) => s.kind === first.kind && s.word === first.word);
+        const slot = `${first.kind}:${first.word}`;
+        const n = used.get(slot) ?? 0;
+        if (group.length > 1 && n >= group.length) return;
+        const entry = group.length > 1 ? group[n] : first;
+        pendingKey = key;
+        later(() => void swap(entry.clipUrl, pose, gen, () => {
+          used.set(slot, Math.max(used.get(slot) ?? 0, n + 1));
+          switched.add(key);
+        }));
       },
       /** 명령이 지워졌다(id가 없으면 무엇이든): 마지막 단계 영상 명령이면 세대를 올려 예약된 바꾸기·재생을 기다리는 바꾸기를 버리고 걷기를 멈춘다. */
       commandClear(id) {
         if (id !== undefined && id !== lastCmdId) return;
         cmdGen++;
         lastKey = null;
+        pendingKey = null;
         for (const timer of reactTimers) clearTimeout(timer);
         reactTimers.clear();
         walk = null;
