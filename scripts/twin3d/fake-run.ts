@@ -1,6 +1,6 @@
 // 대시보드 가짜 단계 자료(ui/src/dashboard/fake-run.json)를 만든다. 실행: npx tsx scripts/twin3d/fake-run.ts
 // 한양목련 실제 장면·평면도(loadScene·floorPlanFrom)로 컵 치우기 계획(에이전트 컵 계획이 맞춰야 할 모양 tests/helpers/cup-plan.ts, 로봇 [10.6, 8.6])을 짜고, 다섯 순간(0 지켜보기, 1~4 계획 단계)마다
-// 서버가 대시보드 /events로 보내는 메시지 묶음(plan·eye·brain decision·생각 메시지 thought·brain observe·seen·say)을 적는다. 생각 메시지는 지켜보기 판단의 메시지 하나와, 계획 순간에는 그 뒤 컵 치우기 판단의 메시지 둘(본 것 → 근거와 할 일)이 쌓인 것이다. 판단(decision)은 생각 한 문장(reasoning)과 판단 때 지금 FSM(fsm, src/brain/decision.ts fsmNow: 지켜보기는 처음 상태)을 싣는다. 말은 sayLine에 그 단계 명령을 넣은 글이다.
+// 서버가 대시보드 /events로 보내는 메시지 묶음(plan·eye·brain decision·생각 메시지 thought·brain observe·seen·say)을 적는다. 생각 메시지는 지켜보기 판단의 메시지 하나와, 계획 순간에는 그 뒤 컵 치우기 판단의 메시지 둘(본 것 → 근거와 할 일)이 쌓인 것이다. 판단(decision)은 생각 한 문장(reasoning)과 판단 때 지금 FSM(fsm, src/brain/decision.ts fsmNow: 지켜보기는 처음 상태)을 싣는다. 말은 sayLine에 그 단계 명령을 넣은 글이고, 계획 순간에는 그 앞 계획 순간의 말이 차례로 쌓여 있다.
 // 대시보드 폰 칸 그림은 시안 눈 그림(ui/public/debug-eye/, 세로 405×720)이고, 컵 모양(seen 마스크)은 시안 가로 그림 상자를 잘라 낸 자리만큼 옮긴 상자 안에 컵꼴로 채운 것이다.
 // 시각을 고정해서 다시 만들어도 같은 파일이 나온다.
 import { writeFileSync } from "node:fs";
@@ -115,7 +115,7 @@ function build(): Moment[] {
     at_ms: T0, objects: [cup], person: { visible: false, since_ms: T0, last_seen_ms: null, count: 0, room: null, room_label: null, position: null, near: [], holding: [], position_ms: null, answered_ms: null, facts: {} }, fixtures: [], devices: [], eye: null, frame_ms: null, vlm_missing: 0, yolo_missing: 0,
   };
 
-  return MOMENTS.map(({ eye, score }, n) => {
+  const moments = MOMENTS.map(({ eye, score }, n) => {
     const now = T0 + n * STEP_MS;
     const open: PlanView | null = n === 0 ? null : {
       ...plan, revision: n, status: "running", updatedAt: iso(now), judgment: "사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.",
@@ -158,6 +158,9 @@ function build(): Moment[] {
     ];
     return { index: n, eye, messages };
   });
+  // 계획 순간의 말은 실제 서버가 보낸 차례대로 그 앞 계획 순간의 말 뒤에 쌓인다(대시보드 메시지 상자 줄이 굴러간다)
+  const said = moments.map((m) => m.messages.find((x) => x.type === "say")!);
+  return moments.map((m, n) => (n === 0 ? m : { ...m, messages: [...m.messages.filter((x) => x.type !== "say"), ...said.slice(1, n + 1)] }));
 }
 
 writeFileSync(OUT, `${JSON.stringify({ moments: build() }, null, 2)}\n`);

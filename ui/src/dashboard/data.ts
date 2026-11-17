@@ -23,13 +23,15 @@ export interface DashData {
   say: string | null;
   /** 판단에서 본 행동마다 그 모드(판단 기록 assist): 진행 중 계획의 행동으로 메시지 상자 머리를 정한다. */
   modes: Record<string, "noonchi" | "coach">;
+  /** 메시지 상자에 넣은 말의 수(말 줄 id의 차례). */
+  says: number;
   /** 지금 유효한 안전 알림 말(say safety)과 그 줄 id. 안전 아닌 말이나 빈 말이 오면 null. 메시지 상자는 그동안 한 줄을 늘 이 알림에 준다. */
   safety: { id: string; text: string } | null;
   /** 메시지 상자 줄: 새로 온 생각 메시지(반성 메시지 포함)와 바뀐 말풍선 카드 말을 받은 차례로(시계가 다른 기기여도 차례가 맞다). 최근 THOUGHT_KEPT개. */
   talk: { id: string; text: string }[];
 }
 
-export const EMPTY_DASH: DashData = { plan: null, eye: null, decision: null, thoughts: [], reflection: null, say: null, modes: {}, safety: null, talk: [] };
+export const EMPTY_DASH: DashData = { plan: null, eye: null, decision: null, thoughts: [], reflection: null, say: null, modes: {}, says: 0, safety: null, talk: [] };
 
 /** 메시지 상자 줄 더하기: 같은 id는 한 번만, 받은 차례로 최근 THOUGHT_KEPT개. */
 function addTalk(list: DashData["talk"], more: { id: string; text: string }[]): DashData["talk"] {
@@ -78,11 +80,12 @@ export function reduceDash(s: DashData, m: ServerMessage, now: number): DashData
     case "say": {
       const safe = !!m.safety && !!m.text;
       if (m.text === s.say && safe === !!s.safety) return s;
-      const id = `say@${now}:${s.talk.length}`;
+      // 줄 id는 받은 말의 차례(같은 메시지 묶음을 다시 넣어도 같은 id라 메시지 상자가 굴러갈 줄을 가른다)
+      const id = `say#${s.says}`;
       const changed = m.text !== s.say;
       const talk = changed && m.text ? addTalk(s.talk, [{ id, text: m.text }]) : s.talk;
       const safety = safe ? (changed ? { id, text: m.text! } : s.safety ?? { id, text: m.text! }) : null;
-      return { ...s, say: m.text, safety, talk };
+      return { ...s, say: m.text, safety, talk, says: changed && m.text ? s.says + 1 : s.says };
     }
     case "thought": {
       const thoughts = addThoughts(s.thoughts, m.messages);

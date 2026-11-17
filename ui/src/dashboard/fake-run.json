@@ -137,6 +137,7 @@
             "updatedAt": "2026-11-09T09:00:04.000Z",
             "source": "brain",
             "goal": "컵 치우기",
+            "assist": "noonchi",
             "judgment": "사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.",
             "dryRun": true,
             "path": [
@@ -351,6 +352,7 @@
             "updatedAt": "2026-11-09T09:00:08.000Z",
             "source": "brain",
             "goal": "컵 치우기",
+            "assist": "noonchi",
             "judgment": "사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.",
             "dryRun": true,
             "path": [
@@ -542,6 +544,10 @@
         },
         {
           "type": "say",
+          "text": "식탁으로 가라고 했어요."
+        },
+        {
+          "type": "say",
           "text": "컵을 들라고 했어요."
         }
       ]
@@ -565,6 +571,7 @@
             "updatedAt": "2026-11-09T09:00:12.000Z",
             "source": "brain",
             "goal": "컵 치우기",
+            "assist": "noonchi",
             "judgment": "사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.",
             "dryRun": true,
             "path": [
@@ -740,6 +747,14 @@
         },
         {
           "type": "say",
+          "text": "식탁으로 가라고 했어요."
+        },
+        {
+          "type": "say",
+          "text": "컵을 들라고 했어요."
+        },
+        {
+          "type": "say",
           "text": "싱크대로 가라고 했어요."
         }
       ]
@@ -763,6 +778,7 @@
             "updatedAt": "2026-11-09T09:00:16.000Z",
             "source": "brain",
             "goal": "컵 치우기",
+            "assist": "noonchi",
             "judgment": "사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.",
             "dryRun": true,
             "path": [
@@ -951,6 +967,18 @@
               }
             }
           ]
+        },
+        {
+          "type": "say",
+          "text": "식탁으로 가라고 했어요."
+        },
+        {
+          "type": "say",
+          "text": "컵을 들라고 했어요."
+        },
+        {
+          "type": "say",
+          "text": "싱크대로 가라고 했어요."
         },
         {
           "type": "say",

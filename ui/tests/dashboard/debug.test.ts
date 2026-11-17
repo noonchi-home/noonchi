@@ -55,3 +55,16 @@ describe("가짜 단계 메시지 상자 상태(&talk)", () => {
     expect(talkMoment(MOMENTS[1]!, null)).toBe(MOMENTS[1]);
   });
 });
+
+describe("가짜 단계 메시지 상자 줄이 굴러간다", () => {
+  it("계획 순간이 넘어가면 앞 순간의 줄 끝에 새 말 한 줄이 붙는다(같은 묶음을 다시 넣어도 줄 id가 같다)", () => {
+    for (const n of [1, 2, 3]) {
+      const now = talkAt(MOMENTS[n]!)!.lines;
+      const next = talkAt(MOMENTS[n + 1]!)!.lines;
+      expect(next.slice(0, -1)).toEqual(now.slice(1));
+      expect(next.at(-1)!.id).not.toBe(now.at(-1)!.id);
+    }
+    expect(talkAt(MOMENTS[3]!)).toEqual(talkAt(MOMENTS[3]!));
+  });
+});
+
