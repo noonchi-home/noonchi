@@ -20,13 +20,22 @@
    - 그래도 모르면 묻지 않는다. 계획은 실행하지 않고 「대상 물건 안을 몰라 실행하지 않아요」로 닫힌다. 계획 밖이면 보기 기록만 남는다. 같은 컵·세대는 60초 동안 다시 가지 않는다.
    - 가까이 가서 보는 동안 컵이 옮겨지면(트윈 자리가 0.1m 넘게 바뀜, 옮김 표시, 사라짐) 그 차례를 거두고 처음부터 한다.
 3. **컵 안이 보임 판정**(엔진 프레임 하나, 카메라가 있을 때만, `topView`):
-   - 컵 모양은 안 반지름 r = 3.5cm, 깊이 h = 10cm 원통으로 본다(`TOP_CUP_M`). 컵 자리는 바닥 가운데다.
+   - 컵 크기는 World State가 옆 사진에서 잰 값(`size_m`: 높이·폭)을 쓴다.
+     - 높이: 전체 사진 감지 상자 윗변 가운데를 지나는 광선이 컵 자리 세로줄에 가장 가까워지는 점의 높이(컵 바닥 위)다.
+     - 폭: 상자 왼쪽·오른쪽 변 가운데를 지나는 광선이 컵 자리 깊이에서 벌어진 거리다.
+     - 사진 가장자리에 닿은 상자와 잘라 본 사진은 쓰지 않는다. 최근 5장의 가운데값이다.
+   - 안 반지름 r = 0.85 × min(폭, 높이) ÷ 2, 깊이 h = 높이 − 1cm다.
+     - min은 손잡이로 넓어진 폭을 막는다. 0.85는 벽 두께 여유다.
+     - 머그(폭 12cm·높이 9.5cm)는 r 4cm·h 8.5cm, 종이컵(8cm·9cm)은 3.4cm·8cm, 좁은 잔(7cm·15cm)은 3cm·14cm다.
+   - 크기를 모르면 좁고 깊은 컵(r 3cm·h 15cm, `TOP_CUP_FALLBACK`)으로 본다. 그러면 거의 입구 바로 위에서만 통과한다.
    - 카메라와 컵 자리의 수평 거리 d, 카메라의 컵 바닥 위 높이 H로 본다.
    - 카메라가 테두리보다 높다(H > h). 그리고 d ≤ r(카메라가 입구 바로 위)이거나, 먼 쪽 안벽 바닥 모서리로 가는 선이 가까운 테두리 위로 지난다(H·2r ≥ h·(d + r)).
    - 컵 자리가 화면 가운데 절반 안이다(NDC |x|·|y| ≤ 0.5).
    - 근거: 먼 쪽 안벽 바닥 모서리가 보이면 바닥이 보인다. 조금만 담겨도 그 모서리를 수면이 덮으므로 빈 컵과 갈린다.
-   - 근거: 모양은 머그(안지름 7.5cm·깊이 9.5cm)와 종이컵(7cm·9cm)보다 좁고 깊게 잡았다. 그래서 두 컵 모두 이 판정이 통과하면 안이 보인다. 키 큰 유리잔은 속이 비쳐 옆 사진으로 본다.
-   - 예: 수평 8cm·바닥 위 13.9cm는 안 된다(필요 높이 16.4cm). 테두리가 바닥을 가린다. 바닥 위 35cm면 수평 21cm 안이어야 한다. 영상 모드 자세(수평 15cm·위 40cm)는 된다.
+   - 예:
+     - r 3.5cm·h 10cm 컵: 수평 8cm·바닥 위 13.9cm는 안 된다(필요 높이 16.4cm, 테두리가 바닥을 가림).
+     - r 3cm·h 15cm 컵: 수평 15cm·위 40cm도 안 된다(필요 0.45m). 입구 바로 위(수평 2cm)·위 40cm는 된다.
+   - 판정은 기하만 본다. 바닥이 실제로 보였는지는 VLM 답이 정한다(정한 것 7: 바닥이나 수면이 보일 때만 비어 있음·내용물 있음, 아니면 안이 안 보임으로 답하고 그 장은 버린다).
    - 근거: 잘라 보기는 컵 자리를 가운데로 프레임 절반 크기를 자른다(`cropBox`). 컵이 가운데 절반 안이면 잘라 낸 칸이 화면 밖으로 밀리지 않고 가장자리 왜곡·잘림이 없다.
 4. **가까이 가기 0.5m 근거:** 식탁 가에 선 사람이 팔을 뻗어 폰을 컵 위에 둘 수 있는 거리다(팔 길이 약 0.6m, 폰은 몸 앞 0.2~0.4m).
 5. **위에서 본 사진 시간 조건(한곳 `TOP_CONFIRM`, 준비 판정과 확인 판정이 같이 쓴다): 서로 다른 원본 프레임 2장, 처음과 마지막 촬영 1.5초 이상, 이웃 공백 6초 이하.**
@@ -39,12 +48,15 @@
    - 확인 값이 위에서 정한 것이면 반대 쌍은 지금 규칙(후보 충돌로 짐작, 창 안에서만 바꿈)을 따른다.
    - 위에서 확인한 값은 `sure.top`으로 표시한다.
    - 불투명이 확인되면 옆 사진으로 정한 확인 값은 거둔다(보관, 세대 +1). 그 뒤 옆 사진은 버리고 위에서 본 사진만 받는다.
+   - 같은 원본 프레임은 한 장으로 세고, 위에서 본 답 > 잘라 본 답 > 전체 사진 답 차례로 덮는다. 낮거나 같은 차례의 두 번째 답은 버린다. 덮으면 확인을 다시 센다(받치던 사진이 반대가 되면 거둠).
 7. **위에서 보기는 대상 확인을 거친 장의 답만 넣는다.**
    - VLM에는 그 컵 하나만 감지 번호 d1로 준다. 상자는 트윈 컵 자리를 그 장 카메라로 찍은 것이다(지름 10cm·높이 12cm 원기둥의 꼭짓점).
-   - VLM 글에 「d1에 컵이 없으면 not_visible로 답하라」를 둔다(`TOP_NOTE`).
+   - VLM 글(`TOP_NOTE`)에 둘을 둔다.
+     - 「d1에 컵이 없으면 not_visible로 답하라」.
+     - 「컵 안쪽 바닥이나 수면이 보일 때만 비어 있음·내용물 있음으로 답하고, 아니면 안이 안 보임으로 답하라」. 내용물 값이 「안쪽 바닥이 보이는가」 칸을 겸한다.
    - 장마다 차례대로 본다.
      1. d1 답에 not_visible이 있으면 그 장을 버린다.
-     2. 내용물 값(비어 있음·내용물 있음)이 없으면 그 장을 버린다.
+     2. 내용물 값이 비어 있음·내용물 있음이 아니면(안이 안 보임 포함, 바닥이 안 보임) 그 장을 버린다.
      3. 같은 잘라 본 사진의 YOLO 그릇 감지(컵·와인잔·그릇 종류) 가운데 상자 가운데가 d1 상자 안인 것이 없으면 그 장을 버린다(그 자리에 그릇이 있음).
      4. 트윈에서 같은 종류 다른 물건이 컵 자리 0.1m 안에 있으면 버린다(어느 컵인지 모름).
    - VLM 답이 왔을 때 컵이 사라졌거나, 옮김 표시가 붙었거나, 트윈 자리가 위에서 보기를 시작한 때보다 0.1m 넘게 바뀌었으면 답을 넣지 않는다(`moved`).
@@ -58,8 +70,9 @@
    - 불투명이 확인됐거나, B가 그 세대에 잘라 본 지 4초가 지났다.
    - 명령 id는 `peek:<번호>`다.
 10. **영상 모드도 같은 명령을 받는다.**
-    - 영상 페이지가 명령의 `near_m`(go)·`view: "above"`(do)를 따라 자세를 옮긴다. go는 `near_m`×0.8(0.4m)까지 걷는다. above는 컵에서 0.15m 떨어진 0.4m 위로 폰을 옮겨 컵을 바라본다(정한 것 3이 통과하는 자세).
+    - 영상 페이지가 명령의 `near_m`(go)·`view: "above"`(do)를 따라 자세를 옮긴다. go는 `near_m`×0.8(0.4m)까지 걷는다. above는 폰을 컵 입구 바로 위(수평 2cm), 0.4m 위로 옮겨 컵을 내려다본다(크기를 몰라도 정한 것 3이 통과하는 자세).
     - 명령이 지워지면(`command_clear`) 영상 페이지는 그 명령의 예약된 영상 바꾸기와 걷기를 멈춘다(`PhoneAr.commandClear`).
+    - 영상 페이지는 명령·지우기마다 명령 세대를 올린다. 이미 타이머가 돌아 새 영상 재생을 기다리는 전환도, 재생이 끝났을 때 세대가 다르면 새 영상을 닫고 앞 영상과 자세를 그대로 둔다.
     - 새 칸 때문에 폰 계약 판본을 3에서 4로 올린다. 판본 3으로 열린 탭은 옛 탭으로 새로 고침 안내를 받는다.
     - 단계 영상 `step=go:cup:…`·`step=do:cup:…`이 그 사진을 대신한다.
     - 실행 추적·폰 서버에는 영상 갈래가 없다.
@@ -74,8 +87,18 @@
     - 다 확인된 반대 값이면 막는다.
 13. **따르기 사건은 감지 마스크로 본다:** 병 마스크 긴 축(주성분)과 중력 방향의 각, 「컵 위」는 두 마스크를 중력 좌표에 비춘 범위로 본다. 마스크가 없거나 작거나 둥글거나 카메라 자세가 없으면 보지 않는다.
 14. **위에서 볼 때 컵의 보임:**
-    - 위에서는 YOLO가 컵을 못 잡아 사라짐으로 셀 수 있다. 그래서 위에서 비추기 명령을 보낼 때 그 컵에 지킴(가까이 보기 지킴과 같은 칸 `closerAt`, 30초)을 건다(`WorldState.guard`). 지킴 동안은 전체 사진에서 못 봐도 사라짐으로 세지 않는다. 같은 종류 새 물건이 다른 자리에 생기면 지금처럼 지킴이 풀리고 옮김 표시가 붙는다.
-    - 대상 확인을 거친 위 사진은 그 컵의 마지막 본 때·시야 안 때를 그 촬영 시각으로 올리고 지킴을 다시 건다.
+    - 위에서는 YOLO가 컵을 못 잡아 사라짐으로 셀 수 있다.
+    - 그래서 위에서 비추기 명령을 보낼 때 그 컵에 보기 지킴(`peekGuard`)을 건다(`WorldState.guard(id, at, true)`).
+      - 이 지킴은 확인된 관측의 지킴(`closerAt`)과 다른 칸이다.
+      - 지킴 동안은 전체 사진에서 못 봐도 사라짐으로 세지 않는다.
+    - 보기 지킴은 그 가까이 가서 보기 차례가 끝나면 푼다(`guard(id, at, false)`).
+      - 끝나는 때: 위에서 보기 끝, 거둠, 시간 초과, 옮겨짐, 보류 풀림·닫힘.
+      - 풀리지 않아도 60초(`PEEK_GUARD_MS`)가 지나면 저절로 끝난다.
+      - 풀린 뒤에는 지금처럼 사라짐을 센다. 실제로 없어진 컵은 사라진다.
+    - 대상 확인을 거친 위 사진만 확인된 관측이다.
+      - 그 컵의 마지막 본 때·시야 안 때를 그 촬영 시각으로 올리고 `closerAt` 지킴(30초)을 건다.
+      - not_visible·안이 안 보임·대상 확인 실패로 버린 장은 아무것도 바꾸지 않는다.
+    - 같은 종류 새 물건이 다른 자리에 생기면 두 지킴 다 풀리고 옮김 표시가 붙는다.
     - 위에서 본 뒤 실행 전 검사가 낡음(3초 넘게 못 봄)으로 막으면, 보류가 30초(`holdMs`) 동안 기다린다. 사람이 폰을 내리면 옆 사진이 컵을 다시 보고 시작한다. 30초가 지나도 못 보면 낡음으로 닫는다.
 
 ## 조사한 사실 (2026-11-17, `refactor/domain-split` bee7c2e)
@@ -119,7 +142,10 @@
 | 후보 충돌 | 확인 값과 반대 값이 최신 사진에서 2장 이어짐 | `CONTENTS_CONFIRM.conflict` |
 | 위에서 본 확인·준비 | 서로 다른 원본 프레임 2장, 1.5초 이상, 이웃 공백 6초 이하 | `TOP_CONFIRM`·`topPairOf` |
 | 위에서 보기 대상 | 컵 자리 0.1m 안 같은 종류 다른 물건 없음, 자리 바뀜 0.1m 안 | `TOP_SAME_M` |
-| 컵 안이 보임 | 안 반지름 3.5cm·깊이 10cm 컵의 먼 쪽 안벽 바닥 모서리가 가까운 테두리 위로 보임, 컵 NDC \|x\|·\|y\| ≤ 0.5 | `TOP_CUP_M`·`TOP_VIEW` |
+| 컵 안이 보임 | 잰 크기의 컵(r = 0.85·min(폭, 높이)/2, h = 높이 − 1cm)의 먼 쪽 안벽 바닥 모서리가 가까운 테두리 위로 보임, 컵 NDC \|x\|·\|y\| ≤ 0.5 | `cupInside`·`TOP_VIEW` |
+| 크기를 모를 때 컵 | r 3cm·h 15cm | `TOP_CUP_FALLBACK` |
+| 컵 크기 재기 | 가장자리에 닿지 않은 전체 사진 상자 최근 5장 가운데값 | `SIZE_SAMPLES` |
+| 보기 지킴 한도 | 60초 | `PEEK_GUARD_MS` |
 | 위에서 보기 상자 | 지름 0.1m·높이 0.12m 원기둥 | `TOP_BOX_M` |
 | 가까이 가기 끝 | 폰 눈과 컵 수평 0.5m 안 | `PEEK.nearM` |
 | 가까이 가서 보기 명령 한도 | 명령마다 30초 | `PEEK.stepMs` |
@@ -130,7 +156,7 @@
 | 보류: 사진 기다림 | 잘라 본 뒤·위에서 본 뒤 4초 | `CONTENTS_HOLD.settleMs` |
 | 보류 한도(가까이 가서 보기를 시작하지 못할 때, 위에서 본 뒤 다시 보기, 보류에서 풀려 첫 명령을 미룰 때) | 30초 | `CONTENTS_HOLD.holdMs` |
 | 영상: 가까이 걷기 | `near_m`×0.8 | `video-ar.js` `NEAR_WALK` |
-| 영상: 위에서 비추기 | 컵에서 수평 0.15m, 위로 0.4m | `video-ar.js` `ABOVE` |
+| 영상: 위에서 비추기 | 컵에서 수평 0.02m, 위로 0.4m | `video-ar.js` `ABOVE` |
 
 ## 끝낸 묶음 (1~7·9·10, 남는 것)
 
@@ -162,7 +188,7 @@
 |---|---|
 | `src/act/prompts.ts`, `src/act/ask-step.ts`, `src/act/talk-grade.ts`, `src/act/say.ts`, `src/act/labels.ts`, `src/act/track/{contents,core,start,approval,answers,tracker}.ts`, `src/server/home/act.ts`, `src/observe/pipeline.ts`, `src/world/state/{contents,world}.ts`, `src/world/{labels,text}.ts`, `src/contract/{world,phone}.ts`, `CLAUDE.md` | Task 12 질문 걷어 내기 |
 | `src/act/check.ts`, `src/act/tasks.ts` | Task 13 검사 고침 |
-| `src/world/place.ts`(`topView`·`topBox`), `src/world/state/contents.ts`(`TOP_CONFIRM`·`topPairOf`, 위에서 본 사진, 옆 확인 거둠), `src/world/state/world.ts`(`applyTop`·`guard`) | Task 14 위에서 본 사진 |
+| `src/world/place.ts`(`topView`·`topBox`·`cupInside`·`sizeOf`), `src/world/state/objects.ts`(크기 재기), `src/world/state/core.ts`(`Obj.size`·`Obj.peekGuard`), `src/contract/world.ts`(`size_m`), `src/world/state/contents.ts`(`TOP_CONFIRM`·`topPairOf`, 위에서 본 사진, 같은 원본 차례, 옆 확인 거둠), `src/world/state/world.ts`(`applyTop`·`guard`) | Task 14 위에서 본 사진 |
 | `src/observe/pipeline.ts`(`topReady`·`topLook`), `src/observe/scene.ts`(`TOP_NOTE`), `src/observe/crop.ts`, `src/act/look.ts`(E 위에서 보기) | Task 15 위에서 보기 |
 | `src/act/track/contents.ts`(peek), `src/act/track/{core,start,tracker,answers}.ts`, `src/act/labels.ts`(`PEEK_TEXT`), `src/contract/phone.ts`(`near_m`·`view`), `src/contract/phone-version.ts`·`src/phone/protocol.ts`·`ui/src/phone/protocol.ts`(판본 4), `src/server/home/act.ts` | Task 16 보류의 가까이 가서 보기 |
 | `src/act/track/contents.ts`(idle peek), `src/act/track/{core,tracker,answers}.ts`, `src/act/look.ts`(`looked`) | Task 17 계획 밖 가까이 가서 보기 |
@@ -253,20 +279,25 @@ git push origin refactor/domain-split
 - Modify: `src/world/place.ts`
 
 ```ts
-/** 컵 안이 보임 판정의 컵 모양(안 반지름·깊이 m). 정한 것 3의 근거. */
-export const TOP_CUP_M = { radius: 0.035, depth: 0.1 } as const;
+/** 크기를 모를 때 컵 안 모양(안 반지름·깊이 m): 좁고 깊은 컵. 정한 것 3의 근거. */
+export const TOP_CUP_FALLBACK = { radius: 0.03, depth: 0.15 } as const;
+/** 잰 크기(높이·폭 m) → 컵 안 모양: r = 0.85·min(폭, 높이)/2, h = 높이 − 0.01. 모르면 TOP_CUP_FALLBACK. */
+export function cupInside(size: { height: number; width: number } | null | undefined): { radius: number; depth: number };
+/** 감지 상자 하나로 그 물건 크기를 잰다(정한 것 3): 윗변 가운데 광선이 자리 세로줄에 가장 가까운 점의 높이, 좌우 변 가운데 광선이 자리 깊이에서 벌어진 거리.
+ *  상자가 사진 가장자리에 닿거나 카메라 뒤면 null. */
+export function sizeOf(view: CameraView, box: [number, number, number, number], frame: { width: number; height: number }, at: V3): { height: number; width: number } | null;
 /** 컵 자리가 화면 가운데(NDC |x|·|y| ≤ center)여야 한다. */
 export const TOP_VIEW = { center: 0.5 } as const;
 /** 위에서 보기 상자: 컵 자리(바닥 가운데)에 세운 원기둥(반지름·높이 m). */
 export const TOP_BOX_M = { radius: 0.05, height: 0.12 } as const;
-/** 이 카메라가 point(컵 바닥 가운데)에 놓인 TOP_CUP_M 컵의 안을 보는가: 테두리보다 높고, 입구 바로 위이거나 먼 쪽 안벽 바닥 모서리가
+/** 이 카메라가 point(컵 바닥 가운데)에 놓인 cup 모양 컵의 안을 보는가: 테두리보다 높고, 입구 바로 위이거나 먼 쪽 안벽 바닥 모서리가
  *  가까운 테두리 위로 보이고, 컵 자리가 화면 가운데다. 카메라 뒤면 false. */
-export function topView(view: CameraView, point: V3): boolean;
+export function topView(view: CameraView, point: V3, cup: { radius: number; depth: number }): boolean;
 /** point에 세운 TOP_BOX_M 원기둥 꼭짓점 16개를 찍은 엔진 프레임 픽셀 상자 [x, y, w, h]. 하나라도 카메라 뒤면 null. */
 export function topBox(view: CameraView, point: V3, size: { width: number; height: number }): [number, number, number, number] | null;
 ```
 
-  - d = 카메라 origin과 point의 수평 거리, H = origin 높이 − point 높이(트윈 y가 높이), r·h = `TOP_CUP_M`.
+  - d = 카메라 origin과 point의 수평 거리, H = origin 높이 − point 높이(트윈 y가 높이), r·h = `cup`.
   - 판정: `H > h && (d <= r || H * 2 * r >= h * (d + r))`, 그리고 NDC 가운데.
 - Modify: `src/world/state/contents.ts`
 
@@ -278,31 +309,48 @@ export const TOP_CONFIRM = { photos: 2, spanMs: 1500, gapMs: 6000 } as const;
 export function topPairOf<T extends { at: number }>(xs: readonly T[]): [T, T] | null;
 ```
 
-  - `Photo`에 `top: boolean`을 둔다. `sure`에는 `top: boolean`(위에서 본 쌍으로 확인했는가)을 둔다.
-  - `see(obj, frameId, atMs, value, crop, top = false)`:
-    - 불투명이 확인된 컵은 `top`이 아니면 버린다. `top` 답은 늘 `crop`이다.
+  - `Photo`의 `crop: boolean`을 `rank: 0 | 1 | 2`(전체 사진·잘라 봄·위에서 봄)로 바꾼다. `sure`에는 `top: boolean`(위에서 본 쌍으로 확인했는가)을 둔다.
+  - `see(obj, frameId, atMs, value, rank)`:
+    - 불투명이 확인된 컵은 `rank`가 2가 아니면 버린다.
+    - 같은 원본 프레임 답이 있으면 새 `rank`가 더 클 때만 덮는다(위 > 잘라 봄 > 전체). 덮은 뒤 지금처럼 받치던 확인을 다시 센다.
     - 옆·위 사진 전체의 최신 묶음이 `CONTENTS_CONFIRM`를 채우면 지금 규칙대로다.
     - 같은 값의 최신 위 사진 쌍(`topPairOf`)이 있으면:
       - 확인 값이 없거나, 옆 사진으로 정한 것이면(창과 상관없이) 그 값으로 확인한다(`top: true`, 이전 값 보관, 세대 +1, 판단 계기 줄).
       - 확인 값이 위에서 정한 것이면 지금 규칙(같으면 이어 감, 반대면 후보 충돌, 창 안이면 바꿈)이다.
   - 불투명이 확인되면(`settle` 때 몸통 면을 봄) 옆 사진으로 정한 확인 값을 거둔다(보관, 세대 +1).
   - `effective`: 불투명이 확인됐고 확인 값이 없으면 「안이 안 보임」(확인됨)이다. 위에서 확인한 값이 있으면 그 값이다.
+- Modify: `src/world/state/objects.ts`·`src/world/state/core.ts`·`src/contract/world.ts`
+  - 전체 사진에서 자리를 맞춘 물건 감지마다 `sizeOf`로 재서 `Obj.size`(최근 `SIZE_SAMPLES` 5장)에 쌓는다.
+  - 보기에는 가운데값을 `size_m: { height, width }`로 낸다(없으면 칸 없음).
 - Modify: `src/world/state/world.ts`
   - `applyTop(objectId, frameId, capturedAtMs, value)`:
-    - 대상 확인을 거친 장의 내용물 값 하나를 `see(..., crop: true, top: true)`로 넣는다.
-    - 그 컵의 마지막 본 때·시야 안 때를 `capturedAtMs`로 올리고(더 새 것만), 지킴(`closerAt`)을 다시 건다.
+    - 대상 확인을 거친 장의 내용물 값 하나를 `see(..., rank 2)`로 넣는다.
+    - 그 컵의 마지막 본 때·시야 안 때를 `capturedAtMs`로 올리고(더 새 것만), 확인된 관측 지킴(`closerAt`)을 건다.
     - 물건이 없거나 사라졌으면 빈 목록을 돌려준다. 다른 면은 넣지 않는다.
-  - `guard(objectId, atMs)`: 그 컵에 지킴(`closerAt`)을 건다. 물건이 없으면 아무것도 하지 않는다.
-- Modify: `src/world/index.ts`(`topView`·`topBox`·`TOP_CUP_M`·`TOP_VIEW`·`TOP_CONFIRM`·`topPairOf` 내보냄)
+  - `guard(objectId, atMs, on)`: 보기 지킴(`Obj.peekGuard`, `closerAt`과 다른 칸)을 걸거나 푼다.
+    - 걸린 동안(`PEEK_GUARD_MS` 60초 안) 사라짐을 세지 않는다.
+    - 같은 종류 새 물건이 다른 자리에 생기면 `closerAt`처럼 풀린다.
+    - 물건이 없으면 아무것도 하지 않는다.
+- Modify: `src/world/index.ts`(`topView`·`topBox`·`cupInside`·`TOP_CUP_FALLBACK`·`TOP_VIEW`·`TOP_CONFIRM`·`topPairOf` 내보냄)
 - Test: `tests/world-top.test.ts`(새로), `tests/world-contents.test.ts`
 
 - [ ] **Step 1: 실패하는 시험**
-  - `topView`:
+  - `topView`(r 3.5cm·h 10cm 컵):
     - 바닥 위 40cm·수평 15cm에서 컵을 바라보면 참이다.
     - 수평 8cm·바닥 위 13.9cm면 거짓이다(Codex 반례, 내려다보는 각 60°지만 테두리가 가림).
     - 바닥 위 35cm면 수평 20cm는 참, 25cm는 거짓이다.
     - 입구 바로 위(수평 2cm·위 30cm)는 참이고, 테두리보다 낮으면 거짓이다.
     - 컵이 NDC 0.6이거나 카메라 뒤면 거짓이다.
+  - `topView`(r 3cm·h 15cm 컵, Codex 재검토 반례): 수평 15cm·위 40cm는 거짓, 수평 2cm·위 40cm는 참이다.
+  - `cupInside`:
+    - 폭 12cm·높이 9.5cm면 r 4cm·h 8.5cm다.
+    - 크기가 없으면 `TOP_CUP_FALLBACK`이다.
+  - `sizeOf`:
+    - 1.4m 높이 카메라로 0.6m 앞 식탁 위 높이 10cm·폭 8cm 원기둥을 찍은 상자에서 높이·폭이 1cm 안이다.
+    - 가장자리에 닿은 상자는 null이다.
+  - World State:
+    - 같은 컵을 다섯 장 찍으면 `size_m`이 가운데값이다.
+    - 잘라 본 사진은 쌓지 않는다.
   - `topBox`: 바로 위에서 본 상자는 가운데를 감싼다. 카메라 뒤면 null이다.
   - `topPairOf`:
     - 0초·2초면 쌍이다. 0초·1초는 아니다.
@@ -318,12 +366,20 @@ export function topPairOf<T extends { at: number }>(xs: readonly T[]): [T, T] | 
     - 그 뒤 옆 사진 「내용물 있음」 3장·4초는 바꾸지 않는다(후보 충돌로 짐작).
   - 옆 사진으로 확인된 값은 불투명이 확인되면 거둬진다(세대 +1, 보관).
   - 마시기 사건은 위에서 확인한 값도 다시 연다.
-  - `applyTop`은 마지막 본 때를 올리고 지킴을 건다. 자리·다른 면은 바꾸지 않는다.
-  - `guard` 뒤 전체 사진에서 6초 넘게 못 봐도 사라지지 않는다.
+  - 같은 원본 프레임:
+    - 전체 → 잘라 봄 → 위 차례로 오면 차례대로 덮는다.
+    - 위 → 잘라 봄, 잘라 봄 → 잘라 봄은 버린다.
+    - 잘라 본 답 「내용물 있음」으로 받치던 프레임을 위 답 「비어 있음」이 덮으면 확인을 다시 센다.
+  - `applyTop`은 마지막 본 때를 올리고 `closerAt` 지킴을 건다. 자리·다른 면은 바꾸지 않는다.
+  - 보기 지킴:
+    - `guard(on)` 뒤 전체 사진에서 6초 넘게 못 봐도 사라지지 않는다.
+    - `guard(off)` 뒤에는 6초면 사라진다.
+    - 풀지 않아도 60초 뒤에는 사라짐을 센다.
+    - `closerAt`은 건드리지 않는다.
 - [ ] **Step 2: FAIL을 본다** — `tests/world-top.test.ts`, `tests/world-contents.test.ts`
 - [ ] **Step 3: 구현한다**
 - [ ] **Step 4: PASS를 본다** — 두 파일, 이어서 `tests/world-state.test.ts`·`tests/world-closer.test.ts`
-- [ ] **Step 5: 커밋·푸시** — `feat(world): judge whether a camera sees inside a cup, confirm contents from two top-down photos over side photos and guard the cup while it is viewed from above`
+- [ ] **Step 5: 커밋·푸시** — `feat(world): measure cup size, judge whether a camera sees inside a cup, confirm contents from two top-down photos over side photos and guard the cup while it is viewed from above`
 
 ### Task 15: 위에서 보기 (관찰 흐름 · 보기 담당)
 
@@ -331,10 +387,11 @@ export function topPairOf<T extends { at: number }>(xs: readonly T[]): [T, T] | 
 - Modify: `src/observe/pipeline.ts`
 
 ```ts
-/** 위에서 본 VLM 프레임 쌍: sinceMs 뒤에 찍혀 카메라가 있고 position의 컵 안을 보는(topView) VLM 프레임 중 topPairOf(TOP_CONFIRM 시간 조건). 없으면 null. */
-private topPair(position: V3, sinceMs: number): [EngineFrame, EngineFrame] | null;
+/** 위에서 본 VLM 프레임 쌍: sinceMs 뒤에 찍혀 카메라가 있고 그 컵 안을 보는(topView, 크기는 World State size_m의 cupInside) VLM 프레임 중
+ *  topPairOf(TOP_CONFIRM 시간 조건). 없으면 null. */
+private topPair(objectId: string, sinceMs: number): [EngineFrame, EngineFrame] | null;
 /** 위에서 비추기 단계가 끝났는가(실행 추적이 본다): 쌍이 있다. */
-topReady(position: V3, sinceMs: number): boolean;
+topReady(objectId: string, sinceMs: number): boolean;
 /** 위에서 보기 한 번(정한 것 7). 결과는 CloserResult(found는 그 컵 하나, frames 2). */
 async topLook(spot: LookSpot, sinceMs: number, signal?: AbortSignal): Promise<CloserResult>;
 ```
@@ -349,7 +406,7 @@ async topLook(spot: LookSpot, sinceMs: number, signal?: AbortSignal): Promise<Cl
        - 컵이 옮겨졌으면(`moved`) 그 뒤 장도 넣지 않고 끝낸다.
        - 거른 답의 내용물 값을 `world.applyTop`으로 넣고 방송한다.
   - 기록·결과에는 장마다 넣었는지, 버렸으면 그 까닭(not_visible·값 없음·그릇 없음·다른 물건·옮겨짐)을 싣는다.
-- Modify: `src/observe/scene.ts`(`TOP_NOTE`: 「This photo is the cup seen from above, cut out and enlarged 2x. d1 is where the cup should be. If d1 holds no cup, answer not_visible for d1.」), 가까이 보기 자리 풀(`pool.submitCloser`)이 글을 받게 한다.
+- Modify: `src/observe/scene.ts`(`TOP_NOTE`: 「This photo is the cup seen from above, cut out and enlarged 2x. d1 is where the cup should be. If d1 holds no cup, answer not_visible for d1. Answer empty or has_contents for d1 only when you can see the inside bottom of the cup or a liquid surface in it; otherwise answer contents_unknown.」), 가까이 보기 자리 풀(`pool.submitCloser`)이 글을 받게 한다.
 - Modify: `src/observe/crop.ts`(`toCropBox(box, crop, out)`: 엔진 프레임 상자를 잘라 키운 사진 픽셀로, `toFrameBox`의 거꾸로)
 - Modify: `src/contract/events.ts`(`CloserMiss`에 `moved`, 결과에 장마다 버린 까닭)
 - Modify: `src/act/look.ts`
@@ -364,13 +421,14 @@ async topLook(spot: LookSpot, sinceMs: number, signal?: AbortSignal): Promise<Cl
   - `topReady`:
     - 컵 안을 보는 VLM 프레임 0초·2초면 참이다.
     - 0초·1초, 0초·10초는 거짓이다(`topPairOf`와 같은 답).
+    - 크기가 r 3cm·h 15cm로 잰 컵은 수평 15cm·위 40cm 프레임을 세지 않는다.
     - 빠른 프레임(`vlm: false`)만이면 거짓이다. sinceMs 앞 프레임은 세지 않는다.
   - `topLook`:
     - 가짜 VLM에 두 번 보낸다. 요청의 감지는 d1 하나이고 상자가 잘라 낸 사진 안이며 글이 `TOP_NOTE`다.
     - 두 답이 들어가 불투명 컵이 확인되고, 컵의 마지막 본 때가 둘째 장 촬영 시각이다.
     - 걸러지는 장:
       - d1에 not_visible이 있으면 내용물 값이 같이 와도 버린다.
-      - 내용물 값이 없으면 버린다.
+      - 내용물 값이 없거나 안이 안 보임이면 버린다(바닥이 안 보임).
       - 잘라 본 사진에 그릇 감지가 없거나 상자 밖이면 버린다.
       - 0.1m 안에 다른 컵이 있으면 버린다.
       - 첫 답 뒤 컵 자리가 0.2m 옮겨졌으면 둘째 장을 넣지 않고 `moved`다.
@@ -423,9 +481,10 @@ export const PEEK_TEXT = {
     - 폰 눈과 컵 수평 거리가 `nearM` 밖이면 go 명령을 보낸다(종류 go, `near_m`, 대상 그 컵, 단추 없음, 소리로 읽기).
     - 안이면 above 명령을 보낸다(종류 do, `view: "above"`).
     - 비전 줄은 go면 `VISION_TEXT.distance(이름, m)`, above면 `이름 · 지금 내용물 값 글`이다.
-    - go가 끝나면(안으로 들어옴) 새 번호로 above를 보낸다. above를 보낼 때 `guardObject(컵)`(World State `guard`)를 부른다.
+    - go가 끝나면(안으로 들어옴) 새 번호로 above를 보낸다. above를 보낼 때 `guardObject(컵, true)`(World State 보기 지킴)를 부른다.
+    - 그 차례가 끝나면 `guardObject(컵, false)`로 푼다. 끝나는 때: 위에서 보기가 끝남(done), 거둠, 시간 초과, 옮겨짐, `release`, `over`, 계획 닫힘.
     - 컵이 옮겨지면(트윈 자리가 peek를 시작한 때보다 0.1m 넘게 바뀜, 옮김 표시, 사라짐) 떠 있는 명령을 거두고 처음부터 한다.
-    - above가 끝나면(`topReady(컵 자리, above 보낸 때)`) 명령을 거두고 `seeing`으로 가서 `lookContents({ ..., top: { sinceMs } })`를 부른다(받지 않으면 다음 tick). `done`이면 `after`로 간다.
+    - above가 끝나면(`topReady(컵 id, above 보낸 때)`) 명령을 거두고 `seeing`으로 가서 `lookContents({ ..., top: { sinceMs } })`를 부른다(받지 않으면 다음 tick). `done`이면 `after`로 간다.
     - 명령마다 `stepMs`가 지나면 거두고 `over`다.
     - `repeatMs`마다 소리로 다시 읽는다.
   - **after:**
@@ -435,13 +494,13 @@ export const PEEK_TEXT = {
   - 보류에서 풀린 계획은 폰 대화·승인 대기가 없을 때만 첫 명령을 보낸다(`start.ts`). 있으면 tick마다 다시 보고, 미룬 지 `holdMs`가 지나면 `EXEC_TEXT.phoneBusy` 「폰을 쓰는 중이라 실행하지 않아요」로 닫는다.
   - 세대가 바뀌면 처음부터 한다.
 - Modify: `src/act/track/tracker.ts`
-  - 옵션 `topReady?: (position: V3, sinceMs: number) => boolean`을 둔다. 없으면 above가 끝나지 않는다.
-  - 옵션 `guardObject?: (objectId: string) => void`를 둔다.
+  - 옵션 `topReady?: (objectId: string, sinceMs: number) => boolean`을 둔다. 없으면 above가 끝나지 않는다.
+  - 옵션 `guardObject?: (objectId: string, on: boolean) => void`를 둔다.
   - `lookContents`의 `top`을 넘긴다.
 - Modify: `src/act/track/answers.ts`
   - peek 명령은 「완료」를 받지 않는다(단추 없음).
   - 「그만」은 지금처럼 계획을 그만둔다.
-- Modify: `src/server/home/act.ts`(`topReady: (p, t) => observe.topReady(p, t)`, `guardObject: (id) => world.guard(id, now())`)
+- Modify: `src/server/home/act.ts`(`topReady: (id, t) => observe.topReady(id, t)`, `guardObject: (id, on) => world.guard(id, now(), on)`)
 - Test: `tests/act-track.test.ts`
 
 - [ ] **Step 1: 실패하는 시험**(가짜 World State·가짜 `topReady`)
@@ -459,7 +518,7 @@ export const PEEK_TEXT = {
   - 승인 대기·끄기 안내 중에는 보내지 않는다.
   - go 명령이 30초 안에 끝나지 않으면 닫힌다.
   - above를 보낸 뒤 컵이 0.2m 옮겨지면 명령을 거두고 go부터 다시 한다.
-  - above를 보낼 때 `guardObject`가 그 컵으로 불린다.
+  - above를 보낼 때 `guardObject(컵, true)`가 불린다. 위에서 보기가 끝나거나, 거두거나, 시간 초과, 옮겨짐, 그만둠이면 `guardObject(컵, false)`가 불린다(각각 시험).
   - 위에서 본 뒤 확인됐지만 낡음이면 기다린다. 컵이 다시 보이면 첫 명령이다. 30초가 지나면 낡음으로 닫는다.
   - 확인 뒤 폰 대화 중이면 첫 명령을 미룬다. 대화가 끝나고 10초 뒤 보낸다. 30초 넘게 막히면 「폰을 쓰는 중이라 실행하지 않아요」로 닫는다.
   - 보내는 peek 명령에 `near_m`·`view`가 실리고, 폰 판본이 4다.
@@ -473,7 +532,7 @@ export const PEEK_TEXT = {
 
 **Files:**
 - Modify: `src/act/track/contents.ts`
-  - `idlePeek()`(tick)를 둔다. 정한 것 9의 때에 Task 16과 같은 차례(go → above → seeing → after)를 계획 밖 칸 `TrackCore.idlePeek`(명령 id `peek:<번호>`)로 돈다.
+  - `idlePeek()`(tick)를 둔다. 정한 것 9의 때에 Task 16과 같은 차례(go → above → seeing → after)를 계획 밖 칸 `TrackCore.idlePeek`(명령 id `peek:<번호>`)로 돈다. 보기 지킴을 걸고 푸는 때도 같다.
   - 막는 것이 생기면 거둔다. 막는 것: 계획 시작·만드는 계획·코치·대화·끄기 안내·승인 대기·사람 안 보임·컵 사라짐·확인됨·세대 바뀜.
   - 계획 명령이 그 자리를 덮었으면 지우기를 보내지 않는다.
   - after 뒤에는 칸을 비운다. 모르면 그 컵·세대를 `retryMs` 동안 다시 가지 않는다(보기 기록만 남음).
@@ -505,17 +564,19 @@ export function aboveGoal(position, target, backM, upM) { /* { goal, yaw, pitchD
 ```
 
 - Modify: `ui/src/phone/core/video-ar.js`
-  - `NEAR_WALK = 0.8`, `ABOVE = { backM: 0.15, upM: 0.4 }`.
+  - `NEAR_WALK = 0.8`, `ABOVE = { backM: 0.02, upM: 0.4 }`.
+  - 명령 세대 `cmdGen`: 새 명령(맞는 step 칸)·`commandClear`마다 올린다. 반응 타이머와 `swap`은 받을 때 세대를 적어 두고, 타이머가 돌 때와 `next.play()`가 끝났을 때 세대가 다르면 새 영상을 닫고 앞 영상·자세·걷기를 그대로 둔다.
   - 단계 영상으로 바꿀 때 go면 `cmd.near_m`이 있을 때 `min(WALK_STOP_M, near_m × NEAR_WALK)`까지 걷는다. do면 `cmd.view === "above"`일 때 `aboveGoal` 자세로 옮긴다.
   - `commandClear(id)`: 그 명령(id가 없으면 모두)의 예약된 영상 바꾸기 타이머를 지우고 걷기를 멈춘다. 자세는 그대로 둔다.
   - 머리 설명 줄과 갈래 줄에 `영상 모드: 자세 흉내`를 단다.
 - Modify: `ui/src/phone/core/ar.d.ts`(`PhoneAr.commandClear?(id?: string): void`), `ui/src/phone/controller.ts`(`command_clear`를 받으면 `ar.commandClear?.(m.id)`, 영상 갈래 없이)
 - Test: `ui/tests/video-math.test.ts`(또는 있는 영상 수학 시험), `ui/tests/video-ar.test.ts`
-  - `aboveGoal`: 수평 0.15m·위 0.4m, 숙인 각 69°다.
+  - `aboveGoal`: 수평 0.02m·위 0.4m, 숙인 각 87°다. 바라보는 쪽은 지금 자리에서 컵 쪽이다.
   - go `near_m` 0.5면 0.4m 앞에서 멈춘다. 없으면 0.6m다.
   - do `view` above면 그 자세다. 없으면 그 자리에서 바라본다.
   - 단계 영상 `step=go:cup:a.mp4`·`step=do:cup:b.mp4`가 두 명령에 하나씩 바뀐다.
   - go 명령을 받고 반응 시간 전에 `command_clear`가 오면 영상을 바꾸지 않고 걷지 않는다. 걷는 중에 오면 그 자리에 멈춘다.
+  - 타이머가 돌아 새 영상 `play()`를 기다리는 중에 `command_clear`가 오면, 재생이 끝난 뒤 새 영상을 닫고 앞 영상이 그대로 돌며 걷지 않는다(재생을 늦게 끝내는 가짜 영상으로 본다).
   - controller가 `command_clear`를 AR에 넘긴다(`ui/tests/phone-mode-parity.test.ts`·`tests/video-mode-parity.test.ts` PASS).
 
 
@@ -553,6 +614,11 @@ export function aboveGoal(position, target, backM, upM) { /* { goal, yaw, pitchD
   6. 준비·확인 시간 조건 한곳 → 정한 것 5, Task 14·15.
   7. 폰 판본 4 → 정한 것 10, Task 16.
   8. 지우기 때 영상 전환·걷기 취소 → 정한 것 10, Task 18.
+- Codex 재검토(fe45d93, P2 넷):
+  1. 대상 크기와 바닥 보임 → 정한 것 3(잰 크기·모르면 좁고 깊은 컵)·7(바닥이나 수면이 보일 때만 값), Task 14·15.
+  2. 같은 원본 위 > 잘라 봄 > 전체 → 정한 것 6, Task 14.
+  3. 보기 지킴과 확인된 관측 지킴 구별, 차례가 끝나면 풂 → 정한 것 14, Task 14·16·17.
+  4. 재생을 기다리는 전환도 세대로 무효 → 정한 것 10, Task 18.
 - 정한 것 9(계획 밖): Task 17.
 - 정한 것 10(영상 모드): Task 16(`near_m`·`view`), 18.
 - 정한 것 11·12(검사): Task 13.
