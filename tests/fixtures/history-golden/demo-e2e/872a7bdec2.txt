@@ -1,13 +1,13 @@
 # 2 TV 보는 사람이 「아 덥다」라고 하면 폰 답은 빈 글이고 말 요청 에이전트는 가전 도구를 부르지 않으며, 판단이 거실 에어컨을 켠다
-[판단·실행·답] execution 대기
 [판단·실행·답] decision 에어컨 켜기 valid
 [판단·실행·답] execution 판단
 [판단·실행·답] execution 계획
 [판단·실행·답] execution 실행 중
 [판단·실행·답] execution 완료
 [집 상태] world VLM: 집
-[집 상태] world 들은 말 있음
 [집 상태] world 거실·복도 에어컨 켜짐
+[들은 말] world 들은 말 있음
 [가전] device stand_ac_dc22b8f3 power "off"→"on"
-[있음] decision 대기
+[있음] decision 대기 valid
+[있음] execution 대기
 [있음] vlm

@@ -1,18 +1,9 @@
 # 컵이 둘이면 놓기를 끝낸 컵(VLM이 「식탁 위」로 봐도)은 다음 계획 입력에 「이미 치움」으로 가고, 다음 계획은 다른 컵으로 실행 전 검사를 지나 첫 명령을 보낸다
-[판단·실행·답] execution 대기
 [판단·실행·답] decision 컵 치우기 valid
 [판단·실행·답] execution 판단
 [판단·실행·답] execution 계획
 [판단·실행·답] execution 실행 중
-[판단·실행·답] feedback 완료 · 부탁: 식탁으로 가 주세요
-[판단·실행·답] feedback 완료 · 부탁: 컵을 들어 주세요
-[판단·실행·답] feedback 완료 · 부탁: 싱크대로 가 주세요
 [판단·실행·답] execution 완료
-[판단·실행·답] feedback 완료 · 부탁: 컵을 싱크대에 넣어 주세요
-[판단·실행·답] decision 컵 치우기 valid
-[판단·실행·답] execution 방금 계획한 일이라 잠시 뒤 다시 봄
-[판단·실행·답] decision 컵 치우기 valid
-[판단·실행·답] execution 방금 계획한 일이라 잠시 뒤 다시 봄
 [판단·실행·답] decision 컵 치우기 valid
 [판단·실행·답] execution 판단
 [판단·실행·답] execution 계획
@@ -20,5 +11,8 @@
 [집 상태] world VLM: 컵 둘
 [집 상태] detection 컵 cup_1 보임
 [집 상태] detection 컵 cup_2 보임
-[있음] decision 대기
+[있음] decision 대기 valid
+[있음] decision 컵 치우기 valid
+[있음] execution 대기
+[있음] execution 방금 계획한 일이라 잠시 뒤 다시 봄
 [있음] vlm

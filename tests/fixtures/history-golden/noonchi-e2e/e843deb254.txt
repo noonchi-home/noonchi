@@ -1,11 +1,8 @@
 # 관찰부터 단계 명령·실행 결과까지 한 흐름으로 돌고 기록·대시보드에 남는다
-[판단·실행·답] execution 대기
 [판단·실행·답] decision 컵 치우기 valid
 [판단·실행·답] execution 판단
 [판단·실행·답] execution 계획
 [판단·실행·답] execution 실행 중
-[판단·실행·답] feedback 완료 · 부탁: 식탁으로 가 주세요
-[판단·실행·답] feedback 다 했어 · 부탁: 싱크대로 가 주세요
 [판단·실행·답] execution 완료
 [판단·실행·답] decision 컵 치우기 valid
 [판단·실행·답] execution 판단
@@ -18,5 +15,6 @@
 [집 상태] world 컵 cup_1 손에 있음
 [집 상태] world 컵 cup_1 싱크대 안
 [집 상태] world 컵 cup_1 식탁 위
-[있음] decision 대기
+[있음] decision 대기 valid
+[있음] execution 대기
 [있음] vlm

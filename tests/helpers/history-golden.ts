@@ -1,18 +1,23 @@
 // 기록 DB 같음 시험(stage-queue 계획 정한 것 10, 묶음 1 Task 5): 반성이 읽는 종류(DAY_KINDS·HABIT_KINDS)의 줄을
 // 시각과 상관없는 모양으로 뽑아, 지금 방식이 남긴 정답(tests/fixtures/history-golden)과 견준다.
 // 묶음 2·3에서 단계 사이를 통로로 바꿔도 같은 e2e 장면이 같은 줄을 같은 차례로 남기는지 본다.
-// 모양: 흐름마다(판단·실행·사용자 답 / 집 상태 / 가전) 시각 차례로 줄을 늘어놓고, 바로 이어진 같은 줄만 하나로 본다(다른 사건 사이의 되풀이는 남긴다).
-// 흐름끼리의 앞뒤는 프레임·판단 주기에 따라 섞여서 보지 않는다. 판단 주기의 대기, VLM·YOLO 프레임 줄은 몇 번이든 있는지만 본다.
+// 모양: 흐름마다(판단·실행·답 / 집 상태 / 들은 말 / 가전) 시각 차례로 줄을 늘어놓고, 바로 이어진 같은 줄만 하나로 본다(다른 사건 사이의 되풀이는 남긴다).
+// 정해지지 않는 차이만 뺀다(근거는 각 규칙 옆):
+// - 흐름끼리의 앞뒤: 영상 프레임·VLM 답·폰 말·가전이 서로 다른 시계로 와서 섞이는 차례가 실행마다 다르다.
+// - 주기 판단과 그 처리 메모(대기·같은 행동·기다리는 동안·앞선 판단·방금 계획함·판단 실패·가까이 본 뒤 다시 판단): 판단은 5초 주기(PAM_PERIOD_MS)라
+//   장면 단계와 상관없는 시각에 와서 몇 번·어디에 끼는지가 실행마다 다르다(src/brain/decide.ts tick, src/act/track/start.ts onDecision). 있는지만 본다.
+//   계획을 시작한 판단(그 판단 id의 실행 줄 「판단」이 있는 것)은 차례에 남긴다.
+// - 사람 단계의 「완료」 답: 그 단계는 비전(World State)·폰 위치로도 끝나서(CLAUDE.md 단계 확인 규칙), 사람이 먼저 눌렀는지 비전이 먼저 봤는지에 따라
+//   완료 답 줄이 있거나 없다(2026-11-18 전자레인지 장면 4번 문 닫기: 세 번 중 한 번은 VLM이 먼저 닫힘을 봐 완료 줄이 없었다). 뺀다.
+//   승인·거절·질문 답처럼 사람만 정하는 답은 차례에 남긴다.
 import { createHash } from "node:crypto";
 import { expect } from "vitest";
 import type { HistoryDb } from "../../src/brain/history/db.js";
 import type { HistoryRow } from "../../src/contract/history.js";
+import { EXEC_TEXT } from "../../src/act/labels.js";
 
-const STREAMS: { name: string; kinds: readonly HistoryRow["kind"][] }[] = [
-  { name: "판단·실행·답", kinds: ["decision", "execution", "feedback"] },
-  { name: "집 상태", kinds: ["detection", "world"] },
-  { name: "가전", kinds: ["device"] },
-];
+/** 주기 판단을 받아 처리한 메모(계획을 시작하지 않은 판단의 실행 줄). */
+const DECISION_NOTES = new Set<string>([EXEC_TEXT.wait, EXEC_TEXT.same, EXEC_TEXT.busy, EXEC_TEXT.late, EXEC_TEXT.held, EXEC_TEXT.decisionFailed, EXEC_TEXT.closerNewer]);
 
 const lineOf = (r: HistoryRow): string => {
   const d = (r.data ?? {}) as Record<string, unknown>;
@@ -22,23 +27,37 @@ const lineOf = (r: HistoryRow): string => {
     default: return `${r.kind} ${r.text}`;
   }
 };
-const isWait = (r: HistoryRow) => r.kind === "decision" && (r.data as { status?: string } | null)?.status === "valid" && r.text === "대기";
+
+const ordered = (name: string, rows: HistoryRow[]): string[] => {
+  const out: string[] = [];
+  let last = "";
+  for (const r of rows) {
+    const line = `[${name}] ${lineOf(r)}`;
+    if (line !== last) out.push(line);
+    last = line;
+  }
+  return out;
+};
 
 /** 반성용 줄의 모양: 흐름마다 시각 차례(바로 이어진 같은 줄은 하나), 끝에 있는지만 보는 줄. */
 export function reflectionRows(db: HistoryDb): string[] {
-  const out: string[] = [];
-  for (const s of STREAMS) {
-    const rows = db.list({ kinds: [...s.kinds], limit: Number.MAX_SAFE_INTEGER }).filter((r) => !isWait(r));
-    let last = "";
-    for (const r of rows) {
-      const line = `[${s.name}] ${lineOf(r)}`;
-      if (line !== last) out.push(line);
-      last = line;
-    }
-  }
-  if (db.list({ kinds: ["decision"], limit: Number.MAX_SAFE_INTEGER }).some(isWait)) out.push("[있음] decision 대기");
-  for (const kind of ["vlm", "yolo"] as const) if (db.list({ kinds: [kind], limit: 1 }).length) out.push(`[있음] ${kind}`);
-  return out;
+  const all = (kinds: HistoryRow["kind"][]) => db.list({ kinds, limit: Number.MAX_SAFE_INTEGER });
+  const acted = all(["decision", "execution", "feedback"]);
+  const started = new Set(acted.filter((r) => r.kind === "execution" && r.text === EXEC_TEXT.decided).map((r) => r.subject));
+  const periodic = (r: HistoryRow) =>
+    (r.kind === "decision" && !started.has(`plan:${r.subject}`)) || (r.kind === "execution" && DECISION_NOTES.has(r.text));
+  const doneAnswer = (r: HistoryRow) => r.kind === "feedback" && (r.data as { choice?: string } | null)?.choice === "done";
+  const world = all(["detection", "world"]);
+  const heard = (r: HistoryRow) => (r.data as { kind?: string } | null)?.kind === "heard";
+  const out = [
+    ...ordered("판단·실행·답", acted.filter((r) => !periodic(r) && !doneAnswer(r))),
+    ...ordered("집 상태", world.filter((r) => !heard(r))),
+    ...ordered("들은 말", world.filter(heard)),
+    ...ordered("가전", all(["device"])),
+  ];
+  const seen = new Set(acted.filter(periodic).map((r) => `[있음] ${lineOf(r)}`));
+  for (const kind of ["vlm", "yolo"] as const) if (all([kind]).length) seen.add(`[있음] ${kind}`);
+  return [...out, ...[...seen].sort()];
 }
 
 /** 시험 하나의 기록 DB 모양(서버를 닫기 전에 reflectionRows로 뽑은 것)을 그 시험의 정답 파일과 견준다(없으면 쓴다, -u면 고쳐 쓴다).

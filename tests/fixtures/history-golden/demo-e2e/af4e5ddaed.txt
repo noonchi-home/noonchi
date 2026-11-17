@@ -1,6 +1,6 @@
 # 3 같은 장면에서 말이 없으면 에어컨을 켜지 않는다(대조)
-[판단·실행·답] execution 대기
 [집 상태] world VLM: 집
 [집 상태] detection 사람 보임
-[있음] decision 대기
+[있음] decision 대기 valid
+[있음] execution 대기
 [있음] vlm

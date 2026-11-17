@@ -1,39 +1,33 @@
 # 4 합성 7일(관찰만)을 날마다 반성하면 날마다 다음 날부터 쓰고 7일 판본은 오늘부터다. 라면 습관은 빠지고 요리 규칙은 seed 글이며, 말없이 TV를 보면 배운 습관으로 에어컨을 켠다
-[판단·실행·답] execution 대기
 [판단·실행·답] decision 컵 치우기 valid
 [판단·실행·답] execution 판단
 [판단·실행·답] execution 계획
 [판단·실행·답] execution 사용자가 거절한 일
 [판단·실행·답] feedback 거절 · 질문: 컵 치우기를 할까요?
-[판단·실행·답] execution 대기
 [판단·실행·답] decision 컵 치우기 valid
 [판단·실행·답] execution 판단
 [판단·실행·답] execution 계획
 [판단·실행·답] execution 실행 중
 [판단·실행·답] feedback 승인 · 질문: 컵 치우기를 할까요?
-[판단·실행·답] feedback 완료 · 부탁: 싱크대로 가 주세요
 [판단·실행·답] execution 완료
-[판단·실행·답] execution 대기
+[판단·실행·답] decision 대기 valid
 [판단·실행·답] decision 컵 치우기 valid
 [판단·실행·답] execution 판단
 [판단·실행·답] execution 계획
 [판단·실행·답] execution 실행 중
 [판단·실행·답] execution 완료
-[판단·실행·답] decision 에어컨 켜기 valid
-[판단·실행·답] execution 대기
 [판단·실행·답] decision 사용자에게 물어보기 valid
 [판단·실행·답] execution 판단
 [판단·실행·답] execution 계획
 [판단·실행·답] execution 실행 중
 [판단·실행·답] execution 완료: 그대로 둬요
 [판단·실행·답] feedback 그대로 둬요. 밤에는 묻지 마세요 · 질문: 컵을 치울까요?
-[판단·실행·답] execution 대기
 [판단·실행·답] decision 컵 치우기 valid
 [판단·실행·답] execution 판단
 [판단·실행·답] execution 계획
 [판단·실행·답] execution 실행 중
 [판단·실행·답] execution 완료
-[판단·실행·답] execution 대기
+[판단·실행·답] decision 대기 valid
 [판단·실행·답] decision 사용자에게 물어보기 valid
 [판단·실행·답] execution 판단
 [판단·실행·답] execution 계획
@@ -45,74 +39,71 @@
 [판단·실행·답] execution 계획
 [판단·실행·답] execution 실행 중
 [판단·실행·답] execution 완료
-[판단·실행·답] execution 대기
-[판단·실행·답] decision 컵 치우기 valid
-[판단·실행·답] execution 판단
-[판단·실행·답] execution 계획
-[판단·실행·답] execution 실행 중
-[판단·실행·답] feedback 다 했어 · 부탁: 식탁으로 가 주세요
-[판단·실행·답] execution 완료
-[판단·실행·답] execution 대기
+[판단·실행·답] decision 대기 valid
 [판단·실행·답] decision 컵 치우기 valid
 [판단·실행·답] execution 판단
 [판단·실행·답] execution 계획
 [판단·실행·답] execution 실행 중
 [판단·실행·답] execution 완료
-[판단·실행·답] execution 대기
+[판단·실행·답] decision 대기 valid
 [판단·실행·답] decision 컵 치우기 valid
 [판단·실행·답] execution 판단
 [판단·실행·답] execution 계획
 [판단·실행·답] execution 실행 중
 [판단·실행·답] execution 완료
-[판단·실행·답] execution 대기
 [판단·실행·답] decision 컵 치우기 valid
 [판단·실행·답] execution 판단
 [판단·실행·답] execution 계획
 [판단·실행·답] execution 실행 중
 [판단·실행·답] execution 완료
-[판단·실행·답] execution 대기
+[판단·실행·답] decision 대기 valid
 [판단·실행·답] decision 컵 치우기 valid
 [판단·실행·답] execution 판단
 [판단·실행·답] execution 계획
 [판단·실행·답] execution 실행 중
 [판단·실행·답] execution 완료
-[판단·실행·답] execution 대기
+[판단·실행·답] decision 대기 valid
 [판단·실행·답] decision 컵 치우기 valid
 [판단·실행·답] execution 판단
 [판단·실행·답] execution 계획
 [판단·실행·답] execution 실행 중
 [판단·실행·답] execution 완료
-[판단·실행·답] execution 대기
 [판단·실행·답] decision 컵 치우기 valid
 [판단·실행·답] execution 판단
 [판단·실행·답] execution 계획
 [판단·실행·답] execution 실행 중
 [판단·실행·답] execution 완료
-[판단·실행·답] execution 대기
+[판단·실행·답] decision 대기 valid
 [판단·실행·답] decision 컵 치우기 valid
 [판단·실행·답] execution 판단
 [판단·실행·답] execution 계획
 [판단·실행·답] execution 실행 중
 [판단·실행·답] execution 완료
-[판단·실행·답] execution 대기
+[판단·실행·답] decision 대기 valid
 [판단·실행·답] decision 컵 치우기 valid
 [판단·실행·답] execution 판단
 [판단·실행·답] execution 계획
 [판단·실행·답] execution 실행 중
 [판단·실행·답] execution 완료
-[판단·실행·답] execution 대기
+[판단·실행·답] decision 대기 valid
 [판단·실행·답] decision 컵 치우기 valid
 [판단·실행·답] execution 판단
 [판단·실행·답] execution 계획
 [판단·실행·답] execution 실행 중
 [판단·실행·답] execution 완료
-[판단·실행·답] execution 대기
+[판단·실행·답] decision 대기 valid
 [판단·실행·답] decision 컵 치우기 valid
 [판단·실행·답] execution 판단
 [판단·실행·답] execution 계획
 [판단·실행·답] execution 실행 중
 [판단·실행·답] execution 완료
-[판단·실행·답] execution 대기
+[판단·실행·답] decision 대기 valid
+[판단·실행·답] decision 컵 치우기 valid
+[판단·실행·답] execution 판단
+[판단·실행·답] execution 계획
+[판단·실행·답] execution 실행 중
+[판단·실행·답] execution 완료
+[판단·실행·답] decision 대기 valid
 [판단·실행·답] decision 에어컨 켜기 valid
 [판단·실행·답] execution 판단
 [판단·실행·답] execution 계획
@@ -189,7 +180,6 @@
 [집 상태] detection 사람 보임
 [집 상태] world VLM: A person sits on the sofa watching TV.
 [집 상태] world 사람 앉아 있음
-[집 상태] world 사람이 말함: 「아 덥다」
 [집 상태] detection 컵 cup_5 보임 · 거실·복도 테이블 위
 [집 상태] world VLM: A person sits on the sofa holding a cup of tea.
 [집 상태] world 사람 물건을 들고 있음
@@ -636,6 +626,7 @@
 [집 상태] world VLM: 집
 [집 상태] detection 사람 보임
 [집 상태] world 거실·복도 에어컨 켜짐
+[들은 말] world 사람이 말함: 「아 덥다」
 [가전] device wall_ac_703d00ba power "on"→"off"
 [가전] device stand_ac_dc22b8f3 power "off"→"on"
 [가전] device stand_ac_dc22b8f3 power "on"→"off"
@@ -667,5 +658,7 @@
 [가전] device stand_ac_dc22b8f3 power "on"→"off"
 [가전] device wall_ac_703d00ba power "off"→"on"
 [가전] device stand_ac_dc22b8f3 power "off"→"on"
-[있음] decision 대기
+[있음] decision 대기 valid
+[있음] decision 에어컨 켜기 valid
+[있음] execution 대기
 [있음] vlm
