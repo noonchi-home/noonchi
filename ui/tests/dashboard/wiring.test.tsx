@@ -63,12 +63,11 @@ const pending: ServerMessage = {
 
 const called = (path: string) => vi.mocked(fetch).mock.calls.some((c) => c[0] === path);
 const phonePane = () => screen.getByRole("region", { name: "폰 카메라" });
-const thought = () => document.querySelector<HTMLElement>("[data-thought]")!;
-/** 지금 생각의 칩 둘(이름표 칩 「본 것」·「그래서」는 빼고). */
-const chipTexts = () => thought().querySelectorAll("[data-thought-chips] [data-slot=status]");
-/** 생각 말풍선에 보이는 메시지 글(오래된 것부터). */
-const messageTexts = () => [...thought().querySelectorAll("[data-thought-message]")].map((l) => l.textContent);
-const sayLine = () => [...document.querySelectorAll<HTMLElement>("[data-say-line]")].find((p) => !p.hasAttribute("aria-hidden"))!;
+const talk = () => document.querySelector<HTMLElement>("[data-talk]")!;
+/** 메시지 상자에 보이는 줄 글(오래된 것부터). */
+const messageTexts = () => [...talk().querySelectorAll("[data-talk-line]")].map((l) => l.textContent);
+/** 메시지 상자 최신 줄. */
+const sayLine = () => talk().querySelector<HTMLElement>('[data-talk-line="new"]')!;
 
 /** 대시보드를 그리고 health·소켓이 붙을 때까지 기다린 뒤 연결을 연다. */
 async function mount(eye: boolean) {
@@ -117,37 +116,25 @@ describe("대시보드 자료 연결", () => {
     expect(sayLine()).toHaveTextContent("식탁을 보고 있어요.");
   });
 
-  it("판단 없이 반성 사건만 와도 생각 말풍선이 바뀐다: 새로 배운 규칙이면 「습관 · 새로 배움」", async () => {
+  it("판단 없이 반성 사건만 와도 메시지 상자에 그 규칙 두 줄이 쌓인다. 칩은 없다", async () => {
     await mount(false);
-    expect(thought()).toHaveAttribute("data-thought", "hidden");
+    expect(messageTexts()).toEqual([]);
     const rule = { state: "watching_tv", trigger: "사용자가 소파에 앉아 TV를 보기 시작한다.", action: "에어컨 켜기" };
     send([{ type: "brain", replay: true, event: { type: "reflection", at_ms: 5, day: "2026-11-13", ok: true, version: 3, applies_day: "2026-11-14", text: "반성 완료", learned: [rule], active: [rule], dropped: [] } }]);
-    expect(thought()).toHaveAttribute("data-thought", "shown");
-    expect([...chipTexts()].map((c) => c.textContent)).toEqual(["습관 · 새로 배움", "눈치 · 에어컨 켜기"]);
     expect(messageTexts()).toEqual(["사용자가 소파에 앉아 TV를 보기 시작한다", "새로 배운 습관이에요"]);
+    expect(document.querySelector("[data-thought], [data-thought-chips]")).toBeNull();
   });
 
-  it("서버 판단이 행동을 고르면 생각 말풍선에 쌓인 메시지와 상태·판단 칩을 보이고, 대기 판단이 오면 메시지는 남고 칩이 없어진다", async () => {
+  it("/events thought 메시지와 말이 받은 차례로 쌓이고 최근 두 줄만 보인다. 원래 생각은 보이지 않는다", async () => {
     await mount(false);
-    send(moment(2));
-    expect(thought()).toHaveAttribute("data-thought", "shown");
-    expect(messageTexts()).toEqual(["식탁 위 컵을 지켜보고 있어요", "사람이 컵을 두고 자리를 떠났어요", "치우는 습관이라 컵을 치울게요"]);
-    expect([...chipTexts()].map((c) => c.textContent)).toEqual(["상태 · 컵을 두고 자리를 뜸", "눈치 · 컵 치우기"]);
-    send(moment(0));
-    expect(thought()).toHaveAttribute("data-thought", "shown");
-    expect([...chipTexts()]).toEqual([]);
-  });
-
-  it("판단만 오고 메시지가 없으면 숨긴다. /events thought 메시지가 오면 아래에 쌓이고 최근 3개만 보인다. 원래 생각은 보이지 않는다", async () => {
-    await mount(false);
-    send(moment(2).filter((m) => m.type !== "thought"));
-    expect(thought()).toHaveAttribute("data-thought", "hidden");
+    send(moment(2).filter((m) => m.type !== "thought" && m.type !== "say"));
+    expect(messageTexts()).toEqual([]);
     const msg = (id: string, at: number, text: string) => ({ id, text, at_ms: at, decision: "pam-1" });
     send([{ type: "thought", messages: [msg("a", 1, "사람이 떠났어요"), msg("b", 2, "컵이 남아 있어요")] }]);
     expect(messageTexts()).toEqual(["사람이 떠났어요", "컵이 남아 있어요"]);
     send([{ type: "thought", messages: [msg("c", 3, "치우는 습관이 있어요"), msg("d", 4, "컵을 치울게요")] }]);
-    await waitFor(() => expect(messageTexts()).toEqual(["컵이 남아 있어요", "치우는 습관이 있어요", "컵을 치울게요"]));
-    expect(thought()).not.toHaveTextContent("사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.");
+    await waitFor(() => expect(messageTexts()).toEqual(["치우는 습관이 있어요", "컵을 치울게요"]));
+    expect(talk()).not.toHaveTextContent("사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.");
   });
 
   it("다시 연결되면(hello) health를 다시 받아 날짜·시간 칩이 새 서버 기록 시간대를 쓴다(서버를 다른 시간대로 다시 띄운 때)", async () => {
@@ -184,7 +171,7 @@ describe("대시보드 자료 연결", () => {
     // 물체 모양(seen)은 600ms 넘게 안 오면 지운다: 새 seen이 오면 마스크 canvas와 컵 이름표가 보인다. 네모 상자는 없다
     send(moment(2));
     expect(phonePane().querySelector("canvas[data-masks]")).not.toBeNull();
-    expect([...phonePane().querySelectorAll("[data-detection-label]")].map((t) => t.textContent)).toEqual(["컵 0.95"]);
+    expect([...phonePane().querySelectorAll("[data-detection-label]")].map((t) => t.textContent)).toEqual(["컵"]);
     expect(phonePane().querySelector('[data-detection], [data-slot="bounding-box"]')).toBeNull();
   });
 
@@ -233,14 +220,13 @@ describe("가짜 단계(?debug=steps)", () => {
     return render(<Dashboard />);
   };
 
-  it("&step=2면 서버 자료 없이 그 순간이다: 진행도·말·대시보드 폰 칸 눈 그림·생각 말풍선·컵 이름표", async () => {
+  it("&step=2면 서버 자료 없이 그 순간이다: 진행도·말·대시보드 폰 칸 눈 그림·메시지 상자·컵 이름표", async () => {
     open("&step=2");
     expect(document.querySelector("[data-progress]")).toHaveTextContent("2/4 · 컵 집기");
     expect(sayLine()).toHaveTextContent("컵을 들라고 했어요.");
     const img = phonePane().querySelector<HTMLImageElement>('img[alt="폰 카메라 영상"]')!;
     expect(img.getAttribute("src")).toBe("/debug-eye/eye-table-near.webp");
-    expect(thought().querySelector("[data-thought-action]")).toHaveTextContent("눈치 · 컵 치우기");
-    expect(thought().querySelector("[data-thought-state]")).toHaveTextContent("상태 · 컵을 두고 자리를 뜸");
+    expect(talk().querySelector("[data-talk-who]")).toHaveTextContent("눈치");
     expect([...phonePane().querySelectorAll("[data-detection-label]")].map((t) => t.textContent?.split(" ")[0])).toEqual(["컵"]);
     expect(phonePane().querySelector("canvas[data-masks]")).not.toBeNull();
   });

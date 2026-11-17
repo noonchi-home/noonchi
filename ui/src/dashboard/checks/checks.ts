@@ -4,6 +4,9 @@
 // 계획: 열린 판단 계획의 집기 대상 물건·가전마다 「확인」 한 줄. 계획이 끝나면 지운다.
 import type { AgentAction, BrainLog, PendingView, ServerMessage } from "../../../../src/contract/events.ts";
 import type { PlanView } from "../../../../src/contract/plan.ts";
+import type { WorldView } from "../../../../src/contract/world.ts";
+import { STATE_TEXT } from "../../../../src/world/labels.ts";
+import { CLASSES } from "../../../../src/world/vocab.ts";
 
 export type CheckVerb = "확인" | "바꿈" | "승인 대기" | "실패" | "취소" | "지켜봄";
 
@@ -16,7 +19,10 @@ export type Check = {
   /** 물건 id. 두뇌 줄은 checkList가 식탁 id를 채운다. */
   objectId?: string;
   verb: CheckVerb;
+  /** 관찰 기록 YOLO 글(확신 숫자 포함, 개발용 보기에서만 보인다). */
   note?: string;
+  /** 로봇이 믿는 상태 한 줄(숫자 없음, beliefOf). */
+  belief?: string;
   at: number;
   /** 승인 대기 표(취소 알림은 표만 온다). */
   token?: string;
@@ -30,6 +36,8 @@ export interface ChecksState {
   brainAt: number | null;
   /** 진행 중인 요청의 세션. null이면 다음 에이전트 이벤트가 새 요청이다. */
   open: string | null;
+  /** 마지막 World State(식탁 줄의 믿는 상태를 쓴다). */
+  world?: WorldView | null;
 }
 
 export type ChecksEvent =
@@ -76,10 +84,33 @@ function noteOf(e: BrainLog): string | null {
   return e.type === "observe" ? e.yolo : null;
 }
 
+/** 화면 이름 → 낱말 표 종류(YOLO 글은 화면 이름으로 온다). */
+const CLASS_OF_LABEL: Record<string, string> = Object.fromEntries(Object.entries(CLASSES).map(([k, c]) => [c.label, k]));
+
+/** 식탁 줄의 믿는 상태: YOLO 글에 나온 종류마다 「사람 마시는 중」(하는 일, 없으면 자세, 그것도 없으면 보임), 「컵 내용물 있음」(확인된 물건의 안·자리, 없으면 보임),
+ *  확인된 물건이 없는 종류는 「컵 확인 중」. 숫자는 쓰지 않는다. YOLO 글이 없거나 감지가 없으면 undefined. */
+export function beliefOf(yolo: string | undefined, world: WorldView | null | undefined): string | undefined {
+  const labels = [...new Set((yolo ?? "").split("·").map((p) => p.trim().split(/\s+/)[0] ?? "").filter((l) => CLASS_OF_LABEL[l]))];
+  if (!labels.length) return undefined;
+  return labels.map((label) => {
+    const cls = CLASS_OF_LABEL[label]!;
+    if (cls === "person") {
+      const f = world?.person.facts;
+      const v = f?.activity?.value ?? f?.posture?.value;
+      return `${label} ${v ? STATE_TEXT[v] ?? v : "보임"}`;
+    }
+    const o = (world?.objects ?? []).filter((x) => x.cls === cls && x.status !== "gone").sort((a, b) => b.last_seen_ms - a.last_seen_ms)[0];
+    if (!o) return `${label} 확인 중`;
+    const v = o.facts.contents?.value ?? o.facts.place?.value;
+    return `${label} ${v ? STATE_TEXT[v] ?? v : "보임"}`;
+  }).join(" · ");
+}
+
 function onBrain(s: ChecksState, e: BrainLog, now: number): ChecksState {
   const prev = s.brain[0];
   const note = noteOf(e) ?? prev?.note;
-  return { ...s, brainAt: now, brain: [{ key: "brain", order: 1, source: "brain", verb: "지켜봄", ...(note ? { note } : {}), at: now }] };
+  const belief = beliefOf(note, s.world);
+  return { ...s, brainAt: now, brain: [{ key: "brain", order: 1, source: "brain", verb: "지켜봄", ...(note ? { note } : {}), ...(belief ? { belief } : {}), at: now }] };
 }
 
 function onAgent(s: ChecksState, m: Extract<ServerMessage, { type: "agent" }>, now: number): ChecksState {
@@ -131,6 +162,12 @@ export function checksReducer(s: ChecksState, e: ChecksEvent): ChecksState {
   }
   if (m.type === "brain") return m.replay ? s : onBrain(s, m.event, e.now);
   if (m.type === "plan") return onPlan(s, m.plan, e.now);
+  if (m.type === "world") {
+    // 식탁 줄이 있으면 믿는 상태를 새 World State로 다시 쓴다
+    const row = s.brain[0];
+    const belief = row ? beliefOf(row.note, m.world) : undefined;
+    return { ...s, world: m.world, ...(row ? { brain: [{ ...row, ...(belief ? { belief } : { belief: undefined }) }] } : {}) };
+  }
   return s;
 }
 

@@ -29,7 +29,7 @@ export interface PageLayout {
   /** 지도 카메라가 그 단계에 중요한 것을 맞출 칸(진행도 아래·말풍선 카드 위·미니맵과 생각 말풍선 왼쪽)과, 그 칸의 트윈 기준 여백. */
   focus: Rect;
   camPad: Pad;
-  /** 지도 위에 얹어 지도를 가리는 자리: [말풍선 카드, 마스코트 단추(초점 고리 포함), 미니맵, 생각 말풍선과 꼬리]. */
+  /** 지도 위에 얹어 지도를 가리는 자리: [메시지 상자, 마스코트 단추(초점 고리 포함), 미니맵]. */
   blocked: Rect[];
   /** 비전 미니맵(대시보드 폰 칸): 트윈 오른쪽 위. 너비는 화면 너비 몫이고 높이는 영상 비율을 따른다(영상이 없으면 16:9, 세로 영상은 높이 상한까지). */
   video: Rect;
@@ -41,11 +41,8 @@ export interface PageLayout {
   image: Rect;
   /** 가슴 LG 표시 원을 담는 네모(단추 왼쪽 위 기준 px). 그림을 뒤집을 때 이 원만 다시 뒤집어 바로 읽히게 한다. */
   logo: Rect;
-  /** 말풍선 카드(트윈 아래쪽). 높이는 말풍선 글(Item say text-base, 줄 24px) 두 줄 + 위아래 여백·테두리 26px로 정해져 있다. */
+  /** 메시지 상자(트윈 아래쪽, 마스코트 왼쪽). 높이는 TALK_H로 정해져 있다. */
   bubble: Rect;
-  /** 생각 말풍선(마스코트 위, 크기 THOUGHT)과 꼬리 점 둘(말풍선 쪽 큰 점, 마스코트 쪽 작은 점). */
-  thought: Rect;
-  tail: Rect[];
 }
 
 /** 이 너비부터 hub1920 토큰(여백·글 크기). tokens.css의 @media (min-width: 1680px)와 같다. */
@@ -55,7 +52,7 @@ export const WIDE = 1680;
 export const MINIMAP_SHARE = 320 / 1280;
 /** 영상이 없을 때(연결 QR·빈 칸) 미니맵 비율(가로/세로). */
 export const MINIMAP_ASPECT = 16 / 9;
-/** 미니맵 높이 상한: 트윈 칸 높이에 곱하는 몫. 세로 영상이 와도 칸이 이보다 길어지지 않고, 그때만 영상을 contain으로 넣어 양옆이 빈다. 생각 말풍선 위 사이(gap)도 넘지 않는다. */
+/** 미니맵 높이 상한: 트윈 칸 높이에 곱하는 몫. 세로 영상이 와도 칸이 이보다 길어지지 않고, 그때만 영상을 contain으로 넣어 양옆이 빈다. 마스코트 위 사이(gap)도 넘지 않는다. */
 export const MINIMAP_MAX_SHARE = 0.5;
 /** 영상 비율이 지금 비율과 이 몫 넘게 다를 때만 미니맵 비율을 바꾼다(프레임 크기가 1px씩 흔들려도 칸이 떨리지 않게). */
 export const ASPECT_STEP = 0.02;
@@ -66,15 +63,6 @@ export function nextAspect(now: number, video: BoxSize | null): number {
   const next = video.width / video.height;
   return now > 0 && Math.abs(next / now - 1) <= ASPECT_STEP ? now : next;
 }
-/** 생각 말풍선 크기(px). 화면 크기·글 길이·메시지 수와 상관없다.
- *  높이: ThoughtBubble 위아래 여백(py-2.5) 20 + 테두리 2 + 메시지 목록 THOUGHT_LIST(Animated List 한 줄 메시지 셋) + 사이 8 + 칩 한 줄 26 = 210.
- *  너비: 좌우 여백(px-3.5) 28 + 테두리 2 + 메시지 좌우 여백(px-4) 32 + 테두리 2 + 글 396(한글 14px 28자) = 460. 30자 안팎 메시지가 한 줄에 든다. */
-export const THOUGHT = { width: 460, height: 210 };
-/** 생각 메시지 목록 높이(px): Animated List 항목(text-sm 줄 20 + 위아래 여백 py-3 24 + 테두리 2 = 46) 셋 + 사이(gap-2) 8 둘 = 154. 넘친 위쪽 메시지는 가린다. */
-export const THOUGHT_LIST = 154;
-/** 생각 말풍선 아래 끝에서 마스코트 단추 위 끝까지(px): 꼬리 점 둘(16·10)이 놓인다. */
-const TAIL_ROOM = 36;
-const TAIL = [{ size: 16, dx: -26, top: 4 }, { size: 10, dx: -6, top: 23 }];
 /** 마스코트 단추 둘레 초점 고리(px): Button의 선 2 + 띄움 2. */
 export const RING = 4;
 /** 마우스를 올리거나 초점이 오면 마스코트 그림이 올라오는 만큼(px, group-hover:-translate-y-2). */
@@ -85,10 +73,8 @@ export const MASCOT_SHARE = 0.3;
 const HEAD_ROOM = LIFT + 2;
 /** 부품 원래 글(text-sm 14px)의 줄 높이(px). 화면 너비로 커지지 않는다. */
 export const TEXT_LINE = 20;
-/** 말풍선 카드 글(Item say text-base 16px, 사용자가 허락한 크기)의 줄 높이(px). 화면 너비로 커지지 않는다. */
-export const SAY_LINE = 24;
-/** 말풍선 카드 높이에서 글 두 줄을 뺀 위아래 여백 합(px): Item say py-3(12+12) + 테두리 1+1. */
-const BUBBLE_PAD = 26;
+/** 메시지 상자 높이(px): Item sm 위아래 여백(py-3) 24 + 테두리 2 + 머리 줄(눈치·습관 Status) 24 + 사이 4 + 두 줄(20·20)과 사이 4 + 둘레 여유 6 = 104. 화면 크기·글 길이와 상관없다. */
+export const TALK_H = 104;
 /** 지도 카메라 칸: 위는 할 일 진행도(top-4 16 + 알약 44) 아래 20, 왼쪽은 40, 얹은 것(말풍선 카드·미니맵·생각 말풍선·마스코트)과는 FOCUS_GAP 떨어진다. */
 const FOCUS_TOP = 80;
 const FOCUS_LEFT = 40;
@@ -106,7 +92,7 @@ export function pageLayout(view: BoxSize, mascot: Pick<MascotImage, "width" | "h
   const pad = space.gutter;
   const gap = space.gap;
   if (view.width <= 0 || view.height <= 0) {
-    return { pad, gap, scale: 0, twin: ZERO, focus: ZERO, camPad: { top: 0, right: 0, bottom: 0, left: 0 }, blocked: [], video: ZERO, chipsRight: 0, mascot: ZERO, image: ZERO, logo: ZERO, bubble: ZERO, thought: ZERO, tail: TAIL.map(() => ZERO) };
+    return { pad, gap, scale: 0, twin: ZERO, focus: ZERO, camPad: { top: 0, right: 0, bottom: 0, left: 0 }, blocked: [], video: ZERO, chipsRight: 0, mascot: ZERO, image: ZERO, logo: ZERO, bubble: ZERO };
   }
   // 트윈: 여백 안 화면 전체
   const twin: Rect = { left: pad, top: pad, width: Math.max(0, view.width - 2 * pad), height: Math.max(0, view.height - 2 * pad) };
@@ -117,39 +103,33 @@ export function pageLayout(view: BoxSize, mascot: Pick<MascotImage, "width" | "h
   const mw = (mascot.x1 - mascot.x0) * scale;
   const m: Rect = { left: right(twin) - inset - mw, top: view.height - shown, width: mw, height: shown };
 
-  // 생각 말풍선: 마스코트 위, 오른쪽 끝은 마스코트와 같다. 꼬리 점은 마스코트 가운데 축 위에서 말풍선 쪽으로 올라간다
-  const thought: Rect = { left: right(m) - THOUGHT.width, top: m.top - TAIL_ROOM - THOUGHT.height, ...THOUGHT };
-  const axis = m.left + mw / 2;
-  const tail: Rect[] = TAIL.map((t) => ({ left: axis + t.dx - t.size / 2, top: bottom(thought) + t.top, width: t.size, height: t.size }));
-
-  // 비전 미니맵: 트윈 오른쪽 위. 높이는 너비 ÷ 영상 비율이고 상한(트윈 높이 몫, 생각 말풍선 위 사이)을 넘지 않는다
+  // 비전 미니맵: 트윈 오른쪽 위. 높이는 너비 ÷ 영상 비율이고 상한(트윈 높이 몫, 마스코트 위 사이)을 넘지 않는다
   const videoW = view.width * MINIMAP_SHARE;
   const videoTop = twin.top + inset;
-  const videoMax = Math.max(0, Math.min(twin.height * MINIMAP_MAX_SHARE, thought.top - gap - videoTop));
+  const videoMax = Math.max(0, Math.min(twin.height * MINIMAP_MAX_SHARE, m.top - LIFT - gap - videoTop));
   const video: Rect = { left: right(twin) - inset - videoW, top: videoTop, width: videoW, height: Math.min(videoW / (videoAspect > 0 ? videoAspect : MINIMAP_ASPECT), videoMax) };
 
-  // 말풍선 카드: 트윈 아래쪽 안, 마스코트 왼쪽(초점 고리 밖)에서 사이만큼 띄운다
-  const bubbleH = 2 * SAY_LINE + BUBBLE_PAD;
+  // 메시지 상자: 트윈 아래쪽 안, 마스코트 왼쪽(초점 고리 밖)에서 사이만큼 띄운다(마스코트가 상자 옆에서 말한다)
+  const bubbleH = TALK_H;
   const bubbleLeft = twin.left + inset;
   const bubble: Rect = { left: bubbleLeft, top: bottom(twin) - inset - bubbleH, width: Math.max(0, m.left - RING - gap - bubbleLeft), height: bubbleH };
   const image = mascotImageBox(mascot, scale, HEAD_ROOM);
   const logo = mascotLogoBox(mascot, scale, image);
 
-  // 지도 위에 얹는 것: 말풍선 카드, 마스코트 단추(초점 고리 포함), 미니맵, 생각 말풍선(꼬리가 있는 마스코트 위 끝까지)
+  // 지도 위에 얹는 것: 메시지 상자, 마스코트 단추(초점 고리 포함), 미니맵
   const blocked: Rect[] = [
     { ...bubble },
     { left: m.left - RING, top: m.top - RING, width: m.width + 2 * RING, height: m.height + RING },
     { ...video },
-    { left: thought.left, top: thought.top, width: thought.width, height: m.top - thought.top },
   ];
-  // 지도 카메라 칸: 진행도 아래, 말풍선 카드 위, 미니맵·생각 말풍선·마스코트 왼쪽
+  // 지도 카메라 칸: 진행도 아래, 메시지 상자 위, 미니맵·마스코트 왼쪽
   const fx = twin.left + FOCUS_LEFT;
   const fy = twin.top + FOCUS_TOP;
-  const edge = Math.min(video.left, thought.left, m.left - RING);
+  const edge = Math.min(video.left, m.left - RING);
   const focus: Rect = { left: fx, top: fy, width: Math.max(0, edge - FOCUS_SIDE - fx), height: Math.max(0, bubble.top - FOCUS_GAP - fy) };
   const camPad: Pad = { left: focus.left - twin.left, top: focus.top - twin.top, right: right(twin) - right(focus), bottom: bottom(twin) - bottom(focus) };
 
-  return { pad, gap, scale, twin, focus, camPad, blocked, video, chipsRight: right(twin) - video.left + gap, mascot: m, image, logo, bubble, thought, tail };
+  return { pad, gap, scale, twin, focus, camPad, blocked, video, chipsRight: right(twin) - video.left + gap, mascot: m, image, logo, bubble };
 }
 
 /** 마스코트 그림 픽셀 [x, y] → 화면 자리. */
