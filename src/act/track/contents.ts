@@ -305,7 +305,7 @@ export class ContentsHold extends Part {
   /** 계획 밖 가까이 가서 보기를 이어 가지 않을 때: 멈춤·열린 계획·만드는 계획·계획 전 찾기 중·위치 맞추기 전·폰 없음·끄기 안내·승인 대기·폰 대화 중. */
   private idleBlocked(): boolean {
     const core = this.core;
-    return core.stopped || !!core.open() || !!core.planning || !!core.finding || phoneBlocked(core, this.clock.now(), false);
+    return core.stopped || !!core.open() || !!core.planning || !!core.finding || !!core.docking || phoneBlocked(core, this.clock.now(), false);
   }
 
   /** 행동 목록의 손대는 내용물 행동(touch·want와 대상 종류가 있는 행동: 채우기·따르기. 그대로 두기는 손대지 않아 아니다). */

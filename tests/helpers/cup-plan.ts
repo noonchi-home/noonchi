@@ -25,10 +25,10 @@ export function cupPlan(fp: FloorPlan, id: string, nowIso: string, target: PickT
     ] : []),
   ];
   const walk = { ...fp, robot: { ...fp.robot, reachable: fp.rooms.map((r) => r.id) } };
-  return assemblePlan(walk, { id, goal: GOAL.clearCup, judgment: "", source: "brain", dryRun: true, nowIso, assist: "noonchi" }, draft);
+  return assemblePlan(walk, { id, goal: GOAL.clearCup, judgment: "", source: "brain", dryRun: true, nowIso }, draft);
 }
 
 /** 사용자에게 물어보기: 폰으로 묻는 한 단계, 이동 없음. */
 export function askPlan(fp: FloorPlan, id: string, nowIso: string): PlanView {
-  return assemblePlan(fp, { id, goal: GOAL.askUser, judgment: "", source: "brain", dryRun: true, nowIso, assist: "noonchi" }, [{ kind: "ask", label: STEP_LABEL.askUser }]);
+  return assemblePlan(fp, { id, goal: GOAL.askUser, judgment: "", source: "brain", dryRun: true, nowIso }, [{ kind: "ask", label: STEP_LABEL.askUser }]);
 }

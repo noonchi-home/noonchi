@@ -80,6 +80,8 @@ export interface AppOptions {
   seenLast?: () => SeenEvent | null;
   /** 지금 대시보드 말풍선 말과 안전 알림 표시(src/act/say.ts). /events 접속 때 {type:"say"}. */
   say?: () => { text: string | null; safety?: true };
+  /** 지금 행동 모드(눈치·코치, src/act/mode.ts). /events 접속 때 {type:"mode"}. 없으면 보내지 않는다. */
+  actMode?: () => "noonchi" | "coach";
   /** 지금 운영 모드(/api/health). 없으면 시험 모드. */
   mode?: () => ControlMode;
   /** 준비 상태(/api/health ready, src/server/ready.ts). 없으면 준비 안 됨. */
@@ -306,6 +308,7 @@ export function createApp(opts: AppOptions): TwinHomeApp {
     const seen = opts.seenLast?.();
     if (seen) send(ws, { ...seen, replay: true });
     send(ws, { type: "say", ...(opts.say?.() ?? { text: null }) });
+    if (opts.actMode) send(ws, { type: "mode", mode: opts.actMode() });
     ws.on("error", () => {});
   });
 

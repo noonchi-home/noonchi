@@ -5,8 +5,6 @@ import type { DeviceKind } from "../devices/kinds.js";
 /** test: 시험 모드(트윈에서만, ThinQ를 부르지 않음, 기본). live: 실제 모드(짝지은 기기는 ThinQ로 실제 가전). */
 export type ControlMode = "test" | "live";
 
-/** 돕는 방식. auto: 상황마다 PAM이 눈치·코치 행동 가운데 고른다. noonchi: 눈치 행동만. coach: 코치 행동과 묻기만. 운영 모드(test·live)와 따로다. */
-export type AssistMode = "auto" | "noonchi" | "coach";
 
 /** ThinQ 기기 목록 한 줄(GET /api/setup/thinq). */
 export interface ThinqDeviceView {
@@ -47,8 +45,6 @@ export interface SetupView {
   /** 4단계: start는 시작 위치를 쓸 수 있다(집 scene.json이 있음), layout은 배치 보정을 쓸 수 있다. */
   position: { start: boolean; layout: boolean; phone_urls: string[] };
   mode: ControlMode;
-  /** 돕는 방식(눈치·코치). */
-  assist: AssistMode;
   /** ready: ThinQ 토큰이 있어 실제 모드로 바꿀 수 있다. */
   thinq: { ready: boolean };
   /** 트윈 기기 id → ThinQ 기기 id(실제 모드에서만 쓴다). */

@@ -53,16 +53,31 @@ function addedObject(d: AddedDevice, home: SceneHome): SceneObject {
   };
 }
 
+/** 집의 충전 자리(data/dock.json { version, position: [x, y] 평면도 }) → 트윈 자리 [x, 0, y]. 없거나 틀리면 null(계획이 끝나도 충전 자리로 가지 않는다). */
+function dockOf(home: SceneHome): [number, number, number] | null {
+  const file = join(home.dataDir, "dock.json");
+  if (!existsSync(file)) return null;
+  try {
+    const p = (read(file) as { position?: unknown }).position;
+    return Array.isArray(p) && p.length === 2 && p.every((v) => typeof v === "number" && Number.isFinite(v)) ? [p[0] as number, 0, p[1] as number] : null;
+  } catch {
+    return null;
+  }
+}
+
 /** scene.json이 없으면(빌드 전) null. 도면 설비·더하는 가전 파일이 없으면 그만큼 scene.json 그대로.
- *  더하는 가전은 같은 id가 이미 있으면 더하지 않고, 더한 id 목록을 added로 준다(더한 것이 없으면 칸이 없다). */
-export function loadScene(home: SceneHome): (SceneJson & { added?: string[] }) | null {
+ *  더하는 가전은 같은 id가 이미 있으면 더하지 않고, 더한 id 목록을 added로 준다(더한 것이 없으면 칸이 없다).
+ *  집의 충전 자리(data/dock.json)가 있으면 dock(트윈 자리 [x, 0, y])으로 함께 준다(없으면 칸이 없다). */
+export function loadScene(home: SceneHome): (SceneJson & { added?: string[]; dock?: [number, number, number] }) | null {
   if (!existsSync(home.scenePath)) return null;
   let scene = read(home.scenePath) as SceneJson;
   const drawn = join(home.dataDir, "drawn_fixtures.json");
   if (existsSync(drawn)) scene = withDrawn(scene, ((read(drawn) as { items?: DrawnFixture[] }).items ?? []));
+  const dock = dockOf(home);
+  const docked = <T extends SceneJson>(s: T) => (dock ? { ...s, dock } : s);
   const addedFile = join(home.dataDir, "added_devices.json");
-  if (!existsSync(addedFile)) return scene;
+  if (!existsSync(addedFile)) return docked(scene);
   const have = new Set(scene.objects.map((o) => (o as { id?: string }).id));
   const add = ((read(addedFile) as { items?: AddedDevice[] }).items ?? []).filter((d) => !have.has(d.id)).map((d) => addedObject(d, home));
-  return add.length ? { ...scene, objects: [...scene.objects, ...add], added: add.map((o) => o.id) } : scene;
+  return docked(add.length ? { ...scene, objects: [...scene.objects, ...add], added: add.map((o) => o.id) } : scene);
 }

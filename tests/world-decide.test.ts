@@ -245,6 +245,30 @@ describe("판단 호출", () => {
     }
   });
 
+  it("PAM 행동 목록은 tasks(heard)로 받는다: 이번 관찰 텍스트에 사람이 한 말이 있으면 heard가 참이다. 판단 기록 assist는 mode(고른 행동)가 정한다(대기도 지금 모드)", async () => {
+    const tasks = [...TASK_NAMES];
+    let index = -1;
+    pam = await startFakePamLlm({ predict: () => ({ observation: "o", reasoning: "r", task_index: index }) });
+    const logs: BrainLog[] = [];
+    const asked: boolean[] = [];
+    const modes: (string | null)[] = [];
+    let now = 10_000;
+    const d = new Decider({ pam: pamClientFor(pam), world: emptyWorld(), trigger: event(),
+      tasks: (heard) => { asked.push(heard); return tasks; }, mode: (action) => { modes.push(action); return action === "라면 끓이기 알려 주기" ? "coach" : "noonchi"; },
+      memory, emit: (l) => logs.push(l), offsetMinutes: 540, clock: { now: () => now } });
+    d.onChanges([{ kind: "appeared", at_ms: now, subject: "cup_1", text: "컵 cup_1 보임", meaningful: true }]);
+    d.tick();
+    await d.idle();
+    now += 1000;
+    index = tasks.indexOf("라면 끓이기 알려 주기");
+    d.onChanges([{ kind: "heard", at_ms: now, subject: "person", text: "사람이 말함: 「라면 끓이는 법 알려 줘」", meaningful: true }]);
+    d.tick();
+    await d.idle();
+    expect(asked).toEqual([false, true]);
+    expect(modes).toEqual([null, "라면 끓이기 알려 주기"]);
+    expect(logs.filter((l) => l.type === "decision").map((l) => l.type === "decision" && [l.action, l.assist])).toEqual([[null, "noonchi"], ["라면 끓이기 알려 주기", "coach"]]);
+  });
+
   it("PAM에 닿지 않다가 닿으면 연결 끊김·연결됨을 한 번씩 기록한다. 닿지 않은 판단은 실패로 남긴다", async () => {
     const logs: BrainLog[] = [];
     const records: DecisionRecord[] = [];

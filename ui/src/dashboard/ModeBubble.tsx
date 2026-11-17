@@ -9,7 +9,8 @@ const HEAD_GAP = 6;
 
 /**
  * 마스코트 머리 바로 위 모드 말풍선: 지금 모드(눈치 모드 brand 바탕, 코치 모드 ok 바탕)를 21st.dev Tooltip(화살표 끝이 머리 위)으로 늘 띄운다.
- * 마스코트는 늘 왼쪽을 보도록 단추 가운데 축으로 뒤집혀 있어 머리 자리도 그 축으로 뒤집는다. 모드를 모르면(판단 전·대기) 눈치 모드다. 보기만 한다: 마우스를 받지 않는다.
+ * 모드는 서버가 한 곳에서 정해 보낸 지금 행동 모드(mode 메시지, src/act/mode.ts)이고, 받기 전이면 눈치 모드다.
+ * 마스코트는 늘 왼쪽을 보도록 단추 가운데 축으로 뒤집혀 있어 머리 자리도 그 축으로 뒤집는다. 보기만 한다: 마우스를 받지 않는다.
  */
 export function ModeBubble({ mode, layout, mascot }: { mode: "noonchi" | "coach" | null; layout: PageLayout; mascot: Pick<MascotImage, "x0" | "headTop"> }) {
   const [box, setBox] = useState<HTMLDivElement | null>(null);

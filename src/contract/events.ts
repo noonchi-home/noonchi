@@ -315,7 +315,9 @@ export type ServerMessage =
   /** 실행 중 배치 보정(src/contract/layout.ts). 바뀔 때마다, 그리고 접속 때 맞추기 메시지. */
   | LayoutMessage
   /** 대시보드 말풍선 말 한 문장(src/act/say.ts). 바뀔 때마다, 그리고 접속 때 한 번. null이면 글 없음. safety: 안전 알림(쓰러짐 의심·다시 켜짐·꺼짐 기다림·끄기 안내)이다. */
-  | { type: "say"; text: string | null; safety?: true };
+  | { type: "say"; text: string | null; safety?: true }
+  /** 지금 행동 모드(눈치·코치, src/act/mode.ts modeNow): 대시보드 마스코트 머리 위 모드 말풍선. 바뀔 때마다, 그리고 접속 때 한 번. */
+  | { type: "mode"; mode: "noonchi" | "coach" };
 
 export interface DecisionRecord {
   id: string;

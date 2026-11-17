@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type WebSocket from "ws";
 import { startFakeOpenAI, type FakeResponse, type FakeServer } from "../scripts/fake-openai.js";
-import { tasksFor } from "../src/act/tasks.js";
+import { TASK_NAMES, tasksFor } from "../src/act/tasks.js";
 import type { Detection } from "../src/contract/observe.js";
 import type { HistoryRow } from "../src/contract/history.js";
 import { encodeFramePacket } from "../src/phone/packet.js";
@@ -47,7 +47,7 @@ const YESNO = [{ id: "approve", label: "승인" }, { id: "reject", label: "거�
 /** 장면: 감지(YOLO 대본)와 감지 종류마다 VLM이 내는 사실 값. */
 interface Scene { dets: Detection[]; facts: Record<string, string[]> }
 
-async function start(o: { assist: "coach" | "noonchi"; scene?: Scene } = { assist: "coach" }) {
+async function start(o: { scene?: Scene } = {}) {
   const scene: Scene = o.scene ?? { dets: [], facts: {} };
   let light = "";
   const planning = plannerRespond(ramenScripts(2));
@@ -85,8 +85,6 @@ async function start(o: { assist: "coach" | "noonchi"; scene?: Scene } = { assis
       BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, ...pamLlmEnv(pam), OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: `${fake.url}/v1` },
     brain: { detector: new ScriptedDetector(() => scene.dets) }, log: () => {},
   });
-  const post = async (path: string, body: unknown) => (await fetchRetry(`${srv!.url}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })).json() as Promise<Msg>;
-  expect(await post("/api/setup/assist", { assist: o.assist })).toMatchObject({ ok: true, assist: o.assist });
   light = srv.twin.devices.find((d) => d.kind === "aircon")!.id;
   const cooktop = srv.twin.devices.find((d) => d.kind === "cooktop")!.id;
   const dash: Msg[] = [];
@@ -117,7 +115,9 @@ async function start(o: { assist: "coach" | "noonchi"; scene?: Scene } = { assis
   const agentBodies = () => fake!.requests.filter((r) => r.method === "POST" && r.path.endsWith("/responses") && !isObserving(r.body) && !planning(r.body)).map((r) => r.body);
   const observerBodies = () => fake!.requests.filter((r) => r.method === "POST" && r.path.endsWith("/responses") && isObserving(r.body)).map((r) => r.body);
   const predicts = () => pam!.calls.filter((c) => c === "predict").length;
-  return { scene, runtimeDir, cooktop, light, dash, phone, pump, history, commands, spoken, said, last, answer, say, replies, agentBodies, observerBodies, predicts };
+  // 대시보드 모드 말풍선(서버가 정한 지금 행동 모드): 받은 차례
+  const modes = () => dash.filter((m) => m.type === "mode").map((m) => m.mode as string);
+  return { scene, runtimeDir, cooktop, light, dash, phone, pump, history, commands, spoken, said, last, answer, say, replies, agentBodies, observerBodies, predicts, modes };
 }
 
 /** 「라면 끓이는 법 알려 줘」로 시작해 n번 단계 명령이 뜰 때까지 앞 단계를 「완료」로 넘긴다. 계획 id를 돌려준다. */
@@ -135,7 +135,7 @@ async function toStep(s: Awaited<ReturnType<typeof start>>, n: number): Promise<
 
 describe("코치 모드: 라면 끓이기 알려 주기", () => {
   it("말로 시작해 단계마다 알려 주고, 다른 행동은 한 줄로 바로잡고, 혼잣말에 지금 할 일을 다시 알리고, 불 켜기 전에 묻고, 끝까지 가면 수업 기록을 남긴다. 들은 말은 기록에 남지 않는다", async () => {
-    const s = await start({ assist: "coach" });
+    const s = await start();
     // 1 말 → 말 요청 에이전트는 답하지 않고(빈 글), PAM이 코치 목록에서 고른다 → 첫 명령
     s.say(ASK_RAMEN);
     await s.pump(() => s.replies().length > 0, "말의 답");
@@ -144,9 +144,12 @@ describe("코치 모드: 라면 끓이기 알려 주기", () => {
     const first = s.said("수납장으로 가 주세요")!;
     const planId = first.id as string;
     expect(first).toMatchObject({ step: `${planId}:1`, kind: "go", choices: [{ id: "done", label: "완료" }] });
+    // 평소 눈치 모드에서 사람이 말했으니 PAM 목록에 코치 행동도 있고, PAM이 고른 코치 행동으로 코치 모드가 된다(src/act/mode.ts)
     const chosen = pam!.bodies.find((b) => String(b.observation_text).includes(`사람이 말함: 「${ASK_RAMEN}」`))! as PredictView;
-    expect(chosen.tasks).toEqual(tasksFor("coach"));
-    expect(chosen.tasks).toEqual(["사용자에게 물어보기", RAMEN, "전자레인지로 데우기 알려 주기"]);
+    expect(chosen.tasks).toEqual([...TASK_NAMES]);
+    expect(s.dash.find((m) => m.type === "brain" && m.event.type === "decision" && m.event.action === RAMEN)!.event).toMatchObject({ assist: "coach" });
+    await s.pump(() => s.modes().at(-1) === "coach", "코치 모드");
+    expect(s.modes()[0]).toBe("noonchi");
     expect(Object.keys(chosen).sort()).toEqual(["final_time", "memory", "memory_kind", "observation_text", "role", "tasks"]);
     const during = s.predicts();
 
@@ -217,6 +220,9 @@ describe("코치 모드: 라면 끓이기 알려 주기", () => {
     await srv!.hub.command(s.cooktop, { type: "off" });
     await s.pump(() => !!s.said("라면이 다 됐어요."), "끝 알림");
     await s.pump(async () => (await s.history("execution")).some((r) => r.subject === planId && r.text === "완료"), "완료");
+    // 코치 계획이 끝나고 비상이 없으니 눈치 모드로 돌아온다
+    await s.pump(() => s.modes().at(-1) === "noonchi", "눈치 모드로 돌아옴");
+    expect(s.modes().filter((m, i, all) => i === 0 || m !== all[i - 1])).toEqual(["noonchi", "coach", "noonchi"]);
     // 진행 중에는 PAM을 부르지 않는다(시작 때 나가 있던 판단 하나까지는 봐준다)
     expect(s.predicts() - during).toBeLessThanOrEqual(1);
     expect(s.commands().some((m) => /^off:/.test(m.step))).toBe(false);
@@ -249,7 +255,7 @@ describe("코치 모드: 라면 끓이기 알려 주기", () => {
   }, 120_000);
 
   it("인덕션을 켠 뒤 「그만」이면 계획을 취소하고 「…꺼 주세요」 명령을 보낸다. 「완료」로는 풀리지 않고 보이게 해 달라는 부탁으로 바뀌며, 허브 꺼짐을 보면 지운다", async () => {
-    const s = await start({ assist: "coach" });
+    const s = await start();
     const planId = await toStep(s, 7);
     s.answer({ id: planId, step: `${planId}:7:hand` }, "approve");
     await s.pump(() => !!s.said("인덕션을 켜 주세요"), "켜라는 명령");
@@ -259,6 +265,8 @@ describe("코치 모드: 라면 끓이기 알려 주기", () => {
     const off = s.commands().find((m) => m.step === `off:${planId}:${s.cooktop}:1`)!;
     expect(off).toMatchObject({ id: planId, choices: [{ id: "done", label: "완료" }], speak: true, grade: "safety" });
     expect(off.text).toMatch(/인덕션.* 꺼 주세요$/);
+    // 계획은 닫혔지만 켠 위험 가전 끄기 안내가 유효한 동안(비상)은 코치 모드다
+    await s.pump(() => s.modes().at(-1) === "coach", "비상 코치 모드");
     // 끄기 안내가 승인 대기 카드를 가리는 동안 승인 시간 제한이 멈춘다
     expect(srv!.policy.paused()).toBe(true);
     // GET /api/plan은 닫힌 계획 상태와 끄기 추적 요약을 한 답으로 준다(영상 판정이 같은 순간 값으로 끝낼지 본다)
@@ -272,19 +280,22 @@ describe("코치 모드: 라면 끓이기 알려 주기", () => {
     expect(s.phone.at(-1)?.type).toBe("command");
     await srv!.hub.command(s.cooktop, { type: "off" });
     await s.pump(() => s.phone.at(-1)?.type === "command_clear", "안내 지움");
+    // 꺼짐을 보면 비상이 풀려 눈치 모드로 돌아온다
+    await s.pump(() => s.modes().at(-1) === "noonchi", "비상이 풀려 눈치 모드");
     expect(srv!.policy.paused()).toBe(false);
     expect((await planNow()).off).toEqual({ hot: [], notices: [] });
     expect(existsSync(join(s.runtimeDir, "homes", "mokryeon_180b", "lessons.json"))).toBe(false);
   }, 90_000);
 
-  it("눈치 모드에서는 같은 말에도 PAM 요청의 행동 목록에 코치 행동이 없고 명령이 나가지 않는다", async () => {
-    const s = await start({ assist: "noonchi" });
-    s.say(ASK_RAMEN);
-    await s.pump(() => pam!.bodies.some((b) => String(b.observation_text).includes(`사람이 말함: 「${ASK_RAMEN}」`)), "들은 말이 든 PAM 요청");
-    const body = pam!.bodies.find((b) => String(b.observation_text).includes("사람이 말함"))! as PredictView;
-    expect(body.tasks).toEqual(tasksFor("noonchi"));
-    expect(body.tasks).not.toContain(RAMEN);
-    await new Promise((r) => setTimeout(r, 1500));
+  it("평소에는 눈치 모드다: 들은 말이 없는 PAM 요청의 행동 목록에는 코치 행동이 없고 명령이 나가지 않으며, 대시보드 모드 말풍선은 눈치 모드다", async () => {
+    const s = await start({ scene: { dets: [PERSON], facts: { person: ["standing"] } } });
+    await s.pump(() => pam!.bodies.length >= 2, "PAM 요청 둘");
+    for (const body of pam!.bodies as PredictView[]) {
+      expect(String(body.observation_text)).not.toContain("사람이 말함");
+      expect(body.tasks).toEqual(tasksFor("noonchi"));
+      expect(body.tasks).not.toContain(RAMEN);
+    }
     expect(s.commands()).toEqual([]);
+    expect(s.modes()).toEqual(["noonchi"]);
   }, 60_000);
 });

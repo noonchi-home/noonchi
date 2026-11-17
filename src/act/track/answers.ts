@@ -22,8 +22,9 @@ export class Answers extends Part {
     const r = core.shown();
     if (!r) {
       // 계획 전 찾기(src/act/track/find.ts)·계획 밖 가까이 가서 보기(src/act/track/contents.ts idle): 단추 없는 사람 단계 명령
-      const q = core.finding?.sent ? core.finding : core.idlePeek;
-      return q?.sent && !core.stopped ? { planId: q.id, stepId: q.sent.step, kind: "command", text: q.sent.text, choices: [] } : null;
+      const q = core.finding?.sent ? core.finding : core.docking?.sent ? core.docking : core.idlePeek;
+      // 충전 자리 명령만 「완료」가 있다(폰 눈을 모를 때 닿음을 받는다, dock.ts)
+      return q?.sent && !core.stopped ? { planId: q.id, stepId: q.sent.step, kind: "command", text: q.sent.text, choices: q === core.docking ? [STEP_DONE] : [] } : null;
     }
     const ask = r.asking !== null || core.stepOf(r)?.kind === "ask";
     return { planId: r.plan.view.id, stepId: r.sent.step, kind: ask ? "ask" : "command", text: r.sent.text, choices: choicesOf(r, core.stepOf(r)) };
@@ -38,6 +39,13 @@ export class Answers extends Part {
       // 「완료」는 확인된 꺼짐일 때만 지운다. 아니면 보이게 해 달라는 부탁으로 바꾼다(부를 이름이 없으면 그대로)
       if (choice !== STEP_DONE.id || off.note.ask) return false;
       if (!safety.releaseIfOff(off.note.deviceId)) safety.askToShow(off.note.deviceId);
+      return true;
+    }
+    // 충전 자리 명령의 「완료」: 닿은 것으로 받는다
+    const dock = core.docking;
+    if (!core.stopped && dock?.sent && dock.id === planId && dock.sent.step === stepId) {
+      if (choice !== STEP_DONE.id) return false;
+      core.dock.arrived();
       return true;
     }
     const r = core.shown();
@@ -90,6 +98,17 @@ export class Answers extends Part {
     if (!open && !core.planning && core.finding && matchChoice(text, [STOP])) {
       core.finder.stopIdle();
       return { kind: "answer", choice: STOP };
+    }
+    // 충전 자리 돌아가기(사용자 위치 확인 포함)에 「그만」: 명령을 거두고 그만둔다. 그 명령에 한 「완료」·「다 했어」는 닿은 것이다
+    const dock = !open && !core.planning ? core.docking : null;
+    if (dock && matchChoice(text, [STOP])) {
+      core.dock.drop();
+      return { kind: "answer", choice: STOP };
+    }
+    if (dock?.sent && matchChoice(text, [STEP_DONE])) {
+      if (at?.kind !== "command" || at.id !== dock.id || at.step !== dock.sent.step) return { kind: "stale" };
+      core.dock.arrived();
+      return { kind: "answer", choice: STEP_DONE };
     }
     // 계획 밖 가까이 가서 보기에 「그만」(명령을 거둔 뒤 위에서 보는 중·사진을 기다리는 중에도): 그만두고 그 컵은 잠시 다시 보내지 않는다
     if (!open && !core.planning && core.idlePeek && matchChoice(text, [STOP])) {

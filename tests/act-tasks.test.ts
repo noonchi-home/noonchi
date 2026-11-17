@@ -42,14 +42,9 @@ describe("행동 목록", () => {
     expect(tasksFor("noonchi")).not.toContain("전자레인지로 데우기 알려 주기");
   });
 
-  it("자동이면 PAM에 눈치·코치 행동을 모두 순서 그대로 보낸다(task_index가 같다)", () => {
-    expect(tasksFor("auto")).toEqual([...TASK_NAMES]);
-  });
-
   it("코치 모드에서는 PAM에 코치 행동과 「사용자에게 물어보기」만 보낸다", () => {
     expect(tasksFor("coach")).toEqual(["사용자에게 물어보기", "라면 끓이기 알려 주기", "전자레인지로 데우기 알려 주기"]);
     expect(TASK_NAMES.filter((n) => TASKS[n]!.coach)).toEqual(["라면 끓이기 알려 주기", "전자레인지로 데우기 알려 주기"]);
-    expect(tasksFor("auto")).toContain("전자레인지로 데우기 알려 주기");
   });
 
   it("코치 행동은 가전을 조작하지 않는다: device 단계를 쓸 수 없고 do가 꼭 있어야 하며 14단계까지다", () => {

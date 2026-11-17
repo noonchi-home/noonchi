@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { HistoryRow } from "../src/contract/history.js";
 import type { WorldEye, WorldObject, WorldView } from "../src/contract/world.js";
+import { dockId, isDockStep } from "../src/act/dock-step.js";
 import { SEND_SAY, clickChoice, clock, costLine, judgeInput, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, stepVerdict, timeline, twinRows, usedServer, roomLabels, ownAssetFailures, videoClock, runTimeline, clipEnd, syncWarning, mustStop, openDashboard, waitLoaded, waitTwinReady, frameGapLine, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
 import { createServer, type Server } from "node:http";
 import { listenRetry } from "../src/shared/net.js";
@@ -502,6 +503,15 @@ describe("video-check", () => {
       expect(plannedClicks(cmd("plan:pam-3:3", "그릇을 전자레인지에 넣어 주세요"), r, 0)).toEqual([{ at: 8000, label: "완료", id: "plan:pam-3", step: "plan:pam-3:3", text: "그릇을 전자레인지에 넣어 주세요" }]);
       expect(plannedClicks(cmd("plan:pam-3:9", "그릇을 꺼내 주세요"), r, 0)).toEqual([]);
       expect(plannedClicks(cmd("plan:pam-3:9", "그릇을 꺼내 주세요"), rule({ doneAfterMs: 3000 }), 0)).toEqual([{ at: 3000, label: null, id: "plan:pam-3", step: "plan:pam-3:9", text: "그릇을 꺼내 주세요" }]);
+    });
+
+    // 2026-11-18: 계획이 끝나면 서버가 「충전 자리로 가 주세요」(명령 id dock:<번호>)를 보낸다. 판정은 계획이 끝나면 끝내고, 그 명령에는 단추를 누르지 않는다
+    it("계획이 끝난 뒤 오는 충전 자리 명령(dock:)에는 어떤 누르기도 예약하지 않아, 단계 영상이 없어도 계획이 끝나면 판정이 끝난다", () => {
+      const dock = cmd(`${dockId(1)}:1`, "충전 자리로 가 주세요", dockId(1));
+      expect(isDockStep(dock.step)).toBe(true);
+      for (const r of [rule({ doneAfterMs: 3000 }), rule({ approveAfterMs: 2000, doneOn: [{ afterMs: 1000, text: "충전 자리로 가 주세요" }] })]) expect(plannedClicks(dock, r, 0)).toEqual([]);
+      const due = plannedClicks(dock, rule({ doneAfterMs: 3000 }), 0).length;
+      expect(judgeState({ stillForMs: null, clipPlayedMs: 5_000, clipDurationMs: 60_000, due, planStatus: "done", tailMs: 30_000, totalMs: 60_000, maxMs: 1_800_000, offOpen: false })).toBe("done");
     });
 
     /** 가짜 페이지: 지금 명령 기록과 위 줄·단추. clickChoice 식을 그 페이지에서 돌린다. */

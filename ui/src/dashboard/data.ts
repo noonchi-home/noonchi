@@ -19,8 +19,8 @@ export interface DashData {
   /** 마지막 성공한 반성(접속 때 다시 받은 오늘 것 포함). */
   reflection: Reflection | null;
   say: string | null;
-  /** 판단에서 본 행동마다 그 모드(판단 기록 assist): 진행 중 계획의 행동으로 메시지 상자 머리를 정한다. */
-  modes: Record<string, "noonchi" | "coach">;
+  /** 서버가 정한 지금 행동 모드(mode 메시지, src/act/mode.ts). 받기 전이면 null. */
+  mode: "noonchi" | "coach" | null;
   /** 메시지 상자에 넣은 말의 수(말 줄 id의 차례). */
   says: number;
   /** 지금 유효한 안전 알림 말(say safety)과 그 줄 id. 안전 아닌 말이나 빈 말이 오면 null. 메시지 상자는 그동안 한 줄을 늘 이 알림에 준다. */
@@ -29,7 +29,7 @@ export interface DashData {
   talk: { id: string; text: string }[];
 }
 
-export const EMPTY_DASH: DashData = { plan: null, eye: null, decision: null, thoughts: [], reflection: null, say: null, modes: {}, says: 0, safety: null, talk: [] };
+export const EMPTY_DASH: DashData = { plan: null, eye: null, decision: null, thoughts: [], reflection: null, say: null, mode: null, says: 0, safety: null, talk: [] };
 
 /** 메시지 상자 줄 더하기: 같은 id는 한 번만, 받은 차례로 최근 THOUGHT_KEPT개. */
 function addTalk(list: DashData["talk"], more: { id: string; text: string }[]): DashData["talk"] {
@@ -75,6 +75,8 @@ export function reduceDash(s: DashData, m: ServerMessage, now: number): DashData
     }
     case "eye":
       return m.eye.estimated ? s : { ...s, eye: m.eye };
+    case "mode":
+      return m.mode === s.mode ? s : { ...s, mode: m.mode };
     case "say": {
       const safe = !!m.safety && !!m.text;
       if (m.text === s.say && safe === !!s.safety) return s;
@@ -96,7 +98,7 @@ export function reduceDash(s: DashData, m: ServerMessage, now: number): DashData
       if (e.type === "decision") {
         // 동시에 나간 판단의 늦은 응답(seq가 더 작음)은 쓰지 않는다
         if (e.status !== "valid" || (s.decision && e.seq < s.decision.seq)) return s;
-        return { ...s, decision: e, modes: e.action && e.assist ? { ...s.modes, [e.action]: e.assist } : s.modes };
+        return { ...s, decision: e };
       }
       if (e.type === "reflection") {
         if (!e.ok) return s;
@@ -153,10 +155,5 @@ export function talkOf(s: DashData): Talk | null {
   return lines.length || fsm ? { lines, fsm } : null;
 }
 
-/** 지금 행동의 모드(마스코트 머리 위 모드 말풍선): 실행 추적이 받아들인 행동이 어느 모드로 하는 행동인가(서버 판단 기록·계획 스냅숏 assist, 행동 목록 TaskSpec.coach).
- *  진행 중 계획이 있으면 그 계획의 행동, 없으면 가장 새 판단의 행동이다. 대기·판단 전이면 null(말풍선은 눈치 모드). 설정의 돕는 방식(자동 등)은 쓰지 않는다. */
-export function modeNow(s: DashData): "noonchi" | "coach" | null {
-  const open = isOpen(s.plan) ? s.plan : null;
-  const d = s.decision;
-  return open ? open.assist ?? s.modes[open.goal] ?? null : d?.action ? d.assist ?? null : null;
-}
+/** 지금 행동 모드(마스코트 머리 위 모드 말풍선): 서버가 한 곳에서 정해 보낸 mode 메시지 그대로(src/act/mode.ts). 받기 전이면 null(말풍선은 눈치 모드). */
+export const modeNow = (s: DashData): "noonchi" | "coach" | null => s.mode;

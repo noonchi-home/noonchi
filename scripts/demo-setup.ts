@@ -209,7 +209,7 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
       }
       // 잠금을 잡은 뒤에 본다: 준비 명령 둘이 같은 폴더를 함께 돌려도 뒤쪽은 앞쪽이 만든 DB를 보고 멈춘다
       if (existsSync(dbPath)) throw new DemoStop(`기록 DB가 이미 있어요(${dbPath}). --fresh로 새로 시작하세요`);
-      writeFileSync(join(dir, "setup.json"), `${JSON.stringify({ version: 1, home: DEMO_HOME, done: true, mode: "test", assist: "auto" }, null, 2)}
+      writeFileSync(join(dir, "setup.json"), `${JSON.stringify({ version: 1, home: DEMO_HOME, done: true, mode: "test" }, null, 2)}
 `);
       const at = () => new Date(now()).toISOString();
       const approvals = new ApprovalStore(approvalsPath(dir, DEMO_HOME), at);

@@ -15,6 +15,12 @@ export function startSay(core: HomeCore): void {
     const { text, safety } = sayOf({ plan: plans.current(), command: core.command, world: core.view(), nowMs: Date.now(), look: core.lookSay, left: leftAt === null ? null : { atMs: leftAt },
       told: toldAt === null ? null : { atMs: toldAt }, quiet: tracker?.quietStep() ?? null, reflected: core.reflected, offWait: tracker?.offWaiting() ?? null,
       offTold: tracker?.offTold() ?? null, service: core.serviceSaid });
+    // 지금 행동 모드(모드 말풍선)는 말과 같은 때 다시 보고 바뀔 때만 보낸다
+    const mode = core.mode();
+    if (mode !== core.modeSent) {
+      core.modeSent = mode;
+      core.app?.broadcast({ type: "mode", mode });
+    }
     if (text === core.said && safety === core.saidSafety) return;
     core.said = text;
     core.saidSafety = safety;

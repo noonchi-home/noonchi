@@ -1,7 +1,7 @@
 // 설정 흐름 서버: 집 바꾸기(실행 묶음을 닫고 새로 만듦), 기기 신호 출처, 저장한 선택으로 다시 켜기.
 // 실제 twin-studio 데이터(oneroom·apartment)와 HUB=memory, 가짜 OpenAI 호환 서버에 붙인 에이전트로 돈다.
 
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { request, type IncomingMessage } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -91,29 +91,24 @@ describe("설정 흐름 서버", () => {
     expect(r.json.devices_saved).toBe(false);
   });
 
-  it("POST /api/setup/assist가 돕는 방식을 바꾸고 GET /api/setup에 보인다. 틀린 값은 400이고, 운영 모드를 바꿔도 그대로다", async () => {
+  it("돕는 방식 설정은 없다: GET /api/setup에 assist가 없고 POST /api/setup/assist는 없는 API(404)다. 모드는 서버가 정한다(src/act/mode.ts)", async () => {
     srv = await startServer({ env: env(runtime()), log: () => {} });
-    expect((await get("/api/setup")).json).toMatchObject({ assist: "noonchi", mode: "test" });
-    expect(srv.assist).toBe("noonchi");
-    const r = await post("/api/setup/assist", { assist: "coach" });
-    expect(r.status).toBe(200);
-    expect(r.json).toMatchObject({ ok: true, assist: "coach", mode: "test" });
-    expect((await get("/api/setup")).json.assist).toBe("coach");
-    expect(srv.assist).toBe("coach");
-    for (const bad of [{ assist: "teacher" }, { assist: null }, {}]) expect((await post("/api/setup/assist", bad)).status).toBe(400);
-    expect((await get("/api/setup")).json.assist).toBe("coach");
-    expect((await post("/api/setup/mode", { mode: "test" })).json).toMatchObject({ mode: "test", assist: "coach" });
-    expect((await post("/api/setup/assist", { assist: "noonchi" })).json.assist).toBe("noonchi");
+    expect((await get("/api/setup")).json).not.toHaveProperty("assist");
+    expect(srv).not.toHaveProperty("assist");
+    expect((await post("/api/setup/assist", { assist: "coach" })).status).toBe(404);
+    expect((await post("/api/setup/mode", { mode: "test" })).json).not.toHaveProperty("assist");
   });
 
-  it("POST /api/setup/assist {assist: auto}가 받히고 robot은 400이다", async () => {
-    srv = await startServer({ env: env(runtime()), log: () => {} });
-    const r = await post("/api/setup/assist", { assist: "auto" });
-    expect(r.status).toBe(200);
-    expect(r.json).toMatchObject({ ok: true, assist: "auto" });
-    expect(srv.assist).toBe("auto");
-    expect((await post("/api/setup/assist", { assist: "robot" })).status).toBe(400);
-    expect((await get("/api/setup")).json.assist).toBe("auto");
+  it("옛 설정 파일의 assist는 읽을 때 무시하고, 다시 쓸 때 남기지 않는다", async () => {
+    const dir = runtime();
+    writeFileSync(join(dir, "setup.json"), JSON.stringify({ version: 1, home: "oneroom", done: true, mode: "test", assist: "coach" }));
+    srv = await startServer({ env: env(dir), log: () => {}, persistSetup: true });
+    expect((await get("/api/setup")).json).toMatchObject({ done: true, home: { id: "oneroom" }, mode: "test" });
+    expect((await get("/api/setup")).json).not.toHaveProperty("assist");
+    expect((await post("/api/setup/mode", { mode: "test" })).status).toBe(200);
+    const saved = JSON.parse(readFileSync(join(dir, "setup.json"), "utf8")) as Record<string, unknown>;
+    expect(saved).toMatchObject({ version: 1, home: "oneroom", done: true, mode: "test" });
+    expect(saved).not.toHaveProperty("assist");
   });
 
   it("집을 바꾸면 허브·에이전트·트윈이 새 집으로, 다시 붙은 WS hello도 새 집", async () => {

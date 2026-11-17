@@ -17,7 +17,8 @@
 // 그 단계 영상으로 바꿔 튼다(영상 시각은 이어 셈). --step·--approve·--done-on이 있으면 --done-after 기본은 0이다(고른 명령 밖에는 단추를 누르지 않고 비전·폰 위치로 단계가 넘어가는지 본다).
 // 판마다 서버를 새로 띄운다. 앞 판 계획이 끝나지 않았거나 엔진 프레임을 이미 받은 서버(World State가 남음)면 크롬을 띄우기 전에 멈춘다.
 // 1초마다 window.__noonchiVideo(t0·받은 명령·바꾼 단계 영상의 영상 시각·끝)와 GET /api/world(눈 자리·컵)를 읽는다(World State를 못 받으면 넘어감).
-// 새 명령이 오면 --done-after초 뒤 엄지 자리 첫 답 단추(승인·완료)를 누른다(0이면 안 누름).
+// 새 명령이 오면 --done-after초 뒤 엄지 자리 첫 답 단추(승인·완료)를 누른다(0이면 안 누름). 끄기 안내(off:)와 계획이 끝난 뒤 충전 자리 명령(dock:)은 누르지 않는다:
+// 충전 자리 명령은 단계 영상이 없어도 폰 페이지가 그쪽으로 걷기만 하고, 판정은 계획이 끝나면 끝난다.
 // 영상이 끝나도 계획이 열려 있으면 최대 30초 더 보고, 남은 답과 그 뒤 온 명령을 누른다. 단계 영상이 새로 시작되면 끝 시각을 지우고 다시 끝날 때까지 본다.
 // t0는 폰 페이지가 서버 시계로 고친 마지막 값을 쓴다. 서버 기록·트윈 줄·누름은 폰 페이지가 남긴 [서버 시각, 영상 시각] 짝(__noonchiVideo.sync)으로
 // 영상 시각에 옮긴다(videoClock): 영상이 멈칫하면 영상 시각이 서버 시계보다 늦게 가 t0 하나로는 폰 명령과 어긋난다. 짝이 없는 옛 기록은 t0를 뺀다.
@@ -58,6 +59,7 @@ import { demoFile, encodeDemo, RECORD_FPS, startRecording, type Recorded, type R
 import { det } from "../tests/helpers/detectors.js";
 import type { SceneJson } from "../src/contract/layout.js";
 import type { OffTrack } from "../src/contract/plan.js";
+import { isDockStep } from "../src/act/dock-step.js";
 import { isOffStep } from "../src/act/off-step.js";
 import { resolveTwinStudioDir } from "../src/layout/twin-files.js";
 import { resolveHome } from "../src/layout/homes.js";
@@ -371,7 +373,8 @@ export function plannedClicks(cmd: VideoCommand, rule: ClickRule, now: number): 
   const at = (ms: number, label: string | null): PlannedClick => ({ at: now + ms, label, id: cmd.id, step: cmd.step, text: cmd.text });
   const out: PlannedClick[] = [];
   // 닫힌 계획의 끄기 안내·부탁(src/act/off-step.ts)에는 어떤 누르기도 예약하지 않는다(같은 글의 라면 12번 명령과 가른다)
-  if (isOffStep(cmd.step)) return out;
+  // 계획이 끝난 뒤 충전 자리 명령(src/act/dock-step.ts)도 누르지 않는다: 판정은 계획이 끝나면 끝나고, 폰 페이지는 단계 영상 없이 그쪽으로 걷기만 한다
+  if (isOffStep(cmd.step) || isDockStep(cmd.step)) return out;
   if (rule.approveAfterMs > 0 && /:(approve|hand)$/.test(cmd.step)) out.push(at(rule.approveAfterMs, "승인"));
   for (const d of rule.doneOn) if (d.text === cmd.text) out.push(at(d.afterMs, "완료"));
   if (!out.length && rule.doneAfterMs > 0) out.push(at(rule.doneAfterMs, null));

@@ -1,7 +1,7 @@
 // 집 실행 묶음의 판단·검사·실행 잇기(src/act·src/brain 판단 호출): 클로이드 계획(PlanHub), 실행 설정·수업 기록, 생각 메시지·판단 호출(PAM)·실행 추적, 보기 담당(관찰 모드).
 // 판단 → 계획(에이전트 계획 모드) → 실행 전 검사 → 실행 추적이 실제 폰에 명령을 낸다. 생각 메시지는 판단 기록 뒤에 따로 만들어 대시보드로 보내고 기록 DB(thought)에 남긴다.
-import { ExecutionTracker, LessonStore, Looker, PlanHub, checkDecision, checkPlan, deviceRunner, lessonsPath, loadActConfig } from "../../act/index.js";
-import { lookTargets, taskOf, tasksFor } from "../../act/tasks.js";
+import { ExecutionTracker, LessonStore, Looker, PlanHub, checkDecision, checkPlan, deviceRunner, lessonsPath, loadActConfig, pamTasks } from "../../act/index.js";
+import { lookTargets, taskOf } from "../../act/tasks.js";
 import { deviceViews, placesOf, type PlaceInfo } from "../../agent/index.js";
 import { Decider, PamClient, lastStoredThoughts, memoryForDay, pamSettings, storeThought, thoughtFeed } from "../../brain/index.js";
 import type { BrainLog } from "../../contract/events.js";
@@ -102,7 +102,8 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
   const pamTimeout = Number(env.PAM_TIMEOUT_MS);
   const decide = new Decider({
     pam: new PamClient({ settings: pamSettings(env), timeoutMs: Number.isFinite(pamTimeout) && pamTimeout > 0 ? pamTimeout : undefined }),
-    world: { view }, trigger: new Trigger(loadTriggerConfig(env), now()), tasks: () => tasksFor(core.assist()),
+    // 행동 목록은 지금 모드를 따르고(들은 말이 있으면 말로 부탁한 코치 행동도), 판단 기록의 모드는 그 판단 뒤의 지금 모드다(src/act/mode.ts)
+    world: { view }, trigger: new Trigger(loadTriggerConfig(env), now()), tasks: (heard) => pamTasks(core.mode(), heard), mode: (action) => core.mode(action),
     memory: () => memoryForDay(history.db, history.db.dayOf(now())), emit, offsetMinutes: history.db.offsetMinutes, clock: ctx.brain?.clock,
     // 행동 중 기다리기·기기 단계 동안은 PAM을 부르지 않는다(실행 추적이 조건을 본다)
     hold: () => (core.tracker?.waiting() ?? false) || (core.tracker?.coaching() ?? false),
@@ -122,7 +123,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     plans, floor: () => plans.floor(), world: view, emit, clock: ctx.brain?.clock, approvals, devices, offsetMinutes: history.db.offsetMinutes,
     // 계획 전 검사(LLM 없음) → 에이전트 계획 모드 한 번. 손 자리는 맞춘 눈(PlanHub 평면도의 로봇 자리)
     // 실행 추적이 놓기 단계를 끝낸 물건(placed)도 이미 치운 것으로 본다
-    precheck: (d) => checkDecision({ decision: d, tasks: d.tasks ?? tasksFor(core.assist()), world: view(), nowMs: now(), placed: core.tracker?.placed() }),
+    precheck: (d) => checkDecision({ decision: d, tasks: d.tasks ?? pamTasks(core.mode(), false), world: view(), nowMs: now(), placed: core.tracker?.placed() }),
     // 계획 입력·제출 검사도 이미 치운 물건(placed, 이 계획을 만들 때 것)을 안다: 입력 줄에 「이미 치움」, 그 물건을 대상으로 한 계획은 버린다
     planner: (d, signal) => {
       const task = taskOf(d.action);
@@ -142,8 +143,10 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
       if (m.type === "command") core.speak();
     },
     locate: placeAt, names: placeNames,
+    // 계획이 끝나면 사용자 위치를 확인하고 이 집의 충전 자리(장면과 함께 읽은 dock.json)로 돌아간다
+    dock: () => core.scene?.dock ?? null,
     check: (d, p) => checkPlan({
-      decision: d, tasks: d.tasks ?? tasksFor(core.assist()), plan: p, world: view(), nowMs: now(), staleMs: core.act.staleMs, mode: ctx.mode?.() ?? "test", deviceSteps: deviceSteps(p),
+      decision: d, tasks: d.tasks ?? pamTasks(core.mode(), false), plan: p, world: view(), nowMs: now(), staleMs: core.act.staleMs, mode: ctx.mode?.() ?? "test", deviceSteps: deviceSteps(p),
       placed: core.tracker?.placed(),
     }),
     lessons,
@@ -171,8 +174,8 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     // 실제 폰의 승인 대기와 폰 대화 사용(실행 추적이 그동안 사람을 움직이게 하지 않는다)
     approvalsWaiting: () => core.agent.pending(PHONE_SESSION).length > 0,
     talking: () => core.talk.inflight > 0 || now() - core.talk.at < TALK_QUIET_MS,
-    // 이번 판단에 보내는 행동 목록
-    tasks: () => tasksFor(core.assist()),
+    // 지금 모드의 행동 목록(쓰는 중 지킴·내용물 보류가 볼 행동)
+    tasks: () => pamTasks(core.mode(), false),
     // 코치 계획 중 다른 행동을 본 것 같으면 보기 담당(관찰 모드 계기 off_track)에 알린다
     strayed: (s) => core.looker?.strayed(s) ?? false,
   });

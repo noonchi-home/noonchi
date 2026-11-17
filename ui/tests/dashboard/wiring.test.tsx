@@ -126,16 +126,17 @@ describe("대시보드 자료 연결", () => {
     expect(document.querySelector("[data-thought], [data-thought-chips]")).toBeNull();
   });
 
-  // Codex(cd25828 Dashboard.tsx:238): talkOf 메모에 계획이 빠져 계획 시작·끝만으로는 머리가 바뀌지 않았다
-  it("판단이 그대로여도 계획이 시작·끝나면 마스코트 모드 말풍선이 그 계획 행동의 모드로 바뀐다", async () => {
+  it("마스코트 모드 말풍선은 서버 mode 메시지를 따른다: 받기 전과 눈치면 「눈치 모드」, 코치면 「코치 모드」. 코치 행동 판단·계획만으로는 바뀌지 않는다", async () => {
     await mount(false);
     const mode = () => document.querySelector("[data-mode-text]")?.textContent ?? null;
-    send([branchDecision(COACH, 1)]);
-    await waitFor(() => expect(mode()).toBe("코치 모드"));
-    send([{ type: "plan", plan: { ...PLAN, revision: 50, assist: "noonchi" } }]);
     await waitFor(() => expect(mode()).toBe("눈치 모드"));
-    send([{ type: "plan", plan: { ...PLAN, revision: 51, assist: "noonchi", status: "done" } }]);
+    send([branchDecision(COACH, 1), { type: "plan", plan: { ...PLAN, revision: 50 } }]);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(mode()).toBe("눈치 모드");
+    send([{ type: "mode", mode: "coach" }]);
     await waitFor(() => expect(mode()).toBe("코치 모드"));
+    send([{ type: "mode", mode: "noonchi" }]);
+    await waitFor(() => expect(mode()).toBe("눈치 모드"));
   });
 
   it("/events thought 메시지와 말이 받은 차례로 쌓이고 최근 세 줄만 보인다. 원래 생각은 보이지 않는다", async () => {

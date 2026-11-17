@@ -1,12 +1,11 @@
 // 집 실행 묶음(src/server/home/)의 안쪽 공유 객체 HomeCore: 도메인별 잇기(devices·agent·phone·act·observe·say)가 함께 쓰는 상태와 집 맥락.
 // startHome 한 함수가 나눠 쓰던 클로저 변수를 칸으로 둔 것이다. 조립(index.ts)이 만들어 도메인별 잇기를 옛 차례대로 부르고, 닫을 때도 이 칸을 본다.
 // 칸은 그 잇기가 채우기 전에는 읽지 않는다. 말풍선 카드 speak는 say.ts가 채우기 전까지 아무것도 하지 않는다.
-import type { ExecutionTracker, LessonStore, Looker, PlanHub, loadActConfig } from "../../act/index.js";
+import { modeNow, type ExecutionTracker, type LessonStore, type Looker, type Mode, type PlanHub, type loadActConfig } from "../../act/index.js";
 import type { Agent, ApprovalStore, Observer, PlaceInfo, Planner, Policy } from "../../agent/index.js";
 import type { Decider, ThoughtFeed } from "../../brain/index.js";
 import type { BrainLog, SeenEvent } from "../../contract/events.js";
 import type { PlannedCommand } from "../../contract/phone.js";
-import type { AssistMode } from "../../contract/setup.js";
 import type { SignalHub, ThinqLink } from "../../devices/index.js";
 import type { FloorPlan, HomePlan, PlaceNames, TwinData, loadLayout, loadScene } from "../../layout/index.js";
 import { realClock, type BusNode, type Clock, type Outbox } from "../../bus/index.js";
@@ -96,6 +95,8 @@ export class HomeCore {
   said: string | null = null;
   /** 지금 말풍선 말이 안전 알림인가(src/act/say.ts sayOf). */
   saidSafety = false;
+  /** 대시보드에 마지막으로 보낸 행동 모드. */
+  modeSent: Mode | null = null;
   lookSay: { place: string; atMs: number } | null = null;
   reflected: { atMs: number; learned: number; active: number } | null = null;
   serviceSaid: { text: string; atMs: number } | null = null;
@@ -119,8 +120,10 @@ export class HomeCore {
     return this.mirror?.view() ?? null;
   }
 
-  /** 지금 돕는 방식(눈치·코치). 판단 호출이 그때그때 읽는다(집을 다시 띄우지 않고 바뀐다). */
-  assist(): AssistMode {
-    return this.ctx.assist?.() ?? "noonchi";
+  /** 지금 행동 모드(눈치·코치)를 정하는 한 곳(src/act/mode.ts): 비상(쓰러짐 의심·끄기 안내)이거나 코치 계획이 열려 있거나 만드는 중이면 코치.
+   *  action: 판단 기록에 붙일 때 이번 판단이 고른 행동. 집 상태는 거울 보기다. */
+  mode(action: string | null = null): Mode {
+    const tracker = this.tracker;
+    return modeNow({ world: this.view(), offNotices: tracker?.offTrack().notices ?? [], coaching: tracker?.coaching() ?? false, plan: this.plans.current(), action });
   }
 }

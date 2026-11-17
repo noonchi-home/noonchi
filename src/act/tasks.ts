@@ -2,7 +2,6 @@
 // 목록은 src/brain/pam/scenarios/noonchi/tasks.json과 같다(tests/agent-planner.test.ts). 최종 목록은 FSM 담당(박석준·김준형)이 정한다.
 // 여기에는 계획 모양이 없다: 무엇을 어떤 순서로 할지는 에이전트가 정한다. target은 계획 전 검사(LLM을 부르기 전)에만 쓴다.
 import type { PlanView } from "../contract/plan.js";
-import type { AssistMode } from "../contract/setup.js";
 import type { Facet, ObjClass, WorldFact, WorldObject, WorldView } from "../contract/world.js";
 import type { DeviceKind } from "../devices/kinds.js";
 import type { ActionChoice } from "./prompts.js";
@@ -79,7 +78,7 @@ export const TASKS: Record<string, TaskSpec> = {
   },
 };
 
-/** 모든 행동 이름(검사·tasks.json 견주기). PAM에 보내는 목록은 돕는 방식마다 다르다(tasksFor). */
+/** 모든 행동 이름(검사·tasks.json 견주기). PAM에 보내는 목록은 지금 모드를 따른다(src/act/mode.ts pamTasks). */
 export const TASK_NAMES: readonly string[] = Object.keys(TASKS);
 
 /** 그 행동이 어느 모드로 하는 행동인가: 코치 행동(TaskSpec.coach)이면 coach, 그 밖의 목록 행동이면 noonchi, 대기(null)·목록 밖이면 null.
@@ -112,10 +111,10 @@ export function touchTarget(action: string | null): ObjClass | null {
 /** 코치 모드에서도 PAM에 보내는 눈치 행동. */
 const COACH_ALSO: readonly string[] = ["사용자에게 물어보기"];
 
-/** PAM에 보내는 행동 목록(순서가 task_index). auto: 모든 행동(순서 그대로), noonchi: 코치가 아닌 행동, coach: 코치 행동과 「사용자에게 물어보기」. */
-export function tasksFor(assist: AssistMode): string[] {
-  if (assist === "auto") return [...TASK_NAMES];
-  return TASK_NAMES.filter((n) => (assist === "coach" ? TASKS[n]!.coach || COACH_ALSO.includes(n) : !TASKS[n]!.coach));
+/** 모드의 행동 목록(순서가 task_index, 행동 목록 순서 그대로). noonchi: 코치가 아닌 행동, coach: 코치 행동과 「사용자에게 물어보기」.
+ *  PAM에 보내는 목록은 지금 모드와 들은 말로 정한다(src/act/mode.ts pamTasks). */
+export function tasksFor(mode: "noonchi" | "coach"): string[] {
+  return TASK_NAMES.filter((n) => (mode === "coach" ? TASKS[n]!.coach || COACH_ALSO.includes(n) : !TASKS[n]!.coach));
 }
 
 /** 행동 이름 → 행동. 목록 밖이면 null. */
