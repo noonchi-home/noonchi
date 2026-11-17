@@ -218,8 +218,9 @@ describe("가까이 보기(관찰 흐름 closer)", () => {
       return r;
     };
     const silent = (body: any) => (closerVlmReply()(body) === null ? null : JSON.stringify({ scene: "kitchen", observations: [], summary: CLOSER_SUMMARY }));
-    expect(await one(silent)).toMatchObject({ ok: true, found: [{ id: null, cls: "cup", facts: [] }], vlm: "ok" });
-    expect(await one(closerVlmReply("not_visible"))).toMatchObject({ ok: true, found: [{ id: null, cls: "cup", facts: ["not_visible"] }], vlm: "ok" });
+    // VLM이 답했으면 found는 VLM이 본 물건만이다(답 없음·가림은 본 것이 아니다)
+    expect(await one(silent)).toMatchObject({ ok: true, found: [], vlm: "ok" });
+    expect(await one(closerVlmReply("not_visible"))).toMatchObject({ ok: true, found: [], vlm: "ok" });
     const broken = (body: any) => (closerVlmReply()(body) === null ? null : "{not json");
     expect(await one(broken)).toMatchObject({ ok: true, found: [{ id: null, cls: "cup", facts: [] }], summary: null, vlm: "format" });
   });
@@ -650,7 +651,8 @@ describe("가까이 보기 found를 VLM 답으로", () => {
     for (let i = 1; i <= 3; i++) s.frame(i * 2000);
     await s.p.idle();
     const r = await s.p.closer(SPOT);
-    expect(r).toMatchObject({ ok: true, vlm: "ok", found: [{ id: null, cls: "cup" }] });
+    // VLM이 답했으면 found도 VLM이 본 것만 싣는다(가로 유리컵 r7: VLM은 아무것도 답하지 않았는데 YOLO 잘라 본 감지로 「병 보임」이었다)
+    expect(r).toMatchObject({ ok: true, vlm: "ok", found: [] });
     expect(s.world.view(6000).objects).toEqual([]);
     await s.p.close();
   });

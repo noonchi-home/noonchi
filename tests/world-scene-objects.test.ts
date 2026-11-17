@@ -16,7 +16,8 @@ const cupIn = det("cup", CUP);
 /** 들린 컵: 상자 아랫변이 바닥 자리와 멀다. */
 const lifted = det("cup", [60, 300, 40, 20]);
 const frac = (b: [number, number, number, number]) => ({ x: b[0] / 480, y: b[1] / 360, w: b[2] / 480, h: b[3] / 360 });
-const look = { view: LOOK_VIEW, ...LOOK_SIZE };
+/** 그 사진의 카메라·크기·폰 눈(새 물건은 폰 눈을 아는 사진에서만 만든다). */
+const look = { view: LOOK_VIEW, ...LOOK_SIZE, eye: [0, 0] as [number, number] };
 /** 전체 사진 YOLO 한 장. eye: 그 사진을 찍은 폰 눈 수평 자리(없으면 모름). */
 const full = (w: WorldState, id: string, atMs: number, dets: Detection[], eye?: [number, number]) =>
   w.applyDetections({ ...engineFrame(id, atMs, { view: LOOK_VIEW }), eye: eye ? { position: eye, height_m: 1.4, yaw_deg: 0, pitch_deg: 0 } as never : null }, dets);
@@ -237,5 +238,20 @@ describe("한 잔은 처음부터 한 물건(YOLO·VLM 자리 차이)", () => {
     const off = det("cup", [270, 170, 20, 10]);   // 컵 자리에서 0.354m
     for (let t = 3500; t <= 7000; t += 500) full(w, `e${t}`, t, [off]);
     expect(objs(w, 7000)).toEqual([["cup_1", "cup", "present"]]);
+  });
+});
+
+// 가로 키 큰 컵 실제 판 r1(2026-11-18): 식탁으로 걷는 동안 후면 발코니에 유령 컵(cup_10·cup_12)이 확정됐다
+describe("걷는 동안 찍힌 VLM 상자로는 새 물건을 확정하지 않는다", () => {
+  it("두 장의 폰 눈이 0.3m 넘게 떨어져 있으면(걷는 중) 확정하지 않고, 폰 눈을 모르는 사진으로는 만들지 않는다", () => {
+    const w = ws();
+    w.applyScene("e1000", 1000, scene(), new Map(), { ...look, eye: [0, 0] });
+    w.applyScene("e3000", 3000, scene(), new Map(), { ...look, eye: [0.8, 0] });
+    full(w, "e3500", 3500, []);
+    expect(w.view(3500).objects).toEqual([]);
+    const blind = ws();
+    blind.applyScene("e1000", 1000, scene(), new Map(), { view: LOOK_VIEW, ...LOOK_SIZE });
+    blind.applyScene("e3000", 3000, scene(), new Map(), { view: LOOK_VIEW, ...LOOK_SIZE });
+    expect(blind.view(3000).objects).toEqual([]);
   });
 });

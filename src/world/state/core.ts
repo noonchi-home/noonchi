@@ -104,6 +104,8 @@ export interface Obj {
   vlmFrames: string[];
   /** 장면 VLM이 말한 다른 놓인 곳(place) 하나: 다음 원본 프레임의 더 새 촬영이 같은 값을 말하면 바꾼다(SceneFacts.steady). */
   placeVote: { value: string; frame: string; at: number } | null;
+  /** 장면 VLM 후보를 처음 본 사진의 폰 눈(두 장의 폰 눈이 가까워야 확정한다). YOLO 후보는 null. */
+  vlmEye: [number, number] | null;
   /** 자리를 장면 VLM 상자로 정했다(YOLO가 자리를 고치면 false): YOLO 감지는 VLM_MATCH_M 안이면 이 물건으로 잇는다(투영 차이로 두 id가 되지 않게). */
   vlmPlaced: boolean;
   /** 장면 VLM 상자로 낸 VLM_MOVE_M 넘게 떨어진 새 자리 하나: 다음 원본 프레임의 더 새 촬영이 그 근처를 말하면 옮긴다(sceneobjects.ts). */
@@ -132,6 +134,8 @@ export const VLM_CANDIDATE_MS = 5000;
 export const VLM_CONFIRM_FRAMES = 2;
 /** 장면 VLM 상자 투영은 흔들린다: 확인된 물건 자리는 이만큼(m) 넘게, 사진 2장 이어서 옮겼다고 할 때만 옮긴다. */
 export const VLM_MOVE_M = 0.3;
+/** 손에 있던 물건을 내려놓은 자리로 잇는 거리(m, 그 물건 마지막 자리에서). */
+export const PUT_DOWN_M = 1.0;
 /** 집기 단계 동안 대상으로 잇는 감지 자리(m, 대상 자리에서). */
 export const FOCUS_PICK_M = 0.5;
 /** 장면 VLM 상자로 같은 물건을 잇는 거리(m): 상자 투영 흔들림이 YOLO보다 커서 종류 거리보다 넓게 본다. */
@@ -168,7 +172,9 @@ export class WorldCore {
   /** 사람 감지가 둘 넘게 보인 마지막 촬영 시각(VLM 자리 사실은 사람을 하나로 합치므로 그동안의 답은 누구의 것인지 모른다). */
   crowdAt = Number.NEGATIVE_INFINITY;
   /** 실행 추적이 지금 집기·내려놓기 하는 대상(WorldState.focus): 물건 id, 단계, 자리(집기는 그 물건 자리, 내려놓기는 목적지, 수평 [x, z]). */
-  focusOn: { id: string; step: "pick" | "place"; spot: [number, number] | null } | null = null;
+  focusOn: { id: string; step: "pick" | "place" | "carry"; spot: [number, number] | null } | null = null;
+  /** 지금 든 물건(focusOn)을 처음 알린 촬영 시각: 그 뒤에 생긴 같은 무리 둘째 id를 내려놓기 시작 때 대상으로 합친다. */
+  focusFrom: number | null = null;
   merge!: Detections;
   scene!: SceneObjects;
   people!: People;
@@ -203,7 +209,7 @@ export class WorldCore {
     const obj: Obj = {
       id: `${cls}_${n}`, cls, position: null, surface: null, surfaceLabel: null, part: null, room: null, errorM: null, confirmed: false, status: "present",
       firstSeen: atMs, lastSeen: atMs, lastInView: atMs, goneAt: null, facts: {}, answered: null, closerAt: null, peekGuard: null, sizes: [], posFrom: null,
-      posAt: Number.NEGATIVE_INFINITY, posCloser: false, judgedAt: atMs, judgedFrame: frameId, judgedCloser: false, followed: null, closerRev: {}, clsVote: null, clsAt: Number.NEGATIVE_INFINITY, clsFrame: null, vlmSeen: null, vlmFrames: [], placeVote: null, posVote: null, vlmPlaced: false,
+      posAt: Number.NEGATIVE_INFINITY, posCloser: false, judgedAt: atMs, judgedFrame: frameId, judgedCloser: false, followed: null, closerRev: {}, clsVote: null, clsAt: Number.NEGATIVE_INFINITY, clsFrame: null, vlmSeen: null, vlmFrames: [], placeVote: null, posVote: null, vlmPlaced: false, vlmEye: null,
       movedAt: atMs, trail: [], carried: false, contents: null, free: null,
     };
     this.objects.set(obj.id, obj);
@@ -244,15 +250,27 @@ export class WorldCore {
   }
 
   /** 맞는 물건이 없는 감지를 실행 추적의 지금 대상(focusOn)으로 잇는가: 같은 종류이고 이번 사진에서 아직 쓰지 않았어야 한다. 식별 근거가 모자라면 잇지 않는다(미룬다).
-   *  - 집기: 그 감지 자리가 대상 자리 FOCUS_PICK_M 안이거나, 들린 근거가 있다(lifted: 이 답이 손에 있음, 또는 대상이 이미 손에 있음).
+   *  - 집기: 그 감지 자리가 대상 자리 FOCUS_PICK_M 안이거나, 들린 근거가 있거나(lifted: 이 답이 손에 있음, 또는 대상이 이미 손에 있음),
+   *    그 사진에서 대상 자리가 감지 상자 안에 비친다(sees).
    *  - 내려놓기: 그 감지 자리를 알고 목적지 NEAR_M 안이다(자리를 모르면 잇지 않는다). */
-  focusTarget(cls: ObjClass, position: V3 | null, used: ReadonlySet<string>, lifted = false): Obj | null {
+  focusTarget(cls: ObjClass, position: V3 | null, used: ReadonlySet<string>, lifted = false, sees?: (target: V3) => boolean, eye?: [number, number] | null): Obj | null {
     const f = this.focusOn;
     const t = f ? this.objects.get(f.id) : undefined;
     if (!f || !t || t.cls !== cls || used.has(t.id)) return null;
     const near = (m: number) => !!position && !!f.spot && Math.hypot(position[0] - f.spot[0], position[2] - f.spot[1]) <= m;
     if (f.step === "place") return near(NEAR_M) ? t : null;
-    return near(FOCUS_PICK_M) || lifted || t.facts.place?.value === "in_hand" ? t : null;
+    // 든 물건(집기 끝 ~ 내려놓기 끝): 그 사진의 폰 눈 NEAR_M 안(폰을 든 사람의 손)이거나 들린 근거가 있을 때
+    if (f.step === "carry") return lifted || (!!eye && !!position && Math.hypot(position[0] - eye[0], position[2] - eye[1]) <= NEAR_M) ? t : null;
+    // 그 사진에서 대상 자리가 감지 상자 안에 비친다(바짝 댄 잔: 상자 아랫변 투영은 대상 자리와 멀다, 가로 유리컵 r7)
+    const inBox = !!sees && !!t.position && sees(t.position);
+    return near(FOCUS_PICK_M) || lifted || inBox || t.facts.place?.value === "in_hand" ? t : null;
+  }
+
+  /** 손에 있던 물건이 다른 자리에 다시 보였다(내려놓음): 손에 있음인 확인 물건 중 같은 무리이고 마지막 자리 PUT_DOWN_M 안인 것이 하나면 그것(가로 키 큰 컵 r1). */
+  putDown(cls: ObjClass, position: V3, used: ReadonlySet<string>): Obj | null {
+    const held = [...this.objects.values()].filter((x) => x.confirmed && !used.has(x.id) && sameDrinkware(x.cls, cls) && x.facts.place?.value === "in_hand"
+      && x.position && dist(x.position, position) <= PUT_DOWN_M);
+    return held.length === 1 ? held[0]! : null;
   }
 
   /** 실행 추적이 지금 집기·내려놓기 하는 대상이다: 그 단계 동안 사라짐을 세지 않는다(들고 옮기는 동안 전체 사진이 놓친다). */

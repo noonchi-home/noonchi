@@ -224,7 +224,7 @@ export class ObservationPipeline {
         const look = f?.view ? { view: f.view, width: f.width, height: f.height, eye: f.eye ? f.eye.position : null } : undefined;
         const scene = r.scene && f ? linkDets(r.scene, dets, f.width, f.height) : r.scene;
         const changes = scene ? o.world.applyScene(r.frameId, r.capturedAtMs, scene, ids, look) : o.world.applyMissing(r.frameId, r.capturedAtMs, { vlm: r.missing! });
-        o.emit({ type: "observe", at_ms: this.clock.now(), frame_id: r.frameId, captured_at_ms: r.capturedAtMs, yolo: null, vlm: r.scene?.summary ?? null, ...(r.missing ? { vlm_missing: r.missing } : {}), ...(r.scene ? { scene: r.scene } : {}) });
+        o.emit({ type: "observe", at_ms: this.clock.now(), frame_id: r.frameId, captured_at_ms: r.capturedAtMs, yolo: null, vlm: r.scene?.summary ?? null, ...(r.missing ? { vlm_missing: r.missing } : {}), ...(r.scene ? { scene: r.scene, ...(look ? { view: look.view, size: [look.width, look.height] as [number, number] } : {}) } : {}) });
         this.publish(changes);
       },
     });
@@ -548,7 +548,9 @@ export class ObservationPipeline {
       .map((v) => ({ id: ids.get(v.id) ?? null, cls: v.cls as CloserFound["cls"], score: 0, facts: said.get(v.id) ?? [], via: "vlm" as const }));
     return {
       ok: true, frame_id: id, captured_at_ms: last.frame.capturedAtMs, crop: last.crop, frames: passes.length,
-      found: [...last.dets.map((d, i) => ({ id: ids.get(`d${i + 1}`) ?? null, cls: d.label, score: Math.round(d.score * 100) / 100, facts: said.get(`d${i + 1}`) ?? [] })), ...byVlm],
+      // VLM이 답했으면 YOLO 감지는 VLM이 본 것(물건에 이어진 것)만 싣는다(VLM 무조건 우선: 가로 유리컵 r7에서 VLM은 아무것도 답하지 않았는데 「병 보임」이었다)
+      found: [...last.dets.map((d, i) => ({ id: ids.get(`d${i + 1}`) ?? null, cls: d.label, score: Math.round(d.score * 100) / 100, facts: said.get(`d${i + 1}`) ?? [] }))
+        .filter((x) => !r?.scene || x.id !== null || !this.o.world.closerObject({ label: x.cls, score: 1, box: [0, 0, 1, 1], edge: false } as never)), ...byVlm],
       summary: r?.scene?.summary ?? null, vlm,
     };
   }

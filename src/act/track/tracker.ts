@@ -174,7 +174,7 @@ export interface TrackerOptions {
   /** 보기 지킴(src/world/state/world.ts guard): 위에서 비추는 동안 그 컵을 사라짐으로 세지 않게 걸고(true) 그 차례가 끝나면 푼다(false). */
   guardObject?: (objectId: string, on: boolean) => void;
   /** 지금 집기·내려놓기 하는 대상과 자리(집기는 그 물건 자리, 내려놓기는 목적지, 수평 [x, z])를 World State에 알린다(src/world/state/world.ts focus). null이면 푼다. */
-  focusObject?: (objectId: string | null, f?: { step: "pick" | "place"; spot: [number, number] | null }) => void;
+  focusObject?: (objectId: string | null, f?: { step: "pick" | "place" | "carry"; spot: [number, number] | null }) => void;
   /** 실제 폰에 승인 대기(가전·외부 연락)가 떠 있는가. 그동안 가까이 가서 보라고 하지 않고 보류에서 풀린 첫 명령도 미룬다. 없으면 없다고 본다. */
   approvalsWaiting?: () => boolean;
   /** 실제 폰 대화를 쓰는 중인가(에이전트가 들은 말을 처리하는 중이거나 끝난 지 얼마 안 됨). 그동안 가까이 가서 보라고 하지 않고 보류에서 풀린 첫 명령도 미룬다.

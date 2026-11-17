@@ -86,10 +86,16 @@ export class SceneFacts extends Part {
   }
 
   /** VLM 놓인 곳 답을 트윈 면으로 바꾼다: 손에 있음·싱크대 안·식기 건조대 안·냉장고 안은 VLM 말 그대로, 그 밖(면 위·바닥)은 물건 자리 아래 트윈 면이 있으면 그 면의 놓인 곳. */
-  private twinPlace(obj: Obj, value: string): string {
-    if (KEEP_VLM_PLACE.has(value) || !obj.surface) return value;
+  private twinPlace(obj: Obj, value: string): string | null {
+    if (value === "in_hand" || !obj.surface) return value;
     const s = this.o.surfaces().find((x) => x.id === obj.surface);
-    return (s && surfacePlace(s)) ?? value;
+    if (!s) return value;
+    // 싱크볼 안은 「싱크대 안」이다: VLM이 다른 면 위(조리대 위 등)로 답해도 트윈 싱크볼 안이면 싱크대 안으로 넣는다(가로 머그 r4). 2장 규칙은 그대로다
+    if (obj.part === "basin") return KEEP_VLM_PLACE.has(value) ? value : "in_sink";
+    if (KEEP_VLM_PLACE.has(value)) return value;
+    // 면 안쪽(가운데에서 반지름 0.8배 안)이고 투영 오차가 작을 때만 트윈 면으로 덮는다(Codex 40407aa 2: 외접원 가장자리 밖 컵의 바닥 답을 덮지 않는다)
+    const inside = !!obj.position && Math.hypot(obj.position[0] - s.center[0], obj.position[2] - s.center[1]) <= s.radius * 0.8 && (obj.errorM ?? 0) <= 0.15;
+    return inside ? surfacePlace(s) ?? value : value;
   }
 
   /** VLM 대상: 사람·물건·가전 설비와 그 사실, 종류. */
@@ -137,6 +143,7 @@ export class SceneFacts extends Part {
       if (core.people.poseHolds(target.facts[facet], capturedAtMs) || core.merge.carriedPlace(id, facet) || core.people.fallHeld(id, facet)) continue;
       // 들려 있지 않은 물건의 놓인 곳은 트윈 면으로 정한다(식탁 위 잔을 VLM이 「선반 위」로 답했다, 가로 유리컵 r4·r6). VLM 말은 손에 있음·싱크대 안처럼 트윈 면으로 모르는 것에만 쓴다
       const placed = target.kind === "object" && facet === "place" ? this.twinPlace(core.objects.get(id)!, value) : value;
+      if (placed === null) continue;
       if (target.kind === "object" && facet === "place" && !this.steady(core.objects.get(id)!, placed, frameId, capturedAtMs)) continue;
       if (!this.answer(frameId, id, target.facts, facet, placed, capturedAtMs, false, NOW_FACETS[target.kind].includes(facet), turn)) continue;
       if (target.kind === "person") {
@@ -146,7 +153,8 @@ export class SceneFacts extends Part {
         changes.push({ kind: "fixture", at_ms: capturedAtMs, subject: id, meaningful: true, text: CHANGE_TEXT.state(fixtureName(fix.cls, fix.id, fix.roomLabel), value) });
       } else {
         const obj = core.objects.get(id)!;
-        if (obj.confirmed && obj.status !== "gone") changes.push({ kind: "state", at_ms: capturedAtMs, subject: id, meaningful: true, text: CHANGE_TEXT.state(core.name(obj), value) });
+        // 변화 줄도 넣은 값으로(Codex 40407aa 3: 사실은 「식탁 위」인데 줄은 「선반 위」)
+        if (obj.confirmed && obj.status !== "gone") changes.push({ kind: "state", at_ms: capturedAtMs, subject: id, meaningful: true, text: CHANGE_TEXT.state(core.name(obj), placed as StateKey) });
       }
     }
     for (const id of bodies) core.contents.settle(core.objects.get(id)!);

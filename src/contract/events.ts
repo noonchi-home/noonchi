@@ -5,7 +5,7 @@ import type { LayoutMessage } from "./layout.js";
 import type { PhoneChoice } from "./phone.js";
 import type { PlanView } from "./plan.js";
 import type { ControlMode } from "./setup.js";
-import type { Mask, SceneObservation } from "./observe.js";
+import type { CameraView, Mask, SceneObservation } from "./observe.js";
 import type { DetLabel } from "../world/vocab.js";
 import type { VlmMissing, WorldChangeKind, WorldView, YoloMissing } from "./world.js";
 import type { Prediction, FsmRuleAt } from "./pam.js";
@@ -116,8 +116,10 @@ export type BrainLog =
   | {
     type: "observe"; at_ms: number; frame_id: string; captured_at_ms: number; yolo: string | null; yolo_missing?: YoloMissing; vlm: string | null; vlm_missing?: VlmMissing;
     closer?: [number, number, number, number];
-    /** 장면 VLM 답 원문(물건·사실): 기록 DB에 남겨 실제 판을 같은 답 순서로 다시 돌린다. */
+    /** 장면 VLM 답 원문(물건·사실)과 그 사진의 카메라·크기: 기록 DB에 남겨 실제 판을 같은 답 순서·같은 자리로 다시 돌린다. */
     scene?: SceneObservation;
+    view?: CameraView;
+    size?: [number, number];
   }
   | { type: "world_change"; at_ms: number; kind: WorldChangeKind; text: string }
   | {

@@ -26,6 +26,51 @@ const xz = (w: WorldState, d: Detection): [number, number] => {
 };
 
 describe("집기·내려놓기 대상(focus)", () => {
+  // 가로 머그 실제 판 r4(2026-11-18): 싱크대로 가는 중 손에 든 머그가 새 cup_11이 됐고, 내려놓기 중 대상 cup_7이 사라졌다
+  it("든 물건(carry) 동안 그 사진의 폰 눈 1.5m 안 같은 종류 새 감지는 대상으로 잇고, 사라짐으로 세지 않는다. 내려놓기 시작 때 목적지 가까이 이미 생긴 둘째 id는 대상으로 합친다", () => {
+    const w = ws();
+    for (let t = 0; t <= 2000; t += 500) full(w, `e${t}`, t, [cupIn]);
+    w.focus("cup_1", { step: "carry", spot: null });
+    const eyeAt = xz(w, atSink);
+    for (let t = 2500; t <= 9000; t += 500) w.applyDetections({ ...engineFrame(`c${t}`, t, { view: LOOK_VIEW }), eye: { position: eyeAt, height_m: 1.4, yaw_deg: 0, pitch_deg: 0 } as never }, t < 5000 ? [] : [atSink]);
+    expect(ids(w, 9000)).toEqual([["cup_1", "present"]]);
+    // 둘째 id가 이미 생긴 뒤 내려놓기
+    const v = ws();
+    for (let t = 0; t <= 2000; t += 500) full(v, `e${t}`, t, [cupIn]);
+    v.focus("cup_1", { step: "carry", spot: null });
+    for (let t = 2500; t <= 5000; t += 500) full(v, `e${t}`, t, [cupIn, atSink]);
+    expect(v.view(5000).objects.map((o) => o.id)).toEqual(["cup_1", "cup_2"]);
+    v.focus("cup_1", { step: "place", spot: eyeAt });
+    expect(v.view(5000).objects.find((o) => o.id === "cup_2")).toMatchObject({ status: "gone", followed_by: "cup_1" });
+  });
+
+  // 가로 키 큰 컵 실제 판 r1(2026-11-18): 사람이 들고 있던 cup_4를 식탁에 내려놓고 나가자 같은 자리에 새 cup_6이 생겨 한 컵이 두 id였다
+  it("손에 있던 물건이 다른 자리 1m 안에 다시 보이면(내려놓음) 그 물건이다: 새 id를 만들지 않는다", () => {
+    const w = ws();
+    for (let t = 0; t <= 2000; t += 500) full(w, `e${t}`, t, [cupIn]);
+    w.applyScene("s1", 2000, { scene: "k", summary: "s", observations: [{ object_id: "d1", state: "in_hand" }] }, new Map([["d1", "cup_1"]]));
+    w.applyScene("s2", 2500, { scene: "k", summary: "s", observations: [{ object_id: "d1", state: "in_hand" }] }, new Map([["d1", "cup_1"]]));
+    expect(w.view(2500).objects[0]!.facts.place?.value).toBe("in_hand");
+    full(w, "e3000", 3000, []);
+    const r = full(w, "e3500", 3500, [det("cup", [270, 170, 20, 10])]);   // 0.354m 옆
+    expect(r.ids.get("d1")).toBe("cup_1");
+  });
+
+  // 가로 유리컵 실제 판 r7(2026-11-18): 폰을 잔에 바짝 댄 집기 장면에서 큰 상자의 아랫변 투영이 대상 자리에서 0.5m 넘게 떨어져 새 cup_17이 생겼고, 집기가 20.5초 걸렸다
+  it("집기 단계: 상자 아랫변 투영이 대상 자리에서 멀어도, 그 사진에서 대상 자리가 감지 상자 안에 비치면 대상으로 잇는다. 대상 자리가 상자 밖이면 잇지 않는다", () => {
+    const w = ws();
+    for (let t = 0; t <= 2000; t += 500) full(w, `e${t}`, t, [cupIn]);
+    w.focus("cup_1", { step: "pick", spot: [1.5, 0] });
+    const close = det("cup", [100, 100, 300, 250]);   // 바짝 댄 잔: 대상 자리 픽셀(240, 180)을 덮는다
+    const r = full(w, "e2500", 2500, [close]);
+    expect(r.ids.get("d1")).toBe("cup_1");
+    const other = ws();
+    for (let t = 0; t <= 2000; t += 500) full(other, `e${t}`, t, [cupIn]);
+    other.focus("cup_1", { step: "pick", spot: [1.5, 0] });
+    const r2 = full(other, "e2500", 2500, [det("cup", [300, 200, 150, 150])]);
+    expect(r2.ids.get("d1")).not.toBe("cup_1");
+  });
+
   // Codex(02dda8c 1): 식별 근거가 모자라면 잇지 않는다. 집기는 대상 자리 0.5m 안이거나 들린 근거(VLM 손에 있음)가 있을 때만 잇는다
   it("집기 단계: 대상 자리 0.5m 안(0.35m) 감지는 대상으로 잇고, 먼 들린 감지는 근거 없이 잇지 않는다. VLM이 그 감지를 손에 있음으로 답하면 대상으로 잇고 그 뒤 들린 감지도 대상이다", () => {
     const w = ws();

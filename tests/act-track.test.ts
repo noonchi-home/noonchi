@@ -144,7 +144,8 @@ describe("실행 추적: 단계마다 실제 폰 명령", () => {
     clock.t += 600;
     w = world([cup("present", "in_hand", clock.t)]);
     t.onWorld();
-    expect(focuses.at(-1)).toEqual([null, null]);
+    // 집기 뒤 내려놓기까지(싱크대로 가는 동안)는 든 물건으로 알린다(가로 머그 r4: 가는 중 손에 든 머그가 새 id가 됐다)
+    expect(focuses.at(-1)).toEqual(["cup_1", { step: "carry", spot: null }]);
     clock.t += 600;
     t.onEye([5.3, 1.5]);
     t.tick();
@@ -3586,6 +3587,31 @@ describe("실행 추적 + 실제 World State(기준점을 맞춘 카메라)", ()
     expect(ws.view(7000).objects[0]!.facts.place?.value).toBe("in_hand");
   });
 
+  // 가로 머그 실제 판 r4(2026-11-18): 싱크볼 안 컵이 「조리대 위」였다. Codex(40407aa 2·3): 면 가장자리 밖 컵의 바닥 답을 덮지 않고, 변화 줄도 바꾼 값으로
+  it("싱크볼 안 물건은 VLM이 조리대 위라 해도 싱크대 안으로 넣는다. 면 가운데에서 먼(반지름 0.8배 밖) 물건은 트윈 면으로 덮지 않는다. 변화 줄은 넣은 값으로 쓴다", () => {
+    const sink = { id: "sink_1", label: "싱크대", center: [0.75, 0] as [number, number], top: 0.75, radius: 0.6, basin: { center: [0.75, 0] as [number, number], size: [0.9, 0.9] as [number, number], facing_deg: 0 } };
+    const ws = new WorldState({ evidenceStepMs: 1000, surfaces: () => [sink], floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices: () => [] });
+    const see = (i: number, state: "on_counter" | "in_sink") => {
+      const { ids } = ws.applyDetections(frame(i), [onTable]);
+      return ws.applyScene(`e${i}`, i * 1000, { scene: "k", observations: [{ object_id: "d1", state }], summary: "s" }, ids);
+    };
+    for (let i = 1; i <= 3; i++) see(i, "on_counter");
+    expect(ws.view(3000).objects[0]).toMatchObject({ surface: "sink_1", surface_part: "basin" });
+    expect(ws.view(3000).objects[0]!.facts.place?.value).toBe("in_sink");
+    see(4, "in_sink");
+    see(5, "in_sink");
+    expect(ws.view(5000).objects[0]!.facts.place?.value).toBe("in_sink");
+    // 변화 줄은 넣은 값(트윈 면으로 바꾼 값)이다
+    const table = new WorldState({ evidenceStepMs: 1000, surfaces: () => [{ id: "table_1", label: "식탁", center: [0.75, 0], top: 0.75, radius: 0.6 }], floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices: () => [] });
+    const said = (i: number, state: "on_table" | "on_shelf") => {
+      const { ids } = table.applyDetections(frame(i), [onTable]);
+      return table.applyScene(`e${i}`, i * 1000, { scene: "k", observations: [{ object_id: "d1", state }], summary: "s" }, ids);
+    };
+    for (let i = 1; i <= 3; i++) said(i, "on_table");
+    const texts = [...said(4, "on_shelf"), ...said(5, "on_shelf")].map((c) => c.text).join(" ");
+    expect(texts).not.toContain("선반");
+  });
+
   it("식탁 위 컵을 들어 옮기면 새 id(cup_2)가 붙어도 집기·내려놓기가 비전으로 넘어가고 비전 상태 줄이 그 컵을 따라간다", async () => {
     const ws = new WorldState({ evidenceStepMs: 1000,
       surfaces: () => [{ id: "table_1", label: "식탁", center: [2, 0], top: 0.75, radius: 0.6 }, { id: "sink_1", label: "싱크대", center: [1.2, 0.8], top: 0.9, radius: 0.5 }],
@@ -3651,10 +3677,10 @@ describe("실행 추적 + 실제 World State(기준점을 맞춘 카메라)", ()
     ]);
     expect(steps()).toEqual(["done", "done", "done", "active"]);
     expect(plans.current()).toMatchObject({ status: "running" });
-    // VLM이 싱크대 안 대신 「식탁 위」라 답해도 컵이 싱크볼 안이고 손에 없으니 끝난다(「완료」를 누르지 않음)
+    // VLM이 싱크대 안 대신 「식탁 위」라 답해도 트윈 싱크볼 안이라 싱크대 안으로 넣고 끝난다(「완료」를 누르지 않음)
     see(13, inSink, "on_table");
     see(14, inSink, "on_table");   // 다른 놓인 곳은 VLM 사진 2장 이어서
-    expect(ws.view(14_000).objects.at(-1)).toMatchObject({ id: "cup_4", surface: "sink_1", surface_part: "basin", facts: { place: { value: "on_table" } } });
+    expect(ws.view(14_000).objects.at(-1)).toMatchObject({ id: "cup_4", surface: "sink_1", surface_part: "basin", facts: { place: { value: "in_sink" } } });
     expect(last()).toEqual({ type: "command_clear", id: "plan:pam-1" });
     expect(plans.current()).toMatchObject({ id: "plan:pam-1", status: "done" });
     expect(exec().at(-1)).toMatchObject({ plan_id: "plan:pam-1", state: "done" });
@@ -4201,11 +4227,17 @@ describe("실행 추적: 안 보이는 대상은 마지막으로 본 자리로 �
     expect(s.exec().some((l) => l.state === "planned")).toBe(false);
   });
 
-  it("가까이 보기가 새 사진으로 보고 VLM도 답했는데 그 종류가 없으면(분명히 없음) 사진을 기다리지 않고 바로 「대상 물건이 보이지 않아 실행하지 않아요」로 닫고, 60초 안 같은 판단은 찾으러 가지 않고 바로 닫는다", async () => {
+  // 가로 키 큰 컵 실제 판 r1(2026-11-18): 비추기 뒤 1장만 보는 가까이 보기가 한 번 「찾은 것 없음」이면 바로 계획이 실패했다
+  it("가까이 보기가 새 사진으로 보고 VLM도 답했는데 그 종류가 없으면(분명히 없음), 첫 번은 확인 실패로 보고 다시 비춰 한 번 더 보고, 두 번째도 없으면 「대상 물건이 보이지 않아 실행하지 않아요」로 닫는다. 60초 안 같은 판단은 찾으러 가지 않고 바로 닫는다", async () => {
     const s = findSetup();
     await s.decide(decision);
     toLook(s);
     s.looks[0]!.done(ABSENT);
+    s.tick();
+    expect(s.exec().some((l) => l.state === "failed")).toBe(false);
+    for (let i = 0; i < 60 && s.looks.length < 2; i++) s.tick();
+    expect(s.looks).toHaveLength(2);
+    s.looks[1]!.done(ABSENT);
     s.tick();
     expect(s.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-1", state: "failed", text: CHECK_TEXT.no_target });
     const n = s.commands().length;
@@ -4261,6 +4293,11 @@ describe("실행 추적: 안 보이는 대상은 마지막으로 본 자리로 �
     s.tick();
     expect(s.t.looking()).toBe(true);    // 가까이 보기
     s.looks[0]!.done(ABSENT);
+    s.tick();
+    // 첫 「분명히 없음」은 다시 본다(사진 기다림도 가까이 보는 차례)
+    expect(s.t.looking()).toBe(true);
+    for (let i = 0; i < 60 && s.looks.length < 2; i++) s.tick();
+    s.looks[1]!.done(ABSENT);
     s.tick();
     expect(s.exec().at(-1)).toMatchObject({ state: "failed" });
     expect(s.t.looking()).toBe(false);   // 끝

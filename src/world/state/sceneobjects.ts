@@ -16,6 +16,8 @@ import { OBJ_CLASSES, Part, VLM_CONFIRM_FRAMES, VLM_MATCH_M, VLM_MOVE_M, dist, t
 export interface SceneLook { view: CameraView; width: number; height: number; eye?: Plan2 | null }
 /** 손에 있음으로 답한 물건을 폰 눈에서 이만큼(m, 수평) 안의 물건으로 잇는다. */
 export const REACH_M = NEAR_M;
+/** 장면 VLM 새 물건을 확정하는 두 장의 폰 눈은 이만큼(m) 안이어야 한다(걷는 동안 찍힌 상자 투영은 틀린다). */
+const VLM_STILL_M = 0.3;
 /** 상자가 사진 끝에서 이만큼(비율) 안이면 잘린 것으로 본다(아랫변이 놓인 자리가 아닐 수 있다). */
 const EDGE = 0.01;
 
@@ -56,15 +58,18 @@ export class SceneObjects extends Part {
       // 든 물건 잇기가 모호하면(liftTarget null) 상자 투영 자리로 우회해 잇지도 않는다(Codex e0fb3b8 4)
       if (!obj && spot?.position && !lifted) obj = core.matchAt(cls, spot.position, used, VLM_MATCH_M);
       // 실행 추적이 지금 집기·내려놓기 하는 대상(들린 컵, 목적지에 놓인 컵)
-      if (!obj) obj = core.focusTarget(cls, spot?.position ?? null, used);
-      // VLM 무조건 우선: YOLO가 못 봤어도 VLM이 본 물건은 있다(놓인 자리를 알 때 후보로 만든다)
-      if (!obj && placed?.position && vlmFirst(false, true)) obj = core.create(cls, at, frameId);
+      if (!obj) obj = core.focusTarget(cls, spot?.position ?? null, used, false, undefined, eye);
+      // VLM 무조건 우선: YOLO가 못 봤어도 VLM이 본 물건은 있다(놓인 자리와 그 사진의 폰 눈을 알 때 후보로 만든다)
+      if (!obj && placed?.position && eye && vlmFirst(false, true)) {
+        obj = core.create(cls, at, frameId);
+        obj.vlmEye = eye;
+      }
       if (!obj) continue;
       used.add(obj.id);
       ids.set(v.id, obj.id);
       // 가림은 있다는 근거가 아니다: 사실(가림)만 잇고 보임·확정·자리는 바꾸지 않는다
       if (hidden) continue;
-      this.seen(obj, cls, at, frameId, edge ? null : placed, surfaces, changes);
+      this.seen(obj, cls, at, frameId, edge ? null : placed, surfaces, changes, eye);
     }
     return changes;
   }
@@ -111,7 +116,7 @@ export class SceneObjects extends Part {
   }
 
   /** VLM이 이 물건을 at 촬영에 봤다: 종류 셈, VLM 본 시각, 자리(놓인 자리를 알고 더 새 촬영일 때), 확정(후보는 서로 다른 원본 프레임 VLM_CONFIRM_FRAMES장)·되살림·시야 안으로. */
-  private seen(obj: Obj, cls: ObjClass, at: number, frameId: string, placed: Placed | null, surfaces: PlaneSurface[], changes: WorldChange[]): void {
+  private seen(obj: Obj, cls: ObjClass, at: number, frameId: string, placed: Placed | null, surfaces: PlaneSurface[], changes: WorldChange[], eye: Plan2 | null = null): void {
     const core = this.core;
     if (obj.confirmed) core.voteClass(obj, cls, at, frameId);
     obj.vlmSeen = Math.max(obj.vlmSeen ?? at, at);
@@ -139,6 +144,12 @@ export class SceneObjects extends Part {
       changes.push({ kind: "appeared", at_ms: at, subject: obj.id, meaningful: true, text: CHANGE_TEXT.appeared(core.name(obj), obj.surfaceLabel ? onSurface(obj.surfaceLabel) : null) });
     };
     if (!obj.confirmed) {
+      // 걷는 중(두 장의 폰 눈이 VLM_STILL_M 넘게 떨어짐)이거나 폰 눈을 모르는 사진은 확정에 세지 않고 그 장부터 다시 센다(가로 키 큰 컵 r1: 걷는 동안 유령 컵)
+      if (obj.vlmEye && (!eye || Math.hypot(eye[0] - obj.vlmEye[0], eye[1] - obj.vlmEye[1]) > VLM_STILL_M)) {
+        obj.vlmFrames = [frameId];
+        obj.vlmEye = eye;
+        return;
+      }
       if (!obj.vlmFrames.includes(frameId)) obj.vlmFrames.push(frameId);
       if (obj.vlmFrames.length >= VLM_CONFIRM_FRAMES) appear();
       return;

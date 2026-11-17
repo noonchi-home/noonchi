@@ -325,6 +325,14 @@ export class Steps extends Part {
   /** 집기·내려놓기 단계면 그 대상(지금 따라가는 World State id)과 자리(집기는 그 물건 자리, 내려놓기는 목적지)를 World State에 알리고, 아니면 푼다. */
   private focus(r: Run, step: AgentStep | null): void {
     if (!step || (step.kind !== "pick" && step.kind !== "place") || !step.object) {
+      // 집기를 마치고 아직 내려놓지 않은 물건이 있으면 그 사이 단계(싱크대로 가기 등)는 든 물건으로 알린다(가로 머그 r4: 가는 중 든 머그가 새 id가 됐다)
+      const held = step ? [...r.carried].at(-1) : undefined;
+      if (held) {
+        const id = ours(r, held, this.o.world())[0]?.id ?? r.alias.get(held) ?? held;
+        this.focused.set(r, id);
+        this.o.focusObject?.(id, { step: "carry", spot: null });
+        return;
+      }
       this.focused.delete(r);
       this.o.focusObject?.(null);
       return;

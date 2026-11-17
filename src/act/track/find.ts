@@ -54,6 +54,8 @@ export interface Find {
   /** 마지막 가까이 보기 결과: absent 새 사진으로 보고 VLM도 답했는데 그 종류가 없음(바로 그만둔다), unsure 확인 실패(사진 모자람·VLM 답 없음·
    *  그 종류를 감지했지만 확정 못 함, 사진을 기다린 뒤 다시 비춘다), null 결과를 모름(사진을 기다린 뒤 그만둔다). */
   looked: "absent" | "unsure" | null;
+  /** 「분명히 없음」을 본 수: 비추기 뒤 1장만 보므로 첫 번은 확인 실패로 보고 다시 비춰 본다(가로 키 큰 컵 r1). */
+  absents: number;
   guarded: boolean; end: AbortController;
 }
 /** 계획 전 찾기 칸: 명령 줄(find:<번호>), 그 찾기, 시작한 판단·찾는 동안 받은 같은 행동의 가장 새 판단, 막은 검사의 글. */
@@ -198,7 +200,7 @@ export class Finder extends Part {
     const place = (spot.surface ? this.core.nameOf(spot.surface) : null) ?? spot.surface_label;
     const f: Find = {
       objectId: spot.objectId, cls: spot.cls, name, label: place ?? name, surfaceLabel: place, spotId: spot.objectId ?? `find_${spot.cls}`, at: [...spot.position],
-      freshMs, after, phase: "cmd", part: null, sent: null, since: now, aimAt: now, startedAt: now, blockedAt: null, lookTryAt: now, afterAt: now, looked: null, guarded: false, end: new AbortController(),
+      freshMs, after, phase: "cmd", part: null, sent: null, since: now, aimAt: now, startedAt: now, blockedAt: null, lookTryAt: now, afterAt: now, looked: null, absents: 0, guarded: false, end: new AbortController(),
     };
     this.guard(f);
     return f;
@@ -268,7 +270,8 @@ export class Finder extends Part {
       if (f.phase !== "looking" && f.phase !== "look") return;
       f.phase = "after";
       f.afterAt = this.clock.now();
-      f.looked = r === undefined ? null : r?.ok && r.vlm === "ok" && !r.found.some((x) => sameDrinkware(x.cls, f.cls)) ? "absent" : "unsure";
+      const absent = r !== undefined && !!r?.ok && r.vlm === "ok" && !r.found.some((x) => sameDrinkware(x.cls, f.cls));
+      f.looked = r === undefined ? null : absent ? (f.absents++ ? "absent" : "unsure") : "unsure";
     };
     if (!this.o.lookContents) {
       after();

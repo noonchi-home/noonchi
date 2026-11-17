@@ -6,10 +6,10 @@ import type { Facet, FixtureClass, ObjClass, WorldChange } from "../../contract/
 import type { Detection, EngineFrame, Pose } from "../../contract/observe.js";
 import { EVIDENCE_GAP_MS } from "../confirm.js";
 import { CHANGE_TEXT, onSurface } from "../labels.js";
-import { inView, placePoint, sizeOf } from "../place.js";
+import { inView, pixelOf, placePoint, sizeOf } from "../place.js";
 import { CLASSES, NOW_FACETS, POSE_HOLD } from "../vocab.js";
 import { NEAR_M as REACH_M, sameDrinkware } from "../vocab.js";
-import { KEYS, OBJ_CLASSES, PERSON, Part, SIZE_SAMPLES, VLM_CANDIDATE_MS, VLM_MATCH_M, fromCamera, type Obj, type TrailSample, type V3 } from "./core.js";
+import { KEYS, OBJ_CLASSES, PERSON, Part, SIZE_SAMPLES, VLM_CANDIDATE_MS, VLM_MATCH_M, dist, fromCamera, type Obj, type TrailSample, type V3 } from "./core.js";
 
 const FIXTURE_CLASSES: ReadonlySet<string> = new Set(KEYS.filter((k) => CLASSES[k].role === "fixture"));
 /** 사라진 물체를 이만큼 두었다가 잊는다(같은 자리에 다시 보이면 같은 id로 돌아온다). */
@@ -38,6 +38,8 @@ export class Detections extends Part {
     const boxes: { obj: Obj; box: Detection["box"]; mask: Detection["mask"] }[] = [];
     const people: Detection[] = [];
     const eyeRoom = frame.eye ? this.o.roomAt([frame.eye.position[0], frame.eye.position[1]]) : null;
+    // 이 사진 물건 감지들의 트윈 자리(보완 잇기가 가장 가까운 감지를 고를 때 본다)
+    const spots = dets.map((d) => (view && core.accepts(d) && OBJ_CLASSES.has(d.label) ? placePoint(view, d.foot, { width: frame.width, height: frame.height }, surfaces, this.o.floorAt).position : null));
     dets.forEach((d, i) => {
       const tmp = `d${i + 1}`;
       if (!core.accepts(d)) return;
@@ -56,7 +58,15 @@ export class Detections extends Part {
       if (!OBJ_CLASSES.has(d.label)) return;
       const cls = d.label as ObjClass;
       const placed = view ? placePoint(view, d.foot, { width: frame.width, height: frame.height }, surfaces, this.o.floorAt) : null;
-      const obj = this.match(cls, placed?.position ?? null, used, frame.eye ? frame.eye.position : null) ?? core.create(cls, at, frame.id);
+      // 그 사진에서 어떤 자리가 이 감지 상자 안에 비치는가(상자를 10% 넓혀 본다)
+      const sees = view ? (p: V3) => {
+        const px = pixelOf(view, p, { width: frame.width, height: frame.height });
+        const [bx, by, bw, bh] = d.box;
+        return !!px && px[0] >= bx - bw * 0.1 && px[0] <= bx + bw * 1.1 && px[1] >= by - bh * 0.1 && px[1] <= by + bh * 1.1;
+      } : undefined;
+      // 보완 잇기(0.5m·내려놓음)는 이 사진 감지 가운데 그 물건 자리에 이 감지가 가장 가까울 때만
+      const nearest = placed?.position ? (o: Obj) => !o.position || spots.every((s, j) => j === i || !s || dist(s, o.position!) >= dist(placed.position!, o.position!)) : undefined;
+      const obj = this.match(cls, placed?.position ?? null, used, frame.eye ? frame.eye.position : null, sees, nearest) ?? core.create(cls, at, frame.id);
       used.add(obj.id);
       ids.set(tmp, obj.id);
       seen.add(obj.id);
@@ -197,20 +207,24 @@ export class Detections extends Part {
 
   /** 같은 물체 찾기. 위치가 있으면 장면 VLM·가까이 보기와 같은 식별 규칙(core.matchAt: 같은 종류 먼저, 마시는 그릇 무리는 하나뿐일 때만). 맞는 것이 없으면
    *  VLM이 손에 있음으로 답한 같은 무리 물건이 하나뿐일 때 그것(들린 컵은 상자 아랫변이 놓인 자리가 아니다), 그다음 자리를 모르는 같은 종류. 위치가 없으면 사라지지 않은 같은 종류를 처음 본 순서로. */
-  private match(cls: ObjClass, position: V3 | null, used: ReadonlySet<string>, eye: [number, number] | null): Obj | null {
+  private match(cls: ObjClass, position: V3 | null, used: ReadonlySet<string>, eye: [number, number] | null, sees?: (target: V3) => boolean, nearest?: (o: Obj) => boolean): Obj | null {
     const pool = [...this.core.objects.values()].filter((x) => x.cls === cls && !used.has(x.id));
     if (position) {
       const hit = this.core.matchAt(cls, position, used);
       if (hit) return hit;
-      // 장면 VLM 상자로 자리를 정한 물건은 투영 차이가 커서 VLM_MATCH_M 안 감지를 잇는다(가로 유리컵 r6: 한 잔이 cup_9·cup_18 두 id)
+      // 장면 VLM 상자로 자리를 정한 물건은 투영 차이가 커서 VLM_MATCH_M 안 감지를 잇는다(가로 유리컵 r6: 한 잔이 cup_9·cup_18 두 id).
+      // 이 사진의 다른 감지가 그 물건에 더 가까우면 그 감지 몫이다(Codex 40407aa 1: 가까운 일치를 먼저 배정하고 모호하지 않을 때만 보완)
       const vlmHit = this.core.matchAt(cls, position, new Set([...used, ...[...this.core.objects.values()].filter((x) => !x.vlmPlaced).map((x) => x.id)]), VLM_MATCH_M);
-      if (vlmHit) return vlmHit;
+      if (vlmHit && (!nearest || nearest(vlmHit))) return vlmHit;
+      // 손에 있던 물건이 다른 자리 1m 안에 다시 보였다(내려놓음)
+      const down = this.core.putDown(cls, position, used);
+      if (down && (!nearest || nearest(down))) return down;
       // 손에 든 컵은 그 사진의 폰 눈 REACH_M 안일 때만 먼 감지를 잇는다(폰을 든 사람의 손). 둘 이상이면 모호해 잇지 않는다
       const held = [...this.core.objects.values()].filter((x) => x.confirmed && !used.has(x.id) && sameDrinkware(x.cls, cls) && x.facts.place?.value === POSE_HOLD.object);
       const reach = eye && held.length === 1 && held[0]!.position && Math.hypot(held[0]!.position[0] - eye[0], held[0]!.position[2] - eye[1]) <= REACH_M;
       if (reach) return held[0]!;
-      // 실행 추적이 지금 집기·내려놓기 하는 대상(들린 컵, 목적지에 놓인 컵)
-      const focus = this.core.focusTarget(cls, position, used);
+      // 실행 추적이 지금 집기·내려놓기 하는 대상(들린 컵, 바짝 댄 잔, 목적지에 놓인 컵)
+      const focus = this.core.focusTarget(cls, position, used, false, sees, eye);
       if (focus) return focus;
       return pool.find((x) => x.status !== "gone" && !x.position) ?? null;
     }

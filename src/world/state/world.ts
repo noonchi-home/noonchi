@@ -43,7 +43,7 @@ import type { PlaneSurface, RestSpot } from "../place.js";
 import type { FallConfig } from "../fall.js";
 import { relatedDeviceIds } from "../relations.js";
 import { cameraKindOf } from "../../devices/kinds.js";
-import { FRESH_MS, NEAR_M, POSE_HOLD } from "../vocab.js";
+import { FRESH_MS, NEAR_M, POSE_HOLD, sameDrinkware } from "../vocab.js";
 import { WorldCore, type Plan2, type V3 } from "./core.js";
 import { Detections } from "./objects.js";
 import { People } from "./people.js";
@@ -146,8 +146,33 @@ export class WorldState {
 
   /** 실행 추적이 지금 집기·내려놓기 하는 대상(src/act/track/steps.ts): 그 단계 동안 대상은 사라짐으로 세지 않고, 맞는 물건이 없는 같은 종류 감지(들린 컵, 목적지
    *  NEAR_M 안에 놓인 컵)는 그 대상 id로 잇는다(가로 유리컵 r5: 집기·내려놓기 중 새 id가 생겨 단계가 늦거나 끝나지 않았다). null이면 푼다. */
-  focus(objectId: string | null, f: { step: "pick" | "place"; spot: [number, number] | null } | null = null): void {
-    this.core.focusOn = objectId && f ? { id: objectId, step: f.step, spot: f.spot } : null;
+  focus(objectId: string | null, f: { step: "pick" | "place" | "carry"; spot: [number, number] | null } | null = null): void {
+    const core = this.core;
+    const prev = core.focusOn;
+    core.focusOn = objectId && f ? { id: objectId, step: f.step, spot: f.spot } : null;
+    if (!core.focusOn) core.focusFrom = null;
+    else if (prev?.id !== objectId) core.focusFrom = core.frameAt ?? 0;
+    if (core.focusOn?.step === "place") this.mergeAtPlace(core.focusOn.id, core.focusOn.spot);
+  }
+
+  /** 내려놓기 시작: 든 물건을 알린 뒤 목적지 NEAR_M 안에 생긴 같은 무리 확인 물건이 하나면 그것은 대상이다(가로 머그 r4: 싱크대로 가는 중 든 머그가 cup_11이 됐다).
+   *  대상이 그 자리·보임·더 새 사실을 받고, 둘째 id는 사라짐과 옮김 표시(followed_by: 대상)를 남긴다. */
+  private mergeAtPlace(id: string, spot: [number, number] | null): void {
+    const core = this.core;
+    const t = core.objects.get(id);
+    if (!t || !spot || core.focusFrom === null) return;
+    const dups = [...core.objects.values()].filter((o) => o !== t && o.confirmed && o.status !== "gone" && sameDrinkware(o.cls, t.cls) && o.firstSeen > core.focusFrom!
+      && o.position && Math.hypot(o.position[0] - spot[0], o.position[2] - spot[1]) <= NEAR_M);
+    if (dups.length !== 1) return;
+    const d = dups[0]!;
+    if (d.posAt >= t.posAt) Object.assign(t, { position: d.position, surface: d.surface, surfaceLabel: d.surfaceLabel, part: d.part, room: d.room, errorM: d.errorM, posAt: d.posAt, posCloser: d.posCloser });
+    for (const [facet, fact] of Object.entries(d.facts)) if (fact && (!t.facts[facet as keyof typeof t.facts] || fact.at_ms > t.facts[facet as keyof typeof t.facts]!.at_ms)) (t.facts as Record<string, unknown>)[facet] = fact;
+    t.status = "present";
+    t.goneAt = null;
+    t.lastSeen = Math.max(t.lastSeen, d.lastSeen);
+    d.status = "gone";
+    d.goneAt = d.lastSeen;
+    d.followed = { id: t.id, at: d.lastSeen, frame: d.judgedFrame };
   }
 
   /** 보기 지킴(가까이 가서 위에서 비추는 동안, 실행 추적이 건다): on이면 그 물건을 그동안(PEEK_GUARD_MS 한도) 사라짐으로 세지 않고, off면 푼다.
