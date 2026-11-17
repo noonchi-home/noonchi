@@ -3,7 +3,7 @@
 // 여기에는 계획 모양이 없다: 무엇을 어떤 순서로 할지는 에이전트가 정한다. target은 계획 전 검사(LLM을 부르기 전)에만 쓴다.
 import type { PlanView } from "../contract/plan.js";
 import type { AssistMode } from "../contract/setup.js";
-import type { Facet, ObjClass, WorldObject, WorldView } from "../contract/world.js";
+import type { Facet, ObjClass, WorldFact, WorldObject, WorldView } from "../contract/world.js";
 import type { DeviceKind } from "../devices/kinds.js";
 import type { ActionChoice } from "./prompts.js";
 import { UNKNOWN_STATES, type StateKey } from "../world/vocab.js";
@@ -29,6 +29,7 @@ export interface TaskSpec {
   /** 이 행동 계획의 단계 수 상한(없으면 8, src/agent/planTools.ts PLAN_LIMITS). */
   maxSteps?: number;
   /** 대상 물건에 손을 대는 행동(치우기·채우기·따르기): 대상이 안 보이면 마지막으로 본 자리로 찾으러 간다(src/act/track/find.ts).
+   *  사람이 그 대상 종류를 쓰는 것을 보면 그 사람이 사라질 때까지 찾기·가까이 가서 보기·첫 명령을 미룬다(usingNow, src/act/track/use.ts).
    *  대상을 건드리지 않는 행동(그대로 두기)은 찾지 않는다. */
   touch?: true;
 }
@@ -80,6 +81,12 @@ export const TASKS: Record<string, TaskSpec> = {
 
 /** 모든 행동 이름(검사·tasks.json 견주기). PAM에 보내는 목록은 돕는 방식마다 다르다(tasksFor). */
 export const TASK_NAMES: readonly string[] = Object.keys(TASKS);
+
+/** 손대는 행동(touch)의 대상 종류. 손대지 않는 행동·목록 밖이면 null. */
+export function touchTarget(action: string | null): ObjClass | null {
+  const t = taskOf(action);
+  return t?.touch ? t.target ?? null : null;
+}
 
 /** 코치 모드에서도 PAM에 보내는 눈치 행동. */
 const COACH_ALSO: readonly string[] = ["사용자에게 물어보기"];
@@ -141,14 +148,38 @@ export function holdsTarget(world: WorldView, cls: string | undefined, known = f
   return (held.length === 0 && !known) || (cls !== undefined && held.includes(cls));
 }
 
+/** 사람이 그 종류 물건을 쓰는 중이라고 보는 사람 활동(마시는 중이면 컵·병). */
+export const USE_ACTS: Readonly<Partial<Record<StateKey, readonly string[]>>> = { drinking: ["cup", "bottle"] };
+/** 사람이 그 종류를 쓰는 까닭: 활동(act, USE_ACTS), 들고 있음(holding), 그 물건·가전이 쓰는 중으로 보임(using). */
+export type UseWhy = { kind: "act"; act: StateKey } | { kind: "holding" } | { kind: "using" };
+
+/** 사람이 그 종류(물건·가전)를 지금 쓰는 중인가와 그 까닭. 쓰는 중 지킴의 기준은 여기 하나다(실행 추적 src/act/track/use.ts가 사람이 사라질 때까지 붙잡는다).
+ *  사람이 보일 때만, 그 사람이 나타난 뒤(since_ms) 찍힌 사진의 사실로 본다(사라지기 전 사진의 늦은 답은 다음 등장의 근거가 아니다):
+ *  - 활동: 그 종류를 쓰는 활동(USE_ACTS, 마시는 중).
+ *  - 들고 있음: 사람이 그 종류나 무엇인지 모르는 물건을 든다(holdsTarget), 그 종류 물건이나 후보 자리(sightings)를 손에 든 채 봤다.
+ *  - 쓰는 중: 그 종류 물건·가전이 쓰는 중(use in_use)으로 보였다(전자레인지를 쓰는 사람). */
+export function usingNow(world: WorldView, cls: string): UseWhy | null {
+  const p = world.person;
+  if (!p.visible) return null;
+  const from = p.since_ms ?? Number.NEGATIVE_INFINITY;
+  const fresh = (f: WorldFact | undefined, value: string) => f?.value === value && f.at_ms >= from;
+  const act = p.facts.activity;
+  if (act && act.at_ms >= from && USE_ACTS[act.value as StateKey]?.includes(cls)) return { kind: "act", act: act.value as StateKey };
+  const mine = world.objects.filter((o) => o.cls === cls);
+  if ((fresh(p.facts.holding, "holding_object") && holdsTarget(world, cls)) || mine.some((o) => fresh(o.facts.place, "in_hand"))
+    || (world.sightings ?? []).some((s) => s.cls === cls && s.in_hand && s.at_ms >= from)) return { kind: "holding" };
+  if (mine.some((o) => fresh(o.facts.use, "in_use")) || world.fixtures.some((f) => f.cls === cls && fresh(f.facts.use, "in_use"))) return { kind: "using" };
+  return null;
+}
+
 /** 대상 종류 중 사라지지 않았고 이미 치우지 않은(싱크대 안·실행 추적이 놓은 것이 아닌) 물건 가운데 가장 최근에 본 것. 대상이 없는 행동이거나 못 찾으면 null. */
 export function targetOf(spec: Pick<TaskSpec, "target">, world: WorldView, placed?: Placed): WorldObject | null {
   if (!spec.target) return null;
   return world.objects.filter((o) => o.cls === spec.target && o.status !== "gone" && !putAway(o, placed)).sort((a, b) => b.last_seen_ms - a.last_seen_ms)[0] ?? null;
 }
 
-/** 찾을 자리: 안 보이는 대상을 마지막으로 본 자리. objectId는 확인 물건 id, 후보 자리(World State sightings)면 null. in_hand: 그 자리를 손에 든 채 봤다. */
-export interface LostSpot { objectId: string | null; cls: ObjClass; position: [number, number, number]; surface: string | null; surface_label: string | null; at_ms: number; in_hand: boolean }
+/** 찾을 자리: 안 보이는 대상을 마지막으로 본 자리. objectId는 확인 물건 id, 후보 자리(World State sightings)면 null. */
+export interface LostSpot { objectId: string | null; cls: ObjClass; position: [number, number, number]; surface: string | null; surface_label: string | null; at_ms: number }
 
 /** 대상이 안 보일 때 찾으러 갈 자리(가장 새 것 하나). 그 종류 있는 물건이 freshMs 안에(seenAfter를 주면 그 뒤에도) 보였으면 null
  *  (막은 검사의 신선도 기준을 그대로 받는다: 실행 전 검사는 판단 뒤에 다시 본 것만 신선하다).
@@ -168,11 +199,10 @@ export function lostTarget(i: {
   const spots: LostSpot[] = mine.filter((o) => o.position && !putAway(o, i.placed) && o.carried !== true && !i.away?.has(o.id))
     .map((o) => ({
       objectId: o.id, cls: i.cls, position: [...o.position!] as [number, number, number], surface: o.surface, surface_label: o.surface_label, at_ms: o.last_seen_ms,
-      in_hand: o.facts.place?.value === "in_hand",
     }));
   if (i.objectId === undefined) {
     for (const s of i.world.sightings ?? []) {
-      if (s.cls === i.cls) spots.push({ objectId: null, cls: i.cls, position: [...s.position], surface: s.surface, surface_label: s.surface_label, at_ms: s.at_ms, in_hand: s.in_hand });
+      if (s.cls === i.cls) spots.push({ objectId: null, cls: i.cls, position: [...s.position], surface: s.surface, surface_label: s.surface_label, at_ms: s.at_ms });
     }
   }
   return spots.filter((s) => !i.resting?.(s)).sort((a, b) => b.at_ms - a.at_ms)[0] ?? null;

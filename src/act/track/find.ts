@@ -11,8 +11,8 @@
 // - 막힘(맞춘 눈·폰 판본·끄기 안내·승인 대기·폰 대화·계획의 질문)과 명령 되풀이는 내용물 보류와 같은 명령 줄 규칙이다(phone-line.ts).
 // - 확인 물건의 자리를 찾는 동안은 그 물건에 보기 지킴을 건다(후보 자리는 지킬 물건이 없다).
 // - 생각 말풍선에 상태 줄을 올린다(TrackerOptions.thought): 시작하면 「컵이 안 보여서 식탁 쪽을 다시 볼게요」, 찾으면 「컵을 찾았어요」, 그만두면(한도) 「컵을 못 찾았어요」.
-// 찾기는 대상에 손을 대는 행동(TaskSpec.touch: 치우기·채우기·따르기)만 한다. 사람이 그 종류 물건(또는 무엇인지 모르는 물건)을 들고 있거나,
-//   사람이 보이고 찾을 자리를 손에 든 채 봤으면 시작하지 않는다(손에 든 컵을 찾으러 사람을 걷게 하지 않는다).
+// 찾기는 자동 접근 조건(src/act/track/use.ts mayApproach: 손대는 행동 TaskSpec.touch의 대상이고 사람이 쓰는 중이 아님)을 지날 때만 시작한다.
+//   찾는 중에도 tick마다 보고, 사람이 그 종류를 쓰기 시작하면 명령·보기 지킴·가까이 보기를 거두고 사람이 사라질 때까지 기다린다(막힘 한도 holdMs).
 // 계획 전 찾기(idle 칸 TrackCore.finding, 명령 id find:<번호>): 계획 전 검사가 no_target·in_sink로 막았고 찾을 자리가 있으면 시작한다.
 //   찾는 동안 같은 행동 판단은 기록만 하고 가장 새 것으로 바꿔 두며(start.ts), 찾으면 그 판단으로 다시 계획 전 검사부터 한다. 다른 행동의 계획을 받으면 거둔다.
 //   계획 밖 가까이 가서 보기보다 먼저다(찾는 동안은 시작하지 않는다). 「그만」은 거두고 그 자리를 쉰다.
@@ -24,7 +24,7 @@ import type { ObjClass, WorldObject, WorldView } from "../../contract/world.js";
 import { OBJECT_NAME } from "../../world/labels.js";
 import { PRECHECK_FRESH_MS } from "../check.js";
 import { EXEC_TEXT, FIND_THOUGHT, FIND_TEXT, STEP_TEXT, VISION_TEXT } from "../labels.js";
-import { holdsTarget, lostTarget, planIdOf, putAway, taskOf, type LostSpot } from "../tasks.js";
+import { lostTarget, planIdOf, putAway, touchTarget, type LostSpot } from "../tasks.js";
 import { CONTENTS_HOLD, PEEK } from "./contents.js";
 import { Part, type Run } from "./core.js";
 import { eyeNow, idleLine, phoneBlocked, planLine, refreshLine, sendLine, type IdleSlot, type Line } from "./phone-line.js";
@@ -72,13 +72,11 @@ export class Finder extends Part {
    *  이미 찾는 중이거나, 다른 계획이 열려 있거나(질문 중 포함) 만드는 중이거나(그 계획의 폰 줄을 덮지 않는다), 자리가 없으면 false. */
   start(d: DecisionRecord, text: string): boolean {
     const core = this.core;
-    const spec = taskOf(d.action);
-    const cls = spec?.touch ? spec.target : undefined;
-    if (core.stopped || core.finding || !cls || core.open() || core.planning) return false;
+    const cls = touchTarget(d.action);
+    if (core.stopped || core.finding || !cls || core.open() || core.planning || !core.use.mayApproach(cls)) return false;
     const now = this.clock.now();
-    const world = this.o.world();
-    const spot = lostTarget({ world, cls, placed: core.steps.placed(), away: core.steps.awayIds(), now, freshMs: PRECHECK_FRESH_MS, resting: (s) => this.resting(s, now) });
-    if (!spot || !this.mayFind(world, spot)) return false;
+    const spot = lostTarget({ world: this.o.world(), cls, placed: core.steps.placed(), away: core.steps.awayIds(), now, freshMs: PRECHECK_FRESH_MS, resting: (s) => this.resting(s, now) });
+    if (!spot) return false;
     // 계획 밖 가까이 가서 보기와 함께 돌지 않는다(찾기가 먼저)
     core.contents.dropIdle();
     const q: FindSlot = { id: `find:${++this.slotSeq}`, sent: null, spokeAt: now, visionAt: now, find: this.make(spot, PRECHECK_FRESH_MS, Number.NEGATIVE_INFINITY, now), first: d, decision: d, text };
@@ -157,14 +155,11 @@ export class Finder extends Part {
     }
     if (f?.phase === "over") return "over";
     if (!f) {
-      const spec = taskOf(r.decision.action);
-      const cls = spec?.touch ? spec.target : undefined;
-      const world = this.o.world();
-      const found = cls ? lostTarget({
+      const cls = touchTarget(r.decision.action);
+      const spot = cls && this.core.use.mayApproach(cls) ? lostTarget({
         world: this.o.world(), cls, placed: this.core.steps.placed(), away: this.core.steps.awayIds(), now, freshMs: this.staleMs(), seenAfter: r.decision.atMs, objectId,
         resting: (s) => this.resting(s, now),
       }) : null;
-      const spot = found && this.mayFind(world, found) ? found : null;
       if (!spot) return "none";
       f = r.find = this.make(spot, this.staleMs(), r.decision.atMs, now);
       this.o.thought?.(FIND_THOUGHT.start(f.name, f.surfaceLabel), r.decision.id);
@@ -202,16 +197,15 @@ export class Finder extends Part {
       objectId: spot.objectId, cls: spot.cls, name, label: place ?? name, surfaceLabel: place, spotId: spot.objectId ?? `find_${spot.cls}`, at: [...spot.position],
       freshMs, after, phase: "cmd", part: null, sent: null, since: now, aimAt: now, startedAt: now, blockedAt: null, lookTryAt: now, afterAt: now, looked: null, guarded: false, end: new AbortController(),
     };
-    if (f.objectId) {
-      f.guarded = true;
-      this.o.guardObject?.(f.objectId, true);
-    }
+    this.guard(f);
     return f;
   }
 
   /** 한 걸음(계획 전·실행 전 같은 길). asking: 계획에 승인·다시 묻기 질문이 떠 있다(막음). */
   private step(line: Line, f: Find, now: number, asking: boolean): Outcome {
     if (now - f.startedAt > FIND.totalMs) return this.over(line, f);
+    // 사람이 그 종류를 쓰는 중이면(use.ts) 명령·보기 지킴·가까이 보기를 거두고 사람이 사라질 때까지 기다린다(막힘 한도 holdMs). 풀리면 가기·비추기부터 다시 한다
+    if (!this.core.use.mayApproach(f.cls)) return this.pause(line, f, now);
     const hit = this.hit(this.o.world(), f, now);
     if (hit?.fresh) {
       this.close(line, f, "done");
@@ -247,6 +241,7 @@ export class Finder extends Part {
       return now - f.blockedAt > CONTENTS_HOLD.holdMs ? this.over(line, f) : { kind: "going" };
     }
     f.blockedAt = null;
+    this.guard(f);
     const d = Math.hypot(eye.position[0] - f.at[0], eye.position[1] - f.at[2]);
     if (!f.sent) return this.send(line, f, d > FIND.nearM ? "go" : "aim", d, now);
     if (f.part === "go" && d <= FIND.nearM) return this.send(line, f, "aim", d, now);
@@ -345,16 +340,28 @@ export class Finder extends Part {
     f.part = null;
   }
 
+  /** 사람이 쓰는 중이라 멈춘다: 명령·보기 지킴을 거두고 가까이 보기를 끊어 가기·비추기 차례로 돌린다. 막힌 채 holdMs가 지나면 그만둔다. */
+  private pause(line: Line, f: Find, now: number): Outcome {
+    this.withdraw(line, f);
+    this.unguard(f);
+    if (f.phase !== "cmd") {
+      f.end.abort();
+      Object.assign(f, { end: new AbortController(), phase: "cmd", looked: null });
+    }
+    f.blockedAt ??= now;
+    return now - f.blockedAt > CONTENTS_HOLD.holdMs ? this.over(line, f) : { kind: "going" };
+  }
+
+  private guard(f: Find): void {
+    if (f.guarded || !f.objectId) return;
+    f.guarded = true;
+    this.o.guardObject?.(f.objectId, true);
+  }
+
   private unguard(f: Find): void {
     if (!f.guarded || !f.objectId) return;
     f.guarded = false;
     this.o.guardObject?.(f.objectId, false);
-  }
-
-  /** 찾으러 가도 되는가: 사람이 그 종류 물건(또는 무엇인지 모르는 물건)을 들고 있지 않고, 사람이 보이는데 그 자리를 손에 든 채 본 것이 아니다. */
-  private mayFind(world: WorldView, spot: LostSpot): boolean {
-    if (holdsTarget(world, spot.cls)) return false;
-    return !(world.person.visible && spot.in_hand);
   }
 
   /** 쉬는 자리인가: 같은 종류를 FIND.retryMs 안에 FIND.matchM 안에서 찾아보고 못 찾았다. */

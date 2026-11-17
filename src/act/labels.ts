@@ -102,6 +102,13 @@ export const FIND_THOUGHT = {
   lost: (item: string) => `${josa(item, "을/를")} 못 찾았어요`,
 } as const;
 
+/** 쓰는 중 지킴(src/act/track/use.ts): 사람이 손대는 행동의 대상을 쓰는 것을 볼 때 생각 말풍선에 올리는 상태 줄(활동 이름·물건 이름). */
+export const USE_THOUGHT = {
+  act: (label: string) => `사람이 ${label}이라 지켜볼게요`,
+  holding: (item: string) => `사람이 ${josa(item, "을/를")} 들고 있어서 지켜볼게요`,
+  using: (item: string) => `사람이 ${josa(item, "을/를")} 쓰는 중이라 지켜볼게요`,
+} as const;
+
 /** 승인(src/act/track/approval.ts): 처음 하는 계획을 실제 폰에 묻는 글, 「거절」을 받은 계획의 실행 기록. */
 export const APPROVAL_TEXT = {
   ask: (task: string) => `${josa(task, "을/를")} 할까요?`,
@@ -214,6 +221,9 @@ export const EXEC_TEXT = {
   finding: (item: string) => `${josa(item, "을/를")} 찾으러 가요`,
   findingSame: (item: string) => `${josa(item, "을/를")} 찾는 중이에요`,
   foundNew: "찾은 뒤 다시 판단",
+  /** 쓰는 중 지킴(src/act/track/use.ts): 사람이 계획 대상을 쓰는 중이라 첫 명령을 미룸, holdMs 넘게 이어져 닫음. */
+  inUse: "사람이 쓰는 중이라 기다려요",
+  inUseLong: "사람이 쓰는 중이라 실행하지 않아요",
 } as const;
 
 /** 관찰 모드 기록 글(src/act/look.ts, 기록 종류 look). 가까이 본 결과, 못 본 까닭, 사람 부탁, 기다리기. capped·failed는 모델 대신 쓰는 까닭 글이다. */

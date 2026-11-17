@@ -6,7 +6,8 @@
 //   - 폰 눈과 컵 바닥 가운데의 수평 거리가 PEEK.nearM 밖이면 「컵 가까이 가 주세요」(go, near_m), 안이면 「컵 안이 보이게 위에서 비춰 주세요」(do, view above).
 //   - 위에서 비추기를 보낼 때 그 컵에 보기 지킴을 걸고(guardObject, 위에서는 YOLO가 컵을 못 잡아 사라짐으로 셀 수 있음) 그 차례가 끝나면 푼다.
 //   - 관찰 흐름이 위에서 비추기를 보낸 뒤 컵 안을 내려다본 VLM 프레임 쌍을 찾으면(topReady) 명령을 거두고 그 쌍으로 위에서 보기를 부탁한다(lookContents top).
-//   - 막히면(위치를 맞추기 전·판본이 맞는 폰 없음·끄기 안내·승인 대기·폰 대화·승인이나 다시 묻기 질문·컵이 사라졌거나 자리를 모름·손에 있음·사람이 그 종류를 듦)
+//   - 막히면(위치를 맞추기 전·판본이 맞는 폰 없음·끄기 안내·승인 대기·폰 대화·승인이나 다시 묻기 질문·컵이 사라졌거나 자리를 모름·손에 있음·
+//     자동 접근 조건이 아님: src/act/track/use.ts mayApproach, 손대는 행동의 대상이 아니거나 사람이 쓰는 중)
 //     명령을 보내지 않고 떠 있으면 거둔다. 풀리면 새 번호의 단계 id로 다시 보낸다. 막힌 채 holdMs가 지나면 그만둔다.
 //   - 컵이 옮겨지면(트윈 자리가 PEEK.movedM 넘게 바뀜·옮김 표시) 명령을 거두고 처음부터 한다. 명령마다 stepMs 안에 끝나지 않으면 그만둔다.
 // 위에서 본 뒤(after) settleMs에도 모르면 그만둔다. 그 컵·세대는 retryMs 동안 다시 가까이 가지 않는다. 확인됐지만 낡았으면 holdMs 동안 다시 보이기를 기다린다.
@@ -15,9 +16,10 @@
 // (가까이 보기가 늦거나 멈춰도) 신호를 끊고 그만둔다. 보류하는 동안 컵을 다시 보지 못해 낡아도(stale) 보류를 이어 간다(src/act/track/start.ts tryStart).
 // 계획 밖 가까이 가서 보기(idle, tick): 계획이 없어 PAM이 모르는 내용물로 대기만 하지 않게 같은 차례(peek → seeing → after)를 계획 밖 칸
 //   TrackCore.idlePeek(명령 id peek:<번호>)로 돈다. 시작하는 때(모두): 열린·만드는 계획(코치 포함)·끄기 안내·승인 대기·폰 대화가 없고, 위치를 맞췄고,
-//   사람이 보이고, 행동 목록에 내용물 행동(want)이 있고, 그 컵이 보이고 자리를 알고 치운 것·손에 든 것이 아니고 볼 면을 모르며, 불투명이 확인됐거나
+//   사람이 보이고, 행동 목록에 손대는 내용물 행동(touch·want: 채우기·따르기)이 있고, 그 컵이 자동 접근 조건(mayApproach: 사람이 쓰는 중이 아님)을 지나고
+//   보이고 자리를 알고 치운 것·손에 든 것이 아니고 볼 면을 모르며, 불투명이 확인됐거나
 //   B가 그 세대에 잘라 본 지 settleMs가 지났고, 그 컵·세대를 retryMs 안에 보지 않았다. 도는 동안 막는 것(계획·대화·끄기 안내·승인 대기·위치·폰)이 생기면 거둔다
-//   (계획 명령이 그 자리를 덮었으면 지우기를 보내지 않는다). 새 계획을 받으면 그 계획이 명령·보기 지킴을 쓰기 전에 거둔다(src/act/track/start.ts).
+//   (계획 명령이 그 자리를 덮었으면 지우기를 보내지 않는다). 사람이 그 컵을 쓰기 시작해도 tick마다 보고 거둔다. 새 계획을 받으면 그 계획이 명령·보기 지킴을 쓰기 전에 거둔다(src/act/track/start.ts).
 //   가까이 가기 중에는 사람이 보여야 하고, 위에서 비추기·위에서 보기·사진 기다림 동안은 안 보여도 잇는다. 「그만」은 어느 차례에서든 받는다.
 //   끝나면 칸을 비운다(모르면 보기 기록만 남는다).
 import type { CloserResult } from "../../contract/events.js";
@@ -26,7 +28,7 @@ import type { Facet, WorldObject, WorldView } from "../../contract/world.js";
 import type { LookSpot } from "../../observe/index.js";
 import { OBJECT_NAME, STATE_TEXT } from "../../world/labels.js";
 import { PEEK_TEXT, VISION_TEXT } from "../labels.js";
-import { holdsTarget, opaqueBody, putAway, sureValue, taskOf, type TaskSpec } from "../tasks.js";
+import { opaqueBody, putAway, sureValue, taskOf, type TaskSpec } from "../tasks.js";
 import { Part, type Run } from "./core.js";
 import { EYE_MS, eyeNow, idleLine, phoneBlocked, planLine, refreshLine, sendLine, type Line } from "./phone-line.js";
 
@@ -151,7 +153,7 @@ export class ContentsHold extends Part {
     }
     const eye = eyeNow(core, now);
     const blocked = !o || o.status === "gone" || !o.position || !!o.followed_by || phoneBlocked(core, now, asking)
-      || o.facts.place?.value === "in_hand" || holdsTarget(world, o.cls, true);
+      || o.facts.place?.value === "in_hand" || !core.use.mayApproach(o.cls);
     if (blocked) {
       if (h.peek?.sent) {
         this.withdraw(line, h);
@@ -305,9 +307,9 @@ export class ContentsHold extends Part {
     return core.stopped || !!core.open() || !!core.planning || !!core.finding || phoneBlocked(core, this.clock.now(), false);
   }
 
-  /** 행동 목록의 내용물 행동(want와 대상 종류가 있는 행동). */
+  /** 행동 목록의 손대는 내용물 행동(touch·want와 대상 종류가 있는 행동: 채우기·따르기. 그대로 두기는 손대지 않아 아니다). */
   private wanting(): TaskSpec[] {
-    return (this.o.tasks?.() ?? []).map((n) => taskOf(n)).filter((t): t is TaskSpec => !!t?.want && !!t.target);
+    return (this.o.tasks?.() ?? []).map((n) => taskOf(n)).filter((t): t is TaskSpec => !!t?.want && !!t.target && !!t.touch);
   }
 
   /** 계획 밖으로 가까이 가서 볼 컵: 내용물 행동의 대상 종류이고, 보이고 자리를 알며, 치운 것·손에 든 것이 아니고, 볼 면을 모르고,
@@ -317,7 +319,7 @@ export class ContentsHold extends Part {
     const placed = this.core.steps.placed();
     const hit = world.objects.filter((o) => {
       const facets = wants.filter((t) => t.target === o.cls).flatMap((t) => Object.keys(t.want!) as Facet[]);
-      if (!facets.length || o.status !== "present" || !o.position || putAway(o, placed) || o.facts.place?.value === "in_hand" || holdsTarget(world, o.cls, true)) return false;
+      if (!facets.length || o.status !== "present" || !o.position || putAway(o, placed) || o.facts.place?.value === "in_hand" || !this.core.use.mayApproach(o.cls)) return false;
       const gen = o.contents_gen ?? 0;
       if (!facets.some((f) => sureValue(o, f) === null)) return false;
       const recent = this.peeked.get(o.id);
@@ -343,7 +345,8 @@ export class ContentsHold extends Part {
       const lapsed = !o || o.status === "gone" || (o.contents_gen ?? 0) !== h.gen || sureValue(o, "contents") !== null;
       // 사람이 안 보여도 되는 것은 위에서 비추기·위에서 보기·사진 기다림뿐이다(폰이 컵을 내려다봐 사람이 안 찍힌다). 가까이 가기 중에는 사람이 보여야 한다
       const away = !world.person.visible && h.phase === "peek" && h.peek?.part !== "above";
-      if (lapsed || blocked || away) return this.dropIdle();
+      // 사람이 그 컵을 쓰기 시작하면(use.ts) 어느 차례든 거둔다
+      if (lapsed || blocked || away || !core.use.mayApproach(o!.cls)) return this.dropIdle();
       const line = idleLine(this.core, q);
       const going = h.phase === "after" ? now - h.afterAt <= CONTENTS_HOLD.settleMs || this.over(line, h) : this.advance(line, h, o, now, false);
       if (!going) core.idlePeek = null;
