@@ -117,9 +117,25 @@ describe("World State: 컵 크기와 보기 지킴", () => {
     expect(Math.abs(o.size_m!.height - 0.1)).toBeLessThan(0.01);
     expect(Math.abs(o.size_m!.width - 0.08)).toBeLessThan(0.01);
     // 바닥 가운데: 자리(가까운 가장자리)에서 카메라 반대쪽으로 반 폭
-    expect(Math.hypot(o.size_m!.center[0] - 0.6, o.size_m!.center[2])).toBeLessThan(0.01);
+    expect(Math.hypot(o.size_m!.center![0] - 0.6, o.size_m!.center![2])).toBeLessThan(0.01);
     // 사람 같은 물건 아닌 것·그릇 아닌 물건은 재지 않는다
     expect(w.view(5000).objects.filter((x) => x.cls !== "cup").every((x) => x.size_m === undefined)).toBe(true);
+  });
+
+  it("크기를 잰 뒤 반대편 카메라가 자리를 고치면(돌린 폰이라 크기는 못 잼) 바닥 가운데는 지금 자리를 잰 카메라 기준으로 다시 구한다", () => {
+    const w = new WorldState({ evidenceStepMs: 1000, surfaces: () => [table], floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices: () => [] });
+    const c: [number, number, number] = [0.6, 0.75, 0];
+    for (let i = 1; i <= 5; i++) w.applyDetections(engineFrame(`e${i}`, i * 1000, { view }), [det("cup", 0.9, cylinderBox(view, c, 0.04, 0.1), 41)]);
+    const before = w.view(5000).objects[0]!;
+    const back = rolled(viewLooking([1.2, 1.4, 0], [0.6, 0.8, 0]), 20);
+    w.applyDetections(engineFrame("e6", 6000, { view: back }), [det("cup", 0.9, cylinderBox(back, c, 0.04, 0.1), 41)]);
+    const o = w.view(6000).objects[0]!;
+    expect(o.size_m!.width).toBe(before.size_m!.width);
+    const [px, , pz] = o.position!;
+    const len = Math.hypot(px - 1.2, pz);
+    expect(o.size_m!.center![0]).toBeCloseTo(px + ((px - 1.2) / len) * (o.size_m!.width / 2), 2);
+    expect(o.size_m!.center![2]).toBeCloseTo(pz + (pz / len) * (o.size_m!.width / 2), 2);
+    expect(Math.abs(o.size_m!.center![0] - 0.6)).toBeLessThan(0.03);
   });
 
   // 바닥만 있는 집에서 LOOK_VIEW로 바닥 (1.5, 0, 0)에 보이는 컵

@@ -492,14 +492,14 @@ export class ObservationPipeline {
   }
 
   /** 위에서 본 VLM 프레임 쌍: sinceMs 뒤에 찍혀 카메라가 있고 그 컵 안을 보는(topView, 컵 모양은 World State size_m의 cupInside) VLM 프레임 가운데
-   *  topPairOf(TOP_CONFIRM 시간 조건, 내용물 확인과 같은 조건). 컵 자리는 잰 바닥 가운데(size_m.center), 모르면 자리(가까운 가장자리, edge)다.
+   *  topPairOf(TOP_CONFIRM 시간 조건, 내용물 확인과 같은 조건). 컵 자리는 잰 바닥 가운데(size_m.center), 모르면 자리(가까운 가장자리, edge로 본다)다.
    *  컵이 없거나 사라졌거나 자리를 모르면 null. */
   private topPair(objectId: string, sinceMs: number): { obj: WorldObject; center: [number, number, number]; pair: [EngineFrame, EngineFrame] } | null {
     const obj = this.o.world.view(this.clock.now()).objects.find((o) => o.id === objectId && o.status !== "gone");
     if (!obj?.position) return null;
     const center = obj.size_m?.center ?? obj.position;
     const cup = cupInside(obj.size_m);
-    const tops = this.ring.frames().filter((f) => f.vlm !== false && f.view && f.capturedAtMs >= sinceMs && topView(f.view, center, cup, !obj.size_m));
+    const tops = this.ring.frames().filter((f) => f.vlm !== false && f.view && f.capturedAtMs >= sinceMs && topView(f.view, center, cup, !obj.size_m?.center));
     const pair = topPairOf(tops.map((f) => ({ at: f.capturedAtMs, f })));
     return pair ? { obj, center, pair: [pair[0].f, pair[1].f] } : null;
   }

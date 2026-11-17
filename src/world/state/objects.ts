@@ -8,7 +8,7 @@ import { EVIDENCE_GAP_MS } from "../confirm.js";
 import { CHANGE_TEXT, onSurface } from "../labels.js";
 import { inView, placePoint, sizeOf } from "../place.js";
 import { CLASSES, NOW_FACETS, POSE_HOLD } from "../vocab.js";
-import { KEYS, OBJ_CLASSES, PERSON, Part, SIZE_SAMPLES, dist, type Obj, type TrailSample, type V3 } from "./core.js";
+import { KEYS, OBJ_CLASSES, PERSON, Part, SIZE_SAMPLES, dist, fromCamera, type Obj, type TrailSample, type V3 } from "./core.js";
 
 const FIXTURE_CLASSES: ReadonlySet<string> = new Set(KEYS.filter((k) => CLASSES[k].role === "fixture"));
 /** 사라진 물체를 이만큼 두었다가 잊는다(같은 자리에 다시 보이면 같은 id로 돌아온다). */
@@ -63,7 +63,7 @@ export class Detections extends Part {
       // 그릇은 크기를 잰다(위에서 컵 안을 보는 판정이 쓴다, src/world/place.ts cupInside)
       if (view && placed?.position && (CLASSES[cls].facets as readonly string[]).includes("contents")) {
         const size = sizeOf(view, d.box, { width: frame.width, height: frame.height }, placed.position);
-        if (size) obj.sizes = [...obj.sizes, { height: size.height, width: size.width, offset: [size.center[0] - placed.position[0], size.center[2] - placed.position[2]] as [number, number] }].slice(-SIZE_SAMPLES);
+        if (size) obj.sizes = [...obj.sizes, { height: size.height, width: size.width }].slice(-SIZE_SAMPLES);
       }
       obj.lastSeen = Math.max(obj.lastSeen, at);
       obj.lastInView = Math.max(obj.lastInView, at);
@@ -80,6 +80,7 @@ export class Detections extends Part {
         obj.room = this.o.roomAt([placed.position[0], placed.position[2]])?.id ?? null;
         obj.posAt = at;
         obj.posCloser = false;
+        obj.posFrom = view ? fromCamera(view.origin, placed.position) : null;
       }
     });
     if (people.length > 1) core.crowdAt = at;

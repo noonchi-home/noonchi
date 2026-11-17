@@ -78,12 +78,13 @@ export interface WorldStateOptions {
   rests?: () => RestSpot[];
 }
 
-/** 잰 크기들의 가운데값(높이·폭 따로, mm까지)과 바닥 가운데(지금 자리에서 가장 새로 잰 때의 가운데 쪽으로 옮긴 점). */
-function sizeView(xs: readonly { height: number; width: number; offset: [number, number] }[], at: [number, number, number]): { height: number; width: number; center: [number, number, number] } {
+/** 잰 크기들의 가운데값(높이·폭 따로, mm까지)과 바닥 가운데: 지금 자리(가까운 바닥 가장자리)에서 그 자리를 잰 카메라 반대쪽(from)으로 반 폭 옮긴 점.
+ *  from을 모르면 가운데를 내지 않는다. */
+function sizeView(xs: readonly { height: number; width: number }[], at: [number, number, number], from: [number, number] | null): { height: number; width: number; center?: [number, number, number] } {
   const mid = (v: number[]) => { const a = [...v].sort((x, y) => x - y); const n = a.length; return n % 2 ? a[(n - 1) / 2]! : (a[n / 2 - 1]! + a[n / 2]!) / 2; };
   const r = (v: number) => Math.round(v * 1000) / 1000;
-  const off = xs.at(-1)!.offset;
-  return { height: r(mid(xs.map((x) => x.height))), width: r(mid(xs.map((x) => x.width))), center: [r(at[0] + off[0]), at[1], r(at[2] + off[1])] };
+  const width = r(mid(xs.map((x) => x.width)));
+  return { height: r(mid(xs.map((x) => x.height))), width, ...(from ? { center: [r(at[0] + from[0] * width / 2), at[1], r(at[2] + from[1] * width / 2)] as [number, number, number] } : {}) };
 }
 
 export class WorldState {
@@ -205,7 +206,7 @@ export class WorldState {
       first_seen_ms: x.firstSeen, last_seen_ms: x.lastSeen, last_in_view_ms: x.lastInView, facts: { ...x.facts }, answered_ms: x.answered, devices: relatedDeviceIds(x.cls, devices),
       closer_hold: core.held(x, nowMs), followed_by: x.followed?.id ?? null, ...(Object.keys(x.closerRev).length ? { closer_rev: { ...x.closerRev } } : {}),
       ...(x.carried ? { carried: true as const } : {}),
-      ...(x.sizes.length && x.position ? { size_m: sizeView(x.sizes, x.position) } : {}),
+      ...(x.sizes.length && x.position ? { size_m: sizeView(x.sizes, x.position, x.posFrom) } : {}),
       ...(x.contents ? { contents_gen: x.contents.gen, ...(x.contents.past.length ? { contents_past: x.contents.past.map((p) => ({ value: p.value, at_ms: p.atMs })) } : {}) } : {}),
     }));
     const fixtures: WorldFixture[] = [...core.fixtures.values()].map((f) => ({

@@ -6,7 +6,7 @@ import type { CameraView, Detection, SceneObservation } from "../../contract/obs
 import { CHANGE_TEXT, onSurface } from "../labels.js";
 import { placePoint, type PlaneSurface } from "../place.js";
 import { CLASSES, NOW_FACETS, STATES, VLM_ONLY, type StateKey, type StateOf } from "../vocab.js";
-import { OBJ_CLASSES, Part, dist, fits, type Obj, type V3 } from "./core.js";
+import { OBJ_CLASSES, Part, dist, fits, fromCamera, type Obj, type V3 } from "./core.js";
 
 /** 가까이 보기로 VLM 확인 없이 새 물건을 만들려면 같은 자리로 보인 서로 다른 원본 프레임이 이만큼 있어야 한다(물건 등장 확인 장수와 같다).
  *  이보다 적으면 같은 가까이 보기의 VLM이 그 감지에 사실을 답해야 만든다(CloserPending). */
@@ -208,6 +208,7 @@ export class CloserLook extends Part {
     obj.room = this.o.roomAt([s.position[0], s.position[2]])?.id ?? null;
     obj.posAt = at;
     obj.posCloser = true;
+    obj.posFrom = fromCamera(s.pass.view.origin, s.position);
   }
 
   /** 가까이 본 촬영으로 보였다: 본 시각·보임 판단 시각·지킴을 두고, 보통 프레임의 등장·사라짐 셈은 있음으로 다시 둔다. 옮김 표시는 applyCloser가 따로 지운다. */
