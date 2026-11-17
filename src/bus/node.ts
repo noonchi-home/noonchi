@@ -17,6 +17,8 @@ type Settle = (ok: boolean) => void;
 
 /** 발행 한 번의 시간 제한 기본값(ms). */
 export const PUBLISH_TIMEOUT_MS = 5000;
+/** settled가 새 일이 없는지 보는 간격(ms). 통로로 오는 중인 메시지가 닿을 시간이다. */
+const SETTLE_GAP_MS = 50;
 
 /** p를 기다리되 신호가 끊기거나 ms가 지나면 실패한다. */
 function bounded<T>(p: Promise<T>, signal: AbortSignal, ms: number, what: string): Promise<T> {
@@ -57,6 +59,8 @@ export class BusNode {
   #running: Promise<void> | null = null;
   /** prepare가 구독을 만든 #subs 수. */
   #prepared = 0;
+  /** 줄에서 돌린 일 수(settled가 새 일이 왔는지 본다). */
+  #handled = 0;
   #current: AbortController | null = null;
   #closed = false;
   #idle: (() => void)[] = [];
@@ -172,10 +176,26 @@ export class BusNode {
     for (const settle of [...this.#parked]) settle(false);
   }
 
+  /** 닫기 전 비우기: 한 간격(SETTLE_GAP_MS) 동안 새로 처리한 일이 없고 줄이 비고 more()가 참일 때까지 기다린다
+   *  (메시지 사이 잠깐 빈 틈을 다 비었다고 보지 않는다: 통로로 오는 중인 메시지도 받는다).
+   *  ms쯤(간격 돌림 수로 센다: 시험 시계가 멈춰 있어도 걸리지 않는다) 지나면 기다리지 않고 false. 타이머는 노드 시계의 after를 쓴다. */
+  async settled(ms: number, more: () => boolean = () => true): Promise<boolean> {
+    for (let round = 0; round * SETTLE_GAP_MS < ms; round++) {
+      await this.idle();
+      const seen = this.#handled;
+      await new Promise<void>((r) => { this.#clock.after(SETTLE_GAP_MS, r); });
+      if (!this.busy() && more() && this.#handled === seen) return true;
+    }
+    return false;
+  }
+
   /** 시험·재생 장벽: 줄이 빌 때까지 기다린다. */
   idle(): Promise<void> {
     return this.busy() ? new Promise((r) => this.#idle.push(r)) : Promise.resolve();
   }
+
+  /** 끝낸 노드인가(그 뒤 발행·spawn은 거절, post는 버린다). */
+  get closed(): boolean { return this.#closed; }
 
   /** 줄에 일이 있거나 도는 중이다. 내려놓은 메시지와 spawn한 일은 세지 않는다. */
   busy(): boolean { return this.#running !== null || this.#queue.length > 0; }
@@ -221,6 +241,7 @@ export class BusNode {
     await null;   // 늘 다음 차례에 시작한다: 첫 일이 동기로 던져 줄이 바로 비어도 #running이 끝난 Promise로 남지 않는다
     while (this.#queue.length && !this.#closed) {
       const job = this.#queue.shift()!;
+      this.#handled++;
       const ac = new AbortController();
       this.#current = ac;
       let taken: Settle | null = null;

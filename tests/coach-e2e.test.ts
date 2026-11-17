@@ -254,8 +254,6 @@ describe("코치 모드: 라면 끓이기 알려 주기", () => {
     s.answer({ id: planId, step: `${planId}:7:hand` }, "approve");
     await s.pump(() => !!s.said("인덕션을 켜 주세요"), "켜라는 명령");
     await srv!.hub.command(s.cooktop, { type: "on" });
-    // 켜짐은 가전 노드 → 집 상태 노드 → 거울로 들어온다(통로, stage-queue 묶음 2): 사람이 「그만」이라 말하기 전에 집 상태에 들어간 뒤로 맞춘다
-    await s.pump(() => !!s.dash.filter((m) => m.type === "world").at(-1)?.world.devices.find((d: { id: string }) => d.id === s.cooktop)?.active, "인덕션 켜짐이 집 상태에 들어감");
     s.say("그만");
     await s.pump(() => s.commands().some((m) => m.step === `off:${planId}:${s.cooktop}:1`), "끄기 안내");
     const off = s.commands().find((m) => m.step === `off:${planId}:${s.cooktop}:1`)!;

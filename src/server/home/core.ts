@@ -9,7 +9,7 @@ import type { PlannedCommand } from "../../contract/phone.js";
 import type { AssistMode } from "../../contract/setup.js";
 import type { SignalHub, ThinqLink } from "../../devices/index.js";
 import type { FloorPlan, HomePlan, PlaceNames, TwinData, loadLayout, loadScene } from "../../layout/index.js";
-import { realClock, type BusNode, type Clock } from "../../bus/index.js";
+import { realClock, type BusNode, type Clock, type Outbox } from "../../bus/index.js";
 import type { ObservationPipeline, PerceptionNode } from "../../observe/index.js";
 import type { WorldView } from "../../contract/world.js";
 import type { EyeFeed, FrameHeader, PhoneServer, StartStore, twinLandmarks } from "../../phone/index.js";
@@ -84,6 +84,8 @@ export class HomeCore {
   mirror: WorldMirror | null = null;
   phoneNode: BusNode | null = null;
   devicesNode: BusNode | null = null;
+  /** 노드가 내는 입력의 차례대로 보내기 줄(실패하면 같은 봉투로 다시, 닫기 전 비운다): 실행 추적(거울 노드)·폰·가전. */
+  out: { act?: Outbox; phone?: Outbox; devices?: Outbox } = {};
   unsubWorld: () => void = () => {};
   decideTimer: NodeJS.Timeout | undefined;
   // 말풍선 카드(say.ts): 실제 폰에 낸 지금 명령, 마지막 판단·물체 모양, 보낸 글, 가까이 보기·반성·외부 연락 결과

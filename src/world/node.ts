@@ -16,7 +16,11 @@ const KEEP_MS = 30_000;
 /** 넣은 입력 메시지 id를 이만큼 기억한다(다시 온 메시지는 다시 넣지 않는다). */
 const APPLIED_MAX = 1024;
 
-export interface WorldNode { node: BusNode }
+export interface WorldNode {
+  node: BusNode;
+  /** 닫기 전 비우기: 받은 입력을 다 넣고 남은 출력을 다 낼 때까지 기다린다(ms쯤 지나면 false). */
+  settle(ms: number): Promise<boolean>;
+}
 
 /** 입력을 World State에 넣는 곳: 감지 번호 표(프레임 → 감지 번호 → 물건 id)와 가까이 보기 표(look → 감지 번호 표·VLM 답을 기다리는 후보)를 갖는다.
  *  집 상태 노드와 관찰 흐름 시험 대역(tests/helpers/world-port.ts)이 같이 쓴다. */
@@ -149,7 +153,8 @@ export async function startWorldNode(o: { bus: Bus; epoch: { boot: string; home:
   node.on("/phone/heard", (b, { e }) => once(e, () => ({ changes: world.heard(b.text, b.observed_ms) })));
   node.on("/device/changes", (b, { e }) => once(e, () => {
     const changes = world.applyDevice(b.state, clock.now());
-    return { changes: b.note.initial ? [] : changes, state: true };   // 첫 상태는 변화로 내지 않는다(지금 시작 가전 상태와 같다)
+    // 첫 상태는 변화로 내지 않는다(지금 시작 가전 상태와 같다). 상태를 억지로 다시 내지 않는다: 시작 때 가전 수십 개가 18KB 상태를 하나씩 내며 줄이 밀린다(250ms 다시 냄이 맡는다)
+    return { changes: b.note.initial ? [] : changes };
   }));
   node.every(o.tickMs ?? WORLD_TICK_MS, () => {
     inputs.prune();
@@ -158,5 +163,5 @@ export async function startWorldNode(o: { bus: Bus; epoch: { boot: string; home:
 
   await node.prepare();
   await node.publish("/world/state", { rev, view: world.view(clock.now()) });
-  return { node };
+  return { node, settle: (ms) => node.settled(ms, () => outbox.length === 0) };
 }

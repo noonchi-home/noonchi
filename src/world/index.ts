@@ -4,7 +4,7 @@ export { accepts, closerObject } from "./accept.js";
 export { ConditionWatch, type Condition, type ConditionContext, CONDITION_KINDS, ConditionSchema, checkCondition, type ConditionHome } from "./conditions.js";
 export { inView, pixelOf, rayDir, restsFromLayout, surfacesFromLayout, boxShape, cupInside, topBox, topView, TOP_BOX_M, TOP_CUP_FALLBACK, TOP_VIEW, type CupInside, type PlaneSurface, type RestSpot } from "./place.js";
 export { TOP_CONFIRM, topPairOf } from "./state/contents.js";
-export { becameKey, deviceText } from "./relations.js";
+export { becameKey, deviceStateKeys, deviceStatus, deviceText } from "./relations.js";
 export { WorldState, CLOSER_NEW_FRAMES, type CloserPass } from "./state/world.js";
 export { WorldInputs, startWorldNode, WORLD_TICK_MS, type WorldNode } from "./node.js";
 export { startWorldMirror, type WorldMirror } from "./mirror.js";

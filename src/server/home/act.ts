@@ -5,11 +5,13 @@ import { lookTargets, taskOf, tasksFor } from "../../act/tasks.js";
 import { deviceViews, placesOf, type PlaceInfo } from "../../agent/index.js";
 import { Decider, PamClient, ThoughtWriter, lastStoredThoughts, memoryForDay, pamSettings, storeThought, thoughtFeed } from "../../brain/index.js";
 import type { BrainLog } from "../../contract/events.js";
-import type { WorldInput } from "../../contract/world.js";
+import type { WorldInput, WorldView } from "../../contract/world.js";
+import type { SignalHub } from "../../devices/index.js";
 import type { PlanView } from "../../contract/plan.js";
 import { createInference } from "../../infer/inference.js";
 import { floorPlanFrom, loadScene, type LayoutEditor, type PlaceNames } from "../../layout/index.js";
-import { Trigger, loadTriggerConfig, type PlaneSurface } from "../../world/index.js";
+import { Trigger, deviceStateKeys, deviceStatus, loadTriggerConfig, type PlaneSurface } from "../../world/index.js";
+import { DEVICE_STATES } from "../../world/vocab.js";
 import { PHONE_SESSION, TALK_QUIET_MS, type HomeCore } from "./core.js";
 
 /** 명령 대상·가까이 볼 자리(이름과 트윈 자리 [x, 높이, y]): 면(식탁·싱크대처럼 윗면이 있는 배치)이면 윗면 가운데(싱크볼이 있으면 윗면 높이의 싱크볼 가운데),
@@ -25,9 +27,23 @@ function placeLocator(editor: LayoutEditor | undefined, surfaces: () => PlaneSur
   };
 }
 
+/** 가전의 지금 상태(state·status·active)는 같은 프로세스의 허브 값으로 맞춘 집 상태 보기(이력·카메라 근거는 거울 그대로).
+ *  거울은 가전 노드 → 집 상태 노드를 지나 몇 ms 늦다: 켠 직후 「그만」 같은 판단이 지난 상태(꺼짐)를 보지 않게 한다. 묶음 5에서 /device/state로 바꾼다. */
+function liveDevices(v: WorldView, hub: SignalHub): WorldView {
+  return {
+    ...v,
+    devices: v.devices.map((d) => {
+      const s = hub.get(d.id);
+      if (!s || s.signal === "none") return d;
+      const state = deviceStateKeys(d.kind, s.twin);
+      return { ...d, state, status: deviceStatus(d.kind, s.twin), active: state.some((k) => DEVICE_STATES[k].active) };
+    }),
+  };
+}
+
 /** 실행 추적이 World State에 넣는 것(보기 지킴·따르기 창)은 /world/input으로 낸다(거울 노드 act, 집 상태 노드가 넣는다). */
 function worldInput(core: HomeCore, i: WorldInput): void {
-  core.mirror?.node.publish("/world/input", i).catch((e: Error) => core.ctx.log(`[경고] /world/input을 보내지 못했어요: ${e.message}`));
+  core.out.act?.push("/world/input", i);   // 차례대로, 실패하면 같은 봉투로 다시(src/bus/outbox.ts)
 }
 
 /** 클로이드 계획(src/act/hub.ts): 장면·평면도·부르는 이름과 계획 묶음(PlanHub). 계획 방송은 대시보드·기록·말풍선 카드로 간다. */
@@ -68,8 +84,8 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
   const { env, history } = ctx;
   const { home } = twin;
   const now = () => core.nowMs();
-  // 집 상태는 거울(가장 새 /world/state)로 읽는다. 노드는 실행 추적을 만든 뒤 띄우고 첫 상태를 받은 뒤에 판단·실행이 돈다
-  const view = () => core.view()!;
+  // 집 상태는 거울(가장 새 /world/state)로 읽고 가전 지금 상태는 허브 값으로 맞춘다. 노드는 실행 추적을 만든 뒤 띄우고 첫 상태를 받은 뒤에 판단·실행이 돈다
+  const view = () => liveDevices(core.view()!, signals);
   // 판단·계획은 메시지를 기다리지 않는다: 판단 기록을 보낸 뒤 부르고, 새 메시지가 오면 보낸다. 다시 띄우면 이 집의 최근 메시지(10분 안)로 시작한다
   const feed = thoughtFeed({
     writer: new ThoughtWriter({ chat: createInference(env).thought }), send: (m) => core.app?.broadcast(m),
@@ -168,7 +184,7 @@ export function startLooker(core: HomeCore, emit: (event: BrainLog) => void): vo
     observer, closer: (spot, signal) => observed.closer(spot, signal), topLook: (spot, sinceMs, signal) => observed.topLook(spot, sinceMs, signal),
     // B가 잘라 본 컵: 실행 추적이 계획 밖으로 가까이 가서 볼지 본다
     looked: (id) => tracking.lookedIdle(id),
-    frame: () => observed.latest(), world: () => core.view()!,
+    frame: () => observed.latest(), world: () => liveDevices(core.view()!, core.signals),
     askPerson: (planId, stepId, spot) => tracking.askCloser(planId, stepId, spot), tell: (planId, stepId, mode) => tracking.tell(planId, stepId, mode), emit, targets: lookTargets, placed: () => tracking.placed(), clock: ctx.brain?.clock,
     onLook: (spot) => {
       core.lookSay = { place: spot.label, atMs: Date.now() };

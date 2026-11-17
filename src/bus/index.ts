@@ -6,5 +6,6 @@ export { Header, decode, encode, frameBytes, msgId, type Envelope } from "./head
 export { MemoryBus } from "./memory.js";
 export { BusNode } from "./node.js";
 export { openBus } from "./open.js";
+export { Outbox } from "./outbox.js";
 export { Pending } from "./pending.js";
 export { MAX_FRAME_B64, NODES, TOPICS, type Body, type NodeName, type Order, type Qos, type TopicName, type TopicSpec } from "./topics.js";

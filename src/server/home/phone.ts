@@ -72,10 +72,9 @@ function phonePending(core: HomeCore) {
 /** 실제 폰이 들은 말 가운데 지금 명령의 답이 아닌 말: 관찰 텍스트 한 줄로 판단 호출에 넘긴다(눈치 모드에서도).
  *  그 말 자체는 기록하지 않는다: 기록·대시보드에는 내용 없는 표시(HEARD_MARK)만 남긴다. KEEP_HEARD_TEXT=1이면 그대로 남긴다(기본 꺼짐) */
 function heardSpeech(core: HomeCore, text: string): void {
-  const node = core.phoneNode;
-  if (!node || !core.decider) return;
-  // 집 상태 노드가 heard 변화로 넣고, 거울이 판단에 넘기고 기록에는 표시만 남긴다(src/server/home/observe.ts routeWorldChanges)
-  node.publish("/phone/heard", { text, observed_ms: core.nowMs() }).catch((e: Error) => core.ctx.log(`[경고] 들은 말을 보내지 못했어요: ${e.message}`));
+  if (!core.out.phone || !core.decider) return;
+  // 집 상태 노드가 heard 변화로 넣고, 거울이 판단에 넘기고 기록에는 표시만 남긴다(src/server/home/observe.ts routeWorldChanges). 차례대로, 실패하면 같은 봉투로 다시
+  core.out.phone.push("/phone/heard", { text, observed_ms: core.nowMs() });
 }
 
 /** 실제 폰 서버를 열고(PHONE_PORT가 있을 때) 말·단추·승인 답을 실행 추적·에이전트에 잇는다. 폰 주소와 잡은 포트를 남긴다. 앱을 연 뒤 부른다. */

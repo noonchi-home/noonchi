@@ -3,7 +3,7 @@
 // (frame·closer_merge 없이 뒤의 VLM 답만 가지 않는다). 미니맵 물체 모양은 /perception/detections로 낸다(가장 새 것만 보면 되어 다시 보내지 않는다). 가까이 보기의 찾은 물건 id는 /world/closer 답을 look으로 맞춘다:
 // closer_merge를 낼 때 기다림을 열고, VLM 답(closer_scene·closer_end)을 낸 뒤 기한(CLOSER_WAIT_MS)이 지나면 timeout, 노드를 끝내면 closed로 끝낸다.
 // 가까이 보기 대상 고르기·위에서 보기 쌍 찾기는 자기 /world/state 구독의 가장 새 보기를 읽는다.
-import { BusNode, RETRY_MS, realClock, type Bus, type Clock, type Envelope } from "../bus/index.js";
+import { BusNode, Outbox, realClock, type Bus, type Clock } from "../bus/index.js";
 import type { SeenEvent } from "../contract/events.js";
 import type { SceneInput, WorldView } from "../contract/world.js";
 import type { WorldPort } from "./pipeline.js";
@@ -20,6 +20,8 @@ export interface PerceptionNode {
   port: WorldPort;
   /** 미니맵 물체 모양 하나를 /perception/detections로 낸다(근거 시각은 촬영 시각). */
   seen(e: SeenEvent): void;
+  /** 닫기 전 비우기: 낸 입력을 다 보낼 때까지 기다린다(ms가 지나면 false). */
+  drain(ms: number): Promise<boolean>;
 }
 
 /** 인식 노드를 준비한다(구독까지, 시작은 띄우는 곳이 모든 노드를 준비한 뒤). */
@@ -50,29 +52,8 @@ export async function startPerceptionNode(o: { bus: Bus; epoch: { boot: string; 
   node.on("/world/state", (b) => { latest = b.view; });
   node.on("/world/closer", (b) => { finish(b.look, new Map(Object.entries(b.ids))); });
   const publish = (what: string, p: Promise<void>) => { p.catch((e: Error) => log(`[인식] ${what} 발행 실패: ${e.message}`)); };
-  /** 보낼 입력 봉투(낸 차례). 앞 것이 나가야 뒤 것을 보낸다. */
-  const outbox: Envelope<"/perception/scene">[] = [];
-  let pumping = false;
-  const pump = async () => {
-    if (pumping) return;
-    pumping = true;
-    try {
-      while (outbox.length) {
-        try {
-          await node.send(outbox[0]!);
-          outbox.shift();
-        } catch (e) {
-          if (closed) { outbox.length = 0; return; }
-          log(`[인식] /perception/scene ${outbox[0]!.body.kind} 발행 실패, 다시 보내요: ${(e as Error).message}`);
-          await new Promise<void>((r) => { clock.after(RETRY_MS, r); });
-        }
-      }
-    } finally {
-      pumping = false;
-    }
-  };
-  let closed = false;
-  node.spawn((signal) => new Promise<void>((r) => { signal.addEventListener("abort", () => { closed = true; r(); }, { once: true }); }));
+  /** 입력은 낸 차례대로 하나씩, 실패하면 같은 봉투로 다시(src/bus/outbox.ts). */
+  const outbox = new Outbox(node, { clock, log });
   const port: WorldPort = {
     send: (i: SceneInput) => {
       if (i.kind === "closer_merge") open(i.look);
@@ -80,12 +61,7 @@ export async function startPerceptionNode(o: { bus: Bus; epoch: { boot: string; 
         const w = waits.get(i.look);
         if (w && !w.settled && !w.timer) w.timer = clock.after(waitMs, () => finish(i.look, "timeout"));
       }
-      try {
-        outbox.push(node.envelope("/perception/scene", i));
-      } catch (e) {
-        return log(`[인식] /perception/scene ${i.kind}를 낼 수 없어요: ${(e as Error).message}`);
-      }
-      void pump();
+      outbox.push("/perception/scene", i);
     },
     closerIds: (look) => {
       const w = waits.get(look);
@@ -98,5 +74,6 @@ export async function startPerceptionNode(o: { bus: Bus; epoch: { boot: string; 
   return {
     node, port,
     seen: (e) => publish("/perception/detections", node.publish("/perception/detections", { observed_ms: e.captured_at_ms, frame_id: e.frame_id, frame: e.frame, shapes: e.shapes })),
+    drain: (ms) => outbox.drain(ms),
   };
 }

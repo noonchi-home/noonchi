@@ -2,7 +2,7 @@
 // 주기 타이머(관찰·판단·실행 추적·보기 담당·말풍선 카드). 관찰 흐름은 BRAIN=1이고 PHONE_PORT가 있을 때만 켠다(폰 카메라가 입력).
 import { join } from "node:path";
 import { datasetWriter } from "../../brain/index.js";
-import { BusNode } from "../../bus/index.js";
+import { BusNode, Outbox } from "../../bus/index.js";
 import type { BrainLog, SeenEvent } from "../../contract/events.js";
 import type { WorldChange } from "../../contract/world.js";
 import { floorLookup, roomNamedAt, type LayoutEditor } from "../../layout/index.js";
@@ -118,13 +118,15 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
   const devices = new BusNode({ name: "devices", bus, epoch, clock, log });
   core.phoneNode = phone;
   core.devicesNode = devices;
+  core.out = { act: new Outbox(core.mirror.node, { clock, log }), phone: new Outbox(phone, { clock, log }), devices: new Outbox(devices, { clock, log }) };
+  const deviceOut = core.out.devices!;
   await phone.prepare();
   await devices.prepare();
   for (const n of [core.worldNode.node, core.perception.node, core.mirror.node, phone, devices]) n.start();
   const send = (s: Parameters<Parameters<typeof signals.subscribe>[0]>[0], initial: boolean) => {
     const spec = specOf.get(s.id);
     const note = { ...(initial ? { initial: true } : {}), ...(spec ? { label: spec.label, kind: spec.kind } : {}) };
-    devices.publish("/device/changes", { id: s.id, state: s, note }).catch((e: Error) => log(`[경고] 가전 상태를 집 상태에 넣지 못했어요: ${e.message}`));
+    deviceOut.push("/device/changes", { id: s.id, state: s, note });
   };
   for (const s of signals.states()) send(s, true); // 시작 상태는 변화로 내지 않는다
   core.unsubWorld = signals.subscribe((s) => send(s, false));
@@ -135,8 +137,15 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
   if (got === "late") throw new Error(`집 상태 노드의 첫 상태를 ${FIRST_STATE_MS}ms 안에 받지 못했어요`);
 }
 
-/** 노드를 끝낸다: 새 일을 만드는 쪽(인식) → 집 상태 → 거울·폰·가전 차례. 관찰 흐름을 닫은 뒤 부른다. */
+/** 닫기 전 비우기 단계마다 기다리는 시간(ms). 넘으면 기다리지 않고 다음으로 간다(닫기가 걸리지 않게). */
+const DRAIN_MS = 1000;
+
+/** 노드를 끝낸다. 먼저 비운다: 발행 줄(인식·실행 추적·폰·가전 입력) → 집 상태(받은 입력을 다 넣고 출력을 다 냄) → 거울(받은 변화를 기록·판단으로 넘김).
+ *  그다음 새 일을 만드는 쪽(인식) → 집 상태 → 거울·폰·가전 차례로 끝낸다. 관찰 흐름을 닫고 가전 구독을 끊은 뒤 부른다. */
 export async function stopNodes(core: HomeCore): Promise<void> {
+  await Promise.all([core.perception?.drain(DRAIN_MS), core.out.act?.drain(DRAIN_MS), core.out.phone?.drain(DRAIN_MS), core.out.devices?.drain(DRAIN_MS)]);
+  await core.worldNode?.settle(DRAIN_MS);
+  await core.mirror?.node.settled(DRAIN_MS);
   for (const n of [core.perception?.node, core.worldNode?.node, core.mirror?.node, core.phoneNode, core.devicesNode]) await n?.stop();
 }
 

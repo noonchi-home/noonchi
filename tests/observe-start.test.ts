@@ -223,4 +223,21 @@ describe("startServer(BRAIN=1) + 관찰 흐름", () => {
     expect(first("perception")).toBeLessThan(first("world"));
     expect(first("world")).toBeLessThan(first("act"));
   }, 30_000);
+
+  it("집을 바꾸기 바로 전에 바뀐 가전 상태도 발행 줄 → 집 상태 → 거울 차례로 비운 뒤 멈춰 기록에 남는다", async () => {
+    fake = await startFakeOpenAI();
+    pam = await startFakePamLlm();
+    srv = await startServer({
+      env: env({ PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, VLM_MODEL: "fake-vlm", ENGINE_FRAME_MS: "500", ...pamLlmEnv(pam) }),
+      log: () => {}, brain: { detector: new ScriptedDetector(() => [cup]) },
+    });
+    const light = srv.signals.list().find((d) => d.kind === "light")!;
+    const other = srv.twin.home.id === "mokryeon_180b" ? undefined : "mokryeon_180b";
+    expect(other).toBeDefined();
+    const before = srv.history.list({ kinds: ["world"] }).length;
+    await srv.hub.command(light.id, { type: "on" });
+    await srv.switchHome(other!);
+    const rows = srv.history.list({ kinds: ["world"] }).slice(before);
+    expect(rows.some((r) => (r.data as { kind?: string } | null)?.kind === "device" && r.text.includes(light.label)), JSON.stringify(rows.map((r) => r.text))).toBe(true);
+  }, 30_000);
 });
