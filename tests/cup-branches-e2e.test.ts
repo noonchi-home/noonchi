@@ -160,7 +160,7 @@ describe("컵 장면 갈래", () => {
     expect(plan.at(-1)).toMatchObject({ status: "done" });
     expect(s.dash.find((m) => m.type === "brain" && m.event.type === "decision" && `plan:${m.event.id}` === planId)!.event).toMatchObject({ action: "컵에 물 채워 주기", fsm: { state: "drinking" } });
     const says = s.dash.filter((m) => m.type === "say").map((m) => m.text as string);
-    expect(says).toEqual(expect.arrayContaining(["냉장고로 가기를 부탁했어요.", "물병 꺼내기를 부탁했어요.", "컵에 물 따르기를 부탁했어요.", "컵에 물 채워 주기를 마쳤어요."]));
+    expect(says).toEqual(expect.arrayContaining(["컵에 물을 채울게요.", "냉장고로 갈게요.", "물병을 꺼낼게요.", "컵에 물을 따를게요.", "컵에 물 채워 주기를 마쳤어요."]));
     // PAM 판단 요청 그대로: 칸 여섯, 사진 칸 없음, 실제로 나간 LLM 본문에도 사진 없음
     expect(pam!.bodies.length).toBeGreaterThan(0);
     for (const r of pam!.requests) expect(JSON.stringify(r)).not.toMatch(/data:image|base64|"image_url"|"type":"image/);

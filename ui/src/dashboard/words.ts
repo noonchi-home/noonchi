@@ -10,6 +10,8 @@ export const WORDS = {
   noRule: "규칙 없음",
   manyRules: "규칙 여럿",
   more: "▼",
+  /** 마스코트 머리 위 모드 말풍선. */
+  mode: { noonchi: "눈치 모드", coach: "코치 모드" },
   newHabit: "새로 배운 습관이에요",
   oldHabit: "전에 배운 습관이에요",
   offline: "연결 끊김 · 다시 연결 중",

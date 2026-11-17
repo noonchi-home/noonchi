@@ -89,6 +89,20 @@ export function modeOf(action: string | null): "noonchi" | "coach" | null {
   return t ? (t.coach ? "coach" : "noonchi") : null;
 }
 
+/** 메시지 상자 문장: 행동마다 허락형(src/brain/thought.ts 「<조건> <허락> 된다고 하셨어요」)과 클로이드가 직접 하는 말(src/act/labels.ts SAY_TEXT.decided
+ *  「컵을 치울게요.」). 표에 없는 행동은 「<행동>을 해도」·「<행동>을 할게요」. 행동 목록에 없는 일은 문장에 나오지 않는다. */
+export const TASK_SAY: Readonly<Record<string, { may: string; will: string }>> = {
+  "컵 치우기": { may: "치워도", will: "컵을 치울게요" },
+  "사용자에게 물어보기": { may: "여쭤봐도", will: "폰으로 여쭤볼게요" },
+  "세탁물 건조기로 옮기기": { may: "세탁물을 건조기로 옮겨도", will: "세탁물을 건조기로 옮길게요" },
+  "에어컨 켜기": { may: "에어컨을 켜도", will: "에어컨을 켤게요" },
+  "컵 그대로 두기": { may: "그대로 둬도", will: "컵을 그대로 둘게요" },
+  "컵에 물 채워 주기": { may: "물을 채워 드려도", will: "컵에 물을 채울게요" },
+  "컵에 콜라 따라 주기": { may: "콜라를 따라 드려도", will: "컵에 콜라를 따를게요" },
+  "라면 끓이기 알려 주기": { may: "라면 끓이는 법을 알려 드려도", will: "라면 끓이는 법을 알려 드릴게요" },
+  "전자레인지로 데우기 알려 주기": { may: "전자레인지 쓰는 법을 알려 드려도", will: "전자레인지 쓰는 법을 알려 드릴게요" },
+};
+
 /** 손대는 행동(touch)의 대상 종류. 손대지 않는 행동·목록 밖이면 null. */
 export function touchTarget(action: string | null): ObjClass | null {
   const t = taskOf(action);

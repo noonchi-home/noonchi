@@ -61,24 +61,22 @@ describe("실행 추적은 같은 이름 찾기만 쓴다", () => {
     return { t, phone, clock };
   }
 
-  it("비전 상태 줄과 사람 부탁은 계획 명령과 같은 이름(책장)이다", () => {
+  it("비전 상태 줄은 계획 명령과 같은 이름(책장)이다", () => {
     const { t, phone, clock } = run(catalog);
     expect(phone.at(-1)).toMatchObject({ step: "plan:pam-1:1", text: "책장으로 가 주세요", vision: "책장까지 거리 모름" });
     clock.t += 600;
     t.onEye([1, 0.5]);
     t.tick();
     expect(phone.at(-1)).toMatchObject({ vision: "책장까지 2.7m" });
-    expect(t.askCloser("plan:pam-1", "plan:pam-1:1", "bookcase_1")).toBe("책장이 보이게 폰을 가까이 대 주세요");
   });
 
-  it("부를 이름을 모르면 비전 상태 줄에 id를 내지 않고 사람 부탁은 보내지 않는다", () => {
+  it("부를 이름을 모르면 비전 상태 줄에 id를 내지 않는다", () => {
     const { t, phone, clock } = run();
     expect(phone.at(-1)).toMatchObject({ step: "plan:pam-1:1", text: "책장으로 가 주세요", vision: "거리 모름" });
     clock.t += 600;
     t.onEye([1, 0.5]);
     t.tick();
     expect(phone.at(-1)).toMatchObject({ vision: "2.7m 남음" });
-    expect(t.askCloser("plan:pam-1", "plan:pam-1:1", "bookcase_1")).toBeNull();
     expect(phone.map((m) => (m.type === "command" ? `${m.text} ${m.vision ?? ""}` : "")).join(" ")).not.toContain("bookcase");
   });
 });

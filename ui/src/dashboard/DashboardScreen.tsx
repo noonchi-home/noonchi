@@ -5,7 +5,8 @@ import type { SeenStore } from "./masks";
 import { useBoxSize, type BoxSize } from "./fit";
 import type { HubState } from "../lib/hub";
 import { MINIMAP_ASPECT, nextAspect, pageLayout, type PageLayout } from "./layout";
-import { Mascot, type Facing } from "./Mascot";
+import { Mascot } from "./Mascot";
+import { ModeBubble } from "./ModeBubble";
 import { MASCOT } from "../lib/mascot-image";
 import { PreDrawing, useFontsLoaded, usePredecode, usePreDraw } from "./motion";
 import { PhonePane, type PhoneSlot } from "./PhonePane";
@@ -33,7 +34,8 @@ export interface ScreenProps {
   seen: SeenStore;
   /** 메시지 상자: 다듬은 생각·한 일 최근 두 줄과 배운 습관 한 줄(data.ts talkOf). 줄이 없으면 null. */
   talk: Talk | null;
-  facing: Facing;
+  /** 지금 행동의 모드(data.ts modeNow). 모르면 null이고 모드 말풍선은 눈치 모드다. */
+  mode: "noonchi" | "coach" | null;
   hub: HubState;
   /** 설정 창을 연 채 그린다(가짜 단계 화면 찍기). */
   settingsOpen?: boolean;
@@ -52,7 +54,7 @@ export interface ScreenProps {
  * 비율 차이가 ASPECT_STEP 안이면 그대로), 처음 그림부터 가짜 단계 그림 비율을 쓴다. 말풍선 말·생각은 opacity·transform으로 바뀐다(SayCard·ThoughtCard).
  * 글꼴 조각·마스코트 그림 풀기·지도 첫 그림이 다 되면 한 번 미리 그려 보고(usePreDraw, 단계가 바뀔 때는 하지 않는다) 그 뒤 main에 data-ready를 달고 onReady를 부른다.
  */
-export function DashboardScreen({ index, plan, step, robotKnown, connected, map, mapReady, phone, seen, talk, facing, hub, settingsOpen, onReady, tzMinutes = null }: ScreenProps) {
+export function DashboardScreen({ index, plan, step, robotKnown, connected, map, mapReady, phone, seen, talk, mode, hub, settingsOpen, onReady, tzMinutes = null }: ScreenProps) {
   const main = useRef<HTMLElement>(null);
   const view = useBoxSize(main);
   const [aspect, setAspect] = useState(() => nextAspect(MINIMAP_ASPECT, phone.kind === "image" ? phone : null));
@@ -77,7 +79,8 @@ export function DashboardScreen({ index, plan, step, robotKnown, connected, map,
       </LiquidGlass>
       <PhonePane slot={phone} seen={seen} box={L.video} connected={connected} onVideoSize={onVideoSize} />
       <TalkBox talk={talk} box={L.bubble} />
-      <Mascot image={MASCOT} hub={hub} box={L.mascot} imageBox={L.image} logoBox={L.logo} facing={facing} settingsOpen={settingsOpen} />
+      <Mascot image={MASCOT} hub={hub} box={L.mascot} imageBox={L.image} logoBox={L.logo} settingsOpen={settingsOpen} />
+      <ModeBubble mode={mode} layout={L} mascot={MASCOT} />
     </main>
   );
 }

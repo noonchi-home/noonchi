@@ -1,10 +1,10 @@
 // 실행 추적의 코치 도움(Coach): 코치 계획의 지금 사람 단계(coachStep), 다른 행동 알림(stray: 의미 있는 변화·폰이 다른 자리로 감, 관찰 모드 계기 off_track),
-// 다시 알리기(tell)와 사람 부탁(askCloser, 그 단계의 명령 글만 바꿔 다시 보냄), 조용한 단계(quietStep). 위험 가전 손 조작 단계에는 바꾼 글을 보내지 않는다.
+// 다시 알리기(tell, 그 단계의 명령 글만 바꿔 다시 보냄), 조용한 단계(quietStep). 위험 가전 손 조작 단계에는 바꾼 글을 보내지 않는다.
 import type { StepStatus, XZ } from "../../contract/plan.js";
 import type { WorldChange, WorldChangeKind } from "../../contract/world.js";
 import { PHONE_NEAR_M } from "../../world/vocab.js";
 import { HUMAN_KINDS, type AgentStep } from "../../agent/index.js";
-import { CLOSER_TEXT, TELL_TEXT, VISION_TEXT, type TellMode } from "../labels.js";
+import { TELL_TEXT, VISION_TEXT, type TellMode } from "../labels.js";
 import { taskOf } from "../tasks.js";
 import { Part, type Run } from "./core.js";
 
@@ -22,7 +22,7 @@ const QUIET_KINDS: ReadonlySet<WorldChangeKind> = new Set<WorldChangeKind>(["vlm
 /** 방금 본 변화 줄을 두는 시간(ms). */
 const STRAY_KEEP_MS = 30_000;
 
-/** 코치 도움: 다른 행동 알림·다시 알리기·사람 부탁·조용한 단계. */
+/** 코치 도움: 다른 행동 알림·다시 알리기·조용한 단계. */
 export class Coach extends Part {
   /** 방금 본 변화 줄(다른 행동 알림에 넣는다). */
   private seen: { at: number; text: string }[] = [];
@@ -108,34 +108,13 @@ export class Coach extends Part {
     return this.toldWallAt;
   }
 
-  /** 관찰 모드의 사람 부탁(ask_person): 지금 그 계획의 그 사람 단계면 같은 계획·단계 id로 명령 글만 서버 글(그 곳이 보이게 가까이 대 달라는 부탁)로 바꿔 다시 보낸다(소리로 읽음).
-   *  spot은 가까이 볼 곳 id(그 단계의 계획 물건·대상 자리)이고 그 이름으로 글을 만든다. 모르는 곳이면 보내지 않는다.
-   *  단계 종류·대상·답 단추·비전 상태는 그대로라 실제 폰은 새 단계로 보지 않는다. 그 뒤 다시 읽기·비전 상태도 이 글이다. 보낸 글, 못 보냈으면 null. */
-  askCloser(planId: string, stepId: string, spot: string): string | null {
-    const r = this.core.run;
-    const step = r ? this.core.stepOf(r) : undefined;
-    if (this.core.stopped || !r || r.state !== "running" || r.asking || !r.sent || !step || !HUMAN_KINDS.includes(step.kind)) return null;
-    if (r.plan.view.id !== planId || step.id !== stepId || r.sent.step !== stepId || this.handStep(step)) return null;
-    // 평면도 자리는 같은 이름 찾기(src/layout/names.ts)로, 물건은 그 종류 이름으로 부른다. 부를 이름이 없으면 보내지 않는다(id를 폰 글에 쓰지 않는다)
-    const listed = this.core.steps.spots(r, step, this.o.world()).find((p) => p.id === spot);
-    const name = this.o.floor().objects.has(spot) ? (listed || spot === step.target ? this.core.nameOf(spot) : null) : listed?.label ?? null;
-    if (!name) return null;
-    const said = CLOSER_TEXT(name);
-    r.spokeAt = this.clock.now();
-    r.helped = true;
-    r.quietOn = false;
-    r.sent = { ...r.sent, text: said, speak: true };
-    this.core.answers.send(r.sent);
-    return said;
-  }
-
   /** 지금 조용히 띄운 단계 이름(소리로 읽지 않고 지켜보는 중, 대시보드 말풍선 카드). 아니면 null. */
   quietStep(): string | null {
     const r = this.core.run;
     return !this.core.stopped && r?.state === "running" && r.quietOn && !r.asking ? this.core.stepOf(r)?.label ?? null : null;
   }
 
-  /** 손 조작 단계(켜기·끄기·열기·닫기)인가: 그 명령 자리는 켜기 전 질문·승인 뒤 명령만 쓴다(다시 알리기·사람 부탁으로 바꾸지 않는다). */
+  /** 손 조작 단계(켜기·끄기·열기·닫기)인가: 그 명령 자리는 켜기 전 질문·승인 뒤 명령만 쓴다(다시 알리기로 바꾸지 않는다). */
   private handStep(step: AgentStep): boolean {
     return step.hand !== null;
   }

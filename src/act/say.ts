@@ -1,4 +1,5 @@
-// 대시보드 말풍선 카드 한 문장: 사람 자세가 쓰러짐 의심(src/world/fall.ts)이면 무엇보다 먼저 그것을 알린다. 열린 계획이면 실제 폰에 낸 지금 명령(컵 명령은 정한 글, 그 밖의 사람 단계는 단계 이름), 명령이 없는 기다리기·기기 단계는
+// 대시보드 말풍선 말 한 문장(메시지 상자 줄, 클로이드가 직접 하는 말): 사람 자세가 쓰러짐 의심(src/world/fall.ts)이면 무엇보다 먼저 그것을 알린다.
+// 열린 계획이면 실제 폰에 낸 지금 명령을 클로이드 말로 바꾼 것(「컵을 들어 주세요」 → 「컵을 들게요.」, 끝을 모르면 단계 이름), 명령이 없는 기다리기·기기 단계는
 // 그 단계, 그것도 아니면 정한 것. 닫힌 지 SAY_DONE_MS 안이면 끝낸 일, 그 밖에는 지켜보는 것.
 // 계획 없는 행동(컵 그대로 두기, src/act/track/start.ts leftAt)을 고른 지 SAY_DONE_MS 안이고 열린 계획이 없으면 그대로 두기로 했다고 한다(그 뒤에 끝난 계획이 있으면 그 끝낸 일이 먼저).
 // 승인 질문은 대시보드에 보이지 않는다(D37): 단계 id가 :approve(처음 하는 일)·:hand(손으로 켜는 위험 가전 켜기 전 질문)로 끝나는 명령은 없는 것으로 본다.
@@ -22,7 +23,7 @@ export const SAY_TOLD_MS = 8000;
 const HIDDEN = /:(approve|hand)$/;
 const OPEN = new Set<PlanView["status"]>(["planned", "running"]);
 
-/** 컵 치우기 단계(단계 이름이나 명령 글이 같다)면 그 열쇠(정한 말풍선 글이 있다). */
+/** 컵 치우기 단계(단계 이름이나 명령 글이 같다)면 그 열쇠(정한 폰 명령 STEP_COMMAND으로 말한다). */
 const cupKey = (label: string | undefined, text: string) =>
   (Object.keys(STEP_COMMAND) as (keyof typeof STEP_COMMAND)[]).find((k) => STEP_LABEL[k] === label || STEP_COMMAND[k] === text) ?? null;
 
@@ -61,8 +62,8 @@ function restLine({ plan, command, world, nowMs, left = null, told = null, quiet
     if (sent && sent.choices.length > 1) return SAY_TEXT.asked;
     const step = sent ? plan.steps.find((s) => s.id === sent.step) : undefined;
     const key = sent ? cupKey(step?.label, sent.text) : null;
-    if (key) return SAY_TEXT.told[key];
-    if (step) return sent!.choices.length === 0 ? SAY_TEXT.said : SAY_TEXT.toldStep(step.label);
+    if (key) return SAY_TEXT.will(STEP_COMMAND[key], step?.label ?? STEP_LABEL[key]);
+    if (step) return sent!.choices.length === 0 ? SAY_TEXT.said : SAY_TEXT.will(sent!.text, step.label);
     const active = plan.steps.find((s) => s.status === "active");
     if (active?.kind === "wait") return SAY_TEXT.waiting(active.label);
     if (active?.kind === "device") return SAY_TEXT.device(active.label);

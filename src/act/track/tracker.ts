@@ -15,7 +15,7 @@
 // 폰이 필요 없는 가전 계획은 그대로 돌고, 그 알림 줄(say)은 안내가 떠 있는 동안 명령 줄로 보내지 않는다.
 // 폰이 필요한 다른 계획이 도는 동안 다시 걸려 생긴 안내는 그 계획이 끝난 뒤 띄우고(그 계획은 막지 않는다), 기다리는 동안 붙은 폰에 소리로만 알린다
 // (sayAloud, CAUTION_TEXT.rearmed, offHoldMs마다 다시, 여러 가전이 기다리면 돌아가며). 그 시각은 offTold()로 말풍선 카드가 본다.
-// 다시 알리기(tell)·사람 부탁(askCloser)은 모델이 쓴 글이라, 위험 가전 이름이 나오거나 지금 단계가 위험 가전 단계(대상이 위험 가전이거나 hand_device가 붙음)면 보내지 않는다(기본 거부).
+// 다시 알리기(tell)는 모델이 쓴 글이라, 위험 가전 이름이 나오거나 지금 단계가 위험 가전 단계(대상이 위험 가전이거나 hand_device가 붙음)면 보내지 않는다(기본 거부).
 // 코치 행동(TaskSpec.coach) 계획이 열려 있거나 만드는 중이면 coaching()이 참이다: 그동안 판단 호출(PAM)을 쉰다.
 // 폰 판본(phoneReady, src/phone/server.ts): 판본이 맞는 실제 폰이 없으면 폰이 필요한 계획(needsPhone)만 시작을 미루고(실행 기록 EXEC_TEXT.phoneOld, 한 번),
 // 맞는 폰이 붙으면 시작한다. 계획 도중 폰에 물어야 할 때(승인·시간 초과 질문) 맞는 폰이 없으면 기다리지 않고 실패로 닫는다(EXEC_TEXT.phoneGone).
@@ -49,7 +49,7 @@
 // 받은 것만 센다. 받은 부름은 끝날 때 Stall.settle(counted)로 셈을 정하고, 자원 사정(새 사진 모자람·VLM 자리 없음)은 settle(false)로 돌려받는다.
 // 알림마다 그 단계 세대와 신호가 있고, 단계가 끝나면(다음 단계·완료·실패·그만·새 계획·멈춤) 신호를 끊는다. 지난 세대의 settle은 아무것도 하지 않는다.
 // 같은 물건 따라가기에서 가까이 봐서 지키는 중이거나 옮김 표시(World State followed_by)가 있는 물건은 「아직 있음」으로 세지 않는다.
-// 사람 부탁(askCloser)은 지금 그 계획의 그 사람 단계일 때만 같은 계획·단계 id로 명령 글만 바꿔 다시 보낸다(소리로 읽음).
+// 계획이 도는 동안 폰은 그 단계 명령의 것이다: 관찰 모드가 폰으로 사람에게 부탁하는 길은 없다(src/act/look.ts A는 look_closer·wait).
 // 판단 뒤 가까이 본 사실(관찰 모드 B는 PAM을 막지 않는다): 그 행동 대상 종류 물건의 볼 면(TaskSpec.look)을 판단 뒤에 가까이 보기가 바꿨고
 // (World State closer_rev가 판단 기록의 횟수와 다름) 지금 값이 판단 때 본 값과 다르면, 판단을 받을 때와 계획을 받을 때 실행하지 않고
 // 「가까이 본 뒤 다시 판단」만 남긴다. 계획을 받은 뒤 첫 명령 전(승인 답·실행 전 검사를 기다리는 사이)이면 시작하지 않고 그 기록으로 계획을 취소로 닫는다.
@@ -59,7 +59,7 @@
 // 계획 전·실행 전 검사·계획 입력·제출 검사와 대상 고르기가 이미 치운 것으로 본다. 다시 집거나(손에 있음 확인됨) 그 영역 밖(다른 면, 싱크볼이면 싱크볼 밖)에서 보이면 지운다.
 // 파일 나눔(src/act/track/): tracker.ts 겉 클래스·공개 메서드·tick, core.ts 안쪽 공유 객체 TrackCore(상태·기록·실제 폰 길)와 Run, start.ts 판단 받기·계획 시작,
 // steps.ts 단계 진행·치운 물건, approval.ts 승인 질문, safety.ts 켠 위험 가전 추적·끄기 안내(SafetyTracker, 추적 상태는 # 칸), answers.ts 폰 명령 줄·답·말·보내기,
-// coach.ts 다시 알리기·다른 행동·사람 부탁·조용한 단계, contents.ts 내용물 보류(실행 전 검사가 컵 안을 몰라 막은 계획: 잘라 보기 → 사진 기다리기 → 가까이 가서 위에서 보기, 사용자에게 묻지 않음),
+// coach.ts 다시 알리기·다른 행동·조용한 단계, contents.ts 내용물 보류(실행 전 검사가 컵 안을 몰라 막은 계획: 잘라 보기 → 사진 기다리기 → 가까이 가서 위에서 보기, 사용자에게 묻지 않음),
 // find.ts 찾기(대상이 안 보여 검사가 막은 판단·계획: 마지막으로 본 자리로 가기 → 비추기 → 다시 가까이 보기, 사용자에게 묻지 않음), phone-line.ts 사람 단계 명령 줄 규칙.
 // 다른 도메인은 src/act/index.ts로 가져온다.
 import type { BrainLog, ExecState, DecisionRecord } from "../../contract/events.js";
@@ -296,10 +296,6 @@ export class ExecutionTracker {
     return this.core.steps.placed();
   }
 
-  /** 관찰 모드의 사람 부탁(ask_person, coach.ts askCloser). 보낸 글, 못 보냈으면 null. */
-  askCloser(planId: string, stepId: string, spot: string): string | null {
-    return this.core.coach.askCloser(planId, stepId, spot);
-  }
 
   /** 지금 조용히 띄운 단계 이름(소리로 읽지 않고 지켜보는 중, 대시보드 말풍선 카드). 아니면 null. */
   quietStep(): string | null {

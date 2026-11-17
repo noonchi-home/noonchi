@@ -16,7 +16,7 @@ import { ScriptedDetector, det } from "../../tests/helpers/detectors.js";
 import { startFakePamLlm, type FakePamLlm, pamLlmEnv } from "../../tests/helpers/pam.js";
 import { openWebSocket } from "../../tests/helpers/ws.js";
 import { encodeFramePacket } from "../../src/phone/packet.js";
-import { APPROVAL_TEXT, SAY_TEXT, STEP_LABEL } from "../../src/act/labels.js";
+import { APPROVAL_TEXT, SAY_TEXT, STEP_COMMAND, STEP_LABEL } from "../../src/act/labels.js";
 import { fetchRetry } from "../../src/shared/net.js";
 import { startServer, type RunningServer } from "../../src/server/start.js";
 import { startFakeOpenAI, type FakeServer } from "../fake-openai.js";
@@ -45,13 +45,13 @@ const PITCH = Math.atan2(1.5 - 0.75, 1.5);
 const ORIENTATION = mul([0, Math.sin(-Math.PI / 4), 0, Math.cos(-Math.PI / 4)], [Math.sin(-PITCH / 2), 0, 0, Math.cos(-PITCH / 2)]) as [number, number, number, number];
 const EYE: [number, number, number] = [9.9612 - 1.5, 1.5, 3.9242];
 
-/** 순간: 단계 번호(main[data-step]), 그 순간 말, 진행도(단계 번호·이름), 마스코트 보는 쪽. */
-interface Moment { name: string; step: number; say: (t: string) => boolean; sayText: string; progress: string | null; facing: "twin" | "video" }
+/** 순간: 단계 번호(main[data-step]), 그 순간 말, 진행도(단계 번호·이름). 마스코트는 늘 왼쪽을 본다. */
+interface Moment { name: string; step: number; say: (t: string) => boolean; sayText: string; progress: string | null }
 const STEPS = [STEP_LABEL.goTable, STEP_LABEL.pickCup, STEP_LABEL.goSink, STEP_LABEL.placeCup];
-const TOLD = [SAY_TEXT.told.goTable, SAY_TEXT.told.pickCup, SAY_TEXT.told.goSink, SAY_TEXT.told.placeCup];
-const watching: Moment = { name: "0", step: 0, say: (t) => t.endsWith("보고 있어요."), sayText: "…보고 있어요.", progress: null, facing: "video" };
-const stepMoment = (n: number): Moment => ({ name: String(n), step: n, say: (t) => t === TOLD[n - 1], sayText: TOLD[n - 1]!, progress: `${n}/4 · ${STEPS[n - 1]}`, facing: "twin" });
-const doneMoment: Moment = { name: "done", step: 0, say: (t) => t === SAY_TEXT.done("컵 치우기"), sayText: SAY_TEXT.done("컵 치우기"), progress: null, facing: "video" };
+const TOLD = (["goTable", "pickCup", "goSink", "placeCup"] as const).map((k) => SAY_TEXT.will(STEP_COMMAND[k], STEP_LABEL[k]));
+const watching: Moment = { name: "0", step: 0, say: (t) => t.endsWith("보고 있어요."), sayText: "…보고 있어요.", progress: null };
+const stepMoment = (n: number): Moment => ({ name: String(n), step: n, say: (t) => t === TOLD[n - 1], sayText: TOLD[n - 1]!, progress: `${n}/4 · ${STEPS[n - 1]}` });
+const doneMoment: Moment = { name: "done", step: 0, say: (t) => t === SAY_TEXT.done("컵 치우기"), sayText: SAY_TEXT.done("컵 치우기"), progress: null };
 
 /** 지금 화면 값(크롬에서 돌린다). */
 const READ = `(() => {
@@ -59,11 +59,11 @@ const READ = `(() => {
   const now = document.querySelector('[data-say-line]:not([aria-hidden="true"])');
   return {
     ready: Boolean(main?.hasAttribute("data-ready")), step: main?.getAttribute("data-step") ?? null, say: now?.textContent ?? null,
-    progress: document.querySelector("[data-progress]")?.textContent ?? null, facing: document.querySelector("[data-mascot]")?.getAttribute("data-facing") ?? null,
+    progress: document.querySelector("[data-progress]")?.textContent ?? null,
     detections: document.querySelectorAll("[data-detection]").length, text: document.body.innerText,
   };
 })()`;
-type Seen = { ready: boolean; step: string | null; say: string | null; progress: string | null; facing: string | null; detections: number; text: string };
+type Seen = { ready: boolean; step: string | null; say: string | null; progress: string | null; detections: number; text: string };
 
 const logPath = join(out, "server.log");
 mkdirSync(out, { recursive: true });
@@ -157,7 +157,6 @@ try {
     if (seen.step !== String(m.step)) failed.push(`data-step ${seen.step}(기대 ${m.step})`);
     if (!seen.say || !m.say(seen.say)) failed.push(`말풍선 「${seen.say}」(기대 「${m.sayText}」)`);
     if (m.progress ? !seen.progress?.includes(m.progress) : seen.progress !== null) failed.push(`진행도 「${seen.progress}」(기대 ${m.progress ? `「${m.progress}」` : "없음"})`);
-    if (seen.facing !== m.facing) failed.push(`마스코트 data-facing ${seen.facing}(기대 ${m.facing})`);
     if (seen.detections < 1) failed.push("YOLO 상자 없음");
     for (const word of ["승인", APPROVAL_TEXT.ask("컵 치우기")]) if (seen.text.includes(word)) failed.push(`문서 글에 「${word}」`);
     const { text: _text, ...shown } = seen;

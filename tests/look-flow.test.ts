@@ -75,7 +75,7 @@ async function setup(o: { stalled: boolean }) {
   });
   looker = new Looker({
     observer: new Observer({ provider: createProvider(env).provider }), closer: (spot, signal) => pipeline.closer(spot, signal), frame: () => pipeline.latest(),
-    world: () => world.view(clock.now()), askPerson: (planId, stepId, spot) => tracker.askCloser(planId, stepId, spot), emit: (l) => logs.push(l),
+    world: () => world.view(clock.now()), emit: (l) => logs.push(l),
     targets: lookTargets, clock,
   });
   let n = 0;

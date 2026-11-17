@@ -99,21 +99,21 @@ describe("대시보드 자료 연결", () => {
     history.replaceState(null, "", "/");
   });
 
-  it("순간 2(컵 집기)를 받으면 진행도 2/4 · 컵 집기, 말풍선 카드 말, 마스코트는 트윈을 본다", async () => {
+  it("순간 2(컵 집기)를 받으면 진행도 2/4 · 컵 집기, 말풍선 카드 말, 마스코트는 늘 왼쪽을 본다", async () => {
     await mount(false);
     send(moment(2));
     expect(document.querySelector("[data-progress]")).toHaveTextContent("2/4 · 컵 집기");
-    expect(sayLine()).toHaveTextContent("컵을 들라고 했어요.");
-    expect(screen.getByRole("region", { name: "마스코트" })).toHaveAttribute("data-facing", "twin");
+    expect(sayLine()).toHaveTextContent("컵을 들게요.");
+    expect(screen.getByRole("region", { name: "마스코트" }).querySelector<HTMLElement>("[data-mascot-turn]")!.style.transform).toBe("scaleX(-1)");
     expect(document.querySelector("main")).toHaveAttribute("data-step", "2");
   });
 
-  it("지켜보기(순간 0)는 진행도가 없고 마스코트는 영상을 본다", async () => {
+  it("지켜보기(순간 0)는 진행도가 없고 마스코트는 늘 왼쪽을 본다", async () => {
     await mount(false);
     send(moment(2));
     send(moment(0));
     expect(document.querySelector("[data-progress]")).toBeNull();
-    expect(screen.getByRole("region", { name: "마스코트" })).toHaveAttribute("data-facing", "video");
+    expect(screen.getByRole("region", { name: "마스코트" }).querySelector<HTMLElement>("[data-mascot-turn]")!.style.transform).toBe("scaleX(-1)");
     expect(sayLine()).toHaveTextContent("식탁을 보고 있어요.");
   });
 
@@ -127,9 +127,9 @@ describe("대시보드 자료 연결", () => {
   });
 
   // Codex(cd25828 Dashboard.tsx:238): talkOf 메모에 계획이 빠져 계획 시작·끝만으로는 머리가 바뀌지 않았다
-  it("판단이 그대로여도 계획이 시작·끝나면 메시지 상자 머리가 그 계획 행동의 모드로 바뀐다", async () => {
+  it("판단이 그대로여도 계획이 시작·끝나면 마스코트 모드 말풍선이 그 계획 행동의 모드로 바뀐다", async () => {
     await mount(false);
-    const mode = () => talk().querySelector("[data-talk-mode]")?.textContent ?? null;
+    const mode = () => document.querySelector("[data-mode-text]")?.textContent ?? null;
     send([branchDecision(COACH, 1)]);
     await waitFor(() => expect(mode()).toBe("코치 모드"));
     send([{ type: "plan", plan: { ...PLAN, revision: 50, assist: "noonchi" } }]);
@@ -236,10 +236,10 @@ describe("가짜 단계(?debug=steps)", () => {
   it("&step=2면 서버 자료 없이 그 순간이다: 진행도·말·대시보드 폰 칸 눈 그림·메시지 상자·컵 이름표", async () => {
     open("&step=2");
     expect(document.querySelector("[data-progress]")).toHaveTextContent("2/4 · 컵 집기");
-    expect(sayLine()).toHaveTextContent("컵을 들라고 했어요.");
+    expect(sayLine()).toHaveTextContent("컵을 들게요.");
     const img = phonePane().querySelector<HTMLImageElement>('img[alt="폰 카메라 영상"]')!;
     expect(img.getAttribute("src")).toBe("/debug-eye/eye-table-near.webp");
-    expect(talk().querySelector("[data-talk-mode]")).toHaveTextContent(/^눈치 모드$/);
+    expect(document.querySelector("[data-mode-text]")).toHaveTextContent(/^눈치 모드$/);
     expect([...talk().querySelectorAll("[data-talk-pill]")].map((p) => p.textContent)).toEqual(["상태 · 컵을 두고 자리를 뜸", expect.stringMatching(/^트리거 · /), "액션 · 컵 치우기"]);
     expect([...phonePane().querySelectorAll("[data-detection-label]")].map((t) => t.textContent?.split(" ")[0])).toEqual(["컵"]);
     expect(phonePane().querySelector("canvas[data-masks]")).not.toBeNull();

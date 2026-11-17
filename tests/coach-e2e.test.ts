@@ -233,7 +233,7 @@ describe("코치 모드: 라면 끓이기 알려 주기", () => {
     expect(plan.at(-1)).toMatchObject({ status: "done", goal: RAMEN });
     expect(s.dash.find((m) => m.type === "brain" && m.event.type === "decision" && `plan:${m.event.id}` === planId)!.event).toMatchObject({ action: RAMEN, fsm: { state: "cooking" } });
     const says = s.dash.filter((m) => m.type === "say").map((m) => m.text as string);
-    expect(says).toEqual(expect.arrayContaining(["냄비 꺼내기를 부탁했어요.", "다시 알려 줬어요.", "인덕션 켜기를 부탁했어요.", "라면 끓이기 알려 주기를 마쳤어요."]));
+    expect(says).toEqual(expect.arrayContaining(["라면 끓이는 법을 알려 드릴게요.", "냄비를 꺼낼게요.", "다시 알려 줬어요.", "인덕션을 켤게요.", "라면 끓이기 알려 주기를 마쳤어요."]));
     expect(says.some((t) => t.includes("켤까요") || t === "폰으로 물어봤어요.")).toBe(false);
 
     // 들은 말은 기록 DB에도 대시보드 방송에도 남지 않는다: 내용 없는 표시만 있다
@@ -265,7 +265,7 @@ describe("코치 모드: 라면 끓이기 알려 주기", () => {
     const planNow = async () => (await (await fetchRetry(`${srv!.url}/api/plan`)).json()) as { plan: { id: string; status: string } | null; off: { hot: string[]; notices: string[] } | null };
     expect(await planNow()).toMatchObject({ plan: { id: planId, status: "cancelled" }, off: { hot: [], notices: [s.cooktop] } });
     await s.pump(async () => (await s.history("execution")).some((r) => r.subject === planId && r.text === "사용자가 그만둠"), "취소 기록");
-    await s.pump(() => s.dash.some((m) => m.type === "say" && m.text === "불을 꺼 달라고 했어요."), "말풍선 카드");
+    await s.pump(() => s.dash.some((m) => m.type === "say" && m.text === "불을 끌게요."), "말풍선 카드");
     s.answer(off);
     await s.pump(() => s.commands().some((m) => m.step === `off:${planId}:${s.cooktop}:1` && m.choices.length === 0), "부탁으로 바뀜");
     expect(s.commands().at(-1)).toMatchObject({ id: planId, step: `off:${planId}:${s.cooktop}:1`, text: "인덕션이 보이게 폰을 가까이 대 주세요", choices: [] });

@@ -3,12 +3,11 @@
 import { ExecutionTracker, LessonStore, Looker, PlanHub, checkDecision, checkPlan, deviceRunner, lessonsPath, loadActConfig } from "../../act/index.js";
 import { lookTargets, taskOf, tasksFor } from "../../act/tasks.js";
 import { deviceViews, placesOf, type PlaceInfo } from "../../agent/index.js";
-import { Decider, PamClient, ThoughtWriter, lastStoredThoughts, memoryForDay, pamSettings, storeThought, thoughtFeed } from "../../brain/index.js";
+import { Decider, PamClient, lastStoredThoughts, memoryForDay, pamSettings, storeThought, thoughtFeed } from "../../brain/index.js";
 import type { BrainLog } from "../../contract/events.js";
 import type { WorldInput, WorldView } from "../../contract/world.js";
 import type { SignalHub } from "../../devices/index.js";
 import type { PlanView } from "../../contract/plan.js";
-import { createInference } from "../../infer/inference.js";
 import { floorPlanFrom, loadScene, type LayoutEditor, type PlaceNames } from "../../layout/index.js";
 import { Trigger, deviceStateKeys, deviceStatus, loadTriggerConfig, type PlaneSurface } from "../../world/index.js";
 import { DEVICE_STATES } from "../../world/vocab.js";
@@ -86,9 +85,9 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
   const now = () => core.nowMs();
   // 집 상태는 거울(가장 새 /world/state)로 읽고 가전 지금 상태는 허브 값으로 맞춘다. 노드는 실행 추적을 만든 뒤 띄우고 첫 상태를 받은 뒤에 판단·실행이 돈다
   const view = () => liveDevices(core.view()!, signals);
-  // 판단·계획은 메시지를 기다리지 않는다: 판단 기록을 보낸 뒤 부르고, 새 메시지가 오면 보낸다. 다시 띄우면 이 집의 최근 메시지(10분 안)로 시작한다
+  // 메시지 상자 문장은 모델 없이 판단 기록의 사실로만 만든다(src/brain/thought.ts). 다시 띄우면 이 집의 최근 메시지(10분 안)로 시작한다
   const feed = thoughtFeed({
-    writer: new ThoughtWriter({ chat: createInference(env).thought }), send: (m) => core.app?.broadcast(m),
+    send: (m) => core.app?.broadcast(m),
     record: (m) => storeThought(history.db, home.id, m), seed: lastStoredThoughts(history.db, home.id, Date.now()),
   });
   core.thoughts = feed;
@@ -191,7 +190,7 @@ export function startLooker(core: HomeCore, emit: (event: BrainLog) => void): vo
     // B가 잘라 본 컵: 실행 추적이 계획 밖으로 가까이 가서 볼지 본다
     looked: (id) => tracking.lookedIdle(id),
     frame: () => observed.latest(), world: () => liveDevices(core.view()!, core.signals),
-    askPerson: (planId, stepId, spot) => tracking.askCloser(planId, stepId, spot), tell: (planId, stepId, mode) => tracking.tell(planId, stepId, mode), emit, targets: lookTargets, placed: () => tracking.placed(), clock: ctx.brain?.clock,
+    tell: (planId, stepId, mode) => tracking.tell(planId, stepId, mode), emit, targets: lookTargets, placed: () => tracking.placed(), clock: ctx.brain?.clock,
     onLook: (spot) => {
       core.lookSay = { place: spot.label, atMs: Date.now() };
       core.speak();

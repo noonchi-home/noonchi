@@ -41,16 +41,9 @@ describe("추론 모드", () => {
     const same = createInference({ VLM_MODEL: "gpt-5.4-nano" });
     expect(same.closerVlm.model).toBe("gpt-5.4-nano");
   });
-  it("생각 말풍선 모델(THOUGHT_MODEL)은 같은 VLM 주소·키·요청 칸에 모델 이름만 바꾼다: 비우면 openai gpt-5.4-nano, vllm vlm", () => {
-    expect(VLM_PRESETS.openai.thoughtModel).toBe("gpt-5.4-nano");
-    expect(VLM_PRESETS.vllm.thoughtModel).toBe("vlm");
-    expect(loadEndpoints({}).vlm.thoughtModel).toBe("gpt-5.4-nano");
-    expect(loadEndpoints({ INFERENCE_MODE: "vllm" }).vlm.thoughtModel).toBe("vlm");
-    expect(loadEndpoints({ VLM_MODEL: "gpt-5.4-mini", THOUGHT_MODEL: " " }).vlm.thoughtModel).toBe("gpt-5.4-nano");
-    expect(loadEndpoints({ THOUGHT_MODEL: "small" }).vlm).toMatchObject({ model: VLM_PRESETS.openai.model, thoughtModel: "small" });
-    const { thought } = createInference({ VLM_BASE_URL: "http://127.0.0.1:9/v1", OPENAI_API_KEY: "k" });
-    expect(thought.model).toBe("gpt-5.4-nano");
-    expect(thought.endpoint).toEqual({ baseUrl: "http://127.0.0.1:9/v1", model: "gpt-5.4-nano", apiKey: "k", extraBody: { reasoning_effort: "none" } });
+  it("생각 말풍선 모델은 없다: 메시지 상자 문장은 모델 없이 만든다(THOUGHT_MODEL을 줘도 쓰지 않는다)", () => {
+    expect(loadEndpoints({ THOUGHT_MODEL: "small" }).vlm).not.toHaveProperty("thoughtModel");
+    expect(createInference({ THOUGHT_MODEL: "small" })).not.toHaveProperty("thought");
   });
   it("VLM_EXTRA_BODY는 JSON으로 읽고, 깨진 JSON은 시작을 막는다", () => {
     expect(loadEndpoints({ VLM_EXTRA_BODY: '{"temperature":0}' }).vlm.extraBody).toEqual({ temperature: 0 });

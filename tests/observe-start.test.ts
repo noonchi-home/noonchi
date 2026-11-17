@@ -13,7 +13,6 @@ import { fetchRetry, listenRetry } from "../src/shared/net.js";
 import { MemoryBus, type Deliver, type NodeName, type Subscription, type TopicName } from "../src/bus/index.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { HEARD_MARK } from "../src/world/labels.js";
-import { isThought } from "./helpers/thought.js";
 import { ScriptedDetector, det } from "./helpers/detectors.js";
 import { startFakePamLlm, type FakePamLlm, pamLlmEnv } from "./helpers/pam.js";
 import { openPhone, openWebSocket } from "./helpers/ws.js";
@@ -156,12 +155,12 @@ describe("startServer(BRAIN=1) + 관찰 흐름", () => {
       const status = (await (await fetchRetry(`${srv.url}/api/brain`)).json()) as Msg;
       expect(status).toMatchObject({ ok: true, frames: 3, detected: 3, time_source: "phone", closer: { looks: 0, failed: 0, costUsd: 0 } });
       // 관찰 모드(보기 담당): 카메라를 맞추기 전 사진이라 판단 전 보기(B)를 부르지 않았다
-      expect(status.look).toEqual({ calls: 0, costUsd: 0, looks: 0, asks: 0, waits: 0, tells: 0 });
+      expect(status.look).toEqual({ calls: 0, costUsd: 0, looks: 0, waits: 0, tells: 0 });
       expect(((await (await fetchRetry(`${srv.url}/api/world`)).json()) as Msg).world.objects).toHaveLength(1);
-      // VLM 요청은 VLM_MODEL로, 같은 주소의 생각 말풍선 메시지 요청(대기 판단에도 부른다)은 생각 모델(THOUGHT_MODEL 기본)로 간다
+      // 모델 요청은 VLM 사진 분석뿐이다(VLM_MODEL): 판단마다 생각 말풍선 모델을 부르지 않는다
       const chats = fake.requests.filter((r) => r.path.endsWith("/chat/completions"));
-      expect(chats.filter((r) => !isThought(r.body)).every((r) => r.body.model === "fake-vlm")).toBe(true);
-      expect(chats.filter((r) => isThought(r.body)).every((r) => r.body.model === "gpt-5.4-nano")).toBe(true);
+      expect(chats.length).toBeGreaterThan(0);
+      expect(chats.every((r) => r.body.model === "fake-vlm")).toBe(true);
       const late = await openWebSocket(`${srv.url.replace(/^http/, "ws")}/events`, { setup: (ws) => { dashBox = inbox(ws); } });
       expect(await until(dashBox, (m) => m.type === "world")).toMatchObject({ world: { objects: [{ id: "cup_1" }] } });
       expect(await until(dashBox, (m) => m.type === "seen")).toMatchObject({ replay: true, shapes: [{ label: "cup" }] });

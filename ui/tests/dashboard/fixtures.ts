@@ -89,24 +89,22 @@ export function planAt(n: number): PlanView {
 }
 export const PLAN = planAt(1);
 
-/** 단계마다 말풍선 카드 말(0 지켜보기, 1~4 실제 폰 명령). */
-export const SAY = ["식탁을 보고 있어요.", "식탁으로 가 주세요.", "컵을 들어 주세요.", "싱크대로 가 주세요.", "컵을 싱크대에 넣어 주세요."];
 export const CLEAR_CUP = "컵 치우기";
 export const REASON = "사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.";
 export const LEFT_CUP_STATE = "컵을 두고 자리를 뜸";
-/** 작은 모델이 쓴 생각 메시지(src/brain/thought.ts): 컵 치우기 판단의 흐름(본 것 → 결정적인 근거와 할 일). */
+/** 메시지 상자 줄(src/brain/thought.ts 규칙 줄, 이어 말풍선 말): 컵 치우기 판단의 흐름(허락받은 규칙 → 클로이드가 할 일). */
 export const MESSAGES = [
-  { id: "pam-1@1794214809000:0", text: "사람이 컵을 두고 자리를 떠났어요" },
-  { id: "pam-1@1794214809000:1", text: "치우는 습관이라 컵을 치울게요" },
+  { id: "pam-1@1794214809000:0", text: "컵을 두고 자리를 뜨면 치워도 된다고 하셨어요" },
+  { id: "say#1", text: "식탁 컵을 치울게요." },
 ];
 /** 컵 치우기 규칙대로 고른 판단의 알약 셋(상태 이름·트리거·액션). */
 export const PILLS = { state: "컵을 두고 자리를 뜸", trigger: "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다.", action: "컵 치우기" };
 /** 대기 판단의 알약 셋(처음 상태, 트리거·액션은 대기). */
 export const WAIT_PILLS = { state: "먹거나 마시는 중", trigger: "대기", action: "대기" };
 /** 계획 단계의 메시지 상자(다듬은 생각 두 줄과 알약 셋). */
-export const TALK: Talk = { lines: MESSAGES, fsm: PILLS, mode: "눈치 모드" };
+export const TALK: Talk = { lines: MESSAGES, fsm: PILLS };
 /** 지켜보기의 메시지 상자(말풍선 카드 말 한 줄과 대기 알약). */
-export const WATCH_TALK: Talk = { lines: [{ id: "say@0:0", text: "지켜보고 있어요." }], fsm: WAIT_PILLS, mode: null };
+export const WATCH_TALK: Talk = { lines: [{ id: "say@0:0", text: "지켜보고 있어요." }], fsm: WAIT_PILLS };
 
 /** 컵 갈래 판단 고정 자료: 행동, 그 규칙이 있는 FSM 상태 id·트리거(src/brain/decision.ts CUP_FSM_MEMORY와 같다, data.test.ts가 견준다), PAM의 생각 한 문장. */
 export interface Branch { action: string; state: string; trigger: string; reasoning: string }
@@ -133,10 +131,10 @@ export function coachPlanAt(n: number): PlanView {
   };
 }
 /** 코치 계획의 말풍선 카드 말(src/act/labels.ts SAY_TEXT): 다시 알린 뒤, 조용한 단계, 끄기 안내. */
-export const COACH_SAY = { retold: "다시 알려 줬어요.", quiet: "냄비 꺼내기를 지켜보고 있어요.", offAsked: "불을 꺼 달라고 했어요." };
+export const COACH_SAY = { retold: "다시 알려 줬어요.", quiet: "냄비 꺼내기를 지켜보고 있어요.", offAsked: "불을 끌게요." };
 
 /** 「그대로 두기」를 고른 뒤 말풍선 카드 말(src/act/labels.ts SAY_TEXT.left). */
-export const LEFT_SAY = "컵을 그대로 두기로 했어요.";
+export const LEFT_SAY = "컵을 그대로 둘게요.";
 const BRANCH_TASKS = ["컵 치우기", "사용자에게 물어보기", "세탁물 건조기로 옮기기", "에어컨 켜기", "컵 그대로 두기", "컵에 물 채워 주기", "컵에 콜라 따라 주기", "라면 끓이기 알려 주기"];
 
 /** 판단 방송 한 줄. b가 null이면 대기(-1). */
@@ -162,7 +160,7 @@ export function screenAt(n: number, over: Partial<ScreenProps> = {}): ScreenProp
   return {
     index: n, plan, step: plan ? plan.steps[n - 1]! : null, robotKnown: true, connected: true, map: MAP, mapReady: true,
     phone: imageSlot(), seen: seenOf([BOX]),
-    talk: n > 0 ? TALK : WATCH_TALK, facing: n > 0 ? "twin" : "video", hub: HUB,
+    talk: n > 0 ? TALK : WATCH_TALK, mode: n > 0 ? "noonchi" : null, hub: HUB,
     ...over,
   };
 }

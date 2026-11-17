@@ -8,12 +8,11 @@ import type { BrainLog, CloserResult } from "../src/contract/events.js";
 import type { WorldObject, WorldView } from "../src/contract/world.js";
 import type { LookSpot } from "../src/observe/crop.js";
 import type { LatestFrame } from "../src/observe/pipeline.js";
-import { CLOSER_TEXT, LOOK_TEXT, TELL_TEXT } from "../src/act/labels.js";
+import { LOOK_TEXT, TELL_TEXT } from "../src/act/labels.js";
 import { LOOK_VIEW } from "./helpers/camera.js";
 import { CLOSER_FOUND, testCloser, type TestCloser } from "./helpers/look.js";
 import { startFakeObserver, type FakeObserver, type ObserveScript } from "./helpers/observer.js";
 
-const ASK = CLOSER_TEXT("싱크대");
 // 실행 추적이 주는 싱크대 자리는 윗면 가운데다(src/server/home/act.ts placeLocator)
 const SINK_TOP: [number, number, number] = [0.6, 0.9, 0];
 const SINK: LookSpot = { id: "sink_1", label: "싱크대", position: SINK_TOP };
@@ -51,20 +50,18 @@ async function setup(o: { script: ObserveScript; gate?: (input: string) => Promi
   llm = await startFakeObserver(o.script, { gate: async (body) => { await o.gate?.(body.input[0].content as string); } });
   const clock = { t: 100_000, now() { return this.t; } };
   const logs: BrainLog[] = [];
-  const asked: [string, string, string][] = [];
   const looked: LookSpot[] = [];
   const closer = o.closer ?? testCloser();
   let objects = o.objects ?? [cupAt()];
   const looker = new Looker({
     observer: new Observer({ provider: llm.provider() }), closer: (spot, signal) => closer.closer(spot, signal),
     frame: () => (o.frame ? o.frame(clock.now()) : { view: LOOK_VIEW, capturedAtMs: clock.now(), width: 480, height: 360 }),
-    // 실행 추적 자리: 가까이 볼 곳 id로 서버 부탁 글을 만든다
-    world: () => worldOf(objects), askPerson: (planId, stepId, spot) => { asked.push([planId, stepId, spot]); return CLOSER_TEXT([SINK, CUP].find((p) => p.id === spot)?.label ?? spot); },
+    world: () => worldOf(objects),
     emit: (l) => logs.push(l), targets: () => [{ cls: "cup", facets: ["contents"] }], clock,
     onLook: (spot) => looked.push(spot), ...o.options,
   });
   const looks = () => logs.filter((l): l is Extract<BrainLog, { type: "look" }> => l.type === "look");
-  return { looker, clock, logs, looks, asked, looked, closer, llm, setObjects: (x: WorldObject[]) => { objects = x; } };
+  return { looker, clock, logs, looks, looked, closer, llm, setObjects: (x: WorldObject[]) => { objects = x; } };
 }
 
 describe("보기 담당: 판단 전 보기(B)", () => {
@@ -111,7 +108,7 @@ describe("보기 담당: 판단 전 보기(B)", () => {
     await t.looker.idle();
     expect(t.llm.bodies()).toHaveLength(3);
     expect(t.llm.bodies()[2].input[0].content).toContain("- cup_2 컵 · 지금 사진 안");
-    expect(t.looker.status()).toEqual({ calls: 3, costUsd: expect.any(Number), looks: 0, asks: 0, waits: 3, tells: 0 });
+    expect(t.looker.status()).toEqual({ calls: 3, costUsd: expect.any(Number), looks: 0, waits: 3, tells: 0 });
   });
 
   it("B: 볼 면이 짐작이면 부르고, 확인됨이면 부르지 않는다. 불투명이 확인된 컵은 내용물을 가까이 보지 않는다", async () => {
@@ -248,7 +245,9 @@ describe("보기 담당: 내용물 보류의 가까이 보기(contents)", () => 
 });
 
 describe("보기 담당: 멈춘 단계(A)가 먼저", () => {
-  it("B가 관찰 모드를 부르는 중이면 끊고(B 기록 없음) A를 받는다. A가 고른 사람 부탁을 실행 추적에 넘기고 기록·settle(true)을 남긴다", async () => {
+  // 실제 판(wide-glass r8, 2026-11-18): 컵 치우기 계획의 집기·내려놓기 단계 중에 관찰 모드가 「컵이 보이게 폰을 가까이 대 주세요」를 폰에 보내
+  // 단계 명령을 덮었고 집기 37초·내려놓기 33초가 걸렸다. 계획이 도는 동안 폰은 그 단계 명령의 것이다
+  it("B가 관찰 모드를 부르는 중이면 끊고(B 기록 없음) A를 받는다. A(계획 단계 중)는 사람에게 부탁하지 않는다: 쓸 수 있는 도구는 look_closer·wait뿐이고 사람 부탁을 골라도 거절돼 폰에 아무것도 보내지 않는다", async () => {
     let releaseB!: () => void;
     const heldB = new Promise<void>((ok) => { releaseB = ok; });
     const t = await setup({
@@ -261,13 +260,11 @@ describe("보기 담당: 멈춘 단계(A)가 먼저", () => {
       const { s, settled } = stall();
       expect(t.looker.stalled(s)).toBe(true);
       await t.looker.idle();
-      expect(t.asked).toEqual([["plan:pam-1", "plan:pam-1:4", "sink_1"]]);
-      expect(t.looks()).toEqual([{
-        type: "look", at_ms: 100_000, trigger: "stalled", target: "sink_1", tool: "ask_person", reason: "싱크대 안이 사진에서 작아서",
-        text: `가까이 비춰 달라고 부탁함 · ${ASK}`, result: { sent: true }, plan_id: "plan:pam-1", step_id: "plan:pam-1:4",
-      }]);
+      const a = t.llm.bodies().find((b) => isA(String(b.input[0].content)))!;
+      expect(a.tools.map((x: { name: string }) => x.name)).toEqual(["look_closer", "wait"]);
+      expect(t.looks()).toHaveLength(1);
+      expect(t.looks()[0]).toMatchObject({ trigger: "stalled", tool: "wait", plan_id: "plan:pam-1", step_id: "plan:pam-1:4" });
       expect(settled).toEqual([true]);
-      expect(t.llm.bodies()).toHaveLength(2);
     } finally {
       releaseB();
     }
@@ -322,7 +319,7 @@ describe("보기 담당: 가까이 보기 실행", () => {
       text: "싱크대 쪽을 가까이 봄 · 컵 보임", result: CLOSER_FOUND, plan_id: "plan:pam-1", step_id: "plan:pam-1:4",
     }]);
     expect(a.settled).toEqual([true]);
-    expect(t.looker.status()).toMatchObject({ calls: 1, looks: 1, asks: 0, waits: 0 });
+    expect(t.looker.status()).toMatchObject({ calls: 1, looks: 1, waits: 0 });
 
     t.clock.t += 8_000;
     t.looker.stalled(stall().s);
@@ -569,6 +566,6 @@ describe("보기 담당: 한 시간 상한", () => {
     const t = await setup({ script: () => [["wait", { reason: "다음 사진을 보려고" }]], options: { observer: { decide: async () => ({ tool: "wait", reason: "기다리려고" }), status: () => ({ calls: 1, requests: 1, costUsd: null }) } } });
     t.looker.tick();
     await t.looker.idle();
-    expect(t.looker.status()).toEqual({ calls: 1, costUsd: null, looks: 0, asks: 0, waits: 1, tells: 0 });
+    expect(t.looker.status()).toEqual({ calls: 1, costUsd: null, looks: 0, waits: 1, tells: 0 });
   });
 });

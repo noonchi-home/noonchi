@@ -4,6 +4,7 @@
 // 바꾼 것: 「Tooltip with arrow」 데모 그대로 showArrow. Portal에 container prop을 이어 말풍선 층(움직이는 판 안)에 그린다. 크기 size: md(데모 text-xs), lg(이름 줄 text-sm medium, 나머지 text-xs), say(받은 text-sm).
 // 원래 글 크기: text-sm(14px). 받은 부품 text-sm, 「Tooltip with arrow」 데모 text-xs다. 더 큰 글은 npm run lint(scripts/lint-ui-type.ts)가 막는다.
 // tone twin(트윈·지도·눈 위)이면 테두리·화살표 선 twin-edge, 그림자 shadow-float, 상태 줄 ink-2. focus면 테두리 brand 2px(확인한 기기 강조). 화살표 drop-shadow hsl(var(--border)) → 토큰 변수.
+// tone noonchi·coach(마스코트 머리 위 모드 말풍선): 바탕·화살표 brand(눈치 모드)·ok(코치 모드) 토큰, 글 on-brand·on-status 토큰, 테두리 없음.
 
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import * as React from "react";
@@ -30,8 +31,8 @@ const TooltipContent = React.forwardRef<
     /** 그릴 자리(Portal container). */
     container?: HTMLElement | null;
     size?: keyof typeof SIZE;
-    /** twin: 트윈·지도·눈 그림 위 말풍선. */
-    tone?: "default" | "twin";
+    /** twin: 트윈·지도·눈 그림 위 말풍선. noonchi·coach: 마스코트 머리 위 모드 말풍선(눈치 모드 brand, 코치 모드 ok 바탕). */
+    tone?: "default" | "twin" | "noonchi" | "coach";
     /** 확인한 기기 강조. */
     focus?: boolean;
   }
@@ -48,6 +49,8 @@ const TooltipContent = React.forwardRef<
         "relative z-50 max-w-[280px] rounded-lg border border-border bg-popover px-3 py-1.5 text-popover-foreground animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
         SIZE[size],
         tone === "twin" && "border-twin-edge shadow-float [&_[data-part=line]]:text-ink-2",
+        tone === "noonchi" && "border-transparent bg-brand text-on-brand",
+        tone === "coach" && "border-transparent bg-ok text-on-status",
         focus && "border-2 border-brand",
         className,
       )}
@@ -59,7 +62,9 @@ const TooltipContent = React.forwardRef<
           data-slot="tooltip-arrow"
           className={cn(
             "-my-px fill-popover",
-            tone === "twin" ? "drop-shadow-[0_1px_0_var(--twin-edge)]" : "drop-shadow-[0_1px_0_var(--border)]",
+            tone === "twin" ? "drop-shadow-[0_1px_0_var(--twin-edge)]" : tone === "noonchi" || tone === "coach" ? "" : "drop-shadow-[0_1px_0_var(--border)]",
+            tone === "noonchi" && "fill-brand",
+            tone === "coach" && "fill-ok",
             focus && "drop-shadow-[0_2px_0_var(--brand)]",
           )}
         />
