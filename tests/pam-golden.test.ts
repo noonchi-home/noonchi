@@ -2,7 +2,8 @@
 // 메시지는 바이트까지 같다(toMatchFileSnapshot). 프롬프트를 일부러 바꿨으면 `npx vitest run tests/pam-golden.test.ts -u`로 새 정답을 쓰고 차이를 본다.
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { adaptation, buildPredictMessages, buildReflectMessages, estimateTokens, pamLimits, parseMemory, parsePrediction, predictRequest, reflectRequest } from "../src/brain/pam/index.js";
+import { adaptation, buildPredictMessages, buildReflectMessages, estimateTokens, PamAnswerError, PamBudgetError, PamClient, PamLinkError, PamLlm, pamLimits, PamRequestError, pamSettings, parseMemory, parsePrediction, predictRequest, reflectRequest, type Generation, type PamMessage } from "../src/brain/pam/index.js";
+import { loadEndpoints } from "../src/infer/endpoints.js";
 
 const DIR = new URL("./fixtures/pam-golden/", import.meta.url);
 const inputs = JSON.parse(readFileSync(new URL("inputs.json", DIR), "utf8"));
@@ -59,5 +60,71 @@ describe("Python과 같은 결과", () => {
     const len = (env: Record<string, string>) => Number(env.PAM_MAX_MODEL_LEN?.trim() || 32768);
     const got = inputs.limits.map((env: Record<string, string>) => ({ env, limits: pamLimits({ ...MAX, maxModelLen: len(env) }) }));
     expect(got).toEqual(out("limits.json"));
+  });
+});
+
+
+const TRANSPORTS = { mock: { OPENROUTER_API_KEY: "k" }, live: { INFERENCE_MODE: "live" }, openai: { PAM_LLM_PROVIDER: "openai", OPENAI_API_KEY: "k" } };
+
+async function wire(env: Record<string, string>, built: { messages: PamMessage[]; generation: Generation }, role: "predictor" | "reflector") {
+  let line = "";
+  const fetchImpl = (async (url: string | URL, init?: RequestInit) => {
+    const auth = new Headers(init?.headers).get("authorization");
+    line = `POST ${url}\nauthorization: ${auth ?? "-"}\n\n${init?.body}`;
+    return Response.json({ choices: [{ message: { content: "{}" }, finish_reason: "stop" }] });
+  }) as typeof fetch;
+  await new PamLlm(pamSettings(env), { fetchImpl }).complete(built.messages, built.generation, role, 5000);
+  return line;
+}
+
+describe("Python과 같은 전송", () => {
+  it("판단·반성 LLM 요청(주소·authorization·본문 바이트)이 세 갈래 모두 같다", async () => {
+    for (const [cases, build, role] of [[inputs.predict, (r: unknown) => buildPredictMessages(predictRequest(r)), "predictor"], [inputs.reflect, (r: unknown) => buildReflectMessages(reflectRequest(r)), "reflector"]] as const) {
+      for (const c of cases) {
+        const built = build(c.request);
+        let text = "";
+        for (const [t, env] of Object.entries(TRANSPORTS)) text += `=== ${t} ===\n${await wire(env, built, role)}\n`;
+        await sameFile(`${c.id}.wire.txt`, text);
+      }
+    }
+  });
+
+  it("설정(모드 표·덮어쓰기·오류 글)", () => {
+    const got = inputs.settings.map((c: { id: string; env: Record<string, string> }) => {
+      try {
+        const s = pamSettings(c.env);
+        return { id: c.id, settings: { mode: loadEndpoints(c.env).mode, base_url: s.baseUrl, model: s.model, api_key: s.apiKey, thinking: s.thinking,
+          extra: s.extraBody, timeout_s: s.timeoutMs / 1000, max_tokens: s.maxTokens, max_model_len: s.maxModelLen } };
+      } catch (e) {
+        return { id: c.id, error: (e as Error).message };
+      }
+    });
+    expect(got).toEqual(out("settings.json"));
+  });
+
+  it("요청 결과: 400→PamRequestError, 413→PamBudgetError, 200 invalid→PamAnswerError, 502→PamLinkError, 보낸 횟수까지 같다", async () => {
+    const got = [];
+    for (const c of inputs.requests) {
+      let sent = 0;
+      const fetchImpl = (async () => { sent++; return Response.json(c.llm.json, { status: c.llm.status }); }) as typeof fetch;
+      const pam = new PamClient({ settings: pamSettings({ INFERENCE_MODE: "live" }), fetchImpl });
+      let status = 200;
+      let answer: string | null = "valid";
+      try {
+        if (c.route === "predict") await pam.predict(c.body);
+        else await pam.reflect(c.body, c.body.memory_kind);
+      } catch (e) {
+        if (e instanceof PamAnswerError) answer = "invalid";
+        else {
+          answer = null;
+          if (e instanceof PamRequestError) status = 400;
+          else if (e instanceof PamBudgetError) status = 413;
+          else if (e instanceof PamLinkError) status = 502;
+          else throw e;
+        }
+      }
+      got.push({ id: c.id, status, answer, sent });
+    }
+    expect(got).toEqual(out("requests.json"));
   });
 });

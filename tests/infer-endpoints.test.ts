@@ -19,6 +19,13 @@ describe("추론 모드", () => {
     expect(Object.keys(m).sort()).toEqual(Object.keys(l).sort());
     expect(Object.keys(m.vlm).sort()).toEqual(Object.keys(l.vlm).sort());
   });
+  it("PAM LLM: 따로 준 주소·모델·키가 앞서고 끝 /를 지운다. 키는 PAM_LLM_API_KEY → 모드 키 → 빈 글", () => {
+    const e = loadEndpoints({ INFERENCE_MODE: "live", PAM_LLM_BASE_URL: "http://x:1/v1//", PAM_LLM_MODEL: "m", VLLM_API_KEY: "v" });
+    expect(e.pam).toMatchObject({ baseUrl: "http://x:1/v1", model: "m", apiKey: "v", thinking: "chat_template" });
+    expect(loadEndpoints({ INFERENCE_MODE: "live", PAM_LLM_API_KEY: "a", VLLM_API_KEY: "v" }).pam.apiKey).toBe("a");
+    expect(loadEndpoints({}).pam).toMatchObject({ baseUrl: "https://openrouter.ai/api/v1", model: "qwen/qwen3.5-27b", apiKey: "", thinking: "openrouter" });
+    expect(loadEndpoints({ PAM_LLM_PROVIDER: "openai", OPENAI_API_KEY: "k" }).pam).toMatchObject({ baseUrl: "https://api.openai.com/v1", model: "gpt-5.4-mini", apiKey: "k", thinking: "openai" });
+  });
   it("따로 준 주소·모델·PAM_URL이 앞선다", () => {
     const e = loadEndpoints({ INFERENCE_MODE: "live", VLM_BASE_URL: "http://127.0.0.1:8500/v1/", VLM_MODEL: "m", PAM_URL: "http://pam:8300/" });
     expect(e.vlm.baseUrl).toBe("http://127.0.0.1:8500/v1");

@@ -13,11 +13,12 @@ let f: FakeServer | undefined;
 afterEach(async () => { await f?.close(); f = undefined; });
 
 describe("같은 구조", () => {
-  it("두 모드의 차이는 VLM 주소·모델·키·제공자 칸뿐이다", () => {
+  it("두 모드의 차이는 VLM·PAM LLM 주소·모델·키·제공자 칸뿐이다", () => {
     const a = loadEndpoints({ INFERENCE_MODE: "mock" });
     const b = loadEndpoints({ INFERENCE_MODE: "live" });
-    expect({ ...a, mode: "", vlm: {} }).toEqual({ ...b, mode: "", vlm: {} });
+    expect({ ...a, mode: "", vlm: {}, pam: {} }).toEqual({ ...b, mode: "", vlm: {}, pam: {} });
     expect(Object.keys(a.vlm)).toEqual(Object.keys(b.vlm));
+    expect(Object.keys(a.pam)).toEqual(Object.keys(b.pam));
   });
 
   it("INFERENCE_MODE는 src/infer/endpoints.ts만 읽고, src에 가짜 모드 분기가 없다", () => {
