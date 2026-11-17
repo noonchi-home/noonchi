@@ -56,6 +56,30 @@ describe("거울", () => {
     expect(r.seen).toEqual(["보기 100", "보기 400", "변화 cup_2@400"]);
   });
 
+  it("onView가 실패하면 그 rev를 보인 것으로 치지 않고, 같은 rev가 다시 오면 다시 부른다", async () => {
+    const bus = new MemoryBus({ warn: () => {} });
+    const world = new BusNode({ name: "world", bus, epoch: EPOCH, log: () => {} });
+    await world.prepare();
+    world.start();
+    const shown: number[] = [];
+    let fail = true;
+    const m = await startWorldMirror({
+      bus, epoch: EPOCH, name: "act", log: () => {},
+      onView: (v) => { if (fail) { fail = false; throw new Error("방송 실패"); } shown.push(v.at_ms); },
+    });
+    m.node.start();
+    const flush = () => settle(bus, [world, m.node]);
+    await world.publish("/world/state", { rev: 1, view: view(100) });
+    await flush();
+    expect(shown).toEqual([]);
+    await world.publish("/world/state", { rev: 1, view: view(350) });
+    await flush();
+    expect(shown).toEqual([350]);
+    await world.publish("/world/state", { rev: 1, view: view(600) });
+    await flush();
+    expect(shown).toEqual([350]);
+  });
+
   it("늦게 붙어도 가장 새 상태를 바로 받는다(STATE)", async () => {
     const r = await rig({
       before: async (w) => {

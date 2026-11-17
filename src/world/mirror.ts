@@ -26,8 +26,8 @@ export async function startWorldMirror(o: {
     async (s) => {
       latest = s;
       if (s.rev === shown) return;
-      shown = s.rev;
       await o.onView?.(s.view);
+      shown = s.rev;   // 보인 뒤에만 센다: 실패하면 같은 rev가 다시 올 때(250ms 다시 냄) 다시 부른다
     });
   await node.prepare();
   return { node, view: () => latest?.view ?? null, rev: () => latest?.rev ?? null };
