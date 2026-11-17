@@ -599,6 +599,37 @@ describe("가까이 본 VLM 물건(applyCloserScene objects)", () => {
     expect(ids.get("v1")).toBe("cup_1");
   });
 
+  it("VLM 무조건 우선: YOLO가 병으로 잡은 감지를 VLM이 같은 물건(det d1)의 컵이라 답하면 컵으로 넣는다", () => {
+    const w = ws();
+    const bottleIn = { ...cupIn, label: "bottle" as const };
+    const { ids, pending } = w.applyCloser([pass("e1000", 1000, [bottleIn]), pass("e2000", 2000, [bottleIn]), pass("e3000", 3000, [bottleIn])], "e3000", { defer: true });
+    w.applyCloserScene("e3000", 3000, vscene(["in_sink"], "d1"), ids, pending, look(3000));
+    expect(w.view(3000).objects).toEqual([expect.objectContaining({ id: "cup_1", cls: "cup" })]);
+    expect(ids.get("d1")).toBe("cup_1");
+  });
+
+  // 가로 유리컵 실제 판 r2(2026-11-18): 사라진 cup_20 자리에서 가까이 본 VLM이 그 유리컵을 병으로 답해 bottle_2가 따로 생겼다(Codex c5dbb3b 4: 물건 식별과 종류를 나눈다)
+  it("마시는 그릇 무리는 종류가 달라도 같은 자리면 같은 물건이다: 사라진 컵 자리의 VLM 병은 그 컵을 되살리고 id를 그대로 둔다. 종류는 VLM이 다른 사진 2장 이어 그 종류로 답해야 바뀐다", () => {
+    const w = ws();
+    for (let t = 0; t <= 2000; t += 500) full(w, `e${t}`, t, [cupIn]);
+    for (let t = 2500; t <= 9500; t += 500) full(w, `e${t}`, t, []);
+    const bottle = (facts: SceneState[] = []): SceneObservation => ({ ...vscene(facts), objects: [{ id: "v1", cls: "bottle", box: vbox, det: null }] });
+    const once = (frame: string, at: number, s: SceneObservation) => {
+      const { ids, pending } = w.applyCloser([pass(frame, at, [])], frame, { defer: true });
+      w.applyCloserScene(frame, at, s, ids, pending, look(at));
+      return ids;
+    };
+    expect(once("e10000", 10_000, bottle()).get("v1")).toBe("cup_1");
+    expect(w.view(10_000).objects).toEqual([expect.objectContaining({ id: "cup_1", cls: "cup", status: "present" })]);
+    // cup → bottle → cup으로 흔들리면 종류가 바뀌지 않는다
+    once("e11000", 11_000, vscene());
+    once("e12000", 12_000, bottle());
+    expect(w.view(12_000).objects).toEqual([expect.objectContaining({ id: "cup_1", cls: "cup" })]);
+    // 다른 사진 2장 이어 병이면 병이다(id는 그대로)
+    once("e13000", 13_000, bottle());
+    expect(w.view(13_000).objects).toEqual([expect.objectContaining({ id: "cup_1", cls: "bottle" })]);
+  });
+
   it("YOLO 감지(d1)와 같은 물건이라고 답한 VLM 물건(det d1)은 새로 넣지 않고 그 물건 id를 쓴다", () => {
     const w = ws();
     const { ids } = w.applyCloser([pass("e1000", 1000, [cupIn]), pass("e2000", 2000, [cupIn]), pass("e3000", 3000, [cupIn])], "e3000");

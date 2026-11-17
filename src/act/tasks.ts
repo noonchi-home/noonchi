@@ -6,7 +6,7 @@ import type { AssistMode } from "../contract/setup.js";
 import type { Facet, ObjClass, WorldFact, WorldObject, WorldView } from "../contract/world.js";
 import type { DeviceKind } from "../devices/kinds.js";
 import type { ActionChoice } from "./prompts.js";
-import { UNKNOWN_STATES, type StateKey } from "../world/vocab.js";
+import { sameDrinkware, UNKNOWN_STATES, type StateKey } from "../world/vocab.js";
 
 type Kind = "go" | "pick" | "place" | "do" | "device" | "ask" | "say" | "wait";
 /** 이 행동의 계획에 쓸 수 있는 단계: 단계 종류(src/agent/planTools.ts AgentStepKind), 꼭 있어야 하는 단계 종류(need), 기기 단계의 가전 종류·도구. 승인한 일의 범위다. */
@@ -227,7 +227,9 @@ export function planObjectsOf(plan: PlanView, world: WorldView, cls: ObjClass): 
     const id = s.target?.objectId;
     if (!id || out.includes(id)) continue;
     const o = world.objects.find((x) => x.id === id);
-    if (o ? o.cls === cls : shaped.test(id)) out.push(id);
+    // 같은 물건의 종류는 마시는 그릇 무리 안에서 VLM 답으로 바뀔 수 있고 id는 그대로다(cup_1이 병이 됨): 계획은 그 id를 따른다.
+    // 처음부터 다른 종류인 물건(따르기의 bottle_1)은 그 종류 대상이 아니다
+    if (o ? o.cls === cls || (shaped.test(id) && sameDrinkware(o.cls, cls)) : shaped.test(id)) out.push(id);
   }
   return out;
 }

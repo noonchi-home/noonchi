@@ -89,6 +89,12 @@ describe("실행 전 검사", () => {
     expect(checkPlan(base({ tasks: ["사용자에게 물어보기"] }))).toMatchObject({ reason: "unknown_task" });
     expect(checkPlan(base({ plan: null }))).toMatchObject({ reason: "unknown_task" });
   });
+  // Codex(c5dbb3b 4): 같은 유리컵의 종류가 VLM 답으로 컵 → 병으로 바뀌어도 계획은 같은 id를 따른다
+  it("계획 대상 id의 종류가 마시는 그릇 무리 안에서 바뀌었으면(컵 → 병) 같은 대상으로 본다. 무리 밖 종류면 없음이다", () => {
+    expect(checkPlan(base({ world: { ...base().world, objects: [obj({ cls: "bottle" })] } }))).toEqual({ ok: true });
+    expect(planObjectsOf(base().plan!, { ...base().world, objects: [obj({ cls: "bottle" })] }, "cup")).toEqual(["cup_1"]);
+    expect(checkPlan(base({ world: { ...base().world, objects: [obj({ cls: "bowl" })] } }))).toMatchObject({ reason: "no_target" });
+  });
   it("대상 물건이 World State에 없거나 사라짐: 막은 물건 id를 싣는다", () => {
     expect(checkPlan(base({ world: { ...base().world, objects: [] } }))).toEqual({ ok: false, reason: "no_target", text: CHECK_TEXT.no_target, object: "cup_1" });
     expect(checkPlan(base({ world: { ...base().world, objects: [obj({ status: "gone" })] } }))).toEqual({ ok: false, reason: "no_target", text: CHECK_TEXT.no_target, object: "cup_1" });

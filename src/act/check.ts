@@ -10,6 +10,7 @@
 // 낡음·들고 있음 뒤에 본다(보류 중 낡음은 실행 추적이 보류를 이어 간다, src/act/track/start.ts).
 import type { PlanView } from "../contract/plan.js";
 import type { ControlMode } from "../contract/setup.js";
+import { sameDrinkware } from "../world/vocab.js";
 import type { WorldObject, WorldView } from "../contract/world.js";
 import { CHECK_TEXT } from "./labels.js";
 import type { DecisionRecord } from "../contract/events.js";
@@ -74,7 +75,7 @@ export function checkPlan(i: CheckInput): CheckResult {
     const all: WorldObject[] = [];
     for (const id of ids.length ? ids : [null]) {
       const o = i.world.objects.find((x) => x.id === id);
-      if (!o || o.status === "gone" || o.cls !== target) {
+      if (!o || o.status === "gone" || !sameDrinkware(o.cls, target)) {
         // 치움은 막은 그 대상 자신만 본다(다른 컵이 싱크대에 있어도 이 대상은 없음이다)
         if (id !== null && (i.placed?.has(id) || (o && o.cls === target && putAway(o, i.placed)))) return fail("in_sink");
         return id === null ? fail("no_target") : failOn("no_target", id);

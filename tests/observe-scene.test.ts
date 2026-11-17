@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { startFakeOpenAI, type FakeServer } from "../scripts/fake-openai.js";
 import { VlmClient } from "../src/infer/vlm.js";
 import { analyzeScene, CLOSER_NOTE, parseScene, SCENE_JSON_SCHEMA, SCENE_PROMPT } from "../src/observe/scene.js";
-import { VLM_FIND } from "../src/world/vocab.js";
+import { CLASSES, VLM_FIND } from "../src/world/vocab.js";
 import { sha256 } from "../src/observe/ring.js";
 import type { EngineFrame } from "../src/contract/observe.js";
 
@@ -49,6 +49,14 @@ describe("VLM 장면 분석", () => {
     expect(() => parseScene(JSON.stringify({ ...raw, objects: [{ id: "v1", cls: "person", box: { x: 0, y: 0, w: 0.1, h: 0.1 }, det: null }] }), new Set())).toThrow();
     // objects가 없는 옛 답도 읽는다(빈 목록)
     expect(parseScene('{"scene":"k","observations":[],"summary":"s"}', new Set()).objects ?? []).toEqual([]);
+  });
+
+  // 가로 유리컵 실제 판 r2(2026-11-18): 가까이 본 VLM이 투명한 유리컵을 병(bottle)으로 답했다
+  it("프롬프트가 종류 기준을 낱말 표(CLASSES vlm)에서 그대로 싣는다: 마시는 잔·유리컵·머그·텀블러는 cup, 좁은 목·마개가 있는 것만 bottle", () => {
+    for (const c of VLM_FIND) expect(SCENE_PROMPT).toContain(`${c} = ${(CLASSES[c] as { vlm?: string }).vlm}`);
+    expect(CLASSES.cup.vlm).toMatch(/drinking glass.*mug.*tumbler/);
+    expect(CLASSES.bottle.vlm).toMatch(/narrow neck/);
+    expect(SCENE_PROMPT).toContain("A clear drinking glass is a cup, not a bottle.");
   });
 
   it("스키마 objects의 종류 enum은 낱말 표의 내용물 면이 있는 물건(VLM_FIND)이고, 프롬프트가 감지 목록에 없는 물건도 상자와 함께 답하라고 한다", () => {

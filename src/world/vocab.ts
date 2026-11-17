@@ -21,6 +21,8 @@ export interface ClassEntry {
   facets: readonly Facet[];
   /** 같은 물체로 볼 거리(m). 없으면 World State 기본값(0.25). */
   identityM?: number;
+  /** VLM 종류 기준(프롬프트에 「종류 = 이 글」로 그대로 싣는다). VLM이 상자로 찾는 물건(VLM_FIND)만 있다. */
+  vlm?: string;
 }
 
 const OBJ = ["place", "use"] as const;
@@ -30,9 +32,9 @@ const VESSEL = ["place", "contents", "body", "use"] as const;
 /** 감지 종류. 순서가 감지 결과 순서다(사람 먼저). */
 export const CLASSES = {
   person: { label: "사람", role: "person", coco: { 0: "person" }, minScore: 0.5, facets: ["posture", "place", "holding", "activity", "moment"] },
-  cup: { label: "컵", role: "object", coco: { 41: "cup", 40: "wine glass" }, minScore: 0.4, facets: VESSEL },
-  bottle: { label: "병", role: "object", coco: { 39: "bottle" }, minScore: 0.4, facets: VESSEL },
-  bowl: { label: "그릇", role: "object", coco: { 45: "bowl" }, minScore: 0.4, facets: VESSEL },
+  cup: { label: "컵", role: "object", coco: { 41: "cup", 40: "wine glass" }, minScore: 0.4, facets: VESSEL, vlm: "any drinking vessel you drink from directly: drinking glass (clear or colored), cup, mug, tumbler, wine glass" },
+  bottle: { label: "병", role: "object", coco: { 39: "bottle" }, minScore: 0.4, facets: VESSEL, vlm: "only a container with a narrow neck or a cap for pouring, such as a water, wine or soda bottle" },
+  bowl: { label: "그릇", role: "object", coco: { 45: "bowl" }, minScore: 0.4, facets: VESSEL, vlm: "a wide open dish for food" },
   fork: { label: "포크", role: "object", coco: { 42: "fork" }, minScore: 0.45, facets: OBJ },
   knife: { label: "칼", role: "object", coco: { 43: "knife" }, minScore: 0.45, facets: OBJ },
   spoon: { label: "숟가락", role: "object", coco: { 44: "spoon" }, minScore: 0.45, facets: OBJ },
@@ -164,6 +166,12 @@ export type Activity = StateOf<"activity">;
 /** VLM이 장면·가까이 본 사진에서 상자와 함께 찾아 답하는 물건 종류(VLM 물건 목록): 안 내용 면이 있는 물건(컵·병·그릇).
  *  YOLO가 놓쳐도 VLM이 본 물건을 World State에 넣는다(사용자 결정 2026-11-18 「VLM 무조건 우선」, src/world/merge.ts). */
 export const VLM_FIND = (Object.keys(CLASSES) as ClassKey[]).filter((k) => CLASSES[k].role === "object" && (CLASSES[k].facets as readonly Facet[]).includes("contents")) as ObjClass[];
+
+/** 마시는 그릇 무리: 같은 물건을 VLM·YOLO가 서로 다른 종류로 볼 수 있다(투명한 유리컵 ↔ 병). 찾기는 같은 자리면 이 무리를 찾던 대상으로 잇는다(src/act/track/find.ts). */
+export const DRINKWARE = ["cup", "bottle"] as const satisfies readonly ClassKey[];
+/** 두 종류가 같거나 둘 다 마시는 그릇 무리인가. */
+export const sameDrinkware = (a: string, b: string): boolean =>
+  a === b || ((DRINKWARE as readonly string[]).includes(a) && (DRINKWARE as readonly string[]).includes(b));
 
 /** VLM이 낼 수 있지만 사실로 쌓지 않는 값: 감지 목록의 물건이 가려 안 보임. */
 export const VLM_ONLY = ["not_visible"] as const;

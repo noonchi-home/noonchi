@@ -3969,6 +3969,23 @@ describe("실행 추적: 안 보이는 대상은 마지막으로 본 자리로 �
     expect(s.t.openCommand()).toMatchObject({ planId: "find:1", kind: "command", text: "식탁으로 가 주세요", choices: [] });
   });
 
+  // 가로 유리컵 실제 판 r2(2026-11-18): 가까이 본 VLM이 유리컵을 병으로 답했다
+  it("가까이 보기가 그 자리에서 마시는 그릇 무리의 다른 종류(병)를 찾았으면 「분명히 없음」이 아니다. 그 자리 0.1m 안 병으로 찾으면 다시 판단하고, 컵이 없어 막히면 그 자리를 다시 찾지 않고 닫는다", async () => {
+    const s = findSetup();
+    await s.decide(decision);
+    toLook(s);
+    s.looks[0]!.done({ ...ABSENT, found: [{ id: "bottle_2", cls: "bottle", score: 0, facts: [], via: "vlm" }] });
+    s.tick();
+    expect(s.exec().some((l) => l.state === "failed")).toBe(false);
+    s.sightings(null);
+    s.objects([{ ...found("bottle_2", [2.05, 0.75, 1], s.clock.t), cls: "bottle" }]);
+    s.tick();
+    expect(s.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-1", state: "failed", text: CHECK_TEXT.no_target });
+    s.sightings([sighting(s.clock.t)]);
+    await s.decide({ ...decision, id: "pam-2", seq: 2, atMs: s.clock.t });
+    expect(s.commands().filter((c) => c.id.startsWith("find:")).map((c) => c.id)).not.toContain("find:2");
+  });
+
   it("자리 이름은 계획 단계와 같은 평면도 이름을 쓴다(World State 면 이름 「거실·복도 식탁」이 아니라 「식탁」)", async () => {
     const s = findSetup({ sightings: [{ ...sighting(), surface: "table_1", surface_label: "거실·복도 식탁" }] });
     await s.decide(decision);
@@ -4426,6 +4443,19 @@ describe("실행 추적: 계획 대상이 안 보이면 그 마지막 자리에�
     expect(s.plans.current()).toMatchObject({ id: "plan:pam-1", status: "cancelled" });
     await s.decide({ ...decision, id: "pam-2", seq: 2, atMs: s.clock.t });
     expect(s.exec().filter((l) => l.plan_id === "plan:pam-2").map((l) => l.text)).not.toContain(EXEC_TEXT.held);
+  });
+
+  // 가로 유리컵 실제 판 r2(2026-11-18): 가까이 본 VLM이 그 자리 유리컵을 병으로 답해 bottle_2가 생겼고, 찾기가 컵만 찾아 「대상 물건이 보이지 않아」로 끝났다
+  it("그 자리 0.1m 안에 마시는 그릇 무리의 다른 종류(병)만 생겨도 찾던 대상으로 이어 「찾은 뒤 다시 판단」으로 닫는다(종류는 병 그대로). 0.1m 밖의 병은 잇지 않는다", async () => {
+    const s = runSetup({ objects: [seenAt(5_000)] });
+    await blocked(s);
+    const bottle = (id: string, at: [number, number, number]): WorldObject => ({ ...seenAt(s.clock.t, id, at), cls: "bottle" });
+    s.objects([{ ...seenAt(5_000), status: "gone" }, bottle("bottle_3", [2.3, 0.75, 1])]);
+    s.tick();
+    expect(s.exec().some((l) => l.state === "failed")).toBe(false);
+    s.objects([{ ...seenAt(5_000), status: "gone" }, bottle("bottle_2", [2.05, 0.75, 1])]);
+    s.tick();
+    expect(s.exec().find((l) => l.state === "failed")).toMatchObject({ plan_id: "plan:pam-1", text: EXEC_TEXT.foundNew });
   });
 
   it("못 찾으면 낡음 글로 닫는다. 들고 감 보호였던 컵·치운 컵이면 찾지 않는다", async () => {

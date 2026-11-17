@@ -5,6 +5,8 @@
 //   확인에 실패했으면(사진 모자람·VLM 답 없음·그 종류를 감지했지만 확정 못 함) settleMs 사진을 기다린 뒤 다시 비춘다(after, 전체 기한 안).
 // - 비추기는 가까이 보기와 같은 프레임 고르기가 그 자리를 비추기 뒤 사진으로만 고를 수 있을 때(spotReady) 끝난다.
 // - 찾음은 tick마다 본다: 그 자리 FIND.matchM 안에 그 종류의 있는 물건이 막은 검사의 신선도(freshMs, 실행 전은 판단 뒤에 본 것만) 안에 보였고 치운 것·손에 있음이 아니다.
+//   같은 자리(FIND.splitM 안)면 마시는 그릇 무리(vocab DRINKWARE)의 다른 종류도 찾던 대상으로 잇는다(VLM이 투명한 유리컵을 병으로 봄). 종류는 VLM 답 그대로라
+//   새 id이므로 계획 대상 이어 붙이기 규칙대로 다시 판단하고, 그 자리는 FIND.retryMs 동안 다시 찾지 않는다(다시 판단이 그 종류를 못 찾아 막혀도 같은 찾기를 되풀이하지 않는다).
 //   여럿이면 그 자리에 가장 가까운 것, 둘이 FIND.splitM 안으로 붙어 가를 수 없으면 아직 못 찾은 것이다. 사진 기다림 중에 찾았지만 낡았으면 새 사진으로 다시 비춘다.
 // - 그만둠: 명령 하나가 PEEK.stepMs 안에 안 끝남, 막힌 채 holdMs, 가까이 보기가 분명히 없음, 찾기 시작부터 FIND.totalMs.
 //   그 자리는 FIND.retryMs 동안 다시 가지 않는다.
@@ -22,6 +24,7 @@ import type { CloserResult, DecisionRecord } from "../../contract/events.js";
 import type { PlannedCommand } from "../../contract/phone.js";
 import type { ObjClass, WorldObject, WorldView } from "../../contract/world.js";
 import { OBJECT_NAME } from "../../world/labels.js";
+import { sameDrinkware } from "../../world/vocab.js";
 import { PRECHECK_FRESH_MS } from "../check.js";
 import { EXEC_TEXT, FIND_THOUGHT, FIND_TEXT, STEP_TEXT, VISION_TEXT } from "../labels.js";
 import { lostTarget, planIdOf, putAway, touchTarget, type LostSpot } from "../tasks.js";
@@ -209,6 +212,7 @@ export class Finder extends Part {
     const hit = this.hit(this.o.world(), f, now);
     if (hit?.fresh) {
       this.close(line, f, "done");
+      if (hit.obj.cls !== f.cls) this.rested.push({ cls: f.cls, at: [...f.at], when: now });
       return { kind: "found", obj: hit.obj };
     }
     if (f.phase === "after") {
@@ -264,7 +268,7 @@ export class Finder extends Part {
       if (f.phase !== "looking" && f.phase !== "look") return;
       f.phase = "after";
       f.afterAt = this.clock.now();
-      f.looked = r === undefined ? null : r?.ok && r.vlm === "ok" && !r.found.some((x) => x.cls === f.cls) ? "absent" : "unsure";
+      f.looked = r === undefined ? null : r?.ok && r.vlm === "ok" && !r.found.some((x) => sameDrinkware(x.cls, f.cls)) ? "absent" : "unsure";
     };
     if (!this.o.lookContents) {
       after();
@@ -308,8 +312,9 @@ export class Finder extends Part {
    *  가장 가까운 둘이 FIND.splitM 안으로 붙어 있으면 가를 수 없어 null. */
   private hit(world: WorldView, f: Find, now: number): { obj: WorldObject; fresh: boolean } | null {
     const placed = this.core.steps.placed();
+    const kin = (o: WorldObject) => (o.cls === f.cls ? dist3(o.position!, f.at) <= FIND.matchM : sameDrinkware(o.cls, f.cls) && dist3(o.position!, f.at) <= FIND.splitM);
     const near = world.objects
-      .filter((o) => o.cls === f.cls && o.status === "present" && o.position && !putAway(o, placed) && o.facts.place?.value !== "in_hand" && dist3(o.position, f.at) <= FIND.matchM)
+      .filter((o) => o.status === "present" && o.position && kin(o) && !putAway(o, placed) && o.facts.place?.value !== "in_hand")
       .sort((a, b) => dist3(a.position!, f.at) - dist3(b.position!, f.at));
     const fresh = near.filter((o) => o.last_seen_ms > f.after && now - o.last_seen_ms <= f.freshMs);
     const pool = fresh.length ? fresh : near.filter((o) => o.last_seen_ms > f.after && o.last_seen_ms >= f.aimAt);
@@ -364,7 +369,7 @@ export class Finder extends Part {
     this.o.guardObject?.(f.objectId, false);
   }
 
-  /** 쉬는 자리인가: 같은 종류를 FIND.retryMs 안에 FIND.matchM 안에서 찾아보고 못 찾았다. */
+  /** 쉬는 자리인가: 같은 종류를 FIND.retryMs 안에 FIND.matchM 안에서 찾아보고 못 찾았거나 마시는 그릇 무리의 다른 종류로만 찾았다. */
   private resting(s: { cls: ObjClass; position: V3 }, now: number): boolean {
     this.rested = this.rested.filter((x) => now - x.when < FIND.retryMs);
     return this.rested.some((x) => x.cls === s.cls && dist3(x.at, s.position) <= FIND.matchM);

@@ -10,6 +10,10 @@ describe("VLM 무조건 우선(vlmFirst)", () => {
   it("YOLO가 없다 / VLM이 있다 → 있음", () => {
     expect(vlmFirst(false, true)).toBe(true);
   });
+  it("종류도 VLM 답을 따른다: YOLO 병 / VLM 컵 → 컵", () => {
+    expect(vlmFirst("bottle", "cup")).toBe("cup");
+    expect(vlmFirst("bottle", null)).toBe("bottle");
+  });
   it("VLM이 답하지 않았으면(답 없음·끊김) YOLO를 따른다", () => {
     expect(vlmFirst(true, null)).toBe(true);
     expect(vlmFirst(false, null)).toBe(false);

@@ -92,6 +92,8 @@ export interface Obj {
   followed: { id: string; at: number; frame: string } | null;
   /** 면마다 가까이 보기 VLM 답이 값을 새로 넣거나 바꾼 횟수(지금 값의 출처와 따로 남는다). */
   closerRev: Partial<Record<Facet, number>>;
+  /** VLM이 이 물건을 다른 종류(마시는 그릇 무리 안)로 이어 답한 수: 서로 다른 답 CLASS_SWITCH_ANSWERS번 이으면 그 종류로 바꾼다(src/world/state/closer.ts). */
+  clsVote: { cls: ObjClass; n: number } | null;
   /** 내용물 갱신기의 상태(src/world/state/contents.ts). 내용물을 쌓은 적 없으면 null. */
   contents: ContentsState | null;
   /** 관절의 손에 없을 때 전체 사진으로 본 마지막 자리(확인 전 후보만 쓴다: 잊을 때 후보 자리로 남긴다). */
@@ -169,7 +171,7 @@ export class WorldCore {
     const obj: Obj = {
       id: `${cls}_${n}`, cls, position: null, surface: null, surfaceLabel: null, part: null, room: null, errorM: null, confirmed: false, status: "present",
       firstSeen: atMs, lastSeen: atMs, lastInView: atMs, goneAt: null, facts: {}, answered: null, closerAt: null, peekGuard: null, sizes: [], posFrom: null,
-      posAt: Number.NEGATIVE_INFINITY, posCloser: false, judgedAt: atMs, judgedFrame: frameId, judgedCloser: false, followed: null, closerRev: {},
+      posAt: Number.NEGATIVE_INFINITY, posCloser: false, judgedAt: atMs, judgedFrame: frameId, judgedCloser: false, followed: null, closerRev: {}, clsVote: null,
       movedAt: atMs, trail: [], carried: false, contents: null, free: null,
     };
     this.objects.set(obj.id, obj);
