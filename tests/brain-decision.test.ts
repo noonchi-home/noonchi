@@ -12,7 +12,7 @@ const input = (over: Partial<DecisionInput> = {}): DecisionInput => ({
   facts: { contents: "empty" }, ...over,
 });
 
-describe("PAM 계약 검사(services/pam/pam/contracts.py와 같은 규칙)", () => {
+describe("PAM 계약 검사(Python PAM과 같은 규칙, 검사 글도 같다)", () => {
   it("작업 목록은 비어 있지 않은 글 목록", () => {
     expect(validateTasks(["컵 치우기"])).toEqual(["컵 치우기"]);
     expect(() => validateTasks([])).toThrow(/at least one/);

@@ -3,16 +3,15 @@
 
 /** 키 → 그 키를 받는 서비스. */
 export const KEY_OWNERS: Record<string, readonly string[]> = {
-  OPENAI_API_KEY: ["noonchi", "pam"],
+  OPENAI_API_KEY: ["noonchi"],
   ANTHROPIC_API_KEY: ["noonchi"],
   VLM_API_KEY: ["noonchi"],
   THINQ_TOKEN: ["noonchi"],
   THINQ_API_KEY: ["noonchi"],
   PLAN_TOKEN: ["noonchi"],
-  OPENROUTER_API_KEY: ["pam"],
-  PAM_LLM_API_KEY: ["noonchi", "pam"],
-  // vLLM 서버 키: 서버(vllm-*)가 요구하고, noonchi(live VLM)·pam(live PAM LLM)이 붙인다
-  VLLM_API_KEY: ["noonchi", "pam", "vllm-pam", "vllm-vlm"],
+  PAM_LLM_API_KEY: ["noonchi"],
+  // vLLM 서버 키: 서버(vllm-*)가 요구하고, noonchi(vllm 모드 VLM·PAM LLM)가 붙인다
+  VLLM_API_KEY: ["noonchi", "vllm-pam", "vllm-vlm"],
   HF_TOKEN: ["vllm-pam", "vllm-vlm"],
 };
 

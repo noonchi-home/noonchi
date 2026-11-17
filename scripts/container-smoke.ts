@@ -1,12 +1,12 @@
-// 키 없는 컨테이너 확인: compose 프로젝트 noonchi-check로 noonchi(호스트 허브·폰 포트), pam(호스트 pam 포트), 가짜 OpenAI 호환 서버(check 프로필)를 띄우고
-// ready.ok가 true인지(VLM·PAM 서비스·PAM LLM이 모두 가짜 서버로 답함), /api/health 폰 주소가 확인용 PHONE_URL 하나뿐인지, 에이전트가 가짜 서버의 답을 돌려주는지, PAM 서비스가 관찰 텍스트로 판단하는지, 폰 화면(HTML·script·link 파일·인코딩 워커)이 열리는지,
+// 키 없는 컨테이너 확인: compose 프로젝트 noonchi-check로 noonchi(호스트 허브·폰 포트), 가짜 OpenAI 호환 서버(check 프로필)를 띄우고
+// ready.ok가 true인지(VLM·PAM LLM이 모두 가짜 서버로 답함), /api/health 폰 주소가 확인용 PHONE_URL 하나뿐인지, 에이전트가 가짜 서버의 답을 돌려주는지, 엔진 프레임 뒤 서버 안 PAM 판단(대기)이 기록되는지, 폰 화면(HTML·script·link 파일·인코딩 워커)이 열리는지,
 // 이미지 안 YOLO26s·관절 모델이 떴고(GET /api/brain detector yolo26s-seg, pose yolo26n-pose) 관찰 흐름(BRAIN=1)이 엔진 프레임 한 장을 YOLO·가짜 VLM으로 분석해 기록 DB에 vlm 줄을 남기는지(GET /api/history·/api/brain detected),
 // 호스트에서 보낸 계획(POST /api/plan)이 토큰 없이는 403, PLAN_TOKEN을 붙이면 200인지,
 // docker stop(SIGTERM)에 종료 코드 0으로 끝나는지, 멈춘 컨테이너에 onnxruntime 원격 측정 파일(~/.cache/Microsoft/DeveloperTools/.onnxruntime)이 없는지(docker diff) 본 뒤 내린다(볼륨까지 지운다).
 // 키가 그 키를 쓰는 서비스에만 가는지(docker compose config, scripts/compose-keys.ts)도 본다.
 // 저장소 .env와 셸의 키·토큰은 넘기지 않는다: 확인용 값만 적은 임시 env 파일을 --env-file로 주고, compose가 서비스에 넘기는 이름은 셸 값을 지운다.
 // 모델·PAM LLM·에이전트(OpenAI 공급자) 주소는 compose 안의 가짜 서버(fake-openai:8500)다. 실제 AI API를 부르지 않는다.
-// 호스트 포트(127.0.0.1)는 기본 허브 8500·폰 8510·pam 8530이고 CHECK_HUB_PORT·CHECK_PHONE_PORT·CHECK_PAM_PORT로 바꾼다(scripts/check-ports.ts).
+// 호스트 포트(127.0.0.1)는 기본 허브 8500·폰 8510이고 CHECK_HUB_PORT·CHECK_PHONE_PORT로 바꾼다(scripts/check-ports.ts).
 // 무거운 일 잠금 안에서 돌린다: npm run heavy -- npx tsx scripts/container-smoke.ts
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -28,7 +28,6 @@ let PORTS: CheckPorts;
 try { PORTS = checkPorts(process.env); } catch (e) { console.error((e as Error).message); process.exit(2); }
 const HUB_URL = `http://127.0.0.1:${PORTS.hub}`;
 const PHONE_URL = `http://127.0.0.1:${PORTS.phone}`;
-const PAM_URL = `http://127.0.0.1:${PORTS.pam}`;
 const FAKE = "http://fake-openai:8500/v1";
 const PLAN_TOKEN = "check-plan-token";
 /** 확인용 폰 주소. /api/health 폰 주소는 이것 하나여야 한다(컨테이너 안 주소는 밖에서 열 수 없어 넣지 않는다). */
@@ -36,6 +35,8 @@ const CHECK_PHONE_URL = "https://noonchi-check.example/phone/";
 const CHECK_ENV = {
   HUB: "memory", BRAIN: "1", INFERENCE_MODE: "vllm", VLM_BASE_URL: "http://fake-openai:8500/v1", PAM_LLM_BASE_URL: "http://fake-openai:8500/v1",
   AGENT_PROVIDER: "openai", OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: "http://fake-openai:8500/v1", PLAN_TOKEN, PHONE_URL: CHECK_PHONE_URL,
+  // 엔진 프레임 한 장 뒤 서버 안 PAM 판단이 곧 한 번 돌게 주기를 줄인다
+  PAM_PERIOD_MS: "1000",
 };
 /** docs/plan-contract.md의 { plan } 예시. */
 const PLAN_BODY = /```json\r?\n([\s\S]*?)```/.exec(readFileSync(join(ROOT, "docs", "plan-contract.md"), "utf8"))![1]!;
@@ -48,7 +49,7 @@ const SERVICE_ENV = new Set(Object.values((parse(readFileSync(join(ROOT, "compos
   .flatMap((svc) => Object.keys(svc.environment ?? {})));
 // 셸의 키·토큰 값과 서비스가 받는 이름은 넘기지 않는다
 const shell = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/(KEY|TOKEN|SECRET)$/i.test(k) && !SERVICE_ENV.has(k)));
-const env = { ...shell, NOONCHI_PORT: String(PORTS.hub), NOONCHI_PHONE_PORT: String(PORTS.phone), PAM_HOST_PORT: String(PORTS.pam) };
+const env = { ...shell, NOONCHI_PORT: String(PORTS.hub), NOONCHI_PHONE_PORT: String(PORTS.phone) };
 const compose = (args: string[], capture = false) =>
   spawnSync("docker", ["compose", "--env-file", envFile, "-p", "noonchi-check", "--profile", "check", ...args],
     { cwd: ROOT, env, encoding: "utf8", stdio: capture ? "pipe" : "inherit" });
@@ -134,10 +135,10 @@ try {
   // 이 PC(Windows)는 포트를 열 때 가끔 EFAULT(invalid pointer address)로 실패하고, up이 성공해도 호스트 포트 하나가 안 열릴 때가 있다
   // (src/shared/net.ts). 그때만 내리고 다시 띄운다
   for (let attempt = 1; ; attempt++) {
-    const up = compose(["up", "-d", "noonchi", "pam", "fake-openai"], true);
+    const up = compose(["up", "-d", "noonchi", "fake-openai"], true);
     process.stdout.write(up.stdout ?? "");
     process.stderr.write(up.stderr ?? "");
-    const closed = up.status === 0 ? await closedPorts([PORTS.hub, PORTS.phone, PORTS.pam], 15_000) : [];
+    const closed = up.status === 0 ? await closedPorts([PORTS.hub, PORTS.phone], 15_000) : [];
     if (up.status === 0 && !closed.length) break;
     const flaky = up.status === 0 || /invalid pointer address/i.test(`${up.stdout}${up.stderr}`);
     if (attempt >= 8 || !flaky) throw new Error(up.status === 0 ? `호스트 포트가 열리지 않아요(${closed.join(", ")})` : "compose up 실패");
@@ -155,7 +156,7 @@ try {
   if (!h.twin) fails.push("트윈 결과물(twin/)이 이미지에 없어요");
   if (h.ready?.db !== true) fails.push("기록 DB를 열지 못했어요");
   if (h.ready?.inference_mode !== "vllm" || h.ready?.vlm?.base_url !== FAKE) fails.push("추론 설정이 확인용 env 파일 값이 아니에요");
-  if (h.ready?.pam?.url !== "http://pam:8300" || h.ready?.pam?.llm?.base_url !== FAKE) fails.push("PAM 서비스·PAM LLM 주소가 compose·확인용 값이 아니에요");
+  if (h.ready?.pam?.base_url !== FAKE || h.ready?.pam?.reachable !== true) fails.push("PAM LLM 주소가 확인용 가짜 서버가 아니거나 답하지 않아요");
   console.log(`폰 주소: ${JSON.stringify(h.phone_urls)}`);
   if (JSON.stringify(h.phone_urls) !== JSON.stringify([CHECK_PHONE_URL])) fails.push(`폰 주소가 PHONE_URL 하나가 아니에요(${JSON.stringify(h.phone_urls)})`);
   const chat = await fetchRetry(`${HUB_URL}/api/agent/chat`, {
@@ -163,16 +164,6 @@ try {
   }).then(async (r) => ({ status: r.status, body: (await r.json()) as Record<string, any> }), (e: Error) => ({ status: 0, body: { error: e.message } as Record<string, any> }));
   console.log(`에이전트: ${chat.status} ${JSON.stringify(chat.body.reply ?? chat.body)}`);
   if (chat.status !== 200 || !String(chat.body.reply ?? "").includes("가짜 답")) fails.push("에이전트가 가짜 서버의 답(가짜 답)을 돌려주지 않았어요");
-  // PAM 서비스: 관찰 텍스트로 판단 한 번(가짜 PAM LLM은 대기 -1), /health의 입력 한도
-  const memory = { initial_state: "s", states: [{ id: "s", description: "d", rules: [], next: [] }] };
-  const predict = await fetchRetry(`${PAM_URL}/predict`, {
-    method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(30_000),
-    body: JSON.stringify({ contract: "pam-predict/2", final_time: "2026-11-07T21:00:08+09:00", observation_text: "21:00:00 사람 보임", memory_kind: "fsm", memory, tasks: ["컵 치우기"] }),
-  }).then(async (r) => ({ status: r.status, body: (await r.json()) as Record<string, any> }), (e: Error) => ({ status: 0, body: { error: e.message } as Record<string, any> }));
-  console.log(`PAM 판단: ${predict.status} ${JSON.stringify(predict.body.prediction ?? predict.body)}`);
-  if (predict.status !== 200 || predict.body.status !== "valid" || predict.body.prediction?.task_index !== -1) fails.push("PAM 서비스 판단이 가짜 PAM LLM의 대기(-1)가 아니에요");
-  const limits = (await waitJson(`${PAM_URL}/health`, 10_000))?.limits;
-  if (!(limits?.reflect_input_bytes > 0) || limits?.max_model_len !== 32768) fails.push(`PAM /health 입력 한도가 없어요(${JSON.stringify(limits)})`);
   // 폰 화면: /phone/ HTML, 그 script·link 파일, 폰 JS가 띄우는 인코딩 워커가 모두 200이어야 화면이 뜬다
   const phone = await phoneAssetFailures(PHONE_URL, (url) => fetchRetry(url, { signal: AbortSignal.timeout(5000) }).catch((e: Error & { cause?: { code?: string; syscall?: string } }) => {
     throw new Error(`${e.message} ${e.cause?.code ?? ""} ${e.cause?.syscall ?? ""}`.trim());
@@ -200,6 +191,11 @@ try {
   const brain1 = await waitJson(`${HUB_URL}/api/brain`, 10_000, (b) => (b.detected ?? 0) >= 1);
   console.log(`YOLO 분석: ${brain1?.detected ?? 0}장`);
   if (!((brain1?.detected ?? 0) >= 1)) fails.push("YOLO가 엔진 프레임을 분석하지 않았어요(/api/brain detected)");
+  // 서버 안 PAM 판단: 엔진 프레임이 오는 동안 주기 판단 한 번(가짜 PAM LLM은 대기) → 기록 DB decision 줄
+  const decided = await waitJson(`${HUB_URL}/api/history?kinds=decision`, 30_000, (b) => (b.rows?.length ?? 0) > 0);
+  const decision = decided?.rows?.[0];
+  console.log(`PAM 판단: ${JSON.stringify(decision?.text ?? null)} ${JSON.stringify(decision?.data?.status ?? null)}`);
+  if (decision?.data?.status !== "valid" || decision?.text !== "대기") fails.push("서버 안 PAM 판단이 가짜 PAM LLM의 대기가 아니에요(기록 DB decision 줄)");
   // docker stop(SIGTERM) → 서버가 닫고 0으로 끝나야 한다
   if (compose(["stop", "noonchi"]).status !== 0) fails.push("compose stop 실패");
   const id = compose(["ps", "-a", "-q", "noonchi"], true).stdout.trim();
@@ -217,7 +213,7 @@ try {
   code = 0;
 } catch (e) {
   console.error(`키 없는 컨테이너 확인 실패: ${(e as Error).message}`);
-  compose(["logs", "--tail", "80", "noonchi", "pam", "fake-openai"]);
+  compose(["logs", "--tail", "80", "noonchi", "fake-openai"]);
 } finally {
   compose(["down", "-v"]);
   clearInterval(keepAlive);

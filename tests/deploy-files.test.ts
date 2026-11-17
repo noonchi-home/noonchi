@@ -1,5 +1,5 @@
 // 배포 파일(Dockerfile·compose.yaml·.dockerignore·.env.example·키 없는 컨테이너 확인)이 배포 규칙을 지키는지 본다.
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -79,19 +79,17 @@ describe("배포 파일", () => {
     expect(Object.keys(c.volumes)).toEqual(expect.arrayContaining(["noonchi-data", "model-cache"]));
   });
 
-  it("compose: pam 서비스와 check 프로필 가짜 서버, noonchi는 pam에 붙는다", () => {
+  it("compose: PAM 서비스가 없고(판단·반성은 noonchi 안), noonchi가 PAM LLM 설정을 받으며, check 프로필 가짜 서버가 있다", () => {
     const c = parse(read("compose.yaml"), { merge: true }) as { services: Record<string, any> };
-    const pam = c.services.pam;
-    expect(pam.build).toBe("services/pam");
-    expect(pam.image).toBe("noonchi-pam:local");
-    expect(pam.ports).toEqual(["127.0.0.1:${PAM_HOST_PORT:-8300}:8300"]);
-    expect(pam.profiles).toBeUndefined();
-    expect(c.services.noonchi.environment.PAM_URL).toBe("http://pam:8300");
+    expect(c.services.pam).toBeUndefined();
+    expect(c.services.noonchi.depends_on?.pam).toBeUndefined();
+    const env = Object.keys(c.services.noonchi.environment ?? {});
+    for (const k of ["INFERENCE_MODE", "PAM_LLM_BASE_URL", "PAM_LLM_MODEL", "PAM_LLM_API_KEY", "PAM_LLM_TIMEOUT_S", "PAM_MAX_MODEL_LEN", "VLLM_API_KEY", "OPENAI_API_KEY"]) expect(env, k).toContain(k);
+    for (const k of ["PAM_URL", "PAM_LLM_PROVIDER", "OPENROUTER_API_KEY"]) expect(env, k).not.toContain(k);
     // 컨테이너 안 네트워크 주소(Docker 브리지)는 밖에서 열 수 없으니 폰 주소에 넣지 않는다
     expect(c.services.noonchi.environment.PHONE_LAN_URLS).toBe("0");
-    expect(c.services.noonchi.depends_on).toEqual({ pam: { condition: "service_healthy" } });
     // 이름만 적은 칸은 .env에 있을 때만 넘긴다. ${X:-}로 두면 비어 있어도 늘 넘긴다
-    for (const name of ["noonchi", "pam"]) for (const v of Object.values(c.services[name].environment ?? {})) expect(String(v), name).not.toContain("${");
+    for (const v of Object.values(c.services.noonchi.environment ?? {})) expect(String(v)).not.toContain("${");
     const fake = c.services["fake-openai"];
     expect(fake.profiles).toEqual(["check"]);
     expect(fake.image).toBe("noonchi:local");
@@ -119,50 +117,21 @@ describe("배포 파일", () => {
     expect(plan).toContain("!SERVICE_ENV.has(k)");
   });
 
-  it("compose: noonchi는 서버 코드가 읽는 설정을, pam은 PAM 서비스가 읽는 설정을 받는다", () => {
+  it("compose: noonchi는 서버 코드가 읽는 설정을 받는다", () => {
     const svc = services();
     const noonchi = new Set(envNames(svc.noonchi!));
     const missing = [...serverEnvNames()].filter((k) => !NOT_FOR_CONTAINER.has(k) && !noonchi.has(k));
     expect(missing, "compose.yaml noonchi environment에 더하세요").toEqual([]);
-    const settings = read("services/pam/noonchi_pam/settings.py");
-    const pamReads = [...settings.matchAll(/get\("([A-Z][A-Z0-9_]+)"\)|"key_env": "([A-Z][A-Z0-9_]+)"/g)].map((m) => (m[1] ?? m[2])!);
-    pamReads.push((JSON.parse(read("services/pam/config/openrouter.json")) as { api_key_env: string }).api_key_env);
-    expect(pamReads.length).toBeGreaterThan(5);
-    expect(pamReads.filter((k) => !envNames(svc.pam!).includes(k)), "compose.yaml pam environment에 더하세요").toEqual([]);
   });
 
-  it("PAM 이미지: 저장소 안 services/pam만 쓰고 해시를 고정한 잠금 파일로 pyproject와 같은 판의 의존성을 깐다", () => {
-    const d = read("services/pam/Dockerfile");
-    expect(d).toMatch(/^FROM python:3\.13\.\d+-slim-bookworm/m);
-    expect(d).toContain("COPY requirements.lock ./");
-    expect(d).toContain("pip install --no-cache-dir --require-hashes -r requirements.lock");
-    const pyproject = read("services/pam/pyproject.toml");
-    const pins = (re: RegExp) => re.exec(pyproject)![1]!.match(/"[^"]+"/g)!.map((x) => x.slice(1, -1).toLowerCase());
-    const runtime = pins(/dependencies = \[([^\]]*)\]/);
-    const test = pins(/test = \[([^\]]*)\]/);
-    for (const [file, need] of [["services/pam/requirements.lock", runtime], ["services/pam/requirements-test.lock", [...runtime, ...test]]] as const) {
-      // 판을 ==로 고정한 줄마다 sha256 해시 줄이 따른다
-      const reqs: { pin: string; hashes: number }[] = [];
-      for (const line of read(file).split(/\r?\n/)) {
-        if (/^[A-Za-z0-9]/.test(line)) reqs.push({ pin: line.split(/[ ;]/)[0]!.toLowerCase(), hashes: 0 });
-        else if (/^\s+--hash=sha256:[0-9a-f]{64}/.test(line) && reqs.length) reqs.at(-1)!.hashes++;
-      }
-      expect(reqs.length, file).toBeGreaterThan(need.length);
-      for (const r of reqs) {
-        expect(r.pin, file).toMatch(/^[a-z0-9._-]+==\S+$/);
-        expect(r.hashes, `${file} ${r.pin}`).toBeGreaterThan(0);
-      }
-      for (const dep of need) expect(reqs.map((r) => r.pin), file).toContain(dep);
-    }
-    for (const x of ["COPY pam pam", "COPY noonchi_pam noonchi_pam", "COPY prompts prompts", "COPY config config", "COPY scenarios scenarios", "USER pam", "EXPOSE 8300"]) expect(d).toContain(x);
-    expect(d).toContain('CMD ["uvicorn", "noonchi_pam.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8300"]');
-    const i = read("services/pam/.dockerignore").split(/\r?\n/);
-    for (const x of [".venv", "__pycache__", ".pytest_cache", "tests", "*.egg-info"]) expect(i).toContain(x);
+  it("저장소·CI에 Python PAM이 없다(services/pam, pytest, PAM 이미지)", () => {
+    expect(existsSync("services/pam")).toBe(false);
+    expect(read(".github/workflows/ci.yml")).not.toMatch(/pytest|services\/pam|noonchi-pam|setup-python/);
   });
 
   it(".dockerignore가 비밀·런타임·의존성을 뺀다", () => {
     const i = read(".dockerignore").split(/\r?\n/);
-    for (const x of [".env", "node_modules", "ui/node_modules", "runtime", "runtime-3d", "graft", ".git", "services/pam/.venv"]) expect(i).toContain(x);
+    for (const x of [".env", "node_modules", "ui/node_modules", "runtime", "runtime-3d", "graft", ".git"]) expect(i).toContain(x);
   });
 
   it(".env.example의 키·토큰 값은 비어 있다", () => {
@@ -179,17 +148,14 @@ describe("배포 파일", () => {
     expect(ci).not.toMatch(/docker push|push: true/);
     const jobs = (parse(ci) as { jobs: Record<string, { env?: Record<string, string> }> }).jobs;
     for (const [name, j] of Object.entries(jobs)) expect(j.env?.ONNXRUNTIME_NODE_INSTALL, name).toBe("skip");
-    expect(ci).toContain("pip install --require-hashes -r services/pam/requirements-test.lock");
-    expect(ci).toContain("pytest services/pam");
-    expect(ci).toContain("docker build -t noonchi-pam:ci services/pam");
   });
 
   it("배포 문서: GPU 서버 크기·Tailscale 인증서·두 모드의 에이전트 키·두 모델 확인·호출량", () => {
     const d = read("docs/deploy.md");
     for (const s of ["g6e.2xlarge", "MagicDNS", "HTTPS Certificates", "tailscale serve --bg --https=443 http://127.0.0.1:8200", "tailscale serve --bg --https=8443 http://127.0.0.1:8210",
       "`ANTHROPIC_API_KEY` 또는 `OPENAI_API_KEY`", "curl -s http://127.0.0.1:8410/v1/models", "curl -s http://127.0.0.1:8420/v1/models", "`ENGINE_FRAME_MS`(기본 100)", "`VLM_FRAME_MS`(기본 2000)", "1,800", "vllm/vllm-openai:v0.17.0",
-      "curl -s http://127.0.0.1:8300/health", "PAM_HOST_PORT", "`PAM_LLM_BASE_URL`", "fake-openai"]) expect(d).toContain(s);
-    expect(d).not.toMatch(/\| `PAM_URL` \|/);
+      "`PAM_LLM_BASE_URL`", "fake-openai"]) expect(d).toContain(s);
+    expect(d).not.toMatch(/PAM_URL|PAM_HOST_PORT|:8300|services\/pam|OPENROUTER/);
     // VLM 프레임 기본 간격 2초(src/observe/pipeline.ts loadObserveConfig)와 같은 값·호출량
     expect(d).not.toContain("3,600");
     expect(read("docs/reference.md")).toContain("| `ENGINE_FRAME_MS` | `100` |");
@@ -199,7 +165,7 @@ describe("배포 파일", () => {
     for (const f of ["docs/deploy.md", ".env.example", "README.md", "docs/reference.md", "docs/plan.md"]) expect(read(f), f).not.toMatch(/규칙 기반|rule-based|rules-ko|mock 에이전트|mock 공급자|anthropic` \/ `mock|openai \| anthropic \| mock/);
   });
 
-  it("키 없는 컨테이너 확인: 저장소 .env와 셸의 키를 넘기지 않고 확인용 호스트 포트(기본 8500·8510·8530)에 띄운다", () => {
+  it("키 없는 컨테이너 확인: 저장소 .env와 셸의 키를 넘기지 않고 확인용 호스트 포트(기본 8500·8510)에 띄운다", () => {
     const s = read("scripts/container-smoke.ts");
     expect(s).toContain('"--env-file", envFile');
     expect(s).toContain("(KEY|TOKEN|SECRET)$");
@@ -210,7 +176,7 @@ describe("배포 파일", () => {
     expect(s).toContain("NOONCHI_PORT: String(PORTS.hub)");
     expect(s).toContain("NOONCHI_PHONE_PORT: String(PORTS.phone)");
     expect(s).toContain('"down", "-v"');
-    expect(s).toContain("PAM_HOST_PORT: String(PORTS.pam)");
+    expect(s).not.toMatch(/PAM_HOST_PORT|PORTS\.pam|CHECK_PAM_PORT/);
   });
 
   it("키 없는 컨테이너 확인: 모델·PAM LLM·에이전트를 모두 가짜 서버에 붙이고 ready.ok와 에이전트 답을 본다", () => {
@@ -245,6 +211,8 @@ describe("배포 파일", () => {
     expect(s).toContain('BRAIN: "1"');
     expect(s).toContain('kind: "engine"');
     expect(s).toContain("/api/history?kinds=vlm");
+    // 서버 안 PAM 판단(가짜 PAM LLM 대기)을 기록 DB decision 줄로 본다
+    expect(s).toContain("/api/history?kinds=decision");
   });
 
   it("키 없는 컨테이너 확인: 이미지 안 YOLO26s·관절 모델이 떠서 분석했는지, 호스트에서 보낸 계획이 토큰으로만 들어가는지 본다", () => {
@@ -260,9 +228,11 @@ describe("배포 파일", () => {
     expect(s).toContain("DeveloperTools");
   });
 
-  it(".env.example에 PAM 서비스 설정 자리가 있다", () => {
+  it(".env.example에 PAM LLM 설정 자리가 있고 없어진 이름이 없다", () => {
     const keys = read(".env.example").split(/\r?\n/).map((l) => /^#?\s*([A-Z0-9_]+)=/.exec(l)?.[1]).filter(Boolean);
-    for (const k of ["OPENROUTER_API_KEY", "PAM_LLM_BASE_URL", "PAM_LLM_MODEL", "PAM_LLM_API_KEY", "PAM_HOST_PORT"]) expect(keys, k).toContain(k);
+    for (const k of ["INFERENCE_MODE", "PAM_LLM_BASE_URL", "PAM_LLM_MODEL", "PAM_LLM_API_KEY", "PAM_LLM_TIMEOUT_S", "PAM_MAX_MODEL_LEN"]) expect(keys, k).toContain(k);
+    for (const k of ["PAM_URL", "PAM_HOST_PORT", "PAM_LLM_PROVIDER", "OPENROUTER_API_KEY"]) expect(keys, k).not.toContain(k);
+    expect(read(".env.example")).toMatch(/^INFERENCE_MODE=openai\r?$/m);
   });
 
   it("배포 문서 3절이 .env에 넣으라는 이름은 모두 .env.example에 있고, 관찰 흐름은 켜져 있다", () => {

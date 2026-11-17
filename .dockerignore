@@ -11,5 +11,4 @@ graft
 .matter
 coverage
 *.log
-services/pam/.venv
 docs/superpowers

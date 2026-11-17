@@ -7,7 +7,7 @@ import { resolveTwinStudioDir } from "../src/layout/twin-files.js";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SELF = fileURLToPath(import.meta.url);
-const DIRS = ["src", "scripts", "tests", "ui/src", "ui/tests", "web", "services", ".github"];
+const DIRS = ["src", "scripts", "tests", "ui/src", "ui/tests", "web", ".github"];
 const FILES = [
   "package.json", "ui/package.json", "vitest.config.ts", "ui/vite.config.ts", "tsconfig.json", "Dockerfile", "compose.yaml",
   ".env.example", ".dockerignore", "README.md", "docs/reference.md", "docs/deploy.md", "docs/pam-interface.md", "docs/plan.md", "docs/plan-contract.md",
@@ -16,14 +16,14 @@ const SKIP = new Set(["node_modules", ".venv", "dist", "__pycache__", ".pytest_c
 const TEXT = /\.(ts|tsx|mts|mjs|js|cjs|json|py|toml|ya?ml|md|txt|html|css|sh|ps1|cmd)$|(^|[\\/])(Dockerfile|\.env\.example|\.dockerignore)$/;
 
 export const RULES = [
-  { re: /(?:\.\.[\\/])+ai(?=[\\/"'`\s)]|$)/, use: "services/pam/" },
+  { re: /(?:\.\.[\\/])+ai(?=[\\/"'`\s)]|$)/, use: "src/brain/pam/" },
   { re: /(?:\.\.[\\/])+twin-studio[\w-]*/, use: "twin/ (TWIN_STUDIO_DIR 기본값)" },
   { re: /noonchi[-_]server/, use: "src/ (TypeScript로 옮긴 모듈)" },
   { re: /소웨공[\\/]/, use: "이 저장소 안의 폴더" },
   // join(ROOT, "..", "ai")처럼 경로 조각으로 쓴 옆 저장소
-  { re: /["'`]\.\.["'`]\s*,\s*(?:["'`]\.\.["'`]\s*,\s*)*["'`](?:ai|twin-studio[\w-]*)["'`]/, use: "services/pam/·twin/" },
+  { re: /["'`]\.\.["'`]\s*,\s*(?:["'`]\.\.["'`]\s*,\s*)*["'`](?:ai|twin-studio[\w-]*)["'`]/, use: "src/brain/pam/·twin/" },
   // compose build·context가 저장소 밖(절대 경로·위 폴더)을 가리킴
-  { re: /^\s*(?:build|context)\s*:\s*["']?(?:\/|[A-Za-z]:[\\/]|\.\.)/, use: "저장소 안 폴더(. 또는 services/pam)" },
+  { re: /^\s*(?:build|context)\s*:\s*["']?(?:\/|[A-Za-z]:[\\/]|\.\.)/, use: "저장소 안 폴더(.)" },
 ];
 
 function walk(dir: string, out: string[]): void {
@@ -68,13 +68,20 @@ describe("한 저장소", () => {
     expect(scan(files())).toEqual([]);
   });
 
+  it("코드·설정에 옛 PAM 서비스 자리(services/pam·PAM_URL·PAM_HOST_PORT·PAM 이미지)가 없다", () => {
+    const old = /services\/pam|\bPAM_URL\b|\bPAM_HOST_PORT\b|\bCHECK_PAM_PORT\b|noonchi-pam/;
+    const hits = files().filter((f) => !f.endsWith(".md") && !f.endsWith("deploy-files.test.ts"))
+      .filter((f) => old.test(readFileSync(f, "utf8"))).map((f) => relative(ROOT, f)).sort();
+    expect(hits).toEqual([]);
+  });
+
   it("규칙이 옆 저장소 경로만 잡는다", () => {
     for (const s of ["../ai/pam", "..\\twin-studio\\homes.json", "../twin-studio-3d", "noonchi-server", "C:/Users/x/Desktop/소웨공/ai",
       'const AI = join(ROOT, "..", "ai", "pam");', 'TWIN_STUDIO_DIR: resolve(ROOT, "..", "twin-studio")', "join(here, '..', '..', 'twin-studio-3d')", "    context: /srv/ai", "  build: ../ai",
       "    build: C:/srv/ai"]) {
       expect(RULES.some((r) => r.re.test(s)), s).toBe(true);
     }
-    for (const s of ["services/pam/", "twin/homes.json", "my-ai", "twin-studio 저장소에서 빌드", 'join(ROOT, "..", "src")', 'join(ROOT, "ui")', "    build: services/pam", "    build: ."]) {
+    for (const s of ["src/brain/pam/", "twin/homes.json", "my-ai", "twin-studio 저장소에서 빌드", 'join(ROOT, "..", "src")', 'join(ROOT, "ui")', "    build: ."]) {
       expect(RULES.some((r) => r.re.test(s)), s).toBe(false);
     }
   });
