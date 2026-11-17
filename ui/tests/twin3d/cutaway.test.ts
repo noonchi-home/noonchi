@@ -127,21 +127,28 @@ describe("자른 키 큰 가구 뚜껑", () => {
 describe("자른 키 큰 가구 뚜껑이 가구를 따라간다", () => {
   // 편집기에서 수납장을 현관(바닥 -0.1 m)에서 방(0 m)으로 옮기거나 노드가 기울어도 뚜껑은 세계 좌표 자르기 높이에 수평으로 남는다
   const lidOf = (wardrobe: THREE.Object3D) => wardrobe.children.find((c): c is THREE.Mesh => c instanceof THREE.Mesh && c.userData.isLid === true)!;
-  it("가구를 옮기고 돌리고 기울여도 뚜껑은 자르기 높이에 수평이고 바닥 자리를 따라간다", () => {
+  it("가구를 옮기고 돌리고 기울여도 뚜껑은 자르기 높이에서 가구의 실제 단면과 맞는다", () => {
     const { wardrobe } = lowered();
     const lid = lidOf(wardrobe);
     const { geometry, material } = lid;
     wardrobe.position.set(4, -0.1, 2.5);
-    wardrobe.rotation.set(0.08, 0, 0.05); // 기운 노드(돌림 y는 0으로 바뀜)
+    wardrobe.rotation.set(0.08, 0.6, 0.05); // 편집기로 옮기고 돌린 기운 노드
     wardrobe.updateMatrixWorld(true);
-    const box = new THREE.Box3().setFromObject(lid);
-    expect(box.min.y).toBeCloseTo(1.052, 4);
-    expect(box.max.y).toBeCloseTo(1.052, 4);
-    // 돌림 y 0: 폭 1.8 m가 x, 깊이 0.62 m가 z. 가운데는 가구 자리(문 두께만큼 앞으로 0.01 m)
-    expect(box.max.x - box.min.x).toBeCloseTo(1.8, 2);
-    expect(box.max.z - box.min.z).toBeCloseTo(0.62, 2);
-    expect((box.min.x + box.max.x) / 2).toBeCloseTo(4, 2);
-    expect((box.min.z + box.max.z) / 2).toBeCloseTo(2.49, 2);
+    // 기대 단면: 가구 로컬 바닥 자리(몸통 + 문, x ±0.9, z -0.32~0.3)의 네 세로 모서리가 세계 y = 1.052와 만나는 점
+    const corners = ([[-0.9, -0.32], [0.9, -0.32], [0.9, 0.3], [-0.9, 0.3]] as const).map(([x, z]) => {
+      const a = new THREE.Vector3(x, 0, z).applyMatrix4(wardrobe.matrixWorld);
+      const b = new THREE.Vector3(x, 1, z).applyMatrix4(wardrobe.matrixWorld);
+      return a.clone().lerp(b, (1.052 - a.y) / (b.y - a.y));
+    });
+    const pos = lid.geometry.getAttribute("position");
+    const got = Array.from({ length: pos.count }, (_, i) => new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(lid.matrixWorld));
+    expect(got).toHaveLength(4);
+    for (const p of got) expect(p.y).toBeCloseTo(1.052, 6);
+    for (const want of corners) expect(Math.min(...got.map((p) => p.distanceTo(want)))).toBeLessThan(1e-6);
+    // 기울면 단면이 바닥 자리 위에서 옆으로 옮겨 간다(0.08 rad × 1.15 m ≈ 9 cm)
+    const footprint = new THREE.Vector3(0, 0, -0.01).applyMatrix4(wardrobe.matrixWorld);
+    const center = got.reduce((s, p) => s.add(p), new THREE.Vector3()).multiplyScalar(1 / 4);
+    expect(Math.hypot(center.x - footprint.x, center.z - footprint.z)).toBeGreaterThan(0.08);
     // 따라가며 새 지오메트리·재질을 만들지 않는다
     expect(lid.geometry).toBe(geometry);
     expect(lid.material).toBe(material);

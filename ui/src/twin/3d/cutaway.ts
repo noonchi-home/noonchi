@@ -36,26 +36,21 @@ export interface SceneEntry {
   state?: Record<string, unknown>;
 }
 
-const LID_POS = new THREE.Vector3();
-const LID_ROT = new THREE.Quaternion();
-const LID_SCALE = new THREE.Vector3();
-const LID_YAW = new THREE.Euler();
-const UP = new THREE.Vector3(0, 1, 0);
-const ONE = new THREE.Vector3(1, 1, 1);
+const LID_SECTION = new THREE.Matrix4();
 
 /**
- * 뚜껑의 세계 행렬을 부모(가구) 자리·방위(y 돌림)만 따르고 높이는 세계 y = 높이, 늘 수평으로 둔다.
- * 편집기로 가구를 옮기거나(바닥 높이가 다른 방으로) 노드가 기울어도 자른 면과 맞는다. 행렬만 다시 쓰고 새 객체를 만들지 않는다.
+ * 뚜껑의 세계 행렬: 가구 로컬 바닥 자리(판, 로컬 y 0)를 가구의 세로축을 따라 세계 y = 높이 평면에 옮긴 자리, 곧 가구와 그 평면이
+ * 실제로 만나는 단면이다. 세계 점 = 가구 행렬 · (x, t, z), t는 그 점의 세계 y가 높이가 되는 로컬 y(x·z의 일차식)라 행렬 하나로 된다.
+ * 편집기로 옮기거나(바닥 높이가 다른 방) 돌리거나 기울여도 맞고, 행렬만 다시 쓰고 새 객체를 만들지 않는다.
  */
 function levelLid(lid: THREE.Object3D, height: number): void {
   const fit = () => {
     const parent = lid.parent;
     if (!parent) return;
-    parent.matrixWorld.decompose(LID_POS, LID_ROT, LID_SCALE);
-    LID_YAW.setFromQuaternion(LID_ROT, "YXZ");
-    LID_ROT.setFromAxisAngle(UP, LID_YAW.y);
-    LID_POS.y = height;
-    lid.matrixWorld.compose(LID_POS, LID_ROT, ONE);
+    const e = parent.matrixWorld.elements; // 열 우선: 세계 y = e[1]·x + e[5]·y + e[9]·z + e[13]
+    if (Math.abs(e[5]!) < 1e-6) { lid.matrixWorld.copy(parent.matrixWorld); return; } // 옆으로 누운 가구: 세로축이 평면과 나란하다
+    LID_SECTION.set(1, 0, 0, 0, -e[1]! / e[5]!, 1, -e[9]! / e[5]!, (height - e[13]!) / e[5]!, 0, 0, 1, 0, 0, 0, 0, 1);
+    lid.matrixWorld.multiplyMatrices(parent.matrixWorld, LID_SECTION);
     lid.matrixWorldNeedsUpdate = false;
   };
   lid.matrixAutoUpdate = false;
