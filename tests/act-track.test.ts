@@ -1406,18 +1406,15 @@ describe("실행 추적: 코치 계획(손으로 켜는 위험 가전)", () => {
     expect(s.t.openCommand()).toMatchObject({ stepId: `off:${P}:induction_1:1`, text: "인덕션을 꺼 주세요" });
   });
 
-  it("다시 알리기(tell)·사람 부탁(askCloser)은 서버 글만 보낸다: 지금 명령(그대로·「먼저」), 그 단계의 곳이 보이게 대 달라는 부탁. 모르는 곳·모델 글은 보내지 않는다(그 판은 원래 명령 그대로)", async () => {
+  it("다시 알리기(tell)는 서버 글만 보낸다: 지금 명령(그대로·「먼저」). 모델 글은 보내지 않는다(그 판은 원래 명령 그대로)", async () => {
     const s = coachSetup();
     await s.decide(ramenDecision());
     for (const n of [1, 2, 3]) s.t.onAnswer(P, `${P}:${n}`, "done");
     const before = s.last();
     expect(s.t.tell(P, `${P}:4`, "먼저 인덕션을 켜 주세요" as TellMode)).toBeNull();
-    expect(s.t.askCloser(P, `${P}:4`, "인덕션을 켜 주세요")).toBeNull();
-    expect(s.t.askCloser(P, `${P}:4`, "induction_1")).toBeNull();
     expect(s.last()).toEqual(before);
     expect(s.t.toldAt()).toBeNull();
     expect(s.t.tell(P, `${P}:4`, "earlier")).toBe("먼저 냄비에 물을 받아 주세요");
-    expect(s.t.askCloser(P, `${P}:4`, "sink_1")).toBe("싱크대가 보이게 폰을 가까이 대 주세요");
     for (const n of [4, 5]) s.t.onAnswer(P, `${P}:${n}`, "done");
     // 위험 가전이 대상인 단계도 그 단계 서버 명령으로만 나간다
     expect(s.t.tell(P, `${P}:6`, "repeat")).toBe("냄비를 인덕션에 올려 주세요");
@@ -2555,18 +2552,17 @@ describe("실행 추적: 잘한 단계는 말을 줄인다(수업 기록)", () =
   }
   const HUMAN = ["수납장으로 가기", "냄비 꺼내기", "싱크대로 가기", "물 받기", "인덕션으로 가기", "냄비 올리기", "인덕션 켜기", "면과 스프 넣기", "인덕션 끄기"];
 
-  it("끝낸 계획의 사람 단계마다 혼자 해냈는지 기록한다. 다시 알리기(tell)·다시 읽기·가까이 비춰 달라는 부탁을 받은 단계는 혼자 해낸 것이 아니다. 알림·기다리기 단계는 기록하지 않는다", async () => {
+  it("끝낸 계획의 사람 단계마다 혼자 해냈는지 기록한다. 다시 알리기(tell)·다시 읽기를 받은 단계는 혼자 해낸 것이 아니다. 알림·기다리기 단계는 기록하지 않는다", async () => {
     const lessons = memoryLessons();
     const s = coachSetup({ lessons });
     await finishRun(s, (n) => {
       if (n === 4) expect(s.t.tell(P, `${P}:4`, "earlier")).toBe("먼저 냄비에 물을 받아 주세요");
       if (n === 6) { s.clock.t += 30_000; s.t.tick(); }
-      if (n === 2) expect(s.t.askCloser(P, `${P}:2`, "cabinet_1")).toBe("수납장이 보이게 폰을 가까이 대 주세요");
     });
     const got = lessons.get(RAMEN)!;
     expect(got.runs).toBe(1);
     expect(got.steps.map((x) => x.label)).toEqual(HUMAN);
-    expect(got.steps.filter((x) => x.alone === 0).map((x) => x.label)).toEqual(["냄비 꺼내기", "물 받기", "냄비 올리기"]);
+    expect(got.steps.filter((x) => x.alone === 0).map((x) => x.label)).toEqual(["물 받기", "냄비 올리기"]);
     expect(got.updatedAt).toBe(new Date(s.clock.t).toISOString());
   });
 
@@ -2756,7 +2752,6 @@ describe("실행 추적: 멈춘 집기·놓기 단계(관찰 모드 A)와 사람
       { not: { person_holding: "cup_1" } },
     ],
   };
-  const CLOSER = "컵이 보이게 폰을 가까이 대 주세요";
 
   /** stalled는 받은 알림을 모은다. accept(false)면 받지 않았다고 돌려준다. */
   function stallSetup(over: Parameters<typeof setup>[0] = {}) {
@@ -2942,86 +2937,6 @@ describe("실행 추적: 멈춘 집기·놓기 단계(관찰 모드 A)와 사람
       await end(s);
       expect(s.stalls.map((x) => x.signal.aborted), name).toEqual(s.stalls.map(() => true));
     }
-  });
-
-  it("사람 부탁(askCloser)은 지금 명령을 같은 계획·단계 id로 글만 바꿔 다시 보낸다(소리로 읽음). 그 뒤 다시 읽기·비전 상태도 새 글이다", async () => {
-    let w = world([cup("present")]);
-    const s = stallSetup({ w: () => w });
-    await toPick(s);
-    s.clock.t += 8000;
-    s.t.tick();
-    const n = s.phone.length;
-    expect(s.t.askCloser("plan:pam-1", "plan:pam-1:2", "cup_1")).toBe(CLOSER);
-    expect(s.phone).toHaveLength(n + 1);
-    expect(s.last()).toEqual({
-      type: "command", id: "plan:pam-1", step: "plan:pam-1:2", text: CLOSER, vision: "컵 · 식탁 위", choices: DONE,
-      target: { id: "cup_1", label: "컵", position: [2, 0.75, 1] }, speak: true, kind: "pick",
-    });
-    expect(s.t.openCommand()).toEqual({ planId: "plan:pam-1", stepId: "plan:pam-1:2", kind: "command", text: CLOSER, choices: [expect.objectContaining({ id: "done", label: "완료" })] });
-    // 30초 뒤 다시 읽을 때도 새 글
-    s.clock.t += 29_999;
-    s.t.tick();
-    expect(s.phone).toHaveLength(n + 1);
-    s.clock.t += 1;
-    s.t.tick();
-    expect(s.phone).toHaveLength(n + 2);
-    expect(s.last()).toMatchObject({ step: "plan:pam-1:2", text: CLOSER, speak: true, kind: "pick" });
-    // 비전 상태만 바뀐 명령도 새 글
-    w = world([cup("present", "in_sink", s.clock.t)]);
-    s.clock.t += 500;
-    s.t.onWorld();
-    expect(s.last()).toMatchObject({ step: "plan:pam-1:2", text: CLOSER, vision: "컵 · 싱크대 안", speak: false, kind: "pick" });
-    // 「완료」는 그대로 받고 다음 단계는 그 단계 명령이다
-    expect(s.t.onAnswer("plan:pam-1", "plan:pam-1:2", "done")).toBe(true);
-    expect(s.last()).toMatchObject({ step: "plan:pam-1:3", text: STEP_COMMAND.goSink, speak: true });
-    expect(s.spoken()).toEqual([STEP_COMMAND.goTable, STEP_COMMAND.pickCup, CLOSER, CLOSER, STEP_COMMAND.goSink]);
-  });
-
-  it("사람 부탁은 지금 그 계획의 그 사람 단계이고 가까이 볼 곳이 그 단계의 곳일 때만 보낸다. 다른 단계·계획, 승인·다시 묻기·물어보기 중, 끝난 계획·멈춘 뒤면 false이고 아무것도 보내지 않는다", async () => {
-    const s = stallSetup();
-    await toPick(s);
-    const n = s.phone.length;
-    expect(s.t.askCloser("plan:pam-1", "plan:pam-1:1", "cup_1")).toBeNull();
-    expect(s.t.askCloser("plan:pam-1", "plan:pam-1:3", "cup_1")).toBeNull();
-    expect(s.t.askCloser("plan:pam-9", "plan:pam-1:2", "cup_1")).toBeNull();
-    // 그 단계의 곳(계획 물건·대상 자리)만 받는다: 모르는 곳·모델 글이면 보내지 않는다
-    expect(s.t.askCloser("plan:pam-1", "plan:pam-1:2", "컵을 가까이 볼게요")).toBeNull();
-    expect(s.t.askCloser("plan:pam-1", "plan:pam-1:2", "")).toBeNull();
-    expect(s.t.askCloser("plan:pam-1", "plan:pam-1:2", "sink_1")).toBeNull();
-    expect(s.phone).toHaveLength(n);
-    s.heard("그만");
-    const m = s.phone.length;
-    expect(s.t.askCloser("plan:pam-1", "plan:pam-1:2", "cup_1")).toBeNull();
-    expect(s.phone).toHaveLength(m);
-
-    const a = stallSetup({ approvals: store() });
-    await a.decide(decision);
-    expect(a.t.askCloser("plan:pam-1", "plan:pam-1:approve", "cup_1")).toBeNull();
-    expect(a.t.askCloser("plan:pam-1", "plan:pam-1:1", "cup_1")).toBeNull();
-    expect(a.phone).toHaveLength(1);
-
-    const q = stallSetup();
-    await q.decide(ask("pam-1", 1));
-    expect(q.t.askCloser("plan:pam-1", "plan:pam-1:1", "cup_1")).toBeNull();
-    expect(q.phone).toHaveLength(1);
-
-    // 시간 초과로 계속할지 묻는 중: 부탁도, 관찰 모드 부름도 없다
-    const g = variant((st) => ({ ...st, onTimeout: "ask" }));
-    await toPick(g);
-    g.clock.t += 120_001;
-    g.t.tick();
-    expect(g.last()).toMatchObject({ step: "plan:pam-1:2:again" });
-    const k = g.phone.length;
-    expect(g.t.askCloser("plan:pam-1", "plan:pam-1:2", "cup_1")).toBeNull();
-    g.clock.t += 8000;
-    g.t.tick();
-    expect(g.phone).toHaveLength(k);
-    expect(g.stalls).toEqual([]);
-
-    const z = stallSetup();
-    await toPick(z);
-    z.t.stop();
-    expect(z.t.askCloser("plan:pam-1", "plan:pam-1:2", "cup_1")).toBeNull();
   });
 
   it("가까이 봐서 지키는 중인 옛 물건(closer_hold)은 「아직 있음」으로 세지 않는다: 그 뒤 새로 보인 같은 종류 물건으로 이어 가 놓기가 비전으로 넘어간다", async () => {

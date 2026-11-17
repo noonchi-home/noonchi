@@ -1,10 +1,11 @@
 // 보기 담당: 관찰 모드(src/agent/observer.ts)를 부르고 고른 도구를 실행한다. 한 번에 하나만 돈다.
-// A 멈춘 단계(실행 추적 stalled, src/act/track/steps.ts Stall): 집기·놓기 단계가 안 끝남 → look_closer·ask_person·wait.
+// A 멈춘 단계(실행 추적 stalled, src/act/track/steps.ts Stall): 집기·놓기 단계가 안 끝남 → look_closer·wait. 계획이 도는 동안 폰은 그 단계 명령의 것이라
+//   사람에게 폰으로 부탁하지 않는다(사진만 쓰는 가까이 보기는 한다).
 //   관찰 모드 호출과 가까이 보기는 그 단계 신호(Stall.signal)로 끊긴다. 끊겨서 그쳤으면(관찰 모드 답 전, 감지를 합치기 전에 끊긴 가까이 보기 aborted)
 //   기록도 settle도 하지 않는다. 가까이 본 결과가 World State에 들어가 그 단계를 끝냈으면(그래서 신호가 끊김, 감지만 합치고 VLM 답은 넣지 않은
 //   vlm aborted 포함) 실행한 관찰로 기록한다(지난 단계 세대의 settle은 아무것도 하지 않는다).
 //   가까이 보기가 자원 사정(CloserWait: 새 사진 모자람·VLM 자리 없음)으로 못 보거나, 감지는 합쳤지만 VLM 답이 왔을 때 사진이 끊겨 넣지 않았으면(vlm no_fresh_frames)
-//   Stall.settle(false)로 시도에서 빼고, 그 밖(wait·ask_person 포함)은 settle(true).
+//   Stall.settle(false)로 시도에서 빼고, 그 밖(wait 포함)은 settle(true).
 // B 판단 전 보기(판단 타이머 tick): 행동 대상 종류 물건이 사진 안에 있는데 볼 면(TaskSpec.look)이 확인되지 않음(없음·짐작·모름 값) → look_closer·wait.
 //   불투명이 확인된 컵의 내용물은 옆에서 가까이 봐도 모르므로 보지 않는다(실행 추적이 가까이 가서 위에서 본다). PAM 판단을 막지 않는다.
 //   물건마다 objectGapMs, B 전체로 gapMs에 한 번. 이미 싱크대 안·시야 밖 물건, frameFreshMs 넘게 낡은 프레임, 카메라 없는 프레임은 보지 않는다.
@@ -57,8 +58,6 @@ export interface LookerOptions {
   /** 고리 가장 새 프레임(src/observe/pipeline.ts latest). */
   frame: () => LatestFrame | null;
   world: () => WorldView;
-  /** 사람 부탁(src/act/track/coach.ts askCloser): 가까이 볼 곳 id로 서버가 부탁 글을 만든다. 보낸 글, 못 보냈으면 null. */
-  askPerson: (planId: string, stepId: string, spot: string) => string | null;
   /** 지금 할 일 다시 알리기(src/act/track/coach.ts tell): 방식으로 서버가 글을 만든다. 보낸 글, 못 보냈으면 null. 없으면 보내지 못한 것으로 본다. */
   tell?: (planId: string, stepId: string, mode: TellMode) => string | null;
   emit: (l: BrainLog) => void;
@@ -76,7 +75,7 @@ export interface LookerOptions {
 }
 
 /** 관찰 모드 호출 수·비용(모르면 null)과 고른 도구 수(가까이 보기·사람 부탁·기다리기, 상한으로 부르지 않은 기다리기 포함). */
-export interface LookerStatus { calls: number; costUsd: number | null; looks: number; asks: number; waits: number; tells: number }
+export interface LookerStatus { calls: number; costUsd: number | null; looks: number; waits: number; tells: number }
 
 interface Job {
   trigger: LookTrigger; key: string; goal: string; stuckMs: number | null; spots: LookSpot[]; tools: LookTool[];
@@ -93,7 +92,7 @@ export class Looker {
   private readonly running = new Set<Promise<void>>();
   private readonly lookedAt = new Map<string, number>();
   private readonly earlier = new Map<string, Earlier[]>();
-  private readonly count = { looks: 0, asks: 0, waits: 0, tells: 0 };
+  private readonly count = { looks: 0, waits: 0, tells: 0 };
   /** 관찰 모드를 부른 시각(지난 한 시간). */
   private calledAt: number[] = [];
   private lastB = Number.NEGATIVE_INFINITY;
@@ -117,7 +116,7 @@ export class Looker {
     }
     this.start({
       trigger: "stalled", key: `${s.planId}:${s.stepId}`, goal: `${s.label} 단계 · 지금 명령 「${s.command}」 · 끝난 조건 ${JSON.stringify(s.until)}`,
-      stuckMs: s.stuckMs, spots: s.spots, tools: ["look_closer", "ask_person", "wait"], planId: s.planId, stepId: s.stepId, settle: (c) => s.settle(c),
+      stuckMs: s.stuckMs, spots: s.spots, tools: ["look_closer", "wait"], planId: s.planId, stepId: s.stepId, settle: (c) => s.settle(c),
     }, s.signal);
     return true;
   }
@@ -313,7 +312,7 @@ export class Looker {
     }
     if (job.signal.aborted || this.stopped) return;
     job.phase = "act";
-    const want = choice.tool === "look_closer" || choice.tool === "ask_person" ? choice.target : null;
+    const want = choice.tool === "look_closer" ? choice.target : null;
     const picked = want === null ? undefined : spots.find((p) => p.id === want);
     if (choice.tool === "look_closer" && !picked) choice = { tool: "wait", reason: choice.reason, invalid: "target" };
     const spot = picked ?? spots[0] ?? null;
@@ -334,11 +333,6 @@ export class Looker {
       if (job.trigger === "unknown_fact" && !job.planId && counted) this.o.looked?.(spot.id);
       text = LOOK_TEXT.closer(spot.label, closerText(r));
       if (r.ok) detail = r.found.map((f) => `${f.id ?? f.cls} ${f.score} ${f.facts.join(" ")}`.trim()).join(", ");
-    } else if (choice.tool === "ask_person") {
-      const sent = job.planId && job.stepId ? this.o.askPerson(job.planId, job.stepId, choice.target) : null;
-      result = { sent: sent !== null };
-      this.count.asks++;
-      text = sent !== null ? LOOK_TEXT.asked(sent) : LOOK_TEXT.notSent;
     } else if (choice.tool === "tell_person") {
       const sent = job.planId && job.stepId ? this.o.tell?.(job.planId, job.stepId, choice.mode) ?? null : null;
       result = { sent: sent !== null };

@@ -244,7 +244,6 @@ export const LOOK_TEXT = {
   } satisfies Record<TopDrop, string>,
   vlmAborted: "단계가 끝나 VLM 답은 넣지 않음",
   vlmStale: "새 사진이 끊겨 VLM 답은 넣지 않음",
-  asked: (text: string) => `가까이 비춰 달라고 부탁함 · ${text}`,
   notSent: "단계가 바뀌어 부탁하지 않음",
   /** 코치 계획: 지금 할 일을 다시 알림, 들은 말을 말 요청 에이전트로 넘김. */
   told: (text: string) => `다시 알림 · ${text}`,

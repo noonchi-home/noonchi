@@ -207,7 +207,7 @@ describe("서버 글 틀", () => {
     expect(planStep(ask({ question: "냄비를 올려 주세요?" }), ASK_TASK)).toBeNull();
   });
 
-  it("관찰 모드의 다시 알리기·사람 부탁은 모델 글을 받지 않는다: 방식·가까이 볼 곳만 고르고 실행 추적이 서버 글로 보낸다(위험 가전이 대상인 단계도)", async () => {
+  it("관찰 모드의 다시 알리기는 모델 글을 받지 않는다: 방식만 고르고 실행 추적이 서버 글로 보낸다(위험 가전이 대상인 단계도)", async () => {
     // 관찰 모드: 모델이 함께 낸 글(이름 있음)은 버리고 방식·곳만 돌려준다. 글만 내면 받지 않는다
     expect(await observe(["tell_person", { mode: "earlier", text: NAMED, reason: "알리려고" }])).toEqual({ tool: "tell_person", mode: "earlier", reason: "알리려고" });
     expect(await observe(["ask_person", { target: "sink_1", text: BARE, reason: "보려고" }])).toEqual({ tool: "ask_person", target: "sink_1", reason: "보려고" });
@@ -215,11 +215,9 @@ describe("서버 글 틀", () => {
     // 실행 추적: 물 받기(싱크대)와 냄비 올리기(인덕션이 대상) 모두 그 단계 서버 명령으로만 나간다
     expect(tracked((t, step) => t.tell("plan:pam-1", step, "repeat"), 1)("")).toBe("냄비에 물을 받아 주세요");
     expect(tracked((t, step) => t.tell("plan:pam-1", step, "earlier"), 2)("")).toBe("먼저 냄비를 인덕션에 올려 주세요");
-    expect(tracked((t, step) => t.askCloser("plan:pam-1", step, "induction_1"), 2)("")).toBe("인덕션이 보이게 폰을 가까이 대 주세요");
     // 모델 글은 그 자리에 넣을 수 없다
     for (const at of [1, 2]) {
       expect(tracked((t, step, x) => t.tell("plan:pam-1", step, x as TellMode), at)(NAMED), String(at)).toBeNull();
-      expect(tracked((t, step, x) => t.askCloser("plan:pam-1", step, x), at)(BARE), String(at)).toBeNull();
     }
   });
 
