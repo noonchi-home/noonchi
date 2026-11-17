@@ -4045,26 +4045,30 @@ describe("실행 추적: 안 보이는 대상은 마지막으로 본 자리로 �
     expect(s.commands()).toEqual([]);
   });
 
-  it("찾기 시작부터 60초가 지나면 낡은 발견을 되풀이하는 중이어도 닫힌다", async () => {
+  it("찾기 시작부터 60초가 지나면 낡은 발견을 되풀이하는 중이어도 닫힌다(다시 비추기로 명령 한도가 새로 시작돼도)", async () => {
     const s = findSetup();
     await s.decide(decision);
-    toLook(s);
-    // 가까이 보기가 그 자리 컵을 찾았지만 사진이 11초 옛것(계획 전 기준 10초 넘음): 다시 비추기를 보낸다
-    s.objects([found("cup_3", [2.1, 0.75, 1], s.clock.t - 11_000)]);
-    s.looks[0]!.done();
-    s.ready(false);
-    s.tick();
-    expect(s.last()).toMatchObject({ id: "find:1", text: "식탁 위를 비춰 주세요" });
-    for (let i = 0; i < 70 && !s.exec().some((l) => l.state === "failed"); i++) {
-      s.ready(true);
-      s.tick(1000);
-      s.looks.at(-1)?.done();
+    const started = s.clock.t;
+    s.eye([2.6, 1]);
+    let reaims = 0;
+    for (let i = 0; i < 10 && !s.exec().some((l) => l.state === "failed"); i++) {
       s.ready(false);
-      s.tick(1000);
+      s.tick();   // 비추기(두 번째부터는 다시 비추기)
+      if (s.last().type === "command" && s.last().text === "식탁 위를 비춰 주세요" && i > 0) reaims++;
+      const aimAt = s.clock.t;
+      s.tick(9_000);
+      s.ready(true);
+      s.tick();   // 가까이 보기 부탁
+      s.clock.t += 3_000;
+      // 가까이 보기가 비추기 뒤 사진에서 컵을 찾았지만 그 사진이 10초 넘게 옛것이다(계획 전 기준 10초)
+      s.objects([found("cup_3", [2.1, 0.75, 1], aimAt + 500)]);
+      s.looks.at(-1)?.done();
     }
+    expect(reaims).toBeGreaterThanOrEqual(3);
     const closed = s.exec().find((l) => l.state === "failed")!;
     expect(closed).toMatchObject({ plan_id: "plan:pam-1", text: CHECK_TEXT.no_target });
-    expect(closed.at_ms - 10_000).toBeLessThanOrEqual(FIND.totalMs + 2_500);
+    expect(closed.at_ms - started).toBeGreaterThan(FIND.totalMs);
+    expect(closed.at_ms - started).toBeLessThanOrEqual(FIND.totalMs + 9_250);
   });
 
   it("명령 글은 모두 「주세요」로 끝나고 질문이 없다", async () => {
@@ -4075,5 +4079,114 @@ describe("실행 추적: 안 보이는 대상은 마지막으로 본 자리로 �
     const texts = [...new Set(s.commands().map((c) => c.text))];
     expect(texts).toEqual(["컵 있던 곳으로 가 주세요", "컵 있던 곳을 비춰 주세요"]);
     for (const t of texts) expect(t.endsWith("주세요") && !t.includes("?")).toBe(true);
+  });
+});
+
+describe("실행 추적: 계획 대상이 안 보이면 그 마지막 자리에서 찾는다(실행 전 찾기)", () => {
+  // 판단 8초, 계획을 받는 때 10초. 컵 cup_1 자리 [2, 0.75, 1], 폰 눈은 처음에 [6, 1](4m 밖). 실행 전 검사는 실제 checkPlan(낡음 3초)
+  const AT: [number, number, number] = [2, 0.75, 1];
+  const CUP_TASKS = ["컵 치우기", "사용자에게 물어보기"];
+  function runSetup(o: { objects: WorldObject[]; over?: Parameters<typeof setup>[0] }) {
+    let objects = o.objects;
+    let ready = false;
+    const looks: ContentsLook[] = [];
+    const guards: [string, boolean][] = [];
+    const w = (): WorldView => ({ ...world(objects), at_ms: 0 });
+    let s: ReturnType<typeof setup>;
+    s = setup({
+      w, staleMs: 3000,
+      check: ((d, p) => checkPlan({ decision: d, tasks: CUP_TASKS, plan: p, world: w(), nowMs: s.clock.t, staleMs: 3000, mode: "test", placed: s.t.placed() })) as TrackerOptions["check"] as () => CheckResult,
+      spotReady: () => ready, lookContents: (h) => { looks.push(h); return true; }, guardObject: (id, on) => guards.push([id, on]), ...o.over,
+    });
+    let eye: [number, number] = [6, 1];
+    s.t.onEye(eye);
+    const tick = (ms = 250) => { s.clock.t += ms; s.t.onEye(eye); s.t.tick(); };
+    return {
+      ...s, looks, guards, tick, ready: (v: boolean) => { ready = v; }, eye: (p: [number, number]) => { eye = p; s.t.onEye(p); },
+      objects: (x: WorldObject[]) => { objects = x; },
+    };
+  }
+  const seenAt = (ms: number, id = "cup_1", at: [number, number, number] = AT): WorldObject => ({ ...cup("present", "on_table", ms), id, position: at });
+
+  it("계획 대상 컵을 5초 전에 마지막으로 봤으면(실행 전 기준 3초 넘음) 계획을 붙잡고 그 자리로 가기 명령(계획 명령 줄, 단추 없음)을 보내고 보기 지킴을 건다", async () => {
+    const s = runSetup({ objects: [seenAt(5_000)] });
+    await s.decide(decision);
+    expect(s.exec().some((l) => l.state === "failed")).toBe(false);
+    expect(s.last()).toMatchObject({
+      type: "command", id: "plan:pam-1", step: "plan:pam-1:find:cup_1:go:1", text: "식탁으로 가 주세요", kind: "go", near_m: FIND.nearM, choices: [],
+      target: { id: "cup_1", label: "식탁", position: AT },
+    });
+    expect(s.t.openCommand()).toMatchObject({ planId: "plan:pam-1", kind: "command", text: "식탁으로 가 주세요", choices: [] });
+    expect(s.guards).toEqual([["cup_1", true]]);
+    for (let i = 0; i < 20; i++) s.tick();   // 다시 보기 기한(3초)을 세지 않는다
+    expect(s.exec().some((l) => l.state === "failed")).toBe(false);
+  });
+
+  // Codex(d2a34f4): 실행 전 검사는 판단 뒤 다시 못 본 컵을 낡음으로 막는데 찾을 자리는 3초 안이면 없다고 해 판단 바로 전에 본 컵을 찾지 않았다
+  it("판단 바로 전에 본 컵(3초 안이지만 판단 뒤 다시 못 봄)도 찾는다", async () => {
+    const s = runSetup({ objects: [seenAt(7_500)] });
+    await s.decide(decision);
+    expect(s.last()).toMatchObject({ id: "plan:pam-1", step: "plan:pam-1:find:cup_1:go:1", text: "식탁으로 가 주세요" });
+  });
+
+  it("막은 그 컵이 다시 보이면 첫 단계를 보낸다(지킴 풂)", async () => {
+    const s = runSetup({ objects: [seenAt(5_000)] });
+    await s.decide(decision);
+    s.objects([seenAt(s.clock.t + 250)]);
+    s.tick();
+    expect(s.last()).toMatchObject({ id: "plan:pam-1", step: "plan:pam-1:1" });
+    expect(s.guards).toEqual([["cup_1", true], ["cup_1", false]]);
+  });
+
+  it("가까이 보기에서만 잡혀 3초를 넘겼으면 새 사진으로 다시 비추고 가까이 본다", async () => {
+    const s = runSetup({ objects: [seenAt(5_000)] });
+    await s.decide(decision);
+    s.eye([2.6, 1]);
+    s.tick();
+    const aimAt = s.clock.t;
+    expect(s.last()).toMatchObject({ text: "식탁 위를 비춰 주세요", kind: "do" });
+    s.tick(4_000);
+    s.ready(true);
+    s.tick();
+    expect(s.looks).toEqual([expect.objectContaining({ planId: "plan:pam-1", objectId: "cup_1", force: true })]);
+    // 가까이 보기가 비추기 뒤(판단 뒤) 사진에서 컵을 찾았지만 그 사진이 3초 넘게 옛것
+    s.objects([seenAt(aimAt + 500)]);
+    s.looks[0]!.done();
+    s.ready(false);
+    s.tick();
+    expect(s.last()).toMatchObject({ id: "plan:pam-1", text: "식탁 위를 비춰 주세요" });
+    s.ready(true);
+    s.tick();
+    expect(s.looks).toHaveLength(2);
+    s.objects([seenAt(s.clock.t)]);
+    s.tick();
+    expect(s.last()).toMatchObject({ step: "plan:pam-1:1" });
+  });
+
+  it("그 자리 0.5m 안에 다른 id의 같은 종류 컵만 생기면 계획을 「찾은 뒤 다시 판단」으로 닫고 같은 행동 다시 계획 간격에서 뺀다", async () => {
+    const s = runSetup({ objects: [seenAt(5_000)], over: { planGapMs: 15_000 } });
+    await s.decide(decision);
+    s.objects([{ ...seenAt(5_000), status: "out_of_view" }, seenAt(s.clock.t, "cup_7", [2.2, 0.75, 1])]);
+    s.tick();
+    expect(s.exec().find((l) => l.state === "failed")).toMatchObject({ plan_id: "plan:pam-1", text: EXEC_TEXT.foundNew });
+    expect(s.plans.current()).toMatchObject({ id: "plan:pam-1", status: "cancelled" });
+    await s.decide({ ...decision, id: "pam-2", seq: 2, atMs: s.clock.t });
+    expect(s.exec().filter((l) => l.plan_id === "plan:pam-2").map((l) => l.text)).not.toContain(EXEC_TEXT.held);
+  });
+
+  it("못 찾으면 낡음 글로 닫는다. 들고 감 보호였던 컵·치운 컵이면 찾지 않는다", async () => {
+    const s = runSetup({ objects: [seenAt(5_000)] });
+    await s.decide(decision);
+    s.eye([2.6, 1]);
+    s.tick();
+    s.ready(true);
+    s.tick();
+    s.looks[0]!.done();
+    s.tick(4_100);
+    expect(s.exec().find((l) => l.state === "failed")).toMatchObject({ plan_id: "plan:pam-1", text: CHECK_TEXT.stale });
+    expect(s.guards.at(-1)).toEqual(["cup_1", false]);
+    const carried = runSetup({ objects: [{ ...seenAt(5_000), carried: true }] });
+    await carried.decide(decision);
+    expect(carried.commands().some((c) => c.step.includes(":find:"))).toBe(false);
   });
 });

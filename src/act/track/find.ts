@@ -268,14 +268,15 @@ export class Finder extends Part {
   }
 
   /** 그 자리에서 찾은 물건: 그 자리 FIND.matchM 안의 그 종류 있는 물건(치운 것·손에 있음 빼고). 신선도(freshMs) 안에 본 것이 있으면 그 가운데 가장 가까운 것(fresh),
-   *  없으면 가장 가까운 낡은 것(다시 비춘다). 가장 가까운 둘이 FIND.splitM 안으로 붙어 있으면 가를 수 없어 null. */
+   *  없으면 비추기 뒤 사진에서 봤지만 낡은 것 가운데 가장 가까운 것(다시 비춘다). 비추기 전 기록만 남은 물건(찾는 그 옛 자리)은 찾은 것이 아니다.
+   *  가장 가까운 둘이 FIND.splitM 안으로 붙어 있으면 가를 수 없어 null. */
   private hit(world: WorldView, f: Find, now: number): { obj: WorldObject; fresh: boolean } | null {
     const placed = this.core.steps.placed();
     const near = world.objects
       .filter((o) => o.cls === f.cls && o.status === "present" && o.position && !putAway(o, placed) && o.facts.place?.value !== "in_hand" && dist3(o.position, f.at) <= FIND.matchM)
       .sort((a, b) => dist3(a.position!, f.at) - dist3(b.position!, f.at));
     const fresh = near.filter((o) => o.last_seen_ms > f.after && now - o.last_seen_ms <= f.freshMs);
-    const pool = fresh.length ? fresh : near;
+    const pool = fresh.length ? fresh : near.filter((o) => o.last_seen_ms > f.after && o.last_seen_ms >= f.aimAt);
     if (!pool.length) return null;
     if (pool.length > 1 && dist3(pool[0]!.position!, pool[1]!.position!) <= FIND.splitM) return null;
     return { obj: pool[0]!, fresh: fresh.length > 0 };
