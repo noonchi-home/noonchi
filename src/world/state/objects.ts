@@ -196,6 +196,9 @@ export class Detections extends Part {
     for (const { obj } of boxes) {
       if (!obj.confirmed && obj.position && obj.posAt === at && !core.people.posedInHand(obj)) obj.free = { position: obj.position, surface: obj.surface, surfaceLabel: obj.surfaceLabel, at };
     }
+    // 내려놓기 단계: 시작 뒤 목적지에 새로 보인 같은 종류 물건은 놓인 대상이다(감지 번호도 대상으로)
+    core.placeDups();
+    for (const [k, v] of ids) { const o = core.objects.get(v); if (o?.status === "gone" && o.followed) ids.set(k, o.followed.id); }
     return { changes, ids };
   }
 

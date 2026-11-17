@@ -96,7 +96,9 @@ export class SceneFacts extends Part {
     if (KEEP_VLM_PLACE.has(value) || !obj.position) return value;
     // 투영 오차 여유(TWIN_MARGIN_M, 그 물건 오차가 더 크면 그 오차)를 빼고도 안쪽일 때만 트윈으로 덮는다(Codex 4e682c8 2·3: 옆 조리대 컵·긴 식탁 바깥 컵)
     const at: [number, number] = [obj.position[0], obj.position[2]];
-    const margin = Math.max(TWIN_MARGIN_M, obj.errorM ?? 0);
+    // 내려놓기 대상이 목적지 면에 있으면 싱크볼 판정에 투영 오차 여유를 빼지 않는다(가로 머그 r6: 싱크볼 자리를 「바닥」으로 남겼다)
+    const placing = this.core.focusOn?.step === "place" && this.core.focusOn.id === obj.id;
+    const margin = placing && obj.part === "basin" ? 0 : Math.max(TWIN_MARGIN_M, obj.errorM ?? 0);
     // 싱크볼 안은 「싱크대 안」이다: VLM이 다른 면 위(조리대 위 등)로 답해도 싱크볼 안쪽이면 싱크대 안으로 넣는다(가로 머그 r4). 2장 규칙은 그대로다
     if (obj.part === "basin") return s.basin && inBasin(s.basin, at, margin) ? "in_sink" : value;
     const inside = s.rect ? inBasin(s.rect, at, margin) : Math.hypot(at[0] - s.center[0], at[1] - s.center[1]) <= s.radius * 0.8 && (obj.errorM ?? 0) <= TWIN_MARGIN_M;
@@ -149,6 +151,8 @@ export class SceneFacts extends Part {
       // 들려 있지 않은 물건의 놓인 곳은 트윈 면으로 정한다(식탁 위 잔을 VLM이 「선반 위」로 답했다, 가로 유리컵 r4·r6). VLM 말은 손에 있음·싱크대 안처럼 트윈 면으로 모르는 것에만 쓴다
       const placed = target.kind === "object" && facet === "place" ? this.twinPlace(core.objects.get(id)!, value) : value;
       if (placed === null) continue;
+      // 내려놓기 중 대상은 목적지에서 먼 면 위 값으로 바꾸지 않는다(가로 유리컵 r9: 싱크대에서 「식탁 위」)
+      if (target.kind === "object" && facet === "place" && !KEEP_VLM_PLACE.has(placed) && core.placeHeld(core.objects.get(id)!)) continue;
       if (target.kind === "object" && facet === "place" && !this.steady(core.objects.get(id)!, placed, frameId, capturedAtMs)) continue;
       if (!this.answer(frameId, id, target.facts, facet, placed, capturedAtMs, false, NOW_FACETS[target.kind].includes(facet), turn)) continue;
       // 손에 있음으로 보인 적이 있는 물건(내려놓기 때 옮긴 컵이라는 근거, WorldState.mergeAtPlace)

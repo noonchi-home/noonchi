@@ -237,7 +237,7 @@ export class ObservationPipeline {
         o.world.send(scene
           ? { kind: "scene", frame_id: r.frameId, observed_ms: r.capturedAtMs, scene, ...(look ? { look } : {}) }
           : { kind: "missing", frame_id: r.frameId, observed_ms: r.capturedAtMs, missing: r.missing! });
-        o.emit({ type: "observe", at_ms: this.clock.now(), frame_id: r.frameId, captured_at_ms: r.capturedAtMs, yolo: null, vlm: r.scene?.summary ?? null, ...(r.missing ? { vlm_missing: r.missing } : {}), ...(r.scene ? { scene: r.scene, ...(look ? { view: look.view, size: [look.width, look.height] as [number, number] } : {}) } : {}) });
+        o.emit({ type: "observe", at_ms: this.clock.now(), frame_id: r.frameId, captured_at_ms: r.capturedAtMs, yolo: null, vlm: r.scene?.summary ?? null, ...(r.missing ? { vlm_missing: r.missing } : {}), ...(r.scene ? { scene: r.scene, dets: dets.map((d) => ({ id: d.id, class: d.class, box: [...d.box] as [number, number, number, number], score: d.score })), ...(look ? { view: look.view, size: [look.width, look.height] as [number, number] } : {}) } : {}) });
       },
     });
   }
@@ -526,6 +526,9 @@ export class ObservationPipeline {
       this.o.emit({
         type: "observe", at_ms: this.clock.now(), frame_id: id, captured_at_ms: last.frame.capturedAtMs, yolo: null, vlm: r.scene?.summary ?? null,
         ...(r.missing ? { vlm_missing: r.missing } : {}), closer: last.crop,
+        // 재생 시험용: 가까이 본 사진의 VLM 답 원문·카메라·크기·잘라 본 사진의 YOLO 감지(잘라 키운 사진 픽셀)
+        ...(r.scene ? { scene: r.scene, view: last.view, size: [last.frame.width, last.frame.height] as [number, number],
+          dets: last.dets.map((d, i) => ({ id: `d${i + 1}`, class: d.label, box: [...d.box] as [number, number, number, number], score: d.score })) } : {}),
       });
     }
     // 3장이 안 된 새 물건 후보는 이 답이 그 감지에 사실을 답할 때만 만든다(답이 없거나 넣지 않으면 버린다)

@@ -178,6 +178,8 @@ export class WorldCore {
   focusOn: { id: string; step: "pick" | "place" | "carry"; spot: [number, number] | null } | null = null;
   /** 지금 든 물건(focusOn)을 처음 알린 촬영 시각: 그 뒤에 생긴 같은 무리 둘째 id를 내려놓기 시작 때 대상으로 합친다. */
   focusFrom: number | null = null;
+  /** 내려놓기 단계를 시작한 촬영 시각: 그 뒤 처음 보인 같은 종류 물건이 목적지 가까이면 대상이다(placeDups). */
+  placeFrom: number | null = null;
   merge!: Detections;
   scene!: SceneObjects;
   people!: People;
@@ -262,7 +264,9 @@ export class WorldCore {
     const near = (m: number) => !!position && !!f.spot && Math.hypot(position[0] - f.spot[0], position[2] - f.spot[1]) <= m;
     if (f.step === "place") return near(NEAR_M) ? t : null;
     // 든 물건(집기 끝 ~ 내려놓기 끝): 그 사진의 폰 눈 NEAR_M 안(폰을 든 사람의 손)이거나 들린 근거가 있을 때
-    if (f.step === "carry") return lifted || (!!eye && !!position && Math.hypot(position[0] - eye[0], position[2] - eye[1]) <= NEAR_M) ? t : null;
+    // 손에 든 대상이 자리를 잃었으면(시야 밖·자리 모름) 폰 눈을 모르는 사진의 같은 종류 새 감지도 그 대상이다(가로 머그 r6)
+    const lost = t.facts.place?.value === "in_hand" && (!t.position || t.status === "out_of_view");
+    if (f.step === "carry") return lifted || lost || (!!eye && !!position && Math.hypot(position[0] - eye[0], position[2] - eye[1]) <= NEAR_M) ? t : null;
     // 그 사진에서 대상 자리가 감지 상자 안에 비친다(바짝 댄 잔: 상자 아랫변 투영은 대상 자리와 멀다, 가로 유리컵 r7)
     const inBox = !!sees && !!t.position && sees(t.position);
     return near(FOCUS_PICK_M) || lifted || inBox || t.facts.place?.value === "in_hand" ? t : null;
@@ -273,6 +277,35 @@ export class WorldCore {
     const held = [...this.objects.values()].filter((x) => x.confirmed && !used.has(x.id) && sameDrinkware(x.cls, cls) && x.facts.place?.value === "in_hand"
       && x.position && dist(x.position, position) <= PUT_DOWN_M);
     return held.length === 1 ? held[0]! : null;
+  }
+
+  /** 내려놓기 단계: 시작 뒤 처음 보인 같은 종류 물건(대상 아님)이 목적지 NEAR_M 안이면 그것은 놓인 대상이다. 대상이 그 자리·보임·더 새 사실을 받고,
+   *  그 물건은 사라짐과 옮김 표시(followed_by: 대상)를 남긴다(가로 키 큰 컵 r3·가로 유리컵 r9: 눈 자리 모름 사진 때문에 대상 잇기를 놓쳤다). 시작 전부터 보이던 물건은 뺀다. */
+  placeDups(): void {
+    const f = this.focusOn;
+    const t = f?.step === "place" ? this.objects.get(f.id) : undefined;
+    if (!f || !t || !f.spot || this.placeFrom === null) return;
+    for (const d of [...this.objects.values()]) {
+      if (d === t || d.status === "gone" || d.cls !== t.cls || d.firstSeen < this.placeFrom || !d.position) continue;
+      if (Math.hypot(d.position[0] - f.spot[0], d.position[2] - f.spot[1]) > NEAR_M) continue;
+      if (d.posAt >= t.posAt) Object.assign(t, { position: d.position, surface: d.surface, surfaceLabel: d.surfaceLabel, part: d.part, room: d.room, errorM: d.errorM, posAt: d.posAt, posCloser: d.posCloser });
+      for (const [facet, fact] of Object.entries(d.facts)) if (fact && (!t.facts[facet as Facet] || fact.at_ms > t.facts[facet as Facet]!.at_ms)) (t.facts as Record<string, unknown>)[facet] = fact;
+      t.status = "present";
+      t.goneAt = null;
+      t.lastSeen = Math.max(t.lastSeen, d.lastSeen);
+      t.lastInView = Math.max(t.lastInView, d.lastInView);
+      d.status = "gone";
+      d.goneAt = d.lastSeen;
+      d.followed = { id: t.id, at: d.lastSeen, frame: d.judgedFrame };
+      if (!d.confirmed) this.forget(d.id);
+    }
+  }
+
+  /** 내려놓기 중 대상의 놓인 곳은 목적지에서 먼 면 위 값으로 바꾸지 않는다(손에 있음 → 목적지 쪽만). 대상 자리를 모르거나 목적지 NEAR_M 밖이면 막는다. */
+  placeHeld(obj: Obj): boolean {
+    const f = this.focusOn;
+    if (f?.step !== "place" || f.id !== obj.id || !f.spot) return false;
+    return !obj.position || Math.hypot(obj.position[0] - f.spot[0], obj.position[2] - f.spot[1]) > NEAR_M;
   }
 
   /** 실행 추적이 지금 집기·내려놓기 하는 대상이다: 그 단계 동안 사라짐을 세지 않는다(들고 옮기는 동안 전체 사진이 놓친다). */

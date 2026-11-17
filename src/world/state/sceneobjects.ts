@@ -8,7 +8,7 @@ import type { CameraView, SceneObservation } from "../../contract/observe.js";
 import type { Plan2 } from "../../contract/events.js";
 import { CHANGE_TEXT, onSurface } from "../labels.js";
 import { vlmFirst } from "../merge.js";
-import { placePoint, type PlaneSurface } from "../place.js";
+import { inView, placePoint, type PlaneSurface } from "../place.js";
 import { NEAR_M, POSE_HOLD, sameDrinkware, VLM_ONLY, type ObjClass } from "../vocab.js";
 import { OBJ_CLASSES, Part, VLM_CONFIRM_FRAMES, VLM_MATCH_M, VLM_MOVE_M, dist, type Obj } from "./core.js";
 
@@ -59,6 +59,9 @@ export class SceneObjects extends Part {
       if (!obj && spot?.position && !lifted) obj = core.matchAt(cls, spot.position, used, VLM_MATCH_M);
       // 실행 추적이 지금 집기·내려놓기 하는 대상(들린 컵, 목적지에 놓인 컵)
       if (!obj) obj = core.focusTarget(cls, spot?.position ?? null, used, false, undefined, eye);
+      // 그 사진 시야 안에 아직 이 답에서 쓰지 않은 같은 무리 확인 물건이 하나뿐이면 그것이다(거리 제한 없음, 둘 이상이면 모호해 미룬다). VLM 상자 투영은 많이 흔들려
+      // 같은 컵이 새 id가 됐다(가로 유리컵 r10·키 큰 컵 r4·머그 r7 재생). 새 물건은 시야 안 확인 물건보다 VLM이 더 많이 답할 때만 만든다
+      if (!obj && !lifted && look) obj = this.inViewKin(cls, used, look.view);
       // VLM 무조건 우선: YOLO가 못 봤어도 VLM이 본 물건은 있다(놓인 자리와 그 사진의 폰 눈을 알 때 후보로 만든다)
       if (!obj && placed?.position && eye && vlmFirst(false, true)) {
         obj = core.create(cls, at, frameId);
@@ -107,6 +110,14 @@ export class SceneObjects extends Part {
     }
     obj.posVote = { position, frame: frameId, at, surface: placed.surface, part: placed.part };
     return false;
+  }
+
+  /** 그 사진 시야 안의 같은 무리 확인 물건 중 이 답에서 아직 쓰지 않은 것이 하나뿐이면 그것(같은 종류가 있으면 같은 종류 중에서). 둘 이상이면 모호해 null. */
+  private inViewKin(cls: ObjClass, used: ReadonlySet<string>, view: CameraView): Obj | null {
+    const kin = [...this.core.objects.values()].filter((x) => x.confirmed && x.status !== "gone" && !used.has(x.id) && sameDrinkware(x.cls, cls) && x.position && inView(view, x.position));
+    const same = kin.filter((x) => x.cls === cls);
+    const pool = same.length ? same : kin;
+    return pool.length === 1 ? pool[0]! : null;
   }
 
   /** VLM 물건 상자(사진 비율)의 아랫변 가운데를 트윈 자리로. */

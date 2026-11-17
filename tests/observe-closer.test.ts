@@ -355,7 +355,7 @@ describe("가까이 보기(관찰 흐름 closer)", () => {
     ac.abort();
     expect(signals[0]!.aborted).toBe(true);
     answers[0]!();
-    // 감지는 이미 합쳤으므로 실행한 가까이 보기다: VLM 답만 넣지 않았다(aborted)
+    // 감지는 이미 합쳤으므로 실행한 가까이 보기다: 끊긴 요청의 답은 VLM 풀이 버려 넣을 답이 없다(aborted)
     expect(await pending).toEqual({
       ok: true, frame_id: "e3.c1", captured_at_ms: 6000, crop: [120, 90, 240, 180], frames: 3,
       found: [{ id: "cup_1", cls: "cup", score: 0.72, facts: [] }], summary: null, vlm: "aborted",

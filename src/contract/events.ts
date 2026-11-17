@@ -123,6 +123,8 @@ export type BrainLog =
     scene?: SceneObservation;
     view?: CameraView;
     size?: [number, number];
+    /** 그 사진의 YOLO 감지(번호·종류·상자·신뢰도, 엔진 프레임 픽셀). */
+    dets?: { id: string; class: string; box: [number, number, number, number]; score: number }[];
   }
   /** at_ms는 기록 시각(처리 시각), observed_ms는 그 변화의 근거(촬영) 시각(통로로 온 변화만 싣는다). */
   | { type: "world_change"; at_ms: number; kind: WorldChangeKind; text: string; observed_ms?: number }
