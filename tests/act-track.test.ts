@@ -864,6 +864,22 @@ describe("실행 추적: 그 자리에서 하는 일(do, 채워 주기)", () => 
         expect(s.exec().at(-1)).toMatchObject({ state: "failed", text: CHECK_TEXT.in_hand });
       });
 
+      it("보류 중 컵을 잠깐 들었다 내려놓으면(들고 감 보호 아님) 3초 만에 닫지 않고 기다렸다가 다시 이어 간다. 컵이 안 보이게 돼도(없음) 30초 기다린다", async () => {
+        const s = await peeking({ eye: [2.3, 1] });
+        s.set({ ...OPAQUE(), place: { value: "in_hand", at_ms: s.clock.t, since_ms: s.clock.t, certainty: "confirmed" } });
+        s.run(10_000);
+        expect(s.exec().map((e) => e.state)).not.toContain("failed");
+        s.set(OPAQUE());
+        s.run(1000);
+        expect(s.last()).toMatchObject({ text: PEEK_TEXT.above("컵"), speak: true });
+        expect(s.exec().map((e) => e.state)).not.toContain("failed");
+        s.extra({ status: "gone" });
+        s.run(10_000);
+        expect(s.exec().map((e) => e.state)).not.toContain("failed");
+        s.run(CONTENTS_HOLD.holdMs);
+        expect(s.exec().at(-1)).toMatchObject({ state: "failed", text: CHECK_TEXT.no_target });
+      });
+
       it("옮김 표시(followed_by)가 남아 있으면 한 번 거두고 새 대상이 정해질 때까지 같은 컵으로 다시 보내지 않는다", async () => {
         const s = await peeking({ eye: [2.3, 1] });
         s.extra({ followed_by: "cup_2" });

@@ -159,8 +159,13 @@ export class Starter extends Part {
     }
     const c = this.o.check(r.decision, r.plan.view);
     if (!c.ok) {
-      // 보류 중 검사가 다른 까닭(들고 있음·없음·치움)으로 막으면 그 까닭과 상관없이 먼저 명령·보기 지킴을 거두고 holdMs 한도를 센다
-      if (c.reason !== "unknown_contents" && c.reason !== "stale" && this.core.contents.holding(r) && !this.core.contents.pause(r)) return steps.finish(r, "failed", c.text);
+      // 보류 중 검사가 다른 까닭(들고 있음·없음·치움)으로 막으면 그 까닭과 상관없이 먼저 명령·보기 지킴을 거두고 holdMs 한도를 센다.
+      // 기다리는 동안은 다시 보기 기한(recheckMs)을 세지 않는다(잠깐 들었다 내려놓아도 이어 간다)
+      if (c.reason !== "unknown_contents" && c.reason !== "stale" && this.core.contents.holding(r)) {
+        if (!this.core.contents.pause(r)) return steps.finish(r, "failed", c.text);
+        r.since = this.clock.now();
+        return;
+      }
       // 검사를 막은 대상 물건의 손에 있음이 들고 감 보호(World State carried)에서만 왔으면 보호가 풀릴 때까지 다시 보기 기한을 세지 않는다(풀린 때부터 recheckMs)
       if (c.reason === "in_hand" && c.carried) {
         r.since = this.clock.now();
