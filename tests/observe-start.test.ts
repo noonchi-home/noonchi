@@ -10,7 +10,9 @@ import { startFakeOpenAI, type FakeServer } from "../scripts/fake-openai.js";
 import type { Detection } from "../src/contract/observe.js";
 import { encodeFramePacket } from "../src/phone/packet.js";
 import { fetchRetry, listenRetry } from "../src/shared/net.js";
+import { MemoryBus, type Deliver, type NodeName, type Subscription, type TopicName } from "../src/bus/index.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
+import { HEARD_MARK } from "../src/world/labels.js";
 import { isThought } from "./helpers/thought.js";
 import { ScriptedDetector, det } from "./helpers/detectors.js";
 import { startFakePamLlm, type FakePamLlm, pamLlmEnv } from "./helpers/pam.js";
@@ -169,5 +171,56 @@ describe("startServer(BRAIN=1) + 관찰 흐름", () => {
       dash.close();
       phone.close();
     }
+  }, 30_000);
+
+  it("통로를 잃으면(Redis가 다시 켜짐) 그 까닭을 남기고 서버를 닫은 뒤 끝 코드 1로 끝낸다", async () => {
+    let lose: ((e: Error) => void) | null = null;
+    let code: number | null = null;
+    const lines: string[] = [];
+    srv = await startServer({
+      env: env(), log: (l) => lines.push(l), exit: (c) => { code = c; },
+      openBus: async (_env, o) => { lose = o.onLost; return new MemoryBus({ warn: () => {} }); },
+    });
+    lose!(new Error("Redis가 다시 켜져 이번 기동의 메시지를 잃었어요"));
+    for (let i = 0; i < 250 && code === null; i++) await new Promise((r) => setTimeout(r, 20));
+    expect(code).toBe(1);
+    expect(lines.some((l) => l.includes("잃었어요"))).toBe(true);
+    expect((await fetchRetry(`${srv.url}/api/health`).catch(() => null))?.ok ?? false).toBe(false);
+    srv = undefined;
+  });
+
+  it("집을 닫으면 인식 → 집 상태 → 거울 차례로 노드를 끝낸다. 들은 말은 판단으로 가고 기록에는 표시만 남는다", async () => {
+    fake = await startFakeOpenAI();
+    pam = await startFakePamLlm();
+    /** 구독을 끊은 노드 차례를 적는 통로. */
+    class StopOrder extends MemoryBus {
+      readonly stops: NodeName[] = [];
+      override async subscribe<N extends TopicName>(t: N, n: NodeName, d: Deliver<N>, o?: { mode?: "latest" | "all" }): Promise<Subscription> {
+        const sub = await super.subscribe(t, n, d, o);
+        return { start: () => sub.start(), lost: () => sub.lost(), stop: async () => { this.stops.push(n); await sub.stop(); } };
+      }
+    }
+    const bus = new StopOrder({ warn: () => {} });
+    srv = await startServer({
+      env: env({ PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, VLM_MODEL: "fake-vlm", ENGINE_FRAME_MS: "500", ...pamLlmEnv(pam) }),
+      log: () => {}, brain: { detector: new ScriptedDetector(() => [cup]) }, openBus: async () => bus,
+    });
+    const phoneUrl = new URL(srv.phoneUrls[0]!);
+    const phone = await openPhone(`ws://${phoneUrl.host}/phone/events`, { options: { origin: phoneUrl.origin } });
+    try {
+      phone.send(JSON.stringify({ type: "say", text: "컵 좀 치워 줘" }));
+      const history = srv.history;
+      for (let i = 0; i < 250 && !history.list({ kinds: ["world"] }).some((r) => (r.data as { kind?: string } | null)?.kind === "heard"); i++) await new Promise((r) => setTimeout(r, 20));
+      const heard = history.list({ kinds: ["world"] }).filter((r) => (r.data as { kind?: string } | null)?.kind === "heard");
+      expect(heard.map((r) => r.text)).toEqual([HEARD_MARK]);
+    } finally {
+      phone.close();
+    }
+    await srv.close();
+    srv = undefined;
+    const first = (n: NodeName) => bus.stops.indexOf(n);
+    expect(first("perception")).toBeGreaterThanOrEqual(0);
+    expect(first("perception")).toBeLessThan(first("world"));
+    expect(first("world")).toBeLessThan(first("act"));
   }, 30_000);
 });

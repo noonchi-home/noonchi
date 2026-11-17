@@ -5,6 +5,7 @@
 // agent.ts 정책·에이전트·외부 연락·계획 모드·관찰 모드·초점, phone.ts 실제 폰, act.ts 계획·판단·실행 추적·보기 담당, observe.ts World State·관찰 흐름·주기 타이머, say.ts 말풍선 카드.
 
 import type { DeviceNote, HistoryDb, ReflectResult } from "../../brain/index.js";
+import type { Bus } from "../../bus/index.js";
 import type { BrainLog, ReadyView } from "../../contract/events.js";
 import type { PlanView } from "../../contract/plan.js";
 import type { AssistMode, ControlMode } from "../../contract/setup.js";
@@ -18,7 +19,7 @@ import type { HubKind, MatterTransport, StartHubOptions } from "../hubFactory.js
 import { prepareAct, startAct, startLooker, startPlans } from "./act.js";
 import { startAgent, watchFocus } from "./agent.js";
 import { preparePhone, startPhone } from "./phone.js";
-import { startLoop, startPipeline, startWorld } from "./observe.js";
+import { startLoop, startPipeline, startWorld, startNodes, stopNodes } from "./observe.js";
 import { onReflection, sayTimer, startSay } from "./say.js";
 import { setLink, startDevices } from "./devices.js";
 import { HomeCore } from "./core.js";
@@ -68,6 +69,10 @@ export interface HomeContext {
   ready?: () => Promise<ReadyView>;
   /** 기록 DB·기록기·반성. */
   history: HomeHistory;
+  /** 노드 통로(서버가 기동마다 하나 연다, 집을 바꿔도 같다). */
+  bus: Bus;
+  /** 집을 열 때마다 새 세대(기동, <집 id>#<연 횟수>). */
+  epochOf: (homeId: string) => { boot: string; home: string };
 }
 
 export interface HomeRuntime {
@@ -99,6 +104,7 @@ export interface HomeRuntime {
 export async function startHome(homeId: string | undefined, ctx: HomeContext): Promise<HomeRuntime> {
   const core = new HomeCore(ctx);
   await startDevices(core, homeId);
+  core.epoch = ctx.epochOf(core.twin.home.id);
   try {
     startAgent(core);
     preparePhone(core);
@@ -108,6 +114,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     startSay(core);
     if (core.world) {
       const emit = startAct(core);
+      await startNodes(core, emit);
       await startPipeline(core, emit);
       startLooker(core, emit);
       startLoop(core);
@@ -127,6 +134,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     core.looker?.stop();
     core.unsubWorld();
     await core.pipeline?.close().catch(() => {});
+    await stopNodes(core).catch(() => {});
     core.unsubHistory();
     await core.signals.stop().catch(() => {});
     throw e;
@@ -150,8 +158,7 @@ function startApp(core: HomeCore): void {
   const { log, history } = ctx;
   const { home } = twin;
   const observe = core.pipeline;
-  const world = core.world;
-  const worldNow = world && (() => world.view(core.nowMs()));
+  const worldNow = core.world ? (() => core.view()!) : undefined;
   core.app = createApp({
     hub: signals, policy, agent, rooms: twin.rooms, twinDir: home.outDir, viewerDir: home.viewerDir, libraryDir: home.libraryDir, hubKind: core.started.kind, log, eye: feed,
     brain: observe ? { status: () => ({ ...observe.status(), look: core.looker?.status() ?? null }) } : undefined, world: worldNow ?? undefined,
@@ -187,7 +194,9 @@ function runtime(core: HomeCore): HomeRuntime {
       // 그다음 외부 연락: 차례를 기다리던 연락은 취소로 기록하고, 보내는 중인 연락은 끝난 뒤 닫는다(기록 DB·말풍선·폰·앱 답 길은 아직 열려 있다)
       const steps: [string, () => unknown][] = [
         ["새 일 막기", () => { policy.close(); clearInterval(core.decideTimer); core.decider?.stop(); core.tracker?.stop(); core.looker?.stop(); planner.abort(); }],
-        ["외부 연락", () => agent.close()], ["초점", core.unsubFocus], ["관찰 흐름", () => { core.thoughts?.close(); core.unsubWorld(); return core.pipeline?.close(); }], ["눈 화면", () => feed?.close()],
+        ["외부 연락", () => agent.close()], ["초점", core.unsubFocus], ["관찰 흐름", () => { core.thoughts?.close(); core.unsubWorld(); return core.pipeline?.close(); }],
+        // 노드: 새 일을 만드는 쪽(인식) → 집 상태 → 거울·폰·가전 차례(그 뒤 변화가 대시보드로 가지 않는다)
+        ["노드", () => stopNodes(core)], ["눈 화면", () => feed?.close()],
         ["폰 서버", () => phoneNow?.close()], ["앱", () => appNow.close()], ["배치", () => layout?.editor.close()], ["ThinQ", () => core.link?.stop()],
         ["기록", core.unsubHistory], ["허브", () => signals.stop()],
       ];

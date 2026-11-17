@@ -7,7 +7,6 @@ import { taskOf } from "../act/tasks.js";
 import { checkInput, fsmRuleOf, isoWithOffset, type PamMemory } from "./decision.js";
 import { PamLinkError, type PamClient } from "./pam/index.js";
 import { LINK_TEXT, TRIGGER_TEXT, redactHeard, redactSaid, saidIn } from "../world/labels.js";
-import type { WorldState } from "../world/index.js";
 import { textFromWorld } from "../world/index.js";
 import type { Trigger, TriggerPause } from "../world/index.js";
 
@@ -29,7 +28,8 @@ export function decisionWorld(w: WorldView): DecisionWorld {
 
 export interface DeciderOptions {
   pam: PamClient;
-  world: WorldState;
+  /** 집 상태 보기(거울). */
+  world: { view(now: number): WorldView };
   trigger: Trigger;
   tasks: () => string[];
   memory: () => { memory: PamMemory; kind: "list" | "fsm"; version: number };

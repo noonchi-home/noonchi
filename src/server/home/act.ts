@@ -5,6 +5,7 @@ import { lookTargets, taskOf, tasksFor } from "../../act/tasks.js";
 import { deviceViews, placesOf, type PlaceInfo } from "../../agent/index.js";
 import { Decider, PamClient, ThoughtWriter, lastStoredThoughts, memoryForDay, pamSettings, storeThought, thoughtFeed } from "../../brain/index.js";
 import type { BrainLog } from "../../contract/events.js";
+import type { WorldInput } from "../../contract/world.js";
 import type { PlanView } from "../../contract/plan.js";
 import { createInference } from "../../infer/inference.js";
 import { floorPlanFrom, loadScene, type LayoutEditor, type PlaceNames } from "../../layout/index.js";
@@ -22,6 +23,11 @@ function placeLocator(editor: LayoutEditor | undefined, surfaces: () => PlaneSur
     const at = top?.basin?.center ?? top?.center;
     return { label: c.label, position: top && at ? [at[0], top.top, at[1]] : c.position };
   };
+}
+
+/** 실행 추적이 World State에 넣는 것(보기 지킴·따르기 창)은 /world/input으로 낸다(거울 노드 act, 집 상태 노드가 넣는다). */
+function worldInput(core: HomeCore, i: WorldInput): void {
+  core.mirror?.node.publish("/world/input", i).catch((e: Error) => core.ctx.log(`[경고] /world/input을 보내지 못했어요: ${e.message}`));
 }
 
 /** 클로이드 계획(src/act/hub.ts): 장면·평면도·부르는 이름과 계획 묶음(PlanHub). 계획 방송은 대시보드·기록·말풍선 카드로 간다. */
@@ -61,8 +67,9 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
   const { ctx, twin, signals, policy, approvals, planner, plans, lessons, placeNames, layout } = core;
   const { env, history } = ctx;
   const { home } = twin;
-  const world = core.world!;
   const now = () => core.nowMs();
+  // 집 상태는 거울(가장 새 /world/state)로 읽는다. 노드는 실행 추적을 만든 뒤 띄우고 첫 상태를 받은 뒤에 판단·실행이 돈다
+  const view = () => core.view()!;
   // 판단·계획은 메시지를 기다리지 않는다: 판단 기록을 보낸 뒤 부르고, 새 메시지가 오면 보낸다. 다시 띄우면 이 집의 최근 메시지(10분 안)로 시작한다
   const feed = thoughtFeed({
     writer: new ThoughtWriter({ chat: createInference(env).thought }), send: (m) => core.app?.broadcast(m),
@@ -80,7 +87,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
   const pamTimeout = Number(env.PAM_TIMEOUT_MS);
   const decide = new Decider({
     pam: new PamClient({ settings: pamSettings(env), timeoutMs: Number.isFinite(pamTimeout) && pamTimeout > 0 ? pamTimeout : undefined }),
-    world, trigger: new Trigger(loadTriggerConfig(env), now()), tasks: () => tasksFor(core.assist()),
+    world: { view }, trigger: new Trigger(loadTriggerConfig(env), now()), tasks: () => tasksFor(core.assist()),
     memory: () => memoryForDay(history.db, history.db.dayOf(now())), emit, offsetMinutes: history.db.offsetMinutes, clock: ctx.brain?.clock,
     // 행동 중 기다리기·기기 단계 동안은 PAM을 부르지 않는다(실행 추적이 조건을 본다)
     hold: () => (core.tracker?.waiting() ?? false) || (core.tracker?.coaching() ?? false),
@@ -97,16 +104,16 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
   // 명령 대상 자리는 배치(면이면 윗면 가운데, 싱크볼이 있으면 싱크볼)에서
   const placeAt = placeLocator(layout?.editor, core.surfaces);
   core.tracker = new ExecutionTracker({
-    plans, floor: () => plans.floor(), world: () => world.view(now()), emit, clock: ctx.brain?.clock, approvals, devices, offsetMinutes: history.db.offsetMinutes,
+    plans, floor: () => plans.floor(), world: view, emit, clock: ctx.brain?.clock, approvals, devices, offsetMinutes: history.db.offsetMinutes,
     // 계획 전 검사(LLM 없음) → 에이전트 계획 모드 한 번. 손 자리는 맞춘 눈(PlanHub 평면도의 로봇 자리)
     // 실행 추적이 놓기 단계를 끝낸 물건(placed)도 이미 치운 것으로 본다
-    precheck: (d) => checkDecision({ decision: d, tasks: d.tasks ?? tasksFor(core.assist()), world: world.view(now()), nowMs: now(), placed: core.tracker?.placed() }),
+    precheck: (d) => checkDecision({ decision: d, tasks: d.tasks ?? tasksFor(core.assist()), world: view(), nowMs: now(), placed: core.tracker?.placed() }),
     // 계획 입력·제출 검사도 이미 치운 물건(placed, 이 계획을 만들 때 것)을 안다: 입력 줄에 「이미 치움」, 그 물건을 대상으로 한 계획은 버린다
     planner: (d, signal) => {
       const task = taskOf(d.action);
       if (!task) return { ok: false, error: "행동 목록에 없는 행동" };
       return planner.plan({
-        decision: d, task, world: world.view(now()), floor: plans.floor(), places: core.places(), names: placeNames, rooms: twin.rooms, devices: deviceViews(signals), nowIso: new Date(now()).toISOString(),
+        decision: d, task, world: view(), floor: plans.floor(), places: core.places(), names: placeNames, rooms: twin.rooms, devices: deviceViews(signals), nowIso: new Date(now()).toISOString(),
         placed: new Map(core.tracker?.placed() ?? []), ...(task.coach ? { lesson: lessons.get(task.name) } : {}),
       }, signal);
     },
@@ -121,7 +128,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     },
     locate: placeAt, names: placeNames,
     check: (d, p) => checkPlan({
-      decision: d, tasks: d.tasks ?? tasksFor(core.assist()), plan: p, world: world.view(now()), nowMs: now(), staleMs: core.act.staleMs, mode: ctx.mode?.() ?? "test", deviceSteps: deviceSteps(p),
+      decision: d, tasks: d.tasks ?? tasksFor(core.assist()), plan: p, world: view(), nowMs: now(), staleMs: core.act.staleMs, mode: ctx.mode?.() ?? "test", deviceSteps: deviceSteps(p),
       placed: core.tracker?.placed(),
     }),
     lessons,
@@ -137,9 +144,9 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     lookContents: (h) => core.looker?.contents(h) ?? false,
     // 가까이 가서 보기: 위에서 비추기가 끝났는가(관찰 흐름), 위에서 비추는 동안 그 컵의 보기 지킴(World State)
     topReady: (id, sinceMs) => core.pipeline?.topReady(id, sinceMs) ?? false,
-    guardObject: (id, on) => world.guard(id, now(), on),
+    guardObject: (id, on) => worldInput(core, { kind: "guard", id, on, at_ms: now() }),
     // 따르기 단계 동안 그 컵의 창(그 뒤 사진만, 다 이어진 값이 확인 값을 바꿈)
-    contentsAction: (id, on) => { world.contentsAction(id, now(), on); },
+    contentsAction: (id, on) => worldInput(core, { kind: "contents", id, on, at_ms: now() }),
     // 실제 폰의 승인 대기와 폰 대화 사용(실행 추적이 그동안 사람을 움직이게 하지 않는다)
     approvalsWaiting: () => core.agent.pending(PHONE_SESSION).length > 0,
     talking: () => core.talk.inflight > 0 || now() - core.talk.at < TALK_QUIET_MS,
@@ -154,7 +161,6 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
 /** 보기 담당(src/act/look.ts): 멈춘 단계(A)와 판단 전 보기(B)에 관찰 모드를 한 번에 하나 부르고 고른 도구를 실행한다. 관찰 흐름을 연 뒤 부른다. */
 export function startLooker(core: HomeCore, emit: (event: BrainLog) => void): void {
   const { ctx, observer } = core;
-  const world = core.world!;
   const observed = core.pipeline!;
   const tracking = core.tracker!;
   const now = () => core.nowMs();
@@ -162,7 +168,7 @@ export function startLooker(core: HomeCore, emit: (event: BrainLog) => void): vo
     observer, closer: (spot, signal) => observed.closer(spot, signal), topLook: (spot, sinceMs, signal) => observed.topLook(spot, sinceMs, signal),
     // B가 잘라 본 컵: 실행 추적이 계획 밖으로 가까이 가서 볼지 본다
     looked: (id) => tracking.lookedIdle(id),
-    frame: () => observed.latest(), world: () => world.view(now()),
+    frame: () => observed.latest(), world: () => core.view()!,
     askPerson: (planId, stepId, spot) => tracking.askCloser(planId, stepId, spot), tell: (planId, stepId, mode) => tracking.tell(planId, stepId, mode), emit, targets: lookTargets, placed: () => tracking.placed(), clock: ctx.brain?.clock,
     onLook: (spot) => {
       core.lookSay = { place: spot.label, atMs: Date.now() };

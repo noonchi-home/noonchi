@@ -6,12 +6,10 @@ import { APPROVE } from "../../act/prompts.js";
 import { EXEC_TEXT } from "../../act/labels.js";
 import { matchChoice } from "../../act/tasks.js";
 import { FEEDBACK_TEXT, PHOTO_TEXT, recordFeedback } from "../../brain/index.js";
-import type { BrainLog } from "../../contract/events.js";
 import type { ApprovalAnswer } from "../../contract/phone.js";
 import { eyeHeightOf, floorLookup, homeBounds, readScenePlan } from "../../layout/index.js";
 import { EyeFeed, StartStore, createPhoneServer, describeStart, estimateViewpoint, orderPhoneUrls, readStartPose, startPosePath, twinLandmarks, wallSegments, type StartPose } from "../../phone/index.js";
 import { repoPath } from "../../shared/paths.js";
-import { HEARD_MARK } from "../../world/labels.js";
 import { PHONE_SESSION, type HomeCore } from "./core.js";
 
 /** 영상 모드 영상 공용 폴더(저장소 runtime/videos). 시연 폴더(RUNTIME_DIR=runtime/demo/day1·week)로 띄워도 여기서 읽는다:
@@ -74,14 +72,10 @@ function phonePending(core: HomeCore) {
 /** 실제 폰이 들은 말 가운데 지금 명령의 답이 아닌 말: 관찰 텍스트 한 줄로 판단 호출에 넘긴다(눈치 모드에서도).
  *  그 말 자체는 기록하지 않는다: 기록·대시보드에는 내용 없는 표시(HEARD_MARK)만 남긴다. KEEP_HEARD_TEXT=1이면 그대로 남긴다(기본 꺼짐) */
 function heardSpeech(core: HomeCore, text: string): void {
-  const { world, decider } = core;
-  if (!world || !decider) return;
-  const changes = world.heard(text, core.nowMs());
-  if (!changes.length) return;
-  decider.onChanges(changes);
-  const event: BrainLog = { type: "world_change", at_ms: core.nowMs(), kind: "heard", text: core.keepHeard ? changes[0]!.text : HEARD_MARK };
-  core.app?.broadcast({ type: "brain", event });
-  core.ctx.history.brain(event);
+  const node = core.phoneNode;
+  if (!node || !core.decider) return;
+  // 집 상태 노드가 heard 변화로 넣고, 거울이 판단에 넘기고 기록에는 표시만 남긴다(src/server/home/observe.ts routeWorldChanges)
+  node.publish("/phone/heard", { text, observed_ms: core.nowMs() }).catch((e: Error) => core.ctx.log(`[경고] 들은 말을 보내지 못했어요: ${e.message}`));
 }
 
 /** 실제 폰 서버를 열고(PHONE_PORT가 있을 때) 말·단추·승인 답을 실행 추적·에이전트에 잇는다. 폰 주소와 잡은 포트를 남긴다. 앱을 연 뒤 부른다. */

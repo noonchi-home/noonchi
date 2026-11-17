@@ -12,7 +12,7 @@ export function startSay(core: HomeCore): void {
     const { tracker } = core;
     const leftAt = tracker?.leftAt() ?? null;
     const toldAt = tracker?.toldAt() ?? null;
-    const text = sayLine({ plan: plans.current(), command: core.command, world: core.world?.view(core.nowMs()) ?? null, nowMs: Date.now(), look: core.lookSay, left: leftAt === null ? null : { atMs: leftAt },
+    const text = sayLine({ plan: plans.current(), command: core.command, world: core.view(), nowMs: Date.now(), look: core.lookSay, left: leftAt === null ? null : { atMs: leftAt },
       told: toldAt === null ? null : { atMs: toldAt }, quiet: tracker?.quietStep() ?? null, reflected: core.reflected, offWait: tracker?.offWaiting() ?? null,
       offTold: tracker?.offTold() ?? null, service: core.serviceSaid });
     if (text === core.said) return;

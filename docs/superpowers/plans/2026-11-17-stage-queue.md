@@ -2700,9 +2700,10 @@ Task 1 뒤 RedisBus 한 번 지나기는 같은 크기 맨 전달과 p50이 같�
 
 **Files:** Modify `src/server/start.ts`(통로), `src/server/home/core.ts`(`world` → `mirror`·노드), `observe.ts`(노드 띄우기, `startLoop`의 `observed.tick()`·가전 구독 빼기: 집 상태 노드가 맡음, 미니맵은 `/perception/detections` 구독 → 대시보드), `act.ts`(`guardObject`·`contentsAction` → `/world/input`, `world` → 거울), `phone.ts`(`heardSpeech` → `/phone/heard`), `devices.ts`(허브 구독 → `/device/changes`), `say.ts`·`index.ts`(`/api/world`·닫기 차례), `src/brain/decide.ts`(`world` 타입).
 
-- [ ] 실패 시험: `tests/observe-start.test.ts`에 「집을 닫으면 인식 → 집 상태 → 거울 차례로 끝나고 그 뒤 변화가 대시보드로 가지 않는다」, `tests/server.test.ts`에 「통로를 잃으면(가짜 통로의 onLost) 서버가 끝 코드 1로 끝난다」, 들은 말은 기록에 `HEARD_MARK`만 남고 실행 추적에 가지 않는다(정한 것 14).
-- [ ] 구현: `grep -n "world\.\(guard\|contentsAction\|apply\|heard\|tick\|setEye\)" src/server src/act src/observe src/phone src/brain`이 `src/world/` 밖에서 빈다.
-- [ ] 통과 확인: 기존 `tests/world-*.test.ts`·`tests/act-track*.test.ts`·`tests/observe-*.test.ts`. 커밋·push.
+- [x] 실패 시험: `tests/observe-start.test.ts`에 「집을 닫으면 인식 → 집 상태 → 거울 차례로 끝나고 그 뒤 변화가 대시보드로 가지 않는다」, `tests/server.test.ts`에 「통로를 잃으면(가짜 통로의 onLost) 서버가 끝 코드 1로 끝난다」, 들은 말은 기록에 `HEARD_MARK`만 남고 실행 추적에 가지 않는다(정한 것 14).
+- [x] 구현: `grep -n "world\.\(guard\|contentsAction\|apply\|heard\|tick\|setEye\)" src/server src/act src/observe src/phone src/brain`이 `src/world/` 밖에서 빈다.
+- [x] 통과 확인: 기존 `tests/world-*.test.ts`·`tests/act-track*.test.ts`·`tests/observe-*.test.ts`·서버·폰·비전 시험, 데모 e2e 넷(기록 DB 같음 정답 포함), typecheck, lint. 커밋(push는 조정자가 한다).
+- 잇는 모양: 서버가 기동마다 통로 하나(`openBus`, 시험은 `openBus`·`exit`를 넘긴다)와 집 세대(`<집 id>#<연 횟수>`). 집 묶음은 실행 추적을 만든 뒤 `startNodes`로 집 상태·인식·거울(`act`, `/world/input`도 낸다)·폰(`/phone/heard`, 미니맵 `/perception/detections` → 대시보드)·가전(`/device/changes`, 시작 상태는 `initial`) 노드를 모두 준비한 뒤 시작하고, 거울이 첫 상태를 받을 때까지(5초) 기다린다. 닫을 때는 관찰 흐름 → 인식 → 집 상태 → 거울·폰·가전 차례. 폰 눈 사건의 추적 상태·시각 칸은 집 상태로 보내지 않는다(눈 자리만). 인식 노드는 입력을 낸 차례대로 하나씩 보내고 실패하면 같은 봉투로 다시 보낸다(Codex a10bcb7 지적).
 
 ### Task 7: 묶음 2 끝 조건
 

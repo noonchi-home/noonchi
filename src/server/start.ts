@@ -2,8 +2,10 @@
 // 설정 흐름(집 → 가전 → 운영 모드 → 위치 동기화 → 대시보드): 집을 고르면 묶음을 닫고 새 집으로 다시 만든다. 포트는 그대로다.
 // 운영 모드: 시험(기본, ThinQ를 부르지 않음) · 실제(짝지은 에어컨·냉장고는 ThinQ). ThinQ 클라이언트는 실제 모드에서만 만든다.
 
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import type { Agent, Policy } from "../agent/index.js";
+import { openBus, type Bus } from "../bus/index.js";
 import { agentEndpoint } from "../agent/index.js";
 import type { BrainLog } from "../contract/events.js";
 import type { PlanView } from "../contract/plan.js";
@@ -78,6 +80,10 @@ export interface StartServerOptions {
   servedPhoneUrls?: (phonePort: number) => Promise<string[]>;
   /** 대시보드·설정 화면 폴더. 기본은 React 빌드(ui/dist). */
   webDir?: string;
+  /** 시험용: 노드 통로 열기(기본 openBus: REDIS_URL이면 RedisBus, 아니면 MemoryBus). */
+  openBus?: (env: Env, o: { boot: string; log?: (s: string) => void; onLost: (err: Error) => void }) => Promise<Bus>;
+  /** 통로를 잃었을 때(Redis가 다시 켜짐) 서버를 닫은 뒤 부르는 끝내기(기본 process.exit). */
+  exit?: (code: number) => void;
 }
 
 /** 집 실행 묶음에서 오는 값은 집을 바꾸면 새 집 것으로 바뀐다(getter). */
@@ -157,6 +163,26 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     stopRecorder();
     db.close();
   };
+  // 노드 통로(src/bus): 기동마다 새 boot로 하나 열고 집을 바꿔도 같은 통로를 쓴다. 집을 열 때마다 집 세대(<집 id>#<연 횟수>)가 새로 붙는다.
+  // Redis가 다시 켜져 이번 기동을 잃으면 그 까닭을 남기고 서버를 닫은 뒤 끝 코드 1로 끝낸다(compose restart가 새 기동으로 띄운다)
+  const boot = randomUUID();
+  let closeServer: (() => Promise<void>) | null = null;
+  const exit = opts.exit ?? ((code: number) => process.exit(code));
+  let bus: Bus;
+  try {
+    bus = await (opts.openBus ?? openBus)(env, {
+      boot, log,
+      onLost: (e) => {
+        log(`[오류] ${e.message}`);
+        void (closeServer?.() ?? Promise.resolve()).catch(() => {}).finally(() => exit(1));
+      },
+    });
+  } catch (e) {
+    closeDb();
+    lock.release();
+    throw e;
+  }
+  let opened = 0;
   // 반성: 한 번에 하나. 결과는 지금 집의 대시보드 판단 기록으로 보낸다(기록 DB에는 runReflection이 적는다).
   // 서버를 끌 때는 진행 중인 반성의 PAM 요청을 끊고 끝날 때까지 기다린 뒤 DB를 닫는다
   const pam = new PamClient({ settings: pamConfig });
@@ -183,6 +209,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     env, log, runtimeDir, importer: opts.importer, matter: opts.matter, brain: opts.brain, servedPhoneUrls: opts.servedPhoneUrls, webDir: opts.webDir,
     sources: (homeId, ids) => store.sources(homeId, ids), mode: () => mode, assist: () => store.assist(), allowOrigin, planToken: env.PLAN_TOKEN?.trim() || undefined, ready: makeReady({ endpoints, agent: agentEndpoint(env), db }),
     history: { db, device: feed.device.emit, brain: feed.brain.emit, plan: feed.plan.emit, reflect },
+    bus, epochOf: (homeId) => ({ boot, home: `${homeId}#${++opened}` }),
   };
   const studioDir = resolveTwinStudioDir(env.TWIN_STUDIO_DIR);
   const pollMs = msOf(env.THINQ_POLL_MS, DEFAULT_POLL_MS);
@@ -233,6 +260,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       rt = await openHome(fallbackHome);
     }
   } catch (e) {
+    await bus.close().catch(() => {});
     closeDb();
     lock.release();
     throw e;
@@ -424,6 +452,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     listened = await shell.listen(Number.isInteger(wanted) && wanted >= 0 ? wanted : 8200, host);
   } catch (e) {
     await rt.close().catch(() => {});
+    await bus.close().catch(() => {});
     closeDb();
     lock.release();
     throw e;
@@ -444,7 +473,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   const schedule = reflectAt ? scheduleReflection({ at: reflectAt, offsetMinutes: db.offsetMinutes, run: reflect }) : null;
   if (reflectAt) log(`반성: 매일 ${reflectAt}`);
   const live = () => current ?? last;
-  return {
+  const server: RunningServer = {
     url: listened.url, port: listened.port,
     get app() { return live().app; },
     get hub() { return live().hub; },
@@ -479,8 +508,11 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       await homeClosing;
       await reflecting?.catch(() => {});
       await shell.close();
+      await bus.close().catch(() => {});
       closeDb();
       lock.release();
     },
   };
+  closeServer = () => server.close();
+  return server;
 }

@@ -12,7 +12,7 @@
 // 가까이 보기 VLM은 closerVlm(VLM_CLOSER_MODEL, 같은 주소에 모델 이름만 다름, 없으면 보통 프레임과 같은 VLM)이다.
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { BrainLog, CloserMiss, CloserResult, CloserVlm, SeenEvent, TopFrame } from "../contract/events.js";
+import type { BrainLog, CloserMiss, CloserResult, CloserVlm, EyePose, SeenEvent, TopFrame } from "../contract/events.js";
 import type { SceneInput, WorldObject, WorldView, YoloMissing } from "../contract/world.js";
 import { DETECTOR_MODEL, MODELS_DIR, POSE_MODEL, PROVIDERS, WorkerDetector, type DetectResult, type Detector, type DetectorSpec, type Provider } from "./detector.js";
 import type { Detection, Pose, CameraView, EngineFrame, FrameMeta } from "../contract/observe.js";
@@ -113,10 +113,13 @@ export interface WorldPort {
   view(): WorldView | null;
 }
 
-/** 사진 없는 프레임(JPEG·해시는 인식 노드 밖으로 나가지 않는다). */
+/** 눈 자리만(폰 눈 사건의 추적 상태·시각 칸은 집 상태로 보내지 않는다). */
+const eyeOnly = (e: EyePose | null): EyePose | null => (e ? { position: e.position, height_m: e.height_m, yaw_deg: e.yaw_deg, pitch_deg: e.pitch_deg } : null);
+
+/** 사진 없는 프레임(JPEG·해시는 인식 노드 밖으로 나가지 않는다, 눈은 자리만). */
 function frameMeta(f: EngineFrame): FrameMeta {
   const { jpeg: _jpeg, sha256: _sha256, ...meta } = f;
-  return meta;
+  return { ...meta, eye: eyeOnly(f.eye) };
 }
 
 const mean = (xs: number[]) => (xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : null);
@@ -259,7 +262,7 @@ export class ObservationPipeline {
         this.datasetCount.failed++;
       }
     }
-    this.o.world.send({ kind: "eye", eye, at_ms: t.atMs });
+    this.o.world.send({ kind: "eye", eye: eyeOnly(eye), at_ms: t.atMs });
     if (!this.o.detector) {
       if (frame.vlm) this.analyze(frame, undefined);
       return;

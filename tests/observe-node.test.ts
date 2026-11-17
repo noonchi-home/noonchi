@@ -2,7 +2,7 @@
 // World State 입력(YOLO 임시 갈래·VLM 답)은 /perception/scene 하나로 사진 없이 차례대로, 미니맵 모양은 /perception/detections로 낸다.
 // 가까이 보기 id는 VLM 합치기 뒤 /world/closer 답으로 받는다(기한이 지나면 timeout, 노드를 끝내면 closed).
 import { describe, expect, it } from "vitest";
-import { BusNode, MemoryBus, VirtualClock, type TopicName } from "../src/bus/index.js";
+import { BusNode, MemoryBus, RETRY_MS, VirtualClock, type Envelope, type TopicName } from "../src/bus/index.js";
 import type { Detection } from "../src/contract/observe.js";
 import type { VlmClient } from "../src/infer/vlm.js";
 import { startPerceptionNode, type WorldPort } from "../src/observe/index.js";
@@ -21,8 +21,17 @@ const pass = (frameId: string, atMs: number, dets: Detection[]): CloserPass => (
 const ws = () => new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices: () => [] });
 const vlm = { model: "v", json: async () => ({ value: { scene: "kitchen", observations: [{ object_id: "d1", state: "in_sink" }], summary: "컵 하나" }, costUsd: 0, model: "v", attempts: 1 }) } as unknown as VlmClient;
 
+/** 정한 토픽의 다음 발행 한 번을 실패시키는 통로. */
+class FlakyBus extends MemoryBus {
+  readonly failing = new Set<TopicName>();
+  override async publish<N extends TopicName>(e: Envelope<N>): Promise<void> {
+    if (this.failing.delete(e.topic)) throw new Error(`${e.topic} 발행 실패`);
+    return super.publish(e);
+  }
+}
+
 async function rig(o: { clock?: VirtualClock; world?: boolean } = {}) {
-  const bus = new MemoryBus({ warn: () => {} });
+  const bus = new FlakyBus({ warn: () => {} });
   const clock = o.clock ?? new VirtualClock(10_000);
   const w = o.world ? await startWorldNode({ bus, epoch: EPOCH, world: ws(), clock, log: () => {} }) : null;
   const perception = await startPerceptionNode({ bus, epoch: EPOCH, clock, log: () => {} });
@@ -46,12 +55,16 @@ describe("인식 노드", () => {
       config: { engineMs: 1000, vlmMaxInflight: 4, vlmTimeoutMs: 5000, detectQueueMax: 8, keepMs: 20_000 },
       detector: new ScriptedDetector(() => [cupIn]), vlm, world: port, emit: () => {}, onSeen: (e) => r.perception.seen(e),
     });
-    p.onEngine(jpeg(1), head(1000), null, null, 1005);
+    // 폰 눈 사건은 추적 상태·시각 칸이 더 있다: 집 상태로는 눈 자리만 간다
+    p.onEngine(jpeg(1), head(1000), { position: [1, 2], height_m: 1.4, yaw_deg: 30, pitch_deg: -10, tracking: "ok", at: "2026-11-18T00:00:01Z" }, null, 1005);
     await p.idle();
     await r.flush();
     const scene = r.got.filter((g) => g.topic === "/perception/scene").map((g) => g.body);
     expect(scene.map((b) => b.kind)).toEqual(["eye", "frame", "scene"]);
-    expect(scene[1]).toMatchObject({ frame: { id: "e1", capturedAtMs: 1000 }, dets: [{ label: "cup" }] });
+    const eye = { position: [1, 2], height_m: 1.4, yaw_deg: 30, pitch_deg: -10 };
+    expect(scene[0]).toEqual({ kind: "eye", eye, at_ms: 1000 });
+    expect(scene[1]).toMatchObject({ frame: { id: "e1", capturedAtMs: 1000, eye }, dets: [{ label: "cup" }] });
+    expect(scene[1].frame.eye).toEqual(eye);
     expect(scene[2]).toEqual({ kind: "scene", frame_id: "e1", observed_ms: 1000, scene: { scene: "kitchen", observations: [{ object_id: "d1", state: "in_sink" }], summary: "컵 하나" } });
     expect(JSON.stringify(r.got)).not.toMatch(/jpeg|sha256/);
     expect(r.got.filter((g) => g.topic === "/perception/detections").map((g) => g.body.frame_id)).toEqual(["e1"]);
@@ -76,6 +89,19 @@ describe("인식 노드", () => {
     await r.flush();
     expect(await ids).toEqual(new Map([["d2", "cup_1"]]));
     expect(port.view()!.objects.map((o) => o.id)).toEqual(["cup_1"]);
+  });
+
+  it("입력 발행이 실패하면 같은 봉투로 차례대로 다시 보내고, 성공하기 전에는 뒤 입력을 붙잡아 둔다(frame 없이 VLM 답만 가지 않게)", async () => {
+    const clock = new VirtualClock(10_000);
+    const r = await rig({ clock });
+    r.bus.failing.add("/perception/scene");
+    r.perception.port.send({ kind: "yolo_missing", frame_id: "e1", observed_ms: 1000, yolo: "error" });
+    r.perception.port.send({ kind: "missing", frame_id: "e1", observed_ms: 1000, missing: "timeout" });
+    await r.flush();
+    expect(r.got.filter((g) => g.topic === "/perception/scene")).toEqual([]);
+    await clock.advanceTo(10_000 + RETRY_MS, r.flush);
+    await r.flush();
+    expect(r.got.filter((g) => g.topic === "/perception/scene").map((g) => g.body.kind)).toEqual(["yolo_missing", "missing"]);
   });
 
   it("답이 기한(답을 낸 뒤 2초) 안에 없으면 timeout, 기다리는 중 노드를 끝내면 closed로 끝나고 끝내기가 걸리지 않는다", async () => {

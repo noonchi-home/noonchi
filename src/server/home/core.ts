@@ -9,10 +9,11 @@ import type { PlannedCommand } from "../../contract/phone.js";
 import type { AssistMode } from "../../contract/setup.js";
 import type { SignalHub, ThinqLink } from "../../devices/index.js";
 import type { FloorPlan, HomePlan, PlaceNames, TwinData, loadLayout, loadScene } from "../../layout/index.js";
-import type { ObservationPipeline, WorldPort } from "../../observe/index.js";
-import type { WorldChange } from "../../contract/world.js";
+import { realClock, type BusNode, type Clock } from "../../bus/index.js";
+import type { ObservationPipeline, PerceptionNode } from "../../observe/index.js";
+import type { WorldView } from "../../contract/world.js";
 import type { EyeFeed, FrameHeader, PhoneServer, StartStore, twinLandmarks } from "../../phone/index.js";
-import type { PlaneSurface, WorldState } from "../../world/index.js";
+import type { PlaneSurface, WorldMirror, WorldNode, WorldState } from "../../world/index.js";
 import type { TwinHomeApp } from "../app.js";
 import type { StartedHub } from "../hubFactory.js";
 import type { HomeContext } from "./index.js";
@@ -76,8 +77,13 @@ export class HomeCore {
   surfaces!: () => PlaneSurface[];
   world: WorldState | null = null;
   pipeline: ObservationPipeline | null = null;
-  /** World State를 바로 부르는 길(묶음 2 Task 6에서 노드로 바꾼다). */
-  direct: (WorldPort & { publish(c: WorldChange[]): void }) | null = null;
+  // 노드(src/bus, stage-queue 묶음 2): 집 세대, 인식·집 상태·거울(act)·폰·가전 노드
+  epoch!: { boot: string; home: string };
+  perception: PerceptionNode | null = null;
+  worldNode: WorldNode | null = null;
+  mirror: WorldMirror | null = null;
+  phoneNode: BusNode | null = null;
+  devicesNode: BusNode | null = null;
   unsubWorld: () => void = () => {};
   decideTimer: NodeJS.Timeout | undefined;
   // 말풍선 카드(say.ts): 실제 폰에 낸 지금 명령, 마지막 판단·물체 모양, 보낸 글, 가까이 보기·반성·외부 연락 결과
@@ -97,6 +103,16 @@ export class HomeCore {
   /** 지금 시각(시험 시계가 있으면 그 시계). */
   nowMs(): number {
     return this.ctx.brain?.clock?.now() ?? Date.now();
+  }
+
+  /** 노드 시계: 시각은 nowMs(시험 시계가 있으면 그 시계), 타이머는 실제 시계. */
+  busClock(): Clock {
+    return { now: () => this.nowMs(), every: realClock.every, after: realClock.after };
+  }
+
+  /** 집 상태 보기: 거울이 받은 가장 새 /world/state(관찰 흐름이 없거나 아직 못 받았으면 null). */
+  view(): WorldView | null {
+    return this.mirror?.view() ?? null;
   }
 
   /** 지금 돕는 방식(눈치·코치). 판단 호출이 그때그때 읽는다(집을 다시 띄우지 않고 바뀐다). */
