@@ -1,12 +1,11 @@
 // node.ts — 집 상태 노드(stage-queue 묶음 2): World State를 바꾸는 곳은 이 노드 하나다. 입력은 노드 줄에 들어온 차례대로 하나씩 넣는다.
-// 받는 것: /perception/scene(VLM 답, 집 상태 입력의 주인), /world/input(실행 추적의 지킴·따르기 창), /phone/heard(들은 말), /device/changes(가전 상태).
+// 받는 것: /perception/scene(VLM 답, 집 상태 입력의 주인. 지금은 YOLO 임시 갈래도 같은 토픽으로 와서 차례가 지켜진다: VLM 전용으로 바뀔 자리), /world/input(실행 추적의 지킴·따르기 창), /phone/heard(들은 말), /device/changes(가전 상태).
 // 변화가 있으면 rev를 1 올리고 /world/state {rev, view}와 /world/changes {rev, changes}를 이 차례로 함께 낸다(대시보드는 한 번 지나기로 받는다).
 // 변화 없이 보기만 바뀌는 입력(지킴·따르기 창·가전 상태)은 같은 rev로 상태만 다시 낸다. 250ms마다 tick을 넣고 같은 rev로 상태를 다시 낸다.
 // 가까이 보기는 VLM 답(closer_scene·closer_end)을 넣은 뒤 /world/closer {look, ids}로 VLM 합치기 뒤의 최종 id 표를 답한다.
 import { BusNode, msgId, realClock, type Bus, type Clock, type Envelope, type TopicName } from "../bus/index.js";
-import type { EyePose } from "../contract/events.js";
 import type { Detection, FrameMeta, Pose } from "../contract/observe.js";
-import type { SceneInput, VlmMissing, WorldChange, WorldCloserMsg, YoloMissing } from "../contract/world.js";
+import type { SceneInput, WorldChange, WorldCloserMsg } from "../contract/world.js";
 import type { CloserPending } from "./state/closer.js";
 import type { CloserPass, WorldState } from "./state/world.js";
 
@@ -17,18 +16,7 @@ const KEEP_MS = 30_000;
 /** 넣은 입력 메시지 id를 이만큼 기억한다(다시 온 메시지는 다시 넣지 않는다). */
 const APPLIED_MAX = 1024;
 
-/** VLM 전용으로 바뀔 자리: 지금 YOLO가 World State를 바꾸는 네 곳을 토픽 대신 이 노드 줄에 넣는다(feat/vlm-objects를 합치면 쓰러짐 신호 하나만 남는다).
- *  돌려주는 값이 없다: 노드를 끝내면 줄에 남은 입력은 버리고, 끝내기가 기다릴 것이 없다. */
-export interface WorldBridge {
-  eye(eye: EyePose | null, atMs: number): void;
-  /** 한 프레임의 감지. VLM 프레임(vlm이 false가 아님)이면 감지 번호 표를 그 VLM 답까지 둔다. */
-  frame(frame: FrameMeta, dets: Detection[], poses?: Pose[]): void;
-  missing(frameId: string, capturedAtMs: number, m: { yolo?: YoloMissing; vlm?: VlmMissing }): void;
-  /** 잘라 본 장의 YOLO 합치기. look마다 감지 번호 표와 VLM 답을 기다리는 후보를 둔다. */
-  closer(look: string, looks: readonly CloserPass[], from: string): void;
-}
-
-export interface WorldNode { node: BusNode; bridge: WorldBridge }
+export interface WorldNode { node: BusNode }
 
 /** 입력을 World State에 넣는 곳: 감지 번호 표(프레임 → 감지 번호 → 물건 id)와 가까이 보기 표(look → 감지 번호 표·VLM 답을 기다리는 후보)를 갖는다.
  *  집 상태 노드와 관찰 흐름 시험 대역(tests/helpers/world-port.ts)이 같이 쓴다. */
@@ -37,24 +25,32 @@ export class WorldInputs {
   readonly #looks = new Map<string, { at: number; ids: Map<string, string>; pending?: CloserPending }>();
   constructor(readonly world: WorldState, private readonly now: () => number) {}
 
-  // VLM 전용으로 바뀔 자리: YOLO 입력 셋(eye는 world.setEye를 바로 부른다)
+  /** 한 프레임의 감지(VLM 전용으로 바뀔 자리). VLM 프레임(vlm이 false가 아님)이면 감지 번호 표를 그 VLM 답까지 둔다. */
   frame(frame: FrameMeta, dets: Detection[], poses?: Pose[]): WorldChange[] {
     const r = this.world.applyDetections(frame, dets, poses);
     if (frame.vlm !== false) this.#idsOf.set(frame.id, { at: this.now(), ids: r.ids });
     return r.changes;
   }
-  missing(frameId: string, capturedAtMs: number, m: { yolo?: YoloMissing; vlm?: VlmMissing }): WorldChange[] {
-    return this.world.applyMissing(frameId, capturedAtMs, m);
-  }
+  /** 잘라 본 장의 YOLO 합치기(VLM 전용으로 바뀔 자리). look마다 감지 번호 표와 VLM 답을 기다리는 후보를 둔다. */
   closer(look: string, passes: readonly CloserPass[], from: string): WorldChange[] {
     const r = this.world.applyCloser(passes, from);
     this.#looks.set(look, { at: this.now(), ids: r.ids, pending: r.pending });
     return r.changes;
   }
 
-  /** VLM 답 하나(/perception/scene). 가까이 보기 답(closer_scene·closer_end)이면 VLM 합치기 뒤의 최종 id 표도 돌려준다. */
+  /** /perception/scene 입력 하나. 가까이 보기 답(closer_scene·closer_end)이면 VLM 합치기 뒤의 최종 id 표도 돌려준다. */
   scene(b: SceneInput): { changes: WorldChange[]; closer?: { look: string; ids: Map<string, string> } } {
     switch (b.kind) {
+      // VLM 전용으로 바뀔 자리: YOLO 임시 갈래(feat/vlm-objects를 합치면 쓰러짐 신호 하나만 남는다)
+      case "eye":
+        this.world.setEye(b.eye, b.at_ms);
+        return { changes: [] };
+      case "frame":
+        return { changes: this.frame(b.frame, b.dets, b.poses) };
+      case "yolo_missing":
+        return { changes: this.world.applyMissing(b.frame_id, b.observed_ms, { yolo: b.yolo, ...(b.vlm ? { vlm: b.vlm } : {}) }) };
+      case "closer_merge":
+        return { changes: this.closer(b.look, b.passes, b.from) };
       case "scene": {
         const ids = this.#idsOf.get(b.frame_id)?.ids ?? new Map<string, string>();
         this.#idsOf.delete(b.frame_id);
@@ -150,15 +146,7 @@ export async function startWorldNode(o: { bus: Bus; epoch: { boot: string; home:
     return emit(world.tick(clock.now()), { state: true });
   });
 
-  // VLM 전용으로 바뀔 자리: YOLO → World State 임시 다리. 토픽 입력과 같은 노드 줄에 넣는다.
-  const bridge: WorldBridge = {
-    eye: (eye, atMs) => node.post(() => { world.setEye(eye, atMs); }),
-    frame: (frame, dets, poses) => node.post(() => emit(inputs.frame(frame, dets, poses))),
-    missing: (frameId, capturedAtMs, m) => node.post(() => emit(inputs.missing(frameId, capturedAtMs, m))),
-    closer: (look, passes, from) => node.post(() => emit(inputs.closer(look, passes, from))),
-  };
-
   await node.prepare();
   await node.publish("/world/state", { rev, view: world.view(clock.now()) });
-  return { node, bridge };
+  return { node };
 }

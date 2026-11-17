@@ -28,6 +28,8 @@ type Got = { topic: TopicName; body: any };
 const of = (got: Got[], topic: TopicName) => got.filter((g) => g.topic === topic).map((g) => g.body);
 const changesOf = (got: Got[]): WorldChange[] => of(got, "/world/changes").flatMap((b) => b.changes);
 const lastView = (got: Got[]) => of(got, "/world/state").at(-1)?.view;
+/** YOLO 임시 갈래 하나를 /perception/scene으로 낸다(VLM 전용으로 바뀔 자리). */
+const yolo = (r: { perception: BusNode }, b: Record<string, unknown>) => r.perception.publish("/perception/scene", b as never);
 
 /** World State 메서드 부르기를 적는다(이름·인자·돌려준 값·겹친 깊이). */
 function spy(world: WorldState) {
@@ -80,7 +82,7 @@ async function rig(world = ws()) {
 }
 
 describe("집 상태 노드", () => {
-  it("다리·토픽으로 넣은 것과 WorldState에 바로 넣은 것의 변화 줄과 보기가 같다(감지 → VLM 답, 가까이 보기 합치기 → 그 VLM 답, 위에서 본 값, 분석 없음)", async () => {
+  it("YOLO 갈래·VLM 답 토픽으로 넣은 것과 WorldState에 바로 넣은 것의 변화 줄과 보기가 같다(감지 → VLM 답, 가까이 보기 합치기 → 그 VLM 답, 위에서 본 값, 분석 없음)", async () => {
     const direct = ws();
     const d: WorldChange[] = [];
     for (const [id, at] of [["e1", 1000], ["e2", 2000], ["e3", 3000]] as const) {
@@ -94,16 +96,16 @@ describe("집 상태 노드", () => {
 
     const r = await rig();
     for (const [id, at] of [["e1", 1000], ["e2", 2000], ["e3", 3000]] as const) {
-      r.w.bridge.frame(meta(id, at), [cupIn, person]);
+      await yolo(r, { kind: "frame", frame: meta(id, at), dets: [cupIn, person] });
       await r.perception.publish("/perception/scene", { kind: "scene", frame_id: id, observed_ms: at, scene: said(["d1", "in_sink"]) });
       await r.flush();
     }
-    r.w.bridge.closer("e5.c1", [pass("e4", 4000, [cupFar]), pass("e5", 5000, [person, cupFar])], "e5");
+    await yolo(r, { kind: "closer_merge", look: "e5.c1", passes: [pass("e4", 4000, [cupFar]), pass("e5", 5000, [person, cupFar])], from: "e5" });
     await r.perception.publish("/perception/scene", { kind: "closer_scene", look: "e5.c1", frame_id: "e5", observed_ms: 5000, scene: said(["d2", "on_floor"]) });
     await r.perception.publish("/perception/scene", { kind: "top", object_id: "cup_1", frame_id: "e6", observed_ms: 6000, value: "empty" });
     await r.perception.publish("/perception/scene", { kind: "missing", frame_id: "e7", observed_ms: 7000, missing: "timeout" });
     await r.flush();
-    r.w.bridge.missing("e8", 8000, { yolo: "error" });
+    await yolo(r, { kind: "yolo_missing", frame_id: "e8", observed_ms: 8000, yolo: "error" });
     await r.flush();
     expect(d.length).toBeGreaterThan(5);
     expect(changesOf(r.got)).toEqual(d);
@@ -112,13 +114,13 @@ describe("집 상태 노드", () => {
 
   it("가까이 보기: VLM 답을 넣은 뒤 /world/closer로 VLM 답이 만든 물건 id까지 담은 최종 표를 낸다. 답 없이 끝나면(closer_end) 후보를 버리고 그때의 표를 낸다", async () => {
     const r = await rig();
-    r.w.bridge.closer("e2.c1", [pass("e1", 1000, [cupIn]), pass("e2", 2000, [person, cupIn])], "e2");
+    await yolo(r, { kind: "closer_merge", look: "e2.c1", passes: [pass("e1", 1000, [cupIn]), pass("e2", 2000, [person, cupIn])], from: "e2" });
     await r.flush();
     expect(of(r.got, "/world/closer")).toEqual([]);
     await r.perception.publish("/perception/scene", { kind: "closer_scene", look: "e2.c1", frame_id: "e2", observed_ms: 2000, scene: said(["d2", "in_sink"]) });
     await r.flush();
     expect(of(r.got, "/world/closer")).toEqual([{ look: "e2.c1", ids: { d2: "cup_1" } }]);
-    r.w.bridge.closer("e4.c2", [pass("e3", 3000, [cupFar]), pass("e4", 4000, [cupFar])], "e4");
+    await yolo(r, { kind: "closer_merge", look: "e4.c2", passes: [pass("e3", 3000, [cupFar]), pass("e4", 4000, [cupFar])], from: "e4" });
     await r.perception.publish("/perception/scene", { kind: "closer_end", look: "e4.c2" });
     await r.flush();
     expect(of(r.got, "/world/closer").at(-1)).toEqual({ look: "e4.c2", ids: {} });
@@ -128,7 +130,7 @@ describe("집 상태 노드", () => {
   it("변화가 있을 때만 rev가 오르고 상태를 변화보다 먼저 같은 rev로 낸다. 변화 없는 입력은 rev를 올리지 않고, 250ms마다 같은 rev로 상태를 다시 낸다", async () => {
     const r = await rig();
     expect(of(r.got, "/world/state").map((b) => b.rev)).toEqual([0]);
-    r.w.bridge.missing("e1", 1000, { yolo: "error" });
+    await yolo(r, { kind: "yolo_missing", frame_id: "e1", observed_ms: 1000, yolo: "error" });
     await r.flush();
     expect(r.got.slice(-2).map((g) => [g.topic, g.body.rev])).toEqual([["/world/state", 1], ["/world/changes", 1]]);
     await r.act.publish("/world/input", { kind: "guard", id: "없는 물건", on: true, at_ms: 1000 });
@@ -174,7 +176,7 @@ describe("집 상태 노드", () => {
     r.act.on("/world/changes", async () => { await r.act.publish("/world/input", { kind: "guard", id: "cup_1", on: true, at_ms: 1 }); });
     await r.act.prepare();   // 시험용으로 늦게 붙인 구독(준비 뒤 시작)
     r.act.start();
-    r.w.bridge.missing("e1", 1000, { yolo: "error" });
+    await yolo(r, { kind: "yolo_missing", frame_id: "e1", observed_ms: 1000, yolo: "error" });
     await r.flush();
     expect(s.calls.map((c) => [c.name, c.depth])).toEqual([["applyMissing", 1], ["guard", 1]]);
   });
@@ -187,7 +189,7 @@ describe("집 상태 노드", () => {
     for (const [id, at, state] of [["e1", 1000, "in_sink"], ["e2", 2000, "in_sink"], ["e3", 3000, "on_floor"]] as const) {
       const r1 = direct.applyDetections(meta(id, at), [cupIn, person]);
       d.push(...r1.changes, ...direct.applyScene(id, at, said(["d1", state]), r1.ids));
-      r.w.bridge.frame(meta(id, at), [cupIn, person]);
+      await yolo(r, { kind: "frame", frame: meta(id, at), dets: [cupIn, person] });
       await r.flush();
       if (id === "e3") r.bus.failing.add("/world/changes");
       await r.perception.publish("/perception/scene", { kind: "scene", frame_id: id, observed_ms: at, scene: said(["d1", state]) });
@@ -197,7 +199,7 @@ describe("집 상태 노드", () => {
     expect(s.calls.filter((c) => c.name === "applyScene")).toHaveLength(3);
     expect(changesOf(r.got)).toEqual(d);
     // 가까이 보기 답이 실패해도 VLM 합치기는 한 번, 답은 같은 최종 표로 한 번
-    r.w.bridge.closer("e5.c1", [pass("e4", 4000, [cupFar]), pass("e5", 5000, [person, cupFar])], "e5");
+    await yolo(r, { kind: "closer_merge", look: "e5.c1", passes: [pass("e4", 4000, [cupFar]), pass("e5", 5000, [person, cupFar])], from: "e5" });
     await r.flush();
     r.bus.failing.add("/world/closer");
     await r.perception.publish("/perception/scene", { kind: "closer_scene", look: "e5.c1", frame_id: "e5", observed_ms: 5000, scene: said(["d2", "on_floor"]) });
@@ -207,20 +209,20 @@ describe("집 상태 노드", () => {
     expect(of(r.got, "/world/closer")).toEqual([{ look: "e5.c1", ids: { d2: "cup_2" } }]);
   });
 
-  it("다리 입력의 발행이 실패하면 남은 변화를 다음 발행(250ms 다시 냄)에 한 번 낸다", async () => {
+  it("YOLO 갈래 입력의 발행이 실패하면 다시 받을 때 남은 변화를 한 번만 낸다", async () => {
     const r = await rig();
     r.bus.failing.add("/world/changes");
-    r.w.bridge.missing("e1", 1000, { yolo: "error" });
+    await yolo(r, { kind: "yolo_missing", frame_id: "e1", observed_ms: 1000, yolo: "error" });
     await r.flush();
     expect(of(r.got, "/world/changes")).toEqual([]);
-    await r.clock.advanceTo(NOW + 250, r.flush);
+    await r.clock.advanceTo(NOW + RETRY_MS, r.flush);
     expect(of(r.got, "/world/changes").map((b) => [b.rev, b.changes.map((c: WorldChange) => c.kind)])).toEqual([[1, ["yolo_missing"]]]);
   });
 
   it("VLM 답이 오지 않아 30초 넘은 가까이 보기 후보는 지우기 전에 endCloser로 끝낸다", async () => {
     const s = spy(ws());
     const r = await rig(s.proxy);
-    r.w.bridge.closer("e2.c1", [pass("e1", 1000, [cupIn]), pass("e2", 2000, [person, cupIn])], "e2");
+    await yolo(r, { kind: "closer_merge", look: "e2.c1", passes: [pass("e1", 1000, [cupIn]), pass("e2", 2000, [person, cupIn])], from: "e2" });
     await r.flush();
     await r.clock.advanceTo(NOW + 29_000, r.flush);
     expect(s.calls.filter((c) => c.name === "endCloser")).toEqual([]);
@@ -228,19 +230,4 @@ describe("집 상태 노드", () => {
     expect(s.calls.filter((c) => c.name === "endCloser")).toHaveLength(1);
   });
 
-  it("노드를 끝내면 다리 입력은 오류 없이 버리고, 끝내기는 다리 입력 때문에 기다리지 않는다", async () => {
-    const s = spy(ws());
-    const r = await rig(s.proxy);
-    await r.w.node.stop();
-    expect(() => {
-      r.w.bridge.eye(null, 1);
-      r.w.bridge.frame(meta("e1", 1000), [cupIn]);
-      r.w.bridge.missing("e1", 1000, { yolo: "error" });
-      r.w.bridge.closer("e1.c1", [pass("e1", 1000, [cupIn])], "e1");
-    }).not.toThrow();
-    await r.flush();
-    expect(s.calls).toEqual([]);
-    for (const n of r.all) await n.stop();
-    await r.bus.close();
-  });
 });

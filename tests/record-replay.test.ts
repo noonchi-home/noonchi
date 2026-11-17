@@ -3,7 +3,17 @@
 import { describe, expect, it } from "vitest";
 import { BusNode, RETRY_MS } from "../src/bus/index.js";
 import { Bag, REPLAY_INPUTS, replay } from "../src/record/index.js";
-import { WorldState, startWorldNode } from "../src/world/index.js";
+import type { Detection, FrameMeta } from "../src/contract/observe.js";
+import type { WorldChange } from "../src/contract/world.js";
+import { WorldState, startWorldNode, type CloserPass } from "../src/world/index.js";
+import { engineFrame, LOOK_SIZE, LOOK_VIEW } from "./helpers/camera.js";
+import { det } from "./helpers/detectors.js";
+
+const cupIn = det("cup", 0.8, [230, 170, 20, 10], 41);
+const cupFar = det("cup", 0.8, [130, 100, 20, 10], 41);
+const person = det("person", 0.9, [150, 20, 120, 330], 0);
+const meta = (id: string, atMs: number): FrameMeta => { const { jpeg: _jpeg, sha256: _sha, ...m } = engineFrame(id, atMs); return m; };
+const pass = (frameId: string, atMs: number, dets: Detection[]): CloserPass => ({ frameId, capturedAtMs: atMs, view: LOOK_VIEW, ...LOOK_SIZE, dets: dets.map((d) => ({ ...d, edge: false })) });
 
 const EPOCH = { boot: "b1", home: "h#1" };
 const h = (seq: number, stamp: number) => ({ stamp, node: "perception" as const, inst: "i1", seq, ...EPOCH });
@@ -15,26 +25,50 @@ describe("격리 재생", () => {
     expect(REPLAY_INPUTS).toContain("/perception/analysis");
   });
 
-  it("녹화한 VLM 답(/perception/scene)을 흘려 집 상태 노드가 같은 World State를 다시 만든다", async () => {
+  it("녹화한 YOLO 갈래·VLM 답(/perception/scene, 사진 없음)을 흘려 집 상태 노드가 컵의 등장·사실·가까이 보기 결과를 바로 넣은 것과 같게 다시 만든다", async () => {
     expect(REPLAY_INPUTS).toContain("/perception/scene");
+    const ws = () => new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices: () => [] });
+    const said = (id: string, state: string) => ({ scene: "k", observations: [{ object_id: id, state: state as never }], summary: "s" });
+    const passes = [pass("e4", 4000, [cupFar]), pass("e5", 5000, [person, cupFar])];
+    // 바로 넣은 것
+    const direct = ws();
+    const want: WorldChange[] = [];
+    for (const [id, at] of [["e1", 1000], ["e2", 2000], ["e3", 3000]] as const) {
+      const r1 = direct.applyDetections(meta(id, at), [cupIn, person]);
+      want.push(...r1.changes, ...direct.applyScene(id, at, said("d1", "in_sink"), r1.ids));
+    }
+    const rc = direct.applyCloser(passes, "e5");
+    want.push(...rc.changes, ...direct.applyCloserScene("e5", 5000, said("d2", "on_floor"), rc.ids, rc.pending));
+    // 녹화: 도착 차례대로
     const bag = Bag.open(":memory:");
-    const scene = { scene: "kitchen", observations: [], summary: "식탁 위에 컵 하나" };
-    bag.write({ topic: "/perception/scene", key: "_", header: h(1, 1100), body: { kind: "scene", frame_id: "e1", observed_ms: 1000, scene } } as never, 1100);
-    bag.write({ topic: "/perception/scene", key: "_", header: h(2, 2100), body: { kind: "missing", frame_id: "e2", observed_ms: 2000, missing: "timeout" } } as never, 2100);
-    const direct = new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] });
-    const want = [...direct.applyScene("e1", 1000, scene, new Map()), ...direct.applyMissing("e2", 2000, { vlm: "timeout" })];
-    const got: unknown[] = [];
+    let seq = 0;
+    const put = (body: Record<string, unknown>, at: number) => bag.write({ topic: "/perception/scene", key: "_", header: h(++seq, at), body } as never, at);
+    for (const [id, at] of [["e1", 1000], ["e2", 2000], ["e3", 3000]] as const) {
+      put({ kind: "frame", frame: meta(id, at), dets: [cupIn, person] }, at + 100);
+      put({ kind: "scene", frame_id: id, observed_ms: at, scene: said("d1", "in_sink") }, at + 900);
+    }
+    put({ kind: "closer_merge", look: "e5.c1", passes, from: "e5" }, 5100);
+    put({ kind: "closer_scene", look: "e5.c1", frame_id: "e5", observed_ms: 5000, scene: said("d2", "on_floor") }, 6900);
+    expect(JSON.stringify(bag.range(0, 10_000))).not.toMatch(/jpeg|sha256/);
+    const got: WorldChange[] = [];
+    const closer: unknown[] = [];
+    let view: unknown = null;
     await replay({
       bag, from: 0, to: 10_000,
       launch: async (bus, clock) => {
-        const w = await startWorldNode({ bus, epoch: EPOCH, world: new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }), clock, log: () => {} });
-        const probe = new BusNode({ name: "act", bus, epoch: EPOCH, clock, log: () => {} });
+        const w = await startWorldNode({ bus, epoch: EPOCH, world: ws(), clock, log: () => {} });
+        const probe = new BusNode({ name: "perception", bus, epoch: EPOCH, clock, log: () => {} });
         probe.on("/world/changes", (b) => { got.push(...b.changes); });
+        probe.on("/world/closer", (b) => { closer.push(b); });
+        probe.on("/world/state", (b) => { view = b.view; });
         return [w.node, probe];
       },
     });
-    expect(want.map((c) => c.kind)).toEqual(["vlm", "vlm_missing"]);
+    expect(want.map((c) => c.kind)).toContain("appeared");
     expect(got).toEqual(want);
+    expect(closer).toEqual([{ look: "e5.c1", ids: { d2: "cup_2" } }]);
+    const objects = (view as { objects: { id: string; facts: Record<string, { value: string }> }[] }).objects;
+    expect(objects.map((o) => [o.id, o.facts.place?.value])).toEqual(direct.view(9000).objects.map((o) => [o.id, o.facts.place?.value]));
   });
 
   it("도착 차례대로 흘리고, 가상 시계는 발행 시각이 아니라 도착 시각까지 당긴다", async () => {

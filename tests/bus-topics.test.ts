@@ -110,6 +110,30 @@ describe("인식·집 상태 토픽 모양(묶음 2)", () => {
     expect(ok("/perception/scene", { kind: "missing", frame_id: "e1", observed_ms: 1, missing: "모름" })).toBe(false);
   });
 
+  it("/perception/scene의 YOLO 임시 갈래(eye·frame·yolo_missing·closer_merge)는 감지 상자·눈 자리·프레임 번호만 싣고, 사진 바이트 칸(jpeg·jpeg_b64·sha256)은 어느 자리에서든 거절한다", () => {
+    const view = { origin: [0, 1.5, 0], orientation: [0, 0, 0, 1], theta: 0, projection: Array(16).fill(0) };
+    const d = { label: "cup", score: 0.8, box: [1, 2, 3, 4], cls: 41, mask, foot: [2, 6] };
+    const frame = { id: "e1", capturedAtMs: 1000, latestAtMs: 1000, width: 480, height: 360, eye: { position: [1, 2], height_m: 1.4, yaw_deg: 0, pitch_deg: 0 }, view, vlm: true };
+    const pose = { score: 0.9, box: [1, 2, 3, 4], keypoints: [[1, 2, 0.9]] };
+    const pass = { frameId: "e1", capturedAtMs: 1000, view, width: 480, height: 360, dets: [{ ...d, edge: false }] };
+    const kinds = [
+      { kind: "eye", eye: frame.eye, at_ms: 1000 },
+      { kind: "eye", eye: null, at_ms: 1000 },
+      { kind: "frame", frame, dets: [d], poses: [pose] },
+      { kind: "frame", frame: { ...frame, eye: null, view: null }, dets: [] },
+      { kind: "yolo_missing", frame_id: "e1", observed_ms: 1000, yolo: "error" },
+      { kind: "yolo_missing", frame_id: "e1", observed_ms: 1000, yolo: "cap", vlm: "cap" },
+      { kind: "closer_merge", look: "e1.c1", passes: [pass], from: "e1" },
+    ];
+    for (const b of kinds) expect(ok("/perception/scene", b), JSON.stringify(b).slice(0, 60)).toBe(true);
+    for (const photo of ["jpeg", "jpeg_b64", "sha256"]) {
+      expect(ok("/perception/scene", { kind: "frame", frame: { ...frame, [photo]: "x" }, dets: [d] }), `frame.${photo}`).toBe(false);
+      expect(ok("/perception/scene", { kind: "frame", frame, dets: [{ ...d, [photo]: "x" }] }), `det.${photo}`).toBe(false);
+      expect(ok("/perception/scene", { kind: "closer_merge", look: "e1.c1", passes: [{ ...pass, [photo]: "x" }], from: "e1" }), `pass.${photo}`).toBe(false);
+      expect(ok("/perception/scene", { kind: "eye", eye: null, at_ms: 1, [photo]: "x" }), `eye.${photo}`).toBe(false);
+    }
+  });
+
   it("/perception/detections는 미니맵 물체 모양만 받는다(사진 없음)", () => {
     const seen = { observed_ms: 1, frame_id: "e1", frame: { width: 640, height: 360 }, shapes: [{ label: "cup", score: 0.8, mask }] };
     expect(ok("/perception/detections", seen)).toBe(true);

@@ -5,7 +5,7 @@
 import { z } from "zod";
 import type { DeviceState } from "../contract/devices.js";
 import type { SeenEvent } from "../contract/events.js";
-import type { SceneInput, VlmMissing, WorldChange, WorldChangeKind, WorldChangesMsg, WorldCloserMsg, WorldInput, WorldStateMsg, WorldView } from "../contract/world.js";
+import type { SceneInput, VlmMissing, WorldChange, WorldChangeKind, WorldChangesMsg, WorldCloserMsg, WorldInput, WorldStateMsg, WorldView, YoloMissing } from "../contract/world.js";
 import { CLASSES, SCENE_STATES, type DetLabel } from "../world/vocab.js";
 
 export const NODES = ["phone", "perception", "world", "brain", "act", "devices", "recorder"] as const;
@@ -40,21 +40,39 @@ const id = z.string().min(1);
 const rev = z.number().int().nonnegative();
 const scene = z.strictObject({ scene: z.string(), observations: z.array(z.strictObject({ object_id: z.string(), state: z.enum(SCENE_STATES) })), summary: z.string() });
 const VLM_MISSING = ["cap", "timeout", "format", "error", "stale"] as const satisfies readonly VlmMissing[];
-/** /perception/scene: VLM 답 갈래 다섯(집 상태 입력의 주인). */
+const YOLO_MISSING = ["cap", "error", "stale"] as const satisfies readonly YoloMissing[];
+const label = z.custom<DetLabel>((v) => typeof v === "string" && Object.hasOwn(CLASSES, v) && (CLASSES as Record<string, { role: string }>)[v]!.role !== "scene");
+const box = z.tuple([at, at, at, at]);
+const mask = z.strictObject({ at: box, cols: z.number().int().nonnegative(), rows: z.number().int().nonnegative(), bits: z.string().regex(B64) });
+// YOLO 임시 갈래의 모양(VLM 전용으로 바뀔 자리). 모든 칸이 strict라 사진 바이트 칸(jpeg·jpeg_b64·sha256)은 어느 자리에서든 거절된다.
+const detection = { label, score: z.number(), box, cls: z.number().int(), mask, foot: z.tuple([at, at]) };
+const camera = z.strictObject({ origin: z.tuple([at, at, at]), orientation: z.tuple([at, at, at, at]), theta: at, projection: z.array(at) });
+const eyePose = z.strictObject({ position: z.tuple([at, at]), height_m: at, yaw_deg: at, pitch_deg: at });
+const frameMeta = z.strictObject({
+  id, capturedAtMs: at, latestAtMs: at, width: z.number().int().positive(), height: z.number().int().positive(), eye: eyePose.nullable(), view: camera.nullable(),
+  crop: box.optional(), vlm: z.boolean().optional(),
+});
+const pose = z.strictObject({ score: z.number(), box, keypoints: z.array(z.tuple([at, at, at])) });
+const closerPass = z.strictObject({
+  frameId: id, capturedAtMs: at, view: camera, width: z.number().int().positive(), height: z.number().int().positive(), dets: z.array(z.strictObject({ ...detection, edge: z.boolean() })),
+});
+/** /perception/scene: VLM 답 갈래 다섯(집 상태 입력의 주인)과 YOLO 임시 갈래 넷(VLM 전용으로 바뀔 자리, 합친 뒤에는 쓰러짐만 남는다). */
 const sceneInput = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("scene"), frame_id: id, observed_ms: at, scene }),
   z.strictObject({ kind: z.literal("missing"), frame_id: id, observed_ms: at, missing: z.enum(VLM_MISSING) }),
   z.strictObject({ kind: z.literal("closer_scene"), look: id, frame_id: id, observed_ms: at, scene }),
   z.strictObject({ kind: z.literal("closer_end"), look: id }),
   z.strictObject({ kind: z.literal("top"), object_id: id, frame_id: id, observed_ms: at, value: z.enum(["empty", "has_contents"]) }),
+  z.strictObject({ kind: z.literal("eye"), eye: eyePose.nullable(), at_ms: at }),
+  z.strictObject({ kind: z.literal("frame"), frame: frameMeta, dets: z.array(z.strictObject(detection)), poses: z.array(pose).optional() }),
+  z.strictObject({ kind: z.literal("yolo_missing"), frame_id: id, observed_ms: at, yolo: z.enum(YOLO_MISSING), vlm: z.enum(VLM_MISSING).optional() }),
+  z.strictObject({ kind: z.literal("closer_merge"), look: id, passes: z.array(closerPass), from: id }),
 ]);
-const label = z.custom<DetLabel>((v) => typeof v === "string" && Object.hasOwn(CLASSES, v) && (CLASSES as Record<string, { role: string }>)[v]!.role !== "scene");
 /** /perception/detections: 대시보드 미니맵 물체 모양(표시용, 집 상태 노드는 받지 않는다). */
 const seen = z.strictObject({
   observed_ms: at, frame_id: id, frame: z.strictObject({ width: z.number().int().positive(), height: z.number().int().positive() }),
   shapes: z.array(z.strictObject({
-    label, score: z.number(),
-    mask: z.strictObject({ at: z.tuple([at, at, at, at]), cols: z.number().int().nonnegative(), rows: z.number().int().nonnegative(), bits: z.string().regex(B64) }),
+    label, score: z.number(), mask,
   })),
 });
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -88,11 +106,13 @@ const deviceChange = z.strictObject({
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
 type Assert<T extends true> = T;
 type Flat<T> = { [K in keyof T]: T[K] };
+/** 서로 넣을 수 있는가(양쪽으로). 교차 타입(감지 & edge)·Omit 타입처럼 같은 모양을 다르게 적은 계약에 쓴다. */
+type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 /** 실제 모양으로 바꾼 토픽 몸이 계약 타입과 같다. 미니맵 몸은 SeenEvent에서 사건 칸을 빼고 근거 시각(촬영 시각)을 단 것이다. */
 export type TopicBodiesSame = [
   Assert<Equal<(typeof VIEW_KEYS)[number], keyof WorldView>>,
   Assert<Equal<(typeof DEVICE_KEYS)[number], keyof DeviceState>>,
-  Assert<Equal<z.infer<typeof sceneInput>, SceneInput>>,
+  Assert<Same<z.infer<typeof sceneInput>, SceneInput>>,
   Assert<Equal<z.infer<typeof seen>, Flat<Omit<SeenEvent, "type" | "at_ms" | "captured_at_ms"> & { observed_ms: number }>>>,
   Assert<Equal<z.infer<typeof worldState>, WorldStateMsg>>,
   Assert<Equal<z.infer<typeof worldChanges>, WorldChangesMsg>>,
