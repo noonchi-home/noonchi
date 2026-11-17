@@ -70,6 +70,18 @@ describe("낡은 메시지", () => {
     expect(f.check(e("/world/state", { rev: 4, view: {} }, { stamp: 9999, seq: 9 }))).toBe(false);
     expect(f.check(e("/world/state", { rev: 6, view: {} }))).toBe(true);
   });
+
+  it("같은 근거 시각에서 A 인스턴스 → B 인스턴스를 처리한 뒤 A의 이미 처리한 메시지가 다시 와도 버린다(인스턴스마다 처리한 seq를 기억)", () => {
+    const f = new Freshness(() => EPOCH);
+    const at = (inst: string, seq: number) => e("/perception/analysis", { frame_id: "f1", observed_ms: 1000 }, { inst, seq }, "f1");
+    f.commit(at("A", 5));
+    expect(f.check(at("B", 1))).toBe(true);
+    f.commit(at("B", 1));
+    expect(f.check(at("A", 5))).toBe(false);
+    expect(f.check(at("A", 4))).toBe(false);
+    expect(f.check(at("B", 1))).toBe(false);
+    expect(f.check(at("A", 6))).toBe(true);
+  });
 });
 
 describe("요청 id", () => {
