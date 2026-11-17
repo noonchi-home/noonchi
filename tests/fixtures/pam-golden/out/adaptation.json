@@ -1,0 +1,220 @@
+{
+  "predictor_fsm": {
+    "applied": [
+      {
+        "old": "- etc. –- any helpful pick-and-place action that is grounded in observed behavior.",
+        "new": "- operating home appliances the person habitually operates by hand, such as turning on the living-room air conditioner when they sit down to watch TV.\n- etc. –- any helpful action that is grounded in observed behavior.",
+        "reason": "목표에 손으로 다루던 가전을 켜 주는 일(습관)을 더하고, 집기·놓기만이라는 말을 뺀다.",
+        "occurrences": 1
+      },
+      {
+        "old": "- The setting is a personal desk where a single person performs everyday activities.",
+        "new": "- The setting is a home with a dining table, a kitchen sink and a dishwasher, where a single person lives.",
+        "reason": "책상을 집으로 바꾼다.",
+        "occurrences": 1
+      },
+      {
+        "old": "- The designated storage area: the corner of the desk, where items such as cereal,\nbowls, milk, drinks, and water are normally kept.",
+        "new": "- The designated storage area: the kitchen sink, where used cups, bottles and bowls are put. Drinks such as water and cola are kept in the fridge.",
+        "reason": "보관 자리를 싱크대로 바꾸고, 물·콜라가 냉장고에 있다고 알린다.",
+        "occurrences": 1
+      },
+      {
+        "old": "- A sequence of camera frames, ordered from oldest to newest and sampled at 1 fps (\nup to {window} frames), together with the corresponding wall-clock time of the final\n frame. Each frame is the horizontal concatenation of two back-facing cameras (\nleft_back on the left, right_back on the right).",
+        "new": "- A time-stamped observation log of the home, ordered from oldest to newest, made by an object detector and a vision-language model from the robot's camera, followed by long-running facts and the wall-clock time of the final observation.",
+        "reason": "사진 입력 설명을 관찰 텍스트 입력 설명으로 바꾼다.",
+        "occurrences": 1
+      },
+      {
+        "old": "- Given the frames and the memory,",
+        "new": "- Given the observation log and the memory,",
+        "reason": "입력 이름만 바꾼다.",
+        "occurrences": 1
+      },
+      {
+        "old": "based on the final\n (current) frame.",
+        "new": "based on the latest observations.",
+        "reason": "입력 이름만 바꾼다.",
+        "occurrences": 1
+      },
+      {
+        "old": "- Treat the memory as a REFERENCE, not as a strict matcher. Do not over-fixate on\nexact trigger wording or current state: if a memory action is semantically\nappropriate for the current scene, you may fire it even when the trigger phrasing or\n its state assignment doesn't match the scene verbatim.",
+        "new": "- Fire a memory rule only when EVERY condition in its trigger holds in the latest observations: who is present or absent (a rule whose trigger says the user left does not fire while the person is visible), what the person is doing, and the state of the object (empty, has contents, contents unknown). A value marked (짐작) was guessed from a single frame and is not yet confirmed. If any condition of a rule is missing, unknown or contradicted, do not fire that rule; if no rule fully matches, respond with `task_index = -1`.",
+        "reason": "기억 규칙은 조건이 모두 맞을 때만 쓴다. 논문의 「기억은 참고일 뿐, 맞지 않아도 써도 된다」는 사람이 앉아 있는데 「자리를 비웠고」 규칙으로 치우게 했다(2026-11-16 밤 판정 F·G·E).",
+        "occurrences": 1
+      }
+    ],
+    "adapted_template_sha256": "d799675863e2139e953bbae474952703ed194d3ee386d8bb7c6e7e58a1955c0e"
+  },
+  "predictor_list": {
+    "applied": [
+      {
+        "old": "- etc. –- any helpful pick-and-place action that is grounded in observed behavior.",
+        "new": "- operating home appliances the person habitually operates by hand, such as turning on the living-room air conditioner when they sit down to watch TV.\n- etc. –- any helpful action that is grounded in observed behavior.",
+        "reason": "목표에 손으로 다루던 가전을 켜 주는 일(습관)을 더하고, 집기·놓기만이라는 말을 뺀다.",
+        "occurrences": 1
+      },
+      {
+        "old": "- The setting is a personal desk where a single person performs everyday activities.",
+        "new": "- The setting is a home with a dining table, a kitchen sink and a dishwasher, where a single person lives.",
+        "reason": "책상을 집으로 바꾼다.",
+        "occurrences": 1
+      },
+      {
+        "old": "- The designated storage area: the corner of the desk, where items such as cereal,\nbowls, milk, drinks, and water are normally kept.",
+        "new": "- The designated storage area: the kitchen sink, where used cups, bottles and bowls are put. Drinks such as water and cola are kept in the fridge.",
+        "reason": "보관 자리를 싱크대로 바꾸고, 물·콜라가 냉장고에 있다고 알린다.",
+        "occurrences": 1
+      },
+      {
+        "old": "- A sequence of camera frames, ordered from oldest to newest and sampled at 1 fps (\nup to {window} frames), together with the corresponding wall-clock time of the final\n frame. Each frame is the horizontal concatenation of two back-facing cameras (\nleft_back on the left, right_back on the right).",
+        "new": "- A time-stamped observation log of the home, ordered from oldest to newest, made by an object detector and a vision-language model from the robot's camera, followed by long-running facts and the wall-clock time of the final observation.",
+        "reason": "사진 입력 설명을 관찰 텍스트 입력 설명으로 바꾼다.",
+        "occurrences": 1
+      },
+      {
+        "old": "- Given the frames and the memory,",
+        "new": "- Given the observation log and the memory,",
+        "reason": "입력 이름만 바꾼다.",
+        "occurrences": 1
+      },
+      {
+        "old": "based on the final\n (current) frame.",
+        "new": "based on the latest observations.",
+        "reason": "입력 이름만 바꾼다.",
+        "occurrences": 1
+      },
+      {
+        "old": "- Treat the memory as a REFERENCE, not as a strict matcher. Do not over-fixate on\nexact trigger wording: if a memory action is semantically appropriate for the\ncurrent scene, you may fire it even when the trigger phrasing doesn't match the\nscene verbatim.",
+        "new": "- Fire a memory rule only when EVERY condition in its trigger holds in the latest observations: who is present or absent (a rule whose trigger says the user left does not fire while the person is visible), what the person is doing, and the state of the object (empty, has contents, contents unknown). A value marked (짐작) was guessed from a single frame and is not yet confirmed. If any condition of a rule is missing, unknown or contradicted, do not fire that rule; if no rule fully matches, respond with `task_index = -1`.",
+        "reason": "기억 규칙은 조건이 모두 맞을 때만 쓴다. 논문의 「기억은 참고일 뿐, 맞지 않아도 써도 된다」는 사람이 앉아 있는데 「자리를 비웠고」 규칙으로 치우게 했다(2026-11-16 밤 판정 F·G·E).",
+        "occurrences": 1
+      }
+    ],
+    "adapted_template_sha256": "7b25accf6ad0e8500125051775b95bab2377464af48483a4ff5c77dba8836dd3"
+  },
+  "reflector_fsm_update": {
+    "applied": [
+      {
+        "old": "- etc. –- any helpful pick-and-place action that is grounded in observed behavior.",
+        "new": "- operating home appliances the person habitually operates by hand, such as turning on the living-room air conditioner when they sit down to watch TV.\n- etc. –- any helpful action that is grounded in observed behavior.",
+        "reason": "목표에 손으로 다루던 가전을 켜 주는 일(습관)을 더하고, 집기·놓기만이라는 말을 뺀다.",
+        "occurrences": 1
+      },
+      {
+        "old": "- First, explicitly RE-STATE the pick-and-place actions that the human performed in\nthis video and summary. Then, for EACH of those human actions, think concretely\nabout HOW the robot could have taken that action over on the person's behalf. Your\nrules should be built around these take-over opportunities –- do NOT invent rules\nfor objects or actions the human did not interact with.",
+        "new": "- First, explicitly RE-STATE the actions that the human performed in\nthis video and summary: pick-and-place actions and appliance operations (turning an appliance on or off by hand). Then, for EACH of those human actions, think concretely\nabout HOW the robot could have taken that action over on the person's behalf, by guiding the person through the phone or by operating the appliance. Your\nrules should be built around these take-over opportunities –- do NOT invent rules\nfor objects, appliances or actions the human did not interact with.",
+        "reason": "먼저 다시 적을 행동에 손으로 한 가전 조작을 넣는다.",
+        "occurrences": 1
+      },
+      {
+        "old": "- Each rule's action MUST literally mirror an action the human performed in this\nvideo and summary. Do NOT invent hypothetical actions.",
+        "new": "- Each rule's action MUST be one task name whose effect mirrors an action the human performed in this\nvideo and summary. Do NOT invent hypothetical actions.",
+        "reason": "규칙의 행동은 우리 행동 이름 하나다.",
+        "occurrences": 1
+      },
+      {
+        "old": "- Default to ADDING a new rule whenever the summary mentions a human pick-and-place\naction that the robot could plausibly take over and that is not yet covered by the\ncurrent memory. Err on the side of MORE rules, not fewer.",
+        "new": "- Default to ADDING a new rule whenever the summary mentions a human pick-and-place\naction or appliance operation that the robot could plausibly take over and that is not yet covered by the\ncurrent memory. Err on the side of MORE rules, not fewer.",
+        "reason": "규칙을 더할 때 가전 조작도 본다.",
+        "occurrences": 1
+      },
+      {
+        "old": "- action: a NATURAL LANGUAGE description of how the robot should help, written in\nthe canonical form `Pick up <object> and place it <location>.` Valid `<location>`\nvalues are exactly one of: `next to the person`, `in the designated storage area`, `\nin the trash can`.",
+        "new": "- action: exactly one of these task names, copied character for character: 컵 치우기, 사용자에게 물어보기, 세탁물 건조기로 옮기기, 에어컨 켜기, 컵 그대로 두기, 컵에 물 채워 주기, 컵에 콜라 따라 주기, 라면 끓이기 알려 주기, 전자레인지로 데우기 알려 주기. Write state descriptions and triggers in Korean.\n- Coaching tasks (라면 끓이기 알려 주기, 전자레인지로 데우기 알려 주기) fire only when the person asks how to do it or says they are stuck. Never add, move, rewrite or remove rules for them.",
+        "reason": "행동 형식을 우리 행동 이름 목록으로 바꾸고, 코치 행동 규칙은 반성이 손대지 않게 한다.",
+        "occurrences": 1
+      },
+      {
+        "old": "- The setting is a personal desk where a single person performs everyday activities.",
+        "new": "- The setting is a home with a dining table, a kitchen sink and a dishwasher, where a single person lives.",
+        "reason": "책상을 집으로 바꾼다.",
+        "occurrences": 1
+      },
+      {
+        "old": "- The designated storage area: the corner of the desk, where items such as cereal,\nbowls, milk, drinks, and water are normally kept.",
+        "new": "- The designated storage area: the kitchen sink, where used cups, bottles and bowls are put. Drinks such as water and cola are kept in the fridge.",
+        "reason": "보관 자리를 싱크대로 바꾸고, 물·콜라가 냉장고에 있다고 알린다.",
+        "occurrences": 1
+      },
+      {
+        "old": "- Today's video: the person's activities recorded from two back-facing cameras\nconcatenated side by side (left_back (*@\\textbar@*) right_back)",
+        "new": "- Today's observations: a time-stamped log of the person's activities made by an object detector and a vision-language model from the robot's camera",
+        "reason": "반성 입력의 영상 설명을 관찰 텍스트 설명으로 바꾼다.",
+        "occurrences": 1
+      },
+      {
+        "old": "today's video",
+        "new": "today's observations",
+        "reason": "입력 이름만 바꾼다.",
+        "occurrences": 2
+      },
+      {
+        "old": "this video and summary",
+        "new": "these observations and summary",
+        "reason": "입력 이름만 바꾼다.",
+        "occurrences": 1
+      },
+      {
+        "old": "Use the video, summary,",
+        "new": "Use the observations, summary,",
+        "reason": "입력 이름만 바꾼다.",
+        "occurrences": 1
+      }
+    ],
+    "adapted_template_sha256": "acb5f7e98342766e8be1b5e06a2efaba77c30087f679b87807f0b5e6526a0a96"
+  },
+  "reflector_list_update": {
+    "applied": [
+      {
+        "old": "- etc. –- any helpful pick-and-place action that is grounded in observed behavior.",
+        "new": "- operating home appliances the person habitually operates by hand, such as turning on the living-room air conditioner when they sit down to watch TV.\n- etc. –- any helpful action that is grounded in observed behavior.",
+        "reason": "목표에 손으로 다루던 가전을 켜 주는 일(습관)을 더하고, 집기·놓기만이라는 말을 뺀다.",
+        "occurrences": 1
+      },
+      {
+        "old": "- action: a NATURAL LANGUAGE description of how the robot should help, written in\nthe canonical form `Pick up <object> and place it <location>.` Valid `<location>`\nvalues are exactly one of: `next to the person`, `in the designated storage area`, `\nin the trash can`.",
+        "new": "- action: exactly one of these task names, copied character for character: 컵 치우기, 사용자에게 물어보기, 세탁물 건조기로 옮기기, 에어컨 켜기, 컵 그대로 두기, 컵에 물 채워 주기, 컵에 콜라 따라 주기, 라면 끓이기 알려 주기, 전자레인지로 데우기 알려 주기. Write state descriptions and triggers in Korean.\n- Coaching tasks (라면 끓이기 알려 주기, 전자레인지로 데우기 알려 주기) fire only when the person asks how to do it or says they are stuck. Never add, move, rewrite or remove rules for them.",
+        "reason": "행동 형식을 우리 행동 이름 목록으로 바꾸고, 코치 행동 규칙은 반성이 손대지 않게 한다.",
+        "occurrences": 1
+      },
+      {
+        "old": "- The setting is a personal desk where a single person performs everyday activities.",
+        "new": "- The setting is a home with a dining table, a kitchen sink and a dishwasher, where a single person lives.",
+        "reason": "책상을 집으로 바꾼다.",
+        "occurrences": 1
+      },
+      {
+        "old": "- The designated storage area: the corner of the desk, where items such as cereal,\nbowls, milk, drinks, and water are normally kept.",
+        "new": "- The designated storage area: the kitchen sink, where used cups, bottles and bowls are put. Drinks such as water and cola are kept in the fridge.",
+        "reason": "보관 자리를 싱크대로 바꾸고, 물·콜라가 냉장고에 있다고 알린다.",
+        "occurrences": 1
+      },
+      {
+        "old": "- Today's video: the person's activities recorded from two back-facing cameras\nconcatenated side by side (left_back (*@\\textbar@*) right_back)",
+        "new": "- Today's observations: a time-stamped log of the person's activities made by an object detector and a vision-language model from the robot's camera",
+        "reason": "반성 입력의 영상 설명을 관찰 텍스트 설명으로 바꾼다.",
+        "occurrences": 1
+      },
+      {
+        "old": "today's video",
+        "new": "today's observations",
+        "reason": "입력 이름만 바꾼다.",
+        "occurrences": 3
+      },
+      {
+        "old": "this video and summary",
+        "new": "these observations and summary",
+        "reason": "입력 이름만 바꾼다.",
+        "occurrences": 2
+      },
+      {
+        "old": "Use the video, summary,",
+        "new": "Use the observations, summary,",
+        "reason": "입력 이름만 바꾼다.",
+        "occurrences": 1
+      }
+    ],
+    "adapted_template_sha256": "02422772f6abf3831d9b38948f8ccbe3bf07def675a7c32c90d4407480a44c36"
+  }
+}

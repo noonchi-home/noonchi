@@ -1,0 +1,460 @@
+[
+  {
+    "id": "valid-0",
+    "result": {
+      "status": "valid",
+      "raw_response": "{\"observation\":\"o\",\"reasoning\":\"r\",\"task_index\":0}",
+      "prediction": {
+        "observation": "o",
+        "reasoning": "r",
+        "task_index": 0
+      },
+      "selected_action": "\ucef5 \uce58\uc6b0\uae30",
+      "errors": []
+    }
+  },
+  {
+    "id": "valid-wait",
+    "result": {
+      "status": "valid",
+      "raw_response": "{\"observation\":\"o\",\"reasoning\":\"r\",\"task_index\":-1}",
+      "prediction": {
+        "observation": "o",
+        "reasoning": "r",
+        "task_index": -1
+      },
+      "selected_action": null,
+      "errors": []
+    }
+  },
+  {
+    "id": "valid-1",
+    "result": {
+      "status": "valid",
+      "raw_response": "{\"observation\":\"o\",\"reasoning\":\"r\",\"task_index\":1}",
+      "prediction": {
+        "observation": "o",
+        "reasoning": "r",
+        "task_index": 1
+      },
+      "selected_action": "\uc0ac\uc6a9\uc790\uc5d0\uac8c \ubb3c\uc5b4\ubcf4\uae30",
+      "errors": []
+    }
+  },
+  {
+    "id": "minus-zero",
+    "result": {
+      "status": "valid",
+      "raw_response": "{\"observation\":\"o\",\"reasoning\":\"r\",\"task_index\":-0}",
+      "prediction": {
+        "observation": "o",
+        "reasoning": "r",
+        "task_index": 0
+      },
+      "selected_action": "\ucef5 \uce58\uc6b0\uae30",
+      "errors": []
+    }
+  },
+  {
+    "id": "spaces",
+    "result": {
+      "status": "valid",
+      "raw_response": " \n{\"observation\":\"o\",\"reasoning\":\"r\",\"task_index\":0}\t\r\n",
+      "prediction": {
+        "observation": "o",
+        "reasoning": "r",
+        "task_index": 0
+      },
+      "selected_action": "\ucef5 \uce58\uc6b0\uae30",
+      "errors": []
+    }
+  },
+  {
+    "id": "fenced",
+    "result": {
+      "status": "invalid",
+      "raw_response": "```json\n{\"observation\":\"o\",\"reasoning\":\"r\",\"task_index\":0}\n```",
+      "prediction": null,
+      "selected_action": null,
+      "errors": [
+        "<json>"
+      ]
+    }
+  },
+  {
+    "id": "prose",
+    "result": {
+      "status": "invalid",
+      "raw_response": "\ub2f5: {\"observation\":\"o\",\"reasoning\":\"r\",\"task_index\":0}",
+      "prediction": null,
+      "selected_action": null,
+      "errors": [
+        "<json>"
+      ]
+    }
+  },
+  {
+    "id": "trailing",
+    "result": {
+      "status": "invalid",
+      "raw_response": "{\"observation\":\"o\",\"reasoning\":\"r\",\"task_index\":0} x",
+      "prediction": null,
+      "selected_action": null,
+      "errors": [
+        "<json>"
+      ]
+    }
+  },
+  {
+    "id": "empty",
+    "result": {
+      "status": "invalid",
+      "raw_response": "",
+      "prediction": null,
+      "selected_action": null,
+      "errors": [
+        "<json>"
+      ]
+    }
+  },
+  {
+    "id": "bom",
+    "result": {
+      "status": "invalid",
+      "raw_response": "\ufeff{\"observation\":\"o\",\"reasoning\":\"r\",\"task_index\":0}",
+      "prediction": null,
+      "selected_action": null,
+      "errors": [
+        "<json>"
+      ]
+    }
+  },
+  {
+    "id": "dup-top",
+    "result": {
+      "status": "invalid",
+      "raw_response": "{\"observation\":\"o\",\"reasoning\":\"r\",\"task_index\":0,\"task_index\":-1}",
+      "prediction": null,
+      "selected_action": null,
+      "errors": [
+        "response JSON: duplicate key 'task_index'"
+      ]
+    }
+  },
+  {
+    "id": "dup-nested-first",
+    "result": {
+      "status": "invalid",
+      "raw_response": "{\"observation\":\"o\",\"observation\":{\"x\":1,\"x\":2},\"reasoning\":\"r\",\"task_index\":0}",
+      "prediction": null,
+      "selected_action": null,
+      "errors": [
+        "response JSON: duplicate key 'x'"
+      ]
+    }
+  },
+  {
+    "id": "dup-quote",
+    "result": {
+      "status": "invalid",
+      "raw_response": "{\"it's\":1,\"it's\":2}",
+      "prediction": null,
+      "selected_action": null,
+      "errors": [
+        "response JSON: duplicate key \"it's\""
+      ]
+    }
+  },
+  {
+    "id": "dup-korean",
+    "result": {
+      "status": "invalid",
+      "raw_response": "{\"\uad00\ucc30\":1,\"\uad00\ucc30\":2}",
+      "prediction": null,
+      "selected_action": null,
+      "errors": [
+        "response JSON: duplicate key '\uad00\ucc30'"
+      ]
+    }
+  },
+  {
+    "id": "nan",
+    "result": {
+      "status": "invalid",
+      "raw_response": "{\"observation\":\"o\",\"reasoning\":\"r\",\"task_index\":NaN}",
+      "prediction": null,
+      "selected_action": null,
+      "errors": [
+        "response JSON: nonstandard numeric constant 'NaN'"
+      ]
+    }
+  },
+  {
+    "id": "inf",
+    "result": {
+      "status": "invalid",
+      "raw_response": "{\"observation\":\"o\",\"reasoning\":\"r\",\"task_index\":Infinity}",
+      "prediction": null,
+      "selected_action": null,
+      "errors": [
+        "response JSON: nonstandard numeric constant 'Infinity'"
+      ]
+    }
+  },
+  {
+    "id": "neg-inf",
+    "result": {
+      "status": "invalid",
+      "raw_response": "{\"observation\":\"o\",\"reasoning\":\"r\",\"task_index\":-Infinity}",
+      "prediction": null,
+      "selected_action": null,
+      "errors": [
+        "response JSON: nonstandard numeric constant '-Infinity'"
+      ]
+    }
+  },
+  {
+    "id": "nan-then-syntax",
+    "result": {
+      "status": "invalid",
+      "raw_response": "{\"task_index\":NaN,",
+      "prediction": null,
+      "selected_action": null,
+      "errors": [
+        "response JSON: nonstandard numeric constant 'NaN'"
+      ]
+    }
+  },
+  {
+    "id": "float",
+    "result": {
+      "status": "invalid",
+      "raw_response": "{\"observation\":\"o\",\"reasoning\":\"r\",\"task_index\":1.0}",
+      "prediction": null,
+      "selected_action": null,
+      "errors": [
+        "prediction.task_index: expected an integer from -1 to 1"
+      ]
+    }
+  },
+  {
+    "id": "exp",
+    "result": {
+      "status": "invalid",
+      "raw_response": "{\"observation\":\"o\",\"reasoning\":\"r\",\"task_index\":1e0}",
+      "prediction": null,
+      "selected_action": null,
+      "errors": [
+        "prediction.task_index: expected an integer from -1 to 1"
+      ]
+    }
+  },
+  {
+    "id": "bool",
+    "result": {
+      "status": "invalid",
+      "raw_response": "{\"observation\":\"o\",\"reasoning\":\"r\",\"task_index\":true}",
+      "prediction": null,
+      "selected_action": null,
+      "errors": [
+        "prediction.task_index: expected an integer from -1 to 1"
+      ]
+    }
+  },
+  {
+    "id": "string-index",
+    "result": {
+      "status": "invalid",
+      "raw_response": "{\"observation\":\"o\",\"reasoning\":\"r\",\"task_index\":\"0\"}",
+      "prediction": null,
+      "selected_action": null,
+      "errors": [
+        "prediction.task_index: expected an integer from -1 to 1"
+      ]
+    }
+  },
+  {
+    "id": "out",
+    "result": {
+      "status": "invalid",
+      "raw_response": "{\"observation\":\"o\",\"reasoning\":\"r\",\"task_index\":2}",
+      "prediction": null,
+      "selected_action": null,
+      "errors": [
+        "prediction.task_index: expected an integer from -1 to 1"
+      ]
+    }
+  },
+  {
+    "id": "below",
+    "result": {
+      "status": "invalid",
+      "raw_response": "{\"observation\":\"o\",\"reasoning\":\"r\",\"task_index\":-2}",
+      "prediction": null,
+      "selected_action": null,
+      "errors": [
+        "prediction.task_index: expected an integer from -1 to 1"
+      ]
+    }
+  },
+  {
+    "id": "huge",
+    "result": {
+      "status": "invalid",
+      "raw_response": "{\"observation\":\"o\",\"reasoning\":\"r\",\"task_index\":1e400}",
+      "prediction": null,
+      "selected_action": null,
+      "errors": [
+        "prediction.task_index: expected an integer from -1 to 1"
+      ]
+    }
+  },
+  {
+    "id": "extra",
+    "result": {
+      "status": "invalid",
+      "raw_response": "{\"observation\":\"o\",\"reasoning\":\"r\",\"task_index\":0,\"x\":1}",
+      "prediction": null,
+      "selected_action": null,
+      "errors": [
+        "prediction: incorrect fields (missing=[], extra=[\"'x'\"])"
+      ]
+    }
+  },
+  {
+    "id": "missing",
+    "result": {
+      "status": "invalid",
+      "raw_response": "{\"observation\":\"o\",\"reasoning\":\"r\"}",
+      "prediction": null,
+      "selected_action": null,
+      "errors": [
+        "prediction: incorrect fields (missing=['task_index'], extra=[])"
+      ]
+    }
+  },
+  {
+    "id": "proto",
+    "result": {
+      "status": "invalid",
+      "raw_response": "{\"observation\":\"o\",\"reasoning\":\"r\",\"task_index\":0,\"__proto__\":1}",
+      "prediction": null,
+      "selected_action": null,
+      "errors": [
+        "prediction: incorrect fields (missing=[], extra=[\"'__proto__'\"])"
+      ]
+    }
+  },
+  {
+    "id": "blank",
+    "result": {
+      "status": "invalid",
+      "raw_response": "{\"observation\":\" \",\"reasoning\":\"r\",\"task_index\":0}",
+      "prediction": null,
+      "selected_action": null,
+      "errors": [
+        "prediction.observation: expected a nonempty string"
+      ]
+    }
+  },
+  {
+    "id": "ideo-space",
+    "result": {
+      "status": "invalid",
+      "raw_response": "{\"observation\":\"\\u3000\",\"reasoning\":\"r\",\"task_index\":0}",
+      "prediction": null,
+      "selected_action": null,
+      "errors": [
+        "prediction.observation: expected a nonempty string"
+      ]
+    }
+  },
+  {
+    "id": "unit-sep",
+    "result": {
+      "status": "invalid",
+      "raw_response": "{\"observation\":\"\\u001f\",\"reasoning\":\"r\",\"task_index\":0}",
+      "prediction": null,
+      "selected_action": null,
+      "errors": [
+        "prediction.observation: expected a nonempty string"
+      ]
+    }
+  },
+  {
+    "id": "bom-text",
+    "result": {
+      "status": "valid",
+      "raw_response": "{\"observation\":\"\\ufeff\",\"reasoning\":\"r\",\"task_index\":0}",
+      "prediction": {
+        "observation": "\ufeff",
+        "reasoning": "r",
+        "task_index": 0
+      },
+      "selected_action": "\ucef5 \uce58\uc6b0\uae30",
+      "errors": []
+    }
+  },
+  {
+    "id": "array",
+    "result": {
+      "status": "invalid",
+      "raw_response": "[]",
+      "prediction": null,
+      "selected_action": null,
+      "errors": [
+        "prediction: expected an object"
+      ]
+    }
+  },
+  {
+    "id": "null",
+    "result": {
+      "status": "invalid",
+      "raw_response": "null",
+      "prediction": null,
+      "selected_action": null,
+      "errors": [
+        "prediction: expected an object"
+      ]
+    }
+  },
+  {
+    "id": "number",
+    "result": {
+      "status": "invalid",
+      "raw_response": "1.5",
+      "prediction": null,
+      "selected_action": null,
+      "errors": [
+        "prediction: expected an object"
+      ]
+    }
+  },
+  {
+    "id": "control",
+    "result": {
+      "status": "invalid",
+      "raw_response": "{\"observation\":\"a\nb\",\"reasoning\":\"r\",\"task_index\":0}",
+      "prediction": null,
+      "selected_action": null,
+      "errors": [
+        "<json>"
+      ]
+    }
+  },
+  {
+    "id": "surrogate",
+    "result": {
+      "status": "valid",
+      "raw_response": "{\"observation\":\"\\ud800\",\"reasoning\":\"r\",\"task_index\":0}",
+      "prediction": {
+        "observation": "\ud800",
+        "reasoning": "r",
+        "task_index": 0
+      },
+      "selected_action": "\ucef5 \uce58\uc6b0\uae30",
+      "errors": []
+    }
+  }
+]

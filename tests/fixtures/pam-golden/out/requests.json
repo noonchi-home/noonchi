@@ -1,0 +1,206 @@
+[
+  {
+    "id": "ok",
+    "status": 200,
+    "answer": "valid",
+    "sent": 1
+  },
+  {
+    "id": "frames",
+    "status": 400,
+    "answer": null,
+    "sent": 0
+  },
+  {
+    "id": "image-url",
+    "status": 400,
+    "answer": null,
+    "sent": 0
+  },
+  {
+    "id": "no-tz",
+    "status": 400,
+    "answer": null,
+    "sent": 0
+  },
+  {
+    "id": "old-contract",
+    "status": 400,
+    "answer": null,
+    "sent": 0
+  },
+  {
+    "id": "bad-time",
+    "status": 400,
+    "answer": null,
+    "sent": 0
+  },
+  {
+    "id": "empty-text",
+    "status": 400,
+    "answer": null,
+    "sent": 0
+  },
+  {
+    "id": "long-text",
+    "status": 400,
+    "answer": null,
+    "sent": 0
+  },
+  {
+    "id": "no-tasks",
+    "status": 400,
+    "answer": null,
+    "sent": 0
+  },
+  {
+    "id": "blank-task",
+    "status": 400,
+    "answer": null,
+    "sent": 0
+  },
+  {
+    "id": "number-task",
+    "status": 400,
+    "answer": null,
+    "sent": 0
+  },
+  {
+    "id": "bad-memory",
+    "status": 400,
+    "answer": null,
+    "sent": 0
+  },
+  {
+    "id": "kind-none",
+    "status": 400,
+    "answer": null,
+    "sent": 0
+  },
+  {
+    "id": "memory-array",
+    "status": 400,
+    "answer": null,
+    "sent": 0
+  },
+  {
+    "id": "over-context",
+    "status": 413,
+    "answer": null,
+    "sent": 0
+  },
+  {
+    "id": "fenced-answer",
+    "status": 200,
+    "answer": "invalid",
+    "sent": 1
+  },
+  {
+    "id": "truncated",
+    "status": 502,
+    "answer": null,
+    "sent": 1
+  },
+  {
+    "id": "no-finish",
+    "status": 200,
+    "answer": "valid",
+    "sent": 1
+  },
+  {
+    "id": "http-500",
+    "status": 502,
+    "answer": null,
+    "sent": 1
+  },
+  {
+    "id": "http-429",
+    "status": 502,
+    "answer": null,
+    "sent": 1
+  },
+  {
+    "id": "shape",
+    "status": 502,
+    "answer": null,
+    "sent": 1
+  },
+  {
+    "id": "null-content",
+    "status": 502,
+    "answer": null,
+    "sent": 1
+  },
+  {
+    "id": "reflect-ok",
+    "status": 200,
+    "answer": "valid",
+    "sent": 1
+  },
+  {
+    "id": "reflect-null-feedback",
+    "status": 200,
+    "answer": "valid",
+    "sent": 1
+  },
+  {
+    "id": "reflect-no-feedback-key",
+    "status": 200,
+    "answer": "valid",
+    "sent": 1
+  },
+  {
+    "id": "reflect-photos",
+    "status": 400,
+    "answer": null,
+    "sent": 0
+  },
+  {
+    "id": "reflect-long-feedback",
+    "status": 400,
+    "answer": null,
+    "sent": 0
+  },
+  {
+    "id": "reflect-long-obs",
+    "status": 400,
+    "answer": null,
+    "sent": 0
+  },
+  {
+    "id": "reflect-long-summary",
+    "status": 400,
+    "answer": null,
+    "sent": 0
+  },
+  {
+    "id": "reflect-empty-summary",
+    "status": 400,
+    "answer": null,
+    "sent": 0
+  },
+  {
+    "id": "reflect-bad-day",
+    "status": 400,
+    "answer": null,
+    "sent": 0
+  },
+  {
+    "id": "reflect-over-context",
+    "status": 413,
+    "answer": null,
+    "sent": 0
+  },
+  {
+    "id": "reflect-invalid-answer",
+    "status": 200,
+    "answer": "invalid",
+    "sent": 1
+  },
+  {
+    "id": "reflect-wrong-kind-answer",
+    "status": 200,
+    "answer": "invalid",
+    "sent": 1
+  }
+]

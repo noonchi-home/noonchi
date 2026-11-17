@@ -6,3 +6,4 @@ twin/**/*.css text eol=lf
 services/pam/** -text
 services/pam/prompts/paper/*.txt text eol=lf
 models/*.onnx binary
+tests/fixtures/pam-golden/** -text
