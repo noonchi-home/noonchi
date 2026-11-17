@@ -56,9 +56,12 @@ function spy(world: WorldState) {
 /** 정한 토픽의 다음 발행 한 번을 실패시키는 통로(다시 주기는 가상 시계로 돈다). */
 class FlakyBus extends MemoryBus {
   readonly failing = new Set<TopicName>();
+  /** 통로에는 들어갔는데 답만 끊긴 발행(다음 한 번). */
+  readonly lying = new Set<TopicName>();
   override async publish<N extends TopicName>(e: Envelope<N>): Promise<void> {
     if (this.failing.delete(e.topic)) throw new Error(`${e.topic} 발행 실패`);
-    return super.publish(e);
+    await super.publish(e);
+    if (this.lying.delete(e.topic)) throw new Error(`${e.topic} 답 끊김`);
   }
 }
 
@@ -217,6 +220,27 @@ describe("집 상태 노드", () => {
     expect(of(r.got, "/world/changes")).toEqual([]);
     await r.clock.advanceTo(NOW + RETRY_MS, r.flush);
     expect(of(r.got, "/world/changes").map((b) => [b.rev, b.changes.map((c: WorldChange) => c.kind)])).toEqual([[1, ["yolo_missing"]]]);
+  });
+
+  it("앞 rev의 변화 발행이 실패하면 뒤 rev를 먼저 내지 않는다(받는 쪽이 늦게 온 앞 rev를 낡은 것으로 버리지 않게)", async () => {
+    const r = await rig();
+    r.bus.failing.add("/world/changes");
+    await yolo(r, { kind: "yolo_missing", frame_id: "e1", observed_ms: 1000, yolo: "error" });
+    await r.flush();
+    r.bus.failing.add("/world/changes");
+    await r.phone.publish("/phone/heard", { text: "컵 치워 줘", observed_ms: 1500 });
+    await r.flush();
+    await r.clock.advanceTo(NOW + 3 * RETRY_MS, r.flush);
+    expect(of(r.got, "/world/changes").map((b) => [b.rev, b.changes.map((c: WorldChange) => c.kind)])).toEqual([[1, ["yolo_missing"]], [2, ["heard"]]]);
+  });
+
+  it("통로에 들어갔는데 답만 끊긴 출력을 다시 낼 때는 같은 봉투(메시지 id)로 내서 받는 쪽이 한 번만 받는다", async () => {
+    const r = await rig();
+    r.bus.lying.add("/world/changes");
+    await yolo(r, { kind: "yolo_missing", frame_id: "e1", observed_ms: 1000, yolo: "error" });
+    await r.flush();
+    await r.clock.advanceTo(NOW + 2 * RETRY_MS, r.flush);
+    expect(of(r.got, "/world/changes").map((b) => b.rev)).toEqual([1]);
   });
 
   it("VLM 답이 오지 않아 30초 넘은 가까이 보기 후보는 지우기 전에 endCloser로 끝낸다", async () => {

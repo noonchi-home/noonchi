@@ -95,27 +95,37 @@ export async function startWorldNode(o: { bus: Bus; epoch: { boot: string; home:
   const node = new BusNode({ name: "world", bus: o.bus, epoch: o.epoch, clock, log: o.log });
   let rev = 0;
   const inputs = new WorldInputs(world, () => clock.now());
-  /** 아직 다 내지 못한 출력(판본마다 변화, 가까이 보기 답). 발행이 실패하면 남아 다음 발행(같은 메시지 다시 받기·다음 입력·250ms 다시 냄)에 다시 낸다. */
-  const outbox: { rev: number; changes: WorldChange[]; closer?: WorldCloserMsg; sent: { changes: boolean; closer: boolean } }[] = [];
+  /** 아직 다 내지 못한 출력(판본마다 변화 봉투, 가까이 보기 답 봉투). 발행이 실패하면 남아 다음 발행(같은 메시지 다시 받기·다음 입력·250ms 다시 냄)에
+   *  같은 봉투(같은 메시지 id)로 다시 낸다: 통로에 들어갔는데 답만 끊긴 출력을 받는 쪽이 두 번 받지 않는다. */
+  const outbox: { out: Envelope<TopicName>[]; sent: number }[] = [];
   /** 넣은 입력 메시지 id(최근 APPLIED_MAX개): 다시 온 메시지는 World State에 다시 넣지 않고 남은 출력만 다시 낸다. */
   const applied = new Set<string>();
-  /** 상태(state면 늘, 남은 출력이 있어도)와 남은 출력을 이 차례로 함께 낸다. 실패한 것만 남기고 던진다. */
+  /** 상태(state면 늘, 남은 출력이 있어도)와 남은 출력을 낸다. 상태는 함께 내고, 남은 출력은 판본 차례로 하나씩 낸다:
+   *  앞 판본이 나가야 뒤 판본을 낸다(받는 쪽은 옛 판본을 버리므로 뒤 판본이 먼저 가면 앞 판본을 잃는다). 실패하면 그 뒤를 남기고 던진다. */
   const flush = async (state: boolean) => {
     const jobs: Promise<void>[] = [];
     if (state || outbox.length) jobs.push(node.publish("/world/state", { rev, view: world.view(clock.now()) }));
-    for (const it of outbox) {
-      if (!it.sent.changes) jobs.push(node.publish("/world/changes", { rev: it.rev, changes: it.changes }).then(() => { it.sent.changes = true; }));
-      if (it.closer && !it.sent.closer) jobs.push(node.publish("/world/closer", it.closer).then(() => { it.sent.closer = true; }));
-    }
+    jobs.push((async () => {
+      while (outbox.length) {
+        const it = outbox[0]!;
+        while (it.sent < it.out.length) {
+          await node.send(it.out[it.sent]!);
+          it.sent++;
+        }
+        outbox.shift();
+      }
+    })());
     const done = await Promise.allSettled(jobs);
-    for (let i = outbox.length - 1; i >= 0; i--) if (outbox[i]!.sent.changes && outbox[i]!.sent.closer) outbox.splice(i, 1);
     const failed = done.find((r): r is PromiseRejectedResult => r.status === "rejected");
     if (failed) throw failed.reason;
   };
-  /** 넣은 결과를 낸다: 변화가 있으면 rev를 올려 남은 출력에 넣고, 상태는 변화가 있거나 state일 때 낸다. */
+  /** 넣은 결과를 낸다: 변화가 있으면 rev를 올려 그 봉투를 남은 출력에 넣고(가까이 보기 답 봉투도), 상태는 변화가 있거나 state일 때 낸다. */
   const emit = (changes: WorldChange[], o2: { state?: boolean; closer?: WorldCloserMsg } = {}) => {
     if (changes.length) rev++;
-    if (changes.length || o2.closer) outbox.push({ rev, changes, closer: o2.closer, sent: { changes: !changes.length, closer: !o2.closer } });
+    const out: Envelope<TopicName>[] = [];
+    if (changes.length) out.push(node.envelope("/world/changes", { rev, changes }));
+    if (o2.closer) out.push(node.envelope("/world/closer", o2.closer));
+    if (out.length) outbox.push({ out, sent: 0 });
     return flush(changes.length > 0 || !!o2.state);
   };
   /** 토픽 입력 하나: 이미 넣은 메시지면 다시 넣지 않고 남은 출력만 낸다. 넣은 뒤(발행 전)에 기억한다. */

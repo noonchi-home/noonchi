@@ -108,6 +108,11 @@ export class BusNode {
   }
 
   async publish<N extends TopicName>(topic: N, body: Body<N>): Promise<void> {
+    return this.send(this.envelope(topic, body));
+  }
+
+  /** 낼 봉투를 만든다(seq를 하나 쓴다). 실패한 발행은 같은 봉투를 다시 send해 받는 쪽이 같은 메시지(msgId)로 보게 한다. */
+  envelope<N extends TopicName>(topic: N, body: Body<N>): Envelope<N> {
     if (this.#closed) throw new Error(`닫힌 노드(${this.name})는 ${topic}을 보낼 수 없어요`);
     const t = TOPICS[topic];
     if (!(t.from as readonly NodeName[]).includes(this.name)) throw new Error(`${this.name}는 ${topic}을 보낼 수 없어요(보내는 노드: ${t.from.join(", ")})`);
@@ -115,8 +120,13 @@ export class BusNode {
     const seq = (this.#seq.get(topic) ?? 0) + 1;
     this.#seq.set(topic, seq);
     const key = (t.key as (b: Body<N>) => string)(body);
-    const sent = this.#bus.publish({ topic, key, header: { stamp: this.#clock.now(), node: this.name, inst: this.inst, seq, ...this.#epoch }, body } as Envelope<N>);
-    await bounded(sent, this.#life.signal, this.#publishMs, `${topic} 발행`);
+    return { topic, key, header: { stamp: this.#clock.now(), node: this.name, inst: this.inst, seq, ...this.#epoch }, body } as Envelope<N>;
+  }
+
+  /** 만든 봉투를 낸다(다시 내기 포함, 시간 제한·끝내기 신호는 publish와 같다). */
+  async send<N extends TopicName>(e: Envelope<N>): Promise<void> {
+    if (this.#closed) throw new Error(`닫힌 노드(${this.name})는 ${e.topic}을 보낼 수 없어요`);
+    await bounded(this.#bus.publish(e), this.#life.signal, this.#publishMs, `${e.topic} 발행`);
   }
 
   /** 콜백 밖에서 도는 긴 일(LLM 호출 등). 노드 수명 신호를 받고, stop()이 그 신호를 끊고 끝나길 기다린다. */
