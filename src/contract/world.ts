@@ -136,9 +136,15 @@ export interface WorldDevice {
 /** 클로이드 눈(폰) 위치. room은 방 id, room_label은 방 이름(관찰 텍스트의 [눈] 줄). */
 export interface WorldEye { position: [number, number]; height_m: number; yaw_deg: number; pitch_deg: number; room: string | null; room_label: string | null; at_ms: number }
 
+/** 등장 확인 전에 끊긴 물건 후보의 마지막 자리(2분, 종류마다 최근 4개). 같은 종류 물건이 0.5m 안에 등장하면 지운다.
+ *  in_hand: 관절로 손에 든 채 본 자리(그 후보의 손에 없던 자리가 있으면 그 자리를 손에 없음으로 남긴다). */
+export interface WorldSighting { cls: ObjClass; position: [number, number, number]; surface: string | null; surface_label: string | null; at_ms: number; in_hand: boolean }
+
 export interface WorldView {
   at_ms: number;
   objects: WorldObject[];
+  /** 후보 자리(없으면 없음). 확인 물건이 아니므로 objects에 들지 않는다. */
+  sightings?: WorldSighting[];
   person: WorldPerson;
   fixtures: WorldFixture[];
   devices: WorldDevice[];

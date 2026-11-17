@@ -1,7 +1,7 @@
 // World State(src/world/state/)의 안쪽 공유 객체 WorldCore: 부분(objects 감지 합치기·people 사람·관절·facts VLM 사실·closer 가까이 보기·devices 카메라로 본 가전)이
 // 함께 쓰는 상태(물건·가전 설비·사람·등장 셈·관절이 붙인 사실·쓰러짐)와 작은 도우미(물건 만들기·잊기·이름·보임 판단·자리 고칠 촬영·지킴).
 // 부분은 이 객체를 받는 작은 클래스(Part)이고 서로를 이 객체의 칸으로 부른다. 부분끼리는 값 import가 없다(WorldState가 만들어 잇는다, world.ts).
-import type { Facet, FixtureClass, ObjClass, WorldFact, WorldObject } from "../../contract/world.js";
+import type { Facet, FixtureClass, ObjClass, WorldFact, WorldObject, WorldSighting } from "../../contract/world.js";
 import type { Detection } from "../../contract/observe.js";
 import { Confirmer, EVIDENCE_STEP_MS } from "../confirm.js";
 import { objectName } from "../labels.js";
@@ -35,6 +35,13 @@ export function fromCamera(origin: readonly number[], at: readonly number[]): [n
 export const PEEK_GUARD_MS = 60_000;
 /** 크기 재기에 쌓는 최근 사진 수(가운데값을 쓴다). */
 export const SIZE_SAMPLES = 5;
+/** 등장 확인 전에 끊긴 후보의 마지막 자리(sightings)를 이만큼(ms) 두고, 종류마다 최근 이만큼 둔다. 같은 종류 물건이 이 거리(m) 안에 등장하면 지운다. */
+export const SIGHTING_KEEP_MS = 120_000;
+export const SIGHTING_MAX = 4;
+export const SIGHTING_CLEAR_M = 0.5;
+
+/** 물건을 본 자리 하나(트윈 자리·면·촬영 시각). */
+export interface Spot { position: V3; surface: string | null; surfaceLabel: string | null; at: number }
 
 /** 움직임·정지를 보는 자리 하나: 원본 프레임(전체 감지·가까이 보기)의 촬영 시각·id, 트윈 자리(모르면 null), 엔진 프레임 사진 가운데 점(0~1). */
 export interface TrailSample { at: number; frame: string; position: V3 | null; center: [number, number] }
@@ -87,6 +94,8 @@ export interface Obj {
   closerRev: Partial<Record<Facet, number>>;
   /** 내용물 갱신기의 상태(src/world/state/contents.ts). 내용물을 쌓은 적 없으면 null. */
   contents: ContentsState | null;
+  /** 관절의 손에 없을 때 전체 사진으로 본 마지막 자리(확인 전 후보만 쓴다: 잊을 때 후보 자리로 남긴다). */
+  free: Spot | null;
 }
 
 export interface Fix {
@@ -117,6 +126,8 @@ export class WorldCore {
   frameAt: number | null = null;
   /** 관절로 마지막에 든 물건 id(확인 전 물건 포함). */
   heldIds: string[] = [];
+  /** 등장 확인 전에 끊긴 후보의 마지막 자리(오래된 것부터). */
+  sightings: WorldSighting[] = [];
   /** 관절이 붙인 사실(그 사실 객체). VLM이 같은 면을 다시 쓰면 새 객체라 빠진다. */
   readonly byPose = new WeakSet<WorldFact>();
   readonly identityM: number;
@@ -158,7 +169,7 @@ export class WorldCore {
       id: `${cls}_${n}`, cls, position: null, surface: null, surfaceLabel: null, part: null, room: null, errorM: null, confirmed: false, status: "present",
       firstSeen: atMs, lastSeen: atMs, lastInView: atMs, goneAt: null, facts: {}, answered: null, closerAt: null, peekGuard: null, sizes: [], posFrom: null,
       posAt: Number.NEGATIVE_INFINITY, posCloser: false, judgedAt: atMs, judgedFrame: frameId, judgedCloser: false, followed: null, closerRev: {},
-      movedAt: atMs, trail: [], carried: false, contents: null,
+      movedAt: atMs, trail: [], carried: false, contents: null, free: null,
     };
     this.objects.set(obj.id, obj);
     return obj;
@@ -196,6 +207,32 @@ export class WorldCore {
   forget(id: string): void {
     this.objects.delete(id);
     this.confirmer.forget(id);
+  }
+
+  /** 등장 확인 전 후보를 잊는다: 트윈 자리가 있으면 그 마지막 자리를 후보 자리로 남긴다. 관절의 손에 든 채 끊겼으면 손에 없던 마지막 자리를,
+   *  그런 자리가 없으면 손에 든 자리를 in_hand로 남긴다. 종류마다 최근 SIGHTING_MAX개, atMs 기준 SIGHTING_KEEP_MS 안만 둔다. */
+  loseCandidate(obj: Obj, atMs: number): void {
+    this.forget(obj.id);
+    const inHand = this.people.posedInHand(obj);
+    const spot: Spot | null = inHand && obj.free ? obj.free : obj.position ? { position: obj.position, surface: obj.surface, surfaceLabel: obj.surfaceLabel, at: obj.lastSeen } : null;
+    if (!spot) return;
+    const kept = this.sightings.filter((s) => atMs - s.at_ms <= SIGHTING_KEEP_MS);
+    kept.push({ cls: obj.cls, position: spot.position, surface: spot.surface, surface_label: spot.surfaceLabel, at_ms: spot.at, in_hand: inHand && spot !== obj.free });
+    kept.sort((a, b) => a.at_ms - b.at_ms);
+    const mine = kept.filter((s) => s.cls === obj.cls);
+    this.sightings = kept.filter((s) => s.cls !== obj.cls || mine.indexOf(s) >= mine.length - SIGHTING_MAX);
+  }
+
+  /** 확인 물건이 등장했다: 같은 종류 후보 자리 가운데 그 자리 SIGHTING_CLEAR_M 안의 것을 지운다. */
+  clearSightings(obj: Obj): void {
+    const at = obj.position;
+    if (!at) return;
+    this.sightings = this.sightings.filter((s) => s.cls !== obj.cls || dist(s.position, at) > SIGHTING_CLEAR_M);
+  }
+
+  /** nowMs에 남은 후보 자리(SIGHTING_KEEP_MS 안). */
+  sightingsAt(nowMs: number): WorldSighting[] {
+    return this.sightings.filter((s) => nowMs - s.at_ms <= SIGHTING_KEEP_MS).map((s) => ({ ...s, position: [...s.position] as V3 }));
   }
 }
 

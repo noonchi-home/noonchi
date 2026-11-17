@@ -157,6 +157,7 @@ export class CloserLook extends Part {
         if (obj.status === "gone") {
           obj.status = "present";
           obj.goneAt = null;
+          core.clearSightings(obj);
           changes.push({ kind: "appeared", at_ms: at, subject: obj.id, meaningful: true, text: CHANGE_TEXT.appeared(core.name(obj), obj.surfaceLabel ? onSurface(obj.surfaceLabel) : null) });
         } else if (obj.status === "out_of_view") {
           obj.status = "present";
@@ -172,6 +173,7 @@ export class CloserLook extends Part {
       this.placeCloser(obj, last, surfaces);
       this.seenCloser(obj, at, last.pass.frameId);
       created.push({ obj, at, frame: last.pass.frameId });
+      core.clearSightings(obj);
       changes.push({ kind: "appeared", at_ms: at, subject: obj.id, meaningful: true, text: CHANGE_TEXT.appeared(core.name(obj), obj.surfaceLabel ? onSurface(obj.surfaceLabel) : null) });
     }
     if (!obj) return null;

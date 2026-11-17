@@ -130,6 +130,7 @@ export class Detections extends Part {
         obj.status = "present";
         obj.goneAt = null;
         fresh.push({ obj, at, frame: frame.id });
+        core.clearSightings(obj);
         changes.push({ kind: "appeared", at_ms: at, subject: obj.id, meaningful: true, text: CHANGE_TEXT.appeared(core.name(obj), obj.surfaceLabel ? onSurface(obj.surfaceLabel) : null) });
       } else {
         obj.status = "gone";
@@ -142,7 +143,7 @@ export class Detections extends Part {
     core.closer.liftHolds(fresh, seen);
     for (const obj of core.objects.values()) {
       if (!obj.confirmed) {
-        if (!seen.has(obj.id) && at - obj.lastSeen >= EVIDENCE_GAP_MS) core.forget(obj.id);   // 세는 중에 500ms 넘게 못 보면 잊는다(한두 장 놓친 것은 둔다)
+        if (!seen.has(obj.id) && at - obj.lastSeen >= EVIDENCE_GAP_MS) core.loseCandidate(obj, at);   // 세는 중에 500ms 넘게 못 보면 잊고 마지막 자리를 후보 자리로 남긴다(한두 장 놓친 것은 둔다)
         continue;
       }
       if (obj.status === "gone") {
@@ -177,6 +178,10 @@ export class Detections extends Part {
       if (core.person.visible) changes.push(core.people.roomChange(at));
     } else if (appeared && core.person.room) changes.push(core.people.roomChange(at));
     if (poses) core.people.applyPose(frame, poses, boxes, changes);
+    // 확인 전 후보가 이 사진에서 관절의 손에 없으면 그 자리를 손에 없던 자리로 둔다(잊을 때 후보 자리로 남긴다)
+    for (const { obj } of boxes) {
+      if (!obj.confirmed && obj.position && obj.posAt === at && !core.people.posedInHand(obj)) obj.free = { position: obj.position, surface: obj.surface, surfaceLabel: obj.surfaceLabel, at };
+    }
     return { changes, ids };
   }
 

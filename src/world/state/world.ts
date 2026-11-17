@@ -225,8 +225,9 @@ export class WorldState {
         ...objects.filter((o) => o.status !== "gone" && o.facts.place?.value === POSE_HOLD.object).map((o) => o.id)])],
       facts: { ...p.facts }, answered_ms: p.answered,
     };
+    const sightings = core.sightingsAt(nowMs);
     return {
-      at_ms: nowMs, objects, person, fixtures,
+      at_ms: nowMs, objects, ...(sightings.length ? { sightings } : {}), person, fixtures,
       devices: core.sight.deviceViews(nowMs),
       eye: this.eye, frame_ms: core.frameAt, vlm_missing: this.vlmMissing, yolo_missing: this.yoloMissing,
     };

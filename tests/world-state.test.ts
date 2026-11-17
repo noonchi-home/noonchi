@@ -423,3 +423,69 @@ describe("World State + 관절", () => {
     expect(w.applyDetections(frame(4), [person], [lie]).changes.map((c) => [c.kind, c.text, c.meaningful])).toEqual([["person_state", "사람 누워 있음", false]]);
   });
 });
+
+describe("후보 자리(sightings): 등장 확인 전에 끊긴 물건의 마지막 자리", () => {
+  // 실제처럼 2초 간격 기준(물건 등장 4초). 사진은 500ms마다, 카메라는 +x(식탁 쪽)를 본다
+  const w0 = () => new WorldState({ surfaces, floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices });
+  const shot = (at: number): EngineFrame => ({ id: `s${at}`, capturedAtMs: at, latestAtMs: at, jpeg: Buffer.from(`s${at}`), sha256: sha256(Buffer.from(`s${at}`)), width: 480, height: 360, eye: null, view: look });
+  const run = (w: WorldState, from: number, to: number, dets: Detection[], poses?: ReturnType<typeof standing>[]) => {
+    for (let t = from; t <= to; t += 500) w.applyDetections(shot(t), dets, poses);
+  };
+  const size = { width: 480, height: 360 };
+  const onTable = det("cup", 0.9, [230, 88, 20, 10], 41);
+  const tableAt = placeBox(look, onTable.box, size, surfaces(), () => 0).position!;
+  const onFloor = (x: number) => det("cup", 0.9, [x, 300, 20, 10], 41);
+  const grip = (x: number) => standing({ 10: [x, 93, 0.9] });
+
+  it("트윈 자리가 있는 컵 후보가 2초 보이다 끊기면 500ms 뒤 물건은 잊히고 종류·자리·면·마지막 본 때가 남는다", () => {
+    expect(placeBox(look, onTable.box, size, surfaces(), () => 0).surface).toBe("table_1");
+    const w = w0();
+    run(w, 0, 2000, [onTable]);
+    expect(w.view(2000).sightings).toBeUndefined();   // 아직 세는 중
+    run(w, 2500, 3000, []);
+    const v = w.view(3000);
+    expect(v.objects).toEqual([]);
+    expect(v.sightings).toEqual([{ cls: "cup", position: tableAt, surface: "table_1", surface_label: "식탁", at_ms: 2000, in_hand: false }]);
+  });
+
+  it("2분이 지나면 사라지고, 종류마다 가장 새 4개까지다", () => {
+    const w = w0();
+    run(w, 0, 1000, [onTable]);
+    run(w, 1500, 1500, []);
+    expect(w.view(121_000).sightings).toHaveLength(1);
+    expect(w.view(121_001).sightings).toBeUndefined();
+    const w2 = w0();
+    [100, 160, 220, 280, 340].forEach((x, i) => {
+      run(w2, i * 3000, i * 3000 + 1000, [onFloor(x)]);
+      run(w2, i * 3000 + 1500, i * 3000 + 1500, []);
+    });
+    expect(w2.view(15_000).sightings!.map((s) => s.at_ms)).toEqual([4000, 7000, 10_000, 13_000]);
+  });
+
+  it("같은 종류 컵이 그 자리 0.5m 안에 등장하면 그 자리를 지운다(먼 자리는 둔다)", () => {
+    const w = w0();
+    run(w, 0, 1000, [onFloor(230)]);
+    run(w, 1500, 1500, []);
+    run(w, 2000, 3000, [onTable]);
+    run(w, 3500, 3500, []);
+    expect(w.view(3500).sightings).toHaveLength(2);
+    run(w, 5000, 9000, [onTable]);
+    const v = w.view(9000);
+    expect(v.objects).toEqual([expect.objectContaining({ cls: "cup", status: "present", surface: "table_1" })]);
+    expect(v.sightings).toEqual([expect.objectContaining({ surface: null, at_ms: 1000 })]);
+  });
+
+  it("관절로 든 채 끊긴 후보는 in_hand: true다. 손에 없던 자리가 있으면 그 자리를 손에 없음으로 남긴다", () => {
+    const w = w0();
+    run(w, 0, 2000, [person, onTable], [grip(240)]);
+    run(w, 2500, 2500, []);
+    expect(w.view(2500).sightings).toEqual([expect.objectContaining({ cls: "cup", in_hand: true, at_ms: 2000 })]);
+    // 식탁 위 컵을 1초 본 뒤 사람이 들어 조금 옮기다 끊긴다
+    const w2 = w0();
+    const moved = det("cup", 0.9, [236, 88, 20, 10], 41);
+    run(w2, 0, 1000, [onTable]);
+    run(w2, 1500, 2500, [person, moved], [grip(246)]);
+    run(w2, 3000, 3000, []);
+    expect(w2.view(3000).sightings).toEqual([{ cls: "cup", position: tableAt, surface: "table_1", surface_label: "식탁", at_ms: 1000, in_hand: false }]);
+  });
+});
