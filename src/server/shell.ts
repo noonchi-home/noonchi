@@ -18,8 +18,6 @@ export interface SetupApi {
   finish(body: Record<string, unknown>): object;
   /** 운영 모드(test·live). live는 confirm: true와 ThinQ 토큰이 있어야 한다. */
   setMode(body: Record<string, unknown>): object;
-  /** 돕는 방식(noonchi·coach). 집을 다시 띄우지 않고 바로 바뀐다. */
-  setAssist(body: Record<string, unknown>): object;
   /** 실제 모드에서만 ThinQ 기기 목록. */
   thinqDevices(): Promise<object>;
   /** 에어컨·냉장고 ↔ ThinQ 기기 짝. */
@@ -66,7 +64,6 @@ export function createShell(opts: ShellOptions): Shell {
       else if (req.method === "POST" && path === "/api/setup/devices") body = opts.setup.setSources(await readJson(req));
       else if (req.method === "POST" && path === "/api/setup/done") body = opts.setup.finish(await readJson(req));
       else if (req.method === "POST" && path === "/api/setup/mode") body = opts.setup.setMode(await readJson(req));
-      else if (req.method === "POST" && path === "/api/setup/assist") body = opts.setup.setAssist(await readJson(req));
       else if (req.method === "GET" && path === "/api/setup/thinq") body = await opts.setup.thinqDevices();
       else if (req.method === "POST" && path === "/api/setup/pairs") body = opts.setup.setPairs(await readJson(req));
       else throw new HttpError(404, `없는 API입니다: ${path}`);

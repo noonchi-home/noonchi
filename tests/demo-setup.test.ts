@@ -106,7 +106,7 @@ describe("시연 폴더(day1·week)", () => {
     const dir = join(tmp(), "day1");
     await run(["day1", "--dir", dir]);
     const home = join(dir, "homes", "mokryeon_180b");
-    expect(JSON.parse(readFileSync(join(dir, "setup.json"), "utf8"))).toEqual({ version: 1, home: "mokryeon_180b", done: true, mode: "test", assist: "auto" });
+    expect(JSON.parse(readFileSync(join(dir, "setup.json"), "utf8"))).toEqual({ version: 1, home: "mokryeon_180b", done: true, mode: "test" });
     const approvals = JSON.parse(readFileSync(join(home, "approvals.json"), "utf8")) as Record<string, unknown>;
     expect(JSON.stringify(approvals)).toContain("task:컵 치우기");
     for (const name of DEMO_APPROVALS) expect(JSON.stringify(approvals), name).toContain(`task:${name}`);

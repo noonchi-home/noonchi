@@ -7,7 +7,7 @@
 import type { DeviceNote, HistoryDb, ReflectResult } from "../../brain/index.js";
 import type { BrainLog, ReadyView } from "../../contract/events.js";
 import type { PlanView } from "../../contract/plan.js";
-import type { AssistMode, ControlMode } from "../../contract/setup.js";
+import type { ControlMode } from "../../contract/setup.js";
 import type { DeviceHub, DeviceState } from "../../contract/devices.js";
 import type { SignalHub, SignalSource, ThinqLink } from "../../devices/index.js";
 import type { LayoutEditor, TwinData } from "../../layout/index.js";
@@ -56,8 +56,6 @@ export interface HomeContext {
   servedPhoneUrls?: (phonePort: number) => Promise<string[]>;
   /** 지금 운영 모드(/api/health). 없으면 시험 모드. */
   mode?: () => ControlMode;
-  /** 지금 돕는 방식(눈치·코치). 없으면 눈치 모드. 판단 호출이 그때그때 읽는다. */
-  assist?: () => AssistMode;
   /** 대시보드·설정 화면 폴더. 없으면 React 빌드(ui/dist). */
   webDir?: string;
   /** 허용할 브라우저 출처(ALLOWED_ORIGINS). 없으면 이 PC만. */

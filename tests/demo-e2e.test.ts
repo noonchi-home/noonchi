@@ -115,7 +115,7 @@ async function start(o: { scene: Scene; kind?: "day1" | "week"; view?: View }) {
     brain: { detector: new ScriptedDetector(() => scene.dets) }, log: () => {}, persistSetup: true,
   });
   const server = srv;
-  expect(server.assist).toBe("auto");
+  expect(server).not.toHaveProperty("assist");
   const dash: Msg[] = [];
   sockets.push(await openWebSocket(`${server.url.replace(/^http/, "ws")}/events`, { setup: (ws) => ws.on("message", (d, bin) => { if (!bin) dash.push(JSON.parse(String(d)) as Msg); }) }));
   const phoneUrl = new URL(server.phoneUrls[0]!);

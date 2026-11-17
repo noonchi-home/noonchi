@@ -1,5 +1,5 @@
 // 설정 흐름(집 → 가전 → 운영 모드 → 위치 동기화)의 선택 저장. npm start만 파일에 쓰고(persist), 테스트·데모는 메모리에만 둔다.
-//   runtime/setup.json                 { version, home, done, mode, assist, updated_at }  (mode: test 시험 · live 실제, 없으면 test. assist: auto 자동 · noonchi 눈치 · coach 코치, 없으면(옛 파일)·틀리면 noonchi, 새로 만드는 파일은 auto)
+//   runtime/setup.json                 { version, home, done, mode, updated_at }  (mode: test 시험 · live 실제, 없으면 test. 옛 파일의 assist(돕는 방식)는 읽을 때 무시하고 다시 쓸 때 남기지 않는다)
 //   runtime/homes/<id>/signals.json    { version, home, sources: { <기기 id>: { kind } }, updated_at }  (virtual이 아닌 것만)
 //   runtime/homes/<id>/thinq.json      { version, home, pairs: { <기기 id>: <ThinQ 기기 id> }, updated_at }
 // 기기 목록은 집 배치(TwinData.devices)에서만 온다. 여기에는 기기별 출처와 ThinQ 짝만 적는다(구현명세서 2.3).
@@ -7,7 +7,7 @@
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { AssistMode, ControlMode } from "../../contract/setup.js";
+import type { ControlMode } from "../../contract/setup.js";
 import type { SignalSource } from "../../devices/index.js";
 import type { DeviceKind } from "../../devices/kinds.js";
 import { PAIRABLE_KINDS } from "../../devices/index.js";
@@ -86,7 +86,6 @@ export class SetupStore {
   private readonly log: (line: string) => void;
   private current: SetupState;
   private currentMode: ControlMode;
-  private currentAssist: AssistMode;
   private readonly memory = new Map<string, Record<string, StoredSource>>();
   private readonly memoryPairs = new Map<string, Record<string, string>>();
 
@@ -94,10 +93,9 @@ export class SetupStore {
     this.persist = opts.persist;
     this.runtimeDir = opts.runtimeDir;
     this.log = opts.log ?? (() => {});
-    const saved = this.persist ? this.readState() : { home: null, done: true, mode: "test" as const, assist: "noonchi" as const };
+    const saved = this.persist ? this.readState() : { home: null, done: true, mode: "test" as const };
     this.current = { home: saved.home, done: saved.done };
     this.currentMode = saved.mode;
-    this.currentAssist = saved.assist;
   }
 
   state(): SetupState {
@@ -123,16 +121,6 @@ export class SetupStore {
 
   setMode(mode: ControlMode): void {
     this.currentMode = mode;
-    this.writeState();
-  }
-
-  /** 돕는 방식. 새로 만드는 설정은 자동, assist가 없는 옛 파일이나 틀린 값이면 눈치 모드. */
-  assist(): AssistMode {
-    return this.currentAssist;
-  }
-
-  setAssist(assist: AssistMode): void {
-    this.currentAssist = assist;
     this.writeState();
   }
 
@@ -198,21 +186,21 @@ export class SetupStore {
     return join(this.runtimeDir, "homes", homeId, "thinq.json");
   }
 
-  private readState(): SetupState & { mode: ControlMode; assist: AssistMode } {
+  private readState(): SetupState & { mode: ControlMode } {
     const path = this.statePath();
-    if (!existsSync(path)) return { home: null, done: false, mode: "test", assist: "auto" };
+    if (!existsSync(path)) return { home: null, done: false, mode: "test" };
     try {
-      const raw = JSON.parse(readFileSync(path, "utf8")) as { home?: unknown; done?: unknown; mode?: unknown; assist?: unknown };
-      return { home: typeof raw.home === "string" && raw.home ? raw.home : null, done: raw.done === true, mode: raw.mode === "live" ? "live" : "test", assist: raw.assist === "coach" || raw.assist === "auto" ? raw.assist : "noonchi" };
+      const raw = JSON.parse(readFileSync(path, "utf8")) as { home?: unknown; done?: unknown; mode?: unknown };
+      return { home: typeof raw.home === "string" && raw.home ? raw.home : null, done: raw.done === true, mode: raw.mode === "live" ? "live" : "test" };
     } catch (e) {
       this.log(`[경고] 설정 파일을 읽지 못해 처음부터 설정합니다: ${path} (${(e as Error).message})`);
-      return { home: null, done: false, mode: "test", assist: "noonchi" };
+      return { home: null, done: false, mode: "test" };
     }
   }
 
   private writeState(): void {
     if (!this.persist) return;
-    writeJson(this.statePath(), { version: 1, home: this.current.home, done: this.current.done, mode: this.currentMode, assist: this.currentAssist, updated_at: new Date().toISOString() });
+    writeJson(this.statePath(), { version: 1, home: this.current.home, done: this.current.done, mode: this.currentMode, updated_at: new Date().toISOString() });
   }
 
   private readPairs(homeId: string): Record<string, string> {

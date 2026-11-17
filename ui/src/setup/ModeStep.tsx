@@ -1,7 +1,6 @@
-import { Eye, FlaskConical, GraduationCap, Info, PlugZap, TriangleAlert } from "lucide-react";
+import { FlaskConical, Info, PlugZap, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import type { AssistMode, ControlMode, SetupView, ThinqDeviceView } from "../../../src/contract/setup.ts";
-import { ASSIST_NAME } from "../lib/assist";
+import type { ControlMode, SetupView, ThinqDeviceView } from "../../../src/contract/setup.ts";
 import { Alert, AlertTitle } from "../components/ui/alert";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader,
@@ -18,7 +17,6 @@ import { call, failText, isOk } from "./setup-api";
 // 3 운영 모드: 시험 모드(트윈에서만, 기본) · 실제 모드(짝지은 에어컨·냉장고는 ThinQ로 실제 가전).
 // 실제 모드로 바꿀 때는 화면 안 확인 창에서 한 번 더 묻는다(브라우저 대화상자를 쓰지 않는다). 시험 모드로는 바로 바꾼다.
 // ThinQ 기기 목록은 실제 모드일 때만 부른다.
-// 그 아래 돕는 방식: 눈치 모드(기본) · 코치 모드. 운영 모드와 따로이고, 고르면 묻지 않고 바로 저장한다.
 
 type List = { status: "loading" } | { status: "error"; error: string } | { status: "ready"; devices: ThinqDeviceView[] };
 
@@ -27,11 +25,6 @@ const MODES: { id: ControlMode; name: string; line: string }[] = [
   { id: "live", name: "실제 모드", line: "ThinQ로 실제 가전을 다뤄요" },
 ];
 
-const ASSISTS: { id: AssistMode; name: string; line: string }[] = [
-  { id: "auto", name: ASSIST_NAME.auto, line: "상황마다 알아서 골라요" },
-  { id: "noonchi", name: ASSIST_NAME.noonchi, line: "먼저 알아채 도와요" },
-  { id: "coach", name: ASSIST_NAME.coach, line: "하는 법을 단계마다 알려 줘요" },
-];
 
 /** 실제 모드 확인 창(21st.dev Alert Dialog with icon). */
 function AskLive({ open, busy, onYes, onNo }: { open: boolean; busy: boolean; onYes: () => void; onNo: () => void }) {
@@ -125,15 +118,6 @@ export function ModeStep({ view, onView, onNotice, onBack, onNext }: {
     onNotice(null);
     onView(r.json);
   };
-  const assist = async (want: AssistMode) => {
-    if (want === view.assist || busy) return;
-    setBusy(true);
-    const r = await call<SetupView>("/api/setup/assist", { assist: want });
-    setBusy(false);
-    if (!isOk(r)) return onNotice(failText(r, "돕는 방식을 저장하지 못했어요."), true);
-    onNotice(null);
-    onView(r.json);
-  };
   const pick = (mode: ControlMode) => {
     if (mode === view.mode || busy) return;
     if (mode === "live") setAsking(true);
@@ -154,12 +138,6 @@ export function ModeStep({ view, onView, onNotice, onBack, onNext }: {
         </RadioGroup>
         {!view.thinq.ready && <Alert size="setup" className="max-w-xl"><Info aria-hidden="true" /><AlertTitle>ThinQ 토큰이 없어요.</AlertTitle></Alert>}
         {view.mode === "live" && view.home && <Pairs view={view} onView={onView} onNotice={onNotice} />}
-        <CardTitle size="md" id="h-assist">돕는 방식</CardTitle>
-        <RadioGroup aria-labelledby="h-assist" value={view.assist} onValueChange={(v) => void assist(v as AssistMode)} className="max-w-xl gap-2">
-          {ASSISTS.map((a) => (
-            <RadioCard key={a.id} value={a.id} label={a.name} size="lg" icon={a.id === "coach" ? <GraduationCap /> : <Eye />} description={a.line} />
-          ))}
-        </RadioGroup>
       </CardContent>
       <CardFooter className="mt-auto justify-end gap-2">
         <Button variant="outline" size="setup" onClick={onBack}>이전</Button>

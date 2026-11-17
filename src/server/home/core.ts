@@ -6,7 +6,6 @@ import type { Agent, ApprovalStore, Observer, PlaceInfo, Planner, Policy } from 
 import type { Decider, ThoughtFeed } from "../../brain/index.js";
 import type { BrainLog, SeenEvent } from "../../contract/events.js";
 import type { PlannedCommand } from "../../contract/phone.js";
-import type { AssistMode } from "../../contract/setup.js";
 import type { SignalHub, ThinqLink } from "../../devices/index.js";
 import type { FloorPlan, HomePlan, PlaceNames, TwinData, loadLayout, loadScene } from "../../layout/index.js";
 import type { ObservationPipeline } from "../../observe/index.js";
@@ -104,11 +103,6 @@ export class HomeCore {
    *  action: 판단 기록에 붙일 때 이번 판단이 고른 행동. */
   mode(action: string | null = null): Mode {
     const tracker = this.tracker;
-    return modeNow({ world: this.world?.view(this.nowMs()) ?? null, offNotices: tracker?.offTrack().notices ?? [], coaching: tracker?.coaching() ?? false, action });
-  }
-
-  /** 지금 돕는 방식(눈치·코치). 판단 호출이 그때그때 읽는다(집을 다시 띄우지 않고 바뀐다). */
-  assist(): AssistMode {
-    return this.ctx.assist?.() ?? "noonchi";
+    return modeNow({ world: this.world?.view(this.nowMs()) ?? null, offNotices: tracker?.offTrack().notices ?? [], coaching: tracker?.coaching() ?? false, plan: this.plans.current(), action });
   }
 }

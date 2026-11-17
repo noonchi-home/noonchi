@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { modeNow, pamTasks } from "../src/act/mode.js";
 import { TASK_NAMES, TASKS, tasksFor } from "../src/act/tasks.js";
+import type { PlanView } from "../src/contract/plan.js";
 import type { WorldView } from "../src/contract/world.js";
 import { POSE_FALL } from "../src/world/vocab.js";
 
@@ -30,6 +31,16 @@ describe("지금 모드(modeNow)", () => {
     expect(modeNow({ ...calm, coaching: true })).toBe("coach");
     for (const action of COACH) expect(modeNow({ ...calm, action }), action).toBe("coach");
     expect(modeNow({ ...calm, coaching: false })).toBe("noonchi");
+  });
+
+  // 2026-11-18 전체 시험: 계획 방송(PlanHub)이 실행 추적이 그 계획을 받기(planned) 전에 말풍선을 다시 보게 해 코치 계획 시작에 눈치 → 코치 → 눈치 → 코치로 깜빡였다
+  it("열린 계획(planned·running)의 행동이 코치 행동이면 코치 모드다(실행 추적이 그 계획을 받기 전 사이도). 닫힌 계획은 아니다", () => {
+    const plan = (goal: string, status: PlanView["status"]) => ({ goal, status }) as PlanView;
+    expect(modeNow({ ...calm, plan: plan("라면 끓이기 알려 주기", "planned") })).toBe("coach");
+    expect(modeNow({ ...calm, plan: plan("라면 끓이기 알려 주기", "running") })).toBe("coach");
+    expect(modeNow({ ...calm, plan: plan("라면 끓이기 알려 주기", "done") })).toBe("noonchi");
+    expect(modeNow({ ...calm, plan: plan("컵 치우기", "running") })).toBe("noonchi");
+    expect(modeNow({ ...calm, plan: null })).toBe("noonchi");
   });
 });
 

@@ -4,6 +4,7 @@
 //   그 코치 계획이 열려 있거나 만드는 중이거나, 이번 판단이 코치 행동을 골랐을 때뿐이다. 그 계획이 끝나고 비상이 풀리면 눈치 모드로 돌아온다.
 // - PAM 행동 목록은 모드를 따른다: 눈치 모드는 눈치 행동, 코치 모드는 코치 행동과 「사용자에게 물어보기」. 눈치 모드에서 사람이 방금 말했으면(관찰 텍스트에 들은 말)
 //   말로 부탁한 코치 행동을 고를 수 있게 코치 행동도 넣는다(들은 말 없이 코치 행동을 고르지 않는다).
+import type { PlanView } from "../contract/plan.js";
 import type { WorldView } from "../contract/world.js";
 import { POSE_FALL } from "../world/vocab.js";
 import { TASK_NAMES, modeOf, tasksFor } from "./tasks.js";
@@ -17,6 +18,8 @@ export interface ModeFacts {
   offNotices: readonly string[];
   /** 코치 행동 계획이 열려 있거나 만드는 중인가(실행 추적 coaching()). */
   coaching: boolean;
+  /** 지금 계획(PlanHub). 열린(planned·running) 코치 행동 계획이면 코치 모드다: 계획 방송이 실행 추적이 그 계획을 받기 전에 먼저 간다. */
+  plan?: Pick<PlanView, "goal" | "status"> | null;
   /** 이번 판단이 고른 행동(판단 기록에 붙일 모드를 정할 때). */
   action?: string | null;
 }
@@ -27,7 +30,8 @@ export const emergencyOf = (f: Pick<ModeFacts, "world" | "offNotices">): boolean
 
 /** 지금 모드. */
 export function modeNow(f: ModeFacts): Mode {
-  return emergencyOf(f) || f.coaching || modeOf(f.action ?? null) === "coach" ? "coach" : "noonchi";
+  const open = f.plan && (f.plan.status === "planned" || f.plan.status === "running") ? f.plan.goal : null;
+  return emergencyOf(f) || f.coaching || modeOf(open) === "coach" || modeOf(f.action ?? null) === "coach" ? "coach" : "noonchi";
 }
 
 /** PAM에 보내는 행동 목록(순서가 task_index, 행동 목록 순서 그대로). heard: 이번 관찰 텍스트에 사람이 한 말이 있다. */
