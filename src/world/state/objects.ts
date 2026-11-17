@@ -34,7 +34,7 @@ export class Detections extends Part {
     const ids = new Map<string, string>();
     const seen = new Set<string>();
     const used = new Set<string>();
-    const boxes: { obj: Obj; box: Detection["box"] }[] = [];
+    const boxes: { obj: Obj; box: Detection["box"]; mask: Detection["mask"] }[] = [];
     const people: Detection[] = [];
     const eyeRoom = frame.eye ? this.o.roomAt([frame.eye.position[0], frame.eye.position[1]]) : null;
     dets.forEach((d, i) => {
@@ -59,7 +59,7 @@ export class Detections extends Part {
       used.add(obj.id);
       ids.set(tmp, obj.id);
       seen.add(obj.id);
-      boxes.push({ obj, box: d.box });
+      boxes.push({ obj, box: d.box, mask: d.mask });
       obj.lastSeen = Math.max(obj.lastSeen, at);
       obj.lastInView = Math.max(obj.lastInView, at);
       core.judge(obj, at, frame.id, false);

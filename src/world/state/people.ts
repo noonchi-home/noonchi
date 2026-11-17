@@ -41,7 +41,7 @@ export class People extends Part {
    *  자세는 가장 확실한 한 사람의 서 있음·앉아 있음·누워 있음. 쓰러짐 의심(src/world/fall.ts)이 되면 자세를 쓰러짐 의심으로 두고 의미 있는 변화 줄을 한 번 내며,
    *  일어날(서 있음·앉아 있음) 때까지 누운 자세 대신 그 값을 이어 둔다.
    *  손목이 보이는데 든 것이 없으면 관절이 붙인 손에 있음·들고 있음만 지운다(VLM이 붙인 사실은 둔다). */
-  applyPose(frame: EngineFrame, poses: Pose[], boxes: { obj: Obj; box: Detection["box"] }[], changes: WorldChange[]): void {
+  applyPose(frame: EngineFrame, poses: Pose[], boxes: { obj: Obj; box: Detection["box"]; mask: Detection["mask"] }[], changes: WorldChange[]): void {
     const core = this.core;
     const at = frame.capturedAtMs;
     const size = { width: frame.width, height: frame.height };
@@ -116,8 +116,8 @@ export class People extends Part {
   }
 
   /** 마시기·따르기 사건(src/world/sip.ts): 든 그릇을 입에 대면 그 그릇, 든 병을 기울여 그릇 위에 두면 그 그릇의 내용물을 다시 연다.
-   *  따르기는 병과 그릇 가운데 점의 중력 방향(down, 카메라 자세가 없으면 모름이라 보지 않는다)으로 본다. 줄은 확인된(사라지지 않은) 물건 것만 낸다. */
-  private sips(people: ReturnType<typeof describePose>[], boxes: { obj: Obj; box: Detection["box"] }[], at: number, changes: WorldChange[], down: (pt: Pt) => Pt | null): void {
+   *  따르기는 두 감지 마스크와 병·그릇 가운데 점의 중력 방향(down, 카메라 자세가 없으면 모름이라 보지 않는다)으로 본다. 줄은 확인된(사라지지 않은) 물건 것만 낸다. */
+  private sips(people: ReturnType<typeof describePose>[], boxes: { obj: Obj; box: Detection["box"]; mask: Detection["mask"] }[], at: number, changes: WorldChange[], down: (pt: Pt) => Pt | null): void {
     const core = this.core;
     const vessel = (o: Obj) => (CLASSES[o.cls].facets as readonly Facet[]).includes("contents");
     const say = (obj: Obj, c: WorldChange[]) => { if (obj.confirmed && obj.status !== "gone") changes.push(...c); };
@@ -127,7 +127,7 @@ export class People extends Part {
       for (const c of boxes) {
         if (c === b || c.obj.cls === "bottle" || !vessel(c.obj)) continue;
         const mid: Pt = [(b.box[0] + b.box[2] / 2 + c.box[0] + c.box[2] / 2) / 2, (b.box[1] + b.box[3] / 2 + c.box[1] + c.box[3] / 2) / 2];
-        if (pouringInto(people, b.box, c.box, down(mid))) say(c.obj, core.contents.reopen(c.obj, at, "pour"));
+        if (pouringInto(people, b, c, down(mid))) say(c.obj, core.contents.reopen(c.obj, at, "pour"));
       }
     }
   }

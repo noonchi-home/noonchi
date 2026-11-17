@@ -8,16 +8,18 @@ import { describePose } from "../src/world/pose.js";
 import { det } from "./helpers/detectors.js";
 import { standing } from "./helpers/poses.js";
 import { LOOK_VIEW } from "./helpers/camera.js";
+import { tilted } from "./helpers/masks.js";
+import { emptyMask, fullMask } from "../src/shared/mask.js";
 
 const ws = () => new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices: () => [] });
 const frame = (i: number, view: CameraView | null = null): EngineFrame => ({ id: `e${i}`, capturedAtMs: i * 1000, latestAtMs: i * 1000, jpeg: Buffer.from(`${i}`), sha256: sha256(Buffer.from(`${i}`)), width: 480, height: 360, eye: null, view });
 const cup: Detection = det("cup", 0.9, [220, 160, 40, 20], 41);
 
 /** 컵 하나를 1~3초에 등장 확인한 World State와 도우미. say: 그 초의 전체 사진 VLM 답, crop: 그 초 원본 프레임을 잘라 본 VLM 답. view: 그 카메라로 찍은 프레임(없으면 맞추기 전). */
-function scene(view: CameraView | null = null) {
+function scene(view: CameraView | null = null, seen: Detection = cup) {
   const w = ws();
   let ids = new Map<string, string>();
-  for (let i = 1; i <= 3; i++) ids = w.applyDetections(frame(i, view), [cup]).ids;
+  for (let i = 1; i <= 3; i++) ids = w.applyDetections(frame(i, view), [seen]).ids;
   const obs = (states: string[]): SceneObservation => ({ scene: "k", observations: states.map((state) => ({ object_id: "d1", state: state as SceneObservation["observations"][number]["state"] })), summary: "s" });
   const say = (i: number, ...states: string[]) => w.applyScene(`e${i}`, i * 1000, obs(states), ids);
   const crop = (i: number, ...states: string[]) => w.applyCloserScene(`e${i}`, i * 1000, obs(states), ids);
@@ -204,9 +206,6 @@ const CUP_BOX: [number, number, number, number] = [220, 160, 40, 20];
 const AT_MOUTH: Record<number, Keypoint> = { 9: [230, 170, 0.9], 0: [240, 150, 0.9] };
 const drinker = describePose(standing({ ...AT_MOUTH }));
 const waist = describePose(standing({ 9: [230, 170, 0.9], 0: [130, 40, 0.9] }));
-const BOTTLE_TILT: [number, number, number, number] = [215, 100, 60, 40];
-const BOTTLE_UP: [number, number, number, number] = [225, 70, 25, 70];
-const pourer = describePose(standing({ 10: [240, 120, 0.9] }));
 const someone = det("person", 0.9, [80, 60, 200, 300], 0);
 
 describe("마시기·따르기 사건", () => {
@@ -215,27 +214,38 @@ describe("마시기·따르기 사건", () => {
     expect(atMouth([waist], CUP_BOX)).toBe(false);
     expect(atMouth([describePose(standing({ 0: [240, 150, 0.9] }))], CUP_BOX)).toBe(false); // 들지 않음
   });
-  it("따름: 중력 방향 좌표에서 든 병이 기울었고(옆/위 0.8 이상) 컵 위에서 옆으로 겹치며, 병 아래가 컵 위에서 컵 높이 안(아래로는 컵 높이 절반까지)", () => {
-    const DOWN: [number, number] = [0, 1]; // 폰을 세워 들었다: 사진 아래가 중력 아래
-    expect(pouringInto([pourer], BOTTLE_TILT, CUP_BOX, DOWN)).toBe(true);
-    expect(pouringInto([describePose(standing({ 10: [237, 100, 0.9] }))], BOTTLE_UP, CUP_BOX, DOWN)).toBe(false);
-    expect(pouringInto([pourer], [400, 100, 60, 40], CUP_BOX, DOWN)).toBe(false);
-    // 병 아래가 컵 위보다 한참 아래(컵 앞에서 병을 들고 있음): 따름이 아니다
-    expect(pouringInto([describePose(standing({ 10: [240, 170, 0.9] }))], [215, 150, 60, 40], CUP_BOX, DOWN)).toBe(false);
-    // 카메라 자세가 없으면(중력 방향 모름) 보류한다
-    expect(pouringInto([pourer], BOTTLE_TILT, CUP_BOX, null)).toBe(false);
+  it("따름(마스크): 폰을 0°·45°·90° 돌려 들어도 컵 위에 세운 병은 따르기가 아니고, 기울여 든 병은 따르기다(마스크 긴 축과 중력 방향을 견줌)", () => {
+    for (const phi of [0, 45, 90]) {
+      const g = tilted(phi);
+      const cupT = g.thing(0, 0, 40, 30, 0); // 컵 위 끝: u = 20
+      const upright = g.thing(0, 60, 70, 25, 0);
+      const pour = g.thing(0, 53, 70, 25, 60);
+      const hold = (b: { center: [number, number] }) => describePose(standing({ 10: [b.center[0], b.center[1], 0.9] }));
+      expect(pouringInto([hold(upright)], upright, cupT, g.down), `${phi}° 세운 병`).toBe(false);
+      expect(pouringInto([hold(pour)], pour, cupT, g.down), `${phi}° 기운 병`).toBe(true);
+    }
   });
 
-  it("따름: 폰을 90° 돌려 들면 사진에서 가로로 누운 세운 병은 기운 병이 아니고, 사진에서 세로로 선 기운 병은 기운 병이다", () => {
-    const RIGHT: [number, number] = [1, 0]; // 중력이 사진 오른쪽
-    // 컵(중력 위는 사진 왼쪽): 사진 [300,150,20,40]. 세운 병: 컵 왼쪽(위)에서 사진 가로로 긴 상자
-    const cupR: [number, number, number, number] = [300, 150, 20, 40];
-    const upright: [number, number, number, number] = [220, 155, 70, 25];
-    expect(pouringInto([describePose(standing({ 10: [250, 165, 0.9] }))], upright, cupR, RIGHT)).toBe(false);
-    // 기운 병: 사진 세로로 긴 상자(중력 옆으로 길다), 컵 위쪽(사진 왼쪽)에 붙어 옆으로 겹침
-    const tilted: [number, number, number, number] = [265, 140, 30, 60];
-    expect(pouringInto([describePose(standing({ 10: [280, 170, 0.9] }))], tilted, cupR, RIGHT)).toBe(true);
-    expect(pouringInto([describePose(standing({ 10: [280, 170, 0.9] }))], tilted, cupR, [0, 1])).toBe(false); // 사진 축으로 보면 세운 병
+  it("따름(마스크): 병 아래가 컵 위보다 컵 높이 절반 넘게 아래면(컵 앞에서 든 병), 옆으로 떨어지면, 들지 않았으면 아니다", () => {
+    const g = tilted(0);
+    const cupT = g.thing(0, 0, 40, 30, 0);
+    const low = g.thing(0, 15, 70, 25, 60);
+    const far = g.thing(120, 53, 70, 25, 60);
+    const pour = g.thing(0, 53, 70, 25, 60);
+    const hold = (b: { center: [number, number] }) => describePose(standing({ 10: [b.center[0], b.center[1], 0.9] }));
+    expect(pouringInto([hold(low)], low, cupT, g.down)).toBe(false);
+    expect(pouringInto([hold(far)], far, cupT, g.down)).toBe(false);
+    expect(pouringInto([describePose(standing())], pour, cupT, g.down)).toBe(false);
+  });
+
+  it("따름(마스크): 카메라 자세가 없거나(중력 모름) 마스크가 없거나 너무 작으면 보류한다", () => {
+    const g = tilted(0);
+    const cupT = g.thing(0, 0, 40, 30, 0);
+    const pour = g.thing(0, 53, 70, 25, 60);
+    const hold = describePose(standing({ 10: [pour.center[0], pour.center[1], 0.9] }));
+    expect(pouringInto([hold], pour, cupT, null)).toBe(false);
+    expect(pouringInto([hold], { box: pour.box, mask: fullMask(pour.box) }, cupT, g.down)).toBe(false);
+    expect(pouringInto([hold], pour, { box: cupT.box, mask: emptyMask(cupT.box) }, g.down)).toBe(false);
   });
   it("확인된 내용물 있음 컵을 입에 대면 「다시 확인 필요」로 열린다(이전 값 보관, 계기 아닌 줄 하나). 사건 앞에 찍힌 늦은 사진은 버리고 그 뒤 3장·4초가 새 값을 정한다", () => {
     const s = scene();
@@ -252,23 +262,20 @@ describe("마시기·따르기 사건", () => {
     s.say(12, "empty");
     expect(s.cupNow().facts.contents).toMatchObject({ value: "empty", certainty: "confirmed" });
   });
-  it("따름: 중력이 사진 축에서 20° 넘게 기울면(상자로는 병 방향을 모름) 보류한다: 45°로 든 폰에서 세운 병도 기운 병도 따르기로 보지 않는다", () => {
-    const D45: [number, number] = [Math.SQRT1_2, Math.SQRT1_2];
-    // 세운 25×70 병을 45° 돌린 사진 상자(약 67×67): 중력 위쪽으로 컵 바로 위에 있다(상자로만 보면 기운 병으로 보인다)
-    const p = describePose(standing({ 10: [210, 90, 0.9] }));
-    expect(pouringInto([p], [180, 60, 67, 67], CUP_BOX, D45)).toBe(false);
-    expect(pouringInto([pourer], BOTTLE_TILT, CUP_BOX, [Math.sin(0.3), Math.cos(0.3)])).toBe(true); // 17°: 본다
-  });
-
-  it("기운 병을 컵 위에서 들면 그 컵이 「따르는 모습」으로 열린다(카메라 자세가 있을 때만)", () => {
-    const s = scene(LOOK_VIEW);
+  it("기운 병을 컵 위에서 들면 그 컵이 「따르는 모습」으로 열린다(감지 마스크로, 카메라 자세가 있을 때만)", () => {
+    const g = tilted(0, [240, 170]);
+    const shape = (label: "cup" | "bottle", t: { box: Detection["box"]; mask: Detection["mask"] }): Detection => ({ ...det(label, 0.9, t.box), mask: t.mask });
+    const cupT = shape("cup", g.thing(0, 0, 20, 40, 0));
+    const pourT = g.thing(0, 42, 70, 25, 60);
+    const bottle = shape("bottle", pourT);
+    const hand = standing({ 10: [pourT.center[0], pourT.center[1], 0.9] });
+    const s = scene(LOOK_VIEW, cupT);
     for (const i of [1, 3, 5]) s.say(i, "empty");
-    const bottle = det("bottle", 0.9, BOTTLE_TILT, 39);
-    const { changes } = s.w.applyDetections(frame(6, LOOK_VIEW), [someone, cup, bottle], [standing({ 10: [240, 120, 0.9] })]);
+    const { changes } = s.w.applyDetections(frame(6, LOOK_VIEW), [someone, cupT, bottle], [hand]);
     expect(changes.filter((c) => c.text.includes("내용물 다시 확인")).map((c) => c.text)).toEqual(["컵 cup_1 따르는 모습 · 내용물 다시 확인"]);
-    const n = scene();
+    const n = scene(null, cupT);
     for (const i of [1, 3, 5]) n.say(i, "empty");
-    const none = n.w.applyDetections(frame(6), [someone, cup, bottle], [standing({ 10: [240, 120, 0.9] })]).changes;
+    const none = n.w.applyDetections(frame(6), [someone, cupT, bottle], [hand]).changes;
     expect(none.filter((c) => c.text.includes("내용물 다시 확인"))).toEqual([]);
   });
   it("사람 답보다 먼저 찍힌 관절 사건(감지 대기열에서 늦게 나온 프레임)은 사람 답을 지우지 않고 세대도 올리지 않는다", () => {
