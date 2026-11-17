@@ -42,10 +42,11 @@ export interface EyeFeedOptions {
   onSaved?: (p: { id: string; atMs: number; path: string }) => void;
 }
 
-/** MJPEG 연결 하나: 아직 못 보낸 데이터가 있는가(write가 false를 돌려준 뒤 drain 전), 그동안 온 가장 새 프레임. */
+/** MJPEG 연결 하나: 한 장을 보내는 중인가(마지막 write 콜백 전), 그동안 온 가장 새 프레임. */
 interface Stream { busy: boolean; next: Buffer | null }
 
-/** 느린 화면에는 프레임을 줄 세우지 않는다: 연결에 아직 못 보낸 데이터가 있으면 가장 새 한 장만 들고 있다가 비면(drain) 그것만 보낸다. */
+/** 느린 화면에는 프레임을 줄 세우지 않는다: 한 장을 다 보내기 전(write가 true여도 못 보낸 데이터가 남을 수 있다)에는 가장 새 한 장만 들고 있다가
+ *  그 장을 다 보내면 그것만 보낸다. */
 export class EyeFeed {
   private latest: Buffer | null = null;
   private recent: { at: number; bytes: number }[] = [];
@@ -122,12 +123,6 @@ export class EyeFeed {
       const s: Stream = { busy: false, next: null };
       this.streams.set(res, s);
       res.on("close", () => this.streams.delete(res));
-      res.on("drain", () => {
-        s.busy = false;
-        const next = s.next;
-        s.next = null;
-        if (next) send(res, s, next);
-      });
       if (this.latest) send(res, s, this.latest);
       return true;
     }
@@ -167,16 +162,21 @@ export class EyeFeed {
   }
 }
 
-/** 비어 있으면 한 장을 쓰고(쓰기 버퍼가 차면 drain까지 busy), 아직 못 보낸 데이터가 있으면 가장 새 한 장으로 갈아 끼운다. */
+/** 보내는 중이 아니면 한 장을 쓰고 그 장을 다 보낼 때(마지막 write 콜백)까지 보내는 중으로 둔다. 보내는 중이면 가장 새 한 장으로 갈아 끼운다. */
 function send(res: ServerResponse, s: Stream, jpeg: Buffer): void {
   if (s.busy) {
     s.next = jpeg;
     return;
   }
-  const head = res.write(`--${BOUNDARY}\r\nContent-Type: image/jpeg\r\nContent-Length: ${jpeg.length}\r\n\r\n`);
-  const body = res.write(jpeg);
-  const tail = res.write("\r\n");
-  s.busy = !(head && body && tail);
+  s.busy = true;
+  res.write(`--${BOUNDARY}\r\nContent-Type: image/jpeg\r\nContent-Length: ${jpeg.length}\r\n\r\n`);
+  res.write(jpeg);
+  res.write("\r\n", (err) => {
+    s.busy = false;
+    const next = s.next;
+    s.next = null;
+    if (next && !err && !res.destroyed) send(res, s, next);
+  });
 }
 
 function notFound(res: ServerResponse, error: string): true {
