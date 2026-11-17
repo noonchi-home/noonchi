@@ -92,7 +92,7 @@ describe.each([[1920, 1080], [1440, 900], [1522, 722]])("%i×%i", (width, height
 
   it("메시지 상자는 트윈 아래쪽 안, 마스코트 왼쪽에서 사이(gap)만큼 띄운 상자 하나다(마스코트가 옆에서 말한다): 높이는 TALK_H로 정해져 있고 초점 고리와도 겹치지 않는다", () => {
     expect(RING).toBe(4);
-    expect(TALK_H).toBe(104);
+    expect(TALK_H).toBe(128);
     expect(L.bubble.left).toBe(L.twin.left + space.panelPadding);
     expect(near(bottom(L.bubble), bottom(L.twin) - space.panelPadding)).toBe(true);
     expect(L.bubble.height).toBe(TALK_H);
@@ -204,13 +204,13 @@ describe("크기(스케치 6안)", () => {
     expect([L.video.width, L.video.height]).toEqual([320, 180]);
   });
 
-  it("1920×1080: 트윈 1888×1048, 미니맵 480×270, 마스코트 약 320 높이, 메시지 상자 높이 TALK_H(104)", () => {
+  it("1920×1080: 트윈 1888×1048, 미니맵 480×270, 마스코트 약 320 높이, 메시지 상자 높이 TALK_H(128: 알약 줄 + 문장 세 줄)", () => {
     const L = pageLayout({ width: 1920, height: 1080 }, M);
     expect([L.twin.width, L.twin.height]).toEqual([1888, 1048]);
     expect([L.video.width, L.video.height]).toEqual([480, 270]);
     expect(near(L.mascot.height, 320, 10)).toBe(true);
     expect(L.bubble.height).toBe(TALK_H);
-    expect(TALK_H).toBe(104);
+    expect(TALK_H).toBe(128);
   });
 });
 

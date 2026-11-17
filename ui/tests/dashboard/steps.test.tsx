@@ -98,18 +98,20 @@ describe("대시보드 단계 바뀜", () => {
     }
   });
 
-  it("지켜보기에서 1단계로 넘어가도, 새 줄이 와도 메시지 상자는 같은 칸이고 크기·자리가 그대로다", () => {
+  it("지켜보기에서 1단계로 넘어가도, 새 줄이 와도 메시지 상자는 같은 칸이고 크기·자리가 그대로다", async () => {
     motionOn();
     const { view, was } = step(screenAt(0), screenAt(1));
     const t = talkOf(view.container);
     expect(t).toBe(was.talk);
     expect(box(t)).toBe(was.boxes.talk);
-    expect(t).toHaveTextContent(MESSAGES[1]!.text);
+    // 새 줄은 차례로 굴러 들어온다
+    await waitFor(() => expect(t).toHaveTextContent(MESSAGES[1]!.text));
     const m = (n: number) => ({ id: `m${n}`, text: `메시지 ${n}` });
     view.rerender(<DashboardScreen {...screenAt(1, { talk: { ...TALK, lines: [m(3), m(4)] } })} />);
     expect(talkOf(view.container)).toBe(t);
     expect(box(t)).toBe(was.boxes.talk);
-    expect([...t.querySelectorAll("[data-talk-line]")].map((l) => l.textContent)).toEqual(["메시지 3", "메시지 4"]);
+    await waitFor(() => expect([...t.querySelectorAll("[data-talk-line]")].map((l) => l.textContent)).toEqual(["메시지 3", "메시지 4"]));
+    expect(box(t)).toBe(was.boxes.talk);
     for (const c of calls) for (const k of c.keyframes) for (const p of Object.keys(k)) expect(ALLOWED.has(p), p).toBe(true);
   });
 

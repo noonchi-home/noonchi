@@ -73,8 +73,9 @@ export const MASCOT_SHARE = 0.3;
 const HEAD_ROOM = LIFT + 2;
 /** 부품 원래 글(text-sm 14px)의 줄 높이(px). 화면 너비로 커지지 않는다. */
 export const TEXT_LINE = 20;
-/** 메시지 상자 높이(px): Item sm 위아래 여백(py-3) 24 + 테두리 2 + 머리 줄(눈치·습관 Status) 24 + 사이 4 + 두 줄(20·20)과 사이 4 + 둘레 여유 6 = 104. 화면 크기·글 길이와 상관없다. */
-export const TALK_H = 104;
+/** 메시지 상자 높이(px): Item sm 위아래 여백(py-3) 24 + 테두리 2 + 머리 줄(모드·알약 Status) 24 + 사이 4 + 문장 세 줄(20씩)과 사이 둘(4씩) 68 + 둘레 여유 6 = 128.
+ *  화면 크기·글 길이와 상관없다. */
+export const TALK_H = 128;
 /** 지도 카메라 칸: 위는 할 일 진행도(top-4 16 + 알약 44) 아래 20, 왼쪽은 40, 얹은 것(말풍선 카드·미니맵·생각 말풍선·마스코트)과는 FOCUS_GAP 떨어진다. */
 const FOCUS_TOP = 80;
 const FOCUS_LEFT = 40;

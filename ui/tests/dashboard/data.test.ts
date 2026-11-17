@@ -22,12 +22,12 @@ describe("대시보드 자료", () => {
     expect(talkOf(s)!.lines.length).toBeGreaterThan(0);
     expect(talkOf(EMPTY_DASH)).toBeNull();
   });
-  it("메시지 상자 줄: 생각 메시지와 말풍선 카드 말을 받은 차례로 쌓고 최근 TALK_SHOWN(2)줄을 보인다. 같은 id·같은 말은 한 번만이고 원래 생각은 싣지 않는다", () => {
-    expect(TALK_SHOWN).toBe(2);
+  it("메시지 상자 줄: 생각 메시지와 말풍선 카드 말을 받은 차례로 쌓고 최근 TALK_SHOWN(3)줄을 보인다. 같은 id·같은 말은 한 번만이고 원래 생각은 싣지 않는다", () => {
+    expect(TALK_SHOWN).toBe(3);
     const s = feed([said("pam-1", 10, "사람이 컵을 두고 떠났어요", "컵이 비어 보여요"), { type: "say", text: "컵을 치우기로 했어요." }, { type: "say", text: "컵을 치우기로 했어요." }]);
-    expect(textsOf(s)).toEqual(["컵이 비어 보여요", "컵을 치우기로 했어요."]);
-    expect(textsOf(reduceDash(s, said("pam-1", 10, "사람이 컵을 두고 떠났어요"), 0))).toEqual(["컵이 비어 보여요", "컵을 치우기로 했어요."]);
-    expect(textsOf(reduceDash(s, said("pam-2", 1, "컵을 찾았어요"), 0))).toEqual(["컵을 치우기로 했어요.", "컵을 찾았어요"]);
+    expect(textsOf(s)).toEqual(["사람이 컵을 두고 떠났어요", "컵이 비어 보여요", "컵을 치우기로 했어요."]);
+    expect(textsOf(reduceDash(s, said("pam-1", 10, "사람이 컵을 두고 떠났어요"), 0))).toEqual(["사람이 컵을 두고 떠났어요", "컵이 비어 보여요", "컵을 치우기로 했어요."]);
+    expect(textsOf(reduceDash(s, said("pam-2", 1, "컵을 찾았어요"), 0))).toEqual(["컵이 비어 보여요", "컵을 치우기로 했어요.", "컵을 찾았어요"]);
     expect(JSON.stringify(talkOf(feed([branchDecision(BRANCHES.clear, 1), said("pam-1", 10, "치우는 습관이라 컵을 치울게요")]))!)).not.toContain(REASON);
   });
   it("알약 셋(상태·트리거·액션)은 서버 판단의 FSM으로 정한다: 규칙대로 고르면 상태 이름·트리거·행동, 대기면 트리거·액션 「대기」, 규칙 없는 행동은 트리거 「규칙 없음」, 규칙이 여럿이면 「규칙 여럿」. 판단 전·FSM 없음이면 없다", () => {
@@ -51,12 +51,12 @@ describe("대시보드 자료", () => {
   it("안전 알림(say safety)이 유효한 동안 메시지 상자 최신 줄은 늘 그 알림이고, 안전 아닌 말이 오면 풀린다", () => {
     const fall = "사람이 쓰러진 것 같아요.";
     const s = feed([said("pam-0", 5, "식탁을 보고 있어요"), { type: "say", text: fall, safety: true }, said("pam-1", 10, "사람이 보여요", "자세가 낮아요")]);
-    expect(textsOf(s)).toEqual(["자세가 낮아요", fall]);
+    expect(textsOf(s)).toEqual(["사람이 보여요", "자세가 낮아요", fall]);
     const more = reduceDash(s, said("pam-2", 20, "계속 지켜볼게요"), 0);
-    expect(textsOf(more)).toEqual(["계속 지켜볼게요", fall]);
+    expect(textsOf(more)).toEqual(["자세가 낮아요", "계속 지켜볼게요", fall]);
     const over = reduceDash(more, { type: "say", text: "지켜보고 있어요." }, 0);
-    expect(textsOf(over)).toEqual(["계속 지켜볼게요", "지켜보고 있어요."]);
-    expect(textsOf(reduceDash(more, { type: "say", text: null }, 0))).toEqual(["자세가 낮아요", "계속 지켜볼게요"]);
+    expect(textsOf(over)).toEqual(["자세가 낮아요", "계속 지켜볼게요", "지켜보고 있어요."]);
+    expect(textsOf(reduceDash(more, { type: "say", text: null }, 0))).toEqual(["사람이 보여요", "자세가 낮아요", "계속 지켜볼게요"]);
   });
   it("메시지 상자 머리는 지금 판단의 행동이 어느 모드로 하는 행동인지다: 코치 행동이면 「코치 모드」, 다른 행동이면 「눈치 모드」, 대기·판단 전이면 없다", () => {
     const one = said("pam-1", 10, "컵을 살피고 있어요");
@@ -78,6 +78,12 @@ describe("대시보드 자료", () => {
     expect(talkOf(feed([branchDecision(BRANCHES.clear, 2), plan, branchDecision(COACH, 3), one]))!.mode).toBe("눈치 모드");
     // 계획이 없으면 가장 새 판단이다
     expect(talkOf(feed([branchDecision(BRANCHES.clear, 2), branchDecision(COACH, 3), one]))!.mode).toBe("코치 모드");
+  });
+  // Codex(cd25828 data.ts:156): 계획이 도는 중에 다시 접속하면 마지막 판단이 대기·다른 행동일 때 계획 행동의 모드를 몰라 머리가 사라졌다
+  it("다시 접속해 계획 스냅숏만 받아도 머리는 그 계획에 실린 행동의 모드다", () => {
+    const one = said("pam-1", 10, "컵을 살피고 있어요");
+    const coachPlan: ServerMessage = { type: "plan", plan: { ...PLAN, goal: COACH.action, assist: "coach" } };
+    expect(talkOf(feed([{ type: "hello", home: null } as unknown as ServerMessage, coachPlan, branchDecision(null, 9), one]))!.mode).toBe("코치 모드");
   });
   it("계획 단계마다 번호·마스코트·말이 따라간다", () => {
     const says = ["식탁으로 가라고 했어요.", "컵을 들라고 했어요.", "싱크대로 가라고 했어요.", "컵을 싱크대에 넣으라고 했어요."];

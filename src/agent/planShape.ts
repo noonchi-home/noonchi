@@ -16,7 +16,7 @@ const base = (fp: FloorPlan, id: string, nowIso: string) => ({
 export interface DraftStep { kind: StepKind; label: string; target?: PlanTarget; to?: XZ }
 
 /** 계획 머리: id·할 일·판단 이유·출처·모의. */
-export interface PlanHead { id: string; goal: string; judgment: string; source: PlanView["source"]; dryRun: boolean; nowIso: string }
+export interface PlanHead { id: string; goal: string; judgment: string; source: PlanView["source"]; dryRun: boolean; nowIso: string; assist?: PlanView["assist"] }
 
 /**
  * 단계 목록 → PlanView. 단계 id는 <계획 id>:<번호>. 이동 단계마다 앞 이동 끝(처음은 로봇 자리)에서 목적지까지 길을 잇고 목적지 STOP_M 앞에서 멈춘다.
@@ -41,7 +41,7 @@ export function assemblePlan(fp: FloorPlan, head: PlanHead, draft: DraftStep[]):
     at = seg.at(-1)!;
   }
   return {
-    ...base(fp, head.id, head.nowIso), source: head.source, goal: head.goal, judgment: head.judgment, dryRun: head.dryRun, path, legs, steps, status: "planned",
+    ...base(fp, head.id, head.nowIso), source: head.source, goal: head.goal, ...(head.assist ? { assist: head.assist } : {}), judgment: head.judgment, dryRun: head.dryRun, path, legs, steps, status: "planned",
   };
 }
 

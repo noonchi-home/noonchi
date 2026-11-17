@@ -6,6 +6,7 @@ import type { DeviceView, HealthView, ServerMessage } from "../../../src/contrac
 import { Dashboard } from "../../src/dashboard/Dashboard";
 import { clockText } from "../../src/dashboard/clock";
 import run from "../../src/dashboard/fake-run.json";
+import { branchDecision, COACH, PLAN } from "./fixtures";
 
 const SPOT = new Map<string, { x: number; y: number; visible: boolean }>();
 vi.mock("../../src/twin/use-anchors", () => ({
@@ -125,7 +126,19 @@ describe("대시보드 자료 연결", () => {
     expect(document.querySelector("[data-thought], [data-thought-chips]")).toBeNull();
   });
 
-  it("/events thought 메시지와 말이 받은 차례로 쌓이고 최근 두 줄만 보인다. 원래 생각은 보이지 않는다", async () => {
+  // Codex(cd25828 Dashboard.tsx:238): talkOf 메모에 계획이 빠져 계획 시작·끝만으로는 머리가 바뀌지 않았다
+  it("판단이 그대로여도 계획이 시작·끝나면 메시지 상자 머리가 그 계획 행동의 모드로 바뀐다", async () => {
+    await mount(false);
+    const mode = () => talk().querySelector("[data-talk-mode]")?.textContent ?? null;
+    send([branchDecision(COACH, 1)]);
+    await waitFor(() => expect(mode()).toBe("코치 모드"));
+    send([{ type: "plan", plan: { ...PLAN, revision: 50, assist: "noonchi" } }]);
+    await waitFor(() => expect(mode()).toBe("눈치 모드"));
+    send([{ type: "plan", plan: { ...PLAN, revision: 51, assist: "noonchi", status: "done" } }]);
+    await waitFor(() => expect(mode()).toBe("코치 모드"));
+  });
+
+  it("/events thought 메시지와 말이 받은 차례로 쌓이고 최근 세 줄만 보인다. 원래 생각은 보이지 않는다", async () => {
     await mount(false);
     send(moment(2).filter((m) => m.type !== "thought" && m.type !== "say"));
     expect(messageTexts()).toEqual([]);
@@ -133,7 +146,7 @@ describe("대시보드 자료 연결", () => {
     send([{ type: "thought", messages: [msg("a", 1, "사람이 떠났어요"), msg("b", 2, "컵이 남아 있어요")] }]);
     expect(messageTexts()).toEqual(["사람이 떠났어요", "컵이 남아 있어요"]);
     send([{ type: "thought", messages: [msg("c", 3, "치우는 습관이 있어요"), msg("d", 4, "컵을 치울게요")] }]);
-    await waitFor(() => expect(messageTexts()).toEqual(["치우는 습관이 있어요", "컵을 치울게요"]));
+    await waitFor(() => expect(messageTexts()).toEqual(["컵이 남아 있어요", "치우는 습관이 있어요", "컵을 치울게요"]));
     expect(talk()).not.toHaveTextContent("사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.");
   });
 

@@ -37,8 +37,8 @@ function addTalk(list: DashData["talk"], more: { id: string; text: string }[]): 
   return fresh.length ? [...list, ...fresh].slice(-THOUGHT_KEPT) : list;
 }
 
-/** 메시지 상자에 보이는 줄 수(최근 것): 지난 줄 하나와 최신 줄 하나. */
-export const TALK_SHOWN = 2;
+/** 메시지 상자에 보이는 줄 수(최근 것): 지난 줄 둘과 최신 줄 하나. */
+export const TALK_SHOWN = 3;
 /** 자료에 두는 메시지 수. */
 const THOUGHT_KEPT = 6;
 
@@ -153,7 +153,7 @@ export function talkOf(s: DashData): Talk | null {
   // 머리: 실행 추적이 받아들인 행동이 어느 모드로 하는 행동인가(서버 판단 기록 assist, 행동 목록 TaskSpec.coach). 진행 중 계획이 있으면 그 계획의 행동,
   // 없으면 가장 새 판단의 행동이고, 대기면 없다. 설정의 돕는 방식(자동 등)은 쓰지 않는다
   const open = isOpen(s.plan) ? s.plan : null;
-  const m = open ? s.modes[open.goal] ?? null : d?.action ? d.assist ?? null : null;
+  const m = open ? open.assist ?? s.modes[open.goal] ?? null : d?.action ? d.assist ?? null : null;
   const mode = m ? ASSIST_NAME[m] : null;
   return lines.length || fsm || mode ? { lines, fsm, mode } : null;
 }
