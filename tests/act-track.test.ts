@@ -3989,6 +3989,20 @@ describe("실행 추적: 안 보이는 대상은 마지막으로 본 자리로 �
     expect(s.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-4", state: "decided", text: "컵을 찾으러 가요" });
   });
 
+  it("비춘 사진에 그 자리가 30초 안에 들어오지 않으면(영상 모드에서 자리가 영상 화면 밖일 때) 비추기 한도로 닫고 그 자리를 쉰다", async () => {
+    const s = findSetup();
+    await s.decide(decision);
+    s.eye([2.6, 1]);
+    s.tick();
+    expect(s.last()).toMatchObject({ text: "식탁 위를 비춰 주세요" });
+    for (let i = 0; i < 29; i++) s.tick(1000);
+    expect(s.exec().some((l) => l.state === "failed")).toBe(false);
+    s.tick(1_250);
+    expect(s.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-1", state: "failed", text: CHECK_TEXT.no_target });
+    expect(s.last()).toEqual({ type: "command_clear", id: "find:1" });
+    expect(s.looks).toEqual([]);
+  });
+
   it("보기 담당이 바쁘면 3초 뒤 다시 부탁한다", async () => {
     const s = findSetup();
     await s.decide(decision);

@@ -47,8 +47,6 @@ const WALK_MPS = 0.8;
 const WALK_STOP_M = 0.6;
 /** 가까이 가서 보기 go(near_m)는 그 거리의 이만큼까지 걷는다(자세 흔들림 여유). */
 const NEAR_WALK = 0.8;
-/** 사람에게 하는 단계 명령 종류: 대상이 있으면 맞는 단계 영상 칸이 없어도 자세를 옮긴다(실제 모드에서 사람이 명령대로 폰을 움직이듯). */
-const HUMAN_KINDS = new Set(["go", "pick", "place", "do"]);
 /** 위에서 비추기 자세: 대상에서 지금 자리 쪽으로 수평(m)·대상 위(m). 크기를 모르는 좁고 깊은 컵도 입구 바로 위라 안이 보인다(src/world/place.ts topView). */
 const ABOVE = { backM: 0.02, upM: 0.4 };
 const STEP_KINDS = new Set(["go", "pick", "place", "do"]);
@@ -626,7 +624,8 @@ export function createVideoAr({ link, params, hooks, deps }) {
     const current = {
       videoTime: timeline,
       /** 사람 단계 명령: 맞는 step 칸이 있으면 그 id·step에 한 번, reactMs 뒤 단계 영상으로 바꾸고, 바뀌면 go는 걷고 집기·놓기·그 자리에서 하는 일(do)은 대상을 바라본다.
-       *  맞는 칸이 없어도 대상이 있는 사람 단계 명령이면 reactMs 뒤 자세만 옮긴다(영상은 그대로). */
+       *  맞는 칸이 없으면 대상이 있는 go만 reactMs 뒤 걷는다(영상은 그대로). 그 밖은 영상이 돌지 않으므로 자세도 그대로 둔다:
+       *  자세만 돌리면 사진과 자세가 어긋나 서버가 엉뚱한 자리를 잘라 본다(2026-11-17 머그 실제 녹화). */
       command(cmd) {
         const key = `${cmd.id}:${cmd.step}`;
         const fresh = key !== lastKey;
@@ -645,7 +644,8 @@ export function createVideoAr({ link, params, hooks, deps }) {
         const id = cmd.target?.id;
         const first = typeof id === "string" ? steps.find((s) => s.kind === cmd.kind && id.includes(s.word)) : undefined;
         const target = Array.isArray(cmd.target?.ar) ? cmd.target.ar : null;
-        if (!first && !(target && HUMAN_KINDS.has(cmd.kind))) return;
+        // 영상 모드: 자세 흉내. 칸이 없으면 go만(걷기는 가기 단계가 끝나는 데 필요하다)
+        if (!first && !(target && cmd.kind === "go")) return;
         const gen = cmdGen;
         lastCmdId = cmd.id;
         // go는 걷기(near_m이 있으면 그 거리 안까지), view above면 위에서 비추기, 그 밖은 그 자리에서 바라보기
@@ -659,7 +659,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
           }, reactMs);
           reactTimers.add(timer);
         };
-        // 영상 모드: 자세 흉내. 맞는 단계 영상 칸이 없으면 영상은 그대로 두고 반응 시간 뒤 자세만 옮긴다(같은 명령이 다시 와도 다시 시작하지 않는다).
+        // 영상 모드: 자세 흉내. 맞는 단계 영상 칸이 없는 go는 영상은 그대로 두고 반응 시간 뒤 걷기만 한다(같은 명령이 다시 와도 다시 시작하지 않는다).
         // 단계 영상 예약과 따로 센다: 대상이 바뀌어 같은 명령이 칸에 맞게 되면 그때 단계 영상으로 바꾼다
         if (!first) {
           if (posedKey === key) return;
