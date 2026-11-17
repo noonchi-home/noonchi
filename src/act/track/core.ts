@@ -87,6 +87,8 @@ export class TrackCore {
   idlePeek: IdlePeek | null = null;
   /** 계획 전 찾기(계획 전 검사가 대상이 안 보여 막은 판단, src/act/track/find.ts): 명령 id find:<번호>와 그 상태. 없으면 null. */
   finding: FindSlot | null = null;
+  /** 계획 전 찾기에서 찾은 뒤 다시 판단 받기로 넘긴 판단 id: 그 판단으로 만든 계획은 찾기로 붙잡았던 것으로 본다(Run.findHeld). */
+  foundFor: string | null = null;
   /** 마지막으로 기다리기·기기 단계가 시작된 시각. 그 전에 보낸 다른 행동 판단은 쓰지 않는다. */
   quietFrom = -Infinity;
   stopped = false;

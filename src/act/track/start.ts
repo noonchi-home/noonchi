@@ -145,8 +145,10 @@ export class Starter extends Part {
       looks: 0, lookAt: Number.NEGATIVE_INFINITY, stepEnd: null, gapAt: job.at, onAt: new Map(), ends: new Map(), offAsked: -1, deferred: false, phoneWait: false, phone: false,
       strays: 0, strayAt: Number.NEGATIVE_INFINITY, strayNear: null, told: null, helped: false,
       quiet: taskOf(r.plan.task)?.coach ? quietLabels(this.o.lessons?.get(r.plan.task) ?? null) : new Set(), quietOn: false, outcomes: [], hold: null, window: null, heldIds: new Set(), busyAt: null,
-      find: null, findHeld: false,
+      // 계획 전 찾기에서 찾은 뒤 만든 계획이면 찾기로 붙잡았던 계획처럼 첫 명령을 폰 대화·승인 대기 동안 미룬다
+      find: null, findHeld: core.foundFor === d.id,
     };
+    if (core.foundFor === d.id) core.foundFor = null;
     // 계획 밖 가까이 가서 보기·계획 전 찾기는 이 계획이 명령·보기 지킴을 쓰기 전에 거둔다(같은 컵의 지킴을 나중에 풀지 않게)
     core.contents.dropIdle();
     core.finder.drop(EXEC_TEXT.superseded);

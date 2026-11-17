@@ -4055,6 +4055,26 @@ describe("실행 추적: 안 보이는 대상은 마지막으로 본 자리로 �
     expect(s.commands().at(-1)).toMatchObject({ id: "plan:pam-2" });
   });
 
+  // Codex(3672313): 계획 전 찾기에서 찾은 뒤 만든 계획은 findHeld가 없어, 폰 대화·승인 대기가 남아도 첫 명령을 바로 보냈다
+  it("계획 전 찾기에서 찾은 뒤 만든 계획도 폰 대화·승인 대기가 있으면 첫 명령을 미루고, 풀리면 보낸다", async () => {
+    let talking = false;
+    const s = findSetup({ over: { talking: () => talking } });
+    await s.decide(decision);
+    toLook(s);
+    talking = true;
+    s.objects([found("cup_3", [2.2, 0.75, 1], s.clock.t)]);
+    s.tick();
+    await s.t.idle();
+    expect(s.exec().some((l) => l.plan_id === "plan:pam-1" && l.state === "planned")).toBe(true);
+    s.objects([found("cup_3", [2.2, 0.75, 1], s.clock.t + 250)]);
+    s.tick();
+    expect(s.commands().some((c) => c.id === "plan:pam-1")).toBe(false);
+    talking = false;
+    s.objects([found("cup_3", [2.2, 0.75, 1], s.clock.t + 250)]);
+    s.tick();
+    expect(s.commands().at(-1)).toMatchObject({ id: "plan:pam-1" });
+  });
+
   it("0.5m 안 컵 둘이 0.1m 안으로 붙어 있으면 아직 찾은 것이 아니다", async () => {
     const s = findSetup();
     await s.decide(decision);

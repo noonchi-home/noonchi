@@ -117,6 +117,7 @@ export class Finder extends Part {
       return core.emit(planIdOf(q.first.id), "failed", q.text);
     }
     this.o.thought?.(FIND_THOUGHT.found(q.find.name), q.first.id);
+    core.foundFor = q.decision.id;
     core.start.onDecision(q.decision);
   }
 
