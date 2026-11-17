@@ -26,6 +26,39 @@ function gatedVlm() {
 const head = (at: number) => ({ kind: "engine" as const, width: 100, height: 100, captured_at: at, time_err_ms: 0 });
 
 describe("관찰 흐름", () => {
+  // 속도(4a 앞 단계): VLM 프레임이 YOLO 줄의 빠른 프레임 뒤에 서면 사진 → VLM 보냄이 (앞 장 수 + 1) × YOLO 한 장(0.15~0.22초)만큼 늦는다
+  it("VLM 프레임은 YOLO 줄의 빠른 프레임 앞에 선다: 앞 감지가 끝나면 VLM 프레임부터 감지해 VLM에 보낸다", async () => {
+    const order: number[] = [];
+    const gates: (() => void)[] = [];
+    const detector = { name: "held", provider: "test", detect: async (j: Buffer) => {
+      order.push(j[2]!);
+      await new Promise<void>((ok) => gates.push(ok));
+      return { detections: [], ms: 0, width: 100, height: 100 };
+    } } as unknown as Detector;
+    let sent = 0;
+    const vlm = { model: "w", json: async () => { sent++; return { value: { scene: "k", observations: [], summary: "s" }, costUsd: 0, model: "w", attempts: 1 }; } } as unknown as VlmClient;
+    const p = new ObservationPipeline({ config: { engineMs: 100, vlmMs: 2000, vlmMaxInflight: 4, vlmTimeoutMs: 5000, detectQueueMax: 8, keepMs: 20_000 }, detector, vlm,
+      world: new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }), emit: () => {}, broadcastWorld: () => {} });
+    p.onEngine(jpeg(1), head(1000), null, null, 1005);   // VLM 프레임(첫 장): 감지 중
+    p.onEngine(jpeg(2), head(1100), null, null, 1105);   // 빠른 프레임
+    p.onEngine(jpeg(3), head(1200), null, null, 1205);   // 빠른 프레임
+    p.onEngine(jpeg(4), head(3000), null, null, 3005);   // VLM 프레임
+    await until(() => gates.length === 1);
+    gates.shift()!();
+    await until(() => order.length === 2);
+    expect(order).toEqual([1, 4]);
+    await until(() => sent === 1);
+    gates.shift()!();
+    await until(() => sent === 2);
+    expect(sent).toBe(2);
+    for (let i = 0; i < 20 && order.length < 4; i++) {
+      while (gates.length) gates.shift()!();
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    while (gates.length) gates.shift()!();
+    await p.close();
+  });
+
   it("엔진 프레임마다 YOLO와 VLM이 둘 다 분석하고, 같은 사진은 버리고, World State를 보낸다", async () => {
     fake = await startFakeOpenAI();
     const logs: BrainLog[] = [];

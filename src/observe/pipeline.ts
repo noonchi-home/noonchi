@@ -293,7 +293,10 @@ export class ObservationPipeline {
         this.missBoth(frame, "cap");
         return false;
       }
-      this.queue.push(frame);
+      // VLM 프레임은 빠른 프레임 앞(앞선 VLM 프레임 뒤)에 선다: VLM은 이 프레임의 YOLO 감지를 받아 보내므로, 빠른 프레임을 기다리면
+      // 사진 → VLM 보냄이 앞 장 수 × YOLO 한 장(0.15~0.22초)만큼 늦는다
+      const at = this.queue.findIndex((f) => !f.vlm);
+      this.queue.splice(at < 0 ? this.queue.length : at, 0, frame);
       return true;
     }
     this.queue.push(frame);
