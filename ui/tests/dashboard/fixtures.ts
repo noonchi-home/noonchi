@@ -19,7 +19,7 @@ export const HEALTH: HealthView = {
   ok: true, devices: 2, hub: "memory", transport: null, provider: "openai", model: "gpt-5-mini", twin: true, eye: true,
   home: { id: "mokryeon_180b", name: "한양목련 180B" }, phone_urls: [PHONE_URL], brain: true, mode: "test",
   ready: {
-    ok: false, inference_mode: "mock", vlm: { base_url: "", model: "", key: false, reachable: false }, pam: { url: "", reachable: false, llm: null },
+    ok: false, inference_mode: "openai", vlm: { base_url: "", model: "", key: false, reachable: false }, pam: { base_url: "", model: "", key: false, reachable: false },
     agent: { provider: "openai", base_url: "", model: "", key: false, reachable: false }, db: false,
   },
 };

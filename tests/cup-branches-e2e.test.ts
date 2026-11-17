@@ -104,6 +104,8 @@ describe("컵 장면 갈래", () => {
     const s = await start({ dets: [CUP], facts: { cup: ["on_table", "empty"] } }, ["컵 치우기"]);
     await s.pump(() => s.spoken().length > 0);
     expect(s.spoken()[0]).toMatchObject({ text: "식탁으로 가 주세요", kind: "go" });
+    // 컵 치우기는 내용물과 상관없이 바로 첫 명령을 낸다. 내용물은 그 뒤에도 비전으로 계속 확정된다
+    await s.pump(async () => (await s.history("world")).some((r) => r.text === "컵 cup_1 비어 있음"));
     expect((await s.history("decision")).map((r) => r.text)).toContain("컵 치우기");
     expect((pam!.bodies.at(-1) as PredictView).tasks).toEqual(tasksFor("noonchi"));
   }, 60_000);
@@ -112,6 +114,8 @@ describe("컵 장면 갈래", () => {
     const s = await start({ dets: [CUP], facts: { cup: ["on_table", "has_contents"] } }, ["컵 치우기"]);
     await s.pump(() => s.spoken().length > 0);
     expect(s.spoken()[0]).toMatchObject({ text: "식탁으로 가 주세요", kind: "go" });
+    // 컵 치우기는 내용물과 상관없이 바로 첫 명령을 낸다. 내용물은 그 뒤에도 비전으로 계속 확정된다
+    await s.pump(async () => (await s.history("world")).some((r) => r.text === "컵 cup_1 내용물 있음"));
     const decisions = (await s.history("decision")).map((r) => r.text);
     expect(decisions).toContain("컵 치우기");
     expect(decisions).not.toContain("컵 그대로 두기");

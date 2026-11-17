@@ -10,6 +10,7 @@
 [집 상태] world 컵 cup_1 비어 있음
 [집 상태] world 사람 물건을 들고 있음
 [집 상태] detection 병 bottle_1 보임
+[집 상태] world 병 bottle_1 손에 있음
 [집 상태] world 병 bottle_1 식탁 위
 [집 상태] world 컵 cup_1 내용물 있음
 [있음] decision 대기 valid

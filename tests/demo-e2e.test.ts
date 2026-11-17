@@ -180,6 +180,8 @@ describe("시연 네 장면(자동 모드, 한양목련, 가짜 서버)", () => 
     const s = await start({ scene: { dets: [det("cup", 0.9, CUP_BOX, 41)], facts: { cup: ["on_table", "empty"] } }, view: CUP_VIEW });
     await s.pump(() => s.commands().some((m) => m.text === "식탁으로 가 주세요"), "첫 명령");
     expect(s.commands()[0]).toMatchObject({ text: "식탁으로 가 주세요", choices: [{ id: "done", label: "완료" }] });
+    // 컵 치우기는 내용물과 상관없이 바로 첫 명령을 낸다. 내용물은 그 뒤에도 비전으로 계속 확정된다
+    await s.pump(() => s.server.history.list({ kinds: ["world"], limit: 5000 }).some((r) => r.text === "컵 cup_1 비어 있음"), "내용물 확정");
     expect(s.decisions().find((e) => e.action === "컵 치우기")).toMatchObject({ assist: "noonchi", fsm: { learned: false } });
     s.pamChecked();
   }, 120_000);

@@ -16,9 +16,9 @@ const HEALTH: HealthView = {
   phone_urls: ["http://172.20.0.5:8443/phone/", "https://192.168.0.21:8443/phone/"],
   brain: true, mode: "test",
   ready: {
-    ok: true, inference_mode: "mock",
+    ok: true, inference_mode: "openai",
     vlm: { base_url: "http://127.0.0.1:1/v1", model: "vlm", key: true, reachable: true },
-    pam: { url: "http://127.0.0.1:2", reachable: true, llm: null },
+    pam: { base_url: "http://127.0.0.1:2/v1", model: "pam", key: true, reachable: true },
     agent: { provider: "openai", base_url: "http://127.0.0.1:3/v1", model: "gpt-5.5", key: true, reachable: true },
     db: true,
   },

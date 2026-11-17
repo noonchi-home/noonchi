@@ -39,7 +39,7 @@ function stubServer(eye: boolean, twin = true) {
   const health: HealthView = {
     ok: true, devices: 2, hub: "memory", transport: null, provider: "openai", model: "m", twin, eye,
     home: { id: "h", name: "우리 집" }, phone_urls: [PHONE_URL], brain: true, mode: "test",
-    ready: { ok: false, inference_mode: "mock", vlm: { base_url: "", model: "", key: false, reachable: false }, pam: { url: "", reachable: false, llm: null },
+    ready: { ok: false, inference_mode: "openai", vlm: { base_url: "", model: "", key: false, reachable: false }, pam: { base_url: "", model: "", key: false, reachable: false },
       agent: { provider: "openai", base_url: "", model: "", key: false, reachable: false }, db: false },
   };
   vi.stubGlobal("fetch", vi.fn(async (path: string) => (

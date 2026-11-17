@@ -7,5 +7,7 @@
 [집 상태] detection 컵 cup_1 보임
 [집 상태] world 컵 cup_1 비어 있음
 [있음] decision 대기 valid
+[있음] decision 컵 치우기 valid
+[있음] execution 같은 행동을 진행 중
 [있음] execution 대기
 [있음] vlm
