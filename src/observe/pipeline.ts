@@ -84,6 +84,8 @@ export const FAST_QUEUE_MAX = 2;
 export const CLOSER_FRAMES = 5;
 /** 가까이 보기 촬영 범위와 끊김 검사의 가장 짧은 값(ms). */
 export const CLOSER_FRESH_MS = 3000;
+/** 실행 추적이 가까이 보는 차례(찾기 비추기·가까이 보기, 내용물 보류 잘라 보기·위에서 보기)인 동안의 VLM 프레임 간격(ms). 그 밖에는 VLM_FRAME_MS. */
+export const FAST_VLM_MS = 1000;
 /** VLM 풀에 따로 둔 가까이 보기 자리 수. */
 export const CLOSER_VLM_SLOTS = 1;
 
@@ -128,6 +130,8 @@ export interface PipelineOptions {
   dataset?: (f: EngineFrame) => void;
   /** 감지가 끝난 프레임(받은 JPEG 그대로)과 감지 결과. 폰 위치 맞추기가 기준점 상자(landmarks)를 쓴다(src/server/home/observe.ts). */
   onDetected?: (jpeg: Buffer, result: DetectResult) => void;
+  /** 참인 동안 VLM 프레임 간격을 FAST_VLM_MS(VLM_FRAME_MS가 더 짧으면 그 값)로 줄인다: 실행 추적이 가까이 보는 차례(src/act/track/tracker.ts looking). */
+  vlmFast?: () => boolean;
   clock?: { now(): number };
 }
 
@@ -237,15 +241,16 @@ export class ObservationPipeline {
     const frame: EngineFrame = { id: `e${++this.seq}`, capturedAtMs: t.atMs, latestAtMs: t.latestMs, jpeg, sha256: sha256(jpeg), width: header.width, height: header.height, eye, view, vlm: false };
     // 붙잡은 장면(held)은 같은 사진이어도 VLM 간격마다 새 관찰로 넣는다: 붙잡는 동안 VLM은 영상이 돌 때와 같은 간격으로 부른다
     // 영상 모드: held
-    const pushed = this.ring.push(frame, header.held ? { resendAfterMs: vlmStepMs(this.o.config) } : {});
+    const pushed = this.ring.push(frame, header.held ? { resendAfterMs: this.vlmGap() ?? vlmStepMs(this.o.config) } : {});
     if (pushed === "duplicate") return;
     this.frames++;
     if (pushed === "stale") {
       this.missBoth(frame, "stale");
       return;
     }
-    // VLM 프레임: 앞 VLM 프레임보다 VLM 간격 이상 뒤에 찍힌 프레임(간격이 없으면 모든 프레임). 그 사이는 빠른 프레임이다
-    const vlmMs = this.o.config.vlmMs;
+    // VLM 프레임: 앞 VLM 프레임보다 VLM 간격 이상 뒤에 찍힌 프레임(간격이 없으면 모든 프레임). 그 사이는 빠른 프레임이다.
+    // 가까이 보는 차례인 동안은 간격이 FAST_VLM_MS다(늘어나는 VLM 호출은 그 차례뿐이다)
+    const vlmMs = this.vlmGap();
     frame.vlm = vlmMs === undefined || this.lastVlmAt === null || t.atMs - this.lastVlmAt >= vlmMs;
     if (frame.vlm) this.lastVlmAt = t.atMs;
     if (this.o.dataset) {
@@ -375,6 +380,12 @@ export class ObservationPipeline {
       dataset: this.o.dataset ? { ...this.datasetCount } : null,
       closer: { ...this.closerCount, costUsd: this.closerUnpriced ? null : Math.round(this.closerCount.costUsd * 1e5) / 1e5, model: this.closerVlm.model },
     };
+  }
+
+  /** 지금 VLM 프레임 간격(ms, 없으면 모든 프레임): 가까이 보는 차례면 FAST_VLM_MS와 VLM_FRAME_MS 가운데 짧은 것. */
+  private vlmGap(): number | undefined {
+    const ms = this.o.config.vlmMs;
+    return ms !== undefined && this.o.vlmFast?.() ? Math.min(ms, FAST_VLM_MS) : ms;
   }
 
   /** 고리 가장 새 프레임(없으면 null). */
@@ -683,6 +694,7 @@ export async function createPipeline(o: {
   onChanges?: (c: WorldChange[]) => void; onFrame?: () => void; log: (line: string) => void; inject?: PipelineInject; dataset?: (f: EngineFrame) => void;
   onSeen?: (e: SeenEvent) => void;
   onDetected?: (jpeg: Buffer, result: DetectResult) => void;
+  vlmFast?: () => boolean;
 }): Promise<ObservationPipeline> {
   const config = loadObserveConfig(o.env);
   const detector = o.inject && "detector" in o.inject ? o.inject.detector ?? null : await createDetector(o.env, o.log);
@@ -694,6 +706,6 @@ export async function createPipeline(o: {
   if (detector?.decoder === "jpeg-js") o.log("[경고] sharp를 불러오지 못했습니다. JPEG을 jpeg-js로 풉니다(한 장에 약 30ms 더 걸립니다).");
   if (o.dataset) o.log("[경고] 시험 자료 모으기가 켜져 있습니다. 엔진 프레임을 디스크에 씁니다.");
   return new ObservationPipeline({
-    config, detector, vlm, closerVlm, world: o.world, emit: o.emit, broadcastWorld: o.broadcastWorld, onChanges: o.onChanges, onFrame: o.onFrame, onSeen: o.onSeen, dataset: o.dataset, onDetected: o.onDetected, clock: o.inject?.clock,
+    config, detector, vlm, closerVlm, world: o.world, emit: o.emit, broadcastWorld: o.broadcastWorld, onChanges: o.onChanges, onFrame: o.onFrame, onSeen: o.onSeen, dataset: o.dataset, onDetected: o.onDetected, vlmFast: o.vlmFast, clock: o.inject?.clock,
   });
 }

@@ -342,6 +342,12 @@ export class ExecutionTracker {
     if (HUMAN_KINDS.includes(step.kind) || step.kind === "ask") steps.repeat(r, now);
   }
 
+  /** 가까이 보는 차례인가(찾기 비추기·가까이 보기, 내용물 보류 잘라 보기·위에서 보기): 관찰 흐름이 그동안 VLM 사진 간격을 줄인다(src/observe/pipeline.ts vlmFast). */
+  looking(): boolean {
+    const core = this.core;
+    return !core.stopped && (core.finder.looking() || core.contents.looking());
+  }
+
   /** 판단 전 보기 B가 그 컵을 잘라 봤다(src/act/look.ts looked): 계획 밖으로 가까이 가서 볼지 본다. */
   lookedIdle(objectId: string): void {
     this.core.contents.lookedIdle(objectId);

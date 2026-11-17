@@ -3731,6 +3731,23 @@ describe("실행 추적: 계획 밖 가까이 가서 보기(판단 전 보기 B 
     expect(s.commands().filter((c) => c.id !== "peek:1")).toEqual([]);
   });
 
+  it("내용물 보류의 위에서 비추기·위에서 보기 동안에만 looking()이 참이다(가까이 가기는 아니다)", () => {
+    const s = idleSetup();
+    s.tick();
+    expect(s.last()).toMatchObject({ text: PEEK_TEXT.go("컵") });
+    expect(s.t.looking()).toBe(false);
+    s.eye([2.3, 1]);
+    s.tick();
+    expect(s.last()).toMatchObject({ text: PEEK_TEXT.above("컵") });
+    expect(s.t.looking()).toBe(true);
+    s.ready(true);
+    s.tick();
+    expect(s.t.looking()).toBe(true);
+    s.looks[0]!.done();
+    for (let i = 0; i < 40; i++) s.tick();
+    expect(s.t.looking()).toBe(false);
+  });
+
   it("위에서 본 뒤에도 모르면 기록만 남고(묻지 않음) 그 컵·세대는 60초 동안 다시 가까이 가지 않는다", () => {
     const s = idleSetup({ eye: false });
     s.eye([2.3, 1]);
@@ -4029,6 +4046,22 @@ describe("실행 추적: 안 보이는 대상은 마지막으로 본 자리로 �
     expect(s.exec().some((l) => l.state === "failed")).toBe(false);
     s.tick(200);
     expect(s.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-1", state: "failed", text: CHECK_TEXT.no_target });
+  });
+
+  it("가까이 보는 차례(비추기·가까이 보기·사진 기다림)에만 looking()이 참이다(관찰 흐름이 그동안 VLM 사진 간격을 1초로 줄인다)", async () => {
+    const s = findSetup();
+    await s.decide(decision);
+    expect(s.t.looking()).toBe(false);   // 가기
+    s.eye([2.6, 1]);
+    s.tick();
+    expect(s.t.looking()).toBe(true);    // 비추기
+    s.ready(true);
+    s.tick();
+    expect(s.t.looking()).toBe(true);    // 가까이 보기
+    s.looks[0]!.done(true);
+    s.tick();
+    expect(s.exec().at(-1)).toMatchObject({ state: "failed" });
+    expect(s.t.looking()).toBe(false);   // 끝
   });
 
   it("보기 담당이 바쁘면 3초 뒤 다시 부탁한다", async () => {

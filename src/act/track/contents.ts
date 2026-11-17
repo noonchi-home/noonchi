@@ -265,6 +265,13 @@ export class ContentsHold extends Part {
     return now - h.pausedAt > CONTENTS_HOLD.holdMs ? this.over(line, h) : true;
   }
 
+  /** 가까이 보는 차례인가(계획의 보류·계획 밖 칸): 잘라 보기, 위에서 비추기, 위에서 보기, 위에서 본 뒤 사진 기다림. 가까이 가기는 아니다. */
+  looking(): boolean {
+    const r = this.core.open();
+    return [r?.hold, this.core.idlePeek?.hold].some((h) => !!h && (h.phase === "look" || h.phase === "looking" || h.phase === "seeing" || h.phase === "after"
+      || (h.phase === "peek" && h.peek?.part === "above")));
+  }
+
   /** 붙잡고 있는가(그만두지 않은 보류). */
   holding(r: Run): boolean {
     return !!r.hold && r.hold.phase !== "over";

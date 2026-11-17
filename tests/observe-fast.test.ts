@@ -6,6 +6,7 @@ import type { BrainLog, SeenEvent } from "../src/contract/events.js";
 import type { VlmClient } from "../src/infer/vlm.js";
 import { FAST_QUEUE_MAX, ObservationPipeline, loadObserveConfig, type ObserveConfig } from "../src/observe/pipeline.js";
 import { WorldState } from "../src/world/state/world.js";
+import { topPairOf } from "../src/world/state/contents.js";
 import { det } from "./helpers/detectors.js";
 
 type Observe = Extract<BrainLog, { type: "observe" }>;
@@ -15,7 +16,7 @@ const CUP = det("cup", 0.9, [220, 160, 40, 20]);
 const FAST: ObserveConfig = { engineMs: 100, vlmMs: 2000, vlmMaxInflight: 4, vlmTimeoutMs: 5000, detectQueueMax: 8, keepMs: 20_000 };
 
 /** 관찰 흐름 하나. 감지기는 부른 횟수를 세고(fail이면 오류), VLM은 받은 사진(셋째 바이트 = 프레임 번호)과 글을 적는다. hold면 감지를 gates에 붙잡아 둔다. */
-function setup(config: ObserveConfig, o: { hold?: boolean; fail?: () => boolean; detector?: null; delayMs?: number } = {}) {
+function setup(config: ObserveConfig, o: { hold?: boolean; fail?: () => boolean; detector?: null; delayMs?: number; vlmFast?: () => boolean } = {}) {
   const logs: BrainLog[] = [];
   const seen: SeenEvent[] = [];
   const calls: { images: number[]; captions: string[] }[] = [];
@@ -38,6 +39,7 @@ function setup(config: ObserveConfig, o: { hold?: boolean; fail?: () => boolean;
   const world = new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] });
   const p = new ObservationPipeline({
     config, detector: o.detector === null ? null : detector, vlm, world, emit: (l) => logs.push(l), broadcastWorld: () => {}, onSeen: (e) => seen.push(e),
+    ...(o.vlmFast ? { vlmFast: o.vlmFast } : {}),
   });
   const observed = () => logs.filter((l): l is Observe => l.type === "observe");
   /** i번째 프레임(촬영 시각 i × stepMs). */
@@ -200,5 +202,33 @@ describe("관찰 흐름 설정: 두 간격", () => {
   it("고리는 20초, VLM 창 시간(창 크기 × VLM 프레임 간격)이 더 길면 창 시간", () => {
     expect(loadObserveConfig({ VLM_WINDOW_FRAMES: "8", VLM_FRAME_MS: "5000" }).keepMs).toBe(40_000);
     expect(loadObserveConfig({ VLM_WINDOW_FRAMES: "8" }).keepMs).toBe(20_000);
+  });
+});
+
+describe("찾기·위에서 보기 동안 VLM 사진 간격 1초(vlmFast)", () => {
+  it("vlmFast가 참인 동안만 VLM 프레임 간격이 1초이고, 끝나면 2초로 돌아간다: 늘어나는 VLM 호출은 그 구간뿐이다", async () => {
+    let fast = false;
+    const s = setup(FAST, { vlmFast: () => fast });
+    // 0~6초는 2초 간격(0·2·4초), 6~10초는 1초 간격(6·7·8·9초), 10초부터 다시 2초(마지막 VLM 프레임 9초에서 2초 뒤 11·13초)
+    for (let i = 0; i <= 130; i++) {
+      fast = i >= 60 && i < 100;
+      s.send(i);
+      await s.p.idle();
+    }
+    const vlmFrames = s.calls.map((c) => c.images.at(-1));
+    expect(vlmFrames).toEqual([0, 20, 40, 60, 70, 80, 90, 110, 130]);
+    await s.p.close();
+  });
+
+  it("1초 간격에서도 위에서 보기 쌍(1.5~6초)은 한 장 건너 고르고, 1초 떨어진 두 장만으로는 고르지 않는다", () => {
+    expect(topPairOf([{ at: 0 }, { at: 1000 }])).toBeNull();
+    expect(topPairOf([{ at: 0 }, { at: 1000 }, { at: 2000 }])).toEqual([{ at: 0 }, { at: 2000 }]);
+  });
+
+  it("vlmFast가 없으면 지금처럼 2초다", async () => {
+    const s = setup(FAST);
+    for (let i = 0; i <= 60; i++) { s.send(i); await s.p.idle(); }
+    expect(s.calls.map((c) => c.images.at(-1))).toEqual([0, 20, 40, 60]);
+    await s.p.close();
   });
 });

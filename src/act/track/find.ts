@@ -95,6 +95,12 @@ export class Finder extends Part {
     return this.core.finding?.find.name ?? null;
   }
 
+  /** 가까이 보는 차례인가(비추기·가까이 보기·사진 기다림, 계획 전·실행 전). 가기는 아니다. */
+  looking(): boolean {
+    const r = this.core.open();
+    return [this.core.finding?.find, r?.find].some((f) => !!f && (f.part === "aim" || f.phase === "look" || f.phase === "looking" || f.phase === "after"));
+  }
+
   /** tick: 계획 전 찾기 한 걸음. 찾으면 가장 새 같은 행동 판단으로 다시 판단 받기부터 하고, 그만두면 막은 검사의 글로 닫는다. */
   idle(): void {
     const core = this.core;
