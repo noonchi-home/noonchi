@@ -1,30 +1,30 @@
-// 판단 모델(PAM)을 도구로 부르는 자리. 검사 규칙은 services/pam/pam/contracts.py와 같다:
+// 판단 모델(PAM)을 도구로 부르는 자리: 기억 모양·seed·검사(행동 목록·기억·판단 답). 검사 글은 Python PAM(src/brain/pam/PROVENANCE.md)과 같다.
 // decide(관찰 텍스트, 마지막 관찰 시각, 기억, 작업 목록) → {observation, reasoning, task_index}. task_index -1은 대기다. 사진은 넘기지 않는다.
-// 판단 모델은 무엇을 도울지만 정한다. 언제 부를지는 판단 호출 시점(src/world/trigger.ts)이 정한다.
+// 판단 모델은 무엇을 도울지만 정한다. 언제 부를지는 판단 호출 시점(src/world/trigger.ts)이 정한다. 답 글 읽기는 src/brain/pam/answer.ts.
 // 검사 메시지는 PAM 원문(영어)과 같게 두어 두 쪽 기록을 대조하기 쉽게 한다.
-
-
 
 import type { Prediction, FsmRuleAt } from "../contract/pam.js";
 import { PAM_TEXT_MAX } from "../world/index.js";
+import { byCodePoint, isPyBlank, pyList, pyRepr } from "./pam/py.js";
 
 export class ContractError extends Error {}
 
 type Json = unknown;
 
 function object(value: Json, fields: string[], path: string): Record<string, Json> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) throw new ContractError(`${path}: expected an object`);
-  const actual = Object.keys(value);
-  const missing = fields.filter((f) => !actual.includes(f)).sort();
-  const extra = actual.filter((k) => !fields.includes(k)).sort();
-  if (missing.length || extra.length) {
-    throw new ContractError(`${path}: incorrect fields (missing=${JSON.stringify(missing)}, extra=${JSON.stringify(extra)})`);
+  const proto = value && typeof value === "object" ? Object.getPrototypeOf(value) : undefined;
+  if (typeof value !== "object" || value === null || Array.isArray(value) || (proto !== Object.prototype && proto !== null)) {
+    throw new ContractError(`${path}: expected an object`);
   }
+  const actual = Object.keys(value);
+  const missing = fields.filter((f) => !actual.includes(f)).sort(byCodePoint);
+  const extra = actual.filter((k) => !fields.includes(k)).map(pyRepr).sort(byCodePoint);
+  if (missing.length || extra.length) throw new ContractError(`${path}: incorrect fields (missing=${pyList(missing)}, extra=${pyList(extra)})`);
   return value as Record<string, Json>;
 }
 
 function text(value: Json, path: string): string {
-  if (typeof value !== "string" || !value.trim()) throw new ContractError(`${path}: expected a nonempty string`);
+  if (typeof value !== "string" || isPyBlank(value)) throw new ContractError(`${path}: expected a nonempty string`);
   return value;
 }
 
@@ -74,7 +74,7 @@ export function validateMemory(value: Json, kind: "list" | "fsm"): PamMemory {
     const p = `memory.states[${i}]`;
     const s = object(state, ["id", "description", "rules", "next"], p);
     const id = text(s.id, `${p}.id`);
-    if (ids.has(id)) throw new ContractError(`${p}.id: duplicate state identifier '${id}'`);
+    if (ids.has(id)) throw new ContractError(`${p}.id: duplicate state identifier ${pyRepr(id)}`);
     ids.add(id);
     text(s.description, `${p}.description`);
     rules(s.rules, `${p}.rules`);
@@ -87,7 +87,7 @@ export function validateMemory(value: Json, kind: "list" | "fsm"): PamMemory {
   });
   if (!ids.has(initial)) throw new ContractError("memory.initial_state: must name an existing state");
   for (const [path, to] of destinations) {
-    if (!ids.has(to)) throw new ContractError(`${path}: unknown state identifier '${to}'`);
+    if (!ids.has(to)) throw new ContractError(`${path}: unknown state identifier ${pyRepr(to)}`);
   }
   return m as unknown as FsmMemory;
 }
@@ -103,59 +103,6 @@ export function validatePrediction(value: Json, tasks: string[]): Prediction {
     throw new ContractError(`prediction.task_index: expected an integer from -1 to ${tasks.length - 1}`);
   }
   return p as unknown as Prediction;
-}
-
-/** 이미 올바른 JSON 글에서 같은 객체 안의 중복 키를 찾는다(JSON.parse는 마지막 값으로 덮어쓴다). */
-export function findDuplicateKey(raw: string): string | null {
-  const stack: (Set<string> | null)[] = [];
-  let i = 0;
-  while (i < raw.length) {
-    const ch = raw[i]!;
-    if (ch === "{") { stack.push(new Set()); i++; continue; }
-    if (ch === "[") { stack.push(null); i++; continue; }
-    if (ch === "}" || ch === "]") { stack.pop(); i++; continue; }
-    if (ch === '"') {
-      let j = i + 1;
-      while (raw[j] !== '"') j += raw[j] === "\\" ? 2 : 1;
-      const str = JSON.parse(raw.slice(i, j + 1)) as string;
-      let k = j + 1;
-      while (/\s/.test(raw[k] ?? "")) k++;
-      const keys = stack.at(-1);
-      if (raw[k] === ":" && keys) {
-        if (keys.has(str)) return str;
-        keys.add(str);
-      }
-      i = j + 1;
-      continue;
-    }
-    i++;
-  }
-  return null;
-}
-
-export interface ParsedPrediction {
-  status: "valid" | "invalid";
-  raw_response: string;
-  prediction: Prediction | null;
-  selected_action: string | null;
-  errors: string[];
-}
-
-/** 원문을 고치지 않는다: 완전한 JSON 객체만 받고, invalid는 대기(-1)와 구분한다. */
-export function parsePrediction(raw: string, tasks: string[]): ParsedPrediction {
-  const result: ParsedPrediction = { status: "invalid", raw_response: raw, prediction: null, selected_action: null, errors: [] };
-  try {
-    const value = JSON.parse(raw) as Json;
-    const dup = findDuplicateKey(raw);
-    if (dup !== null) throw new ContractError(`response JSON: duplicate key '${dup}'`);
-    const prediction = validatePrediction(value, tasks);
-    result.status = "valid";
-    result.prediction = prediction;
-    result.selected_action = prediction.task_index === -1 ? null : tasks[prediction.task_index]!;
-  } catch (e) {
-    result.errors.push(e instanceof Error ? e.message : String(e));
-  }
-  return result;
 }
 
 const TZ = /(Z|[+-]\d{2}:\d{2})$/;

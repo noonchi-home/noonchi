@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  CUP_FSM_MEMORY, CUP_MEMORY, CUP_TASKS, checkInput, findDuplicateKey, fsmRuleOf, isoWithOffset, parsePrediction,
+  CUP_FSM_MEMORY, CUP_MEMORY, CUP_TASKS, checkInput, fsmRuleOf, isoWithOffset,
   validateMemory, validatePrediction, validateTasks, type DecisionInput, type FsmMemory,
 } from "../src/brain/decision.js";
 import { FSM_STATE_TEXT } from "../src/world/labels.js";
@@ -44,21 +44,6 @@ describe("PAM 계약 검사(services/pam/pam/contracts.py와 같은 규칙)", ()
     expect(() => validatePrediction({ observation: "o", reasoning: "r", task_index: 1.5 }, tasks)).toThrow();
     expect(() => validatePrediction({ observation: "o", reasoning: "r", task_index: true }, tasks)).toThrow();
     expect(() => validatePrediction({ observation: "o", reasoning: "r", task_index: 0, extra: 1 }, tasks)).toThrow();
-  });
-
-  it("원문 답은 고치지 않는다: 마크다운·중복 키는 invalid, 대기와 구분", () => {
-    const tasks = ["컵 치우기"];
-    expect(parsePrediction('{"observation":"o","reasoning":"r","task_index":0}', tasks)).toMatchObject({ status: "valid", selected_action: "컵 치우기" });
-    expect(parsePrediction('{"observation":"o","reasoning":"r","task_index":-1}', tasks)).toMatchObject({ status: "valid", selected_action: null });
-    expect(parsePrediction('```json\n{"observation":"o","reasoning":"r","task_index":0}\n```', tasks).status).toBe("invalid");
-    const dup = parsePrediction('{"observation":"o","reasoning":"r","task_index":0,"task_index":-1}', tasks);
-    expect(dup.status).toBe("invalid");
-    expect(dup.errors[0]).toMatch(/duplicate key/);
-  });
-
-  it("중복 키는 중첩·문자열 안까지 정확히 찾는다", () => {
-    expect(findDuplicateKey('{"a":{"b":1,"c":"\\"b\\":"},"d":[{"b":1},{"b":2}]}')).toBeNull();
-    expect(findDuplicateKey('{"a":{"b":1,"b":2}}')).toBe("b");
   });
 });
 

@@ -3,7 +3,8 @@
 // 연결 실패·5xx 등은 PamLinkError(PAM 연결 끊김), 우리 요청이 계약에 맞지 않음(400)·문맥 길이 넘음(413)·답 형식 오류는 ContractError.
 import type { PamPredictContract, PamPredictRequest, PamPredictResponse, PamReflectContract, PamReflectRequest, PamReflectResponse, Prediction } from "../contract/pam.js";
 import { fetchRetry } from "../shared/net.js";
-import { ContractError, checkInput, parsePrediction, validateMemory, type DecisionInput, type DecisionModel, type PamMemory } from "./decision.js";
+import { ContractError, checkInput, validateMemory, type DecisionInput, type DecisionModel, type PamMemory } from "./decision.js";
+import { parsePrediction } from "./pam/answer.js";
 
 export const PAM_PREDICT: PamPredictContract = "pam-predict/2";
 export const PAM_REFLECT: PamReflectContract = "pam-reflect/2";
