@@ -11,8 +11,9 @@ import { Part, type Run } from "./core.js";
 
 /** 보기 담당이 받기를 기다리는 시간, 가까이 본 뒤 사진을 기다리는 시간, 보류 한도(ms). */
 export const CONTENTS_HOLD = { lookWaitMs: 3000, settleMs: 4000, holdMs: 30_000 } as const;
-/** 보류의 가까이 보기 부탁(보기 담당 src/act/look.ts contents). done은 끝날 때 한 번(못 봐도). signal은 보류가 풀리면 끊긴다. */
-export interface ContentsLook { planId: string; objectId: string; spot: LookSpot; signal: AbortSignal; done(): void }
+/** 보류의 가까이 보기 부탁(보기 담당 src/act/look.ts contents). done은 끝날 때 한 번(못 봐도). signal은 보류가 풀리면 끊긴다.
+ *  top이 있으면 잘라 보기 대신 위에서 보기(그 뒤 찍힌 컵 안을 내려다본 사진 쌍, src/observe/pipeline.ts topLook)다. */
+export interface ContentsLook { planId: string; objectId: string; spot: LookSpot; signal: AbortSignal; done(): void; top?: { sinceMs: number } }
 /** 보류 상태: 그 컵과 세대, 차례(over: holdMs가 지나 그만둠, 같은 컵·세대면 다시 붙잡지 않는다), 처음 붙잡은 때, 가까이 본 때, 끊는 신호. */
 export interface Hold { objectId: string; gen: number; phase: "look" | "looking" | "settle" | "wait" | "over"; at: number; lookedAt: number; end: AbortController }
 

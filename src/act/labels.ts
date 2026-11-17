@@ -1,6 +1,6 @@
 // 서버가 만들어 화면에 그대로 나가는 글. npm run lint가 이 파일도 검사한다(60자 아래, 화살표·괄호 없음).
 import { josa } from "../shared/korean.js";
-import type { CloserMiss } from "../contract/events.js";
+import type { CloserMiss, TopDrop } from "../contract/events.js";
 import { KINDS, KIND_ORDER } from "../devices/kinds.js";
 import { OBJECT_NAME } from "../world/labels.js";
 
@@ -200,6 +200,12 @@ export const LOOK_TEXT = {
     no_detector: "감지기가 없어 못 봄", aborted: "단계가 바뀌어 그만 봄", "closed": "멈춰서 못 봄", error: "감지 오류로 못 봄",
   } satisfies Record<CloserMiss, string>,
   vlmMissing: "VLM 답 없음",
+  /** 위에서 보기(내용물 보류의 가까이 가서 보기): 기록 까닭과 넣지 않은 장의 까닭. */
+  above: (item: string) => `${item} 안을 위에서 봄`,
+  topDrop: {
+    moved: "옮겨져 넣지 않음", vlm_missing: "VLM 답 없음", not_visible: "컵이 안 보여 버림", no_contents: "안이 안 보여 버림",
+    no_vessel: "그릇 감지가 없어 버림", crowded: "같은 종류가 가까이 있어 버림",
+  } satisfies Record<TopDrop, string>,
   vlmAborted: "단계가 끝나 VLM 답은 넣지 않음",
   vlmStale: "새 사진이 끊겨 VLM 답은 넣지 않음",
   asked: (text: string) => `가까이 비춰 달라고 부탁함 · ${text}`,

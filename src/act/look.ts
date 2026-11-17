@@ -6,12 +6,14 @@
 //   가까이 보기가 자원 사정(CloserWait: 새 사진 모자람·VLM 자리 없음)으로 못 보거나, 감지는 합쳤지만 VLM 답이 왔을 때 사진이 끊겨 넣지 않았으면(vlm no_fresh_frames)
 //   Stall.settle(false)로 시도에서 빼고, 그 밖(wait·ask_person 포함)은 settle(true).
 // B 판단 전 보기(판단 타이머 tick): 행동 대상 종류 물건이 사진 안에 있는데 볼 면(TaskSpec.look)이 확인되지 않음(없음·짐작·모름 값) → look_closer·wait.
-//   불투명이 확인된 컵의 내용물은 가까이 봐도 모르므로 보지 않는다(사람에게 묻는다). PAM 판단을 막지 않는다.
+//   불투명이 확인된 컵의 내용물은 옆에서 가까이 봐도 모르므로 보지 않는다(실행 추적이 가까이 가서 위에서 본다). PAM 판단을 막지 않는다.
 //   물건마다 objectGapMs, B 전체로 gapMs에 한 번. 이미 싱크대 안·시야 밖 물건, frameFreshMs 넘게 낡은 프레임, 카메라 없는 프레임은 보지 않는다.
 // C 코치 계획의 다른 행동(실행 추적 strayed, src/act/track/coach.ts Stray): 사람이 지금 단계와 다른 일을 하는 것 같다 → tell_person·wait.
 //   다른 일(A·B·C)이 도는 중이면 받지 않는다. 그 단계 신호로 끊긴다(끊기면 기록 없음). tell_person이면 실행 추적의 tell을 부른다.
 // E 내용물 보류(실행 추적 src/act/track/contents.ts contents): 실행 전 검사가 컵 안을 몰라 붙잡은 계획의 그 컵을 관찰 모드 없이 바로 가까이 본다.
 //   다른 일이 돌면 받지 않는다(실행 추적이 다음 tick에 다시 부른다). objectGapMs 안에 본 컵은 보지 않고 done만. 끝나면 done 한 번(look 기록, 계기 unknown_fact).
+//   위에서 보기(top, 사람이 폰을 컵 위에 든 뒤)는 objectGapMs를 보지 않고 topLook을 부른다. B가 관찰 모드를 부르는 중이면 A처럼 끊고 먼저 돈다.
+//   topLook이 없으면 done만.
 // D 코치 계획 중 들은 말(heard): 명령의 답이 아닌 말 → tell_person(told)·pass_on(passed, 말 요청 에이전트로 넘김)·wait(waited).
 //   보기 담당이 바쁘거나 한 시간 상한을 넘었거나 관찰 모드가 실패하면 passed다. 들은 말은 관찰 모드 입력에만 넣고 기록(글·까닭)에는 남기지 않는다.
 // A가 먼저다: B가 관찰 모드를 부르는 중이면 끊고(B 기록 없음) A를 돌린다. B가 잘라 보는 중이거나 다른 A가 도는 중이면 A를 받지 않는다(실행 추적이 다음 tick에 다시 부른다).
@@ -47,6 +49,8 @@ export interface LookerOptions {
   /** 가까이 보기(src/observe/pipeline.ts closer). 감지를 합치기 전에 signal이 끊기면 넣지 않고 aborted, 합친 뒤에 끊기면 ok(vlm aborted),
    *  VLM 답이 왔을 때 사진이 끊겼으면 ok(vlm no_fresh_frames). */
   closer: (spot: LookSpot, signal?: AbortSignal) => Promise<CloserResult>;
+  /** 위에서 보기(src/observe/pipeline.ts topLook): sinceMs 뒤 찍힌 컵 안을 내려다본 사진 쌍. 없으면 위에서 보기 부탁은 done만 한다. */
+  topLook?: (spot: LookSpot, sinceMs: number, signal?: AbortSignal) => Promise<CloserResult>;
   /** 고리 가장 새 프레임(src/observe/pipeline.ts latest). */
   frame: () => LatestFrame | null;
   world: () => WorldView;
@@ -117,7 +121,9 @@ export class Looker {
 
   /** 내용물 보류의 가까이 보기(E). 받았으면 true(끝나면 h.done 한 번). 다른 일이 돌면 false. */
   contents(h: ContentsLook): boolean {
-    if (this.stopped || h.signal.aborted || this.job) return false;
+    if (this.stopped || h.signal.aborted) return false;
+    if (h.top) return this.above(h, h.top.sinceMs);
+    if (this.job) return false;
     const now = this.clock.now();
     if (now - (this.lookedAt.get(h.objectId) ?? Number.NEGATIVE_INFINITY) < this.cfg.objectGapMs) {
       h.done();
@@ -137,6 +143,46 @@ export class Looker {
     });
     this.running.add(p);
     return true;
+  }
+
+  /** 위에서 보기(E top): B가 관찰 모드를 부르는 중이면 끊고(B 기록 없음) 받는다. 다른 일이 돌면 false. topLook이 없으면 done만. */
+  private above(h: ContentsLook, sinceMs: number): boolean {
+    if (this.job) {
+      if (this.job.trigger !== "unknown_fact" || this.job.phase !== "observer" || this.job.planId) return false;
+      this.job.abort.abort();
+      this.job = null;
+    }
+    const topLook = this.o.topLook;
+    if (!topLook) {
+      h.done();
+      return true;
+    }
+    this.lookedAt.set(h.objectId, this.clock.now());
+    const abort = new AbortController();
+    const job: Job = {
+      trigger: "unknown_fact", key: `${h.planId}:contents`, goal: LOOK_TEXT.above(h.spot.label), stuckMs: null, spots: [h.spot], tools: ["look_closer"],
+      planId: h.planId, abort, signal: AbortSignal.any([abort.signal, h.signal]), phase: "act",
+    };
+    this.job = job;
+    const p: Promise<void> = this.topOnly(job, h.spot, sinceMs, topLook).catch(() => {}).finally(() => {
+      if (this.job === job) this.job = null;
+      this.running.delete(p);
+      h.done();
+    });
+    this.running.add(p);
+    return true;
+  }
+
+  /** 위에서 보고 look 기록 하나(첫 장 VLM 전에 끊기면 기록 없음). 넣지 않은 장의 까닭을 덧붙인다. */
+  private async topOnly(job: Job, spot: LookSpot, sinceMs: number, topLook: NonNullable<LookerOptions["topLook"]>): Promise<void> {
+    this.o.onLook?.(spot);
+    const r = await topLook(spot, sinceMs, job.signal).catch((): CloserResult => ({ ok: false, why: "error" }));
+    if (this.stopped || (!r.ok && r.why === "aborted")) return;
+    this.count.looks++;
+    const drops = r.ok ? (r.top ?? []).flatMap((t) => (t.why ? [LOOK_TEXT.topDrop[t.why]] : [])) : [];
+    const detail = r.ok ? r.found.map((f) => `${f.id ?? f.cls} ${f.score} ${f.facts.join(" ")}`.trim()).join(", ") : "";
+    const text = [LOOK_TEXT.closer(spot.label, closerText(r)), ...new Set(drops)].join(" · ");
+    this.record(job, { tool: "look_closer", reason: job.goal }, spot, text, r, detail);
   }
 
   /** 관찰 모드 없이 가까이 보고 look 기록 하나(감지를 합치기 전에 끊기면 기록 없음). */

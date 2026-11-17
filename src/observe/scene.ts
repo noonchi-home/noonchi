@@ -57,6 +57,10 @@ export function frameCaptions(frames: readonly EngineFrame[]): string[] {
 
 /** 가까이 본 사진(src/observe/pipeline.ts closer) 앞에 두는 한 줄: 그 사진은 장면 일부를 잘라 키운 것이다. */
 export const CLOSER_NOTE = "This photo is one spot of the latest phone photo, cut out and enlarged 2x. Report only what is visible in it.";
+/** 위에서 본 컵 사진(src/observe/pipeline.ts topLook) 앞에 두는 글: d1은 그 컵 자리다. 컵이 없으면 가림, 안쪽 바닥이나 수면이 보일 때만 비어 있음·내용물 있음,
+ *  아니면 안이 안 보임으로 답하게 한다(내용물 값이 「안쪽 바닥이 보이는가」 칸을 겸한다). */
+export const TOP_NOTE = "This photo is the cup seen from above, cut out and enlarged 2x. d1 is where the cup should be. If d1 holds no cup, answer not_visible for d1. "
+  + "Answer empty or has_contents for d1 only when you can see the inside bottom of the cup or a liquid surface in it; otherwise answer contents_unknown.";
 
 /** frames: 오래된 것부터, 마지막이 분석하는 프레임(dets는 그 프레임의 감지). note가 있으면 감지 목록 앞에 둔다(가까이 본 사진은 CLOSER_NOTE).
  *  호출 한 번의 비용과 그 비용을 센 모델(답이 온 모델, 답이 없으면 부른 모델)을 돌려준다. */

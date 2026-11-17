@@ -175,8 +175,14 @@ export type CloserVlm = "ok" | VlmMissing | "aborted" | "no_fresh_frames";
  *  그 요청을 끊고 답을 넣지 않은 것이다. no_fresh_frames는 VLM 답이 왔을 때 쓴 가장 새 프레임이 지금보다 끊김 범위(closerStaleMs) 넘게 앞서 찍혀(폰 끊김)
  *  답을 넣지 않은 것이다. 둘 다 found의 facts·summary는 비고 VLM 기록(observe)을 내지 않는다.
  *  VLM 답이 없거나 넣지 않으면 3장이 안 된 새 물건은 만들지 않는다. */
+/** 위에서 본 장(src/observe/pipeline.ts topLook)을 넣지 않은 까닭: moved 컵이 사라지거나 옮김 표시가 붙거나 0.1m 넘게 옮겨짐(그 뒤 장도 넣지 않음),
+ *  vlm_missing VLM 답 없음, not_visible d1에 가림 답, no_contents 내용물 값이 비어 있음·내용물 있음이 아님(바닥이 안 보임), no_vessel 그 자리에 그릇 감지 없음,
+ *  crowded 같은 종류 다른 물건이 0.1m 안(어느 컵인지 모름). */
+export type TopDrop = "moved" | "vlm_missing" | "not_visible" | "no_contents" | "no_vessel" | "crowded";
+/** 위에서 본 장 하나: 그 장의 기록 id, 넣었는가, 넣지 않았으면 그 까닭. */
+export interface TopFrame { frame_id: string; kept: boolean; why?: TopDrop }
 export type CloserResult =
-  | { ok: true; frame_id: string; captured_at_ms: number; crop: [number, number, number, number]; frames: number; found: CloserFound[]; summary: string | null; vlm: CloserVlm }
+  | { ok: true; frame_id: string; captured_at_ms: number; crop: [number, number, number, number]; frames: number; found: CloserFound[]; summary: string | null; vlm: CloserVlm; top?: TopFrame[] }
   | { ok: false; why: CloserMiss };
 /** 관찰 모드가 고른 도구의 결과: look_closer는 가까이 보기 결과, ask_person은 실제 폰에 부탁을 보냈는가. */
 export type LookResult = CloserResult | { sent: boolean };

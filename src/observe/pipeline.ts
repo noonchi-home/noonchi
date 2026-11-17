@@ -10,8 +10,8 @@
 // 가까이 보기 VLM은 closerVlm(VLM_CLOSER_MODEL, 같은 주소에 모델 이름만 다름, 없으면 보통 프레임과 같은 VLM)이다.
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { BrainLog, CloserMiss, CloserResult, CloserVlm, SeenEvent } from "../contract/events.js";
-import type { WorldChange, WorldView, YoloMissing } from "../contract/world.js";
+import type { BrainLog, CloserMiss, CloserResult, CloserVlm, SeenEvent, TopFrame } from "../contract/events.js";
+import type { WorldChange, WorldObject, WorldView, YoloMissing } from "../contract/world.js";
 import type { DeviceState } from "../contract/devices.js";
 import { DETECTOR_MODEL, MODELS_DIR, POSE_MODEL, PROVIDERS, WorkerDetector, type DetectResult, type Detector, type DetectorSpec, type Provider } from "./detector.js";
 import type { Detection, Pose, CameraView, EngineFrame } from "../contract/observe.js";
@@ -21,11 +21,12 @@ import { createInference } from "../infer/inference.js";
 import type { VlmClient } from "../infer/vlm.js";
 import type { FrameHeader, EyeEvent } from "../phone/index.js";
 import { OBJECT_NAME, YOLO_TEXT } from "../world/labels.js";
-import { inView, pixelOf } from "../world/index.js";
+import { cupInside, inView, pixelOf, topBox, topPairOf, topView } from "../world/index.js";
 import { CLOSER_NEW_FRAMES, type CloserPass, type WorldState } from "../world/index.js";
-import { cropBox, cropJpeg, LOOK_MARGIN, onCropEdge, toFrameDetection, type Box, type LookSpot } from "./crop.js";
+import { cropBox, cropJpeg, LOOK_MARGIN, onCropEdge, toCropBox, toFrameDetection, type Box, type LookSpot } from "./crop.js";
 import { captureTime, FrameRing, sha256 } from "./ring.js";
-import { analyzeScene, CLOSER_NOTE, type SceneDetection } from "./scene.js";
+import { analyzeScene, CLOSER_NOTE, TOP_NOTE, type SceneDetection } from "./scene.js";
+import { topDropOf } from "./top.js";
 import { VlmPool, type VlmResult } from "./vlm-pool.js";
 
 type Env = Record<string, string | undefined>;
@@ -178,6 +179,8 @@ export class ObservationPipeline {
   /** 가까이 보기가 도는 중(한 번에 하나: 자르기부터 VLM 답까지). */
   private closing = false;
   private closerSeq = 0;
+  /** 위에서 보기로 보낸 잘라 키운 사진의 기록 id(그 VLM 요청은 TOP_NOTE를 단다). */
+  private readonly topIds = new Set<string>();
   private readonly closerCount = { looks: 0, failed: 0, costUsd: 0 };
   /** 가까이 보기 VLM 답을 가격표에 없는 모델이 냈다(그 비용은 모름). */
   private closerUnpriced = false;
@@ -210,7 +213,7 @@ export class ObservationPipeline {
   }
 
   private async analyzeCloser(f: EngineFrame, d: SceneDetection[], signal: AbortSignal) {
-    const r = await analyzeScene(this.closerVlm, [f], d, signal, CLOSER_NOTE);
+    const r = await analyzeScene(this.closerVlm, [f], d, signal, this.topIds.has(f.id) ? TOP_NOTE : CLOSER_NOTE);
     if (!hasPrice(r.model)) this.closerUnpriced = true;
     return r;
   }
@@ -485,6 +488,108 @@ export class ObservationPipeline {
       ok: true, frame_id: id, captured_at_ms: last.frame.capturedAtMs, crop: last.crop, frames: passes.length,
       found: last.dets.map((d, i) => ({ id: ids.get(`d${i + 1}`) ?? null, cls: d.label, score: Math.round(d.score * 100) / 100, facts: said.get(`d${i + 1}`) ?? [] })),
       summary: r?.scene?.summary ?? null, vlm,
+    };
+  }
+
+  /** 위에서 본 VLM 프레임 쌍: sinceMs 뒤에 찍혀 카메라가 있고 그 컵 안을 보는(topView, 컵 모양은 World State size_m의 cupInside) VLM 프레임 가운데
+   *  topPairOf(TOP_CONFIRM 시간 조건, 내용물 확인과 같은 조건). 컵 자리는 잰 바닥 가운데(size_m.center), 모르면 자리(가까운 가장자리, edge)다.
+   *  컵이 없거나 사라졌거나 자리를 모르면 null. */
+  private topPair(objectId: string, sinceMs: number): { obj: WorldObject; center: [number, number, number]; pair: [EngineFrame, EngineFrame] } | null {
+    const obj = this.o.world.view(this.clock.now()).objects.find((o) => o.id === objectId && o.status !== "gone");
+    if (!obj?.position) return null;
+    const center = obj.size_m?.center ?? obj.position;
+    const cup = cupInside(obj.size_m);
+    const tops = this.ring.frames().filter((f) => f.vlm !== false && f.view && f.capturedAtMs >= sinceMs && topView(f.view, center, cup, !obj.size_m));
+    const pair = topPairOf(tops.map((f) => ({ at: f.capturedAtMs, f })));
+    return pair ? { obj, center, pair: [pair[0].f, pair[1].f] } : null;
+  }
+
+  /** 위에서 비추기 단계가 끝났는가(실행 추적이 본다): sinceMs 뒤 그 컵 안을 내려다본 VLM 프레임 쌍이 있다. */
+  topReady(objectId: string, sinceMs: number): boolean {
+    return !this.closed && this.topPair(objectId, sinceMs) !== null;
+  }
+
+  /** 위에서 보기 한 번(가까이 보기와 같은 자리, 한 번에 하나). 쌍의 두 장을 촬영 순으로 컵 자리를 가운데로 잘라 감지기로 보고, 그 컵 하나만 d1(topBox를 잘라 키운 사진
+   *  픽셀로 옮긴 상자)로 VLM 가까이 보기 자리에 TOP_NOTE와 보낸다. 답마다 topDropOf로 걸러 넣을 장만 World State applyTop으로 넣고 방송한다.
+   *  옮겨졌으면(moved) 그 뒤 장은 보지 않는다. 감지는 대상 확인에만 쓰고 물건 합치기에는 넣지 않는다.
+   *  쌍이 없거나 가장 새 장이 closerStaleMs보다 낡았으면 no_fresh_frames, 감지기가 없으면 no_detector, 가까이 보기가 돌거나 자리가 없으면 vlm_busy,
+   *  첫 장 VLM 전에 끊기면 aborted. 결과의 found는 그 컵 하나(facts는 넣은 값들), top은 장마다 넣었는지와 그 까닭이다. */
+  async topLook(spot: LookSpot, sinceMs: number, signal?: AbortSignal): Promise<CloserResult> {
+    if (this.closed) return this.closerMiss("closed");
+    if (signal?.aborted) return this.closerMiss("aborted");
+    const detector = this.o.detector;
+    if (!detector) return this.closerMiss("no_detector");
+    if (this.closing || !this.pool.closerFree()) return this.closerMiss("vlm_busy");
+    const found = this.topPair(spot.id, sinceMs);
+    if (!found || this.clock.now() - found.pair[1].capturedAtMs > closerStaleMs(vlmStepMs(this.o.config))) return this.closerMiss("no_fresh_frames");
+    this.closing = true;
+    try {
+      return await this.lookTop(found.obj, found.center, found.pair, detector, signal);
+    } finally {
+      this.closing = false;
+    }
+  }
+
+  private async lookTop(start: WorldObject, at: [number, number, number], pair: [EngineFrame, EngineFrame], detector: Detector, signal: AbortSignal | undefined): Promise<CloserResult> {
+    const top: TopFrame[] = [];
+    const kept: string[] = [];
+    let last: { id: string; at: number; crop: Box } | null = null;
+    let summary: string | null = null;
+    let vlm: CloserVlm = "ok";
+    for (const frame of pair) {
+      if (this.closed) return this.closerMiss("closed");
+      if (signal?.aborted) {
+        if (!last) return this.closerMiss("aborted");
+        vlm = "aborted";
+        break;
+      }
+      const view = frame.view!;
+      const crop = cropBox(pixelOf(view, at, frame)!, frame);
+      const jpeg = cropJpeg(frame.jpeg, crop, frame);
+      let dets: Detection[];
+      try {
+        dets = (await detector.detect(jpeg)).detections.filter((d) => this.o.world.accepts(d));
+      } catch {
+        if (!last) return this.closerMiss(this.closed ? "closed" : "error");
+        break;
+      }
+      const box = toCropBox(topBox(view, at, frame)!, crop, frame);
+      const id = `${frame.id}.t${++this.closerSeq}`;
+      this.topIds.add(id);
+      const answer = this.pool.submitCloser({ ...frame, id, jpeg, sha256: sha256(jpeg), crop }, [{ id: "d1", class: start.cls, box, score: 1 }], signal);
+      const r: VlmResult = answer ? await answer : { frameId: id, capturedAtMs: frame.capturedAtMs, scene: null, missing: "cap", costUsd: 0 };
+      this.topIds.delete(id);
+      this.closerCount.costUsd += r.costUsd;
+      if (this.closed) return this.closerMiss("closed");
+      last = { id, at: frame.capturedAtMs, crop };
+      if (signal?.aborted) {
+        vlm = "aborted";
+        break;
+      }
+      this.o.emit({
+        type: "observe", at_ms: this.clock.now(), frame_id: id, captured_at_ms: frame.capturedAtMs, yolo: yoloText(dets), vlm: r.scene?.summary ?? null,
+        ...(r.missing ? { vlm_missing: r.missing } : {}), closer: crop,
+      });
+      if (r.missing) vlm = r.missing;
+      summary = r.scene?.summary ?? summary;
+      const objects = this.o.world.view(this.clock.now()).objects;
+      const d = topDropOf({
+        start: start.position!, now: objects.find((o) => o.id === start.id), others: objects.filter((o) => o.id !== start.id && o.cls === start.cls && o.status !== "gone"),
+        scene: r.scene, dets, box,
+      });
+      if ("drop" in d) {
+        top.push({ frame_id: id, kept: false, why: d.drop });
+        if (d.drop === "moved") break;
+        continue;
+      }
+      kept.push(d.value);
+      top.push({ frame_id: id, kept: true });
+      this.publish(this.o.world.applyTop(start.id, frame.id, frame.capturedAtMs, d.value));
+    }
+    this.closerCount.looks++;
+    return {
+      ok: true, frame_id: last!.id, captured_at_ms: last!.at, crop: last!.crop, frames: pair.length,
+      found: [{ id: start.id, cls: start.cls, score: 1, facts: kept }], summary, vlm, top,
     };
   }
 

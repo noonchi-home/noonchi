@@ -156,6 +156,50 @@ describe("보기 담당: 내용물 보류의 가까이 보기(contents)", () => 
     expect(t.looked).toHaveLength(1);
     expect(done).toBe(2);
   });
+  it("위에서 보기(top): 30초 안에 본 컵도 관찰 모드 없이 topLook(그 자리, sinceMs, 신호)을 부르고 look 기록(까닭 「컵 안을 위에서 봄」)과 done 한 번", async () => {
+    const calls: [LookSpot, number, AbortSignal | undefined][] = [];
+    const top: CloserResult = { ...(CLOSER_FOUND as Extract<CloserResult, { ok: true }>), frames: 2, found: [{ id: "cup_1", cls: "cup", score: 1, facts: ["empty", "empty"] }], top: [{ frame_id: "e8.t1", kept: true }, { frame_id: "e9.t2", kept: false, why: "no_vessel" }] };
+    const t = await setup({ script: () => [["wait", { reason: "x" }]], options: { topLook: async (spot, since, signal) => { calls.push([spot, since, signal]); return top; } } });
+    let done = 0;
+    const h = { planId: "plan:pam-1", objectId: "cup_1", spot: CUP, signal: new AbortController().signal, done: () => { done++; } };
+    expect(t.looker.contents(h)).toBe(true);
+    await t.looker.idle();
+    expect(t.looker.contents({ ...h, top: { sinceMs: 99_000 } })).toBe(true);
+    await t.looker.idle();
+    expect(calls).toEqual([[CUP, 99_000, expect.any(AbortSignal)]]);
+    expect(t.llm.bodies()).toHaveLength(0);
+    expect(t.looks()).toHaveLength(2);
+    expect(t.looks()[1]).toMatchObject({ trigger: "unknown_fact", tool: "look_closer", target: "cup_1", plan_id: "plan:pam-1", reason: LOOK_TEXT.above("컵"), result: top });
+    expect(t.looks()[1]!.text).toContain(LOOK_TEXT.topDrop.no_vessel);
+    expect(done).toBe(2);
+  });
+  it("위에서 보기는 B가 관찰 모드를 부르는 중이면 끊고(B 기록 없음) 먼저 돈다. 위에서 보기가 없으면 done만", async () => {
+    let releaseB!: () => void;
+    const heldB = new Promise<void>((ok) => { releaseB = ok; });
+    const tops: number[] = [];
+    const t = await setup({
+      script: () => [["wait", { reason: "x" }]], gate: () => heldB, objects: [cupAt({ facts: {} })],
+      options: { topLook: async (_spot, since) => { tops.push(since); return CLOSER_FOUND; } },
+    });
+    try {
+      t.looker.tick();
+      await vi.waitFor(() => expect(t.llm.bodies()).toHaveLength(1));
+      let done = 0;
+      expect(t.looker.contents({ planId: "plan:pam-1", objectId: "cup_1", spot: CUP, signal: new AbortController().signal, done: () => { done++; }, top: { sinceMs: 5 } })).toBe(true);
+      await t.looker.idle();
+      expect(tops).toEqual([5]);
+      expect(t.looks()).toEqual([expect.objectContaining({ reason: LOOK_TEXT.above("컵") })]);
+      expect(done).toBe(1);
+    } finally {
+      releaseB();
+    }
+    const none = await setup({ script: () => [["wait", { reason: "x" }]] });
+    let done = 0;
+    expect(none.looker.contents({ planId: "plan:pam-1", objectId: "cup_1", spot: CUP, signal: new AbortController().signal, done: () => { done++; }, top: { sinceMs: 5 } })).toBe(true);
+    await none.looker.idle();
+    expect(done).toBe(1);
+    expect(none.looks()).toEqual([]);
+  });
   it("A가 도는 동안은 받지 않는다(false, done 없음)", async () => {
     let releaseA!: () => void;
     const heldA = new Promise<void>((ok) => { releaseA = ok; });

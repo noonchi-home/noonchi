@@ -157,7 +157,8 @@ export function startLooker(core: HomeCore, emit: (event: BrainLog) => void): vo
   const tracking = core.tracker!;
   const now = () => core.nowMs();
   core.looker = new Looker({
-    observer, closer: (spot, signal) => observed.closer(spot, signal), frame: () => observed.latest(), world: () => world.view(now()),
+    observer, closer: (spot, signal) => observed.closer(spot, signal), topLook: (spot, sinceMs, signal) => observed.topLook(spot, sinceMs, signal),
+    frame: () => observed.latest(), world: () => world.view(now()),
     askPerson: (planId, stepId, spot) => tracking.askCloser(planId, stepId, spot), tell: (planId, stepId, mode) => tracking.tell(planId, stepId, mode), emit, targets: lookTargets, placed: () => tracking.placed(), clock: ctx.brain?.clock,
     onLook: (spot) => {
       core.lookSay = { place: spot.label, atMs: Date.now() };

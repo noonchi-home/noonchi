@@ -25,6 +25,14 @@ export function toFrameBox(box: Box, crop: Box, out: Size): Box {
   return [crop[0] + box[0] * sx, crop[1] + box[1] * sy, box[2] * sx, box[3] * sy];
 }
 
+/** 엔진 프레임 픽셀 상자 → 잘라 키운 사진(out 크기) 픽셀(toFrameBox의 거꾸로). 잘라 낸 칸 밖은 그 사진 안으로 붙인다. */
+export function toCropBox(box: Box, crop: Box, out: Size): Box {
+  const sx = out.width / crop[2], sy = out.height / crop[3];
+  const x0 = Math.max(0, (box[0] - crop[0]) * sx), y0 = Math.max(0, (box[1] - crop[1]) * sy);
+  const x1 = Math.min(out.width, (box[0] + box[2] - crop[0]) * sx), y1 = Math.min(out.height, (box[1] + box[3] - crop[1]) * sy);
+  return [x0, y0, Math.max(0, x1 - x0), Math.max(0, y1 - y0)];
+}
+
 /** 잘라 키운 사진(out 크기)의 점 → 엔진 프레임 픽셀. */
 export function toFramePoint(point: [number, number], crop: Box, out: Size): [number, number] {
   return [crop[0] + point[0] * (crop[2] / out.width), crop[1] + point[1] * (crop[3] / out.height)];
