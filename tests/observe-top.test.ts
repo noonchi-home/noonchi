@@ -26,7 +26,7 @@ const CUP_AT: V3 = [1, 0.75, 0];
 /** 0.6m 앞 옆에서 본 카메라, 컵 입구 바로 위 0.4m에서 내려다본 카메라. */
 const SIDE = viewLooking([0.4, 1.4, 0], [1, 0.8, 0]);
 const ABOVE = viewLooking([0.98, 1.15, 0], CUP_AT);
-const sideCup = (at: V3 = CUP_AT): Detection => det("cup", 0.9, cylinderBox(SIDE, at, 0.04, 0.1), 41);
+const sideCup = (at: V3 = CUP_AT, h = 0.1): Detection => det("cup", 0.9, cylinderBox(SIDE, at, 0.04, h), 41);
 /** 잘라 키운 위 사진 가운데 그릇(YOLO가 위에서 본 컵을 그릇으로 봄). */
 const BOWL: Detection = det("bowl", 0.8, [190, 130, 100, 100]);
 
@@ -76,8 +76,8 @@ function setup(vlm: VlmClient, crop: () => Detection[] = () => [BOWL]) {
 }
 
 /** 옆 사진 1~6초로 컵을 확인한다. */
-async function seeCup(s: ReturnType<typeof setup>) {
-  for (let i = 1; i <= 6; i++) s.frame(i * 1000, SIDE, [sideCup()]);
+async function seeCup(s: ReturnType<typeof setup>, h = 0.1) {
+  for (let i = 1; i <= 6; i++) s.frame(i * 1000, SIDE, [sideCup(CUP_AT, h)]);
   await s.p.idle();
   expect(s.cup()).toMatchObject({ id: "cup_1", status: "present" });
   expect(s.cup().size_m).toBeDefined();
@@ -177,6 +177,21 @@ describe("위에서 보기(topLook)", () => {
     await s.p.idle();
   });
 
+  it("짧은 컵(높이 5cm)을 9cm 위에서 보아도 잰 크기의 상자로 보낸다(높이 12cm 고정 상자는 카메라 뒤로 넘어간다)", async () => {
+    const t = topReply([["empty"], ["empty"]]);
+    fake = await startFakeOpenAI({ reply: t.reply });
+    const s = setup(fakeVlm(fake));
+    await seeCup(s, 0.05);
+    const low = viewLooking([0.99, 0.84, 0], CUP_AT);
+    s.frame(8000, low);
+    s.frame(10_000, low);
+    await s.p.idle();
+    expect(s.p.topReady("cup_1", 7000)).toBe(true);
+    const r = await s.p.topLook(spotOf(s.cup()), 7000);
+    expect(r).toMatchObject({ ok: true, top: [{ kept: true }, { kept: true }] });
+    expect(t.sent).toHaveLength(2);
+  });
+
   it("쌍이 없으면 no_fresh_frames다", async () => {
     const t = topReply([["empty"]]);
     fake = await startFakeOpenAI({ reply: t.reply });
@@ -206,6 +221,10 @@ describe("위에서 본 장 거르기(topDropOf)", () => {
     expect(topDropOf({ ...base, scene: null })).toEqual({ drop: "vlm_missing" });
     expect(topDropOf({ ...base, scene: scene("empty", "not_visible") })).toEqual({ drop: "not_visible" });
     expect(topDropOf({ ...base, scene: scene("contents_unknown") })).toEqual({ drop: "no_contents" });
+    // 모름이 섞이거나 내용물 값이 서로 다르면 버린다
+    expect(topDropOf({ ...base, scene: scene("contents_unknown", "empty") })).toEqual({ drop: "no_contents" });
+    expect(topDropOf({ ...base, scene: scene("empty", "has_contents") })).toEqual({ drop: "no_contents" });
+    expect(topDropOf({ ...base, scene: scene("empty", "empty", "on_table") })).toEqual({ value: "empty" });
     expect(topDropOf({ ...base, dets: [det("bowl", 0.8, [10, 10, 40, 40])] })).toEqual({ drop: "no_vessel" });
     expect(topDropOf({ ...base, dets: [det("cell_phone", 0.8, [190, 130, 100, 100])] })).toEqual({ drop: "no_vessel" });
     expect(topDropOf({ ...base, others: [cup({ id: "cup_2", position: [1.08, 0.75, 0] })] })).toEqual({ drop: "crowded" });

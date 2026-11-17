@@ -176,7 +176,8 @@ export type CloserVlm = "ok" | VlmMissing | "aborted" | "no_fresh_frames";
  *  답을 넣지 않은 것이다. 둘 다 found의 facts·summary는 비고 VLM 기록(observe)을 내지 않는다.
  *  VLM 답이 없거나 넣지 않으면 3장이 안 된 새 물건은 만들지 않는다. */
 /** 위에서 본 장(src/observe/pipeline.ts topLook)을 넣지 않은 까닭: moved 컵이 사라지거나 옮김 표시가 붙거나 0.1m 넘게 옮겨짐(그 뒤 장도 넣지 않음),
- *  vlm_missing VLM 답 없음, not_visible d1에 가림 답, no_contents 내용물 값이 비어 있음·내용물 있음이 아님(바닥이 안 보임), no_vessel 그 자리에 그릇 감지 없음,
+ *  vlm_missing VLM 답 없음, not_visible d1에 가림 답, no_contents 내용물 값이 비어 있음·내용물 있음 하나로 모이지 않음(없음·안이 안 보임 섞임·서로 다름),
+ *  no_vessel 그 자리에 그릇 감지 없음,
  *  crowded 같은 종류 다른 물건이 0.1m 안(어느 컵인지 모름). */
 export type TopDrop = "moved" | "vlm_missing" | "not_visible" | "no_contents" | "no_vessel" | "crowded";
 /** 위에서 본 장 하나: 그 장의 기록 id, 넣었는가, 넣지 않았으면 그 까닭. */

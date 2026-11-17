@@ -181,13 +181,18 @@ export function topView(view: CameraView, point: V3, cup: CupInside, edge = fals
   return H > h && (d <= r || H * 2 * r >= h * (d + r));
 }
 
-/** point에 세운 TOP_BOX_M 원기둥 꼭짓점 16개(아래·위 원마다 8개)를 찍은 엔진 프레임 픽셀 상자 [x, y, w, h]. 하나라도 카메라 뒤면 null. */
-export function topBox(view: CameraView, point: V3, size: { width: number; height: number }): [number, number, number, number] | null {
+/** 위에서 보기 상자의 원기둥: 잰 크기(size_m)가 있으면 반지름 반 폭·그 높이, 없으면 TOP_BOX_M. */
+export function boxShape(size: { height: number; width: number } | null | undefined): { radius: number; height: number } {
+  return size ? { radius: size.width / 2, height: size.height } : TOP_BOX_M;
+}
+
+/** point에 세운 원기둥(shape, 기본 TOP_BOX_M) 꼭짓점 16개(아래·위 원마다 8개)를 찍은 엔진 프레임 픽셀 상자 [x, y, w, h]. 하나라도 카메라 뒤면 null. */
+export function topBox(view: CameraView, point: V3, size: { width: number; height: number }, shape: { radius: number; height: number } = TOP_BOX_M): [number, number, number, number] | null {
   const xs: number[] = [], ys: number[] = [];
   for (let k = 0; k < 8; k++) {
     const a = (k / 8) * Math.PI * 2;
-    for (const y of [0, TOP_BOX_M.height]) {
-      const p = pixelOf(view, [point[0] + TOP_BOX_M.radius * Math.cos(a), point[1] + y, point[2] + TOP_BOX_M.radius * Math.sin(a)], size);
+    for (const y of [0, shape.height]) {
+      const p = pixelOf(view, [point[0] + shape.radius * Math.cos(a), point[1] + y, point[2] + shape.radius * Math.sin(a)], size);
       if (!p) return null;
       xs.push(p[0]);
       ys.push(p[1]);

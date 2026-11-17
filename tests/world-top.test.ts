@@ -90,6 +90,12 @@ describe("위에서 보기 상자(topBox)", () => {
     expect(b[1] + b[3]).toBeGreaterThan(LOOK_SIZE.height / 2);
     expect(topBox(viewLooking([CUP[0] - 0.02, CUP[1] + 0.4, CUP[2]], [CUP[0] - 1, CUP[1] + 0.4, CUP[2]]), CUP, LOOK_SIZE)).toBeNull();
   });
+  it("잰 크기로 상자를 만든다: 9cm 위에서 본 높이 5cm 컵은 그 크기면 상자가 있고, 높이 12cm 고정 상자는 카메라 뒤로 넘어간다(null)", () => {
+    const low = from(0.01, 0.09);
+    expect(topBox(low, CUP, LOOK_SIZE)).toBeNull();
+    const b = topBox(low, CUP, LOOK_SIZE, { radius: 0.04, height: 0.05 })!;
+    expect(b[2]).toBeGreaterThan(0);
+  });
 });
 
 describe("위에서 본 쌍(topPairOf)", () => {

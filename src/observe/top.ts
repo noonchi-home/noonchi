@@ -1,5 +1,6 @@
 // 위에서 보기(src/observe/pipeline.ts topLook)의 장마다 거르기: 그 컵 하나만 d1로 VLM에 보낸 답을 대상 확인을 거친 것만 World State에 넣는다.
-// 차례: 옮겨짐(사라짐·옮김 표시·트윈 자리가 TOP_SAME_M 넘게 바뀜) → VLM 답 없음 → d1에 not_visible → 내용물 값이 비어 있음·내용물 있음이 아님(바닥이 안 보임)
+// 차례: 옮겨짐(사라짐·옮김 표시·트윈 자리가 TOP_SAME_M 넘게 바뀜) → VLM 답 없음 → d1에 not_visible → 내용물 값이 비어 있음·내용물 있음 하나로 모이지 않음
+// (값 없음, 안이 안 보임이 섞임(바닥이 안 보임), 서로 다른 값)
 // → 잘라 키운 사진에 그릇 감지(내용물 면이 있는 종류)가 d1 상자 안에 없음 → 같은 종류 다른 물건이 컵 자리 TOP_SAME_M 안. 다 거치면 그 내용물 값.
 import type { TopDrop } from "../contract/events.js";
 import type { Detection, SceneObservation } from "../contract/observe.js";
@@ -22,8 +23,10 @@ export function topDropOf(o: { start: V3; now: WorldObject | undefined; others: 
   if (!o.scene) return { drop: "vlm_missing" };
   const said = o.scene.observations.filter((ob) => ob.object_id === "d1").map((ob) => ob.state as string);
   if (said.some((s) => (VLM_ONLY as readonly string[]).includes(s))) return { drop: "not_visible" };
-  const value = said.find((s): s is "empty" | "has_contents" => s === "empty" || s === "has_contents");
-  if (!value) return { drop: "no_contents" };
+  // 내용물 값: 안이 안 보임이 섞이거나 서로 다른 값이면 그 장을 믿지 않는다
+  const contents = new Set(said.filter((s) => s === "empty" || s === "has_contents" || s === "contents_unknown"));
+  const value = contents.size === 1 ? [...contents][0] : undefined;
+  if (value !== "empty" && value !== "has_contents") return { drop: "no_contents" };
   const [bx, by, bw, bh] = o.box;
   const inside = (d: Detection) => {
     const cx = d.box[0] + d.box[2] / 2, cy = d.box[1] + d.box[3] / 2;

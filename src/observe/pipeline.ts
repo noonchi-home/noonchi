@@ -21,7 +21,7 @@ import { createInference } from "../infer/inference.js";
 import type { VlmClient } from "../infer/vlm.js";
 import type { FrameHeader, EyeEvent } from "../phone/index.js";
 import { OBJECT_NAME, YOLO_TEXT } from "../world/labels.js";
-import { cupInside, inView, pixelOf, topBox, topPairOf, topView } from "../world/index.js";
+import { boxShape, cupInside, inView, pixelOf, topBox, topPairOf, topView } from "../world/index.js";
 import { CLOSER_NEW_FRAMES, type CloserPass, type WorldState } from "../world/index.js";
 import { cropBox, cropJpeg, LOOK_MARGIN, onCropEdge, toCropBox, toFrameDetection, type Box, type LookSpot } from "./crop.js";
 import { captureTime, FrameRing, sha256 } from "./ring.js";
@@ -94,6 +94,9 @@ export const closerSpanMs = (stepMs: number): number => spanOf(CLOSER_FRAMES, st
 /** 폰 끊김 검사(ms): 가장 새 프레임이 지금보다 이만큼 넘게 앞서 찍혔으면 새 프레임이 안 오는 것으로 본다. 연달은 CLOSER_NEW_FRAMES장 기준(기본 2초 간격이면 5초).
  *  촬영 범위(closerSpanMs)와 따로 둔다: 범위처럼 9초로 늘리면 끊긴 지 9초 된 사진과 그보다 9초 앞선 사진까지 「새 사진」으로 쓴다. */
 export const closerStaleMs = (stepMs: number): number => spanOf(CLOSER_NEW_FRAMES, stepMs);
+
+/** 위에서 본 장 하나와 그 장의 d1 상자(엔진 프레임 픽셀). */
+interface TopShot { frame: EngineFrame; box: Box }
 
 /** 고리 가장 새 프레임의 카메라·촬영 시각·크기(관찰 모드가 대상이 사진 안인지 본다). */
 export interface LatestFrame { view: CameraView | null; capturedAtMs: number; width: number; height: number }
@@ -493,15 +496,22 @@ export class ObservationPipeline {
 
   /** 위에서 본 VLM 프레임 쌍: sinceMs 뒤에 찍혀 카메라가 있고 그 컵 안을 보는(topView, 컵 모양은 World State size_m의 cupInside) VLM 프레임 가운데
    *  topPairOf(TOP_CONFIRM 시간 조건, 내용물 확인과 같은 조건). 컵 자리는 잰 바닥 가운데(size_m.center), 모르면 자리(가까운 가장자리, edge로 본다)다.
+   *  d1 상자(topBox, 잰 크기의 원기둥)를 만들 수 있는 장만 센다(짧은 컵을 낮게 보면 고정 높이 상자는 카메라 뒤로 넘어간다). 장마다 그 상자를 같이 돌려준다.
    *  컵이 없거나 사라졌거나 자리를 모르면 null. */
-  private topPair(objectId: string, sinceMs: number): { obj: WorldObject; center: [number, number, number]; pair: [EngineFrame, EngineFrame] } | null {
+  private topPair(objectId: string, sinceMs: number): { obj: WorldObject; center: [number, number, number]; pair: [TopShot, TopShot] } | null {
     const obj = this.o.world.view(this.clock.now()).objects.find((o) => o.id === objectId && o.status !== "gone");
     if (!obj?.position) return null;
     const center = obj.size_m?.center ?? obj.position;
     const cup = cupInside(obj.size_m);
-    const tops = this.ring.frames().filter((f) => f.vlm !== false && f.view && f.capturedAtMs >= sinceMs && topView(f.view, center, cup, !obj.size_m?.center));
-    const pair = topPairOf(tops.map((f) => ({ at: f.capturedAtMs, f })));
-    return pair ? { obj, center, pair: [pair[0].f, pair[1].f] } : null;
+    const shape = boxShape(obj.size_m);
+    const tops: (TopShot & { at: number })[] = [];
+    for (const f of this.ring.frames()) {
+      if (f.vlm === false || !f.view || f.capturedAtMs < sinceMs || !topView(f.view, center, cup, !obj.size_m?.center)) continue;
+      const box = topBox(f.view, center, f, shape);
+      if (box) tops.push({ frame: f, box, at: f.capturedAtMs });
+    }
+    const pair = topPairOf(tops);
+    return pair ? { obj, center, pair } : null;
   }
 
   /** 위에서 비추기 단계가 끝났는가(실행 추적이 본다): sinceMs 뒤 그 컵 안을 내려다본 VLM 프레임 쌍이 있다. */
@@ -521,7 +531,7 @@ export class ObservationPipeline {
     if (!detector) return this.closerMiss("no_detector");
     if (this.closing || !this.pool.closerFree()) return this.closerMiss("vlm_busy");
     const found = this.topPair(spot.id, sinceMs);
-    if (!found || this.clock.now() - found.pair[1].capturedAtMs > closerStaleMs(vlmStepMs(this.o.config))) return this.closerMiss("no_fresh_frames");
+    if (!found || this.clock.now() - found.pair[1].frame.capturedAtMs > closerStaleMs(vlmStepMs(this.o.config))) return this.closerMiss("no_fresh_frames");
     this.closing = true;
     try {
       return await this.lookTop(found.obj, found.center, found.pair, detector, signal);
@@ -530,13 +540,13 @@ export class ObservationPipeline {
     }
   }
 
-  private async lookTop(start: WorldObject, at: [number, number, number], pair: [EngineFrame, EngineFrame], detector: Detector, signal: AbortSignal | undefined): Promise<CloserResult> {
+  private async lookTop(start: WorldObject, at: [number, number, number], pair: [TopShot, TopShot], detector: Detector, signal: AbortSignal | undefined): Promise<CloserResult> {
     const top: TopFrame[] = [];
     const kept: string[] = [];
     let last: { id: string; at: number; crop: Box } | null = null;
     let summary: string | null = null;
     let vlm: CloserVlm = "ok";
-    for (const frame of pair) {
+    for (const { frame, box: frameBox } of pair) {
       if (this.closed) return this.closerMiss("closed");
       if (signal?.aborted) {
         if (!last) return this.closerMiss("aborted");
@@ -553,7 +563,7 @@ export class ObservationPipeline {
         if (!last) return this.closerMiss(this.closed ? "closed" : "error");
         break;
       }
-      const box = toCropBox(topBox(view, at, frame)!, crop, frame);
+      const box = toCropBox(frameBox, crop, frame);
       const id = `${frame.id}.t${++this.closerSeq}`;
       this.topIds.add(id);
       const answer = this.pool.submitCloser({ ...frame, id, jpeg, sha256: sha256(jpeg), crop }, [{ id: "d1", class: start.cls, box, score: 1 }], signal);
