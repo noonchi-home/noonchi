@@ -49,11 +49,14 @@ function setup(o: { vlm: VlmClient; detector?: (engine: Set<string>) => Detector
     emit: (l) => logs.push(l), broadcastWorld: () => {}, onChanges: (c) => { changes.push(c); o.onChanges?.(c); }, clock,
   });
   let n = 0;
-  const frame = (atMs: number, view: CameraView | null = LOOK_VIEW) => {
-    const jpeg = frameJpeg(++n, [[0, 0, 8, 8]]);   // 잘라 보는 자리 밖 표시: 고른 회색만이면 잘라 키운 사진이 엔진 사진과 같은 JPEG이 된다
+  let last: Buffer | null = null;
+  /** 엔진 프레임 하나. same: 앞 프레임과 같은 사진(가만히 든 폰), held: 붙잡은 장면 다시 보내기(같은 사진 + held 표시). */
+  const frame = (atMs: number, view: CameraView | null = LOOK_VIEW, o: { same?: boolean; held?: boolean } = {}) => {
+    const jpeg = (o.same || o.held) && last ? last : frameJpeg(++n, [[0, 0, 8, 8]]);   // 잘라 보는 자리 밖 표시: 고른 회색만이면 잘라 키운 사진이 엔진 사진과 같은 JPEG이 된다
+    last = jpeg;
     engine.add(sha256(jpeg));
     clock.t = Math.max(clock.t, atMs + 5);
-    p.onEngine(jpeg, { kind: "engine", width: 480, height: 360, captured_at: atMs, time_err_ms: 0 }, null, view, atMs + 5);
+    p.onEngine(jpeg, { kind: "engine", width: 480, height: 360, captured_at: atMs, time_err_ms: 0, ...(o.held ? { held: true } : {}) }, null, view, atMs + 5);
   };
   return { p, world, logs, changes, frame, clock };
 }
@@ -459,6 +462,42 @@ describe("가까이 보기(관찰 흐름 closer)", () => {
     const three = await one([[cup], [cup], [cup]], 6005 + 6000);
     expect(three.r).toMatchObject({ ok: true, found: [{ id: "cup_1", cls: "cup", facts: [] }], summary: null, vlm: "no_fresh_frames" });
     expect(three.objects).toEqual([expect.objectContaining({ id: "cup_1", status: "present", facts: {} })]);
+  });
+
+  // 가로 유리컵 실제 판 r2(2026-11-18): 영상이 끝나 마지막 장면을 붙잡은(held) 동안 첫 가까이 보기가 「새 사진이 끊겨 VLM 답은 넣지 않음」이었다(Codex c5dbb3b 5)
+  it("입력 끊김과 분석 사진 나이를 나눈다: VLM을 기다리는 사이 쓴 장이 closerStaleMs보다 낡아도 폰이 사진을 계속 보내면(붙잡은 장면 held·가만히 든 폰의 같은 사진) 답을 넣는다. 사진이 끊기면 넣지 않는다", async () => {
+    const answers: (() => void)[] = [];
+    const vlm = {
+      model: "held",
+      json: (req: { texts: string[] }) => new Promise((ok) => {
+        const value = { scene: "k", observations: [{ object_id: "d1", state: "in_sink" }], summary: "s" };
+        if (!req.texts.includes(CLOSER_NOTE)) return ok({ value: { ...value, observations: [] }, costUsd: 0, model: "held", attempts: 1 });
+        answers.push(() => ok({ value, costUsd: 0, model: "held", attempts: 1 }));
+      }),
+    } as unknown as VlmClient;
+    const one = async (keep: "held" | "same" | "none") => {
+      const s = setup({ vlm, detector: (engine) => cropTurns(engine, [[], [], [cup]]) });
+      for (let i = 1; i <= 3; i++) s.frame(i * 2000);
+      await s.p.idle();
+      const n = answers.length;
+      const pending = s.p.closer(SPOT);
+      await until(() => answers.length === n + 1);
+      if (keep !== "none") for (const at of [8000, 10_000, 12_000]) s.frame(at, LOOK_VIEW, { [keep]: true });
+      s.clock.t = 12_005;   // 쓴 가장 새 장(6초)은 closerStaleMs(5초)보다 낡았다
+      answers.at(-1)!();
+      const r = await pending;
+      const objects = s.world.view(12_005).objects;
+      await s.p.close();
+      return { r, objects };
+    };
+    for (const keep of ["held", "same"] as const) {
+      const got = await one(keep);
+      expect(got.r).toMatchObject({ ok: true, captured_at_ms: 6000, found: [{ id: "cup_1", facts: ["in_sink"] }], vlm: "ok" });
+      expect(got.objects).toEqual([expect.objectContaining({ id: "cup_1", status: "present" })]);
+    }
+    const cut = await one("none");
+    expect(cut.r).toMatchObject({ ok: true, vlm: "no_fresh_frames", found: [{ id: null, cls: "cup", facts: [] }] });
+    expect(cut.objects).toEqual([]);
   });
 
   it("보통 프레임이 VLM 자리를 다 써도 가까이 보기는 따로 둔 자리로 간다. 가까이 보기가 이미 돌고 있으면 「VLM 자리 없음」이고 합치지 않는다. 닫으면 답을 기다리던 가까이 보기는 닫힘으로 끝난다", async () => {

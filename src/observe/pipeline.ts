@@ -178,6 +178,8 @@ export class ObservationPipeline {
   /** 마지막 VLM 프레임의 촬영 시각. */
   private lastVlmAt: number | null = null;
   private readonly yoloMissing: Record<YoloMissing, number> = { cap: 0, error: 0, stale: 0 };
+  /** 받은 엔진 프레임의 가장 새 촬영 시각(같은 사진·붙잡은 장면 포함, 넣지 않은 중복도). 입력 끊김 검사(inputCut)가 본다. */
+  private lastInputAt: number | null = null;
   private detectMs: number[] = [];
   private poseMs: number[] = [];
   private posed = 0;
@@ -240,6 +242,7 @@ export class ObservationPipeline {
     const t = captureTime({ receivedAtMs, capturedAt: header.captured_at, timeErrMs: header.time_err_ms });
     this.timeSource = t.source;
     this.timeErr = t.source === "phone" ? header.time_err_ms ?? null : null;
+    this.lastInputAt = Math.max(this.lastInputAt ?? Number.NEGATIVE_INFINITY, t.atMs);
     const frame: EngineFrame = { id: `e${++this.seq}`, capturedAtMs: t.atMs, latestAtMs: t.latestMs, jpeg, sha256: sha256(jpeg), width: header.width, height: header.height, eye, view, vlm: false };
     // 붙잡은 장면(held)은 같은 사진이어도 VLM 간격마다 새 관찰로 넣는다: 붙잡는 동안 VLM은 영상이 돌 때와 같은 간격으로 부른다
     // 영상 모드: held
@@ -399,14 +402,14 @@ export class ObservationPipeline {
   /** 가까이 보기 한 번. 한 번에 하나만 돈다(다른 가까이 보기가 돌거나 VLM 가까이 보기 자리가 차 있으면 vlm_busy).
    *  고리의 VLM 프레임 가운데 가장 새 VLM 프레임으로부터 closerSpanMs 안에 찍혀 카메라가 있고 spot이 사진 안(LOOK_MARGIN)인 프레임을 최근 것부터 CLOSER_FRAMES장까지 쓴다
    *  (엔진 프레임이 100ms마다 와도 VLM 프레임 간격으로 고른 5장, 9초 폭이다).
-   *  서로 다른 프레임이 CLOSER_NEW_FRAMES장보다 적거나, 가장 새 프레임이 지금(clock)보다 closerStaleMs 넘게 앞서 찍혔으면(폰이 끊겨 새 프레임이 안 옴)
+   *  서로 다른 프레임이 CLOSER_NEW_FRAMES장보다 적거나, 입력이 끊겼으면(inputCut: 폰이 보낸 가장 새 프레임이 지금보다 closerStaleMs 넘게 앞섬)
    *  자르지 않고 no_fresh_frames.
    *  장마다 spot을 그 프레임 카메라로 찍은 자리를 절반 크기로 잘라 2배로 키워 같은 감지기로 보고, 상자를 엔진 프레임 픽셀로 옮겨 World State에 한 번에 합친다(변화 발행도 한 번).
-   *  감지가 끝나면 쓴 가장 새 프레임이 아직 closerStaleMs 안인지 다시 보고, 낡았으면 합치지 않고 no_fresh_frames.
+   *  감지가 끝나면 입력이 끊기지 않았는지 다시 보고, 끊겼으면 합치지 않고 no_fresh_frames.
    *  signal은 자르기 전(장마다)·합치기 바로 전에 보고, 끊겼으면 넣지 않고 aborted(ok 아님). 감지를 합친 뒤에 끊기면(합친 변화로 그 단계가 끝남 등)
    *  VLM을 보내지 않거나 기다리던 HTTP 요청을 끊고 답을 넣지 않으며, 실행한 가까이 보기(ok, vlm aborted)로 돌려준다.
    *  물건 감지(World State closerObject)가 있는 가장 새 장(없으면 가장 새 장) 하나만 VLM 가까이 보기 자리로 보내고 그 답(그 장에서 잡은 물건 사실만)을 넣은 뒤 끝난다.
-   *  VLM 답이 왔을 때 쓴 가장 새 프레임이 지금보다 closerStaleMs 넘게 앞서 찍혔으면(VLM을 기다리는 사이 폰 끊김) 답을 넣지 않고 ok, vlm no_fresh_frames로 돌려준다.
+   *  VLM 답이 왔을 때 입력이 끊겼으면(VLM을 기다리는 사이 폰 끊김) 답을 넣지 않고 ok, vlm no_fresh_frames로 돌려준다. 쓴 장의 나이는 보지 않는다.
    *  3장이 안 된 새 물건 후보는 그 답이 그 감지에 사실을 하나 이상 답하고 가림은 답하지 않을 때 만들고 그 사실을 넣는다. VLM 답이 없거나 넣지 않으면 만들지 않는다.
    *  결과의 frame_id·captured_at_ms·crop·found는 그 장 기준이고 frames는 잘라 본 장 수다. */
   async closer(spot: LookSpot, signal?: AbortSignal): Promise<CloserResult> {
@@ -425,13 +428,19 @@ export class ObservationPipeline {
     }
   }
 
-  /** 가까이 보기가 그 자리(트윈 [x, 높이, y])를 볼 장을 고른다(closer와 같은 규칙): 가장 새 프레임이 closerStaleMs 안이고 카메라가 있고 그 자리가 사진 안이며,
+  /** 입력 끊김: 폰이 보낸 가장 새 엔진 프레임(같은 사진·붙잡은 장면 held 포함)이 지금보다 closerStaleMs 넘게 앞서 찍혔다.
+   *  분석하는 사진의 나이와 따로 본다: 가만히 든 폰·붙잡은 장면은 같은 사진이 이어지므로 그 사진이 지금 장면이다. 옛 사진의 답이 새 판단을 덮지 않는 것은 World State가 촬영 순서로 지킨다. */
+  private inputCut(): boolean {
+    return this.lastInputAt === null || this.clock.now() - this.lastInputAt > closerStaleMs(vlmStepMs(this.o.config));
+  }
+
+  /** 가까이 보기가 그 자리(트윈 [x, 높이, y])를 볼 장을 고른다(closer와 같은 규칙): 입력이 끊기지 않았고(inputCut) 카메라가 있고 그 자리가 사진 안이며,
    *  가장 새 VLM 프레임으로부터 closerSpanMs 안에 찍혀 그 자리가 사진 안(LOOK_MARGIN)인 VLM 프레임을 최근 것부터 CLOSER_FRAMES장까지, 서로 다른 장이 CLOSER_NEW_FRAMES장 이상. */
   private closerFrames(position: [number, number, number]): { ok: true; picked: EngineFrame[] } | { ok: false; why: "no_fresh_frames" | "no_view" | "out_of_view" } {
     const ring = this.ring.frames();
     const newest = ring.at(-1);
     const step = vlmStepMs(this.o.config);
-    if (!newest || this.clock.now() - newest.capturedAtMs > closerStaleMs(step)) return { ok: false, why: "no_fresh_frames" };
+    if (!newest || this.inputCut()) return { ok: false, why: "no_fresh_frames" };
     if (!newest.view) return { ok: false, why: "no_view" };
     if (!inView(newest.view, position, LOOK_MARGIN)) return { ok: false, why: "out_of_view" };
     const span = closerSpanMs(step);
@@ -467,8 +476,8 @@ export class ObservationPipeline {
     }
     if (this.closed) return this.closerMiss("closed");
     if (signal?.aborted) return this.closerMiss("aborted");
-    // 감지하는 사이 새 프레임이 끊겼으면(쓴 가장 새 프레임이 지금보다 너무 앞섬) 합치지 않는다
-    if (this.clock.now() - picked.at(-1)!.capturedAtMs > closerStaleMs(vlmStepMs(this.o.config))) return this.closerMiss("no_fresh_frames");
+    // 감지하는 사이 입력이 끊겼으면(폰이 보낸 가장 새 프레임이 지금보다 너무 앞섬) 합치지 않는다
+    if (this.inputCut()) return this.closerMiss("no_fresh_frames");
     const looks: CloserPass[] = passes.map((p) => ({
       frameId: p.frame.id, capturedAtMs: p.frame.capturedAtMs, view: p.view, width: p.frame.width, height: p.frame.height,
       dets: p.dets.map((d) => {
@@ -500,8 +509,9 @@ export class ObservationPipeline {
       this.closerCount.costUsd += r.costUsd;
     }
     if (this.closed) return this.closerMiss("closed");
-    // VLM 답을 넣기 바로 전에 다시 본다: 끊겼으면 aborted, 그사이 새 프레임이 끊겼으면(쓴 가장 새 프레임이 지금보다 너무 앞섬, 폰 끊김) no_fresh_frames로 넣지 않는다
-    const stale = this.clock.now() - picked.at(-1)!.capturedAtMs > closerStaleMs(vlmStepMs(this.o.config));
+    // VLM 답을 넣기 바로 전에 다시 본다: 끊겼으면 aborted, 그사이 입력이 끊겼으면(폰 끊김) no_fresh_frames로 넣지 않는다.
+    // 쓴 장이 그사이 낡은 것은 막지 않는다(붙잡은 장면·가만히 든 폰은 같은 사진이 이어진다)
+    const stale = this.inputCut();
     const vlm: CloserVlm = !r || signal?.aborted ? "aborted" : r.scene && stale ? "no_fresh_frames" : r.missing ?? "ok";
     if (vlm === "aborted" || vlm === "no_fresh_frames") r = null;
     if (r) {
