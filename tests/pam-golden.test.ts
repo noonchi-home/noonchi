@@ -1,5 +1,5 @@
 // 옮기기 전 Python PAM이 만든 정답(tests/fixtures/pam-golden/out)과 TS 결과를 비교한다.
-// 메시지는 바이트까지 같다(toMatchFileSnapshot). 프롬프트를 일부러 바꿨으면 `npx vitest run tests/pam-golden.test.ts -u`로 새 정답을 쓰고 차이를 본다.
+// 프롬프트에 따라 바뀌는 정답(메시지·전송 바이트·토큰 추정·바꾸기 결과·입력 한도)은 toMatchFileSnapshot이다. 프롬프트를 일부러 바꿨으면 `npx vitest run tests/pam-golden.test.ts -u`로 새 정답을 쓰고 차이를 본다.
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { adaptation, buildPredictMessages, buildReflectMessages, estimateTokens, PamAnswerError, PamBudgetError, PamClient, PamLinkError, PamLlm, pamLimits, PamRequestError, pamSettings, parseMemory, parsePrediction, predictRequest, reflectRequest, type Generation, type PamMessage } from "../src/brain/pam/index.js";
@@ -55,10 +55,10 @@ describe("Python과 같은 결과", () => {
     expect(got).toEqual(out("memory.json"));
   });
 
-  it("입력 한도(limits)", () => {
+  it("입력 한도(limits, 프롬프트 길이를 따라 바뀐다)", async () => {
     const len = (env: Record<string, string>) => Number(env.PAM_MAX_MODEL_LEN?.trim() || 32768);
     const got = inputs.limits.map((env: Record<string, string>) => ({ env, limits: pamLimits({ ...MAX, maxModelLen: len(env) }) }));
-    expect(got).toEqual(out("limits.json"));
+    await sameFile("limits.json", pretty(got));
   });
 });
 

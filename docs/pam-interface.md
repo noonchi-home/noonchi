@@ -42,7 +42,7 @@
 | `PamRequestError` | 입력이 계약에 안 맞음(모르는 칸·사진 칸·시간대 없는 시각·글 길이·틀린 기억). LLM에 보내지 않는다 | 판단 실패 |
 | `PamBudgetError` | `입력 추정 + max_tokens`가 문맥 길이를 넘음. LLM에 보내지 않는다 | 판단 실패 |
 | `PamAnswerError` | LLM 답이 계약에 안 맞음(대기 −1과 다르다) | 판단 실패 |
-| `PamLinkError` | LLM 연결 실패·HTTP 오류·시간 초과·잘린 답(`finish_reason`이 `stop`이 아님)·답 모양 틀림 | PAM 연결 끊김 |
+| `PamLinkError` | LLM 연결 실패·HTTP 오류·시간 초과·잘린 답(`finish_reason`이 있고 `stop`도 `null`도 아님, 칸이 없으면 받음)·답 모양 틀림 | PAM 연결 끊김 |
 
 `PamRequestError`·`PamBudgetError`·`PamAnswerError`는 `ContractError`다.
 

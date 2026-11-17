@@ -34,5 +34,5 @@
 
 1. `tests/pam-prompts.test.ts`가 일부러 실패해요. 바꾼 파일의 해시를 `prompts/source_map.json`의 `sha256`에 같이 고쳐요.
    - 해시 보기: `node -e "console.log(require('crypto').createHash('sha256').update(require('fs').readFileSync('src/brain/pam/prompts/paper/predictor_fsm.txt')).digest('hex'))"`
-2. 메시지가 바뀌므로 `tests/pam-golden.test.ts`도 실패해요. `npx vitest run tests/pam-golden.test.ts -u`로 새 정답을 쓰고, `git diff tests/fixtures/pam-golden`로 바뀐 글을 확인한 뒤 같이 커밋해요.
+2. 메시지·전송 바이트·토큰 추정·입력 한도(`limits.json`)가 바뀌므로 `tests/pam-golden.test.ts`도 실패해요. `npx vitest run tests/pam-golden.test.ts -u`로 새 정답을 한꺼번에 쓰고, `git diff tests/fixtures/pam-golden`로 바뀐 글을 확인한 뒤 같이 커밋해요.
 3. 프롬프트 파일은 LF 줄끝이어야 해요(`.gitattributes`가 고정해요).
