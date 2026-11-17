@@ -104,6 +104,18 @@ function patchVersion(db: HistoryDb, patch: (typeof SEED_PATCHES)[number], base:
   return version;
 }
 
+/** 반성이 읽는 그날 기억: 고정·저장하지 않는다. 그날 고정 판본 → 그날 쓸 판본 → 지금 seed 차례(dayMemory와 같은 골라내기). */
+function readDayMemory(db: HistoryDb, day: string): { memory: PamMemory; kind: "list" | "fsm" } {
+  const pinned = db.pinnedMemory(day);
+  const m = pinned !== null ? db.memoryVersion(pinned) : db.memoryFor(day);
+  if (!m) return { memory: CUP_FSM_MEMORY, kind: "fsm" };
+  const seed = JSON.stringify(CUP_FSM_MEMORY);
+  if (m.source === "seed" && JSON.stringify(m.memory) !== seed && db.memoryVersion(db.latestMemoryVersion() ?? m.version)?.source === "seed") {
+    return { memory: CUP_FSM_MEMORY, kind: "fsm" };
+  }
+  return { memory: validateMemory(m.memory, m.kind), kind: m.kind };
+}
+
 function dayMemory(db: HistoryDb, day: string): DayMemory {
   const pinned = db.pinnedMemory(day);
   const m = pinned !== null ? db.memoryVersion(pinned) : db.memoryFor(day);
@@ -141,8 +153,8 @@ export async function runReflection(db: HistoryDb, pam: PamClient, day: string, 
     return { ok: false, empty: true, error: REFLECT_TEXT.empty };
   }
   try {
-    // 지난날 반성은 그날 판본을 그대로 읽는다(습관을 넣거나 날 고정을 바꾸지 않는다)
-    const cur = memoryForDay(db, day, { patch: false });
+    // 그날 판본을 읽기만 한다(습관을 넣거나 날 고정·seed 판본을 남기지 않는다: 끊긴 반성이 다른 반성의 적용일을 밀지 않게)
+    const cur = readDayMemory(db, day);
     const feedback = latestWithin(db.list({ day, kinds: ["feedback"] }).map((r) => r.text), MAX_REFLECT_TEXT.feedback).join("\n") || null;
     const limits = await pam.limits();
     // 요약이 비면 대신 보내는 글(관찰 없음·행동 없음)도 한도 안에 들게 미리 뺀다
@@ -166,12 +178,17 @@ export async function runReflection(db: HistoryDb, pam: PamClient, day: string, 
       // 기록 줄은 따로 넘긴 거르기만 읽는다: 기본(keepAll)은 쓰지 않으니 30일 기록을 올리지 않는다(기록 DB가 커도 서버를 멈추지 않게)
       const rows = o.filter ? db.list({ since: dayStart - (windowDays - 1) * 86_400_000, until: dayStart + 86_400_000 - 1, kinds: [...HABIT_KINDS], limit: Number.MAX_SAFE_INTEGER }) : [];
       const filtered = await (o.filter ?? keepAll)({ day, windowDays, offsetMinutes: db.offsetMinutes, previous, proposed: first.memory, rows });
+      if (o.signal?.aborted) return { ok: false, error: REFLECT_TEXT.cancelled };
       const second = coachGuard(CUP_FSM_MEMORY, filtered.memory);
       memory = validateMemory(second.memory, "fsm");
       dropped = [...first.notes, ...filtered.notes, ...second.notes].filter((n) => !n.kept);
       learned = learnedRules(previous, memory as FsmMemory).filter((r) => !TASKS[r.action]?.coach);
       active = learnedRules(CUP_FSM_MEMORY, memory as FsmMemory).filter((r) => !TASKS[r.action]?.coach);
     }
+    // 저장 바로 전에도 끊겼는지 본다(끊긴 반성은 날 고정·새 판본·성공 기록을 남기지 않는다)
+    if (o.signal?.aborted) return { ok: false, error: REFLECT_TEXT.cancelled };
+    // 끝난 반성만 그날 판본을 고정한다(판본이 없으면 seed를 저장한다). 읽을 때는 고정하지 않았다
+    memoryForDay(db, day, { patch: false });
     let appliesDay = nextDay(day);
     while (db.pinnedMemory(appliesDay) !== null) appliesDay = nextDay(appliesDay);
     const version = db.saveMemory({ kind: cur.kind, memory, day, appliesDay, source: "reflection" });

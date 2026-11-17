@@ -8,6 +8,7 @@ import { CUP_FSM_MEMORY, type FsmMemory } from "../src/brain/decision.js";
 import type { PamClient } from "../src/brain/pam/index.js";
 import type { BrainLog } from "../src/contract/events.js";
 import { HistoryDb } from "../src/brain/history/db.js";
+import { REFLECT_TEXT } from "../src/brain/history/labels.js";
 import { loadReflectAt, memoryForDay, runReflection, scheduleReflection } from "../src/brain/history/reflect.js";
 import { fetchRetry, listenRetry } from "../src/shared/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
@@ -308,7 +309,8 @@ describe("반성", () => {
         filter: (i) => ({ memory: { ...i.proposed, initial_state: "nowhere" }, notes: [] }),
       });
       expect(r.ok).toBe(false);
-      expect(db.latestMemoryVersion()).toBe(1);
+      // 반성은 그날 기억을 읽기만 하므로 실패하면 seed 판본도 남기지 않는다
+      expect(db.latestMemoryVersion()).toBeNull();
       expect(db.list({ kinds: ["reflection"] }).at(-1)!.text).toMatch(/^반성 실패: /);
     });
   });
@@ -431,6 +433,33 @@ describe("반성 API", () => {
       hang.closeAllConnections();
       hang.close();
     }
+  });
+
+  it("끊긴 반성은 그날 고정·seed 판본·기록을 남기지 않는다", async () => {
+    const db = HistoryDb.open(":memory:");
+    db.add("detection", Date.UTC(2026, 10, 6, 23), "사람 보임");
+    const ac = new AbortController();
+    const hang = ((_u: unknown, init?: RequestInit) => new Promise<Response>((_, reject) => init!.signal!.addEventListener("abort", () => reject(init!.signal!.reason)))) as typeof fetch;
+    const run = runReflection(db, pamClientFor({ url: "http://pam.invalid/v1" }, { fetchImpl: hang }), "2026-11-07", { signal: ac.signal });
+    await new Promise((ok) => setTimeout(ok, 30));
+    ac.abort();
+    expect(await run).toEqual({ ok: false, error: REFLECT_TEXT.cancelled });
+    expect(db.pinnedMemory("2026-11-07")).toBeNull();
+    expect(db.latestMemoryVersion()).toBeNull();
+    expect(db.list({ kinds: ["reflection"] })).toEqual([]);
+  });
+
+  it("습관 거르기 중 끊기면 새 판본·성공 기록을 남기지 않는다", async () => {
+    const db = HistoryDb.open(":memory:");
+    db.add("detection", Date.UTC(2026, 10, 6, 23), "사람 보임");
+    const ac = new AbortController();
+    const fetchImpl = (async () => Response.json({ model: "pam", choices: [{ message: { content: JSON.stringify(CUP_FSM_MEMORY) }, finish_reason: "stop" }] })) as unknown as typeof fetch;
+    const r = await runReflection(db, pamClientFor({ url: "http://pam.invalid/v1" }, { fetchImpl }), "2026-11-07", {
+      signal: ac.signal, filter: async (x) => { ac.abort(); return { memory: x.proposed, notes: [] }; },
+    });
+    expect(r).toEqual({ ok: false, error: REFLECT_TEXT.cancelled });
+    expect(db.latestMemoryVersion()).toBeNull();
+    expect(db.list({ kinds: ["reflection"] })).toEqual([]);
   });
 
   it("반성 기록에 PAM 사용량을 남긴다", async () => {

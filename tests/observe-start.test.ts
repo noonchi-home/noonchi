@@ -1,6 +1,7 @@
 // startServer(BRAIN=1) + 폰: 엔진 프레임 → 관찰 흐름 → 대시보드 observe 기록·World State → PAM 판단, /api/brain·/api/world.
 // VLM은 가짜 OpenAI 호환 서버, PAM 서비스는 시험용 PAM 자리(tests/helpers/pam.ts).
 import { mkdtempSync } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -8,7 +9,7 @@ import type WebSocket from "ws";
 import { startFakeOpenAI, type FakeServer } from "../scripts/fake-openai.js";
 import type { Detection } from "../src/contract/observe.js";
 import { encodeFramePacket } from "../src/phone/packet.js";
-import { fetchRetry } from "../src/shared/net.js";
+import { fetchRetry, listenRetry } from "../src/shared/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { isThought } from "./helpers/thought.js";
 import { ScriptedDetector, det } from "./helpers/detectors.js";
@@ -46,6 +47,64 @@ async function until(list: Msg[], pred: (m: Msg) => boolean, ms = 5000): Promise
 const cup: Detection = det("cup", 0.9, [1, 1, 2, 1], 41);
 
 describe("startServer(BRAIN=1) + 관찰 흐름", () => {
+  it("서버를 끄면 집의 새 일(나가 있는 판단 요청)을 먼저 끊고, 그다음 진행 중인 반성 요청을 끊는다", async () => {
+    fake = await startFakeOpenAI();
+    const seen = { predict: 0, reflect: 0 };
+    const aborted: string[] = [];
+    // 답하지 않는 PAM LLM
+    const hang = createServer(async (req) => {
+      let raw = "";
+      for await (const c of req) raw += c;
+      seen[raw.includes("task inference module") ? "predict" : "reflect"]++;
+    });
+    const { port } = await listenRetry(hang, 0, "127.0.0.1");
+    // 서버 안에서 PAM LLM으로 나가는 요청이 끊기는 차례(부른 쪽 신호가 끊기는 순간)를 적는다
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = ((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes(`127.0.0.1:${port}/`)) {
+        const kind = String(init?.body ?? "").includes("task inference module") ? "predict" : "reflect";
+        init?.signal?.addEventListener("abort", () => aborted.push(kind));
+      }
+      return realFetch(input, init);
+    }) as typeof fetch;
+    try {
+      srv = await startServer({
+        env: env({ PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, VLM_MODEL: "fake-vlm", ENGINE_FRAME_MS: "500",
+          PAM_LLM_BASE_URL: `http://127.0.0.1:${port}/v1`, PAM_LLM_API_KEY: "fake-key", PAM_TIMEOUT_MS: "60000" }),
+        log: () => {}, brain: { detector: new ScriptedDetector(() => [cup]) },
+      });
+      const phoneUrl = new URL(srv.phoneUrls[0]!);
+      let phoneBox: Msg[] = [];
+      const phone = await openPhone(`ws://${phoneUrl.host}/phone/events`, { options: { origin: phoneUrl.origin }, setup: (ws) => { phoneBox = inbox(ws); } });
+      await until(phoneBox, (m) => m.type === "status");
+      phone.send(encodeFramePacket({ kind: "engine", width: 4, height: 3, captured_at: Date.now() - 10, time_err_ms: 2 }, Buffer.from([0xff, 0xd8, 1])));
+      const wait = async (ok: () => boolean, what: string) => {
+        const end = Date.now() + 8000;
+        while (!ok()) {
+          if (Date.now() > end) throw new Error(`${what}이 오지 않았습니다`);
+          await new Promise((r) => setTimeout(r, 20));
+        }
+      };
+      await wait(() => seen.predict > 0, "판단 요청");
+      srv.history.add("detection", Date.now(), "사람 보임");
+      const day = srv.history.dayOf(Date.now());
+      const running = fetchRetry(`${srv.url}/api/reflection/run`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ day }) }).catch(() => null);
+      await wait(() => seen.reflect > 0, "반성 요청");
+      await srv.close();
+      srv = undefined;
+      expect(aborted).toContain("predict");
+      expect(aborted).toContain("reflect");
+      expect(aborted.indexOf("predict")).toBeLessThan(aborted.indexOf("reflect"));
+      await running;
+      phone.close();
+    } finally {
+      globalThis.fetch = realFetch;
+      hang.closeAllConnections();
+      hang.close();
+    }
+  }, 30_000);
+
   it("BRAIN=1인데 PHONE_PORT가 없으면 관찰 흐름을 끄고 알린다", async () => {
     const lines: string[] = [];
     srv = await startServer({ env: env({ BRAIN: "1" }), log: (l) => lines.push(l) });

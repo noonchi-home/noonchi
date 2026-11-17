@@ -470,12 +470,14 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       if (closed) return;
       closed = true;
       schedule?.stop();
-      closing.abort(new Error("서버를 끔"));
-      await reflecting?.catch(() => {});
       clearInterval(cleaner);
       await job;
-      // 앱이 /events 소켓을 먼저 끊어야 껍데기 서버 close가 기다리지 않는다
-      await current?.close();
+      // 집의 새 일(판단·실행 추적·가전 정책)을 먼저 막는다: 집 닫기의 첫 단계(새 일 막기)는 부르는 순간 돈다.
+      // 그다음 진행 중인 반성 요청을 끊고, 집 닫기와 반성이 끝나기를 기다린다. 앱이 /events 소켓을 먼저 끊어야 껍데기 서버 close가 기다리지 않는다
+      const homeClosing = current?.close();
+      closing.abort(new Error("서버를 끔"));
+      await homeClosing;
+      await reflecting?.catch(() => {});
       await shell.close();
       closeDb();
       lock.release();
