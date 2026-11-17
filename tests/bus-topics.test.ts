@@ -92,11 +92,14 @@ describe("인식·집 상태 토픽 모양(묶음 2)", () => {
   const scene = { scene: "kitchen", observations: [{ object_id: "d1", state: SCENE_STATES[0] }], summary: "컵 하나" };
   const mask = { at: [1, 2, 3, 4], cols: 2, rows: 1, bits: "wA==" };
 
+  const view = { origin: [0, 1.5, 0], orientation: [0, 0, 0, 1], theta: 0, projection: Array(16).fill(0) };
+  const at = { view, width: 480, height: 360, crop: [1, 2, 3, 4] };
+
   it("/perception/scene은 VLM 갈래 다섯만 받고, 사진 칸(jpeg·jpeg_b64)이 있거나 모르는 사실이면 거절한다", () => {
     const kinds = [
       { kind: "scene", frame_id: "e1", observed_ms: 1, scene },
       { kind: "missing", frame_id: "e1", observed_ms: 1, missing: "timeout" },
-      { kind: "closer_scene", look: "e1.c1", frame_id: "e1", observed_ms: 1, scene },
+      { kind: "closer_scene", look: "e1.c1", frame_id: "e1", observed_ms: 1, scene, at },
       { kind: "closer_end", look: "e1.c1" },
       { kind: "top", object_id: "cup_1", frame_id: "e1", observed_ms: 1, value: "empty" },
     ];
@@ -110,8 +113,26 @@ describe("인식·집 상태 토픽 모양(묶음 2)", () => {
     expect(ok("/perception/scene", { kind: "missing", frame_id: "e1", observed_ms: 1, missing: "모름" })).toBe(false);
   });
 
+  it("/perception/scene VLM 갈래는 VLM 물건 목록(objects)·그 사진의 카메라(look)·가까이 본 장의 자리(at)를 싣고, 그 안의 사진 칸도 거절한다", () => {
+    const objects = [{ id: "v1", cls: "glass", box: { x: 0.1, y: 0.2, w: 0.1, h: 0.2 }, det: null }, { id: "v2", cls: "cup", box: { x: 0.5, y: 0.5, w: 0.1, h: 0.1 }, det: "d1" }];
+    const look = { view, width: 480, height: 360, eye: [1, 2] };
+    const withObjects = { ...scene, objects };
+    const kinds = [
+      { kind: "scene", frame_id: "e1", observed_ms: 1, scene: withObjects, look },
+      { kind: "scene", frame_id: "e1", observed_ms: 1, scene: withObjects, look: { ...look, eye: null } },
+      { kind: "scene", frame_id: "e1", observed_ms: 1, scene: withObjects, look: { view, width: 480, height: 360 } },
+      { kind: "closer_scene", look: "e1.c1", frame_id: "e1", observed_ms: 1, scene: withObjects, at },
+    ];
+    for (const b of kinds) expect(ok("/perception/scene", b), JSON.stringify(b).slice(0, 80)).toBe(true);
+    expect(ok("/perception/scene", { kind: "closer_scene", look: "e1.c1", frame_id: "e1", observed_ms: 1, scene })).toBe(false);
+    for (const photo of ["jpeg", "jpeg_b64", "sha256"]) {
+      expect(ok("/perception/scene", { ...kinds[0], scene: { ...scene, objects: [{ ...objects[0], [photo]: "x" }] } }), `object.${photo}`).toBe(false);
+      expect(ok("/perception/scene", { ...kinds[0], look: { ...look, [photo]: "x" } }), `look.${photo}`).toBe(false);
+      expect(ok("/perception/scene", { ...kinds[3], at: { ...at, [photo]: "x" } }), `at.${photo}`).toBe(false);
+    }
+  });
+
   it("/perception/scene의 YOLO 임시 갈래(eye·frame·yolo_missing·closer_merge)는 감지 상자·눈 자리·프레임 번호만 싣고, 사진 바이트 칸(jpeg·jpeg_b64·sha256)은 어느 자리에서든 거절한다", () => {
-    const view = { origin: [0, 1.5, 0], orientation: [0, 0, 0, 1], theta: 0, projection: Array(16).fill(0) };
     const d = { label: "cup", score: 0.8, box: [1, 2, 3, 4], cls: 41, mask, foot: [2, 6] };
     const frame = { id: "e1", capturedAtMs: 1000, latestAtMs: 1000, width: 480, height: 360, eye: { position: [1, 2], height_m: 1.4, yaw_deg: 0, pitch_deg: 0 }, view, vlm: true };
     const pose = { score: 0.9, box: [1, 2, 3, 4], keypoints: [[1, 2, 0.9]] };
@@ -152,6 +173,9 @@ describe("인식·집 상태 토픽 모양(묶음 2)", () => {
     expect(ok("/world/state", { rev: 1, view: { ...VIEW, at_ms: "1" } })).toBe(false);
     expect(ok("/world/state", { rev: 1, view: { ...VIEW, jpeg_b64: "x" } })).toBe(false);
     expect(ok("/world/state", { rev: 1, view: { ...VIEW, jpeg: "x" } })).toBe(false);
+    // 후보 자리(sightings)는 있을 때만 싣는다
+    expect(ok("/world/state", { rev: 1, view: { ...VIEW, sightings: [] } })).toBe(true);
+    expect(ok("/world/state", { rev: 1, view: { ...VIEW, sightings: "x" } })).toBe(false);
     const change = { kind: "appeared", at_ms: 1, subject: "cup_1", text: "컵 보임", meaningful: true };
     expect(ok("/world/changes", { rev: 1, changes: [change] })).toBe(true);
     expect(ok("/world/changes", { rev: 1 })).toBe(false);
@@ -166,7 +190,13 @@ describe("인식·집 상태 토픽 모양(묶음 2)", () => {
     expect(ok("/world/closer", { look: "e2.c1", ids: { d1: 1 } })).toBe(false);
   });
 
-  it("/world/input은 지킴·따르기 창만, /phone/heard는 {text, observed_ms}, /device/changes는 {id, state, note}만 받는다", () => {
+  it("/world/input은 지킴·따르기 창·지금 단계 대상(focus)만, /phone/heard는 {text, observed_ms}, /device/changes는 {id, state, note}만 받는다", () => {
+    expect(ok("/world/input", { kind: "focus", id: "cup_1", focus: { step: "place", spot: [1, 2] }, at_ms: 1 })).toBe(true);
+    expect(ok("/world/input", { kind: "focus", id: "cup_1", focus: { step: "carry", spot: null }, at_ms: 1 })).toBe(true);
+    expect(ok("/world/input", { kind: "focus", id: null, focus: null, at_ms: 1 })).toBe(true);
+    expect(ok("/world/input", { kind: "focus", id: "cup_1", focus: { step: "throw", spot: null }, at_ms: 1 })).toBe(false);
+    expect(ok("/world/input", { kind: "focus", id: "cup_1", on: true, at_ms: 1 })).toBe(false);
+    expect(ok("/world/input", { kind: "guard", id: null, on: true, at_ms: 1 })).toBe(false);
     expect(ok("/world/input", { kind: "guard", id: "cup_1", on: true, at_ms: 1 })).toBe(true);
     expect(ok("/world/input", { kind: "contents", id: "cup_1", on: false, at_ms: 1 })).toBe(true);
     expect(ok("/world/input", { kind: "move", id: "cup_1", on: true, at_ms: 1 })).toBe(false);

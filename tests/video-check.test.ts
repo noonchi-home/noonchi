@@ -7,11 +7,12 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { HistoryRow } from "../src/contract/history.js";
 import type { WorldEye, WorldObject, WorldView } from "../src/contract/world.js";
-import { SEND_SAY, clickChoice, clock, costLine, judgeInput, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, stepVerdict, timeline, twinRows, usedServer, roomLabels, ownAssetFailures, videoClock, runTimeline, clipEnd, syncWarning, mustStop, openDashboard, waitLoaded, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
+import { SEND_SAY, clickChoice, clock, costLine, judgeInput, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, stepVerdict, timeline, twinRows, usedServer, roomLabels, ownAssetFailures, videoClock, runTimeline, clipEnd, syncWarning, mustStop, openDashboard, waitLoaded, waitTwinReady, frameGapLine, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
 import { createServer, type Server } from "node:http";
 import { listenRetry } from "../src/shared/net.js";
 import type { SceneJson } from "../src/contract/layout.js";
 import { ackAt, concatList, demoFile, encodeDemo, ffmpegArgs, startRecording, type ScreencastPage } from "../scripts/video-record.js";
+import { chromeFlags } from "../scripts/twin3d/cdp.js";
 
 const eye = (room: string | null, room_label: string | null, x: number, y: number): WorldEye => ({ position: [x, y], height_m: 1.4, yaw_deg: 0, pitch_deg: -20, room, room_label, at_ms: 0 });
 const cup = (id: string, place: string | null, o: Partial<WorldObject> = {}): WorldObject => ({
@@ -760,5 +761,70 @@ describe("video-check", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+// 2026-11-18 사용자: 「렉이 너무 걸린다. 폰 화면은 안 해도 되니까 트윈 화면만 띄우고, 트윈이 온전히 뜨면 영상을 시작해」
+describe("녹화는 대시보드 한 화면만, 트윈이 다 뜬 뒤 시작", () => {
+  it("--record는 기본으로 대시보드만 녹화하고(--record-phone이면 폰도), --chrome은 그리기 방식(기본 headless-gpu)이다", () => {
+    const a = parseArgs(["--clip", "cup-demo.mp4", "--record", "demo-backup"]);
+    expect(a).toMatchObject({ record: "demo-backup", recordPhone: false, chrome: "headless-gpu" });
+    expect(parseArgs(["--clip", "cup-demo.mp4", "--record", "demo-backup", "--record-phone", "--chrome", "swiftshader"])).toMatchObject({ recordPhone: true, chrome: "swiftshader" });
+    expect(parseArgs(["--clip", "cup-demo.mp4", "--chrome", "metal"])).toMatch(/--chrome/);
+  });
+
+  it("크롬 그리기 방식: swiftshader는 지금 플래그, headless-gpu는 화면 없이 그래픽 카드(ANGLE D3D11), window는 창", () => {
+    expect(chromeFlags("swiftshader")).toEqual(["--headless=new", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"]);
+    expect(chromeFlags("headless-gpu")).toEqual(expect.arrayContaining(["--headless=new", "--use-angle=d3d11", "--enable-gpu", "--ignore-gpu-blocklist"]));
+    expect(chromeFlags("headless-gpu")).not.toContain("--enable-unsafe-swiftshader");
+    expect(chromeFlags("window")).toEqual([]);
+  });
+
+  it("ffmpeg 명령: 폰이 없으면 대시보드 한 화면을 높이 800에 맞춘다(나란히 붙이지 않는다)", () => {
+    const args = ffmpegArgs({ dash: "dash.txt", out: "o.mp4", seconds: 2, dashSize: [1280, 800] });
+    expect(args.filter((x) => x === "-i")).toHaveLength(1);
+    expect(args).toContain("dash.txt");
+    expect(args.join(" ")).not.toMatch(/hstack|phone/);
+    expect(args[args.indexOf("-filter_complex") + 1]).toBe("[0:v]fps=10,scale=1280:800:force_original_aspect_ratio=decrease:force_divisible_by=2:out_range=tv,pad=1280:800:(ow-iw)/2:(oh-ih)/2,setsar=1[d];[d]format=yuv420p[v]");
+  });
+
+  it("대시보드 프레임만 있으면 대시보드 한 화면으로 만든다(폰 프레임이 없다고 실패하지 않는다)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "video-record-"));
+    try {
+      mkdirSync(join(dir, "dash"));
+      writeFileSync(join(dir, "dash", "000001.jpg"), "d");
+      const r = await encodeDemo(dir, { endMs: 1000, frames: { dash: [{ file: "dash/000001.jpg", ms: 0 }] }, lost: 0 }, join(dir, "x.demo.mp4"), { dashSize: [1280, 800], ffmpeg: "ffmpeg-not-installed-video-check" });
+      expect(r.ok ? "" : r.why).toMatch(/ffmpeg가 없어요/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("트윈이 다 뜰 때(main data-ready, 그 뒤 그림 몇 장)까지 기다리고, 시간 한도를 넘기면 던진다", async () => {
+    const answers: unknown[] = [false, false, true, 5];
+    let i = 0;
+    const tab = { evaluate: async () => answers[Math.min(i++, answers.length - 1)] };
+    await waitTwinReady(tab as never, { waitMs: 5_000, everyMs: 1 });
+    expect(i).toBe(4);
+    const never = { evaluate: async () => false };
+    await expect(waitTwinReady(never as never, { waitMs: 50, everyMs: 5 })).rejects.toThrow(/트윈/);
+  });
+
+  it("녹화하는 동안 잰 대시보드 그림 간격을 한 줄로 적는다(중앙값·p90·최대·초당 장 수). 자료가 없으면 null", () => {
+    expect(frameGapLine([17, 17, 16, 18, 333])).toBe("대시보드 그림 간격: 중앙값 17ms · p90 333ms · 최대 333ms · 초당 12.5장");
+    expect(frameGapLine(null)).toBeNull();
+    expect(frameGapLine([5])).toBeNull();
+  });
+
+  it("녹화 차례: 폰 페이지를 불러온 뒤 대시보드를 열고 트윈이 다 뜬 것을 본 다음 녹화를 시작하고, 그 뒤에 「AR 시작」을 누른다", () => {
+    const src = readFileSync(new URL("../scripts/video-check.ts", import.meta.url), "utf8");
+    const at = (needle: string) => {
+      const k = src.indexOf(needle);
+      expect(k, needle).toBeGreaterThan(0);
+      return k;
+    };
+    expect(at("await waitLoaded(cdp, url")).toBeLessThan(at("await waitTwinReady(dash"));
+    expect(at("await waitTwinReady(dash")).toBeLessThan(at("rec = await startRecording("));
+    expect(at("rec = await startRecording(")).toBeLessThan(at("cdp.evaluate(CLICK_START"));
   });
 });

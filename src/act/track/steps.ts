@@ -34,10 +34,19 @@ export interface Stall {
 
 /** 단계 진행·치운 물건. */
 export class Steps extends Part {
+  /** 실행마다 지금 World State에 알린 집기·내려놓기 대상 id(focus). */
+  private readonly focused = new WeakMap<Run, string>();
   /** 놓기 단계를 끝낸 물건(placed). */
   private readonly put = new Map<string, { target: string; part?: "basin"; atMs: number }>();
   /** 놓기를 끝낸 물건의 종류(새 id로 다시 잡혔을 때 같은 종류만 이어 간다). */
   private readonly putCls = new Map<string, string>();
+  /** 놓기를 끝낸 물건의 옛 id와 적은 시각: 계획이 따라간 옛 id와, 놓은 뒤 사라져 새 id로 넘기거나 잊은 id. 다시 집거나 옮기거나 그 뒤 다시 보이면 지운다. */
+  private readonly putOld = new Map<string, number>();
+
+  /** 찾기에서 뺄 물건(src/act/track/find.ts): 놓기를 끝낸 물건(placed)과 그 옛 id. 안 보이는 옛 id의 마지막 자리는 치우기 전 자리다. */
+  awayIds(): ReadonlySet<string> {
+    return new Set([...this.placed().keys(), ...this.putOld.keys()]);
+  }
 
   /** 놓기 단계를 끝낸 물건(이미 치운 것): World State id → 그 계획의 넣은 곳, 끝낸 때 싱크볼 안이었으면 part basin, 끝낸 시각.
    *  그 뒤 손에 있음이 확인되거나(다시 집음, VLM 한 번의 손에 있음은 싱크대 속 컵에도 나와 확인됨만 본다) 트윈 자리가 그 영역을 벗어나거나
@@ -57,7 +66,13 @@ export class Steps extends Part {
       if (picked || moved) {
         this.put.delete(id);
         this.putCls.delete(id);
+        this.putOld.delete(id);
       } else if (!o || o.status === "gone") this.carryPut(id, p, objects, now);
+    }
+    // 놓기 기억에서 빠진 옛 id가 적은 뒤 다시 보이면(다시 집음·다른 자리) 옛 기억을 지운다
+    for (const [id, at] of this.putOld) {
+      const o = objects.find((x) => x.id === id);
+      if (o && o.status !== "gone" && o.last_seen_ms > at) this.putOld.delete(id);
     }
     // 싱크볼 안에 있고 손에 있음이 확인되지 않은 물건도 치운 것이다(치우기 계획 놓기 끝 자리: 싱크대 면의 싱크볼 안이고 손에 없음).
     // 실행 추적이 넣은 기억이 없는 컵(서버를 다시 띄운 뒤 본 컵, 새 id로 잡힌 컵)을 다시 치우지 않게 한다(2026-11-16 23:48)
@@ -85,6 +100,7 @@ export class Steps extends Part {
     if (one || now - lostAt > PUT_HANDOVER_MS) {
       this.put.delete(id);
       this.putCls.delete(id);
+      this.putOld.set(id, now);
     }
     if (one) {
       this.put.set(one.id, p);
@@ -103,6 +119,8 @@ export class Steps extends Part {
       this.put.set(id, { target, ...(basin ? { part: "basin" as const } : {}), atMs: now });
       this.putCls.set(id, cls);
     }
+    // 계획 물건 id와 따라간 id 가운데 지금 그 물건이 아닌 것(옮겨 새 id가 붙기 전 id)
+    for (const old of [object, r.alias.get(object) ?? object]) if (!at.some((x) => x.id === old)) this.putOld.set(old, now);
   }
 
   /** 지금 단계를 끝내고 다음 단계로. 마지막이었으면 계획 완료. 집기를 마치면 그 물건은 사람이 들고 다니고, 놓기를 마치면 그 물건은 넣은 곳에 치운 것이다. */
@@ -132,6 +150,7 @@ export class Steps extends Part {
     });
     this.o.plans.setSteps(r.plan.view.id, { ...(prev ? { [prev.id]: "done" as const } : {}), [step.id]: "active" });
     this.window(r, windowOf(step));
+    this.focus(r, step);
     if (step.kind === "wait" || step.kind === "device") this.core.quietFrom = now;
     if (step.kind === "wait") return this.clear(r);
     if (step.kind === "device") {
@@ -206,6 +225,7 @@ export class Steps extends Part {
   look(r: Run): boolean {
     const step = this.core.stepOf(r);
     if (!step || r.state !== "running" || step.kind === "ask") return false;
+    this.refocus(r, step);
     if (r.asking && r.asking.why !== "again") return false;
     // 시간 한도가 지난 뒤 온 관찰·기기 결과로는 넘기지 않는다(시간 초과가 먼저다)
     if (!r.asking && this.clock.now() > r.deadline) {
@@ -302,6 +322,38 @@ export class Steps extends Part {
     if (id) this.o.contentsAction?.(id, true);
   }
 
+  /** 집기·내려놓기 단계면 그 대상(지금 따라가는 World State id)과 자리(집기는 그 물건 자리, 내려놓기는 목적지)를 World State에 알리고, 아니면 푼다. */
+  private focus(r: Run, step: AgentStep | null): void {
+    if (!step || (step.kind !== "pick" && step.kind !== "place") || !step.object) {
+      // 집기를 마치고 아직 내려놓지 않은 물건이 있으면 그 사이 단계(싱크대로 가기 등)는 든 물건으로 알린다(가로 머그 r4: 가는 중 든 머그가 새 id가 됐다)
+      const held = step ? [...r.carried].at(-1) : undefined;
+      if (held) {
+        const id = ours(r, held, this.o.world())[0]?.id ?? r.alias.get(held) ?? held;
+        this.focused.set(r, id);
+        this.o.focusObject?.(id, { step: "carry", spot: null });
+        return;
+      }
+      this.focused.delete(r);
+      this.o.focusObject?.(null);
+      return;
+    }
+    const world = this.o.world();
+    const obj = ours(r, step.object, world)[0] ?? null;
+    const spot: [number, number] | null = step.kind === "pick"
+      ? (obj?.position ? [obj.position[0], obj.position[2]] : null)
+      : r.placeAt(step.target);
+    const id = obj?.id ?? r.alias.get(step.object) ?? step.object;
+    this.focused.set(r, id);
+    this.o.focusObject?.(id, { step: step.kind, spot: spot ? [spot[0], spot[1]] : null });
+  }
+
+  /** 따라가는 id가 바뀌었으면(가까이 보기 뒤 새 id 등) focus를 새 대상으로 고친다. */
+  private refocus(r: Run, step: AgentStep): void {
+    if ((step.kind !== "pick" && step.kind !== "place") || !step.object || !this.focused.has(r)) return;
+    const now = ours(r, step.object, this.o.world())[0]?.id;
+    if (now && now !== this.focused.get(r)) this.focus(r, step);
+  }
+
   /** 실제 폰 명령을 지운다(기다리기·기기 단계). */
   clear(r: Run): void {
     if (!r.sent) return;
@@ -384,7 +436,9 @@ export class Steps extends Part {
   /** close: 계획을 닫을 상태. null이면 닫지 않는다(새 계획이 PlanHub.onDecision으로 취소로 닫는다). */
   finish(r: Run, state: "done" | "failed", text?: string, close: "done" | "failed" | "cancelled" | null = state): void {
     this.core.contents.release(r);
+    this.core.finder.release(r);
     this.window(r, null);
+    this.focus(r, null);
     if (r.asking?.why === "device") this.o.devices?.cancel(r.asking.token);
     r.asking = null;
     r.gen++;

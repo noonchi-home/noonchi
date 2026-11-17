@@ -18,8 +18,6 @@ import { VideoRelay, type DisplayStats } from "./video.js";
 export type { PhotoRecord } from "../contract/events.js";
 
 const BOUNDARY = "eyeframe";
-/** 느린 화면에는 프레임을 쌓지 않고 건너뛴다. */
-const MAX_BUFFERED = 1 << 20;
 const STATS_WINDOW_MS = 2000;
 
 export interface FeedStats {
@@ -44,11 +42,16 @@ export interface EyeFeedOptions {
   onSaved?: (p: { id: string; atMs: number; path: string }) => void;
 }
 
+/** MJPEG 연결 하나: 한 장을 보내는 중인가(마지막 write 콜백 전), 그동안 온 가장 새 프레임. */
+interface Stream { busy: boolean; next: Buffer | null }
+
+/** 느린 화면에는 프레임을 줄 세우지 않는다: 한 장을 다 보내기 전(write가 true여도 못 보낸 데이터가 남을 수 있다)에는 가장 새 한 장만 들고 있다가
+ *  그 장을 다 보내면 그것만 보낸다. */
 export class EyeFeed {
   private latest: Buffer | null = null;
   private recent: { at: number; bytes: number }[] = [];
   private lastSize: { width: number; height: number; at: number } | null = null;
-  private readonly streams = new Set<ServerResponse>();
+  private readonly streams = new Map<ServerResponse, Stream>();
   private seq = 0;
   private readonly now: () => Date;
   /** 표시 영상 중계. 폰 서버가 영상 패킷을 넘긴다. */
@@ -65,10 +68,7 @@ export class EyeFeed {
     this.recent.push({ at, bytes: jpeg.length });
     this.recent = this.recent.filter((f) => f.at > at - STATS_WINDOW_MS);
     this.lastSize = { width, height, at };
-    for (const res of this.streams) {
-      if (res.writableLength > MAX_BUFFERED) continue;
-      writePart(res, jpeg);
-    }
+    for (const [res, s] of this.streams) send(res, s, jpeg);
   }
 
   /** 최근 2초 동안 받은 프레임 통계와 표시 영상 통계. */
@@ -120,9 +120,13 @@ export class EyeFeed {
         res.end();
         return true;
       }
-      this.streams.add(res);
-      res.on("close", () => this.streams.delete(res));
-      if (this.latest) writePart(res, this.latest);
+      const s: Stream = { busy: false, next: null };
+      this.streams.set(res, s);
+      res.on("close", () => {
+        s.next = null;
+        this.streams.delete(res);
+      });
+      if (this.latest) send(res, s, this.latest);
       return true;
     }
     if (path === "/api/eye/video") {
@@ -155,16 +159,31 @@ export class EyeFeed {
   }
 
   close(): void {
-    for (const res of this.streams) res.end();
+    // 기다리던 프레임을 버리고 끝낸다(보내던 장의 쓰기 콜백이 끝낸 뒤에 와도 다시 쓰지 않는다)
+    for (const [res, s] of this.streams) {
+      s.next = null;
+      res.end();
+    }
     this.streams.clear();
     this.video.close();
   }
 }
 
-function writePart(res: ServerResponse, jpeg: Buffer): void {
+/** 보내는 중이 아니면 한 장을 쓰고 그 장을 다 보낼 때(마지막 write 콜백)까지 보내는 중으로 둔다. 보내는 중이면 가장 새 한 장으로 갈아 끼운다. */
+function send(res: ServerResponse, s: Stream, jpeg: Buffer): void {
+  if (s.busy) {
+    s.next = jpeg;
+    return;
+  }
+  s.busy = true;
   res.write(`--${BOUNDARY}\r\nContent-Type: image/jpeg\r\nContent-Length: ${jpeg.length}\r\n\r\n`);
   res.write(jpeg);
-  res.write("\r\n");
+  res.write("\r\n", (err) => {
+    s.busy = false;
+    const next = s.next;
+    s.next = null;
+    if (next && !err && !res.destroyed && !res.writableEnded) send(res, s, next);
+  });
 }
 
 function notFound(res: ServerResponse, error: string): true {

@@ -1,6 +1,7 @@
 import { Eye, FlaskConical, GraduationCap, Info, PlugZap, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import type { AssistMode, ControlMode, SetupView, ThinqDeviceView } from "../../../src/contract/setup.ts";
+import { ASSIST_NAME } from "../lib/assist";
 import { Alert, AlertTitle } from "../components/ui/alert";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader,
@@ -27,9 +28,9 @@ const MODES: { id: ControlMode; name: string; line: string }[] = [
 ];
 
 const ASSISTS: { id: AssistMode; name: string; line: string }[] = [
-  { id: "auto", name: "자동", line: "상황마다 알아서 골라요" },
-  { id: "noonchi", name: "눈치 모드", line: "먼저 알아채 도와요" },
-  { id: "coach", name: "코치 모드", line: "하는 법을 단계마다 알려 줘요" },
+  { id: "auto", name: ASSIST_NAME.auto, line: "상황마다 알아서 골라요" },
+  { id: "noonchi", name: ASSIST_NAME.noonchi, line: "먼저 알아채 도와요" },
+  { id: "coach", name: ASSIST_NAME.coach, line: "하는 법을 단계마다 알려 줘요" },
 ];
 
 /** 실제 모드 확인 창(21st.dev Alert Dialog with icon). */

@@ -5,10 +5,10 @@ import type { LayoutMessage } from "./layout.js";
 import type { PhoneChoice } from "./phone.js";
 import type { PlanView } from "./plan.js";
 import type { ControlMode } from "./setup.js";
-import type { Mask } from "./observe.js";
+import type { CameraView, Mask, SceneObservation } from "./observe.js";
 import type { DetLabel } from "../world/vocab.js";
 import type { VlmMissing, WorldChangeKind, WorldView, YoloMissing } from "./world.js";
-import type { Prediction, FsmRuleAt } from "./pam.js";
+import type { Prediction, FsmAt } from "./pam.js";
 import type { ServiceKind } from "./service.js";
 
 // 좌표
@@ -119,6 +119,10 @@ export type BrainLog =
   | {
     type: "observe"; at_ms: number; frame_id: string; captured_at_ms: number; yolo: string | null; yolo_missing?: YoloMissing; vlm: string | null; vlm_missing?: VlmMissing;
     closer?: [number, number, number, number];
+    /** 장면 VLM 답 원문(물건·사실)과 그 사진의 카메라·크기: 기록 DB에 남겨 실제 판을 같은 답 순서·같은 자리로 다시 돌린다. */
+    scene?: SceneObservation;
+    view?: CameraView;
+    size?: [number, number];
   }
   /** at_ms는 기록 시각(처리 시각), observed_ms는 그 변화의 근거(촬영) 시각(통로로 온 변화만 싣는다). */
   | { type: "world_change"; at_ms: number; kind: WorldChangeKind; text: string; observed_ms?: number }
@@ -127,10 +131,11 @@ export type BrainLog =
     /** 이번 판단의 PAM LLM 사용량(답을 받았을 때만, 틀린 답·잘린 답이어도). 예전 기록에는 없다. */
     usage?: PamUsage;
     prediction: { observation: string; reasoning: string; task_index: number } | null; action: string | null;
-    /** 고른 행동의 FSM 자리(행동 단위, src/brain/decision.ts FsmRuleAt): 그 행동의 규칙이 한 상태에만 있으면 상태 id, 규칙이 하나면 트리거,
-     *  seed에 없는 규칙이 있으면 learned. 대기·실패·못 찾으면 null. 예전 기록에는 없다. */
-    fsm?: { state: string | null; trigger: string | null; learned: boolean } | null;
-    /** 고른 행동의 종류(표시용, TaskSpec.coach): 코치 행동이면 coach, 아니면 noonchi. 대기·실패는 null. 예전 기록에는 없다. */
+    /** 판단 때 지금 FSM(src/brain/decision.ts fsmNow): 고른 행동의 규칙이 있으면(matched) 그 상태·트리거, 대기·규칙 없는 행동이면 직전 상태(처음이면 기억의 처음 상태)에
+     *  트리거 없음. seed에 없는 규칙이 있으면 learned. 실패·list 기억이면 null. 예전 기록에는 없거나 matched가 없다. */
+    fsm?: { state: string | null; trigger: string | null; learned: boolean; matched?: boolean } | null;
+    /** 고른 행동이 어느 모드로 하는 행동인가(TaskSpec.coach, src/act/tasks.ts): 코치 행동이면 coach, 아니면 noonchi. 대기·실패는 null.
+     *  대시보드 메시지 상자 머리(「코치 모드」·「눈치 모드」, 대기면 없음)가 이 값만 쓴다. 예전 기록에는 없다. */
     assist?: "noonchi" | "coach" | null;
     error?: string; memory_version: number; world: DecisionWorld;
   }
@@ -174,7 +179,8 @@ export type CloserMiss = CloserWait | "no_view" | "out_of_view" | "no_detector" 
 /** VLM에 보낸 가까이 본 사진의 감지 하나: 맞추거나 만든 World State 물건 id(없으면 null), 종류, 신뢰도(소수 둘째 자리), 그 감지에 대한 VLM 답 값.
  *  맞는 물건이 없는 물건 감지는 서로 다른 원본 프레임 3장에서 같은 자리로 보였거나, 1장 이상 보이고 이 VLM 답이 그 감지에 사실을 하나 이상 답하고 가림(not_visible)은 답하지 않았을 때
  *  새 물건이 되고 그 id가 실린다. 그 밖에는 null이다. */
-export interface CloserFound { id: string | null; cls: DetLabel; score: number; facts: string[] }
+/** 가까이 보기에서 찾은 것 하나. via "vlm"이면 YOLO 감지가 아니라 VLM 답의 물건 상자로 찾은 것이다(score 0). */
+export interface CloserFound { id: string | null; cls: DetLabel; score: number; facts: string[]; via?: "vlm" }
 /** 가까이 본 사진의 VLM 답: ok 넣음, VlmMissing 답 없음, 감지를 합친 뒤 넣지 않음 둘(aborted·no_fresh_frames, 아래 CloserResult).
  *  no_fresh_frames는 CloserWait와 같은 자원 사정이라 실행 추적 Stall.settle(false)다. */
 export type CloserVlm = "ok" | VlmMissing | "aborted" | "no_fresh_frames";
@@ -305,8 +311,8 @@ export type ServerMessage =
   | { type: "world"; world: WorldView }
   /** 실행 중 배치 보정(src/contract/layout.ts). 바뀔 때마다, 그리고 접속 때 맞추기 메시지. */
   | LayoutMessage
-  /** 대시보드 말풍선 카드 한 문장(src/act/say.ts). 바뀔 때마다, 그리고 접속 때 한 번. null이면 글 없음. */
-  | { type: "say"; text: string | null };
+  /** 대시보드 말풍선 말 한 문장(src/act/say.ts). 바뀔 때마다, 그리고 접속 때 한 번. null이면 글 없음. safety: 안전 알림(쓰러짐 의심·다시 켜짐·꺼짐 기다림·끄기 안내)이다. */
+  | { type: "say"; text: string | null; safety?: true };
 
 export interface DecisionRecord {
   id: string;
@@ -320,7 +326,7 @@ export interface DecisionRecord {
   /** 고른 행동(대기·실패면 null). */
   action: string | null;
   /** 고른 행동의 FSM 규칙 자리(그때 보낸 기억에서 찾는다). 대기·실패·못 찾으면 null. */
-  fsm?: FsmRuleAt | null;
+  fsm?: FsmAt | null;
   error?: string;
   /** 이번 판단의 PAM LLM 사용량(답을 받았을 때만). */
   usage?: PamUsage;

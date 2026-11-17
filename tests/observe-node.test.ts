@@ -84,7 +84,7 @@ describe("인식 노드", () => {
     const r = await rig({ world: true });
     const port = r.perception.port;
     port.send({ kind: "closer_merge", look: "e2.c1", passes: [pass("e1", 1000, [cupIn]), pass("e2", 2000, [person, cupIn])], from: "e2" });
-    port.send({ kind: "closer_scene", look: "e2.c1", frame_id: "e2", observed_ms: 2000, scene: { scene: "k", observations: [{ object_id: "d2", state: "in_sink" }], summary: "s" } });
+    port.send({ kind: "closer_scene", look: "e2.c1", frame_id: "e2", observed_ms: 2000, scene: { scene: "k", observations: [{ object_id: "d2", state: "in_sink" }], summary: "s" }, at: { view: LOOK_VIEW, ...LOOK_SIZE, crop: [120, 60, 240, 180] } });
     const ids = port.closerIds("e2.c1");
     await r.flush();
     expect(await ids).toEqual(new Map([["d2", "cup_1"]]));

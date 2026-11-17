@@ -1545,6 +1545,104 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
     await after(1500);
     expect(urls).toEqual(["/phone/videos/cup-empty.mp4", "/phone/videos/go-table.mp4", "/phone/videos/cup-empty.mp4", "/phone/videos/go-table.mp4"]);
   });
+
+  describe("자세 흉내는 단계 영상과 따로: 맞는 칸이 없으면 go만 걷고, 그 밖은 화면이 돌지 않으므로 자세도 그대로 둔다", () => {
+    const NO_STEPS = "?clip=cup-empty.mp4&step=pick:cup:pick-cup.mp4";
+    const SPOT = { id: "find_cup", label: "식탁", ar: [0.1, 0.8, -1.4] };
+    const flatTo = (p: number[], t: number[]) => Math.hypot(p[0]! - t[0]!, p[2]! - t[2]!);
+    const aimSpot = (over: Record<string, unknown> = {}) =>
+      command({ id: "find:1", step: "find:1:aim:2", text: "식탁 위를 비춰 주세요", vision: "식탁까지 0.8m", choices: [], kind: "do", target: SPOT, speak: true, ...over });
+
+    // 2026-11-17 머그 실제 녹화(wide-mug.real2): 칸이 없는 비추기에 자세만 대상 쪽으로 돌려 사진(그대로인 영상)과 자세가 어긋났고,
+    // 가까이 보기가 대상 자리 대신 커튼을 잘라 봐 컵을 못 찾았다
+    it("칸이 없는 do·pick·place 명령은 영상도 자세도 그대로 둔다(view above도). 대상이 이미 화면 안이면 그 사진으로 서버가 비추기를 끝낸다", async () => {
+      fakeTimers();
+      const { ws, sent, urls, startAr } = make({}, NO_STEPS);
+      await startAr();
+      ws.push(ALIGNED);
+      ws.push(aimSpot());
+      await after(3000);
+      ws.push(aimSpot({ step: "find:1:aim:3", view: "above" }));
+      await after(3000);
+      ws.push(command({ id: "plan:pam-1", step: "plan:pam-1:4", text: "컵을 싱크대에 넣어 주세요", kind: "place", target: SPOT, speak: false }));
+      await after(3000);
+      for (const p of sent().filter((m) => m.type === "pose")) {
+        expect(p.position).toEqual([0, 1.4, 0]);
+        expect(p.orientation).toEqual(pitchQuat(-25));
+      }
+      expect(urls).toEqual(["/phone/videos/cup-empty.mp4"]);
+    });
+
+    it("칸이 없는 go 명령(near_m 1.0)은 반응 시간 뒤 영상은 그대로 두고 대상 0.6m 앞까지 걷는다", async () => {
+      fakeTimers();
+      const { ws, sent, urls, startAr } = make({}, NO_STEPS);
+      await startAr();
+      ws.push(ALIGNED);
+      ws.push(command({ id: "find:1", step: "find:1:go:1", text: "식탁으로 가 주세요", choices: [], kind: "go", near_m: 1, target: SPOT, speak: true }));
+      await after(1400);
+      expect(lastPose(sent).position).toEqual([0, 1.4, 0]);
+      await after(3600);
+      expect(flatTo(lastPose(sent).position, SPOT.ar)).toBeCloseTo(0.6, 6);
+      expect(urls).toEqual(["/phone/videos/cup-empty.mp4"]);
+    });
+
+    it("같은 명령이 다시 와도(비전 상태만 바뀜) 다시 시작하지 않고, 새 명령·지우기면 예약된 자세 바꾸기를 멈춘다", async () => {
+      fakeTimers();
+      const { ws, sent, startAr } = make({}, NO_STEPS);
+      await startAr();
+      ws.push(ALIGNED);
+      ws.push(command({ id: "find:1", step: "find:1:go:1", text: "식탁으로 가 주세요", choices: [], kind: "go", near_m: 1, target: SPOT, speak: true }));
+      await after(2000);   // 반응 1.5초 뒤 0.5초 걸음(초당 0.8m)
+      const mid = lastPose(sent).position;
+      expect(flatTo(mid, SPOT.ar)).toBeGreaterThan(0.7);
+      ws.push(command({ id: "find:1", step: "find:1:go:1", text: "식탁으로 가 주세요", vision: "식탁까지 1.0m", choices: [], kind: "go", near_m: 1, target: SPOT, speak: false }));
+      await after(100);
+      expect(flatTo(lastPose(sent).position, SPOT.ar)).toBeLessThan(flatTo(mid, SPOT.ar));
+      ws.push({ type: "command_clear", id: "find:1" });
+      await after(100);
+      const stopped = lastPose(sent).position;
+      await after(2000);
+      expect(lastPose(sent).position).toEqual(stopped);
+      // 예약 중 지우기: 걷지 않는다
+      const b = make({}, NO_STEPS);
+      await b.startAr();
+      b.ws.push(ALIGNED);
+      b.ws.push(command({ id: "find:1", step: "find:1:go:1", text: "식탁으로 가 주세요", choices: [], kind: "go", near_m: 1, target: SPOT, speak: true }));
+      await after(500);
+      b.ws.push({ type: "command_clear", id: "find:1" });
+      await after(3000);
+      expect(lastPose(b.sent).position).toEqual([0, 1.4, 0]);
+    });
+
+    // Codex(c5d3e6a): 칸 없는 go가 시간 초과 질문으로 멈춘 뒤 「계속」으로 같은 명령이 다시 오면 남은 posedKey 때문에 다시 걷지 않았다
+    it("칸이 없는 go가 다른 명령(시간 초과 질문)으로 멈춘 뒤 같은 명령이 다시 오면(「계속」) 다시 걷는다", async () => {
+      fakeTimers();
+      const { ws, sent, startAr } = make({}, NO_STEPS);
+      await startAr();
+      ws.push(ALIGNED);
+      const go = command({ id: "plan:pam-1", step: "plan:pam-1:1", text: "식탁으로 가 주세요", choices: [], kind: "go", near_m: 1, target: SPOT, speak: true });
+      ws.push(go);
+      await after(2000);
+      const mid = lastPose(sent).position;
+      ws.push(command({ id: "plan:pam-1", step: "plan:pam-1:1:again", text: "계속할까요?", choices: [{ id: "continue", label: "계속" }, { id: "stop", label: "그만" }], target: null, speak: true }));
+      await after(1000);
+      expect(lastPose(sent).position).toEqual(mid);
+      ws.push(go);
+      await after(5000);
+      expect(flatTo(lastPose(sent).position, SPOT.ar)).toBeCloseTo(0.6, 6);
+    });
+
+    it("질문·승인(대상 없음)은 자세를 바꾸지 않는다", async () => {
+      fakeTimers();
+      const { ws, sent, startAr } = make({}, NO_STEPS);
+      await startAr();
+      ws.push(ALIGNED);
+      ws.push(command({ id: "plan:pam-1", step: "plan:pam-1:approve", text: "컵 치우기를 할까요?", choices: [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }], target: null, speak: true }));
+      await after(3000);
+      expect(lastPose(sent).position).toEqual([0, 1.4, 0]);
+      expect(lastPose(sent).orientation).toEqual(pitchQuat(-25));
+    });
+  });
 });
 
 describe("video-math", () => {

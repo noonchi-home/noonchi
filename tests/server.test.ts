@@ -78,6 +78,8 @@ describe("REST 읽기", () => {
     const { url, devices } = await start();
     const h = await api(url, "/api/health");
     expect(h.json).toMatchObject({ ok: true, devices: devices.length, provider: "openai", model: "gpt-5.5" });
+    // 메시지 상자 머리는 설정의 돕는 방식이 아니라 지금 행동의 모드라 health에 싣지 않는다
+    expect(h.json).not.toHaveProperty("assist");
     const rooms = await api(url, "/api/rooms");
     expect(rooms.status).toBe(200);
     expect(rooms.json.find((r: Msg) => r.id === "living_room")).toMatchObject({ label: "거실" });
@@ -147,7 +149,7 @@ describe("REST 명령 + WS 이벤트", () => {
       type: "seen", at_ms: 11, frame_id: "e7", captured_at_ms: 9, frame: { width: 360, height: 640 },
       shapes: [{ label: "cup", score: 0.83, mask: { at: [100, 50, 40, 60], cols: 1, rows: 1, bits: "gA==" } }],
     };
-    const app = createApp({ hub: home.hub, policy: home.policy, rooms: ROOMS, log: () => {}, world: () => world, brainLast: () => [decision], seenLast: () => seen, say: () => "컵을 들라고 했어요." });
+    const app = createApp({ hub: home.hub, policy: home.policy, rooms: ROOMS, log: () => {}, world: () => world, brainLast: () => [decision], seenLast: () => seen, say: () => ({ text: "컵을 들라고 했어요." }) });
     const { url } = await app.listen(0, "127.0.0.1");
     cleanups.push(() => app.close());
     const { waitFor, messages } = await listen(url);

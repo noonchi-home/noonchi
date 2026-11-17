@@ -24,6 +24,8 @@ export interface PlanView {
   origin?: "live" | "mock";
   source: PlanSource;
   goal: string;
+  /** 이 계획의 행동이 어느 모드로 하는 행동인가(src/act/tasks.ts modeOf, 대시보드 메시지 상자 머리). PAM 판단으로 만든 계획에만 있다. */
+  assist?: "noonchi" | "coach";
   judgment: string;
   /** true면 실제로 움직이지 않는 모의 계획이고 화면에 「모의」를 붙인다. */
   dryRun: boolean;

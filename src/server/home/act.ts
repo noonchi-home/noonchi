@@ -160,7 +160,13 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     lookContents: (h) => core.looker?.contents(h) ?? false,
     // 가까이 가서 보기: 위에서 비추기가 끝났는가(관찰 흐름), 위에서 비추는 동안 그 컵의 보기 지킴(World State)
     topReady: (id, sinceMs) => core.pipeline?.topReady(id, sinceMs) ?? false,
+    // 찾기(src/act/track/find.ts): 비추기가 끝났는가(가까이 보기와 같은 프레임 고르기), 실행 전 찾기의 신선도는 실행 전 검사의 낡음 기준
+    spotReady: (at, sinceMs) => core.pipeline?.spotReady(at, sinceMs) ?? false, staleMs: core.act.staleMs,
+    // 찾기 상태 줄은 생각 말풍선에 모델 없이 바로 올린다
+    thought: (text, decisionId) => feed.note(text, decisionId),
     guardObject: (id, on) => worldInput(core, { kind: "guard", id, on, at_ms: now() }),
+    // 지금 단계가 보는 물건(집기·놓기·들고 감): 집 상태 노드가 VLM 식별에 쓴다(/world/input focus)
+    focusObject: (id, f) => worldInput(core, { kind: "focus", id, focus: f ?? null, at_ms: now() }),
     // 따르기 단계 동안 그 컵의 창(그 뒤 사진만, 다 이어진 값이 확인 값을 바꿈)
     contentsAction: (id, on) => worldInput(core, { kind: "contents", id, on, at_ms: now() }),
     // 실제 폰의 승인 대기와 폰 대화 사용(실행 추적이 그동안 사람을 움직이게 하지 않는다)
@@ -181,7 +187,7 @@ export function startLooker(core: HomeCore, emit: (event: BrainLog) => void): vo
   const tracking = core.tracker!;
   const now = () => core.nowMs();
   core.looker = new Looker({
-    observer, closer: (spot, signal) => observed.closer(spot, signal), topLook: (spot, sinceMs, signal) => observed.topLook(spot, sinceMs, signal),
+    observer, closer: (spot, signal, sinceMs) => observed.closer(spot, signal, sinceMs), topLook: (spot, sinceMs, signal) => observed.topLook(spot, sinceMs, signal),
     // B가 잘라 본 컵: 실행 추적이 계획 밖으로 가까이 가서 볼지 본다
     looked: (id) => tracking.lookedIdle(id),
     frame: () => observed.latest(), world: () => liveDevices(core.view()!, core.signals),

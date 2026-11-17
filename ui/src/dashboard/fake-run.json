@@ -37,7 +37,13 @@
               "task_index": -1
             },
             "action": null,
-            "fsm": null,
+            "fsm": {
+              "state": "drinking",
+              "trigger": null,
+              "learned": false,
+              "matched": false
+            },
+            "assist": null,
             "memory_version": 1,
             "world": {
               "objects": [
@@ -131,6 +137,7 @@
             "updatedAt": "2026-11-09T09:00:04.000Z",
             "source": "brain",
             "goal": "컵 치우기",
+            "assist": "noonchi",
             "judgment": "사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.",
             "dryRun": true,
             "path": [
@@ -236,8 +243,10 @@
             "fsm": {
               "state": "left_cup",
               "trigger": "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다.",
-              "learned": false
+              "learned": false,
+              "matched": true
             },
+            "assist": "noonchi",
             "memory_version": 1,
             "world": {
               "objects": [
@@ -343,6 +352,7 @@
             "updatedAt": "2026-11-09T09:00:08.000Z",
             "source": "brain",
             "goal": "컵 치우기",
+            "assist": "noonchi",
             "judgment": "사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.",
             "dryRun": true,
             "path": [
@@ -448,8 +458,10 @@
             "fsm": {
               "state": "left_cup",
               "trigger": "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다.",
-              "learned": false
+              "learned": false,
+              "matched": true
             },
+            "assist": "noonchi",
             "memory_version": 1,
             "world": {
               "objects": [
@@ -532,6 +544,10 @@
         },
         {
           "type": "say",
+          "text": "식탁으로 가라고 했어요."
+        },
+        {
+          "type": "say",
           "text": "컵을 들라고 했어요."
         }
       ]
@@ -555,6 +571,7 @@
             "updatedAt": "2026-11-09T09:00:12.000Z",
             "source": "brain",
             "goal": "컵 치우기",
+            "assist": "noonchi",
             "judgment": "사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.",
             "dryRun": true,
             "path": [
@@ -660,8 +677,10 @@
             "fsm": {
               "state": "left_cup",
               "trigger": "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다.",
-              "learned": false
+              "learned": false,
+              "matched": true
             },
+            "assist": "noonchi",
             "memory_version": 1,
             "world": {
               "objects": [
@@ -728,6 +747,14 @@
         },
         {
           "type": "say",
+          "text": "식탁으로 가라고 했어요."
+        },
+        {
+          "type": "say",
+          "text": "컵을 들라고 했어요."
+        },
+        {
+          "type": "say",
           "text": "싱크대로 가라고 했어요."
         }
       ]
@@ -751,6 +778,7 @@
             "updatedAt": "2026-11-09T09:00:16.000Z",
             "source": "brain",
             "goal": "컵 치우기",
+            "assist": "noonchi",
             "judgment": "사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.",
             "dryRun": true,
             "path": [
@@ -856,8 +884,10 @@
             "fsm": {
               "state": "left_cup",
               "trigger": "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다.",
-              "learned": false
+              "learned": false,
+              "matched": true
             },
+            "assist": "noonchi",
             "memory_version": 1,
             "world": {
               "objects": [
@@ -937,6 +967,18 @@
               }
             }
           ]
+        },
+        {
+          "type": "say",
+          "text": "식탁으로 가라고 했어요."
+        },
+        {
+          "type": "say",
+          "text": "컵을 들라고 했어요."
+        },
+        {
+          "type": "say",
+          "text": "싱크대로 가라고 했어요."
         },
         {
           "type": "say",

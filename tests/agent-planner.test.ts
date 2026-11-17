@@ -314,6 +314,8 @@ describe("계획 모드: 컵 치우기", () => {
       ]);
       for (const s of r.plan.steps.filter((x) => ["go", "pick", "place", "do"].includes(x.kind))) expect(s.command, s.label).toMatch(/주세요$/);
       expect(r.plan.view.steps.map((s) => s.kind)).toEqual(["move", "act", "move", "act", "move", "act", "act", "ask", "wait", "act", "wait", "act", "ask"]);
+      // 계획 스냅숏에도 그 행동의 모드를 싣는다(다시 접속해도 메시지 상자 머리가 그 계획 행동의 모드다)
+      expect(r.plan.view.assist).toBe("coach");
       // 사람 단계(올리기·켜기·끄기)의 이름·명령·안전 문구·손 조작 끝 조건은 서버 글 틀이다
       expect(r.plan.steps[5]).toMatchObject({ label: "냄비 올리기", command: "냄비를 인덕션에 올려 주세요" });
       expect(r.plan.steps[6]).toMatchObject({ hand: { deviceId: "induction_1", to: "on" }, caution: "냄비와 상판이 뜨거워져요.", until: { device: "induction_1", became: "on" } });

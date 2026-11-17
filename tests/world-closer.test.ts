@@ -137,8 +137,8 @@ describe("가까이 보기 합치기(applyCloser)", () => {
 
   it("보이지 않은 물건과 세는 중인 물건은 그대로 둔다", () => {
     const w = ws();
-    for (let i = 1; i <= 3; i++) full(w, `e${i}`, i * 1000, [cupIn]);
-    for (let i = 4; i <= 5; i++) full(w, `e${i}`, i * 1000, [cupIn, cupOut]);   // 상자 밖 컵 cup_2를 두 장 셈
+    for (let i = 1; i <= 4; i++) full(w, `e${i}`, i * 1000, [cupIn]);
+    full(w, "e5", 5000, [cupIn, cupOut]);   // 상자 밖 컵 cup_2를 한 장 셈
     expect(w.applyCloser([6, 7, 8].map((i) => pass(`e${i}`, i * 1000, [])))).toEqual({ changes: [], ids: new Map() });
     expect(obj(w, "cup_1", 8000)!.status).toBe("present");
     expect(full(w, "e9", 9000, [cupIn, cupOut]).changes).toEqual([expect.objectContaining({ kind: "appeared", subject: "cup_2" })]);
@@ -160,14 +160,13 @@ describe("가까이 보기 합치기(applyCloser)", () => {
     const w = ws();
     w.applyCloser([1, 2, 3].map((i) => pass(`e${i}`, i * 1000, [cupIn])));
     full(w, "e4", 4000, [cupOut]);
-    full(w, "e5", 5000, [cupOut]);
-    expect(obj(w, "cup_1", 5000)!.closer_hold).toBe(true);
-    expect(full(w, "e6", 6000, [cupOut]).changes).toEqual([expect.objectContaining({ kind: "appeared", subject: "cup_2" })]);
-    expect(obj(w, "cup_1", 6000)).toMatchObject({ status: "present", closer_hold: false, followed_by: "cup_2" });
-    expect(obj(w, "cup_2", 6000)!.followed_by).toBeNull();
+    expect(obj(w, "cup_1", 4000)!.closer_hold).toBe(true);
+    expect(full(w, "e5", 5000, [cupOut]).changes).toEqual([expect.objectContaining({ kind: "appeared", subject: "cup_2" })]);
+    expect(obj(w, "cup_1", 5000)).toMatchObject({ status: "present", closer_hold: false, followed_by: "cup_2" });
+    expect(obj(w, "cup_2", 5000)!.followed_by).toBeNull();
+    full(w, "e6", 6000, [cupOut]);
     full(w, "e7", 7000, [cupOut]);
-    full(w, "e8", 8000, [cupOut]);
-    expect(full(w, "e9", 9000, [cupOut]).changes).toEqual([expect.objectContaining({ kind: "gone", subject: "cup_1" })]);
+    expect(full(w, "e8", 8000, [cupOut]).changes).toEqual([expect.objectContaining({ kind: "gone", subject: "cup_1" })]);
   });
 
   it("옮김 표시(followed_by)는 지킴 중이던 물건에만 붙고, 그 뒤 전체 사진이 옛 물건을 다시 보면 지운다. 같은 프레임에서 본 물건에는 붙지 않는다", () => {
@@ -193,34 +192,34 @@ describe("가까이 보기 합치기(applyCloser)", () => {
   it("전체 사진의 새 컵 등장으로 옮김 표시가 붙은 뒤 같은 원본 사진을 잘라 옛 컵을 찾으면 표시를 지운다(두 컵이 함께 있었다). 표시보다 옛 촬영을 잘라 찾으면 지우지 않는다", () => {
     const w = ws();
     w.applyCloser([1, 2, 3].map((i) => pass(`e${i}`, i * 1000, [cupIn])));
-    for (let i = 4; i <= 6; i++) full(w, `e${i}`, i * 1000, [cupOut]);
-    expect(obj(w, "cup_1", 6000)!.followed_by).toBe("cup_2");
-    w.applyCloser([pass("e5", 5000, [cupIn])]);
-    expect(obj(w, "cup_1", 6000)!.followed_by).toBe("cup_2");
-    expect(w.applyCloser([pass("e6", 6000, [cupIn])]).ids.get("d1")).toBe("cup_1");
-    expect(obj(w, "cup_1", 6000)).toMatchObject({ status: "present", followed_by: null });
+    for (let i = 4; i <= 5; i++) full(w, `e${i}`, i * 1000, [cupOut]);
+    expect(obj(w, "cup_1", 5000)!.followed_by).toBe("cup_2");
+    w.applyCloser([pass("e4", 4000, [cupIn])]);
+    expect(obj(w, "cup_1", 5000)!.followed_by).toBe("cup_2");
+    expect(w.applyCloser([pass("e5", 5000, [cupIn])]).ids.get("d1")).toBe("cup_1");
+    expect(obj(w, "cup_1", 5000)).toMatchObject({ status: "present", followed_by: null });
   });
 
   it("옮김 표시가 붙고 더 새 전체 사진이 옛 컵 보임(시야 밖·사라짐)을 판단한 뒤에도, 같은 원본 사진을 잘라 옛 컵을 찾으면 표시를 지운다. 보임은 되살리지 않고, 표시보다 옛 촬영은 지우지 않는다", () => {
     const marked = () => {
       const w = ws();
       w.applyCloser([1, 2, 3].map((i) => pass(`e${i}`, i * 1000, [cupIn])));
-      for (let i = 4; i <= 6; i++) full(w, `e${i}`, i * 1000, [cupOut]);
-      expect(obj(w, "cup_1", 6000)!.followed_by).toBe("cup_2");
+      for (let i = 4; i <= 5; i++) full(w, `e${i}`, i * 1000, [cupOut]);
+      expect(obj(w, "cup_1", 5000)!.followed_by).toBe("cup_2");
       return w;
     };
     const w = marked();
-    full(w, "e7", 7000, [], AWAY_VIEW);
-    expect(obj(w, "cup_1", 7000)).toMatchObject({ status: "out_of_view", followed_by: "cup_2" });
-    w.applyCloser([pass("e5", 5000, [cupIn])]);
-    expect(obj(w, "cup_1", 7000)!.followed_by).toBe("cup_2");
-    expect(w.applyCloser([pass("e6", 6000, [cupIn])]).changes).toEqual([]);
-    expect(obj(w, "cup_1", 7000)).toMatchObject({ status: "out_of_view", followed_by: null });
+    full(w, "e6", 6000, [], AWAY_VIEW);
+    expect(obj(w, "cup_1", 6000)).toMatchObject({ status: "out_of_view", followed_by: "cup_2" });
+    w.applyCloser([pass("e4", 4000, [cupIn])]);
+    expect(obj(w, "cup_1", 6000)!.followed_by).toBe("cup_2");
+    expect(w.applyCloser([pass("e5", 5000, [cupIn])]).changes).toEqual([]);
+    expect(obj(w, "cup_1", 6000)).toMatchObject({ status: "out_of_view", followed_by: null });
     const v = marked();
-    for (let i = 7; i <= 9; i++) full(v, `e${i}`, i * 1000, [cupOut]);
-    expect(obj(v, "cup_1", 9000)).toMatchObject({ status: "gone", followed_by: "cup_2" });
-    expect(v.applyCloser([pass("e6", 6000, [cupIn])]).changes).toEqual([]);
-    expect(obj(v, "cup_1", 9000)).toMatchObject({ status: "gone", followed_by: null });
+    for (let i = 6; i <= 8; i++) full(v, `e${i}`, i * 1000, [cupOut]);
+    expect(obj(v, "cup_1", 8000)).toMatchObject({ status: "gone", followed_by: "cup_2" });
+    expect(v.applyCloser([pass("e5", 5000, [cupIn])]).changes).toEqual([]);
+    expect(obj(v, "cup_1", 8000)).toMatchObject({ status: "gone", followed_by: null });
   });
 
   it("지킴 중인 물건을 두고 한 촬영(전체 사진 한 장·가까이 보기 한 번)에 같은 종류 새 물건이 여럿 생기면 지킴만 풀고 어느 것에도 잇지 않는다(옮김 표시 없음)", () => {
@@ -285,14 +284,13 @@ describe("보임 판단보다 옛 촬영과 같은 원본 촬영", () => {
     expect(obj(v, "cup_1", 20_000)!.status).toBe("present");
   });
 
-  it("옛 전체 사진은 새 사진의 등장 셈을 끊지 않는다: 20초 사라짐 뒤 22·24초에 보고 늦게 온 17초 빈 사진이 와도 26초에 다시 있음이 된다", () => {
+  it("옛 전체 사진은 새 사진의 등장 셈을 끊지 않는다: 20초 사라짐 뒤 22초에 보고 늦게 온 17초 빈 사진이 와도 24초에 다시 있음이 된다", () => {
     const w = ws();
     for (const s of [6, 8, 10]) full(w, `e${s}`, s * 1000, [cupIn]);
     for (const s of [16, 18, 20]) full(w, `e${s}`, s * 1000, []);
     full(w, "e22", 22_000, [cupIn]);
-    full(w, "e24", 24_000, [cupIn]);
     full(w, "l17", 17_000, []);
-    expect(full(w, "e26", 26_000, [cupIn]).changes).toEqual([expect.objectContaining({ kind: "appeared", subject: "cup_1" })]);
+    expect(full(w, "e24", 24_000, [cupIn]).changes).toEqual([expect.objectContaining({ kind: "appeared", subject: "cup_1" })]);
   });
 
   it("이미 넣은 가장 새 전체 사진보다 옛 전체 사진은 넣지 않는다: 20초에 보고 30·31초에 못 본 뒤 늦게 온 25초 양성 사진이 사라짐 셈을 끊지 않아 32초에 사라짐이 된다", () => {
@@ -421,6 +419,8 @@ describe("가까이 본 사진의 VLM 답(applyCloserScene)", () => {
     expect(place(3000)).toEqual({ value: "in_sink", at_ms: 3000, since_ms: 3000, certainty: "inferred", closer_ms: 3000 });
     w.applyScene("e4", 4000, said("in_sink"), full(w, "e4", 4000, [cupIn, person]).ids);
     expect(place(4000)).toEqual({ value: "in_sink", at_ms: 4000, since_ms: 3000, certainty: "confirmed", closer_ms: 3000 });
+    // 전체 사진 답의 다른 놓인 곳은 다른 원본 프레임 2장이 이어 말할 때만 바뀐다(SceneFacts.steady)
+    w.applyScene("e45", 4500, said("on_counter"), ids);
     w.applyScene("e5", 5000, said("on_counter"), full(w, "e5", 5000, [cupIn, person]).ids);
     expect(place(5000)).toEqual({ value: "on_counter", at_ms: 5000, since_ms: 5000, certainty: "inferred" });
     w.applyCloserScene("e6", 6000, said("on_counter"), ids);
@@ -437,6 +437,7 @@ describe("가까이 본 사진의 VLM 답(applyCloserScene)", () => {
     expect(cup(3000).closer_rev).toBeUndefined();
     w.applyCloserScene("e3", 3000, said("in_sink"), ids);
     expect(cup(3000).closer_rev).toEqual({ place: 1 });
+    w.applyScene("e45", 4500, said("on_counter"), ids);
     w.applyScene("e5", 5000, said("on_counter"), full(w, "e5", 5000, [cupIn, person]).ids);
     expect(cup(5000).facts.place).toEqual({ value: "on_counter", at_ms: 5000, since_ms: 5000, certainty: "inferred" });
     expect(cup(5000).closer_rev).toEqual({ place: 1 });
@@ -563,5 +564,100 @@ describe("가까이 보기 새 물건 두 모델 확인(3장 안 된 후보 + VL
     w.applyCloserScene("e1", 1000, said(["d1", "in_sink"]), r.ids, r.pending);
     expect(r.ids).toEqual(new Map([["d1", "cup_1"]]));
     expect(w.view(4000).objects.map((o) => [o.id, o.facts.place?.value])).toEqual([["cup_1", "in_sink"]]);
+  });
+});
+
+// 가로 유리컵 실제 판(2026-11-18): 컵이 한 번 확인된 뒤 YOLO가 놓쳐 사라짐이 됐고, 찾기의 가까이 보기에서 잘라 본 칸(240×135)의 YOLO는 컵을 못 잡았다.
+// VLM은 그 칸 안 컵을 봤다(「A metallic/opaque cup sits on a surface…」). 가까이 본 VLM 물건(상자)도 그 자리에서 본 것으로 넣는다.
+describe("가까이 본 VLM 물건(applyCloserScene objects)", () => {
+  // 잘라 본 칸 R = [120, 90, 240, 180]. 그 안 컵 [230, 170, 20, 10](엔진 프레임 픽셀)은 잘라 본 사진 비율 { x: 110/240, y: 80/180, w: 20/240, h: 10/180 }
+  const R: [number, number, number, number] = [120, 90, 240, 180];
+  const vbox = { x: 110 / 240, y: 80 / 180, w: 20 / 240, h: 10 / 180 };
+  const look = (atMs: number) => ({ view: LOOK_VIEW, ...LOOK_SIZE, crop: R, capturedAtMs: atMs });
+  const vscene = (facts: SceneState[] = [], det: string | null = null): SceneObservation => ({
+    scene: "k", summary: "A metallic/opaque cup sits on a surface",
+    objects: [{ id: "v1", cls: "cup", box: vbox, det }],
+    observations: facts.map((state) => ({ object_id: "v1", state })),
+  });
+
+  it("YOLO가 놓쳐 사라진 컵을, 잘라 본 장에 YOLO 감지가 없어도 VLM 물건 상자로 그 자리에서 다시 보고(보임·지킴) 사실도 넣는다", () => {
+    const w = ws();
+    for (let t = 0; t <= 2000; t += 500) full(w, `e${t}`, t, [cupIn]);
+    expect(obj(w, "cup_1", 2000)).toMatchObject({ status: "present" });
+    for (let t = 2500; t <= 9500; t += 500) full(w, `e${t}`, t, []);
+    expect(obj(w, "cup_1", 9500)).toMatchObject({ status: "gone" });
+    const { ids } = w.applyCloser([pass("e10000", 10_000, [])]);
+    const changes = w.applyCloserScene("e10000", 10_000, vscene(["on_floor"]), ids, undefined, look(10_000));
+    expect(ids.get("v1")).toBe("cup_1");
+    expect(changes).toContainEqual(expect.objectContaining({ kind: "appeared", subject: "cup_1" }));
+    expect(obj(w, "cup_1", 10_000)).toMatchObject({ status: "present", closer_hold: true, last_seen_ms: 10_000 });
+    expect(obj(w, "cup_1", 10_000)!.facts.place).toMatchObject({ value: "on_floor" });
+  });
+
+  it("맞는 물건이 없으면 가까이 본 VLM 물건 하나로 확인된 컵을 만든다(사람이 그 자리를 비춘 가까이 보기)", () => {
+    const w = ws();
+    const { ids } = w.applyCloser([pass("e1000", 1000, [])]);
+    w.applyCloserScene("e1000", 1000, vscene(), ids, undefined, look(1000));
+    expect(w.view(1000).objects).toEqual([expect.objectContaining({ id: "cup_1", cls: "cup", status: "present", closer_hold: true })]);
+    expect(ids.get("v1")).toBe("cup_1");
+  });
+
+  it("VLM 무조건 우선: YOLO가 병으로 잡은 감지를 VLM이 같은 물건(det d1)의 컵이라 답하면 컵으로 넣는다", () => {
+    const w = ws();
+    const bottleIn = { ...cupIn, label: "bottle" as const };
+    const { ids, pending } = w.applyCloser([pass("e1000", 1000, [bottleIn]), pass("e2000", 2000, [bottleIn]), pass("e3000", 3000, [bottleIn])], "e3000", { defer: true });
+    w.applyCloserScene("e3000", 3000, vscene(["in_sink"], "d1"), ids, pending, look(3000));
+    expect(w.view(3000).objects).toEqual([expect.objectContaining({ id: "cup_1", cls: "cup" })]);
+    expect(ids.get("d1")).toBe("cup_1");
+  });
+
+  // 가로 유리컵 실제 판 r2(2026-11-18): 사라진 cup_20 자리에서 가까이 본 VLM이 그 유리컵을 병으로 답해 bottle_2가 따로 생겼다(Codex c5dbb3b 4: 물건 식별과 종류를 나눈다)
+  it("마시는 그릇 무리는 종류가 달라도 같은 자리면 같은 물건이다: 사라진 컵 자리의 VLM 병은 그 컵을 되살리고 id를 그대로 둔다. 종류는 VLM이 다른 사진 2장 이어 그 종류로 답해야 바뀐다", () => {
+    const w = ws();
+    for (let t = 0; t <= 2000; t += 500) full(w, `e${t}`, t, [cupIn]);
+    for (let t = 2500; t <= 9500; t += 500) full(w, `e${t}`, t, []);
+    const bottle = (facts: SceneState[] = []): SceneObservation => ({ ...vscene(facts), objects: [{ id: "v1", cls: "bottle", box: vbox, det: null }] });
+    const once = (frame: string, at: number, s: SceneObservation) => {
+      const { ids, pending } = w.applyCloser([pass(frame, at, [])], frame, { defer: true });
+      w.applyCloserScene(frame, at, s, ids, pending, look(at));
+      return ids;
+    };
+    expect(once("e10000", 10_000, bottle()).get("v1")).toBe("cup_1");
+    expect(w.view(10_000).objects).toEqual([expect.objectContaining({ id: "cup_1", cls: "cup", status: "present" })]);
+    // cup → bottle → cup으로 흔들리면 종류가 바뀌지 않는다
+    once("e11000", 11_000, vscene());
+    once("e12000", 12_000, bottle());
+    expect(w.view(12_000).objects).toEqual([expect.objectContaining({ id: "cup_1", cls: "cup" })]);
+    // 다른 사진 2장 이어 병이면 병이다(id는 그대로)
+    once("e13000", 13_000, bottle());
+    expect(w.view(13_000).objects).toEqual([expect.objectContaining({ id: "cup_1", cls: "bottle" })]);
+  });
+
+  it("YOLO 감지(d1)와 같은 물건이라고 답한 VLM 물건(det d1)은 새로 넣지 않고 그 물건 id를 쓴다", () => {
+    const w = ws();
+    const { ids } = w.applyCloser([pass("e1000", 1000, [cupIn]), pass("e2000", 2000, [cupIn]), pass("e3000", 3000, [cupIn])], "e3000");
+    expect(ids.get("d1")).toBe("cup_1");
+    w.applyCloserScene("e3000", 3000, vscene(["in_sink"], "d1"), ids, undefined, look(3000));
+    expect(w.view(3000).objects.map((o) => o.id)).toEqual(["cup_1"]);
+    expect(ids.get("v1")).toBe("cup_1");
+  });
+
+  // Codex(ee670bb 4): 상자 아랫변은 들렸거나 가린 컵이면 놓인 자리가 아니다
+  it("VLM이 손에 있음·가림으로 답한 물건은 자리를 바꾸거나 새로 만들지 않는다", () => {
+    const w = ws();
+    const a = w.applyCloser([pass("e1000", 1000, [])]);
+    w.applyCloserScene("e1000", 1000, vscene(["in_hand"]), a.ids, undefined, look(1000));
+    const b = w.applyCloser([pass("e2000", 2000, [])]);
+    w.applyCloserScene("e2000", 2000, vscene(["not_visible"]), b.ids, undefined, look(2000));
+    expect(w.view(2000).objects).toEqual([]);
+  });
+
+  it("전체 사진이 더 새 촬영으로 사라짐을 정했으면, 늦게 온 옛 가까이 본 VLM 물건은 되살리지 않는다", () => {
+    const w = ws();
+    for (let t = 0; t <= 2000; t += 500) full(w, `e${t}`, t, [cupIn]);
+    for (let t = 2500; t <= 9500; t += 500) full(w, `e${t}`, t, []);
+    const { ids } = w.applyCloser([pass("e2200", 2200, [])]);
+    w.applyCloserScene("e2200", 2200, vscene(), ids, undefined, look(2200));
+    expect(obj(w, "cup_1", 9500)).toMatchObject({ status: "gone" });
   });
 });

@@ -8,7 +8,16 @@ type V3 = [number, number, number];
 /** 면 안의 싱크볼 사각형: 가운데 평면도 [x, y], 크기 [폭, 깊이](m), 깊이는 facing_deg 방향(배치 facing, 0 = +x, 90 = +y). */
 export interface Basin { center: [number, number]; size: [number, number]; facing_deg: number }
 /** 물건이 놓일 수 있는 윗면. center는 평면도 [x, y], top은 바닥에서 윗면 높이(m), radius는 윗면을 덮는 원. basin은 그 면의 싱크볼(있을 때). */
-export interface PlaneSurface { id: string; label: string; center: [number, number]; top: number; radius: number; basin?: Basin }
+/** 면 종류(배치 type): 놓인 곳(place) 사실을 트윈 면으로 정한다(surfacePlace). 없으면 id 앞말(table_1 → table)로 본다. */
+export type SurfaceKind = "table" | "desk" | "counter" | "sink";
+/** rect: 실제 윗면 사각형(배치 바닥 크기·방향). 없으면 radius 원만 안다. */
+export interface PlaneSurface { id: string; label: string; center: [number, number]; top: number; radius: number; basin?: Basin; kind?: SurfaceKind; rect?: Basin }
+
+/** 들려 있지 않은 물건의 놓인 곳을 그 자리 아래 트윈 면으로: 식탁 → 식탁 위, 책상 → 책상 위, 조리대 → 조리대 위. 싱크대 면(싱크볼 안·옆)은 VLM 말로 정한다(null). */
+export function surfacePlace(s: Pick<PlaneSurface, "id" | "kind">): "on_table" | "on_desk" | "on_counter" | null {
+  const kind = s.kind ?? (/^(table|desk|counter|sink)/.exec(s.id)?.[1] as SurfaceKind | undefined);
+  return kind === "table" ? "on_table" : kind === "desk" ? "on_desk" : kind === "counter" ? "on_counter" : null;
+}
 
 /** 싱크볼 크기 [폭, 깊이](m). 도면 설비 자료(drawn_fixtures.json)는 싱크볼 가운데 점(sink)만 있다.
  *  근거: 구운 트윈(twin/homes/mokryeon_180b/bake) sink_counter_kitchen_basin 노드 상자가 폭 0.74 × 깊이 0.44(가운데는 sink 점과 1.3cm 차이),
@@ -27,11 +36,11 @@ export const REST_INSET_M = 0.1;
 export const REST_BODY_M: readonly [number, number] = [0.1, 0.25];
 
 /** 평면 점이 싱크볼 사각형 안인가. */
-export function inBasin(b: Basin, p: [number, number]): boolean {
+export function inBasin(b: Basin, p: [number, number], margin = 0): boolean {
   const a = (b.facing_deg * Math.PI) / 180;
   const dx = p[0] - b.center[0], dy = p[1] - b.center[1];
   const depth = dx * Math.cos(a) + dy * Math.sin(a), width = -dx * Math.sin(a) + dy * Math.cos(a);
-  return Math.abs(depth) <= b.size[1] / 2 && Math.abs(width) <= b.size[0] / 2;
+  return Math.abs(depth) <= b.size[1] / 2 - margin && Math.abs(width) <= b.size[0] / 2 - margin;
 }
 
 function invert4(m: number[]): number[] {
@@ -278,7 +287,9 @@ export function restsFromLayout(objects: readonly { id: string; name: string; ty
 
 export function surfacesFromLayout(objects: readonly { id: string; name: string; type: string; plan: [number, number]; base: number; height: number; footprint?: [number, number]; facing_deg?: number; basin?: [number, number] }[]): PlaneSurface[] {
   return objects.filter((o) => SURFACE_TYPE.test(o.type) && !NOT_SURFACE.test(o.type)).map((o) => ({
-    id: o.id, label: o.name, center: [o.plan[0], o.plan[1]], top: o.base + o.height, radius: o.footprint ? Math.hypot(o.footprint[0], o.footprint[1]) / 2 : 0.4,
+    id: o.id, label: o.name, kind: (/sink/.test(o.type) ? "sink" : /counter/.test(o.type) ? "counter" : /desk/.test(o.type) ? "desk" : "table") as SurfaceKind,
+    center: [o.plan[0], o.plan[1]], top: o.base + o.height, radius: o.footprint ? Math.hypot(o.footprint[0], o.footprint[1]) / 2 : 0.4,
     ...(o.basin ? { basin: { center: [o.basin[0], o.basin[1]] as [number, number], size: BASIN_SIZE, facing_deg: o.facing_deg ?? 0 } } : {}),
+    ...(o.footprint ? { rect: { center: [o.plan[0], o.plan[1]] as [number, number], size: o.footprint, facing_deg: o.facing_deg ?? 0 } } : {}),
   }));
 }

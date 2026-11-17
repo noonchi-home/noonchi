@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  CUP_FSM_MEMORY, CUP_MEMORY, CUP_TASKS, checkInput, fsmRuleOf, isoWithOffset,
+  CUP_FSM_MEMORY, CUP_MEMORY, CUP_TASKS, checkInput, fsmNow, fsmRuleOf, isoWithOffset,
   validateMemory, validatePrediction, validateTasks, type DecisionInput, type FsmMemory,
 } from "../src/brain/decision.js";
 import { FSM_STATE_TEXT } from "../src/world/labels.js";
@@ -79,12 +79,34 @@ describe("고른 행동의 FSM 상태(대시보드 생각 말풍선 「상태」
     expect(fsmRuleOf(CUP_FSM_MEMORY, "fsm", "사용자에게 물어보기")).toBeNull();
   });
 
+  it("지금 FSM(fsmNow): 규칙이 있는 행동은 그 상태·트리거(matched), 대기·규칙 없는 행동은 직전 상태(처음이면 기억의 처음 상태)에 트리거 없음, list 기억이면 null", () => {
+    const left = CUP_FSM_MEMORY.states.find((s) => s.id === "left_cup")!;
+    expect(fsmNow(CUP_FSM_MEMORY, "fsm", "컵 치우기")).toEqual({ state: "left_cup", trigger: left.rules[0]!.trigger, learned: false, matched: true });
+    expect(fsmNow(CUP_FSM_MEMORY, "fsm", null)).toEqual({ state: CUP_FSM_MEMORY.initial_state, trigger: null, learned: false, matched: false });
+    // 직전에 상태를 정할 수 없었으면(null) 대기도 「정할 수 없음」이다(처음 상태와 다르다)
+    expect(fsmNow(CUP_FSM_MEMORY, "fsm", null, null)).toEqual({ state: null, trigger: null, learned: false, matched: false });
+    expect(fsmNow(CUP_FSM_MEMORY, "fsm", null, "left_cup")).toEqual({ state: "left_cup", trigger: null, learned: false, matched: false });
+    expect(fsmNow(CUP_FSM_MEMORY, "fsm", "사용자에게 물어보기", "left_cup")).toEqual({ state: "left_cup", trigger: null, learned: false, matched: false });
+    expect(fsmNow(CUP_MEMORY, "list", "컵 치우기")).toBeNull();
+  });
+
   // 반성이 배운 규칙: seed에 없는 트리거·행동 쌍
   const HOT = { trigger: "사용자가 덥다고 말하거나 더워서 부채질을 한다.", action: "에어컨 켜기" };
   const TV = { trigger: "사용자가 TV를 보러 소파에 앉는다.", action: "에어컨 켜기" };
   const withRules = (add: Record<string, { trigger: string; action: string }[]>, extra: FsmMemory["states"] = []): FsmMemory => ({
     ...CUP_FSM_MEMORY,
     states: [...CUP_FSM_MEMORY.states.map((s) => ({ ...s, rules: [...s.rules, ...(add[s.id] ?? [])] })), ...extra],
+  });
+
+  // Codex(f905eac decision.ts:281): 그 행동 규칙이 여러 상태에 있으면 그 규칙이 없는 직전 상태를 지금 상태로 보였다
+  it("지금 FSM(fsmNow): 고른 행동의 규칙이 여러 상태에 있으면 상태를 정할 수 없어 null이다(직전 상태로 메우지 않는다)", () => {
+    const memory = withRules({ watching_tv: [HOT], drinking: [TV] });
+    expect(fsmNow(memory, "fsm", "에어컨 켜기", "left_cup")).toEqual({ state: null, trigger: null, learned: true, matched: true });
+  });
+
+  // Codex(d64a383 decide.ts:106): 반성으로 기억이 바뀌어 옛 상태가 지워져도 직전 상태로 남았다
+  it("지금 FSM(fsmNow): 직전 상태가 지금 기억에 없으면(반성으로 지워짐) 기억의 처음 상태다", () => {
+    expect(fsmNow(CUP_FSM_MEMORY, "fsm", null, "gone_state")).toEqual({ state: CUP_FSM_MEMORY.initial_state, trigger: null, learned: false, matched: false });
   });
 
   it("seed 덥다 규칙과 배운 TV 규칙이 둘 다 watching_tv에 있으면 에어컨 켜기는 그 상태이고 트리거는 모르며 배운 규칙이 있다", () => {

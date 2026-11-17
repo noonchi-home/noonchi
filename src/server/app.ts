@@ -78,8 +78,8 @@ export interface AppOptions {
   thoughtLast?: () => ThoughtEvent | null;
   /** 마지막 물체 모양(BRAIN=1). /events 접속 때 그대로 replay:true를 붙여 보낸다. */
   seenLast?: () => SeenEvent | null;
-  /** 지금 대시보드 말풍선 카드 글(src/act/say.ts). /events 접속 때 {type:"say"}. 없으면 null. */
-  say?: () => string | null;
+  /** 지금 대시보드 말풍선 말과 안전 알림 표시(src/act/say.ts). /events 접속 때 {type:"say"}. */
+  say?: () => { text: string | null; safety?: true };
   /** 지금 운영 모드(/api/health). 없으면 시험 모드. */
   mode?: () => ControlMode;
   /** 준비 상태(/api/health ready, src/server/ready.ts). 없으면 준비 안 됨. */
@@ -305,7 +305,7 @@ export function createApp(opts: AppOptions): TwinHomeApp {
     if (thought) send(ws, { ...thought, replay: true });
     const seen = opts.seenLast?.();
     if (seen) send(ws, { ...seen, replay: true });
-    send(ws, { type: "say", text: opts.say?.() ?? null });
+    send(ws, { type: "say", ...(opts.say?.() ?? { text: null }) });
     ws.on("error", () => {});
   });
 

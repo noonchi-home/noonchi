@@ -88,6 +88,27 @@ export const PEEK_TEXT = {
   above: (item: string) => `${item} 안이 보이게 위에서 비춰 주세요`,
 } as const;
 
+/** 찾기(src/act/track/find.ts): 대상이 안 보일 때 마지막으로 본 자리로 폰을 든 사람을 보내는 명령(「주세요」로 끝남). 면이 있으면 가기는 계획의 가기 글(STEP_TEXT go:가기)을 쓴다. */
+export const FIND_TEXT = {
+  goSpot: (item: string) => `${item} 있던 곳으로 가 주세요`,
+  aim: (place: string) => `${place} 위를 비춰 주세요`,
+  aimSpot: (item: string) => `${item} 있던 곳을 비춰 주세요`,
+} as const;
+
+/** 찾기의 생각 말풍선 상태 줄(src/act/track/find.ts → src/brain/thought.ts note): 해요체 한 문장, 끝에 마침표 없음. place는 면 이름(없으면 그 물건 있던 곳). */
+export const FIND_THOUGHT = {
+  start: (item: string, place: string | null) => `${josa(item, "이/가")} 안 보여서 ${place ? `${place} 쪽` : `${item} 있던 곳`}을 다시 볼게요`,
+  found: (item: string) => `${josa(item, "을/를")} 찾았어요`,
+  lost: (item: string) => `${josa(item, "을/를")} 못 찾았어요`,
+} as const;
+
+/** 쓰는 중 지킴(src/act/track/use.ts): 사람이 손대는 행동의 대상을 쓰는 것을 볼 때 생각 말풍선에 올리는 상태 줄(활동 이름·물건 이름). */
+export const USE_THOUGHT = {
+  act: (label: string) => `사람이 ${label}이라 지켜볼게요`,
+  holding: (item: string) => `사람이 ${josa(item, "을/를")} 들고 있어서 지켜볼게요`,
+  using: (item: string) => `사람이 ${josa(item, "을/를")} 쓰는 중이라 지켜볼게요`,
+} as const;
+
 /** 승인(src/act/track/approval.ts): 처음 하는 계획을 실제 폰에 묻는 글, 「거절」을 받은 계획의 실행 기록. */
 export const APPROVAL_TEXT = {
   ask: (task: string) => `${josa(task, "을/를")} 할까요?`,
@@ -196,6 +217,13 @@ export const EXEC_TEXT = {
   staleAnswer: "늦은 답이라 쓰지 않음",
   /** 내용물 보류에서 풀렸지만 폰 대화·승인 대기로 첫 명령을 holdMs 넘게 미뤄 닫음. */
   phoneBusy: "폰을 쓰는 중이라 실행하지 않아요",
+  /** 찾기(src/act/track/find.ts): 대상이 안 보여 마지막 자리로 찾으러 감, 찾는 동안 받은 같은 행동 판단, 실행 전 찾기에서 다른 물건을 찾아 계획을 닫음. */
+  finding: (item: string) => `${josa(item, "을/를")} 찾으러 가요`,
+  findingSame: (item: string) => `${josa(item, "을/를")} 찾는 중이에요`,
+  foundNew: "찾은 뒤 다시 판단",
+  /** 쓰는 중 지킴(src/act/track/use.ts): 사람이 계획 대상을 쓰는 중이라 첫 명령을 미룸, holdMs 넘게 이어져 닫음. */
+  inUse: "사람이 쓰는 중이라 기다려요",
+  inUseLong: "사람이 쓰는 중이라 실행하지 않아요",
 } as const;
 
 /** 관찰 모드 기록 글(src/act/look.ts, 기록 종류 look). 가까이 본 결과, 못 본 까닭, 사람 부탁, 기다리기. capped·failed는 모델 대신 쓰는 까닭 글이다. */
@@ -226,5 +254,7 @@ export const LOOK_TEXT = {
   capped: "한 시간 관찰 횟수를 다 써서 부르지 않음",
   /** 내용물 보류의 가까이 보기 까닭(관찰 모드를 부르지 않는다). */
   held: (place: string) => `${place} 안을 몰라 가까이 봄`,
+  /** 찾기의 다시 가까이 보기 까닭(src/act/track/find.ts). */
+  find: (place: string) => `${place} 쪽에서 대상을 찾으려고 가까이 봄`,
   failed: (why: string) => `관찰 모드 호출 실패: ${why}`,
 };

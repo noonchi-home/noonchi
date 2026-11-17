@@ -1,5 +1,5 @@
-// 시연 녹화(scripts/video-check.ts --record): 같은 크롬의 폰 탭과 대시보드 창을 CDP Page.startScreencast로 받아 폴더에 JPEG로 쓰고,
-// 끝나면 ffmpeg로 왼쪽 폰·오른쪽 대시보드를 높이 맞춰 나란히 붙인 mp4 하나(H.264, yuv420p, RECORD_FPS)로 합친다.
+// 시연 녹화(scripts/video-check.ts --record): 같은 크롬의 대시보드 창(--record-phone이면 폰 탭도)을 CDP Page.startScreencast로 받아 폴더에 JPEG로 쓰고,
+// 끝나면 ffmpeg로 대시보드 한 화면(폰도 받았으면 왼쪽 폰·오른쪽 대시보드를 높이 맞춰 나란히) mp4 하나(H.264, yuv420p, RECORD_FPS)로 합친다.
 // 프레임은 받은 시각을 붙여 두고, concat 목록의 프레임마다 다음 프레임까지 보이게 해 영상 길이가 녹화한 실제 시간과 같다.
 // ack는 앞 ack에서 RECORD_MS 뒤에 보낸다(크롬은 ack를 받아야 다음 프레임을 보내므로 화면마다 초당 약 10장).
 // 녹화 시작 답이 화면마다 START_TIMEOUT_MS 안에 오지 않거나 오류면 리스너·타이머·녹화를 정리하고 오류를 낸다.
@@ -51,20 +51,21 @@ export function concatList(frames: Frame[], endMs: number): string | null {
 /** 높이 height에 맞춘 화면 너비(짝수). */
 const panelWidth = (size: [number, number], height: number) => 2 * Math.round((size[0] * height) / size[1] / 2);
 
-/** ffmpeg 인자: 두 concat 목록(폰, 대시보드)을 fps로 고르게 하고 높이를 맞춰(비율 그대로, 남는 곳은 채움) 나란히 붙여 H.264 yuv420p로, seconds 길이.
- *  JPEG는 전체 범위(yuvj420p)라 보통 범위(tv)로 바꾼다. 그대로 두면 mp4가 yuvj420p가 된다. */
-export function ffmpegArgs(o: { phone: string; dash: string; out: string; seconds: number; phoneSize: [number, number]; dashSize: [number, number]; fps?: number; height?: number }): string[] {
+/** ffmpeg 인자: concat 목록(폰이 있으면 폰, 대시보드)을 fps로 고르게 하고 높이를 맞춰(비율 그대로, 남는 곳은 채움) 폰이 있으면 나란히 붙여 H.264 yuv420p로, seconds 길이.
+ *  폰이 없으면 대시보드 한 화면이다. JPEG는 전체 범위(yuvj420p)라 보통 범위(tv)로 바꾼다. 그대로 두면 mp4가 yuvj420p가 된다. */
+export function ffmpegArgs(o: { phone?: string; dash: string; out: string; seconds: number; phoneSize?: [number, number]; dashSize: [number, number]; fps?: number; height?: number }): string[] {
   const fps = o.fps ?? RECORD_FPS;
   const h = o.height ?? RECORD_HEIGHT;
   const fit = (input: number, size: [number, number], label: string) => {
     const w = panelWidth(size, h);
     return `[${input}:v]fps=${fps},scale=${w}:${h}:force_original_aspect_ratio=decrease:force_divisible_by=2:out_range=tv,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1[${label}]`;
   };
+  const both = o.phone !== undefined && o.phoneSize !== undefined;
   return [
     "-y", "-hide_banner", "-loglevel", "error",
-    "-f", "concat", "-safe", "0", "-i", o.phone,
+    ...(both ? ["-f", "concat", "-safe", "0", "-i", o.phone!] : []),
     "-f", "concat", "-safe", "0", "-i", o.dash,
-    "-filter_complex", `${fit(0, o.phoneSize, "p")};${fit(1, o.dashSize, "d")};[p][d]hstack=inputs=2,format=yuv420p[v]`,
+    "-filter_complex", both ? `${fit(0, o.phoneSize!, "p")};${fit(1, o.dashSize, "d")};[p][d]hstack=inputs=2,format=yuv420p[v]` : `${fit(0, o.dashSize, "d")};[d]format=yuv420p[v]`,
     "-map", "[v]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p", "-r", String(fps),
     "-t", o.seconds.toFixed(3), "-movflags", "+faststart", o.out,
   ];
@@ -157,14 +158,16 @@ export async function encodeDemo(
   dir: string,
   rec: Recorded,
   out: string,
-  o: { phoneSize: [number, number]; dashSize: [number, number]; ffmpeg?: string },
+  o: { phoneSize?: [number, number]; dashSize: [number, number]; ffmpeg?: string },
 ): Promise<{ ok: true } | { ok: false; why: string }> {
-  const phone = concatList(rec.frames.phone ?? [], rec.endMs);
+  // 폰 화면은 녹화했을 때만(--record-phone) 붙인다
+  const withPhone = rec.frames.phone !== undefined && o.phoneSize !== undefined;
+  const phone = withPhone ? concatList(rec.frames.phone!, rec.endMs) : null;
   const dash = concatList(rec.frames.dash ?? [], rec.endMs);
-  if (!phone || !dash) return { ok: false, why: `${phone ? "대시보드" : "폰"} 프레임이 없어요. 프레임 폴더: ${dir}` };
-  writeFileSync(join(dir, "phone.txt"), phone);
+  if (!dash || (withPhone && !phone)) return { ok: false, why: `${dash ? "폰" : "대시보드"} 프레임이 없어요. 프레임 폴더: ${dir}` };
+  if (phone) writeFileSync(join(dir, "phone.txt"), phone);
   writeFileSync(join(dir, "dash.txt"), dash);
-  const args = ffmpegArgs({ phone: "phone.txt", dash: "dash.txt", out, seconds: rec.endMs / 1000, phoneSize: o.phoneSize, dashSize: o.dashSize });
+  const args = ffmpegArgs({ ...(phone ? { phone: "phone.txt", phoneSize: o.phoneSize } : {}), dash: "dash.txt", out, seconds: rec.endMs / 1000, dashSize: o.dashSize });
   const result = await new Promise<{ code: number | null; missing: boolean; err: string }>((done) => {
     let err = "";
     const proc = spawn(o.ffmpeg ?? "ffmpeg", args, { cwd: dir, stdio: ["ignore", "ignore", "pipe"] });

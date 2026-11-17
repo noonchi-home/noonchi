@@ -26,7 +26,7 @@ async function rig() {
   const act = new BusNode({ name: "act", bus, epoch: EPOCH, clock, log: () => {} });
   const world = new BusNode({ name: "world", bus, epoch: EPOCH, clock, log: () => {} });
   const got: { kind: string; id: string; msg: string }[] = [];
-  world.on("/world/input", (b, { e }) => { got.push({ kind: b.kind, id: b.id, msg: msgId(e.header) }); });
+  world.on("/world/input", (b, { e }) => { got.push({ kind: b.kind, id: b.id ?? "", msg: msgId(e.header) }); });
   await world.prepare();
   act.start();
   world.start();

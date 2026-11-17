@@ -10,7 +10,7 @@ import { useHealth } from "../lib/use-health";
 import { TwinStage, useAnchors, type TwinEngine, LiveQueue, attachLive, BAKE_VIEWS, Twin3D, useLayoutBox } from "../twin";
 import { useViewer } from "../lib/twin-viewer";
 import { focusOf, homeCamera, homeKeep, livedOf, still, wholeOf, wideCamera, type Camera } from "./camera";
-import { currentStep, facingOf, isOpen, stepIndex, thoughtOf } from "./data";
+import { currentStep, facingOf, isOpen, stepIndex, talkOf } from "./data";
 import { DashboardScreen } from "./DashboardScreen";
 import { debugPhone, debugQuery, useDebugSteps, type Moment } from "./debug";
 import { roomSetsOf, twinFrame } from "./frame";
@@ -27,7 +27,7 @@ declare global {
 }
 
 /** 트윈 위에 얹힌 것: 말풍선이 덮지 않을 자리. */
-const AVOID = "[data-say-card], [data-mascot], [data-progress], [data-chips], [data-phone], [data-thought]";
+const AVOID = "[data-talk], [data-mascot], [data-progress], [data-chips], [data-phone]";
 
 /** 확인 목록만 말풍선으로(승인 대기 줄은 뺀다). 두뇌 줄은 장면의 식탁(dining_table)에 붙는다. 자리는 확인한 것만 센다. 말풍선은 트윈 위에 얹힌 것(AVOID)을 비킨다. */
 function Overlay({ devices, checks, focusId }: { devices: ReturnType<typeof useDevices>["devices"]; checks: ChecksState; focusId: string | null }) {
@@ -235,11 +235,12 @@ export function Dashboard() {
       <BakedStage home={kind === "three" ? homeId : null} layout={layout} plan={dash.plan} eye={dash.eye} checks={checks} devices={devices} onEngine={onEngine} onReady={onBakedReady} />
     );
   const plan = isOpen(dash.plan) ? dash.plan : null;
-  const thought = useMemo(() => thoughtOf(dash), [dash.decision, dash.thoughts, dash.reflection]);
+  // talkOf가 읽는 것 모두: 판단·줄·안전 알림·계획(머리)·행동별 모드
+  const talk = useMemo(() => talkOf(dash), [dash.decision, dash.talk, dash.safety, dash.plan, dash.modes]);
   return (
     <DashboardScreen
       index={stepIndex(plan)} plan={plan} step={currentStep(plan)} robotKnown={dash.eye !== null} connected={online} map={map} mapReady={mapReady}
-      phone={phone} seen={seen} thought={thought} say={dash.say ?? ""}
+      phone={phone} seen={seen} talk={talk}
       facing={facingOf(plan)} hub={hub} settingsOpen={debug?.settings} onReady={onScreenReady} tzMinutes={health?.tz_minutes ?? null}
     />
   );

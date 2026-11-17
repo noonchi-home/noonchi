@@ -3,7 +3,7 @@
 
 import type { DeviceStateKey, Facet, FixtureClass, ObjClass } from "../world/vocab.js";
 import type { EyePose } from "./events.js";
-import type { CloserPassInput, Detection, FrameMeta, Pose, SceneObservation } from "./observe.js";
+import type { CloserAtInput, CloserPassInput, Detection, FrameMeta, Pose, SceneLookInput, SceneObservation } from "./observe.js";
 
 /** 낱말 표(src/world/vocab.ts)의 물건 종류·가전 설비 종류·사실 면·가전 상태 키. */
 export type { DeviceStateKey, Facet, FixtureClass, ObjClass };
@@ -138,9 +138,15 @@ export interface WorldDevice {
 /** 클로이드 눈(폰) 위치. room은 방 id, room_label은 방 이름(관찰 텍스트의 [눈] 줄). */
 export interface WorldEye { position: [number, number]; height_m: number; yaw_deg: number; pitch_deg: number; room: string | null; room_label: string | null; at_ms: number }
 
+/** 등장 확인 전에 끊긴 물건 후보의 마지막 자리(2분, 종류마다 최근 4개). 같은 종류 물건이 0.5m 안에 등장하면 지운다.
+ *  in_hand: 관절로 손에 든 채 본 자리(그 후보의 손에 없던 자리가 있으면 그 자리를 손에 없음으로 남긴다). */
+export interface WorldSighting { cls: ObjClass; position: [number, number, number]; surface: string | null; surface_label: string | null; at_ms: number; in_hand: boolean }
+
 export interface WorldView {
   at_ms: number;
   objects: WorldObject[];
+  /** 후보 자리(없으면 없음). 확인 물건이 아니므로 objects에 들지 않는다. */
+  sightings?: WorldSighting[];
   person: WorldPerson;
   fixtures: WorldFixture[];
   devices: WorldDevice[];
@@ -167,22 +173,27 @@ export interface WorldChange { kind: WorldChangeKind; at_ms: number; subject: st
 
 /** /perception/scene 몸: VLM 답 갈래(집 상태 입력의 주인, stage-queue 묶음 2). 사진은 싣지 않는다.
  *  원본 프레임 id·가까이 보기 look id로 집 상태 노드가 자기 감지 번호 표를 찾는다. observed_ms는 원본 사진의 촬영 시각이다.
- *  scene 전체 사진 VLM 답, missing VLM 분석 없음, closer_scene 가까이 본 VLM 답, closer_end VLM 답 없이 끝난 가까이 보기, top 위에서 본 내용물 값.
+ *  scene 전체 사진 VLM 답(VLM 물건 목록, 그 사진의 카메라 look), missing VLM 분석 없음, closer_scene 가까이 본 VLM 답(그 장의 자리 at),
+ *  closer_end VLM 답 없이 끝난 가까이 보기(미룬 합치기를 YOLO만으로 넣는다), top 위에서 본 내용물 값.
  *  YOLO 임시 갈래(eye 눈 자리, frame 프레임 감지·관절, yolo_missing YOLO 분석 없음, closer_merge 가까이 본 장 합치기)는 VLM 답과 한 토픽이라 차례가 지켜지고 녹화·재생된다. */
 export type SceneInput =
-  | { kind: "scene"; frame_id: string; observed_ms: number; scene: SceneObservation }
+  | { kind: "scene"; frame_id: string; observed_ms: number; scene: SceneObservation; look?: SceneLookInput }
   | { kind: "missing"; frame_id: string; observed_ms: number; missing: VlmMissing }
-  | { kind: "closer_scene"; look: string; frame_id: string; observed_ms: number; scene: SceneObservation }
+  | { kind: "closer_scene"; look: string; frame_id: string; observed_ms: number; scene: SceneObservation; at: CloserAtInput }
   | { kind: "closer_end"; look: string }
   | { kind: "top"; object_id: string; frame_id: string; observed_ms: number; value: "empty" | "has_contents" }
-  // VLM 전용으로 바뀔 자리: YOLO 임시 갈래(사진 없음, 감지 상자·눈 자리·프레임 번호만). feat/vlm-objects를 합치면 쓰러짐 신호 하나만 남는다.
+  // VLM 전용으로 바뀔 자리: YOLO 임시 갈래(사진 없음, 감지 상자·눈 자리·프레임 번호만). feat/vlm-objects를 합친 뒤에도 VLM 답이 없을 때·VLM 답과 잇는 데 쓴다.
   | { kind: "eye"; eye: EyePose | null; at_ms: number }
   | { kind: "frame"; frame: FrameMeta; dets: Detection[]; poses?: Pose[] }
   | { kind: "yolo_missing"; frame_id: string; observed_ms: number; yolo: YoloMissing; vlm?: VlmMissing }
   | { kind: "closer_merge"; look: string; passes: CloserPassInput[]; from: string };
 
-/** /world/input 몸: 실행 추적이 World State에 넣는 것. guard 보기 지킴 켜기·끄기, contents 따르기 창 켜기·끄기. */
-export interface WorldInput { kind: "guard" | "contents"; id: string; on: boolean; at_ms: number }
+/** 실행 추적이 지금 집기·내려놓기·들고 가는 대상의 단계와 목적지(트윈 [x, y], 없으면 null). */
+export interface WorldFocus { step: "pick" | "place" | "carry"; spot: [number, number] | null }
+/** /world/input 몸: 실행 추적이 World State에 넣는 것. guard 보기 지킴 켜기·끄기, contents 따르기 창 켜기·끄기, focus 지금 단계 대상(id null이면 풂). */
+export type WorldInput =
+  | { kind: "guard" | "contents"; id: string; on: boolean; at_ms: number }
+  | { kind: "focus"; id: string | null; focus: WorldFocus | null; at_ms: number };
 /** /world/state 몸: 집 상태 판본과 보기. */
 export interface WorldStateMsg { rev: number; view: WorldView }
 /** /world/changes 몸: 그 판본에서 생긴 변화. */

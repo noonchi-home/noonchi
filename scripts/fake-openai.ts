@@ -22,7 +22,7 @@ export function defaultReply(body: any): string {
   if (body?.response_format?.json_schema?.name === "scene_observation") {
     const m = /Detections: (\[.*\])/.exec(user);
     const dets: { id: string }[] = m ? JSON.parse(m[1]!) : [];
-    return JSON.stringify({ scene: "unknown", observations: dets.map((d) => ({ object_id: d.id, state: "contents_unknown" })), summary: "가짜 장면" });
+    return JSON.stringify({ scene: "unknown", observations: dets.map((d) => ({ object_id: d.id, state: "contents_unknown" })), objects: [], summary: "가짜 장면" });
   }
   if (body?.response_format?.json_schema?.name === "thought_messages") return JSON.stringify({ messages: ["가짜 장면을 봤어요"] });
   if (system.includes("procedural memory")) {

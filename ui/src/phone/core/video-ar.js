@@ -369,6 +369,8 @@ export function createVideoAr({ link, params, hooks, deps }) {
     let lastCmdId = null;
     let lastKey = null; // 마지막으로 받은 명령 id:단계(같은 명령이 다시 오면 비전 상태만 바뀐 것)
     let pendingKey = null; // 단계 영상 바꾸기를 예약한 명령 id:단계(끝나거나 지워지기 전)
+    // 영상 모드: 자세 흉내
+    let posedKey = null; // 단계 영상 칸 없이 자세만 옮기기로 한 명령 id:단계(같은 명령이 다시 와도 다시 하지 않는다)
     let pendingToken = null; // 그 예약 하나(바꾸기가 끝나면 성공·실패·취소 모두 그 예약만 푼다)
     let stepClip = null; // 지금 도는 단계 영상 이름(첫 영상이면 null)
     let holdMs = 0; // 마지막 장면을 붙잡은 시간(타이머 칸을 센다): 붙잡는 동안에도 영상 시각이 흐른다
@@ -621,7 +623,9 @@ export function createVideoAr({ link, params, hooks, deps }) {
 
     const current = {
       videoTime: timeline,
-      /** 사람 단계 명령: 맞는 step 칸이 있으면 그 id·step에 한 번, reactMs 뒤 단계 영상으로 바꾸고, 바뀌면 go는 걷고 집기·놓기·그 자리에서 하는 일(do)은 대상을 바라본다. */
+      /** 사람 단계 명령: 맞는 step 칸이 있으면 그 id·step에 한 번, reactMs 뒤 단계 영상으로 바꾸고, 바뀌면 go는 걷고 집기·놓기·그 자리에서 하는 일(do)은 대상을 바라본다.
+       *  맞는 칸이 없으면 대상이 있는 go만 reactMs 뒤 걷는다(영상은 그대로). 그 밖은 영상이 돌지 않으므로 자세도 그대로 둔다:
+       *  자세만 돌리면 사진과 자세가 어긋나 서버가 엉뚱한 자리를 잘라 본다(2026-11-17 머그 실제 녹화). */
       command(cmd) {
         const key = `${cmd.id}:${cmd.step}`;
         const fresh = key !== lastKey;
@@ -639,13 +643,14 @@ export function createVideoAr({ link, params, hooks, deps }) {
         }
         const id = cmd.target?.id;
         const first = typeof id === "string" ? steps.find((s) => s.kind === cmd.kind && id.includes(s.word)) : undefined;
-        if (!first) return;
-        const target = Array.isArray(cmd.target.ar) ? cmd.target.ar : null;
+        const target = Array.isArray(cmd.target?.ar) ? cmd.target.ar : null;
+        // 영상 모드: 자세 흉내. 칸이 없으면 go만(걷기는 가기 단계가 끝나는 데 필요하다)
+        if (!first && !(target && cmd.kind === "go")) return;
         const gen = cmdGen;
         lastCmdId = cmd.id;
         // go는 걷기(near_m이 있으면 그 거리 안까지), view above면 위에서 비추기, 그 밖은 그 자리에서 바라보기
         const stopM = typeof cmd.near_m === "number" ? Math.min(WALK_STOP_M, cmd.near_m * NEAR_WALK) : WALK_STOP_M;
-        const pose = target && (first.kind === "go" ? () => startWalk(target, stopM) : cmd.view === "above" ? () => holdAbove(target) : () => face(target));
+        const pose = target && (cmd.kind === "go" ? () => startWalk(target, stopM) : cmd.view === "above" ? () => holdAbove(target) : () => face(target));
         const later = (fn) => {
           const timer = setTimeout(() => {
             reactTimers.delete(timer);
@@ -654,6 +659,15 @@ export function createVideoAr({ link, params, hooks, deps }) {
           }, reactMs);
           reactTimers.add(timer);
         };
+        // 영상 모드: 자세 흉내. 맞는 단계 영상 칸이 없는 go는 영상은 그대로 두고 반응 시간 뒤 걷기만 한다(같은 명령이 다시 와도 다시 시작하지 않는다).
+        // 단계 영상 예약과 따로 센다: 대상이 바뀌어 같은 명령이 칸에 맞게 되면 그때 단계 영상으로 바꾼다
+        if (!first) {
+          // 이어진 재전송(비전 상태만 바뀜)은 그대로 두고, 다른 명령 뒤 다시 온 같은 명령(시간 초과 질문 뒤 「계속」)은 다시 걷는다
+          if (!fresh && posedKey === key) return;
+          posedKey = key;
+          later(pose);
+          return;
+        }
         // 이미 그 단계 영상으로 바꾼 명령이 다시 왔다(시간 초과 질문 뒤 「계속」 등): 영상 칸을 더 쓰지 않고 자세 동작만 다시 시작한다
         if (switched.has(key)) {
           if (pose) later(pose);
@@ -686,6 +700,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
         cmdGen++;
         lastKey = null;
         pendingKey = null;
+        posedKey = null;
         pendingToken = null;
         for (const timer of reactTimers) clearTimeout(timer);
         reactTimers.clear();

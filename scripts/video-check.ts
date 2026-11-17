@@ -30,9 +30,10 @@
 // 끝까지 돌지 않았으면(시간 넘김·중단) 판정 줄 위에 적고 끝 코드 1.
 // 끝에 같은 크롬 새 탭(1280×800)으로 대시보드 <api>/를 열어 8초 뒤 사진을 runtime/videos/<영상>.<시각 또는 fake>.twin.png에 남기고 markdown에 넣는다.
 // 사진을 못 남기면 판정 줄 위에 적기만 한다.
-// --record <폴더>: 폰 페이지를 연 뒤 같은 크롬 새 창(1280×800)으로 대시보드를 판정 내내 띄우고, 두 화면을 CDP screencast로 초당 약 10장 받아
-// 끝(30초 더 보기 포함)까지 녹화한다(scripts/video-record.ts). 끝 사진은 그 창으로 바로 찍는다. 크롬을 끈 뒤 ffmpeg로 왼쪽 폰·오른쪽 대시보드를
-// 높이 800에 맞춰 나란히 붙인 mp4 하나(H.264, yuv420p, 10fps, 실제 시간 길이)를 <폴더>/<시각표 이름 줄기>.demo.mp4로 만든다.
+// --record <폴더>: 폰 페이지를 연 뒤 같은 크롬 새 창(1280×800)으로 대시보드를 판정 내내 띄우고, 트윈이 다 뜬 뒤(waitTwinReady) 대시보드 한 화면
+// (--record-phone이면 폰 탭도)을 CDP screencast로 초당 약 10장 받아 끝(30초 더 보기 포함)까지 녹화한다(scripts/video-record.ts). 「AR 시작」은 그 뒤에 누른다.
+// 녹화하는 동안 대시보드 그림 간격을 재 적는다. 끝 사진은 그 창으로 바로 찍는다. 크롬을 끈 뒤 ffmpeg로 대시보드(폰도 받았으면 나란히) mp4 하나
+// (H.264, yuv420p, 10fps, 실제 시간 길이)를 <폴더>/<시각표 이름 줄기>.demo.mp4로 만든다. --chrome은 크롬 그리기 방식(기본 headless-gpu)이다.
 // ffmpeg가 없거나 실패하면 <폴더>/<줄기>.frames 프레임 폴더를 남기고 판정 줄 위에 적는다.
 // 영상은 소리 없이 「AR 시작」 누름에서 튼다. launchChrome은 자동 재생 플래그를 받지 않지만 소리 없는 재생은 크롬 기본값으로 된다.
 // --fake: 실제 모델 없이 같은 프로세스에서 스스로 시험한다. 본 서버(HUB=memory, 한양목련, 새 RUNTIME_DIR, 영상·단계 영상은 공용 runtime/videos에서 바로 읽음, BRAIN=1, PAM 1초마다)와
@@ -51,7 +52,7 @@ import type { WorldObject, WorldView } from "../src/contract/world.js";
 import { EXEC_TEXT } from "../src/act/labels.js";
 import { STATES } from "../src/world/vocab.js";
 import { withTimeout } from "./twin3d/capture-lib.js";
-import { chromePath, closeChrome, devtoolsPort, launchChrome, openPage, openTab, openWindow, type Chrome, type Page } from "./twin3d/cdp.js";
+import { CHROME_GPU, chromePath, closeChrome, devtoolsPort, launchChrome, openPage, openTab, openWindow, type Chrome, type ChromeGpu, type Page } from "./twin3d/cdp.js";
 import { heldLock, withHeavy, type Lock } from "./twin3d/heavy.js";
 import { demoFile, encodeDemo, RECORD_FPS, startRecording, type Recorded, type Recording } from "./video-record.js";
 import { det } from "../tests/helpers/detectors.js";
@@ -552,6 +553,8 @@ export interface Args {
   clip: string; fake: boolean; steps: string[]; doneAfterMs: number; expectMs: number; expectSet: boolean; phone: string; api: string; out: string | undefined; record: string | undefined;
   says: { atMs: number; text: string }[]; startAt: DemoScene | null; home: string; tailMs: number; maxMs: number; approveAfterMs: number; doneOn: { afterMs: number; text: string }[];
   camera: Camera;
+  /** --record-phone: 녹화에 폰 화면도 붙인다(기본은 대시보드만). --chrome: 크롬 그리기 방식(기본 headless-gpu). */
+  recordPhone: boolean; chrome: ChromeGpu;
 }
 
 /** 인자(process.argv.slice(2)) → 판 설정, 틀리면 까닭 글. --step은 여러 번 받고, 있으면 --done-after 기본이 0이다. --record는 시연 영상 폴더. */
@@ -598,7 +601,10 @@ export function parseArgs(argv: string[]): Args | string {
     if (!raw?.trim() || raw.startsWith("--") || !Number.isFinite(v) || v < lo || v > hi) return `--fov는 20~120(도), --pitch는 -89~89(도), --h는 0.2~3(m) 숫자예요. ${USAGE}`;
     camera[k] = v;
   }
+  const chrome = (arg("chrome") ?? "headless-gpu") as ChromeGpu;
+  if (!CHROME_GPU.includes(chrome)) return `--chrome은 ${CHROME_GPU.join("·")} 가운데 하나예요. ${USAGE}`;
   return {
+    recordPhone: argv.includes("--record-phone"), chrome,
     clip, fake, steps, doneAfterMs, expectMs, expectSet: arg("expect-after") !== undefined, phone: arg("phone") ?? "http://127.0.0.1:8210", api: arg("api") ?? "http://127.0.0.1:8200", out: arg("out"), record,
     says: says.map((x) => ({ atMs: x!.ms, text: x!.text })), startAt: startAt as DemoScene | null, home: arg("home") ?? HOME, tailMs, maxMs, approveAfterMs,
     doneOn: doneOn.map((x) => ({ afterMs: x!.ms, text: x!.text })), camera,
@@ -631,6 +637,34 @@ export async function openDashboard(tab: Pick<Page, "send">, api: string, o: { w
   await withTimeout(tab.send("Emulation.setDeviceMetricsOverride", { width: DASH_SIZE[0], height: DASH_SIZE[1], deviceScaleFactor: 1, mobile: false }), 10_000, "대시보드 탭 크기");
   await withTimeout(tab.send("Page.navigate", { url: `${api}/` }), 30_000, "대시보드 열기");
   await waitLoaded(tab, `${api}/`, { what: "대시보드", ...o });
+}
+
+/** 대시보드 그림 간격 모으기 시작(window.__frameGaps)과 읽기. */
+const FRAME_GAPS_START = "(() => { const g = (window.__frameGaps = []); let last = performance.now(); const f = (n) => { g.push(n - last); last = n; if (g.length < 100000) requestAnimationFrame(f); }; requestAnimationFrame(f); return true; })()";
+const FRAME_GAPS_READ = "window.__frameGaps ?? null";
+/** 그림 간격(ms) 목록 → 한 줄(중앙값·p90·최대·초당 장 수). 없으면 null. */
+export function frameGapLine(raw: unknown): string | null {
+  if (!Array.isArray(raw) || raw.length < 2) return null;
+  const g = (raw as number[]).filter((x) => Number.isFinite(x) && x > 0);
+  if (!g.length) return null;
+  const s = [...g].sort((a, b) => a - b);
+  const q = (p: number) => Math.round(s[Math.min(s.length - 1, Math.floor(p * s.length))]!);
+  const total = g.reduce((a, b) => a + b, 0) / 1000;
+  return `대시보드 그림 간격: 중앙값 ${q(0.5)}ms · p90 ${q(0.9)}ms · 최대 ${Math.round(s.at(-1)!)}ms · 초당 ${(g.length / Math.max(total, 0.001)).toFixed(1)}장`;
+}
+
+/** 트윈이 다 뜰 때까지 기다린다: 대시보드가 data-ready를 달고(글꼴·마스코트·지도 첫 그림·미리 그려 보기 뒤) 그 뒤 그림 TWIN_FRAMES장이 그려진다. 한도를 넘기면 던진다. */
+const TWIN_FRAMES = 5;
+export async function waitTwinReady(tab: Pick<Page, "evaluate">, o: { waitMs?: number; everyMs?: number } = {}): Promise<void> {
+  const waitMs = o.waitMs ?? 180_000;
+  const end = Date.now() + waitMs;
+  for (; Date.now() < end; await sleep(o.everyMs ?? 250)) {
+    const ready = await tab.evaluate("!!document.querySelector('main[data-ready]')", Math.max(1, end - Date.now())).catch(() => false);
+    if (ready !== true) continue;
+    const drawn = await tab.evaluate(`new Promise((res) => { let n = 0; const f = () => { n += 1; if (n >= ${TWIN_FRAMES}) res(n); else requestAnimationFrame(f); }; requestAnimationFrame(f); })`, Math.max(1, end - Date.now())).catch(() => 0);
+    if (Number(drawn) >= TWIN_FRAMES) return;
+  }
+  throw new Error(`대시보드 트윈이 ${Math.round(waitMs / 1000)}초 안에 다 뜨지 않았어요`);
 }
 
 /** 대시보드 사진을 file에 쓴다. open(--record로 판정 내내 띄운 대시보드 창)이 있으면 그 창을 바로 찍고,
@@ -705,7 +739,7 @@ async function main(): Promise<number> {
         console.log(`[video-check] 시작 위치 ${args.startAt}`);
       }
 
-      chrome = launchChrome({ path: chromeExe, size: SIZE });
+      chrome = launchChrome({ path: chromeExe, size: SIZE, gpu: args.chrome });
       note(chrome.proc.pid!);
       const port = await devtoolsPort(chrome);
       page = await openPage(port, (msg) => errors.push(msg));
@@ -717,15 +751,21 @@ async function main(): Promise<number> {
       await waitLoaded(cdp, url, { what: "폰 페이지" });
       const read = async () => (await cdp.evaluate(READ, 10_000)) as Seen;
 
-      // 시연 녹화: 같은 크롬 새 창(탭은 폰 탭을 가린다)으로 대시보드를 판정 내내 띄우고, 두 화면의 프레임을 받는다
+      // 시연 녹화: 같은 크롬 새 창(탭은 폰 탭을 가린다)으로 대시보드를 판정 내내 띄우고, 트윈이 다 뜬 뒤 대시보드(--record-phone이면 폰도) 프레임을 받는다.
+      // 「AR 시작」(영상 재생)은 녹화를 시작한 뒤에 누른다
       if (framesDir) {
         dash = await openWindow(port, DASH_SIZE, (msg) => dashErrors.push(msg));
         await openDashboard(dash, api);
+        const twinFrom = Date.now();
+        await waitTwinReady(dash);
+        console.log(`[video-check] 대시보드 트윈 준비 ${((Date.now() - twinFrom) / 1000).toFixed(1)}초`);
+        // 녹화하는 동안 대시보드 그림 간격(requestAnimationFrame)을 쌓는다(끝에 중앙값·p90·최대를 적는다)
+        await dash.evaluate(FRAME_GAPS_START, 10_000).catch(() => {});
         rmSync(framesDir, { recursive: true, force: true });
-        rec = await startRecording(framesDir, [{ name: "phone", page: cdp, size: SIZE }, { name: "dash", page: dash, size: DASH_SIZE }]);
+        rec = await startRecording(framesDir, [...(args.recordPhone ? [{ name: "phone", page: cdp, size: SIZE }] : []), { name: "dash", page: dash, size: DASH_SIZE }]);
         const shown = await cdp.evaluate("document.visibilityState", 10_000).catch(() => "모름");
-        if (shown !== "visible") recordNotes.push(`녹화: 폰 탭이 가려짐(visibilityState ${String(shown)})`);
-        console.log(`[video-check] 녹화 시작 · ${RECORD_FPS}fps · 폰 탭 ${String(shown)} · ${framesDir}`);
+        if (args.recordPhone && shown !== "visible") recordNotes.push(`녹화: 폰 탭이 가려짐(visibilityState ${String(shown)})`);
+        console.log(`[video-check] 녹화 시작 · ${RECORD_FPS}fps · ${args.recordPhone ? "폰·대시보드" : "대시보드만"} · 크롬 ${args.chrome} · ${framesDir}`);
       }
 
       // 폰 페이지 자기 자원을 못 받았으면(이 PC는 127.0.0.1 연결이 가끔 실패하고 크롬은 다시 받지 않는다) 「AR 시작」 전에 한 번 다시 읽는다
@@ -865,6 +905,8 @@ async function main(): Promise<number> {
         console.log(`[video-check] ${out}`);
         return 1;
       }
+      const gaps = dash ? frameGapLine(await dash.evaluate(FRAME_GAPS_READ, 10_000).catch(() => null)) : null;
+      if (gaps) { recordNotes.push(gaps); console.log(`[video-check] ${gaps}`); }
       recorded = await rec?.stop();
       const endMs = clipEnd(seen, clipStart(), seen.duration ?? duration);
       const t0 = seen.record?.t0 ?? firstT0;
@@ -911,8 +953,8 @@ async function main(): Promise<number> {
         if (chrome) { await closeChrome(chrome); chrome = undefined; }
         const n = (name: string) => recorded!.frames[name]?.length ?? 0;
         const fps = (name: string) => (n(name) / Math.max(recorded!.endMs / 1000, 0.001)).toFixed(1);
-        console.log(`[video-check] 녹화 ${(recorded.endMs / 1000).toFixed(1)}초 · 폰 ${n("phone")}장(${fps("phone")}fps) · 대시보드 ${n("dash")}장(${fps("dash")}fps)${recorded.lost ? ` · 못 쓴 프레임 ${recorded.lost}장` : ""}`);
-        const made = await encodeDemo(framesDir, recorded, demo, { phoneSize: SIZE, dashSize: DASH_SIZE });
+        console.log(`[video-check] 녹화 ${(recorded.endMs / 1000).toFixed(1)}초 · ${args.recordPhone ? `폰 ${n("phone")}장(${fps("phone")}fps) · ` : ""}대시보드 ${n("dash")}장(${fps("dash")}fps)${recorded.lost ? ` · 못 쓴 프레임 ${recorded.lost}장` : ""}`);
+        const made = await encodeDemo(framesDir, recorded, demo, { ...(args.recordPhone ? { phoneSize: SIZE } : {}), dashSize: DASH_SIZE });
         encoded = true;
         if (made.ok) console.log(`[video-check] 시연 영상 ${demo}`);
         else { console.log(`[video-check] ${made.why}`); notes.push(`시연 영상 못 만듦: ${made.why}`); }

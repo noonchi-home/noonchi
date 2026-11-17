@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import tokens from "../../../src/design/tokens.json";
 import { mascotLogoBox } from "../../src/dashboard/bust";
-import { ASPECT_STEP, LIFT, MASCOT_SHARE, mascotPoint, MINIMAP_ASPECT, MINIMAP_MAX_SHARE, MINIMAP_SHARE, nextAspect, pageLayout, RING, SAY_LINE, THOUGHT, type Rect } from "../../src/dashboard/layout";
+import { ASPECT_STEP, LIFT, MASCOT_SHARE, mascotPoint, MINIMAP_ASPECT, MINIMAP_MAX_SHARE, MINIMAP_SHARE, nextAspect, pageLayout, RING, TALK_H, type Rect } from "../../src/dashboard/layout";
 import { MASCOT } from "../../src/lib/mascot-image";
 
 const M = MASCOT;
@@ -90,37 +90,16 @@ describe.each([[1920, 1080], [1440, 900], [1522, 722]])("%i×%i", (width, height
     expect(L.logo.top + L.logo.height).toBeLessThan(L.mascot.height);
   });
 
-  it("생각 말풍선은 마스코트 위다: 크기는 화면과 상관없이 정해져 있고(460 × 메시지 셋·칩 한 줄), 오른쪽 끝은 마스코트와 같으며 미니맵·마스코트·말풍선 카드와 겹치지 않는다", () => {
-    expect(THOUGHT).toEqual({ width: 460, height: 210 });
-    expect([L.thought.width, L.thought.height]).toEqual([THOUGHT.width, THOUGHT.height]);
-    expect(near(right(L.thought), right(L.mascot))).toBe(true);
-    expect(bottom(L.thought)).toBeLessThan(L.mascot.top);
-    expect(L.thought.top).toBeGreaterThan(bottom(L.video));
-    for (const r of [L.video, L.mascot, L.bubble]) expect(hit(L.thought, r)).toBe(false);
-  });
-
-  it("생각 말풍선 꼬리는 점 둘이다: 말풍선과 마스코트 사이에 있고 마스코트 쪽 점이 더 작다", () => {
-    expect(L.tail).toHaveLength(2);
-    const [big, small] = L.tail as [Rect, Rect];
-    expect([big.width, big.height, small.width, small.height]).toEqual([16, 16, 10, 10]);
-    for (const d of L.tail) {
-      expect(d.top).toBeGreaterThanOrEqual(bottom(L.thought));
-      expect(bottom(d)).toBeLessThanOrEqual(L.mascot.top);
-      expect(d.left).toBeGreaterThanOrEqual(L.mascot.left);
-      expect(right(d)).toBeLessThanOrEqual(right(L.mascot));
-    }
-    expect(small.top).toBeGreaterThan(big.top);
-  });
-
-  it("말풍선 카드는 트윈 아래쪽 안, 마스코트 왼쪽에서 사이(gap)만큼 띄운 카드 하나다: 높이는 말풍선 글(Item say text-base 16px, 줄 24px) 두 줄 + 위아래 여백(py-3)·테두리 26px로 정해져 있고 초점 고리와도 겹치지 않는다", () => {
+  it("메시지 상자는 트윈 아래쪽 안, 마스코트 왼쪽에서 사이(gap)만큼 띄운 상자 하나다(마스코트가 옆에서 말한다): 높이는 TALK_H로 정해져 있고 초점 고리와도 겹치지 않는다", () => {
     expect(RING).toBe(4);
-    expect(SAY_LINE).toBe(24);
+    expect(TALK_H).toBe(128);
     expect(L.bubble.left).toBe(L.twin.left + space.panelPadding);
     expect(near(bottom(L.bubble), bottom(L.twin) - space.panelPadding)).toBe(true);
-    expect(L.bubble.height).toBe(2 * 24 + 26);
+    expect(L.bubble.height).toBe(TALK_H);
     expect(near(right(L.bubble), L.mascot.left - RING - L.gap)).toBe(true);
     expect(L.bubble.width).toBeGreaterThan(L.twin.width / 2);
-    for (const r of [L.video, L.mascot, L.thought]) expect(hit(L.bubble, r)).toBe(false);
+    expect(("thought" in L) || ("tail" in L)).toBe(false);
+    for (const r of [L.video, L.mascot]) expect(hit(L.bubble, r)).toBe(false);
     expect(head.y).toBeLessThan(L.bubble.top);
   });
 
@@ -128,31 +107,29 @@ describe.each([[1920, 1080], [1440, 900], [1522, 722]])("%i×%i", (width, height
     expect("map" in L).toBe(false);
   });
 
-  it("지도 위에 얹는 것(말풍선 카드, 마스코트·초점 고리, 미니맵, 생각 말풍선과 꼬리)은 가린 자리(blocked)다", () => {
-    expect(L.blocked).toHaveLength(4);
-    const [say, mascot, video, thought] = L.blocked as [Rect, Rect, Rect, Rect];
+  it("지도 위에 얹는 것(메시지 상자, 마스코트·초점 고리, 미니맵)은 가린 자리(blocked)다. 생각 말풍선은 없다(트윈을 가리지 않는다)", () => {
+    expect(L.blocked).toHaveLength(3);
+    const [say, mascot, video] = L.blocked as [Rect, Rect, Rect];
     expect(say).toEqual(L.bubble);
     expect(near(mascot.left, L.mascot.left - RING)).toBe(true);
     expect(near(mascot.top, L.mascot.top - RING)).toBe(true);
     expect(video).toEqual(L.video);
-    expect([thought.left, thought.top, thought.width]).toEqual([L.thought.left, L.thought.top, L.thought.width]);
-    expect(near(bottom(thought), L.mascot.top)).toBe(true);
   });
 
-  it("지도 카메라가 맞추는 칸(focus)은 트윈 안, 할 일 진행도 아래, 가린 자리(말풍선 카드·마스코트·미니맵·생각 말풍선) 밖이고, 카메라 여백(camPad)은 그 칸의 트윈 기준 여백이다", () => {
+  it("지도 카메라가 맞추는 칸(focus)은 트윈 안, 할 일 진행도 아래, 가린 자리(메시지 상자·마스코트·미니맵) 밖이고, 카메라 여백(camPad)은 그 칸의 트윈 기준 여백이다", () => {
     const f = L.focus;
     expect(f.left).toBeGreaterThanOrEqual(L.twin.left);
     expect(f.top).toBeGreaterThanOrEqual(L.twin.top + 60);
     expect(right(f)).toBeLessThanOrEqual(right(L.twin));
     for (const b of L.blocked) expect(hit(f, b)).toBe(false);
-    expect(right(f)).toBeLessThan(Math.min(L.video.left, L.thought.left, L.mascot.left));
+    expect(right(f)).toBeLessThan(Math.min(L.video.left, L.mascot.left));
     expect(f.width).toBeGreaterThan(L.twin.width * 0.55);
     expect(f.height).toBeGreaterThan(L.twin.height * 0.6);
     expect(L.camPad).toEqual({ left: f.left - L.twin.left, top: f.top - L.twin.top, right: right(L.twin) - right(f), bottom: bottom(L.twin) - bottom(f) });
   });
 
   it("모든 자리가 화면 안이다(가로·세로 넘침 없음)", () => {
-    for (const r of [L.twin, L.focus, L.video, L.mascot, L.bubble, L.thought, ...L.tail]) {
+    for (const r of [L.twin, L.focus, L.video, L.mascot, L.bubble]) {
       expect(r.left).toBeGreaterThanOrEqual(0);
       expect(r.top).toBeGreaterThanOrEqual(0);
       expect(right(r)).toBeLessThanOrEqual(width + 1e-6);
@@ -161,15 +138,11 @@ describe.each([[1920, 1080], [1440, 900], [1522, 722]])("%i×%i", (width, height
   });
 });
 
-describe("말풍선을 키운 만큼 미니맵을 줄인다", () => {
-  it.each([[1920, 1080], [1440, 900], [1522, 722]])("%i×%i: 메시지 셋이 드는 생각 말풍선(높이 210) 아래에서도 16:9 미니맵은 높이 상한(말풍선 위 사이)에 걸리지 않는다(320/1280이면 가장 낮은 1522×722에서도 들어간다)", (width, height) => {
+describe("미니맵 높이 상한(마스코트 위 사이)", () => {
+  it.each([[1920, 1080], [1440, 900], [1522, 722]])("%i×%i: 16:9 미니맵은 마스코트 위 사이에 걸리지 않는다", (width, height) => {
     const L = pageLayout({ width, height }, M);
     expect(near(L.video.height, (width * 320) / 1280 * (9 / 16))).toBe(true);
-    expect(bottom(L.video)).toBeLessThanOrEqual(L.thought.top - L.gap + 1e-6);
-  });
-  it("340/1280이었으면 1522×722에서 16:9 미니맵이 말풍선 위 사이에 걸려 잘렸다", () => {
-    const L = pageLayout({ width: 1522, height: 722 }, M);
-    expect((1522 * 340) / 1280 * (9 / 16)).toBeGreaterThan(L.thought.top - L.gap - L.video.top);
+    expect(bottom(L.video)).toBeLessThanOrEqual(L.mascot.top - LIFT - L.gap + 1e-6);
   });
 });
 
@@ -188,19 +161,19 @@ describe.each([[1920, 1080], [1440, 900], [1522, 722]])("%i×%i 미니맵은 영
     expect(near(L.video.height, L.video.width / (w / h))).toBe(true);
   });
 
-  it("세로 영상(360×640)은 칸이 너무 길어지지 않게 높이 상한에 걸린다: 트윈 높이의 절반, 생각 말풍선 위 사이(gap)까지 중 작은 쪽", () => {
+  it("세로 영상(360×640)은 칸이 너무 길어지지 않게 높이 상한에 걸린다: 트윈 높이의 절반, 마스코트(올라온 머리) 위 사이(gap)까지 중 작은 쪽", () => {
     expect(MINIMAP_MAX_SHARE).toBe(0.5);
     const L = at(360 / 640);
-    const cap = Math.min(L.twin.height * MINIMAP_MAX_SHARE, L.thought.top - L.gap - L.video.top);
+    const cap = Math.min(L.twin.height * MINIMAP_MAX_SHARE, L.mascot.top - LIFT - L.gap - L.video.top);
     expect(near(L.video.height, cap)).toBe(true);
     expect(L.video.height).toBeLessThan(L.video.width / (360 / 640));
     expect(L.video.width).toBe(base.video.width);
   });
 
-  it.each([480 / 222, 16 / 9, 4 / 3, 1, 360 / 640])("비율 %f: 미니맵 높이가 바뀌어도 생각 말풍선·마스코트·말풍선 카드와 겹치지 않고, 지도 카메라 칸은 미니맵 밖이며, 다른 자리는 그대로다", (aspect) => {
+  it.each([480 / 222, 16 / 9, 4 / 3, 1, 360 / 640])("비율 %f: 미니맵 높이가 바뀌어도 마스코트·메시지 상자와 겹치지 않고, 지도 카메라 칸은 미니맵 밖이며, 다른 자리는 그대로다", (aspect) => {
     const L = at(aspect);
-    for (const r of [L.thought, L.mascot, L.bubble, L.focus, ...L.tail]) expect(hit(L.video, r)).toBe(false);
-    expect(bottom(L.video)).toBeLessThanOrEqual(L.thought.top - L.gap + 1e-6);
+    for (const r of [L.mascot, L.bubble, L.focus]) expect(hit(L.video, r)).toBe(false);
+    expect(bottom(L.video)).toBeLessThanOrEqual(L.mascot.top - LIFT - L.gap + 1e-6);
     expect(bottom(L.video)).toBeLessThanOrEqual(height);
     expect(L.blocked[2]).toEqual(L.video);
     const { video: _v, blocked: _b, ...rest } = L;
@@ -231,18 +204,19 @@ describe("크기(스케치 6안)", () => {
     expect([L.video.width, L.video.height]).toEqual([320, 180]);
   });
 
-  it("1920×1080: 트윈 1888×1048, 미니맵 480×270, 마스코트 약 320 높이, 말풍선 카드 높이 74", () => {
+  it("1920×1080: 트윈 1888×1048, 미니맵 480×270, 마스코트 약 320 높이, 메시지 상자 높이 TALK_H(128: 알약 줄 + 문장 세 줄)", () => {
     const L = pageLayout({ width: 1920, height: 1080 }, M);
     expect([L.twin.width, L.twin.height]).toEqual([1888, 1048]);
     expect([L.video.width, L.video.height]).toEqual([480, 270]);
     expect(near(L.mascot.height, 320, 10)).toBe(true);
-    expect(L.bubble.height).toBe(74);
+    expect(L.bubble.height).toBe(TALK_H);
+    expect(TALK_H).toBe(128);
   });
 });
 
 describe("크기를 모를 때", () => {
   it("크기를 모르면(0) 모두 0 크기다", () => {
     const L = pageLayout({ width: 0, height: 0 }, M);
-    for (const r of [L.twin, L.focus, L.video, L.mascot, L.bubble, L.thought, ...L.tail]) expect(Math.max(0, r.width) * Math.max(0, r.height)).toBe(0);
+    for (const r of [L.twin, L.focus, L.video, L.mascot, L.bubble]) expect(Math.max(0, r.width) * Math.max(0, r.height)).toBe(0);
   });
 });

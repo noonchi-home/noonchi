@@ -30,17 +30,22 @@ export class Starter extends Part {
     if (d.seq < this.lastSeq) return this.note(d, EXEC_TEXT.late);
     // 받은 가장 새 판단 번호: 기록만 한 판단(같은 행동 등)보다 먼저 보낸 판단이 늦게 와도 쓰지 않는다
     this.lastSeq = d.seq;
+    core.lastDecision = d.id;
     // 기다리기·기기 단계 전에 보낸 판단이 그 뒤에 오면 낡은 관찰이라 쓰지 않는다(다시 부르는 판단이 새 관찰로 정한다)
     if (d.atMs < core.quietFrom && core.open()?.decision.action !== d.action) return this.note(d, EXEC_TEXT.late);
     if (d.status !== "valid") return this.note(d, EXEC_TEXT.decisionFailed);
     if (!d.action) return this.note(d, EXEC_TEXT.wait);
     const open = core.open();
     if (open?.decision.action === d.action || core.planning?.decision.action === d.action) return this.note(d, EXEC_TEXT.same);
+    // 그 행동 대상을 찾는 중이면 기록만 하고 가장 새 판단으로 바꿔 둔다(찾으면 그 판단으로 다시 본다, find.ts)
+    if (core.finder.same(d)) return this.note(d, EXEC_TEXT.findingSame(core.finder.name()!));
     // 행동 중 기다리기·기기 단계에는 다른 판단으로 바꾸지 않는다(그동안 판단도 멈춘다, waiting)
     if (open && core.waiting()) return this.note(d, EXEC_TEXT.busy);
     if (this.closerNewer(d)) return this.note(d, EXEC_TEXT.closerNewer);
     const pre = this.o.precheck?.(d) ?? { ok: true };
     if (!pre.ok) {
+      // 대상이 안 보이면 마지막으로 본 자리로 찾으러 간다(찾을 자리가 없으면 지금처럼 닫는다)
+      if ((pre.reason === "no_target" || pre.reason === "in_sink") && core.finder.start(d, pre.text)) return;
       core.emit(planIdOf(d.id), "decided");
       core.emit(planIdOf(d.id), "failed", pre.text);
       return;
@@ -140,10 +145,14 @@ export class Starter extends Part {
       asking: null, askAt: now, watch: null, others, alias: new Map([...ids].map((id) => [id, id])), carried: new Set(), placeAt: (id) => (id ? this.o.floor().objects.get(id)?.position ?? null : null), deadline: now, again: false, device: "idle", gen: 0,
       looks: 0, lookAt: Number.NEGATIVE_INFINITY, stepEnd: null, gapAt: job.at, onAt: new Map(), ends: new Map(), offAsked: -1, deferred: false, phoneWait: false, phone: false,
       strays: 0, strayAt: Number.NEGATIVE_INFINITY, strayNear: null, told: null, helped: false,
-      quiet: taskOf(r.plan.task)?.coach ? quietLabels(this.o.lessons?.get(r.plan.task) ?? null) : new Set(), quietOn: false, outcomes: [], hold: null, window: null, heldIds: new Set(), busyAt: null,
+      quiet: taskOf(r.plan.task)?.coach ? quietLabels(this.o.lessons?.get(r.plan.task) ?? null) : new Set(), quietOn: false, outcomes: [], hold: null, window: null, heldIds: new Set(), busyAt: null, usedAt: null, useHeld: false,
+      // 계획 전 찾기에서 찾은 뒤 만든 계획이면 찾기로 붙잡았던 계획처럼 첫 명령을 폰 대화·승인 대기 동안 미룬다
+      find: null, findHeld: core.foundFor === d.id,
     };
-    // 계획 밖 가까이 가서 보기는 이 계획이 명령·보기 지킴을 쓰기 전에 거둔다(같은 컵의 지킴을 나중에 풀지 않게)
+    if (core.foundFor === d.id) core.foundFor = null;
+    // 계획 밖 가까이 가서 보기·계획 전 찾기는 이 계획이 명령·보기 지킴을 쓰기 전에 거둔다(같은 컵의 지킴을 나중에 풀지 않게)
     core.contents.dropIdle();
+    core.finder.drop(EXEC_TEXT.superseded);
     core.run = run;
     this.o.plans.onDecision(r.plan.view);
     core.step(run, "planned");
@@ -159,8 +168,12 @@ export class Starter extends Part {
       this.ungap(r.decision, r.gapAt);
       return steps.finish(r, "failed", EXEC_TEXT.closerNewer, "cancelled");
     }
+    // 사람이 계획 대상을 쓰는 중이면 사람이 사라질 때까지 첫 명령·찾기·가까이 보기를 미룬다(holdMs 넘으면 닫음, src/act/track/use.ts)
+    if (this.core.use.waits(r)) return;
     const c = this.o.check(r.decision, r.plan.view);
     if (!c.ok) {
+      // 찾는 중에 대상이 안 보임이 아닌 까닭으로 막히면 찾기를 거둔다(그 까닭은 아래가 본다)
+      if (r.find && c.reason !== "no_target" && c.reason !== "stale") this.core.finder.release(r, true);
       // 보류 중 검사가 다른 까닭(들고 있음·없음·치움)으로 막으면 그 까닭과 상관없이 먼저 명령·보기 지킴을 거두고 holdMs 한도를 센다.
       // 기다리는 동안은 다시 보기 기한(recheckMs)을 세지 않는다(잠깐 들었다 내려놓아도 이어 간다)
       if (c.reason !== "unknown_contents" && c.reason !== "stale" && this.core.contents.holding(r)) {
@@ -180,14 +193,32 @@ export class Starter extends Part {
         r.since = this.clock.now();
         return;
       }
+      // 계획 대상이 다시 보기 기한(recheckMs)이 지나도 안 보이면(없음·낡음, 내용물 보류가 아님) 닫지 않고 그 대상의 마지막 자리에서 찾는다.
+      // 찾는 동안은 다시 보기 기한을 세지 않는다
+      if ((c.reason === "no_target" || c.reason === "stale") && c.object && !r.hold && (last || r.find)) {
+        const k = this.core.finder.keep(r, c.object);
+        if (k === "hold") {
+          r.findHeld = true;
+          r.since = this.clock.now();
+          return;
+        }
+        if (k === "over") return steps.finish(r, "failed", c.text);
+        // 그 자리에서 다른 id의 같은 종류 물건을 찾았다: 계획의 물건 id가 옛것이라 닫고, 다음 판단이 새 id로 바로 다시 계획한다
+        if (k === "other") {
+          this.ungap(r.decision, r.gapAt);
+          return steps.finish(r, "failed", EXEC_TEXT.foundNew, "cancelled");
+        }
+      }
       if (last) steps.finish(r, "failed", c.text);
       return;
     }
     this.core.contents.release(r);
-    // 보류에서 풀린 계획은 폰 대화·승인 대기가 없을 때만 첫 명령을 보낸다(다른 대화를 덮지 않는다). 미룬 지 holdMs가 지나면 닫는다
-    if (r.heldIds.size > 0 && ((this.o.talking?.() ?? false) || (this.o.approvalsWaiting?.() ?? false))) {
+    this.core.finder.release(r);
+    // 보류·찾기·쓰는 중 기다림에서 풀린 계획은 폰 대화·승인 대기가 없을 때만 첫 명령을 보낸다(다른 대화를 덮지 않는다). 미룬 지 holdMs가 지나면 닫는다
+    if ((r.heldIds.size > 0 || r.findHeld || r.useHeld) && ((this.o.talking?.() ?? false) || (this.o.approvalsWaiting?.() ?? false))) {
       const now = this.clock.now();
       this.core.contents.clearPeek(r);
+      this.core.finder.clearFind(r);
       r.busyAt ??= now;
       if (now - r.busyAt > CONTENTS_HOLD.holdMs) return steps.finish(r, "failed", EXEC_TEXT.phoneBusy);
       r.since = now;

@@ -184,8 +184,7 @@ describe("World State + 낱말 표", () => {
   it("관절로 든 물건은 확인 전이어도 사람 든 물건 id에 들어, 책을 들면 컵을 든 것이 아니다", () => {
     const w = ws();
     const bookBox = det("book", [220, 160, 40, 20]);
-    w.applyDetections(frame(1), [person, bookBox], [standing({ 10: [230, 170, 0.9] })]);
-    const v = w.applyDetections(frame(2), [person, bookBox], [standing({ 10: [230, 170, 0.9] })]) && w.view(2000);
+    const v = w.applyDetections(frame(1), [person, bookBox], [standing({ 10: [230, 170, 0.9] })]) && w.view(1000);
     expect(v.objects).toEqual([]); // 책은 아직 확인 전
     expect(v.person).toMatchObject({ holding: ["book_1"], facts: { holding: expect.objectContaining({ value: "holding_object" }) } });
     expect(holdsTarget(v, "cup")).toBe(false);

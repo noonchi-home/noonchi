@@ -11,7 +11,8 @@
 // C 코치 계획의 다른 행동(실행 추적 strayed, src/act/track/coach.ts Stray): 사람이 지금 단계와 다른 일을 하는 것 같다 → tell_person·wait.
 //   다른 일(A·B·C)이 도는 중이면 받지 않는다. 그 단계 신호로 끊긴다(끊기면 기록 없음). tell_person이면 실행 추적의 tell을 부른다.
 // E 내용물 보류(실행 추적 src/act/track/contents.ts contents): 실행 전 검사가 컵 안을 몰라 붙잡은 계획의 그 컵을 관찰 모드 없이 바로 가까이 본다.
-//   다른 일이 돌면 받지 않는다(실행 추적이 다음 tick에 다시 부른다). objectGapMs 안에 본 컵은 보지 않고 done만. 끝나면 done 한 번(look 기록, 계기 unknown_fact).
+//   다른 일이 돌면 받지 않는다(실행 추적이 다음 tick에 다시 부른다). objectGapMs 안에 본 컵은 보지 않고 done만(찾기의 다시 보기 force는 그래도 본다).
+//   끝나면 done 한 번(look 기록, 계기 unknown_fact). done에는 가까이 보기 결과(끊겼으면 null)를 싣는다(찾기가 「분명히 없음」과 「확인 실패」를 가른다).
 //   위에서 보기(top, 사람이 폰을 컵 위에 든 뒤)는 objectGapMs를 보지 않고 topLook을 부른다. B가 관찰 모드를 부르는 중이면 A처럼 끊고 먼저 돈다.
 //   topLook이 없으면 done만.
 // D 코치 계획 중 들은 말(heard): 명령의 답이 아닌 말 → tell_person(told)·pass_on(passed, 말 요청 에이전트로 넘김)·wait(waited).
@@ -48,7 +49,7 @@ export interface LookerOptions {
   observer: Pick<Observer, "decide" | "status">;
   /** 가까이 보기(src/observe/pipeline.ts closer). 감지를 합치기 전에 signal이 끊기면 넣지 않고 aborted, 합친 뒤에 끊기면 ok(vlm aborted),
    *  VLM 답이 왔을 때 사진이 끊겼으면 ok(vlm no_fresh_frames). */
-  closer: (spot: LookSpot, signal?: AbortSignal) => Promise<CloserResult>;
+  closer: (spot: LookSpot, signal?: AbortSignal, sinceMs?: number) => Promise<CloserResult>;
   /** 판단 전 보기 B가 잘라 보기를 마쳤다(자원 사정으로 못 본 것은 빼고): 그 물건 id. 실행 추적이 계획 밖으로 가까이 가서 볼지 본다(src/act/track/contents.ts). */
   looked?: (objectId: string) => void;
   /** 위에서 보기(src/observe/pipeline.ts topLook): sinceMs 뒤 찍힌 컵 안을 내려다본 사진 쌍. 없으면 위에서 보기 부탁은 done만 한다. */
@@ -127,21 +128,23 @@ export class Looker {
     if (h.top) return this.above(h, h.top.sinceMs);
     if (this.job) return false;
     const now = this.clock.now();
-    if (now - (this.lookedAt.get(h.objectId) ?? Number.NEGATIVE_INFINITY) < this.cfg.objectGapMs) {
+    // 찾기의 다시 보기(force)는 같은 물건 건너뛰기를 보지 않는다
+    if (!h.force && now - (this.lookedAt.get(h.objectId) ?? Number.NEGATIVE_INFINITY) < this.cfg.objectGapMs) {
       h.done();
       return true;
     }
     this.lookedAt.set(h.objectId, now);
     const abort = new AbortController();
     const job: Job = {
-      trigger: "unknown_fact", key: `${h.planId}:contents`, goal: LOOK_TEXT.held(h.spot.label), stuckMs: null, spots: [h.spot], tools: ["look_closer"],
+      trigger: "unknown_fact", key: `${h.planId}:contents`, goal: h.force ? LOOK_TEXT.find(h.spot.label) : LOOK_TEXT.held(h.spot.label), stuckMs: null, spots: [h.spot], tools: ["look_closer"],
       planId: h.planId, abort, signal: AbortSignal.any([abort.signal, h.signal]), phase: "act",
     };
     this.job = job;
-    const p: Promise<void> = this.closerOnly(job, h.spot).catch(() => {}).finally(() => {
+    let result: CloserResult | null = null;
+    const p: Promise<void> = this.closerOnly(job, h.spot, h.since).then((r) => { result = r; }, () => {}).finally(() => {
       if (this.job === job) this.job = null;
       this.running.delete(p);
-      h.done();
+      h.done(result);
     });
     this.running.add(p);
     return true;
@@ -188,13 +191,15 @@ export class Looker {
   }
 
   /** 관찰 모드 없이 가까이 보고 look 기록 하나(감지를 합치기 전에 끊기면 기록 없음). */
-  private async closerOnly(job: Job, spot: LookSpot): Promise<void> {
+  /** 가까이 본 결과(끊겼거나 멈췄으면 null). */
+  private async closerOnly(job: Job, spot: LookSpot, sinceMs?: number): Promise<CloserResult | null> {
     this.o.onLook?.(spot);
-    const r = await this.o.closer(spot, job.signal).catch((): CloserResult => ({ ok: false, why: "error" }));
-    if (this.stopped || (!r.ok && r.why === "aborted")) return;
+    const r = await this.o.closer(spot, job.signal, sinceMs).catch((): CloserResult => ({ ok: false, why: "error" }));
+    if (this.stopped || (!r.ok && r.why === "aborted")) return null;
     this.count.looks++;
     const detail = r.ok ? r.found.map((f) => `${f.id ?? f.cls} ${f.score} ${f.facts.join(" ")}`.trim()).join(", ") : "";
     this.record(job, { tool: "look_closer", reason: job.goal }, spot, LOOK_TEXT.closer(spot.label, closerText(r)), r, detail);
+    return r;
   }
 
   /** 코치 계획의 다른 행동(C). 받았으면 true. 다른 일이 도는 중이면 받지 않는다(실행 추적이 다음 계기에 다시 부른다). */

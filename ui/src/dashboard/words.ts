@@ -3,12 +3,13 @@ import { CLASSES } from "../../../src/world/vocab.ts";
 
 export const WORDS = {
   waiting: "기다리는 중",
-  state: "상태",
-  noonchi: "눈치",
-  coach: "코치",
-  habit: "습관",
-  learnedRule: "배운 규칙",
-  learnedNow: "새로 배움",
+  /** 메시지 상자: 알약 앞말(상태·트리거·액션), 대기 판단의 트리거·액션, 규칙 없이 고른 행동·규칙이 여럿인 행동의 트리거, 오른쪽 아래 이어짐 표시. */
+  pill: { state: "상태", trigger: "트리거", action: "액션" },
+  idle: "대기",
+  unknown: "모름",
+  noRule: "규칙 없음",
+  manyRules: "규칙 여럿",
+  more: "▼",
   newHabit: "새로 배운 습관이에요",
   oldHabit: "전에 배운 습관이에요",
   offline: "연결 끊김 · 다시 연결 중",

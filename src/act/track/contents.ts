@@ -6,7 +6,8 @@
 //   - 폰 눈과 컵 바닥 가운데의 수평 거리가 PEEK.nearM 밖이면 「컵 가까이 가 주세요」(go, near_m), 안이면 「컵 안이 보이게 위에서 비춰 주세요」(do, view above).
 //   - 위에서 비추기를 보낼 때 그 컵에 보기 지킴을 걸고(guardObject, 위에서는 YOLO가 컵을 못 잡아 사라짐으로 셀 수 있음) 그 차례가 끝나면 푼다.
 //   - 관찰 흐름이 위에서 비추기를 보낸 뒤 컵 안을 내려다본 VLM 프레임 쌍을 찾으면(topReady) 명령을 거두고 그 쌍으로 위에서 보기를 부탁한다(lookContents top).
-//   - 막히면(위치를 맞추기 전·판본이 맞는 폰 없음·끄기 안내·승인 대기·폰 대화·승인이나 다시 묻기 질문·컵이 사라졌거나 자리를 모름·손에 있음·사람이 그 종류를 듦)
+//   - 막히면(위치를 맞추기 전·판본이 맞는 폰 없음·끄기 안내·승인 대기·폰 대화·승인이나 다시 묻기 질문·컵이 사라졌거나 자리를 모름·손에 있음·
+//     자동 접근 조건이 아님: src/act/track/use.ts mayApproach, 손대는 행동의 대상이 아니거나 사람이 쓰는 중)
 //     명령을 보내지 않고 떠 있으면 거둔다. 풀리면 새 번호의 단계 id로 다시 보낸다. 막힌 채 holdMs가 지나면 그만둔다.
 //   - 컵이 옮겨지면(트윈 자리가 PEEK.movedM 넘게 바뀜·옮김 표시) 명령을 거두고 처음부터 한다. 명령마다 stepMs 안에 끝나지 않으면 그만둔다.
 // 위에서 본 뒤(after) settleMs에도 모르면 그만둔다. 그 컵·세대는 retryMs 동안 다시 가까이 가지 않는다. 확인됐지만 낡았으면 holdMs 동안 다시 보이기를 기다린다.
@@ -15,27 +16,32 @@
 // (가까이 보기가 늦거나 멈춰도) 신호를 끊고 그만둔다. 보류하는 동안 컵을 다시 보지 못해 낡아도(stale) 보류를 이어 간다(src/act/track/start.ts tryStart).
 // 계획 밖 가까이 가서 보기(idle, tick): 계획이 없어 PAM이 모르는 내용물로 대기만 하지 않게 같은 차례(peek → seeing → after)를 계획 밖 칸
 //   TrackCore.idlePeek(명령 id peek:<번호>)로 돈다. 시작하는 때(모두): 열린·만드는 계획(코치 포함)·끄기 안내·승인 대기·폰 대화가 없고, 위치를 맞췄고,
-//   사람이 보이고, 행동 목록에 내용물 행동(want)이 있고, 그 컵이 보이고 자리를 알고 치운 것·손에 든 것이 아니고 볼 면을 모르며, 불투명이 확인됐거나
+//   사람이 보이고, 행동 목록에 손대는 내용물 행동(touch·want: 채우기·따르기)이 있고, 그 컵이 자동 접근 조건(mayApproach: 사람이 쓰는 중이 아님)을 지나고
+//   보이고 자리를 알고 치운 것·손에 든 것이 아니고 볼 면을 모르며, 불투명이 확인됐거나
 //   B가 그 세대에 잘라 본 지 settleMs가 지났고, 그 컵·세대를 retryMs 안에 보지 않았다. 도는 동안 막는 것(계획·대화·끄기 안내·승인 대기·위치·폰)이 생기면 거둔다
-//   (계획 명령이 그 자리를 덮었으면 지우기를 보내지 않는다). 새 계획을 받으면 그 계획이 명령·보기 지킴을 쓰기 전에 거둔다(src/act/track/start.ts).
+//   (계획 명령이 그 자리를 덮었으면 지우기를 보내지 않는다). 사람이 그 컵을 쓰기 시작해도 tick마다 보고 거둔다. 새 계획을 받으면 그 계획이 명령·보기 지킴을 쓰기 전에 거둔다(src/act/track/start.ts).
 //   가까이 가기 중에는 사람이 보여야 하고, 위에서 비추기·위에서 보기·사진 기다림 동안은 안 보여도 잇는다. 「그만」은 어느 차례에서든 받는다.
 //   끝나면 칸을 비운다(모르면 보기 기록만 남는다).
+import type { CloserResult } from "../../contract/events.js";
 import type { PlannedCommand } from "../../contract/phone.js";
 import type { Facet, WorldObject, WorldView } from "../../contract/world.js";
 import type { LookSpot } from "../../observe/index.js";
 import { OBJECT_NAME, STATE_TEXT } from "../../world/labels.js";
 import { PEEK_TEXT, VISION_TEXT } from "../labels.js";
-import { holdsTarget, opaqueBody, putAway, sureValue, taskOf, type TaskSpec } from "../tasks.js";
+import { opaqueBody, putAway, sureValue, taskOf, type TaskSpec } from "../tasks.js";
 import { Part, type Run } from "./core.js";
+import { EYE_MS, eyeNow, idleLine, phoneBlocked, planLine, refreshLine, sendLine, type Line } from "./phone-line.js";
 
 /** 보기 담당이 받기를 기다리는 시간, 가까이 본 뒤·위에서 본 뒤 사진을 기다리는 시간, 보류 한도(앞 차례·막힘·위에서 본 뒤 다시 보기·첫 명령 미룸, ms). */
 export const CONTENTS_HOLD = { lookWaitMs: 3000, settleMs: 4000, holdMs: 30_000 } as const;
 /** 가까이 가서 보기: 가까이 가기가 끝나는 폰-컵 수평 거리(m, 식탁 가에 선 사람이 팔을 뻗어 폰을 컵 위에 둘 수 있는 거리), 명령마다 한도(ms),
  *  같은 컵·세대를 다시 가까이 가기 전 기다림(ms), 옮겨짐으로 보는 자리 바뀜(m), 맞춘 눈이 이만큼(ms) 안 오면 지금 위치를 모른다(폰 자세는 초당 10번). */
-export const PEEK = { nearM: 0.5, stepMs: 30_000, retryMs: 60_000, movedM: 0.1, eyeMs: 2000 } as const;
-/** 보류의 가까이 보기 부탁(보기 담당 src/act/look.ts contents). done은 끝날 때 한 번(못 봐도). signal은 보류가 풀리면 끊긴다.
- *  top이 있으면 잘라 보기 대신 위에서 보기(그 뒤 찍힌 컵 안을 내려다본 사진 쌍, src/observe/pipeline.ts topLook)다. planId가 빈 글이면 계획 밖이다. */
-export interface ContentsLook { planId: string; objectId: string; spot: LookSpot; signal: AbortSignal; done(): void; top?: { sinceMs: number } }
+export const PEEK = { nearM: 0.5, stepMs: 30_000, retryMs: 60_000, movedM: 0.1, eyeMs: EYE_MS } as const;
+/** 보류의 가까이 보기 부탁(보기 담당 src/act/look.ts contents). done은 끝날 때 한 번(못 봐도, 가까이 보기 결과, 끊겼으면 null). signal은 보류가 풀리면 끊긴다.
+ *  top이 있으면 잘라 보기 대신 위에서 보기(그 뒤 찍힌 컵 안을 내려다본 사진 쌍, src/observe/pipeline.ts topLook)다. planId가 빈 글이면 계획 밖이다.
+ *  force면 찾기의 다시 보기다(src/act/track/find.ts): 같은 물건을 objectGapMs 안에 봤어도 다시 본다. */
+/** since: 찾기의 비추기 시각(그 뒤 사진만 가까이 본다, 1장이면 된다). */
+export interface ContentsLook { planId: string; objectId: string; spot: LookSpot; signal: AbortSignal; done(result?: CloserResult | null): void; top?: { sinceMs: number }; force?: true; since?: number }
 type V3 = [number, number, number];
 /** 가까이 가서 보기 한 차례: 지금 명령(go·above, 거뒀으면 null)과 보낸 때, 시작 때 컵 자리, 위에서 비추기를 보낸 때(위에서 보기 sinceMs), 보기 지킴을 걸었는가. */
 export interface Peek { part: "go" | "above" | null; sent: PlannedCommand | null; since: number; at: V3; aboveAt: number; guarded: boolean }
@@ -49,15 +55,6 @@ export interface Hold {
 }
 /** 계획 밖 가까이 가서 보기 칸: 명령 id(peek:<번호>), 그 보류 상태, 떠 있는 명령, 읽은 때·비전 줄을 보낸 때. */
 export interface IdlePeek { id: string; hold: Hold; sent: PlannedCommand | null; spokeAt: number; visionAt: number }
-
-/** 명령 줄 하나(계획의 지금 명령 줄 또는 계획 밖 칸): 명령 id, 떠 있는 명령, 띄우기·지우기, 읽은 때·비전 줄을 보낸 때. planId는 보기 기록에 남길 계획 id(계획 밖이면 빈 글). */
-interface Line {
-  id: string; planId: string;
-  shown(): PlannedCommand | null;
-  show(c: PlannedCommand): void;
-  clear(): void;
-  spokeAt: number; visionAt: number;
-}
 
 const dist3 = (a: readonly number[], b: readonly number[]) => Math.hypot(a[0]! - b[0]!, a[1]! - b[1]!, a[2]! - b[2]!);
 /** 가까이 가서 보기 명령의 단계 id(그 명령 id 뒤, 컵·세대·차례·번호). */
@@ -79,36 +76,6 @@ export class ContentsHold extends Part {
   /** 판단 전 보기 B가 잘라 본 컵: 그때 세대와 시각. */
   private readonly lookedB = new Map<string, { gen: number; at: number }>();
 
-  /** 계획의 지금 명령 줄. */
-  private planLine(r: Run): Line {
-    const core = this.core;
-    return {
-      id: r.plan.view.id, planId: r.plan.view.id,
-      shown: () => r.sent,
-      show: (c) => { r.sent = c; core.answers.send(c); },
-      clear: () => core.steps.clear(r),
-      get spokeAt() { return r.spokeAt; }, set spokeAt(v) { r.spokeAt = v; },
-      get visionAt() { return r.visionAt; }, set visionAt(v) { r.visionAt = v; },
-    };
-  }
-
-  /** 계획 밖 칸의 명령 줄: 지울 때 계획 명령이 그 자리를 덮었으면 지우기를 보내지 않는다. */
-  private idleLine(q: IdlePeek): Line {
-    const core = this.core;
-    return {
-      id: q.id, planId: "",
-      shown: () => q.sent,
-      show: (c) => { q.sent = c; core.answers.send(c); },
-      clear: () => {
-        if (!q.sent) return;
-        q.sent = null;
-        if (!core.shown()) core.answers.send({ type: "command_clear", id: q.id });
-      },
-      get spokeAt() { return q.spokeAt; }, set spokeAt(v) { q.spokeAt = v; },
-      get visionAt() { return q.visionAt; }, set visionAt(v) { q.visionAt = v; },
-    };
-  }
-
   /** 실행 전 검사가 내용물을 몰라(unknown_contents) 또는 보류 중 컵이 낡아(stale) 막았다: 보류를 한 걸음 진행한다.
    *  아직 붙잡고 있으면 true, 그만두면 false(검사 실패로 닫힌다). */
   keep(r: Run, objectId: string, reason: "unknown_contents" | "stale" = "unknown_contents"): boolean {
@@ -116,7 +83,7 @@ export class ContentsHold extends Part {
     const world = this.o.world();
     const o = world.objects.find((x) => x.id === objectId);
     const gen = o?.contents_gen ?? 0;
-    const line = this.planLine(r);
+    const line = planLine(this.core, r);
     let h = r.hold;
     if (h?.phase === "over" && h.objectId === objectId && h.gen === gen) return false;
     // 확인으로 오른 세대(위에서 본 값·사진이 확인함): 처음부터 세지 않는다. 위에서 보는 중이면 그대로, 낡아 막혔으면 다시 보이기를 기다린다(after)
@@ -185,10 +152,9 @@ export class ContentsHold extends Part {
       h.peek = null;
       h.waitFrom = now;
     }
-    const eye = this.eyeNow(now);
-    const blocked = !o || o.status === "gone" || !o.position || !!o.followed_by || !eye || !core.start.phoneOk() || core.safety.offPending() || !!core.safety.shownOff()
-      || (this.o.approvalsWaiting?.() ?? false) || (this.o.talking?.() ?? false) || asking
-      || o.facts.place?.value === "in_hand" || holdsTarget(world, o.cls, true);
+    const eye = eyeNow(core, now);
+    const blocked = !o || o.status === "gone" || !o.position || !!o.followed_by || phoneBlocked(core, now, asking)
+      || o.facts.place?.value === "in_hand" || !core.use.mayApproach({ cls: o.cls, id: o.id });
     if (blocked) {
       if (h.peek?.sent) {
         this.withdraw(line, h);
@@ -210,16 +176,7 @@ export class ContentsHold extends Part {
       return true;
     }
     // 비전 줄이 바뀌면 visionMs에 한 번까지 보내고, repeatMs마다 소리로 다시 읽는다
-    const vision = this.vision(pk.part!, o, d);
-    if (vision !== pk.sent.vision && now - line.visionAt >= this.cfg.visionMs) {
-      line.visionAt = now;
-      pk.sent = { ...pk.sent, vision, speak: false };
-      line.show(pk.sent);
-    }
-    if (now - line.spokeAt >= this.cfg.repeatMs) {
-      line.spokeAt = now;
-      core.answers.send({ ...pk.sent, speak: true });
-    }
+    pk.sent = refreshLine(core, line, pk.sent, this.vision(pk.part!, o, d), now);
     return true;
   }
 
@@ -240,9 +197,7 @@ export class ContentsHold extends Part {
       }
     }
     h.tried = true;
-    line.spokeAt = now;
-    line.visionAt = now;
-    line.show(sent);
+    sendLine(line, sent, now);
     return true;
   }
 
@@ -301,23 +256,24 @@ export class ContentsHold extends Part {
     h.end.abort();
   }
 
-  /** 지금 맞춘 눈: 다시 맞추는 중(추정 눈)이 아니고 PEEK.eyeMs 안에 받았다. 아니면 null. */
-  private eyeNow(now: number): { position: [number, number]; at: number } | null {
-    const e = this.core.eye;
-    return e && e.at > this.core.eyeLostAt && now - e.at <= PEEK.eyeMs ? e : null;
-  }
-
   /** 보류 중 검사가 다른 까닭(들고 있음·없음·치움)으로 막았다: 명령·보기 지킴을 거두고 멈춘 때부터 holdMs를 센다. 아직이면 true, 지나면 그만두고 false. */
   pause(r: Run): boolean {
     const h = r.hold;
     if (!h || h.phase === "over") return false;
     const now = this.clock.now();
-    const line = this.planLine(r);
+    const line = planLine(this.core, r);
     if (h.pausedAt === null) {
       h.pausedAt = now;
       this.withdraw(line, h);
     }
     return now - h.pausedAt > CONTENTS_HOLD.holdMs ? this.over(line, h) : true;
+  }
+
+  /** 가까이 보는 차례인가(계획의 보류·계획 밖 칸): 잘라 보기, 위에서 비추기, 위에서 보기, 위에서 본 뒤 사진 기다림. 가까이 가기·멈춘 보류(pause)는 아니다. */
+  looking(): boolean {
+    const r = this.core.open();
+    return [r?.hold, this.core.idlePeek?.hold].some((h) => !!h && h.pausedAt === null && (h.phase === "look" || h.phase === "looking" || h.phase === "seeing" || h.phase === "after"
+      || (h.phase === "peek" && h.peek?.part === "above")));
   }
 
   /** 붙잡고 있는가(그만두지 않은 보류). */
@@ -346,16 +302,15 @@ export class ContentsHold extends Part {
     this.lookedB.set(objectId, { gen: o?.contents_gen ?? 0, at: this.clock.now() });
   }
 
-  /** 계획 밖 가까이 가서 보기를 이어 가지 않을 때: 멈춤·열린 계획·만드는 계획·위치 맞추기 전·폰 없음·끄기 안내·승인 대기·폰 대화 중. */
+  /** 계획 밖 가까이 가서 보기를 이어 가지 않을 때: 멈춤·열린 계획·만드는 계획·계획 전 찾기 중·위치 맞추기 전·폰 없음·끄기 안내·승인 대기·폰 대화 중. */
   private idleBlocked(): boolean {
     const core = this.core;
-    return core.stopped || !!core.open() || !!core.planning || !this.eyeNow(this.clock.now()) || !core.start.phoneOk() || core.safety.offPending() || !!core.safety.shownOff()
-      || (this.o.approvalsWaiting?.() ?? false) || (this.o.talking?.() ?? false);
+    return core.stopped || !!core.open() || !!core.planning || !!core.finding || phoneBlocked(core, this.clock.now(), false);
   }
 
-  /** 행동 목록의 내용물 행동(want와 대상 종류가 있는 행동). */
+  /** 행동 목록의 손대는 내용물 행동(touch·want와 대상 종류가 있는 행동: 채우기·따르기. 그대로 두기는 손대지 않아 아니다). */
   private wanting(): TaskSpec[] {
-    return (this.o.tasks?.() ?? []).map((n) => taskOf(n)).filter((t): t is TaskSpec => !!t?.want && !!t.target);
+    return (this.o.tasks?.() ?? []).map((n) => taskOf(n)).filter((t): t is TaskSpec => !!t?.want && !!t.target && !!t.touch);
   }
 
   /** 계획 밖으로 가까이 가서 볼 컵: 내용물 행동의 대상 종류이고, 보이고 자리를 알며, 치운 것·손에 든 것이 아니고, 볼 면을 모르고,
@@ -365,7 +320,7 @@ export class ContentsHold extends Part {
     const placed = this.core.steps.placed();
     const hit = world.objects.filter((o) => {
       const facets = wants.filter((t) => t.target === o.cls).flatMap((t) => Object.keys(t.want!) as Facet[]);
-      if (!facets.length || o.status !== "present" || !o.position || putAway(o, placed) || o.facts.place?.value === "in_hand" || holdsTarget(world, o.cls, true)) return false;
+      if (!facets.length || o.status !== "present" || !o.position || putAway(o, placed) || o.facts.place?.value === "in_hand" || !this.core.use.mayApproach({ cls: o.cls, id: o.id })) return false;
       const gen = o.contents_gen ?? 0;
       if (!facets.some((f) => sureValue(o, f) === null)) return false;
       const recent = this.peeked.get(o.id);
@@ -391,8 +346,9 @@ export class ContentsHold extends Part {
       const lapsed = !o || o.status === "gone" || (o.contents_gen ?? 0) !== h.gen || sureValue(o, "contents") !== null;
       // 사람이 안 보여도 되는 것은 위에서 비추기·위에서 보기·사진 기다림뿐이다(폰이 컵을 내려다봐 사람이 안 찍힌다). 가까이 가기 중에는 사람이 보여야 한다
       const away = !world.person.visible && h.phase === "peek" && h.peek?.part !== "above";
-      if (lapsed || blocked || away) return this.dropIdle();
-      const line = this.idleLine(q);
+      // 사람이 그 컵을 쓰기 시작하면(use.ts) 어느 차례든 거둔다
+      if (lapsed || blocked || away || !core.use.mayApproach({ cls: o!.cls, id: o!.id })) return this.dropIdle();
+      const line = idleLine(this.core, q);
       const going = h.phase === "after" ? now - h.afterAt <= CONTENTS_HOLD.settleMs || this.over(line, h) : this.advance(line, h, o, now, false);
       if (!going) core.idlePeek = null;
       return;
@@ -403,14 +359,14 @@ export class ContentsHold extends Part {
     const hold = newHold(o.id, o.contents_gen ?? 0, now, "peek");
     const fresh: IdlePeek = { id: `peek:${++this.idleSeq}`, hold, sent: null, spokeAt: now, visionAt: now };
     core.idlePeek = fresh;
-    if (!this.advance(this.idleLine(fresh), hold, o, now, false)) core.idlePeek = null;
+    if (!this.advance(idleLine(this.core, fresh), hold, o, now, false)) core.idlePeek = null;
   }
 
   /** 계획 밖 가까이 가서 보기를 거둔다(떠 있으면 지우기, 계획 명령이 덮었으면 보내지 않음, 보기 지킴 풂, 부탁 끊음). */
   dropIdle(): void {
     const q = this.core.idlePeek;
     this.core.idlePeek = null;
-    if (q) this.stopHold(this.idleLine(q), q.hold);
+    if (q) this.stopHold(idleLine(this.core, q), q.hold);
   }
 
   /** 계획 밖 가까이 가서 보기의 「그만」: 거두고 그 컵은 retryMs 동안 다시 보내지 않는다. */
@@ -419,7 +375,7 @@ export class ContentsHold extends Part {
     this.core.idlePeek = null;
     if (q) {
       q.hold.tried = true;
-      this.over(this.idleLine(q), q.hold);
+      this.over(idleLine(this.core, q), q.hold);
     }
   }
 }

@@ -147,6 +147,27 @@ describe("생각 말풍선 메시지 보내기(thoughtFeed)", () => {
     expect(feed.last()).toEqual({ type: "thought", messages: kept });
   });
 
+  it("상태 줄(note): 모델 없이 그 글을 바로 보내고 기록하며 최근 메시지에 넣는다(다음 모델 요청에 이미 올린 메시지로 준다). 바로 앞과 같은 말은 다시 보내지 않고, 닫으면 보내지 않는다", async () => {
+    const w = manualWriter();
+    const sent: ThoughtEvent[] = [];
+    const kept: ThoughtMessage[] = [];
+    let now = 1000;
+    const feed = thoughtFeed({ writer: w, send: (m) => sent.push(m), record: (m) => kept.push(m), clock: () => now });
+    feed.note("컵이 안 보여서 식탁 쪽을 다시 볼게요", "pam-3");
+    expect(sent).toEqual([{ type: "thought", messages: [{ id: "pam-3@1000:note", text: "컵이 안 보여서 식탁 쪽을 다시 볼게요", at_ms: 1000, decision: "pam-3" }] }]);
+    expect(kept.map((m) => m.text)).toEqual(["컵이 안 보여서 식탁 쪽을 다시 볼게요"]);
+    feed.note("컵이 안 보여서 식탁 쪽을 다시 볼게요", "pam-4");
+    expect(sent).toHaveLength(1);
+    now = 2000;
+    feed.decision(decision("pam-5", REAL.action));
+    expect(w.calls[0]!.input.recent).toEqual(["컵이 안 보여서 식탁 쪽을 다시 볼게요"]);
+    feed.note("컵을 찾았어요", "pam-5");
+    expect(sent.at(-1)!.messages.map((m) => m.text)).toEqual(["컵을 찾았어요"]);
+    feed.close();
+    feed.note("컵을 못 찾았어요", "pam-6");
+    expect(sent).toHaveLength(2);
+  });
+
   it("바뀐 것이 없으면(빈 목록) 보내지 않는다. 이미 올린 말은 다시 보내지 않는다. 같은 판단 글(관찰·생각·행동)이 다시 오면 모델을 부르지 않는다", async () => {
     const w = manualWriter();
     const sent: ThoughtEvent[] = [];

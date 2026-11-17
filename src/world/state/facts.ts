@@ -5,8 +5,15 @@
 import type { Facet, WorldChange } from "../../contract/world.js";
 import type { SceneObservation } from "../../contract/observe.js";
 import { CHANGE_TEXT, OBJECT_NAME, fixtureName } from "../labels.js";
-import { FACT_FRESH_MS, NOW_FACETS, STATES, VLM_ONLY, type ClassKey, type StateKey, type StateOf, type Target } from "../vocab.js";
+import { FACT_FRESH_MS, NOW_FACETS, POSE_HOLD, STATES, VLM_ONLY, type ClassKey, type StateKey, type StateOf, type Target } from "../vocab.js";
 import { PERSON, Part, fits, type Facts, type Obj } from "./core.js";
+import { inBasin, surfacePlace } from "../place.js";
+
+/** 트윈 면·싱크볼로 놓인 곳을 덮을 때 빼는 투영 오차 여유(m). */
+const TWIN_MARGIN_M = 0.15;
+
+/** 트윈 면으로 알 수 없어 VLM 말을 그대로 쓰는 놓인 곳. */
+const KEEP_VLM_PLACE: ReadonlySet<string> = new Set(["in_hand", "in_sink", "in_dish_rack", "in_fridge"]);
 
 /** VLM 답을 원본 프레임·대상·면마다 한 번만 세려고 기억하는 수(넣은 순서, 최근 것). */
 const ANSWERS_KEEP = 4000;
@@ -62,6 +69,40 @@ export class SceneFacts extends Part {
     return this.setFact(facts, facet, value, atMs, now);
   }
 
+  /** 장면 VLM이 물건의 놓인 곳을 말했다: 지금 값과 같으면 넣는다. 처음 값(손에 있음은 빼고)도 넣는다. 다른 값(손에 있음 포함)은 다른 원본 프레임의 더 새 촬영이
+   *  같은 값을 이어 말할 때만 넣는다(가로 유리컵 r4: 한 장씩 식탁 위 → 선반 위 → 책상 위로 흔들렸고, 손이 없는 장면 한 장이 손에 있음을 켰다). 잘라 본 답은 이 규칙을 거치지 않는다. */
+  private steady(obj: Obj, value: string, frameId: string, at: number): boolean {
+    const prev = obj.facts.place;
+    // 지금 값보다 옛 촬영(늦게 온 옛 답)은 넣지도 세지도 않는다(Codex e0fb3b8 2)
+    if (prev && at <= prev.at_ms) return false;
+    if (prev?.value === value || (!prev && value !== POSE_HOLD.object)) {
+      obj.placeVote = null;
+      return true;
+    }
+    const v = obj.placeVote;
+    if (v && v.value === value && v.frame !== frameId && at > v.at) {
+      obj.placeVote = null;
+      return true;
+    }
+    if (!v || v.value !== value || (v.frame !== frameId && at > v.at)) obj.placeVote = { value, frame: frameId, at };
+    return false;
+  }
+
+  /** VLM 놓인 곳 답을 트윈 면으로 바꾼다: 손에 있음·싱크대 안·식기 건조대 안·냉장고 안은 VLM 말 그대로, 그 밖(면 위·바닥)은 물건 자리 아래 트윈 면이 있으면 그 면의 놓인 곳. */
+  private twinPlace(obj: Obj, value: string): string | null {
+    if (value === "in_hand" || !obj.surface) return value;
+    const s = this.o.surfaces().find((x) => x.id === obj.surface);
+    if (!s) return value;
+    if (KEEP_VLM_PLACE.has(value) || !obj.position) return value;
+    // 투영 오차 여유(TWIN_MARGIN_M, 그 물건 오차가 더 크면 그 오차)를 빼고도 안쪽일 때만 트윈으로 덮는다(Codex 4e682c8 2·3: 옆 조리대 컵·긴 식탁 바깥 컵)
+    const at: [number, number] = [obj.position[0], obj.position[2]];
+    const margin = Math.max(TWIN_MARGIN_M, obj.errorM ?? 0);
+    // 싱크볼 안은 「싱크대 안」이다: VLM이 다른 면 위(조리대 위 등)로 답해도 싱크볼 안쪽이면 싱크대 안으로 넣는다(가로 머그 r4). 2장 규칙은 그대로다
+    if (obj.part === "basin") return s.basin && inBasin(s.basin, at, margin) ? "in_sink" : value;
+    const inside = s.rect ? inBasin(s.rect, at, margin) : Math.hypot(at[0] - s.center[0], at[1] - s.center[1]) <= s.radius * 0.8 && (obj.errorM ?? 0) <= TWIN_MARGIN_M;
+    return inside ? surfacePlace(s) ?? value : value;
+  }
+
   /** VLM 대상: 사람·물건·가전 설비와 그 사실, 종류. */
   private targetOf(id: string): { kind: Target; facts: Facts; cls: ClassKey } | null {
     if (id === PERSON) return { kind: "person", facts: this.core.person.facts, cls: "person" };
@@ -105,7 +146,13 @@ export class SceneFacts extends Part {
       }
       if (target.kind === "object" && facet === "body") bodies.add(id);
       if (core.people.poseHolds(target.facts[facet], capturedAtMs) || core.merge.carriedPlace(id, facet) || core.people.fallHeld(id, facet)) continue;
-      if (!this.answer(frameId, id, target.facts, facet, value, capturedAtMs, false, NOW_FACETS[target.kind].includes(facet), turn)) continue;
+      // 들려 있지 않은 물건의 놓인 곳은 트윈 면으로 정한다(식탁 위 잔을 VLM이 「선반 위」로 답했다, 가로 유리컵 r4·r6). VLM 말은 손에 있음·싱크대 안처럼 트윈 면으로 모르는 것에만 쓴다
+      const placed = target.kind === "object" && facet === "place" ? this.twinPlace(core.objects.get(id)!, value) : value;
+      if (placed === null) continue;
+      if (target.kind === "object" && facet === "place" && !this.steady(core.objects.get(id)!, placed, frameId, capturedAtMs)) continue;
+      if (!this.answer(frameId, id, target.facts, facet, placed, capturedAtMs, false, NOW_FACETS[target.kind].includes(facet), turn)) continue;
+      // 손에 있음으로 보인 적이 있는 물건(내려놓기 때 옮긴 컵이라는 근거, WorldState.mergeAtPlace)
+      if (target.kind === "object" && facet === "place" && placed === POSE_HOLD.object) core.objects.get(id)!.heldSeen = true;
       if (target.kind === "person") {
         if (core.person.visible) changes.push({ kind: "person_state", at_ms: capturedAtMs, subject: PERSON, meaningful: false, text: CHANGE_TEXT.state(OBJECT_NAME.person!, value) });
       } else if (target.kind === "fixture") {
@@ -113,7 +160,8 @@ export class SceneFacts extends Part {
         changes.push({ kind: "fixture", at_ms: capturedAtMs, subject: id, meaningful: true, text: CHANGE_TEXT.state(fixtureName(fix.cls, fix.id, fix.roomLabel), value) });
       } else {
         const obj = core.objects.get(id)!;
-        if (obj.confirmed && obj.status !== "gone") changes.push({ kind: "state", at_ms: capturedAtMs, subject: id, meaningful: true, text: CHANGE_TEXT.state(core.name(obj), value) });
+        // 변화 줄도 넣은 값으로(Codex 40407aa 3: 사실은 「식탁 위」인데 줄은 「선반 위」)
+        if (obj.confirmed && obj.status !== "gone") changes.push({ kind: "state", at_ms: capturedAtMs, subject: id, meaningful: true, text: CHANGE_TEXT.state(core.name(obj), placed as StateKey) });
       }
     }
     for (const id of bodies) core.contents.settle(core.objects.get(id)!);

@@ -3,10 +3,10 @@
 // 여기에는 계획 모양이 없다: 무엇을 어떤 순서로 할지는 에이전트가 정한다. target은 계획 전 검사(LLM을 부르기 전)에만 쓴다.
 import type { PlanView } from "../contract/plan.js";
 import type { AssistMode } from "../contract/setup.js";
-import type { Facet, ObjClass, WorldObject, WorldView } from "../contract/world.js";
+import type { Facet, ObjClass, WorldFact, WorldObject, WorldView } from "../contract/world.js";
 import type { DeviceKind } from "../devices/kinds.js";
 import type { ActionChoice } from "./prompts.js";
-import { UNKNOWN_STATES, type StateKey } from "../world/vocab.js";
+import { sameDrinkware, UNKNOWN_STATES, type StateKey } from "../world/vocab.js";
 
 type Kind = "go" | "pick" | "place" | "do" | "device" | "ask" | "say" | "wait";
 /** 이 행동의 계획에 쓸 수 있는 단계: 단계 종류(src/agent/planTools.ts AgentStepKind), 꼭 있어야 하는 단계 종류(need), 기기 단계의 가전 종류·도구. 승인한 일의 범위다. */
@@ -28,6 +28,10 @@ export interface TaskSpec {
   coach?: true;
   /** 이 행동 계획의 단계 수 상한(없으면 8, src/agent/planTools.ts PLAN_LIMITS). */
   maxSteps?: number;
+  /** 대상 물건에 손을 대는 행동(치우기·채우기·따르기): 대상이 안 보이면 마지막으로 본 자리로 찾으러 간다(src/act/track/find.ts).
+   *  사람이 그 대상 종류를 쓰는 것을 보면 그 사람이 사라질 때까지 찾기·가까이 가서 보기·첫 명령을 미룬다(usingNow, src/act/track/use.ts).
+   *  대상을 건드리지 않는 행동(그대로 두기)은 찾지 않는다. */
+  touch?: true;
 }
 
 const HAND = ["go", "pick", "place"] as const;
@@ -36,7 +40,7 @@ const FILL: TaskAllow = { kinds: ["go", "pick", "do", "place"], need: ["go", "pi
 
 export const TASKS: Record<string, TaskSpec> = {
   "컵 치우기": {
-    name: "컵 치우기", description: "사람이 자리를 비운 뒤 식탁 등에 남은 컵을 사람이 싱크대에 넣게 한다.", target: "cup",
+    name: "컵 치우기", description: "사람이 자리를 비운 뒤 식탁 등에 남은 컵을 사람이 싱크대에 넣게 한다.", target: "cup", touch: true,
     allow: { kinds: HAND, need: HAND },
   },
   "사용자에게 물어보기": { name: "사용자에게 물어보기", description: "컵 안을 확인할 수 없는 등 애매할 때 폰으로 사용자에게 어떻게 할지 묻는다.", allow: { kinds: ["ask", "say"], need: ["ask"] } },
@@ -54,11 +58,11 @@ export const TASKS: Record<string, TaskSpec> = {
     allow: { kinds: [], need: [] },
   },
   "컵에 물 채워 주기": {
-    name: "컵에 물 채워 주기", description: "사람이 식사 중인데 컵이 비어 있으면 사람이 냉장고에서 물병을 꺼내 와 컵에 물을 따르게 한다.", target: "cup", look: ["contents"], want: { contents: "empty" },
+    name: "컵에 물 채워 주기", description: "사람이 식사 중인데 컵이 비어 있으면 사람이 냉장고에서 물병을 꺼내 와 컵에 물을 따르게 한다.", target: "cup", touch: true, look: ["contents"], want: { contents: "empty" },
     carry: "bottle", carryUnseen: true, allow: FILL,
   },
   "컵에 콜라 따라 주기": {
-    name: "컵에 콜라 따라 주기", description: "사람이 TV를 보는 중인데 컵이 비어 있으면 사람이 냉장고에서 콜라를 꺼내 와 컵에 따르게 한다.", target: "cup", look: ["contents"], want: { contents: "empty" },
+    name: "컵에 콜라 따라 주기", description: "사람이 TV를 보는 중인데 컵이 비어 있으면 사람이 냉장고에서 콜라를 꺼내 와 컵에 따르게 한다.", target: "cup", touch: true, look: ["contents"], want: { contents: "empty" },
     carry: "bottle", carryUnseen: true, allow: FILL,
   },
   // 코치 행동(2026-11-13): 단계 목록은 에이전트 계획 모드가 만든다. 여기에는 설명과 쓸 수 있는 단계만 둔다(device 없음)
@@ -77,6 +81,19 @@ export const TASKS: Record<string, TaskSpec> = {
 
 /** 모든 행동 이름(검사·tasks.json 견주기). PAM에 보내는 목록은 돕는 방식마다 다르다(tasksFor). */
 export const TASK_NAMES: readonly string[] = Object.keys(TASKS);
+
+/** 그 행동이 어느 모드로 하는 행동인가: 코치 행동(TaskSpec.coach)이면 coach, 그 밖의 목록 행동이면 noonchi, 대기(null)·목록 밖이면 null.
+ *  판단 기록 assist와 대시보드 메시지 상자 머리(「코치 모드」·「눈치 모드」)의 기준은 이 하나다. */
+export function modeOf(action: string | null): "noonchi" | "coach" | null {
+  const t = taskOf(action);
+  return t ? (t.coach ? "coach" : "noonchi") : null;
+}
+
+/** 손대는 행동(touch)의 대상 종류. 손대지 않는 행동·목록 밖이면 null. */
+export function touchTarget(action: string | null): ObjClass | null {
+  const t = taskOf(action);
+  return t?.touch ? t.target ?? null : null;
+}
 
 /** 코치 모드에서도 PAM에 보내는 눈치 행동. */
 const COACH_ALSO: readonly string[] = ["사용자에게 물어보기"];
@@ -138,10 +155,81 @@ export function holdsTarget(world: WorldView, cls: string | undefined, known = f
   return (held.length === 0 && !known) || (cls !== undefined && held.includes(cls));
 }
 
+/** 사람이 그 종류 물건을 쓰는 중이라고 보는 사람 활동(마시는 중이면 컵·병). */
+export const USE_ACTS: Readonly<Partial<Record<StateKey, readonly string[]>>> = { drinking: ["cup", "bottle"] };
+/** 사람이 그 종류를 쓰는 까닭: 활동(act, USE_ACTS), 들고 있음(holding), 그 물건·가전이 쓰는 중으로 보임(using). */
+export type UseWhy = { kind: "act"; act: StateKey } | { kind: "holding" } | { kind: "using" };
+
+/** 사람이 쓰는 것: 까닭과 쓰는 물건 id(World State 물건으로 알 때). ids가 null이면 무엇을 쓰는지 몰라 그 종류 전체다. */
+export interface Use { why: UseWhy; ids: string[] | null }
+
+/** 사람이 그 종류(물건·가전)를 지금 쓰는 중인가와 그 까닭·물건. 쓰는 중 지킴의 기준은 여기 하나다(실행 추적 src/act/track/use.ts가 사람이 모두 사라질 때까지 붙잡는다).
+ *  사람이 보일 때만, 그 사람이 나타난 뒤(since_ms) 찍힌 사진의 사실로 본다(사라지기 전 사진의 늦은 답은 다음 등장의 근거가 아니다):
+ *  - 활동: 그 종류를 쓰는 활동(USE_ACTS, 마시는 중). 손에 든 그 종류 물건이 있으면 그 물건, 없으면 종류 전체.
+ *  - 들고 있음: 사람이 그 종류나 무엇인지 모르는 물건을 든다(holdsTarget, 든 id가 World State 물건이면 그 물건, 모르면 종류 전체),
+ *    그 종류 물건을 손에 든 채 봤다(그 물건), 후보 자리(sightings)를 손에 든 채 봤다(종류 전체).
+ *  - 쓰는 중: 그 종류 물건이 쓰는 중(use in_use)으로 보였다(그 물건), 그 종류 가전이 쓰는 중(종류 전체: 전자레인지를 쓰는 사람). */
+export function usingNow(world: WorldView, cls: string): Use | null {
+  const p = world.person;
+  if (!p.visible) return null;
+  const from = p.since_ms ?? Number.NEGATIVE_INFINITY;
+  const fresh = (f: WorldFact | undefined, value: string) => f?.value === value && f.at_ms >= from;
+  const mine = world.objects.filter((o) => o.cls === cls);
+  const inHand = mine.filter((o) => fresh(o.facts.place, "in_hand")).map((o) => o.id);
+  const known = (ids: string[]) => {
+    const ok = [...new Set(ids)].filter((id) => mine.some((o) => o.id === id));
+    return ok.length ? ok : null;
+  };
+  const act = p.facts.activity;
+  if (act && act.at_ms >= from && USE_ACTS[act.value as StateKey]?.includes(cls)) return { why: { kind: "act", act: act.value as StateKey }, ids: known(inHand) };
+  if (fresh(p.facts.holding, "holding_object") && holdsTarget(world, cls)) {
+    const held = p.holding.filter((id) => id.replace(/_\d+$/, "") === cls);
+    // 든 것 가운데 World State 물건이 아닌 id(확인 전 물건)나 무엇인지 모르는 듦이 있으면 어느 물건인지 몰라 종류 전체다
+    const unknown = held.length === 0 || held.some((id) => !mine.some((o) => o.id === id));
+    return { why: { kind: "holding" }, ids: unknown ? null : known([...held, ...inHand]) };
+  }
+  if (inHand.length) return { why: { kind: "holding" }, ids: inHand };
+  if ((world.sightings ?? []).some((s) => s.cls === cls && s.in_hand && s.at_ms >= from)) return { why: { kind: "holding" }, ids: null };
+  const used = mine.filter((o) => fresh(o.facts.use, "in_use")).map((o) => o.id);
+  if (used.length) return { why: { kind: "using" }, ids: used };
+  if (world.fixtures.some((f) => f.cls === cls && fresh(f.facts.use, "in_use"))) return { why: { kind: "using" }, ids: null };
+  return null;
+}
+
 /** 대상 종류 중 사라지지 않았고 이미 치우지 않은(싱크대 안·실행 추적이 놓은 것이 아닌) 물건 가운데 가장 최근에 본 것. 대상이 없는 행동이거나 못 찾으면 null. */
 export function targetOf(spec: Pick<TaskSpec, "target">, world: WorldView, placed?: Placed): WorldObject | null {
   if (!spec.target) return null;
   return world.objects.filter((o) => o.cls === spec.target && o.status !== "gone" && !putAway(o, placed)).sort((a, b) => b.last_seen_ms - a.last_seen_ms)[0] ?? null;
+}
+
+/** 찾을 자리: 안 보이는 대상을 마지막으로 본 자리. objectId는 확인 물건 id, 후보 자리(World State sightings)면 null. */
+export interface LostSpot { objectId: string | null; cls: ObjClass; position: [number, number, number]; surface: string | null; surface_label: string | null; at_ms: number }
+
+/** 대상이 안 보일 때 찾으러 갈 자리(가장 새 것 하나). 그 종류 있는 물건이 freshMs 안에(seenAfter를 주면 그 뒤에도) 보였으면 null
+ *  (막은 검사의 신선도 기준을 그대로 받는다: 실행 전 검사는 판단 뒤에 다시 본 것만 신선하다).
+ *  objectId를 주면(실행 전) 그 물건의 마지막 자리만, 아니면(계획 전) 그 종류 확인 물건과 후보 자리(sightings) 가운데 고른다.
+ *  치운 것(putAway, 놓기를 끝낸 물건의 옛 id away 포함)·들고 감 보호(carried)였던 물건·자리를 모르는 물건·쉬는 자리(resting: 찾아보고 못 찾은 자리)는 뺀다. */
+export function lostTarget(i: {
+  world: WorldView; cls: ObjClass; now: number; freshMs: number; placed?: Placed; objectId?: string;
+  /** 이 시각 뒤에 본 것만 신선하다(실행 전 검사의 판단 시각). 없으면 freshMs만 본다. */
+  seenAfter?: number;
+  /** 놓기를 끝낸 물건의 옛 id(실행 추적 Steps.awayIds): 그 마지막 자리는 치우기 전 자리라 찾지 않는다. */
+  away?: ReadonlySet<string>;
+  resting?: (spot: { cls: ObjClass; position: [number, number, number] }) => boolean;
+}): LostSpot | null {
+  const mine = i.world.objects.filter((o) => o.cls === i.cls && (i.objectId === undefined || o.id === i.objectId));
+  const fresh = (o: WorldObject) => o.status === "present" && o.last_seen_ms > (i.seenAfter ?? Number.NEGATIVE_INFINITY) && i.now - o.last_seen_ms <= i.freshMs;
+  if (mine.some((o) => fresh(o) && !putAway(o, i.placed))) return null;
+  const spots: LostSpot[] = mine.filter((o) => o.position && !putAway(o, i.placed) && o.carried !== true && !i.away?.has(o.id))
+    .map((o) => ({
+      objectId: o.id, cls: i.cls, position: [...o.position!] as [number, number, number], surface: o.surface, surface_label: o.surface_label, at_ms: o.last_seen_ms,
+    }));
+  if (i.objectId === undefined) {
+    for (const s of i.world.sightings ?? []) {
+      if (s.cls === i.cls) spots.push({ objectId: null, cls: i.cls, position: [...s.position], surface: s.surface, surface_label: s.surface_label, at_ms: s.at_ms });
+    }
+  }
+  return spots.filter((s) => !i.resting?.(s)).sort((a, b) => b.at_ms - a.at_ms)[0] ?? null;
 }
 
 /** 놓기를 끝낸 물건이 「치운 물건」(placed)인가: 그 행동의 대상 종류이고 집어 옮긴 것이 바로 그 대상일 때만(컵 치우기의 컵).
@@ -163,7 +251,9 @@ export function planObjectsOf(plan: PlanView, world: WorldView, cls: ObjClass): 
     const id = s.target?.objectId;
     if (!id || out.includes(id)) continue;
     const o = world.objects.find((x) => x.id === id);
-    if (o ? o.cls === cls : shaped.test(id)) out.push(id);
+    // 계획이 정한 역할은 id 꼴(cls_n)로 지킨다: 같은 물건의 종류는 마시는 그릇 무리 안에서 VLM 답으로 바뀌어도 id는 그대로다(cup_1이 병이 돼도 컵 대상,
+    // 따르기 원료 bottle_1이 컵이 돼도 컵 대상이 아니다)
+    if (shaped.test(id) && (!o || sameDrinkware(o.cls, cls))) out.push(id);
   }
   return out;
 }

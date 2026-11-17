@@ -15,7 +15,9 @@ const det = (label: string, box: Detection["box"], score = 0.9): Detection => ({
 describe("YOLO 상자 자리", () => {
   it("판이 영상과 같은 비율이면 상자를 배율만큼 키워 그 자리에 둔다", () => {
     const [b] = placeDetections([det("컵", [100, 200, 300, 400])], IMG, { width: 640, height: 360 });
-    expect(b).toMatchObject({ left: 50, top: 100, width: 100, height: 100, text: "컵 0.90" });
+    expect(b).toMatchObject({ left: 50, top: 100, width: 100, height: 100, text: "컵" });
+    // 확신 숫자는 개발용 보기(?scores=1)에서만
+    expect(placeDetections([det("컵", [100, 200, 300, 400])], IMG, { width: 640, height: 360 }, 0, true)[0]).toMatchObject({ text: "컵 0.90" });
   });
 
   it("판 비율이 영상과 다르면 영상을 다 보이게(contain) 줄여 가운데에 두고, 상자도 같은 만큼 옮긴다: 위아래·양옆을 자르지 않는다", () => {
@@ -127,14 +129,14 @@ describe("화면 자리 위 YOLO 상자", () => {
 
   describe.each([[1920, 1080], [1440, 900], [1522, 722]])("%i×%i", (width, height) => {
     const L = pageLayout({ width, height }, MASCOT);
-    it.each(EYE_FRAMES.map((f) => [f.id, f] as const))("%s: 상자와 이름표는 미니맵 영상 안에 있고 마스코트·말풍선 카드·생각 말풍선과 겹치지 않는다", (_, f) => {
+    it.each(EYE_FRAMES.map((f) => [f.id, f] as const))("%s: 상자와 이름표는 미니맵 영상 안에 있고 마스코트·메시지 상자와 겹치지 않는다", (_, f) => {
       const placed = placeDetections(f.boxes, f, L.video, 0);
       expect(placed).toHaveLength(f.boxes.length);
       for (const d of placed) {
         const box: Rect = { left: L.video.left + d.left, top: L.video.top + d.top, width: d.width, height: d.height };
         const tag: Rect = { left: L.video.left + d.tag.left, top: L.video.top + d.tag.top, width: tagWidth(d.label), height: TAG_H };
         for (const r of [box, tag]) {
-          for (const [name, k] of [["마스코트", L.mascot], ["말풍선 카드", L.bubble], ["생각 말풍선", L.thought]] as const) expect(hit(r, k), `${d.label} ${name}`).toBe(false);
+          for (const [name, k] of [["마스코트", L.mascot], ["메시지 상자", L.bubble]] as const) expect(hit(r, k), `${d.label} ${name}`).toBe(false);
           expect(r.left).toBeGreaterThanOrEqual(L.video.left);
           expect(r.top).toBeGreaterThanOrEqual(L.video.top);
           expect(right(r)).toBeLessThanOrEqual(right(L.video) + 1e-6);

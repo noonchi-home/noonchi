@@ -1,6 +1,6 @@
 // 검사(결정론) 둘. 통과하지 못하면 실행하지 않고 이유(CHECK_TEXT)를 낸다.
 // 계획 전 검사(checkDecision, 에이전트를 부르기 전): 행동 목록에 있는 행동이다, 대상 종류가 있는 행동이면 치우지 않은 대상이 보인다(남은 같은 종류가 모두 싱크대 안이면 그 이유).
-// 실행 전 검사(checkPlan, 에이전트가 만든 계획): 아는 행동이고 계획이 있다, 대상 물건이 있고 이미 싱크대 안이 아니다, 판단 뒤에 찍힌 프레임으로 다시 봤고 STALE_MS 안이다,
+// 실행 전 검사(checkPlan, 에이전트가 만든 계획): 아는 행동이고 계획이 있다, 대상 물건이 있고 그 대상이 이미 싱크대 안이 아니다, 판단 뒤에 찍힌 프레임으로 다시 봤고 STALE_MS 안이다,
 // 사람이 그 물건을 들고 있거나 쓰는 중이 아니다, 이동 단계가 있으면 경로가 있다, 시험 모드에서는 짝지은 실제 가전 단계를 막는다.
 // 대상 물건은 계획 단계 대상 가운데 그 행동의 대상 종류인 첫 물건이다(채워 주기는 첫 act 단계가 병 집기이고 컵은 따르기 단계의 대상이다).
 // 집는 것이 대상과 다른 행동(carry, 채워 주기)은 사람이 그 자리에서 다른 것을 들고 있는 일이라, 든 것을 모르는 것만으로는 막지 않는다(그 컵을 들었다고 보일 때만).
@@ -10,6 +10,7 @@
 // 낡음·들고 있음 뒤에 본다(보류 중 낡음은 실행 추적이 보류를 이어 간다, src/act/track/start.ts).
 import type { PlanView } from "../contract/plan.js";
 import type { ControlMode } from "../contract/setup.js";
+import { sameDrinkware } from "../world/vocab.js";
 import type { WorldObject, WorldView } from "../contract/world.js";
 import { CHECK_TEXT } from "./labels.js";
 import type { DecisionRecord } from "../contract/events.js";
@@ -17,7 +18,8 @@ import { holdsTarget, planObjectsOf, putAway, taskOf, wantOf, type Placed } from
 
 export type CheckFail = keyof typeof CHECK_TEXT;
 /** carried: in_hand가 대상 물건의 들고 감 보호(World State 물건 carried)에서만 왔다. 실행 추적은 이때 보호가 풀릴 때까지 다시 보기 기한을 세지 않는다. */
-/** object: unknown_contents면 안을 모르는 대상 물건 id(실행 추적 보류, src/act/track/contents.ts). */
+/** object: unknown_contents면 안을 모르는 대상 물건 id(실행 추적 보류, src/act/track/contents.ts), no_target·stale이면 막은 대상 물건 id(실행 추적이 그 자리로 찾으러 간다,
+ *  src/act/track/find.ts). 계획에 그 종류 대상이 없으면 싣지 않는다. */
 export type CheckResult = { ok: true } | { ok: false; reason: CheckFail; text: string; carried?: true; object?: string };
 export interface CheckInput {
   decision: DecisionRecord;
@@ -36,6 +38,8 @@ export interface CheckInput {
 }
 
 const fail = (reason: CheckFail): CheckResult => ({ ok: false, reason, text: CHECK_TEXT[reason] });
+/** 막은 대상 물건 id를 실은 실패. */
+const failOn = (reason: CheckFail, object: string): CheckResult => ({ ok: false, reason, text: CHECK_TEXT[reason], object });
 
 /** 계획 전 검사: 에이전트를 부를 만한 판단인가(LLM을 부르지 않고 본다). */
 /** 계획 전 검사의 대상은 이만큼(ms) 안에 본 것이어야 한다(감지가 끊겨 남은 「보임」으로 모델을 부르지 않는다). */
@@ -71,11 +75,13 @@ export function checkPlan(i: CheckInput): CheckResult {
     const all: WorldObject[] = [];
     for (const id of ids.length ? ids : [null]) {
       const o = i.world.objects.find((x) => x.id === id);
-      if (!o || o.status === "gone" || o.cls !== target) {
-        return fail(i.world.objects.some((x) => x.cls === target && x.status !== "gone" && putAway(x, i.placed)) ? "in_sink" : "no_target");
+      if (!o || o.status === "gone" || !sameDrinkware(o.cls, target)) {
+        // 치움은 막은 그 대상 자신만 본다(다른 컵이 싱크대에 있어도 이 대상은 없음이다)
+        if (id !== null && (i.placed?.has(id) || (o && o.cls === target && putAway(o, i.placed)))) return fail("in_sink");
+        return id === null ? fail("no_target") : failOn("no_target", id);
       }
       if (putAway(o, i.placed)) return fail("in_sink");
-      if (o.last_seen_ms <= i.decision.atMs || i.nowMs - o.last_seen_ms > i.staleMs) return fail("stale");
+      if (o.last_seen_ms <= i.decision.atMs || i.nowMs - o.last_seen_ms > i.staleMs) return failOn("stale", o.id);
       const inUse = o.facts.use?.value === "in_use";
       const holds = holdsTarget(i.world, target, spec.carry !== undefined);
       if (o.facts.place?.value === "in_hand" || inUse || holds) {

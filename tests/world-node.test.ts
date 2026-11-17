@@ -23,6 +23,11 @@ const person = det("person", [150, 20, 120, 330], 0.9);
 const pass = (frameId: string, atMs: number, dets: Detection[]): CloserPass => ({ frameId, capturedAtMs: atMs, view: LOOK_VIEW, ...LOOK_SIZE, dets: dets.map((d) => ({ ...d, edge: false })) });
 const meta = (id: string, atMs: number): FrameMeta => { const { jpeg: _jpeg, sha256: _sha, ...m } = engineFrame(id, atMs); return m; };
 const said = (...obs: [string, string][]): SceneObservation => ({ scene: "k", observations: obs.map(([object_id, state]) => ({ object_id, state: state as never })), summary: "s" });
+/** 장면 VLM 답에 YOLO가 못 본 유리잔 하나(VLM 물건 목록). */
+const withVlmObject = (s: SceneObservation): SceneObservation => ({ ...s, objects: [{ id: "v1", cls: "glass", box: { x: 0.3, y: 0.55, w: 0.06, h: 0.08 }, det: null }] });
+/** VLM 답을 받은 사진의 카메라·크기(폰 눈 자리 없음), 가까이 본 장의 카메라·크기·자른 자리. */
+const LOOK = { view: LOOK_VIEW, ...LOOK_SIZE, eye: null };
+const AT = { view: LOOK_VIEW, ...LOOK_SIZE, crop: [120, 60, 240, 180] as [number, number, number, number] };
 
 type Got = { topic: TopicName; body: any };
 const of = (got: Got[], topic: TopicName) => got.filter((g) => g.topic === topic).map((g) => g.body);
@@ -85,26 +90,26 @@ async function rig(world = ws()) {
 }
 
 describe("집 상태 노드", () => {
-  it("YOLO 갈래·VLM 답 토픽으로 넣은 것과 WorldState에 바로 넣은 것의 변화 줄과 보기가 같다(감지 → VLM 답, 가까이 보기 합치기 → 그 VLM 답, 위에서 본 값, 분석 없음)", async () => {
+  it("YOLO 갈래·VLM 답 토픽으로 넣은 것과 WorldState에 바로 넣은 것의 변화 줄과 보기가 같다(감지 → VLM 답·물건 목록·사진 카메라, 가까이 보기 합치기(VLM 답까지 미룸) → 그 VLM 답·자른 자리, 위에서 본 값, 분석 없음)", async () => {
     const direct = ws();
     const d: WorldChange[] = [];
     for (const [id, at] of [["e1", 1000], ["e2", 2000], ["e3", 3000]] as const) {
       const r1 = direct.applyDetections(meta(id, at), [cupIn, person]);
-      d.push(...r1.changes, ...direct.applyScene(id, at, said(["d1", "in_sink"]), r1.ids));
+      d.push(...r1.changes, ...direct.applyScene(id, at, withVlmObject(said(["d1", "in_sink"])), r1.ids, LOOK));
     }
-    const rc = direct.applyCloser([pass("e4", 4000, [cupFar]), pass("e5", 5000, [person, cupFar])], "e5");
-    d.push(...rc.changes, ...direct.applyCloserScene("e5", 5000, said(["d2", "on_floor"]), rc.ids, rc.pending));
+    const rc = direct.applyCloser([pass("e4", 4000, [cupFar]), pass("e5", 5000, [person, cupFar])], "e5", { defer: true });
+    d.push(...rc.changes, ...direct.applyCloserScene("e5", 5000, said(["d2", "on_floor"]), rc.ids, rc.pending, AT));
     d.push(...direct.applyTop("cup_1", "e6", 6000, "empty"));
     d.push(...direct.applyMissing("e7", 7000, { vlm: "timeout" }), ...direct.applyMissing("e8", 8000, { yolo: "error" }));
 
     const r = await rig();
     for (const [id, at] of [["e1", 1000], ["e2", 2000], ["e3", 3000]] as const) {
       await yolo(r, { kind: "frame", frame: meta(id, at), dets: [cupIn, person] });
-      await r.perception.publish("/perception/scene", { kind: "scene", frame_id: id, observed_ms: at, scene: said(["d1", "in_sink"]) });
+      await r.perception.publish("/perception/scene", { kind: "scene", frame_id: id, observed_ms: at, scene: withVlmObject(said(["d1", "in_sink"])), look: LOOK });
       await r.flush();
     }
     await yolo(r, { kind: "closer_merge", look: "e5.c1", passes: [pass("e4", 4000, [cupFar]), pass("e5", 5000, [person, cupFar])], from: "e5" });
-    await r.perception.publish("/perception/scene", { kind: "closer_scene", look: "e5.c1", frame_id: "e5", observed_ms: 5000, scene: said(["d2", "on_floor"]) });
+    await r.perception.publish("/perception/scene", { kind: "closer_scene", look: "e5.c1", frame_id: "e5", observed_ms: 5000, scene: said(["d2", "on_floor"]), at: AT });
     await r.perception.publish("/perception/scene", { kind: "top", object_id: "cup_1", frame_id: "e6", observed_ms: 6000, value: "empty" });
     await r.perception.publish("/perception/scene", { kind: "missing", frame_id: "e7", observed_ms: 7000, missing: "timeout" });
     await r.flush();
@@ -115,12 +120,50 @@ describe("집 상태 노드", () => {
     expect(lastView(r.got)).toEqual(JSON.parse(JSON.stringify(direct.view(NOW))));   // 통로는 JSON으로 오간다(-0은 0)
   });
 
+  it("가까이 보기 합치기는 VLM 답까지 미루고(defer), VLM 답 없이 끝나면(closer_end) VLM에 보낸 장의 표로 YOLO만으로 넣은 변화를 낸다", async () => {
+    const s = spy(ws());
+    const r = await rig(s.proxy);
+    const passes = [pass("e1", 1000, [cupFar]), pass("e2", 2000, [cupFar]), pass("e3", 3000, [person, cupFar])];
+    await yolo(r, { kind: "closer_merge", look: "e3.c1", passes, from: "e3" });
+    await r.flush();
+    expect(s.calls.find((c) => c.name === "applyCloser")!.args.slice(1)).toEqual(["e3", { defer: true }]);
+    expect(changesOf(r.got).filter((c) => c.kind === "appeared")).toEqual([]);
+    await r.perception.publish("/perception/scene", { kind: "closer_end", look: "e3.c1" });
+    await r.flush();
+    const end = s.calls.find((c) => c.name === "endCloser")!;
+    expect(end.args.slice(1)).toEqual([new Map([["d2", "cup_1"]]), "e3"]);
+    expect(changesOf(r.got).filter((c) => c.kind === "appeared").map((c) => c.subject)).toEqual(["cup_1"]);
+    expect(of(r.got, "/world/closer").at(-1)).toEqual({ look: "e3.c1", ids: { d2: "cup_1" } });
+  });
+
+  it("VLM 갈래의 사진 카메라(look)·가까이 본 장의 자리(at)를 World State에 그대로 넘긴다", async () => {
+    const s = spy(ws());
+    const r = await rig(s.proxy);
+    await yolo(r, { kind: "frame", frame: meta("e1", 1000), dets: [cupIn] });
+    await r.perception.publish("/perception/scene", { kind: "scene", frame_id: "e1", observed_ms: 1000, scene: withVlmObject(said(["d1", "in_sink"])), look: LOOK });
+    await yolo(r, { kind: "closer_merge", look: "e2.c1", passes: [pass("e2", 2000, [cupIn])], from: "e2" });
+    await r.perception.publish("/perception/scene", { kind: "closer_scene", look: "e2.c1", frame_id: "e2", observed_ms: 2000, scene: said(["d1", "in_sink"]), at: AT });
+    await r.flush();
+    expect(s.calls.find((c) => c.name === "applyScene")!.args[4]).toEqual(LOOK);
+    expect(s.calls.find((c) => c.name === "applyScene")!.args[2]).toEqual(withVlmObject(said(["d1", "in_sink"])));
+    expect(s.calls.find((c) => c.name === "applyCloserScene")!.args[5]).toEqual(AT);
+  });
+
+  it("/world/input focus(지금 단계 대상)는 world.focus를 그 값으로 부르고, id null이면 푼다", async () => {
+    const s = spy(ws());
+    const r = await rig(s.proxy);
+    await r.act.publish("/world/input", { kind: "focus", id: "cup_1", focus: { step: "place", spot: [1, 2] }, at_ms: 4000 });
+    await r.act.publish("/world/input", { kind: "focus", id: null, focus: null, at_ms: 4100 });
+    await r.flush();
+    expect(s.calls.filter((c) => c.name === "focus").map((c) => c.args)).toEqual([["cup_1", { step: "place", spot: [1, 2] }], [null, null]]);
+  });
+
   it("가까이 보기: VLM 답을 넣은 뒤 /world/closer로 VLM 답이 만든 물건 id까지 담은 최종 표를 낸다. 답 없이 끝나면(closer_end) 후보를 버리고 그때의 표를 낸다", async () => {
     const r = await rig();
     await yolo(r, { kind: "closer_merge", look: "e2.c1", passes: [pass("e1", 1000, [cupIn]), pass("e2", 2000, [person, cupIn])], from: "e2" });
     await r.flush();
     expect(of(r.got, "/world/closer")).toEqual([]);
-    await r.perception.publish("/perception/scene", { kind: "closer_scene", look: "e2.c1", frame_id: "e2", observed_ms: 2000, scene: said(["d2", "in_sink"]) });
+    await r.perception.publish("/perception/scene", { kind: "closer_scene", look: "e2.c1", frame_id: "e2", observed_ms: 2000, scene: said(["d2", "in_sink"]), at: AT });
     await r.flush();
     expect(of(r.got, "/world/closer")).toEqual([{ look: "e2.c1", ids: { d2: "cup_1" } }]);
     await yolo(r, { kind: "closer_merge", look: "e4.c2", passes: [pass("e3", 3000, [cupFar]), pass("e4", 4000, [cupFar])], from: "e4" });
@@ -194,20 +237,22 @@ describe("집 상태 노드", () => {
       d.push(...r1.changes, ...direct.applyScene(id, at, said(["d1", state]), r1.ids));
       await yolo(r, { kind: "frame", frame: meta(id, at), dets: [cupIn, person] });
       await r.flush();
-      if (id === "e3") r.bus.failing.add("/world/changes");
+      if (id === "e1") r.bus.failing.add("/world/changes");
       await r.perception.publish("/perception/scene", { kind: "scene", frame_id: id, observed_ms: at, scene: said(["d1", state]) });
       await r.flush();
     }
     await r.clock.advanceTo(NOW + RETRY_MS, r.flush);
+    expect(r.bus.failing.size).toBe(0);
     expect(s.calls.filter((c) => c.name === "applyScene")).toHaveLength(3);
     expect(changesOf(r.got)).toEqual(d);
     // 가까이 보기 답이 실패해도 VLM 합치기는 한 번, 답은 같은 최종 표로 한 번
     await yolo(r, { kind: "closer_merge", look: "e5.c1", passes: [pass("e4", 4000, [cupFar]), pass("e5", 5000, [person, cupFar])], from: "e5" });
     await r.flush();
     r.bus.failing.add("/world/closer");
-    await r.perception.publish("/perception/scene", { kind: "closer_scene", look: "e5.c1", frame_id: "e5", observed_ms: 5000, scene: said(["d2", "on_floor"]) });
+    await r.perception.publish("/perception/scene", { kind: "closer_scene", look: "e5.c1", frame_id: "e5", observed_ms: 5000, scene: said(["d2", "on_floor"]), at: AT });
     await r.flush();
     await r.clock.advanceTo(NOW + 2 * RETRY_MS, r.flush);
+    expect(r.bus.failing.size).toBe(0);
     expect(s.calls.filter((c) => c.name === "applyCloserScene")).toHaveLength(1);
     expect(of(r.got, "/world/closer")).toEqual([{ look: "e5.c1", ids: { d2: "cup_2" } }]);
   });
@@ -252,6 +297,8 @@ describe("집 상태 노드", () => {
     expect(s.calls.filter((c) => c.name === "endCloser")).toEqual([]);
     await r.clock.advanceTo(NOW + 31_000, r.flush);
     expect(s.calls.filter((c) => c.name === "endCloser")).toHaveLength(1);
+    // 미룬 합치기도 YOLO만으로 넣는다(VLM에 보낸 장 e2의 표)
+    expect(s.calls.find((c) => c.name === "endCloser")!.args[2]).toBe("e2");
   });
 
 });

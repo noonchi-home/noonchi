@@ -37,8 +37,10 @@ describe("격리 재생", () => {
       const r1 = direct.applyDetections(meta(id, at), [cupIn, person]);
       want.push(...r1.changes, ...direct.applyScene(id, at, said("d1", "in_sink"), r1.ids));
     }
-    const rc = direct.applyCloser(passes, "e5");
-    want.push(...rc.changes, ...direct.applyCloserScene("e5", 5000, said("d2", "on_floor"), rc.ids, rc.pending));
+    // 관찰 흐름이 내는 모양: 가까이 보기 합치기는 VLM 답까지 미루고, VLM 답은 그 장의 자리(at)를 싣는다
+    const at = { view: LOOK_VIEW, ...LOOK_SIZE, crop: [120, 60, 240, 180] as [number, number, number, number] };
+    const rc = direct.applyCloser(passes, "e5", { defer: true });
+    want.push(...rc.changes, ...direct.applyCloserScene("e5", 5000, said("d2", "on_floor"), rc.ids, rc.pending, at));
     // 녹화: 도착 차례대로
     const bag = Bag.open(":memory:");
     let seq = 0;
@@ -48,7 +50,7 @@ describe("격리 재생", () => {
       put({ kind: "scene", frame_id: id, observed_ms: at, scene: said("d1", "in_sink") }, at + 900);
     }
     put({ kind: "closer_merge", look: "e5.c1", passes, from: "e5" }, 5100);
-    put({ kind: "closer_scene", look: "e5.c1", frame_id: "e5", observed_ms: 5000, scene: said("d2", "on_floor") }, 6900);
+    put({ kind: "closer_scene", look: "e5.c1", frame_id: "e5", observed_ms: 5000, scene: said("d2", "on_floor"), at }, 6900);
     expect(JSON.stringify(bag.range(0, 10_000))).not.toMatch(/jpeg|sha256/);
     const got: WorldChange[] = [];
     const closer: unknown[] = [];

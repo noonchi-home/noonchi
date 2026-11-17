@@ -38,7 +38,12 @@ const by = (k: string) => (b: Record<string, unknown>) => String(b[k] ?? "_");
 const at = z.number().finite();
 const id = z.string().min(1);
 const rev = z.number().int().nonnegative();
-const scene = z.strictObject({ scene: z.string(), observations: z.array(z.strictObject({ object_id: z.string(), state: z.enum(SCENE_STATES) })), summary: z.string() });
+const unitBox = z.strictObject({ x: z.number().finite(), y: z.number().finite(), w: z.number().finite(), h: z.number().finite() });
+/** VLM 물건 목록 하나(VLM이 답한 번호·종류·사진 비율 상자, 같은 물건 감지 번호). */
+const sceneObject = z.strictObject({ id: z.string(), cls: z.string(), box: unitBox, det: z.string().nullable() });
+const scene = z.strictObject({
+  scene: z.string(), observations: z.array(z.strictObject({ object_id: z.string(), state: z.enum(SCENE_STATES) })), objects: z.array(sceneObject).optional(), summary: z.string(),
+});
 const VLM_MISSING = ["cap", "timeout", "format", "error", "stale"] as const satisfies readonly VlmMissing[];
 const YOLO_MISSING = ["cap", "error", "stale"] as const satisfies readonly YoloMissing[];
 const label = z.custom<DetLabel>((v) => typeof v === "string" && Object.hasOwn(CLASSES, v) && (CLASSES as Record<string, { role: string }>)[v]!.role !== "scene");
@@ -56,11 +61,16 @@ const pose = z.strictObject({ score: z.number(), box, keypoints: z.array(z.tuple
 const closerPass = z.strictObject({
   frameId: id, capturedAtMs: at, view: camera, width: z.number().int().positive(), height: z.number().int().positive(), dets: z.array(z.strictObject({ ...detection, edge: z.boolean() })),
 });
-/** /perception/scene: VLM 답 갈래 다섯(집 상태 입력의 주인)과 YOLO 임시 갈래 넷(VLM 전용으로 바뀔 자리, 합친 뒤에는 쓰러짐만 남는다). */
+const size = { width: z.number().int().positive(), height: z.number().int().positive() };
+/** 장면 VLM 답을 받은 사진의 카메라·크기·폰 눈 자리. */
+const sceneLook = z.strictObject({ view: camera, ...size, eye: z.tuple([at, at]).nullable().optional() });
+/** 가까이 본 그 장의 카메라·크기·자른 자리. */
+const closerAt = z.strictObject({ view: camera, ...size, crop: box });
+/** /perception/scene: VLM 답 갈래 다섯(집 상태 입력의 주인)과 YOLO 임시 갈래 넷(VLM 전용으로 바뀔 자리). */
 const sceneInput = z.discriminatedUnion("kind", [
-  z.strictObject({ kind: z.literal("scene"), frame_id: id, observed_ms: at, scene }),
+  z.strictObject({ kind: z.literal("scene"), frame_id: id, observed_ms: at, scene, look: sceneLook.optional() }),
   z.strictObject({ kind: z.literal("missing"), frame_id: id, observed_ms: at, missing: z.enum(VLM_MISSING) }),
-  z.strictObject({ kind: z.literal("closer_scene"), look: id, frame_id: id, observed_ms: at, scene }),
+  z.strictObject({ kind: z.literal("closer_scene"), look: id, frame_id: id, observed_ms: at, scene, at: closerAt }),
   z.strictObject({ kind: z.literal("closer_end"), look: id }),
   z.strictObject({ kind: z.literal("top"), object_id: id, frame_id: id, observed_ms: at, value: z.enum(["empty", "has_contents"]) }),
   z.strictObject({ kind: z.literal("eye"), eye: eyePose.nullable(), at_ms: at }),
@@ -79,18 +89,21 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object
 const isNum = (v: unknown) => typeof v === "number" && Number.isFinite(v);
 /** 최상위 칸이 이 표의 칸뿐인가(사진 칸 jpeg·jpeg_b64 같은 모르는 칸이 없다). */
 const onlyKeys = (v: Record<string, unknown>, keys: ReadonlySet<string>) => Object.keys(v).every((k) => keys.has(k));
-const VIEW_KEYS = ["at_ms", "objects", "person", "fixtures", "devices", "eye", "frame_ms", "vlm_missing", "yolo_missing"] as const satisfies readonly (keyof WorldView)[];
+const VIEW_KEYS = ["at_ms", "objects", "sightings", "person", "fixtures", "devices", "eye", "frame_ms", "vlm_missing", "yolo_missing"] as const satisfies readonly (keyof WorldView)[];
 const VIEW_KEY_SET: ReadonlySet<string> = new Set(VIEW_KEYS);
 /** /world/state의 보기는 집 상태 노드 하나가 타입으로 만든 18KB 객체라 깊이는 보지 않는다(지나기마다 세 번 검사하므로 지연 예산).
- *  최상위 칸은 다 있고 그 칸뿐인지(사진 칸 없음)와 칸의 종류만 본다. */
-const view = z.custom<WorldView>((v) => isObj(v) && onlyKeys(v, VIEW_KEY_SET) && isNum(v.at_ms) && Array.isArray(v.objects) && isObj(v.person) && Array.isArray(v.fixtures)
+ *  최상위 칸은 다 있고(후보 자리 sightings는 있을 때만) 그 칸뿐인지(사진 칸 없음)와 칸의 종류만 본다. */
+const view = z.custom<WorldView>((v) => isObj(v) && onlyKeys(v, VIEW_KEY_SET) && isNum(v.at_ms) && Array.isArray(v.objects) && (v.sightings === undefined || Array.isArray(v.sightings)) && isObj(v.person) && Array.isArray(v.fixtures)
   && Array.isArray(v.devices) && (v.eye === null || isObj(v.eye)) && (v.frame_ms === null || isNum(v.frame_ms)) && isNum(v.vlm_missing) && isNum(v.yolo_missing));
 const worldState = z.strictObject({ rev, view });
 const CHANGE_KINDS = [
   "appeared", "gone", "out_of_view", "back_in_view", "state", "person_appeared", "person_gone", "person_state", "person_room", "fixture", "device", "vlm", "vlm_missing", "yolo_missing", "heard",
 ] as const satisfies readonly WorldChangeKind[];
 const worldChanges = z.strictObject({ rev, changes: z.array(z.strictObject({ kind: z.enum(CHANGE_KINDS), at_ms: at, subject: z.string(), text: z.string(), meaningful: z.boolean() })) });
-const worldInput = z.strictObject({ kind: z.enum(["guard", "contents"]), id, on: z.boolean(), at_ms: at });
+const worldInput = z.union([
+  z.strictObject({ kind: z.enum(["guard", "contents"]), id, on: z.boolean(), at_ms: at }),
+  z.strictObject({ kind: z.literal("focus"), id: id.nullable(), focus: z.strictObject({ step: z.enum(["pick", "place", "carry"]), spot: z.tuple([at, at]).nullable() }).nullable(), at_ms: at }),
+]);
 const heard = z.strictObject({ text: z.string(), observed_ms: at });
 /** /world/closer: 가까이 보기 한 번의 VLM 합치기 뒤 최종 id 표. */
 const worldCloser = z.strictObject({ look: id, ids: z.record(z.string(), z.string()) });

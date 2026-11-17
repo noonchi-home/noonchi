@@ -166,7 +166,7 @@ function startApp(core: HomeCore): void {
     start: startStore && { get: () => startStore.get(), save: (raw) => startStore.save(raw), preview: (raw) => startStore.preview(raw), clear: () => startStore.clear() },
     phoneSync: () => core.phone?.syncState() ?? null,
     plan: plans, offTrack: () => core.tracker?.offTrack() ?? null, history: history.db, reflect: history.reflect, scene: () => core.scene,
-    brainLast: () => [...todayReflection(history.db), ...(core.lastDecision ? [core.lastDecision] : [])], thoughtLast: () => core.thoughts?.last() ?? null, seenLast: () => core.lastSeen, say: () => core.said,
+    brainLast: () => [...todayReflection(history.db), ...(core.lastDecision ? [core.lastDecision] : [])], thoughtLast: () => core.thoughts?.last() ?? null, seenLast: () => core.lastSeen, say: () => ({ text: core.said, ...(core.saidSafety ? { safety: true as const } : {}) }),
   });
   core.speak();
 }

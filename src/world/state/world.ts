@@ -1,8 +1,8 @@
 // World State: 엔진 프레임마다 YOLO 감지와 VLM 관찰을 물체별로 합치고, 시간에 따른 변화(등장·사라짐·시야 밖·상태·가전)를 낸다.
 // 종류·사실 값·면·신뢰도는 낱말 표(src/world/vocab.ts)를 따른다.
 // - 같은 물체: 트윈 위치 + 종류(종류의 identityM, 없으면 기본 0.25m 안). 맞추기 전(카메라 없음)에는 같은 종류의 물체에 차례로 붙인다.
-// - 등장·사라짐: Confirmer(시간 기준. 등장은 처음 본 뒤 사람 2초·물건 4초 이어 보임, 사라짐은 마지막으로 본 뒤 시야 안에서 사람 4초·물건 6초 못 봄.
-//   2초 간격이면 사람 2장·물건 3장). 사라짐은 그 자리가 시야 안인 프레임만 센다. 등장 확인 전 물체는 view()에 내지 않고, 500ms 넘게 못 보면 잊는다.
+// - 등장·사라짐: Confirmer(시간 기준. 등장은 처음 본 뒤 사람·물건 2초 이어 보임, 사라짐은 마지막으로 본 뒤 시야 안에서 사람 4초·물건 6초 못 봄.
+//   2초 간격이면 등장 2장, 사라짐 사람 2장·물건 3장). 사라짐은 그 자리가 시야 안인 프레임만 센다. 등장 확인 전 물체는 view()에 내지 않고, 500ms 넘게 못 보면 잊는다.
 // - 가전 설비(TV·냉장고·전자레인지·오븐·토스터·싱크대): 보임·사라짐 없이 방(클로이드 눈의 방)마다 종류 하나. VLM 사실만 쌓고 같은 방 트윈 가전 id를 붙인다.
 // - VLM 사실: 면(facet)마다 하나. 그 종류에 없는 면·그 대상에 붙지 않는 값은 버린다. 촬영 시각이 더 오래된 답은 버리고, 같은 값이 연속 두 번이면 confirmed.
 //   지금만 맞는 면(vocab NOW_FACETS: 쓰는 중, 사람 들고 있음·하는 일·자리)은 그 대상을 본 프레임의 VLM 답에 없으면 지운다. 사람이 안 보이면 사람 사실을 지운다.
@@ -43,17 +43,18 @@ import type { PlaneSurface, RestSpot } from "../place.js";
 import type { FallConfig } from "../fall.js";
 import { relatedDeviceIds } from "../relations.js";
 import { cameraKindOf } from "../../devices/kinds.js";
-import { FRESH_MS, NEAR_M, POSE_HOLD } from "../vocab.js";
+import { FRESH_MS, NEAR_M, POSE_HOLD, sameDrinkware } from "../vocab.js";
 import { WorldCore, type Plan2, type V3 } from "./core.js";
 import { Detections } from "./objects.js";
 import { People } from "./people.js";
 import { SceneFacts } from "./facts.js";
-import { CloserLook, type CloserDetection, type CloserPass, type CloserPending } from "./closer.js";
+import { CloserLook, type CloserDetection, type CloserLookAt, type CloserPass, type CloserPending } from "./closer.js";
+import { SceneObjects, type SceneLook } from "./sceneobjects.js";
 import { DeviceSight } from "./devices.js";
 import { ContentsBook } from "./contents.js";
 
 export { CLOSER_HOLD_MS } from "./core.js";
-export { CLOSER_NEW_FRAMES, type CloserDetection, type CloserPass, type CloserPending } from "./closer.js";
+export { CLOSER_NEW_FRAMES, type CloserDetection, type CloserLookAt, type CloserPass, type CloserPending } from "./closer.js";
 
 export interface WorldStateOptions {
   surfaces: () => PlaneSurface[];
@@ -96,6 +97,7 @@ export class WorldState {
   constructor(o: WorldStateOptions) {
     const core = new WorldCore(o);
     core.merge = new Detections(core);
+    core.scene = new SceneObjects(core);
     core.people = new People(core);
     core.vlm = new SceneFacts(core);
     core.closer = new CloserLook(core);
@@ -116,18 +118,20 @@ export class WorldState {
   }
 
   /** 전체 사진의 VLM 답(facts.ts). */
-  applyScene(frameId: string, capturedAtMs: number, scene: SceneObservation, ids: Map<string, string>): WorldChange[] {
-    return this.core.vlm.applyScene(frameId, capturedAtMs, scene, ids);
+  /** 장면 VLM 답: 물건 목록(sceneobjects.ts, VLM 무조건 우선)을 먼저 넣어 답 번호를 물건 id에 잇고, 사실을 넣는다(facts.ts). look: 그 사진의 카메라·크기. */
+  applyScene(frameId: string, capturedAtMs: number, scene: SceneObservation, ids: Map<string, string>, look?: SceneLook): WorldChange[] {
+    const linked = this.core.scene.link(frameId, capturedAtMs, scene, ids, look);
+    return [...linked, ...this.core.vlm.applyScene(frameId, capturedAtMs, scene, ids)];
   }
 
   /** 가까이 보기 합치기(closer.ts applyCloser). */
-  applyCloser(looks: readonly CloserPass[], idsFrom?: string): { changes: WorldChange[]; ids: Map<string, string>; pending?: CloserPending } {
-    return this.core.closer.applyCloser(looks, idsFrom);
+  applyCloser(looks: readonly CloserPass[], idsFrom?: string, o: { defer?: boolean } = {}): { changes: WorldChange[]; ids: Map<string, string>; pending?: CloserPending } {
+    return this.core.closer.applyCloser(looks, idsFrom, o);
   }
 
   /** 가까이 보기 한 번이 VLM 답 없이 끝났다(closer.ts endCloser). */
-  endCloser(pending: CloserPending): void {
-    this.core.closer.endCloser(pending);
+  endCloser(pending: CloserPending, ids?: Map<string, string>, idsFrom?: string): WorldChange[] {
+    return this.core.closer.endCloser(pending, ids, idsFrom);
   }
 
   /** 가까이 본 감지가 물건 감지인가(closer.ts closerObject). */
@@ -140,6 +144,38 @@ export class WorldState {
     return this.core.closer.applyTop(objectId, sourceFrameId, capturedAtMs, value);
   }
 
+  /** 실행 추적이 지금 집기·내려놓기 하는 대상(src/act/track/steps.ts): 그 단계 동안 대상은 사라짐으로 세지 않고, 맞는 물건이 없는 같은 종류 감지(들린 컵, 목적지
+   *  NEAR_M 안에 놓인 컵)는 그 대상 id로 잇는다(가로 유리컵 r5: 집기·내려놓기 중 새 id가 생겨 단계가 늦거나 끝나지 않았다). null이면 푼다. */
+  focus(objectId: string | null, f: { step: "pick" | "place" | "carry"; spot: [number, number] | null } | null = null): void {
+    const core = this.core;
+    const prev = core.focusOn;
+    core.focusOn = objectId && f ? { id: objectId, step: f.step, spot: f.spot } : null;
+    if (!core.focusOn) core.focusFrom = null;
+    else if (prev?.id !== objectId) core.focusFrom = core.frameAt ?? 0;
+    if (core.focusOn?.step === "place") this.mergeAtPlace(core.focusOn.id, core.focusOn.spot);
+  }
+
+  /** 내려놓기 시작: 든 물건을 알린 뒤 목적지 NEAR_M 안에 생긴 같은 무리 확인 물건이 하나면 그것은 대상이다(가로 머그 r4: 싱크대로 가는 중 든 머그가 cup_11이 됐다).
+   *  대상이 그 자리·보임·더 새 사실을 받고, 둘째 id는 사라짐과 옮김 표시(followed_by: 대상)를 남긴다. */
+  private mergeAtPlace(id: string, spot: [number, number] | null): void {
+    const core = this.core;
+    const t = core.objects.get(id);
+    if (!t || !spot || core.focusFrom === null) return;
+    // 옮긴 컵이라는 근거(손에 있음으로 보인 적 있음)가 있는 것만: 싱크대에 원래 있던 컵은 대상이 아니다(Codex 4e682c8 1)
+    const dups = [...core.objects.values()].filter((o) => o !== t && o.confirmed && o.status !== "gone" && sameDrinkware(o.cls, t.cls) && o.firstSeen > core.focusFrom!
+      && o.heldSeen && o.position && Math.hypot(o.position[0] - spot[0], o.position[2] - spot[1]) <= NEAR_M);
+    if (dups.length !== 1) return;
+    const d = dups[0]!;
+    if (d.posAt >= t.posAt) Object.assign(t, { position: d.position, surface: d.surface, surfaceLabel: d.surfaceLabel, part: d.part, room: d.room, errorM: d.errorM, posAt: d.posAt, posCloser: d.posCloser });
+    for (const [facet, fact] of Object.entries(d.facts)) if (fact && (!t.facts[facet as keyof typeof t.facts] || fact.at_ms > t.facts[facet as keyof typeof t.facts]!.at_ms)) (t.facts as Record<string, unknown>)[facet] = fact;
+    t.status = "present";
+    t.goneAt = null;
+    t.lastSeen = Math.max(t.lastSeen, d.lastSeen);
+    d.status = "gone";
+    d.goneAt = d.lastSeen;
+    d.followed = { id: t.id, at: d.lastSeen, frame: d.judgedFrame };
+  }
+
   /** 보기 지킴(가까이 가서 위에서 비추는 동안, 실행 추적이 건다): on이면 그 물건을 그동안(PEEK_GUARD_MS 한도) 사라짐으로 세지 않고, off면 푼다.
    *  확인된 관측의 지킴(closer_hold)과 다른 칸이다. 물건이 없으면 아무것도 하지 않는다. */
   guard(objectId: string, atMs: number, on: boolean): void {
@@ -148,8 +184,8 @@ export class WorldState {
   }
 
   /** 가까이 본 사진의 VLM 답(closer.ts applyCloserScene). */
-  applyCloserScene(sourceFrameId: string, capturedAtMs: number, scene: SceneObservation, ids: Map<string, string>, pending?: CloserPending): WorldChange[] {
-    return this.core.closer.applyCloserScene(sourceFrameId, capturedAtMs, scene, ids, pending);
+  applyCloserScene(sourceFrameId: string, capturedAtMs: number, scene: SceneObservation, ids: Map<string, string>, pending?: CloserPending, look?: CloserLookAt): WorldChange[] {
+    return this.core.closer.applyCloserScene(sourceFrameId, capturedAtMs, scene, ids, pending, look);
   }
 
   /** 계획의 따르기 단계 창(contents.ts window): on이면 확인 값을 보관하고 다시 열어(그 뒤 사진만) 다 이어진 값이 확인 값을 바꾸게 한다. off면 닫는다(값은 둔다).
@@ -225,8 +261,9 @@ export class WorldState {
         ...objects.filter((o) => o.status !== "gone" && o.facts.place?.value === POSE_HOLD.object).map((o) => o.id)])],
       facts: { ...p.facts }, answered_ms: p.answered,
     };
+    const sightings = core.sightingsAt(nowMs);
     return {
-      at_ms: nowMs, objects, person, fixtures,
+      at_ms: nowMs, objects, ...(sightings.length ? { sightings } : {}), person, fixtures,
       devices: core.sight.deviceViews(nowMs),
       eye: this.eye, frame_ms: core.frameAt, vlm_missing: this.vlmMissing, yolo_missing: this.yoloMissing,
     };

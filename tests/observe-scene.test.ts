@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { startFakeOpenAI, type FakeServer } from "../scripts/fake-openai.js";
 import { VlmClient } from "../src/infer/vlm.js";
 import { analyzeScene, CLOSER_NOTE, parseScene, SCENE_JSON_SCHEMA, SCENE_PROMPT } from "../src/observe/scene.js";
+import { CLASSES, VLM_FIND } from "../src/world/vocab.js";
 import { sha256 } from "../src/observe/ring.js";
 import type { EngineFrame } from "../src/contract/observe.js";
 
@@ -21,7 +22,51 @@ describe("VLM 장면 분석", () => {
     expect(SCENE_PROMPT).toContain("not_in_use");
   });
   it("JSON Schema는 엄격 모드(모든 칸 필수, 다른 칸 없음)", () => {
-    expect(SCENE_JSON_SCHEMA).toMatchObject({ type: "object", additionalProperties: false, required: ["scene", "observations", "summary"] });
+    expect(SCENE_JSON_SCHEMA).toMatchObject({ type: "object", additionalProperties: false, required: ["scene", "observations", "objects", "summary"] });
+  });
+
+  // 가로 유리컵 실제 판(2026-11-18): 잘라 본 칸의 YOLO가 컵을 못 잡아 found가 비었지만 VLM은 컵을 봤다. VLM이 대상 종류 물건을 상자와 함께 답한다
+  it("VLM 물건(objects): 대상 종류(컵·병·그릇)만, 상자는 그 사진 비율(0~1)이고 넓이가 있어야 하며, det는 감지 목록에 있는 번호일 때만 남는다", () => {
+    const raw = {
+      scene: "k", summary: "s",
+      objects: [
+        { id: "v1", cls: "cup", box: { x: 0.4, y: 0.5, w: 0.1, h: 0.1 }, det: null },
+        { id: "v2", cls: "cup", box: { x: 0.95, y: 0.5, w: 0.1, h: 0.1 }, det: null },
+        { id: "v3", cls: "bowl", box: { x: 0.2, y: 0.2, w: 0, h: 0.1 }, det: null },
+        { id: "v4", cls: "bottle", box: { x: 0.1, y: 0.1, w: 0.1, h: 0.2 }, det: "d9" },
+        { id: "v5", cls: "cup", box: { x: 0.6, y: 0.6, w: 0.1, h: 0.1 }, det: "d1" },
+      ],
+      observations: [{ object_id: "v1", state: "empty" }, { object_id: "v2", state: "empty" }, { object_id: "d1", state: "in_sink" }],
+    };
+    const s = parseScene(JSON.stringify(raw), new Set(["d1"]));
+    expect(s.objects).toEqual([
+      { id: "v1", cls: "cup", box: { x: 0.4, y: 0.5, w: 0.1, h: 0.1 }, det: null },
+      { id: "v4", cls: "bottle", box: { x: 0.1, y: 0.1, w: 0.1, h: 0.2 }, det: null },
+      { id: "v5", cls: "cup", box: { x: 0.6, y: 0.6, w: 0.1, h: 0.1 }, det: "d1" },
+    ]);
+    // 관찰은 감지 번호와 남은 VLM 물건 번호에만 단다(버린 v2의 사실도 버린다)
+    expect(s.observations).toEqual([{ object_id: "v1", state: "empty" }, { object_id: "d1", state: "in_sink" }]);
+    expect(() => parseScene(JSON.stringify({ ...raw, objects: [{ id: "v1", cls: "person", box: { x: 0, y: 0, w: 0.1, h: 0.1 }, det: null }] }), new Set())).toThrow();
+    // objects가 없는 옛 답도 읽는다(빈 목록)
+    expect(parseScene('{"scene":"k","observations":[],"summary":"s"}', new Set()).objects ?? []).toEqual([]);
+  });
+
+  // 가로 유리컵 실제 판 r2(2026-11-18): 가까이 본 VLM이 투명한 유리컵을 병(bottle)으로 답했다
+  it("프롬프트가 종류 기준을 낱말 표(CLASSES vlm)에서 그대로 싣는다: 마시는 잔·유리컵·머그·텀블러는 cup, 좁은 목·마개가 있는 것만 bottle", () => {
+    for (const c of VLM_FIND) expect(SCENE_PROMPT).toContain(`${c} = ${(CLASSES[c] as { vlm?: string }).vlm}`);
+    expect(CLASSES.cup.vlm).toMatch(/drinking glass.*mug.*tumbler/);
+    expect(CLASSES.bottle.vlm).toMatch(/narrow neck/);
+    expect(SCENE_PROMPT).toContain("A clear drinking glass is a cup, not a bottle.");
+    // 가로 유리컵 r6: 가까이 본 VLM이 유리잔을 그릇으로 답했다
+    expect(CLASSES.bowl.vlm).toMatch(/wide, low/);
+    expect(CLASSES.bowl.vlm).toMatch(/never a bowl/);
+  });
+
+  it("스키마 objects의 종류 enum은 낱말 표의 내용물 면이 있는 물건(VLM_FIND)이고, 프롬프트가 감지 목록에 없는 물건도 상자와 함께 답하라고 한다", () => {
+    const schema = JSON.stringify(SCENE_JSON_SCHEMA);
+    for (const c of VLM_FIND) expect(schema).toContain(`"${c}"`);
+    expect([...VLM_FIND].sort()).toEqual(["bottle", "bowl", "cup"]);
+    expect(SCENE_PROMPT).toContain("including ones missing from Detections");
   });
   it("감지 목록을 같이 보내고 보이는 사실만 받는다", async () => {
     fake = await startFakeOpenAI();
