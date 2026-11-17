@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { WorldState } from "../src/world/state/world.js";
 import { sha256 } from "../src/observe/ring.js";
-import type { CameraView, Detection, EngineFrame } from "../src/contract/observe.js";
+import type { CameraView, Detection, EngineFrame, Keypoint, SceneObservation } from "../src/contract/observe.js";
 import { atMouth, pouringInto } from "../src/world/sip.js";
 import { describePose } from "../src/world/pose.js";
 import { det } from "./helpers/detectors.js";
@@ -18,7 +18,7 @@ function scene(view: CameraView | null = null) {
   const w = ws();
   let ids = new Map<string, string>();
   for (let i = 1; i <= 3; i++) ids = w.applyDetections(frame(i, view), [cup]).ids;
-  const obs = (states: string[]) => ({ scene: "k", observations: states.map((state) => ({ object_id: "d1", state })), summary: "s" });
+  const obs = (states: string[]): SceneObservation => ({ scene: "k", observations: states.map((state) => ({ object_id: "d1", state: state as SceneObservation["observations"][number]["state"] })), summary: "s" });
   const say = (i: number, ...states: string[]) => w.applyScene(`e${i}`, i * 1000, obs(states), ids);
   const crop = (i: number, ...states: string[]) => w.applyCloserScene(`e${i}`, i * 1000, obs(states), ids);
   const cupNow = () => w.view(99_000).objects[0]!;
@@ -201,7 +201,7 @@ describe("따르기 창(계획의 따르기 단계)", () => {
 
 // 서 있는 사람(어깨 너비 40, 몸통 100 → scale 60). 컵 상자 [220,160,40,20], 손목이 그 안이면 든 것이다
 const CUP_BOX: [number, number, number, number] = [220, 160, 40, 20];
-const AT_MOUTH = { 9: [230, 170, 0.9], 0: [240, 150, 0.9] } as const;
+const AT_MOUTH: Record<number, Keypoint> = { 9: [230, 170, 0.9], 0: [240, 150, 0.9] };
 const drinker = describePose(standing({ ...AT_MOUTH }));
 const waist = describePose(standing({ 9: [230, 170, 0.9], 0: [130, 40, 0.9] }));
 const BOTTLE_TILT: [number, number, number, number] = [215, 100, 60, 40];
