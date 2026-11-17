@@ -234,6 +234,20 @@ export const EXEC_TEXT = {
   /** 쓰는 중 지킴(src/act/track/use.ts): 사람이 계획 대상을 쓰는 중이라 첫 명령을 미룸, holdMs 넘게 이어져 닫음. */
   inUse: "사람이 쓰는 중이라 기다려요",
   inUseLong: "사람이 쓰는 중이라 실행하지 않아요",
+  /** 충전 자리 돌아가기(src/act/track/dock.ts): 계획이 끝난 뒤 사용자 위치 확인·충전 자리로 가는 동안 받은 행동 판단. */
+  docking: "충전 자리로 가는 중이라 새 일을 미룸",
+} as const;
+
+/** 충전 자리 돌아가기(src/act/track/dock.ts): 실제 폰 명령(사람에게 「주세요」), 대상·비전 이름, 메시지 상자 줄(클로이드가 직접 하는 말). */
+export const DOCK_TEXT = {
+  command: "충전 자리로 가 주세요",
+  label: "충전 자리",
+  userHere: (room: string) => `사용자는 ${room}에 계세요`,
+  userLast: (room: string) => `사용자를 마지막으로 ${room}에서 봤어요`,
+  userUnknown: "사용자가 어디 계신지 몰라요",
+  going: "충전 자리로 갈게요",
+  docked: "충전 자리에서 지켜볼게요",
+  gaveUp: "충전 자리로 가지 못했어요",
 } as const;
 
 /** 관찰 모드 기록 글(src/act/look.ts, 기록 종류 look). 가까이 본 결과, 못 본 까닭, 사람 부탁, 기다리기. capped·failed는 모델 대신 쓰는 까닭 글이다. */

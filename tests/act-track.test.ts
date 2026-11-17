@@ -18,9 +18,10 @@ import type { BrainLog, CloserResult, DecisionRecord } from "../src/contract/eve
 import type { HeardAt, PlannedCommand, PlannedCommandMessage } from "../src/contract/phone.js";
 import type { WorldChange, WorldObject, WorldView } from "../src/contract/world.js";
 import { PlanHub } from "../src/act/hub.js";
-import { APPROVAL_TEXT, CAUTION_TEXT, CHECK_TEXT, EXEC_TEXT, CAUTION_LINE, PEEK_TEXT, STEP_COMMAND, STEP_LABEL, USE_THOUGHT, type TellMode } from "../src/act/labels.js";
+import { APPROVAL_TEXT, CAUTION_TEXT, CHECK_TEXT, DOCK_TEXT, EXEC_TEXT, CAUTION_LINE, PEEK_TEXT, STEP_COMMAND, STEP_LABEL, USE_THOUGHT, type TellMode } from "../src/act/labels.js";
 import { CONTENTS_HOLD, PEEK } from "../src/act/track/contents.js";
 import { FIND } from "../src/act/track/find.js";
+import { DOCK } from "../src/act/track/dock.js";
 import { PHONE_PROTOCOL } from "../src/phone/protocol.js";
 /** 인덕션 켜기 전 질문(서버 글). */
 const ASK_ON = "냄비와 상판이 뜨거워져요. 인덕션을 켤까요?";
@@ -4553,5 +4554,128 @@ describe("실행 추적: 사람이 쓰는 물건은 그 사람이 사라질 때�
     talking = false;
     s.tick();
     expect(s.last()).toMatchObject({ id: "plan:pam-1", text: "식탁으로 가 주세요" });
+  });
+});
+
+// 2026-11-18 사용자 결정: 계획이 끝나면(완료·그만·실패) 걷지 않고 아는 사실로 사용자 위치를 확인한 뒤 충전 자리로 돌아가 지켜본다. 새 일은 그 자리에서 시작한다
+describe("실행 추적: 계획이 끝나면 충전 자리로", () => {
+  const DOCK_AT: [number, number, number] = [11, 0, 11];
+  const withPerson = (w: WorldView, visible: boolean, room: string | null): WorldView => ({ ...w, person: { ...w.person, visible, room: room && "living", room_label: room } });
+  function dockSetup(w: () => WorldView, over: Parameters<typeof setup>[0] = {}) {
+    const said: string[] = [];
+    const s = setup({ w, dock: () => DOCK_AT, thought: (text) => said.push(text), ...over });
+    const docks = () => s.commands().filter((c) => c.id.startsWith("dock:"));
+    /** 눈을 그 자리로 두고 tick. */
+    const at = (x: number, z: number, ms = 500) => { s.clock.t += ms; s.t.onEye([x, z]); s.t.tick(); };
+    return { ...s, said, docks, at };
+  }
+  const finishCup = async (s: ReturnType<typeof setup>) => {
+    await s.decide(decision);
+    for (const n of [1, 2, 3, 4]) s.t.onAnswer("plan:pam-1", `plan:pam-1:${n}`, "done");
+  };
+
+  it("계획이 끝나면 걷지 않고 지금 아는 사실로 사용자 위치를 확인한 뒤(지금 자리에서 보기 lookMs) 「충전 자리로 가 주세요」 하나를 보내고, 폰 눈이 충전 자리 1.2m 안에 들면 지우고 지켜본다", async () => {
+    const w = withPerson(world([cup("present")]), false, "거실");
+    const s = dockSetup(() => w);
+    s.t.onEye([5, 1]);
+    await finishCup(s);
+    expect(s.plans.current()).toMatchObject({ status: "done" });
+    // 확인하는 동안은 명령을 보내지 않는다(걷지 않는다)
+    s.at(5, 1);
+    expect(s.docks()).toEqual([]);
+    s.at(5, 1, DOCK.lookMs);
+    expect(s.said).toContain(DOCK_TEXT.userLast("거실"));
+    expect(s.last()).toMatchObject({
+      type: "command", id: "dock:1", step: "dock:1:1", text: "충전 자리로 가 주세요", choices: [{ id: "done", label: "완료" }], kind: "go", near_m: DOCK.nearM, speak: true,
+      target: { id: "dock", label: "충전 자리", position: DOCK_AT },
+    });
+    expect(s.said.at(-1)).toBe(DOCK_TEXT.going);
+    // 1.2m 밖이면 그대로 두고, 안에 들면 지우고 지켜본다. 그 뒤 다시 보내지 않는다
+    s.at(10, 10);
+    expect(s.last().type).toBe("command");
+    s.at(10.3, 10.3);
+    expect(s.last()).toEqual({ type: "command_clear", id: "dock:1" });
+    expect(s.said.at(-1)).toBe(DOCK_TEXT.docked);
+    s.at(10.3, 10.3, 20_000);
+    expect(new Set(s.docks().map((c) => c.step))).toEqual(new Set(["dock:1:1"]));
+    expect(DOCK.nearM).toBe(1.2);
+  });
+
+  it("사용자 위치: 보이면 그 방, 안 보이면 마지막으로 본 방, 둘 다 모르면 모른다고 한다. 이미 충전 자리 1.2m 안이면 명령 없이 지켜본다", async () => {
+    for (const [visible, room, line] of [[true, "주방·식당", DOCK_TEXT.userHere("주방·식당")], [false, null, DOCK_TEXT.userUnknown]] as const) {
+      const w = withPerson(world([cup("present")]), visible, room);
+      const s = dockSetup(() => w);
+      s.t.onEye([10.5, 10.5]);
+      await finishCup(s);
+      s.at(10.5, 10.5, DOCK.lookMs);
+      expect(s.said, line).toContain(line);
+      expect(s.docks()).toEqual([]);
+      expect(s.said.at(-1)).toBe(DOCK_TEXT.docked);
+    }
+  });
+
+  it("충전 자리로 가는 동안 새 행동 판단은 미루고, 닿으면 새 일을 시작한다. 「그만」은 계획처럼 충전 자리 가기도 그만둔다", async () => {
+    const w = withPerson(world([cup("present")]), false, "거실");
+    const s = dockSetup(() => w);
+    s.t.onEye([5, 1]);
+    await finishCup(s);
+    s.at(5, 1, DOCK.lookMs);
+    expect(s.last()).toMatchObject({ id: "dock:1" });
+    await s.decide({ ...decision, id: "pam-2", seq: 2, atMs: s.clock.t });
+    expect(s.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-2", text: EXEC_TEXT.docking });
+    expect(s.plans.current()).toMatchObject({ id: "plan:pam-1", status: "done" });
+    s.at(10.5, 10.5);
+    await s.decide({ ...decision, id: "pam-3", seq: 3, atMs: s.clock.t });
+    expect(s.plans.current()).toMatchObject({ id: "plan:pam-3", status: "running" });
+    // 계획을 「그만」으로 닫아도 충전 자리로 간다. 가는 중 「그만」은 그것도 그만둔다
+    expect(s.heard("그만")).toMatchObject({ id: "stop" });
+    expect(s.plans.current()).toMatchObject({ id: "plan:pam-3", status: "cancelled" });
+    s.at(5, 1, DOCK.lookMs);
+    expect(s.last()).toMatchObject({ id: "dock:2", text: "충전 자리로 가 주세요" });
+    expect(s.heard("그만", { kind: "command", id: "dock:2", step: "dock:2:1", pending: [] })).toMatchObject({ id: "stop" });
+    expect(s.last()).toEqual({ type: "command_clear", id: "dock:2" });
+    await s.decide({ ...decision, id: "pam-4", seq: 4, atMs: s.clock.t });
+    expect(s.plans.current()).toMatchObject({ id: "plan:pam-4", status: "running" });
+  });
+
+  it("폰 눈을 모르면(맞추기 전) 거리 모름으로 보내고, 「완료」 단추나 그 명령에 한 말 「다 했어」로 닿은 것으로 받는다. 다른 명령에 한 말은 버린다", async () => {
+    const w = withPerson(world([cup("present")]), false, "거실");
+    for (const how of ["button", "voice"] as const) {
+      const s = dockSetup(() => w);
+      await finishCup(s);
+      s.clock.t += DOCK.lookMs;
+      s.t.tick();
+      expect(s.last()).toMatchObject({ id: "dock:1", vision: "충전 자리까지 거리 모름", choices: [{ id: "done", label: "완료" }] });
+      expect(s.t.openCommand()).toMatchObject({ planId: "dock:1", stepId: "dock:1:1", kind: "command", choices: [{ id: "done" }] });
+      if (how === "button") {
+        expect(s.t.onAnswer("dock:1", "dock:1:9", "done")).toBe(false);
+        expect(s.t.onAnswer("dock:1", "dock:1:1", "done")).toBe(true);
+      } else {
+        expect(s.t.onHeard("다 했어", { kind: "command", id: "plan:pam-1", step: "plan:pam-1:4", pending: [] })).toEqual({ kind: "stale" });
+        expect(s.heard("다 했어")).toMatchObject({ id: "done" });
+      }
+      expect(s.last()).toEqual({ type: "command_clear", id: "dock:1" });
+      expect(s.said.at(-1), how).toBe(DOCK_TEXT.docked);
+      await s.decide({ ...decision, id: "pam-2", seq: 2, atMs: s.clock.t });
+      expect(s.plans.current(), how).toMatchObject({ id: "plan:pam-2", status: "running" });
+    }
+  });
+
+  it("명령을 낸 적 없이 닫힌 계획(실행 전 검사에서 멈춤)과 충전 자리를 모르는 집에서는 충전 자리로 가지 않는다", async () => {
+    const w = withPerson(world([cup("present")]), false, "거실");
+    const blocked = dockSetup(() => w, { check: () => ({ ok: false, reason: "unknown_task", text: CHECK_TEXT.unknown_task }) as CheckResult, recheckMs: 0 });
+    blocked.t.onEye([5, 1]);
+    await blocked.decide(decision);
+    blocked.at(5, 1);
+    expect(blocked.plans.current()).toMatchObject({ status: "failed" });
+    blocked.at(5, 1, DOCK.lookMs);
+    blocked.at(5, 1, DOCK.lookMs);
+    expect(blocked.docks()).toEqual([]);
+    const none = dockSetup(() => w, { dock: () => null });
+    none.t.onEye([5, 1]);
+    await finishCup(none);
+    none.at(5, 1, DOCK.lookMs);
+    none.at(5, 1, DOCK.lookMs);
+    expect(none.docks()).toEqual([]);
   });
 });

@@ -131,7 +131,13 @@ describe("한양목련 처음부터 끝까지", () => {
     cupPlace = "in_sink";
     await pump(() => phone.some((m) => m.type === "command_clear" && m.id === planId));
     await pump(() => dash.some((m) => m.type === "plan" && m.plan?.id === planId && m.plan.status === "done") && dash.some((m) => m.type === "say" && m.text === "컵을 다 치웠어요."));
-    expect(spoken().map((m) => m.text)).toEqual(["컵 치우기를 할까요?", "식탁으로 가 주세요", "컵을 들어 주세요", "싱크대로 가 주세요", "컵을 싱크대에 넣어 주세요"]);
+    expect(spoken().filter((m) => !String(m.id).startsWith("dock:")).map((m) => m.text)).toEqual(["컵 치우기를 할까요?", "식탁으로 가 주세요", "컵을 들어 주세요", "싱크대로 가 주세요", "컵을 싱크대에 넣어 주세요"]);
+    // 계획이 끝나면 사용자 위치를 확인한 뒤 충전 자리(dock.json)로 돌아간다. 맞추기 전이라 폰 눈을 몰라 「완료」로 닿음을 알린다
+    await pump(() => spoken().some((m) => m.text === "충전 자리로 가 주세요"));
+    const dock = spoken().find((m) => m.text === "충전 자리로 가 주세요")!;
+    expect(dock).toMatchObject({ id: "dock:1", step: "dock:1:1", kind: "go", near_m: 1.2, choices: [{ id: "done", label: "완료" }], target: { id: "dock", label: "충전 자리" } });
+    ws.send(JSON.stringify({ type: "answer", id: dock.id, step: dock.step, choice: "done" }));
+    await pump(() => phone.some((m) => m.type === "command_clear" && m.id === "dock:1"));
 
     // 3 대시보드: 판단·명령 글 차례, 계획 단계 1→4, 상자 있는 observe. 승인 질문은 어디에도 없다
     const says = dash.filter((m) => m.type === "say").map((m) => m.text as string);
@@ -159,7 +165,7 @@ describe("한양목련 처음부터 끝까지", () => {
     expect(memory).toEqual({ always: { "task:컵 치우기": expect.any(String) } });
     cupPlace = "on_table";
     await pump(() => spoken().some((m) => m.id !== planId && m.text === "식탁으로 가 주세요"));
-    const next = spoken().filter((m) => m.id !== planId);
+    const next = spoken().filter((m) => m.id !== planId && !String(m.id).startsWith("dock:"));
     expect(next.map((m) => m.text)).toEqual(["식탁으로 가 주세요"]);
     expect(phone.filter((m) => m.type === "command" && m.text === ask)).toHaveLength(1);
   }, 90_000);

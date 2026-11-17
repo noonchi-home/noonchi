@@ -121,6 +121,8 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
       if (m.type === "command") core.speak();
     },
     locate: placeAt, names: placeNames,
+    // 계획이 끝나면 사용자 위치를 확인하고 이 집의 충전 자리(장면과 함께 읽은 dock.json)로 돌아간다
+    dock: () => core.scene?.dock ?? null,
     check: (d, p) => checkPlan({
       decision: d, tasks: d.tasks ?? pamTasks(core.mode(), false), plan: p, world: world.view(now()), nowMs: now(), staleMs: core.act.staleMs, mode: ctx.mode?.() ?? "test", deviceSteps: deviceSteps(p),
       placed: core.tracker?.placed(),

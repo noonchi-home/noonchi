@@ -432,6 +432,8 @@ export class Steps extends Part {
     // 손으로 켠 위험 가전이 작동 끝남 확인 전에 닫혔다: 가전마다 끄기 안내 줄로 옮기고 차례로 띄운다(확인된 꺼짐으로만 하나씩 지운다)
     this.core.safety.handOver(r);
     r.ends.clear();
+    // 계획이 끝나면(새 계획으로 바뀐 것이 아니면) 사용자 위치를 확인하고 충전 자리로 돌아간다(dock.ts)
+    this.core.dock.planClosed(r, close);
   }
 }
 
