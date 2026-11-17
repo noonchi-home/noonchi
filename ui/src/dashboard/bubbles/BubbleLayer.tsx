@@ -1,3 +1,4 @@
+import { SHOW_SCORES } from "../dev";
 import { CircleHelp, TriangleAlert } from "lucide-react";
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { DeviceView } from "../../../../src/contract/events.ts";
@@ -37,7 +38,8 @@ function shownOf(c: Check, devices: Map<string, DeviceView>, objects: Map<string
   }
   const name = c.objectId ? objects.get(c.objectId) : undefined;
   if (!c.objectId || !name) return null;
-  return { id: c.objectId, title: name, line: c.note };
+  // 줄은 로봇이 믿는 상태(숫자 없음). 개발용 보기(?scores=1)에서만 YOLO 글(확신 숫자)을 보인다
+  return { id: c.objectId, title: name, line: SHOW_SCORES ? c.note : c.belief };
 }
 
 /**

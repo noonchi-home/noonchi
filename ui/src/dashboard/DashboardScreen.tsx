@@ -7,11 +7,10 @@ import type { HubState } from "../lib/hub";
 import { MINIMAP_ASPECT, nextAspect, pageLayout, type PageLayout } from "./layout";
 import { Mascot, type Facing } from "./Mascot";
 import { MASCOT } from "../lib/mascot-image";
-import { PreDrawing, useFontsLoaded, usePredecode, usePreDraw, useReducedMotionNow } from "./motion";
+import { PreDrawing, useFontsLoaded, usePredecode, usePreDraw } from "./motion";
 import { PhonePane, type PhoneSlot } from "./PhonePane";
-import { SayCard } from "./SayCard";
-import type { Thought } from "./data";
-import { ThoughtCard } from "./ThoughtCard";
+import type { Talk } from "./data";
+import { TalkBox } from "./TalkBox";
 import { TwinPane } from "./TwinPane";
 import { WORDS } from "./words";
 
@@ -32,10 +31,8 @@ export interface ScreenProps {
   phone: PhoneSlot;
   /** 마지막 물체 모양(seen) 저장소. 대시보드 폰 칸의 마스크 층만 듣는다. */
   seen: SeenStore;
-  /** 생각 말풍선: PAM의 생각 한 문장·상태·판단. PAM이 대기면 null(말풍선을 숨긴다). */
-  thought: Thought | null;
-  /** 말풍선 카드 한 문장. */
-  say: string;
+  /** 메시지 상자: 다듬은 생각·한 일 최근 두 줄과 배운 습관 한 줄(data.ts talkOf). 줄이 없으면 null. */
+  talk: Talk | null;
   facing: Facing;
   hub: HubState;
   /** 설정 창을 연 채 그린다(가짜 단계 화면 찍기). */
@@ -55,16 +52,15 @@ export interface ScreenProps {
  * 비율 차이가 ASPECT_STEP 안이면 그대로), 처음 그림부터 가짜 단계 그림 비율을 쓴다. 말풍선 말·생각은 opacity·transform으로 바뀐다(SayCard·ThoughtCard).
  * 글꼴 조각·마스코트 그림 풀기·지도 첫 그림이 다 되면 한 번 미리 그려 보고(usePreDraw, 단계가 바뀔 때는 하지 않는다) 그 뒤 main에 data-ready를 달고 onReady를 부른다.
  */
-export function DashboardScreen({ index, plan, step, robotKnown, connected, map, mapReady, phone, seen, thought, say, facing, hub, settingsOpen, onReady, tzMinutes = null }: ScreenProps) {
+export function DashboardScreen({ index, plan, step, robotKnown, connected, map, mapReady, phone, seen, talk, facing, hub, settingsOpen, onReady, tzMinutes = null }: ScreenProps) {
   const main = useRef<HTMLElement>(null);
   const view = useBoxSize(main);
   const [aspect, setAspect] = useState(() => nextAspect(MINIMAP_ASPECT, phone.kind === "image" ? phone : null));
   const onVideoSize = useCallback((size: BoxSize | null) => setAspect((now) => nextAspect(now, size)), []);
   const L = useMemo(() => pageLayout(view, MASCOT, aspect), [view, aspect]);
-  const reduced = useReducedMotionNow();
   const decoded = usePredecode([MASCOT.src]);
   // 지금 화면 글이 쓰는 글꼴 조각을 받는다(처음 나오는 글자가 새 조각을 받으면 글을 다시 그린다)
-  const text = JSON.stringify([say, plan?.goal, plan?.steps.map((s) => s.label), thought, WORDS]);
+  const text = JSON.stringify([talk, plan?.goal, plan?.steps.map((s) => s.label), WORDS]);
   const fonts = useFontsLoaded("Noto Sans KR Variable", text);
   const phase = usePreDraw(fonts && decoded && mapReady);
   const ready = phase === "done";
@@ -80,8 +76,7 @@ export function DashboardScreen({ index, plan, step, robotKnown, connected, map,
         </PreDrawing.Provider>
       </LiquidGlass>
       <PhonePane slot={phone} seen={seen} box={L.video} connected={connected} onVideoSize={onVideoSize} />
-      <ThoughtCard thought={thought} box={L.thought} tail={L.tail} />
-      <SayCard say={say} box={L.bubble} animate={!reduced} />
+      <TalkBox talk={talk} box={L.bubble} />
       <Mascot image={MASCOT} hub={hub} box={L.mascot} imageBox={L.image} logoBox={L.logo} facing={facing} settingsOpen={settingsOpen} />
     </main>
   );

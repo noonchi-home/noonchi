@@ -9,7 +9,7 @@ const dev = (id: string, label: string, power: string): [string, DeviceView] => 
   state: { id, online: true, twin: { power }, matter: {}, updatedAt: "t" },
 }];
 const checked = (deviceId: string, order: number, verb: Check["verb"] = "바꿈"): Check => ({ key: `device:${deviceId}`, order, source: "agent", deviceId, verb, at: 0 });
-const table: Check = { key: "brain", order: 1, source: "brain", objectId: "table_1", verb: "지켜봄", note: "사람 있음 · 컵 없음", at: 0 };
+const table: Check = { key: "brain", order: 1, source: "brain", objectId: "table_1", verb: "지켜봄", note: "사람 0.91 · 컵 0.84", belief: "사람 마시는 중 · 컵 비어 있음", at: 0 };
 const at = (ids: string[], p = { x: 10, y: 20, visible: true }) => new Map(ids.map((id) => [id, p]));
 const bubbleOf = (label: string) => screen.getByText(label).closest("[data-check]") as HTMLElement;
 
@@ -45,11 +45,12 @@ describe("BubbleLayer", () => {
     expect(screen.queryByText("거실 조명")).toBeNull();
   });
 
-  it("식탁은 이름 + 지켜봄 + 판정 요약, 번호는 없다", () => {
+  it("식탁은 이름 + 지켜봄 + 로봇이 믿는 상태 한 줄이고 확신 숫자·번호는 없다", () => {
     render(<BubbleLayer checks={[table]} devices={new Map()} objects={new Map([["table_1", "식탁"]])} points={at(["table_1"])} />);
     const t = bubbleOf("식탁");
     expect(t).toHaveTextContent("지켜봄");
-    expect(t).toHaveTextContent("사람 있음 · 컵 없음");
+    expect(t).toHaveTextContent("사람 마시는 중 · 컵 비어 있음");
+    expect(t.textContent).not.toMatch(/\d\.\d/);
     expect(t.querySelector("[data-order]")).toBeNull();
   });
 

@@ -231,7 +231,7 @@ describe("찾을 자리(lostTarget): 대상이 안 보일 때 마지막으로 �
   it("있는 컵이 기준(freshMs) 안에 보였으면 없다. 실행 전 기준(3초)이면 5초 된 컵의 자리를 낸다", () => {
     const w = world([obj({ last_seen_ms: 5_000 })]);
     expect(lostTarget({ world: w, cls: "cup", now: 10_000, freshMs: 10_000 })).toBeNull();
-    expect(lostTarget({ world: w, cls: "cup", now: 10_000, freshMs: 3000 })).toEqual({ objectId: "cup_1", cls: "cup", position: [2, 0.75, 0], surface: "t", surface_label: "식탁", at_ms: 5_000, in_hand: false });
+    expect(lostTarget({ world: w, cls: "cup", now: 10_000, freshMs: 3000 })).toEqual({ objectId: "cup_1", cls: "cup", position: [2, 0.75, 0], surface: "t", surface_label: "식탁", at_ms: 5_000 });
   });
   // Codex(d2a34f4): 실행 전 검사는 판단 뒤 다시 못 본 컵을 낡음으로 막는데 찾을 자리는 3초 안이면 없다고 했다
   it("판단 시각(seenAfter)을 주면 그 뒤에 다시 본 것만 신선하다(실행 전 검사의 낡음과 같은 조건)", () => {
@@ -239,11 +239,6 @@ describe("찾을 자리(lostTarget): 대상이 안 보일 때 마지막으로 �
     expect(checkPlan(base({ decision: { ...base().decision, atMs: 9_500 }, world: w }))).toMatchObject({ reason: "stale", object: "cup_1" });
     expect(lostTarget({ world: w, cls: "cup", now: 10_000, freshMs: 3000, objectId: "cup_1", seenAfter: 9_500 })).toMatchObject({ objectId: "cup_1", at_ms: 9_000 });
     expect(lostTarget({ world: w, cls: "cup", now: 10_000, freshMs: 3000, objectId: "cup_1", seenAfter: 8_000 })).toBeNull();
-  });
-  it("찾을 자리는 그 자리가 손에 든 채 본 것인가(in_hand)를 싣는다: 후보 자리는 그대로, 확인 물건은 자리 사실이 손에 있음이면", () => {
-    const held = { ...obj({ last_seen_ms: 4_000, status: "out_of_view" }), facts: { place: fact("in_hand") } };
-    expect(lostTarget({ world: world([held]), cls: "cup", now: 10_000, freshMs: 3000 })).toMatchObject({ objectId: "cup_1", in_hand: true });
-    expect(lostTarget({ world: world([], [{ ...seen(5_000), in_hand: true }]), cls: "cup", now: 10_000, freshMs: 3000 })).toMatchObject({ objectId: null, in_hand: true });
   });
   it("찾기는 대상에 손을 대는 행동(TaskSpec.touch: 치우기·채우기·따르기)만 한다. 그대로 두기는 하지 않는다", () => {
     expect(["컵 치우기", "컵에 물 채워 주기", "컵에 콜라 따라 주기"].map((n) => TASKS[n]!.touch)).toEqual([true, true, true]);
@@ -258,7 +253,7 @@ describe("찾을 자리(lostTarget): 대상이 안 보일 때 마지막으로 �
   it("싱크대에 치운 컵과 식탁 위 후보 자리가 함께 있으면 후보 자리를 낸다", () => {
     const w = world([obj({ id: "cup_2", facts: inSink, last_seen_ms: 9_500 })], [seen(8_000)]);
     expect(checkDecision({ decision: base().decision, tasks: base().tasks, world: w, nowMs: 10_000 })).toMatchObject({ reason: "in_sink" });
-    expect(lostTarget({ world: w, cls: "cup", now: 10_000, freshMs: 10_000 })).toEqual({ objectId: null, cls: "cup", position: [2, 0.75, 0], surface: "t", surface_label: "식탁", at_ms: 8_000, in_hand: false });
+    expect(lostTarget({ world: w, cls: "cup", now: 10_000, freshMs: 10_000 })).toEqual({ objectId: null, cls: "cup", position: [2, 0.75, 0], surface: "t", surface_label: "식탁", at_ms: 8_000 });
   });
   it("들고 감 보호였던 물건·치운 것(싱크대 안·놓기로 끝냄)·쉬는 자리는 빼고, 여럿이면 가장 새 것", () => {
     const placed = new Map([["cup_3", { target: "sink_1", atMs: 9_000 }]]);

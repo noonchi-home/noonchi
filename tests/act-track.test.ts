@@ -18,7 +18,7 @@ import type { BrainLog, CloserResult, DecisionRecord } from "../src/contract/eve
 import type { HeardAt, PlannedCommand, PlannedCommandMessage } from "../src/contract/phone.js";
 import type { WorldChange, WorldObject, WorldView } from "../src/contract/world.js";
 import { PlanHub } from "../src/act/hub.js";
-import { APPROVAL_TEXT, CAUTION_TEXT, CHECK_TEXT, EXEC_TEXT, CAUTION_LINE, PEEK_TEXT, STEP_COMMAND, STEP_LABEL, type TellMode } from "../src/act/labels.js";
+import { APPROVAL_TEXT, CAUTION_TEXT, CHECK_TEXT, EXEC_TEXT, CAUTION_LINE, PEEK_TEXT, STEP_COMMAND, STEP_LABEL, USE_THOUGHT, type TellMode } from "../src/act/labels.js";
 import { CONTENTS_HOLD, PEEK } from "../src/act/track/contents.js";
 import { FIND } from "../src/act/track/find.js";
 import { PHONE_PROTOCOL } from "../src/phone/protocol.js";
@@ -3933,7 +3933,8 @@ describe("실행 추적: 안 보이는 대상은 마지막으로 본 자리로 �
     const looks: ContentsLook[] = [];
     const guards: [string, boolean][] = [];
     const asked: [number[], number][] = [];
-    const w = (): WorldView => ({ ...world(objects, o.person), ...(sightings ? { sightings } : {}) });
+    let person = o.person;
+    const w = (): WorldView => ({ ...world(objects, person), ...(sightings ? { sightings } : {}) });
     const s = setup({
       w, precheck: (d) => checkDecision({ decision: d, tasks: TASKS_ALL, world: w() }),
       spotReady: (at, since) => { asked.push([at, since]); return ready; },
@@ -3945,7 +3946,7 @@ describe("실행 추적: 안 보이는 대상은 마지막으로 본 자리로 �
     return {
       ...s, looks, guards, asked, tick,
       ready: (v: boolean) => { ready = v; }, took: (v: boolean) => { took = v; }, eye: (p: [number, number]) => { eye = p; s.t.onEye(p); },
-      objects: (x: WorldObject[]) => { objects = x; }, sightings: (x: WorldView["sightings"] | null) => { sightings = x; },
+      objects: (x: WorldObject[]) => { objects = x; }, sightings: (x: WorldView["sightings"] | null) => { sightings = x; }, person: (v?: string) => { person = v; },
     };
   }
   /** 가까이 가서(1m 안) 비춘 뒤 그 자리 사진이 모여 가까이 보기를 부탁한 데까지. */
@@ -3999,7 +4000,7 @@ describe("실행 추적: 안 보이는 대상은 마지막으로 본 자리로 �
     expect(fill.last()).toMatchObject({ id: "find:1" });
   });
 
-  it("사람이 그 컵(또는 무엇인지 모르는 물건)을 들고 있거나, 사람이 보이고 그 자리를 손에 든 채 봤으면 찾지 않는다(손에 든 컵을 찾으러 사람을 걷게 하지 않는다)", async () => {
+  it("사람이 컵을 쓰는 중이면(그 컵·무엇인지 모르는 물건을 듦, 그 자리를 손에 든 채 봄: 쓰는 중 지킴) 찾지 않는다. 사람이 안 보이면 찾는다", async () => {
     const holding = findSetup({ person: "holding_object" });
     await holding.decide(decision);
     expect(holding.exec().at(-1)).toMatchObject({ state: "failed", text: CHECK_TEXT.no_target });
@@ -4011,6 +4012,20 @@ describe("실행 추적: 안 보이는 대상은 마지막으로 본 자리로 �
     const gone = findSetup({ sightings: [{ ...sighting(), in_hand: true }] });
     await gone.decide(decision);
     expect(gone.last()).toMatchObject({ id: "find:1" });
+  });
+
+  it("찾는 중에 사람이 나타나 무엇인지 모르는 물건(컵일 수 있음)을 들면 찾기 명령을 거두고, 사람이 사라지면 다시 보낸다", async () => {
+    const s = findSetup();
+    await s.decide(decision);
+    expect(s.last()).toMatchObject({ id: "find:1", text: "식탁으로 가 주세요" });
+    s.person("holding_object");
+    s.tick();
+    expect(s.last()).toEqual({ type: "command_clear", id: "find:1" });
+    for (let i = 0; i < 8; i++) s.tick();
+    expect(s.last()).toEqual({ type: "command_clear", id: "find:1" });
+    s.person(undefined);
+    s.tick();
+    expect(s.last()).toMatchObject({ id: "find:1", text: "식탁으로 가 주세요", speak: true });
   });
 
   it("싱크대에 치운 컵이 따로 있어 계획 전 검사가 in_sink로 막아도 후보 자리가 있으면 찾으러 간다", async () => {
@@ -4429,5 +4444,97 @@ describe("실행 추적: 계획 대상이 안 보이면 그 마지막 자리에�
     for (let i = 0; i < 13; i++) carried.tick();
     expect(carried.commands().some((c) => c.step.includes(":find:"))).toBe(false);
     expect(carried.exec().find((l) => l.state === "failed")).toMatchObject({ text: CHECK_TEXT.stale });
+  });
+});
+
+describe("실행 추적: 사람이 쓰는 물건은 그 사람이 사라질 때까지 지켜본다(쓰는 중 지킴)", () => {
+  const fact = (value: string, at = 9_000) => ({ value, at_ms: at, since_ms: at, certainty: "confirmed" as const });
+  const NOONCHI = ["컵 치우기", "사용자에게 물어보기", "세탁물 건조기로 옮기기", "에어컨 켜기", "컵 그대로 두기", "컵에 물 채워 주기", "컵에 콜라 따라 주기"];
+  const mug = (): WorldObject => ({ ...cup("present", "on_table", 9_000), facts: { body: fact("opaque"), contents: fact("contents_unknown"), place: fact("on_table") }, contents_gen: 2 });
+  type Who = { act?: string; holding?: string[] } | null;
+  /** 식탁에 불투명 컵 cup_1(내용물 모름)이 있는 집. who로 사람을 바꾼다(null이면 안 보임, act 활동, holding 든 물건 id). 사람이 새로 보이면 그때가 since_ms다.
+   *  폰 눈은 컵 [2, 1]에서 1m. thoughts: 생각 말풍선에 올린 글. */
+  function useSetup(o: { objects?: () => WorldObject[]; over?: Parameters<typeof setup>[0] } = {}) {
+    let who: Who = null;
+    let since = 0;
+    const thoughts: string[] = [];
+    const clockAt = { t: 10_000 };
+    const w = (): WorldView => {
+      const base = world((o.objects ?? (() => [mug()]))());
+      if (!who) return base;
+      const facts = { ...(who.act ? { activity: fact(who.act, clockAt.t) } : {}), ...(who.holding ? { holding: fact("holding_object", clockAt.t) } : {}) };
+      return { ...base, person: { ...base.person, visible: true, since_ms: since, holding: who.holding ?? [], facts } };
+    };
+    const s = setup({ w, tasks: () => NOONCHI, thought: (text) => thoughts.push(text), lookContents: () => true, topReady: () => false, ...o.over });
+    s.t.onEye([3, 1]);
+    const tick = (ms = 250) => { s.clock.t += ms; clockAt.t = s.clock.t; s.t.onEye([3, 1]); s.t.tick(); };
+    const set = (p: Who) => { if (p && !who) since = s.clock.t; who = p; clockAt.t = s.clock.t; };
+    return { ...s, thoughts, tick, who: set };
+  }
+
+  it("사람이 컵으로 마시는 것을 보면 내려놓고 계속 있어도 사라질 때까지 계획 밖 가까이 가서 보기를 하지 않고, 생각 말풍선에 「사람이 마시는 중이라 지켜볼게요」를 한 번 올린다", () => {
+    const s = useSetup();
+    s.who({ act: "drinking" });
+    s.tick();
+    expect(s.commands()).toEqual([]);
+    expect(s.thoughts).toEqual([USE_THOUGHT.act("마시는 중")]);
+    expect(s.thoughts).toEqual(["사람이 마시는 중이라 지켜볼게요"]);
+    // 사람이 컵을 내려놓고 아무것도 하지 않아도 보이는 동안은 이어 간다
+    s.who({});
+    for (let i = 0; i < 80; i++) s.tick();
+    expect(s.commands()).toEqual([]);
+    expect(s.thoughts).toHaveLength(1);
+  });
+
+  it("사람이 사라지면 풀고, 다시 나타나 쓰지 않으면 가까이 가서 보며, 또 쓰면 거두고 다시 붙잡는다", () => {
+    const s = useSetup();
+    s.who({ act: "drinking" });
+    s.tick();
+    s.who(null);
+    s.tick();
+    // 계획 밖 가까이 가서 보기는 사람이 보일 때만 한다: 다시 나타나면(쓰지 않음) 바로 보낸다
+    s.who({});
+    s.tick();
+    expect(s.last()).toMatchObject({ id: "peek:1", text: PEEK_TEXT.go("컵") });
+    s.who({ holding: ["cup_1"] });
+    s.tick();
+    expect(s.last()).toEqual({ type: "command_clear", id: "peek:1" });
+    expect(s.thoughts).toEqual([USE_THOUGHT.act("마시는 중"), USE_THOUGHT.holding("컵")]);
+    for (let i = 0; i < 20; i++) s.tick();
+    expect(s.commands().filter((c) => c.speak)).toHaveLength(1);
+  });
+
+  it("다른 물건을 쓰는 것은 영향이 없다(병을 들어도 컵은 가까이 가서 본다)", () => {
+    const s = useSetup({ objects: () => [mug(), { ...cup("present", "on_table", 9_000), id: "bottle_1", cls: "bottle", position: [4, 0.75, 1] }] });
+    s.who({ holding: ["bottle_1"] });
+    s.tick();
+    expect(s.last()).toMatchObject({ id: "peek:1", text: PEEK_TEXT.go("컵") });
+    expect(s.thoughts).toEqual([]);
+  });
+
+  it("컵 치우기 계획은 사람이 컵을 쓰는 동안 첫 명령을 미루고(「사람이 쓰는 중이라 기다려요」) 사람이 사라지면 「식탁으로 가 주세요」부터 한다", async () => {
+    const s = useSetup({ objects: () => [cup("present", "on_table", 9_000)] });
+    s.who({ holding: ["cup_1"] });
+    s.tick();
+    await s.decide(decision);
+    expect(s.commands()).toEqual([]);
+    expect(s.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-1", state: "planned", text: EXEC_TEXT.inUse });
+    s.who({});
+    for (let i = 0; i < 40; i++) s.tick();
+    expect(s.commands()).toEqual([]);
+    expect(s.exec().filter((l) => l.text === EXEC_TEXT.inUse)).toHaveLength(1);
+    s.who(null);
+    s.tick();
+    expect(s.last()).toMatchObject({ id: "plan:pam-1", text: "식탁으로 가 주세요", speak: true });
+  });
+
+  it("사람이 holdMs 넘게 계속 있으면 그 계획을 「사람이 쓰는 중이라 실행하지 않아요」로 닫는다", async () => {
+    const s = useSetup({ objects: () => [cup("present", "on_table", 9_000)] });
+    s.who({ act: "drinking" });
+    s.tick();
+    await s.decide(decision);
+    for (let i = 0; i * 1000 <= CONTENTS_HOLD.holdMs + 1000; i++) s.tick(1000);
+    expect(s.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-1", state: "failed", text: EXEC_TEXT.inUseLong });
+    expect(s.commands()).toEqual([]);
   });
 });

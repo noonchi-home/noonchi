@@ -5,6 +5,9 @@ export const WORDS = {
   waiting: "기다리는 중",
   state: "상태",
   noonchi: "눈치",
+  /** 메시지 상자: 배운 습관대로 행동할 때 맨 위 한 줄의 앞말, 오른쪽 아래 이어짐 표시. */
+  habitLine: "배운 습관",
+  more: "▼",
   coach: "코치",
   habit: "습관",
   learnedRule: "배운 규칙",

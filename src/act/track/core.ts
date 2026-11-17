@@ -18,6 +18,7 @@ import type { Coach } from "./coach.js";
 import type { ContentsHold, Hold, IdlePeek } from "./contents.js";
 import type { Find, Finder, FindSlot } from "./find.js";
 import type { Cycle, CycleEnd, SafetyTracker } from "./safety.js";
+import type { UseWatch } from "./use.js";
 import type { Starter } from "./start.js";
 import type { Steps } from "./steps.js";
 import type { TrackerOptions } from "./tracker.js";
@@ -65,6 +66,8 @@ export interface Run {
   window: string | null;
   /** 실행 전 찾기(실행 전 검사가 대상이 안 보여 막은 계획, src/act/track/find.ts). 없으면 null. findHeld: 찾기로 붙잡은 적이 있다(풀린 첫 명령을 폰 대화·승인 대기 동안 미룬다). */
   find: Find | null; findHeld: boolean;
+  /** 사람이 계획 대상을 쓰는 중이라 첫 명령을 미루기 시작한 시각(src/act/track/use.ts waits). 아니면 null. */
+  usedAt: number | null;
 }
 
 /** at: 같은 행동 다시 계획 간격(planGapMs)을 세려고 적은 시각. */
@@ -89,6 +92,8 @@ export class TrackCore {
   finding: FindSlot | null = null;
   /** 계획 전 찾기에서 찾은 뒤 다시 판단 받기로 넘긴 판단 id: 그 판단으로 만든 계획은 찾기로 붙잡았던 것으로 본다(Run.findHeld). */
   foundFor: string | null = null;
+  /** 마지막으로 받은 판단 id(쓰는 중 지킴의 상태 줄이 붙는 판단). 없으면 null. */
+  lastDecision: string | null = null;
   /** 마지막으로 기다리기·기기 단계가 시작된 시각. 그 전에 보낸 다른 행동 판단은 쓰지 않는다. */
   quietFrom = -Infinity;
   stopped = false;
@@ -103,6 +108,7 @@ export class TrackCore {
   coach!: Coach;
   contents!: ContentsHold;
   finder!: Finder;
+  use!: UseWatch;
 
   constructor(readonly o: TrackerOptions, readonly clock: { now(): number }, readonly cfg: TrackConfig) {}
 

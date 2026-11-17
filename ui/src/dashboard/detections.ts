@@ -3,6 +3,7 @@
 // 이름표는 상자 위, 아래, 오른쪽 옆, 왼쪽 옆 차례로 칸 안에 들고 다른 이름표·다른 상자와 겹치지 않는 첫 자리에 둔다.
 // 제 상자가 든 큰 상자(식탁 위 컵)는 피하지 않는다. 작은 상자부터 고른다: 큰 상자 곁·안의 작은 상자는 고를 자리가 적다.
 // 오른쪽 끝에 걸리면 칸 안으로 당긴다.
+import { SHOW_SCORES } from "./dev";
 import { fitBox, toBox, type BoxSize } from "./fit";
 
 /** YOLO가 찾은 물건 하나: 화면 이름, 신뢰도(0~1), 상자(그림 픽셀 [왼쪽, 위, 오른쪽, 아래]). */
@@ -29,8 +30,9 @@ const hit = (a: Rect, b: Rect) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b
 const within = (a: Rect, b: Rect) => a.x0 >= b.x0 && a.y0 >= b.y0 && a.x1 <= b.x1 && a.y1 <= b.y1;
 const area = (r: Rect) => (r.x1 - r.x0) * (r.y1 - r.y0);
 
-/** YOLO 상자(그림 픽셀)를 영상 칸(size) 안 자리로. ceiling은 칸 위 끝에서 위쪽에 얹은 카드 아래 끝까지(px, 없으면 0): 그 아래에만 그린다. 칸 크기를 모르거나 상자가 칸 안에 남지 않으면 뺀다. */
-export function placeDetections(dets: Detection[], image: BoxSize, size: BoxSize, ceiling = 0): PlacedDetection[] {
+/** YOLO 상자(그림 픽셀)를 영상 칸(size) 안 자리로. ceiling은 칸 위 끝에서 위쪽에 얹은 카드 아래 끝까지(px, 없으면 0): 그 아래에만 그린다. 칸 크기를 모르거나 상자가 칸 안에 남지 않으면 뺀다.
+ *  이름표 글은 종류 이름만이고, scores(개발용 보기 ?scores=1)면 확신 숫자를 붙인다. */
+export function placeDetections(dets: Detection[], image: BoxSize, size: BoxSize, ceiling = 0, scores = SHOW_SCORES): PlacedDetection[] {
   const fit = fitBox(image, size, "contain");
   if (fit.scale <= 0) return [];
   const roof = ceiling + EDGE;
@@ -58,7 +60,7 @@ export function placeDetections(dets: Detection[], image: BoxSize, size: BoxSize
       ?? (above.y0 >= roof ? above : tagAt(x, r.y0 + TAG_GAP));
   }
   return boxes.map(({ d, r }, i) => ({
-    label: d.label, text: `${d.label} ${d.score.toFixed(2)}`,
+    label: d.label, text: scores ? `${d.label} ${d.score.toFixed(2)}` : d.label,
     left: r.x0, top: r.y0, width: r.x1 - r.x0, height: r.y1 - r.y0, tag: { left: tags[i]!.x0, top: tags[i]!.y0 },
   }));
 }

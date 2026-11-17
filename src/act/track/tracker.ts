@@ -83,6 +83,7 @@ import { OPEN, TrackCore, type TrackConfig } from "./core.js";
 import { Finder } from "./find.js";
 import { SafetyTracker, type Cycle, type CycleEnd } from "./safety.js";
 import { Starter } from "./start.js";
+import { UseWatch } from "./use.js";
 
 export type { HeardResult } from "./answers.js";
 export type { Stray } from "./coach.js";
@@ -215,6 +216,7 @@ export class ExecutionTracker {
     core.coach = new Coach(core);
     core.contents = new ContentsHold(core);
     core.finder = new Finder(core);
+    core.use = new UseWatch(core);
     this.core = core;
   }
 
@@ -309,6 +311,8 @@ export class ExecutionTracker {
     const r = core.run;
     if (!core.stopped) safety.reminderTick();
     // 계획 전 찾기(대상이 안 보여 막은 판단)가 먼저, 계획 밖 가까이 가서 보기(판단 전 보기 B 뒤에도 모를 때)는 계획·찾기가 없을 때만 하고 막는 것이 생기면 거둔다
+    // 사람이 손대는 행동 대상을 쓰는지 먼저 본다(쓰는 중이면 찾기·가까이 가서 보기가 그 종류로 사람을 보내지 않는다, use.ts)
+    if (!core.stopped) core.use.update();
     if (!core.stopped) core.finder.idle();
     if (!core.stopped) core.contents.idle();
     if (core.stopped || !r || !OPEN.has(r.state)) return;

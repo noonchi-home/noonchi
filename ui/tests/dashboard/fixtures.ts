@@ -8,7 +8,7 @@ import type { Detection } from "../../src/dashboard/detections";
 import { hubOf } from "../../src/lib/hub";
 import { createSeenStore, type SeenStore } from "../../src/dashboard/masks";
 import type { PhoneSlot } from "../../src/dashboard/PhonePane";
-import type { Thought } from "../../src/dashboard/data";
+import type { Talk } from "../../src/dashboard/data";
 import { taskOf } from "../../../src/act/tasks.ts";
 import { BOX_NAME } from "../../src/dashboard/words";
 import type { SeenEvent } from "../../../src/contract/events.ts";
@@ -99,8 +99,12 @@ export const MESSAGES = [
   { id: "pam-1@1794214809000:0", text: "사람이 컵을 두고 자리를 떠났어요" },
   { id: "pam-1@1794214809000:1", text: "치우는 습관이라 컵을 치울게요" },
 ];
-/** 계획 단계의 생각 말풍선(메시지·FSM 상태 이름표·습관 아님·눈치·판단). 지켜보기는 메시지가 없어 숨긴다. */
-export const THOUGHT: Thought = { messages: MESSAGES, state: LEFT_CUP_STATE, habit: false, assist: "noonchi", action: CLEAR_CUP };
+/** 계획 단계의 메시지 상자(다듬은 생각 두 줄, 배운 습관 아님). */
+export const TALK: Talk = { lines: MESSAGES, habit: null };
+/** 배운 습관대로 행동할 때 메시지 상자 맨 위 한 줄. */
+export const HABIT = "배운 습관: 컵을 두고 자리를 뜸 · 컵 치우기";
+/** 지켜보기의 메시지 상자(말풍선 카드 말 한 줄). */
+export const WATCH_TALK: Talk = { lines: [{ id: "say@0:0", text: "지켜보고 있어요." }], habit: null };
 
 /** 컵 갈래 판단 고정 자료: 행동, 그 규칙이 있는 FSM 상태 id·트리거(src/brain/decision.ts CUP_FSM_MEMORY와 같다, data.test.ts가 견준다), PAM의 생각 한 문장. */
 export interface Branch { action: string; state: string; trigger: string; reasoning: string }
@@ -156,7 +160,7 @@ export function screenAt(n: number, over: Partial<ScreenProps> = {}): ScreenProp
   return {
     index: n, plan, step: plan ? plan.steps[n - 1]! : null, robotKnown: true, connected: true, map: MAP, mapReady: true,
     phone: imageSlot(), seen: seenOf([BOX]),
-    thought: n > 0 ? THOUGHT : null, say: SAY[n]!, facing: n > 0 ? "twin" : "video", hub: HUB,
+    talk: n > 0 ? TALK : WATCH_TALK, facing: n > 0 ? "twin" : "video", hub: HUB,
     ...over,
   };
 }
