@@ -96,11 +96,13 @@ describe("고른 행동의 FSM 상태(대시보드 생각 말풍선 「상태」
 
   it("지금 FSM(fsmNow): 규칙이 있는 행동은 그 상태·트리거(matched), 대기·규칙 없는 행동은 직전 상태(처음이면 기억의 처음 상태)에 트리거 없음, list 기억이면 null", () => {
     const left = CUP_FSM_MEMORY.states.find((s) => s.id === "left_cup")!;
-    expect(fsmNow(CUP_FSM_MEMORY, "fsm", "컵 치우기", null)).toEqual({ state: "left_cup", trigger: left.rules[0]!.trigger, learned: false, matched: true });
-    expect(fsmNow(CUP_FSM_MEMORY, "fsm", null, null)).toEqual({ state: CUP_FSM_MEMORY.initial_state, trigger: null, learned: false, matched: false });
+    expect(fsmNow(CUP_FSM_MEMORY, "fsm", "컵 치우기")).toEqual({ state: "left_cup", trigger: left.rules[0]!.trigger, learned: false, matched: true });
+    expect(fsmNow(CUP_FSM_MEMORY, "fsm", null)).toEqual({ state: CUP_FSM_MEMORY.initial_state, trigger: null, learned: false, matched: false });
+    // 직전에 상태를 정할 수 없었으면(null) 대기도 「정할 수 없음」이다(처음 상태와 다르다)
+    expect(fsmNow(CUP_FSM_MEMORY, "fsm", null, null)).toEqual({ state: null, trigger: null, learned: false, matched: false });
     expect(fsmNow(CUP_FSM_MEMORY, "fsm", null, "left_cup")).toEqual({ state: "left_cup", trigger: null, learned: false, matched: false });
     expect(fsmNow(CUP_FSM_MEMORY, "fsm", "사용자에게 물어보기", "left_cup")).toEqual({ state: "left_cup", trigger: null, learned: false, matched: false });
-    expect(fsmNow(CUP_MEMORY, "list", "컵 치우기", null)).toBeNull();
+    expect(fsmNow(CUP_MEMORY, "list", "컵 치우기")).toBeNull();
   });
 
   // 반성이 배운 규칙: seed에 없는 트리거·행동 쌍

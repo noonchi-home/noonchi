@@ -50,8 +50,8 @@ export class Decider {
   private seq = 0;
   private stopped = false;
   private link: boolean | null = null;
-  /** 마지막으로 맞은 규칙의 FSM 상태(대기 판단의 지금 상태). 없으면 null(기억의 처음 상태). */
-  private fsmState: string | null = null;
+  /** 마지막으로 맞은 규칙의 FSM 상태(대기 판단의 지금 상태). undefined면 아직 없음(기억의 처음 상태), null이면 규칙이 여러 상태라 정할 수 없었음. */
+  private fsmState: string | null | undefined = undefined;
   private paused: TriggerPause | "acting" | null = null;
   private readonly clock: { now(): number };
 
@@ -104,9 +104,9 @@ export class Decider {
           const said = this.o.keepHeard?.() ? [] : saidIn(textSent);
           const prediction = said.length ? { ...p, observation: redactSaid(p.observation, said), reasoning: redactSaid(p.reasoning, said) } : p;
           const fsm = fsmNow(mem.memory, mem.kind, action, this.fsmState);
-          // 맞은 규칙의 상태로 옮긴다. 대기·규칙 없는 행동이 직전 상태를 쓰지 않았으면(지금 기억에 없음) 지운다
-          if (fsm?.matched) this.fsmState = fsm.state ?? this.fsmState;
-          else if (fsm?.state !== this.fsmState) this.fsmState = null;
+          // 맞은 규칙의 상태(정할 수 없으면 null)로 옮긴다. 대기·규칙 없는 행동이 직전 상태를 쓰지 못했으면(지금 기억에 없음) 처음으로 돌린다
+          if (fsm?.matched) this.fsmState = fsm.state;
+          else if (fsm && fsm.state !== this.fsmState) this.fsmState = undefined;
           this.finish({ ...base, status: "valid", prediction, action, fsm });
         },
         (e: unknown) => {
