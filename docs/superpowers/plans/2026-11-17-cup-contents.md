@@ -4,18 +4,18 @@
 
 **Goal:** 컵 안 내용물을 사진 한 장으로 바꾸지 않는다. 새 값은 서로 다른 VLM 사진 3장·4초가 이어지거나 사람이 말로 답할 때만 정하고, 확인된 값은 마시기·따르기 같은 행동으로만 다시 연다. 불투명 컵은 VLM 내용물 답을 쓰지 않는다. 내용물이 필요한 행동인데 모르면 실행을 붙잡고 가까이 본 뒤 폰이 소리로 「컵 비었어요?」를 묻고 말로 받은 답을 World State에 넣는다.
 
-**Architecture:** World State에 내용물 갱신기 하나(`src/world/state/contents.ts` `ContentsBook`)를 둔다. 전체 사진 VLM 답·가까이 본 사진 VLM 답·사람 답·마시기 따르기 사건·계획의 따르기 단계가 모두 이 갱신기로 들어가고, 갱신기가 물건의 `facts.contents`(확인됨이면 믿어도 되는 값)와 내용물 세대(`contents_gen`)를 쓴다. 실행 쪽은 `facts.contents`가 확인됨일 때만 값으로 쓴다(조건 `factIs`·실행 전 검사·판단 전 보기 B). 실행 전 검사가 내용물을 몰라 막은 계획은 실행 추적의 내용물 보류(`src/act/track/contents.ts` `ContentsHold`)가 붙잡아 가까이 보기 → 사진 기다리기 → 말 질문 차례로 푼다. 질문은 지금 명령 줄(승인 질문과 같은 `Run.asking` 자리)로 보내고 단추 없이 말로만 받는다.
+**Architecture:** World State에 내용물 갱신기 하나(`src/world/state/contents.ts` `ContentsBook`)를 둔다. 전체 사진 VLM 답·가까이 본 사진 VLM 답·사람 답·마시기 따르기 사건·계획의 따르기 단계가 모두 이 갱신기로 들어가고, 갱신기가 물건의 `facts.contents`(확인됨이면 믿어도 되는 값)와 내용물 세대(`contents_gen`)를 쓴다. 실행 쪽은 `facts.contents`가 확인됨일 때만 값으로 쓴다(조건 `factIs`·실행 전 검사·판단 전 보기 B). 실행 전 검사가 내용물을 몰라 막은 계획은 실행 추적의 내용물 보류(`src/act/track/contents.ts` `ContentsHold`)가 붙잡아 가까이 보기 → 사진 기다리기 → 말 질문 차례로 푼다. 질문은 지금 명령 줄(승인 질문과 같은 `Run.asking` 자리)로 보내고 단추 없이 말로만 받는다. 계획이 없을 때는 판단 전 보기 B가 가까이 본 뒤에도 모르거나 불투명한 컵을 같은 명령 줄의 계획 밖 질문(`TrackCore.idleAsk`)으로 묻는다.
 
 **Tech Stack:** Node 22 TypeScript, zod, Vitest, 가짜 OpenAI 호환 서버(`scripts/fake-openai.ts`), 시험용 PAM 자리(`tests/helpers/pam.ts`).
 
 **Spec:** 사용자가 정한 것(2026-11-17) 1~3번과 Codex 설계 검토를 받은 설계(이 계획을 부탁한 글). 구현명세서 `docs` 저장소 `01_Product/구현명세서 SSOT.md` 6.1·6.2·6.3·6.6·6.12절. 저장소 설명 `docs/reference.md` 「관찰 흐름」.
 
-## 정해야 할 것 (구현 전에 답이 필요)
+## 정한 것 (2026-11-17)
 
-1. **불투명 머그 장면에서 질문이 안 나간다.** PAM 시나리오 지시문은 「(짐작)·모름 값이면 규칙을 쓰지 않는다」이다(`services/pam/scenarios/noonchi/scenario.json`). 불투명 머그는 내용물이 늘 「안이 안 보임」이라 PAM이 물 채우기·콜라 규칙을 고르지 않고 대기한다. 이 계획은 설계대로 **PAM이 고른 행동이 내용물 때문에 막혔을 때만** 묻는다. 그래서 불투명 머그 + 아직 아무도 답하지 않음이면 물·콜라 장면이 나오지 않는다. 고를 것:
-   - (가) 그대로 둔다. 불투명 머그로 물·콜라 장면을 보이려면 투명 컵을 쓰거나 그 장면 전에 사람이 다른 길로 답해야 한다.
-   - (나) 판단 전 보기 B 끝에 묻기를 더한다: 가까이 봐도 못 정했거나 불투명 컵이고, 행동 목록에 내용물 행동이 있고, 열린·만드는 계획·끄기 안내·승인 대기가 없고, 위치를 맞췄고, 사람이 보일 때. Codex P2(전자레인지·라면·에어컨 장면 중 질문)를 다시 받는 안이다.
-   - 이 계획의 묶음 1~10은 (가)로 쓴다. (나)를 고르면 묶음 11을 더한다(아래 끝에 적은 모양).
+1. **판단 전 보기 B 끝에도 묻는다(묶음 11).** PAM 시나리오 지시문은 「(짐작)·모름 값이면 규칙을 쓰지 않는다」라(`services/pam/scenarios/noonchi/scenario.json`), 불투명 머그는 PAM이 물·콜라를 고르지 않고 대기한다. 보류된 행동에만 물으면 그 장면에서 질문도 물·콜라도 나오지 않는다. 사용자는 「모르면 사람에게 말로 묻기」를 원했다.
+   - 묻는 때(모두): 가까이 봐도 못 정했거나(B가 그 세대에 가까이 본 뒤 4초) 불투명 컵이다, 행동 목록에 내용물 행동(`want`)이 있다, 열린·만드는 계획(코치 포함)·끄기 안내·승인 대기가 없다, 위치를 맞췄다, 사람이 보인다.
+   - 계획이 없어 질문 문맥은 실행 추적의 계획 밖 질문 칸(`TrackCore.idleAsk`, 명령 id `ask:<번호>`)이다. 답·늦은 답·한 번만·답 없음 규칙은 보류 질문(묶음 8)과 같다. 계획이 시작되거나 막는 것이 생기면 질문을 지운다.
+   - 보류된 행동의 질문(묶음 7~8)은 그대로 둔다.
 2. 「컵 그대로 두기」(계획 없는 행동)는 내용물을 모르면 묻지 않고 「안을 몰라 실행하지 않아요」로 기록만 한다(아무것도 안 하는 행동이라 물을 까닭이 없다).
 
 ## 조사한 사실 (2026-11-17, `refactor/domain-split` 8afca05)
@@ -78,6 +78,7 @@
 | `src/act/tasks.ts`, `src/act/check.ts`, `src/act/labels.ts`, `src/act/look.ts` | 행동 조건 `want`, 검사, B |
 | `src/act/track/contents.ts`(새로), `core.ts`, `start.ts`, `approval.ts`, `answers.ts`, `steps.ts`, `tracker.ts`, `src/act/ask-step.ts`(새로), `src/act/talk-grade.ts`, `src/act/say.ts` | 보류·질문·답, 따르기 창 |
 | `src/act/look.ts`, `src/observe/pipeline.ts`, `src/server/home/act.ts` | 보류의 가까이 보기, 방송 길, 잇기 |
+| `src/act/track/contents.ts`, `core.ts`(`idleAsk`), `answers.ts`, `tracker.ts`(`tasks`·`lookedIdle`), `src/act/look.ts`(`looked`), `src/server/home/act.ts` | 계획 밖 질문(B 끝에 묻기, 묶음 11) |
 | `tests/contents-answer.test.ts`(새로), `tests/world-contents.test.ts`(새로), 기존 시험 | 시험 |
 | `docs/reference.md` | 저장소 설명 |
 
@@ -1346,12 +1347,13 @@ export const CONTENTS_TEXT: { ask: (item: string) => string }; // 「컵 비었�
 `tests/talk-grade.test.ts`:
 
 ```ts
-it("내용물 질문(단추 없음)은 question이다", () => {
+it("내용물 질문(단추 없음)은 question이다(계획 안 질문·계획 밖 질문 모두)", () => {
   expect(talkGrade({ step: "plan:pam-1:contents:cup_1:3", choices: [] }, false)).toBe("question");
+  expect(talkGrade({ step: "ask:1:contents:cup_1:0", choices: [] }, false)).toBe("question");
 });
 ```
 
-`tests/act-say.test.ts`: 열린 계획에 내용물 질문 명령(`step: "plan:pam-1:contents:cup_1:3", choices: []`)이 떠 있으면 `sayLine`이 `SAY_TEXT.asked`.
+`tests/act-say.test.ts`: 내용물 질문 명령(`step: "plan:pam-1:contents:cup_1:3"`, 열린 계획)과 계획 밖 질문 명령(`id: "ask:1", step: "ask:1:contents:cup_1:0"`, 계획 없음)이 떠 있으면 `sayLine`이 둘 다 `SAY_TEXT.asked`.
 
 `tests/act-track.test.ts`의 Task 7 describe에 더한다(`holdSetup` 그대로, `answerContents`를 넘겨 World를 바꾼다):
 
@@ -1457,8 +1459,8 @@ export const isContentsStep = (step: string): boolean => /:contents:[^:]+:\d+$/.
 ```ts
 // src/act/talk-grade.ts: offStep 다음
 if (isContentsStep(c.step)) return "question";
-// src/act/say.ts: sent 계산 뒤
-if (sent && isContentsStep(sent.step)) return SAY_TEXT.asked;
+// src/act/say.ts: 끄기 안내 줄(isOffStep) 바로 다음, 계획 갈래 앞(계획 밖 질문도 같은 글)
+if (command?.type === "command" && isContentsStep(command.step)) return SAY_TEXT.asked;
 // src/act/track/core.ts choicesOf
 if (r.asking?.why === "contents") return [...CONTENTS_CHOICES];
 // src/act/track/answers.ts onAnswer: a?.why 갈래에
@@ -1696,6 +1698,8 @@ git push origin refactor/domain-split
 
 ### Task 10: 문서와 전체 검증
 
+묶음 11(B 끝에 묻기)을 끝낸 뒤 마지막에 한다.
+
 **Files:**
 - Modify: `docs/reference.md`(「관찰 흐름」 World State·VLM·계획·검사·실행 줄, 「가까이 보기」, 판단 전 보기)
 
@@ -1703,7 +1707,7 @@ git push origin refactor/domain-split
   - World State 줄: 「VLM 사실은 … 같은 값이 두 번 이어지면 확인됨이다」 뒤에 내용물 예외(3장·4초·6초 공백, 같은 원본 프레임 한 장, 확인 값은 사건·따르기 단계로만 다시 열림, 반대 값 2장이면 짐작, 사람 답은 다음 사건까지, 불투명 확인이면 「안이 안 보임」).
   - 관절 줄: 입에 댐·기운 병 사건.
   - 계획·검사·실행 줄: 행동 조건(그대로 두기 내용물 있음, 채우기·콜라 비어 있음), 계획 전 검사는 반대 값만 막음, 실행 전 검사 내용물 모름 → 보류(가까이 보기 → 4초 → 「컵 비었어요?」 말 질문, 단추 없음, 2분, 60초 다시 묻지 않음, 위치 맞춘 뒤·끄기 안내·승인 대기 없을 때), 따르기 단계 창, 조건의 내용물은 확인됨만.
-  - 판단 전 보기 B: 짐작도 모름으로 보고, 불투명 컵 내용물은 보지 않음.
+  - 판단 전 보기 B: 짐작도 모름으로 보고, 불투명 컵 내용물은 보지 않음. 계획이 없을 때 B가 가까이 본 뒤 4초에도 모르거나 불투명한 컵은 계획 밖 질문으로 묻는 때(정한 것 1의 조건)와 지우는 때.
 - [ ] **Step 2: 전체 검증**(하나씩, 메모리 3GB 넘을 때)
   - `npm run heavy -- npm run typecheck`
   - `npm run heavy -- npm run lint`
@@ -1717,16 +1721,311 @@ git commit -m "docs: describe cup contents confirmation, events and the spoken c
 git push origin refactor/domain-split
 ```
 
-- [ ] **Step 4: 구현명세서에서 바꿀 곳 목록을 보고한다**(고치지 않는다): 6.1의 4(사실 53개·면 10개), 6.1의 8(VLM 값 목록에 몸통 면), 6.2 사실·지금만 맞는 상태·관찰 텍스트 줄(내용물 확인 규칙·사건·사람 답 꼬리·불투명), 6.3 행동 목록(행동 조건), 계획 전·실행 전 검사(내용물), 실행 추적(보류·말 질문·따르기 창), 사용자에게 묻기 단락(내용물 질문은 단추 없이 말), 6.6 B(짐작도 모름, 불투명 제외)·보류의 가까이 보기, 6.12 노닌치 시나리오 설명(「(짐작)」 줄과 사람 답 꼬리).
+- [ ] **Step 4: 구현명세서에서 바꿀 곳 목록을 보고한다**(고치지 않는다): 6.1의 4(사실 53개·면 10개), 6.1의 8(VLM 값 목록에 몸통 면), 6.2 사실·지금만 맞는 상태·관찰 텍스트 줄(내용물 확인 규칙·사건·사람 답 꼬리·불투명), 6.3 행동 목록(행동 조건), 계획 전·실행 전 검사(내용물), 실행 추적(보류·말 질문·따르기 창), 사용자에게 묻기 단락(내용물 질문은 단추 없이 말, 계획 밖 질문), 6.6 B(짐작도 모름, 불투명 제외, B 끝에 묻기)·보류의 가까이 보기, 6.12 노닌치 시나리오 설명(「(짐작)」 줄과 사람 답 꼬리).
 
 ---
 
-### Task 11 (정해야 할 것 1에서 (나)를 고를 때만): 판단 전 보기 B 끝에 묻기
+### Task 11: 판단 전 보기 B 끝에 묻기(계획 밖 질문)
 
-모양만 적는다. 고르면 이 묶음을 Task 7~8과 같은 틀(실패 시험 → 구현 → 통과)로 풀어 쓴다.
-- B(`Looker.tick`)가 가까이 본 뒤에도 그 컵이 모르거나 불투명이면 실행 추적에 `askIdle(objectId)`를 부른다.
-- 실행 추적은 열린 계획·만드는 계획·코치·끄기 안내·승인 대기가 없고, 위치를 맞췄고, 사람이 보이고, 행동 목록에 `want`가 있는 행동이 있을 때만 질문 문맥(명령 id `ask:contents:<컵>:<세대>`, 계획 없음)을 만들어 같은 `CONTENTS_TEXT.ask`로 묻는다. 답은 같은 `answerContents` 길.
-- 시험: 전자레인지·라면·에어컨 장면(열린 계획·코치)에서는 묻지 않음, 위치를 맞추기 전에는 묻지 않음.
+정한 것 1. 묶음 8 뒤, 묶음 9와 따로 커밋한다(묶음 9 뒤에 해도 된다). 묶음 10보다 먼저 한다.
+
+**Files:**
+- Modify: `src/act/track/contents.ts`(idle·lookedIdle·idleAnswered·dropIdle), `src/act/track/core.ts`(`TrackCore.idleAsk`), `src/act/track/answers.ts`(openCommand·onAnswer·onHeard), `src/act/track/tracker.ts`(tick·`lookedIdle`·`TrackerOptions.tasks`), `src/act/look.ts`(`LookerOptions.looked`), `src/server/home/act.ts`(잇기)
+- Test: `tests/act-track.test.ts`(새 describe, 파일 맨 위 `setup` 사용), `tests/act-look.test.ts`
+
+**Interfaces:**
+- Consumes: 묶음 6 `sureValue`·`opaqueBody`·`wantOf`, 묶음 8 `CONTENTS_CHOICES`·`contentsAnswer`·`contentsStep`·`CONTENTS_TEXT`·`answerContents`·`approvalsWaiting`, `ContentsHold`의 `asked`·`quietUntil`
+- Produces:
+
+```ts
+// src/act/track/core.ts TrackCore
+/** 계획 밖 내용물 질문(판단 전 보기 B 끝, src/act/track/contents.ts idle): 명령 id ask:<번호>, 그 컵·세대, 보낸 명령, 물은·읽은 시각. 없으면 null. */
+idleAsk: { id: string; objectId: string; gen: number; sent: PlannedCommand; askAt: number; spokeAt: number } | null;
+// TrackerOptions
+/** 이번 판단에 보내는 행동 목록(src/act/tasks.ts tasksFor). 내용물 행동(want)이 있을 때만 계획 밖 질문을 한다. 없으면 묻지 않는다. */
+tasks?: () => readonly string[];
+// ExecutionTracker
+/** 판단 전 보기 B가 그 컵을 가까이 봤다(src/act/look.ts looked). */
+lookedIdle(objectId: string): void;
+// LookerOptions
+/** B가 가까이 보기를 마쳤다(자원 사정으로 못 본 것은 빼고). 그 물건 id. */
+looked?: (objectId: string) => void;
+```
+
+- [ ] **Step 1: 실패하는 시험**
+
+`tests/act-track.test.ts` 맨 끝(파일 위쪽 `setup`·`cup`·`world`·`decision` 사용):
+
+```ts
+describe("실행 추적: 계획 밖 내용물 질문(판단 전 보기 B 끝)", () => {
+  const fact = (value: string) => ({ value, at_ms: 9_000, since_ms: 9_000, certainty: "confirmed" as const });
+  const OPAQUE = { body: fact("opaque"), contents: fact("contents_unknown") };
+  const GUESS = { contents: { ...fact("empty"), certainty: "inferred" as const } };
+  /** 사람이 보이고(먹는 중) 식탁에 컵 하나가 있는 집. tasks 기본은 눈치 모드 목록(내용물 행동 있음), 위치는 맞췄다. */
+  function idleSetup(o: { facts?: WorldObject["facts"]; tasks?: string[]; eye?: boolean; person?: boolean; over?: Parameters<typeof setup>[0] } = {}) {
+    let facts = o.facts ?? OPAQUE;
+    const answered: [string, string, number][] = [];
+    const s = setup({
+      w: () => world([{ ...cup("present", "on_table", 9_000), facts: { ...facts, place: fact("on_table") }, contents_gen: 2 }], o.person === false ? undefined : "eating", 9_000),
+      tasks: () => o.tasks ?? ["컵 치우기", "사용자에게 물어보기", "컵 그대로 두기", "컵에 물 채워 주기", "컵에 콜라 따라 주기"],
+      answerContents: (id, v, g) => { answered.push([id, v, g]); facts = { ...facts, contents: { ...fact(v), by: "person" as const } }; return true; },
+      ...o.over,
+    });
+    if (o.eye !== false) s.t.onEye([0, 0]);
+    const tick = (ms = 250) => { s.clock.t += ms; s.t.tick(); };
+    return { ...s, answered, tick, set: (f: WorldObject["facts"]) => { facts = f; } };
+  }
+
+  it("계획이 없고 불투명 컵이면 지금 명령 줄에 「컵 비었어요?」를 단추 없이 소리로 묻고, 말 「비었어」를 그 컵·세대로 넣은 뒤 질문을 지운다", () => {
+    const s = idleSetup();
+    s.tick();
+    expect(s.last()).toEqual({ type: "command", id: "ask:1", step: "ask:1:contents:cup_1:2", text: "컵 비었어요?", vision: null, choices: [], target: expect.objectContaining({ id: "cup_1" }), speak: true, grade: "question" });
+    expect(s.t.openCommand()).toMatchObject({ planId: "ask:1", kind: "ask", text: "컵 비었어요?" });
+    expect(s.heard("비었어")?.id).toBe("empty");
+    expect(s.answered).toEqual([["cup_1", "empty", 2]]);
+    expect(s.last()).toEqual({ type: "command_clear", id: "ask:1" });
+    expect(s.t.openCommand()).toBeNull();
+  });
+
+  it("불투명이 아니면 B가 그 세대에 가까이 본 뒤 4초가 지나야 묻는다", () => {
+    const s = idleSetup({ facts: GUESS });
+    s.tick();
+    expect(s.commands()).toEqual([]);
+    s.t.lookedIdle("cup_1");
+    s.tick(3_500);
+    expect(s.commands()).toEqual([]);
+    s.tick(600);
+    expect(s.last()).toMatchObject({ text: "컵 비었어요?" });
+  });
+
+  it("묻지 않는 때: 위치를 맞추기 전, 사람이 안 보임, 목록에 내용물 행동이 없음(코치 모드), 승인 대기, 이미 확인된 컵", () => {
+    for (const o of [{ eye: false }, { person: false }, { tasks: ["라면 끓이기 알려 주기", "사용자에게 물어보기"] }, { over: { approvalsWaiting: () => true } }, { facts: { contents: fact("empty") } }]) {
+      const s = idleSetup(o);
+      s.tick();
+      expect(s.commands()).toEqual([]);
+    }
+  });
+
+  it("계획이 열려 있으면 묻지 않고, 떠 있는 질문은 계획이 시작되면 지운다(계획 명령이 그 자리를 덮어 지우기는 보내지 않는다)", async () => {
+    const s = idleSetup();
+    s.tick();
+    expect(s.last()).toMatchObject({ id: "ask:1" });
+    await s.decide(decision);
+    s.tick();
+    expect(s.t.openCommand()).toMatchObject({ planId: "plan:pam-1", text: "식탁으로 가 주세요" });
+    expect(s.phone.some((m) => m.type === "command_clear" && m.id === "ask:1")).toBe(false);
+    s.tick();
+    expect(s.commands().filter((m) => m.id.startsWith("ask:"))).toHaveLength(1);
+  });
+
+  it("다른 명령에 온 말은 늦은 답이고, 「그만」은 질문을 지운다. 세대가 바뀌면 질문을 지운다", () => {
+    const s = idleSetup();
+    s.tick();
+    expect(s.t.onHeard("비었어", { kind: "command", id: "plan:pam-9", step: "plan:pam-9:1", pending: [] })).toEqual({ kind: "stale" });
+    expect(s.heard("그만해")?.id).toBe("stop");
+    expect(s.last()).toEqual({ type: "command_clear", id: "ask:1" });
+    expect(s.answered).toEqual([]);
+  });
+
+  it("2분 안에 답이 없으면 지우고(물어봄으로 세지 않음) 그 컵은 60초 동안 다시 묻지 않는다. 답한 컵·세대는 다시 묻지 않는다", () => {
+    const s = idleSetup();
+    s.tick();
+    s.tick(120_100);
+    expect(s.last()).toEqual({ type: "command_clear", id: "ask:1" });
+    s.tick(30_000);
+    expect(s.commands().filter((m) => m.speak && m.text === "컵 비었어요?")).toHaveLength(1);
+    s.tick(31_000);
+    expect(s.last()).toMatchObject({ id: "ask:2", text: "컵 비었어요?" });
+    s.heard("아직 있어");
+    s.set(OPAQUE); // 같은 세대로 다시 모름이 되어도
+    s.tick(1_000);
+    expect(s.last()).toEqual({ type: "command_clear", id: "ask:2" });
+  });
+});
+```
+
+(`setup`의 `heard`는 받은 답의 `ActionChoice`를 돌려준다. 계획 밖 질문의 답은 `CONTENTS_CHOICES` 하나라 `id`가 `empty`·`has` 등이다.)
+
+`tests/act-look.test.ts` B describe에:
+
+```ts
+it("B가 가까이 보기를 마치면 looked(그 물건 id)를 부른다. 새 사진이 모자라 못 본 것은 부르지 않는다", async () => {
+  const looked: string[] = [];
+  const t = await setup({ script: () => [["look_closer", { target: "cup_1", reason: "안을 보려고" }]], objects: [cupAt({ facts: { contents: fact("contents_unknown") } })], options: { looked: (id) => looked.push(id) } });
+  t.looker.tick();
+  await t.looker.idle();
+  expect(looked).toEqual(["cup_1"]);
+  const w = await setup({ script: () => [["look_closer", { target: "cup_1", reason: "안을 보려고" }]], objects: [cupAt({ facts: { contents: fact("contents_unknown") } })], closer: testCloser({ ok: false, why: "no_fresh_frames" }), options: { looked: (id) => looked.push(id) } });
+  w.looker.tick();
+  await w.looker.idle();
+  expect(looked).toEqual(["cup_1"]);
+});
+```
+
+(`testCloser`가 결과를 받는 모양이 다르면 `tests/helpers/look.ts`의 모양에 맞춘다.)
+
+- [ ] **Step 2: 실패 확인**
+
+Run: `npm run heavy -- npx vitest run tests/act-track.test.ts -t "계획 밖"`, `npm run heavy -- npx vitest run tests/act-look.test.ts -t looked`
+Expected: FAIL
+
+- [ ] **Step 3: 구현**
+
+```ts
+// src/act/track/contents.ts ContentsHold에 더한다(파일 머리 설명에 「계획이 없으면 B 끝에 묻기」 한 단락)
+/** 판단 전 보기 B가 가까이 본 컵: 그때 세대와 시각. */
+private readonly lookedB = new Map<string, { gen: number; at: number }>();
+private idleSeq = 0;
+
+lookedIdle(objectId: string): void {
+  const o = this.o.world().objects.find((x) => x.id === objectId);
+  this.lookedB.set(objectId, { gen: o?.contents_gen ?? 0, at: this.clock.now() });
+}
+
+/** 묻지 않을 때: 멈춤·열린 계획·만드는 계획·위치 맞추기 전·폰 없음·끄기 안내·승인 대기·사람 안 보임·목록에 내용물 행동 없음. */
+private idleBlocked(world: WorldView): boolean {
+  const core = this.core;
+  return core.stopped || !!core.open() || !!core.planning || !core.eye || !core.start.phoneOk() || core.safety.offPending() || !!core.safety.shownOff()
+    || (this.o.approvalsWaiting?.() ?? false) || !world.person.visible || !this.wanting().length;
+}
+
+/** 목록의 내용물 행동(want가 있는 행동). */
+private wanting(): TaskSpec[] {
+  return (this.o.tasks?.() ?? []).map((n) => taskOf(n)).filter((t): t is TaskSpec => !!t?.want && !!t.target);
+}
+
+/** 물을 컵: 내용물 행동의 대상 종류이고, 보이고 자리를 알며, 치운 것·손에 든 것이 아니고, 볼 면을 모르고, 이 세대에 묻지 않았고 다시 묻기 대기가 아니며,
+ *  불투명이 확인됐거나 B가 이 세대에 가까이 본 지 settleMs가 지났다. 여럿이면 가장 최근에 본 것. */
+private idleTarget(world: WorldView, now: number): WorldObject | null {
+  const wants = this.wanting();
+  const placed = this.core.steps.placed();
+  const hit = world.objects.filter((o) => {
+    const facets = wants.filter((t) => t.target === o.cls).flatMap((t) => Object.keys(t.want!) as Facet[]);
+    if (!facets.length || o.status !== "present" || !o.position || putAway(o, placed) || o.facts.place?.value === "in_hand" || holdsTarget(world, o.cls, true)) return false;
+    const gen = o.contents_gen ?? 0;
+    if (!facets.some((f) => sureValue(o, f) === null) || this.asked.has(`${o.id}|${gen}`) || now < (this.quietUntil.get(o.id) ?? 0)) return false;
+    const b = this.lookedB.get(o.id);
+    return opaqueBody(o) || (!!b && b.gen === gen && now - b.at >= CONTENTS_HOLD.settleMs);
+  });
+  return hit.sort((a, b) => b.last_seen_ms - a.last_seen_ms)[0] ?? null;
+}
+
+/** tick: 떠 있는 계획 밖 질문은 지났거나 막히면 지우고 repeatMs마다 다시 읽고 askMs가 지나면 지운다(그 컵은 retryMs 동안 다시 묻지 않음). 없으면 물을 컵이 있을 때 묻는다. */
+idle(): void {
+  const core = this.core;
+  if (core.stopped) return;
+  const now = this.clock.now();
+  const world = this.o.world();
+  const blocked = this.idleBlocked(world);
+  const q = core.idleAsk;
+  if (q) {
+    const o = world.objects.find((x) => x.id === q.objectId);
+    const lapsed = !o || o.status === "gone" || (o.contents_gen ?? 0) !== q.gen || sureValue(o, "contents") !== null;
+    // 계획 명령이 그 자리를 덮었으면 지우기를 보내지 않는다
+    if (lapsed || blocked) return this.dropIdle(!core.shown());
+    if (now - q.askAt > this.cfg.askMs) {
+      this.quietUntil.set(q.objectId, now + CONTENTS_HOLD.retryMs);
+      return this.dropIdle(true);
+    }
+    if (now - q.spokeAt >= this.cfg.repeatMs) {
+      q.spokeAt = now;
+      core.answers.send({ ...q.sent, speak: true });
+    }
+    return;
+  }
+  if (blocked) return;
+  const o = this.idleTarget(world, now);
+  if (!o) return;
+  const id = `ask:${++this.idleSeq}`;
+  const gen = o.contents_gen ?? 0;
+  const name = OBJECT_NAME[o.cls] ?? o.cls;
+  const sent: PlannedCommand = { type: "command", id, step: contentsStep(id, o.id, gen), text: CONTENTS_TEXT.ask(name), vision: null, choices: [], target: { id: o.id, label: name, position: o.position! }, speak: true };
+  core.idleAsk = { id, objectId: o.id, gen, sent, askAt: now, spokeAt: now };
+  core.answers.send(sent);
+}
+
+/** 계획 밖 질문의 말 답: 그 컵·세대로 World State에 넣고(늦은 세대면 넣지 않음) 질문을 지운다. */
+idleAnswered(picked: ActionChoice): void {
+  const q = this.core.idleAsk;
+  if (!q) return;
+  if (this.o.answerContents?.(q.objectId, (picked as ContentsChoice).value, q.gen)) this.asked.add(`${q.objectId}|${q.gen}`);
+  this.dropIdle(true);
+}
+
+/** 계획 밖 질문을 지운다. clear면 폰에 지우기를 보낸다. */
+dropIdle(clear: boolean): void {
+  const q = this.core.idleAsk;
+  this.core.idleAsk = null;
+  if (q && clear) this.core.answers.send({ type: "command_clear", id: q.id });
+}
+```
+
+```ts
+// src/act/track/answers.ts
+// openCommand: const r = core.shown(); 다음
+if (!r) {
+  const q = core.idleAsk;
+  return q ? { planId: q.id, stepId: q.sent.step, kind: "ask", text: q.sent.text, choices: [...CONTENTS_CHOICES] } : null;
+}
+// onAnswer: 끄기 안내 갈래 다음
+const q = core.idleAsk;
+if (q && !core.shown() && q.id === planId && q.sent.step === stepId) {
+  const picked = CONTENTS_CHOICES.find((c) => c.id === choice);
+  if (!picked) return false;
+  core.contents.idleAnswered(picked);
+  return true;
+}
+// onHeard: `if (r) { … }` 다음, 끝 「완료」 갈래 앞
+const q = off ? null : core.idleAsk;
+if (q) {
+  if (matchChoice(text, [STOP])) {
+    core.contents.dropIdle(true);
+    return { kind: "answer", choice: STOP };
+  }
+  const picked = contentsAnswer(text);
+  if (!picked) return null;
+  if (at?.kind !== "command" || at.id !== q.id || at.step !== q.sent.step) return { kind: "stale" };
+  this.onAnswer(q.id, q.sent.step, picked.id);
+  return { kind: "answer", choice: picked };
+}
+```
+
+```ts
+// src/act/track/tracker.ts tick: safety.reminderTick() 다음(계획이 없어도 돈다)
+if (!core.stopped) core.contents.idle();
+// 공개 메서드
+lookedIdle(objectId: string): void {
+  this.core.contents.lookedIdle(objectId);
+}
+// stop(): core.stopped = true 앞에 core.contents.dropIdle(false)
+```
+
+```ts
+// src/act/look.ts run(): look_closer 결과를 정한 뒤(counted 계산 다음)
+// 판단 전 보기 B(계획 없음)가 가까이 보기를 마쳤다: 실행 추적이 그 컵을 계획 밖으로 물을지 본다(자원 사정으로 못 본 것은 빼고)
+if (choice.tool === "look_closer" && job.trigger === "unknown_fact" && !job.planId && counted && spot) this.o.looked?.(spot.id);
+```
+
+```ts
+// src/server/home/act.ts
+// ExecutionTracker 옵션: 이번 판단에 보내는 행동 목록(내용물 행동이 있을 때만 계획 밖 질문)
+tasks: () => tasksFor(core.assist()),
+// startLooker의 Looker 옵션: B가 가까이 본 컵을 실행 추적에 알린다
+looked: (id) => tracking.lookedIdle(id),
+```
+
+- [ ] **Step 4: 통과 확인**
+
+Run(하나씩): `npm run heavy -- npx vitest run tests/act-track.test.ts`, `npm run heavy -- npx vitest run tests/act-look.test.ts tests/act-say.test.ts tests/talk-grade.test.ts tests/act-track-release.test.ts tests/video-mode-parity.test.ts`, 그리고 데모 e2e 넷(`demo-e2e`·`noonchi-e2e`·`coach-e2e`·`cup-branches-e2e`)을 하나씩. `npm run heavy -- npm run typecheck`, `npm run heavy -- npm run lint`
+Expected: PASS. e2e 넷은 위치를 맞추지 않아 계획 밖 질문이 나오지 않는다.
+
+- [ ] **Step 5: 커밋·푸시**
+
+```bash
+git add src/act/track/contents.ts src/act/track/core.ts src/act/track/answers.ts src/act/track/tracker.ts src/act/look.ts src/server/home/act.ts tests/act-track.test.ts tests/act-look.test.ts
+git commit -m "feat(act): ask the cup contents by voice after the pre-decision look when no plan is open"
+git push origin refactor/domain-split
+```
 
 ## Self-Review
 
@@ -1738,5 +2037,5 @@ git push origin refactor/domain-split
 - 사실 갱신 한곳·같은 원본 프레임 한 번·사람 답 우선·사건 전 늦은 답 버림 → Task 3·4.
 - 이벤트 계기: 짐작 줄 없음, 확인·사람 답은 판단 계기 → Task 3.
 - 불투명: 낱말 표·VLM 답 무시·사람 답만 → Task 2·3.
-- 묻기: 내용물 때문에 보류된 행동에만, 가까이 본 뒤·불투명이면, 질문 문맥(계획 id·단계 id·세대), 늦은 답 버림, 끄기 안내·승인 질문 안 덮음, 등급, 한 컵 한 번·사건 뒤 다시·답 없음은 세지 않음, 위치 맞추기 전 안 물음 → Task 7·8.
-- 남은 틈: 정해야 할 것 1(불투명 머그에서 PAM이 대기하면 질문이 안 나감).
+- 묻기: 내용물 때문에 보류된 행동, 가까이 본 뒤·불투명이면, 질문 문맥(계획 id·단계 id·세대), 늦은 답 버림, 끄기 안내·승인 질문 안 덮음, 등급, 한 컵 한 번·사건 뒤 다시·답 없음은 세지 않음, 위치 맞추기 전 안 물음 → Task 7·8.
+- 정한 것 1(B 끝에 묻기): 계획 밖 질문 칸, 같은 답·늦은 답·한 번·답 없음 규칙, 열린·만드는 계획·코치·끄기 안내·승인 대기·위치 맞추기 전·사람 안 보임·내용물 행동 없음이면 안 물음, 계획이 시작되면 지움 → Task 11.
