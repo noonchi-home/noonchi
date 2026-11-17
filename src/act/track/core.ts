@@ -63,8 +63,8 @@ export interface Run {
   heldIds: Set<string>; busyAt: number | null;
   /** 따르기 창을 연 물건(World State id, src/act/track/steps.ts window). 없으면 null. */
   window: string | null;
-  /** 실행 전 찾기(실행 전 검사가 대상이 안 보여 막은 계획, src/act/track/find.ts). 없으면 null. */
-  find: Find | null;
+  /** 실행 전 찾기(실행 전 검사가 대상이 안 보여 막은 계획, src/act/track/find.ts). 없으면 null. findHeld: 찾기로 붙잡은 적이 있다(풀린 첫 명령을 폰 대화·승인 대기 동안 미룬다). */
+  find: Find | null; findHeld: boolean;
 }
 
 /** at: 같은 행동 다시 계획 간격(planGapMs)을 세려고 적은 시각. */

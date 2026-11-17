@@ -14,7 +14,7 @@ import type { AgentStep } from "../src/agent/planTools.js";
 import { checkDecision, checkPlan, type CheckResult } from "../src/act/check.js";
 import { TASKS, clearsAway, targetOf } from "../src/act/tasks.js";
 import { PlanDraft } from "../src/agent/planTools.js";
-import type { BrainLog, DecisionRecord } from "../src/contract/events.js";
+import type { BrainLog, CloserResult, DecisionRecord } from "../src/contract/events.js";
 import type { HeardAt, PlannedCommand, PlannedCommandMessage } from "../src/contract/phone.js";
 import type { WorldChange, WorldObject, WorldView } from "../src/contract/world.js";
 import { PlanHub } from "../src/act/hub.js";
@@ -3369,6 +3369,33 @@ describe("실행 추적: 놓기 단계를 끝낸 물건(이미 치운 것)", () 
   });
 
   // 2026-11-16 23:36·23:48 실제 시험: 놓은 컵(cup_11)이 끝낸 뒤 새 id(cup_28)로 다시 잡혀 치운 기억이 없어지고, 서버를 다시 본 뒤 싱크볼 안 새 컵(cup_32)도 치울 컵으로 남아 PAM이 다시 치우기를 골랐다
+  // Codex(c5d3e6a): 새 id로 넘기며 놓기 기억에서 빠진 옛 id는 다시 집거나 다른 자리에서 보여도 찾기에서 영영 빠졌다
+  it("놓기 기억을 새 id로 넘긴 옛 컵이 그 뒤 다시 보이면 찾기에서 빼지 않는다", async () => {
+    let w = world([cup("present")]);
+    let tracker: ExecutionTracker | null = null;
+    const { t, decide, clock, exec } = setup({ w: () => w, precheck: (d) => checkDecision({ decision: d, tasks: TASK_LIST, world: w, placed: tracker!.placed() }) });
+    tracker = t;
+    await decide(decision);
+    for (const n of [1, 2, 3, 4]) t.onAnswer("plan:pam-1", `plan:pam-1:${n}`, "done");
+    const done = clock.t;
+    clock.t += 1000;
+    w = { ...world([cup("gone", undefined, done - 1000)]), frame_ms: clock.t };
+    t.placed();
+    clock.t += 1000;
+    const again: WorldObject = { ...cup("present", "on_counter", clock.t), id: "cup_28", first_seen_ms: clock.t, position: [5, 0.9, 0.6], surface: "sink_1", surface_label: "싱크대" };
+    w = { ...world([cup("gone", undefined, done - 1000), again]), frame_ms: clock.t };
+    expect([...t.placed().keys()]).toEqual(["cup_28"]);
+    // 옛 컵 cup_1이 식탁에서 다시 보인다(다른 컵이었다): 놓기 기억과 상관없는 컵이다
+    clock.t += 1000;
+    w = { ...world([cup("present", "on_table", clock.t), again]), frame_ms: clock.t };
+    t.placed();
+    // 그 뒤 cup_1이 오래 안 보이면 계획 전 검사는 싱크대 컵(cup_28) 때문에 in_sink로 막고, 찾기는 cup_1의 마지막 자리로 간다
+    clock.t += 15_000;
+    w = { ...world([{ ...cup("out_of_view", "on_table", clock.t - 15_000) }, again]), frame_ms: clock.t };
+    await decide({ ...decision, id: "pam-2", seq: 2, atMs: clock.t });
+    expect(exec().at(-1)).toMatchObject({ plan_id: "plan:pam-2", state: "decided", text: "컵을 찾으러 가요" });
+  });
+
   it("놓기를 끝낸 컵이 사라지고 같은 종류가 넣은 곳(싱크대 면)에 새 id로 다시 잡히면 그 컵으로 치운 기억을 이어 가 다시 치우지 않는다. 30초가 지나도 안 잡히면 잊는다", async () => {
     let w = world([cup("present")]);
     let tracker: ExecutionTracker | null = null;
@@ -3748,6 +3775,22 @@ describe("실행 추적: 계획 밖 가까이 가서 보기(판단 전 보기 B 
     expect(s.t.looking()).toBe(false);
   });
 
+  // Codex(22ac514): 보기를 거둔 일시정지 중에도 looking이 참이라 최대 30초 동안 VLM 1초 간격이 이어졌다
+  it("계획의 보류가 다른 까닭으로 멈춘 동안(pause)은 looking()이 거짓이다", async () => {
+    let held = false;
+    const s = setup({
+      w: () => world([{ ...cup("present", "on_table", 9_000), facts: held ? { place: { value: "in_hand", at_ms: 9_000, since_ms: 9_000, certainty: "confirmed" } } : {} }]),
+      check: () => (held ? { ok: false, reason: "in_hand", text: CHECK_TEXT.in_hand } : { ok: false, reason: "unknown_contents", text: CHECK_TEXT.unknown_contents, object: "cup_1" }),
+      lookContents: () => true,
+    });
+    await s.decide(decision);
+    expect(s.t.looking()).toBe(true);   // 잘라 보기
+    held = true;
+    s.clock.t += 250;
+    s.t.tick();
+    expect(s.t.looking()).toBe(false);
+  });
+
   it("위에서 본 뒤에도 모르면 기록만 남고(묻지 않음) 그 컵·세대는 60초 동안 다시 가까이 가지 않는다", () => {
     const s = idleSetup({ eye: false });
     s.eye([2.3, 1]);
@@ -3880,6 +3923,8 @@ describe("실행 추적: 안 보이는 대상은 마지막으로 본 자리로 �
     ({ cls: "cup", position: SPOT, surface: label ? "t" : null, surface_label: label, at_ms, in_hand: false });
   const found = (id: string, at: [number, number, number], seen: number): WorldObject => ({ ...cup("present", "on_table", seen), id, position: at });
   const TASKS_ALL = ["컵 치우기", "사용자에게 물어보기"];
+  /** 가까이 보기가 새 사진으로 보고 VLM도 답했는데 찾은 것이 없다(분명히 없음). */
+  const ABSENT: CloserResult = { ok: true, frame_id: "e9.c1", captured_at_ms: 9_000, crop: [0, 0, 10, 10], frames: 5, found: [], summary: "s", vlm: "ok" };
   function findSetup(o: { objects?: WorldObject[]; sightings?: WorldView["sightings"] | null; over?: Parameters<typeof setup>[0] } = {}) {
     let objects = o.objects ?? [];
     let sightings: WorldView["sightings"] | null = o.sightings === undefined ? [sighting()] : o.sightings;
@@ -3927,6 +3972,19 @@ describe("실행 추적: 안 보이는 대상은 마지막으로 본 자리로 �
     const s = findSetup({ sightings: [{ ...sighting(), surface: "table_1", surface_label: "거실·복도 식탁" }] });
     await s.decide(decision);
     expect(s.last()).toMatchObject({ text: "식탁으로 가 주세요", target: { label: "식탁" }, vision: expect.stringMatching(/^식탁까지 /) });
+  });
+
+  // Codex(c5d3e6a): 다른 계획이 진행 중이거나 승인 질문 중이어도 계획 전 찾기를 시작해 그 계획의 폰 줄을 찾기 명령이 덮었다
+  it("다른 계획이 열려 있으면(질문 중 포함) 계획 전 찾기를 시작하지 않고 지금처럼 닫는다: 그 계획의 폰 줄을 덮지 않는다", async () => {
+    const s = findSetup();
+    await s.decide(ask("pam-1", 1));
+    const shown = s.last();
+    expect(shown).toMatchObject({ id: "plan:pam-1" });
+    await s.decide({ ...decision, id: "pam-2", seq: 2 });
+    expect(s.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-2", state: "failed", text: CHECK_TEXT.no_target });
+    expect(s.last()).toEqual(shown);
+    s.tick();
+    expect(s.commands().some((c) => c.id.startsWith("find:"))).toBe(false);
   });
 
   it("싱크대에 치운 컵이 따로 있어 계획 전 검사가 in_sink로 막아도 후보 자리가 있으면 찾으러 간다", async () => {
@@ -4007,11 +4065,11 @@ describe("실행 추적: 안 보이는 대상은 마지막으로 본 자리로 �
     expect(s.exec().some((l) => l.state === "planned")).toBe(false);
   });
 
-  it("가까이 보기가 새 사진으로 보고 없으면 사진을 기다리지 않고 바로 「대상 물건이 보이지 않아 실행하지 않아요」로 닫고, 60초 안 같은 판단은 찾으러 가지 않고 바로 닫는다", async () => {
+  it("가까이 보기가 새 사진으로 보고 VLM도 답했는데 그 종류가 없으면(분명히 없음) 사진을 기다리지 않고 바로 「대상 물건이 보이지 않아 실행하지 않아요」로 닫고, 60초 안 같은 판단은 찾으러 가지 않고 바로 닫는다", async () => {
     const s = findSetup();
     await s.decide(decision);
     toLook(s);
-    s.looks[0]!.done(true);
+    s.looks[0]!.done(ABSENT);
     s.tick();
     expect(s.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-1", state: "failed", text: CHECK_TEXT.no_target });
     const n = s.commands().length;
@@ -4037,15 +4095,23 @@ describe("실행 추적: 안 보이는 대상은 마지막으로 본 자리로 �
     expect(s.looks).toEqual([]);
   });
 
-  it("가까이 보기가 사진을 보지 못하고 끝났으면(자원 사정) 4초 사진을 기다린 뒤 닫는다", async () => {
-    const s = findSetup();
-    await s.decide(decision);
-    toLook(s);
-    s.looks[0]!.done(false);
-    s.tick(3_900);
-    expect(s.exec().some((l) => l.state === "failed")).toBe(false);
-    s.tick(200);
-    expect(s.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-1", state: "failed", text: CHECK_TEXT.no_target });
+  // Codex(edf045c): 결과가 ok이기만 하면 「없음」으로 보아, 컵을 감지했지만 VLM 실패로 확정하지 못한 때도 바로 닫고 60초 쉬었다
+  it("가까이 보기가 확인에 실패했으면(사진 모자람·그 종류를 감지했지만 VLM 답 없음) 사진을 4초 기다린 뒤 닫지 않고 다시 비춰 본다(전체 기한 안)", async () => {
+    for (const unsure of [
+      { ok: false as const, why: "no_fresh_frames" as const },
+      { ...ABSENT, found: [{ id: null, cls: "cup" as const, score: 0.6, facts: [] }], vlm: "vlm_busy" as const },
+    ]) {
+      const s = findSetup();
+      await s.decide(decision);
+      toLook(s);
+      s.looks[0]!.done(unsure as CloserResult);
+      s.ready(false);
+      s.tick(3_900);
+      expect(s.exec().some((l) => l.state === "failed")).toBe(false);
+      s.tick(200);
+      expect(s.exec().some((l) => l.state === "failed")).toBe(false);
+      expect(s.last()).toMatchObject({ id: "find:1", text: "식탁 위를 비춰 주세요" });
+    }
   });
 
   it("가까이 보는 차례(비추기·가까이 보기·사진 기다림)에만 looking()이 참이다(관찰 흐름이 그동안 VLM 사진 간격을 1초로 줄인다)", async () => {
@@ -4058,7 +4124,7 @@ describe("실행 추적: 안 보이는 대상은 마지막으로 본 자리로 �
     s.ready(true);
     s.tick();
     expect(s.t.looking()).toBe(true);    // 가까이 보기
-    s.looks[0]!.done(true);
+    s.looks[0]!.done(ABSENT);
     s.tick();
     expect(s.exec().at(-1)).toMatchObject({ state: "failed" });
     expect(s.t.looking()).toBe(false);   // 끝
@@ -4230,6 +4296,30 @@ describe("실행 추적: 계획 대상이 안 보이면 그 마지막 자리에�
     s.looks[0]!.done();
     s.tick(4_100);
     expect(said.at(-1)).toEqual(["컵을 못 찾았어요", "pam-1"]);
+  });
+
+  // Codex(c5d3e6a): 실행 전 찾기 중 폰 대화·승인 대기가 생기고 컵이 다시 보이면 내용물 보류와 달리 첫 명령을 바로 보냈다
+  it("찾기에서 풀린 계획도 폰 대화·승인 대기가 있으면 첫 명령을 미루고, 풀리면 보내며, 30초 넘게 막히면 닫는다", async () => {
+    let talking = false;
+    const s = runSetup({ objects: [seenAt(5_000)], over: { talking: () => talking } });
+    await blocked(s);
+    expect(s.last()).toMatchObject({ step: "plan:pam-1:find:cup_1:go:1" });
+    talking = true;
+    s.objects([seenAt(s.clock.t + 250)]);
+    s.tick();
+    expect(s.commands().some((c) => c.step === "plan:pam-1:1")).toBe(false);
+    talking = false;
+    s.objects([seenAt(s.clock.t + 250)]);
+    s.tick();
+    expect(s.last()).toMatchObject({ step: "plan:pam-1:1" });
+    const b = runSetup({ objects: [seenAt(5_000)], over: { talking: () => true } });
+    await blocked(b);
+    for (let i = 0; i < 32; i++) {
+      b.objects([seenAt(b.clock.t + 1000)]);
+      b.tick(1000);
+    }
+    expect(b.exec().find((l) => l.state === "failed")).toMatchObject({ text: EXEC_TEXT.phoneBusy });
+    expect(b.commands().some((c) => c.step === "plan:pam-1:1")).toBe(false);
   });
 
   it("막은 그 컵이 다시 보이면 첫 단계를 보낸다(지킴 풂)", async () => {

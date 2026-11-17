@@ -1,11 +1,12 @@
 // 실행 추적의 찾기(Finder): 대상 물건이 안 보여 검사가 막으면 바로 닫지 않고, 마지막으로 본 자리(src/act/tasks.ts lostTarget)로 폰을 든 사람을 보내 다시 본다.
 // 사용자에게 묻지 않는다. 명령은 모두 사람에게 하는 「주세요」 명령이고 단추가 없다(비전으로만 넘긴다).
 // 차례: 가기(go, 폰 눈과 그 자리 수평 거리가 FIND.nearM 밖일 때만) → 비추기(aim, 「<면> 위를 비춰 주세요」) → 가까이 보기(look, 보기 담당의 같은 물건 건너뛰기 없이)
-//   → 찾음(found) 또는 그만둠(over). 가까이 보기가 새 사진으로 보고 없으면 바로 그만두고, 사진을 보지 못하고 끝났을 때만 settleMs 사진을 기다린다(after).
+//   → 찾음(found) 또는 그만둠(over). 가까이 보기가 새 사진으로 보고 VLM도 답했는데 그 종류가 없으면(분명히 없음) 바로 그만두고,
+//   확인에 실패했으면(사진 모자람·VLM 답 없음·그 종류를 감지했지만 확정 못 함) settleMs 사진을 기다린 뒤 다시 비춘다(after, 전체 기한 안).
 // - 비추기는 가까이 보기와 같은 프레임 고르기가 그 자리를 비추기 뒤 사진으로만 고를 수 있을 때(spotReady) 끝난다.
 // - 찾음은 tick마다 본다: 그 자리 FIND.matchM 안에 그 종류의 있는 물건이 막은 검사의 신선도(freshMs, 실행 전은 판단 뒤에 본 것만) 안에 보였고 치운 것·손에 있음이 아니다.
 //   여럿이면 그 자리에 가장 가까운 것, 둘이 FIND.splitM 안으로 붙어 가를 수 없으면 아직 못 찾은 것이다. 사진 기다림 중에 찾았지만 낡았으면 새 사진으로 다시 비춘다.
-// - 그만둠: 명령 하나가 PEEK.stepMs 안에 안 끝남, 막힌 채 holdMs, 가까이 보기가 새 사진으로 봤는데 없음(사진을 못 봤으면 settleMs 뒤), 찾기 시작부터 FIND.totalMs.
+// - 그만둠: 명령 하나가 PEEK.stepMs 안에 안 끝남, 막힌 채 holdMs, 가까이 보기가 분명히 없음, 찾기 시작부터 FIND.totalMs.
 //   그 자리는 FIND.retryMs 동안 다시 가지 않는다.
 // - 막힘(맞춘 눈·폰 판본·끄기 안내·승인 대기·폰 대화·계획의 질문)과 명령 되풀이는 내용물 보류와 같은 명령 줄 규칙이다(phone-line.ts).
 // - 확인 물건의 자리를 찾는 동안은 그 물건에 보기 지킴을 건다(후보 자리는 지킬 물건이 없다).
@@ -15,7 +16,7 @@
 //   계획 밖 가까이 가서 보기보다 먼저다(찾는 동안은 시작하지 않는다). 「그만」은 거두고 그 자리를 쉰다.
 // 실행 전 찾기(Run.find, 계획 명령 줄): 실행 전 검사가 다시 보기 기한(recheckMs)이 지나도 no_target·stale로 막은 계획 대상 하나를 그 마지막 자리에서 찾는다(start.ts tryStart).
 //   막은 그 물건을 찾으면 검사가 다시 통과해 첫 단계로 가고, 그 자리에서 다른 id의 같은 종류 물건만 찾으면 계획을 「찾은 뒤 다시 판단」으로 닫는다.
-import type { DecisionRecord } from "../../contract/events.js";
+import type { CloserResult, DecisionRecord } from "../../contract/events.js";
 import type { PlannedCommand } from "../../contract/phone.js";
 import type { ObjClass, WorldObject, WorldView } from "../../contract/world.js";
 import { OBJECT_NAME } from "../../world/labels.js";
@@ -45,8 +46,9 @@ export interface Find {
   /** 지금 명령을 보낸 때(명령 한도), 비추기를 보낸 때(spotReady since), 찾기를 시작한 때(전체 기한), 막히기 시작한 때(없으면 null),
    *  가까이 보기를 다시 부탁할 때, 사진 기다림을 시작한 때. */
   since: number; aimAt: number; startedAt: number; blockedAt: number | null; lookTryAt: number; afterAt: number;
-  /** 마지막 가까이 보기가 새 사진으로 실제로 봤는가(봤는데 없으면 사진을 기다리지 않고 바로 그만둔다). */
-  looked: boolean;
+  /** 마지막 가까이 보기 결과: absent 새 사진으로 보고 VLM도 답했는데 그 종류가 없음(바로 그만둔다), unsure 확인 실패(사진 모자람·VLM 답 없음·
+   *  그 종류를 감지했지만 확정 못 함, 사진을 기다린 뒤 다시 비춘다), null 결과를 모름(사진을 기다린 뒤 그만둔다). */
+  looked: "absent" | "unsure" | null;
   guarded: boolean; end: AbortController;
 }
 /** 계획 전 찾기 칸: 명령 줄(find:<번호>), 그 찾기, 시작한 판단·찾는 동안 받은 같은 행동의 가장 새 판단, 막은 검사의 글. */
@@ -64,11 +66,12 @@ export class Finder extends Part {
   /** 찾아보고 못 찾은 자리(종류·자리·시각): FIND.retryMs 동안 다시 가지 않는다. */
   private rested: { cls: ObjClass; at: V3; when: number }[] = [];
 
-  /** 계획 전 검사가 대상이 안 보여(no_target·in_sink) 막았다: 찾을 자리가 있으면 찾기를 시작하고 true. 이미 찾는 중이거나 자리가 없으면 false. */
+  /** 계획 전 검사가 대상이 안 보여(no_target·in_sink) 막았다: 찾을 자리가 있으면 찾기를 시작하고 true.
+   *  이미 찾는 중이거나, 다른 계획이 열려 있거나(질문 중 포함) 만드는 중이거나(그 계획의 폰 줄을 덮지 않는다), 자리가 없으면 false. */
   start(d: DecisionRecord, text: string): boolean {
     const core = this.core;
     const cls = taskOf(d.action)?.target;
-    if (core.stopped || core.finding || !cls) return false;
+    if (core.stopped || core.finding || !cls || core.open() || core.planning) return false;
     const now = this.clock.now();
     const spot = lostTarget({ world: this.o.world(), cls, placed: core.steps.placed(), away: core.steps.awayIds(), now, freshMs: PRECHECK_FRESH_MS, resting: (s) => this.resting(s, now) });
     if (!spot) return false;
@@ -189,7 +192,7 @@ export class Finder extends Part {
     const place = (spot.surface ? this.core.nameOf(spot.surface) : null) ?? spot.surface_label;
     const f: Find = {
       objectId: spot.objectId, cls: spot.cls, name, label: place ?? name, surfaceLabel: place, spotId: spot.objectId ?? `find_${spot.cls}`, at: [...spot.position],
-      freshMs, after, phase: "cmd", part: null, sent: null, since: now, aimAt: now, startedAt: now, blockedAt: null, lookTryAt: now, afterAt: now, looked: false, guarded: false, end: new AbortController(),
+      freshMs, after, phase: "cmd", part: null, sent: null, since: now, aimAt: now, startedAt: now, blockedAt: null, lookTryAt: now, afterAt: now, looked: null, guarded: false, end: new AbortController(),
     };
     if (f.objectId) {
       f.guarded = true;
@@ -212,8 +215,14 @@ export class Finder extends Part {
         f.phase = "cmd";
         return this.command(line, f, now, asking);
       }
-      // 가까이 보기가 새 사진으로 봤는데 없으면 바로 그만둔다. 못 보고 끝났으면(자원 사정) 사진을 settleMs 기다린다
-      return f.looked || now - f.afterAt > CONTENTS_HOLD.settleMs ? this.over(line, f) : { kind: "going" };
+      // 분명히 없으면 바로 그만둔다. 확인에 실패했으면 사진을 settleMs 기다린 뒤 다시 비춘다(전체 기한 안). 결과를 모르면 사진을 기다린 뒤 그만둔다
+      if (f.looked === "absent") return this.over(line, f);
+      if (now - f.afterAt <= CONTENTS_HOLD.settleMs) return { kind: "going" };
+      if (f.looked === "unsure") {
+        f.phase = "cmd";
+        return this.command(line, f, now, asking);
+      }
+      return this.over(line, f);
     }
     if (f.phase === "look") return this.look(line, f, now);
     if (f.phase === "looking") return { kind: "going" };
@@ -248,11 +257,11 @@ export class Finder extends Part {
   /** 가까이 보기 부탁(보기 담당의 같은 물건 건너뛰기 없이). 바쁘면 lookWaitMs 뒤 다시 부탁한다. 보기 담당이 없으면 바로 사진 기다림. */
   private look(line: Line, f: Find, now: number): Outcome {
     if (now < f.lookTryAt) return { kind: "going" };
-    const after = (looked?: boolean) => {
+    const after = (r?: CloserResult | null) => {
       if (f.phase !== "looking" && f.phase !== "look") return;
       f.phase = "after";
       f.afterAt = this.clock.now();
-      f.looked = looked === true;
+      f.looked = r === undefined ? null : r?.ok && r.vlm === "ok" && !r.found.some((x) => x.cls === f.cls) ? "absent" : "unsure";
     };
     if (!this.o.lookContents) {
       after();

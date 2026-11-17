@@ -1614,6 +1614,24 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
       expect(lastPose(b.sent).position).toEqual([0, 1.4, 0]);
     });
 
+    // Codex(c5d3e6a): 칸 없는 go가 시간 초과 질문으로 멈춘 뒤 「계속」으로 같은 명령이 다시 오면 남은 posedKey 때문에 다시 걷지 않았다
+    it("칸이 없는 go가 다른 명령(시간 초과 질문)으로 멈춘 뒤 같은 명령이 다시 오면(「계속」) 다시 걷는다", async () => {
+      fakeTimers();
+      const { ws, sent, startAr } = make({}, NO_STEPS);
+      await startAr();
+      ws.push(ALIGNED);
+      const go = command({ id: "plan:pam-1", step: "plan:pam-1:1", text: "식탁으로 가 주세요", choices: [], kind: "go", near_m: 1, target: SPOT, speak: true });
+      ws.push(go);
+      await after(2000);
+      const mid = lastPose(sent).position;
+      ws.push(command({ id: "plan:pam-1", step: "plan:pam-1:1:again", text: "계속할까요?", choices: [{ id: "continue", label: "계속" }, { id: "stop", label: "그만" }], target: null, speak: true }));
+      await after(1000);
+      expect(lastPose(sent).position).toEqual(mid);
+      ws.push(go);
+      await after(5000);
+      expect(flatTo(lastPose(sent).position, SPOT.ar)).toBeCloseTo(0.6, 6);
+    });
+
     it("질문·승인(대상 없음)은 자세를 바꾸지 않는다", async () => {
       fakeTimers();
       const { ws, sent, startAr } = make({}, NO_STEPS);

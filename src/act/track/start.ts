@@ -145,7 +145,7 @@ export class Starter extends Part {
       looks: 0, lookAt: Number.NEGATIVE_INFINITY, stepEnd: null, gapAt: job.at, onAt: new Map(), ends: new Map(), offAsked: -1, deferred: false, phoneWait: false, phone: false,
       strays: 0, strayAt: Number.NEGATIVE_INFINITY, strayNear: null, told: null, helped: false,
       quiet: taskOf(r.plan.task)?.coach ? quietLabels(this.o.lessons?.get(r.plan.task) ?? null) : new Set(), quietOn: false, outcomes: [], hold: null, window: null, heldIds: new Set(), busyAt: null,
-      find: null,
+      find: null, findHeld: false,
     };
     // 계획 밖 가까이 가서 보기·계획 전 찾기는 이 계획이 명령·보기 지킴을 쓰기 전에 거둔다(같은 컵의 지킴을 나중에 풀지 않게)
     core.contents.dropIdle();
@@ -193,6 +193,7 @@ export class Starter extends Part {
       if ((c.reason === "no_target" || c.reason === "stale") && c.object && !r.hold && (last || r.find)) {
         const k = this.core.finder.keep(r, c.object);
         if (k === "hold") {
+          r.findHeld = true;
           r.since = this.clock.now();
           return;
         }
@@ -208,8 +209,8 @@ export class Starter extends Part {
     }
     this.core.contents.release(r);
     this.core.finder.release(r);
-    // 보류에서 풀린 계획은 폰 대화·승인 대기가 없을 때만 첫 명령을 보낸다(다른 대화를 덮지 않는다). 미룬 지 holdMs가 지나면 닫는다
-    if (r.heldIds.size > 0 && ((this.o.talking?.() ?? false) || (this.o.approvalsWaiting?.() ?? false))) {
+    // 보류·찾기에서 풀린 계획은 폰 대화·승인 대기가 없을 때만 첫 명령을 보낸다(다른 대화를 덮지 않는다). 미룬 지 holdMs가 지나면 닫는다
+    if ((r.heldIds.size > 0 || r.findHeld) && ((this.o.talking?.() ?? false) || (this.o.approvalsWaiting?.() ?? false))) {
       const now = this.clock.now();
       this.core.contents.clearPeek(r);
       this.core.finder.clearFind(r);

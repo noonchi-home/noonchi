@@ -662,7 +662,8 @@ export function createVideoAr({ link, params, hooks, deps }) {
         // 영상 모드: 자세 흉내. 맞는 단계 영상 칸이 없는 go는 영상은 그대로 두고 반응 시간 뒤 걷기만 한다(같은 명령이 다시 와도 다시 시작하지 않는다).
         // 단계 영상 예약과 따로 센다: 대상이 바뀌어 같은 명령이 칸에 맞게 되면 그때 단계 영상으로 바꾼다
         if (!first) {
-          if (posedKey === key) return;
+          // 이어진 재전송(비전 상태만 바뀜)은 그대로 두고, 다른 명령 뒤 다시 온 같은 명령(시간 초과 질문 뒤 「계속」)은 다시 걷는다
+          if (!fresh && posedKey === key) return;
           posedKey = key;
           later(pose);
           return;

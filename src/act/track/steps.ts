@@ -38,12 +38,12 @@ export class Steps extends Part {
   private readonly put = new Map<string, { target: string; part?: "basin"; atMs: number }>();
   /** 놓기를 끝낸 물건의 종류(새 id로 다시 잡혔을 때 같은 종류만 이어 간다). */
   private readonly putCls = new Map<string, string>();
-  /** 놓기를 끝낸 물건의 옛 id: 계획이 따라간 옛 id와, 놓은 뒤 사라져 새 id로 넘기거나 잊은 id. 다시 집거나 옮기면 지운다. */
-  private readonly putOld = new Set<string>();
+  /** 놓기를 끝낸 물건의 옛 id와 적은 시각: 계획이 따라간 옛 id와, 놓은 뒤 사라져 새 id로 넘기거나 잊은 id. 다시 집거나 옮기거나 그 뒤 다시 보이면 지운다. */
+  private readonly putOld = new Map<string, number>();
 
   /** 찾기에서 뺄 물건(src/act/track/find.ts): 놓기를 끝낸 물건(placed)과 그 옛 id. 안 보이는 옛 id의 마지막 자리는 치우기 전 자리다. */
   awayIds(): ReadonlySet<string> {
-    return new Set([...this.placed().keys(), ...this.putOld]);
+    return new Set([...this.placed().keys(), ...this.putOld.keys()]);
   }
 
   /** 놓기 단계를 끝낸 물건(이미 치운 것): World State id → 그 계획의 넣은 곳, 끝낸 때 싱크볼 안이었으면 part basin, 끝낸 시각.
@@ -66,6 +66,11 @@ export class Steps extends Part {
         this.putCls.delete(id);
         this.putOld.delete(id);
       } else if (!o || o.status === "gone") this.carryPut(id, p, objects, now);
+    }
+    // 놓기 기억에서 빠진 옛 id가 적은 뒤 다시 보이면(다시 집음·다른 자리) 옛 기억을 지운다
+    for (const [id, at] of this.putOld) {
+      const o = objects.find((x) => x.id === id);
+      if (o && o.status !== "gone" && o.last_seen_ms > at) this.putOld.delete(id);
     }
     // 싱크볼 안에 있고 손에 있음이 확인되지 않은 물건도 치운 것이다(치우기 계획 놓기 끝 자리: 싱크대 면의 싱크볼 안이고 손에 없음).
     // 실행 추적이 넣은 기억이 없는 컵(서버를 다시 띄운 뒤 본 컵, 새 id로 잡힌 컵)을 다시 치우지 않게 한다(2026-11-16 23:48)
@@ -93,7 +98,7 @@ export class Steps extends Part {
     if (one || now - lostAt > PUT_HANDOVER_MS) {
       this.put.delete(id);
       this.putCls.delete(id);
-      this.putOld.add(id);
+      this.putOld.set(id, now);
     }
     if (one) {
       this.put.set(one.id, p);
@@ -113,7 +118,7 @@ export class Steps extends Part {
       this.putCls.set(id, cls);
     }
     // 계획 물건 id와 따라간 id 가운데 지금 그 물건이 아닌 것(옮겨 새 id가 붙기 전 id)
-    for (const old of [object, r.alias.get(object) ?? object]) if (!at.some((x) => x.id === old)) this.putOld.add(old);
+    for (const old of [object, r.alias.get(object) ?? object]) if (!at.some((x) => x.id === old)) this.putOld.set(old, now);
   }
 
   /** 지금 단계를 끝내고 다음 단계로. 마지막이었으면 계획 완료. 집기를 마치면 그 물건은 사람이 들고 다니고, 놓기를 마치면 그 물건은 넣은 곳에 치운 것이다. */

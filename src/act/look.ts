@@ -12,7 +12,7 @@
 //   다른 일(A·B·C)이 도는 중이면 받지 않는다. 그 단계 신호로 끊긴다(끊기면 기록 없음). tell_person이면 실행 추적의 tell을 부른다.
 // E 내용물 보류(실행 추적 src/act/track/contents.ts contents): 실행 전 검사가 컵 안을 몰라 붙잡은 계획의 그 컵을 관찰 모드 없이 바로 가까이 본다.
 //   다른 일이 돌면 받지 않는다(실행 추적이 다음 tick에 다시 부른다). objectGapMs 안에 본 컵은 보지 않고 done만(찾기의 다시 보기 force는 그래도 본다).
-//   끝나면 done 한 번(look 기록, 계기 unknown_fact). done에는 가까이 보기가 새 사진으로 실제로 봤는가(결과 ok)를 싣는다.
+//   끝나면 done 한 번(look 기록, 계기 unknown_fact). done에는 가까이 보기 결과(끊겼으면 null)를 싣는다(찾기가 「분명히 없음」과 「확인 실패」를 가른다).
 //   위에서 보기(top, 사람이 폰을 컵 위에 든 뒤)는 objectGapMs를 보지 않고 topLook을 부른다. B가 관찰 모드를 부르는 중이면 A처럼 끊고 먼저 돈다.
 //   topLook이 없으면 done만.
 // D 코치 계획 중 들은 말(heard): 명령의 답이 아닌 말 → tell_person(told)·pass_on(passed, 말 요청 에이전트로 넘김)·wait(waited).
@@ -140,11 +140,11 @@ export class Looker {
       planId: h.planId, abort, signal: AbortSignal.any([abort.signal, h.signal]), phase: "act",
     };
     this.job = job;
-    let looked = false;
-    const p: Promise<void> = this.closerOnly(job, h.spot).then((r) => { looked = r?.ok === true; }, () => {}).finally(() => {
+    let result: CloserResult | null = null;
+    const p: Promise<void> = this.closerOnly(job, h.spot).then((r) => { result = r; }, () => {}).finally(() => {
       if (this.job === job) this.job = null;
       this.running.delete(p);
-      h.done(looked);
+      h.done(result);
     });
     this.running.add(p);
     return true;

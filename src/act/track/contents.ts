@@ -20,6 +20,7 @@
 //   (계획 명령이 그 자리를 덮었으면 지우기를 보내지 않는다). 새 계획을 받으면 그 계획이 명령·보기 지킴을 쓰기 전에 거둔다(src/act/track/start.ts).
 //   가까이 가기 중에는 사람이 보여야 하고, 위에서 비추기·위에서 보기·사진 기다림 동안은 안 보여도 잇는다. 「그만」은 어느 차례에서든 받는다.
 //   끝나면 칸을 비운다(모르면 보기 기록만 남는다).
+import type { CloserResult } from "../../contract/events.js";
 import type { PlannedCommand } from "../../contract/phone.js";
 import type { Facet, WorldObject, WorldView } from "../../contract/world.js";
 import type { LookSpot } from "../../observe/index.js";
@@ -34,10 +35,10 @@ export const CONTENTS_HOLD = { lookWaitMs: 3000, settleMs: 4000, holdMs: 30_000 
 /** 가까이 가서 보기: 가까이 가기가 끝나는 폰-컵 수평 거리(m, 식탁 가에 선 사람이 팔을 뻗어 폰을 컵 위에 둘 수 있는 거리), 명령마다 한도(ms),
  *  같은 컵·세대를 다시 가까이 가기 전 기다림(ms), 옮겨짐으로 보는 자리 바뀜(m), 맞춘 눈이 이만큼(ms) 안 오면 지금 위치를 모른다(폰 자세는 초당 10번). */
 export const PEEK = { nearM: 0.5, stepMs: 30_000, retryMs: 60_000, movedM: 0.1, eyeMs: EYE_MS } as const;
-/** 보류의 가까이 보기 부탁(보기 담당 src/act/look.ts contents). done은 끝날 때 한 번(못 봐도, looked: 새 사진으로 실제로 봤는가). signal은 보류가 풀리면 끊긴다.
+/** 보류의 가까이 보기 부탁(보기 담당 src/act/look.ts contents). done은 끝날 때 한 번(못 봐도, 가까이 보기 결과, 끊겼으면 null). signal은 보류가 풀리면 끊긴다.
  *  top이 있으면 잘라 보기 대신 위에서 보기(그 뒤 찍힌 컵 안을 내려다본 사진 쌍, src/observe/pipeline.ts topLook)다. planId가 빈 글이면 계획 밖이다.
  *  force면 찾기의 다시 보기다(src/act/track/find.ts): 같은 물건을 objectGapMs 안에 봤어도 다시 본다. */
-export interface ContentsLook { planId: string; objectId: string; spot: LookSpot; signal: AbortSignal; done(looked?: boolean): void; top?: { sinceMs: number }; force?: true }
+export interface ContentsLook { planId: string; objectId: string; spot: LookSpot; signal: AbortSignal; done(result?: CloserResult | null): void; top?: { sinceMs: number }; force?: true }
 type V3 = [number, number, number];
 /** 가까이 가서 보기 한 차례: 지금 명령(go·above, 거뒀으면 null)과 보낸 때, 시작 때 컵 자리, 위에서 비추기를 보낸 때(위에서 보기 sinceMs), 보기 지킴을 걸었는가. */
 export interface Peek { part: "go" | "above" | null; sent: PlannedCommand | null; since: number; at: V3; aboveAt: number; guarded: boolean }
@@ -265,10 +266,10 @@ export class ContentsHold extends Part {
     return now - h.pausedAt > CONTENTS_HOLD.holdMs ? this.over(line, h) : true;
   }
 
-  /** 가까이 보는 차례인가(계획의 보류·계획 밖 칸): 잘라 보기, 위에서 비추기, 위에서 보기, 위에서 본 뒤 사진 기다림. 가까이 가기는 아니다. */
+  /** 가까이 보는 차례인가(계획의 보류·계획 밖 칸): 잘라 보기, 위에서 비추기, 위에서 보기, 위에서 본 뒤 사진 기다림. 가까이 가기·멈춘 보류(pause)는 아니다. */
   looking(): boolean {
     const r = this.core.open();
-    return [r?.hold, this.core.idlePeek?.hold].some((h) => !!h && (h.phase === "look" || h.phase === "looking" || h.phase === "seeing" || h.phase === "after"
+    return [r?.hold, this.core.idlePeek?.hold].some((h) => !!h && h.pausedAt === null && (h.phase === "look" || h.phase === "looking" || h.phase === "seeing" || h.phase === "after"
       || (h.phase === "peek" && h.peek?.part === "above")));
   }
 
