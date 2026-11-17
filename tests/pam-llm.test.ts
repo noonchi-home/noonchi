@@ -72,6 +72,20 @@ describe("PAM LLM 전송", () => {
     expect(() => pamSettings({ INFERENCE_MODE: "vllm", PAM_MAX_MODEL_LEN: "16384" })).toThrow(/PAM_MAX_MODEL_LEN/);
   });
 
+  it("답을 받으면 사용량(모델·토큰·비용)을 알린다: 잘린 답도, 가격표에 없는 모델은 비용 null", async () => {
+    const seen: unknown[] = [];
+    const reply = (finish: string, model: string) => () => Response.json({ model, choices: [{ message: { content: "{}" }, finish_reason: finish }],
+      usage: { prompt_tokens: 100, completion_tokens: 20, prompt_tokens_details: { cached_tokens: 40 } } });
+    const ok = capture(reply("stop", "gpt-5.4-mini"));
+    await new PamLlm(pamSettings({ INFERENCE_MODE: "openai", OPENAI_API_KEY: "k" }), ok).complete(X, OFF, "predictor", 5000, { onUsage: (u) => seen.push(u) });
+    const cut = capture(reply("length", "pam"));
+    await expect(new PamLlm(pamSettings({ INFERENCE_MODE: "vllm" }), cut).complete(X, OFF, "predictor", 5000, { onUsage: (u) => seen.push(u) })).rejects.toThrow(/끝나지 않음/);
+    expect(seen).toEqual([
+      { model: "gpt-5.4-mini", prompt: 100, completion: 20, cached: 40, cost_usd: (60 * 0.75 + 40 * 0.075 + 20 * 4.5) / 1e6 },
+      { model: "pam", prompt: 100, completion: 20, cached: 40, cost_usd: null },
+    ]);
+  });
+
   it("HTTP 오류는 다시 보내지 않고 PamLinkError(한 번만 보냄)", async () => {
     for (const status of [500, 429]) {
       const c = capture(() => Response.json({ error: "x" }, { status }));

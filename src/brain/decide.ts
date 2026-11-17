@@ -1,7 +1,7 @@
 // 판단 호출: Trigger가 허락하면 World State 관찰 텍스트 + 기억 + 행동 목록으로 PAM을 부른다. 요청마다 번호(seq)를 붙인다.
 // 동시 상한을 넘으면 부르지 않는다(Trigger.due가 false). 결과는 기록(decision)과 onDecision으로 넘긴다. 늦게 온 답의 처리는 실행 추적이 seq로 한다.
 // PAM 연결 끊김·연결됨(link)과 주기 판단 멈춤(폰 사진 없음·사람 없음)·다시 시작(trigger)은 바뀔 때 한 번씩 기록한다.
-import type { BrainLog, DecisionWorld, DecisionRecord } from "../contract/events.js";
+import type { BrainLog, DecisionWorld, DecisionRecord, PamUsage } from "../contract/events.js";
 import type { WorldChange, WorldView } from "../contract/world.js";
 import { taskOf } from "../act/tasks.js";
 import { checkInput, fsmRuleOf, isoWithOffset, type PamMemory } from "./decision.js";
@@ -47,6 +47,8 @@ export interface DeciderOptions {
 export class Decider {
   private recent: WorldChange[] = [];
   private readonly running = new Set<Promise<void>>();
+  /** 멈추면 나가 있는 PAM 요청도 끊는다. */
+  private readonly cancel = new AbortController();
   private seq = 0;
   private stopped = false;
   private link: boolean | null = null;
@@ -87,10 +89,12 @@ export class Decider {
     const tasks = this.o.tasks();
     const mem = this.o.memory();
     const base = { id: `pam-${seq}`, seq, atMs: now, textSent, finalTime, memoryVersion: mem.version, world: decisionWorld(view), tasks };
+    let usage: PamUsage | undefined;
     const job: Promise<void> = Promise.resolve()
       .then(() => {
         checkInput({ text: textSent, finalTime, memory: mem.memory, memoryKind: mem.kind, tasks });
-        return this.o.pam.predict({ final_time: finalTime, observation_text: textSent, memory_kind: mem.kind, memory: mem.memory, tasks });
+        return this.o.pam.predict({ final_time: finalTime, observation_text: textSent, memory_kind: mem.kind, memory: mem.memory, tasks },
+          { signal: this.cancel.signal, onUsage: (u) => { usage = u; } });
       })
       .then(
         (p) => {
@@ -101,11 +105,11 @@ export class Decider {
           // PAM의 생각 글은 계획 이유·판단 기록·대시보드에 남는다: 들은 말을 그대로 옮겼으면 뺀다
           const said = this.o.keepHeard?.() ? [] : saidIn(textSent);
           const prediction = said.length ? { ...p, observation: redactSaid(p.observation, said), reasoning: redactSaid(p.reasoning, said) } : p;
-          this.finish({ ...base, status: "valid", prediction, action, fsm: fsmRuleOf(mem.memory, mem.kind, action) });
+          this.finish({ ...base, status: "valid", prediction, action, fsm: fsmRuleOf(mem.memory, mem.kind, action), ...(usage ? { usage } : {}) });
         },
         (e: unknown) => {
           if (e instanceof PamLinkError) this.setLink(false);
-          this.finish({ ...base, status: "failed", prediction: null, action: null, fsm: null, error: (e as Error).message });
+          this.finish({ ...base, status: "failed", prediction: null, action: null, fsm: null, error: (e as Error).message, ...(usage ? { usage } : {}) });
         },
       )
       .finally(() => { this.running.delete(job); });
@@ -127,7 +131,7 @@ export class Decider {
       type: "decision", at_ms: this.clock.now(), id: r.id, seq: r.seq, text_sent: this.o.keepHeard?.() ? r.textSent : redactHeard(r.textSent), status: r.status, prediction: r.prediction, action: r.action, fsm: r.fsm ?? null,
       // 고른 행동의 종류(표시용): 그 행동이 코치 행동인가
       assist: r.action ? (taskOf(r.action)?.coach ? "coach" : "noonchi") : null,
-      ...(r.error ? { error: r.error } : {}), memory_version: r.memoryVersion, world: r.world,
+      ...(r.error ? { error: r.error } : {}), ...(r.usage ? { usage: r.usage } : {}), memory_version: r.memoryVersion, world: r.world,
     });
     this.o.onDecision?.(r);
   }
@@ -137,8 +141,9 @@ export class Decider {
     while (this.running.size) await Promise.all([...this.running]);
   }
 
-  /** 멈추면 새로 부르지 않고, 늦게 온 답도 기록하지 않는다. */
+  /** 멈추면 새로 부르지 않고, 나가 있는 요청은 끊고, 늦게 온 답도 기록하지 않는다. */
   stop(): void {
     this.stopped = true;
+    this.cancel.abort(new Error("판단 호출을 멈춤"));
   }
 }

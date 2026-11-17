@@ -6,5 +6,5 @@ export { PamAnswerError, PamBudgetError, PamLinkError, PamRequestError } from ".
 export { loadPaperConfig, loadPrompt, PAM_DIR, PROMPT_IDS, render, type PromptId } from "./paper.js";
 export { predictRequest, pyIsoformat, reflectRequest, type PredictRequest, type ReflectRequest } from "./request.js";
 export { assertTextOnly, PAM_PREDICT, PAM_REFLECT, PamClient, PamDecision } from "./client.js";
-export { PamLlm } from "./llm.js";
+export { PamLlm, type CallOptions } from "./llm.js";
 export { pamSettings, type PamSettings } from "./settings.js";

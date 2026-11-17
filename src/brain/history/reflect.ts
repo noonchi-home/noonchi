@@ -7,7 +7,7 @@
 import { TASKS } from "../../act/tasks.js";
 import { CUP_FSM_MEMORY, MAX_REFLECT_TEXT, SEED_PATCHES, patchMemory, validateMemory, type FsmMemory, type PamMemory } from "../decision.js";
 import type { PamClient } from "../pam/index.js";
-import type { BrainLog } from "../../contract/events.js";
+import type { BrainLog, PamUsage } from "../../contract/events.js";
 import type { HistoryDb } from "./db.js";
 import { coachGuard, keepAll, learnedRules, type HabitFilter, type HabitRuleNote, type RuleLine } from "./habits.js";
 import { REFLECT_TEXT } from "./labels.js";
@@ -126,12 +126,15 @@ function dayMemory(db: HistoryDb, day: string): DayMemory {
 }
 
 /** filter: 습관 거르기(기본 keepAll, 기록 줄을 읽지 않고 rows는 빈 목록). windowDays: 따로 넘긴 거르기에 주는 지난 기록 날 수(기본 30, 반성한 날 포함). */
-export async function runReflection(db: HistoryDb, pam: PamClient, day: string, o: { now?: () => number; emit?: (l: BrainLog) => void; filter?: HabitFilter; windowDays?: number } = {}): Promise<ReflectResult> {
+/** signal로 끊으면(서버를 끌 때) PAM 요청을 끊고 기록 DB에 아무것도 쓰지 않는다. */
+export async function runReflection(db: HistoryDb, pam: PamClient, day: string, o: { now?: () => number; emit?: (l: BrainLog) => void; filter?: HabitFilter; windowDays?: number; signal?: AbortSignal } = {}): Promise<ReflectResult> {
   const now = o.now ?? (() => Date.now());
+  let usage: PamUsage | undefined;
   const done = (ok: boolean, text: string, version: number | null, appliesDay: string | null, found?: { learned: RuleLine[]; active: RuleLine[]; dropped: HabitRuleNote[] }) => {
     const at = now();
-    db.add("reflection", at, text, { data: { day, ok, version, applies_day: appliesDay, ...found } });
-    o.emit?.({ type: "reflection", at_ms: at, day, ok, version, applies_day: appliesDay, text, ...found });
+    const used = usage ? { usage } : {};
+    db.add("reflection", at, text, { data: { day, ok, version, applies_day: appliesDay, ...found, ...used } });
+    o.emit?.({ type: "reflection", at_ms: at, day, ok, version, applies_day: appliesDay, text, ...found, ...used });
   };
   if (!db.list({ day, kinds: [...DAY_KINDS], limit: 1 }).length) {
     done(false, REFLECT_TEXT.failed(REFLECT_TEXT.empty), null, null);
@@ -149,7 +152,8 @@ export async function runReflection(db: HistoryDb, pam: PamClient, day: string, 
     let memory = await pam.reflect({
       day, memory_kind: cur.kind, memory: cur.memory, observation_text: summary.observation_text || REFLECT_TEXT.noObservation,
       action_summary: summary.action_summary || REFLECT_TEXT.noAction, feedback,
-    }, cur.kind);
+    }, cur.kind, { signal: o.signal, onUsage: (u) => { usage = u; } });
+    if (o.signal?.aborted) return { ok: false, error: REFLECT_TEXT.cancelled };
     let learned: RuleLine[] = [];
     let active: RuleLine[] = [];
     let dropped: HabitRuleNote[] = [];
@@ -175,6 +179,8 @@ export async function runReflection(db: HistoryDb, pam: PamClient, day: string, 
     done(true, text, version, appliesDay, { learned, active, dropped });
     return { ok: true, version, appliesDay, learned, active, dropped };
   } catch (e) {
+    // 서버를 끄느라 끊었으면 기록하지 않는다(닫히는 DB에 쓰지 않는다)
+    if (o.signal?.aborted) return { ok: false, error: REFLECT_TEXT.cancelled };
     const error = (e as Error).message;
     done(false, REFLECT_TEXT.failed(error), null, null);
     return { ok: false, error };

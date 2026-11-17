@@ -129,8 +129,9 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   }
   // 대시보드를 여는 출처: 이 PC + ALLOWED_ORIGINS(tailscale serve 주소). 쓰기 요청과 /events에 쓴다
   const allowOrigin = originChecker(env.ALLOWED_ORIGINS);
-  // 추론 모드(openai|vllm)와 모델 주소. 모르는 모드면 여기서 시작을 막는다
+  // 추론 모드(openai|vllm)와 모델 주소, PAM LLM 전송 값. 틀린 설정이면 잠금·DB를 열기 전에 시작을 막는다
   const endpoints = loadEndpoints(env);
+  const pamConfig = pamSettings(env);
   const reflectAt = loadReflectAt(env);
   const retention = loadRetention(env);
   // 이 런타임 폴더를 쓰는 서버라는 표시(RUNTIME_DIR/server.lock.db의 SQLite 배타 잠금, src/server/lock.ts). DB를 열기 전에 잡는다:
@@ -156,22 +157,26 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     stopRecorder();
     db.close();
   };
-  // 반성: 한 번에 하나. 결과는 지금 집의 대시보드 판단 기록으로 보낸다(기록 DB에는 runReflection이 적는다)
-  const pam = new PamClient({ settings: pamSettings(env) });
-  let reflecting = false;
+  // 반성: 한 번에 하나. 결과는 지금 집의 대시보드 판단 기록으로 보낸다(기록 DB에는 runReflection이 적는다).
+  // 서버를 끌 때는 진행 중인 반성의 PAM 요청을 끊고 끝날 때까지 기다린 뒤 DB를 닫는다
+  const pam = new PamClient({ settings: pamConfig });
+  const closing = new AbortController();
+  let reflecting: Promise<ReflectResult> | null = null;
   const reflect = async (day: string): Promise<ReflectResult> => {
     if (reflecting) throw new HttpError(409, REFLECT_TEXT.running);
-    reflecting = true;
+    // 반성 사건은 지금 집의 대시보드로 보내고 집 묶음에도 넘긴다(말풍선 카드가 배운 습관을 말한다)
+    const job = runReflection(db, pam, day, {
+      signal: closing.signal,
+      emit: (event) => {
+        current?.app.broadcast({ type: "brain", event });
+        if (event.type === "reflection") current?.onReflection(event);
+      },
+    });
+    reflecting = job;
     try {
-      // 반성 사건은 지금 집의 대시보드로 보내고 집 묶음에도 넘긴다(말풍선 카드가 배운 습관을 말한다)
-      return await runReflection(db, pam, day, {
-        emit: (event) => {
-          current?.app.broadcast({ type: "brain", event });
-          if (event.type === "reflection") current?.onReflection(event);
-        },
-      });
+      return await job;
     } finally {
-      reflecting = false;
+      reflecting = null;
     }
   };
   const ctx: HomeContext = {
@@ -465,6 +470,8 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       if (closed) return;
       closed = true;
       schedule?.stop();
+      closing.abort(new Error("서버를 끔"));
+      await reflecting?.catch(() => {});
       clearInterval(cleaner);
       await job;
       // 앱이 /events 소켓을 먼저 끊어야 껍데기 서버 close가 기다리지 않는다

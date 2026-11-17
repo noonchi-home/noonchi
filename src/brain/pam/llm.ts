@@ -4,6 +4,8 @@
 // 키가 없으면 authorization을 보내지 않는다. 연결 단계 EFAULT만 다시 보낸다(fetchRetry). 넘겨주기(3xx)는 따라가지 않는다.
 import OpenAI, { APIError } from "openai";
 import { z } from "zod";
+import type { PamUsage } from "../../contract/events.js";
+import { estimateCostUsd, hasPrice } from "../../infer/cost.js";
 import { fetchRetry } from "../../shared/net.js";
 import { checkBudget } from "./budget.js";
 import { PamLinkError } from "./errors.js";
@@ -11,6 +13,22 @@ import type { Generation, PamMessage } from "./prompt.js";
 import type { PamSettings } from "./settings.js";
 
 type Role = "predictor" | "reflector";
+/** 한 번 부를 때 받는 것: 부른 쪽 취소 신호, 답을 받자마자 알리는 사용량(검사 전이라 틀린 답·잘린 답에도 온다). */
+export interface CallOptions { signal?: AbortSignal; onUsage?: (u: PamUsage) => void }
+
+const Usage = z.object({
+  prompt_tokens: z.number().optional(), completion_tokens: z.number().optional(), prompt_tokens_details: z.object({ cached_tokens: z.number().optional() }).nullish(),
+}).nullish();
+
+function usageOf(reply: unknown, fallbackModel: string): PamUsage | null {
+  const r = z.object({ model: z.string().optional(), usage: Usage }).safeParse(reply);
+  if (!r.success || !r.data.usage) return null;
+  const u = r.data.usage;
+  const model = r.data.model || fallbackModel;
+  const counts = { prompt: u.prompt_tokens ?? 0, completion: u.completion_tokens ?? 0, cached: u.prompt_tokens_details?.cached_tokens ?? 0 };
+  return { model, ...counts, cost_usd: hasPrice(model) ? estimateCostUsd(model, counts) : null };
+}
+
 const Reply = z.object({
   choices: z.array(z.object({ message: z.looseObject({}).refine((m) => "content" in m), finish_reason: z.unknown().optional() })).min(1),
 });
@@ -39,12 +57,12 @@ export class PamLlm {
       chat_template_kwargs: { enable_thinking: g.enable_thinking }, ...s.extraBody };
   }
 
-  async complete(messages: PamMessage[], g: Generation, role: Role, timeoutMs: number): Promise<string> {
+  async complete(messages: PamMessage[], g: Generation, role: Role, timeoutMs: number, call: CallOptions = {}): Promise<string> {
     const body = this.body(messages, g, role);
     checkBudget(messages, this.s.maxTokens[role], this.s.maxModelLen);
     let reply: unknown;
     // SDK timeout은 응답 머리를 받으면 풀린다. 본문 읽기까지 이어지는 전체 제한은 따로 끊는 신호로 건다(본문이 멈춰도 끊긴다).
-    const limit = AbortSignal.timeout(timeoutMs);
+    const limit = call.signal ? AbortSignal.any([AbortSignal.timeout(timeoutMs), call.signal]) : AbortSignal.timeout(timeoutMs);
     try {
       reply = await this.client.chat.completions.create(body as never, { timeout: timeoutMs, signal: limit });
     } catch (e) {
@@ -52,6 +70,8 @@ export class PamLlm {
       if (e instanceof APIError && typeof e.status === "number") throw new PamLinkError(`PAM LLM HTTP ${e.status}`);
       throw new PamLinkError(`PAM LLM 연결 실패: ${(e as Error).name}`);
     }
+    const used = usageOf(reply, this.s.model);
+    if (used) call.onUsage?.(used);
     const r = Reply.safeParse(reply);
     if (!r.success) throw new PamLinkError("PAM LLM 답 모양이 chat completions가 아님");
     const choice = r.data.choices[0]!;

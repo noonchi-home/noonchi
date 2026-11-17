@@ -105,7 +105,7 @@ describe("기록기", () => {
     subs.brain!({ type: "world_change", at_ms: 2, kind: "appeared", text: "컵 cup_1 보임" });
     subs.brain!({
       type: "decision", at_ms: 3, id: "pam-1", seq: 1, text_sent: "21:00:00 사람 보임", status: "valid", prediction: { observation: "o", reasoning: "r", task_index: -1 }, action: null, memory_version: 1,
-      world: { objects: [], person_visible: true, vlm_missing: 0, yolo_missing: 0 },
+      world: { objects: [], person_visible: true, vlm_missing: 0, yolo_missing: 0 }, usage: { model: "gpt-5.4-mini", prompt: 100, completion: 20, cached: 0, cost_usd: 0.000165 },
     });
     subs.brain!({ type: "link", at_ms: 4, target: "pam", up: false, text: "PAM 연결 끊김" });
     subs.brain!({ type: "trigger", at_ms: 5, paused: true, text: "사람이 없어 판단을 멈춤" });
@@ -116,7 +116,7 @@ describe("기록기", () => {
     expect(db.list({ kinds: ["yolo"] })[0]).toMatchObject({ subject: "e2", text: "요청이 몰려 YOLO·VLM 분석 없음", data: { yolo_missing: "cap", vlm_missing: "cap" } });
     expect(db.list({ kinds: ["vlm"] })[0]).toMatchObject({ subject: "e1", text: "컵이 식탁 위", data: { captured_at_ms: 1, missing: null } });
     expect(db.list({ kinds: ["pam_text"] })[0]).toMatchObject({ subject: "pam-1", text: "21:00:00 사람 보임" });
-    expect(db.list({ kinds: ["decision"] })[0]).toMatchObject({ subject: "pam-1", text: "대기", data: { seq: 1, memory_version: 1, status: "valid", prediction: { task_index: -1 } } });
+    expect(db.list({ kinds: ["decision"] })[0]).toMatchObject({ subject: "pam-1", text: "대기", data: { seq: 1, memory_version: 1, status: "valid", prediction: { task_index: -1 }, usage: { model: "gpt-5.4-mini", prompt: 100, completion: 20, cached: 0, cost_usd: 0.000165 } } });
     expect(db.list({ kinds: ["mode"] })[0]).toMatchObject({ at_ms: NOW, text: "실제 모드", data: { mode: "live" } });
     expect(db.list({ kinds: ["device"] })[0]).toMatchObject({ at_ms: Date.UTC(2026, 10, 7, 12), subject: "dishwasher_1", data: { attr: "running", from: null, to: true } });
     expect(JSON.stringify(db.list({}))).not.toMatch(/jpeg|base64/);

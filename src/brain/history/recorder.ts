@@ -69,7 +69,7 @@ export function attachRecorder(db: HistoryDb, o: RecorderSources): () => void {
         case "decision":
           db.add("pam_text", l.at_ms, l.text_sent, { subject: l.id });
           db.add("decision", l.at_ms, l.action ?? (l.status === "valid" ? DECISION_TEXT.wait : DECISION_TEXT.failed(l.error ?? "")), {
-            subject: l.id, data: { seq: l.seq, prediction: l.prediction, status: l.status, memory_version: l.memory_version, world: l.world },
+            subject: l.id, data: { seq: l.seq, prediction: l.prediction, status: l.status, memory_version: l.memory_version, world: l.world, ...(l.usage ? { usage: l.usage } : {}) },
           });
           return;
         case "execution":

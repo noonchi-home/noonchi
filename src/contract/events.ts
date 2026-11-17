@@ -120,6 +120,8 @@ export type BrainLog =
   | { type: "world_change"; at_ms: number; kind: WorldChangeKind; text: string }
   | {
     type: "decision"; at_ms: number; id: string; seq: number; text_sent: string; status: "valid" | "failed";
+    /** 이번 판단의 PAM LLM 사용량(답을 받았을 때만, 틀린 답·잘린 답이어도). 예전 기록에는 없다. */
+    usage?: PamUsage;
     prediction: { observation: string; reasoning: string; task_index: number } | null; action: string | null;
     /** 고른 행동의 FSM 자리(행동 단위, src/brain/decision.ts FsmRuleAt): 그 행동의 규칙이 한 상태에만 있으면 상태 id, 규칙이 하나면 트리거,
      *  seed에 없는 규칙이 있으면 learned. 대기·실패·못 찾으면 null. 예전 기록에는 없다. */
@@ -133,6 +135,8 @@ export type BrainLog =
   | { type: "trigger"; at_ms: number; paused: boolean; text: string }
   | {
     type: "reflection"; at_ms: number; day: string; ok: boolean; version: number | null; applies_day: string | null; text: string;
+    /** 이번 반성의 PAM LLM 사용량(답을 받았을 때만). 예전 기록에는 없다. */
+    usage?: PamUsage;
     /** 이번 반성이 새로 더한 규칙, 새 판본에서 지금 적용 중인 seed에 없는 규칙(둘 다 코치 행동 빼고), 반성 뒤 검사가 뺀 규칙(src/brain/history/habits.ts). 성공한 fsm 반성에만 있다. */
     learned?: { state: string; trigger: string; action: string }[];
     active?: { state: string; trigger: string; action: string }[];
@@ -196,6 +200,9 @@ export interface DeviceView extends DeviceSpec {
 }
 
 // 서버 상태
+
+/** PAM LLM 한 번의 사용량: 응답 모델 이름, 입력·출력·캐시 토큰, 비용(달러, 가격표 src/infer/cost.ts에 없는 모델이면 null). */
+export interface PamUsage { model: string; prompt: number; completion: number; cached: number; cost_usd: number | null }
 
 /** GET /api/health. */
 export interface HealthView {
@@ -310,6 +317,8 @@ export interface DecisionRecord {
   /** 고른 행동의 FSM 규칙 자리(그때 보낸 기억에서 찾는다). 대기·실패·못 찾으면 null. */
   fsm?: FsmRuleAt | null;
   error?: string;
+  /** 이번 판단의 PAM LLM 사용량(답을 받았을 때만). */
+  usage?: PamUsage;
   memoryVersion: number;
   /** 이 판단에 보낸 행동 목록(돕는 방식마다 다르다). 계획 전·실행 전 검사가 이 목록으로 본다. */
   tasks?: string[];

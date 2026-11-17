@@ -27,6 +27,7 @@ export const REFLECT_TEXT = {
   empty: "그날 기록 없음",
   tooBig: "기억이 커서 반성 입력 한도를 넘어요",
   running: "이미 반성하는 중이에요",
+  cancelled: "서버를 끄느라 반성을 멈췄어요",
   noObservation: "관찰 없음",
   noAction: "행동 없음",
   learned: (n: number) => `새 규칙 ${n}개를 배웠어요`,

@@ -5,7 +5,7 @@ import { checkInput, validateMemory, type DecisionInput, type DecisionModel, typ
 import { parseMemory, parsePrediction } from "./answer.js";
 import { pamLimits, type PamLimits } from "./budget.js";
 import { PamAnswerError, PamRequestError } from "./errors.js";
-import { PamLlm } from "./llm.js";
+import { PamLlm, type CallOptions } from "./llm.js";
 import { buildPredictMessages, buildReflectMessages } from "./prompt.js";
 import { predictRequest, reflectRequest } from "./request.js";
 import type { PamSettings } from "./settings.js";
@@ -44,23 +44,24 @@ export class PamClient {
     return pamLimits(this.o.settings);
   }
 
-  async predict(r: Omit<PamPredictRequest, "contract">): Promise<Prediction> {
+  /** call.signal로 끊고(PamLinkError), call.onUsage로 이번 LLM 사용량을 받는다. */
+  async predict(r: Omit<PamPredictRequest, "contract">, call: CallOptions = {}): Promise<Prediction> {
     assertTextOnly(r);
     const req = predictRequest({ contract: PAM_PREDICT, ...r });
     const built = buildPredictMessages(req);
     assertTextOnly(built.messages);
-    const raw = await this.llm.complete(built.messages, built.generation, "predictor", Math.min(this.o.timeoutMs ?? 30_000, this.o.settings.timeoutMs));
+    const raw = await this.llm.complete(built.messages, built.generation, "predictor", Math.min(this.o.timeoutMs ?? 30_000, this.o.settings.timeoutMs), call);
     const parsed = parsePrediction(raw, req.tasks);
     if (parsed.status !== "valid" || !parsed.prediction) throw new PamAnswerError(`PAM 답이 계약에 맞지 않음(대기와 다름): ${parsed.errors.join("; ") || "이유 없음"}`);
     return parsed.prediction;
   }
 
-  async reflect(r: Omit<PamReflectRequest, "contract">, kind: "list" | "fsm"): Promise<PamMemory> {
+  async reflect(r: Omit<PamReflectRequest, "contract">, kind: "list" | "fsm", call: CallOptions = {}): Promise<PamMemory> {
     assertTextOnly(r);
     const req = reflectRequest({ contract: PAM_REFLECT, ...r });
     const built = buildReflectMessages(req);
     assertTextOnly(built.messages);
-    const raw = await this.llm.complete(built.messages, built.generation, "reflector", this.o.settings.timeoutMs);
+    const raw = await this.llm.complete(built.messages, built.generation, "reflector", this.o.settings.timeoutMs, call);
     const parsed = parseMemory(raw, req.memory_kind);
     if (!parsed.ok) throw new PamAnswerError(`PAM 반성 실패: ${parsed.error}`);
     return validateMemory(parsed.memory, kind);

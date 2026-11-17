@@ -165,6 +165,42 @@ describe("판단 호출", () => {
     ]);
   });
 
+  it("멈추면 나가 있는 판단 요청도 끊고 기록하지 않는다", async () => {
+    let aborted = false;
+    const hang = ((_u: unknown, init?: RequestInit) => new Promise<Response>((_, reject) => init!.signal!.addEventListener("abort", () => { aborted = true; reject(init!.signal!.reason); }))) as typeof fetch;
+    const logs: BrainLog[] = [];
+    const now = 10_000;
+    const d = new Decider({ pam: pamClientFor({ url: "http://pam.invalid/v1" }, { fetchImpl: hang, timeoutMs: 60_000 }), world: emptyWorld(), trigger: event(), tasks: () => [...CUP_TASKS], memory,
+      emit: (l) => logs.push(l), offsetMinutes: 540, clock: { now: () => now } });
+    d.onChanges([{ kind: "appeared", at_ms: now, subject: "cup_1", text: "컵 cup_1 보임", meaningful: true }]);
+    d.tick();
+    await new Promise((r) => setTimeout(r, 50));
+    const t0 = Date.now();
+    d.stop();
+    await d.idle();
+    expect(Date.now() - t0).toBeLessThan(2000);
+    expect(aborted).toBe(true);
+    expect(logs.filter((l) => l.type === "decision")).toEqual([]);
+  });
+
+  it("판단 기록에 PAM 사용량(모델·토큰·비용)을 남긴다. 답이 틀려 실패해도 남긴다", async () => {
+    const reply = (content: string) => (async () => Response.json({ model: "gpt-5.4-mini", choices: [{ message: { content }, finish_reason: "stop" }],
+      usage: { prompt_tokens: 1000, completion_tokens: 50, prompt_tokens_details: { cached_tokens: 200 } } })) as unknown as typeof fetch;
+    const usage = { model: "gpt-5.4-mini", prompt: 1000, completion: 50, cached: 200, cost_usd: (800 * 0.75 + 200 * 0.075 + 50 * 4.5) / 1e6 };
+    for (const [content, status] of [['{"observation":"o","reasoning":"r","task_index":-1}', "valid"], ["```json {}```", "failed"]] as const) {
+      const logs: BrainLog[] = [];
+      const now = 10_000;
+      const d = new Decider({ pam: pamClientFor({ url: "http://pam.invalid/v1" }, { env: { INFERENCE_MODE: "openai" }, fetchImpl: reply(content) }), world: emptyWorld(), trigger: event(),
+        tasks: () => [...CUP_TASKS], memory, emit: (l) => logs.push(l), offsetMinutes: 540, clock: { now: () => now } });
+      d.onChanges([{ kind: "appeared", at_ms: now, subject: "cup_1", text: "컵 cup_1 보임", meaningful: true }]);
+      d.tick();
+      await d.idle();
+      const decision = logs.find((l) => l.type === "decision") as Extract<BrainLog, { type: "decision" }>;
+      expect(decision.status, content).toBe(status);
+      expect(decision.usage, content).toEqual(usage);
+    }
+  });
+
   it("PAM에 닿지 않다가 닿으면 연결 끊김·연결됨을 한 번씩 기록한다. 닿지 않은 판단은 실패로 남긴다", async () => {
     const logs: BrainLog[] = [];
     const records: DecisionRecord[] = [];

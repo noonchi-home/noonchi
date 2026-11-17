@@ -1,6 +1,7 @@
 // 반성과 기억 판본(src/brain/history/reflect.ts): 하루 관찰 텍스트·행동 요약·피드백 → pam-reflect/2(가짜 PAM LLM) → 새 판본은 다음 날부터.
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { createServer } from "node:http";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CUP_FSM_MEMORY, type FsmMemory } from "../src/brain/decision.js";
@@ -8,7 +9,7 @@ import type { PamClient } from "../src/brain/pam/index.js";
 import type { BrainLog } from "../src/contract/events.js";
 import { HistoryDb } from "../src/brain/history/db.js";
 import { loadReflectAt, memoryForDay, runReflection, scheduleReflection } from "../src/brain/history/reflect.js";
-import { fetchRetry } from "../src/shared/net.js";
+import { fetchRetry, listenRetry } from "../src/shared/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { pamClientFor, startFakePamLlm, type FakePamLlm, type ReflectView, pamLlmEnv } from "./helpers/pam.js";
 import { openWebSocket } from "./helpers/ws.js";
@@ -27,6 +28,8 @@ afterEach(async () => {
 });
 
 const got: (ReflectView & Record<string, any>)[] = [];
+/** 가짜 PAM LLM(vllm 모드 모델 pam)의 사용량: 토큰 0, 가격표에 없는 모델이라 비용 null. */
+const FAKE_USAGE = { model: "pam", prompt: 0, completion: 0, cached: 0, cost_usd: null };
 /** 반성 답이 memory인 가짜 PAM LLM에 붙은 PamClient. 받은 반성 요청 값은 got에 쌓인다. env로 문맥 길이(PAM_MAX_MODEL_LEN) 등을 바꾼다. */
 async function startPam(memory: unknown, env: Record<string, string> = {}): Promise<PamClient> {
   await reflectLlm?.close();
@@ -216,9 +219,9 @@ describe("반성", () => {
     expect(memoryForDay(db, "2026-11-07").version).toBe(1); // 그날은 그대로
     expect(memoryForDay(db, "2026-11-08")).toMatchObject({ version: 2, memory: { initial_state: "left_cup" } });
     expect(db.list({ kinds: ["reflection"] })).toEqual([expect.objectContaining({
-      at_ms: t + 3_600_000, text: "반성 완료: 기억 2판, 2026-11-08부터", data: { day: "2026-11-07", ok: true, version: 2, applies_day: "2026-11-08", learned: [], active: [], dropped: [] },
+      at_ms: t + 3_600_000, text: "반성 완료: 기억 2판, 2026-11-08부터", data: { day: "2026-11-07", ok: true, version: 2, applies_day: "2026-11-08", learned: [], active: [], dropped: [], usage: FAKE_USAGE },
     })]);
-    expect(logs).toEqual([{ type: "reflection", at_ms: t + 3_600_000, day: "2026-11-07", ok: true, version: 2, applies_day: "2026-11-08", text: "반성 완료: 기억 2판, 2026-11-08부터", learned: [], active: [], dropped: [] }]);
+    expect(logs).toEqual([{ type: "reflection", at_ms: t + 3_600_000, day: "2026-11-07", ok: true, version: 2, applies_day: "2026-11-08", text: "반성 완료: 기억 2판, 2026-11-08부터", learned: [], active: [], dropped: [], usage: FAKE_USAGE }]);
   });
 
   describe("반성 뒤 검사(코치 규칙 지키기·습관 거르기)", () => {
@@ -402,6 +405,47 @@ describe("반성 API", () => {
     const r = await fetchRetry(`${running!.url}/api/reflection/run`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     return { status: r.status, json: (await r.json()) as Record<string, any> };
   };
+
+  it("서버를 끄면 진행 중인 반성 요청을 끊고 끝날 때까지 기다린 뒤 DB를 닫는다", async () => {
+    let got = false;
+    let cut = false;
+    const hang = createServer((_req, res) => { got = true; res.on("close", () => { cut = true; }); });
+    const { port } = await listenRetry(hang, 0, "127.0.0.1");
+    try {
+      running = await startServer({ env: { HUB: "memory", PORT: "0", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), PAM_LLM_BASE_URL: `http://127.0.0.1:${port}/v1`, PAM_LLM_API_KEY: "fake-key" }, log: () => {} });
+      running.history.add("detection", Date.UTC(2026, 10, 7, 1), "사람 보임");
+      const pending = post({ day: "2026-11-07" }).catch(() => null);
+      const end = Date.now() + 5000;
+      while (!got && Date.now() < end) await new Promise((ok) => setTimeout(ok, 20));
+      expect(got).toBe(true);
+      const t0 = Date.now();
+      await running.close();
+      running = undefined;
+      expect(Date.now() - t0).toBeLessThan(5000);
+      // 끊긴 요청의 소켓 닫힘이 PAM LLM 쪽에 닿을 때까지
+      const until = Date.now() + 2000;
+      while (!cut && Date.now() < until) await new Promise((ok) => setTimeout(ok, 20));
+      expect(cut).toBe(true);
+      await pending;
+    } finally {
+      hang.closeAllConnections();
+      hang.close();
+    }
+  });
+
+  it("반성 기록에 PAM 사용량을 남긴다", async () => {
+    const db = HistoryDb.open(":memory:");
+    const t = Date.UTC(2026, 10, 6, 23);
+    db.add("detection", t, "사람 보임");
+    const logs: BrainLog[] = [];
+    const fetchImpl = (async () => Response.json({ model: "pam", choices: [{ message: { content: JSON.stringify(CUP_FSM_MEMORY) }, finish_reason: "stop" }],
+      usage: { prompt_tokens: 3000, completion_tokens: 900 } })) as unknown as typeof fetch;
+    const r = await runReflection(db, pamClientFor({ url: "http://pam.invalid/v1" }, { fetchImpl }), "2026-11-07", { emit: (l) => logs.push(l), now: () => t + 3_600_000 });
+    expect(r.ok).toBe(true);
+    const usage = { model: "pam", prompt: 3000, completion: 900, cached: 0, cost_usd: null };
+    expect(logs.find((l) => l.type === "reflection")).toMatchObject({ usage });
+    expect(db.list({ kinds: ["reflection"] })[0]!.data).toMatchObject({ usage });
+  });
 
   it("POST /api/reflection/run: 그날을 반성하고 결과를 대시보드 판단 기록으로 보낸다", async () => {
     const s = await start();
