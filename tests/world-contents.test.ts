@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 import { WorldState } from "../src/world/state/world.js";
 import { sha256 } from "../src/observe/ring.js";
 import type { Detection, EngineFrame } from "../src/contract/observe.js";
+import { atMouth, pouringInto } from "../src/world/sip.js";
+import { describePose } from "../src/world/pose.js";
 import { det } from "./helpers/detectors.js";
+import { standing } from "./helpers/poses.js";
 
 const ws = () => new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices: () => [] });
 const frame = (i: number): EngineFrame => ({ id: `e${i}`, capturedAtMs: i * 1000, latestAtMs: i * 1000, jpeg: Buffer.from(`${i}`), sha256: sha256(Buffer.from(`${i}`)), width: 480, height: 360, eye: null, view: null });
@@ -148,5 +151,64 @@ describe("따르기 창(계획의 따르기 단계)", () => {
     for (const i of [18, 20, 22]) s.say(i, "empty");
     expect(s.cupNow().facts.contents).toMatchObject({ value: "has_contents", certainty: "inferred" });
     expect(s.w.contentsAction("cup_9", 1, true)).toBe(false);
+  });
+});
+
+// 서 있는 사람(어깨 너비 40, 몸통 100 → scale 60). 컵 상자 [220,160,40,20], 손목이 그 안이면 든 것이다
+const CUP_BOX: [number, number, number, number] = [220, 160, 40, 20];
+const AT_MOUTH = { 9: [230, 170, 0.9], 0: [240, 150, 0.9] } as const;
+const drinker = describePose(standing({ ...AT_MOUTH }));
+const waist = describePose(standing({ 9: [230, 170, 0.9], 0: [130, 40, 0.9] }));
+const BOTTLE_TILT: [number, number, number, number] = [215, 100, 60, 40];
+const BOTTLE_UP: [number, number, number, number] = [225, 70, 25, 70];
+const pourer = describePose(standing({ 10: [240, 120, 0.9] }));
+const someone = det("person", 0.9, [80, 60, 200, 300], 0);
+
+describe("마시기·따르기 사건", () => {
+  it("입에 댐: 컵을 든 손목이 있고 얼굴 점이 컵 상자에서 scale × 0.5 안", () => {
+    expect(atMouth([drinker], CUP_BOX)).toBe(true);
+    expect(atMouth([waist], CUP_BOX)).toBe(false);
+    expect(atMouth([describePose(standing({ 0: [240, 150, 0.9] }))], CUP_BOX)).toBe(false); // 들지 않음
+  });
+  it("따름: 든 병이 기울었고(가로/세로 0.8 이상) 컵 위쪽 가까이에서 가로로 겹친다", () => {
+    expect(pouringInto([pourer], BOTTLE_TILT, CUP_BOX)).toBe(true);
+    expect(pouringInto([describePose(standing({ 10: [237, 100, 0.9] }))], BOTTLE_UP, CUP_BOX)).toBe(false);
+    expect(pouringInto([pourer], [400, 100, 60, 40], CUP_BOX)).toBe(false);
+  });
+  it("확인된 내용물 있음 컵을 입에 대면 「다시 확인 필요」로 열린다(이전 값 보관, 계기 아닌 줄 하나). 사건 앞에 찍힌 늦은 사진은 버리고 그 뒤 3장·4초가 새 값을 정한다", () => {
+    const s = scene();
+    for (const i of [1, 3, 5]) s.say(i, "has_contents");
+    const { changes } = s.w.applyDetections(frame(6), [someone, cup], [standing({ ...AT_MOUTH })]);
+    expect(changes.filter((c) => c.text.includes("내용물 다시 확인"))).toEqual([expect.objectContaining({ text: "컵 cup_1 입에 댐 · 내용물 다시 확인", meaningful: false })]);
+    expect(s.cupNow()).toMatchObject({ contents_past: [{ value: "has_contents" }] });
+    expect(s.cupNow().facts.contents).toMatchObject({ value: "has_contents", certainty: "inferred" });
+    // 이어서 입에 댐: 줄 없음
+    expect(s.w.applyDetections(frame(7), [someone, cup], [standing({ ...AT_MOUTH })]).changes.filter((c) => c.text.includes("내용물 다시 확인"))).toEqual([]);
+    s.say(5, "empty"); // 사건 앞에 찍힌 늦은 답
+    for (const i of [8, 10]) s.say(i, "empty");
+    expect(s.cupNow().facts.contents).toMatchObject({ certainty: "inferred" });
+    s.say(12, "empty");
+    expect(s.cupNow().facts.contents).toMatchObject({ value: "empty", certainty: "confirmed" });
+  });
+  it("기운 병을 컵 위에서 들면 그 컵이 「따르는 모습」으로 열린다", () => {
+    const s = scene();
+    for (const i of [1, 3, 5]) s.say(i, "empty");
+    const bottle = det("bottle", 0.9, BOTTLE_TILT, 39);
+    const { changes } = s.w.applyDetections(frame(6), [someone, cup, bottle], [standing({ 10: [240, 120, 0.9] })]);
+    expect(changes.filter((c) => c.text.includes("내용물 다시 확인")).map((c) => c.text)).toEqual(["컵 cup_1 따르는 모습 · 내용물 다시 확인"]);
+  });
+  it("사람 답보다 먼저 찍힌 관절 사건(감지 대기열에서 늦게 나온 프레임)은 사람 답을 지우지 않고 세대도 올리지 않는다", () => {
+    const s = scene();
+    s.w.answerContents("cup_1", "empty", 6000, 0);
+    const gen = s.cupNow().contents_gen;
+    s.w.applyDetections(frame(5), [someone, cup], [standing({ ...AT_MOUTH })]);
+    expect(s.cupNow()).toMatchObject({ contents_gen: gen, facts: { contents: { value: "empty", certainty: "confirmed", by: "person" } } });
+  });
+  it("사람이 답한 값도 사건이 다시 연다", () => {
+    const s = scene();
+    s.w.answerContents("cup_1", "has_contents", 4000, 0);
+    s.w.applyDetections(frame(6), [someone, cup], [standing({ ...AT_MOUTH })]);
+    expect(s.cupNow().facts.contents).toMatchObject({ value: "has_contents", certainty: "inferred" });
+    expect(s.cupNow().facts.contents?.by).toBeUndefined();
   });
 });

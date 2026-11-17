@@ -1,13 +1,15 @@
 // World State의 사람·관절(People): 사람 자리·방(가장 큰 사람 상자의 발), 관절 사실(손목이 물건 상자 안·가까이면 손에 있음·들고 있음, 서 있음·앉아 있음·누워 있음)과
 // 쓰러짐 의심(src/world/fall.ts FallWatch). 쓰러짐 의심인 동안 사람 자세는 관절만 바꾸고(VLM 자세 답은 막음), 침대·소파 위로 빼는 것은 지금 누운 구간 안에서 찍힌
 // 그 사람의 VLM 자리 답(침대 위·소파 위)으로만 한다. 관절이 붙인 사실은 같은 프레임 VLM 답보다 앞선다(poseHolds).
+// 마시기·따르기 사건(src/world/sip.ts): 든 그릇을 입에 대거나 든 병을 기울여 그릇 위에 두면 그 그릇의 내용물을 다시 연다(contents.ts reopen).
 import type { Facet, WorldChange, WorldFact } from "../../contract/world.js";
 import type { CameraView, Detection, EngineFrame, Pose } from "../../contract/observe.js";
 import { CHANGE_TEXT, OBJECT_NAME } from "../labels.js";
 import { onRest, pixelOf, placeBox, rayDir } from "../place.js";
 import { describePose, heldByAny, mainPerson, type Pt } from "../pose.js";
 import { fallPose, type FallPose } from "../fall.js";
-import { FACT_FRESH_MS, POSE_FALL, POSE_HOLD, POSE_POSTURE, REST_PLACES } from "../vocab.js";
+import { atMouth, pouringInto } from "../sip.js";
+import { CLASSES, FACT_FRESH_MS, POSE_FALL, POSE_HOLD, POSE_POSTURE, REST_PLACES } from "../vocab.js";
 import { PERSON, Part, type Facts, type Obj, type Plan2, type V3 } from "./core.js";
 
 /** 상자 아래가 프레임 높이의 이 비율보다 아래면 발이 잘린 것으로 본다. */
@@ -58,6 +60,7 @@ export class People extends Part {
         changes.push({ kind: "state", at_ms: at, subject: obj.id, meaningful: true, text: CHANGE_TEXT.state(core.name(obj), POSE_HOLD.object) });
       }
     }
+    this.sips(people, boxes, at, changes);
     const personFact = (facet: Facet, value: string) => {
       if (this.setPoseFact(core.person.facts, facet, value, at) && core.person.visible) {
         changes.push({ kind: "person_state", at_ms: at, subject: PERSON, meaningful: false, text: CHANGE_TEXT.state(OBJECT_NAME.person!, value) });
@@ -110,6 +113,19 @@ export class People extends Part {
       const v: Pt = [b[0] - a[0], b[1] - a[1]];
       return Math.hypot(v[0], v[1]) > 1e-6 ? v : null;
     };
+  }
+
+  /** 마시기·따르기 사건(src/world/sip.ts): 든 그릇을 입에 대면 그 그릇, 든 병을 기울여 그릇 위에 두면 그 그릇의 내용물을 다시 연다.
+   *  줄은 확인된(사라지지 않은) 물건 것만 낸다. */
+  private sips(people: ReturnType<typeof describePose>[], boxes: { obj: Obj; box: Detection["box"] }[], at: number, changes: WorldChange[]): void {
+    const core = this.core;
+    const vessel = (o: Obj) => (CLASSES[o.cls].facets as readonly Facet[]).includes("contents");
+    const say = (obj: Obj, c: WorldChange[]) => { if (obj.confirmed && obj.status !== "gone") changes.push(...c); };
+    for (const { obj, box } of boxes) if (vessel(obj) && atMouth(people, box)) say(obj, core.contents.reopen(obj, at, "drink"));
+    for (const b of boxes) {
+      if (b.obj.cls !== "bottle") continue;
+      for (const c of boxes) if (c !== b && c.obj.cls !== "bottle" && vessel(c.obj) && pouringInto(people, b.box, c.box)) say(c.obj, core.contents.reopen(c.obj, at, "pour"));
+    }
   }
 
   /** 쓰러짐 의심인 동안 사람 자세는 관절만 바꾼다(VLM 답이 알림을 지우지 않게). */

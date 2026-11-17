@@ -16,6 +16,8 @@ export type Pt = [number, number];
 type Box = [number, number, number, number];
 
 const L_SH = 5, R_SH = 6, L_WR = 9, R_WR = 10, L_HIP = 11, R_HIP = 12, L_KNEE = 13, R_KNEE = 14;
+/** 얼굴 관절: 코·왼눈·오른눈·왼귀·오른귀. */
+const FACE = [0, 1, 2, 3, 4] as const;
 /** 이 신뢰도 아래 관절은 쓰지 않는다. */
 export const KPT_LOW = 0.3;
 /** 쓴 관절이 모두 이 신뢰도 이상이면 확실(high). */
@@ -40,6 +42,8 @@ export interface PoseInfo {
   level: "high" | "mid" | "low";
   /** 보이는 손목(원본 픽셀). */
   wrists: Partial<Record<"left" | "right", Pt>>;
+  /** 얼굴 점: 보이는 코·눈·귀(0~4)의 평균(원본 픽셀). 하나도 안 보이면 null. 마시기 사건(src/world/sip.ts)이 쓴다. */
+  face: Pt | null;
   /** 거리 기준 길이(픽셀). */
   scale: number;
   score: number;
@@ -86,7 +90,9 @@ export function describePose(p: Pose, down?: (pt: Pt) => Pt | null): PoseInfo {
     used.push(k[i]![2]);
   }
   const level = posture === "unknown" || !used.length ? "low" : Math.min(...used) >= KPT_HIGH && posture !== "upright" ? "high" : "mid";
-  const info: PoseInfo = { posture, level, wrists, scale, score: p.score, box: p.box };
+  const facePts = FACE.map((i) => kp(k, i)).filter((x): x is Pt => x !== null);
+  const face: Pt | null = facePts.length ? [facePts.reduce((a, q) => a + q[0], 0) / facePts.length, facePts.reduce((a, q) => a + q[1], 0) / facePts.length] : null;
+  const info: PoseInfo = { posture, level, wrists, face, scale, score: p.score, box: p.box };
   if (!down) return info;
   const d = sh && hip ? down(hip) : null;
   const torsoOff = d ? off(sh!, hip!, d) : null;
@@ -109,7 +115,7 @@ export function mainPerson(poses: Pose[], down?: (pt: Pt) => Pt | null): PoseInf
 }
 
 /** 점과 상자 [x, y, w, h] 사이 거리(안이면 0). */
-const toBox = (p: Pt, b: Box) => Math.hypot(Math.max(b[0] - p[0], 0, p[0] - (b[0] + b[2])), Math.max(b[1] - p[1], 0, p[1] - (b[1] + b[3])));
+export const toBox = (p: Pt, b: Box) => Math.hypot(Math.max(b[0] - p[0], 0, p[0] - (b[0] + b[2])), Math.max(b[1] - p[1], 0, p[1] - (b[1] + b[3])));
 
 /** 이 물건을 든 손(가까운 손목 쪽). 들지 않았으면 null. */
 export function heldBy(person: PoseInfo, box: Box): "left" | "right" | null {

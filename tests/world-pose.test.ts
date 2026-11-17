@@ -46,6 +46,11 @@ describe("describePose: 관절 → 자세", () => {
     expect(p.wrists).toEqual({ right: [160, 150] });
     expect(p.scale).toBe(60); // 몸통 100 × 0.6
   });
+
+  it("얼굴 점은 코·눈·귀 가운데 0.3 이상으로 보이는 것의 평균이고, 없으면 null(마시기 사건)", () => {
+    expect(describePose(pose({ ...SHOULDERS, ...HIPS, 0: [130, 60, 0.9], 1: [126, 56, 0.9], 2: [134, 56, 0.2] })).face).toEqual([128, 58]);
+    expect(describePose(pose({ ...SHOULDERS, ...HIPS })).face).toBeNull();
+  });
 });
 
 describe("mainPerson: 한 사람 고르기", () => {
