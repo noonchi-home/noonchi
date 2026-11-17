@@ -6,6 +6,7 @@ import { WorldState } from "../src/world/state/world.js";
 import { holdsTarget } from "../src/act/tasks.js";
 import { standing } from "./helpers/poses.js";
 import { det as mkDet } from "./helpers/detectors.js";
+import { see } from "./helpers/vlm-scene.js";
 
 const frame = (i: number): EngineFrame => ({ id: `e${i}`, capturedAtMs: i * 1000, latestAtMs: i * 1000, jpeg: Buffer.from(`${i}`), sha256: sha256(Buffer.from(`${i}`)), width: 480, height: 360, eye: null, view: null });
 const det = (label: Detection["label"], box: Detection["box"], score = 0.9): Detection => mkDet(label, score, box, 0);
@@ -31,7 +32,7 @@ describe("World State + 낱말 표", () => {
   it("VLM이 고른 하는 일·자리·들고 있음을 사람 면에 두고, 그 종류 면이 아닌 값은 버린다", () => {
     const w = ws();
     let ids = new Map<string, string>();
-    for (let i = 1; i <= 3; i++) ids = w.applyDetections(frame(i), [person, laptop, book]).ids;
+    for (let i = 1; i <= 3; i++) ids = see(w, frame(i), [person, laptop, book]).ids;
     const changes = w.applyScene("e3", 3000, scene([
       { object_id: "d1", state: "watching_tv" }, { object_id: "d1", state: "on_sofa" }, { object_id: "d1", state: "sitting" },
       { object_id: "d2", state: "open" }, { object_id: "d2", state: "screen_on" }, { object_id: "d2", state: "on_desk" },
@@ -56,13 +57,13 @@ describe("World State + 낱말 표", () => {
     expect(Object.keys(w.view(4000).person.facts)).toEqual(["posture"]);
   });
 
-  it("관절로 든 물건은 사람 들고 있음과 손에 있음 목록", () => {
+  it("VLM이 손에 있음으로 답한 물건은 사람 손에 있음 목록이다. 관절은 물건을 보지 않는다", () => {
     const w = ws();
     const cup = det("cup", [220, 160, 40, 20]);
-    for (let i = 1; i <= 3; i++) w.applyDetections(frame(i), [person, cup], [standing({ 10: [230, 170, 0.9] })]);
-    const v = w.view(3000);
-    expect(v.person.facts.holding?.value).toBe("holding_object");
-    expect(v.person.holding).toEqual(["cup_1"]);
+    for (let i = 1; i <= 2; i++) see(w, frame(i), [person, cup], { poses: [standing({ 10: [230, 170, 0.9] })] });
+    expect(w.view(2000).person.holding).toEqual([]);
+    for (let i = 3; i <= 4; i++) see(w, frame(i), [person, cup], { facts: [["d2", "in_hand"]] });
+    expect(w.view(4000).person.holding).toEqual(["cup_1"]);
   });
 
   it("새 물건 종류는 종류별 신뢰도로 받고, 음식에는 관계표로 냉장고를 붙인다", () => {
@@ -70,7 +71,7 @@ describe("World State + 낱말 표", () => {
     expect(w.accepts({ label: "fork", score: 0.44 })).toBe(false);
     expect(w.accepts({ label: "fork", score: 0.45 })).toBe(true);
     expect(w.accepts({ label: "pizza", score: 0.49 })).toBe(false);
-    for (let i = 1; i <= 3; i++) w.applyDetections(frame(i), [det("pizza", [10, 300, 60, 40], 0.7)]);
+    for (let i = 1; i <= 3; i++) see(w, frame(i), [det("pizza", [10, 300, 60, 40], 0.7)]);
     expect(w.view(3000).objects.map((o) => [o.id, o.devices])).toEqual([["pizza_1", ["fridge_1"]]]);
   });
 
@@ -181,12 +182,15 @@ describe("World State + 낱말 표", () => {
     expect(w.tick(270_000).map((c) => c.text)).toEqual(["주방 냉장고 문이 1분 넘게 열림"]);
   });
 
-  it("관절로 든 물건은 확인 전이어도 사람 든 물건 id에 들어, 책을 들면 컵을 든 것이 아니다", () => {
+  it("확인 전 물건은 손에 있음 목록에 들지 않고, 책을 손에 있음으로 답하면 컵을 든 것이 아니다", () => {
     const w = ws();
     const bookBox = det("book", [220, 160, 40, 20]);
-    const v = w.applyDetections(frame(1), [person, bookBox], [standing({ 10: [230, 170, 0.9] })]) && w.view(1000);
-    expect(v.objects).toEqual([]); // 책은 아직 확인 전
-    expect(v.person).toMatchObject({ holding: ["book_1"], facts: { holding: expect.objectContaining({ value: "holding_object" }) } });
+    see(w, frame(1), [person, bookBox], { facts: [["d2", "in_hand"]] });
+    expect(w.view(1000).objects).toEqual([]); // 책은 아직 확인 전
+    expect(w.view(1000).person.holding).toEqual([]);
+    for (let i = 2; i <= 3; i++) see(w, frame(i), [person, bookBox], { facts: [["d2", "in_hand"]] });
+    const v = w.view(3000);
+    expect(v.person.holding).toEqual(["book_1"]);
     expect(holdsTarget(v, "cup")).toBe(false);
   });
 });

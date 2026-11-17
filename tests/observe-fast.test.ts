@@ -34,7 +34,8 @@ function setup(config: ObserveConfig, o: { hold?: boolean; fail?: () => boolean;
   } as Detector;
   const vlm = { model: "w", json: async (req: { images: Buffer[]; captions: string[] }) => {
     calls.push({ images: req.images.map((b) => b[2]!), captions: req.captions });
-    return { value: { scene: "k", observations: [], summary: "s" }, costUsd: 0, model: "w", attempts: 1 };
+    // 장면 VLM이 컵(감지 d1과 같은 물건)을 답한다: World State 물건은 VLM 물건으로만 생긴다
+    return { value: { scene: "k", objects: [{ id: "v1", cls: "cup", box: { x: 220 / 480, y: 160 / 360, w: 40 / 480, h: 20 / 360 }, det: "d1" }], observations: [], summary: "s" }, costUsd: 0, model: "w", attempts: 1 };
   } } as unknown as VlmClient;
   const world = new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] });
   const p = new ObservationPipeline({
@@ -63,7 +64,7 @@ describe("빠른 프레임과 VLM 프레임", () => {
     expect(s.seen).toHaveLength(40);
     expect(s.seen[7]).toEqual({ type: "seen", at_ms: expect.any(Number), frame_id: "e8", captured_at_ms: 700, frame: { width: 480, height: 360 }, shapes: [{ label: "cup", score: 0.9, mask: CUP.mask }] });
     expect(s.p.status()).toMatchObject({ frames: 40, detected: 40, skipped: 0, queued: 0, vlm: { sent: 2 } });
-    // 빠른 프레임도 World State에 들어간다: 처음 본 뒤 2초인 21번째 장에 컵 등장
+    // 빠른 프레임(YOLO만)은 World State 물건을 바꾸지 않는다: 컵은 VLM 사진 2장(0초·2초)으로 등장하고 4초 VLM 사진에서 다시 본다
     s.send(40);
     await s.p.idle();
     expect(s.world.view(4000).objects.map((o) => [o.id, o.first_seen_ms, o.last_seen_ms])).toEqual([["cup_1", 0, 4000]]);

@@ -15,11 +15,11 @@ afterEach(async () => { await fake?.close(); fake = undefined; });
 const jpeg = (i: number) => Buffer.from([0xff, 0xd8, i]);
 const cupDet = () => new ScriptedDetector(() => [mkDet("cup", 0.9, [10, 10, 10, 10], 41)]);
 const until = async (ok: () => boolean) => { for (let i = 0; i < 200 && !ok(); i++) await new Promise((r) => setTimeout(r, 5)); };
-/** 답을 시험이 풀 때까지 붙잡아 두는 VLM. 풀면 d1을 싱크대 안으로 답한다. */
+/** 답을 시험이 풀 때까지 붙잡아 두는 VLM. 풀면 d1과 이은 컵을 싱크대 안으로 답한다. */
 function gatedVlm() {
   const gates: (() => void)[] = [];
   const vlm = { model: "gated", json: () => new Promise((ok) => {
-    gates.push(() => ok({ value: { scene: "kitchen", observations: [{ object_id: "d1", state: "in_sink" }], summary: `s${gates.length}` }, costUsd: 0, model: "gated", attempts: 1 }));
+    gates.push(() => ok({ value: { scene: "kitchen", objects: [{ id: "v1", cls: "cup", box: { x: 0.1, y: 0.1, w: 0.1, h: 0.1 }, det: "d1" }], observations: [{ object_id: "d1", state: "in_sink" }], summary: `s${gates.length}` }, costUsd: 0, model: "gated", attempts: 1 }));
   }) } as unknown as VlmClient;
   return { vlm, gates };
 }
@@ -236,24 +236,31 @@ describe("관찰 흐름", () => {
     await p.close();
   });
 
-  it("감지기가 낸 관절을 World State에 넣는다: 손목이 컵 상자 안이면 컵 손에 있음. 상태에 관절 모델 이름과 관절을 돌린 프레임 수", async () => {
+  it("감지기가 낸 관절을 World State에 넣는다: 사람 자세만 넣고, 손목이 컵 상자 안이어도 컵 손에 있음은 넣지 않는다(물건 사실은 VLM으로만). 상태에 관절 모델 이름과 관절을 돌린 프레임 수", async () => {
     const worlds: WorldView[] = [];
-    const vlm = { model: "v", json: async () => ({ value: { scene: "k", observations: [], summary: "s" }, costUsd: 0, model: "v", attempts: 1 }) } as unknown as VlmClient;
+    // 컵은 장면 VLM 물건(d2와 이음)으로 생긴다(VLM 사진 2장). 관절은 그 확인된 컵 상자를 본다
+    const vlm = { model: "v", json: async () => ({ value: { scene: "k", objects: [{ id: "v1", cls: "cup", box: { x: 0.6, y: 0.2, w: 0.1, h: 0.03 }, det: "d2" }], observations: [], summary: "s" }, costUsd: 0, model: "v", attempts: 1 }) } as unknown as VlmClient;
     const dets: Detection[] = [mkDet("person", 0.9, [150, 40, 160, 300], 0), mkDet("cup", 0.9, [220, 160, 40, 20], 41)];
+    const world = new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] });
     let n = 0;
     const p = new ObservationPipeline({ config: { engineMs: 1000, vlmMaxInflight: 4, vlmTimeoutMs: 5000, detectQueueMax: 8, keepMs: 20_000 },
-      detector: new ScriptedDetector(() => dets, () => (++n === 4 ? undefined : [standing({ 10: [235, 170, 0.9] })])), vlm,
-      world: new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }), emit: () => {}, broadcastWorld: (w) => worlds.push(w) });
-    for (let i = 1; i <= 4; i++) p.onEngine(jpeg(i), { kind: "engine", width: 360, height: 780, captured_at: i * 1000, time_err_ms: 0 }, null, null, i * 1000 + 5);
-    await p.idle();
-    expect(worlds.at(-1)!.objects[0]!.facts.place).toMatchObject({ value: "in_hand", certainty: "confirmed" });
-    expect(worlds.at(-1)!.person.facts).toMatchObject({ posture: { value: "standing" } });
-    expect(p.status()).toMatchObject({ detector: "scripted", pose: "scripted-pose", provider: "scripted", detected: 4, posed: 3, pose_ms: 0 });
+      detector: new ScriptedDetector(() => dets, () => (++n === 6 ? undefined : [standing({ 10: [235, 170, 0.9] })])), vlm,
+      world, emit: () => {}, broadcastWorld: (w) => worlds.push(w) });
+    for (let i = 1; i <= 6; i++) {
+      p.onEngine(jpeg(i), { kind: "engine", width: 360, height: 780, captured_at: i * 1000, time_err_ms: 0 }, null, null, i * 1000 + 5);
+      await p.idle();
+    }
+    expect(worlds.length).toBeGreaterThan(0);
+    expect(world.view(6000).objects[0]!.facts.place).toBeUndefined();
+    expect(world.view(6000).person.facts).toMatchObject({ posture: { value: "standing" } });
+    expect(p.status()).toMatchObject({ detector: "scripted", pose: "scripted-pose", provider: "scripted", detected: 6, posed: 5, pose_ms: 0 });
     await p.close();
   });
 
   it("감지가 실패한 프레임은 물체를 사라짐으로 세지 않고 YOLO 분석 없음으로 남기며, VLM은 그 프레임도 분석한다", async () => {
-    fake = await startFakeOpenAI();
+    // VLM은 YOLO와 상관없이 그 사진의 컵을 답한다
+    fake = await startFakeOpenAI({ reply: (b) => (b?.response_format?.json_schema?.name === "scene_observation"
+      ? JSON.stringify({ scene: "k", observations: [], objects: [{ id: "v1", cls: "cup", box: { x: 0.2, y: 0.2, w: 0.2, h: 0.2 }, det: null }], summary: "s" }) : null) });
     const logs: BrainLog[] = [];
     let fail = false;
     const det = { detect: async () => { if (fail) throw new Error("onnx"); return { detections: [mkDet("cup", 0.9, [220, 160, 40, 20], 41)], ms: 1 }; }, close: async () => {} } as unknown as Detector;
@@ -277,6 +284,9 @@ describe("관찰 흐름", () => {
     const p = new ObservationPipeline({ config: { engineMs: 1000, vlmMaxInflight: 50, vlmTimeoutMs: 600_000, detectQueueMax: 50, keepMs: 20_000 }, detector: cupDet(), vlm, world,
       emit: () => {}, broadcastWorld: () => {} });
     for (let i = 1; i <= 3; i++) { p.onEngine(jpeg(i), head(i * 1000), null, null, i * 1000 + 5); await until(() => gates.length >= i); }
+    // 1번 사진 답(후보)을 넣고, 4번 사진으로 1~3번이 고리에서 빠진 뒤 3번 사진 답(둘째 장)이 온다
+    gates[0]!();
+    await new Promise((r) => setTimeout(r, 20));
     p.onEngine(jpeg(4), head(24_000), null, null, 24_005);
     await until(() => gates.length >= 4);
     gates[2]!();

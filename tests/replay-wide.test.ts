@@ -23,7 +23,8 @@ function replay(name: string) {
     const dets: Detection[] = s.dets.map((d) => det(d.class as DetLabel, d.score, d.box, 0));
     const { ids } = w.applyDetections(frame, dets);
     const scene = linkDets(s.scene, s.dets, s.size[0], s.size[1]);
-    w.applyScene(s.frame, at, scene, ids, { view: s.view, width: s.size[0], height: s.size[1], eye: eye.position });
+    // 관찰 흐름처럼 그 사진의 YOLO 감지(바닥 점 = 상자 아랫변 가운데)를 함께 넘긴다: 감지와 이은 VLM 물건은 그 바닥 점이 자리다
+    w.applyScene(s.frame, at, scene, ids, { view: s.view, width: s.size[0], height: s.size[1], eye: eye.position, dets: dets.map((d, i) => ({ id: s.dets[i]!.id, box: d.box, foot: d.foot })) });
     for (const o of w.view(at).objects) if (o.facts.place) places.add(`${o.id}:${o.facts.place.value}`);
   }
   const end = (steps.at(-1)?.at ?? 0) + 1000;
@@ -35,7 +36,8 @@ function replay(name: string) {
 // 85ce9df(실제 판 3/4)와 0af95a1의 World State는 이 자료에서 같은 결과였다(유리컵 5·키 큰 컵 3·머그 2 id): 나빠진 원인은 World 규칙이 아니라 VLM 답(글·상자 받기)이다.
 // 그래서 글·상자 받기를 85ce9df로 되돌렸고, 이 자료는 World 규칙의 회귀 그물로 둔다: 마시는 그릇 id 수가 아래보다 늘지 않는다(시야 안 같은 무리 잇기로 유리컵 5 → 3).
 describe("실제 판 재생(장면 VLM 답 + 카메라 + YOLO 감지)", () => {
-  const limit: Record<string, number> = { "wide-glass-r10": 3, "wide-tall-r4": 3, "wide-mug-r7": 2 };
+  // 물건을 장면 VLM 답으로만 넣은 뒤(YOLO 감지는 같은 사진 VLM 물건의 자리만 고친다): 유리컵 3 → 2
+  const limit: Record<string, number> = { "wide-glass-r10": 2, "wide-tall-r4": 3, "wide-mug-r7": 2 };
   for (const name of Object.keys(limit)) {
     it(`${name}: 마시는 그릇 id가 ${limit[name]}개를 넘지 않는다`, () => {
       const r = replay(name);

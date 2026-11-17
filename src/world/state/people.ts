@@ -1,16 +1,15 @@
-// World State의 사람·관절(People): 사람 자리·방(가장 큰 사람 상자의 발), 관절 사실(손목이 물건 상자 안·가까이면 손에 있음·들고 있음, 서 있음·앉아 있음·누워 있음)과
-// 쓰러짐 의심(src/world/fall.ts FallWatch). 쓰러짐 의심인 동안 사람 자세는 관절만 바꾸고(VLM 자세 답은 막음), 침대·소파 위로 빼는 것은 지금 누운 구간 안에서 찍힌
-// 그 사람의 VLM 자리 답(침대 위·소파 위)으로만 한다. 관절이 붙인 사실은 같은 프레임 VLM 답보다 앞선다(poseHolds).
-// 마시기·따르기 사건(src/world/sip.ts): 든 그릇을 입에 대거나 든 병을 기울여 그릇 위에 두면 그 그릇의 내용물을 다시 연다(contents.ts reopen).
+// World State의 사람·관절(People): 사람 자리·방(가장 큰 사람 상자의 발), 관절 자세(서 있음·앉아 있음·누워 있음)와 쓰러짐 의심(src/world/fall.ts FallWatch).
+// 쓰러짐 의심인 동안 사람 자세는 관절만 바꾸고(VLM 자세 답은 막음), 침대·소파 위로 빼는 것은 지금 누운 구간 안에서 찍힌 그 사람의 VLM 자리 답(침대 위·소파 위)으로만 한다.
+// 관절이 붙인 사실은 같은 프레임 VLM 답보다 앞선다(poseHolds). 관절은 물건을 보지 않는다: 손에 있음·마시기·따르기 같은 물건 사실은 장면 VLM 답으로만 정한다
+// (사용자 결정 2026-11-18, 판단 입력에 YOLO 물건 사실을 넣지 않는다).
 import type { Facet, WorldChange, WorldFact } from "../../contract/world.js";
 import type { CameraView, Detection, EngineFrame, Pose } from "../../contract/observe.js";
 import { CHANGE_TEXT, OBJECT_NAME } from "../labels.js";
 import { onRest, pixelOf, placeBox, rayDir } from "../place.js";
-import { describePose, heldByAny, mainPerson, type Pt } from "../pose.js";
+import { mainPerson, type Pt } from "../pose.js";
 import { fallPose, type FallPose } from "../fall.js";
-import { atMouth, pouringInto } from "../sip.js";
-import { CLASSES, FACT_FRESH_MS, POSE_FALL, POSE_HOLD, POSE_POSTURE, REST_PLACES } from "../vocab.js";
-import { PERSON, Part, type Facts, type Obj, type Plan2, type V3 } from "./core.js";
+import { FACT_FRESH_MS, POSE_FALL, POSE_POSTURE, REST_PLACES } from "../vocab.js";
+import { PERSON, Part, type Facts, type Plan2, type V3 } from "./core.js";
 
 /** 상자 아래가 프레임 높이의 이 비율보다 아래면 발이 잘린 것으로 본다. */
 const FEET_EDGE = 0.98;
@@ -37,42 +36,19 @@ export class People extends Part {
     return { kind: "person_room", at_ms: at, subject: PERSON, meaningful: true, text: CHANGE_TEXT.personRoom(this.core.person.room!.label) };
   }
 
-  /** 관절로 본 사실(규칙: src/world/pose.ts). 어느 관절이든 손목이 물건 상자 안·가까이면 그 물건 손에 있음과 사람 물건을 들고 있음,
-   *  자세는 가장 확실한 한 사람의 서 있음·앉아 있음·누워 있음. 쓰러짐 의심(src/world/fall.ts)이 되면 자세를 쓰러짐 의심으로 두고 의미 있는 변화 줄을 한 번 내며,
-   *  일어날(서 있음·앉아 있음) 때까지 누운 자세 대신 그 값을 이어 둔다.
-   *  손목이 보이는데 든 것이 없으면 관절이 붙인 손에 있음·들고 있음만 지운다(VLM이 붙인 사실은 둔다). */
-  applyPose(frame: EngineFrame, poses: Pose[], boxes: { obj: Obj; box: Detection["box"]; mask: Detection["mask"] }[], changes: WorldChange[]): void {
+  /** 관절로 본 사람 자세(규칙: src/world/pose.ts): 가장 확실한 한 사람의 서 있음·앉아 있음·누워 있음. 쓰러짐 의심(src/world/fall.ts)이 되면 자세를 쓰러짐 의심으로 두고
+   *  의미 있는 변화 줄을 한 번 내며, 일어날(서 있음·앉아 있음) 때까지 누운 자세 대신 그 값을 이어 둔다. 물건은 보지 않는다. */
+  applyPose(frame: EngineFrame, poses: Pose[], changes: WorldChange[]): void {
     const core = this.core;
     const at = frame.capturedAtMs;
     const size = { width: frame.width, height: frame.height };
     const person = mainPerson(poses, this.downOf(frame.view, size));
     if (!person) return;
-    const people = poses.map((p) => describePose(p));
-    const wrists = people.some((p) => Object.keys(p.wrists).length > 0);
-    const held: string[] = [];
-    for (const { obj, box } of boxes) {
-      if (!heldByAny(people, box)) {
-        if (wrists) this.dropPoseFact(obj.facts, "place", POSE_HOLD.object);
-        continue;
-      }
-      held.push(obj.id);
-      if (this.setPoseFact(obj.facts, "place", POSE_HOLD.object, at) && obj.confirmed && obj.status !== "gone") {
-        changes.push({ kind: "state", at_ms: at, subject: obj.id, meaningful: true, text: CHANGE_TEXT.state(core.name(obj), POSE_HOLD.object) });
-      }
-    }
-    this.sips(people, boxes, at, changes, this.downOf(frame.view, size));
     const personFact = (facet: Facet, value: string) => {
       if (this.setPoseFact(core.person.facts, facet, value, at) && core.person.visible) {
         changes.push({ kind: "person_state", at_ms: at, subject: PERSON, meaningful: false, text: CHANGE_TEXT.state(OBJECT_NAME.person!, value) });
       }
     };
-    if (held.length) {
-      personFact("holding", POSE_HOLD.person);
-      core.heldIds = held; // 확인 전 물건도 든다: 무엇을 들었는지는 id 앞 종류로 본다
-    } else if (wrists) {
-      this.dropPoseFact(core.person.facts, "holding", POSE_HOLD.person);
-      core.heldIds = [];
-    }
     const lean = person.lean ?? null;
     let pose: FallPose | null = person.level === "low" ? null : fallPose(lean, person.box, size, core.fallCfg);
     // 침대·소파 위로 빼려면 몸이 그 가구 자리에 비치고(기하는 후보만) 그 사람을 본 VLM 자리 답이 그 가구 위여야 한다. 그 답은 지금 누운 구간 안에서 찍혔고
@@ -115,23 +91,6 @@ export class People extends Part {
     };
   }
 
-  /** 마시기·따르기 사건(src/world/sip.ts): 든 그릇을 입에 대면 그 그릇, 든 병을 기울여 그릇 위에 두면 그 그릇의 내용물을 다시 연다.
-   *  따르기는 두 감지 마스크와 병·그릇 가운데 점의 중력 방향(down, 카메라 자세가 없으면 모름이라 보지 않는다)으로 본다. 줄은 확인된(사라지지 않은) 물건 것만 낸다. */
-  private sips(people: ReturnType<typeof describePose>[], boxes: { obj: Obj; box: Detection["box"]; mask: Detection["mask"] }[], at: number, changes: WorldChange[], down: (pt: Pt) => Pt | null): void {
-    const core = this.core;
-    const vessel = (o: Obj) => (CLASSES[o.cls].facets as readonly Facet[]).includes("contents");
-    const say = (obj: Obj, c: WorldChange[]) => { if (obj.confirmed && obj.status !== "gone") changes.push(...c); };
-    for (const { obj, box } of boxes) if (vessel(obj) && atMouth(people, box)) say(obj, core.contents.reopen(obj, at, "drink"));
-    for (const b of boxes) {
-      if (b.obj.cls !== "bottle") continue;
-      for (const c of boxes) {
-        if (c === b || c.obj.cls === "bottle" || !vessel(c.obj)) continue;
-        const mid: Pt = [(b.box[0] + b.box[2] / 2 + c.box[0] + c.box[2] / 2) / 2, (b.box[1] + b.box[3] / 2 + c.box[1] + c.box[3] / 2) / 2];
-        if (pouringInto(people, b, c, down(mid))) say(c.obj, core.contents.reopen(c.obj, at, "pour"));
-      }
-    }
-  }
-
   /** 쓰러짐 의심인 동안 사람 자세는 관절만 바꾼다(VLM 답이 알림을 지우지 않게). */
   fallHeld(id: string, facet: Facet): boolean {
     return id === PERSON && facet === "posture" && this.core.fall.active;
@@ -149,12 +108,6 @@ export class People extends Part {
   dropPoseFact(facts: Facts, facet: Facet, value: string): void {
     const f = facts[facet];
     if (f && f.value === value && this.core.byPose.has(f)) delete facts[facet];
-  }
-
-  /** 관절이 붙인 「손에 있음」인가. */
-  posedInHand(o: Obj): boolean {
-    const f = o.facts.place;
-    return !!f && f.value === POSE_HOLD.object && this.core.byPose.has(f);
   }
 
   /** 관절이 이 프레임(또는 더 새 프레임)에서 붙인 사실이면 VLM 답이 바꾸거나 지우지 않는다. */

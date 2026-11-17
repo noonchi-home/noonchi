@@ -221,7 +221,8 @@ export class ObservationPipeline {
         this.detsOf.delete(r.frameId);
         const f = this.ring.get(r.frameId);
         // 그 사진을 찍은 때의 카메라·폰 눈(답이 온 때가 아니다)
-        const look = f?.view ? { view: f.view, width: f.width, height: f.height, eye: f.eye ? f.eye.position : null } : undefined;
+        // 그 사진의 YOLO 감지(바닥 점 포함): 그 감지와 이어진 VLM 물건은 자리를 감지 바닥 점으로 낸다
+        const look = f?.view ? { view: f.view, width: f.width, height: f.height, eye: f.eye ? f.eye.position : null, dets } : undefined;
         const scene = r.scene && f ? linkDets(r.scene, dets, f.width, f.height) : r.scene;
         const changes = scene ? o.world.applyScene(r.frameId, r.capturedAtMs, scene, ids, look) : o.world.applyMissing(r.frameId, r.capturedAtMs, { vlm: r.missing! });
         o.emit({ type: "observe", at_ms: this.clock.now(), frame_id: r.frameId, captured_at_ms: r.capturedAtMs, yolo: null, vlm: r.scene?.summary ?? null, ...(r.missing ? { vlm_missing: r.missing } : {}), ...(r.scene ? { scene: r.scene, dets: dets.map((d) => ({ id: d.id, class: d.class, box: [...d.box] as [number, number, number, number], score: d.score })), ...(look ? { view: look.view, size: [look.width, look.height] as [number, number] } : {}) } : {}) });
@@ -352,7 +353,7 @@ export class ObservationPipeline {
       this.o.emit({ ...base, at_ms: this.clock.now(), yolo: null, yolo_missing: "error" });
       this.publish(this.o.world.applyMissing(frame.id, frame.capturedAtMs, { yolo: "error" }));
     }
-    const sceneDets: SceneDetection[] = (dets ?? []).map((d, i) => ({ id: `d${i + 1}`, class: d.label, box: d.box, score: d.score }));
+    const sceneDets: SceneDetection[] = (dets ?? []).map((d, i) => ({ id: `d${i + 1}`, class: d.label, box: d.box, score: d.score, foot: d.foot }));
     this.detsOf.set(frame.id, sceneDets);
     this.pool.submit(frame, sceneDets); // 상한을 넘으면 풀이 VLM 분석 없음(cap)을 onResult로 낸다
   }
@@ -506,7 +507,7 @@ export class ObservationPipeline {
     const sentAt = objectAt < 0 ? looks.length - 1 : objectAt;
     const last = passes[sentAt]!;
     // 잘라 본 몇 장은 await 없이 한 번에 합치고 변화도 한 번만 낸다
-    const { changes, ids, pending } = this.o.world.applyCloser(looks, last.frame.id, { defer: true });
+    const { changes, ids, pending } = this.o.world.applyCloser(looks);
     this.publish(changes);
     const id = `${last.frame.id}.c${++this.closerSeq}`;
     this.o.emit({
@@ -542,7 +543,7 @@ export class ObservationPipeline {
     // 3장이 안 된 새 물건 후보는 이 답이 그 감지에 사실을 답할 때만 만든다(답이 없거나 넣지 않으면 버린다)
     const at = { view: last.view, width: last.frame.width, height: last.frame.height, crop: last.crop };
     if (r?.scene) this.publish(this.o.world.applyCloserScene(last.frame.id, last.frame.capturedAtMs, r.scene, ids, pending, at));
-    else if (pending) this.publish(this.o.world.endCloser(pending, ids, last.frame.id));
+    else if (pending) this.publish(this.o.world.endCloser(pending));
     this.closerCount.looks++;
     const said = new Map<string, string[]>();
     for (const ob of r?.scene?.observations ?? []) said.set(ob.object_id, [...(said.get(ob.object_id) ?? []), ob.state]);

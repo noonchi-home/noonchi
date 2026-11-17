@@ -11,7 +11,7 @@ import { sha256 } from "../src/observe/ring.js";
 import { TOP_NOTE } from "../src/observe/scene.js";
 import { topDropOf } from "../src/observe/top.js";
 import { WorldState } from "../src/world/state/world.js";
-import { cylinderBox, frameJpeg, viewLooking } from "./helpers/camera.js";
+import { cylinderBox, eyeOfView, frameJpeg, viewLooking } from "./helpers/camera.js";
 import { det } from "./helpers/detectors.js";
 
 type V3 = [number, number, number];
@@ -69,7 +69,7 @@ function setup(vlm: VlmClient, crop: () => Detection[] = () => [BOWL]) {
     engine.add(sha256(jpeg));
     if (dets.length) sides.set(sha256(jpeg), dets);
     clock.t = Math.max(clock.t, atMs + 5);
-    p.onEngine(jpeg, { kind: "engine", width: 480, height: 360, captured_at: atMs, time_err_ms: 0 }, null, view, atMs + 5);
+    p.onEngine(jpeg, { kind: "engine", width: 480, height: 360, captured_at: atMs, time_err_ms: 0 }, eyeOfView(view), view, atMs + 5);
   };
   const cup = () => world.view(clock.now()).objects.find((o) => o.cls === "cup")!;
   return { p, world, frame, clock, cup };
@@ -154,7 +154,7 @@ describe("위에서 보기(topLook)", () => {
     expect(await s.p.topLook(spotOf(s.cup()), 7000)).toMatchObject({ ok: true, top: [{ why: "no_vessel" }, { why: "no_vessel" }] });
   });
 
-  it("첫 답 뒤 컵이 0.2m 옮겨지면 둘째 장은 넣지 않고 moved로 끝난다", async () => {
+  it("첫 답 뒤 컵이 0.35m 옮겨지면 둘째 장은 넣지 않고 moved로 끝난다", async () => {
     let release!: () => void;
     const held = new Promise<void>((ok) => { release = ok; });
     const t = topReply([["empty"], ["empty"]], (i) => (i === 1 ? held : undefined));
@@ -167,8 +167,9 @@ describe("위에서 보기(topLook)", () => {
     const start = s.cup().position!;
     const look = s.p.topLook(spotOf(s.cup()), 7000);
     await until(() => t.sent.length === 2);
-    // 옆 사진이 옮겨진 컵을 본다(같은 물건, 자리만 바뀜)
-    s.frame(11_000, SIDE, [sideCup([1.2, 0.75, 0])]);
+    // 옆 사진 2장이 옮겨진 컵을 본다(같은 물건, 자리만 바뀜. 장면 VLM 자리는 0.3m 넘게 사진 2장 이어야 옮긴다)
+    s.frame(11_000, SIDE, [sideCup([1.35, 0.75, 0])]);
+    s.frame(12_000, SIDE, [sideCup([1.35, 0.75, 0])]);
     await until(() => Math.abs(s.cup().position![0] - start[0]) > 0.1);
     release();
     const r = await look;
