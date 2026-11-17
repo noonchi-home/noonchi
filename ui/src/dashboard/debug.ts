@@ -5,7 +5,7 @@
 //   &eye=0       대시보드 폰 칸 영상 없음(연결 QR)
 //   &wide=1      실제 폰을 가로로 든 것처럼: 눈 그림과 컵 모양이 가로 프레임(세로 눈 그림에서 잘라 낸 405×228)
 //   &talk=find   계획 전 찾기 중: 판단은 컵 치우기(1번 순간의 판단), 메시지 상자 최신 줄이 찾기 상태 줄(말풍선 말은 빼고)
-//   &mode=coach  서버가 정한 지금 모드를 코치 모드로(마스코트 머리 위 모드 말풍선)
+//   &mode=coach  코치 행동 중 순간(fake-run.json coach: 라면 끓이기 알려 주기 2단계, 서버 지금 모드 코치)으로 바꾼다(step과 상관없음)
 //   &offline=1   서버 연결 끊김
 //   &settings=1  설정 창을 연 채
 // window.__dash.step(n)으로 바로 그 순간으로 간다. 대시보드 폰 칸은 그 순간 눈 그림(세로 405×720)이다.
@@ -21,6 +21,8 @@ declare global {
 export type EyeFrameId = "table-far" | "table-near" | "sink" | "sink-cup";
 export interface Moment { index: number; eye: EyeFrameId; messages: ServerMessage[] }
 export const MOMENTS = run.moments as unknown as Moment[];
+/** 코치 행동 중 순간(&mode=coach). */
+export const COACH_MOMENT = run.coach as unknown as Moment;
 
 const EYE_FRAME = { width: 405, height: 720 };
 /** 가로 눈 그림(ui/public/debug-eye/eye-<이름>-wide.webp): 세로 눈 그림의 위에서 WIDE_TOP만큼 내려온 곳부터 405×228을 잘라 낸 것. */
@@ -45,9 +47,9 @@ export function talkMoment(m: Moment, talk: DebugTalk | null): Moment {
   };
 }
 
-/** 그 순간의 서버 지금 모드를 바꾼다(coach). null이면 그대로(가짜 단계는 눈치 모드). */
+/** coach면 코치 행동 중 순간으로 바꾼다. null이면 그대로(가짜 단계 순간은 눈치 모드). */
 export function modeMoment(m: Moment, mode: "coach" | null): Moment {
-  return mode ? { ...m, messages: [...m.messages.filter((x) => x.type !== "mode"), { type: "mode", mode }] } : m;
+  return mode === "coach" ? COACH_MOMENT : m;
 }
 
 /** 그 순간을 가로 프레임으로: seen의 프레임 크기를 가로로 바꾸고 마스크 자리를 잘라 낸 만큼 올린다. 다른 메시지는 그대로다. */

@@ -2,7 +2,7 @@
 // 가짜 단계(debug.ts) 주소 설정과 순간 자료.
 import { describe, expect, it } from "vitest";
 import { EMPTY_DASH, modeNow, reduceDash, talkOf } from "../../src/dashboard/data";
-import { debugPhone, debugQuery, FIND_LINE, modeMoment, MOMENTS, talkMoment, WIDE_FRAME, WIDE_TOP, wideMoment, type Moment } from "../../src/dashboard/debug";
+import { COACH_MOMENT, debugPhone, debugQuery, FIND_LINE, modeMoment, MOMENTS, talkMoment, WIDE_FRAME, WIDE_TOP, wideMoment, type Moment } from "../../src/dashboard/debug";
 
 /** 순간 메시지를 차례로 넣은 메시지 상자. */
 const talkAt = (m: Moment) => talkOf(m.messages.reduce((s, x, i) => reduceDash(s, x, i), EMPTY_DASH));
@@ -63,7 +63,12 @@ describe("가짜 단계 모드 말풍선(&mode)", () => {
     expect(debugQuery("?debug=steps&mode=x")?.mode).toBeNull();
     expect(debugQuery("?debug=steps")?.mode).toBeNull();
     for (const m of MOMENTS) expect(modeAt(m)).toBe("noonchi");
-    expect(modeAt(modeMoment(MOMENTS[2]!, "coach"))).toBe("coach");
+    // coach: 코치 행동 중 순간(라면 끓이기 알려 주기 2단계, 규칙 줄·클로이드 말)으로 바꾼다
+    const coach = modeMoment(MOMENTS[2]!, "coach");
+    expect(modeAt(coach)).toBe("coach");
+    expect(coach).toBe(COACH_MOMENT);
+    expect(talkAt(coach)!.lines.map((l) => l.text)).toEqual(["라면 끓이는 법을 알려 드릴게요.", "수납장으로 갈게요.", "냄비를 꺼낼게요."]);
+    expect(talkAt(coach)!.fsm).toMatchObject({ state: "주방에서 할 일을 찾음", action: "라면 끓이기 알려 주기" });
     expect(modeMoment(MOMENTS[2]!, null)).toBe(MOMENTS[2]);
   });
 });

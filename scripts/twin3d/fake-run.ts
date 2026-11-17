@@ -8,6 +8,8 @@ import { fileURLToPath } from "node:url";
 import { sayLine } from "../../src/act/say.js";
 import { modeNow } from "../../src/act/mode.js";
 import { planIdOf } from "../../src/act/tasks.js";
+import { assemblePlan, type DraftStep } from "../../src/agent/planShape.js";
+import type { FloorPlan } from "../../src/layout/floor.js";
 import { CUP_FSM_MEMORY, fsmNow } from "../../src/brain/decision.js";
 import { decisionLines } from "../../src/brain/thought.js";
 import type { Mask } from "../../src/contract/observe.js";
@@ -34,6 +36,7 @@ const FRAME = { width: 405, height: 720 };
 const EYE_HEIGHT_M = 1.1;
 const OBSERVATION = "식탁 위에 컵이 있고 사람이 자리를 비웠어요.";
 const ACTION = "컵 치우기";
+const RAMEN = "라면 끓이기 알려 주기";
 const OUT = fileURLToPath(new URL("../../ui/src/dashboard/fake-run.json", import.meta.url));
 
 /** 세로 눈 그림을 잘라 낸 가로 그림(1280×720) 자리 x0(시안 assets.ts EYE_CROP_X0). */
@@ -93,7 +96,47 @@ function along(path: XZ[], t: number): { at: XZ; yaw: number } {
   throw new Error("경로가 비었어요");
 }
 
-function build(): Moment[] {
+/** 코치 행동 중 한 순간(대시보드 ?debug=steps&mode=coach): 라면 끓이기 알려 주기 계획의 2단계(냄비 꺼내기)와 그 판단·규칙 줄·말, 서버 지금 모드 코치. */
+function coachMoment(fp: FloorPlan, world: WorldView): Moment {
+  const at = T0 + 2 * STEP_MS;
+  const byType = (t: string) => [...fp.objects.values()].find((o) => o.type === t)!;
+  const cabinet = byType("kitchen_cabinet");
+  const cooktop = byType("induction_counter");
+  const draft: DraftStep[] = [
+    { kind: "move", label: "수납장으로 가기", target: { objectId: cabinet.id, ...(cabinet.room ? { room: cabinet.room } : {}) }, to: cabinet.position },
+    { kind: "act", label: "냄비 꺼내기", target: { objectId: cabinet.id } },
+    { kind: "move", label: "인덕션으로 가기", target: { objectId: cooktop.id, ...(cooktop.room ? { room: cooktop.room } : {}) }, to: cooktop.position },
+    { kind: "act", label: "냄비 올리기", target: { objectId: cooktop.id } },
+  ];
+  const walk = { ...fp, robot: { ...fp.robot, reachable: fp.rooms.map((r) => r.id) } };
+  const planned = assemblePlan(walk, { id: planIdOf("pam-7"), goal: RAMEN, judgment: "사용자가 라면 끓이는 법을 물었어요.", source: "brain", dryRun: true, nowIso: iso(at) }, draft);
+  const plan: PlanView = { ...planned, revision: 2, status: "running", steps: planned.steps.map((s, i) => ({ ...s, status: i === 0 ? "done" : i === 1 ? "active" : "pending" })) };
+  const decision: Extract<BrainLog, { type: "decision" }> = {
+    type: "decision", at_ms: at, id: "pam-7", seq: 7, text_sent: "사람이 말함: 「들은 말 있음」", status: "valid",
+    prediction: { observation: "사용자가 요리 방법을 물음", reasoning: "방법을 물어서 단계마다 알려 준다", task_index: 0 },
+    action: RAMEN, fsm: fsmNow(CUP_FSM_MEMORY, "fsm", RAMEN), assist: "coach", memory_version: 1,
+    world: { objects: [], person_visible: true, vlm_missing: 0, yolo_missing: 0 },
+  };
+  const command = (step: number, text: string): PlannedCommand => ({ type: "command", id: plan.id, step: plan.steps[step]!.id, text, vision: null, choices: [{ id: "done", label: "완료" }], target: null, speak: true });
+  const say = (p: PlanView, c: PlannedCommand | null) => sayLine({ plan: p, command: c, world, nowMs: at });
+  const eyeAt = along(plan.path.slice(0, plan.legs[0]!.end + 1), 1);
+  return {
+    index: 0, eye: "sink",
+    messages: [
+      { type: "plan", plan },
+      { type: "eye", eye: { position: eyeAt.at, height_m: EYE_HEIGHT_M, yaw_deg: eyeAt.yaw, pitch_deg: -10, tracking: "ok", at: iso(at) } },
+      { type: "brain", event: decision },
+      { type: "thought", messages: decisionLines(decision).map((text, i) => ({ id: `pam-7@${at}:${i}`, text, at_ms: at, decision: "pam-7" })) },
+      { type: "seen", at_ms: at, frame_id: "fake-coach", captured_at_ms: at, frame: FRAME, shapes: [] },
+      { type: "say", text: say({ ...plan, status: "planned" }, null) },
+      { type: "say", text: say(plan, command(0, "수납장으로 가 주세요")) },
+      { type: "say", text: say(plan, command(1, "냄비를 꺼내 주세요")) },
+      { type: "mode", mode: modeNow({ world, offNotices: [], coaching: true, plan }) },
+    ],
+  };
+}
+
+function build(): { moments: Moment[]; coach: Moment } {
   const home = resolveHome(DEFAULT_TWIN_DIR, HOME);
   const base = floorPlanFrom(loadScene(home));
   const fp = { ...base, robot: { ...base.robot, position: START, room: roomAt(base, START) } };
@@ -156,8 +199,11 @@ function build(): Moment[] {
   // 계획 순간의 말은 실제 서버가 보낸 차례대로 쌓인다: 정한 것(「식탁 컵을 치울게요.」) 뒤에 그 앞 계획 순간의 말(대시보드 메시지 상자 줄이 굴러간다)
   const decided: ServerMessage = { type: "say", text: sayLine({ plan: { ...plan, status: "planned" }, command: null, world, nowMs: T0 + STEP_MS }) };
   const said = moments.map((m) => m.messages.find((x) => x.type === "say")!);
-  return moments.map((m, n) => (n === 0 ? m : { ...m, messages: [...m.messages.filter((x) => x.type !== "say"), decided, ...said.slice(1, n + 1)] }));
+  return {
+    moments: moments.map((m, n) => (n === 0 ? m : { ...m, messages: [...m.messages.filter((x) => x.type !== "say"), decided, ...said.slice(1, n + 1)] })),
+    coach: coachMoment(fp, world),
+  };
 }
 
-writeFileSync(OUT, `${JSON.stringify({ moments: build() }, null, 2)}\n`);
-console.log(`가짜 단계 ${MOMENTS.length}개를 적었어요: ${OUT}`);
+writeFileSync(OUT, `${JSON.stringify(build(), null, 2)}\n`);
+console.log(`가짜 단계 ${MOMENTS.length}개와 코치 순간을 적었어요: ${OUT}`);
