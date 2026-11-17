@@ -12,10 +12,7 @@ import { eyeHeightOf, floorLookup, homeBounds, readScenePlan } from "../../layou
 import { EyeFeed, StartStore, createPhoneServer, describeStart, estimateViewpoint, orderPhoneUrls, readStartPose, startPosePath, twinLandmarks, wallSegments, type StartPose } from "../../phone/index.js";
 import { repoPath } from "../../shared/paths.js";
 import { HEARD_MARK } from "../../world/labels.js";
-import type { HomeCore } from "./core.js";
-
-/** 폰에서 말한 것은 "phone" 세션 하나로 이어진다(대시보드 대화와 따로 기억). */
-const PHONE_SESSION = "phone";
+import { PHONE_SESSION, type HomeCore } from "./core.js";
 
 /** 영상 모드 영상 공용 폴더(저장소 runtime/videos). 시연 폴더(RUNTIME_DIR=runtime/demo/day1·week)로 띄워도 여기서 읽는다:
  *  영상은 커서 시연 폴더마다 복사하지 않고, 시연 폴더를 지우는 준비 명령(demo-setup --fresh)이 이은 폴더를 따라 지우지 않게 정션도 쓰지 않는다. */
@@ -112,8 +109,15 @@ export async function startPhone(core: HomeCore): Promise<void> {
       const at = core.tracker?.coachStep() ?? null;
       const looker = core.looker;
       if (at && looker && (await looker.heard(at.planId, at.stepId, text, at)) !== "passed") return { reply: "", pending: [] };
-      const r = await agent.chat(PHONE_SESSION, text, { heard: true });
-      return { reply: r.reply, pending: r.pendingConfirmations.map((p) => ({ token: p.token, deviceLabel: p.deviceLabel, reason: p.reason, choices: p.choices })) };
+      // 대화를 쓰는 동안(끝난 뒤 TALK_QUIET_MS까지) 내용물 질문이 끼어들지 않는다(실행 추적 talking)
+      core.talk.inflight++;
+      try {
+        const r = await agent.chat(PHONE_SESSION, text, { heard: true });
+        return { reply: r.reply, pending: r.pendingConfirmations.map((p) => ({ token: p.token, deviceLabel: p.deviceLabel, reason: p.reason, choices: p.choices })) };
+      } finally {
+        core.talk.inflight--;
+        core.talk.at = core.nowMs();
+      }
     },
     // 승인 답(승인·거절): 위험 목록이라 둘 다 이번만이고 기억하지 않는다
     onConfirm: async (token, choice) => ({ reply: (await agent.confirm(token, choice)).reply }),

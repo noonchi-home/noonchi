@@ -165,6 +165,8 @@ export interface TrackerOptions {
   approvalsWaiting?: () => boolean;
   /** 실제 폰 대화를 쓰는 중인가(에이전트가 들은 말을 처리하는 중이거나 끝난 지 얼마 안 됨). 그동안 내용물 질문을 하지 않는다. */
   talking?: () => boolean;
+  /** 그 자리에서 하는 일 단계가 물건 안을 바꾸는 단계(끝 조건에 그 물건 내용물)일 때 창을 연다·닫는다(src/world/state/world.ts contentsAction). */
+  contentsAction?: (objectId: string, on: boolean) => void;
   /** 집기·놓기 단계가 이만큼(ms) 안 끝나면 stalled를 부른다(단계 시작 뒤, 받은 부름 뒤). */
   stallMs?: number;
   /** 단계마다 stalled를 받아 센 횟수 상한(settle(false)로 돌려받은 부름은 넣지 않는다). */

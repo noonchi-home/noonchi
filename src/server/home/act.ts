@@ -10,7 +10,7 @@ import { loadEndpoints } from "../../infer/endpoints.js";
 import { createInference } from "../../infer/inference.js";
 import { floorPlanFrom, loadScene, type LayoutEditor, type PlaceNames } from "../../layout/index.js";
 import { Trigger, loadTriggerConfig, type PlaneSurface } from "../../world/index.js";
-import type { HomeCore } from "./core.js";
+import { PHONE_SESSION, TALK_QUIET_MS, type HomeCore } from "./core.js";
 
 /** 명령 대상·가까이 볼 자리(이름과 트윈 자리 [x, 높이, y]): 면(식탁·싱크대처럼 윗면이 있는 배치)이면 윗면 가운데(싱크볼이 있으면 윗면 높이의 싱크볼 가운데),
  *  그 밖은 배치 가운데. 배치 가운데는 싱크대면 높이 약 0.45m라, 대상을 겨눈 폰 사진에서 윗면(컵이 놓이는 곳)보다 한참 아래다.
@@ -134,6 +134,19 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     sayAloud: (text) => core.phone?.reply(text, "safety"),
     // 멈춘 집기·놓기 단계는 보기 담당(관찰 모드 A)에 알린다
     stalled: (s) => core.looker?.stalled(s) ?? false,
+    // 내용물 보류(src/act/track/contents.ts): 가까이 보기는 보기 담당이 한 번에 하나
+    lookContents: (h) => core.looker?.contents(h) ?? false,
+    // 사람이 말로 답한 내용물: 그 컵·세대일 때만 World State에 넣는다. 방송은 이 호출이 끝난 뒤(실행 추적 안에서 다시 들어가지 않게)
+    answerContents: (id, value, gen) => {
+      const changes = world.answerContents(id, value, now(), gen);
+      if (changes) queueMicrotask(() => core.pipeline?.publish(changes));
+      return changes !== null;
+    },
+    // 따르기 단계 동안 그 컵의 창(그 뒤 사진만, 다 이어진 값이 확인 값을 바꿈)
+    contentsAction: (id, on) => { world.contentsAction(id, now(), on); },
+    // 실제 폰에 승인 대기가 떠 있거나 폰 대화를 쓰는 중이면 내용물 질문을 미룬다(승인 질문·대화를 덮지 않는다)
+    approvalsWaiting: () => core.agent.pending(PHONE_SESSION).length > 0,
+    talking: () => core.talk.inflight > 0 || now() - core.talk.at < TALK_QUIET_MS,
     // 코치 계획 중 다른 행동을 본 것 같으면 보기 담당(관찰 모드 계기 off_track)에 알린다
     strayed: (s) => core.looker?.strayed(s) ?? false,
   });

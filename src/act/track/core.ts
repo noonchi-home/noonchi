@@ -57,6 +57,8 @@ export interface Run {
   outcomes: StepOutcome[];
   /** 내용물 보류(실행 전 검사가 컵 안을 몰라 막음, src/act/track/contents.ts). 없으면 null. */
   hold: Hold | null;
+  /** 따르기 창을 연 물건(World State id, src/act/track/steps.ts window). 없으면 null. */
+  window: string | null;
 }
 
 /** at: 같은 행동 다시 계획 간격(planGapMs)을 세려고 적은 시각. */

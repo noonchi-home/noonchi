@@ -1,6 +1,8 @@
 // 실행 추적의 단계 진행(Steps): 단계를 시작하고(activate·show·runDevice) 끝나는 조건·기기 결과·끄기 단계 판단으로 넘기며(look·advance),
 // 시간 한도(timeout)·멈춘 단계 알림(stall)·다시 읽기(repeat)를 보고, 계획을 닫는다(finish). 비전 상태 줄·명령 대상·가까이 볼 곳과 같은 물건 따라가기(ours)도 여기 있다.
 // 치운 물건(placed)도 여기 둔다: 놓기 단계를 끝낼 때(advance) 적고, 사라진 뒤 같은 종류가 넣은 곳에 새 id로 다시 잡히면(PUT_HANDOVER_MS 안, 하나뿐일 때) 이어 간다.
+// 따르기 창: 그 자리에서 하는 일 단계의 끝 조건이 그 물건 내용물을 보면 그 단계 동안 그 물건(지금 따라가는 id)의 창을 연다(o.contentsAction).
+// 따라가는 id가 바뀌면 창도 옮기고, 단계가 바뀌거나 계획이 닫히면 닫는다.
 import type { PhoneStepKind, PlannedCommand } from "../../contract/phone.js";
 import type { Facet, WorldEye, WorldObject, WorldView } from "../../contract/world.js";
 import type { LookSpot } from "../../observe/index.js";
@@ -129,6 +131,7 @@ export class Steps extends Part {
       strays: 0, strayAt: Number.NEGATIVE_INFINITY, strayNear: null, told: null, helped: false, quietOn: false,
     });
     this.o.plans.setSteps(r.plan.view.id, { ...(prev ? { [prev.id]: "done" as const } : {}), [step.id]: "active" });
+    this.window(r, windowOf(step));
     if (step.kind === "wait" || step.kind === "device") this.core.quietFrom = now;
     if (step.kind === "wait") return this.clear(r);
     if (step.kind === "device") {
@@ -210,6 +213,8 @@ export class Steps extends Part {
       return true;
     }
     if (step.kind === "device" && r.device !== "done" && r.device !== "sent") return false;
+    // 따라가는 컵이 새 id로 이어졌으면 따르기 창도 옮긴다
+    if (step.kind === "do") this.window(r, windowOf(step));
     const world = this.o.world();
     // 끄기 do 단계는 그 가전 추적이 풀려도(확인된 꺼짐) 끝난다. 저절로 꺼지는 가전의 꺼짐 기다리기는 그것으로만 넘긴다(끝 조건을 보지 않는다)
     const self = selfStopWait(step, this.o.handDevices?.() ?? []) !== null;
@@ -286,6 +291,15 @@ export class Steps extends Part {
     r.spokeAt = now;
     r.helped = true;
     this.core.answers.send({ ...r.sent, speak: true });
+  }
+
+  /** 따르기 창: 그 물건(지금 따라가는 World State id)의 창을 열고, 다른 물건·다른 단계가 되면 앞 창을 닫는다. */
+  private window(r: Run, objectId: string | null): void {
+    const id = objectId ? ours(r, objectId, this.o.world()).find((o) => o.status !== "gone")?.id ?? null : null;
+    if (r.window === id) return;
+    if (r.window) this.o.contentsAction?.(r.window, false);
+    r.window = id;
+    if (id) this.o.contentsAction?.(id, true);
   }
 
   /** 실제 폰 명령을 지운다(기다리기·기기 단계). */
@@ -370,6 +384,7 @@ export class Steps extends Part {
   /** close: 계획을 닫을 상태. null이면 닫지 않는다(새 계획이 PlanHub.onDecision으로 취소로 닫는다). */
   finish(r: Run, state: "done" | "failed", text?: string, close: "done" | "failed" | "cancelled" | null = state): void {
     this.core.contents.release(r);
+    this.window(r, null);
     if (r.asking?.why === "device") this.o.devices?.cancel(r.asking.token);
     r.asking = null;
     r.gen++;
@@ -424,6 +439,9 @@ function objectLine(r: Run, id: string, world: WorldView): string {
   const cls = clsOf(world, id);
   return `${OBJECT_NAME[cls] ?? cls} · ${place(ours(r, id, world).find((o) => o.status !== "gone") ?? null)}`;
 }
+
+/** 따르기 창을 열 물건: 그 자리에서 하는 일 단계이고 끝 조건이 그 물건 내용물을 보면 그 대상(계획 물건 id). 아니면 null. */
+const windowOf = (step: AgentStep): string | null => (step.kind === "do" && step.until && factFacets(step.until).includes("contents") ? step.target : null);
 
 /** 조건이 보는 물건 사실의 면(쓴 순서, 겹치지 않게). */
 function factFacets(c: Condition, out: Facet[] = []): Facet[] {

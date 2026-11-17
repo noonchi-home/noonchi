@@ -529,6 +529,57 @@ describe("실행 추적: 그 자리에서 하는 일(do, 채워 주기)", () => 
     expect(s.last()).toMatchObject({ step: "plan:pam-1:4", vision: "식탁까지 0.5m", target: TABLE, kind: "do" });
   });
 
+  it("따르기 단계(끝 조건이 그 컵 내용물)가 되면 그 컵의 창을 열고, 단계가 끝나거나 계획이 닫히면 닫는다", async () => {
+    const calls: [string, boolean][] = [];
+    let w = world([tableCup(["empty", 9_000])]);
+    const s = fillSetup({ w: () => w, contentsAction: (id, on) => calls.push([id, on]) });
+    await s.decide(water);
+    s.t.onAnswer("plan:pam-1", "plan:pam-1:1", "done");
+    w = world([tableCup(["empty", 9_000]), bottle("in_hand", s.clock.t)], "holding_object", s.clock.t);
+    s.t.onWorld();
+    s.t.onAnswer("plan:pam-1", "plan:pam-1:3", "done");
+    expect(calls).toEqual([["cup_1", true]]);
+    s.t.onAnswer("plan:pam-1", "plan:pam-1:4", "done");
+    expect(calls).toEqual([["cup_1", true], ["cup_1", false]]);
+  });
+
+  it("따르기 단계 도중 컵이 새 id로 이어지면 창도 새 컵으로 옮긴다(앞 컵 닫고 새 컵 엶)", async () => {
+    const calls: [string, boolean][] = [];
+    let w = world([tableCup(["empty", 9_000])]);
+    const s = fillSetup({ w: () => w, contentsAction: (id, on) => calls.push([id, on]) });
+    await s.decide(water);
+    s.t.onAnswer("plan:pam-1", "plan:pam-1:1", "done");
+    w = world([tableCup(["empty", 9_000]), bottle("in_hand", s.clock.t)], "holding_object", s.clock.t);
+    s.t.onWorld();
+    s.t.onAnswer("plan:pam-1", "plan:pam-1:3", "done");
+    s.clock.t += 1_000;
+    // 옛 컵은 사라지고 그 뒤 같은 종류 새 컵(cup_2)이 보인다: 실행 추적이 그 컵으로 잇는다
+    w = world([{ ...tableCup(["empty", 9_000]), status: "gone" }, { ...tableCup(["empty", s.clock.t], s.clock.t), id: "cup_2", first_seen_ms: s.clock.t }]);
+    s.t.onWorld();
+    expect(calls).toEqual([["cup_1", true], ["cup_1", false], ["cup_2", true]]);
+  });
+
+  it("불투명 컵(실제 World State): 물 채우기를 붙잡고 폰이 「컵 비었어요?」를 묻고, 말 「비었어」를 넣은 뒤(출처 사람) 첫 명령을 보낸다", async () => {
+    const ws = new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices: () => [] });
+    const frame = (i: number): EngineFrame => ({ id: `e${i}`, capturedAtMs: i * 1000, latestAtMs: i * 1000, jpeg: Buffer.from(`${i}`), sha256: sha256(Buffer.from(`${i}`)), width: 480, height: 360, eye: null, view: null });
+    for (let i = 1; i <= 3; i++) {
+      const { ids } = ws.applyDetections(frame(i), [det("cup", 0.9, [220, 160, 40, 20], 41)]);
+      ws.applyScene(`e${i}`, i * 1000, { scene: "k", observations: [{ object_id: "d1", state: "opaque" }, { object_id: "d1", state: "on_table" }], summary: "s" }, ids);
+    }
+    const s = fillSetup({
+      w: () => ws.view(s.clock.t),
+      check: () => checkPlan({ decision: { ...water, atMs: 0 }, tasks: [WATER], plan: s.plans.current()!, world: ws.view(s.clock.t), nowMs: s.clock.t, staleMs: 600_000, mode: "test" }),
+      answerContents: (id, v, g) => ws.answerContents(id, v, s.clock.t, g) !== null, lookContents: (h) => { h.done(); return true; },
+    });
+    s.t.onEye([0, 0]);
+    await s.decide({ ...water, tasks: [WATER], atMs: 0 });
+    for (let i = 0; i < 20 && !s.commands().length; i++) { s.clock.t += 250; s.t.tick(); }
+    expect(s.last()).toMatchObject({ text: "컵 비었어요?", choices: [], grade: "question" });
+    s.heard("비었어");
+    expect(ws.view(s.clock.t).objects[0]!.facts.contents).toMatchObject({ value: "empty", certainty: "confirmed", by: "person" });
+    expect(s.spoken().at(-1)).toBe("냉장고로 가 주세요");
+  });
+
   describe("내용물 보류(실행 전 검사가 컵 안을 몰라 막은 계획)", () => {
     const fillDecision = { ...water, tasks: [WATER] };
     const inferred = (v: string) => ({ contents: { value: v, at_ms: 9_000, since_ms: 9_000, certainty: "inferred" as const } });
@@ -2015,7 +2066,7 @@ describe("실행 추적: 실제 폰 질문은 모두 말로 답할 수 있다(�
     await s.decide(decision);
     expect(s.last()).toMatchObject({ text: APPROVAL_TEXT.ask("컵 치우기"), step: "plan:pam-1:approve" });
     const at = heardAtOf(s.phone);
-    expect(s.t.onHeard("승인", { ...at, step: "plan:pam-1:1" })).toEqual({ kind: "stale" });
+    expect(s.t.onHeard("승인", { kind: "command", id: "plan:pam-1", step: "plan:pam-1:1", pending: [] })).toEqual({ kind: "stale" });
     expect(s.t.onHeard("응 승인", at)).toEqual({ kind: "answer", choice: expect.objectContaining({ id: "approve" }) });
     expect(s.spoken().at(-1)).toBe("식탁으로 가 주세요");
   });
@@ -2024,7 +2075,7 @@ describe("실행 추적: 실제 폰 질문은 모두 말로 답할 수 있다(�
     const s = setup();
     await s.decide(ask("pam-1", 1));
     const at = heardAtOf(s.phone);
-    expect(s.t.onHeard("그대로 둬요", { ...at, step: "plan:pam-0:1" })).toEqual({ kind: "stale" });
+    expect(s.t.onHeard("그대로 둬요", { kind: "command", id: "plan:pam-0", step: "plan:pam-0:1", pending: [] })).toEqual({ kind: "stale" });
     expect(s.t.onHeard("그대로 둬요", at)).toEqual({ kind: "answer", choice: expect.objectContaining({ id: "keep" }) });
     expect(s.plans.current()).toMatchObject({ status: "done" });
   });
