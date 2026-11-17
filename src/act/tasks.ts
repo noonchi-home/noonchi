@@ -156,16 +156,16 @@ export type UseWhy = { kind: "act"; act: StateKey } | { kind: "holding" } | { ki
 /** 사람이 쓰는 것: 까닭과 쓰는 물건 id(World State 물건으로 알 때). ids가 null이면 무엇을 쓰는지 몰라 그 종류 전체다. */
 export interface Use { why: UseWhy; ids: string[] | null }
 
-/** 사람이 그 종류(물건·가전)를 지금 쓰는 중인가와 그 까닭·물건. 쓰는 중 지킴의 기준은 여기 하나다(실행 추적 src/act/track/use.ts가 쓴 사람이 떠날 때까지 붙잡는다).
- *  사람이 보일 때만, 그 사람이 나타난 뒤(since_ms)와 after 뒤에 찍힌 사진의 사실로 본다(사라지기 전·쓴 사람이 떠나기 전 사진의 늦은 답은 근거가 아니다):
+/** 사람이 그 종류(물건·가전)를 지금 쓰는 중인가와 그 까닭·물건. 쓰는 중 지킴의 기준은 여기 하나다(실행 추적 src/act/track/use.ts가 사람이 모두 사라질 때까지 붙잡는다).
+ *  사람이 보일 때만, 그 사람이 나타난 뒤(since_ms) 찍힌 사진의 사실로 본다(사라지기 전 사진의 늦은 답은 다음 등장의 근거가 아니다):
  *  - 활동: 그 종류를 쓰는 활동(USE_ACTS, 마시는 중). 손에 든 그 종류 물건이 있으면 그 물건, 없으면 종류 전체.
  *  - 들고 있음: 사람이 그 종류나 무엇인지 모르는 물건을 든다(holdsTarget, 든 id가 World State 물건이면 그 물건, 모르면 종류 전체),
  *    그 종류 물건을 손에 든 채 봤다(그 물건), 후보 자리(sightings)를 손에 든 채 봤다(종류 전체).
  *  - 쓰는 중: 그 종류 물건이 쓰는 중(use in_use)으로 보였다(그 물건), 그 종류 가전이 쓰는 중(종류 전체: 전자레인지를 쓰는 사람). */
-export function usingNow(world: WorldView, cls: string, after = Number.NEGATIVE_INFINITY): Use | null {
+export function usingNow(world: WorldView, cls: string): Use | null {
   const p = world.person;
   if (!p.visible) return null;
-  const from = Math.max(p.since_ms ?? Number.NEGATIVE_INFINITY, after);
+  const from = p.since_ms ?? Number.NEGATIVE_INFINITY;
   const fresh = (f: WorldFact | undefined, value: string) => f?.value === value && f.at_ms >= from;
   const mine = world.objects.filter((o) => o.cls === cls);
   const inHand = mine.filter((o) => fresh(o.facts.place, "in_hand")).map((o) => o.id);

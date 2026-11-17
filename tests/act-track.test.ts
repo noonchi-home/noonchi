@@ -21,7 +21,6 @@ import { PlanHub } from "../src/act/hub.js";
 import { APPROVAL_TEXT, CAUTION_TEXT, CHECK_TEXT, EXEC_TEXT, CAUTION_LINE, PEEK_TEXT, STEP_COMMAND, STEP_LABEL, USE_THOUGHT, type TellMode } from "../src/act/labels.js";
 import { CONTENTS_HOLD, PEEK } from "../src/act/track/contents.js";
 import { FIND } from "../src/act/track/find.js";
-import { USE_LEAVE_MS } from "../src/act/track/use.js";
 import { PHONE_PROTOCOL } from "../src/phone/protocol.js";
 /** 인덕션 켜기 전 질문(서버 글). */
 const ASK_ON = "냄비와 상판이 뜨거워져요. 인덕션을 켤까요?";
@@ -406,6 +405,18 @@ describe("실행 추적: 그 자리에서 하는 일(do, 채워 주기)", () => 
     llm.scripts[WATER] = () => [planCalls(fillSteps({ fridge: "fridge_1", table: "table_1", cup: "cup_1", drink: "물" }))];
     return setup({ plans, locate: (id) => ({ ...PLACES, fridge_1: FRIDGE })[id], approvals: store({ [`task:${WATER}`]: "approve" }), ...over });
   }
+
+  // Codex(638302d use.ts:104): 채우기 계획의 첫 act 대상(냉장고·병)으로 보호를 검사해 쓰는 중인 컵을 지나쳐 첫 명령이 나갔다
+  it("사람이 그 컵을 쓰는 중이면 물 채워 주기 계획도 첫 명령을 미룬다(첫 단계 대상이 냉장고·병이어도 계획이 다루는 컵을 본다)", async () => {
+    const w = (): WorldView => {
+      const b = world([tableCup(["empty", 9_000])]);
+      return { ...b, person: { ...b.person, visible: true, since_ms: 0, count: 1, holding: ["cup_1"], facts: { holding: fact("holding_object", 9_500) } } };
+    };
+    const s = fillSetup({ w });
+    await s.decide(water);
+    expect(s.commands()).toEqual([]);
+    expect(s.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-1", state: "planned", text: EXEC_TEXT.inUse });
+  });
 
   it("물 채워 주기는 네 명령을 차례로 보내고 kind는 go·pick·go·do다. 병 집기는 병이 손에 있음일 때, 따르기는 컵이 내용물 있음일 때만 넘어간다. 답 단추는 「완료」 하나다", async () => {
     let w = world([tableCup(["empty", 9_000])]);
@@ -4540,16 +4551,20 @@ describe("실행 추적: 사람이 쓰는 물건은 그 사람이 사라질 때�
     expect(s.commands()).toEqual([]);
   });
 
-  // Codex(65d1360 use.ts:32): 컵을 쓰던 A가 떠나도 B가 남아 사람이 보이면 풀리지 않았다
-  it("컵을 쓴 사람이 떠나고 다른 사람이 남으면(보인 사람 수가 USE_LEAVE_MS 넘게 줄면) 풀고, 떠나기 전에 본 근거로 다시 붙잡지 않는다", () => {
+  // Codex(638302d use.ts:64): 보인 사람 수가 줄었다는 것만으로 풀어, 컵을 쓰는 사람은 남고 같이 있던 사람만 나가도 보호가 풀렸다.
+  // World State는 사람을 한 묶음으로 세어 누가 나갔는지 모르므로 사람이 모두 사라질 때까지 지킨다
+  it("같이 있던 사람이 나가 보인 사람 수가 줄어도(누가 나갔는지 모름) 보호를 지키고, 사람이 모두 사라지면 푼다", () => {
     const s = useSetup();
     s.who({ act: "drinking", count: 2 });
     s.tick();
     const drankAt = s.clock.t;
     s.who({ act: "drinking", count: 1, factAt: drankAt });
-    for (let i = 0; i * 250 < USE_LEAVE_MS - 500; i++) s.tick();
+    for (let i = 0; i < 60; i++) s.tick();
     expect(s.commands()).toEqual([]);
-    for (let i = 0; i < 8; i++) s.tick();
+    s.who(null);
+    s.tick();
+    s.who({});
+    s.tick();
     expect(s.last()).toMatchObject({ id: "peek:1", text: PEEK_TEXT.go("컵") });
     expect(s.thoughts).toHaveLength(1);
   });

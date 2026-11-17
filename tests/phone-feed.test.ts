@@ -33,8 +33,10 @@ function fakeStream() {
   const out: Buffer[] = [];
   let pending: (() => void)[] = [];
   const res = Object.assign(new EventEmitter(), {
-    writeHead: () => res, flushHeaders: () => {}, end: () => {}, destroyed: false,
-    write: (c: string | Buffer, cb?: () => void) => { out.push(Buffer.from(c)); if (cb) pending.push(cb); return true; },
+    writeHead: () => res, flushHeaders: () => {}, end: () => { res.writableEnded = true; }, destroyed: false, writableEnded: false,
+    /** 끝낸 뒤에 쓴 횟수(실제 응답이면 ERR_STREAM_WRITE_AFTER_END). */
+    afterEnd: 0,
+    write: (c: string | Buffer, cb?: () => void) => { if (res.writableEnded) res.afterEnd++; out.push(Buffer.from(c)); if (cb) pending.push(cb); return true; },
     /** 쓴 조각을 다 보냈다(write 콜백을 부른다). */
     flush: () => { const cbs = pending; pending = []; for (const cb of cbs) cb(); },
     frames: () => out.filter((c) => c[0] === 0xff && c[1] === 0xd8),
@@ -120,6 +122,19 @@ describe("EyeFeed", () => {
     // 더 보낼 것이 없으면 다 보낸 뒤에도 아무것도 쓰지 않는다
     res.flush();
     expect(res.frames()).toHaveLength(3);
+  });
+
+  // Codex(33a76df feed.ts:158·178): 끝내는 중에 남은 프레임의 쓰기 콜백이 res.end() 뒤에 다시 보내 ERR_STREAM_WRITE_AFTER_END가 날 수 있었다
+  it("끝낼 때(close) 기다리던 프레임은 버리고, 보내던 장의 쓰기 콜백이 그 뒤에 와도 끝낸 연결에 쓰지 않는다", () => {
+    const { feed } = plainFeed();
+    const res = fakeStream();
+    feed.handle({ method: "GET" } as IncomingMessage, res as unknown as ServerResponse, "/api/eye/stream");
+    feed.pushFrame(JPEG_A, 640, 480);
+    feed.pushFrame(JPEG_B, 640, 480);
+    feed.close();
+    res.flush();
+    expect(res.frames()).toEqual([JPEG_A]);
+    expect(res.afterEnd).toBe(0);
   });
 
   it("사진을 JPEG·JSON으로 저장하고 photo 이벤트를 보낸다", async () => {

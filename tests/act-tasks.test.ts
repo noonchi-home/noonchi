@@ -194,9 +194,6 @@ describe("사람이 그 물건을 쓰는 중인가(usingNow, 쓰는 중 지킴�
     expect(usingNow(person([cupAt()], { facts: { activity: seen("drinking", 4_000) } }), "cup")).toBeNull();
     // 사람이 사라지기 전 사진의 늦은 VLM 답(든 물건 있음)은 다시 나타난 사람의 근거가 아니다(Codex 8944cb6 find.ts:356)
     expect(usingNow(person([], { facts: { holding: seen("holding_object", 4_500) } }), "cup")).toBeNull();
-    // 쓴 사람이 떠나 푼 뒤(after)에는 그 뒤에 찍힌 근거만 본다
-    expect(usingNow(person([cupAt()], { facts: { activity: seen("drinking", 6_000) } }), "cup", 7_000)).toBeNull();
-    expect(usingNow(person([cupAt()], { facts: { activity: seen("drinking", 8_000) } }), "cup", 7_000)).not.toBeNull();
     expect(usingNow(person([cupAt({ facts: { place: seen("in_hand", 4_000) } })]), "cup")).toBeNull();
     expect(usingNow(person([cupAt()], { visible: false, facts: { activity: seen("drinking") } }), "cup")).toBeNull();
   });

@@ -122,7 +122,10 @@ export class EyeFeed {
       }
       const s: Stream = { busy: false, next: null };
       this.streams.set(res, s);
-      res.on("close", () => this.streams.delete(res));
+      res.on("close", () => {
+        s.next = null;
+        this.streams.delete(res);
+      });
       if (this.latest) send(res, s, this.latest);
       return true;
     }
@@ -156,7 +159,11 @@ export class EyeFeed {
   }
 
   close(): void {
-    for (const res of this.streams.keys()) res.end();
+    // 기다리던 프레임을 버리고 끝낸다(보내던 장의 쓰기 콜백이 끝낸 뒤에 와도 다시 쓰지 않는다)
+    for (const [res, s] of this.streams) {
+      s.next = null;
+      res.end();
+    }
     this.streams.clear();
     this.video.close();
   }
@@ -175,7 +182,7 @@ function send(res: ServerResponse, s: Stream, jpeg: Buffer): void {
     s.busy = false;
     const next = s.next;
     s.next = null;
-    if (next && !err && !res.destroyed) send(res, s, next);
+    if (next && !err && !res.destroyed && !res.writableEnded) send(res, s, next);
   });
 }
 
