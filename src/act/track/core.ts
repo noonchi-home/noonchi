@@ -15,7 +15,7 @@ import { AGAIN, APPROVE, STEP_DONE, type ActionChoice } from "../prompts.js";
 import type { Answers } from "./answers.js";
 import type { Approvals, Asking } from "./approval.js";
 import type { Coach } from "./coach.js";
-import type { ContentsHold, Hold } from "./contents.js";
+import type { ContentsHold, Hold, IdlePeek } from "./contents.js";
 import type { Cycle, CycleEnd, SafetyTracker } from "./safety.js";
 import type { Starter } from "./start.js";
 import type { Steps } from "./steps.js";
@@ -80,6 +80,8 @@ export interface TrackConfig {
 export class TrackCore {
   run: Run | null = null;
   planning: Job | null = null;
+  /** 계획 밖 가까이 가서 보기(판단 전 보기 B 뒤에도 모를 때, src/act/track/contents.ts idle): 명령 id peek:<번호>와 그 상태. 없으면 null. */
+  idlePeek: IdlePeek | null = null;
   /** 마지막으로 기다리기·기기 단계가 시작된 시각. 그 전에 보낸 다른 행동 판단은 쓰지 않는다. */
   quietFrom = -Infinity;
   stopped = false;

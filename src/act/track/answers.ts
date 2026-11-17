@@ -20,7 +20,11 @@ export class Answers extends Part {
     const off = core.safety.shownOff();
     if (off && !core.stopped) return { planId: off.sent.id, stepId: off.sent.step, kind: "command", text: off.sent.text, choices: off.note.ask ? [] : [STEP_DONE] };
     const r = core.shown();
-    if (!r) return null;
+    if (!r) {
+      // 계획 밖 가까이 가서 보기(src/act/track/contents.ts idle): 단추 없는 사람 단계 명령
+      const q = core.idlePeek;
+      return q?.sent && !core.stopped ? { planId: q.id, stepId: q.sent.step, kind: "command", text: q.sent.text, choices: [] } : null;
+    }
     const ask = r.asking !== null || core.stepOf(r)?.kind === "ask";
     return { planId: r.plan.view.id, stepId: r.sent.step, kind: ask ? "ask" : "command", text: r.sent.text, choices: choicesOf(r, core.stepOf(r)) };
   }
@@ -77,6 +81,11 @@ export class Answers extends Part {
     if ((open || core.planning) && matchChoice(text, [STOP])) {
       core.start.dropPlanning(EXEC_TEXT.stopped);
       if (open) core.steps.finish(open, "failed", EXEC_TEXT.stopped, "cancelled");
+      return { kind: "answer", choice: STOP };
+    }
+    // 계획 밖 가까이 가서 보기에 「그만」: 거두고 그 컵은 잠시 다시 보내지 않는다
+    if (!open && !core.planning && core.idlePeek?.sent && matchChoice(text, [STOP])) {
+      core.contents.stopIdle();
       return { kind: "answer", choice: STOP };
     }
     const off = core.safety.shownOff();

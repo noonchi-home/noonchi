@@ -49,6 +49,8 @@ export interface LookerOptions {
   /** 가까이 보기(src/observe/pipeline.ts closer). 감지를 합치기 전에 signal이 끊기면 넣지 않고 aborted, 합친 뒤에 끊기면 ok(vlm aborted),
    *  VLM 답이 왔을 때 사진이 끊겼으면 ok(vlm no_fresh_frames). */
   closer: (spot: LookSpot, signal?: AbortSignal) => Promise<CloserResult>;
+  /** 판단 전 보기 B가 잘라 보기를 마쳤다(자원 사정으로 못 본 것은 빼고): 그 물건 id. 실행 추적이 계획 밖으로 가까이 가서 볼지 본다(src/act/track/contents.ts). */
+  looked?: (objectId: string) => void;
   /** 위에서 보기(src/observe/pipeline.ts topLook): sinceMs 뒤 찍힌 컵 안을 내려다본 사진 쌍. 없으면 위에서 보기 부탁은 done만 한다. */
   topLook?: (spot: LookSpot, sinceMs: number, signal?: AbortSignal) => Promise<CloserResult>;
   /** 고리 가장 새 프레임(src/observe/pipeline.ts latest). */
@@ -323,6 +325,8 @@ export class Looker {
       result = r;
       this.count.looks++;
       counted = !WAITS.has(r.ok ? r.vlm : r.why);
+      // 판단 전 보기 B(계획 없음)가 잘라 보기를 마쳤다: 실행 추적이 그 컵을 계획 밖으로 가까이 가서 볼지 본다
+      if (job.trigger === "unknown_fact" && !job.planId && counted) this.o.looked?.(spot.id);
       text = LOOK_TEXT.closer(spot.label, closerText(r));
       if (r.ok) detail = r.found.map((f) => `${f.id ?? f.cls} ${f.score} ${f.facts.join(" ")}`.trim()).join(", ");
     } else if (choice.tool === "ask_person") {

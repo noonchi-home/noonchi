@@ -3677,3 +3677,132 @@ describe("실행 추적 + 실제 World State(기준점을 맞춘 카메라)", ()
     expect(last()).toMatchObject({ step: "plan:pam-1:3", text: STEP_COMMAND.goSink, vision: "컵 · 손에 있음 · 싱크대까지 거리 모름" });
   });
 });
+
+describe("실행 추적: 계획 밖 가까이 가서 보기(판단 전 보기 B 뒤에도 모를 때)", () => {
+  const fact = (value: string) => ({ value, at_ms: 9_000, since_ms: 9_000, certainty: "confirmed" as const });
+  const OPAQUE: WorldObject["facts"] = { body: fact("opaque"), contents: fact("contents_unknown") };
+  const GUESS: WorldObject["facts"] = { contents: { ...fact("empty"), certainty: "inferred" } };
+  const NOONCHI = ["컵 치우기", "사용자에게 물어보기", "세탁물 건조기로 옮기기", "에어컨 켜기", "컵 그대로 두기", "컵에 물 채워 주기", "컵에 콜라 따라 주기"];
+  /** 사람이 보이고(먹는 중) 식탁에 컵 하나가 있는 집. 폰 눈은 컵 [2, 1]에서 1m(eye false면 맞추기 전). looks: 받은 위에서 보기 부탁. */
+  function idleSetup(o: { facts?: WorldObject["facts"]; tasks?: string[]; eye?: boolean; person?: boolean; over?: Parameters<typeof setup>[0] } = {}) {
+    let facts = o.facts ?? OPAQUE;
+    let person = o.person !== false;
+    let ready = false;
+    const looks: ContentsLook[] = [];
+    const guards: [string, boolean][] = [];
+    const s = setup({
+      w: () => world([{ ...cup("present", "on_table", 9_000), facts: { ...facts, place: fact("on_table") }, contents_gen: 2 }], person ? "eating" : undefined, 9_000),
+      tasks: () => o.tasks ?? NOONCHI, topReady: () => ready, guardObject: (id, on) => guards.push([id, on]), lookContents: (h) => { looks.push(h); return true; },
+      ...o.over,
+    });
+    // 맞춘 폰 눈은 tick마다 다시 온다(실제 폰은 초당 10번)
+    let eye: [number, number] | null = o.eye === false ? null : [3, 1];
+    if (eye) s.t.onEye(eye);
+    const tick = (ms = 250) => { s.clock.t += ms; if (eye) s.t.onEye(eye); s.t.tick(); };
+    return {
+      ...s, looks, guards, tick, set: (f: WorldObject["facts"]) => { facts = f; }, ready: (v: boolean) => { ready = v; }, person: (v: boolean) => { person = v; },
+      eye: (p: [number, number]) => { eye = p; s.t.onEye(p); },
+    };
+  }
+
+  it("계획이 없고 불투명 컵이면 지금 명령 줄에 「컵 가까이 가 주세요」(id peek:1)를 보내고, 0.5m 안이면 위에서 비춰 달라고 한 뒤 위에서 보기를 부탁한다(계획 id 없음)", () => {
+    const s = idleSetup();
+    s.tick();
+    expect(s.last()).toMatchObject({ type: "command", id: "peek:1", step: "peek:1:peek:cup_1:2:go:1", text: PEEK_TEXT.go("컵"), choices: [], kind: "go", near_m: PEEK.nearM });
+    expect(s.t.openCommand()).toMatchObject({ planId: "peek:1", kind: "command", text: PEEK_TEXT.go("컵"), choices: [] });
+    s.eye([2.3, 1]);
+    s.tick();
+    const aboveAt = s.clock.t;
+    expect(s.last()).toMatchObject({ id: "peek:1", text: PEEK_TEXT.above("컵"), kind: "do", view: "above" });
+    expect(s.guards).toEqual([["cup_1", true]]);
+    // 위에서 보는 동안 사람이 안 보여도(폰이 컵을 내려다봄) 거두지 않는다
+    s.person(false);
+    s.tick();
+    expect(s.last()).toMatchObject({ text: PEEK_TEXT.above("컵") });
+    s.ready(true);
+    s.tick();
+    expect(s.last()).toEqual({ type: "command_clear", id: "peek:1" });
+    expect(s.looks).toEqual([expect.objectContaining({ planId: "", objectId: "cup_1", top: { sinceMs: aboveAt } })]);
+    s.looks[0]!.done();
+    expect(s.guards).toEqual([["cup_1", true], ["cup_1", false]]);
+    // 확인되면 칸이 비고 다시 보내지 않는다
+    s.set({ body: fact("opaque"), contents: fact("empty") });
+    for (let i = 0; i < 40; i++) s.tick();
+    expect(s.t.openCommand()).toBeNull();
+    expect(s.commands().filter((c) => c.id !== "peek:1")).toEqual([]);
+  });
+
+  it("위에서 본 뒤에도 모르면 기록만 남고(묻지 않음) 그 컵·세대는 60초 동안 다시 가까이 가지 않는다", () => {
+    const s = idleSetup({ eye: false });
+    s.eye([2.3, 1]);
+    s.tick();
+    s.ready(true);
+    s.tick();
+    s.looks[0]!.done();
+    for (let i = 0; i < 40; i++) s.tick();
+    const n = s.commands().length;
+    for (let i = 0; i < 200; i++) s.tick();
+    expect(s.commands().slice(n)).toEqual([]);
+    expect(s.commands().some((c) => c.text.endsWith("?"))).toBe(false);
+    for (let i = 0; i < 60; i++) s.tick(250);
+    expect(s.commands().slice(n).map((c) => c.id)).toContain("peek:2");
+  });
+
+  it("불투명이 아니면 B가 그 세대에 잘라 본 뒤 4초가 지나야 보낸다", () => {
+    const s = idleSetup({ facts: GUESS });
+    s.tick();
+    expect(s.commands()).toEqual([]);
+    s.t.lookedIdle("cup_1");
+    s.tick(3_500);
+    expect(s.commands()).toEqual([]);
+    s.tick(600);
+    expect(s.last()).toMatchObject({ text: PEEK_TEXT.go("컵") });
+  });
+
+  it("보내지 않는 때: 위치를 맞추기 전, 사람이 안 보임, 목록에 내용물 행동이 없음, 승인 대기, 폰 대화 중, 이미 확인된 컵", () => {
+    const cases: Parameters<typeof idleSetup>[0][] = [
+      { eye: false }, { person: false }, { tasks: ["라면 끓이기 알려 주기", "사용자에게 물어보기"] },
+      { over: { approvalsWaiting: () => true } }, { over: { talking: () => true } }, { facts: { body: fact("opaque"), contents: fact("empty") } },
+    ];
+    for (const o of cases) {
+      const s = idleSetup(o);
+      s.tick();
+      expect(s.commands()).toEqual([]);
+    }
+  });
+
+  it("폰 대화가 시작되면 거두고(지우기·보기 지킴 풂), 끝나면 새 번호로 다시 보낸다", () => {
+    let talking = false;
+    const s = idleSetup({ eye: false, over: { talking: () => talking } });
+    s.eye([2.3, 1]);
+    s.tick();
+    expect(s.last()).toMatchObject({ id: "peek:1", view: "above" });
+    talking = true;
+    s.tick();
+    expect(s.last()).toEqual({ type: "command_clear", id: "peek:1" });
+    expect(s.guards).toEqual([["cup_1", true], ["cup_1", false]]);
+    talking = false;
+    s.tick();
+    expect(s.last()).toMatchObject({ id: "peek:2", view: "above" });
+  });
+
+  it("계획이 열리면 거두고, 계획 명령이 그 자리를 덮었으면 지우기를 보내지 않는다", async () => {
+    const s = idleSetup();
+    s.tick();
+    expect(s.last()).toMatchObject({ id: "peek:1" });
+    await s.decide(decision);
+    s.tick();
+    expect(s.phone.filter((m) => m.type === "command_clear" && m.id === "peek:1")).toEqual([]);
+    expect(s.last()).toMatchObject({ id: "plan:pam-1" });
+    expect(s.t.openCommand()).toMatchObject({ planId: "plan:pam-1" });
+  });
+
+  it("「그만」이면 거두고 그 컵은 60초 동안 다시 보내지 않는다", () => {
+    const s = idleSetup();
+    s.tick();
+    expect(s.heard("그만해")?.id).toBe("stop");
+    expect(s.last()).toEqual({ type: "command_clear", id: "peek:1" });
+    for (let i = 0; i < 40; i++) s.tick();
+    expect(s.commands().filter((c) => c.id !== "peek:1")).toEqual([]);
+  });
+});
