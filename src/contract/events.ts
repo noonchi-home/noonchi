@@ -4,7 +4,7 @@ import type { Command, DeviceSpec, DeviceState } from "./devices.js";
 import type { LayoutMessage } from "./layout.js";
 import type { PhoneChoice } from "./phone.js";
 import type { PlanView } from "./plan.js";
-import type { AssistMode, ControlMode } from "./setup.js";
+import type { ControlMode } from "./setup.js";
 import type { Mask } from "./observe.js";
 import type { DetLabel } from "../world/vocab.js";
 import type { VlmMissing, WorldChangeKind, WorldView, YoloMissing } from "./world.js";
@@ -124,7 +124,8 @@ export type BrainLog =
     /** 판단 때 지금 FSM(src/brain/decision.ts fsmNow): 고른 행동의 규칙이 있으면(matched) 그 상태·트리거, 대기·규칙 없는 행동이면 직전 상태(처음이면 기억의 처음 상태)에
      *  트리거 없음. seed에 없는 규칙이 있으면 learned. 실패·list 기억이면 null. 예전 기록에는 없거나 matched가 없다. */
     fsm?: { state: string | null; trigger: string | null; learned: boolean; matched?: boolean } | null;
-    /** 고른 행동의 종류(표시용, TaskSpec.coach): 코치 행동이면 coach, 아니면 noonchi. 대기·실패는 null. 예전 기록에는 없다. */
+    /** 고른 행동이 어느 모드로 하는 행동인가(TaskSpec.coach, src/act/tasks.ts): 코치 행동이면 coach, 아니면 noonchi. 대기·실패는 null.
+     *  대시보드 메시지 상자 머리(「코치 모드」·「눈치 모드」, 대기면 없음)가 이 값만 쓴다. 예전 기록에는 없다. */
     assist?: "noonchi" | "coach" | null;
     error?: string; memory_version: number; world: DecisionWorld;
   }
@@ -217,8 +218,6 @@ export interface HealthView {
   brain: boolean;
   /** 운영 모드: test 시험(트윈만), live 실제(짝지은 가전은 ThinQ). */
   mode: ControlMode;
-  /** 돕는 방식: auto 자동, noonchi 눈치 모드, coach 코치 모드(대시보드 메시지 상자 머리). */
-  assist: AssistMode;
   /** 준비 상태: 추론 모드, 모델 주소 응답, 기록 DB. 모델 주소가 답하지 않아도 health는 200이고 ready.ok가 false다. */
   ready: ReadyView;
 }

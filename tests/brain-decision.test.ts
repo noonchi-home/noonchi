@@ -111,6 +111,17 @@ describe("고른 행동의 FSM 상태(대시보드 생각 말풍선 「상태」
     states: [...CUP_FSM_MEMORY.states.map((s) => ({ ...s, rules: [...s.rules, ...(add[s.id] ?? [])] })), ...extra],
   });
 
+  // Codex(f905eac decision.ts:281): 그 행동 규칙이 여러 상태에 있으면 그 규칙이 없는 직전 상태를 지금 상태로 보였다
+  it("지금 FSM(fsmNow): 고른 행동의 규칙이 여러 상태에 있으면 상태를 정할 수 없어 null이다(직전 상태로 메우지 않는다)", () => {
+    const memory = withRules({ watching_tv: [HOT], drinking: [TV] });
+    expect(fsmNow(memory, "fsm", "에어컨 켜기", "left_cup")).toEqual({ state: null, trigger: null, learned: true, matched: true });
+  });
+
+  // Codex(d64a383 decide.ts:106): 반성으로 기억이 바뀌어 옛 상태가 지워져도 직전 상태로 남았다
+  it("지금 FSM(fsmNow): 직전 상태가 지금 기억에 없으면(반성으로 지워짐) 기억의 처음 상태다", () => {
+    expect(fsmNow(CUP_FSM_MEMORY, "fsm", null, "gone_state")).toEqual({ state: CUP_FSM_MEMORY.initial_state, trigger: null, learned: false, matched: false });
+  });
+
   it("seed 덥다 규칙과 배운 TV 규칙이 둘 다 watching_tv에 있으면 에어컨 켜기는 그 상태이고 트리거는 모르며 배운 규칙이 있다", () => {
     expect(fsmRuleOf(withRules({ watching_tv: [HOT, TV] }), "fsm", "에어컨 켜기")).toEqual({ state: "watching_tv", trigger: null, learned: true });
   });

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { WorldObject, WorldView } from "../src/contract/world.js";
-import { holdsTarget, lookTargets, opaqueBody, planTargetId, putAway, sureValue, targetOf, TASK_NAMES, TASKS, taskOf, tasksFor, touchTarget, usingNow, wantOf } from "../src/act/tasks.js";
+import { holdsTarget, lookTargets, opaqueBody, planTargetId, putAway, sureValue, targetOf, TASK_NAMES, TASKS, taskOf, tasksFor, modeOf, touchTarget, usingNow, wantOf } from "../src/act/tasks.js";
 import type { WorldFact } from "../src/contract/world.js";
 import { smallFloor } from "./helpers/floor.js";
 import { cupPlan } from "./helpers/cup-plan.js";
@@ -196,6 +196,9 @@ describe("사람이 그 물건을 쓰는 중인가(usingNow, 쓰는 중 지킴�
     expect(usingNow(person([], { facts: { holding: seen("holding_object", 4_500) } }), "cup")).toBeNull();
     expect(usingNow(person([cupAt({ facts: { place: seen("in_hand", 4_000) } })]), "cup")).toBeNull();
     expect(usingNow(person([cupAt()], { visible: false, facts: { activity: seen("drinking") } }), "cup")).toBeNull();
+  });
+  it("행동의 모드(modeOf, 메시지 상자 머리의 기준): 코치 행동은 coach, 그 밖의 목록 행동은 noonchi, 대기·목록 밖은 null", () => {
+    expect(["컵 치우기", "에어컨 켜기", "라면 끓이기 알려 주기", "전자레인지로 데우기 알려 주기", null, "춤추기"].map(modeOf)).toEqual(["noonchi", "noonchi", "coach", "coach", null, null]);
   });
   it("손대는 행동(touch)만 대상 종류가 있다(그대로 두기·에어컨 켜기는 없다)", () => {
     expect(["컵 치우기", "컵에 물 채워 주기", "컵에 콜라 따라 주기"].map(touchTarget)).toEqual(["cup", "cup", "cup"]);

@@ -3,7 +3,7 @@
 // PAM 연결 끊김·연결됨(link)과 주기 판단 멈춤(폰 사진 없음·사람 없음)·다시 시작(trigger)은 바뀔 때 한 번씩 기록한다.
 import type { BrainLog, DecisionWorld, DecisionRecord } from "../contract/events.js";
 import type { WorldChange, WorldView } from "../contract/world.js";
-import { taskOf } from "../act/tasks.js";
+import { modeOf } from "../act/tasks.js";
 import { checkInput, fsmNow, isoWithOffset, type PamMemory } from "./decision.js";
 import { PamLinkError, type PamClient } from "./pam.js";
 import { LINK_TEXT, TRIGGER_TEXT, redactHeard, redactSaid, saidIn } from "../world/labels.js";
@@ -104,7 +104,9 @@ export class Decider {
           const said = this.o.keepHeard?.() ? [] : saidIn(textSent);
           const prediction = said.length ? { ...p, observation: redactSaid(p.observation, said), reasoning: redactSaid(p.reasoning, said) } : p;
           const fsm = fsmNow(mem.memory, mem.kind, action, this.fsmState);
-          if (fsm?.matched && fsm.state) this.fsmState = fsm.state;
+          // 맞은 규칙의 상태로 옮긴다. 대기·규칙 없는 행동이 직전 상태를 쓰지 않았으면(지금 기억에 없음) 지운다
+          if (fsm?.matched) this.fsmState = fsm.state ?? this.fsmState;
+          else if (fsm?.state !== this.fsmState) this.fsmState = null;
           this.finish({ ...base, status: "valid", prediction, action, fsm });
         },
         (e: unknown) => {
@@ -130,7 +132,7 @@ export class Decider {
     this.o.emit({
       type: "decision", at_ms: this.clock.now(), id: r.id, seq: r.seq, text_sent: this.o.keepHeard?.() ? r.textSent : redactHeard(r.textSent), status: r.status, prediction: r.prediction, action: r.action, fsm: r.fsm ?? null,
       // 고른 행동의 종류(표시용): 그 행동이 코치 행동인가
-      assist: r.action ? (taskOf(r.action)?.coach ? "coach" : "noonchi") : null,
+      assist: modeOf(r.action),
       ...(r.error ? { error: r.error } : {}), memory_version: r.memoryVersion, world: r.world,
     });
     this.o.onDecision?.(r);

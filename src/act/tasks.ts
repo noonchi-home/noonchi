@@ -82,6 +82,13 @@ export const TASKS: Record<string, TaskSpec> = {
 /** 모든 행동 이름(검사·tasks.json 견주기). PAM에 보내는 목록은 돕는 방식마다 다르다(tasksFor). */
 export const TASK_NAMES: readonly string[] = Object.keys(TASKS);
 
+/** 그 행동이 어느 모드로 하는 행동인가: 코치 행동(TaskSpec.coach)이면 coach, 그 밖의 목록 행동이면 noonchi, 대기(null)·목록 밖이면 null.
+ *  판단 기록 assist와 대시보드 메시지 상자 머리(「코치 모드」·「눈치 모드」)의 기준은 이 하나다. */
+export function modeOf(action: string | null): "noonchi" | "coach" | null {
+  const t = taskOf(action);
+  return t ? (t.coach ? "coach" : "noonchi") : null;
+}
+
 /** 손대는 행동(touch)의 대상 종류. 손대지 않는 행동·목록 밖이면 null. */
 export function touchTarget(action: string | null): ObjClass | null {
   const t = taskOf(action);

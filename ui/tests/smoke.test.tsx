@@ -9,7 +9,7 @@ import { TwinEngine } from "../src/twin/3d/engine";
 function stubHealth(home: string, manifest: number, eye = false) {
   const health: HealthView = {
     ok: true, devices: 0, hub: "memory", transport: null, provider: "openai", model: "m", twin: true, eye,
-    home: { id: home, name: "우리 집" }, phone_urls: [], brain: false, mode: "test", assist: "noonchi",
+    home: { id: home, name: "우리 집" }, phone_urls: [], brain: false, mode: "test",
     ready: { ok: false, inference_mode: "mock", vlm: { base_url: "", model: "", key: false, reachable: false }, pam: { url: "", reachable: false, llm: null },
       agent: { provider: "openai", base_url: "", model: "", key: false, reachable: false }, db: false },
   };

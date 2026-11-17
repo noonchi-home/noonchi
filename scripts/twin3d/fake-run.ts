@@ -6,7 +6,7 @@
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { sayLine } from "../../src/act/say.js";
-import { planIdOf } from "../../src/act/tasks.js";
+import { modeOf, planIdOf } from "../../src/act/tasks.js";
 import { CUP_FSM_MEMORY, fsmNow } from "../../src/brain/decision.js";
 import type { Mask } from "../../src/contract/observe.js";
 import type { BrainLog, EyeEvent, SeenEvent, ServerMessage } from "../../src/contract/events.js";
@@ -132,7 +132,7 @@ function build(): Moment[] {
       type: "decision", at_ms: n === 0 ? T0 : T0 + STEP_MS, id: n === 0 ? "pam-0" : decisionId, seq: n === 0 ? 1 : 2,
       text_sent: "컵 1개가 식탁 위에 있어요. 사람이 안 보여요.", status: "valid",
       prediction: { observation: OBSERVATION, reasoning: n === 0 ? "자리를 비운 지 얼마 안 됐어요." : "사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.", task_index: n === 0 ? -1 : 0 },
-      action: n === 0 ? null : ACTION, fsm: fsmNow(CUP_FSM_MEMORY, "fsm", n === 0 ? null : ACTION, null), memory_version: 1,
+      action: n === 0 ? null : ACTION, fsm: fsmNow(CUP_FSM_MEMORY, "fsm", n === 0 ? null : ACTION, null), assist: modeOf(n === 0 ? null : ACTION), memory_version: 1,
       world: { objects: [{ id: cup.id, cls: cup.cls, status: cup.status, surface: cup.surface, surface_label: cup.surface_label, error_m: null, facts: {} }], person_visible: false, vlm_missing: 0, yolo_missing: 0 },
     };
     const shapes = cupShapes(eye, score);

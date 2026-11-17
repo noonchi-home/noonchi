@@ -1,5 +1,6 @@
 // 대시보드 자료(순수 리듀서): /events 메시지 → 지금 계획·맞춘 눈·마지막 유효 판단·쌓인 생각 메시지·말풍선 카드 말. 물체 모양(seen)은 초당 10번 와서 여기 넣지 않는다(masks.ts 저장소). 화면 값(단계 번호·마스코트 방향·생각 말풍선)도 여기서 고른다.
 // hello는 처음으로 돌린다(접속 스냅숏이 뒤따른다). 같은 계획의 옛 번호, 맞추기 전 추정 눈, 실패한 판단은 버린다.
+import { ASSIST_NAME } from "../lib/assist";
 import type { BrainLog, EyeEvent, ServerMessage, ThoughtMessage } from "../../../src/contract/events.ts";
 import type { PlanStep, PlanView } from "../../../src/contract/plan.ts";
 import { FSM_STATE_TEXT } from "../../../src/world/labels.ts";
@@ -123,9 +124,9 @@ export const facingOf = (p: PlanView | null): Facing => (isOpen(p) ? "twin" : "v
 
 /** 메시지 상자 알약 셋(FSM 구조): 지금 상태 이름, 맞은 규칙의 트리거, 그 행동. */
 export interface Pills { state: string; trigger: string; action: string }
-/** 메시지 상자에 보이는 것: 최근 줄(오래된 것부터 TALK_SHOWN개, 다듬은 생각 메시지와 말풍선 카드 말을 받은 차례로)과 마지막 판단의 알약 셋(FSM을 모르면 null).
- *  PAM의 원래 생각(reasoning)은 싣지 않는다. */
-export interface Talk { lines: { id: string; text: string }[]; fsm: Pills | null }
+/** 메시지 상자에 보이는 것: 최근 줄(오래된 것부터 TALK_SHOWN개, 다듬은 생각 메시지와 말풍선 카드 말을 받은 차례로), 마지막 판단의 알약 셋(FSM을 모르면 null),
+ *  지금 행동의 모드(「눈치 모드」·「코치 모드」, 대기·판단 전이면 null). PAM의 원래 생각(reasoning)은 싣지 않는다. */
+export interface Talk { lines: { id: string; text: string }[]; fsm: Pills | null; mode: string | null }
 
 /**
  * 메시지 상자: 다듬은 생각 메시지(반성 메시지 포함)와 말풍선 카드 말을 받은 차례로 섞은 최근 TALK_SHOWN줄과 마지막 유효 판단의 알약 셋. 둘 다 없으면 null.
@@ -138,10 +139,12 @@ export function talkOf(s: DashData): Talk | null {
   const lines = safety ? [...s.talk.filter((l) => l.id !== safety.id).slice(-(TALK_SHOWN - 1)), safety] : s.talk.slice(-TALK_SHOWN);
   const d = s.decision;
   const f = d?.fsm;
-  const fsm = d && f?.state ? {
-    state: FSM_STATE_TEXT[f.state] ?? f.state,
+  const fsm = d && f ? {
+    state: f.state ? FSM_STATE_TEXT[f.state] ?? f.state : WORDS.unknown,
     trigger: f.trigger ?? (d.action ? (f.matched ? WORDS.manyRules : WORDS.noRule) : WORDS.idle),
     action: d.action ?? WORDS.idle,
   } : null;
-  return lines.length || fsm ? { lines, fsm } : null;
+  // 머리: 고른 행동이 어느 모드로 하는 행동인가(서버 판단 기록 assist, 행동 목록 TaskSpec.coach). 대기면 없다. 설정의 돕는 방식(자동 등)은 쓰지 않는다
+  const mode = d?.action && d.assist ? ASSIST_NAME[d.assist] : null;
+  return lines.length || fsm || mode ? { lines, fsm, mode } : null;
 }

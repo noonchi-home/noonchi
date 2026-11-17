@@ -43,6 +43,7 @@
               "learned": false,
               "matched": false
             },
+            "assist": null,
             "memory_version": 1,
             "world": {
               "objects": [
@@ -244,6 +245,7 @@
               "learned": false,
               "matched": true
             },
+            "assist": "noonchi",
             "memory_version": 1,
             "world": {
               "objects": [
@@ -457,6 +459,7 @@
               "learned": false,
               "matched": true
             },
+            "assist": "noonchi",
             "memory_version": 1,
             "world": {
               "objects": [
@@ -670,6 +673,7 @@
               "learned": false,
               "matched": true
             },
+            "assist": "noonchi",
             "memory_version": 1,
             "world": {
               "objects": [
@@ -867,6 +871,7 @@
               "learned": false,
               "matched": true
             },
+            "assist": "noonchi",
             "memory_version": 1,
             "world": {
               "objects": [

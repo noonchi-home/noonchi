@@ -151,6 +151,26 @@ describe("판단 호출", () => {
     expect(records.map((r) => r.fsm)).toEqual([first, fsm, after]);
   });
 
+  // Codex(d64a383 decide.ts:106–107): 반성으로 기억 판본이 바뀌어 옛 상태가 지워져도 그 상태가 대기 알약에 남았다
+  it("반성으로 바뀐 기억에 직전 상태가 없으면 대기 판단의 상태는 새 기억의 처음 상태다", async () => {
+    let index = 0;
+    pam = await startFakePam({ predict: () => ({ observation: "o", reasoning: "r", task_index: index }) });
+    const records: DecisionRecord[] = [];
+    let now = 10_000;
+    let mem = { memory: CUP_FSM_MEMORY, kind: "fsm" as const, version: 0 };
+    const d = new Decider({ pam: new PamClient({ url: pam.url }), world: emptyWorld(), trigger: event(),
+      tasks: () => [...CUP_TASKS], memory: () => mem, emit: () => {}, onDecision: (r) => records.push(r), offsetMinutes: 540, clock: { now: () => now } });
+    const poke = async () => { d.onChanges([{ kind: "appeared", at_ms: now, subject: "cup_1", text: "컵 cup_1 보임", meaningful: true }]); d.tick(); await d.idle(); now += 1000; };
+    await poke();
+    expect(records.at(-1)!.fsm!.state).toBe("left_cup");
+    // 새 판본: left_cup 상태가 없다(다른 상태가 그 다음 처음 상태)
+    const next = { ...CUP_FSM_MEMORY, states: CUP_FSM_MEMORY.states.filter((x) => x.id !== "left_cup").map((x) => ({ ...x, next: x.next.filter((n) => n.to !== "left_cup") })) };
+    mem = { memory: next, kind: "fsm", version: 1 };
+    index = -1;
+    await poke();
+    expect(records.at(-1)!.fsm).toEqual({ state: next.initial_state, trigger: null, learned: false, matched: false });
+  });
+
   it("판단 사건에 고른 행동의 종류를 붙인다: 라면 끓이기 알려 주기는 coach, 에어컨 켜기는 noonchi, 대기·실패는 null", async () => {
     const tasks = [...TASK_NAMES];
     let index = tasks.indexOf("라면 끓이기 알려 주기");

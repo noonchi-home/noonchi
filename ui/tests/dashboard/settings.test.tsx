@@ -11,7 +11,7 @@ import { Mascot } from "../../src/dashboard/Mascot";
 import { MASCOT } from "../../src/lib/mascot-image";
 
 const HEALTH: HealthView = {
-  ok: true, devices: 12, hub: "matter", transport: "network", provider: "openai", model: "gpt-5.5", twin: true, eye: true, assist: "noonchi",
+  ok: true, devices: 12, hub: "matter", transport: "network", provider: "openai", model: "gpt-5.5", twin: true, eye: true,
   home: { id: "mokryeon_180b", name: "한양목련 180B" },
   phone_urls: ["http://172.20.0.5:8443/phone/", "https://192.168.0.21:8443/phone/"],
   brain: true, mode: "test",
@@ -37,7 +37,7 @@ function show(hub = HUB, width = 1920, height = 1080) {
 describe("허브 상태(hubOf)", () => {
   it("/api/health 값에서 설정 창에 보일 것만 고른다: 폰 주소는 https·집 공유기 대역을 먼저", () => {
     expect(HUB).toEqual({
-      connected: true, mode: "test", assist: "noonchi", hub: "matter · network", agent: "openai · gpt-5.5", home: "한양목련 180B",
+      connected: true, mode: "test", hub: "matter · network", agent: "openai · gpt-5.5", home: "한양목련 180B",
       phoneUrl: "https://192.168.0.21:8443/phone/", setupHref: "/setup/",
     });
   });
@@ -53,7 +53,7 @@ describe("허브 상태(hubOf)", () => {
   });
 
   it("health를 아직 못 받았으면 빈 값과 시험 모드다", () => {
-    expect(hubOf(null, null)).toEqual({ connected: false, mode: "test", assist: "noonchi", hub: "", agent: "", home: "", phoneUrl: "", setupHref: "/setup/" });
+    expect(hubOf(null, null)).toEqual({ connected: false, mode: "test", hub: "", agent: "", home: "", phoneUrl: "", setupHref: "/setup/" });
   });
 });
 

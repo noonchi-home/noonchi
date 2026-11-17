@@ -48,6 +48,6 @@ export interface Prediction { observation: string; reasoning: string; task_index
  *  trigger: 그 행동의 규칙이 하나면 그 트리거, 둘 이상이면 null.
  *  learned: 그 행동의 규칙 가운데 seed 기억(CUP_FSM_MEMORY)에 없는 트리거·행동 쌍이 하나라도 있다. */
 export interface FsmRuleAt { state: string | null; trigger: string | null; learned: boolean }
-/** 판단 때 지금 FSM(대시보드 메시지 상자 알약 상태·트리거·액션, src/brain/decision.ts fsmNow): 규칙대로 고른 행동이면 그 규칙의 상태·트리거,
- *  대기·규칙 없는 행동이면 직전 상태(처음이면 기억의 처음 상태)에 트리거 없음. matched: 고른 행동의 규칙이 기억에 있다. */
+/** 판단 때 지금 FSM(대시보드 메시지 상자 알약 상태·트리거·액션, src/brain/decision.ts fsmNow): 규칙대로 고른 행동이면 그 규칙의 상태(여러 상태면 null)·트리거,
+ *  대기·규칙 없는 행동이면 직전 상태(지금 기억에 없거나 처음이면 기억의 처음 상태)에 트리거 없음. matched: 고른 행동의 규칙이 기억에 있다. */
 export interface FsmAt extends FsmRuleAt { matched: boolean }
