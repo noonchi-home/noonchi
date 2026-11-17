@@ -2562,33 +2562,36 @@ Expected: 모두 PASS(이 묶음은 집 실행 묶음을 바꾸지 않는다).
 
 ## 묶음 2: 집 상태 노드 (입력 포함)
 
-**구현 시점:** 이 단계 계획은 Codex 검토까지만 받는다. 구현은 「VLM 메인, YOLO 보조」 일(`docs/superpowers/plans/2026-11-18-vlm-objects.md`)이 domain-split에 합쳐진 뒤 다시 정한다(2026-11-18 조정자, 사용자 목표 「가로 영상 세 개가 끝까지 통과」에 Redis가 필요하지 않음).
+**구현 시점:** 2026-11-18 조정자가 지금 구현하기로 했다. 「상태 동기화는 VLM으로만」 일(`feat/vlm-objects`, `docs/superpowers/plans/2026-11-18-vlm-objects.md`)은 다른 에이전트가 만들고 나중에 합친다.
 
-**목표:** World State를 `world` 노드 하나만 바꾼다. 인식 노드(`perception`, 지금 관찰 흐름)는 World State에 넣던 것을 토픽으로 내고, 실행 추적이 직접 부르던 `world.guard`·`world.contentsAction`, 폰의 들은 말, 가전 상태도 토픽으로 간다. 읽는 쪽(판단·실행 추적·보기 담당·말풍선 카드·대시보드)은 `/world/state`·`/world/changes`를 받는 거울(`WorldMirror`)로 읽는다.
+**목표:** World State를 `world` 노드 하나만 바꾼다. 집 상태 입력의 주인은 VLM 답 토픽 `/perception/scene`이다. 실행 추적이 직접 부르던 `world.guard`·`world.contentsAction`, 폰의 들은 말, 가전 상태도 토픽으로 간다. 지금 YOLO가 World State를 바꾸는 길은 토픽으로 옮기지 않고 집 상태 노드 줄에 넣는 임시 다리로 잇는다(정한 것 13). 읽는 쪽(판단·실행 추적·보기 담당·말풍선 카드·대시보드)은 `/world/state`·`/world/changes`를 받는 거울(`WorldMirror`)로 읽는다.
 
 **사용자 결정(2026-11-18):**
 - 트윈 성능(속도)을 최우선으로 제안한다. 그래서 이 묶음은 지연 예산·늘지 않게 하는 시험·줄일 수 있는 곳을 함께 정한다.
-- 「VLM을 메인으로, YOLO는 보조로」: 물건 알아보기는 VLM이 주로 하고, YOLO는 빠른 추적·사람 자세·마스크를 맡는다(실제 판에서 VLM은 「식탁 가운데 작은 컵」을 봤는데 YOLO가 못 잡아 물건이 생기지 않았다). 이 묶음은 그 자리에 맞게 인식 토픽을 VLM 갈래·YOLO 갈래로 나눈다. 집 상태 확정 규칙(무엇으로 물건이 생기고 사라지나)은 domain-split 변경을 합친 뒤 따로 계획한다. 이 묶음은 지금 규칙을 그대로 옮긴다.
+- 「집 상태(World State) 동기화는 VLM으로만 하고, YOLO는 대시보드 미니맵 표시용으로만 쓴다」(조정자 전달). `feat/vlm-objects`가 VLM 답의 사람·물건 목록으로만 World State를 바꾸게 만든다. 그 계획에서 YOLO는 미니맵 상자, 폰 위치 맞추기 기준점, 쓰러짐 신호(`applyFall`, World State로 가는 예외 길 하나)에만 남는다. 이 묶음은:
+  - 집 상태 노드의 입력 주인은 `/perception/scene`(VLM)이다. `/perception/detections`(YOLO)는 대시보드 미니맵 상자로 가는 표시용 토픽이다.
+  - 지금 YOLO → World State 길은 큰 품을 들여 토픽으로 옮기지 않는다. 임시 다리 하나로 잇고 계획과 코드 주석 한 줄에 「VLM 전용으로 바뀔 자리」라고 적는다.
 - 「사람이 물건을 쓰는 중이면 그 사람이 사라질 때까지 관찰만」: domain-split에서 만드는 규칙이다. 통로로 옮길 때 실행 추적 노드의 공통 지킴으로 간다(묶음 3).
 
 ### 이 묶음에서 정한 것
 
-1. **인식 토픽은 두 갈래다(사용자 결정 「VLM 메인, YOLO 보조」의 자리):**
-   - `/perception/detections`(RELIABLE, 열쇠 `_`): YOLO 갈래. 지금 관찰 흐름이 `world.setEye`·`applyDetections`·`applyMissing`·`applyCloser`·`applyTop`을 부르던 자리에서 같은 차례로 낸다(갈래 `eye`·`frame`·`missing`·`closer`·`top`). 집 상태가 프레임마다 다 넣어야 하므로 토픽 표의 SENSOR를 RELIABLE로 바꾼다. 대시보드 물체 모양은 `/perception/seen`(SENSOR 가장 새 것, 녹화 없음)으로 따로 낸다.
-   - `/perception/scene`(RELIABLE, 열쇠 원본 프레임 id): VLM 갈래. 전체 사진 VLM 답(`scene`: 물건 상자·사실·요약), 가까이 본 VLM 답(`closer_scene`), VLM 답 없이 끝난 가까이 보기(`closer_end`). 다음 계획에서 VLM 물건 상자로 물건을 만드는 규칙이 이 토픽을 쓴다.
-   - 집 상태 노드는 두 토픽을 프레임 차례로 맞춘다: VLM 답은 같은 원본 프레임(가까이 보기는 같은 `look`)의 YOLO 입력을 넣은 뒤에 넣는다. 아직 안 왔으면 `ctx.defer()`로 기다리고, 2초가 지나면 지금처럼 빈 감지 번호 표로 넣는다(지금도 감지가 없던 프레임은 빈 표다).
+1. **인식 토픽:**
+   - `/perception/scene`(RELIABLE, 열쇠 `_`, 순서 기준 없음): VLM 갈래, 집 상태 입력의 주인. 갈래 다섯: 전체 사진 VLM 답(`scene`: 원본 프레임 id·촬영 시각·장면 답), VLM 분석 없음(`missing`), 가까이 본 VLM 답(`closer_scene`: `look` id), VLM 답 없이 끝난 가까이 보기(`closer_end`), 위에서 본 VLM 값(`top`: 컵 id·원본 프레임·`empty`·`has_contents`). 지금 관찰 흐름이 `applyScene`·VLM 쪽 `applyMissing`·`applyCloserScene`·`endCloser`·`applyTop`을 부르던 자리에서 같은 차례로 낸다. 순서 기준을 두지 않는 까닭: VLM 답은 약 2초 전 사진의 답이라 근거 시각으로 거르면 그사이 들어온 입력 뒤에 온 답이 버려진다. 늦은 답 판정은 지금처럼 World State 안(자리를 고친 촬영보다 새면)에서 한다.
+   - `/perception/detections`(SENSOR, 표시용): 대시보드 미니맵 물체 모양(지금 `seen` 사건: 프레임 id·촬영 시각·프레임 크기·모양). 집 상태 노드는 구독하지 않는다. 토픽 표의 QoS(depth 600, 녹화)는 바꾸지 않는다.
    - 토픽 표의 `/perception/analysis`는 쓰지 않는다(분석 기록 `logs`는 기록 노드로 옮기는 묶음 3에서 정한다).
-2. **사진은 싣지 않는다:** 프레임은 `id`·`captured_ms`·`width`·`height`·`view`·`eye`·`vlm`만(`FrameMeta`: `EngineFrame`에서 `jpeg`·`sha256`을 뺀 것), 잘라 본 장(`CloserPass`)도 JPEG 없이.
-3. **감지 번호 맞추기는 집 상태 노드가 갖는다:** 관찰 흐름의 `idsOf`(프레임 → 감지 번호 → 물건 id)와 가까이 보기 `pending`을 집 상태 노드가 갖는다.
-4. **가까이 보기의 물건 id는 답 토픽으로:** 가까이 보기 결과(`found`)는 합친 뒤의 물건 id가 필요하다. 인식 노드는 `closer`에 `look` id를 붙여 내고, 집 상태 노드는 합친 뒤 `/world/closer {look, ids}`(RELIABLE)로 답한다. 인식 노드는 `Pending`으로 `look`을 맞추고(기한 2초, 넘으면 `closerMiss("world_timeout")`) 그 표로 `found`를 채운다. VLM 호출(수 초)에 비하면 두 번 지나기는 작다.
-5. **읽기는 거울로:** `src/world/mirror.ts` `WorldMirror`가 `/world/state`(STATE)와 `/world/changes`(RELIABLE, `withState`)를 받아 `view()`(가장 새 상태)와 변화 콜백을 준다. 판단(`Decider`의 `world`는 `{ view(now) }`만 쓴다)·실행 추적·보기 담당·말풍선 카드·`/api/world`·대시보드 방송·인식 노드의 가까이 보기 대상 고르기·위에서 보기 쌍 찾기가 거울을 읽는다.
-6. **상태를 내는 때:** 입력 하나를 넣어 변화가 있으면 `rev`를 1 올리고 `/world/changes {rev, changes}`와 `/world/state {rev, view}`를 낸다. 시간이 지나야 바뀌는 칸(`closer_hold`·`person.near`·가전 남은 시간·`at_ms`)이 있으므로 250ms마다(지금 판단 타이머와 같은 간격) `world.tick`을 넣고 같은 `rev`로 `/world/state`를 다시 낸다. 거울의 `view()`는 지금보다 최대 250ms + 지나는 시간 늦다(지금도 판단·실행 추적·보기 담당은 250ms마다 본다).
+2. **사진은 싣지 않는다:** `/perception/scene`에는 JPEG가 없다. 다리로 넘기는 프레임도 `EngineFrame`에서 `jpeg`·`sha256`을 뺀 것(`FrameMeta`)이다.
+3. **감지 번호 맞추기는 집 상태 노드가 갖는다:** 관찰 흐름의 `idsOf`(프레임 → 감지 번호 → 물건 id)와 가까이 보기 `pending`(`look` id마다)을 집 상태 노드가 갖는다(30초 넘은 것은 지운다). VLM 답은 원본 프레임 id·`look` id만 싣고, 집 상태 노드가 자기 표에서 찾는다.
+4. **가까이 보기의 물건 id는 다리의 답으로:** 가까이 보기 결과(`found`)는 합친 뒤의 물건 id가 필요하다. 다리 `closer(looks, from)`가 집 상태 노드 줄에서 `applyCloser`를 돌리고 `{look, ids}`를 돌려준다(답 토픽·`Pending`을 만들지 않는다). VLM 전용으로 바뀔 자리: `feat/vlm-objects`가 `found`를 VLM 답 물건으로 채우면 이 답도 없어진다.
+5. **읽기는 거울로:** `src/world/mirror.ts` `WorldMirror`가 `/world/state`(STATE)와 `/world/changes`(RELIABLE, `withState`)를 받아 `view()`(가장 새 상태)와 변화 콜백을 준다. 판단(`Decider`의 `world`는 `{ view(now) }`만 쓴다)·실행 추적·보기 담당·말풍선 카드·`/api/world`·대시보드 방송이 거울을 읽는다. 인식 노드는 가까이 보기 대상 고르기·위에서 보기 쌍 찾기에 자기 `/world/state` 구독의 가장 새 상태를 읽는다. 이 묶음에서 집 묶음 안의 읽는 쪽은 거울 하나(이름 `act`)를 같이 쓴다. 노드마다 따로 받는 것은 그 노드를 옮기는 묶음 3·4에서 한다.
+6. **상태를 내는 때:** 입력 하나를 넣어 변화가 있으면 `rev`를 1 올리고 `/world/state {rev, view}`와 `/world/changes {rev, changes}`를 이 차례로, 앞 발행을 기다리지 않고 함께 낸다(대시보드는 한 번 지나기로 받고, 변화를 받는 쪽은 상태를 기다리며 내려놓지 않는다). 시간이 지나야 바뀌는 칸(`closer_hold`·`person.near`·가전 남은 시간·`at_ms`)이 있으므로 250ms마다(지금 판단 타이머와 같은 간격) `world.tick`을 넣고 같은 `rev`로 `/world/state`를 다시 낸다. 거울의 `view()`는 지금보다 최대 250ms + 지나는 시간 늦다(지금도 판단·실행 추적·보기 담당은 250ms마다 본다).
 7. **대시보드 방송은 `rev`가 바뀔 때만:** 거울이 `rev`가 바뀐 상태만 대시보드로 보낸다(250ms 다시 냄은 보내지 않는다). 지금과 같은 횟수다. 대시보드 트윈이 더 자주 다시 그리지 않는다.
 8. **입력 토픽:** `/world/input`(RELIABLE, act): `{kind: "guard", id, on, at_ms}`·`{kind: "contents", id, on, at_ms}`. `/phone/heard`(RELIABLE, phone): `{text, observed_ms}` → `world.heard`. `/device/changes`(RELIABLE, devices): `{id, state, note}`. 첫 상태(`note.initial`)는 변화 없이 넣는다(지금 `startLoop`의 시작 가전 상태와 같음). 가전 목록(`signals.list()`)은 집 상태 노드가 허브에서 읽는다(지금과 같음).
 9. **기록 DB는 이 묶음에서 그대로 `attachRecorder`다:** 판단·실행·계획·운영 모드 기록이 아직 집 묶음 방송으로 온다. 집 상태 변화만 기록 노드로 옮기면 한 줄이 빠지거나 두 번 남는다. 기록 노드로 바꾸는 것은 모든 기록 줄이 토픽으로 오는 묶음 3 끝에 한 번에 한다. 이 묶음에서는 거울이 받은 변화의 `world_change` 기록을 지금 `emit`으로 넘긴다(같은 줄·같은 차례, 기록 DB 같음 시험이 본다).
 10. **통로 하나:** 서버(`src/server/start.ts`)가 켜질 때 `boot`(UUID)와 `openBus(env, {boot, log, onLost})`로 통로 하나를 열고 집을 바꿔도 같은 통로를 쓴다. 집 세대 `home`은 `<집 id>#<연 횟수>`. `onLost`는 「Redis가 다시 켜져…」를 남기고 서버를 끝낸다(끝 코드 1, compose `restart`가 새 기동으로). 집을 닫을 때는 새 일을 만드는 쪽(인식) → 집 상태 → 거울 차례로 `stop()`한다.
 11. **가까이 보기·위에서 보기 요청은 묶음 3:** 보기 담당(`src/act/look.ts`)이 관찰 흐름의 `closer()`·`topLook()`·`latest()`를 부르는 것은 이 묶음에서 그대로 둔다. 묶음 3에서 실행 추적 노드와 함께 `/perception/look_request`·`/perception/look_result`로 바꾼다(이 계획 12).
 12. **RedisBus 지나기를 먼저 줄인다(Task 1, 아래 지연 예산 근거):** 이 PC에서 RedisBus 한 번 지나기가 RELIABLE p50 8.3ms·STATE p50 6.5ms로 PING 왕복(1.5ms)의 4~6배다. 이대로면 프레임 → 집 상태 발행에 두 번 지나며 약 15ms가 더해져 한도를 넘는다. 묶음 2의 노드를 잇기 전에 줄인다.
+13. **YOLO → World State 임시 다리(VLM 전용으로 바뀔 자리):** 지금 관찰 흐름이 YOLO로 World State를 바꾸는 네 곳(`setEye`, 프레임 감지 `applyDetections`, YOLO 쪽 `applyMissing`, 가까이 보기 합치기 `applyCloser`)은 토픽 대신 다리 `WorldBridge`(`eye`·`frame`·`missing`·`closer`)로 잇는다. 다리는 그 일을 집 상태 노드 줄(`post`)에 넣는다. 그래서 World State는 여전히 집 상태 노드 하나만 바꾸고, 다리 입력과 토픽 입력은 노드 줄에 들어온 차례대로 넣는다. 같은 프레임의 YOLO 다리 입력은 그 프레임을 VLM에 보내기 전에 줄에 들어가므로 VLM 답보다 늘 먼저다(맞추는 대기가 필요 없다). 다리 입력은 통로를 지나지 않아 녹화·재생에 남지 않는다. `feat/vlm-objects`를 합치면 다리는 없어지고, YOLO에서 World State로 가는 것은 쓰러짐 신호 하나다(그때 토픽으로 낸다).
+14. **들은 말은 지금처럼 판단에만, 기록에는 표시만:** `/phone/heard`로 넣은 `heard` 변화는 거울이 판단에만 넘기고 실행 추적에는 넘기지 않는다. `world_change` 기록과 대시보드에는 지금처럼 `HEARD_MARK`(`KEEP_HEARD_TEXT=1`이면 말 그대로)만 남긴다.
 
 ### 지연 예산(사용자 결정: 트윈 성능 최우선)
 
@@ -2596,11 +2599,11 @@ Expected: 모두 PASS(이 묶음은 집 실행 묶음을 바꾸지 않는다).
 
 | 구간 | 지금(통로 전) | 통로 한 번 지나기: MemoryBus / RedisBus(p50·p95) | 묶음 2 뒤 예상 p95 |
 |---|---|---|---|
-| 엔진 프레임 → 집 상태 발행(대시보드 world) | p50 7.9ms · p95 13.5ms(감지기 시간 뺌, 40장) | RELIABLE(`/world/changes` 113바이트) 0.47·0.79ms / Task 1 뒤 2.4·3.2ms(전 8.3·9.5ms). STATE(`/world/state` 18.4KB) 0.54·0.86ms / Task 1 뒤 3.3·4.1ms~3.7·4.8ms(두 판, 전 6.5·7.6ms) | MemoryBus 약 15ms(두 번 지남). RedisBus 약 21ms(13.5 + RELIABLE p95 3.2 + STATE p95 4.8) |
+| 엔진 프레임 → 집 상태 발행(대시보드 world) | p50 7.9ms · p95 13.5ms(감지기 시간 뺌, 40장) | RELIABLE(`/world/changes` 113바이트) 0.47·0.79ms / Task 1 뒤 2.4·3.2ms(전 8.3·9.5ms). STATE(`/world/state` 18.4KB) 0.54·0.86ms / Task 1 뒤 3.3·4.1ms~3.7·4.8ms(두 판, 전 6.5·7.6ms) | 프레임 → 다리 → 집 상태 노드 → `/world/state` 한 번 지남(상태를 변화보다 먼저 냄). MemoryBus 약 14.4ms(13.5 + 0.9), RedisBus 약 18.3ms(13.5 + STATE p95 4.8) |
 | 집 상태 변화 → 판단 시작(PAM 요청), event 모드 | 47·123·191·235ms(4번): 250ms 판단 타이머 기다림이 거의 전부. 기본 periodic 모드는 5초 주기라 0~5초 | 변화 한 번 지나기(위 RELIABLE) | 타이머가 그대로면 지금 + 한 번 지나기(아래 「줄일 수 있는 곳」 2) |
 | 실제 감지(YOLO26s-seg) | DirectML 약 144ms · CPU 8스레드 약 218ms(구현명세서 4절) | — | 그대로 |
 | Redis PING 왕복 | — | p50 1.57ms · p95 2.1ms | — |
-| Redis 맨 전달(통로 없이 같은 크기 값을 `XADD` → 막고 읽던 다른 연결의 `XREAD`가 깨어남) | — | `/world/changes` 크기 p50 2.4·2.5ms · p95 3.0·3.1ms. `/world/state` 크기 p50 3.1·3.3ms · p95 3.8·4.1ms | — |
+| Redis 맨 전달: 이 PC 바닥(통로 없이 같은 크기 값을 `XADD` → 막고 읽던 다른 연결의 `XREAD`가 깨어남) | — | `/world/changes` 크기 p50 2.4·2.5ms · p95 3.0·3.1ms. `/world/state` 크기 p50 3.1·3.3ms · p95 3.8·4.1ms | AWS에서 다시 잴 것: 배포한 EC2의 noonchi 컨테이너 안에서 `scripts/bus-latency.ts`(PING·맨 전달·RedisBus 한 번 지나기)를 돌려 이 표에 더한다 |
 | 봉투 만들기·읽기·검사(`/world/state` 18.4KB) | — | p50 0.27ms · p95 0.46ms | — |
 
 Task 1 뒤 RedisBus 한 번 지나기는 같은 크기 맨 전달과 p50이 같거나 0.6ms 안쪽으로 더 걸린다(통로가 왕복을 더하지 않는다). STATE p50 3ms는 이 PC에서 닿을 수 없다: 18.4KB 맨 전달의 바닥이 p50 3.1~3.3ms다(Docker Desktop 포트 전달에서 18KB 한 번 오가기가 PING보다 약 1.5ms 더 든다). AWS EC2 같은 호스트에서는 이 바닥이 훨씬 낮다.
@@ -2617,19 +2620,23 @@ Task 1 뒤 RedisBus 한 번 지나기는 같은 크기 맨 전달과 p50이 같�
 3. **인식이 World State·읽는 쪽을 기다리지 않는다(이 묶음에서 저절로 생김):** 지금 `ObservationPipeline.publish()`는 감지 대기열을 비우는 고리 안에서 `world.apply…` → `tracking.onWorld` → `decide.onChanges` → `world.view()`(18.4KB) → 대시보드 JSON까지 같이 돈다(`src/observe/pipeline.ts` `publish`). 통로 뒤에는 인식 노드가 토픽만 내고 다음 프레임 감지로 간다. 감지가 밀릴 때(실제 YOLO 144~218ms) 다음 감지 시작이 그만큼 앞당겨진다.
 4. **집 상태 보기(`view`)를 한 번만 만든다:** 지금은 판단·실행 추적·보기 담당·말풍선 카드가 250ms마다 저마다 `world.view(now)`를 부른다(초당 16번 이상, 한 번 18.4KB 객체). 통로 뒤에는 집 상태 노드가 `rev`마다·250ms마다 한 번 만들고 거울이 같은 객체를 나눠 준다.
 5. **대시보드가 밀리면 가장 새 것만:** 변화가 몰릴 때(가까이 보기 합치기 등) 중간 상태 방송을 건너뛰면 트윈 다시 그리기가 준다. 이 묶음은 지금 횟수보다 늘지 않게만 하고(정한 것 7), 건너뛰기는 대시보드 시험(`ui/tests/dashboard/steps.test.tsx`)과 함께 따로 제안한다.
+6. **집 상태를 통째로 말고 바뀐 부분만 보내기(적어만 둔다, 이 묶음에서 하지 않음):**
+   - 얻는 것: 한 번에 18.4KB 대신 바뀐 물건·사람 몇 개(수백 바이트)만 지난다. 이 PC에서 STATE 한 번 지나기가 작은 몸 바닥(p50 약 2.4ms)으로 내려가 약 1ms 준다. 봉투 만들기·읽기·검사 0.27ms도 거의 없어진다. 250ms 다시 냄(초당 4번 × 18KB)과 Redis 알림 스트림(약 1.2MB)도 준다.
+   - 잃는 것: STATE는 늦게 붙은 노드에게 통째 값을 줘야 하므로 통째 값(열쇠 값)과 바뀐 부분(알림)을 같이 둬야 한다. 받는 쪽은 `rev`가 이어질 때만 바뀐 부분을 붙이고, 하나라도 건너뛰면 통째 값을 다시 읽어야 한다. 집 상태 노드에 차이 만들기, 거울에 차이 붙이기와 그 시험이 새로 든다. `at_ms`·`closer_hold`·가전 남은 시간처럼 250ms마다 바뀌는 칸이 있어 다시 냄마다 몇 칸은 늘 나간다.
+   - 판단: 얻는 것은 이 PC에서 한 번 지나기 약 1ms이고, AWS(같은 호스트 컨테이너 사이)에서는 18KB 전달이 훨씬 짧아 거의 없다. AWS에서 다시 잰 값에서 STATE 지나기가 프레임 → 대시보드 지연의 큰 몫일 때 다시 본다.
 
 ### 파일
 
 | 파일 | 맡는 일 |
 |---|---|
 | `src/bus/redis.ts` | Task 1: 모아서 자르기, ack 파이프라인, STATE Lua 발행·알림에 값 싣기 |
-| `src/bus/topics.ts` | `/perception/detections`(RELIABLE로)·`/perception/scene`·`/perception/seen`·`/world/closer`·`/world/input`·`/world/state`·`/world/changes`·`/phone/heard`·`/device/changes`의 실제 몸 모양(zod, `src/contract/`와 같음을 타입으로 묶음) |
-| `src/contract/world.ts` | `PerceptionInput`(YOLO 갈래), `SceneInput`(VLM 갈래), `FrameMeta`, `WorldInput`, `WorldStateMsg {rev, view}`, `WorldChangesMsg {rev, changes}` |
+| `src/bus/topics.ts` | `/perception/scene`(VLM 갈래 다섯)·`/perception/detections`(미니맵 물체 모양)·`/world/input`·`/world/state`·`/world/changes`·`/phone/heard`·`/device/changes`의 실제 몸 모양(zod, `src/contract/`와 같음을 타입으로 묶음) |
+| `src/contract/world.ts` | `SceneInput`(VLM 갈래), `FrameMeta`, `WorldInput`, `WorldStateMsg {rev, view}`, `WorldChangesMsg {rev, changes}` |
 | `src/world/accept.ts` | `accepts(d)`·`closerObject(d)`를 상태 없는 함수로 뺀다(지금 `core.accepts`·`closer.closerObject`와 같은 식) |
-| `src/world/node.ts` | `startWorldNode(o)`: 입력 토픽을 프레임 차례로 넣고 `rev`·상태·변화·`/world/closer`를 낸다. 250ms `tick` |
+| `src/world/node.ts` | `startWorldNode(o)`: 입력 토픽과 YOLO 다리(`WorldBridge`, VLM 전용으로 바뀔 자리) 입력을 노드 줄에 들어온 차례로 넣고 `rev`·상태·변화를 낸다. 250ms `tick` |
 | `src/world/mirror.ts` | `WorldMirror`: `/world/state`·`/world/changes`를 받아 `view()`·변화 콜백·대시보드 방송 |
-| `src/observe/pipeline.ts` | `world` 대신 `WorldPort`(`detections(i)`·`scene(i)`·`closerIds(look)`·`view()`). `idsOf`·`publish()` 삭제 |
-| `src/observe/node.ts` | `startPerceptionNode(o)`: `WorldPort`를 통로로 잇는다 |
+| `src/observe/pipeline.ts` | `world` 대신 `WorldPort`(YOLO 다리 `eye`·`frame`·`missing`·`closer`, VLM 갈래 `scene(i)`, `view()`). `idsOf`·`publish()` 삭제, 물체 모양은 `onSeen` 그대로 |
+| `src/observe/node.ts` | `startPerceptionNode(o)`: `WorldPort`의 VLM 갈래는 `/perception/scene`으로, 다리 메서드는 집 상태 노드 다리로, `view()`는 자기 `/world/state` 구독으로. 물체 모양은 `/perception/detections`로 |
 | `src/server/start.ts` | 통로 열기(`boot`·`onLost`) |
 | `src/server/home/observe.ts`·`act.ts`·`phone.ts`·`devices.ts`·`index.ts`·`say.ts`·`core.ts` | `core.world`(WorldState) 대신 `core.mirror`, 노드 띄우기·닫기 차례, `/world/input`·`/phone/heard`·`/device/changes` 내기 |
 | `src/brain/decide.ts` | `world: WorldState` → `world: { view(now: number): WorldView }` |
@@ -2652,7 +2659,7 @@ Task 1 뒤 RedisBus 한 번 지나기는 같은 크기 맨 전달과 p50이 같�
 
 **Files:** Modify `src/contract/world.ts`, `src/bus/topics.ts`, `src/world/state/core.ts`·`closer.ts`(`accepts`·`closerObject`를 `src/world/accept.ts` 함수로), `src/world/index.ts`. Test: `tests/bus-topics.test.ts`, `tests/world-accept.test.ts`.
 
-- [ ] 실패 시험: `/perception/detections`는 갈래 다섯(`eye`·`frame`·`missing`·`closer`·`top`), `/perception/scene`은 셋(`scene`·`closer_scene`·`closer_end`)만 받고 `jpeg`·`jpeg_b64` 칸이 있으면 거절한다. `/world/state`는 `{rev, view}`, `/world/changes`는 `{rev, changes}`, `/world/input`은 `guard`·`contents`, `/world/closer`는 `{look, ids}`만 받는다. `accepts`·`closerObject` 함수가 지금 `WorldState` 메서드와 같은 답을 낸다(낱말 표 모든 종류 × 점수 경계).
+- [ ] 실패 시험: `/perception/scene`은 갈래 다섯(`scene`·`missing`·`closer_scene`·`closer_end`·`top`)만 받고 `jpeg`·`jpeg_b64` 칸이 있으면 거절한다. `/perception/detections`는 미니맵 물체 모양(`seen` 사건)만 받는다. `/world/state`는 `{rev, view}`, `/world/changes`는 `{rev, changes}`, `/world/input`은 `guard`·`contents`, `/phone/heard`는 `{text, observed_ms}`, `/device/changes`는 `{id, state, initial}`만 받는다. `accepts`·`closerObject` 함수가 지금 `WorldState` 메서드와 같은 답을 낸다(낱말 표 모든 종류 × 점수 경계).
 - [ ] 구현: 계약 타입과 zod 모양(`z.ZodType<…>` 주석으로 계약과 묶음), 상태 없는 함수로 빼고 `WorldState`는 그 함수를 부른다.
 - [ ] 통과 확인: `npm run heavy -- npx vitest run tests/bus-topics.test.ts tests/world-accept.test.ts tests/world-state.test.ts`. 커밋·push.
 
@@ -2660,16 +2667,17 @@ Task 1 뒤 RedisBus 한 번 지나기는 같은 크기 맨 전달과 p50이 같�
 
 **Files:** Create `src/world/node.ts`. Test: `tests/world-node.test.ts`.
 
-**Interfaces:** `startWorldNode(o: { bus: Bus; epoch; world: WorldState; clock?: Clock; tickMs?: number; log? }): Promise<BusNode>`(prepare까지). 받는 것: `/perception/detections`·`/perception/scene`·`/world/input`·`/phone/heard`·`/device/changes`. 내는 것: `/world/state`·`/world/changes`·`/world/closer`.
+**Interfaces:** `startWorldNode(o: { bus: Bus; epoch; world: WorldState; clock?: Clock; tickMs?: number; log? }): Promise<{ node: BusNode; bridge: WorldBridge }>`(prepare까지). 받는 것: `/perception/scene`·`/world/input`·`/phone/heard`·`/device/changes`. 다리(VLM 전용으로 바뀔 자리): `eye(eye, atMs)`·`frame(frame: FrameMeta, dets: Detection[] | null | undefined, poses?)`·`missing(frameId, capturedAtMs, m)`·`closer(looks, from): Promise<{ look: string; ids: Map<string, string> } | null>`(닫혔으면 null). 내는 것: `/world/state`·`/world/changes`.
 
 - [ ] 실패 시험(`tests/world-node.test.ts`, MemoryBus·VirtualClock):
-  - 같은 입력 차례를 `WorldState`에 바로 넣은 것과 집 상태 노드에 토픽으로 넣은 것의 변화 줄·`view`가 같다(감지 → VLM 답, 가까이 보기 합치기 → `/world/closer` 답 → 그 VLM 답, 위에서 본 값, 분석 없음).
-  - VLM 답(`/perception/scene`)이 같은 프레임의 YOLO 입력보다 먼저 와도 YOLO 입력을 넣은 뒤에 넣는다. 2초 안에 YOLO 입력이 없으면 빈 감지 번호 표로 넣는다.
-  - 변화가 있을 때만 `rev`가 오르고 상태·변화를 같은 `rev`로 낸다. 변화 없는 입력은 `rev`를 올리지 않는다. 250ms마다 같은 `rev`로 상태를 다시 낸다(가상 시계).
+  - 같은 입력 차례를 `WorldState`에 바로 넣은 것과 집 상태 노드에 다리·토픽으로 넣은 것의 변화 줄·`view`가 같다(다리 감지 → VLM 답, 다리 가까이 보기 합치기 → 돌려받은 `ids` → 그 VLM 답, 위에서 본 값, 분석 없음).
+  - 다리 입력과 토픽 입력은 노드 줄에 들어온 차례대로 넣는다(같은 프레임의 다리 감지가 그 프레임 VLM 답보다 먼저).
+  - 변화가 있을 때만 `rev`가 오르고 상태·변화를 같은 `rev`로, 상태를 먼저 낸다. 변화 없는 입력은 `rev`를 올리지 않는다. 250ms마다 같은 `rev`로 상태를 다시 낸다(가상 시계).
   - `/world/input` 지킴·따르기 창이 `world.guard`·`contentsAction`과 같다. 없는 물건이면 아무것도 하지 않는다.
-  - 가전 첫 상태(`note.initial`)는 변화를 내지 않는다.
+  - 가전 첫 상태(`initial`)는 변화를 내지 않는다.
   - 1620be1 다시 들어오기: 변화를 받는 쪽이 같은 콜백 안에서 `/world/input`을 내도 그 입력은 지금 콜백이 끝난 뒤에 넣는다.
-- [ ] 구현: 입력마다 `world`에 넣고, 변화가 있으면 `rev++` → `publish("/world/changes")` → `publish("/world/state")`. `idsOf`·가까이 보기 `pending`을 노드 안 표로(30초 넘은 것은 지운다).
+  - 노드를 끝낸 뒤 다리 입력은 버리고 `closer`는 null이다.
+- [ ] 구현: 입력마다 `world`에 넣고, 변화가 있으면 `rev++` → `/world/state`·`/world/changes`를 함께 발행. 다리는 `post`로 같은 줄에 넣는다. `idsOf`·가까이 보기 `pending`을 노드 안 표로(30초 넘은 것은 지운다). 다리 코드에 「VLM 전용으로 바뀔 자리」 주석 한 줄.
 - [ ] 통과 확인, 커밋·push.
 
 ### Task 4: 거울
@@ -2685,14 +2693,14 @@ Task 1 뒤 RedisBus 한 번 지나기는 같은 크기 맨 전달과 p50이 같�
 
 **Files:** Modify `src/observe/pipeline.ts`(`world` → `WorldPort`, `idsOf`·`publish()` 삭제), Create `src/observe/node.ts`. Test: `tests/observe-node.test.ts`, 기존 `tests/observe-*.test.ts`·가까이 보기·위에서 보기 시험(그 시험들은 `WorldState`를 바로 넘기던 것을 `WorldState`를 바로 부르는 시험 대역 `tests/helpers/world-port.ts`로 바꾼다. 대역은 같은 차례로 넣고 같은 `ids`를 돌려준다).
 
-- [ ] 실패 시험: 프레임 하나에 `/perception/detections`로 `eye` → `frame` 차례, VLM 답은 `/perception/scene`으로 내고 JPEG를 싣지 않는다. 가까이 보기는 `closer`를 내고 `/world/closer` 답으로 `found` id를 채운다. 답이 2초 안에 없으면 `world_timeout`. 감지 대기열 고리가 변화 콜백·`view()`를 부르지 않는다.
+- [ ] 실패 시험: 프레임 하나에 다리로 `eye` → `frame` 차례, VLM 답은 `/perception/scene`으로 내고 JPEG를 싣지 않는다. 가까이 보기는 다리 `closer`가 돌려준 `ids`로 `found` id를 채우고, 다리가 null이면(집 상태 노드가 닫힘) `closed`. 감지 대기열 고리가 변화 콜백·`view()`를 부르지 않는다. 물체 모양은 `/perception/detections`로 낸다.
 - [ ] 구현, 통과 확인, 커밋·push.
 
 ### Task 6: 집 묶음 잇기
 
-**Files:** Modify `src/server/start.ts`(통로), `src/server/home/core.ts`(`world` → `mirror`·노드), `observe.ts`(노드 띄우기, `startLoop`의 `observed.tick()`·가전 구독 빼기: 집 상태 노드가 맡음), `act.ts`(`guardObject`·`contentsAction` → `/world/input`, `world` → 거울), `phone.ts`(`heardSpeech` → `/phone/heard`), `devices.ts`(허브 구독 → `/device/changes`), `say.ts`·`index.ts`(`/api/world`·닫기 차례), `src/brain/decide.ts`(`world` 타입).
+**Files:** Modify `src/server/start.ts`(통로), `src/server/home/core.ts`(`world` → `mirror`·노드), `observe.ts`(노드 띄우기, `startLoop`의 `observed.tick()`·가전 구독 빼기: 집 상태 노드가 맡음, 미니맵은 `/perception/detections` 구독 → 대시보드), `act.ts`(`guardObject`·`contentsAction` → `/world/input`, `world` → 거울), `phone.ts`(`heardSpeech` → `/phone/heard`), `devices.ts`(허브 구독 → `/device/changes`), `say.ts`·`index.ts`(`/api/world`·닫기 차례), `src/brain/decide.ts`(`world` 타입).
 
-- [ ] 실패 시험: `tests/observe-start.test.ts`에 「집을 닫으면 인식 → 집 상태 → 거울 차례로 끝나고 그 뒤 변화가 대시보드로 가지 않는다」, `tests/server.test.ts`에 「통로를 잃으면(가짜 통로의 onLost) 서버가 끝 코드 1로 끝난다」.
+- [ ] 실패 시험: `tests/observe-start.test.ts`에 「집을 닫으면 인식 → 집 상태 → 거울 차례로 끝나고 그 뒤 변화가 대시보드로 가지 않는다」, `tests/server.test.ts`에 「통로를 잃으면(가짜 통로의 onLost) 서버가 끝 코드 1로 끝난다」, 들은 말은 기록에 `HEARD_MARK`만 남고 실행 추적에 가지 않는다(정한 것 14).
 - [ ] 구현: `grep -n "world\.\(guard\|contentsAction\|apply\|heard\|tick\|setEye\)" src/server src/act src/observe src/phone src/brain`이 `src/world/` 밖에서 빈다.
 - [ ] 통과 확인: 기존 `tests/world-*.test.ts`·`tests/act-track*.test.ts`·`tests/observe-*.test.ts`. 커밋·push.
 
