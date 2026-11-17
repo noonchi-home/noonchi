@@ -84,11 +84,11 @@
 
 ---
 
-### Task 1: 말 답 맞추기(말 시험 먼저)
+### Task 1: 말 답 맞추기(말 시험 먼저) · 규칙 표 한 줄
 
 **Files:**
-- Create: `tests/contents-answer.test.ts`
-- Modify: `src/act/prompts.ts`
+- Create: `tests/contents-answer.test.ts`, `tests/voice-answers.test.ts`
+- Modify: `src/act/prompts.ts`, `src/act/tasks.ts`(`matchChoice` whole), `CLAUDE.md`(규칙 표 한 줄)
 
 **Interfaces:**
 - Produces:
@@ -98,81 +98,106 @@
 /** 내용물 질문의 답 하나: 맞으면 그 값. */
 export interface ContentsChoice extends ActionChoice { value: "empty" | "has_contents" }
 export const CONTENTS_CHOICES: readonly ContentsChoice[];
-/** 폰에서 들은 말 → 내용물 답(없으면 null). */
+/** 폰에서 들은 말 → 내용물 답(없으면 null). 말 전체가 받는 답 문장일 때만. */
 export function contentsAnswer(text: string): ContentsChoice | null;
+/** 실제 폰 질문의 답 묶음 전부(말 답 시험이 본다). 새 질문 답 묶음은 여기에 더한다. */
+export const QUESTION_CHOICES: Readonly<Record<string, readonly ActionChoice[]>>;
 ```
 
 - [ ] **Step 1: 실패하는 말 시험**
 
 ```ts
 // tests/contents-answer.test.ts
-// 내용물 질문(「컵 비었어요?」)의 말 답: 폰은 소리로 묻고 사람은 말로 답한다(단추 없음). 자연스러운 말을 받고, 부정이 붙은 말을 거꾸로 읽지 않는다.
+// 내용물 질문(「컵 비었어요?」)의 말 답: 폰은 소리로 묻고 사람은 말로 답한다(단추 없음). 말 전체가 받는 답 문장일 때만 받는다
+// (앞의 응·네·어, 「아니」 뒤 남음 답, 끝의 요는 된다). 부분 일치로 「시간 없어」「비어 있지 않아」를 빈 컵으로 읽지 않는다.
 import { describe, expect, it } from "vitest";
-import { APPROVE, ASK_CHOICES, CONTENTS_CHOICES, contentsAnswer } from "../src/act/prompts.js";
-import { matchChoice } from "../src/act/tasks.js";
+import { CONTENTS_CHOICES, contentsAnswer } from "../src/act/prompts.js";
 
 const value = (t: string) => contentsAnswer(t)?.value ?? null;
 
 describe("내용물 질문의 말 답", () => {
   it.each([
-    ["비었어", "empty"], ["비었어요", "empty"], ["다 마셨어", "empty"], ["다 마셨어요.", "empty"], ["없어", "empty"], ["물 없어요", "empty"],
-    ["텅 비었어", "empty"], ["비어 있어", "empty"], ["하나도 없어", "empty"], ["안 남았어", "empty"], ["다 먹었어", "empty"],
-    ["응", "empty"], ["네", "empty"], ["네 비었어요", "empty"], ["아니 비었어", "empty"],
-  ])("「%s」는 비어 있음", (t, v) => expect(value(t)).toBe(v));
+    "비었어", "비었어요", "다 마셨어", "다 마셨어요.", "없어", "물 없어요", "텅 비었어", "비어 있어", "하나도 없어", "안 남았어", "다 먹었어",
+    "응", "네", "네 비었어요", "어 다 마셨어",
+  ])("「%s」는 비어 있음", (t) => expect(value(t)).toBe("empty"));
 
   it.each([
-    ["남았어", "has_contents"], ["아직 있어", "has_contents"], ["조금 있어", "has_contents"], ["좀 남았어요", "has_contents"], ["있어", "has_contents"],
-    ["반쯤 남았어", "has_contents"], ["안 비었어", "has_contents"], ["아직 안 마셨어", "has_contents"], ["덜 마셨어", "has_contents"],
-    ["아니", "has_contents"], ["아니요", "has_contents"], ["아니 남았어", "has_contents"], ["안 비어 있어", "has_contents"],
-  ])("「%s」는 내용물 있음", (t, v) => expect(value(t)).toBe(v));
+    "남았어", "아직 있어", "조금 있어", "좀 남았어요", "있어", "반쯤 남았어", "안 비었어", "아직 안 마셨어", "덜 마셨어",
+    "아니", "아니요", "아니 남았어", "아뇨 아직 있어요", "안 비어 있어",
+  ])("「%s」는 내용물 있음", (t) => expect(value(t)).toBe("has_contents"));
 
-  it.each([["", null], ["TV 켜 줘", null], ["라면 먹을래", null], ["응 그래서 내일", null], ["완료", null], ["마셨어", null]])("「%s」는 답이 아니다", (t, v) => expect(value(t)).toBe(v));
+  it.each([
+    "", "TV 켜 줘", "라면 먹을래", "응 그래서 내일", "완료", "마셨어", "시간 없어", "비어 있지 않아", "다 마셨어? 아니", "아니 비었어",
+    "물 마실래", "컵 어디 있어", "있어 봐", "없어진 줄 알았어", "그만해",
+  ])("「%s」는 답이 아니다", (t) => expect(value(t)).toBeNull());
 
-  it("말 전체가 답인 짧은 답(whole)은 앞말로 지우는 「응」「네」만 말해도 맞는다(지금 yes_no 질문 답도 같다)", () => {
-    expect(matchChoice("네", ASK_CHOICES.yes_no)?.id).toBe("yes");
-    expect(matchChoice("응", ASK_CHOICES.yes_no)?.id).toBe("yes");
-    expect(matchChoice("응", APPROVE)).toBeNull(); // 응·네만으로는 승인이 아니다(승인 말에 없음)
-    expect(matchChoice("응 승인", APPROVE)?.id).toBe("approve");
-  });
-
-  it("답마다 읽어 줄 글이 있고, 단추로 보이지 않는다(글은 서버 글 규칙: 60자 아래, 괄호·화살표 없음)", () => {
+  it("답마다 읽어 줄 글이 있고(서버 글 규칙: 60자 아래, 괄호·화살표 없음) 답 id가 겹치지 않는다", () => {
     for (const c of CONTENTS_CHOICES) {
       expect(c.reply).toBe("알겠어요");
       expect(c.label.length).toBeLessThan(60);
       expect(c.label).not.toMatch(/[()→]/);
+      expect(c.whole).toBe(true);
     }
     expect(new Set(CONTENTS_CHOICES.map((c) => c.id)).size).toBe(CONTENTS_CHOICES.length);
   });
 });
 ```
 
+```ts
+// tests/voice-answers.test.ts
+// 실제 폰 질문은 말로 답할 수 있다(단추는 보조). 질문 답 묶음(src/act/prompts.ts QUESTION_CHOICES)마다 답 하나하나를 그 글자(label)로 말하면
+// 그 답으로 맞아야 한다(src/act/tasks.ts matchChoice, 실행 추적 onHeard와 같은 길). 2026-11-17 이전 matchChoice는 「네」 한 마디를 앞말로 지워
+// yes_no 질문에 말로 답할 수 없었다: 그 실수에서 이 시험이 실패한다.
+import { describe, expect, it } from "vitest";
+import { ASK_CHOICES, QUESTION_CHOICES } from "../src/act/prompts.js";
+import { matchChoice } from "../src/act/tasks.js";
+
+describe("실제 폰 질문은 말로 답할 수 있다", () => {
+  it.each(Object.entries(QUESTION_CHOICES))("%s: 답마다 그 글자로 말하면 그 답이다", (_, choices) => {
+    for (const c of choices) expect(matchChoice(c.label, choices)?.id, c.label).toBe(c.id);
+  });
+  it("묶음에는 지금 쓰는 질문 답이 다 있다(물어보기 답 묶음·승인·다시 묻기·내용물)", () => {
+    expect(Object.keys(QUESTION_CHOICES).sort()).toEqual(["again", "approve", "clear_keep", "contents", "yes_no"]);
+    expect(QUESTION_CHOICES.yes_no).toBe(ASK_CHOICES.yes_no);
+  });
+  it("「응」「네」만으로는 승인이 아니다(승인 말에 없음)", () => {
+    expect(matchChoice("응", QUESTION_CHOICES.approve!)).toBeNull();
+    expect(matchChoice("응 승인", QUESTION_CHOICES.approve!)?.id).toBe("approve");
+  });
+});
+```
+
 - [ ] **Step 2: 시험을 돌려 실패를 본다**
 
-Run: `npm run heavy -- npx vitest run tests/contents-answer.test.ts`
-Expected: FAIL (`CONTENTS_CHOICES`·`contentsAnswer`가 없음)
+Run: `npm run heavy -- npx vitest run tests/contents-answer.test.ts tests/voice-answers.test.ts`
+Expected: FAIL (`CONTENTS_CHOICES`·`contentsAnswer`·`QUESTION_CHOICES`가 없음). 묶음을 더한 뒤에도 `yes_no`의 「네」가 실패하는지 본다(지금 실수를 잡는지).
 
 - [ ] **Step 3: 구현**
 
 ```ts
-// src/act/prompts.ts 끝에 더한다. matchChoice(src/act/tasks.ts)는 글에서 띄어쓰기·문장부호를 빼고 앞의 답부터 맞추므로 차례가 뜻이다:
-// 부정이 붙은 말(「안 비었어」·「안 남았어」·「비어 있어」)을 먼저 보고, 그다음 남음·빔, 마지막으로 말 전체가 네·아니인 짧은 답.
-import { matchChoice } from "./tasks.js"; // 이미 tasks.ts가 prompts.ts를 타입으로 가져오므로 값 import 고리가 생기면 contentsAnswer를 tasks.ts로 옮긴다
+// src/act/prompts.ts 끝에 더한다
+import { matchChoice } from "./tasks.js"; // tasks.ts는 prompts.ts를 타입으로만 가져와 고리가 아니다. lint-domains가 고리를 말하면 contentsAnswer를 tasks.ts로 옮긴다
 
 /** 내용물 질문의 답 하나: 맞으면 그 값. */
 export interface ContentsChoice extends ActionChoice { value: "empty" | "has_contents" }
 const OK = "알겠어요";
-/** 내용물 질문(「컵 비었어요?」)의 말 답. 단추는 없다(폰은 말로만 묻고 말로만 받는다). 앞의 것부터 맞춘다. */
+/** 받는 빈 컵 답 문장(띄어쓰기 없이). 말 전체가 이 문장이어야 한다(앞의 응·네·어, 끝의 요는 된다). */
+const EMPTY_SAID = ["비었어", "비어있어", "다비었어", "텅비었어", "다마셨어", "다먹었어", "없어", "물없어", "하나도없어", "안남았어", "남은거없어", "남은게없어", "컵비었어"];
+/** 받는 남음 답 문장. 앞에 「아니」「아뇨」가 붙어도 된다. */
+const HAS_SAID = ["남았어", "남아있어", "아직있어", "조금있어", "좀있어", "있어", "물있어", "반쯤남았어", "조금남았어", "좀남았어", "아직남았어", "많이남았어", "안비었어", "안비어있어", "아직안마셨어", "덜마셨어"];
+/** 내용물 질문(「컵 비었어요?」)의 말 답. 단추는 없다(폰은 말로만 묻고 말로만 받는다). 모두 말 전체가 답일 때만(whole) 맞는다. */
 export const CONTENTS_CHOICES: readonly ContentsChoice[] = [
-  { id: "has_not_empty", value: "has_contents", label: "안 비었어요", words: ["안비었", "안비어", "안마셨", "덜마셨"], reply: OK },
-  { id: "empty_not_left", value: "empty", label: "안 남았어요", words: ["안남았", "안남아", "하나도없", "남은게없", "남은거없", "비어있"], reply: OK },
-  { id: "has", value: "has_contents", label: "남았어요", words: ["남았", "남아", "아직있", "조금있", "좀있", "많이있", "반쯤", "있어"], reply: OK },
-  { id: "empty", value: "empty", label: "비었어요", words: ["비었", "비어", "다마셨", "다먹었", "없어", "텅"], reply: OK },
+  { id: "empty", value: "empty", label: "비었어요", words: EMPTY_SAID, reply: OK, whole: true },
+  { id: "has", value: "has_contents", label: "남았어요", words: [...HAS_SAID, ...HAS_SAID.map((w) => `아니${w}`), ...HAS_SAID.map((w) => `아뇨${w}`)], reply: OK, whole: true },
   { id: "yes", value: "empty", label: "네", words: ["네", "응", "예", "맞아"], reply: OK, whole: true },
   { id: "no", value: "has_contents", label: "아니요", words: ["아니", "아니요", "아뇨"], reply: OK, whole: true },
 ];
 
 /** 폰에서 들은 말 → 내용물 답(없으면 null). */
 export const contentsAnswer = (text: string): ContentsChoice | null => matchChoice(text, CONTENTS_CHOICES) as ContentsChoice | null;
+
+/** 실제 폰 질문의 답 묶음 전부: 물어보기 답 묶음(ASK_CHOICES), 승인, 시간 초과 다시 묻기, 내용물. tests/voice-answers.test.ts가 답마다 말로 맞는지 본다. */
+export const QUESTION_CHOICES: Readonly<Record<string, readonly ActionChoice[]>> = { ...ASK_CHOICES, approve: APPROVE, again: AGAIN, contents: CONTENTS_CHOICES };
 ```
 
 `src/act/tasks.ts matchChoice`의 whole 맞추기는 앞말(`LEAD`: 응·어·네·예·자·이제)을 지운 글만 봐서 「네」「응」 한 마디가 빈 글이 되어 맞지 않는다(지금 `ASK_CHOICES.yes_no`도 같다). 앞말을 지우기 전 글도 본다:
@@ -181,18 +206,22 @@ export const contentsAnswer = (text: string): ContentsChoice | null => matchChoi
 const hit = (c: ActionChoice, w: string) => (c.whole ? TAIL.some((t) => core === squash(w) + t || said === squash(w) + t) : said.includes(squash(w)));
 ```
 
-`src/act/tasks.ts`는 `prompts.ts`에서 타입(`ActionChoice`)만 가져온다(`import type`). 그래서 `prompts.ts`가 `tasks.ts`의 `matchChoice`를 값으로 가져와도 고리가 아니다. `npm run lint`(lint-domains)가 고리를 말하면 `contentsAnswer`를 `tasks.ts`로 옮기고 시험 import도 고친다.
+저장소 `CLAUDE.md` 규칙 표에 한 줄 더한다(사용자가 「단추로 누르게 하지 말고 말로」를 두 번 바로잡음):
+
+```markdown
+| 실제 폰 질문은 말로 답할 수 있다(단추는 보조). 새 질문은 지금 명령 줄로 보내고 그 답 말을 실행 추적 `choicesOf`에 둬 `onHeard`가 받는다. 답 묶음은 `src/act/prompts.ts` `QUESTION_CHOICES`에 더한다. | `tests/voice-answers.test.ts`(묶음마다 답 하나하나를 그 글자로 말하면 그 답인지, 지금 질문 답 묶음이 다 있는지. 2026-11-17 전 「네」를 앞말로 지워 말로 답할 수 없던 실수에서 실패)·`tests/contents-answer.test.ts`(내용물 질문 말 답과 부정문·상관없는 말). 묶음에 넣지 않은 새 질문은 못 잡는다(질문을 만들 때 `QUESTION_CHOICES`에 넣는다). |
+```
 
 - [ ] **Step 4: 시험 통과·lint**
 
-Run: `npm run heavy -- npx vitest run tests/contents-answer.test.ts tests/act-tasks.test.ts`, `npm run heavy -- npm run lint`
-Expected: PASS. 틀린 말이 있으면 단어 차례만 고친다(시험 표는 고치지 않는다).
+Run: `npm run heavy -- npx vitest run tests/contents-answer.test.ts tests/voice-answers.test.ts tests/act-tasks.test.ts tests/act-track.test.ts`, `npm run heavy -- npm run lint`
+Expected: PASS. 틀린 말이 있으면 받는 문장 목록만 고친다(시험 표는 고치지 않는다).
 
 - [ ] **Step 5: 커밋·푸시**
 
 ```bash
-git add tests/contents-answer.test.ts src/act/prompts.ts src/act/tasks.ts
-git commit -m "feat(act): match spoken answers to the cup contents question"
+git add tests/contents-answer.test.ts tests/voice-answers.test.ts src/act/prompts.ts src/act/tasks.ts CLAUDE.md
+git commit -m "feat(act): match whole spoken answers to the cup contents question and check every phone question by voice"
 git push origin refactor/domain-split
 ```
 
@@ -360,6 +389,17 @@ describe("내용물 확인", () => {
     expect(s.cupNow().facts.contents).toMatchObject({ value: "has_contents", certainty: "confirmed" });
   });
 
+  it("확인을 받치던 사진이 같은 원본 프레임의 잘라 본 답으로 반대가 되면 바뀐 근거로 다시 센다: 다 이어진 묶음이 없으면 확인을 거둔다(세대 +1)", () => {
+    const s = scene();
+    for (const i of [1, 3, 5]) s.say(i, "empty");
+    expect(s.cupNow()).toMatchObject({ contents_gen: 1, facts: { contents: { value: "empty", certainty: "confirmed" } } });
+    s.crop(3, "has_contents");
+    expect(s.cupNow()).toMatchObject({ contents_gen: 2, facts: { contents: { value: "empty", certainty: "inferred" } } });
+    // 받치는 사진이 다시 다 이어지면 확인
+    s.say(6, "empty"); s.say(9, "empty");
+    expect(s.cupNow().facts.contents).toMatchObject({ value: "empty", certainty: "confirmed" });
+  });
+
   it("이웃 사진 사이가 6초 넘으면 처음부터 센다", () => {
     const s = scene();
     s.say(1, "empty"); s.say(2, "empty"); s.say(9, "empty"); s.say(10, "empty");
@@ -475,7 +515,8 @@ export type Sure = "empty" | "has_contents";
 type Value = StateOf<"contents">;
 interface Photo { frame: string; at: number; value: Value; crop: boolean }
 export interface ContentsState {
-  sure: { value: Sure; by: "vlm" | "person"; sinceMs: number; atMs: number } | null;
+  /** 확인 값. frames: 그 값을 확인한 사진들의 원본 프레임(사람 답이면 빈 목록). */
+  sure: { value: Sure; by: "vlm" | "person"; sinceMs: number; atMs: number; frames: string[] } | null;
   photos: Photo[];
   /** 이보다 앞서 찍힌 사진은 받지 않는다(다시 연 때·사람 답 때). */
   from: number;
@@ -486,21 +527,21 @@ export interface ContentsState {
 const SURE: ReadonlySet<string> = new Set<Sure>(["empty", "has_contents"]);
 const isSure = (v: string): v is Sure => SURE.has(v);
 
-/** 최신 사진부터 같은 확인 가능 값이 이어진 묶음(이웃 gapMs 안). 없으면 null. */
-function streakOf(photos: readonly Photo[]): { value: Sure; count: number; first: number; last: number } | null {
-  const sure = photos.filter((p) => isSure(p.value));
-  const newest = sure.at(-1);
-  if (!newest) return null;
-  let first = newest.at, count = 1;
-  for (let i = sure.length - 2; i >= 0; i--) {
-    const p = sure[i]!;
-    if (p.value !== newest.value || first - p.at > CONTENTS_CONFIRM.gapMs) break;
-    first = p.at;
-    count++;
+interface Streak { value: Sure; count: number; first: number; last: number; frames: string[] }
+/** 확인 가능 값 사진(촬영 순)을 같은 값이 이웃 gapMs 안으로 이어진 묶음들로 나눈다. */
+function streaks(photos: readonly Photo[]): Streak[] {
+  const out: Streak[] = [];
+  for (const p of photos) {
+    if (!isSure(p.value)) continue;
+    const cur = out.at(-1);
+    if (cur && cur.value === p.value && p.at - cur.last <= CONTENTS_CONFIRM.gapMs) Object.assign(cur, { count: cur.count + 1, last: p.at, frames: [...cur.frames, p.frame] });
+    else out.push({ value: p.value, count: 1, first: p.at, last: p.at, frames: [p.frame] });
   }
-  return { value: newest.value as Sure, count, first, last: newest.at };
+  return out;
 }
-const complete = (s: ReturnType<typeof streakOf>) => !!s && s.count >= CONTENTS_CONFIRM.photos && s.last - s.first >= CONTENTS_CONFIRM.spanMs;
+/** 최신 사진의 묶음. 없으면 null. */
+const streakOf = (photos: readonly Photo[]): Streak | null => streaks(photos).at(-1) ?? null;
+const complete = (s: Streak | null) => !!s && s.count >= CONTENTS_CONFIRM.photos && s.last - s.first >= CONTENTS_CONFIRM.spanMs;
 
 export class ContentsBook extends Part {
   private state(obj: Obj): ContentsState {
@@ -520,22 +561,29 @@ export class ContentsBook extends Part {
     const s = this.state(obj);
     if (s.sure?.by === "person" || atMs < s.from || this.opaque(obj)) return { changes: [], changed: false };
     const same = s.photos.findIndex((p) => p.frame === frameId);
-    if (same >= 0) {
-      if (s.photos[same]!.crop && !crop) return { changes: [], changed: false };
+    const replaced = same >= 0 ? s.photos[same]! : null;
+    if (replaced) {
+      if (replaced.crop && !crop) return { changes: [], changed: false };
       s.photos.splice(same, 1);
     }
     s.photos.push({ frame: frameId, at: atMs, value, crop });
     s.photos.sort((a, b) => a.at - b.at);
     if (s.photos.length > CONTENTS_CONFIRM.keep) s.photos.splice(0, s.photos.length - CONTENTS_CONFIRM.keep);
+    // 확인 값을 받치던 사진이 다른 값으로 바뀌었다(같은 원본 프레임의 잘라 본 답): 바뀐 근거로 다시 셈해 다 이어진 묶음이 없으면 확인을 거둔다
+    if (s.sure?.by === "vlm" && replaced && replaced.value !== value && s.sure.frames.includes(frameId)
+      && !streaks(s.photos).some((x) => x.value === s.sure!.value && complete(x))) {
+      s.sure = null;
+      s.gen++;
+    }
     const changes: WorldChange[] = [];
     const run = streakOf(s.photos);
     if (run && complete(run)) {
       if (!s.sure || (s.sure.value !== run.value && s.window)) {
         this.keepPast(s);
-        s.sure = { value: run.value, by: "vlm", sinceMs: run.first, atMs: run.last };
+        s.sure = { value: run.value, by: "vlm", sinceMs: run.first, atMs: run.last, frames: run.frames };
         s.gen++;
         changes.push({ kind: "state", at_ms: atMs, subject: obj.id, meaningful: true, text: CHANGE_TEXT.state(this.core.name(obj), run.value) });
-      } else if (s.sure.value === run.value) s.sure.atMs = Math.max(s.sure.atMs, run.last);
+      } else if (s.sure.value === run.value) Object.assign(s.sure, { atMs: Math.max(s.sure.atMs, run.last), frames: [...new Set([...s.sure.frames, ...run.frames])] });
     }
     return { changes, changed: this.settle(obj) };
   }
@@ -544,13 +592,15 @@ export class ContentsBook extends Part {
     const s = this.state(obj);
     if (s.gen !== gen) return null;
     this.keepPast(s);
-    Object.assign(s, { sure: { value, by: "person", sinceMs: atMs, atMs }, photos: [], from: atMs, gen: s.gen + 1 });
+    Object.assign(s, { sure: { value, by: "person", sinceMs: atMs, atMs, frames: [] }, photos: [], from: atMs, gen: s.gen + 1 });
     this.settle(obj);
     return [{ kind: "state", at_ms: atMs, subject: obj.id, meaningful: true, text: CHANGE_TEXT.contentsAnswered(this.core.name(obj), value) }];
   }
 
   reopen(obj: Obj, atMs: number, why: "drink" | "pour" | "step"): WorldChange[] {
     const s = this.state(obj);
+    // 사람 답·앞서 연 때보다 먼저(같은 때 포함) 찍힌 사건(대기열에서 늦게 나온 관절 결과)은 버린다
+    if (atMs <= s.from) return [];
     const had = s.sure;
     this.keepPast(s);
     Object.assign(s, { sure: null, from: Math.max(s.from, atMs), gen: s.gen + 1 });
@@ -739,6 +789,14 @@ describe("마시기·따르기 사건", () => {
     s.say(12, "empty");
     expect(s.cupNow().facts.contents).toMatchObject({ value: "empty", certainty: "confirmed" });
   });
+  it("사람 답보다 먼저 찍힌 관절 사건(감지 대기열에서 늦게 나온 프레임)은 사람 답을 지우지 않고 세대도 올리지 않는다", () => {
+    const s = scene();
+    s.w.answerContents("cup_1", "empty", 6000, 0);
+    const gen = s.cupNow().contents_gen;
+    s.w.applyDetections(frame(5), [det("person", 0.9, [80, 60, 200, 300], 0), cup], [standing({ 9: [230, 170, 0.9], 0: [240, 150, 0.9] })]);
+    expect(s.cupNow()).toMatchObject({ contents_gen: gen, facts: { contents: { value: "empty", certainty: "confirmed", by: "person" } } });
+  });
+
   it("사람이 답한 값도 사건이 다시 연다", () => {
     const s = scene();
     s.w.answerContents("cup_1", "has_contents", 4000, 0);
@@ -1328,7 +1386,7 @@ git push origin refactor/domain-split
 ```ts
 // src/act/ask-step.ts
 /** 내용물 질문 명령의 단계 id: 계획·컵·내용물 세대에 묶는다. */
-export const contentsStep: (planId: string, objectId: string, gen: number) => string; // `${planId}:contents:${objectId}:${gen}`
+export const contentsStep: (planId: string, objectId: string, gen: number, seq: number) => string; // `${planId}:contents:${objectId}:${gen}:${seq}`, seq는 물을 때마다 새 번호
 export const isContentsStep: (step: string) => boolean;
 // src/act/track/approval.ts
 export type Asking = { why: "plan" } | { why: "device"; token: string } | { why: "again" } | { why: "hand" } | { why: "contents"; objectId: string; gen: number };
@@ -1337,6 +1395,8 @@ export type Asking = { why: "plan" } | { why: "device"; token: string } | { why:
 answerContents?: (objectId: string, value: "empty" | "has_contents", gen: number) => boolean;
 /** 실제 폰에 승인 대기(가전·외부 연락)가 떠 있는가. 있으면 내용물 질문을 미룬다. */
 approvalsWaiting?: () => boolean;
+/** 실제 폰 대화를 쓰는 중인가(에이전트가 들은 말을 처리하는 중이거나 끝난 지 TALK_QUIET_MS 안). 그동안 내용물 질문을 하지 않고, 계획 밖 질문은 지운다. */
+talking?: () => boolean;
 // src/act/labels.ts
 export const CONTENTS_TEXT: { ask: (item: string) => string }; // 「컵 비었어요?」
 // EXEC_TEXT.contentsAsked: "안을 몰라 폰으로 물어봄"
@@ -1348,12 +1408,12 @@ export const CONTENTS_TEXT: { ask: (item: string) => string }; // 「컵 비었�
 
 ```ts
 it("내용물 질문(단추 없음)은 question이다(계획 안 질문·계획 밖 질문 모두)", () => {
-  expect(talkGrade({ step: "plan:pam-1:contents:cup_1:3", choices: [] }, false)).toBe("question");
-  expect(talkGrade({ step: "ask:1:contents:cup_1:0", choices: [] }, false)).toBe("question");
+  expect(talkGrade({ step: "plan:pam-1:contents:cup_1:3:1", choices: [] }, false)).toBe("question");
+  expect(talkGrade({ step: "ask:2:contents:cup_1:0:2", choices: [] }, false)).toBe("question");
 });
 ```
 
-`tests/act-say.test.ts`: 내용물 질문 명령(`step: "plan:pam-1:contents:cup_1:3"`, 열린 계획)과 계획 밖 질문 명령(`id: "ask:1", step: "ask:1:contents:cup_1:0"`, 계획 없음)이 떠 있으면 `sayLine`이 둘 다 `SAY_TEXT.asked`.
+`tests/act-say.test.ts`: 내용물 질문 명령(`step: "plan:pam-1:contents:cup_1:3:1"`, 열린 계획)과 계획 밖 질문 명령(`id: "ask:2", step: "ask:2:contents:cup_1:0:2"`, 계획 없음)이 떠 있으면 `sayLine`이 둘 다 `SAY_TEXT.asked`.
 
 `tests/act-track.test.ts`의 Task 7 describe에 더한다(`holdSetup` 그대로, `answerContents`를 넘겨 World를 바꾼다):
 
@@ -1376,7 +1436,7 @@ describe("실행 추적: 내용물 말 질문", () => {
 
   it("가까이 봐도 모르면 지금 명령 줄에 「컵 비었어요?」를 단추 없이 소리로 묻는다(등급 question, 그 컵 고리)", async () => {
     const s = await asking();
-    expect(s.last()).toEqual({ type: "command", id: "plan:pam-1", step: "plan:pam-1:contents:cup_1:3", text: "컵 비었어요?", vision: null, choices: [], target: expect.objectContaining({ id: "cup_1" }), speak: true, grade: "question" });
+    expect(s.last()).toEqual({ type: "command", id: "plan:pam-1", step: "plan:pam-1:contents:cup_1:3:1", text: "컵 비었어요?", vision: null, choices: [], target: expect.objectContaining({ id: "cup_1" }), speak: true, grade: "question" });
     expect(s.t.openCommand()).toMatchObject({ kind: "ask", text: "컵 비었어요?" });
     expect(s.exec().at(-1)).toMatchObject({ state: "planned", text: EXEC_TEXT.contentsAsked });
   });
@@ -1429,6 +1489,8 @@ describe("실행 추적: 내용물 말 질문", () => {
     expect(noEye.commands()).toEqual([]);
     const pending = await asking({ approvalsWaiting: () => true });
     expect(pending.commands()).toEqual([]);
+    const talk = await asking({ talking: () => true }); // 에이전트가 「아 덥다」를 처리하는 중
+    expect(talk.commands()).toEqual([]);
   });
 
   it("「그만」이면 질문을 지우고 취소로 닫는다", async () => {
@@ -1452,8 +1514,8 @@ Expected: FAIL
 // src/act/ask-step.ts
 // 내용물 질문 명령의 단계 id(src/act/track/contents.ts ask). 명령 id는 그 계획 id다. 컵 id와 내용물 세대를 실어 늦은 답(다른 컵·지난 세대)을 가른다.
 // 소리 등급(src/act/talk-grade.ts)과 말풍선 카드(src/act/say.ts)가 이 모양으로 내용물 질문을 가른다.
-export const contentsStep = (planId: string, objectId: string, gen: number): string => `${planId}:contents:${objectId}:${gen}`;
-export const isContentsStep = (step: string): boolean => /:contents:[^:]+:\d+$/.test(step);
+export const contentsStep = (planId: string, objectId: string, gen: number, seq: number): string => `${planId}:contents:${objectId}:${gen}:${seq}`;
+export const isContentsStep = (step: string): boolean => /:contents:[^:]+:\d+:\d+$/.test(step);
 ```
 
 ```ts
@@ -1480,6 +1542,13 @@ contentsAsked: "안을 몰라 폰으로 물어봄",
 // src/act/track/contents.ts ContentsHold에 더한다
 private readonly asked = new Set<string>();
 private readonly quietUntil = new Map<string, number>();
+/** 물을 때마다 오르는 번호(계획 안 질문·계획 밖 질문이 같이 쓴다): 단계 id에 실어 앞 질문의 늦은 답을 가른다. */
+private askSeq = 0;
+
+/** 폰 대화를 쓰는 중인가: 에이전트가 들은 말을 처리하는 중이거나 끝난 지 얼마 안 됨(src/server/home/phone.ts가 센다). */
+private talking(): boolean {
+  return this.o.talking?.() ?? false;
+}
 
 /** keep의 ask 차례: 물을 수 있으면 지금 명령 줄에 묻는다. 물을 수 없으면 그대로 기다린다(holdMs가 지나면 keep이 그만둔다). */
 private ask(r: Run, h: Hold): void {
@@ -1489,13 +1558,13 @@ private ask(r: Run, h: Hold): void {
   const key = `${h.objectId}|${h.gen}`;
   const core = this.core;
   const can = !!o && o.status === "present" && !!core.eye && core.start.phoneOk() && !core.safety.offPending() && !core.safety.shownOff()
-    && !(this.o.approvalsWaiting?.() ?? false) && !r.asking && !r.sent && !this.asked.has(key) && now >= (this.quietUntil.get(h.objectId) ?? 0)
+    && !(this.o.approvalsWaiting?.() ?? false) && !this.talking() && !r.asking && !r.sent && !this.asked.has(key) && now >= (this.quietUntil.get(h.objectId) ?? 0)
     && o.facts.place?.value !== "in_hand" && !holdsTarget(world, o.cls, true);
   if (!can) return;
   const name = OBJECT_NAME[o!.cls] ?? o!.cls;
   Object.assign(r, { asking: { why: "contents", objectId: h.objectId, gen: h.gen }, askAt: now, spokeAt: now });
   r.sent = {
-    type: "command", id: r.plan.view.id, step: contentsStep(r.plan.view.id, h.objectId, h.gen), text: CONTENTS_TEXT.ask(name), vision: null, choices: [],
+    type: "command", id: r.plan.view.id, step: contentsStep(r.plan.view.id, h.objectId, h.gen, ++this.askSeq), text: CONTENTS_TEXT.ask(name), vision: null, choices: [],
     target: o!.position ? { id: o!.id, label: name, position: o!.position } : null, speak: true,
   };
   core.emit(r.plan.view.id, "planned", EXEC_TEXT.contentsAsked);
@@ -1569,7 +1638,7 @@ git push origin refactor/domain-split
 ### Task 9: 따르기 창 · 서버 잇기 · 데모 흐름
 
 **Files:**
-- Modify: `src/act/track/steps.ts`(따르기 단계 창), `src/act/track/core.ts`(`Run.window`), `src/act/track/tracker.ts`(`TrackerOptions.contentsAction`), `src/observe/pipeline.ts`(`publish` 공개), `src/server/home/act.ts`(잇기)
+- Modify: `src/act/track/steps.ts`(따르기 단계 창, 따라가는 id가 바뀌면 창도 옮김), `src/act/track/core.ts`(`Run.window`), `src/act/track/tracker.ts`(`TrackerOptions.contentsAction`), `src/observe/pipeline.ts`(`publish` 공개), `src/server/home/act.ts`(잇기), `src/server/home/core.ts`·`src/server/home/phone.ts`(폰 대화 사용 중 세기)
 - Test: `tests/act-track.test.ts`(창, 실제 World State로 질문→답→계획), `tests/cup-branches-e2e.test.ts`·`tests/demo-e2e.test.ts`·`tests/noonchi-e2e.test.ts`·`tests/coach-e2e.test.ts`(그대로 통과)
 
 **Interfaces:**
@@ -1601,6 +1670,22 @@ it("따르기 단계(끝 조건이 그 컵 내용물)가 되면 그 컵의 창�
   expect(calls).toEqual([["cup_1", true]]);
   s.t.onAnswer("plan:pam-1", "plan:pam-1:4", "done");
   expect(calls).toEqual([["cup_1", true], ["cup_1", false]]);
+});
+
+it("따르기 단계 도중 컵이 새 id로 이어지면 창도 새 컵으로 옮긴다(앞 컵 닫고 새 컵 엶)", async () => {
+  const calls: [string, boolean][] = [];
+  let w = world([tableCup(["empty", 9_000])]);
+  const s = fillSetup({ w: () => w, contentsAction: (id, on) => calls.push([id, on]) });
+  await s.decide(water);
+  s.t.onAnswer("plan:pam-1", "plan:pam-1:1", "done");
+  w = world([tableCup(["empty", 9_000]), bottle("in_hand", s.clock.t)], "holding_object", s.clock.t);
+  s.t.onWorld();
+  s.t.onAnswer("plan:pam-1", "plan:pam-1:3", "done");
+  s.clock.t += 1_000;
+  // 옛 컵은 사라지고 그 뒤 같은 종류 새 컵(cup_2)이 보인다: 실행 추적이 그 컵으로 잇는다
+  w = world([{ ...tableCup(["empty", 9_000]), status: "gone" }, { ...tableCup(["empty", s.clock.t], s.clock.t), id: "cup_2", first_seen_ms: s.clock.t }]);
+  s.t.onWorld();
+  expect(calls).toEqual([["cup_1", true], ["cup_1", false], ["cup_2", true]]);
 });
 ```
 
@@ -1636,8 +1721,13 @@ Expected: FAIL
 - [ ] **Step 3: 구현**
 
 ```ts
-// src/act/track/steps.ts activate: Object.assign 뒤, 단계 종류 갈래 앞
-this.window(r, step.kind === "do" && step.until && factFacets(step.until).includes("contents") ? step.target : null);
+// src/act/track/steps.ts
+/** 창을 열 물건: 그 자리에서 하는 일 단계이고 끝 조건이 그 물건 내용물을 보면 그 대상(계획 물건 id). 아니면 null. */
+const windowOf = (step: AgentStep): string | null => (step.kind === "do" && step.until && factFacets(step.until).includes("contents") ? step.target : null);
+// activate: Object.assign 뒤, 단계 종류 갈래 앞
+this.window(r, windowOf(step));
+// look: 지금 단계를 본 직후(조건을 보기 전) 따라가는 id가 바뀌었으면 창을 옮긴다
+if (step.kind === "do") this.window(r, windowOf(step));
 
 /** 따르기 창: 그 물건(지금 따라가는 World State id)의 창을 열고, 다른 단계가 되면 앞 창을 닫는다. */
 private window(r: Run, objectId: string | null): void {
@@ -1671,7 +1761,23 @@ contentsAction: (id, on) => { world.contentsAction(id, now(), on); },
 lookContents: (h) => core.looker?.contents(h) ?? false,
 // 실제 폰에 승인 대기가 떠 있으면 내용물 질문을 미룬다(승인 질문을 덮지 않는다)
 approvalsWaiting: () => core.agent.pending(PHONE_SESSION).length > 0,
+// 폰 대화를 쓰는 중(에이전트가 들은 말을 처리하는 중이거나 끝난 지 TALK_QUIET_MS 안)이면 내용물 질문을 하지 않는다
+talking: () => core.talk.inflight > 0 || core.nowMs() - core.talk.at < TALK_QUIET_MS,
 ```
+
+```ts
+// src/server/home/core.ts HomeCore
+/** 실제 폰 대화(말 요청 에이전트) 사용: 처리 중인 말 수와 마지막으로 끝난 시각. 내용물 질문이 끼어들지 않게 본다. */
+talk = { inflight: 0, at: Number.NEGATIVE_INFINITY };
+// src/server/home/phone.ts
+/** 폰 대화가 끝난 뒤 이만큼(ms) 내용물 질문을 하지 않는다(에이전트 답을 읽는 동안). */
+export const TALK_QUIET_MS = 10_000;
+// onSay: agent.chat 앞뒤(코치 관찰 모드로 넘긴 말은 세지 않는다)
+core.talk.inflight++;
+try { const r = await agent.chat(PHONE_SESSION, text, { heard: true }); … } finally { core.talk.inflight--; core.talk.at = core.nowMs(); }
+```
+
+잇기는 타입 검사와 e2e 넷으로 본다.
 
 (`PHONE_SESSION`은 지금 `src/server/home/phone.ts`의 파일 안 상수다. 내보내 `act.ts`가 가져온다. `core.agent`가 `startAct` 때 없으면 `core.agent?.pending(...)`.)
 
@@ -1727,7 +1833,10 @@ git push origin refactor/domain-split
 
 ### Task 11: 판단 전 보기 B 끝에 묻기(계획 밖 질문)
 
-정한 것 1. 묶음 8 뒤, 묶음 9와 따로 커밋한다(묶음 9 뒤에 해도 된다). 묶음 10보다 먼저 한다.
+정한 것 1. 묶음 9 뒤, 묶음 10보다 먼저 한다.
+- 불투명이 확인된 컵은 B가 가까이 보지 않으므로(묶음 6) B를 기다리지 않고 바로 묻는다. 불투명이 아니면 B가 그 세대에 가까이 본 뒤 4초가 지나야 묻는다.
+- 계획 밖 질문은 자기 문맥(`TrackCore.idleAsk`)을 지금 명령 줄 길(openCommand·onAnswer·onHeard·「그만」)과 시간 초과·지우기에 잇는다. 물을 때마다 새 명령 id(`ask:<번호>`)와 단계 id(번호 포함)를 써 앞 질문의 늦은 답을 막는다.
+- 폰 대화를 쓰는 중(에이전트가 들은 말을 처리하는 중이거나 끝난 지 10초 안)이면 묻지 않고, 떠 있는 질문은 대화·계획이 시작되면 지운다.
 
 **Files:**
 - Modify: `src/act/track/contents.ts`(idle·lookedIdle·idleAnswered·dropIdle), `src/act/track/core.ts`(`TrackCore.idleAsk`), `src/act/track/answers.ts`(openCommand·onAnswer·onHeard), `src/act/track/tracker.ts`(tick·`lookedIdle`·`TrackerOptions.tasks`), `src/act/look.ts`(`LookerOptions.looked`), `src/server/home/act.ts`(잇기)
@@ -1779,7 +1888,8 @@ describe("실행 추적: 계획 밖 내용물 질문(판단 전 보기 B 끝)", 
   it("계획이 없고 불투명 컵이면 지금 명령 줄에 「컵 비었어요?」를 단추 없이 소리로 묻고, 말 「비었어」를 그 컵·세대로 넣은 뒤 질문을 지운다", () => {
     const s = idleSetup();
     s.tick();
-    expect(s.last()).toEqual({ type: "command", id: "ask:1", step: "ask:1:contents:cup_1:2", text: "컵 비었어요?", vision: null, choices: [], target: expect.objectContaining({ id: "cup_1" }), speak: true, grade: "question" });
+    // lookedIdle을 부르지 않았다: 불투명 컵은 B를 기다리지 않는다
+    expect(s.last()).toEqual({ type: "command", id: "ask:1", step: "ask:1:contents:cup_1:2:1", text: "컵 비었어요?", vision: null, choices: [], target: expect.objectContaining({ id: "cup_1" }), speak: true, grade: "question" });
     expect(s.t.openCommand()).toMatchObject({ planId: "ask:1", kind: "ask", text: "컵 비었어요?" });
     expect(s.heard("비었어")?.id).toBe("empty");
     expect(s.answered).toEqual([["cup_1", "empty", 2]]);
@@ -1799,11 +1909,27 @@ describe("실행 추적: 계획 밖 내용물 질문(판단 전 보기 B 끝)", 
   });
 
   it("묻지 않는 때: 위치를 맞추기 전, 사람이 안 보임, 목록에 내용물 행동이 없음(코치 모드), 승인 대기, 이미 확인된 컵", () => {
-    for (const o of [{ eye: false }, { person: false }, { tasks: ["라면 끓이기 알려 주기", "사용자에게 물어보기"] }, { over: { approvalsWaiting: () => true } }, { facts: { contents: fact("empty") } }]) {
+    for (const o of [{ eye: false }, { person: false }, { tasks: ["라면 끓이기 알려 주기", "사용자에게 물어보기"] }, { over: { approvalsWaiting: () => true } }, { over: { talking: () => true } }, { facts: { contents: fact("empty") } }]) {
       const s = idleSetup(o);
       s.tick();
       expect(s.commands()).toEqual([]);
     }
+  });
+
+  it("폰 대화가 시작되면(에이전트가 「아 덥다」를 처리) 떠 있는 질문을 지우고, 대화가 끝난 뒤 새 번호로 다시 묻는다", () => {
+    let talking = false;
+    const s = idleSetup({ over: { talking: () => talking } });
+    s.tick();
+    expect(s.last()).toMatchObject({ id: "ask:1" });
+    talking = true;
+    s.tick();
+    expect(s.last()).toEqual({ type: "command_clear", id: "ask:1" });
+    expect(s.t.onHeard("비었어", { kind: "command", id: "ask:1", step: "ask:1:contents:cup_1:2:1", pending: [] })).toBeNull();
+    talking = false;
+    s.tick();
+    expect(s.last()).toMatchObject({ id: "ask:2", step: "ask:2:contents:cup_1:2:2" });
+    expect(s.t.onHeard("비었어", { kind: "command", id: "ask:1", step: "ask:1:contents:cup_1:2:1", pending: [] })).toEqual({ kind: "stale" });
+    expect(s.answered).toEqual([]);
   });
 
   it("계획이 열려 있으면 묻지 않고, 떠 있는 질문은 계획이 시작되면 지운다(계획 명령이 그 자리를 덮어 지우기는 보내지 않는다)", async () => {
@@ -1875,18 +2001,17 @@ Expected: FAIL
 // src/act/track/contents.ts ContentsHold에 더한다(파일 머리 설명에 「계획이 없으면 B 끝에 묻기」 한 단락)
 /** 판단 전 보기 B가 가까이 본 컵: 그때 세대와 시각. */
 private readonly lookedB = new Map<string, { gen: number; at: number }>();
-private idleSeq = 0;
 
 lookedIdle(objectId: string): void {
   const o = this.o.world().objects.find((x) => x.id === objectId);
   this.lookedB.set(objectId, { gen: o?.contents_gen ?? 0, at: this.clock.now() });
 }
 
-/** 묻지 않을 때: 멈춤·열린 계획·만드는 계획·위치 맞추기 전·폰 없음·끄기 안내·승인 대기·사람 안 보임·목록에 내용물 행동 없음. */
+/** 묻지 않을 때: 멈춤·열린 계획·만드는 계획·위치 맞추기 전·폰 없음·끄기 안내·승인 대기·폰 대화 중·사람 안 보임·목록에 내용물 행동 없음. */
 private idleBlocked(world: WorldView): boolean {
   const core = this.core;
   return core.stopped || !!core.open() || !!core.planning || !core.eye || !core.start.phoneOk() || core.safety.offPending() || !!core.safety.shownOff()
-    || (this.o.approvalsWaiting?.() ?? false) || !world.person.visible || !this.wanting().length;
+    || (this.o.approvalsWaiting?.() ?? false) || this.talking() || !world.person.visible || !this.wanting().length;
 }
 
 /** 목록의 내용물 행동(want가 있는 행동). */
@@ -1936,10 +2061,11 @@ idle(): void {
   if (blocked) return;
   const o = this.idleTarget(world, now);
   if (!o) return;
-  const id = `ask:${++this.idleSeq}`;
+  const seq = ++this.askSeq;
+  const id = `ask:${seq}`;
   const gen = o.contents_gen ?? 0;
   const name = OBJECT_NAME[o.cls] ?? o.cls;
-  const sent: PlannedCommand = { type: "command", id, step: contentsStep(id, o.id, gen), text: CONTENTS_TEXT.ask(name), vision: null, choices: [], target: { id: o.id, label: name, position: o.position! }, speak: true };
+  const sent: PlannedCommand = { type: "command", id, step: contentsStep(id, o.id, gen, seq), text: CONTENTS_TEXT.ask(name), vision: null, choices: [], target: { id: o.id, label: name, position: o.position! }, speak: true };
   core.idleAsk = { id, objectId: o.id, gen, sent, askAt: now, spokeAt: now };
   core.answers.send(sent);
 }
@@ -2038,4 +2164,6 @@ git push origin refactor/domain-split
 - 이벤트 계기: 짐작 줄 없음, 확인·사람 답은 판단 계기 → Task 3.
 - 불투명: 낱말 표·VLM 답 무시·사람 답만 → Task 2·3.
 - 묻기: 내용물 때문에 보류된 행동, 가까이 본 뒤·불투명이면, 질문 문맥(계획 id·단계 id·세대), 늦은 답 버림, 끄기 안내·승인 질문 안 덮음, 등급, 한 컵 한 번·사건 뒤 다시·답 없음은 세지 않음, 위치 맞추기 전 안 물음 → Task 7·8.
-- 정한 것 1(B 끝에 묻기): 계획 밖 질문 칸, 같은 답·늦은 답·한 번·답 없음 규칙, 열린·만드는 계획·코치·끄기 안내·승인 대기·위치 맞추기 전·사람 안 보임·내용물 행동 없음이면 안 물음, 계획이 시작되면 지움 → Task 11.
+- 정한 것 1(B 끝에 묻기): 계획 밖 질문 칸, 같은 답·늦은 답·한 번·답 없음 규칙, 열린·만드는 계획·코치·끄기 안내·승인 대기·폰 대화 중·위치 맞추기 전·사람 안 보임·내용물 행동 없음이면 안 물음, 계획·대화가 시작되면 지움 → Task 11.
+- 설계 검토(2026-11-17, P2 일곱): ① 불투명 컵은 B 없이 바로 묻기 → Task 11 첫 시험. ② 계획 밖 질문을 명령 줄 길·시간 초과·「그만」에 잇고 물을 때마다 새 id → Task 8·11(`contentsStep`에 번호). ③ 폰 대화 사용 중 막기·대화 시작 때 지우기 → Task 8·9·11(`talking`). ④ 말 답은 문장 전체만, 부정문·상관없는 말 시험 → Task 1. ⑤ 사람 답보다 먼저 찍힌 사건 버림 → Task 3·4. ⑥ 받치던 사진이 바뀌면 확인을 다시 셈 → Task 3. ⑦ 따라가는 id가 바뀌면 창을 옮김 → Task 9.
+- 규칙 표: 「실제 폰 질문은 말로 답할 수 있다」 줄과 막는 장치 `tests/voice-answers.test.ts`(지금 「네」 실수에서 실패) → Task 1.
