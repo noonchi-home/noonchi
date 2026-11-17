@@ -153,4 +153,21 @@ describe("자른 키 큰 가구 뚜껑이 가구를 따라간다", () => {
     expect(lid.geometry).toBe(geometry);
     expect(lid.material).toBe(material);
   });
+  it("가구가 자르기 높이와 만나지 않으면(누웠거나 몸통이 그 높이에 닿지 않음) 뚜껑을 숨기고, 다시 만나면 보인다", () => {
+    const { wardrobe } = lowered();
+    const lid = lidOf(wardrobe);
+    const { geometry, material } = lid;
+    const at = (y: number, tilt: number) => {
+      wardrobe.position.set(3, y, 2);
+      wardrobe.rotation.set(tilt, Math.PI / 2, 0);
+      wardrobe.updateMatrixWorld(true);
+      return lid.visible;
+    };
+    expect(at(0, Math.PI / 2)).toBe(false); // 세로축이 수평
+    expect(at(-1.5, 0)).toBe(false); // 윗면 0.8 m < 1.052 m
+    expect(at(1.2, 0)).toBe(false); // 바닥 1.2 m > 1.052 m
+    expect(at(0, 0)).toBe(true);
+    expect(lid.geometry).toBe(geometry);
+    expect(lid.material).toBe(material);
+  });
 });

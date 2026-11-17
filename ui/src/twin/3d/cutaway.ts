@@ -42,16 +42,26 @@ const LID_SECTION = new THREE.Matrix4();
  * 뚜껑의 세계 행렬: 가구 로컬 바닥 자리(판, 로컬 y 0)를 가구의 세로축을 따라 세계 y = 높이 평면에 옮긴 자리, 곧 가구와 그 평면이
  * 실제로 만나는 단면이다. 세계 점 = 가구 행렬 · (x, t, z), t는 그 점의 세계 y가 높이가 되는 로컬 y(x·z의 일차식)라 행렬 하나로 된다.
  * 편집기로 옮기거나(바닥 높이가 다른 방) 돌리거나 기울여도 맞고, 행렬만 다시 쓰고 새 객체를 만들지 않는다.
+ * 가구가 그 평면과 만나지 않으면(세로축이 수평에 가깝거나, 바닥 자리 네 모서리의 단면 높이가 몸통 로컬 높이 box 밖) 숨긴다.
+ * 보일지는 lid.userData.on(기본 보기에서 자르는가)과 만남을 함께 본다. 숨김은 visible만 바꾼다.
  */
-function levelLid(lid: THREE.Object3D, height: number): void {
+function levelLid(lid: THREE.Object3D, height: number, box: THREE.Box3): void {
   const fit = () => {
     const parent = lid.parent;
     if (!parent) return;
     const e = parent.matrixWorld.elements; // 열 우선: 세계 y = e[1]·x + e[5]·y + e[9]·z + e[13]
-    if (Math.abs(e[5]!) < 1e-6) { lid.matrixWorld.copy(parent.matrixWorld); return; } // 옆으로 누운 가구: 세로축이 평면과 나란하다
-    LID_SECTION.set(1, 0, 0, 0, -e[1]! / e[5]!, 1, -e[9]! / e[5]!, (height - e[13]!) / e[5]!, 0, 0, 1, 0, 0, 0, 0, 1);
-    lid.matrixWorld.multiplyMatrices(parent.matrixWorld, LID_SECTION);
-    lid.matrixWorldNeedsUpdate = false;
+    let meets = Math.abs(e[5]!) >= 1e-6;
+    if (meets) {
+      const a = -e[1]! / e[5]!, c = -e[9]! / e[5]!, d = (height - e[13]!) / e[5]!;
+      for (const x of [box.min.x, box.max.x]) for (const z of [box.min.z, box.max.z]) {
+        const at = a * x + c * z + d; // 이 모서리에서 단면이 지나는 몸통 로컬 높이
+        if (at < box.min.y - 1e-6 || at > box.max.y + 1e-6) meets = false;
+      }
+      LID_SECTION.set(1, 0, 0, 0, a, 1, c, d, 0, 0, 1, 0, 0, 0, 0, 1);
+      lid.matrixWorld.multiplyMatrices(parent.matrixWorld, LID_SECTION);
+      lid.matrixWorldNeedsUpdate = false;
+    }
+    lid.visible = lid.userData.on === true && meets;
   };
   lid.matrixAutoUpdate = false;
   lid.updateMatrixWorld = () => { fit(); };
@@ -205,12 +215,13 @@ export function applyDefaultView(o: {
       const lid = new THREE.Mesh(geo, mat);
       lid.userData.isLid = true;
       lid.name = `${node.name}_lid`;
-      levelLid(lid, cut + LID_LIFT);
+      lid.userData.on = on;
+      levelLid(lid, cut + LID_LIFT, box);
       node.add(lid);
       lids.set(node, lid);
     }
     const lid = lids.get(node);
-    if (lid) lid.visible = on;
+    if (lid) { lid.userData.on = on; lid.updateMatrixWorld(); }
   };
 
   const tallClip = new Set(view.clip);
