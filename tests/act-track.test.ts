@@ -3974,6 +3974,8 @@ describe("실행 추적: 안 보이는 대상은 마지막으로 본 자리로 �
     const s = findSetup();
     await s.decide(decision);
     toLook(s);
+    // 비추기 뒤 사진만 가까이 본다(비추기를 보낸 시각)
+    expect(s.looks[0]!.since).toBeTypeOf("number");
     s.looks[0]!.done({ ...ABSENT, found: [{ id: "bottle_2", cls: "bottle", score: 0, facts: [], via: "vlm" }] });
     s.tick();
     expect(s.exec().some((l) => l.state === "failed")).toBe(false);

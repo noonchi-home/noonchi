@@ -276,7 +276,7 @@ export class Finder extends Part {
     }
     f.phase = "looking";
     const took = this.o.lookContents({
-      planId: line.planId, objectId: f.spotId, spot: { id: f.spotId, label: f.label, position: [...f.at] }, signal: f.end.signal, force: true, done: after,
+      planId: line.planId, objectId: f.spotId, spot: { id: f.spotId, label: f.label, position: [...f.at] }, signal: f.end.signal, force: true, since: f.aimAt, done: after,
     });
     if (!took && f.phase === "looking") {
       f.phase = "look";

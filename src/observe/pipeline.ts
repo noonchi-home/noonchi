@@ -414,13 +414,13 @@ export class ObservationPipeline {
    *  VLM 답이 왔을 때 입력이 끊겼으면(VLM을 기다리는 사이 폰 끊김) 답을 넣지 않고 ok, vlm no_fresh_frames로 돌려준다. 쓴 장의 나이는 보지 않는다.
    *  3장이 안 된 새 물건 후보는 그 답이 그 감지에 사실을 하나 이상 답하고 가림은 답하지 않을 때 만들고 그 사실을 넣는다. VLM 답이 없거나 넣지 않으면 만들지 않는다.
    *  결과의 frame_id·captured_at_ms·crop·found는 그 장 기준이고 frames는 잘라 본 장 수다. */
-  async closer(spot: LookSpot, signal?: AbortSignal): Promise<CloserResult> {
+  async closer(spot: LookSpot, signal?: AbortSignal, sinceMs?: number): Promise<CloserResult> {
     if (this.closed) return this.closerMiss("closed");
     if (signal?.aborted) return this.closerMiss("aborted");
     const detector = this.o.detector;
     if (!detector) return this.closerMiss("no_detector");
     if (this.closing || !this.pool.closerFree()) return this.closerMiss("vlm_busy");
-    const frames = this.closerFrames(spot.position);
+    const frames = this.closerFrames(spot.position, sinceMs);
     if (!frames.ok) return this.closerMiss(frames.why);
     this.closing = true;
     try {
@@ -438,7 +438,7 @@ export class ObservationPipeline {
 
   /** 가까이 보기가 그 자리(트윈 [x, 높이, y])를 볼 장을 고른다(closer와 같은 규칙): 입력이 끊기지 않았고(inputCut) 카메라가 있고 그 자리가 사진 안이며,
    *  가장 새 VLM 프레임으로부터 closerSpanMs 안에 찍혀 그 자리가 사진 안(LOOK_MARGIN)인 VLM 프레임을 최근 것부터 CLOSER_FRAMES장까지, 서로 다른 장이 CLOSER_NEW_FRAMES장 이상. */
-  private closerFrames(position: [number, number, number]): { ok: true; picked: EngineFrame[] } | { ok: false; why: "no_fresh_frames" | "no_view" | "out_of_view" } {
+  private closerFrames(position: [number, number, number], sinceMs?: number): { ok: true; picked: EngineFrame[] } | { ok: false; why: "no_fresh_frames" | "no_view" | "out_of_view" } {
     const ring = this.ring.frames();
     const newest = ring.at(-1);
     const step = vlmStepMs(this.o.config);
@@ -448,8 +448,9 @@ export class ObservationPipeline {
     const span = closerSpanMs(step);
     const slow = ring.filter((f) => f.vlm !== false);
     const newestSlow = slow.at(-1)?.capturedAtMs ?? newest.capturedAtMs;
-    const picked = slow.filter((f) => f.view && newestSlow - f.capturedAtMs <= span && inView(f.view, position, LOOK_MARGIN)).slice(-CLOSER_FRAMES);
-    if (new Set(picked.map((f) => f.id)).size < CLOSER_NEW_FRAMES) return { ok: false, why: "no_fresh_frames" };
+    const picked = slow.filter((f) => f.view && newestSlow - f.capturedAtMs <= span && inView(f.view, position, LOOK_MARGIN) && (sinceMs === undefined || f.capturedAtMs >= sinceMs)).slice(-CLOSER_FRAMES);
+    // 비추기 뒤(sinceMs) 가까이 보기는 그 뒤 사진 1장이면 된다(VLM이 정한다). 관찰 모드 가까이 보기는 서로 다른 장 CLOSER_NEW_FRAMES장
+    if (new Set(picked.map((f) => f.id)).size < (sinceMs === undefined ? CLOSER_NEW_FRAMES : 1)) return { ok: false, why: "no_fresh_frames" };
     return { ok: true, picked };
   }
 
@@ -457,8 +458,7 @@ export class ObservationPipeline {
    *  그래서 참인 바로 뒤 가까이 보기는 새 사진이 모자라지 않고 비추기 뒤 사진만 본다. */
   spotReady(position: [number, number, number], sinceMs: number): boolean {
     if (this.closed) return false;
-    const r = this.closerFrames(position);
-    return r.ok && r.picked.every((f) => f.capturedAtMs >= sinceMs);
+    return this.closerFrames(position, sinceMs).ok;
   }
 
   private async look(spot: LookSpot, picked: readonly EngineFrame[], detector: Detector, signal: AbortSignal | undefined): Promise<CloserResult> {

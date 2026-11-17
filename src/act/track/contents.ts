@@ -40,7 +40,8 @@ export const PEEK = { nearM: 0.5, stepMs: 30_000, retryMs: 60_000, movedM: 0.1, 
 /** 보류의 가까이 보기 부탁(보기 담당 src/act/look.ts contents). done은 끝날 때 한 번(못 봐도, 가까이 보기 결과, 끊겼으면 null). signal은 보류가 풀리면 끊긴다.
  *  top이 있으면 잘라 보기 대신 위에서 보기(그 뒤 찍힌 컵 안을 내려다본 사진 쌍, src/observe/pipeline.ts topLook)다. planId가 빈 글이면 계획 밖이다.
  *  force면 찾기의 다시 보기다(src/act/track/find.ts): 같은 물건을 objectGapMs 안에 봤어도 다시 본다. */
-export interface ContentsLook { planId: string; objectId: string; spot: LookSpot; signal: AbortSignal; done(result?: CloserResult | null): void; top?: { sinceMs: number }; force?: true }
+/** since: 찾기의 비추기 시각(그 뒤 사진만 가까이 본다, 1장이면 된다). */
+export interface ContentsLook { planId: string; objectId: string; spot: LookSpot; signal: AbortSignal; done(result?: CloserResult | null): void; top?: { sinceMs: number }; force?: true; since?: number }
 type V3 = [number, number, number];
 /** 가까이 가서 보기 한 차례: 지금 명령(go·above, 거뒀으면 null)과 보낸 때, 시작 때 컵 자리, 위에서 비추기를 보낸 때(위에서 보기 sinceMs), 보기 지킴을 걸었는가. */
 export interface Peek { part: "go" | "above" | null; sent: PlannedCommand | null; since: number; at: V3; aboveAt: number; guarded: boolean }

@@ -592,29 +592,28 @@ describe("가까이 보기 VLM 모델(VLM_CLOSER_MODEL)", () => {
 });
 
 describe("찾기의 비추기 끝(spotReady): 가까이 보기와 같은 프레임 고르기", () => {
-  it("그 자리가 사진 안인 VLM 프레임을 since 뒤 사진만으로 3장 이상 고르면 참이고, 그 바로 뒤 가까이 보기는 새 사진이 모자라지 않는다", async () => {
+  // 속도(가로 유리컵 r3: 비추기 30.4초 → 찾음 37.8초): 비추기 뒤 서로 다른 사진 3장(가까이 보는 차례 VLM 1초 간격이면 약 2~3초)을 기다리던 것을
+  // VLM이 정하므로 1장(약 0~1초)만 기다린다. 그 장으로 확인에 실패하면 찾기의 「확인 실패 → 다시 봄」이 다음 장을 본다
+  it("비추기(since) 뒤 그 자리가 사진 안인 VLM 프레임이 1장이면 참이고, 그 바로 뒤 가까이 보기(sinceMs)는 비추기 뒤 사진만 본다", async () => {
     fake = await startFakeOpenAI({ reply: closerVlmReply() });
     const s = setup({ vlm: fakeVlm(fake) });
     s.frame(2000, AWAY_VIEW);
     s.frame(4000);
     s.frame(6000);
     await s.p.idle();
-    expect(s.p.spotReady(SPOT.position, 3000)).toBe(false);   // 2장뿐
+    expect(s.p.spotReady(SPOT.position, 7000)).toBe(false);   // 비추기 뒤 사진 없음
     s.frame(8000);
     await s.p.idle();
-    expect(s.p.spotReady(SPOT.position, 3000)).toBe(true);
-    expect(s.p.spotReady(SPOT.position, 5000)).toBe(false);   // 고른 장 가운데 4000이 비추기 전
-    const r = await s.p.closer(SPOT);
-    expect(r.ok).toBe(true);
+    expect(s.p.spotReady(SPOT.position, 7000)).toBe(true);    // 비추기 뒤 1장
+    const r = await s.p.closer(SPOT, undefined, 7000);
+    expect(r).toMatchObject({ ok: true, frames: 1, captured_at_ms: 8000 });
+    // sinceMs 없이 부르는 가까이 보기(관찰 모드)는 지금처럼 서로 다른 장 3장이다
+    expect(await s.p.closer(SPOT)).toMatchObject({ ok: true, frames: 3 });
   });
-  it("간격을 두고 모여 가장 오래된 장이 closerSpanMs 밖이면 고르지 않고, 가장 새 장이 closerStaleMs 넘게 옛것이면 거짓", async () => {
+  it("가장 새 장이 closerStaleMs 넘게 옛것이면(입력 끊김) 거짓", async () => {
     fake = await startFakeOpenAI({ reply: closerVlmReply() });
     const s = setup({ vlm: fakeVlm(fake) });
-    for (const at of [2000, 4000, 14_000, 16_000]) s.frame(at);
-    await s.p.idle();
-    expect(closerSpanMs(2000)).toBeLessThan(14_000 - 4000);
-    expect(s.p.spotReady(SPOT.position, 0)).toBe(false);
-    s.frame(18_000);
+    for (const at of [14_000, 16_000, 18_000]) s.frame(at);
     await s.p.idle();
     expect(s.p.spotReady(SPOT.position, 0)).toBe(true);
     s.clock.t = 18_000 + closerStaleMs(2000) + 1;

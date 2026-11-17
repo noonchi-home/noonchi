@@ -49,7 +49,7 @@ export interface LookerOptions {
   observer: Pick<Observer, "decide" | "status">;
   /** 가까이 보기(src/observe/pipeline.ts closer). 감지를 합치기 전에 signal이 끊기면 넣지 않고 aborted, 합친 뒤에 끊기면 ok(vlm aborted),
    *  VLM 답이 왔을 때 사진이 끊겼으면 ok(vlm no_fresh_frames). */
-  closer: (spot: LookSpot, signal?: AbortSignal) => Promise<CloserResult>;
+  closer: (spot: LookSpot, signal?: AbortSignal, sinceMs?: number) => Promise<CloserResult>;
   /** 판단 전 보기 B가 잘라 보기를 마쳤다(자원 사정으로 못 본 것은 빼고): 그 물건 id. 실행 추적이 계획 밖으로 가까이 가서 볼지 본다(src/act/track/contents.ts). */
   looked?: (objectId: string) => void;
   /** 위에서 보기(src/observe/pipeline.ts topLook): sinceMs 뒤 찍힌 컵 안을 내려다본 사진 쌍. 없으면 위에서 보기 부탁은 done만 한다. */
@@ -141,7 +141,7 @@ export class Looker {
     };
     this.job = job;
     let result: CloserResult | null = null;
-    const p: Promise<void> = this.closerOnly(job, h.spot).then((r) => { result = r; }, () => {}).finally(() => {
+    const p: Promise<void> = this.closerOnly(job, h.spot, h.since).then((r) => { result = r; }, () => {}).finally(() => {
       if (this.job === job) this.job = null;
       this.running.delete(p);
       h.done(result);
@@ -192,9 +192,9 @@ export class Looker {
 
   /** 관찰 모드 없이 가까이 보고 look 기록 하나(감지를 합치기 전에 끊기면 기록 없음). */
   /** 가까이 본 결과(끊겼거나 멈췄으면 null). */
-  private async closerOnly(job: Job, spot: LookSpot): Promise<CloserResult | null> {
+  private async closerOnly(job: Job, spot: LookSpot, sinceMs?: number): Promise<CloserResult | null> {
     this.o.onLook?.(spot);
-    const r = await this.o.closer(spot, job.signal).catch((): CloserResult => ({ ok: false, why: "error" }));
+    const r = await this.o.closer(spot, job.signal, sinceMs).catch((): CloserResult => ({ ok: false, why: "error" }));
     if (this.stopped || (!r.ok && r.why === "aborted")) return null;
     this.count.looks++;
     const detail = r.ok ? r.found.map((f) => `${f.id ?? f.cls} ${f.score} ${f.facts.join(" ")}`.trim()).join(", ") : "";

@@ -164,7 +164,7 @@ export function startLooker(core: HomeCore, emit: (event: BrainLog) => void): vo
   const tracking = core.tracker!;
   const now = () => core.nowMs();
   core.looker = new Looker({
-    observer, closer: (spot, signal) => observed.closer(spot, signal), topLook: (spot, sinceMs, signal) => observed.topLook(spot, sinceMs, signal),
+    observer, closer: (spot, signal, sinceMs) => observed.closer(spot, signal, sinceMs), topLook: (spot, sinceMs, signal) => observed.topLook(spot, sinceMs, signal),
     // B가 잘라 본 컵: 실행 추적이 계획 밖으로 가까이 가서 볼지 본다
     looked: (id) => tracking.lookedIdle(id),
     frame: () => observed.latest(), world: () => world.view(now()),
