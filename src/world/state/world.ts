@@ -78,6 +78,13 @@ export interface WorldStateOptions {
   rests?: () => RestSpot[];
 }
 
+/** 잰 크기들의 가운데값(높이·폭 따로, cm 아래 셋째 자리까지). */
+function medianSize(xs: readonly { height: number; width: number }[]): { height: number; width: number } {
+  const mid = (v: number[]) => { const a = [...v].sort((x, y) => x - y); const n = a.length; return n % 2 ? a[(n - 1) / 2]! : (a[n / 2 - 1]! + a[n / 2]!) / 2; };
+  const r = (v: number) => Math.round(v * 1000) / 1000;
+  return { height: r(mid(xs.map((x) => x.height))), width: r(mid(xs.map((x) => x.width))) };
+}
+
 export class WorldState {
   private readonly core: WorldCore;
   private eye: WorldEye | null = null;
@@ -124,6 +131,18 @@ export class WorldState {
   /** 가까이 본 감지가 물건 감지인가(closer.ts closerObject). */
   closerObject(d: CloserDetection): boolean {
     return this.core.closer.closerObject(d);
+  }
+
+  /** 위에서 본 장의 내용물 값(closer.ts applyTop): 대상 확인을 거친 장만 넣는다(src/observe/pipeline.ts topLook). */
+  applyTop(objectId: string, sourceFrameId: string, capturedAtMs: number, value: "empty" | "has_contents"): WorldChange[] {
+    return this.core.closer.applyTop(objectId, sourceFrameId, capturedAtMs, value);
+  }
+
+  /** 보기 지킴(가까이 가서 위에서 비추는 동안, 실행 추적이 건다): on이면 그 물건을 그동안(PEEK_GUARD_MS 한도) 사라짐으로 세지 않고, off면 푼다.
+   *  확인된 관측의 지킴(closer_hold)과 다른 칸이다. 물건이 없으면 아무것도 하지 않는다. */
+  guard(objectId: string, atMs: number, on: boolean): void {
+    const obj = this.core.objects.get(objectId);
+    if (obj) obj.peekGuard = on ? atMs : null;
   }
 
   /** 가까이 본 사진의 VLM 답(closer.ts applyCloserScene). */
@@ -185,6 +204,7 @@ export class WorldState {
       first_seen_ms: x.firstSeen, last_seen_ms: x.lastSeen, last_in_view_ms: x.lastInView, facts: { ...x.facts }, answered_ms: x.answered, devices: relatedDeviceIds(x.cls, devices),
       closer_hold: core.held(x, nowMs), followed_by: x.followed?.id ?? null, ...(Object.keys(x.closerRev).length ? { closer_rev: { ...x.closerRev } } : {}),
       ...(x.carried ? { carried: true as const } : {}),
+      ...(x.sizes.length ? { size_m: medianSize(x.sizes) } : {}),
       ...(x.contents ? { contents_gen: x.contents.gen, ...(x.contents.past.length ? { contents_past: x.contents.past.map((p) => ({ value: p.value, at_ms: p.atMs })) } : {}) } : {}),
     }));
     const fixtures: WorldFixture[] = [...core.fixtures.values()].map((f) => ({

@@ -25,6 +25,10 @@ export const OBJ_CLASSES: ReadonlySet<string> = new Set(KEYS.filter((k) => CLASS
 export const PERSON = "person";
 /** 가까이 보기로 찾거나 고친 물건은 이만큼(ms, 촬영 시각 기준) 전체 사진에서 못 봐도 사라짐으로 세지 않는다(전체 사진의 감지기는 그 물건을 못 본다). */
 export const CLOSER_HOLD_MS = 30_000;
+/** 보기 지킴(가까이 가서 위에서 비추는 동안, WorldState.guard) 한도: 풀지 않아도 이만큼(ms) 지나면 끝난다. */
+export const PEEK_GUARD_MS = 60_000;
+/** 크기 재기에 쌓는 최근 사진 수(가운데값을 쓴다). */
+export const SIZE_SAMPLES = 5;
 
 /** 움직임·정지를 보는 자리 하나: 원본 프레임(전체 감지·가까이 보기)의 촬영 시각·id, 트윈 자리(모르면 null), 엔진 프레임 사진 가운데 점(0~1). */
 export interface TrailSample { at: number; frame: string; position: V3 | null; center: [number, number] }
@@ -50,6 +54,10 @@ export interface Obj {
   answered: number | null;
   /** 가까이 보기로 마지막에 찾거나 고친 촬영 시각(지킴의 시작). 지킴이 풀리면 null. */
   closerAt: number | null;
+  /** 보기 지킴을 건 시각(가까이 가서 위에서 비추는 동안, closerAt과 다른 칸). 풀면 null. */
+  peekGuard: number | null;
+  /** 전체 사진 감지 상자로 잰 크기(높이·폭 m, 최근 SIZE_SAMPLES장). 그릇 종류만 잰다. */
+  sizes: { height: number; width: number }[];
   /** 자리를 마지막으로 고친 촬영 시각과 그것이 가까이 보기였는가(같은 촬영이면 잘라 본 자리가 앞선다). */
   posAt: number;
   /** 마지막으로 움직인 촬영 시각(최근 본 자리에서 트윈 자리 MOVE_M, 자리를 모르면 사진 가운데 점 MOVE_IMAGE 넘게 떨어짐)과 최근 SETTLE_MS 동안 본 자리. */
@@ -140,7 +148,7 @@ export class WorldCore {
     this.counters.set(cls, n);
     const obj: Obj = {
       id: `${cls}_${n}`, cls, position: null, surface: null, surfaceLabel: null, part: null, room: null, errorM: null, confirmed: false, status: "present",
-      firstSeen: atMs, lastSeen: atMs, lastInView: atMs, goneAt: null, facts: {}, answered: null, closerAt: null,
+      firstSeen: atMs, lastSeen: atMs, lastInView: atMs, goneAt: null, facts: {}, answered: null, closerAt: null, peekGuard: null, sizes: [],
       posAt: Number.NEGATIVE_INFINITY, posCloser: false, judgedAt: atMs, judgedFrame: frameId, judgedCloser: false, followed: null, closerRev: {},
       movedAt: atMs, trail: [], carried: false, contents: null,
     };
@@ -151,6 +159,11 @@ export class WorldCore {
   /** 가까이 보기 지킴 중인가(atMs 기준 CLOSER_HOLD_MS 안). 지킴보다 앞서 찍힌 사진도 지킴으로 본다. */
   held(obj: Obj, atMs: number): boolean {
     return obj.closerAt !== null && atMs - obj.closerAt < CLOSER_HOLD_MS;
+  }
+
+  /** 보기 지킴 중인가(atMs 기준 PEEK_GUARD_MS 안). */
+  guarded(obj: Obj, atMs: number): boolean {
+    return obj.peekGuard !== null && atMs - obj.peekGuard < PEEK_GUARD_MS;
   }
 
   /** 보임을 이 촬영(원본 프레임 frameId, closer면 가까이 보기 양성)으로 판단했다: 마지막 판단보다 새 촬영이면 그것으로 바꾸고,

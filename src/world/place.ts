@@ -150,6 +150,88 @@ export function inView(view: CameraView, point: V3, margin = 0): boolean {
   return !!n && Math.abs(n[0]) <= 1 + margin && Math.abs(n[1]) <= 1 + margin;
 }
 
+/** 컵 안 모양(안 반지름·깊이 m). */
+export interface CupInside { radius: number; depth: number }
+/** 크기를 모를 때 컵 안 모양: 좁고 깊은 컵(안 반지름 3cm·깊이 15cm). 이 모양은 거의 입구 바로 위에서만 안이 보인다. */
+export const TOP_CUP_FALLBACK: CupInside = { radius: 0.03, depth: 0.15 };
+/** 컵 안을 볼 때 컵 자리가 있어야 하는 화면 가운데(NDC |x|·|y| ≤ center): 잘라 보기(cropBox, 프레임 절반 크기)가 화면 밖으로 밀리지 않는 자리. */
+export const TOP_VIEW = { center: 0.5 } as const;
+/** 위에서 보기 VLM 상자: 컵 자리(바닥 가운데)에 세운 원기둥(반지름·높이 m). 흔한 컵(지름 7~9cm·높이 9~12cm)을 덮는다. */
+export const TOP_BOX_M = { radius: 0.05, height: 0.12 } as const;
+
+/** 잰 크기(높이·폭 m) → 컵 안 모양: 안 반지름 0.85 × min(폭, 높이) ÷ 2(손잡이로 넓어진 폭을 막고 벽 두께를 뺌), 깊이 높이 − 1cm(바닥 두께).
+ *  모르면 TOP_CUP_FALLBACK. */
+export function cupInside(size: { height: number; width: number } | null | undefined): CupInside {
+  if (!size) return TOP_CUP_FALLBACK;
+  return { radius: (0.85 * Math.min(size.width, size.height)) / 2, depth: Math.max(0.01, size.height - 0.01) };
+}
+
+/** 이 카메라가 point(컵 바닥 가운데)에 놓인 cup 모양 컵의 안을 보는가.
+ *  수평 거리 d, 카메라의 컵 바닥 위 높이 H, 안 반지름 r, 깊이 h일 때: 테두리보다 높고(H > h), 입구 바로 위(d ≤ r)이거나
+ *  먼 쪽 안벽 바닥 모서리로 가는 선이 가까운 테두리 위로 지난다(H·2r ≥ h·(d + r)). 그리고 컵 자리가 화면 가운데(TOP_VIEW)다. 카메라 뒤면 false.
+ *  먼 쪽 안벽 바닥 모서리가 보이면 조금만 담겨도 그 모서리를 수면이 덮으므로 빈 컵과 갈린다. */
+export function topView(view: CameraView, point: V3, cup: CupInside): boolean {
+  const n = ndc(view, point);
+  if (!n || Math.abs(n[0]) > TOP_VIEW.center || Math.abs(n[1]) > TOP_VIEW.center) return false;
+  const o = view.origin;
+  const d = Math.hypot(o[0] - point[0], o[2] - point[2]);
+  const H = o[1] - point[1];
+  const { radius: r, depth: h } = cup;
+  return H > h && (d <= r || H * 2 * r >= h * (d + r));
+}
+
+/** point에 세운 TOP_BOX_M 원기둥 꼭짓점 16개(아래·위 원마다 8개)를 찍은 엔진 프레임 픽셀 상자 [x, y, w, h]. 하나라도 카메라 뒤면 null. */
+export function topBox(view: CameraView, point: V3, size: { width: number; height: number }): [number, number, number, number] | null {
+  const xs: number[] = [], ys: number[] = [];
+  for (let k = 0; k < 8; k++) {
+    const a = (k / 8) * Math.PI * 2;
+    for (const y of [0, TOP_BOX_M.height]) {
+      const p = pixelOf(view, [point[0] + TOP_BOX_M.radius * Math.cos(a), point[1] + y, point[2] + TOP_BOX_M.radius * Math.sin(a)], size);
+      if (!p) return null;
+      xs.push(p[0]);
+      ys.push(p[1]);
+    }
+  }
+  const x = Math.min(...xs), y = Math.min(...ys);
+  return [x, y, Math.max(...xs) - x, Math.max(...ys) - y];
+}
+
+/** 크기를 잴 상자가 사진 가장자리에서 이만큼(픽셀) 안이면 잘렸을 수 있어 재지 않는다. */
+const SIZE_EDGE_PX = 2;
+/** 광선이 수평 법선 nrm(단위)·점 base를 지나는 세로 평면과 만나는 점. 평면과 나란하거나 카메라 뒤면 null. */
+function onPlane(o: V3, dir: V3, base: V3, nrm: [number, number]): V3 | null {
+  const den = dir[0] * nrm[0] + dir[2] * nrm[1];
+  if (Math.abs(den) < 1e-9) return null;
+  const t = ((base[0] - o[0]) * nrm[0] + (base[2] - o[2]) * nrm[1]) / den;
+  return t > 0 ? [o[0] + dir[0] * t, o[1] + dir[1] * t, o[2] + dir[2] * t] : null;
+}
+
+/** 감지 상자 하나로 그 물건 크기(높이·폭 m)를 잰다. at은 그 물건 자리(마스크 바닥 점이라 카메라에 가까운 바닥 가장자리)다.
+ *  폭: 상자 왼쪽·오른쪽 변 가운데 광선이 그 물건 가운데 깊이(at에서 반 폭 더 먼)의 세로 평면에서 벌어진 거리(한 번 고쳐 잰다).
+ *  높이: 상자 윗변 가운데 광선이 먼 테두리 깊이(at에서 폭만큼 더 먼)의 세로 평면과 만나는 점의 at 위 높이. 위에서 내려다본 원기둥의 상자 윗변은 먼 테두리다.
+ *  상자가 사진 가장자리에 닿았거나(잘렸을 수 있음) 광선이 그 평면에 닿지 않으면 null. */
+export function sizeOf(view: CameraView, box: [number, number, number, number], frame: { width: number; height: number }, at: V3): { height: number; width: number } | null {
+  const [x, y, w, h] = box;
+  if (x <= SIZE_EDGE_PX || y <= SIZE_EDGE_PX || x + w >= frame.width - SIZE_EDGE_PX || y + h >= frame.height - SIZE_EDGE_PX) return null;
+  const o = view.origin;
+  const flat = Math.hypot(at[0] - o[0], at[2] - o[2]);
+  if (flat < 1e-6) return null;
+  const nrm: [number, number] = [(at[0] - o[0]) / flat, (at[2] - o[2]) / flat];
+  const ray = (u: number, v: number) => rayDir(view, [(u / frame.width) * 2 - 1, 1 - (v / frame.height) * 2]);
+  const ahead = (m: number): V3 => [at[0] + nrm[0] * m, at[1], at[2] + nrm[1] * m];
+  const widthAt = (m: number): number | null => {
+    const l = onPlane(o, ray(x, y + h / 2), ahead(m), nrm), r = onPlane(o, ray(x + w, y + h / 2), ahead(m), nrm);
+    return l && r ? Math.hypot(l[0] - r[0], l[2] - r[2]) : null;
+  };
+  const first = widthAt(0);
+  if (first === null) return null;
+  const width = widthAt(first / 2);
+  if (width === null) return null;
+  const top = onPlane(o, ray(x + w / 2, y), ahead(width), nrm);
+  if (!top || top[1] <= at[1]) return null;
+  return { height: top[1] - at[1], width };
+}
+
 const SURFACE_TYPE = /table|desk|counter|sink/;
 /** 이름에 면 낱말이 들어도 면이 아닌 것(책상 조명). */
 const NOT_SURFACE = /lamp/;

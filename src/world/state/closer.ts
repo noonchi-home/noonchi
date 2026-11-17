@@ -45,15 +45,16 @@ export class CloserLook extends Part {
   liftHolds(fresh: readonly Fresh[], saw: ReadonlySet<string>): void {
     if (!fresh.length) return;
     for (const o of this.core.objects.values()) {
-      if (o.closerAt === null || saw.has(o.id)) continue;
+      if ((o.closerAt === null && o.peekGuard === null) || saw.has(o.id)) continue;
       const near = (CLASSES[o.cls] as { identityM?: number }).identityM ?? this.core.identityM;
       const moved = fresh.filter(({ obj, at }) => obj !== o && obj.cls === o.cls && at > o.lastSeen && at >= o.judgedAt
         && !(o.position && obj.position && dist(o.position, obj.position) <= near));
       if (!moved.length) continue;
       const at = Math.max(...moved.map((m) => m.at));
       const one = moved.length === 1 ? moved[0]! : null;
-      if (one && o.status !== "gone" && this.core.held(o, at)) o.followed = { id: one.obj.id, at: one.at, frame: one.frame };
+      if (one && o.status !== "gone" && (this.core.held(o, at) || this.core.guarded(o, at))) o.followed = { id: one.obj.id, at: one.at, frame: one.frame };
       o.closerAt = null;
+      o.peekGuard = null;
     }
   }
 
@@ -218,6 +219,20 @@ export class CloserLook extends Part {
     this.core.confirmer.mark(obj.id);
   }
 
+  /** 위에서 본 장(src/observe/pipeline.ts topLook이 대상 확인을 거친 장)의 내용물 값 하나: 그 물건을 그 촬영에 본 것으로 두고(본 시각·보임 판단·지킴)
+   *  내용물 갱신기에 위에서 본 답으로 넣는다. 자리·다른 면은 바꾸지 않는다. 물건이 없거나 사라졌으면 빈 목록. */
+  applyTop(objectId: string, sourceFrameId: string, capturedAtMs: number, value: "empty" | "has_contents"): WorldChange[] {
+    const obj = this.core.objects.get(objectId);
+    if (!obj || obj.status === "gone") return [];
+    this.seenCloser(obj, capturedAtMs, sourceFrameId);
+    const r = this.core.contents.see(obj, sourceFrameId, capturedAtMs, value, 2);
+    if (r.changed) {
+      obj.closerRev.contents = (obj.closerRev.contents ?? 0) + 1;
+      if (obj.facts.contents) obj.facts.contents = { ...obj.facts.contents, closer_ms: capturedAtMs };
+    }
+    return obj.confirmed ? r.changes : [];
+  }
+
   /** 가까이 본 사진의 VLM 답: ids(그 사진에서 잡은 물건)의 사실만 넣는다. 장면 요약·답에 없는 면·지금만 맞는 사실·사람·가전 설비는 건드리지 않는다.
    *  가림(not_visible)을 답한 상자는 이미 있는 물건이어도 그 상자의 사실을 넣지 않는다.
    *  원본 프레임(sourceFrameId)·물건·면마다 한 번만 넣고, 같은 원본 프레임의 전체 사진 답보다 앞선다(answer).
@@ -270,7 +285,7 @@ export class CloserLook extends Part {
       if (obj.confirmed && obj.status !== "gone") changes.push({ kind: "state", at_ms: capturedAtMs, subject: obj.id, meaningful: true, text: CHANGE_TEXT.state(core.name(obj), value) });
     }
     for (const [obj, value] of contents) {
-      const r = core.contents.see(obj, sourceFrameId, capturedAtMs, value, true);
+      const r = core.contents.see(obj, sourceFrameId, capturedAtMs, value, 1);
       // 가까이 본 답이 내용물 값을 새로 넣거나 바꿨으면 횟수와 그 촬영 시각(같은 값이 이어지는 동안 남는다)
       if (r.changed) {
         obj.closerRev.contents = (obj.closerRev.contents ?? 0) + 1;

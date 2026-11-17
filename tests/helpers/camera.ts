@@ -13,6 +13,14 @@ const tilt = [Math.sin(-Math.PI / 8), 0, 0, Math.cos(-Math.PI / 8)];
 export const cameraAt = (yaw: number): CameraView => ({
   origin: [0, 1.5, 0], orientation: mul([0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)], tilt) as [number, number, number, number], theta: 0, projection: P,
 });
+/** origin(트윈 [x, 높이, y])에서 target을 그림 가운데로 바라보는 카메라(같은 90° 투영, theta 0). target이 바로 아래면 yaw는 0이다. */
+export function viewLooking(origin: [number, number, number], target: [number, number, number]): CameraView {
+  const dx = target[0] - origin[0], dy = target[1] - origin[1], dz = target[2] - origin[2];
+  const yaw = Math.atan2(-dx, -dz);
+  const pitch = Math.atan2(dy, Math.hypot(dx, dz));
+  const q = mul([0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)], [Math.sin(pitch / 2), 0, 0, Math.cos(pitch / 2)]) as [number, number, number, number];
+  return { origin, orientation: q, theta: 0, projection: P };
+}
 /** +x를 보는 카메라: 그림 가운데 광선이 바닥 (1.5, 0, 0)과 높이 0.9의 (0.6, 0.9, 0)을 지난다. */
 export const LOOK_VIEW = cameraAt(-Math.PI / 2);
 /** 반대(−x)를 보는 카메라: LOOK_VIEW 앞 자리는 시야 밖이다. */

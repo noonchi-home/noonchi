@@ -6,9 +6,9 @@ import type { Facet, FixtureClass, ObjClass, WorldChange } from "../../contract/
 import type { Detection, EngineFrame, Pose } from "../../contract/observe.js";
 import { EVIDENCE_GAP_MS } from "../confirm.js";
 import { CHANGE_TEXT, onSurface } from "../labels.js";
-import { inView, placePoint } from "../place.js";
+import { inView, placePoint, sizeOf } from "../place.js";
 import { CLASSES, NOW_FACETS, POSE_HOLD } from "../vocab.js";
-import { KEYS, OBJ_CLASSES, PERSON, Part, dist, type Obj, type TrailSample, type V3 } from "./core.js";
+import { KEYS, OBJ_CLASSES, PERSON, Part, SIZE_SAMPLES, dist, type Obj, type TrailSample, type V3 } from "./core.js";
 
 const FIXTURE_CLASSES: ReadonlySet<string> = new Set(KEYS.filter((k) => CLASSES[k].role === "fixture"));
 /** 사라진 물체를 이만큼 두었다가 잊는다(같은 자리에 다시 보이면 같은 id로 돌아온다). */
@@ -60,6 +60,11 @@ export class Detections extends Part {
       ids.set(tmp, obj.id);
       seen.add(obj.id);
       boxes.push({ obj, box: d.box, mask: d.mask });
+      // 그릇은 크기를 잰다(위에서 컵 안을 보는 판정이 쓴다, src/world/place.ts cupInside)
+      if (view && placed?.position && (CLASSES[cls].facets as readonly string[]).includes("contents")) {
+        const size = sizeOf(view, d.box, { width: frame.width, height: frame.height }, placed.position);
+        if (size) obj.sizes = [...obj.sizes, size].slice(-SIZE_SAMPLES);
+      }
       obj.lastSeen = Math.max(obj.lastSeen, at);
       obj.lastInView = Math.max(obj.lastInView, at);
       core.judge(obj, at, frame.id, false);
@@ -91,11 +96,11 @@ export class Detections extends Part {
       const obj = key === PERSON ? undefined : core.objects.get(key);
       return !!obj && this.staleFull(obj, at, frame.id);
     };
-    // 가까이 보기 지킴 중인 물건은 그 자리가 시야 안이어도 사라짐을 세지 않는다
+    // 가까이 보기 지킴·보기 지킴 중인 물건은 그 자리가 시야 안이어도 사라짐을 세지 않는다
     const events = core.confirmer.observe(at, seen, candidates, (key) => {
       if (key === PERSON) return true;
       const obj = core.objects.get(key)!;
-      return !core.held(obj, at) && this.visible(obj, view) === true;
+      return !core.held(obj, at) && !core.guarded(obj, at) && this.visible(obj, view) === true;
     }, stale);
     const changes: WorldChange[] = [];
     const fresh: { obj: Obj; at: number; frame: string }[] = [];

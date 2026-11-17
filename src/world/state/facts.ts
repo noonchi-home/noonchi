@@ -118,7 +118,7 @@ export class SceneFacts extends Part {
     }
     for (const id of bodies) core.contents.settle(core.objects.get(id)!);
     for (const [obj, value] of contents) {
-      const { changes: c } = core.contents.see(obj, frameId, capturedAtMs, value, false);
+      const { changes: c } = core.contents.see(obj, frameId, capturedAtMs, value, 0);
       if (obj.confirmed && obj.status !== "gone") changes.push(...c);
     }
     // 이 프레임에서 본 대상의 지금만 맞는 사실: 이 답에 없으면 지운다(더 새 답의 사실, 같은 원본 프레임을 잘라 본 답의 사실은 그대로)

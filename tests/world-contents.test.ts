@@ -23,9 +23,11 @@ function scene(view: CameraView | null = null, seen: Detection = cup) {
   const obs = (states: string[]): SceneObservation => ({ scene: "k", observations: states.map((state) => ({ object_id: "d1", state: state as SceneObservation["observations"][number]["state"] })), summary: "s" });
   const say = (i: number, ...states: string[]) => w.applyScene(`e${i}`, i * 1000, obs(states), ids);
   const crop = (i: number, ...states: string[]) => w.applyCloserScene(`e${i}`, i * 1000, obs(states), ids);
+  /** 그 초 원본 프레임을 위에서 본 답(대상 확인을 거친 장, src/observe/pipeline.ts topLook). */
+  const top = (i: number, value: "empty" | "has_contents") => w.applyTop("cup_1", `e${i}`, i * 1000, value);
   const cupNow = () => w.view(99_000).objects[0]!;
   const lines = (c: { kind: string; text: string; meaningful: boolean }[]) => c.filter((x) => x.kind === "state").map((x) => [x.text, x.meaningful]);
-  return { w, say, crop, cupNow, lines };
+  return { w, say, crop, top, cupNow, lines };
 }
 
 describe("내용물 확인", () => {
@@ -139,6 +141,84 @@ describe("내용물 확인", () => {
     t.crop(1, "empty"); t.say(2, "has_contents");
     expect(t.cupNow().facts.contents).toMatchObject({ value: "has_contents" });
     expect(t.cupNow().facts.contents).not.toHaveProperty("closer_ms");
+  });
+});
+
+describe("위에서 본 사진(2장·1.5초 이상·공백 6초 이하)", () => {
+  it("불투명이 확인된 컵: 옆 사진은 버리고, 위에서 본 두 장(0초·2초 간격)이면 확인됨이다(세대 +1, 판단 계기 줄)", () => {
+    const s = scene();
+    s.say(1, "opaque"); s.say(2, "opaque");
+    for (const i of [3, 5, 7]) s.say(i, "empty");
+    expect(s.cupNow().facts.contents).toMatchObject({ value: "contents_unknown", certainty: "confirmed" });
+    const gen = s.cupNow().contents_gen ?? 0;
+    expect(s.lines(s.top(8, "empty"))).toEqual([]);
+    expect(s.cupNow().facts.contents).toMatchObject({ value: "contents_unknown", certainty: "confirmed" });
+    expect(s.lines(s.top(10, "empty"))).toEqual([["컵 cup_1 비어 있음", true]]);
+    expect(s.cupNow()).toMatchObject({ contents_gen: gen + 1, facts: { contents: { value: "empty", certainty: "confirmed" } } });
+  });
+  it("한 장, 1초 간격, 10초 간격은 확인이 아니다", () => {
+    for (const [a, b] of [[8, 9], [8, 18]] as const) {
+      const s = scene();
+      s.say(1, "opaque"); s.say(2, "opaque");
+      s.top(a, "empty"); s.top(b, "empty");
+      expect(s.cupNow().facts.contents).toMatchObject({ value: "contents_unknown", certainty: "confirmed" });
+    }
+  });
+  it("속이 비치는 컵도 위 두 장으로 확인된다. 옆 사진 3장·4초 규칙도 그대로다", () => {
+    const s = scene();
+    s.top(1, "has_contents"); s.top(3, "has_contents");
+    expect(s.cupNow().facts.contents).toMatchObject({ value: "has_contents", certainty: "confirmed" });
+  });
+  it("옆 사진으로 확인된 값은 창 밖에서도 위 두 장이 반대면 바뀐다(이전 값 보관, 세대 +1). 그 뒤 옆 사진의 반대 값은 바꾸지 않는다", () => {
+    const s = scene();
+    for (const i of [1, 3, 5]) s.say(i, "has_contents");
+    expect(s.cupNow()).toMatchObject({ contents_gen: 1, facts: { contents: { value: "has_contents", certainty: "confirmed" } } });
+    s.top(6, "empty");
+    expect(s.cupNow().facts.contents).toMatchObject({ value: "has_contents", certainty: "confirmed" });
+    s.top(8, "empty");
+    expect(s.cupNow()).toMatchObject({ contents_gen: 2, contents_past: [{ value: "has_contents" }], facts: { contents: { value: "empty", certainty: "confirmed" } } });
+    for (const i of [9, 11, 13]) s.say(i, "has_contents");
+    expect(s.cupNow().facts.contents).toMatchObject({ value: "empty" });
+    expect(s.cupNow().contents_gen).toBe(2);
+  });
+  it("옆 사진으로 확인된 값은 불투명이 확인되면 거둔다(보관, 세대 +1)", () => {
+    const s = scene();
+    for (const i of [1, 3, 5]) s.say(i, "empty");
+    s.say(6, "opaque"); s.say(7, "opaque");
+    expect(s.cupNow()).toMatchObject({ contents_gen: 2, contents_past: [{ value: "empty" }], facts: { contents: { value: "contents_unknown", certainty: "confirmed" } } });
+  });
+  it("위에서 확인한 값도 따르기 창이 다시 연다", () => {
+    const s = scene();
+    s.top(1, "empty"); s.top(3, "empty");
+    s.w.contentsAction("cup_1", 4000, true);
+    expect(s.cupNow().facts.contents).toMatchObject({ value: "empty", certainty: "inferred" });
+  });
+  it("같은 원본 프레임은 위에서 본 답 > 잘라 본 답 > 전체 사진 답 차례로 덮는다", () => {
+    const s = scene();
+    s.say(1, "has_contents"); s.crop(1, "has_contents"); s.top(1, "empty");
+    s.top(3, "empty");
+    expect(s.cupNow().facts.contents).toMatchObject({ value: "empty", certainty: "confirmed" });
+  });
+  it("같은 원본 프레임의 위에서 본 답 뒤에 온 잘라 본 답은 버린다", () => {
+    const s = scene();
+    s.top(1, "empty"); s.crop(1, "has_contents"); s.top(3, "empty");
+    expect(s.cupNow().facts.contents).toMatchObject({ value: "empty", certainty: "confirmed" });
+  });
+  it("잘라 본 답으로 받치던 프레임을 위에서 본 반대 답이 덮으면 확인을 다시 센다", () => {
+    const s = scene();
+    for (const i of [1, 3, 5]) s.crop(i, "has_contents");
+    expect(s.cupNow()).toMatchObject({ contents_gen: 1, facts: { contents: { value: "has_contents", certainty: "confirmed" } } });
+    s.top(3, "empty");
+    expect(s.cupNow().contents_gen).toBe(2);
+    expect(s.cupNow().facts.contents?.certainty).toBe("inferred");
+    s.top(5, "empty");
+    expect(s.cupNow().facts.contents).toMatchObject({ value: "empty", certainty: "confirmed" });
+  });
+  it("위에서 본 답은 마지막 본 때를 올리고 closer 지킴을 건다. 없거나 사라진 물건이면 빈 목록", () => {
+    const s = scene();
+    s.top(20, "empty");
+    expect(s.w.view(20_000).objects[0]).toMatchObject({ last_seen_ms: 20_000, closer_hold: true });
+    expect(s.w.applyTop("cup_9", "e21", 21_000, "empty")).toEqual([]);
   });
 });
 
