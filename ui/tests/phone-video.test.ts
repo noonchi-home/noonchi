@@ -1212,6 +1212,19 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
       expect(urls).toEqual(["/phone/videos/cup-empty.mp4", "/phone/videos/go-cup.mp4"]);
     });
 
+    it("단계 영상을 열지 못하면(재생 실패) 예약이 풀려, 같은 명령이 다시 오면 다시 바꿔 본다", async () => {
+      fakeTimers();
+      const { ws, urls, startAr } = make({}, PEEK_STEPS, { later: { play: async () => { throw new Error("열 수 없음"); } } });
+      await startAr();
+      ws.push(ALIGNED);
+      ws.push(goCup());
+      await after(2000);
+      expect(urls).toEqual(["/phone/videos/cup-empty.mp4", "/phone/videos/go-cup.mp4"]);
+      ws.push(goCup({ vision: "컵까지 1.2m", speak: false }));
+      await after(2000);
+      expect(urls).toEqual(["/phone/videos/cup-empty.mp4", "/phone/videos/go-cup.mp4", "/phone/videos/go-cup.mp4"]);
+    });
+
     it("시간 초과 질문 뒤 「계속」으로 같은 go 명령이 다시 오면 영상 칸을 더 쓰지 않고 걷기만 다시 시작한다", async () => {
       fakeTimers();
       const { ws, sent, urls, startAr } = make({}, PEEK_STEPS);

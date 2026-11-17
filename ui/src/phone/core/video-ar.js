@@ -369,6 +369,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
     let lastCmdId = null;
     let lastKey = null; // 마지막으로 받은 명령 id:단계(같은 명령이 다시 오면 비전 상태만 바뀐 것)
     let pendingKey = null; // 단계 영상 바꾸기를 예약한 명령 id:단계(끝나거나 지워지기 전)
+    let pendingToken = null; // 그 예약 하나(바꾸기가 끝나면 성공·실패·취소 모두 그 예약만 푼다)
     let stepClip = null; // 지금 도는 단계 영상 이름(첫 영상이면 null)
     let holdMs = 0; // 마지막 장면을 붙잡은 시간(타이머 칸을 센다): 붙잡는 동안에도 영상 시각이 흐른다
     let holdTimer = null;
@@ -630,6 +631,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
         if (fresh) {
           lastKey = key;
           pendingKey = null;
+          pendingToken = null;
           cmdGen++;
           for (const timer of reactTimers) clearTimeout(timer);
           reactTimers.clear();
@@ -664,11 +666,19 @@ export function createVideoAr({ link, params, hooks, deps }) {
         const n = used.get(slot) ?? 0;
         if (group.length > 1 && n >= group.length) return;
         const entry = group.length > 1 ? group[n] : first;
+        const token = {};
         pendingKey = key;
+        pendingToken = token;
+        // 바꾸기가 끝나면(성공·재생 실패·더 새 바꾸기·지움) 이 예약을 푼다: 재생에 실패했으면 같은 명령이 다시 올 때 다시 바꿔 본다
+        const settle = () => {
+          if (pendingToken !== token) return;
+          pendingToken = null;
+          pendingKey = null;
+        };
         later(() => void swap(entry.clipUrl, pose, gen, () => {
           used.set(slot, Math.max(used.get(slot) ?? 0, n + 1));
           switched.add(key);
-        }));
+        }).finally(settle));
       },
       /** 명령이 지워졌다(id가 없으면 무엇이든): 마지막 단계 영상 명령이면 세대를 올려 예약된 바꾸기·재생을 기다리는 바꾸기를 버리고 걷기를 멈춘다. */
       commandClear(id) {
@@ -676,6 +686,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
         cmdGen++;
         lastKey = null;
         pendingKey = null;
+        pendingToken = null;
         for (const timer of reactTimers) clearTimeout(timer);
         reactTimers.clear();
         walk = null;
