@@ -4,7 +4,8 @@
 
 **쉬운 요약:**
 1. 지금은 World State의 사람·물건 등장·자리·사라짐·자세·손에 듦을 YOLO가 0.1초마다 바꾸고, VLM은 그 감지에 사실만 단다. 그래서 YOLO가 컵을 못 잡으면 VLM이 컵을 봐도 컵이 없는 것이 된다(가로 유리컵·머그 실제 판).
-2. 사용자 결정: 상태 동기화는 VLM으로만 하고, YOLO는 대시보드 미니맵 상자 그리기에만 쓴다.
+2. 사용자 결정: 상태 동기화는 VLM으로만 한다. YOLO의 쓸모는 셋이다: 대시보드 미니맵 상자, 폰 위치 맞추기(가구 기준점), 쓰러짐 감지(빠른 자세).
+   - 쓰러짐만 World State에 들어가는 예외 길 하나로 둔다. 다른 YOLO 감지는 World State로 들어가지 못하게 구조로 막는다.
 3. VLM 장면 답이 사람·물건 목록(종류·상자·자세·하는 일·몸통·내용물)을 내고, World State는 그 목록만으로 바뀐다. 가까이 보기의 「찾은 것」도 VLM 답으로 채운다.
 4. YOLO(0.1초)에서 VLM(2초 + 답 1.8초)으로 바뀌어 반응이 늦어진다. 구간별 숫자와 줄이는 법을 아래에 적는다.
 
@@ -16,11 +17,15 @@
   - 물건(가전 설비 포함): 종류, 상자, 면 값(자리·몸통·내용물·열림·쓰는 중·화면).
   - `observations`(감지 번호에 다는 사실)는 없앤다.
 - World State는 VLM 상자 아랫변 가운데를 지금 YOLO와 같은 투영(`placePoint`)으로 트윈 자리로 바꾸고, VLM 사진 간격 기준의 확정·사라짐 규칙으로 넣는다.
-- YOLO 감지는 관찰 흐름에서 대시보드 `seen`(미니맵)으로만 간다. World State 입구(`applyDetections`·`applyPose`)를 없애 구조로 막는다.
+- YOLO 감지는 관찰 흐름에서 대시보드 `seen`(미니맵)과 폰 위치 맞추기(`landmarks`)로만 간다.
+- 관절은 쓰러짐 신호 하나로만 World State에 들어간다(`applyFall`). World State 입구 `applyDetections`·`applyPose`를 없애 구조로 막는다.
 
 **Tech Stack:** Node 22 TypeScript, zod 4, Vitest, 가짜 VLM(`scripts/fake-openai.ts`). 실제 모델은 부르지 않는다(실제 판은 조정자가 돌린다).
 
-**Spec:** 사용자 결정(2026-11-18): 「상태 동기화는 VLM으로만 써. YOLO는 그냥 미니맵 표시용」, 「트윈 성능(속도) 최우선」, 목표 「가로 영상 세 개가 끝까지 통과」. 앞 결정의 「YOLO 약한 감지로 확정」, 「YOLO는 사람·자세·추적 담당」은 버린다(조정자 전달).
+**Spec:** 사용자 결정(2026-11-18):
+- 「상태 동기화는 VLM으로만 써. YOLO는 그냥 미니맵 표시용」, 「트윈 성능(속도) 최우선」, 목표 「가로 영상 세 개가 끝까지 통과」.
+- 이어서 정한 것: 「코치 모드에서 긴급 상황, 예를 들어 서 있다가 갑자기 쓰러지는 자세를 포착하면 보호자에게 전화하는 걸 만들어야 해. YOLO는 이거(위치 맞추기)랑 그거(쓰러짐)로 쓴다고 생각해」. 폰 위치 맞추기 기준점은 YOLO로 남긴다.
+- 앞 결정의 「YOLO 약한 감지로 확정」, 「YOLO는 사람·자세·추적 담당」은 버린다(조정자 전달).
 
 ## 조사한 사실
 
@@ -48,10 +53,10 @@
 | 1 | 물건 등장·자리·사라짐 | `objects.ts` `applyDetections`·`Confirmer` | **VLM으로**: `objects` 목록의 상자 → 자리, VLM 사진 기준 확정·사라짐(아래) | 사용자 결정. 실제 판 두 번 모두 VLM이 본 컵을 YOLO가 놓침 |
 | 2 | 사람 등장·사라짐·수 | `objects.ts`·`people.ts` `locatePerson` | **VLM으로**: `people` 목록 | 같음 |
 | 3 | 사람 자리·방 | `people.ts` `locatePerson`(상자 바닥 → 트윈) | **VLM으로**: 사람 상자 바닥 → 같은 투영 | 투영 길은 그대로 쓴다 |
-| 4 | 사람 자세(관절) | `people.ts` `applyPose`, `pose.ts` | **VLM으로**: `posture`(지금도 VLM 값이 있음). 관절이 VLM 답을 덮는 규칙(`poseHolds`) 삭제 | VLM이 이미 같은 값을 답한다 |
+| 4 | 사람 자세(관절) | `people.ts` `applyPose`, `pose.ts` | **VLM으로**: `posture`(지금도 VLM 값이 있음). 관절이 VLM 답을 덮는 규칙(`poseHolds`)은 쓰러짐 의심 동안 막는 부분만 남기고 삭제 | VLM이 이미 같은 값을 답한다 |
 | 5 | 손에 듦(관절 손목 + 상자) | `people.ts` `heldIds`·`posedInHand` | **VLM으로**: 사람의 `holding`과 물건 자리 `in_hand` | 같음 |
 | 6 | 들고 감 보호(`carried`: 관절 손 + 움직임) | `objects.ts` `track`·`carried` | **VLM으로 줄여서**: 사람이 사라질 때 마지막 VLM 답에서 손에 든 물건은 다음 VLM이 그 물건을 다른 자리에서 볼 때까지 손에 있음으로 둔다. 움직임 자취(`trail`)는 뺀다 | 0.1초 자취는 VLM 간격에서 뜻이 없다. 지키려던 것(들고 나간 컵이 식탁 컵으로 남음)은 VLM 손에 듦으로 지킨다 |
-| 7 | 쓰러짐 의심(관절 기울기 3초) | `fall.ts`·`people.ts` | **VLM으로**: 자세 `lying` + 자리가 침대·소파가 아님이 VLM 사진 두 장 이어지면 쓰러짐 의심. 지금 침대·소파 빼기 규칙은 그대로 | 안전 기능이라 남긴다. 반응은 늦어진다(아래 표) |
+| 7 | 쓰러짐 의심(관절 기울기 3초) | `fall.ts`·`people.ts` | **YOLO 유지(예외 길 하나)**: 쓰러짐 신호(`FALL_*`, 중력 보정, 침대·소파 빼기)는 지금 그대로. 관찰 흐름이 가장 확실한 한 사람의 관절·상자로 `applyFall` 하나만 부른다(아래 「쓰러짐 예외 길」) | 사용자 결정: 긴급 상황은 빠른 자세로 잡는다. VLM 2초 간격이면 평균 4.8초로 늦어진다 |
 | 8 | 마시기·따르기 사건(관절 + 마스크) | `sip.ts`, `contents.ts` `reopen` | **VLM으로**: 사람 `moment`(마심·따름, 지금 VLM 값)로 내용물을 다시 연다 | VLM이 여러 장 사이 순간을 이미 답한다 |
 | 9 | 컵 크기(`size_m`, 위에서 보기 판정이 씀) | `objects.ts` `sizeOf` | **VLM으로**: VLM 상자를 픽셀로 바꿔 같은 `sizeOf` | 투영 길은 그대로 쓴다 |
 | 10 | 가전 설비 보임·카메라로 본 가전 상태 | `devices.ts` `fixture`·`sight` | **VLM으로**: `objects`에 가전 설비 종류도 넣고 그 면 값(열림·쓰는 중·화면)으로 | 지금도 상태 값은 VLM이 답한다. 보임만 YOLO였다 |
@@ -62,7 +67,20 @@
 | 15 | `frame_ms`(YOLO가 본 마지막 프레임) | `world.ts` `view` | **VLM으로**: VLM 답을 넣은 마지막 프레임의 촬영 시각 | 「사람 안 보임이 지금도 맞나」를 VLM 기준으로 |
 | 16 | 사람 여럿(`crowdAt`) | `objects.ts` | **VLM으로**: `people` 목록 수 | — |
 | 17 | 대시보드 미니맵 물체 모양(`seen`) | `pipeline.ts` `onSeen` | **YOLO 그대로** | 사용자 결정(YOLO는 미니맵용) |
-| 18 | 폰 위치 맞추기 기준점(가구 상자, `onDetected` → `phone.landmarks`) | `src/phone/sync` | **YOLO 그대로(조정자 확인 필요)** | World State 사실이 아니라 카메라 자세 맞추기다. VLM 간격(2초)으로는 맞추기 정확도가 떨어진다. 사용자 결정 「YOLO는 미니맵용만」에 넣을지 정해 주세요 |
+| 18 | 폰 위치 맞추기 기준점(가구 상자, `onDetected` → `phone.landmarks`) | `src/phone/sync` | **YOLO 그대로**(사용자 결정) | World State 사실이 아니라 카메라 자세 맞추기다. VLM 간격(2초)으로는 맞추기 정확도가 떨어진다 |
+
+### 쓰러짐 예외 길(YOLO → World State는 여기 하나)
+
+- `WorldState.applyFall(at, signal: FallSignal | null)`
+  - `FallSignal`은 그 프레임의 가장 확실한 한 사람의 관절·상자·프레임 크기·카메라다. `null`은 사람 관절 없음이다.
+  - 지금 `people.ts` `applyPose`의 쓰러짐 부분(`fallPose`·`FallWatch.see`·침대·소파 빼기·`fall_suspected` 자세와 의미 있는 변화 한 줄)만 옮긴다.
+  - 손에 듦·자세(서 있음·앉아 있음·누워 있음)·들고 감은 하지 않는다(VLM이 한다).
+- 쓰러짐 의심인 동안 VLM 자세 답이 그 자세를 지우지 않는 지금 규칙(`poseHolds`의 쓰러짐 부분)은 남긴다. 그 밖의 관절 우선 규칙은 없앤다.
+- 사람 등장·사라짐은 VLM이 정한다. 쓰러짐 신호는 VLM이 사람을 아직 확정하지 않았어도 「쓰러짐 의심」 변화를 낸다(긴급이라 기다리지 않는다).
+- **구조로 막기:** `src/world/`에서 계약의 `Detection`·`Pose`(YOLO 출력 타입)를 쓰는 파일은 `src/world/fall.ts`·`src/world/pose.ts`(쓰러짐 계산)와 `applyFall`이 있는 파일 하나뿐이다.
+  - 새 시험 `tests/world-yolo-gate.test.ts`가 그 밖의 파일에서 그 타입을 import하면 실패한다.
+  - 지금 `objects.ts`·`people.ts`·`devices.ts` 실제 줄로 실패를 확인한다.
+  - 관찰 흐름은 YOLO 감지를 `seen`·`landmarks`·`applyFall` 셋에만 넘긴다(`tests/observe-yolo-routes.test.ts`).
 
 ## 장면 VLM 답 모양
 
@@ -106,7 +124,8 @@
 | 물건 사라짐 | 약 6.2초 | 0~2 + 4 + 1.8 = 평균 6.8초(3장) | 사람이 보이면 평균 3.8초 |
 | 물건 자리 바뀜(옮김) | 약 0.2초 | 평균 2.8초 | 평균 1.8초 |
 | 손에 듦·마심 | 관절 3장에 1장, 약 0.5초 | 평균 2.8초 | 평균 1.8초 |
-| 쓰러짐 의심 | 넘어짐 + 누운 채 3초, 약 3.2초 | 0~2 + 2 + 1.8 = 평균 4.8초(2장) | 평균 2.8초 |
+| 폰 위치 맞추기 | YOLO 기준점 | **YOLO 유지: 그대로** | 같음 |
+| 쓰러짐 의심 | 넘어짐 + 누운 채 3초, 약 3.2초 | **YOLO 유지: 약 3.2초 그대로** | 같음 |
 | 가까이 보기 결과 | 자르기 + YOLO + VLM, 약 2초 | VLM만, 약 1.8초(자르기 YOLO 0.15초 빠짐) | 같음 |
 | 대시보드 미니맵 | 0.1초(YOLO) | 그대로 | 그대로 |
 
@@ -154,8 +173,8 @@
 **묶음 ③: 사람·자세·손에 듦·사건을 VLM으로(YOLO → World State 길 다 끊기)**
 
 - Task 7: `people` 목록 → 사람 등장·사라짐·자리·방·자세·하는 일·손에 듦(표 2~5·16).
-- Task 8: 쓰러짐 의심·마시기 사건·들고 감·컵 크기·가전 설비 상태(표 6~10·12).
-- Task 9: `applyDetections`·`applyPose`·`Detection`·`Pose`를 World State 입구에서 없앤다. `tests/domain-boundaries.test.ts` 또는 새 검사로 `src/world/`가 `Detection`·`Pose`를 가져오면 실패하게 한다(구조로 막기).
+- Task 8: 마시기 사건·들고 감·컵 크기·가전 설비 상태(표 6·8~10·12)를 VLM으로.
+- Task 9: 쓰러짐 예외 길 `applyFall`을 떼어 내고, `applyDetections`·`applyPose`를 World State 입구에서 없앤다. `tests/world-yolo-gate.test.ts`·`tests/observe-yolo-routes.test.ts`로 구조로 막는다(위 「쓰러짐 예외 길」). 쓰러짐 시험(`tests/world-fall*.test.ts`)은 `applyFall`로 그대로 통과한다.
 - Task 10: 사람이 보이는 동안 VLM 1초(`VLM_FRAME_MS_ACTIVE`), 짧은 스키마. `tests/latency-world.test.ts` 같은 반응 시험(가짜 VLM 답 지연을 둔 사람 사라짐 반응)을 둔다.
 
 각 묶음 끝: 데모 e2e 넷·영상 모드 셋·typecheck·lint, 커밋·push, 해시를 조정자에게. 실제 판은 조정자가 돌린다.
@@ -167,6 +186,15 @@
 | 반응이 늦어짐(위 표) | 사람이 보이는 동안 1초·짧은 스키마. 실제 판 시각표로 잰다 |
 | VLM이 없는 물건을 지어냄 | 물건은 두 장 같은 자리여야 확정. 가까이 보기 1장은 사람이 그 자리를 비춘 때뿐 |
 | VLM 상자가 덜 정확(작은 물건) | 바닥 점 투영 오차를 `errorM`에 남기고, 맞추기는 종류 거리 안 |
-| 쓰러짐 의심이 늦어짐(안전) | 두 장(사람이 보이면 1초 간격)으로 평균 2.8초. 실제 판에서 확인하고 더 늦으면 조정자와 다시 정한다 |
+| YOLO가 쓰러짐 길로 World State에 새어 들어감 | 예외 길은 `applyFall` 하나, 받는 것은 쓰러짐 신호뿐. 두 구조 시험이 막는다 |
 | 시험 대본을 모두 바꿔야 함 | 장면 대본 → 가짜 VLM 답 도우미 하나로 옮김(Task 6) |
 | 다른 에이전트의 act/track·ui 변경과 충돌 | observe·VLM·world/state·contract·tests에 머문다. `src/act`는 `CloserFound.via`만 읽는다 |
+
+## 쓰러짐 → 보호자 연락: 지금 코드가 이어진 곳(다음 일)
+
+지금은 쓰러짐 의심이 보호자 연락으로 이어지지 않는다.
+- YOLO 관절이 쓰러짐 의심이 되면 World State 사람 자세가 `fall_suspected`가 되고 의미 있는 변화 「쓰러짐 의심」 한 줄이 난다(`src/world/state/people.ts`).
+- 대시보드 말풍선 카드가 다른 글보다 먼저 「사람이 쓰러진 것 같아요.」를 보인다(`src/act/say.ts`).
+- 그 변화는 PAM 판단의 계기·관찰 텍스트에 들어가지만, PAM 행동 목록(`src/act/tasks.ts`)에는 연락 행동이 없다.
+- 보호자 연락(`call_service` kind `guardian`, `src/agent/service.ts`)은 말로 시킨 요청에서 에이전트 도구로만 부른다. 부르면 늘 실제 폰으로 승인을 먼저 묻고, 받는 이는 등록부 `contacts.json`에서만 정한다(구현명세서 6.6).
+- 그래서 지금은 쓰러짐을 보고 바로 거는 길도, 승인 질문을 내는 길도 없다. 코치 모드 긴급 상황 → 보호자 전화는 다음 일로 따로 계획한다.
