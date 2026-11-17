@@ -30,17 +30,29 @@ const cupKey = (label: string | undefined, text: string) =>
  *  told: 마지막으로 다시 알린(tell) 시각. quiet: 지금 조용히 띄운 단계 이름(src/act/track/coach.ts quietStep).
  *  reflected: 마지막 반성 시각과 새로 배운 규칙 수·쓰고 있는 습관 수(20초 동안 말한다). offWait: 끄기 안내 때문에 새 계획을 미루는 동안 기다리는 가전 이름.
  *  offTold: 줄에서 기다리는 끄기 안내를 마지막으로 소리로 알린 가전 이름과 시각(20초 동안 말한다). service: 마지막 외부 연락 결과 글과 그 시각(20초 동안 말한다). */
-export function sayLine({ plan, command, world, nowMs, look = null, left = null, told = null, quiet = null, reflected = null, offWait = null, offTold = null, service = null }: {
+export interface SayInput {
   plan: PlanView | null; command: PlannedCommandMessage | null; world: WorldView | null; nowMs: number; look?: { place: string; atMs: number } | null; left?: { atMs: number } | null;
   told?: { atMs: number } | null; quiet?: string | null; reflected?: { atMs: number; learned: number; active: number } | null; offWait?: string | null;
   offTold?: { device: string; atMs: number } | null; service?: { text: string; atMs: number } | null;
-}): string {
-  if (world?.person?.facts.posture?.value === POSE_FALL) return SAY_TEXT.fall;
-  if (look && nowMs - look.atMs <= SAY_LOOK_MS) return SAY_TEXT.closer(look.place);
-  if (offTold && nowMs - offTold.atMs <= SAY_DONE_MS) return SAY_TEXT.rearmed(offTold.device);
-  if (offWait) return SAY_TEXT.offWait(offWait);
+}
+
+/** 말풍선 말과, 그 말이 안전 알림(쓰러짐 의심·다시 켜짐·꺼짐 기다림·끄기 안내)인가. 대시보드 메시지 상자는 안전 알림이 유효한 동안 한 줄을 늘 그 알림에 준다. */
+export function sayOf(i: SayInput): { text: string; safety: boolean } {
+  const { world, nowMs, look = null, offWait = null, offTold = null, command } = i;
+  if (world?.person?.facts.posture?.value === POSE_FALL) return { text: SAY_TEXT.fall, safety: true };
+  if (look && nowMs - look.atMs <= SAY_LOOK_MS) return { text: SAY_TEXT.closer(look.place), safety: false };
+  if (offTold && nowMs - offTold.atMs <= SAY_DONE_MS) return { text: SAY_TEXT.rearmed(offTold.device), safety: true };
+  if (offWait) return { text: SAY_TEXT.offWait(offWait), safety: true };
   // 끄기 안내(켠 채 닫힌 계획 뒤)가 떠 있는 동안
-  if (command?.type === "command" && isOffStep(command.step)) return SAY_TEXT.offAsked;
+  if (command?.type === "command" && isOffStep(command.step)) return { text: SAY_TEXT.offAsked, safety: true };
+  return { text: restLine(i), safety: false };
+}
+
+/** 말풍선 글 한 문장(sayOf의 글). */
+export const sayLine = (i: SayInput): string => sayOf(i).text;
+
+/** 안전 알림·가까이 보기 다음 차례의 말. */
+function restLine({ plan, command, world, nowMs, left = null, told = null, quiet = null, reflected = null, service = null }: SayInput): string {
   if (service && nowMs - service.atMs <= SAY_DONE_MS) return service.text;
   if (plan && OPEN.has(plan.status)) {
     if (told && nowMs - told.atMs <= SAY_TOLD_MS) return SAY_TEXT.retold;

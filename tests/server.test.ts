@@ -147,7 +147,7 @@ describe("REST 명령 + WS 이벤트", () => {
       type: "seen", at_ms: 11, frame_id: "e7", captured_at_ms: 9, frame: { width: 360, height: 640 },
       shapes: [{ label: "cup", score: 0.83, mask: { at: [100, 50, 40, 60], cols: 1, rows: 1, bits: "gA==" } }],
     };
-    const app = createApp({ hub: home.hub, policy: home.policy, rooms: ROOMS, log: () => {}, world: () => world, brainLast: () => [decision], seenLast: () => seen, say: () => "컵을 들라고 했어요." });
+    const app = createApp({ hub: home.hub, policy: home.policy, rooms: ROOMS, log: () => {}, world: () => world, brainLast: () => [decision], seenLast: () => seen, say: () => ({ text: "컵을 들라고 했어요." }) });
     const { url } = await app.listen(0, "127.0.0.1");
     cleanups.push(() => app.close());
     const { waitFor, messages } = await listen(url);

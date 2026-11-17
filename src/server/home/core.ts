@@ -83,6 +83,8 @@ export class HomeCore {
   lastDecision: BrainLog | null = null;
   lastSeen: SeenEvent | null = null;
   said: string | null = null;
+  /** 지금 말풍선 말이 안전 알림인가(src/act/say.ts sayOf). */
+  saidSafety = false;
   lookSay: { place: string; atMs: number } | null = null;
   reflected: { atMs: number; learned: number; active: number } | null = null;
   serviceSaid: { text: string; atMs: number } | null = null;

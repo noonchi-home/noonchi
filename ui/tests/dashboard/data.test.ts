@@ -41,6 +41,17 @@ describe("대시보드 자료", () => {
     expect(talkOf(feed([learned(BRANCHES.clear, false), one]))!.habit).toBeNull();
     expect(talkOf(feed([learned(BRANCHES.clear, true), one, learned(null, false, 2)]))!.habit).toBeNull();
   });
+  // Codex(2a449e5 data.ts:75·126): 쓰러짐·끄기 안내 뒤 생각 두 줄이 오면 아직 유효한 안전 알림이 밀려 사라졌다
+  it("안전 알림(say safety)이 유효한 동안 메시지 상자 최신 줄은 늘 그 알림이고, 안전 아닌 말이 오면 풀린다", () => {
+    const fall = "사람이 쓰러진 것 같아요.";
+    const s = feed([said("pam-0", 5, "식탁을 보고 있어요"), { type: "say", text: fall, safety: true }, said("pam-1", 10, "사람이 보여요", "자세가 낮아요")]);
+    expect(textsOf(s)).toEqual(["자세가 낮아요", fall]);
+    const more = reduceDash(s, said("pam-2", 20, "계속 지켜볼게요"), 0);
+    expect(textsOf(more)).toEqual(["계속 지켜볼게요", fall]);
+    const over = reduceDash(more, { type: "say", text: "지켜보고 있어요." }, 0);
+    expect(textsOf(over)).toEqual(["계속 지켜볼게요", "지켜보고 있어요."]);
+    expect(textsOf(reduceDash(more, { type: "say", text: null }, 0))).toEqual(["자세가 낮아요", "계속 지켜볼게요"]);
+  });
   it("계획 단계마다 번호·마스코트·말이 따라간다", () => {
     const says = ["식탁으로 가라고 했어요.", "컵을 들라고 했어요.", "싱크대로 가라고 했어요.", "컵을 싱크대에 넣으라고 했어요."];
     for (let n = 1; n <= 4; n++) {
@@ -60,7 +71,7 @@ describe("대시보드 자료", () => {
     const seen = (run.moments[1]!.messages as ServerMessage[]).find((m) => m.type === "seen")!;
     expect(seen).toMatchObject({ type: "seen", frame: { width: 405, height: 720 }, shapes: [{ label: "cup" }] });
     expect(reduceDash(s, seen, 5)).toBe(s);
-    expect(Object.keys(s).sort()).toEqual(["decision", "eye", "plan", "reflection", "say", "talk", "thoughts"]);
+    expect(Object.keys(s).sort()).toEqual(["decision", "eye", "plan", "reflection", "safety", "say", "talk", "thoughts"]);
   });
   describe("반성 뒤 메시지 상자", () => {
     const NIGHT = { state: "left_cup", trigger: "밤에 사용자가 식탁을 떠난다.", action: "컵 치우기" };

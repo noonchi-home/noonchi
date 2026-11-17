@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { PlannedCommand } from "../src/contract/phone.js";
 import type { PlanView } from "../src/contract/plan.js";
 import type { WorldView } from "../src/contract/world.js";
-import { SAY_DONE_MS, SAY_LOOK_MS, SAY_TOLD_MS, sayLine } from "../src/act/say.js";
+import { SAY_DONE_MS, SAY_LOOK_MS, SAY_TOLD_MS, sayLine, sayOf } from "../src/act/say.js";
 import { STEP_LABEL } from "../src/act/labels.js";
 import { POSE_FALL } from "../src/world/vocab.js";
 
@@ -147,5 +147,21 @@ describe("말풍선 카드 글: 외부 연락 결과", () => {
     expect(say({ service, offTold: { device: "인덕션", atMs: T - 500 } })).toBe("인덕션이 다시 켜졌어요.");
     expect(say({ service, offWait: "인덕션" })).toBe(say({ offWait: "인덕션" }));
     expect(say({ service, command: cmd("off:plan:d1:1") })).toBe(say({ command: cmd("off:plan:d1:1") }));
+  });
+});
+
+// Codex(2a449e5 data.ts:75·126): 안전 알림 뒤 생각 두 줄이 오면 그 알림이 메시지 상자 밖으로 밀렸다. 서버가 안전 알림인 말에 표시를 단다
+describe("말풍선 말의 안전 알림 표시(sayOf safety)", () => {
+  const fallen = { objects: [], person: { facts: { posture: { value: POSE_FALL } } } } as unknown as WorldView;
+  const of = (o: Partial<Parameters<typeof sayOf>[0]>) => sayOf({ plan: null, command: null, world: null, nowMs: T, ...o });
+  it("쓰러짐 의심·다시 켜짐·꺼짐 기다림·끄기 안내는 safety이고, 글은 sayLine과 같다", () => {
+    for (const o of [{ world: fallen }, { offTold: { device: "인덕션", atMs: T - 500 } }, { offWait: "인덕션" }, { command: cmd("off:plan:d1:1") }]) {
+      expect(of(o)).toEqual({ text: say(o), safety: true });
+    }
+  });
+  it("그 밖의 말(지켜보기·외부 연락 결과·가까이 보기·계획 단계)은 safety가 아니다", () => {
+    for (const o of [{}, { service: { text: "AS센터에 전화를 요청했어요.", atMs: T - 1000 } }, { look: { place: "식탁", atMs: T - 1000 } }, { plan: plan("running") }]) {
+      expect(of(o)).toEqual({ text: say(o), safety: false });
+    }
   });
 });

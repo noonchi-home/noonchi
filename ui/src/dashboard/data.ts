@@ -20,11 +20,13 @@ export interface DashData {
   /** 마지막 성공한 반성(접속 때 다시 받은 오늘 것 포함). */
   reflection: Reflection | null;
   say: string | null;
+  /** 지금 유효한 안전 알림 말(say safety)과 그 줄 id. 안전 아닌 말이나 빈 말이 오면 null. 메시지 상자는 그동안 한 줄을 늘 이 알림에 준다. */
+  safety: { id: string; text: string } | null;
   /** 메시지 상자 줄: 새로 온 생각 메시지(반성 메시지 포함)와 바뀐 말풍선 카드 말을 받은 차례로(시계가 다른 기기여도 차례가 맞다). 최근 THOUGHT_KEPT개. */
   talk: { id: string; text: string }[];
 }
 
-export const EMPTY_DASH: DashData = { plan: null, eye: null, decision: null, thoughts: [], reflection: null, say: null, talk: [] };
+export const EMPTY_DASH: DashData = { plan: null, eye: null, decision: null, thoughts: [], reflection: null, say: null, safety: null, talk: [] };
 
 /** 메시지 상자 줄 더하기: 같은 id는 한 번만, 받은 차례로 최근 THOUGHT_KEPT개. */
 function addTalk(list: DashData["talk"], more: { id: string; text: string }[]): DashData["talk"] {
@@ -70,9 +72,15 @@ export function reduceDash(s: DashData, m: ServerMessage, now: number): DashData
     }
     case "eye":
       return m.eye.estimated ? s : { ...s, eye: m.eye };
-    case "say":
-      if (m.text === s.say) return s;
-      return { ...s, say: m.text, talk: m.text ? addTalk(s.talk, [{ id: `say@${now}:${s.talk.length}`, text: m.text }]) : s.talk };
+    case "say": {
+      const safe = !!m.safety && !!m.text;
+      if (m.text === s.say && safe === !!s.safety) return s;
+      const id = `say@${now}:${s.talk.length}`;
+      const changed = m.text !== s.say;
+      const talk = changed && m.text ? addTalk(s.talk, [{ id, text: m.text }]) : s.talk;
+      const safety = safe ? (changed ? { id, text: m.text! } : s.safety ?? { id, text: m.text! }) : null;
+      return { ...s, say: m.text, safety, talk };
+    }
     case "thought": {
       const thoughts = addThoughts(s.thoughts, m.messages);
       if (thoughts === s.thoughts) return s;
@@ -123,7 +131,9 @@ export interface Talk { lines: { id: string; text: string }[]; habit: string | n
  */
 export function talkOf(s: DashData): Talk | null {
   if (!s.talk.length) return null;
-  const lines = s.talk.slice(-TALK_SHOWN);
+  // 안전 알림이 유효한 동안 최신 줄은 늘 그 알림이고, 지난 줄은 그 밖의 가장 새 줄이다
+  const safety = s.safety;
+  const lines = safety ? [...s.talk.filter((l) => l.id !== safety.id).slice(-(TALK_SHOWN - 1)), safety] : s.talk.slice(-TALK_SHOWN);
   const d = s.decision;
   const rule = d?.action && d.fsm?.learned ? (d.fsm.state ? FSM_STATE_TEXT[d.fsm.state] ?? d.fsm.trigger : d.fsm.trigger) : null;
   const habit = d?.action && d.fsm?.learned ? `${WORDS.habitLine}: ${rule ? `${rule} · ` : ""}${d.action}` : null;
