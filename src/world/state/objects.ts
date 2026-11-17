@@ -9,7 +9,7 @@ import { CHANGE_TEXT, onSurface } from "../labels.js";
 import { inView, placePoint, sizeOf } from "../place.js";
 import { CLASSES, NOW_FACETS, POSE_HOLD } from "../vocab.js";
 import { NEAR_M as REACH_M, sameDrinkware } from "../vocab.js";
-import { KEYS, OBJ_CLASSES, PERSON, Part, SIZE_SAMPLES, VLM_CANDIDATE_MS, fromCamera, type Obj, type TrailSample, type V3 } from "./core.js";
+import { KEYS, OBJ_CLASSES, PERSON, Part, SIZE_SAMPLES, VLM_CANDIDATE_MS, VLM_MATCH_M, fromCamera, type Obj, type TrailSample, type V3 } from "./core.js";
 
 const FIXTURE_CLASSES: ReadonlySet<string> = new Set(KEYS.filter((k) => CLASSES[k].role === "fixture"));
 /** 사라진 물체를 이만큼 두었다가 잊는다(같은 자리에 다시 보이면 같은 id로 돌아온다). */
@@ -81,6 +81,7 @@ export class Detections extends Part {
         obj.room = this.o.roomAt([placed.position[0], placed.position[2]])?.id ?? null;
         obj.posAt = at;
         obj.posCloser = false;
+        obj.vlmPlaced = false;
         obj.posFrom = view ? fromCamera(view.origin, placed.position) : null;
       }
     });
@@ -201,6 +202,9 @@ export class Detections extends Part {
     if (position) {
       const hit = this.core.matchAt(cls, position, used);
       if (hit) return hit;
+      // 장면 VLM 상자로 자리를 정한 물건은 투영 차이가 커서 VLM_MATCH_M 안 감지를 잇는다(가로 유리컵 r6: 한 잔이 cup_9·cup_18 두 id)
+      const vlmHit = this.core.matchAt(cls, position, new Set([...used, ...[...this.core.objects.values()].filter((x) => !x.vlmPlaced).map((x) => x.id)]), VLM_MATCH_M);
+      if (vlmHit) return vlmHit;
       // 손에 든 컵은 그 사진의 폰 눈 REACH_M 안일 때만 먼 감지를 잇는다(폰을 든 사람의 손). 둘 이상이면 모호해 잇지 않는다
       const held = [...this.core.objects.values()].filter((x) => x.confirmed && !used.has(x.id) && sameDrinkware(x.cls, cls) && x.facts.place?.value === POSE_HOLD.object);
       const reach = eye && held.length === 1 && held[0]!.position && Math.hypot(held[0]!.position[0] - eye[0], held[0]!.position[2] - eye[1]) <= REACH_M;

@@ -57,6 +57,9 @@ describe("VLM 장면 분석", () => {
     expect(CLASSES.cup.vlm).toMatch(/drinking glass.*mug.*tumbler/);
     expect(CLASSES.bottle.vlm).toMatch(/narrow neck/);
     expect(SCENE_PROMPT).toContain("A clear drinking glass is a cup, not a bottle.");
+    // 가로 유리컵 r6: 가까이 본 VLM이 유리잔을 그릇으로 답했다
+    expect(CLASSES.bowl.vlm).toMatch(/wide, low/);
+    expect(CLASSES.bowl.vlm).toMatch(/never a bowl/);
   });
 
   it("스키마 objects의 종류 enum은 낱말 표의 내용물 면이 있는 물건(VLM_FIND)이고, 프롬프트가 감지 목록에 없는 물건도 상자와 함께 답하라고 한다", () => {

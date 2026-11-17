@@ -34,6 +34,8 @@ export interface Stall {
 
 /** 단계 진행·치운 물건. */
 export class Steps extends Part {
+  /** 실행마다 지금 World State에 알린 집기·내려놓기 대상 id(focus). */
+  private readonly focused = new WeakMap<Run, string>();
   /** 놓기 단계를 끝낸 물건(placed). */
   private readonly put = new Map<string, { target: string; part?: "basin"; atMs: number }>();
   /** 놓기를 끝낸 물건의 종류(새 id로 다시 잡혔을 때 같은 종류만 이어 간다). */
@@ -223,6 +225,7 @@ export class Steps extends Part {
   look(r: Run): boolean {
     const step = this.core.stepOf(r);
     if (!step || r.state !== "running" || step.kind === "ask") return false;
+    this.refocus(r, step);
     if (r.asking && r.asking.why !== "again") return false;
     // 시간 한도가 지난 뒤 온 관찰·기기 결과로는 넘기지 않는다(시간 초과가 먼저다)
     if (!r.asking && this.clock.now() > r.deadline) {
@@ -322,6 +325,7 @@ export class Steps extends Part {
   /** 집기·내려놓기 단계면 그 대상(지금 따라가는 World State id)과 자리(집기는 그 물건 자리, 내려놓기는 목적지)를 World State에 알리고, 아니면 푼다. */
   private focus(r: Run, step: AgentStep | null): void {
     if (!step || (step.kind !== "pick" && step.kind !== "place") || !step.object) {
+      this.focused.delete(r);
       this.o.focusObject?.(null);
       return;
     }
@@ -330,7 +334,16 @@ export class Steps extends Part {
     const spot: [number, number] | null = step.kind === "pick"
       ? (obj?.position ? [obj.position[0], obj.position[2]] : null)
       : r.placeAt(step.target);
-    this.o.focusObject?.(obj?.id ?? r.alias.get(step.object) ?? step.object, { step: step.kind, spot: spot ? [spot[0], spot[1]] : null });
+    const id = obj?.id ?? r.alias.get(step.object) ?? step.object;
+    this.focused.set(r, id);
+    this.o.focusObject?.(id, { step: step.kind, spot: spot ? [spot[0], spot[1]] : null });
+  }
+
+  /** 따라가는 id가 바뀌었으면(가까이 보기 뒤 새 id 등) focus를 새 대상으로 고친다. */
+  private refocus(r: Run, step: AgentStep): void {
+    if ((step.kind !== "pick" && step.kind !== "place") || !step.object || !this.focused.has(r)) return;
+    const now = ours(r, step.object, this.o.world())[0]?.id;
+    if (now && now !== this.focused.get(r)) this.focus(r, step);
   }
 
   /** 실제 폰 명령을 지운다(기다리기·기기 단계). */

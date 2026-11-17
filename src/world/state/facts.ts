@@ -7,6 +7,10 @@ import type { SceneObservation } from "../../contract/observe.js";
 import { CHANGE_TEXT, OBJECT_NAME, fixtureName } from "../labels.js";
 import { FACT_FRESH_MS, NOW_FACETS, POSE_HOLD, STATES, VLM_ONLY, type ClassKey, type StateKey, type StateOf, type Target } from "../vocab.js";
 import { PERSON, Part, fits, type Facts, type Obj } from "./core.js";
+import { surfacePlace } from "../place.js";
+
+/** 트윈 면으로 알 수 없어 VLM 말을 그대로 쓰는 놓인 곳. */
+const KEEP_VLM_PLACE: ReadonlySet<string> = new Set(["in_hand", "in_sink", "in_dish_rack", "in_fridge"]);
 
 /** VLM 답을 원본 프레임·대상·면마다 한 번만 세려고 기억하는 수(넣은 순서, 최근 것). */
 const ANSWERS_KEEP = 4000;
@@ -66,6 +70,8 @@ export class SceneFacts extends Part {
    *  같은 값을 이어 말할 때만 넣는다(가로 유리컵 r4: 한 장씩 식탁 위 → 선반 위 → 책상 위로 흔들렸고, 손이 없는 장면 한 장이 손에 있음을 켰다). 잘라 본 답은 이 규칙을 거치지 않는다. */
   private steady(obj: Obj, value: string, frameId: string, at: number): boolean {
     const prev = obj.facts.place;
+    // 지금 값보다 옛 촬영(늦게 온 옛 답)은 넣지도 세지도 않는다(Codex e0fb3b8 2)
+    if (prev && at <= prev.at_ms) return false;
     if (prev?.value === value || (!prev && value !== POSE_HOLD.object)) {
       obj.placeVote = null;
       return true;
@@ -77,6 +83,13 @@ export class SceneFacts extends Part {
     }
     if (!v || v.value !== value || (v.frame !== frameId && at > v.at)) obj.placeVote = { value, frame: frameId, at };
     return false;
+  }
+
+  /** VLM 놓인 곳 답을 트윈 면으로 바꾼다: 손에 있음·싱크대 안·식기 건조대 안·냉장고 안은 VLM 말 그대로, 그 밖(면 위·바닥)은 물건 자리 아래 트윈 면이 있으면 그 면의 놓인 곳. */
+  private twinPlace(obj: Obj, value: string): string {
+    if (KEEP_VLM_PLACE.has(value) || !obj.surface) return value;
+    const s = this.o.surfaces().find((x) => x.id === obj.surface);
+    return (s && surfacePlace(s)) ?? value;
   }
 
   /** VLM 대상: 사람·물건·가전 설비와 그 사실, 종류. */
@@ -122,8 +135,10 @@ export class SceneFacts extends Part {
       }
       if (target.kind === "object" && facet === "body") bodies.add(id);
       if (core.people.poseHolds(target.facts[facet], capturedAtMs) || core.merge.carriedPlace(id, facet) || core.people.fallHeld(id, facet)) continue;
-      if (target.kind === "object" && facet === "place" && !this.steady(core.objects.get(id)!, value, frameId, capturedAtMs)) continue;
-      if (!this.answer(frameId, id, target.facts, facet, value, capturedAtMs, false, NOW_FACETS[target.kind].includes(facet), turn)) continue;
+      // 들려 있지 않은 물건의 놓인 곳은 트윈 면으로 정한다(식탁 위 잔을 VLM이 「선반 위」로 답했다, 가로 유리컵 r4·r6). VLM 말은 손에 있음·싱크대 안처럼 트윈 면으로 모르는 것에만 쓴다
+      const placed = target.kind === "object" && facet === "place" ? this.twinPlace(core.objects.get(id)!, value) : value;
+      if (target.kind === "object" && facet === "place" && !this.steady(core.objects.get(id)!, placed, frameId, capturedAtMs)) continue;
+      if (!this.answer(frameId, id, target.facts, facet, placed, capturedAtMs, false, NOW_FACETS[target.kind].includes(facet), turn)) continue;
       if (target.kind === "person") {
         if (core.person.visible) changes.push({ kind: "person_state", at_ms: capturedAtMs, subject: PERSON, meaningful: false, text: CHANGE_TEXT.state(OBJECT_NAME.person!, value) });
       } else if (target.kind === "fixture") {

@@ -371,6 +371,8 @@ export class ExecutionTracker {
     core.run?.stepEnd?.abort();
     const a = core.run?.asking;
     if (a?.why === "device") core.o.devices?.cancel(a.token);
+    // 집기·내려놓기 대상(World State focus)도 푼다
+    core.o.focusObject?.(null);
     core.stopped = true;
   }
 

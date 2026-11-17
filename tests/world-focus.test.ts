@@ -2,7 +2,7 @@
 // 가로 유리컵 실제 판 r5(2026-11-18): 집기 중 들린 컵이 새 cup_21·cup_22가 돼 집기가 23초 걸렸고, 내려놓기 중 손에 든 cup_21이 사라짐이 되고
 // 싱크대 위에 새 cup_33·cup_36이 생겨 내려놓기가 끝나지 않았다.
 import { describe, expect, it } from "vitest";
-import type { Detection } from "../src/contract/observe.js";
+import type { Detection, SceneObservation } from "../src/contract/observe.js";
 import { WorldState } from "../src/world/state/world.js";
 import type { DetLabel } from "../src/world/vocab.js";
 import { engineFrame, LOOK_VIEW } from "./helpers/camera.js";
@@ -26,16 +26,22 @@ const xz = (w: WorldState, d: Detection): [number, number] => {
 };
 
 describe("집기·내려놓기 대상(focus)", () => {
-  it("집기 단계 동안 들린 컵 감지(맞는 물건 없음)는 대상 cup_1로 잇고 새 id를 만들지 않는다. focus가 없으면 지금처럼 새 컵이 생긴다", () => {
-    const run = (focus: boolean) => {
-      const w = ws();
-      for (let t = 0; t <= 2000; t += 500) full(w, `e${t}`, t, [cupIn]);
-      if (focus) w.focus("cup_1", { step: "pick", spot: [1.5, 0] });
-      for (let t = 2500; t <= 9000; t += 500) full(w, `e${t}`, t, [lifted]);
-      return ids(w, 9000);
-    };
-    expect(run(true)).toEqual([["cup_1", "present"]]);
-    expect(run(false)).toEqual([["cup_1", "gone"], ["cup_2", "present"]]);
+  // Codex(02dda8c 1): 식별 근거가 모자라면 잇지 않는다. 집기는 대상 자리 0.5m 안이거나 들린 근거(VLM 손에 있음)가 있을 때만 잇는다
+  it("집기 단계: 대상 자리 0.5m 안(0.35m) 감지는 대상으로 잇고, 먼 들린 감지는 근거 없이 잇지 않는다. VLM이 그 감지를 손에 있음으로 답하면 대상으로 잇고 그 뒤 들린 감지도 대상이다", () => {
+    const w = ws();
+    for (let t = 0; t <= 2000; t += 500) full(w, `e${t}`, t, [cupIn]);
+    w.focus("cup_1", { step: "pick", spot: [1.5, 0] });
+    full(w, "e2500", 2500, [det("cup", [270, 170, 20, 10])]);   // 대상 자리에서 0.354m
+    expect(w.view(2500).objects.map((o) => o.id)).toEqual(["cup_1"]);
+    const r = full(w, "e3000", 3000, [lifted]);
+    expect(r.ids.get("d1")).not.toBe("cup_1");
+    const said = (): SceneObservation => ({ scene: "k", summary: "s", objects: [{ id: "v1", cls: "cup", box: { x: 60 / 480, y: 300 / 360, w: 40 / 480, h: 20 / 360 }, det: "d1" }], observations: [{ object_id: "v1", state: "in_hand" }] });
+    w.applyScene("e3000", 3000, said(), r.ids, { view: LOOK_VIEW, width: 480, height: 360 });
+    expect(r.ids.get("d1")).toBe("cup_1");
+    const r2 = full(w, "e3500", 3500, [lifted]);
+    w.applyScene("e3500", 3500, said(), r2.ids, { view: LOOK_VIEW, width: 480, height: 360 });
+    for (let t = 4000; t <= 9000; t += 500) full(w, `e${t}`, t, [lifted]);
+    expect(ids(w, 9000)).toEqual([["cup_1", "present"]]);
   });
 
   it("내려놓기 단계 동안 손에 든 대상은 안 보여도 사라짐으로 세지 않고, 목적지 가까이(1.5m 안)에 새로 보인 같은 종류 컵을 대상으로 잇는다. 목적지에서 먼 새 컵은 잇지 않는다", () => {

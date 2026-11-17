@@ -104,8 +104,10 @@ export interface Obj {
   vlmFrames: string[];
   /** 장면 VLM이 말한 다른 놓인 곳(place) 하나: 다음 원본 프레임의 더 새 촬영이 같은 값을 말하면 바꾼다(SceneFacts.steady). */
   placeVote: { value: string; frame: string; at: number } | null;
+  /** 자리를 장면 VLM 상자로 정했다(YOLO가 자리를 고치면 false): YOLO 감지는 VLM_MATCH_M 안이면 이 물건으로 잇는다(투영 차이로 두 id가 되지 않게). */
+  vlmPlaced: boolean;
   /** 장면 VLM 상자로 낸 VLM_MOVE_M 넘게 떨어진 새 자리 하나: 다음 원본 프레임의 더 새 촬영이 그 근처를 말하면 옮긴다(sceneobjects.ts). */
-  posVote: { position: V3; frame: string; at: number } | null;
+  posVote: { position: V3; frame: string; at: number; surface: string | null; part: "basin" | null } | null;
   /** 내용물 갱신기의 상태(src/world/state/contents.ts). 내용물을 쌓은 적 없으면 null. */
   contents: ContentsState | null;
   /** 관절의 손에 없을 때 전체 사진으로 본 마지막 자리(확인 전 후보만 쓴다: 잊을 때 후보 자리로 남긴다). */
@@ -130,6 +132,8 @@ export const VLM_CANDIDATE_MS = 5000;
 export const VLM_CONFIRM_FRAMES = 2;
 /** 장면 VLM 상자 투영은 흔들린다: 확인된 물건 자리는 이만큼(m) 넘게, 사진 2장 이어서 옮겼다고 할 때만 옮긴다. */
 export const VLM_MOVE_M = 0.3;
+/** 집기 단계 동안 대상으로 잇는 감지 자리(m, 대상 자리에서). */
+export const FOCUS_PICK_M = 0.5;
 /** 장면 VLM 상자로 같은 물건을 잇는 거리(m): 상자 투영 흔들림이 YOLO보다 커서 종류 거리보다 넓게 본다. */
 export const VLM_MATCH_M = 0.5;
 
@@ -199,7 +203,7 @@ export class WorldCore {
     const obj: Obj = {
       id: `${cls}_${n}`, cls, position: null, surface: null, surfaceLabel: null, part: null, room: null, errorM: null, confirmed: false, status: "present",
       firstSeen: atMs, lastSeen: atMs, lastInView: atMs, goneAt: null, facts: {}, answered: null, closerAt: null, peekGuard: null, sizes: [], posFrom: null,
-      posAt: Number.NEGATIVE_INFINITY, posCloser: false, judgedAt: atMs, judgedFrame: frameId, judgedCloser: false, followed: null, closerRev: {}, clsVote: null, clsAt: Number.NEGATIVE_INFINITY, clsFrame: null, vlmSeen: null, vlmFrames: [], placeVote: null, posVote: null,
+      posAt: Number.NEGATIVE_INFINITY, posCloser: false, judgedAt: atMs, judgedFrame: frameId, judgedCloser: false, followed: null, closerRev: {}, clsVote: null, clsAt: Number.NEGATIVE_INFINITY, clsFrame: null, vlmSeen: null, vlmFrames: [], placeVote: null, posVote: null, vlmPlaced: false,
       movedAt: atMs, trail: [], carried: false, contents: null, free: null,
     };
     this.objects.set(obj.id, obj);
@@ -239,14 +243,16 @@ export class WorldCore {
     obj.clsVote = null;
   }
 
-  /** 맞는 물건이 없는 감지를 실행 추적의 지금 대상(focusOn)으로 잇는가: 같은 종류이고 이번 사진에서 아직 쓰지 않았으며,
-   *  내려놓기는 그 감지 자리가 목적지 NEAR_M 안일 때(자리를 모르면 잇는다). 집기는 들린 컵 자리가 어디로 비칠지 몰라 거리를 보지 않는다. */
-  focusTarget(cls: ObjClass, position: V3 | null, used: ReadonlySet<string>): Obj | null {
+  /** 맞는 물건이 없는 감지를 실행 추적의 지금 대상(focusOn)으로 잇는가: 같은 종류이고 이번 사진에서 아직 쓰지 않았어야 한다. 식별 근거가 모자라면 잇지 않는다(미룬다).
+   *  - 집기: 그 감지 자리가 대상 자리 FOCUS_PICK_M 안이거나, 들린 근거가 있다(lifted: 이 답이 손에 있음, 또는 대상이 이미 손에 있음).
+   *  - 내려놓기: 그 감지 자리를 알고 목적지 NEAR_M 안이다(자리를 모르면 잇지 않는다). */
+  focusTarget(cls: ObjClass, position: V3 | null, used: ReadonlySet<string>, lifted = false): Obj | null {
     const f = this.focusOn;
     const t = f ? this.objects.get(f.id) : undefined;
     if (!f || !t || t.cls !== cls || used.has(t.id)) return null;
-    if (f.step === "place" && position && f.spot && Math.hypot(position[0] - f.spot[0], position[2] - f.spot[1]) > NEAR_M) return null;
-    return t;
+    const near = (m: number) => !!position && !!f.spot && Math.hypot(position[0] - f.spot[0], position[2] - f.spot[1]) <= m;
+    if (f.step === "place") return near(NEAR_M) ? t : null;
+    return near(FOCUS_PICK_M) || lifted || t.facts.place?.value === "in_hand" ? t : null;
   }
 
   /** 실행 추적이 지금 집기·내려놓기 하는 대상이다: 그 단계 동안 사라짐을 세지 않는다(들고 옮기는 동안 전체 사진이 놓친다). */

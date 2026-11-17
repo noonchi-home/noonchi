@@ -41,7 +41,8 @@ export class SceneObjects extends Part {
       let obj: Obj | null = linked ? core.objects.get(linked) ?? null : null;
       // 감지 번호로 이은 확정 물건은 다른 든 컵으로 덮지 않는다. 이을 컵이 모호하면 미룬다(liftTarget null)
       if (lifted && !obj?.confirmed) {
-        const hold = this.liftTarget(cls, eye, used);
+        // 실행 추적의 집기 대상이 먼저다(들린 근거: 이 답의 손에 있음)
+        const hold = core.focusTarget(cls, null, used, true) ?? this.liftTarget(cls, eye, used);
         if (hold && hold !== obj) {
           if (obj && !obj.confirmed) core.forget(obj.id);
           obj = hold;
@@ -52,7 +53,8 @@ export class SceneObjects extends Part {
       // 상자 자리: 들렸거나 가렸으면 잇기에만 쓰고(놓인 자리가 아니다) 자리·새 물건에는 쓰지 않는다
       const spot = !linked && look ? this.place(v.box, look, surfaces) : null;
       const placed = lifted || hidden ? null : spot;
-      if (!obj && spot?.position) obj = core.matchAt(cls, spot.position, used, VLM_MATCH_M);
+      // 든 물건 잇기가 모호하면(liftTarget null) 상자 투영 자리로 우회해 잇지도 않는다(Codex e0fb3b8 4)
+      if (!obj && spot?.position && !lifted) obj = core.matchAt(cls, spot.position, used, VLM_MATCH_M);
       // 실행 추적이 지금 집기·내려놓기 하는 대상(들린 컵, 목적지에 놓인 컵)
       if (!obj) obj = core.focusTarget(cls, spot?.position ?? null, used);
       // VLM 무조건 우선: YOLO가 못 봤어도 VLM이 본 물건은 있다(놓인 자리를 알 때 후보로 만든다)
@@ -82,18 +84,23 @@ export class SceneObjects extends Part {
 
   /** 장면 VLM 상자 자리로 옮기는가: 자리를 모르는 물건·후보는 옮긴다. 확인된 물건은 VLM_MOVE_M 안 흔들림은 버리고, 그보다 먼 자리는 다른 원본 프레임의 더 새 촬영이
    *  그 근처(VLM_MOVE_M 안)를 이어 말할 때만 옮긴다(가로 유리컵 r4: 상자 투영이 흔들려 놓인 곳·같은 물건 잇기가 흔들렸다). */
-  private moved(obj: Obj, position: [number, number, number], frameId: string, at: number): boolean {
+  private moved(obj: Obj, placed: Placed, frameId: string, at: number): boolean {
+    const position = placed.position!;
     if (!obj.confirmed || !obj.position) return true;
-    if (dist(obj.position, position) <= VLM_MOVE_M) {
+    // 좌표 흔들림(VLM_MOVE_M 안)과 면·싱크볼 경계 바뀜을 따로 본다: 같은 면·같은 칸이면 흔들림이라 버리고,
+    // 면이나 싱크볼 안·밖이 바뀌었으면 거리가 짧아도 다른 원본 프레임의 더 새 촬영이 같은 면·칸을 이어 말할 때 옮긴다(Codex e0fb3b8 3)
+    const sameSpot = placed.surface === obj.surface && placed.part === obj.part;
+    if (sameSpot && dist(obj.position, position) <= VLM_MOVE_M) {
       obj.posVote = null;
       return false;
     }
     const v = obj.posVote;
-    if (v && v.frame !== frameId && at > v.at && dist(v.position, position) <= VLM_MOVE_M) {
+    const agree = v && v.frame !== frameId && at > v.at && (sameSpot ? dist(v.position, position) <= VLM_MOVE_M : v.surface === placed.surface && v.part === placed.part);
+    if (agree) {
       obj.posVote = null;
       return true;
     }
-    obj.posVote = { position, frame: frameId, at };
+    obj.posVote = { position, frame: frameId, at, surface: placed.surface, part: placed.part };
     return false;
   }
 
@@ -110,7 +117,8 @@ export class SceneObjects extends Part {
     obj.vlmSeen = Math.max(obj.vlmSeen ?? at, at);
     obj.lastSeen = Math.max(obj.lastSeen, at);
     obj.lastInView = Math.max(obj.lastInView, at);
-    if (placed?.position && core.newerPlace(obj, at, false) && this.moved(obj, placed.position, frameId, at)) {
+    if (placed?.position && core.newerPlace(obj, at, false) && this.moved(obj, placed, frameId, at)) {
+      obj.vlmPlaced = true;
       obj.position = placed.position;
       obj.surface = placed.surface;
       obj.surfaceLabel = placed.surface ? surfaces.find((s) => s.id === placed.surface)?.label ?? null : null;

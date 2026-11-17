@@ -149,7 +149,14 @@ describe("실행 추적: 단계마다 실제 폰 명령", () => {
     t.onEye([5.3, 1.5]);
     t.tick();
     expect(focuses.at(-1)).toEqual(["cup_1", { step: "place", spot: expect.any(Array) }]);
-    t.stop?.();
+    // Codex(02dda8c 2): 실행 추적이 따라가는 id가 새 id로 바뀌면 focus도 새 대상으로
+    clock.t += 600;
+    w = world([cup("gone", "in_hand", clock.t - 600), { ...cup("present", "in_sink", clock.t), id: "cup_2", first_seen_ms: clock.t }]);
+    t.onWorld();
+    expect(focuses.some(([id]) => id === "cup_2")).toBe(true);
+    // Codex(02dda8c 3): 멈추면 푼다
+    t.stop();
+    expect(focuses.at(-1)).toEqual([null, null]);
   });
 
   it("컵 치우기는 단계마다 사람에게 하는 명령 하나를 보내고, 폰 위치와 World State로 그 단계가 된 것을 본 뒤 다음 명령을 보낸다", async () => {
@@ -3559,6 +3566,26 @@ describe("실행 추적 + 실제 World State(기준점을 맞춘 카메라)", ()
   const onTable = box([220, 160, 40, 20]);
   const moved = box([60, 300, 40, 20]);
 
+  // 가로 유리컵 실제 판 r4·r6(2026-11-18): 식탁 위 잔을 VLM이 「선반 위」로 답했다
+  it("들려 있지 않은 물건의 놓인 곳은 트윈 면으로 정한다: 식탁 면 위 컵은 VLM이 선반 위라 해도 식탁 위다. 손에 있음은 VLM 말을 따른다", () => {
+    // 식탁 면을 카메라 앞(0.75, 0)에 둔다: onTable 상자가 그 면 위다(tests/world-state.test.ts와 같은 자리)
+    const ws = new WorldState({ evidenceStepMs: 1000,
+      surfaces: () => [{ id: "table_1", label: "식탁", center: [0.75, 0], top: 0.75, radius: 0.6 }],
+      floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices: () => [],
+    });
+    const see = (i: number, state: "on_table" | "on_shelf" | "in_hand") => {
+      const { ids } = ws.applyDetections(frame(i), [onTable]);
+      ws.applyScene(`e${i}`, i * 1000, { scene: "k", observations: [{ object_id: "d1", state }], summary: "s" }, ids);
+    };
+    for (let i = 1; i <= 3; i++) see(i, "on_table");
+    see(4, "on_shelf");
+    see(5, "on_shelf");
+    expect(ws.view(5000).objects[0]).toMatchObject({ surface: "table_1", facts: { place: { value: "on_table" } } });
+    see(6, "in_hand");
+    see(7, "in_hand");
+    expect(ws.view(7000).objects[0]!.facts.place?.value).toBe("in_hand");
+  });
+
   it("식탁 위 컵을 들어 옮기면 새 id(cup_2)가 붙어도 집기·내려놓기가 비전으로 넘어가고 비전 상태 줄이 그 컵을 따라간다", async () => {
     const ws = new WorldState({ evidenceStepMs: 1000,
       surfaces: () => [{ id: "table_1", label: "식탁", center: [2, 0], top: 0.75, radius: 0.6 }, { id: "sink_1", label: "싱크대", center: [1.2, 0.8], top: 0.9, radius: 0.5 }],
@@ -4487,6 +4514,15 @@ describe("실행 추적: 계획 대상이 안 보이면 그 마지막 자리에�
     s.objects([{ ...seenAt(5_000), status: "gone" }, bottle("bottle_2", [2.05, 0.75, 1])]);
     s.tick();
     expect(s.exec().find((l) => l.state === "failed")).toMatchObject({ plan_id: "plan:pam-1", text: EXEC_TEXT.foundNew });
+  });
+
+  // 가로 유리컵 실제 판 r6(2026-11-18): 찾던 cup_9가 겨눈 자리에서 다시 보였는데 같은 자리의 다른 id를 찾아 「찾은 뒤 다시 판단」으로 계획을 버렸다
+  it("겨눈 자리에서 대상 id가 다시 보이면 더 가까운 다른 id가 있어도 대상을 찾은 것이다(계획을 이어 간다)", async () => {
+    const s = runSetup({ objects: [seenAt(5_000)] });
+    await blocked(s);
+    s.objects([seenAt(s.clock.t, "cup_7", [2.02, 0.75, 1]), seenAt(s.clock.t, "cup_1", [2.2, 0.75, 1])]);
+    s.tick();
+    expect(s.exec().some((l) => l.state === "failed")).toBe(false);
   });
 
   it("못 찾으면 낡음 글로 닫는다. 들고 감 보호였던 컵·치운 컵이면 찾지 않는다", async () => {

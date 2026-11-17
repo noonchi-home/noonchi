@@ -151,11 +151,13 @@ describe("VLM 동기화 흔들림 막기", () => {
 
   it("손에 있음은 VLM 사진 2장 이어서일 때만 켠다", () => {
     const w = confirmed();
-    w.applyScene("e4000", 4000, scene({ facts: ["in_hand"] }), new Map(), look);
-    w.applyScene("e6000", 6000, scene({ facts: ["on_table"] }), new Map(), look);
+    // 든 물건은 그 사진의 폰 눈 가까이 컵 하나로 잇는다(모호하면 미룬다)
+    const near = { ...look, eye: [1, 0] as [number, number] };
+    w.applyScene("e4000", 4000, scene({ facts: ["in_hand"] }), new Map(), near);
+    w.applyScene("e6000", 6000, scene({ facts: ["on_table"] }), new Map(), near);
     expect(place(w, 6000)).toBe("on_table");
-    w.applyScene("e8000", 8000, scene({ facts: ["in_hand"] }), new Map(), look);
-    w.applyScene("e10000", 10_000, scene({ facts: ["in_hand"] }), new Map(), look);
+    w.applyScene("e8000", 8000, scene({ facts: ["in_hand"] }), new Map(), near);
+    w.applyScene("e10000", 10_000, scene({ facts: ["in_hand"] }), new Map(), near);
     expect(place(w, 10_000)).toBe("in_hand");
   });
 
@@ -222,5 +224,18 @@ describe("Codex 25ddddd: VLM 확정과 사라짐 판정기·가림·모호한 �
     expect(w.view(2500).objects[0]!.facts.place?.value).toBe("in_hand");
     const r = full(w, "e3000", 3000, [lifted], [9, 9]);
     expect(r.ids.get("d1")).not.toBe("cup_1");
+  });
+});
+
+// 가로 유리컵 실제 판 r6(2026-11-18): 첫 등장부터 한 잔이 cup_9(장면 VLM)·cup_18(YOLO) 두 id였고, VLM이 한쪽만 봐 다른 쪽이 사라짐이 됐다
+describe("한 잔은 처음부터 한 물건(YOLO·VLM 자리 차이)", () => {
+  it("장면 VLM이 먼저 자리를 정한 컵에서 0.5m 안(0.35m)의 YOLO 감지는 그 컵이다: 새 id를 만들지 않는다", () => {
+    const w = ws();
+    w.applyScene("e1000", 1000, scene(), new Map(), look);
+    w.applyScene("e3000", 3000, scene(), new Map(), look);
+    expect(objs(w, 3000)).toEqual([["cup_1", "cup", "present"]]);
+    const off = det("cup", [270, 170, 20, 10]);   // 컵 자리에서 0.354m
+    for (let t = 3500; t <= 7000; t += 500) full(w, `e${t}`, t, [off]);
+    expect(objs(w, 7000)).toEqual([["cup_1", "cup", "present"]]);
   });
 });

@@ -16,7 +16,8 @@ import type { BrainLog, CloserFound, CloserMiss, CloserResult, CloserVlm, SeenEv
 import type { WorldChange, WorldObject, WorldView, YoloMissing } from "../contract/world.js";
 import type { DeviceState } from "../contract/devices.js";
 import { DETECTOR_MODEL, MODELS_DIR, POSE_MODEL, PROVIDERS, WorkerDetector, type DetectResult, type Detector, type DetectorSpec, type Provider } from "./detector.js";
-import type { Detection, Pose, CameraView, EngineFrame } from "../contract/observe.js";
+import type { Detection, Pose, CameraView, EngineFrame, SceneObservation } from "../contract/observe.js";
+import { sameDrinkware } from "../world/vocab.js";
 import { hasPrice } from "../infer/cost.js";
 import { vlmTimeoutMs } from "../infer/endpoints.js";
 import { createInference } from "../infer/inference.js";
@@ -169,6 +170,10 @@ export class ObservationPipeline {
   private readonly pool: VlmPool;
   private readonly clock: { now(): number };
   private readonly idsOf = new Map<string, Map<string, string>>();
+  /** VLM 프레임의 YOLO 감지(번호·종류·상자, 엔진 프레임 픽셀): VLM이 det를 비워 답한 물건을 상자 겹침으로 잇는다(linkDets). */
+  private readonly detsOf = new Map<string, SceneDetection[]>();
+  /** 대시보드로 보낸 마지막 seen의 촬영 시각: 그보다 옛 사진의 감지는 보내지 않는다(미니맵이 과거로 돌아가지 않게). */
+  private seenAt = Number.NEGATIVE_INFINITY;
   private readonly queue: EngineFrame[] = [];
   private detecting: Promise<void> | null = null;
   private seq = 0;
@@ -212,11 +217,14 @@ export class ObservationPipeline {
         if (this.closed) return;
         const ids = this.idsOf.get(r.frameId) ?? new Map<string, string>();
         this.idsOf.delete(r.frameId);
+        const dets = this.detsOf.get(r.frameId) ?? [];
+        this.detsOf.delete(r.frameId);
         const f = this.ring.get(r.frameId);
         // 그 사진을 찍은 때의 카메라·폰 눈(답이 온 때가 아니다)
         const look = f?.view ? { view: f.view, width: f.width, height: f.height, eye: f.eye ? f.eye.position : null } : undefined;
-        const changes = r.scene ? o.world.applyScene(r.frameId, r.capturedAtMs, r.scene, ids, look) : o.world.applyMissing(r.frameId, r.capturedAtMs, { vlm: r.missing! });
-        o.emit({ type: "observe", at_ms: this.clock.now(), frame_id: r.frameId, captured_at_ms: r.capturedAtMs, yolo: null, vlm: r.scene?.summary ?? null, ...(r.missing ? { vlm_missing: r.missing } : {}) });
+        const scene = r.scene && f ? linkDets(r.scene, dets, f.width, f.height) : r.scene;
+        const changes = scene ? o.world.applyScene(r.frameId, r.capturedAtMs, scene, ids, look) : o.world.applyMissing(r.frameId, r.capturedAtMs, { vlm: r.missing! });
+        o.emit({ type: "observe", at_ms: this.clock.now(), frame_id: r.frameId, captured_at_ms: r.capturedAtMs, yolo: null, vlm: r.scene?.summary ?? null, ...(r.missing ? { vlm_missing: r.missing } : {}), ...(r.scene ? { scene: r.scene } : {}) });
         this.publish(changes);
       },
     });
@@ -317,7 +325,8 @@ export class ObservationPipeline {
    *  관절(poses)은 World State만 받는다(자세·손에 듦 사실). */
   private analyze(frame: EngineFrame, raw: Detection[] | null | undefined, poses?: Pose[]): void {
     const dets = raw && raw.filter((d) => this.o.world.accepts(d));
-    if (dets) {
+    if (dets && frame.capturedAtMs >= this.seenAt) {
+      this.seenAt = frame.capturedAtMs;
       this.o.onSeen?.({
         type: "seen", at_ms: this.clock.now(), frame_id: frame.id, captured_at_ms: frame.capturedAtMs, frame: { width: frame.width, height: frame.height },
         shapes: dets.map(({ label, score, mask }) => ({ label, score, mask })),
@@ -344,6 +353,7 @@ export class ObservationPipeline {
       this.publish(this.o.world.applyMissing(frame.id, frame.capturedAtMs, { yolo: "error" }));
     }
     const sceneDets: SceneDetection[] = (dets ?? []).map((d, i) => ({ id: `d${i + 1}`, class: d.label, box: d.box, score: d.score }));
+    this.detsOf.set(frame.id, sceneDets);
     this.pool.submit(frame, sceneDets); // 상한을 넘으면 풀이 VLM 분석 없음(cap)을 onResult로 낸다
   }
 
@@ -730,4 +740,34 @@ export async function createPipeline(o: {
   return new ObservationPipeline({
     config, detector, vlm, closerVlm, world: o.world, emit: o.emit, broadcastWorld: o.broadcastWorld, onChanges: o.onChanges, onFrame: o.onFrame, onSeen: o.onSeen, dataset: o.dataset, onDetected: o.onDetected, vlmFast: o.vlmFast, clock: o.inject?.clock,
   });
+}
+
+/** VLM 물건을 같은 사진 YOLO 감지에 잇는 상자 겹침(IoU) 하한. */
+export const LINK_IOU = 0.3;
+
+/** VLM이 det를 비워 답한 물건을 같은 사진의 YOLO 감지와 상자 겹침(IoU LINK_IOU 이상, 같은 종류 또는 마시는 그릇 무리)으로 잇는다(가장 많이 겹치는 것부터, 감지 하나에 하나).
+ *  가로 유리컵 r6: 같은 잔이 YOLO 컵과 VLM 물건으로 두 id가 됐다. 상자는 VLM 비율 × 사진 크기를 엔진 프레임 픽셀로 본다. */
+export function linkDets(scene: SceneObservation, dets: readonly SceneDetection[], width: number, height: number): SceneObservation {
+  if (!scene.objects?.length || !dets.length) return scene;
+  const taken = new Set(scene.objects.map((v) => v.det).filter((d): d is string => !!d));
+  const iou = (a: readonly number[], b: readonly number[]) => {
+    const x = Math.max(0, Math.min(a[0]! + a[2]!, b[0]! + b[2]!) - Math.max(a[0]!, b[0]!));
+    const y = Math.max(0, Math.min(a[1]! + a[3]!, b[1]! + b[3]!) - Math.max(a[1]!, b[1]!));
+    const inter = x * y;
+    return inter / (a[2]! * a[3]! + b[2]! * b[3]! - inter || 1);
+  };
+  const pairs = scene.objects.flatMap((v, i) => (v.det !== null ? [] : dets
+    .filter((d) => !taken.has(d.id) && sameDrinkware(d.class, v.cls))
+    .map((d) => ({ i, d: d.id, s: iou([v.box.x * width, v.box.y * height, v.box.w * width, v.box.h * height], d.box) }))
+    .filter((p) => p.s >= LINK_IOU)))
+    .sort((a, b) => b.s - a.s);
+  const objects = scene.objects.map((v) => ({ ...v }));
+  const done = new Set<number>();
+  for (const p of pairs) {
+    if (done.has(p.i) || taken.has(p.d)) continue;
+    objects[p.i]!.det = p.d;
+    done.add(p.i);
+    taken.add(p.d);
+  }
+  return { ...scene, objects };
 }
