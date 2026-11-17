@@ -563,3 +563,67 @@ describe("가까이 보기 새 물건 두 모델 확인(3장 안 된 후보 + VL
     expect(w.view(4000).objects.map((o) => [o.id, o.facts.place?.value])).toEqual([["cup_1", "in_sink"]]);
   });
 });
+
+// 가로 유리컵 실제 판(2026-11-18): 컵이 한 번 확인된 뒤 YOLO가 놓쳐 사라짐이 됐고, 찾기의 가까이 보기에서 잘라 본 칸(240×135)의 YOLO는 컵을 못 잡았다.
+// VLM은 그 칸 안 컵을 봤다(「A metallic/opaque cup sits on a surface…」). 가까이 본 VLM 물건(상자)도 그 자리에서 본 것으로 넣는다.
+describe("가까이 본 VLM 물건(applyCloserScene objects)", () => {
+  // 잘라 본 칸 R = [120, 90, 240, 180]. 그 안 컵 [230, 170, 20, 10](엔진 프레임 픽셀)은 잘라 본 사진 비율 { x: 110/240, y: 80/180, w: 20/240, h: 10/180 }
+  const R: [number, number, number, number] = [120, 90, 240, 180];
+  const vbox = { x: 110 / 240, y: 80 / 180, w: 20 / 240, h: 10 / 180 };
+  const look = (atMs: number) => ({ view: LOOK_VIEW, ...LOOK_SIZE, crop: R, capturedAtMs: atMs });
+  const vscene = (facts: SceneState[] = [], det: string | null = null): SceneObservation => ({
+    scene: "k", summary: "A metallic/opaque cup sits on a surface",
+    objects: [{ id: "v1", cls: "cup", box: vbox, det }],
+    observations: facts.map((state) => ({ object_id: "v1", state })),
+  });
+
+  it("YOLO가 놓쳐 사라진 컵을, 잘라 본 장에 YOLO 감지가 없어도 VLM 물건 상자로 그 자리에서 다시 보고(보임·지킴) 사실도 넣는다", () => {
+    const w = ws();
+    for (let t = 0; t <= 2000; t += 500) full(w, `e${t}`, t, [cupIn]);
+    expect(obj(w, "cup_1", 2000)).toMatchObject({ status: "present" });
+    for (let t = 2500; t <= 9500; t += 500) full(w, `e${t}`, t, []);
+    expect(obj(w, "cup_1", 9500)).toMatchObject({ status: "gone" });
+    const { ids } = w.applyCloser([pass("e10000", 10_000, [])]);
+    const changes = w.applyCloserScene("e10000", 10_000, vscene(["on_floor"]), ids, undefined, look(10_000));
+    expect(ids.get("v1")).toBe("cup_1");
+    expect(changes).toContainEqual(expect.objectContaining({ kind: "appeared", subject: "cup_1" }));
+    expect(obj(w, "cup_1", 10_000)).toMatchObject({ status: "present", closer_hold: true, last_seen_ms: 10_000 });
+    expect(obj(w, "cup_1", 10_000)!.facts.place).toMatchObject({ value: "on_floor" });
+  });
+
+  it("맞는 물건이 없으면 가까이 본 VLM 물건 하나로 확인된 컵을 만든다(사람이 그 자리를 비춘 가까이 보기)", () => {
+    const w = ws();
+    const { ids } = w.applyCloser([pass("e1000", 1000, [])]);
+    w.applyCloserScene("e1000", 1000, vscene(), ids, undefined, look(1000));
+    expect(w.view(1000).objects).toEqual([expect.objectContaining({ id: "cup_1", cls: "cup", status: "present", closer_hold: true })]);
+    expect(ids.get("v1")).toBe("cup_1");
+  });
+
+  it("YOLO 감지(d1)와 같은 물건이라고 답한 VLM 물건(det d1)은 새로 넣지 않고 그 물건 id를 쓴다", () => {
+    const w = ws();
+    const { ids } = w.applyCloser([pass("e1000", 1000, [cupIn]), pass("e2000", 2000, [cupIn]), pass("e3000", 3000, [cupIn])], "e3000");
+    expect(ids.get("d1")).toBe("cup_1");
+    w.applyCloserScene("e3000", 3000, vscene(["in_sink"], "d1"), ids, undefined, look(3000));
+    expect(w.view(3000).objects.map((o) => o.id)).toEqual(["cup_1"]);
+    expect(ids.get("v1")).toBe("cup_1");
+  });
+
+  // Codex(ee670bb 4): 상자 아랫변은 들렸거나 가린 컵이면 놓인 자리가 아니다
+  it("VLM이 손에 있음·가림으로 답한 물건은 자리를 바꾸거나 새로 만들지 않는다", () => {
+    const w = ws();
+    const a = w.applyCloser([pass("e1000", 1000, [])]);
+    w.applyCloserScene("e1000", 1000, vscene(["in_hand"]), a.ids, undefined, look(1000));
+    const b = w.applyCloser([pass("e2000", 2000, [])]);
+    w.applyCloserScene("e2000", 2000, vscene(["not_visible"]), b.ids, undefined, look(2000));
+    expect(w.view(2000).objects).toEqual([]);
+  });
+
+  it("전체 사진이 더 새 촬영으로 사라짐을 정했으면, 늦게 온 옛 가까이 본 VLM 물건은 되살리지 않는다", () => {
+    const w = ws();
+    for (let t = 0; t <= 2000; t += 500) full(w, `e${t}`, t, [cupIn]);
+    for (let t = 2500; t <= 9500; t += 500) full(w, `e${t}`, t, []);
+    const { ids } = w.applyCloser([pass("e2200", 2200, [])]);
+    w.applyCloserScene("e2200", 2200, vscene(), ids, undefined, look(2200));
+    expect(obj(w, "cup_1", 9500)).toMatchObject({ status: "gone" });
+  });
+});

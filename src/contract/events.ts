@@ -165,7 +165,8 @@ export type CloserMiss = CloserWait | "no_view" | "out_of_view" | "no_detector" 
 /** VLM에 보낸 가까이 본 사진의 감지 하나: 맞추거나 만든 World State 물건 id(없으면 null), 종류, 신뢰도(소수 둘째 자리), 그 감지에 대한 VLM 답 값.
  *  맞는 물건이 없는 물건 감지는 서로 다른 원본 프레임 3장에서 같은 자리로 보였거나, 1장 이상 보이고 이 VLM 답이 그 감지에 사실을 하나 이상 답하고 가림(not_visible)은 답하지 않았을 때
  *  새 물건이 되고 그 id가 실린다. 그 밖에는 null이다. */
-export interface CloserFound { id: string | null; cls: DetLabel; score: number; facts: string[] }
+/** 가까이 보기에서 찾은 것 하나. via "vlm"이면 YOLO 감지가 아니라 VLM 답의 물건 상자로 찾은 것이다(score 0). */
+export interface CloserFound { id: string | null; cls: DetLabel; score: number; facts: string[]; via?: "vlm" }
 /** 가까이 본 사진의 VLM 답: ok 넣음, VlmMissing 답 없음, 감지를 합친 뒤 넣지 않음 둘(aborted·no_fresh_frames, 아래 CloserResult).
  *  no_fresh_frames는 CloserWait와 같은 자원 사정이라 실행 추적 Stall.settle(false)다. */
 export type CloserVlm = "ok" | VlmMissing | "aborted" | "no_fresh_frames";

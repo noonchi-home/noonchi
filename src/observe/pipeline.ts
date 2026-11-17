@@ -7,10 +7,12 @@
 // 가까이 보기(closer): 고리의 새 프레임 최대 5장마다 대상 자리를 그 프레임 카메라로 찍어 절반 크기로 잘라 2배로 키우고 같은 감지기로 본다.
 // 잘라 본 결과는 보통 프레임처럼 넣지 않고 World State applyCloser로 한 번에 합친다. 물건 감지가 있는 가장 새 장(없으면 가장 새 장) 하나만
 // VLM 풀의 가까이 보기 자리로 혼자 보내고 그 답은 applyCloserScene으로 넣는다(그때도 사진이 끊김 범위 안일 때만). 3장이 안 된 새 물건 후보는 그 답이 사실을 답할 때만 만든다.
+// VLM 무조건 우선(src/world/merge.ts): 합치기는 VLM 답까지 미루고(defer), VLM 답이 YOLO 묶음과 VLM 물건 상자(objects)로 무엇을 넣을지 정한다.
+// found는 YOLO 감지와 VLM 물건(via vlm) 둘 다 싣는다. VLM 답이 없으면 YOLO만으로 넣는다(endCloser).
 // 가까이 보기 VLM은 closerVlm(VLM_CLOSER_MODEL, 같은 주소에 모델 이름만 다름, 없으면 보통 프레임과 같은 VLM)이다.
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { BrainLog, CloserMiss, CloserResult, CloserVlm, SeenEvent, TopFrame } from "../contract/events.js";
+import type { BrainLog, CloserFound, CloserMiss, CloserResult, CloserVlm, SeenEvent, TopFrame } from "../contract/events.js";
 import type { WorldChange, WorldObject, WorldView, YoloMissing } from "../contract/world.js";
 import type { DeviceState } from "../contract/devices.js";
 import { DETECTOR_MODEL, MODELS_DIR, POSE_MODEL, PROVIDERS, WorkerDetector, type DetectResult, type Detector, type DetectorSpec, type Provider } from "./detector.js";
@@ -479,7 +481,7 @@ export class ObservationPipeline {
     const sentAt = objectAt < 0 ? looks.length - 1 : objectAt;
     const last = passes[sentAt]!;
     // 잘라 본 몇 장은 await 없이 한 번에 합치고 변화도 한 번만 낸다
-    const { changes, ids, pending } = this.o.world.applyCloser(looks, last.frame.id);
+    const { changes, ids, pending } = this.o.world.applyCloser(looks, last.frame.id, { defer: true });
     this.publish(changes);
     const id = `${last.frame.id}.c${++this.closerSeq}`;
     this.o.emit({
@@ -509,14 +511,18 @@ export class ObservationPipeline {
       });
     }
     // 3장이 안 된 새 물건 후보는 이 답이 그 감지에 사실을 답할 때만 만든다(답이 없거나 넣지 않으면 버린다)
-    if (r?.scene) this.publish(this.o.world.applyCloserScene(last.frame.id, last.frame.capturedAtMs, r.scene, ids, pending));
-    else if (pending) this.o.world.endCloser(pending);
+    const at = { view: last.view, width: last.frame.width, height: last.frame.height, crop: last.crop };
+    if (r?.scene) this.publish(this.o.world.applyCloserScene(last.frame.id, last.frame.capturedAtMs, r.scene, ids, pending, at));
+    else if (pending) this.publish(this.o.world.endCloser(pending, ids, last.frame.id));
     this.closerCount.looks++;
     const said = new Map<string, string[]>();
     for (const ob of r?.scene?.observations ?? []) said.set(ob.object_id, [...(said.get(ob.object_id) ?? []), ob.state]);
+    // VLM이 상자로 답한 물건(YOLO 감지와 같은 물건이라 한 것은 빼고)도 찾은 것이다
+    const byVlm: CloserFound[] = (r?.scene?.objects ?? []).filter((v) => v.det === null)
+      .map((v) => ({ id: ids.get(v.id) ?? null, cls: v.cls as CloserFound["cls"], score: 0, facts: said.get(v.id) ?? [], via: "vlm" as const }));
     return {
       ok: true, frame_id: id, captured_at_ms: last.frame.capturedAtMs, crop: last.crop, frames: passes.length,
-      found: last.dets.map((d, i) => ({ id: ids.get(`d${i + 1}`) ?? null, cls: d.label, score: Math.round(d.score * 100) / 100, facts: said.get(`d${i + 1}`) ?? [] })),
+      found: [...last.dets.map((d, i) => ({ id: ids.get(`d${i + 1}`) ?? null, cls: d.label, score: Math.round(d.score * 100) / 100, facts: said.get(`d${i + 1}`) ?? [] })), ...byVlm],
       summary: r?.scene?.summary ?? null, vlm,
     };
   }

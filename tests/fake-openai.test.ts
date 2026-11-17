@@ -18,7 +18,7 @@ describe("가짜 OpenAI 호환 서버", () => {
     f = await startFakeOpenAI();
     const r = await chat({ model: "m", response_format: { type: "json_schema", json_schema: { name: "scene_observation", schema: {} } },
       messages: [{ role: "user", content: [{ type: "text", text: 'Detections: [{"id":"d1","class":"cup","box":[1,2,3,4]}]' }] }] });
-    expect(JSON.parse(r.choices[0].message.content)).toEqual({ scene: "unknown", observations: [{ object_id: "d1", state: "contents_unknown" }], summary: "가짜 장면" });
+    expect(JSON.parse(r.choices[0].message.content)).toEqual({ scene: "unknown", observations: [{ object_id: "d1", state: "contents_unknown" }], objects: [], summary: "가짜 장면" });
   });
 
   it("PAM 판단이면 대기, 반성이면 받은 기억을 그대로 낸다", async () => {

@@ -48,12 +48,12 @@ import { WorldCore, type Plan2, type V3 } from "./core.js";
 import { Detections } from "./objects.js";
 import { People } from "./people.js";
 import { SceneFacts } from "./facts.js";
-import { CloserLook, type CloserDetection, type CloserPass, type CloserPending } from "./closer.js";
+import { CloserLook, type CloserDetection, type CloserLookAt, type CloserPass, type CloserPending } from "./closer.js";
 import { DeviceSight } from "./devices.js";
 import { ContentsBook } from "./contents.js";
 
 export { CLOSER_HOLD_MS } from "./core.js";
-export { CLOSER_NEW_FRAMES, type CloserDetection, type CloserPass, type CloserPending } from "./closer.js";
+export { CLOSER_NEW_FRAMES, type CloserDetection, type CloserLookAt, type CloserPass, type CloserPending } from "./closer.js";
 
 export interface WorldStateOptions {
   surfaces: () => PlaneSurface[];
@@ -121,13 +121,13 @@ export class WorldState {
   }
 
   /** 가까이 보기 합치기(closer.ts applyCloser). */
-  applyCloser(looks: readonly CloserPass[], idsFrom?: string): { changes: WorldChange[]; ids: Map<string, string>; pending?: CloserPending } {
-    return this.core.closer.applyCloser(looks, idsFrom);
+  applyCloser(looks: readonly CloserPass[], idsFrom?: string, o: { defer?: boolean } = {}): { changes: WorldChange[]; ids: Map<string, string>; pending?: CloserPending } {
+    return this.core.closer.applyCloser(looks, idsFrom, o);
   }
 
   /** 가까이 보기 한 번이 VLM 답 없이 끝났다(closer.ts endCloser). */
-  endCloser(pending: CloserPending): void {
-    this.core.closer.endCloser(pending);
+  endCloser(pending: CloserPending, ids?: Map<string, string>, idsFrom?: string): WorldChange[] {
+    return this.core.closer.endCloser(pending, ids, idsFrom);
   }
 
   /** 가까이 본 감지가 물건 감지인가(closer.ts closerObject). */
@@ -148,8 +148,8 @@ export class WorldState {
   }
 
   /** 가까이 본 사진의 VLM 답(closer.ts applyCloserScene). */
-  applyCloserScene(sourceFrameId: string, capturedAtMs: number, scene: SceneObservation, ids: Map<string, string>, pending?: CloserPending): WorldChange[] {
-    return this.core.closer.applyCloserScene(sourceFrameId, capturedAtMs, scene, ids, pending);
+  applyCloserScene(sourceFrameId: string, capturedAtMs: number, scene: SceneObservation, ids: Map<string, string>, pending?: CloserPending, look?: CloserLookAt): WorldChange[] {
+    return this.core.closer.applyCloserScene(sourceFrameId, capturedAtMs, scene, ids, pending, look);
   }
 
   /** 계획의 따르기 단계 창(contents.ts window): on이면 확인 값을 보관하고 다시 열어(그 뒤 사진만) 다 이어진 값이 확인 값을 바꾸게 한다. off면 닫는다(값은 둔다).

@@ -161,6 +161,10 @@ export type StateKey = keyof typeof STATES;
 export type StateOf<F extends Facet> = { [K in StateKey]: (typeof STATES)[K]["facet"] extends F ? K : never }[StateKey];
 export type Activity = StateOf<"activity">;
 
+/** VLM이 장면·가까이 본 사진에서 상자와 함께 찾아 답하는 물건 종류(VLM 물건 목록): 안 내용 면이 있는 물건(컵·병·그릇).
+ *  YOLO가 놓쳐도 VLM이 본 물건을 World State에 넣는다(사용자 결정 2026-11-18 「VLM 무조건 우선」, src/world/merge.ts). */
+export const VLM_FIND = (Object.keys(CLASSES) as ClassKey[]).filter((k) => CLASSES[k].role === "object" && (CLASSES[k].facets as readonly Facet[]).includes("contents")) as ObjClass[];
+
 /** VLM이 낼 수 있지만 사실로 쌓지 않는 값: 감지 목록의 물건이 가려 안 보임. */
 export const VLM_ONLY = ["not_visible"] as const;
 /** 관절만 정하는 사실 값(pose). */

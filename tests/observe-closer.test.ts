@@ -313,21 +313,18 @@ describe("가까이 보기(관찰 흐름 closer)", () => {
     await s.p.close();
   });
 
-  it("감지를 합친 변화로 단계가 끝나 신호가 끊기면 VLM은 보내지 않고, 합친 결과는 실행한 가까이 보기로 돌려준다(VLM 답 없음 aborted)", async () => {
+  // VLM 무조건 우선(사용자 결정 2026-11-18): YOLO가 봤어도 VLM이 아니라고 하면 넣지 않아야 하므로, 감지만으로 World State를 바꾸지 않는다
+  it("VLM 무조건 우선: 잘라 본 감지를 합쳐도 VLM 답 전에는 변화를 내지 않고, VLM 답이 온 뒤 물건과 VLM 사실을 한 번에 넣는다", async () => {
+    let closerSentAtAppear = -1;
+    const closerSent = () => fake!.requests.filter((r) => JSON.stringify(r.body).includes(CLOSER_NOTE)).length;
     fake = await startFakeOpenAI({ reply: closerVlmReply() });
-    const ac = new AbortController();
-    const s = setup({ vlm: fakeVlm(fake), onChanges: (c) => { if (c.some((x) => x.kind === "appeared")) ac.abort(); } });
+    const s = setup({ vlm: fakeVlm(fake), onChanges: (c) => { if (c.some((x) => x.kind === "appeared")) closerSentAtAppear = closerSent(); } });
     for (let i = 1; i <= 3; i++) s.frame(i * 2000);
     await s.p.idle();
-    const sentBefore = fake.requests.length;
-    expect(await s.p.closer(SPOT, ac.signal)).toEqual({
-      ok: true, frame_id: "e3.c1", captured_at_ms: 6000, crop: [120, 90, 240, 180], frames: 3,
-      found: [{ id: "cup_1", cls: "cup", score: 0.72, facts: [] }], summary: null, vlm: "aborted",
-    });
-    expect(ac.signal.aborted).toBe(true);
-    expect(fake.requests.length).toBe(sentBefore);
-    expect(s.world.view(6000).objects).toEqual([expect.objectContaining({ id: "cup_1", status: "present", facts: {} })]);
-    expect(s.p.status().closer).toMatchObject({ looks: 1, failed: 0 });
+    expect(await s.p.closer(SPOT)).toMatchObject({ ok: true, found: [{ id: "cup_1", cls: "cup", facts: ["in_sink"] }], vlm: "ok" });
+    expect(closerSentAtAppear).toBe(1);
+    expect(s.world.view(6000).objects).toEqual([expect.objectContaining({ id: "cup_1", status: "present" })]);
+    expect(s.world.view(6000).objects[0]!.facts.place).toMatchObject({ value: "in_sink" });
     await s.p.close();
   });
 
@@ -482,9 +479,11 @@ describe("가까이 보기(관찰 흐름 closer)", () => {
     const first = s.p.closer(SPOT);
     await until(() => closer.length === 1);
     expect(await s.p.closer(SPOT)).toEqual({ ok: false, why: "vlm_busy" });
-    expect(s.world.view(6000).objects.map((o) => o.id)).toEqual(["cup_1"]);
+    // 첫 가까이 보기는 VLM 답을 기다리는 중이라 아직 넣지 않았고(VLM 무조건 우선), 자리 없는 가까이 보기도 합치지 않는다
+    expect(s.world.view(6000).objects).toEqual([]);
     closer[0]!();
     expect(await first).toMatchObject({ ok: true, found: [{ id: "cup_1", facts: ["in_sink"] }], vlm: "ok" });
+    expect(s.world.view(6000).objects.map((o) => o.id)).toEqual(["cup_1"]);
     const hanging = s.p.closer(SPOT);
     await until(() => closer.length === 2);
     await s.p.close();
@@ -589,5 +588,32 @@ describe("찾기의 비추기 끝(spotReady): 가까이 보기와 같은 프레�
     s.frame(8000, AWAY_VIEW);
     await s.p.idle();
     expect(s.p.spotReady(SPOT.position, 0)).toBe(false);
+  });
+});
+
+// 가로 유리컵 실제 판(2026-11-18): 잘라 본 칸의 YOLO는 컵을 못 잡았고 VLM은 봤다. found를 VLM 답으로도 채운다
+describe("가까이 보기 found를 VLM 답으로", () => {
+  it("잘라 본 장의 YOLO 감지가 없어도 VLM이 컵을 상자로 답하면 그 컵을 World State에 넣고 found에 싣는다(via vlm)", async () => {
+    // 잘라 키운 사진(480×360)의 컵 [220, 160, 40, 20] = 비율 { x: 220/480, y: 160/360, w: 40/480, h: 20/360 }: 엔진 프레임 [230, 170, 20, 10], 싱크대 위
+    const box = { x: 220 / 480, y: 160 / 360, w: 40 / 480, h: 20 / 360 };
+    fake = await startFakeOpenAI({ reply: closerVlmReply("in_sink", [{ id: "v1", cls: "cup", box, det: null }]) });
+    const s = setup({ vlm: fakeVlm(fake), detector: (engine) => cropAware(engine, { crop: [] }) });
+    for (let i = 1; i <= 3; i++) s.frame(i * 2000);
+    await s.p.idle();
+    const r = await s.p.closer(SPOT);
+    expect(r).toMatchObject({ ok: true, vlm: "ok", found: [{ id: "cup_1", cls: "cup", via: "vlm", facts: ["in_sink"] }] });
+    expect(s.world.view(6000).objects).toEqual([expect.objectContaining({ id: "cup_1", status: "present", surface: "sink_1", closer_hold: true })]);
+    await s.p.close();
+  });
+
+  it("VLM 무조건 우선: 잘라 본 장의 YOLO가 컵을 잡아도 VLM이 그 컵을 목록·사실에 넣지 않으면(없다) 컵을 만들지 않고 found도 비운다", async () => {
+    fake = await startFakeOpenAI({ reply: (body) => (JSON.stringify(body).includes(CLOSER_NOTE) ? JSON.stringify({ scene: "kitchen", observations: [], objects: [], summary: CLOSER_SUMMARY }) : null) });
+    const s = setup({ vlm: fakeVlm(fake) });
+    for (let i = 1; i <= 3; i++) s.frame(i * 2000);
+    await s.p.idle();
+    const r = await s.p.closer(SPOT);
+    expect(r).toMatchObject({ ok: true, vlm: "ok", found: [{ id: null, cls: "cup" }] });
+    expect(s.world.view(6000).objects).toEqual([]);
+    await s.p.close();
   });
 });
