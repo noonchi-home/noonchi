@@ -1,5 +1,6 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { createServer, get, type IncomingMessage, type Server } from "node:http";
+import { EventEmitter } from "node:events";
+import { createServer, get, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -10,12 +11,33 @@ import { readVideo } from "./helpers/video.js";
 
 const JPEG_A = Buffer.from([0xff, 0xd8, 0xaa, 0xaa, 0xff, 0xd9]);
 const JPEG_B = Buffer.from([0xff, 0xd8, 0xbb, 0xbb, 0xbb, 0xff, 0xd9]);
+const JPEG_C = Buffer.from([0xff, 0xd8, 0xcc, 0xff, 0xd9]);
 const EYE: EyeEvent = { position: [3.9, 5], height_m: 1.4, yaw_deg: 270, pitch_deg: -20, tracking: "ok", at: "2026-10-24T10:15:00.000Z" };
 
 const cleanups: (() => void | Promise<void>)[] = [];
 afterEach(async () => {
   while (cleanups.length) await cleanups.pop()!();
 });
+
+/** 서버 없이 쓰는 EyeFeed. */
+function plainFeed() {
+  const photoDir = mkdtempSync(join(tmpdir(), "eye-photos-"));
+  const feed = new EyeFeed({ photoDir, broadcast: () => {} });
+  cleanups.push(() => { feed.close(); rmSync(photoDir, { recursive: true, force: true }); });
+  return { feed };
+}
+
+/** 쓰기만 흉내 내는 응답: full이면 write가 false(쓰기 버퍼가 참)를 돌려준다. frames: 쓴 JPEG들. */
+function fakeStream() {
+  const out: Buffer[] = [];
+  const res = Object.assign(new EventEmitter(), {
+    full: false,
+    writeHead: () => res, flushHeaders: () => {}, end: () => {},
+    write: (c: string | Buffer) => { out.push(Buffer.from(c)); return !res.full; },
+    frames: () => out.filter((c) => c[0] === 0xff && c[1] === 0xd8),
+  });
+  return res;
+}
 
 async function setup() {
   const photoDir = mkdtempSync(join(tmpdir(), "eye-photos-"));
@@ -74,6 +96,27 @@ describe("EyeFeed", () => {
     const a = body.indexOf(JPEG_A), b = body.indexOf(JPEG_B);
     expect(a).toBeGreaterThan(0);
     expect(b).toBeGreaterThan(a);
+  });
+
+  it("연결에 아직 못 보낸 데이터가 있으면 프레임을 줄 세우지 않고 가장 새 한 장만 들고 있다가 비면 그것만 보낸다(늦게 보이는 미니맵)", () => {
+    const { feed } = plainFeed();
+    const res = fakeStream();
+    expect(feed.handle({ method: "GET" } as IncomingMessage, res as unknown as ServerResponse, "/api/eye/stream")).toBe(true);
+    // 첫 장은 바로 쓰고, 쓰기 버퍼가 차 있는 동안 온 B·C는 C 하나만 남긴다
+    res.full = true;
+    feed.pushFrame(JPEG_A, 640, 480);
+    feed.pushFrame(JPEG_B, 640, 480);
+    feed.pushFrame(JPEG_C, 640, 480);
+    expect(res.frames()).toEqual([JPEG_A]);
+    res.full = false;
+    res.emit("drain");
+    expect(res.frames()).toEqual([JPEG_A, JPEG_C]);
+    // 비어 있으면 바로 쓴다
+    feed.pushFrame(JPEG_B, 640, 480);
+    expect(res.frames()).toEqual([JPEG_A, JPEG_C, JPEG_B]);
+    // 더 보낼 것이 없을 때 온 drain은 아무것도 쓰지 않는다
+    res.emit("drain");
+    expect(res.frames()).toHaveLength(3);
   });
 
   it("사진을 JPEG·JSON으로 저장하고 photo 이벤트를 보낸다", async () => {
