@@ -61,18 +61,19 @@ describe("World State", () => {
     for (let i = 4; i <= 6; i++) w.applyDetections(frame(i), [cup]);
     expect(w.view(6000).objects.map((o) => [o.id, o.first_seen_ms])).toEqual([["cup_2", 4000]]);
   });
+  // 안 내용(contents)은 이 규칙이 아니라 내용물 갱신기(3장·4초, tests/world-contents.test.ts)가 정한다
   it("VLM 사실을 면(facet)마다 두고, 두 번 연속이면 confirmed", () => {
     const w = ws();
     let ids = new Map<string, string>();
     for (let i = 1; i <= 3; i++) ids = w.applyDetections(frame(i), [cup]).ids;
-    expect(w.applyScene("e3", 3000, { scene: "kitchen", observations: [{ object_id: "d1", state: "empty" }], summary: "s" }, ids)
-      .filter((c) => c.kind === "state")).toEqual([expect.objectContaining({ subject: "cup_1", text: "컵 cup_1 비어 있음", meaningful: true })]);
-    expect(w.view(3000).objects[0]!.facts.contents).toMatchObject({ value: "empty", certainty: "inferred" });
+    expect(w.applyScene("e3", 3000, { scene: "kitchen", observations: [{ object_id: "d1", state: "on_table" }], summary: "s" }, ids)
+      .filter((c) => c.kind === "state")).toEqual([expect.objectContaining({ subject: "cup_1", text: "컵 cup_1 식탁 위", meaningful: true })]);
+    expect(w.view(3000).objects[0]!.facts.place).toMatchObject({ value: "on_table", certainty: "inferred" });
     // 같은 원본 프레임의 답은 두 번 세지 않는다. 다른 프레임의 같은 값이어야 confirmed
-    w.applyScene("e3", 3000, { scene: "kitchen", observations: [{ object_id: "d1", state: "empty" }], summary: "s" }, ids);
-    expect(w.view(3000).objects[0]!.facts.contents).toMatchObject({ value: "empty", certainty: "inferred" });
+    w.applyScene("e3", 3000, { scene: "kitchen", observations: [{ object_id: "d1", state: "on_table" }], summary: "s" }, ids);
+    expect(w.view(3000).objects[0]!.facts.place).toMatchObject({ value: "on_table", certainty: "inferred" });
     w.applyScene("e4", 4000, { scene: "kitchen", observations: [{ object_id: "d1", state: "empty" }, { object_id: "d1", state: "on_table" }], summary: "s" }, ids);
-    expect(w.view(4000).objects[0]!.facts).toMatchObject({ contents: { certainty: "confirmed" }, place: { value: "on_table" } });
+    expect(w.view(4000).objects[0]!.facts).toMatchObject({ contents: { value: "empty", certainty: "inferred" }, place: { value: "on_table", certainty: "confirmed" } });
   });
   it("늦게 온 오래된 VLM 답은 새 사실을 덮지 않고, 분석 없음은 셈과 변화로 남긴다", () => {
     const w = ws();

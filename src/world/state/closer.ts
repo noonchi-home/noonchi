@@ -5,7 +5,7 @@ import type { ObjClass, WorldChange } from "../../contract/world.js";
 import type { CameraView, Detection, SceneObservation } from "../../contract/observe.js";
 import { CHANGE_TEXT, onSurface } from "../labels.js";
 import { placePoint, type PlaneSurface } from "../place.js";
-import { CLASSES, NOW_FACETS, STATES, VLM_ONLY, type StateKey } from "../vocab.js";
+import { CLASSES, NOW_FACETS, STATES, VLM_ONLY, type StateKey, type StateOf } from "../vocab.js";
 import { OBJ_CLASSES, Part, dist, fits, type Obj, type V3 } from "./core.js";
 
 /** 가까이 보기로 VLM 확인 없이 새 물건을 만들려면 같은 자리로 보인 서로 다른 원본 프레임이 이만큼 있어야 한다(물건 등장 확인 장수와 같다).
@@ -254,8 +254,22 @@ export class CloserLook extends Part {
       const value = ob.state as StateKey;
       if (!fits(value, obj.cls, "object")) continue;
       const facet = STATES[value].facet;
+      // 안 내용은 내용물 갱신기(contents.ts)가 정한다: 같은 원본 프레임의 전체 사진 답보다 이 답이 앞선다
+      if (facet === "contents") {
+        const r = core.contents.see(obj, sourceFrameId, capturedAtMs, value as StateOf<"contents">, true);
+        if (r.changed) {
+          obj.closerRev.contents = (obj.closerRev.contents ?? 0) + 1;
+          if (obj.facts.contents) obj.facts.contents = { ...obj.facts.contents, closer_ms: capturedAtMs };
+        }
+        if (obj.confirmed && obj.status !== "gone") changes.push(...r.changes);
+        continue;
+      }
       if (core.people.poseHolds(obj.facts[facet], capturedAtMs) || core.merge.carriedPlace(obj.id, facet)) continue;
-      if (!core.vlm.answer(sourceFrameId, obj.id, obj.facts, facet, value, capturedAtMs, true, NOW_FACETS.object.includes(facet), turn)) continue;
+      if (!core.vlm.answer(sourceFrameId, obj.id, obj.facts, facet, value, capturedAtMs, true, NOW_FACETS.object.includes(facet), turn)) {
+        if (facet === "body") core.contents.settle(obj);
+        continue;
+      }
+      if (facet === "body") core.contents.settle(obj);
       obj.closerRev[facet] = (obj.closerRev[facet] ?? 0) + 1;
       if (obj.confirmed && obj.status !== "gone") changes.push({ kind: "state", at_ms: capturedAtMs, subject: obj.id, meaningful: true, text: CHANGE_TEXT.state(core.name(obj), value) });
     }

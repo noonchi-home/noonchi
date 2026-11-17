@@ -9,6 +9,7 @@ import { FALL_DEFAULTS, FallWatch, type FallConfig } from "../fall.js";
 import type { SightLink } from "../sight.js";
 import { CLASSES, STATES, type ClassKey, type StateKey, type Target } from "../vocab.js";
 import type { CloserLook } from "./closer.js";
+import type { ContentsBook, ContentsState } from "./contents.js";
 import type { DeviceSight } from "./devices.js";
 import type { SceneFacts } from "./facts.js";
 import type { Detections } from "./objects.js";
@@ -68,6 +69,8 @@ export interface Obj {
   followed: { id: string; at: number; frame: string } | null;
   /** 면마다 가까이 보기 VLM 답이 값을 새로 넣거나 바꾼 횟수(지금 값의 출처와 따로 남는다). */
   closerRev: Partial<Record<Facet, number>>;
+  /** 내용물 갱신기의 상태(src/world/state/contents.ts). 내용물을 쌓은 적 없으면 null. */
+  contents: ContentsState | null;
 }
 
 export interface Fix {
@@ -110,6 +113,7 @@ export class WorldCore {
   people!: People;
   vlm!: SceneFacts;
   closer!: CloserLook;
+  contents!: ContentsBook;
   sight!: DeviceSight;
 
   constructor(readonly o: WorldStateOptions) {
@@ -138,7 +142,7 @@ export class WorldCore {
       id: `${cls}_${n}`, cls, position: null, surface: null, surfaceLabel: null, part: null, room: null, errorM: null, confirmed: false, status: "present",
       firstSeen: atMs, lastSeen: atMs, lastInView: atMs, goneAt: null, facts: {}, answered: null, closerAt: null,
       posAt: Number.NEGATIVE_INFINITY, posCloser: false, judgedAt: atMs, judgedFrame: frameId, judgedCloser: false, followed: null, closerRev: {},
-      movedAt: atMs, trail: [], carried: false,
+      movedAt: atMs, trail: [], carried: false, contents: null,
     };
     this.objects.set(obj.id, obj);
     return obj;

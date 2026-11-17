@@ -1,10 +1,11 @@
 // World State의 VLM 사실(SceneFacts): 면(facet)마다 하나, 그 종류에 없는 면·그 대상에 붙지 않는 값은 버린다. 촬영 시각이 더 오래된 답은 버리고, 같은 값이 연속 두 번이면 confirmed.
 // 지금만 맞는 면은 그 대상을 본 프레임의 VLM 답에 없으면 지운다. VLM 답은 원본 프레임·대상·면마다 한 번만 세고, 같은 원본 프레임이면 잘라 본 사진의 답이 앞선다.
 // 관절이 붙인 사실·들고 가는 중인 물건의 자리·쓰러짐 의심 중 자세는 VLM 답이 덮지 않는다.
+// 물건 안 내용(contents)은 이 규칙이 아니라 내용물 갱신기(contents.ts)가 정한다. 몸통(body) 답을 받은 물건은 갱신기가 내용물을 다시 쓴다(불투명이면 「안이 안 보임」).
 import type { Facet, WorldChange } from "../../contract/world.js";
 import type { SceneObservation } from "../../contract/observe.js";
 import { CHANGE_TEXT, OBJECT_NAME, fixtureName } from "../labels.js";
-import { FACT_FRESH_MS, NOW_FACETS, STATES, VLM_ONLY, type ClassKey, type StateKey, type Target } from "../vocab.js";
+import { FACT_FRESH_MS, NOW_FACETS, STATES, VLM_ONLY, type ClassKey, type StateKey, type StateOf, type Target } from "../vocab.js";
 import { PERSON, Part, fits, type Facts } from "./core.js";
 
 /** VLM 답을 원본 프레임·대상·면마다 한 번만 세려고 기억하는 수(넣은 순서, 최근 것). */
@@ -84,6 +85,8 @@ export class SceneFacts extends Part {
     }
     const said = new Set<string>();
     const turn = new Set<string>();
+    /** 몸통 답을 받은 물건(값이 그대로여도: 두 번째 같은 값이 확인됨으로 올린다). 고리 끝에 내용물을 다시 쓴다. */
+    const bodies = new Set<string>();
     const hidden = new Set(scene.observations.filter((o) => (VLM_ONLY as readonly string[]).includes(o.state)).map((o) => ids.get(o.object_id)).filter((x): x is string => !!x));
     for (const ob of scene.observations) {
       const id = ids.get(ob.object_id);
@@ -93,6 +96,13 @@ export class SceneFacts extends Part {
       if (!fits(value, target.cls, target.kind)) continue;
       const facet = STATES[value].facet;
       said.add(`${id}|${facet}`);
+      if (target.kind === "object" && facet === "contents") {
+        const obj = core.objects.get(id)!;
+        const { changes: c } = core.contents.see(obj, frameId, capturedAtMs, value as StateOf<"contents">, false);
+        if (obj.confirmed && obj.status !== "gone") changes.push(...c);
+        continue;
+      }
+      if (target.kind === "object" && facet === "body") bodies.add(id);
       if (core.people.poseHolds(target.facts[facet], capturedAtMs) || core.merge.carriedPlace(id, facet) || core.people.fallHeld(id, facet)) continue;
       if (!this.answer(frameId, id, target.facts, facet, value, capturedAtMs, false, NOW_FACETS[target.kind].includes(facet), turn)) continue;
       if (target.kind === "person") {
@@ -105,6 +115,7 @@ export class SceneFacts extends Part {
         if (obj.confirmed && obj.status !== "gone") changes.push({ kind: "state", at_ms: capturedAtMs, subject: id, meaningful: true, text: CHANGE_TEXT.state(core.name(obj), value) });
       }
     }
+    for (const id of bodies) core.contents.settle(core.objects.get(id)!);
     // 이 프레임에서 본 대상의 지금만 맞는 사실: 이 답에 없으면 지운다(더 새 답의 사실, 같은 원본 프레임을 잘라 본 답의 사실은 그대로)
     for (const id of new Set(ids.values())) {
       const target = this.targetOf(id);

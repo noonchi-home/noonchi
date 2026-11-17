@@ -402,7 +402,8 @@ describe("가까이 본 사진의 VLM 답(applyCloserScene)", () => {
     const w = seeded();
     const changes = w.applyCloserScene("e3", 3000, { scene: "k", observations: [{ object_id: "d1", state: "in_sink" }, { object_id: "d1", state: "empty" }, { object_id: "d2", state: "sitting" }], summary: "s2" },
       new Map([["d1", "cup_1"]]));
-    expect(changes.map((c) => [c.kind, c.text])).toEqual([["state", "컵 cup_1 싱크대 안"], ["state", "컵 cup_1 비어 있음"]]);
+    // 안 내용 짐작(한 장)은 변화 줄이 없다(내용물 갱신기, tests/world-contents.test.ts)
+    expect(changes.map((c) => [c.kind, c.text])).toEqual([["state", "컵 cup_1 싱크대 안"]]);
     const v = w.view(3000);
     expect(v.objects[0]!.facts).toMatchObject({ place: { value: "in_sink" }, contents: { value: "empty" }, use: { value: "in_use" } });
     expect(v.person.facts.posture).toMatchObject({ value: "standing" });
@@ -414,17 +415,18 @@ describe("가까이 본 사진의 VLM 답(applyCloserScene)", () => {
     const w = seeded();
     const ids = new Map([["d1", "cup_1"]]);
     const said = (state: SceneState): SceneObservation => ({ scene: "k", observations: [{ object_id: "d1", state }], summary: "" });
-    const contents = (nowMs: number) => w.view(nowMs).objects[0]!.facts.contents;
-    w.applyCloserScene("e3", 3000, said("has_contents"), ids);
-    expect(contents(3000)).toEqual({ value: "has_contents", at_ms: 3000, since_ms: 3000, certainty: "inferred", closer_ms: 3000 });
-    w.applyScene("e4", 4000, said("has_contents"), full(w, "e4", 4000, [cupIn, person]).ids);
-    expect(contents(4000)).toEqual({ value: "has_contents", at_ms: 4000, since_ms: 3000, certainty: "confirmed", closer_ms: 3000 });
-    w.applyScene("e5", 5000, said("empty"), full(w, "e5", 5000, [cupIn, person]).ids);
-    expect(contents(5000)).toEqual({ value: "empty", at_ms: 5000, since_ms: 5000, certainty: "inferred" });
-    w.applyCloserScene("e6", 6000, said("empty"), ids);
-    expect(contents(6000)).toEqual({ value: "empty", at_ms: 6000, since_ms: 5000, certainty: "confirmed" });
-    w.applyCloserScene("e7", 7000, said("has_contents"), ids);
-    expect(contents(7000)).toMatchObject({ value: "has_contents", closer_ms: 7000 });
+    // 자리 면으로 본다(안 내용은 내용물 갱신기가 정한다, tests/world-contents.test.ts)
+    const place = (nowMs: number) => w.view(nowMs).objects[0]!.facts.place;
+    w.applyCloserScene("e3", 3000, said("in_sink"), ids);
+    expect(place(3000)).toEqual({ value: "in_sink", at_ms: 3000, since_ms: 3000, certainty: "inferred", closer_ms: 3000 });
+    w.applyScene("e4", 4000, said("in_sink"), full(w, "e4", 4000, [cupIn, person]).ids);
+    expect(place(4000)).toEqual({ value: "in_sink", at_ms: 4000, since_ms: 3000, certainty: "confirmed", closer_ms: 3000 });
+    w.applyScene("e5", 5000, said("on_counter"), full(w, "e5", 5000, [cupIn, person]).ids);
+    expect(place(5000)).toEqual({ value: "on_counter", at_ms: 5000, since_ms: 5000, certainty: "inferred" });
+    w.applyCloserScene("e6", 6000, said("on_counter"), ids);
+    expect(place(6000)).toEqual({ value: "on_counter", at_ms: 6000, since_ms: 5000, certainty: "confirmed" });
+    w.applyCloserScene("e7", 7000, said("in_sink"), ids);
+    expect(place(7000)).toMatchObject({ value: "in_sink", closer_ms: 7000 });
   });
 
   it("가까이 본 답이 면 값을 새로 넣거나 바꾼 횟수(closer_rev)는 지금 값의 출처와 따로 남는다: 전체 사진이 값을 바꿔 closer_ms가 없어져도 줄지 않고, 판단 기록 요약에도 실린다", () => {
@@ -433,16 +435,20 @@ describe("가까이 본 사진의 VLM 답(applyCloserScene)", () => {
     const said = (state: SceneState): SceneObservation => ({ scene: "k", observations: [{ object_id: "d1", state }], summary: "" });
     const cup = (nowMs: number) => w.view(nowMs).objects[0]!;
     expect(cup(3000).closer_rev).toBeUndefined();
-    w.applyCloserScene("e3", 3000, said("has_contents"), ids);
-    expect(cup(3000).closer_rev).toEqual({ contents: 1 });
-    w.applyScene("e5", 5000, said("contents_unknown"), full(w, "e5", 5000, [cupIn, person]).ids);
-    expect(cup(5000).facts.contents).toEqual({ value: "contents_unknown", at_ms: 5000, since_ms: 5000, certainty: "inferred" });
-    expect(cup(5000).closer_rev).toEqual({ contents: 1 });
-    w.applyCloserScene("e6", 6000, said("contents_unknown"), ids);   // 같은 값을 다시 본 것은 세지 않는다
-    expect(cup(6000).closer_rev).toEqual({ contents: 1 });
-    w.applyCloserScene("e7", 7000, said("empty"), ids);
-    expect(cup(7000).closer_rev).toEqual({ contents: 2 });
-    expect(decisionWorld(w.view(7000)).objects[0]!.closer_rev).toEqual({ contents: 2 });
+    w.applyCloserScene("e3", 3000, said("in_sink"), ids);
+    expect(cup(3000).closer_rev).toEqual({ place: 1 });
+    w.applyScene("e5", 5000, said("on_counter"), full(w, "e5", 5000, [cupIn, person]).ids);
+    expect(cup(5000).facts.place).toEqual({ value: "on_counter", at_ms: 5000, since_ms: 5000, certainty: "inferred" });
+    expect(cup(5000).closer_rev).toEqual({ place: 1 });
+    w.applyCloserScene("e6", 6000, said("on_counter"), ids);   // 같은 값을 다시 본 것은 세지 않는다
+    expect(cup(6000).closer_rev).toEqual({ place: 1 });
+    w.applyCloserScene("e7", 7000, said("on_floor"), ids);
+    expect(cup(7000).closer_rev).toEqual({ place: 2 });
+    expect(decisionWorld(w.view(7000)).objects[0]!.closer_rev).toEqual({ place: 2 });
+    // 안 내용도 가까이 본 답이 내용물 값을 바꾸면 센다(내용물 갱신기)
+    w.applyCloserScene("e8", 8000, said("empty"), ids);
+    expect(cup(8000).closer_rev).toEqual({ place: 2, contents: 1 });
+    expect(cup(8000).facts.contents).toMatchObject({ value: "empty", closer_ms: 8000 });
   });
 
   it("이미 있는 물건도 그 상자에 가림(not_visible)과 사실을 함께 답하면 답 순서와 상관없이 그 상자의 사실을 넣지 않는다", () => {

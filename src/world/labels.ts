@@ -17,6 +17,10 @@ export const STATE_TEXT: Record<string, string> = Object.fromEntries(Object.entr
 
 /** 카메라로 본 가전 상태 표시: 변화 줄·[지속] 줄 끝, 대시보드 말풍선 줄 끝. */
 export const SEEN_TEXT = "카메라로 봄";
+/** 사람이 말로 답한 내용물의 꼬리(변화 줄·[지속] 줄, src/world/state/contents.ts). */
+export const ANSWERED = "사람이 답함";
+/** 내용물을 다시 연 까닭(변화 줄). */
+const AGAIN_WHY = { drink: "입에 댐", pour: "따르는 모습", step: "따르기 단계" } as const;
 
 /** World State 변화 글(관찰 텍스트 줄, 판단 기록 줄). */
 export const CHANGE_TEXT = {
@@ -36,6 +40,10 @@ export const CHANGE_TEXT = {
   people: (n: number) => `${n}명`,
   near: (label: string) => `${label} 가까이`,
   state: (name: string, value: string) => `${name} ${STATE_TEXT[value] ?? value}`,
+  /** 사람이 말로 답한 내용물(판단 계기). */
+  contentsAnswered: (name: string, value: string) => `${name} ${STATE_TEXT[value] ?? value} · ${ANSWERED}`,
+  /** 마시기·따르기 사건이나 따르기 단계로 내용물을 다시 확인한다(판단 계기 아님). */
+  contentsAgain: (name: string, why: keyof typeof AGAIN_WHY) => `${name} ${AGAIN_WHY[why]} · 내용물 다시 확인`,
   device: (label: string, status: string) => `${label} ${status}`,
   deviceAttr: (label: string, attr: string, to: unknown) => `${label} ${attr} ${String(to)}`,
   remaining: (min: number) => `남은 시간 ${min}분`,

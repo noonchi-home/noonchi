@@ -50,6 +50,7 @@ import { People } from "./people.js";
 import { SceneFacts } from "./facts.js";
 import { CloserLook, type CloserDetection, type CloserPass, type CloserPending } from "./closer.js";
 import { DeviceSight } from "./devices.js";
+import { ContentsBook } from "./contents.js";
 
 export { CLOSER_HOLD_MS } from "./core.js";
 export { CLOSER_NEW_FRAMES, type CloserDetection, type CloserPass, type CloserPending } from "./closer.js";
@@ -89,6 +90,7 @@ export class WorldState {
     core.people = new People(core);
     core.vlm = new SceneFacts(core);
     core.closer = new CloserLook(core);
+    core.contents = new ContentsBook(core);
     core.sight = new DeviceSight(core);
     this.core = core;
   }
@@ -127,6 +129,21 @@ export class WorldState {
   /** 가까이 본 사진의 VLM 답(closer.ts applyCloserScene). */
   applyCloserScene(sourceFrameId: string, capturedAtMs: number, scene: SceneObservation, ids: Map<string, string>, pending?: CloserPending): WorldChange[] {
     return this.core.closer.applyCloserScene(sourceFrameId, capturedAtMs, scene, ids, pending);
+  }
+
+  /** 사람이 말로 답한 내용물(contents.ts answer). 물건이 없거나 세대가 지금과 다르면(늦은 답) null. */
+  answerContents(id: string, value: "empty" | "has_contents", atMs: number, gen: number): WorldChange[] | null {
+    const obj = this.core.objects.get(id);
+    return obj ? this.core.contents.answer(obj, value, atMs, gen) : null;
+  }
+
+  /** 계획의 따르기 단계 창(contents.ts window): on이면 확인 값을 보관하고 다시 열어(그 뒤 사진만) 다 이어진 값이 확인 값을 바꾸게 한다. off면 닫는다(값은 둔다).
+   *  물건이 없으면 false. */
+  contentsAction(id: string, atMs: number, on: boolean): boolean {
+    const obj = this.core.objects.get(id);
+    if (!obj) return false;
+    this.core.contents.window(obj, atMs, on);
+    return true;
   }
 
   /** 분석 없음 프레임: 셈을 늘리고 변화 하나. 등장·사라짐 셈은 그대로다. VLM 답이 없으면 그 프레임의 가전 맞춤도 버린다(값이 아니다). */
@@ -174,6 +191,7 @@ export class WorldState {
       first_seen_ms: x.firstSeen, last_seen_ms: x.lastSeen, last_in_view_ms: x.lastInView, facts: { ...x.facts }, answered_ms: x.answered, devices: relatedDeviceIds(x.cls, devices),
       closer_hold: core.held(x, nowMs), followed_by: x.followed?.id ?? null, ...(Object.keys(x.closerRev).length ? { closer_rev: { ...x.closerRev } } : {}),
       ...(x.carried ? { carried: true as const } : {}),
+      ...(x.contents ? { contents_gen: x.contents.gen, ...(x.contents.past.length ? { contents_past: x.contents.past.map((p) => ({ value: p.value, by: p.by, at_ms: p.atMs })) } : {}) } : {}),
     }));
     const fixtures: WorldFixture[] = [...core.fixtures.values()].map((f) => ({
       id: f.id, cls: f.cls, room: f.room, room_label: f.roomLabel, first_seen_ms: f.firstSeen, last_seen_ms: f.lastSeen, facts: { ...f.facts }, answered_ms: f.answered,
