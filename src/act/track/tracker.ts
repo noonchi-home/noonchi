@@ -229,7 +229,12 @@ export class ExecutionTracker {
 
   /** 폰 눈(맞춘 자세)의 평면 자리 [x, z]. 맞추기 전 추정 눈은 쓰지 않는다. 이동 단계는 다음 tick에 본다. */
   onEye(position: XZ, estimated = false): void {
-    if (estimated || !position.every(Number.isFinite)) return;
+    if (!position.every(Number.isFinite)) return;
+    // 추정 눈: 위치 맞춤을 다시 하는 중이다(그 전 맞춘 눈은 지금 것이 아니다)
+    if (estimated) {
+      this.core.eyeLostAt = this.core.clock.now();
+      return;
+    }
     this.core.eye = { position: [position[0], position[1]], at: this.core.clock.now() };
   }
 
@@ -327,6 +332,7 @@ export class ExecutionTracker {
   /** 멈추면 더 기록하지 않고 폰에도 보내지 않는다. 만들던 계획과 멈춘 단계 알림은 끊는다. */
   stop(): void {
     const core = this.core;
+    if (core.run) core.contents.release(core.run);
     core.planning?.abort.abort();
     core.planning = null;
     core.run?.stepEnd?.abort();

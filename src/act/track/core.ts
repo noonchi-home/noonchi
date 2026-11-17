@@ -57,8 +57,9 @@ export interface Run {
   outcomes: StepOutcome[];
   /** 내용물 보류(실행 전 검사가 컵 안을 몰라 막음, src/act/track/contents.ts). 없으면 null. */
   hold: Hold | null;
-  /** 내용물 보류로 붙잡은 적이 있다(보류에서 풀려 첫 명령을 보낼 때 폰 대화·승인 대기를 본다). busyAt: 그 때문에 첫 명령을 미루기 시작한 시각. */
-  held: boolean; busyAt: number | null;
+  /** 내용물 보류로 붙잡은 컵 id(보류에서 풀려 첫 명령을 보낼 때 폰 대화·승인 대기를 보고, 그 컵 내용물은 「가까이 본 뒤 다시 판단」에서 뺀다).
+   *  busyAt: 폰 대화·승인 대기 때문에 첫 명령을 미루기 시작한 시각. */
+  heldIds: Set<string>; busyAt: number | null;
   /** 따르기 창을 연 물건(World State id, src/act/track/steps.ts window). 없으면 null. */
   window: string | null;
 }
@@ -83,6 +84,8 @@ export class TrackCore {
   quietFrom = -Infinity;
   stopped = false;
   eye: { position: XZ; at: number } | null = null;
+  /** 마지막으로 추정 눈(맞추기 전·다시 맞추는 중)을 받은 시각. 이보다 앞선 맞춘 눈은 지금 맞춘 것이 아니다. */
+  eyeLostAt = Number.NEGATIVE_INFINITY;
   start!: Starter;
   steps!: Steps;
   approval!: Approvals;

@@ -18,14 +18,14 @@ import type { WorldObject } from "../../contract/world.js";
 import type { LookSpot } from "../../observe/index.js";
 import { OBJECT_NAME, STATE_TEXT } from "../../world/labels.js";
 import { PEEK_TEXT, VISION_TEXT } from "../labels.js";
-import { holdsTarget, opaqueBody } from "../tasks.js";
+import { holdsTarget, opaqueBody, sureValue } from "../tasks.js";
 import { Part, type Run } from "./core.js";
 
 /** 보기 담당이 받기를 기다리는 시간, 가까이 본 뒤·위에서 본 뒤 사진을 기다리는 시간, 보류 한도(앞 차례·막힘·위에서 본 뒤 다시 보기·첫 명령 미룸, ms). */
 export const CONTENTS_HOLD = { lookWaitMs: 3000, settleMs: 4000, holdMs: 30_000 } as const;
 /** 가까이 가서 보기: 가까이 가기가 끝나는 폰-컵 수평 거리(m, 식탁 가에 선 사람이 팔을 뻗어 폰을 컵 위에 둘 수 있는 거리), 명령마다 한도(ms),
- *  같은 컵·세대를 다시 가까이 가기 전 기다림(ms), 옮겨짐으로 보는 자리 바뀜(m). */
-export const PEEK = { nearM: 0.5, stepMs: 30_000, retryMs: 60_000, movedM: 0.1 } as const;
+ *  같은 컵·세대를 다시 가까이 가기 전 기다림(ms), 옮겨짐으로 보는 자리 바뀜(m), 맞춘 눈이 이만큼(ms) 안 오면 지금 위치를 모른다(폰 자세는 초당 10번). */
+export const PEEK = { nearM: 0.5, stepMs: 30_000, retryMs: 60_000, movedM: 0.1, eyeMs: 2000 } as const;
 /** 보류의 가까이 보기 부탁(보기 담당 src/act/look.ts contents). done은 끝날 때 한 번(못 봐도). signal은 보류가 풀리면 끊긴다.
  *  top이 있으면 잘라 보기 대신 위에서 보기(그 뒤 찍힌 컵 안을 내려다본 사진 쌍, src/observe/pipeline.ts topLook)다. */
 export interface ContentsLook { planId: string; objectId: string; spot: LookSpot; signal: AbortSignal; done(): void; top?: { sinceMs: number } }
@@ -37,6 +37,8 @@ export interface Peek { part: "go" | "above" | null; sent: PlannedCommand | null
 export interface Hold {
   objectId: string; gen: number; phase: "look" | "looking" | "settle" | "peek" | "seeing" | "after" | "over"; at: number; lookedAt: number; end: AbortController;
   peek: Peek | null; waitFrom: number; seeingAt: number; lookAsked: boolean; afterAt: number; tried: boolean;
+  /** 검사가 다른 까닭(들고 있음 등)으로 막아 멈춘 때(pause). 다시 이어지면 null. */
+  pausedAt: number | null;
 }
 
 const dist3 = (a: readonly number[], b: readonly number[]) => Math.hypot(a[0]! - b[0]!, a[1]! - b[1]!, a[2]! - b[2]!);
@@ -61,15 +63,26 @@ export class ContentsHold extends Part {
     const gen = o?.contents_gen ?? 0;
     let h = r.hold;
     if (h?.phase === "over" && h.objectId === objectId && h.gen === gen) return false;
+    // 확인으로 오른 세대(위에서 본 값·사진이 확인함): 처음부터 세지 않는다. 위에서 보는 중이면 그대로, 낡아 막혔으면 다시 보이기를 기다린다(after)
+    if (h && h.phase !== "over" && h.objectId === objectId && h.gen !== gen && o && sureValue(o, "contents") !== null
+      && (h.phase === "seeing" || h.phase === "after" || reason === "stale")) {
+      h.gen = gen;
+      if (h.phase !== "seeing" && h.phase !== "after") {
+        this.withdraw(r, h);
+        Object.assign(h, { phase: "after", afterAt: now });
+      }
+    }
     if (!h || h.objectId !== objectId || h.gen !== gen) {
       if (h) this.drop(r, h);
       // 같은 컵이면 처음 붙잡은 때를 둔다(사건이 이어져도 holdMs 안에서 끝난다)
       const at = h?.objectId === objectId ? h.at : now;
       h = r.hold = {
         objectId, gen, phase: "look", at, lookedAt: now, end: new AbortController(), peek: null, waitFrom: at, seeingAt: 0, lookAsked: false, afterAt: 0, tried: false,
+        pausedAt: null,
       };
-      r.held = true;
+      r.heldIds.add(objectId);
     }
+    h.pausedAt = null;
     if ((h.phase === "look" || h.phase === "looking" || h.phase === "settle") && now - h.at > CONTENTS_HOLD.holdMs) return this.over(r, h);
     if (h.phase === "look") {
       const skip = !o?.position || opaqueBody(o) || !this.o.lookContents;
@@ -109,13 +122,15 @@ export class ContentsHold extends Part {
     if (!h.tried && recent && recent.gen === h.gen && now - recent.at < PEEK.retryMs) return this.over(r, h);
     const core = this.core;
     const world = this.o.world();
-    // 컵이 옮겨졌다(자리 바뀜·옮김 표시): 거두고 처음부터
-    if (h.peek && o?.position && (o.followed_by || dist3(o.position, h.peek.at) > PEEK.movedM)) {
+    // 컵이 옮겨졌다(자리 바뀜): 거두고 처음부터. 옮김 표시가 남아 있으면 새 대상이 정해질 때까지 막힘으로 둔다(같은 옛 컵으로 다시 보내지 않는다)
+    if (h.peek && o?.position && !o.followed_by && dist3(o.position, h.peek.at) > PEEK.movedM) {
       this.withdraw(r, h);
       h.peek = null;
       h.waitFrom = now;
     }
-    const blocked = !o || o.status === "gone" || !o.position || !core.eye || !core.start.phoneOk() || core.safety.offPending() || !!core.safety.shownOff()
+    // 지금 맞춘 눈: 다시 맞추는 중(추정 눈)이 아니고 PEEK.eyeMs 안에 받았다
+    const eye = core.eye && core.eye.at > core.eyeLostAt && now - core.eye.at <= PEEK.eyeMs ? core.eye : null;
+    const blocked = !o || o.status === "gone" || !o.position || !!o.followed_by || !eye || !core.start.phoneOk() || core.safety.offPending() || !!core.safety.shownOff()
       || (this.o.approvalsWaiting?.() ?? false) || (this.o.talking?.() ?? false) || !!r.asking
       || o.facts.place?.value === "in_hand" || holdsTarget(world, o.cls, true);
     if (blocked) {
@@ -127,7 +142,7 @@ export class ContentsHold extends Part {
     }
     const pk = (h.peek ??= { part: null, sent: null, since: now, at: o.position!, aboveAt: 0, guarded: false });
     const c = centerOf(o);
-    const d = Math.hypot(core.eye!.position[0] - c[0], core.eye!.position[1] - c[2]);
+    const d = Math.hypot(eye!.position[0] - c[0], eye!.position[1] - c[2]);
     if (!pk.sent) return this.send(r, h, o, d <= PEEK.nearM ? "above" : "go", d, now);
     if (pk.part === "go" && d <= PEEK.nearM) return this.send(r, h, o, "above", d, now);
     if (now - pk.since > PEEK.stepMs) return this.over(r, h);
@@ -230,6 +245,18 @@ export class ContentsHold extends Part {
   private drop(r: Run, h: Hold): void {
     this.withdraw(r, h);
     h.end.abort();
+  }
+
+  /** 보류 중 검사가 다른 까닭(들고 있음·없음·치움)으로 막았다: 명령·보기 지킴을 거두고 멈춘 때부터 holdMs를 센다. 아직이면 true, 지나면 그만두고 false. */
+  pause(r: Run): boolean {
+    const h = r.hold;
+    if (!h || h.phase === "over") return false;
+    const now = this.clock.now();
+    if (h.pausedAt === null) {
+      h.pausedAt = now;
+      this.withdraw(r, h);
+    }
+    return now - h.pausedAt > CONTENTS_HOLD.holdMs ? this.over(r, h) : true;
   }
 
   /** 붙잡고 있는가(그만두지 않은 보류). */

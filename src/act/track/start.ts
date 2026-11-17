@@ -77,12 +77,13 @@ export class Starter extends Part {
   /** 판단 뒤에 가까이 보기가 그 행동 대상 종류 물건의 볼 면을 바꿨는가: 사라지지 않은 그 종류 물건의 볼 면 가까이 보기 횟수(closer_rev)가
    *  판단 때 횟수(판단 기록 World State 요약, 그때 없던 물건이면 0)와 다르고, 지금 값도 판단 때 본 값과 다르다.
    *  횟수는 지금 값의 출처와 따로 남으므로 가까이 보기가 바꾼 값을 그 뒤 전체 사진이 다시 바꿔도 잡는다. */
-  private closerNewer(d: DecisionRecord): boolean {
+  private closerNewer(d: DecisionRecord, held?: ReadonlySet<string>): boolean {
     const spec = taskOf(d.action);
     const facets = spec?.look ?? [];
     if (!spec?.target || !facets.length) return false;
     const then = new Map(d.world.objects.map((o) => [o.id, o]));
     return this.o.world().objects.some((o) => o.cls === spec.target && o.status !== "gone" && facets.some((f) => {
+      if (f === "contents" && held?.has(o.id)) return false;
       const before = then.get(o.id);
       return (o.closer_rev?.[f] ?? 0) !== (before?.closer_rev?.[f] ?? 0) && before?.facts[f]?.value !== o.facts[f]?.value;
     }));
@@ -139,7 +140,7 @@ export class Starter extends Part {
       asking: null, askAt: now, watch: null, others, alias: new Map([...ids].map((id) => [id, id])), carried: new Set(), placeAt: (id) => (id ? this.o.floor().objects.get(id)?.position ?? null : null), deadline: now, again: false, device: "idle", gen: 0,
       looks: 0, lookAt: Number.NEGATIVE_INFINITY, stepEnd: null, gapAt: job.at, onAt: new Map(), ends: new Map(), offAsked: -1, deferred: false, phoneWait: false, phone: false,
       strays: 0, strayAt: Number.NEGATIVE_INFINITY, strayNear: null, told: null, helped: false,
-      quiet: taskOf(r.plan.task)?.coach ? quietLabels(this.o.lessons?.get(r.plan.task) ?? null) : new Set(), quietOn: false, outcomes: [], hold: null, window: null, held: false, busyAt: null,
+      quiet: taskOf(r.plan.task)?.coach ? quietLabels(this.o.lessons?.get(r.plan.task) ?? null) : new Set(), quietOn: false, outcomes: [], hold: null, window: null, heldIds: new Set(), busyAt: null,
     };
     core.run = run;
     this.o.plans.onDecision(r.plan.view);
@@ -151,12 +152,15 @@ export class Starter extends Part {
    *  「가까이 본 뒤 다시 판단」으로 닫는다(다음 판단이 새 사실로 다시 고른다). 첫 명령을 보낸 뒤에는 보지 않는다. */
   tryStart(r: Run, last: boolean): void {
     const { safety, steps } = this.core;
-    if (this.closerNewer(r.decision)) {
+    // 이번 보류에서 본 컵의 내용물은 「가까이 본 뒤 다시 판단」에서 뺀다(행동 조건은 아래 검사가 다시 본다)
+    if (this.closerNewer(r.decision, r.heldIds)) {
       this.ungap(r.decision, r.gapAt);
       return steps.finish(r, "failed", EXEC_TEXT.closerNewer, "cancelled");
     }
     const c = this.o.check(r.decision, r.plan.view);
     if (!c.ok) {
+      // 보류 중 검사가 다른 까닭(들고 있음·없음·치움)으로 막으면 그 까닭과 상관없이 먼저 명령·보기 지킴을 거두고 holdMs 한도를 센다
+      if (c.reason !== "unknown_contents" && c.reason !== "stale" && this.core.contents.holding(r) && !this.core.contents.pause(r)) return steps.finish(r, "failed", c.text);
       // 검사를 막은 대상 물건의 손에 있음이 들고 감 보호(World State carried)에서만 왔으면 보호가 풀릴 때까지 다시 보기 기한을 세지 않는다(풀린 때부터 recheckMs)
       if (c.reason === "in_hand" && c.carried) {
         r.since = this.clock.now();
@@ -174,7 +178,7 @@ export class Starter extends Part {
     }
     this.core.contents.release(r);
     // 보류에서 풀린 계획은 폰 대화·승인 대기가 없을 때만 첫 명령을 보낸다(다른 대화를 덮지 않는다). 미룬 지 holdMs가 지나면 닫는다
-    if (r.held && ((this.o.talking?.() ?? false) || (this.o.approvalsWaiting?.() ?? false))) {
+    if (r.heldIds.size > 0 && ((this.o.talking?.() ?? false) || (this.o.approvalsWaiting?.() ?? false))) {
       const now = this.clock.now();
       this.core.contents.clearPeek(r);
       r.busyAt ??= now;
