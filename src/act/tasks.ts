@@ -154,6 +154,7 @@ export function matchChoice(text: string, choices: readonly ActionChoice[]): Act
   const said = squash(text);
   if (!said) return null;
   const core = said.replace(LEAD, "");
-  const hit = (c: ActionChoice, w: string) => (c.whole ? TAIL.some((t) => core === squash(w) + t) : said.includes(squash(w)));
+  // whole: 앞말을 지운 글과 지우기 전 글을 다 본다(「네」「응」 한 마디는 앞말을 지우면 빈 글이다)
+  const hit = (c: ActionChoice, w: string) => (c.whole ? TAIL.some((t) => core === squash(w) + t || said === squash(w) + t) : said.includes(squash(w)));
   return choices.find((c) => [c.label, ...c.words].some((w) => hit(c, w))) ?? null;
 }
