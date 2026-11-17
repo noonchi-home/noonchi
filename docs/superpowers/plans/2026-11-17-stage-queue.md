@@ -15,7 +15,7 @@
 
 **Tech Stack:** Node 22 TypeScript, zod 4.6.5, `redis`(node-redis) 6.3.1, Redis 8.10.2(`redis:8.10.2-alpine`), `node:sqlite`, Vitest.
 
-**Spec:** 사용자 결정(2026-11-17, 조정자 전달): 「ROS 2처럼 Redis를 쓰는 코드를 짜자」, Redis는 EC2 안 noonchi 옆 컨테이너, 개발용 Redis는 이 PC의 Docker 컨테이너, Redis 디스크 저장 끔, 반성 입력은 기록 DB에 빠짐없이. 아키텍처 그림 `2026_SWE_NOONCHI_Archi.drawio`(인식 ↔ Redis ↔ noonchi, pam 없음). 앞선 일: `docs/superpowers/plans/2026-11-17-pam-in-node.md`(이 계획은 그 브랜치 끝에서 시작한다). Codex 설계 검토(c6073a6, P1 다섯·P2 열)를 아래 「검토 반영」 표로 반영했다.
+**Spec:** 사용자 결정(2026-11-17, 조정자 전달): 「ROS 2처럼 Redis를 쓰는 코드를 짜자」, Redis는 EC2 안 noonchi 옆 컨테이너, 개발용 Redis는 이 PC의 Docker 컨테이너, Redis 디스크 저장 끔, 반성 입력은 기록 DB에 빠짐없이. 아키텍처 그림 `2026_SWE_NOONCHI_Archi.drawio`(인식 ↔ Redis ↔ noonchi, pam 없음). 앞선 일: `docs/superpowers/plans/2026-11-17-pam-in-node.md`(이 계획은 그 브랜치 끝에서 시작한다). Codex 설계 검토 두 번(c6073a6: P1 다섯·P2 열, d4fe651: P1 셋·P2 열·P3 하나)을 아래 「검토 반영」 표 둘로 반영했다.
 
 ## 정한 것 (2026-11-17, 사용자)
 
@@ -35,6 +35,7 @@
     - RELIABLE 토픽: 기록 노드는 자기 consumer group으로 읽고, SQLite에 쓴 뒤에만 XACK한다.
     - SENSOR 토픽 가운데 기록에 남기는 것: 기록 노드는 따로 커서로 처음부터 차례로 다 읽는다. MAXLEN 때문에 잘려 놓치면 그 수를 기록 DB에 `bus_gap` 줄로 남긴다. 상한·속도 근거는 「SENSOR 상한」 표.
     - 사진 바이트는 남기지 않는다.
+    - 메시지 하나의 기록 줄과 처리표를 한 트랜잭션으로 써서, 다시 온 메시지는 한 번만 남는다(이 계획 18).
     - 시험: 같은 입력을 지금 방식과 통로 방식으로 돌려 기록 DB의 반성용 줄이 같아야 한다(묶음 2·3 끝 조건).
 11. **녹화·재생(rosbag2처럼):** 기록 노드가 토픽을 사진 칸 없이 녹화 파일(SQLite)에 남긴다. 하루치를 **격리된 재생 실행기**에서 다시 흘려 시험한다(이 계획 17).
 12. **폰 사용권:** 줄과 따로 표 하나: 안전 안내 > 승인 질문 > 대화 > 계획 명령 > 가까이 가서 보기.
@@ -52,18 +53,19 @@
    - **집(`home`):** 집을 열 때마다 새 값(`<집 id>#<연 횟수>`). 머리에 싣고, 받는 쪽은 지금 집이 아니면 버린다. 집을 바꾸면 띄우는 곳이 모든 노드를 끝내고(이 계획 9) 새 집 값으로 다시 띄운다.
    - **요청 id(`req`):** 요청과 답을 잇는 글 id(UUID). 답을 받는 노드는 `Pending`에 열어 둔 요청 id와 맞을 때만 받는다(늦은 답·모르는 답은 버린다). 다른 요청끼리 세대 숫자를 견주지 않는다.
 6. **두 단계로 띄운다(준비 → 시작):** 띄우는 곳은 모든 노드의 `prepare()`(구독·consumer group·커서를 만든다, 콜백은 아직 안 부른다)를 마친 뒤에 모든 노드의 `start()`(콜백·타이머 시작)를 부른다. 첫 노드의 타이머나 STATE 초기 콜백이 다른 노드의 그룹이 생기기 전에 발행해 잃는 일이 없다.
-7. **ack는 처리가 끝난 뒤에만:** 콜백이 성공하고, 그 안에서 기다린 필수 발행(`await node.publish(...)`)도 성공해야 RELIABLE을 ack한다. 실패하면 ack하지 않고 같은 기동 안에서 다시 준다(최대 3번, 그 뒤 `/bus/dead`에 남기고 ack, 기록 DB `bus_gap`). 낡은 메시지 기록(Freshness)도 성공 뒤에 확정한다.
+7. **ack는 처리가 끝난 뒤에만, 차례는 지킨다:** 콜백이 성공하고, 그 안에서 기다린 필수 발행(`await node.publish(...)`)도 성공해야 RELIABLE을 ack한다. 줄에서 잠시 내려놓은 메시지(상태를 기다리는 변화, 이 계획 10)는 실제로 처리한 뒤에 ack한다(`ctx.defer()`). 실패하면 ack하지 않고 같은 메시지를 다시 준다(한 구독 안에서 최대 3번). 그동안 같은 토픽·그룹의 뒤 메시지는 앞지르지 않는다. 세 번 실패하면 `/bus/dead`에 남기고 ack한 뒤 다음으로 간다(기록 DB `bus_gap`). `/bus/dead` 처리 자체가 실패하면 dead로 다시 보내지 않고 log 오류로만 남긴다. 낡은 메시지 기록(Freshness)도 성공 뒤에 확정한다.
 8. **순서 기준은 근거 시각:** 머리 stamp는 발행 시각이다. 사진 근거가 있는 몸은 `observed_ms`(촬영·근거 시각)를 싣고, 토픽 표의 `order`가 `observed_ms`면 그것으로, `rev`면 상태 판본으로 낡음을 본다. 늦게 끝난 옛 VLM 답이 새 관측처럼 통과하지 않는다.
-9. **끝내기 계약:** `BusNode.stop()`은 닫힘 표시 → 타이머 멈춤 → 돌던 콜백에 취소 신호(`ctx.signal`) → 그 콜백이 끝나길 기다림 → 구독 끊기 차례다. 닫힌 뒤 `publish`는 거절된다. 집을 닫은 뒤 옛 출력이 나가지 않는다. 띄우는 곳은 새 일을 만드는 노드(판단·실행 추적·가전)를 먼저 끝내고, 그다음 나머지를 끝낸다(9f0f661과 같은 차례).
-10. **상태와 변화의 판본을 잇는다:** 집 상태 노드는 바뀔 때마다 `rev`를 1 올려 `/world/state {rev, view}`와 `/world/changes {rev, changes}`를 낸다. 변화를 받는 노드는 `rev`가 그 이상인 상태를 가진 뒤에 변화를 처리한다(`node.withState`).
+9. **끝내기 계약:** `BusNode.stop()`은 닫힘 표시 → 타이머 멈춤 → 돌던 콜백과 `spawn()`으로 띄운 긴 일(LLM 호출)에 취소 신호 → 둘 다 끝나길 기다림 → 구독 끊기 차례다. 내려놓은 메시지는 ack하지 않고 둔다(같은 기동 안에서 다시 띄운 노드가 다시 받는다). 닫힌 뒤 `publish`는 거절된다. 집을 닫은 뒤 옛 출력이 나가지 않는다. 띄우는 곳은 새 일을 만드는 노드(판단·실행 추적·가전)를 먼저 끝내고, 그다음 나머지를 끝낸다(9f0f661과 같은 차례).
+10. **상태와 변화의 판본을 잇는다:** 집 상태 노드는 바뀔 때마다 `rev`를 1 올려 `/world/state {rev, view}`와 `/world/changes {rev, changes}`를 낸다. 변화를 받는 노드는 `rev`가 그 이상인 상태를 가진 뒤에 변화를 처리한다(`node.withState`). 상태가 아직 없으면 변화를 내려놓고 줄을 비우며, 상태가 와서 처리한 뒤에 그 변화를 ack한다.
 11. **사용권은 요청(claim) id마다:** `/phone/claim`의 열쇠는 claim id다(계획 승인과 대화 승인이 서로 덮지 않는다). `/phone/owner`는 고른 claim id와 종류를 싣는다. 승인 시간은 그 claim이 화면에 있을 때만 흐른다.
 12. **위에서 보기는 사진 쌍을 기다리는 요청 하나로:** `topReady`(사진 쌍이 모였나)를 따로 묻지 않는다. 실행 추적은 `/perception/look_request {req, kind: "top", target, since_ms, deadline_ms}`를 내고, 인식 노드가 쌍이 모이면(또는 기한이 지나면) `/perception/look_result`를 낸다(지금 `contents.ts:205`의 「준비됐으면 topLook」을 인식 쪽이 맡는다). 순환 대기가 없다.
 13. **사진은 base64로 싣고 크기를 묶는다:** `/perception/frame`의 사진은 `jpeg_b64`(JSON 글, 최대 700,000자 ≈ 512KB)이고, 받는 쪽은 `frameBytes(body)`로 `Buffer`를 되살린다. 녹화는 이 칸을 뺀다.
-14. **가전 명령은 한 번만 실행한다:** `/device/command`는 `command_id`·`deadline_ms`를 싣는다. 가전 노드는 실행 전에 「시작함」을 적고, 실행 뒤 결과를 `command_id`로 보관한다(같은 기동 안). 다시 온 명령은 실행하지 않고 보관한 결과를 다시 낸다. 「시작함」만 있고 결과가 없으면(실행 중 끊김) 다시 실행하지 않고 `unknown`을 낸다. 기한이 지났으면 실행하지 않고 `expired`를 낸다.
-15. **Redis 오류·끊김:** 연결마다 오류 리스너를 단다(프로세스가 죽지 않는다). `NOGROUP`(Redis가 다시 켜짐)이면 그룹을 다시 만들고 log로 알린다. STATE는 알림의 카운터가 건너뛰면 스냅숏을 다시 읽는다.
-16. **SENSOR는 정말 최신을, STATE는 빠짐없이:** SENSOR 구독은 깨어날 때마다 `XREVRANGE + COUNT 1`로 가장 새 것을 읽는다. STATE는 발행마다 토픽 카운터(`INCR`)를 알림에 싣고, 받는 쪽이 건너뜀을 보면 스냅숏(`HGETALL`)을 다시 읽는다.
-17. **재생은 격리된 실행기에서:** `replay()`는 실제 통로가 아니라 새 `MemoryBus`·가상 시계 위에 노드를 띄우고(가전 노드는 실행하지 않는 `dry-run`), 허용 목록의 바깥 입력 토픽만 흘린다(`/perception/detections`·`/perception/analysis`·`/perception/look_result`·`/phone/pose`·`/phone/heard`·`/phone/progress`·`/device/changes`). 녹화의 도착 차례와 근거 시각을 따로 보관하고, 메시지마다 가상 시계를 그 시각까지 당겨 타이머를 돌린 뒤 발행하고, 모든 노드가 빌 때까지 기다린 다음(처리 장벽) 다음 메시지로 간다.
-18. **이 계획의 깊이:** 묶음 1은 단계·코드까지 쓴다. 묶음 2~6은 토픽·파일·시험·끝 조건까지 정하고, 앞 묶음이 끝나면 그 묶음의 단계 계획을 같은 파일에 더한다(묶음마다 Codex 설계 검토).
+14. **가전 명령은 한 번만 실행한다:** `/device/command`는 `command_id`·`deadline_ms`를 싣는다. 가전 노드는 실행 전에 「시작함」을 적고, 실행 뒤 결과를 `command_id`로 보관한다. 이 원장은 기록 DB(SQLite)의 `device_commands` 표(기동·`command_id`·시작함·결과)에 둔다. 노드를 다시 만들어도, Redis가 다시 켜져도 그 기동 동안 남는다. 다시 온 명령은 실행하지 않고 보관한 결과를 다시 낸다. 「시작함」만 있고 결과가 없으면(실행 중 끊김) 다시 실행하지 않고 `unknown`을 낸다. 기한이 지났으면 실행하지 않고 `expired`를 낸다.
+15. **Redis 오류·끊김:** 연결마다 오류 리스너를 단다(프로세스가 죽지 않는다). 잠깐 끊겼다 다시 붙으면 그룹·처리 중 메시지가 Redis에 남아 있으므로 그대로 잇는다. 켜질 때 기동 표시 열쇠(`noonchi:<boot>:alive`)를 두고 1초마다 본다. 열쇠가 없거나 `NOGROUP`이 나면 Redis가 다시 켜져 이번 기동의 메시지·그룹을 잃은 것이다. 되살려 잇지 않고 이 기동을 멈춘다: `onLost`로 띄우는 곳이 「Redis가 다시 켜져 이번 기동의 메시지를 잃었어요」를 남기고 서버를 끝내고, compose `restart`가 새 기동으로 다시 띄운다. STATE는 알림의 카운터가 건너뛰면 스냅숏을 다시 읽는다.
+16. **SENSOR는 정말 최신을, STATE는 빠짐없이:** SENSOR 구독은 깨어날 때마다 `XREVRANGE + COUNT 1`로 가장 새 것을 읽는다. SENSOR 상한은 정확히 depth개(`MAXLEN = depth`)이고, 메모리 통로도 같은 상한의 기록을 커서로 읽는다(상한 밖으로 쌓아 두지 않는다). 기록 커서는 준비 때 가장 새 메시지의 seq(없으면 0)를 기준으로 잡아, 첫 수신 전에 잘린 것도 놓친 수에 센다(SENSOR 토픽은 보내는 노드가 하나다). STATE는 발행마다 토픽 카운터(`INCR`)를 알림에 싣고, 받는 쪽이 건너뜀을 보면 스냅숏(`HGETALL`)을 다시 읽는다.
+17. **재생은 격리된 실행기에서:** `replay()`는 실제 통로가 아니라 새 `MemoryBus`·가상 시계 위에 노드를 띄우고(가전 노드는 실행하지 않는 `dry-run`), 허용 목록의 바깥 입력 토픽만 흘린다(`/perception/detections`·`/perception/analysis`·`/perception/look_result`·`/phone/pose`·`/phone/heard`·`/phone/progress`·`/device/changes`). 녹화는 도착 차례와 도착 시각(`arrival_ms`, 기록 노드 시계)을 보관한다. 메시지마다 가상 시계를 그 도착 시각까지 당기되 타이머를 하나 부를 때마다 처리 장벽을 지나고, 발행한 뒤 다시 장벽을 지나 다음 메시지로 간다. 처리 장벽은 모든 노드의 줄이 비고 통로에 예약된 배달이 없는 상태가 두 번 이어질 때까지 기다린다(이어지는 발행이 몇 단계여도 비운다).
+18. **기록은 한 번만:** 기록 노드는 메시지 하나의 기록 DB 줄과 처리표(`bus_seen`: 토픽·그룹·열쇠·기동·보낸 노드·seq)를 한 SQLite 트랜잭션으로 쓴다(`db.once`). 녹화나 ack 전에 실패해 다시 와도 처리표에 있으면 쓰지 않는다. 녹화는 (토픽, 기동, 보낸 노드, seq)가 같으면 다시 남기지 않는다. 가전 기록기는 기기마다 지난 값을 들고(`deviceRecorder`, 지금 `attachRecorder`의 `last`와 같음), 트랜잭션이 커밋된 뒤에만 바꾼다.
+19. **이 계획의 깊이:** 묶음 1은 단계·코드까지 쓴다. 묶음 2~6은 토픽·파일·시험·끝 조건까지 정하고, 앞 묶음이 끝나면 그 묶음의 단계 계획을 같은 파일에 더한다(묶음마다 Codex 설계 검토).
 
 ## 검토 반영 (Codex, c6073a6)
 
@@ -84,6 +86,25 @@
 | P2-13 | Redis 오류 리스너 없음, NOGROUP 삼킴 | 이 계획 15(Task 3) |
 | P2-14 | SENSOR 최신 보장 안 됨, STATE 알림 누락 복구 없음 | 이 계획 16(Task 3) |
 | P2-15 | 재생 시계·타이머·처리 장벽 없음 | 이 계획 17(Task 4) |
+
+## 검토 반영 (Codex, d4fe651)
+
+| # | 지적 | 반영 |
+|---|---|---|
+| P1-1 | `withState`가 상태를 기다리며 변화를 보관한 채 바로 ack | 이 계획 7·10: `ctx.defer()`로 줄은 비우고 ack는 처리 뒤(Task 2 `withState`, 시험 「상태를 기다리는 변화는 처리한 뒤에 ack」) |
+| P1-2 | 실패한 메시지를 남긴 채 뒤 메시지를 처리(Redis) | 이 계획 7: 같은 메시지를 ack·dead까지 다시 주고 뒤 메시지는 기다림, 다시 붙으면 내 몫(id 0)부터(Task 3, 계약 시험 「앞 메시지가 성공하거나 dead가 되기 전에는…」) |
+| P1-3 | 가전 중복 막기 원장이 노드 재생성·Redis 재시작 때 사라짐 | 이 계획 14: 원장은 기록 DB `device_commands`(묶음 5). 이 계획 15: Redis가 다시 켜지면 그 기동을 멈춤(Task 3 기동 표시 열쇠·`onLost`) |
+| P2-4 | 시작만 한 LLM 호출이 stop 취소에서 빠짐 | 이 계획 9: `spawn()`(노드 수명 신호, stop이 끊고 기다림)·`post()`(Task 2, 묶음 4) |
+| P2-5 | MemoryBus SENSOR all이 상한 없이 쌓음 | 이 계획 16: 같은 상한 기록을 커서로, 계약 시험 「상한을 넘으면 앞을 잃고 그 수를 센다」 |
+| P2-6 | 기록 뒤 녹화·ack 전에 실패하면 반성용 줄 중복 | 이 계획 18: 기록 줄과 처리표 `bus_seen`을 한 트랜잭션(`db.once`), 녹화 `INSERT OR IGNORE`(Task 4) |
+| P2-7 | `recordDevice`에 지난 값 상태가 없음 | 이 계획 18: `deviceRecorder(db, now)`가 기기마다 지난 값을 들고 커밋 뒤에 바꿈(Task 4) |
+| P2-8 | 가상 시계가 비동기 타이머 일이 끝나기 전에 넘어감 | `VirtualClock.advanceTo(ms, settle)`: 타이머마다 장벽(Task 2 시험 「타이머마다 그 일이 끝난 뒤에」) |
+| P2-9 | 장벽 세 번으로는 긴 발행 사슬을 못 비움 | 이 계획 17: `settle(bus, nodes)`가 줄·예약 배달이 두 번 연속 빌 때까지(Task 4 시험 「다섯 단계」) |
+| P2-10 | 재생이 발행 stamp로 시계를 옮김 | 이 계획 17: 녹화에 `arrival_ms`, 재생 시계는 도착 시각(Task 4) |
+| P2-11 | 동기 예외 때 `#running`이 끝난 Promise로 남음 | `#drain()`은 늘 다음 차례에 시작(`await null`), 회귀 시험 「타이머 콜백이 동기로 던져도」(Task 2) |
+| P2-12 | `/bus/dead` 실패가 dead를 다시 dead로 | 이 계획 7: `/bus/dead` 실패는 log만(계약 시험) |
+| P2-13 | 재진입 시험이 다른 노드의 정상 순서까지 잡음 | 계약 시험은 publish 안 동기 호출만, 같은 노드 콜백 겹침은 `bus-node` 시험이 따로 |
+| P3-14 | 첫 수신 전에 잘린 SENSOR가 놓친 수에서 빠짐 | 이 계획 16: 준비 때 기준 seq(`sensorBase`) |
 
 ## 근거: 오늘 고친 버그와 구조로 막는 자리
 
@@ -110,7 +131,7 @@
 - rosbag2: 남길 토픽만 녹화하고 다시 흘린다(재생은 시뮬레이션 시계 `/clock`).
 - Home Assistant core: State Machine이 엔티티마다 최신 상태를 들고, Event Bus가 `state_changed` 사건을 낸다. 우리 `/world/state`(STATE)와 `/world/changes`(RELIABLE)가 같은 짝이다.
 - Kafka log compaction: 열쇠마다 마지막 값만 남기는 상태 토픽과, 사건을 다 남기는 사건 토픽을 나눈다. 우리 STATE와 RELIABLE.
-- Redis Streams: `XADD … MAXLEN ~ N`, consumer group `XGROUP CREATE … $ MKSTREAM`, `XREADGROUP`, `XACK`, 못 받은 것 `XAUTOCLAIM`·`XPENDING`(전달 횟수), 자르기 `XTRIM MINID`. 영속은 `appendonly`·`save` 설정.
+- Redis Streams: `XADD … MAXLEN N`(정확히)·`MAXLEN ~ N`(대략), consumer group `XGROUP CREATE … $ MKSTREAM`, `XREADGROUP`(`>` 새것, `0` 내 몫으로 남은 것), `XACK`, `XPENDING`, 자르기 `XTRIM MINID`. 영속은 `appendonly`·`save` 설정.
 
 ## 노드와 토픽
 
@@ -225,7 +246,7 @@
 | `src/bus/open.ts` | `openBus(env, o)`: `REDIS_URL`이면 `RedisBus`, 아니면 `MemoryBus` |
 | `src/bus/index.ts` | 입구 |
 | `src/record/bag.ts`, `src/record/history.ts`, `src/record/node.ts`, `src/record/replay.ts`, `src/record/index.ts` | 녹화(SQLite)·기록 DB 쓰기·격리 재생 |
-| `src/brain/history/recorder.ts` | 기록 DB 줄 만들기를 함수(`recordBrainLog`·`recordDevice`)로 뺀다 |
+| `src/brain/history/recorder.ts`, `src/brain/history/db.ts` | 기록 DB 줄 만들기를 `recordBrainLog`·`deviceRecorder`로 빼고, 처리표 `bus_seen`과 한 트랜잭션 쓰기 `once`를 더한다 |
 | `scripts/lint-domains.ts` | `bus`·`record` 도메인, 의존 표 |
 | `compose.dev.yaml` | 개발용 `redis`(`noonchi-redis`, `127.0.0.1:6379`, 디스크 저장 끔) |
 | `compose.yaml` | AWS `redis` 서비스(디스크 저장 끔), noonchi `REDIS_URL` |
@@ -268,7 +289,10 @@ describe("토픽 표", () => {
   it("토픽마다 QoS가 셋 가운데 하나이고 보내는 노드가 노드 목록 안이다", () => {
     for (const [name, t] of Object.entries(TOPICS)) {
       expect(["sensor", "state", "reliable"], name).toContain(t.qos.kind);
-      if (t.qos.kind === "sensor") expect(t.qos.depth, name).toBeGreaterThanOrEqual(1);
+      if (t.qos.kind === "sensor") {
+        expect(t.qos.depth, name).toBeGreaterThanOrEqual(1);
+        expect(t.from, `${name}: SENSOR는 보내는 노드가 하나(놓친 수 기준 seq)`).toHaveLength(1);
+      }
       for (const n of t.from) expect(NODES, name).toContain(n);
     }
   });
@@ -521,28 +545,31 @@ git push
 
 **Interfaces:**
 - Consumes: Task 1 전부.
-- Produces(`bus.ts`): `MAX_DELIVERIES = 3`, `type Outcome = "ack" | "retry"`, `type Deliver<N> = (e: Envelope<N>) => Promise<Outcome>`, `interface Subscription { start(): void; stop(): Promise<void>; lost(): number }`, `interface Bus { publish<N>(e): Promise<void>; subscribe<N>(topic, node, deliver, o?: { mode?: "latest" | "all" }): Promise<Subscription>; close(): Promise<void> }`, `gapCounter()`, `deadBody(topic, group, raw, deliveries)`. `subscribe`는 그룹·커서를 만들기만 하고(준비) `start()` 뒤에 배달한다. RELIABLE은 `"ack"`일 때만 ack하고 `"retry"`면 같은 기동 안에서 다시 준다(`MAX_DELIVERIES`번 넘으면 `/bus/dead`에 남기고 ack). `mode: "all"`은 SENSOR를 준비 이후부터 차례로 다 준다(기록 노드).
-- Produces(`clock.ts`): `interface Clock { now(): number; every(ms, fn): () => void }`, `realClock`, `class VirtualClock implements Clock { constructor(start?: number); set(ms): void; advanceTo(ms): Promise<void> }`.
-- Produces(`node.ts`): `class BusNode { constructor(o: { name; bus; epoch: { boot; home }; clock?; log? }); on<N>(topic, cb: (body, ctx: { e; signal: AbortSignal }) => void | Promise<void>, o?: { mode? }): void; withState<C, S>(changes: C, state: S, cb: (change, latest, ctx) => void | Promise<void>): void; every(ms, cb): void; publish<N>(topic, body): Promise<void>; prepare(): Promise<void>; start(): void; stop(): Promise<void>; idle(): Promise<void> }`.
-- Produces(`open.ts`): `openBus(env, o: { boot: string; log? }): Promise<Bus>`.
+- Produces(`bus.ts`): `MAX_DELIVERIES = 3`, `RETRY_MS = 100`, `type Outcome = "ack" | "retry"`, `type Deliver<N> = (e: Envelope<N>) => Promise<Outcome>`, `interface Subscription { start(): void; stop(): Promise<void>; lost(): number }`, `interface Bus { publish<N>(e): Promise<void>; subscribe<N>(topic, node, deliver, o?: { mode?: "latest" | "all" }): Promise<Subscription>; close(): Promise<void> }`, `gapCounter(base?)`, `sensorBase(topic, newest)`, `deadBody(topic, group, raw, deliveries)`. `subscribe`는 그룹·커서를 만들기만 하고(준비) `start()` 뒤에 배달한다. RELIABLE은 `"ack"`일 때만 ack하고, `"retry"`면 `RETRY_MS` 뒤 같은 메시지를 다시 주며 그동안 뒤 메시지를 주지 않는다(한 구독 안에서 `MAX_DELIVERIES`번 넘으면 `/bus/dead`에 남기고 ack, `/bus/dead` 자체의 실패는 log만). `mode: "all"`은 SENSOR를 같은 상한의 기록에서 커서로 차례로 준다(기록 노드, 준비 때 가장 새 seq가 놓친 수 기준).
+- Produces(`clock.ts`): `interface Clock { now(): number; every(ms, fn): () => void }`, `realClock`, `class VirtualClock implements Clock { constructor(start?: number); set(ms): void; advanceTo(ms, settle?: () => Promise<void>): Promise<void> }`(타이머 하나를 부를 때마다 `settle`을 기다린다).
+- Produces(`memory.ts`): `class MemoryBus implements Bus { constructor(warn?); quiet(): boolean; length(topic): number }`(`quiet`: 예약된 배달이 없다).
+- Produces(`node.ts`): `class BusNode { constructor(o: { name; bus; epoch: { boot; home }; clock?; log? }); on<N>(topic, cb: (body, ctx: { e; signal: AbortSignal; defer(): (ok: boolean) => void }) => void | Promise<void>, o?: { mode? }): void; withState<C, S>(changes: C, state: S, cb: (change, latest, ctx) => void | Promise<void>): void; every(ms, cb): void; publish<N>(topic, body): Promise<void>; spawn<T>(fn: (signal: AbortSignal) => Promise<T>): Promise<T>; post(fn: (signal) => void | Promise<void>): void; prepare(): Promise<void>; start(): void; stop(): Promise<void>; idle(): Promise<void>; busy(): boolean; lost(topic): number }`.
+- Produces(`open.ts`): `openBus(env, o: { boot: string; log?; onLost?: (err: Error) => void }): Promise<Bus>`.
 
 - [ ] **Step 1: 실패하는 시험을 쓴다**
 
 `tests/helpers/bus-contract.ts`(두 통로가 함께 쓰는 계약):
 
 ```ts
-// 통로 계약(MemoryBus·RedisBus가 같은 시험을 통과한다): 준비·시작 두 단계, QoS 셋, 처리 뒤 ack·다시 주기·dead, 기록 커서, 같은 호출 안에서 부르지 않음.
+// 통로 계약(MemoryBus·RedisBus가 같은 시험을 통과한다): 준비·시작 두 단계, QoS 셋, SENSOR 상한·놓친 수,
+// 처리 뒤 ack·차례를 지키며 다시 주기·dead(dead의 실패는 다시 보내지 않음), 끊긴 뒤 다시 받기, publish 안에서 동기로 부르지 않음.
 import { describe, expect, it } from "vitest";
 import type { Bus, Envelope, Outcome, TopicName } from "../../src/bus/index.js";
 
 const EPOCH = { boot: "b1", home: "h#1" };
 const env = <N extends TopicName>(topic: N, body: Record<string, unknown>, seq: number, key = "_", node = "world"): Envelope<N> =>
   ({ topic, key, header: { stamp: 1000 + seq, node, seq, ...EPOCH }, body } as never);
+const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const until = async (f: () => boolean | Promise<boolean>, ms = 3000) => {
   const t0 = Date.now();
   while (!(await f())) {
     if (Date.now() - t0 > ms) throw new Error("기다림 초과");
-    await new Promise((r) => setTimeout(r, 10));
+    await pause(10);
   }
 };
 
@@ -553,7 +580,7 @@ export function busContract(name: string, make: () => Promise<Bus>, opts: { leng
       const got: number[] = [];
       const sub = await bus.subscribe("/world/changes", "brain", async (m) => { got.push(m.body.rev as number); return "ack"; });
       await bus.publish(env("/world/changes", { rev: 1 }, 1));
-      await new Promise((r) => setTimeout(r, 100));
+      await pause(100);
       expect(got).toEqual([]);
       sub.start();
       await until(() => got.includes(1));
@@ -564,7 +591,7 @@ export function busContract(name: string, make: () => Promise<Bus>, opts: { leng
       const bus = await make();
       for (let i = 1; i <= 50; i++) await bus.publish(env("/phone/pose", { observed_ms: i }, i, "_", "phone"));
       const got: number[] = [];
-      const sub = await bus.subscribe("/phone/pose", "world", async (m) => { got.push(m.body.observed_ms as number); await new Promise((r) => setTimeout(r, 30)); return "ack"; });
+      const sub = await bus.subscribe("/phone/pose", "world", async (m) => { got.push(m.body.observed_ms as number); await pause(30); return "ack"; });
       sub.start();
       for (let i = 51; i <= 60; i++) await bus.publish(env("/phone/pose", { observed_ms: i }, i, "_", "phone"));
       await until(() => got.includes(60));
@@ -582,6 +609,21 @@ export function busContract(name: string, make: () => Promise<Bus>, opts: { leng
       await until(() => got.length === 20);
       expect(got).toEqual(Array.from({ length: 20 }, (_, k) => k + 1));
       expect(sub.lost()).toBe(0);
+      await bus.close();
+    });
+
+    it("SENSOR all: 상한(depth 600)을 넘으면 앞을 잃고 그 수를 센다. 준비 때 가장 새 seq가 기준이라 첫 수신 전에 잘린 것도 센다", async () => {
+      const bus = await make();
+      const det = (seq: number) => env("/perception/detections", { observed_ms: seq }, seq, "_", "perception");
+      for (let i = 1; i <= 5; i++) await bus.publish(det(i));
+      const got: number[] = [];
+      const sub = await bus.subscribe("/perception/detections", "recorder", async (m) => { got.push(m.header.seq); return "ack"; }, { mode: "all" });
+      for (let i = 6; i <= 705; i++) await bus.publish(det(i));
+      expect(await opts.length(bus, "/perception/detections")).toBe(600);
+      sub.start();
+      await until(() => got.at(-1) === 705, 10_000);
+      expect(got).toEqual(Array.from({ length: 600 }, (_, k) => k + 106));
+      expect(sub.lost()).toBe(100);
       await bus.close();
     });
 
@@ -605,7 +647,7 @@ export function busContract(name: string, make: () => Promise<Bus>, opts: { leng
       const a: number[] = [];
       const b: number[] = [];
       const sa = await bus.subscribe("/world/changes", "brain", async (m) => { a.push(m.body.rev as number); return "ack"; });
-      const sb = await bus.subscribe("/world/changes", "act", async (m) => { await new Promise((r) => setTimeout(r, 5)); b.push(m.body.rev as number); return "ack"; });
+      const sb = await bus.subscribe("/world/changes", "act", async (m) => { await pause(5); b.push(m.body.rev as number); return "ack"; });
       sa.start();
       sb.start();
       for (let i = 1; i <= 30; i++) await bus.publish(env("/world/changes", { rev: i }, i));
@@ -616,45 +658,80 @@ export function busContract(name: string, make: () => Promise<Bus>, opts: { leng
       await bus.close();
     });
 
-    it("RELIABLE: retry면 다시 주고, 세 번 실패하면 /bus/dead에 남기고 ack한다", async () => {
+    it("RELIABLE: 앞 메시지가 성공하거나 dead가 되기 전에는 뒤 메시지를 주지 않는다", async () => {
       const bus = await make();
-      let tries = 0;
-      const dead: Record<string, unknown>[] = [];
-      const sd = await bus.subscribe("/bus/dead", "recorder", async (m) => { dead.push(m.body); return "ack"; });
-      const s = await bus.subscribe("/world/changes", "act", async () => { tries++; return "retry"; });
-      sd.start();
+      const seen: string[] = [];
+      let fails = 2;
+      const s = await bus.subscribe("/world/changes", "act", async (m) => {
+        const rev = m.body.rev as number;
+        if (rev === 1 && fails-- > 0) { seen.push("1 실패"); return "retry"; }
+        seen.push(`${rev} 성공`);
+        return "ack";
+      });
       s.start();
       await bus.publish(env("/world/changes", { rev: 1 }, 1));
-      await until(() => dead.length === 1, 10_000);
-      expect(tries).toBe(3);
-      expect(dead[0]).toMatchObject({ topic: "/world/changes", group: "act" });
+      await bus.publish(env("/world/changes", { rev: 2 }, 2));
+      await until(() => seen.includes("2 성공"), 5000);
+      expect(seen).toEqual(["1 실패", "1 실패", "1 성공", "2 성공"]);
       await bus.close();
     });
 
-    it("RELIABLE: 처리를 끝내지 못하고 끊긴 메시지는 같은 그룹이 다시 붙으면 다시 받는다(같은 기동 안)", async () => {
+    it("RELIABLE: 세 번 실패하면 /bus/dead에 남기고 ack한 뒤 다음으로 간다", async () => {
+      const bus = await make();
+      const tries: number[] = [];
+      const dead: Record<string, unknown>[] = [];
+      const sd = await bus.subscribe("/bus/dead", "recorder", async (m) => { dead.push(m.body); return "ack"; });
+      const s = await bus.subscribe("/world/changes", "act", async (m) => { tries.push(m.body.rev as number); return m.body.rev === 1 ? "retry" : "ack"; });
+      sd.start();
+      s.start();
+      await bus.publish(env("/world/changes", { rev: 1 }, 1));
+      await bus.publish(env("/world/changes", { rev: 2 }, 2));
+      await until(() => dead.length === 1 && tries.includes(2), 10_000);
+      expect(tries).toEqual([1, 1, 1, 2]);
+      expect(dead[0]).toMatchObject({ topic: "/world/changes", group: "act", deliveries: 3 });
+      await bus.close();
+    });
+
+    it("/bus/dead 처리가 실패해도 dead를 다시 dead로 보내지 않는다", async () => {
+      const bus = await make();
+      let tries = 0;
+      const sd = await bus.subscribe("/bus/dead", "recorder", async () => { tries++; return "retry"; });
+      sd.start();
+      await bus.publish(env("/bus/dead", { topic: "/world/changes" }, 1, "/world/changes", "act"));
+      await until(() => tries === 3, 5000);
+      await pause(500);
+      expect(tries).toBe(3);
+      expect(await opts.length(bus, "/bus/dead")).toBe(0);
+      await bus.close();
+    });
+
+    it("RELIABLE: 처리를 끝내지 못하고 끊긴 메시지는 같은 그룹이 다시 붙으면 차례대로 다시 받는다(같은 기동 안)", async () => {
       const bus = await make();
       const s1 = await bus.subscribe("/world/changes", "act", () => new Promise<Outcome>(() => {}));
       s1.start();
       await bus.publish(env("/world/changes", { rev: 1 }, 1));
-      await new Promise((r) => setTimeout(r, 100));
+      await bus.publish(env("/world/changes", { rev: 2 }, 2));
+      await pause(100);
       await s1.stop();
       const got: number[] = [];
       const s2 = await bus.subscribe("/world/changes", "act", async (m) => { got.push(m.body.rev as number); return "ack"; });
       s2.start();
-      await until(() => got.includes(1), 5000);
+      await until(() => got.length === 2, 5000);
+      expect(got).toEqual([1, 2]);
       await bus.close();
     });
 
-    it("publish는 받는 쪽 콜백을 같은 호출 안에서 부르지 않는다", async () => {
+    it("publish는 받는 쪽 콜백을 그 호출 안에서(동기로) 부르지 않는다", async () => {
       const bus = await make();
       let inside = false;
       let sawInside = false;
       const s = await bus.subscribe("/world/changes", "act", async () => { sawInside ||= inside; return "ack"; });
       s.start();
       inside = true;
-      await bus.publish(env("/world/changes", { rev: 1 }, 1));
+      const sent = bus.publish(env("/world/changes", { rev: 1 }, 1));
       inside = false;
-      await new Promise((r) => setTimeout(r, 50));
+      await sent;
+      await until(async () => (await opts.length(bus, "/world/changes")) === 0);
       expect(sawInside).toBe(false);
       await bus.close();
     });
@@ -674,8 +751,9 @@ busContract("MemoryBus", async () => new MemoryBus(), { length: async (b, t) => 
 `tests/bus-node.test.ts`:
 
 ```ts
-// 실행기(ROS 2 single-threaded executor처럼): 준비·시작 두 단계, 콜백 하나씩, 타이머도 같은 줄, 콜백 안 발행은 콜백이 끝난 뒤,
-// 처리 성공 뒤에만 ack·Freshness 확정, 끝내기 계약, 변화는 그 판본 이상의 상태를 가진 뒤에, 가상 시계 타이머.
+// 실행기(ROS 2 single-threaded executor처럼): 준비·시작 두 단계, 같은 노드의 콜백은 겹치지 않음, 콜백 안 발행은 콜백이 끝난 뒤,
+// 처리 성공 뒤에만 ack·Freshness 확정, 상태를 기다리는 변화는 처리한 뒤 ack, 동기 예외에도 줄이 멈추지 않음,
+// 끝내기 계약(돌던 콜백·spawn한 일 취소와 대기), 가상 시계는 타이머 일이 끝난 뒤 간다.
 import { describe, expect, it } from "vitest";
 import { BusNode, MemoryBus, VirtualClock } from "../src/bus/index.js";
 
@@ -703,7 +781,7 @@ describe("BusNode 실행기", () => {
     await a.stop();
   });
 
-  it("메시지 콜백과 타이머 콜백이 겹치지 않는다", async () => {
+  it("같은 노드의 메시지 콜백과 타이머 콜백이 겹치지 않는다", async () => {
     const bus = new MemoryBus();
     const n = node("act", bus);
     let running = 0;
@@ -754,6 +832,17 @@ describe("BusNode 실행기", () => {
     expect(calls).toBe(2);
   });
 
+  it("타이머 콜백이 동기로 던져도 줄이 멈추지 않는다", async () => {
+    const clock = new VirtualClock(0);
+    const n = node("act", new MemoryBus(), clock);
+    const ran: number[] = [];
+    n.every(100, () => { ran.push(clock.now()); if (ran.length === 1) throw new Error("동기 예외"); });
+    await n.prepare();
+    n.start();
+    await clock.advanceTo(300, () => n.idle());
+    expect(ran).toEqual([100, 200, 300]);
+  });
+
   it("지난 기동·지난 집의 메시지는 콜백에 오지 않는다", async () => {
     const bus = new MemoryBus();
     const n = node("act", bus);
@@ -784,6 +873,22 @@ describe("BusNode 실행기", () => {
     await expect(n.publish("/act/log", { a: 1 })).rejects.toThrow(/닫힌 노드/);
   });
 
+  it("끝내기: spawn한 긴 일(LLM 호출)도 끊고 끝나길 기다리며, 그 뒤 post는 버린다", async () => {
+    const n = node("brain", new MemoryBus());
+    await n.prepare();
+    n.start();
+    let cut = false;
+    let posted = false;
+    const job = n.spawn((signal) => new Promise<string>((_ok, no) => signal.addEventListener("abort", () => { cut = true; no(signal.reason); })))
+      .catch(() => n.post(() => { posted = true; }));
+    await n.stop();
+    expect(cut).toBe(true);
+    await job;
+    await tick();
+    expect(posted).toBe(false);
+    await expect(n.spawn(async () => 1)).rejects.toThrow(/닫힌 노드/);
+  });
+
   it("변화는 그 판본 이상의 상태를 가진 뒤에 처리한다", async () => {
     const bus = new MemoryBus();
     const n = node("act", bus);
@@ -802,21 +907,46 @@ describe("BusNode 실행기", () => {
     expect(seen).toEqual([[1, 1]]);
   });
 
+  it("상태를 기다리는 변화는 처리한 뒤에 ack한다: 그 전에 노드를 끝내면 다시 띄운 노드가 다시 받는다", async () => {
+    const bus = new MemoryBus();
+    const w = node("world", bus);
+    await w.prepare();
+    w.start();
+    const a1 = node("act", bus);
+    const seen1: number[] = [];
+    a1.withState("/world/changes", "/world/state", (c) => { seen1.push(c.rev as number); });
+    await a1.prepare();
+    a1.start();
+    await w.publish("/world/changes", { rev: 1, changes: [] });
+    await tick(50);
+    await a1.stop();
+    expect(seen1).toEqual([]);
+    expect(bus.length("/world/changes")).toBe(1);
+    const a2 = node("act", bus);
+    const seen2: [number, number][] = [];
+    a2.withState("/world/changes", "/world/state", (c, s) => { seen2.push([c.rev as number, s.rev as number]); });
+    await a2.prepare();
+    a2.start();
+    await w.publish("/world/state", { rev: 1, view: {} });
+    await tick(100);
+    expect(seen2).toEqual([[1, 1]]);
+    expect(bus.length("/world/changes")).toBe(0);
+  });
+
   it("보내는 노드가 아닌 노드가 발행하면 거절된다", async () => {
     const n = node("brain", new MemoryBus());
     await expect(n.publish("/world/state", { rev: 1 })).rejects.toThrow(/world/);
   });
 
-  it("가상 시계: 시각을 당기면 그 사이 타이머가 차례로 돈다", async () => {
+  it("가상 시계: 타이머마다 그 일(비동기 포함)이 끝난 뒤에 다음 시각으로 간다", async () => {
     const clock = new VirtualClock(0);
     const n = node("act", new MemoryBus(), clock);
-    const at: number[] = [];
-    n.every(250, () => { at.push(clock.now()); });
+    const log: string[] = [];
+    n.every(250, async () => { const at = clock.now(); log.push(`시작 ${at}`); await tick(10); log.push(`끝 ${at}@${clock.now()}`); });
     await n.prepare();
     n.start();
-    await clock.advanceTo(1000);
-    await n.idle();
-    expect(at).toEqual([250, 500, 750, 1000]);
+    await clock.advanceTo(750, () => n.idle());
+    expect(log).toEqual(["시작 250", "끝 250@250", "시작 500", "끝 500@500", "시작 750", "끝 750@750"]);
   });
 });
 ```
@@ -830,19 +960,21 @@ Expected: FAIL(`MemoryBus`·`BusNode`가 없다)
 
 ```ts
 // bus.ts — 통로 인터페이스(ROS 2 rmw처럼). MemoryBus(시험·개발)와 RedisBus(실제)가 같은 계약(tests/helpers/bus-contract.ts)을 따른다.
-// subscribe는 그룹·커서를 만들기만 하고 start() 뒤에 배달한다. publish는 받는 쪽 콜백을 같은 호출 안에서 부르지 않는다.
-// RELIABLE은 deliver가 "ack"일 때만 ack하고, "retry"면 같은 기동 안에서 다시 준다(MAX_DELIVERIES번 넘으면 /bus/dead에 남기고 ack).
+// subscribe는 그룹·커서를 만들기만 하고 start() 뒤에 배달한다. publish는 받는 쪽 콜백을 그 호출 안에서 부르지 않는다.
+// RELIABLE은 deliver가 "ack"일 때만 ack한다. "retry"면 RETRY_MS 뒤 같은 메시지를 다시 주고, 그동안 같은 토픽·그룹의 뒤 메시지는 주지 않는다.
+// 한 구독 안에서 MAX_DELIVERIES번 실패하면 /bus/dead에 남기고 ack한 뒤 다음으로 간다. /bus/dead 자체의 실패는 다시 보내지 않고 log만 남긴다.
 import type { Envelope } from "./header.js";
-import type { NodeName, TopicName } from "./topics.js";
+import { TOPICS, type NodeName, type TopicName } from "./topics.js";
 
 export const MAX_DELIVERIES = 3;
+export const RETRY_MS = 100;
 export type Outcome = "ack" | "retry";
 export type Deliver<N extends TopicName> = (e: Envelope<N>) => Promise<Outcome>;
 export interface Subscription {
   start(): void;
-  /** 끊는다. 처리 중이던 RELIABLE은 ack하지 않는다(다시 붙은 같은 그룹이 다시 받는다). */
+  /** 끊는다. 처리 중이던 RELIABLE은 ack하지 않는다(다시 붙은 같은 그룹이 차례대로 다시 받는다). */
   stop(): Promise<void>;
-  /** mode "all"에서 잘려 놓친 수(보낸 노드 seq의 건너뜀). */
+  /** mode "all"에서 잘려 놓친 수(보낸 노드 seq의 건너뜀, 준비 때 기준부터). */
   lost(): number;
 }
 export interface Bus {
@@ -851,27 +983,30 @@ export interface Bus {
   close(): Promise<void>;
 }
 
-/** 놓친 수 세기: 보낸 노드마다 마지막 seq. */
-export function gapCounter() {
-  const last = new Map<string, number>();
+/** 놓친 수 세기: 보낸 노드마다 마지막 seq. base는 준비 때의 기준이다. */
+export function gapCounter(base?: { node: string; seq: number }) {
+  const last = new Map<string, number>(base ? [[base.node, base.seq]] : []);
   let lost = 0;
   return {
     see(e: Envelope<TopicName>): void {
-      const k = `${e.header.boot}|${e.header.node}`;
-      const p = last.get(k);
+      const p = last.get(e.header.node);
       if (p !== undefined && e.header.seq > p + 1) lost += e.header.seq - p - 1;
-      last.set(k, Math.max(p ?? 0, e.header.seq));
+      last.set(e.header.node, Math.max(p ?? 0, e.header.seq));
     },
     lost: () => lost,
   };
 }
+
+/** SENSOR all 구독의 기준: 준비 때 가장 새 메시지의 seq, 없으면 0(이 기동에 그 토픽을 아직 보내지 않음). SENSOR 토픽은 보내는 노드가 하나다. */
+export const sensorBase = (topic: TopicName, newest: Envelope<TopicName> | null) => ({ node: TOPICS[topic].from[0]!, seq: newest?.header.seq ?? 0 });
 
 /** /bus/dead 몸: 처리하지 못한 메시지와 그룹, 전달 횟수. */
 export const deadBody = (topic: TopicName, group: NodeName, raw: string, deliveries: number) => ({ topic, group, raw, deliveries });
 ```
 
 ```ts
-// clock.ts — 노드 시계. 실제 시계는 Date.now·setInterval, 가상 시계(재생·시험)는 advanceTo로 시각을 당기며 그 사이 타이머를 차례로 부른다.
+// clock.ts — 노드 시계. 실제 시계는 Date.now·setInterval, 가상 시계(재생·시험)는 advanceTo로 시각을 당기며 그 사이 타이머를 시각 차례로 부른다.
+// 타이머 하나를 부를 때마다 settle(재생 장벽)을 기다린 뒤 다음으로 간다: 비동기 타이머 일과 그 일이 낸 메시지가 끝나기 전에 시계가 넘어가지 않는다.
 export interface Clock { now(): number; every(ms: number, fn: () => void): () => void }
 
 export const realClock: Clock = {
@@ -890,15 +1025,14 @@ export class VirtualClock implements Clock {
     this.#timers.add(t);
     return () => this.#timers.delete(t);
   }
-  /** ms까지 시각을 당긴다. 그 사이 타이머를 시각 차례로 부르고, 부를 때마다 한 번 비워 준다(콜백이 줄에 들어갈 틈). */
-  async advanceTo(ms: number): Promise<void> {
+  async advanceTo(ms: number, settle: () => Promise<void> = async () => {}): Promise<void> {
     for (;;) {
       const due = [...this.#timers].filter((t) => t.next <= ms).sort((a, b) => a.next - b.next)[0];
       if (!due) break;
       this.#now = due.next;
       due.next += due.ms;
       due.fn();
-      await new Promise((r) => setImmediate(r));
+      await settle();
     }
     this.set(ms);
   }
@@ -909,10 +1043,12 @@ export class VirtualClock implements Clock {
 
 ```ts
 // memory.ts — 한 프로세스 안 통로. QoS 동작은 RedisBus와 같다(tests/helpers/bus-contract.ts).
-// SENSOR: 토픽마다 마지막 depth개. latest는 시작 뒤 새것 가운데 가장 새 것만, all은 준비 이후 것을 차례로 다(seq 건너뜀을 센다).
-// STATE: 열쇠마다 마지막 하나, 시작할 때 지금 값들을 먼저 준다. RELIABLE: 토픽 기록 + 그룹마다 다음 차례·처리 중·전달 횟수.
-// 배달은 늘 다음 차례(setImmediate)에 한다: publish 안에서 콜백을 부르지 않는다.
-import { deadBody, gapCounter, MAX_DELIVERIES, type Bus, type Deliver, type Subscription } from "./bus.js";
+// SENSOR: 토픽마다 정확히 마지막 depth개. latest는 깨어날 때 가장 새 것 하나, all은 같은 기록을 커서로 차례로 읽는다
+//   (준비 때 가장 새 seq가 기준, 잘려 건너뛴 수를 센다). 상한 밖으로 쌓아 두지 않는다.
+// STATE: 열쇠마다 마지막 하나. 바뀐 열쇠만 표시해 두고 읽을 때 그 열쇠의 지금 값을 준다. 시작할 때 모든 열쇠를 먼저 준다.
+// RELIABLE: 토픽 기록 + 그룹마다 다음 차례·처리 중 하나·전달 횟수. 처리 중인 것이 ack되거나 dead가 될 때까지 뒤 메시지를 주지 않는다.
+// 배달은 늘 다음 차례(setImmediate, 다시 주기는 RETRY_MS 뒤)에 한다: publish 안에서 콜백을 부르지 않는다. quiet()는 예약된 배달이 없는지 본다.
+import { deadBody, gapCounter, MAX_DELIVERIES, RETRY_MS, sensorBase, type Bus, type Deliver, type Subscription } from "./bus.js";
 import { decode, encode, type Envelope } from "./header.js";
 import { TOPICS, type NodeName, type TopicName } from "./topics.js";
 
@@ -921,10 +1057,23 @@ interface Group { name: NodeName; next: number; pending: Raw | null; tries: numb
 
 export class MemoryBus implements Bus {
   #id = 0;
+  #scheduled = 0;
   readonly #log = new Map<string, Raw[]>();
   readonly #state = new Map<string, Map<string, string>>();
-  readonly #live = new Map<string, Set<(r: Raw) => void>>();
+  readonly #wake = new Map<string, Set<(key: string) => void>>();
   readonly #groups = new Map<string, Map<string, Group>>();
+
+  constructor(private readonly warn: (s: string) => void = (s) => console.error(s)) {}
+
+  #later(f: () => void, ms = 0): void {
+    this.#scheduled++;
+    const go = () => { this.#scheduled--; f(); };
+    if (ms > 0) setTimeout(go, ms);
+    else setImmediate(go);
+  }
+
+  /** 예약된 배달이 없다(재생·시험 장벽). 처리 중인 콜백은 노드 쪽(BusNode.busy)이 센다. */
+  quiet(): boolean { return this.#scheduled === 0; }
 
   async publish<N extends TopicName>(e: Envelope<N>): Promise<void> {
     const raw = encode(e);
@@ -932,12 +1081,11 @@ export class MemoryBus implements Bus {
     const q = TOPICS[e.topic].qos;
     if (q.kind === "state") (this.#state.get(e.topic) ?? this.#state.set(e.topic, new Map()).get(e.topic)!).set(e.key, raw);
     const log = this.#log.get(e.topic) ?? this.#log.set(e.topic, []).get(e.topic)!;
-    const item = { id: ++this.#id, raw };
-    log.push(item);
+    log.push({ id: ++this.#id, raw });
     if (q.kind === "sensor" && log.length > q.depth) log.splice(0, log.length - q.depth);
     if (q.kind === "state" && log.length > 1) log.splice(0, log.length - 1);
     if (q.kind === "reliable") for (const g of this.#groups.get(e.topic)?.values() ?? []) this.#pump(e.topic, g);
-    else for (const f of this.#live.get(e.topic) ?? []) setImmediate(() => f(item));
+    else for (const w of this.#wake.get(e.topic) ?? []) this.#later(() => w(e.key));
   }
 
   async subscribe<N extends TopicName>(topic: N, node: NodeName, deliver: Deliver<N>, o: { mode?: "latest" | "all" } = {}): Promise<Subscription> {
@@ -948,71 +1096,88 @@ export class MemoryBus implements Bus {
       const g = groups.get(node) ?? groups.set(node, { name: node, next: this.#id + 1, pending: null, tries: 0, deliver: null, busy: false, started: false }).get(node)!;
       g.deliver = d;
       g.busy = false;
+      g.tries = 0;
       return {
         start: () => { g.started = true; this.#pump(topic, g); },
         stop: async () => { g.deliver = null; g.started = false; g.busy = false; },
         lost: () => 0,
       };
     }
+    const log = () => this.#log.get(topic) ?? [];
+    const all = q.kind === "sensor" && o.mode === "all";
+    const tail = log().at(-1);
+    let cursor = tail?.id ?? 0;
+    const gaps = gapCounter(all ? sensorBase(topic, tail ? decode(topic, tail.raw) : null) : undefined);
+    const dirty = new Set<string>();
     let started = false;
     let busy = false;
-    let newest: Raw | null = null;
-    const backlog: Raw[] = [];
-    const gaps = gapCounter();
-    const all = q.kind === "sensor" && o.mode === "all";
+    const next = (): string | undefined => {
+      if (q.kind === "state") {
+        const key = dirty.values().next().value;
+        if (key === undefined) return undefined;
+        dirty.delete(key);
+        return this.#state.get(topic)?.get(key);
+      }
+      const l = log();
+      const r = all ? l.find((x) => x.id > cursor) : l.at(-1);
+      if (!r || r.id <= cursor) return undefined;
+      cursor = r.id;
+      return r.raw;
+    };
     const run = () => {
       if (!started || busy) return;
-      const next = all || q.kind === "state" ? backlog.shift() : newest;
-      if (!next) return;
-      if (!(all || q.kind === "state")) newest = null;
+      const raw = next();
+      if (raw === undefined) return;
       busy = true;
-      const e = decode(topic, next.raw);
+      const e = decode(topic, raw);
       if (all) gaps.see(e);
-      void d(e).finally(() => { busy = false; setImmediate(run); });
+      void d(e).finally(() => { busy = false; this.#later(run); });
     };
-    const onRaw = (r: Raw) => { if (all || q.kind === "state") backlog.push(r); else newest = r; run(); };
-    const live = this.#live.get(topic) ?? this.#live.set(topic, new Set()).get(topic)!;
-    live.add(onRaw);
+    const wake = (key: string) => { if (q.kind === "state") dirty.add(key); run(); };
+    const wakes = this.#wake.get(topic) ?? this.#wake.set(topic, new Set()).get(topic)!;
+    wakes.add(wake);
     return {
       start: () => {
-        if (q.kind === "state") backlog.unshift(...[...(this.#state.get(topic)?.values() ?? [])].map((raw) => ({ id: 0, raw })));
+        if (q.kind === "state") for (const key of this.#state.get(topic)?.keys() ?? []) dirty.add(key);
         started = true;
         run();
       },
-      stop: async () => { live.delete(onRaw); started = false; },
+      stop: async () => { wakes.delete(wake); started = false; },
       lost: () => gaps.lost(),
     };
   }
 
   #pump(topic: TopicName, g: Group): void {
     if (!g.started || g.busy || !g.deliver) return;
-    const log = this.#log.get(topic) ?? [];
-    const item = g.pending ?? log.find((r) => r.id >= g.next);
+    const item = g.pending ?? (this.#log.get(topic) ?? []).find((r) => r.id >= g.next);
     if (!item) return;
     if (g.pending !== item) g.tries = 0;
     g.pending = item;
     g.next = item.id + 1;
     g.busy = true;
     const deliver = g.deliver;
-    setImmediate(() => {
+    this.#later(() => {
       void deliver(decode(topic, item.raw)).then(async (out) => {
-        if (g.deliver !== deliver) return;
+        if (g.deliver !== deliver) return;   // 끊긴 구독: 처리 중인 것을 그대로 둔다(다시 붙으면 다시 준다)
         g.tries++;
-        if (out === "retry" && g.tries < MAX_DELIVERIES) {
+        if (out === "retry" && g.tries < MAX_DELIVERIES) {   // 같은 메시지를 다시 준다. 뒤 메시지는 기다린다
           g.busy = false;
-          setTimeout(() => this.#pump(topic, g), 50);
+          this.#later(() => this.#pump(topic, g), RETRY_MS);
           return;
         }
-        if (out === "retry") {
-          const e = decode(topic, item.raw);
-          await this.publish({ topic: "/bus/dead", key: topic, header: { ...e.header, node: g.name }, body: deadBody(topic, g.name, item.raw, g.tries) } as never);
-        }
+        if (out === "retry") await this.#dead(topic, g.name, item.raw, g.tries);
         g.pending = null;
         g.busy = false;
         this.#trim(topic);
         this.#pump(topic, g);
       });
     });
+  }
+
+  async #dead(topic: TopicName, group: NodeName, raw: string, tries: number): Promise<void> {
+    if (topic === "/bus/dead") return this.warn(`[통로] /bus/dead 처리 실패(${group}, ${tries}번): 다시 보내지 않아요`);
+    const e = decode(topic, raw);
+    await this.publish({ topic: "/bus/dead", key: topic, header: { ...e.header, node: group }, body: deadBody(topic, group, raw, tries) } as never);
   }
 
   #trim(topic: TopicName): void {
@@ -1027,7 +1192,7 @@ export class MemoryBus implements Bus {
   length(topic: string): number { return this.#log.get(topic)?.length ?? 0; }
 
   async close(): Promise<void> {
-    this.#live.clear();
+    this.#wake.clear();
     for (const groups of this.#groups.values()) for (const g of groups.values()) { g.deliver = null; g.started = false; }
   }
 }
@@ -1037,18 +1202,22 @@ export class MemoryBus implements Bus {
 
 ```ts
 // node.ts — 노드 실행기(ROS 2 single-threaded executor처럼). prepare()로 모든 구독을 만들고, 띄우는 곳이 모든 노드를 준비한 뒤 start()로 배달·타이머를 켠다.
-// 메시지 콜백과 타이머 콜백을 한 줄에서 하나씩 처리한다(다시 들어오기 없음). 받은 메시지는 먼저 낡은 것을 버리고(Freshness.check),
-// 콜백이 성공해야 ack·확정(commit)한다. 실패하면 "retry"로 돌려 같은 기동 안에서 다시 받는다. SENSOR latest는 줄에 마지막 하나만 둔다.
-// 발행은 머리(stamp·node·seq·boot·home)를 붙여 통로로 보낸다. 콜백 안에서 await한 발행이 실패하면 그 콜백도 실패다.
-// stop(): 닫힘 → 타이머 멈춤 → 돌던 콜백에 취소 신호 → 그 콜백을 기다림 → 구독 끊기. 닫힌 뒤 publish는 거절한다.
+// 메시지 콜백과 타이머 콜백을 한 줄에서 하나씩 처리한다(같은 노드의 콜백은 겹치지 않는다). 받은 메시지는 먼저 낡은 것을 버리고(Freshness.check),
+// 콜백이 성공해야 ack·확정(commit)한다. 실패하면 "retry"로 돌려 같은 메시지를 다시 받는다. SENSOR latest는 줄에 마지막 하나만 둔다.
+// 콜백이 ctx.defer()를 부르면 줄은 비우되 ack·확정은 돌려받은 settle(ok)를 부를 때까지 미룬다(상태를 기다리는 변화, withState).
+// 콜백 밖에서 도는 긴 일(LLM)은 spawn()으로 띄워 노드 수명 신호를 받고, 결과는 post()로 줄에 넣는다.
+// stop(): 닫힘 → 타이머 멈춤 → 줄에 남은 일 버림 → 돌던 콜백·spawn한 일에 취소 신호 → 둘 다 기다림 → 구독 끊기 → 미룬 메시지는 ack하지 않음.
+// 닫힌 뒤 publish·spawn은 거절하고 post는 버린다. 줄은 늘 다음 차례에 돌기 시작한다(첫 일이 동기로 던져도 줄이 멈추지 않는다).
 import type { Bus, Outcome, Subscription } from "./bus.js";
 import { realClock, type Clock } from "./clock.js";
 import { Freshness } from "./fresh.js";
 import type { Envelope } from "./header.js";
 import { TOPICS, type Body, type NodeName, type TopicName } from "./topics.js";
 
-type Ctx<N extends TopicName> = { e: Envelope<N>; signal: AbortSignal };
-type Job = { run: (signal: AbortSignal) => Promise<void> | void; done?: (ok: boolean) => void; latest?: TopicName };
+type Settle = (ok: boolean) => void;
+type Ctx<N extends TopicName> = { e: Envelope<N>; signal: AbortSignal; defer: () => Settle };
+type RunCtx = { signal: AbortSignal; defer: () => Settle };
+type Job = { run: (c: RunCtx) => Promise<void> | void; done?: Settle; latest?: TopicName };
 type Sub = { topic: TopicName; mode?: "latest" | "all"; cb: (body: never, ctx: Ctx<TopicName>) => void | Promise<void> };
 
 export class BusNode {
@@ -1062,8 +1231,11 @@ export class BusNode {
   readonly #subs: Sub[] = [];
   readonly #timers: [number, () => void | Promise<void>][] = [];
   readonly #queue: Job[] = [];
-  readonly #handles: Subscription[] = [];
+  readonly #handles: { topic: TopicName; h: Subscription }[] = [];
   readonly #stopTimers: (() => void)[] = [];
+  readonly #parked = new Set<Settle>();
+  readonly #tasks = new Set<Promise<void>>();
+  readonly #life = new AbortController();
   #running: Promise<void> | null = null;
   #current: AbortController | null = null;
   #closed = false;
@@ -1082,19 +1254,30 @@ export class BusNode {
     this.#subs.push({ topic, mode: o.mode, cb: cb as never });
   }
 
-  /** 변화(rev)는 그 판본 이상의 상태를 가진 뒤에 처리한다(상태가 늦게 오면 변화를 줄에 둔다). */
+  /** 변화(rev)는 그 판본 이상의 상태를 가진 뒤에 처리한다. 상태가 아직 없으면 변화를 내려놓고(defer) 줄을 비운다.
+   *  내려놓은 변화는 상태가 오면 그 콜백 안에서 처리하고 그때 ack한다. RELIABLE은 ack 전에는 뒤 변화를 주지 않으므로 내려놓은 변화는 하나다. */
   withState<C extends TopicName, S extends TopicName>(changes: C, state: S, cb: (change: Body<C>, latest: Body<S>, ctx: Ctx<C>) => void | Promise<void>): void {
     let latest: Body<S> | null = null;
-    const waiting: [Body<C>, Ctx<C>][] = [];
+    let parked: { c: Body<C>; ctx: Ctx<C>; settle: Settle } | null = null;
     const rev = (b: unknown) => Number((b as { rev?: number }).rev);
-    const flush = async () => {
-      while (waiting.length && latest && rev(latest) >= rev(waiting[0]![0])) {
-        const [c, ctx] = waiting.shift()!;
-        await cb(c, latest, ctx);
+    const ready = (c: Body<C>) => latest !== null && rev(latest) >= rev(c);
+    this.on(state, async (b, sctx) => {
+      latest = b;
+      if (!parked || !ready(parked.c)) return;
+      const p = parked;
+      parked = null;
+      try {
+        await cb(p.c, b, { ...p.ctx, signal: sctx.signal });
+      } catch (err) {
+        p.settle(false);
+        throw err;
       }
-    };
-    this.on(state, async (b) => { latest = b; await flush(); });
-    this.on(changes, async (c, ctx) => { waiting.push([c, ctx]); await flush(); });
+      p.settle(true);
+    });
+    this.on(changes, async (c, ctx) => {
+      if (ready(c)) return cb(c, latest!, ctx);
+      parked = { c, ctx, settle: ctx.defer() };
+    });
   }
 
   every(ms: number, cb: () => void | Promise<void>): void {
@@ -1112,14 +1295,29 @@ export class BusNode {
     await this.#bus.publish({ topic, key, header: { stamp: this.#clock.now(), node: this.name, seq, ...this.#epoch }, body } as Envelope<N>);
   }
 
+  /** 콜백 밖에서 도는 긴 일(LLM 호출 등). 노드 수명 신호를 받고, stop()이 그 신호를 끊고 끝나길 기다린다. */
+  spawn<T>(fn: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    if (this.#closed) return Promise.reject(new Error(`닫힌 노드(${this.name})는 새 일을 띄울 수 없어요`));
+    const p = fn(this.#life.signal);
+    const t = p.then(() => {}, () => {});
+    this.#tasks.add(t);
+    void t.then(() => this.#tasks.delete(t));
+    return p;
+  }
+
+  /** 줄에 일 하나를 넣는다(spawn한 일의 결과를 노드 상태에 넣을 때). 닫힌 뒤에는 버린다. */
+  post(fn: (signal: AbortSignal) => void | Promise<void>): void {
+    this.#push({ run: ({ signal }) => fn(signal) });
+  }
+
   /** 구독·그룹·커서를 만든다(배달은 start 뒤). */
   async prepare(): Promise<void> {
-    for (const s of this.#subs) this.#handles.push(await this.#bus.subscribe(s.topic, this.name, (e) => this.#enqueue(e, s), { mode: s.mode }));
+    for (const s of this.#subs) this.#handles.push({ topic: s.topic, h: await this.#bus.subscribe(s.topic, this.name, (e) => this.#enqueue(e, s), { mode: s.mode }) });
   }
 
   /** 배달·타이머를 켠다. 띄우는 곳은 모든 노드의 prepare를 마친 뒤 부른다. */
   start(): void {
-    for (const h of this.#handles) h.start();
+    for (const { h } of this.#handles) h.start();
     for (const [ms, cb] of this.#timers) this.#stopTimers.push(this.#clock.every(ms, () => this.#push({ run: () => cb() })));
   }
 
@@ -1127,15 +1325,25 @@ export class BusNode {
     this.#closed = true;
     for (const s of this.#stopTimers) s();
     for (const j of this.#queue.splice(0)) j.done?.(false);
-    this.#current?.abort(new Error(`${this.name} 노드를 끝냄`));
+    const why = new Error(`${this.name} 노드를 끝냄`);
+    this.#current?.abort(why);
+    this.#life.abort(why);
     await this.#running;
-    for (const h of this.#handles) await h.stop();
+    await Promise.all([...this.#tasks]);
+    for (const { h } of this.#handles) await h.stop();
+    for (const settle of [...this.#parked]) settle(false);
   }
 
   /** 시험·재생 장벽: 줄이 빌 때까지 기다린다. */
   idle(): Promise<void> {
-    return !this.#running && !this.#queue.length ? Promise.resolve() : new Promise((r) => this.#idle.push(r));
+    return this.busy() ? new Promise((r) => this.#idle.push(r)) : Promise.resolve();
   }
+
+  /** 줄에 일이 있거나 도는 중이다. 내려놓은 메시지와 spawn한 일은 세지 않는다. */
+  busy(): boolean { return this.#running !== null || this.#queue.length > 0; }
+
+  /** 그 토픽 구독의 놓친 수(SENSOR all). */
+  lost(topic: TopicName): number { return this.#handles.filter((x) => x.topic === topic).reduce((n, x) => n + x.h.lost(), 0); }
 
   #enqueue(e: Envelope<TopicName>, s: Sub): Promise<Outcome> {
     return new Promise<Outcome>((resolve) => {
@@ -1144,7 +1352,18 @@ export class BusNode {
       const latest = TOPICS[e.topic].qos.kind === "sensor" && s.mode !== "all" ? e.topic : undefined;
       this.#push({
         latest,
-        run: async (signal) => { await s.cb(e.body as never, { e, signal }); this.#fresh.commit(e); },
+        run: async ({ signal, defer }) => {
+          let deferred = false;
+          await s.cb(e.body as never, {
+            e, signal,
+            defer: () => {
+              deferred = true;
+              const settle = defer();
+              return (ok) => { if (ok) this.#fresh.commit(e); settle(ok); };
+            },
+          });
+          if (!deferred) this.#fresh.commit(e);
+        },
         done: (ok) => resolve(ok ? "ack" : "retry"),
       });
     });
@@ -1161,16 +1380,33 @@ export class BusNode {
   }
 
   async #drain(): Promise<void> {
+    await null;   // 늘 다음 차례에 시작한다: 첫 일이 동기로 던져 줄이 바로 비어도 #running이 끝난 Promise로 남지 않는다
     while (this.#queue.length && !this.#closed) {
       const job = this.#queue.shift()!;
       const ac = new AbortController();
       this.#current = ac;
+      let taken: Settle | null = null;
+      const defer = (): Settle => {
+        const done = job.done;
+        job.done = undefined;
+        let settled = false;
+        const settle: Settle = (ok) => {
+          if (settled) return;
+          settled = true;
+          this.#parked.delete(settle);
+          done?.(ok && !this.#closed);
+        };
+        this.#parked.add(settle);
+        taken = settle;
+        return settle;
+      };
       let ok = true;
       try {
-        await job.run(ac.signal);
+        await job.run({ signal: AbortSignal.any([ac.signal, this.#life.signal]), defer });
       } catch (err) {
         ok = false;
         this.#log(`[${this.name}] 콜백 실패: ${(err as Error).message}`);
+        (taken as Settle | null)?.(false);
       }
       this.#current = null;
       job.done?.(ok && !this.#closed);
@@ -1182,19 +1418,20 @@ export class BusNode {
 ```
 
 ```ts
-// open.ts — REDIS_URL이 있으면 RedisBus(켜질 때 디스크 저장 끔 확인, 다른 기동의 열쇠 지움), 없으면 MemoryBus(같은 계약). 다른 갈래는 없다.
+// open.ts — REDIS_URL이 있으면 RedisBus(켜질 때 디스크 저장 끔 확인, 다른 기동의 열쇠 지움, 기동 표시 열쇠), 없으면 MemoryBus(같은 계약). 다른 갈래는 없다.
+// onLost: Redis가 다시 켜져 이번 기동의 메시지를 잃었을 때. 띄우는 곳은 이 기동을 멈춘다(서버를 끝내고 compose restart가 새 기동으로 띄운다).
 import type { Bus } from "./bus.js";
 import { MemoryBus } from "./memory.js";
 
-export async function openBus(env: Record<string, string | undefined>, o: { boot: string; log?: (s: string) => void }): Promise<Bus> {
+export async function openBus(env: Record<string, string | undefined>, o: { boot: string; log?: (s: string) => void; onLost?: (err: Error) => void }): Promise<Bus> {
   const url = env.REDIS_URL?.trim();
-  if (!url) return new MemoryBus();
+  if (!url) return new MemoryBus(o.log);
   const { RedisBus } = await import("./redis.js");
-  return RedisBus.connect(url, { boot: o.boot, log: o.log });
+  return RedisBus.connect(url, { boot: o.boot, log: o.log, onLost: o.onLost });
 }
 ```
 
-`index.ts`에 `MAX_DELIVERIES`, `type Bus`, `type Outcome`, `type Subscription`, `BusNode`, `MemoryBus`, `VirtualClock`, `realClock`, `type Clock`, `openBus`를 더한다.
+`index.ts`에 `MAX_DELIVERIES`, `RETRY_MS`, `type Bus`, `type Outcome`, `type Subscription`, `BusNode`, `MemoryBus`, `VirtualClock`, `realClock`, `type Clock`, `openBus`를 더한다.
 
 - [ ] **Step 6: 통과를 확인한다**
 
@@ -1216,8 +1453,8 @@ git push
 - Modify: `package.json`·`package-lock.json`(`redis` 6.3.1 정확히), `compose.yaml`(`redis` 서비스, noonchi `REDIS_URL`·`depends_on`), `.env.example`(`REDIS_URL`), `tests/deploy-files.test.ts`
 
 **Interfaces:**
-- Consumes: Task 2 `Bus`, `Deliver`, `Subscription`, `MAX_DELIVERIES`, `gapCounter`, `deadBody`, 계약 시험.
-- Produces: `assertNoPersistence(get: (name: string) => Promise<string>): Promise<void>`, `class RedisBus implements Bus { static connect(url, o: { boot: string; keepOthers?: boolean; log? }): Promise<RedisBus>; length(topic): Promise<number> }`.
+- Consumes: Task 2 `Bus`, `Deliver`, `Subscription`, `MAX_DELIVERIES`, `RETRY_MS`, `gapCounter`, `sensorBase`, `deadBody`, 계약 시험.
+- Produces: `assertNoPersistence(get: (name: string) => Promise<string>): Promise<void>`, `class RedisBus implements Bus { static connect(url, o: { boot: string; keepOthers?: boolean; log?; onLost?: (err: Error) => void }): Promise<RedisBus>; length(topic): Promise<number> }`.
 
 - [ ] **Step 1: 실패하는 시험을 쓴다**
 
@@ -1247,14 +1484,30 @@ describe("Redis 디스크 저장 끔 확인", () => {
 ```ts
 // 실제 Redis 통로: REDIS_URL이 있을 때만 돈다(이 PC는 compose.dev.yaml의 noonchi-redis, CI·다른 PC는 건너뜀).
 // 시험마다 다른 기동 값을 쓰고(다른 시험의 열쇠는 지우지 않는다) 다른 시험·개발 서버와 섞이지 않게 한다.
-import { describe } from "vitest";
+import { createClient } from "redis";
+import { describe, expect, it } from "vitest";
 import { RedisBus } from "../src/bus/redis.js";
 import { busContract } from "./helpers/bus-contract.js";
 
 const url = process.env.REDIS_URL?.trim();
 let n = 0;
+const boot = () => `test-${process.pid}-${Date.now()}-${++n}`;
 describe.skipIf(!url)("RedisBus", () => {
-  busContract("RedisBus", () => RedisBus.connect(url!, { boot: `test-${process.pid}-${Date.now()}-${++n}`, keepOthers: true, log: () => {} }), { length: (b, t) => (b as RedisBus).length(t) });
+  busContract("RedisBus", () => RedisBus.connect(url!, { boot: boot(), keepOthers: true, log: () => {} }), { length: (b, t) => (b as RedisBus).length(t) });
+
+  it("기동 표시 열쇠가 사라지면(Redis가 다시 켜짐) onLost를 부르고, 되살려 잇지 않는다", async () => {
+    const b = boot();
+    let lost: Error | null = null;
+    const bus = await RedisBus.connect(url!, { boot: b, keepOthers: true, log: () => {}, onLost: (e) => { lost = e; } });
+    const c = createClient({ url: url! });
+    await c.connect();
+    await c.del(`noonchi:${b}:alive`);
+    await c.quit();
+    const t0 = Date.now();
+    while (!lost && Date.now() - t0 < 3000) await new Promise((r) => setTimeout(r, 50));
+    expect((lost as Error | null)?.message).toMatch(/Redis가 다시 켜져 이번 기동의 메시지를 잃었어요/);
+    await bus.close();
+  });
 });
 ```
 
@@ -1295,21 +1548,27 @@ Expected: `package.json` `dependencies`에 `"redis": "6.3.1"`
 
 ```ts
 // redis.ts — Redis Streams 통로(node-redis). QoS 동작은 MemoryBus와 같다(tests/helpers/bus-contract.ts).
-// 켜질 때: 디스크 저장 끔 확인(assertNoPersistence), 다른 기동의 열쇠 지움(keepOthers면 두기). 열쇠는 noonchi:<boot>:<토픽>.
-// SENSOR: XADD MAXLEN ~ depth. latest는 깨어날 때마다 XREVRANGE COUNT 1로 가장 새 것, all은 커서로 차례로 다(seq 건너뜀을 센다).
+// 켜질 때: 디스크 저장 끔 확인(assertNoPersistence), 다른 기동의 열쇠 지움(keepOthers면 두기), 기동 표시 열쇠(noonchi:<boot>:alive)를 둔다.
+// 1초마다 기동 표시 열쇠를 본다. 없거나 NOGROUP이 나면 Redis가 다시 켜져 이번 기동의 메시지·그룹을 잃은 것이다:
+//   onLost를 한 번 부르고 읽기를 멈춘다(되살려 잇지 않는다. 띄우는 곳이 이 기동을 멈춘다). 잠깐 끊겼다 붙은 것은 그대로 잇는다.
+// SENSOR: XADD MAXLEN = depth(정확히). latest는 깨어날 때마다 XREVRANGE COUNT 1로 가장 새 것, all은 커서로 차례로 다
+//   (준비 때 가장 새 seq가 기준, seq 건너뜀을 센다).
 // STATE: INCR 카운터 + MULTI(HSET 값 + XADD 알림{key, n} MAXLEN ~ 64). 받는 쪽은 n이 건너뛰면 HGETALL로 다시 읽는다.
-// RELIABLE: XADD(자르지 않음), 그룹 = 노드 이름(준비 때 $부터). XREADGROUP → deliver → "ack"면 XACK, "retry"면 두고 1초 뒤 XAUTOCLAIM으로 다시.
-//   XPENDING의 전달 횟수가 MAX_DELIVERIES에 닿으면 /bus/dead에 남기고 XACK. ack 뒤 모든 그룹이 넘긴 앞부분을 XTRIM MINID로 자른다.
-// 오류: 연결마다 error 리스너(프로세스가 죽지 않음). NOGROUP이면 그룹을 다시 만들고 알린다(디스크 저장을 끄므로 Redis가 다시 켜졌다는 뜻).
-// 막고 읽기(BLOCK)는 구독마다 따로 연결(duplicate)을 쓴다.
+// RELIABLE: XADD(자르지 않음), 그룹 = 노드 이름 = 소비자 이름(준비 때 $부터). 먼저 내 몫으로 남은 것(id 0)을 차례대로, 다 비면 새것(>)을 읽는다.
+//   한 메시지를 "ack"까지 다시 준다(RETRY_MS 간격, 그동안 뒤 메시지를 읽지 않는다). 이 구독에서 MAX_DELIVERIES번 실패하면 /bus/dead에 남기고 XACK.
+//   /bus/dead 자체의 실패는 다시 보내지 않고 log만 남긴다. ack 뒤 모든 그룹이 넘긴 앞부분을 XTRIM MINID로 자른다.
+//   읽기·XACK가 실패하면 내 몫(id 0)부터 다시 읽는다(같은 메시지를 다시 받을 수 있다: 받는 쪽은 한 번만 쓰기로 막는다).
+// 연결마다 error 리스너를 단다(프로세스가 죽지 않는다). 막고 읽기(BLOCK)는 구독마다 따로 연결(duplicate)을 쓴다.
 import { createClient, type RedisClientType } from "redis";
-import { deadBody, gapCounter, MAX_DELIVERIES, type Bus, type Deliver, type Subscription } from "./bus.js";
+import { deadBody, gapCounter, MAX_DELIVERIES, RETRY_MS, sensorBase, type Bus, type Deliver, type Subscription } from "./bus.js";
 import { decode, encode, type Envelope } from "./header.js";
 import { TOPICS, type NodeName, type TopicName } from "./topics.js";
 
 const BLOCK_MS = 1000;
 const STATE_NOTE = 64;
-const RETRY_IDLE_MS = 1000;
+const WATCH_MS = 1000;
+const LOST = "Redis가 다시 켜져 이번 기동의 메시지를 잃었어요. 서버를 새 기동으로 다시 띄워요";
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const nextId = (id: string) => { const [ms, seq] = id.split("-"); return `${ms}-${Number(seq) + 1}`; };
 const cmpId = (a: string, b: string) => { const [am, as] = a.split("-").map(Number); const [bm, bs] = b.split("-").map(Number); return am! - bm! || as! - bs!; };
 
@@ -1324,10 +1583,12 @@ export async function assertNoPersistence(get: (name: string) => Promise<string>
 
 export class RedisBus implements Bus {
   readonly #closers = new Set<() => Promise<void>>();
+  #watch: ReturnType<typeof setInterval> | null = null;
+  #lost = false;
 
-  private constructor(private readonly client: RedisClientType, private readonly prefix: string, private readonly log: (s: string) => void) {}
+  private constructor(private readonly client: RedisClientType, private readonly prefix: string, private readonly log: (s: string) => void, private readonly onLost: (e: Error) => void) {}
 
-  static async connect(url: string, o: { boot: string; keepOthers?: boolean; log?: (s: string) => void }): Promise<RedisBus> {
+  static async connect(url: string, o: { boot: string; keepOthers?: boolean; log?: (s: string) => void; onLost?: (e: Error) => void }): Promise<RedisBus> {
     const log = o.log ?? ((s) => console.error(s));
     const client = createClient({ url }) as RedisClientType;
     client.on("error", (e: Error) => log(`[통로] Redis 오류: ${e.message}`));
@@ -1340,7 +1601,21 @@ export class RedisBus implements Bus {
         if (old.length) await client.del(old);
       }
     }
-    return new RedisBus(client, prefix, log);
+    await client.set(`${prefix}alive`, "1");
+    const bus = new RedisBus(client, prefix, log, o.onLost ?? ((e) => log(`[통로] ${e.message}`)));
+    bus.#watch = setInterval(() => void bus.#check(), WATCH_MS);
+    bus.#watch.unref?.();
+    return bus;
+  }
+
+  async #check(): Promise<void> {
+    if ((await this.client.exists(`${this.prefix}alive`).catch(() => null)) === 0) this.#lose();
+  }
+
+  #lose(): void {
+    if (this.#lost) return;
+    this.#lost = true;
+    this.onLost(new Error(LOST));
   }
 
   #k(topic: string): string { return `${this.prefix}${topic}`; }
@@ -1350,7 +1625,7 @@ export class RedisBus implements Bus {
     decode(e.topic, raw);
     const q = TOPICS[e.topic].qos;
     const k = this.#k(e.topic);
-    if (q.kind === "sensor") await this.client.xAdd(k, "*", { m: raw }, { TRIM: { strategy: "MAXLEN", strategyModifier: "~", threshold: q.depth } });
+    if (q.kind === "sensor") await this.client.xAdd(k, "*", { m: raw }, { TRIM: { strategy: "MAXLEN", threshold: q.depth } });
     else if (q.kind === "state") {
       const n = await this.client.incr(`${k}:n`);
       await this.client.multi().hSet(`${k}:state`, e.key, raw).xAdd(k, "*", { key: e.key, n: String(n) }, { TRIM: { strategy: "MAXLEN", strategyModifier: "~", threshold: STATE_NOTE } }).exec();
@@ -1366,42 +1641,41 @@ export class RedisBus implements Bus {
     let on = true;
     let started = false;
     let loop: Promise<void> = Promise.resolve();
-    const gaps = gapCounter();
-    const tail = (await this.client.xRevRange(k, "+", "-", { COUNT: 1 }))[0]?.id ?? "0-0";
+    const tailEntry = (await this.client.xRevRange(k, "+", "-", { COUNT: 1 }))[0];
+    const tail = tailEntry?.id ?? "0-0";
+    const all = q.kind === "sensor" && o.mode === "all";
+    const gaps = gapCounter(all ? sensorBase(topic, tailEntry?.message.m ? decode(topic, tailEntry.message.m) : null) : undefined);
+    const readFailed = async (e: unknown) => { this.log(`[통로] ${topic} 읽기 실패, 다시 읽어요: ${(e as Error).message}`); await sleep(RETRY_MS); return null; };
     let run: () => Promise<void>;
     if (q.kind === "reliable") {
-      const createGroup = async (from: string) => {
-        try { await this.client.xGroupCreate(k, node, from, { MKSTREAM: true }); } catch (e) { if (!String(e).includes("BUSYGROUP")) throw e; }
-      };
-      await createGroup("$");
-      const settle = async (id: string, raw: string) => {
-        const out = await deliver(decode(topic, raw)).catch(() => "retry" as const);
-        if (!on) return;
-        if (out === "ack") {
-          await this.client.xAck(k, node, id);
-          await this.#trim(k);
-          return;
+      try { await this.client.xGroupCreate(k, node, "$", { MKSTREAM: true }); } catch (e) { if (!String(e).includes("BUSYGROUP")) throw e; }
+      /** 한 메시지를 ack나 dead까지. 끊긴 구독이면 false(ack하지 않고 둔다). */
+      const handle = async (id: string, raw: string): Promise<boolean> => {
+        for (let tries = 1; ; tries++) {
+          const out = await deliver(decode(topic, raw)).catch(() => "retry" as const);
+          if (!on) return false;
+          if (out === "ack") break;
+          if (tries >= MAX_DELIVERIES) { await this.#dead(topic, node, raw, tries); break; }
+          await sleep(RETRY_MS);
+          if (!on) return false;
         }
-        const p = await this.client.xPendingRange(k, node, id, id, 1);
-        if ((p[0]?.deliveriesCounter ?? 0) >= MAX_DELIVERIES) {
-          const e = decode(topic, raw);
-          await this.publish({ topic: "/bus/dead", key: topic, header: { ...e.header, node }, body: deadBody(topic, node, raw, p[0]!.deliveriesCounter) } as never);
-          await this.client.xAck(k, node, id);
-          await this.#trim(k);
-        }
+        await this.client.xAck(k, node, id);
+        await this.#trim(k);
+        return true;
       };
       run = async () => {
-        while (on) {
-          const claimed = await this.client.xAutoClaim(k, node, node, RETRY_IDLE_MS, "0-0", { COUNT: 100 }).catch(() => ({ messages: [] }));
-          for (const m of claimed.messages) if (m && on) await settle(m.id, m.message.m!);
-          const r = await conn.xReadGroup(node, node, { key: k, id: ">" }, { COUNT: 16, BLOCK: BLOCK_MS }).catch(async (e: unknown) => {
-            if (String(e).includes("NOGROUP")) {
-              this.log(`[통로] ${topic} 그룹 ${node}이 없어 다시 만들어요(Redis가 다시 켜졌어요)`);
-              await createGroup("0");
-            }
-            return null;
-          });
-          for (const s of r ?? []) for (const m of s.messages) if (on) await settle(m.id, m.message.m!);
+        let mineDone = false;
+        while (on && !this.#lost) {
+          try {
+            const r = await conn.xReadGroup(node, node, { key: k, id: mineDone ? ">" : "0" }, { COUNT: 16, ...(mineDone ? { BLOCK: BLOCK_MS } : {}) });
+            const ms = (r ?? []).flatMap((s) => s.messages).filter((m) => m?.message?.m);
+            if (!mineDone && !ms.length) { mineDone = true; continue; }
+            for (const m of ms) if (!(await handle(m.id, m.message.m!))) return;
+          } catch (e) {
+            if (String(e).includes("NOGROUP")) return this.#lose();
+            mineDone = false;
+            await readFailed(e);
+          }
         }
       };
     } else if (q.kind === "state") {
@@ -1412,8 +1686,8 @@ export class RedisBus implements Bus {
       };
       run = async () => {
         await snapshot();
-        while (on) {
-          const r = await conn.xRead({ key: k, id: last }, { COUNT: 100, BLOCK: BLOCK_MS }).catch(() => null);
+        while (on && !this.#lost) {
+          const r = await conn.xRead({ key: k, id: last }, { COUNT: 100, BLOCK: BLOCK_MS }).catch(readFailed);
           const ms = r?.flatMap((s) => s.messages) ?? [];
           if (!ms.length) continue;
           last = ms.at(-1)!.id;
@@ -1430,11 +1704,11 @@ export class RedisBus implements Bus {
     } else {
       let last = tail;
       run = async () => {
-        while (on) {
-          const r = await conn.xRead({ key: k, id: last }, { COUNT: o.mode === "all" ? 100 : 1, BLOCK: BLOCK_MS }).catch(() => null);
+        while (on && !this.#lost) {
+          const r = await conn.xRead({ key: k, id: last }, { COUNT: all ? 100 : 1, BLOCK: BLOCK_MS }).catch(readFailed);
           const ms = r?.flatMap((s) => s.messages) ?? [];
           if (!ms.length) continue;
-          if (o.mode === "all") {
+          if (all) {
             for (const m of ms) {
               last = m.id;
               const e = decode(topic, m.message.m!);
@@ -1464,6 +1738,12 @@ export class RedisBus implements Bus {
     };
   }
 
+  async #dead(topic: TopicName, group: NodeName, raw: string, tries: number): Promise<void> {
+    if (topic === "/bus/dead") return this.log(`[통로] /bus/dead 처리 실패(${group}, ${tries}번): 다시 보내지 않아요`);
+    const e = decode(topic, raw);
+    await this.publish({ topic: "/bus/dead", key: topic, header: { ...e.header, node: group }, body: deadBody(topic, group, raw, tries) } as never);
+  }
+
   /** 모든 그룹이 넘긴(처리 중 없음) 앞부분을 자른다. */
   async #trim(k: string): Promise<void> {
     const groups = await this.client.xInfoGroups(k);
@@ -1480,13 +1760,14 @@ export class RedisBus implements Bus {
   async length(topic: string): Promise<number> { return this.client.xLen(this.#k(topic)); }
 
   async close(): Promise<void> {
+    if (this.#watch) clearInterval(this.#watch);
     for (const c of [...this.#closers]) await c();
     await this.client.quit();
   }
 }
 ```
 
-node-redis 6.3.1의 명령 함수 이름·반환 모양(`configGet`, `scanIterator`가 낱개·배열을 내는지, `xAutoClaim`, `xPendingRange`의 `deliveriesCounter`, `xInfoGroups`의 `lastDeliveredId`, `xPending`의 `firstId`)은 설치한 판의 타입으로 맞춘다. 맞추는 기준은 계약 시험과 `bus-persistence` 시험이다.
+node-redis 6.3.1의 명령 함수 이름·반환 모양(`configGet`, `scanIterator`가 낱개·배열을 내는지, `xReadGroup`이 id `0`으로 내 몫을 돌려줄 때 지운 메시지를 어떻게 내는지, `xInfoGroups`의 `lastDeliveredId`, `xPending`의 `firstId`)은 설치한 판의 타입으로 맞춘다. 맞추는 기준은 계약 시험과 `bus-persistence` 시험이다.
 
 - [ ] **Step 4: Redis 컨테이너 파일을 쓴다**
 
@@ -1539,7 +1820,7 @@ docker compose -f compose.dev.yaml down
 Stop-Process -Name "Docker Desktop" -Confirm:$false; wsl --shutdown           # WSL VM 메모리를 돌려받는다(다른 WSL 일이 돌면 wsl --shutdown은 빼고 조정자에게 알린다)
 ```
 
-Expected: `RedisBus 통로 계약` 여덟 시험 PASS. 끝나면 Docker Desktop과 WSL VM이 꺼져 있다. 빈 메모리가 모자라면 이 단계를 미루고 조정자에게 알린다.
+Expected: `RedisBus 통로 계약` 열한 시험과 기동 표시 열쇠 시험 PASS. 끝나면 Docker Desktop과 WSL VM이 꺼져 있다. 빈 메모리가 모자라면 이 단계를 미루고 조정자에게 알린다.
 
 - [ ] **Step 7: 커밋·push**
 
@@ -1553,20 +1834,21 @@ git push
 
 **Files:**
 - Create: `src/record/history.ts`, `src/record/bag.ts`, `src/record/node.ts`, `src/record/replay.ts`, `src/record/index.ts`
-- Modify: `src/brain/history/recorder.ts`(기록 DB 줄 만들기를 `recordBrainLog`·`recordDevice` 함수로 빼고 `attachRecorder`가 그것을 쓴다), `src/brain/index.ts`(두 함수 내보내기), `src/contract/history.ts`(`bus_gap` 종류), `scripts/lint-domains.ts`(`record` 도메인, `DEPS.record = ["bus", "brain"]`, `server`에 `record`)
+- Modify: `src/brain/history/recorder.ts`(기록 DB 줄 만들기를 `recordBrainLog`·`deviceRecorder`로 빼고 `attachRecorder`가 그것을 쓴다), `src/brain/history/db.ts`(처리표 `bus_seen`, `once`, `forgetOtherBoots`), `src/brain/index.ts`(내보내기), `src/contract/history.ts`(`bus_gap` 종류), `scripts/lint-domains.ts`(`record` 도메인, `DEPS.record = ["bus", "brain"]`, `server`에 `record`)
 - Test: `tests/record-bag.test.ts`, `tests/record-replay.test.ts`
 
 **Interfaces:**
-- Consumes: Task 2 `BusNode`, `MemoryBus`, `VirtualClock`, `TOPICS`.
-- Produces(`brain`): `recordBrainLog(db: HistoryDb, l: BrainLog): void`, `recordDevice(db: HistoryDb, s: DeviceState, note?: DeviceNote): void`.
-- Produces(`record`): `class Bag { static open(path); write(e, arrival: number): void; range(from, to, o?: { topics? }): { e; arrival }[]; close() }`, `historyRoutes(node: BusNode, db: HistoryDb, bag?: Bag): void`, `startRecorder(o: { bus; epoch; db: HistoryDb; bag?: Bag; clock? }): Promise<BusNode>`(prepare까지, start는 띄우는 곳), `REPLAY_INPUTS`, `replay(o: { bag; from; to; launch: (bus: MemoryBus, clock: VirtualClock) => Promise<BusNode[]>; topics? }): Promise<{ sent: number }>`.
+- Consumes: Task 2 `BusNode`, `MemoryBus`(`quiet`), `VirtualClock`(`advanceTo(ms, settle)`), `TOPICS`.
+- Produces(`brain`): `recordBrainLog(db: HistoryDb, l: BrainLog): void`, `deviceRecorder(db: HistoryDb, now: () => number): (s: DeviceState, note?: DeviceNote) => () => void`(돌려준 함수는 지난 값을 바꾼다: 커밋 뒤에 부른다), `HistoryDb.once(key: { topic; group; key; boot; node; seq }, write: () => void): boolean`, `HistoryDb.forgetOtherBoots(boot): void`.
+- Produces(`record`): `class Bag { static open(path); write(e, arrivalMs: number): void; range(from, to, o?: { topics? }): { e; arrivalMs }[]; close() }`, `historyRoutes(node: BusNode, db: HistoryDb, o: { bag?: Bag; now: () => number }): void`, `startRecorder(o: { bus; epoch; db: HistoryDb; bag?: Bag; clock? }): Promise<BusNode>`(prepare까지, start는 띄우는 곳), `REPLAY_INPUTS`, `settle(bus: MemoryBus, nodes): Promise<void>`, `replay(o: { bag; from; to; launch: (bus: MemoryBus, clock: VirtualClock) => Promise<BusNode[]>; topics? }): Promise<{ sent: number }>`.
 
 - [ ] **Step 1: 실패하는 시험을 쓴다**
 
 `tests/record-bag.test.ts`:
 
 ```ts
-// 기록 노드: 반성용 기록 DB 줄은 RELIABLE을 쓴 뒤에만 ack하고, 녹화는 사진 칸을 뺀다.
+// 기록 노드: 반성용 기록 DB 줄은 쓴 뒤에만 ack하고, 기록 줄과 처리표가 한 트랜잭션이라 다시 와도 한 번만 남는다.
+// 가전 기록기는 기기마다 지난 값을 든다. 녹화는 사진 칸을 뺀다.
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -1577,20 +1859,56 @@ import { Bag, startRecorder } from "../src/record/index.js";
 
 const EPOCH = { boot: "b1", home: "h#1" };
 const tick = (ms = 50) => new Promise((r) => setTimeout(r, ms));
+const sender = async (name: "world" | "phone" | "devices", bus: MemoryBus) => {
+  const n = new BusNode({ name, bus, epoch: EPOCH, log: () => {} });
+  await n.prepare();
+  n.start();
+  return n;
+};
 
 describe("기록 노드", () => {
   it("World State 바뀜을 기록 DB에 지금과 같은 줄로 쓴다", async () => {
     const bus = new MemoryBus();
     const db = HistoryDb.open(":memory:");
     const rec = await startRecorder({ bus, epoch: EPOCH, db });
-    const world = new BusNode({ name: "world", bus, epoch: EPOCH, log: () => {} });
-    await world.prepare();
     rec.start();
-    world.start();
+    const world = await sender("world", bus);
     await world.publish("/world/changes", { rev: 1, changes: [{ type: "world_change", at_ms: 1000, kind: "appeared", text: "컵 cup_1 보임" }] });
     await tick();
     await rec.idle();
     expect(db.list({}).map((r) => [r.kind, r.text])).toEqual([["detection", "컵 cup_1 보임"]]);
+  });
+
+  it("녹화가 실패해 같은 메시지를 다시 받아도 기록 DB 줄은 한 번만 남는다", async () => {
+    const bus = new MemoryBus();
+    const db = HistoryDb.open(":memory:");
+    const bag = Bag.open(":memory:");
+    const write = bag.write.bind(bag);
+    let fail = 1;
+    bag.write = (e, at) => { if (fail-- > 0) throw new Error("녹화 실패"); write(e, at); };
+    const rec = await startRecorder({ bus, epoch: EPOCH, db, bag });
+    rec.start();
+    const world = await sender("world", bus);
+    await world.publish("/world/changes", { rev: 1, changes: [{ type: "world_change", at_ms: 1000, kind: "appeared", text: "컵 cup_1 보임" }] });
+    await tick(400);
+    await rec.idle();
+    expect(db.list({ kinds: ["detection"] })).toHaveLength(1);
+    expect(bag.range(0, Number.MAX_SAFE_INTEGER)).toHaveLength(1);
+  });
+
+  it("가전 기록기는 기기마다 지난 값을 들어, 처음 상태는 적지 않고 같은 값은 다시 적지 않는다", async () => {
+    const bus = new MemoryBus();
+    const db = HistoryDb.open(":memory:");
+    const rec = await startRecorder({ bus, epoch: EPOCH, db });
+    rec.start();
+    const dev = await sender("devices", bus);
+    const tv = (on: boolean) => ({ id: "tv", twin: { on }, updatedAt: "2026-11-17T12:00:00Z" });
+    await dev.publish("/device/changes", { id: "tv", state: tv(false), note: { initial: true, label: "TV", kind: "tv" } });
+    await dev.publish("/device/changes", { id: "tv", state: tv(true), note: { label: "TV", kind: "tv" } });
+    await dev.publish("/device/changes", { id: "tv", state: tv(true), note: { label: "TV", kind: "tv" } });
+    await tick(100);
+    await rec.idle();
+    expect(db.list({ kinds: ["device"] }).map((r) => r.data)).toEqual([expect.objectContaining({ attr: "on", from: false, to: true })]);
   });
 
   it("녹화에 사진 바이트(jpeg_b64)는 남기지 않는다", async () => {
@@ -1598,10 +1916,8 @@ describe("기록 노드", () => {
     const bus = new MemoryBus();
     const bag = Bag.open(path);
     const rec = await startRecorder({ bus, epoch: EPOCH, db: HistoryDb.open(":memory:"), bag });
-    const phone = new BusNode({ name: "phone", bus, epoch: EPOCH, log: () => {} });
-    await phone.prepare();
     rec.start();
-    phone.start();
+    const phone = await sender("phone", bus);
     const b64 = Buffer.from("SECRET-PHOTO-BYTES").toString("base64");
     await phone.publish("/perception/frame", { jpeg_b64: b64, width: 4, height: 3, observed_ms: 1000 });
     await tick();
@@ -1615,12 +1931,14 @@ describe("기록 노드", () => {
 `tests/record-replay.test.ts`:
 
 ```ts
-// 격리 재생: 실제 통로가 아닌 새 MemoryBus·가상 시계에서, 허용 목록의 바깥 입력만 도착 차례대로 흘리고, 메시지마다 처리 장벽을 지난다.
+// 격리 재생: 실제 통로가 아닌 새 MemoryBus·가상 시계에서, 허용 목록의 바깥 입력만 도착 차례·도착 시각대로 흘리고,
+// 메시지마다 이어지는 발행이 다 끝날 때까지(처리 장벽) 기다린다.
 import { describe, expect, it } from "vitest";
 import { BusNode } from "../src/bus/index.js";
 import { Bag, REPLAY_INPUTS, replay } from "../src/record/index.js";
 
 const EPOCH = { boot: "b1", home: "h#1" };
+const h = (seq: number, stamp: number) => ({ stamp, node: "perception" as const, seq, ...EPOCH });
 
 describe("격리 재생", () => {
   it("가전 명령·계획 같은 출력 토픽은 흘리지 않는다", () => {
@@ -1629,12 +1947,11 @@ describe("격리 재생", () => {
     expect(REPLAY_INPUTS).toContain("/perception/analysis");
   });
 
-  it("도착 차례대로 흘리고, 가상 시계를 발행 시각까지 당기며, 각 메시지 뒤 모든 노드가 빌 때까지 기다린다", async () => {
+  it("도착 차례대로 흘리고, 가상 시계는 발행 시각이 아니라 도착 시각까지 당긴다", async () => {
     const bag = Bag.open(":memory:");
-    const h = (seq: number, stamp: number) => ({ stamp, node: "perception" as const, seq, ...EPOCH });
-    bag.write({ topic: "/perception/analysis", key: "f1", header: h(1, 2000), body: { frame_id: "f1", observed_ms: 1500 } } as never, 1);
-    bag.write({ topic: "/device/command", key: "c1", header: { ...h(1, 2500), node: "act" }, body: { command_id: "c1", deadline_ms: 9e15 } } as never, 2);
-    bag.write({ topic: "/perception/analysis", key: "f2", header: h(2, 3000), body: { frame_id: "f2", observed_ms: 2900 } } as never, 3);
+    bag.write({ topic: "/perception/analysis", key: "f1", header: h(1, 2000), body: { frame_id: "f1", observed_ms: 1500 } } as never, 2100);
+    bag.write({ topic: "/device/command", key: "c1", header: { ...h(1, 2500), node: "act" }, body: { command_id: "c1", deadline_ms: 9e15 } } as never, 2500);
+    bag.write({ topic: "/perception/analysis", key: "f2", header: h(2, 2200), body: { frame_id: "f2", observed_ms: 2150 } } as never, 3050);
     const seen: [string, number][] = [];
     const r = await replay({
       bag, from: 0, to: 10_000,
@@ -1646,7 +1963,27 @@ describe("격리 재생", () => {
       },
     });
     expect(r.sent).toBe(2);
-    expect(seen).toEqual([["f1", 2000], ["f2", 3000]]);
+    expect(seen).toEqual([["f1", 2100], ["f2", 3050]]);
+  });
+
+  it("장벽은 이어지는 발행(다섯 단계)이 다 끝난 뒤 다음 메시지로 간다", async () => {
+    const bag = Bag.open(":memory:");
+    bag.write({ topic: "/perception/analysis", key: "f1", header: h(1, 1000), body: { frame_id: "f1", observed_ms: 1000 } } as never, 1000);
+    bag.write({ topic: "/perception/analysis", key: "f2", header: h(2, 2000), body: { frame_id: "f2", observed_ms: 2000 } } as never, 2000);
+    const seen: string[] = [];
+    await replay({
+      bag, from: 0, to: 10_000,
+      launch: async (bus, clock) => {
+        const w = new BusNode({ name: "world", bus, epoch: EPOCH, clock, log: () => {} });
+        const a = new BusNode({ name: "act", bus, epoch: EPOCH, clock, log: () => {} });
+        w.on("/perception/analysis", async (b) => { seen.push(String(b.frame_id)); await w.publish("/world/changes", { rev: Number(b.observed_ms), changes: [] }); });
+        a.on("/world/changes", async () => { await a.publish("/act/log", { n: 1 }); });
+        a.on("/act/log", async (b) => { const n = Number(b.n); seen.push(`log ${n}`); if (n < 5) await a.publish("/act/log", { n: n + 1 }); });
+        return [w, a];
+      },
+    });
+    const five = ["log 1", "log 2", "log 3", "log 4", "log 5"];
+    expect(seen).toEqual(["f1", ...five, "f2", ...five]);
   });
 });
 ```
@@ -1656,92 +1993,118 @@ Expected: FAIL(`src/record/index.js`가 없다)
 
 - [ ] **Step 2: 기록 DB 쓰기를 함수로 뺀다(`brain`)**
 
-`src/brain/history/recorder.ts`의 `o.onBrain((l) => { switch … })` 몸을 `export function recordBrainLog(db: HistoryDb, l: BrainLog): void`로, `o.onDevice` 몸을 `export function recordDevice(db: HistoryDb, s: DeviceState, note?: DeviceNote): void`로 옮기고, `attachRecorder`는 이 둘을 부른다. `src/brain/index.ts`에서 내보낸다. `src/contract/history.ts` `HISTORY_KINDS`에 `bus_gap`을 더한다(반성 `DAY_KINDS`에는 넣지 않는다). 기존 `tests/history-db.test.ts`가 그대로 통과해야 한다.
+`src/brain/history/recorder.ts`의 `o.onBrain((l) => { switch … })` 몸을 `export function recordBrainLog(db: HistoryDb, l: BrainLog): void`로 옮긴다. `o.onDevice` 몸은 `export function deviceRecorder(db: HistoryDb, now: () => number)`로 옮긴다: 기기마다 지난 값(`last`)을 들고, `(s, note?)`를 받아 줄을 쓰고 지난 값을 바꾸는 함수를 돌려준다(부른 쪽이 커밋 뒤에 부른다). `attachRecorder`는 `const rec = deviceRecorder(db, now); o.onDevice((s, note) => rec(s, note)())`로 쓴다. `src/brain/history/db.ts`에 처리표 `bus_seen(topic, grp, msg_key, boot, node, seq, PRIMARY KEY 여섯 칸 전부)`와 `once(key, write)`를 더한다: `BEGIN IMMEDIATE` → `INSERT OR IGNORE`로 처리표에 넣고, 이미 있으면 `ROLLBACK`하고 false. 없으면 `write()`(같은 연결의 `add`들) → `COMMIT` → true. `write`가 던지면 `ROLLBACK`하고 다시 던진다. `forgetOtherBoots(boot)`는 다른 기동의 처리표 줄을 지운다. `src/brain/index.ts`에서 `recordBrainLog`·`deviceRecorder`를 내보낸다. `src/contract/history.ts` `HISTORY_KINDS`에 `bus_gap`을 더한다(반성 `DAY_KINDS`에는 넣지 않는다). 기존 `tests/history-db.test.ts`가 그대로 통과해야 하고, `once` 시험(같은 열쇠 두 번 → 한 번만 씀, `write`가 던지면 처리표에도 남지 않음)을 더한다.
 
 - [ ] **Step 3: `bag.ts`·`history.ts`·`node.ts`·`replay.ts`·`index.ts`를 쓴다**
 
 ```ts
-// bag.ts — 녹화 파일(SQLite, node:sqlite): 도착 차례(arrival)·발행 시각·토픽·봉투. 사진 칸(TOPICS의 photo)은 빼고 남긴다.
+// bag.ts — 녹화 파일(SQLite, node:sqlite): 도착 차례(arrival)·도착 시각(arrival_ms, 기록 노드 시계)·발행 시각·토픽·봉투.
+// 사진 칸(TOPICS의 photo)은 빼고 남긴다. 같은 메시지(토픽·기동·보낸 노드·seq)는 한 번만 남긴다.
 import { DatabaseSync } from "node:sqlite";
-import { TOPICS, decode, encode, type Envelope, type TopicName } from "../bus/index.js";
+import { TOPICS, decode, type Envelope, type TopicName } from "../bus/index.js";
 
 export class Bag {
   private constructor(private readonly db: DatabaseSync) {
-    db.exec("CREATE TABLE IF NOT EXISTS bag (arrival INTEGER NOT NULL, stamp INTEGER NOT NULL, topic TEXT NOT NULL, raw TEXT NOT NULL); CREATE INDEX IF NOT EXISTS bag_stamp ON bag(stamp, arrival);");
+    db.exec(`CREATE TABLE IF NOT EXISTS bag (arrival INTEGER PRIMARY KEY AUTOINCREMENT, arrival_ms INTEGER NOT NULL, stamp INTEGER NOT NULL,
+      topic TEXT NOT NULL, boot TEXT NOT NULL, node TEXT NOT NULL, seq INTEGER NOT NULL, raw TEXT NOT NULL, UNIQUE (topic, boot, node, seq));
+      CREATE INDEX IF NOT EXISTS bag_time ON bag(arrival_ms, arrival);`);
   }
   static open(path: string): Bag { return new Bag(new DatabaseSync(path)); }
 
-  write(e: Envelope<TopicName>, arrival: number): void {
+  write(e: Envelope<TopicName>, arrivalMs: number): void {
     const photo = (TOPICS[e.topic] as { photo?: string }).photo;
     const body = photo ? Object.fromEntries(Object.entries(e.body as Record<string, unknown>).filter(([k]) => k !== photo)) : e.body;
-    this.db.prepare("INSERT INTO bag (arrival, stamp, topic, raw) VALUES (?, ?, ?, ?)").run(arrival, e.header.stamp, e.topic, JSON.stringify({ key: e.key, header: e.header, body }));
+    const h = e.header;
+    this.db.prepare("INSERT OR IGNORE INTO bag (arrival_ms, stamp, topic, boot, node, seq, raw) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(arrivalMs, h.stamp, e.topic, h.boot, h.node, h.seq, JSON.stringify({ key: e.key, header: h, body }));
   }
 
-  /** from ≤ stamp < to, 도착 차례로. 사진 칸을 뺀 토픽(/perception/frame)은 돌려주지 않는다(되살릴 사진이 없다). */
-  range(from: number, to: number, o: { topics?: readonly TopicName[] } = {}): { e: Envelope<TopicName>; arrival: number }[] {
-    const rows = this.db.prepare("SELECT arrival, topic, raw FROM bag WHERE stamp >= ? AND stamp < ? ORDER BY arrival").all(from, to) as { arrival: number; topic: TopicName; raw: string }[];
-    return rows.filter((r) => !(TOPICS[r.topic] as { photo?: string }).photo && (!o.topics || o.topics.includes(r.topic))).map((r) => ({ e: decode(r.topic, r.raw), arrival: r.arrival }));
+  /** from ≤ 도착 시각 < to, 도착 차례로. 사진 토픽은 돌려주지 않는다(되살릴 사진이 없다). */
+  range(from: number, to: number, o: { topics?: readonly TopicName[] } = {}): { e: Envelope<TopicName>; arrivalMs: number }[] {
+    const rows = this.db.prepare("SELECT arrival_ms, topic, raw FROM bag WHERE arrival_ms >= ? AND arrival_ms < ? ORDER BY arrival").all(from, to) as { arrival_ms: number; topic: TopicName; raw: string }[];
+    return rows
+      .filter((r) => !(TOPICS[r.topic] as { photo?: string }).photo && (!o.topics || o.topics.includes(r.topic)))
+      .map((r) => ({ e: decode(r.topic, r.raw), arrivalMs: r.arrival_ms }));
   }
 
   close(): void { this.db.close(); }
 }
-
-export { encode };
 ```
 
 ```ts
 // history.ts — 기록 노드가 기록 DB(noonchi.db)에 쓰는 토픽과 줄(+ 녹화). 반성(DAY_KINDS·HABIT_KINDS)이 읽는 종류는 모두 RELIABLE에서 온다.
-// 토픽마다 구독은 하나다: 기록 DB 쓰기와 녹화를 한 콜백에서 하고, 다 쓰면 콜백이 끝나 실행기가 ack한다(실패하면 던져 다시 받는다).
-// SENSOR 녹화는 커서(mode "all")로 다 읽고, 잘려 놓친 수를 1분마다 bus_gap 줄에 남긴다.
+// 메시지 하나의 기록 줄과 처리표(bus_seen)는 한 트랜잭션이다(db.once): 다시 온 메시지는 쓰지 않는다. 가전 기록기의 지난 값은 커밋된 뒤에만 바꾼다.
+// 녹화는 같은 메시지를 다시 남기지 않는다. 다 쓰면 콜백이 끝나 실행기가 ack한다(실패하면 던져 다시 받는다).
+// 녹화하는 SENSOR(record: true)는 커서(mode "all")로 다 읽는다. 사진 토픽과 /bus/dead는 녹화하지 않는다.
 import type { BrainLog } from "../contract/events.js";
-import { recordBrainLog, recordDevice, type HistoryDb } from "../brain/index.js";
+import { deviceRecorder, recordBrainLog, type HistoryDb } from "../brain/index.js";
 import { TOPICS, type BusNode, type TopicName } from "../bus/index.js";
 import type { Bag } from "./bag.js";
 
-const HISTORY: Partial<Record<TopicName, (db: HistoryDb, b: Record<string, unknown>) => void>> = {
-  "/perception/analysis": (db, b) => { for (const l of (b.logs ?? []) as BrainLog[]) recordBrainLog(db, l); },
-  "/world/changes": (db, b) => { for (const l of (b.changes ?? []) as BrainLog[]) recordBrainLog(db, l); },
-  "/brain/decision": (db, b) => recordBrainLog(db, b as unknown as BrainLog),
-  "/brain/link": (db, b) => recordBrainLog(db, b as unknown as BrainLog),
-  "/act/log": (db, b) => recordBrainLog(db, b as unknown as BrainLog),
-  "/device/changes": (db, b) => recordDevice(db, b.state as never, b.note as never),
-  "/bus/dead": (db, b) => { db.add("bus_gap", Date.now(), `처리하지 못한 메시지: ${String(b.topic)}`, { data: b }); },
-};
+type Write = (b: Record<string, unknown>) => (() => void) | void;
 
-export function historyRoutes(node: BusNode, db: HistoryDb, bag?: Bag): void {
-  let arrival = 0;
-  const topics = new Set<TopicName>([...(Object.keys(HISTORY) as TopicName[]), ...(bag ? (Object.keys(TOPICS) as TopicName[]).filter((t) => t !== "/bus/dead") : [])]);
+export function historyRoutes(node: BusNode, db: HistoryDb, o: { bag?: Bag; now: () => number }): void {
+  const device = deviceRecorder(db, o.now);
+  const logs = (list: unknown) => { for (const l of (list ?? []) as BrainLog[]) recordBrainLog(db, l); };
+  const history: Partial<Record<TopicName, Write>> = {
+    "/perception/analysis": (b) => logs(b.logs),
+    "/world/changes": (b) => logs(b.changes),
+    "/brain/decision": (b) => recordBrainLog(db, b as unknown as BrainLog),
+    "/brain/link": (b) => recordBrainLog(db, b as unknown as BrainLog),
+    "/act/log": (b) => recordBrainLog(db, b as unknown as BrainLog),
+    "/device/changes": (b) => device(b.state as never, b.note as never),
+    "/bus/dead": (b) => { db.add("bus_gap", o.now(), `처리하지 못한 메시지: ${String(b.topic)}`, { data: b }); },
+  };
+  const recorded = (t: TopicName) => {
+    const s = TOPICS[t] as { qos: { kind: string; record?: boolean }; photo?: string };
+    return t !== "/bus/dead" && !s.photo && (s.qos.kind !== "sensor" || !!s.qos.record);
+  };
+  const topics = new Set<TopicName>([...(Object.keys(history) as TopicName[]), ...(o.bag ? (Object.keys(TOPICS) as TopicName[]).filter(recorded) : [])]);
   for (const topic of topics) {
-    const sensor = TOPICS[topic].qos.kind === "sensor";
+    const write = history[topic];
     node.on(topic, (b, { e }) => {
-      HISTORY[topic]?.(db, b as Record<string, unknown>);
-      bag?.write(e, ++arrival);
-    }, sensor ? { mode: "all" } : {});
+      if (write) {
+        let after: (() => void) | void;
+        const h = e.header;
+        if (db.once({ topic, group: "recorder", key: e.key, boot: h.boot, node: h.node, seq: h.seq }, () => { after = write(b as Record<string, unknown>); })) after?.();
+      }
+      if (o.bag && recorded(topic)) o.bag.write(e, o.now());
+    }, TOPICS[topic].qos.kind === "sensor" ? { mode: "all" } : {});
   }
 }
 ```
 
 ```ts
-// node.ts — 기록 노드: 기록 DB 줄·녹화(history.ts). prepare까지 하고 start는 띄우는 곳이 모든 노드를 준비한 뒤 부른다.
-import { BusNode, type Bus, type Clock } from "../bus/index.js";
+// node.ts — 기록 노드: 기록 DB 줄·녹화(history.ts), 잘려 놓친 SENSOR 수를 1분마다 bus_gap 줄로. prepare까지 하고 start는 띄우는 곳이 부른다.
+import { BusNode, TOPICS, realClock, type Bus, type Clock, type TopicName } from "../bus/index.js";
 import type { HistoryDb } from "../brain/index.js";
 import type { Bag } from "./bag.js";
 import { historyRoutes } from "./history.js";
 
 export async function startRecorder(o: { bus: Bus; epoch: { boot: string; home: string }; db: HistoryDb; bag?: Bag; clock?: Clock }): Promise<BusNode> {
-  const node = new BusNode({ name: "recorder", bus: o.bus, epoch: o.epoch, clock: o.clock });
-  historyRoutes(node, o.db, o.bag);
+  const clock = o.clock ?? realClock;
+  const node = new BusNode({ name: "recorder", bus: o.bus, epoch: o.epoch, clock });
+  o.db.forgetOtherBoots(o.epoch.boot);
+  historyRoutes(node, o.db, { bag: o.bag, now: () => clock.now() });
+  const sensors = (Object.keys(TOPICS) as TopicName[]).filter((t) => (TOPICS[t].qos as { kind: string; record?: boolean }).record);
+  const told = new Map<TopicName, number>();
+  node.every(60_000, () => {
+    for (const t of sensors) {
+      const n = node.lost(t) - (told.get(t) ?? 0);
+      if (n <= 0) continue;
+      o.db.add("bus_gap", clock.now(), `잘려 놓친 ${t} ${n}개`, { data: { topic: t, lost: n } });
+      told.set(t, node.lost(t));
+    }
+  });
   await node.prepare();
   return node;
 }
 ```
 
-(잘려 놓친 수의 1분 기록: `startRecorder`가 SENSOR 구독의 `lost()`를 1분마다 보고 늘었으면 `db.add("bus_gap", …, { data: { topic, lost } })`를 쓴다. 이를 위해 `BusNode`에 `lost(topic): number`(그 토픽 구독의 `Subscription.lost()`)를 더하고, 기록 노드 타이머 `every(60_000)`가 부른다.)
-
 ```ts
 // replay.ts — 격리 재생(rosbag2 재생처럼, 시뮬레이션 시계): 새 MemoryBus·가상 시계 위에 launch가 띄운 노드(가전은 dry-run)로,
-// 허용 목록의 바깥 입력 토픽만 녹화의 도착 차례대로 흘린다. 메시지마다 가상 시계를 그 발행 시각까지 당겨 타이머를 돌리고,
-// 발행한 뒤 모든 노드가 빌 때까지 기다린다(처리 장벽). 실제 통로(Redis)에는 아무것도 보내지 않는다.
+// 허용 목록의 바깥 입력 토픽만 녹화의 도착 차례대로 흘린다. 메시지마다 가상 시계를 그 도착 시각까지 당기며 타이머를 하나씩 돌리고
+// (타이머마다 장벽), 발행한 뒤 다시 장벽을 지난다. 실제 통로(Redis)에는 아무것도 보내지 않는다.
 import { MemoryBus, VirtualClock, type BusNode, type TopicName } from "../bus/index.js";
 import type { Bag } from "./bag.js";
 
@@ -1749,22 +2112,26 @@ export const REPLAY_INPUTS: readonly TopicName[] = [
   "/perception/detections", "/perception/analysis", "/perception/look_result", "/phone/pose", "/phone/heard", "/phone/progress", "/device/changes",
 ];
 
+/** 처리 장벽: 모든 노드의 줄이 비고 통로에 예약된 배달이 없는 상태가 두 번 이어질 때까지 기다린다(이어지는 발행이 몇 단계여도). */
+export async function settle(bus: MemoryBus, nodes: readonly BusNode[], maxRounds = 10_000): Promise<void> {
+  for (let calm = 0, round = 0; calm < 2; round++) {
+    if (round > maxRounds) throw new Error("재생 장벽: 노드가 멈추지 않아요");
+    await Promise.all(nodes.map((n) => n.idle()));
+    await new Promise((r) => setImmediate(r));
+    calm = bus.quiet() && nodes.every((n) => !n.busy()) ? calm + 1 : 0;
+  }
+}
+
 export async function replay(o: { bag: Bag; from: number; to: number; launch: (bus: MemoryBus, clock: VirtualClock) => Promise<BusNode[]>; topics?: readonly TopicName[] }): Promise<{ sent: number }> {
-  const allow = o.topics ?? REPLAY_INPUTS;
-  const rows = o.bag.range(o.from, o.to, { topics: allow });
-  const bus = new MemoryBus();
-  const clock = new VirtualClock(rows[0]?.e.header.stamp ?? o.from);
+  const rows = o.bag.range(o.from, o.to, { topics: o.topics ?? REPLAY_INPUTS });
+  const bus = new MemoryBus(() => {});
+  const clock = new VirtualClock(rows[0]?.arrivalMs ?? o.from);
   const nodes = await o.launch(bus, clock);
   for (const n of nodes) await n.prepare();
   for (const n of nodes) n.start();
-  const barrier = async () => {
-    for (let round = 0; round < 3; round++) {
-      await new Promise((r) => setImmediate(r));
-      await Promise.all(nodes.map((n) => n.idle()));
-    }
-  };
-  for (const { e } of rows) {
-    await clock.advanceTo(e.header.stamp);
+  const barrier = () => settle(bus, nodes);
+  for (const { e, arrivalMs } of rows) {
+    await clock.advanceTo(arrivalMs, barrier);
     await barrier();
     await bus.publish(e);
     await barrier();
@@ -1780,7 +2147,7 @@ export async function replay(o: { bag: Bag; from: number; to: number; launch: (b
 export { Bag } from "./bag.js";
 export { historyRoutes } from "./history.js";
 export { startRecorder } from "./node.js";
-export { REPLAY_INPUTS, replay } from "./replay.js";
+export { REPLAY_INPUTS, replay, settle } from "./replay.js";
 ```
 
 `scripts/lint-domains.ts`: `SERVER_DOMAINS`에 `"record"`, `DEPS.record = ["bus", "brain"]`, `server`에 `"record"`.
@@ -1793,7 +2160,7 @@ Expected: PASS
 - [ ] **Step 5: 커밋·push**
 
 ```bash
-git add src/record src/brain/history/recorder.ts src/brain/index.ts src/contract/history.ts src/bus/node.ts scripts/lint-domains.ts tests/record-bag.test.ts tests/record-replay.test.ts
+git add src/record src/brain/history/recorder.ts src/brain/history/db.ts src/brain/index.ts src/contract/history.ts src/bus/node.ts scripts/lint-domains.ts tests/record-bag.test.ts tests/record-replay.test.ts tests/history-db.test.ts
 git commit -m "feat(record): write the history DB from bus topics after each message, record topics without photos and replay inputs in an isolated bus"
 git push
 ```
@@ -1882,7 +2249,7 @@ Expected: 모두 PASS(이 묶음은 집 실행 묶음을 바꾸지 않는다).
 
 ## 묶음 4: 판단 노드
 
-**목표:** `brain` 노드가 `/world/state`·`/world/changes`·`/act/status`·`/phone/heard`를 받아 판단하고(`/brain/decision`), 계획 전 검사와 계획 모드를 돌려 `/brain/plan`을 낸다. 실행 추적은 `/brain/plan`을 받아 실행 전 검사·실행만 한다. 「그만」이 계획 만드는 중이면 `act`가 `/brain/cancel`을 낸다. LLM 호출(PAM·계획 모드)은 콜백에서 시작만 하고, 답은 그 노드에 메시지로 돌아와 `req`로 맞춘다(실행기 줄을 오래 막지 않는다).
+**목표:** `brain` 노드가 `/world/state`·`/world/changes`·`/act/status`·`/phone/heard`를 받아 판단하고(`/brain/decision`), 계획 전 검사와 계획 모드를 돌려 `/brain/plan`을 낸다. 실행 추적은 `/brain/plan`을 받아 실행 전 검사·실행만 한다. 「그만」이 계획 만드는 중이면 `act`가 `/brain/cancel`을 낸다. LLM 호출(PAM·계획 모드)은 `node.spawn()`으로 띄워 노드 수명 신호를 받고(stop이 끊고 기다림), 답은 `node.post()`로 줄에 넣어 `req`로 맞춘다(실행기 줄을 오래 막지 않는다).
 
 **바뀌는 자리:** `Decider`의 `hold`(`tracker.waiting()·coaching()`) → `/act/status`, `keepHeard` → `/phone/heard`, `onDecision` → `/brain/decision`, 생각 메시지 → `/brain/thought`, PAM 연결 → `/brain/link`, 반성은 `brain` 노드의 하루 끝 타이머(끝내기 계약으로 끊는다).
 
@@ -1892,9 +2259,9 @@ Expected: 모두 PASS(이 묶음은 집 실행 묶음을 바꾸지 않는다).
 
 ## 묶음 5: 가전 노드
 
-**목표:** `devices` 노드가 허브(`signals`)를 가지고 `/device/command`를 받아 실행해 `/device/result`, 상태는 `/device/state`(STATE, 기기마다)·`/device/changes`(RELIABLE)로 낸다. 위험 목록 명령은 승인 토큰이 있어야 한다(지금 `deviceRunner`·정책과 같음). 말로 시킨 가전(대화, `phone` 노드)도 같은 토픽을 쓴다. 한 번만 실행(이 계획 14): 실행 전 「시작함」 기록 → 실행 → 결과 보관 → ack. 다시 온 명령은 보관한 결과를 다시 내고, 「시작함」만 있으면 `unknown`, 기한이 지났으면 `expired`. 보관은 `RedisBus`면 `noonchi:<boot>:device_results` 해시, `MemoryBus`면 노드 안 표(같은 기동 안).
+**목표:** `devices` 노드가 허브(`signals`)를 가지고 `/device/command`를 받아 실행해 `/device/result`, 상태는 `/device/state`(STATE, 기기마다)·`/device/changes`(RELIABLE)로 낸다. 위험 목록 명령은 승인 토큰이 있어야 한다(지금 `deviceRunner`·정책과 같음). 말로 시킨 가전(대화, `phone` 노드)도 같은 토픽을 쓴다. 한 번만 실행(이 계획 14): 실행 전 「시작함」 기록 → 실행 → 결과 보관 → ack. 다시 온 명령은 보관한 결과를 다시 내고, 「시작함」만 있으면 `unknown`, 기한이 지났으면 `expired`. 원장은 통로와 상관없이 기록 DB의 `device_commands` 표(기동·`command_id`·시작함·결과)다. 「시작함」은 실행 전에 커밋하고, 결과는 실행 뒤 커밋한 다음 `/device/result`를 내고 ack한다.
 
-**시험:** `tests/devices-node.test.ts`(승인 토큰 없는 위험 명령 거절, 같은 `command_id`가 다시 와도 허브에 한 번만 보냄 — 실행 뒤 ack 전에 노드를 끝내고 다시 띄운 경우 포함, 기한 지난 명령은 보내지 않고 `expired`, 늦게 붙은 노드가 모든 기기 상태를 받음), 기존 `tests/agent.test.ts` 「Agent + 승인 규칙」, `tests/act-track.test.ts` 기기 단계 통과.
+**시험:** `tests/devices-node.test.ts`(승인 토큰 없는 위험 명령 거절, 같은 `command_id`가 다시 와도 허브에 한 번만 보냄 — 실행 뒤 ack 전에 노드를 끝내고 다시 만든 경우(새 노드가 같은 기록 DB 원장을 봄)와 실행 중 끊겨 「시작함」만 있는 경우(`unknown`) 포함, 기한 지난 명령은 보내지 않고 `expired`, 늦게 붙은 노드가 모든 기기 상태를 받음), 기존 `tests/agent.test.ts` 「Agent + 승인 규칙」, `tests/act-track.test.ts` 기기 단계 통과.
 
 **끝 조건:** 묶음 공통 + 기록 DB 같음 시험 + `signals`를 `src/devices` 밖에서 가져오지 않는다.
 
@@ -1920,7 +2287,9 @@ Expected: 모두 PASS(이 묶음은 집 실행 묶음을 바꾸지 않는다).
 | 가전 명령이 두 번 실행된다 | `command_id` 결과 보관·「시작함」·기한(이 계획 14) |
 | Redis 메모리가 가득 차 RELIABLE을 잃는다 | `noeviction`(가득 차면 발행 오류, 지우지 않음), 처리 뒤 `XTRIM MINID`, SENSOR·STATE 알림은 `MAXLEN ~`. 발행 오류는 그 콜백 실패라 다시 받는다 |
 | 사진이 디스크에 남는다 | Redis 디스크 저장 끔 + 켜질 때 확인(정한 것 9), 녹화는 사진 칸을 뺀다(`tests/record-bag.test.ts`, `tests/no-frames-on-disk.test.ts`) |
-| Redis가 다시 켜져 그룹·상태가 사라진다 | `NOGROUP` 복구·STATE 다시 읽기(이 계획 15). 디스크 저장을 끄므로 그 사이 메시지는 잃는다: noonchi와 같이 켜지고 꺼지므로 운영에서는 같이 다시 띄운다 |
+| Redis가 다시 켜져 그룹·상태가 사라진다 | 기동 표시 열쇠·`NOGROUP`으로 알아채 그 기동을 멈추고 새 기동으로 다시 띄운다(이 계획 15). 되살려 잇지 않는다. 디스크 저장을 끄므로 그 사이 메시지는 잃는다: noonchi와 같이 켜지고 꺼지므로 운영에서는 같이 다시 띄운다 |
+| 상태를 기다리던 변화·처리 중 메시지를 잃는다 | 내려놓은 변화도 처리한 뒤에 ack(`ctx.defer()`), 실패한 메시지는 뒤 메시지보다 먼저 다시 줌(이 계획 7) |
+| 다시 온 메시지로 반성용 줄이 두 번 남는다 | 기록 줄과 처리표를 한 트랜잭션(이 계획 18) |
 | 반성 입력(기록 DB)이 빠진다 | 반성용 종류는 모두 RELIABLE + 쓴 뒤 ack, SENSOR 녹화는 커서 + 놓친 수 기록, 기록 DB 같음 시험(묶음 2·3) |
 | 실행기가 한 줄이라 느린 콜백(LLM)이 노드를 막는다 | LLM 호출은 시작만 하고 답은 메시지로(묶음 4) |
 | 재생이 실제 가전·실제 통로를 건드린다 | 격리 실행기·허용 목록·dry-run(이 계획 17) |
@@ -1929,6 +2298,6 @@ Expected: 모두 PASS(이 묶음은 집 실행 묶음을 바꾸지 않는다).
 
 ## Self-Review
 
-- 사용자 결정: 정한 것 1~14(Redis 디스크 저장 끔·확인 시험, 「다시 주기」는 같은 기동 안, 기록 DB 빠짐없이·SENSOR 커서·놓친 수·상한 근거·같음 시험, 개발용 Docker Redis). Codex 15개: 「검토 반영」 표.
+- 사용자 결정: 정한 것 1~14(Redis 디스크 저장 끔·확인 시험, 「다시 주기」는 같은 기동 안, 기록 DB 빠짐없이·SENSOR 커서·놓친 수·상한 근거·같음 시험, 개발용 Docker Redis). Codex c6073a6 15개·d4fe651 14개: 「검토 반영」 표 둘.
 - 근거 표: 다시 들어오기(1620be1·8a13f9f), 순서(d1ccae2·e54860d·4dc5de7), 늦은 답(292eb63·58246d8·c966b20·6a2efe9·cb07b65), 타이머(a243ea5·6fb2d1d), 끝내기(dc411ae·9f0f661).
-- 이름 맞춤: `TOPICS`·`TopicName`·`Body`·`Envelope`·`Header`·`Freshness`·`Pending`·`Bus`·`Subscription`·`Outcome`·`MemoryBus`·`RedisBus`·`assertNoPersistence`·`BusNode`·`VirtualClock`·`openBus`·`Bag`·`historyRoutes`·`startRecorder`·`REPLAY_INPUTS`·`replay`가 묶음 1 Task 1~4에서 같다.
+- 이름 맞춤: `TOPICS`·`TopicName`·`Body`·`Envelope`·`Header`·`Freshness`·`Pending`·`Bus`·`Subscription`·`Outcome`·`RETRY_MS`·`gapCounter`·`sensorBase`·`MemoryBus`(`quiet`)·`RedisBus`(`onLost`)·`assertNoPersistence`·`BusNode`(`defer`·`withState`·`spawn`·`post`·`busy`·`lost`)·`VirtualClock`(`advanceTo(ms, settle)`)·`openBus`·`Bag`(`arrivalMs`)·`historyRoutes`·`startRecorder`·`REPLAY_INPUTS`·`settle`·`replay`·`recordBrainLog`·`deviceRecorder`·`HistoryDb.once`이 묶음 1 Task 1~4에서 같다.
