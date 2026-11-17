@@ -154,12 +154,16 @@ export function planTargetId(plan: PlanView): string | null {
   return plan.steps.find((s) => s.kind === "act" && s.target?.objectId)?.target?.objectId ?? null;
 }
 
-/** 계획 단계 대상(objectId) 가운데 World State에서 그 종류인 물건 id 전부(단계 차례, 겹치지 않게). */
+/** 계획 단계 대상(objectId) 가운데 그 종류인 물건 id 전부(단계 차례, 겹치지 않게): World State에서 그 종류인 것과,
+ *  World State에 없지만 그 종류 id 꼴(cup_2)인 것(없어진 물건을 「없음」으로 막으려고). */
 export function planObjectsOf(plan: PlanView, world: WorldView, cls: ObjClass): string[] {
+  const shaped = new RegExp(`^${cls}_\\d+$`);
   const out: string[] = [];
   for (const s of plan.steps) {
     const id = s.target?.objectId;
-    if (id && !out.includes(id) && world.objects.some((o) => o.id === id && o.cls === cls)) out.push(id);
+    if (!id || out.includes(id)) continue;
+    const o = world.objects.find((x) => x.id === id);
+    if (o ? o.cls === cls : shaped.test(id)) out.push(id);
   }
   return out;
 }

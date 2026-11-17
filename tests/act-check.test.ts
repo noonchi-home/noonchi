@@ -66,6 +66,20 @@ describe("행동 조건(내용물)", () => {
     expect(checkPlan(both(cupOf("cup_2", "empty", "inferred")))).toEqual({ ok: false, reason: "unknown_contents", text: CHECK_TEXT.unknown_contents, object: "cup_2" });
     expect(checkPlan(both(cupOf("cup_2", "empty")))).toEqual({ ok: true });
   });
+  it("실행 전 검사: 계획이 다루는 컵마다 있음·치움·낡음·들고 있음을 본다(둘째 컵이 사라졌거나 치웠거나 낡았거나 손에 있으면 막는다)", () => {
+    const steps = [...fill().plan!.steps, { id: "s3", kind: "act" as const, label: "l", target: { objectId: "cup_2" }, status: "pending" as const }];
+    const both = (objects: WorldObject[]) => ({ ...fill(), plan: { ...fill().plan!, steps }, world: { ...base().world, objects } });
+    const empty = (id: string, over: Partial<WorldObject> = {}) => ({ ...cupOf(id, "empty"), ...over });
+    expect(checkPlan(both([empty("cup_1"), empty("cup_2", { status: "gone" })]))).toMatchObject({ reason: "no_target" });
+    expect(checkPlan(both([empty("cup_1")]))).toMatchObject({ reason: "no_target" });
+    expect(checkPlan(both([empty("cup_1"), empty("cup_2", { last_seen_ms: 1_000 })]))).toMatchObject({ reason: "stale" });
+    expect(checkPlan(both([empty("cup_1"), empty("cup_2", { facts: { ...empty("cup_2").facts, place: { value: "in_hand", at_ms: 9_000, since_ms: 9_000, certainty: "confirmed" } } })]))).toMatchObject({ reason: "in_hand" });
+    expect(checkPlan({ ...both([empty("cup_1"), empty("cup_2")]), placed: new Map([["cup_2", { target: "sink_1", atMs: 9_000 }]]) })).toMatchObject({ reason: "in_sink" });
+  });
+  it("계획 전 검사: 내용물 후보는 지금 보이는(10초 안에 본) 컵만이다(오래전 시야 밖 빈 컵으로 지금 보이는 찬 컵을 통과시키지 않는다)", () => {
+    const i = { ...fill(), world: { ...base().world, objects: [{ ...cupOf("cup_1", "empty"), status: "out_of_view" as const, last_seen_ms: 1_000 }, cupOf("cup_2", "has_contents", "confirmed", 30_000)] } };
+    expect(checkDecision({ decision: i.decision, tasks: i.tasks, world: i.world, nowMs: 31_000 })).toMatchObject({ reason: "contents_mismatch" });
+  });
 });
 
 describe("실행 전 검사", () => {
