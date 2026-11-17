@@ -145,7 +145,7 @@ export class Starter extends Part {
       asking: null, askAt: now, watch: null, others, alias: new Map([...ids].map((id) => [id, id])), carried: new Set(), placeAt: (id) => (id ? this.o.floor().objects.get(id)?.position ?? null : null), deadline: now, again: false, device: "idle", gen: 0,
       looks: 0, lookAt: Number.NEGATIVE_INFINITY, stepEnd: null, gapAt: job.at, onAt: new Map(), ends: new Map(), offAsked: -1, deferred: false, phoneWait: false, phone: false,
       strays: 0, strayAt: Number.NEGATIVE_INFINITY, strayNear: null, told: null, helped: false,
-      quiet: taskOf(r.plan.task)?.coach ? quietLabels(this.o.lessons?.get(r.plan.task) ?? null) : new Set(), quietOn: false, outcomes: [], hold: null, window: null, heldIds: new Set(), busyAt: null, usedAt: null,
+      quiet: taskOf(r.plan.task)?.coach ? quietLabels(this.o.lessons?.get(r.plan.task) ?? null) : new Set(), quietOn: false, outcomes: [], hold: null, window: null, heldIds: new Set(), busyAt: null, usedAt: null, useHeld: false,
       // 계획 전 찾기에서 찾은 뒤 만든 계획이면 찾기로 붙잡았던 계획처럼 첫 명령을 폰 대화·승인 대기 동안 미룬다
       find: null, findHeld: core.foundFor === d.id,
     };
@@ -214,8 +214,8 @@ export class Starter extends Part {
     }
     this.core.contents.release(r);
     this.core.finder.release(r);
-    // 보류·찾기에서 풀린 계획은 폰 대화·승인 대기가 없을 때만 첫 명령을 보낸다(다른 대화를 덮지 않는다). 미룬 지 holdMs가 지나면 닫는다
-    if ((r.heldIds.size > 0 || r.findHeld) && ((this.o.talking?.() ?? false) || (this.o.approvalsWaiting?.() ?? false))) {
+    // 보류·찾기·쓰는 중 기다림에서 풀린 계획은 폰 대화·승인 대기가 없을 때만 첫 명령을 보낸다(다른 대화를 덮지 않는다). 미룬 지 holdMs가 지나면 닫는다
+    if ((r.heldIds.size > 0 || r.findHeld || r.useHeld) && ((this.o.talking?.() ?? false) || (this.o.approvalsWaiting?.() ?? false))) {
       const now = this.clock.now();
       this.core.contents.clearPeek(r);
       this.core.finder.clearFind(r);

@@ -21,6 +21,7 @@ import { PlanHub } from "../src/act/hub.js";
 import { APPROVAL_TEXT, CAUTION_TEXT, CHECK_TEXT, EXEC_TEXT, CAUTION_LINE, PEEK_TEXT, STEP_COMMAND, STEP_LABEL, USE_THOUGHT, type TellMode } from "../src/act/labels.js";
 import { CONTENTS_HOLD, PEEK } from "../src/act/track/contents.js";
 import { FIND } from "../src/act/track/find.js";
+import { USE_LEAVE_MS } from "../src/act/track/use.js";
 import { PHONE_PROTOCOL } from "../src/phone/protocol.js";
 /** 인덕션 켜기 전 질문(서버 글). */
 const ASK_ON = "냄비와 상판이 뜨거워져요. 인덕션을 켤까요?";
@@ -4451,9 +4452,9 @@ describe("실행 추적: 사람이 쓰는 물건은 그 사람이 사라질 때�
   const fact = (value: string, at = 9_000) => ({ value, at_ms: at, since_ms: at, certainty: "confirmed" as const });
   const NOONCHI = ["컵 치우기", "사용자에게 물어보기", "세탁물 건조기로 옮기기", "에어컨 켜기", "컵 그대로 두기", "컵에 물 채워 주기", "컵에 콜라 따라 주기"];
   const mug = (): WorldObject => ({ ...cup("present", "on_table", 9_000), facts: { body: fact("opaque"), contents: fact("contents_unknown"), place: fact("on_table") }, contents_gen: 2 });
-  type Who = { act?: string; holding?: string[] } | null;
-  /** 식탁에 불투명 컵 cup_1(내용물 모름)이 있는 집. who로 사람을 바꾼다(null이면 안 보임, act 활동, holding 든 물건 id). 사람이 새로 보이면 그때가 since_ms다.
-   *  폰 눈은 컵 [2, 1]에서 1m. thoughts: 생각 말풍선에 올린 글. */
+  type Who = { act?: string; holding?: string[]; count?: number; factAt?: number } | null;
+  /** 식탁에 불투명 컵 cup_1(내용물 모름)이 있는 집. who로 사람을 바꾼다(null이면 안 보임, act 활동, holding 든 물건 id, count 보인 사람 수(기본 1),
+   *  factAt 활동·듦 사실을 찍은 때(기본 지금)). 사람이 새로 보이면 그때가 since_ms다. 폰 눈은 컵 [2, 1]에서 1m. thoughts: 생각 말풍선에 올린 글. */
   function useSetup(o: { objects?: () => WorldObject[]; over?: Parameters<typeof setup>[0] } = {}) {
     let who: Who = null;
     let since = 0;
@@ -4462,8 +4463,9 @@ describe("실행 추적: 사람이 쓰는 물건은 그 사람이 사라질 때�
     const w = (): WorldView => {
       const base = world((o.objects ?? (() => [mug()]))());
       if (!who) return base;
-      const facts = { ...(who.act ? { activity: fact(who.act, clockAt.t) } : {}), ...(who.holding ? { holding: fact("holding_object", clockAt.t) } : {}) };
-      return { ...base, person: { ...base.person, visible: true, since_ms: since, holding: who.holding ?? [], facts } };
+      const at = who.factAt ?? clockAt.t;
+      const facts = { ...(who.act ? { activity: fact(who.act, at) } : {}), ...(who.holding ? { holding: fact("holding_object", at) } : {}) };
+      return { ...base, person: { ...base.person, visible: true, since_ms: since, last_seen_ms: clockAt.t, count: who.count ?? 1, holding: who.holding ?? [], facts } };
     };
     const s = setup({ w, tasks: () => NOONCHI, thought: (text) => thoughts.push(text), lookContents: () => true, topReady: () => false, ...o.over });
     s.t.onEye([3, 1]);
@@ -4536,5 +4538,49 @@ describe("실행 추적: 사람이 쓰는 물건은 그 사람이 사라질 때�
     for (let i = 0; i * 1000 <= CONTENTS_HOLD.holdMs + 1000; i++) s.tick(1000);
     expect(s.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-1", state: "failed", text: EXEC_TEXT.inUseLong });
     expect(s.commands()).toEqual([]);
+  });
+
+  // Codex(65d1360 use.ts:32): 컵을 쓰던 A가 떠나도 B가 남아 사람이 보이면 풀리지 않았다
+  it("컵을 쓴 사람이 떠나고 다른 사람이 남으면(보인 사람 수가 USE_LEAVE_MS 넘게 줄면) 풀고, 떠나기 전에 본 근거로 다시 붙잡지 않는다", () => {
+    const s = useSetup();
+    s.who({ act: "drinking", count: 2 });
+    s.tick();
+    const drankAt = s.clock.t;
+    s.who({ act: "drinking", count: 1, factAt: drankAt });
+    for (let i = 0; i * 250 < USE_LEAVE_MS - 500; i++) s.tick();
+    expect(s.commands()).toEqual([]);
+    for (let i = 0; i < 8; i++) s.tick();
+    expect(s.last()).toMatchObject({ id: "peek:1", text: PEEK_TEXT.go("컵") });
+    expect(s.thoughts).toHaveLength(1);
+  });
+
+  // Codex(65d1360 use.ts:25): 종류로 지켜 cup_1을 쓰면 다른 cup_2도 막혔다
+  it("쓰는 물건을 알면 그 물건만 지킨다: cup_1을 들면 cup_2는 가까이 가서 보고, 무엇을 들었는지 모르면 컵 모두 기다린다", () => {
+    const two = () => [mug(), { ...mug(), id: "cup_2", position: [2.5, 0.75, 1] as [number, number, number], last_seen_ms: 9_500 }];
+    const known = useSetup({ objects: two });
+    known.who({ holding: ["cup_1"] });
+    known.tick();
+    expect(known.last()).toMatchObject({ id: "peek:1", step: expect.stringContaining(":peek:cup_2:") });
+    const unknown = useSetup({ objects: two });
+    unknown.who({ holding: [] });
+    for (let i = 0; i < 20; i++) unknown.tick();
+    expect(unknown.commands()).toEqual([]);
+  });
+
+  // Codex(65d1360 use.ts:64, start.ts:218): 쓰는 중 기다림이 풀리면 폰 대화 중에도 첫 명령이 나갔다
+  it("쓰는 중이라 미룬 계획은 풀려도 폰 대화·승인 대기 중이면 첫 명령을 더 미룬다", async () => {
+    let talking = false;
+    const s = useSetup({ objects: () => [cup("present", "on_table", 9_000)], over: { talking: () => talking } });
+    s.who({ holding: ["cup_1"] });
+    s.tick();
+    await s.decide(decision);
+    expect(s.commands()).toEqual([]);
+    talking = true;
+    s.who(null);
+    for (let i = 0; i < 4; i++) s.tick();
+    expect(s.commands()).toEqual([]);
+    talking = false;
+    s.tick();
+    expect(s.last()).toMatchObject({ id: "plan:pam-1", text: "식탁으로 가 주세요" });
   });
 });

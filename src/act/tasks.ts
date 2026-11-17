@@ -153,22 +153,39 @@ export const USE_ACTS: Readonly<Partial<Record<StateKey, readonly string[]>>> = 
 /** 사람이 그 종류를 쓰는 까닭: 활동(act, USE_ACTS), 들고 있음(holding), 그 물건·가전이 쓰는 중으로 보임(using). */
 export type UseWhy = { kind: "act"; act: StateKey } | { kind: "holding" } | { kind: "using" };
 
-/** 사람이 그 종류(물건·가전)를 지금 쓰는 중인가와 그 까닭. 쓰는 중 지킴의 기준은 여기 하나다(실행 추적 src/act/track/use.ts가 사람이 사라질 때까지 붙잡는다).
- *  사람이 보일 때만, 그 사람이 나타난 뒤(since_ms) 찍힌 사진의 사실로 본다(사라지기 전 사진의 늦은 답은 다음 등장의 근거가 아니다):
- *  - 활동: 그 종류를 쓰는 활동(USE_ACTS, 마시는 중).
- *  - 들고 있음: 사람이 그 종류나 무엇인지 모르는 물건을 든다(holdsTarget), 그 종류 물건이나 후보 자리(sightings)를 손에 든 채 봤다.
- *  - 쓰는 중: 그 종류 물건·가전이 쓰는 중(use in_use)으로 보였다(전자레인지를 쓰는 사람). */
-export function usingNow(world: WorldView, cls: string): UseWhy | null {
+/** 사람이 쓰는 것: 까닭과 쓰는 물건 id(World State 물건으로 알 때). ids가 null이면 무엇을 쓰는지 몰라 그 종류 전체다. */
+export interface Use { why: UseWhy; ids: string[] | null }
+
+/** 사람이 그 종류(물건·가전)를 지금 쓰는 중인가와 그 까닭·물건. 쓰는 중 지킴의 기준은 여기 하나다(실행 추적 src/act/track/use.ts가 쓴 사람이 떠날 때까지 붙잡는다).
+ *  사람이 보일 때만, 그 사람이 나타난 뒤(since_ms)와 after 뒤에 찍힌 사진의 사실로 본다(사라지기 전·쓴 사람이 떠나기 전 사진의 늦은 답은 근거가 아니다):
+ *  - 활동: 그 종류를 쓰는 활동(USE_ACTS, 마시는 중). 손에 든 그 종류 물건이 있으면 그 물건, 없으면 종류 전체.
+ *  - 들고 있음: 사람이 그 종류나 무엇인지 모르는 물건을 든다(holdsTarget, 든 id가 World State 물건이면 그 물건, 모르면 종류 전체),
+ *    그 종류 물건을 손에 든 채 봤다(그 물건), 후보 자리(sightings)를 손에 든 채 봤다(종류 전체).
+ *  - 쓰는 중: 그 종류 물건이 쓰는 중(use in_use)으로 보였다(그 물건), 그 종류 가전이 쓰는 중(종류 전체: 전자레인지를 쓰는 사람). */
+export function usingNow(world: WorldView, cls: string, after = Number.NEGATIVE_INFINITY): Use | null {
   const p = world.person;
   if (!p.visible) return null;
-  const from = p.since_ms ?? Number.NEGATIVE_INFINITY;
+  const from = Math.max(p.since_ms ?? Number.NEGATIVE_INFINITY, after);
   const fresh = (f: WorldFact | undefined, value: string) => f?.value === value && f.at_ms >= from;
-  const act = p.facts.activity;
-  if (act && act.at_ms >= from && USE_ACTS[act.value as StateKey]?.includes(cls)) return { kind: "act", act: act.value as StateKey };
   const mine = world.objects.filter((o) => o.cls === cls);
-  if ((fresh(p.facts.holding, "holding_object") && holdsTarget(world, cls)) || mine.some((o) => fresh(o.facts.place, "in_hand"))
-    || (world.sightings ?? []).some((s) => s.cls === cls && s.in_hand && s.at_ms >= from)) return { kind: "holding" };
-  if (mine.some((o) => fresh(o.facts.use, "in_use")) || world.fixtures.some((f) => f.cls === cls && fresh(f.facts.use, "in_use"))) return { kind: "using" };
+  const inHand = mine.filter((o) => fresh(o.facts.place, "in_hand")).map((o) => o.id);
+  const known = (ids: string[]) => {
+    const ok = [...new Set(ids)].filter((id) => mine.some((o) => o.id === id));
+    return ok.length ? ok : null;
+  };
+  const act = p.facts.activity;
+  if (act && act.at_ms >= from && USE_ACTS[act.value as StateKey]?.includes(cls)) return { why: { kind: "act", act: act.value as StateKey }, ids: known(inHand) };
+  if (fresh(p.facts.holding, "holding_object") && holdsTarget(world, cls)) {
+    const held = p.holding.filter((id) => id.replace(/_\d+$/, "") === cls);
+    // 든 것 가운데 World State 물건이 아닌 id(확인 전 물건)나 무엇인지 모르는 듦이 있으면 어느 물건인지 몰라 종류 전체다
+    const unknown = held.length === 0 || held.some((id) => !mine.some((o) => o.id === id));
+    return { why: { kind: "holding" }, ids: unknown ? null : known([...held, ...inHand]) };
+  }
+  if (inHand.length) return { why: { kind: "holding" }, ids: inHand };
+  if ((world.sightings ?? []).some((s) => s.cls === cls && s.in_hand && s.at_ms >= from)) return { why: { kind: "holding" }, ids: null };
+  const used = mine.filter((o) => fresh(o.facts.use, "in_use")).map((o) => o.id);
+  if (used.length) return { why: { kind: "using" }, ids: used };
+  if (world.fixtures.some((f) => f.cls === cls && fresh(f.facts.use, "in_use"))) return { why: { kind: "using" }, ids: null };
   return null;
 }
 

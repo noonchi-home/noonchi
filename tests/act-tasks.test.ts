@@ -169,20 +169,24 @@ describe("사람이 그 물건을 쓰는 중인가(usingNow, 쓰는 중 지킴�
     return { ...w, ...extra, person: { ...w.person, visible: p.visible ?? true, since_ms: 5_000, holding: p.holding ?? [], facts: p.facts ?? {} } };
   };
   it("사람이 보이고 마시는 중이면 컵·병을 쓰는 중이고(활동), 그 종류를 들거나 손에 든 채 봤으면 들고 있음이다", () => {
-    expect(usingNow(person([cupAt()], { facts: { activity: seen("drinking") } }), "cup")).toEqual({ kind: "act", act: "drinking" });
-    expect(usingNow(person([cupAt()], { facts: { activity: seen("drinking") } }), "bottle")).toEqual({ kind: "act", act: "drinking" });
-    expect(usingNow(person([cupAt()], { facts: { holding: seen("holding_object") }, holding: ["cup_1"] }), "cup")).toEqual({ kind: "holding" });
-    expect(usingNow(person([cupAt({ facts: { place: seen("in_hand", 6_000) } })]), "cup")).toEqual({ kind: "holding" });
+    expect(usingNow(person([cupAt()], { facts: { activity: seen("drinking") } }), "cup")).toEqual({ why: { kind: "act", act: "drinking" }, ids: null });
+    expect(usingNow(person([cupAt()], { facts: { activity: seen("drinking") } }), "bottle")).toEqual({ why: { kind: "act", act: "drinking" }, ids: null });
+    // 마시는 중에 손에 든 컵이 보이면 그 컵이다
+    expect(usingNow(person([cupAt({ facts: { place: seen("in_hand", 6_000) } })], { facts: { activity: seen("drinking") } }), "cup")).toEqual({ why: { kind: "act", act: "drinking" }, ids: ["cup_1"] });
+    expect(usingNow(person([cupAt()], { facts: { holding: seen("holding_object") }, holding: ["cup_1"] }), "cup")).toEqual({ why: { kind: "holding" }, ids: ["cup_1"] });
+    expect(usingNow(person([cupAt({ facts: { place: seen("in_hand", 6_000) } })]), "cup")).toEqual({ why: { kind: "holding" }, ids: ["cup_1"] });
+    // 든 id가 World State 물건이 아니면(확인 전 물건) 어느 컵인지 몰라 종류 전체다
+    expect(usingNow(person([cupAt()], { facts: { holding: seen("holding_object") }, holding: ["cup_9"] }), "cup")).toEqual({ why: { kind: "holding" }, ids: null });
     // 확인 전 후보 자리를 손에 든 채 봤다(ccd08c9의 「손에 든 채 본 자리」)
     const sighting = { cls: "cup" as const, position: [7, 0.75, 3] as [number, number, number], surface: null, surface_label: null, at_ms: 6_000, in_hand: true };
-    expect(usingNow(person([], {}, { sightings: [sighting] }), "cup")).toEqual({ kind: "holding" });
+    expect(usingNow(person([], {}, { sightings: [sighting] }), "cup")).toEqual({ why: { kind: "holding" }, ids: null });
     // 무엇을 들었는지 모르면 그 종류를 든 것으로 본다(식탁에 컵이 보여도: 실제 판 real4에서 든 컵을 못 가려 가까이 가기가 나갔다)
-    expect(usingNow(person([], { facts: { holding: seen("holding_object") } }), "cup")).toEqual({ kind: "holding" });
-    expect(usingNow(person([cupAt()], { facts: { holding: seen("holding_object") } }), "cup")).toEqual({ kind: "holding" });
+    expect(usingNow(person([], { facts: { holding: seen("holding_object") } }), "cup")).toEqual({ why: { kind: "holding" }, ids: null });
+    expect(usingNow(person([cupAt()], { facts: { holding: seen("holding_object") } }), "cup")).toEqual({ why: { kind: "holding" }, ids: null });
     // 그 물건·가전이 쓰는 중으로 보였다(전자레인지를 쓰는 사람)
     const microwave = { id: "microwave_kitchen", cls: "microwave" as const, room: "kitchen", room_label: "주방", device: null, first_seen_ms: 0, last_seen_ms: 6_000, facts: { use: seen("in_use", 6_000) }, answered_ms: null };
-    expect(usingNow(person([], {}, { fixtures: [microwave] }), "microwave")).toEqual({ kind: "using" });
-    expect(usingNow(person([cupAt({ facts: { use: seen("in_use", 6_000) } })]), "cup")).toEqual({ kind: "using" });
+    expect(usingNow(person([], {}, { fixtures: [microwave] }), "microwave")).toEqual({ why: { kind: "using" }, ids: null });
+    expect(usingNow(person([cupAt({ facts: { use: seen("in_use", 6_000) } })]), "cup")).toEqual({ why: { kind: "using" }, ids: ["cup_1"] });
   });
   it("다른 종류를 쓰는 것, 사람이 나타나기 전에 본 사실, 사람이 안 보일 때는 쓰는 중이 아니다", () => {
     expect(usingNow(person([cupAt()], { facts: { holding: seen("holding_object") }, holding: ["book_1"] }), "cup")).toBeNull();
@@ -190,6 +194,9 @@ describe("사람이 그 물건을 쓰는 중인가(usingNow, 쓰는 중 지킴�
     expect(usingNow(person([cupAt()], { facts: { activity: seen("drinking", 4_000) } }), "cup")).toBeNull();
     // 사람이 사라지기 전 사진의 늦은 VLM 답(든 물건 있음)은 다시 나타난 사람의 근거가 아니다(Codex 8944cb6 find.ts:356)
     expect(usingNow(person([], { facts: { holding: seen("holding_object", 4_500) } }), "cup")).toBeNull();
+    // 쓴 사람이 떠나 푼 뒤(after)에는 그 뒤에 찍힌 근거만 본다
+    expect(usingNow(person([cupAt()], { facts: { activity: seen("drinking", 6_000) } }), "cup", 7_000)).toBeNull();
+    expect(usingNow(person([cupAt()], { facts: { activity: seen("drinking", 8_000) } }), "cup", 7_000)).not.toBeNull();
     expect(usingNow(person([cupAt({ facts: { place: seen("in_hand", 4_000) } })]), "cup")).toBeNull();
     expect(usingNow(person([cupAt()], { visible: false, facts: { activity: seen("drinking") } }), "cup")).toBeNull();
   });
