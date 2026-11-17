@@ -35,8 +35,8 @@ describe("MemoryBus", () => {
       return "ack";
     });
     s.start();
-    await bus.publish(env("/world/changes", { rev: 1 }, 1));
-    await bus.publish(env("/world/changes", { rev: 2 }, 2));
+    await bus.publish(env("/world/changes", { rev: 1, changes: [] }, 1));
+    await bus.publish(env("/world/changes", { rev: 2, changes: [] }, 2));
     await until(() => got.length === 2);
     expect(got).toEqual([1, 2]);
     await bus.close();

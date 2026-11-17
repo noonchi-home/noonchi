@@ -3,6 +3,7 @@
 // 부분은 이 객체를 받는 작은 클래스(Part)이고 서로를 이 객체의 칸으로 부른다. 부분끼리는 값 import가 없다(WorldState가 만들어 잇는다, world.ts).
 import type { Facet, FixtureClass, ObjClass, WorldFact, WorldObject } from "../../contract/world.js";
 import type { Detection } from "../../contract/observe.js";
+import { OBJ_CLASSES, accepts } from "../accept.js";
 import { Confirmer, EVIDENCE_STEP_MS } from "../confirm.js";
 import { objectName } from "../labels.js";
 import { FALL_DEFAULTS, FallWatch, type FallConfig } from "../fall.js";
@@ -21,7 +22,7 @@ export type Plan2 = [number, number];
 export type Facts = Partial<Record<Facet, WorldFact>>;
 
 export const KEYS = Object.keys(CLASSES) as ClassKey[];
-export const OBJ_CLASSES: ReadonlySet<string> = new Set(KEYS.filter((k) => CLASSES[k].role === "object"));
+export { OBJ_CLASSES };
 export const PERSON = "person";
 /** 가까이 보기로 찾거나 고친 물건은 이만큼(ms, 촬영 시각 기준) 전체 사진에서 못 봐도 사라짐으로 세지 않는다(전체 사진의 감지기는 그 물건을 못 본다). */
 export const CLOSER_HOLD_MS = 30_000;
@@ -140,10 +141,9 @@ export class WorldCore {
     this.confirmer = new Confirmer((key) => (key === PERSON ? 2 : 3), this.stepMs);
   }
 
-  /** 이 감지를 받는가: 낱말 표의 사람·물건·가전 설비 종류이고 그 종류의 최소 신뢰도 이상. 관찰 흐름은 받는 감지만 상자·YOLO 글·VLM 감지 목록에 싣는다. */
+  /** 이 감지를 받는가(src/world/accept.ts accepts). */
   accepts(d: Pick<Detection, "label" | "score">): boolean {
-    const c = (CLASSES as Record<string, (typeof CLASSES)[ClassKey] | undefined>)[d.label];
-    return !!c && c.role !== "scene" && d.score >= c.minScore;
+    return accepts(d);
   }
 
   /** 첫 프레임 시각을 사람 「안 보임」의 시작으로 둔다. */

@@ -2659,9 +2659,9 @@ Task 1 뒤 RedisBus 한 번 지나기는 같은 크기 맨 전달과 p50이 같�
 
 **Files:** Modify `src/contract/world.ts`, `src/bus/topics.ts`, `src/world/state/core.ts`·`closer.ts`(`accepts`·`closerObject`를 `src/world/accept.ts` 함수로), `src/world/index.ts`. Test: `tests/bus-topics.test.ts`, `tests/world-accept.test.ts`.
 
-- [ ] 실패 시험: `/perception/scene`은 갈래 다섯(`scene`·`missing`·`closer_scene`·`closer_end`·`top`)만 받고 `jpeg`·`jpeg_b64` 칸이 있으면 거절한다. `/perception/detections`는 미니맵 물체 모양(`seen` 사건)만 받는다. `/world/state`는 `{rev, view}`, `/world/changes`는 `{rev, changes}`, `/world/input`은 `guard`·`contents`, `/phone/heard`는 `{text, observed_ms}`, `/device/changes`는 `{id, state, initial}`만 받는다. `accepts`·`closerObject` 함수가 지금 `WorldState` 메서드와 같은 답을 낸다(낱말 표 모든 종류 × 점수 경계).
-- [ ] 구현: 계약 타입과 zod 모양(`z.ZodType<…>` 주석으로 계약과 묶음), 상태 없는 함수로 빼고 `WorldState`는 그 함수를 부른다.
-- [ ] 통과 확인: `npm run heavy -- npx vitest run tests/bus-topics.test.ts tests/world-accept.test.ts tests/world-state.test.ts`. 커밋·push.
+- [x] 실패 시험: `/perception/scene`은 갈래 다섯(`scene`·`missing`·`closer_scene`·`closer_end`·`top`)만 받고 `jpeg`·`jpeg_b64` 칸이 있으면 거절한다. `/perception/detections`는 미니맵 물체 모양(`seen` 사건의 프레임 id·크기·모양 + `observed_ms`)만 받는다. `/world/state`는 `{rev, view}`, `/world/changes`는 `{rev, changes}`, `/world/input`은 `guard`·`contents`, `/phone/heard`는 `{text, observed_ms}`, `/device/changes`는 `{id, state, note}`(묶음 1 기록 노드와 같은 모양)만 받는다. `accepts`·`closerObject` 함수가 지금 `WorldState` 메서드와 같은 답을 낸다(낱말 표 모든 종류 × 점수 경계). 기록 노드는 `/world/changes`의 `WorldChange`를 지금과 같은 `world_change` 줄로 쓰고, 프레임마다 분석 없음은 쓰지 않고 들은 말은 `HEARD_MARK`만 쓴다.
+- [x] 구현: 계약 타입(`SceneInput`·`WorldInput`·`WorldStateMsg`·`WorldChangesMsg`·`FrameMeta`)과 zod 모양, `src/bus/topics.ts` `TopicBodiesSame`(`Assert<Equal<…>>`)로 계약과 같음을 tsc가 본다. `/world/state`의 보기는 깊이 검사하지 않는다(18KB, 지나기마다 세 번 검사). 상태 없는 함수로 빼고 `WorldState`는 그 함수를 부른다.
+- [x] 통과 확인: `tests/bus-topics.test.ts`·`tests/world-accept.test.ts`·`tests/world-state.test.ts`·`tests/world-closer.test.ts`·통로·기록 시험, typecheck, lint. 커밋(push는 조정자가 한다).
 
 ### Task 3: 집 상태 노드
 

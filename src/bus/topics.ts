@@ -1,7 +1,12 @@
 // 토픽 표(ROS 2 토픽·QoS처럼): 이름, QoS(SENSOR·STATE·RELIABLE), 몸 모양(zod), 열쇠, 순서 기준, 보내는 노드, 사진 칸.
 // 토픽을 더할 때는 이 표 하나에 더한다. qos가 없으면 satisfies에서 타입 오류다. 사진(jpeg_b64)이 든 토픽은 SENSOR만.
 // 몸 모양은 그 토픽을 옮기는 묶음에서 실제 모양으로 바꾼다(그 전에는 객체인지와 순서 칸만 본다).
+// 실제 모양으로 바꾼 토픽은 계약(src/contract)의 타입과 같은지 아래 Assert로 tsc가 본다(한쪽만 바꾸면 tsc 실패).
 import { z } from "zod";
+import type { DeviceState } from "../contract/devices.js";
+import type { SeenEvent } from "../contract/events.js";
+import type { SceneInput, VlmMissing, WorldChange, WorldChangeKind, WorldChangesMsg, WorldInput, WorldStateMsg, WorldView } from "../contract/world.js";
+import { CLASSES, SCENE_STATES, type DetLabel } from "../world/vocab.js";
 
 export const NODES = ["phone", "perception", "world", "brain", "act", "devices", "recorder"] as const;
 export type NodeName = (typeof NODES)[number];
@@ -23,23 +28,75 @@ export const MAX_FRAME_B64 = 700_000;
 const B64 = /^[A-Za-z0-9+/]*={0,2}$/;
 const obj = z.looseObject({});
 const observed = z.looseObject({ observed_ms: z.number().finite() });
-const revved = z.looseObject({ rev: z.number().int().nonnegative() });
 const frame = z.looseObject({
   jpeg_b64: z.string().max(MAX_FRAME_B64).regex(B64), width: z.number().int().positive(), height: z.number().int().positive(), observed_ms: z.number().finite(),
 });
 const one = () => "_";
 const by = (k: string) => (b: Record<string, unknown>) => String(b[k] ?? "_");
 
+// 묶음 2: 인식·집 상태 토픽의 실제 모양. 사진 칸(jpeg·jpeg_b64)은 strict라 거절된다.
+const at = z.number().finite();
+const id = z.string().min(1);
+const rev = z.number().int().nonnegative();
+const scene = z.strictObject({ scene: z.string(), observations: z.array(z.strictObject({ object_id: z.string(), state: z.enum(SCENE_STATES) })), summary: z.string() });
+const VLM_MISSING = ["cap", "timeout", "format", "error", "stale"] as const satisfies readonly VlmMissing[];
+/** /perception/scene: VLM 답 갈래 다섯(집 상태 입력의 주인). */
+const sceneInput = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("scene"), frame_id: id, observed_ms: at, scene }),
+  z.strictObject({ kind: z.literal("missing"), frame_id: id, observed_ms: at, missing: z.enum(VLM_MISSING) }),
+  z.strictObject({ kind: z.literal("closer_scene"), look: id, frame_id: id, observed_ms: at, scene }),
+  z.strictObject({ kind: z.literal("closer_end"), look: id }),
+  z.strictObject({ kind: z.literal("top"), object_id: id, frame_id: id, observed_ms: at, value: z.enum(["empty", "has_contents"]) }),
+]);
+const label = z.custom<DetLabel>((v) => typeof v === "string" && Object.hasOwn(CLASSES, v) && (CLASSES as Record<string, { role: string }>)[v]!.role !== "scene");
+/** /perception/detections: 대시보드 미니맵 물체 모양(표시용, 집 상태 노드는 받지 않는다). */
+const seen = z.strictObject({
+  observed_ms: at, frame_id: id, frame: z.strictObject({ width: z.number().int().positive(), height: z.number().int().positive() }),
+  shapes: z.array(z.strictObject({
+    label, score: z.number(),
+    mask: z.strictObject({ at: z.tuple([at, at, at, at]), cols: z.number().int().nonnegative(), rows: z.number().int().nonnegative(), bits: z.string().regex(B64) }),
+  })),
+});
+/** /world/state의 보기는 집 상태 노드 하나가 타입으로 만든 18KB 객체라 모양을 깊이 보지 않는다(지나기마다 세 번 검사하므로 지연 예산). */
+const view = z.custom<WorldView>((v) => typeof v === "object" && v !== null && !Array.isArray(v));
+const worldState = z.strictObject({ rev, view });
+const CHANGE_KINDS = [
+  "appeared", "gone", "out_of_view", "back_in_view", "state", "person_appeared", "person_gone", "person_state", "person_room", "fixture", "device", "vlm", "vlm_missing", "yolo_missing", "heard",
+] as const satisfies readonly WorldChangeKind[];
+const worldChanges = z.strictObject({ rev, changes: z.array(z.strictObject({ kind: z.enum(CHANGE_KINDS), at_ms: at, subject: z.string(), text: z.string(), meaningful: z.boolean() })) });
+const worldInput = z.strictObject({ kind: z.enum(["guard", "contents"]), id, on: z.boolean(), at_ms: at });
+const heard = z.strictObject({ text: z.string(), observed_ms: at });
+/** /device/changes: 기기 상태(허브가 만든 값이라 id만 본다)와 기록용 메모(첫 상태·이름·종류). */
+const deviceChange = z.strictObject({
+  id, state: z.custom<DeviceState>((v) => typeof v === "object" && v !== null && typeof (v as { id?: unknown }).id === "string"),
+  note: z.strictObject({ initial: z.boolean().optional(), label: z.string().optional(), kind: z.string().optional() }),
+});
+
+/** 두 타입이 같은가(양쪽으로). Assert<Equal<…>>가 false면 tsc가 실패한다(src/observe/scene.ts와 같은 식). */
+type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
+type Assert<T extends true> = T;
+type Flat<T> = { [K in keyof T]: T[K] };
+/** 실제 모양으로 바꾼 토픽 몸이 계약 타입과 같다. 미니맵 몸은 SeenEvent에서 사건 칸을 빼고 근거 시각(촬영 시각)을 단 것이다. */
+export type TopicBodiesSame = [
+  Assert<Equal<z.infer<typeof sceneInput>, SceneInput>>,
+  Assert<Equal<z.infer<typeof seen>, Flat<Omit<SeenEvent, "type" | "at_ms" | "captured_at_ms"> & { observed_ms: number }>>>,
+  Assert<Equal<z.infer<typeof worldState>, WorldStateMsg>>,
+  Assert<Equal<z.infer<typeof worldChanges>, WorldChangesMsg>>,
+  Assert<Equal<z.infer<typeof worldInput>, WorldInput>>,
+  Assert<Equal<z.infer<typeof worldChanges>["changes"][number], WorldChange>>,
+];
+
 export const TOPICS = {
   "/perception/frame": { qos: { kind: "sensor", depth: 4 }, body: frame, key: one, order: "observed_ms", from: ["phone"], photo: "jpeg_b64" },
   "/phone/pose": { qos: { kind: "sensor", depth: 600, record: true }, body: observed, key: one, order: "observed_ms", from: ["phone"] },
-  "/perception/detections": { qos: { kind: "sensor", depth: 600, record: true }, body: observed, key: one, order: "observed_ms", from: ["perception"] },
+  "/perception/detections": { qos: { kind: "sensor", depth: 600, record: true }, body: seen, key: one, order: "observed_ms", from: ["perception"] },
   "/perception/analysis": { qos: { kind: "reliable" }, body: observed, key: by("frame_id"), order: "observed_ms", from: ["perception"] },
+  "/perception/scene": { qos: { kind: "reliable" }, body: sceneInput, key: one, order: null, from: ["perception"] },
   "/perception/look_request": { qos: { kind: "reliable" }, body: obj, key: by("req"), order: null, from: ["act"] },
   "/perception/look_result": { qos: { kind: "reliable" }, body: observed, key: by("req"), order: "observed_ms", from: ["perception"] },
-  "/world/input": { qos: { kind: "reliable" }, body: obj, key: by("id"), order: null, from: ["act"] },
-  "/world/state": { qos: { kind: "state" }, body: revved, key: one, order: "rev", from: ["world"] },
-  "/world/changes": { qos: { kind: "reliable" }, body: revved, key: one, order: "rev", from: ["world"] },
+  "/world/input": { qos: { kind: "reliable" }, body: worldInput, key: by("id"), order: null, from: ["act"] },
+  "/world/state": { qos: { kind: "state" }, body: worldState, key: one, order: "rev", from: ["world"] },
+  "/world/changes": { qos: { kind: "reliable" }, body: worldChanges, key: one, order: "rev", from: ["world"] },
   "/brain/decision": { qos: { kind: "reliable" }, body: obj, key: one, order: "stamp", from: ["brain"] },
   "/brain/plan": { qos: { kind: "reliable" }, body: obj, key: by("decision_id"), order: null, from: ["brain", "act"] },
   "/brain/thought": { qos: { kind: "reliable" }, body: obj, key: one, order: "stamp", from: ["brain"] },
@@ -52,13 +109,13 @@ export const TOPICS = {
   "/phone/claim": { qos: { kind: "state" }, body: obj, key: by("claim_id"), order: "stamp", from: ["act", "phone"] },
   "/phone/owner": { qos: { kind: "state" }, body: obj, key: one, order: "stamp", from: ["phone"] },
   "/phone/progress": { qos: { kind: "reliable" }, body: obj, key: by("req"), order: null, from: ["phone"] },
-  "/phone/heard": { qos: { kind: "reliable" }, body: observed, key: one, order: "observed_ms", from: ["phone"] },
+  "/phone/heard": { qos: { kind: "reliable" }, body: heard, key: one, order: "observed_ms", from: ["phone"] },
   "/phone/say": { qos: { kind: "reliable" }, body: obj, key: one, order: null, from: ["act", "brain"] },
   "/phone/link": { qos: { kind: "state" }, body: obj, key: one, order: "stamp", from: ["phone"] },
   "/device/command": { qos: { kind: "reliable" }, body: z.looseObject({ command_id: z.string().min(1), deadline_ms: z.number().finite() }), key: by("command_id"), order: null, from: ["act", "phone"] },
   "/device/result": { qos: { kind: "reliable" }, body: z.looseObject({ command_id: z.string().min(1), status: z.enum(["done", "failed", "expired", "unknown"]) }), key: by("command_id"), order: null, from: ["devices"] },
   "/device/state": { qos: { kind: "state" }, body: obj, key: by("id"), order: "stamp", from: ["devices"] },
-  "/device/changes": { qos: { kind: "reliable" }, body: obj, key: by("id"), order: "stamp", from: ["devices"] },
+  "/device/changes": { qos: { kind: "reliable" }, body: deviceChange, key: by("id"), order: "stamp", from: ["devices"] },
   "/bus/dead": { qos: { kind: "reliable" }, body: obj, key: by("topic"), order: null, from: NODES },
 } as const satisfies Record<string, TopicSpec<Record<string, unknown>>>;
 

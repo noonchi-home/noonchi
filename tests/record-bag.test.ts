@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { HistoryDb } from "../src/brain/index.js";
 import { BusNode, MemoryBus } from "../src/bus/index.js";
 import { Bag, startRecorder } from "../src/record/index.js";
+import { HEARD_MARK } from "../src/world/labels.js";
 
 const EPOCH = { boot: "b1", home: "h#1" };
 const tick = (ms = 50) => new Promise((r) => setTimeout(r, ms));
@@ -24,10 +25,23 @@ describe("기록 노드", () => {
     const rec = await startRecorder({ bus, epoch: EPOCH, db });
     rec.start();
     const world = await sender("world", bus);
-    await world.publish("/world/changes", { rev: 1, changes: [{ type: "world_change", at_ms: 1000, kind: "appeared", text: "컵 cup_1 보임" }] });
+    await world.publish("/world/changes", { rev: 1, changes: [{ kind: "appeared", at_ms: 1000, subject: "cup_1", text: "컵 cup_1 보임", meaningful: true }] });
     await tick();
     await rec.idle();
     expect(db.list({}).map((r) => [r.kind, r.text])).toEqual([["detection", "컵 cup_1 보임"]]);
+  });
+
+  it("World State 변화의 프레임마다 분석 없음은 world_change로 다시 쓰지 않고(관찰 기록으로 남음), 들은 말은 표시만 쓴다", async () => {
+    const bus = new MemoryBus();
+    const db = HistoryDb.open(":memory:");
+    const rec = await startRecorder({ bus, epoch: EPOCH, db });
+    rec.start();
+    const world = await sender("world", bus);
+    const c = (kind: string, text: string) => ({ kind: kind as "appeared", at_ms: 1000, subject: "s", text, meaningful: false });
+    await world.publish("/world/changes", { rev: 1, changes: [c("yolo_missing", "YOLO 없음"), c("vlm_missing", "VLM 없음"), c("heard", "들은 말: 컵 치워 줘")] });
+    await tick();
+    await rec.idle();
+    expect(db.list({}).map((r) => r.text)).toEqual([HEARD_MARK]);
   });
 
   it("녹화가 실패해 같은 메시지를 다시 받아도 기록 DB 줄은 한 번만 남는다", async () => {
@@ -40,7 +54,7 @@ describe("기록 노드", () => {
     const rec = await startRecorder({ bus, epoch: EPOCH, db, bag });
     rec.start();
     const world = await sender("world", bus);
-    await world.publish("/world/changes", { rev: 1, changes: [{ type: "world_change", at_ms: 1000, kind: "appeared", text: "컵 cup_1 보임" }] });
+    await world.publish("/world/changes", { rev: 1, changes: [{ kind: "appeared", at_ms: 1000, subject: "cup_1", text: "컵 cup_1 보임", meaningful: true }] });
     await tick(400);
     await rec.idle();
     expect(db.list({ kinds: ["detection"] })).toHaveLength(1);
@@ -50,7 +64,7 @@ describe("기록 노드", () => {
   it("가전 기록기는 기기마다 지난 값을 들어, 처음 상태는 적지 않고 같은 값은 다시 적지 않는다. 기록 노드를 다시 만들어도 이어진다", async () => {
     const bus = new MemoryBus();
     const db = HistoryDb.open(":memory:");
-    const tv = (on: boolean) => ({ id: "tv", twin: { on }, updatedAt: "2026-11-17T12:00:00Z" });
+    const tv = (on: boolean) => ({ id: "tv", online: true, twin: { on }, matter: {}, updatedAt: "2026-11-17T12:00:00Z" });
     const note = { label: "TV", kind: "tv" };
     const rec1 = await startRecorder({ bus, epoch: EPOCH, db });
     rec1.start();
@@ -78,7 +92,7 @@ describe("기록 노드", () => {
     rec.start();
     for (const text of ["컵 cup_1 보임", "컵 cup_2 보임"]) {
       const world = await sender("world", bus);
-      await world.publish("/world/changes", { rev: 1, changes: [{ type: "world_change", at_ms: 1000, kind: "appeared", text }] });
+      await world.publish("/world/changes", { rev: 1, changes: [{ kind: "appeared", at_ms: 1000, subject: "cup", text, meaningful: true }] });
       await tick();
       await world.stop();
     }

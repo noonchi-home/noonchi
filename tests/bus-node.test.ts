@@ -149,7 +149,7 @@ describe("BusNode 실행기", () => {
     await w.publish("/world/changes", { rev: 1, changes: [] });
     await tick(50);
     expect(seen).toEqual([]);
-    await w.publish("/world/state", { rev: 1, view: {} });
+    await w.publish("/world/state", { rev: 1, view: {} as never });
     await tick(50);
     expect(seen).toEqual([[1, 1]]);
   });
@@ -174,7 +174,7 @@ describe("BusNode 실행기", () => {
     a2.withState("/world/changes", "/world/state", (c, s) => { seen2.push([c.rev as number, s.rev as number]); });
     await a2.prepare();
     a2.start();
-    await w.publish("/world/state", { rev: 1, view: {} });
+    await w.publish("/world/state", { rev: 1, view: {} as never });
     await tick(100);
     expect(seen2).toEqual([[1, 1]]);
     expect(bus.length("/world/changes")).toBe(0);
@@ -182,7 +182,7 @@ describe("BusNode 실행기", () => {
 
   it("보내는 노드가 아닌 노드가 발행하면 거절된다", async () => {
     const n = node("brain", new MemoryBus());
-    await expect(n.publish("/world/state", { rev: 1 })).rejects.toThrow(/world/);
+    await expect(n.publish("/world/state", { rev: 1, view: {} as never })).rejects.toThrow(/world/);
   });
 
   it("가상 시계: 타이머마다 그 일(비동기 포함)이 끝난 뒤에 다음 시각으로 간다", async () => {

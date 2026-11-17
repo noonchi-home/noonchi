@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 import { RETRY_MS, type Bus, type Envelope, type Outcome, type TopicName } from "../../src/bus/index.js";
 
 const EPOCH = { boot: "b1", home: "h#1" };
+/** SENSOR 시험 몸: 미니맵 물체 모양(빈 모양). */
+const seen = (observed_ms: number) => ({ observed_ms, frame_id: `e${observed_ms}`, frame: { width: 4, height: 3 }, shapes: [] });
 const env = <N extends TopicName>(topic: N, body: Record<string, unknown>, seq: number, key = "_", node = "world"): Envelope<N> =>
   ({ topic, key, header: { stamp: 1000 + seq, node, inst: "i1", seq, ...EPOCH }, body } as never);
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -21,7 +23,7 @@ export function busContract(name: string, make: () => Promise<Bus>, opts: { leng
       const bus = await make();
       const got: number[] = [];
       const sub = await bus.subscribe("/world/changes", "brain", async (m) => { got.push(m.body.rev as number); return "ack"; });
-      await bus.publish(env("/world/changes", { rev: 1 }, 1));
+      await bus.publish(env("/world/changes", { rev: 1, changes: [] }, 1));
       await pause(100);
       expect(got).toEqual([]);
       sub.start();
@@ -46,7 +48,7 @@ export function busContract(name: string, make: () => Promise<Bus>, opts: { leng
       const bus = await make();
       const got: number[] = [];
       const sub = await bus.subscribe("/perception/detections", "recorder", async (m) => { got.push(m.header.seq); return "ack"; }, { mode: "all" });
-      for (let i = 1; i <= 20; i++) await bus.publish(env("/perception/detections", { observed_ms: i }, i, "_", "perception"));
+      for (let i = 1; i <= 20; i++) await bus.publish(env("/perception/detections", seen(i), i, "_", "perception"));
       sub.start();
       await until(() => got.length === 20);
       expect(got).toEqual(Array.from({ length: 20 }, (_, k) => k + 1));
@@ -56,7 +58,7 @@ export function busContract(name: string, make: () => Promise<Bus>, opts: { leng
 
     it("SENSOR all: 상한(depth 600)을 넘으면 앞을 잃고 그 수를 센다. 준비 때 가장 새 seq가 기준이라 첫 수신 전에 잘린 것도 센다", async () => {
       const bus = await make();
-      const det = (seq: number) => env("/perception/detections", { observed_ms: seq }, seq, "_", "perception");
+      const det = (seq: number) => env("/perception/detections", seen(seq), seq, "_", "perception");
       for (let i = 1; i <= 5; i++) await bus.publish(det(i));
       const got: number[] = [];
       const sub = await bus.subscribe("/perception/detections", "recorder", async (m) => { got.push(m.header.seq); return "ack"; }, { mode: "all" });
@@ -92,7 +94,7 @@ export function busContract(name: string, make: () => Promise<Bus>, opts: { leng
       const sb = await bus.subscribe("/world/changes", "act", async (m) => { await pause(5); b.push(m.body.rev as number); return "ack"; });
       sa.start();
       sb.start();
-      for (let i = 1; i <= 30; i++) await bus.publish(env("/world/changes", { rev: i }, i));
+      for (let i = 1; i <= 30; i++) await bus.publish(env("/world/changes", { rev: i, changes: [] }, i));
       await until(() => a.length === 30 && b.length === 30);
       expect(a).toEqual(Array.from({ length: 30 }, (_, k) => k + 1));
       expect(b).toEqual(a);
@@ -111,8 +113,8 @@ export function busContract(name: string, make: () => Promise<Bus>, opts: { leng
         return "ack";
       });
       s.start();
-      await bus.publish(env("/world/changes", { rev: 1 }, 1));
-      await bus.publish(env("/world/changes", { rev: 2 }, 2));
+      await bus.publish(env("/world/changes", { rev: 1, changes: [] }, 1));
+      await bus.publish(env("/world/changes", { rev: 2, changes: [] }, 2));
       await until(() => seen.includes("2 성공"), 5000);
       expect(seen).toEqual(["1 실패", "1 실패", "1 성공", "2 성공"]);
       await bus.close();
@@ -126,8 +128,8 @@ export function busContract(name: string, make: () => Promise<Bus>, opts: { leng
       const s = await bus.subscribe("/world/changes", "act", async (m) => { tries.push(m.body.rev as number); return m.body.rev === 1 ? "retry" : "ack"; });
       sd.start();
       s.start();
-      await bus.publish(env("/world/changes", { rev: 1 }, 1));
-      await bus.publish(env("/world/changes", { rev: 2 }, 2));
+      await bus.publish(env("/world/changes", { rev: 1, changes: [] }, 1));
+      await bus.publish(env("/world/changes", { rev: 2, changes: [] }, 2));
       await until(() => dead.length === 1 && tries.includes(2), 10_000);
       expect(tries).toEqual([1, 1, 1, 2]);
       expect(dead[0]).toMatchObject({ topic: "/world/changes", group: "act", deliveries: 3 });
@@ -151,8 +153,8 @@ export function busContract(name: string, make: () => Promise<Bus>, opts: { leng
       const bus = await make();
       const s1 = await bus.subscribe("/world/changes", "act", () => new Promise<Outcome>(() => {}));
       s1.start();
-      await bus.publish(env("/world/changes", { rev: 1 }, 1));
-      await bus.publish(env("/world/changes", { rev: 2 }, 2));
+      await bus.publish(env("/world/changes", { rev: 1, changes: [] }, 1));
+      await bus.publish(env("/world/changes", { rev: 2, changes: [] }, 2));
       await pause(100);
       await s1.stop();
       const got: number[] = [];
@@ -170,7 +172,7 @@ export function busContract(name: string, make: () => Promise<Bus>, opts: { leng
       const s = await bus.subscribe("/world/changes", "act", async () => { sawInside ||= inside; return "ack"; });
       s.start();
       inside = true;
-      const sent = bus.publish(env("/world/changes", { rev: 1 }, 1));
+      const sent = bus.publish(env("/world/changes", { rev: 1, changes: [] }, 1));
       inside = false;
       await sent;
       await until(async () => (await opts.length(bus, "/world/changes")) === 0);
@@ -187,9 +189,9 @@ export function busContract(name: string, make: () => Promise<Bus>, opts: { leng
         return at.length === 1 ? "retry" : "ack";
       });
       s.start();
-      await bus.publish(env("/world/changes", { rev: 1 }, 1));
+      await bus.publish(env("/world/changes", { rev: 1, changes: [] }, 1));
       await until(() => at.length === 1);
-      await bus.publish(env("/world/changes", { rev: 2 }, 2));
+      await bus.publish(env("/world/changes", { rev: 2, changes: [] }, 2));
       await until(() => at.length === 2, 5000);
       expect(at[1]! - at[0]!).toBeGreaterThanOrEqual(RETRY_MS - 5);
       await bus.close();
@@ -198,7 +200,7 @@ export function busContract(name: string, make: () => Promise<Bus>, opts: { leng
     it("닫은 뒤에는 발행·구독을 거절한다", async () => {
       const bus = await make();
       await bus.close();
-      await expect(bus.publish(env("/world/changes", { rev: 1 }, 1))).rejects.toThrow(/닫힌 통로/);
+      await expect(bus.publish(env("/world/changes", { rev: 1, changes: [] }, 1))).rejects.toThrow(/닫힌 통로/);
       await expect(bus.subscribe("/world/changes", "act", async () => "ack")).rejects.toThrow(/닫힌 통로/);
     });
   });

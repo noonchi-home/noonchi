@@ -78,7 +78,7 @@ describe.skipIf(!url)("RedisBus", () => {
     await admin(["DEL", `noonchi:${b}:alive`]);
     await until(() => lost !== null, 3000);
     expect((lost as Error | null)?.message).toMatch(/Redis가 다시 켜져 이번 기동의 메시지를 잃었어요/);
-    const msg = { topic: "/world/changes", key: "_", header: { stamp: 1, node: "world", inst: "i1", seq: 1, boot: b, home: "h#1" }, body: { rev: 1 } } as Envelope<TopicName>;
+    const msg = { topic: "/world/changes", key: "_", header: { stamp: 1, node: "world", inst: "i1", seq: 1, boot: b, home: "h#1" }, body: { rev: 1, changes: [] } } as Envelope<TopicName>;
     await expect(bus.publish(msg)).rejects.toThrow(/잃었어요/);
     await expect(bus.subscribe("/world/changes", "act", async () => "ack")).rejects.toThrow(/잃었어요/);
     await bus.close();
@@ -99,7 +99,7 @@ describe.skipIf(!url)("RedisBus", () => {
     await new Promise((r) => setTimeout(r, 500));
     await bus.publish({ topic: "/device/state", key: "a", header: h("devices", 1), body: { id: "a", on: 2 } } as never);
     await bus.publish({ topic: "/phone/pose", key: "_", header: h("phone", 1), body: { observed_ms: 7 } } as never);
-    await bus.publish({ topic: "/world/changes", key: "_", header: h("world", 1), body: { rev: 3 } } as never);
+    await bus.publish({ topic: "/world/changes", key: "_", header: h("world", 1), body: { rev: 3, changes: [] } } as never);
     await until(() => ["state 2", "pose 7", "changes 3"].every((x) => got.includes(x)), 10_000);
     await bus.close();
   });
@@ -111,7 +111,7 @@ describe.skipIf(!url)("RedisBus", () => {
     let tries = 0;
     const s = await bus.subscribe("/world/changes", "act", async () => { tries++; return "retry"; });
     s.start();
-    await bus.publish({ topic: "/world/changes", key: "_", header: { stamp: 1, node: "world", inst: "i1", seq: 1, boot: b, home: "h#1" }, body: { rev: 1 } } as never);
+    await bus.publish({ topic: "/world/changes", key: "_", header: { stamp: 1, node: "world", inst: "i1", seq: 1, boot: b, home: "h#1" }, body: { rev: 1, changes: [] } } as never);
     await new Promise((r) => setTimeout(r, 1500));
     expect(tries).toBe(3);
     await admin(["DEL", `noonchi:${b}:/bus/dead`]);
@@ -146,7 +146,7 @@ describe.skipIf(!url)("RedisBus", () => {
     const s = await bus.subscribe("/world/changes", "act", async (m) => { got.push(m.body.rev as number); return "ack"; });
     s.start();
     const before = await calls("xtrim");
-    for (let i = 1; i <= 100; i++) await bus.publish({ topic: "/world/changes", key: "_", header: { stamp: i, node: "world", inst: "i1", seq: i, boot: b, home: "h#1" }, body: { rev: i } } as never);
+    for (let i = 1; i <= 100; i++) await bus.publish({ topic: "/world/changes", key: "_", header: { stamp: i, node: "world", inst: "i1", seq: i, boot: b, home: "h#1" }, body: { rev: i, changes: [] } } as never);
     await until(() => got.length === 100, 10_000);
     await until(async () => (await bus.length("/world/changes")) === 0, 3000);
     expect(got).toEqual(Array.from({ length: 100 }, (_, k) => k + 1));
@@ -213,7 +213,7 @@ describe.skipIf(!url)("RedisBus", () => {
       await new Promise((r) => setTimeout(r, 50));
       return "ack";
     });
-    for (let i = 1; i <= 3; i++) await bus.publish({ topic: "/world/changes", key: "_", header: { stamp: i, node: "world", inst: "i1", seq: i, boot: b, home: "h#1" }, body: { rev: i } } as never);
+    for (let i = 1; i <= 3; i++) await bus.publish({ topic: "/world/changes", key: "_", header: { stamp: i, node: "world", inst: "i1", seq: i, boot: b, home: "h#1" }, body: { rev: i, changes: [] } } as never);
     s.start();
     await until(() => lost !== null, 3000);
     await new Promise((r) => setTimeout(r, 300));
@@ -241,7 +241,7 @@ describe.skipIf(!url)("RedisBus", () => {
       if (m.body.rev === 2) logsAtTwo ??= [...logs];
       return "ack";
     });
-    for (let i = 1; i <= 3; i++) await bus.publish({ topic: "/world/changes", key: "_", header: { stamp: i, node: "world", inst: "i1", seq: i, boot: b, home: "h#1" }, body: { rev: i } } as never);
+    for (let i = 1; i <= 3; i++) await bus.publish({ topic: "/world/changes", key: "_", header: { stamp: i, node: "world", inst: "i1", seq: i, boot: b, home: "h#1" }, body: { rev: i, changes: [] } } as never);
     s.start();
     await until(() => logsAtTwo !== null, 3000);
     await new Promise((r) => setTimeout(r, 300));

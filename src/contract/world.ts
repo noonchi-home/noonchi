@@ -2,6 +2,7 @@
 // 만드는 곳은 src/world/state/다.
 
 import type { DeviceStateKey, Facet, FixtureClass, ObjClass } from "../world/vocab.js";
+import type { SceneObservation } from "./observe.js";
 
 /** 낱말 표(src/world/vocab.ts)의 물건 종류·가전 설비 종류·사실 면·가전 상태 키. */
 export type { DeviceStateKey, Facet, FixtureClass, ObjClass };
@@ -162,3 +163,20 @@ export type WorldChangeKind =
 
 /** World State 변화 하나. meaningful이면 PAM 판단 계기가 된다(등장·사라짐, 물건·가전 설비 상태, 사람 방, 가전 사건). */
 export interface WorldChange { kind: WorldChangeKind; at_ms: number; subject: string; text: string; meaningful: boolean }
+
+/** /perception/scene 몸: VLM 답 갈래(집 상태 입력의 주인, stage-queue 묶음 2). 사진은 싣지 않는다.
+ *  원본 프레임 id·가까이 보기 look id로 집 상태 노드가 자기 감지 번호 표를 찾는다. observed_ms는 원본 사진의 촬영 시각이다.
+ *  scene 전체 사진 VLM 답, missing VLM 분석 없음, closer_scene 가까이 본 VLM 답, closer_end VLM 답 없이 끝난 가까이 보기, top 위에서 본 내용물 값. */
+export type SceneInput =
+  | { kind: "scene"; frame_id: string; observed_ms: number; scene: SceneObservation }
+  | { kind: "missing"; frame_id: string; observed_ms: number; missing: VlmMissing }
+  | { kind: "closer_scene"; look: string; frame_id: string; observed_ms: number; scene: SceneObservation }
+  | { kind: "closer_end"; look: string }
+  | { kind: "top"; object_id: string; frame_id: string; observed_ms: number; value: "empty" | "has_contents" };
+
+/** /world/input 몸: 실행 추적이 World State에 넣는 것. guard 보기 지킴 켜기·끄기, contents 따르기 창 켜기·끄기. */
+export interface WorldInput { kind: "guard" | "contents"; id: string; on: boolean; at_ms: number }
+/** /world/state 몸: 집 상태 판본과 보기. */
+export interface WorldStateMsg { rev: number; view: WorldView }
+/** /world/changes 몸: 그 판본에서 생긴 변화. */
+export interface WorldChangesMsg { rev: number; changes: WorldChange[] }

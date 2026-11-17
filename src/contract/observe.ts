@@ -76,3 +76,6 @@ export interface SceneObservation {
   observations: { object_id: string; state: (typeof SCENE_STATES)[number] }[];
   summary: string;
 }
+
+/** 사진 없는 엔진 프레임: 관찰 흐름이 집 상태 노드에 넘기는 프레임(stage-queue 묶음 2). JPEG·해시는 인식 노드 밖으로 나가지 않는다. */
+export type FrameMeta = Omit<EngineFrame, "jpeg" | "sha256">;

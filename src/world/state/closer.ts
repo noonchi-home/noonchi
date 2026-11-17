@@ -3,10 +3,11 @@
 // 가까이 보기와 전체 사진은 촬영 순서가 섞여 들어오므로 자리·보임은 물건마다 마지막으로 고친 촬영보다 새 촬영만 고친다(같은 원본 프레임이면 잘라 본 것이 앞선다).
 import type { ObjClass, WorldChange } from "../../contract/world.js";
 import type { CameraView, Detection, SceneObservation } from "../../contract/observe.js";
+import { closerObject } from "../accept.js";
 import { CHANGE_TEXT, onSurface } from "../labels.js";
 import { placePoint, type PlaneSurface } from "../place.js";
 import { CLASSES, NOW_FACETS, STATES, VLM_ONLY, type StateKey, type StateOf } from "../vocab.js";
-import { OBJ_CLASSES, Part, dist, fits, fromCamera, type Obj, type V3 } from "./core.js";
+import { Part, dist, fits, fromCamera, type Obj, type V3 } from "./core.js";
 
 /** 가까이 보기로 VLM 확인 없이 새 물건을 만들려면 같은 자리로 보인 서로 다른 원본 프레임이 이만큼 있어야 한다(물건 등장 확인 장수와 같다).
  *  이보다 적으면 같은 가까이 보기의 VLM이 그 감지에 사실을 답해야 만든다(CloserPending). */
@@ -193,7 +194,7 @@ export class CloserLook extends Part {
   /** 가까이 본 감지가 물건 감지인가: 사람·가전 설비·받지 않는 감지·잘라 본 경계에 닿은 상자가 아니다.
    *  applyCloser는 이 감지만 쓰고, 관찰 흐름은 이 감지가 있는 가장 새 장을 VLM에 보낸다. */
   closerObject(d: CloserDetection): boolean {
-    return !d.edge && this.core.accepts(d) && OBJ_CLASSES.has(d.label);
+    return closerObject(d);
   }
 
   /** 가까이 본 촬영으로 자리·면·방을 고친다(자리를 마지막으로 고친 촬영보다 새면, 같은 촬영이면 잘라 본 자리가 앞선다). */
