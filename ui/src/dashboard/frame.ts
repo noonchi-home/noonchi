@@ -113,7 +113,8 @@ export function twinFrame(o: {
   for (const c of dashboardChecks(o.checks)) {
     const id = c.deviceId ?? c.objectId;
     if (!id || marks.some((m) => m.id === id)) continue;
-    const a = o.anchor(id);
+    // 장면 물건이 아닌 자리(폰 눈·World State 물건)는 그 트윈 자리
+    const a = c.pos ?? o.anchor(id);
     if (a) marks.push({ id, px: planToPixel(cam, [a[0], a[2]], a[1]) });
   }
 
