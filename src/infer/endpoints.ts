@@ -8,7 +8,8 @@ export type InferenceMode = (typeof INFERENCE_MODES)[number];
 export interface ModelEndpoint { baseUrl: string; model: string; apiKey: string; extraBody: Record<string, unknown> }
 /** VLM 주소. closerModel은 가까이 보기 VLM 모델 이름이고 주소·키·요청 칸은 같다. */
 export interface VlmEndpoint extends ModelEndpoint { closerModel: string }
-export interface Endpoints { mode: InferenceMode; vlm: VlmEndpoint; pam: PamEndpoint }
+/** warnings: 시작 로그에 남길 설정 경고(옛 이름을 새 이름으로 읽음 등). */
+export interface Endpoints { mode: InferenceMode; vlm: VlmEndpoint; pam: PamEndpoint; warnings: string[] }
 type Env = Record<string, string | undefined>;
 
 // vllm 모델 이름 vlm은 compose vllm-vlm의 --served-model-name이다(Hugging Face 모델은 compose VLM_LIVE_MODEL).
@@ -27,12 +28,15 @@ export const PAM_PRESETS: Record<InferenceMode, { baseUrl: string; model: string
   vllm: { baseUrl: "http://vllm-pam:8000/v1", model: "pam", keyEnv: "VLLM_API_KEY", thinking: "chat_template", extraBody: {} },
 };
 
-/** 예전 이름(2026-11-17 전): mock → openai, live → vllm. 예전 이름이면 시작을 막고 새 이름을 알린다. */
+/** 예전 이름(2026-11-17 전): mock → openai, live → vllm. live면 시작을 막고 새 이름을 알린다. */
 const OLD_MODES: Record<string, InferenceMode> = { mock: "openai", live: "vllm" };
+/** 그대로 읽는 예전 이름: 지금 .env들(이 PC·팀원·EC2)이 INFERENCE_MODE=mock이다(2026-11-18 조정자 결정). 시작 로그에 경고를 남긴다. */
+const READ_OLD: ReadonlySet<string> = new Set(["mock"]);
 
-function modeOf(env: Env): InferenceMode {
+function modeOf(env: Env): { mode: InferenceMode; warnings: string[] } {
   const raw = env.INFERENCE_MODE?.trim() || "openai";
-  if ((INFERENCE_MODES as readonly string[]).includes(raw)) return raw as InferenceMode;
+  if ((INFERENCE_MODES as readonly string[]).includes(raw)) return { mode: raw as InferenceMode, warnings: [] };
+  if (READ_OLD.has(raw)) return { mode: OLD_MODES[raw]!, warnings: [`[경고] INFERENCE_MODE=${raw}은 ${OLD_MODES[raw]}로 읽어요`] };
   const now = Object.hasOwn(OLD_MODES, raw) ? `(예전 이름 ${raw} → ${OLD_MODES[raw]})` : "";
   throw new Error(`INFERENCE_MODE=${raw}: openai 또는 vllm이어야 합니다${now}`);
 }
@@ -55,7 +59,7 @@ function extraBodyOf(raw: string): Record<string, unknown> {
 }
 
 export function loadEndpoints(env: Env): Endpoints {
-  const mode = modeOf(env);
+  const { mode, warnings } = modeOf(env);
   const v = (k: string) => env[k]?.trim() || undefined;
   const p = VLM_PRESETS[mode];
   const pp = PAM_PRESETS[mode];
@@ -72,5 +76,6 @@ export function loadEndpoints(env: Env): Endpoints {
       baseUrl: (v("PAM_LLM_BASE_URL") ?? pp.baseUrl).replace(/\/+$/, ""), model: v("PAM_LLM_MODEL") ?? pp.model,
       apiKey: v("PAM_LLM_API_KEY") ?? v(pp.keyEnv) ?? "", thinking: pp.thinking, extraBody: structuredClone(pp.extraBody),
     },
+    warnings,
   };
 }

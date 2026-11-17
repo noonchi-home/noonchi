@@ -51,8 +51,15 @@ describe("추론 모드", () => {
   });
   it("모르는 모드는 시작을 막는다", () => {
     expect(() => loadEndpoints({ INFERENCE_MODE: "replay" })).toThrow(/openai 또는 vllm/);
-    expect(() => loadEndpoints({ INFERENCE_MODE: "mock" })).toThrow("(예전 이름 mock → openai)");
     expect(() => loadEndpoints({ INFERENCE_MODE: "live" })).toThrow("(예전 이름 live → vllm)");
+  });
+  it("옛 이름 mock은 openai로 읽고 경고 한 줄을 남긴다(지금 .env들이 mock이다). 새 이름이면 경고가 없다", () => {
+    const e = loadEndpoints({ INFERENCE_MODE: "mock" });
+    expect(e.mode).toBe("openai");
+    expect(e.vlm).toEqual(loadEndpoints({ INFERENCE_MODE: "openai" }).vlm);
+    expect(e.warnings).toEqual(["[경고] INFERENCE_MODE=mock은 openai로 읽어요"]);
+    expect(loadEndpoints({ INFERENCE_MODE: "openai" }).warnings).toEqual([]);
+    expect(loadEndpoints({}).warnings).toEqual([]);
   });
 });
 

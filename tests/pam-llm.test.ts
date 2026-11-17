@@ -65,8 +65,8 @@ describe("PAM LLM 전송", () => {
     ]);
   });
 
-  it("예전 모드 이름·모르는 모드·작은 문맥 길이는 시작할 때 실패", () => {
-    expect(() => pamSettings({ INFERENCE_MODE: "mock" })).toThrow("INFERENCE_MODE=mock: openai 또는 vllm이어야 합니다(예전 이름 mock → openai)");
+  it("예전 모드 이름 live·모르는 모드·작은 문맥 길이는 시작할 때 실패하고, 옛 이름 mock은 openai로 읽는다", () => {
+    expect(pamSettings({ INFERENCE_MODE: "mock" })).toEqual(pamSettings({ INFERENCE_MODE: "openai" }));
     expect(() => pamSettings({ INFERENCE_MODE: "live" })).toThrow("(예전 이름 live → vllm)");
     expect(() => pamSettings({ INFERENCE_MODE: "replay" })).toThrow("INFERENCE_MODE=replay: openai 또는 vllm이어야 합니다");
     expect(() => pamSettings({ INFERENCE_MODE: "vllm", PAM_MAX_MODEL_LEN: "16384" })).toThrow(/PAM_MAX_MODEL_LEN/);

@@ -139,6 +139,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   const allowOrigin = originChecker(env.ALLOWED_ORIGINS);
   // 추론 모드(openai|vllm)와 모델 주소, PAM LLM 전송 값. 틀린 설정이면 잠금·DB를 열기 전에 시작을 막는다
   const endpoints = loadEndpoints(env);
+  for (const w of endpoints.warnings) log(w);
   const pamConfig = pamSettings(env);
   const reflectAt = loadReflectAt(env);
   const retention = loadRetention(env);

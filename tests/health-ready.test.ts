@@ -66,12 +66,21 @@ describe("준비 상태", () => {
   it("PAM 설정이 틀리면 잠금·DB를 열기 전에 시작을 막아, 같은 폴더로 바로 다시 띄울 수 있다", async () => {
     const runtime = mkdtempSync(join(tmpdir(), "rt-"));
     const base = { HUB: "memory", PORT: "0", RUNTIME_DIR: runtime, VLM_BASE_URL: "http://127.0.0.1:9/v1", PAM_LLM_BASE_URL: "http://127.0.0.1:9/v1", OPENAI_BASE_URL: "http://127.0.0.1:9/v1" };
-    for (const bad of [{ PAM_MAX_MODEL_LEN: "16384" }, { INFERENCE_MODE: "mock" }, { INFERENCE_MODE: "live" }]) {
+    for (const bad of [{ PAM_MAX_MODEL_LEN: "16384" }, { INFERENCE_MODE: "live" }]) {
       await expect(startServer({ env: { ...base, ...bad }, log: () => {} })).rejects.toThrow(/PAM_MAX_MODEL_LEN|openai 또는 vllm/);
       expect(existsSync(join(runtime, "noonchi.db")), JSON.stringify(bad)).toBe(false);
     }
     srv = await startServer({ env: base, log: () => {} });
     expect(srv.url).toMatch(/^http:/);
+  });
+
+  it("옛 이름 INFERENCE_MODE=mock이면 openai로 띄우고 시작 로그에 경고 한 줄을 남긴다", async () => {
+    const lines: string[] = [];
+    srv = await startServer({ env: { HUB: "memory", PORT: "0", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), INFERENCE_MODE: "mock",
+      VLM_BASE_URL: "http://127.0.0.1:9/v1", PAM_LLM_BASE_URL: "http://127.0.0.1:9/v1", OPENAI_BASE_URL: "http://127.0.0.1:9/v1" }, log: (l) => lines.push(l) });
+    expect(lines.filter((l) => l.includes("INFERENCE_MODE"))).toEqual(["[경고] INFERENCE_MODE=mock은 openai로 읽어요"]);
+    const r = await fetchRetry(`${srv.url}/api/health`);
+    expect(((await r.json()) as HealthView).ready).toMatchObject({ inference_mode: "openai" });
   });
 
   it("잘못된 추론 모드면 서버가 뜨지 않는다", async () => {

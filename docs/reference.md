@@ -94,7 +94,7 @@ HUB=memory npm run demo
 | `REFLECT_AT` | `23:30` | 매일 그날을 반성하는 시각(HH:MM, 기록 시간대). `off`면 끈다. 틀린 값이면 시작하지 않는다 |
 | `PHOTO_RETENTION_DAYS`, `DATASET_RETENTION_DAYS` | `7`, `7` | 폰 사진 찍기 사진·시험 자료 보관 일(0보다 큰 숫자). 지나면 파일과 표 줄을 지운다. 틀린 값이면 시작하지 않는다 |
 | `DATASET_COLLECT` | (끔) | `1`이면 엔진 프레임을 시험 자료로 `RUNTIME_DIR/dataset/<날짜>/`에 JPEG과 같은 이름의 `.json`(크기·자세·카메라)으로 쓴다 |
-| `INFERENCE_MODE` | `openai` | `openai`(개발, VLM·PAM LLM 모두 OpenAI API) · `vllm`(GPU 서버, VLM은 같은 서버 vLLM `http://vllm-vlm:8000/v1`의 `vlm`, PAM LLM은 `http://vllm-pam:8000/v1`의 `pam`). 두 모드는 같은 코드 경로이고 주소·모델 이름·제공자 칸만 다르다. 다른 값(예전 이름 mock·live 포함)이면 시작하지 않는다 |
+| `INFERENCE_MODE` | `openai` | `openai`(개발, VLM·PAM LLM 모두 OpenAI API) · `vllm`(GPU 서버, VLM은 같은 서버 vLLM `http://vllm-vlm:8000/v1`의 `vlm`, PAM LLM은 `http://vllm-pam:8000/v1`의 `pam`). 두 모드는 같은 코드 경로이고 주소·모델 이름·제공자 칸만 다르다. 예전 이름 `mock`은 `openai`로 읽고 시작 로그에 경고 한 줄을 남긴다. 다른 값(예전 이름 `live` 포함)이면 시작하지 않는다 |
 | `VLM_BASE_URL`, `VLM_MODEL`, `VLM_API_KEY`, `VLM_EXTRA_BODY` | 모드 기본값 | 따로 주면 모드 기본값 대신 쓴다(OpenAI 호환 주소). openai 기본: `https://api.openai.com/v1`·`gpt-5.4-mini`·`OPENAI_API_KEY`·`{"reasoning_effort":"none"}`, vllm 기본: `http://vllm-vlm:8000/v1`·`vlm`·`VLLM_API_KEY`·`{}` |
 | `VLM_CLOSER_MODEL` | `VLM_MODEL`과 같음 | 가까이 보기 VLM 모델 이름. 같은 VLM 주소·키·요청 칸에 모델 이름만 바꿔 보낸다. 비용은 그 모델 가격으로 세고, 가격표(`src/infer/cost.ts`)에 없으면 모름 |
 | `VLM_TIMEOUT_MS` | `20000` | 사진 한 장 VLM 분석 제한 시간(1000 이상) |
