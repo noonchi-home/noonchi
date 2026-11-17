@@ -6,6 +6,7 @@
 // 다른 행동·대기로 바뀌면 앞 요청을 끊고 새로 부른다. 늦거나(THOUGHT_TIMEOUT_MS) 실패하면 그 판단은 메시지 없이 넘어간다.
 // 닫으면(close, 집·서버 종료) 나가 있는 요청을 끊고 늦은 답은 버린다. 보내기·기록 오류는 받아 넘긴다.
 // PAM의 원래 생각(reasoning)은 모델에만 주고 대시보드로 보내지 않는다. 판단 기록 DB 줄에는 원래 생각이 그대로 남는다.
+// 상태 줄(note): 실행 추적이 정한 글(찾기 시작·찾음·못 찾음, src/act/labels.ts FIND_THOUGHT)은 모델 없이 바로 같은 길로 보내고 최근 메시지에 넣는다.
 import type { BrainLog, ThoughtEvent, ThoughtMessage } from "../contract/events.js";
 import type { ChatMessage, OpenAICompatClient } from "../infer/openai-compat.js";
 import { headWithin } from "../shared/cut.js";
@@ -103,6 +104,8 @@ type Decision = Extract<BrainLog, { type: "decision" }>;
 export interface ThoughtFeed {
   /** 판단 기록 하나(대시보드에 보낸 그대로). 모델 답을 기다리지 않고 바로 돌아온다. */
   decision(e: Decision): void;
+  /** 정한 상태 글 한 줄을 모델 없이 바로 보내고 기록한다(바로 앞 메시지와 같은 말이면 보내지 않는다). decision은 그 일의 판단 id. */
+  note(text: string, decision: string): void;
   /** 최근 메시지(새로 붙은 대시보드에 다시 보낸다). 없으면 null. */
   last(): ThoughtEvent | null;
   /** 집·서버를 닫을 때: 나가 있는 요청을 끊고, 늦은 답과 그 뒤 판단은 버린다. */
@@ -155,6 +158,18 @@ export function thoughtFeed(o: {
           for (const m of made) try { o.record?.(m); } catch { /* 닫힌 기록 DB 등: 기록만 빠진다 */ }
         })
         .catch(() => { if (asking === mine) asking = null; });
+    },
+    note(text, decision) {
+      if (closed) return;
+      const kept = fresh();
+      if (kept.length && same(kept.at(-1)!.text, text)) return;
+      const at = clock();
+      const base = `${decision}@${at}:note`;
+      const id = kept.some((m) => m.id === base) ? `${base}:${kept.length}` : base;
+      const m: ThoughtMessage = { id, text, at_ms: at, decision };
+      recent = [...kept, m].slice(-THOUGHT_KEEP);
+      try { o.send({ type: "thought", messages: [m] }); } catch { /* 보내기 오류는 메시지를 버리지 않는다 */ }
+      try { o.record?.(m); } catch { /* 닫힌 기록 DB 등: 기록만 빠진다 */ }
     },
     last: () => {
       const kept = fresh();

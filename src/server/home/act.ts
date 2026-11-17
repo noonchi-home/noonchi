@@ -140,6 +140,8 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     topReady: (id, sinceMs) => core.pipeline?.topReady(id, sinceMs) ?? false,
     // 찾기(src/act/track/find.ts): 비추기가 끝났는가(가까이 보기와 같은 프레임 고르기), 실행 전 찾기의 신선도는 실행 전 검사의 낡음 기준
     spotReady: (at, sinceMs) => core.pipeline?.spotReady(at, sinceMs) ?? false, staleMs: core.act.staleMs,
+    // 찾기 상태 줄은 생각 말풍선에 모델 없이 바로 올린다
+    thought: (text, decisionId) => feed.note(text, decisionId),
     guardObject: (id, on) => world.guard(id, now(), on),
     // 따르기 단계 동안 그 컵의 창(그 뒤 사진만, 다 이어진 값이 확인 값을 바꿈)
     contentsAction: (id, on) => { world.contentsAction(id, now(), on); },

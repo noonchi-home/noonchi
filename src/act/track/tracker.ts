@@ -168,6 +168,8 @@ export interface TrackerOptions {
   spotReady?: (position: [number, number, number], sinceMs: number) => boolean;
   /** 실행 전 검사의 낡음 기준(ms, STALE_MS). 실행 전 찾기가 찾았다고 보는 신선도다. 없으면 3초. */
   staleMs?: number;
+  /** 생각 말풍선에 정한 상태 글 한 줄을 올린다(src/brain/thought.ts note): 찾기 시작·찾음·못 찾음. decisionId는 그 일의 판단 id. 없으면 올리지 않는다. */
+  thought?: (text: string, decisionId: string) => void;
   /** 보기 지킴(src/world/state/world.ts guard): 위에서 비추는 동안 그 컵을 사라짐으로 세지 않게 걸고(true) 그 차례가 끝나면 푼다(false). */
   guardObject?: (objectId: string, on: boolean) => void;
   /** 실제 폰에 승인 대기(가전·외부 연락)가 떠 있는가. 그동안 가까이 가서 보라고 하지 않고 보류에서 풀린 첫 명령도 미룬다. 없으면 없다고 본다. */

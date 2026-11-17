@@ -3937,6 +3937,27 @@ describe("실행 추적: 안 보이는 대상은 마지막으로 본 자리로 �
     expect(s.looks).toEqual([expect.objectContaining({ planId: "", objectId: "find_cup", spot: { id: "find_cup", label: "식탁", position: SPOT }, force: true })]);
   });
 
+  it("생각 말풍선에 찾기 상태를 쌓는다: 시작하면 「컵이 안 보여서 식탁 쪽을 다시 볼게요」, 찾으면 「컵을 찾았어요」, 못 찾으면 「컵을 못 찾았어요」", async () => {
+    const said: [string, string][] = [];
+    const s = findSetup({ over: { thought: (text, id) => said.push([text, id]) } });
+    await s.decide(decision);
+    expect(said).toEqual([["컵이 안 보여서 식탁 쪽을 다시 볼게요", "pam-1"]]);
+    toLook(s);
+    s.objects([found("cup_3", [2.2, 0.75, 1], s.clock.t)]);
+    s.tick();
+    await s.t.idle();
+    expect(said.at(-1)).toEqual(["컵을 찾았어요", "pam-1"]);
+    const lost: [string, string][] = [];
+    const l = findSetup({ sightings: [sighting(9_000, null)], over: { thought: (text, id) => lost.push([text, id]) } });
+    await l.decide(decision);
+    expect(lost).toEqual([["컵이 안 보여서 컵 있던 곳을 다시 볼게요", "pam-1"]]);
+    toLook(l);
+    l.looks[0]!.done();
+    l.tick(4_100);
+    expect(lost.at(-1)).toEqual(["컵을 못 찾았어요", "pam-1"]);
+    for (const [text] of [...said, ...lost]) expect(text).not.toMatch(/[.?]$/);
+  });
+
   it("처음부터 1m 안이면 가기 없이 비추기부터, 면이 없는 자리는 「컵 있던 곳…」", async () => {
     const s = findSetup({ sightings: [sighting(9_000, null)] });
     s.eye([2.5, 1]);
@@ -4155,6 +4176,20 @@ describe("실행 추적: 계획 대상이 안 보이면 그 마지막 자리에�
     const s = runSetup({ objects: [seenAt(7_500)] });
     await blocked(s);
     expect(s.last()).toMatchObject({ id: "plan:pam-1", step: "plan:pam-1:find:cup_1:go:1", text: "식탁으로 가 주세요" });
+  });
+
+  it("생각 말풍선에 찾기 상태를 쌓는다(계획 판단 id): 시작·못 찾음", async () => {
+    const said: [string, string][] = [];
+    const s = runSetup({ objects: [seenAt(5_000)], over: { thought: (text, id) => said.push([text, id]) } });
+    await blocked(s);
+    expect(said).toEqual([["컵이 안 보여서 식탁 쪽을 다시 볼게요", "pam-1"]]);
+    s.eye([2.6, 1]);
+    s.tick();
+    s.ready(true);
+    s.tick();
+    s.looks[0]!.done();
+    s.tick(4_100);
+    expect(said.at(-1)).toEqual(["컵을 못 찾았어요", "pam-1"]);
   });
 
   it("막은 그 컵이 다시 보이면 첫 단계를 보낸다(지킴 풂)", async () => {

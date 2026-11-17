@@ -8,6 +8,7 @@
 // - 그만둠: 명령 하나가 PEEK.stepMs 안에 안 끝남, 막힌 채 holdMs, 사진 기다림 settleMs가 지나도 못 찾음, 찾기 시작부터 FIND.totalMs. 그 자리는 FIND.retryMs 동안 다시 가지 않는다.
 // - 막힘(맞춘 눈·폰 판본·끄기 안내·승인 대기·폰 대화·계획의 질문)과 명령 되풀이는 내용물 보류와 같은 명령 줄 규칙이다(phone-line.ts).
 // - 확인 물건의 자리를 찾는 동안은 그 물건에 보기 지킴을 건다(후보 자리는 지킬 물건이 없다).
+// - 생각 말풍선에 상태 줄을 올린다(TrackerOptions.thought): 시작하면 「컵이 안 보여서 식탁 쪽을 다시 볼게요」, 찾으면 「컵을 찾았어요」, 그만두면(한도) 「컵을 못 찾았어요」.
 // 계획 전 찾기(idle 칸 TrackCore.finding, 명령 id find:<번호>): 계획 전 검사가 no_target·in_sink로 막았고 찾을 자리가 있으면 시작한다.
 //   찾는 동안 같은 행동 판단은 기록만 하고 가장 새 것으로 바꿔 두며(start.ts), 찾으면 그 판단으로 다시 계획 전 검사부터 한다. 다른 행동의 계획을 받으면 거둔다.
 //   계획 밖 가까이 가서 보기보다 먼저다(찾는 동안은 시작하지 않는다). 「그만」은 거두고 그 자리를 쉰다.
@@ -18,7 +19,7 @@ import type { PlannedCommand } from "../../contract/phone.js";
 import type { ObjClass, WorldObject, WorldView } from "../../contract/world.js";
 import { OBJECT_NAME } from "../../world/labels.js";
 import { PRECHECK_FRESH_MS } from "../check.js";
-import { EXEC_TEXT, FIND_TEXT, STEP_TEXT, VISION_TEXT } from "../labels.js";
+import { EXEC_TEXT, FIND_THOUGHT, FIND_TEXT, STEP_TEXT, VISION_TEXT } from "../labels.js";
 import { lostTarget, planIdOf, putAway, taskOf, type LostSpot } from "../tasks.js";
 import { CONTENTS_HOLD, PEEK } from "./contents.js";
 import { Part, type Run } from "./core.js";
@@ -73,6 +74,7 @@ export class Finder extends Part {
     const q: FindSlot = { id: `find:${++this.slotSeq}`, sent: null, spokeAt: now, visionAt: now, find: this.make(spot, PRECHECK_FRESH_MS, Number.NEGATIVE_INFINITY, now), first: d, decision: d, text };
     core.finding = q;
     core.emit(planIdOf(d.id), "decided", EXEC_TEXT.finding(q.find.name));
+    this.o.thought?.(FIND_THOUGHT.start(q.find.name, q.find.surfaceLabel), d.id);
     this.idle();
     return true;
   }
@@ -98,7 +100,11 @@ export class Finder extends Part {
     const out = this.step(idleLine(core, q), q.find, this.clock.now(), false);
     if (out.kind === "going") return;
     core.finding = null;
-    if (out.kind === "over") return core.emit(planIdOf(q.first.id), "failed", q.text);
+    if (out.kind === "over") {
+      this.o.thought?.(FIND_THOUGHT.lost(q.find.name), q.first.id);
+      return core.emit(planIdOf(q.first.id), "failed", q.text);
+    }
+    this.o.thought?.(FIND_THOUGHT.found(q.find.name), q.first.id);
     core.start.onDecision(q.decision);
   }
 
@@ -141,9 +147,14 @@ export class Finder extends Part {
       }) : null;
       if (!spot) return "none";
       f = r.find = this.make(spot, this.staleMs(), r.decision.atMs, now);
+      this.o.thought?.(FIND_THOUGHT.start(f.name, f.surfaceLabel), r.decision.id);
     }
     const out = this.step(line, f, now, !!r.asking);
-    if (out.kind === "over") return "over";
+    if (out.kind === "over") {
+      this.o.thought?.(FIND_THOUGHT.lost(f.name), r.decision.id);
+      return "over";
+    }
+    if (out.kind === "found") this.o.thought?.(FIND_THOUGHT.found(f.name), r.decision.id);
     if (out.kind === "found" && out.obj.id !== objectId) return "other";
     return "hold";
   }

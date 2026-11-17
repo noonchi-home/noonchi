@@ -95,6 +95,13 @@ export const FIND_TEXT = {
   aimSpot: (item: string) => `${item} 있던 곳을 비춰 주세요`,
 } as const;
 
+/** 찾기의 생각 말풍선 상태 줄(src/act/track/find.ts → src/brain/thought.ts note): 해요체 한 문장, 끝에 마침표 없음. place는 면 이름(없으면 그 물건 있던 곳). */
+export const FIND_THOUGHT = {
+  start: (item: string, place: string | null) => `${josa(item, "이/가")} 안 보여서 ${place ? `${place} 쪽` : `${item} 있던 곳`}을 다시 볼게요`,
+  found: (item: string) => `${josa(item, "을/를")} 찾았어요`,
+  lost: (item: string) => `${josa(item, "을/를")} 못 찾았어요`,
+} as const;
+
 /** 승인(src/act/track/approval.ts): 처음 하는 계획을 실제 폰에 묻는 글, 「거절」을 받은 계획의 실행 기록. */
 export const APPROVAL_TEXT = {
   ask: (task: string) => `${josa(task, "을/를")} 할까요?`,
