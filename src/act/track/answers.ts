@@ -83,8 +83,8 @@ export class Answers extends Part {
       if (open) core.steps.finish(open, "failed", EXEC_TEXT.stopped, "cancelled");
       return { kind: "answer", choice: STOP };
     }
-    // 계획 밖 가까이 가서 보기에 「그만」: 거두고 그 컵은 잠시 다시 보내지 않는다
-    if (!open && !core.planning && core.idlePeek?.sent && matchChoice(text, [STOP])) {
+    // 계획 밖 가까이 가서 보기에 「그만」(명령을 거둔 뒤 위에서 보는 중·사진을 기다리는 중에도): 그만두고 그 컵은 잠시 다시 보내지 않는다
+    if (!open && !core.planning && core.idlePeek && matchChoice(text, [STOP])) {
       core.contents.stopIdle();
       return { kind: "answer", choice: STOP };
     }

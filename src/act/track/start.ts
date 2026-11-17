@@ -142,6 +142,8 @@ export class Starter extends Part {
       strays: 0, strayAt: Number.NEGATIVE_INFINITY, strayNear: null, told: null, helped: false,
       quiet: taskOf(r.plan.task)?.coach ? quietLabels(this.o.lessons?.get(r.plan.task) ?? null) : new Set(), quietOn: false, outcomes: [], hold: null, window: null, heldIds: new Set(), busyAt: null,
     };
+    // 계획 밖 가까이 가서 보기는 이 계획이 명령·보기 지킴을 쓰기 전에 거둔다(같은 컵의 지킴을 나중에 풀지 않게)
+    core.contents.dropIdle();
     core.run = run;
     this.o.plans.onDecision(r.plan.view);
     core.step(run, "planned");

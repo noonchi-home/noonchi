@@ -3786,15 +3786,52 @@ describe("실행 추적: 계획 밖 가까이 가서 보기(판단 전 보기 B 
     expect(s.last()).toMatchObject({ id: "peek:2", view: "above" });
   });
 
-  it("계획이 열리면 거두고, 계획 명령이 그 자리를 덮었으면 지우기를 보내지 않는다", async () => {
+  it("계획이 열리면 그 계획이 명령을 보내기 전에 거둔다(지우기 뒤 계획 명령)", async () => {
     const s = idleSetup();
     s.tick();
     expect(s.last()).toMatchObject({ id: "peek:1" });
     await s.decide(decision);
     s.tick();
-    expect(s.phone.filter((m) => m.type === "command_clear" && m.id === "peek:1")).toEqual([]);
+    const clear = s.phone.findIndex((m) => m.type === "command_clear" && m.id === "peek:1");
+    const plan = s.phone.findIndex((m) => m.type === "command" && m.id === "plan:pam-1");
+    expect(clear).toBeGreaterThanOrEqual(0);
+    expect(clear).toBeLessThan(plan);
     expect(s.last()).toMatchObject({ id: "plan:pam-1" });
     expect(s.t.openCommand()).toMatchObject({ planId: "plan:pam-1" });
+  });
+
+  it("같은 컵을 붙잡은 새 계획이 위에서 비추기를 보내면, 계획 밖 정리가 그 계획의 보기 지킴을 풀지 않는다", async () => {
+    const s = idleSetup({ eye: false, over: { check: () => ({ ok: false, reason: "unknown_contents", text: CHECK_TEXT.unknown_contents, object: "cup_1" }) } });
+    s.eye([2.3, 1]);
+    s.tick();
+    expect(s.last()).toMatchObject({ id: "peek:1", view: "above" });
+    await s.decide(decision);
+    for (let i = 0; i < 8; i++) s.tick();
+    expect(s.last()).toMatchObject({ id: "plan:pam-1", view: "above" });
+    expect(s.guards.at(-1)).toEqual(["cup_1", true]);
+  });
+
+  it("위에서 보는 중(명령을 거둔 뒤)에도 「그만」이면 계획 밖 가까이 가서 보기를 그만두고 60초 쉰다", () => {
+    const s = idleSetup({ eye: false });
+    s.eye([2.3, 1]);
+    s.tick();
+    s.ready(true);
+    s.tick();
+    expect(s.looks).toHaveLength(1);
+    expect(s.heard("그만해")?.id).toBe("stop");
+    expect(s.looks[0]!.signal.aborted).toBe(true);
+    const n = s.commands().length;
+    for (let i = 0; i < 200; i++) s.tick();
+    expect(s.commands().slice(n)).toEqual([]);
+  });
+
+  it("가까이 가기(go) 도중 사람이 안 보이면 거둔다. 위에서 비추는 동안은 안 보여도 잇는다", () => {
+    const s = idleSetup();
+    s.tick();
+    expect(s.last()).toMatchObject({ id: "peek:1", kind: "go" });
+    s.person(false);
+    s.tick();
+    expect(s.last()).toEqual({ type: "command_clear", id: "peek:1" });
   });
 
   it("「그만」이면 거두고 그 컵은 60초 동안 다시 보내지 않는다", () => {

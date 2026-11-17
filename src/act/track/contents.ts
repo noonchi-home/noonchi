@@ -17,7 +17,9 @@
 //   TrackCore.idlePeek(명령 id peek:<번호>)로 돈다. 시작하는 때(모두): 열린·만드는 계획(코치 포함)·끄기 안내·승인 대기·폰 대화가 없고, 위치를 맞췄고,
 //   사람이 보이고, 행동 목록에 내용물 행동(want)이 있고, 그 컵이 보이고 자리를 알고 치운 것·손에 든 것이 아니고 볼 면을 모르며, 불투명이 확인됐거나
 //   B가 그 세대에 잘라 본 지 settleMs가 지났고, 그 컵·세대를 retryMs 안에 보지 않았다. 도는 동안 막는 것(계획·대화·끄기 안내·승인 대기·위치·폰)이 생기면 거둔다
-//   (계획 명령이 그 자리를 덮었으면 지우기를 보내지 않는다). 위에서 보는 동안은 사람이 안 보여도 잇는다. 끝나면 칸을 비운다(모르면 보기 기록만 남는다).
+//   (계획 명령이 그 자리를 덮었으면 지우기를 보내지 않는다). 새 계획을 받으면 그 계획이 명령·보기 지킴을 쓰기 전에 거둔다(src/act/track/start.ts).
+//   가까이 가기 중에는 사람이 보여야 하고, 위에서 비추기·위에서 보기·사진 기다림 동안은 안 보여도 잇는다. 「그만」은 어느 차례에서든 받는다.
+//   끝나면 칸을 비운다(모르면 보기 기록만 남는다).
 import type { PlannedCommand } from "../../contract/phone.js";
 import type { Facet, WorldObject, WorldView } from "../../contract/world.js";
 import type { LookSpot } from "../../observe/index.js";
@@ -387,7 +389,9 @@ export class ContentsHold extends Part {
       const h = q.hold;
       const o = world.objects.find((x) => x.id === h.objectId);
       const lapsed = !o || o.status === "gone" || (o.contents_gen ?? 0) !== h.gen || sureValue(o, "contents") !== null;
-      if (lapsed || blocked) return this.dropIdle();
+      // 사람이 안 보여도 되는 것은 위에서 비추기·위에서 보기·사진 기다림뿐이다(폰이 컵을 내려다봐 사람이 안 찍힌다). 가까이 가기 중에는 사람이 보여야 한다
+      const away = !world.person.visible && h.phase === "peek" && h.peek?.part !== "above";
+      if (lapsed || blocked || away) return this.dropIdle();
       const line = this.idleLine(q);
       const going = h.phase === "after" ? now - h.afterAt <= CONTENTS_HOLD.settleMs || this.over(line, h) : this.advance(line, h, o, now, false);
       if (!going) core.idlePeek = null;
