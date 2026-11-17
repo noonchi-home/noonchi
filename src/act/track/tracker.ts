@@ -159,6 +159,12 @@ export interface TrackerOptions {
   stalled?: (s: Stall) => boolean;
   /** 내용물 보류의 가까이 보기(src/act/look.ts contents). 받았으면 true(끝나면 h.done). 없으면 가까이 보지 않고 사진만 기다린다. */
   lookContents?: (h: ContentsLook) => boolean;
+  /** 사람이 말로 답한 내용물을 World State에 넣는다(src/world/state/world.ts answerContents). 세대가 지났으면 false. 없으면 답을 넣지 못한다. */
+  answerContents?: (objectId: string, value: "empty" | "has_contents", gen: number) => boolean;
+  /** 실제 폰에 승인 대기(가전·외부 연락)가 떠 있는가. 있으면 내용물 질문을 미룬다(승인 질문을 덮지 않는다). */
+  approvalsWaiting?: () => boolean;
+  /** 실제 폰 대화를 쓰는 중인가(에이전트가 들은 말을 처리하는 중이거나 끝난 지 얼마 안 됨). 그동안 내용물 질문을 하지 않는다. */
+  talking?: () => boolean;
   /** 집기·놓기 단계가 이만큼(ms) 안 끝나면 stalled를 부른다(단계 시작 뒤, 받은 부름 뒤). */
   stallMs?: number;
   /** 단계마다 stalled를 받아 센 횟수 상한(settle(false)로 돌려받은 부름은 넣지 않는다). */
@@ -284,6 +290,15 @@ export class ExecutionTracker {
     const now = core.clock.now();
     if (r.state === "planned" && !r.asking) return core.start.tryStart(r, now - r.since >= core.cfg.recheckMs);
     if (r.asking) {
+      if (r.asking.why === "contents") {
+        // 떠 있는 내용물 질문: 지났으면(컵이 없음·세대가 바뀜·이제 확인됨) 지우고 다시 검사, 기한이 지나면 답을 받지 못함으로 닫는다
+        if (core.contents.lapsed(r)) return core.start.tryStart(r, false);
+        if (now - r.askAt > core.cfg.askMs) {
+          core.contents.noAnswer(r);
+          return steps.finish(r, "failed", EXEC_TEXT.noAnswer);
+        }
+        return steps.repeat(r, now);
+      }
       if (r.asking.why === "again" && steps.look(r)) return;
       if (now - r.askAt > core.cfg.askMs) return steps.finish(r, "failed", EXEC_TEXT.noAnswer);
       return steps.repeat(r, now);

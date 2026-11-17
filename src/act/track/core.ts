@@ -11,7 +11,7 @@ import type { ConditionWatch } from "../../world/index.js";
 import { HUMAN_KINDS, type AgentPlan, type AgentStep } from "../../agent/index.js";
 import { DEVICE_UNKNOWN, EXEC_TEXT } from "../labels.js";
 import type { StepOutcome } from "../lessons.js";
-import { AGAIN, APPROVE, STEP_DONE, type ActionChoice } from "../prompts.js";
+import { AGAIN, APPROVE, CONTENTS_CHOICES, STEP_DONE, type ActionChoice } from "../prompts.js";
 import type { Answers } from "./answers.js";
 import type { Approvals, Asking } from "./approval.js";
 import type { Coach } from "./coach.js";
@@ -154,9 +154,10 @@ export abstract class Part {
   }
 }
 
-/** 승인 질문은 승인·거절, 다시 묻기는 계속·그만, 사람 단계는 「완료」 하나, 질문은 그 답들, 알림·기다리기·기기는 없음. */
+/** 승인 질문은 승인·거절, 다시 묻기는 계속·그만, 내용물 질문은 그 말 답(폰에 단추로 보내지 않는다), 사람 단계는 「완료」 하나, 질문은 그 답들, 알림·기다리기·기기는 없음. */
 export function choicesOf(r: Run, step: AgentStep | undefined): ActionChoice[] {
   if (r.asking?.why === "again") return AGAIN;
+  if (r.asking?.why === "contents") return [...CONTENTS_CHOICES];
   if (r.asking) return APPROVE;
   if (!step) return [];
   if (step.kind === "ask") return step.prompt?.choices ?? [];

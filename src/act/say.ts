@@ -12,6 +12,7 @@ import type { PlanView } from "../contract/plan.js";
 import type { WorldView } from "../contract/world.js";
 import { SAY_TEXT, STEP_COMMAND, STEP_LABEL } from "./labels.js";
 import { isOffStep } from "./off-step.js";
+import { isContentsStep } from "./ask-step.js";
 import { planTargetId } from "./tasks.js";
 import { POSE_FALL } from "../world/vocab.js";
 
@@ -41,6 +42,8 @@ export function sayLine({ plan, command, world, nowMs, look = null, left = null,
   if (offWait) return SAY_TEXT.offWait(offWait);
   // 끄기 안내(켠 채 닫힌 계획 뒤)가 떠 있는 동안
   if (command?.type === "command" && isOffStep(command.step)) return SAY_TEXT.offAsked;
+  // 내용물 질문(열린 계획의 질문·계획 밖 질문)
+  if (command?.type === "command" && isContentsStep(command.step)) return SAY_TEXT.asked;
   if (service && nowMs - service.atMs <= SAY_DONE_MS) return service.text;
   if (plan && OPEN.has(plan.status)) {
     if (told && nowMs - told.atMs <= SAY_TOLD_MS) return SAY_TEXT.retold;

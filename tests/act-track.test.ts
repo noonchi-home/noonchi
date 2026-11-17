@@ -6,7 +6,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import type { ActionChoice } from "../src/act/prompts.js";
+import type { ActionChoice, ContentsChoice } from "../src/act/prompts.js";
 import { ExecutionTracker, TRACK_DEFAULTS, type ContentsLook, type Stall, type Stray, type TrackerOptions } from "../src/act/track/tracker.js";
 import type { TrackCore } from "../src/act/track/core.js";
 import { ApprovalStore, type ApprovalAnswer } from "../src/agent/approval.js";
@@ -595,6 +595,94 @@ describe("실행 추적: 그 자리에서 하는 일(do, 채워 주기)", () => 
       await t2.decide(fillDecision);
       t2.heard("그만해");
       expect(t2.looks[0]!.signal.aborted).toBe(true);
+    });
+
+    describe("말 질문", () => {
+      /** 보류가 묻는 차례까지 간 실행 추적: 위치를 맞췄고 가까이 보기는 받자마자 끝난다. answered는 World State에 넣은 답, bump은 세대를 올린다(사건). */
+      async function asking(over: Parameters<typeof setup>[0] = {}) {
+        const answered: [string, string, number][] = [];
+        let gen = 3;
+        const s = holdSetup({
+          lookContents: (h) => { h.done(); return true; },
+          answerContents: (id, v, g) => {
+            if (g !== gen) return false;
+            answered.push([id, v, g]);
+            gen++;
+            s.set(confirmed(v));
+            return true;
+          },
+          ...over,
+        });
+        s.t.onEye([0, 0]);
+        await s.decide(fillDecision);
+        for (let i = 0; i < 20 && !s.commands().length; i++) { s.clock.t += 250; s.see(s.clock.t); s.t.tick(); }
+        return { ...s, answered, bump: () => { gen++; } };
+      }
+
+      it("가까이 봐도 모르면 지금 명령 줄에 「컵 비었어요?」를 단추 없이 소리로 묻는다(등급 question, 그 컵 고리)", async () => {
+        const s = await asking();
+        expect(s.last()).toEqual({ type: "command", id: "plan:pam-1", step: "plan:pam-1:contents:cup_1:3:1", text: "컵 비었어요?", vision: null, choices: [], target: expect.objectContaining({ id: "cup_1" }), speak: true, grade: "question" });
+        expect(s.t.openCommand()).toMatchObject({ kind: "ask", text: "컵 비었어요?" });
+        expect(s.exec().at(-1)).toMatchObject({ state: "planned", text: EXEC_TEXT.contentsAsked });
+      });
+
+      it("말 「다 마셨어」는 그 컵·세대로 World State에 넣고 질문을 지운 뒤 바로 다시 검사해 첫 명령을 보낸다", async () => {
+        const s = await asking();
+        expect((s.heard("다 마셨어") as ContentsChoice | null)?.value).toBe("empty");
+        expect(s.answered).toEqual([["cup_1", "empty", 3]]);
+        expect(s.spoken().at(-1)).toBe("냉장고로 가 주세요");
+      });
+
+      it("말 「아직 있어」(확인된 반대 값)면 다시 묻지 않고 「안이 맞지 않아」로 닫는다", async () => {
+        const s = await asking();
+        s.heard("아직 있어");
+        s.clock.t += 3_100; s.see(s.clock.t); s.t.tick();
+        expect(s.exec().at(-1)).toMatchObject({ state: "failed", text: CHECK_TEXT.contents_mismatch });
+        expect(s.commands().filter((m) => /:contents:/.test(m.step))).toHaveLength(1);
+      });
+
+      it("다른 명령에 온 말·질문과 상관없는 말은 답이 아니다. 세대가 바뀐 뒤의 답(늦은 답)은 넣지 않는다", async () => {
+        const s = await asking();
+        expect(s.t.onHeard("비었어", { kind: "command", id: "plan:pam-1", step: "plan:pam-1:2", pending: [] })).toEqual({ kind: "stale" });
+        expect(s.heard("TV 켜 줘")).toBeNull();
+        expect(s.heard("시간 없어")).toBeNull();
+        s.bump();
+        s.heard("비었어");
+        expect(s.answered).toEqual([]);
+      });
+
+      it("컵이 확인되면 떠 있는 질문을 지우고(command_clear) 첫 명령을 보낸다", async () => {
+        const s = await asking();
+        s.set(confirmed("empty"));
+        s.clock.t += 250; s.see(s.clock.t); s.t.tick();
+        expect(s.phone.some((m) => m.type === "command_clear")).toBe(true);
+        expect(s.spoken().at(-1)).toBe("냉장고로 가 주세요");
+      });
+
+      it("2분 안에 답이 없으면 「답을 받지 못함」으로 닫고, 같은 컵은 60초 안에 다시 묻지 않는다", async () => {
+        const s = await asking();
+        s.clock.t += 121_000; s.see(s.clock.t); s.t.tick();
+        expect(s.exec().at(-1)).toMatchObject({ state: "failed", text: EXEC_TEXT.noAnswer });
+        const n = s.commands().length;
+        await s.decide({ ...fillDecision, id: "pam-2", seq: 2 });
+        for (let i = 0; i < 40; i++) { s.clock.t += 250; s.see(s.clock.t); s.t.tick(); }
+        expect(s.commands().slice(n).filter((m) => /:contents:/.test(m.step))).toEqual([]);
+      });
+
+      it("묻지 않는 때: 위치를 맞추기 전, 승인 대기가 있을 때, 폰 대화를 쓰는 중, 컵을 손에 들었을 때", async () => {
+        const noEye = holdSetup({ lookContents: (h) => { h.done(); return true; } });
+        await noEye.decide(fillDecision);
+        for (let i = 0; i < 40; i++) { noEye.clock.t += 250; noEye.see(noEye.clock.t); noEye.t.tick(); }
+        expect(noEye.commands()).toEqual([]);
+        expect((await asking({ approvalsWaiting: () => true })).commands()).toEqual([]);
+        expect((await asking({ talking: () => true })).commands()).toEqual([]);
+      });
+
+      it("「그만」이면 질문을 지우고 취소로 닫는다", async () => {
+        const s = await asking();
+        expect(s.heard("그만해")?.id).toBe("stop");
+        expect(s.phone.at(-1)).toEqual({ type: "command_clear", id: "plan:pam-1" });
+      });
     });
   });
 });

@@ -3,9 +3,16 @@
 // 그사이 확인되면 실행 전 검사가 통과해 tryStart가 release하고 첫 단계로 간다. 확인된 반대 값이면 검사가 contents_mismatch로 막아 묻지 않는다.
 // 컵의 내용물 세대가 바뀌면(마시기 사건·확인) 가까이 보기부터 다시 한다. 묻지 못한 채 holdMs가 지나면 그만둔다(검사 실패로 닫힘).
 // 보류하는 동안 컵을 다시 보지 못해 낡아도(stale) 보류를 이어 간다(src/act/track/start.ts tryStart).
+// 말 질문: 위치를 맞췄고, 판본이 맞는 폰이 있고, 끄기 안내·승인 대기·폰 대화가 없고, 컵이 보이고 손에 없고, 그 컵·세대를 묻지 않았고 답 없음 뒤 retryMs가 지났을 때만
+// 지금 명령 줄에 「컵 비었어요?」를 단추 없이 소리로 묻는다(Run.asking contents, 등급 question). 단계 id에 컵·세대·물을 때마다 오르는 번호를 실어 늦은 답을 가른다.
+// 말 답(onHeard)은 그 컵·세대로 World State에 넣고(answerContents, 세대가 지났으면 넣지 않음) 질문을 지운 뒤 바로 다시 검사한다.
+// 답을 넣은 컵·세대는 다시 묻지 않는다. 답이 없거나 그만두면 물어봄으로 세지 않는다(답이 없으면 그 컵은 retryMs 동안 묻지 않는다).
 import type { LookSpot } from "../../observe/index.js";
 import { OBJECT_NAME } from "../../world/labels.js";
-import { opaqueBody } from "../tasks.js";
+import { contentsStep } from "../ask-step.js";
+import { CONTENTS_TEXT, EXEC_TEXT } from "../labels.js";
+import type { ActionChoice, ContentsChoice } from "../prompts.js";
+import { holdsTarget, opaqueBody, sureValue } from "../tasks.js";
 import { Part, type Run } from "./core.js";
 
 /** 보기 담당이 받기를 기다리는 시간, 가까이 본 뒤 사진을 기다리는 시간, 묻지 못할 때 보류 한도, 답이 없던 컵을 다시 묻기 전 기다리는 시간(ms). */
@@ -17,6 +24,13 @@ export interface Hold { objectId: string; gen: number; phase: "look" | "looking"
 
 /** 내용물 보류. */
 export class ContentsHold extends Part {
+  /** 답을 넣은 컵·세대(「컵|세대」): 다시 묻지 않는다. */
+  private readonly asked = new Set<string>();
+  /** 답이 없던 컵: 이 시각 전에는 다시 묻지 않는다. */
+  private readonly quietUntil = new Map<string, number>();
+  /** 물을 때마다 오르는 번호(계획 안 질문·계획 밖 질문이 같이 쓴다). */
+  private askSeq = 0;
+
   /** 실행 전 검사가 내용물을 몰라 막았다: 보류를 한 걸음 진행한다. 아직 붙잡고 있으면 true, 그만두면 false(검사 실패로 닫힌다). */
   keep(r: Run, objectId: string): boolean {
     const now = this.clock.now();
@@ -49,7 +63,61 @@ export class ContentsHold extends Part {
       if (h.phase === "look" && (skip || now - h.at >= CONTENTS_HOLD.lookWaitMs)) Object.assign(h, { phase: o && opaqueBody(o) ? "ask" : "settle", lookedAt: now });
     }
     if (h.phase === "settle" && now - h.lookedAt >= CONTENTS_HOLD.settleMs) h.phase = "ask";
+    if (h.phase === "ask") this.ask(r, h);
     return true;
+  }
+
+  /** 폰 대화를 쓰는 중인가(에이전트가 들은 말을 처리하는 중이거나 끝난 지 얼마 안 됨). */
+  private talking(): boolean {
+    return this.o.talking?.() ?? false;
+  }
+
+  /** keep의 ask 차례: 물을 수 있으면 지금 명령 줄에 묻는다. 물을 수 없으면 그대로 기다린다(holdMs가 지나면 keep이 그만둔다). */
+  private ask(r: Run, h: Hold): void {
+    const core = this.core;
+    const now = this.clock.now();
+    const world = this.o.world();
+    const o = world.objects.find((x) => x.id === h.objectId);
+    if (!o || o.status !== "present" || !core.eye || !core.start.phoneOk() || core.safety.offPending() || core.safety.shownOff()
+      || (this.o.approvalsWaiting?.() ?? false) || this.talking() || r.asking || r.sent || this.asked.has(`${h.objectId}|${h.gen}`)
+      || now < (this.quietUntil.get(h.objectId) ?? 0) || o.facts.place?.value === "in_hand" || holdsTarget(world, o.cls, true)) return;
+    const name = OBJECT_NAME[o.cls] ?? o.cls;
+    Object.assign(r, { asking: { why: "contents", objectId: h.objectId, gen: h.gen }, askAt: now, spokeAt: now });
+    r.sent = {
+      type: "command", id: r.plan.view.id, step: contentsStep(r.plan.view.id, h.objectId, h.gen, ++this.askSeq), text: CONTENTS_TEXT.ask(name), vision: null, choices: [],
+      target: o.position ? { id: o.id, label: name, position: o.position } : null, speak: true,
+    };
+    core.emit(r.plan.view.id, "planned", EXEC_TEXT.contentsAsked);
+    core.answers.send(r.sent);
+  }
+
+  /** 말 답: 그 컵·세대로 World State에 넣는다(늦은 세대면 넣지 않음). 질문을 지우고 보류를 푼 뒤 바로 다시 검사한다. */
+  answered(r: Run, picked: ActionChoice): void {
+    const a = r.asking;
+    if (a?.why !== "contents") return;
+    if (this.o.answerContents?.(a.objectId, (picked as ContentsChoice).value, a.gen)) this.asked.add(`${a.objectId}|${a.gen}`);
+    r.asking = null;
+    this.core.steps.clear(r);
+    this.release(r);
+    r.since = this.clock.now();
+    this.core.start.tryStart(r, false);
+  }
+
+  /** 떠 있는 질문이 지났는가(컵이 없음·사라짐, 세대가 바뀜, 이제 확인됨): 지났으면 질문을 지우고 true(다시 검사한다). */
+  lapsed(r: Run): boolean {
+    const a = r.asking;
+    if (a?.why !== "contents") return false;
+    const o = this.o.world().objects.find((x) => x.id === a.objectId);
+    if (o && o.status !== "gone" && (o.contents_gen ?? 0) === a.gen && sureValue(o, "contents") === null) return false;
+    r.asking = null;
+    this.core.steps.clear(r);
+    return true;
+  }
+
+  /** 답 없이 질문 기한이 지났다: 물어봄으로 세지 않고, 그 컵은 retryMs 동안 다시 묻지 않는다. */
+  noAnswer(r: Run): void {
+    const a = r.asking;
+    if (a?.why === "contents") this.quietUntil.set(a.objectId, this.clock.now() + CONTENTS_HOLD.retryMs);
   }
 
   /** 붙잡고 있는가(그만두지 않은 보류). */
