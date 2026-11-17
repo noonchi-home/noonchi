@@ -55,6 +55,8 @@ export class BusNode {
   readonly #tasks = new Set<Promise<void>>();
   readonly #life = new AbortController();
   #running: Promise<void> | null = null;
+  /** prepare가 구독을 만든 #subs 수. */
+  #prepared = 0;
   #current: AbortController | null = null;
   #closed = false;
   #idle: (() => void)[] = [];
@@ -74,14 +76,16 @@ export class BusNode {
   }
 
   /** 변화(rev)는 그 판본 이상의 상태를 가진 뒤에 처리한다. 상태가 아직 없으면 변화를 내려놓고(defer) 줄을 비운다.
+   *  onState는 상태가 올 때마다(같은 판본을 다시 내도) 내려놓은 변화보다 먼저 부른다(같은 노드가 상태를 두 번 구독하면 낡은 메시지 거르기가 둘째를 버린다).
    *  내려놓은 변화는 상태가 오면 그 콜백 안에서 처리하고 그때 ack한다. RELIABLE은 ack 전에는 뒤 변화를 주지 않으므로 내려놓은 변화는 하나다. */
-  withState<C extends TopicName, S extends TopicName>(changes: C, state: S, cb: (change: Body<C>, latest: Body<S>, ctx: Ctx<C>) => void | Promise<void>): void {
+  withState<C extends TopicName, S extends TopicName>(changes: C, state: S, cb: (change: Body<C>, latest: Body<S>, ctx: Ctx<C>) => void | Promise<void>, onState?: (latest: Body<S>, ctx: Ctx<S>) => void | Promise<void>): void {
     let latest: Body<S> | null = null;
     let parked: { c: Body<C>; ctx: Ctx<C>; settle: Settle } | null = null;
     const rev = (b: unknown) => Number((b as { rev?: number }).rev);
     const ready = (c: Body<C>) => latest !== null && rev(latest) >= rev(c);
     this.on(state, async (b, sctx) => {
       latest = b;
+      await onState?.(b, sctx);
       if (!parked || !ready(parked.c)) return;
       const p = parked;
       parked = null;
@@ -130,9 +134,12 @@ export class BusNode {
     this.#push({ run: ({ signal }) => fn(signal) });
   }
 
-  /** 구독·그룹·커서를 만든다(배달은 start 뒤). */
+  /** 구독·그룹·커서를 만든다(배달은 start 뒤). 다시 부르면 그 뒤 더한 구독만 만든다(재생은 받은 노드를 다시 준비한다). */
   async prepare(): Promise<void> {
-    for (const s of this.#subs) this.#handles.push({ topic: s.topic, h: await this.#bus.subscribe(s.topic, this.name, (e) => this.#enqueue(e, s), { mode: s.mode }) });
+    while (this.#prepared < this.#subs.length) {
+      const s = this.#subs[this.#prepared++]!;
+      this.#handles.push({ topic: s.topic, h: await this.#bus.subscribe(s.topic, this.name, (e) => this.#enqueue(e, s), { mode: s.mode }) });
+    }
   }
 
   /** 배달·타이머를 켠다. 띄우는 곳은 모든 노드의 prepare를 마친 뒤 부른다. */

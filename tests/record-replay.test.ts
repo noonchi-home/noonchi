@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { BusNode, RETRY_MS } from "../src/bus/index.js";
 import { Bag, REPLAY_INPUTS, replay } from "../src/record/index.js";
+import { WorldState, startWorldNode } from "../src/world/index.js";
 
 const EPOCH = { boot: "b1", home: "h#1" };
 const h = (seq: number, stamp: number) => ({ stamp, node: "perception" as const, inst: "i1", seq, ...EPOCH });
@@ -12,6 +13,28 @@ describe("격리 재생", () => {
     expect(REPLAY_INPUTS).not.toContain("/device/command");
     expect(REPLAY_INPUTS).not.toContain("/brain/plan");
     expect(REPLAY_INPUTS).toContain("/perception/analysis");
+  });
+
+  it("녹화한 VLM 답(/perception/scene)을 흘려 집 상태 노드가 같은 World State를 다시 만든다", async () => {
+    expect(REPLAY_INPUTS).toContain("/perception/scene");
+    const bag = Bag.open(":memory:");
+    const scene = { scene: "kitchen", observations: [], summary: "식탁 위에 컵 하나" };
+    bag.write({ topic: "/perception/scene", key: "_", header: h(1, 1100), body: { kind: "scene", frame_id: "e1", observed_ms: 1000, scene } } as never, 1100);
+    bag.write({ topic: "/perception/scene", key: "_", header: h(2, 2100), body: { kind: "missing", frame_id: "e2", observed_ms: 2000, missing: "timeout" } } as never, 2100);
+    const direct = new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] });
+    const want = [...direct.applyScene("e1", 1000, scene, new Map()), ...direct.applyMissing("e2", 2000, { vlm: "timeout" })];
+    const got: unknown[] = [];
+    await replay({
+      bag, from: 0, to: 10_000,
+      launch: async (bus, clock) => {
+        const w = await startWorldNode({ bus, epoch: EPOCH, world: new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }), clock, log: () => {} });
+        const probe = new BusNode({ name: "act", bus, epoch: EPOCH, clock, log: () => {} });
+        probe.on("/world/changes", (b) => { got.push(...b.changes); });
+        return [w.node, probe];
+      },
+    });
+    expect(want.map((c) => c.kind)).toEqual(["vlm", "vlm_missing"]);
+    expect(got).toEqual(want);
   });
 
   it("도착 차례대로 흘리고, 가상 시계는 발행 시각이 아니라 도착 시각까지 당긴다", async () => {

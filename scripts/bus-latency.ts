@@ -17,7 +17,7 @@ const pct = (xs: number[], p: number) => { const s = [...xs].sort((a, b) => a - 
 const show = (name: string, xs: number[]) => console.log(`${name.padEnd(36)} p50 ${pct(xs, 50).toFixed(3)}ms  p95 ${pct(xs, 95).toFixed(3)}ms  최대 ${Math.max(...xs).toFixed(3)}ms  (${xs.length}번)`);
 
 /** 집 상태 크기의 몸: rev와 bytes만큼의 view. */
-const stateBody = (rev: number) => ({ rev, view: { at_ms: rev, objects: [], pad: "x".repeat(Math.max(0, BYTES - 60)) } });
+const stateBody = (rev: number) => ({ rev, view: { at_ms: rev, objects: [{ pad: "x".repeat(Math.max(0, BYTES - 190)) }], person: {}, fixtures: [], devices: [], eye: null, frame_ms: null, vlm_missing: 0, yolo_missing: 0 } });
 const changeBody = (rev: number) => ({ rev, changes: [{ kind: "appeared", at_ms: rev, subject: "cup_1", text: "컵 cup_1 보임", meaningful: true }] });
 
 async function hop(bus: Bus, topic: "/world/changes" | "/world/state", body: (rev: number) => Record<string, unknown>): Promise<number[]> {

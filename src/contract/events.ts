@@ -120,7 +120,8 @@ export type BrainLog =
     type: "observe"; at_ms: number; frame_id: string; captured_at_ms: number; yolo: string | null; yolo_missing?: YoloMissing; vlm: string | null; vlm_missing?: VlmMissing;
     closer?: [number, number, number, number];
   }
-  | { type: "world_change"; at_ms: number; kind: WorldChangeKind; text: string }
+  /** at_ms는 기록 시각(처리 시각), observed_ms는 그 변화의 근거(촬영) 시각(통로로 온 변화만 싣는다). */
+  | { type: "world_change"; at_ms: number; kind: WorldChangeKind; text: string; observed_ms?: number }
   | {
     type: "decision"; at_ms: number; id: string; seq: number; text_sent: string; status: "valid" | "failed";
     /** 이번 판단의 PAM LLM 사용량(답을 받았을 때만, 틀린 답·잘린 답이어도). 예전 기록에는 없다. */

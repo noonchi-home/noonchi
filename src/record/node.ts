@@ -4,11 +4,12 @@ import type { HistoryDb } from "../brain/index.js";
 import type { Bag } from "./bag.js";
 import { historyRoutes } from "./history.js";
 
-export async function startRecorder(o: { bus: Bus; epoch: { boot: string; home: string }; db: HistoryDb; bag?: Bag; clock?: Clock }): Promise<BusNode> {
+/** keepHeard: KEEP_HEARD_TEXT(들은 말 원문을 남김, 기본 꺼짐). */
+export async function startRecorder(o: { bus: Bus; epoch: { boot: string; home: string }; db: HistoryDb; bag?: Bag; clock?: Clock; keepHeard?: boolean }): Promise<BusNode> {
   const clock = o.clock ?? realClock;
   const node = new BusNode({ name: "recorder", bus: o.bus, epoch: o.epoch, clock });
   o.db.forgetOtherBoots(o.epoch.boot);
-  historyRoutes(node, o.db, { bag: o.bag, now: () => clock.now() });
+  historyRoutes(node, o.db, { bag: o.bag, now: () => clock.now(), keepHeard: o.keepHeard });
   const sensors = (Object.keys(TOPICS) as TopicName[]).filter((t) => (TOPICS[t].qos as { kind: string; record?: boolean }).record);
   const told = new Map<TopicName, number>();
   node.every(60_000, () => {

@@ -2599,12 +2599,12 @@ Expected: 모두 PASS(이 묶음은 집 실행 묶음을 바꾸지 않는다).
 
 | 구간 | 지금(통로 전) | 통로 한 번 지나기: MemoryBus / RedisBus(p50·p95) | 묶음 2 뒤 예상 p95 |
 |---|---|---|---|
-| 엔진 프레임 → 집 상태 발행(대시보드 world) | p50 7.9ms · p95 13.5ms(감지기 시간 뺌, 40장) | RELIABLE(`/world/changes` 113바이트) 0.47·0.79ms / Task 1 뒤 2.4·3.2ms(전 8.3·9.5ms). STATE(`/world/state` 18.4KB) 0.54·0.86ms / Task 1 뒤 3.3·4.1ms~3.7·4.8ms(두 판, 전 6.5·7.6ms) | 프레임 → 다리 → 집 상태 노드 → `/world/state` 한 번 지남(상태를 변화보다 먼저 냄). MemoryBus 약 14.4ms(13.5 + 0.9), RedisBus 약 18.3ms(13.5 + STATE p95 4.8) |
+| 엔진 프레임 → 집 상태 발행(대시보드 world) | p50 7.9ms · p95 13.5ms(감지기 시간 뺌, 40장) | RELIABLE(`/world/changes` 113바이트) 0.47·0.79ms / Task 1 뒤 2.4·3.2ms(전 8.3·9.5ms). STATE(`/world/state` 18.4KB) 0.54·0.86ms / Task 1 뒤 3.3·4.1ms~3.7·4.8ms(두 판, 전 6.5·7.6ms). 실제 몸 모양 검사(Task 2·최상위 칸 검사) 뒤 MemoryBus RELIABLE 0.48~0.50·0.70~0.78ms, STATE 0.56~0.57·0.73~0.84ms(두 판, 그대로) | 프레임 → 다리 → 집 상태 노드 → `/world/state` 한 번 지남(상태를 변화보다 먼저 냄). MemoryBus 약 14.4ms(13.5 + 0.9), RedisBus 약 18.3ms(13.5 + STATE p95 4.8) |
 | 집 상태 변화 → 판단 시작(PAM 요청), event 모드 | 47·123·191·235ms(4번): 250ms 판단 타이머 기다림이 거의 전부. 기본 periodic 모드는 5초 주기라 0~5초 | 변화 한 번 지나기(위 RELIABLE) | 타이머가 그대로면 지금 + 한 번 지나기(아래 「줄일 수 있는 곳」 2) |
 | 실제 감지(YOLO26s-seg) | DirectML 약 144ms · CPU 8스레드 약 218ms(구현명세서 4절) | — | 그대로 |
 | Redis PING 왕복 | — | p50 1.57ms · p95 2.1ms | — |
 | Redis 맨 전달: 이 PC 바닥(통로 없이 같은 크기 값을 `XADD` → 막고 읽던 다른 연결의 `XREAD`가 깨어남) | — | `/world/changes` 크기 p50 2.4·2.5ms · p95 3.0·3.1ms. `/world/state` 크기 p50 3.1·3.3ms · p95 3.8·4.1ms | AWS에서 다시 잴 것: 배포한 EC2의 noonchi 컨테이너 안에서 `scripts/bus-latency.ts`(PING·맨 전달·RedisBus 한 번 지나기)를 돌려 이 표에 더한다 |
-| 봉투 만들기·읽기·검사(`/world/state` 18.4KB) | — | p50 0.27ms · p95 0.46ms | — |
+| 봉투 만들기·읽기·검사(`/world/state` 18.4KB) | — | p50 0.27ms · p95 0.46ms. 최상위 칸·사진 칸 검사 뒤 p50 0.28ms · p95 0.49~0.54ms | — |
 
 Task 1 뒤 RedisBus 한 번 지나기는 같은 크기 맨 전달과 p50이 같거나 0.6ms 안쪽으로 더 걸린다(통로가 왕복을 더하지 않는다). STATE p50 3ms는 이 PC에서 닿을 수 없다: 18.4KB 맨 전달의 바닥이 p50 3.1~3.3ms다(Docker Desktop 포트 전달에서 18KB 한 번 오가기가 PING보다 약 1.5ms 더 든다). AWS EC2 같은 호스트에서는 이 바닥이 훨씬 낮다.
 

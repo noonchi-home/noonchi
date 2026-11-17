@@ -57,8 +57,16 @@ const seen = z.strictObject({
     mask: z.strictObject({ at: z.tuple([at, at, at, at]), cols: z.number().int().nonnegative(), rows: z.number().int().nonnegative(), bits: z.string().regex(B64) }),
   })),
 });
-/** /world/state의 보기는 집 상태 노드 하나가 타입으로 만든 18KB 객체라 모양을 깊이 보지 않는다(지나기마다 세 번 검사하므로 지연 예산). */
-const view = z.custom<WorldView>((v) => typeof v === "object" && v !== null && !Array.isArray(v));
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+const isNum = (v: unknown) => typeof v === "number" && Number.isFinite(v);
+/** 최상위 칸이 이 표의 칸뿐인가(사진 칸 jpeg·jpeg_b64 같은 모르는 칸이 없다). */
+const onlyKeys = (v: Record<string, unknown>, keys: ReadonlySet<string>) => Object.keys(v).every((k) => keys.has(k));
+const VIEW_KEYS = ["at_ms", "objects", "person", "fixtures", "devices", "eye", "frame_ms", "vlm_missing", "yolo_missing"] as const satisfies readonly (keyof WorldView)[];
+const VIEW_KEY_SET: ReadonlySet<string> = new Set(VIEW_KEYS);
+/** /world/state의 보기는 집 상태 노드 하나가 타입으로 만든 18KB 객체라 깊이는 보지 않는다(지나기마다 세 번 검사하므로 지연 예산).
+ *  최상위 칸은 다 있고 그 칸뿐인지(사진 칸 없음)와 칸의 종류만 본다. */
+const view = z.custom<WorldView>((v) => isObj(v) && onlyKeys(v, VIEW_KEY_SET) && isNum(v.at_ms) && Array.isArray(v.objects) && isObj(v.person) && Array.isArray(v.fixtures)
+  && Array.isArray(v.devices) && (v.eye === null || isObj(v.eye)) && (v.frame_ms === null || isNum(v.frame_ms)) && isNum(v.vlm_missing) && isNum(v.yolo_missing));
 const worldState = z.strictObject({ rev, view });
 const CHANGE_KINDS = [
   "appeared", "gone", "out_of_view", "back_in_view", "state", "person_appeared", "person_gone", "person_state", "person_room", "fixture", "device", "vlm", "vlm_missing", "yolo_missing", "heard",
@@ -68,9 +76,11 @@ const worldInput = z.strictObject({ kind: z.enum(["guard", "contents"]), id, on:
 const heard = z.strictObject({ text: z.string(), observed_ms: at });
 /** /world/closer: 가까이 보기 한 번의 VLM 합치기 뒤 최종 id 표. */
 const worldCloser = z.strictObject({ look: id, ids: z.record(z.string(), z.string()) });
-/** /device/changes: 기기 상태(허브가 만든 값이라 id만 본다)와 기록용 메모(첫 상태·이름·종류). */
+const DEVICE_KEYS = ["id", "online", "twin", "matter", "updatedAt", "signal", "readback", "vision"] as const satisfies readonly (keyof DeviceState)[];
+const DEVICE_KEY_SET: ReadonlySet<string> = new Set(DEVICE_KEYS);
+/** /device/changes: 기기 상태(허브가 만든 값이라 최상위 칸만 본다: 꼭 있는 칸과 그 칸뿐인지)와 기록용 메모(첫 상태·이름·종류). */
 const deviceChange = z.strictObject({
-  id, state: z.custom<DeviceState>((v) => typeof v === "object" && v !== null && typeof (v as { id?: unknown }).id === "string"),
+  id, state: z.custom<DeviceState>((v) => isObj(v) && onlyKeys(v, DEVICE_KEY_SET) && typeof v.id === "string" && typeof v.online === "boolean" && isObj(v.twin) && isObj(v.matter) && typeof v.updatedAt === "string"),
   note: z.strictObject({ initial: z.boolean().optional(), label: z.string().optional(), kind: z.string().optional() }),
 });
 
@@ -80,6 +90,8 @@ type Assert<T extends true> = T;
 type Flat<T> = { [K in keyof T]: T[K] };
 /** 실제 모양으로 바꾼 토픽 몸이 계약 타입과 같다. 미니맵 몸은 SeenEvent에서 사건 칸을 빼고 근거 시각(촬영 시각)을 단 것이다. */
 export type TopicBodiesSame = [
+  Assert<Equal<(typeof VIEW_KEYS)[number], keyof WorldView>>,
+  Assert<Equal<(typeof DEVICE_KEYS)[number], keyof DeviceState>>,
   Assert<Equal<z.infer<typeof sceneInput>, SceneInput>>,
   Assert<Equal<z.infer<typeof seen>, Flat<Omit<SeenEvent, "type" | "at_ms" | "captured_at_ms"> & { observed_ms: number }>>>,
   Assert<Equal<z.infer<typeof worldState>, WorldStateMsg>>,

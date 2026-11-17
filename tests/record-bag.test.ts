@@ -44,6 +44,39 @@ describe("기록 노드", () => {
     expect(db.list({}).map((r) => r.text)).toEqual([HEARD_MARK]);
   });
 
+  it("들은 말은 KEEP_HEARD_TEXT가 아니면 기록 DB와 녹화 모두 표시만 남기고, 켜면 그대로 남긴다", async () => {
+    for (const keepHeard of [false, true]) {
+      const bus = new MemoryBus();
+      const db = HistoryDb.open(":memory:");
+      const bag = Bag.open(":memory:");
+      const rec = await startRecorder({ bus, epoch: EPOCH, db, bag, keepHeard });
+      rec.start();
+      const phone = await sender("phone", bus);
+      const world = await sender("world", bus);
+      await phone.publish("/phone/heard", { text: "컵 치워 줘", observed_ms: 1000 });
+      await world.publish("/world/changes", { rev: 1, changes: [{ kind: "heard", at_ms: 1000, subject: "person", text: "들은 말: 컵 치워 줘", meaningful: true }] });
+      await tick();
+      await rec.idle();
+      const want = (raw: string) => (keepHeard ? raw : HEARD_MARK);
+      expect(db.list({}).map((r) => r.text)).toEqual([want("들은 말: 컵 치워 줘")]);
+      const kept = bag.range(0, Number.MAX_SAFE_INTEGER).map(({ e }) => e.body as Record<string, any>);
+      expect(kept.map((b) => b.text ?? b.changes?.[0]?.text)).toEqual([want("컵 치워 줘"), want("들은 말: 컵 치워 줘")]);
+      expect(JSON.stringify(kept).includes("컵 치워 줘")).toBe(keepHeard);
+    }
+  });
+
+  it("World State 변화의 기록 시각은 처리 시각이고, 근거(촬영) 시각은 data.observed_ms로 따로 남긴다", async () => {
+    const bus = new MemoryBus();
+    const db = HistoryDb.open(":memory:");
+    const rec = await startRecorder({ bus, epoch: EPOCH, db, clock: { now: () => 50_000, every: () => () => {}, after: () => () => {} } });
+    rec.start();
+    const world = await sender("world", bus);
+    await world.publish("/world/changes", { rev: 1, changes: [{ kind: "appeared", at_ms: 1000, subject: "cup_1", text: "컵 cup_1 보임", meaningful: true }] });
+    await tick();
+    await rec.idle();
+    expect(db.list({}).map((r) => [r.at_ms, r.data])).toEqual([[50_000, { kind: "appeared", observed_ms: 1000 }]]);
+  });
+
   it("녹화가 실패해 같은 메시지를 다시 받아도 기록 DB 줄은 한 번만 남는다", async () => {
     const bus = new MemoryBus();
     const db = HistoryDb.open(":memory:");

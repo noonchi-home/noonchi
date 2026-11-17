@@ -5,22 +5,34 @@
 import type { BrainLog, FeedbackLog } from "../contract/events.js";
 import type { WorldChange } from "../contract/world.js";
 import { deviceRecorder, recordBrainLog, recordFeedback, type HistoryDb } from "../brain/index.js";
-import { TOPICS, msgId, type BusNode, type TopicName } from "../bus/index.js";
+import { TOPICS, msgId, type BusNode, type Envelope, type TopicName } from "../bus/index.js";
 import { HEARD_MARK } from "../world/labels.js";
 import type { Bag } from "./bag.js";
 
 type Write = (b: Record<string, unknown>) => void;
 /** 프레임마다 생기는 분석 없음은 관찰 기록(observe)으로 남으므로 world_change로 다시 쓰지 않는다(관찰 흐름과 같다). */
 const PER_FRAME = new Set(["vlm_missing", "yolo_missing"]);
-/** World State 변화 하나의 기록 줄. 들은 말은 내용 없이 표시만 남긴다. */
-const changeLog = (c: WorldChange): BrainLog => ({ type: "world_change", at_ms: c.at_ms, kind: c.kind, text: c.kind === "heard" ? HEARD_MARK : c.text });
+/** 들은 말 글: KEEP_HEARD_TEXT가 아니면 내용 없이 표시만 남긴다(기록 DB·녹화가 같은 정책). */
+const heardText = (text: string, keep: boolean) => (keep ? text : HEARD_MARK);
+/** World State 변화 하나의 기록 줄: 기록 시각은 처리 시각(지금처럼 그날 기록에 들어간다), 근거(촬영) 시각은 observed_ms로 따로. */
+const changeLog = (c: WorldChange, at: number, keep: boolean): BrainLog =>
+  ({ type: "world_change", at_ms: at, kind: c.kind, text: c.kind === "heard" ? heardText(c.text, keep) : c.text, observed_ms: c.at_ms });
+/** 녹화에 남길 봉투: 들은 말(/phone/heard 글, /world/changes의 heard 변화 글)은 기록 DB와 같은 정책으로 가린다. */
+function forBag(e: Envelope<TopicName>, keep: boolean): Envelope<TopicName> {
+  if (keep) return e;
+  const b = e.body as Record<string, unknown>;
+  if (e.topic === "/phone/heard") return { ...e, body: { ...b, text: HEARD_MARK } } as Envelope<TopicName>;
+  if (e.topic === "/world/changes") return { ...e, body: { ...b, changes: (b.changes as WorldChange[]).map((c) => (c.kind === "heard" ? { ...c, text: HEARD_MARK } : c)) } } as Envelope<TopicName>;
+  return e;
+}
 
-export function historyRoutes(node: BusNode, db: HistoryDb, o: { bag?: Bag; now: () => number }): void {
+export function historyRoutes(node: BusNode, db: HistoryDb, o: { bag?: Bag; now: () => number; keepHeard?: boolean }): void {
+  const keep = o.keepHeard ?? false;
   const device = deviceRecorder(db, o.now);
   const logs = (list: unknown) => { for (const l of (list ?? []) as BrainLog[]) recordBrainLog(db, l); };
   const history: Partial<Record<TopicName, Write>> = {
     "/perception/analysis": (b) => logs(b.logs),
-    "/world/changes": (b) => { for (const c of b.changes as WorldChange[]) if (!PER_FRAME.has(c.kind)) recordBrainLog(db, changeLog(c)); },
+    "/world/changes": (b) => { for (const c of b.changes as WorldChange[]) if (!PER_FRAME.has(c.kind)) recordBrainLog(db, changeLog(c, o.now(), keep)); },
     "/brain/decision": (b) => recordBrainLog(db, b as unknown as BrainLog),
     "/brain/link": (b) => recordBrainLog(db, b as unknown as BrainLog),
     "/act/log": (b) => (b.type === "feedback" ? recordFeedback(db, b as unknown as FeedbackLog) : recordBrainLog(db, b as unknown as BrainLog)),
@@ -36,7 +48,7 @@ export function historyRoutes(node: BusNode, db: HistoryDb, o: { bag?: Bag; now:
     const write = history[topic];
     node.on(topic, (b, { e }) => {
       if (write) db.once({ topic, group: "recorder", key: e.key, msg: msgId(e.header), boot: e.header.boot }, () => write(b as Record<string, unknown>));
-      if (o.bag && recorded(topic)) o.bag.write(e, o.now());
+      if (o.bag && recorded(topic)) o.bag.write(forBag(e, keep), o.now());
     }, TOPICS[topic].qos.kind === "sensor" ? { mode: "all" } : {});
   }
 }

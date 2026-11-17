@@ -5,6 +5,8 @@ import { describe, expect, it } from "vitest";
 import { BusNode, MemoryBus, VirtualClock, type Bus } from "../src/bus/index.js";
 
 const EPOCH = { boot: "b1", home: "h#1" };
+/** 최상위 칸이 다 있는 가장 작은 집 상태 보기. */
+const VIEW = { at_ms: 0, objects: [], person: {}, fixtures: [], devices: [], eye: null, frame_ms: null, vlm_missing: 0, yolo_missing: 0 } as never;
 const tick = (ms = 20) => new Promise((r) => setTimeout(r, ms));
 const node = (name: ConstructorParameters<typeof BusNode>[0]["name"], bus: MemoryBus, clock?: VirtualClock) => new BusNode({ name, bus, epoch: EPOCH, clock, log: () => {} });
 
@@ -149,7 +151,7 @@ describe("BusNode 실행기", () => {
     await w.publish("/world/changes", { rev: 1, changes: [] });
     await tick(50);
     expect(seen).toEqual([]);
-    await w.publish("/world/state", { rev: 1, view: {} as never });
+    await w.publish("/world/state", { rev: 1, view: VIEW });
     await tick(50);
     expect(seen).toEqual([[1, 1]]);
   });
@@ -174,15 +176,47 @@ describe("BusNode 실행기", () => {
     a2.withState("/world/changes", "/world/state", (c, s) => { seen2.push([c.rev as number, s.rev as number]); });
     await a2.prepare();
     a2.start();
-    await w.publish("/world/state", { rev: 1, view: {} as never });
+    await w.publish("/world/state", { rev: 1, view: VIEW });
     await tick(100);
     expect(seen2).toEqual([[1, 1]]);
     expect(bus.length("/world/changes")).toBe(0);
   });
 
+  it("withState의 상태 콜백은 상태가 올 때마다(같은 rev를 다시 내도) 먼저 불리고, 내려놓은 변화는 그 뒤에 처리된다", async () => {
+    const bus = new MemoryBus();
+    const n = node("act", bus);
+    const seen: string[] = [];
+    n.withState("/world/changes", "/world/state", (c, s) => { seen.push(`변화 ${c.rev}@${s.rev}`); }, (s) => { seen.push(`상태 ${s.rev}`); });
+    const w = node("world", bus);
+    await n.prepare();
+    await w.prepare();
+    n.start();
+    w.start();
+    await w.publish("/world/changes", { rev: 1, changes: [] });
+    await tick(50);
+    await w.publish("/world/state", { rev: 1, view: VIEW });
+    await tick(50);
+    await w.publish("/world/state", { rev: 1, view: VIEW });
+    await tick(50);
+    expect(seen).toEqual(["상태 1", "변화 1@1", "상태 1"]);
+  });
+
+  it("prepare를 다시 불러도 이미 만든 구독은 다시 만들지 않고, 그 뒤 더한 구독만 만든다(재생이 준비된 노드를 받아도 한 번만 받는다)", async () => {
+    const mem = new MemoryBus();
+    const made: string[] = [];
+    const bus: Bus = { publish: (e) => mem.publish(e), close: () => mem.close(), subscribe: (t, n, d, o) => { made.push(t); return mem.subscribe(t, n, d, o); } };
+    const n = new BusNode({ name: "act", bus, epoch: EPOCH, log: () => {} });
+    n.on("/world/changes", () => {});
+    await n.prepare();
+    await n.prepare();
+    n.on("/world/state", () => {});
+    await n.prepare();
+    expect(made).toEqual(["/world/changes", "/world/state"]);
+  });
+
   it("보내는 노드가 아닌 노드가 발행하면 거절된다", async () => {
     const n = node("brain", new MemoryBus());
-    await expect(n.publish("/world/state", { rev: 1, view: {} as never })).rejects.toThrow(/world/);
+    await expect(n.publish("/world/state", { rev: 1, view: VIEW })).rejects.toThrow(/world/);
   });
 
   it("가상 시계: 타이머마다 그 일(비동기 포함)이 끝난 뒤에 다음 시각으로 간다", async () => {

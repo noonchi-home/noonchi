@@ -4,6 +4,8 @@ import { Freshness, MAX_FRAME_B64, NODES, Pending, TOPICS, decode, encode, frame
 import { SCENE_STATES } from "../src/world/vocab.js";
 
 const EPOCH = { boot: "b1", home: "h#1" };
+/** 최상위 칸이 다 있는 가장 작은 집 상태 보기. */
+const VIEW = { at_ms: 0, objects: [], person: {}, fixtures: [], devices: [], eye: null, frame_ms: null, vlm_missing: 0, yolo_missing: 0 };
 const e = <N extends "/perception/analysis" | "/world/state">(topic: N, body: Record<string, unknown>, over: Partial<Envelope<N>["header"]> = {}, key = "_"): Envelope<N> =>
   ({ topic, key, header: { stamp: 1000, node: topic === "/world/state" ? "world" : "perception", inst: "i1", seq: 1, ...EPOCH, ...over }, body } as never);
 
@@ -34,13 +36,13 @@ describe("토픽 표", () => {
   });
 
   it("메시지 식별자는 기동·집·노드·인스턴스·seq를 모두 담는다(노드를 다시 만들어 seq가 1로 돌아와도 겹치지 않는다)", () => {
-    const a = e("/world/state", { rev: 1, view: {} }).header;
+    const a = e("/world/state", { rev: 1, view: VIEW }).header;
     expect(msgId(a)).not.toBe(msgId({ ...a, inst: "i2" }));
     expect(msgId(a)).not.toBe(msgId({ ...a, home: "h#2" }));
   });
 
   it("머리·몸은 JSON으로 오가고 모양이 틀리면 거절한다", () => {
-    const one = e("/world/state", { rev: 1, view: {} });
+    const one = e("/world/state", { rev: 1, view: VIEW });
     const raw = encode(one);
     expect(decode("/world/state", raw)).toEqual(one);
     expect(() => decode("/world/state", raw.replace('"node":"world"', '"node":"nobody"'))).toThrow();
@@ -51,8 +53,8 @@ describe("토픽 표", () => {
 describe("낡은 메시지", () => {
   it("지난 기동·지난 집의 메시지는 버린다", () => {
     const f = new Freshness(() => EPOCH);
-    expect(f.check(e("/world/state", { rev: 1, view: {} }, { boot: "b0" }))).toBe(false);
-    expect(f.check(e("/world/state", { rev: 1, view: {} }, { home: "h#0" }))).toBe(false);
+    expect(f.check(e("/world/state", { rev: 1, view: VIEW }, { boot: "b0" }))).toBe(false);
+    expect(f.check(e("/world/state", { rev: 1, view: VIEW }, { home: "h#0" }))).toBe(false);
   });
 
   it("observed_ms 순서 토픽은 옛 근거 시각을 버린다(늦게 끝난 옛 VLM 답). 확정은 성공 뒤에만 한다", () => {
@@ -67,9 +69,9 @@ describe("낡은 메시지", () => {
 
   it("rev 순서 토픽은 옛 판본을 버린다", () => {
     const f = new Freshness(() => EPOCH);
-    f.commit(e("/world/state", { rev: 5, view: {} }));
-    expect(f.check(e("/world/state", { rev: 4, view: {} }, { stamp: 9999, seq: 9 }))).toBe(false);
-    expect(f.check(e("/world/state", { rev: 6, view: {} }))).toBe(true);
+    f.commit(e("/world/state", { rev: 5, view: VIEW }));
+    expect(f.check(e("/world/state", { rev: 4, view: VIEW }, { stamp: 9999, seq: 9 }))).toBe(false);
+    expect(f.check(e("/world/state", { rev: 6, view: VIEW }))).toBe(true);
   });
 
   it("같은 근거 시각에서 A 인스턴스 → B 인스턴스를 처리한 뒤 A의 이미 처리한 메시지가 다시 와도 버린다(인스턴스마다 처리한 seq를 기억)", () => {
@@ -117,14 +119,20 @@ describe("인식·집 상태 토픽 모양(묶음 2)", () => {
   });
 
   it("/world/state는 {rev, view}, /world/changes는 {rev, changes}만 받는다", () => {
-    expect(ok("/world/state", { rev: 1, view: { at_ms: 1, objects: [] } })).toBe(true);
+    expect(ok("/world/state", { rev: 1, view: VIEW })).toBe(true);
     expect(ok("/world/state", { rev: 1 })).toBe(false);
     expect(ok("/world/state", { rev: 1, view: null })).toBe(false);
+    // 깊이는 보지 않아도 최상위 칸은 다 있어야 하고 사진 칸·모르는 칸은 거절한다
+    expect(ok("/world/state", { rev: 1, view: {} })).toBe(false);
+    expect(ok("/world/state", { rev: 1, view: { ...VIEW, objects: undefined } })).toBe(false);
+    expect(ok("/world/state", { rev: 1, view: { ...VIEW, at_ms: "1" } })).toBe(false);
+    expect(ok("/world/state", { rev: 1, view: { ...VIEW, jpeg_b64: "x" } })).toBe(false);
+    expect(ok("/world/state", { rev: 1, view: { ...VIEW, jpeg: "x" } })).toBe(false);
     const change = { kind: "appeared", at_ms: 1, subject: "cup_1", text: "컵 보임", meaningful: true };
     expect(ok("/world/changes", { rev: 1, changes: [change] })).toBe(true);
     expect(ok("/world/changes", { rev: 1 })).toBe(false);
     expect(ok("/world/changes", { rev: 1, changes: [{ ...change, kind: "없는 변화" }] })).toBe(false);
-    expect(ok("/world/changes", { rev: 1, changes: [change], view: {} })).toBe(false);
+    expect(ok("/world/changes", { rev: 1, changes: [change], view: VIEW })).toBe(false);
   });
 
   it("/world/closer는 {look, ids}(감지 번호 → 물건 id 표)만 받는다", () => {
@@ -144,6 +152,9 @@ describe("인식·집 상태 토픽 모양(묶음 2)", () => {
     const state = { id: "tv", online: true, twin: { on: true }, matter: {}, updatedAt: "2026-11-18T00:00:00Z" };
     expect(ok("/device/changes", { id: "tv", state, note: { label: "TV", kind: "tv", initial: true } })).toBe(true);
     expect(ok("/device/changes", { id: "tv", note: {} })).toBe(false);
+    expect(ok("/device/changes", { id: "tv", state: { id: "tv" }, note: {} })).toBe(false);
+    expect(ok("/device/changes", { id: "tv", state: { ...state, online: "yes" }, note: {} })).toBe(false);
+    expect(ok("/device/changes", { id: "tv", state: { ...state, jpeg_b64: "x" }, note: {} })).toBe(false);
     expect(ok("/device/changes", { id: "tv", state, note: { 모름: 1 } })).toBe(false);
   });
 });

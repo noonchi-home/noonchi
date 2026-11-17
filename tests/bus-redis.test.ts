@@ -173,7 +173,7 @@ describe.skipIf(!url)("RedisBus", () => {
   it("RELIABLE·STATE 한 번 지나기 p50은 같은 크기 Redis 맨 전달 p50보다 왕복 하나만큼 늘지 않는다(묶음 2 지연 예산: 한도 1ms와 PING 왕복의 0.8배 가운데 큰 값, 번갈아 잰 다섯 판의 중앙값)", async () => {
     const b = boot();
     const change = (rev: number) => ({ rev, changes: [{ kind: "appeared", at_ms: rev, subject: "cup_1", text: "컵 cup_1 보임", meaningful: true }] });
-    const state = (rev: number) => ({ rev, view: { at_ms: rev, objects: [], pad: "x".repeat(18_340) } });
+    const state = (rev: number) => ({ rev, view: { at_ms: rev, objects: [{ pad: "x".repeat(18_200) }], person: {}, fixtures: [], devices: [], eye: null, frame_ms: null, vlm_missing: 0, yolo_missing: 0 } });
     const size = (body: Record<string, unknown>) => Buffer.byteLength(JSON.stringify({ key: "_", header: { stamp: 1, node: "world", inst: "i1", seq: 1, boot: b, home: "h#1" }, body }));
     const bus = await RedisBus.connect(url!, { boot: b, keepOthers: true, log: () => {}, onLost: failOnLost });
     const c = createClient({ url: url! });
